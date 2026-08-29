@@ -46,15 +46,17 @@ StatBreakdownSource statSourceOf(StatFact f) {
 
 /// 逐来源、逐日的统计合计（v90：输入是统一事实面的**日面**，不再各表各读）。
 Map<StatBreakdownSource, Map<String, StatSourceTotals>>
-    aggregateStatSourceDaily(Iterable<StatFact> daily) {
+aggregateStatSourceDaily(Iterable<StatFact> daily) {
   final Map<StatBreakdownSource, Map<String, StatSourceTotals>> out =
       <StatBreakdownSource, Map<String, StatSourceTotals>>{
-    for (final StatBreakdownSource s in StatBreakdownSource.values)
-      s: <String, StatSourceTotals>{},
-  };
+        for (final StatBreakdownSource s in StatBreakdownSource.values)
+          s: <String, StatSourceTotals>{},
+      };
   for (final StatFact f in daily) {
-    final StatSourceTotals b =
-        out[statSourceOf(f)]!.putIfAbsent(f.dateKey, StatSourceTotals.new);
+    final StatSourceTotals b = out[statSourceOf(f)]!.putIfAbsent(
+      f.dateKey,
+      StatSourceTotals.new,
+    );
     b.chars += f.chars;
     b.timeMs += f.ms;
     b.pages += f.pages;

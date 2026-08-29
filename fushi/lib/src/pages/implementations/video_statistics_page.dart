@@ -5,6 +5,7 @@ import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/video_stat_aggregates.dart';
+import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -67,8 +68,11 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       // 的重置），上一轮失败的 _error 不清会让本轮成功的数据被错误画面挡住。
       _error = null;
       final db = appModelNoUpdate.database;
-      final List<VideoWatchStatisticRow> stats =
-          await db.getAllVideoWatchStatistics();
+      // v90：观看事实只走统一事实面（legacy `video_watch_statistics` 日行 +
+      // `study_segments` 段，由 loadStatFacts 归一），本页不再直接读表。
+      // activityLimit 0：统计页不需要活动流行。
+      final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
+      final List<StatFact> stats = facts.dailyVideos.toList();
       final List<VideoBookRow> books = await VideoBookRepository(db).listAll();
       final List<DateTime> completed = books
           .map((VideoBookRow b) => b.completedAt)
@@ -146,7 +150,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
           mined.isNotEmpty ||
           counters.isNotEmpty ||
           videoFavSentences.isNotEmpty;
-      await _loadHourlyData();
+      _loadHourlyData(facts);
     } catch (e, stack) {
       ErrorLogService.instance.log('VideoStatisticsPage.load', e, stack);
       _error = e.toString();
@@ -154,14 +158,16 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     setState(() => _loading = false);
   }
 
-  Future<void> _loadHourlyData() async {
-    final db = appModelNoUpdate.database;
-    final todayKey = statTodayKey();
-    final rows = await db.getVideoHourlyLogsForDate(todayKey);
+  /// 今日按小时观看时长：从事实面的小时面取 video 行**累加**。v90 起同一小时
+  /// 会同时有 legacy 小时行与多条段，旧实现按行赋值（`=`）会让后来的行覆盖前面
+  /// 的，只能用 `+=`。
+  void _loadHourlyData(StatFacts facts) {
+    final String todayKey = statTodayKey();
     _hourlyMs = List.filled(24, 0);
-    for (final row in rows) {
-      if (row.hour >= 0 && row.hour < 24) {
-        _hourlyMs[row.hour] = row.watchTimeMs;
+    for (final StatFact f in facts.hourly) {
+      if (!f.isVideo || f.dateKey != todayKey) continue;
+      if (f.hour >= 0 && f.hour < 24) {
+        _hourlyMs[f.hour] += f.ms;
       }
     }
   }

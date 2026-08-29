@@ -4,11 +4,74 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-1204 后续：统计页长按删除某本书/视频的统计 + 防同步复活墓碑。
+///
+/// v90 起累加 DAO（addReadingStatistic / addVideoWatchStatistic）已删：legacy 行在
+/// 这里用 OVERWRITE 版 set* / drift 直插造数（行的最终值与原用例相同）；「新阅读 /
+/// 观看活动清 (title, sourceType) 墓碑」两条用例随累加 DAO 删除（本地写入面已不再
+/// 写 legacy 表；study_segments 的复活仲裁是 `updatedAt > deletedAt`，见
+/// study_segments_test.dart）。定向删除现在连带删本媒体的 study_segments 并按身份
+/// 立碑——见文件末尾 v90 组。
 Future<FushiDatabase> _openDb() async {
   final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   return db;
 }
+
+/// 造一行 legacy 日阅读统计（绝对值）。
+Future<void> _setReading(
+  FushiDatabase db, {
+  required String title,
+  required String dateKey,
+  required int chars,
+  required int ms,
+}) =>
+    db.setReadingStatistic(ReadingStatisticsCompanion.insert(
+      title: title,
+      dateKey: dateKey,
+      charactersRead: chars,
+      readingTimeMs: ms,
+      lastStatisticModified: 1,
+    ));
+
+/// 直插一行 legacy 观看统计。不走 [FushiDatabase.setVideoWatchStatistic]：它是
+/// 同步落地的 title 粒度 OVERWRITE（会把同 (title, dateKey) 的 per-uid 行塌缩成
+/// 一行），造不出 v39 的同名多身份 fixture。[bookUid] 缺省 = NULL（无身份遗留行）。
+Future<void> _insertWatch(
+  FushiDatabase db, {
+  required String title,
+  String? bookUid,
+  required String dateKey,
+  required int subtitleChars,
+  required int watchTimeMs,
+}) =>
+    db.into(db.videoWatchStatistics).insert(VideoWatchStatisticsCompanion.insert(
+      title: title,
+      bookUid: Value(bookUid),
+      dateKey: dateKey,
+      subtitleChars: subtitleChars,
+      watchTimeMs: watchTimeMs,
+      lastModified: 1,
+    ));
+
+/// 一段 study_segments 事实（v90）。
+Future<void> _seedSegment(
+  FushiDatabase db, {
+  required String mediaKind,
+  required String mediaKey,
+  required String title,
+}) =>
+    db.upsertStudySegment(StudySegmentsCompanion.insert(
+      uid: FushiDatabase.newStudySegmentUid(),
+      deviceId: 'dev-test',
+      mediaKind: mediaKind,
+      mediaKey: mediaKey,
+      title: title,
+      startAt: 1000,
+      endAt: 61000,
+      dateKey: '2026-07-05',
+      hour: 10,
+      updatedAt: 61000,
+    ));
 
 void main() {
   group('deleteReadingStatisticsForTitle', () {
@@ -17,10 +80,10 @@ void main() {
         'writes a book tombstone', () async {
       final FushiDatabase db = await _openDb();
       // Two books; delete only "A".
-      await db.addReadingStatistic(
-          title: 'A', dateKey: '2026-07-05', charsRead: 100, timeMs: 6000);
-      await db.addReadingStatistic(
-          title: 'B', dateKey: '2026-07-05', charsRead: 50, timeMs: 3000);
+      await _setReading(db,
+          title: 'A', dateKey: '2026-07-05', chars: 100, ms: 6000);
+      await _setReading(db,
+          title: 'B', dateKey: '2026-07-05', chars: 50, ms: 3000);
       await db.addLookupCount(
           bookKey: 'book/A',
           title: 'A',
@@ -66,8 +129,8 @@ void main() {
         'does NOT delete mined sentences or favorite words (content, not '
         'statistics)', () async {
       final FushiDatabase db = await _openDb();
-      await db.addReadingStatistic(
-          title: 'A', dateKey: '2026-07-05', charsRead: 100, timeMs: 6000);
+      await _setReading(db,
+          title: 'A', dateKey: '2026-07-05', chars: 100, ms: 6000);
       await db.addMinedSentence(
           source: 'book',
           dateKey: '2026-07-05',
@@ -95,10 +158,10 @@ void main() {
         'clears video watch + lookup/mining (video) rows and writes a video '
         'tombstone; a same-title book stays', () async {
       final FushiDatabase db = await _openDb();
-      await db.addVideoWatchStatistic(
+      await _insertWatch(db,
           title: 'A', dateKey: '2026-07-05', subtitleChars: 10, watchTimeMs: 5);
-      await db.addReadingStatistic(
-          title: 'A', dateKey: '2026-07-05', charsRead: 1, timeMs: 1);
+      await _setReading(db,
+          title: 'A', dateKey: '2026-07-05', chars: 1, ms: 1);
       await db.addLookupCount(
           title: 'A', sourceType: 'video', dateKey: '2026-07-05');
 
@@ -119,13 +182,13 @@ void main() {
         '(no more collateral title delete)', () async {
       final FushiDatabase db = await _openDb();
       // Same title, two identities (v39 storage model).
-      await db.addVideoWatchStatistic(
+      await _insertWatch(db,
           title: 'A',
           bookUid: 'uid-1',
           dateKey: '2026-07-05',
           subtitleChars: 10,
           watchTimeMs: 5);
-      await db.addVideoWatchStatistic(
+      await _insertWatch(db,
           title: 'A',
           bookUid: 'uid-2',
           dateKey: '2026-07-05',
@@ -159,13 +222,13 @@ void main() {
         'review2-6 回归：改名视频按 uid 删除时，墓碑覆盖被删行的全部历史 title'
         '（否则旧 title 行从旧备份复活）', () async {
       final FushiDatabase db = await _openDb();
-      await db.addVideoWatchStatistic(
+      await _insertWatch(db,
           title: '旧名',
           bookUid: 'uid-x',
           dateKey: '2026-07-01',
           subtitleChars: 1,
           watchTimeMs: 1);
-      await db.addVideoWatchStatistic(
+      await _insertWatch(db,
           title: '新名',
           bookUid: 'uid-x',
           dateKey: '2026-07-05',
@@ -195,13 +258,13 @@ void main() {
         'review3-2 回归：includeUnattributed 扫面覆盖被删 uid 的全部历史 title'
         '（展示层吸收了哪些行，删除就删哪些行）', () async {
       final FushiDatabase db = await _openDb();
-      await db.addVideoWatchStatistic(
+      await _insertWatch(db,
           title: '旧名',
           bookUid: 'uid-x',
           dateKey: '2026-07-01',
           subtitleChars: 1,
           watchTimeMs: 1);
-      await db.addVideoWatchStatistic(
+      await _insertWatch(db,
           title: '新名',
           bookUid: 'uid-x',
           dateKey: '2026-07-05',
@@ -209,7 +272,7 @@ void main() {
           watchTimeMs: 2);
       // 新 title 的无身份遗留行——展示层按「组内全部 title 注册 owner」把它归并
       // 进 uid-x 的 tile（review-9），删 tile 必须连它一起删。
-      await db.addVideoWatchStatistic(
+      await _insertWatch(db,
           title: '新名', dateKey: '2026-07-02', subtitleChars: 3, watchTimeMs: 3);
 
       // tile 首见 title 是「旧名」——传入的是旧名，扫面仍须覆盖新名的遗留行。
@@ -225,26 +288,26 @@ void main() {
         '——那些行显示在别的 tile 里，删本 tile 不许连坐', () async {
       final FushiDatabase db = await _openDb();
       // uid-x 的两个 title；「同名」同时被 uid-y 使用（行宇宙歧义）。
-      await db.addVideoWatchStatistic(
+      await _insertWatch(db,
           title: '独享名',
           bookUid: 'uid-x',
           dateKey: '2026-07-01',
           subtitleChars: 1,
           watchTimeMs: 1);
-      await db.addVideoWatchStatistic(
+      await _insertWatch(db,
           title: '同名',
           bookUid: 'uid-x',
           dateKey: '2026-07-02',
           subtitleChars: 2,
           watchTimeMs: 2);
-      await db.addVideoWatchStatistic(
+      await _insertWatch(db,
           title: '同名',
           bookUid: 'uid-y',
           dateKey: '2026-07-03',
           subtitleChars: 3,
           watchTimeMs: 3);
       // 「同名」的无身份遗留行：展示层因歧义否决吸收 → 独立 orphan tile。
-      await db.addVideoWatchStatistic(
+      await _insertWatch(db,
           title: '同名', dateKey: '2026-07-01', subtitleChars: 5, watchTimeMs: 5);
 
       await db.deleteVideoStatisticsForIdentity(
@@ -287,14 +350,14 @@ void main() {
         'v76: includeUnattributed sweeps legacy NULL/empty-identity rows of '
         'the same title along with the uid rows', () async {
       final FushiDatabase db = await _openDb();
-      await db.addVideoWatchStatistic(
+      await _insertWatch(db,
           title: 'A',
           bookUid: 'uid-1',
           dateKey: '2026-07-05',
           subtitleChars: 10,
           watchTimeMs: 5);
       // Legacy row (no identity) of the same title.
-      await db.addVideoWatchStatistic(
+      await _insertWatch(db,
           title: 'A', dateKey: '2026-07-04', subtitleChars: 3, watchTimeMs: 2);
       await db.addLookupCount(
           title: 'A', sourceType: 'video', dateKey: '2026-07-04');
@@ -308,33 +371,6 @@ void main() {
   });
 
   group('tombstone lifecycle', () {
-    test('new reading activity clears a prior book tombstone', () async {
-      final FushiDatabase db = await _openDb();
-      await db.addReadingStatistic(
-          title: 'A', dateKey: '2026-07-05', charsRead: 100, timeMs: 6000);
-      await db.deleteReadingStatisticsForTitle('A');
-      expect(await db.getStatisticsTombstoneKeys(), contains(('A', 'book')));
-
-      // Reading A again (creating a fresh daily row) revives it.
-      await db.addReadingStatistic(
-          title: 'A', dateKey: '2026-07-06', charsRead: 10, timeMs: 600);
-      expect(await db.getStatisticsTombstoneKeys(),
-          isNot(contains(('A', 'book'))));
-    });
-
-    test('new video activity clears a prior video tombstone', () async {
-      final FushiDatabase db = await _openDb();
-      await db.addVideoWatchStatistic(
-          title: 'V', dateKey: '2026-07-05', subtitleChars: 1, watchTimeMs: 1);
-      await db.deleteVideoStatisticsForIdentity(title: 'V');
-      expect(await db.getStatisticsTombstoneKeys(), contains(('V', 'video')));
-
-      await db.addVideoWatchStatistic(
-          title: 'V', dateKey: '2026-07-06', subtitleChars: 1, watchTimeMs: 1);
-      expect(await db.getStatisticsTombstoneKeys(),
-          isNot(contains(('V', 'video'))));
-    });
-
     test('new lookup activity clears the matching tombstone (per sourceType)',
         () async {
       final FushiDatabase db = await _openDb();
@@ -350,6 +386,94 @@ void main() {
           dateKey: '2026-07-06');
       expect(await db.getStatisticsTombstoneKeys(),
           isNot(contains(('A', 'book'))));
+    });
+  });
+
+  group('v90: 定向删除连带 study_segments 事实 + 按媒体身份立碑', () {
+    test(
+        'deleteReadingStatisticsForTitle(bookKey:) removes the book segments '
+        'and writes a (book, bookKey) segment tombstone; other books untouched',
+        () async {
+      final FushiDatabase db = await _openDb();
+      await _seedSegment(db,
+          mediaKind: kActivityMediaBook, mediaKey: 'book/A', title: 'A');
+      await _seedSegment(db,
+          mediaKind: kActivityMediaBook, mediaKey: 'book/B', title: 'B');
+      await _setReading(db,
+          title: 'A', dateKey: '2026-07-05', chars: 100, ms: 6000);
+
+      await db.deleteReadingStatisticsForTitle('A', bookKey: 'book/A');
+
+      expect(
+          await db.getStudySegmentsForMedia(
+              mediaKind: kActivityMediaBook, mediaKey: 'book/A'),
+          isEmpty);
+      expect(
+          await db.getStudySegmentsForMedia(
+              mediaKind: kActivityMediaBook, mediaKey: 'book/B'),
+          hasLength(1),
+          reason: '按身份删，不连坐别的书');
+      expect(await db.getAllReadingStatistics(), isEmpty,
+          reason: 'legacy 行仍按 title 删');
+      final List<StudySegmentTombstoneRow> tombstones =
+          await db.getStudySegmentTombstones();
+      expect(
+          tombstones
+              .map((StudySegmentTombstoneRow t) => (t.mediaKind, t.mediaKey)),
+          <(String, String)>[(kActivityMediaBook, 'book/A')]);
+      expect(await db.getStatisticsTombstoneKeys(), contains(('A', 'book')),
+          reason: 'legacy (title, sourceType) 墓碑照立，两套墓碑各管各的 wire 家族');
+    });
+
+    test(
+        'deleteReadingStatisticsForTitle without bookKey leaves segments alone '
+        '(no identity → nothing to delete, no segment tombstone)', () async {
+      final FushiDatabase db = await _openDb();
+      await _seedSegment(db,
+          mediaKind: kActivityMediaBook, mediaKey: 'book/A', title: 'A');
+
+      await db.deleteReadingStatisticsForTitle('A');
+
+      expect(
+          await db.getStudySegmentsForMedia(
+              mediaKind: kActivityMediaBook, mediaKey: 'book/A'),
+          hasLength(1));
+      expect(await db.getStudySegmentTombstones(), isEmpty);
+    });
+
+    test(
+        'deleteVideoStatisticsForIdentity(bookUid:) removes the video segments '
+        'and writes a (video, bookUid) segment tombstone', () async {
+      final FushiDatabase db = await _openDb();
+      await _seedSegment(db,
+          mediaKind: kActivityMediaVideo, mediaKey: 'uid-1', title: 'A');
+      await _seedSegment(db,
+          mediaKind: kActivityMediaVideo, mediaKey: 'uid-2', title: 'A');
+      await _insertWatch(db,
+          title: 'A',
+          bookUid: 'uid-1',
+          dateKey: '2026-07-05',
+          subtitleChars: 10,
+          watchTimeMs: 5);
+
+      await db.deleteVideoStatisticsForIdentity(title: 'A', bookUid: 'uid-1');
+
+      expect(
+          await db.getStudySegmentsForMedia(
+              mediaKind: kActivityMediaVideo, mediaKey: 'uid-1'),
+          isEmpty);
+      expect(
+          await db.getStudySegmentsForMedia(
+              mediaKind: kActivityMediaVideo, mediaKey: 'uid-2'),
+          hasLength(1),
+          reason: '同名另一身份的事实不连坐');
+      expect(await db.getAllVideoWatchStatistics(), isEmpty);
+      final List<StudySegmentTombstoneRow> tombstones =
+          await db.getStudySegmentTombstones();
+      expect(
+          tombstones
+              .map((StudySegmentTombstoneRow t) => (t.mediaKind, t.mediaKey)),
+          <(String, String)>[(kActivityMediaVideo, 'uid-1')]);
     });
   });
 }

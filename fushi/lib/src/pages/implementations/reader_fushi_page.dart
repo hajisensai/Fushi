@@ -1387,7 +1387,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   EpubBook? _book;
 
   /// TODO-1204：查词计数归属本书——[title] 与阅读统计 tile 的聚合键（[EpubBook.title]，
-  /// 见 navigation.part.dart 的 addReadingStatistic）对齐，[bookKey] 存书身份。
+  /// 见 study_segments 的 mediaKey）对齐，[bookKey] 存书身份。
   @override
   ({String? bookKey, String? title})? get lookupBookIdentity =>
       (bookKey: widget.bookKey, title: _book?.title);

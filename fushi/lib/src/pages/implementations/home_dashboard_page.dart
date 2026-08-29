@@ -36,6 +36,8 @@ import 'package:fushi/src/pages/implementations/home_video_page.dart'
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
+import 'package:fushi/src/stats/stat_facts.dart';
+import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
@@ -464,7 +466,8 @@ class _HomeDashboardPageState
   PreferencesRepository? _prefsRepoForRemoteGate;
 
   /// 每日字数合计（dateKey → 字数，阅读 + 观看 + 游戏），热力图「全部」档 +
-  /// 今日目标行的分子（目标固定按全来源合计，不随热力图筛选变）。
+  /// 日明细 sheet 头部合计。**不是**今日目标的分子——目标只算阅读域，见
+  /// [readingGoalCharsForDay]（v90：与阅读统计页同一函数、同一口径）。
   Map<String, int> _readingCharsByDay = const <String, int>{};
 
   /// 每日学习时长合计（dateKey → 毫秒，阅读 + 观看 + 游戏），热力图气泡的第二维度
@@ -479,14 +482,17 @@ class _HomeDashboardPageState
   Map<String, int> _gameCharsByDay = const <String, int>{};
   Map<String, int> _gameTimeMsByDay = const <String, int>{};
 
-  /// 已加载的原始统计行（点选日明细 sheet 按 dateKey 过滤，免重查）。
-  List<ReadingStatisticRow> _readingRows = const <ReadingStatisticRow>[];
-  List<VideoWatchStatisticRow> _watchRows = const <VideoWatchStatisticRow>[];
+  /// 已加载的统一事实面日行（v90：[StatFacts.daily] 按 mediaKind 分三份；点选日
+  /// 明细 sheet 按 dateKey 过滤、今日目标分子按阅读域求和，免重查）。
+  List<StatFact> _readingRows = const <StatFact>[];
+  List<StatFact> _watchRows = const <StatFact>[];
+  List<StatFact> _gameRows = const <StatFact>[];
 
   /// 合集归属映射（统计页/书架同源，显示名规则「非合集上下文拼合集名」用）：
   /// - [_collectionNamesById]：collectionId → 合集名。
   /// - [_primaryCollectionByEntry]：'<mediaType>|<entryKey>' → 折叠归属主 collectionId。
-  /// - [_bookKeyByTitle]：reading_statistics 行只存 title，经 epub_books 反查 bookKey。
+  /// - [_bookKeyByTitle]：legacy 阅读事实行无身份（mediaKey ''）时经 epub_books
+  ///   按 title 反查 bookKey（v90 段自带 mediaKey，优先直用）。
   /// - [_epubUidByBookKey]：v83 起成员表 epub entryKey = `epub_books.uid`，页面
   ///   手里的 bookKey 查归属映射前经此表换算（书架 `_epubUidByKey` 同款口径）。
   Map<int, String> _collectionNamesById = const <int, String>{};
@@ -605,18 +611,17 @@ class _HomeDashboardPageState
     final AppModel appModel = ref.read(appProvider);
     final FushiDatabase db = appModel.database;
     final List<VideoBookRow> videos = await widget.videoRepo.listForShelf();
-    final List<ActivityEventRow> events =
-        await db.getRecentActivityEvents(limit: 200);
-    final List<ReadingStatisticRow> reading =
-        await db.getAllReadingStatistics();
-    final List<VideoWatchStatisticRow> watch =
-        await db.getAllVideoWatchStatistics();
-    // 游戏文本字数仍取 hook 活动事件；游玩时长必须取 galgame_sessions 事实表。
-    // activity_events 只描述时间线，不能兼任游戏时长统计投影。
-    final List<(String, int, int)> gameActivityDaily =
-        await db.getActivityDailyTotals(kActivityGame);
-    final Map<String, (int totalSeconds, int sessionCount)> gameSessionDaily =
-        await db.getAllGalgameDailyTotals();
+    // v90：学习统计只经统一事实面读取（study_segments + 冻结的 legacy 投影表，
+    // 游戏时长来自 galgame_sessions、游戏 hook 字数来自 legacy game 行 + 段），
+    // 首页不再自己读六张表各自累加——与阅读/视频/游戏统计页同一份事实。
+    final StatFacts facts = await loadStatFacts(db);
+    final List<StatFact> reading = facts.dailyBooks.toList(growable: false);
+    final List<StatFact> watch = facts.dailyVideos.toList(growable: false);
+    final List<StatFact> game = facts.dailyGames.toList(growable: false);
+    // 活动流唯一数据源 [StatFacts.activityRows]：legacy activity_events（含仍在写的
+    // added 导入事件）∪ v90 段映射行 ∪ galgame_sessions 合成的游玩事件，按时刻倒序
+    // 截 200（与旧 getRecentActivityEvents(limit: 200) 对齐）。
+    final List<ActivityEventRow> events = facts.activityRows;
     // P4：游戏库整表（日明细/时间轴的游戏显示名反查）。仓储缓存与表恒一致，
     // 未载入过才真查 DB（毫秒级）；load() 会 notify → 本页监听器防抖重载一次
     // 后 isLoaded=true，不再形成回环。
@@ -652,10 +657,10 @@ class _HomeDashboardPageState
         memberSortIndex[key] = m.sortIndex;
       }
     }
-    // reading_statistics 行只存 title：日明细拼合集前缀需经 epub_books 反查 bookKey
-    // （阅读统计页 _collectionNameForBook 同范式）。同批顺带取 importedAt 喂
-    // 「最近添加」行（一次查询两用）。
-    final List<EpubBookRow> epubRows = await db.getAllEpubBooks();
+    // legacy 阅读事实行无身份时按 title 反查 bookKey（日明细拼合集前缀，阅读统计
+    // 页 _collectionNameForBook 同范式）。书表由事实面加载时顺带取回，同批再取
+    // importedAt 喂「最近添加」行（一次查询两用）。
+    final List<EpubBookRow> epubRows = facts.epubRows;
     final Map<String, String> bookKeyByTitle = <String, String>{
       for (final EpubBookRow r in epubRows) r.title: r.bookKey,
     };
@@ -672,27 +677,17 @@ class _HomeDashboardPageState
     // 每日「读到的字数」按来源拆三份（热力图筛选 全部/阅读/观看/游戏）：书内阅读、
     // 视频字幕字数（看带字幕的视频也是在读字，用户反馈「阅读活动只有书籍，其他的
     // 呢」）、游戏 hook 文本。「全部」= 三者合计。
+    // 事实行的 chars / ms 已分列（游戏时长行 chars=0、hook 字数行 ms=0），各自累加
+    // 不会双计。
     final Map<String, int> readChars = <String, int>{};
     final Map<String, int> readTimeMs = <String, int>{};
-    for (final ReadingStatisticRow r in reading) {
-      readChars[r.dateKey] = (readChars[r.dateKey] ?? 0) + r.charactersRead;
-      readTimeMs[r.dateKey] = (readTimeMs[r.dateKey] ?? 0) + r.readingTimeMs;
-    }
+    _accumulateByDay(reading, chars: readChars, timeMs: readTimeMs);
     final Map<String, int> watchChars = <String, int>{};
     final Map<String, int> watchTimeMs = <String, int>{};
-    for (final VideoWatchStatisticRow w in watch) {
-      watchChars[w.dateKey] = (watchChars[w.dateKey] ?? 0) + w.subtitleChars;
-      watchTimeMs[w.dateKey] = (watchTimeMs[w.dateKey] ?? 0) + w.watchTimeMs;
-    }
+    _accumulateByDay(watch, chars: watchChars, timeMs: watchTimeMs);
     final Map<String, int> gameChars = <String, int>{};
     final Map<String, int> gameTimeMs = <String, int>{};
-    for (final (String dateKey, int charsDelta, int _) in gameActivityDaily) {
-      gameChars[dateKey] = (gameChars[dateKey] ?? 0) + charsDelta;
-    }
-    for (final MapEntry<String, (int totalSeconds, int sessionCount)> entry
-        in gameSessionDaily.entries) {
-      gameTimeMs[entry.key] = entry.value.$1 * 1000;
-    }
+    _accumulateByDay(game, chars: gameChars, timeMs: gameTimeMs);
     final Map<String, int> charsByDay = <String, int>{};
     final Map<String, int> timeMsByDay = <String, int>{};
     for (final Map<String, int> m in <Map<String, int>>[
@@ -714,13 +709,14 @@ class _HomeDashboardPageState
       }
     }
 
-    // 每个视频的最近观看时刻（按 bookUid 取 lastModified 最大值）。
+    // 每个视频的最近观看时刻（按 bookUid 取 lastActiveMs 最大值；legacy 无身份行
+    // mediaKey '' 跳过）。
     final Map<String, int> watchAt = <String, int>{};
-    for (final VideoWatchStatisticRow w in watch) {
-      if (w.bookUid case final String uid) {
-        if (w.lastModified > (watchAt[uid] ?? 0)) {
-          watchAt[uid] = w.lastModified;
-        }
+    for (final StatFact w in watch) {
+      final String uid = w.mediaKey;
+      if (uid.isEmpty) continue;
+      if (w.lastActiveMs > (watchAt[uid] ?? 0)) {
+        watchAt[uid] = w.lastActiveMs;
       }
     }
 
@@ -747,6 +743,7 @@ class _HomeDashboardPageState
       _gameTimeMsByDay = gameTimeMs;
       _readingRows = reading;
       _watchRows = watch;
+      _gameRows = game;
       _collectionNamesById = collectionNamesById;
       _primaryCollectionByEntry = primaryByEntry;
       _mediaImagesByCollection = imagesByCollection;
@@ -759,6 +756,18 @@ class _HomeDashboardPageState
     });
     // 本地渲染先行，互联数据到达后再增量补位（不阻塞首屏）。
     unawaited(_loadRemoteDashboardData());
+  }
+
+  /// 把一组事实行按 dateKey 累加进 [chars] / [timeMs] 两张日映射（热力图分档数据源）。
+  static void _accumulateByDay(
+    List<StatFact> facts, {
+    required Map<String, int> chars,
+    required Map<String, int> timeMs,
+  }) {
+    for (final StatFact f in facts) {
+      chars[f.dateKey] = (chars[f.dateKey] ?? 0) + f.chars;
+      timeMs[f.dateKey] = (timeMs[f.dateKey] ?? 0) + f.ms;
+    }
   }
 
   /// 「继续/活动也走 hibiki 互联」：互联启用且已配对时，从 host 拉取
@@ -1845,9 +1854,11 @@ class _HomeDashboardPageState
     }
   }
 
-  /// 「今日目标」行：全来源合计今日字数 vs 每日字数目标（与阅读统计页同一持久化
-  /// [AppModel.readingGoalDailyChars]，不随热力图筛选变）。目标为 0 → 只留设定
-  /// 入口按钮；否则进度条 + 「X / Y 字」，点击行弹编辑对话框。
+  /// 「今日目标」行：阅读域（普通书 + 漫画）今日字数 vs 每日字数目标（与阅读统计页
+  /// 同一持久化 [AppModel.readingGoalDailyChars]、同一分子函数
+  /// [readingGoalCharsForDay]，不随热力图筛选变；v90 前首页把字幕字 / hook 字也
+  /// 加进分子，与统计页永远对不上）。目标为 0 → 只留设定入口按钮；否则进度条 +
+  /// 「X / Y 字」，点击行弹编辑对话框。
   Widget _buildDailyGoalRow(FushiDesignTokens tokens) {
     final int goal = ref.read(appProvider).readingGoalDailyChars;
     if (goal <= 0) {
@@ -1881,8 +1892,8 @@ class _HomeDashboardPageState
         ),
       );
     }
-    final String todayKey = FushiTimeFormat.dayKey(DateTime.now());
-    final int todayChars = _readingCharsByDay[todayKey] ?? 0;
+    final String todayKey = StatWindow(DateTime.now()).todayKey;
+    final int todayChars = readingGoalCharsForDay(_readingRows, todayKey);
     final double fraction = (todayChars / goal).clamp(0.0, 1.0);
     return InkWell(
       onTap: () => unawaited(_editDailyGoal()),
@@ -1932,40 +1943,29 @@ class _HomeDashboardPageState
     if (mounted) setState(() {});
   }
 
-  /// 近 [days] 天（含今天）的日均字数，**与目标同口径**（全来源合计
-  /// [_readingCharsByDay]）：给「我该填多少」一个真实参考值（BUG-1075）。
+  /// 近 [days] 天（含今天）的日均字数，**与目标同口径**（阅读域
+  /// [readingGoalCharsForDay]）：给「我该填多少」一个真实参考值（BUG-1075）。
   /// 无数据日按 0 计入分母（真实反映日均，不是活跃日均）。
   int _recentDailyAverageChars({int days = 7}) {
     if (days <= 0) return 0;
-    final DateTime today = DateTime.now();
+    final StatWindow w = StatWindow(DateTime.now());
     int total = 0;
-    for (int i = 0; i < days; i++) {
-      final String key =
-          FushiTimeFormat.dayKey(today.subtract(Duration(days: i)));
-      total += _readingCharsByDay[key] ?? 0;
+    for (final String key in w.lastDayKeys(days)) {
+      total += readingGoalCharsForDay(_readingRows, key);
     }
     return total ~/ days;
   }
 
   /// 点热力图某日 → 当日明细 sheet：头部=日期+当日合计（全来源），内容按
-  /// 阅读/观看/游戏分节列出每条目的字数+时长（空节不显示）。阅读/观看直接过滤
-  /// 已加载统计行，游戏按日按标题现查 DB 聚合。
+  /// 阅读/观看/游戏分节列出每条目的字数+时长（空节不显示）。三节都直接过滤
+  /// 已加载的事实行（v90：游戏节不再另查 activity_events）。
   Future<void> _showDayDetailSheet(String dateKey) async {
-    final FushiDatabase db = ref.read(appProvider).database;
-    final List<(String, int, int)> gameRows =
-        await db.getActivityTitleTotalsForDay(kActivityGame, dateKey);
-    if (!mounted) return;
     final List<({String title, int chars, int timeMs})> reading =
         _readingDayRows(dateKey);
     final List<({String title, int chars, int timeMs})> watch =
         _watchDayRows(dateKey);
-    // P4：游戏节的 title 是 activity_events 落库时的标题快照（聚合键，恒 raw），
-    // 上屏前按库内条目反查显示名（用户改名后明细跟着变；查不到原样显示快照）。
     final List<({String title, int chars, int timeMs})> game =
-        <({String title, int chars, int timeMs})>[
-      for (final (String title, int chars, int timeMs) in gameRows)
-        (title: _gameDisplayTitle(title), chars: chars, timeMs: timeMs),
-    ];
+        _gameDayRows(dateKey);
     await adaptiveModalSheet<void>(
       context: context,
       builder: (BuildContext sheetContext) =>
@@ -1973,44 +1973,85 @@ class _HomeDashboardPageState
     );
   }
 
-  /// 明细「阅读」节：reading_statistics 当日行按 title 聚合。显示名拼合集前缀
-  /// （title→bookKey 反查，阅读统计页 _collectionNameForBook 同范式）；DB 行
-  /// 仍按原 title 聚合，不动历史数据身份。
+  /// 把 [rows] 里 [dateKey] 当日的事实行按 [StatFact.identityKey] 聚合（有身份按
+  /// 身份、legacy 无身份行按 title 回退——沿用 v76 分组契约），每组保留首个非空的
+  /// mediaKey / title 供显示名解析（游戏时长行 title 为 ''，与同 id 的 hook 字数段
+  /// 并组后拿到标题快照）。三节明细共用。
+  static List<StatFact> _dayGroups(List<StatFact> rows, String dateKey) {
+    final Map<String, StatFact> byIdentity = <String, StatFact>{};
+    for (final StatFact f in rows) {
+      if (f.dateKey != dateKey) continue;
+      final StatFact? prev = byIdentity[f.identityKey];
+      byIdentity[f.identityKey] = prev == null
+          ? f
+          : StatFact(
+              mediaKind: prev.mediaKind,
+              mediaKey: prev.mediaKey.isNotEmpty ? prev.mediaKey : f.mediaKey,
+              title: prev.title.isNotEmpty ? prev.title : f.title,
+              format: prev.format,
+              dateKey: prev.dateKey,
+              hour: -1,
+              ms: prev.ms + f.ms,
+              chars: prev.chars + f.chars,
+              pages: prev.pages + f.pages,
+              lastActiveMs: prev.lastActiveMs > f.lastActiveMs
+                  ? prev.lastActiveMs
+                  : f.lastActiveMs,
+            );
+    }
+    return byIdentity.values.toList(growable: false);
+  }
+
+  /// 明细「阅读」节：阅读域当日事实行按身份聚合。显示名拼合集前缀（v90 段自带
+  /// bookKey；legacy 行经 title→bookKey 反查，阅读统计页 _collectionNameForBook
+  /// 同范式）；事实行仍按原身份聚合，不动历史数据身份。
   List<({String title, int chars, int timeMs})> _readingDayRows(
     String dateKey,
   ) {
-    final Map<String, ({int chars, int timeMs})> byTitle =
-        <String, ({int chars, int timeMs})>{};
-    for (final ReadingStatisticRow r in _readingRows) {
-      if (r.dateKey != dateKey) continue;
-      final ({int chars, int timeMs}) prev =
-          byTitle[r.title] ?? (chars: 0, timeMs: 0);
-      byTitle[r.title] = (
-        chars: prev.chars + r.charactersRead,
-        timeMs: prev.timeMs + r.readingTimeMs,
-      );
-    }
     return <({String title, int chars, int timeMs})>[
-      for (final MapEntry<String, ({int chars, int timeMs})> e
-          in byTitle.entries)
+      for (final StatFact f in _dayGroups(_readingRows, dateKey))
         (
-          title: _readingStatDisplayTitle(e.key),
-          chars: e.value.chars,
-          timeMs: e.value.timeMs,
+          title: _readingStatDisplayTitle(f.title, mediaKey: f.mediaKey),
+          chars: f.chars,
+          timeMs: f.ms,
         ),
     ];
   }
 
-  /// 阅读统计行 title → 显示名：先过 display-title 门面（P4：改名 override 应用
-  /// 到明细行；统计行 title 是聚合键恒 raw，仅上屏时替换），命中合集再拼
-  /// 「合集名 - 名字」；反查不到 bookKey（视频字幕书/已删书等）原样返回。
-  String _readingStatDisplayTitle(String title) {
+  /// 明细「游戏」节：游戏域当日事实行（galgame_sessions 时长行 + hook 字数行）按
+  /// 身份聚合。P4：title 是落库时的标题快照（时长行为 ''），上屏前按 mediaKey
+  /// （galgames.id）/ 快照反查库内显示名（用户改名后明细跟着变；查不到原样显示
+  /// 快照）。
+  List<({String title, int chars, int timeMs})> _gameDayRows(String dateKey) {
+    return <({String title, int chars, int timeMs})>[
+      for (final StatFact f in _dayGroups(_gameRows, dateKey))
+        (
+          // 已从库里删掉、当日又只有时长行（快照 ''）的游戏：显示名解析两头都
+          // 落空，退回 id 而不是空行。
+          title: switch (_gameDisplayTitle(f.title, mediaKey: f.mediaKey)) {
+            '' => f.mediaKey,
+            final String name => name,
+          },
+          chars: f.chars,
+          timeMs: f.ms,
+        ),
+    ];
+  }
+
+  /// 阅读事实行 → 显示名：先过 display-title 门面（P4：改名 override 应用到明细
+  /// 行；事实行 title 是快照恒 raw，仅上屏时替换），命中合集再拼「合集名 - 名字」。
+  /// 身份优先用行自带的 [mediaKey]（v90 段），为空再按 title 反查（legacy 行）；
+  /// 两者都拿不到 bookKey（视频字幕书/已删书等）原样返回。
+  String _readingStatDisplayTitle(String title, {String mediaKey = ''}) {
+    final String? bookKey =
+        mediaKey.isNotEmpty ? mediaKey : _bookKeyByTitle[title];
+    if (bookKey == null) return title;
+    // 统计行 title 是聚合键恒 raw，只在上屏时经门面换显示名；v90 段自带身份
+    // （mediaKey）时直接用它反查，legacy 行才回退 title→bookKey 表。
     final String display = displayTitleForStatRow(
       rawTitle: title,
-      bookKeyByTitle: _bookKeyByTitle,
+      bookKeyByTitle: <String, String>{title: bookKey},
     );
-    final String? bookKey = _bookKeyByTitle[title];
-    if (bookKey == null) return display;
     // v83：归属映射 epub 键 = uid，bookKey 经换算表转一跳。
     return collectionQualifiedTitle(
       entryKey:
@@ -2033,35 +2074,22 @@ class _HomeDashboardPageState
     return displayTitleForGame(entry: entry, rawTitle: rawTitle);
   }
 
-  /// 明细「观看」节：video_watch_statistics 当日行按 title 聚合；行自带 bookUid
-  /// （任取一条非空）可直接拼合集前缀。
+  /// 明细「观看」节：视频域当日事实行按身份聚合；有 bookUid（mediaKey 非空）的
+  /// 直接拼合集前缀，legacy 无身份行按 title 分组、原样显示。
   List<({String title, int chars, int timeMs})> _watchDayRows(String dateKey) {
-    final Map<String, ({int chars, int timeMs, String? uid})> byTitle =
-        <String, ({int chars, int timeMs, String? uid})>{};
-    for (final VideoWatchStatisticRow w in _watchRows) {
-      if (w.dateKey != dateKey) continue;
-      final ({int chars, int timeMs, String? uid}) prev =
-          byTitle[w.title] ?? (chars: 0, timeMs: 0, uid: null);
-      byTitle[w.title] = (
-        chars: prev.chars + w.subtitleChars,
-        timeMs: prev.timeMs + w.watchTimeMs,
-        uid: prev.uid ?? w.bookUid,
-      );
-    }
     return <({String title, int chars, int timeMs})>[
-      for (final MapEntry<String, ({int chars, int timeMs, String? uid})> e
-          in byTitle.entries)
+      for (final StatFact f in _dayGroups(_watchRows, dateKey))
         (
-          title: e.value.uid == null
-              ? e.key
+          title: f.mediaKey.isEmpty
+              ? f.title
               : collectionQualifiedTitle(
-                  entryKey: MediaKind.video.compositeKey(e.value.uid!),
-                  rawTitle: e.key,
+                  entryKey: MediaKind.video.compositeKey(f.mediaKey),
+                  rawTitle: f.title,
                   primaryByEntry: _primaryCollectionByEntry,
                   collectionNamesById: _collectionNamesById,
                 ),
-          chars: e.value.chars,
-          timeMs: e.value.timeMs,
+          chars: f.chars,
+          timeMs: f.ms,
         ),
     ];
   }

@@ -54,12 +54,13 @@ List<(String, int, int)> splitReadingTime(DateTime start, DateTime now) {
     final int firstMs = boundary.difference(start).inMilliseconds;
     final int secondMs = now.difference(boundary).inMilliseconds;
     return <(String, int, int)>[
-      if (firstMs > 0) (FushiDatabase.statDateKeyOf(start), start.hour, firstMs),
+      if (firstMs > 0)
+        (FushiDatabase.statDateKeyOf(start), start.hour, firstMs),
       if (secondMs > 0) (FushiDatabase.statDateKeyOf(now), now.hour, secondMs),
     ];
   }
   return <(String, int, int)>[
-    (FushiDatabase.statDateKeyOf(start), start.hour, elapsed)
+    (FushiDatabase.statDateKeyOf(start), start.hour, elapsed),
   ];
 }
 
@@ -123,20 +124,21 @@ class StudyClock {
     this.isActive,
     this.idleTimeout,
     this.onTick,
+    this.onWriteError,
     Duration tick = const Duration(seconds: 60),
     StudySegmentSink? sink,
     Future<String> Function()? deviceId,
     DateTime Function()? now,
     String Function()? uidFactory,
-  })  : _mediaKind = mediaKind,
-        _mediaKey = mediaKey,
-        _title = title,
-        _format = format,
-        _tick = tick,
-        _sink = sink ?? database.upsertStudySegment,
-        _deviceId = deviceId ?? database.getOrCreateStudyDeviceId,
-        _now = now ?? DateTime.now,
-        _uidFactory = uidFactory ?? FushiDatabase.newStudySegmentUid;
+  }) : _mediaKind = mediaKind,
+       _mediaKey = mediaKey,
+       _title = title,
+       _format = format,
+       _tick = tick,
+       _sink = sink ?? database.upsertStudySegment,
+       _deviceId = deviceId ?? database.getOrCreateStudyDeviceId,
+       _now = now ?? DateTime.now,
+       _uidFactory = uidFactory ?? FushiDatabase.newStudySegmentUid;
 
   final String _mediaKind;
   final String _mediaKey;
@@ -156,6 +158,10 @@ class StudyClock {
 
   /// 每个 tick（无论是否入账）后回调，给消费方挂周期性检查（视频完成判定）。
   void Function(DateTime now)? onTick;
+
+  /// 落库失败回调（fail-open 之外的诊断出口）：本包不依赖 app 层的
+  /// ErrorLogService，页面把它接上让 DB 写异常线上可查（BUG-911 纪律）。
+  void Function(Object error, StackTrace stack)? onWriteError;
 
   Timer? _timer;
   DateTime? _tickStart;
@@ -202,7 +208,7 @@ class StudyClock {
     _tickStart = null;
     final _OpenSegment? seg = _open;
     _open = null;
-    if (seg != null && seg.dirty) _enqueueWrite(seg);
+    if (seg != null && seg.dirty && _worthWriting(seg)) _enqueueWrite(seg);
     await _writeChain;
   }
 
@@ -236,7 +242,7 @@ class StudyClock {
   Future<void> flushNow() async {
     _accrue(_now());
     final _OpenSegment? seg = _open;
-    if (seg != null && seg.dirty) _enqueueWrite(seg);
+    if (seg != null && seg.dirty && _worthWriting(seg)) _enqueueWrite(seg);
     await _writeChain;
   }
 
@@ -244,7 +250,7 @@ class StudyClock {
     final DateTime now = _now();
     _accrue(now);
     final _OpenSegment? seg = _open;
-    if (seg != null && seg.dirty) _enqueueWrite(seg);
+    if (seg != null && seg.dirty && _worthWriting(seg)) _enqueueWrite(seg);
     onTick?.call(now);
     await _writeChain;
   }
@@ -253,8 +259,12 @@ class StudyClock {
   void _accrue(DateTime now) {
     final DateTime? start = _tickStart;
     if (start == null) return;
+    // 零长度窗口（同一时刻连续 flushNow / stop）是 no-op，不是断档：不能封段，否则
+    // 紧随其后的正常窗口会开新 uid 把一次阅读切碎。
+    if (!now.isAfter(start)) return;
     _tickStart = now;
-    final bool accepted = isContinuousReadingGap(start, now) &&
+    final bool accepted =
+        isContinuousReadingGap(start, now) &&
         (isActive?.call() ?? true) &&
         !_isIdle(now);
     if (!accepted) {
@@ -264,8 +274,10 @@ class StudyClock {
       return;
     }
     DateTime bucketStart = start;
-    for (final (String dateKey, int hour, int ms)
-        in splitReadingTime(start, now)) {
+    for (final (String dateKey, int hour, int ms) in splitReadingTime(
+      start,
+      now,
+    )) {
       _OpenSegment? seg = _open;
       if (seg == null || seg.dateKey != dateKey || seg.hour != hour) {
         _seal();
@@ -286,8 +298,7 @@ class StudyClock {
   }
 
   _OpenSegment _ensureOpen(DateTime now) =>
-      _open ??
-      _openNew(now, FushiDatabase.statDateKeyOf(now), now.hour);
+      _open ?? _openNew(now, FushiDatabase.statDateKeyOf(now), now.hour);
 
   _OpenSegment _openNew(DateTime startAt, String dateKey, int hour) {
     final _OpenSegment seg = _OpenSegment(
@@ -305,38 +316,50 @@ class StudyClock {
     final _OpenSegment? seg = _open;
     if (seg == null) return;
     _open = null;
-    if (seg.dirty) _enqueueWrite(seg);
+    if (seg.dirty && _worthWriting(seg)) _enqueueWrite(seg);
   }
+
+  /// 落库门槛（与 v90 前各页面「<1s 且无内容账的段不记账」同一条判据）：不足 1 秒
+  /// 又没有字数 / 页数的段是生命周期抖动（开书秒关、失焦回焦），不值一行；
+  /// [flushNow] 下段仍开着、保持 dirty 留到下次，[stop] / 封段则直接丢弃。
+  /// 这也让「打开页面立刻 dispose」的路径零 DB 写——测试 harness 的 FakeAsync 在
+  /// teardown 后不再推进，dispose 里起的事务会把 `db.close()` 挂死。
+  static bool _worthWriting(_OpenSegment seg) =>
+      seg.durationMs >= 1000 || seg.chars > 0 || seg.pages > 0;
 
   void _enqueueWrite(_OpenSegment seg) {
     seg.dirty = false;
     final DateTime now = _now();
-    _writeChain = _writeChain.then((_) => _write(seg, now)).catchError(
-      (Object e, StackTrace stack) {
-        // fail-open：不冒泡、不阻塞阅读 / 播放；段留 dirty，下个 tick 用绝对值重写。
-        seg.dirty = true;
-        debugPrint('[study-clock] write error: $e\n$stack');
-      },
-    );
+    _writeChain = _writeChain.then((_) => _write(seg, now)).catchError((
+      Object e,
+      StackTrace stack,
+    ) {
+      // fail-open：不冒泡、不阻塞阅读 / 播放；段留 dirty，下个 tick 用绝对值重写。
+      seg.dirty = true;
+      debugPrint('[study-clock] write error: $e\n$stack');
+      onWriteError?.call(e, stack);
+    });
   }
 
   Future<void> _write(_OpenSegment seg, DateTime now) async {
     final String deviceId = _cachedDeviceId ??= await _deviceId();
-    await _sink(StudySegmentsCompanion(
-      uid: Value(seg.uid),
-      deviceId: Value(deviceId),
-      mediaKind: Value(_mediaKind),
-      mediaKey: Value(_mediaKey),
-      format: Value(_format),
-      title: Value(_title),
-      startAt: Value(seg.startAt.millisecondsSinceEpoch),
-      endAt: Value(seg.endAt.millisecondsSinceEpoch),
-      dateKey: Value(seg.dateKey),
-      hour: Value(seg.hour),
-      durationMs: Value(seg.durationMs),
-      chars: Value(seg.chars),
-      pages: Value(seg.pages),
-      updatedAt: Value(now.millisecondsSinceEpoch),
-    ));
+    await _sink(
+      StudySegmentsCompanion(
+        uid: Value(seg.uid),
+        deviceId: Value(deviceId),
+        mediaKind: Value(_mediaKind),
+        mediaKey: Value(_mediaKey),
+        format: Value(_format),
+        title: Value(_title),
+        startAt: Value(seg.startAt.millisecondsSinceEpoch),
+        endAt: Value(seg.endAt.millisecondsSinceEpoch),
+        dateKey: Value(seg.dateKey),
+        hour: Value(seg.hour),
+        durationMs: Value(seg.durationMs),
+        chars: Value(seg.chars),
+        pages: Value(seg.pages),
+        updatedAt: Value(now.millisecondsSinceEpoch),
+      ),
+    );
   }
 }

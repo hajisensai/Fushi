@@ -2,15 +2,18 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
 import 'reader_fushi_page_source_corpus.dart';
 
 /// BUG-1107 源码扫描守卫：阅读统计「速度爆表」三段根因的形态锁定。
 ///
 /// 断点 A（时长丢失）：EPUB 的 `_flushReadingStats` 旧守卫
 /// `_sessionCharsRead <= 0 || _book == null` 拒写纯时长行——dispose 时最后一段
-/// 无新字数 / 歌词·听书全程不计字 ⇒ 时长蒸发。PDF / 漫画都允许 `charsRead: 0`
-/// 纯时长行，只有 EPUB 口径分叉。守卫锁定新形式：无书才拒；无新字数时只要有
-/// 已确认时长（>=1s）也落库。
+/// 无新字数 / 歌词·听书全程不计字 ⇒ 时长蒸发。v90 起时长与字数进**同一段**
+/// （`StudyClock`，同 uid 一行），页面侧不再持有 `_sessionCharsRead` 之类的会话累计
+/// 器，也不存在任何「拒写」路径：`_flushReadingStats` 只结算时钟。守卫锁定这个
+/// 形态：函数体只含 `_studyClock?.flushNow()`、没有按字数早退；三个阅读器都不再
+/// 出现 `_sessionCharsRead`。
 ///
 /// 断点 B（幻象字数）：水位播种必须与真实恢复锚（`_initialCharOffset`）同源
 /// （经 [computeCharWatermark]），且显式跳句（skipToCue 漏斗）必须经
@@ -19,30 +22,50 @@ import 'reader_fushi_page_source_corpus.dart';
 void main() {
   final String corpus = readReaderPageSource();
 
-  group('断点 A：_flushReadingStats 允许纯时长行', () {
+  group('断点 A：_flushReadingStats 不按字数拒写（时长与字数同段）', () {
     String flush() => _functionSource(
-          corpus,
+          maskComments(File(
+                  'lib/src/pages/implementations/reader_fushi/navigation.part.dart')
+              .readAsStringSync()
+              .replaceAll('\r\n', '\n')),
           '  Future<void> _flushReadingStats() async {',
-          '\n}\n',
+          '\n  }\n',
         );
 
     test('旧「必须有字数」守卫不得回归', () {
+      final String body = flush();
       expect(
-        flush(),
-        isNot(contains('if (_sessionCharsRead <= 0 || _book == null) return;')),
+        body,
+        isNot(contains('_sessionCharsRead')),
         reason: '旧守卫拒写纯时长行：dispose 最后一段 / 歌词·听书模式的时长会整段蒸发'
             '（BUG-1107 断点 A）',
       );
+      expect(body, isNot(contains('charsRead <= 0')));
+      expect(body, isNot(contains('return')),
+          reason: '没有任何早退：时长与字数同一段，flush 只能是结算时钟');
     });
 
-    test('新守卫：无书才拒；无新字数但有已确认时长（>=1s）仍落库', () {
-      expect(flush(), contains('if (_book == null) return;'));
-      expect(
-        flush(),
-        contains('if (_sessionCharsRead <= 0 && _sessionReadingMs < 1000) '
-            'return;'),
-        reason: '纯时长行（charsRead: 0）必须能落库，与 PDF/漫画口径对齐',
-      );
+    test('新形态：函数体只委托 StudyClock.flushNow', () {
+      expect(flush(), contains('await _studyClock?.flushNow();'),
+          reason: '时长与字数记在同一段，flush = 结算时钟当前窗口并绝对值落库');
+    });
+
+    test('三个阅读器都不再持有会话字数累计器', () {
+      final String epub = maskComments(corpus);
+      final String pdf = maskComments(
+          File('lib/src/pages/implementations/reader_pdf_page.dart')
+              .readAsStringSync());
+      final String manga = maskComments(
+          File('lib/src/media/manga/reader/manga_fushi_page.dart')
+              .readAsStringSync());
+      for (final (String name, String src) in <(String, String)>[
+        ('epub', epub),
+        ('pdf', pdf),
+        ('manga', manga),
+      ]) {
+        expect(src, isNot(contains('_sessionCharsRead')),
+            reason: '$name：会话字数累计器已废，字数直接进 StudyClock 段');
+      }
     });
   });
 

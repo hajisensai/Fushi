@@ -319,7 +319,7 @@ Future<int?> showMangaPageJumpDialog(
 /// 页图 + 透明 OCR 覆盖层在 WebView 里渲染（文档由 [mangaWindowDocument] 生成），
 /// 汇入同一批共享设施：[BaseSourcePageState.searchDictionaryResult]（查词弹窗）、
 /// [ReaderPositionRepository]（阅读位置，sectionIndex=0-based 页码）、
-/// [ReadingTimeTracker]（时长统计；v60 起同时落 OCR 字数与页数，见
+/// [StudyClock]（时长 / OCR 字数 / 页数统计，见
 /// [mangaAccumulateReadingStats]）、[AnkiMiningContext]（制卡，
 /// 卡图=当前页图文件路径）。
 ///
@@ -3676,7 +3676,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       mediaKey: widget.bookKey,
       title: _bookRow?.title ?? widget.bookKey,
       format: BookFormat.manga.dbValue,
-      idleTimeout: kDefaultReadingIdleTimeout,
+      idleTimeout: appModel.readingIdleTimeout,
+      onWriteError: (Object e, StackTrace st) =>
+          ErrorLogService.instance.log('StudyClock.write(manga)', e, st),
     );
     _studyClock!.start();
   }

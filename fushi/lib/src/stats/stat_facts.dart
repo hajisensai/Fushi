@@ -72,6 +72,9 @@ class StatFacts {
     required this.segments,
     required this.legacyActivity,
     required this.epubRows,
+    this.recentGameSessions = const <GalgameSessionRow>[],
+    this.gameNamesById = const <String, String>{},
+    this.activityLimit = 200,
   });
 
   static const StatFacts empty = StatFacts(
@@ -81,6 +84,30 @@ class StatFacts {
     legacyActivity: <ActivityEventRow>[],
     epubRows: <EpubBookRow>[],
   );
+
+  /// 最近的游玩会话（v90 起游玩只写 galgame_sessions，活动流从这里合成）。
+  final List<GalgameSessionRow> recentGameSessions;
+
+  /// galgames.id → 显示名（合成游玩事件的 title 快照）。
+  final Map<String, String> gameNamesById;
+
+  /// [activityRows] 的条数上限（与 legacy 行的取数上限同值）。
+  final int activityLimit;
+
+  /// **活动流的唯一数据源**：legacy 活动行 ∪ 段合成行 ∪ 游玩会话合成行，按精确
+  /// 时刻倒序、截到 [activityLimit]。首页时间轴与游戏首页时间线都只吃它。
+  List<ActivityEventRow> get activityRows {
+    final List<ActivityEventRow> all =
+        <ActivityEventRow>[
+          ...legacyActivity,
+          ...segmentsAsActivityRows(segments),
+          ...galgameSessionsAsActivityRows(recentGameSessions, gameNamesById),
+        ]..sort(
+          (ActivityEventRow a, ActivityEventRow b) =>
+              b.timestampMs.compareTo(a.timestampMs),
+        );
+    return all.length <= activityLimit ? all : all.sublist(0, activityLimit);
+  }
 
   final List<StatFact> daily;
   final List<StatFact> hourly;
@@ -119,101 +146,115 @@ Future<StatFacts> loadStatFacts(
   // format ''，按 title 分组、归普通书）；视频 v39 起自带 bookUid。
   for (final ReadingStatisticRow r in await db.getAllReadingStatistics()) {
     final EpubBookRow? book = bookByTitle[r.title];
-    daily.add(StatFact(
-      mediaKind: kActivityMediaBook,
-      mediaKey: book?.bookKey ?? '',
-      title: r.title,
-      format: book?.format ?? '',
-      dateKey: r.dateKey,
-      hour: -1,
-      ms: r.readingTimeMs,
-      chars: r.charactersRead,
-      pages: r.pagesRead,
-      lastActiveMs: r.lastStatisticModified,
-    ));
+    daily.add(
+      StatFact(
+        mediaKind: kActivityMediaBook,
+        mediaKey: book?.bookKey ?? '',
+        title: r.title,
+        format: book?.format ?? '',
+        dateKey: r.dateKey,
+        hour: -1,
+        ms: r.readingTimeMs,
+        chars: r.charactersRead,
+        pages: r.pagesRead,
+        lastActiveMs: r.lastStatisticModified,
+      ),
+    );
   }
-  for (final VideoWatchStatisticRow w in await db.getAllVideoWatchStatistics()) {
-    daily.add(StatFact(
-      mediaKind: kActivityMediaVideo,
-      mediaKey: w.bookUid ?? '',
-      title: w.title,
-      format: '',
-      dateKey: w.dateKey,
-      hour: -1,
-      ms: w.watchTimeMs,
-      chars: w.subtitleChars,
-      pages: 0,
-      lastActiveMs: w.lastModified,
-    ));
+  for (final VideoWatchStatisticRow w
+      in await db.getAllVideoWatchStatistics()) {
+    daily.add(
+      StatFact(
+        mediaKind: kActivityMediaVideo,
+        mediaKey: w.bookUid ?? '',
+        title: w.title,
+        format: '',
+        dateKey: w.dateKey,
+        hour: -1,
+        ms: w.watchTimeMs,
+        chars: w.subtitleChars,
+        pages: 0,
+        lastActiveMs: w.lastModified,
+      ),
+    );
   }
   // legacy 小时行（无身份、无 title）。
   for (final ReadingHourlyLogRow h in await db.getAllReadingHourlyLogs()) {
-    hourly.add(StatFact(
-      mediaKind: kActivityMediaBook,
-      mediaKey: '',
-      title: '',
-      format: h.format,
-      dateKey: h.dateKey,
-      hour: h.hour,
-      ms: h.readingTimeMs,
-      chars: 0,
-      pages: 0,
-      lastActiveMs: 0,
-    ));
+    hourly.add(
+      StatFact(
+        mediaKind: kActivityMediaBook,
+        mediaKey: '',
+        title: '',
+        format: h.format,
+        dateKey: h.dateKey,
+        hour: h.hour,
+        ms: h.readingTimeMs,
+        chars: 0,
+        pages: 0,
+        lastActiveMs: 0,
+      ),
+    );
   }
   for (final VideoHourlyLogRow h in await db.getAllVideoHourlyLogs()) {
-    hourly.add(StatFact(
-      mediaKind: kActivityMediaVideo,
-      mediaKey: '',
-      title: '',
-      format: '',
-      dateKey: h.dateKey,
-      hour: h.hour,
-      ms: h.watchTimeMs,
-      chars: 0,
-      pages: 0,
-      lastActiveMs: 0,
-    ));
+    hourly.add(
+      StatFact(
+        mediaKind: kActivityMediaVideo,
+        mediaKey: '',
+        title: '',
+        format: '',
+        dateKey: h.dateKey,
+        hour: h.hour,
+        ms: h.watchTimeMs,
+        chars: 0,
+        pages: 0,
+        lastActiveMs: 0,
+      ),
+    );
   }
   // 游戏时长真相源 galgame_sessions（v55 起就是事实表）：按 (game, day) 进日面。
   for (final (String gameId, String dateKey, int seconds)
       in await db.getGalgameDailySecondsByGame()) {
-    daily.add(StatFact(
-      mediaKind: kActivityMediaGame,
-      mediaKey: gameId,
-      title: '',
-      format: '',
-      dateKey: dateKey,
-      hour: -1,
-      ms: seconds * 1000,
-      chars: 0,
-      pages: 0,
-      lastActiveMs: 0,
-    ));
+    daily.add(
+      StatFact(
+        mediaKind: kActivityMediaGame,
+        mediaKey: gameId,
+        title: '',
+        format: '',
+        dateKey: dateKey,
+        hour: -1,
+        ms: seconds * 1000,
+        chars: 0,
+        pages: 0,
+        lastActiveMs: 0,
+      ),
+    );
   }
   // legacy 活动行：v90 前的游戏 hook 字数只存在这里（chars-only game 行）；
   // read / watch 行的时长 / 字数已在日投影里，**只**取 game 的字数进日面，
   // 时长一律不取（时长真相源是 galgame_sessions，取了就双计）。
-  final List<ActivityEventRow> activity =
-      await db.getRecentActivityEvents(limit: activityLimit);
+  final List<ActivityEventRow> activity = await db.getRecentActivityEvents(
+    limit: activityLimit,
+  );
   for (final ActivityEventRow e in await db.getRecentActivityEvents(
     limit: 1 << 31,
     eventTypes: const <String>[kActivityGame],
   )) {
     final int chars = e.charsDelta ?? 0;
     if (chars <= 0) continue;
-    daily.add(StatFact(
-      mediaKind: kActivityMediaGame,
-      mediaKey: e.mediaKey ?? '',
-      title: e.title,
-      format: '',
-      dateKey: e.dateKey,
-      hour: -1,
-      ms: 0,
-      chars: chars,
-      pages: 0,
-      lastActiveMs: e.timestampMs,
-    ));
+    daily.add(
+      StatFact(
+        mediaKind: kActivityMediaGame,
+        mediaKey: e.mediaKey ?? '',
+        title: e.title,
+        format: '',
+        dateKey: e.dateKey,
+        hour: -1,
+        ms: 0,
+        chars: chars,
+        pages: 0,
+        lastActiveMs: e.timestampMs,
+      ),
+    );
   }
   // v90 段：两面各一份。
   final List<StudySegmentRow> segments = await db.getStudySegments();
@@ -233,13 +274,48 @@ Future<StatFacts> loadStatFacts(
     daily.add(fact);
     hourly.add(fact);
   }
+  // 游玩会话（活动流合成「游玩」事件用；activityLimit 为 0 时不取）。
+  final List<GalgameSessionRow> recentGameSessions = activityLimit <= 0
+      ? const <GalgameSessionRow>[]
+      : await db.getRecentGalgameSessions(limit: activityLimit);
+  final Map<String, String> gameNamesById = recentGameSessions.isEmpty
+      ? const <String, String>{}
+      : <String, String>{
+          for (final GalgameRow g in await db.getAllGalgames()) g.id: g.name,
+        };
   return StatFacts(
     daily: daily,
     hourly: hourly,
     segments: segments,
     legacyActivity: activity,
     epubRows: epubRows,
+    recentGameSessions: recentGameSessions,
+    gameNamesById: gameNamesById,
+    activityLimit: activityLimit,
   );
+}
+
+/// 把游玩会话映射成活动流行（id=0 哨兵）：v90 前 `GalgamePlayTracker` 会在
+/// galgame_sessions 之外再写一条带 durationMs 的 game 活动行（第二本账），现在
+/// 只在读取时合成。title 取当前库内显示名（游戏已删则空串，展示层回退 mediaKey）。
+List<ActivityEventRow> galgameSessionsAsActivityRows(
+  List<GalgameSessionRow> sessions,
+  Map<String, String> gameNamesById,
+) {
+  return <ActivityEventRow>[
+    for (final GalgameSessionRow s in sessions)
+      ActivityEventRow(
+        id: 0,
+        eventType: kActivityGame,
+        mediaType: kActivityMediaGame,
+        title: gameNamesById[s.gameId] ?? '',
+        mediaKey: s.gameId,
+        dateKey: s.dateKey,
+        timestampMs: s.endMs,
+        durationMs: s.durationSeconds * 1000,
+        charsDelta: null,
+      ),
+  ];
 }
 
 /// 把 v90 段映射成活动流行（id=0 哨兵，display-only 不落库——与互联远端行同一

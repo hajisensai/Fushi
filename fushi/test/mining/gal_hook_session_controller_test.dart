@@ -1557,9 +1557,11 @@ void main() {
     endpoints.dispose();
   });
 
-  test('游戏活动落库：hook 台词只把字符数写入 activity_events（game 类别，不写时长）', () async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
+  // v90：hook 字数的默认写入方从 activity_events 改为 study_segments 的 chars-only
+  // 段，且**无稳定身份（mediaKey 空）不落**——统计永不按 title 认身份。attach 未识
+  // 别游戏的三条用例因此改成注入假写入方（GalHookActivityWriter 契约不变）断言
+  // 「交给写入方的字数」；默认写入方的落段 / 不落段行为由下面两条 DB 用例守。
+  test('游戏活动：hook 台词只把字符数交给活动写入方（game 类别，契约不带时长）', () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     final _FakeEngineSource engine = _FakeEngineSource(
@@ -1578,6 +1580,89 @@ void main() {
           seq: 2,
           timestampMs: 2000,
           text: 'かきくけこさ', // 6 字
+          threadId: 1,
+          hookName: 'Unity',
+        ),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final List<({String title, String? mediaKey, int charsDelta})> written =
+        <({String title, String? mediaKey, int charsDelta})>[];
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      activityWriter: ({
+        required String title,
+        String? mediaKey,
+        required String dateKey,
+        required int timestampMs,
+        required int charsDelta,
+      }) async {
+        written.add((title: title, mediaKey: mediaKey, charsDelta: charsDelta));
+      },
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'サノバウィッチ'),
+    );
+    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
+    // 「选了哪条线程」因此成了本用例的显式前提。
+    await controller.selectTextThread(1);
+    for (int i = 0; i < 40 && service.entries.length < 2; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(service.entries, hasLength(2));
+
+    // 会话结束落库；flush 内写入是 unawaited，轮询等其完成。
+    await controller.stopCapture();
+    for (int i = 0; i < 40 && written.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(written, hasLength(1));
+    expect(written.single.title, 'サノバウィッチ');
+    // attach 模式无稳定可执行文件 id → mediaKey 为空。
+    expect(written.single.mediaKey, isNull);
+    // 两行合计 5 + 6 = 11 字。
+    expect(written.single.charsDelta, 11);
+    // 契约 §3.1：时长真相源是 GalgamePlayTracker（前台窗口计时），hook 文本这条
+    // 路径的写入契约（GalHookActivityWriter）结构上就没有 durationMs。
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('v90：无稳定身份（attach 未识别游戏）时默认写入方不落段、不写 activity 行', () async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      polledLines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 1000,
+          text: 'あいうえお',
           threadId: 1,
           hookName: 'Unity',
         ),
@@ -1611,33 +1696,22 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'サノバウィッチ'),
     );
-    // v13：采集期不再按选定线程丢行，过滤挪到消费期，
-    // 「选了哪条线程」因此成了本用例的显式前提。
     await controller.selectTextThread(1);
-    for (int i = 0; i < 40 && service.entries.length < 2; i++) {
+    for (int i = 0; i < 40 && service.entries.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
-    expect(service.entries, hasLength(2));
+    expect(service.entries, hasLength(1));
 
-    // 会话结束落库；flush 内写入是 unawaited，轮询等其完成。
     await controller.stopCapture();
-    List<ActivityEventRow> rows = const <ActivityEventRow>[];
-    for (int i = 0; i < 40 && rows.isEmpty; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-      rows =
-          await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]);
-    }
-    expect(rows, hasLength(1));
-    expect(rows.single.eventType, kActivityGame);
-    expect(rows.single.mediaType, kActivityMediaGame);
-    expect(rows.single.title, 'サノバウィッチ');
-    // attach 模式无稳定可执行文件 id → mediaKey 为空。
-    expect(rows.single.mediaKey, isNull);
-    // 两行合计 5 + 6 = 11 字。
-    expect(rows.single.charsDelta, 11);
-    // 契约 §3.1：时长真相源改为 GalgamePlayTracker（前台窗口计时），hook 文本这条
-    // 路径**不再写 durationMs**，否则同一次游玩被计两遍。
-    expect(rows.single.durationMs, isNull);
+    // 没有任何写入可等，给 unawaited 的 flush 一个足够的窗口后再断言「确实没写」。
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(await db.getStudySegments(), isEmpty,
+        reason: 'mediaKey 空 = 没有可归属的媒体身份，统计永不按 title 认身份');
+    expect(
+      await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]),
+      isEmpty,
+      reason: 'v90 起 hook 字数不再写 activity_events（第二本账）',
+    );
 
     await controller.close();
     endpoints.dispose();
@@ -1703,24 +1777,32 @@ void main() {
     expect(service.entries, hasLength(1));
 
     await controller.stopCapture();
-    List<ActivityEventRow> rows = const <ActivityEventRow>[];
+    // v90：默认写入方落 study_segments 一条 chars-only 段（时长恒 0：时长真相源
+    // 是 galgame_sessions）。flush 内写入是 unawaited，轮询等其完成。
+    List<StudySegmentRow> rows = const <StudySegmentRow>[];
     for (int i = 0; i < 40 && rows.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
-      rows =
-          await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]);
+      rows = await db.getStudySegments();
     }
     expect(rows, hasLength(1));
+    expect(rows.single.mediaKind, kActivityMediaGame);
     expect(rows.single.title, '统一后的显示名');
     expect(rows.single.mediaKey, 'galgame-row-42');
     expect(rows.single.mediaKey, isNot(r'D:\Games\LegacyName.exe'));
+    expect(rows.single.chars, '統一された活動'.length);
+    expect(rows.single.durationMs, 0, reason: 'hook 文本路径只记字数，不记时长');
+    expect(
+      await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]),
+      isEmpty,
+      reason: 'v90 起 hook 字数不再写 activity_events（第二本账）',
+    );
 
     await controller.close();
     endpoints.dispose();
   });
 
   test('BUG-1085：重复台词/标点不计入字数，引擎计数后外部通道行不再双计', () async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
+    final List<int> writtenChars = <int>[];
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     final _FakeEngineSource engine = _FakeEngineSource(
@@ -1773,8 +1855,15 @@ void main() {
       textPollInterval: const Duration(milliseconds: 5),
       endpointListenable: endpoints,
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      activityWriter: ({
+        required String title,
+        String? mediaKey,
+        required String dateKey,
+        required int timestampMs,
+        required int charsDelta,
+      }) async =>
+          writtenChars.add(charsDelta),
     );
-    controller.attachActivityDatabase(() => db);
 
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'サノバウィッチ'),
@@ -1794,23 +1883,19 @@ void main() {
     );
 
     await controller.stopCapture();
-    List<ActivityEventRow> rows = const <ActivityEventRow>[];
-    for (int i = 0; i < 40 && rows.isEmpty; i++) {
+    for (int i = 0; i < 40 && writtenChars.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
-      rows =
-          await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]);
     }
-    expect(rows, hasLength(1));
+    expect(writtenChars, hasLength(1));
     // 5（首句去标点）+ 0（重发）+ 5（ありがとう）；外部行被单计数源门挡下。
-    expect(rows.single.charsDelta, 10);
+    expect(writtenChars.single, 10);
 
     await controller.close();
     endpoints.dispose();
   });
 
   test('BUG-1085：引擎无文本时外部通道是唯一计数源，照常计数', () async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
+    final List<int> writtenChars = <int>[];
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     final _FakeEngineSource engine = _FakeEngineSource(
@@ -1840,8 +1925,15 @@ void main() {
       textPollInterval: const Duration(milliseconds: 5),
       endpointListenable: endpoints,
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      activityWriter: ({
+        required String title,
+        String? mediaKey,
+        required String dateKey,
+        required int timestampMs,
+        required int charsDelta,
+      }) async =>
+          writtenChars.add(charsDelta),
     );
-    controller.attachActivityDatabase(() => db);
 
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'サノバウィッチ'),
@@ -1852,14 +1944,11 @@ void main() {
     );
 
     await controller.stopCapture();
-    List<ActivityEventRow> rows = const <ActivityEventRow>[];
-    for (int i = 0; i < 40 && rows.isEmpty; i++) {
+    for (int i = 0; i < 40 && writtenChars.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
-      rows =
-          await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]);
     }
-    expect(rows, hasLength(1));
-    expect(rows.single.charsDelta, 7);
+    expect(writtenChars, hasLength(1));
+    expect(writtenChars.single, 7);
 
     await controller.close();
     endpoints.dispose();
@@ -2008,22 +2097,23 @@ void _playTrackerLaunchWiring() {
       matches(RegExp(r'^\d{4}-\d{2}-\d{2}$')),
     );
 
-    // 活动行是时长侧的**对偶写入**：durationMs 有值、charsDelta 恒 null（字符侧
-    // 由 hook 文本路径独立写行，两侧 SUM 才不会把同一次游玩计两遍）。
-    final List<ActivityEventRow> activities =
-        await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]);
-    expect(activities, hasLength(1));
-    expect(activities.single.mediaType, kActivityMediaGame);
-    expect(activities.single.title, '统一后的显示名');
-    expect(activities.single.mediaKey, 'galgame-row-42');
-    expect(activities.single.durationMs, session.durationSeconds * 1000);
-    expect(activities.single.charsDelta, isNull);
-    expect(activities.single.dateKey, session.dateKey);
+    // v90：游玩时长只落 galgame_sessions 这一张事实表；首页活动流 / 热力图从它
+    // 派生，不再另写带 durationMs 的 game 活动行（那是第二本账）。
+    expect(session.gameId, 'galgame-row-42');
+    expect(
+      await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]),
+      isEmpty,
+      reason: 'v90 起会话结算不写 activity_events，时长只有 galgame_sessions 一本账',
+    );
 
-    // getActivityDailyTotals(kActivityGame) 的 duration 不再恒 0（B1 缺口本体）。
-    final List<(String, int, int)> totals =
-        await db.getActivityDailyTotals(kActivityGame);
-    expect(totals.single.$3, session.durationSeconds * 1000);
+    // 统计事实面从 galgame_sessions 现算 GROUP BY (game, day)——时长不再恒 0
+    // （B1 缺口本体）。
+    final List<(String, String, int)> totals =
+        await db.getGalgameDailySecondsByGame();
+    expect(totals, hasLength(1));
+    expect(totals.single.$1, 'galgame-row-42');
+    expect(totals.single.$2, session.dateKey);
+    expect(totals.single.$3, session.durationSeconds);
 
     await harness.controller.close();
     harness.endpoints.dispose();
@@ -2114,7 +2204,7 @@ void _playTrackerLaunchWiring() {
 
 /// P4 B1 源码守卫：钉死「时长账本有人写」。缺口形状（data-layer-p4-plan.md §4）：
 /// `GalgamePlayTracker` 在 lib 无构造点、`insertGalgameSession` 无生产调用方——
-/// 账本断供后 UI 不红不报，`getActivityDailyTotals(kActivityGame)` 只是恒 0。
+/// 账本断供后 UI 不红不报，`getGalgameDailySecondsByGame()` 只是空表、游戏时长恒 0。
 void _playTrackerWiringGuard() {
   test('P4 B1 守卫：launch 路径必须接线游玩计时器并落 galgame_sessions', () {
     final File src = File('lib/src/mining/gal_hook_session_controller.dart');
@@ -2322,18 +2412,13 @@ void _playTrackerAttachWiring() {
       greaterThanOrEqualTo(kMinSessionSeconds),
     );
 
-    // 时长侧活动行照样落，mediaKey 是 galgames.id、标题取库内显示名（窗口标题会变，
-    // 不能当身份用）。
-    final List<ActivityEventRow> activities =
-        await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]);
-    final ActivityEventRow durationRow = activities.firstWhere(
-      (ActivityEventRow row) => row.durationMs != null,
-    );
-    expect(durationRow.mediaKey, 'galgame-attached-7');
-    expect(durationRow.title, '附着的游戏');
+    // 会话身份是 galgames.id（窗口标题会变，不能当身份用）；v90 起时长只落
+    // galgame_sessions，不再另写 game 活动行。
+    expect(sessions.single.gameId, 'galgame-attached-7');
     expect(
-      durationRow.durationMs,
-      sessions.single.durationSeconds * 1000,
+      await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]),
+      isEmpty,
+      reason: 'v90 起会话结算不写 activity_events（第二本账）',
     );
 
     await harness.controller.close();

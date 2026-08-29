@@ -129,13 +129,22 @@ void main() {
       videoPath: const Value('/abs/a9.mp4'),
       importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
     ));
-    await db.addVideoWatchStatistic(
+    // v90：观看只写 `study_segments`，「最近观看」时刻取该 uid 段的 max(endAt)。
+    final DateTime watchedAt = DateTime.now();
+    await db.upsertStudySegment(StudySegmentsCompanion.insert(
+      uid: FushiDatabase.newStudySegmentUid(),
+      deviceId: await db.getOrCreateStudyDeviceId(),
+      mediaKind: kActivityMediaVideo,
+      mediaKey: 'video/beta',
       title: 'Beta',
-      dateKey: '2026-07-12',
-      subtitleChars: 1,
-      watchTimeMs: 1000,
-      bookUid: 'video/beta',
-    );
+      startAt: watchedAt.millisecondsSinceEpoch - 1000,
+      endAt: watchedAt.millisecondsSinceEpoch,
+      dateKey: FushiDatabase.statDateKeyOf(watchedAt),
+      hour: watchedAt.hour,
+      durationMs: const Value(1000),
+      chars: const Value(1),
+      updatedAt: watchedAt.millisecondsSinceEpoch,
+    ));
   }
 
   const List<String> allTitles = <String>['Beta', 'Alpha 第10话', 'Alpha 第9话'];

@@ -27,6 +27,7 @@ import 'package:fushi/src/media/video/series_playback_prefs.dart'
         effectiveSeriesSecondaryDelayMs;
 import 'package:fushi/src/sync/manga_sync_package.dart'
     show kMangaPackageMarker, repackageMangaBook;
+import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi/src/sync/aggregate_snapshot.dart';
 import 'package:fushi/src/sync/override_title_lookup.dart';
 import 'package:fushi/src/sync/aggregate_sync_service.dart';
@@ -511,8 +512,10 @@ class AppModelLibraryHostService
   @override
   Future<List<RemoteActivityEvent>> listActivityEvents(
       {int limit = 100}) async {
+    // v90：活动流唯一数据源是统一事实面（legacy 活动行 ∪ 段 ∪ 游玩会话合成行），
+    // 与本机首页同一份；否则 client 看不到 host 在 v90 之后的任何阅读 / 观看。
     final List<ActivityEventRow> rows =
-        await _db.getRecentActivityEvents(limit: limit);
+        (await loadStatFacts(_db, activityLimit: limit)).activityRows;
     return <RemoteActivityEvent>[
       for (final ActivityEventRow r in rows)
         RemoteActivityEvent(

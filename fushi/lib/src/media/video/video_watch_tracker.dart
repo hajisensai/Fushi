@@ -37,8 +37,8 @@ bool shouldCountCueDwell({
 }) {
   final int threshold =
       (cueStartMs != null && cueEndMs != null && cueEndMs > cueStartMs)
-          ? math.min(kCueDwellMs, cueEndMs - cueStartMs)
-          : kCueDwellMs;
+      ? math.min(kCueDwellMs, cueEndMs - cueStartMs)
+      : kCueDwellMs;
   return playedMs >= threshold;
 }
 
@@ -60,9 +60,9 @@ class VideoWatchTracker {
     required StudyClock clock,
     required Future<void> Function(String bookUid) markCompleted,
     FutureOr<void> Function()? onEpisodeCompleted,
-  })  : _clock = clock,
-        _markCompleted = markCompleted,
-        _onEpisodeCompleted = onEpisodeCompleted {
+  }) : _clock = clock,
+       _markCompleted = markCompleted,
+       _onEpisodeCompleted = onEpisodeCompleted {
     _clock.isActive = () => _source?.isPlaying ?? false;
     _clock.onTick = (DateTime _) => unawaited(_checkCompletion());
   }

@@ -92,8 +92,10 @@ VideoStatsAggregate computeVideoStats({
       agg.monthChars += s.chars;
       agg.monthMs += s.ms;
     }
-    final StatDayData day =
-        dailyMap.putIfAbsent(s.dateKey, () => StatDayData(dateKey: s.dateKey));
+    final StatDayData day = dailyMap.putIfAbsent(
+      s.dateKey,
+      () => StatDayData(dateKey: s.dateKey),
+    );
     day.chars += s.chars;
     day.ms += s.ms;
   }
@@ -142,9 +144,10 @@ VideoStatsAggregate computeVideoStats({
     titleOf: (_IdentityRow r) => r.title,
     ambiguousTitles: ambiguousTitles,
   )) {
-    final VideoStatBookData book =
-        VideoStatBookData(g.title, bookUid: g.identity)
-          ..absorbedUnattributed = g.absorbedUnattributed;
+    final VideoStatBookData book = VideoStatBookData(
+      g.title,
+      bookUid: g.identity,
+    )..absorbedUnattributed = g.absorbedUnattributed;
     bool hasWatch = false;
     for (final _IdentityRow r in g.rows) {
       final StatFact? s = r.watch;

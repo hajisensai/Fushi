@@ -245,17 +245,28 @@ void main() {
       await emitted;
     });
 
-    test('watchDashboardDataChanges 在写入阅读统计时也 emit', () async {
+    test('watchDashboardDataChanges 在写入学习事实段（study_segments）时也 emit',
+        () async {
+      // v90：本地统计写入面只写 study_segments（累加 DAO 已删），首页热力图 /
+      // 今日 / 活动流全部从它派生，它必须在监听表集里。
       final db = await _openDb();
       final Future<void> emitted = db.watchDashboardDataChanges().first.timeout(
             const Duration(seconds: 3),
           );
-      await db.addReadingStatistic(
+      await db.upsertStudySegment(StudySegmentsCompanion.insert(
+        uid: FushiDatabase.newStudySegmentUid(),
+        deviceId: 'dev-test',
+        mediaKind: kActivityMediaBook,
+        mediaKey: 'book-y',
         title: 'Y',
+        startAt: 1000,
+        endAt: 2000,
         dateKey: '2026-07-20',
-        charsRead: 10,
-        timeMs: 1000,
-      );
+        hour: 10,
+        durationMs: const Value(1000),
+        chars: const Value(10),
+        updatedAt: 2000,
+      ));
       await emitted;
     });
 

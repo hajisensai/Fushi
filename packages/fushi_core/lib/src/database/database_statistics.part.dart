@@ -300,6 +300,58 @@ mixin _FushiDbStatistics
                 t.mediaKind.equals(mediaKind) & t.mediaKey.equals(mediaKey)))
           .get();
 
+  /// 同步 / 备份落地用：按 uid 批量 upsert，**只在对端 `updatedAt` 严格更新时覆盖**
+  /// （LWW；同值重放 no-op、旧值不降级）。一次事务。
+  Future<void> upsertStudySegmentsIfNewer(
+    Iterable<StudySegmentsCompanion> rows,
+  ) =>
+      transaction(() async {
+        for (final StudySegmentsCompanion row in rows) {
+          await into(studySegments).insert(
+            row,
+            onConflict: DoUpdate(
+              (old) => row,
+              target: [studySegments.uid],
+              where: (old) =>
+                  old.updatedAt.isSmallerThanValue(row.updatedAt.value),
+            ),
+          );
+        }
+      });
+
+  /// 同步 / 备份落地用：写入一条对端墓碑（只在 deletedAt 严格更新时覆盖），并删掉
+  /// 本地该身份下 `updatedAt < deletedAt` 的段（删除跨端传播；之后又读的段不动）。
+  Future<void> applyStudySegmentTombstone({
+    required String mediaKind,
+    required String mediaKey,
+    required int deletedAt,
+  }) =>
+      transaction(() async {
+        await into(studySegmentTombstones).insert(
+          StudySegmentTombstonesCompanion.insert(
+            mediaKind: mediaKind,
+            mediaKey: mediaKey,
+            deletedAt: deletedAt,
+          ),
+          onConflict: DoUpdate(
+            (old) => StudySegmentTombstonesCompanion(
+              deletedAt: Value(deletedAt),
+            ),
+            target: [
+              studySegmentTombstones.mediaKind,
+              studySegmentTombstones.mediaKey,
+            ],
+            where: (old) => old.deletedAt.isSmallerThanValue(deletedAt),
+          ),
+        );
+        await (delete(studySegments)
+              ..where((t) =>
+                  t.mediaKind.equals(mediaKind) &
+                  t.mediaKey.equals(mediaKey) &
+                  t.updatedAt.isSmallerThanValue(deletedAt)))
+            .go();
+      });
+
   // deleteStudySegmentsForMedia / clearStudySegments 住 _FushiDbContentMisc
   // （legacy 的 delete*Statistics* / clearAll* 在那层连带调用，mixin 只能向下看）。
 
@@ -461,6 +513,14 @@ mixin _FushiDbStatistics
             ..where((t) => t.gameId.equals(gameId))
             ..orderBy([(t) => OrderingTerm.desc(t.startMs)])
             ..limit(limit, offset: offset))
+          .get();
+
+  /// 全库最近 [limit] 条游玩会话（按结束时刻倒序）：v90 起游玩不再写 activity 行，
+  /// 首页活动流 / 游戏首页时间线从这里合成「游玩」事件。
+  Future<List<GalgameSessionRow>> getRecentGalgameSessions({int limit = 200}) =>
+      (select(galgameSessions)
+            ..orderBy([(t) => OrderingTerm.desc(t.endMs)])
+            ..limit(limit))
           .get();
 
   /// 删除单条会话（详情页「删掉这次记录」）。

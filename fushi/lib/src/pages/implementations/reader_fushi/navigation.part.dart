@@ -155,7 +155,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
 
     // BUG-1052：这里**不再**重锚任何会话时钟。本方法（恢复完成）每次重排版/重恢复
     // 都会跑，旧代码在此重置 `_sessionStartTime`，把上一段还没落库的前台阅读时长整段
-    // 抹掉。[_ensureReadingTimeTracker] 的 start() 对已在跑的计时器是 no-op，重排版
+    // 抹掉。[_ensureStudyClock] 的 start() 对已在跑的时钟是 no-op，重排版
     // 不打断计时。
     _ensureStudyClock();
     // TODO-1192：session 水位只升不降。旧代码在此把水位无条件重置成恢复目标位置，
@@ -1435,7 +1435,9 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       mediaKey: widget.bookKey,
       title: _book?.title ?? widget.bookKey,
       format: BookFormat.epub.dbValue,
-      idleTimeout: kDefaultReadingIdleTimeout,
+      idleTimeout: appModel.readingIdleTimeout,
+      onWriteError: (Object e, StackTrace st) =>
+          ErrorLogService.instance.log('StudyClock.write(epub)', e, st),
     );
     clock.start();
     return clock;

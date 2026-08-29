@@ -1,13 +1,13 @@
-import 'package:fushi/src/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 首页 Activity 时间轴的纯数据层：把 [ActivityEventRow] 事件流聚合成「按日期分组、
 /// 每组内按 (标题, 事件类型) 合并」的时间线条目，并把「相对时间」算成结构化描述
 /// 供 widget 层用 i18n 格式化（保持纯函数可单测、跨 17 语言一致）。
 ///
-/// 事件流两侧写入粒度不同：视频每次观看 session 落 1 行；阅读每次 flush（换章/导航）
-/// 落 1 行，一坐可能多行。故 session 数不能直接取行数——用 [kActivitySessionGap]
-/// 时间间隔归并（>gap 才算新 session），两侧统一。
+/// v90 起事件流 = legacy `activity_events` 行（v90 前历史 + 导入事件）∪ 由
+/// `study_segments` 映射出的段行（`segmentsAsActivityRows`，一段 ≤ 1 小时、一坐
+/// 多段）。故 session 数不能直接取行数——用 [kActivitySessionGap] 时间间隔归并
+/// （>gap 才算新 session），两侧统一。
 
 /// 相对时间单位。i18n 在 widget 层按此 + [ActivityRelativeTime.value] 选串。
 enum ActivityRelativeUnit { justNow, minutesAgo, hoursAgo, daysAgo }
@@ -186,49 +186,6 @@ List<ActivityDateGroup> aggregateActivityEvents(
       ),
   ];
 }
-
-/// 首页顶部统计卡的时长窗口聚合结果（毫秒）。
-class DashboardTimeStats {
-  const DashboardTimeStats({
-    required this.today,
-    required this.week,
-    required this.month,
-    required this.all,
-  });
-
-  final int today;
-  final int week;
-  final int month;
-  final int all;
-}
-
-/// 纯函数：把 (dateKey, 时长毫秒) 事件按 [now] 的今日/近7天/近30天/全部窗口求和。
-/// 与 [bucketActivityByDateKey]（stat_activity）同一套 dateKey 阈值语义，只是聚合的是
-/// 时长而非计数。阅读统计与视频观看统计的行都可喂进来（首页「总时长/今日/本周/本月」）。
-DashboardTimeStats sumTimeWindowsByDateKey(
-  Iterable<(String dateKey, int ms)> rows,
-  DateTime now,
-) {
-  final String todayKey = _dayKey(now);
-  final String weekAgoKey = _dayKey(now.subtract(const Duration(days: 7)));
-  final String monthAgoKey = _dayKey(now.subtract(const Duration(days: 30)));
-  int today = 0;
-  int week = 0;
-  int month = 0;
-  int all = 0;
-  for (final (String dateKey, int ms) in rows) {
-    if (ms <= 0) continue;
-    all += ms;
-    if (dateKey == todayKey) today += ms;
-    if (dateKey.compareTo(weekAgoKey) >= 0) week += ms;
-    if (dateKey.compareTo(monthAgoKey) >= 0) month += ms;
-  }
-  return DashboardTimeStats(today: today, week: week, month: month, all: all);
-}
-
-/// `yyyy-MM-dd`（与统计行 dateKey 同格式，可字典序比较）。委托
-/// [FushiTimeFormat.dayKey]（G5 收敛；不引 UI 层的 statDateKey，保持纯数据层）。
-String _dayKey(DateTime d) => FushiTimeFormat.dayKey(d);
 
 /// 把已按升序排好的时间戳按 [gap] 归并成 session 数：相邻间隔 > gap 记一个新 session。
 int _countSessions(List<int> sortedAscTimestamps, Duration gap) {

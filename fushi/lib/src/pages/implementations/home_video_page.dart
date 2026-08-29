@@ -614,8 +614,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     // UI v2 Phase B / v39：watch-stats 全量行 → 最近观看时间（内存聚合）。
     // v39 新行按 bookUid 键控；迁移遗留 NULL-uid 行按 title 建回退映射。
+    // v90 起 `video_watch_statistics` 冻结为 legacy 只读（历史数据还在），新的
+    // 观看只写 `study_segments`：两处的 (uid, 时刻) 一起喂 latestWatchAtByKey，
+    // 同 uid 取最大，任一来源缺席都不影响另一来源。
     final List<VideoWatchStatisticRow> watchRows =
         await db.getAllVideoWatchStatistics();
+    final Map<String, int> segmentEndAtByUid =
+        await db.getLatestStudyEndAtByMedia(kActivityMediaVideo);
     // 无身份判定 NULL 与 '' 都算（review4-9/review2-10：与统计页展示、删除谓词
     // 同一判据）——'' 行进不了任何书架条目的 uid 匹配，落 title 回退才不会让该
     // 视频从「最近观看」消失。
@@ -624,6 +629,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         for (final VideoWatchStatisticRow r in watchRows)
           if (r.bookUid case final String uid when uid.isNotEmpty)
             (uid, r.lastModified),
+        for (final MapEntry<String, int> e in segmentEndAtByUid.entries)
+          if (e.key.isNotEmpty) (e.key, e.value),
       ],
     );
     final Map<String, DateTime> legacyByTitle = latestWatchAtByKey(

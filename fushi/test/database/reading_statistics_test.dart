@@ -1,6 +1,12 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
+
+// v90 起累加 DAO（addReadingStatistic / addHourlyReadingTime / recordReadingSession）
+// 已删：本地写入面只写 study_segments 事实表（新语义见 study_segments_test.dart）。
+// reading_statistics / reading_hourly_logs 冻结为 legacy，只剩同步落地的 OVERWRITE
+// 版 set*；本文件只守 legacy 表的行形状 / 键控 / 读取契约，累加用例已随 DAO 删除。
 
 Future<FushiDatabase> _openDb() async {
   final db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -8,17 +14,31 @@ Future<FushiDatabase> _openDb() async {
   return db;
 }
 
+/// 造一行 legacy 日统计（绝对值）。
+Future<void> _setReading(
+  FushiDatabase db, {
+  required String title,
+  required String dateKey,
+  required int chars,
+  required int ms,
+  int pages = 0,
+}) =>
+    db.setReadingStatistic(ReadingStatisticsCompanion.insert(
+      title: title,
+      dateKey: dateKey,
+      charactersRead: chars,
+      readingTimeMs: ms,
+      pagesRead: Value(pages),
+      lastStatisticModified: 1,
+    ));
+
 void main() {
   group('ReadingStatistics table', () {
-    test('addReadingStatistic creates a new row', () async {
+    test('setReadingStatistic creates a new row', () async {
       final db = await _openDb();
 
-      await db.addReadingStatistic(
-        title: '吾輩は猫である',
-        dateKey: '2026-05-16',
-        charsRead: 100,
-        timeMs: 60000,
-      );
+      await _setReading(db,
+          title: '吾輩は猫である', dateKey: '2026-05-16', chars: 100, ms: 60000);
 
       final all = await db.getAllReadingStatistics();
       expect(all, hasLength(1));
@@ -27,52 +47,18 @@ void main() {
       expect(all.single.readingTimeMs, 60000);
     });
 
-    test('addReadingStatistic aggregates into existing day', () async {
-      final db = await _openDb();
-      await db.addReadingStatistic(
-        title: 'Book',
-        dateKey: '2026-05-16',
-        charsRead: 100,
-        timeMs: 10000,
-      );
-
-      await db.addReadingStatistic(
-        title: 'Book',
-        dateKey: '2026-05-16',
-        charsRead: 50,
-        timeMs: 5000,
-      );
-
-      final all = await db.getAllReadingStatistics();
-      expect(all, hasLength(1));
-      expect(all.single.charactersRead, 150);
-      expect(all.single.readingTimeMs, 15000);
-    });
-
-    test('pagesRead 默认 0，且与字数各自独立累加（v60）', () async {
+    test('pagesRead 默认 0，且与字数是两个独立量纲（v60）', () async {
       final db = await _openDb();
       // EPUB：只有字数，不传页数 → 页数恒 0。
-      await db.addReadingStatistic(
-        title: 'Novel',
-        dateKey: '2026-07-28',
-        charsRead: 800,
-        timeMs: 60000,
-      );
+      await _setReading(db,
+          title: 'Novel', dateKey: '2026-07-28', chars: 800, ms: 60000);
       // 漫画：字数与页数一起落，两个量纲互不顶替。
-      await db.addReadingStatistic(
-        title: 'Manga',
-        dateKey: '2026-07-28',
-        charsRead: 300,
-        timeMs: 30000,
-        pagesRead: 12,
-      );
-      await db.addReadingStatistic(
-        title: 'Manga',
-        dateKey: '2026-07-28',
-        charsRead: 120,
-        timeMs: 10000,
-        pagesRead: 5,
-      );
+      await _setReading(db,
+          title: 'Manga',
+          dateKey: '2026-07-28',
+          chars: 420,
+          ms: 40000,
+          pages: 17);
 
       final List<ReadingStatisticRow> all = await db.getAllReadingStatistics();
       final ReadingStatisticRow novel =
@@ -88,50 +74,34 @@ void main() {
 
     test('different dates create separate rows', () async {
       final db = await _openDb();
-      await db.addReadingStatistic(
-        title: 'Book',
-        dateKey: '2026-05-15',
-        charsRead: 100,
-        timeMs: 10000,
-      );
-      await db.addReadingStatistic(
-        title: 'Book',
-        dateKey: '2026-05-16',
-        charsRead: 200,
-        timeMs: 20000,
-      );
+      await _setReading(db,
+          title: 'Book', dateKey: '2026-05-15', chars: 100, ms: 10000);
+      await _setReading(db,
+          title: 'Book', dateKey: '2026-05-16', chars: 200, ms: 20000);
 
       expect(await db.getAllReadingStatistics(), hasLength(2));
     });
 
     test('different titles create separate rows on same date', () async {
       final db = await _openDb();
-      await db.addReadingStatistic(
-        title: 'Book A',
-        dateKey: '2026-05-16',
-        charsRead: 100,
-        timeMs: 10000,
-      );
-      await db.addReadingStatistic(
-        title: 'Book B',
-        dateKey: '2026-05-16',
-        charsRead: 200,
-        timeMs: 20000,
-      );
+      await _setReading(db,
+          title: 'Book A', dateKey: '2026-05-16', chars: 100, ms: 10000);
+      await _setReading(db,
+          title: 'Book B', dateKey: '2026-05-16', chars: 200, ms: 20000);
 
       expect(await db.getAllReadingStatistics(), hasLength(2));
     });
   });
 
   group('ReadingHourlyLogs table', () {
-    test('addHourlyReadingTime creates entry for new hour', () async {
+    test('setReadingHourlyLog creates entry for new hour', () async {
       final db = await _openDb();
 
-      await db.addHourlyReadingTime(
+      await db.setReadingHourlyLog(
         dateKey: '2026-05-16',
         hour: 14,
-        deltaMs: 30000,
-        format: BookFormat.epub,
+        readingTimeMs: 30000,
+        format: BookFormat.epub.dbValue,
       );
 
       final logs = await db.getHourlyLogsForDate('2026-05-16');
@@ -140,40 +110,19 @@ void main() {
       expect(logs.single.readingTimeMs, 30000);
     });
 
-    test('addHourlyReadingTime aggregates into same hour', () async {
-      final db = await _openDb();
-      await db.addHourlyReadingTime(
-        dateKey: '2026-05-16',
-        hour: 14,
-        deltaMs: 10000,
-        format: BookFormat.epub,
-      );
-
-      await db.addHourlyReadingTime(
-        dateKey: '2026-05-16',
-        hour: 14,
-        deltaMs: 5000,
-        format: BookFormat.epub,
-      );
-
-      final logs = await db.getHourlyLogsForDate('2026-05-16');
-      expect(logs, hasLength(1));
-      expect(logs.single.readingTimeMs, 15000);
-    });
-
     test('same hour different formats stay separate rows (v67)', () async {
       final db = await _openDb();
-      await db.addHourlyReadingTime(
+      await db.setReadingHourlyLog(
         dateKey: '2026-05-16',
         hour: 15,
-        deltaMs: 1200000,
-        format: BookFormat.epub,
+        readingTimeMs: 1200000,
+        format: BookFormat.epub.dbValue,
       );
-      await db.addHourlyReadingTime(
+      await db.setReadingHourlyLog(
         dateKey: '2026-05-16',
         hour: 15,
-        deltaMs: 600000,
-        format: BookFormat.manga,
+        readingTimeMs: 600000,
+        format: BookFormat.manga.dbValue,
       );
 
       final logs = await db.getHourlyLogsForDate('2026-05-16');
@@ -243,17 +192,17 @@ void main() {
 
     test('different hours create separate logs', () async {
       final db = await _openDb();
-      await db.addHourlyReadingTime(
+      await db.setReadingHourlyLog(
         dateKey: '2026-05-16',
         hour: 10,
-        deltaMs: 5000,
-        format: BookFormat.epub,
+        readingTimeMs: 5000,
+        format: BookFormat.epub.dbValue,
       );
-      await db.addHourlyReadingTime(
+      await db.setReadingHourlyLog(
         dateKey: '2026-05-16',
         hour: 11,
-        deltaMs: 3000,
-        format: BookFormat.epub,
+        readingTimeMs: 3000,
+        format: BookFormat.epub.dbValue,
       );
 
       final logs = await db.getHourlyLogsForDate('2026-05-16');
@@ -264,61 +213,6 @@ void main() {
       final db = await _openDb();
 
       expect(await db.getHourlyLogsForDate('2020-01-01'), isEmpty);
-    });
-  });
-
-  group('recordReadingSession（P4 写侧收敛：事实 + 派生投影单入口）', () {
-    test('一次调用同份数字落 activity 事实行与 reading_statistics 投影', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      final DateTime at = DateTime(2026, 8, 10, 21, 30);
-
-      await db.recordReadingSession(
-        title: 'BookA',
-        mediaKey: 'bk-a',
-        charsRead: 250,
-        timeMs: 60000,
-        pagesRead: 3,
-        at: at,
-      );
-
-      final stat = (await db.getAllReadingStatistics()).single;
-      expect(stat.title, 'BookA');
-      expect(stat.dateKey, '2026-08-10');
-      expect(stat.charactersRead, 250);
-      expect(stat.readingTimeMs, 60000);
-      expect(stat.pagesRead, 3);
-
-      final events = await db.getRecentActivityEvents(limit: 5);
-      final ev = events.single;
-      expect(ev.eventType, 'read');
-      expect(ev.mediaType, 'book');
-      expect(ev.mediaKey, 'bk-a');
-      expect(ev.dateKey, stat.dateKey,
-          reason: '事实与投影的 dateKey 由同一时刻在 DB 层派生，结构上不可能漂移');
-      expect(ev.charsDelta, 250);
-      expect(ev.durationMs, 60000);
-      expect(ev.timestampMs, at.millisecondsSinceEpoch);
-    });
-
-    test('复合入口保留清统计墓碑语义（重读复活）', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      await db.insertStatisticsTombstone('BookA', FushiDatabase.statSourceBook);
-
-      await db.recordReadingSession(
-        title: 'BookA',
-        mediaKey: 'bk-a',
-        charsRead: 1,
-        timeMs: 1,
-        at: DateTime(2026, 8, 10),
-      );
-
-      expect(await db.getStatisticsTombstoneKeys(),
-          isNot(contains(('BookA', 'book'))),
-          reason: '经 addReadingStatistic 派生投影，清碑语义原样保留');
     });
   });
 }

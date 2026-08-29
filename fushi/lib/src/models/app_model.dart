@@ -6259,6 +6259,16 @@ class AppModel with ChangeNotifier {
   Future<void> setReadingGoalDailyChars(int value) =>
       prefsRepo.setReadingGoalDailyChars(value);
 
+  /// v90 阅读空闲门（分钟 / Duration 两种形态；阅读器建 StudyClock 时取后者）。
+  /// 偏好层未就绪（精简初始化路径 / 测试 harness）时回落默认 10 分钟——阅读器
+  /// 建时钟绝不能因为一个可选偏好没加载而整页崩掉。
+  int get readingIdleTimeoutMinutes =>
+      _prefsRepo?.readingIdleTimeoutMinutes ??
+      kDefaultReadingIdleTimeout.inMinutes;
+  Duration get readingIdleTimeout => Duration(minutes: readingIdleTimeoutMinutes);
+  Future<void> setReadingIdleTimeoutMinutes(int value) =>
+      prefsRepo.setReadingIdleTimeoutMinutes(value);
+
   int get readingGoalWeeklyChars => prefsRepo.readingGoalWeeklyChars;
   Future<void> setReadingGoalWeeklyChars(int value) =>
       prefsRepo.setReadingGoalWeeklyChars(value);

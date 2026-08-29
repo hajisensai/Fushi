@@ -1625,7 +1625,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String get dictionarySourceType => kStatSourceVideo;
 
   /// TODO-1204：查词 / 制卡计数归属本视频——[title] 用 [_title]（剧集标题，与
-  /// 视频统计 tile 的 [addVideoWatchStatistic] title 聚合键对齐），[bookKey] 存
+  /// 视频统计 tile 的身份分组键对齐），[bookKey] 存
   /// [VideoFushiPage.bookUid]。远端视频无观看统计 tile，其计数仍进「查词」汇总。
   @override
   ({String? bookKey, String? title})? get lookupBookIdentity =>
@@ -3375,6 +3375,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           mediaKind: kActivityMediaVideo,
           mediaKey: widget.bookUid,
           title: title,
+          onWriteError: (Object e, StackTrace st) =>
+              ErrorLogService.instance.log('StudyClock.write(video)', e, st),
         ),
         markCompleted: (String uid) =>
             db.markVideoCompleted(uid, DateTime.now()),

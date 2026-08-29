@@ -27,7 +27,7 @@ import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/utils/misc/fushi_time_format.dart';
 
 /// 落 `activity_events` 的一条游戏活动写入契约。默认实现走 [FushiDatabase.
-/// addActivityEvent]（[kActivityGame] / [kActivityMediaGame]）；单测可注入假写入方
+/// upsertStudySegment]（chars-only 游戏段）；单测可注入假写入方
 /// 断言 flush 时机与聚合值，无需真实 DB。
 ///
 /// **只写字符数，不写 `durationMs`**（契约 §3.1）：游玩时长的真相源已经是

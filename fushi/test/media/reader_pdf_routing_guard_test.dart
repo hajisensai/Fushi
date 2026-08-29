@@ -124,12 +124,14 @@ void main() {
         reason: 'PDF 总页数存在 chapterCount');
   });
 
-  test('PDF 阅读统计不把页数当字数（charsRead 恒 0）', () {
+  test('PDF 阅读统计不把页数当字数（时钟只记时长，永不 addChars）', () {
     final String src =
         read('lib/src/pages/implementations/reader_pdf_page.dart');
-    expect(src.contains('charsRead: 0'), isTrue,
-        reason: 'PDF 无字数；把页数塞进 charsRead 会污染统计页的「字数」口径');
-    expect(src.contains('ReadingTimeTracker'), isTrue, reason: '复用时长统计');
+    // v90：字数只有一个入口 StudyClock.addChars。PDF 无字数，页面里不得出现该
+    // 调用——把页数塞进 chars 会污染统计页的「字数」口径（旧形态是 `charsRead: 0`）。
+    expect(src.contains('addChars('), isFalse,
+        reason: 'PDF 无字数；把页数塞进 chars 会污染统计页的「字数」口径');
+    expect(src.contains('StudyClock'), isTrue, reason: '复用时长统计');
   });
 
   // ── Phase 4：制卡 ────────────────────────────────────────────────────

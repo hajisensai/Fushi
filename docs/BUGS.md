@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1815 条。点号进各自文件。
+> 共 1817 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1948](bugs/BUG-1948-video-watch-tracker-stop-double-activity.md) | ✅ | ✅ | VideoWatchTracker.stop 在 await 后才清零累计器：dispose 与进程退出并发各写一条活动行 |
+| [BUG-1947](bugs/BUG-1947-video-stats-sync-title-collapse.md) | ✅ | ✅ | 视频统计同步按 title 塌缩：分集裸集号跨作品相加、per-uid 行被删成无身份行 |
 | [BUG-1945](bugs/BUG-1945-video-fullscreen-exit-deactivated-context.md) | ✅ | ✅ | 视频取消全屏短暂闪现 deactivated widget 红屏 |
 | [BUG-1944](bugs/BUG-1944-mokuro-retry-cancel-test-wall-clock-race.md) | ✅ | ✅ | mokuro 退避取消测试拿真时钟当同步原语，CI 上偶发红 |
 | [BUG-1937](bugs/BUG-1937-download-tasks-kind-filter.md) | ✅ | ✅ | 下载任务面板缺少类型筛选 |

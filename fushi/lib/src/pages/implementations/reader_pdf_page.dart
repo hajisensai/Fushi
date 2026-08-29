@@ -26,7 +26,7 @@ import 'package:fushi/utils.dart';
 /// 与 EPUB 的 [ReaderFushiPage] 平行：那边是 WebView + JS 选区 + 章内字符偏移，这边是
 /// pdfrx（PDFium）+ 字符级 `charRects` + **页码**。两者最终汇到同一批共享设施：
 /// [BaseSourcePageState.searchDictionaryResult]（查词弹窗/朗读）、[ReaderPositionRepository]
-/// （阅读位置）、[ReadingTimeTracker]（时长统计）、[AnkiMiningContext]（制卡）。
+/// （阅读位置）、[StudyClock]（时长统计）、[AnkiMiningContext]（制卡）。
 ///
 /// PDF 绝对路径由 `EpubBooks` 行经 `bookMainFilePath` 还原（唯一真相源，不自拼）。
 class ReaderPdfPage extends BaseSourcePage {
@@ -171,7 +171,9 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       mediaKey: widget.bookKey,
       title: row.title,
       format: BookFormat.pdf.dbValue,
-      idleTimeout: kDefaultReadingIdleTimeout,
+      idleTimeout: appModel.readingIdleTimeout,
+      onWriteError: (Object e, StackTrace st) =>
+          ErrorLogService.instance.log('StudyClock.write(pdf)', e, st),
     );
     _studyClock!.start();
     return _PdfBookLoad(path: path, row: row);

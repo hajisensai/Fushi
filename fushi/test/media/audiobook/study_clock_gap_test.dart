@@ -7,7 +7,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import '../../helpers/source_guard.dart';
 
 // BUG-892：阅读时长记账把后台挂起/熄屏/睡眠的墙钟时长一次性计入（34h 的书 /
-// 单小时 >1h / 凌晨幻影阅读）。根因是 ReadingTimeTracker 的 60s 定时器按墙钟差累加，
+// 单小时 >1h / 凌晨幻影阅读）。根因是旧 ReadingTimeTracker（现 StudyClock）的 60s 定时器按墙钟差累加，
 // 缺视频侧早有的「异常大间隔整窗丢弃」守卫。本测试锁定移植过来的纯函数
 // isContinuousReadingGap / splitReadingTime（对照 video_watch_tracker_test）。
 //
@@ -114,25 +114,25 @@ void main() {
               .readAsStringSync());
     });
 
-    test('进后台/失焦时停掉阅读计时器', () {
+    test('进后台/失焦时停掉阅读时钟', () {
       final int i = src.indexOf('didChangeAppLifecycleState');
       expect(i, greaterThanOrEqualTo(0));
       final int resumed = src.indexOf('AppLifecycleState.resumed', i);
-      // paused/inactive 分支（resumed 之前）里停 tracker。
+      // paused/inactive 分支（resumed 之前）里停时钟。
       final String pausedBranch = src.substring(i, resumed);
-      expect(pausedBranch.contains('_readingTimeTracker?.stop()'), isTrue,
+      expect(pausedBranch.contains('_studyClock?.stop()'), isTrue,
           reason: 'BUG-892 回归：后台不停计时 → 挂起时长被计入');
     });
 
-    test('恢复前台时重启计时器（后台段靠「计时器停着」丢弃，不靠重锚墙钟）', () {
+    test('恢复前台时重启时钟（后台段靠「时钟停着」丢弃，不靠重锚墙钟）', () {
       final int resumed = src.indexOf('AppLifecycleState.resumed');
       final String resumedBranch = src.substring(resumed, resumed + 900);
-      expect(resumedBranch.contains('_readingTimeTracker?.start()'), isTrue,
-          reason: 'BUG-892：不重启小时桶计时器 → 回前台后阅读时长不再记账');
+      expect(resumedBranch.contains('_studyClock?.start()'), isTrue,
+          reason: 'BUG-892：不重启时钟 → 回前台后阅读时长不再记账');
       // BUG-1052：这里曾经是 `_sessionStartTime = DateTime.now()`。那个重锚在丢弃
       // 后台段的同时，把**重锚前那段还没落库的前台阅读时长**一并抹掉（`_flushReadingStats`
       // 以 `_sessionCharsRead <= 0` 早退时根本不消费它）。查词频繁 = 失焦/回前台频繁
-      // = 几乎全部时长蒸发。现在后台段由「tracker 停着不 tick」天然排除，无需重锚。
+      // = 几乎全部时长蒸发。现在后台段由「时钟停着不 tick」天然排除，无需重锚。
       expect(resumedBranch.contains('_sessionStartTime'), isFalse,
           reason: 'BUG-1052 回归：resumed 重锚墙钟基准会吃掉未落库的前台阅读时长');
     });
@@ -143,68 +143,71 @@ void main() {
   // 症状（用户 2026-07-23 反馈截图）：今日 1832 字 / 时长 0 分钟 / 速度 125666 字·时⁻¹，
   // 「最快日」421249 字·时⁻¹。生产库对账坐实——同一天 reading_statistics 记 84 分钟，
   // reading_hourly_logs 记 345 分钟；两条账目差 4 倍以上，前者是错的那条。
+  //
+  // v90 形态：三个阅读器只剩一个 `StudyClock`（时长 / 字数 / 页数同一段、绝对值
+  // 落库）——不存在第二本账可被重锚吃掉。此前「tracker.onDelta 累加进
+  // `_sessionReadingMs`」「flush 前 sampleNow」那些中间形态随 `ReadingTimeTracker`
+  // 一起删除，对应断言改成「这些形态一个都不许回潮」。
   group('BUG-1052 单一时钟：会话时长累计器不被任何重锚吃掉', () {
-    test('EPUB 阅读器不再持有可被重置的墙钟基准字段', () {
-      final String page = maskComments(
-          File('lib/src/pages/implementations/reader_fushi_page.dart')
-              .readAsStringSync());
-      final String nav = maskComments(File(
-              'lib/src/pages/implementations/reader_fushi/navigation.part.dart')
-          .readAsStringSync());
-      // 字段本体必须已删除（注释里可以留历史说明，故只查声明与赋值形态）。
-      expect(page.contains('DateTime _sessionStartTime'), isFalse);
-      expect(page.contains('_sessionStartTime ='), isFalse);
-      expect(nav.contains('_sessionStartTime ='), isFalse);
-      // 取而代之：由 tracker 的 onDelta 累加的会话累计器。
-      expect(page.contains('int _sessionReadingMs = 0'), isTrue);
-      expect(nav.contains('onDelta:'), isTrue);
-      expect(nav.contains('_sessionReadingMs += deltaMs'), isTrue);
+    String readMasked(String path) =>
+        maskComments(File(path).readAsStringSync());
+
+    test('三个阅读器都不再持有会话累计器 / 墙钟基准 / 逐 tick 回调', () {
+      final Map<String, String> sources = <String, String>{
+        'epub': readMasked('lib/src/pages/implementations/reader_fushi_page.dart'),
+        'epub-nav': readMasked(
+            'lib/src/pages/implementations/reader_fushi/navigation.part.dart'),
+        'pdf': readMasked('lib/src/pages/implementations/reader_pdf_page.dart'),
+        'manga': readMasked('lib/src/media/manga/reader/manga_fushi_page.dart'),
+      };
+      for (final MapEntry<String, String> e in sources.entries) {
+        for (final String needle in <String>[
+          '_sessionStartTime',
+          '_sessionReadingMs',
+          'onDelta:',
+          'sampleNow(',
+        ]) {
+          expect(e.value.contains(needle), isFalse,
+              reason: '${e.key}：`$needle` 回潮 = 第二本账重新出现，'
+                  '重锚 / 分账正是 BUG-1052 的形状');
+        }
+      }
+    });
+
+    test('EPUB 字数直接记进唯一时钟的当前段', () {
+      final String nav = readMasked(
+          'lib/src/pages/implementations/reader_fushi/navigation.part.dart');
+      expect(nav.contains('_ensureStudyClock().addChars('), isTrue,
+          reason: '字数与时长必须进同一段（同 uid 一行），不得另起累计器');
     });
 
     test('恢复完成（每次重排版都会跑）不得重锚会话时钟', () {
-      final String nav = maskComments(File(
-              'lib/src/pages/implementations/reader_fushi/navigation.part.dart')
-          .readAsStringSync());
+      final String nav = readMasked(
+          'lib/src/pages/implementations/reader_fushi/navigation.part.dart');
       final int i = nav.indexOf('void _onRestoreComplete()');
       expect(i, greaterThanOrEqualTo(0));
       final int end = nav.indexOf('\n  void ', i + 10);
       final String body = nav.substring(i, end > i ? end : i + 4000);
       expect(body.contains('_sessionStartTime'), isFalse,
           reason: 'BUG-1052 回归：重排版/重恢复会抹掉上一段未落库的阅读时长');
-      expect(body.contains('_sessionReadingMs = 0'), isFalse,
-          reason: 'BUG-1052 回归：恢复完成不得清空会话时长累计器');
-    });
-
-    test('无新字数的早退路径不清空累计器（时长留到下次落库）', () {
-      final String nav = maskComments(File(
-              'lib/src/pages/implementations/reader_fushi/navigation.part.dart')
-          .readAsStringSync());
-      final int i = nav.indexOf('Future<void> _flushReadingStats()');
-      expect(i, greaterThanOrEqualTo(0));
-      final String body = nav.substring(i, math.min(i + 1600, nav.length));
-      final int guard = body.indexOf('_sessionCharsRead <= 0');
-      final int clear = body.indexOf('_sessionReadingMs = 0');
-      expect(guard, greaterThanOrEqualTo(0));
-      expect(clear, greaterThan(guard), reason: 'BUG-1052：累计器只能在真正落库那条路径上清零');
-      // 落库前必须先把「上一次 tick 到现在」这段补进累计器。
-      expect(body.indexOf('sampleNow()'), inInclusiveRange(0, guard),
-          reason: 'BUG-1052：不 sampleNow 每次落库都漏掉最多一个 tick 间隔');
+      // 对已在跑的时钟 start() 是 no-op：重排版不打断计时、不开新段。
+      expect(body.contains('_ensureStudyClock();'), isTrue,
+          reason: '恢复完成只能确保时钟在跑，不得重建 / 重锚');
     });
 
     test('PDF 阅读器不再拿整段会话去过一次 gap 守卫', () {
-      final String pdf = maskComments(
-          File('lib/src/pages/implementations/reader_pdf_page.dart')
-              .readAsStringSync());
+      final String pdf =
+          readMasked('lib/src/pages/implementations/reader_pdf_page.dart');
       expect(pdf.contains('DateTime _sessionStartTime'), isFalse);
-      expect(pdf.contains('int _sessionReadingMs = 0'), isTrue);
       final int i = pdf.indexOf('Future<void> _flushReadingStats()');
       expect(i, greaterThanOrEqualTo(0));
-      final String body = pdf.substring(i, i + 1400);
+      final String body = pdf.substring(i, math.min(i + 1400, pdf.length));
       // 旧写法：if (!isContinuousReadingGap(now - elapsed, now)) return;
       // → 任何 >120s 的正常 PDF 阅读会话被整段丢弃，读多久都记 0。
       expect(body.contains('isContinuousReadingGap('), isFalse,
           reason: 'BUG-1052 回归：整段会话过守卫 = 长会话时长恒为 0');
-      expect(body.contains('sampleNow()'), isTrue);
+      expect(body.contains('_studyClock?.flushNow()'), isTrue,
+          reason: 'flush = 结算时钟当前窗口（gap 守卫在时钟内逐 tick 生效）');
     });
   });
 }

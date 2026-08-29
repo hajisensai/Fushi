@@ -10,11 +10,11 @@ import 'package:fushi_core/fushi_core.dart';
 /// dateKey 是零填充的 `yyyy-MM-dd`，字典序即时间序，比较全走字符串。
 class StatWindow {
   StatWindow(DateTime now)
-      : todayKey = FushiDatabase.statDateKeyOf(now),
-        weekFromKey = _keyDaysAgo(now, 6),
-        prevWeekFromKey = _keyDaysAgo(now, 13),
-        monthFromKey = _keyDaysAgo(now, 29),
-        _now = now;
+    : todayKey = FushiDatabase.statDateKeyOf(now),
+      weekFromKey = _keyDaysAgo(now, 6),
+      prevWeekFromKey = _keyDaysAgo(now, 13),
+      monthFromKey = _keyDaysAgo(now, 29),
+      _now = now;
 
   final DateTime _now;
 
@@ -44,10 +44,11 @@ class StatWindow {
 
   /// 含今日在内最近 [n] 天的 dateKey，升序（图表补齐空日期用）。
   List<String> lastDayKeys(int n) => <String>[
-        for (int i = n - 1; i >= 0; i--) _keyDaysAgo(_now, i),
-      ];
+    for (int i = n - 1; i >= 0; i--) _keyDaysAgo(_now, i),
+  ];
 
   static String _keyDaysAgo(DateTime now, int days) =>
       FushiDatabase.statDateKeyOf(
-          DateTime(now.year, now.month, now.day - days));
+        DateTime(now.year, now.month, now.day - days),
+      );
 }
