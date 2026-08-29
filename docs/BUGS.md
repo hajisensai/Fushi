@@ -29,12 +29,18 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1815 条。点号进各自文件。
+> 共 1821 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1945](bugs/BUG-1945-video-fullscreen-exit-deactivated-context.md) | ✅ | ✅ | 视频取消全屏短暂闪现 deactivated widget 红屏 |
 | [BUG-1944](bugs/BUG-1944-mokuro-retry-cancel-test-wall-clock-race.md) | ✅ | ✅ | mokuro 退避取消测试拿真时钟当同步原语，CI 上偶发红 |
+| [BUG-1943](bugs/BUG-1943-subtitle-ruby-flattened.md) | ✅ | ✅ | 字幕振假名被当成正文与文字同级 |
+| [BUG-1942](bugs/BUG-1942-extension-lookup-no-auto-read.md) | ✅ | ✅ | 浏览器扩展查词不自动播放单词音频 |
+| [BUG-1941](bugs/BUG-1941-subtitle-row-blank-click-no-seek.md) | ✅ | ✅ | 点字幕行内空白不跳转只弹未识别提示 |
+| [BUG-1940](bugs/BUG-1940-page-lookup-close-click-leaks.md) | ✅ | ✅ | 关弹窗的点击与 Esc 漏给站点 |
+| [BUG-1939](bugs/BUG-1939-side-panel-lookup-popup-placement.md) | ✅ | ✅ | 侧栏查词弹窗不跟随位置且遮挡内容 |
+| [BUG-1938](bugs/BUG-1938-live-cue-seek-duplicate.md) | ✅ | ✅ | 实时采集轨在来回跳转后同一句重复入轨 |
 | [BUG-1937](bugs/BUG-1937-download-tasks-kind-filter.md) | ✅ | ✅ | 下载任务面板缺少类型筛选 |
 | [BUG-1936](bugs/BUG-1936-downloads-discovery-queue-invisible.md) | ✅ | ✅ | 发现页直链下载（游戏等）提示已加入下载，下载页任务 tab 却不显示 |
 | [BUG-1934](bugs/BUG-1934-tombstone-partial-read-baseline.md) | ✅ | ✅ | 远端删除墓碑单条读失败被跳过，基线照常推进 → 该条删除永久不再提示 |

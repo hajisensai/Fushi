@@ -24,10 +24,46 @@ function loadFushiDictMedia(ctx) {
     { filename: 'vendor/dict-media.js' });
 }
 
+// 极简节点树：文本段 → 文本节点；带 reading 的段 → <ruby>base<rt>reading</rt></ruby>。
+// 只实现 content.js 采样真正用到的那几个属性（nodeType / childNodes / tagName /
+// textContent / querySelectorAll('rt')）。
+function textNode(value) {
+  return { nodeType: 3, nodeValue: value, textContent: value };
+}
+
+function elementNode(tag, children) {
+  return {
+    nodeType: 1,
+    tagName: tag.toUpperCase(),
+    childNodes: children,
+    get textContent() {
+      return children.map((c) => c.textContent).join('');
+    },
+    querySelectorAll(sel) {
+      if (sel !== 'rt') return [];
+      return children.filter((c) => c.nodeType === 1 && c.tagName === 'RT');
+    },
+  };
+}
+
+function makeSubtitleNode(segments) {
+  const children = [];
+  for (const seg of segments) {
+    // bare:true = 不裹 <ruby> 的孤立 <rt>（站点把注音拆平时的真实形态）。
+    if (seg.bare) { children.push(elementNode('rt', [textNode(seg.text)])); continue; }
+    if (!seg.reading) { children.push(textNode(seg.text)); continue; }
+    children.push(elementNode('ruby', [
+      textNode(seg.text),
+      elementNode('rt', [textNode(seg.reading)]),
+    ]));
+  }
+  return elementNode('div', children);
+}
+
 function loadContent(opts) {
   const events = []; // 时序记录：listener 注册 / postMessage
   const intervals = []; // {fn, ms}
-  const state = { subText: '', videoPresent: true, video: null };
+  const state = { subText: '', subRuby: null, videoPresent: true, video: null };
   function createVideo(currentTime, textTracks) {
     const listeners = Object.create(null);
     return {
@@ -81,9 +117,11 @@ function loadContent(opts) {
         sel === 'video' && state.videoPresent ? state.video : null
       ),
       querySelectorAll: (sel) => {
-        if (sel === '.player-timedtext' && state.subText) {
-          return [{ textContent: state.subText }];
+        if (sel !== '.player-timedtext') return [];
+        if (Array.isArray(state.subRuby) && state.subRuby.length) {
+          return [makeSubtitleNode(state.subRuby)];
         }
+        if (state.subText) return [makeSubtitleNode([{ text: state.subText, reading: '' }])];
         return [];
       },
       createElement: () => ({
@@ -648,4 +686,116 @@ test('videoKey 契约：netflix=watch id、youtube=yt-<v>、其它=host+path', (
   assert.strictEqual(yt.windowObj.fushiVideoKey(), 'yt-abc123');
   const generic = loadContent({ hostname: 'example.com', pathname: '/show/1' });
   assert.strictEqual(generic.windowObj.fushiVideoKey(), 'example.com/show/1');
+});
+
+// 用户报（截图）：来回跳转后实时采集轨里同一句出现两条，时间戳都停在同一秒。
+// 成因链：cue 的 startMs 记的是「这句在 DOM 里被我们看到的时刻」——先前那次经过若是 seek 落在
+// 句子中段，它就比真实句首晚了一截；下一次从句首正常播放采到同一句，两个起点差出旧判据的
+// 750ms 窄窗（且新起点更早，正好从窗口前沿漏出去），于是同一句被当成两句入轨。
+test('seek 落在句中先采到这句，回跳后从句首经过不得再插一条同句', () => {
+  const h = loadContent({
+    hostname: 'www.youtube.com',
+    pathname: '/watch',
+    search: '?v=seek-mid',
+  });
+  const key = 'yt-seek-mid|live';
+
+  // ① 用户直接跳到 12:49.9（句子已经在屏幕上）：这句第一次被看到，起点只能记成落点。
+  h.video.currentTime = 769.9;
+  h.state.subText = '（玲琳）よく効く熱さましが…';
+  h.sampler.fn();
+  const track = h.windowObj.fushiEpisodeCues[key];
+  assert.strictEqual(track.length, 1, '前置：落点处这句应入轨');
+  assert.strictEqual(track[0].startMs, 769900, '前置：起点就是落点（比真实句首晚）');
+
+  // ② 往回跳到 12:44 的另一句。
+  h.seekTo(764.0);
+  h.state.subText = '（慧月）せいせい 死の足音におびえて過ごすといいわ';
+  h.sampler.fn();
+  assert.strictEqual(track.length, 2, '前置：回跳处的另一句是新句，应入轨');
+
+  // ③ 正常播放推进到 12:49.0——同一句的真实句首，比 ① 记下的起点早 900ms。
+  h.video.currentTime = 769.0;
+  h.state.subText = '（玲琳）よく効く熱さましが…';
+  h.sampler.fn();
+
+  const sameLine = track.filter((cue) => cue.text === '（玲琳）よく効く熱さましが…');
+  assert.strictEqual(sameLine.length, 1,
+    '同一句入轨两次（用户截图里 12:49 那两行重复字幕）');
+  assert.strictEqual(track.length, 2, '轨里只该有这两句');
+});
+
+// 用户报：字幕列表的振假名没正常显示，变成和文字一个层级了。
+// DOM 采样此前用 `textContent` 取字幕，`<ruby>熱<rt>ねつ</rt></ruby>さまし` 直接被取成
+// 「熱ねつさまし」——读音以同级文字的身份混进正文，列表、查词、制卡 sentence 全被污染。
+test('live 轨：<rt> 的读音不进正文，另行留给渲染端画振假名', () => {
+  const h = loadContent({ hostname: 'www.netflix.com', pathname: '/watch/81002' });
+  h.video.currentTime = 12;
+  h.state.subRuby = [
+    { text: '（玲琳）', reading: '' },
+    { text: '熱', reading: 'ねつ' },
+    { text: 'さましが…', reading: '' },
+  ];
+  h.sampler.fn();
+
+  const track = h.windowObj.fushiEpisodeCues['81002|live'];
+  assert.ok(track && track.length === 1, '这句应入 live 轨');
+  assert.strictEqual(track[0].text, '（玲琳）熱さましが…',
+    '读音被拼进了正文（用户看到的「和文字一个层级」）');
+  // vm 沙箱里造的对象跨 realm，deepStrictEqual 会比原型；这里比结构。
+  assert.strictEqual(JSON.stringify(track[0].ruby), JSON.stringify([
+    { text: '（玲琳）', reading: '' },
+    { text: '熱', reading: 'ねつ' },
+    { text: 'さましが…', reading: '' },
+  ]), '读音必须单独留下来，否则列表画不出振假名');
+});
+
+test('live 轨：整句没有注音时不带 ruby 数据（不给每条 cue 挂无用负担）', () => {
+  const h = loadContent({ hostname: 'www.netflix.com', pathname: '/watch/81003' });
+  h.video.currentTime = 5;
+  h.state.subText = '注音のない字幕';
+  h.sampler.fn();
+  const track = h.windowObj.fushiEpisodeCues['81003|live'];
+  assert.strictEqual(track[0].text, '注音のない字幕');
+  assert.strictEqual(track[0].ruby, undefined);
+});
+
+test('live 轨：字幕容器里的孤立 <rt>（注音被拆平）同样不算正文', () => {
+  const h = loadContent({ hostname: 'www.netflix.com', pathname: '/watch/81004' });
+  h.video.currentTime = 8;
+  h.state.subRuby = [
+    { text: '熱', reading: '' },
+    { text: 'ねつ', bare: true },   // 与正文平级的读音节点
+    { text: 'さまし', reading: '' },
+  ];
+  h.sampler.fn();
+  const track = h.windowObj.fushiEpisodeCues['81004|live'];
+  assert.strictEqual(track[0].text, '熱さまし', '拆平的读音仍被当成了正文');
+});
+
+test('切行后段与正文错位时不挂 ruby（宁可不画，也不把振假名标到别的字上）', () => {
+  const h = loadContent({
+    hostname: 'www.youtube.com',
+    pathname: '/watch',
+    search: '?v=ruby-split',
+  });
+  // YouTube 式累积 DOM：同一节点逐段加长，超过 12 秒上限被切成第二行。DOM 快照始终是**整句**，
+  // 而第二行的 cue.text 只是后缀——此时段序列与正文对不上，绝不能照挂。
+  const parts = ['工場', 'です。', 'パイプ', 'ライン', 'です。', 'その', '中に', '赤と',
+    '白の', '煙突が', '見えます。', 'その', '先端', '部分に'];
+  let cumulative = '';
+  for (let i = 0; i < parts.length; i++) {
+    cumulative += parts[i];
+    h.video.currentTime = 193.0 + i;
+    h.state.subRuby = [
+      { text: '工場', reading: 'こうじょう' },
+      { text: cumulative.slice('工場'.length), reading: '' },
+    ];
+    h.sampler.fn();
+  }
+  const track = h.windowObj.fushiEpisodeCues['yt-ruby-split|live'];
+  assert.ok(track.length >= 2, '累积 DOM 应被切成多行');
+  assert.ok(track[0].ruby, '第一行与整句一致，应带振假名');
+  assert.strictEqual(track[track.length - 1].ruby, undefined,
+    '后缀行的段与正文对不上，不得挂 ruby（否则振假名标到别的字上）');
 });
