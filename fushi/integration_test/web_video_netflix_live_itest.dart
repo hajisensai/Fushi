@@ -5,8 +5,8 @@
 // （PlayReady，正常观看模式）→ 主世界注入的 netflix-bridge 抓到整集明文字幕轨 → 字幕列表面板
 // 出现 cue → 经 bridge seek 后播放头跟到目标。截 Flutter 帧留证（WebView2 纹理抓不到，只证外壳）。
 //
-// 依赖真实网络 + 已登录的 Netflix 会话（WebView2 profile 预置进 runner 的
-// `isolated-root\webview2-profile\EBWebView`），故**默认 skip**，仅在
+// 依赖真实网络 + 已登录的 Netflix 会话（网页播放器用独立 WebView2 环境，profile 预置进 runner 的
+// `isolated-root\webview2-profile-webvideo\EBWebView`），故**默认 skip**，仅在
 // FUSHI_WEB_VIDEO_LIVE_ITEST=1 时跑：
 //   $env:FUSHI_WEB_VIDEO_LIVE_ITEST=1; .\tool\run_windows_itest.ps1 -Visible -KeepUserDirs `
 //     -RunId web-video-netflix-live integration_test\web_video_netflix_live_itest.dart
@@ -124,12 +124,10 @@ void main() {
       debugPrint('[web-video-itest] shelfRows=$shelfRows card(onstage='
           '${card.evaluate().isNotEmpty} anyStage=$anyStage)');
 
-      // FUSHI_WEB_VIDEO_SOFTWARE_DRM=1：走软件 DRM 档（Chrome UA + 拒 PlayReady 垫片 → Widevine），
-      // 用来区分「硬件 PlayReady 在 fork 离屏 visual 下不可用」与「页面本身不通」。
-      WebVideoFushiPage.debugForceSoftwareDrm =
-          Platform.environment['FUSHI_WEB_VIDEO_SOFTWARE_DRM'] == '1';
-      debugPrint('[web-video-itest] softwareDrm='
-          '${WebVideoFushiPage.debugForceSoftwareDrm}');
+      // 页面默认 = 软件 DRM 档 + 可捕获环境（独立 profile：登录态需预置到
+      // <FUSHI_WEBVIEW2_USER_DATA_FOLDER>-webvideo\EBWebView，见文件头）。
+      debugPrint('[web-video-itest] env folder='
+          '${WebVideoFushiPage.capturableUserDataFolder()}');
 
       // ── 打开 → 分流到网页播放器 ──
       // 优先焦点驱动（禁坐标点击）；卡未上屏时走书架卡片同一条生产路由

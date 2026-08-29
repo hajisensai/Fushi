@@ -67,7 +67,7 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
   const WebVideoFushiPage({
     required this.bookUid,
     required this.repo,
-    this.softwareDrm = false,
+    this.softwareDrm = true,
     super.key,
   });
 
@@ -76,12 +76,40 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
   final VideoBookRepository repo;
 
   /// 软件 DRM 档：Chrome UA + document-start EME 垫片（拒 PlayReady、Widevine 降软件级）。
-  /// 观看默认 false（PlayReady 全画质）；制卡 / 增强环境与诊断用 true（帧可捕获，Netflix 1080p）。
+  ///
+  /// **默认 true，这不是降级而是唯一可行档**（2026-08-29 真机，见计划 §5.2）：fork 的显示链路是
+  /// 对 WebView2 visual 的 WGC 捕获，硬件 PlayReady 在这条链路上直接报 Netflix D7703；软件档
+  /// 给 Netflix 1080p（与 Chrome 关硬件加速同档），且帧可捕获 → 超分 / 截图 / 制卡全部可用。
+  /// 传 false 只在 fork 将来有 HWND 窗口宿主模式（不经捕获）时才有意义。
   final bool softwareDrm;
 
-  /// 诊断 / 集成测试用：让经分流打开的页面也走软件 DRM 档（构造参数由分流点固定为 false）。
-  @visibleForTesting
-  static bool debugForceSoftwareDrm = false;
+  /// 可捕获 WebView2 环境单例：`--disable-direct-composition`。fork 的显示链路本身就是 WGC 捕获，
+  /// Chromium 把 DRM 视频放进 DComp overlay 时纹理里是黑的（真机：默认环境视频区纯黑、加该参数
+  /// 清晰可见）。environment 级参数不能运行期切换，且同 user data folder 的多个 env 参数必须逐字
+  /// 一致，故用独立目录（独立 cookie 罐：站点登录在网页播放器里做一次即可）。
+  static Future<WebViewEnvironment>? _capturableEnv;
+
+  /// 目录：测试 runner 给了 `FUSHI_WEBVIEW2_USER_DATA_FOLDER` 就放它旁边（隔离），否则
+  /// `%LOCALAPPDATA%\Fushi\WebVideoWebView2`（与 runner 的 OverlayUserDataFolder 命名法一致）。
+  static String capturableUserDataFolder() {
+    final String? testFolder =
+        Platform.environment['FUSHI_WEBVIEW2_USER_DATA_FOLDER'];
+    if (testFolder != null && testFolder.isNotEmpty) {
+      return '$testFolder-webvideo';
+    }
+    final String base = Platform.environment['LOCALAPPDATA'] ?? '.';
+    return '$base\\Fushi\\WebVideoWebView2';
+  }
+
+  static Future<WebViewEnvironment> capturableEnvironment() {
+    return _capturableEnv ??= WebViewEnvironment.create(
+      settings: WebViewEnvironmentSettings(
+        userDataFolder: capturableUserDataFolder(),
+        additionalBrowserArguments:
+            '--autoplay-policy=no-user-gesture-required --disable-direct-composition',
+      ),
+    );
+  }
 
   /// 打开本页的唯一入口：路由层包 [FushiAppUiScaleNeutralizer]（WebView2 是平台纹理，
   /// 落在缩放画布里会被栅格化再放大 → 糊；与 `VideoFushiPage.neutralized` 同理）。
@@ -131,8 +159,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 缓存的 [AppModel]（浮层在 LayoutBuilder 回调里读，widget 失活后 `ref.read` 会抛）。
   late final AppModel _appModel = ref.read(appProvider);
 
-  bool get _softwareDrm =>
-      widget.softwareDrm || WebVideoFushiPage.debugForceSoftwareDrm;
+  bool get _softwareDrm => widget.softwareDrm;
 
   /// 只当 cue 仓库 + 字幕定位器用的 controller：永不 [VideoPlayerController.load]，
   /// 位置 / 播放态经 [VideoPlayerController.applyExternalPlaybackState] 由页面 JS 注入。
@@ -164,6 +191,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   InAppWebViewController? _web;
   VideoBookRow? _row;
   String? _failReason;
+  WebViewEnvironment? _env;
 
   /// document-start 注入脚本（按导航 host 选 bridge），资产异步读取，就绪前不建 WebView。
   UnmodifiableListView<UserScript>? _userScripts;
@@ -305,6 +333,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       sources.add(await rootBundle.loadString(asset));
     }
     sources.add(_keyBridgeScript());
+    _env = await WebVideoFushiPage.capturableEnvironment();
     if (!mounted) return;
     unawaited(_refreshFavoriteCache());
     setState(() {
@@ -1048,6 +1077,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     UnmodifiableListView<UserScript> scripts,
   ) {
     return InAppWebView(
+      webViewEnvironment: _env,
       initialUrlRequest: URLRequest(url: WebUri(row.videoPath)),
       initialUserScripts: scripts,
       initialSettings: InAppWebViewSettings(

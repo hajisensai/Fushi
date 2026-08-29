@@ -235,10 +235,18 @@ document-created 注入的 EME 垫片（拒 `com.microsoft.playready*`、Widevin
 - **CDP `Page.captureScreenshot` 在默认环境（不加 `--disable-direct-composition`）下就能拿到清晰帧**
   （3.1 MB PNG，草原蝗虫画面）——它走 compositor 回读，不受 DComp overlay 影响。P3 取帧走 `takeScreenshot`
   即可，`--disable-direct-composition` 只在需要 WGC 纹理（超分）时才必要。
-- 待定：整集明文字幕轨（netflix-bridge `timedtexttracks`）在 app 内未到，只有 live 轨（诊断进行中）。
-- 结论修正：「观看=正常模式（PlayReady 全画质）」在 fork 现有 composition hosting 下**做不到**，app 内上限 =
-  软件档 1080p（与用户 Chrome 关硬件加速时同档）。要 1440p/4K 必须给 fork 加**窗口宿主**（HWND child，
-  `CreateCoreWebView2Controller`）模式给视频页专用——工作量单独评估，由用户拍板。
+- 整集明文字幕轨（netflix-bridge `timedtexttracks`）在 app 内未到，只有 live 轨 → 根因是站点侧
+  `JSON.parse` 零命中，扩展同样受影响，另立 **BUG-1949**（不阻塞 P1，live 轨可用）。
+- **用户在 app 里看到什么（WGC 抓 app 窗口，两次 itest 各一张）**：默认环境 → 网飞控件在、
+  **视频区纯黑**（`wgc_capturable_0/wgc_17_089s.png`）；独立环境 `--disable-direct-composition` →
+  **画面清晰**（`wgc_capturable_1/wgc_15_080s.png`，蝗虫特写 + `RATED 7+` + 右侧字幕列表）。
+- **P1 最终默认**：网页播放器页 = 软件 DRM 档（Chrome UA + EME 垫片）+ 独立可捕获环境
+  （`%LOCALAPPDATA%\Fushi\WebVideoWebView2`，`--disable-direct-composition`）。这不是降级而是 fork 捕获式
+  显示链路下**唯一可播的档**；Netflix 1080p（= 用户 Chrome 关硬件加速），帧可捕获 → P2 超分 / P3 制卡
+  在同一环境直接可做，不再需要「观看 / 制卡」双环境。
+- 结论修正：「观看=PlayReady 全画质」在 fork 现有 composition hosting 下**做不到**（硬件 DRM 报 D7703）。
+  要 1440p/4K 必须给 fork 加**窗口宿主**（HWND child，`CreateCoreWebView2Controller`）模式给视频页专用，
+  且该模式下画面不经捕获、超分/取帧不可用——工作量单独评估，由用户拍板。
 
 P2 落地时的两条硬约束：
 - `--disable-direct-composition` 是 **WebView2 environment 级**（每个 user data folder 一个浏览器进程）
