@@ -179,6 +179,22 @@ SettingsDestination buildSystemDestination() {
               }
             },
           ),
+          // P2P（torrent）传输单独列出：**默认直连**，用户明确开了才跟上面的
+          // 全局出口。副标题就是警告——走代理可能降速，且不少代理服务商禁止
+          // BT 流量（限速/警告/封号）。只对内置引擎生效；外接 qBittorrent 的
+          // 代理在它自己的 WebUI 里配，这里不越权改用户的 qB 设置。
+          SettingsSwitchItem(
+            id: 'system.network_proxy_p2p',
+            title: t.network_proxy_p2p_label,
+            subtitle: t.network_proxy_p2p_warning,
+            icon: Icons.swap_vert_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.p2pProxyEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setP2pProxyEnabled(value);
+              settingsContext.refresh();
+            },
+          ),
         ],
       ),
       SettingsSection(

@@ -2018,7 +2018,7 @@
   "update_check_failed": "Updatecontrole mislukt",
   "update_checking_now": "Controleren op updates…",
   "update_connecting": "Verbinden…",
-  "network_proxy_auto_hint": "Geldt voor alle internetverzoeken van de app: updates, cloudsynchronisatie, woordenboeken, downloads, ondertitels en metadata. Laat leeg voor automatisch: omgevingsvariabelen, daarna de ingeschakelde systeemproxy. P2P-overdrachten (torrent) maken altijd rechtstreeks verbinding.",
+  "network_proxy_auto_hint": "Geldt voor alle internetverzoeken van de app: updates, cloudsynchronisatie, woordenboeken, downloads, ondertitels en metadata. Laat leeg voor automatisch: omgevingsvariabelen, daarna de ingeschakelde systeemproxy. P2P-overdrachten (torrent) maken standaard rechtstreeks verbinding; je kunt ze hieronder apart inschakelen.",
   "network_proxy_hint": "host:poort, bijv. 127.0.0.1:7890 (alleen IPv4/host)",
   "network_proxy_invalid": "Ongeldige proxy. Gebruik host:poort",
   "network_proxy_label": "Netwerkproxy",
@@ -3828,5 +3828,7 @@
   "download_task_delete_files_failed": "De gedownloade gegevens konden niet worden verwijderd; de downloadengine bevestigde dit niet",
   "delete_local_files_failed": "$n lokale bestand(en) konden niet worden verwijderd; ze zijn mogelijk nog in gebruik",
   "batch_hidden_by_filter_note": "Nog ${n} geselecteerde items zijn verborgen door het huidige filter en worden niet verwerkt.",
-  "section_network": "Netwerk"
+  "section_network": "Netwerk",
+  "network_proxy_p2p_label": "P2P-verkeer (torrent) via de proxy leiden",
+  "network_proxy_p2p_warning": "Standaard uit: P2P maakt rechtstreeks verbinding. Via de proxy kan de snelheid dalen en veel proxyaanbieders verbieden BitTorrent-verkeer: je proxyaccount kan worden afgeknepen, gewaarschuwd of opgezegd. Geldt alleen voor de ingebouwde engine; een externe qBittorrent gebruikt zijn eigen proxy-instellingen."
 }

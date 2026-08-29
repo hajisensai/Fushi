@@ -703,6 +703,30 @@ class EmbeddedTorrentSession {
         1;
   }
 
+  /// 已加载的库是否支持 [applyProxy]（老预编译 DLL 没有 `ht_apply_proxy`）。
+  bool get supportsProxy => _b.hasApplyProxy;
+
+  /// P2P 代理：[hostPort] 为 null/空 = 直连；否则 `host:port`，[proxyType]
+  /// 1=http（默认，系统/手填代理都是 HTTP）2=socks5。peer / tracker / 主机名
+  /// 解析三条链路一并切换（见 native 注释）。返回 false：session 已关 / 库无
+  /// 此符号 / host:port 拆不开 / native 失败——调用方据此提示，不假装成功。
+  bool applyProxy({String? hostPort, int proxyType = 1}) {
+    if (isClosed || !_b.hasApplyProxy) return false;
+    final String value = hostPort?.trim() ?? '';
+    if (value.isEmpty) {
+      return _b.ht_apply_proxy(_session, 0, nullptr, 0) == 1;
+    }
+    final int colon = value.lastIndexOf(':');
+    final int? port =
+        colon > 0 ? int.tryParse(value.substring(colon + 1)) : null;
+    if (port == null || port <= 0 || port > 65535) return false;
+    final String host = value.substring(0, colon);
+    return using((Arena arena) {
+      final Pointer<Char> cHost = host.toNativeUtf8(allocator: arena).cast();
+      return _b.ht_apply_proxy(_session, proxyType, cHost, port) == 1;
+    });
+  }
+
   /// 应用会话级设置（端口/DHT/LSD/UPnP/NAT-PMP/加密/匿名/活跃数/上传槽）。
   /// [encPolicy] 0=首选 1=强制 2=禁用；[listenPort]/[activeDownloads]/
   /// [activeSeeds]/[maxUploadSlots] <=0 保持默认。1 成功 0 失败。

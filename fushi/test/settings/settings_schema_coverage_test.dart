@@ -322,6 +322,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Capture selection context':
       'test/lookup/sentence_extraction_test.dart',
   'system/Enable debug log': 'test/utils/misc/debug_log_service_test.dart',
+  // P2P 走代理开关：写 prefsRepo（changed=true），生效点是 libtorrent session 的
+  // proxy 设置，harness 里没有原生引擎可探。开关语义（默认直连 / 开了才跟全局
+  // 出口）由 resolveP2pProxyHostPort 纯函数用例 + C ABI 桥源码守卫咬住。
+  'system/Route P2P (torrent) traffic through the proxy':
+      'test/torrent/download_http_client_proxy_test.dart',
   'syncBackup/Auto sync': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync statistics': 'test/sync/sync_gating_test.dart',
   'syncBackup/Upload book files': 'test/sync/sync_gating_test.dart',

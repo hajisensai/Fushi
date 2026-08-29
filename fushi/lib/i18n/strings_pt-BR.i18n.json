@@ -2018,7 +2018,7 @@
   "update_check_failed": "Falha ao verificar atualizações",
   "update_checking_now": "Verificando atualizações…",
   "update_connecting": "Conectando…",
-  "network_proxy_auto_hint": "Aplica-se a todas as solicitações de Internet do aplicativo: atualizações, sincronização na nuvem, dicionários, downloads, legendas e metadados. Deixe em branco para automático: variáveis de ambiente e, depois, o proxy do sistema ativado. As transferências P2P (torrent) sempre se conectam diretamente.",
+  "network_proxy_auto_hint": "Aplica-se a todas as solicitações de Internet do aplicativo: atualizações, sincronização na nuvem, dicionários, downloads, legendas e metadados. Deixe em branco para automático: variáveis de ambiente e, depois, o proxy do sistema ativado. As transferências P2P (torrent) se conectam diretamente por padrão; você pode ativá-las separadamente abaixo.",
   "network_proxy_hint": "host:porta, ex: 127.0.0.1:7890 (apenas IPv4/host)",
   "network_proxy_invalid": "Proxy inválido. Use host:porta",
   "network_proxy_label": "Proxy de rede",
@@ -3828,5 +3828,7 @@
   "download_task_delete_files_failed": "Não foi possível excluir os dados baixados; o mecanismo de download não confirmou",
   "delete_local_files_failed": "Não foi possível excluir $n arquivo(s) local(is); eles podem estar em uso",
   "batch_hidden_by_filter_note": "Outros ${n} itens selecionados estão ocultos pelo filtro atual e não serão processados.",
-  "section_network": "Rede"
+  "section_network": "Rede",
+  "network_proxy_p2p_label": "Rotear o tráfego P2P (torrent) pelo proxy",
+  "network_proxy_p2p_warning": "Desativado por padrão: o P2P se conecta diretamente. Passar pelo proxy pode reduzir a velocidade, e muitos provedores de proxy proíbem tráfego BitTorrent: sua conta de proxy pode ser limitada, advertida ou encerrada. Aplica-se apenas ao mecanismo integrado; um qBittorrent externo usa suas próprias configurações de proxy."
 }

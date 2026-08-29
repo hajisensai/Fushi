@@ -2018,7 +2018,7 @@
   "update_check_failed": "Güncelleme kontrolü başarısız",
   "update_checking_now": "Güncellemeler kontrol ediliyor…",
   "update_connecting": "Bağlanılıyor…",
-  "network_proxy_auto_hint": "Uygulamanın tüm internet isteklerine uygulanır: güncellemeler, bulut eşitleme, sözlükler, indirmeler, altyazılar ve meta veriler. Otomatik için boş bırakın: önce ortam değişkenleri, sonra etkin sistem proxy'si. P2P (torrent) aktarımları her zaman doğrudan bağlanır.",
+  "network_proxy_auto_hint": "Uygulamanın tüm internet isteklerine uygulanır: güncellemeler, bulut eşitleme, sözlükler, indirmeler, altyazılar ve meta veriler. Otomatik için boş bırakın: önce ortam değişkenleri, sonra etkin sistem proxy'si. P2P (torrent) aktarımları varsayılan olarak doğrudan bağlanır; aşağıdan ayrıca etkinleştirebilirsiniz.",
   "network_proxy_hint": "sunucu:port, ör. 127.0.0.1:7890 (yalnızca IPv4/sunucu adı)",
   "network_proxy_invalid": "Geçersiz proxy. sunucu:port kullanın",
   "network_proxy_label": "Ağ proxy'si",
@@ -3828,5 +3828,7 @@
   "download_task_delete_files_failed": "İndirilen veriler silinemedi; indirme motoru bunu onaylamadı",
   "delete_local_files_failed": "$n yerel dosya silinemedi; hâlâ kullanımda olabilir",
   "batch_hidden_by_filter_note": "Seçili ${n} öğe daha geçerli filtre tarafından gizlendi ve işlenmeyecek.",
-  "section_network": "Ağ"
+  "section_network": "Ağ",
+  "network_proxy_p2p_label": "P2P (torrent) trafiğini proxy üzerinden yönlendir",
+  "network_proxy_p2p_warning": "Varsayılan olarak kapalı; P2P doğrudan bağlanır. Proxy üzerinden geçmek hızı düşürebilir ve birçok proxy sağlayıcısı BitTorrent trafiğini yasaklar: proxy hesabınız kısıtlanabilir, uyarılabilir veya kapatılabilir. Yalnızca yerleşik motor için geçerlidir; harici qBittorrent kendi proxy ayarlarını kullanır."
 }

@@ -59,6 +59,7 @@ class ProfileKeys {
     // download-specific mode was folded into it) describes this device's
     // network, not a reading profile — never per-profile snapshot.
     'update_custom_proxy',
+    'network_proxy_p2p_enabled',
     // TODO-1961: the download folder (and the history of folders we still have
     // to recognise) describes this device's disks, not a reading profile.
     // Snapshotting it would make a profile switch redirect downloads onto a

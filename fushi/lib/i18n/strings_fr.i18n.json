@@ -2018,7 +2018,7 @@
   "update_check_failed": "échec de la vérification des mises à jour",
   "update_checking_now": "Vérification des mises à jour…",
   "update_connecting": "Connexion…",
-  "network_proxy_auto_hint": "S'applique à toutes les requêtes Internet de l'application : mises à jour, synchronisation cloud, dictionnaires, téléchargements, sous-titres et métadonnées. Laissez vide pour le mode automatique : variables d'environnement, puis le proxy système activé. Les transferts P2P (torrent) se connectent toujours directement.",
+  "network_proxy_auto_hint": "S'applique à toutes les requêtes Internet de l'application : mises à jour, synchronisation cloud, dictionnaires, téléchargements, sous-titres et métadonnées. Laissez vide pour le mode automatique : variables d'environnement, puis le proxy système activé. Les transferts P2P (torrent) se connectent directement par défaut ; vous pouvez les activer séparément ci-dessous.",
   "network_proxy_hint": "hôte:port, par ex. 127.0.0.1:7890 (IPv4/nom d'hôte uniquement)",
   "network_proxy_invalid": "Proxy invalide. Utilisez hôte:port",
   "network_proxy_label": "Proxy réseau",
@@ -3828,5 +3828,7 @@
   "download_task_delete_files_failed": "Impossible de supprimer les données téléchargées ; le moteur de téléchargement ne l'a pas confirmé",
   "delete_local_files_failed": "Impossible de supprimer $n fichier(s) local(aux) ; ils sont peut-être encore utilisés",
   "batch_hidden_by_filter_note": "${n} autres éléments sélectionnés sont masqués par le filtre actuel et ne seront pas traités.",
-  "section_network": "Réseau"
+  "section_network": "Réseau",
+  "network_proxy_p2p_label": "Faire passer le trafic P2P (torrent) par le proxy",
+  "network_proxy_p2p_warning": "Désactivé par défaut : le P2P se connecte directement. Passer par le proxy peut réduire la vitesse, et de nombreux fournisseurs de proxy interdisent le trafic BitTorrent : votre compte proxy peut être bridé, averti ou résilié. Ne s'applique qu'au moteur intégré ; un qBittorrent externe utilise ses propres paramètres de proxy."
 }

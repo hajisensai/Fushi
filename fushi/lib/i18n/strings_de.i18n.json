@@ -2018,7 +2018,7 @@
   "update_check_failed": "Update-Prüfung fehlgeschlagen",
   "update_checking_now": "Suche nach Updates…",
   "update_connecting": "Verbinde…",
-  "network_proxy_auto_hint": "Gilt für alle Internetanfragen der App: Updates, Cloud-Sync, Wörterbücher, Downloads, Untertitel und Metadaten. Leer lassen für automatisch: Umgebungsvariablen, dann der aktivierte System-Proxy. P2P-(Torrent-)Übertragungen verbinden sich immer direkt.",
+  "network_proxy_auto_hint": "Gilt für alle Internetanfragen der App: Updates, Cloud-Sync, Wörterbücher, Downloads, Untertitel und Metadaten. Leer lassen für automatisch: Umgebungsvariablen, dann der aktivierte System-Proxy. P2P-(Torrent-)Übertragungen verbinden sich standardmäßig direkt und lassen sich unten separat aktivieren.",
   "network_proxy_hint": "Host:Port, z. B. 127.0.0.1:7890 (nur IPv4/Host)",
   "network_proxy_invalid": "Ungültiger Proxy. Verwende Host:Port",
   "network_proxy_label": "Netzwerk-Proxy",
@@ -3828,5 +3828,7 @@
   "download_task_delete_files_failed": "Die heruntergeladenen Daten konnten nicht gelöscht werden; der Download-Dienst hat es nicht bestätigt",
   "delete_local_files_failed": "$n lokale Datei(en) konnten nicht gelöscht werden; sie sind möglicherweise noch in Benutzung",
   "batch_hidden_by_filter_note": "Weitere ${n} ausgewählte Elemente sind durch den aktuellen Filter ausgeblendet und werden nicht bearbeitet.",
-  "section_network": "Netzwerk"
+  "section_network": "Netzwerk",
+  "network_proxy_p2p_label": "P2P-(Torrent-)Verkehr über den Proxy leiten",
+  "network_proxy_p2p_warning": "Standardmäßig aus – P2P verbindet sich direkt. Über den Proxy kann die Geschwindigkeit sinken, und viele Proxy-Anbieter verbieten BitTorrent-Verkehr: Dein Proxy-Konto kann gedrosselt, verwarnt oder gekündigt werden. Gilt nur für die integrierte Engine; ein externes qBittorrent nutzt seine eigenen Proxy-Einstellungen."
 }

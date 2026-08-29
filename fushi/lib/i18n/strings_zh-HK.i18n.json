@@ -2018,7 +2018,7 @@
   "update_check_failed": "檢查更新失敗",
   "update_checking_now": "正在檢查更新…",
   "update_connecting": "正在連接更新來源…",
-  "network_proxy_auto_hint": "應用程式的全部連線請求都經此處：更新、雲端同步、詞典、下載、字幕與中繼資料。留空為自動：先讀取環境變數，再讀取已啟用的系統代理。P2P（torrent）傳輸始終直連。",
+  "network_proxy_auto_hint": "應用程式的全部連線請求都經此處：更新、雲端同步、詞典、下載、字幕與中繼資料。留空為自動：先讀取環境變數，再讀取已啟用的系統代理。P2P（torrent）傳輸預設直連，可在下方單獨開啟。",
   "network_proxy_hint": "host:port，例如 127.0.0.1:7890（僅 IPv4/域名）",
   "network_proxy_invalid": "代理格式無效，請用 host:port",
   "network_proxy_label": "網路代理",
@@ -3828,5 +3828,7 @@
   "download_task_delete_files_failed": "已下載的資料未能刪除：下載引擎沒有確認",
   "delete_local_files_failed": "有 $n 個本機檔案刪除失敗，可能正在被使用",
   "batch_hidden_by_filter_note": "另有 ${n} 項被目前篩選隱藏，今次不會處理。",
-  "section_network": "網路"
+  "section_network": "網路",
+  "network_proxy_p2p_label": "P2P（torrent）傳輸走代理",
+  "network_proxy_p2p_warning": "預設關閉，P2P 直連。走代理可能降低速度；且不少代理服務商禁止 BT 流量，可能導致代理帳號被限速、警告甚至封禁。僅對內建引擎生效，外接 qBittorrent 請在其自身設定中配置。"
 }

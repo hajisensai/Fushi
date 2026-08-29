@@ -2018,7 +2018,7 @@
   "update_check_failed": "업데이트 확인 실패",
   "update_checking_now": "업데이트 확인 중…",
   "update_connecting": "연결 중…",
-  "network_proxy_auto_hint": "앱의 모든 인터넷 요청(업데이트, 클라우드 동기화, 사전, 다운로드, 자막, 메타데이터)에 적용됩니다. 비워 두면 자동: 환경 변수, 그다음 활성화된 시스템 프록시를 사용합니다. P2P(토렌트) 전송은 항상 직접 연결합니다.",
+  "network_proxy_auto_hint": "앱의 모든 인터넷 요청(업데이트, 클라우드 동기화, 사전, 다운로드, 자막, 메타데이터)에 적용됩니다. 비워 두면 자동: 환경 변수, 그다음 활성화된 시스템 프록시를 사용합니다. P2P(토렌트) 전송은 기본적으로 직접 연결하며, 아래에서 따로 켤 수 있습니다.",
   "network_proxy_hint": "호스트:포트, 예: 127.0.0.1:7890 (IPv4/호스트만 지원)",
   "network_proxy_invalid": "잘못된 프록시입니다. 호스트:포트 형식을 사용하세요",
   "network_proxy_label": "네트워크 프록시",
@@ -3828,5 +3828,7 @@
   "download_task_delete_files_failed": "다운로드된 데이터를 삭제하지 못했습니다. 다운로드 엔진이 확인하지 않았습니다",
   "delete_local_files_failed": "로컬 파일 $n 개를 삭제하지 못했습니다. 아직 사용 중일 수 있습니다",
   "batch_hidden_by_filter_note": "선택한 항목 중 ${n}개는 현재 필터로 숨겨져 있어 처리되지 않습니다.",
-  "section_network": "네트워크"
+  "section_network": "네트워크",
+  "network_proxy_p2p_label": "P2P(토렌트) 전송을 프록시로 라우팅",
+  "network_proxy_p2p_warning": "기본적으로 꺼져 있으며 P2P는 직접 연결합니다. 프록시를 거치면 속도가 떨어질 수 있고, 많은 프록시 제공업체가 BitTorrent 트래픽을 금지하므로 프록시 계정이 속도 제한·경고·해지될 수 있습니다. 내장 엔진에만 적용되며 외부 qBittorrent는 자체 프록시 설정을 사용합니다."
 }

@@ -2018,7 +2018,7 @@
   "update_check_failed": "Pemeriksaan pembaruan gagal",
   "update_checking_now": "Memeriksa pembaruan…",
   "update_connecting": "Menghubungkan…",
-  "network_proxy_auto_hint": "Berlaku untuk semua permintaan Internet aplikasi: pembaruan, sinkronisasi cloud, kamus, unduhan, subtitel, dan metadata. Kosongkan untuk otomatis: variabel lingkungan, lalu proksi sistem yang diaktifkan. Transfer P2P (torrent) selalu terhubung langsung.",
+  "network_proxy_auto_hint": "Berlaku untuk semua permintaan Internet aplikasi: pembaruan, sinkronisasi cloud, kamus, unduhan, subtitel, dan metadata. Kosongkan untuk otomatis: variabel lingkungan, lalu proksi sistem yang diaktifkan. Transfer P2P (torrent) terhubung langsung secara default; Anda dapat mengaktifkannya secara terpisah di bawah.",
   "network_proxy_hint": "host:port, mis. 127.0.0.1:7890 (khusus IPv4/host)",
   "network_proxy_invalid": "Proksi tidak valid. Gunakan host:port",
   "network_proxy_label": "Proksi jaringan",
@@ -3828,5 +3828,7 @@
   "download_task_delete_files_failed": "Data unduhan tidak dapat dihapus; mesin unduhan tidak mengonfirmasinya",
   "delete_local_files_failed": "Gagal menghapus $n berkas lokal; mungkin masih digunakan",
   "batch_hidden_by_filter_note": "${n} item terpilih lainnya disembunyikan oleh filter saat ini dan tidak akan diproses.",
-  "section_network": "Jaringan"
+  "section_network": "Jaringan",
+  "network_proxy_p2p_label": "Rutekan lalu lintas P2P (torrent) melalui proksi",
+  "network_proxy_p2p_warning": "Nonaktif secara default — P2P terhubung langsung. Melewati proksi dapat menurunkan kecepatan, dan banyak penyedia proksi melarang lalu lintas BitTorrent: akun proksi Anda bisa dibatasi, diperingatkan, atau dihentikan. Hanya berlaku untuk mesin bawaan; qBittorrent eksternal memakai pengaturan proksinya sendiri."
 }

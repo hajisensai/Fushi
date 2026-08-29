@@ -2199,6 +2199,17 @@ class PreferencesRepository extends ChangeNotifier {
 
   // ── update preferences ───────────────────────────────────────────────
 
+  /// P2P（torrent）传输是否也走全局代理。**默认 false = 直连**：走代理可能
+  /// 降速，且不少代理服务商禁止 BT 流量（限速/警告/封号），只有用户明确
+  /// 开了才下发给内置引擎（外接 qBittorrent 自管）。
+  bool get p2pProxyEnabled =>
+      getPref('network_proxy_p2p_enabled', defaultValue: false) as bool;
+
+  Future<void> setP2pProxyEnabled(bool value) async {
+    await setPref('network_proxy_p2p_enabled', value);
+    notifyListeners();
+  }
+
   bool get updateNeverRemind =>
       getPref('update_never_remind', defaultValue: false) as bool;
 

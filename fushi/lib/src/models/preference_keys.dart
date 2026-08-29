@@ -127,6 +127,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'module_games_enabled',
   'module_manga_enabled',
   'module_video_enabled',
+  // bool：P2P（torrent）传输是否也走全局代理，默认 false（直连）。
+  'network_proxy_p2p_enabled',
   'onboarding_completed',
   'overlay_lookup_independent_size',
   'overlay_lookup_max_height',

@@ -2018,7 +2018,7 @@
   "update_check_failed": "アップデートの確認に失敗しました",
   "update_checking_now": "アップデートを確認中…",
   "update_connecting": "更新元に接続中…",
-  "network_proxy_auto_hint": "アプリのすべての通信（更新、クラウド同期、辞書、ダウンロード、字幕、メタデータ）に適用されます。空欄で自動：環境変数、次に有効なシステムプロキシを使用します。P2P（torrent）通信は常に直接接続します。",
+  "network_proxy_auto_hint": "アプリのすべての通信（更新、クラウド同期、辞書、ダウンロード、字幕、メタデータ）に適用されます。空欄で自動：環境変数、次に有効なシステムプロキシを使用します。P2P（torrent）通信は既定で直接接続します。下で個別に有効化できます。",
   "network_proxy_hint": "ホスト:ポート 例: 127.0.0.1:7890（IPv4/ホスト名のみ）",
   "network_proxy_invalid": "無効なプロキシです。ホスト:ポートの形式で入力してください",
   "network_proxy_label": "ネットワークプロキシ",
@@ -3828,5 +3828,7 @@
   "download_task_delete_files_failed": "ダウンロード済みデータを削除できませんでした。ダウンロードエンジンが確認を返していません",
   "delete_local_files_failed": "$n 件のローカルファイルを削除できませんでした。使用中の可能性があります",
   "batch_hidden_by_filter_note": "選択済みの ${n} 件は現在のフィルターで非表示のため、今回は処理されません。",
-  "section_network": "ネットワーク"
+  "section_network": "ネットワーク",
+  "network_proxy_p2p_label": "P2P（torrent）通信をプロキシ経由にする",
+  "network_proxy_p2p_warning": "既定ではオフで、P2P は直接接続します。プロキシ経由にすると速度が低下する場合があり、多くのプロキシ事業者は BitTorrent 通信を禁止しているため、プロキシアカウントが帯域制限・警告・停止される恐れがあります。内蔵エンジンにのみ適用され、外部 qBittorrent は自身のプロキシ設定を使用します。"
 }
