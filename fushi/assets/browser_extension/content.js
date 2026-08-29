@@ -121,6 +121,22 @@ function fushiArmPlayDismiss(v) {
     }, { once: true });
   } catch (_) {}
 }
+// 本轮页面弹窗是不是侧栏（side panel）交过来的词。侧栏只知道自己把词递出去了，弹窗何时被关
+// （点页面空白、Esc、手动播放）只有这边知道；关窗时定向回一条 fushiSidePanelLookupGone，侧栏
+// 据此复位扫词去重键——否则鼠标停在同一个字上就永远重查不了。定向：页面自身 Shift 查词关窗
+// 不发这条，侧栏自己那份面板内弹窗不受影响。
+let fushiLookupFromSidePanel = false;
+function fushiNotifySidePanelLookupGone() {
+  if (!fushiLookupFromSidePanel) return;
+  fushiLookupFromSidePanel = false;
+  if (!fushiExtAlive()) return;
+  try {
+    chrome.runtime.sendMessage({ type: 'fushiSidePanelLookupGone' }, function () {
+      try { void chrome.runtime.lastError; } catch (_) {}
+    });
+  } catch (_) { /* 扩展重载中：侧栏也随之重建，无需回执 */ }
+}
+
 // 手动播放 → 关掉两处查词浮层。页面弹窗直接关（fushiRemoveContainer 幂等；其恢复步骤
 // 因标记已清而为 no-op）；Side Panel 是独立扩展页，发一条 runtime 消息让它自关。
 function fushiDismissLookupOnPlay() {
@@ -1810,6 +1826,7 @@ function fushiRemoveContainer() {
   }
   fushiPlaceAnchor = null;
   fushiUserResizedPopup = false;
+  fushiNotifySidePanelLookupGone();
 }
 
 // 流媒体字幕的取词兜底：Netflix 等在字幕**上面**盖了视频覆盖层（如 .watch-video--flag-container），
@@ -1941,10 +1958,11 @@ function fushiShowConnectionFailure(resp) {
 // 用户开启「查词时暂停」后，仅在确实发起了非空查词请求时暂停正在播放的视频，并记下
 // fushiPausedForLookup；关闭查词弹窗时自动恢复（fushiRemoveContainer）。关闭该设置时
 // 任何站点都不因查词被暂停。
-function fushiSendLookup(term, anchorRect, cueWindow) {
+function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel) {
   // TODO-1219 P3：每次查词刷新精确窗——面板行查词传 cueWindow（该行精确 [startMs,endMs]），
   // mousemove 划词不传则清空，使后续制卡回落 DOM 采样窗（live 视频 hover 取当前句）。
   fushiPendingCueWindow = cueWindow || null;
+  fushiLookupFromSidePanel = fromSidePanel === true; // 关窗回执只发给真正的侧栏路径
   if (!term || !term.trim()) return;
   if (!fushiExtAlive()) return; // 扩展已重载/失效：静默停手（重载页面恢复）
   // 已因查词暂停且视频仍停着：重复查词不必再扫（fushiFindPlayingVideo 也不会命中）。
@@ -2102,6 +2120,38 @@ window.fushiPrepareLookupFromSidePanel = function (cueWindow) {
     try { const video = fushiFindPlayingVideo(); if (video) { video.pause(); fushiMarkPausedForLookup(video); } } catch (_) {}
     try { fushiArmPlayDismiss(fushiPausedForLookup || document.querySelector('video')); } catch (_) {}
   }
+  return true;
+};
+// 侧栏查词「跨出面板」（用户报：面板里的弹窗被那 ~400px 宽的面板夹住）。Chrome 的 side panel
+// 是浏览器自己的一份 web contents，面板内的 DOM 不管怎么定位都画不出面板边界——这是浏览器
+// 边界，不是我们的落点逻辑能绕开的。要更大的空间只有一条真路径：把词交回宿主页，由页面弹窗
+// （Shadow host）渲染，于是嵌套查词、发音、查重、制卡全部沿用页面既有链路，与 Shift 划词同源。
+// 取词发生在侧栏，宿主页这边并没有对应选区：先清掉上一轮的选区与高亮覆盖层，否则 fushiRender
+// 会拿上一个词的 rects 当锚点、并把那处词重新点亮。锚点给视口右上角的零宽矩形，经落点夹取后
+// 弹窗贴右缘展开——紧邻侧栏、也不压住底部字幕。
+window.fushiShowLookupFromSidePanel = function (term, cueWindow) {
+  const value = String(term || '').trim();
+  if (!value) return false;
+  try {
+    if (window.fushiSelection && typeof window.fushiSelection.clearSelection === 'function') {
+      window.fushiSelection.clearSelection();
+    }
+  } catch (_) { /* selection 结构异常：继续，锚点回落到下面构造的 anchorRect */ }
+  fushiClearHighlightOverlay();
+  const margin = 8;
+  const edge = Math.max(margin, window.innerWidth - margin);
+  const anchorRect = {
+    x: edge, y: margin, width: 0, height: 0,
+    left: edge, top: margin, right: edge, bottom: margin,
+    authoritative: true, // 宿主页上没有对应选区，锚点以这份为准（见 fushiRender）
+  };
+  fushiSendLookup(value, anchorRect, cueWindow, true);
+  return true;
+};
+// 侧栏按 Esc 时关掉页面上的这份弹窗（面板内那份由侧栏自己关）。fushiRemoveContainer 幂等，
+// 且会把「查词时暂停」的视频恢复、并回一条 fushiSidePanelLookupGone。
+window.fushiCloseLookupFromSidePanel = function () {
+  try { fushiRemoveContainer(); } catch (_) { return false; }
   return true;
 };
 // Side Panel 查词面板真正关闭时由 subtitle-panel.js 转发到这里：恢复由查词暂停的视频。
@@ -2529,8 +2579,11 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
   // 直接改宿主页文本节点）：动态站点（React/Vue/视频字幕逐帧重渲染）框架 diff / MutationObserver
   // 会在下一帧把这个凭空多出的 span revert 掉 → 高亮闪一下就没（用户报「非常容易消失」）。改画
   // 扩展自有的顶层 fixed 覆盖层：宿主页重绘/事件都碰不到它，保持到弹窗关闭。高亮前 termLen 个字。
-  let wordRect = null;
-  try {
+  // authoritative 锚点=调用方明确知道宿主页上没有对应选区（侧栏交来的词）：跳过整段选区
+  // 探测。不跳的话，下面 highlightSelection 的无选区兜底会把**上一轮**查词的 bbox 当锚点，
+  // 弹窗落到上一个词旁边，还可能把那处重新点亮。
+  let wordRect = anchorRect && anchorRect.authoritative === true ? anchorRect : null;
+  if (!wordRect) try {
     const hl = fushiSelectionRects(termLen);
     if (hl.rects.length) {
       fushiDrawHighlightOverlay(hl.rects); // 覆盖层高亮：宿主页 DOM 重绘/事件冲不掉它

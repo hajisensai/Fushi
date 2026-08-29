@@ -12,7 +12,7 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 | `background.js` | service worker | 唯一网络出口：查词/制卡/字幕等所有 HTTP 请求 + 连接诊断 + 自更新执行 + 心跳 + Netflix 录制编排 |
 | `content.js` | 隔离 | Shift 悬停查词、查词暂停、弹窗渲染/定位、高亮、挖词队列、字幕轨 provider（textTracks 收割 / DOM 采样兜底 / 整集拦截接收端）、Netflix/YouTube 批量制卡驱动 |
 | `subtitle-panel.js` | 隔离 | 字幕轨状态控制器 + 视频覆盖层 + 外挂字幕安装 + 全轨时轴偏移 + 快捷键执行端；不渲染网页列表 |
-| `side-panel.html/js/css` | 扩展页 | 浏览器原生 Side Panel 字幕列表与词典抽屉；在侧边栏内完成取词/嵌套查词，经 tabs 消息读取轨道并执行跳转/制卡/偏移，不把列表或查词结果注入网页 |
+| `side-panel.html/js/css` | 扩展页 | 浏览器原生 Side Panel 字幕列表；侧边栏内取词，默认把词交给宿主页用页面弹窗渲染（见「侧边栏查词跨出面板」），经 tabs 消息读取轨道并执行跳转/制卡/偏移，不把字幕列表注入网页 |
 | `video-shortcuts.js` | 隔离 | 视频页快捷键判定（纯函数）+ 绑定；每个动作独立开关，动作交 subtitle-panel 执行 |
 | `netflix-bridge.js` | MAIN | Netflix 专用：JSON.parse hook 抓整集字幕 + 官方 player.seek（避开 DRM M7375） |
 | `youtube-bridge.js` | MAIN | YouTube 专用：按 asbplayer 顺序读取播放器运行态 captionTracks（含 POT）→ Android Innertube → player response，并一次下载完整 srv3/json3 轨；只读、不改宿主 DOM |
@@ -77,6 +77,31 @@ app 升级
 `/api/duplicate` · 状态/心跳 `/api/extension/status` · 弹窗尺寸 `/api/extension/popup-size` ·
 YouTube 整集字幕 `/api/youtube/captions` · 外挂字幕解析 `/api/subtitle/parse`。
 服务端实现：`fushi/lib/src/sync/yomitan_api_server.dart`。
+
+## 侧边栏查词跨出面板
+
+Chrome 的 side panel 是浏览器自己的一份 web contents：**面板里的 DOM 画不出面板边界**，没有
+CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」不是落点逻辑的问题，改落点永远
+解决不了。唯一的真路径是把词交回宿主页：
+
+    侧栏取词 → fushiSubtitleSidePanelShowLookup（tabs 消息，带该行精确时间窗）
+      → subtitle-panel.js → content.js 的 fushiShowLookupFromSidePanel
+      → fushiSendLookup（页面自己发查词） → 页面弹窗（Shadow host），落在视口右上角
+
+于是嵌套查词、发音、查重、制卡、「查词时暂停」全部沿用页面既有链路，与 Shift 划词同源。
+几个必须成立的点：
+
+- **锚点是权威的**：侧栏交来的词在宿主页上没有对应选区，`anchorRect.authoritative` 让
+  `fushiRender` 跳过整段选区探测——否则 `highlightSelection` 的无选区兜底会把**上一轮**查词的
+  bbox 当锚点，弹窗落到上一个词旁边、还会把那处重新点亮。
+- **回落不可少**：宿主页没有内容脚本（`chrome://`、扩展页、标签正在跳转）时 tabs 消息拿不到
+  回复，此时退回面板内那份窄弹窗——绝不能变成查不了词。设置页「查词结果显示在网页上」
+  （`subtitleLookupOnPage`，默认开）关掉后也走这条。
+- **关窗回执**：页面弹窗关掉（点页面空白 / 侧栏 Esc / 手动播放）时 content.js 定向发
+  `fushiSidePanelLookupGone`，侧栏据此复位扫词去重键；没有它，鼠标停在同一个字上就永远
+  重查不了。页面自身的 Shift 查词关窗**不**发这条。
+
+行为守卫：`side-panel-lookup-on-page.test.js`（两侧各一组，含落点、锚点、回落、Esc、去重复位）。
 
 ## 查词框大小（单一真相源 + 窄侧边栏自动收敛）
 

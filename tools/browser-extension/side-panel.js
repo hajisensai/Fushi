@@ -59,6 +59,30 @@
   // 用户宽高；拖拽结果经 popupSize 回写 app（与页面弹窗同一把「拖即解锁」尺寸键）。
   var lookupUserResized = false;
   var lookupResizeSnapshot = null;
+  // 「查词结果显示在网页上」。Chrome side panel 是浏览器自己的一份 web contents，面板内的
+  // 弹窗永远只能有面板那么宽——DOM 画不出面板边界，这是浏览器边界不是落点逻辑。开启后侧栏
+  // 点词把词交给宿主页，用页面弹窗渲染（详见 content.js 的 fushiShowLookupFromSidePanel）；
+  // 关掉、或宿主页没有内容脚本时，回落到面板内渲染（下面 lookupTerm 的两条路径）。
+  var lookupOnPage = true;
+  // 侧栏交出去的那轮页面弹窗是否还开着。用于扫词去重：弹窗还在就别对同一个字重复发请求，
+  // 弹窗没了（页面点空白/Esc/手动播放，content.js 回 fushiSidePanelLookupGone）就得放行。
+  var pageLookupOpen = false;
+  try {
+    chrome.storage.local.get('subtitleLookupOnPage', function (saved) {
+      try { if (chrome.runtime.lastError) return; } catch (_) { return; }
+      if (saved && typeof saved.subtitleLookupOnPage === 'boolean') {
+        lookupOnPage = saved.subtitleLookupOnPage;
+      }
+    });
+    chrome.storage.onChanged.addListener(function (changes, area) {
+      if (area !== 'local' || !changes || !changes.subtitleLookupOnPage) return;
+      var next = changes.subtitleLookupOnPage.newValue;
+      lookupOnPage = typeof next === 'boolean' ? next : true;
+      // 切换即收拾另一侧的残留：切到页面渲染时关面板内弹窗，切回面板时关页面上那份。
+      if (lookupOnPage) closeLookup();
+      else closePageLookup();
+    });
+  } catch (_) { /* storage 不可用：按默认（页面渲染）走 */ }
   // 复杂词的 popupJson 可超过 2 MB，解析后的对象树通常还会膨胀数倍。只按“48 个词”
   // 淘汰会让 Side Panel 很快常驻数百 MB，并在后续查词时触发秒级 GC。双门槛保留常用
   // 小词，同时让超大结果最多只占少量槽位；最新一条即使单独超预算也保留以支持复查。
@@ -139,17 +163,31 @@
     });
   }
 
-  function closeLookup() {
-    var wasOpen = !lookupPaneEl.hidden;
+  // 只收起面板内那份弹窗：推进请求代际让在途查词的渲染失效，清空内容。**不动 activeScanKey**
+  // ——那是扫词去重键，只在「这一轮查词真的没了」时才该复位（closeLookup / 页面弹窗关窗回执）。
+  function hideLookupPane() {
     lookupRequestId += 1;
     if (Number.isInteger(window._renderGeneration)) window._renderGeneration += 1;
     window._renderInProgress = false;
     lookupPaneEl.hidden = true;
     lookupPaneEl.style.visibility = 'hidden';
     lookupContainer.textContent = '';
-    currentLookupCue = null;
     currentLookupAnchor = null;
     currentLookupPerfContext = null;
+  }
+
+  // 关掉页面上那份（侧栏交出去的）弹窗。面板内那份由 closeLookup 管，两者互不代管。
+  function closePageLookup() {
+    if (!pageLookupOpen) return;
+    pageLookupOpen = false;
+    activeScanKey = '';
+    sendToTab({ type: 'fushiSubtitleSidePanelCloseLookup' });
+  }
+
+  function closeLookup() {
+    var wasOpen = !lookupPaneEl.hidden;
+    hideLookupPane();
+    currentLookupCue = null;
     activeScanKey = '';
     // 面板真关掉时通知视频页：由查词暂停的视频该恢复了（content 侧只恢复「确实是查词
     // 暂停的」，用户自己暂停的不动）。「手动播放→content 反向 dismiss→这里 close」的
@@ -406,6 +444,22 @@
     var value = String(term || '').trim();
     if (!value) return;
     var shouldPosition = !!anchor;
+    if (lookupOnPage) {
+      // 「跨出面板」路径：只负责把词递给宿主页，查词请求、暂停/恢复、嵌套查词、发音、查重、
+      // 制卡全部在页面侧走既有链路（与 Shift 划词同源）。
+      if (!lookupPaneEl.hidden) hideLookupPane(); // 刚从「面板内」切过来的残留
+      currentLookupCue = cue || currentLookupCue;
+      var shown = await sendToTab({
+        type: 'fushiSubtitleSidePanelShowLookup', term: value, cue: currentLookupCue,
+      });
+      if (shown && shown.ok === true) {
+        pageLookupOpen = true;
+        return;
+      }
+      // 宿主页不可达（无内容脚本的页面、标签已关或正在跳转）：绝不能变成查不了词——
+      // 落回下面的面板内渲染。
+      pageLookupOpen = false;
+    }
     var requestId = ++lookupRequestId;
     currentLookupCue = cue || currentLookupCue;
     lookupPaneEl.hidden = false;
@@ -485,7 +539,7 @@
       return;
     }
     var scanKey = pointer.index + '\u0000' + term;
-    if (scanKey === activeScanKey && !lookupPaneEl.hidden) return;
+    if (scanKey === activeScanKey && (pageLookupOpen || !lookupPaneEl.hidden)) return;
     // 在途闸只拦 pointermove 自动扫词（announceMissing=false）；显式手势永远放行。
     // 超过截止时间的在途视为已死（SW 被回收等），放行新查词——死锁不可复活。
     if (!announceMissing && lookupPendingSince &&
@@ -976,6 +1030,7 @@
   document.addEventListener('keydown', function (event) {
     if (event.key === 'Escape') {
       closeLookup();
+      closePageLookup();
       return;
     }
     // Yomitan 的 modifier-on-keydown 路径：指针已经停在词上时，按下 Shift 就用最后
@@ -998,7 +1053,16 @@
   // 已滚走，浮窗不该原地留着）即关。均幂等，重复触发无副作用。
   try {
     chrome.runtime.onMessage.addListener(function (msg) {
-      if (msg && msg.type === 'fushiLookupDismiss') closeLookup();
+      if (!msg || typeof msg.type !== 'string') return;
+      if (msg.type === 'fushiLookupDismiss') {
+        closeLookup();
+        pageLookupOpen = false;
+      } else if (msg.type === 'fushiSidePanelLookupGone') {
+        // 交出去的那份页面弹窗关了（点页面空白 / Esc / 手动播放）：复位去重键，鼠标停在
+        // 同一个字上也能立刻重查。
+        pageLookupOpen = false;
+        activeScanKey = '';
+      }
     });
   } catch (_) {}
   window.addEventListener('blur', function () { closeLookup(); });
