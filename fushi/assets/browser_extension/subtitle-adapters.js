@@ -251,6 +251,65 @@ function parseBilibiliJson(text) {
   return out;
 }
 
+// ── 整轨优先仲裁的共享纯函数（TODO-1219 收口）──
+// 面板（subtitle-panel.js）与制卡链路（content.js）共用同一份判据：整集拦截轨是主路径，
+// DOM 实时采样（`|live` 伪轨）只在没有整轨时兜底。此前二分查找只存在于面板
+// IIFE 闭包内，content.js 够不着 → 画面上直接查词永远退到抖动的 DOM 采样窗，
+// 而整轨明明已在内存里。
+
+/**
+ * 二分查找覆盖 timeMs 的 cue 下标。cues 须按 startMs 升序（store 里的轨都满足）。
+ * 时间落在两句之间的间隙时返回 -1——静音段没有台词是真实结果，不能就近
+ * 吸附到邻句，否则制卡会录到一段与所查词无关的画面。
+ * @param {Array<{startMs:number,endMs:number,text:string}>} cues
+ * @param {number} timeMs
+ * @returns {number} 命中下标，未命中为 -1
+ */
+function findCueIndexAt(cues, timeMs) {
+  if (!Array.isArray(cues) || !cues.length || typeof timeMs !== 'number') return -1;
+  let lo = 0;
+  let hi = cues.length - 1;
+  let ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (cues[mid].startMs <= timeMs) { ans = mid; lo = mid + 1; } else { hi = mid - 1; }
+  }
+  if (ans < 0) return -1;
+  return timeMs < cues[ans].endMs ? ans : -1;
+}
+
+/**
+ * 从 fushiEpisodeCues store 中挑当前视频的「整轨」（整集拦截 / textTracks 收割得到的
+ * 真语言轨），排除 DOM 采样的 live 伪轨。preferredLang 用于跟随面板当前选中的语言，
+ * 缺省或不存在时取字典序第一条非 live 轨（与面板 tracksForVideo 的排序一致）。
+ * @param {Object|null} store
+ * @param {string} videoKey
+ * @param {string} liveLang
+ * @param {string=} preferredLang
+ * @returns {{lang:string,key:string,cues:Array}|null} 无整轨时返回 null
+ */
+function pickPrimaryCueTrack(store, videoKey, liveLang, preferredLang) {
+  if (!store || !videoKey) return null;
+  const prefix = String(videoKey) + '|';
+  const candidates = [];
+  for (const key in store) {
+    if (key.indexOf(prefix) !== 0) continue;
+    const lang = key.slice(prefix.length);
+    if (lang === liveLang) continue; // live 是降级轨，永远不当主路径
+    const cues = store[key];
+    if (!cues || !cues.length) continue;
+    candidates.push({ lang: lang, key: key, cues: cues });
+  }
+  if (!candidates.length) return null;
+  if (preferredLang) {
+    for (const c of candidates) {
+      if (c.lang === preferredLang) return c;
+    }
+  }
+  candidates.sort((a, b) => (a.lang < b.lang ? -1 : (a.lang > b.lang ? 1 : 0)));
+  return candidates[0];
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     extractNetflixCueText,
@@ -265,5 +324,7 @@ if (typeof module !== 'undefined' && module.exports) {
     parseTtml,
     parseBilibiliJson,
     netflixDocumentTitle,
+    findCueIndexAt,
+    pickPrimaryCueTrack,
   };
 }

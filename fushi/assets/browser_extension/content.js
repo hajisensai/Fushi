@@ -614,6 +614,111 @@ const fushiEpisodeCues = Object.create(null); // key: `${videoId}|${lang}` -> [{
 // （面板只依赖 window.fushiEpisodeCues 这一个契约，不跨文件依赖 const 词法作用域）。同一对象
 // 引用，后续 fushiOnFullEpisodeCues 就地写入即对面板可见。
 window.fushiEpisodeCues = fushiEpisodeCues;
+
+// ── 整轨优先仲裁（TODO-1219 收口）──
+// 整集拦截轨是主路径，DOM 实时采样只是兜底。判据与选轨逻辑收在 subtitle-adapters.js
+// 的共享纯函数里（findCueIndexAt / pickPrimaryCueTrack），面板与此处共用同一份。
+
+// 面板在场时以它暴露的活动轨为准——那份已应用用户设的时轴偏移，语言也与用户正在读的
+// 一致；面板未加载或未开启时自取第一条非 live 轨（偏移默认 0，不影响正确性）。
+// 认领结果缓存：`videoKey -> lang`。认领一次就钉住，避免每次查词重扫几十条轨。
+let fushiClaimedTrackKey = null;
+let fushiClaimedTrackLang = null;
+
+// 用**屏幕上正在显示的那句**去认领「哪条整轨是用户在读的那条」。
+//
+// 为什么必须有这一步：netflix-bridge 对 manifest 里的 timedtexttracks **全量**
+// fetchCues，textTracks 收割还会把 disabled 轨临时升 hidden——一集下来 store 里
+// 躺着几十种语言，每条都覆盖整条时间轴。没有这道门时选轨兜底是 `lang` **字典序**，
+// 与「用户在读哪条」毫无关系：开日文字幕看片，查词制卡的句子会取自 `ar`/`cs`。
+// 那是把「拿到了某条轨」当成了「拿到了用户那条轨」，比阶段推断更隐蔽。
+//
+// 认不上就返回 null —— 调用方回落 DOM 采样，也就是本次改造前的行为。这道门只会
+// **收窄**整轨的适用面，不会让任何原本能工作的路径变差。
+// 在 nowV 时刻，哪条整轨的当前 cue 与屏幕上这句对得上。对不上返回 null。
+function fushiMatchFullTrackLangAt(videoKey, nowV, onScreenText) {
+  const prefix = String(videoKey) + '|';
+  for (const key in fushiEpisodeCues) {
+    if (key.indexOf(prefix) !== 0) continue;
+    const lang = key.slice(prefix.length);
+    if (lang === FUSHI_LIVE_LANG) continue;
+    const cues = fushiEpisodeCues[key];
+    if (!cues || !cues.length) continue;
+    const idx = findCueIndexAt(cues, nowV);
+    if (idx < 0) continue;
+    const cue = cues[idx];
+    if (!cue || !cue.text) continue;
+    if (fushiCueTextRelated(String(cue.text), String(onScreenText))) return lang;
+  }
+  return null;
+}
+
+function fushiClaimFullTrackLang() {
+  const videoKey = fushiVideoKey();
+  if (!videoKey) return null;
+  if (fushiClaimedTrackKey !== videoKey) {
+    fushiClaimedTrackKey = null;
+    fushiClaimedTrackLang = null;
+  }
+  const onScreen = fushiCurrentCueWindowV();
+  const nowV = fushiVideoTimeMs();
+  // 屏幕上没有字可比（静音段 / 字幕未渲染）：不改判，沿用已认领的那条。
+  if (!onScreen || !onScreen.text || nowV === null) return fushiClaimedTrackLang;
+  const matched = fushiMatchFullTrackLangAt(videoKey, nowV, String(onScreen.text));
+  if (matched) {
+    fushiClaimedTrackKey = videoKey;
+    fushiClaimedTrackLang = matched;
+    return matched;
+  }
+  // 屏幕上明明有字、却没有一条整轨对得上 —— 之前那次认领已经失效（用户中途换了
+  // 字幕语言）。**这里必须作废**：只在成功路径写、失败路径不复位，就是本仓
+  // 「bool 镜像只有成功路径复位」那个反复出现的坑。作废后回落 DOM 采样。
+  fushiClaimedTrackKey = null;
+  fushiClaimedTrackLang = null;
+  return null;
+}
+
+function fushiActiveFullTrackCues() {
+  try {
+    if (typeof window.fushiActiveFullTrack === 'function') {
+      const t = window.fushiActiveFullTrack();
+      if (t && t.cues && t.cues.length) return t.cues;
+    }
+  } catch (_) {}
+  // 面板不在场时，只有**被认领**的那条轨才够格当主路径。
+  const claimed = fushiClaimFullTrackLang();
+  if (!claimed) return null;
+  const picked = pickPrimaryCueTrack(
+    fushiEpisodeCues, fushiVideoKey(), FUSHI_LIVE_LANG, claimed);
+  return picked && picked.lang === claimed ? picked.cues : null;
+}
+
+// 该视频是否已有**可用**的整轨（live 伪轨不算，认领不上的也不算）。
+//
+// live 采样据此降级（见 fushiLiveCueStart）。判据必须是「有一条对得上屏幕的轨」而
+// 不是「有任意一条非 live 轨」：后者会被一条只有 1 句的分片轨（HLS/Shaka 渐进加载，
+// 轨只增不减）或几十条看不懂的语言轨满足，把唯一跟屏幕一致的 live 轨永久掐掉。
+function fushiHasFullEpisodeTrack(videoKey) {
+  const claimed = fushiClaimFullTrackLang();
+  if (!claimed) return false;
+  return !!pickPrimaryCueTrack(fushiEpisodeCues, videoKey, FUSHI_LIVE_LANG, claimed);
+}
+
+/**
+ * 当前播放时刻在整轨中的精确 [startMs,endMs] 窗。整轨缺席、或当前时刻落在字幕间隙
+ * （静音段）时返回 null，交由调用方回落 DOM 采样窗。
+ * @returns {{text:string,startV:number,endV:number}|null}
+ */
+function fushiFullTrackWindowAt() {
+  const cues = fushiActiveFullTrackCues();
+  if (!cues) return null;
+  const nowV = fushiVideoTimeMs();
+  if (nowV === null) return null;
+  const idx = findCueIndexAt(cues, nowV);
+  if (idx < 0) return null;
+  const cue = cues[idx];
+  return { text: cue.text || '', startV: cue.startMs, endV: cue.endMs };
+}
 function fushiOnFullEpisodeCues(msg) {
   try {
     const cues = msg.format === 'ttml' ? parseTtml(msg.text) : parseWebVtt(msg.text);
@@ -732,6 +837,15 @@ function fushiCueTextRelated(a, b) {
 }
 function fushiLiveCueStart(state, text, startV) {
   if (!text) {
+    state.liveCue = null;
+    state.liveCueReplay = false;
+    return;
+  }
+  // 整轨优先：已有整集拦截/textTracks 收割的真语言轨时，DOM 实时采样退居兜底，不再往
+  // `|live` 伪轨写——两条来源并存会让面板多出一条重复的抖动轨（用户诉求：实时采集只能
+  // 是降级）。注意 cueHist 仍照常采样，fushiCurrentCueWindowV 是整轨查不中（字幕间隙、
+  // 整轨尚未到达）时的最后退路，所以这是降级不是砍掉退路。
+  if (fushiHasFullEpisodeTrack(state.key)) {
     state.liveCue = null;
     state.liveCueReplay = false;
     return;
@@ -1017,7 +1131,12 @@ window.fushiEnqueue = function (fields, sentence) {
   // [startMs,endMs] 窗（稳过 DOM 采样）；否则回落 fushiCurrentCueWindowV 的 DOM 采样窗。下方
   // startV-200/endV+200 录制边距 + fushiQueueKey 去重两路不变。
   const cw = fushiPendingCueWindow;
-  const w = cw ? { text: cw.text || '', startV: cw.startMs, endV: cw.endMs } : fushiCurrentCueWindowV();
+  // 面板行查词带来的精确窗最强（用户显式点了那一行）；否则按当前播放时间到整轨里查
+  // ——此前这里直接回落 DOM 采样窗，整轨明明已在内存里却没人查，画面上直接查词制卡
+  // 拿到的一直是抖动窗。整轨查不中（间隙/未到达）才退 DOM 采样。
+  const w = cw
+      ? { text: cw.text || '', startV: cw.startMs, endV: cw.endMs }
+      : (fushiFullTrackWindowAt() || fushiCurrentCueWindowV());
   if (!w) return { ok: false, reason: 'no-cue' };
   // BUG-1416：**制卡那一刻**的视频时间就地采样并随队列项持久化。用户拍板「按制卡时候的时间来」，
   // 而这是唯一还知道那一刻的地方——之后的回放录制只知道句首，再也拿不回这个时刻。
