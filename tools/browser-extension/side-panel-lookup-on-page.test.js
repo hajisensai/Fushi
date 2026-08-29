@@ -101,7 +101,7 @@ function findById(el, id) {
 
 // ───────────────────────── content.js（宿主页一侧） ─────────────────────────
 
-function loadContent(lookupExtras) {
+function loadContent(lookupExtras, respondOverride) {
   const docListeners = Object.create(null);
   const bridgeCalls = [];
   const sent = [];
@@ -170,7 +170,11 @@ function loadContent(lookupExtras) {
       onMessage: { addListener() {} },
       sendMessage: (msg, cb) => {
         sent.push(msg);
-        if (cb) cb({ ok: true, data: Object.assign({
+        if (!cb) return;
+        // respondOverride 让用例造**失败**响应（查词服务没开 / 缺 popupJson）——
+        // 默认恒回合法响应意味着 fushiSendLookup 的四个失败出口一行都跑不到。
+        if (typeof respondOverride === 'function') { cb(respondOverride(msg)); return; }
+        cb({ ok: true, data: Object.assign({
           popupJson: '[{"expression":"世界","reading":"せかい"}]',
           result: { bestLength: 2 },
           audioSources: [],
@@ -276,6 +280,38 @@ test('弹窗纵向跟随侧栏里被点的那一行（固定糊在右上角会�
   // 视口高 800：点列表上方 → 锚点 y=40，弹窗落其下方 44px；点靠下 → 锚点 y=480，落 484px。
   assert.strictEqual(topHost.style.top, '44px', '点列表上方时弹窗应落在上方');
   assert.strictEqual(midHost.style.top, '484px', '点列表靠下时弹窗应跟着下移');
+});
+
+test('点扩展自绘的在页字幕覆盖层：关旧弹窗，但那一击不得被吞（否则每个词要点两次）', () => {
+  const h = loadContent();
+  h.sandbox.window.fushiShowLookupFromSidePanel('世界', null, 0.2);
+  assert.ok(findById(h.body, 'hibiki-popup-host'), '前置：页面弹窗应在场');
+
+  // 扩展自绘的在页字幕覆盖层。它的 click 走 subtitle-panel.js 的 fushiLookupAtPoint；
+  // document capture 阶段的 stopImmediatePropagation 会连它自己的 target-phase 监听
+  // 一起掐掉。
+  const onOverlay = makeEl('span');
+  onOverlay.closest = (sel) => (sel === '#fushi-subtitle-overlay' ? makeEl('div') : null);
+
+  const before = (h.docListeners['capture:click'] || []).length;
+  for (const fn of (h.docListeners['capture:mousedown'] || [])) fn({ target: onOverlay });
+  assert.strictEqual(findById(h.body, 'hibiki-popup-host'), null,
+    '点覆盖层仍应关掉旧弹窗（新词要让位）');
+  assert.strictEqual((h.docListeners['capture:click'] || []).length, before,
+    '不得为自家在页 UI 装吞击监听——那一击是用来查下一个词的');
+});
+
+test('查词失败（服务没开）也要给侧栏发关窗回执，否则同一个词再也点不动', () => {
+  const h = loadContent(null, () => ({ ok: false }));
+  h.sandbox.window.fushiShowLookupFromSidePanel('世界', null, 0.2);
+
+  assert.strictEqual(findById(h.body, 'hibiki-popup-host'), null,
+    '前置：查词失败时页面弹窗不该建出来');
+  assert.ok(
+    h.sent.some((m) => m && m.type === 'fushiSidePanelLookupGone'),
+    '失败出口必须发关窗回执：不发的话侧栏 pageLookupOpen 停在 true，'
+    + '扫词去重闸会把同一个词的再次点击一并吞掉，用户零反馈',
+  );
 });
 
 test('关掉弹窗的那一击不再传给站点（Netflix 点画面=播放/暂停切换）', () => {
@@ -518,6 +554,29 @@ test('设置关掉「查词结果显示在网页上」：仍走面板内渲染',
   assert.strictEqual(h.runtimeMessages.filter((m) => m && m.type === 'lookup').length, 1,
     '设置关掉后必须在面板内查词');
   assert.strictEqual(h.pane.hidden, false, '设置关掉后面板内弹窗必须显示');
+});
+
+test('面板内渲染：词典组件没就绪时必须显示提示，而不是一片空白', async () => {
+  // BUG-1942 的自动朗读块插进来之后，`else lookupContainer.innerHTML = '…尚未就绪…'`
+  // 曾经绑到了 `if (typeof window.fushiAutoReadFirstEntry === 'function')` 上：这个沙箱
+  // 不加载 vendor/popup.js（renderPopup 恒 undefined）却加载 auto-read.js
+  // （fushiAutoReadFirstEntry 恒存在），于是永远走进 if、else 一次都不执行 —— 词典组件
+  // 真没就绪时用户只看到空白，而 auto-read.js 缺席时反倒会把渲染好的内容覆盖成提示。
+  const h = loadSidePanel({ subtitleLookupOnPage: false }, OK_REPLY, {
+    ok: true,
+    data: {
+      popupJson: '[{"expression":"世界","reading":"せかい"}]',
+      audioSources: [],
+      theme: {},
+    },
+  });
+  await flush();
+  assert.notStrictEqual(typeof h.windowObj.renderPopup, 'function',
+    '前置：本沙箱不加载 vendor/popup.js，renderPopup 必须缺席');
+  h.clickCueWord('世界');
+  await flush();
+  assert.match(h.container.innerHTML, /词典组件尚未就绪/,
+    'renderPopup 缺席时必须落到提示分支（else 绑错 if 就会是一片空白）');
 });
 
 test('侧栏按 Esc 关掉页面上那份弹窗（否则页面弹窗只能回页面上关）', async () => {

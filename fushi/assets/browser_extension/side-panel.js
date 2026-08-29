@@ -319,7 +319,15 @@
     window.needsAudio = true;
     window._noResultsMessage = '没有查到结果';
     applyLookupTheme(data.theme);
-    if (typeof window.renderPopup === 'function') window.renderPopup();
+    // 花括号是必需的：BUG-1942 的自动朗读块插进来之后，这个 else 曾经绑到了下面那个
+    // `if (typeof window.fushiAutoReadFirstEntry === 'function')` 上 —— 于是词典组件
+    // 真没就绪时不再显示提示（一片空白），而 auto-read.js 没加载时反倒会把已经渲染好
+    // 的弹窗内容覆盖成「词典组件尚未就绪」。
+    if (typeof window.renderPopup === 'function') {
+      window.renderPopup();
+    } else {
+      lookupContainer.innerHTML = '<div class="no-results">词典组件尚未就绪，请重试。</div>';
+    }
     // 查词后自动朗读：与页面弹窗共用 auto-read.js 那一份（开关同为 app 全局偏好）。
     if (typeof window.fushiAutoReadFirstEntry === 'function') {
       window.fushiAutoReadFirstEntry(window.lookupEntries, {
@@ -327,7 +335,6 @@
         audioSources: window.audioSources,
       });
     }
-    else lookupContainer.innerHTML = '<div class="no-results">词典组件尚未就绪，请重试。</div>';
     if (lookupPaneEl.style.visibility === 'visible' &&
         currentLookupPerfContext && !currentLookupPerfContext.visibleReported) {
       reportLookupVisibleAfterPaint(currentLookupPerfContext);

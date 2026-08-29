@@ -137,6 +137,21 @@ function fushiNotifySidePanelLookupGone() {
   } catch (_) { /* 扩展重载中：侧栏也随之重建，无需回执 */ }
 }
 
+// 查词结束了，却没有弹窗在场（服务没开 / 空响应 / 上下文失效 / SW 被回收）。
+//
+// 这个出口有**两件**必须做的事，历史上只做了第一件：
+//   ① 被查词暂停的视频要有出口；
+//   ② 侧栏必须知道「那份页面弹窗没出现」—— 否则它的 pageLookupOpen 永远停在 true，
+//      side-panel.js 的扫词去重闸会把同一个词的再次点击一并吞掉，用户在侧栏点那个词
+//      既不查词也不跳转，零反馈（首次装扩展、查词服务没开时必然撞上）。
+// 「bool 镜像只有成功路径复位」是本仓反复出现的形状；收成一个原语而不是在四个失败
+// 出口各抄两行，以后再加出口也只有这一个地方要记。
+function fushiAbandonLookupWithoutPopup() {
+  if (fushiHost) return;
+  fushiResumePausedForLookup();
+  fushiNotifySidePanelLookupGone();
+}
+
 // 手动播放 → 关掉两处查词浮层。页面弹窗直接关（fushiRemoveContainer 幂等；其恢复步骤
 // 因标记已清而为 no-op）；Side Panel 是独立扩展页，发一条 runtime 消息让它自关。
 function fushiDismissLookupOnPlay() {
@@ -2058,8 +2073,8 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel) {
   const fushiLookupIssuedAt = fushiPendingSince;
   try {
     setTimeout(() => {
-      if (fushiPending && fushiPendingSince === fushiLookupIssuedAt && !fushiHost) {
-        fushiResumePausedForLookup();
+      if (fushiPending && fushiPendingSince === fushiLookupIssuedAt) {
+        fushiAbandonLookupWithoutPopup();
       }
     }, 12000);
   } catch (_) {}
@@ -2094,7 +2109,7 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel) {
         fushiShowConnectionFailure(resp);
         // 失败且没有在场弹窗：不会有任何「关窗」动作可触发恢复——直接恢复被查词暂停的
         // 视频，否则服务未启动时 Shift 划词=视频被停住+只剩一条 toast、暂停无出口。
-        if (!fushiHost) fushiResumePausedForLookup();
+        fushiAbandonLookupWithoutPopup();
         return;
       }
       if (!resp.data || typeof resp.data.popupJson !== 'string') {
@@ -2105,7 +2120,7 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel) {
           term,
           error: 'missing popupJson',
         });
-        if (!fushiHost) fushiResumePausedForLookup();
+        fushiAbandonLookupWithoutPopup();
         return;
       }
       const servicePerf = resp.lookupPerf || {};
@@ -2156,7 +2171,7 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel) {
     });
   } catch (_) {
     fushiPending = false; // 「Extension context invalidated」：静默，等用户重载页面
-    if (!fushiHost) fushiResumePausedForLookup(); // 暂停不能没有出口
+    fushiAbandonLookupWithoutPopup(); // 暂停不能没有出口，侧栏也不能被吊死
   }
 }
 
@@ -2796,6 +2811,18 @@ function fushiObservePopupResize() {
 // 弹窗，却连带把视频停了/放了。只吞紧随本次 mousedown 的那一个 click（capture 阶段截住，站点
 // 的 document/元素监听都收不到），不 preventDefault——聚焦、选区这些浏览器默认行为要留着。
 // 没产生 click（拖拽出界）时由定时器撤掉监听，不会误吞后面无关的点击。
+// 这一击落在扩展自绘的在页 UI 上吗？（字幕覆盖层等）
+//
+// 缺了这个判据，document capture 阶段的 stopImmediatePropagation 会把整条派发链
+// 掐断——**包括目标元素自身的 target-phase 监听**，也就是我们自己的覆盖层。
+function fushiOwnPageUiTarget(target) {
+  try {
+    return !!(target && target.closest && target.closest('#fushi-subtitle-overlay'));
+  } catch (_) {
+    return false;
+  }
+}
+
 function fushiSwallowClosingClick() {
   const swallow = (ev) => {
     ev.stopPropagation();
@@ -2820,7 +2847,12 @@ document.addEventListener('mousedown', (e) => {
   }
   if (fushiHost && !fushiHost.contains(e.target)) {
     fushiRemoveContainer();
-    fushiSwallowClosingClick();
+    // 「关窗」和「吞击」在这里必须分开取值：点扩展自绘的在页 UI（字幕覆盖层）是
+    // 「用扩展做下一件事」——旧弹窗该让位，但那一击必须送达我们自己的监听，否则
+    // 「看一句字幕连着查两三个词」每个词都要点两次（覆盖层的 click 走
+    // subtitle-panel.js 的 fushiLookupAtPoint）。只有站点自己的元素才需要挡，
+    // 那才是 BUG-1940 要防的（Netflix 点画面 = 播放/暂停）。
+    if (!fushiOwnPageUiTarget(e.target)) fushiSwallowClosingClick();
   }
 }, true);
 
