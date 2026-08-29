@@ -56,7 +56,10 @@ if [[ "$verify_only" == false ]]; then
     "$flutter" build macos "--$configuration"
   )
 
-  "$repository_root/tool/aidoku/build_macos_runtime.sh" \
+  # 本机开发只在本机跑，默认 host 架构省一次交叉编译；CI 走 universal（默认值），
+  # 见 tool/aidoku/build_macos_runtime.sh 里的 BUG-1922 注释。
+  FUSHI_AIDOKU_ARCHS="${FUSHI_AIDOKU_ARCHS:-host}" \
+    "$repository_root/tool/aidoku/build_macos_runtime.sh" \
     "$app/Contents/Resources/aidoku_runtime"
 
   mihon_cache="$repository_root/.dart_tool/mihon_bridge"
@@ -106,10 +109,10 @@ if [[ ! -x "$app/Contents/MacOS/fushi" ]]; then
   exit 1
 fi
 
-if [[ ! -x "$app/Contents/Resources/aidoku_runtime/fushi-aidoku-runtime" ]]; then
-  echo "Aidoku runtime is missing from $app" >&2
-  exit 1
-fi
+# 与两条 macOS CI job 用同一道门（BUG-1922）。本地是 host 构建，所以不传 app
+# 本体做架构覆盖核对 —— 那条不变式只在出发布包的 CI 上成立。
+bash "$repository_root/tool/aidoku/verify_macos_runtime.sh" \
+  "$app/Contents/Resources/aidoku_runtime"
 
 case "$(uname -m)" in
   arm64) mihon_host_runtime="runtime-macos-arm64" ;;
