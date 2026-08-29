@@ -262,11 +262,15 @@ extension _VideoFullscreen on _VideoFushiPageState {
   Future<void> _exitVideoFullscreen(BuildContext context) async {
     if (_videoFullscreenTransitioning || !isFullscreen(context)) return;
     if (!context.mounted) return;
+    final NavigatorState navigator = Navigator.of(context);
+    final VideoState parent = FullscreenInheritedWidget.of(context).parent;
     _videoFullscreenTransitioning = true;
     try {
-      await Navigator.of(context).maybePop();
-      if (context.mounted) {
-        FullscreenInheritedWidget.of(context).parent.refreshView();
+      await navigator.maybePop();
+      // BUG-1945: pop 后 controls element 可能仍 mounted、却已 deactivated；这里只能
+      // 使用 pop 前捕获的稳定引用，不能再从旧 context 查祖先。
+      if (parent.mounted) {
+        parent.refreshView();
       }
     } finally {
       _videoFullscreenTransitioning = false;
