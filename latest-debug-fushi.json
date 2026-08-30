@@ -26,13 +26,13 @@
       "sha256": "9207c0e1b50bd6adc33cf5051309f0e8d7ae7a51770b603988dcf6bf58ff5e3b"
     },
     {
-      "name": "fushi-2.2.4-debug.12820-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.12820-windows-setup.exe",
-      "releaseSequence": 12820,
-      "tag": "v2.2.4-debug.12820+594b177",
-      "version": "2.2.4-debug.12820",
-      "size": 253284122,
-      "sha256": "cc5b7578d2ea60375f7262854bf006eefccf96d489c1e2cfa49423549e0ac521"
+      "name": "fushi-2.2.4-debug.12858-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.12858-windows-setup.exe",
+      "releaseSequence": 12858,
+      "tag": "v2.2.4-debug.12858+10bc93a",
+      "version": "2.2.4-debug.12858",
+      "size": 263258204,
+      "sha256": "5d78ba39b9eadb8c49b02abe75cd89e088accf4409a1062749652b1884053834"
     },
     {
       "name": "fushi-2.2.4-debug.12865-a3f533b-debug.apk",
