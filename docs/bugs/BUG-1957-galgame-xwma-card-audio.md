@@ -1,0 +1,6 @@
+## BUG-1957 · Galgame 制卡把 xWMA 原样写入卡片，手机无法播放
+- **报告**：2026-08-30（用户：「有的 gal 制卡音频是 xwma，要加一下转码，不然手机播放不了」）
+- **真实性**：✅ 真 bug。`fushi/lib/src/mining/galgame_audio_source.dart:2397-2401`（修前）对单个 `.xwma` 直接 `readAsBytes()` 返回，绕过同函数末尾的 `transcodeVoiceResourcesToMiningAudio`；`fushi/lib/src/mining/gal_hook_mining_coordinator.dart:38-55,380-383`（修前）又按 RIFF/XWMA 魔数把 Anki 媒体命名为 `.xwma`。`ImmersionMiningEngine` 对 provided bytes 只逐字节落盘，不再编码，因此同步到手机的卡片仍是原始 xWMA。另查出随 Windows 包分发的 ffmpeg-min 虽有 WMA decoder 与 AAC/ADTS 输出，却缺专用 `xwma` demuxer；只有 `wav` demuxer 不足以打开 RIFF/XWMA。
+- **[x] ① 已修复** — 删除单 xWMA 原样返回旁路，OGG/WAV/xWMA 全部经统一资源转码 helper 输出 AAC；helper 从误导性的 `Ogg/oggPath` 改为 `Resource/resourcePath`。协调器不再保留 `.xwma` 文件名，卡片媒体恒使用请求的桌面制卡扩展 `.aac`。Windows ffmpeg-min 构建额外启用 `--enable-demuxer=xwma`，并重新编译、替换随包的 `ffmpeg.exe` / `ffprobe.exe`；macOS 配方与二进制未改，保持 Galgame Windows-only 边界。
+- **[x] ② 已加自动化测试** — `fushi/test/mining/galgame_multi_voice_resources_test.dart` 注入 fake `FfmpegBackend`，断言单个 `.xwma` 也执行 `-i <xwma> -c:a aac`、输出 `.aac` 且不返回原字节；`fushi/test/tools/ffmpeg_min_vendored_recipe_guard_test.dart` 钉住 Windows 入库二进制的 `--enable-demuxer=xwma`；`tool/ffmpeg-min/smoke-test.sh` 在 Windows 构建上检查实际 demuxer 列表。
+- **备注**：定向 Flutter 测试 51 条通过，Windows ffmpeg-min 全套 smoke test 通过，入库二进制实测列出 `D xwma`。仓库没有也不应提交真实游戏语音样本，因此尚未在用户原游戏与手机上完成「真实 xWMA → AAC → Anki 同步 → 手机播放」E2E；状态为已实现/静态与工具链验证，设备路径待复核。

@@ -2363,8 +2363,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
     return file.existsSync() ? path : null;
   }
 
-  /// 取这句台词的原始语音字节。单个 xWMA 资源直接返回原文件字节，
-  /// 不做 AAC 二次有损编码；OGG/WAV 与多资源合成仍走既有制卡容器链。
+  /// 取这句台词的制卡语音字节。OGG/WAV/xWMA 都统一转成 [outputExtension] 对应的
+  /// 手机可播放容器；原始 xWMA 不能直接写进 Anki 媒体。
   ///
   /// BUG-1605：同一句可能有多个角色同时配音，引擎为同一条文本读入多个资源。这里取的是
   /// **全部**（主语音在前），交给 [transcodeVoiceResourcesToMiningAudio] 合成一段音频；
@@ -2393,11 +2393,6 @@ class EngineHookGalAudioSource implements GalAudioSource {
     // 的卡，比报错更难发现，所以先等它们写完。
     for (final File file in picked) {
       await awaitStableVoiceDumpFile(file);
-    }
-    if (picked.length == 1 &&
-        picked.single.path.toLowerCase().endsWith('.xwma')) {
-      final Uint8List bytes = await picked.single.readAsBytes();
-      return bytes.isEmpty ? null : bytes;
     }
     return transcodeVoiceResourcesToMiningAudio(
       resourcePaths: <String>[for (final File file in picked) file.path],
