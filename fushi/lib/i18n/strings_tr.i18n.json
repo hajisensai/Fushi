@@ -3931,5 +3931,22 @@
   "network_proxy_label": "Ağ proxy'si",
   "section_network": "Ağ",
   "network_proxy_p2p_label": "P2P (torrent) trafiğini proxy üzerinden yönlendir",
-  "network_proxy_p2p_warning": "Varsayılan olarak kapalı; P2P doğrudan bağlanır. Proxy üzerinden geçmek hızı düşürebilir ve birçok proxy sağlayıcısı BitTorrent trafiğini yasaklar: proxy hesabınız kısıtlanabilir, uyarılabilir veya kapatılabilir. Yalnızca yerleşik motor için geçerlidir; harici qBittorrent kendi proxy ayarlarını kullanır."
+  "network_proxy_p2p_warning": "Varsayılan olarak kapalı; P2P doğrudan bağlanır. Proxy üzerinden geçmek hızı düşürebilir ve birçok proxy sağlayıcısı BitTorrent trafiğini yasaklar: proxy hesabınız kısıtlanabilir, uyarılabilir veya kapatılabilir. Yalnızca yerleşik motor için geçerlidir; harici qBittorrent kendi proxy ayarlarını kullanır.",
+  "video_ajatt_settings_hint": "Ücretsiz Japonca altyazı arşivi (kitsunekko yansıması). Hesap gerekmez; altyazı dosyaları GitHub'dan indirilir.",
+  "video_ajatt_enabled_hint": "Kapalıysa altyazı aranırken AJATT arşivi atlanır.",
+  "video_subtitle_workbench_title": "Altyazılar",
+  "video_subtitle_scope_episode": "Bu bölüm",
+  "video_subtitle_scope_collection": "Tüm koleksiyon",
+  "video_subtitle_search_open": "Çevrimiçi altyazı ara",
+  "video_subtitle_collection_settings": "Koleksiyon altyazı ayarları",
+  "video_subtitle_collection_language": "Varsayılan altyazı dili",
+  "video_subtitle_collection_language_hint": "Bu koleksiyondaki her bölüme uygulanır. Boş = videonun kendi dilini izle.",
+  "video_subtitle_collection_release_group": "Tercih edilen sürüm",
+  "video_subtitle_collection_release_group_hint": "Toplu indirmeler önce bu sürümü seçer, böylece tüm sezon aynı zamanlamayı paylaşır.",
+  "video_subtitle_collection_release_group_any": "Herhangi bir sürüm",
+  "video_subtitle_source_label": "Kaynak",
+  "video_subtitle_collection_members_hint": "Bölümler dosya adındaki numaraya göre eşleştirilir; sezon paketleri otomatik olarak bölünür.",
+  "video_subtitle_adjust_title": "Altyazı ayarları",
+  "video_subtitle_adjust_collapse": "Daralt",
+  "video_subtitle_adjust_expand": "Genişlet"
 }

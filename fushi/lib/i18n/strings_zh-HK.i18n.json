@@ -3931,5 +3931,22 @@
   "network_proxy_label": "網路代理",
   "section_network": "網路",
   "network_proxy_p2p_label": "P2P（torrent）傳輸走代理",
-  "network_proxy_p2p_warning": "預設關閉，P2P 直連。走代理可能降低速度；且不少代理服務商禁止 BT 流量，可能導致代理帳號被限速、警告甚至封禁。僅對內建引擎生效，外接 qBittorrent 請在其自身設定中配置。"
+  "network_proxy_p2p_warning": "預設關閉，P2P 直連。走代理可能降低速度；且不少代理服務商禁止 BT 流量，可能導致代理帳號被限速、警告甚至封禁。僅對內建引擎生效，外接 qBittorrent 請在其自身設定中配置。",
+  "video_ajatt_settings_hint": "免費日語字幕庫（kitsunekko 鏡像）。無需帳號；字幕檔案從 GitHub 下載。",
+  "video_ajatt_enabled_hint": "關閉後搜尋字幕時跳過 AJATT 字幕庫。",
+  "video_subtitle_workbench_title": "字幕",
+  "video_subtitle_scope_episode": "本集",
+  "video_subtitle_scope_collection": "整個合集",
+  "video_subtitle_search_open": "線上搜尋字幕",
+  "video_subtitle_collection_settings": "合集字幕設定",
+  "video_subtitle_collection_language": "預設字幕語言",
+  "video_subtitle_collection_language_hint": "對本合集所有集生效；留空 = 跟隨影片自身語言。",
+  "video_subtitle_collection_release_group": "偏好版本",
+  "video_subtitle_collection_release_group_hint": "批次下載優先選這個版本，整季共用一套時間軸。",
+  "video_subtitle_collection_release_group_any": "不限版本",
+  "video_subtitle_source_label": "來源",
+  "video_subtitle_collection_members_hint": "各集按檔名中的集數匹配；整季打包字幕自動拆分。",
+  "video_subtitle_adjust_title": "字幕調整",
+  "video_subtitle_adjust_collapse": "收起",
+  "video_subtitle_adjust_expand": "展開"
 }

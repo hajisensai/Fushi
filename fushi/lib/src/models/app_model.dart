@@ -106,6 +106,8 @@ import 'package:fushi/src/media/video/jimaku_subtitle_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
+import 'package:fushi/src/media/video/subtitle/ajatt_catalog.dart';
+import 'package:fushi/src/media/video/subtitle/ajatt_subtitle_provider.dart';
 import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
@@ -3459,6 +3461,17 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
+  /// AJATT 字幕库开关，见 [PreferencesRepository.videoSubtitleAjattEnabled]。
+  bool get videoSubtitleAjattEnabled =>
+      _prefsRepo?.videoSubtitleAjattEnabled ?? true;
+
+  /// 与 [setJimakuEnabled] 同范式：落 pref 后重建下载流水线运行时（字幕 registry
+  /// 按开关注册 provider），不重启即生效。
+  Future<void> setVideoSubtitleAjattEnabled(bool enabled) async {
+    await prefsRepo.setVideoSubtitleAjattEnabled(enabled);
+    await reloadVideoDownloadPipelineRuntime();
+  }
+
   /// 默认字幕语言归一成语言选择器用的 `String?`（`''`/空白 → null = 不限）。
   /// 三个 Jimaku 界面（字幕对话框 / 番剧下载 / 批量匹配）共用同一兜底。
   ///
@@ -4082,6 +4095,25 @@ class AppModel with ChangeNotifier {
         config: openSubtitles,
         client: openSubtitlesHttpClient,
         closesClient: true,
+      ));
+    }
+    // AJATT（kitsunekko 镜像）：零配置，只有开关。目录 HTML 约 9 MB，解析结果落
+    // support 目录缓存 24 小时（`subtitle_catalogs/ajatt.json`）。
+    if (prefsRepo.videoSubtitleAjattEnabled) {
+      final http.Client ajattHttpClient = await createDownloadHttpClient();
+      final Directory supportRoot = await AppPaths.supportRootDirectory();
+      subtitleProviders.add(AjattVideoSubtitleProvider(
+        client: AjattClient(
+          client: ajattHttpClient,
+          closesClient: true,
+          cache: AjattCatalogCache(
+            file: File(path.join(
+              supportRoot.path,
+              'subtitle_catalogs',
+              'ajatt.json',
+            )),
+          ),
+        ),
       ));
     }
     final VideoResourceRegistry resources = VideoResourceRegistry(

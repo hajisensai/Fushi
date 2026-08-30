@@ -3931,5 +3931,22 @@
   "network_proxy_label": "Network proxy",
   "section_network": "Network",
   "network_proxy_p2p_label": "Route P2P (torrent) traffic through the proxy",
-  "network_proxy_p2p_warning": "Off by default: P2P connects directly. Routing it through the proxy can reduce speed, and many proxy providers forbid BitTorrent traffic, so your proxy account may be throttled, warned or terminated. Applies to the built-in engine; an external qBittorrent uses its own proxy settings."
+  "network_proxy_p2p_warning": "Off by default: P2P connects directly. Routing it through the proxy can reduce speed, and many proxy providers forbid BitTorrent traffic, so your proxy account may be throttled, warned or terminated. Applies to the built-in engine; an external qBittorrent uses its own proxy settings.",
+  "video_ajatt_settings_hint": "Free Japanese subtitle archive (kitsunekko mirror). No account needed; subtitle files download from GitHub.",
+  "video_ajatt_enabled_hint": "Off means the AJATT archive is skipped when searching subtitles.",
+  "video_subtitle_workbench_title": "Subtitles",
+  "video_subtitle_scope_episode": "This episode",
+  "video_subtitle_scope_collection": "Whole collection",
+  "video_subtitle_search_open": "Search subtitles online",
+  "video_subtitle_collection_settings": "Collection subtitle settings",
+  "video_subtitle_collection_language": "Default subtitle language",
+  "video_subtitle_collection_language_hint": "Applies to every episode in this collection. Empty = follow the video's own language.",
+  "video_subtitle_collection_release_group": "Preferred version",
+  "video_subtitle_collection_release_group_hint": "Batch downloads pick this version first so the whole season shares one timing.",
+  "video_subtitle_collection_release_group_any": "Any version",
+  "video_subtitle_source_label": "Source",
+  "video_subtitle_collection_members_hint": "Episodes are matched by number from file names; season packs are split automatically.",
+  "video_subtitle_adjust_title": "Subtitle adjustments",
+  "video_subtitle_adjust_collapse": "Collapse",
+  "video_subtitle_adjust_expand": "Expand"
 }

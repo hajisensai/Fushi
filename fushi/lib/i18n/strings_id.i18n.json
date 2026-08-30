@@ -3931,5 +3931,22 @@
   "network_proxy_label": "Proksi jaringan",
   "section_network": "Jaringan",
   "network_proxy_p2p_label": "Rutekan lalu lintas P2P (torrent) melalui proksi",
-  "network_proxy_p2p_warning": "Nonaktif secara default — P2P terhubung langsung. Melewati proksi dapat menurunkan kecepatan, dan banyak penyedia proksi melarang lalu lintas BitTorrent: akun proksi Anda bisa dibatasi, diperingatkan, atau dihentikan. Hanya berlaku untuk mesin bawaan; qBittorrent eksternal memakai pengaturan proksinya sendiri."
+  "network_proxy_p2p_warning": "Nonaktif secara default — P2P terhubung langsung. Melewati proksi dapat menurunkan kecepatan, dan banyak penyedia proksi melarang lalu lintas BitTorrent: akun proksi Anda bisa dibatasi, diperingatkan, atau dihentikan. Hanya berlaku untuk mesin bawaan; qBittorrent eksternal memakai pengaturan proksinya sendiri.",
+  "video_ajatt_settings_hint": "Arsip subtitle bahasa Jepang gratis (cermin kitsunekko). Tidak perlu akun; berkas subtitle diunduh dari GitHub.",
+  "video_ajatt_enabled_hint": "Nonaktif berarti arsip AJATT dilewati saat mencari subtitle.",
+  "video_subtitle_workbench_title": "Subtitle",
+  "video_subtitle_scope_episode": "Episode ini",
+  "video_subtitle_scope_collection": "Seluruh koleksi",
+  "video_subtitle_search_open": "Cari subtitle daring",
+  "video_subtitle_collection_settings": "Pengaturan subtitle koleksi",
+  "video_subtitle_collection_language": "Bahasa subtitle default",
+  "video_subtitle_collection_language_hint": "Berlaku untuk setiap episode di koleksi ini. Kosong = ikuti bahasa video itu sendiri.",
+  "video_subtitle_collection_release_group": "Versi pilihan",
+  "video_subtitle_collection_release_group_hint": "Unduhan massal memilih versi ini lebih dulu agar satu musim berbagi timing yang sama.",
+  "video_subtitle_collection_release_group_any": "Versi apa pun",
+  "video_subtitle_source_label": "Sumber",
+  "video_subtitle_collection_members_hint": "Episode dicocokkan berdasarkan nomor di nama berkas; paket musim dipisah otomatis.",
+  "video_subtitle_adjust_title": "Penyesuaian subtitle",
+  "video_subtitle_adjust_collapse": "Ciutkan",
+  "video_subtitle_adjust_expand": "Perluas"
 }

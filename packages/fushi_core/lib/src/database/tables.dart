@@ -978,6 +978,20 @@ class MediaCollections extends Table {
   /// 主字幕调轴（v86 前行为）。无损迁移：nullable 无 default → 旧库既有行全 NULL =
   /// 行为与旧版一致（Never break userspace）。
   IntColumn get secondarySubtitleDelayMs => integer().nullable()();
+
+  /// 系列级默认字幕语言代码（`ja` / `en` …，schema v91）。与 [subtitleDelayMs]
+  /// 同款「系列共享、nullable」语义：非 NULL 时覆盖合集内每一集的字幕语言选择。
+  /// **NULL = 没人配过 → 消费方回退视频内容语言链（`resolveContentLanguage`），
+  /// 绝不是 ja**——语言未知不许替用户猜。无损迁移：nullable 无 default → 旧库既有
+  /// 行全 NULL = 行为与旧版一致（Never break userspace）。
+  TextColumn get subtitleLanguage => text().nullable()();
+
+  /// 系列级偏好的字幕版本组键（schema v91）。值是
+  /// `subtitle_version_groups.dart` 的分组键（一个字符串），合集内多版本字幕
+  /// （不同字幕组/发布版本）时优先选这一组。与 [subtitleLanguage] 同款语义：
+  /// **NULL = 没人配过**（消费方走默认选轨），非 NULL 覆盖每集。无损迁移：
+  /// nullable 无 default → 旧库既有行全 NULL = 行为与旧版一致。
+  TextColumn get subtitleReleaseGroup => text().nullable()();
 }
 
 // ── media_collection_items (合集成员引用 = Jellyfin LinkedChildren) ────

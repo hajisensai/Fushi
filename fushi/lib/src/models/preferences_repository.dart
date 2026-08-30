@@ -1395,6 +1395,18 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// AJATT 日语字幕库（`subtitles.ajatt.top`，kitsunekko 镜像）是否参与字幕搜索。
+  ///
+  /// 零配置：无 API key、无配额，所以只有这一个开关（不像 Jimaku / OpenSubtitles
+  /// 的 `enabled && key` 双门控）。默认 true——它是没填任何 key 的用户唯一能用的源。
+  bool get videoSubtitleAjattEnabled =>
+      getPref('video_subtitle_ajatt_enabled', defaultValue: true) as bool;
+
+  Future<void> setVideoSubtitleAjattEnabled(bool enabled) async {
+    await setPref('video_subtitle_ajatt_enabled', enabled);
+    notifyListeners();
+  }
+
   /// 远端/流媒体视频用户手选的字幕来源（按 `<bookUid>#ep<index>` 记忆）：
   /// `{ "<key>": "<subtitleSource 四态编码>" }`。
   ///

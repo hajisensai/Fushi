@@ -3931,5 +3931,22 @@
   "network_proxy_label": "Proxy mạng",
   "section_network": "Mạng",
   "network_proxy_p2p_label": "Định tuyến lưu lượng P2P (torrent) qua proxy",
-  "network_proxy_p2p_warning": "Mặc định tắt — P2P kết nối trực tiếp. Đi qua proxy có thể làm giảm tốc độ, và nhiều nhà cung cấp proxy cấm lưu lượng BitTorrent: tài khoản proxy của bạn có thể bị giới hạn, cảnh báo hoặc chấm dứt. Chỉ áp dụng cho engine tích hợp; qBittorrent bên ngoài dùng cài đặt proxy riêng."
+  "network_proxy_p2p_warning": "Mặc định tắt — P2P kết nối trực tiếp. Đi qua proxy có thể làm giảm tốc độ, và nhiều nhà cung cấp proxy cấm lưu lượng BitTorrent: tài khoản proxy của bạn có thể bị giới hạn, cảnh báo hoặc chấm dứt. Chỉ áp dụng cho engine tích hợp; qBittorrent bên ngoài dùng cài đặt proxy riêng.",
+  "video_ajatt_settings_hint": "Kho phụ đề tiếng Nhật miễn phí (bản sao kitsunekko). Không cần tài khoản; tệp phụ đề tải từ GitHub.",
+  "video_ajatt_enabled_hint": "Tắt nghĩa là bỏ qua kho AJATT khi tìm phụ đề.",
+  "video_subtitle_workbench_title": "Phụ đề",
+  "video_subtitle_scope_episode": "Tập này",
+  "video_subtitle_scope_collection": "Toàn bộ bộ sưu tập",
+  "video_subtitle_search_open": "Tìm phụ đề trực tuyến",
+  "video_subtitle_collection_settings": "Cài đặt phụ đề của bộ sưu tập",
+  "video_subtitle_collection_language": "Ngôn ngữ phụ đề mặc định",
+  "video_subtitle_collection_language_hint": "Áp dụng cho mọi tập trong bộ sưu tập này. Để trống = theo ngôn ngữ của video.",
+  "video_subtitle_collection_release_group": "Phiên bản ưu tiên",
+  "video_subtitle_collection_release_group_hint": "Tải hàng loạt sẽ chọn phiên bản này trước để cả mùa dùng chung một mốc thời gian.",
+  "video_subtitle_collection_release_group_any": "Phiên bản bất kỳ",
+  "video_subtitle_source_label": "Nguồn",
+  "video_subtitle_collection_members_hint": "Các tập được khớp theo số trong tên tệp; gói cả mùa được tách tự động.",
+  "video_subtitle_adjust_title": "Điều chỉnh phụ đề",
+  "video_subtitle_adjust_collapse": "Thu gọn",
+  "video_subtitle_adjust_expand": "Mở rộng"
 }
