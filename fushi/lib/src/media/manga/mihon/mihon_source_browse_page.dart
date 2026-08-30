@@ -6,12 +6,13 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_library.dart';
+import 'package:fushi/src/media/manga/library/manga_series_page.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
+import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_online_reader_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
-import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/utils.dart';
 
 enum _MihonBrowseMode { popular, latest, search }
@@ -358,7 +359,15 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
   }
 }
 
-class MihonMangaDetailPage extends StatefulWidget {
+/// 源浏览里的作品页入口。
+///
+/// v88 前这里是一整个独立详情页：自己拉详情、拉章节、写书架、渲染章节列表、
+/// 选章开读——和作品页逐条重复，而且**只**服务源浏览这一条路径。书架够不着它，
+/// 正是「加入书架后只能看第一章」的成因之一。
+///
+/// 现在它只负责把 Mihon 的源上下文翻译成运行时无关的 seed，页面本体交给
+/// [MangaSeriesPage]：两条入口从此共用同一套章节列表、已读标记和进度。
+class MihonMangaDetailPage extends StatelessWidget {
   const MihonMangaDetailPage({
     required this.manager,
     required this.sourceContext,
@@ -371,317 +380,31 @@ class MihonMangaDetailPage extends StatefulWidget {
   final MihonManga manga;
 
   @override
-  State<MihonMangaDetailPage> createState() => _MihonMangaDetailPageState();
-}
-
-class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
-  MihonManga? _details;
-  List<MihonChapter> _chapters = const <MihonChapter>[];
-  String? _libraryBookKey;
-  MihonLibraryEntry? _libraryEntry;
-  bool _libraryBusy = false;
-  Object? _error;
-  String? _errorStage;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_load());
-  }
-
-  Future<void> _load() async {
-    if (_error != null) setState(() => _error = null);
-    String stage = 'details';
-    try {
-      final MihonManga details = await widget.manager.runtime.getDetails(
-        widget.sourceContext.extension,
-        widget.sourceContext.source,
-        widget.manga,
-        preferences: widget.sourceContext.preferences,
-      );
-      stage = 'chapters';
-      final List<MihonChapter> chapters =
-          await widget.manager.runtime.getChapters(
-        widget.sourceContext.extension,
-        widget.sourceContext.source,
-        details,
-        preferences: widget.sourceContext.preferences,
-      );
-      stage = 'library';
-      final MihonLibraryService library = MihonLibraryService(widget.manager);
-      EpubBookRow? shelfBook =
-          await library.find(widget.sourceContext, details);
-      if (shelfBook != null) {
-        await library.refresh(
-          bookKey: shelfBook.bookKey,
-          existing: MihonLibraryEntry.tryParse(shelfBook.sourceMetadata),
-          manga: details,
-          chapters: chapters,
-        );
-        shelfBook =
-            await widget.manager.database.getEpubBook(shelfBook.bookKey);
-      }
-      if (mounted) {
-        setState(() {
-          _details = details;
-          _chapters = chapters;
-          _libraryBookKey = shelfBook?.bookKey;
-          _libraryEntry = MihonLibraryEntry.tryParse(shelfBook?.sourceMetadata);
-        });
-      }
-    } on Object catch (error, stack) {
-      // 三个阶段共用一个 catch，不记 stage 就分不出断在拉详情、拉章节
-      // 还是写书架，而桥接层对三者返回的 code 可能完全一样。
-      ErrorLogService.instance.log(
-        'MihonMangaDetailPage.load[$stage][${widget.sourceContext.source.name}]',
-        error,
-        stack,
-      );
-      debugPrint('[Mihon] detail load failed at $stage: $error');
-      if (mounted) {
-        setState(() {
-          _error = error;
-          _errorStage = stage;
-        });
-      }
-    }
-  }
-
-  Future<void> _addToBookshelf() async {
-    final MihonManga? details = _details;
-    if (details == null || _libraryBusy) return;
-    setState(() => _libraryBusy = true);
-    try {
-      final EpubBookRow row = await MihonLibraryService(widget.manager).add(
-        context: widget.sourceContext,
-        manga: details,
-        chapters: _chapters,
-      );
-      if (!mounted) return;
-      setState(() {
-        _libraryBookKey = row.bookKey;
-        _libraryEntry = MihonLibraryEntry.tryParse(row.sourceMetadata);
-      });
-    } on Object catch (error, stack) {
-      ErrorLogService.instance
-          .log('MihonMangaDetailPage.addToBookshelf', error, stack);
-      debugPrint('[Mihon] add to bookshelf failed: $error');
-      if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
-      }
-    } finally {
-      if (mounted) setState(() => _libraryBusy = false);
-    }
-  }
-
-  Future<void> _continueReading() async {
-    final MihonLibraryEntry? entry = _libraryEntry;
-    if (entry == null || entry.chapters.isEmpty) return;
-    final int chapterIndex = MihonLibraryService.initialChapterIndex(entry);
-    await _openChapter(entry.chapters[chapterIndex]);
-  }
-
-  Future<void> _openChapter(MihonChapter chapter) async {
-    final String? libraryBookKey = _libraryBookKey;
-    if (libraryBookKey != null) {
-      final MihonLibraryEntry? entry = _libraryEntry;
-      if (entry != null) {
-        final int chapterIndex = entry.chapters.indexWhere(
-          (MihonChapter value) => value.url == chapter.url,
-        );
-        if (chapterIndex >= 0 && chapterIndex != entry.currentChapterIndex) {
-          _libraryEntry =
-              await MihonLibraryService(widget.manager).selectChapter(
-            bookKey: libraryBookKey,
-            entry: entry,
-            chapterIndex: chapterIndex,
-          );
-          if (mounted) setState(() {});
-        }
-      }
-    }
-    if (!mounted) return;
-    await Navigator.of(context).push(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (BuildContext context) => MihonChapterReaderPage(
-          manager: widget.manager,
-          context: widget.sourceContext,
-          manga: _details ?? widget.manga,
-          chapter: chapter,
-          libraryBookKey: libraryBookKey,
+  Widget build(BuildContext context) => MangaSeriesPage(
+        target: SourceMangaSeriesTarget(
+          // 上下文已经解析好（网格就是用它拉出来的）：直接交给适配器，别让作品页
+          // 再从 manager 现解析一次——预览态（试用未安装的扩展）根本没有库行，
+          // 现解析必然失败。
+          adapter: MihonLibraryAdapter(manager, presetContext: sourceContext),
+          service: mihonOnlineLibraryService(manager),
+          seed: OnlineMangaLibraryEntry(
+            runtime: OnlineMangaRuntimeKind.mihon,
+            extensionPackage: sourceContext.extension.packageName,
+            sourceId: sourceContext.source.id,
+            series: MihonLibraryAdapter.seriesOf(manga),
+            // 网格上只有标题和封面；章节由作品页进页后自己拉。
+            chapters: const <OnlineMangaChapter>[],
+          ),
+          sourceLabel: sourceContext.source.name,
+          // 未入库时封面必须经扩展的 imageProxy 取（带鉴权头），不能裸 https。
+          remoteCoverBuilder: (BuildContext context) => MihonSourceImage(
+            runtime: manager.runtime,
+            cache: manager.coverCache,
+            context: sourceContext,
+            url: manga.coverUrl,
+          ),
         ),
-      ),
-    );
-  }
-
-  /// 失败态不能只扔一行异常文本。
-  ///
-  /// 这里的失败几乎全是环境性的（站点抽风、Cloudflare、网络），
-  /// 所以重试是真正有用的动作；而排障需要的堆栈太长，只能进可复制的
-  /// 诊断对话框（[showErrorDetails]），不能铺在页面上。
-  Widget _buildErrorView(BuildContext context, Object error) {
-    final String diagnostics = <String>[
-      'stage: ${_errorStage ?? 'unknown'}',
-      'source: ${widget.sourceContext.source.name}',
-      'manga: ${widget.manga.url}',
-      '',
-      error is MihonRuntimeException ? error.diagnostics : '$error',
-    ].join('\n');
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(
-              t.manga_online_detail_load_failed,
-              style: Theme.of(context).textTheme.titleMedium,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            SelectableText(
-              '$error',
-              style: Theme.of(context).textTheme.bodySmall,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              alignment: WrapAlignment.center,
-              children: <Widget>[
-                FilledButton(
-                  onPressed: () => unawaited(_load()),
-                  child: Text(t.retry),
-                ),
-                TextButton(
-                  key: const ValueKey<String>('mihon_detail_error_details'),
-                  onPressed: () => unawaited(showErrorDetails(
-                    context,
-                    title: t.mihon_extension_error,
-                    error: diagnostics,
-                  )),
-                  child: Text(t.manga_online_error_view_detail),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final MihonManga details = _details ?? widget.manga;
-    return FushiPageScaffold(
-      title: details.title,
-      subtitle: widget.sourceContext.source.name,
-      body: _error != null
-          ? _buildErrorView(context, _error!)
-          : _details == null
-              ? Center(child: adaptiveIndicator(context: context))
-              : ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: <Widget>[
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        SizedBox(
-                          width: 150,
-                          height: 220,
-                          child: ClipRRect(
-                            borderRadius: FushiBorderRadius.poster,
-                            child: MihonSourceImage(
-                              runtime: widget.manager.runtime,
-                              cache: widget.manager.coverCache,
-                              context: widget.sourceContext,
-                              url: details.coverUrl,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              if (details.author?.isNotEmpty == true)
-                                Text(details.author!),
-                              if (details.artist?.isNotEmpty == true)
-                                Text(details.artist!),
-                              if (details.genre?.isNotEmpty ==
-                                  true) ...<Widget>[
-                                const SizedBox(height: 8),
-                                Text(details.genre!),
-                              ],
-                              if (details.description?.isNotEmpty ==
-                                  true) ...<Widget>[
-                                const SizedBox(height: 12),
-                                Text(details.description!),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 8,
-                      children: <Widget>[
-                        FilledButton.icon(
-                          key: const ValueKey<String>(
-                            'mihon_add_to_bookshelf',
-                          ),
-                          onPressed: _libraryBookKey == null && !_libraryBusy
-                              ? _addToBookshelf
-                              : null,
-                          icon: Icon(
-                            _libraryBookKey == null
-                                ? Icons.library_add_outlined
-                                : Icons.check,
-                          ),
-                          label: Text(
-                            _libraryBookKey == null
-                                ? t.mihon_add_to_bookshelf
-                                : t.mihon_in_bookshelf,
-                          ),
-                        ),
-                        if (_libraryBookKey != null)
-                          OutlinedButton.icon(
-                            onPressed:
-                                _chapters.isEmpty ? null : _continueReading,
-                            icon: const Icon(Icons.play_arrow),
-                            label: Text(t.book_continue_reading),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    Text(
-                      t.mihon_chapters_title,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 8),
-                    for (final MihonChapter chapter in _chapters)
-                      FushiCard(
-                        padding: EdgeInsets.zero,
-                        child: FushiListItem(
-                          title: Text(chapter.name),
-                          subtitle: chapter.scanlator?.isNotEmpty == true
-                              ? Text(chapter.scanlator!)
-                              : null,
-                          trailing: Icon(
-                            _libraryEntry?.currentChapter?.url == chapter.url
-                                ? Icons.play_circle_outline
-                                : Icons.chevron_right,
-                          ),
-                          onTap: () => unawaited(_openChapter(chapter)),
-                        ),
-                      ),
-                  ],
-                ),
-    );
-  }
+      );
 }
 
 class MihonSourceImage extends StatefulWidget {

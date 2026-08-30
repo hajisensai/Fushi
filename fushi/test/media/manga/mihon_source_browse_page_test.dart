@@ -170,7 +170,10 @@ void main() {
 
       // 诊断对话框里必须能拿到原生堆栈和失败阶段。
       await tester.tap(
-        find.byKey(const ValueKey<String>('mihon_detail_error_details')),
+        // 详情页已并入共享的 MangaSeriesPage（书架和源浏览共用一页），诊断入口
+        // 随之改名。**盯的行为一条没变**：原因可见、堆栈与阶段进可复制对话框、
+        // 重试真的重新发请求（BUG-1767）。
+        find.byKey(const ValueKey<String>('manga_series_error_details')),
       );
       await tester.pumpAndSettle();
       expect(find.textContaining('stage: details'), findsOneWidget);

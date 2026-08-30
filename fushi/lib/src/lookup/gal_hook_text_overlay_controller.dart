@@ -548,6 +548,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
         passThrough: _passThrough,
         locked: _locked,
         hoverAutoLookup: hoverAutoLookup,
+        clickLookupEnabled: _readClickLookupEnabled(),
+        lookupTrigger: _readLookupTrigger(),
+        toolbarAutoHide: _readToolbarAutoHide(),
+        passThroughBlocksMouse: _readPassThroughBlocksMouse(),
         slotTooltips: _slotTooltips,
       );
       _pushedHoverAutoLookup = hoverAutoLookup;
@@ -717,6 +721,51 @@ class GalHookTextOverlayController extends ChangeNotifier {
 
   /// 「悬停即查词」当前值。默认真值在 [ReaderFushiSource]（与阅读器 / 视频字幕
   /// 同一个开关），测试可注入替身。
+  /// hook 浮窗交互偏好四件套。走同一个 [_readPreference]（测试可注入），坏值一律
+  /// 退回默认——一个越界的触发方式会让 native 的分派变成「哪个键都不触发」。
+  bool _readClickLookupEnabled() {
+    final Object? stored = _readPreference(
+      'gal_hook_click_lookup',
+      PreferencesRepository.galHookClickLookupDefault,
+    );
+    return stored is bool
+        ? stored
+        : PreferencesRepository.galHookClickLookupDefault;
+  }
+
+  int _readLookupTrigger() {
+    final Object? stored = _readPreference(
+      'gal_hook_lookup_trigger',
+      PreferencesRepository.galHookLookupTriggerDefault,
+    );
+    final int value = stored is num
+        ? stored.toInt()
+        : PreferencesRepository.galHookLookupTriggerDefault;
+    return value >= 0 && value <= 2
+        ? value
+        : PreferencesRepository.galHookLookupTriggerDefault;
+  }
+
+  bool _readToolbarAutoHide() {
+    final Object? stored = _readPreference(
+      'gal_hook_toolbar_auto_hide',
+      PreferencesRepository.galHookToolbarAutoHideDefault,
+    );
+    return stored is bool
+        ? stored
+        : PreferencesRepository.galHookToolbarAutoHideDefault;
+  }
+
+  bool _readPassThroughBlocksMouse() {
+    final Object? stored = _readPreference(
+      'gal_hook_passthrough_blocks_mouse',
+      PreferencesRepository.galHookPassThroughBlocksMouseDefault,
+    );
+    return stored is bool
+        ? stored
+        : PreferencesRepository.galHookPassThroughBlocksMouseDefault;
+  }
+
   bool _readHoverAutoLookup() {
     final GalHookHoverAutoLookupReader? reader = _hoverAutoLookupReader;
     if (reader != null) return reader();

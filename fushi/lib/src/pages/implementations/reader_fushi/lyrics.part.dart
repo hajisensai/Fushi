@@ -445,13 +445,15 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   /// 排队 → 唤前台 → 请求首页切到查词 tab。切 tab 让 [HomeDictionaryPage] 挂载，
   /// 它在 initState 无条件消费已存在的 [DesktopLookupService.pendingText] 并展示——
   /// pending 必须在请求切 tab **之前**就位（这里顺序即如此），否则页面挂载时读不到。
-  Future<void> _lookupFromFloatingLyric(String text, int index) async {
+  Future<void> _lookupFromFloatingLyric(
+      String text, int index, Rect? wordRect) async {
     if (!mounted) return;
     // TODO-872 — 覆盖窗接手即返回；false 时继续原「切主窗词典 tab」回落路由。
     if (await tryFloatingLyricGlobalLookup(
       appModel: appModel,
       text: text,
       index: index,
+      wordRect: wordRect,
     )) {
       return;
     }

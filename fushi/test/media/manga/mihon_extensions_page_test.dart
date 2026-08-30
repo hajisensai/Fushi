@@ -328,6 +328,14 @@ void main() {
     );
     await tester.pump();
 
+    // 300 个扩展超过 kMihonStoreAutoCollapseThreshold，仓库分组默认收起，
+    // 先展开才能验证「展开后仍然是懒建的」——这才是本守卫真正要咬的东西。
+    await tester.tap(find.byKey(
+      const ValueKey<String>(
+          'mihon-store-group-https://repo.example/index.json'),
+    ));
+    await tester.pump();
+
     expect(find.text('Extension 0'), findsOneWidget);
     expect(
       find.text('Extension 299'),
@@ -341,7 +349,9 @@ void main() {
   // 整页可装扩展从列表消失，误触成本远高于一次确认。
   testWidgets('删除扩展仓库先确认：取消保留、确认才真删', (WidgetTester tester) async {
     await pumpStandalone(tester);
-    expect(find.text('Fixture repository'), findsOneWidget);
+    // 仓库名现在出现两次：顶部的仓库**管理**卡，以及下方扩展列表的**分组表头**。
+    // 删除入口只在管理卡上（tooltip 定位），这里只需确认仓库存在。
+    expect(find.text('Fixture repository'), findsNWidgets(2));
 
     // 点删除 → 出确认框，仓库还在。
     await tester.tap(find.byTooltip(t.mihon_store_remove));
@@ -353,7 +363,7 @@ void main() {
     await tester.tap(find.text(t.dialog_cancel));
     await tester.pumpAndSettle();
     expect(manager.stores, hasLength(1));
-    expect(find.text('Fixture repository'), findsOneWidget);
+    expect(find.text('Fixture repository'), findsNWidgets(2));
 
     // 再点删除并确认 → 仓库真的被删。
     await tester.tap(find.byTooltip(t.mihon_store_remove));
@@ -361,6 +371,8 @@ void main() {
     await tester.tap(find.text(t.dialog_delete));
     await tester.pumpAndSettle();
     expect(manager.stores, isEmpty);
+    // 仓库删掉后连分组表头也没了：孤儿分组（扩展的 storeUrl 指向已删仓库）退回用
+    // indexUrl 当标签，不会再打出仓库名。
     expect(find.text('Fixture repository'), findsNothing);
   });
 }

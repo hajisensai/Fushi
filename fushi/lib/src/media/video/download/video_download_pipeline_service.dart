@@ -1457,17 +1457,47 @@ class VideoDownloadPipelineService {
     unawaited(_drain().whenComplete(() => _running = false));
   }
 
-  Future<void> stop() async {
+  /// 单轮 `_drain` 收尾的等待上界。`_disposed` 只让 `_drain` 的循环条件提前结束，
+  /// **当前那一个 `await _process(job)` 仍要跑完**——它做网络 + 文件 + Drift 工作，
+  /// 时长不可控。此前这里是裸 `while (_running)` 无界忙等，而 `dispose()` 挂在
+  /// `AppModel.closeDatabase()` → 退出路径上，等于让一个在飞的下载决定 app 什么时候
+  /// 能关掉（BUG-192 遗留的最后一个无界点）。放行不丢数据：job 状态机是租约式的，
+  /// 未完成的 claim 到期后由下次启动重新领取。
+  static const Duration stopDrainTimeout = Duration(milliseconds: 1500);
+
+  /// [drainTimeout] 为 null = **等到它自己收尾**（默认，也是历史行为）。
+  ///
+  /// 这个上界只能由**退出路径**传进来，绝不能变成 `stop()` 的全局语义。
+  /// `dispose()` 挂在 `AppModel.closeDatabase()` 上，而那条链的调用方不止退出：
+  /// 迁移导入（`migration_import_page.dart`）、备份导入与数据根整目录迁移都会
+  /// 先关库、紧接着在**文件层**合并/替换整个 DB 目录，`reloadVideoDownloadPipeline
+  /// Runtime` 还会关掉再立刻重启。
+  ///
+  /// 那些路径上放行意味着：`_disposeVideoDownloadPipelineRuntime` 会紧接着
+  /// `_videoDownloadBackend?.close()`，销毁一个在飞 `_process` 仍在引用的后端句柄；
+  /// `_database.close()` 之后租约续期定时器和 stage 写入继续打已关闭的 drift 连接
+  /// —— 正是 BUG-1505 的那 8 条「connection was closed」，而在迁移路径上那是**数据
+  /// 安全问题，不是噪声问题**。退出路径不同：进程马上就没了，放行只损失一次
+  /// checkpoint（租约式状态机下次启动重新领取）。
+  Future<void> stop({Duration? drainTimeout}) async {
     _timer?.cancel();
     _timer = null;
+    final Stopwatch waited = Stopwatch()..start();
     while (_running) {
+      if (drainTimeout != null && waited.elapsed >= drainTimeout) {
+        debugPrint(
+          '[Fushi] video download pipeline stop timed out after '
+          '${waited.elapsedMilliseconds}ms; releasing',
+        );
+        return;
+      }
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
   }
 
-  Future<void> dispose() async {
+  Future<void> dispose({Duration? drainTimeout}) async {
     _disposed = true;
-    await stop();
+    await stop(drainTimeout: drainTimeout);
   }
 
   Future<void> _drain() async {

@@ -52,6 +52,9 @@ import 'package:fushi/src/models/dictionary_directory.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
+import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
@@ -559,9 +562,9 @@ class AppModel with ChangeNotifier {
       // （与 client 下载远端视频落点一致，AppPaths.remoteVideosDirectory 同目录）。
       uploadedVideoRoot: Directory('${appDirectory.path}/remote_videos'),
       // 上传视频封面 best-effort 抽帧（桌面 ffmpeg；移动端无则留空占位）。
-      extractVideoCover:
-          ({required String videoPath, required String bookUid}) =>
-              extractVideoCover(videoPath: videoPath, bookUid: bookUid),
+      extractVideoCover: (
+              {required String videoPath, required String bookUid}) =>
+          extractVideoCover(videoPath: videoPath, bookUid: bookUid),
       removeLocalAudioEntry: (String displayName) async {
         // 按 displayName 在 LocalAudioManager 中找到对应 index 并删除。
         // LocalAudioManager.remove(int) 删除 DB 文件 + 从 prefs 移出 + 推 native。
@@ -701,10 +704,10 @@ class AppModel with ChangeNotifier {
           case SyncTombstoneKind.video:
             final bool deleted = await VideoBookRepository(database)
                 .deleteVideoBookAndReclaimAssets(
-                  c.itemKey,
-                  scope: DeleteScope.keepLocalOnly,
-                  compactDatabase: false,
-                );
+              c.itemKey,
+              scope: DeleteScope.keepLocalOnly,
+              compactDatabase: false,
+            );
             deletedVideoBook = deletedVideoBook || deleted;
           case SyncTombstoneKind.audiobook:
             await AudiobookRepository(database)
@@ -891,7 +894,7 @@ class AppModel with ChangeNotifier {
     floatingLyricStyle: _appLevelFloatingLyricStyle,
     floatingLyricContextLines: () => floatingLyricContextLines,
     floatingLyricClickLookup: () => floatingLyricClickLookup,
-    onFloatingLyricLookup: (String text, int index) {
+    onFloatingLyricLookup: (String text, int index, Rect? wordRect) {
       // app 级（无 reader attach）桌面悬浮窗点词：Windows 优先弹 867 app 外全局
       // 查词覆盖窗（TODO-872，主窗最小化/被遮挡也看得见）；覆盖窗不可用才回落
       // 常驻主窗口的 in-app 查词宿主 [FloatingLyricLookupHost]（main.dart 根
@@ -902,6 +905,7 @@ class AppModel with ChangeNotifier {
           appModel: this,
           text: text,
           index: index,
+          wordRect: wordRect,
         )) {
           return;
         }
@@ -3588,6 +3592,43 @@ class AppModel with ChangeNotifier {
     return manager;
   }
 
+  /// 按 runtime 分派在线漫画书架服务。
+  ///
+  /// 书架条目和作品页手上只有 `bookKey` + 描述符里的 runtime，不知道该找哪个
+  /// 运行时；这里是唯一的分派点。
+  ///
+  /// **Aidoku 分支刻意不碰 [mihonManager]**：平台矩阵不重合——Mihon 是
+  /// Android/Windows/macOS，Aidoku 是 macOS/iOS。在 iOS 上读一条 Aidoku 书架
+  /// 条目时去取 mihonManager 会直接抛 `UnsupportedError`，把「打开这本书」变成
+  /// 崩溃。两个分支各自独立到底。
+  OnlineMangaLibraryService onlineMangaLibraryService(
+    OnlineMangaRuntimeKind runtime,
+  ) {
+    switch (runtime) {
+      case OnlineMangaRuntimeKind.mihon:
+        final MihonManager manager = mihonManager;
+        return OnlineMangaLibraryService(
+          database: manager.database,
+          rootDirectory: manager.rootDirectory,
+          adapter: MihonLibraryAdapter(manager),
+        );
+      case OnlineMangaRuntimeKind.aidoku:
+        return OnlineMangaLibraryService(
+          database: database,
+          rootDirectory: aidokuLibraryRoot,
+          adapter: AidokuLibraryAdapter(),
+        );
+    }
+  }
+
+  /// Aidoku 书架条目的本地落盘根（占位 manga.json、封面、章节页缓存）。
+  ///
+  /// 单独暴露是为了让源浏览的详情页能带着**自己那份**（可能是测试注入的）
+  /// `AidokuRuntime` 建服务，而不是被迫走上面那条恒用
+  /// `AidokuRuntimeFactory.create()` 的分派。
+  Directory get aidokuLibraryRoot =>
+      Directory(path.join(databaseDirectory.path, 'aidoku'));
+
   AnimeDownloadSubscriptionService? _animeDownloadSubscriptionService;
   AnimeDownloadSubscriptionService? get animeDownloadSubscriptionService =>
       _animeDownloadSubscriptionService;
@@ -4184,7 +4225,9 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  Future<void> _disposeVideoDownloadPipelineRuntime() async {
+  Future<void> _disposeVideoDownloadPipelineRuntime({
+    Duration? pipelineDrainTimeout,
+  }) async {
     final VideoDownloadSubscriptionService? subscriptions =
         _videoDownloadSubscriptionService;
     _videoDownloadSubscriptionService = null;
@@ -4192,7 +4235,9 @@ class AppModel with ChangeNotifier {
     final VideoDownloadPipelineService? pipeline =
         _videoDownloadPipelineService;
     _videoDownloadPipelineService = null;
-    if (pipeline != null) await pipeline.dispose();
+    if (pipeline != null) {
+      await pipeline.dispose(drainTimeout: pipelineDrainTimeout);
+    }
     _videoResourceRegistry?.close();
     _videoResourceRegistry = null;
     _videoSubtitleRegistry?.close();
@@ -5983,16 +6028,26 @@ class AppModel with ChangeNotifier {
   ///
   /// 只停「后台自己会写库」的那几个（下载/订阅/漫画队列），不碰查词、TTS 这类只读
   /// 子系统：closeDatabase 之后调用方一律走重启，停多了没收益、只增加爆炸半径。
-  Future<void> quiesceBackgroundDatabaseWriters() async {
+  ///
+  /// [pipelineDrainTimeout] 只在**退出路径**给：见
+  /// [VideoDownloadPipelineService.stop] 的注释——迁移导入 / 备份导入 / 数据根迁移
+  /// 也走这条链，它们在关库后要在文件层动整个 DB 目录，放行一个仍在飞的 `_process`
+  /// 会让它继续打已关闭的连接、并被随后的 `_videoDownloadBackend?.close()` 抽掉
+  /// 句柄。那些路径必须等到真收尾。
+  Future<void> quiesceBackgroundDatabaseWriters({
+    Duration? pipelineDrainTimeout,
+  }) async {
     _animeDownloadService?.stop();
     _animeDownloadSubscriptionService?.stop();
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
     _videoDownloadPipelineRuntimeWanted = false;
-    await _disposeVideoDownloadPipelineRuntime();
+    await _disposeVideoDownloadPipelineRuntime(
+      pipelineDrainTimeout: pipelineDrainTimeout,
+    );
   }
 
-  Future<void> closeDatabase() async {
+  Future<void> closeDatabase({Duration? pipelineDrainTimeout}) async {
     _isInitialised = false;
     // BUG-1569②：合集观察者持有本库的表订阅 + 未决防抖 Timer，关库前必须撤——
     // 否则防抖到点后 _runCollectionsSync 会对已关闭的 db 发起查询（drift「connection
@@ -6000,7 +6055,9 @@ class AppModel with ChangeNotifier {
     // 测试 teardown 调过 uninstall，生产三条关库路径全都不撤订阅。
     uninstallCollectionsSyncWatcher();
     databaseCloseNotifier.notifyListeners();
-    await quiesceBackgroundDatabaseWriters();
+    await quiesceBackgroundDatabaseWriters(
+      pipelineDrainTimeout: pipelineDrainTimeout,
+    );
     await _database.close();
   }
 
@@ -6302,7 +6359,8 @@ class AppModel with ChangeNotifier {
 
   /// 防截屏（桌面查词浮窗，Windows）。存储键沿用历史名 `clipboard_panel_block_capture`。
   bool get lookupBlockCapture => prefsRepo.lookupBlockCapture;
-  Future<void> setLookupBlockCapture(bool v) => prefsRepo.setLookupBlockCapture(v);
+  Future<void> setLookupBlockCapture(bool v) =>
+      prefsRepo.setLookupBlockCapture(v);
 
   Map<String, String> get customDictCSS => prefsRepo.customDictCSS;
   String getCustomCSSForDict(String dictName) =>
@@ -6593,6 +6651,10 @@ class AppModel with ChangeNotifier {
       // 单词音频（1139②）：已启用音频源随查词响应下发，扩展弹窗据此渲染 ♪ 按钮
       // （点击 → /api/lookup/audio 解析 → HTML5 Audio 播放）。
       audioSourcesProvider: () => enabledAudioSources,
+      // 查词后自动朗读：与 app 内弹窗/app 外浮窗/剪贴板面板同一个全局偏好（读同一个
+      // ReaderFushiSource 真相源），扩展弹窗渲染后自动播首条词发音，不再只能手动点 ♪。
+      autoReadOnLookupProvider: () =>
+          ReaderFushiSource.instance.autoReadOnLookup,
       // BUG-726：内置扩展内容指纹随查词响应下发（`extensionBuild`），扩展 background
       // 与自身 FUSHI_DEFAULTS.build 比对，不一致即 chrome.runtime.reload() 从磁盘拉新。
       // 指纹由 refreshBrowserExtensionCopy 在启动时算好缓存；算好前返回 null（字段省略）。
@@ -6921,6 +6983,23 @@ class AppModel with ChangeNotifier {
   Future<void> setGalIngameLookupEnabled(bool value) =>
       prefsRepo.setGalIngameLookupEnabled(value);
 
+  // hook 台词浮窗的交互偏好四件套（仅 Windows 生效）。
+  bool get galHookClickLookup => prefsRepo.galHookClickLookup;
+  Future<void> setGalHookClickLookup(bool value) =>
+      prefsRepo.setGalHookClickLookup(value);
+
+  int get galHookLookupTrigger => prefsRepo.galHookLookupTrigger;
+  Future<void> setGalHookLookupTrigger(int value) =>
+      prefsRepo.setGalHookLookupTrigger(value);
+
+  bool get galHookToolbarAutoHide => prefsRepo.galHookToolbarAutoHide;
+  Future<void> setGalHookToolbarAutoHide(bool value) =>
+      prefsRepo.setGalHookToolbarAutoHide(value);
+
+  bool get galHookPassThroughBlocksMouse =>
+      prefsRepo.galHookPassThroughBlocksMouse;
+  Future<void> setGalHookPassThroughBlocksMouse(bool value) =>
+      prefsRepo.setGalHookPassThroughBlocksMouse(value);
   // 折叠「同一句台词的多次快照」。TexthookerService 是没有 ref 的进程级单例，
   // 拿不到偏好；真值由这里单向推给它（启动期一次 + 每次改开关一次）。
   bool get galHookFoldProgressiveLines => prefsRepo.galHookFoldProgressiveLines;
@@ -7038,7 +7117,8 @@ class AppModel with ChangeNotifier {
       prefsRepo.setMangaOcrLensLanguage(value);
 
   bool get mangaTapToOcr => prefsRepo.mangaTapToOcr;
-  Future<void> setMangaTapToOcr(bool value) => prefsRepo.setMangaTapToOcr(value);
+  Future<void> setMangaTapToOcr(bool value) =>
+      prefsRepo.setMangaTapToOcr(value);
 
   bool get mangaTapToOcrNoticeShown => prefsRepo.mangaTapToOcrNoticeShown;
   Future<void> setMangaTapToOcrNoticeShown(bool value) =>

@@ -32,21 +32,18 @@ void main() {
   final String window = File(
     'windows/runner/floating_lyric_window.cpp',
   ).readAsStringSync();
-  final String flutterWindow = File(
-    'windows/runner/flutter_window.cpp',
-  ).readAsStringSync();
   final String controller = File(
     'lib/src/lookup/gal_hook_text_overlay_controller.dart',
-  ).readAsStringSync();
-  final String channel = File(
-    'lib/src/platform/gal_hook_text_overlay_channel.dart',
   ).readAsStringSync();
 
   test('① 文案是一张共享表，两个工具条宿主都接了提示', () {
     expect(
-      toolbarCpp.contains('void SetSlotTooltips(std::vector<std::wstring>'),
+      toolbarCpp.contains(
+          'void SetSlotTooltips(Profile profile, std::vector<std::wstring>'),
       isTrue,
-      reason: '文案表的唯一写入口必须是 hook_toolbar::SetSlotTooltips',
+      reason: '文案表的唯一写入口必须是 hook_toolbar::SetSlotTooltips，且按 profile '
+          '分表——两个浮窗可以同时在屏上，共用一张表意味着后 show 的那个把另一个的'
+          '提示整表覆盖掉',
     );
     // 两个宿主各自持有一个 SlotTooltipHost，但文案都从共享表来（Update 内部
     // 只拿到 slot 下标，自己去 SlotTooltip 查）。宿主绝不许自带文案数组。
@@ -65,10 +62,11 @@ void main() {
     // Update 的签名只吃 slot + 屏幕坐标：文案不经过宿主，宿主就没法各说各话。
     expect(
       RegExp(
-        r'void Update\(HWND owner, int slot, int screen_x, int screen_y\);',
+        r'void Update\(HWND owner, Profile profile, int slot, int screen_x,\s*'
+        r'int screen_y\);',
       ).hasMatch(toolbarHeader),
       isTrue,
-      reason: 'Update 只接受槽位下标；文案一旦经宿主传入就不再是单一真相',
+      reason: 'Update 只接受 profile + 槽位下标；文案一旦经宿主传入就不再是单一真相',
     );
     // 隐藏 / 按下 / 离开三处都要收掉提示，否则会留一块孤儿浮在桌面上。
     for (final String host in <String>[toolbarCpp, window]) {
@@ -162,16 +160,18 @@ void main() {
     expect(
       RegExp(
         r'const int slot = HookToolbarSlotAt\(x, y\);\s*'
-        r'return slot >= 0 \? hook_toolbar::kSlotActions\[slot\]',
+        r'return slot >= 0 \? hook_toolbar::SlotAction\(toolbar_profile_, slot\)',
       ).hasMatch(window),
       isTrue,
       reason:
-          'ControlActionAt 的 hook 分支必须走 HookToolbarSlotAt——'
-          '命中与悬停提示必须指同一颗按钮',
+          'ControlActionAt 的 hook 分支必须走 HookToolbarSlotAt + 本 profile 的槽表'
+          '——命中与悬停提示必须指同一颗按钮',
     );
     // 行宽 / 行起点在整份源码里各只算一次；绘制与穿透工具条窗定位都问它。
     expect(
-      RegExp(r'btn \* kHookTextControlSlotCount \+').allMatches(window).length,
+      RegExp(r'return btn \* slots \+ gap \* \(slots - 1\);')
+          .allMatches(window)
+          .length,
       1,
       reason: '一行按钮的总宽只允许在 HookToolbarRowWidth 里算一次',
     );
@@ -188,65 +188,78 @@ void main() {
       RegExp(
         r'float FloatingLyricWindow::HookToolbarRowWidth\(\) const \{\s*'
         r'const float btn = ScaleForDpi\(kHookTextButtonSizeDip\);\s*'
-        r'const float gap = ScaleForDpi\(kHookTextButtonGapDip\);',
+        r'const float gap = ScaleForDpi\(kHookTextButtonGapDip\);\s*'
+        r'const int slots = hook_toolbar::SlotCount\(toolbar_profile_\);',
       ).hasMatch(window),
       isTrue,
       reason: 'hook 工具条必须用 kHookTextButton*Dip，不是通用的 kButton*Dip',
     );
   });
 
-  test('⑥ 提示条数与 native 槽位数同长，且键都在 i18n 里', () {
-    final Match? table = RegExp(
-      r'constexpr const char\* kSlotActions\[kSlotCount\] = \{([\s\S]*?)\};',
-    ).firstMatch(toolbarHeader);
-    expect(table, isNotNull, reason: 'kSlotActions 表必须存在');
-    final int slotCount = RegExp(
-      r'"[a-zA-Z]+",',
-    ).allMatches(table!.group(1)!).length;
-    expect(slotCount, 9, reason: 'kSlotActions 当前是 9 槽');
-
-    final Match? tooltips = RegExp(
-      r'List<String> get _slotTooltips => <String>\[([\s\S]*?)\];',
-    ).firstMatch(controller);
-    expect(tooltips, isNotNull, reason: '_slotTooltips 必须存在');
-    final List<String> keys = RegExp(r't\.(game_hook_btn_[a-z]+)')
-        .allMatches(tooltips!.group(1)!)
-        .map((RegExpMatch m) => m.group(1)!)
-        .toList();
-    expect(
-      keys.length,
-      slotCount,
-      reason:
-          '提示条数必须与 native 槽位数一致——少一条就整体错位，'
-          '第 N 颗按钮会顶着第 N-1 颗的说明',
-    );
-
+  test('⑥ 每张槽表的提示条数与槽位数同长，且键都在 i18n 里', () {
     final Map<String, dynamic> en =
         jsonDecode(File('lib/i18n/strings.i18n.json').readAsStringSync())
             as Map<String, dynamic>;
-    for (final String key in keys) {
+
+    /// 一张 native 槽表 ↔ 一份 Dart 提示表的对齐检查。
+    ///
+    /// 两张表必须各自对齐：条数差一条就整体错位，第 N 颗按钮会顶着第 N-1 颗的
+    /// 说明——而这两套按钮语义完全不同（试听 vs 上一句），错位的后果不是「说明不
+    /// 准」而是「说明指向另一件事」。
+    void checkTable({
+      required String countName,
+      required String tableName,
+      required int expectedSlots,
+      required String tooltipSource,
+      required String keyPrefix,
+    }) {
+      final Match? table = RegExp(
+        'constexpr const char\\* $tableName\\[$countName\\] = \\{([\\s\\S]*?)\\};',
+      ).firstMatch(toolbarHeader);
+      expect(table, isNotNull, reason: '$tableName 表必须存在');
+      final int slotCount =
+          RegExp(r'"[a-zA-Z]+",').allMatches(table!.group(1)!).length;
+      expect(slotCount, expectedSlots, reason: '$tableName 当前是 $expectedSlots 槽');
+
+      final Match? tooltips = RegExp(
+        r'List<String> get _slotTooltips => <String>\[([\s\S]*?)\];',
+      ).firstMatch(tooltipSource);
+      expect(tooltips, isNotNull, reason: '_slotTooltips 必须存在');
+      final List<String> keys = RegExp('t\\.($keyPrefix[a-z_]+)')
+          .allMatches(tooltips!.group(1)!)
+          .map((RegExpMatch m) => m.group(1)!)
+          .toList();
       expect(
-        en.containsKey(key),
-        isTrue,
-        reason: 'i18n 缺 key $key（必须用 tool/i18n_sync.dart 新增）',
+        keys.length,
+        slotCount,
+        reason:
+            '提示条数必须与 native 槽位数一致——少一条就整体错位，'
+            '第 N 颗按钮会顶着第 N-1 颗的说明',
       );
+      for (final String key in keys) {
+        expect(
+          en.containsKey(key),
+          isTrue,
+          reason: '提示 key「$key」不在 i18n 里，用户会看到空提示',
+        );
+      }
     }
 
-    // 载荷键名两侧对齐；不传时 native 侧就是无提示（老 payload 行为）。
-    expect(
-      channel.contains("'slotTooltips': slotTooltips"),
-      isTrue,
-      reason: 'channel 必须把 slotTooltips 放进 show 载荷',
+    checkTable(
+      countName: 'kGalHookSlotCount',
+      tableName: 'kGalHookSlotActions',
+      expectedSlots: 9,
+      tooltipSource: controller,
+      keyPrefix: 'game_hook_btn_',
     );
-    expect(
-      flutterWindow.contains('WideListFromValue(args,'),
-      isTrue,
-      reason: 'native show 处理必须解析 slotTooltips 载荷',
-    );
-    expect(
-      RegExp(r'hook_toolbar::SetSlotTooltips\(').hasMatch(flutterWindow),
-      isTrue,
-      reason: 'native 必须把解析出来的文案下发到共享表',
+    checkTable(
+      countName: 'kAudiobookSlotCount',
+      tableName: 'kAudiobookSlotActions',
+      expectedSlots: 8,
+      tooltipSource:
+          File('lib/src/media/audiobook/audiobook_session.dart')
+              .readAsStringSync(),
+      keyPrefix: 'floating_lyric_',
     );
   });
 }

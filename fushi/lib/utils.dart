@@ -58,5 +58,7 @@ export 'src/utils/misc/fushi_toast.dart';
 export 'src/utils/misc/webview_asset_url.dart';
 export 'src/utils/misc/platform_utils.dart';
 export 'src/utils/misc/gallery_image_picker.dart';
+// 官网入口（侧栏左上角 app 图标 + 设置 · 通用 · 官网共用同一个 URL）。
+export 'src/utils/misc/official_links.dart';
 
 export 'src/utils/adaptive/fushi_adaptive.dart';
