@@ -122,13 +122,23 @@ class GalgameLineCharCounter {
   int countDelta(String delta) {
     final String trimmed = delta.trim();
     if (trimmed.isEmpty) return 0;
+    // 相邻**完全相同**的一拍仍要去重：上游折叠只吞「同一句越写越长」
+    // （`isProgressiveTextUpdate` 对等长文本直接返回 false），引擎把同一句
+    // 原样重发一次时折不掉，会作为新行进来、增量就是整句。BUG-1085 钉的就是
+    // 这条。它与 [countLine] 的打字机前缀去重不同：这里只比「上一次的增量」，
+    // 不维护整行状态，所以不会被增量污染成半句话。
+    if (trimmed == _lastDelta) return 0;
+    _lastDelta = trimmed;
     final int count = countGalgameChars(trimmed);
     return count > maxCountedChars ? 0 : count;
   }
 
+  String? _lastDelta;
+
   /// 会话结束/换游戏时复位，下一段从零开始（跨会话不做前缀/去重比对）。
   void reset() {
     _lastText = null;
+    _lastDelta = null;
     _lastCount = 0;
   }
 }
