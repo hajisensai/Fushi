@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart';
 import 'package:fushi/src/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_tasks_section.dart';
@@ -255,6 +256,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                             return Column(
                               children: <Widget>[
                                 const MokuroMoeTasksSection(),
+                                const DiscoveryDownloadTasksSection(),
                                 Expanded(
                                   child: VideoDownloadJobsPanel.database(
                                     database: ref.read(appProvider).database,

@@ -15,6 +15,7 @@ import 'package:fushi/src/epub/epub_storage.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
@@ -547,6 +548,22 @@ class ReaderFushiSource extends ReaderMediaSource {
     return _bookToMediaItem(book, ReaderPositionRepository(db));
   }
 
+  /// 在线漫画的章级进度。
+  ///
+  /// 「读到第几话」= 从**末尾**往回数：源按新→旧返回，列表 0 是最新一话，所以
+  /// 下标越大越旧。没选过章 = 一话都没开始读，position 0。
+  static ({int position, int duration}) _onlineMangaProgress(
+    OnlineMangaLibraryEntry entry,
+  ) {
+    final int total = entry.chapters.length;
+    if (total == 0) return (position: 0, duration: 1);
+    final int? selected = entry.currentChapterIndex;
+    if (selected == null || selected < 0 || selected >= total) {
+      return (position: 0, duration: total);
+    }
+    return (position: (total - selected).clamp(0, total), duration: total);
+  }
+
   /// Resolve a single [EpubBookRow] into a [MediaItem], reading its reader
   /// position and cover concurrently with sibling books (HBK-AUDIT-128).
   Future<MediaItem> _bookToMediaItem(
@@ -588,7 +605,19 @@ class ReaderFushiSource extends ReaderMediaSource {
     // v82：位置键 = 行 uid（行在手直接取；空 uid 视同无阅读记录）。
     final ReaderPosition? pos =
         book.uid.isEmpty ? null : await posRepo.findByBookUid(book.uid);
-    final ({int position, int duration}) prog = pageBased
+    // 在线漫画的进度是**章级**的，不能走下面的页级分支。
+    //
+    // 那条分支算的是 `sectionIndex+1 ÷ chapterCount`，而在线条目里这两个量纲
+    // 根本不同：`chapterCount` 写的是**章数**（OnlineMangaLibraryService.add），
+    // `sectionIndex` 存的是**当前章内的页码**（阅读器 _persistPosition）。于是
+    // 「第 3 章的第 8 页 ÷ 共 128 章」= 6%，翻页时进度条乱跳，换章时反而回退。
+    // 本地 mokuro 卷两个量纲一致（都是页），继续走页级分支。
+    final OnlineMangaLibraryEntry? onlineEntry = pageBased
+        ? OnlineMangaLibraryEntry.tryParse(book.sourceMetadata)
+        : null;
+    final ({int position, int duration}) prog = onlineEntry != null
+        ? _onlineMangaProgress(onlineEntry)
+        : pageBased
         // PDF Phase 3 / 漫画同款：进度单位是**页**（sectionIndex=当前页 0-based，
         // chapterCount=总页数）。chaptersJson='[]' 无字数，走 computeBookProgress 会恒回
         // (0,1)=0%。用 sectionIndex+1（1-based 页序）而非 0-based：停在第 1 页时

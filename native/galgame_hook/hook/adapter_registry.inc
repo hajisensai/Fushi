@@ -78,6 +78,9 @@ class SiglusAdapter final : public fushi_voice_hook::EngineAdapter {
            fushi_voice_hook::AdapterCapability::kResourceAudio |
            fushi_voice_hook::AdapterCapability::kPcmAudio;
   }
+  fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
+    return SiglusLookupAdmission();
+  }
   void onModuleLoaded(const wchar_t*) override {
     // Siglus hooks target the main executable and kernel32 file APIs; startup install + bounded
     // MinHook retry handles its protected launch window, not delayed engine modules.
@@ -193,6 +196,18 @@ class KiriKiriAdapter final : public fushi_voice_hook::EngineAdapter {
   void ProcessPendingEvents() { ProcessKirikiriVoiceTasks(); }
   bool decoder_ready() const { return decoder_ready_; }
   bool voice_ready() const { return voice_ready_; }
+  // KiriKiri 没有 exe hash 门，但有一道等价的运行期门：传感器只在游戏带第三方
+  // textrender.dll（KAGEX 的 global.TextRender）时才装得上，经典 KAG3 上装不上。
+  // 因此"装上了"与"还没装上"之间不存在身份拒绝这一档——未装一律报 IdentityAccepted，
+  // 表示"引擎对得上，传感器还没到位"。把它谎报成 IdentityRejected 会让用户去换游戏
+  // 版本，而真正该做的是看这个游戏有没有 textrender.dll。
+  fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
+    fushi_voice_hook::LookupAdmissionReport report;
+    report.state = KirikiriLookupSensorLive()
+                       ? fushi_voice_hook::kLookupAdmissionSensorInstalled
+                       : fushi_voice_hook::kLookupAdmissionIdentityAccepted;
+    return report;
+  }
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kText |
            fushi_voice_hook::AdapterCapability::kResourceAudio |
@@ -241,6 +256,15 @@ class RenPyAdapter final : public fushi_voice_hook::EngineAdapter {
   void ProcessPendingEvents() {
     PollRenpyLookupInstall();
     ProcessRenpyLookupTick();
+  }
+  // Ren'Py 也没有 exe hash 门：装不上的原因是找不到 CPython 或解释器没初始化，
+  // 那属于"引擎对得上、传感器还没到位"，不是身份被拒。
+  fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
+    fushi_voice_hook::LookupAdmissionReport report;
+    report.state = RenpyLookupSensorLive()
+                       ? fushi_voice_hook::kLookupAdmissionSensorInstalled
+                       : fushi_voice_hook::kLookupAdmissionIdentityAccepted;
+    return report;
   }
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kText |
@@ -559,6 +583,68 @@ class AdapterRegistry {
       tyrano_.install();
       ++tyrano_retry_;
     }
+    PublishLookupAdmissionSummary();
+  }
+
+  // v19：把「本会话游戏内查词能不能用」汇总成一个值发布给 host。
+  //
+  // 唯一写者。每个 adapter 只回答自己那份（纯查询的 lookupAdmission()），合并规则在这里
+  // 一处定死：**取进展最高的那个**。理由是这些报告互不矛盾，只是各说各的 adapter——
+  // Leaf 说"身份不符"和 Siglus 说"本引擎没做"可以同时为真，而用户要看的是"最有希望的
+  // 那条路走到哪了"。让每个 adapter 自己往 header 里写就会互相覆盖，最后显示哪条取决于
+  // Poll 里的调用顺序，那是把 UI 结论押在一个没人当契约维护的顺序上。
+  void PublishLookupAdmissionSummary() {
+    if (g_header == nullptr) return;
+    if (!fushi_voice_hook::HasLookupRegion(g_header)) return;
+    fushi_voice_hook::LookupAdmissionReport best;
+    bool any_engine_claimed = false;
+    auto consider = [&best,
+                     &any_engine_claimed](
+                        const fushi_voice_hook::EngineAdapter& adapter) {
+      if (!adapter.probe()) return;
+      any_engine_claimed = true;
+      const fushi_voice_hook::LookupAdmissionReport report =
+          adapter.lookupAdmission();
+      if (report.state > best.state) best = report;
+    };
+    // 只有**引擎身份** adapter 参与。generic_audio_ / text_render_ / loopback_ 的
+    // probe() 恒为 true（它们是横切能力，不声称"这游戏是哪个引擎"），放进来会让任何
+    // 游戏在引擎探测成立之前就先被判成 EngineUnsupported——开关先灰后亮，比不显示更糟。
+    consider(siglus_);
+    consider(unity_);
+    consider(kirikiri_);
+    consider(renpy_);
+    consider(tyrano_);
+#include "generated/adapter_admission.inc"
+    // 一个引擎 adapter 都没 probe 成立时 best 保持 Unknown：那是"还没认出这是什么游戏"，
+    // 不是"不支持"。这两者必须分开，否则注入后的头几轮 Poll 会稳定误报。
+    //
+    // 但 Unknown 不能是**终态**：有几家（Leaf/SGRE）的 probe() 本身就是精确 exe hash 门，
+    // 所以「白2 的另一个发行版」这种情形下没有任何 adapter 会认领，best 会永远停在
+    // Unknown，用户界面上就是永远"正在判定"——比直接说不支持还糟，因为它不给任何出路。
+    // 模块表**稳定**之后仍无人认领，才是一个确定的结论：这个游戏我们不认识，查词
+    // 用不了。这里合并了"认出引擎但它没传感器"和"压根没认出引擎"——对用户来说处置
+    // 相同（用不了 + 请把 exe 摘要报上来），host 文案按"不支持或未识别"表述即可。
+    //
+    // 判据必须是 module_settle_.settled()（连续 15 次 200ms 全量扫描无新模块，且距
+    // 首次扫描已过 5 秒），**不能**是 modules_seeded_ —— 后者在注入完成的第 1 拍就
+    // 成立，而 KiriKiri / Ren'Py / Unity 的 probe 全是迟到信号（前者要等第一句有声
+    // 台词把 wuvorbis.dll 拉进来）。用 modules_seeded_ 等于对着一个唯一已发布查词
+    // 的引擎自信地说「本引擎没做查词」，要等第一句语音才自愈。
+    if (!any_engine_claimed && module_settle_.settled(GetTickCount64()) &&
+        best.state == fushi_voice_hook::kLookupAdmissionUnknown) {
+      best.state = fushi_voice_hook::kLookupAdmissionEngineUnsupported;
+      // 上面那句"请把 exe 摘要报上来"得真给得出摘要。这一档的定义就是没有任何
+      // adapter 认领，各家私有缓冲在这里全部够不着，所以读共享槽（Leaf 的 profile
+      // 解析对任何 x86 游戏都会跑，顺手把它填满了）。算不出就留空串——host 要能说
+      // "算不出"，而不是显示 64 个 0 让用户以为那就是他的 hash。
+      // 两边都是 kHookModuleDigestChars，共享槽恒带 NUL（要么空串、要么 64 位十六进制
+      // + NUL），所以整段拷贝是精确的——与 Siglus 那处同一种写法。
+      std::memcpy(best.executable_sha256,
+                  fushi_voice_hook::HostExecutableSha256Hex(),
+                  sizeof(best.executable_sha256));
+    }
+    fushi_voice_hook::PublishLookupAdmission(g_header, best);
   }
 
   DWORD PollDelayMs() {
@@ -606,6 +692,7 @@ class AdapterRegistry {
     entry.dwSize = sizeof(entry);
     if (Module32FirstW(snapshot, &entry)) {
       const bool notify = modules_seeded_;
+      const size_t known_before = known_modules_.size();
       do {
         bool known = false;
         for (const std::wstring& module : known_modules_) {
@@ -629,6 +716,15 @@ class AdapterRegistry {
 #include "generated/adapter_module.inc"
       } while (Module32NextW(snapshot, &entry));
       modules_seeded_ = true;
+      // 首拍必然长出一整张表，那不是「变化」、只是第一次看见——但也不能当成
+      // 「没变化」去起算安静计数，否则满表落地那一刻就开始攒。首拍一律记成有新
+      // 模块，安静计数从第二拍才开始。
+      //
+      // known_modules_ 只增不减，所以 size() 变化就是「本拍发现了新模块」的精确
+      // 判据，不需要另设标志位。快照失败的早返回路径不调 OnScanCompleted ——
+      // 那是「没观测到」，不是「观测到没变」。
+      module_settle_.OnScanCompleted(
+          !notify || known_modules_.size() != known_before, now);
     }
     CloseHandle(snapshot);
   }
@@ -650,6 +746,9 @@ class AdapterRegistry {
   int renpy_retry_ = 0;
   int tyrano_retry_ = 0;
   ULONGLONG next_module_scan_ms_ = 0;
+  // 只表示「首拍已过」（用于抑制首张全表的 onModuleLoaded 风暴），**不表示稳定**。
   bool modules_seeded_ = false;
+  // 表示「模块表稳定了」。两者曾是同一个 bool，那正是准入在第 1 拍就误报的根因。
+  fushi_voice_hook::ModuleTableSettle module_settle_;
   std::vector<std::wstring> known_modules_;
 };

@@ -147,6 +147,10 @@
     return (ms >= 0 ? '+' : '') + (ms / 1000).toFixed(1) + 's';
   }
 
+  // 与 subtitle-adapters.js 的 findCueIndexAt 是同一判据（含「落在字幕间隙返回 -1」）。
+  // 这里**有意**保留独立实现而不去调它：本文件被多套测试 harness 单独装进 vm 沙箱，
+  // 依赖同世界的其它 content script 会让面板从自包含变成跨文件依赖，harness 漏装一个
+  // 就假红。两份都只有 8 行、语义封闭，改其一必须同步另一处。
   function cueIndexAt(cues, t) {
     var lo = 0, hi = cues.length - 1, ans = -1;
     while (lo <= hi) {
@@ -335,7 +339,8 @@
     var el = ensureSubtitleOverlay();
     st.overlayCue = cue;
     el.setAttribute('data-theme', resolveTheme());
-    el.textContent = cue.text;
+    if (typeof window.fushiRenderCueText === 'function') window.fushiRenderCueText(el, cue);
+    else el.textContent = cue.text;
     el.style.left = (rect.left + rect.width / 2) + 'px';
     el.style.top = (rect.top + rect.height * 0.84) + 'px';
     el.style.maxWidth = Math.max(240, rect.width * 0.9) + 'px';
@@ -618,6 +623,15 @@
   window.fushiSubtitlePanelSuspendPush = function () {};
   window.fushiSubtitlePanelResumePush = function () {};
 
+  // 制卡链路（content.js fushiFullTrackWindowAt）按播放时间到整轨取精确窗时要跟面板看到的
+  // 是同一份：已应用用户设的时轴偏移，语言也是用户正在读的那条。live 伪轨不对外——它是
+  // 降级来源，content.js 自己有 DOM 采样兜底，不需要绕经这里。
+  window.fushiActiveFullTrack = function () {
+    if (!st.activeLang || st.activeLang === LIVE_LANG) return null;
+    if (!st.cues || !st.cues.length) return null;
+    return { lang: st.activeLang, cues: st.cues };
+  };
+
   window.fushiSubtitlePanelOnCues = function (_key) {
     if (!st.enabled) return;
     refreshHeadless();
@@ -706,12 +720,30 @@
         sendResponse({ ok: handled });
         return false;
       }
+      if (msg.type === 'fushiSubtitleSidePanelShowLookup') {
+        // 「跨出面板」：侧栏取好词后交给宿主页渲染页面弹窗（content.js 里的
+        // fushiShowLookupFromSidePanel 说明了为什么面板内画不出去）。ok:false 时侧栏
+        // 会退回面板内自己渲染——宿主页没有 content.js（chrome:// 等）不能变成查不了词。
+        var showCue = msg.cue && typeof msg.cue === 'object' ? msg.cue : null;
+        var shown = typeof window.fushiShowLookupFromSidePanel === 'function' &&
+          window.fushiShowLookupFromSidePanel(
+            String(msg.term || ''), showCue, msg.anchorRatio) === true;
+        sendResponse({ ok: shown });
+        return false;
+      }
       if (msg.type === 'fushiSubtitleSidePanelLookupClosed') {
         // Side Panel 查词面板关闭 → 恢复由查词暂停的视频（content.js 只恢复「确实是查词
         // 暂停的」，用户自己暂停的不动）。
         var closed = typeof window.fushiLookupClosedFromSidePanel === 'function' &&
           window.fushiLookupClosedFromSidePanel() === true;
         sendResponse({ ok: closed });
+        return false;
+      }
+      if (msg.type === 'fushiSubtitleSidePanelCloseLookup') {
+        // 侧栏按 Esc：关掉宿主页上那份侧栏交出去的弹窗（面板内那份侧栏自己关）。
+        var closedPage = typeof window.fushiCloseLookupFromSidePanel === 'function' &&
+          window.fushiCloseLookupFromSidePanel() === true;
+        sendResponse({ ok: closedPage });
         return false;
       }
       if (msg.type === 'fushiSubtitleSidePanelMine') {

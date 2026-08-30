@@ -221,6 +221,121 @@ void main() {
     });
   });
 
+  // ══ v19 查词准入 ═══════════════════════════════════════════════════════════
+  //
+  // 这条链回答的是「本局到底能不能游戏内查词」。它在 v19 之前**在协议里根本没有
+  // 位置**，症状就是查词在很多游戏上静默失效、用户与开发者都看不出卡在哪一步。
+  // 钉三样东西：线上值映射、"还不知道"绝不冒充"不支持"、以及会话换代必须复位。
+  group('runner → Dart：查词准入', () {
+    test('onGalLookupAdmission 逐字段解码（状态 + exe 摘要）', () async {
+      GalLookupAdmission? received;
+      GalHookTextOverlayChannel.setEventHandlers(
+        onGalLookupAdmission: (GalLookupAdmission admission) =>
+            received = admission,
+      );
+      const String sha =
+          '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08';
+      await invokeFromNative('onGalLookupAdmission', <String, Object?>{
+        'state': 2,
+        'executableSha256': sha,
+      });
+      expect(received, isNotNull);
+      expect(received!.state, GalLookupAdmissionState.identityRejected);
+      expect(received!.executableSha256, sha);
+    });
+
+    test('线上值与 voice_hook_ipc.h 的 LookupAdmissionState 逐值对应', () {
+      expect(GalLookupAdmissionState.unknown.wireValue, 0);
+      expect(GalLookupAdmissionState.engineUnsupported.wireValue, 1);
+      expect(GalLookupAdmissionState.identityRejected.wireValue, 2);
+      expect(GalLookupAdmissionState.identityAccepted.wireValue, 3);
+      expect(GalLookupAdmissionState.sensorInstalled.wireValue, 4);
+    });
+
+    test('本构建不认识的状态值回落 unknown，绝不猜成"不支持"', () async {
+      GalLookupAdmission? received;
+      GalHookTextOverlayChannel.setEventHandlers(
+        onGalLookupAdmission: (GalLookupAdmission admission) =>
+            received = admission,
+      );
+      await invokeFromNative('onGalLookupAdmission', <String, Object?>{
+        'state': 99,
+        'executableSha256': '',
+      });
+      expect(received!.state, GalLookupAdmissionState.unknown);
+    });
+
+    // 🔴 这一条是整块改造的核心不变式：把 unknown 当成"不支持"，每局游戏启动的头
+    // 几百毫秒都会误报一次。判据只有 blocksLookup 一份，UI 不得另写。
+    test('只有 engineUnsupported / identityRejected 挡住查词', () {
+      expect(GalLookupAdmissionState.unknown.blocksLookup, isFalse);
+      expect(GalLookupAdmissionState.engineUnsupported.blocksLookup, isTrue);
+      expect(GalLookupAdmissionState.identityRejected.blocksLookup, isTrue);
+      expect(GalLookupAdmissionState.identityAccepted.blocksLookup, isFalse);
+      expect(GalLookupAdmissionState.sensorInstalled.blocksLookup, isFalse);
+      // 枚举加了新状态却没在这里表态 = 默认被当成"不挡"，必须显式复核。
+      expect(GalLookupAdmissionState.values.length, 5);
+    });
+
+    test('会话换代复位成 unknown：上一局的准入不许留给下一局', () async {
+      // setSessionActive 会把开关意图下发给 runner；这里只关心准入复位，把 native
+      // 那半边收成一个成功应答，不然 MissingPluginException 会把断言前的路径炸掉。
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+        return <String, Object?>{'ok': true};
+      });
+      final GalIngameLookupController controller =
+          GalIngameLookupController.test();
+      controller.handleAdmission(
+        const GalLookupAdmission(
+          state: GalLookupAdmissionState.sensorInstalled,
+          executableSha256: '',
+        ),
+      );
+      expect(
+        controller.admission.value.state,
+        GalLookupAdmissionState.sensorInstalled,
+      );
+      await controller.setSessionActive(true);
+      expect(controller.admission.value, GalLookupAdmission.unknown);
+
+      controller.handleAdmission(
+        const GalLookupAdmission(
+          state: GalLookupAdmissionState.engineUnsupported,
+          executableSha256: 'abc',
+        ),
+      );
+      await controller.setSessionActive(false);
+      expect(controller.admission.value, GalLookupAdmission.unknown);
+    });
+
+    test('同内容的快照不重复通知（runner 补摘要后会再发一次同一份）', () {
+      final GalIngameLookupController controller =
+          GalIngameLookupController.test();
+      int notifications = 0;
+      void listener() => notifications++;
+      controller.admission.addListener(listener);
+      addTearDown(() => controller.admission.removeListener(listener));
+
+      const GalLookupAdmission blocked = GalLookupAdmission(
+        state: GalLookupAdmissionState.engineUnsupported,
+        executableSha256: '',
+      );
+      controller.handleAdmission(blocked);
+      controller.handleAdmission(blocked);
+      expect(notifications, 1);
+
+      // 摘要补上来了：内容变了，必须通知——设置页那一行要从"无法获取"换成真摘要。
+      controller.handleAdmission(
+        const GalLookupAdmission(
+          state: GalLookupAdmissionState.engineUnsupported,
+          executableSha256: 'deadbeef',
+        ),
+      );
+      expect(notifications, 2);
+    });
+  });
+
   group('定位：卡片必须整张留在游戏画面里', () {
     const int cardW = 480;
     const int cardH = 320;

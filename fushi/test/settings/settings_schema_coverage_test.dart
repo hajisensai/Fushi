@@ -90,6 +90,26 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   //   ③ ruby-render 守卫：行距门控与默认行高恒等 1.0。
   // ②③ 那两条默认值断言是这批登记的前提：可配置化如果顺手改了默认观感，
   // 「没探针」就会变成「没人发现所有老用户的浮窗都变样了」。
+  // hook 台词浮窗的交互三件套（单击查词 / 工具条自动隐藏 / 穿透时是否拦截鼠标）。
+  // 写 prefsRepo（changed=true），生效点全在 runner 自有的 Win32 分层浮窗里：
+  // 前者是 native 的 click_lookup_enabled_ 门控，后两者一个决定工具条窗显不显示、
+  // 一个决定穿透态要不要铺行盒 catch fill——本进程内没有任何可探的渲染输入，故无
+  // 适用探针。由偏好行为用例 + runner 源码守卫咬住（含「设置项必须 live 下发」
+  // 这条：只落盘不推 channel = 开关本局不生效，要退出重进一局）。
+  //
+  // 「查词触发方式」是下拉不是开关，coverage 的 changed 判定够不到它，因此不在此表。
+  'game/Tap a word to look it up':
+      'test/lookup/gal_hook_overlay_interaction_prefs_test.dart',
+  'game/Auto-hide the toolbar':
+      'test/lookup/gal_hook_overlay_interaction_prefs_test.dart',
+  'game/Caption still catches clicks while clicking through':
+      'test/lookup/gal_hook_overlay_interaction_prefs_test.dart',
+  // 台词折叠开关。写 prefsRepo（changed=true），生效点在 TexthookerService 这个
+  // 进程级单例的 buffer 折叠上——harness 里没有跑着的 hook 会话，也就没有可探的
+  // 输入。由折叠判据的纯函数用例 + service 级行为用例咬住（前缀/后缀/等长/过短
+  // 四种形状 + 关掉开关必须退回旧的逐条追加行为）。
+  'game/Merge split dialogue lines':
+      'test/sync/texthooker_progressive_fold_test.dart',
   'game/In-game dictionary lookup':
       'test/lookup/gal_ingame_lookup_contract_test.dart + '
           'native/galgame_hook/tests/lookup_ipc_contract_test.cpp + '
@@ -376,6 +396,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Hardware decoding': 'test/media/video/video_mpv_config_test.dart',
   'video/Debanding': 'test/media/video/video_mpv_config_test.dart',
   'video/Loop file': 'test/media/video/video_mpv_config_test.dart',
+  // HDR：值写穿 videoMpvConfig，生效点在 libmpv（tone-mapping /
+  // hdr-compute-peak），harness 探不到渲染输入。round-trip + 白名单挡脏值
+  // 由下面这个文件咬住；真实 HDR 片源的映射效果需桌面设备验。
+  'video/HDR tone mapping':
+      'test/media/video/video_hdr_tone_mapping_test.dart',
+  'video/Dynamic peak detection':
+      'test/media/video/video_hdr_tone_mapping_test.dart',
   // TODO-1247：把播放页内 mpv 详情（画质余项/几何/色彩/音频）平移到首页后，这些
   // 纯 pref 项写穿 videoMpvConfig（下次开视频 applyMpvConfig 应用）；结构化字段
   // round-trip + buildMpvProperties 生效由 video_mpv_config_test.dart 咬住，真实

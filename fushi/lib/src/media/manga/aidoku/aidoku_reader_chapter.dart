@@ -111,13 +111,51 @@ String _normalizeAidokuRequestHeader(String name, String value) {
   return value;
 }
 
+/// 把 `AidokuRuntime.getPages` 的原始返回解析成可读页表。
+///
+/// 源浏览页和书架条目走同一份解析，否则两条路径对「哪些 page 形状算可读」的
+/// 判断会各自漂移。
+List<AidokuImagePage> aidokuImagePagesFrom(List<Object?> raw) {
+  final List<AidokuImagePage> pages = raw
+      .whereType<Map<Object?, Object?>>()
+      .map((Map<Object?, Object?> value) =>
+          AidokuImagePage.fromJson(value.cast<String, Object?>()))
+      .toList(growable: false);
+  if (pages.isEmpty) {
+    throw const AidokuRuntimeException(
+      'EMPTY_CHAPTER',
+      'Aidoku returned no readable image pages for this chapter',
+    );
+  }
+  return pages;
+}
+
 class AidokuReaderChapter extends OnlineMangaReaderChapter {
   AidokuReaderChapter({
     required this.package,
     required this.manga,
     required this.chapter,
     required this.pages,
-  }) : managedDirectory = Directory(
+    Directory? managedDirectory,
+    this.persistProgress = false,
+    this.initialPage,
+  }) : managedDirectory = managedDirectory ??
+            defaultCacheDirectory(
+              package: package,
+              manga: manga,
+              chapter: chapter,
+            );
+
+  /// 未入库（在源浏览里随手翻一章）时的落盘位置：包目录旁的私有缓存。
+  ///
+  /// 入库条目改由 `OnlineMangaLibraryService.chapterDirectory` 显式给目录，让它
+  /// 与 Mihon 条目一样住进应用管理的 reader-cache，删书时能被一起清掉。
+  static Directory defaultCacheDirectory({
+    required AidokuInstalledPackage package,
+    required Map<String, Object?> manga,
+    required Map<String, Object?> chapter,
+  }) =>
+      Directory(
           p.join(
             p.dirname(package.packagePath),
             '.reader-cache',
@@ -140,10 +178,10 @@ class AidokuReaderChapter extends OnlineMangaReaderChapter {
   final Directory managedDirectory;
 
   @override
-  bool get persistProgress => false;
+  final bool persistProgress;
 
   @override
-  int? get initialPage => null;
+  final int? initialPage;
 
   @override
   String get title => manga['title']?.toString() ?? package.name;

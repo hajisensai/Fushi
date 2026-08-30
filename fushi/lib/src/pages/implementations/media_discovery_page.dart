@@ -412,25 +412,13 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
 
   String _kindLabel(DiscoveryMediaKind kind) => discoveryMediaKindLabel(kind);
 
-  static String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    const List<String> units = <String>['KiB', 'MiB', 'GiB', 'TiB'];
-    double value = bytes / 1024;
-    int unit = 0;
-    while (value >= 1024 && unit < units.length - 1) {
-      value /= 1024;
-      unit++;
-    }
-    return '${value.toStringAsFixed(value >= 100 ? 0 : 1)} ${units[unit]}';
-  }
-
   String _subtitleFor(
     DiscoveryResourceItem item,
     MediaDiscoveryService service,
   ) {
     final List<String> parts = <String>[
       service.sourceById(item.sourceId)?.displayName ?? item.sourceId,
-      if (item.sizeBytes != null) _formatBytes(item.sizeBytes!),
+      if (item.sizeBytes != null) formatDiscoveryBytes(item.sizeBytes!),
       if (item.dateText != null) item.dateText!,
       if (item.seeders != null) '↑${item.seeders}',
       if (item.note != null) item.note!,

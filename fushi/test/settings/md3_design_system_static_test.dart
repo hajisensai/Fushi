@@ -3081,12 +3081,20 @@ void main() {
     final String homeSource = File(
       'lib/src/pages/implementations/home_page.dart',
     ).readAsStringSync();
-    final String railLeading = _functionSource(
-      homeSource,
-      'Widget _buildRailLeading()',
-      'Widget _bodyWithMiniBar()',
+    // 品牌位（rail 的 leading）已从 home_page 的私有方法抽成
+    // [NavRailBrandButton]——它同时是官网入口，需要独立可测（点击/焦点确认真的
+    // 打开官网，见 test/widgets/nav_rail_brand_button_test.dart）。MD3 判据跟着
+    // 实现搬到该组件的 build 里，home_page 这边只剩「rail 确实挂了品牌位」。
+    final String brandSource = File(
+      'lib/src/utils/components/nav_rail_brand_button.dart',
+    ).readAsStringSync();
+    final String railLeading = _sectionSource(
+      brandSource,
+      'Widget build(BuildContext context)',
+      // 品牌位的 build 是该文件最后一个成员，没有下一个可锚的符号。
+      brandSource.length,
     );
-    expect(homeSource, contains('leading: _buildRailLeading()'));
+    expect(homeSource, contains('leading: const NavRailBrandButton()'));
     expect(railLeading, contains('FushiDesignTokens.of(context)'));
     expect(railLeading, contains('tokens.spacing'));
     expect(railLeading, contains('tokens.radii.controlRadius'));
