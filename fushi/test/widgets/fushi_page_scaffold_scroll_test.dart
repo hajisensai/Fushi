@@ -1,9 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/focus/page_scroll_registry.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 import 'widget_test_helpers.dart';
 
@@ -129,5 +133,67 @@ void main() {
     await tester.pump();
     expect(PageScrollRegistry.debugDepth, 0,
         reason: 'the scaffold must pop its controller on dispose (no leak)');
+  });
+
+  testWidgets('BUG-1959：粗鼠标滚轮不再一格跳过完整原始 delta',
+      (WidgetTester tester) async {
+    PageScrollRegistry.debugClear();
+    await tester.pumpWidget(buildTestApp(
+      FushiPageScaffold(
+        title: 'Wheel',
+        body: ListView.builder(
+          itemCount: 60,
+          itemBuilder: (BuildContext context, int index) =>
+              SizedBox(height: 100, child: Text('wheel row $index')),
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    final ScrollController controller = PageScrollRegistry.current!;
+    final TestPointer wheel = TestPointer(1, PointerDeviceKind.mouse);
+    await tester.sendEventToBinding(
+      wheel.hover(tester.getCenter(find.text('wheel row 0'))),
+    );
+    await tester.sendEventToBinding(wheel.scroll(const Offset(0, 120)));
+    // 先空 pump 一帧把 Ticker 起起来：AnimationController 第一次 tick 拿到的
+    // elapsed 恒为 0（起始时间就在那一帧上设），所以直接 `pump(40ms)` 落在的是
+    // 「动画刚开始、位移还是 0」那一帧，下面 `greaterThan(0)` 必然失败——那测的是
+    // Ticker 的记时约定，不是滚动行为。起完之后再推进 40ms 才是真的动画中途。
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    if (Platform.isWindows || Platform.isLinux) {
+      expect(
+        controller.offset,
+        allOf(
+          greaterThan(0),
+          lessThan(refinedDesktopPointerScrollDelta(120)),
+        ),
+        reason: '粗滚轮应在多帧内逐步到达目标，而不是第一帧瞬移',
+      );
+    } else {
+      expect(controller.offset, 120, reason: 'macOS 保持平台原生 pointer delta');
+    }
+    await tester.pumpAndSettle();
+    expect(controller.offset, refinedDesktopPointerScrollDelta(120));
+
+    await tester.sendEventToBinding(wheel.scroll(const Offset(0, 12)));
+    await tester.pump();
+    expect(
+      controller.offset,
+      refinedDesktopPointerScrollDelta(120) + 12,
+      reason: '小 delta 不得跟着粗滚轮一起打折',
+    );
+
+    controller.jumpTo(0);
+    await tester.sendEventToBinding(wheel.scroll(const Offset(0, 120)));
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.sendEventToBinding(wheel.scroll(const Offset(0, 120)));
+    await tester.pumpAndSettle();
+    expect(
+      controller.offset,
+      refinedDesktopPointerScrollDelta(120) * 2,
+      reason: '连续同向滚轮必须累积目标，不能因重启动画吃掉滚动距离',
+    );
   });
 }
