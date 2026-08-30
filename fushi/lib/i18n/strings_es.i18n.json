@@ -3891,8 +3891,6 @@
   "gal_hook_toolbar_auto_hide_hint": "Oculta la barra hasta que el puntero llega al cuadro de texto, al estilo de LunaHook. Oculta significa oculta de verdad: esos píxeles vuelven al juego.",
   "gal_hook_passthrough_blocks_mouse": "El texto sigue recibiendo clics con el clic pasante",
   "gal_hook_passthrough_blocks_mouse_hint": "Activado: las líneas de texto siguen recibiendo clics, así puedes tocar una palabra. Desactivado: toda la superposición es transparente al ratón; puedes hacer clic en lo que haya debajo, pero tocar palabras deja de funcionar.",
-  "floating_lyric_passthrough": "Dejar pasar los clics a lo que hay debajo",
-  "floating_lyric_transparency": "Alternar el fondo",
   "floating_lyric_topmost": "Mantener al frente",
   "gal_hook_fold_progressive_lines": "Unir líneas de diálogo divididas",
   "gal_hook_fold_progressive_lines_hint": "Algunos motores redibujan la línea entera en cada clic, así que una misma línea se captura varias veces. Pliega esas instantáneas en una sola línea.",
@@ -3900,5 +3898,13 @@
   "gal_hook_ingame_lookup_version_unsupported": "Esta versión del juego aún no está en la lista de compatibles",
   "gal_hook_ingame_lookup_exe_hash_copy": "Copiar el SHA-256 del ejecutable del juego",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "No se pudo leer el ejecutable del juego",
-  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 del ejecutable copiado"
+  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 del ejecutable copiado",
+  "download_tracker_section": "Suscripción de trackers",
+  "download_tracker_auto_add": "Añadir automáticamente los trackers suscritos a las descargas nuevas",
+  "download_tracker_auto_add_hint": "La lista se almacena en caché 6 horas. Si la suscripción falla, la descarga no se bloquea.",
+  "download_tracker_url": "URL de suscripción",
+  "download_tracker_refresh": "Obtener trackers",
+  "download_tracker_preview_empty": "Obtén la suscripción para ver los trackers HTTP, HTTPS y UDP compatibles.",
+  "download_tracker_preview_count": "$count trackers obtenidos",
+  "download_tracker_fetch_failed": "No se pudieron obtener los trackers: $message"
 }

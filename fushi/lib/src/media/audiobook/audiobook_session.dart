@@ -544,15 +544,18 @@ class AudiobookSession extends ChangeNotifier {
   }
 
   /// 工具条槽位悬停提示文案，**下标与 native `hook_toolbar::kAudiobookSlotActions`
-  /// 严格同序**（上一句 / 播放暂停 / 下一句 / 穿透 / 透明 / 锁定 / 置顶 / 关闭）。
+  /// 严格同序**（上一句 / 播放暂停 / 下一句 / 锁定 / 置顶 / 关闭）。
   /// native 不持有 i18n，文案只能由这里按当前 locale 下发；表按 profile 分开存，
   /// 不会和 galgame hook 台词浮窗的提示互相覆盖。
+  ///
+  /// 🔴 条数必须与 native 槽数**恰好相等**：这两张表靠下标对齐，多一条就从多出来
+  /// 的那一位起整体错位，第 N 颗按钮顶着第 N-1 颗的说明——后果不是「说明不准」
+  /// 而是「说明指向另一件事」。删 native 槽时必须同拍删掉这里对应的那条。
+  /// 守卫：`test/build/gal_hook_toolbar_tooltip_guard_test.dart`。
   List<String> get _slotTooltips => <String>[
         t.floating_lyric_previous,
         t.floating_lyric_play_pause,
         t.floating_lyric_next,
-        t.floating_lyric_passthrough,
-        t.floating_lyric_transparency,
         t.floating_lyric_lock,
         t.floating_lyric_topmost,
         t.floating_lyric_close,

@@ -9,6 +9,8 @@
 /// 让「目录没有 payload/体积/做种数」在类型上成立，而不是一堆可空字段的运行时约定。
 library;
 
+import 'package:fushi/src/media/torrent/torrent_metainfo.dart';
+
 /// 发现页覆盖的媒体域。各域独立枚举（见根 CLAUDE.md 术语表），与持久化的
 /// `MediaKind` 等值域互不混用；本枚举只活在发现/下载编排层，不落库。
 enum DiscoveryMediaKind { novel, audiobook, game, manga }
@@ -31,6 +33,29 @@ final class DiscoveryTorrentPayload extends DiscoveryPayload {
   const DiscoveryTorrentPayload({required this.magnetUri});
 
   final String magnetUri;
+}
+
+/// 已在 add 之前解析、并且只允许下载其中一部分文件的 `.torrent` payload。
+///
+/// 普通 Nyaa 搜索仍用 [DiscoveryTorrentPayload]；CoreAudio 的 TMW 合集必须用
+/// 本类型，避免一个“卷”点击退化成整颗合集下载。选择意图与 metainfo 一起交给
+/// durable 下载管线，重启后仍能重新应用文件优先级。
+final class DiscoverySelectedTorrentPayload extends DiscoveryPayload {
+  DiscoverySelectedTorrentPayload({
+    required this.metainfo,
+    required Iterable<int> selectedFileIndexes,
+    required this.resourceTitle,
+    this.importAfterDownload = true,
+  }) : selectedFileIndexes = Set<int>.unmodifiable(selectedFileIndexes);
+
+  final InspectedTorrentMetainfo metainfo;
+  final Set<int> selectedFileIndexes;
+
+  /// 合集自身的展示名（例如 `TMW Part 7`），与条目的目标卷标题分开。
+  final String resourceTitle;
+
+  /// false = 文件完成后只结束下载任务、保留在下载目录，不冒充已自动入书架。
+  final bool importAfterDownload;
 }
 
 /// HTTP 直链：交给 HTTP 下载队列。
@@ -69,10 +94,18 @@ final class DiscoveryFolder extends DiscoveryEntry {
     required super.sourceId,
     required super.title,
     required this.path,
+    this.note,
+    this.itemCount,
   });
 
   /// 源内路径（源自定义语义，聚合层只透传）。
   final String path;
+
+  /// 来源补充信息（例如作者）。
+  final String? note;
+
+  /// 目录直属资源数；UI 可据此显示卷数。
+  final int? itemCount;
 }
 
 /// 可下载资源。
@@ -92,6 +125,7 @@ final class DiscoveryResourceItem extends DiscoveryEntry {
     this.detailUrl,
     this.note,
     this.gameLocalization,
+    this.isDownloadable = true,
   });
 
   /// 源内稳定 id（去重/防重复入队的身份键；语义源自定义：文件路径、种子页 URL 等）。
@@ -135,6 +169,9 @@ final class DiscoveryResourceItem extends DiscoveryEntry {
   /// 不是「未汉化」。UI 必须为它保留一个可见的「未标注」档，否则用户在聚合搜索里
   /// 一按筛选就把这两个源整个滤没了。
   final DiscoveryGameLocalization? gameLocalization;
+
+  /// false 表示该来源只支持展示/辨认，当前下载模块没有可执行 payload。
+  final bool isDownloadable;
 }
 
 /// BUG-1910：游戏资源的汉化状态。值域来自 shinnku 上游 `get_game_type` 的三分类。
@@ -157,19 +194,19 @@ class DiscoveryRequest {
     this.path,
     this.page = 1,
     this.pageSize = 50,
-  })  : assert(page > 0),
-        assert(pageSize > 0),
-        // BUG-1768：[query] 与 [path] 互斥。服务层按 [isSearch] 二选一分发，
-        // 两个都给时 [path] 会被**静默**丢弃，调用方却以为自己在浏览那个目录
-        // ——发现页当初就是这样把「进文件夹」变成「重发同一次全站搜索」的。
-        // 让它在构造点炸，而不是等用户看见同名目录无限自嵌套。
-        // 写成 `a == null || b == null`（不是 `query.trim().isEmpty`）是因为本类
-        // 有 const 构造点：const 断言只接受潜在常量表达式，方法调用会让所有
-        // `const DiscoveryRequest(...)` 编译不过。
-        assert(
-          query == null || path == null,
-          'DiscoveryRequest: query 与 path 互斥（isSearch 时 path 会被丢弃）',
-        );
+  }) : assert(page > 0),
+       assert(pageSize > 0),
+       // BUG-1768：[query] 与 [path] 互斥。服务层按 [isSearch] 二选一分发，
+       // 两个都给时 [path] 会被**静默**丢弃，调用方却以为自己在浏览那个目录
+       // ——发现页当初就是这样把「进文件夹」变成「重发同一次全站搜索」的。
+       // 让它在构造点炸，而不是等用户看见同名目录无限自嵌套。
+       // 写成 `a == null || b == null`（不是 `query.trim().isEmpty`）是因为本类
+       // 有 const 构造点：const 断言只接受潜在常量表达式，方法调用会让所有
+       // `const DiscoveryRequest(...)` 编译不过。
+       assert(
+         query == null || path == null,
+         'DiscoveryRequest: query 与 path 互斥（isSearch 时 path 会被丢弃）',
+       );
 
   final DiscoveryMediaKind kind;
   final String? query;

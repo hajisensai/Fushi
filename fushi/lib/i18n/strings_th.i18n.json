@@ -3891,8 +3891,6 @@
   "gal_hook_toolbar_auto_hide_hint": "ซ่อนแถบเครื่องมือจนกว่าตัวชี้จะถึงกล่องคำบรรยาย แบบ LunaHook ซ่อนคือซ่อนจริง ๆ พิกเซลเหล่านั้นคืนให้เกม",
   "gal_hook_passthrough_blocks_mouse": "คำบรรยายยังรับคลิกขณะคลิกทะลุ",
   "gal_hook_passthrough_blocks_mouse_hint": "เปิด: บรรทัดข้อความยังรับคลิก จึงแตะคำได้ ปิด: โอเวอร์เลย์ทั้งหมดโปร่งต่อเมาส์ คุณคลิกสิ่งที่อยู่ข้างล่างได้ แต่แตะคำจะไม่ทำงานอีก",
-  "floating_lyric_passthrough": "ส่งการคลิกไปยังหน้าต่างด้านล่าง",
-  "floating_lyric_transparency": "สลับพื้นหลัง",
   "floating_lyric_topmost": "อยู่ด้านบนเสมอ",
   "gal_hook_fold_progressive_lines": "รวมบรรทัดบทสนทนาที่ถูกแบ่ง",
   "gal_hook_fold_progressive_lines_hint": "บางเอนจินวาดทั้งบรรทัดใหม่ทุกครั้งที่คลิก ทำให้บรรทัดเดียวถูกเก็บหลายครั้ง ให้ยุบสแนปช็อตเหล่านั้นเป็นบรรทัดเดียว",
@@ -3900,5 +3898,13 @@
   "gal_hook_ingame_lookup_version_unsupported": "เกมเวอร์ชันนี้ยังไม่อยู่ในรายการที่รองรับ",
   "gal_hook_ingame_lookup_exe_hash_copy": "คัดลอก SHA-256 ของไฟล์เกม",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "อ่านไฟล์เกมไม่ได้",
-  "gal_hook_ingame_lookup_exe_hash_copied": "คัดลอก SHA-256 ของไฟล์เกมแล้ว"
+  "gal_hook_ingame_lookup_exe_hash_copied": "คัดลอก SHA-256 ของไฟล์เกมแล้ว",
+  "download_tracker_section": "การสมัครรับแทร็กเกอร์",
+  "download_tracker_auto_add": "เพิ่มแทร็กเกอร์จากการสมัครรับลงในดาวน์โหลดใหม่โดยอัตโนมัติ",
+  "download_tracker_auto_add_hint": "รายการจะถูกแคชไว้ 6 ชั่วโมง หากดึงรายการไม่สำเร็จก็จะไม่ขัดขวางการดาวน์โหลด",
+  "download_tracker_url": "URL การสมัครรับ",
+  "download_tracker_refresh": "ดึงแทร็กเกอร์",
+  "download_tracker_preview_empty": "ดึงรายการที่สมัครรับเพื่อดูตัวอย่างแทร็กเกอร์ HTTP, HTTPS และ UDP ที่รองรับ",
+  "download_tracker_preview_count": "ดึงแทร็กเกอร์มาแล้ว $count รายการ",
+  "download_tracker_fetch_failed": "ดึงแทร็กเกอร์ไม่สำเร็จ: $message"
 }

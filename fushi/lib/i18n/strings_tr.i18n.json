@@ -3891,8 +3891,6 @@
   "gal_hook_toolbar_auto_hide_hint": "İmleç altyazı kutusuna gelene kadar araç çubuğunu gizler, LunaHook tarzı. Gizli gerçekten gizli demek — o pikseller oyuna geri döner.",
   "gal_hook_passthrough_blocks_mouse": "Tıklama geçişi açıkken altyazı yine tıklama alır",
   "gal_hook_passthrough_blocks_mouse_hint": "Açık: metin satırları tıklama almaya devam eder, böylece bir kelimeye dokunabilirsin. Kapalı: tüm katman fareye saydamdır — altındakine tıklarsın ama kelimelere dokunmak artık çalışmaz.",
-  "floating_lyric_passthrough": "Tıklamaları alttaki pencereye geçir",
-  "floating_lyric_transparency": "Arka planı değiştir",
   "floating_lyric_topmost": "Her zaman üstte tut",
   "gal_hook_fold_progressive_lines": "Bölünmüş diyalog satırlarını birleştir",
   "gal_hook_fold_progressive_lines_hint": "Bazı motorlar her tıklamada satırın tamamını yeniden çizer, bu yüzden tek bir satır birkaç kez yakalanır. Bu anlık görüntüleri tek satırda topla.",
@@ -3900,5 +3898,13 @@
   "gal_hook_ingame_lookup_version_unsupported": "Bu oyun sürümü henüz desteklenenler listesinde değil",
   "gal_hook_ingame_lookup_exe_hash_copy": "Oyun çalıştırılabilir dosyasının SHA-256 değerini kopyala",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "Oyun çalıştırılabilir dosyası okunamadı",
-  "gal_hook_ingame_lookup_exe_hash_copied": "Çalıştırılabilir dosyanın SHA-256 değeri kopyalandı"
+  "gal_hook_ingame_lookup_exe_hash_copied": "Çalıştırılabilir dosyanın SHA-256 değeri kopyalandı",
+  "download_tracker_section": "Tracker aboneliği",
+  "download_tracker_auto_add": "Abonelikteki trackerları yeni indirmelere otomatik ekle",
+  "download_tracker_auto_add_hint": "Liste 6 saat önbellekte tutulur. Abonelik alınamazsa indirme engellenmez.",
+  "download_tracker_url": "Abonelik adresi",
+  "download_tracker_refresh": "Trackerları getir",
+  "download_tracker_preview_empty": "Desteklenen HTTP, HTTPS ve UDP trackerlarını önizlemek için aboneliği getir.",
+  "download_tracker_preview_count": "$count tracker getirildi",
+  "download_tracker_fetch_failed": "Trackerlar getirilemedi: $message"
 }

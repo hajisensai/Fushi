@@ -3891,8 +3891,6 @@
   "gal_hook_toolbar_auto_hide_hint": "포인터가 자막 상자에 닿을 때까지 도구 모음을 숨깁니다(LunaHook 방식). 숨긴다는 건 정말로 사라진다는 뜻이라, 그 픽셀은 게임으로 돌아갑니다.",
   "gal_hook_passthrough_blocks_mouse": "클릭 통과 중에도 자막은 클릭을 받음",
   "gal_hook_passthrough_blocks_mouse_hint": "켬: 자막 줄이 계속 클릭을 받아 단어를 누를 수 있습니다. 끔: 오버레이 전체가 마우스에 투명해져 아래 것을 클릭할 수 있지만, 단어 누르기는 더 이상 되지 않습니다.",
-  "floating_lyric_passthrough": "클릭을 아래 창으로 통과",
-  "floating_lyric_transparency": "배경 전환",
   "floating_lyric_topmost": "항상 위에 표시",
   "gal_hook_fold_progressive_lines": "나뉜 대사 줄 합치기",
   "gal_hook_fold_progressive_lines_hint": "클릭할 때마다 줄 전체를 다시 그리는 엔진이 있어 같은 줄이 여러 번 캡처됩니다. 그 스냅숏들을 한 줄로 접습니다.",
@@ -3900,5 +3898,13 @@
   "gal_hook_ingame_lookup_version_unsupported": "이 게임 버전은 아직 지원 목록에 없습니다",
   "gal_hook_ingame_lookup_exe_hash_copy": "게임 실행 파일의 SHA-256 복사",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "게임 실행 파일을 읽을 수 없습니다 (권한 부족일 수 있음)",
-  "gal_hook_ingame_lookup_exe_hash_copied": "실행 파일의 SHA-256을 복사했습니다"
+  "gal_hook_ingame_lookup_exe_hash_copied": "실행 파일의 SHA-256을 복사했습니다",
+  "download_tracker_section": "트래커 구독",
+  "download_tracker_auto_add": "새 다운로드에 구독 트래커 자동 추가",
+  "download_tracker_auto_add_hint": "목록은 6시간 동안 캐시됩니다. 구독을 가져오지 못해도 다운로드는 중단되지 않습니다.",
+  "download_tracker_url": "구독 URL",
+  "download_tracker_refresh": "트래커 가져오기",
+  "download_tracker_preview_empty": "구독을 가져오면 지원되는 HTTP, HTTPS, UDP 트래커를 미리 볼 수 있습니다.",
+  "download_tracker_preview_count": "트래커 $count개를 가져왔습니다",
+  "download_tracker_fetch_failed": "트래커를 가져오지 못했습니다: $message"
 }

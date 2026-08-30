@@ -29,11 +29,19 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1825 条。点号进各自文件。
+> 共 1833 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1962](bugs/BUG-1962-windows-icon-shortcuts.md) | ✅ | ✅ | Windows 换图标未同步固定任务栏且启动后快捷方式不自愈 |
+| [BUG-1960](bugs/BUG-1960-app-wheel-scroll-jump.md) | ✅ | ✅ | App 桌面滚轮滚动逐事件瞬移不流畅 |
+| [BUG-1959](bugs/BUG-1959-dashboard-activity-scroll-jank.md) | ✅ | ✅ | Windows/Linux 粗鼠标滚轮一格跳动范围过大 |
 | [BUG-1958](bugs/BUG-1958-online-manga-local-ocr.md) | ✅ | ✅ | 在线漫画点击查词无视已下载本地模型并强制 Google Lens |
+| [BUG-1957](bugs/BUG-1957-galgame-xwma-card-audio.md) | ✅ | ✅ | Galgame 制卡把 xWMA 原样写入卡片，手机无法播放 |
+| [BUG-1956](bugs/BUG-1956-downloads-center-sections-global-search.md) | ✅ | ✅ | 下载中心四分区被移除且资源页发现入口失去模块复用 |
+| [BUG-1955](bugs/BUG-1955-selective-download-backend-target.md) | ✅ | ✅ | 选择性下载仍调用已删除的后端身份接口导致 Windows 构建失败 |
+| [BUG-1954](bugs/BUG-1954-downloads-dropdown-back-button.md) | ✅ | ✅ | 下载页展开下拉框时左上角误显返回键 |
+| [BUG-1953](bugs/BUG-1953-torrent-detail-missing-live-data-layout.md) | ✅ | ✅ | Torrent 详情缺少实时数据时空态布局失衡 |
 | [BUG-1952](bugs/BUG-1952-gal-progressive-line-fold.md) | ✅ | ✅ | 一句台词分多次显示时工作台重复出现且字数重复统计（Zato） |
 | [BUG-1946](bugs/BUG-1946-sukebei-rss-namespace-rejected.md) | ✅ | ✅ | Sukebei 发现源结果恒空：NyaaClient 严格解析硬编码 nyaa.si 命名空间，sukebei RSS 的 sukebei.nyaa.si/xmlns/nyaa 被判 invalidNamespace |
 | [BUG-1945](bugs/BUG-1945-video-fullscreen-exit-deactivated-context.md) | ✅ | ✅ | 视频取消全屏短暂闪现 deactivated widget 红屏 |

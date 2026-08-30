@@ -3891,8 +3891,6 @@
   "gal_hook_toolbar_auto_hide_hint": "Hide the toolbar until the pointer reaches the caption box, LunaHook style. Hidden means really hidden — those pixels go back to the game.",
   "gal_hook_passthrough_blocks_mouse": "Caption still catches clicks while clicking through",
   "gal_hook_passthrough_blocks_mouse_hint": "On: text lines still take clicks so you can tap a word. Off: the whole overlay is transparent to the mouse — you can click whatever is underneath, but tapping words no longer works.",
-  "floating_lyric_passthrough": "Click through to what is underneath",
-  "floating_lyric_transparency": "Toggle the background",
   "floating_lyric_topmost": "Keep on top",
   "gal_hook_fold_progressive_lines": "Merge split dialogue lines",
   "gal_hook_fold_progressive_lines_hint": "Some engines redraw the whole line on every click, so one line is captured several times. Fold those snapshots into a single line.",
@@ -3900,5 +3898,13 @@
   "gal_hook_ingame_lookup_version_unsupported": "This game version is not on the supported list yet",
   "gal_hook_ingame_lookup_exe_hash_copy": "Copy game executable SHA-256",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "Could not read the game executable",
-  "gal_hook_ingame_lookup_exe_hash_copied": "Executable SHA-256 copied"
+  "gal_hook_ingame_lookup_exe_hash_copied": "Executable SHA-256 copied",
+  "download_tracker_section": "Tracker subscription",
+  "download_tracker_auto_add": "Automatically add subscription trackers to new downloads",
+  "download_tracker_auto_add_hint": "The list is cached for 6 hours. A subscription failure will not block the download.",
+  "download_tracker_url": "Subscription URL",
+  "download_tracker_refresh": "Fetch trackers",
+  "download_tracker_preview_empty": "Fetch the subscription to preview supported HTTP, HTTPS, and UDP trackers.",
+  "download_tracker_preview_count": "Fetched $count trackers",
+  "download_tracker_fetch_failed": "Could not fetch trackers: $message"
 }

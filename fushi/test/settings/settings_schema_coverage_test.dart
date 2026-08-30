@@ -481,6 +481,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // harness 里可达——全部登记（含反吸血二级开关，超集登记无害）。
   'downloads/Enable upload / seeding':
       'test/media/torrent/torrent_upload_policy_test.dart',
+  // 「自动为新任务添加订阅 tracker」：生效点是 addTorrent 之后**多打一次**
+  // `/api/v2/torrents/addTrackers`（qB 后端）／把 tracker 追加进 magnet（内置引擎），
+  // 都在 widget 树之外。torrent_backend_test 咬住的是真行为而不只是编解码：开关为真时
+  // 断言请求序列是 add → addTrackers 且 urls 正是订阅拉回来的那两条。
+  'downloads/Automatically add subscription trackers to new downloads':
+      'test/torrent/torrent_backend_test.dart',
   // 「限速也作用于局域网」：生效点在 native（ht_apply_limits_ex 把上限写进
   // libtorrent 的 local peer class），widget 测不到；由编解码 + 下发透传测试覆盖。
   'downloads/Apply limits to LAN peers':
