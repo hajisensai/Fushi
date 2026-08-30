@@ -3912,10 +3912,6 @@
   "onboarding_action_badge_required": "必做",
   "onboarding_action_badge_recommended": "推荐",
   "onboarding_action_badge_optional": "可选",
-  "onboarding_pack_route_label": "下载来源",
-  "onboarding_pack_route_github_hint": "先取清单，再从 GitHub Releases 并发下载分片并逐片校验。GitHub 通的话这条最快。",
-  "onboarding_pack_route_drive_hint": "从 Google Drive 拉一个整包。GitHub 慢或被挡时用这条。",
-  "onboarding_pack_manifest_failed": "官网和 GitHub 都没取到推荐包清单。检查网络，或把下载来源切到 Google Drive。",
   "onboarding_pack_action_download_desc": "在后台下载整个推荐包，下完自动进入导入。随时可以取消，下次从断点续传。",
   "onboarding_pack_action_import_existing_desc": "包已经下好了，这里直接导入。确认框里选「合并到现有库」不会动你已有的数据。",
   "onboarding_pack_action_pick_desc": "已经从别处拿到包的 zip？从硬盘导入，整段下载都可以跳过。",
@@ -3932,5 +3928,6 @@
   "onboarding_step_backup_action_desc": "选备份后端并登录，换机器或丢设备时库还在。",
   "onboarding_step_interconnect_action_desc": "把这台设备和你的其它设备配对，共享同一个库并同步进度。",
   "onboarding_step_extension_action_desc": "告诉你怎么装浏览器扩展并连上 Fushi，之后在网页上也能查词。",
-  "onboarding_step_fonts_action_desc": "导入自己的字体文件，并给每种语言指定用哪个。"
+  "onboarding_step_fonts_action_desc": "导入自己的字体文件，并给每种语言指定用哪个。",
+  "onboarding_pack_sources_hint": "同时从 GitHub、官网和备用镜像分片并发下载，每片都校验。下载过程中会实测各来源速度，哪家快就多分给哪家，所以这里不用你选。"
 }

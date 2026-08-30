@@ -3912,10 +3912,6 @@
   "onboarding_action_badge_required": "Required",
   "onboarding_action_badge_recommended": "Recommended",
   "onboarding_action_badge_optional": "Optional",
-  "onboarding_pack_route_label": "Download source",
-  "onboarding_pack_route_github_hint": "Fetches the manifest, then downloads the pack from GitHub Releases as parallel chunks, verifying each one. Fastest wherever GitHub is reachable.",
-  "onboarding_pack_route_drive_hint": "Pulls the whole file from Google Drive in one piece. Use this when GitHub is slow or blocked.",
-  "onboarding_pack_manifest_failed": "Could not fetch the pack manifest from the website or from GitHub. Check your network, or switch the download source to Google Drive.",
   "onboarding_pack_action_download_desc": "Downloads the whole pack in the background, then imports it. Cancel anytime; it resumes from where it stopped.",
   "onboarding_pack_action_import_existing_desc": "The pack is already downloaded; this imports it. Choose Merge in the confirmation dialog and your existing data is left alone.",
   "onboarding_pack_action_pick_desc": "Already got the pack zip from somewhere else? Import it from disk and skip the download entirely.",
@@ -3932,5 +3928,6 @@
   "onboarding_step_backup_action_desc": "Choose a backup backend and sign in, so your library survives a lost or replaced device.",
   "onboarding_step_interconnect_action_desc": "Pair this device with your other devices to share one library and keep progress in sync.",
   "onboarding_step_extension_action_desc": "Shows how to install the browser extension and connect it to Fushi, so you can look words up on web pages too.",
-  "onboarding_step_fonts_action_desc": "Add your own font files and pick which one each language uses."
+  "onboarding_step_fonts_action_desc": "Add your own font files and pick which one each language uses.",
+  "onboarding_pack_sources_hint": "Downloaded in parallel chunks from GitHub, the official site and a backup mirror at the same time, each chunk checksummed. Fushi measures the sources as it goes and gives more chunks to whichever is fastest right now, so there is nothing to choose here."
 }

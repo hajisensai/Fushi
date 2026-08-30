@@ -35,17 +35,6 @@ const String kAnkiDesktopDownloadUrl = 'https://apps.ankiweb.net/';
 const String kAnkiDroidDownloadUrl =
     'https://play.google.com/store/apps/details?id=com.ichi2.anki';
 
-/// 推荐包下载线路：两条线路指向同一份包。
-///
-/// [github] 是默认：拉稳定清单（官网 / GitHub 两个候选），照清单里的分片表并发下
-/// 载 GitHub Release 上的 39 个切片，逐片 + 整包 sha256 校验。这条线路以前叫
-/// 「Cloudflare」，那是个**错名字**——原来的 CF 分发域名早已整站 404，真正在供字节
-/// 的一直是 GitHub Release（官网只是它的边缘代理）。
-///
-/// [googleDrive] 是备用整包镜像：9.5 GB 单文件，GitHub Release 单资产上限 2 GB
-/// 装不下，所以整包只能挂在 Drive；应用内直下走 usercontent 直链。
-enum _PackRoute { github, googleDrive }
-
 /// 新手引导向导：首次启动（`onboarding_completed == false`）由 [HomePage] 首帧
 /// 弹出，之后可从「设置 → 系统」重新打开。
 ///
@@ -80,32 +69,24 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   late final Directory _packDir =
       Directory(p.join(appModelNoUpdate.appDirectory.path, 'recommended_pack'));
 
-  /// 稳定清单解析出的下载器（分片表 / sha256 随清单走），[_PackRoute.github] 唯一
-  /// 的下载器。清单拉不到时保持 null——**不再静默回退到 Drive 整包**：那会让
-  /// 「GitHub」这个标签当场撒谎（用户以为在走分片并发校验，实际在单连接拉 9.5 GB）。
-  /// 拉不到就明确报错，让用户自己切到 Drive 线路。
+  /// 稳定清单解析出的下载器。**来源不给用户选**：清单里同时挂着 GitHub Release 的
+  /// 分片、官网 CF 的同名分片，以及 Drive 整包镜像（每片按 Range 取），分片下载器
+  /// 按实测吞吐在这几家之间派活——哪家快，哪家多下（见 `SourceSpeedLedger`）。
+  ///
+  /// 让用户在「Cloudflare / Google Drive」里二选一是个错误的问题：一次下载本来就
+  /// 该同时用上所有能用的来源，而哪家当下更快，只有跑起来才知道，用户猜不出。
   RecommendedPackDownloader? _manifestDownloader;
 
-  /// Google Drive 整包镜像的下载器（懒建）。落盘名与清单线路相同（下载器里恒为
-  /// [kRecommendedPackFileName]），所以半截文件真的能跨线路续传。
-  RecommendedPackDownloader? _googleDownloader;
+  /// 清单彻底拉不到（官网和 GitHub 两个候选都不可达）时的兜底：内置的 Drive 整包
+  /// 直链，单流下载。没有清单就没有分片表，混源无从谈起，只能退到这一条。
+  late final RecommendedPackDownloader _fallbackDownloader =
+      RecommendedPackDownloader(
+    packDir: _packDir,
+    url: kRecommendedPackGoogleDriveDirectUrl,
+  );
 
-  /// 当前选中的下载线路（分段按钮；下载中不可切换）。
-  _PackRoute _packRoute = _PackRoute.github;
-
-  /// 当前线路的下载器。GitHub 线路在清单到手前是 null——「还不能下」是这条线路的
-  /// 真实状态，不该用另一条线路的下载器冒充。
-  RecommendedPackDownloader? get _activeDownloader {
-    switch (_packRoute) {
-      case _PackRoute.github:
-        return _manifestDownloader;
-      case _PackRoute.googleDrive:
-        return _googleDownloader ??= RecommendedPackDownloader(
-          packDir: _packDir,
-          url: kRecommendedPackGoogleDriveDirectUrl,
-        );
-    }
-  }
+  RecommendedPackDownloader get _activeDownloader =>
+      _manifestDownloader ?? _fallbackDownloader;
 
   final ValueNotifier<double> _packProgress = ValueNotifier<double>(0);
   final ValueNotifier<int> _packBytes = ValueNotifier<int>(0);
@@ -229,9 +210,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     });
     _packCancelToken = CancelToken();
     try {
-      // GitHub 线路先拉稳定清单拿分片表（换包零发版）。只解析一次并缓存——同一
-      // 会话内 URL 抖动会打断续传。Drive 线路是固定整包镜像，不走清单。
-      if (_packRoute == _PackRoute.github && _manifestDownloader == null) {
+      // 先拉稳定清单拿分片表与来源表（换包零发版）。只解析一次并缓存——同一会话
+      // 内 URL 抖动会打断续传。拉不到就走 _fallbackDownloader 的整包直链。
+      if (_manifestDownloader == null) {
         final RecommendedPackManifest? manifest =
             await fetchRecommendedPackManifest();
         if (manifest != null) {
@@ -243,12 +224,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       }
       if (!mounted) return;
       // 钉住本次下载用的下载器：导入确认回调也要落在同一实例上。
-      final RecommendedPackDownloader? downloader = _activeDownloader;
-      if (downloader == null) {
-        // 清单是 GitHub 线路的全部依据（分片表 + 每片 sha256），没有它无从下起。
-        _packError = t.onboarding_pack_manifest_failed;
-        return;
-      }
+      final RecommendedPackDownloader downloader = _activeDownloader;
       final File file = await downloader.download(
         progress: _packProgress,
         receivedBytes: _packBytes,
@@ -935,33 +911,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
             ),
           ),
         ] else ...<Widget>[
-          // 下载来源：两条线路同一份包，应用内直下跟随此选择。
-          Text(t.onboarding_pack_route_label, style: textTheme.labelLarge),
-          SizedBox(height: tokens.spacing.gap),
-          Center(
-            child: SegmentedButton<_PackRoute>(
-              segments: const <ButtonSegment<_PackRoute>>[
-                ButtonSegment<_PackRoute>(
-                  value: _PackRoute.github,
-                  icon: Icon(Icons.inventory_2_outlined),
-                  label: Text('GitHub'),
-                ),
-                ButtonSegment<_PackRoute>(
-                  value: _PackRoute.googleDrive,
-                  icon: Icon(Icons.cloud_outlined),
-                  label: Text('Google Drive'),
-                ),
-              ],
-              selected: <_PackRoute>{_packRoute},
-              onSelectionChanged: (Set<_PackRoute> selection) =>
-                  setState(() => _packRoute = selection.first),
-            ),
-          ),
-          SizedBox(height: tokens.spacing.gap),
+          // 来源不给用户选：清单里挂着 GitHub 分片、官网 CF 分片和备用整包镜像，
+          // 下载器按实测吞吐自己派活。用户猜不出哪家当下更快，也不该被要求去猜。
           Text(
-            _packRoute == _PackRoute.github
-                ? t.onboarding_pack_route_github_hint
-                : t.onboarding_pack_route_drive_hint,
+            t.onboarding_pack_sources_hint,
             style: textTheme.bodySmall,
             textAlign: TextAlign.center,
           ),
