@@ -24,26 +24,83 @@ void main() {
       );
     });
 
-    test('fileName override names the pack file; default falls back to URL',
+    test('every route names the pack file the same, whatever the URL is',
         () async {
       final Directory dir =
           await Directory.systemTemp.createTemp('recommended_pack_test');
       addTearDown(() => dir.delete(recursive: true));
-      // Google 直下 URL 尾段是 'download'，不是文件名——线路必须显式覆盖，
-      // 覆盖名沿用内置直链包名，半截文件才能跨线路续传。
+      // 落盘名恒定，不再从 URL 尾段推导。推导过一次，代价是清单线路把包落成了
+      // `recommended_pack/download`（清单的 url 是 Drive 直下地址，尾段就是
+      // 'download'），于是两条线路各存一份半截，跨线路续传从来没成立过。
       final RecommendedPackDownloader google = RecommendedPackDownloader(
         packDir: dir,
         url: kRecommendedPackGoogleDriveDirectUrl,
-        fileName: kRecommendedPackFileName,
       );
       expect(p.basename(google.packFile.path), kRecommendedPackFileName);
       expect(kRecommendedPackFileName, endsWith('.fushi.zip'));
 
       final RecommendedPackDownloader bare = RecommendedPackDownloader(
         packDir: dir,
-        url: 'https://dl.wrds.xyz/a.zip',
+        url: 'https://example.invalid/a.zip',
       );
-      expect(p.basename(bare.packFile.path), 'a.zip');
+      expect(p.basename(bare.packFile.path), kRecommendedPackFileName);
+    });
+
+    test('fromManifest names the pack file after the constant, not the URL',
+        () async {
+      final Directory dir =
+          await Directory.systemTemp.createTemp('recommended_pack_test');
+      addTearDown(() => dir.delete(recursive: true));
+      // 线上清单的 url 就是 Drive 直下地址（整包镜像）。回归点：这里曾落成
+      // 'download'，两条线路因此各下各的 9.5 GB。
+      final RecommendedPackManifest? manifest = parseRecommendedPackManifest(
+        '{"version":"2026-08-14",'
+        '"url":"$kRecommendedPackGoogleDriveDirectUrl",'
+        '"size_bytes":10220484385}',
+      );
+      expect(manifest, isNotNull);
+      final RecommendedPackDownloader fromManifest =
+          RecommendedPackDownloader.fromManifest(
+        packDir: dir,
+        manifest: manifest!,
+      );
+      expect(
+        p.basename(fromManifest.packFile.path),
+        kRecommendedPackFileName,
+      );
+      expect(p.basename(fromManifest.packFile.path), isNot('download'));
+    });
+
+    test('migrateLegacyArtifacts moves the old download* half files over',
+        () async {
+      final Directory dir =
+          await Directory.systemTemp.createTemp('recommended_pack_test');
+      addTearDown(() => dir.delete(recursive: true));
+      File(p.join(dir.path, 'download.mpart')).writeAsStringSync('halfway');
+      File(p.join(dir.path, 'download.mpart.json')).writeAsStringSync('{}');
+
+      RecommendedPackDownloader.migrateLegacyArtifacts(dir);
+
+      // 升级不该让已下的 9.5 GB 作废。
+      expect(
+        File(p.join(dir.path, '$kRecommendedPackFileName.mpart'))
+            .readAsStringSync(),
+        'halfway',
+      );
+      expect(
+        File(p.join(dir.path, '$kRecommendedPackFileName.mpart.json'))
+            .existsSync(),
+        isTrue,
+      );
+      expect(File(p.join(dir.path, 'download.mpart')).existsSync(), isFalse);
+
+      // 幂等：再跑一次不会把已经搬好的文件弄坏。
+      RecommendedPackDownloader.migrateLegacyArtifacts(dir);
+      expect(
+        File(p.join(dir.path, '$kRecommendedPackFileName.mpart'))
+            .readAsStringSync(),
+        'halfway',
+      );
     });
   });
 
@@ -279,11 +336,13 @@ void main() {
       expect(kRecommendedPackWholeFileUrl, isNot(contains('dl.wrds.xyz')));
       expect(kRecommendedPackWholeFileUrl, startsWith('https://'));
       // 整包回退只能落在还存得下 9.5 GB 单文件的主机上。
-      expect(kRecommendedPackWholeFileUrl, contains('drive.usercontent.google.com'));
+      expect(kRecommendedPackWholeFileUrl,
+          contains('drive.usercontent.google.com'));
       expect(kRecommendedPackWholeFileUrl, contains('confirm=t'),
           reason: '少了 confirm=t 会拿到病毒扫描确认页而不是文件');
       // 换包不该再改文件名——版本隔离由清单的 version + sha256 负责。
-      expect(kRecommendedPackFileName, isNot(matches(RegExp(r'\d{4}-\d{2}-\d{2}'))));
+      expect(kRecommendedPackFileName,
+          isNot(matches(RegExp(r'\d{4}-\d{2}-\d{2}'))));
       expect(kRecommendedPackFileName, endsWith('.fushi.zip'));
     });
 
