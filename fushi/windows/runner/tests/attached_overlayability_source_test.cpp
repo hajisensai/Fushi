@@ -1,3 +1,8 @@
+// release 也要真断言：NDEBUG 会把 assert 编成空语句，本文件的断言就会整批
+// 消失、测试空跑照样"通过"（CI 的 C4189「变量没人引用」正是它漏出来的痕迹）。
+// 与 attached_mouse_hook_nonblocking_source_test.cpp 同一写法。
+#undef NDEBUG
+
 #include <cassert>
 #include <fstream>
 #include <iterator>
