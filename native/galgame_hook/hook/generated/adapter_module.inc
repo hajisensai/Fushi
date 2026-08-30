@@ -8,3 +8,4 @@
         elf_ai6_.onModuleLoaded(entry.szModule);
         sgre_.onModuleLoaded(entry.szModule);
         leaf_aquaplus_.onModuleLoaded(entry.szModule);
+        hunex_gge_.onModuleLoaded(entry.szModule);

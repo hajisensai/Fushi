@@ -8,3 +8,4 @@
     elf_ai6_.shutdown();
     sgre_.shutdown();
     leaf_aquaplus_.shutdown();
+    hunex_gge_.shutdown();

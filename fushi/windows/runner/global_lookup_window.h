@@ -147,6 +147,15 @@ class GlobalLookupWindow {
   void Hide(bool notify = true);
   bool IsShowing() const;
 
+  // Temporarily removes the lookup card from the DWM composition tree while a
+  // galgame mining capture is taken.  Unlike Hide(), this preserves the live
+  // WebView route, dismissal hooks and card geometry so the exact same lookup
+  // can be restored afterwards.  The caller-provided generation and the bound
+  // route form a one-shot transaction: a stale release can never resurrect a
+  // card belonging to an older lookup.
+  bool SuspendForCapture(int64_t capture_generation);
+  bool RestoreAfterCapture(int64_t capture_generation);
+
   // Injects |popup_json| and calls window.renderPopup(). Cached until the
   // WebView2 finishes initial navigation if called too early.
   void RenderJson(const std::string& popup_json);
@@ -367,6 +376,8 @@ class GlobalLookupWindow {
   // 投影可见性 = revealed_ && visible_（离屏渲染/预热/gal 采集面绝不带影）；
   // 模态 resize 循环中（resizing_）几何脏时不重画只隐藏，防拖拽掉帧。
   void SyncShadow();
+  void CancelCaptureSuppression();
+  bool CaptureRouteIsCurrent() const;
 
   HWND hwnd_ = nullptr;
   HWINEVENTHOOK foreground_hook_ = nullptr;
@@ -377,6 +388,10 @@ class GlobalLookupWindow {
   static GlobalLookupWindow* s_hook_owner_;
   bool visible_ = false;
   bool revealed_ = false;
+  bool capture_suppressed_ = false;
+  bool capture_was_window_visible_ = false;
+  int64_t capture_generation_ = 0;
+  RouteContext capture_route_;
   // The galgame capture surface is intentionally never "visible" in desktop
   // semantics, but a rendered off-screen card still owns a live popup session
   // whose JS dismiss must notify Dart and hide the in-game bitmap.

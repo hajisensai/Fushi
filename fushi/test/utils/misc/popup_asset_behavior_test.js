@@ -94,6 +94,7 @@ class FakeElement {
     // Pre-declared so el()'s `key in element` check routes these as real
     // properties (a callable handler / boolean), not stringified attributes.
     this.onclick = null;
+    this.onpointerdown = null;
     this.ontouchstart = null;
     this.disabled = false;
   }
@@ -1401,6 +1402,45 @@ async function flush() {
     await Promise.resolve();
   }
 }
+
+// BUG-1972: desktop mouse/pen selection must be captured before clicking the
+// mine button clears the live browser Selection. Mobile already had a
+// touchstart snapshot; Pointer Events are the missing cross-input boundary.
+async function testMineButtonCapturesSelectedDefinitionOnPointerDown() {
+  const context = loadPopup();
+  const mined = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      return Promise.resolve({ankiConnect: true, noteId: 1972});
+    }
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+
+  const selectedDefinition = '生命を維持するために食物を取る。';
+  context.window.getSelection().text = selectedDefinition;
+  mineButton.onpointerdown();
+  // Model the focus/click transition that clears the live desktop selection.
+  context.window.getSelection().removeAllRanges();
+  await mineButton.onclick();
+  await flush();
+
+  assert.equal(mined.length, 1, 'clicking + mines exactly one card');
+  assert.equal(
+    mined[0].popupSelectionText,
+    selectedDefinition,
+    'the selected definition survives focus loss and reaches SelectionText',
+  );
+}
+
+testMineButtonCapturesSelectedDefinitionOnPointerDown().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
 
 // BUG-1833 follow-up: a real browser exposes IntersectionObserver. Initial
 // favorite/duplicate decoration must stay off the synchronous card-render path,

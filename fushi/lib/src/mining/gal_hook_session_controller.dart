@@ -2228,7 +2228,8 @@ class GalHookSessionController extends ChangeNotifier {
   /// 判据逐条对应 native 的 `LunaSelectedThreadAccepts`：
   /// * 未选定线程 → 一行都不放行（与 v12 起的 UX 一致：由 UI 引导用户从线程预览里挑）；
   /// * 精确 threadId 命中 → 放行，并顺手记下它的 hook 面；
-  /// * 同一 hook 面命中 → 放行（BUG-1159：同 hook 面换调用点会让 threadId 变）。
+  /// * 要求精确上下文的引擎行 → 到此拒绝，保持 LunaHook 的线程边界；
+  /// * 其余同一 hook 面命中 → 放行（BUG-1159：同 hook 面换调用点会让 threadId 变）。
   bool _acceptsLineFromSelectedThread(GalHookedLine line) {
     final int? selected = _selectedNativeTextThreadId;
     if (selected == null || selected == 0) return false;
@@ -2237,6 +2238,10 @@ class GalHookSessionController extends ChangeNotifier {
       _claimThreadKey(line);
       return true;
     }
+    // HUNEX/TYPEMOON 的剧情文本与顶部控制栏共用一个 hook face，却由不同
+    // ThreadParam.ctx 分成两条 Luna 线程。普通 face fallback 会把控制栏说明重新并入
+    // 用户选中的剧情线程；native 的显式标志要求这里保持精确 threadId 语义。
+    if (line.requiresExactThreadContext) return false;
     if (_selectedTextThreadFaceId != 0 &&
         line.faceId == _selectedTextThreadFaceId) {
       _claimThreadKey(line);

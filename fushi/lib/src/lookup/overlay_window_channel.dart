@@ -281,6 +281,22 @@ class OverlayWindowChannel {
 
   Future<bool> isShowing() async => (await _invoke<bool>('isShowing')) ?? false;
 
+  /// Temporarily removes the routed card (and its native shadow) from DWM while
+  /// a galgame frame is captured.  This is deliberately distinct from [hide]:
+  /// the WebView, route and dictionary state remain live and can be restored by
+  /// the matching generation only.
+  Future<bool> suspendForCapture(int captureGeneration) async =>
+      (await _invoke<bool>('suspendForCapture', <String, Object?>{
+        'captureGeneration': captureGeneration,
+      })) ??
+      false;
+
+  Future<bool> restoreAfterCapture(int captureGeneration) async =>
+      (await _invoke<bool>('restoreAfterCapture', <String, Object?>{
+        'captureGeneration': captureGeneration,
+      })) ??
+      false;
+
   /// 防截屏 — SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)：窗口对用户可见
   /// 但从截图 / 录屏 / 屏幕共享里排除（pref lookupBlockCapture）。
   Future<void> setBlockCapture(bool block) =>
