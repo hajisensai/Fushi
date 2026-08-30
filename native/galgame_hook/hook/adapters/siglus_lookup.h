@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <limits>
 
+#include "exact_lookup_signature.h"
+
 namespace fushi_voice_hook {
 
 inline constexpr uint16_t kSiglusLookupPeMachineI386 = 0x014cu;
@@ -156,6 +158,77 @@ FindSiglusLookupProfile(const uint8_t *executable_sha256, size_t digest_bytes,
   return match;
 }
 
+namespace siglus_exact {
+
+// Both admitted builds share this hydrated glyph-layout prologue. The SEH
+// handler and /GS cookie operands are loader-dependent, and the local stack
+// size is 0xDC or 0xEC; only those measured differences are wildcarded. A
+// runtime gate scans every executable section and requires the sole match to
+// equal the exact profile RVA.
+inline constexpr uint8_t kGlyphLayoutEntryBytes[] = {
+    0x55, 0x8b, 0xec, 0x6a, 0xff, 0x68, 0x00, 0x00, 0x00, 0x00, 0x64,
+    0xa1, 0x00, 0x00, 0x00, 0x00, 0x50, 0x81, 0xec, 0x00, 0x00, 0x00,
+    0x00, 0x53, 0x56, 0x57, 0xa1, 0x00, 0x00, 0x00, 0x00, 0x33, 0xc5,
+    0x50, 0x8d, 0x45, 0xf4, 0x64, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x8b,
+    0xf1, 0x80, 0x7e, 0x20, 0x00, 0x75, 0x16,
+};
+inline constexpr auto kGlyphLayoutEntryMask =
+    exact_lookup::MaskExceptRanges<sizeof(kGlyphLayoutEntryBytes)>(
+        6u, 10u, 19u, 20u, 27u, 31u);
+inline constexpr exact_lookup::MaskedPattern kGlyphLayoutEntryPattern = {
+    kGlyphLayoutEntryBytes, kGlyphLayoutEntryMask.data(),
+    sizeof(kGlyphLayoutEntryBytes)};
+inline constexpr size_t kGlyphLayoutStackByteOffset = 19u;
+
+inline constexpr uint8_t kAnemoiInputMessageEntryBytes[] = {
+    0x55, 0x8b, 0xec, 0x83, 0xe4, 0xf8, 0x51, 0x8b, 0x45,
+    0x08, 0x56, 0x8b, 0x35, 0x00, 0x00, 0x00, 0x00, 0x3d,
+    0x01, 0x02, 0x00, 0x00, 0x77, 0x5c, 0x74, 0x45, 0x05,
+    0x00, 0xff, 0xff, 0xff, 0x83, 0xf8, 0x05,
+};
+inline constexpr auto kAnemoiInputMessageEntryMask =
+    exact_lookup::MaskExceptRanges<sizeof(kAnemoiInputMessageEntryBytes)>(
+        13u, 17u);
+inline constexpr exact_lookup::MaskedPattern kAnemoiInputMessageEntryPattern = {
+    kAnemoiInputMessageEntryBytes, kAnemoiInputMessageEntryMask.data(),
+    sizeof(kAnemoiInputMessageEntryBytes)};
+
+inline constexpr uint8_t kSprbInputMessageEntryBytes[] = {
+    0x55, 0x8b, 0xec, 0x83, 0xe4, 0xf8, 0x8b, 0x45, 0x08,
+    0x83, 0xec, 0x08, 0x8b, 0x0d, 0x00, 0x00, 0x00, 0x00,
+    0x3d, 0x01, 0x02, 0x00, 0x00, 0x77, 0x59, 0x74, 0x43,
+    0x05, 0x00, 0xff, 0xff, 0xff, 0x83, 0xf8, 0x05,
+};
+inline constexpr auto kSprbInputMessageEntryMask =
+    exact_lookup::MaskExceptRanges<sizeof(kSprbInputMessageEntryBytes)>(
+        14u, 18u);
+inline constexpr exact_lookup::MaskedPattern kSprbInputMessageEntryPattern = {
+    kSprbInputMessageEntryBytes, kSprbInputMessageEntryMask.data(),
+    sizeof(kSprbInputMessageEntryBytes)};
+
+inline const exact_lookup::MaskedPattern* InputMessagePatternForProfile(
+    const SiglusLookupProfile& profile) {
+  if (profile.input_message_rva ==
+          kAnemoiSiglusLookupProfile.input_message_rva &&
+      profile.text_feed == SiglusLookupTextFeed::kNativeEcxTextUnion) {
+    return &kAnemoiInputMessageEntryPattern;
+  }
+  if (profile.input_message_rva ==
+          kSummerPocketsReflectionBlueSiglusLookupProfile.input_message_rva &&
+      profile.text_feed == SiglusLookupTextFeed::kLunaScenarioLane) {
+    return &kSprbInputMessageEntryPattern;
+  }
+  return nullptr;
+}
+
+inline bool IsMeasuredGlyphStackSize(const uint8_t* entry) {
+  return entry != nullptr &&
+         (entry[kGlyphLayoutStackByteOffset] == 0xdcu ||
+          entry[kGlyphLayoutStackByteOffset] == 0xecu);
+}
+
+}  // namespace siglus_exact
+
 struct SiglusLookupGlyphCapture {
   char16_t code_unit = 0;
   int32_t x = 0;
@@ -234,6 +307,59 @@ struct SiglusLookupGeometry {
   int32_t viewport_height = 0;
 };
 
+struct SiglusLookupClientSnapshot {
+  uintptr_t game_window = 0;
+  int32_t screen_x = 0;
+  int32_t screen_y = 0;
+  int32_t width = 0;
+  int32_t height = 0;
+};
+
+// Glyph callbacks are transport events and can replay an unchanged layout on
+// every render. This counter identifies the combined UTF-16 sentence and
+// derived geometry, so identical complete redraws retain one generation.
+inline uint64_t NextSiglusLookupLogicalGeneration(uint64_t generation) {
+  ++generation;
+  return generation == 0 ? 1 : generation;
+}
+
+inline bool SameSiglusLookupGeometry(const SiglusLookupGeometry &lhs,
+                                     const SiglusLookupGeometry &rhs) {
+  if (lhs.glyph_count != rhs.glyph_count ||
+      lhs.viewport_width != rhs.viewport_width ||
+      lhs.viewport_height != rhs.viewport_height) {
+    return false;
+  }
+  for (size_t index = 0; index < lhs.glyph_count; ++index) {
+    const auto &left = lhs.glyphs[index];
+    const auto &right = rhs.glyphs[index];
+    if (left.code_unit != right.code_unit ||
+        left.char_index != right.char_index ||
+        left.visual_line != right.visual_line ||
+        left.rect.x != right.rect.x || left.rect.y != right.rect.y ||
+        left.rect.width != right.rect.width ||
+        left.rect.height != right.rect.height) {
+      return false;
+    }
+  }
+  return true;
+}
+
+inline bool MatchesSiglusLookupGenerationAndClient(
+    uint64_t payload_generation,
+    const SiglusLookupClientSnapshot &payload_client,
+    uint64_t active_generation,
+    const SiglusLookupClientSnapshot &active_client) {
+  return payload_generation != 0 && payload_generation == active_generation &&
+         payload_client.game_window != 0 &&
+         payload_client.game_window == active_client.game_window &&
+         payload_client.screen_x == active_client.screen_x &&
+         payload_client.screen_y == active_client.screen_y &&
+         payload_client.width > 0 && payload_client.height > 0 &&
+         payload_client.width == active_client.width &&
+         payload_client.height == active_client.height;
+}
+
 inline bool IsSaneSiglusLookupAnchor(const SiglusLookupGlyphCapture &glyph,
                                      const SiglusLookupProfile &profile) {
   return glyph.code_unit != u'\0' && glyph.code_unit != u'\r' &&
@@ -279,10 +405,13 @@ inline bool
 BuildSiglusLookupGeometry(const SiglusLookupProfile &profile,
                           const SiglusLookupGlyphCaptureBuffer &captures,
                           const char16_t *latest_line, size_t latest_line_units,
-                          SiglusLookupGeometry *geometry) {
+                          SiglusLookupGeometry *geometry,
+                          size_t *matched_end = nullptr) {
   if (geometry == nullptr)
     return false;
   *geometry = {};
+  if (matched_end != nullptr)
+    *matched_end = 0;
   geometry->viewport_width = profile.viewport_width;
   geometry->viewport_height = profile.viewport_height;
   if (latest_line == nullptr || latest_line_units == 0 ||
@@ -458,6 +587,8 @@ BuildSiglusLookupGeometry(const SiglusLookupProfile &profile,
     };
   }
   geometry->glyph_count = expected_count;
+  if (matched_end != nullptr)
+    *matched_end = matched_start + expected_count;
   return true;
 }
 

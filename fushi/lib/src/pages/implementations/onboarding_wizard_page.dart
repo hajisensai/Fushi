@@ -43,7 +43,7 @@ const String kAnkiDroidDownloadUrl =
 /// 弹出，之后可从「设置 → 系统」重新打开。
 ///
 /// 步骤序列由纯函数 [onboardingStepSequence] 生成：欢迎（界面语言/主题）→ 功能
-/// 选择（库页模块显隐 + 要配置的能力）→ 资源准备二选一（推荐包 / 手动导入）→
+/// 选择（库页模块显隐 + 要配置的能力）→ 资源准备（推荐包 / 手动补充可独立多选）→
 /// 按勾选出现的配置步骤 → 字体 → 功能操作教程（点击查词 + 平台支持时的全局查词
 /// + Anki 真正就绪后的第一张卡片）→ 完成。
 /// 配置步骤只做说明 + 跳转到**既有**配置入口（推荐包走备份导入共享编排
@@ -217,14 +217,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
 
   void _toggleFeature(OnboardingFeature feature) {
     setState(() {
-      // 资源准备是二选一，不允许两条都跑，也不允许两条都不跑；其余项仍是多选。
-      final Set<OnboardingFeature> next = toggleOnboardingFeature(
-        selected: _selected,
-        feature: feature,
-      );
-      _selected
-        ..clear()
-        ..addAll(next);
+      if (!_selected.remove(feature)) _selected.add(feature);
       // 勾选变化会改变步骤序列；功能选择步骤位于序列首段（index ≤ 1），后续
       // 步骤此刻尚未进入，不会越界。
     });

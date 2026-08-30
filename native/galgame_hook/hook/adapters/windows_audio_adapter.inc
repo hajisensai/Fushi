@@ -131,6 +131,16 @@ void SetXAudioDiagnostic(uint32_t diagnostic) {
       static_cast<LONG>(diagnostic));
 }
 
+// v20 起的第二个引擎诊断字。第一个字的 32 位已满（低 27 位既有 + HUNEX HFA 高 5 位），
+// 见 voice_hook_ipc.h 的 (c) 段。位常量前缀是 kXAudioDiag2*，别和 kXAudioDiag* 混用：
+// 用错设置器不会编译报错，只会让那一档诊断恒 0，真机看位才发现得了。
+void SetXAudioDiagnostic2(uint32_t diagnostic) {
+  if (g_header == nullptr) return;
+  InterlockedOr(
+      reinterpret_cast<volatile LONG*>(&g_header->xaudio_diagnostics2),
+      static_cast<LONG>(diagnostic));
+}
+
 void IncrementXAudioCounter(volatile LONG64* counter) {
   InterlockedIncrement64(counter);
 }

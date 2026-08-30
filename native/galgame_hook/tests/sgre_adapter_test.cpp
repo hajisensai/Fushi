@@ -476,6 +476,32 @@ int main() {
   assert(!last_shift_down);
   assert(!fushi_voice_hook::ConsumeSgreLookupShiftSample(0x0000, nullptr));
 
+  // Per-frame draw captures are transport updates, not new production
+  // generations. Keep the epoch stable for identical UTF-16 and glyph layout,
+  // and reject an up after either geometry or the client transform changes.
+  constexpr char16_t kStableText[] = u"一二三";
+  assert(fushi_voice_hook::SameSgreLookupLogicalSnapshot(
+      kStableText, 3, glyphs, 3, 80.0f, kStableText, 3, glyphs, 3,
+      80.0f));
+  fushi_voice_hook::SgreLookupGlyphGeometry moved_glyphs[] = {
+      glyphs[0], glyphs[1], glyphs[2]};
+  moved_glyphs[1].x += 1.0f;
+  assert(!fushi_voice_hook::SameSgreLookupLogicalSnapshot(
+      kStableText, 3, glyphs, 3, 80.0f, kStableText, 3, moved_glyphs, 3,
+      80.0f));
+  assert(fushi_voice_hook::NextSgreLookupLogicalGeneration(0) == 1);
+  assert(fushi_voice_hook::NextSgreLookupLogicalGeneration(UINT64_MAX) == 1);
+  const fushi_voice_hook::SgreLookupClientSnapshot stable_client = {
+      0x4321u, -1600, 20, 1920, 1080};
+  assert(fushi_voice_hook::MatchesSgreLookupGenerationAndClient(
+      11, stable_client, 11, stable_client));
+  auto moved_client = stable_client;
+  ++moved_client.screen_x;
+  assert(!fushi_voice_hook::MatchesSgreLookupGenerationAndClient(
+      11, stable_client, 11, moved_client));
+  assert(!fushi_voice_hook::MatchesSgreLookupGenerationAndClient(
+      11, stable_client, 12, stable_client));
+
   // Generic dispatch is inert until an explicitly matched engine registers a
   // handler. This is the cross-engine negative boundary: WMA by itself never
   // activates SGRE archive logic.

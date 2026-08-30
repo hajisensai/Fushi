@@ -10,6 +10,8 @@
 
 volatile LONG g_leaf_aquaplus_profile_state =
     0; // 0 unknown, +1 match, -1 reject
+volatile LONG g_leaf_exact_binary_structure_state =
+    0; // 0 unknown, +1 hydrated structure match, -1 reject
 std::atomic<const fushi_voice_hook::LeafAquaplusProfile *>
     g_leaf_aquaplus_profile{nullptr};
 
@@ -467,6 +469,148 @@ bool IsLeafAquaplusProfileMatched() {
   // 本函数对**任何** x86 游戏都会跑到这里，于是共享槽在"谁都没认领"的场合也是满的。
   if (executable_read) {
     fushi_voice_hook::PublishHostExecutableSha256(digest.data(), digest.size());
+  }
+  if (profile != nullptr) {
+    const LONG structure_cached = InterlockedCompareExchange(
+        &g_leaf_exact_binary_structure_state, 0, 0);
+    bool structure_matched = structure_cached > 0;
+    if (structure_cached == 0) {
+#if defined(_M_IX86)
+      fushi_voice_hook::exact_lookup::LoadedPeImage image;
+      const bool opened =
+          fushi_voice_hook::exact_lookup::OpenLoadedPeImage(module, &image) &&
+          image.machine == IMAGE_FILE_MACHINE_I386 &&
+          image.pointer_bits == 32u;
+      const uintptr_t base = reinterpret_cast<uintptr_t>(module);
+      const uintptr_t expected_cookie = base + profile->stack_cookie_rva;
+      const uintptr_t expected_input_iat =
+          base + profile->get_async_key_state_iat_rva;
+      const uintptr_t expected_device =
+          base + profile->d3d9_device_pointer_rva;
+      const uintptr_t input_anchor_rva =
+          profile->input_poller_first_return_rva >= 10u
+              ? profile->input_poller_first_return_rva - 10u
+              : 0u;
+
+      fushi_voice_hook::exact_lookup::UniquePatternMatch traversal;
+      fushi_voice_hook::exact_lookup::UniquePatternMatch raster;
+      fushi_voice_hook::exact_lookup::UniquePatternMatch input;
+      fushi_voice_hook::exact_lookup::UniquePatternMatch embed;
+      fushi_voice_hook::exact_lookup::UniquePatternMatch device;
+      if (opened) {
+        traversal = fushi_voice_hook::exact_lookup::
+            FindUniqueAbsolute32PatternInExecutableSections(
+                image,
+                fushi_voice_hook::leaf_exact::kTextTraversalEntryPattern,
+                fushi_voice_hook::leaf_exact::
+                    kTextTraversalCookieOperandOffset,
+                expected_cookie);
+        raster = fushi_voice_hook::exact_lookup::
+            FindUniqueAbsolute32PatternInExecutableSections(
+                image, fushi_voice_hook::leaf_exact::kRasterDrawEntryPattern,
+                fushi_voice_hook::leaf_exact::kRasterDrawCookieOperandOffset,
+                expected_cookie);
+        input = fushi_voice_hook::exact_lookup::
+            FindUniqueAbsolute32PatternInExecutableSections(
+                image, fushi_voice_hook::leaf_exact::kInputPollerEntryPattern,
+                fushi_voice_hook::leaf_exact::kInputPollerIatOperandOffset,
+                expected_input_iat);
+        embed = fushi_voice_hook::exact_lookup::
+            FindUniquePatternInExecutableSections(
+                image, fushi_voice_hook::leaf_exact::kEmbedLoopAnchorPattern);
+        device = fushi_voice_hook::exact_lookup::
+            FindUniqueAbsolute32PatternInExecutableSections(
+                image, fushi_voice_hook::leaf_exact::kD3dDeviceAccessPattern,
+                fushi_voice_hook::leaf_exact::
+                    kD3dDevicePointerOperandOffset,
+                expected_device);
+      }
+
+      const auto executable_rva = [&image](uintptr_t rva, size_t bytes = 1u) {
+        return fushi_voice_hook::exact_lookup::SectionHasRole(
+            fushi_voice_hook::exact_lookup::FindSectionForRva(image, rva,
+                                                               bytes),
+            IMAGE_SCN_MEM_EXECUTE);
+      };
+      const auto data_rva = [&image](uintptr_t rva, size_t bytes,
+                                     uint32_t required) {
+        return fushi_voice_hook::exact_lookup::SectionHasRole(
+            fushi_voice_hook::exact_lookup::FindSectionForRva(image, rva,
+                                                               bytes),
+            required, IMAGE_SCN_MEM_EXECUTE);
+      };
+      structure_matched =
+          opened && input_anchor_rva != 0u &&
+          executable_rva(profile->embed_leaf_hook_rva) &&
+          executable_rva(profile->text_traversal_rva,
+                         sizeof(fushi_voice_hook::leaf_exact::
+                                    kTextTraversalEntryBytes)) &&
+          executable_rva(profile->raster_draw_rva,
+                         sizeof(fushi_voice_hook::leaf_exact::
+                                    kRasterDrawEntryBytes)) &&
+          executable_rva(profile->glyph_dispatch_rva) &&
+          executable_rva(profile->input_poller_first_return_rva) &&
+          executable_rva(profile->input_poller_last_return_rva) &&
+          executable_rva(profile->raster_glyph_return_rva) &&
+          executable_rva(profile->glyph_single_return_rva) &&
+          executable_rva(profile->glyph_double_first_return_rva) &&
+          executable_rva(profile->glyph_double_second_return_rva) &&
+          executable_rva(profile->quad_draw_return_rva) &&
+          executable_rva(profile->alternate_quad_draw_return_rva) &&
+          executable_rva(profile->voice_archive_read_return_rva) &&
+          data_rva(profile->d3d9_device_pointer_rva, sizeof(uintptr_t),
+                   IMAGE_SCN_MEM_WRITE) &&
+          data_rva(profile->stack_cookie_rva, sizeof(uint32_t),
+                   IMAGE_SCN_MEM_WRITE) &&
+          data_rva(profile->get_async_key_state_iat_rva, sizeof(uint32_t),
+                   IMAGE_SCN_MEM_READ) &&
+          data_rva(profile->read_file_iat_rva, sizeof(uint32_t),
+                   IMAGE_SCN_MEM_READ) &&
+          traversal.count == 1u &&
+          reinterpret_cast<uintptr_t>(traversal.address) ==
+              base + profile->text_traversal_rva &&
+          raster.count == 1u &&
+          reinterpret_cast<uintptr_t>(raster.address) ==
+              base + profile->raster_draw_rva &&
+          input.count == 1u &&
+          reinterpret_cast<uintptr_t>(input.address) ==
+              base + input_anchor_rva &&
+          embed.count == 1u &&
+          reinterpret_cast<uintptr_t>(embed.address) +
+                  fushi_voice_hook::leaf_exact::kEmbedHookOffsetFromAnchor ==
+              base + profile->embed_leaf_hook_rva &&
+          device.count == 1u &&
+          fushi_voice_hook::exact_lookup::MatchesRel32CallEndingAt(
+              image, profile->raster_glyph_return_rva,
+              profile->raster_draw_rva) &&
+          fushi_voice_hook::exact_lookup::MatchesRel32CallEndingAt(
+              image, profile->glyph_single_return_rva,
+              profile->glyph_dispatch_rva) &&
+          fushi_voice_hook::exact_lookup::MatchesRel32CallEndingAt(
+              image, profile->glyph_double_first_return_rva,
+              profile->glyph_dispatch_rva) &&
+          fushi_voice_hook::exact_lookup::MatchesRel32CallEndingAt(
+              image, profile->glyph_double_second_return_rva,
+              profile->glyph_dispatch_rva) &&
+          fushi_voice_hook::exact_lookup::MatchesRegisterIndirectCallEndingAt(
+              image, profile->quad_draw_return_rva, 0xd0u) &&
+          fushi_voice_hook::exact_lookup::MatchesRegisterIndirectCallEndingAt(
+              image, profile->alternate_quad_draw_return_rva, 0xd0u) &&
+          fushi_voice_hook::exact_lookup::MatchesRegisterIndirectCallEndingAt(
+              image, profile->input_poller_first_return_rva, 0xd6u) &&
+          fushi_voice_hook::exact_lookup::MatchesRegisterIndirectCallEndingAt(
+              image, profile->input_poller_last_return_rva, 0xd6u) &&
+          fushi_voice_hook::exact_lookup::MatchesAbsoluteIndirectCallEndingAt(
+              image, profile->voice_archive_read_return_rva,
+              profile->read_file_iat_rva);
+#else
+      structure_matched = false;
+#endif
+      InterlockedExchange(&g_leaf_exact_binary_structure_state,
+                          structure_matched ? 1 : -1);
+    }
+    if (!structure_matched)
+      profile = nullptr;
   }
   g_leaf_aquaplus_profile.store(profile, std::memory_order_release);
   if (profile != nullptr) {
@@ -1148,34 +1292,21 @@ bool CaptureLeafQuadBounds(const void *vertices, UINT stride, UINT count,
   return valid && *right > *left && *bottom > *top;
 }
 
-bool MatchesLeafEntry(const uint8_t *target, const uint8_t *expected,
-                      size_t expected_bytes) {
-  if (target == nullptr)
-    return false;
-  __try {
-    for (size_t index = 0; index < expected_bytes; ++index) {
-      if (target[index] != expected[index])
-        return false;
-    }
-    return true;
-  } __except (EXCEPTION_EXECUTE_HANDLER) {
-    return false;
-  }
-}
-
 bool MatchesLeafTextTraversalEntry(const uint8_t *target) {
-  static constexpr uint8_t kEntry[] = {
-      0x81, 0xec, 0x3c, 0x01, 0x00, 0x00, 0xa1, 0x30, 0x16, 0x4d,
-      0x00, 0x33, 0xc4, 0x89, 0x84, 0x24, 0x38, 0x01, 0x00, 0x00,
-  };
-  return MatchesLeafEntry(target, kEntry, sizeof(kEntry));
+  return fushi_voice_hook::exact_lookup::IsReadableSpan(
+             target, fushi_voice_hook::leaf_exact::
+                         kTextTraversalEntryPattern.size) &&
+         fushi_voice_hook::exact_lookup::MatchesMaskedPattern(
+             target,
+             fushi_voice_hook::leaf_exact::kTextTraversalEntryPattern);
 }
 
 bool MatchesLeafRasterDrawEntry(const uint8_t *target) {
-  static constexpr uint8_t kEntry[] = {
-      0x55, 0x8b, 0xec, 0x83, 0xe4, 0xf8, 0xb8, 0xa4, 0x16, 0x00, 0x00,
-  };
-  return MatchesLeafEntry(target, kEntry, sizeof(kEntry));
+  return fushi_voice_hook::exact_lookup::IsReadableSpan(
+             target,
+             fushi_voice_hook::leaf_exact::kRasterDrawEntryPattern.size) &&
+         fushi_voice_hook::exact_lookup::MatchesMaskedPattern(
+             target, fushi_voice_hook::leaf_exact::kRasterDrawEntryPattern);
 }
 
 bool DecodeLeafPackedCp932(uint16_t packed, wchar_t *decoded) {
@@ -1250,6 +1381,7 @@ bool ReadLeafLookupClickTarget(LeafLookupClickTarget *copy) {
          now - copy->published_tick <= kLeafLookupClickTargetMaxAgeMs &&
          copy->game_window != 0 && copy->client_width > 0 &&
          copy->client_height > 0 && copy->geometry.sentence_epoch != 0 &&
+         copy->geometry.generation != 0 &&
          copy->geometry.text_units != 0 &&
          copy->geometry.text_units <= kLeafLookupTextUnits &&
          copy->geometry.glyph_count != 0 &&
@@ -1313,6 +1445,7 @@ bool BuildLeafLookupPayloadAtPress(const LeafLookupClickTarget &target,
 
 void QueueLeafLookupClickSubmit(const LeafLookupPayload &payload) {
   if (payload.activation_epoch == 0 || payload.sentence_epoch == 0 ||
+      payload.geometry_generation == 0 ||
       payload.text_units == 0 || payload.text_units > kLeafLookupTextUnits ||
       payload.char_index >= payload.text_units) {
     return;
@@ -2460,6 +2593,26 @@ bool InstallLeafAquaplusD3DTrace() {
   }
   if (device == nullptr)
     return false;
+  void **device_vtable = nullptr;
+  if (fushi_voice_hook::exact_lookup::IsReadableSpan(device, sizeof(void *))) {
+    memcpy(&device_vtable, device, sizeof(device_vtable));
+  }
+  constexpr size_t kLeafD3dLastRequiredSlot = 83u;
+  const bool device_abi_valid =
+      device_vtable != nullptr &&
+      fushi_voice_hook::exact_lookup::IsReadableSpan(
+          device_vtable, (kLeafD3dLastRequiredSlot + 1u) * sizeof(void *)) &&
+      fushi_voice_hook::exact_lookup::IsExecutableAddress(device_vtable[0]) &&
+      fushi_voice_hook::exact_lookup::IsExecutableAddress(device_vtable[1]) &&
+      fushi_voice_hook::exact_lookup::IsExecutableAddress(device_vtable[2]) &&
+      fushi_voice_hook::exact_lookup::IsExecutableAddress(
+          device_vtable[17]) &&
+      fushi_voice_hook::exact_lookup::IsExecutableAddress(
+          device_vtable[65]) &&
+      fushi_voice_hook::exact_lookup::IsExecutableAddress(
+          device_vtable[83]);
+  if (!device_abi_valid)
+    return false;
   InterlockedOr(
       reinterpret_cast<volatile LONG *>(&FushiLeafD3DTraceV1.reserved), 0x02);
   auto *traversal_target =
@@ -2484,21 +2637,21 @@ bool InstallLeafAquaplusD3DTrace() {
         reinterpret_cast<volatile LONG *>(&FushiLeafD3DTraceV1.reserved), 0x04);
   }
   const bool present_ready = HookFn(
-      VtableSlot(device, 17), reinterpret_cast<void *>(&Detour_LeafPresent),
+      device_vtable[17], reinterpret_cast<void *>(&Detour_LeafPresent),
       reinterpret_cast<void **>(&g_leaf_present_original));
   if (present_ready && g_leaf_present_original != nullptr) {
     InterlockedOr(
         reinterpret_cast<volatile LONG *>(&FushiLeafD3DTraceV1.reserved), 0x08);
   }
   const bool texture_ready = HookFn(
-      VtableSlot(device, 65), reinterpret_cast<void *>(&Detour_LeafSetTexture),
+      device_vtable[65], reinterpret_cast<void *>(&Detour_LeafSetTexture),
       reinterpret_cast<void **>(&g_leaf_set_texture_original));
   if (texture_ready && g_leaf_set_texture_original != nullptr) {
     InterlockedOr(
         reinterpret_cast<volatile LONG *>(&FushiLeafD3DTraceV1.reserved), 0x10);
   }
   const bool draw_ready =
-      HookFn(VtableSlot(device, 83),
+      HookFn(device_vtable[83],
              reinterpret_cast<void *>(&Detour_LeafDrawPrimitiveUP),
              reinterpret_cast<void **>(&g_leaf_draw_primitive_up_original));
   if (draw_ready && g_leaf_draw_primitive_up_original != nullptr) {
@@ -2568,6 +2721,8 @@ bool InstallLeafSampledInputShield() {
 bool PublishLeafLookupHit(const LeafLookupPayload &payload) {
   if (g_header == nullptr || payload.sentence_epoch == 0 ||
       payload.sentence_epoch != g_leaf_sentence_epoch ||
+      payload.geometry_generation == 0 || !g_leaf_active_geometry_valid ||
+      payload.geometry_generation != g_leaf_active_geometry.generation ||
       payload.text_units == 0 || payload.text_units > kLeafLookupTextUnits ||
       payload.text_units != g_leaf_active_line_units ||
       payload.char_index >= payload.text_units ||
@@ -2575,40 +2730,36 @@ bool PublishLeafLookupHit(const LeafLookupPayload &payload) {
              static_cast<size_t>(payload.text_units) * sizeof(wchar_t)) != 0) {
     return false;
   }
-  auto *slot = fushi_voice_hook::LookupHitOf(g_header);
-  if (slot == nullptr)
-    return false;
   char utf8[fushi_voice_hook::kLookupLineBytes] = {};
   const int bytes = WideCharToMultiByte(
       CP_UTF8, 0, payload.text, static_cast<int>(payload.text_units), utf8,
       static_cast<int>(sizeof(utf8)), nullptr, nullptr);
   if (bytes <= 0)
     return false;
-  const uint64_t next =
-      static_cast<uint64_t>(InterlockedCompareExchange64(
-          reinterpret_cast<volatile LONG64 *>(&g_header->lookup_hit_count), 0,
-          0)) +
-      1u;
-  InterlockedExchange64(reinterpret_cast<volatile LONG64 *>(&slot->seq), 0);
-  slot->char_index = payload.char_index;
-  slot->char_count = payload.text_units;
-  slot->glyph_x = payload.rect.x;
-  slot->glyph_y = payload.rect.y;
-  slot->glyph_w = payload.rect.width;
-  slot->glyph_h = payload.rect.height;
-  slot->view_w = payload.client_width;
-  slot->view_h = payload.client_height;
-  slot->flags = fushi_voice_hook::kLookupHitFlagSubmit;
-  slot->line_bytes = static_cast<uint32_t>(bytes);
-  memcpy(slot->line_utf8, utf8, static_cast<size_t>(bytes));
-  MemoryBarrier();
-  InterlockedExchange64(reinterpret_cast<volatile LONG64 *>(&slot->seq),
-                        static_cast<LONG64>(next));
-  InterlockedExchange64(
-      reinterpret_cast<volatile LONG64 *>(&g_header->lookup_hit_count),
-      static_cast<LONG64>(next));
-  SetLeafLookupDiag(fushi_voice_hook::kLookupDiagHitSubmitted);
-  return true;
+  fushi_voice_hook::LookupGeometryHitPublication publication;
+  publication.provider_kind =
+      fushi_voice_hook::kLookupGeometryProviderEngineExactLayout;
+  publication.provider_id =
+      fushi_voice_hook::kLookupGeometryProviderIdLeafAquaplus;
+  publication.char_index = payload.char_index;
+  publication.source_length = fushi_voice_hook::LookupUtf16SourceLength(
+      payload.text, payload.text_units, payload.char_index);
+  publication.char_count = payload.text_units;
+  publication.coordinate_space =
+      fushi_voice_hook::kLookupCoordinateSpaceClientPhysicalPixels;
+  publication.writing_mode = fushi_voice_hook::kLookupWritingModeHorizontal;
+  publication.text_generation = payload.sentence_epoch;
+  publication.geometry_generation = payload.geometry_generation;
+  publication.glyph_x = payload.rect.x;
+  publication.glyph_y = payload.rect.y;
+  publication.glyph_w = payload.rect.width;
+  publication.glyph_h = payload.rect.height;
+  publication.view_w = payload.client_width;
+  publication.view_h = payload.client_height;
+  publication.flags = fushi_voice_hook::kLookupHitFlagSubmit;
+  publication.line_utf8 = reinterpret_cast<const uint8_t *>(utf8);
+  publication.line_bytes = static_cast<uint32_t>(bytes);
+  return fushi_voice_hook::g_geometry_provider_registry.PublishHit(g_header, publication);
 }
 
 bool PublishLeafLookupPayload(const LeafLookupPayload &payload) {
@@ -2616,6 +2767,8 @@ bool PublishLeafLookupPayload(const LeafLookupPayload &payload) {
       payload.activation_epoch !=
           g_leaf_lookup_activation_epoch.load(std::memory_order_acquire) ||
       payload.sentence_epoch != g_leaf_sentence_epoch ||
+      payload.geometry_generation == 0 || !g_leaf_active_geometry_valid ||
+      payload.geometry_generation != g_leaf_active_geometry.generation ||
       payload.text_units == 0 || payload.char_index >= payload.text_units) {
     return false;
   }
@@ -2626,6 +2779,7 @@ bool PublishLeafLookupPayload(const LeafLookupPayload &payload) {
     identity *= 1099511628211ull;
   };
   hash_value(payload.sentence_epoch);
+  hash_value(payload.geometry_generation);
   hash_value(payload.text_units);
   for (uint32_t index = 0; index < payload.text_units; ++index) {
     hash_value(static_cast<uint32_t>(payload.text[index]));
@@ -2673,6 +2827,13 @@ void ProcessLeafAquaplusLookupTick() {
                       poller_contended ? 1 : 0);
   if (poller_contended) {
     ReleaseDeadLeafInputPollerOwner();
+    if (g_header != nullptr) {
+      fushi_voice_hook::g_geometry_provider_registry.Retire(
+          g_header,
+          fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+          fushi_voice_hook::kLookupGeometryProviderIdLeafAquaplus,
+          fushi_voice_hook::kLookupGeometryStatusFaulted);
+    }
     SetLeafLookupRuntimeEnabled(false);
     InvalidateLeafLookupClickTarget();
     return;
@@ -2680,6 +2841,12 @@ void ProcessLeafAquaplusLookupTick() {
   if (g_stop || g_header == nullptr ||
       !fushi_voice_hook::HasLookupRegion(g_header) ||
       g_header->lookup_enabled == 0) {
+    if (g_header != nullptr) {
+      fushi_voice_hook::g_geometry_provider_registry.Retire(
+          g_header,
+          fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+          fushi_voice_hook::kLookupGeometryProviderIdLeafAquaplus);
+    }
     SetLeafLookupRuntimeEnabled(false);
     InvalidateLeafLookupClickTarget();
     return;
@@ -2687,6 +2854,10 @@ void ProcessLeafAquaplusLookupTick() {
   const bool input_ready = InstallLeafSampledInputShield();
   const bool geometry_ready = InstallLeafAquaplusD3DTrace();
   if (!input_ready || !geometry_ready) {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header,
+        fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdLeafAquaplus);
     SetLeafLookupRuntimeEnabled(false);
     InvalidateLeafLookupClickTarget();
     return;
@@ -2695,6 +2866,22 @@ void ProcessLeafAquaplusLookupTick() {
   ConsumeLeafLookupSelectedText();
   ConsumeLeafLookupPrivateTraversals();
   SetLeafLookupRuntimeEnabled(true);
+
+  const bool active_geometry_ready =
+      g_leaf_active_geometry_valid &&
+      g_leaf_active_geometry.sentence_epoch == g_leaf_sentence_epoch &&
+      g_leaf_active_geometry.generation != 0;
+  if (active_geometry_ready) {
+    fushi_voice_hook::g_geometry_provider_registry.OfferReady(
+        g_header,
+        fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdLeafAquaplus);
+  } else {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header,
+        fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdLeafAquaplus);
+  }
 
   bool click_submitted = false;
   LeafLookupClickEvent click_event;
@@ -2723,6 +2910,10 @@ void ProcessLeafAquaplusLookupTick() {
   POINT cursor = {};
   if (game == nullptr || !GetClientRect(game, &client) ||
       !ClientToScreen(game, &origin) || !GetCursorPos(&cursor)) {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header,
+        fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdLeafAquaplus);
     InvalidateLeafLookupClickTarget();
     return;
   }
@@ -2796,6 +2987,12 @@ public:
   }
   void onModuleLoaded(const wchar_t *) override { install(); }
   void shutdown() override {
+    if (g_header != nullptr) {
+      fushi_voice_hook::g_geometry_provider_registry.Retire(
+          g_header,
+          fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+          fushi_voice_hook::kLookupGeometryProviderIdLeafAquaplus);
+    }
     StopLeafAquaplusResourceAudio();
     SetLeafLookupRuntimeEnabled(false);
     g_leaf_d3d_trace_ready.store(false, std::memory_order_release);

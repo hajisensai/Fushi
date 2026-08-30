@@ -7,3 +7,4 @@
 #include "../adapters/elf_ai6_profile.h"
 #include "../adapters/sgre_profile.h"
 #include "../adapters/leaf_aquaplus_profile.h"
+#include "../adapters/hunex_gge_profile.h"

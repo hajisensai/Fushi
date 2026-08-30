@@ -10,6 +10,10 @@
 int main() {
   using namespace fushi_voice_hook;
   const auto &profile = kWhiteAlbum2LeafAquaplusProfile;
+  assert(profile.d3d9_device_pointer_rva == 0x734430u);
+  assert(profile.stack_cookie_rva == 0x0d1630u);
+  assert(profile.get_async_key_state_iat_rva == 0x0a134cu);
+  assert(profile.read_file_iat_rva == 0x0a10a4u);
   assert(profile.embed_leaf_hook_rva == 0x0512bfu);
   assert(profile.input_poller_first_return_rva == 0x04a83eu);
   assert(profile.input_poller_last_return_rva == 0x04a9b4u);
@@ -17,6 +21,7 @@ int main() {
   assert(0x00400000u + profile.input_poller_last_return_rva == 0x0044a9b4u);
   assert(profile.text_traversal_rva == 0x0462c0u);
   assert(profile.raster_draw_rva == 0x03b590u);
+  assert(profile.glyph_dispatch_rva == 0x0460a0u);
   assert(profile.raster_glyph_return_rva == 0x0462b7u);
   assert(profile.raster_parent_return_stack_offset == 0x0cu);
   assert(profile.raster_packed_cp932_stack_offset == 0x110u);

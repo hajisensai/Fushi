@@ -141,6 +141,12 @@ abstract final class GlobalLookupChannel {
 
   static Future<bool> isShowing() => _impl.isShowing();
 
+  static Future<bool> suspendForCapture(int captureGeneration) =>
+      _impl.suspendForCapture(captureGeneration);
+
+  static Future<bool> restoreAfterCapture(int captureGeneration) =>
+      _impl.restoreAfterCapture(captureGeneration);
+
   static void setHandlers({
     required Future<Uint8List> Function(String url) onGetMedia,
     required void Function(Map<String, Object?> message) onJsMessage,

@@ -6,12 +6,16 @@ import 'dart:ui' show Rect;
 import 'package:flutter/foundation.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
+import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
+import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
+import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/galgame_window_gif.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/magpie_upscaling.dart';
 import 'package:fushi/src/mining/magpie_upscaling_service.dart';
@@ -29,14 +33,10 @@ import 'package:fushi/src/utils/misc/ruby_markup.dart';
 import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
 
-typedef GalHookPreferenceReader = Object? Function(
-  String key, {
-  required Object? defaultValue,
-});
-typedef GalHookPreferenceWriter = Future<void> Function(
-  String key,
-  Object? value,
-);
+typedef GalHookPreferenceReader =
+    Object? Function(String key, {required Object? defaultValue});
+typedef GalHookPreferenceWriter =
+    Future<void> Function(String key, Object? value);
 
 /// 「悬停即查词」开关的读取口（设置项 `hover_auto_lookup`）。真值在
 /// [ReaderFushiSource]（media source 偏好store，与本控制器用的 prefsRepo 不是同一
@@ -52,13 +52,23 @@ class GalHookTextOverlayController extends ChangeNotifier {
     GalHookPreferenceWriter? preferenceWriter,
     GalHookHoverAutoLookupReader? hoverAutoLookupReader,
     GalIngameLookupController? ingameLookup,
-  })  : _session = session ?? GalHookSessionController.instance,
-        _miningCoordinator =
-            miningCoordinator ?? GalHookMiningCoordinator.instance,
-        _preferenceReader = preferenceReader,
-        _preferenceWriter = preferenceWriter,
-        _hoverAutoLookupReader = hoverAutoLookupReader,
-        _ingameLookup = ingameLookup ?? GalIngameLookupController.instance;
+    GalAttachedTextController? attachedText,
+  }) : _session = session ?? GalHookSessionController.instance,
+       _miningCoordinator =
+           miningCoordinator ?? GalHookMiningCoordinator.instance,
+       _preferenceReader = preferenceReader,
+       _preferenceWriter = preferenceWriter,
+       _hoverAutoLookupReader = hoverAutoLookupReader,
+       _ingameLookup = ingameLookup ?? GalIngameLookupController.instance {
+    _attachedText =
+        attachedText ??
+        GalAttachedTextController(
+          preferenceReader: (String key) => _readPreference(key, ''),
+          preferenceWriter: _writeAttachedPreference,
+          onBeforeAttachedActivation: _beforeAttachedActivation,
+          onLookup: _onAttachedLookupText,
+        );
+  }
 
   static final GalHookTextOverlayController instance =
       GalHookTextOverlayController._();
@@ -71,14 +81,16 @@ class GalHookTextOverlayController extends ChangeNotifier {
     GalHookPreferenceWriter? preferenceWriter,
     GalHookHoverAutoLookupReader? hoverAutoLookupReader,
     GalIngameLookupController? ingameLookup,
+    GalAttachedTextController? attachedText,
   }) : this._(
-          session: session,
-          miningCoordinator: miningCoordinator,
-          preferenceReader: preferenceReader,
-          preferenceWriter: preferenceWriter,
-          hoverAutoLookupReader: hoverAutoLookupReader,
-          ingameLookup: ingameLookup,
-        );
+         session: session,
+         miningCoordinator: miningCoordinator,
+         preferenceReader: preferenceReader,
+         preferenceWriter: preferenceWriter,
+         hoverAutoLookupReader: hoverAutoLookupReader,
+         ingameLookup: ingameLookup,
+         attachedText: attachedText,
+       );
 
   static const String _rectPreferenceKey = 'gal_hook_text_window_rect';
   static const String _opacityPreferenceKey = 'gal_hook_text_window_bg_opacity';
@@ -122,6 +134,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
   /// 启动并喂养它——不另起第二条会话监听、不复制第二份制卡链。
   final GalIngameLookupController _ingameLookup;
 
+  /// Per-game calibrated transparent hit layer. It is a child state machine of
+  /// this controller and never subscribes to [GalHookSessionController] itself.
+  late final GalAttachedTextController _attachedText;
+
   AppModel? _appModel;
   bool _started = false;
   bool _visible = false;
@@ -131,6 +147,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
   bool _suppressedForSession = false;
   bool _syncing = false;
   bool _syncAgain = false;
+  String _attachedRoutingKey = '';
 
   /// 当前行语音正在试听（浮窗「重播」按钮高亮）。
   bool _replaying = false;
@@ -186,6 +203,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
   String? get displayedLineId => _displayedLineId;
   bool get isReplaying => _replaying;
   bool get isRecapturing => _session.isRecapturing;
+  GalAttachedTextController get attachedText => _attachedText;
 
   /// BUG-1095：当前台词字号（逻辑 px），与窗口高度无关。
   double get fontSize => _fontSize;
@@ -222,8 +240,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
     // 且用户一改就同步覆盖记忆，见 session 侧注释。
     _session.attachCaptureMemory(
       load: (String gameKey) {
-        final Object? stored = appModel.prefsRepo
-            .getPref('gal_capture_memory::$gameKey', defaultValue: '');
+        final Object? stored = appModel.prefsRepo.getPref(
+          'gal_capture_memory::$gameKey',
+          defaultValue: '',
+        );
         if (stored is! String || stored.isEmpty) {
           return const GalCaptureMemory();
         }
@@ -270,10 +290,18 @@ class GalHookTextOverlayController extends ChangeNotifier {
       // 游戏内查词：hook 报命中 / 转发卡片内输入，两条都直通编排器，本控制器不解释。
       onGalLookupHit: _ingameLookup.handleHit,
       onGalLookupInput: _ingameLookup.handleInput,
+      // attached surface 复用同一个 MethodChannel listener；子控制器只收类型化事件，
+      // 不自行 setMethodCallHandler，也不订阅第二条 session listener。
+      onAttachedLookupText: _attachedText.handleLookupText,
+      onAttachedSurfaceStateChanged: _attachedText.handleSurfaceStateChanged,
+      onAttachedCalibrationCommitted: _attachedText.handleCalibrationCommitted,
+      onAttachedCalibrationCancelled: _attachedText.handleCalibrationCancelled,
       // 查词准入（v19）：与开关正交，runner 在会话在的时候一直报。设置页据此决定
       // 「游戏内查词」那一行灰不灰、说什么。
       onGalLookupAdmission: _ingameLookup.handleAdmission,
     );
+    _attachedRoutingKey = _currentAttachedRoutingKey;
+    _attachedText.addListener(_onAttachedRoutingChanged);
     _session.addListener(_scheduleSync);
     _scheduleSync();
   }
@@ -282,7 +310,15 @@ class GalHookTextOverlayController extends ChangeNotifier {
   Future<void> stopForTesting() async {
     if (!_started) return;
     _session.removeListener(_scheduleSync);
+    _attachedText.removeListener(_onAttachedRoutingChanged);
     GalHookTextOverlayChannel.clearEventHandlers();
+    await _attachedText.detach();
+    await _ingameLookup.setProviderAdmission(false);
+    await _ingameLookup.setGeometryAdmission(
+      GalLookupGeometryAdmissionMode.disabled,
+      attachedReady: false,
+    );
+    await _ingameLookup.setSessionActive(false);
     await GalHookTextOverlayChannel.hide();
     _started = false;
     _visible = false;
@@ -311,10 +347,13 @@ class GalHookTextOverlayController extends ChangeNotifier {
   }
 
   void _loadPreferences(AppModel appModel) {
-    final Object? storedOpacity =
-        _readPreference(_opacityPreferenceKey, _defaultOpacity);
-    final double stored =
-        storedOpacity is num ? storedOpacity.toDouble() : _defaultOpacity;
+    final Object? storedOpacity = _readPreference(
+      _opacityPreferenceKey,
+      _defaultOpacity,
+    );
+    final double stored = storedOpacity is num
+        ? storedOpacity.toDouble()
+        : _defaultOpacity;
     _opacity = stored.clamp(0.0, 1.0);
     if (_opacity > 0) _lastNonZeroOpacity = _opacity;
     _readAppearancePreferences();
@@ -339,6 +378,30 @@ class GalHookTextOverlayController extends ChangeNotifier {
     if (reader != null) return reader(key, defaultValue: fallback);
     return _appModel?.prefsRepo.getPref(key, defaultValue: fallback) ??
         fallback;
+  }
+
+  Future<void> _writeAttachedPreference(String key, Object? value) async {
+    final GalHookPreferenceWriter? writer = _preferenceWriter;
+    if (writer != null) {
+      await writer(key, value);
+      return;
+    }
+    await _appModel?.prefsRepo.setPref(key, value);
+  }
+
+  GalLookupTextLayoutV1 _attachedLayoutFor(
+    GalLookupReferenceClientV1 referenceClient,
+  ) {
+    final double height = referenceClient.heightPx.toDouble();
+    return GalLookupTextLayoutV1(
+      fontFamily: _fontSelection?.family ?? '',
+      fontSizePerClientHeight: _fontSize / height,
+      letterSpacingPerClientHeight: _letterSpacing / height,
+      lineHeight: _lineHeight,
+      textAlign: _textAlignment,
+      verticalAlign: _verticalAlignment,
+      paddingPerClientHeight: _textPadding / height,
+    );
   }
 
   double _readDouble(
@@ -374,12 +437,12 @@ class GalHookTextOverlayController extends ChangeNotifier {
     _bold = _readPreference(_boldPreferenceKey, true) == true;
     _textAlignment =
         _readPreference(_alignmentPreferenceKey, 'center') == 'left'
-            ? 'left'
-            : 'center';
+        ? 'left'
+        : 'center';
     _verticalAlignment =
         _readPreference(_verticalAlignmentPreferenceKey, 'center') == 'top'
-            ? 'top'
-            : 'center';
+        ? 'top'
+        : 'center';
     _textColor = _readColor(
       _textColorPreferenceKey,
       PreferencesRepository.galHookTextColorDefault,
@@ -419,8 +482,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
     final AppModel? model = _appModel;
     final Object? stored = _preferenceReader != null
         ? _preferenceReader(_fontSizePreferenceKey, defaultValue: fallback)
-        : model?.prefsRepo
-            .getPref(_fontSizePreferenceKey, defaultValue: fallback);
+        : model?.prefsRepo.getPref(
+            _fontSizePreferenceKey,
+            defaultValue: fallback,
+          );
     final double value = stored is num ? stored.toDouble() : fallback;
     return value.clamp(
       PreferencesRepository.galHookTextFontSizeMin,
@@ -446,6 +511,72 @@ class GalHookTextOverlayController extends ChangeNotifier {
     if (_syncing) return;
     _syncing = true;
     unawaited(_drainSync());
+  }
+
+  String get _currentAttachedRoutingKey =>
+      '${(_attachedText.profile?.mode ?? GalLookupSurfaceMode.auto).wireName}:'
+      '${_attachedText.status.name}:'
+      '${_attachedText.attachedProviderClaimed}:'
+      '${_attachedText.forceAttachedProvider}';
+
+  void _onAttachedRoutingChanged() {
+    final String next = _currentAttachedRoutingKey;
+    if (next == _attachedRoutingKey) return;
+    _attachedRoutingKey = next;
+    _scheduleSync();
+  }
+
+  bool _nativeProviderAdmitted(
+    GalLookupSurfaceMode mode,
+    GalAttachedTextStatus status,
+  ) {
+    switch (mode) {
+      case GalLookupSurfaceMode.off:
+      case GalLookupSurfaceMode.attachedOnly:
+        return false;
+      case GalLookupSurfaceMode.nativeOnly:
+      case GalLookupSurfaceMode.auto:
+        // activeNative is assigned only after kind/id/status coherence and the
+        // verified-or-per-exe-risk shield gate both pass. Pending, calibration,
+        // risk and fault states therefore fail closed instead of accepting a
+        // native hit merely because no attached box is currently visible.
+        return status == GalAttachedTextStatus.activeNative;
+    }
+  }
+
+  static GalLookupGeometryAdmissionMode _geometryAdmissionMode(
+    GalLookupSurfaceMode mode, {
+    required bool forceAttached,
+  }) {
+    if (forceAttached) return GalLookupGeometryAdmissionMode.attachedOnly;
+    return switch (mode) {
+      GalLookupSurfaceMode.off => GalLookupGeometryAdmissionMode.disabled,
+      GalLookupSurfaceMode.auto => GalLookupGeometryAdmissionMode.auto,
+      GalLookupSurfaceMode.nativeOnly =>
+        GalLookupGeometryAdmissionMode.nativeOnly,
+      GalLookupSurfaceMode.attachedOnly =>
+        GalLookupGeometryAdmissionMode.attachedOnly,
+    };
+  }
+
+  Future<void> _beforeAttachedActivation(
+    GalLookupSurfaceMode profileMode, {
+    required bool forceAttached,
+  }) async {
+    // Retire the Dart route before asking the injected registry to change
+    // owner. The registry itself waits for down/up/tail; the runner will not
+    // publish attached boxes until kind=4/id=11 is active.
+    await _ingameLookup.setProviderAdmission(false);
+    final GalLookupCallResult result = await _ingameLookup.setGeometryAdmission(
+      _geometryAdmissionMode(profileMode, forceAttached: forceAttached),
+      attachedReady: true,
+    );
+    // not_open still persists the desired control in VoiceHookReader and is
+    // replayed when the mapping arrives. Other failures are permanent for the
+    // current surface attempt and must fail closed.
+    if (!result.ok && result.error != 'not_open') {
+      throw StateError(result.error ?? 'geometry_admission_rejected');
+    }
   }
 
   Future<void> _drainSync() async {
@@ -482,15 +613,74 @@ class GalHookTextOverlayController extends ChangeNotifier {
       notifyListeners();
     }
 
-    final bool active = state.externalWindowMode &&
+    final bool active =
+        state.externalWindowMode &&
         nextSessionKey != null &&
         state.phase != GalHookSessionPhase.idle &&
         state.phase != GalHookSessionPhase.stopping &&
         state.phase != GalHookSessionPhase.error;
+    final List<TexthookerLineEntry> lines = active
+        ? _session.selectedSessionLines
+        : const <TexthookerLineEntry>[];
+    // v1 attached geometry deliberately excludes ruby. The selected line's
+    // plain text has already had ruby markup removed, but its baseline no
+    // longer proves the same glyph boxes as the game's two-level rendering.
+    // Feed no source at all so the child withdraws every old hit box instead
+    // of guessing a clickable layout.
+    final TexthookerLineEntry? latestAttachedLine = lines.isEmpty
+        ? null
+        : lines.last;
+    final String? attachedSourceText =
+        latestAttachedLine == null || latestAttachedLine.rubySpans.isNotEmpty
+        ? null
+        : latestAttachedLine.text;
+    final int targetPid = state.gamePid ?? state.boundWindow?.pid ?? 0;
+    final int targetHwnd = state.boundWindow?.hwnd ?? 0;
+    // 与 KiriKiri surface 一样，attached surface 跟会话而不是浮窗可见性走；但它不
+    // 新增 listener，只消费这次 central sync 的不可变快照。
+    final bool lookupPreferenceEnabled =
+        _readPreference(
+          GalIngameLookupController.enabledPreferenceKey,
+          PreferencesRepository.galIngameLookupEnabledDefault,
+        ) ==
+        true;
+    final bool lookupActive = active && lookupPreferenceEnabled;
+    await _attachedText.syncSession(
+      active: lookupActive,
+      sessionEpoch: nextSessionKey,
+      targetPid: targetPid,
+      targetHwnd: targetHwnd,
+      sourceText: attachedSourceText,
+      // Launch sessions are keyed by the executable the user selected even
+      // when an engine replaces itself with a child process. Attach sessions
+      // leave this null so the runner resolves the PID's absolute image path.
+      launchExePath: state.launchExe,
+    );
     // 游戏内查词的开关跟着**会话**走，不跟着台词浮窗的可见性走：用户把浮窗关了
     // （`_suppressedForSession`）不代表他不要游戏内查词，两者是各自独立的表面。
     // 放在下面所有早退之前，会话一结束就一定关得掉。
-    await _ingameLookup.setSessionActive(active);
+    final GalLookupSurfaceMode lookupMode =
+        _attachedText.profile?.mode ?? GalLookupSurfaceMode.auto;
+    final bool forceAttached = _attachedText.forceAttachedProvider;
+    final bool attachedReady =
+        lookupActive && _attachedText.attachedProviderClaimed;
+    await _ingameLookup.setProviderAdmission(
+      lookupActive &&
+          !forceAttached &&
+          _nativeProviderAdmitted(lookupMode, _attachedText.status),
+    );
+    await _ingameLookup.setGeometryAdmission(
+      lookupActive
+          ? _geometryAdmissionMode(lookupMode, forceAttached: forceAttached)
+          : GalLookupGeometryAdmissionMode.disabled,
+      attachedReady: attachedReady,
+    );
+    // `attachedOnly` keeps IPC v19 alive because its generic input shield is
+    // implemented in the injected hook. `off` and the global preference both
+    // drive lookup_enabled to zero and detach the transparent catch surface.
+    await _ingameLookup.setSessionActive(
+      lookupActive && (lookupMode != GalLookupSurfaceMode.off || forceAttached),
+    );
     if (!active) {
       if (_visible) {
         await GalHookTextOverlayChannel.hide();
@@ -505,7 +695,6 @@ class GalHookTextOverlayController extends ChangeNotifier {
       if (nextSessionKey == null) _sessionKey = null;
       return;
     }
-    final List<TexthookerLineEntry> lines = _session.selectedSessionLines;
     // 会话最新行 ID 变化时让游戏内控制器复核句子内容。不能直接把 ID
     // 当句界：KiriKiriZ 的人物动画/renderer 重绑会让 Luna 重发同句并分配新 ID。
     // 文本服务仍保留这些 occurrence（配音/制卡身份需要），只有查词 surface
@@ -591,38 +780,44 @@ class GalHookTextOverlayController extends ChangeNotifier {
   /// 严格同序**（重播 / 重录 / 跟随 / 穿透 / 底板 / 锁定 / 工作台 / 置顶 /
   /// 关闭）。native 不持有 i18n，文案只能由这里按当前 locale 下发。
   List<String> get _slotTooltips => <String>[
-        t.game_hook_btn_replay,
-        t.game_hook_btn_recapture,
-        t.game_hook_btn_follow,
-        t.game_hook_btn_passthrough,
-        t.game_hook_btn_transparency,
-        t.game_hook_btn_lock,
-        t.game_hook_btn_workbench,
-        t.game_hook_btn_topmost,
-        t.game_hook_btn_close,
-      ];
+    t.game_hook_btn_replay,
+    t.game_hook_btn_recapture,
+    t.game_hook_btn_follow,
+    t.game_hook_btn_passthrough,
+    t.game_hook_btn_transparency,
+    t.game_hook_btn_lock,
+    t.game_hook_btn_workbench,
+    t.game_hook_btn_topmost,
+    t.game_hook_btn_close,
+  ];
 
   int get _backgroundColor {
     final int alpha = (_opacity.clamp(0.0, 1.0) * 255).round();
     return (alpha << 24) | (_backgroundBaseColor & 0x00FFFFFF);
   }
 
-  Future<void> _pushStyle() => GalHookTextOverlayChannel.updateStyle(
-        bgColor: _backgroundColor,
-        fontSize: _fontSize,
-        fontFamily: _fontSelection?.family ?? '',
-        fontPath: _fontSelection?.path,
-        letterSpacing: _letterSpacing,
-        lineHeight: _lineHeight,
-        bold: _bold,
-        textAlignment: _textAlignment,
-        verticalAlignment: _verticalAlignment,
-        textColor: _textColor,
-        outlineColor: _outlineColor,
-        outlineWidth: _outlineWidth,
-        textPadding: _textPadding,
-        cornerRadius: _cornerRadius,
-      );
+  Future<void> _pushStyle() async {
+    await GalHookTextOverlayChannel.updateStyle(
+      bgColor: _backgroundColor,
+      fontSize: _fontSize,
+      fontFamily: _fontSelection?.family ?? '',
+      fontPath: _fontSelection?.path,
+      letterSpacing: _letterSpacing,
+      lineHeight: _lineHeight,
+      bold: _bold,
+      textAlignment: _textAlignment,
+      verticalAlignment: _verticalAlignment,
+      textColor: _textColor,
+      outlineColor: _outlineColor,
+      outlineWidth: _outlineWidth,
+      textPadding: _textPadding,
+      cornerRadius: _cornerRadius,
+    );
+    final GalLookupReferenceClientV1? client = _attachedText.currentClient;
+    if (client != null) {
+      await _attachedText.updateActiveStyle(_attachedLayoutFor(client));
+    }
+  }
 
   Future<void> showManually() async {
     if (!_started) return;
@@ -720,6 +915,14 @@ class GalHookTextOverlayController extends ChangeNotifier {
     _readAppearancePreferences();
     await _pushStyle();
     notifyListeners();
+  }
+
+  /// Reconciles the global in-game lookup switch across both native and
+  /// attached providers. Keeping this at the central session owner prevents a
+  /// disabled transparent surface from continuing to intercept bare clicks.
+  Future<void> applyIngameLookupEnabledFromPreferences() async {
+    await _ingameLookup.applyEnabledFromPreferences();
+    _scheduleSync();
   }
 
   /// 「悬停即查词」当前值。默认真值在 [ReaderFushiSource]（与阅读器 / 视频字幕
@@ -831,8 +1034,9 @@ class GalHookTextOverlayController extends ChangeNotifier {
       );
       return;
     }
-    final GalTrackPreview? preview =
-        await _session.exportLineAudioPreview(lineId);
+    final GalTrackPreview? preview = await _session.exportLineAudioPreview(
+      lineId,
+    );
     if (preview == null) {
       FushiToast.show(
         msg: t.game_line_preview_failed,
@@ -851,8 +1055,9 @@ class GalHookTextOverlayController extends ChangeNotifier {
     _replayResetTimer?.cancel();
     _replayResetTimer = Timer(
       Duration(
-        milliseconds:
-            preview.durationMs > 0 ? preview.durationMs + 300 : _replayMaxMs,
+        milliseconds: preview.durationMs > 0
+            ? preview.durationMs + 300
+            : _replayMaxMs,
       ),
       () {
         _replaying = false;
@@ -935,8 +1140,9 @@ class GalHookTextOverlayController extends ChangeNotifier {
     String lineId,
     String text,
     int index,
-    Rect? wordRect,
-  ) async {
+    Rect? wordRect, {
+    GalHookCaptureLeaseFactory? captureLeaseFactory,
+  }) async {
     final AppModel? model = _appModel;
     final TexthookerLineEntry? entry = _session.entryById(lineId);
     if (model == null ||
@@ -962,16 +1168,117 @@ class GalHookTextOverlayController extends ChangeNotifier {
       // 浮窗里点词跟阅读器/剪贴板面板一样是「点哪个词看哪个词」。老 native 不带
       // 矩形时为 null，自动回落到光标定位。
       anchorScreenRect: wordRect,
-      miningHandler: ({
-        required Map<String, String> fields,
-        int? updateNoteId,
-      }) =>
-          _mineFromLookup(
-        lineId: entry.id,
-        fields: fields,
-        updateNoteId: updateNoteId,
-      ),
+      miningHandler:
+          ({required Map<String, String> fields, int? updateNoteId}) =>
+              _mineFromLookup(
+                lineId: entry.id,
+                fields: fields,
+                updateNoteId: updateNoteId,
+                captureLeaseFactory: captureLeaseFactory,
+              ),
     );
+  }
+
+  Future<void> _onAttachedLookupText(GalAttachedLookupHitV19 hit) async {
+    if (_readPreference(
+          GalIngameLookupController.enabledPreferenceKey,
+          PreferencesRepository.galIngameLookupEnabledDefault,
+        ) !=
+        true) {
+      return;
+    }
+    final List<TexthookerLineEntry> lines = _session.selectedSessionLines;
+    if (lines.isEmpty) return;
+    final TexthookerLineEntry latest = lines.last;
+    // attached hit 必须逐字对应 central sync 刚送出的当前正文。任何旧 epoch、旧
+    // generation 或长度漂移已在子控制器丢弃；这里再以 session line identity 收口，
+    // 从而完整复用既有查词/制卡链而不发明第二份上下文模型。
+    if (latest.rubySpans.isNotEmpty || latest.text != hit.sourceText) return;
+    await _onLookupText(
+      latest.id,
+      hit.sourceText,
+      hit.charIndex,
+      hit.wordRect,
+      captureLeaseFactory: _acquireAttachedMiningCaptureLease,
+    );
+  }
+
+  /// Acquires one screenshot fence spanning both independently composited
+  /// surfaces used by attached lookup: the 1/255-alpha glyph catch window and
+  /// the visible global dictionary card. The two exact generation tokens are
+  /// kept together so a late release cannot revive either an old sentence or
+  /// an old card route.
+  Future<GalHookCaptureLease> _acquireAttachedMiningCaptureLease() async {
+    final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
+    final GalAttachedMiningCaptureLease? attachedLease = await _attachedText
+        .acquireMiningCaptureLease();
+    if (attachedLease == null) {
+      throw const GalHookCaptureSuppressionException(
+        'the attached glyph surface is no longer current',
+      );
+    }
+
+    try {
+      final bool cardHidden = await GlobalLookupChannel.runWithRoute(
+        route,
+        () => GlobalLookupChannel.suspendForCapture(
+          attachedLease.captureGeneration,
+        ),
+      );
+      if (!cardHidden) {
+        throw const GalHookCaptureSuppressionException(
+          'the lookup card did not acknowledge capture suppression',
+        );
+      }
+      return _AttachedCompositeCaptureLease(
+        releaseCallback: () async {
+          final Object? restoreError = await _restoreAttachedCaptureSurfaces(
+            route,
+            attachedLease,
+          );
+          if (restoreError != null) {
+            throw GalHookCaptureSuppressionException(
+              'attached capture restoration threw: $restoreError',
+            );
+          }
+        },
+      );
+    } catch (error) {
+      // The card call may have reached native even when the reply was lost.
+      // Attempt the exact-token restore before releasing the attached surface,
+      // then fail closed so no screenshot starts with ambiguous visibility.
+      await _restoreAttachedCaptureSurfaces(route, attachedLease);
+      if (error is GalHookCaptureSuppressionException) rethrow;
+      throw GalHookCaptureSuppressionException(
+        'attached capture suppression threw: $error',
+      );
+    }
+  }
+
+  Future<Object?> _restoreAttachedCaptureSurfaces(
+    GlobalLookupRoute route,
+    GalAttachedMiningCaptureLease attachedLease,
+  ) async {
+    Object? firstError;
+    try {
+      final bool restored = await GlobalLookupChannel.runWithRoute(
+        route,
+        () => GlobalLookupChannel.restoreAfterCapture(
+          attachedLease.captureGeneration,
+        ),
+      );
+      if (!restored) {
+        firstError = StateError('lookup_card_capture_restore_rejected');
+      }
+    } catch (error) {
+      firstError = error;
+    }
+    try {
+      await _attachedText.releaseMiningCaptureLease(attachedLease);
+    } catch (error) {
+      firstError ??= error;
+    }
+    return firstError;
   }
 
   /// 游戏内查词的制卡 handler：按台词文本回溯本局会话里的那一行，复用浮窗点词
@@ -999,10 +1306,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
   }
 
   OverlayMiningHandler _ingameMiningHandlerFor(String line) {
-    return ({
-      required Map<String, String> fields,
-      int? updateNoteId,
-    }) async {
+    return ({required Map<String, String> fields, int? updateNoteId}) async {
       // resolver 在 popup 构造时被保存，而文本线程可能稍后才发布当前行。到真正点「制卡」
       // 时重新解析，既覆盖这段时序差，也会重新套用当前 session/thread 的筛选。
       final String? resolved = _resolveIngameMiningLineId(line);
@@ -1022,17 +1326,14 @@ class GalHookTextOverlayController extends ChangeNotifier {
               : t.game_hook_line_unavailable,
           severity: ToastSeverity.error,
         );
-        return const <String, Object?>{
-          'ankiConnect': false,
-          'noteId': null,
-        };
+        return const <String, Object?>{'ankiConnect': false, 'noteId': null};
       }
       return _mineFromLookup(
         lineId: resolved,
         fields: fields,
         updateNoteId: updateNoteId,
         sentenceOverride: line,
-        suppressIngameLookupForCapture: true,
+        captureLeaseFactory: _ingameLookup.acquireMiningCaptureLease,
       );
     };
   }
@@ -1042,21 +1343,18 @@ class GalHookTextOverlayController extends ChangeNotifier {
     required Map<String, String> fields,
     required int? updateNoteId,
     String? sentenceOverride,
-    bool suppressIngameLookupForCapture = false,
+    GalHookCaptureLeaseFactory? captureLeaseFactory,
   }) async {
     final AppModel? model = _appModel;
     if (model == null) {
-      return const <String, Object?>{
-        'ankiConnect': false,
-        'noteId': null,
-      };
+      return const <String, Object?>{'ankiConnect': false, 'noteId': null};
     }
     FushiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
     );
-    final BaseAnkiRepository repo =
-        model.platformServices.createAnkiRepository();
+    final BaseAnkiRepository repo = model.platformServices
+        .createAnkiRepository();
     final GalHookMiningResult result = await _miningCoordinator.mineLine(
       lineId: lineId,
       fields: fields,
@@ -1075,9 +1373,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       imageMode: model.galMiningImageMode,
       animatedFormat: model.galMiningAnimatedFormat,
       stillFormat: model.galMiningStillFormat,
-      captureLeaseFactory: suppressIngameLookupForCapture
-          ? _ingameLookup.acquireMiningCaptureLease
-          : null,
+      captureLeaseFactory: captureLeaseFactory,
     );
     if (result.aborted) {
       // 截图已经成功后，resource-only 音频门禁也可能中止制卡。不要把所有
@@ -1085,8 +1381,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
       final String abortMessage = result.audioFallbackDisabled
           ? t.game_audio_fallback_disabled_missing
           : result.failureReason != null
-              ? '${t.external_window_capture_failed}：${result.failureReason}'
-              : t.external_window_capture_failed;
+          ? '${t.external_window_capture_failed}：${result.failureReason}'
+          : t.external_window_capture_failed;
       FushiToast.showMine(msg: abortMessage, status: MineToastStatus.failed);
       // BUG-1908：同一句话也回给浮窗——游戏全屏时主 app 窗在后台，上面那个 toast
       // 用户看不见。
@@ -1110,11 +1406,39 @@ class GalHookTextOverlayController extends ChangeNotifier {
     }
     if (result.unmappedTokens.isNotEmpty) {
       FushiToast.show(
-        msg: '${t.game_card_mapping_missing}: '
+        msg:
+            '${t.game_card_mapping_missing}: '
             '${result.unmappedTokens.join(', ')}',
         severity: ToastSeverity.warning,
       );
     }
     return result.toPopupReply(message: failureMessage);
+  }
+}
+
+class _AttachedCompositeCaptureLease implements GalHookCaptureLease {
+  _AttachedCompositeCaptureLease({required this.releaseCallback});
+
+  final Future<void> Function() releaseCallback;
+  bool _released = false;
+  Future<void>? _releaseFuture;
+
+  @override
+  Future<void> release() {
+    if (_released) return Future<void>.value();
+    final Future<void>? pending = _releaseFuture;
+    if (pending != null) return pending;
+    final Future<void> operation = _releaseOnce();
+    _releaseFuture = operation;
+    return operation;
+  }
+
+  Future<void> _releaseOnce() async {
+    try {
+      await releaseCallback();
+      _released = true;
+    } finally {
+      _releaseFuture = null;
+    }
   }
 }
