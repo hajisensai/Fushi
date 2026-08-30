@@ -4014,5 +4014,6 @@
   "onboarding_global_lookup_windows_select_body": "拖选刚才已经验证能返回词典释义的同一个词，并保持文字处于选中状态。",
   "onboarding_global_lookup_android_select_body": "长按刚才已经验证能返回词典释义的同一个词，再拖动选区手柄让它完整覆盖。",
   "onboarding_feature_manual_resources_hint": "可补充推荐包，也可单独导入自己的词典、有声书和单词发音来源",
-  "onboarding_step_manual_resources_body": "这一项可以与推荐包同时使用，也可以单独使用。进入查词教程前至少导入一本词典；有声书音频和单词发音音频属于按需补充。"
+  "onboarding_step_manual_resources_body": "这一项可以与推荐包同时使用，也可以单独使用。进入查词教程前至少导入一本词典；有声书音频和单词发音音频属于按需补充。",
+  "delete_choices_remember": "记住这些选择"
 }

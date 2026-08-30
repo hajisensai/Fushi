@@ -4014,5 +4014,6 @@
   "onboarding_step_click_lookup_body": "Prüfen Sie zuerst ein Wort, das Ihr installiertes Wörterbuch tatsächlich kennt. Üben Sie dann mit demselben Wort das direkte Nachschlagen in Büchern, im OCR-Text von Manga und in Videountertiteln.",
   "onboarding_click_lookup_tap_body": "Tippen Sie auf dem Handy auf ein Zeichen des geprüften Wortes, am Computer klicken Sie es mit links an. Fushi setzt dort an und findet die längste passende Wortform.",
   "onboarding_global_lookup_windows_select_body": "Markieren Sie dasselbe Wort, für das Sie bereits eine Wörterbuchbedeutung geprüft haben, und lassen Sie die Auswahl bestehen.",
-  "onboarding_global_lookup_android_select_body": "Halten Sie dasselbe geprüfte Wort gedrückt und ziehen Sie dann die Auswahlpunkte so, dass es vollständig markiert ist."
+  "onboarding_global_lookup_android_select_body": "Halten Sie dasselbe geprüfte Wort gedrückt und ziehen Sie dann die Auswahlpunkte so, dass es vollständig markiert ist.",
+  "delete_choices_remember": "Remember these choices"
 }

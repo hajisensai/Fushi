@@ -4014,5 +4014,6 @@
   "onboarding_step_click_lookup_body": "先確認一個目前已安裝詞典確實能返回釋義的詞，再用同一個詞練習書籍正文、漫畫 OCR 文字和影片字幕裡的點擊查詞。",
   "onboarding_click_lookup_tap_body": "手機輕點剛才確認過的詞中的一個字，電腦用滑鼠左鍵單擊。Fushi 會從這裡開始比對最長的詞。",
   "onboarding_global_lookup_windows_select_body": "拖選剛才已確認能返回詞典釋義的同一個詞，並保持文字處於選取狀態。",
-  "onboarding_global_lookup_android_select_body": "長按剛才已確認能返回詞典釋義的同一個詞，再拖動選取控點讓它完整覆蓋。"
+  "onboarding_global_lookup_android_select_body": "長按剛才已確認能返回詞典釋義的同一個詞，再拖動選取控點讓它完整覆蓋。",
+  "delete_choices_remember": "Remember these choices"
 }

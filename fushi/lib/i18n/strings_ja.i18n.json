@@ -4014,5 +4014,6 @@
   "onboarding_step_click_lookup_body": "まず、インストール済みの辞書に実際に載っている単語を確認します。次に同じ単語で、書籍の本文・マンガのOCRテキスト・動画の字幕でのタップ検索を練習しましょう。",
   "onboarding_click_lookup_tap_body": "スマートフォンでは確認した単語の1文字をタップ、パソコンでは左クリックします。Fushiはそこを起点にいちばん長い単語を照合します。",
   "onboarding_global_lookup_windows_select_body": "辞書に語義があると確認済みの同じ単語をドラッグで選択し、選択状態のままにします。",
-  "onboarding_global_lookup_android_select_body": "辞書に語義があると確認済みの同じ単語を長押しし、選択ハンドルを動かして単語全体を覆います。"
+  "onboarding_global_lookup_android_select_body": "辞書に語義があると確認済みの同じ単語を長押しし、選択ハンドルを動かして単語全体を覆います。",
+  "delete_choices_remember": "Remember these choices"
 }

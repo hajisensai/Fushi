@@ -4014,5 +4014,6 @@
   "onboarding_step_click_lookup_body": "먼저 설치된 사전에 실제로 실려 있는 단어를 확인하세요. 그런 다음 같은 단어로 책 본문, 만화 OCR 텍스트, 동영상 자막에서 탭 검색을 연습해 보세요.",
   "onboarding_click_lookup_tap_body": "휴대폰에서는 확인한 단어의 글자 하나를 탭하고, 컴퓨터에서는 왼쪽 버튼으로 클릭하세요. Fushi는 그 자리에서 시작해 가장 긴 단어를 찾아냅니다.",
   "onboarding_global_lookup_windows_select_body": "사전에 뜻이 있다고 확인한 그 단어를 드래그해 선택하고, 선택 상태를 유지하세요.",
-  "onboarding_global_lookup_android_select_body": "확인한 그 단어를 길게 누른 뒤 선택 핸들을 움직여 단어 전체를 덮으세요."
+  "onboarding_global_lookup_android_select_body": "확인한 그 단어를 길게 누른 뒤 선택 핸들을 움직여 단어 전체를 덮으세요.",
+  "delete_choices_remember": "Remember these choices"
 }

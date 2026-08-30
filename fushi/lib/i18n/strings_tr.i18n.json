@@ -4014,5 +4014,6 @@
   "onboarding_step_click_lookup_body": "Önce kurulu sözlüğünüzün gerçekten tanımladığı bir kelimeyi doğrulayın. Sonra aynı kelimeyle kitaplarda, manga OCR metninde ve video altyazılarında doğrudan aramayı deneyin.",
   "onboarding_click_lookup_tap_body": "Telefonda doğruladığınız kelimenin bir karakterine dokunun, bilgisayarda sol tıklayın. Fushi oradan başlar ve en uzun kelimeyi eşleştirir.",
   "onboarding_global_lookup_windows_select_body": "Sözlükte anlamı olduğunu doğruladığınız aynı kelimeyi seçin ve seçimi bırakmayın.",
-  "onboarding_global_lookup_android_select_body": "Doğruladığınız aynı kelimeye uzun basın, sonra seçim tutamaçlarını kelimeyi tamamen kaplayacak şekilde ayarlayın."
+  "onboarding_global_lookup_android_select_body": "Doğruladığınız aynı kelimeye uzun basın, sonra seçim tutamaçlarını kelimeyi tamamen kaplayacak şekilde ayarlayın.",
+  "delete_choices_remember": "Remember these choices"
 }

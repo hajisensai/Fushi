@@ -4014,5 +4014,6 @@
   "onboarding_step_click_lookup_body": "Controleer eerst een woord dat je geïnstalleerde woordenboek echt kent. Oefen daarna met datzelfde woord het direct opzoeken in boeken, in OCR-tekst van manga en in video-ondertitels.",
   "onboarding_click_lookup_tap_body": "Tik op de telefoon op een teken van het gecontroleerde woord; op de computer klik je er met links op. Fushi begint daar en pakt het langste passende woord.",
   "onboarding_global_lookup_windows_select_body": "Selecteer hetzelfde woord waarvan je al hebt gecontroleerd dat er een betekenis in het woordenboek staat, en laat de selectie staan.",
-  "onboarding_global_lookup_android_select_body": "Houd datzelfde gecontroleerde woord ingedrukt en versleep daarna de selectiegrepen zodat het hele woord geselecteerd is."
+  "onboarding_global_lookup_android_select_body": "Houd datzelfde gecontroleerde woord ingedrukt en versleep daarna de selectiegrepen zodat het hele woord geselecteerd is.",
+  "delete_choices_remember": "Remember these choices"
 }

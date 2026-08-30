@@ -4014,5 +4014,6 @@
   "onboarding_step_click_lookup_body": "Pastikan dulu ada kata yang memang didefinisikan kamus yang Anda pasang. Lalu pakai kata yang sama untuk berlatih pencarian langsung di buku, teks OCR manga, dan subtitle video.",
   "onboarding_click_lookup_tap_body": "Di ponsel, ketuk salah satu karakter kata yang sudah dipastikan tadi; di komputer, klik kiri. Fushi mulai dari titik itu dan mengambil kata terpanjang yang cocok.",
   "onboarding_global_lookup_windows_select_body": "Sorot kata yang sama, yang sudah Anda pastikan ada definisinya di kamus, dan biarkan tetap terpilih.",
-  "onboarding_global_lookup_android_select_body": "Tekan lama kata yang sudah dipastikan itu, lalu geser pegangan seleksi agar menutupi seluruh kata."
+  "onboarding_global_lookup_android_select_body": "Tekan lama kata yang sudah dipastikan itu, lalu geser pegangan seleksi agar menutupi seluruh kata.",
+  "delete_choices_remember": "Remember these choices"
 }

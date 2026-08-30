@@ -4014,5 +4014,6 @@
   "onboarding_step_click_lookup_body": "تأكد أولًا من كلمة يعرّفها قاموسك المثبَّت فعلًا. ثم استخدم الكلمة نفسها للتدرب على البحث المباشر في الكتب، وفي نص OCR للمانغا، وفي ترجمات الفيديو.",
   "onboarding_click_lookup_tap_body": "على الهاتف، انقر على حرف من الكلمة التي تحققت منها؛ وعلى الحاسوب، انقر عليها بالزر الأيسر. يبدأ Fushi من هناك ويطابق أطول كلمة ممكنة.",
   "onboarding_global_lookup_windows_select_body": "ظلّل الكلمة نفسها التي تأكدت من وجود تعريف لها في القاموس، واترك التحديد قائمًا.",
-  "onboarding_global_lookup_android_select_body": "اضغط مطولًا على الكلمة نفسها التي تحققت منها، ثم اسحب مقابض التحديد لتغطيها بالكامل."
+  "onboarding_global_lookup_android_select_body": "اضغط مطولًا على الكلمة نفسها التي تحققت منها، ثم اسحب مقابض التحديد لتغطيها بالكامل.",
+  "delete_choices_remember": "Remember these choices"
 }

@@ -4014,5 +4014,6 @@
   "onboarding_step_click_lookup_body": "Vérifiez d'abord un mot que votre dictionnaire installé définit vraiment. Utilisez ensuite ce même mot pour vous entraîner à la recherche directe dans les livres, le texte OCR des mangas et les sous-titres des vidéos.",
   "onboarding_click_lookup_tap_body": "Sur téléphone, touchez un caractère du mot vérifié ; sur ordinateur, faites un clic gauche dessus. Fushi part de là et retient le mot le plus long.",
   "onboarding_global_lookup_windows_select_body": "Sélectionnez le même mot dont vous avez déjà vérifié la définition, et laissez la sélection active.",
-  "onboarding_global_lookup_android_select_body": "Appuyez longuement sur ce même mot vérifié, puis ajustez les poignées de sélection pour le couvrir entièrement."
+  "onboarding_global_lookup_android_select_body": "Appuyez longuement sur ce même mot vérifié, puis ajustez les poignées de sélection pour le couvrir entièrement.",
+  "delete_choices_remember": "Remember these choices"
 }

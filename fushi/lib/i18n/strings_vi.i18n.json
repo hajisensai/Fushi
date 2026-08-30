@@ -4014,5 +4014,6 @@
   "onboarding_step_click_lookup_body": "Trước hết hãy kiểm tra một từ mà từ điển đã cài thực sự có nghĩa. Sau đó dùng chính từ đó để tập tra trực tiếp trong sách, trong chữ OCR của manga và trong phụ đề video.",
   "onboarding_click_lookup_tap_body": "Trên điện thoại, chạm vào một ký tự của từ vừa kiểm tra; trên máy tính thì nhấp chuột trái. Fushi bắt đầu từ đó và khớp với từ dài nhất.",
   "onboarding_global_lookup_windows_select_body": "Bôi đen đúng từ mà bạn đã kiểm tra là có nghĩa trong từ điển, và giữ nguyên vùng chọn.",
-  "onboarding_global_lookup_android_select_body": "Nhấn giữ đúng từ đã kiểm tra đó, rồi kéo các tay nắm vùng chọn để phủ hết từ."
+  "onboarding_global_lookup_android_select_body": "Nhấn giữ đúng từ đã kiểm tra đó, rồi kéo các tay nắm vùng chọn để phủ hết từ.",
+  "delete_choices_remember": "Remember these choices"
 }

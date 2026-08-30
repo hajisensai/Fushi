@@ -6,11 +6,14 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:drift/native.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
@@ -101,9 +104,43 @@ void main() {
   });
 
   group('ReaderHistoryDeleteDialog', () {
-    testWidgets('勾选后披露只承诺删音频，书与字幕原件仍在「会保留」里', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('已记住的两项作为默认值，并连同记住状态一起回写', (WidgetTester tester) async {
+      DeleteDecision? got;
+      DeletePromptRememberedChoices? persisted;
+      await tester.pumpWidget(
+        app(
+          ReaderHistoryDeleteDialog(
+            title: t.epub_delete_title,
+            message: 'msg',
+            localFilesSubtitle: t.delete_local_files_audio_desc,
+            rememberedChoices: const DeletePromptRememberedChoices(
+              syncEverywhere: true,
+              deleteLocalFiles: true,
+            ),
+            onPersistChoices: (DeletePromptRememberedChoices? choices) async {
+              persisted = choices;
+            },
+            onConfirm: (DeleteDecision d) => got = d,
+          ),
+        ),
+      );
+
+      expect(find.text(t.delete_choices_remember), findsOneWidget);
+      expect(
+        find.byIcon(Icons.check_box),
+        findsNWidgets(3),
+        reason: '同步删除、本地文件、记住选择都应从偏好恢复为勾选',
+      );
+      await tester.tap(find.text(t.dialog_delete));
+      await tester.pump();
+
+      expect(got!.scope, DeleteScope.syncEverywhere);
+      expect(got!.deleteLocalFiles, isTrue);
+      expect(persisted!.syncEverywhere, isTrue);
+      expect(persisted!.deleteLocalFiles, isTrue);
+    });
+
+    testWidgets('勾选后披露只承诺删音频，书与字幕原件仍在「会保留」里', (WidgetTester tester) async {
       // 披露 + 两个勾选行比默认 800×600 视口高，按钮会被挤到屏幕外；这条测的是
       // 披露语义，不是紧凑布局（那由 reader_history_delete_dialog_test 守）。
       tester.view.devicePixelRatio = 1;
@@ -180,7 +217,10 @@ void main() {
         target: DeletionDisclosureTarget.attachedAudiobook,
       );
       final DeletionDisclosure moved = audiobook.withLocalFilesDeleted();
-      expect(moved.willDelete, contains(t.delete_disclosure_audio_source_files));
+      expect(
+        moved.willDelete,
+        contains(t.delete_disclosure_audio_source_files),
+      );
       expect(moved.willKeep, <String>[t.delete_disclosure_audiobook_book_kept]);
     });
 
@@ -206,6 +246,46 @@ void main() {
         willKeep: <String>['b'],
       );
       expect(identical(plain.withLocalFilesDeleted(), plain), isTrue);
+    });
+  });
+
+  group('DeletePromptPreferenceStore', () {
+    test('组合值原子往返，传 null 后恢复安全默认（无记录）', () async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      final DeletePromptPreferenceStore store = DeletePromptPreferenceStore(db);
+
+      expect(await store.load(), isNull);
+      await store.write(
+        const DeletePromptRememberedChoices(
+          syncEverywhere: true,
+          deleteLocalFiles: false,
+        ),
+      );
+      final DeletePromptRememberedChoices? loaded = await store.load();
+      expect(loaded!.syncEverywhere, isTrue);
+      expect(loaded.deleteLocalFiles, isFalse);
+
+      await store.write(null);
+      expect(await store.load(), isNull);
+    });
+
+    test('损坏或未知版本偏好不会把破坏性选项误判为 true', () async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      final DeletePromptPreferenceStore store = DeletePromptPreferenceStore(db);
+
+      await db.setPref(DeletePromptPreferenceStore.prefKey, '{bad json');
+      expect(await store.load(), isNull);
+      await db.setPref(
+        DeletePromptPreferenceStore.prefKey,
+        '{"version":2,"syncEverywhere":true,"deleteLocalFiles":true}',
+      );
+      expect(await store.load(), isNull);
     });
   });
 }
