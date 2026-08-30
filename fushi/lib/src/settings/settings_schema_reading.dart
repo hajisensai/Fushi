@@ -1,6 +1,7 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -840,6 +841,29 @@ SettingsDestination buildReadingDestination() {
             onChanged: (SettingsContext c, bool value) {
               c.readerSource.setReaderMergeImagePages(value);
               notifyReaderLayoutChanged(c);
+            },
+          ),
+        ],
+      ),
+      // v92 统计域：阅读空闲门。只对阅读面生效（视频以播放态为准，用户拍板）；
+      // 下次打开书生效（时钟在建书时读一次）。
+      SettingsSection(
+        title: t.settings_section_reading_stats,
+        items: <SettingsItem>[
+          SettingsStepperItem(
+            id: 'reading.stats_idle_timeout_minutes',
+            title: t.reading_stats_idle_timeout,
+            subtitle: t.reading_stats_idle_timeout_hint,
+            icon: Icons.timer_off_outlined,
+            min: PreferencesRepository.readingIdleTimeoutMinutesMin.toDouble(),
+            max: PreferencesRepository.readingIdleTimeoutMinutesMax.toDouble(),
+            step: 1,
+            value: (SettingsContext c) =>
+                c.appModel.readingIdleTimeoutMinutes.toDouble(),
+            format: (double value) => '${value.round()} min',
+            onChanged: (SettingsContext c, double value) async {
+              await c.appModel.setReadingIdleTimeoutMinutes(value.round());
+              c.refresh();
             },
           ),
         ],

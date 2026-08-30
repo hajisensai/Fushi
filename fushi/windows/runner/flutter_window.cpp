@@ -260,13 +260,47 @@ HICON CreateIconFromImageFile(const std::wstring& path, int size) {
   return icon;
 }
 
+// Resolves an existing file to the kernel's final DOS path so equivalent path
+// spellings (8.3 names, junctions, symlinks, \\?\ prefixes) compare by identity.
+// Returns empty when the file cannot be opened/resolved.
+std::wstring FinalPathForComparison(const std::wstring& path) {
+  if (path.empty()) {
+    return std::wstring();
+  }
+  HANDLE file = CreateFileW(path.c_str(), 0,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE |
+                                FILE_SHARE_DELETE,
+                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
+                            nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    return std::wstring();
+  }
+  const DWORD required = GetFinalPathNameByHandleW(
+      file, nullptr, 0, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+  if (required == 0) {
+    CloseHandle(file);
+    return std::wstring();
+  }
+  std::wstring resolved(required, L'\0');
+  const DWORD written = GetFinalPathNameByHandleW(
+      file, resolved.data(), required,
+      FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+  CloseHandle(file);
+  if (written == 0 || written >= required) {
+    return std::wstring();
+  }
+  resolved.resize(written);
+  return resolved;
+}
+
 // Rewrites the IconLocation of a single existing .lnk to |icon_path| (index 0),
 // preserving its target/args/workdir, then notifies the shell to re-read it.
 // Returns true on success. A missing .lnk (user deleted it, or a portable
 // unzip install with no shortcuts) is a soft no-op and returns false without
 // being an error.
 bool SetShortcutIconLocation(const std::wstring& lnk_path,
-                             const std::wstring& icon_path) {
+                             const std::wstring& icon_path,
+                             bool require_current_executable = false) {
   if (lnk_path.empty() || icon_path.empty()) {
     return false;
   }
@@ -290,6 +324,31 @@ bool SetShortcutIconLocation(const std::wstring& lnk_path,
   hr = persist_file->Load(lnk_path.c_str(), STGM_READWRITE);
   if (FAILED(hr)) {
     return false;
+  }
+  if (require_current_executable) {
+    std::vector<wchar_t> target(32768, L'\0');
+    WIN32_FIND_DATAW target_data = {};
+    hr = shell_link->GetPath(target.data(), static_cast<int>(target.size()),
+                             &target_data, SLGP_UNCPRIORITY);
+    if (FAILED(hr) || target.front() == L'\0') {
+      return false;
+    }
+    std::vector<wchar_t> executable(32768, L'\0');
+    const DWORD executable_size = GetModuleFileNameW(
+        nullptr, executable.data(), static_cast<DWORD>(executable.size()));
+    if (executable_size == 0 ||
+        executable_size >= static_cast<DWORD>(executable.size())) {
+      return false;
+    }
+    const std::wstring target_final = FinalPathForComparison(target.data());
+    const std::wstring executable_final =
+        FinalPathForComparison(executable.data());
+    if (target_final.empty() || executable_final.empty() ||
+        CompareStringOrdinal(target_final.c_str(), -1,
+                             executable_final.c_str(), -1, TRUE) !=
+            CSTR_EQUAL) {
+      return false;
+    }
   }
   hr = shell_link->SetIconLocation(icon_path.c_str(), 0);
   if (FAILED(hr)) {
@@ -331,9 +390,9 @@ std::wstring FushiShortcutInFolder(REFKNOWNFOLDERID folder_id,
 // at {userdesktop}\Fushi (Desktop\Fushi.lnk) and {group}\Fushi, where
 // {group} = {autoprograms}\{DefaultGroupName=Fushi} -> Programs\Fushi\Fushi.lnk
 // (DisableProgramGroupPage only hides the wizard page; the Fushi subfolder
-// still exists). Returns true if at least one shortcut was updated. Taskbar
-// pinned items are intentionally NOT touched (fragile, cached in the registry;
-// see plan).
+// still exists). The user's pinned taskbar shortcut is also updated, but only
+// when its target is this running executable so a stale/unrelated Fushi.lnk is
+// never rewritten. Returns true if at least one shortcut was updated.
 bool ApplyShortcutIcon(const std::wstring& icon_path) {
   if (icon_path.empty()) {
     return false;
@@ -349,6 +408,11 @@ bool ApplyShortcutIcon(const std::wstring& icon_path) {
       FushiShortcutInFolder(FOLDERID_Programs, L"Fushi\\Fushi.lnk");
   if (!programs_lnk.empty()) {
     any |= SetShortcutIconLocation(programs_lnk, icon_path);
+  }
+  const std::wstring taskbar_lnk = FushiShortcutInFolder(
+      FOLDERID_UserPinned, L"TaskBar\\Fushi.lnk");
+  if (!taskbar_lnk.empty()) {
+    any |= SetShortcutIconLocation(taskbar_lnk, icon_path, true);
   }
   // One global associations-changed notify so already-open Explorer views pick
   // the new icon up sooner (best-effort; shell icon cache is not guaranteed to
@@ -434,6 +498,29 @@ bool FlutterWindow::OnCreate() {
             FlashWindowEx(&flash_info);
           }
           result->Success();
+        } else if (call.method_name() == "setFullscreen") {
+          // BUG-1933: runner-owned flash-free fullscreen (Win32Window::
+          // SetFullscreen). Dart routes F11 and the video player's native
+          // fullscreen here on Windows instead of window_manager / media_kit,
+          // whose style-stripping implementations reveal the redirection
+          // surface for a frame (white in a light theme).
+          const auto* fs_args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          bool enter = false;
+          if (fs_args != nullptr) {
+            const auto fs_it =
+                fs_args->find(flutter::EncodableValue("fullscreen"));
+            if (fs_it != fs_args->end()) {
+              const bool* value = std::get_if<bool>(&fs_it->second);
+              if (value != nullptr) {
+                enter = *value;
+              }
+            }
+          }
+          SetFullscreen(enter);
+          result->Success();
+        } else if (call.method_name() == "isFullscreen") {
+          result->Success(flutter::EncodableValue(IsFullscreen()));
         } else if (call.method_name() == "setWindowIcon") {
           // Runtime window/taskbar icon (preset or user-picked image). Decodes
           // the file to big+small HICONs and WM_SETICONs them. Cannot change the
@@ -553,6 +640,7 @@ bool FlutterWindow::OnCreate() {
   RegisterGlobalLookupChannel();
   RegisterForegroundSelectionChannel();
   RegisterWindowCaptureChannel();
+  RegisterHdrVideoHostChannel();
   RegisterAudioLoopbackChannel();
   RegisterVoiceHookChannel();
   RegisterMagpieChannel();
@@ -1123,6 +1211,14 @@ struct WindowCapturePending {
 
 void FlutterWindow::RegisterFloatingLyricChannel() {
   floating_lyric_window_ = std::make_unique<FloatingLyricWindow>();
+  // 有声书悬浮字幕跑与 galgame hook 台词浮窗同一套富文本形态：换行、滚动条、
+  // 拖角改尺寸、鼠标穿透、一键透明、Shift-悬停查词、点字后卡片锚定到那个字。
+  // 旧的自绘 5 槽歌词条形态已删 —— 它是同一件事的第二份实现，且只有它还在用无坐标
+  // 的旧 LookupCallback（卡片只能跟着鼠标飘）。
+  floating_lyric_window_->SetHookTextMode(true);
+  // 但按钮语义不同：这里是上一句 / 播放暂停 / 下一句，不是试听 / 重捕 / 工作台。
+  floating_lyric_window_->SetToolbarProfile(
+      hook_toolbar::Profile::kAudiobook);
 
   floating_lyric_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
@@ -1138,15 +1234,55 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
         floating_lyric_channel_->InvokeMethod(
             action, std::make_unique<flutter::EncodableValue>());
       });
-  floating_lyric_window_->SetLookupCallback(
-      [this](const std::string& text, int char_index) {
+  // 带词矩形的查词回调（与 gal 台词浮窗同一条）：wordLeft/Top/Width/Height 是被点
+  // 那个字的屏幕逻辑 px 矩形，查词卡据此锚定到词而不是鼠标位置。老字段 text/index
+  // 原样保留，Dart 侧读不到词矩形时回落到光标锚定，逐像素与改造前一致。
+  floating_lyric_window_->SetContextLookupCallback(
+      [this](const std::string& line_id, const std::string& text,
+             int char_index, const D2D1_RECT_F& word_rect) {
         flutter::EncodableMap map{
+            {flutter::EncodableValue("lineId"),
+             flutter::EncodableValue(line_id)},
             {flutter::EncodableValue("text"), flutter::EncodableValue(text)},
             {flutter::EncodableValue("index"),
              flutter::EncodableValue(char_index)},
+            {flutter::EncodableValue("wordLeft"),
+             flutter::EncodableValue(static_cast<double>(word_rect.left))},
+            {flutter::EncodableValue("wordTop"),
+             flutter::EncodableValue(static_cast<double>(word_rect.top))},
+            {flutter::EncodableValue("wordWidth"),
+             flutter::EncodableValue(
+                 static_cast<double>(word_rect.right - word_rect.left))},
+            {flutter::EncodableValue("wordHeight"),
+             flutter::EncodableValue(
+                 static_cast<double>(word_rect.bottom - word_rect.top))},
         };
         floating_lyric_channel_->InvokeMethod(
             "lookupText",
+            std::make_unique<flutter::EncodableValue>(std::move(map)));
+      });
+  // 穿透被 native 否决时必须让 Dart 知道（工具条窗建不出来 = 不许把正文点穿，
+  // 否则用户被浮窗挡住且再也点不回来）。
+  floating_lyric_window_->SetPassThroughCallback([this](bool enabled) {
+    flutter::EncodableMap map{
+        {flutter::EncodableValue("passThrough"),
+         flutter::EncodableValue(enabled)},
+    };
+    floating_lyric_channel_->InvokeMethod(
+        "passThroughChanged",
+        std::make_unique<flutter::EncodableValue>(std::move(map)));
+  });
+  floating_lyric_window_->SetBoundsCallback(
+      [this](int left, int top, int width, int height) {
+        flutter::EncodableMap map{
+            {flutter::EncodableValue("left"), flutter::EncodableValue(left)},
+            {flutter::EncodableValue("top"), flutter::EncodableValue(top)},
+            {flutter::EncodableValue("width"), flutter::EncodableValue(width)},
+            {flutter::EncodableValue("height"),
+             flutter::EncodableValue(height)},
+        };
+        floating_lyric_channel_->InvokeMethod(
+            "windowRectChanged",
             std::make_unique<flutter::EncodableValue>(std::move(map)));
       });
   // The user toggling the lock button on the strip reports the new state back
@@ -1171,14 +1307,32 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
           // permission exists, so it is always permitted.
           result->Success(flutter::EncodableValue(true));
         } else if (method == "show") {
+          // 工具条槽位悬停提示（与 kAudiobookSlotActions 同下标）。native 不持有
+          // i18n，文案按 locale 由 Dart 下发；表按 profile 分开存，不会和 gal
+          // 台词浮窗的提示互相覆盖。
+          hook_toolbar::SetSlotTooltips(
+              hook_toolbar::Profile::kAudiobook,
+              WideListFromValue(args, "slotTooltips"));
           floating_lyric_window_->UpdateStyle(StyleFromArgs(args));
           floating_lyric_window_->SetClickLookupEnabled(
               BoolFromValue(args, "clickLookupEnabled", true));
+          floating_lyric_window_->SetHoverAutoLookup(
+              BoolFromValue(args, "hoverAutoLookup", false));
+          // 置顶 / 穿透按会话复位：上一次关掉置顶后，这一次不该藏在别的窗口后面
+          // 让用户以为它没出来；穿透同理（开着穿透复原 = 用户点不到浮窗）。
+          floating_lyric_window_->SetTopmost(
+              BoolFromValue(args, "topmost", true));
           if (args != nullptr &&
               args->find(flutter::EncodableValue("locked")) != args->end()) {
             floating_lyric_window_->SetLocked(
                 BoolFromValue(args, "locked", false));
           }
+          floating_lyric_window_->SetPassThrough(
+              BoolFromValue(args, "passThrough", false));
+          floating_lyric_window_->SetInitialBounds(
+              IntFromValue(args, "left", 0), IntFromValue(args, "top", 0),
+              IntFromValue(args, "width", 0),
+              IntFromValue(args, "height", 0));
           const bool shown = floating_lyric_window_->Show(GetHandle());
           result->Success(flutter::EncodableValue(shown));
         } else if (method == "hide") {
@@ -1193,7 +1347,9 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
           floating_lyric_window_->UpdateText(
               WideFromValue(args, "text", L""),
               IntFromValue(args, "currentLineStart", -1),
-              IntFromValue(args, "currentLineLength", 0));
+              IntFromValue(args, "currentLineLength", 0),
+              StringFromValue(args, "lineId", ""),
+              RubySpansFromValue(args, "rubySpans"));
           result->Success();
         } else if (method == "highlight") {
           floating_lyric_window_->Highlight(IntFromValue(args, "start", -1),
@@ -1227,6 +1383,15 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
           // any user-driven toggle back over "lockChanged".
           floating_lyric_window_->SetLocked(
               BoolFromValue(args, "locked", false));
+          result->Success();
+        } else if (method == "setPassThrough") {
+          floating_lyric_window_->SetPassThrough(
+              BoolFromValue(args, "enabled", false));
+          result->Success();
+        } else if (method == "setHoverAutoLookup") {
+          // 「悬停即查词」live 下发：设置页一改，正开着的浮窗立刻跟上。
+          floating_lyric_window_->SetHoverAutoLookup(
+              BoolFromValue(args, "enabled", false));
           result->Success();
         } else {
           result->NotImplemented();
@@ -1705,13 +1870,22 @@ void FlutterWindow::RegisterGalHookTextChannel() {
           // 按 locale 由 Dart 在 show 载荷里下发：native 不持有 i18n，正文内
           // 工具条与穿透工具条窗读的是这同一张表。缺键 = 无提示，老 payload
           // 不受影响。
-          hook_toolbar::SetSlotTooltips(WideListFromValue(args,
-                                                          "slotTooltips"));
+          hook_toolbar::SetSlotTooltips(
+              hook_toolbar::Profile::kGalHook,
+              WideListFromValue(args, "slotTooltips"));
           gal_hook_text_window_->UpdateStyle(StyleFromArgs(args));
           gal_hook_text_window_->SetClickLookupEnabled(
               BoolFromValue(args, "clickLookupEnabled", true));
           gal_hook_text_window_->SetHoverAutoLookup(
               BoolFromValue(args, "hoverAutoLookup", false));
+          // 查词触发方式 / 工具条自动隐藏 / 穿透时是否拦截鼠标：三项都是**偏好**
+          // 而不是会话状态，随 show 下发一次，改设置时再走各自的 live setter。
+          gal_hook_text_window_->SetLookupTrigger(
+              IntFromValue(args, "lookupTrigger", 0));
+          gal_hook_text_window_->SetToolbarAutoHide(
+              BoolFromValue(args, "toolbarAutoHide", true));
+          gal_hook_text_window_->SetPassThroughBlocksMouse(
+              BoolFromValue(args, "passThroughBlocksMouse", true));
           // 置顶按会话复位（与 locked / passThrough / following 同规矩）：上一局
           // 关掉置顶后，这一局的浮窗不该藏在全屏游戏后面让用户以为它没出来。
           gal_hook_text_window_->SetTopmost(
@@ -1755,6 +1929,18 @@ void FlutterWindow::RegisterGalHookTextChannel() {
           // 一局游戏（与字号 applyFontSizeFromPreferences 同款纪律）。
           gal_hook_text_window_->SetHoverAutoLookup(
               BoolFromValue(args, "enabled", false));
+          result->Success();
+        } else if (method == "setLookupTrigger") {
+          gal_hook_text_window_->SetLookupTrigger(
+              IntFromValue(args, "trigger", 0));
+          result->Success();
+        } else if (method == "setToolbarAutoHide") {
+          gal_hook_text_window_->SetToolbarAutoHide(
+              BoolFromValue(args, "enabled", true));
+          result->Success();
+        } else if (method == "setPassThroughBlocksMouse") {
+          gal_hook_text_window_->SetPassThroughBlocksMouse(
+              BoolFromValue(args, "enabled", true));
           result->Success();
         } else if (method == "setLocked") {
           gal_hook_text_window_->SetLocked(
@@ -2799,6 +2985,75 @@ void FlutterWindow::RegisterVoiceHookChannel() {
 // Magpie 缩放状态监听（仅 Windows）。Magpie 用 RegisterWindowMessage 注册的广播消息
 // "MagpieScalingChanged" 通知全系统顶层窗口缩放状态变化；本 runner 只读不回，收到后
 // 经 app.fushi.reader/magpie channel 把事件推给 Dart。
+void FlutterWindow::RegisterHdrVideoHostChannel() {
+  hdr_video_host_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.fushi/hdr_video_host",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  hdr_video_host_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        const std::string& method = call.method_name();
+        if (method == "create") {
+          if (!hdr_video_host_) {
+            hdr_video_host_ =
+                std::make_unique<fushi::HdrVideoHostWindow>(GetHandle());
+          }
+          const HWND host = hdr_video_host_->Create();
+          result->Success(flutter::EncodableValue(
+              static_cast<int64_t>(reinterpret_cast<intptr_t>(host))));
+          return;
+        }
+        if (method == "setRect") {
+          const auto* args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          if (args == nullptr || !hdr_video_host_) {
+            result->Error("bad_state", "host not created");
+            return;
+          }
+          auto read = [args](const char* key) -> int {
+            const auto it = args->find(flutter::EncodableValue(key));
+            if (it == args->end()) {
+              return 0;
+            }
+            return static_cast<int>(it->second.TryGetLongValue().value_or(0));
+          };
+          hdr_video_host_->SetClientRect(read("x"), read("y"), read("width"),
+                                         read("height"));
+          result->Success();
+          return;
+        }
+        if (method == "destroy") {
+          if (hdr_video_host_) {
+            hdr_video_host_->Destroy();
+          }
+          result->Success();
+          return;
+        }
+        if (method == "displayInfo") {
+          const fushi::HdrDisplayInfo info =
+              fushi::QueryHdrDisplayInfo(GetHandle());
+          result->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("valid"),
+               flutter::EncodableValue(info.valid)},
+              {flutter::EncodableValue("colorSpace"),
+               flutter::EncodableValue(info.color_space)},
+              {flutter::EncodableValue("maxLuminance"),
+               flutter::EncodableValue(
+                   static_cast<double>(info.max_luminance))},
+              {flutter::EncodableValue("bitsPerColor"),
+               flutter::EncodableValue(
+                   static_cast<int>(info.bits_per_color))},
+          }));
+          return;
+        }
+        result->NotImplemented();
+      });
+}
+
 void FlutterWindow::RegisterMagpieChannel() {
   magpie_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
@@ -2953,6 +3208,29 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // HDR passthrough host: keep the libmpv popup glued behind the main window.
+  // Non-consuming — these messages fall through to their normal handlers.
+  if (hdr_video_host_ && hdr_video_host_->IsCreated()) {
+    switch (message) {
+      case WM_WINDOWPOSCHANGED:
+      case WM_ACTIVATE:
+      case WM_SIZE:
+      case WM_MOVE:
+      case WM_SHOWWINDOW:
+        hdr_video_host_->SyncPlacement();
+        break;
+      case WM_DESTROY:
+        hdr_video_host_->Destroy();
+        break;
+      default:
+        break;
+    }
+  }
+  if (message == WM_DISPLAYCHANGE && hdr_video_host_channel_) {
+    // HDR toggled / monitor changed: let Dart re-evaluate the output mode.
+    hdr_video_host_channel_->InvokeMethod(
+        "onDisplayChanged", std::make_unique<flutter::EncodableValue>());
+  }
   // BUG-1239: inspect VK_PROCESSKEY before Flutter handles the message. The
   // engine deliberately reports IME-owned keys as physical=0/logical=0, so
   // checking after HandleTopLevelWindowProc can no longer identify Space.
@@ -2980,6 +3258,22 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     std::optional<LRESULT> result =
         flutter_controller_->HandleTopLevelWindowProc(hwnd, message, wparam,
                                                       lparam);
+    // BUG-1933: fullscreen deliberately sizes the window LARGER than the
+    // monitor (frame off-screen, see Win32Window::SetFullscreen). The default
+    // ptMaxTrackSize (SM_C*MAXTRACK) silently clamps that SetWindowPos and
+    // leaves a strip of desktop/taskbar exposed at the bottom. window_manager's
+    // delegate consumes WM_GETMINMAXINFO (it applies our minimum size), so the
+    // override must happen here, after the delegates ran: lift the max track
+    // size while fullscreen, keeping whatever minimums the plugins wrote.
+    if (message == WM_GETMINMAXINFO && IsFullscreen()) {
+      auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
+      if (info != nullptr) {
+        // Generous fixed headroom over any real monitor: monitor + frame.
+        info->ptMaxTrackSize.x = GetSystemMetrics(SM_CXVIRTUALSCREEN) + 256;
+        info->ptMaxTrackSize.y = GetSystemMetrics(SM_CYVIRTUALSCREEN) + 256;
+      }
+      return 0;
+    }
     if (result) {
       return *result;
     }

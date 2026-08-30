@@ -747,15 +747,15 @@ Tests：`tests/hunex_gge_adapter_test.cpp`、`tests/hunex_gge_lookup_test.cpp`�
 识别签名（所有非空项均带真实样本或运行时观察证据）：
 
 - `pe_architectures`：x64；证据：runtime_observation — Luna text profile config/luna_hook_profiles.tsv:5 records an x64 Steam build; the audio path has no independent hashed sample yet.
-- `directory_files_all`：wind3d11data/voice_body.bin；证据：runtime_observation — MatchesSgreProfile requires the archive to exist next to the hashed executable; character voices live in voice_body.bin.
-- `hashes`：75A83A0E2A7E22055417AE0474B47BE98418C4E42C695C548B558705C404B9D8；证据：runtime_observation — Same executable SHA-256 the Luna text profile keys on, so text and audio identity cannot drift apart silently.
+- `directory_files_all`：wind3d11data/voice_body.bin；证据：runtime_observation — MatchesSgreFamily is the family probe: the wind3d11 runtime keeps character voices in voice_body.bin next to the executable, and archive membership is the same data contract the audio proof checks. No executable name or hash takes part in family identity.
+- `hashes`：75A83A0E2A7E22055417AE0474B47BE98418C4E42C695C548B558705C404B9D8；证据：runtime_observation — Measured build row in hook/adapters/sgre_anchors.h (kSgreKnownBuilds): the hash selects the measured TextRender draw boundary, scenario-text vtable and DirectInput mouse-slot RVAs, and it is the same digest the Luna text profile keys on. A hash miss is no longer a rejection: the family is still claimed and each anchor is resolved by a unique byte signature (signature table currently empty), so an unmeasured build reports which anchors are missing instead of silently doing nothing.
 
 文本能力：
 
 - `ingame_lookup_geometry`：`implemented_unverified` — The hash-pinned SGRE draw profile publishes renderer-native UTF-16 glyph geometry only after the all-executable-section unique-signature, decoded RIP-target, unwind and vtable-ABI gate passes. No original-path lookup/card E2E is recorded.
 - `ingame_lookup_directinput_shield`：`implemented_unverified` — The exact mouse-device global must be resolved independently by unique CreateDevice and immediate-poller signatures, and the live DirectInput COM vtable is validated before slot 9 is hooked. The 1,000-transaction real-build shield gate has not run.
 - codepage：not_applicable
-- 线程提示：Text comes from the Luna profile keyed by the same executable SHA-256, not from this adapter.
+- 线程提示：Luna text still comes from the hash-keyed Luna profile row (config/luna_hook_profiles.tsv); the in-game lookup sensor takes game-parsed text and per-glyph geometry from the resolved TextRender draw anchor.
 
 音频优先级：
 
@@ -770,6 +770,7 @@ Tests：`tests/hunex_gge_adapter_test.cpp`、`tests/hunex_gge_lookup_test.cpp`�
 - Archive membership is the role proof, and it only holds while the runtime keeps character voice in a separate voice_body.bin.
 - The emitted .xwma file is not byte-identical to an archive entry: the RIFF envelope is synthesised here. Only the fmt/dpds/payload chunks are verbatim.
 - Identity is the executable SHA-256, which recognizes the same bytes on any machine and is not tied to a local path. A game patch, unknown hash, non-unique hydrated signature, decoded-target mismatch, unwind mismatch or ABI mismatch disables exact lookup (and the hash change disables the paired text/audio profile) until that build is measured independently.
+- The anchor signature table (kSgreTextDrawSignature / kSgreScenarioTextVtableSignature / kSgreDirectInputMouseDeviceSignature) is still empty: an executable outside kSgreKnownBuilds is claimed as family and gets archive-resource audio, but its lookup sensor and DirectInput shield resolve to signature_empty until patterns are measured from a real build. The Luna text hook code is still keyed by the measured hash row only.
 
 Fixtures：尚无（P5 补齐）
 

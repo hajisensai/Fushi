@@ -162,6 +162,25 @@ h1 { margin: 0; font-size: 18px; line-height: 1.3; }
   font-variant-numeric: tabular-nums;
 }
 
+/* 振假名：读音在正文上方，行高预留它的位置（否则列表行会随有无注音跳动）。rt 不参与
+   选择/取词——查词只该拿到正文。 */
+.subtitle-text ruby {
+  ruby-position: over;
+  ruby-align: center;
+}
+
+/* 行高按有无振假名分档：1.55 的行框放不下上方的读音，会和上一行糊在一起。 */
+.subtitle-text:has(ruby) {
+  line-height: 2.1;
+}
+
+.subtitle-text rt {
+  font-size: 0.5em;
+  line-height: 1.1;
+  opacity: 0.78;
+  user-select: none;
+}
+
 .subtitle-text {
   min-width: 0;
   padding: 2px 0;

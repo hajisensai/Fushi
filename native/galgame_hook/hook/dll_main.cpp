@@ -44,6 +44,8 @@
 
 #include "il2cpp_thread_scope.h"
 #include "adapter.h"
+#include "module_settle.h"
+#include "host_executable_digest.h"
 #include "lookup_overlay_geometry.h"
 #include "hunex_gge_trace.h"
 #include "leaf_d3d_trace.h"

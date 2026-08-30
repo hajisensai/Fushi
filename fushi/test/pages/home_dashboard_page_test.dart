@@ -163,10 +163,27 @@ void main() {
   Finder inSection(String title, Finder matching) =>
       find.descendant(of: sectionCard(title), matching: matching);
 
+  /// v92 起阅读只写 `study_segments`，`reading_statistics` 冻结为 legacy 只读投影
+  /// （历史数据仍要进首页热力图 / 今日目标）。这里按 legacy 形状直插（OVERWRITE 版
+  /// `setReadingStatistic`），语义与旧 `addReadingStatistic` 累加版在空表上等价。
+  Future<void> seedLegacyReading({
+    required String title,
+    required String dateKey,
+    required int charsRead,
+    required int timeMs,
+  }) =>
+      db.setReadingStatistic(ReadingStatisticsCompanion.insert(
+        title: title,
+        dateKey: dateKey,
+        charactersRead: charsRead,
+        readingTimeMs: timeMs,
+        lastStatisticModified: DateTime.now().millisecondsSinceEpoch,
+      ));
+
   Future<void> seedSampleData() async {
     final DateTime now = DateTime.now();
     final String todayKey = FushiTimeFormat.dayKey(now);
-    await db.addReadingStatistic(
+    await seedLegacyReading(
       title: '吾輩は猫である',
       dateKey: todayKey,
       charsRead: 800,
@@ -232,7 +249,7 @@ void main() {
     final DateTime now = DateTime.now();
     for (int i = 0; i < 20; i++) {
       final String dk = FushiTimeFormat.dayKey(now.subtract(Duration(days: i)));
-      await db.addReadingStatistic(
+      await seedLegacyReading(
         title: '书$i',
         dateKey: dk,
         charsRead: 500 + i * 10,

@@ -5,6 +5,9 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// Compact, always-present controls for the Windows no-OCR lookup surface.
 ///
@@ -31,7 +34,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
         final GalLookupSurfaceMode mode =
             profile?.mode ?? GalLookupSurfaceMode.auto;
         final bool riskModeActive = controller.isUnsafeInputActive;
-        final ColorScheme colors = Theme.of(context).colorScheme;
+        final FushiDesignTokens tokens = FushiDesignTokens.of(context);
         final bool riskPending =
             controller.status == GalAttachedTextStatus.needsRiskAcceptance;
         final bool canOpenCalibration =
@@ -39,7 +42,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
 
         return Material(
           key: const ValueKey<String>('game-attached-lookup-workbench'),
-          color: colors.surfaceContainerLow,
+          color: tokens.surfaces.group,
           child: SizedBox(
             height: 44,
             child: Row(
@@ -56,82 +59,88 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: <Widget>[
-                        _WorkbenchPill(
-                          label: t.game_lookup_attached_mode,
-                          value: _modeLabel(mode),
-                        ),
-                        const SizedBox(width: 6),
-                        _WorkbenchPill(
-                          label: t.game_lookup_attached_status,
-                          value: controller.status.name,
-                        ),
-                        const SizedBox(width: 6),
-                        _WorkbenchPill(
-                          label: t.game_lookup_attached_native_status,
-                          value: controller.nativeStatus ?? '—',
-                        ),
-                        const SizedBox(width: 6),
-                        _WorkbenchPill(
-                          label: t.game_lookup_attached_provider,
-                          value: galAttachedProviderLabel(
-                            providerKind: controller.providerKind,
-                            providerId: controller.providerId,
-                            providerStatus: controller.providerStatus,
-                            fallbackStatus: controller.status,
-                            unknownLabel:
-                                t.game_lookup_attached_provider_unknown,
+                  child: HorizontalDragScrollable(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: <Widget>[
+                          _WorkbenchPill(
+                            label: t.game_lookup_attached_mode,
+                            value: _modeLabel(mode),
                           ),
-                        ),
-                        const SizedBox(width: 6),
-                        _WorkbenchPill(
-                          label: t.game_lookup_attached_profile,
-                          value: profile == null || profile.variants.isEmpty
-                              ? t.game_lookup_attached_profile_missing
-                              : '${t.game_lookup_attached_profile_ready} '
-                                    '(${profile.variants.length})',
-                        ),
-                        const SizedBox(width: 6),
-                        _WorkbenchPill(
-                          label: t.game_lookup_attached_shield,
-                          value: _shieldLabel(
-                            controller.shieldStatus.conclusion,
-                          ),
-                          warning:
-                              controller.shieldStatus.conclusion !=
-                              GalAttachedShieldConclusion.verified,
-                        ),
-                        const SizedBox(width: 6),
-                        _WorkbenchPill(
-                          key: const ValueKey<String>(
-                            'game-attached-lookup-risk-status',
-                          ),
-                          label: t.game_lookup_attached_risk,
-                          value: riskModeActive
-                              ? t.game_lookup_attached_risk_active
-                              : riskPending
-                              ? t.game_lookup_attached_risk_pending
-                              : t.game_lookup_attached_risk_safe,
-                          warning: riskModeActive || riskPending,
-                        ),
-                        if (!hasSelectedBodyThread) ...<Widget>[
                           const SizedBox(width: 6),
                           _WorkbenchPill(
-                            label: t.game_lookup_attached_calibrate,
-                            value: t.game_lookup_attached_thread_required,
-                            warning: true,
+                            label: t.game_lookup_attached_status,
+                            value: controller.status.name,
                           ),
+                          const SizedBox(width: 6),
+                          _WorkbenchPill(
+                            label: t.game_lookup_attached_native_status,
+                            value: controller.nativeStatus ?? '—',
+                          ),
+                          const SizedBox(width: 6),
+                          _WorkbenchPill(
+                            label: t.game_lookup_attached_provider,
+                            value: galAttachedProviderLabel(
+                              providerKind: controller.providerKind,
+                              providerId: controller.providerId,
+                              providerStatus: controller.providerStatus,
+                              fallbackStatus: controller.status,
+                              unknownLabel:
+                                  t.game_lookup_attached_provider_unknown,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          _WorkbenchPill(
+                            label: t.game_lookup_attached_profile,
+                            value: profile == null || profile.variants.isEmpty
+                                ? t.game_lookup_attached_profile_missing
+                                : '${t.game_lookup_attached_profile_ready} '
+                                      '(${profile.variants.length})',
+                          ),
+                          const SizedBox(width: 6),
+                          _WorkbenchPill(
+                            label: t.game_lookup_attached_shield,
+                            value: _shieldLabel(
+                              controller.shieldStatus.conclusion,
+                            ),
+                            warning:
+                                controller.shieldStatus.conclusion !=
+                                GalAttachedShieldConclusion.verified,
+                          ),
+                          const SizedBox(width: 6),
+                          _WorkbenchPill(
+                            key: const ValueKey<String>(
+                              'game-attached-lookup-risk-status',
+                            ),
+                            label: t.game_lookup_attached_risk,
+                            value: riskModeActive
+                                ? t.game_lookup_attached_risk_active
+                                : riskPending
+                                ? t.game_lookup_attached_risk_pending
+                                : t.game_lookup_attached_risk_safe,
+                            warning: riskModeActive || riskPending,
+                          ),
+                          if (!hasSelectedBodyThread) ...<Widget>[
+                            const SizedBox(width: 6),
+                            _WorkbenchPill(
+                              label: t.game_lookup_attached_calibrate,
+                              value: t.game_lookup_attached_thread_required,
+                              warning: true,
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
                 IconButton(
                   key: const ValueKey<String>('game-attached-lookup-calibrate'),
-                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: BoxConstraints.tightFor(
+                    width: tokens.density.compactControlHeight,
+                    height: tokens.density.compactControlHeight,
+                  ),
                   tooltip: canOpenCalibration
                       ? t.game_lookup_attached_calibrate
                       : t.game_lookup_attached_thread_required,
@@ -343,18 +352,9 @@ class _WorkbenchPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: warning ? colors.tertiaryContainer : colors.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        '$label: $value',
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: warning ? colors.onTertiaryContainer : colors.onSurfaceVariant,
-        ),
-      ),
+    return FushiTagChip(
+      label: '$label: $value',
+      color: warning ? colors.tertiaryContainer : null,
     );
   }
 }
@@ -601,14 +601,15 @@ class _GalAttachedCalibrationDialogState
 
   GalLookupTextLayoutV1 _copyLayout({
     String? fontFamily,
-    double? fontSize,
+    double? fontSizePerClientHeight,
     double? letterSpacing,
     double? lineHeight,
     String? textAlign,
     String? verticalAlign,
   }) => GalLookupTextLayoutV1(
     fontFamily: fontFamily ?? _layout.fontFamily,
-    fontSizePerClientHeight: fontSize ?? _layout.fontSizePerClientHeight,
+    fontSizePerClientHeight:
+        fontSizePerClientHeight ?? _layout.fontSizePerClientHeight,
     letterSpacingPerClientHeight:
         letterSpacing ?? _layout.letterSpacingPerClientHeight,
     lineHeight: lineHeight ?? _layout.lineHeight,
@@ -616,6 +617,21 @@ class _GalAttachedCalibrationDialogState
     verticalAlign: verticalAlign ?? _layout.verticalAlign,
     paddingPerClientHeight: _layout.paddingPerClientHeight,
   );
+
+  void _setStartConfirmed(bool? value) {
+    setState(() => _startConfirmed = value == true);
+    _queueDraftPush();
+  }
+
+  void _setMiddleConfirmed(bool? value) {
+    setState(() => _middleConfirmed = value == true);
+    _queueDraftPush();
+  }
+
+  void _setEndConfirmed(bool? value) {
+    setState(() => _endConfirmed = value == true);
+    _queueDraftPush();
+  }
 
   Future<void> _commit() async {
     if (!_allConfirmed || _committing) return;
@@ -641,6 +657,7 @@ class _GalAttachedCalibrationDialogState
 
   @override
   Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return AlertDialog(
       title: Text(t.game_lookup_attached_calibration_title),
       content: SizedBox(
@@ -654,15 +671,9 @@ class _GalAttachedCalibrationDialogState
                 style: Theme.of(context).textTheme.labelLarge,
               ),
               const SizedBox(height: 6),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: SelectableText(widget.previewText),
-                ),
+              FushiCard(
+                padding: EdgeInsets.all(tokens.spacing.rowVertical),
+                child: SelectableText(widget.previewText),
               ),
               const SizedBox(height: 16),
               Text(
@@ -752,7 +763,7 @@ class _GalAttachedCalibrationDialogState
                 max: 0.12,
                 fractionDigits: 3,
                 onChanged: (double value) =>
-                    _setLayout(_copyLayout(fontSize: value)),
+                    _setLayout(_copyLayout(fontSizePerClientHeight: value)),
                 onChangeEnd: (_) => _queueDraftPush(),
               ),
               _RatioSlider(
@@ -842,59 +853,68 @@ class _GalAttachedCalibrationDialogState
               ),
               const SizedBox(height: 16),
               Text(t.game_lookup_attached_probes_hint),
-              CheckboxListTile(
+              FushiListItem(
                 key: const ValueKey<String>(
                   'game-attached-calibration-probe-start',
                 ),
-                contentPadding: EdgeInsets.zero,
-                value: _startConfirmed,
+                density: FushiListDensity.compact,
+                padding: EdgeInsets.symmetric(
+                  vertical: tokens.spacing.gap / 2,
+                ),
+                leading: Checkbox(
+                  value: _startConfirmed,
+                  onChanged: _startObserved ? _setStartConfirmed : null,
+                ),
+                onTap: _startObserved
+                    ? () => _setStartConfirmed(!_startConfirmed)
+                    : null,
                 title: Text(
                   '${t.game_lookup_attached_probe_start}: '
                   '${widget.probePlan.startText}'
                   '${_startObserved ? '' : ' · ${t.game_lookup_attached_probe_waiting}'}',
                 ),
-                onChanged: !_startObserved
-                    ? null
-                    : (bool? value) {
-                        setState(() => _startConfirmed = value == true);
-                        _queueDraftPush();
-                      },
               ),
-              CheckboxListTile(
+              FushiListItem(
                 key: const ValueKey<String>(
                   'game-attached-calibration-probe-middle',
                 ),
-                contentPadding: EdgeInsets.zero,
-                value: _middleConfirmed,
+                density: FushiListDensity.compact,
+                padding: EdgeInsets.symmetric(
+                  vertical: tokens.spacing.gap / 2,
+                ),
+                leading: Checkbox(
+                  value: _middleConfirmed,
+                  onChanged: _middleObserved ? _setMiddleConfirmed : null,
+                ),
+                onTap: _middleObserved
+                    ? () => _setMiddleConfirmed(!_middleConfirmed)
+                    : null,
                 title: Text(
                   '${t.game_lookup_attached_probe_middle}: '
                   '${widget.probePlan.middleText}'
                   '${_middleObserved ? '' : ' · ${t.game_lookup_attached_probe_waiting}'}',
                 ),
-                onChanged: !_middleObserved
-                    ? null
-                    : (bool? value) {
-                        setState(() => _middleConfirmed = value == true);
-                        _queueDraftPush();
-                      },
               ),
-              CheckboxListTile(
+              FushiListItem(
                 key: const ValueKey<String>(
                   'game-attached-calibration-probe-end',
                 ),
-                contentPadding: EdgeInsets.zero,
-                value: _endConfirmed,
+                density: FushiListDensity.compact,
+                padding: EdgeInsets.symmetric(
+                  vertical: tokens.spacing.gap / 2,
+                ),
+                leading: Checkbox(
+                  value: _endConfirmed,
+                  onChanged: _endObserved ? _setEndConfirmed : null,
+                ),
+                onTap: _endObserved
+                    ? () => _setEndConfirmed(!_endConfirmed)
+                    : null,
                 title: Text(
                   '${t.game_lookup_attached_probe_end}: '
                   '${widget.probePlan.endText}'
                   '${_endObserved ? '' : ' · ${t.game_lookup_attached_probe_waiting}'}',
                 ),
-                onChanged: !_endObserved
-                    ? null
-                    : (bool? value) {
-                        setState(() => _endConfirmed = value == true);
-                        _queueDraftPush();
-                      },
               ),
               if (_error != null)
                 Text(

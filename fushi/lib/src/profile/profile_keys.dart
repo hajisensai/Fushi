@@ -55,13 +55,11 @@ class ProfileKeys {
     // HBK-AUDIT-045: keep ALL update-channel/policy keys app-global so the
     // debug channel isn't asymmetrically profile-scoped vs the others.
     'update_debug_channel',
-    // TODO-871: custom update proxy is a global update-policy key (same family as
-    // update_beta_channel / update_debug_channel) — never per-profile snapshot.
+    // The app-wide network proxy (TODO-871; the only proxy setting since the
+    // download-specific mode was folded into it) describes this device's
+    // network, not a reading profile — never per-profile snapshot.
     'update_custom_proxy',
-    // Network routes describe this device, not a reading profile. Restoring a
-    // different profile must not silently redirect AniList/Nyaa/Jimaku.
-    'download_network_proxy_mode',
-    'download_custom_proxy',
+    'network_proxy_p2p_enabled',
     // TODO-1961: the download folder (and the history of folders we still have
     // to recognise) describes this device's disks, not a reading profile.
     // Snapshotting it would make a profile switch redirect downloads onto a

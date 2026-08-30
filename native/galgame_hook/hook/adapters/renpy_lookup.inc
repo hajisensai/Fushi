@@ -67,6 +67,10 @@ PyErrClearFn g_py_err_clear = nullptr;
 HMODULE g_renpy_python_module = nullptr;
 // 0=未装 / 1=后台线程已登记「该装了」 / 2=回调已种下
 volatile LONG g_renpy_lookup_state = 0;
+// v19 准入上报用：2 = bootstrap 已种进 config.periodic_callback，传感器活着。
+bool RenpyLookupSensorLive() {
+  return InterlockedCompareExchange(&g_renpy_lookup_state, 0, 0) == 2;
+}
 // 上一次读回的 Python 侧命中序号；变了才发布一次 hit。
 uint64_t g_renpy_last_hit_seq = 0;
 // 宿主心跳。每轮 ProcessRenpyLookupTick +1 并写进 Python 全局 fushi_host_seq；

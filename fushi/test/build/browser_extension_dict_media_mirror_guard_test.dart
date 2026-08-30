@@ -70,12 +70,30 @@ void main() {
             reason: '$root subtitle-adapters.js missing parseTtml');
       });
 
-      test('[$name] content.js receives full-episode cues', () {
-        final String src = File('$root/content.js').readAsStringSync();
+      // 网页播放器（app 内 WebView2）与扩展共用 subtitle-providers.js：store + 全部 provider
+      // 从 content.js 抽出到该文件，content.js 只剩 chrome.* 绑定的制卡/设置/查词。
+      test('[$name] subtitle-providers.js receives full-episode cues', () {
+        final String src =
+            File('$root/subtitle-providers.js').readAsStringSync();
         expect(src.contains("e.data.__fushiNf !== 'cues'"), isTrue,
-            reason: '$root content.js missing full-episode cues receiver');
+            reason:
+                '$root subtitle-providers.js missing full-episode cues receiver');
         expect(src.contains('fushiEpisodeCues'), isTrue,
-            reason: '$root content.js missing fushiEpisodeCues store');
+            reason: '$root subtitle-providers.js missing fushiEpisodeCues store');
+      });
+
+      test('[$name] subtitle-providers.js stays free of extension-only APIs',
+          () {
+        // 它要原样注入 app 内 WebView2 主世界跑：一旦引用 chrome.* 就在 app 里直接 ReferenceError。
+        final String src =
+            File('$root/subtitle-providers.js').readAsStringSync();
+        // 只认 API 调用形状（chrome.runtime / storage / tabs / tabCapture …），
+        // 注释里提到 chrome.* 字样不算。
+        final RegExp extApi =
+            RegExp(r'\bchrome\.(runtime|storage|tabs|tabCapture|offscreen|scripting|sidePanel)\b');
+        expect(extApi.hasMatch(src), isFalse,
+            reason: '$root subtitle-providers.js must not touch chrome.* '
+                '(shared with the in-app web video player)');
       });
 
       test('[$name] netflix-bridge runs at document_start', () {
@@ -123,17 +141,22 @@ void main() {
             reason: '$root side-panel.css missing the subtitle row styles');
       });
 
-      test('[$name] content.js exposes cues store + lookup entry for the panel',
+      test('[$name] providers expose cues store, content.js exposes lookup entry',
           () {
-        final String src = File('$root/content.js').readAsStringSync();
+        final String providers =
+            File('$root/subtitle-providers.js').readAsStringSync();
         expect(
-            src.contains('window.fushiEpisodeCues = fushiEpisodeCues'), isTrue,
-            reason: '$root content.js must expose fushiEpisodeCues on window');
+            providers.contains('window.fushiEpisodeCues = fushiEpisodeCues'),
+            isTrue,
+            reason:
+                '$root subtitle-providers.js must expose fushiEpisodeCues on window');
+        expect(providers.contains('window.fushiSubtitlePanelOnCues'), isTrue,
+            reason:
+                '$root subtitle-providers.js must notify the panel on new cues');
+        final String src = File('$root/content.js').readAsStringSync();
         expect(src.contains('window.fushiLookupAtPoint'), isTrue,
             reason:
                 '$root content.js must expose fushiLookupAtPoint for panel row lookup');
-        expect(src.contains('window.fushiSubtitlePanelOnCues'), isTrue,
-            reason: '$root content.js must notify the panel on new cues');
       });
 
       test('[$name] manifest bundles subtitle-panel.js after content.js', () {
@@ -164,10 +187,18 @@ void main() {
                 '$root content.js must thread a precise cue window for panel-row mining');
         expect(
             src.contains(
-                'cw ? { text: cw.text || \'\', startV: cw.startMs, endV: cw.endMs } : fushiCurrentCueWindowV()'),
+                '{ text: cw.text || \'\', startV: cw.startMs, endV: cw.endMs }'),
             isTrue,
             reason:
-                '$root content.js fushiEnqueue must prefer the precise window over DOM sampling');
+                '$root content.js fushiEnqueue must keep the panel-row precise window branch');
+        // 整轨优先仲裁三层：面板行精确窗 → 整轨按播放时间查 → DOM 采样兜底。整轨必须在
+        // `||` 左边——实时采集只能是降级，不能反过来当主路径。这里用单行片段而非跨行
+        // 字面串：多行字面量在 CRLF 检出下恒不匹配，守卫会退化成零断言空转。
+        expect(
+            src.contains('fushiFullTrackWindowAt() || fushiCurrentCueWindowV()'),
+            isTrue,
+            reason:
+                '$root content.js fushiEnqueue must prefer the full-episode track over DOM sampling');
         // 录制边距 + 去重不得丢（复核修订 5 红线）。
         expect(
             src.contains(
@@ -397,15 +428,28 @@ void main() {
                 '$root netflix-bridge.js must replay archived cues on replayCues');
       });
 
-      test('[$name] content.js requests a cue replay once its receiver is up',
+      test(
+          '[$name] subtitle-providers.js requests a cue replay once its receiver is up',
           () {
-        final String src = File('$root/content.js').readAsStringSync();
+        final String src =
+            File('$root/subtitle-providers.js').readAsStringSync();
         final int receiver = src.indexOf("e.data.__fushiNf !== 'cues'");
         final int replay = src.indexOf("{ __fushiNf: 'replayCues' }");
         expect(receiver >= 0 && replay > receiver, isTrue,
             reason:
-                '$root content.js must post replayCues after registering the '
-                'cues receiver (injection-order race, TODO-1219)');
+                '$root subtitle-providers.js must post replayCues after registering '
+                'the cues receiver (injection-order race, TODO-1219)');
+      });
+
+      test('[$name] manifest bundles subtitle-providers.js before content.js',
+          () {
+        final String src = File('$root/manifest.json').readAsStringSync();
+        final int providers = src.indexOf('subtitle-providers.js');
+        final int content = src.indexOf('"content.js"');
+        expect(providers >= 0 && content > providers, isTrue,
+            reason:
+                '$root manifest.json must list subtitle-providers.js before '
+                'content.js (content.js calls into the shared providers)');
       });
 
       // BUG-769 根因守卫：跨世界自投消息在 file:// 页 opaque origin 下会炸。opaque origin 序列化成
@@ -417,6 +461,7 @@ void main() {
         const List<String> selfPostFiles = <String>[
           'netflix-bridge.js',
           'subtitle-panel.js',
+          'subtitle-providers.js',
           'content.js',
         ];
         final RegExp badTarget =
@@ -458,18 +503,21 @@ void main() {
                 'video.currentTime (Netflix keeps the DRM bridge)');
       });
 
-      test('[$name] content.js provides universal subtitle providers', () {
-        final String src = File('$root/content.js').readAsStringSync();
+      test('[$name] subtitle-providers.js provides universal subtitle providers',
+          () {
+        final String src =
+            File('$root/subtitle-providers.js').readAsStringSync();
         expect(src.contains('function fushiHarvestTextTracks'), isTrue,
-            reason: '$root content.js must harvest HTML5 video.textTracks '
+            reason:
+                '$root subtitle-providers.js must harvest HTML5 video.textTracks '
                 '(generic full-track provider, TODO-1363)');
         expect(src.contains('FUSHI_LIVE_LANG'), isTrue,
             reason:
-                '$root content.js must promote DOM-sampled cues into a live '
-                'track (YouTube/self-drawn captions, TODO-1363)');
+                '$root subtitle-providers.js must promote DOM-sampled cues into a '
+                'live track (YouTube/self-drawn captions, TODO-1363)');
         expect(src.contains('window.fushiVideoKey = fushiVideoKey'), isTrue,
             reason:
-                '$root content.js must expose the shared video-key contract');
+                '$root subtitle-providers.js must expose the shared video-key contract');
       });
     });
   });
@@ -483,6 +531,8 @@ void main() {
       // TODO-1219 P1：Netflix 整集字幕拦截链改动的共享文件，纳入字节守卫防两镜像漂移。
       'netflix-bridge.js',
       'subtitle-adapters.js',
+      // 网页播放器：store + provider 抽成共享文件，app 内 WebView2 原样注入。
+      'subtitle-providers.js',
       'content.js',
       'manifest.json',
       // TODO-1219 P2：字幕列表面板新增/改动的共享文件，同样纳入字节守卫。

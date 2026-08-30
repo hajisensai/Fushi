@@ -15,6 +15,7 @@ class CropImageDialogPage extends BasePage {
   const CropImageDialogPage({
     required this.imageFile,
     required this.onCrop,
+    this.aspectRatio,
     super.key,
   });
 
@@ -24,12 +25,19 @@ class CropImageDialogPage extends BasePage {
   /// On crop action.
   final Function(File) onCrop;
 
+  /// 锁定裁剪框宽高比；null = 自由裁剪。
+  ///
+  /// 应用图标传 1：图标最终是按正方形渲染的，自由裁出来的长条会被系统拉伸变形，
+  /// 用户以为自己裁歪了。
+  final double? aspectRatio;
+
   @override
   BasePageState createState() => _CropImageDialogPageState();
 }
 
 class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
-  final CropController _controller = CropController();
+  late final CropController _controller =
+      CropController(aspectRatio: widget.aspectRatio);
 
   @override
   Widget build(BuildContext context) {
@@ -124,4 +132,25 @@ class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
     widget.onCrop(imageFile);
     navigator.pop();
   }
+}
+
+/// 弹出裁剪对话框，返回裁好的文件；用户取消返回 null。
+///
+/// [CropImageDialogPage] 本身是回调式的（`onCrop` + 自己 pop），三个调用点各写一遍
+/// 「用局部变量接住回调结果」很容易漏掉取消分支。这里收敛成一个 Future 接口。
+Future<File?> showCropImageDialog(
+  BuildContext context,
+  File source, {
+  double? aspectRatio,
+}) async {
+  File? cropped;
+  await showAppDialog<void>(
+    context: context,
+    builder: (_) => CropImageDialogPage(
+      imageFile: source,
+      aspectRatio: aspectRatio,
+      onCrop: (File file) => cropped = file,
+    ),
+  );
+  return cropped;
 }

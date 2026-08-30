@@ -38,6 +38,9 @@ void main() {
   final String sgreLookupHeader = File(
     '../native/galgame_hook/hook/adapters/sgre_lookup.h',
   ).readAsStringSync();
+  final String sgreAnchorsHeader = File(
+    '../native/galgame_hook/hook/adapters/sgre_anchors.h',
+  ).readAsStringSync();
   final String sgreLookupSource = File(
     '../native/galgame_hook/hook/adapters/sgre_lookup.inc',
   ).readAsStringSync();
@@ -105,7 +108,10 @@ void main() {
 
   test('cold arm 与上屏均成功后才维持 target，失败让 direct presenter 降级', () {
     final String armAndWait = compactCode(
-      methodBody(hookSource, 'bool ArmLowLevelMouseHookAndWait('),
+      // 序列搬进了 ArmLowLevelMouseHookWithSampledShield；ArmLowLevelMouseHookAndWait
+      // 现在只剩一行转发，在它身上找发布/屏障/暴露顺序只会全部落空。
+      methodBody(
+          hookSource, 'bool ArmLowLevelMouseHookWithSampledShield('),
     );
     final String threadMain = compactCode(
       methodBody(hookSource, 'void HookThreadMain()'),
@@ -224,7 +230,10 @@ void main() {
       methodBody(hookSource, 'LRESULT CALLBACK HookProc('),
     );
     final String directArm = compactCode(
-      methodBody(hookSource, 'bool ArmLowLevelMouseHookAndWait('),
+      // 序列搬进了 ArmLowLevelMouseHookWithSampledShield；ArmLowLevelMouseHookAndWait
+      // 现在只剩一行转发，在它身上找发布/屏障/暴露顺序只会全部落空。
+      methodBody(
+          hookSource, 'bool ArmLowLevelMouseHookWithSampledShield('),
     );
     final String desktopArm = compactCode(
       methodBody(hookSource, 'void ArmLowLevelMouseHook('),
@@ -356,9 +365,37 @@ void main() {
     // 所以必须在这里单独钉住它——不变式对两条路径一样：任何吞掉 down 的
     // return 1 之前都必须先把同键事务位置上，否则配对的 up 会漏给游戏，
     // 引擎收到一个永远不抬起的按键。
+    // ③④ 是 v19 无 OCR 附着查词新增的两条吞 down 路径：
+    //   ③ 重复/注入的 down（上一次物理 up 丢了，或中性释放还在等注入确认）——
+    //      它不能证明键真的抬起过，吞掉且不动原有 latch；
+    //   ④ 命中附着字形矩形、BeginAttachedGlyphTransaction 成功之后吞掉 down。
+    // 不变式与 ①② 一样：吞 down 的 return 1 之前必须先置同键事务位，否则配对的 up
+    // 漏给游戏，引擎收到一个永远不抬起的按键。
+    final int repeatedDownSwallow =
+        hookProc.indexOf('HasActiveAttachedGlyphTransactionFast()');
+    final int repeatedDownMark = hookProc.indexOf(
+      'g_swallowed_buttons.fetch_or(kSwallowedLeftButton',
+      repeatedDownSwallow,
+    );
+    expect(repeatedDownSwallow, greaterThanOrEqualTo(0),
+        reason: '③ 重复/注入 down 的吞噬路径必须还在');
+    expect(repeatedDownMark, greaterThan(repeatedDownSwallow),
+        reason: '③ 吞 down 前必须先置同键事务位');
+
+    final int attachedBegin =
+        hookProc.indexOf('BeginAttachedGlyphTransaction(');
+    final int attachedMark = hookProc.indexOf(
+      'g_swallowed_buttons.fetch_or(kSwallowedLeftButton',
+      attachedBegin,
+    );
+    expect(attachedBegin, greaterThanOrEqualTo(0),
+        reason: '④ 附着字形命中后开事务的路径必须还在');
+    expect(attachedMark, greaterThan(attachedBegin),
+        reason: '④ 只有事务真的开起来了才吞 down，且吞之前先置位');
+
     expect(
       'g_swallowed_buttons.fetch_or('.allMatches(hookProc).length,
-      2,
+      4,
       reason: '新增吞 down 的路径必须同时在本守卫里补上顺序断言',
     );
     final int tailFailSwallow = hookProc.indexOf(
@@ -507,17 +544,33 @@ void main() {
       isTrue,
       reason: 'host/helper 的跨进程属性名必须只有 IPC 头这一份真值',
     );
+    final String anchorsHeader = compactCode(sgreAnchorsHeader);
     expect(
-      nativeHeader.contains('kSgreDirectInputMouseDeviceRva=0xA96E18u') &&
+      anchorsHeader.contains('kSgreDirectInputMouseDeviceRva=0xA96E18u') &&
+          anchorsHeader.contains('kSgreDirectInputMouseDeviceRva,') &&
           nativeHeader.contains(
             'kSgreDirectInputGetDeviceStateVtableIndex=9u',
           ) &&
           nativeHeader.contains('kSgreDirectInputMouseStateBytes=20u') &&
           nativeHeader.contains('kSgreDirectInputMouseButtonsOffset=12u'),
       isTrue,
-      reason: '只能使用已由 admitted SGRE binary 证明的 mouse slot / DIMOUSESTATE2 ABI',
+      reason:
+          '已量构建的 mouse slot 只能出现在 kSgreKnownBuilds 行里；'
+          'DIMOUSESTATE2 ABI 是 DirectInput 契约，不随构建变',
     );
-    expect(install.contains('kSgreDirectInputMouseDeviceRva'), isTrue);
+    // 地址只能来自解析结果（已量哈希行或唯一签名命中）；装钩点不许再读裸常量，
+    // 且锚点没解析出来时必须在读设备槽之前就返回。
+    expect(install.contains('kSgreDirectInputMouseDeviceRva'), isFalse);
+    // 两个串都必须先存在——indexOf 对缺失串返回 -1，裸比较顺序会把「门被删掉」判成通过。
+    const String shieldGate = '!g_sgre_anchors.direct_input_shield_available()';
+    const String deviceSlot = 'g_sgre_anchors.direct_input_mouse_device.rva';
+    expect(install.contains(shieldGate), isTrue, reason: '装钩前必须检查设备槽锚点是否已解析');
+    expect(install.contains(deviceSlot), isTrue);
+    expect(
+      install.indexOf(shieldGate) < install.indexOf(deviceSlot),
+      isTrue,
+      reason: '未解析的锚点必须在读槽之前 fail closed',
+    );
     expect(
       install.contains('VtableSlot(mouse_device,') &&
           install.contains('kSgreDirectInputGetDeviceStateVtableIndex'),
@@ -752,10 +805,14 @@ void main() {
 
   test('Fushi 只在 helper ready 后发布 popup HWND，Hide/down-up 生命周期不 ABA', () {
     final String directPublish = compactCode(
-      methodBody(hookSource, 'bool PublishDirectInputShieldIfReady('),
+      methodBody(
+          hookSource, 'SampledShieldPublishResult PublishDirectInputShieldIfReady('),
     );
     final String directArm = compactCode(
-      methodBody(hookSource, 'bool ArmLowLevelMouseHookAndWait('),
+      // 序列搬进了 ArmLowLevelMouseHookWithSampledShield；ArmLowLevelMouseHookAndWait
+      // 现在只剩一行转发，在它身上找发布/屏障/暴露顺序只会全部落空。
+      methodBody(
+          hookSource, 'bool ArmLowLevelMouseHookWithSampledShield('),
     );
     final String desktopArm = compactCode(
       methodBody(hookSource, 'void ArmLowLevelMouseHook('),
@@ -820,7 +877,9 @@ void main() {
             'IsSelectedSampledInputShieldContractReady(game,contract)',
           ) &&
           directPublish.contains('GetPropW(game,contract->window_property)') &&
-          directPublish.contains('returnfalse;'),
+          directPublish.contains(
+            'returnSampledShieldPublishResult::kUnavailable;',
+          ),
       isTrue,
       reason:
           'SGRE/Siglus/Leaf 任一声明的 sampled-input 契约不完整或 SetProp 失败时，'
@@ -873,7 +932,7 @@ void main() {
           '只有 pending_tail 已清零才可清理跨进程属性',
     );
     final int publish = directArm.indexOf(
-      'PublishDirectInputShieldIfReady(target,consume_outside_owner)',
+      'PublishDirectInputShieldIfReady(target,game_owner)',
     );
     final int abortStale = directArm.indexOf(
       'AbortInvalidDirectInputShieldAfterBarrier()',

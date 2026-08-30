@@ -4,6 +4,7 @@ import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
@@ -62,6 +63,7 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     this.onMpvShaderDirChanged,
     required this.onLockWindowAspectRatioChanged,
     required this.onVideoFitModeChanged,
+    this.onHdrOutputModeChanged,
     required this.onImmersiveModeChanged,
     required this.controlLayout,
     this.onControlLayoutChanged,
@@ -178,6 +180,10 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   final Future<void> Function(bool value) onLockWindowAspectRatioChanged;
   final Future<void> Function(VideoFitMode mode) onVideoFitModeChanged;
   final Future<void> Function(VideoImmersiveMode mode) onImmersiveModeChanged;
+
+  /// Windows HDR 直通 / 10-bit 输出模式（`video_hdr_output.dart`）：页面落盘 +
+  /// 让播放器控制器当场重判是否切宿主窗。null = 无播放器场景走 AppModel 落盘。
+  final Future<void> Function(VideoHdrOutputMode mode)? onHdrOutputModeChanged;
 
   // ── 控制条 9 槽位布局 ─────────────────────────────────────────────────────
   final VideoControlLayout Function() controlLayout;

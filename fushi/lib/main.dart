@@ -32,7 +32,9 @@ import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/utils/misc/flutter_error_log.dart';
 import 'package:fushi/src/utils/misc/present_watchdog.dart';
+import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
@@ -63,6 +65,7 @@ import 'package:fushi/src/platform/desktop/desktop_lifecycle_service.dart';
 import 'package:fushi/src/platform/ios/ios_url_event_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_cloudflare_challenge_page.dart';
+import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/media/video/external_video.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
@@ -281,7 +284,15 @@ void main([List<String> args = const <String>[]]) {
               ? startupAppIcon.customPath
               : await exportPresetIconToFile(startupAppIcon.presetKey);
           if (iconPath != null && File(iconPath).existsSync()) {
-            await WindowCaptionChannel.setWindowIcon(iconPath);
+            final bool applied =
+                await WindowCaptionChannel.setWindowIcon(iconPath);
+            if (applied) {
+              // TODO-901：安装器更新可能把桌面 / 开始菜单 / 任务栏固定项的
+              // IconLocation 重置回 exe；同一档图标又不能靠重新点选触发设置页同步。
+              // 冷启动成功恢复窗口图标后，用同一源文件字节重写 .lnk 以自愈。
+              final Uint8List iconBytes = await File(iconPath).readAsBytes();
+              await syncWindowsShortcutIcons(iconBytes);
+            }
           }
         } catch (e) {
           debugPrint('[Fushi] window icon restore failed: $e');
@@ -569,7 +580,7 @@ void main([List<String> args = const <String>[]]) {
       // TODO-607 P0-1：FlutterError 是致命级，用同步 flush 落盘——若这条错误紧接着把
       // 进程带崩（如 build/layout 期的 native 回调异常），异步 append 来不及写盘。
       ErrorLogService.instance.logFatal(
-        'FlutterError: ${details.context?.toString() ?? 'unknown'}',
+        flutterErrorLogSource(details),
         msg,
         details.stack,
       );
@@ -648,6 +659,16 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// 守卫：退出清理（停 Bonsoir 事件源）只跑一次，避免 [onWindowClose] 与
   /// [didChangeAppLifecycleState] 的 `detached` 兜底重复触发。
   bool _shutdownStarted = false;
+
+  /// 退出总预算。窗口在 flush 开始前就已隐藏，这个上界只决定「进程最多在后台多待
+  /// 多久」，不影响用户看到的关闭速度。取 6s：足够覆盖最坏情况下的 Mihon sidecar
+  /// 关停（~1.8s）与关书同步 drain（5s 上界，实际多为 0），外加 checkpoint 余量。
+  static const Duration _exitWatchdogTimeout = Duration(seconds: 6);
+
+  /// 关库上界。数据根迁移路径（`data_root.part.dart`）早就有这层保护，退出路径一直
+  /// 缺；WAL 崩溃安全，超时放行只损失一次 checkpoint，不损失已提交的数据。
+  static const Duration _closeDatabaseOnExitTimeout = Duration(seconds: 3);
+
   Future<void>? _androidBackgroundFlushInFlight;
 
   /// 守卫：Windows 安装器 handoff reconcile 的 post-frame 调度只挂一个。
@@ -801,6 +822,19 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     DesktopWindowPlacement.rememberCurrentBounds();
   }
 
+  /// 最大化/还原直连记忆：Windows 上最大化不保证伴随 `onWindowResized`，只靠 resize
+  /// 去抖会漏掉这个状态，下次冷启动就退回默认居中尺寸（用户「没记住窗口」）。
+  @override
+  void onWindowMaximize() {
+    unawaited(DesktopWindowPlacement.rememberMaximized(true));
+  }
+
+  @override
+  void onWindowUnmaximize() {
+    unawaited(DesktopWindowPlacement.rememberMaximized(false));
+    DesktopWindowPlacement.rememberCurrentBounds();
+  }
+
   /// 桌面关闭快杀路径（TODO-086/BUG-191）。过去这里 await windowManager 的 destroy
   /// 触发原生 WM_DESTROY → 同步逐插件拆 Flutter 引擎（WebView2 / WGC 捕获 /
   /// libmpv），每个原生 teardown 几百 ms~秒级、串行叠加成几秒~十几秒卡死 UI 线程
@@ -816,6 +850,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   Future<void> _flushAndExitForWindowClose() async {
     if (_shutdownStarted) return;
     _shutdownStarted = true;
+    final Stopwatch exitWatch = Stopwatch()..start();
     final AppModel appModel = ref.read(appProvider);
     try {
       await DesktopWindowPlacement.saveCurrentBoundsNow()
@@ -823,44 +858,93 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     } catch (e) {
       debugPrint('[Fushi] desktop window placement save on exit failed: $e');
     }
-    // ① 切断 Bonsoir 事件源（事件订阅同步 cancel；原生 stop fire-and-forget）。
-    //    收紧超时到 1.5s：cutEventSourceForExit 不再 await 原生 stop，正常瞬间返回。
+    // ⓪' 几何已落盘 → 立刻把主窗从屏幕上摘掉。**用户感知的「关闭」到此为止**，后面
+    //    的 flush / WAL checkpoint / 原生 teardown 都在看不见的窗口背后跑完。hide
+    //    只是 ShowWindow(SW_HIDE)，不拆任何原生资源，不会把 ④ 的 WebView2 成本提前。
+    //    必须排在 saveCurrentBoundsNow 之后：窗口隐藏后再读几何不可信。
     try {
-      await appModel.syncServerController
-          .shutdownForExitFast()
-          .timeout(const Duration(milliseconds: 1500));
-    } on TimeoutException {
-      debugPrint('[Fushi] sync source fast shutdown timed out; exiting anyway');
+      await windowManager.hide().timeout(const Duration(milliseconds: 300));
     } catch (e) {
-      debugPrint('[Fushi] sync source fast shutdown failed: $e');
+      debugPrint('[Fushi] hide on exit failed: $e');
     }
-    // ② flush 活跃页面 pending 进度/统计（缓存值落库，不碰退出期正在拆的 WebView）。
-    try {
-      await ExitFlushRegistry.instance.flushAll();
-    } catch (e) {
-      debugPrint('[Fushi] exit flush failed: $e');
-    }
+    // 退出总预算看门狗。下面每步各有超时，但 ③ 的关库（内含下载管线收尾等待）与 ④
+    // 的原生 WebView2 / DirectComposition teardown 历史上都出现过不归（BUG-192）。
+    // 窗口此刻已不可见，进程再卡住就成了用户看不见也关不掉的僵尸——到点无条件终止。
+    final Timer exitWatchdog = Timer(_exitWatchdogTimeout, () {
+      debugPrint('[Fushi] exit watchdog fired after '
+          '${exitWatch.elapsedMilliseconds}ms; forcing exit');
+      exit(0);
+    });
+    // ①② 并行：切断 Bonsoir 事件源只动 mDNS 订阅，页面 flush 只写 Drift，两者互不
+    //    依赖。过去串行 await 让各自的超时预算直接相加。
+    await Future.wait(<Future<void>>[
+      _guardedExitStep('sync source fast shutdown', () async {
+        await appModel.syncServerController
+            .shutdownForExitFast()
+            .timeout(const Duration(milliseconds: 1500));
+      }),
+      // ② flush 活跃页面 pending 进度/统计（缓存值落库，不碰退出期正在拆的 WebView）。
+      _guardedExitStep('exit flush', () async {
+        await ExitFlushRegistry.instance.flushAll();
+      }),
+    ]);
     // ②' TODO-132 诉求B：有界 drain 退出书 fire-and-forget 触发的、仍在飞的 app-scope
     //    关书同步（[BookExitSyncScope]）。退出书 export 与页面生命周期解耦后会继续
     //    在后台跑；若用户「退出书后立刻杀应用」，给这些远端传输一个有上限的机会跑完，
     //    避免内容/统计 export 被进程终止打成半截（与 132A/BUG-201 baseline 原子化互补）。
     //    syncContent 默认关时只剩小 JSON，几乎瞬间返回；卡住也由 drain 上限放行，
     //    绝不无限拖住退出。drain 自身不抛（退出清理失败不阻止退出）。
-    try {
+    await _guardedExitStep('book-exit sync drain', () async {
       await BookExitSyncScope.instance
           .drain(timeout: const Duration(seconds: 5));
-    } catch (e) {
-      debugPrint('[Fushi] book-exit sync drain failed: $e');
-    }
+    });
     // ③ close database：WAL checkpoint + 排空后台 isolate pending 写。退出最后一道
     //    数据完整性闸门——必须在 exit(0) 之前完成。
-    try {
-      await appModel.closeDatabase();
-    } catch (e) {
-      debugPrint('[Fushi] database close on exit failed: $e');
-    }
+    //    加超时上界：quiesceBackgroundDatabaseWriters 内部要等在飞的下载任务收尾，
+    //    这里过去是整条退出链上唯一的无界等待。WAL 本身崩溃安全，超时放行只损失一次
+    //    checkpoint（下次启动自动回放），不损失任何已提交的数据。
+    await _guardedExitStep('database close', () async {
+      // 上界只在**这条**退出链上给：迁移导入 / 备份导入 / 数据根迁移也调
+      // closeDatabase()，它们关库后要在文件层动整个 DB 目录，放行一个仍在飞的
+      // `_process` 是数据安全问题（BUG-1505）。退出路径不同——进程马上就没了。
+      await appModel
+          .closeDatabase(
+            pipelineDrainTimeout: VideoDownloadPipelineService.stopDrainTimeout,
+          )
+          .timeout(_closeDatabaseOnExitTimeout);
+    });
+    debugPrint(
+        '[Fushi] exit teardown finished in ${exitWatch.elapsedMilliseconds}ms');
     // ④ 进程级快杀（desktop lifecycle = exit(0)），跳过 destroy() 的同步插件拆除。
+    //
+    // **看门狗不在这之前 cancel**：exitApp() 里 WindowsNativePreExit + exit(0) 才是
+    // 历史上最会不归的一步（原生 WebView2 / DirectComposition 同步析构），而窗口此刻
+    // 已经 hide 掉，卡在这里就是「用户看不见也关不掉的僵尸」。exit(0) 一旦生效，
+    // 这个 Timer 根本没机会跑；真走到下面说明 exitApp 没杀掉进程，那正是要它兜底的
+    // 场景。cancel 放在最后，只为「万一 exitApp 返回了」留一个显式的收口点。
     await appModel.platformServices.lifecycle.exitApp();
+    exitWatchdog.cancel();
+  }
+
+  /// 退出期单步执行器：统一吞掉超时/异常 + 耗时埋点。退出清理失败绝不阻止退出，但
+  /// 也绝不静默——每步耗时都打出来，下次再遇「关闭慢」可直接读日志定位到具体哪一步。
+  Future<void> _guardedExitStep(
+    String label,
+    Future<void> Function() run,
+  ) async {
+    final Stopwatch watch = Stopwatch()..start();
+    try {
+      await run();
+    } on TimeoutException {
+      debugPrint('[Fushi] exit step "$label" timed out after '
+          '${watch.elapsedMilliseconds}ms; continuing');
+      return;
+    } catch (e) {
+      debugPrint('[Fushi] exit step "$label" failed after '
+          '${watch.elapsedMilliseconds}ms: $e');
+      return;
+    }
+    debugPrint('[Fushi] exit step "$label" took ${watch.elapsedMilliseconds}ms');
   }
 
   /// Android 退后台不是退出：只做保留式 flush，页面回前台后仍继续持有回调。

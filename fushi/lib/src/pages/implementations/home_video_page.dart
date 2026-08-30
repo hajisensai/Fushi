@@ -66,7 +66,7 @@ import 'package:fushi/src/media/selection/media_selection_controller.dart';
 import 'package:fushi/src/media/selection/selection_gestures.dart';
 import 'package:fushi/src/media/tags/tag_drop.dart';
 import 'package:fushi/src/media/collections/collection_shelf_row.dart';
-import 'package:fushi/src/pages/implementations/jimaku_batch_dialog.dart';
+import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/pages/implementations/video_work_detail_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
@@ -614,8 +614,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     // UI v2 Phase B / v39：watch-stats 全量行 → 最近观看时间（内存聚合）。
     // v39 新行按 bookUid 键控；迁移遗留 NULL-uid 行按 title 建回退映射。
+    // v92 起 `video_watch_statistics` 冻结为 legacy 只读（历史数据还在），新的
+    // 观看只写 `study_segments`：两处的 (uid, 时刻) 一起喂 latestWatchAtByKey，
+    // 同 uid 取最大，任一来源缺席都不影响另一来源。
     final List<VideoWatchStatisticRow> watchRows =
         await db.getAllVideoWatchStatistics();
+    final Map<String, int> segmentEndAtByUid =
+        await db.getLatestStudyEndAtByMedia(kActivityMediaVideo);
     // 无身份判定 NULL 与 '' 都算（review4-9/review2-10：与统计页展示、删除谓词
     // 同一判据）——'' 行进不了任何书架条目的 uid 匹配，落 title 回退才不会让该
     // 视频从「最近观看」消失。
@@ -624,6 +629,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         for (final VideoWatchStatisticRow r in watchRows)
           if (r.bookUid case final String uid when uid.isNotEmpty)
             (uid, r.lastModified),
+        for (final MapEntry<String, int> e in segmentEndAtByUid.entries)
+          if (e.key.isNotEmpty) (e.key, e.value),
       ],
     );
     final Map<String, DateTime> legacyByTitle = latestWatchAtByKey(
@@ -5283,7 +5290,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
         title: Text(video.title),
-        content: Text(t.sync_compare_delete_confirm(name: video.title)),
+        content: Text(t.sync_peer_video_delete_confirm(name: video.title)),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -5796,8 +5803,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 合集右键「为合集获取字幕」：与合集详情页 AppBar 同一 [JimakuBatchDialog]
-  /// （绑定 AniList 系列 → 逐集拉最佳字幕）。collection 行重取一次拿最新
+  /// 合集右键「为合集获取字幕」：与合集详情页 AppBar 同一 [SubtitleWorkbenchPage]
+  /// （合集作用域：绑定 AniList 系列 → 统一来源 → 逐集拉最佳字幕）。collection 行重取一次拿最新
   /// anilistId 快照作对话框初值；无本地视频成员时无从拉取，给可见提示而不是静默返回
   /// （避免菜单关闭后静默无响应）。
   Future<void> _openCollectionSubtitles(MediaCollectionRow collection) async {
@@ -5819,13 +5826,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       );
       return;
     }
-    await showDialog<void>(
-      context: context,
-      builder: (_) => JimakuBatchDialog(
-        database: db,
-        collection: fresh,
-        members: members,
-      ),
+    final String saveDir = (await AppPaths.videoSubtitlesDirectory()).path;
+    if (!mounted) return;
+    await SubtitleWorkbenchPage.open(
+      context,
+      host: AppSubtitleWorkbenchHost(ref.read(appProvider)),
+      saveDirectory: saveDir,
+      collection: SubtitleCollectionSpec(collection: fresh, members: members),
+      initialScope: SubtitleWorkbenchScope.collection,
     );
   }
 

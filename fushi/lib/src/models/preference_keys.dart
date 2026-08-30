@@ -46,8 +46,6 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 发现页「全部源」聚合默认排除的源 id（逗号分隔；默认 sukebei——18+ 源
   // 只在用户显式单选时使用）。String，读写见 PreferencesRepository。
   'discovery_disabled_sources',
-  'download_custom_proxy',
-  'download_network_proxy_mode',
   'download_save_root',
   'download_save_root_history',
   'experimental_focus_navigation_enabled',
@@ -63,7 +61,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'floating_lyric_font_size',
   'floating_lyric_text_opacity',
   'floating_lyric_width',
+  'gal_hook_click_lookup',
+  'gal_hook_fold_progressive_lines',
   'gal_hook_ingame_lookup_enabled',
+  'gal_hook_lookup_trigger',
+  'gal_hook_passthrough_blocks_mouse',
   'gal_hook_text_alignment',
   'gal_hook_text_background_color',
   'gal_hook_text_bold',
@@ -77,6 +79,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'gal_hook_text_padding',
   'gal_hook_text_vertical_alignment',
   'gal_hook_text_window_bg_opacity',
+  'gal_hook_toolbar_auto_hide',
   'gal_mining_animated_format',
   'gal_mining_image_mode',
   'gal_mining_still_format',
@@ -129,6 +132,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'module_games_enabled',
   'module_manga_enabled',
   'module_video_enabled',
+  // bool：P2P（torrent）传输是否也走全局代理，默认 false（直连）。
+  'network_proxy_p2p_enabled',
   'onboarding_completed',
   'overlay_lookup_independent_size',
   'overlay_lookup_max_height',
@@ -199,6 +204,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_secondary_subtitle_obscure_hide',
   'video_shaders_enabled',
   'video_sort_mode',
+  // bool（默认 true）：AJATT 日语字幕库（kitsunekko 镜像）是否参与字幕搜索。
+  // 零配置源，没有 key 门控；默认开是因为它是没填 Jimaku/OpenSubtitles key 的
+  // 用户唯一能用的源。
+  'video_subtitle_ajatt_enabled',
   'video_subtitle_backfill_after_scrape',
   'video_subtitle_blur',
   'video_subtitle_list_auto_scroll',

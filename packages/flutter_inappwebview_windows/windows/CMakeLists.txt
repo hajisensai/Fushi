@@ -164,6 +164,30 @@ if(NOT FLUTTER_WEBVIEW_WINDOWS_USE_TEXTURE_FALLBACK)
     "custom_platform_view/texture_bridge_gpu.cc"
     "custom_platform_view/texture_bridge_gpu.h"
   )
+  # 计划 P2：libplacebo 着色器通道（third_party/libplacebo-win，见其 UPSTREAM.md）。头文件在就编进
+  # 通道代码；DLL 运行期动态加载，缺失 fail-open。随包 DLL 整批进 bundled_libraries。
+  # Flutter 经 windows/flutter/ephemeral/.plugin_symlinks/<plugin> 编本插件：CMAKE_CURRENT_SOURCE_DIR 是
+  # 符号链接路径，`../../../` 落不到仓库根。先按 REALPATH 解回真实包目录再上溯；解不到再按 app 工程
+  #（fushi/windows）相对仓库根兜底。
+  get_filename_component(_fiw_real_dir "${CMAKE_CURRENT_LIST_DIR}" REALPATH)
+  set(LIBPLACEBO_WIN_DIR "${_fiw_real_dir}/../../../third_party/libplacebo-win")
+  if(NOT EXISTS "${LIBPLACEBO_WIN_DIR}/include/libplacebo/config.h")
+    set(LIBPLACEBO_WIN_DIR "${CMAKE_SOURCE_DIR}/../../third_party/libplacebo-win")
+  endif()
+  get_filename_component(LIBPLACEBO_WIN_DIR "${LIBPLACEBO_WIN_DIR}" ABSOLUTE)
+  if(EXISTS "${LIBPLACEBO_WIN_DIR}/include/libplacebo/config.h")
+    message(STATUS "libplacebo headers found: ${LIBPLACEBO_WIN_DIR}")
+    target_compile_definitions("${PLUGIN_NAME}" PRIVATE HAVE_LIBPLACEBO_HEADERS)
+    target_include_directories("${PLUGIN_NAME}" PRIVATE "${LIBPLACEBO_WIN_DIR}/include")
+    target_sources("${PLUGIN_NAME}" PRIVATE
+      "custom_platform_view/placebo_pass.cc"
+      "custom_platform_view/placebo_pass.h"
+    )
+    file(GLOB LIBPLACEBO_WIN_DLLS "${LIBPLACEBO_WIN_DIR}/bin/*.dll")
+  else()
+    message(STATUS "libplacebo headers not found; web video super-resolution pass disabled")
+    set(LIBPLACEBO_WIN_DLLS "")
+  endif()
 else()
   message(STATUS "Building with fallback PixelBuffer texture.")
   target_sources("${PLUGIN_NAME}" PRIVATE
@@ -216,6 +240,7 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin)
 # This list could contain prebuilt libraries, or libraries created by an
 # external build triggered from this build file.
 set(flutter_inappwebview_windows_bundled_libraries
+  ${LIBPLACEBO_WIN_DLLS}
   PARENT_SCOPE
 )
 

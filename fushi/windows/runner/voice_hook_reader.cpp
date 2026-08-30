@@ -2,12 +2,16 @@
 
 #include <windows.h>
 
+// v19 准入兜底：注入侧算不出游戏 exe 摘要时由 host 自己算（见 [ExeDigestCache]）。
+#include <bcrypt.h>
+
 #include <algorithm>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <utility>
+#include <vector>
 
 // v15 游戏内查词通道要往 Dart 投 hit / input，并接 Dart 的 present / dismiss / capture suppress。
 #include <flutter/method_channel.h>
@@ -66,6 +70,13 @@ struct ReaderState {
   uint32_t lookup_geometry_admission_mode_desired =
       fushi_voice_hook::kLookupGeometryAdmissionDisabled;
   bool lookup_geometry_attached_ready_desired = false;
+  // ── v19 查词准入游标（与上面同一把锁）───────────────────────────────────────
+  // 上次向 Dart 报过的 lookup_admission_seq。[primed] 单独存在，是因为「新段刚开出来、
+  // hook 还没上报」时共享 seq 就是 0，与游标 0 相等——只比 seq 会让新会话一条准入事件
+  // 都不发，Dart 侧就会继续挂着**上一局**的状态（上一局 SensorInstalled、这一局引擎
+  // 根本不支持，设置页照样说"能用"）。primed=false 保证换段后必发一条如实的 Unknown。
+  uint32_t lookup_admission_seq = 0;
+  bool lookup_admission_primed = false;
 };
 
 ReaderState& State() {
@@ -280,6 +291,10 @@ void ResetLookupCursorsLocked(ReaderState& st, const SharedHeader* h) {
   st.lookup_hit_seq = 0;
   st.lookup_input_seq = 0;
   st.lookup_publish_seq = 0;
+  // 准入游标**在查词区那道早退之前**复位：准入活在 SharedHeader 里，没有查词区的
+  // 会话照样要报（"本引擎没做查词传感器"正是必须报得出来的那一类）。
+  st.lookup_admission_seq = 0;
+  st.lookup_admission_primed = false;
   if (!fushi_voice_hook::HasLookupRegion(h)) {
     return;
   }
@@ -319,6 +334,8 @@ void CloseLocked(ReaderState& st) {
   st.lookup_hit_seq = 0;
   st.lookup_input_seq = 0;
   st.lookup_shield_prevalidated_target = nullptr;
+  st.lookup_admission_seq = 0;
+  st.lookup_admission_primed = false;
 }
 
 // 把一条 clip 的 PCM 从环形读出**追加**到 [out]（多段拼接用）；clip 已被环形覆盖返回 false。
@@ -408,6 +425,178 @@ std::vector<const fushi_voice_hook::VoiceClip*> CollectValidClipsLocked(
 
 // ══ v15 查词通道：轮询泵 + MethodChannel ═══════════════════════════════════════
 //
+// ══ v19 准入兜底：游戏主 exe 的 SHA-256 ══════════════════════════════════════
+//
+// 为什么 host 还要自己算：Leaf/AQUAPLUS（白色相簿2）与 SGRE 两家 adapter 的 probe()
+// **本身就是精确 exe SHA-256 门**。用户的 exe 不在白名单里时这些 adapter 直接 probe
+// 失败、根本不参与汇总——而这类用户最终落到的 kLookupAdmissionEngineUnsupported
+// 恰恰是「把自己的 exe 摘要报上来」唯一能推进事情的状态。
+//
+// 注入侧现在会填（hook/host_executable_digest.h 的共享槽：profile 解析本来就算过这个
+// 摘要，存进一个不属于任何 adapter 的槽，由汇总处在这一档读出来），所以常态下走不到
+// 这里 —— NeedsHostExeDigest 的第一句就是"注入侧已经填了就别算"。
+//
+// 但这条兜底不能删，它覆盖注入侧够不着的两种情形：hook 还没走到 profile 解析就发布了
+// 快照，以及 hook 侧读自己 exe 失败。反过来也成立：**游戏提权而 Fushi 没提权**时
+// OpenProcess 必然失败，host 这条算不出来，而 hook 跑在游戏进程里读自己的 exe 反而没
+// 问题——两条路各能覆盖对方的盲区，优先级由 NeedsHostExeDigest 一处定死。
+//
+// 三条纪律：
+//  1. **只在 EngineUnsupported / IdentityRejected 两个状态下算**。exe 动辄几十 MB，
+//     一次几百毫秒，稳态下每轮都算等于白烧 IO。
+//  2. **不在平台线程上算**。泵跑在平台线程（MethodChannel/WebView2 的线程亲和性要求），
+//     在那里读几十 MB 文件就是几百毫秒的界面卡死。丢进 Win32 线程池。
+//  3. **算不出来就报空串**，绝不用全 0 或占位串冒充摘要——游戏以管理员身份跑而 Fushi
+//     没有时 OpenProcess 必然失败，此时 Dart 侧要说的是"无法获取"，不是一串假摘要。
+struct ExeDigestCache {
+  std::mutex mutex;
+  uint32_t pid = 0;        // 摘要属于哪个进程；pid 一换整份作废
+  bool computing = false;  // 线程池里有一笔在算
+  bool done = false;       // 算完了（[sha256] 为空表示"算不出来"，也是终态）
+  std::string sha256;
+};
+
+ExeDigestCache& DigestCache() {
+  static ExeDigestCache cache;
+  return cache;
+}
+
+std::string HexOfDigest(const uint8_t* bytes, size_t length) {
+  static const char* kDigits = "0123456789abcdef";
+  std::string out;
+  out.reserve(length * 2);
+  for (size_t i = 0; i < length; ++i) {
+    out.push_back(kDigits[(bytes[i] >> 4) & 0x0f]);
+    out.push_back(kDigits[bytes[i] & 0x0f]);
+  }
+  return out;
+}
+
+// 文件全文 SHA-256 → 小写十六进制。任何一步失败都返回空串（不猜、不部分摘要）。
+std::string Sha256HexOfFile(const std::wstring& path) {
+  // 游戏正在跑，它自己的映像是以 FILE_SHARE_READ 打开的；共享位给全，否则必被拒。
+  HANDLE file = CreateFileW(
+      path.c_str(), GENERIC_READ,
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN,
+      nullptr);
+  if (file == INVALID_HANDLE_VALUE) return std::string();
+  BCRYPT_ALG_HANDLE alg = nullptr;
+  if (!BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(
+          &alg, BCRYPT_SHA256_ALGORITHM, nullptr, 0))) {
+    CloseHandle(file);
+    return std::string();
+  }
+  DWORD object_bytes = 0;
+  DWORD copied = 0;
+  std::string result;
+  if (BCRYPT_SUCCESS(BCryptGetProperty(
+          alg, BCRYPT_OBJECT_LENGTH, reinterpret_cast<PUCHAR>(&object_bytes),
+          sizeof(object_bytes), &copied, 0))) {
+    std::vector<uint8_t> object(object_bytes);
+    BCRYPT_HASH_HANDLE hash = nullptr;
+    if (BCRYPT_SUCCESS(BCryptCreateHash(alg, &hash, object.data(),
+                                        object_bytes, nullptr, 0, 0))) {
+      std::vector<uint8_t> chunk(64 * 1024);
+      bool ok = true;
+      for (;;) {
+        DWORD read = 0;
+        if (!ReadFile(file, chunk.data(), static_cast<DWORD>(chunk.size()),
+                      &read, nullptr)) {
+          ok = false;
+          break;
+        }
+        if (read == 0) break;
+        if (!BCRYPT_SUCCESS(BCryptHashData(hash, chunk.data(), read, 0))) {
+          ok = false;
+          break;
+        }
+      }
+      uint8_t digest[32] = {};
+      if (ok && BCRYPT_SUCCESS(BCryptFinishHash(hash, digest, sizeof(digest),
+                                                0))) {
+        result = HexOfDigest(digest, sizeof(digest));
+      }
+      BCryptDestroyHash(hash);
+    }
+  }
+  BCryptCloseAlgorithmProvider(alg, 0);
+  CloseHandle(file);
+  return result;
+}
+
+// pid → 主 exe 全路径。PROCESS_QUERY_LIMITED_INFORMATION 是能拿到路径的最低权限；
+// 目标完整性级别更高（游戏以管理员跑）时这里就会失败，如实返回空。
+std::wstring ProcessImagePath(uint32_t pid) {
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                               static_cast<DWORD>(pid));
+  if (process == nullptr) return std::wstring();
+  constexpr DWORD kPathChars = MAX_PATH * 2;
+  wchar_t buffer[kPathChars] = {};
+  DWORD length = kPathChars;
+  const BOOL ok = QueryFullProcessImageNameW(process, 0, buffer, &length);
+  CloseHandle(process);
+  if (!ok || length == 0) return std::wstring();
+  return std::wstring(buffer, length);
+}
+
+VOID CALLBACK ExeDigestWorker(PTP_CALLBACK_INSTANCE, PVOID context) {
+  const uint32_t pid =
+      static_cast<uint32_t>(reinterpret_cast<UINT_PTR>(context));
+  const std::wstring path = ProcessImagePath(pid);
+  const std::string digest =
+      path.empty() ? std::string() : Sha256HexOfFile(path);
+  ExeDigestCache& cache = DigestCache();
+  std::lock_guard<std::mutex> lock(cache.mutex);
+  // 会话在算的过程中换了：这份摘要属于上一局，丢掉。不丢就会把上一个游戏的身份
+  // 报成这一局的，用户照着它报版本，谁都对不上。
+  if (cache.pid != pid) return;
+  cache.sha256 = digest;
+  cache.done = true;
+  cache.computing = false;
+}
+
+// 取本进程主 exe 的摘要。返回 true = 已有终态（[out] 可能是空串，表示算不出来）；
+// false = 还没有，已在后台开算或正在算，调用方下一拍再问。
+bool TakeExeDigest(uint32_t pid, std::string* out) {
+  if (pid == 0 || out == nullptr) return false;
+  ExeDigestCache& cache = DigestCache();
+  bool submit = false;
+  {
+    std::lock_guard<std::mutex> lock(cache.mutex);
+    if (cache.pid != pid) {
+      cache.pid = pid;
+      cache.computing = false;
+      cache.done = false;
+      cache.sha256.clear();
+    }
+    if (cache.done) {
+      *out = cache.sha256;
+      return true;
+    }
+    if (!cache.computing) {
+      cache.computing = true;
+      submit = true;
+    }
+  }
+  if (submit &&
+      !TrySubmitThreadpoolCallback(
+          ExeDigestWorker,
+          reinterpret_cast<PVOID>(static_cast<UINT_PTR>(pid)), nullptr)) {
+    // 线程池拒了（极罕见）：把 computing 放回去，下一拍重试，绝不永久卡在"算不出"。
+    std::lock_guard<std::mutex> lock(cache.mutex);
+    if (cache.pid == pid) cache.computing = false;
+  }
+  return false;
+}
+
+// 这份准入快照要不要 host 补摘要：注入侧没填、而状态又正是"用户得报版本"的那两种。
+bool NeedsHostExeDigest(const VoiceHookLookupAdmission& admission) {
+  if (!admission.executable_sha256.empty()) return false;
+  return admission.state == fushi_voice_hook::kLookupAdmissionEngineUnsupported ||
+         admission.state == fushi_voice_hook::kLookupAdmissionIdentityRejected;
+}
+
 // 泵是「平台线程上的 WM_TIMER」而不是后台线程，理由是两侧的线程亲和性都硬：
 //   * MethodChannel::InvokeMethod 只能在平台线程调；
 //   * WebView2 的 SendMouseInput / CapturePreview 是 STA，也只能在平台线程调。
@@ -420,6 +609,10 @@ constexpr wchar_t kLookupPumpClassName[] = L"FushiGalLookupPump";
 constexpr char kGalHookTextChannel[] = "app.fushi.reader/gal_hook_text";
 constexpr UINT_PTR kLookupPumpTimerId = 1;
 constexpr UINT kLookupPumpIntervalMs = 16;  // ~60Hz：查词要跟手，卡片重绘也吃这个节拍
+// 查词没开时泵仍要跑，因为准入状态（v19）与开关正交：设置页在开关关着时也得知道
+// 「本引擎没做」/「本 exe 不在白名单」。但那一路一局游戏只变几次，没有跟手需求，
+// 用 60Hz 空转整局游戏纯属浪费。两档节拍由 [SyncLookupPump] 按当前闸门自动选。
+constexpr UINT kLookupAdmissionPumpIntervalMs = 250;
 // 这只是“游戏主线程不再前进”的失败上界，不参与正确性同步。真正的屏障是共享内存里的
 // lookup_frame_applied_seq；绝不靠等若干毫秒猜卡片已经从合成画面消失。
 constexpr ULONGLONG kLookupCaptureSuppressTimeoutMs = 3000;
@@ -452,8 +645,16 @@ struct LookupPumpState {
   std::shared_ptr<LookupResult> capture_suppress_reply;
   uint64_t capture_suppress_publish_seq = 0;
   ULONGLONG capture_suppress_deadline = 0;
+  // 最近一次准入快照，以及它是否还等着 host 兜底算 exe 摘要（见 [TakeExeDigest]）。
+  // 存住它而不是每次现读，是因为摘要要几百毫秒才算得出来，补上之后得把**同一份**
+  // 快照连同摘要再发一次；重新读共享内存拿到的是"没变过"，什么都发不出去。
+  VoiceHookLookupAdmission admission;
+  bool admission_digest_pending = false;
   HWND hwnd = nullptr;
   bool timer_running = false;
+  // 当前 WM_TIMER 的周期。记着它才能在两档节拍间切换时判断"要不要重设"——
+  // 同 id 的 SetTimer 会替换既有定时器，但每拍都无脑重设等于永远推迟第一次触发。
+  UINT timer_interval_ms = 0;
 };
 
 LookupPumpState& Pump() {
@@ -467,6 +668,7 @@ void StopLookupPump() {
     KillTimer(pump.hwnd, kLookupPumpTimerId);
   }
   pump.timer_running = false;
+  pump.timer_interval_ms = 0;
 }
 
 flutter::EncodableValue LookupErrorMap(VoiceHookLookupError error) {
@@ -552,7 +754,17 @@ flutter::EncodableValue LookupInputMap(const VoiceHookLookupInput& input) {
   });
 }
 
-// 一次泵动：一条 hit（latest-wins，多的没意义）+ 环里全部新输入。
+flutter::EncodableValue LookupAdmissionMap(
+    const VoiceHookLookupAdmission& admission) {
+  return flutter::EncodableValue(flutter::EncodableMap{
+      {flutter::EncodableValue("state"),
+       flutter::EncodableValue(static_cast<int64_t>(admission.state))},
+      {flutter::EncodableValue("executableSha256"),
+       flutter::EncodableValue(admission.executable_sha256)},
+  });
+}
+
+// 一次泵动：准入快照 + 一条 hit（latest-wins，多的没意义）+ 环里全部新输入。
 void PumpLookupOnce() {
   LookupPumpState& pump = Pump();
   VoiceHookReader& reader = VoiceHookReader::Instance();
@@ -569,9 +781,10 @@ void PumpLookupOnce() {
           VoiceHookLookupError::kCaptureSuppressTimeout);
     }
   }
-  // 会话没了（关游戏 / Close）就把定时器停掉，别在没有映射的情况下空转。Dart 侧
-  // 重开会话后本来就要再调一次 galLookupSetEnabled，泵会跟着重新起来。
-  if (!reader.HasLookupChannel()) {
+  // 会话没了（关游戏 / Close）就把定时器停掉，别在没有映射的情况下空转。会话一开
+  // （[Open] 尾部的 [SyncLookupPump]）泵就起来，不再等 galLookupSetEnabled——准入
+  // 要在开关关着时也报得出来。
+  if (!reader.HasSession()) {
     StopLookupPump();
     return;
   }
@@ -590,6 +803,35 @@ void PumpLookupOnce() {
     pump.has_last_geometry_status = true;
     if (pump.geometry_status_sink != nullptr)
       pump.geometry_status_sink(geometry);
+  }
+  // v19 准入：与 lookup_enabled 正交，会话在就报。放在下面那道闸**之前**，因为
+  // 「本引擎不支持」恰恰是查词开不起来时才需要说出口的话。
+  VoiceHookLookupAdmission fresh;
+  bool publish_admission = reader.PollLookupAdmission(&fresh);
+  if (publish_admission) {
+    pump.admission = fresh;
+    pump.admission_digest_pending = NeedsHostExeDigest(fresh);
+  }
+  if (pump.admission_digest_pending) {
+    std::string digest;
+    if (TakeExeDigest(reader.CurrentPid(), &digest)) {
+      pump.admission.executable_sha256 = digest;
+      pump.admission_digest_pending = false;
+      // 摘要补上（哪怕是空串=确实算不出来）就得把同一份快照再发一次：第一条发出去时
+      // Dart 侧显示的是"摘要不可用"，不再发一条它就永远停在那句话上。
+      publish_admission = true;
+    }
+  }
+  if (publish_admission && pump.channel != nullptr) {
+    pump.channel->InvokeMethod(
+        "onGalLookupAdmission",
+        std::make_unique<flutter::EncodableValue>(
+            LookupAdmissionMap(pump.admission)));
+  }
+  // 查词没开（或本会话没有查词区）：只报准入，绝不消费 hit/input——那两个游标一旦
+  // 在关闭期间被推进，重新打开时用户的第一次点击就会被当成"旧输入"吞掉。
+  if (reader.PeekLookupGate(true) != VoiceHookLookupError::kNone) {
+    return;
   }
   VoiceHookLookupHit hit;
   if (reader.PollLookupHit(&hit) && pump.channel != nullptr) {
@@ -647,15 +889,34 @@ void EnsureLookupPumpWindow() {
                               GetModuleHandleW(nullptr), nullptr);
 }
 
-void StartLookupPump() {
+void StartLookupPumpAt(UINT interval_ms) {
   LookupPumpState& pump = Pump();
   EnsureLookupPumpWindow();
-  if (pump.hwnd == nullptr || pump.timer_running) {
+  if (pump.hwnd == nullptr) {
     return;
   }
-  pump.timer_running =
-      SetTimer(pump.hwnd, kLookupPumpTimerId, kLookupPumpIntervalMs,
-               nullptr) != 0;
+  if (pump.timer_running && pump.timer_interval_ms == interval_ms) {
+    return;
+  }
+  // 同 id 的 SetTimer 就地替换周期，不必先 KillTimer。
+  if (SetTimer(pump.hwnd, kLookupPumpTimerId, interval_ms, nullptr) != 0) {
+    pump.timer_running = true;
+    pump.timer_interval_ms = interval_ms;
+  }
+}
+
+// 泵的节拍只由**当前闸门**决定，调用方不必各自判断：没会话就停，查词开着走跟手
+// 节拍，只剩准入要报就走慢拍。单一裁决点，省得每个调用点各记一套条件而漂开。
+void SyncLookupPump() {
+  VoiceHookReader& reader = VoiceHookReader::Instance();
+  if (!reader.HasSession()) {
+    StopLookupPump();
+    return;
+  }
+  StartLookupPumpAt(
+      reader.PeekLookupGate(true) == VoiceHookLookupError::kNone
+          ? kLookupPumpIntervalMs
+          : kLookupAdmissionPumpIntervalMs);
 }
 
 int64_t ReadLookupInt(const flutter::MethodCall<flutter::EncodableValue>& call,
@@ -889,7 +1150,7 @@ bool HandleLookupCall(const flutter::MethodCall<flutter::EncodableValue>& call,
     pump.capture_suppress_publish_seq = wrote.publish_seq;
     pump.capture_suppress_deadline =
         GetTickCount64() + kLookupCaptureSuppressTimeoutMs;
-    StartLookupPump();
+    SyncLookupPump();
     if (!pump.timer_running) {
       CompleteLookupCaptureSuppressError(
           VoiceHookLookupError::kCaptureSuppressTimeout);
@@ -985,9 +1246,6 @@ VoiceHookOpenResult VoiceHookReader::Open(uint32_t pid) {
       CompleteLookupCaptureSuppressError(VoiceHookLookupError::kCaptureCancelled);
     }
   }
-  // 新段上是否要把查词开关重放回去（连带把泵拉起来）。SetTimer 要进内核，按本文件
-  // 既有纪律不在持锁时做，所以在锁外收尾。
-  bool reapply_lookup_enabled = false;
   {
   ReaderState& st = State();
   std::lock_guard<std::mutex> lock(st.mutex);
@@ -1063,14 +1321,14 @@ VoiceHookOpenResult VoiceHookReader::Open(uint32_t pid) {
     if (st.lookup_enabled_desired) {
       InterlockedExchange(
           reinterpret_cast<volatile LONG*>(&header->lookup_enabled), 1);
-      reapply_lookup_enabled = true;
     }
   }
   out.status = StatusFromHeaderLocked(header);
   }
-  if (reapply_lookup_enabled) {
-    StartLookupPump();
-  }
+  // 会话开出来就把泵拉起来，节拍由 [SyncLookupPump] 按当前闸门自己定——**不再**只在
+  // 重放了开关时才起泵：准入状态与开关正交，开关关着的那一局同样要报得出"本引擎
+  // 没做查词"。SetTimer 要进内核，按本文件既有纪律在锁外收尾。
+  SyncLookupPump();
   return out;
 }
 
@@ -1747,6 +2005,42 @@ bool VoiceHookReader::HasLookupChannel() {
   return LookupGateLocked(st.header, false) == VoiceHookLookupError::kNone;
 }
 
+bool VoiceHookReader::HasSession() {
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  return ProtocolMatches(st.header);
+}
+
+bool VoiceHookReader::PollLookupAdmission(VoiceHookLookupAdmission* out) {
+  if (out == nullptr) {
+    return false;
+  }
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  const SharedHeader* h = st.header;
+  // 闸门是**协议匹配**，不是 HasLookupRegion：准入字段活在 SharedHeader 里，而
+  // 「本引擎没做查词传感器」这条恰恰可能来自一个没有查词区的会话。用查词区当闸
+  // 会把最需要说出口的那一类静音掉。
+  if (!ProtocolMatches(h)) {
+    return false;
+  }
+  uint32_t seq = 0;
+  const fushi_voice_hook::LookupAdmissionReport report =
+      fushi_voice_hook::ReadLookupAdmission(h, &seq);
+  // primed 而且 seq 没动 = 这份快照 Dart 已经有了。**不**拿 state 做比较：hook 侧
+  // 只在内容真变时推进 seq，seq 才是"变没变"的唯一真值。
+  if (st.lookup_admission_primed && seq == st.lookup_admission_seq) {
+    return false;
+  }
+  st.lookup_admission_primed = true;
+  st.lookup_admission_seq = seq;
+  // seq==0 时 ReadLookupAdmission 返回的就是 kLookupAdmissionUnknown + 空摘要，
+  // 原样往上报——"还不知道"是一个必须能表达的状态，绝不在这里替它猜一个。
+  out->state = report.state;
+  out->executable_sha256 = report.executable_sha256;
+  return true;
+}
+
 VoiceHookLookupError VoiceHookReader::PeekLookupGate(bool require_enabled) {
   ReaderState& st = State();
   std::lock_guard<std::mutex> lock(st.mutex);
@@ -1779,12 +2073,9 @@ VoiceHookLookupError VoiceHookReader::SetLookupEnabled(bool enabled) {
       ResetLookupCursorsLocked(st, h);
     }
   }
-  // SetTimer/KillTimer 在锁外：它们要进内核，没理由在持锁时做。
-  if (enabled) {
-    StartLookupPump();
-  } else {
-    StopLookupPump();
-  }
+  // SetTimer/KillTimer 在锁外：它们要进内核，没理由在持锁时做。关掉查词**不停泵**，
+  // 只降到慢拍——准入还得继续报（会话没了泵会在下一拍自己停）。
+  SyncLookupPump();
   return VoiceHookLookupError::kNone;
 }
 

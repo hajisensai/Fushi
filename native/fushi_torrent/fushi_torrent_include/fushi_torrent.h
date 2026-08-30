@@ -116,6 +116,13 @@ HT_EXPORT int ht_apply_session_settings(
     int enable_upnp, int enable_natpmp, int enc_policy, int anonymous_mode,
     int active_downloads, int active_seeds, int max_upload_slots);
 
+// P2P 代理（默认 none = 直连；用户在系统设置里单独开启）。[proxy_type]
+// 0=none 1=http 2=socks5；[host]/[port] 仅 type != 0 时使用。开启时 peer /
+// tracker / 主机名解析三条链路全部经代理，关闭时一并复位直连。参数非法按
+// none 处理。返回 1 成功 0 失败。
+HT_EXPORT int ht_apply_proxy(void* session, int proxy_type, const char* host,
+                             int port);
+
 // 添加磁力链接，落盘到 [save_path]；[sequential] 非 0 开顺序下载。
 // 成功 {"ok":true,"id":"<infohash>"}；失败 {"ok":false,"error":"..."}。
 // 重复添加同一种子返回已有种子的 id（ok:true）。
@@ -264,6 +271,11 @@ HT_EXPORT char* ht_load_resume_dir(void* session, const char* dir);
 //  取最大值；-1 = 该 tracker 未返回 scrape 数据)}]}
 // 种子不存在 {"ok":false,...}；无 tracker（纯 DHT 磁力）trackers 为空数组。
 HT_EXPORT char* ht_torrent_trackers(void* session, const char* info_hash);
+
+// 给已有种子追加 tracker。tracker_urls 为 UTF-8 换行分隔列表；空行、重复项
+// 忽略。返回成功新增数量，-1 = session/种子/参数无效或发生异常。
+HT_EXPORT int ht_add_trackers(void* session, const char* info_hash,
+                              const char* tracker_urls);
 
 // 每个文件的下载优先级（详情页 Files tab）：
 // {"ok":true,"priorities":[4,0,7,...]}（下标 = 文件 index；libtorrent

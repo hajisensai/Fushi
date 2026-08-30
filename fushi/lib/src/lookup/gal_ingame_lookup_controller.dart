@@ -116,6 +116,14 @@ class GalIngameLookupController {
   GalLookupGeometryAdmissionMode _geometryAdmissionMode =
       GalLookupGeometryAdmissionMode.disabled;
   bool _geometryAttachedReady = false;
+  /// 本局游戏的**查词准入**（v19）。真值在注入侧的 adapter registry，经共享内存
+  /// → runner → `onGalLookupAdmission` 推上来，本控制器只存不解释。
+  ///
+  /// 用 ValueNotifier 而不是普通字段：设置页要在准入异步到达时刷新那一行，而设置页
+  /// 的 refresh 是交互驱动的 setState，事件走不到它。[GalLookupAdmission] 是值类型，
+  /// 同内容不会重复通知。
+  final ValueNotifier<GalLookupAdmission> _admission =
+      ValueNotifier<GalLookupAdmission>(GalLookupAdmission.unknown);
 
   /// 最近一次被 runner **确认成功**的开关值，仅供诊断使用。
   /// 它不是跨 shared mapping 的真值：mapping 换代后
@@ -199,6 +207,20 @@ class GalIngameLookupController {
   static bool get isSupported =>
       GalHookTextOverlayChannel.supportsCurrentPlatform &&
       GlobalLookupController.isSupported;
+
+  /// 当前会话的查词准入。UI 据此决定「游戏内查词」开关的副标题说什么、以及那行
+  /// 「复制 exe 摘要」要不要出现。**开关本身不置灰**——它是全局偏好（用户意图），
+  /// 准入是当前这一局的能力，两者正交（理由写在 settings_schema_game.dart 的开关处）。
+  ///
+  /// 没有会话时恒为 [GalLookupAdmission.unknown]——**「还不知道」不是「不支持」**，
+  /// 拿它当"挡住"会让每次启动的头几百毫秒都误报一次原因文案。
+  ValueListenable<GalLookupAdmission> get admission => _admission;
+
+  /// runner 推上来的准入快照。只存，不解释：状态机在注入侧，这里做任何"补全"
+  /// 都是在猜。
+  void handleAdmission(GalLookupAdmission admission) {
+    _admission.value = admission;
+  }
 
   @visibleForTesting
   bool get debugSessionActive => _sessionActive;
@@ -290,6 +312,7 @@ class GalIngameLookupController {
   Future<void> stopForTesting() async {
     GalIngameLookupGamepadRoute.set(null);
     _sessionActive = false;
+    _admission.value = GalLookupAdmission.unknown;
     await _terminateCurrentLookup();
     final Future<void>? lookupDrain = _drainCompleter?.future;
     if (lookupDrain != null) await lookupDrain;
@@ -332,6 +355,10 @@ class GalIngameLookupController {
       if (active && !_pushedEnabled) await _syncEnabled();
       return;
     }
+    // 准入是**上一局**的事实，会话一换代/结束就必须丢掉。留着它，下一局（引擎不同、
+    // exe 不同）的设置页会照着上一局说话。新段的第一份快照由 runner 在 Open 之后
+    // 必发一条（哪怕内容是 Unknown），所以这里清空不留信息缺口。
+    _admission.value = GalLookupAdmission.unknown;
     if (active) {
       _sessionRouteEpoch++;
       _lookupRouteEpoch = 0;

@@ -11,6 +11,47 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class AdapterStructureTest(unittest.TestCase):
+    @staticmethod
+    def _strip_comments(source: str) -> str:
+        """剥掉 `//` 行注释与 `/* */` 块注释。
+
+        「顺序 / 不存在」类断言必须先剥：注释里出现同一个标识符会先被 index 命中，
+        把守卫变成恒真或恒假（本仓反复踩过的坑）。
+        """
+        out = []
+        i = 0
+        n = len(source)
+        while i < n:
+            if source.startswith("//", i):
+                j = source.find("\n", i)
+                i = n if j < 0 else j
+            elif source.startswith("/*", i):
+                j = source.find("*/", i + 2)
+                i = n if j < 0 else j + 2
+            else:
+                out.append(source[i])
+                i += 1
+        return "".join(out)
+
+    @staticmethod
+    def _member_body(source: str, signature: str) -> str:
+        """按大括号配平取成员函数体（含签名）。
+
+        **不要**改回「从签名往后取固定长度窗口」：这些成员是挨着定义的，窗口一溢出
+        就会读到下一个函数，断言恒真。
+        """
+        at = source.index(signature)
+        open_at = source.index("{", at)
+        depth = 0
+        for i in range(open_at, len(source)):
+            if source[i] == "{":
+                depth += 1
+            elif source[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    return source[at : i + 1]
+        raise AssertionError("unbalanced body for " + signature)
+
     def test_main_worker_only_uses_registry(self) -> None:
         source = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
         # 行数预算防的是「引擎逻辑重新爬回 dll_main」——真正的判据是下面那三条
@@ -80,16 +121,29 @@ class AdapterStructureTest(unittest.TestCase):
         source = (
             ROOT / "hook" / "adapters" / "sgre_lookup.inc"
         ).read_text(encoding="utf-8")
-        header = (
-            ROOT / "hook" / "adapters" / "sgre_lookup.h"
+        anchors = (
+            ROOT / "hook" / "adapters" / "sgre_anchors.h"
         ).read_text(encoding="utf-8")
         detour = source.split("void __fastcall SgreTextDrawDetour", 1)[1]
         detour = detour.split("bool InstallSgreLookupSensor", 1)[0]
         snapshot = detour.index("CaptureSgreLookupDrawState(text_surface)")
         original = detour.index("g_sgre_text_draw_original(text_surface)")
         self.assertLess(snapshot, original)
-        self.assertIn("kSgreTextDrawRva", header)
-        self.assertIn("kSgreScenarioTextVtableRva", header)
+        # The measured draw boundary lives in the known-build table; the hook
+        # site itself reads the resolved anchor set and never a raw constant.
+        self.assertIn("kSgreTextDrawRva", anchors)
+        self.assertIn("kSgreScenarioTextVtableRva", anchors)
+        self.assertIn("kSgreKnownBuilds", anchors)
+        install = source.split("bool InstallSgreLookupSensor", 1)[1]
+        install = install.split("bool ReadLatestSgreLookupCapture", 1)[0]
+        self.assertNotIn("kSgreTextDrawRva", install)
+        self.assertNotIn("kSgreScenarioTextVtableRva", install)
+        self.assertIn("g_sgre_anchors.text_draw.rva", install)
+        self.assertIn("g_sgre_anchors.scenario_text_vtable.rva", install)
+        self.assertLess(
+            install.index("!g_sgre_anchors.lookup_sensor_available()"),
+            install.index("g_sgre_anchors.text_draw.rva"),
+        )
         self.assertIn("kSgreDrawVisibleGlyphsOffset", source)
         self.assertIn("kSgreGlyphCharacterOffset", source)
         self.assertIn("kSgreGlyphDrawXOffset", source)
@@ -719,6 +773,119 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("DispatchNewModules();", source)
         self.assertIn("onModuleLoaded(entry.szModule);", source)
 
+    def test_lookup_admission_converges_on_a_settled_module_table(self) -> None:
+        """收敛闸必须是「模块表稳定了」，不能是「扫过一次」。
+
+        `modules_seeded_` 在注入完成的第 1 拍就成立，而 KiriKiri / Ren'Py / Unity
+        的 probe 全是迟到信号（KiriKiri 要等第一句有声台词把 wuvorbis.dll 拉进来）。
+        拿它当收敛闸 = 对着唯一已发布查词的引擎自信地说「本引擎没做查词」。
+        """
+        source = (ROOT / "hook" / "adapter_registry.inc").read_text(
+            encoding="utf-8"
+        )
+        publish = self._member_body(source, "void PublishLookupAdmissionSummary()")
+        # 先剥注释：下面那条 assertNotIn 查的是标识符，而这段代码的解释性注释里
+        # 就写着 modules_seeded_ —— 不剥的话守卫恒红（本仓「顺序守卫必剥注释」）。
+        publish_code = self._strip_comments(publish)
+        self.assertIn("module_settle_.settled(", publish_code)
+        self.assertNotIn("modules_seeded_", publish_code)
+
+        dispatch = self._member_body(source, "void DispatchNewModules()")
+        dispatch_code = self._strip_comments(dispatch)
+        self.assertIn("module_settle_.OnScanCompleted(", dispatch_code)
+        # 快照失败的早返回必须排在 OnScanCompleted 之前：那是「没观测到」，不是
+        # 「观测到没变」，混同会让连续失败的进程假装自己稳定了。
+        self.assertLess(
+            dispatch_code.index("if (snapshot == INVALID_HANDLE_VALUE) return;"),
+            dispatch_code.index("module_settle_.OnScanCompleted("),
+        )
+
+    def test_engine_unsupported_carries_the_host_executable_digest(self) -> None:
+        """判成「不支持或未识别」时必须附上 exe 摘要，否则那句承诺是空的。
+
+        这一档的定义就是**没有任何 adapter 认领**，各家私有摘要缓冲（Leaf/Siglus）
+        在那一刻全部够不着——所以只能读共享槽。少了这一步，用户报上来的只有
+        「用不了」，我们这边一点可查的东西都没有。
+        """
+        source = (ROOT / "hook" / "adapter_registry.inc").read_text(
+            encoding="utf-8"
+        )
+        publish = self._strip_comments(
+            self._member_body(source, "void PublishLookupAdmissionSummary()")
+        )
+        gate = publish.index("kLookupAdmissionEngineUnsupported")
+        # 摘要必须写在收敛那一支里面，而不是函数别处顺手填一下。
+        self.assertIn("HostExecutableSha256Hex()", publish[gate:])
+
+        # 共享槽必须真有人填：Leaf 的 profile 解析对任何 x86 游戏都会跑到，是这个槽
+        # 在「谁都没认领」场合仍然满着的唯一来源。它要是改回只写自己的私有缓冲，
+        # 上面那句就恒发空串——而空串是合法值，测不出来。
+        leaf = (
+            ROOT / "hook" / "adapters" / "leaf_aquaplus_adapter.inc"
+        ).read_text(encoding="utf-8")
+        self.assertIn("PublishHostExecutableSha256(", self._strip_comments(leaf))
+
+    def test_leaf_admission_does_not_claim_identity_rejected(self) -> None:
+        """Leaf 报不出 IdentityRejected —— 它的 probe() 本身就是 hash 门。
+
+        registry 只对 `probe()` 成立的 adapter 问话，而 Leaf 的
+        `probe() == IsLeafAquaplusProfileMatched()`：身份不符时它根本不会被问到，
+        写在那里的分支永远走不到，却会让人以为「白2 换个发行版会显示身份被拒」。
+        真实去向是「没人认领 → 模块表稳定后收敛成 EngineUnsupported」。
+        对照 Siglus：probe() 是 IsSiglusEngine()，与 hash 门是两回事，它那条是活的。
+        """
+        leaf = (
+            ROOT / "hook" / "adapters" / "leaf_aquaplus_adapter.inc"
+        ).read_text(encoding="utf-8")
+        admission = self._strip_comments(
+            self._member_body(
+                leaf,
+                "fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override",
+            )
+        )
+        self.assertNotIn("kLookupAdmissionIdentityRejected", admission)
+
+        siglus = (
+            ROOT / "hook" / "adapters" / "siglus_lookup.inc"
+        ).read_text(encoding="utf-8")
+        siglus_admission = self._strip_comments(
+            self._member_body(
+                siglus,
+                "fushi_voice_hook::LookupAdmissionReport SiglusLookupAdmission()",
+            )
+        )
+        self.assertIn("kLookupAdmissionIdentityRejected", siglus_admission)
+
+    def test_sgre_admission_reports_identity_rejected_with_digest(self) -> None:
+        """SGRE 与 Leaf 相反：IdentityRejected 是活路径，且必须带 exe 摘要。
+
+        Leaf 的 `probe()` 就是它的 hash 门，身份不符时 registry 根本不问它，
+        所以那条分支写了也走不到（见上一条）。SGRE 改成家族探测之后
+        （`MatchesSgreFamily`：exe 旁边有没有 voice_body.bin），精确 hash 只用来
+        挑量好的锚点——「是这个游戏、但这个 build 的查词锚点连签名扫描都没解出来」
+        因此成了可达且**终局**的状态：传感器永远装不上。
+
+        协议规定这一档「lookup_executable_sha256 必须已填」，所以摘要格式化也一并钉住：
+        报成 IdentityAccepted 会让用户一直等一个不会到来的门，摘要留空则让他连版本
+        都报不出来。
+        """
+        adapter = (
+            ROOT / "hook" / "adapters" / "sgre_adapter.inc"
+        ).read_text(encoding="utf-8")
+        admission = self._strip_comments(
+            self._member_body(
+                adapter,
+                "fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override",
+            )
+        )
+        self.assertIn("kLookupAdmissionIdentityRejected", admission)
+        self.assertIn("FormatSha256Hex", admission)
+        self.assertIn("g_sgre_executable_sha256", admission)
+        # 终局判据必须是「锚点已解析且传感器锚点没解出来」，不能退化成
+        # 「传感器还没装上」——后者在 install() 之前恒真，会把等门期误报成拒绝。
+        self.assertIn("g_sgre_anchors_resolved", admission)
+        self.assertIn("lookup_sensor_available()", admission)
+
     def test_unity_text_adapter_supports_legacy_ui_text(self) -> None:
         source = (
             ROOT / "hook" / "adapters" / "unity_adapter.inc"
@@ -1020,10 +1187,18 @@ class AdapterStructureTest(unittest.TestCase):
         generic = (
             ROOT / "hook" / "adapters" / "windows_audio_adapter.inc"
         ).read_text(encoding="utf-8")
-        self.assertIn("MatchesSgreProfile", adapter)
+        # Family membership (voice_body.bin next to the executable) is the
+        # probe; the executable hash only selects measured anchors.
+        self.assertIn("MatchesSgreFamily", adapter)
+        self.assertNotIn("MatchesSgreProfile", adapter)
         self.assertIn("RegisterXAudioCompressedResourceHandler", adapter)
         self.assertIn("FindSgreVoiceArchiveResourceParts", adapter)
-        self.assertIn("kSgreExecutableSha256", profile)
+        self.assertIn("FindSgreKnownBuild", profile)
+        self.assertIn("ResolveSgreRuntimeAnchors", profile)
+        anchors = (ROOT / "hook" / "adapters" / "sgre_anchors.h").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("kSgreExecutableSha256", anchors)
         self.assertIn("HasXAudioCompressedResourceHandler", generic)
         self.assertFalse((ROOT / "hook" / "xaudio_pcm_capture_xapo.h").exists())
         self.assertNotIn("700", generic)
@@ -1053,14 +1228,22 @@ class AdapterStructureTest(unittest.TestCase):
         for forbidden in ("Sgre", "sgre", "voice_body"):
             self.assertNotIn(forbidden, adapter, forbidden)
         self.assertIn("RegisterXAudioCompressedResourceHandler", sgre)
-        # Identity is the executable hash, i.e. the same anchor the Luna text
-        # profile keys on, so text and audio identity cannot drift apart.
-        # An executable *file name* would be a distribution property, not an
-        # engine identity, and CLAUDE.md forbids enabling shared middleware on
-        # that kind of match.
-        self.assertIn("kSgreExecutableSha256", profile)
+        # Family identity is the wind3d11 voice archive next to the executable
+        # -- the very data contract the audio proof checks membership against.
+        # Build-specific addresses come from the measured hash table or a
+        # unique signature hit, never from an executable *file name*: that is
+        # a distribution property, not an engine identity, and CLAUDE.md
+        # forbids enabling shared middleware on that kind of match.
+        self.assertIn("voice_body.bin", profile)
         self.assertNotIn("sgre_steam.exe", profile)
         self.assertNotIn("sgre_steam.exe", adapter)
+        anchors = (ROOT / "hook" / "adapters" / "sgre_anchors.h").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("kSgreExecutableSha256", anchors)
+        self.assertIn("kSgreKnownBuilds", anchors)
+        self.assertNotIn("sgre_steam.exe", anchors)
+        self.assertNotIn("executable_names", anchors)
 
     def test_unclaimed_xwma_submissions_are_published_not_dropped(self) -> None:
         adapter = (

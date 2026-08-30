@@ -82,11 +82,11 @@ class GalHookTextWindowRect {
   bool get isValid => width > 0 && height > 0;
 
   Map<String, Object?> toMap() => <String, Object?>{
-    'left': left,
-    'top': top,
-    'width': width,
-    'height': height,
-  };
+        'left': left,
+        'top': top,
+        'width': width,
+        'height': height,
+      };
 
   static GalHookTextWindowRect? fromMap(Map<Object?, Object?> map) {
     int? value(String key) => _finiteWireInt(map[key]);
@@ -100,13 +100,12 @@ class GalHookTextWindowRect {
   }
 }
 
-typedef GalHookTextLookupHandler =
-    FutureOr<void> Function(
-      String lineId,
-      String text,
-      int index,
-      Rect? wordRect,
-    );
+typedef GalHookTextLookupHandler = FutureOr<void> Function(
+  String lineId,
+  String text,
+  int index,
+  Rect? wordRect,
+);
 typedef GalHookTextEventHandler = FutureOr<void> Function();
 typedef GalHookTextLockHandler = FutureOr<void> Function(bool locked);
 
@@ -178,11 +177,11 @@ class GalLookupHit {
 
   /// 命中字形矩形（与 [coordinateSpace] / view 相同的物理像素域）。
   Rect get glyphRect => Rect.fromLTWH(
-    glyphX.toDouble(),
-    glyphY.toDouble(),
-    glyphW.toDouble(),
-    glyphH.toDouble(),
-  );
+        glyphX.toDouble(),
+        glyphY.toDouble(),
+        glyphW.toDouble(),
+        glyphH.toDouble(),
+      );
 
   /// [charIndex] 是否真的指得到 [line] 里的一个字。**硬门**：指不到就丢弃，不去猜
   /// ——猜出来的下标会让高亮与查词落在完全无关的字上。
@@ -315,8 +314,105 @@ class GalLookupInput {
   }
 }
 
+/// 游戏内查词**准入**：本局游戏到底能不能游戏内查词，不能的话卡在哪一步。
+///
+/// 与「投帧失败」（`GalLookupResult.error`）是两件事：那个回答「这一帧为什么没进去」，
+/// 这个回答「这一局压根有没有资格」。协议真值是 `voice_hook_ipc.h` 的
+/// `LookupAdmissionState`（v19），host 侧只做单值映射，**不做位或、不排优先级**——
+/// 状态机同一时刻只有一个状态，能被表达出来的不可能状态就是 bug 的来源。
+enum GalLookupAdmissionState {
+  /// 还不知道：helper 还没起来、或 adapter 还没上报。
+  ///
+  /// 🔴 **绝不能**当成「不支持」：每局游戏启动的头几百毫秒都停在这里，混淆两者等于
+  /// 每次启动都误报一次"本引擎不支持"的原因文案。
+  unknown(0),
+
+  /// 命中的引擎 adapter 压根没做查词传感器。等新版本，不是 bug。
+  engineUnsupported(1),
+
+  /// 引擎做了传感器，但当前游戏 exe 不在它的精确 SHA-256 白名单里
+  /// （hash-pinned fail closed）。此时 [GalLookupAdmission.executableSha256] 有值，
+  /// 必须显示给用户——那是他报版本的唯一凭据。
+  identityRejected(2),
+
+  /// 身份通过，传感器还没装上（还在等开关 / 主窗 / D3D 设备 / 字节签名等门）。
+  identityAccepted(3),
+
+  /// 传感器已装。不等于"卡片一定出得来"——几何有没有真采到是另一回事。
+  sensorInstalled(4);
+
+  const GalLookupAdmissionState(this.wireValue);
+
+  /// 与 `voice_hook_ipc.h::LookupAdmissionState` 逐值对应的线上值。
+  final int wireValue;
+
+  /// 这个状态是否把本局的游戏内查词整个挡在门外（UI 据此换副标题说明原因、并把
+  /// 「复制 exe 摘要」那一行显示出来；**开关本身不置灰**，理由见 settings_schema_game.dart）。
+  ///
+  /// 🔴 判据只有这一份，别在 UI 层各写一遍。尤其 [unknown] **不在其内**：每局游戏
+  /// 启动的头几百毫秒都停在 unknown（helper 还没起来 / adapter 还没上报），把它算作
+  /// "挡住"等于每次启动都误报一次"本引擎不支持"。[identityAccepted] 与
+  /// [sensorInstalled] 同理——那是"能用/还在等其它门"，不是"没资格"。
+  bool get blocksLookup =>
+      this == engineUnsupported || this == identityRejected;
+
+  /// 本构建不认识的值一律回落 [unknown]——绝不猜。新 helper 加了状态而旧 app 去
+  /// 硬猜，猜错的方向恰好是"说它不支持"，那正是最伤的误报。
+  static GalLookupAdmissionState fromWire(int value) {
+    for (final GalLookupAdmissionState state in values) {
+      if (state.wireValue == value) return state;
+    }
+    return unknown;
+  }
+}
+
+/// 一份准入快照。值语义：内容相同即相等，免得 ValueNotifier 每拍都通知。
+@immutable
+class GalLookupAdmission {
+  const GalLookupAdmission({
+    required this.state,
+    required this.executableSha256,
+  });
+
+  /// 会话开始前 / 会话结束后的复位值。
+  static const GalLookupAdmission unknown = GalLookupAdmission(
+    state: GalLookupAdmissionState.unknown,
+    executableSha256: '',
+  );
+
+  final GalLookupAdmissionState state;
+
+  /// 当前游戏主 exe 的小写十六进制 SHA-256；只有
+  /// [GalLookupAdmissionState.identityRejected] 时保证有值，其余状态为空串。
+  final String executableSha256;
+
+  static GalLookupAdmission fromMap(Map<Object?, Object?> map) {
+    return GalLookupAdmission(
+      state: GalLookupAdmissionState.fromWire(
+        (map['state'] as num?)?.toInt() ?? 0,
+      ),
+      executableSha256: map['executableSha256']?.toString() ?? '',
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is GalLookupAdmission &&
+      other.state == state &&
+      other.executableSha256 == executableSha256;
+
+  @override
+  int get hashCode => Object.hash(state, executableSha256);
+
+  @override
+  String toString() =>
+      'GalLookupAdmission(${state.name}, sha=$executableSha256)';
+}
+
 typedef GalLookupHitHandler = FutureOr<void> Function(GalLookupHit hit);
 typedef GalLookupInputHandler = FutureOr<void> Function(GalLookupInput input);
+typedef GalLookupAdmissionHandler =
+    FutureOr<void> Function(GalLookupAdmission admission);
 
 /// v19 attached-surface identity. Every attached call and event carries both
 /// epochs; callers can therefore discard delayed events after a game/window
@@ -887,10 +983,10 @@ enum GalLookupGeometryAdmissionMode {
 /// native 侧穿透态被否决 / 变更时的回传（BUG-951）。native 建不出逃生工具条窗
 /// 时会拒绝进入穿透并把自己摁回 false；Dart 必须跟着退回，否则它的标志卡在
 /// true，用户下一次按 `↗` 会变成一次看不出反应的空点击。
-typedef GalHookTextPassThroughHandler =
-    FutureOr<void> Function(bool passThrough);
-typedef GalHookTextBoundsHandler =
-    FutureOr<void> Function(GalHookTextWindowRect rect);
+typedef GalHookTextPassThroughHandler = FutureOr<void> Function(
+    bool passThrough);
+typedef GalHookTextBoundsHandler = FutureOr<void> Function(
+    GalHookTextWindowRect rect);
 
 /// Hook 台词浮窗的默认字号（逻辑 px）。
 ///
@@ -934,6 +1030,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
   static GalAttachedCalibrationHandler? _onAttachedCalibrationCommitted;
   static GalAttachedCalibrationCancelledHandler?
   _onAttachedCalibrationCancelled;
+  static GalLookupAdmissionHandler? _onGalLookupAdmission;
 
   static void setEventHandlers({
     GalHookTextLookupHandler? onLookupText,
@@ -953,6 +1050,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     GalAttachedSurfaceStateHandler? onAttachedSurfaceStateChanged,
     GalAttachedCalibrationHandler? onAttachedCalibrationCommitted,
     GalAttachedCalibrationCancelledHandler? onAttachedCalibrationCancelled,
+    GalLookupAdmissionHandler? onGalLookupAdmission,
   }) {
     _onLookupText = onLookupText;
     _onToggleFollow = onToggleFollow;
@@ -971,6 +1069,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     _onAttachedSurfaceStateChanged = onAttachedSurfaceStateChanged;
     _onAttachedCalibrationCommitted = onAttachedCalibrationCommitted;
     _onAttachedCalibrationCancelled = onAttachedCalibrationCancelled;
+    _onGalLookupAdmission = onGalLookupAdmission;
     _instance.channel.setMethodCallHandler(_handleNativeCall);
   }
 
@@ -992,14 +1091,14 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     _onAttachedSurfaceStateChanged = null;
     _onAttachedCalibrationCommitted = null;
     _onAttachedCalibrationCancelled = null;
+    _onGalLookupAdmission = null;
     _instance.channel.setMethodCallHandler(null);
   }
 
   static Future<void> _handleNativeCall(MethodCall call) async {
     final Object? arguments = call.arguments;
-    final Map<Object?, Object?> args = arguments is Map
-        ? arguments.cast<Object?, Object?>()
-        : const {};
+    final Map<Object?, Object?> args =
+        arguments is Map ? arguments.cast<Object?, Object?>() : const {};
     switch (call.method) {
       case 'lookupText':
         if (args['surface'] == GalAttachedLookupHitV19.surface) {
@@ -1072,6 +1171,10 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
         final GalAttachedCalibrationCancelledEvent? event =
             GalAttachedCalibrationCancelledEvent.fromMap(args);
         if (event != null) await _onAttachedCalibrationCancelled?.call(event);
+      // 准入快照：runner 只在 lookup_admission_seq 变过时推，且与查词开关正交
+      // （开关关着照样推）。不做任何过滤——"还不知道"也是必须送达的状态。
+      case 'onGalLookupAdmission':
+        await _onGalLookupAdmission?.call(GalLookupAdmission.fromMap(args));
         break;
       default:
         break;
@@ -1117,6 +1220,10 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     bool passThrough = false,
     bool locked = false,
     bool hoverAutoLookup = false,
+    bool clickLookupEnabled = true,
+    int lookupTrigger = 0,
+    bool toolbarAutoHide = true,
+    bool passThroughBlocksMouse = true,
     List<String>? slotTooltips,
   }) {
     return _instance.showImpl(<String, Object?>{
@@ -1145,7 +1252,18 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       'windowWidth': 900.0,
       'windowHeight': 140.0,
       'cornerRadius': cornerRadius,
-      'clickLookupEnabled': true,
+      // 单击查词：native 侧一直支持，Dart 侧此前**写死 true**，于是设置里根本没有
+      // 这个开关。用户「至少开启穿透的时候我不是很想单击点到单词，还是习惯用侧键
+      // 查」——现在由偏好决定。
+      'clickLookupEnabled': clickLookupEnabled,
+      // 查词触发方式：0 = 左键单击 / 1 = 中键 / 2 = 侧键。与 clickLookupEnabled
+      // 正交（可以既关单击、又用侧键查）。
+      'lookupTrigger': lookupTrigger,
+      // 工具条自动隐藏（LunaHook 式）：平时整条隐藏，鼠标进入台词框才现身。
+      'toolbarAutoHide': toolbarAutoHide,
+      // 穿透时正文是否仍拦截落在文字行盒上的鼠标。false = 连字也不接，整窗对游戏
+      // 彻底透明。
+      'passThroughBlocksMouse': passThroughBlocksMouse,
       // 置顶（📌 按钮）按会话复位为「开」，与 locked / passThrough / following 同
       // 规矩：上一局用户关掉置顶，不该让这一局的浮窗藏在全屏游戏后面。
       'topmost': true,
@@ -1251,6 +1369,43 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     if (!_instance.isSupported) return;
     await _instance.channel.invokeMethod<void>(
       'setHoverAutoLookup',
+      <String, Object?>{'enabled': enabled},
+    );
+  }
+
+  /// 查词触发方式 live 下发（0 = 左键 / 1 = 中键 / 2 = 侧键）。
+  static Future<void> setLookupTrigger(int trigger) async {
+    if (!_instance.isSupported) return;
+    await _instance.channel.invokeMethod<void>(
+      'setLookupTrigger',
+      <String, Object?>{'trigger': trigger},
+    );
+  }
+
+  /// 单击查词开关 live 下发。native 侧的 `setClickLookupEnabled` 一直都在，缺的是
+  /// Dart 这一层包装（此前 show 载荷里写死 true）。
+  static Future<void> setClickLookupEnabled(bool enabled) async {
+    if (!_instance.isSupported) return;
+    await _instance.channel.invokeMethod<void>(
+      'setClickLookupEnabled',
+      <String, Object?>{'enabled': enabled},
+    );
+  }
+
+  /// 工具条自动隐藏 live 下发。
+  static Future<void> setToolbarAutoHide(bool enabled) async {
+    if (!_instance.isSupported) return;
+    await _instance.channel.invokeMethod<void>(
+      'setToolbarAutoHide',
+      <String, Object?>{'enabled': enabled},
+    );
+  }
+
+  /// 穿透时是否拦截鼠标 live 下发。
+  static Future<void> setPassThroughBlocksMouse(bool enabled) async {
+    if (!_instance.isSupported) return;
+    await _instance.channel.invokeMethod<void>(
+      'setPassThroughBlocksMouse',
       <String, Object?>{'enabled': enabled},
     );
   }
@@ -1450,16 +1605,16 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     if (!_instance.isSupported) return GalLookupCallResult.unsupported;
     final Object? reply = await _instance.channel
         .invokeMethod<Object?>('galLookupPresent', <String, Object?>{
-          'seq': seq,
-          'anchorX': anchorX,
-          'anchorY': anchorY,
-          'highlightStart': highlightStart,
-          'highlightLen': highlightLen,
-          'cardWidth': cardWidth,
-          'cardHeight': cardHeight,
-          'viewWidth': viewWidth,
-          'viewHeight': viewHeight,
-        });
+      'seq': seq,
+      'anchorX': anchorX,
+      'anchorY': anchorY,
+      'highlightStart': highlightStart,
+      'highlightLen': highlightLen,
+      'cardWidth': cardWidth,
+      'cardHeight': cardHeight,
+      'viewWidth': viewWidth,
+      'viewHeight': viewHeight,
+    });
     return GalLookupCallResult.fromReply(reply);
   }
 
@@ -1479,12 +1634,12 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     if (!_instance.isSupported) return GalLookupCallResult.unsupported;
     final Object? reply = await _instance.channel
         .invokeMethod<Object?>('galLookupPresentHighlight', <String, Object?>{
-          'seq': seq,
-          'anchorX': anchorX,
-          'anchorY': anchorY,
-          'highlightStart': highlightStart,
-          'highlightLen': highlightLen,
-        });
+      'seq': seq,
+      'anchorX': anchorX,
+      'anchorY': anchorY,
+      'highlightStart': highlightStart,
+      'highlightLen': highlightLen,
+    });
     return GalLookupCallResult.fromReply(reply);
   }
 
@@ -1527,13 +1682,13 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     return GalLookupCallResult.fromReply(
       await _instance.channel
           .invokeMethod<Object?>('galLookupInput', <String, Object?>{
-            'seq': input.seq,
-            'x': input.x,
-            'y': input.y,
-            'kind': input.kind,
-            'wheel': input.wheel,
-            'keys': input.keys,
-          }),
+        'seq': input.seq,
+        'x': input.x,
+        'y': input.y,
+        'kind': input.kind,
+        'wheel': input.wheel,
+        'keys': input.keys,
+      }),
     );
   }
 }

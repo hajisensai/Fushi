@@ -178,6 +178,32 @@ mixin _FushiDbContentMisc
         ),
       );
 
+  /// v92：删某媒体的 `study_segments` 事实 + 立按身份的墓碑（同一事务）。段
+  /// `updatedAt > deletedAt` 的后续新写自然复活，不需要显式清碑。
+  Future<int> deleteStudySegmentsForMedia({
+    required String mediaKind,
+    required String mediaKey,
+  }) =>
+      transaction(() async {
+        final int removed = await (delete(studySegments)
+              ..where((t) =>
+                  t.mediaKind.equals(mediaKind) & t.mediaKey.equals(mediaKey)))
+            .go();
+        await into(studySegmentTombstones).insertOnConflictUpdate(
+          StudySegmentTombstonesCompanion.insert(
+            mediaKind: mediaKind,
+            mediaKey: mediaKey,
+            deletedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
+        return removed;
+      });
+
+  /// v92：清空某媒体种类的全部段（统计页「清空全部」）。与 legacy 的 clearAll* 同律：
+  /// 整体重置不逐媒体立碑（会永久毒化身份空间）。
+  Future<int> clearStudySegments(String mediaKind) =>
+      (delete(studySegments)..where((t) => t.mediaKind.equals(mediaKind))).go();
+
   /// 清除 (title, sourceType) 的统计删除墓碑（用户又读该书 / 查词、新写当日统计时
   /// 调用，让该书统计重新生效）。返回删除的行数（无墓碑时 0）。
   Future<int> clearStatisticsTombstone(String title, String sourceType) =>
@@ -204,8 +230,19 @@ mixin _FushiDbContentMisc
   /// 不删 favorite_words / favorite_sentences（收藏）。小时日志（reading_hourly_logs）
   /// 只按 (dateKey, hour) 聚合、不带 title，无法按书精确清理，故不动（全局时段分布仍
   /// 含该书历史贡献，属已知精度边界）。
-  Future<void> deleteReadingStatisticsForTitle(String title) =>
+  ///
+  /// v92：[bookKey] 非空时同一事务连带删该书的 `study_segments` 事实并立按身份的
+  /// 墓碑（legacy 行仍按 title 删、按 (title, sourceType) 立碑——两套墓碑各管各的
+  /// wire 家族）。
+  Future<void> deleteReadingStatisticsForTitle(
+    String title, {
+    String? bookKey,
+  }) =>
       transaction(() async {
+        if (bookKey != null && bookKey.isNotEmpty) {
+          await deleteStudySegmentsForMedia(
+              mediaKind: kActivityMediaBook, mediaKey: bookKey);
+        }
         await (delete(readingStatistics)..where((t) => t.title.equals(title)))
             .go();
         await (delete(lookupMiningCounters)
@@ -243,6 +280,11 @@ mixin _FushiDbContentMisc
     bool includeUnattributed = false,
   }) =>
       transaction(() async {
+        // v92：有身份即连带删 study_segments 事实 + 按身份立碑。
+        if (bookUid != null && bookUid.isNotEmpty) {
+          await deleteStudySegmentsForMedia(
+              mediaKind: kActivityMediaVideo, mediaKey: bookUid);
+        }
         // 本 tile 自身的 title 恒立碑（被删行的防复活；同名幸存者被连带压制是
         // wire title 粒度的已知限制，见方法 doc）。
         final Set<String> tombstoneTitles = <String>{title};
@@ -354,6 +396,7 @@ mixin _FushiDbContentMisc
   /// 书的统计。云同步开启时下次聚合仍可能从云端 MAX-union 回灌（清空是本地动作，云端为
   /// 权威源）——属已知边界，不在本方法处理。
   Future<void> clearAllReadingStatistics() => transaction(() async {
+        await clearStudySegments(kActivityMediaBook);
         await delete(readingStatistics).go();
         await delete(readingHourlyLogs).go();
         await (delete(lookupMiningCounters)
@@ -370,6 +413,7 @@ mixin _FushiDbContentMisc
   /// video 行)。与 [clearAllReadingStatistics] 对称，同样不动收藏 / 制卡历史 / 视频本体，
   /// 也不写墓碑。
   Future<void> clearAllVideoStatistics() => transaction(() async {
+        await clearStudySegments(kActivityMediaVideo);
         await delete(videoWatchStatistics).go();
         await delete(videoHourlyLogs).go();
         await (delete(lookupMiningCounters)
@@ -513,6 +557,123 @@ mixin _FushiDbContentMisc
         ),
       );
 
+  // ── manga_chapter_states（v89）─────────────────────────────────────
+  //
+  // 「章」的读取状态。为什么不并进 reader_positions：那张表 bookUid 是
+  // unique()，一本书恒一条，表达不了「这本书的第 37 章读到第 8 页」。
+
+  /// 一本书的全部章状态，按 `chapterKey` 索引。
+  ///
+  /// 作品页一次读全量而不是逐章查：章节列表本来就要整屏渲染，N 次单行查询在
+  /// 几百章的长篇上是纯粹的往返浪费。
+  Future<Map<String, MangaChapterStateRow>> getMangaChapterStates(
+    String bookUid,
+  ) async {
+    if (bookUid.isEmpty) return const <String, MangaChapterStateRow>{};
+    final List<MangaChapterStateRow> rows = await (select(mangaChapterStates)
+          ..where((t) => t.bookUid.equals(bookUid)))
+        .get();
+    return <String, MangaChapterStateRow>{
+      for (final MangaChapterStateRow row in rows) row.chapterKey: row,
+    };
+  }
+
+  Future<MangaChapterStateRow?> getMangaChapterState({
+    required String bookUid,
+    required String chapterKey,
+  }) {
+    if (bookUid.isEmpty || chapterKey.isEmpty) {
+      return Future<MangaChapterStateRow?>.value();
+    }
+    return (select(mangaChapterStates)
+          ..where(
+            (t) => t.bookUid.equals(bookUid) & t.chapterKey.equals(chapterKey),
+          ))
+        .getSingleOrNull();
+  }
+
+  /// 记录一次章内进度。
+  ///
+  /// [readAt] 只在**读完**该章时传：它是「已读」的唯一判据，一旦置上就不再被
+  /// 后续的普通进度写入抹掉（重读一遍不该把已读标记退回未读）。传 null 表示
+  /// 「本次不改变已读状态」，而不是「标记未读」——清除已读走
+  /// [clearMangaChapterRead]，让两种意图在调用点就分开。
+  Future<void> saveMangaChapterState({
+    required String bookUid,
+    required String chapterKey,
+    required int lastPage,
+    int lastFraction = -1,
+    int? pageCount,
+    int? readAt,
+  }) async {
+    if (bookUid.isEmpty || chapterKey.isEmpty) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final MangaChapterStateRow? existing = await getMangaChapterState(
+      bookUid: bookUid,
+      chapterKey: chapterKey,
+    );
+    await into(mangaChapterStates).insertOnConflictUpdate(
+      MangaChapterStatesCompanion.insert(
+        bookUid: bookUid,
+        chapterKey: chapterKey,
+        lastPage: Value<int>(lastPage),
+        lastFraction: Value<int>(lastFraction),
+        // 整行覆盖 upsert 会清空没传的列，所以未知页数必须回填既有值而不是
+        // 让它退回 NULL。
+        pageCount: Value<int?>(pageCount ?? existing?.pageCount),
+        readAt: Value<int?>(readAt ?? existing?.readAt),
+        updatedAt: now,
+      ),
+    );
+  }
+
+  /// 显式把一章标回未读（作品页的「标为未读」动作）。
+  Future<void> clearMangaChapterRead({
+    required String bookUid,
+    required String chapterKey,
+  }) async {
+    if (bookUid.isEmpty || chapterKey.isEmpty) return;
+    await (update(mangaChapterStates)
+          ..where(
+            (t) => t.bookUid.equals(bookUid) & t.chapterKey.equals(chapterKey),
+          ))
+        .write(
+      MangaChapterStatesCompanion(
+        readAt: const Value<int?>(null),
+        updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+  }
+
+  /// 批量标记已读（作品页的「标记此章及更早为已读」）。
+  Future<void> markMangaChaptersRead({
+    required String bookUid,
+    required List<String> chapterKeys,
+  }) async {
+    if (bookUid.isEmpty || chapterKeys.isEmpty) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await batch((Batch batch) {
+      for (final String chapterKey in chapterKeys) {
+        if (chapterKey.isEmpty) continue;
+        batch.insert(
+          mangaChapterStates,
+          MangaChapterStatesCompanion.insert(
+            bookUid: bookUid,
+            chapterKey: chapterKey,
+            readAt: Value<int?>(now),
+            updatedAt: now,
+          ),
+          onConflict: DoUpdate(
+            (_) => MangaChapterStatesCompanion(
+              readAt: Value<int?>(now),
+              updatedAt: Value<int>(now),
+            ),
+          ),
+        );
+      }
+    });
+  }
+
   /// Rewrites a book's on-disk content paths (full-data backup restore rebases
   /// absolute paths to this device's roots). Only supplied fields are written;
   /// null leaves a column unchanged.
@@ -606,6 +767,11 @@ mixin _FushiDbContentMisc
           await (delete(bookCustomCss)..where((t) => t.bookUid.equals(bookUid)))
               .go();
           await (delete(revealedImages)
+                ..where((t) => t.bookUid.equals(bookUid)))
+              .go();
+          // v89：每章状态同族（uid 键、刻意无 FK），随书一起清，否则重装同一部
+          // 在线漫画会捡到上一次的已读标记。
+          await (delete(mangaChapterStates)
                 ..where((t) => t.bookUid.equals(bookUid)))
               .go();
         }

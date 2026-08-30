@@ -36,6 +36,189 @@ std::vector<uint8_t> MakeArchive(const std::vector<uint8_t>& payload,
 
 }  // namespace
 
+void TestAnchorResolution() {
+  using namespace fushi_voice_hook;
+
+  // Measured build: the hash row supplies every anchor and needs no image.
+  SgreImageView empty;
+  const SgreAnchorSet known =
+      ResolveSgreAnchors(kSgreExecutableSha256.data(),
+                         kSgreExecutableSha256.size(), empty);
+  assert(known.known_build && known.complete());
+  assert(known.text_draw.rva == 0x35aa0u &&
+         known.text_draw.source == SgreAnchorSource::kKnownBuild);
+  assert(known.scenario_text_vtable.rva == 0x5be330u &&
+         known.scenario_text_vtable.source == SgreAnchorSource::kKnownBuild);
+  assert(known.direct_input_mouse_device.rva == 0xA96E18u &&
+         known.direct_input_mouse_device.source ==
+             SgreAnchorSource::kKnownBuild);
+
+  // Unknown build with the shipped (still empty) signatures: the attempt is
+  // made and every anchor reports why it stayed unresolved. Nothing is hooked
+  // at a guessed address.
+  auto other_build = kSgreExecutableSha256;
+  other_build[31] ^= 0x01;
+  const SgreAnchorSet unknown =
+      ResolveSgreAnchors(other_build.data(), other_build.size(), empty);
+  assert(!unknown.known_build);
+  assert(!unknown.lookup_sensor_available());
+  assert(!unknown.direct_input_shield_available());
+  assert(unknown.text_draw.source == SgreAnchorSource::kSignatureEmpty);
+  assert(unknown.scenario_text_vtable.source ==
+         SgreAnchorSource::kSignatureEmpty);
+  assert(unknown.direct_input_mouse_device.source ==
+         SgreAnchorSource::kSignatureEmpty);
+  assert(unknown.text_draw.rva == 0 && unknown.scenario_text_vtable.rva == 0 &&
+         unknown.direct_input_mouse_device.rva == 0);
+  // A failed hash (no digest at all) takes the same path as an unknown one.
+  const SgreAnchorSet unhashed = ResolveSgreAnchors(nullptr, 0, empty);
+  assert(!unhashed.known_build &&
+         unhashed.text_draw.source == SgreAnchorSource::kSignatureEmpty);
+
+  // Pattern grammar: space separated hex pairs or "??" wildcards, nothing else.
+  SgrePatternByte bytes[8];
+  assert(ParseSgreSignaturePattern("48 8B ?? 24", bytes, 8) == 4);
+  assert(bytes[0].value == 0x48 && !bytes[0].wildcard);
+  assert(bytes[2].wildcard && bytes[3].value == 0x24 && !bytes[3].wildcard);
+  assert(ParseSgreSignaturePattern("", bytes, 8) == 0);
+  assert(ParseSgreSignaturePattern(nullptr, bytes, 8) == 0);
+  assert(ParseSgreSignaturePattern("4G", bytes, 8) == 0);
+  assert(ParseSgreSignaturePattern("48 8", bytes, 8) == 0);
+  assert(ParseSgreSignaturePattern("488B", bytes, 8) == 0);
+  assert(ParseSgreSignaturePattern("48 8B 00 00 00", bytes, 4) == 0);
+
+  // Synthetic image: .text (code) / .rdata (read-only) / .data (writable).
+  uint8_t text[0x80] = {};
+  uint8_t rdata[0x40] = {};
+  uint8_t data[0x40] = {};
+  SgreImageView image;
+  image.image_base = 0x10000000u;
+  image.section_count = 3;
+  std::memcpy(image.sections[0].name, ".text", 6);
+  image.sections[0].rva = 0x1000;
+  image.sections[0].size = sizeof(text);
+  image.sections[0].bytes = text;
+  image.sections[0].executable = true;
+  std::memcpy(image.sections[1].name, ".rdata", 7);
+  image.sections[1].rva = 0x2000;
+  image.sections[1].size = sizeof(rdata);
+  image.sections[1].bytes = rdata;
+  std::memcpy(image.sections[2].name, ".data", 6);
+  image.sections[2].rva = 0x3000;
+  image.sections[2].size = sizeof(data);
+  image.sections[2].bytes = data;
+  image.sections[2].writable = true;
+
+  // Function prologue at .text+0x10.
+  const uint8_t prologue[] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x57};
+  std::memcpy(text + 0x10, prologue, sizeof(prologue));
+  const SgreAnchorSignature code_sig = {"48 89 5C 24 ?? 57", ".text",
+                                        SgreAnchorKind::kCode, 0, -1, 0};
+  SgreResolvedAnchor code = ResolveSgreAnchorBySignature(code_sig, image);
+  assert(code.source == SgreAnchorSource::kSignature && code.rva == 0x1010u);
+  assert(code.resolved());
+  // anchor_offset shifts the result relative to the match.
+  const SgreAnchorSignature offset_sig = {"48 89 5C 24 ?? 57", ".text",
+                                          SgreAnchorKind::kCode, -0x10, -1, 0};
+  code = ResolveSgreAnchorBySignature(offset_sig, image);
+  assert(code.source == SgreAnchorSource::kSignature && code.rva == 0x1000u);
+  // Nothing matching: missing. Unknown section: missing too.
+  const SgreAnchorSignature absent_sig = {"90 90 90 90 90 90", ".text",
+                                          SgreAnchorKind::kCode, 0, -1, 0};
+  assert(ResolveSgreAnchorBySignature(absent_sig, image).source ==
+         SgreAnchorSource::kSignatureMissing);
+  const SgreAnchorSignature no_section_sig = {"48 89 5C 24 ?? 57", ".code",
+                                              SgreAnchorKind::kCode, 0, -1, 0};
+  assert(ResolveSgreAnchorBySignature(no_section_sig, image).source ==
+         SgreAnchorSource::kSignatureMissing);
+  // Malformed text is reported, not treated as "no match".
+  const SgreAnchorSignature bad_sig = {"48 ZZ", ".text", SgreAnchorKind::kCode,
+                                       0, -1, 0};
+  assert(ResolveSgreAnchorBySignature(bad_sig, image).source ==
+         SgreAnchorSource::kSignatureInvalid);
+  // A RIP contract whose displacement does not fit the instruction is invalid.
+  const SgreAnchorSignature bad_rip_sig = {"48 89 5C 24 ?? 57", ".text",
+                                           SgreAnchorKind::kCode, 0, 3, 6};
+  assert(ResolveSgreAnchorBySignature(bad_rip_sig, image).source ==
+         SgreAnchorSource::kSignatureInvalid);
+  // A second copy of the prologue makes the signature ambiguous: rejected.
+  std::memcpy(text + 0x60, prologue, sizeof(prologue));
+  assert(ResolveSgreAnchorBySignature(code_sig, image).source ==
+         SgreAnchorSource::kSignatureAmbiguous);
+  std::memset(text + 0x60, 0, sizeof(prologue));
+  // A unique match that lands outside an executable section is not code.
+  std::memcpy(data + 0x08, prologue, sizeof(prologue));
+  const SgreAnchorSignature data_code_sig = {"48 89 5C 24 ?? 57", ".data",
+                                             SgreAnchorKind::kCode, 0, -1, 0};
+  assert(ResolveSgreAnchorBySignature(data_code_sig, image).source ==
+         SgreAnchorSource::kStructureRejected);
+  std::memset(data + 0x08, 0, sizeof(prologue));
+
+  // Vtable located through the code that references it:
+  //   lea rax, [rip+disp32]  (48 8D 05 disp32, 7 bytes) at .text+0x20.
+  const uintptr_t vtable_rva = 0x2008;
+  const int32_t vtable_disp =
+      static_cast<int32_t>(vtable_rva) - static_cast<int32_t>(0x1020 + 7);
+  text[0x20] = 0x48;
+  text[0x21] = 0x8D;
+  text[0x22] = 0x05;
+  std::memcpy(text + 0x23, &vtable_disp, sizeof(vtable_disp));
+  uintptr_t slot0 = image.image_base + 0x1010;  // first virtual points to code
+  std::memcpy(rdata + 0x08, &slot0, sizeof(slot0));
+  const SgreAnchorSignature vtable_sig = {"48 8D 05 ?? ?? ?? ??", ".text",
+                                          SgreAnchorKind::kVtable, 0, 3, 7};
+  SgreResolvedAnchor vtable = ResolveSgreAnchorBySignature(vtable_sig, image);
+  assert(vtable.source == SgreAnchorSource::kSignature &&
+         vtable.rva == vtable_rva);
+  // Same bytes, but the referenced slot does not point into code: rejected.
+  slot0 = image.image_base + 0x3000;
+  std::memcpy(rdata + 0x08, &slot0, sizeof(slot0));
+  assert(ResolveSgreAnchorBySignature(vtable_sig, image).source ==
+         SgreAnchorSource::kStructureRejected);
+  // A null / below-image slot is not a vtable either.
+  slot0 = 0;
+  std::memcpy(rdata + 0x08, &slot0, sizeof(slot0));
+  assert(ResolveSgreAnchorBySignature(vtable_sig, image).source ==
+         SgreAnchorSource::kStructureRejected);
+  slot0 = image.image_base - 0x10;
+  std::memcpy(rdata + 0x08, &slot0, sizeof(slot0));
+  assert(ResolveSgreAnchorBySignature(vtable_sig, image).source ==
+         SgreAnchorSource::kStructureRejected);
+
+  // Writable global (the mouse device slot) located through
+  //   mov rax, [rip+disp32]  (48 8B 05 disp32, 7 bytes) at .text+0x30.
+  const uintptr_t device_rva = 0x3010;
+  const int32_t device_disp =
+      static_cast<int32_t>(device_rva) - static_cast<int32_t>(0x1030 + 7);
+  text[0x30] = 0x48;
+  text[0x31] = 0x8B;
+  text[0x32] = 0x05;
+  std::memcpy(text + 0x33, &device_disp, sizeof(device_disp));
+  const SgreAnchorSignature device_sig = {"48 8B 05 ?? ?? ?? ??", ".text",
+                                          SgreAnchorKind::kWritableData, 0, 3,
+                                          7};
+  const SgreResolvedAnchor device =
+      ResolveSgreAnchorBySignature(device_sig, image);
+  assert(device.source == SgreAnchorSource::kSignature &&
+         device.rva == device_rva);
+  // Pointing the same instruction at read-only memory is rejected: a device
+  // slot the game writes cannot live there.
+  const int32_t rdata_disp =
+      static_cast<int32_t>(0x2010) - static_cast<int32_t>(0x1030 + 7);
+  std::memcpy(text + 0x33, &rdata_disp, sizeof(rdata_disp));
+  assert(ResolveSgreAnchorBySignature(device_sig, image).source ==
+         SgreAnchorSource::kStructureRejected);
+
+  // The shipped signature table is still empty, so even a scannable image
+  // resolves nothing for an unknown build -- reported, not guessed.
+  const SgreAnchorSet shipped =
+      ResolveSgreAnchors(other_build.data(), other_build.size(), image);
+  assert(!shipped.lookup_sensor_available() &&
+         shipped.text_draw.source == SgreAnchorSource::kSignatureEmpty);
+  assert(std::strcmp(SgreAnchorSourceName(SgreAnchorSource::kSignatureEmpty),
+                     "signature_empty") == 0);
+}
+
 int main() {
   assert(fushi_voice_hook::MatchesSgreExecutableHash(
       fushi_voice_hook::kSgreExecutableSha256.data(),
@@ -45,10 +228,12 @@ int main() {
   assert(!fushi_voice_hook::MatchesSgreExecutableHash(wrong_hash.data(),
                                                       wrong_hash.size()));
   assert(!fushi_voice_hook::MatchesSgreExecutableHash(nullptr, 0));
+  TestAnchorResolution();
 
   // BUG-1882 — SGRE polls c_dfDIMouse2 directly, so swallowing Win32 mouse
-  // messages cannot stop the game from seeing the click. Pin the exact profile
-  // address/ABI and the button-only release latch used by the injected detour.
+  // messages cannot stop the game from seeing the click. Pin the measured
+  // build's mouse slot / ABI and the button-only release latch used by the
+  // injected detour.
   assert(fushi_voice_hook::kSgreDirectInputMouseDeviceRva == 0xA96E18u);
   assert(fushi_voice_hook::kSgreDirectInputGetDeviceStateVtableIndex == 9u);
   uint8_t mouse_state[fushi_voice_hook::kSgreDirectInputMouseStateBytes] = {};

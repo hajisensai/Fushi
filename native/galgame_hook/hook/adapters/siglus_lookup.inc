@@ -82,6 +82,12 @@ std::atomic<const fushi_voice_hook::SiglusLookupProfile *>
 volatile LONG g_siglus_lookup_profile_state = 0; // 0 unknown, 1 match, -1 miss
 volatile LONG g_siglus_exact_binary_structure_state =
     0; // 0 unknown, 1 hydrated structure match, -1 reject
+// v19 准入上报用。不复用 lookup_diag 的 kLookupDiagSensorInstalled：那位是**粘滞**的，
+// 只说"曾经装上过"，卸载后不会落回；准入要报的是当前状态。
+std::atomic<bool> g_siglus_lookup_sensor_installed{false};
+// 当前主 exe 的十六进制摘要，由 IsSiglusLookupProfileMatched() 在做 hash 比对时顺手填。
+// 空串 = 没读到 exe。
+char g_siglus_lookup_executable_sha256[fushi_voice_hook::kHookModuleDigestChars] = {};
 
 SiglusLookupGlyphEvent
     g_siglus_lookup_glyph_events[kSiglusLookupGlyphEventSlots] = {};
@@ -383,6 +389,17 @@ bool IsSiglusLookupProfileMatched() {
     admission_diag |= fushi_voice_hook::kLookupDiagSiglusMachineMatched;
   }
   SetSiglusLookupDiag(admission_diag);
+  // 摘要已经在上面算出来了，顺手留一份十六进制给 host——身份不符时用户要靠它报版本。
+  // 只在真读到 exe 时写；读不到就留空串，让 host 说"算不出"而不是显示一串零。
+  if (executable_read) {
+    fushi_voice_hook::FormatSha256Hex(digest.data(), digest.size(),
+                                      g_siglus_lookup_executable_sha256,
+                                      sizeof(g_siglus_lookup_executable_sha256));
+    // 同一串摘要再交共享槽一份。私有缓冲不能删：本家 probe() 是 IsSiglusEngine()
+    // （引擎探测），hash 不符时**仍然被问话**，那条 IdentityRejected 是活路径，要带上
+    // 自己的摘要。共享槽服务的是另一档——谁都没认领时的收敛（见 host_executable_digest.h）。
+    fushi_voice_hook::PublishHostExecutableSha256(digest.data(), digest.size());
+  }
   const auto *profile =
       executable_read ? fushi_voice_hook::FindSiglusLookupProfile(
                             digest.data(), digest.size(), machine)
@@ -1152,7 +1169,25 @@ bool InstallSiglusLookupSensor() {
     RevokeSiglusSampledInputShieldReady(g_siglus_sampled_input_property_window);
     return false;
   }
+  g_siglus_lookup_sensor_installed.store(true, std::memory_order_release);
   return true;
+}
+
+// v19 准入查询。纯读缓存：profile 判定与摘要都在 IsSiglusLookupProfileMatched() 里
+// 一次性算好并缓存，这里不触发任何 IO 或 hook 安装——registry 每轮 Poll 都会调它。
+fushi_voice_hook::LookupAdmissionReport SiglusLookupAdmission() {
+  fushi_voice_hook::LookupAdmissionReport report;
+  if (!IsSiglusLookupProfileMatched()) {
+    report.state = fushi_voice_hook::kLookupAdmissionIdentityRejected;
+    std::memcpy(report.executable_sha256, g_siglus_lookup_executable_sha256,
+                sizeof(report.executable_sha256));
+    return report;
+  }
+  report.state =
+      g_siglus_lookup_sensor_installed.load(std::memory_order_acquire)
+          ? fushi_voice_hook::kLookupAdmissionSensorInstalled
+          : fushi_voice_hook::kLookupAdmissionIdentityAccepted;
+  return report;
 }
 
 void SetSiglusLookupRuntimeEnabled(bool enabled) {
@@ -1492,5 +1527,14 @@ void ShutdownSiglusLookup() {
 bool IsSiglusLookupProfileMatched() { return false; }
 void ProcessSiglusLookupTick() {}
 void ShutdownSiglusLookup() {}
+
+// x64 构建里 Siglus 查词传感器整个不存在（所有 profile 都是 x86 的）。报
+// EngineUnsupported 而不是 IdentityRejected——后者会让用户以为"换个版本的游戏就行"，
+// 而真相是这个 helper 架构下根本没有这条路。
+fushi_voice_hook::LookupAdmissionReport SiglusLookupAdmission() {
+  fushi_voice_hook::LookupAdmissionReport report;
+  report.state = fushi_voice_hook::kLookupAdmissionEngineUnsupported;
+  return report;
+}
 
 #endif // _M_IX86

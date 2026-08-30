@@ -39,7 +39,13 @@ param(
   [string]$RunId = "",
   [string]$Proxy = "http://127.0.0.1:34151",
   [switch]$DryRun,
-  [switch]$Visible
+  [switch]$Visible,
+  # DRM live tests (Netflix / PlayReady in WebView2): the Media Foundation CDM
+  # needs the REAL per-user LOCALAPPDATA / USERPROFILE / TEMP (measured: redirecting
+  # any one of them alone breaks hardware PlayReady with Netflix D7702/D7703
+  # 0x80070003 path-not-found). -KeepUserDirs keeps those three real while still
+  # isolating APPDATA (the app DB) and the WebView2 profile.
+  [switch]$KeepUserDirs
 )
 
 $ErrorActionPreference = "Stop"
@@ -365,7 +371,8 @@ $runnerInfoPath = Join-Path $EvidenceDir "runner-info.json"
   "[itest] pubCache=$RealPubCache",
   "[itest] proxy=$(if ([string]::IsNullOrWhiteSpace($EffectiveProxy)) { '(none)' } else { $EffectiveProxy })",
   "[itest] dryRun=$($DryRun.IsPresent)",
-  "[itest] visible=$($Visible.IsPresent)"
+  "[itest] visible=$($Visible.IsPresent)",
+  "[itest] keepUserDirs=$($KeepUserDirs.IsPresent)"
 ) | Out-File -LiteralPath $commandLog -Encoding UTF8
 
 # Reap stale TEST-RUNNER processes left by a PREVIOUS crashed run of THIS runner.
@@ -433,10 +440,12 @@ if ($DryRun) {
     $env:FUSHI_TEST_RUN_ID = $RunId
     $env:FUSHI_WEBVIEW2_USER_DATA_FOLDER = $Paths.webView2Profile
     $env:APPDATA = $Paths.appData
-    $env:LOCALAPPDATA = $Paths.localAppData
-    $env:TEMP = $Paths.temp
-    $env:TMP = $Paths.temp
-    $env:USERPROFILE = $Paths.userProfile
+    if (-not $KeepUserDirs) {
+      $env:LOCALAPPDATA = $Paths.localAppData
+      $env:TEMP = $Paths.temp
+      $env:TMP = $Paths.temp
+      $env:USERPROFILE = $Paths.userProfile
+    }
     # Keep the build toolchain's pub cache reachable despite LOCALAPPDATA redirect.
     if (-not [string]::IsNullOrWhiteSpace($RealPubCache)) {
       $env:PUB_CACHE = $RealPubCache
@@ -467,10 +476,12 @@ if ($DryRun) {
     $psi.EnvironmentVariables["FUSHI_WEBVIEW2_USER_DATA_FOLDER"] =
       $Paths.webView2Profile
     $psi.EnvironmentVariables["APPDATA"] = $Paths.appData
-    $psi.EnvironmentVariables["LOCALAPPDATA"] = $Paths.localAppData
-    $psi.EnvironmentVariables["TEMP"] = $Paths.temp
-    $psi.EnvironmentVariables["TMP"] = $Paths.temp
-    $psi.EnvironmentVariables["USERPROFILE"] = $Paths.userProfile
+    if (-not $KeepUserDirs) {
+      $psi.EnvironmentVariables["LOCALAPPDATA"] = $Paths.localAppData
+      $psi.EnvironmentVariables["TEMP"] = $Paths.temp
+      $psi.EnvironmentVariables["TMP"] = $Paths.temp
+      $psi.EnvironmentVariables["USERPROFILE"] = $Paths.userProfile
+    }
     # Pin pub cache so native-assets build hooks resolve packages from the real
     # (populated) cache instead of the empty isolated LOCALAPPDATA.
     if (-not [string]::IsNullOrWhiteSpace($RealPubCache)) {

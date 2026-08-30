@@ -799,7 +799,7 @@ void TryInstallGenericKeyAndRawInputShield() {
 }
 
 bool ExactSgreOwnsDirectInput() {
-  static const bool exact = fushi_voice_hook::MatchesSgreProfile(nullptr);
+  static const bool exact = fushi_voice_hook::MatchesSgreFamily();
   return exact;
 }
 

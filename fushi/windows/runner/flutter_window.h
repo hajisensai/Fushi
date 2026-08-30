@@ -12,6 +12,7 @@
 #include "attached_text_surface_window.h"
 #include "floating_lyric_window.h"
 #include "global_lookup_window.h"
+#include "hdr_video_host_window.h"
 #include "ime_association_guard.h"
 #include "win32_window.h"
 
@@ -126,6 +127,16 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       window_capture_channel_;
   void RegisterWindowCaptureChannel();
+
+  // Windows HDR passthrough (docs/plans/2026-08-30-video-hdr-passthrough.md):
+  // Dart asks for the libmpv host popup behind the main window
+  // (create / setRect / destroy) and for the monitor's colour space
+  // (displayInfo); WM_DISPLAYCHANGE is pushed back as onDisplayChanged.
+  // Placement follows the main window from MessageHandler.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      hdr_video_host_channel_;
+  std::unique_ptr<fushi::HdrVideoHostWindow> hdr_video_host_;
+  void RegisterHdrVideoHostChannel();
 
   // Magpie 缩放状态监听（仅 Windows）：Magpie 通过
   // RegisterWindowMessage(L"MagpieScalingChanged") 向所有顶层窗口广播缩放状态。

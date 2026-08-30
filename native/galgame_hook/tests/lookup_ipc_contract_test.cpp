@@ -636,7 +636,7 @@ void TestV14LookupRegionIsPureAppendOverV13() {
 }
 
 void TestV16V17AndV19OnlyAppendOverV15() {
-  Check(kSharedVersion == 19, "本测试锁的是 v19 契约");
+  Check(kSharedVersion == 20, "本测试锁的是 v20 契约（两条 v19 合版）");
 
   // v14 的最后一个字段是 lookup_diag。v15 只能紧随其后追加一个 64 位 applied seq；
   // 把字段插进 v14 中间，或在 applied seq 后再偷偷长出别的字段，都必须判红。
@@ -709,12 +709,14 @@ void TestV16V17AndV19OnlyAppendOverV15() {
             offsetof(SharedHeader, lookup_geometry_admission_applied_seq) ==
                 geometry_admission_begin + 12u,
         "v19 geometry admission 必须纯追加在 shield 尾部，且 x86/x64 同步长");
-  Check(sizeof(SharedHeader) ==
-            ((offsetof(SharedHeader,
-                       lookup_geometry_admission_applied_seq) +
-              4u + 7u) /
-             8u) * 8u,
-        "v19 SharedHeader 尾部只能有 8 字节对齐填充");
+  // 合版后几何区不再是结构体最后一组：develop 的准入区（lookup_admission /
+  // _seq / _executable_sha256）排在它之后。所以这里改判「顺序」而不是「我是最后一个」——
+  // 几何必须纯追加在 shield 之后，准入必须纯追加在几何之后，谁都不许插进已有区。
+  // 「末尾只有 8 字节对齐填充」这条整体性断言由 TestV19AdmissionIsPureAppendOverV17
+  // 按真正的末尾字段 lookup_executable_sha256 负责，两处不重复。
+  Check(offsetof(SharedHeader, lookup_admission) >=
+            offsetof(SharedHeader, lookup_geometry_admission_applied_seq) + 4u,
+        "准入区必须追加在几何区之后，不得插进几何区中间");
 }
 
 void TestV19GeometryAdmissionPublication() {
@@ -889,6 +891,120 @@ void TestV19AttachedGeometryOwnershipSnapshot() {
         "native provider 抢占后旧 attached snapshot 不得继续拥有点击");
 }
 
+// v19 只在 v17 摘要之后追加查词准入三字段，前面一个偏移都不许动。
+void TestV19AdmissionIsPureAppendOverV17() {
+  const size_t v17_end =
+      offsetof(SharedHeader, hook_module_sha256) +
+      fushi_voice_hook::kHookModuleDigestChars;
+  const size_t admission = offsetof(SharedHeader, lookup_admission);
+  Check(admission >= v17_end,
+        "v19 准入字段必须追加在 v17 摘要之后，不能插进既有布局");
+  // 这条不是形式主义：admission / admission_seq 全程走 Interlocked（AtomicLoadShared32
+  // 等），而 Interlocked 系在**未对齐地址上是未定义行为**。前一个字段是 65 字节的奇数长
+  // char 数组，一旦有人把 pack(8) 改成 pack(1)，这里就会静默变成未对齐的原子操作——
+  // 症状是跨进程偶发读到撕裂值，不会报错。
+  Check(admission % 4 == 0, "lookup_admission 必须 4 字节对齐（Interlocked 前提）");
+  Check(offsetof(SharedHeader, lookup_admission_seq) ==
+            admission + sizeof(uint32_t),
+        "admission_seq 必须紧跟 admission");
+  Check(offsetof(SharedHeader, lookup_admission_seq) % 4 == 0,
+        "lookup_admission_seq 必须 4 字节对齐（Interlocked 前提）");
+  Check(offsetof(SharedHeader, lookup_executable_sha256) ==
+            offsetof(SharedHeader, lookup_admission_seq) + sizeof(uint32_t),
+        "exe 摘要必须紧跟 admission_seq");
+  Check(sizeof(SharedHeader) ==
+            ((offsetof(SharedHeader, lookup_executable_sha256) +
+              fushi_voice_hook::kHookModuleDigestChars + 7u) /
+             8u) * 8u,
+        "v19 末尾除 8 字节对齐填充外不得混入其他字段");
+}
+
+// 准入的读写往返。这些性质全都是「UI 会不会误导用户」的直接决定因素，不是内部细节。
+void TestAdmissionRoundTrip() {
+  FakeMapping mapping;
+  SharedHeader* h = mapping.header();
+
+  // (a) 从未上报过（seq==0）必须读成 Unknown。绝不能读成 EngineUnsupported——
+  //     helper 刚起来的那几百毫秒里，"还不知道"被当成"不支持"就是稳定误报。
+  uint32_t seq = 0xffffffffu;
+  fushi_voice_hook::LookupAdmissionReport read =
+      fushi_voice_hook::ReadLookupAdmission(h, &seq);
+  Check(seq == 0, "未上报时 seq 必须是 0");
+  Check(read.state == fushi_voice_hook::kLookupAdmissionUnknown,
+        "未上报必须读成 Unknown，不得读成 EngineUnsupported");
+
+  // (b) 正常往返：状态 + 摘要都要原样回来。
+  fushi_voice_hook::LookupAdmissionReport rejected;
+  rejected.state = fushi_voice_hook::kLookupAdmissionIdentityRejected;
+  const char* digest =
+      "005e71107ed70e662c41cb526879cdcf0b9486e067c0e5a306308688c17409ed";
+  memcpy(rejected.executable_sha256, digest, strlen(digest) + 1);
+  Check(fushi_voice_hook::PublishLookupAdmission(h, rejected),
+        "首次发布必须返回 true（内容确实变了）");
+  read = fushi_voice_hook::ReadLookupAdmission(h, &seq);
+  Check(seq == 1, "首次发布后 seq 必须是 1");
+  Check(read.state == fushi_voice_hook::kLookupAdmissionIdentityRejected,
+        "状态必须原样回来");
+  Check(strcmp(read.executable_sha256, digest) == 0,
+        "exe 摘要必须原样回来——用户就是靠它报版本的");
+
+  // (c) 幂等：内容没变时不得推进 seq。registry 每 16ms Poll 一次，无脑推 seq 会让
+  //     host 每轮都当成新事件刷 UI。
+  Check(!fushi_voice_hook::PublishLookupAdmission(h, rejected),
+        "内容未变时必须返回 false");
+  fushi_voice_hook::ReadLookupAdmission(h, &seq);
+  Check(seq == 1, "内容未变时 seq 不得推进");
+
+  // (d) 状态变化必须推进 seq。
+  fushi_voice_hook::LookupAdmissionReport installed;
+  installed.state = fushi_voice_hook::kLookupAdmissionSensorInstalled;
+  Check(fushi_voice_hook::PublishLookupAdmission(h, installed),
+        "状态变化必须返回 true");
+  read = fushi_voice_hook::ReadLookupAdmission(h, &seq);
+  Check(seq == 2, "状态变化必须推进 seq");
+  Check(read.state == fushi_voice_hook::kLookupAdmissionSensorInstalled,
+        "新状态必须生效");
+  Check(read.executable_sha256[0] == '\0',
+        "装上之后不再带摘要——那是给身份被拒的用户看的");
+
+  // (e) 本构建不认识的状态值必须落回 Unknown，绝不猜。写侧可能是更新的 helper。
+  fushi_voice_hook::AtomicStoreShared32(&h->lookup_admission, 99u);
+  read = fushi_voice_hook::ReadLookupAdmission(h, &seq);
+  Check(read.state == fushi_voice_hook::kLookupAdmissionUnknown,
+        "未知状态值必须落回 Unknown");
+
+  // (f) 摘要字段全是非 NUL 字节时读侧必须有界收尾，不得越界读。
+  fushi_voice_hook::AtomicStoreShared32(
+      &h->lookup_admission, fushi_voice_hook::kLookupAdmissionIdentityRejected);
+  memset(const_cast<char*>(h->lookup_executable_sha256), 'a',
+         fushi_voice_hook::kHookModuleDigestChars);
+  read = fushi_voice_hook::ReadLookupAdmission(h, &seq);
+  Check(strlen(read.executable_sha256) ==
+            fushi_voice_hook::kHookModuleDigestChars - 1,
+        "无 NUL 的摘要必须被有界截断，不得越界");
+}
+
+// 摘要格式化：各 profile 做 hash 准入时已经算出 32 字节摘要，这里只负责变成十六进制。
+void TestSha256HexFormatting() {
+  const uint8_t digest[32] = {0x00, 0x5e, 0x71, 0x10, 0x7e, 0xd7, 0x0e, 0x66,
+                              0x2c, 0x41, 0xcb, 0x52, 0x68, 0x79, 0xcd, 0xcf,
+                              0x0b, 0x94, 0x86, 0xe0, 0x67, 0xc0, 0xe5, 0xa3,
+                              0x06, 0x30, 0x86, 0x88, 0xc1, 0x74, 0x09, 0xed};
+  char out[fushi_voice_hook::kHookModuleDigestChars] = {};
+  fushi_voice_hook::FormatSha256Hex(digest, sizeof(digest), out, sizeof(out));
+  Check(strcmp(out,
+               "005e71107ed70e662c41cb526879cdcf0b9486e067c0e5a306308688c17409ed") == 0,
+        "摘要必须格式化成小写十六进制，前导零不得吞掉");
+  // 缓冲不够时必须给空串而不是截断的半个摘要——半个摘要比没有更糟，用户会照着报错版本。
+  char small[8] = {'x'};
+  fushi_voice_hook::FormatSha256Hex(digest, sizeof(digest), small, sizeof(small));
+  Check(small[0] == '\0', "缓冲不足必须留空串，不得输出截断摘要");
+  // 长度不对的摘要一律拒绝。
+  char out2[fushi_voice_hook::kHookModuleDigestChars] = {'x'};
+  fushi_voice_hook::FormatSha256Hex(digest, 16, out2, sizeof(out2));
+  Check(out2[0] == '\0', "非 32 字节摘要必须拒绝");
+}
+
 // 头里的冗余自洽字段必须与编译期常量一致——否则读侧按 header 值寻址、写侧按常量写，
 // 会各算各的。
 void TestHeaderMirrorsCompileTimeConstants() {
@@ -954,6 +1070,9 @@ int main() {
   TestV19GeometryAdmissionPublication();
   TestV19ShieldPublicationAndVerifiedGate();
   TestV19AttachedGeometryOwnershipSnapshot();
+  TestV19AdmissionIsPureAppendOverV17();
+  TestAdmissionRoundTrip();
+  TestSha256HexFormatting();
   TestHeaderMirrorsCompileTimeConstants();
   if (g_failures != 0) {
     fprintf(stderr, "lookup ipc contract test failures: %d\n", g_failures);

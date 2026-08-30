@@ -48,6 +48,10 @@ import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_top_bar_slots.dart';
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
+import 'package:fushi/src/media/video/web_video_bridge.dart'
+    show shouldOpenInWebVideoPlayer;
+import 'package:fushi/src/pages/implementations/web_video_fushi_page.dart'
+    show WebVideoFushiPage;
 import 'package:fushi/src/media/video/youtube_source_resolver.dart'
     show
         YoutubeCaptionTrack,
@@ -82,10 +86,12 @@ import 'package:fushi/src/media/video/video_danmaku_source.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_screenshot_filename.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/focus/panel_focus_scope.dart';
 import 'package:fushi/src/media/video/video_player_shortcuts.dart';
@@ -123,7 +129,8 @@ import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_overlay.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
-import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
+import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
 import 'package:fushi/src/media/video/video_quick_settings_sheet.dart';
 import 'package:fushi/src/media/video/video_sidecar.dart';
@@ -355,7 +362,7 @@ final RegExp _kLatinWordCharRegExp =
 /// 不该由脚本决定：C++ `scan_candidates` 明确禁止在空格分词语言的单词中间切
 /// （native/fushidicts/fushidicts_src/scan/word_scan.cpp），候选恒是
 /// `listen to music` / `listen to` / `listen`，单词自己仍在候选里，不会被短语挤掉。
-@visibleForTesting
+/// 网页播放器页（web_video_fushi_page.dart）与本页共用同一取词规则，故为公开顶层函数。
 String subtitleLookupTerm(String sentence, int graphemeIndex) {
   final List<String> graphemes = sentence.characters.toList();
   if (graphemeIndex < 0 || graphemeIndex >= graphemes.length) return '';
@@ -691,6 +698,11 @@ enum _VideoSidePanelKind {
   quality,
   // TODO-1376：弹幕手动搜索/选集匹配侧栏。
   danmakuMatch,
+  // 2026-08 字幕工作台 PR-C：字幕调整走**底部抽屉**而不是右侧栏——视频全幅可见、
+  // 继续播放，字幕在真实位置实时预览。内容仍是同一份 schema 投影的快捷设置面板
+  // （`initialCategory: 'subtitle'`），只是容器换成 [VideoTranslucentBottomDrawer]；
+  // 开关/互斥/焦点/逐级 Esc 全部沿用侧栏机制（它就是一种侧栏 kind）。
+  subtitleAdjust,
 }
 
 class _VideoSidePanelState {
@@ -1625,7 +1637,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String get dictionarySourceType => kStatSourceVideo;
 
   /// TODO-1204：查词 / 制卡计数归属本视频——[title] 用 [_title]（剧集标题，与
-  /// 视频统计 tile 的 [addVideoWatchStatistic] title 聚合键对齐），[bookKey] 存
+  /// 视频统计 tile 的身份分组键对齐），[bookKey] 存
   /// [VideoFushiPage.bookUid]。远端视频无观看统计 tile，其计数仍进「查词」汇总。
   @override
   ({String? bookKey, String? title})? get lookupBookIdentity =>
@@ -1808,6 +1820,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// contain/适应；init 时读全局偏好快照，已有用户偏好 cover/fill 会按原值恢复，
   /// 设置面板改动经 [_setVideoFitMode] 落盘 + setState 重建 Video。
   VideoFitMode _videoFitMode = VideoFitMode.contain;
+
+  /// Windows HDR 直通 / 10-bit 输出模式（`video_hdr_output.dart`），init 时从
+  /// AppModel 读入，随控制器创建下发；改设置经 [_setVideoHdrOutputMode]。
+  VideoHdrOutputMode _videoHdrOutputMode = VideoHdrOutputMode.auto;
 
   bool get _isPlaylist => _episodes.length > 1;
 
@@ -2114,6 +2130,24 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 的远端播放路径（_initRemote）。YouTube 会在 buildStreamVideoLaunch 里重解析（临时流
     // URL 会过期）；重建失败按打开失败处理。放在读 row 后、本地字幕/进度恢复前短路。
     if (isStreamVideoBook(row)) {
+      // 网页视频站（Netflix / YouTube 页 / TVer……）在 Windows 上交给内置网页播放器：
+      // 站点自己的播放器播，Fushi 复用字幕面板 / 查词 / 进度登记。在这里分流而非各
+      // push 点：书架 / 首页 / 合集 / 作品页 / app 外打开 8 处入口全部自动覆盖。
+      // media_kit controller 尚未 load，pushReplacement 代价只是本页一次空 build。
+      if (shouldOpenInWebVideoPlayer(row.videoPath)) {
+        final BuildContext pageContext = context;
+        if (!pageContext.mounted) return;
+        unawaited(Navigator.of(pageContext).pushReplacement(
+          adaptivePageRoute<void>(
+            context: pageContext,
+            builder: (_) => WebVideoFushiPage.neutralized(
+              bookUid: widget.bookUid,
+              repo: widget.repo,
+            ),
+          ),
+        ));
+        return;
+      }
       // TODO-1307：把「正在连接视频流…」阶段反馈提前到 buildStreamVideoLaunch（YouTube 快
       // 解析 getManifest 有网络往返、慢网仍可数秒）之前，避免解析期页面裸转圈「点了没动静」。
       _setLoadingPhase(_VideoLoadPhase.connecting);
@@ -2166,6 +2200,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _customActionBindingsNotifier.value = appModel.videoCustomActionBindings;
     _lockWindowAspectRatio = appModel.videoLockWindowAspectRatio;
     _videoFitMode = appModel.videoFitMode;
+    _videoHdrOutputMode = appModel.videoHdrOutputMode;
 
     // 统一合集 Phase 3：本集若作为某 playlist 合集的一集打开（widget.playlistCollectionId
     // 非空），从合集成员建兄弟集列表（剧集面板 / 上下集 / 连播上下文）。每集是独立
@@ -3181,6 +3216,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final bool isInitialVideoOpen = _controller == null;
     final VideoPlayerController controller =
         _controller ?? VideoPlayerController();
+    // HDR 直通模式 + 画面 fit 交给控制器（宿主窗模式下 fit 由 mpv 自己算）。
+    controller.configureHdrOutput(
+      mode: _videoHdrOutputMode,
+      fitMode: _videoFitMode,
+    );
     // BUG-772：首开新建的在途 controller 登记进字段，让页面 dispose 能主动取消它。
     // 换集复用同一 _controller 时不设，避免误 dispose 正在用的实例。
     if (isInitialVideoOpen) _pendingController = controller;
@@ -3365,25 +3405,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (_bookRow != null && _watchTracker == null) {
       final FushiDatabase db = appModel.database;
       _watchTracker = VideoWatchTracker(
-        title: title,
         bookUid: widget.bookUid,
-        // P4 写侧收敛：两条统计路都走 DB 复合入口 recordWatchFlush。dateKey 由
-        // 采集器决定（字幕字数=cue 时刻；观看时长=各桶各自日期），直接透传，不在此
-        // 另算「今日」——否则跨午夜的 flush 会与小时日志的日归属不一致。
-        // v39：按视频稳定身份键控（同名不同视频统计不再互串）。本地视频每集独立
+        // v92：观看时长 + 字幕字数走唯一时钟 StudyClock（活跃态 = 正在播放，由
+        // tracker 挂上；视频面刻意不设空闲门 / 前台门——切走仍在播就照常计时）。
+        // 按视频稳定身份键控（v39：同名不同视频统计不再互串）。本地视频每集独立
         // 页面（pushReplacement 换集）→ widget.bookUid 恒为当前集。
-        recordFlush: (List<(String, int, int)> buckets) => db.recordWatchFlush(
+        clock: StudyClock(
+          database: db,
+          mediaKind: kActivityMediaVideo,
+          mediaKey: widget.bookUid,
           title: title,
-          bookUid: widget.bookUid,
-          buckets: buckets,
-        ),
-        addSubtitleChars: (String dateKey, int chars) => unawaited(
-          db.recordWatchFlush(
-            title: title,
-            bookUid: widget.bookUid,
-            subtitleChars: chars,
-            subtitleCharsDateKey: dateKey,
-          ),
+          onWriteError: (Object e, StackTrace st) =>
+              ErrorLogService.instance.log('StudyClock.write(video)', e, st),
         ),
         markCompleted: (String uid) =>
             db.markVideoCompleted(uid, DateTime.now()),
@@ -3397,19 +3430,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 _episodes.isNotEmpty && _currentEpisode == _episodes.length - 1,
           );
         },
-        // v49：一次观看 session 结束落一条活动事件，喂首页 Activity 时间轴。
-        recordActivity: (String t, String uid, String dateKey, int timestampMs,
-                int durationMs, int chars) =>
-            db.addActivityEvent(
-          eventType: kActivityWatch,
-          mediaType: kActivityMediaVideo,
-          title: t,
-          mediaKey: uid,
-          dateKey: dateKey,
-          timestampMs: timestampMs,
-          durationMs: durationMs,
-          charsDelta: chars,
-        ),
       )
         ..attach(controller)
         ..start();
@@ -6490,8 +6510,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<void> _setVideoFitMode(VideoFitMode mode) async {
     if (_videoFitMode == mode) return;
     _videoFitMode = mode;
+    _controller?.configureHdrOutput(fitMode: mode);
     await appModel.setVideoFitMode(mode);
     if (mounted) setState(() {});
+  }
+
+  /// 切 HDR 直通 / 10-bit 输出模式：落盘 + 控制器当场重判（切宿主窗不重建播放器）。
+  Future<void> _setVideoHdrOutputMode(VideoHdrOutputMode mode) async {
+    if (_videoHdrOutputMode == mode) return;
+    _videoHdrOutputMode = mode;
+    _controller?.configureHdrOutput(mode: mode);
+    await appModel.setVideoHdrOutputMode(mode);
   }
 
   /// Persist + apply a new 9-slot control button layout (TODO-274/312 phase 2).
@@ -6946,6 +6975,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       },
       onLockWindowAspectRatioChanged: _setLockWindowAspectRatio,
       onVideoFitModeChanged: _setVideoFitMode,
+      onHdrOutputModeChanged: _setVideoHdrOutputMode,
       onImmersiveModeChanged: appModel.setVideoImmersiveMode,
       onDanmakuEnabledChanged: _setVideoDanmakuEnabled,
       onDanmakuOnlineEnabledChanged: _setVideoDanmakuOnlineEnabled,
@@ -7045,6 +7075,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-1351：记住目标分类（音频轨/字幕轨按钮传 'audio'/'subtitle'，设置按钮传 null），
     // 供 _buildVideoQuickSettingsSheet 读；面板 didUpdateWidget 据其变化跳分类。
     _settingsInitialCategory = initialCategory;
+    // 字幕分类走底部抽屉（PR-C）：字幕轨按钮 / 右键「字幕轨」/ 字幕加载遮罩都传
+    // 'subtitle'，统一在这一处分流，不让调用方各记一个 kind。
+    if (initialCategory == 'subtitle') {
+      _showVideoSidePanel(
+        _VideoSidePanelKind.subtitleAdjust,
+        sourceSlot: sourceSlot,
+      );
+      return;
+    }
     _showVideoSidePanel(
       _VideoSidePanelKind.settings,
       sourceSlot: sourceSlot,
@@ -7143,9 +7182,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // topButtonBar），外层再叠一条 AppBar 等于两条顶栏、互相重复（BUG-102）。改为
     // 把返回/标题/剧集导航全部并入视频内顶栏（见 [_desktopControlsTheme] /
     // [_mobileControlsTheme]），与播放控制一起随鼠标/触摸显隐，单一顶栏。
-    return Scaffold(
-      backgroundColor: cs.surface,
-      body: _failed
+    // HDR 直通（video_hdr_output.dart）：libmpv 宿主窗钉在主窗正后方，视频洞必须
+    // 一路透到底，页面底色随之透明；失败 / 加载 / 缺资源态与非 HDR 播放不受影响。
+    return ValueListenableBuilder<bool>(
+      valueListenable: controller?.hdrHostActive ?? _kHdrHostInactive,
+      builder: (BuildContext _, bool hdrHost, Widget? body) => Scaffold(
+        backgroundColor: hdrHost ? Colors.transparent : cs.surface,
+        body: body,
+      ),
+      child: _failed
           ? _buildFailedBody(cs)
           // TODO-897：本地资源缺失态——必须在转圈判据之前短路（缺失时不调 load，
           // _controller 维持 null 也会落进下面的 spinner 分支无限转圈）。

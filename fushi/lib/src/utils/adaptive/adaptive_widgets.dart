@@ -165,20 +165,29 @@ Widget adaptiveSlider({
   );
 }
 
+/// [value] 非空时画**确定**进度（0..1）；为空时是原本的不确定动画。两个平台分支都
+/// 认这个值，避免「Material 显进度、Cupertino 一直转」的静默分歧。
 Widget adaptiveIndicator({
   required BuildContext context,
   Color? color,
   double? strokeWidth,
+  double? value,
 }) {
   if (isCupertinoPlatform(context)) {
-    return CupertinoActivityIndicator(
-      color: color,
-      radius: strokeWidth != null ? strokeWidth * 2.5 : 10.0,
-    );
+    final double radius = strokeWidth != null ? strokeWidth * 2.5 : 10.0;
+    if (value != null) {
+      return CupertinoActivityIndicator.partiallyRevealed(
+        color: color,
+        radius: radius,
+        progress: value.clamp(0.0, 1.0),
+      );
+    }
+    return CupertinoActivityIndicator(color: color, radius: radius);
   }
   return CircularProgressIndicator(
     color: color,
     strokeWidth: strokeWidth ?? 4.0,
+    value: value,
   );
 }
 

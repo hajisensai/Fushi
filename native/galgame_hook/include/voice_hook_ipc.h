@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include <cstdint>
+#include <cstring>
 #include <string>
 
 #include "luna_version.h"
@@ -86,13 +87,28 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     这种**同布局、异语义**的变更同样要升版本：跨进程契约的版本号锁的是解释方式，
 //     不只是偏移。升到 18 之后旧 helper 建的映射会在三处既有门被拒（host 的
 //     ProtocolMatches、DLL 的 header 校验、injector 的驻留映射复用判据）。
-// v19：查词命中槽增加几何 provider、UTF-16 source span、文本/几何代际、坐标域与书写方向；
-//     SharedHeader 尾部再追加单一几何 provider 状态和统一输入盾 request/status 控制块。
-//     命中仍是单槽 latest-wins，但只能经 GeometryProviderRegistry 发布：payload 先写，seq
-//     最后写，禁止不同 provider 的文本和几何拼接。输入盾 request_seq 同 v16 loopback 使用
-//     最高位写令牌；状态先发布 required/ready/observed/fault/status，applied_seq 最后确认。
-//     v18 与 v19 的 LookupHitSlot 步长、SharedHeader 长度都不同，必须升版本拒绝旧映射。
-constexpr uint32_t kSharedVersion = 19;
+// v20：本版把两条并行开发的 v19 合成一版。它们各自都叫 v19，但布局不兼容——
+//     一条是尾部纯追加（偏移不动），另一条改了 LookupHitSlot 步长与 SharedHeader
+//     长度。停在 19 就意味着任一边的旧 helper 建的映射会被三处版本门判成「对得上」，
+//     然后按错误偏移读；读到的不是空值而是垃圾。所以合并即升版本，两边内容都在：
+//
+//     (a) 查词命中槽增加几何 provider、UTF-16 source span、文本/几何代际、坐标域与
+//     书写方向；SharedHeader 尾部追加单一几何 provider 状态和统一输入盾 request/status
+//     控制块。命中仍是单槽 latest-wins，但只能经 GeometryProviderRegistry 发布：payload
+//     先写，seq 最后写，禁止不同 provider 的文本和几何拼接。输入盾 request_seq 同 v16
+//     loopback 使用最高位写令牌；状态先发布 required/ready/observed/fault/status，
+//     applied_seq 最后确认。
+//
+//     (b) 尾部追加查词准入区（lookup_admission / lookup_admission_seq /
+//     lookup_executable_sha256）。host 拿 admission 决定「开关要不要置灰、给用户看
+//     什么原因」，旧 helper 建的段那三个字节区是**未初始化内存**而不是
+//     kLookupAdmissionUnknown，读它等于拿垃圾值去误导用户。
+//
+//     (c) 新增 xaudio_diagnostics2：原 xaudio_diagnostics 的 32 位在本次合并中被
+//     两边的新引擎位同时要走（HUNEX HFA 5 位 + SGRE 家族/锚点 3 位，而低 27 位早已
+//     占满）。按本结构体既有先例（reserved_luna 满了之后另立 reserved_hook_diagnostics）
+//     另立一个字，而不是拓宽——拓宽要改 InterlockedOr 的原子写路径与每个读侧。
+constexpr uint32_t kSharedVersion = 20;
 constexpr uint32_t kStableIpcVersion = 1;
 
 // BUG-1882 — SGRE 的鼠标输入走 DirectInput immediate state，不经过普通
@@ -365,6 +381,18 @@ constexpr uint32_t kXAudioDiagHunexHfaHandleTracked = 0x10000000u;
 constexpr uint32_t kXAudioDiagHunexHfaReadObserved = 0x20000000u;
 constexpr uint32_t kXAudioDiagHunexHfaVoiceQueued = 0x40000000u;
 constexpr uint32_t kXAudioDiagHunexHfaTaskRejected = 0x80000000u;
+// SGRE (M2 wind3d11) identity is two layers: the family (voice_body.bin next
+// to the executable) and the build-specific anchors (measured hash row or
+// unique signature hit). These three bits report where anchor resolution
+// ended so an unmeasured build reads as "engine recognised, anchors missing"
+// instead of silently doing nothing.
+// 注意这三位落在 **xaudio_diagnostics2**（第二个诊断字），不是 xaudio_diagnostics：
+// 后者的 32 位在 v20 合并时已被占满（低 27 位既有 + HUNEX HFA 的高 5 位）。设置侧用
+// SetXAudioDiagnostic2，别误用 SetXAudioDiagnostic —— 那会把位或进错误的字，
+// 表现为「诊断一直是 0」而不是编译错误。
+constexpr uint32_t kXAudioDiag2SgreFamilyMatched = 0x00000001u;
+constexpr uint32_t kXAudioDiag2SgreAnchorsResolved = 0x00000002u;   // all three
+constexpr uint32_t kXAudioDiag2SgreAnchorsUnresolved = 0x00000004u; // any missing
 
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM
@@ -722,6 +750,72 @@ constexpr uint32_t kLookupShieldStatusConclusionMask = 0x0000000fu;
 constexpr uint32_t kLookupShieldRequestWriteInProgress = 0x80000000u;
 constexpr uint32_t kLookupShieldRequestSequenceMask = 0x7fffffffu;
 
+// v17：hook DLL 摘要字段的固定长度 = 64 位十六进制 SHA-256 + 结尾 NUL。定长而不是变长，
+// 是因为它落在跨进程共享内存里：读侧必须能在不信任写侧的前提下有界读（strnlen 上界就是它）。
+// 定义点在 v19 从 SharedHeader 附近前移到这里：v19 的 LookupAdmissionReport 也要用它，
+// 而那个结构必须早于 SharedHeader 可见（adapter 契约要用）。
+constexpr uint32_t kHookModuleDigestChars = 65;
+
+// ══ v19 游戏内查词准入 ══════════════════════════════════════════════════
+// 「本会话到底能不能游戏内查词，不能的话卡在哪一步」——这是 host 唯一需要拿来做 UI
+// 决策的东西，而在 v19 之前它**在协议里根本没有位置**。
+//
+// 为什么不是再加一个 lookup_diag 位（两条独立理由，各自都足够）：
+//  1. lookup_diag 32 位在 v18 已经用满（kLookupDiagSiglusMachineMatched = 0x80000000）。
+//  2. 更要命的是语义：lookup_diag 是**粘滞累积**的诊断位，只回答"曾经发生过吗"。而准入
+//     是**状态机的当前状态**。用位表达就能同时置上 IdentityRejected 和 SensorInstalled，
+//     造出一个不存在的状态；读侧于是必须按某个约定的优先级去猜"现在到底算哪个"，而那个
+//     约定不在协议里、只活在读者脑子里。今天三家传感器各写各的私有位（Siglus 四个 admission
+//     位、Leaf 写进 FushiLeafD3DTraceV1.reserved、KiriKiri 什么都不写），host 一个都读不懂，
+//     正是这个缺失的直接后果。单值枚举让不可能状态**无法被表达**，问题从根上消失。
+//
+// 单调性：不保证。这是"当前状态"不是"历史最高水位"，传感器卸载后退回 IdentityAccepted
+// 是合法且必要的。合并多个 adapter 的报告由 registry 单点完成（取最高进展），因此跨进程
+// 只有一个写者，无需 CAS。
+enum LookupAdmissionState : uint32_t {
+  // 尚未判定。**旧 helper 建的段读出来不保证是这个值**，所以版本门必须把旧段整体拒掉，
+  // 不能靠"0 就是 Unknown"来兼容——那块内存压根没被初始化过。
+  kLookupAdmissionUnknown = 0,
+  // 命中的引擎 adapter 没有查词传感器（12 个 adapter 走 EngineAdapter 的默认实现落到这里）。
+  // 这是"本引擎没做"，不是"装失败"——两者在 v18 的 kLookupDiagSensorInstalled 上完全同形，
+  // 用户和开发者都分不出该等新版本还是该报 bug。
+  kLookupAdmissionEngineUnsupported = 1,
+  // 引擎有传感器，但当前 exe 不在该传感器的精确白名单里（hash-pinned fail closed）。
+  // 此时 lookup_executable_sha256 必须已填，用户据此就能报出自己的版本。
+  kLookupAdmissionIdentityRejected = 2,
+  // 身份通过，传感器尚未装上（还在等 lookup_enabled / 主窗 / D3D 设备 / 字节签名等门）。
+  kLookupAdmissionIdentityAccepted = 3,
+  // 传感器已装。不声称"卡片一定出得来"——那要看几何有没有真的采到，那是 lookup_diag 的活。
+  kLookupAdmissionSensorInstalled = 4,
+};
+
+// adapter → registry 的准入报告。sha256_hex 只在 IdentityRejected 时有意义（其余状态留空），
+// 因为只有那一种情况需要用户把自己的 exe 身份报回来。
+struct LookupAdmissionReport {
+  uint32_t state = kLookupAdmissionUnknown;
+  // 小写十六进制 SHA-256 + NUL；首字节为 0 表示"本次没算出/不适用"。
+  char executable_sha256[kHookModuleDigestChars] = {};
+};
+
+// 把 32 字节摘要写成小写十六进制 + NUL。各 profile 在做 hash 准入时**本来就已经算过**
+// 这个摘要，只是过去算完就扔；这里只负责格式化，不重新读盘也不重新哈希——多算一次
+// SHA-256 要读几十 MB 的 exe，落在 Poll 线程上就是一次可感的卡顿。
+inline void FormatSha256Hex(const uint8_t* digest, size_t digest_bytes,
+                            char* out, size_t out_chars) {
+  if (out == nullptr || out_chars == 0) return;
+  out[0] = '\0';
+  if (digest == nullptr || digest_bytes != 32 ||
+      out_chars < kHookModuleDigestChars) {
+    return;
+  }
+  static const char kHex[] = "0123456789abcdef";
+  for (size_t i = 0; i < digest_bytes; ++i) {
+    out[i * 2] = kHex[(digest[i] >> 4) & 0x0F];
+    out[i * 2 + 1] = kHex[digest[i] & 0x0F];
+  }
+  out[digest_bytes * 2] = '\0';
+}
+
 // hook → host：用户真正提交查词时命中了哪个字符。hover 由游戏线程即时画高亮，不写这个
 // 单槽，避免后到 hover 覆盖尚未被 host 消费的 submit。写侧先把 `seq` 清 0，再写 payload，
 // 最后用 Interlocked 发布新 `seq`，与 VoiceClip / LoopbackMarker 同一套纪律。
@@ -844,9 +938,6 @@ constexpr uint32_t kLookupInputVirtualKeyMiddleButton = 0x0010u;
 constexpr uint32_t kLookupInputVirtualKeyXButton1 = 0x0020u;
 constexpr uint32_t kLookupInputVirtualKeyXButton2 = 0x0040u;
 
-// v17：hook DLL 摘要字段的固定长度 = 64 位十六进制 SHA-256 + 结尾 NUL。定长而不是变长，
-// 是因为它落在跨进程共享内存里：读侧必须能在不信任写侧的前提下有界读（strnlen 上界就是它）。
-constexpr uint32_t kHookModuleDigestChars = 65;
 
 // 共享内存头。injector 创建并清零、填各区偏移；hook DLL 注入后填格式、持续更新计数。
 // volatile 字段跨进程无锁单写单读。绝不在此放指针（跨进程地址无意义）。
@@ -860,6 +951,9 @@ struct SharedHeader {
   uint32_t luna_bridge_abi_version;  // = kLunaBridgeAbiVersion
   uint32_t luna_vendored_version;    // packed 10.16.1.2
   volatile uint32_t xaudio_diagnostics;  // kXAudioDiag*（沿用原 protocol_reserved 槽）
+  // v20 第二个引擎诊断字：上面那个 32 位已满（低 27 位既有 + HUNEX HFA 高 5 位）。
+  // 同 reserved_luna→reserved_hook_diagnostics 的先例，另立而不是拓宽。kXAudioDiag2*。
+  volatile uint32_t xaudio_diagnostics2;
   uint32_t sample_rate;     // hook 首次拿到语音格式后填
   uint32_t channels;        //
   uint32_t bits_per_sample;  //
@@ -993,6 +1087,18 @@ struct SharedHeader {
   volatile uint32_t lookup_geometry_admission_flags;
   volatile uint32_t lookup_geometry_admission_request_seq;
   volatile uint32_t lookup_geometry_admission_applied_seq;
+  // ── v19 游戏内查词准入（纯追加；hook→host）──────────────────────────────
+  // 写者唯一：AdapterRegistry::Poll 每轮汇总所有 adapter 的 lookupAdmission() 后写这里。
+  // 各 adapter 自己不碰这三个字段——多写者会让「Leaf 说身份不符」和「Siglus 说本引擎没做」
+  // 互相覆盖，而两条都"对"，只是说的不是同一个 adapter。汇总点唯一，竞争就不存在。
+  volatile uint32_t lookup_admission;      // kLookupAdmissionState 单值（**不是位或**）
+  // 单调发布序号；0 = 从未上报过。写侧先写 admission/sha256，再发布 seq，读侧据此
+  // 判"这份快照写完了"。与 VoiceClip / LookupHitSlot 同一套纪律。
+  volatile uint32_t lookup_admission_seq;
+  // 当前游戏主 exe 的小写十六进制 SHA-256 + NUL。只有 kLookupAdmissionIdentityRejected
+  // 时保证有值：那是唯一需要用户把自己的版本身份报回来的情形（hash-pinned 白名单不中）。
+  // 有界读——上界就是 kHookModuleDigestChars，绝不假设写侧给了 NUL。
+  char lookup_executable_sha256[kHookModuleDigestChars];
 };
 #pragma pack(pop)
 
@@ -1338,6 +1444,58 @@ inline bool PublishLookupShieldStatus(
   if (!LookupShieldRequestMatches(header, request)) return false;
   AtomicStoreShared32(&header->lookup_shield_applied_seq, request.seq);
   return LookupShieldRequestMatches(header, request);
+}
+
+// v19 查词准入：hook 侧发布。payload 先落，seq 最后发布——读侧看到新 seq 就保证
+// admission/sha256 已经写完。写者唯一（registry 汇总点），所以不需要写令牌。
+//
+// 只在**内容真的变了**时推进 seq：registry 每 16~200ms 就 Poll 一次，稳态下无脑推 seq
+// 会让 host 每轮都当成新事件去刷 UI。返回值告诉调用方这轮有没有发生变化。
+inline bool PublishLookupAdmission(SharedHeader* header,
+                                   const LookupAdmissionReport& report) {
+  if (header == nullptr) return false;
+  const uint32_t previous = AtomicLoadShared32(&header->lookup_admission);
+  const bool same_state = previous == report.state;
+  const bool same_digest =
+      std::strncmp(const_cast<const char*>(header->lookup_executable_sha256),
+                   report.executable_sha256, kHookModuleDigestChars) == 0;
+  if (same_state && same_digest &&
+      AtomicLoadShared32(&header->lookup_admission_seq) != 0) {
+    return false;
+  }
+  AtomicStoreShared32(&header->lookup_admission, report.state);
+  std::memcpy(const_cast<char*>(header->lookup_executable_sha256),
+              report.executable_sha256, kHookModuleDigestChars);
+  // 结尾 NUL 由写侧保证，读侧仍按有界读处理（写侧可能是别的构建）。
+  const_cast<char*>(header->lookup_executable_sha256)[kHookModuleDigestChars - 1] = '\0';
+  AtomicStoreShared32(&header->lookup_admission_seq,
+                      AtomicLoadShared32(&header->lookup_admission_seq) + 1);
+  return true;
+}
+
+// host 侧读取。seq==0 表示 hook 从未上报过（例如 helper 还没起来），此时**不能**当成
+// EngineUnsupported 去把开关灰掉——"还不知道"和"确定不支持"是两件事，混在一起就会在
+// 每次启动的头几百毫秒里误报"本引擎不支持"。
+inline LookupAdmissionReport ReadLookupAdmission(const SharedHeader* header,
+                                                 uint32_t* out_seq = nullptr) {
+  LookupAdmissionReport report;
+  if (out_seq != nullptr) *out_seq = 0;
+  if (header == nullptr) return report;
+  const uint32_t seq = AtomicLoadShared32(&header->lookup_admission_seq);
+  if (out_seq != nullptr) *out_seq = seq;
+  if (seq == 0) return report;
+  report.state = AtomicLoadShared32(&header->lookup_admission);
+  if (report.state > kLookupAdmissionSensorInstalled) {
+    // 写侧给了本构建不认识的值：当作"还不知道"，绝不猜。
+    report.state = kLookupAdmissionUnknown;
+    return report;
+  }
+  const char* digest =
+      const_cast<const char*>(header->lookup_executable_sha256);
+  const size_t length = ::strnlen(digest, kHookModuleDigestChars - 1);
+  std::memcpy(report.executable_sha256, digest, length);
+  report.executable_sha256[length] = '\0';
+  return report;
 }
 
 inline NativeLoopbackRequestSnapshot ReadNativeLoopbackRequest(

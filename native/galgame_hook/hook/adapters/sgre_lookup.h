@@ -6,24 +6,18 @@
 #include <cstdint>
 
 #include "exact_lookup_signature.h"
+#include "sgre_anchors.h"
 
 namespace fushi_voice_hook {
 
-// Exact RVA in the single executable admitted by sgre_profile.h. This is the
-// TextRender draw boundary, not UserHook1's pre-layout routine at 0x328e0.
-// At draw time the flattened glyph vector contains only the sentence that the
-// player can currently see and its control codes have already gone through the
-// game's own parser.
-inline constexpr uintptr_t kSgreTextDrawRva = 0x35aa0u;
-inline constexpr uintptr_t kSgreScenarioTextVtableRva = 0x5be330u;
-
-// Exact SGRE Steam x64 mouse-device slot. Static/runtime evidence for the one
-// executable admitted by sgre_profile.h:
-//   CreateDevice(GUID_SysMouse, module + 0xA96E18, ...)
-//   SetDataFormat(c_dfDIMouse2)
-//   GetDeviceState(0x14, ...), vtable slot 9 / byte offset 0x48.
-// This RVA must never become a generic-engine heuristic.
-inline constexpr uintptr_t kSgreDirectInputMouseDeviceRva = 0xA96E18u;
+// Engine-internal addresses (TextRender draw boundary, scenario text vtable,
+// DirectInput mouse device slot) are build-specific and come from
+// sgre_anchors.h: a measured row for known builds, a unique signature hit for
+// unknown ones. The hook sites below read the resolved SgreAnchorSet and stay
+// inert for any anchor that did not resolve.
+//
+// DirectInput ABI, which is not build-specific: SetDataFormat(c_dfDIMouse2),
+// GetDeviceState(0x14, ...) via vtable slot 9 / byte offset 0x48.
 inline constexpr size_t kSgreDirectInputGetDeviceStateVtableIndex = 9u;
 inline constexpr size_t kSgreDirectInputMouseStateBytes = 20u;
 inline constexpr size_t kSgreDirectInputMouseButtonsOffset = 12u;

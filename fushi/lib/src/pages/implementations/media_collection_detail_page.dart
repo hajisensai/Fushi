@@ -37,7 +37,12 @@ import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
 import 'package:fushi/src/pages/implementations/collection_relations_section.dart';
 import 'package:fushi/src/pages/implementations/collection_split_dialog.dart';
-import 'package:fushi/src/pages/implementations/jimaku_batch_dialog.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/subtitle_collection_panel.dart'
+    show SubtitleCollectionPanel;
+import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
@@ -704,22 +709,28 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
   }
 
-  /// 「为整个合集获取字幕」：把合集绑定到 AniList 系列后逐集经 Jimaku 批量下载字幕并
-  /// 持久化（本地集落 DB、远端集落 prefs，见 [JimakuBatchDialog]）。
+  /// 「为整个合集获取字幕」：全屏字幕工作台（合集作用域）——绑定 AniList 系列后经
+  /// 统一来源逐集批量下载并持久化（本地集落 DB、远端集落 prefs，见
+  /// [SubtitleCollectionPanel]）。
   Future<void> _fetchCollectionSubtitles() async {
     if (_members.isEmpty) return;
-    // 用当前 collection 行（可能已在别处更新 anilistId）作对话框初值。
+    // 用当前 collection 行（可能已在别处更新 anilistId / 字幕配置）作初值。
     final MediaCollectionRow collection =
         await widget.database.getMediaCollectionById(widget.collection.id) ??
             widget.collection;
+    final String saveDir = (await AppPaths.videoSubtitlesDirectory()).path;
     if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (_) => JimakuBatchDialog(
-        database: widget.database,
+    await SubtitleWorkbenchPage.open(
+      context,
+      host: AppSubtitleWorkbenchHost(
+        ProviderScope.containerOf(context, listen: false).read(appProvider),
+      ),
+      saveDirectory: saveDir,
+      collection: SubtitleCollectionSpec(
         collection: collection,
         members: _members,
       ),
+      initialScope: SubtitleWorkbenchScope.collection,
     );
   }
 

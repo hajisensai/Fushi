@@ -1027,15 +1027,17 @@ void main() {
       'lib/src/pages/implementations/video_shader_dialog.dart':
           'Experimental mpv shader dialog lists imported shader files as '
               'checkbox rows (transient video-subsystem content).',
-      'lib/src/pages/implementations/jimaku_batch_dialog.dart':
-          'Jimaku batch-download member list renders per-episode status icon / '
-              'title / language rows as video-subsystem content (batch subtitle '
-              'download progress), not ordinary page chrome — same reviewed '
-              'content exception class as video_episode_panel / '
-              'video_subtitle_jump_panel and the sibling jimaku_subtitle_dialog.',
-      'lib/src/pages/implementations/jimaku_subtitle_dialog.dart':
-          'Experimental Jimaku subtitle dialog lists downloadable subtitle '
-              'files as transient video-subsystem content rows.',
+      // 2026-08 字幕工作台：两个 Jimaku 对话框的状态机整体搬进面板文件（对话框只剩
+      // 壳，不再含被禁模式），豁免随代码一起搬，理由不变。
+      'lib/src/pages/implementations/subtitle_collection_panel.dart':
+          'Collection batch-download member list renders per-episode status '
+              'icon / title / language rows as video-subsystem content (batch '
+              'subtitle download progress), not ordinary page chrome — same '
+              'reviewed content exception class as video_episode_panel / '
+              'video_subtitle_jump_panel and the sibling subtitle_search_panel.',
+      'lib/src/pages/implementations/subtitle_search_panel.dart':
+          'Online subtitle search panel lists downloadable subtitle files as '
+              'transient video-subsystem content rows.',
       'lib/src/pages/implementations/anime_download_dialog.dart':
           'Anime download dialog lists Nyaa torrent candidates (release group / '
               'resolution / seeders / subtitle-coverage badges) and per-episode '
@@ -1270,10 +1272,11 @@ void main() {
         'BorderRadius.circular(',
         'fontSize:'
       },
-      'lib/src/pages/implementations/jimaku_batch_dialog.dart': <String>{
+      'lib/src/pages/implementations/subtitle_collection_panel.dart': <String>{
+        'BorderRadius.circular(',
         'ListTile('
       },
-      'lib/src/pages/implementations/jimaku_subtitle_dialog.dart': <String>{
+      'lib/src/pages/implementations/subtitle_search_panel.dart': <String>{
         'BorderRadius.circular(',
         'VisualDensity.compact',
         'ListTile('
@@ -3082,12 +3085,20 @@ void main() {
     final String homeSource = File(
       'lib/src/pages/implementations/home_page.dart',
     ).readAsStringSync();
-    final String railLeading = _functionSource(
-      homeSource,
-      'Widget _buildRailLeading()',
-      'Widget _bodyWithMiniBar()',
+    // 品牌位（rail 的 leading）已从 home_page 的私有方法抽成
+    // [NavRailBrandButton]——它同时是官网入口，需要独立可测（点击/焦点确认真的
+    // 打开官网，见 test/widgets/nav_rail_brand_button_test.dart）。MD3 判据跟着
+    // 实现搬到该组件的 build 里，home_page 这边只剩「rail 确实挂了品牌位」。
+    final String brandSource = File(
+      'lib/src/utils/components/nav_rail_brand_button.dart',
+    ).readAsStringSync();
+    final String railLeading = _sectionSource(
+      brandSource,
+      'Widget build(BuildContext context)',
+      // 品牌位的 build 是该文件最后一个成员，没有下一个可锚的符号。
+      brandSource.length,
     );
-    expect(homeSource, contains('leading: _buildRailLeading()'));
+    expect(homeSource, contains('leading: const NavRailBrandButton()'));
     expect(railLeading, contains('FushiDesignTokens.of(context)'));
     expect(railLeading, contains('tokens.spacing'));
     expect(railLeading, contains('tokens.radii.controlRadius'));

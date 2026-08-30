@@ -158,7 +158,8 @@ void main() {
   test('BUG-1509: search paints loading frame before persistence and network',
       () {
     final String source =
-        File('lib/src/pages/implementations/jimaku_subtitle_dialog.dart')
+        // 搜索状态机住在面板文件（2026-08 字幕工作台改造），对话框只剩壳。
+        File('lib/src/pages/implementations/subtitle_search_panel.dart')
             .readAsStringSync();
     final int methodStart = source.indexOf('Future<void> _search() async {');
     final int methodEnd = source.indexOf(
