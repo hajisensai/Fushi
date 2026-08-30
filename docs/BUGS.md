@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1838 条。点号进各自文件。
+> 共 1839 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1968](bugs/BUG-1968-windows-manga-ocr-directml-runtime.md) | ✅ | ✅ | Windows 漫画 OCR detector 未实际启用 DirectML |
 | [BUG-1965](bugs/BUG-1965-ankiconnect-bundled-addon-missing-modules.md) | ✅ | ✅ | 内置 AnkiConnect 插件包漏打 web/edit/util 三个模块，装上必 ImportError |
 | [BUG-1964](bugs/BUG-1964-ankiconnect-port-busy-timeout-misleading.md) | ✅ | ✅ | AnkiConnect 端口被占用时只报超时，提示指向防火墙且泄漏裸 TimeoutException |
 | [BUG-1963](bugs/BUG-1963-windows-titlebar-focus-ring-offset.md) | ✅ | ✅ | Windows 自定义标题栏下焦点环整体向下错位 |

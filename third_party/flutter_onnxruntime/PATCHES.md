@@ -7,9 +7,9 @@ Vendored from pub.dev `flutter_onnxruntime` **1.8.3**. Referenced via
 ## Why vendored
 
 All five native platforms (Android / iOS / Linux / macOS / Windows) are enabled
-— Hibiki's built-in manga OCR runs locally on every one of them. The fork exists
-only to keep the **Apple deployment floor** at the true `onnxruntime-objc`
-minimum instead of upstream's conservative declaration.
+— Hibiki's built-in manga OCR runs locally on every one of them. The fork keeps
+the **Apple deployment floor** at the true `onnxruntime-objc` minimum and makes
+the Windows plugin's advertised `DIRECT_ML` provider a real execution path.
 
 Upstream ships a `Package.swift` next to each Apple podspec. When those exist,
 Flutter builds the plugin through **Swift Package Manager**, which pulls
@@ -47,6 +47,14 @@ and macOS 13.4–14.0 for free, with no change to the ORT binary or the Dart API
    size).
 5. `environment.sdk` widened `^3.7.0` -> `>=3.5.0 <4.0.0` to match the Hibiki
    workspace floor (per the other `third_party/` vendored packages).
+6. Windows downloads the pinned official
+   `Microsoft.ML.OnnxRuntime.DirectML` 1.22.0 and `Microsoft.AI.DirectML`
+   1.15.4 NuGet artifacts (SHA-256 pinned), bundles `onnxruntime.dll`,
+   `onnxruntime_providers_shared.dll`, and `DirectML.dll`, and handles
+   `DIRECT_ML` through ORT's
+   `OrtDmlApi::SessionOptionsAppendExecutionProvider_DML` with the required
+   sequential execution mode. The upstream generic Windows ORT archive is
+   CPU-only, so its Dart enum previously led only to `INVALID_PROVIDER`.
 
 **The Dart API under `lib/` is byte-for-byte upstream**, and so are all five
 native source trees — no ORT wrapper logic changed anywhere.
@@ -67,7 +75,12 @@ path or drift the floors apart.
 
 ## Re-vendoring on upgrade
 
-Copy the new upstream version over this folder, then re-apply deltas #1–#5.
+Copy the new upstream version over this folder, then re-apply deltas #1–#6.
 Before bumping the `onnxruntime-objc` pin, check the new version's podspec
 platforms (`pod spec cat onnxruntime-objc --version=X.Y.Z`) — if the floor moved,
 the four project deployment targets and the guard test move with it.
+
+Before bumping the Windows ORT pin, update both NuGet package versions and
+SHA-256 values together, verify the DirectML package's declared
+`Microsoft.AI.DirectML` dependency, and keep all three runtime DLLs in
+`flutter_onnxruntime_bundled_libraries`.

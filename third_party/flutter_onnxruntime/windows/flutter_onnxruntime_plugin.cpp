@@ -19,6 +19,9 @@
 
 #include <memory>
 #include <sstream>
+#include <stdexcept>
+
+#include <dml_provider_factory.h>
 
 // Include our implementation headers
 #include "src/session_manager.h"
@@ -521,6 +524,22 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
 
             // Append CUDA execution provider to session options
             session_options.AppendExecutionProvider_CUDA_V2(*cuda_options_ptr);
+          } else if (provider == "DIRECT_ML") {
+            // DirectML requires sequential execution. Memory patterns are
+            // disabled because their allocations cannot be reused safely
+            // across DML device resources.
+            session_options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+            session_options.DisableMemPattern();
+            const OrtDmlApi *dml_api = nullptr;
+            Ort::ThrowOnError(Ort::GetApi().GetExecutionProviderApi(
+                "DML", ORT_API_VERSION,
+                reinterpret_cast<const void **>(&dml_api)));
+            if (dml_api == nullptr) {
+              throw std::runtime_error(
+                  "ONNX Runtime returned no DirectML provider API");
+            }
+            Ort::ThrowOnError(
+                dml_api->SessionOptionsAppendExecutionProvider_DML(session_options, device_id));
           } else if (provider == "TENSOR_RT") {
             // Use TensorRT if available
             // This is just a placeholder - actual implementation would depend on TensorRT availability
