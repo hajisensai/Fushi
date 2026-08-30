@@ -247,6 +247,25 @@ class DeleteLocalFilesRow extends StatelessWidget {
       );
 }
 
+/// 删除确认框的「记住这些选择」行。它只控制两个删除选项下次的默认值，不会跳过确认框。
+class DeleteRememberChoicesRow extends StatelessWidget {
+  const DeleteRememberChoicesRow({
+    required this.value,
+    required this.onChanged,
+    super.key,
+  });
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) => DeleteConfirmCheckboxRow(
+        title: t.delete_choices_remember,
+        value: value,
+        onChanged: onChanged,
+      );
+}
+
 /// 把 [DeletionDisclosure] 渲染成确认框里的「会被删除 / 会被保留」两段列表。
 ///
 /// 书架删除确认框（`ReaderHistoryDeleteDialog`）与通用删除确认框
