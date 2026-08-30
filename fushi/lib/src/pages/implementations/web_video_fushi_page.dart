@@ -766,40 +766,20 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     if (tracker == null) {
       final FushiDatabase db = _appModel.database;
       tracker = VideoWatchTracker(
-        title: row.title,
         bookUid: widget.bookUid,
-        recordFlush: (List<(String, int, int)> buckets) => db.recordWatchFlush(
+        // v92：观看时长 + 字幕字数走唯一时钟 StudyClock（活跃态 = 正在播放，由
+        // tracker 挂上）。与本地视频页同一构造——网页档只是换了播放宿主，统计
+        // 语义不该因此分叉。
+        clock: StudyClock(
+          database: db,
+          mediaKind: kActivityMediaVideo,
+          mediaKey: widget.bookUid,
           title: row.title,
-          bookUid: widget.bookUid,
-          buckets: buckets,
-        ),
-        addSubtitleChars: (String dateKey, int chars) => db.recordWatchFlush(
-          title: row.title,
-          bookUid: widget.bookUid,
-          buckets: const <(String, int, int)>[],
-          subtitleChars: chars,
-          subtitleCharsDateKey: dateKey,
+          onWriteError: (Object e, StackTrace st) =>
+              ErrorLogService.instance.log('StudyClock.write(web-video)', e, st),
         ),
         markCompleted: (String uid) =>
             db.markVideoCompleted(uid, DateTime.now()),
-        recordActivity:
-            (
-              String title,
-              String uid,
-              String dateKey,
-              int timestampMs,
-              int durationMs,
-              int chars,
-            ) => db.addActivityEvent(
-              eventType: kActivityWatch,
-              mediaType: kActivityMediaVideo,
-              title: title,
-              mediaKey: uid,
-              dateKey: dateKey,
-              timestampMs: timestampMs,
-              durationMs: durationMs,
-              charsDelta: chars,
-            ),
       )..attach(_controller);
       _watchTracker = tracker;
     }
