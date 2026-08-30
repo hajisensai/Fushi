@@ -191,7 +191,7 @@ void main() {
               find.byType(LinearProgressIndicator),
             )
             .value,
-        closeTo(2 / 8, 1e-9),
+        closeTo(3 / 8, 1e-9),
       );
     });
   });
