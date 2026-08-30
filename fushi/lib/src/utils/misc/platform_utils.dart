@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/gestures.dart';
@@ -64,6 +65,114 @@ ScrollPhysics desktopAwareScrollPhysics() {
   return md3Desktop
       ? const AlwaysScrollableScrollPhysics(parent: ClampingScrollPhysics())
       : const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics());
+}
+
+/// Windows 鼠标滚轮的粗粒度位移适配器。
+///
+/// Windows 传统滚轮通常一次派发约 100–120 logical pixels；Flutter 原样交给
+/// [ScrollPosition.pointerScroll] 后，单格滚动距离偏大，连续滚动会呈现明显跳跃。
+/// 这里仅把一个手势中首帧绝对值不小于 [coarseDeltaThreshold] 的输入判为粗滚轮，
+/// 并在 [gestureIdleTimeout] 内锁定 [coarseDeltaScale]。细粒度首帧（触控板等）
+/// 整段保持 1:1，避免同一手势尾部变小时倍率突然变化。
+///
+/// 不使用动画：仍由 Flutter 的 [ScrollPosition.pointerScroll] 同步处理边界、方向和
+/// 通知，因此不会给触控板引入惯性拖尾。非 Windows 默认关闭，行为与普通
+/// [ScrollController] 相同。
+class DesktopWheelScrollController extends ScrollController {
+  DesktopWheelScrollController({
+    bool? scaleCoarseWheelDeltas,
+    this.coarseDeltaThreshold = 60,
+    this.coarseDeltaScale = 0.48,
+    this.gestureIdleTimeout = const Duration(milliseconds: 200),
+    super.initialScrollOffset,
+    super.keepScrollOffset,
+    super.debugLabel,
+    super.onAttach,
+    super.onDetach,
+  }) : scaleCoarseWheelDeltas = scaleCoarseWheelDeltas ?? isWindowsPlatform;
+
+  final bool scaleCoarseWheelDeltas;
+  final double coarseDeltaThreshold;
+  final double coarseDeltaScale;
+  final Duration gestureIdleTimeout;
+
+  @override
+  ScrollPosition createScrollPosition(
+    ScrollPhysics physics,
+    ScrollContext context,
+    ScrollPosition? oldPosition,
+  ) {
+    return _DesktopWheelScrollPosition(
+      physics: physics,
+      context: context,
+      oldPosition: oldPosition,
+      initialPixels: initialScrollOffset,
+      keepScrollOffset: keepScrollOffset,
+      debugLabel: debugLabel,
+      scaleCoarseWheelDeltas: scaleCoarseWheelDeltas,
+      coarseDeltaThreshold: coarseDeltaThreshold,
+      coarseDeltaScale: coarseDeltaScale,
+      gestureIdleTimeout: gestureIdleTimeout,
+    );
+  }
+}
+
+class _DesktopWheelScrollPosition extends ScrollPositionWithSingleContext {
+  _DesktopWheelScrollPosition({
+    required super.physics,
+    required super.context,
+    required this.scaleCoarseWheelDeltas,
+    required this.coarseDeltaThreshold,
+    required this.coarseDeltaScale,
+    required this.gestureIdleTimeout,
+    super.initialPixels,
+    super.keepScrollOffset,
+    super.oldPosition,
+    super.debugLabel,
+  });
+
+  final bool scaleCoarseWheelDeltas;
+  final double coarseDeltaThreshold;
+  final double coarseDeltaScale;
+  final Duration gestureIdleTimeout;
+
+  Timer? _gestureIdleTimer;
+  double? _gestureScale;
+
+  void _resetWheelGesture() {
+    _gestureIdleTimer?.cancel();
+    _gestureIdleTimer = null;
+    _gestureScale = null;
+  }
+
+  @override
+  void pointerScroll(double delta) {
+    if (!scaleCoarseWheelDeltas) {
+      super.pointerScroll(delta);
+      return;
+    }
+    // Flutter 用 pointerScroll(0) 投递 PointerScrollInertiaCancelEvent。它是
+    // 手势的显式终点；若只等 idle timer，紧随其后的另一种设备会继承旧分类。
+    if (delta == 0) {
+      _resetWheelGesture();
+      super.pointerScroll(delta);
+      return;
+    }
+
+    _gestureScale ??=
+        delta.abs() >= coarseDeltaThreshold ? coarseDeltaScale : 1.0;
+    _gestureIdleTimer?.cancel();
+    _gestureIdleTimer = Timer(gestureIdleTimeout, () {
+      _resetWheelGesture();
+    });
+    super.pointerScroll(delta * _gestureScale!);
+  }
+
+  @override
+  void dispose() {
+    _resetWheelGesture();
+    super.dispose();
+  }
 }
 
 /// 让**横向**滚动区接受鼠标 / 触控板 / 触笔的拖动滚动。

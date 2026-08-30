@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/cupertino.dart';
@@ -33,6 +34,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/present_watchdog.dart';
+import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
@@ -282,7 +284,15 @@ void main([List<String> args = const <String>[]]) {
               ? startupAppIcon.customPath
               : await exportPresetIconToFile(startupAppIcon.presetKey);
           if (iconPath != null && File(iconPath).existsSync()) {
-            await WindowCaptionChannel.setWindowIcon(iconPath);
+            final bool applied =
+                await WindowCaptionChannel.setWindowIcon(iconPath);
+            if (applied) {
+              // TODO-901：安装器更新可能把桌面 / 开始菜单 / 任务栏固定项的
+              // IconLocation 重置回 exe；同一档图标又不能靠重新点选触发设置页同步。
+              // 冷启动成功恢复窗口图标后，用同一源文件字节重写 .lnk 以自愈。
+              final Uint8List iconBytes = await File(iconPath).readAsBytes();
+              await syncWindowsShortcutIcons(iconBytes);
+            }
           }
         } catch (e) {
           debugPrint('[Fushi] window icon restore failed: $e');

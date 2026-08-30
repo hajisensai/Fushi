@@ -385,6 +385,9 @@ const int _kTrackingUnlinkedLimit = 5;
 
 class _HomeDashboardPageState
     extends BaseModuleTabPageState<HomeDashboardPage> {
+  final ScrollController _dashboardScrollController =
+      DesktopWheelScrollController();
+
   /// 「继续」横滑行：三类条目统一竖版海报槽（BUG-1299）。视频封面可能是刮削
   /// 落地的 2:3 竖版海报，旧「书竖 5:7 / 视频横 16:9」混排会把海报裁成中间一条；
   /// 现在与视频库主网格同源走 [PortraitCoverImage]——竖图铺满、横版截帧模糊
@@ -585,6 +588,7 @@ class _HomeDashboardPageState
     _galgameRepo?.removeListener(_scheduleReload);
     _trackingRevision?.removeListener(_scheduleReload);
     _prefsRepoForRemoteGate?.removeListener(_onPrefsChangedForRemoteGate);
+    _dashboardScrollController.dispose();
     super.dispose();
   }
 
@@ -993,6 +997,7 @@ class _HomeDashboardPageState
           );
         }
         return ListView(
+          controller: _dashboardScrollController,
           padding: EdgeInsets.all(tokens.spacing.card),
           children: <Widget>[
             // 已迁移只读态（Fushi 迁移 P1-4，仅老包生效）：首屏常驻引导。
