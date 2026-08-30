@@ -145,10 +145,18 @@ class GalHookTextOverlayController extends ChangeNotifier {
   int? _sessionKey;
   String? _displayedLineId;
 
+  /// 与 [_displayedLineId] 配对的文本镜像：折叠后同一句的后续快照不产生新 id，
+  /// 只比 id 的话浮窗会永远停在这句的第一段上。
+  String? _displayedLineText;
+
   /// 游戏内查词用的「会话最新行」镜像，与 [_displayedLineId]（浮窗显示的那行）分开：
   /// 浮窗被关掉时仍要能观察新文本事件。ID 只是触发镜像；是否真换句
   /// 由 [GalIngameLookupController.onLineChanged] 用当前 submit 的句子内容裁决。
   String? _ingameLatestLineId;
+
+  /// 与 [_ingameLatestLineId] 配对的文本镜像。同一句被引擎分多次吐出来时会**就地
+  /// 扩写**（id 不变、文本变长），只比 id 会让游戏内卡片继续挂在旧排版的字形坐标上。
+  String? _ingameLatestLineText;
   double _opacity = _defaultOpacity;
   double _lastNonZeroOpacity = _defaultRestoreOpacity;
   double _fontSize = kGalHookTextFontSize;
@@ -458,7 +466,9 @@ class GalHookTextOverlayController extends ChangeNotifier {
       _passThrough = false;
       _locked = false;
       _displayedLineId = null;
+      _displayedLineText = null;
       _ingameLatestLineId = null;
+      _ingameLatestLineText = null;
       // 新会话：上一局的试听计时不能把高亮留在新浮窗上。
       _replayResetTimer?.cancel();
       _replayResetTimer = null;
@@ -498,9 +508,14 @@ class GalHookTextOverlayController extends ChangeNotifier {
     // 文本服务仍保留这些 occurrence（配音/制卡身份需要），只有查词 surface
     // 会把同句重发折叠为同一生命周期。
     final String? latestLineId = lines.isEmpty ? null : lines.last.id;
-    if (latestLineId != _ingameLatestLineId) {
+    final String? latestLineText = lines.isEmpty ? null : lines.last.text;
+    // 文本也要比：就地扩写时 id 不变但屏上排版已经变了，卡片锚定的字形位置不再
+    // 作数，必须一并消场。
+    if (latestLineId != _ingameLatestLineId ||
+        latestLineText != _ingameLatestLineText) {
       _ingameLatestLineId = latestLineId;
-      await _ingameLookup.onLineChanged(lines.isEmpty ? null : lines.last.text);
+      _ingameLatestLineText = latestLineText;
+      await _ingameLookup.onLineChanged(latestLineText);
     }
 
     if (_suppressedForSession) return;
@@ -544,18 +559,24 @@ class GalHookTextOverlayController extends ChangeNotifier {
       // 否则下一次 _syncVoiceState 会认为「已经推过了」而不再推。
       _pushedReplaying = false;
       _pushedRecapturing = false;
-      if (_visible) _displayedLineId = latest.id;
+      if (_visible) {
+        _displayedLineId = latest.id;
+        _displayedLineText = latest.text;
+      }
       notifyListeners();
       await _syncVoiceState();
       return;
     }
-    if (_following && latest.id != _displayedLineId) {
+    // 换句（id 变）或就地扩写（id 不变、文本变长）都要重推。
+    if (_following &&
+        (latest.id != _displayedLineId || latest.text != _displayedLineText)) {
       await GalHookTextOverlayChannel.updateText(
         lineId: latest.id,
         text: latest.text,
         rubySpans: rubySpansToChannel(latest.rubySpans),
       );
       _displayedLineId = latest.id;
+      _displayedLineText = latest.text;
       notifyListeners();
     }
     // 补录窗口可能由 session 侧超时自行收束：每轮都比对一次，浮窗上的「录音中」

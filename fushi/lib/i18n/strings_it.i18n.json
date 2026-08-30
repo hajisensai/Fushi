@@ -3893,5 +3893,7 @@
   "gal_hook_passthrough_blocks_mouse_hint": "Attivo: le righe di testo ricevono ancora i clic, così puoi toccare una parola. Disattivo: l’intera sovrapposizione è trasparente al mouse — clicchi ciò che sta sotto, ma toccare le parole non funziona più.",
   "floating_lyric_passthrough": "Lascia passare i clic a ciò che sta sotto",
   "floating_lyric_transparency": "Attiva/disattiva lo sfondo",
-  "floating_lyric_topmost": "Mantieni in primo piano"
+  "floating_lyric_topmost": "Mantieni in primo piano",
+  "gal_hook_fold_progressive_lines": "Unisci le battute spezzate",
+  "gal_hook_fold_progressive_lines_hint": "Alcuni motori ridisegnano l’intera riga a ogni clic, così una stessa riga viene catturata più volte. Ripiega quelle istantanee in una sola riga."
 }

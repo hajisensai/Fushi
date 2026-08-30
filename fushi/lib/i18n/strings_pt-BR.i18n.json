@@ -3893,5 +3893,7 @@
   "gal_hook_passthrough_blocks_mouse_hint": "Ligado: as linhas de texto continuam recebendo cliques, então você pode tocar numa palavra. Desligado: toda a sobreposição fica transparente ao mouse — você clica no que está embaixo, mas tocar palavras não funciona mais.",
   "floating_lyric_passthrough": "Deixar os cliques passarem para baixo",
   "floating_lyric_transparency": "Alternar o fundo",
-  "floating_lyric_topmost": "Manter sempre visível"
+  "floating_lyric_topmost": "Manter sempre visível",
+  "gal_hook_fold_progressive_lines": "Unir linhas de diálogo divididas",
+  "gal_hook_fold_progressive_lines_hint": "Alguns motores redesenham a linha inteira a cada clique, então a mesma linha é capturada várias vezes. Dobre esses instantâneos em uma única linha."
 }

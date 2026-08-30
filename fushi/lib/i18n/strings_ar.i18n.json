@@ -3893,5 +3893,7 @@
   "gal_hook_passthrough_blocks_mouse_hint": "تشغيل: تبقى أسطر النص تستقبل النقرات فتستطيع الضغط على كلمة. إيقاف: تصبح الطبقة كلها شفافة للفأرة — تنقر ما تحتها، لكن الضغط على الكلمات لا يعمل.",
   "floating_lyric_passthrough": "النقر للوصول إلى ما تحته",
   "floating_lyric_transparency": "تبديل الخلفية",
-  "floating_lyric_topmost": "الإبقاء في المقدمة"
+  "floating_lyric_topmost": "الإبقاء في المقدمة",
+  "gal_hook_fold_progressive_lines": "دمج أسطر الحوار المقسّمة",
+  "gal_hook_fold_progressive_lines_hint": "بعض المحرّكات تعيد رسم السطر كاملًا مع كل نقرة، فيُلتقط السطر الواحد عدة مرات. اطوِ تلك اللقطات في سطر واحد."
 }

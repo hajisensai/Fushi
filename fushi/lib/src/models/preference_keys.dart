@@ -64,6 +64,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'floating_lyric_text_opacity',
   'floating_lyric_width',
   'gal_hook_click_lookup',
+  'gal_hook_fold_progressive_lines',
   'gal_hook_ingame_lookup_enabled',
   'gal_hook_lookup_trigger',
   'gal_hook_passthrough_blocks_mouse',

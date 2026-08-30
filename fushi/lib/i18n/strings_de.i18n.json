@@ -3893,5 +3893,7 @@
   "gal_hook_passthrough_blocks_mouse_hint": "An: Textzeilen nehmen weiter Klicks an, du kannst also ein Wort antippen. Aus: Das gesamte Overlay ist für die Maus durchlässig – du klickst, was darunter liegt, aber Wörter antippen geht nicht mehr.",
   "floating_lyric_passthrough": "Klicks nach unten durchreichen",
   "floating_lyric_transparency": "Hintergrund umschalten",
-  "floating_lyric_topmost": "Immer im Vordergrund"
+  "floating_lyric_topmost": "Immer im Vordergrund",
+  "gal_hook_fold_progressive_lines": "Aufgeteilte Dialogzeilen zusammenfassen",
+  "gal_hook_fold_progressive_lines_hint": "Manche Engines zeichnen bei jedem Klick die ganze Zeile neu, sodass eine Zeile mehrfach erfasst wird. Diese Schnappschüsse zu einer Zeile zusammenfalten."
 }

@@ -104,6 +104,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/lookup/gal_hook_overlay_interaction_prefs_test.dart',
   'game/Caption still catches clicks while clicking through':
       'test/lookup/gal_hook_overlay_interaction_prefs_test.dart',
+  // 台词折叠开关。写 prefsRepo（changed=true），生效点在 TexthookerService 这个
+  // 进程级单例的 buffer 折叠上——harness 里没有跑着的 hook 会话，也就没有可探的
+  // 输入。由折叠判据的纯函数用例 + service 级行为用例咬住（前缀/后缀/等长/过短
+  // 四种形状 + 关掉开关必须退回旧的逐条追加行为）。
+  'game/Merge split dialogue lines':
+      'test/sync/texthooker_progressive_fold_test.dart',
   'game/In-game dictionary lookup':
       'test/lookup/gal_ingame_lookup_contract_test.dart + '
           'native/galgame_hook/tests/lookup_ipc_contract_test.cpp + '

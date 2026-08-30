@@ -160,6 +160,7 @@ import 'package:fushi/src/mining/youtube_clip_miner.dart';
 import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/sync/fushi_remote_api_handlers.dart'
     show RemotePopupDictionaryCss;
@@ -2320,6 +2321,10 @@ class AppModel with ChangeNotifier {
         mediaHistoryRepo.loadFromDb(),
       ]);
       prefsRepo.addListener(notifyListeners);
+      // 偏好一装载就把折叠开关推给 TexthookerService（进程级单例、无 ref）。漏了这一步
+      // 开关就只在「本次会话里手动改过」时才生效，重启后静默退回默认值。
+      TexthookerService.instance.foldProgressiveLines =
+          prefsRepo.galHookFoldProgressiveLines;
       // 代理是**进程级**网络出口配置，却只存在偏好里；同步层的单例（GoogleDriveAuth 等）
       // 拿不到 AppModel，以前就只能各自裸连——BUG-1348 的谷歌云盘登录超时正是如此。偏好
       // 一装载好就把进程级读取器接上去，此后任何 applyAppProxy(client) 都自动拿到同一个值，
@@ -6995,6 +7000,13 @@ class AppModel with ChangeNotifier {
       prefsRepo.galHookPassThroughBlocksMouse;
   Future<void> setGalHookPassThroughBlocksMouse(bool value) =>
       prefsRepo.setGalHookPassThroughBlocksMouse(value);
+  // 折叠「同一句台词的多次快照」。TexthookerService 是没有 ref 的进程级单例，
+  // 拿不到偏好；真值由这里单向推给它（启动期一次 + 每次改开关一次）。
+  bool get galHookFoldProgressiveLines => prefsRepo.galHookFoldProgressiveLines;
+  Future<void> setGalHookFoldProgressiveLines(bool value) async {
+    await prefsRepo.setGalHookFoldProgressiveLines(value);
+    TexthookerService.instance.foldProgressiveLines = value;
+  }
 
   // TODO-370: 悬浮字幕透明度（按钮底色 / 文字），0..100 百分比，100=保持现观感。
   int get floatingLyricButtonBgOpacity =>

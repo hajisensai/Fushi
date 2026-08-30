@@ -2113,6 +2113,23 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 折叠「同一句台词的多次快照」（Zato 症状：一句台词分多次点击显示，工作台里
+  /// 第二句出现两次）。默认开——引擎逐段重绘是 galgame 常态；留开关是给「某个引擎的
+  /// 两句不同台词真的构成前缀关系」这种情形一个不改代码就能退回旧行为的逃生口。
+  static const bool galHookFoldProgressiveLinesDefault = true;
+
+  bool get galHookFoldProgressiveLines =>
+      getPref(
+        'gal_hook_fold_progressive_lines',
+        defaultValue: galHookFoldProgressiveLinesDefault,
+      ) ==
+      true;
+
+  Future<void> setGalHookFoldProgressiveLines(bool value) async {
+    await setPref('gal_hook_fold_progressive_lines', value);
+    notifyListeners();
+  }
+
   /// 游戏内查词总开关（仅 Windows 生效）。
   bool get galIngameLookupEnabled =>
       getPref(

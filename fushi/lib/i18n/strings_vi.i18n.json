@@ -3893,5 +3893,7 @@
   "gal_hook_passthrough_blocks_mouse_hint": "Bật: các dòng chữ vẫn nhận nhấp chuột nên bạn chạm được vào từ. Tắt: toàn bộ lớp phủ trong suốt với chuột — bạn bấm được thứ bên dưới, nhưng chạm vào từ không còn tác dụng.",
   "floating_lyric_passthrough": "Cho phép nhấp xuyên xuống dưới",
   "floating_lyric_transparency": "Bật/tắt nền",
-  "floating_lyric_topmost": "Luôn hiển thị trên cùng"
+  "floating_lyric_topmost": "Luôn hiển thị trên cùng",
+  "gal_hook_fold_progressive_lines": "Gộp các dòng thoại bị chia nhỏ",
+  "gal_hook_fold_progressive_lines_hint": "Một số engine vẽ lại cả dòng mỗi lần nhấp, nên cùng một dòng bị bắt nhiều lần. Gộp các ảnh chụp đó thành một dòng."
 }

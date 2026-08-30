@@ -3893,5 +3893,7 @@
   "gal_hook_passthrough_blocks_mouse_hint": "เปิด: บรรทัดข้อความยังรับคลิก จึงแตะคำได้ ปิด: โอเวอร์เลย์ทั้งหมดโปร่งต่อเมาส์ คุณคลิกสิ่งที่อยู่ข้างล่างได้ แต่แตะคำจะไม่ทำงานอีก",
   "floating_lyric_passthrough": "ส่งการคลิกไปยังหน้าต่างด้านล่าง",
   "floating_lyric_transparency": "สลับพื้นหลัง",
-  "floating_lyric_topmost": "อยู่ด้านบนเสมอ"
+  "floating_lyric_topmost": "อยู่ด้านบนเสมอ",
+  "gal_hook_fold_progressive_lines": "รวมบรรทัดบทสนทนาที่ถูกแบ่ง",
+  "gal_hook_fold_progressive_lines_hint": "บางเอนจินวาดทั้งบรรทัดใหม่ทุกครั้งที่คลิก ทำให้บรรทัดเดียวถูกเก็บหลายครั้ง ให้ยุบสแนปช็อตเหล่านั้นเป็นบรรทัดเดียว"
 }
