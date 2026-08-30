@@ -92,16 +92,21 @@ constexpr const char* kGalHookSlotActions[kGalHookSlotCount] = {
 // 没有 replayVoice / recaptureVoice / openWorkbench：那三颗是 galgame 捕获链专
 // 属，对有声书是死键。也没有 toggleFollow：有声书的「跟随」就是播放本身，
 // playPause 已经表达了它。
-constexpr int kAudiobookSlotCount = 8;
+//
+// **也没有 togglePassThrough / toggleTransparency**：这两个 action 不像 lock /
+// topmost 那样由 DispatchControlAction 就地翻转，它们经 on_control_ 转给 Dart，
+// 而有声书那一侧的处理函数（audiobook_session.dart）只有一行 debugPrint ——
+// 画得出、点得到、按下去什么也不发生。galgame 那边有真实现（穿透是 hook 浮窗的
+// 核心能力），有声书没有；在真接上之前，这里就不该画出来。
+// 要加回来：先在 audiobook_session 接上真正的翻转，再把 action 放回本表。
+constexpr int kAudiobookSlotCount = 6;
 constexpr const char* kAudiobookSlotActions[kAudiobookSlotCount] = {
-    "previousCue",         // 0 上一句
-    "playPause",           // 1 播放 / 暂停
-    "nextCue",             // 2 下一句
-    "togglePassThrough",   // 3 鼠标穿透
-    "toggleTransparency",  // 4 一键透明
-    "lock",                // 5 位置锁定
-    "topmost",             // 6 置顶图钉（native 就地翻转）
-    "close",               // 7 关闭
+    "previousCue",  // 0 上一句
+    "playPause",    // 1 播放 / 暂停
+    "nextCue",      // 2 下一句
+    "lock",         // 3 位置锁定
+    "topmost",      // 4 置顶图钉（native 就地翻转）
+    "close",        // 5 关闭
 };
 
 // 任一 profile 的最大槽数：窗口最小宽度等「必须容得下最宽工具条」的几何常量按它

@@ -324,6 +324,8 @@ void main() {
         required String tableName,
         required List<String> expected,
         required String dartConsumer,
+        required String dartExecutor,
+        required String executorRegisterCall,
       }) {
         final int tableStart = toolbarHeader.indexOf('$tableName[');
         expect(tableStart, greaterThan(0), reason: 'missing table $tableName');
@@ -351,13 +353,30 @@ void main() {
         // deliberately skip the Dart round-trip) or by the Dart side's action
         // switch. Without this, adding a slot to the table draws a button that
         // does nothing — and the hardcoded list above would happily bless it.
+        // 判据必须落在**执行方**，不能只到 channel 的转发层。
+        //
+        // 原来只查 `dartConsumer.contains("case '$action':")` —— 那是 channel 里
+        // 一行 `_onX?.call()`，无论上游注册的是真实现还是一行 debugPrint 都命中。
+        // 有声书的 togglePassThrough / toggleTransparency 就是这么绿着的：画得出、
+        // 点得到、按下去什么也不发生。所以在「channel 有 case」之上再要求
+        // 「注册方真的把这个 handler 传进去了」。
+        final int registerAt = dartExecutor.indexOf(executorRegisterCall);
+        expect(registerAt, isNonNegative,
+            reason: '找不到 $executorRegisterCall 的注册点，判据会退化成恒真');
+        final String registration = dartExecutor.substring(
+            registerAt, dartExecutor.indexOf('\n    );', registerAt));
         for (final String action in expected) {
           final bool nativelyHandled = dispatcher.contains('== "$action"');
-          final bool dartHandled = dartConsumer.contains("case '$action':");
-          expect(nativelyHandled || dartHandled, isTrue,
-              reason: 'Slot "$action" is drawn and hit-tested but nothing runs '
-                  'it — neither DispatchControlAction nor the Dart side '
-                  'handles it.');
+          if (nativelyHandled) continue;
+          expect(dartConsumer.contains("case '$action':"), isTrue,
+              reason: 'Slot "$action" 在 channel 里没有转发分支。');
+          // channel 的字段名是 `_on<Action 首字母大写>`，注册参数名去掉下划线。
+          final String handler =
+              'on${action[0].toUpperCase()}${action.substring(1)}:';
+          expect(registration.contains(handler), isTrue,
+              reason: 'Slot "$action" 画得出、点得到，但注册方没给 $handler —— '
+                  'channel 那一行 `?.call()` 命中的是 null，按下去什么也不发生。'
+                  '要么接上真实现，要么把它从槽表里删掉。');
         }
       }
 
@@ -376,6 +395,10 @@ void main() {
           'close',
         ],
         dartConsumer: dartChannel,
+        dartExecutor:
+            File('lib/src/lookup/gal_hook_text_overlay_controller.dart')
+                .readAsStringSync(),
+        executorRegisterCall: 'GalHookTextOverlayChannel.setEventHandlers(',
       );
       checkTable(
         countName: 'kAudiobookSlotCount',
@@ -384,8 +407,6 @@ void main() {
           'previousCue',
           'playPause',
           'nextCue',
-          'togglePassThrough',
-          'toggleTransparency',
           'lock',
           'topmost',
           'close',
@@ -393,6 +414,9 @@ void main() {
         dartConsumer:
             File('lib/src/media/audiobook/floating_lyric_channel.dart')
                 .readAsStringSync(),
+        dartExecutor: File('lib/src/media/audiobook/audiobook_session.dart')
+            .readAsStringSync(),
+        executorRegisterCall: 'FloatingLyricChannel.setEventHandlers(',
       );
     });
 

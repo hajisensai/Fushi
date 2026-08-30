@@ -577,15 +577,15 @@ class AudiobookSession extends ChangeNotifier {
       onPreviousCue: () => _controller?.skipToPrevCue(),
       onNextCue: () => _controller?.skipToNextCue(),
       onClose: _onFloatingLyricClose,
-      // 穿透 / 一键透明是 native 就地生效的窗口能力：native 翻转自己的状态后把
-      // 结果回报上来，Dart 这边只做镜像与日志，不再往回推（往回推会和 native 的
-      // 当前态打架，正是「按一下闪一下又弹回去」的来源）。
-      onTogglePassThrough: () {
-        debugPrint('[Fushi] floating-lyric pass-through toggled');
-      },
-      onToggleTransparency: () {
-        debugPrint('[Fushi] floating-lyric transparency toggled');
-      },
+      // 不接 onTogglePassThrough / onToggleTransparency：有声书的槽表里已经
+      // **没有**这两颗按钮了（hook_toolbar_window.h 的 kAudiobookSlotActions）。
+      //
+      // 原来这里各挂了一行 debugPrint，并注释说「native 就地生效、Dart 只做镜像」
+      // —— 那句话对 lock / topmost 成立（DispatchControlAction 里就地翻转），对这
+      // 两个 action **不成立**：它们经 on_control_ 转给 Dart，Dart 这边只打日志，
+      // 于是按钮画得出、点得到、按下去什么也不发生。galgame 那侧有真实现（穿透是
+      // hook 浮窗的核心能力），有声书没有。要加回来：先在这里接上真正的翻转，
+      // 再把 action 放回槽表。
       onPassThroughChanged: (bool passThrough) {
         // native 可能否决穿透（工具条窗建不出来时），所以真值以这条事件为准。
         debugPrint('[Fushi] floating-lyric pass-through -> $passThrough');
