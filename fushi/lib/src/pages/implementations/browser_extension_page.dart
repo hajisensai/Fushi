@@ -133,8 +133,33 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
     final ThemeData theme = Theme.of(context);
     final AppModel appModel = ref.watch(appProvider);
 
+    // BUG-1658：顶层各 tab 页头统一为 FushiPageHeader 大标题（全出血 + 自身
+    // spacing.page 内边距，与书架/视频/游戏/查词/下载同一几何），不再用旧 AppBar
+    // 小标题工具栏。
     return Scaffold(
-      body: _buildContentList(theme, appModel),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          // 本页是双身份页：作顶层 tab 时侧栏在旁边、本页就是首个路由，不出箭头
+          // （页头几何与 BUG-1658 结论一致）；被「设置 → 查词 → 浏览器扩展」
+          // push 成全屏路由时侧栏被盖住，这里承接返回键（同 DownloadsPage 范式）。
+          //
+          // 判据是**本页自己所在的 PageRoute 是不是首个**，不是 `Navigator.canPop()`：
+          // 本页的下拉框会临时 push 一个 PopupRoute，canPop() 会因此变成 true，
+          // 于是每开一次下拉都闪出一个返回箭头。
+          FushiPageHeader(
+            title: t.nav_browser_extension,
+            leading: ModalRoute.of(context)?.isFirst == false
+                ? FushiIconButton(
+                    icon: Icons.arrow_back,
+                    tooltip: t.back,
+                    onTap: () => Navigator.of(context).maybePop(),
+                  )
+                : null,
+          ),
+          Expanded(child: _buildContentList(theme, appModel)),
+        ],
+      ),
     );
   }
 
@@ -142,31 +167,11 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
     final bool serverOn = appModel.yomitanApiServerEnabled;
     final bool connected = _isRecentlySeen(appModel);
     final String? build = appModel.browserExtensionBuild;
-    // 只看本页自己所在的 PageRoute，不看 Navigator 栈顶。下拉框会临时
-    // push PopupRoute，Navigator.canPop() 会因此变成 true。
-    final bool showBackButton = ModalRoute.of(context)?.isFirst == false;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: <Widget>[
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            if (showBackButton) ...<Widget>[
-              FushiIconButton(
-                icon: Icons.arrow_back,
-                tooltip: t.back,
-                onTap: () => Navigator.of(context).maybePop(),
-              ),
-              const SizedBox(width: 8),
-            ],
-            Expanded(
-              child: Text(
-                t.browser_extension_page_intro,
-                style: theme.textTheme.bodyMedium,
-              ),
-            ),
-          ],
-        ),
+        // 返回键在页头的 leading 上（见 build），正文不再重复放一个。
+        Text(t.browser_extension_page_intro, style: theme.textTheme.bodyMedium),
         const SizedBox(height: 16),
         _statusCard(theme,
             serverOn: serverOn,

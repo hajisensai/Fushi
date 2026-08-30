@@ -1,4 +1,4 @@
-## BUG-1924 · 下载页展开下拉框时左上角误显返回键
+## BUG-1954 · 下载页展开下拉框时左上角误显返回键
 - **报告**：2026-08-28（用户：「点击下拉框会导致左上角多了返回按钮」）
 - **真实性**：✅ 真 bug。`fushi/lib/src/pages/implementations/downloads_page.dart`
   的旧页头在 build 期读 `Navigator.of(context).canPop()` 决定是否显示返回键。

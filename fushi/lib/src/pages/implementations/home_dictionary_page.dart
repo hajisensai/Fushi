@@ -330,18 +330,26 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       child: FushiFileDropTarget(
         debugLabel: 'home-dictionary',
         onDrop: _handleDictionaryHomeDrop,
-        // 窗口标题栏 / 主导航已经标明「查词」，不再重复画一整行大标题页头。
-        // 独立路由的返回入口和清空历史动作并入搜索行。
-        child: DesktopContentLayout(
-          kind: DesktopContentKind.dictionary,
-          child: Column(
-            children: [
-              _buildSearchHeader(),
-              // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
-              const SyncProgressBanner(),
-              Expanded(child: _buildBody()),
-            ],
-          ),
+        // BUG-1658：页头必须在 DesktopContentLayout 外——dictionary 档的 16/24px
+        // 侧向留白只属于查词正文（文字流贴边可读性差），叠到页头上会让本页大标题
+        // 相对书架/视频/游戏等库页整体右移（用户实报「每个页面的页头宽度不一样」）。
+        child: Column(
+          children: [
+            if (!isCupertinoPlatform(context)) _buildPageHeader(),
+            Expanded(
+              child: DesktopContentLayout(
+                kind: DesktopContentKind.dictionary,
+                child: Column(
+                  children: [
+                    _buildSearchHeader(),
+                    // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
+                    const SyncProgressBanner(),
+                    Expanded(child: _buildBody()),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -367,6 +375,27 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     unawaited(appModel.showDictionaryMenu(initialImportPaths: importPaths));
   }
 
+  Widget _buildPageHeader() {
+    return FushiPageHeader(
+      title: t.nav_lookup,
+      leading: widget.showBackButton
+          ? FushiIconButton(
+              key: const ValueKey<String>('home-dictionary-route-back'),
+              tooltip: t.back,
+              icon: Icons.arrow_back,
+              onTap: () => Navigator.of(context).maybePop(),
+            )
+          : null,
+      actions: <Widget>[
+        FushiIconButton(
+          tooltip: t.clear_dictionary_title,
+          icon: Icons.delete_sweep_outlined,
+          onTap: _showDeleteDictionaryHistoryPrompt,
+        ),
+      ],
+    );
+  }
+
   Widget _buildSearchHeader() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double horizontalPadding =
@@ -382,15 +411,6 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (widget.showBackButton) ...[
-            FushiIconButton(
-              key: const ValueKey<String>('home-dictionary-route-back'),
-              tooltip: t.back,
-              icon: Icons.arrow_back,
-              onTap: () => Navigator.of(context).maybePop(),
-            ),
-            SizedBox(width: tokens.spacing.gap),
-          ],
           Expanded(
             child: FushiSearchField(
               fieldKey: const ValueKey<String>('home_dictionary_search_field'),
@@ -405,12 +425,12 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
               onSubmitted: _search,
             ),
           ),
-          SizedBox(width: tokens.spacing.gap),
-          FushiIconButton(
-            tooltip: t.clear_dictionary_title,
-            icon: Icons.delete_sweep_outlined,
-            onTap: _showDeleteDictionaryHistoryPrompt,
-          ),
+          if (isCupertinoPlatform(context))
+            FushiIconButton(
+              tooltip: t.clear_dictionary_title,
+              icon: Icons.delete_sweep_outlined,
+              onTap: _showDeleteDictionaryHistoryPrompt,
+            ),
         ],
       ),
     );

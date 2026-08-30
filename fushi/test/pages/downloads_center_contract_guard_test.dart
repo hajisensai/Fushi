@@ -16,7 +16,7 @@ String _read(String path) {
 }
 
 void main() {
-  test('BUG-1926：下载中心保留资源、任务、订阅、设置四个顶层页签', () {
+  test('BUG-1956：下载中心保留资源、任务、订阅、设置四个顶层页签', () {
     final String source = _read(_downloadsPath);
     final String code = maskCommentsAndScriptLines(source);
     final String structural = maskCommentsAndStrings(source);
@@ -58,7 +58,7 @@ void main() {
     );
   });
 
-  test('BUG-1926：initialTabIndex 与 initialShowSettings 真正决定初始页', () {
+  test('BUG-1956：initialTabIndex 与 initialShowSettings 真正决定初始页', () {
     final String source = _read(_downloadsPath);
     final EnclosingCall controller = enclosingCallOf(
       source,
@@ -88,7 +88,7 @@ void main() {
     expect(code, contains('Navigator.of(context).maybePop()'));
   });
 
-  test('BUG-1926：资源页用单个类型下拉框复用四个模块的发现页', () {
+  test('BUG-1956：资源页用单个类型下拉框复用四个模块的发现页', () {
     final String downloads = _read(_downloadsPath);
     final String code = maskCommentsAndScriptLines(downloads);
     final String downloadsStructural = maskCommentsAndStrings(downloads);
@@ -126,7 +126,15 @@ void main() {
       isTrue,
       reason: '视频必须复用视频模块的生产发现页',
     );
-    expect(code, contains('MangaDiscoveryPage(\n          embedded: true'));
+    // 「漫画那页是**嵌入态**打开的」必须结构化判，不能钉缩进：上一版写的是
+    // contains('MangaDiscoveryPage(\n          embedded: true')，加个 const 让
+    // dart format 重排一次就恒假——断言的是排版不是行为。
+    expect(
+      RegExp(r'MangaDiscoveryPage\(\s*embedded:\s*true')
+          .hasMatch(downloadsStructural),
+      isTrue,
+      reason: '漫画发现页必须以 embedded: true 打开（否则它会自带一整套页头/导航）',
+    );
     expect(code, contains('VideoDiscoveryPage('));
     expect(code, contains('embedded: true'));
     expect(code, contains('controller: widget.videoDiscoveryController'));
@@ -147,7 +155,7 @@ void main() {
     );
   });
 
-  test('BUG-1925：选择性下载使用当前后端落点快照', () {
+  test('BUG-1955：选择性下载使用当前后端落点快照', () {
     final String source = _read(_downloadActionsPath);
     final String code = maskCommentsAndScriptLines(source);
 

@@ -699,8 +699,9 @@ void main() {
     );
   }
 
-  // 窗口标题栏 / SafeArea 已经承担系统避让，页头在所有窗口宽度下
-  // 都只留一个 gap，保持模块间顶部基线一致。
+  // TODO-667: 手机竖排 / 窄窗（compact 尺寸类，宽 < 600）下页头顶距应收到 `page`
+  // (16)，而桌面 / 平板（>= 600）保持 `page + 8`(24)。验证三档行为，并守住手机首页
+  // 书架标题不再离顶部多空一行。
   Future<double> measureHeaderTop(
     WidgetTester tester, {
     required double width,
@@ -735,18 +736,20 @@ void main() {
     return titleTop - headerTop;
   }
 
-  testWidgets('FushiPageHeader uses compact top gap on phone width',
+  testWidgets('FushiPageHeader trims top gap to page on compact (phone) width',
       (WidgetTester tester) async {
     final double phoneTop = await measureHeaderTop(tester, width: 360);
-    expect(phoneTop, moreOrLessEquals(8, epsilon: 0.5));
+    // page = 20；不再是 page + 8 = 28。
+    expect(phoneTop, moreOrLessEquals(20, epsilon: 0.5));
   });
 
-  testWidgets('FushiPageHeader keeps the same compact gap on wide windows',
+  testWidgets('FushiPageHeader keeps page + 8 top gap on desktop/tablet width',
       (WidgetTester tester) async {
     final double tabletTop = await measureHeaderTop(tester, width: 700);
     final double desktopTop = await measureHeaderTop(tester, width: 1000);
-    expect(tabletTop, moreOrLessEquals(8, epsilon: 0.5));
-    expect(desktopTop, moreOrLessEquals(8, epsilon: 0.5));
+    // page + 8 = 28，桌面 / 平板不变。
+    expect(tabletTop, moreOrLessEquals(28, epsilon: 0.5));
+    expect(desktopTop, moreOrLessEquals(28, epsilon: 0.5));
   });
 
   testWidgets(

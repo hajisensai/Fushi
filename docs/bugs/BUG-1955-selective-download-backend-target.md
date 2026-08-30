@@ -1,4 +1,4 @@
-## BUG-1925 · 选择性下载仍调用已删除的后端身份接口导致 Windows 构建失败
+## BUG-1955 · 选择性下载仍调用已删除的后端身份接口导致 Windows 构建失败
 - **报告**：2026-08-29（集成 CoreAudio 选择性下载后首次 Windows Debug 构建发现）
 - **真实性**：✅ 真 bug。`download_actions.dart` 仍构造
   `VideoDownloadManualEnqueueRequest(backendIdentity: ...)`，但 BUG-1879 已把新任务

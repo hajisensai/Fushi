@@ -518,26 +518,30 @@ class _TorrentSettingsSectionState
             ),
           ),
         ),
-        Container(
+        // 预览框走共享卡片组件，不手搓 Container+BoxDecoration：eink 主题把所有
+        // surface container 塌缩成背景色（theme_notifier 的 eink scheme），手搓的
+        // 这只盒子在那儿会直接隐形，而 FushiCard 自己补描边。圆角/底色也一并交给
+        // 设计 token，不在这里重开一次本地决策。
+        ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 160),
-          width: double.infinity,
-          padding: const EdgeInsets.all(10),
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: SingleChildScrollView(
-            child: SelectableText(
-              _trackerFetchError != null
-                  ? t.download_tracker_fetch_failed(
-                      message: _trackerFetchError!,
-                    )
-                  : _trackerPreview.isEmpty
-                      ? t.download_tracker_preview_empty
-                      : '${t.download_tracker_preview_count(count: _trackerPreview.length)}\n\n'
-                          '${_trackerPreview.join('\n')}',
-              style: theme.textTheme.bodySmall,
+          child: FushiCard(
+            padding: const EdgeInsets.all(10),
+            margin: const EdgeInsets.only(bottom: 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  _trackerFetchError != null
+                      ? t.download_tracker_fetch_failed(
+                          message: _trackerFetchError!,
+                        )
+                      : _trackerPreview.isEmpty
+                          ? t.download_tracker_preview_empty
+                          : '${t.download_tracker_preview_count(count: _trackerPreview.length)}\n\n'
+                              '${_trackerPreview.join('\n')}',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
             ),
           ),
         ),

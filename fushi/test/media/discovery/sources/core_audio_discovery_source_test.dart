@@ -30,9 +30,14 @@ void main() {
   });
 
   test('文件匹配优先真实文件名和 Audible id，不能匹配时 fail closed', () {
+    // 语料里有**两条**系列（上一条测试就断言了 hasLength(2)），所以这里不能用
+    // `.single`——它只在语料还只有一条时成立，语料长出第二条后直接
+    // "Bad state: Too many elements"。按标题取，和上一条测试同一个判据。
     final CoreAudioSeries series = CoreAudioCatalog.parse(
       _catalogBytes(),
-    ).series.single;
+    ).series.firstWhere(
+      (CoreAudioSeries value) => value.title == 'リアデイルの大地にて',
+    );
     final InspectedTorrentMetainfo metainfo = inspectTorrentMetainfo(
       _torrentBytes(),
     );

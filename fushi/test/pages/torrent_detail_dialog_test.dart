@@ -321,7 +321,7 @@ void main() {
     expect(
       find.byKey(const Key('torrent-detail-empty-note')),
       findsOneWidget,
-      reason: 'BUG-1922：缺少实时数据时必须使用统一空态卡，不能只留一段漂浮文本。',
+      reason: 'BUG-1953：缺少实时数据时必须使用统一空态卡，不能只留一段漂浮文本。',
     );
     expect(find.byIcon(Icons.info_outline), findsOneWidget);
     final Size emptyNoteSize = tester.getSize(

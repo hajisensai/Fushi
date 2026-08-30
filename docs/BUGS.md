@@ -29,11 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1829 条。点号进各自文件。
+> 共 1828 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1953](bugs/BUG-1953-tmp-probe-next-free.md) | 🚧 | 🚧 | 探测下一个空号 |
+| [BUG-1956](bugs/BUG-1956-downloads-center-sections-global-search.md) | ✅ | ✅ | 下载中心四分区被移除且资源页发现入口失去模块复用 |
+| [BUG-1955](bugs/BUG-1955-selective-download-backend-target.md) | ✅ | ✅ | 选择性下载仍调用已删除的后端身份接口导致 Windows 构建失败 |
+| [BUG-1954](bugs/BUG-1954-downloads-dropdown-back-button.md) | ✅ | ✅ | 下载页展开下拉框时左上角误显返回键 |
+| [BUG-1953](bugs/BUG-1953-torrent-detail-missing-live-data-layout.md) | ✅ | ✅ | Torrent 详情缺少实时数据时空态布局失衡 |
 | [BUG-1952](bugs/BUG-1952-gal-progressive-line-fold.md) | ✅ | ✅ | 一句台词分多次显示时工作台重复出现且字数重复统计（Zato） |
 | [BUG-1946](bugs/BUG-1946-sukebei-rss-namespace-rejected.md) | ✅ | ✅ | Sukebei 发现源结果恒空：NyaaClient 严格解析硬编码 nyaa.si 命名空间，sukebei RSS 的 sukebei.nyaa.si/xmlns/nyaa 被判 invalidNamespace |
 | [BUG-1945](bugs/BUG-1945-video-fullscreen-exit-deactivated-context.md) | ✅ | ✅ | 视频取消全屏短暂闪现 deactivated widget 红屏 |
@@ -55,13 +58,9 @@
 | [BUG-1928](bugs/BUG-1928-peer-delete-confirm-says-local-kept.md) | ✅ | ✅ | 远端卡「从远端删除」文案谎称本地数据保留 |
 | [BUG-1927](bugs/BUG-1927-mokuro-catalog-series-blank.md) | ✅ | ✅ | mokuro.moe 目录点进系列后一片空白 |
 | [BUG-1926](bugs/BUG-1926-gal-overlay-toolbar-not-following-drag.md) | ✅ | ✅ | 穿透态 galgame 浮窗：拖正文时顶栏不跟随 |
-| [BUG-1926](bugs/BUG-1926-downloads-center-sections-global-search.md) | ✅ | ✅ | 下载中心四分区被移除且资源页发现入口失去模块复用 |
 | [BUG-1925](bugs/BUG-1925-sync-collections-resurrect-flaky.md) | 🚧 | 🚧 | 全量下 sync_orchestrator_collections 的 peer-republish 用例偶发红（4 次全量红 2 次，单跑绿） |
-| [BUG-1925](bugs/BUG-1925-selective-download-backend-target.md) | ✅ | ✅ | 选择性下载仍调用已删除的后端身份接口导致 Windows 构建失败 |
 | [BUG-1924](bugs/BUG-1924-manga-shelf-locked-to-first-chapter.md) | ✅ | ✅ | 漫画加入书架后只能看第一章：书架没有作品页、阅读器不换章 |
-| [BUG-1924](bugs/BUG-1924-downloads-dropdown-back-button.md) | ✅ | ✅ | 下载页展开下拉框时左上角误显返回键 |
 | [BUG-1923](bugs/BUG-1923-lookup-popup-plus-optical-center.md) | ✅ | ✅ | 查词弹窗静息加号可见位置比同排图标低 |
-| [BUG-1922](bugs/BUG-1922-torrent-detail-missing-live-data-layout.md) | ✅ | ✅ | Torrent 详情缺少实时数据时空态布局失衡 |
 | [BUG-1922](bugs/BUG-1922-macos-aidoku-runtime-not-bundled.md) | ✅ | ✅ | macOS 发布包缺 Aidoku runtime，删除再添加 Aidoku 仓库报 RUNTIME_MISSING |
 | [BUG-1921](bugs/BUG-1921-settings-module-labels-mismatch.md) | ✅ | ✅ | 设置里的功能模块开关名字与底栏/侧栏对不上 |
 | [BUG-1920](bugs/BUG-1920-app-icon-rail-live-sync.md) | ✅ | ✅ | 应用图标切换未同步到主侧栏 |

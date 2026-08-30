@@ -1,4 +1,4 @@
-## BUG-1922 · Torrent 详情缺少实时数据时空态布局失衡
+## BUG-1953 · Torrent 详情缺少实时数据时空态布局失衡
 - **报告**：2026-08-26（用户：Torrent 详情 Tracker 页显示问题截图）
 - **真实性**：✅ 真 bug。`fushi/lib/src/pages/implementations/torrent_detail_dialog.dart` 的 `_buildEmptyNote` 仅在占满剩余高度的 `TabBarView` 中居中绘制裸文本，导致缺少实时数据时出现大面积无层级空白。
 - **[x] ① 已修复** — `_buildEmptyNote` 改用统一 `FushiPlaceholderMessage`，补齐图标、分组底色与 480px 最大内容宽度；提交哈希在本提交落地后回填。

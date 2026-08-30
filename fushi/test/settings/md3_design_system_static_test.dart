@@ -80,6 +80,7 @@ void main() {
       'FushiOverflowMenu',
     ],
     'lib/src/pages/implementations/home_dictionary_page.dart': <String>[
+      'FushiPageHeader',
       'FushiSearchField',
       'FushiCard',
       'FushiListItem',

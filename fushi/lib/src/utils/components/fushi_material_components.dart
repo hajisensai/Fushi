@@ -1776,16 +1776,33 @@ class FushiPageHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 窗口标题栏 / SafeArea 已经承担系统避让，内容页头不再按窗口宽度
-    // 叠加一整行顶部留白。所有模块统一使用最小 gap，切页时顶部基线
-    // 保持一致，宽窗也不会显得比窄窗更松散。
-    final double resolvedTop = tokens.spacing.gap;
+    // TODO-667: 顶部留白分三档。
+    // - [compact] 模式（上方已有 AppBar，由 [FushiPageScaffold] 传入）顶距最小，
+    //   只留一个 gap，标题紧贴 AppBar 下沿。
+    // - 非 compact 但窗口是手机竖屏 / 窄窗（[WindowSizeClass.compact]，宽 < 600）：
+    //   页头本身就是顶部锚点，外层 [SafeArea] 已让出状态栏 / 刘海，再叠
+    //   `page + 8 = 24` 会让标题离顶部空出一行（用户反馈「和摄像头差一行」）。
+    //   收到普通 `page = 16`，保留必要呼吸又不顶到摄像头。
+    // - 非 compact 的中 / 宽窗（桌面 / 平板，宽 >= 600）：窗口顶部无系统栏遮挡、
+    //   内容区另有左右留白，`page + 8 = 24` 的标题区呼吸感合适，保持不变。
+    // BUG-401: classify on the real physical width. FushiPageHeader renders
+    // inside FushiAppUiScale, so MediaQuery.sizeOf here is the inflated
+    // logical width; multiply by the net app UI scale to recover the real
+    // viewport width before applying the compact breakpoint.
+    final bool narrowWindow = windowSizeClassReal(
+          MediaQuery.sizeOf(context).width,
+          FushiAppUiScale.of(context),
+        ) ==
+        WindowSizeClass.compact;
+    final double resolvedTop = compact
+        ? tokens.spacing.gap
+        : (narrowWindow ? tokens.spacing.page : tokens.spacing.page + 8);
     final EdgeInsetsGeometry resolvedPadding = padding ??
         EdgeInsets.fromLTRB(
           tokens.spacing.page,
           resolvedTop,
           tokens.spacing.page,
-          tokens.spacing.gap,
+          bottom == null ? tokens.spacing.gap + 4 : tokens.spacing.gap,
         );
     final String? resolvedSubtitle =
         subtitle == null || subtitle!.trim().isEmpty ? null : subtitle;

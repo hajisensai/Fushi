@@ -32,38 +32,41 @@ void main() {
             '与兄弟分区同一页头组件');
   });
 
-  test('查词页不重复画大标题，路由与历史动作并入搜索行', () {
+  test('BUG-1658: 查词页页头必须在 DesktopContentLayout(dictionary) 之外', () {
     final String src =
         File('lib/src/pages/implementations/home_dictionary_page.dart')
             .readAsStringSync();
-    final String buildSection = src.substring(
-      src.indexOf('Widget build(BuildContext context)'),
-      src.indexOf('void _handleDictionaryHomeDrop'),
-    );
-    final String searchHeaderSection = src.substring(
-      src.indexOf('Widget _buildSearchHeader()'),
-      src.indexOf('Widget _buildBody()'),
-    );
-    expect(buildSection.contains('FushiPageHeader'), isFalse,
-        reason: '窗口标题栏 / 主导航已标明查词，内容区不得再占一整行重复标题');
-    expect(buildSection.contains('DesktopContentLayout('), isTrue,
+    final int header = src.indexOf('_buildPageHeader()');
+    final int layout = src.indexOf('DesktopContentLayout(');
+    expect(header, greaterThanOrEqualTo(0), reason: '查词页应有大标题页头');
+    expect(layout, greaterThanOrEqualTo(0),
         reason: '查词正文仍应保留 dictionary 档的文字流留白');
-    expect(searchHeaderSection, contains('home-dictionary-route-back'),
-        reason: '砍掉页头不能丢掉隐藏 tab 独立路由的返回入口');
-    expect(searchHeaderSection, contains('clear_dictionary_title'),
-        reason: '清空查词历史动作应随搜索框留在首屏');
+    // 代码顺序 = widget 树顺序：页头调用必须先于（即位于）DesktopContentLayout
+    // 之外，否则 dictionary 档的 16/24px 侧向留白会把页头挤得比库页窄（BUG-1658）。
+    expect(header, lessThan(layout),
+        reason: '查词页页头被包进 DesktopContentLayout，会与书架/视频/游戏页头错位');
   });
 
-  test('下载保留中心分区页头，浏览器扩展不重复画标题', () {
-    final String downloads = File(
+  test('BUG-1658: 下载页 / 浏览器扩展页不得回退旧 AppBar 小标题页头', () {
+    for (final String path in <String>[
       'lib/src/pages/implementations/downloads_page.dart',
-    ).readAsStringSync();
-    final String browser = File(
       'lib/src/pages/implementations/browser_extension_page.dart',
-    ).readAsStringSync();
-    expect(downloads, contains('FushiPageHeader.customTitle('));
-    expect(browser, isNot(contains('FushiPageHeader(')));
-    expect(downloads, isNot(contains('appBar:')));
-    expect(browser, isNot(contains('appBar:')));
+    ]) {
+      final String code = File(path)
+          .readAsStringSync()
+          .split('\n')
+          .map((String line) => line.replaceFirst(RegExp(r'//.*$'), ''))
+          .join('\n');
+      expect(code.contains('appBar:'), isFalse,
+          reason: '$path 页头已统一为 FushiPageHeader 大标题（BUG-1658），'
+              '不得回退 Scaffold.appBar 小标题工具栏');
+      // 下载页是 customTitle（分段条作页头主位），扩展页是标准大标题——两种构造
+      // 都算统一页头。
+      expect(
+          code.contains('FushiPageHeader(') ||
+              code.contains('FushiPageHeader.customTitle('),
+          isTrue,
+          reason: '$path 必须用 FushiPageHeader 渲染页头（BUG-1658）');
+    }
   });
 }
