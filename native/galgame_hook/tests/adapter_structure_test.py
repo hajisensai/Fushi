@@ -686,6 +686,36 @@ class AdapterStructureTest(unittest.TestCase):
         )
         self.assertIn("kLookupAdmissionIdentityRejected", siglus_admission)
 
+    def test_sgre_admission_reports_identity_rejected_with_digest(self) -> None:
+        """SGRE 与 Leaf 相反：IdentityRejected 是活路径，且必须带 exe 摘要。
+
+        Leaf 的 `probe()` 就是它的 hash 门，身份不符时 registry 根本不问它，
+        所以那条分支写了也走不到（见上一条）。SGRE 改成家族探测之后
+        （`MatchesSgreFamily`：exe 旁边有没有 voice_body.bin），精确 hash 只用来
+        挑量好的锚点——「是这个游戏、但这个 build 的查词锚点连签名扫描都没解出来」
+        因此成了可达且**终局**的状态：传感器永远装不上。
+
+        协议规定这一档「lookup_executable_sha256 必须已填」，所以摘要格式化也一并钉住：
+        报成 IdentityAccepted 会让用户一直等一个不会到来的门，摘要留空则让他连版本
+        都报不出来。
+        """
+        adapter = (
+            ROOT / "hook" / "adapters" / "sgre_adapter.inc"
+        ).read_text(encoding="utf-8")
+        admission = self._strip_comments(
+            self._member_body(
+                adapter,
+                "fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override",
+            )
+        )
+        self.assertIn("kLookupAdmissionIdentityRejected", admission)
+        self.assertIn("FormatSha256Hex", admission)
+        self.assertIn("g_sgre_executable_sha256", admission)
+        # 终局判据必须是「锚点已解析且传感器锚点没解出来」，不能退化成
+        # 「传感器还没装上」——后者在 install() 之前恒真，会把等门期误报成拒绝。
+        self.assertIn("g_sgre_anchors_resolved", admission)
+        self.assertIn("lookup_sensor_available()", admission)
+
     def test_unity_text_adapter_supports_legacy_ui_text(self) -> None:
         source = (
             ROOT / "hook" / "adapters" / "unity_adapter.inc"

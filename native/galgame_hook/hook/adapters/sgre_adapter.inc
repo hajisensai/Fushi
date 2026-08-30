@@ -112,15 +112,31 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
            fushi_voice_hook::AdapterCapability::kResourceAudio;
   }
 
-  // SGRE 的 probe() **本身就是** exe SHA-256 精确门（MatchesSgreProfile），所以能走到
-  // 这里就说明身份已经过了——没有 IdentityRejected 这一档可报。这也意味着"另一个版本的
-  // STEINS;GATE RE:BOOT"不会被本 adapter 认领，registry 那边会收敛成引擎不支持/未识别，
-  // 而不是谎称"是这个游戏但版本不对"（我们并不知道它是不是）。
+  // 家族探测放宽之后，IdentityRejected 这一档在 SGRE 上是**活路径**——这与 Leaf 相反，
+  // 别照着 Leaf 那条注释理解。Leaf 的 probe() 就是它的 hash 门，身份不符时根本不会被
+  // registry 问话；而 SGRE 的 probe() 现在只问家族（exe 旁边有没有 voice_body.bin），
+  // 精确 hash 只用来挑量好的锚点。于是「是这个游戏、但这个 build 的查词锚点连签名
+  // 扫描都没解出来」成了可达状态，而它是**终局**：传感器永远装不上，再等也没有用。
+  //
+  // 协议对这一档的定义正是「引擎有传感器，但当前 exe 不在该传感器的精确白名单里
+  // （hash-pinned fail closed），此时 lookup_executable_sha256 必须已填」。报成
+  // IdentityAccepted 会把终局说成「还在等门」，用户会一直等；摘要留空还会让他连版本
+  // 都报不出来——那正是这一档存在的理由。
   fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
     fushi_voice_hook::LookupAdmissionReport report;
-    report.state = g_sgre_text_draw_original != nullptr
-                       ? fushi_voice_hook::kLookupAdmissionSensorInstalled
-                       : fushi_voice_hook::kLookupAdmissionIdentityAccepted;
+    if (g_sgre_text_draw_original != nullptr) {
+      report.state = fushi_voice_hook::kLookupAdmissionSensorInstalled;
+      return report;
+    }
+    // 锚点还没解析过 = 还在等 install()，是真的「等门」。
+    if (g_sgre_anchors_resolved && !g_sgre_anchors.lookup_sensor_available()) {
+      report.state = fushi_voice_hook::kLookupAdmissionIdentityRejected;
+      fushi_voice_hook::FormatSha256Hex(
+          g_sgre_executable_sha256.data(), g_sgre_executable_sha256.size(),
+          report.executable_sha256, fushi_voice_hook::kHookModuleDigestChars);
+      return report;
+    }
+    report.state = fushi_voice_hook::kLookupAdmissionIdentityAccepted;
     return report;
   }
 
