@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
 
 import 'package:flutter/gestures.dart';
@@ -82,6 +83,11 @@ double refinedDesktopPointerScrollDelta(double delta) {
   return delta.isNegative ? -refined : refined;
 }
 
+bool isCoarseDesktopPointerScrollDelta(double delta) =>
+    (Platform.isWindows || Platform.isLinux) && delta.abs() >= 80;
+
+const Duration kDesktopWheelScrollDuration = Duration(milliseconds: 140);
+
 /// 为 app 主纵向滚动区提供细化后的桌面滚轮步长。
 ///
 /// 通过自定义 [ScrollPosition] 改写真正消费 pointer delta 的边界；仅换
@@ -115,9 +121,60 @@ class _FushiScrollPosition extends ScrollPositionWithSingleContext {
     super.debugLabel,
   });
 
+  double? _wheelTarget;
+  double? _lastCoarseDelta;
+
   @override
   void pointerScroll(double delta) {
-    super.pointerScroll(refinedDesktopPointerScrollDelta(delta));
+    final double refined = refinedDesktopPointerScrollDelta(delta);
+    if (!isCoarseDesktopPointerScrollDelta(delta) ||
+        MediaQuery.maybeDisableAnimationsOf(context.storageContext) == true) {
+      _resetWheelTarget();
+      super.pointerScroll(refined);
+      return;
+    }
+
+    // 连续同向滚轮事件必须向尚未到达的目标继续累积；若每次都从当前 pixels
+    // 重启动画，快速滚轮会不断取消前一段、实际滚动距离反而被吃掉。反向输入则从
+    // 当前视觉位置重新起步，保证用户一反拨就立即响应，而不是先偿还旧方向目标。
+    final bool continuesDrivenScroll = activity is DrivenScrollActivity &&
+        _wheelTarget != null &&
+        _lastCoarseDelta != null &&
+        _lastCoarseDelta!.isNegative == refined.isNegative;
+    final double base = continuesDrivenScroll ? _wheelTarget! : pixels;
+    final double target = (base + refined)
+        .clamp(minScrollExtent, maxScrollExtent)
+        .toDouble();
+    _wheelTarget = target;
+    _lastCoarseDelta = refined;
+    if (target == pixels) return;
+
+    unawaited(super.animateTo(
+      target,
+      duration: kDesktopWheelScrollDuration,
+      curve: Curves.easeOutCubic,
+    ));
+  }
+
+  void _resetWheelTarget() {
+    _wheelTarget = null;
+    _lastCoarseDelta = null;
+  }
+
+  @override
+  void jumpTo(double value) {
+    _resetWheelTarget();
+    super.jumpTo(value);
+  }
+
+  @override
+  Future<void> animateTo(
+    double to, {
+    required Duration duration,
+    required Curve curve,
+  }) {
+    _resetWheelTarget();
+    return super.animateTo(to, duration: duration, curve: curve);
   }
 }
 

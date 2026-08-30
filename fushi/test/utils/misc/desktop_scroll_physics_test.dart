@@ -24,5 +24,7 @@ void main() {
     expect(refinedDesktopPointerScrollDelta(400), refined ? 120 : 400);
     expect(refinedDesktopPointerScrollDelta(12), 12,
         reason: '触控板/高精度滚轮的小 delta 必须保持 1:1');
+    expect(isCoarseDesktopPointerScrollDelta(120), refined);
+    expect(isCoarseDesktopPointerScrollDelta(12), isFalse);
   });
 }
