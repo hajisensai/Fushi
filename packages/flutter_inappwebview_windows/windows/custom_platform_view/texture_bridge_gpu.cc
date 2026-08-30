@@ -78,10 +78,25 @@ namespace flutter_inappwebview_plugin
     D3D11_TEXTURE2D_DESC desc;
     src_texture->GetDesc(&desc);
 
-    const auto width = output_size_.width > 0
+    // BUG-1976 — output_size_ is allowed to differ from the WGC source only
+    // while a shader chain is deliberately capturing below device DPR for an
+    // upscale pass.  Flutter's texture callback and the method-channel layout
+    // report can otherwise disagree by one physical pixel at fractional DPI
+    // (for example 150%).  Treating that harmless rounding residue as an
+    // upscale request sent every ordinary WebView — including dictionary text
+    // — through libplacebo and softened the whole surface after 5d3feac4cd.
+    //
+    // With no shader, preserve the pre-upscale contract exactly: allocate the
+    // destination at the captured texture's size and CopyResource 1:1.  Flutter
+    // composites that native-density descriptor without a second filter pass.
+    bool shader_enabled = false;
+#ifdef HAVE_LIBPLACEBO_HEADERS
+    shader_enabled = placebo_ && placebo_->enabled();
+#endif
+    const auto width = shader_enabled && output_size_.width > 0
       ? static_cast<uint32_t>(output_size_.width)
       : desc.Width;
-    const auto height = output_size_.height > 0
+    const auto height = shader_enabled && output_size_.height > 0
       ? static_cast<uint32_t>(output_size_.height)
       : desc.Height;
 
@@ -93,14 +108,10 @@ namespace flutter_inappwebview_plugin
     const bool same_size = desc.Width == width && desc.Height == height;
 
 #ifdef HAVE_LIBPLACEBO_HEADERS
-    // 着色器链启用时，以及 src/dst 异尺寸时，都由 libplacebo 渲染。后者即使
-    // 没有用户 hook 也必须走直通缩放；D3D11 CopyResource 不允许尺寸不同。
-    const bool needs_placebo = !same_size || (placebo_ && placebo_->enabled());
-    if (needs_placebo) {
-      if (!placebo_ && !placebo_unavailable_) {
-        placebo_ = PlaceboPass::Create(graphics_context_->d3d_device());
-        placebo_unavailable_ = !placebo_;
-      }
+    // 只有显式启用 shader 时才允许重采样。空 hook 的 PlaceboPass 仍负责
+    // 半分辨率 capture -> device-DPR output 的直通放大；普通 WebView 永不因
+    // 1px 尺寸取整差而临时创建 PlaceboPass。
+    if (shader_enabled) {
       if (placebo_ && placebo_->Render(src_texture.get(), surface_.get())) {
         scale_failure_logged_ = false;
         device_context->Flush();
@@ -109,13 +120,13 @@ namespace flutter_inappwebview_plugin
     }
 #endif
 
-    if (same_size) {
+    if (!shader_enabled && same_size) {
       device_context->CopyResource(surface_.get(), src_texture.get());
       device_context->Flush();
     }
     else {
-      // 异尺寸绝不能 CopyResource。libplacebo 缺失/渲染失败时保留当前目标纹理，
-      // 等下一帧重试；随包 DLL 正常时此分支不会命中。
+      // shader 目标异尺寸时绝不能 CopyResource。libplacebo 渲染失败则保留当前
+      // 目标纹理等下一帧重试；普通 WebView 的目标已取 src 尺寸，不会命中。
       if (!scale_failure_logged_) {
         std::cerr << "Scaling WebView texture failed; keeping previous target frame"
           << std::endl;

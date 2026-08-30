@@ -29,7 +29,7 @@ void main() {
     );
   });
 
-  test('Windows GPU bridge 将目标尺寸与 WGC 源解耦，异尺寸绝不 CopyResource', () {
+  test('Windows GPU bridge 仅在 shader 启用时缩放，普通 WebView 保持 1:1', () {
     final File bridge = File(
       '../packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge_gpu.cc',
     );
@@ -74,8 +74,23 @@ void main() {
       ),
       reason: 'shader 状态切换必须在锁外重新设置 source surface',
     );
+    expect(bridgeSrc, contains('bool shader_enabled = false;'));
+    expect(
+      bridgeSrc,
+      contains('shader_enabled = placebo_ && placebo_->enabled();'),
+      reason: '是否允许重采样必须只由显式 shader 状态决定',
+    );
+    expect(
+      bridgeSrc,
+      contains('const auto width = shader_enabled && output_size_.width > 0'),
+      reason: '普通 WebView 必须沿用 WGC 源尺寸，不能拿晚到的 output 尺寸触发缩放',
+    );
     expect(bridgeSrc, contains('const bool same_size ='));
-    expect(bridgeSrc, contains('const bool needs_placebo = !same_size'));
+    expect(
+      bridgeSrc,
+      isNot(contains('const bool needs_placebo = !same_size')),
+      reason: '1px 的 DPI 取整差不是超分请求，不能自动送进 libplacebo',
+    );
     expect(
       bridgeHeaderSrc,
       contains('requested_scale_factor_ == scale_factor'),
@@ -83,8 +98,11 @@ void main() {
     );
     expect(
       bridgeSrc,
-      contains('if (same_size) {\n      device_context->CopyResource'),
-      reason: 'CopyResource 只能留在严格同尺寸分支',
+      contains(
+        'if (!shader_enabled && same_size) {\n'
+        '      device_context->CopyResource',
+      ),
+      reason: '普通 WebView 必须在捕获尺寸上 1:1 CopyResource，保持文字锐度',
     );
     expect(
       passSrc,
