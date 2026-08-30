@@ -496,6 +496,36 @@ class EmbeddedTorrentHost {
     return applied;
   }
 
+  /// 最近一次成功下发给 session 的 P2P 代理（null = 直连）；`_hasAppliedProxy`
+  /// 为 false 表示还没下发过——新建 session 本身就是直连，所以「要直连」时
+  /// 不必为此走一次 FFI（老 DLL 没这个符号也不会白报一次失败）。
+  String? _appliedProxyHostPort;
+  bool _hasAppliedProxy = false;
+
+  /// 下发 P2P 代理：[hostPort] null/空 = 直连（默认）。只在目标变化时走 FFI。
+  ///
+  /// 这里不 import 代理解析层——host 只认「一个 host:port 或没有」，决定「该不该
+  /// 走、走哪个」是 AppModel 的事（`resolveP2pProxyHostPort`）；守卫
+  /// `download_http_client_proxy_test.dart` 钉死 torrent 宿主不碰 app_proxy。
+  bool applyProxy(String? hostPort) {
+    final String trimmed = hostPort?.trim() ?? '';
+    final String? target = trimmed.isEmpty ? null : trimmed;
+    if (_hasAppliedProxy && _appliedProxyHostPort == target) return true;
+    if (!_hasAppliedProxy && target == null) {
+      _hasAppliedProxy = true;
+      return true;
+    }
+    final bool ok = _session.applyProxy(hostPort: target);
+    if (ok) {
+      _hasAppliedProxy = true;
+      _appliedProxyHostPort = target;
+    } else {
+      debugPrint('[torrent] proxy apply failed (${target ?? 'direct'}): '
+          '${_session.supportsProxy ? 'native rejected' : 'library lacks ht_apply_proxy'}');
+    }
+    return ok;
+  }
+
   /// 在同步 native add/resume 之前暂时唤醒发现协议。调用方必须用 finally 配对
   /// [endNetworkWake]；begin 到真正 native 操作之间不得插入 await。
   void beginNetworkWake() {

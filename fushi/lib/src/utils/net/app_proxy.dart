@@ -258,6 +258,38 @@ String resolveAppProxyDirective(Uri uri) {
   return HttpClient.findProxyFromEnvironment(uri, environment: environment);
 }
 
+/// 从 `findProxy` 指令串取第一个 `PROXY host:port`；`DIRECT` / 空 → null。
+///
+/// `HttpClient.findProxyFromEnvironment` 可能给出 `PROXY a:1; PROXY b:2; DIRECT`
+/// 这种链，HttpClient 自己会逐个尝试；不是 HttpClient 的消费方（内置 torrent
+/// 引擎）只能拿一个，取第一个即与 HttpClient 的首选一致。
+String? proxyHostPortFromDirective(String directive) {
+  for (final String part in directive.split(';')) {
+    final String p = part.trim();
+    if (p.length > 6 && p.substring(0, 6).toUpperCase() == 'PROXY ') {
+      final String hostPort = p.substring(6).trim();
+      if (hostPort.isNotEmpty) return hostPort;
+    }
+  }
+  return null;
+}
+
+/// app 此刻会给**公网目标**用的代理 `host:port`（手填 > env > 缓存的 GUI 系统
+/// 代理），直连 → null。与 [resolveAppProxyDirective] 同一份裁决，只是把
+/// 「按 URI 给指令」折成「一个出口」，供装不进 `findProxy` 的消费方（内置
+/// torrent 引擎的 libtorrent session）取用。探针 URI 是任意公网主机——只要不
+/// 落进 [isDirectProxyTarget] 的本机/局域网闸门，任何公网 host 得到的答案都一样。
+String? resolveAppProxyHostPort() =>
+    proxyHostPortFromDirective(resolveAppProxyDirective(_kPublicProbeUri));
+
+final Uri _kPublicProbeUri = Uri.parse('https://example.com/');
+
+/// P2P（torrent）传输该用的代理：开关关 → null（直连，**默认**）；开 → 与
+/// 其它公网出站同一个出口。这是 AppModel 下发给内置引擎的唯一入口，开关的
+/// 语义（默认直连、开了才跟全局）钉在这一个函数上。
+String? resolveP2pProxyHostPort({required bool enabled}) =>
+    enabled ? resolveAppProxyHostPort() : null;
+
 /// **本机 / 局域网直连闸门**：这些目标经 HTTP 代理只会更坏，甚至直接把功能打断。
 ///
 /// 这不是「优化」，是一条硬正确性约束。实测（`HttpClient.findProxyFromEnvironment`，

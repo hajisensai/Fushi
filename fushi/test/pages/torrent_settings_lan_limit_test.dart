@@ -15,7 +15,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
-import 'package:fushi/src/media/torrent/download_network_proxy.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/utils.dart';
@@ -48,10 +47,6 @@ class _TestAppModel extends AppModel {
   Future<void> setQbConnectionConfig(QbConnectionConfig? config) async {
     if (config != null) _config = config;
   }
-
-  @override
-  DownloadNetworkProxyConfig get downloadNetworkProxyConfig =>
-      const DownloadNetworkProxyConfig();
 }
 
 Widget _harness(QbConnectionConfig config) {

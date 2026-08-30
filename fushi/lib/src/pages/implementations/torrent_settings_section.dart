@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
-import 'package:fushi/src/media/torrent/download_network_proxy.dart';
 import 'package:fushi/src/media/torrent/download_save_root.dart';
 import 'package:fushi/src/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
@@ -333,8 +332,6 @@ class _TorrentSettingsSectionState
     final ThemeData theme = Theme.of(context);
     final QbConnectionConfig c = _config;
     final AppModel appModel = ref.watch(appProvider);
-    final DownloadNetworkProxyConfig proxy =
-        appModel.downloadNetworkProxyConfig;
     final String backend =
         c.resolveBackend(embeddedSupported: _supportsEmbedded);
     final bool isQb = backend == QbConnectionConfig.backendQbittorrent;
@@ -343,54 +340,8 @@ class _TorrentSettingsSectionState
     final Widget content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        _sectionLabel(theme, t.download_network_proxy_section),
-        // BUG-1184：窄屏下裸 SegmentedButton 会把每段钳到「可用宽/段数」并静默裁字，
-        // 统一改走 [FushiSegmentedStrip]（装不下就横向滚动，标签永远完整）。
-        FushiSegmentedStrip<DownloadNetworkProxyMode>(
-          segments: <ButtonSegment<DownloadNetworkProxyMode>>[
-            ButtonSegment<DownloadNetworkProxyMode>(
-              value: DownloadNetworkProxyMode.auto,
-              label: Text(t.download_network_proxy_auto),
-            ),
-            ButtonSegment<DownloadNetworkProxyMode>(
-              value: DownloadNetworkProxyMode.direct,
-              label: Text(t.download_network_proxy_direct),
-            ),
-            ButtonSegment<DownloadNetworkProxyMode>(
-              value: DownloadNetworkProxyMode.custom,
-              label: Text(t.download_network_proxy_custom),
-            ),
-          ],
-          selected: proxy.mode,
-          onChanged: (DownloadNetworkProxyMode mode) async {
-            await appModel.setDownloadNetworkProxyMode(mode);
-            if (mounted) setState(() {});
-          },
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(2, 6, 2, 10),
-          child: Text(
-            t.download_network_proxy_auto_hint,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-        if (proxy.mode == DownloadNetworkProxyMode.custom)
-          _text(
-            label: t.download_network_proxy_custom_label,
-            initial: proxy.customProxy,
-            hint: t.update_custom_proxy_hint,
-            // 同文件的 qB 地址框与语义相同的系统更新代理项都声明了，这里漏了。
-            keyboard: TextInputType.url,
-            errorText: proxy.customProxy.trim().isNotEmpty &&
-                    normalizeUserProxyHostPort(proxy.customProxy) == null
-                ? t.update_custom_proxy_invalid
-                : null,
-            onChanged: appModel.setDownloadCustomProxy,
-          ),
-        const Divider(height: 24),
-
+        // 代理不再在这里配：全应用只有系统设置里的一个代理项，下载发现链路
+        // 与其它公网出站共用同一个出口（见 download_timeouts.dart 头注释）。
         // 后端二选一。标签是 `External qBittorrent` / `Built-in engine` 这类
         // 不可断行的长词，窄屏裸 SegmentedButton 会直接裁字（BUG-1184）。
         //
