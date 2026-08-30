@@ -1,4 +1,4 @@
-; fushi/windows/installer/fushi.iss
+﻿; fushi/windows/installer/fushi.iss
 ; 由 CI 用 ISCC 编译；AppVersion / SourceDir / OutputDir 由命令行 /D 传入。
 ; Fushi 改名（Phase 3）：AppId GUID 不变 => 对旧 Hibiki 安装做覆盖升级；
 ; 升级路径上的旧名残留（hibiki.exe / 快捷方式 / 注册表 ProgID）在本脚本内清理。
@@ -34,7 +34,41 @@ OutputDir={#OutputDir}
 OutputBaseFilename=fushi-{#AppVersion}-windows-setup
 Compression=lzma2
 SolidCompression=yes
+
+; ── Material Design 3 外观 ────────────────────────────────────────────────
+; app 五端统一 MD3，安装器是用户见到的第一屏，之前却是 Inno 默认外观（白底 +
+; 分隔线 + 默认纸箱图标 + 无暗色）。Inno 6.7 起原生支持自定义样式、自定义背景色、
+; 跟随系统的明暗切换（dynamic），所以这里用它做 MD3：
+;   - 背景用 MD3 surface（浅 #FEF7FF / 深 #141218），与 app 主题同源；
+;   - hidebevels 去掉经典分隔线（MD3 靠留白与色阶分区，不靠线）；
+;   - windows11 是内置扁平样式，配上面两条后按钮/输入框是圆角扁平的现代形态；
+;   - 图像是本目录 assets\ 下由 generate_md3_assets.py 生成的 MD3 标记与竖图，
+;     明暗各一套。别用 app_icon.ico：那份至今还是改名前的 Hibiki 字标。
+; 版本闸门：这批指令 6.7 以下的编译器不认识，会直接编译失败。CI 已钉 6.7+
+; （release-desktop.yml 的 Compile installer 步骤会校验并按需安装），这里再留一道
+; ISPP 闸门，让任何老编译器上仍能出包，只是退回旧外观。
+#if VER >= EncodeVer(6,7,0)
+WizardStyle=modern dynamic windows11 hidebevels
+WizardBackColor=#FEF7FF
+WizardBackColorDynamicDark=#141218
+WizardImageBackColor=#FEF7FF
+WizardImageBackColorDynamicDark=#141218
+; 页眉标记是带 alpha 的 PNG：底色不跟背景一致就会在页眉右上角露出一个色块。
+WizardSmallImageBackColor=#FEF7FF
+WizardSmallImageBackColorDynamicDark=#141218
+WizardImageAlphaFormat=defined
+; 每页背景：MD3 surface 底 + 两团极淡主色晕。样式接管了控件与文字颜色（见 [Code]
+; 的 ApplyMd3Chrome 注释），背景图是唯一还能把 MD3 主色铺满每页的层。
+WizardBackImageFile=assets\wizard_back_1630x1180.png
+WizardBackImageFileDynamicDark=assets\wizard_back_dark_1630x1180.png
+WizardImageFile=assets\wizard_hero_164x314.png,assets\wizard_hero_192x386.png,assets\wizard_hero_246x492.png,assets\wizard_hero_328x628.png
+WizardImageFileDynamicDark=assets\wizard_hero_dark_164x314.png,assets\wizard_hero_dark_192x386.png,assets\wizard_hero_dark_246x492.png,assets\wizard_hero_dark_328x628.png
+WizardSmallImageFile=assets\wizard_mark_55.png,assets\wizard_mark_64.png,assets\wizard_mark_83.png,assets\wizard_mark_110.png,assets\wizard_mark_138.png
+WizardSmallImageFileDynamicDark=assets\wizard_mark_dark_55.png,assets\wizard_mark_dark_64.png,assets\wizard_mark_dark_83.png,assets\wizard_mark_dark_110.png,assets\wizard_mark_dark_138.png
+#else
 WizardStyle=modern
+#endif
+
 CloseApplications=no
 CloseApplicationsFilter=*.exe,*.dll
 RestartApplications=no
@@ -498,8 +532,50 @@ begin
   Result := Pos(Lowercase(AddBackslash(A)), Lowercase(AddBackslash(B))) = 1;
 end;
 
+// ── MD3 排版 ──
+// [Setup] 段的 WizardStyle / WizardBackColor / Wizard*ImageFile 已经把整体形态做成
+// MD3（扁平、无分隔线、MD3 surface 背景与主色晕、明暗自适应、MD3 标记与竖图）。
+// 这里只补一件指令做不到的事：页眉标题按 MD3 type scale 排——MD3 的 title-large
+// 是常规字重、比正文大一档，Inno 默认给的是小一号的**粗体**。
+//
+// 别再往这里加颜色赋值：自定义样式（含内置 dark / windows11）激活时，Inno 把所有
+// 文字标签画成透明并用样式的前景色重绘，TPanel 的 Color 也由样式接管。实测
+// （6.7.3，本机深色模式）MainPanel.Color := $261F21 与
+// PageNameLabel.Font.Color := $FFBCD0 都是空操作：抓图取色，页眉底仍是 #141218、
+// 标题仍是纯白 #FFFFFF。字体名/字号/字重则照常生效，所以只留排版。
+// 真要改控件强调色（内置样式给的是 Windows 蓝），得自制 VCL 样式文件走
+// WizardStyleFile，那需要 Delphi 的 Bitmap Style Designer，本仓没有这条工具链。
+function Md3UiFontName(const Fallback: String): String;
+begin
+  { MD3 用 Roboto，Windows 上没有；按 Win11 → Win10 → 兜底取系统 UI 字体。
+    不判存在就直接写字体名的话，字体缺失时 GDI 会回落到 Tahoma，比默认还难看。 }
+  if FontExists('Segoe UI Variable Display') then
+    Result := 'Segoe UI Variable Display'
+  else if FontExists('Segoe UI') then
+    Result := 'Segoe UI'
+  else
+    Result := Fallback;
+end;
+
+procedure ApplyMd3Chrome();
+begin
+  WizardForm.PageNameLabel.Font.Name :=
+    Md3UiFontName(WizardForm.PageNameLabel.Font.Name);
+  WizardForm.PageNameLabel.Font.Style := [];
+  WizardForm.PageNameLabel.Font.Size := WizardForm.PageNameLabel.Font.Size + 3;
+  { 放大后高度要重算，再把说明文字顶到新高度下面——两个标签都是固定坐标摆的，
+    不重排就会叠在一起。 }
+  WizardForm.PageNameLabel.AdjustHeight;
+
+  WizardForm.PageDescriptionLabel.Font.Name :=
+    Md3UiFontName(WizardForm.PageDescriptionLabel.Font.Name);
+  WizardForm.PageDescriptionLabel.Top :=
+    WizardForm.PageNameLabel.Top + WizardForm.PageNameLabel.Height + ScaleY(2);
+end;
+
 procedure InitializeWizard();
 begin
+  ApplyMd3Chrome();
   DataRootPageOffered := False;
   DataRootPage := CreateInputDirPage(wpSelectDir,
     '选择数据存储位置',
