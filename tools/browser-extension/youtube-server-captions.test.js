@@ -117,6 +117,8 @@ function loadYoutube(opts) {
   // content.js 的 fushiApplyTheme 直接调它的 fushiResolvePopupBox。
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'popup-size.js'), 'utf8'), sandbox,
     { filename: 'popup-size.js' });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'subtitle-providers.js'), 'utf8'), ctx,
+    { filename: 'subtitle-providers.js' }); // manifest 顺序：先于 content.js
   vm.runInContext(fs.readFileSync(CONTENT, 'utf8'), ctx, { filename: 'content.js' });
   const fetcher = intervals.find((i) => i.ms === 1500);
   return {

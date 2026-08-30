@@ -2,7 +2,7 @@ name: fushi
 resolution: workspace
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 2.2.4+1234
+version: 2.2.4+1235
 environment:
   sdk: ">=3.8.0 <4.0.0"
   flutter: "^3.41.6"
@@ -180,6 +180,9 @@ flutter:
     - assets/anki/
     - assets/browser_extension/
     - assets/browser_extension/vendor/
+    # 内置网页播放器（WebView2 站点播放）主世界胶水；站点 bridge / 字幕 provider 复用
+    # 上面的扩展镜像（同一份文件，见 lib/src/media/video/web_video_bridge.dart）。
+    - assets/web_video/
     - assets/gamepad/xbox/
     - assets/gamepad/playstation/
     - assets/gamepad/switch/

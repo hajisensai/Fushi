@@ -48,6 +48,10 @@ import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_top_bar_slots.dart';
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
+import 'package:fushi/src/media/video/web_video_bridge.dart'
+    show shouldOpenInWebVideoPlayer;
+import 'package:fushi/src/pages/implementations/web_video_fushi_page.dart'
+    show WebVideoFushiPage;
 import 'package:fushi/src/media/video/youtube_source_resolver.dart'
     show
         YoutubeCaptionTrack,
@@ -358,7 +362,7 @@ final RegExp _kLatinWordCharRegExp =
 /// 不该由脚本决定：C++ `scan_candidates` 明确禁止在空格分词语言的单词中间切
 /// （native/fushidicts/fushidicts_src/scan/word_scan.cpp），候选恒是
 /// `listen to music` / `listen to` / `listen`，单词自己仍在候选里，不会被短语挤掉。
-@visibleForTesting
+/// 网页播放器页（web_video_fushi_page.dart）与本页共用同一取词规则，故为公开顶层函数。
 String subtitleLookupTerm(String sentence, int graphemeIndex) {
   final List<String> graphemes = sentence.characters.toList();
   if (graphemeIndex < 0 || graphemeIndex >= graphemes.length) return '';
@@ -1633,7 +1637,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String get dictionarySourceType => kStatSourceVideo;
 
   /// TODO-1204：查词 / 制卡计数归属本视频——[title] 用 [_title]（剧集标题，与
-  /// 视频统计 tile 的 [addVideoWatchStatistic] title 聚合键对齐），[bookKey] 存
+  /// 视频统计 tile 的身份分组键对齐），[bookKey] 存
   /// [VideoFushiPage.bookUid]。远端视频无观看统计 tile，其计数仍进「查词」汇总。
   @override
   ({String? bookKey, String? title})? get lookupBookIdentity =>
@@ -2126,6 +2130,24 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 的远端播放路径（_initRemote）。YouTube 会在 buildStreamVideoLaunch 里重解析（临时流
     // URL 会过期）；重建失败按打开失败处理。放在读 row 后、本地字幕/进度恢复前短路。
     if (isStreamVideoBook(row)) {
+      // 网页视频站（Netflix / YouTube 页 / TVer……）在 Windows 上交给内置网页播放器：
+      // 站点自己的播放器播，Fushi 复用字幕面板 / 查词 / 进度登记。在这里分流而非各
+      // push 点：书架 / 首页 / 合集 / 作品页 / app 外打开 8 处入口全部自动覆盖。
+      // media_kit controller 尚未 load，pushReplacement 代价只是本页一次空 build。
+      if (shouldOpenInWebVideoPlayer(row.videoPath)) {
+        final BuildContext pageContext = context;
+        if (!pageContext.mounted) return;
+        unawaited(Navigator.of(pageContext).pushReplacement(
+          adaptivePageRoute<void>(
+            context: pageContext,
+            builder: (_) => WebVideoFushiPage.neutralized(
+              bookUid: widget.bookUid,
+              repo: widget.repo,
+            ),
+          ),
+        ));
+        return;
+      }
       // TODO-1307：把「正在连接视频流…」阶段反馈提前到 buildStreamVideoLaunch（YouTube 快
       // 解析 getManifest 有网络往返、慢网仍可数秒）之前，避免解析期页面裸转圈「点了没动静」。
       _setLoadingPhase(_VideoLoadPhase.connecting);
@@ -3383,25 +3405,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (_bookRow != null && _watchTracker == null) {
       final FushiDatabase db = appModel.database;
       _watchTracker = VideoWatchTracker(
-        title: title,
         bookUid: widget.bookUid,
-        // P4 写侧收敛：两条统计路都走 DB 复合入口 recordWatchFlush。dateKey 由
-        // 采集器决定（字幕字数=cue 时刻；观看时长=各桶各自日期），直接透传，不在此
-        // 另算「今日」——否则跨午夜的 flush 会与小时日志的日归属不一致。
-        // v39：按视频稳定身份键控（同名不同视频统计不再互串）。本地视频每集独立
+        // v92：观看时长 + 字幕字数走唯一时钟 StudyClock（活跃态 = 正在播放，由
+        // tracker 挂上；视频面刻意不设空闲门 / 前台门——切走仍在播就照常计时）。
+        // 按视频稳定身份键控（v39：同名不同视频统计不再互串）。本地视频每集独立
         // 页面（pushReplacement 换集）→ widget.bookUid 恒为当前集。
-        recordFlush: (List<(String, int, int)> buckets) => db.recordWatchFlush(
+        clock: StudyClock(
+          database: db,
+          mediaKind: kActivityMediaVideo,
+          mediaKey: widget.bookUid,
           title: title,
-          bookUid: widget.bookUid,
-          buckets: buckets,
-        ),
-        addSubtitleChars: (String dateKey, int chars) => unawaited(
-          db.recordWatchFlush(
-            title: title,
-            bookUid: widget.bookUid,
-            subtitleChars: chars,
-            subtitleCharsDateKey: dateKey,
-          ),
+          onWriteError: (Object e, StackTrace st) =>
+              ErrorLogService.instance.log('StudyClock.write(video)', e, st),
         ),
         markCompleted: (String uid) =>
             db.markVideoCompleted(uid, DateTime.now()),
@@ -3415,19 +3430,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 _episodes.isNotEmpty && _currentEpisode == _episodes.length - 1,
           );
         },
-        // v49：一次观看 session 结束落一条活动事件，喂首页 Activity 时间轴。
-        recordActivity: (String t, String uid, String dateKey, int timestampMs,
-                int durationMs, int chars) =>
-            db.addActivityEvent(
-          eventType: kActivityWatch,
-          mediaType: kActivityMediaVideo,
-          title: t,
-          mediaKey: uid,
-          dateKey: dateKey,
-          timestampMs: timestampMs,
-          durationMs: durationMs,
-          charsDelta: chars,
-        ),
       )
         ..attach(controller)
         ..start();

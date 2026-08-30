@@ -74,10 +74,10 @@ void main() {
     });
 
     test('日明细「游戏」节与活动时间轴游戏行经 _gameDisplayTitle → displayTitleForGame', () {
-      // 日明细游戏节。
+      // 日明细游戏节（v92：事实面自带 mediaKey，按身份精确命中再回落标题快照）。
       expect(
         dashboard,
-        contains('(title: _gameDisplayTitle(title), chars: chars,'),
+        contains('_gameDisplayTitle(f.title, mediaKey: f.mediaKey)'),
       );
       // 活动时间轴游戏行。
       expect(
@@ -235,18 +235,21 @@ void main() {
   });
 
   group('身份面反向断言（统计聚合键 / 落库快照恒 raw）', () {
-    test('reader 阅读统计 flush（navigation.part.dart）聚合键恒 raw', () {
+    test('reader 阅读统计时钟（navigation.part.dart）title 快照恒 raw', () {
+      // v92：统计落库走 StudyClock，title 快照在建时钟时取一次（study_segments
+      // 按 mediaKey 分组，title 只是回退显示）——仍必须是 raw 书名，禁过门面。
       final String fn = slice(
         navigationPart,
+        'StudyClock _ensureStudyClock()',
         'Future<void> _flushReadingStats()',
-        '}\n}',
-        where: '_flushReadingStats',
+        where: '_ensureStudyClock',
       );
-      expect(fn, contains('final String title = _book!.title;'));
+      expect(fn, contains('title: _book?.title ?? widget.bookKey,'));
+      expect(fn, contains('mediaKey: widget.bookKey,'));
       expect(
         fn,
         isNot(contains('displayTitleFor')),
-        reason: 'reading_statistics/activity_events 的 title 是聚合键，禁过门面',
+        reason: 'study_segments 的 title 是落库快照，禁过门面',
       );
     });
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
+import 'dart:math' show Random;
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:drift/drift.dart';
@@ -11,6 +12,7 @@ import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
 import '../utils/ttu_sanitize.dart';
 import '../utils/video_book_uid.dart';
+import 'activity_event_types.dart';
 import 'book_format.dart';
 import 'collection_order.dart';
 import 'media_kind.dart';
@@ -688,6 +690,9 @@ void _requireOneVideoMetadataOwner({
   VideoDownloadSubscriptions,
   VideoDownloadSubscriptionItems,
   MangaChapterStates,
+  StudySegmentTombstones,
+  StudySegments,
+  WebMineQueue,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -718,7 +723,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 91;
+  int get schemaVersion => 93;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2836,6 +2841,33 @@ class FushiDatabase extends _$FushiDatabase
                   mediaCollections, mediaCollections.subtitleReleaseGroup);
             }
           }
+          if (from < 92) {
+            // v92（统计域根本性重构）：学习统计唯一事实表 study_segments +
+            // 按媒体身份的删除墓碑 study_segment_tombstones（表注释见 tables.dart）。
+            //
+            // 无损：纯新增两表，旧四张投影表（reading_statistics / video_watch_statistics
+            // / reading_hourly_logs / video_hourly_logs）与 activity_events **原样保留、
+            // 冻结为 legacy**——不迁移、不改写、不删。读取侧并集 legacy + 新表；写入面
+            // 自本版起只写新表。不迁移的理由：日汇总行没 hour、小时行没 title，任何
+            // 合成都得丢一维或双计（Never break userspace = 老数字一个字节不动）。
+            //
+            // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被 _tableExists
+            // 短路 no-op；索引走 _ensureIndexes（IF NOT EXISTS）。
+            if (!await _tableExists('study_segments')) {
+              await m.createTable(studySegments);
+            }
+            if (!await _tableExists('study_segment_tombstones')) {
+              await m.createTable(studySegmentTombstones);
+            }
+            await _ensureIndexes();
+          }
+          if (from < 93) {
+            // v93（网页播放器自动制卡队列）：新表 web_mine_queue，设备本地、无 FK、
+            // 无索引（队列量级为几十行）。守卫幂等（fresh DB 由 onCreate 建好）。
+            if (!await _tableExists('web_mine_queue')) {
+              await m.createTable(webMineQueue);
+            }
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -3588,6 +3620,14 @@ class FushiDatabase extends _$FushiDatabase
   /// 同一实现）。
   static String statDateKeyOf(DateTime d) =>
       _FushiDbStatistics.statDateKeyOf(d);
+
+  /// v92 学习事实段的幂等键生成（转发 [_FushiDbStatistics.newStudySegmentUid]；
+  /// mixin 的 static 不经类继承，这里给调用方一个稳定入口）。
+  static String newStudySegmentUid() => _FushiDbStatistics.newStudySegmentUid();
+
+  /// 段 provenance 用的设备身份偏好键（与 fushi 层 SyncRepository 同一把 key）。
+  static const String studyDeviceIdPrefKey =
+      _FushiDbStatistics.studyDeviceIdPrefKey;
 }
 
 int _epubBookUidCounter = 0;

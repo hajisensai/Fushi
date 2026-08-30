@@ -101,17 +101,20 @@ void main() {
     });
   });
 
-  group('video_watch_tracker._flush fire-and-forget 补 log', () {
-    test('_flush 的 DB 写包 try/catch 并补 ErrorLogService.log', () {
+  // v92：观看时长的 DB 写挪进 StudyClock（`_flush` 已删），VideoWatchTracker 剩下的
+  // 唯一 DB 写路径是完成标记 `_checkCompletion`（每 tick + stop 各查一次）。
+  group('video_watch_tracker._checkCompletion fire-and-forget 补 log', () {
+    test('_checkCompletion 的 DB 写包 try/catch 并补 ErrorLogService.log', () {
       final String src =
           libFile('lib/src/media/video/video_watch_tracker.dart');
-      final String body = fnBody(src, 'Future<void> _flush(');
-      expect(body, contains('VideoWatchTracker.flush'),
-          reason: '_flush 的 DB 写异常必须补 ErrorLogService.log（source tag）。');
+      final String body = fnBody(src, 'Future<void> _checkCompletion(');
+      expect(body, contains('VideoWatchTracker.checkCompletion'),
+          reason:
+              '_checkCompletion 的 DB 写异常必须补 ErrorLogService.log（source tag）。');
       expect(logRe.hasMatch(body), isTrue,
-          reason: '_flush 方法体内必须有 ErrorLogService.instance.log 调用。');
-      // fail-open 未变：仍是 unawaited fire-and-forget（异常不冒泡阻塞播放）。
-      expect(src, contains('unawaited(_flush())'),
+          reason: '_checkCompletion 方法体内必须有 ErrorLogService.instance.log 调用。');
+      // fail-open 未变：周期 tick 仍是 unawaited fire-and-forget（异常不冒泡阻塞播放）。
+      expect(src, contains('unawaited(_checkCompletion())'),
           reason: 'fail-open 未变：周期 tick 仍 fire-and-forget。');
     });
   });
@@ -121,12 +124,23 @@ void main() {
     setUpAll(() => src = libFile(
         'lib/src/pages/implementations/reader_fushi/navigation.part.dart'));
 
-    test('_flushReadingStats catch 保留 debugPrint 且补 ErrorLogService.log', () {
+    test('_flushReadingStats 只委托 StudyClock；时钟写链 fail-open 保持 dirty 并 debugPrint',
+        () {
+      // v92：阅读统计的 DB 写挪进 fushi_audio 的 StudyClock（页面侧没有 try/catch 可
+      // 补日志了）。fail-open 语义现在由时钟写链承担：写失败不冒泡、段留 dirty、
+      // 下个 tick 用绝对值重写。fushi_audio 不依赖 ErrorLogService，只能 debugPrint。
       final String body = fnBody(src, 'Future<void> _flushReadingStats(');
-      expect(body, contains('ReaderFushi._flushReadingStats'));
-      expect(logRe.hasMatch(body), isTrue);
-      expect(body, contains("debugPrint('[ReaderFushi] stats flush error"),
-          reason: 'fail-open 未变：保留原 debugPrint。');
+      expect(body, contains('_studyClock?.flushNow()'),
+          reason: '_flushReadingStats 只能是结算时钟，不得再自己写库。');
+      final String clock = libFile(
+          '../packages/fushi_audio/lib/src/audiobook/study_clock.dart');
+      final String enqueue = fnBody(clock, 'void _enqueueWrite(');
+      expect(enqueue, contains('catchError('),
+          reason: 'StudyClock 写链必须捕获写失败（fail-open：不阻塞阅读 / 播放）。');
+      expect(enqueue, contains('seg.dirty = true'),
+          reason: '写失败保持 dirty，下个 tick 用绝对值重写。');
+      expect(enqueue, contains("debugPrint('[study-clock] write error"),
+          reason: 'fail-open 未变：保留 debugPrint 诊断。');
     });
 
     test('_persistPosition 的 repo.save 包 catch 并补 ErrorLogService.log', () {

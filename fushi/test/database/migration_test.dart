@@ -858,18 +858,20 @@ void main() {
       expect(row.lastPositionMs, 4242);
       expect(row.completedAt, isNull);
 
-      // The two new stats tables are usable.
-      await db.addVideoWatchStatistic(
+      // The two new stats tables are usable（v92 起累加 DAO 已删，legacy 表只剩
+      // 同步落地的 OVERWRITE 版 set*；新事实进 study_segments）。
+      await db.setVideoWatchStatistic(VideoWatchStatisticsCompanion.insert(
           title: 'Seed',
           dateKey: '2026-06-06',
           subtitleChars: 12,
-          watchTimeMs: 3000);
+          watchTimeMs: 3000,
+          lastModified: 1));
       final stats = await db.getAllVideoWatchStatistics();
       expect(stats, hasLength(1));
       expect(stats.single.subtitleChars, 12);
 
-      await db.addVideoHourlyWatchTime(
-          dateKey: '2026-06-06', hour: 8, deltaMs: 500);
+      await db.setVideoHourlyLog(
+          dateKey: '2026-06-06', hour: 8, watchTimeMs: 500);
       final hourly = await db.getVideoHourlyLogsForDate('2026-06-06');
       expect(hourly, hasLength(1));
       expect(hourly.single.watchTimeMs, 500);
@@ -1078,7 +1080,7 @@ void main() {
       // now 31 (v30 series/shelf_entries + v31 paired peers 表). This v28 DB
       // upgrades all the way to current; TODO-894's backfill still ran (asserted
       // below). The literal had to track the bump.
-      expect(db.schemaVersion, 91,
+      expect(db.schemaVersion, 93,
           reason: 'global schemaVersion is now 38 (TODO-616 v30 + TODO-1017 '
               'v31 + TODO-1195 v32 + TODO-1204 v33 + v34 statistics_tombstones + '
               'TODO-1157 v35 stream_spec_json + TODO-1252 v36 favorite_words '
@@ -1155,7 +1157,7 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 91,
+      expect(db.schemaVersion, 93,
           reason:
               'TODO-1288 bumps schema to v37 (audiobook srt_books self-heal)');
 
@@ -1313,7 +1315,7 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 91,
+      expect(db.schemaVersion, 93,
           reason: 'global schemaVersion is now 38 (…v35 + TODO-1252 v36 + '
               'TODO-1288 v37 audiobook srt_books self-heal + v38 unified '
               'media_collections); v29->v30 '
@@ -1364,7 +1366,7 @@ void main() {
           .map((r) => r.data['name'] as String)
           .toSet();
       expect(tableNames, containsAll(['series', 'shelf_entries']));
-      expect(db.schemaVersion, 91);
+      expect(db.schemaVersion, 93);
     });
 
     test(
@@ -1373,7 +1375,7 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 91,
+      expect(db.schemaVersion, 93,
           reason:
               'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)');
 
@@ -1407,7 +1409,7 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 91,
+      expect(db.schemaVersion, 93,
           reason:
               'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)');
 
@@ -1447,7 +1449,7 @@ void main() {
     test('fresh DB (v35) has video_books.stream_spec_json column (TODO-1157)',
         () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 91);
+      expect(db.schemaVersion, 93);
       final cols =
           await db.customSelect("PRAGMA table_info('video_books')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1478,7 +1480,7 @@ void main() {
 
     test('fresh DB (v45) has media_collections.anilist_id column', () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 91);
+      expect(db.schemaVersion, 93);
       final cols =
           await db.customSelect("PRAGMA table_info('media_collections')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1512,7 +1514,7 @@ void main() {
 
     test('fresh DB (v46) has epub_books.completed_at column', () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 91);
+      expect(db.schemaVersion, 93);
       final cols =
           await db.customSelect("PRAGMA table_info('epub_books')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1524,7 +1526,7 @@ void main() {
         'fresh DB (v36) has favorite_words.book_key + title columns (TODO-1252)',
         () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 91);
+      expect(db.schemaVersion, 93);
       final cols =
           await db.customSelect("PRAGMA table_info('favorite_words')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -1560,7 +1562,7 @@ void main() {
     // 且既有合集行**一行不少、一列不改**（升级绝不能碰用户数据）。
     test('fresh DB (v64) has collection_scrape_meta table', () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 91);
+      expect(db.schemaVersion, 93);
       final rows = await db
           .customSelect(
               "SELECT name FROM sqlite_master WHERE type='table' AND name='collection_scrape_meta'")
@@ -1616,11 +1618,11 @@ void main() {
 
       // 新唯一键 {dateKey, hour, format}：同一小时不同写入面各自成行，与
       // 历史 '' 行共存互不冲突。
-      await db.addHourlyReadingTime(
+      await db.setReadingHourlyLog(
         dateKey: '2026-07-01',
         hour: 9,
-        deltaMs: 300000,
-        format: BookFormat.manga,
+        readingTimeMs: 300000,
+        format: BookFormat.manga.dbValue,
       );
       final after = await db.getHourlyLogsForDate('2026-07-01');
       expect(after, hasLength(3));

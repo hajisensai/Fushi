@@ -5095,6 +5095,9 @@ class AppModel with ChangeNotifier {
     }
 
     final int effectiveMaxTerms = overrideMaximumTerms ?? maximumTerms;
+    final List<String> currentDictionaryOrder = termDictionaries
+        .map((Dictionary dictionary) => dictionary.name)
+        .toList();
     final bool tryRemoteFirst = allowRemoteLookup && remoteLookupEnabled;
     if (tryRemoteFirst) {
       final DictionarySearchResult? remoteResult =
@@ -5145,6 +5148,7 @@ class AppModel with ChangeNotifier {
         searchTerm: searchTerm,
         results: ffiResults,
         maximumTerms: effectiveMaxTerms,
+        dictionaryOrder: currentDictionaryOrder,
       );
       // 性能：popupJson 从已拿到的 ffiResults 在 Dart 侧生成（buildPopupJsonFromLookup
       // 与 C++ build_popup_json 逐字段对齐，parity 测试见 dictionary_popup_webview_test）。
@@ -5155,6 +5159,7 @@ class AppModel with ChangeNotifier {
         results: ffiResults,
         maximumTerms: effectiveMaxTerms,
         hiddenDictionaries: hiddenDictionaryNames,
+        dictionaryOrder: currentDictionaryOrder,
       );
       result = result.withKanjiResults(kanjiResults);
     } else {
@@ -5184,6 +5189,7 @@ class AppModel with ChangeNotifier {
           searchTerm: searchTerm,
           results: ffiResults,
           maximumTerms: effectiveMaxTerms,
+          dictionaryOrder: currentDictionaryOrder,
         );
         // 同上：popupJson 由本次 lookup 的 ffiResults 直接生成，砍掉第二次
         // 完整 C++ 查询（原生查词成本 ×2 → ×1）。
@@ -5191,6 +5197,7 @@ class AppModel with ChangeNotifier {
           results: ffiResults,
           maximumTerms: effectiveMaxTerms,
           hiddenDictionaries: hiddenDictionaryNames,
+          dictionaryOrder: currentDictionaryOrder,
         );
         result = result.withKanjiResults(kanjiResults);
       }
@@ -6343,6 +6350,16 @@ class AppModel with ChangeNotifier {
   int get readingGoalDailyChars => prefsRepo.readingGoalDailyChars;
   Future<void> setReadingGoalDailyChars(int value) =>
       prefsRepo.setReadingGoalDailyChars(value);
+
+  /// v92 阅读空闲门（分钟 / Duration 两种形态；阅读器建 StudyClock 时取后者）。
+  /// 偏好层未就绪（精简初始化路径 / 测试 harness）时回落默认 10 分钟——阅读器
+  /// 建时钟绝不能因为一个可选偏好没加载而整页崩掉。
+  int get readingIdleTimeoutMinutes =>
+      _prefsRepo?.readingIdleTimeoutMinutes ??
+      kDefaultReadingIdleTimeout.inMinutes;
+  Duration get readingIdleTimeout => Duration(minutes: readingIdleTimeoutMinutes);
+  Future<void> setReadingIdleTimeoutMinutes(int value) =>
+      prefsRepo.setReadingIdleTimeoutMinutes(value);
 
   int get readingGoalWeeklyChars => prefsRepo.readingGoalWeeklyChars;
   Future<void> setReadingGoalWeeklyChars(int value) =>
@@ -7872,6 +7889,9 @@ class _AppModelRemoteLookupService
         results: ffiResults,
         maximumTerms: maximumTerms,
         hiddenDictionaries: _appModel.hiddenDictionaryNames,
+        dictionaryOrder: _appModel.termDictionaries
+            .map((Dictionary dictionary) => dictionary.name)
+            .toList(),
       );
       if (timing != null) {
         timing.popupJsonMicros = finishPhase(popupJsonWatch);

@@ -603,7 +603,9 @@ class VideoPlayerController extends ChangeNotifier
 
   @override
   bool get isPlaying =>
-      _debugIsPlayingOverride ?? (_player?.state.playing ?? false);
+      _debugIsPlayingOverride ??
+      _externalIsPlaying ??
+      (_player?.state.playing ?? false);
 
   /// 后台抽取/解析内封文本字幕 cue 是否仍在进行。
   bool get isSubtitleCuesLoading => _subtitleCuesLoading;
@@ -617,7 +619,9 @@ class VideoPlayerController extends ChangeNotifier
   /// （tick 整秒节流外的尾差）。
   @override
   int? get positionMs =>
-      _debugPositionOverride ?? _player?.state.position.inMilliseconds;
+      _debugPositionOverride ??
+      _externalPositionMs ??
+      _player?.state.position.inMilliseconds;
 
   /// 测试可注入的播放位置（毫秒）：widget 测试无真实 [Player]（[positionMs] 恒 null），
   /// 无法驱动 `\fad`/`\fade` 按位置逐帧求不透明度。置非 null 时覆盖 [positionMs]（并经
@@ -628,6 +632,35 @@ class VideoPlayerController extends ChangeNotifier
   void debugSetPositionForTesting(int? positionMs) {
     _debugPositionOverride = positionMs;
     notifyListeners();
+  }
+
+  // ── 外部播放态（网页播放器）────────────────────────────────────────────
+  //
+  // 内置网页播放器（WebView2 里由站点自己的播放器播放，Netflix 等）没有 media_kit
+  // [Player]：本 controller 只当 cue 仓库 + 字幕定位器用（字幕列表面板 / 画面字幕叠层 /
+  // 查词锚点全都只读它的 cues / currentCueIndex / positionMs / isPlaying）。播放位置、
+  // 播放中、总时长由页面 JS 轮询上报，经 [applyExternalPlaybackState] 注入。
+  // 优先级：测试覆盖 > 外部态 > 真 [Player]——网页播放器永不 [load]，[_player] 恒 null，
+  // 外部态即唯一来源；真播放器路径从不注入外部态，读到的仍是 [Player]。
+  int? _externalPositionMs;
+  bool? _externalIsPlaying;
+  int? _externalDurationMs;
+
+  /// 注入一次外部播放态并同步当前 cue（[updateCueForPosition]：cue 变化才通知；
+  /// 播放态 / 总时长变化另行通知）。[durationMs] 传 null = 保持上次值。
+  void applyExternalPlaybackState({
+    required int positionMs,
+    required bool playing,
+    int? durationMs,
+  }) {
+    final bool playingChanged = _externalIsPlaying != playing;
+    final bool durationChanged =
+        durationMs != null && _externalDurationMs != durationMs;
+    _externalPositionMs = positionMs;
+    _externalIsPlaying = playing;
+    if (durationMs != null) _externalDurationMs = durationMs;
+    updateCueForPosition(positionMs);
+    if (playingChanged || durationChanged) notifyListeners();
   }
 
   int? get _effectivePositionMs {
@@ -652,7 +685,9 @@ class VideoPlayerController extends ChangeNotifier
   /// 媒体总时长（毫秒）；未 [load] / 未解析媒体头时为 null。
   @override
   int? get durationMs =>
-      _debugDurationOverride ?? _player?.state.duration.inMilliseconds;
+      _debugDurationOverride ??
+      _externalDurationMs ??
+      _player?.state.duration.inMilliseconds;
 
   /// 测试注入的视频分辨率（widget 测试无真实解码帧；BUG-820 让 overlay 的
   /// 视频内容矩形几何可测）。生产恒 null。
