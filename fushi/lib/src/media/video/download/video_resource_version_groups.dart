@@ -11,24 +11,28 @@ import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 /// 从发布标题解析集号（`S01E05` / `Title - 05 [1080p]` 两种主流形态）。
 /// 认不出返回 null。纯函数（原居 acquisition dialogs，聚类需要后下沉到此，
 /// dialogs 侧 re-export 保源兼容）。
+final RegExp _seasonEpisodePattern = RegExp(
+  r'\bS(\d{1,3})[ ._-]*E(\d{1,4})(?:v\d+)?\b',
+  caseSensitive: false,
+);
+final RegExp _animeEpisodePattern = RegExp(
+  r'(?:^|\s)-\s*(\d{1,4})(?:v\d+)?(?=\s*(?:\[|\(|$))',
+  caseSensitive: false,
+);
+
 int? episodeNumberFromReleaseTitle(String title) {
-  final RegExpMatch? seasonEpisode = RegExp(
-    r'\bS\d{1,3}[ ._-]*E(\d{1,4})(?:v\d+)?\b',
-    caseSensitive: false,
-  ).firstMatch(title);
-  if (seasonEpisode != null) return int.tryParse(seasonEpisode.group(1)!);
-  final RegExpMatch? anime = RegExp(
-    r'(?:^|\s)-\s*(\d{1,4})(?:v\d+)?(?=\s*(?:\[|\(|$))',
-    caseSensitive: false,
-  ).firstMatch(title);
+  final RegExpMatch? seasonEpisode = _seasonEpisodePattern.firstMatch(title);
+  if (seasonEpisode != null) return int.tryParse(seasonEpisode.group(2)!);
+  final RegExpMatch? anime = _animeEpisodePattern.firstMatch(title);
   return anime == null ? null : int.tryParse(anime.group(1)!);
 }
 
 /// 标题开头的发布组标签（`[SubsPlease] xxx` → `SubsPlease`）。
 /// candidate.releaseGroup 缺失时的回退；CRC/分辨率不算组名。
 String? releaseGroupTagFromTitle(String title) {
-  final RegExpMatch? match =
-      RegExp(r'^\s*[\[【]([^\]】]{2,30})[\]】]').firstMatch(title);
+  final RegExpMatch? match = RegExp(
+    r'^\s*[\[【]([^\]】]{2,30})[\]】]',
+  ).firstMatch(title);
   if (match == null) return null;
   final String tag = match.group(1)!.trim();
   if (tag.isEmpty) return null;
@@ -37,10 +41,40 @@ String? releaseGroupTagFromTitle(String title) {
   return tag;
 }
 
+String? _releaseGroupOf(VideoResourceCandidate candidate) {
+  final String structured = candidate.releaseGroup?.trim() ?? '';
+  if (structured.isNotEmpty) return structured;
+  return releaseGroupTagFromTitle(candidate.title);
+}
+
+/// 没有发布组字段时，用「只抹掉集号」的标题模板识别同一逐集发布系列。
+///
+/// 不能退成统一空串：那会把不同季、不同编码版本全部混成一组；也不能全部拆成
+/// 单条：综合索引器虽然常缺发布组字段，但同一发布者的逐集标题通常仍有稳定模板。
+/// 只有真的识别到集号才生成模板；电影/合集等没有逐集身份的候选仍保持单条。
+String _unknownReleaseFamilyKey(VideoResourceCandidate candidate) {
+  String title = candidate.title.trim().toLowerCase();
+  bool replacedEpisode = false;
+  title = title.replaceAllMapped(_seasonEpisodePattern, (Match match) {
+    replacedEpisode = true;
+    return 's${match.group(1)}e#';
+  });
+  title = title.replaceAllMapped(_animeEpisodePattern, (Match match) {
+    replacedEpisode = true;
+    return ' - #';
+  });
+  if (!replacedEpisode) return 'single:${candidate.identityKey}';
+  // 每集不同的 CRC 不属于发布系列身份；其它编码、音轨、来源等技术标记保留，
+  // 因而 MULTi x264-AMBER 与普通 H264 不会因为同季同清晰度而误合并。
+  title = title.replaceAll(RegExp(r'[\[\(][0-9a-f]{8}[\]\)]'), '');
+  title = title.replaceAll(RegExp(r'\s+'), ' ').trim();
+  return 'template:$title';
+}
+
 /// 标题里的清晰度（candidate.resolution 缺失时的回退）。
 String? resolutionFromTitle(String title) => RegExp(
-      r'\b(2160|1440|1080|720|576|480)[pP]\b',
-    ).firstMatch(title)?.group(0)?.toLowerCase();
+  r'\b(2160|1440|1080|720|576|480)[pP]\b',
+).firstMatch(title)?.group(0)?.toLowerCase();
 
 /// 这条发布是不是整季合集（batch）。判据（保守，全部对应真实发布形态）：
 /// - 显式关键词：batch / complete / 合集 / 全集；
@@ -70,10 +104,7 @@ bool isLikelyBatchVideoRelease(String title) {
 
 /// 一张资源「版本卡」：同来源实例、同发布组、同清晰度、同 trusted 的发布集合。
 class VideoResourceVersionGroup {
-  VideoResourceVersionGroup._({
-    required this.key,
-    required this.members,
-  });
+  VideoResourceVersionGroup._({required this.key, required this.members});
 
   final String key;
 
@@ -83,29 +114,29 @@ class VideoResourceVersionGroup {
   String get providerId => members.first.providerId;
   bool get trusted => members.first.trusted;
 
-  String? get releaseGroup =>
-      members.first.releaseGroup ??
-      releaseGroupTagFromTitle(members.first.title);
+  String? get releaseGroup => _releaseGroupOf(members.first);
 
   String? get resolution =>
       members.first.resolution ?? resolutionFromTitle(members.first.title);
 
   /// 卡标题的组成部分（缺段跳过）：组名、清晰度、来源。
   List<String> get labelParts => <String>[
-        if (releaseGroup != null) releaseGroup!,
-        if (resolution != null) resolution!,
-        providerId,
-      ];
+    if (releaseGroup != null) releaseGroup!,
+    if (resolution != null) resolution!,
+    providerId,
+  ];
 
   Set<int> get episodes => <int>{
-        for (final VideoResourceCandidate member in members)
-          if (episodeNumberFromReleaseTitle(member.title) != null)
-            episodeNumberFromReleaseTitle(member.title)!,
-      };
+    for (final VideoResourceCandidate member in members)
+      if (episodeNumberFromReleaseTitle(member.title) != null)
+        episodeNumberFromReleaseTitle(member.title)!,
+  };
 
   int get batchCount => members
-      .where((VideoResourceCandidate member) =>
-          isLikelyBatchVideoRelease(member.title))
+      .where(
+        (VideoResourceCandidate member) =>
+            isLikelyBatchVideoRelease(member.title),
+      )
       .length;
 
   DateTime? get latestPublishedAt {
@@ -118,15 +149,16 @@ class VideoResourceVersionGroup {
   }
 
   int get bestSeeders => members.fold(
-        0,
-        (int best, VideoResourceCandidate member) =>
-            member.seeders > best ? member.seeders : best,
-      );
+    0,
+    (int best, VideoResourceCandidate member) =>
+        member.seeders > best ? member.seeders : best,
+  );
 
   /// 代表条：做种最多 → 最新 → 标题（全序，渲染稳定）。
   VideoResourceCandidate get representative {
-    final List<VideoResourceCandidate> sorted =
-        List<VideoResourceCandidate>.of(members)..sort(_bySeedersDesc);
+    final List<VideoResourceCandidate> sorted = List<VideoResourceCandidate>.of(
+      members,
+    )..sort(_bySeedersDesc);
     return sorted.first;
   }
 }
@@ -145,17 +177,18 @@ int _bySeedersDesc(VideoResourceCandidate a, VideoResourceCandidate b) {
   return a.title.compareTo(b.title);
 }
 
-String _groupKeyOf(VideoResourceCandidate candidate) => <String>[
-      candidate.providerId,
-      candidate.providerInstanceId,
-      (candidate.releaseGroup ??
-              releaseGroupTagFromTitle(candidate.title) ??
-              '')
-          .toLowerCase(),
-      (candidate.resolution ?? resolutionFromTitle(candidate.title) ?? '')
-          .toLowerCase(),
-      candidate.trusted ? 'trusted' : '',
-    ].join('\u001f');
+String _groupKeyOf(VideoResourceCandidate candidate) {
+  final String? releaseGroup = _releaseGroupOf(candidate);
+  return <String>[
+    candidate.providerId,
+    candidate.providerInstanceId,
+    // 发布组缺失时仍允许按稳定的逐集标题模板聚合，但不能退成统一空串。
+    releaseGroup?.toLowerCase() ?? _unknownReleaseFamilyKey(candidate),
+    (candidate.resolution ?? resolutionFromTitle(candidate.title) ?? '')
+        .toLowerCase(),
+    candidate.trusted ? 'trusted' : '',
+  ].join('\u001f');
+}
 
 int _byEpisodeAsc(VideoResourceCandidate a, VideoResourceCandidate b) {
   final int episodeA = episodeNumberFromReleaseTitle(a.title) ?? (1 << 30);
@@ -198,8 +231,9 @@ List<VideoResourceVersionGroup> buildVideoResourceVersionGroups(
       ),
   ];
   groups.sort((VideoResourceVersionGroup a, VideoResourceVersionGroup b) {
-    final int byRank =
-        (bestRank[a.key] ?? 1 << 30).compareTo(bestRank[b.key] ?? 1 << 30);
+    final int byRank = (bestRank[a.key] ?? 1 << 30).compareTo(
+      bestRank[b.key] ?? 1 << 30,
+    );
     if (byRank != 0) return byRank;
     final int bySeeders = b.bestSeeders.compareTo(a.bestSeeders);
     if (bySeeders != 0) return bySeeders;
@@ -224,11 +258,14 @@ VideoResourceCandidate? pickResourceVersionCandidate(
   int? episode,
 }) {
   if (episode != null) {
-    final List<VideoResourceCandidate> hits = group.members
-        .where((VideoResourceCandidate member) =>
-            episodeNumberFromReleaseTitle(member.title) == episode)
-        .toList()
-      ..sort(_bySeedersDesc);
+    final List<VideoResourceCandidate> hits =
+        group.members
+            .where(
+              (VideoResourceCandidate member) =>
+                  episodeNumberFromReleaseTitle(member.title) == episode,
+            )
+            .toList()
+          ..sort(_bySeedersDesc);
     return hits.isEmpty ? null : hits.first;
   }
   return group.members.length == 1 ? group.members.single : null;
