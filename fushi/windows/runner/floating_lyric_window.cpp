@@ -2288,11 +2288,19 @@ std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
     if (y < ctrl_top || y > ctrl_top + btn) {
       return std::string();
     }
-    // 到这里不可能是 hook 台词模式（上面 `hook_text_mode_ || !hovered_` 已早退），
-    // 剩下的只有剪贴板文本窗那条 lock/topmost/transparency 的硬编码命中 —— 而
-    // develop 已经把剪贴板窗整个删掉了。两侧的分支因此都不可达，一并删除，
-    // ControlActionAt 只保留下面那个「不是 text-only 也不是 hook」的收口。
-    return std::string();
+    // 索引 profile 槽表：独立工具条窗查的是同一张表，两个窗因此不可能对「这颗
+    // 按钮是什么」各说各的。几何走 HookToolbarSlotAt —— 悬停提示问的是同一个
+    // 入口，提示与命中永远指同一颗。
+    //
+    // 合并注记：本 PR 原来把这段包在 `if (hook_text_mode_)` 里，而上面那条
+    // `hook_text_mode_ || !hovered_` 早退让它不可达；develop 侧则是直接索引
+    // `kSlotActions`（无 profile）。正确形态是 develop 的位置 + 本 PR 的
+    // profile 化 —— 两条守卫（gal_hook_overlay_buttons /
+    // gal_overlay_passthrough_dual_window）都钉着「ControlActionAt 必须索引
+    // profile 槽表，不得另抄一份映射」。
+    const int slot = HookToolbarSlotAt(x, y);
+    return slot >= 0 ? hook_toolbar::SlotAction(toolbar_profile_, slot)
+                     : std::string();
   }
   // 到这里说明既不是 text-only 也不是 hook 模式。有声书悬浮字幕以前走的就是这条
   // 路（自绘 5 槽 previousCue/playPause/nextCue/lock/close 的硬编码 switch），
