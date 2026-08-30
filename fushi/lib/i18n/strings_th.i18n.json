@@ -80,7 +80,7 @@
   "anki_duplicate_scope_hint": "กำหนดว่าจะค้นหาสำรับใดเมื่อตรวจสอบว่าบัตรมีอยู่แล้วหรือไม่ เฉพาะ AnkiConnect เท่านั้น; AnkiDroid จะค้นหาทั้งคอลเลกชันเสมอ",
   "anki_error_collection_unavailable": "ขณะนี้ใช้คอลเลกชันของ AnkiDroid ไม่ได้ กรุณาเปิด AnkiDroid อย่างน้อยหนึ่งครั้ง ตรวจสอบว่าไม่ได้กำลังซิงค์และเปิด API ไว้แล้ว จากนั้นลองใหม่",
   "anki_error_connection_refused": "ไม่สามารถเชื่อมต่อกับ Anki: การเชื่อมต่อถูกปฏิเสธ โปรดตรวจสอบว่า Anki Desktop กำลังทำงานอยู่และติดตั้งส่วนเสริม AnkiConnect แล้ว",
-  "anki_error_connection_timeout": "ไม่สามารถเชื่อมต่อกับ Anki: การเชื่อมต่อหมดเวลา โปรดตรวจสอบโฮสต์ พอร์ต และการตั้งค่าไฟร์วอลล์",
+  "anki_error_connection_timeout": "Anki ไม่ตอบกลับภายในเวลาที่กำหนด มีบางโปรแกรมกำลังฟังอยู่ที่พอร์ตนี้แต่ไม่ได้ตอบแบบ AnkiConnect — พอร์ตน่าจะถูกโปรแกรมอื่นใช้อยู่ (หรือ Anki ค้าง) ลองเปลี่ยนไปใช้พอร์ตที่ว่าง",
   "anki_error_connection_unknown": "ไม่สามารถส่งออกไปยัง Anki: เกิดข้อผิดพลาดในการเชื่อมต่อที่ไม่คาดคิด ดูรายละเอียดในบันทึกข้อผิดพลาด",
   "anki_error_http": "ไม่สามารถส่งออกไปยัง Anki: เกิดข้อผิดพลาด HTTP ขณะติดต่อ AnkiConnect",
   "anki_error_permission_denied": "AnkiDroid ยังไม่ได้ให้สิทธิ์เข้าถึงบัตร อนุมัติกล่องสิทธิ์ของระบบที่เพิ่งปรากฏขึ้น จากนั้นแตะปุ่มอีกครั้งเพื่อส่งออก",
@@ -3898,5 +3898,10 @@
   "gal_hook_ingame_lookup_version_unsupported": "เกมเวอร์ชันนี้ยังไม่อยู่ในรายการที่รองรับ",
   "gal_hook_ingame_lookup_exe_hash_copy": "คัดลอก SHA-256 ของไฟล์เกม",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "อ่านไฟล์เกมไม่ได้",
-  "gal_hook_ingame_lookup_exe_hash_copied": "คัดลอก SHA-256 ของไฟล์เกมแล้ว"
+  "gal_hook_ingame_lookup_exe_hash_copied": "คัดลอก SHA-256 ของไฟล์เกมแล้ว",
+  "anki_connect_port_auto_fix": "เปลี่ยนไปใช้พอร์ตที่ว่าง",
+  "anki_connect_port_auto_fix_hint": "เลือกพอร์ตที่ว่างแล้วเขียนลงทั้งใน Hibiki และการตั้งค่าส่วนเสริม AnkiConnect รีสตาร์ท Anki เพื่อให้มีผล",
+  "anki_connect_port_auto_fix_done": "เปลี่ยนพอร์ตของ AnkiConnect เป็น ${port} แล้ว รีสตาร์ท Anki แล้วลองอีกครั้ง",
+  "anki_connect_port_auto_fix_manual": "ตอนนี้ Hibiki ใช้พอร์ต ${port} แล้ว แต่ไม่พบการตั้งค่าส่วนเสริม AnkiConnect โปรดตั้ง webBindPort เป็น ${port} ใน Anki (เครื่องมือ → ส่วนเสริม → AnkiConnect → การตั้งค่า) แล้วรีสตาร์ท Anki",
+  "anki_connect_port_auto_fix_none": "ไม่พบพอร์ตที่ว่างบนเครื่องนี้"
 }

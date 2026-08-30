@@ -80,7 +80,7 @@
   "anki_duplicate_scope_hint": "Quali mazzi vengono cercati per verificare se una carta esiste già. Solo AnkiConnect; AnkiDroid cerca sempre nell'intera collezione.",
   "anki_error_collection_unavailable": "La collezione di AnkiDroid non è al momento disponibile. Apri AnkiDroid almeno una volta, assicurati che non stia sincronizzando e che l'API sia abilitata, poi riprova.",
   "anki_error_connection_refused": "Impossibile connettersi ad Anki: connessione rifiutata. Assicurati che Anki Desktop sia in esecuzione e il componente AnkiConnect sia installato.",
-  "anki_error_connection_timeout": "Impossibile connettersi ad Anki: connessione scaduta. Controlla host, porta e firewall.",
+  "anki_error_connection_timeout": "Anki non ha risposto in tempo. Qualcosa è in ascolto su questa porta ma non risponde come AnkiConnect: la porta è probabilmente occupata da un altro programma (o Anki è bloccato). Prova a passare a una porta libera.",
   "anki_error_connection_unknown": "Impossibile esportare in Anki: errore di connessione imprevisto. Vedi il log degli errori.",
   "anki_error_http": "Impossibile esportare in Anki: errore HTTP durante la connessione ad AnkiConnect.",
   "anki_error_permission_denied": "AnkiDroid non ha concesso il permesso di accesso alle carte. Approva la finestra di permesso di sistema appena apparsa, poi tocca di nuovo il pulsante per esportare.",
@@ -3898,5 +3898,10 @@
   "gal_hook_ingame_lookup_version_unsupported": "Questa versione del gioco non è ancora nell'elenco supportato",
   "gal_hook_ingame_lookup_exe_hash_copy": "Copia lo SHA-256 dell'eseguibile del gioco",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "Impossibile leggere l'eseguibile del gioco",
-  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 dell'eseguibile copiato"
+  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 dell'eseguibile copiato",
+  "anki_connect_port_auto_fix": "Passa a una porta libera",
+  "anki_connect_port_auto_fix_hint": "Sceglie una porta libera e la scrive sia in Hibiki sia nella configurazione del componente aggiuntivo AnkiConnect. Riavvia Anki per applicarla.",
+  "anki_connect_port_auto_fix_done": "AnkiConnect ora usa la porta ${port}. Riavvia Anki e riprova.",
+  "anki_connect_port_auto_fix_manual": "Hibiki ora usa la porta ${port}, ma la configurazione del componente aggiuntivo AnkiConnect non è stata trovata. Imposta webBindPort su ${port} in Anki (Strumenti → Componenti aggiuntivi → AnkiConnect → Configurazione) e riavvia Anki.",
+  "anki_connect_port_auto_fix_none": "Nessuna porta libera trovata su questo computer."
 }

@@ -80,7 +80,7 @@
   "anki_duplicate_scope_hint": "Dek mana yang dicari saat memeriksa apakah kartu sudah ada. Hanya AnkiConnect; AnkiDroid selalu mencari seluruh koleksi.",
   "anki_error_collection_unavailable": "Koleksi AnkiDroid saat ini tidak tersedia. Buka AnkiDroid setidaknya sekali, pastikan tidak sedang menyinkron dan API-nya aktif, lalu coba lagi.",
   "anki_error_connection_refused": "Tidak dapat terhubung ke Anki: koneksi ditolak. Pastikan Anki Desktop sedang berjalan dan add-on AnkiConnect sudah terpasang.",
-  "anki_error_connection_timeout": "Tidak dapat terhubung ke Anki: koneksi habis waktu. Periksa host, port, dan pengaturan firewall.",
+  "anki_error_connection_timeout": "Anki tidak menjawab tepat waktu. Ada program yang mendengarkan di port ini tetapi tidak menjawab sebagai AnkiConnect — port-nya kemungkinan besar dipakai program lain (atau Anki macet). Coba ganti ke port yang kosong.",
   "anki_error_connection_unknown": "Tidak dapat mengekspor ke Anki: terjadi kesalahan koneksi yang tidak terduga. Lihat log kesalahan untuk detailnya.",
   "anki_error_http": "Tidak dapat mengekspor ke Anki: terjadi kesalahan HTTP saat menghubungi AnkiConnect.",
   "anki_error_permission_denied": "AnkiDroid belum memberikan izin akses kartu. Setujui dialog izin sistem yang baru muncul, lalu ketuk tombol lagi untuk mengekspor.",
@@ -3898,5 +3898,10 @@
   "gal_hook_ingame_lookup_version_unsupported": "Versi gim ini belum ada dalam daftar yang didukung",
   "gal_hook_ingame_lookup_exe_hash_copy": "Salin SHA-256 file eksekusi gim",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "Tidak dapat membaca file eksekusi gim",
-  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 file eksekusi disalin"
+  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 file eksekusi disalin",
+  "anki_connect_port_auto_fix": "Ganti ke port yang kosong",
+  "anki_connect_port_auto_fix_hint": "Memilih port kosong lalu menuliskannya ke Hibiki dan ke konfigurasi add-on AnkiConnect. Mulai ulang Anki agar berlaku.",
+  "anki_connect_port_auto_fix_done": "AnkiConnect kini memakai port ${port}. Mulai ulang Anki lalu coba lagi.",
+  "anki_connect_port_auto_fix_manual": "Hibiki kini memakai port ${port}, tetapi konfigurasi add-on AnkiConnect tidak ditemukan. Setel webBindPort ke ${port} di Anki (Alat → Add-on → AnkiConnect → Konfigurasi), lalu mulai ulang Anki.",
+  "anki_connect_port_auto_fix_none": "Tidak ditemukan port kosong di komputer ini."
 }

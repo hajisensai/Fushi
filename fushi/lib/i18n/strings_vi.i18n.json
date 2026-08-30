@@ -80,7 +80,7 @@
   "anki_duplicate_scope_hint": "Những bộ thẻ nào được tìm kiếm khi kiểm tra thẻ đã tồn tại. Chỉ AnkiConnect; AnkiDroid luôn tìm trong toàn bộ bộ sưu tập.",
   "anki_error_collection_unavailable": "Bộ sưu tập của AnkiDroid hiện không khả dụng. Hãy mở AnkiDroid ít nhất một lần, đảm bảo nó không đang đồng bộ và API đã được bật, rồi thử lại.",
   "anki_error_connection_refused": "Không thể kết nối tới Anki: kết nối bị từ chối. Hãy đảm bảo Anki Desktop đang chạy và add-on AnkiConnect đã được cài đặt.",
-  "anki_error_connection_timeout": "Không thể kết nối tới Anki: kết nối đã hết thời gian chờ. Hãy kiểm tra máy chủ, cổng và cài đặt tường lửa.",
+  "anki_error_connection_timeout": "Anki không phản hồi kịp thời. Có thứ gì đó đang lắng nghe trên cổng này nhưng không trả lời như AnkiConnect — nhiều khả năng cổng đã bị chương trình khác chiếm (hoặc Anki bị treo). Hãy thử đổi sang một cổng còn trống.",
   "anki_error_connection_unknown": "Không thể xuất sang Anki: đã xảy ra lỗi kết nối không xác định. Xem nhật ký lỗi để biết chi tiết.",
   "anki_error_http": "Không thể xuất sang Anki: đã xảy ra lỗi HTTP khi liên hệ với AnkiConnect.",
   "anki_error_permission_denied": "AnkiDroid chưa cấp quyền truy cập thẻ. Chấp nhận hộp thoại quyền hệ thống vừa xuất hiện, sau đó nhấn lại nút để xuất.",
@@ -3898,5 +3898,10 @@
   "gal_hook_ingame_lookup_version_unsupported": "Phiên bản trò chơi này chưa có trong danh sách được hỗ trợ",
   "gal_hook_ingame_lookup_exe_hash_copy": "Sao chép SHA-256 của tệp thực thi trò chơi",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "Không đọc được tệp thực thi trò chơi",
-  "gal_hook_ingame_lookup_exe_hash_copied": "Đã sao chép SHA-256 của tệp thực thi"
+  "gal_hook_ingame_lookup_exe_hash_copied": "Đã sao chép SHA-256 của tệp thực thi",
+  "anki_connect_port_auto_fix": "Đổi sang cổng còn trống",
+  "anki_connect_port_auto_fix_hint": "Chọn một cổng còn trống rồi ghi vào cả Hibiki lẫn cấu hình tiện ích AnkiConnect. Khởi động lại Anki để áp dụng.",
+  "anki_connect_port_auto_fix_done": "AnkiConnect đã chuyển sang cổng ${port}. Hãy khởi động lại Anki rồi thử lại.",
+  "anki_connect_port_auto_fix_manual": "Hibiki hiện dùng cổng ${port}, nhưng không tìm thấy cấu hình tiện ích AnkiConnect. Hãy đặt webBindPort thành ${port} trong Anki (Công cụ → Tiện ích → AnkiConnect → Cấu hình) rồi khởi động lại Anki.",
+  "anki_connect_port_auto_fix_none": "Không tìm thấy cổng nào còn trống trên máy này."
 }

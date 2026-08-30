@@ -80,7 +80,7 @@
   "anki_duplicate_scope_hint": "查询「这个词是否已经有卡」时搜索哪些卡组。仅 AnkiConnect（桌面 Anki）生效；AnkiDroid 始终整库查重。",
   "anki_error_collection_unavailable": "AnkiDroid 数据库当前不可用：请先打开 AnkiDroid 至少一次，确认它没有在同步且已开启 API，然后重试。",
   "anki_error_connection_refused": "无法连接 Anki：连接被拒绝。请确认 Anki 桌面版正在运行，且已安装 AnkiConnect 插件。",
-  "anki_error_connection_timeout": "无法连接 Anki：连接超时。请检查主机、端口和防火墙设置。",
+  "anki_error_connection_timeout": "Anki 没有在限定时间内应答。这个端口上有程序在监听，但它不是以 AnkiConnect 的方式回应——多半是端口被别的程序占用了（也可能 Anki 卡住了）。换一个空闲端口试试。",
   "anki_error_connection_unknown": "无法导出到 Anki：发生未知的连接错误。详情见错误日志。",
   "anki_error_http": "无法导出到 Anki：连接 AnkiConnect 时发生 HTTP 错误。",
   "anki_error_permission_denied": "AnkiDroid 尚未授予卡片访问权限。请在刚弹出的系统授权对话框中允许，然后再次点击按钮制卡。",
@@ -3898,5 +3898,10 @@
   "gal_hook_ingame_lookup_version_unsupported": "当前游戏版本未在支持列表中",
   "gal_hook_ingame_lookup_exe_hash_copy": "复制游戏 exe 的 SHA-256",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "无法读取游戏 exe（可能权限不足）",
-  "gal_hook_ingame_lookup_exe_hash_copied": "已复制 exe 的 SHA-256"
+  "gal_hook_ingame_lookup_exe_hash_copied": "已复制 exe 的 SHA-256",
+  "anki_connect_port_auto_fix": "换一个空闲端口",
+  "anki_connect_port_auto_fix_hint": "自动挑一个空闲端口，同时写进 Hibiki 和 Anki 的 AnkiConnect 插件配置。改完重启 Anki 生效。",
+  "anki_connect_port_auto_fix_done": "AnkiConnect 端口已改为 ${port}。请重启 Anki 后重试。",
+  "anki_connect_port_auto_fix_manual": "Hibiki 已改用端口 ${port}，但没找到 AnkiConnect 的插件配置。请在 Anki 的「工具 → 插件 → AnkiConnect → 配置」里把 webBindPort 也改成 ${port}，然后重启 Anki。",
+  "anki_connect_port_auto_fix_none": "本机没有找到空闲端口。"
 }

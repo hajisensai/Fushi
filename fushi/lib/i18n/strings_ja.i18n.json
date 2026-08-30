@@ -80,7 +80,7 @@
   "anki_duplicate_scope_hint": "カードが既に存在するかチェックする際に検索するデッキの範囲。AnkiConnect のみ。AnkiDroid は常にコレクション全体を検索します。",
   "anki_error_collection_unavailable": "AnkiDroid のコレクションが現在利用できません。AnkiDroid を一度開き、同期中でないことと API が有効になっていることを確認してから、再試行してください。",
   "anki_error_connection_refused": "Anki に接続できません：接続が拒否されました。Anki デスクトップ版が起動していて、AnkiConnect アドオンがインストールされているか確認してください。",
-  "anki_error_connection_timeout": "Anki に接続できません：接続がタイムアウトしました。ホスト・ポート・ファイアウォールの設定を確認してください。",
+  "anki_error_connection_timeout": "Anki から応答がありませんでした。このポートで何かが待ち受けていますが、AnkiConnect としては応答していません——ポートが別のプログラムに使われている（または Anki がフリーズしている）可能性が高いです。空いているポートに変更してみてください。",
   "anki_error_connection_unknown": "Anki に書き出せません：予期しない接続エラーが発生しました。詳細はエラーログを確認してください。",
   "anki_error_http": "Anki に書き出せません：AnkiConnect への接続中に HTTP エラーが発生しました。",
   "anki_error_permission_denied": "AnkiDroid がカードアクセス権限を許可していません。表示されたシステム権限ダイアログを承認してから、もう一度エクスポートボタンをタップしてください。",
@@ -3898,5 +3898,10 @@
   "gal_hook_ingame_lookup_version_unsupported": "このゲームのバージョンはまだ対応リストにありません",
   "gal_hook_ingame_lookup_exe_hash_copy": "ゲーム実行ファイルの SHA-256 をコピー",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "ゲーム実行ファイルを読み取れません（権限不足の可能性）",
-  "gal_hook_ingame_lookup_exe_hash_copied": "実行ファイルの SHA-256 をコピーしました"
+  "gal_hook_ingame_lookup_exe_hash_copied": "実行ファイルの SHA-256 をコピーしました",
+  "anki_connect_port_auto_fix": "空いているポートに変更",
+  "anki_connect_port_auto_fix_hint": "空いているポートを選び、Hibiki と Anki の AnkiConnect アドオン設定の両方に書き込みます。反映には Anki の再起動が必要です。",
+  "anki_connect_port_auto_fix_done": "AnkiConnect のポートを ${port} に変更しました。Anki を再起動してからもう一度お試しください。",
+  "anki_connect_port_auto_fix_manual": "Hibiki はポート ${port} を使うようになりましたが、AnkiConnect のアドオン設定が見つかりませんでした。Anki の「ツール → アドオン → AnkiConnect → 設定」で webBindPort も ${port} にしてから、Anki を再起動してください。",
+  "anki_connect_port_auto_fix_none": "このマシンに空いているポートが見つかりませんでした。"
 }

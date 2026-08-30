@@ -80,7 +80,7 @@
   "anki_duplicate_scope_hint": "Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.",
   "anki_error_collection_unavailable": "AnkiDroid's collection is currently unavailable. Open AnkiDroid at least once, make sure it isn't syncing and the API is enabled, then retry.",
   "anki_error_connection_refused": "Could not connect to Anki: connection refused. Make sure Anki Desktop is running and the AnkiConnect add-on is installed.",
-  "anki_error_connection_timeout": "Could not connect to Anki: the connection timed out. Check the host, port, and firewall settings.",
+  "anki_error_connection_timeout": "Anki did not answer in time. Something is listening on this port but is not responding as AnkiConnect - the port is probably taken by another program (or Anki is frozen). Try switching to a free port.",
   "anki_error_connection_unknown": "Could not export to Anki: an unexpected connection error occurred. See the error log for details.",
   "anki_error_http": "Could not export to Anki: an HTTP error occurred while contacting AnkiConnect.",
   "anki_error_permission_denied": "AnkiDroid hasn't granted card access permission. Approve the system permission dialog that just appeared, then tap the button again to export.",
@@ -3898,5 +3898,10 @@
   "gal_hook_ingame_lookup_version_unsupported": "This game version is not on the supported list yet",
   "gal_hook_ingame_lookup_exe_hash_copy": "Copy game executable SHA-256",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "Could not read the game executable",
-  "gal_hook_ingame_lookup_exe_hash_copied": "Executable SHA-256 copied"
+  "gal_hook_ingame_lookup_exe_hash_copied": "Executable SHA-256 copied",
+  "anki_connect_port_auto_fix": "Switch to a free port",
+  "anki_connect_port_auto_fix_hint": "Picks a free port and writes it to both Hibiki and the AnkiConnect add-on config. Restart Anki to apply.",
+  "anki_connect_port_auto_fix_done": "Switched AnkiConnect to port ${port}. Restart Anki to apply.",
+  "anki_connect_port_auto_fix_manual": "Hibiki now uses port ${port}, but the AnkiConnect add-on config was not found. Set webBindPort to ${port} in Anki (Tools -> Add-ons -> AnkiConnect -> Config), then restart Anki.",
+  "anki_connect_port_auto_fix_none": "No free port found on this machine."
 }
