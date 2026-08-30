@@ -299,6 +299,68 @@ void main() {
   });
 
   testWidgets(
+      'ring converts view coordinates into its offset host coordinate space '
+      '(Windows custom title bar, BUG-1963)',
+      (WidgetTester tester) async {
+    final FocusManager fm = FocusManager.instance;
+    final FocusHighlightStrategy previous = fm.highlightStrategy;
+    fm.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
+    addTearDown(() => fm.highlightStrategy = previous);
+
+    final FocusNode node = FocusNode();
+    addTearDown(node.dispose);
+    const Key focusKey = ValueKey<String>('offset-host-focus-target');
+
+    await tester.pumpWidget(MaterialApp(
+      home: Column(
+        children: <Widget>[
+          // Mirrors FushiWindowsTitleBar: the app/focus-ring subtree starts
+          // below a native-sized caption row instead of at view y = 0.
+          const SizedBox(height: 48),
+          Expanded(
+            child: FushiAppUiScale(
+              scale: 1.25,
+              child: FushiFocusRing(
+                child: Scaffold(
+                  body: Center(
+                    child: Focus(
+                      focusNode: node,
+                      autofocus: true,
+                      child: const SizedBox(
+                        key: focusKey,
+                        width: 48,
+                        height: 40,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ));
+    await tester.pump();
+    await tester.pump();
+
+    final Finder ring = find.descendant(
+      of: find.byType(FushiFocusRing),
+      matching: find.byWidgetPredicate((Widget widget) =>
+          widget is DecoratedBox &&
+          widget.decoration is BoxDecoration &&
+          (widget.decoration as BoxDecoration).border != null),
+    );
+    expect(ring, findsOneWidget);
+
+    final Rect controlRect = tester.getRect(find.byKey(focusKey));
+    final Rect ringRect = tester.getRect(ring);
+    expect(ringRect.left, closeTo(controlRect.left - 2, 0.6));
+    expect(ringRect.top, closeTo(controlRect.top - 2, 0.6));
+    expect(ringRect.right, closeTo(controlRect.right + 2, 0.6));
+    expect(ringRect.bottom, closeTo(controlRect.bottom + 2, 0.6));
+  });
+
+  testWidgets(
       'ring follows the focused control after a plain layout shift '
       '(async content load — no focus/scroll/scale/theme event, BUG-1300)',
       (WidgetTester tester) async {
