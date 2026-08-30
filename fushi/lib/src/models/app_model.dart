@@ -4219,7 +4219,9 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  Future<void> _disposeVideoDownloadPipelineRuntime() async {
+  Future<void> _disposeVideoDownloadPipelineRuntime({
+    Duration? pipelineDrainTimeout,
+  }) async {
     final VideoDownloadSubscriptionService? subscriptions =
         _videoDownloadSubscriptionService;
     _videoDownloadSubscriptionService = null;
@@ -4227,7 +4229,9 @@ class AppModel with ChangeNotifier {
     final VideoDownloadPipelineService? pipeline =
         _videoDownloadPipelineService;
     _videoDownloadPipelineService = null;
-    if (pipeline != null) await pipeline.dispose();
+    if (pipeline != null) {
+      await pipeline.dispose(drainTimeout: pipelineDrainTimeout);
+    }
     _videoResourceRegistry?.close();
     _videoResourceRegistry = null;
     _videoSubtitleRegistry?.close();
@@ -6018,16 +6022,26 @@ class AppModel with ChangeNotifier {
   ///
   /// 只停「后台自己会写库」的那几个（下载/订阅/漫画队列），不碰查词、TTS 这类只读
   /// 子系统：closeDatabase 之后调用方一律走重启，停多了没收益、只增加爆炸半径。
-  Future<void> quiesceBackgroundDatabaseWriters() async {
+  ///
+  /// [pipelineDrainTimeout] 只在**退出路径**给：见
+  /// [VideoDownloadPipelineService.stop] 的注释——迁移导入 / 备份导入 / 数据根迁移
+  /// 也走这条链，它们在关库后要在文件层动整个 DB 目录，放行一个仍在飞的 `_process`
+  /// 会让它继续打已关闭的连接、并被随后的 `_videoDownloadBackend?.close()` 抽掉
+  /// 句柄。那些路径必须等到真收尾。
+  Future<void> quiesceBackgroundDatabaseWriters({
+    Duration? pipelineDrainTimeout,
+  }) async {
     _animeDownloadService?.stop();
     _animeDownloadSubscriptionService?.stop();
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
     _videoDownloadPipelineRuntimeWanted = false;
-    await _disposeVideoDownloadPipelineRuntime();
+    await _disposeVideoDownloadPipelineRuntime(
+      pipelineDrainTimeout: pipelineDrainTimeout,
+    );
   }
 
-  Future<void> closeDatabase() async {
+  Future<void> closeDatabase({Duration? pipelineDrainTimeout}) async {
     _isInitialised = false;
     // BUG-1569②：合集观察者持有本库的表订阅 + 未决防抖 Timer，关库前必须撤——
     // 否则防抖到点后 _runCollectionsSync 会对已关闭的 db 发起查询（drift「connection
@@ -6035,7 +6049,9 @@ class AppModel with ChangeNotifier {
     // 测试 teardown 调过 uninstall，生产三条关库路径全都不撤订阅。
     uninstallCollectionsSyncWatcher();
     databaseCloseNotifier.notifyListeners();
-    await quiesceBackgroundDatabaseWriters();
+    await quiesceBackgroundDatabaseWriters(
+      pipelineDrainTimeout: pipelineDrainTimeout,
+    );
     await _database.close();
   }
 

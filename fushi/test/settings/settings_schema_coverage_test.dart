@@ -390,6 +390,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Hardware decoding': 'test/media/video/video_mpv_config_test.dart',
   'video/Debanding': 'test/media/video/video_mpv_config_test.dart',
   'video/Loop file': 'test/media/video/video_mpv_config_test.dart',
+  // HDR：值写穿 videoMpvConfig，生效点在 libmpv（tone-mapping /
+  // hdr-compute-peak），harness 探不到渲染输入。round-trip + 白名单挡脏值
+  // 由下面这个文件咬住；真实 HDR 片源的映射效果需桌面设备验。
+  'video/HDR tone mapping':
+      'test/media/video/video_hdr_tone_mapping_test.dart',
+  'video/Dynamic peak detection':
+      'test/media/video/video_hdr_tone_mapping_test.dart',
   // TODO-1247：把播放页内 mpv 详情（画质余项/几何/色彩/音频）平移到首页后，这些
   // 纯 pref 项写穿 videoMpvConfig（下次开视频 applyMpvConfig 应用）；结构化字段
   // round-trip + buildMpvProperties 生效由 video_mpv_config_test.dart 咬住，真实
