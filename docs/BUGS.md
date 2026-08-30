@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1848 条。点号进各自文件。
+> 共 1850 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1976](bugs/BUG-1976-lookup-webview-text-blur.md) | ✅ | ✅ | Windows 查词 WebView 被超分通路无条件重采样导致字体发糊 |
 | [BUG-1972](bugs/BUG-1972-selected-glossary-mining.md) | ✅ | ✅ | 桌面选中释义制卡丢失选区 |
 | [BUG-1971](bugs/BUG-1971-library-tabs-overflow-cue.md) | ✅ | ✅ | 库页顶栏横向标签缺少后续内容提示 |
 | [BUG-1970](bugs/BUG-1970-onboarding-feature-tile-height.md) | ✅ | ✅ | 新手引导功能选中态高度变化 |
