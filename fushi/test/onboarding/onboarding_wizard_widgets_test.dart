@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
+import 'package:fushi/utils.dart' show FushiListItem;
 
 Widget _host(Widget child) => MaterialApp(home: Scaffold(body: child));
 
