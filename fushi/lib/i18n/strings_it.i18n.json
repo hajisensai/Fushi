@@ -3951,5 +3951,21 @@
   "video_subtitle_adjust_expand": "Espandi",
   "settings_section_reading_stats": "Statistiche di lettura",
   "reading_stats_idle_timeout": "Timeout di inattività",
-  "reading_stats_idle_timeout_hint": "Smetti di contare il tempo di lettura dopo questi minuti senza voltare pagina, scorrere o cercare una parola. Solo per romanzi, PDF e manga; il video conta mentre è in riproduzione."
+  "reading_stats_idle_timeout_hint": "Smetti di contare il tempo di lettura dopo questi minuti senza voltare pagina, scorrere o cercare una parola. Solo per romanzi, PDF e manga; il video conta mentre è in riproduzione.",
+  "web_video_track_menu": "Traccia sottotitoli",
+  "web_video_track_live": "Sottotitoli live (campionati dalla pagina)",
+  "web_video_no_tracks": "Nessun sottotitolo acquisito ancora",
+  "web_video_hide_native_subtitles": "Nascondi i sottotitoli del sito",
+  "web_video_import_hint": "Questa è una pagina web (non uno stream diretto). Si aprirà nel lettore web integrato.",
+  "web_video_platform_unsupported": "Il lettore web integrato è disponibile per ora solo su Windows.",
+  "web_video_mine_queue_run": "Crea le carte in coda",
+  "web_video_mine_queue_stop": "Interrompi la creazione delle carte",
+  "web_video_mine_queue_empty": "Nessuna carta in coda",
+  "web_video_mine_queued": "In coda per la creazione di carte ($count in attesa)",
+  "web_video_mine_queue_running": "Creazione carte $done/$total…",
+  "web_video_mine_queue_finished": "Carte create: $ok, non riuscite: $failed",
+  "web_video_hosting_menu": "Modalità di riproduzione",
+  "web_video_hosting_builtin": "Integrato (1080p; super-risoluzione, screenshot e carte disponibili)",
+  "web_video_hosting_windowed": "Finestra nativa (4K, DRM hardware; le carte vengono messe in coda)",
+  "web_video_mine_switch_builtin": "Passa alla modalità integrata per creare $count carte in coda"
 }

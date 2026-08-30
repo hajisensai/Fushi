@@ -549,9 +549,11 @@ class BackupService {
     'manga_trusted_signers',
     'sync_baselines',
     'fushi_paired_peers',
+    'web_mine_queue',
   ];
 
   static const List<String> _deviceLocalTablesParentFirst = <String>[
+    'web_mine_queue',
     'sync_baselines',
     'fushi_paired_peers',
     'manga_extension_stores',

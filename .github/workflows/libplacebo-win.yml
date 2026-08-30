@@ -1,0 +1,57 @@
+# third_party/libplacebo-win 的版本守卫构建（Windows x64，仅 D3D11 后端 + shaderc）。
+#
+# 消费模型与 ffmpeg-min.yml 相同：workflow_dispatch 手动跑 → 下载 artifact → 把单个 bin/*.dll、
+# include/libplacebo/（含生成的 config.h）、SHA256SUMS 提交进 third_party/libplacebo-win/
+# （UPSTREAM.md 记版本与哈希）。app 构建不从网络拉，fork 运行期 LoadLibrary 动态加载。
+name: libplacebo-win
+
+on:
+  workflow_dispatch:
+    inputs:
+      placebo_ref:
+        description: 'libplacebo git tag/ref'
+        required: false
+        default: 'v7.360.1'
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-binutils
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-shaderc
+            mingw-w64-x86_64-spirv-cross
+            mingw-w64-x86_64-vulkan-headers
+            mingw-w64-x86_64-python
+            mingw-w64-x86_64-python-jinja
+      - name: Build libplacebo (D3D11 only)
+        shell: msys2 {0}
+        env:
+          PLACEBO_REF: ${{ inputs.placebo_ref }}
+        run: |
+          set -euo pipefail
+          bash tool/libplacebo/build_placebo.sh \
+            --ref "$PLACEBO_REF" \
+            --output out
+      - name: Smoke (single self-contained DLL and exports present)
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          test "$(find out/bin -maxdepth 1 -type f -name '*.dll' | wc -l)" -eq 1
+          ! ldd out/bin/libplacebo-*.dll | grep -qi '/mingw64/'
+          objdump -p out/bin/libplacebo-*.dll | grep -E 'pl_d3d11_create|pl_mpv_user_shader_parse|pl_render_image|pl_log_create_'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libplacebo-win-x64
+          path: out
+          if-no-files-found: error

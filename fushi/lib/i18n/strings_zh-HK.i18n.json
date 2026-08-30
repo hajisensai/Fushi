@@ -3951,5 +3951,21 @@
   "video_subtitle_adjust_expand": "展開",
   "settings_section_reading_stats": "閱讀統計",
   "reading_stats_idle_timeout": "閒置判定時長",
-  "reading_stats_idle_timeout_hint": "這麼久沒有翻頁、捲動或查詞就停止計入閱讀時長。只對小說、PDF、漫畫生效；影片以播放狀態為準。"
+  "reading_stats_idle_timeout_hint": "這麼久沒有翻頁、捲動或查詞就停止計入閱讀時長。只對小說、PDF、漫畫生效；影片以播放狀態為準。",
+  "web_video_track_menu": "字幕軌",
+  "web_video_track_live": "即時字幕（從頁面取樣）",
+  "web_video_no_tracks": "尚未擷取到字幕",
+  "web_video_hide_native_subtitles": "隱藏網站字幕",
+  "web_video_import_hint": "這是網頁（不是直接串流），將在內建網頁播放器中開啟。",
+  "web_video_platform_unsupported": "內建網頁播放器目前僅支援 Windows。",
+  "web_video_mine_queue_run": "製作佇列中的卡片",
+  "web_video_mine_queue_stop": "停止製作卡片",
+  "web_video_mine_queue_empty": "佇列中沒有卡片",
+  "web_video_mine_queued": "已加入製卡佇列（待製 $count 張）",
+  "web_video_mine_queue_running": "製卡中 $done/$total…",
+  "web_video_mine_queue_finished": "製卡完成：成功 $ok，失敗 $failed",
+  "web_video_hosting_menu": "播放模式",
+  "web_video_hosting_builtin": "內建（1080p；可超解析、截圖、製卡）",
+  "web_video_hosting_windowed": "原生視窗（4K 硬體 DRM；製卡先排隊）",
+  "web_video_mine_switch_builtin": "切換到內建模式製作 $count 張排隊卡片"
 }

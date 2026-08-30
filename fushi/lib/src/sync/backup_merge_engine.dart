@@ -1420,6 +1420,7 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       'video_download_job_subtitles',
       'video_download_subscriptions',
       'video_download_subscription_items',
+      'web_mine_queue',
     ]);
 
 /// Read-only summary of what a backup MERGE import would change on this device

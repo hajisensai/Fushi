@@ -1,6 +1,6 @@
 // 字幕文本渲染（含振假名）。
 //
-// cue.text 永远只有正文（读音在采集时就被分了出去，见 content.js 的 fushiCollectCueSegments
+// cue.text 永远只有正文（读音在采集时就被分了出去，见 subtitle-providers.js 的 fushiCollectCueSegments
 // 与 subtitle-adapters.js 的 splitCueRuby——`<rt>` 的内容拼进正文会让读音和正文变成同级文字，
 // 还会污染查词与制卡 sentence）。cue.ruby 是「正文段 + 可选读音」的序列，有它就画真正的
 // `<ruby><rt>`，振假名回到正文上方。

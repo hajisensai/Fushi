@@ -46927,6 +46927,282 @@ class MangaChapterStatesCompanion
   }
 }
 
+class $StudySegmentTombstonesTable extends StudySegmentTombstones
+    with TableInfo<$StudySegmentTombstonesTable, StudySegmentTombstoneRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $StudySegmentTombstonesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mediaKindMeta = const VerificationMeta(
+    'mediaKind',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKind = GeneratedColumn<String>(
+    'media_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mediaKeyMeta = const VerificationMeta(
+    'mediaKey',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKey = GeneratedColumn<String>(
+    'media_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<int> deletedAt = GeneratedColumn<int>(
+    'deleted_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [mediaKind, mediaKey, deletedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'study_segment_tombstones';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<StudySegmentTombstoneRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('media_kind')) {
+      context.handle(
+        _mediaKindMeta,
+        mediaKind.isAcceptableOrUnknown(data['media_kind']!, _mediaKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaKindMeta);
+    }
+    if (data.containsKey('media_key')) {
+      context.handle(
+        _mediaKeyMeta,
+        mediaKey.isAcceptableOrUnknown(data['media_key']!, _mediaKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaKeyMeta);
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_deletedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {mediaKind, mediaKey};
+  @override
+  StudySegmentTombstoneRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return StudySegmentTombstoneRow(
+      mediaKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_kind'],
+      )!,
+      mediaKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_key'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}deleted_at'],
+      )!,
+    );
+  }
+
+  @override
+  $StudySegmentTombstonesTable createAlias(String alias) {
+    return $StudySegmentTombstonesTable(attachedDatabase, alias);
+  }
+}
+
+class StudySegmentTombstoneRow extends DataClass
+    implements Insertable<StudySegmentTombstoneRow> {
+  final String mediaKind;
+  final String mediaKey;
+  final int deletedAt;
+  const StudySegmentTombstoneRow({
+    required this.mediaKind,
+    required this.mediaKey,
+    required this.deletedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['media_kind'] = Variable<String>(mediaKind);
+    map['media_key'] = Variable<String>(mediaKey);
+    map['deleted_at'] = Variable<int>(deletedAt);
+    return map;
+  }
+
+  StudySegmentTombstonesCompanion toCompanion(bool nullToAbsent) {
+    return StudySegmentTombstonesCompanion(
+      mediaKind: Value(mediaKind),
+      mediaKey: Value(mediaKey),
+      deletedAt: Value(deletedAt),
+    );
+  }
+
+  factory StudySegmentTombstoneRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return StudySegmentTombstoneRow(
+      mediaKind: serializer.fromJson<String>(json['mediaKind']),
+      mediaKey: serializer.fromJson<String>(json['mediaKey']),
+      deletedAt: serializer.fromJson<int>(json['deletedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'mediaKind': serializer.toJson<String>(mediaKind),
+      'mediaKey': serializer.toJson<String>(mediaKey),
+      'deletedAt': serializer.toJson<int>(deletedAt),
+    };
+  }
+
+  StudySegmentTombstoneRow copyWith({
+    String? mediaKind,
+    String? mediaKey,
+    int? deletedAt,
+  }) => StudySegmentTombstoneRow(
+    mediaKind: mediaKind ?? this.mediaKind,
+    mediaKey: mediaKey ?? this.mediaKey,
+    deletedAt: deletedAt ?? this.deletedAt,
+  );
+  StudySegmentTombstoneRow copyWithCompanion(
+    StudySegmentTombstonesCompanion data,
+  ) {
+    return StudySegmentTombstoneRow(
+      mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
+      mediaKey: data.mediaKey.present ? data.mediaKey.value : this.mediaKey,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('StudySegmentTombstoneRow(')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('mediaKey: $mediaKey, ')
+          ..write('deletedAt: $deletedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(mediaKind, mediaKey, deletedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is StudySegmentTombstoneRow &&
+          other.mediaKind == this.mediaKind &&
+          other.mediaKey == this.mediaKey &&
+          other.deletedAt == this.deletedAt);
+}
+
+class StudySegmentTombstonesCompanion
+    extends UpdateCompanion<StudySegmentTombstoneRow> {
+  final Value<String> mediaKind;
+  final Value<String> mediaKey;
+  final Value<int> deletedAt;
+  final Value<int> rowid;
+  const StudySegmentTombstonesCompanion({
+    this.mediaKind = const Value.absent(),
+    this.mediaKey = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  StudySegmentTombstonesCompanion.insert({
+    required String mediaKind,
+    required String mediaKey,
+    required int deletedAt,
+    this.rowid = const Value.absent(),
+  }) : mediaKind = Value(mediaKind),
+       mediaKey = Value(mediaKey),
+       deletedAt = Value(deletedAt);
+  static Insertable<StudySegmentTombstoneRow> custom({
+    Expression<String>? mediaKind,
+    Expression<String>? mediaKey,
+    Expression<int>? deletedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (mediaKind != null) 'media_kind': mediaKind,
+      if (mediaKey != null) 'media_key': mediaKey,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  StudySegmentTombstonesCompanion copyWith({
+    Value<String>? mediaKind,
+    Value<String>? mediaKey,
+    Value<int>? deletedAt,
+    Value<int>? rowid,
+  }) {
+    return StudySegmentTombstonesCompanion(
+      mediaKind: mediaKind ?? this.mediaKind,
+      mediaKey: mediaKey ?? this.mediaKey,
+      deletedAt: deletedAt ?? this.deletedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (mediaKind.present) {
+      map['media_kind'] = Variable<String>(mediaKind.value);
+    }
+    if (mediaKey.present) {
+      map['media_key'] = Variable<String>(mediaKey.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<int>(deletedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('StudySegmentTombstonesCompanion(')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('mediaKey: $mediaKey, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $StudySegmentsTable extends StudySegments
     with TableInfo<$StudySegmentsTable, StudySegmentRow> {
   @override
@@ -47736,277 +48012,809 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
   }
 }
 
-class $StudySegmentTombstonesTable extends StudySegmentTombstones
-    with TableInfo<$StudySegmentTombstonesTable, StudySegmentTombstoneRow> {
+class $WebMineQueueTable extends WebMineQueue
+    with TableInfo<$WebMineQueueTable, WebMineQueueRow> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
-  $StudySegmentTombstonesTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _mediaKindMeta = const VerificationMeta(
-    'mediaKind',
+  $WebMineQueueTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _bookUidMeta = const VerificationMeta(
+    'bookUid',
   );
   @override
-  late final GeneratedColumn<String> mediaKind = GeneratedColumn<String>(
-    'media_kind',
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+    'book_uid',
     aliasedName,
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _mediaKeyMeta = const VerificationMeta(
-    'mediaKey',
+  static const VerificationMeta _videoKeyMeta = const VerificationMeta(
+    'videoKey',
   );
   @override
-  late final GeneratedColumn<String> mediaKey = GeneratedColumn<String>(
-    'media_key',
+  late final GeneratedColumn<String> videoKey = GeneratedColumn<String>(
+    'video_key',
     aliasedName,
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
-    'deletedAt',
+  static const VerificationMeta _hrefMeta = const VerificationMeta('href');
+  @override
+  late final GeneratedColumn<String> href = GeneratedColumn<String>(
+    'href',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _cueStartMsMeta = const VerificationMeta(
+    'cueStartMs',
   );
   @override
-  late final GeneratedColumn<int> deletedAt = GeneratedColumn<int>(
-    'deleted_at',
+  late final GeneratedColumn<int> cueStartMs = GeneratedColumn<int>(
+    'cue_start_ms',
     aliasedName,
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _cueEndMsMeta = const VerificationMeta(
+    'cueEndMs',
+  );
   @override
-  List<GeneratedColumn> get $columns => [mediaKind, mediaKey, deletedAt];
+  late final GeneratedColumn<int> cueEndMs = GeneratedColumn<int>(
+    'cue_end_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sentenceMeta = const VerificationMeta(
+    'sentence',
+  );
+  @override
+  late final GeneratedColumn<String> sentence = GeneratedColumn<String>(
+    'sentence',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _cueSentenceMeta = const VerificationMeta(
+    'cueSentence',
+  );
+  @override
+  late final GeneratedColumn<String> cueSentence = GeneratedColumn<String>(
+    'cue_sentence',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _fieldsJsonMeta = const VerificationMeta(
+    'fieldsJson',
+  );
+  @override
+  late final GeneratedColumn<String> fieldsJson = GeneratedColumn<String>(
+    'fields_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+    'status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('pending'),
+  );
+  static const VerificationMeta _errorMeta = const VerificationMeta('error');
+  @override
+  late final GeneratedColumn<String> error = GeneratedColumn<String>(
+    'error',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _noteIdMeta = const VerificationMeta('noteId');
+  @override
+  late final GeneratedColumn<int> noteId = GeneratedColumn<int>(
+    'note_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _minedAtMeta = const VerificationMeta(
+    'minedAt',
+  );
+  @override
+  late final GeneratedColumn<int> minedAt = GeneratedColumn<int>(
+    'mined_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    bookUid,
+    videoKey,
+    href,
+    cueStartMs,
+    cueEndMs,
+    sentence,
+    cueSentence,
+    fieldsJson,
+    status,
+    error,
+    noteId,
+    createdAt,
+    minedAt,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
   String get actualTableName => $name;
-  static const String $name = 'study_segment_tombstones';
+  static const String $name = 'web_mine_queue';
   @override
   VerificationContext validateIntegrity(
-    Insertable<StudySegmentTombstoneRow> instance, {
+    Insertable<WebMineQueueRow> instance, {
     bool isInserting = false,
   }) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
-    if (data.containsKey('media_kind')) {
-      context.handle(
-        _mediaKindMeta,
-        mediaKind.isAcceptableOrUnknown(data['media_kind']!, _mediaKindMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_mediaKindMeta);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
-    if (data.containsKey('media_key')) {
+    if (data.containsKey('book_uid')) {
       context.handle(
-        _mediaKeyMeta,
-        mediaKey.isAcceptableOrUnknown(data['media_key']!, _mediaKeyMeta),
+        _bookUidMeta,
+        bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta),
       );
     } else if (isInserting) {
-      context.missing(_mediaKeyMeta);
+      context.missing(_bookUidMeta);
     }
-    if (data.containsKey('deleted_at')) {
+    if (data.containsKey('video_key')) {
       context.handle(
-        _deletedAtMeta,
-        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+        _videoKeyMeta,
+        videoKey.isAcceptableOrUnknown(data['video_key']!, _videoKeyMeta),
       );
     } else if (isInserting) {
-      context.missing(_deletedAtMeta);
+      context.missing(_videoKeyMeta);
+    }
+    if (data.containsKey('href')) {
+      context.handle(
+        _hrefMeta,
+        href.isAcceptableOrUnknown(data['href']!, _hrefMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_hrefMeta);
+    }
+    if (data.containsKey('cue_start_ms')) {
+      context.handle(
+        _cueStartMsMeta,
+        cueStartMs.isAcceptableOrUnknown(
+          data['cue_start_ms']!,
+          _cueStartMsMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_cueStartMsMeta);
+    }
+    if (data.containsKey('cue_end_ms')) {
+      context.handle(
+        _cueEndMsMeta,
+        cueEndMs.isAcceptableOrUnknown(data['cue_end_ms']!, _cueEndMsMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_cueEndMsMeta);
+    }
+    if (data.containsKey('sentence')) {
+      context.handle(
+        _sentenceMeta,
+        sentence.isAcceptableOrUnknown(data['sentence']!, _sentenceMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sentenceMeta);
+    }
+    if (data.containsKey('cue_sentence')) {
+      context.handle(
+        _cueSentenceMeta,
+        cueSentence.isAcceptableOrUnknown(
+          data['cue_sentence']!,
+          _cueSentenceMeta,
+        ),
+      );
+    }
+    if (data.containsKey('fields_json')) {
+      context.handle(
+        _fieldsJsonMeta,
+        fieldsJson.isAcceptableOrUnknown(data['fields_json']!, _fieldsJsonMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fieldsJsonMeta);
+    }
+    if (data.containsKey('status')) {
+      context.handle(
+        _statusMeta,
+        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
+      );
+    }
+    if (data.containsKey('error')) {
+      context.handle(
+        _errorMeta,
+        error.isAcceptableOrUnknown(data['error']!, _errorMeta),
+      );
+    }
+    if (data.containsKey('note_id')) {
+      context.handle(
+        _noteIdMeta,
+        noteId.isAcceptableOrUnknown(data['note_id']!, _noteIdMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('mined_at')) {
+      context.handle(
+        _minedAtMeta,
+        minedAt.isAcceptableOrUnknown(data['mined_at']!, _minedAtMeta),
+      );
     }
     return context;
   }
 
   @override
-  Set<GeneratedColumn> get $primaryKey => {mediaKind, mediaKey};
+  Set<GeneratedColumn> get $primaryKey => {id};
   @override
-  StudySegmentTombstoneRow map(
-    Map<String, dynamic> data, {
-    String? tablePrefix,
-  }) {
+  WebMineQueueRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return StudySegmentTombstoneRow(
-      mediaKind: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}media_kind'],
-      )!,
-      mediaKey: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}media_key'],
-      )!,
-      deletedAt: attachedDatabase.typeMapping.read(
+    return WebMineQueueRow(
+      id: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
-        data['${effectivePrefix}deleted_at'],
+        data['${effectivePrefix}id'],
       )!,
+      bookUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}book_uid'],
+      )!,
+      videoKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}video_key'],
+      )!,
+      href: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}href'],
+      )!,
+      cueStartMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}cue_start_ms'],
+      )!,
+      cueEndMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}cue_end_ms'],
+      )!,
+      sentence: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sentence'],
+      )!,
+      cueSentence: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cue_sentence'],
+      ),
+      fieldsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}fields_json'],
+      )!,
+      status: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status'],
+      )!,
+      error: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}error'],
+      ),
+      noteId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}note_id'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      minedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}mined_at'],
+      ),
     );
   }
 
   @override
-  $StudySegmentTombstonesTable createAlias(String alias) {
-    return $StudySegmentTombstonesTable(attachedDatabase, alias);
+  $WebMineQueueTable createAlias(String alias) {
+    return $WebMineQueueTable(attachedDatabase, alias);
   }
 }
 
-class StudySegmentTombstoneRow extends DataClass
-    implements Insertable<StudySegmentTombstoneRow> {
-  final String mediaKind;
-  final String mediaKey;
-  final int deletedAt;
-  const StudySegmentTombstoneRow({
-    required this.mediaKind,
-    required this.mediaKey,
-    required this.deletedAt,
+class WebMineQueueRow extends DataClass implements Insertable<WebMineQueueRow> {
+  final int id;
+
+  /// 书架流媒体书 uid（`video/stream/…`）。
+  final String bookUid;
+
+  /// 站点内视频身份（`fushiVideoKey`，如 Netflix 的 `/watch/<id>`）与页面 URL（重放时导航）。
+  final String videoKey;
+  final String href;
+  final int cueStartMs;
+  final int cueEndMs;
+
+  /// 制卡句（多句合并后的整句）与锚点 cue 原句。
+  final String sentence;
+  final String? cueSentence;
+
+  /// 弹窗点击时的 Anki 字段映射（`Map<String,String>` JSON），重放时原样喂引擎。
+  final String fieldsJson;
+
+  /// [WebMineQueueStatus]。
+  final String status;
+  final String? error;
+
+  /// 成功后的 Anki note id（AnkiDroid 后端恒 null）。
+  final int? noteId;
+  final int createdAt;
+  final int? minedAt;
+  const WebMineQueueRow({
+    required this.id,
+    required this.bookUid,
+    required this.videoKey,
+    required this.href,
+    required this.cueStartMs,
+    required this.cueEndMs,
+    required this.sentence,
+    this.cueSentence,
+    required this.fieldsJson,
+    required this.status,
+    this.error,
+    this.noteId,
+    required this.createdAt,
+    this.minedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['media_kind'] = Variable<String>(mediaKind);
-    map['media_key'] = Variable<String>(mediaKey);
-    map['deleted_at'] = Variable<int>(deletedAt);
+    map['id'] = Variable<int>(id);
+    map['book_uid'] = Variable<String>(bookUid);
+    map['video_key'] = Variable<String>(videoKey);
+    map['href'] = Variable<String>(href);
+    map['cue_start_ms'] = Variable<int>(cueStartMs);
+    map['cue_end_ms'] = Variable<int>(cueEndMs);
+    map['sentence'] = Variable<String>(sentence);
+    if (!nullToAbsent || cueSentence != null) {
+      map['cue_sentence'] = Variable<String>(cueSentence);
+    }
+    map['fields_json'] = Variable<String>(fieldsJson);
+    map['status'] = Variable<String>(status);
+    if (!nullToAbsent || error != null) {
+      map['error'] = Variable<String>(error);
+    }
+    if (!nullToAbsent || noteId != null) {
+      map['note_id'] = Variable<int>(noteId);
+    }
+    map['created_at'] = Variable<int>(createdAt);
+    if (!nullToAbsent || minedAt != null) {
+      map['mined_at'] = Variable<int>(minedAt);
+    }
     return map;
   }
 
-  StudySegmentTombstonesCompanion toCompanion(bool nullToAbsent) {
-    return StudySegmentTombstonesCompanion(
-      mediaKind: Value(mediaKind),
-      mediaKey: Value(mediaKey),
-      deletedAt: Value(deletedAt),
+  WebMineQueueCompanion toCompanion(bool nullToAbsent) {
+    return WebMineQueueCompanion(
+      id: Value(id),
+      bookUid: Value(bookUid),
+      videoKey: Value(videoKey),
+      href: Value(href),
+      cueStartMs: Value(cueStartMs),
+      cueEndMs: Value(cueEndMs),
+      sentence: Value(sentence),
+      cueSentence: cueSentence == null && nullToAbsent
+          ? const Value.absent()
+          : Value(cueSentence),
+      fieldsJson: Value(fieldsJson),
+      status: Value(status),
+      error: error == null && nullToAbsent
+          ? const Value.absent()
+          : Value(error),
+      noteId: noteId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(noteId),
+      createdAt: Value(createdAt),
+      minedAt: minedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(minedAt),
     );
   }
 
-  factory StudySegmentTombstoneRow.fromJson(
+  factory WebMineQueueRow.fromJson(
     Map<String, dynamic> json, {
     ValueSerializer? serializer,
   }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return StudySegmentTombstoneRow(
-      mediaKind: serializer.fromJson<String>(json['mediaKind']),
-      mediaKey: serializer.fromJson<String>(json['mediaKey']),
-      deletedAt: serializer.fromJson<int>(json['deletedAt']),
+    return WebMineQueueRow(
+      id: serializer.fromJson<int>(json['id']),
+      bookUid: serializer.fromJson<String>(json['bookUid']),
+      videoKey: serializer.fromJson<String>(json['videoKey']),
+      href: serializer.fromJson<String>(json['href']),
+      cueStartMs: serializer.fromJson<int>(json['cueStartMs']),
+      cueEndMs: serializer.fromJson<int>(json['cueEndMs']),
+      sentence: serializer.fromJson<String>(json['sentence']),
+      cueSentence: serializer.fromJson<String?>(json['cueSentence']),
+      fieldsJson: serializer.fromJson<String>(json['fieldsJson']),
+      status: serializer.fromJson<String>(json['status']),
+      error: serializer.fromJson<String?>(json['error']),
+      noteId: serializer.fromJson<int?>(json['noteId']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      minedAt: serializer.fromJson<int?>(json['minedAt']),
     );
   }
   @override
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
-      'mediaKind': serializer.toJson<String>(mediaKind),
-      'mediaKey': serializer.toJson<String>(mediaKey),
-      'deletedAt': serializer.toJson<int>(deletedAt),
+      'id': serializer.toJson<int>(id),
+      'bookUid': serializer.toJson<String>(bookUid),
+      'videoKey': serializer.toJson<String>(videoKey),
+      'href': serializer.toJson<String>(href),
+      'cueStartMs': serializer.toJson<int>(cueStartMs),
+      'cueEndMs': serializer.toJson<int>(cueEndMs),
+      'sentence': serializer.toJson<String>(sentence),
+      'cueSentence': serializer.toJson<String?>(cueSentence),
+      'fieldsJson': serializer.toJson<String>(fieldsJson),
+      'status': serializer.toJson<String>(status),
+      'error': serializer.toJson<String?>(error),
+      'noteId': serializer.toJson<int?>(noteId),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'minedAt': serializer.toJson<int?>(minedAt),
     };
   }
 
-  StudySegmentTombstoneRow copyWith({
-    String? mediaKind,
-    String? mediaKey,
-    int? deletedAt,
-  }) => StudySegmentTombstoneRow(
-    mediaKind: mediaKind ?? this.mediaKind,
-    mediaKey: mediaKey ?? this.mediaKey,
-    deletedAt: deletedAt ?? this.deletedAt,
+  WebMineQueueRow copyWith({
+    int? id,
+    String? bookUid,
+    String? videoKey,
+    String? href,
+    int? cueStartMs,
+    int? cueEndMs,
+    String? sentence,
+    Value<String?> cueSentence = const Value.absent(),
+    String? fieldsJson,
+    String? status,
+    Value<String?> error = const Value.absent(),
+    Value<int?> noteId = const Value.absent(),
+    int? createdAt,
+    Value<int?> minedAt = const Value.absent(),
+  }) => WebMineQueueRow(
+    id: id ?? this.id,
+    bookUid: bookUid ?? this.bookUid,
+    videoKey: videoKey ?? this.videoKey,
+    href: href ?? this.href,
+    cueStartMs: cueStartMs ?? this.cueStartMs,
+    cueEndMs: cueEndMs ?? this.cueEndMs,
+    sentence: sentence ?? this.sentence,
+    cueSentence: cueSentence.present ? cueSentence.value : this.cueSentence,
+    fieldsJson: fieldsJson ?? this.fieldsJson,
+    status: status ?? this.status,
+    error: error.present ? error.value : this.error,
+    noteId: noteId.present ? noteId.value : this.noteId,
+    createdAt: createdAt ?? this.createdAt,
+    minedAt: minedAt.present ? minedAt.value : this.minedAt,
   );
-  StudySegmentTombstoneRow copyWithCompanion(
-    StudySegmentTombstonesCompanion data,
-  ) {
-    return StudySegmentTombstoneRow(
-      mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
-      mediaKey: data.mediaKey.present ? data.mediaKey.value : this.mediaKey,
-      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+  WebMineQueueRow copyWithCompanion(WebMineQueueCompanion data) {
+    return WebMineQueueRow(
+      id: data.id.present ? data.id.value : this.id,
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      videoKey: data.videoKey.present ? data.videoKey.value : this.videoKey,
+      href: data.href.present ? data.href.value : this.href,
+      cueStartMs: data.cueStartMs.present
+          ? data.cueStartMs.value
+          : this.cueStartMs,
+      cueEndMs: data.cueEndMs.present ? data.cueEndMs.value : this.cueEndMs,
+      sentence: data.sentence.present ? data.sentence.value : this.sentence,
+      cueSentence: data.cueSentence.present
+          ? data.cueSentence.value
+          : this.cueSentence,
+      fieldsJson: data.fieldsJson.present
+          ? data.fieldsJson.value
+          : this.fieldsJson,
+      status: data.status.present ? data.status.value : this.status,
+      error: data.error.present ? data.error.value : this.error,
+      noteId: data.noteId.present ? data.noteId.value : this.noteId,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      minedAt: data.minedAt.present ? data.minedAt.value : this.minedAt,
     );
   }
 
   @override
   String toString() {
-    return (StringBuffer('StudySegmentTombstoneRow(')
-          ..write('mediaKind: $mediaKind, ')
-          ..write('mediaKey: $mediaKey, ')
-          ..write('deletedAt: $deletedAt')
+    return (StringBuffer('WebMineQueueRow(')
+          ..write('id: $id, ')
+          ..write('bookUid: $bookUid, ')
+          ..write('videoKey: $videoKey, ')
+          ..write('href: $href, ')
+          ..write('cueStartMs: $cueStartMs, ')
+          ..write('cueEndMs: $cueEndMs, ')
+          ..write('sentence: $sentence, ')
+          ..write('cueSentence: $cueSentence, ')
+          ..write('fieldsJson: $fieldsJson, ')
+          ..write('status: $status, ')
+          ..write('error: $error, ')
+          ..write('noteId: $noteId, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('minedAt: $minedAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(mediaKind, mediaKey, deletedAt);
+  int get hashCode => Object.hash(
+    id,
+    bookUid,
+    videoKey,
+    href,
+    cueStartMs,
+    cueEndMs,
+    sentence,
+    cueSentence,
+    fieldsJson,
+    status,
+    error,
+    noteId,
+    createdAt,
+    minedAt,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is StudySegmentTombstoneRow &&
-          other.mediaKind == this.mediaKind &&
-          other.mediaKey == this.mediaKey &&
-          other.deletedAt == this.deletedAt);
+      (other is WebMineQueueRow &&
+          other.id == this.id &&
+          other.bookUid == this.bookUid &&
+          other.videoKey == this.videoKey &&
+          other.href == this.href &&
+          other.cueStartMs == this.cueStartMs &&
+          other.cueEndMs == this.cueEndMs &&
+          other.sentence == this.sentence &&
+          other.cueSentence == this.cueSentence &&
+          other.fieldsJson == this.fieldsJson &&
+          other.status == this.status &&
+          other.error == this.error &&
+          other.noteId == this.noteId &&
+          other.createdAt == this.createdAt &&
+          other.minedAt == this.minedAt);
 }
 
-class StudySegmentTombstonesCompanion
-    extends UpdateCompanion<StudySegmentTombstoneRow> {
-  final Value<String> mediaKind;
-  final Value<String> mediaKey;
-  final Value<int> deletedAt;
-  final Value<int> rowid;
-  const StudySegmentTombstonesCompanion({
-    this.mediaKind = const Value.absent(),
-    this.mediaKey = const Value.absent(),
-    this.deletedAt = const Value.absent(),
-    this.rowid = const Value.absent(),
+class WebMineQueueCompanion extends UpdateCompanion<WebMineQueueRow> {
+  final Value<int> id;
+  final Value<String> bookUid;
+  final Value<String> videoKey;
+  final Value<String> href;
+  final Value<int> cueStartMs;
+  final Value<int> cueEndMs;
+  final Value<String> sentence;
+  final Value<String?> cueSentence;
+  final Value<String> fieldsJson;
+  final Value<String> status;
+  final Value<String?> error;
+  final Value<int?> noteId;
+  final Value<int> createdAt;
+  final Value<int?> minedAt;
+  const WebMineQueueCompanion({
+    this.id = const Value.absent(),
+    this.bookUid = const Value.absent(),
+    this.videoKey = const Value.absent(),
+    this.href = const Value.absent(),
+    this.cueStartMs = const Value.absent(),
+    this.cueEndMs = const Value.absent(),
+    this.sentence = const Value.absent(),
+    this.cueSentence = const Value.absent(),
+    this.fieldsJson = const Value.absent(),
+    this.status = const Value.absent(),
+    this.error = const Value.absent(),
+    this.noteId = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.minedAt = const Value.absent(),
   });
-  StudySegmentTombstonesCompanion.insert({
-    required String mediaKind,
-    required String mediaKey,
-    required int deletedAt,
-    this.rowid = const Value.absent(),
-  }) : mediaKind = Value(mediaKind),
-       mediaKey = Value(mediaKey),
-       deletedAt = Value(deletedAt);
-  static Insertable<StudySegmentTombstoneRow> custom({
-    Expression<String>? mediaKind,
-    Expression<String>? mediaKey,
-    Expression<int>? deletedAt,
-    Expression<int>? rowid,
+  WebMineQueueCompanion.insert({
+    this.id = const Value.absent(),
+    required String bookUid,
+    required String videoKey,
+    required String href,
+    required int cueStartMs,
+    required int cueEndMs,
+    required String sentence,
+    this.cueSentence = const Value.absent(),
+    required String fieldsJson,
+    this.status = const Value.absent(),
+    this.error = const Value.absent(),
+    this.noteId = const Value.absent(),
+    required int createdAt,
+    this.minedAt = const Value.absent(),
+  }) : bookUid = Value(bookUid),
+       videoKey = Value(videoKey),
+       href = Value(href),
+       cueStartMs = Value(cueStartMs),
+       cueEndMs = Value(cueEndMs),
+       sentence = Value(sentence),
+       fieldsJson = Value(fieldsJson),
+       createdAt = Value(createdAt);
+  static Insertable<WebMineQueueRow> custom({
+    Expression<int>? id,
+    Expression<String>? bookUid,
+    Expression<String>? videoKey,
+    Expression<String>? href,
+    Expression<int>? cueStartMs,
+    Expression<int>? cueEndMs,
+    Expression<String>? sentence,
+    Expression<String>? cueSentence,
+    Expression<String>? fieldsJson,
+    Expression<String>? status,
+    Expression<String>? error,
+    Expression<int>? noteId,
+    Expression<int>? createdAt,
+    Expression<int>? minedAt,
   }) {
     return RawValuesInsertable({
-      if (mediaKind != null) 'media_kind': mediaKind,
-      if (mediaKey != null) 'media_key': mediaKey,
-      if (deletedAt != null) 'deleted_at': deletedAt,
-      if (rowid != null) 'rowid': rowid,
+      if (id != null) 'id': id,
+      if (bookUid != null) 'book_uid': bookUid,
+      if (videoKey != null) 'video_key': videoKey,
+      if (href != null) 'href': href,
+      if (cueStartMs != null) 'cue_start_ms': cueStartMs,
+      if (cueEndMs != null) 'cue_end_ms': cueEndMs,
+      if (sentence != null) 'sentence': sentence,
+      if (cueSentence != null) 'cue_sentence': cueSentence,
+      if (fieldsJson != null) 'fields_json': fieldsJson,
+      if (status != null) 'status': status,
+      if (error != null) 'error': error,
+      if (noteId != null) 'note_id': noteId,
+      if (createdAt != null) 'created_at': createdAt,
+      if (minedAt != null) 'mined_at': minedAt,
     });
   }
 
-  StudySegmentTombstonesCompanion copyWith({
-    Value<String>? mediaKind,
-    Value<String>? mediaKey,
-    Value<int>? deletedAt,
-    Value<int>? rowid,
+  WebMineQueueCompanion copyWith({
+    Value<int>? id,
+    Value<String>? bookUid,
+    Value<String>? videoKey,
+    Value<String>? href,
+    Value<int>? cueStartMs,
+    Value<int>? cueEndMs,
+    Value<String>? sentence,
+    Value<String?>? cueSentence,
+    Value<String>? fieldsJson,
+    Value<String>? status,
+    Value<String?>? error,
+    Value<int?>? noteId,
+    Value<int>? createdAt,
+    Value<int?>? minedAt,
   }) {
-    return StudySegmentTombstonesCompanion(
-      mediaKind: mediaKind ?? this.mediaKind,
-      mediaKey: mediaKey ?? this.mediaKey,
-      deletedAt: deletedAt ?? this.deletedAt,
-      rowid: rowid ?? this.rowid,
+    return WebMineQueueCompanion(
+      id: id ?? this.id,
+      bookUid: bookUid ?? this.bookUid,
+      videoKey: videoKey ?? this.videoKey,
+      href: href ?? this.href,
+      cueStartMs: cueStartMs ?? this.cueStartMs,
+      cueEndMs: cueEndMs ?? this.cueEndMs,
+      sentence: sentence ?? this.sentence,
+      cueSentence: cueSentence ?? this.cueSentence,
+      fieldsJson: fieldsJson ?? this.fieldsJson,
+      status: status ?? this.status,
+      error: error ?? this.error,
+      noteId: noteId ?? this.noteId,
+      createdAt: createdAt ?? this.createdAt,
+      minedAt: minedAt ?? this.minedAt,
     );
   }
 
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    if (mediaKind.present) {
-      map['media_kind'] = Variable<String>(mediaKind.value);
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
     }
-    if (mediaKey.present) {
-      map['media_key'] = Variable<String>(mediaKey.value);
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
     }
-    if (deletedAt.present) {
-      map['deleted_at'] = Variable<int>(deletedAt.value);
+    if (videoKey.present) {
+      map['video_key'] = Variable<String>(videoKey.value);
     }
-    if (rowid.present) {
-      map['rowid'] = Variable<int>(rowid.value);
+    if (href.present) {
+      map['href'] = Variable<String>(href.value);
+    }
+    if (cueStartMs.present) {
+      map['cue_start_ms'] = Variable<int>(cueStartMs.value);
+    }
+    if (cueEndMs.present) {
+      map['cue_end_ms'] = Variable<int>(cueEndMs.value);
+    }
+    if (sentence.present) {
+      map['sentence'] = Variable<String>(sentence.value);
+    }
+    if (cueSentence.present) {
+      map['cue_sentence'] = Variable<String>(cueSentence.value);
+    }
+    if (fieldsJson.present) {
+      map['fields_json'] = Variable<String>(fieldsJson.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (error.present) {
+      map['error'] = Variable<String>(error.value);
+    }
+    if (noteId.present) {
+      map['note_id'] = Variable<int>(noteId.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (minedAt.present) {
+      map['mined_at'] = Variable<int>(minedAt.value);
     }
     return map;
   }
 
   @override
   String toString() {
-    return (StringBuffer('StudySegmentTombstonesCompanion(')
-          ..write('mediaKind: $mediaKind, ')
-          ..write('mediaKey: $mediaKey, ')
-          ..write('deletedAt: $deletedAt, ')
-          ..write('rowid: $rowid')
+    return (StringBuffer('WebMineQueueCompanion(')
+          ..write('id: $id, ')
+          ..write('bookUid: $bookUid, ')
+          ..write('videoKey: $videoKey, ')
+          ..write('href: $href, ')
+          ..write('cueStartMs: $cueStartMs, ')
+          ..write('cueEndMs: $cueEndMs, ')
+          ..write('sentence: $sentence, ')
+          ..write('cueSentence: $cueSentence, ')
+          ..write('fieldsJson: $fieldsJson, ')
+          ..write('status: $status, ')
+          ..write('error: $error, ')
+          ..write('noteId: $noteId, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('minedAt: $minedAt')
           ..write(')'))
         .toString();
   }
@@ -48157,9 +48965,10 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   videoDownloadSubscriptionItems = $VideoDownloadSubscriptionItemsTable(this);
   late final $MangaChapterStatesTable mangaChapterStates =
       $MangaChapterStatesTable(this);
-  late final $StudySegmentsTable studySegments = $StudySegmentsTable(this);
   late final $StudySegmentTombstonesTable studySegmentTombstones =
       $StudySegmentTombstonesTable(this);
+  late final $StudySegmentsTable studySegments = $StudySegmentsTable(this);
+  late final $WebMineQueueTable webMineQueue = $WebMineQueueTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -48243,8 +49052,9 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     videoDownloadSubscriptions,
     videoDownloadSubscriptionItems,
     mangaChapterStates,
-    studySegments,
     studySegmentTombstones,
+    studySegments,
+    webMineQueue,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -84220,6 +85030,187 @@ typedef $$MangaChapterStatesTableProcessedTableManager =
       MangaChapterStateRow,
       PrefetchHooks Function()
     >;
+typedef $$StudySegmentTombstonesTableCreateCompanionBuilder =
+    StudySegmentTombstonesCompanion Function({
+      required String mediaKind,
+      required String mediaKey,
+      required int deletedAt,
+      Value<int> rowid,
+    });
+typedef $$StudySegmentTombstonesTableUpdateCompanionBuilder =
+    StudySegmentTombstonesCompanion Function({
+      Value<String> mediaKind,
+      Value<String> mediaKey,
+      Value<int> deletedAt,
+      Value<int> rowid,
+    });
+
+class $$StudySegmentTombstonesTableFilterComposer
+    extends Composer<_$FushiDatabase, $StudySegmentTombstonesTable> {
+  $$StudySegmentTombstonesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaKey => $composableBuilder(
+    column: $table.mediaKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$StudySegmentTombstonesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $StudySegmentTombstonesTable> {
+  $$StudySegmentTombstonesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mediaKey => $composableBuilder(
+    column: $table.mediaKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$StudySegmentTombstonesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $StudySegmentTombstonesTable> {
+  $$StudySegmentTombstonesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get mediaKind =>
+      $composableBuilder(column: $table.mediaKind, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaKey =>
+      $composableBuilder(column: $table.mediaKey, builder: (column) => column);
+
+  GeneratedColumn<int> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+}
+
+class $$StudySegmentTombstonesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $StudySegmentTombstonesTable,
+          StudySegmentTombstoneRow,
+          $$StudySegmentTombstonesTableFilterComposer,
+          $$StudySegmentTombstonesTableOrderingComposer,
+          $$StudySegmentTombstonesTableAnnotationComposer,
+          $$StudySegmentTombstonesTableCreateCompanionBuilder,
+          $$StudySegmentTombstonesTableUpdateCompanionBuilder,
+          (
+            StudySegmentTombstoneRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $StudySegmentTombstonesTable,
+              StudySegmentTombstoneRow
+            >,
+          ),
+          StudySegmentTombstoneRow,
+          PrefetchHooks Function()
+        > {
+  $$StudySegmentTombstonesTableTableManager(
+    _$FushiDatabase db,
+    $StudySegmentTombstonesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$StudySegmentTombstonesTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$StudySegmentTombstonesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$StudySegmentTombstonesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> mediaKind = const Value.absent(),
+                Value<String> mediaKey = const Value.absent(),
+                Value<int> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => StudySegmentTombstonesCompanion(
+                mediaKind: mediaKind,
+                mediaKey: mediaKey,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String mediaKind,
+                required String mediaKey,
+                required int deletedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => StudySegmentTombstonesCompanion.insert(
+                mediaKind: mediaKind,
+                mediaKey: mediaKey,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$StudySegmentTombstonesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $StudySegmentTombstonesTable,
+      StudySegmentTombstoneRow,
+      $$StudySegmentTombstonesTableFilterComposer,
+      $$StudySegmentTombstonesTableOrderingComposer,
+      $$StudySegmentTombstonesTableAnnotationComposer,
+      $$StudySegmentTombstonesTableCreateCompanionBuilder,
+      $$StudySegmentTombstonesTableUpdateCompanionBuilder,
+      (
+        StudySegmentTombstoneRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $StudySegmentTombstonesTable,
+          StudySegmentTombstoneRow
+        >,
+      ),
+      StudySegmentTombstoneRow,
+      PrefetchHooks Function()
+    >;
 typedef $$StudySegmentsTableCreateCompanionBuilder =
     StudySegmentsCompanion Function({
       required String uid,
@@ -84599,157 +85590,355 @@ typedef $$StudySegmentsTableProcessedTableManager =
       StudySegmentRow,
       PrefetchHooks Function()
     >;
-typedef $$StudySegmentTombstonesTableCreateCompanionBuilder =
-    StudySegmentTombstonesCompanion Function({
-      required String mediaKind,
-      required String mediaKey,
-      required int deletedAt,
-      Value<int> rowid,
+typedef $$WebMineQueueTableCreateCompanionBuilder =
+    WebMineQueueCompanion Function({
+      Value<int> id,
+      required String bookUid,
+      required String videoKey,
+      required String href,
+      required int cueStartMs,
+      required int cueEndMs,
+      required String sentence,
+      Value<String?> cueSentence,
+      required String fieldsJson,
+      Value<String> status,
+      Value<String?> error,
+      Value<int?> noteId,
+      required int createdAt,
+      Value<int?> minedAt,
     });
-typedef $$StudySegmentTombstonesTableUpdateCompanionBuilder =
-    StudySegmentTombstonesCompanion Function({
-      Value<String> mediaKind,
-      Value<String> mediaKey,
-      Value<int> deletedAt,
-      Value<int> rowid,
+typedef $$WebMineQueueTableUpdateCompanionBuilder =
+    WebMineQueueCompanion Function({
+      Value<int> id,
+      Value<String> bookUid,
+      Value<String> videoKey,
+      Value<String> href,
+      Value<int> cueStartMs,
+      Value<int> cueEndMs,
+      Value<String> sentence,
+      Value<String?> cueSentence,
+      Value<String> fieldsJson,
+      Value<String> status,
+      Value<String?> error,
+      Value<int?> noteId,
+      Value<int> createdAt,
+      Value<int?> minedAt,
     });
 
-class $$StudySegmentTombstonesTableFilterComposer
-    extends Composer<_$FushiDatabase, $StudySegmentTombstonesTable> {
-  $$StudySegmentTombstonesTableFilterComposer({
+class $$WebMineQueueTableFilterComposer
+    extends Composer<_$FushiDatabase, $WebMineQueueTable> {
+  $$WebMineQueueTableFilterComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnFilters<String> get mediaKind => $composableBuilder(
-    column: $table.mediaKind,
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get mediaKey => $composableBuilder(
-    column: $table.mediaKey,
+  ColumnFilters<String> get bookUid => $composableBuilder(
+    column: $table.bookUid,
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<int> get deletedAt => $composableBuilder(
-    column: $table.deletedAt,
+  ColumnFilters<String> get videoKey => $composableBuilder(
+    column: $table.videoKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get href => $composableBuilder(
+    column: $table.href,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get cueStartMs => $composableBuilder(
+    column: $table.cueStartMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get cueEndMs => $composableBuilder(
+    column: $table.cueEndMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sentence => $composableBuilder(
+    column: $table.sentence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get cueSentence => $composableBuilder(
+    column: $table.cueSentence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get fieldsJson => $composableBuilder(
+    column: $table.fieldsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get error => $composableBuilder(
+    column: $table.error,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get noteId => $composableBuilder(
+    column: $table.noteId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get minedAt => $composableBuilder(
+    column: $table.minedAt,
     builder: (column) => ColumnFilters(column),
   );
 }
 
-class $$StudySegmentTombstonesTableOrderingComposer
-    extends Composer<_$FushiDatabase, $StudySegmentTombstonesTable> {
-  $$StudySegmentTombstonesTableOrderingComposer({
+class $$WebMineQueueTableOrderingComposer
+    extends Composer<_$FushiDatabase, $WebMineQueueTable> {
+  $$WebMineQueueTableOrderingComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnOrderings<String> get mediaKind => $composableBuilder(
-    column: $table.mediaKind,
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get mediaKey => $composableBuilder(
-    column: $table.mediaKey,
+  ColumnOrderings<String> get bookUid => $composableBuilder(
+    column: $table.bookUid,
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<int> get deletedAt => $composableBuilder(
-    column: $table.deletedAt,
+  ColumnOrderings<String> get videoKey => $composableBuilder(
+    column: $table.videoKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get href => $composableBuilder(
+    column: $table.href,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get cueStartMs => $composableBuilder(
+    column: $table.cueStartMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get cueEndMs => $composableBuilder(
+    column: $table.cueEndMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sentence => $composableBuilder(
+    column: $table.sentence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get cueSentence => $composableBuilder(
+    column: $table.cueSentence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get fieldsJson => $composableBuilder(
+    column: $table.fieldsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get error => $composableBuilder(
+    column: $table.error,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get noteId => $composableBuilder(
+    column: $table.noteId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get minedAt => $composableBuilder(
+    column: $table.minedAt,
     builder: (column) => ColumnOrderings(column),
   );
 }
 
-class $$StudySegmentTombstonesTableAnnotationComposer
-    extends Composer<_$FushiDatabase, $StudySegmentTombstonesTable> {
-  $$StudySegmentTombstonesTableAnnotationComposer({
+class $$WebMineQueueTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $WebMineQueueTable> {
+  $$WebMineQueueTableAnnotationComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  GeneratedColumn<String> get mediaKind =>
-      $composableBuilder(column: $table.mediaKind, builder: (column) => column);
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumn<String> get mediaKey =>
-      $composableBuilder(column: $table.mediaKey, builder: (column) => column);
+  GeneratedColumn<String> get bookUid =>
+      $composableBuilder(column: $table.bookUid, builder: (column) => column);
 
-  GeneratedColumn<int> get deletedAt =>
-      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+  GeneratedColumn<String> get videoKey =>
+      $composableBuilder(column: $table.videoKey, builder: (column) => column);
+
+  GeneratedColumn<String> get href =>
+      $composableBuilder(column: $table.href, builder: (column) => column);
+
+  GeneratedColumn<int> get cueStartMs => $composableBuilder(
+    column: $table.cueStartMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get cueEndMs =>
+      $composableBuilder(column: $table.cueEndMs, builder: (column) => column);
+
+  GeneratedColumn<String> get sentence =>
+      $composableBuilder(column: $table.sentence, builder: (column) => column);
+
+  GeneratedColumn<String> get cueSentence => $composableBuilder(
+    column: $table.cueSentence,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get fieldsJson => $composableBuilder(
+    column: $table.fieldsJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<String> get error =>
+      $composableBuilder(column: $table.error, builder: (column) => column);
+
+  GeneratedColumn<int> get noteId =>
+      $composableBuilder(column: $table.noteId, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get minedAt =>
+      $composableBuilder(column: $table.minedAt, builder: (column) => column);
 }
 
-class $$StudySegmentTombstonesTableTableManager
+class $$WebMineQueueTableTableManager
     extends
         RootTableManager<
           _$FushiDatabase,
-          $StudySegmentTombstonesTable,
-          StudySegmentTombstoneRow,
-          $$StudySegmentTombstonesTableFilterComposer,
-          $$StudySegmentTombstonesTableOrderingComposer,
-          $$StudySegmentTombstonesTableAnnotationComposer,
-          $$StudySegmentTombstonesTableCreateCompanionBuilder,
-          $$StudySegmentTombstonesTableUpdateCompanionBuilder,
+          $WebMineQueueTable,
+          WebMineQueueRow,
+          $$WebMineQueueTableFilterComposer,
+          $$WebMineQueueTableOrderingComposer,
+          $$WebMineQueueTableAnnotationComposer,
+          $$WebMineQueueTableCreateCompanionBuilder,
+          $$WebMineQueueTableUpdateCompanionBuilder,
           (
-            StudySegmentTombstoneRow,
+            WebMineQueueRow,
             BaseReferences<
               _$FushiDatabase,
-              $StudySegmentTombstonesTable,
-              StudySegmentTombstoneRow
+              $WebMineQueueTable,
+              WebMineQueueRow
             >,
           ),
-          StudySegmentTombstoneRow,
+          WebMineQueueRow,
           PrefetchHooks Function()
         > {
-  $$StudySegmentTombstonesTableTableManager(
-    _$FushiDatabase db,
-    $StudySegmentTombstonesTable table,
-  ) : super(
+  $$WebMineQueueTableTableManager(_$FushiDatabase db, $WebMineQueueTable table)
+    : super(
         TableManagerState(
           db: db,
           table: table,
           createFilteringComposer: () =>
-              $$StudySegmentTombstonesTableFilterComposer(
-                $db: db,
-                $table: table,
-              ),
+              $$WebMineQueueTableFilterComposer($db: db, $table: table),
           createOrderingComposer: () =>
-              $$StudySegmentTombstonesTableOrderingComposer(
-                $db: db,
-                $table: table,
-              ),
+              $$WebMineQueueTableOrderingComposer($db: db, $table: table),
           createComputedFieldComposer: () =>
-              $$StudySegmentTombstonesTableAnnotationComposer(
-                $db: db,
-                $table: table,
-              ),
+              $$WebMineQueueTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback:
               ({
-                Value<String> mediaKind = const Value.absent(),
-                Value<String> mediaKey = const Value.absent(),
-                Value<int> deletedAt = const Value.absent(),
-                Value<int> rowid = const Value.absent(),
-              }) => StudySegmentTombstonesCompanion(
-                mediaKind: mediaKind,
-                mediaKey: mediaKey,
-                deletedAt: deletedAt,
-                rowid: rowid,
+                Value<int> id = const Value.absent(),
+                Value<String> bookUid = const Value.absent(),
+                Value<String> videoKey = const Value.absent(),
+                Value<String> href = const Value.absent(),
+                Value<int> cueStartMs = const Value.absent(),
+                Value<int> cueEndMs = const Value.absent(),
+                Value<String> sentence = const Value.absent(),
+                Value<String?> cueSentence = const Value.absent(),
+                Value<String> fieldsJson = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<String?> error = const Value.absent(),
+                Value<int?> noteId = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int?> minedAt = const Value.absent(),
+              }) => WebMineQueueCompanion(
+                id: id,
+                bookUid: bookUid,
+                videoKey: videoKey,
+                href: href,
+                cueStartMs: cueStartMs,
+                cueEndMs: cueEndMs,
+                sentence: sentence,
+                cueSentence: cueSentence,
+                fieldsJson: fieldsJson,
+                status: status,
+                error: error,
+                noteId: noteId,
+                createdAt: createdAt,
+                minedAt: minedAt,
               ),
           createCompanionCallback:
               ({
-                required String mediaKind,
-                required String mediaKey,
-                required int deletedAt,
-                Value<int> rowid = const Value.absent(),
-              }) => StudySegmentTombstonesCompanion.insert(
-                mediaKind: mediaKind,
-                mediaKey: mediaKey,
-                deletedAt: deletedAt,
-                rowid: rowid,
+                Value<int> id = const Value.absent(),
+                required String bookUid,
+                required String videoKey,
+                required String href,
+                required int cueStartMs,
+                required int cueEndMs,
+                required String sentence,
+                Value<String?> cueSentence = const Value.absent(),
+                required String fieldsJson,
+                Value<String> status = const Value.absent(),
+                Value<String?> error = const Value.absent(),
+                Value<int?> noteId = const Value.absent(),
+                required int createdAt,
+                Value<int?> minedAt = const Value.absent(),
+              }) => WebMineQueueCompanion.insert(
+                id: id,
+                bookUid: bookUid,
+                videoKey: videoKey,
+                href: href,
+                cueStartMs: cueStartMs,
+                cueEndMs: cueEndMs,
+                sentence: sentence,
+                cueSentence: cueSentence,
+                fieldsJson: fieldsJson,
+                status: status,
+                error: error,
+                noteId: noteId,
+                createdAt: createdAt,
+                minedAt: minedAt,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
@@ -84759,25 +85948,21 @@ class $$StudySegmentTombstonesTableTableManager
       );
 }
 
-typedef $$StudySegmentTombstonesTableProcessedTableManager =
+typedef $$WebMineQueueTableProcessedTableManager =
     ProcessedTableManager<
       _$FushiDatabase,
-      $StudySegmentTombstonesTable,
-      StudySegmentTombstoneRow,
-      $$StudySegmentTombstonesTableFilterComposer,
-      $$StudySegmentTombstonesTableOrderingComposer,
-      $$StudySegmentTombstonesTableAnnotationComposer,
-      $$StudySegmentTombstonesTableCreateCompanionBuilder,
-      $$StudySegmentTombstonesTableUpdateCompanionBuilder,
+      $WebMineQueueTable,
+      WebMineQueueRow,
+      $$WebMineQueueTableFilterComposer,
+      $$WebMineQueueTableOrderingComposer,
+      $$WebMineQueueTableAnnotationComposer,
+      $$WebMineQueueTableCreateCompanionBuilder,
+      $$WebMineQueueTableUpdateCompanionBuilder,
       (
-        StudySegmentTombstoneRow,
-        BaseReferences<
-          _$FushiDatabase,
-          $StudySegmentTombstonesTable,
-          StudySegmentTombstoneRow
-        >,
+        WebMineQueueRow,
+        BaseReferences<_$FushiDatabase, $WebMineQueueTable, WebMineQueueRow>,
       ),
-      StudySegmentTombstoneRow,
+      WebMineQueueRow,
       PrefetchHooks Function()
     >;
 
@@ -84981,11 +86166,13 @@ class $FushiDatabaseManager {
       );
   $$MangaChapterStatesTableTableManager get mangaChapterStates =>
       $$MangaChapterStatesTableTableManager(_db, _db.mangaChapterStates);
-  $$StudySegmentsTableTableManager get studySegments =>
-      $$StudySegmentsTableTableManager(_db, _db.studySegments);
   $$StudySegmentTombstonesTableTableManager get studySegmentTombstones =>
       $$StudySegmentTombstonesTableTableManager(
         _db,
         _db.studySegmentTombstones,
       );
+  $$StudySegmentsTableTableManager get studySegments =>
+      $$StudySegmentsTableTableManager(_db, _db.studySegments);
+  $$WebMineQueueTableTableManager get webMineQueue =>
+      $$WebMineQueueTableTableManager(_db, _db.webMineQueue);
 }

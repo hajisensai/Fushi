@@ -3951,5 +3951,21 @@
   "video_subtitle_adjust_expand": "Genişlet",
   "settings_section_reading_stats": "Okuma istatistikleri",
   "reading_stats_idle_timeout": "Boşta kalma süresi",
-  "reading_stats_idle_timeout_hint": "Sayfa çevirme, kaydırma veya sözcük arama olmadan bu kadar dakika geçince okuma süresini saymayı durdur. Yalnızca roman, PDF ve manga için; video oynatılırken sayılır."
+  "reading_stats_idle_timeout_hint": "Sayfa çevirme, kaydırma veya sözcük arama olmadan bu kadar dakika geçince okuma süresini saymayı durdur. Yalnızca roman, PDF ve manga için; video oynatılırken sayılır.",
+  "web_video_track_menu": "Altyazı parçası",
+  "web_video_track_live": "Canlı altyazılar (sayfadan alınan)",
+  "web_video_no_tracks": "Henüz altyazı yakalanmadı",
+  "web_video_hide_native_subtitles": "Site altyazılarını gizle",
+  "web_video_import_hint": "Bu bir web sayfası (doğrudan akış değil). Yerleşik web oynatıcıda açılacak.",
+  "web_video_platform_unsupported": "Yerleşik web oynatıcı şimdilik yalnızca Windows’ta kullanılabilir.",
+  "web_video_mine_queue_run": "Sıradaki kartları oluştur",
+  "web_video_mine_queue_stop": "Kart oluşturmayı durdur",
+  "web_video_mine_queue_empty": "Sırada kart yok",
+  "web_video_mine_queued": "Kart oluşturma sırasına alındı ($count bekliyor)",
+  "web_video_mine_queue_running": "Kartlar oluşturuluyor $done/$total…",
+  "web_video_mine_queue_finished": "Oluşturulan kart: $ok, başarısız: $failed",
+  "web_video_hosting_menu": "Oynatma modu",
+  "web_video_hosting_builtin": "Yerleşik (1080p; süper çözünürlük, ekran görüntüsü ve kartlar kullanılabilir)",
+  "web_video_hosting_windowed": "Yerel pencere (4K, donanımsal DRM; kartlar sonra sıraya alınır)",
+  "web_video_mine_switch_builtin": "$count bekleyen kartı oluşturmak için yerleşik moda geç"
 }

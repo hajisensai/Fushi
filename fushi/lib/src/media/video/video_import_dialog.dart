@@ -17,6 +17,8 @@ import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
+import 'package:fushi/src/media/video/web_video_bridge.dart'
+    show shouldOpenInWebVideoPlayer;
 import 'package:fushi/src/media/video/youtube_source_resolver.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_storage.dart';
@@ -769,6 +771,19 @@ class _VideoImportDialogState extends State<VideoImportDialog>
               t.video_import_stream_url_hint,
               style: Theme.of(context).textTheme.bodySmall,
             ),
+            // 网页视频站软提示（kKnownWebPageVideoHosts 的文档承诺、此前从未接线）：
+            // Windows 走内置网页播放器；其它平台说明暂不支持但**不硬拒**导入。
+            if (isKnownWebPageVideoUrl(_streamUrlController.text)) ...<Widget>[
+              const SizedBox(height: 4),
+              Text(
+                shouldOpenInWebVideoPlayer(_streamUrlController.text)
+                    ? t.web_video_import_hint
+                    : t.web_video_platform_unsupported,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+              ),
+            ],
             const SizedBox(height: 8),
             TextField(
               controller: _streamSubtitleUrlController,

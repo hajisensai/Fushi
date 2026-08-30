@@ -3951,5 +3951,21 @@
   "video_subtitle_adjust_expand": "Развернуть",
   "settings_section_reading_stats": "Статистика чтения",
   "reading_stats_idle_timeout": "Тайм-аут бездействия",
-  "reading_stats_idle_timeout_hint": "Не засчитывать время чтения после стольких минут без перелистывания, прокрутки или поиска слова. Только для романов, PDF и манги; видео засчитывается, пока воспроизводится."
+  "reading_stats_idle_timeout_hint": "Не засчитывать время чтения после стольких минут без перелистывания, прокрутки или поиска слова. Только для романов, PDF и манги; видео засчитывается, пока воспроизводится.",
+  "web_video_track_menu": "Дорожка субтитров",
+  "web_video_track_live": "Живые субтитры (с страницы)",
+  "web_video_no_tracks": "Субтитры пока не получены",
+  "web_video_hide_native_subtitles": "Скрыть субтитры сайта",
+  "web_video_import_hint": "Это веб-страница (не прямой поток). Она откроется во встроенном веб-плеере.",
+  "web_video_platform_unsupported": "Встроенный веб-плеер пока доступен только в Windows.",
+  "web_video_mine_queue_run": "Создать карточки из очереди",
+  "web_video_mine_queue_stop": "Остановить создание карточек",
+  "web_video_mine_queue_empty": "Очередь карточек пуста",
+  "web_video_mine_queued": "Добавлено в очередь на создание карточек (ожидает: $count)",
+  "web_video_mine_queue_running": "Создание карточек $done/$total…",
+  "web_video_mine_queue_finished": "Карточек создано: $ok, ошибок: $failed",
+  "web_video_hosting_menu": "Режим воспроизведения",
+  "web_video_hosting_builtin": "Встроенный (1080p; доступны суперразрешение, скриншоты и карточки)",
+  "web_video_hosting_windowed": "Нативное окно (4K, аппаратный DRM; карточки ставятся в очередь)",
+  "web_video_mine_switch_builtin": "Переключиться на встроенный режим и создать карточек из очереди: $count"
 }

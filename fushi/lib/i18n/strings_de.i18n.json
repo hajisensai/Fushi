@@ -3951,5 +3951,21 @@
   "video_subtitle_adjust_expand": "Ausklappen",
   "settings_section_reading_stats": "Lesestatistik",
   "reading_stats_idle_timeout": "Inaktivitäts-Timeout",
-  "reading_stats_idle_timeout_hint": "Lesezeit nach so vielen Minuten ohne Umblättern, Scrollen oder Wortsuche nicht mehr zählen. Gilt nur für Romane, PDFs und Manga; Video zählt, solange es läuft."
+  "reading_stats_idle_timeout_hint": "Lesezeit nach so vielen Minuten ohne Umblättern, Scrollen oder Wortsuche nicht mehr zählen. Gilt nur für Romane, PDFs und Manga; Video zählt, solange es läuft.",
+  "web_video_track_menu": "Untertitelspur",
+  "web_video_track_live": "Live-Untertitel (von der Seite erfasst)",
+  "web_video_no_tracks": "Noch keine Untertitel erfasst",
+  "web_video_hide_native_subtitles": "Website-Untertitel ausblenden",
+  "web_video_import_hint": "Dies ist eine Webseite (kein direkter Stream). Sie wird im integrierten Web-Player geöffnet.",
+  "web_video_platform_unsupported": "Der integrierte Web-Player ist derzeit nur unter Windows verfügbar.",
+  "web_video_mine_queue_run": "Wartende Karten erstellen",
+  "web_video_mine_queue_stop": "Kartenerstellung stoppen",
+  "web_video_mine_queue_empty": "Keine wartenden Karten",
+  "web_video_mine_queued": "Für die Kartenerstellung vorgemerkt ($count ausstehend)",
+  "web_video_mine_queue_running": "Karten werden erstellt $done/$total…",
+  "web_video_mine_queue_finished": "Karten erstellt: $ok, fehlgeschlagen: $failed",
+  "web_video_hosting_menu": "Wiedergabemodus",
+  "web_video_hosting_builtin": "Integriert (1080p; Hochskalierung, Screenshots und Karten verfügbar)",
+  "web_video_hosting_windowed": "Natives Fenster (4K, Hardware-DRM; Karten werden später erstellt)",
+  "web_video_mine_switch_builtin": "In den integrierten Modus wechseln, um $count wartende Karten zu erstellen"
 }

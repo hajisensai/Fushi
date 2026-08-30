@@ -3951,5 +3951,21 @@
   "video_subtitle_adjust_expand": "Expandir",
   "settings_section_reading_stats": "Estatísticas de leitura",
   "reading_stats_idle_timeout": "Tempo de inatividade",
-  "reading_stats_idle_timeout_hint": "Parar de contar o tempo de leitura após esses minutos sem virar página, rolar ou pesquisar uma palavra. Apenas para romances, PDFs e mangás; o vídeo conta enquanto estiver reproduzindo."
+  "reading_stats_idle_timeout_hint": "Parar de contar o tempo de leitura após esses minutos sem virar página, rolar ou pesquisar uma palavra. Apenas para romances, PDFs e mangás; o vídeo conta enquanto estiver reproduzindo.",
+  "web_video_track_menu": "Faixa de legendas",
+  "web_video_track_live": "Legendas ao vivo (capturadas da página)",
+  "web_video_no_tracks": "Nenhuma legenda capturada ainda",
+  "web_video_hide_native_subtitles": "Ocultar legendas do site",
+  "web_video_import_hint": "Isto é uma página web (não um stream direto). Será aberta no player web integrado.",
+  "web_video_platform_unsupported": "O player web integrado só está disponível no Windows por enquanto.",
+  "web_video_mine_queue_run": "Criar cartões na fila",
+  "web_video_mine_queue_stop": "Parar de criar cartões",
+  "web_video_mine_queue_empty": "Nenhum cartão na fila",
+  "web_video_mine_queued": "Na fila para criar cartões ($count pendentes)",
+  "web_video_mine_queue_running": "Criando cartões $done/$total…",
+  "web_video_mine_queue_finished": "Cartões criados: $ok, falhas: $failed",
+  "web_video_hosting_menu": "Modo de reprodução",
+  "web_video_hosting_builtin": "Integrado (1080p; super-resolução, capturas e cartões disponíveis)",
+  "web_video_hosting_windowed": "Janela nativa (4K, DRM por hardware; cartões ficam na fila)",
+  "web_video_mine_switch_builtin": "Mudar para o modo integrado para criar $count cartões na fila"
 }

@@ -3951,5 +3951,21 @@
   "video_subtitle_adjust_expand": "توسيع",
   "settings_section_reading_stats": "إحصائيات القراءة",
   "reading_stats_idle_timeout": "مهلة الخمول",
-  "reading_stats_idle_timeout_hint": "إيقاف احتساب وقت القراءة بعد هذا العدد من الدقائق دون تقليب صفحة أو تمرير أو بحث عن كلمة. ينطبق على الروايات وملفات PDF والمانغا فقط؛ يُحتسب الفيديو أثناء التشغيل."
+  "reading_stats_idle_timeout_hint": "إيقاف احتساب وقت القراءة بعد هذا العدد من الدقائق دون تقليب صفحة أو تمرير أو بحث عن كلمة. ينطبق على الروايات وملفات PDF والمانغا فقط؛ يُحتسب الفيديو أثناء التشغيل.",
+  "web_video_track_menu": "مسار الترجمة",
+  "web_video_track_live": "ترجمة مباشرة (مأخوذة من الصفحة)",
+  "web_video_no_tracks": "لم يتم التقاط أي ترجمة بعد",
+  "web_video_hide_native_subtitles": "إخفاء ترجمة الموقع",
+  "web_video_import_hint": "هذه صفحة ويب (وليست بثًا مباشرًا). ستُفتح في مشغّل الويب المدمج.",
+  "web_video_platform_unsupported": "مشغّل الويب المدمج متاح حاليًا على Windows فقط.",
+  "web_video_mine_queue_run": "إنشاء البطاقات المنتظرة",
+  "web_video_mine_queue_stop": "إيقاف إنشاء البطاقات",
+  "web_video_mine_queue_empty": "لا توجد بطاقات في قائمة الانتظار",
+  "web_video_mine_queued": "أُضيف إلى قائمة انتظار إنشاء البطاقات ($count معلّقة)",
+  "web_video_mine_queue_running": "جارٍ إنشاء البطاقات $done/$total…",
+  "web_video_mine_queue_finished": "البطاقات المُنشأة: $ok، الفاشلة: $failed",
+  "web_video_hosting_menu": "وضع التشغيل",
+  "web_video_hosting_builtin": "مدمج (1080p؛ يتوفر تحسين الدقة ولقطات الشاشة والبطاقات)",
+  "web_video_hosting_windowed": "نافذة أصلية (4K، DRM عتادي؛ تُوضع البطاقات في قائمة الانتظار)",
+  "web_video_mine_switch_builtin": "التبديل إلى الوضع المدمج لإنشاء $count بطاقة منتظرة"
 }

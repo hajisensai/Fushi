@@ -3951,5 +3951,21 @@
   "video_subtitle_adjust_expand": "展開",
   "settings_section_reading_stats": "読書統計",
   "reading_stats_idle_timeout": "アイドル判定時間",
-  "reading_stats_idle_timeout_hint": "ページめくり・スクロール・辞書引きがこの分数ないと読書時間の計測を止めます。小説・PDF・漫画のみ対象。動画は再生中なら計測します。"
+  "reading_stats_idle_timeout_hint": "ページめくり・スクロール・辞書引きがこの分数ないと読書時間の計測を止めます。小説・PDF・漫画のみ対象。動画は再生中なら計測します。",
+  "web_video_track_menu": "字幕トラック",
+  "web_video_track_live": "ライブ字幕（ページから取得）",
+  "web_video_no_tracks": "字幕はまだ取得されていません",
+  "web_video_hide_native_subtitles": "サイトの字幕を隠す",
+  "web_video_import_hint": "これは（直接ストリームではなく）Web ページです。内蔵 Web プレーヤーで開きます。",
+  "web_video_platform_unsupported": "内蔵 Web プレーヤーは現在 Windows でのみ利用できます。",
+  "web_video_mine_queue_run": "キューのカードを作成",
+  "web_video_mine_queue_stop": "カード作成を停止",
+  "web_video_mine_queue_empty": "キューにカードはありません",
+  "web_video_mine_queued": "カード作成のキューに追加しました（残り $count 件）",
+  "web_video_mine_queue_running": "カード作成中 $done/$total…",
+  "web_video_mine_queue_finished": "カード作成完了：成功 $ok、失敗 $failed",
+  "web_video_hosting_menu": "再生モード",
+  "web_video_hosting_builtin": "内蔵（1080p；超解像・スクリーンショット・カード作成が可能）",
+  "web_video_hosting_windowed": "ネイティブウィンドウ（4K、ハードウェア DRM；カードは後でキュー処理）",
+  "web_video_mine_switch_builtin": "内蔵モードに切り替えて $count 件のカードを作成"
 }

@@ -690,8 +690,9 @@ void _requireOneVideoMetadataOwner({
   VideoDownloadSubscriptions,
   VideoDownloadSubscriptionItems,
   MangaChapterStates,
-  StudySegments,
   StudySegmentTombstones,
+  StudySegments,
+  WebMineQueue,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -722,7 +723,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 92;
+  int get schemaVersion => 93;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2859,6 +2860,13 @@ class FushiDatabase extends _$FushiDatabase
               await m.createTable(studySegmentTombstones);
             }
             await _ensureIndexes();
+          }
+          if (from < 93) {
+            // v93（网页播放器自动制卡队列）：新表 web_mine_queue，设备本地、无 FK、
+            // 无索引（队列量级为几十行）。守卫幂等（fresh DB 由 onCreate 建好）。
+            if (!await _tableExists('web_mine_queue')) {
+              await m.createTable(webMineQueue);
+            }
           }
         },
         onCreate: (m) async {

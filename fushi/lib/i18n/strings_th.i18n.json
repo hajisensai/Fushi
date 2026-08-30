@@ -3951,5 +3951,21 @@
   "video_subtitle_adjust_expand": "ขยาย",
   "settings_section_reading_stats": "สถิติการอ่าน",
   "reading_stats_idle_timeout": "เวลาพักการอ่าน",
-  "reading_stats_idle_timeout_hint": "หยุดนับเวลาอ่านเมื่อไม่มีการพลิกหน้า เลื่อน หรือค้นหาคำนานเท่านี้นาที ใช้กับนิยาย PDF และมังงะเท่านั้น วิดีโอจะนับขณะเล่น"
+  "reading_stats_idle_timeout_hint": "หยุดนับเวลาอ่านเมื่อไม่มีการพลิกหน้า เลื่อน หรือค้นหาคำนานเท่านี้นาที ใช้กับนิยาย PDF และมังงะเท่านั้น วิดีโอจะนับขณะเล่น",
+  "web_video_track_menu": "แทร็กคำบรรยาย",
+  "web_video_track_live": "คำบรรยายสด (เก็บจากหน้าเว็บ)",
+  "web_video_no_tracks": "ยังไม่ได้เก็บคำบรรยาย",
+  "web_video_hide_native_subtitles": "ซ่อนคำบรรยายของเว็บไซต์",
+  "web_video_import_hint": "นี่คือหน้าเว็บ (ไม่ใช่สตรีมโดยตรง) จะเปิดในเว็บเพลเยอร์ในตัว",
+  "web_video_platform_unsupported": "ตอนนี้เว็บเพลเยอร์ในตัวใช้ได้เฉพาะบน Windows",
+  "web_video_mine_queue_run": "สร้างการ์ดที่อยู่ในคิว",
+  "web_video_mine_queue_stop": "หยุดสร้างการ์ด",
+  "web_video_mine_queue_empty": "ไม่มีการ์ดในคิว",
+  "web_video_mine_queued": "เพิ่มในคิวสร้างการ์ดแล้ว (รอ $count รายการ)",
+  "web_video_mine_queue_running": "กำลังสร้างการ์ด $done/$total…",
+  "web_video_mine_queue_finished": "สร้างการ์ดแล้ว: $ok รายการ ล้มเหลว: $failed รายการ",
+  "web_video_hosting_menu": "โหมดเล่น",
+  "web_video_hosting_builtin": "ในตัว (1080p; ใช้ซูเปอร์เรโซลูชัน ภาพหน้าจอ และการ์ดได้)",
+  "web_video_hosting_windowed": "หน้าต่างเนทีฟ (4K, DRM ฮาร์ดแวร์; การ์ดจะเข้าคิวไว้ก่อน)",
+  "web_video_mine_switch_builtin": "สลับไปโหมดในตัวเพื่อสร้างการ์ดในคิว $count รายการ"
 }

@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1840 条。点号进各自文件。
+> 共 1842 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -46,7 +46,9 @@
 | [BUG-1954](bugs/BUG-1954-downloads-dropdown-back-button.md) | ✅ | ✅ | 下载页展开下拉框时左上角误显返回键 |
 | [BUG-1953](bugs/BUG-1953-torrent-detail-missing-live-data-layout.md) | ✅ | ✅ | Torrent 详情缺少实时数据时空态布局失衡 |
 | [BUG-1952](bugs/BUG-1952-gal-progressive-line-fold.md) | ✅ | ✅ | 一句台词分多次显示时工作台重复出现且字数重复统计（Zato） |
+| [BUG-1951](bugs/BUG-1951-webview2-cookie-expires-seconds-as-ms.md) | ✅ | ✅ | WebView2 fork getCookies 把 CDP 的秒级 expires 当毫秒回给 Dart：环境间复制 cookie 一律 1970 过期被丢弃、cf_clearance 落库即判过期 |
 | [BUG-1950](bugs/BUG-1950-sgre-single-hash-gate-no-attempt.md) | ✅ | ✅ | STEINS;GATE RE:BOOT 内嵌查词对非首日构建静默失效：SGRE 适配把单个 exe 哈希当准入门，从不尝试其它构建 |
+| [BUG-1949](bugs/BUG-1949-netflix-bridge-timedtext-zero-hits.md) | ✅ | ✅ | netflix-bridge 整集字幕轨在当前 Netflix 上零命中（JSON.parse 钩子看不到 timedtexttracks） |
 | [BUG-1948](bugs/BUG-1948-video-watch-tracker-stop-double-activity.md) | ✅ | ✅ | VideoWatchTracker.stop 在 await 后才清零累计器：dispose 与进程退出并发各写一条活动行 |
 | [BUG-1947](bugs/BUG-1947-video-stats-sync-title-collapse.md) | ✅ | ✅ | 视频统计同步按 title 塌缩：分集裸集号跨作品相加、per-uid 行被删成无身份行 |
 | [BUG-1946](bugs/BUG-1946-sukebei-rss-namespace-rejected.md) | ✅ | ✅ | Sukebei 发现源结果恒空：NyaaClient 严格解析硬编码 nyaa.si 命名空间，sukebei RSS 的 sukebei.nyaa.si/xmlns/nyaa 被判 invalidNamespace |
