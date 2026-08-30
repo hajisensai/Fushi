@@ -278,13 +278,15 @@ void main() {
         'manga_chapter_states',
         'study_segments',
         'study_segment_tombstones',
+        'web_mine_queue',
       },
       reason: '除 v64 的 collection_scrape_meta、v65 的 Mihon 五表、v66 的 '
           'collection_relations、v68 的 media_images、v77 视频来源刮削表、'
           'v78 下载流水线表、v79 的 tag_assignments（五张标签映射表合一）、'
           'v80 的 media_open_history（取代 media_items）、v89 的 '
           'manga_chapter_states（漫画每章阅读状态）与 v92 的 study_segments / '
-          'study_segment_tombstones（学习统计唯一事实表 + 按身份墓碑）外，'
+          'study_segment_tombstones（学习统计唯一事实表 + 按身份墓碑）、'
+          'v93 的 web_mine_queue（网页播放器自动制卡队列）外，'
           '升级不得新增任何表',
     );
   });

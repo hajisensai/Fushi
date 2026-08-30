@@ -1986,7 +1986,7 @@ abstract final class VideoDownloadJobStage {
   static const String scrape = 'scrape';
 }
 
-/// 网页播放器自动制卡队列（schema v90）。
+/// 网页播放器自动制卡队列（schema v93）。
 ///
 /// 观看网页流媒体（Netflix 等）时点「制卡」**只入队**：观看档可能是硬件 DRM 的 4K 窗口宿主
 /// 模式（画面不可捕获、无本地媒体源），录不了句子音频/截不了帧。之后在可捕获的 1080p
