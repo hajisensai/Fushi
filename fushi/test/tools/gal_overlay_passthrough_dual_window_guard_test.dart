@@ -198,17 +198,21 @@ void main() {
     test('建不出逃生工具条就必须取消穿透（正文内工具条此时已不绘制）', () {
       final String applier = functionBody(
           body, 'void FloatingLyricWindow::ApplyPassThroughExStyle()');
-      final int show = applier.indexOf('if (!pass_through_toolbar_.Show(');
-      expect(show, isNot(-1), reason: 'Show() 的结果必须被检查，不能忽略');
+      // 建窗现在收口在 ApplyToolbarVisibility()（它同时管自动隐藏），
+      // 返回值语义不变：false = 期望显示却没能上屏。
+      final int show = applier.indexOf('if (!ApplyToolbarVisibility()');
+      expect(show, isNot(-1), reason: '建窗结果必须被检查，不能忽略');
       final String afterShow = applier.substring(show);
       expect(afterShow.contains('pass_through_ = false;'), isTrue,
           reason: '建不出工具条就必须把穿透翻回 false，否则用户被困在'
               '「正文内工具条不画、独立工具条又没建出来」的无出口态');
+      // 判据从 `!(hook_text_mode_ && pass_through_)` 收紧成 `!hook_text_mode_`：
+      // hook 台词浮窗现在**无论穿不穿透**都只用那个独立短药丸窗，正文里一颗按钮
+      // 都不画。逃生窗因此更不可省——旧写法下非穿透态还有正文内工具条兜着。
       expect(
-        body.contains(
-            'draw_body_toolbar = !(hook_text_mode_ && pass_through_)'),
+        body.contains('draw_body_toolbar = !hook_text_mode_'),
         isTrue,
-        reason: '正文内工具条在穿透态不绘制，正是逃生窗不可省的原因',
+        reason: '正文内工具条在 hook 台词模式一律不绘制，正是逃生窗不可省的原因',
       );
     });
 
@@ -228,8 +232,10 @@ void main() {
     test('穿透态必须在文字行矩形内铺不可见 catch fill（BUG-1853）', () {
       final String render =
           functionBody(body, 'void FloatingLyricWindow::Render()');
-      final int catchFill = render.indexOf(
-          'if (hook_text_mode_ && pass_through_ && !text_.empty())');
+      // 判据多了一维 `passthrough_blocks_mouse_`（「穿透时是否仍拦鼠标」可配），
+      // 所以锚点只取到那一维之前；后面 `contains` 再确认它确实在同一个条件里。
+      final int catchFill =
+          render.indexOf('if (hook_text_mode_ && pass_through_ &&');
       expect(catchFill, isNot(-1),
           reason: '穿透态行矩形 catch fill 的守门条件必须存在，且只在'
               'hook 台词 + 穿透态下生效（歌词条 / 非穿透态整窗兜底已经可点）');
@@ -258,8 +264,11 @@ void main() {
     test('a toolbar that cannot be created cancels pass-through', () {
       final String applier = functionBody(
           body, 'void FloatingLyricWindow::ApplyPassThroughExStyle()');
-      expect(applier.contains('if (!pass_through_toolbar_.Show('), isTrue,
-          reason: 'The Show() result must be checked, not ignored.');
+      expect(applier.contains('if (!ApplyToolbarVisibility()'), isTrue,
+          reason: 'The result must be checked, not ignored. Window creation is '
+              'now funnelled through ApplyToolbarVisibility(), which also owns '
+              'the auto-hide decision; the false = "wanted on screen but is '
+              'not" contract is unchanged.');
       expect(applier.contains('pass_through_ = false;'), isTrue,
           reason: 'Better to drop the toggle than to strand the user behind '
               'an overlay they can no longer click.');
@@ -377,9 +386,14 @@ void main() {
 
     test('one dispatcher runs a button, whichever window was clicked', () {
       expect(bodyHeader.contains('void DispatchControlAction('), isTrue);
-      final String applier = functionBody(
-          body, 'void FloatingLyricWindow::ApplyPassThroughExStyle()');
-      expect(applier.contains('DispatchControlAction(action)'), isTrue,
+      // The binding moved out of ApplyPassThroughExStyle into its own
+      // BindToolbarCallbacks() (the toolbar is no longer pass-through-only, so
+      // the wiring can no longer live in the pass-through applier). The
+      // invariant is unchanged: whoever binds it must forward to the shared
+      // dispatcher.
+      final String binder = functionBody(
+          body, 'void FloatingLyricWindow::BindToolbarCallbacks()');
+      expect(binder.contains('DispatchControlAction(action)'), isTrue,
           reason: 'The toolbar action callback must reuse the body dispatcher, '
               'not a second copy of the lock / topmost logic.');
       // The lock + topmost toggles live in the dispatcher only.
@@ -422,9 +436,11 @@ void main() {
 
     test('the in-body toolbar is not painted while the body is click-through',
         () {
+      // Tightened from `!(hook_text_mode_ && pass_through_)`: the hook-text
+      // overlay now always uses the standalone pill window, click-through or
+      // not, so the body paints no buttons at all in that mode.
       expect(
-          body.contains(
-              'const bool draw_body_toolbar = !(hook_text_mode_ && pass_through_);'),
+          body.contains('const bool draw_body_toolbar = !hook_text_mode_;'),
           isTrue,
           reason: 'Two toolbars drawn at the same spot, one of them dead, is '
               'the UI lie this design exists to remove.');

@@ -3879,5 +3879,16 @@
   "video_setting_hdr_off": "关",
   "video_discovery_cancel_downloads_title": "取消下载？",
   "video_discovery_cancel_downloads_body": "本作品有 $n 个下载任务会被停止。已下载的分片仍保留在磁盘上，之后可以重新开始下载。",
-  "video_discovery_cancel_downloads_failed": "取消下载失败。任务可能已经结束，或下载后端当前不可用。"
+  "video_discovery_cancel_downloads_failed": "取消下载失败。任务可能已经结束，或下载后端当前不可用。",
+  "gal_hook_click_lookup": "单击文字查词",
+  "gal_hook_click_lookup_hint": "关掉后点台词不再触发查词。开着鼠标穿透时尤其有用——不想一不小心点到单词。",
+  "gal_hook_lookup_trigger": "查词触发方式",
+  "gal_hook_lookup_trigger_hint": "用哪个鼠标键查指针底下的词。与上面的开关正交：可以关掉单击查词，仍用侧键查。",
+  "gal_hook_lookup_trigger_left": "左键单击",
+  "gal_hook_lookup_trigger_middle": "鼠标中键",
+  "gal_hook_lookup_trigger_side": "鼠标侧键",
+  "gal_hook_toolbar_auto_hide": "自动隐藏功能栏",
+  "gal_hook_toolbar_auto_hide_hint": "平时把功能栏整条隐藏，鼠标移到台词框附近才现身（LunaHook 那样）。隐藏就是真隐藏，那块像素还给游戏。",
+  "gal_hook_passthrough_blocks_mouse": "穿透时台词仍拦截点击",
+  "gal_hook_passthrough_blocks_mouse_hint": "开：文字行仍接鼠标，能点字查词。关：整个浮窗对鼠标彻底透明，能点到底下的东西，但点字查词也就没了。"
 }

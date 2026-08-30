@@ -621,6 +621,11 @@ void HookToolbarWindow::Sync(const hook_toolbar::Layout& layout,
   if (!repaint) {
     // Still re-assert Z: the body window raises itself to HWND_TOPMOST on show
     // / clamp / DPI change, which would otherwise tint this pill from above.
+    //
+    // 🔴 **不要**把这里改成跟随 states_.topmost。看着像「药丸和正文脱钩了」，实际
+    // 是 BUG-951 的不变式：穿透态下这个独立小窗是用户**唯一**点得到的东西，跟着
+    // 取消置顶一起沉到游戏底下就是彻底失联。守卫在
+    // gal_overlay_shift_hover_pin_guard_test.dart「置顶只作用于正文窗」。
     SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     return;

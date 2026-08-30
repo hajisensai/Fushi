@@ -167,6 +167,22 @@ class FloatingLyricWindow {
   // window, so this is the only place the user can see either state.
   void SetVoiceState(bool replaying, bool recapturing);
   void SetClickLookupEnabled(bool enabled);
+  // 查词触发方式（Dart 偏好 `gal_hook_lookup_trigger`）：
+  // 0 = 左键单击（默认，历史行为）/ 1 = 鼠标中键 / 2 = 鼠标侧键（XButton1/2）。
+  //
+  // 用户诉求：「至少开启穿透的时候我不是很想单击点到单词，还是习惯用侧键查」。
+  // 单击查词的**开关**是 [SetClickLookupEnabled]（关掉就完全不查）；本项决定的是
+  // 「用哪个键查」，两者正交：可以既关单击、又用侧键查。
+  void SetLookupTrigger(int trigger);
+  // 工具条自动隐藏（LunaHook 式）：平时整条工具条 `SW_HIDE`，鼠标进入台词框或
+  // 工具条所在区域才现身。**真隐藏而不是降透明度**——这个窗口盖在游戏上，每一个
+  // 还在的像素都是玩家点不到的像素（BUG-951 的原话）。
+  void SetToolbarAutoHide(bool enabled);
+  // 穿透态下正文是否仍然拦截落在**文字行盒**上的鼠标（默认 true = 拦截，历史行为，
+  // 点字查词才成立）。关掉后连字也不接，整窗对游戏彻底透明——用户原话「穿透不彻底
+  // 等于彻底不穿透」「我想点击文字底下的东西点不到了」。关掉后自然也没有点字查词，
+  // 查词只能靠 [SetLookupTrigger] 里那些不经本窗口的方式或工具条。
+  void SetPassThroughBlocksMouse(bool enabled);
   // 「悬停即查词」（Dart 偏好 `hover_auto_lookup`，与阅读器 / 视频字幕同一开关）。
   // 关闭时（默认）hook 浮窗只在**按住 Shift** 悬停时查词；打开时纯悬停即查。
   // Shift-悬停本身不受此开关控制，它是查词的通用手势。
@@ -271,6 +287,22 @@ class FloatingLyricWindow {
   // 就不出词）。离开窗口即停表，不在后台空转。
   void StartHoverLookupPolling();
   void StopHoverLookupPolling();
+
+  // ── 工具条揭示（自动隐藏）─────────────────────────────────────────────
+  // 悬停轮询只在鼠标**已经在窗口里**时才挂表，对「鼠标正在靠近」无能为力；工具条
+  // 隐藏后更是连 WM_MOUSEMOVE 都收不到。所以揭示判定走一张独立的常驻表，只在 hook
+  // 台词浮窗可见期间挂着。
+  void StartToolbarRevealPolling();
+  void StopToolbarRevealPolling();
+  void UpdateToolbarReveal();
+  bool CursorInToolbarRevealZone() const;
+  // 自动隐藏此刻是否生效。穿透态恒 false——工具条是那时屏幕上唯一还能点的东西
+  // （BUG-951 不变式），不能让轮询表把它藏起来。
+  bool ToolbarAutoHideActive() const;
+  // 把工具条窗调到当前该有的显隐状态。返回 false = 期望显示却没能上屏（穿透态下
+  // 这就是「没有回退入口」，调用方必须据此拒绝开启穿透）。
+  bool ApplyToolbarVisibility();
+  void BindToolbarCallbacks();
 
   // Runs a toolbar action. Single dispatcher shared by the in-body toolbar
   // (WM_LBUTTONDOWN) and the standalone pass-through toolbar window, so a
@@ -398,6 +430,16 @@ class FloatingLyricWindow {
   bool replaying_ = false;
   bool recapturing_ = false;
   bool click_lookup_enabled_ = true;
+  // 查词触发方式镜像（见 SetLookupTrigger）。
+  int lookup_trigger_ = 0;
+  // 工具条自动隐藏（见 SetToolbarAutoHide）。
+  bool toolbar_auto_hide_ = true;
+  // 工具条当前是否处于「已揭示」状态（自动隐藏关时恒 true）。
+  bool toolbar_revealed_ = false;
+  // 揭示轮询定时器是否已挂。
+  bool toolbar_reveal_poll_active_ = false;
+  // 穿透态下文字行盒是否仍接鼠标（见 SetPassThroughBlocksMouse）。
+  bool passthrough_blocks_mouse_ = true;
   // 「悬停即查词」偏好镜像（见 SetHoverAutoLookup）。false 时悬停查词需按住 Shift。
   bool hover_auto_lookup_ = false;
   // Shift-悬停查词去重锚：上一次真正派发查词的字下标（-1 = 无）。命中同一个字不

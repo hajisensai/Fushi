@@ -48,6 +48,13 @@ constexpr float kHookTextMinStripWidthDip = 340.0f;
 // 一次按键的最短可感知延迟，且远低于用户「按下 Shift 想看词」的心理预期；
 // 只在窗口内轮询，代价是一次 GetAsyncKeyState + 一次 DWrite 命中测试。
 constexpr UINT_PTR kHoverLookupTimerId = 1;
+// 工具条揭示轮询（自动隐藏）。120ms 对「鼠标滑到台词框上」够跟手，又不会像悬停
+// 查词那样需要 60ms 级精度——它只决定一个窗口显不显示。
+constexpr UINT_PTR kToolbarRevealTimerId = 2;
+constexpr UINT kToolbarRevealPollMs = 120;
+// 揭示区在正文窗 ∪ 工具条矩形之外再放宽这么多，避免指针刚离开边缘一像素就消失，
+// 以及「从工具条移向正文」的途中出现空档。
+constexpr float kToolbarRevealMarginDip = 24.0f;
 constexpr UINT kHoverLookupPollMs = 60;
 constexpr float kMinStripHeightDip = 64.0f;
 constexpr float kMaxStripWidthDip = 2400.0f;
@@ -479,6 +486,8 @@ void FloatingLyricWindow::Hide() {
   CancelPointerGesture();
   // 隐藏后收不到 WM_MOUSELEAVE：定时器留着就是后台空转。
   StopHoverLookupPolling();
+  StopToolbarRevealPolling();
+  toolbar_revealed_ = false;
   ResetHoverLookupAnchor();
   // BUG-951: hand clicks back unconditionally and take the toolbar down with
   // the body. A hidden window that is still WS_EX_TRANSPARENT would come back
@@ -601,6 +610,42 @@ void FloatingLyricWindow::SetVoiceState(bool replaying, bool recapturing) {
 
 void FloatingLyricWindow::SetClickLookupEnabled(bool enabled) {
   click_lookup_enabled_ = enabled;
+}
+
+void FloatingLyricWindow::SetLookupTrigger(int trigger) {
+  lookup_trigger_ = trigger;
+}
+
+// 现在这一刻，自动隐藏该不该生效。
+//
+// **穿透态一律不生效**：穿透时正文窗不吃点击，工具条是屏幕上**唯一**还能点的
+// 东西——BUG-951 / PR#460 把这条写成了不变式（「工具条是一个独立窗口，永远可点，
+// 没有状态可竞争」）。让一个 120ms 的轮询表有权把它 SW_HIDE 掉，就是把「有没有
+// 逃生口」变成了一个可竞争的状态：光标恰好不在揭示区时它就没了，而用户此刻既点
+// 不动正文、也不知道要把鼠标移回哪里；Show 再失败一次（下面那条回滚就是为它准备
+// 的）就彻底困住。非穿透态没有这个问题——正文窗自己就能点、能拖、能右键。
+bool FloatingLyricWindow::ToolbarAutoHideActive() const {
+  return toolbar_auto_hide_ && !pass_through_;
+}
+
+void FloatingLyricWindow::SetToolbarAutoHide(bool enabled) {
+  if (toolbar_auto_hide_ == enabled) {
+    return;
+  }
+  toolbar_auto_hide_ = enabled;
+  // 关掉自动隐藏 = 立刻恒显；打开 = 立刻按当前光标位置判一次，不必等下一拍。
+  toolbar_revealed_ = !ToolbarAutoHideActive() || CursorInToolbarRevealZone();
+  ApplyToolbarVisibility();
+}
+
+void FloatingLyricWindow::SetPassThroughBlocksMouse(bool enabled) {
+  if (passthrough_blocks_mouse_ == enabled) {
+    return;
+  }
+  passthrough_blocks_mouse_ = enabled;
+  // 这条只改**画**出来的 alpha（行盒 catch fill），命中由 OS 按像素判——所以重画
+  // 一帧就是生效，不需要动窗口样式。
+  RequestRender();
 }
 
 void FloatingLyricWindow::SetTopmost(bool enabled) {
@@ -773,33 +818,27 @@ void FloatingLyricWindow::ApplyPassThroughExStyle() {
   // Only the galgame hook overlay has a pass-through mode. The audiobook lyric
   // strip never reaches the branch below, so its window style is byte-for-byte
   // what it always was.
-  const bool want = hook_text_mode_ && pass_through_ && visible_;
-  if (!want) {
+  // 工具条不再是「穿透专属」：hook 台词浮窗**无论穿不穿透**都用同一个独立短药丸窗
+  // （用户「统一用这个短的舒服点」）。这里的判据因此只剩「是不是 hook 台词浮窗且
+  // 可见」；有声书悬浮歌词条永远走 false 分支，行为逐字节不变。
+  const bool want_toolbar = hook_text_mode_ && visible_;
+  if (!want_toolbar) {
+    StopToolbarRevealPolling();
     pass_through_toolbar_.Hide();
     SetBodyExTransparent(false);
     return;
   }
-  if (!toolbar_callbacks_bound_) {
-    pass_through_toolbar_.SetActionCallback(
-        [this](const std::string& action) { DispatchControlAction(action); });
-    pass_through_toolbar_.SetDragCallback(
-        [this](int x, int y) { MoveBodyTo(x, y); });
-    pass_through_toolbar_.SetDragEndCallback([this]() {
-      SyncStripSizeFromWindow();
-      // The clamp can still nudge the body (e.g. the drag ended half off a
-      // monitor edge), so re-sync the toolbar before reporting the bounds —
-      // otherwise the pill would sit a few px away from the body it belongs to.
-      ClampCurrentPositionToWindowMonitor();
-      SyncPassThroughToolbar();
-      NotifyBoundsChanged();
-    });
-    toolbar_callbacks_bound_ = true;
+  BindToolbarCallbacks();
+  StartToolbarRevealPolling();
+  if (pass_through_) {
+    // 切进穿透的这一刻先把工具条亮出来：它是穿透态下**唯一的回退入口**，用户得先
+    // 看见它在哪，自动隐藏才不至于变成「关不掉的穿透」。
+    toolbar_revealed_ = true;
   }
   // Escape hatch FIRST. The body may only stop taking clicks once the window
   // that can switch pass-through back off is actually on screen; if it cannot
   // be created we refuse the toggle instead of stranding the user.
-  if (!pass_through_toolbar_.Show(ComputePassThroughToolbarLayout(),
-                                  ToolbarStyle(), ToolbarStates())) {
+  if (!ApplyToolbarVisibility() && pass_through_) {
     SetBodyExTransparent(false);
     pass_through_ = false;
     // Tell Dart the toggle was refused. Without this its own flag stays true,
@@ -894,6 +933,105 @@ hook_toolbar::States FloatingLyricWindow::ToolbarStates() const {
   states.locked = locked_;
   states.topmost = topmost_;
   return states;
+}
+
+void FloatingLyricWindow::BindToolbarCallbacks() {
+  if (toolbar_callbacks_bound_) {
+    return;
+  }
+  pass_through_toolbar_.SetActionCallback(
+      [this](const std::string& action) { DispatchControlAction(action); });
+  pass_through_toolbar_.SetDragCallback(
+      [this](int x, int y) { MoveBodyTo(x, y); });
+  pass_through_toolbar_.SetDragEndCallback([this]() {
+    SyncStripSizeFromWindow();
+    // The clamp can still nudge the body (e.g. the drag ended half off a
+    // monitor edge), so re-sync the toolbar before reporting the bounds —
+    // otherwise the pill would sit a few px away from the body it belongs to.
+    ClampCurrentPositionToWindowMonitor();
+    SyncPassThroughToolbar();
+    NotifyBoundsChanged();
+  });
+  toolbar_callbacks_bound_ = true;
+}
+
+bool FloatingLyricWindow::ApplyToolbarVisibility() {
+  if (!hook_text_mode_ || !visible_) {
+    pass_through_toolbar_.Hide();
+    return true;
+  }
+  if (ToolbarAutoHideActive() && !toolbar_revealed_) {
+    // **真隐藏**，不是降到低 alpha。这个窗口盖在游戏上，"every pixel of it is a
+    // pixel the player cannot click"（BUG-951 的原话）——留一条几乎看不见却仍然
+    // 吃点击的催化带，等于一直偷着游戏顶部这块区域，正是用户抱怨的那类"穿透不
+    // 彻底"。隐藏后靠 kToolbarRevealTimerId 那张常驻表把它请回来。
+    pass_through_toolbar_.Hide();
+    return true;
+  }
+  return pass_through_toolbar_.Show(ComputePassThroughToolbarLayout(),
+                                    ToolbarStyle(), ToolbarStates());
+}
+
+void FloatingLyricWindow::StartToolbarRevealPolling() {
+  if (hwnd_ == nullptr || toolbar_reveal_poll_active_) {
+    return;
+  }
+  if (SetTimer(hwnd_, kToolbarRevealTimerId, kToolbarRevealPollMs, nullptr) !=
+      0) {
+    toolbar_reveal_poll_active_ = true;
+  }
+}
+
+void FloatingLyricWindow::StopToolbarRevealPolling() {
+  if (!toolbar_reveal_poll_active_) {
+    return;
+  }
+  if (hwnd_ != nullptr) {
+    KillTimer(hwnd_, kToolbarRevealTimerId);
+  }
+  toolbar_reveal_poll_active_ = false;
+}
+
+bool FloatingLyricWindow::CursorInToolbarRevealZone() const {
+  POINT cursor;
+  if (hwnd_ == nullptr || !GetCursorPos(&cursor)) {
+    return toolbar_revealed_;
+  }
+  RECT zone = {};
+  if (!GetWindowRect(hwnd_, &zone)) {
+    return toolbar_revealed_;
+  }
+  // 揭示区 = 正文窗 ∪ 工具条矩形。工具条画在正文窗**上沿之上**
+  // （ComputePassThroughToolbarLayout 从 wr.top 起算再退一个 margin），只圈正文窗
+  // 的话，鼠标一往工具条方向移就被判成"离开"，工具条会在指针到达之前先消失。
+  const hook_toolbar::Layout layout = ComputePassThroughToolbarLayout();
+  zone.left = std::min(zone.left, layout.rect.left);
+  zone.top = std::min(zone.top, layout.rect.top);
+  zone.right = std::max(zone.right, layout.rect.right);
+  zone.bottom = std::max(zone.bottom, layout.rect.bottom);
+  const int margin =
+      static_cast<int>(std::lround(ScaleForDpi(kToolbarRevealMarginDip)));
+  InflateRect(&zone, margin, margin);
+  return PtInRect(&zone, cursor) != FALSE;
+}
+
+void FloatingLyricWindow::UpdateToolbarReveal() {
+  if (!hook_text_mode_ || hwnd_ == nullptr || !visible_) {
+    return;
+  }
+  const bool want =
+      ToolbarAutoHideActive() ? CursorInToolbarRevealZone() : true;
+  if (want == toolbar_revealed_) {
+    return;
+  }
+  toolbar_revealed_ = want;
+  if (!ApplyToolbarVisibility()) {
+    // Show 失败（建窗/定位失败）时**必须把状态退回去**：这里丢弃返回值的话，
+    // `toolbar_revealed_` 已经是 true 而窗口并不在屏幕上，下一拍
+    // `want == toolbar_revealed_` 就直接早退——工具条再也回不来，而这正是穿透
+    // 态下唯一的逃生口。回滚后下一拍会重试。
+    toolbar_revealed_ = !want;
+  }
 }
 
 void FloatingLyricWindow::SyncPassThroughToolbar() {
@@ -1070,6 +1208,10 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       return 0;
     }
     case WM_TIMER: {
+      if (wparam == kToolbarRevealTimerId) {
+        UpdateToolbarReveal();
+        return 0;
+      }
       if (wparam != kHoverLookupTimerId) {
         return DefWindowProc(hwnd_, message, wparam, lparam);
       }
@@ -1133,7 +1275,10 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       press_origin_ = cursor;
       press_client_.x = static_cast<LONG>(x);
       press_client_.y = static_cast<LONG>(y);
-      press_was_text_ = click_lookup_enabled_ && CharIndexAt(x, y) >= 0 &&
+      // 触发方式不是左键时，左键按下只用来拖窗，不再"顺手"查词——这正是用户要的
+      // 「至少开启穿透的时候我不是很想单击点到单词」。
+      press_was_text_ = click_lookup_enabled_ && lookup_trigger_ == 0 &&
+                        CharIndexAt(x, y) >= 0 &&
                         (on_lookup_ || on_context_lookup_);
       SetCapture(hwnd_);
       return 0;
@@ -1170,6 +1315,27 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       }
       if (was_dragging) {
         NotifyBoundsChanged();
+      }
+      return 0;
+    }
+    // 中键 / 侧键查词。两者都走与左键完全相同的 DispatchLookupAt，所以"查到什么、
+    // 制卡拿到哪句"不因触发键而变；差别只在"哪个键算触发"。
+    //
+    // 前提是这个像素属于本窗口：分层窗按 alpha 逐像素命中，穿透态下背景是真 alpha
+    // 0，只有文字行盒（catch fill）会把消息投进来——这恰好就是想要的语义"按侧键
+    // 查我指着的那个字"。SetPassThroughBlocksMouse(false) 时连行盒都不接，那时本
+    // 分支自然也收不到消息（文档已写明）。
+    case WM_MBUTTONUP:
+    case WM_XBUTTONUP: {
+      const bool matches = (message == WM_MBUTTONUP && lookup_trigger_ == 1) ||
+                           (message == WM_XBUTTONUP && lookup_trigger_ == 2);
+      if (!matches || !click_lookup_enabled_) {
+        return 0;
+      }
+      const float x = static_cast<float>(GET_X_LPARAM(lparam));
+      const float y = static_cast<float>(GET_Y_LPARAM(lparam));
+      if (CharIndexAt(x, y) >= 0 && (on_lookup_ || on_context_lookup_)) {
+        DispatchLookupAt(x, y);
       }
       return 0;
     }
@@ -1565,7 +1731,10 @@ void FloatingLyricWindow::Render() {
       // 然在内），坐标换算与下面高亮框 / CharIndexAt 同一公式，再由外层
       // text_clip 裁掉滚出视口的行。不引入 WS_EX_TRANSPARENT / HTTRANSPARENT /
       // 定时器（BUG-951 / PR#460 两次事故的老路）。
-      if (hook_text_mode_ && pass_through_ && !text_.empty()) {
+      // passthrough_blocks_mouse_ = false 时连这层 catch fill 都不铺：行盒内也是
+      // 真 alpha 0，整窗对游戏彻底透明（用户「穿透不彻底等于彻底不穿透」）。
+      if (hook_text_mode_ && pass_through_ && passthrough_blocks_mouse_ &&
+          !text_.empty()) {
         UINT32 line_hit_count = 0;
         text_layout_->HitTestTextRange(0, static_cast<UINT32>(text_.size()), 0,
                                        0, nullptr, 0, &line_hit_count);
@@ -1860,7 +2029,12 @@ void FloatingLyricWindow::Render() {
     // own always-clickable window (HookToolbarWindow). Painting the band here
     // as well would both double it visually and advertise a grab handle that
     // takes no mouse input any more — the body is purely visual in that mode.
-    const bool draw_body_toolbar = !(hook_text_mode_ && pass_through_);
+    // 统一工具栏样式（用户：「鼠标穿透开/关时这功能栏样式还不一样，统一用这个短的
+    // 舒服点」）。此前穿透**关**时在正文窗内画一条全窗宽的长条 + grip 药丸，穿透
+    // **开**时才用独立的短药丸窗，于是同一个功能栏有两副长相、两套几何、两条命中
+    // 路径。现在 hook 台词模式一律走独立短药丸窗（见 ApplyToolbarVisibility），
+    // 正文窗内这条长条整条不再绘制——少一条路径，也就少一处能走岔的地方。
+    const bool draw_body_toolbar = !hook_text_mode_;
 
     // Full-width strip background: near-invisible at rest (still catches the
     // mouse so the top edge is always grabbable), a visible band on hover so
@@ -2155,7 +2329,9 @@ std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
     // are invisible otherwise, so a click must never land on a phantom button).
     // The grip / empty strip returns empty so a press there becomes a window
     // drag — geometry mirrors Render().
-    if (!hovered_) {
+    // hook 台词模式下正文窗里已经不画任何按钮（见 Render 的 draw_body_toolbar），
+    // 命中必须一起撤掉：留着就是一排看不见却点得中的幽灵按钮。
+    if (hook_text_mode_ || !hovered_) {
       return std::string();
     }
     const float btn = ScaleForDpi(kHookTextButtonSizeDip);
