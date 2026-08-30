@@ -1,6 +1,6 @@
 ## BUG-1959 · Windows/Linux 粗鼠标滚轮一格跳动范围过大
 - **报告**：2026-08-30（用户：app 内例如首页滚轮滚动不流畅，一滚跳一整段）
 - **真实性**：✅ 真 bug。首页及常规 Flutter 页面没有自定义 pointer delta：Flutter 的 `ScrollPositionWithSingleContext.pointerScroll` 会将 Windows/Linux 传统鼠标滚轮一档约 100–120 logical px 的粗 delta 原样同步 `forcePixels`，因此不是 app 额外放大，而是缺少对粗滚轮与触控板精细 delta 的分流。首页另有次要放大项：`home_dashboard_page.dart` 最多预取 200 条活动并用 `Column + for` 全量挂载，外层 `ListView` 只能看到一个巨型 dashboard child。
-- **[x] ① 已修复** — `482174f7f5` 先封顶首页活动渲染/封面解码负载；后续提交新增 `FushiScrollController`，在真正消费 pointer delta 的 `ScrollPosition` 边界只对 Windows/Linux 绝对值 ≥80 的粗事件减半、单事件封顶 120px，小 delta 与 macOS/移动端保持 1:1。首页各 tab 和共享 `FushiPageScaffold` 均接入，覆盖首页、书架、视频、词典及普通二级页面的主纵向滚动。
-- **[x] ② 已加自动化测试** — `fushi/test/utils/misc/desktop_scroll_physics_test.dart` 覆盖正反方向、粗事件减半、巨 delta 封顶、小 delta 原样；`fushi/test/widgets/fushi_page_scaffold_scroll_test.dart` 从真实鼠标 `PointerScrollEvent` 验证主滚动位置。原首页活动分页测试继续保留。
-- **备注**：用户要求本轮建立 worktree 后不要等待测试、直接 PR；因此只做格式化、静态分析/差异校验，Flutter 测试与真机滚动帧率留给 PR CI/设备复测，不能据此宣称已真机验证。
+- **[x] ① 已修复** — `482174f7f5` 先封顶首页活动渲染/封面解码负载；`e4387f215c` 新增 `FushiScrollController`，在真正消费 pointer delta 的 `ScrollPosition` 边界只对 Windows/Linux 绝对值 ≥80 的粗事件减半、单事件封顶 120px，小 delta 与 macOS/移动端保持 1:1。首页各 tab 和共享 `FushiPageScaffold` 均接入，覆盖首页、书架、视频、词典及普通二级页面的主纵向滚动。
+- **[x] ② 已加自动化测试** — `e4387f215c`：`fushi/test/utils/misc/desktop_scroll_physics_test.dart` 覆盖正反方向、粗事件减半、巨 delta 封顶、小 delta 原样；`fushi/test/widgets/fushi_page_scaffold_scroll_test.dart` 从真实鼠标 `PointerScrollEvent` 验证主滚动位置。原首页活动分页测试继续保留。
+- **备注**：用户要求本轮建立 worktree 后不要等待测试、直接 PR；Flutter tests/build 未运行。定向 `dart analyze` 完成代码扫描后在 Analysis Server shutdown 阶段因无法删除 `%LOCALAPPDATA%/Dart/perf/*` 崩溃，未获得成功退出码；`dart format --output=none` 已完成语法解析，BUG strict check / diff check 通过。真机滚轮手感与帧率仍待设备复测，不能据此宣称已真机验证。
