@@ -3929,5 +3929,10 @@
   "onboarding_step_interconnect_action_desc": "Memasangkan perangkat ini dengan perangkatmu yang lain untuk berbagi satu pustaka dan menyelaraskan progres.",
   "onboarding_step_extension_action_desc": "Menunjukkan cara memasang ekstensi peramban dan menghubungkannya ke Fushi, supaya kamu juga bisa mencari kata di halaman web.",
   "onboarding_step_fonts_action_desc": "Tambahkan berkas fonmu sendiri dan pilih fon yang dipakai tiap bahasa.",
-  "onboarding_pack_sources_hint": "Diunduh dalam potongan paralel dari GitHub, situs resmi, dan satu cermin cadangan sekaligus, tiap potongan diperiksa checksum-nya. Fushi mengukur kecepatan sumber sambil berjalan dan memberi lebih banyak potongan ke yang tercepat saat itu, jadi tidak ada yang perlu dipilih di sini."
+  "onboarding_pack_sources_hint": "Diunduh dalam potongan paralel dari GitHub, situs resmi, dan satu cermin cadangan sekaligus, tiap potongan diperiksa checksum-nya. Fushi mengukur kecepatan sumber sambil berjalan dan memberi lebih banyak potongan ke yang tercepat saat itu, jadi tidak ada yang perlu dipilih di sini.",
+  "video_setting_hdr_output": "Keluaran HDR / 10 bit",
+  "video_setting_hdr_output_hint": "Hanya Windows. «Otomatis» meneruskan sumber HDR langsung ke layar HDR lewat jendela video native; «Selalu» memakai jendela itu untuk semua video (keluaran 10 bit); «Mati» tetap memakai perender standar.",
+  "video_setting_hdr_output_auto": "Otomatis",
+  "video_setting_hdr_output_always": "Selalu",
+  "video_setting_hdr_output_off": "Mati"
 }

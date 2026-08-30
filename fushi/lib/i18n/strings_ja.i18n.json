@@ -3929,5 +3929,10 @@
   "onboarding_step_interconnect_action_desc": "この端末を他の端末とペアリングして、同じライブラリを共有し進捗を同期します。",
   "onboarding_step_extension_action_desc": "ブラウザ拡張機能のインストール方法と Fushi への接続手順を案内します。ウェブページ上でも辞書を引けるようになります。",
   "onboarding_step_fonts_action_desc": "自分のフォントファイルを追加し、言語ごとにどれを使うか指定します。",
-  "onboarding_pack_sources_hint": "GitHub・公式サイト・予備ミラーから同時に分割ダウンロードし、各断片をチェックサムで検証します。ダウンロード中も各ソースの速度を実測し、その時点で最も速いソースに多くの断片を割り当てるため、ここで選ぶ必要はありません。"
+  "onboarding_pack_sources_hint": "GitHub・公式サイト・予備ミラーから同時に分割ダウンロードし、各断片をチェックサムで検証します。ダウンロード中も各ソースの速度を実測し、その時点で最も速いソースに多くの断片を割り当てるため、ここで選ぶ必要はありません。",
+  "video_setting_hdr_output": "HDR / 10 ビット出力",
+  "video_setting_hdr_output_hint": "Windows のみ。「自動」はディスプレイとソースがどちらも HDR のとき、ネイティブ動画ウィンドウ経由でそのまま HDR ディスプレイへ渡します。「常に」はすべての動画でそのウィンドウを使います（10 ビット出力）。「オフ」は標準のレンダラーのままです。",
+  "video_setting_hdr_output_auto": "自動",
+  "video_setting_hdr_output_always": "常に",
+  "video_setting_hdr_output_off": "オフ"
 }

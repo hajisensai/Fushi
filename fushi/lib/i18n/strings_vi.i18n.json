@@ -3929,5 +3929,10 @@
   "onboarding_step_interconnect_action_desc": "Ghép nối thiết bị này với các thiết bị khác của bạn để dùng chung một thư viện và đồng bộ tiến độ.",
   "onboarding_step_extension_action_desc": "Hướng dẫn cách cài tiện ích trình duyệt và kết nối nó với Fushi, để bạn tra từ ngay trên trang web.",
   "onboarding_step_fonts_action_desc": "Thêm tệp phông chữ của riêng bạn và chọn phông cho từng ngôn ngữ.",
-  "onboarding_pack_sources_hint": "Được tải song song theo từng phần, đồng thời từ GitHub, trang chính thức và một máy chủ gương dự phòng, mỗi phần đều được kiểm tra checksum. Fushi đo tốc độ các nguồn ngay trong lúc tải và giao nhiều phần hơn cho nguồn đang nhanh nhất, nên ở đây không có gì để chọn."
+  "onboarding_pack_sources_hint": "Được tải song song theo từng phần, đồng thời từ GitHub, trang chính thức và một máy chủ gương dự phòng, mỗi phần đều được kiểm tra checksum. Fushi đo tốc độ các nguồn ngay trong lúc tải và giao nhiều phần hơn cho nguồn đang nhanh nhất, nên ở đây không có gì để chọn.",
+  "video_setting_hdr_output": "Đầu ra HDR / 10 bit",
+  "video_setting_hdr_output_hint": "Chỉ trên Windows. «Tự động» đưa nguồn HDR thẳng tới màn hình HDR qua một cửa sổ video gốc; «Luôn luôn» dùng cửa sổ đó cho mọi video (đầu ra 10 bit); «Tắt» giữ nguyên bộ kết xuất tiêu chuẩn.",
+  "video_setting_hdr_output_auto": "Tự động",
+  "video_setting_hdr_output_always": "Luôn luôn",
+  "video_setting_hdr_output_off": "Tắt"
 }

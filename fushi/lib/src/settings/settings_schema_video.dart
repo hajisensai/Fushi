@@ -6,6 +6,7 @@ import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
@@ -117,6 +118,40 @@ SettingsDestination buildVideoDestination() {
               VideoFitMode mode,
             ) async {
               await setVideoFitModeDual(settingsContext, mode);
+            },
+          ),
+          // Windows HDR 直通 / 10-bit 输出（docs/plans/2026-08-30-video-hdr-passthrough.md）：
+          // auto = 显示器 HDR 开着且片源 HDR 才走宿主窗直通；always = 只要在 Windows
+          // 就走宿主窗（10-bit）；off = 纹理路径（现状）。只有 Windows 有这条链路。
+          SettingsSegmentedItem<VideoHdrOutputMode>(
+            id: 'video.playback.hdr_output',
+            title: t.video_setting_hdr_output,
+            subtitle: t.video_setting_hdr_output_hint,
+            icon: Icons.hdr_on_outlined,
+            dropdown: true,
+            visible: (_) => isWindowsPlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 31),
+            options: <SettingsSegmentOption<VideoHdrOutputMode>>[
+              SettingsSegmentOption<VideoHdrOutputMode>(
+                value: VideoHdrOutputMode.auto,
+                label: t.video_setting_hdr_output_auto,
+              ),
+              SettingsSegmentOption<VideoHdrOutputMode>(
+                value: VideoHdrOutputMode.always,
+                label: t.video_setting_hdr_output_always,
+              ),
+              SettingsSegmentOption<VideoHdrOutputMode>(
+                value: VideoHdrOutputMode.off,
+                label: t.video_setting_hdr_output_off,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoHdrOutputMode,
+            onChanged: (
+              SettingsContext settingsContext,
+              VideoHdrOutputMode mode,
+            ) async {
+              await setVideoHdrOutputModeDual(settingsContext, mode);
             },
           ),
           // YouTube 显式画质目标（0=自动=默认策略：编码优先、≤1080p）。非 0 起播即选

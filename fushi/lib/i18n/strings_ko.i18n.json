@@ -3929,5 +3929,10 @@
   "onboarding_step_interconnect_action_desc": "이 기기를 다른 기기와 페어링해 같은 라이브러리를 공유하고 진도를 동기화합니다.",
   "onboarding_step_extension_action_desc": "브라우저 확장을 설치하고 Fushi에 연결하는 방법을 안내합니다. 웹페이지에서도 단어를 찾을 수 있게 됩니다.",
   "onboarding_step_fonts_action_desc": "자신의 글꼴 파일을 추가하고 언어마다 어떤 글꼴을 쓸지 지정합니다.",
-  "onboarding_pack_sources_hint": "GitHub, 공식 사이트, 예비 미러에서 동시에 조각을 나눠 내려받고 조각마다 체크섬을 확인합니다. 내려받는 동안 각 소스의 속도를 실측해 그 순간 가장 빠른 쪽에 더 많은 조각을 맡기므로, 여기서 고를 것은 없습니다."
+  "onboarding_pack_sources_hint": "GitHub, 공식 사이트, 예비 미러에서 동시에 조각을 나눠 내려받고 조각마다 체크섬을 확인합니다. 내려받는 동안 각 소스의 속도를 실측해 그 순간 가장 빠른 쪽에 더 많은 조각을 맡기므로, 여기서 고를 것은 없습니다.",
+  "video_setting_hdr_output": "HDR / 10비트 출력",
+  "video_setting_hdr_output_hint": "Windows 전용. «자동»은 디스플레이와 원본이 모두 HDR일 때 네이티브 동영상 창을 통해 HDR 디스플레이로 그대로 전달합니다. «항상»은 모든 동영상에 그 창을 사용합니다(10비트 출력). «끄기»는 표준 렌더러를 유지합니다.",
+  "video_setting_hdr_output_auto": "자동",
+  "video_setting_hdr_output_always": "항상",
+  "video_setting_hdr_output_off": "끄기"
 }

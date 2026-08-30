@@ -3929,5 +3929,10 @@
   "onboarding_step_interconnect_action_desc": "Associa questo dispositivo agli altri tuoi dispositivi per condividere un’unica libreria e mantenere sincronizzati i progressi.",
   "onboarding_step_extension_action_desc": "Mostra come installare l’estensione del browser e collegarla a Fushi, così puoi cercare le parole anche nelle pagine web.",
   "onboarding_step_fonts_action_desc": "Aggiungi i tuoi file di font e scegli quale usare per ciascuna lingua.",
-  "onboarding_pack_sources_hint": "Scaricato in spezzoni paralleli contemporaneamente da GitHub, dal sito ufficiale e da un mirror di riserva, con checksum su ogni spezzone. Fushi misura le sorgenti strada facendo e assegna più spezzoni a quella più veloce in quel momento, quindi qui non c’è nulla da scegliere."
+  "onboarding_pack_sources_hint": "Scaricato in spezzoni paralleli contemporaneamente da GitHub, dal sito ufficiale e da un mirror di riserva, con checksum su ogni spezzone. Fushi misura le sorgenti strada facendo e assegna più spezzoni a quella più veloce in quel momento, quindi qui non c’è nulla da scegliere.",
+  "video_setting_hdr_output": "Uscita HDR / 10 bit",
+  "video_setting_hdr_output_hint": "Solo Windows. «Automatico» passa le sorgenti HDR direttamente a uno schermo HDR tramite una finestra video nativa; «Sempre» usa quella finestra per ogni video (uscita a 10 bit); «Disattivato» mantiene il renderer standard.",
+  "video_setting_hdr_output_auto": "Automatico",
+  "video_setting_hdr_output_always": "Sempre",
+  "video_setting_hdr_output_off": "Disattivato"
 }

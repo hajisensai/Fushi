@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart'
+    show hdrHostActiveGlobal;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -178,8 +180,16 @@ class _FushiWindowsTitleBarState extends State<FushiWindowsTitleBar>
       valueListenable: FushiWindowsTitleBar._contentFullscreen,
       builder: (BuildContext context, bool contentFullscreen, Widget? child) {
         final bool hideFrame = contentFullscreen;
-        final Widget frame = ColoredBox(
-          color: colors.surface,
+        // HDR 直通（video_hdr_output.dart）：这层 surface 底色盖着整个 Navigator，宿主
+        // 窗激活时必须让开，否则视频洞透不到主窗后方的 libmpv 宿主窗。
+        final Widget frame = ValueListenableBuilder<bool>(
+          valueListenable: hdrHostActiveGlobal,
+          builder: (BuildContext context, bool hdrHost, Widget? column) {
+            return ColoredBox(
+              color: hdrHost ? Colors.transparent : colors.surface,
+              child: column,
+            );
+          },
           child: Column(
             // The frame is always wrapped in DragToResizeArea's Stack, which
             // hands its non-positioned child loose constraints. Stretch makes
@@ -188,8 +198,11 @@ class _FushiWindowsTitleBarState extends State<FushiWindowsTitleBar>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               if (!hideFrame)
-                SizedBox(
+                Container(
                   height: FushiWindowsTitleBar.height,
+                  // The caption row keeps its own surface fill: only the page
+                  // area below may go transparent for HDR passthrough.
+                  color: colors.surface,
                   child: Row(
                     children: <Widget>[
                       Expanded(

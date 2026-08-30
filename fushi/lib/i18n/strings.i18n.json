@@ -3929,5 +3929,10 @@
   "onboarding_step_interconnect_action_desc": "Pair this device with your other devices to share one library and keep progress in sync.",
   "onboarding_step_extension_action_desc": "Shows how to install the browser extension and connect it to Fushi, so you can look words up on web pages too.",
   "onboarding_step_fonts_action_desc": "Add your own font files and pick which one each language uses.",
-  "onboarding_pack_sources_hint": "Downloaded in parallel chunks from GitHub, the official site and a backup mirror at the same time, each chunk checksummed. Fushi measures the sources as it goes and gives more chunks to whichever is fastest right now, so there is nothing to choose here."
+  "onboarding_pack_sources_hint": "Downloaded in parallel chunks from GitHub, the official site and a backup mirror at the same time, each chunk checksummed. Fushi measures the sources as it goes and gives more chunks to whichever is fastest right now, so there is nothing to choose here.",
+  "video_setting_hdr_output": "HDR / 10-bit output",
+  "video_setting_hdr_output_hint": "Windows only. Auto hands HDR sources straight to an HDR display through a native video window; Always uses that window for every video (10-bit output); Off keeps the standard renderer.",
+  "video_setting_hdr_output_auto": "Auto",
+  "video_setting_hdr_output_always": "Always",
+  "video_setting_hdr_output_off": "Off"
 }

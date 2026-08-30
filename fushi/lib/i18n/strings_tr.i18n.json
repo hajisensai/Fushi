@@ -3929,5 +3929,10 @@
   "onboarding_step_interconnect_action_desc": "Bu cihazı diğer cihazlarınla eşler; tek bir kitaplığı paylaşır ve ilerlemeyi eşitler.",
   "onboarding_step_extension_action_desc": "Tarayıcı uzantısını nasıl kurup Fushi’ye bağlayacağını gösterir; böylece web sayfalarında da kelime arayabilirsin.",
   "onboarding_step_fonts_action_desc": "Kendi yazı tipi dosyalarını ekle ve her dilin hangisini kullanacağını seç.",
-  "onboarding_pack_sources_hint": "Aynı anda GitHub’dan, resmî siteden ve bir yedek aynadan paralel parçalar hâlinde indirilir; her parça sağlama toplamıyla doğrulanır. Fushi kaynakları yol boyunca ölçer ve o an en hızlı olana daha çok parça verir, bu yüzden burada seçilecek bir şey yok."
+  "onboarding_pack_sources_hint": "Aynı anda GitHub’dan, resmî siteden ve bir yedek aynadan paralel parçalar hâlinde indirilir; her parça sağlama toplamıyla doğrulanır. Fushi kaynakları yol boyunca ölçer ve o an en hızlı olana daha çok parça verir, bu yüzden burada seçilecek bir şey yok.",
+  "video_setting_hdr_output": "HDR / 10 bit çıkış",
+  "video_setting_hdr_output_hint": "Yalnızca Windows. «Otomatik», HDR kaynakları yerel bir video penceresi üzerinden doğrudan HDR ekrana verir; «Her zaman» bu pencereyi tüm videolar için kullanır (10 bit çıkış); «Kapalı» standart işleyiciyi korur.",
+  "video_setting_hdr_output_auto": "Otomatik",
+  "video_setting_hdr_output_always": "Her zaman",
+  "video_setting_hdr_output_off": "Kapalı"
 }

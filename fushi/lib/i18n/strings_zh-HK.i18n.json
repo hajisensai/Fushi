@@ -3929,5 +3929,10 @@
   "onboarding_step_interconnect_action_desc": "把這台裝置和你的其它裝置配對，共用同一個庫並同步進度。",
   "onboarding_step_extension_action_desc": "告訴你怎麼裝瀏覽器擴充功能並連上 Fushi，之後在網頁上也能查詞。",
   "onboarding_step_fonts_action_desc": "匯入自己的字型檔案，並給每種語言指定用哪個。",
-  "onboarding_pack_sources_hint": "同時從 GitHub、官網和備用鏡像分片並發下載，每片都校驗。下載過程中會實測各來源速度，哪家快就多分給哪家，所以這裏不用你選。"
+  "onboarding_pack_sources_hint": "同時從 GitHub、官網和備用鏡像分片並發下載，每片都校驗。下載過程中會實測各來源速度，哪家快就多分給哪家，所以這裏不用你選。",
+  "video_setting_hdr_output": "HDR / 10-bit 輸出",
+  "video_setting_hdr_output_hint": "僅 Windows。「自動」在顯示器與片源都是 HDR 時把畫面經原生影片視窗直通；「始終」對所有影片都用原生視窗（10-bit 輸出）；「關閉」沿用常規算繪。",
+  "video_setting_hdr_output_auto": "自動",
+  "video_setting_hdr_output_always": "始終",
+  "video_setting_hdr_output_off": "關閉"
 }
