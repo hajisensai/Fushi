@@ -33,8 +33,10 @@ class FushiFocusRing extends StatefulWidget {
 class _FushiFocusRingState extends State<FushiFocusRing>
     with WidgetsBindingObserver {
   final FocusManager _fm = FocusManager.instance;
+  final GlobalKey _stackKey = GlobalKey(debugLabel: 'fushi-focus-ring-stack');
 
-  // Cached focus rectangle, recomputed in a post-frame callback only. NEVER
+  // Cached focus rectangle in this ring Stack's LOCAL coordinate space,
+  // recomputed in a post-frame callback only. NEVER
   // read render geometry during build: the focused node's element can be
   // *inactive* mid-build (e.g. a route swap at startup), and findRenderObject()
   // asserts on inactive elements ("Cannot get renderObject of inactive
@@ -243,51 +245,46 @@ class _FushiFocusRingState extends State<FushiFocusRing>
     // window edge — clipped, and occluded by any overlaid chrome (e.g. a reader
     // bottom bar). Such a node draws its own inset focus indicator instead.
     final views = WidgetsBinding.instance.platformDispatcher.views;
-    if (views.isEmpty) return rect; // no view to size against — keep the ring
-    final view = views.first;
-    final double sw = view.physicalSize.width / view.devicePixelRatio;
-    final double sh = view.physicalSize.height / view.devicePixelRatio;
-    if (rect.width >= sw * 0.92 && rect.height >= sh * 0.92) return null;
-    return rect;
-  }
+    if (views.isNotEmpty) {
+      final view = views.first;
+      final double sw = view.physicalSize.width / view.devicePixelRatio;
+      final double sh = view.physicalSize.height / view.devicePixelRatio;
+      if (rect.width >= sw * 0.92 && rect.height >= sh * 0.92) return null;
+    }
 
-  // Scale a rect about the top-left origin (matches FushiAppUiScale's
-  // Transform.scale alignment: topLeft). Used to map a global-coord ring rect
-  // into this widget's scaled-down local canvas.
-  static Rect _scaleRect(Rect rect, double factor) => Rect.fromLTWH(
-        rect.left * factor,
-        rect.top * factor,
-        rect.width * factor,
-        rect.height * factor,
-      );
+    // BUG-1963: the ring Stack is not guaranteed to start at the view origin.
+    // The Windows custom title bar wraps the scaled app and places this Stack
+    // below its caption row. Treating [rect]'s global coordinates as local ones
+    // therefore added the title-bar height a second time and drew the ring one
+    // row below the focused subtitle-toolbar button. Convert both corners into
+    // the actual Stack coordinate space; this also preserves any transform
+    // between the view and the Stack instead of assuming scale is the only one.
+    final BuildContext? stackContext = _stackKey.currentContext;
+    if (stackContext == null || !stackContext.mounted) return null;
+    final RenderObject? stackObject = stackContext.findRenderObject();
+    if (stackObject is! RenderBox ||
+        !stackObject.hasSize ||
+        !stackObject.attached) {
+      return null;
+    }
+    return Rect.fromPoints(
+      stackObject.globalToLocal(rect.topLeft),
+      stackObject.globalToLocal(rect.bottomRight),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color color = Theme.of(context).colorScheme.primary;
-    // _rect comes from RenderBox.localToGlobal — it is in GLOBAL (view) coords.
-    // FushiFocusRing sits INSIDE FushiAppUiScale's Transform.scale (alignment
-    // topLeft), so this Stack's local coord system is the un-scaled logical
-    // canvas: local = global / scale. Build the 2px-inflated ring in GLOBAL
-    // coords (so the visual gap around the control stays a constant 2px at any
-    // scale), then map the whole rect back to local so the Transform re-magnifies
-    // it onto the focused control. At scale 1.0 (no Transform) this is a no-op,
-    // matching the pre-Transform behaviour. Reading the scale here also makes
-    // build() depend on _AppUiScaleScope, so a scale change rebuilds the ring.
-    //
-    // ASSUMPTION: the ONLY transform between this Stack and any focusable is that
-    // single app-level Transform.scale, so `local = global / scale` holds exactly.
-    // True for the app tree (FushiAppUiScale → FushiFocusRoot → FushiFocusRing
-    // → Navigator; routes/dialogs add offsets, never another scale). If a nested
-    // Transform/InteractiveViewer is ever placed between the ring and a focusable,
-    // this single-scale mapping breaks — switch to localToGlobal(ancestor: <this
-    // Stack's RenderObject>) to resolve the focused rect in local space directly.
+    // _rect is already expressed in this Stack's local coordinate system. The
+    // Stack sits inside FushiAppUiScale, so inflate by 2 / scale to retain a
+    // constant 2px visual gap after the outer transform magnifies it.
     final double scale = FushiAppUiScale.of(context);
-    final Rect? globalRect = widget.enabled ? _rect : null;
-    final Rect? ringRect = globalRect == null
-        ? null
-        : _scaleRect(globalRect.inflate(2), 1 / scale);
+    final Rect? localRect = widget.enabled ? _rect : null;
+    final Rect? ringRect = localRect?.inflate(2 / scale);
     return Stack(
+      key: _stackKey,
       children: <Widget>[
         // 滚动 / 动画 / 数据加载 reflow 期间环不滞后：traditional 模式下
         // [_armFrameTracker] 逐帧跟踪焦点控件几何（BUG-1300），旧的

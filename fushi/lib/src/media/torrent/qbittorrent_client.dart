@@ -495,6 +495,7 @@ class QBittorrentClient {
     String? savePath,
     bool sequentialDownload = false,
     bool firstLastPiecePrio = false,
+    bool startPaused = false,
   }) async {
     if (bytes.isEmpty) return false;
     final http.Response? res = await _request(
@@ -505,6 +506,9 @@ class QBittorrentClient {
         if (savePath != null) 'savepath': savePath,
         if (sequentialDownload) 'sequentialDownload': 'true',
         if (firstLastPiecePrio) 'firstLastPiecePrio': 'true',
+        // qB 4.x 使用 paused，5.x 政名 stopped；同时发送可覆盖两代 WebUI。
+        if (startPaused) 'paused': 'true',
+        if (startPaused) 'stopped': 'true',
       },
       torrentBytes: bytes,
       torrentFileName: fileName,
@@ -679,6 +683,22 @@ class QBittorrentClient {
     );
     if (res == null || res.statusCode != 200) return null;
     return parseQbTrackers(res.body);
+  }
+
+  /// 给一个种子追加 Tracker；多个 URL 按 qB Web API 要求以换行分隔。
+  Future<bool> addTrackers(String hash, Iterable<String> trackerUrls) async {
+    final List<String> urls = trackerUrls
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (hash.isEmpty || urls.isEmpty) return false;
+    final http.Response? res = await _request(
+      'POST',
+      '/api/v2/torrents/addTrackers',
+      form: <String, String>{'hash': hash, 'urls': urls.join('\n')},
+    );
+    return res != null && isQbActionSuccess(res.statusCode);
   }
 
   /// TODO-2482：某种子每个文件的优先级（按 index 对位）：复用
