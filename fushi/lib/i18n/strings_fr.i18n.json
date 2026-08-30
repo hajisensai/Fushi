@@ -3895,5 +3895,10 @@
   "floating_lyric_transparency": "Basculer l’arrière-plan",
   "floating_lyric_topmost": "Garder au premier plan",
   "gal_hook_fold_progressive_lines": "Fusionner les répliques découpées",
-  "gal_hook_fold_progressive_lines_hint": "Certains moteurs redessinent toute la ligne à chaque clic, si bien qu'une même ligne est capturée plusieurs fois. Replie ces instantanés en une seule ligne."
+  "gal_hook_fold_progressive_lines_hint": "Certains moteurs redessinent toute la ligne à chaque clic, si bien qu'une même ligne est capturée plusieurs fois. Replie ces instantanés en une seule ligne.",
+  "gal_hook_ingame_lookup_engine_unsupported": "Ce moteur de jeu ne prend pas encore en charge la recherche en jeu",
+  "gal_hook_ingame_lookup_version_unsupported": "Cette version du jeu ne figure pas encore dans la liste prise en charge",
+  "gal_hook_ingame_lookup_exe_hash_copy": "Copier le SHA-256 de l'exécutable du jeu",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "Impossible de lire l'exécutable du jeu",
+  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 de l'exécutable copié"
 }

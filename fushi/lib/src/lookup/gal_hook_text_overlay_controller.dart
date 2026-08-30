@@ -270,6 +270,9 @@ class GalHookTextOverlayController extends ChangeNotifier {
       // 游戏内查词：hook 报命中 / 转发卡片内输入，两条都直通编排器，本控制器不解释。
       onGalLookupHit: _ingameLookup.handleHit,
       onGalLookupInput: _ingameLookup.handleInput,
+      // 查词准入（v19）：与开关正交，runner 在会话在的时候一直报。设置页据此决定
+      // 「游戏内查词」那一行灰不灰、说什么。
+      onGalLookupAdmission: _ingameLookup.handleAdmission,
     );
     _session.addListener(_scheduleSync);
     _scheduleSync();

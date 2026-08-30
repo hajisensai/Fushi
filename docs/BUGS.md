@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1823 条。点号进各自文件。
+> 共 1824 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -45,6 +45,7 @@
 | [BUG-1938](bugs/BUG-1938-live-cue-seek-duplicate.md) | ✅ | ✅ | 实时采集轨在来回跳转后同一句重复入轨 |
 | [BUG-1937](bugs/BUG-1937-download-tasks-kind-filter.md) | ✅ | ✅ | 下载任务面板缺少类型筛选 |
 | [BUG-1936](bugs/BUG-1936-downloads-discovery-queue-invisible.md) | ✅ | ✅ | 发现页直链下载（游戏等）提示已加入下载，下载页任务 tab 却不显示 |
+| [BUG-1935](bugs/BUG-1935-gal-ingame-lookup-no-engine-gating.md) | ✅ | ✅ | 内嵌查词在 Siglus/白2 上 hash 钉定不中时静默失效且无任何提示 |
 | [BUG-1934](bugs/BUG-1934-tombstone-partial-read-baseline.md) | ✅ | ✅ | 远端删除墓碑单条读失败被跳过，基线照常推进 → 该条删除永久不再提示 |
 | [BUG-1932](bugs/BUG-1932-lookup-pending-dismiss-freezes-popup.md) | ✅ | ✅ | 挂起期关栈后查词界面卡死、播放控件再也唤不回 |
 | [BUG-1931](bugs/BUG-1931-backup-archive-cannot-be-deleted.md) | ✅ | ✅ | 导出的备份包无法删除，且移动端从不清理 |

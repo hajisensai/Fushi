@@ -3895,5 +3895,10 @@
   "floating_lyric_transparency": "Alternar o fundo",
   "floating_lyric_topmost": "Manter sempre visível",
   "gal_hook_fold_progressive_lines": "Unir linhas de diálogo divididas",
-  "gal_hook_fold_progressive_lines_hint": "Alguns motores redesenham a linha inteira a cada clique, então a mesma linha é capturada várias vezes. Dobre esses instantâneos em uma única linha."
+  "gal_hook_fold_progressive_lines_hint": "Alguns motores redesenham a linha inteira a cada clique, então a mesma linha é capturada várias vezes. Dobre esses instantâneos em uma única linha.",
+  "gal_hook_ingame_lookup_engine_unsupported": "Este motor de jogo ainda não oferece suporte à busca dentro do jogo",
+  "gal_hook_ingame_lookup_version_unsupported": "Esta versão do jogo ainda não está na lista de compatíveis",
+  "gal_hook_ingame_lookup_exe_hash_copy": "Copiar o SHA-256 do executável do jogo",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "Não foi possível ler o executável do jogo",
+  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 do executável copiado"
 }

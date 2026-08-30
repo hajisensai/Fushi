@@ -176,8 +176,105 @@ class GalLookupInput {
   }
 }
 
+/// 游戏内查词**准入**：本局游戏到底能不能游戏内查词，不能的话卡在哪一步。
+///
+/// 与「投帧失败」（`GalLookupResult.error`）是两件事：那个回答「这一帧为什么没进去」，
+/// 这个回答「这一局压根有没有资格」。协议真值是 `voice_hook_ipc.h` 的
+/// `LookupAdmissionState`（v19），host 侧只做单值映射，**不做位或、不排优先级**——
+/// 状态机同一时刻只有一个状态，能被表达出来的不可能状态就是 bug 的来源。
+enum GalLookupAdmissionState {
+  /// 还不知道：helper 还没起来、或 adapter 还没上报。
+  ///
+  /// 🔴 **绝不能**当成「不支持」：每局游戏启动的头几百毫秒都停在这里，混淆两者等于
+  /// 每次启动都误报一次"本引擎不支持"的原因文案。
+  unknown(0),
+
+  /// 命中的引擎 adapter 压根没做查词传感器。等新版本，不是 bug。
+  engineUnsupported(1),
+
+  /// 引擎做了传感器，但当前游戏 exe 不在它的精确 SHA-256 白名单里
+  /// （hash-pinned fail closed）。此时 [GalLookupAdmission.executableSha256] 有值，
+  /// 必须显示给用户——那是他报版本的唯一凭据。
+  identityRejected(2),
+
+  /// 身份通过，传感器还没装上（还在等开关 / 主窗 / D3D 设备 / 字节签名等门）。
+  identityAccepted(3),
+
+  /// 传感器已装。不等于"卡片一定出得来"——几何有没有真采到是另一回事。
+  sensorInstalled(4);
+
+  const GalLookupAdmissionState(this.wireValue);
+
+  /// 与 `voice_hook_ipc.h::LookupAdmissionState` 逐值对应的线上值。
+  final int wireValue;
+
+  /// 这个状态是否把本局的游戏内查词整个挡在门外（UI 据此换副标题说明原因、并把
+  /// 「复制 exe 摘要」那一行显示出来；**开关本身不置灰**，理由见 settings_schema_game.dart）。
+  ///
+  /// 🔴 判据只有这一份，别在 UI 层各写一遍。尤其 [unknown] **不在其内**：每局游戏
+  /// 启动的头几百毫秒都停在 unknown（helper 还没起来 / adapter 还没上报），把它算作
+  /// "挡住"等于每次启动都误报一次"本引擎不支持"。[identityAccepted] 与
+  /// [sensorInstalled] 同理——那是"能用/还在等其它门"，不是"没资格"。
+  bool get blocksLookup =>
+      this == engineUnsupported || this == identityRejected;
+
+  /// 本构建不认识的值一律回落 [unknown]——绝不猜。新 helper 加了状态而旧 app 去
+  /// 硬猜，猜错的方向恰好是"说它不支持"，那正是最伤的误报。
+  static GalLookupAdmissionState fromWire(int value) {
+    for (final GalLookupAdmissionState state in values) {
+      if (state.wireValue == value) return state;
+    }
+    return unknown;
+  }
+}
+
+/// 一份准入快照。值语义：内容相同即相等，免得 ValueNotifier 每拍都通知。
+@immutable
+class GalLookupAdmission {
+  const GalLookupAdmission({
+    required this.state,
+    required this.executableSha256,
+  });
+
+  /// 会话开始前 / 会话结束后的复位值。
+  static const GalLookupAdmission unknown = GalLookupAdmission(
+    state: GalLookupAdmissionState.unknown,
+    executableSha256: '',
+  );
+
+  final GalLookupAdmissionState state;
+
+  /// 当前游戏主 exe 的小写十六进制 SHA-256；只有
+  /// [GalLookupAdmissionState.identityRejected] 时保证有值，其余状态为空串。
+  final String executableSha256;
+
+  static GalLookupAdmission fromMap(Map<Object?, Object?> map) {
+    return GalLookupAdmission(
+      state: GalLookupAdmissionState.fromWire(
+        (map['state'] as num?)?.toInt() ?? 0,
+      ),
+      executableSha256: map['executableSha256']?.toString() ?? '',
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is GalLookupAdmission &&
+      other.state == state &&
+      other.executableSha256 == executableSha256;
+
+  @override
+  int get hashCode => Object.hash(state, executableSha256);
+
+  @override
+  String toString() =>
+      'GalLookupAdmission(${state.name}, sha=$executableSha256)';
+}
+
 typedef GalLookupHitHandler = FutureOr<void> Function(GalLookupHit hit);
 typedef GalLookupInputHandler = FutureOr<void> Function(GalLookupInput input);
+typedef GalLookupAdmissionHandler =
+    FutureOr<void> Function(GalLookupAdmission admission);
 
 /// 游戏内查词 Dart→runner 调用的应答。
 ///
@@ -275,6 +372,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
   static GalHookTextBoundsHandler? _onBoundsChanged;
   static GalLookupHitHandler? _onGalLookupHit;
   static GalLookupInputHandler? _onGalLookupInput;
+  static GalLookupAdmissionHandler? _onGalLookupAdmission;
 
   static void setEventHandlers({
     GalHookTextLookupHandler? onLookupText,
@@ -290,6 +388,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     GalHookTextBoundsHandler? onBoundsChanged,
     GalLookupHitHandler? onGalLookupHit,
     GalLookupInputHandler? onGalLookupInput,
+    GalLookupAdmissionHandler? onGalLookupAdmission,
   }) {
     _onLookupText = onLookupText;
     _onToggleFollow = onToggleFollow;
@@ -304,6 +403,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     _onBoundsChanged = onBoundsChanged;
     _onGalLookupHit = onGalLookupHit;
     _onGalLookupInput = onGalLookupInput;
+    _onGalLookupAdmission = onGalLookupAdmission;
     _instance.channel.setMethodCallHandler(_handleNativeCall);
   }
 
@@ -321,6 +421,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     _onBoundsChanged = null;
     _onGalLookupHit = null;
     _onGalLookupInput = null;
+    _onGalLookupAdmission = null;
     _instance.channel.setMethodCallHandler(null);
   }
 
@@ -378,6 +479,11 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
         break;
       case 'onGalLookupInput':
         await _onGalLookupInput?.call(GalLookupInput.fromMap(args));
+        break;
+      // 准入快照：runner 只在 lookup_admission_seq 变过时推，且与查词开关正交
+      // （开关关着照样推）。不做任何过滤——"还不知道"也是必须送达的状态。
+      case 'onGalLookupAdmission':
+        await _onGalLookupAdmission?.call(GalLookupAdmission.fromMap(args));
         break;
       default:
         break;

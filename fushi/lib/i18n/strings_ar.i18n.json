@@ -3895,5 +3895,10 @@
   "floating_lyric_transparency": "تبديل الخلفية",
   "floating_lyric_topmost": "الإبقاء في المقدمة",
   "gal_hook_fold_progressive_lines": "دمج أسطر الحوار المقسّمة",
-  "gal_hook_fold_progressive_lines_hint": "بعض المحرّكات تعيد رسم السطر كاملًا مع كل نقرة، فيُلتقط السطر الواحد عدة مرات. اطوِ تلك اللقطات في سطر واحد."
+  "gal_hook_fold_progressive_lines_hint": "بعض المحرّكات تعيد رسم السطر كاملًا مع كل نقرة، فيُلتقط السطر الواحد عدة مرات. اطوِ تلك اللقطات في سطر واحد.",
+  "gal_hook_ingame_lookup_engine_unsupported": "محرك اللعبة هذا لا يدعم البحث داخل اللعبة بعد",
+  "gal_hook_ingame_lookup_version_unsupported": "إصدار اللعبة هذا ليس ضمن القائمة المدعومة بعد",
+  "gal_hook_ingame_lookup_exe_hash_copy": "نسخ SHA-256 لملف اللعبة التنفيذي",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "تعذّرت قراءة ملف اللعبة التنفيذي",
+  "gal_hook_ingame_lookup_exe_hash_copied": "تم نسخ SHA-256 لملف اللعبة التنفيذي"
 }

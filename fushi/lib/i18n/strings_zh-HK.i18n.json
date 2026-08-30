@@ -3895,5 +3895,10 @@
   "floating_lyric_transparency": "切換底板",
   "floating_lyric_topmost": "保持置頂",
   "gal_hook_fold_progressive_lines": "把分開顯示的台詞合成一條",
-  "gal_hook_fold_progressive_lines_hint": "有些引擎每點一次就重畫整行，於是同一行被抓到好幾次。把這些快照摺成一條。"
+  "gal_hook_fold_progressive_lines_hint": "有些引擎每點一次就重畫整行，於是同一行被抓到好幾次。把這些快照摺成一條。",
+  "gal_hook_ingame_lookup_engine_unsupported": "目前遊戲引擎不支援遊戲內查詞",
+  "gal_hook_ingame_lookup_version_unsupported": "目前遊戲版本未在支援清單中",
+  "gal_hook_ingame_lookup_exe_hash_copy": "複製遊戲 exe 的 SHA-256",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "無法讀取遊戲 exe（可能權限不足）",
+  "gal_hook_ingame_lookup_exe_hash_copied": "已複製 exe 的 SHA-256"
 }

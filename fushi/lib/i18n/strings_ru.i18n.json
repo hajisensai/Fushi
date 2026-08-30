@@ -3895,5 +3895,10 @@
   "floating_lyric_transparency": "Переключить фон",
   "floating_lyric_topmost": "Поверх других окон",
   "gal_hook_fold_progressive_lines": "Объединять разбитые строки диалога",
-  "gal_hook_fold_progressive_lines_hint": "Некоторые движки перерисовывают строку целиком при каждом клике, поэтому одна строка захватывается несколько раз. Сворачивать такие снимки в одну строку."
+  "gal_hook_fold_progressive_lines_hint": "Некоторые движки перерисовывают строку целиком при каждом клике, поэтому одна строка захватывается несколько раз. Сворачивать такие снимки в одну строку.",
+  "gal_hook_ingame_lookup_engine_unsupported": "Этот движок игры пока не поддерживает поиск внутри игры",
+  "gal_hook_ingame_lookup_version_unsupported": "Эта версия игры пока не в списке поддерживаемых",
+  "gal_hook_ingame_lookup_exe_hash_copy": "Скопировать SHA-256 исполняемого файла игры",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "Не удалось прочитать исполняемый файл игры",
+  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 исполняемого файла скопирован"
 }

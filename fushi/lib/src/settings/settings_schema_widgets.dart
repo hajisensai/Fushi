@@ -152,7 +152,8 @@ class SettingsSchemaItem extends StatelessWidget {
   Widget _action(SettingsActionItem action) {
     return AdaptiveSettingsRow(
       title: action.title,
-      subtitle: action.subtitle,
+      // resolveSubtitle：运行期状态（如游戏 exe 摘要）在这里求值。
+      subtitle: action.resolveSubtitle(settingsContext),
       icon: action.icon,
       showIcon: showIcons,
       onTap: () async => action.onTap(settingsContext),
@@ -163,7 +164,10 @@ class SettingsSchemaItem extends StatelessWidget {
     final bool value = toggle.value(settingsContext);
     return AdaptiveSettingsSwitchRow(
       title: toggle.title,
-      subtitle: toggle.subtitle,
+      // resolveSubtitle：运行期状态说明在这里求值（schema 树本身是缓存的常量树）。
+      // 「本局用不了」这类能力信息只走副标题，不去禁用开关——开关表达的是用户意图，
+      // 与当前会话有没有能力是两件正交的事。
+      subtitle: toggle.resolveSubtitle(settingsContext),
       icon: toggle.icon,
       showIcon: showIcons,
       value: value,

@@ -3895,5 +3895,10 @@
   "floating_lyric_transparency": "배경 전환",
   "floating_lyric_topmost": "항상 위에 표시",
   "gal_hook_fold_progressive_lines": "나뉜 대사 줄 합치기",
-  "gal_hook_fold_progressive_lines_hint": "클릭할 때마다 줄 전체를 다시 그리는 엔진이 있어 같은 줄이 여러 번 캡처됩니다. 그 스냅숏들을 한 줄로 접습니다."
+  "gal_hook_fold_progressive_lines_hint": "클릭할 때마다 줄 전체를 다시 그리는 엔진이 있어 같은 줄이 여러 번 캡처됩니다. 그 스냅숏들을 한 줄로 접습니다.",
+  "gal_hook_ingame_lookup_engine_unsupported": "이 게임 엔진은 아직 인게임 사전 검색을 지원하지 않습니다",
+  "gal_hook_ingame_lookup_version_unsupported": "이 게임 버전은 아직 지원 목록에 없습니다",
+  "gal_hook_ingame_lookup_exe_hash_copy": "게임 실행 파일의 SHA-256 복사",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "게임 실행 파일을 읽을 수 없습니다 (권한 부족일 수 있음)",
+  "gal_hook_ingame_lookup_exe_hash_copied": "실행 파일의 SHA-256을 복사했습니다"
 }

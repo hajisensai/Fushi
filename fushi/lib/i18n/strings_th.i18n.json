@@ -3895,5 +3895,10 @@
   "floating_lyric_transparency": "สลับพื้นหลัง",
   "floating_lyric_topmost": "อยู่ด้านบนเสมอ",
   "gal_hook_fold_progressive_lines": "รวมบรรทัดบทสนทนาที่ถูกแบ่ง",
-  "gal_hook_fold_progressive_lines_hint": "บางเอนจินวาดทั้งบรรทัดใหม่ทุกครั้งที่คลิก ทำให้บรรทัดเดียวถูกเก็บหลายครั้ง ให้ยุบสแนปช็อตเหล่านั้นเป็นบรรทัดเดียว"
+  "gal_hook_fold_progressive_lines_hint": "บางเอนจินวาดทั้งบรรทัดใหม่ทุกครั้งที่คลิก ทำให้บรรทัดเดียวถูกเก็บหลายครั้ง ให้ยุบสแนปช็อตเหล่านั้นเป็นบรรทัดเดียว",
+  "gal_hook_ingame_lookup_engine_unsupported": "เอนจินเกมนี้ยังไม่รองรับการเปิดพจนานุกรมในเกม",
+  "gal_hook_ingame_lookup_version_unsupported": "เกมเวอร์ชันนี้ยังไม่อยู่ในรายการที่รองรับ",
+  "gal_hook_ingame_lookup_exe_hash_copy": "คัดลอก SHA-256 ของไฟล์เกม",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "อ่านไฟล์เกมไม่ได้",
+  "gal_hook_ingame_lookup_exe_hash_copied": "คัดลอก SHA-256 ของไฟล์เกมแล้ว"
 }

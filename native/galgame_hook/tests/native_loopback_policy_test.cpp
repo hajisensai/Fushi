@@ -29,7 +29,7 @@ void Check(bool condition, const char* message) {
 
 void TestV16AndV17TailAbiAndDefaultDeny() {
   SharedHeader header{};
-  Check(fushi_voice_hook::kSharedVersion == 18, "shared ABI must be v18");
+  Check(fushi_voice_hook::kSharedVersion == 19, "shared ABI must be v19");
   Check(offsetof(SharedHeader, native_loopback_request_seq) ==
             offsetof(SharedHeader, native_loopback_requested) + 4,
         "request_seq must follow requested");
@@ -44,11 +44,18 @@ void TestV16AndV17TailAbiAndDefaultDeny() {
   Check(offsetof(SharedHeader, hook_module_sha256) ==
             offsetof(SharedHeader, native_loopback_applied_seq) + 4,
         "v17 digest must directly follow the final v16 word");
+  // v19 在 v17 摘要之后追加了查词准入三字段，所以尾部不再是摘要。这里改锁"v16 policy
+  // 与 v17 摘要之间没有任何东西长出来"，以及"v19 是紧接摘要的纯追加"——这条守卫要防的
+  // 是**把字段插进既有布局**，不是禁止将来继续尾追加。
+  Check(offsetof(SharedHeader, lookup_admission) >=
+            offsetof(SharedHeader, hook_module_sha256) +
+                fushi_voice_hook::kHookModuleDigestChars,
+        "v19 admission must be appended after the v17 digest, never inserted");
   Check(sizeof(SharedHeader) ==
-            ((offsetof(SharedHeader, hook_module_sha256) +
+            ((offsetof(SharedHeader, lookup_executable_sha256) +
               fushi_voice_hook::kHookModuleDigestChars + 7u) /
              8u) * 8u,
-        "v17 digest must be the exact SharedHeader tail (only 8-align padding)");
+        "v19 admission digest must be the exact SharedHeader tail (only 8-align padding)");
   Check(fushi_voice_hook::AtomicLoadShared32(
             &header.native_loopback_requested) ==
             fushi_voice_hook::kNativeLoopbackDeny,

@@ -3895,5 +3895,10 @@
   "floating_lyric_transparency": "Arka planı değiştir",
   "floating_lyric_topmost": "Her zaman üstte tut",
   "gal_hook_fold_progressive_lines": "Bölünmüş diyalog satırlarını birleştir",
-  "gal_hook_fold_progressive_lines_hint": "Bazı motorlar her tıklamada satırın tamamını yeniden çizer, bu yüzden tek bir satır birkaç kez yakalanır. Bu anlık görüntüleri tek satırda topla."
+  "gal_hook_fold_progressive_lines_hint": "Bazı motorlar her tıklamada satırın tamamını yeniden çizer, bu yüzden tek bir satır birkaç kez yakalanır. Bu anlık görüntüleri tek satırda topla.",
+  "gal_hook_ingame_lookup_engine_unsupported": "Bu oyun motoru henüz oyun içi sözlük aramasını desteklemiyor",
+  "gal_hook_ingame_lookup_version_unsupported": "Bu oyun sürümü henüz desteklenenler listesinde değil",
+  "gal_hook_ingame_lookup_exe_hash_copy": "Oyun çalıştırılabilir dosyasının SHA-256 değerini kopyala",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "Oyun çalıştırılabilir dosyası okunamadı",
+  "gal_hook_ingame_lookup_exe_hash_copied": "Çalıştırılabilir dosyanın SHA-256 değeri kopyalandı"
 }

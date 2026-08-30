@@ -3895,5 +3895,10 @@
   "floating_lyric_transparency": "Bật/tắt nền",
   "floating_lyric_topmost": "Luôn hiển thị trên cùng",
   "gal_hook_fold_progressive_lines": "Gộp các dòng thoại bị chia nhỏ",
-  "gal_hook_fold_progressive_lines_hint": "Một số engine vẽ lại cả dòng mỗi lần nhấp, nên cùng một dòng bị bắt nhiều lần. Gộp các ảnh chụp đó thành một dòng."
+  "gal_hook_fold_progressive_lines_hint": "Một số engine vẽ lại cả dòng mỗi lần nhấp, nên cùng một dòng bị bắt nhiều lần. Gộp các ảnh chụp đó thành một dòng.",
+  "gal_hook_ingame_lookup_engine_unsupported": "Engine trò chơi này chưa hỗ trợ tra từ trong trò chơi",
+  "gal_hook_ingame_lookup_version_unsupported": "Phiên bản trò chơi này chưa có trong danh sách được hỗ trợ",
+  "gal_hook_ingame_lookup_exe_hash_copy": "Sao chép SHA-256 của tệp thực thi trò chơi",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "Không đọc được tệp thực thi trò chơi",
+  "gal_hook_ingame_lookup_exe_hash_copied": "Đã sao chép SHA-256 của tệp thực thi"
 }

@@ -3895,5 +3895,10 @@
   "floating_lyric_transparency": "Toggle the background",
   "floating_lyric_topmost": "Keep on top",
   "gal_hook_fold_progressive_lines": "Merge split dialogue lines",
-  "gal_hook_fold_progressive_lines_hint": "Some engines redraw the whole line on every click, so one line is captured several times. Fold those snapshots into a single line."
+  "gal_hook_fold_progressive_lines_hint": "Some engines redraw the whole line on every click, so one line is captured several times. Fold those snapshots into a single line.",
+  "gal_hook_ingame_lookup_engine_unsupported": "This game engine has no in-game lookup sensor yet",
+  "gal_hook_ingame_lookup_version_unsupported": "This game version is not on the supported list yet",
+  "gal_hook_ingame_lookup_exe_hash_copy": "Copy game executable SHA-256",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "Could not read the game executable",
+  "gal_hook_ingame_lookup_exe_hash_copied": "Executable SHA-256 copied"
 }
