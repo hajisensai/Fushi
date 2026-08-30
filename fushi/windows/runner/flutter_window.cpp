@@ -635,6 +635,7 @@ bool FlutterWindow::OnCreate() {
   RegisterGlobalLookupChannel();
   RegisterForegroundSelectionChannel();
   RegisterWindowCaptureChannel();
+  RegisterHdrVideoHostChannel();
   RegisterAudioLoopbackChannel();
   RegisterVoiceHookChannel();
   RegisterMagpieChannel();
@@ -2405,6 +2406,75 @@ void FlutterWindow::RegisterVoiceHookChannel() {
 // Magpie 缩放状态监听（仅 Windows）。Magpie 用 RegisterWindowMessage 注册的广播消息
 // "MagpieScalingChanged" 通知全系统顶层窗口缩放状态变化；本 runner 只读不回，收到后
 // 经 app.fushi.reader/magpie channel 把事件推给 Dart。
+void FlutterWindow::RegisterHdrVideoHostChannel() {
+  hdr_video_host_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.fushi/hdr_video_host",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  hdr_video_host_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        const std::string& method = call.method_name();
+        if (method == "create") {
+          if (!hdr_video_host_) {
+            hdr_video_host_ =
+                std::make_unique<fushi::HdrVideoHostWindow>(GetHandle());
+          }
+          const HWND host = hdr_video_host_->Create();
+          result->Success(flutter::EncodableValue(
+              static_cast<int64_t>(reinterpret_cast<intptr_t>(host))));
+          return;
+        }
+        if (method == "setRect") {
+          const auto* args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          if (args == nullptr || !hdr_video_host_) {
+            result->Error("bad_state", "host not created");
+            return;
+          }
+          auto read = [args](const char* key) -> int {
+            const auto it = args->find(flutter::EncodableValue(key));
+            if (it == args->end()) {
+              return 0;
+            }
+            return static_cast<int>(it->second.TryGetLongValue().value_or(0));
+          };
+          hdr_video_host_->SetClientRect(read("x"), read("y"), read("width"),
+                                         read("height"));
+          result->Success();
+          return;
+        }
+        if (method == "destroy") {
+          if (hdr_video_host_) {
+            hdr_video_host_->Destroy();
+          }
+          result->Success();
+          return;
+        }
+        if (method == "displayInfo") {
+          const fushi::HdrDisplayInfo info =
+              fushi::QueryHdrDisplayInfo(GetHandle());
+          result->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("valid"),
+               flutter::EncodableValue(info.valid)},
+              {flutter::EncodableValue("colorSpace"),
+               flutter::EncodableValue(info.color_space)},
+              {flutter::EncodableValue("maxLuminance"),
+               flutter::EncodableValue(
+                   static_cast<double>(info.max_luminance))},
+              {flutter::EncodableValue("bitsPerColor"),
+               flutter::EncodableValue(
+                   static_cast<int>(info.bits_per_color))},
+          }));
+          return;
+        }
+        result->NotImplemented();
+      });
+}
+
 void FlutterWindow::RegisterMagpieChannel() {
   magpie_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
@@ -2556,6 +2626,29 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // HDR passthrough host: keep the libmpv popup glued behind the main window.
+  // Non-consuming — these messages fall through to their normal handlers.
+  if (hdr_video_host_ && hdr_video_host_->IsCreated()) {
+    switch (message) {
+      case WM_WINDOWPOSCHANGED:
+      case WM_ACTIVATE:
+      case WM_SIZE:
+      case WM_MOVE:
+      case WM_SHOWWINDOW:
+        hdr_video_host_->SyncPlacement();
+        break;
+      case WM_DESTROY:
+        hdr_video_host_->Destroy();
+        break;
+      default:
+        break;
+    }
+  }
+  if (message == WM_DISPLAYCHANGE && hdr_video_host_channel_) {
+    // HDR toggled / monitor changed: let Dart re-evaluate the output mode.
+    hdr_video_host_channel_->InvokeMethod(
+        "onDisplayChanged", std::make_unique<flutter::EncodableValue>());
+  }
   // BUG-1239: inspect VK_PROCESSKEY before Flutter handles the message. The
   // engine deliberately reports IME-owned keys as physical=0/logical=0, so
   // checking after HandleTopLevelWindowProc can no longer identify Space.

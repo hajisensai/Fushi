@@ -10,6 +10,8 @@ import 'package:fushi/src/media/video/download/video_download_path_mapping.dart'
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart'
+    show VideoHdrOutputMode, kVideoHdrOutputPref;
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
@@ -1205,6 +1207,17 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setVideoFitMode(VideoFitMode mode) async {
     await setPref('video_fit_mode', mode.storageValue);
+    notifyListeners();
+  }
+
+  /// Windows HDR 直通 / 10-bit 输出模式（默认 auto：显示器 HDR 开着且片源 HDR 时直通）。
+  VideoHdrOutputMode get videoHdrOutputMode => VideoHdrOutputMode.fromStorage(
+        getPref(kVideoHdrOutputPref,
+            defaultValue: VideoHdrOutputMode.auto.storageValue) as String,
+      );
+
+  Future<void> setVideoHdrOutputMode(VideoHdrOutputMode mode) async {
+    await setPref(kVideoHdrOutputPref, mode.storageValue);
     notifyListeners();
   }
 

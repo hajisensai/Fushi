@@ -144,8 +144,18 @@ extension _VideoFullscreen on _VideoFushiPageState {
         // 只有 B 走 navigatorKey.maybePop 兜底还活着。同一个 wrapper 让全屏子树
         // 拥有与窗口完全一致的手柄语义（A=播放/暂停、dpad=快进快退/音量、
         // B=globalBack「返回上一级」逐级退出……），不在 gamepad_service 里加全屏特判。
-        pageBuilder: (_, __, ___) => _wrapVideoGamepadControls(Material(
-          child: FushiAppUiScaleNeutralizer(
+        // HDR 直通：全屏路由的 Material 底色在宿主窗激活时透明（同窗口侧 Scaffold），
+        // 否则视频洞被路由底色填死、后方宿主窗透不出来。
+        pageBuilder: (_, __, ___) => _wrapVideoGamepadControls(
+          ValueListenableBuilder<bool>(
+            valueListenable:
+                playerController?.hdrHostActive ?? _kHdrHostInactive,
+            builder: (BuildContext _, bool hdrHost, Widget? child) =>
+                Material(
+              color: hdrHost ? Colors.transparent : null,
+              child: child,
+            ),
+            child: FushiAppUiScaleNeutralizer(
             child: MaterialVideoControlsTheme(
               normal:
                   mobileTheme?.normal ?? kDefaultMaterialVideoControlsThemeData,
@@ -214,7 +224,12 @@ extension _VideoFullscreen on _VideoFushiPageState {
                           if (playerController == null) return fullscreenVideo;
                           return _videoWithSubtitlePanel(
                             playerController,
-                            fullscreenVideo,
+                            // HDR 直通：全屏路由的 Video 同样上报矩形（与窗口侧
+                            // [_buildVideoBody] 一致，宿主窗跟着全屏画面走）。
+                            HdrHostRectReporter(
+                              onRect: playerController.reportHdrHostRect,
+                              child: fullscreenVideo,
+                            ),
                           );
                         },
                       ),

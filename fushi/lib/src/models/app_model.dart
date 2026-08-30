@@ -21,6 +21,8 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:fushi/creator.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart'
+    show VideoHdrOutputMode;
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
@@ -3368,6 +3370,12 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoFitMode(VideoFitMode mode) =>
       prefsRepo.setVideoFitMode(mode);
+
+  /// Windows HDR 直通 / 10-bit 输出模式（见 `video_hdr_output.dart`）。
+  VideoHdrOutputMode get videoHdrOutputMode => prefsRepo.videoHdrOutputMode;
+
+  Future<void> setVideoHdrOutputMode(VideoHdrOutputMode mode) =>
+      prefsRepo.setVideoHdrOutputMode(mode);
 
   String get videoAsbplayerConfig => prefsRepo.videoAsbplayerConfig;
 
