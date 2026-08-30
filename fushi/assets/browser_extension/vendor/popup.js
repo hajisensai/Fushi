@@ -3037,6 +3037,16 @@ function createEntryHeader(entry, idx) {
     const mineButton = el('button', {
         className: 'inline-action-button mine-button',
         textContent: '+',
+        // Pointer-down runs before the button takes focus / the bubbling document
+        // click handler clears the native selection. Keep this unified mouse,
+        // pen, and touch path so selecting definition text can populate the
+        // card's popupSelectionText on desktop as well as mobile.
+        onpointerdown: () => {
+            lastSelection = __fushiSel()?.toString() || '';
+        },
+        // Older embedded WebViews without Pointer Events keep the existing
+        // touch fallback. Duplicate snapshots are harmless and preserve the
+        // exact selected text until onclick builds the mining payload.
         ontouchstart: () => {
             lastSelection = __fushiSel()?.toString() || '';
         },
