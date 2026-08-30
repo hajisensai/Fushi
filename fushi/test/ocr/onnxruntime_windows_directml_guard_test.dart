@@ -36,7 +36,13 @@ void main() {
       );
       expect(cmake, contains('EXPECTED_HASH "SHA256='));
       expect(cmake, contains('onnxruntime_providers_shared.dll'));
-      expect(cmake, contains('Microsoft.AI.DirectML'));
+      expect(
+        cmake,
+        contains('microsoft.ai.directml'),
+        reason: 'DirectML 重分发包与 ORT 包分开下载；这里必须是 nuget v3-flatcontainer '
+            '的**全小写** package id——该端点的路径段只接受小写，写成展示用的 '
+            'Microsoft.AI.DirectML 会让构建期下载 404',
+      );
       expect(cmake, contains('DirectML.dll'));
       expect(
         cmake,
