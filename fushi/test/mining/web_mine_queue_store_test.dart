@@ -27,7 +27,7 @@ void main() {
         fields: <String, String>{'term': '六万', 'sentence': '六万年前'},
       );
 
-  test('v89 表存在且 fresh 库 user_version 与 schemaVersion 一致', () async {
+  test('v90 表存在且 fresh 库 user_version 与 schemaVersion 一致', () async {
     final QueryRow ver = await db
         .customSelect('PRAGMA user_version')
         .getSingle();

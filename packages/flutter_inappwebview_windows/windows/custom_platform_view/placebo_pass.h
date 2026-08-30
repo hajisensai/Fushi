@@ -26,7 +26,8 @@ namespace flutter_inappwebview_plugin
     bool SetShaders(const std::vector<std::string>& shader_texts);
     bool enabled() const { return !hooks_.empty(); }
 
-    // src/dst 须同设备、非 mip / 非多重采样；dst 须可作渲染目标。失败回 false（未写 dst）。
+    // src/dst 须同设备、非 mip / 非多重采样；dst 须可作渲染目标。shader 链为空时
+    // 是直通缩放，非空时按序应用 hook。失败回 false（未写 dst）。
     bool Render(ID3D11Texture2D* src, ID3D11Texture2D* dst);
 
     PlaceboPass(const PlaceboPass&) = delete;

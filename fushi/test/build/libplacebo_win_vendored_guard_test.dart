@@ -20,11 +20,16 @@ void main() {
         .readAsLinesSync()
         .where((String l) => l.trim().isNotEmpty)
         .toList();
-    expect(
-      lines.length,
-      greaterThanOrEqualTo(6),
-      reason: '本体 + shaderc + spirv-cross + 3 个 MinGW 运行时',
-    );
+    expect(lines.length, 1, reason: 'shaderc、spirv-cross 与 MinGW 运行时应静态链入本体');
+    final List<String> dllNames =
+        Directory('$root/bin')
+            .listSync()
+            .whereType<File>()
+            .map((File file) => file.uri.pathSegments.last)
+            .where((String name) => name.toLowerCase().endsWith('.dll'))
+            .toList()
+          ..sort();
+    expect(dllNames, <String>['libplacebo-360.dll']);
     for (final String line in lines) {
       final List<String> parts = line.split(RegExp(r'\s+'));
       final String hash = parts.first.toLowerCase();

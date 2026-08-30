@@ -404,7 +404,7 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       '本地 NCOP/NCED 等附加视频复用 VideoBook.coverPath，位于 '
           '<documents>/video_covers；必须与原视频封面一起重挂。'),
 
-  // ── web_mine_queue（schema v89，网页播放器自动制卡队列，device-local）──
+  // ── web_mine_queue（schema v90，网页播放器自动制卡队列，device-local）──
   PathRebaseColumn('WebMineQueue', 'fieldsJson', PathRebaseKind.notAPath,
       '弹窗点击时冻结的 Anki 字段映射 JSON（词头/释义/句子文本），不含本机路径。'),
 

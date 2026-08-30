@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// `web_mine_queue`（schema v89）的读写：网页播放器观看时入队、重放时按书取待办、
+/// `web_mine_queue`（schema v90）的读写：网页播放器观看时入队、重放时按书取待办、
 /// 逐条标 done / failed。纯 DB 层，不碰播放器。
 class WebMineQueueStore {
   const WebMineQueueStore(this.db);

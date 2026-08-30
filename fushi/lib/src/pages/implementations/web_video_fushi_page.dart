@@ -343,7 +343,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 本视频已收藏句缓存（`text|startMs`），列表面板星标同步读。
   final Set<String> _favoritedKeys = <String>{};
 
-  /// 自动制卡队列（schema v89 `web_mine_queue`）：观看时入队，本页可捕获档逐句重放落卡。
+  /// 自动制卡队列（schema v90 `web_mine_queue`）：观看时入队，本页可捕获档逐句重放落卡。
   late final WebMineQueueStore _mineQueue = WebMineQueueStore(
     _appModel.database,
   );
