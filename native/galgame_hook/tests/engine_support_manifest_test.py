@@ -188,6 +188,51 @@ class EngineSupportManifestTest(unittest.TestCase):
             "tests/leaf_d3d_trace_export_test.cpp", leaf["test_paths"]
         )
 
+    def test_hunex_gge_profile_is_structural_generic_and_unverified(self) -> None:
+        hunex = self.engines["hunex_gge"]
+        profile_document = json.loads(
+            (ROOT / "profiles" / "hunex_gge.json").read_text(encoding="utf-8")
+        )
+        profile_header = (
+            ROOT / "hook" / "adapters" / "hunex_gge_profile.h"
+        ).read_text(encoding="utf-8")
+        title_profile = profile_document["profile_metadata"]["title_profiles"][0]
+
+        self.assertEqual("implemented_unverified", hunex["current_status"])
+        self.assertEqual([], hunex["verified_games"])
+        self.assertEqual([], hunex["detection"]["hashes"]["values"])
+        self.assertEqual([], hunex["detection"]["directory_files_all"]["values"])
+        self.assertEqual(
+            [], profile_document["detection"]["executable_sha256"]
+        )
+        self.assertEqual([], profile_document["detection"]["module_sha256"])
+        self.assertEqual("WoH.exe", title_profile["executable_name"])
+        self.assertEqual("data04000.hfa", title_profile["voice_archive_name"])
+        self.assertFalse(title_profile["family_invariant"])
+        self.assertIn("structural HFA/HW validation", title_profile["admission"])
+        self.assertIn("MatchesHunexGgeTitleProfile", profile_header)
+        self.assertIn("IsHunexGgeVoiceArchivePath", profile_header)
+        self.assertNotIn("ExecutableSha256", profile_header)
+        self.assertNotIn("executable_sha256", profile_header)
+
+        resource = hunex["audio"]["priority"][0]
+        self.assertEqual("hunex_hfa_hw_ogg_resource", resource["kind"])
+        self.assertEqual("implemented_unverified", resource["status"])
+        self.assertEqual("not_verified", resource["clean_voice"])
+        self.assertIn("tests/hunex_gge_adapter_test.cpp", hunex["test_paths"])
+        self.assertTrue(
+            any(
+                "resource_observed" in limitation
+                for limitation in hunex["known_limitations"]
+            )
+        )
+        self.assertTrue(
+            any(
+                "not a HUNEX-family invariant" in limitation
+                for limitation in hunex["known_limitations"]
+            )
+        )
+
     def test_support_status_and_capability_promotions_require_evidence(self) -> None:
         reallive = self.engines["reallive"]
         reallive["current_status"] = "verified"

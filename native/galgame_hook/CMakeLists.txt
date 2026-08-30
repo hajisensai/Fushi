@@ -80,6 +80,10 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/leaf_aquaplus_lookup.h"
   "hook/adapters/leaf_aquaplus_voice_archive.h"
   "hook/adapters/leaf_aquaplus_adapter.inc"
+  "hook/adapters/hunex_gge_adapter.inc"
+  "hook/adapters/hunex_gge_lookup.h"
+  "hook/adapters/hunex_gge_profile.h"
+  "include/hunex_gge_trace.h"
   "include/leaf_d3d_trace.h"
 )
 target_include_directories(fushi_voice_hook PRIVATE "include")
@@ -93,6 +97,23 @@ add_executable(fushi_siglus_ovk_test
 )
 target_include_directories(fushi_siglus_ovk_test PRIVATE "hook")
 add_test(NAME fushi_siglus_ovk_test COMMAND fushi_siglus_ovk_test)
+
+# HUNEX HFA/HW directory, wrapper and Ogg validation are worker-side pure
+# functions. The focused test uses only synthetic bytes and never game data.
+add_executable(fushi_hunex_gge_adapter_test
+  "tests/hunex_gge_adapter_test.cpp"
+)
+target_include_directories(fushi_hunex_gge_adapter_test PRIVATE "hook")
+add_test(NAME fushi_hunex_gge_adapter_test
+  COMMAND fushi_hunex_gge_adapter_test)
+
+add_executable(fushi_hunex_gge_lookup_test
+  "tests/hunex_gge_lookup_test.cpp"
+)
+target_include_directories(fushi_hunex_gge_lookup_test PRIVATE
+  "hook/adapters")
+add_test(NAME fushi_hunex_gge_lookup_test
+  COMMAND fushi_hunex_gge_lookup_test)
 
 add_executable(fushi_siglus_text_test
   "tests/siglus_text_test.cpp"

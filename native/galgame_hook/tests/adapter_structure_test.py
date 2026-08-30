@@ -965,6 +965,90 @@ class AdapterStructureTest(unittest.TestCase):
                     return source[open_at : i + 1]
         raise AssertionError(f"unbalanced braces after {signature}")
 
+    def test_hunex_hfa_reuses_shared_file_broker_and_parses_only_on_worker(
+        self,
+    ) -> None:
+        broker = (
+            ROOT / "hook" / "adapters" / "siglus_adapter.inc"
+        ).read_text(encoding="utf-8")
+        adapter = (
+            ROOT / "hook" / "adapters" / "hunex_gge_adapter.inc"
+        ).read_text(encoding="utf-8")
+        registry = (ROOT / "hook" / "adapter_registry.inc").read_text(
+            encoding="utf-8"
+        )
+
+        for callback in (
+            "RememberHunexVoiceHfa(result, file_name)",
+            "RememberHunexVoiceHfa(result, wide)",
+            "ObserveHunexVoiceHfaRead(file, buffer, done, overlapped)",
+            "ForgetHunexVoiceHfa(handle)",
+        ):
+            self.assertIn(callback, broker)
+        close = self._function_body(broker, "BOOL WINAPI Detour_CloseHandle(")
+        self.assertLess(
+            close.index("ForgetHunexVoiceHfa(handle)"),
+            close.index("g_orig_CloseHandle(handle)"),
+        )
+        for engine_detail in ("HUNEXGGEFA10", '"hw  "', "ParseHunex", "data04000"):
+            self.assertNotIn(engine_detail, broker)
+        for forbidden in (
+            "Detour_CreateFileW",
+            "Detour_CreateFileA",
+            "Detour_ReadFile",
+            "Detour_CloseHandle",
+            "HookFn(",
+        ):
+            self.assertNotIn(forbidden, adapter)
+
+        observer = self._function_body(
+            adapter, "void ObserveHunexVoiceHfaRead("
+        )
+        self.assertIn("QueueHunexVoice(archive_index, start, done, prefix,", observer)
+        for forbidden in (
+            "ParseHunexHfaIndex",
+            "ParseHunexHwOgg",
+            "g_hunex_voice_archive.ranges",
+            "malloc",
+            "WriteVoiceOggAt",
+            "CreateFile",
+            "ReadFile",
+            "WaitForSingleObject",
+            "Sleep(",
+        ):
+            self.assertNotIn(forbidden, observer)
+
+        loader = self._function_body(adapter, "bool LoadHunexVoiceArchive(")
+        worker = self._function_body(adapter, "void ProcessHunexVoiceTask(")
+        self.assertIn("ParseHunexHfaIndex", loader)
+        self.assertIn("ParseHunexHwOgg", worker)
+        self.assertIn("WriteVoiceOggAt", worker)
+        self.assertLess(
+            worker.index("WriteVoiceOggAt"),
+            worker.index("kXAudioDiagGameResourcePublished"),
+        )
+        self.assertIn("g_orig_CreateFileW", loader)
+        self.assertIn("g_orig_ReadFile", adapter)
+        self.assertIn("g_orig_CloseHandle", loader)
+
+        stop = self._function_body(adapter, "void StopHunexGgeResourceAudio(")
+        self.assertLess(
+            stop.index("InterlockedExchange(&g_hunex_voice_archive_count, 0)"),
+            stop.index("free(ranges)"),
+        )
+        self.assertLess(
+            registry.index("hunex_gge_.install();"),
+            registry.index(
+                "g_header->hook_diagnostics |= kDiagStartupAudioHooksReady"
+            ),
+        )
+        self.assertIn("hunex_gge_.ProcessPendingEvents();", registry)
+        for seam in ("includes", "startup", "module", "shutdown", "fields"):
+            generated = (
+                ROOT / "hook" / "generated" / f"adapter_{seam}.inc"
+            ).read_text(encoding="utf-8")
+            self.assertIn("hunex_gge", generated)
+
     def test_leaf_voice_archive_ranges_are_owned_by_the_worker(self) -> None:
         """游戏线程绝不解引用 ranges，Stop 必须先撤发布再释放。
 

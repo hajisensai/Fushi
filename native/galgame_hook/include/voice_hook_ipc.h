@@ -216,6 +216,11 @@ constexpr uint32_t kTextSourceUnityTmp = 3;
 constexpr uint32_t kTextSourceSiglus = 4;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
+// Some Luna engine hooks expose scenario text and system controls from the
+// same hook face but keep them separated by ThreadParam.ctx. Consumers must
+// not apply the usual same-face fallback to lines carrying this flag. Bit 0 is
+// already used by thread-discovery events for Luna's embedable attribute.
+constexpr uint32_t kTextEventFlagExactThreadContext = 0x00000002u;
 
 // 语音 clip 索引：最近 kClipCount 条语音片段的位置记录（按 source voice / DirectSound buffer
 // 的一次提交切一条；galgame 一句台词≈一条语音）。指向音频环形里的 [ring_offset, byte_len)。
@@ -345,6 +350,15 @@ constexpr uint32_t kXAudioDiagLeafLacReadObserved = 0x00800000u;
 constexpr uint32_t kXAudioDiagLeafLacVoiceQueued = 0x01000000u;
 constexpr uint32_t kXAudioDiagLeafLacTaskRejected = 0x02000000u;
 constexpr uint32_t kXAudioDiagLeafLacVoicePublished = 0x04000000u;
+// HUNEX GGE 的 HFA/HW 源资源链只复用共享 KernelBase 文件 broker。前四位
+// 分别证明档案索引、实际句柄、播放期读取和有界任务队列；最后一位保留拒绝原因。
+// HooksReady 不能单独算 resource-audio ready：只有 worker 成功发布逐字节取自
+// HW wrapper 后 Ogg payload 的文件时，才另外置 kXAudioDiagGameResourcePublished。
+constexpr uint32_t kXAudioDiagHunexHfaHooksReady = 0x08000000u;
+constexpr uint32_t kXAudioDiagHunexHfaHandleTracked = 0x10000000u;
+constexpr uint32_t kXAudioDiagHunexHfaReadObserved = 0x20000000u;
+constexpr uint32_t kXAudioDiagHunexHfaVoiceQueued = 0x40000000u;
+constexpr uint32_t kXAudioDiagHunexHfaTaskRejected = 0x80000000u;
 
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM
@@ -410,7 +424,7 @@ struct TextSlot {
   uint32_t hook_name_len;   // hook_name 有效字节数（不含结尾 0）
   uint32_t hook_code_len;   // hook_code 有效 wchar 数（不含结尾 0）
   uint32_t event_kind;      // kTextEvent*；0 保持旧写者默认语义为台词行
-  uint32_t event_flags;     // 预留（当前线程发现事件写 Luna embedable 到 bit 0）
+  uint32_t event_flags;     // bit 0: discovery embedable; bit 1: exact ctx only
   // hook「面」id（不含 ctx，见 luna_text_selector.h 的 LunaTextFaceIdFrom）。
   //
   // v13 把选定线程的过滤从采集期挪到消费期，这个字段是**挪过去还能等价**的前提：旧的

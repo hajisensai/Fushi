@@ -2612,6 +2612,11 @@ enum GalTextEventKind {
 /// 一条文本 hook 事件：台词行携带 [text]；线程发现事件的 [text] 为空，只携带 Luna
 /// ThreadParam/hook 元数据。所有事件共享单调 [seq] 与 [timestampMs]（GetTickCount64）。
 class GalHookedLine {
+  /// Native event flag: this Luna engine keeps semantic lanes separated by
+  /// ThreadParam.ctx, so the consumer must not accept a sibling thread merely
+  /// because its hook-face id matches the selected thread.
+  static const int flagExactThreadContext = 0x2;
+
   const GalHookedLine({
     required this.seq,
     required this.timestampMs,
@@ -2648,6 +2653,9 @@ class GalHookedLine {
   final int eventFlags;
   final String hookName;
   final String hookCode;
+
+  bool get requiresExactThreadContext =>
+      (eventFlags & flagExactThreadContext) != 0;
 
   String? get textThreadKey {
     if (threadId == 0) return null;

@@ -45,6 +45,7 @@
 #include "il2cpp_thread_scope.h"
 #include "adapter.h"
 #include "lookup_overlay_geometry.h"
+#include "hunex_gge_trace.h"
 #include "leaf_d3d_trace.h"
 #include "artemis_pfs.h"
 #include "asar_runtime.h"
@@ -54,9 +55,11 @@
 #include "malie_lib.h"
 #include "ffmpeg_runtime.h"
 #include "hook_original_registry.h"
+#include "hunex_hfa.h"
 #include "siglus_ovk.h"
 #include "siglus_launch.h"
 #include "adapters/siglus_lookup.h"
+#include "adapters/hunex_gge_lookup.h"
 #include "adapters/leaf_aquaplus_voice_archive.h"
 #include "siglus_text.h"
 #include "text_thread_identity.h"
@@ -101,6 +104,12 @@ extern "C" __declspec(dllexport) alignas(8)
 // Numeric-only exact-profile renderer telemetry, outside SharedHeader ABI.
 extern "C" __declspec(dllexport) alignas(8)
     fushi_voice_hook::LeafD3DTraceBuffer FushiLeafD3DTraceV1 = {};
+
+// Numeric-only HUNEX/GGE renderer and sampled-input telemetry.  Like the Leaf
+// trace this is resolved by the diagnostic probe from the live DLL export and
+// is intentionally outside SharedHeader ABI.
+extern "C" __declspec(dllexport) alignas(8)
+    fushi_voice_hook::HunexGgeTraceBuffer FushiHunexGgeTraceV1 = {};
 
 namespace {
 

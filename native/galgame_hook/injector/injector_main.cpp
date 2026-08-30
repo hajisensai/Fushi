@@ -749,8 +749,12 @@ void WriteLunaTextLine(SharedHeader* header, const wchar_t* hookcode,
                        const char* hookname, const LunaThreadParam& tp,
                        uint64_t thread_id, uint64_t face_id,
                        const wchar_t* text, int wlen) {
+  const uint32_t event_flags =
+      fushi_voice_hook::LunaTextRequiresExactThreadContext(hookname)
+          ? fushi_voice_hook::kTextEventFlagExactThreadContext
+          : 0u;
   WriteLunaTextEvent(header, hookcode, hookname, tp, thread_id, face_id,
-                     fushi_voice_hook::kTextEventLine, 0, text, wlen);
+                     fushi_voice_hook::kTextEventLine, event_flags, text, wlen);
 }
 
 // ── 文本线程准入（LunaHook 伪影过滤 + 显式线程选择）────
@@ -973,11 +977,15 @@ void LunaThreadCreate(const wchar_t* hookcode, const char* hookname,
     return;
   }
   const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
+  const uint32_t event_flags =
+      (embedable ? 1u : 0u) |
+      (fushi_voice_hook::LunaTextRequiresExactThreadContext(hookname)
+           ? fushi_voice_hook::kTextEventFlagExactThreadContext
+           : 0u);
   WriteLunaTextEvent(
       g_luna.header, hookcode, hookname, tp, thread_id,
       LunaTextFaceId(hookcode, hookname, tp),
-      fushi_voice_hook::kTextEventThreadDiscovered, embedable ? 1u : 0u,
-      nullptr, 0);
+      fushi_voice_hook::kTextEventThreadDiscovered, event_flags, nullptr, 0);
 }
 // 移除事件不透传到线程目录，且不清 selected_text_thread_id / face map：同 ThreadParam 短暂
 // 重建仍沿用用户选择。这里只回收预览槽，避免累计超过 64 个历史线程后新线程永久没有预览。

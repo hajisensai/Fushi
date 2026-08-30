@@ -1918,6 +1918,114 @@
       ]
     },
     {
+      "id": "hunex_gge",
+      "display_name": "HUNEX GGE / HFA-HW",
+      "aliases": [
+        "HUNEX GGE",
+        "HFA/HW",
+        "WITCH ON THE HOLY NIGHT",
+        "WoH"
+      ],
+      "family": {
+        "id": "hunex_gge",
+        "relation": "HUNEX GGE HFA archive family; current admission is a WoH-specific title profile, not a family-wide role claim"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [
+            "WoH.exe"
+          ],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "The original WoH v1.0 Windows sample was observed as WoH.exe on 2026-08-30; the basename is title-profile metadata and never enables the adapter by itself."
+          }
+        },
+        "pe_architectures": {
+          "values": [
+            "x64"
+          ],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "The original WoH v1.0 game process was measured as x64 on 2026-08-30."
+          }
+        },
+        "directory_files_all": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
+        "resource_extensions": {
+          "values": [
+            ".hfa",
+            ".hw"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "The local WoH v1.0 sample contains HUNEXGGEFA10 HFA indexes whose members use the 64-byte HW wrapper around complete Ogg streams; no game payload is committed."
+          }
+        },
+        "hashes": {
+          "values": [],
+          "evidence": null
+        }
+      },
+      "process_strategy": {
+        "launch": "normal_launch_observed_adapter_unverified",
+        "attach": "existing_process_attach_observed_resource_hook_unverified",
+        "follow_child_processes": false,
+        "notes": [
+          "The current WoH title profile requires WoH.exe plus a sibling data04000.hfa whose HFA/HW structure validates; neither basename is sufficient alone and no exact executable SHA-256 gate is used.",
+          "data04000.hfa is a clean-voice role mapping measured only for the local WoH v1.0 sample. It is deliberately absent from family-wide detection signatures; every other HUNEX title requires a separately evidenced role mapping.",
+          "The shared file-I/O broker remains engine-neutral; HFA indexing, HW validation and source-Ogg publication belong to the HUNEX adapter worker."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_typemoon_dialogue_thread",
+            "status": "implemented_unverified",
+            "verification": "The WoH v1.0 original-path session observed and selected the dialogue thread, but no same-session source-audio pairing or card E2E has passed."
+          }
+        ],
+        "codepage": "UTF-16",
+        "thread_selection_hint": "Select the observed Type-Moon dialogue lane and reject menu/help rendering lanes; this text evidence does not prove HFA resource capture."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "hunex_hfa_hw_ogg_resource",
+            "format": "complete source Ogg/Vorbis payload from a structurally validated 64-byte HW member inside a HUNEXGGEFA10 HFA archive",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "The first failed boundary in the observed WoH v1.0 session is resource_observed: text and thread selection passed, while the UI still reported line_has_no_voice and zero voiced lines.",
+        "No HFA/HW resource event, source-byte capture, clean-voice classification, text/audio pair, screenshot-card E2E or source-entry hash equality has passed on the original path.",
+        "The data04000.hfa voice role is proved only by the local WoH v1.0 archive layout and is not a HUNEX-family invariant; other titles stay disabled until their archive role is independently mapped and evidenced.",
+        "Mono versus stereo is not a voice classifier. HW admission is structural and both channel layouts remain valid candidates until the title-scoped archive role is established.",
+        "The profile intentionally has no executable or module hash allowlist so patched WoH executables can remain eligible for structural probing; WoH.exe and data04000.hfa names alone must never bypass HFA/HW validation."
+      ],
+      "adapter_path": "hook/adapters/hunex_gge_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": [
+        "tests/hunex_gge_adapter_test.cpp",
+        "tests/resource_audio_ready_test.cpp",
+        "tests/adapter_structure_test.py",
+        "tests/engine_support_manifest_test.py"
+      ]
+    },
+    {
       "id": "sgre",
       "display_name": "M2 wind3d11 runtime (STEINS;GATE RE:BOOT)",
       "aliases": [

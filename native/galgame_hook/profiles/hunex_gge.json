@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "hunex_gge",
+  "status": "implemented_unverified",
+  "detection": {
+    "executable_sha256": [],
+    "module_sha256": []
+  },
+  "capabilities": {
+    "text": true,
+    "resource_audio": true,
+    "pcm_audio": false
+  },
+  "profile_metadata": {
+    "format_family": "HUNEX GGE HFA/HW",
+    "title_profiles": [
+      {
+        "title": "WITCH ON THE HOLY NIGHT",
+        "version": "1.0 local sample",
+        "executable_name": "WoH.exe",
+        "voice_archive_name": "data04000.hfa",
+        "admission": "executable basename plus sibling archive basename plus structural HFA/HW validation",
+        "family_invariant": false,
+        "evidence_scope": "The data04000.hfa clean-voice role is measured only for the local WoH v1.0 sample. Other HUNEX titles require their own role mapping and evidence."
+      }
+    ]
+  },
+  "evidence": []
+}

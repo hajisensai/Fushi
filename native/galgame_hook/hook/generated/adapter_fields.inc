@@ -8,3 +8,4 @@
   ElfAi6Adapter elf_ai6_;
   SgreAdapter sgre_;
   LeafAquaplusAdapter leaf_aquaplus_;
+  HunexGgeAdapter hunex_gge_;

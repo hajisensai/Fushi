@@ -22,6 +22,7 @@
 | `qlie_filepack` | QLIE / FilePack | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | qlie_wuvorbis_per_source_pcm (verified)；qlie_wuvorbis_float_per_source_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `unity_il2cpp` | Unity IL2CPP | `verified` | luna_pc_hooks (verified)；unity_tmp_events (verified)；unity_legacy_text_events (implemented_unverified) | unity_audioclip_resource (verified)；xaudio2_source_voice_pcm (verified)；process_loopback (verified) | 1 |
 | `leaf_aquaplus` | Leaf / AQUAPLUS (WHITE ALBUM2 exact profile) | `implemented_unverified` | luna_exact_cp932_thread (implemented_unverified)；ingame_lookup_geometry (implemented_unverified)；ingame_lookup_sampled_input_shield (implemented_unverified) | leaf_lac_voice_resource (implemented_unverified)；directsound_pcm (implemented_unverified) | 0 |
+| `hunex_gge` | HUNEX GGE / HFA-HW | `implemented_unverified` | luna_typemoon_dialogue_thread (implemented_unverified) | hunex_hfa_hw_ogg_resource (implemented_unverified) | 0 |
 | `sgre` | M2 wind3d11 runtime (STEINS;GATE RE:BOOT) | `implemented_unverified` | — | engine_archive_resource (implemented_unverified) | 0 |
 
 ## 识别与能力明细
@@ -623,6 +624,45 @@ Tests：`tests/unity_event_cursor_test.cpp`、`tests/il2cpp_thread_scope_test.cp
 Fixtures：`tests/fixtures/leaf_aquaplus_replay.json`
 
 Tests：`tests/leaf_aquaplus_adapter_test.cpp`、`tests/leaf_aquaplus_voice_archive_test.cpp`、`tests/leaf_d3d_trace_export_test.cpp`、`tests/resource_audio_ready_test.cpp`、`tests/adapter_structure_test.py`、`tests/galhook_workflow_test.py`、`../../fushi/test/lookup/gal_ingame_lookup_click_swallow_guard_test.dart`
+
+### HUNEX GGE / HFA-HW (`hunex_gge`)
+
+- 状态：`implemented_unverified`
+- 别名：HUNEX GGE、HFA/HW、WITCH ON THE HOLY NIGHT、WoH
+- 家族：`hunex_gge`（HUNEX GGE HFA archive family; current admission is a WoH-specific title profile, not a family-wide role claim）
+- 当前 adapter：`hook/adapters/hunex_gge_adapter.inc`
+- 进程策略：launch=`normal_launch_observed_adapter_unverified`，attach=`existing_process_attach_observed_resource_hook_unverified`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：WoH.exe；证据：runtime_observation — The original WoH v1.0 Windows sample was observed as WoH.exe on 2026-08-30; the basename is title-profile metadata and never enables the adapter by itself.
+- `pe_architectures`：x64；证据：runtime_observation — The original WoH v1.0 game process was measured as x64 on 2026-08-30.
+- `resource_extensions`：.hfa、.hw；证据：real_sample — The local WoH v1.0 sample contains HUNEXGGEFA10 HFA indexes whose members use the 64-byte HW wrapper around complete Ogg streams; no game payload is committed.
+
+文本能力：
+
+- `luna_typemoon_dialogue_thread`：`implemented_unverified` — The WoH v1.0 original-path session observed and selected the dialogue thread, but no same-session source-audio pairing or card E2E has passed.
+- codepage：UTF-16
+- 线程提示：Select the observed Type-Moon dialogue lane and reject menu/help rendering lanes; this text evidence does not prove HFA resource capture.
+
+音频优先级：
+
+1. `hunex_hfa_hw_ogg_resource` — `implemented_unverified`；格式：complete source Ogg/Vorbis payload from a structurally validated 64-byte HW member inside a HUNEXGGEFA10 HFA archive；clean voice：not_verified
+
+真实样本证据：
+
+
+已知限制：
+
+- The first failed boundary in the observed WoH v1.0 session is resource_observed: text and thread selection passed, while the UI still reported line_has_no_voice and zero voiced lines.
+- No HFA/HW resource event, source-byte capture, clean-voice classification, text/audio pair, screenshot-card E2E or source-entry hash equality has passed on the original path.
+- The data04000.hfa voice role is proved only by the local WoH v1.0 archive layout and is not a HUNEX-family invariant; other titles stay disabled until their archive role is independently mapped and evidenced.
+- Mono versus stereo is not a voice classifier. HW admission is structural and both channel layouts remain valid candidates until the title-scoped archive role is established.
+- The profile intentionally has no executable or module hash allowlist so patched WoH executables can remain eligible for structural probing; WoH.exe and data04000.hfa names alone must never bypass HFA/HW validation.
+
+Fixtures：尚无（P5 补齐）
+
+Tests：`tests/hunex_gge_adapter_test.cpp`、`tests/resource_audio_ready_test.cpp`、`tests/adapter_structure_test.py`、`tests/engine_support_manifest_test.py`
 
 ### M2 wind3d11 runtime (STEINS;GATE RE:BOOT) (`sgre`)
 
