@@ -198,6 +198,10 @@ enum StreamImportCoverStrategy {
   /// （[youtubeThumbnailUrl] + downloadVideoCoverToPath）。
   youtubeThumbnail,
 
+  /// 已知网页视频站：URL 指向 HTML 播放页而非媒体字节，不能交给 ffmpeg probe。
+  /// 保持导入成功并由网页播放器打开，封面暂用书架占位图。
+  noAutomaticCover,
+
   /// 直链 / HLS / m3u8：videoPath 是可 seek 的流 URL → ffmpeg 直接抽帧
   /// （extractVideoCover 经 _isRemoteFfmpegInput 放行远端 URL；移动端走 ffmpeg-kit）。
   ffmpegFrame,
@@ -205,11 +209,16 @@ enum StreamImportCoverStrategy {
 
 /// 纯函数：据 [url] 选流媒体导入封面策略。TODO-1304 修「非 YouTube 流恒无封面」——旧代码
 /// 把下封面整块门控在 `if (isYoutubeUrl(url))` 内，直链/HLS 落到无封面分支。现在两类都出
-/// 封面：YouTube 缩略图下载、其余 ffmpeg 抽帧。
-StreamImportCoverStrategy streamImportCoverStrategy(String url) =>
-    isYoutubeUrl(url)
-        ? StreamImportCoverStrategy.youtubeThumbnail
-        : StreamImportCoverStrategy.ffmpegFrame;
+/// 封面：YouTube 缩略图下载、已知 HTML 播放页不自动取封面、其余 ffmpeg 抽帧。
+StreamImportCoverStrategy streamImportCoverStrategy(String url) {
+  if (isYoutubeUrl(url)) {
+    return StreamImportCoverStrategy.youtubeThumbnail;
+  }
+  if (isKnownWebPageVideoUrl(url)) {
+    return StreamImportCoverStrategy.noAutomaticCover;
+  }
+  return StreamImportCoverStrategy.ffmpegFrame;
+}
 
 /// 单 URL 流的 [RemoteVideoClient]（TODO-850 阶段①）：把「用户粘贴的一条流 URL +
 /// 可选外挂字幕 URL + 可选防盗链 header」喂进既有远端播放链
