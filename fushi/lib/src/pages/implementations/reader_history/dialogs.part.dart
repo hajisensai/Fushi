@@ -7,6 +7,8 @@ part of '../reader_fushi_history_page.dart';
 /// 勾选框（仅 [localFilesSubtitle] 非 null 时渲染——书/PDF/漫画导入即拷贝进 app 目录、
 /// 原件路径根本没入库，只有显式登记了 app 目录之外的原始音频路径的有声书/字幕书才有
 /// 本机可删的原件）。副标题必须由调用方给出、如实说清删的是什么，不能回落到通用措辞。
+/// [rememberedChoices] 恢复两个选项的默认值；「记住这些选择」只保存默认值，不跳过
+/// 本确认框。
 /// [showSyncScope]=false 时把同步勾选框换成 [DeleteScopeUnavailableNote] 说明行、恒
 /// keepLocalOnly——由调用方按 `hasDeletionPropagationChannel` 传入：本机一个同步通道
 /// 都没有时，那个勾选框兑现不了（TODO-2470 死角②）。取消返回 null。
@@ -19,6 +21,8 @@ class ReaderHistoryDeleteDialog extends StatefulWidget {
     this.showSyncScope = true,
     this.localFilesSubtitle,
     this.disclosure,
+    this.rememberedChoices,
+    this.onPersistChoices,
     super.key,
   });
 
@@ -32,6 +36,9 @@ class ReaderHistoryDeleteDialog extends StatefulWidget {
 
   /// 逐项披露真实删除范围；null 表示该入口暂未接入结构化披露。
   final DeletionDisclosure? disclosure;
+  final DeletePromptRememberedChoices? rememberedChoices;
+  final Future<void> Function(DeletePromptRememberedChoices?)?
+      onPersistChoices;
 
   @override
   State<ReaderHistoryDeleteDialog> createState() =>
@@ -39,8 +46,44 @@ class ReaderHistoryDeleteDialog extends StatefulWidget {
 }
 
 class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
-  bool _syncDelete = false;
-  bool _deleteLocalFiles = false;
+  late bool _syncDelete;
+  late bool _deleteLocalFiles;
+  late bool _rememberChoices;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncDelete = widget.rememberedChoices?.syncEverywhere ?? false;
+    _deleteLocalFiles = widget.rememberedChoices?.deleteLocalFiles ?? false;
+    _rememberChoices = widget.rememberedChoices != null;
+  }
+
+  Future<void> _confirm() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    final DeletePromptRememberedChoices? choices = _rememberChoices
+        ? DeletePromptRememberedChoices(
+            syncEverywhere: _syncDelete,
+            deleteLocalFiles: _deleteLocalFiles,
+          )
+        : null;
+    try {
+      await widget.onPersistChoices?.call(choices);
+    } catch (error, stackTrace) {
+      debugPrint('Delete prompt preference write failed: $error\n$stackTrace');
+    }
+    if (!mounted) return;
+    widget.onConfirm(
+      DeleteDecision(
+        scope: widget.showSyncScope && _syncDelete
+            ? DeleteScope.syncEverywhere
+            : DeleteScope.keepLocalOnly,
+        deleteLocalFiles:
+            widget.localFilesSubtitle != null && _deleteLocalFiles,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -97,6 +140,11 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
                 subtitle: widget.localFilesSubtitle!,
                 onChanged: (bool v) => setState(() => _deleteLocalFiles = v),
               ),
+            if (widget.showSyncScope || widget.localFilesSubtitle != null)
+              DeleteRememberChoicesRow(
+                value: _rememberChoices,
+                onChanged: (bool v) => setState(() => _rememberChoices = v),
+              ),
           ],
         ),
         footer: Wrap(
@@ -112,15 +160,7 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
             adaptiveDialogAction(
               context: context,
               isDestructiveAction: true,
-              onPressed: () => widget.onConfirm(
-                DeleteDecision(
-                  scope: widget.showSyncScope && _syncDelete
-                      ? DeleteScope.syncEverywhere
-                      : DeleteScope.keepLocalOnly,
-                  deleteLocalFiles:
-                      widget.localFilesSubtitle != null && _deleteLocalFiles,
-                ),
-              ),
+              onPressed: _saving ? null : _confirm,
               child: Text(t.dialog_delete),
             ),
           ],

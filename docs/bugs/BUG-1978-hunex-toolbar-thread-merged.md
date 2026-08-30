@@ -1,4 +1,4 @@
-## BUG-1947 · HUNEX 顶部控制栏线程被并入剧情台词
+## BUG-1978 · HUNEX 顶部控制栏线程被并入剧情台词
 - **报告**：2026-08-30（用户：Wight）
 - **真实性**：✅ 真 bug。WoH 1.0 的现场文本 ring 显示，剧情与顶部控制栏都来自 Luna `typemoon` hook，但分别稳定写入两个不同 `threadId`；Fushi 的消费期同-face兜底忽略 `ThreadParam.ctx`，因此在用户选中剧情线程后又把控制栏说明行合并进工作台。LunaTranslator 按完整 ThreadParam 精确选择线程，不会发生这次重新合并。
 - **[x] ① 已修复（`fixed`）** — native 对 `typemoon` 事件发布 `exact thread context` 标志，Dart 消费期在精确 `threadId` 命中后即拒绝同-face兄弟线程；其他 Luna 引擎仍保留 BUG-1159 所需的同-face兼容。策略只依赖 Luna 的语义 hook 名，不依赖 WoH 文件名、EXE hash、RVA、文本长度或日文控制栏内容黑名单。

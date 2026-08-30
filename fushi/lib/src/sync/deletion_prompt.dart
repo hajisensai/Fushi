@@ -2,14 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/deletion_propagation_availability.dart';
+import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
 import 'package:fushi/src/sync/sync_conflict_prompter.dart'
     show ConflictSource, PromptQueue;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// 通用「删除范围」确认弹窗：正文 + 「从所有设备删除」勾选框（默认不勾）+
-/// 「同时删除本地文件」勾选框（仅 [localFilesSubtitle] 非 null 时渲染，默认不勾）。
+/// 通用「删除范围」确认弹窗：正文 + 「从所有设备删除」勾选框 +
+/// 「同时删除本地文件」勾选框（仅 [localFilesSubtitle] 非 null 时渲染）+
+/// 「记住这些选择」勾选框。未记住时两个删除选项都采用安全默认值 false；传 [db] 时
+/// 会恢复并更新用户明确要求记住的组合值。
 /// 确认返回用户的 [DeleteDecision]（scope：勾选=syncEverywhere 传播 / 不勾=
 /// keepLocalOnly 仅本机；deleteLocalFiles：是否连磁盘上的原始文件一起删）；取消返回
 /// null。供书架/视频/有声书等各删除入口共用（书架另有 ReaderHistoryDeleteDialog
@@ -36,6 +39,10 @@ Future<DeleteDecision?> showDeleteScopeConfirm(
   FushiDatabase? db,
   String? localFilesSubtitle,
 }) async {
+  final DeletePromptPreferenceStore? preferenceStore =
+      db == null ? null : DeletePromptPreferenceStore(db);
+  final DeletePromptRememberedChoices? rememberedChoices =
+      await preferenceStore?.load();
   final bool canSyncEverywhere =
       db == null || await hasDeletionPropagationChannel(SyncRepository(db));
   if (!context.mounted) return null;
@@ -47,6 +54,8 @@ Future<DeleteDecision?> showDeleteScopeConfirm(
       disclosure: disclosure,
       canSyncEverywhere: canSyncEverywhere,
       localFilesSubtitle: localFilesSubtitle,
+      rememberedChoices: rememberedChoices,
+      onPersistChoices: preferenceStore?.write,
     ),
   );
 }
@@ -58,6 +67,8 @@ class _DeleteScopeConfirmDialog extends StatefulWidget {
     this.disclosure,
     this.canSyncEverywhere = true,
     this.localFilesSubtitle,
+    this.rememberedChoices,
+    this.onPersistChoices,
   });
   final String title;
   final String message;
@@ -69,6 +80,9 @@ class _DeleteScopeConfirmDialog extends StatefulWidget {
   /// null = 这条目没有本机可删的原件 → 不渲染勾选框，恒 deleteLocalFiles=false。
   /// 非 null = 渲染，且这句副标题必须如实说清这个入口到底删什么。
   final String? localFilesSubtitle;
+  final DeletePromptRememberedChoices? rememberedChoices;
+  final Future<void> Function(DeletePromptRememberedChoices?)?
+      onPersistChoices;
 
   @override
   State<_DeleteScopeConfirmDialog> createState() =>
@@ -76,8 +90,45 @@ class _DeleteScopeConfirmDialog extends StatefulWidget {
 }
 
 class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
-  bool _syncDelete = false;
-  bool _deleteLocalFiles = false;
+  late bool _syncDelete;
+  late bool _deleteLocalFiles;
+  late bool _rememberChoices;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncDelete = widget.rememberedChoices?.syncEverywhere ?? false;
+    _deleteLocalFiles = widget.rememberedChoices?.deleteLocalFiles ?? false;
+    _rememberChoices = widget.rememberedChoices != null;
+  }
+
+  Future<void> _confirm() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    final DeletePromptRememberedChoices? choices = _rememberChoices
+        ? DeletePromptRememberedChoices(
+            syncEverywhere: _syncDelete,
+            deleteLocalFiles: _deleteLocalFiles,
+          )
+        : null;
+    try {
+      await widget.onPersistChoices?.call(choices);
+    } catch (error, stackTrace) {
+      debugPrint('Delete prompt preference write failed: $error\n$stackTrace');
+    }
+    if (!mounted) return;
+    Navigator.pop(
+      context,
+      DeleteDecision(
+        scope: widget.canSyncEverywhere && _syncDelete
+            ? DeleteScope.syncEverywhere
+            : DeleteScope.keepLocalOnly,
+        deleteLocalFiles:
+            widget.localFilesSubtitle != null && _deleteLocalFiles,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -123,6 +174,11 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
                 subtitle: widget.localFilesSubtitle!,
                 onChanged: (bool v) => setState(() => _deleteLocalFiles = v),
               ),
+            if (widget.canSyncEverywhere || widget.localFilesSubtitle != null)
+              DeleteRememberChoicesRow(
+                value: _rememberChoices,
+                onChanged: (bool v) => setState(() => _rememberChoices = v),
+              ),
           ],
         ),
         footer: Wrap(
@@ -138,16 +194,7 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
             adaptiveDialogAction(
               context: context,
               isDestructiveAction: true,
-              onPressed: () => Navigator.pop(
-                context,
-                DeleteDecision(
-                  scope: widget.canSyncEverywhere && _syncDelete
-                      ? DeleteScope.syncEverywhere
-                      : DeleteScope.keepLocalOnly,
-                  deleteLocalFiles:
-                      widget.localFilesSubtitle != null && _deleteLocalFiles,
-                ),
-              ),
+              onPressed: _saving ? null : _confirm,
               child: Text(t.dialog_delete),
             ),
           ],

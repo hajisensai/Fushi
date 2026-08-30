@@ -80,6 +80,7 @@ import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/sync/local_file_delete_feedback.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/deletion_propagation_availability.dart';
+import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
@@ -1993,6 +1994,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 纯本地零网络判据，在弹窗弹出前解析完（弹窗自身不做 IO）。
     final bool canSyncEverywhere =
         await hasDeletionPropagationChannel(SyncRepository(appModel.database));
+    final DeletePromptPreferenceStore preferenceStore =
+        DeletePromptPreferenceStore(appModel.database);
+    final DeletePromptRememberedChoices? rememberedChoices =
+        await preferenceStore.load();
     if (!mounted) return null;
     final DeleteDecision? decision = await showAppDialog<DeleteDecision>(
       context: context,
@@ -2002,6 +2007,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         disclosure: disclosure,
         showSyncScope: canSyncEverywhere,
         localFilesSubtitle: localFilesSubtitle,
+        rememberedChoices: rememberedChoices,
+        onPersistChoices: preferenceStore.write,
         onConfirm: (DeleteDecision d) => Navigator.pop(ctx, d),
       ),
     );

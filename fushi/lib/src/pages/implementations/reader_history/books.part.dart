@@ -552,6 +552,10 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // 原始音频**时才摆出来（书本体没有可删原件，见 ReaderFushiSource.deleteBook）。
     final bool anyLocalFiles =
         mediaCount > 0 && await _selectionHasLocalFiles();
+    final DeletePromptPreferenceStore preferenceStore =
+        DeletePromptPreferenceStore(appModel.database);
+    final DeletePromptRememberedChoices? rememberedChoices =
+        await preferenceStore.load();
     if (!mounted) return;
     final DeleteDecision? decision = await showAppDialog<DeleteDecision>(
       context: context,
@@ -568,6 +572,8 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         showSyncScope: canSyncEverywhere,
         localFilesSubtitle:
             anyLocalFiles ? t.delete_local_files_audio_desc : null,
+        rememberedChoices: rememberedChoices,
+        onPersistChoices: preferenceStore.write,
         onConfirm: (DeleteDecision d) => Navigator.pop(ctx, d),
       ),
     );

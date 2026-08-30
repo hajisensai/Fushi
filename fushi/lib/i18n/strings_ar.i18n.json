@@ -4072,5 +4072,6 @@
   "game_lookup_attached_calibration_short_text": "At least three characters are required for calibration probes.",
   "game_lookup_attached_profile_clear_title": "Clear lookup profile?",
   "game_lookup_attached_profile_clear_body": "The saved rectangle, text layout, and executable-specific click authorization will be removed.",
-  "game_lookup_attached_probe_waiting": "Waiting for matching in-game click"
+  "game_lookup_attached_probe_waiting": "Waiting for matching in-game click",
+  "delete_choices_remember": "تذكّر هذه الخيارات"
 }

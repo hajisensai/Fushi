@@ -21,8 +21,10 @@ class _FakeResource extends VideoResourceCandidate {
 void main() {
   group('isLikelyBatchVideoRelease', () {
     test('关键词与带界定符的区间判合集', () {
-      expect(isLikelyBatchVideoRelease('[SubsPlease] Show (01-12) (Batch)'),
-          isTrue);
+      expect(
+        isLikelyBatchVideoRelease('[SubsPlease] Show (01-12) (Batch)'),
+        isTrue,
+      );
       expect(isLikelyBatchVideoRelease('Show Complete Series 1080p'), isTrue);
       expect(isLikelyBatchVideoRelease('【喵萌】剧场版+TV全集'), isTrue);
       expect(isLikelyBatchVideoRelease('[Sub] Show [01-24 Fin]'), isTrue);
@@ -31,9 +33,14 @@ void main() {
 
     test('日期/分辨率/单集不误判', () {
       expect(
-          isLikelyBatchVideoRelease('[SubsPlease] Show - 05 (1080p)'), isFalse);
-      expect(isLikelyBatchVideoRelease('Show 2023-08 Special'), isFalse,
-          reason: '裸日期区间没有 第/括号引导也没有话/集收尾');
+        isLikelyBatchVideoRelease('[SubsPlease] Show - 05 (1080p)'),
+        isFalse,
+      );
+      expect(
+        isLikelyBatchVideoRelease('Show 2023-08 Special'),
+        isFalse,
+        reason: '裸日期区间没有 第/括号引导也没有话/集收尾',
+      );
       expect(isLikelyBatchVideoRelease('Show S01E05 720p'), isFalse);
     });
   });
@@ -66,8 +73,11 @@ void main() {
           buildVideoResourceVersionGroups(ranked);
 
       expect(groups, hasLength(2));
-      expect(groups.first.members.single.remoteId, 's2',
-          reason: '搜第二季，第一季不得因做种多被顶到第一张卡');
+      expect(
+        groups.first.members.single.remoteId,
+        's2',
+        reason: '搜第二季，第一季不得因做种多被顶到第一张卡',
+      );
     });
 
     test('相关度相同（同名次段）时仍按做种数降序', () {
@@ -97,31 +107,34 @@ void main() {
     });
 
     List<VideoResourceCandidate> items() => <VideoResourceCandidate>[
-          for (int ep = 1; ep <= 3; ep++)
-            _FakeResource(
-              remoteId: 'sp$ep',
-              title: '[SubsPlease] Show - 0$ep (1080p) [ABCD123$ep]',
-              releaseGroup: 'SubsPlease',
-              resolution: '1080p',
-              seeders: 10 * ep,
-              publishedAt: DateTime.utc(2026, 8, ep),
-            ),
-          _FakeResource(
-            remoteId: 'er1',
-            title: '[Erai-raws] Show - 01 [720p]',
-            releaseGroup: 'Erai-raws',
-            resolution: '720p',
-            seeders: 5,
-            publishedAt: DateTime.utc(2026, 8, 10),
-          ),
-        ];
+      for (int ep = 1; ep <= 3; ep++)
+        _FakeResource(
+          remoteId: 'sp$ep',
+          title: '[SubsPlease] Show - 0$ep (1080p) [ABCD123$ep]',
+          releaseGroup: 'SubsPlease',
+          resolution: '1080p',
+          seeders: 10 * ep,
+          publishedAt: DateTime.utc(2026, 8, ep),
+        ),
+      _FakeResource(
+        remoteId: 'er1',
+        title: '[Erai-raws] Show - 01 [720p]',
+        releaseGroup: 'Erai-raws',
+        resolution: '720p',
+        seeders: 5,
+        publishedAt: DateTime.utc(2026, 8, 10),
+      ),
+    ];
 
     test('同组同清晰度折一张卡；组间按最高做种数排序', () {
       final List<VideoResourceVersionGroup> groups =
           buildVideoResourceVersionGroups(items());
       expect(groups, hasLength(2));
-      expect(groups.first.releaseGroup, 'SubsPlease',
-          reason: 'bestSeeders 30 > 5');
+      expect(
+        groups.first.releaseGroup,
+        'SubsPlease',
+        reason: 'bestSeeders 30 > 5',
+      );
       expect(groups.first.episodes, <int>{1, 2, 3});
       expect(groups.first.members.first.remoteId, 'sp1', reason: '卡内集号升序');
       expect(groups.first.representative.remoteId, 'sp3', reason: '代表条 = 做种最多');
@@ -129,35 +142,91 @@ void main() {
     });
 
     test('结构化字段缺失时从标题回退组名/清晰度', () {
-      final List<VideoResourceVersionGroup> groups =
-          buildVideoResourceVersionGroups(<VideoResourceCandidate>[
-        _FakeResource(
-          remoteId: 'a',
-          title: '[VCB-Studio] Show - 01 [1080p]',
-        ),
-        _FakeResource(
-          remoteId: 'b',
-          title: '[VCB-Studio] Show - 02 [1080p]',
-        ),
+      final List<VideoResourceVersionGroup>
+      groups = buildVideoResourceVersionGroups(<VideoResourceCandidate>[
+        _FakeResource(remoteId: 'a', title: '[VCB-Studio] Show - 01 [1080p]'),
+        _FakeResource(remoteId: 'b', title: '[VCB-Studio] Show - 02 [1080p]'),
       ]);
       final VideoResourceVersionGroup group = groups.single;
       expect(group.releaseGroup, 'VCB-Studio');
       expect(group.resolution, '1080p');
     });
+
+    test('BUG-1974 未知发布组只聚合标题模板一致的逐集发布', () {
+      final List<VideoResourceVersionGroup> groups =
+          buildVideoResourceVersionGroups(<VideoResourceCandidate>[
+            _FakeResource(
+              remoteId: 's2e1',
+              providerId: 'apibay',
+              providerInstanceId: 'apibay.org',
+              title: 'Kusuriya no Hitorigoto S02E01 MULTi 1080p WEB x264-AMBER',
+              resolution: '1080p',
+            ),
+            _FakeResource(
+              remoteId: 's2e2',
+              providerId: 'apibay',
+              providerInstanceId: 'apibay.org',
+              title: 'Kusuriya no Hitorigoto S02E02 MULTi 1080p WEB x264-AMBER',
+              resolution: '1080p',
+            ),
+            _FakeResource(
+              remoteId: 's1e21',
+              providerId: 'apibay',
+              providerInstanceId: 'apibay.org',
+              title: 'Kusuriya no Hitorigoto - 21 (480p)(Multiple Subtitle)',
+              resolution: '480p',
+            ),
+            _FakeResource(
+              remoteId: 's1e12',
+              providerId: 'apibay',
+              providerInstanceId: 'apibay.org',
+              title: 'Kusuriya no Hitorigoto - 12 (720p)(Multiple Subtitle)',
+              resolution: '720p',
+            ),
+            _FakeResource(
+              remoteId: 's2e17',
+              providerId: 'apibay',
+              providerInstanceId: 'apibay.org',
+              title: 'Kusuriya no Hitorigoto S02E17 1080p WEB H264',
+              resolution: '1080p',
+            ),
+          ]);
+
+      expect(groups, hasLength(4));
+      final VideoResourceVersionGroup amber = groups.singleWhere(
+        (VideoResourceVersionGroup group) => group.members.any(
+          (VideoResourceCandidate item) => item.remoteId == 's2e1',
+        ),
+      );
+      expect(amber.episodes, <int>{1, 2}, reason: '同季且技术模板一致的逐集发布应继续聚合');
+      expect(
+        amber.members.any(
+          (VideoResourceCandidate item) => item.remoteId == 's2e17',
+        ),
+        isFalse,
+        reason: '同季同清晰度但编码模板不同，不能伪装成同一发布系列',
+      );
+    });
   });
 
   group('pickResourceVersionCandidate', () {
     test('指定集精确命中；未指定且多条 → null；单条 → 它', () {
-      final VideoResourceVersionGroup group = buildVideoResourceVersionGroups(
-        <VideoResourceCandidate>[
-          _FakeResource(remoteId: 'a', title: '[G] S - 01 [1080p]', seeders: 3),
-          _FakeResource(remoteId: 'b', title: '[G] S - 02 [1080p]', seeders: 9),
-        ],
-      ).single;
-      expect(
-        pickResourceVersionCandidate(group, episode: 2)!.remoteId,
-        'b',
-      );
+      final VideoResourceVersionGroup group =
+          buildVideoResourceVersionGroups(<VideoResourceCandidate>[
+            _FakeResource(
+              remoteId: 'a',
+              title: '[G] S - 01 [1080p]',
+              releaseGroup: 'G',
+              seeders: 3,
+            ),
+            _FakeResource(
+              remoteId: 'b',
+              title: '[G] S - 02 [1080p]',
+              releaseGroup: 'G',
+              seeders: 9,
+            ),
+          ]).single;
+      expect(pickResourceVersionCandidate(group, episode: 2)!.remoteId, 'b');
       expect(pickResourceVersionCandidate(group, episode: 9), isNull);
       expect(pickResourceVersionCandidate(group), isNull);
 
