@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 
+#include "attached_text_surface_window.h"
 #include "floating_lyric_window.h"
 #include "global_lookup_window.h"
 #include "ime_association_guard.h"
@@ -87,6 +88,9 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       gal_hook_text_channel_;
   std::unique_ptr<FloatingLyricWindow> gal_hook_text_window_;
+  // Transparent DirectWrite cluster surface attached to the selected game
+  // client. This is an independent HWND, not the movable hook text strip.
+  std::unique_ptr<AttachedTextSurfaceWindow> attached_text_surface_window_;
   void RegisterGalHookTextChannel();
 
   // TODO-617: drives the global lookup overlay (bare WebView2 window). The main

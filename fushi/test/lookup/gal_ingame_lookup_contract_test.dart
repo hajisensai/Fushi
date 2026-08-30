@@ -6,13 +6,13 @@
 //
 //   1. runner→Dart 的 `onGalLookupHit` / `onGalLookupInput` 逐字段解出来是什么；
 //   2. 卡片落点由既有的级联定位纯函数算，且**永远整张留在视口内**；
-//   3. Dart→runner 的 `galLookupSetEnabled` / `galLookupPresent` /
-//      `galLookupDismiss` 方法名与参数键；
+//   3. Dart→runner 的 runtime / geometry admission / present / dismiss
+//      方法名与参数键；
 //   4. runner 的失败是编码在应答里的 error token，不是异常——不许被吞成"成功"。
 //
-// 坐标域纪律（错了就是卡片乱跑）：hit 的 glyph/view 与 present 的 anchor 全在**游戏
-// primaryLayer 像素**域；卡片尺寸是 WebView 的物理像素。两者同域，全程不乘 dpr；
-// runner 再用 view 尺寸把它们一起映射到实际游戏客户区。
+// 坐标域纪律（错了就是卡片乱跑）：glyph/view/anchor 要么全在 client physical px，
+// 要么全在 primaryLayer px。runner 对前者强制 view/client 1:1 并 ClientToScreen，后者
+// 走 in-process presenter；design/layout-local 没唯一 transform 时必须丢弃。
 
 import 'dart:io';
 
@@ -49,13 +49,21 @@ GalLookupHit _hit({
   int glyphH = 26,
   int viewW = 1280,
   int viewH = 720,
+  int coordinateSpace = 2,
   bool submit = true,
 }) {
   return GalLookupHit(
     seq: seq,
     line: line,
+    providerKind: 1,
+    providerId: 1,
     charIndex: charIndex,
+    sourceLength: 1,
     charCount: charCount ?? line.length,
+    textGeneration: 1,
+    geometryGeneration: 1,
+    coordinateSpace: coordinateSpace,
+    writingMode: 1,
     glyphX: glyphX,
     glyphY: glyphY,
     glyphW: glyphW,
@@ -65,6 +73,31 @@ GalLookupHit _hit({
     submit: submit,
   );
 }
+
+Map<String, Object?> _wireHit({
+  String line = '本文',
+  int charIndex = 0,
+  int sourceLength = 1,
+}) => <String, Object?>{
+  'seq': 1,
+  'line': line,
+  'providerKind': 1,
+  'providerId': 1,
+  'charIndex': charIndex,
+  'sourceLength': sourceLength,
+  'charCount': line.length,
+  'textGeneration': 1,
+  'geometryGeneration': 1,
+  'coordinateSpace': 2,
+  'writingMode': 1,
+  'glyphX': 10,
+  'glyphY': 10,
+  'glyphW': 16,
+  'glyphH': 20,
+  'viewW': 1280,
+  'viewH': 720,
+  'submit': true,
+};
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -110,8 +143,15 @@ void main() {
       await invokeFromNative('onGalLookupHit', <String, Object?>{
         'seq': 12,
         'line': line,
+        'providerKind': 1,
+        'providerId': 1,
         'charIndex': 4,
+        'sourceLength': 1,
         'charCount': line.length,
+        'textGeneration': 7,
+        'geometryGeneration': 9,
+        'coordinateSpace': 2,
+        'writingMode': 1,
         'glyphX': 512,
         'glyphY': 604,
         'glyphW': 26,
@@ -125,6 +165,13 @@ void main() {
       expect(received!.seq, 12);
       expect(received!.line, line, reason: '整行必须原样送达——制卡要整句');
       expect(received!.charIndex, 4);
+      expect(received!.providerKind, 1);
+      expect(received!.providerId, 1);
+      expect(received!.sourceLength, 1);
+      expect(received!.textGeneration, 7);
+      expect(received!.geometryGeneration, 9);
+      expect(received!.coordinateSpace, 2);
+      expect(received!.writingMode, 1);
       expect(received!.charCount, line.length);
       expect(received!.glyphRect, const Rect.fromLTWH(512, 604, 26, 28));
       expect(received!.viewW, 1280);
@@ -142,8 +189,21 @@ void main() {
       await invokeFromNative('onGalLookupHit', <String, Object?>{
         'seq': 3,
         'line': 'あいう',
+        'providerKind': 1,
+        'providerId': 1,
         'charIndex': 1,
+        'sourceLength': 1,
         'charCount': 3,
+        'textGeneration': 1,
+        'geometryGeneration': 1,
+        'coordinateSpace': 2,
+        'writingMode': 1,
+        'glyphX': 10,
+        'glyphY': 10,
+        'glyphW': 10,
+        'glyphH': 10,
+        'viewW': 100,
+        'viewH': 100,
         'submit': false,
       });
       expect(received?.submit, isFalse);
@@ -163,20 +223,102 @@ void main() {
       expect(called, isFalse, reason: '没有台词就没有可查的东西，不该往下游传空命中');
     });
 
-    test('下标越界是硬门（必须丢），字符数对不上是软门（只记账）', () {
+    test('BMP 与代理对 cluster 都按 UTF-16 sourceLength 派发', () async {
+      final List<GalLookupHit> received = <GalLookupHit>[];
+      GalHookTextOverlayChannel.setEventHandlers(onGalLookupHit: received.add);
+      await invokeFromNative('onGalLookupHit', _wireHit());
+      const String surrogateLine = 'A𠮷B';
+      await invokeFromNative(
+        'onGalLookupHit',
+        _wireHit(line: surrogateLine, charIndex: 1, sourceLength: 2)
+          ..['seq'] = 2,
+      );
+
+      expect(received, hasLength(2));
+      expect(received.first.sourceLength, 1);
+      expect(received.last.charIndex, 1);
+      expect(received.last.sourceLength, 2);
+      expect(received.last.isProductionSane, isTrue);
+    });
+
+    test('UTF-16 代理对半区间与非配对代理项 fail-closed', () async {
+      int calls = 0;
+      GalHookTextOverlayChannel.setEventHandlers(
+        onGalLookupHit: (GalLookupHit _) {
+          calls++;
+        },
+      );
+
+      const String supplementary = 'A𠮷B';
+      await invokeFromNative(
+        'onGalLookupHit',
+        _wireHit(line: supplementary, charIndex: 1, sourceLength: 1),
+      );
+      await invokeFromNative(
+        'onGalLookupHit',
+        _wireHit(line: supplementary, charIndex: 2, sourceLength: 1),
+      );
+      final String unpaired = String.fromCharCodes(<int>[0x41, 0xD842, 0x42]);
+      expect(calls, 0);
+      expect(
+        GalLookupHit.fromMap(
+          _wireHit(line: unpaired, charIndex: 1, sourceLength: 1),
+        )?.isProductionSane,
+        isFalse,
+      );
+    });
+
+    test('错类型、count/range、实验 provider 与陈旧 generation fail-closed', () async {
+      final List<GalLookupHit> received = <GalLookupHit>[];
+      GalHookTextOverlayChannel.setEventHandlers(onGalLookupHit: received.add);
+      final List<Map<String, Object?>> invalid = <Map<String, Object?>>[
+        _wireHit()..['charIndex'] = '0',
+        _wireHit()..['charCount'] = 99,
+        _wireHit()..['sourceLength'] = 99,
+        _wireHit()..['providerKind'] = 5,
+        _wireHit()..['providerId'] = 12,
+        _wireHit()
+          ..['providerKind'] = 1
+          ..['providerId'] = 3,
+        _wireHit()..['textGeneration'] = 0,
+        _wireHit()..['geometryGeneration'] = 0,
+        _wireHit()..['writingMode'] = 2,
+      ];
+      for (final Map<String, Object?> payload in invalid) {
+        await invokeFromNative('onGalLookupHit', payload);
+      }
+      expect(received, isEmpty);
+    });
+
+    test('production provider whitelist matches native kind/id pairs', () {
+      expect(isGalLookupProductionProviderPair(1, 1), isTrue);
+      expect(isGalLookupProductionProviderPair(2, 14), isTrue);
+      expect(isGalLookupProductionProviderPair(3, 10), isTrue);
+      expect(isGalLookupProductionProviderPair(1, 3), isFalse);
+      expect(isGalLookupProductionProviderPair(2, 1), isFalse);
+      expect(isGalLookupProductionProviderPair(3, 11), isFalse);
+    });
+
+    test('client/primaryLayer 坐标可用，design/layout-local fail-closed', () {
+      expect(_hit(coordinateSpace: 1).isProductionSane, isTrue);
+      expect(_hit(coordinateSpace: 2).isProductionSane, isTrue);
+      expect(_hit(coordinateSpace: 3).isProductionSane, isFalse);
+      expect(_hit(coordinateSpace: 4).isProductionSane, isFalse);
+    });
+
+    test('下标越界与字符数漂移都不能通过 v19 生产门', () {
       // 硬门：指不到具体某个字的命中不能往下走，猜出来的下标会让高亮/查词落到无关的字上。
       expect(_hit(line: 'あいうえお', charIndex: 5).isAddressable, isFalse);
       expect(_hit(line: 'あいうえお', charIndex: -1).isAddressable, isFalse);
       expect(_hit(line: 'あいうえお', charIndex: 4).isAddressable, isTrue);
-      // 软门：两侧计数单位若哪天漂了，硬丢会让功能静默死掉；越界本身已被硬门挡住。
       expect(
         _hit(line: 'あいうえお', charCount: 99).hasConsistentCharCount,
         isFalse,
       );
       expect(
-        _hit(line: 'あいうえお', charCount: 99, charIndex: 2).isAddressable,
-        isTrue,
-        reason: '字符数对不上不构成丢弃理由——只要下标还指得到字，就照常查',
+        _hit(line: 'あいうえお', charCount: 99, charIndex: 2).isProductionSane,
+        isFalse,
+        reason: 'v19 不再把 count 漂移的 provider 数据送进查词链',
       );
       expect(_hit(line: 'あいうえお').hasConsistentCharCount, isTrue);
     });
@@ -329,6 +471,23 @@ void main() {
       expect(result.ok, isTrue);
     });
 
+    test('geometry admission 与 runtime 分离并保留 request/applied ack', () async {
+      mockRunner((_) => <String, Object?>{'requestSeq': 7, 'appliedSeq': 6});
+      final GalLookupCallResult result =
+          await GalHookTextOverlayChannel.galLookupSetGeometryAdmission(
+            mode: GalLookupGeometryAdmissionMode.attachedOnly,
+            attachedReady: true,
+          );
+      expect(calls.single.method, 'galLookupSetGeometryAdmission');
+      expect(calls.single.arguments, <String, Object?>{
+        'mode': 3,
+        'attachedReady': true,
+      });
+      expect(result.ok, isTrue);
+      expect(result.requestSeq, 7);
+      expect(result.appliedSeq, 6, reason: 'down/up/tail 未排空时允许 ack 暂时落后');
+    });
+
     test('galLookupPresent 送出 anchor / 卡片 / 游戏视口，并识别 direct surface', () async {
       mockRunner(
         (_) => <String, Object?>{
@@ -428,7 +587,8 @@ void main() {
       expect(
         source,
         isNot(contains('showSentenceBanner')),
-        reason: 'popup 顶部整句横幅已随桌面剪贴板查词移除，不再有该开关；'
+        reason:
+            'popup 顶部整句横幅已随桌面剪贴板查词移除，不再有该开关；'
             '内嵌模式复用同一份 popup，不能另造一套卡片',
       );
       expect(
@@ -511,7 +671,74 @@ void main() {
         contains('lookup_enabled_desired = enabled;'),
         reason: 'mapping 换代重放意图由持有真实 mapping 身份的 reader 负责',
       );
-      expect(reader, contains('if (st.lookup_enabled_desired &&'));
+      expect(reader, contains('st.lookup_geometry_admission_mode_desired'));
+      expect(reader, contains('PublishLookupGeometryAdmission('));
+      expect(reader, contains('if (st.lookup_enabled_desired)'));
+    });
+
+    test('controller 显式驱动 auto/attached admission，不改 lookup runtime', () async {
+      mockRunner(
+        (MethodCall call) => <String, Object?>{
+          'requestSeq': call.arguments is Map ? 4 : 0,
+          'appliedSeq': 4,
+        },
+      );
+      final GalIngameLookupController controller =
+          GalIngameLookupController.test();
+      final GalLookupCallResult result = await controller.setGeometryAdmission(
+        GalLookupGeometryAdmissionMode.auto,
+        attachedReady: true,
+      );
+      expect(result.ok, isTrue);
+      expect(
+        controller.debugGeometryAdmissionMode,
+        GalLookupGeometryAdmissionMode.auto,
+      );
+      expect(controller.debugGeometryAttachedReady, isTrue);
+      expect(calls, hasLength(1));
+      expect(calls.single.method, 'galLookupSetGeometryAdmission');
+      expect(
+        calls.where((MethodCall call) => call.method == 'galLookupSetEnabled'),
+        isEmpty,
+        reason: 'geometry handoff 不能停掉 attached 依赖的 generic shield runtime',
+      );
+    });
+
+    test('provider 仲裁关闭准入时拒绝 native hit，重开后才提交', () async {
+      mockRunner((_) => <String, Object?>{});
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(globalLookupChannel, (_) async => null);
+      int lookupRuns = 0;
+      final GalIngameLookupController controller =
+          GalIngameLookupController.test(
+            preferenceReader: (String key, {required Object? defaultValue}) =>
+                key == GalIngameLookupController.enabledPreferenceKey
+                ? true
+                : defaultValue,
+            lookupRunner: (String query, GalLookupHit hit) async {
+              lookupRuns++;
+              return true;
+            },
+          );
+      try {
+        await controller.start(appModel: AppModel(testPlatformServices()));
+        await controller.setSessionActive(true);
+        // Keep this test's immutable route token distinct from the following
+        // lifecycle test, whose fresh test controller starts at epoch 1.
+        await controller.setSessionActive(false);
+        await controller.setSessionActive(true);
+        await controller.setProviderAdmission(false);
+        expect(controller.debugProviderAdmission, isFalse);
+
+        await controller.handleHit(_hit(seq: 71));
+        expect(lookupRuns, 0);
+
+        await controller.setProviderAdmission(true);
+        await controller.handleHit(_hit(seq: 72));
+        expect(lookupRuns, 1);
+      } finally {
+        await controller.stopForTesting();
+      }
     });
 
     test('submit 查词是 latest-wins，hover 不作废在途 submit', () {
@@ -548,11 +775,10 @@ void main() {
       late GlobalLookupRoute activeRoute;
       final GalIngameLookupController controller =
           GalIngameLookupController.test(
-            preferenceReader:
-                (String key, {required Object? defaultValue}) =>
-                    key == GalIngameLookupController.enabledPreferenceKey
-                    ? true
-                    : defaultValue,
+            preferenceReader: (String key, {required Object? defaultValue}) =>
+                key == GalIngameLookupController.enabledPreferenceKey
+                ? true
+                : defaultValue,
             lookupRunner: (String query, GalLookupHit hit) async {
               activeRoute = GlobalLookupChannel.currentRoute;
               return true;

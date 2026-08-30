@@ -583,6 +583,78 @@ class EngineSupportManifestTest(unittest.TestCase):
         }
         GENERATOR.validate_manifest(self.manifest)
 
+    def test_lookup_matrix_is_windows_only_no_ocr_and_excludes_audio_backend(self) -> None:
+        lookup = self.manifest["lookup_support"]
+        self.assertEqual(["windows_x86", "windows_x64"], lookup["platforms"])
+        self.assertEqual("forbidden", lookup["ocr_policy"])
+        self.assertFalse(lookup["experimental_providers_default_enabled"])
+        ids = {record["engine_id"] for record in lookup["engines"]}
+        self.assertEqual(GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS, ids)
+        self.assertNotIn("xaudio2_directsound", ids)
+        for record in lookup["engines"]:
+            self.assertEqual(
+                {"geometry", "verified_shield", "risky_left_click"},
+                set(GENERATOR.LOOKUP_EVIDENCE_AREAS).intersection(record),
+            )
+
+    def test_lookup_native_publishers_and_manifest_have_bidirectional_parity(self) -> None:
+        source_pairs = GENERATOR.discover_production_lookup_provider_pairs(ROOT)
+        self.assertNotIn(
+            GENERATOR.LOOKUP_HUNEX_OBSERVATION_ONLY_PAIR,
+            source_pairs,
+            "HUNEX renderer telemetry must remain observation-only",
+        )
+        GENERATOR.validate_manifest(self.manifest, ROOT)
+
+        hunex = next(
+            record
+            for record in self.manifest["lookup_support"]["engines"]
+            if record["engine_id"] == "hunex_gge"
+        )
+        hunex["geometry"]["providers"].append("engine_exact_layout")
+        with self.assertRaisesRegex(
+            GENERATOR.ManifestError, "lookup provider manifest parity drift"
+        ):
+            GENERATOR.validate_manifest(self.manifest, ROOT)
+
+    def test_lookup_claim_cannot_be_promoted_without_real_build_gates(self) -> None:
+        siglus = next(
+            record
+            for record in self.manifest["lookup_support"]["engines"]
+            if record["engine_id"] == "siglus"
+        )
+        siglus["verified_shield"]["status"] = "verified"
+        siglus["verified_shield"]["scope"] = "exact_build"
+        siglus["verified_shield"]["build_evidence"] = []
+        with self.assertRaisesRegex(
+            GENERATOR.ManifestError, "independent real build"
+        ):
+            GENERATOR.validate_manifest(self.manifest)
+
+    def test_lookup_experimental_geometry_is_observation_only(self) -> None:
+        tyrano = next(
+            record
+            for record in self.manifest["lookup_support"]["engines"]
+            if record["engine_id"] == "tyrano_nwjs"
+        )
+        tyrano["geometry"]["providers"].append("pixel_template_experimental")
+        tyrano["geometry"]["status"] = "partial"
+        tyrano["geometry"]["scope"] = "exact_build"
+        tyrano["geometry"]["build_evidence"] = [
+            {
+                "exe_sha256": "A" * 64,
+                "positive_probes": 200,
+                "negative_samples": 100,
+                "stale_generation_cases": 100,
+                "same_session_card_e2e": 3,
+                "wrong_character_hits": 0,
+                "negative_false_publish": 0,
+                "stale_hits": 0,
+            }
+        ]
+        with self.assertRaisesRegex(GENERATOR.ManifestError, "observation-only"):
+            GENERATOR.validate_manifest(self.manifest)
+
 
 if __name__ == "__main__":
     unittest.main()

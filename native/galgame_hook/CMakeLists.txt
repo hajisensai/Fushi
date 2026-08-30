@@ -43,6 +43,9 @@ add_library(fushi_voice_hook SHARED
   "hook/adapter.h"
   "hook/ffmpeg_runtime.h"
   "hook/hook_original_registry.h"
+  "hook/geometry_provider_registry.h"
+  "hook/lookup_v19_runtime.h"
+  "hook/generic_input_shield.inc"
   "hook/xaudio_resource_dispatch.h"
   "hook/bgi_arc.h"
   "hook/artemis_pfs.h"
@@ -55,6 +58,7 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/unity_adapter.inc"
   "hook/adapters/windows_audio_adapter.inc"
   "hook/adapters/siglus_adapter.inc"
+  "hook/adapters/exact_lookup_signature.h"
   "hook/adapters/siglus_lookup.h"
   "hook/adapters/siglus_lookup.inc"
   "hook/adapters/bgi_ethornell_adapter.inc"
@@ -84,11 +88,26 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/hunex_gge_lookup.h"
   "hook/adapters/hunex_gge_profile.h"
   "include/hunex_gge_trace.h"
+  "include/generic_input_shield.h"
   "include/leaf_d3d_trace.h"
 )
 target_include_directories(fushi_voice_hook PRIVATE "include")
 target_compile_definitions(fushi_voice_hook PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(fushi_voice_hook PRIVATE minhook winhttp ole32 bcrypt)
+
+# Exact self-rendered engine signatures are candidate locators, never build
+# identity. This synthetic gate pins global uniqueness across all executable
+# sections, relocated-operand masking, decoded targets, and call boundaries on
+# both helper architectures without shipping any game binary.
+add_executable(fushi_exact_lookup_signature_test
+  "tests/exact_lookup_signature_test.cpp"
+)
+target_include_directories(fushi_exact_lookup_signature_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_exact_lookup_signature_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_exact_lookup_signature_test
+  COMMAND fushi_exact_lookup_signature_test)
 
 # Siglus OVK 索引/Ogg 完整性解析是纯函数，独立小测试不需启动或注入游戏。
 enable_testing()
@@ -375,6 +394,16 @@ target_compile_definitions(fushi_lookup_ipc_contract_test
 add_test(NAME fushi_lookup_ipc_contract_test
   COMMAND fushi_lookup_ipc_contract_test)
 
+add_executable(fushi_geometry_provider_registry_test
+  tests/geometry_provider_registry_test.cpp)
+target_include_directories(fushi_geometry_provider_registry_test PRIVATE
+  include
+  hook)
+target_compile_definitions(fushi_geometry_provider_registry_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_geometry_provider_registry_test
+  COMMAND fushi_geometry_provider_registry_test)
+
 # 游戏内查词的会话 replay：hit→frame→apply、旧帧丢弃、未开启零写入、卡片外输入不转发、
 # 会话结束清理不串数据。fixture 走 argv（与 fushi_luna_text_replay_test 同一路子）。
 add_executable(fushi_lookup_session_replay_test
@@ -385,6 +414,17 @@ target_compile_definitions(fushi_lookup_session_replay_test
 add_test(NAME fushi_lookup_session_replay_test
   COMMAND fushi_lookup_session_replay_test
   "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/kirikiri_lookup_replay.tsv")
+
+# v19 generic bare-left-click shield reducers: complete down/up/tail ownership,
+# non-left byte isolation, standard DIMOUSESTATE layouts, stable buffered
+# compaction and Raw Input flag preservation. Pure synthetic data; no device.
+add_executable(fushi_generic_input_shield_test
+  tests/generic_input_shield_test.cpp)
+target_include_directories(fushi_generic_input_shield_test PRIVATE include)
+target_compile_definitions(fushi_generic_input_shield_test PRIVATE
+  "FUSHI_NATIVE_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\"")
+add_test(NAME fushi_generic_input_shield_test
+  COMMAND fushi_generic_input_shield_test)
 
 add_executable(fushi_unity_text_mesh_reassembler_test
   tests/unity_text_mesh_reassembler_test.cpp)

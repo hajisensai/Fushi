@@ -3,8 +3,67 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/platform/floating_overlay_channel.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
+
+int? _finiteWireInt(Object? value) {
+  if (value is! num || !value.isFinite) return null;
+  final int integer = value.toInt();
+  return value.toDouble() == integer.toDouble() ? integer : null;
+}
+
+int? _positiveWireInt(Object? value) {
+  final int? parsed = _finiteWireInt(value);
+  return parsed != null && parsed > 0 ? parsed : null;
+}
+
+bool _hasValidUtf16SourceSpan(String text, int start, int length) {
+  if (text.isEmpty ||
+      start < 0 ||
+      length <= 0 ||
+      start + length > text.length) {
+    return false;
+  }
+
+  // MethodChannel payloads are untrusted. Dart strings can contain unpaired
+  // UTF-16 surrogates, so a length-only check still permits a provider to
+  // address half of a supplementary character. Validate the complete source
+  // and require both ends of the cluster to be scalar boundaries, matching
+  // the native v19 reader gate.
+  for (int index = 0; index < text.length; index++) {
+    final int unit = text.codeUnitAt(index);
+    if (unit >= 0xD800 && unit <= 0xDBFF) {
+      if (index + 1 >= text.length) return false;
+      final int next = text.codeUnitAt(index + 1);
+      if (next < 0xDC00 || next > 0xDFFF) return false;
+      index++;
+    } else if (unit >= 0xDC00 && unit <= 0xDFFF) {
+      return false;
+    }
+  }
+
+  bool isBoundary(int index) =>
+      index == text.length ||
+      text.codeUnitAt(index) < 0xDC00 ||
+      text.codeUnitAt(index) > 0xDFFF;
+  return isBoundary(start) && isBoundary(start + length);
+}
+
+/// Mirrors `kLookupGeometryProductionProviderPairs` in the native v19
+/// registry. A valid kind and a valid id are not sufficient independently.
+bool isGalLookupProductionProviderPair(int kind, int id) {
+  switch (kind) {
+    case 1: // runtime_layout
+      return id == 1 || id == 2 || id == 6 || id == 7 || id == 8;
+    case 2: // engine_exact_layout
+      return id == 3 || id == 4 || id == 5 || id == 14;
+    case 3: // positioned_text_api
+      return id == 9 || id == 10;
+    default:
+      return false;
+  }
+}
 
 @immutable
 class GalHookTextWindowRect {
@@ -30,7 +89,7 @@ class GalHookTextWindowRect {
   };
 
   static GalHookTextWindowRect? fromMap(Map<Object?, Object?> map) {
-    int? value(String key) => (map[key] as num?)?.toInt();
+    int? value(String key) => _finiteWireInt(map[key]);
     final GalHookTextWindowRect rect = GalHookTextWindowRect(
       left: value('left') ?? 0,
       top: value('top') ?? 0,
@@ -53,8 +112,10 @@ typedef GalHookTextLockHandler = FutureOr<void> Function(bool locked);
 
 /// 游戏内查词（KiriKiri in-game lookup）：注入进游戏的 hook 报上来的一次命中。
 ///
-/// 坐标全部在**游戏 primaryLayer 像素**域（不是 Windows 屏幕逻辑/物理 px）——卡片
-/// 位图是逐像素 memcpy 进游戏 Layer 的，所以定位只能在这个域里算，Dart 侧绝不乘 dpr。
+/// 坐标只接受两个已经闭合的像素域：client physical pixels（runner 的
+/// RevealOverProcessClient 强制 view/client 1:1 后再 ClientToScreen）或游戏
+/// primaryLayer pixels（in-process 位图 presenter）。Design/layout-local 在没有唯一
+/// transform lineage 时 fail closed；Dart 侧不猜缩放也不乘 dpr。
 /// [charIndex] / [charCount] 是 UTF-16 code unit 下标，与 [line] 的 Dart String 下标
 /// 同坐标系（native 侧以 UTF-16 计数，见 voice_hook_ipc.h 的 LookupHitSlot）。
 @immutable
@@ -62,8 +123,15 @@ class GalLookupHit {
   const GalLookupHit({
     required this.seq,
     required this.line,
+    required this.providerKind,
+    required this.providerId,
     required this.charIndex,
+    required this.sourceLength,
     required this.charCount,
+    required this.textGeneration,
+    required this.geometryGeneration,
+    required this.coordinateSpace,
+    required this.writingMode,
     required this.glyphX,
     required this.glyphY,
     required this.glyphW,
@@ -79,25 +147,36 @@ class GalLookupHit {
   /// **整行**台词（不截断——制卡要整句）。
   final String line;
 
+  final int providerKind;
+  final int providerId;
+
   /// 光标落在第几个字符（UTF-16 下标）。
   final int charIndex;
 
+  /// Length of the provider-owned source cluster, in UTF-16 code units.
+  final int sourceLength;
+
   /// hook 自报的本行字符数，只用于自洽校验（与 [line] 长度不符即判脏数据）。
   final int charCount;
+
+  final int textGeneration;
+  final int geometryGeneration;
+  final int coordinateSpace;
+  final int writingMode;
 
   final int glyphX;
   final int glyphY;
   final int glyphW;
   final int glyphH;
 
-  /// primaryLayer 尺寸：卡片定位/钳制的「屏幕」。
+  /// 与 [coordinateSpace] 同域的 view 尺寸：卡片定位/钳制的「屏幕」。
   final int viewW;
   final int viewH;
 
   /// true = 真查词（点击 / hook 侧判定的悬停即查词）；false = 纯悬停，只更新高亮。
   final bool submit;
 
-  /// 命中字形矩形（primaryLayer px）。
+  /// 命中字形矩形（与 [coordinateSpace] / view 相同的物理像素域）。
   Rect get glyphRect => Rect.fromLTWH(
     glyphX.toDouble(),
     glyphY.toDouble(),
@@ -110,27 +189,86 @@ class GalLookupHit {
   bool get isAddressable =>
       line.isNotEmpty && charIndex >= 0 && charIndex < line.length;
 
-  /// hook 自报的字符数与 UTF-16 长度是否一致。**软门**（只记账不丢弃）：两侧计数单位
-  /// 若哪天漂了（比如 hook 改按字素簇计），硬丢会让整个功能静默死掉且日志上什么都
-  /// 看不到；[isAddressable] 已经挡住了真正危险的越界。
+  /// hook 自报的字符数与 UTF-16 长度是否一致。v19 production gate 会拒绝漂移，
+  /// 避免把一个 provider 的源文本与另一代几何拼到一起。
   bool get hasConsistentCharCount => charCount == line.length;
 
+  bool get isProductionSane {
+    final bool productionProvider = isGalLookupProductionProviderPair(
+      providerKind,
+      providerId,
+    );
+    final bool validSourceRange = _hasValidUtf16SourceSpan(
+      line,
+      charIndex,
+      sourceLength,
+    );
+    final bool validGeometry =
+        glyphX >= 0 &&
+        glyphY >= 0 &&
+        glyphW > 0 &&
+        glyphH > 0 &&
+        viewW > 0 &&
+        viewH > 0 &&
+        glyphX + glyphW <= viewW &&
+        glyphY + glyphH <= viewH;
+    return seq > 0 &&
+        line.isNotEmpty &&
+        productionProvider &&
+        validSourceRange &&
+        charCount == line.length &&
+        textGeneration > 0 &&
+        geometryGeneration > 0 &&
+        (coordinateSpace == 1 || coordinateSpace == 2) &&
+        writingMode == 1 &&
+        validGeometry;
+  }
+
   static GalLookupHit? fromMap(Map<Object?, Object?> map) {
-    int intOf(String key) => (map[key] as num?)?.toInt() ?? 0;
-    final String line = map['line']?.toString() ?? '';
-    if (line.isEmpty) return null;
+    int? intOf(String key) => _finiteWireInt(map[key]);
+
+    final Object? rawLine = map['line'];
+    if (rawLine is! String || rawLine.isEmpty || map['submit'] is! bool) {
+      return null;
+    }
+    final List<int?> numbers = <int?>[
+      intOf('seq'),
+      intOf('providerKind'),
+      intOf('providerId'),
+      intOf('charIndex'),
+      intOf('sourceLength'),
+      intOf('charCount'),
+      intOf('textGeneration'),
+      intOf('geometryGeneration'),
+      intOf('coordinateSpace'),
+      intOf('writingMode'),
+      intOf('glyphX'),
+      intOf('glyphY'),
+      intOf('glyphW'),
+      intOf('glyphH'),
+      intOf('viewW'),
+      intOf('viewH'),
+    ];
+    if (numbers.any((int? value) => value == null)) return null;
     return GalLookupHit(
-      seq: intOf('seq'),
-      line: line,
-      charIndex: intOf('charIndex'),
-      charCount: intOf('charCount'),
-      glyphX: intOf('glyphX'),
-      glyphY: intOf('glyphY'),
-      glyphW: intOf('glyphW'),
-      glyphH: intOf('glyphH'),
-      viewW: intOf('viewW'),
-      viewH: intOf('viewH'),
-      submit: map['submit'] == true,
+      seq: numbers[0]!,
+      line: rawLine,
+      providerKind: numbers[1]!,
+      providerId: numbers[2]!,
+      charIndex: numbers[3]!,
+      sourceLength: numbers[4]!,
+      charCount: numbers[5]!,
+      textGeneration: numbers[6]!,
+      geometryGeneration: numbers[7]!,
+      coordinateSpace: numbers[8]!,
+      writingMode: numbers[9]!,
+      glyphX: numbers[10]!,
+      glyphY: numbers[11]!,
+      glyphW: numbers[12]!,
+      glyphH: numbers[13]!,
+      viewW: numbers[14]!,
+      viewH: numbers[15]!,
+      submit: map['submit']! as bool,
     );
   }
 }
@@ -165,7 +303,7 @@ class GalLookupInput {
   final int keys;
 
   static GalLookupInput fromMap(Map<Object?, Object?> map) {
-    int intOf(String key) => (map[key] as num?)?.toInt() ?? 0;
+    int intOf(String key) => _finiteWireInt(map[key]) ?? 0;
     return GalLookupInput(
       seq: intOf('seq'),
       x: intOf('x'),
@@ -179,6 +317,498 @@ class GalLookupInput {
 
 typedef GalLookupHitHandler = FutureOr<void> Function(GalLookupHit hit);
 typedef GalLookupInputHandler = FutureOr<void> Function(GalLookupInput input);
+
+/// v19 attached-surface identity. Every attached call and event carries both
+/// epochs; callers can therefore discard delayed events after a game/window
+/// switch without guessing from HWND reuse.
+@immutable
+class GalAttachedSurfaceTarget {
+  const GalAttachedSurfaceTarget({
+    required this.sessionEpoch,
+    required this.surfaceEpoch,
+    required this.targetPid,
+    required this.targetHwnd,
+  });
+
+  final int sessionEpoch;
+  final int surfaceEpoch;
+  final int targetPid;
+  final int targetHwnd;
+
+  bool get isValid =>
+      sessionEpoch > 0 && surfaceEpoch > 0 && targetPid > 0 && targetHwnd != 0;
+
+  Map<String, Object?> toMap() => <String, Object?>{
+    'sessionEpoch': sessionEpoch,
+    'surfaceEpoch': surfaceEpoch,
+    'targetPid': targetPid,
+    'targetHwnd': targetHwnd,
+  };
+
+  bool matches(GalAttachedSurfaceTarget other) =>
+      sessionEpoch == other.sessionEpoch &&
+      surfaceEpoch == other.surfaceEpoch &&
+      targetPid == other.targetPid &&
+      targetHwnd == other.targetHwnd;
+
+  static GalAttachedSurfaceTarget? fromMap(Map<Object?, Object?> map) {
+    int intOf(String key) {
+      final Object? value = map[key];
+      if (value is num) return _finiteWireInt(value) ?? 0;
+      if (value is String) {
+        final String normalized = value.trim().toLowerCase();
+        return int.tryParse(
+              normalized.startsWith('0x')
+                  ? normalized.substring(2)
+                  : normalized,
+              radix: normalized.startsWith('0x') ? 16 : 10,
+            ) ??
+            0;
+      }
+      return 0;
+    }
+
+    final GalAttachedSurfaceTarget target = GalAttachedSurfaceTarget(
+      sessionEpoch: intOf('sessionEpoch'),
+      surfaceEpoch: intOf('surfaceEpoch'),
+      targetPid: intOf('targetPid'),
+      targetHwnd: intOf('targetHwnd'),
+    );
+    return target.isValid ? target : null;
+  }
+}
+
+@immutable
+class GalAttachedCalibrationProbes {
+  const GalAttachedCalibrationProbes({
+    required this.startIndex,
+    required this.middleIndex,
+    required this.endIndex,
+    required this.startConfirmed,
+    required this.middleConfirmed,
+    required this.endConfirmed,
+  });
+
+  final int startIndex;
+  final int middleIndex;
+  final int endIndex;
+  final bool startConfirmed;
+  final bool middleConfirmed;
+  final bool endConfirmed;
+
+  int get confirmationMask =>
+      (startConfirmed ? 1 : 0) |
+      (middleConfirmed ? 2 : 0) |
+      (endConfirmed ? 4 : 0);
+
+  bool hasValidIndicesForSourceLength(int sourceLength) =>
+      startIndex >= 0 &&
+      startIndex < middleIndex &&
+      middleIndex < endIndex &&
+      (sourceLength <= 0 || endIndex < sourceLength);
+
+  bool isCommitReadyForSourceLength(int sourceLength) =>
+      confirmationMask == 7 && hasValidIndicesForSourceLength(sourceLength);
+
+  Map<String, Object?> toMap() => <String, Object?>{
+    'probeStartIndex': startIndex,
+    'probeMiddleIndex': middleIndex,
+    'probeEndIndex': endIndex,
+    'probeStartConfirmed': startConfirmed,
+    'probeMiddleConfirmed': middleConfirmed,
+    'probeEndConfirmed': endConfirmed,
+  };
+}
+
+/// Input-shield conclusion published by the v19 helper.
+///
+/// The conclusion bits are mutually exclusive on the wire. Unknown is the
+/// zero value, so older runners that omit the snapshot remain fail-open and
+/// visibly unverified instead of being mistaken for a safe shield.
+enum GalAttachedShieldConclusion {
+  unknown,
+  verified,
+  partial,
+  knownUncovered,
+  faulted,
+}
+
+@immutable
+class GalAttachedShieldStatus {
+  const GalAttachedShieldStatus({
+    this.available = false,
+    this.requestSeq = 0,
+    this.appliedSeq = 0,
+    this.requiredMask = 0,
+    this.readyMask = 0,
+    this.observedMask = 0,
+    this.faultMask = 0,
+    this.statusFlags = 0,
+  });
+
+  static const int _verifiedFlag = 0x01;
+  static const int _partialFlag = 0x02;
+  static const int _knownUncoveredFlag = 0x04;
+  static const int _faultedFlag = 0x08;
+  static const int _riskAllowedFlag = 0x10;
+  static const int _transactionActiveFlag = 0x20;
+
+  final bool available;
+  final int requestSeq;
+  final int appliedSeq;
+  final int requiredMask;
+  final int readyMask;
+  final int observedMask;
+  final int faultMask;
+  final int statusFlags;
+
+  GalAttachedShieldConclusion get conclusion {
+    if ((statusFlags & _faultedFlag) != 0) {
+      return GalAttachedShieldConclusion.faulted;
+    }
+    if ((statusFlags & _knownUncoveredFlag) != 0) {
+      return GalAttachedShieldConclusion.knownUncovered;
+    }
+    if ((statusFlags & _partialFlag) != 0) {
+      return GalAttachedShieldConclusion.partial;
+    }
+    if ((statusFlags & _verifiedFlag) != 0) {
+      return GalAttachedShieldConclusion.verified;
+    }
+    return GalAttachedShieldConclusion.unknown;
+  }
+
+  bool get riskAllowed => (statusFlags & _riskAllowedFlag) != 0;
+  bool get transactionActive => (statusFlags & _transactionActiveFlag) != 0;
+
+  static GalAttachedShieldStatus fromMap(Object? value) {
+    if (value is! Map) return const GalAttachedShieldStatus();
+    final Map<Object?, Object?> map = value.cast<Object?, Object?>();
+    int intOf(String key) => _finiteWireInt(map[key]) ?? 0;
+    return GalAttachedShieldStatus(
+      available: map['available'] == true,
+      requestSeq: intOf('requestSeq'),
+      appliedSeq: intOf('appliedSeq'),
+      requiredMask: intOf('requiredMask'),
+      readyMask: intOf('readyMask'),
+      observedMask: intOf('observedMask'),
+      faultMask: intOf('faultMask'),
+      statusFlags: intOf('statusFlags'),
+    );
+  }
+}
+
+/// v19 `lookupText` payload emitted by the attached DirectWrite hit layer.
+/// Indices and lengths are UTF-16 code units, matching Dart String indexing.
+@immutable
+class GalAttachedLookupHitV19 {
+  const GalAttachedLookupHitV19({
+    required this.target,
+    required this.sourceText,
+    required this.textGeneration,
+    required this.charIndex,
+    required this.sourceLength,
+    this.wordRect,
+  });
+
+  static const String surface = 'attached';
+
+  final GalAttachedSurfaceTarget target;
+  final String sourceText;
+  final int textGeneration;
+  final int charIndex;
+  final int sourceLength;
+  final Rect? wordRect;
+
+  bool get isAddressable =>
+      sourceText.isNotEmpty &&
+      textGeneration > 0 &&
+      charIndex >= 0 &&
+      charIndex < sourceText.length;
+
+  /// [sourceLength] is the clicked DirectWrite cluster length, not the full
+  /// sentence length. The complete cluster range must remain addressable.
+  bool get hasConsistentSourceLength =>
+      _hasValidUtf16SourceSpan(sourceText, charIndex, sourceLength);
+
+  static GalAttachedLookupHitV19? fromMap(Map<Object?, Object?> map) {
+    if (map['surface'] != surface) return null;
+    final GalAttachedSurfaceTarget? target = GalAttachedSurfaceTarget.fromMap(
+      map,
+    );
+    if (target == null) return null;
+    final Object? source = map['sourceText'] ?? map['text'];
+    if (source is! String) return null;
+    final int? generation = _finiteWireInt(map['textGeneration']);
+    final int? charIndex =
+        _finiteWireInt(map['charIndex']) ?? _finiteWireInt(map['index']);
+    final int? sourceLength = _finiteWireInt(map['sourceLength']);
+    if (generation == null || charIndex == null || sourceLength == null) {
+      return null;
+    }
+    final GalAttachedLookupHitV19 hit = GalAttachedLookupHitV19(
+      target: target,
+      sourceText: source,
+      textGeneration: generation,
+      charIndex: charIndex,
+      sourceLength: sourceLength,
+      wordRect: GalHookTextOverlayChannel._wordRect(map),
+    );
+    return hit.isAddressable && hit.hasConsistentSourceLength ? hit : null;
+  }
+}
+
+@immutable
+class GalAttachedSurfaceStateEvent {
+  const GalAttachedSurfaceStateEvent({
+    required this.target,
+    required this.state,
+    required this.status,
+    this.reason,
+    this.surfaceVisible = false,
+    this.referenceClient,
+    this.bodyRect,
+    this.layout,
+    this.shield = const GalAttachedShieldStatus(),
+    this.providerKind,
+    this.providerId,
+    this.providerStatus,
+    this.probeStartObservedIndex,
+    this.probeMiddleObservedIndex,
+    this.probeEndObservedIndex,
+    this.calibrationProbeMask = 0,
+  });
+
+  final GalAttachedSurfaceTarget target;
+  final String state;
+  final String status;
+  final String? reason;
+  final bool surfaceVisible;
+  final GalLookupReferenceClientV1? referenceClient;
+  final GalLookupNormalizedRectV1? bodyRect;
+  final GalLookupTextLayoutV1? layout;
+  final GalAttachedShieldStatus shield;
+  final int? providerKind;
+  final int? providerId;
+  final int? providerStatus;
+  final int? probeStartObservedIndex;
+  final int? probeMiddleObservedIndex;
+  final int? probeEndObservedIndex;
+  final int calibrationProbeMask;
+
+  static GalAttachedSurfaceStateEvent? fromMap(Map<Object?, Object?> map) {
+    final GalAttachedSurfaceTarget? target = GalAttachedSurfaceTarget.fromMap(
+      map,
+    );
+    final Object? rawStatus = map['status'];
+    final Object? rawState = map['state'];
+    final Object? rawReason = map['reason'];
+    if ((rawStatus != null && rawStatus is! String) ||
+        (rawState != null && rawState is! String) ||
+        (rawReason != null && rawReason is! String)) {
+      return null;
+    }
+    final String status = (rawStatus as String?) ?? (rawState as String?) ?? '';
+    if (target == null || status.isEmpty) return null;
+    final String state = (rawState as String?) ?? '';
+    final String reason = (rawReason as String?) ?? '';
+    return GalAttachedSurfaceStateEvent(
+      target: target,
+      state: state,
+      status: status,
+      reason: reason.isEmpty ? null : reason,
+      surfaceVisible: map['surfaceVisible'] == true,
+      referenceClient: GalLookupReferenceClientV1.tryFromJson(
+        map['referenceClient'],
+      ),
+      bodyRect: GalLookupNormalizedRectV1.tryFromJson(map['bodyRect']),
+      layout: GalLookupTextLayoutV1.tryFromJson(map['layout']),
+      shield: GalAttachedShieldStatus.fromMap(map['shield']),
+      providerKind: _positiveWireInt(map['providerKind']),
+      providerId: _positiveWireInt(map['providerId']),
+      providerStatus: _finiteWireInt(map['providerStatus']),
+      probeStartObservedIndex: _finiteWireInt(map['probeStartObservedIndex']),
+      probeMiddleObservedIndex: _finiteWireInt(map['probeMiddleObservedIndex']),
+      probeEndObservedIndex: _finiteWireInt(map['probeEndObservedIndex']),
+      calibrationProbeMask: _finiteWireInt(map['calibrationProbeMask']) ?? 0,
+    );
+  }
+}
+
+@immutable
+class GalAttachedCalibrationEvent {
+  const GalAttachedCalibrationEvent({
+    required this.target,
+    required this.bodyRect,
+    required this.referenceClient,
+    this.layout,
+    this.riskAccepted = false,
+    this.calibrationProbeMask = 0,
+  });
+
+  final GalAttachedSurfaceTarget target;
+  final GalLookupNormalizedRectV1 bodyRect;
+  final GalLookupReferenceClientV1 referenceClient;
+  final GalLookupTextLayoutV1? layout;
+  final bool riskAccepted;
+  final int calibrationProbeMask;
+
+  static GalAttachedCalibrationEvent? fromMap(Map<Object?, Object?> map) {
+    final GalAttachedSurfaceTarget? target = GalAttachedSurfaceTarget.fromMap(
+      map,
+    );
+    final GalLookupNormalizedRectV1? rect =
+        GalLookupNormalizedRectV1.tryFromJson(map['bodyRect']);
+    final GalLookupReferenceClientV1? client =
+        GalLookupReferenceClientV1.tryFromJson(map['referenceClient']);
+    if (target == null || rect == null || client == null) return null;
+    return GalAttachedCalibrationEvent(
+      target: target,
+      bodyRect: rect,
+      referenceClient: client,
+      layout: GalLookupTextLayoutV1.tryFromJson(map['layout']),
+      riskAccepted: map['riskAccepted'] == true,
+      calibrationProbeMask: _finiteWireInt(map['calibrationProbeMask']) ?? 0,
+    );
+  }
+}
+
+@immutable
+class GalAttachedCalibrationCancelledEvent {
+  const GalAttachedCalibrationCancelledEvent({
+    required this.target,
+    this.reason,
+  });
+
+  final GalAttachedSurfaceTarget target;
+  final String? reason;
+
+  static GalAttachedCalibrationCancelledEvent? fromMap(
+    Map<Object?, Object?> map,
+  ) {
+    final GalAttachedSurfaceTarget? target = GalAttachedSurfaceTarget.fromMap(
+      map,
+    );
+    final Object? rawReason = map['reason'];
+    if (target == null || (rawReason != null && rawReason is! String)) {
+      return null;
+    }
+    final String reason = (rawReason as String?) ?? '';
+    return GalAttachedCalibrationCancelledEvent(
+      target: target,
+      reason: reason.isEmpty ? null : reason,
+    );
+  }
+}
+
+typedef GalAttachedLookupHandler =
+    FutureOr<void> Function(GalAttachedLookupHitV19 hit);
+typedef GalAttachedSurfaceStateHandler =
+    FutureOr<void> Function(GalAttachedSurfaceStateEvent event);
+typedef GalAttachedCalibrationHandler =
+    FutureOr<void> Function(GalAttachedCalibrationEvent event);
+typedef GalAttachedCalibrationCancelledHandler =
+    FutureOr<void> Function(GalAttachedCalibrationCancelledEvent event);
+
+@immutable
+class GalAttachedCallResult {
+  const GalAttachedCallResult({
+    this.error,
+    this.status,
+    this.reason,
+    this.exePath,
+    this.exeSha256,
+    this.surfaceVisible = false,
+    this.bodyRect,
+    this.referenceClient,
+    this.layout,
+    this.shield = const GalAttachedShieldStatus(),
+    this.providerKind,
+    this.providerId,
+    this.providerStatus,
+    this.probeStartObservedIndex,
+    this.probeMiddleObservedIndex,
+    this.probeEndObservedIndex,
+    this.calibrationProbeMask = 0,
+  });
+
+  static const GalAttachedCallResult unsupported = GalAttachedCallResult(
+    error: 'unsupported_platform',
+  );
+
+  final String? error;
+  final String? status;
+  final String? reason;
+  final String? exePath;
+  final String? exeSha256;
+  final bool surfaceVisible;
+  final GalLookupNormalizedRectV1? bodyRect;
+  final GalLookupReferenceClientV1? referenceClient;
+  final GalLookupTextLayoutV1? layout;
+  final GalAttachedShieldStatus shield;
+  final int? providerKind;
+  final int? providerId;
+  final int? providerStatus;
+  final int? probeStartObservedIndex;
+  final int? probeMiddleObservedIndex;
+  final int? probeEndObservedIndex;
+  final int calibrationProbeMask;
+
+  bool get ok => error == null;
+
+  static GalAttachedCallResult fromReply(Object? reply) {
+    if (reply is! Map) {
+      return const GalAttachedCallResult(error: 'malformed_reply');
+    }
+    final Map<Object?, Object?> map = reply.cast<Object?, Object?>();
+    const List<String> stringKeys = <String>[
+      'error',
+      'status',
+      'state',
+      'reason',
+      'exePath',
+      'exeSha256',
+    ];
+    for (final String key in stringKeys) {
+      final Object? value = map[key];
+      if (value != null && value is! String) {
+        return const GalAttachedCallResult(error: 'malformed_reply');
+      }
+    }
+    String? nonEmpty(String key) {
+      final String value = (map[key] as String?) ?? '';
+      return value.isEmpty ? null : value;
+    }
+
+    if (nonEmpty('error') == null &&
+        nonEmpty('status') == null &&
+        nonEmpty('state') == null) {
+      return const GalAttachedCallResult(error: 'malformed_reply');
+    }
+
+    return GalAttachedCallResult(
+      error: nonEmpty('error'),
+      status: nonEmpty('status') ?? nonEmpty('state'),
+      reason: nonEmpty('reason'),
+      exePath: nonEmpty('exePath'),
+      exeSha256: nonEmpty('exeSha256'),
+      surfaceVisible: map['surfaceVisible'] == true,
+      bodyRect: GalLookupNormalizedRectV1.tryFromJson(map['bodyRect']),
+      referenceClient: GalLookupReferenceClientV1.tryFromJson(
+        map['referenceClient'],
+      ),
+      layout: GalLookupTextLayoutV1.tryFromJson(map['layout']),
+      shield: GalAttachedShieldStatus.fromMap(map['shield']),
+      providerKind: _positiveWireInt(map['providerKind']),
+      providerId: _positiveWireInt(map['providerId']),
+      providerStatus: _finiteWireInt(map['providerStatus']),
+      probeStartObservedIndex: _finiteWireInt(map['probeStartObservedIndex']),
+      probeMiddleObservedIndex: _finiteWireInt(map['probeMiddleObservedIndex']),
+      probeEndObservedIndex: _finiteWireInt(map['probeEndObservedIndex']),
+      calibrationProbeMask: _finiteWireInt(map['calibrationProbeMask']) ?? 0,
+    );
+  }
+}
 
 /// 游戏内查词 Dart→runner 调用的应答。
 ///
@@ -194,6 +824,8 @@ class GalLookupCallResult {
     this.height = 0,
     this.clamped = false,
     this.directSurface = false,
+    this.requestSeq = 0,
+    this.appliedSeq = 0,
   });
 
   /// 平台不支持（非 Windows）时的常量结果：不是失败，是「这条链在这个平台不存在」。
@@ -215,6 +847,13 @@ class GalLookupCallResult {
   /// DOM/滚动由浏览器合成器原生刷新，不再需要 CapturePreview dirty 帧。
   final bool directSurface;
 
+  /// Host→hook control generation and the last registry-acknowledged
+  /// generation. Geometry admission may be accepted before an in-flight
+  /// mouse tail lets the registry apply it, so these values need not match in
+  /// the immediate MethodChannel reply.
+  final int requestSeq;
+  final int appliedSeq;
+
   bool get ok => error == null;
 
   static GalLookupCallResult fromReply(Object? reply) {
@@ -223,12 +862,26 @@ class GalLookupCallResult {
     final Object? error = map['error'];
     return GalLookupCallResult(
       error: error is String && error.isNotEmpty ? error : null,
-      width: (map['width'] as num?)?.toInt() ?? 0,
-      height: (map['height'] as num?)?.toInt() ?? 0,
+      width: _finiteWireInt(map['width']) ?? 0,
+      height: _finiteWireInt(map['height']) ?? 0,
       clamped: map['clamped'] == true,
       directSurface: map['directSurface'] == true,
+      requestSeq: _finiteWireInt(map['requestSeq']) ?? 0,
+      appliedSeq: _finiteWireInt(map['appliedSeq']) ?? 0,
     );
   }
+}
+
+/// v19 host→hook geometry ownership policy. This is intentionally separate
+/// from the lookup runtime switch because attached lookup still depends on
+/// the injected generic input shield.
+enum GalLookupGeometryAdmissionMode {
+  disabled,
+  auto,
+  nativeOnly,
+  attachedOnly;
+
+  int get wireValue => index;
 }
 
 /// native 侧穿透态被否决 / 变更时的回传（BUG-951）。native 建不出逃生工具条窗
@@ -276,6 +929,11 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
   static GalHookTextBoundsHandler? _onBoundsChanged;
   static GalLookupHitHandler? _onGalLookupHit;
   static GalLookupInputHandler? _onGalLookupInput;
+  static GalAttachedLookupHandler? _onAttachedLookupText;
+  static GalAttachedSurfaceStateHandler? _onAttachedSurfaceStateChanged;
+  static GalAttachedCalibrationHandler? _onAttachedCalibrationCommitted;
+  static GalAttachedCalibrationCancelledHandler?
+  _onAttachedCalibrationCancelled;
 
   static void setEventHandlers({
     GalHookTextLookupHandler? onLookupText,
@@ -291,6 +949,10 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     GalHookTextBoundsHandler? onBoundsChanged,
     GalLookupHitHandler? onGalLookupHit,
     GalLookupInputHandler? onGalLookupInput,
+    GalAttachedLookupHandler? onAttachedLookupText,
+    GalAttachedSurfaceStateHandler? onAttachedSurfaceStateChanged,
+    GalAttachedCalibrationHandler? onAttachedCalibrationCommitted,
+    GalAttachedCalibrationCancelledHandler? onAttachedCalibrationCancelled,
   }) {
     _onLookupText = onLookupText;
     _onToggleFollow = onToggleFollow;
@@ -305,6 +967,10 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     _onBoundsChanged = onBoundsChanged;
     _onGalLookupHit = onGalLookupHit;
     _onGalLookupInput = onGalLookupInput;
+    _onAttachedLookupText = onAttachedLookupText;
+    _onAttachedSurfaceStateChanged = onAttachedSurfaceStateChanged;
+    _onAttachedCalibrationCommitted = onAttachedCalibrationCommitted;
+    _onAttachedCalibrationCancelled = onAttachedCalibrationCancelled;
     _instance.channel.setMethodCallHandler(_handleNativeCall);
   }
 
@@ -322,6 +988,10 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     _onBoundsChanged = null;
     _onGalLookupHit = null;
     _onGalLookupInput = null;
+    _onAttachedLookupText = null;
+    _onAttachedSurfaceStateChanged = null;
+    _onAttachedCalibrationCommitted = null;
+    _onAttachedCalibrationCancelled = null;
     _instance.channel.setMethodCallHandler(null);
   }
 
@@ -332,9 +1002,16 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
         : const {};
     switch (call.method) {
       case 'lookupText':
+        if (args['surface'] == GalAttachedLookupHitV19.surface) {
+          final GalAttachedLookupHitV19? hit = GalAttachedLookupHitV19.fromMap(
+            args,
+          );
+          if (hit != null) await _onAttachedLookupText?.call(hit);
+          break;
+        }
         final String lineId = args['lineId']?.toString() ?? '';
         final String text = args['text']?.toString() ?? '';
-        final int index = (args['index'] as num?)?.toInt() ?? 0;
+        final int index = _finiteWireInt(args['index']) ?? 0;
         if (lineId.isNotEmpty && text.trim().isNotEmpty) {
           await _onLookupText?.call(lineId, text, index, _wordRect(args));
         }
@@ -374,12 +1051,27 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       // 负责去抖/丢弃，channel 层只做解析与自洽校验。
       case 'onGalLookupHit':
         final GalLookupHit? hit = GalLookupHit.fromMap(args);
-        if (hit != null && hit.isAddressable) {
+        if (hit != null && hit.isProductionSane) {
           await _onGalLookupHit?.call(hit);
         }
         break;
       case 'onGalLookupInput':
         await _onGalLookupInput?.call(GalLookupInput.fromMap(args));
+        break;
+      case 'attachedSurfaceStateChanged':
+        final GalAttachedSurfaceStateEvent? event =
+            GalAttachedSurfaceStateEvent.fromMap(args);
+        if (event != null) await _onAttachedSurfaceStateChanged?.call(event);
+        break;
+      case 'attachedCalibrationCommitted':
+        final GalAttachedCalibrationEvent? event =
+            GalAttachedCalibrationEvent.fromMap(args);
+        if (event != null) await _onAttachedCalibrationCommitted?.call(event);
+        break;
+      case 'attachedCalibrationCancelled':
+        final GalAttachedCalibrationCancelledEvent? event =
+            GalAttachedCalibrationCancelledEvent.fromMap(args);
+        if (event != null) await _onAttachedCalibrationCancelled?.call(event);
         break;
       default:
         break;
@@ -389,10 +1081,15 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
   /// native 回传的被点字矩形（屏幕逻辑 px）。老 native 不带这几项时返回 null，
   /// 调用方回落到原来的光标定位（Never break）。
   static Rect? _wordRect(Map<Object?, Object?> args) {
-    final double? left = (args['wordLeft'] as num?)?.toDouble();
-    final double? top = (args['wordTop'] as num?)?.toDouble();
-    final double? width = (args['wordWidth'] as num?)?.toDouble();
-    final double? height = (args['wordHeight'] as num?)?.toDouble();
+    double? number(String key) {
+      final Object? value = args[key];
+      return value is num && value.isFinite ? value.toDouble() : null;
+    }
+
+    final double? left = number('wordLeft');
+    final double? top = number('wordTop');
+    final double? width = number('wordWidth');
+    final double? height = number('wordHeight');
     if (left == null || top == null || width == null || height == null) {
       return null;
     }
@@ -565,6 +1262,139 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     });
   }
 
+  // ── v19 attached DirectWrite lookup surface (Dart → runner) ──────────────
+
+  static Future<GalAttachedCallResult> _invokeAttached(
+    String method,
+    GalAttachedSurfaceTarget target, [
+    Map<String, Object?> arguments = const <String, Object?>{},
+  ]) async {
+    if (!_instance.isSupported) return GalAttachedCallResult.unsupported;
+    if (!target.isValid) {
+      return const GalAttachedCallResult(error: 'invalid_target');
+    }
+    try {
+      final Object? reply = await _instance.channel.invokeMethod<Object?>(
+        method,
+        <String, Object?>{...target.toMap(), ...arguments},
+      );
+      return GalAttachedCallResult.fromReply(reply);
+    } on PlatformException catch (error) {
+      return GalAttachedCallResult(
+        error: error.code.isEmpty ? 'platform_error' : error.code,
+        reason: error.message,
+      );
+    } on MissingPluginException {
+      return const GalAttachedCallResult(error: 'attached_surface_unavailable');
+    }
+  }
+
+  static Future<GalAttachedCallResult> attachedInspectTarget(
+    GalAttachedSurfaceTarget target, {
+    String? launchExePath,
+  }) => _invokeAttached('attachedInspectTarget', target, <String, Object?>{
+    if (launchExePath != null && launchExePath.trim().isNotEmpty)
+      'launchExePath': launchExePath.trim(),
+  });
+
+  static Future<GalAttachedCallResult> attachedCalibrationStart({
+    required GalAttachedSurfaceTarget target,
+    required GalLookupNormalizedRectV1 bodyRect,
+    required GalLookupReferenceClientV1 referenceClient,
+    required GalLookupTextLayoutV1 layout,
+    required bool riskAccepted,
+  }) => _invokeAttached('attachedCalibrationStart', target, <String, Object?>{
+    'bodyRect': bodyRect.toJson(),
+    'referenceClient': referenceClient.toJson(),
+    'layout': layout.toJson(),
+    'inputMode': GalLookupSurfaceProfileV1.inputMode,
+    'riskAccepted': riskAccepted,
+  });
+
+  static Future<GalAttachedCallResult> attachedCalibrationUpdate({
+    required GalAttachedSurfaceTarget target,
+    required GalLookupNormalizedRectV1 bodyRect,
+    required GalAttachedCalibrationProbes probes,
+  }) => _invokeAttached('attachedCalibrationUpdate', target, <String, Object?>{
+    'bodyRect': bodyRect.toJson(),
+    ...probes.toMap(),
+  });
+
+  static Future<GalAttachedCallResult> attachedCalibrationCommit({
+    required GalAttachedSurfaceTarget target,
+    required GalLookupNormalizedRectV1 bodyRect,
+    required GalAttachedCalibrationProbes probes,
+  }) => _invokeAttached('attachedCalibrationCommit', target, <String, Object?>{
+    'bodyRect': bodyRect.toJson(),
+    ...probes.toMap(),
+  });
+
+  static Future<GalAttachedCallResult> attachedCalibrationCancel(
+    GalAttachedSurfaceTarget target,
+  ) => _invokeAttached('attachedCalibrationCancel', target);
+
+  static Future<GalAttachedCallResult> attachedConfigure({
+    required GalAttachedSurfaceTarget target,
+    required GalLookupSurfaceVariantV1 variant,
+    required GalLookupSurfaceMode mode,
+    required bool riskAccepted,
+  }) => _invokeAttached('attachedConfigure', target, <String, Object?>{
+    'bodyRect': variant.bodyRect.toJson(),
+    'referenceClient': variant.referenceClient.toJson(),
+    'layout': variant.layout.toJson(),
+    'mode': mode.wireName,
+    'inputMode': GalLookupSurfaceProfileV1.inputMode,
+    'riskAccepted': riskAccepted,
+  });
+
+  static Future<GalAttachedCallResult> attachedUpdateText({
+    required GalAttachedSurfaceTarget target,
+    required String sourceText,
+    required int textGeneration,
+    String writingMode = GalLookupSurfaceProfileV1.writingMode,
+  }) {
+    if (writingMode != GalLookupSurfaceProfileV1.writingMode) {
+      return Future<GalAttachedCallResult>.value(
+        const GalAttachedCallResult(error: 'unsupported_writing_mode'),
+      );
+    }
+    return _invokeAttached('attachedUpdateText', target, <String, Object?>{
+      'sourceText': sourceText,
+      'textGeneration': textGeneration,
+      'writingMode': writingMode,
+    });
+  }
+
+  static Future<GalAttachedCallResult> attachedUpdateStyle({
+    required GalAttachedSurfaceTarget target,
+    required GalLookupTextLayoutV1 layout,
+  }) => _invokeAttached('attachedUpdateStyle', target, <String, Object?>{
+    'layout': layout.toJson(),
+  });
+
+  static Future<GalAttachedCallResult> attachedSuspendForCapture({
+    required GalAttachedSurfaceTarget target,
+    required int textGeneration,
+    required int captureGeneration,
+  }) => _invokeAttached('attachedSuspendForCapture', target, <String, Object?>{
+    'textGeneration': textGeneration,
+    'captureGeneration': captureGeneration,
+  });
+
+  static Future<GalAttachedCallResult> attachedRestoreAfterCapture({
+    required GalAttachedSurfaceTarget target,
+    required int textGeneration,
+    required int captureGeneration,
+  }) =>
+      _invokeAttached('attachedRestoreAfterCapture', target, <String, Object?>{
+        'textGeneration': textGeneration,
+        'captureGeneration': captureGeneration,
+      });
+
+  static Future<GalAttachedCallResult> attachedDetach(
+    GalAttachedSurfaceTarget target,
+  ) => _invokeAttached('attachedDetach', target);
+
   // ── 游戏内查词（Dart → runner）────────────────────────────────────────────
   // 三个方法都只搬运整数/布尔：**位图永远不经过 Dart**（离屏 WebView2 出帧 →
   // runner 取帧 → 共享内存 → hook memcpy 进游戏 Layer），Dart 只说「谁、放哪、
@@ -578,6 +1408,25 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       await _instance.channel.invokeMethod<Object?>(
         'galLookupSetEnabled',
         <String, Object?>{'enabled': enabled},
+      ),
+    );
+  }
+
+  /// Updates the injected GeometryProviderRegistry admission without stopping
+  /// the lookup runtime or generic shield. [attachedReady] is the host-owned
+  /// calibrated fallback offer; it never authorizes a shared-memory hit writer.
+  static Future<GalLookupCallResult> galLookupSetGeometryAdmission({
+    required GalLookupGeometryAdmissionMode mode,
+    required bool attachedReady,
+  }) async {
+    if (!_instance.isSupported) return GalLookupCallResult.unsupported;
+    return GalLookupCallResult.fromReply(
+      await _instance.channel.invokeMethod<Object?>(
+        'galLookupSetGeometryAdmission',
+        <String, Object?>{
+          'mode': mode.wireValue,
+          'attachedReady': attachedReady,
+        },
       ),
     );
   }

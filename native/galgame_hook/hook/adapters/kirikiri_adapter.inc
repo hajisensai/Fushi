@@ -4624,13 +4624,17 @@ uint64_t g_lookup_dropped_seq = 0;
 uint64_t g_lookup_retry_seq = 0;
 uint32_t g_lookup_retry_count = 0;
 // hover 只在游戏线程即时绘制高亮，不跨 IPC；hook→host 单槽只发布 submit。
-// g_lookup_hit_seq 仍跟踪最新任意命中，用来避免迟到卡片覆盖新的本地高亮；
-// submit fence 保存最近一次真正的查词意图。
+// frame 的 hit_seq 是 registry 全局 wire sequence；TJS 的 HitSeq/SubmitSeq 则会被 hover
+// 推进，属于 provider-local source sequence。两套序列绝不能直接比较：provider 切换或
+// registry 拒绝一次发布后它们就不再相等。
 uint64_t g_lookup_hit_seq = 0;
 uint64_t g_lookup_submit_hit_seq = 0;
+uint64_t g_lookup_visual_source_seq = 0;
+uint64_t g_lookup_submit_source_seq = 0;
 // 游戏侧 Esc 取消 submit 的单调 fence。它不复用 generic hide：收卡/禁用/失败回滚
 // 都不应取消未来或在途的用户查询；只有显式用户取消，或句子/表面世代退休路径会推进它。
 uint64_t g_lookup_dismissed_submit_seq = 0;
+uint64_t g_lookup_dismissed_source_seq = 0;
 uint64_t g_lookup_processed_submit_seq = 0;
 uint64_t g_lookup_submit_retry_seq = 0;
 uint32_t g_lookup_submit_retry_count = 0;
@@ -5003,8 +5007,12 @@ bool RefreshKirikiriLookupDismissFence() {
   }
   if (dismissed > 0) {
     const uint64_t seq = static_cast<uint64_t>(dismissed);
-    if (seq > g_lookup_dismissed_submit_seq) {
-      g_lookup_dismissed_submit_seq = seq;
+    if (seq > g_lookup_dismissed_source_seq) {
+      g_lookup_dismissed_source_seq = seq;
+      if (seq >= g_lookup_submit_source_seq &&
+          g_lookup_submit_hit_seq > g_lookup_dismissed_submit_seq) {
+        g_lookup_dismissed_submit_seq = g_lookup_submit_hit_seq;
+      }
       if (seq > g_lookup_processed_submit_seq) {
         g_lookup_processed_submit_seq = seq;
       }
@@ -5256,15 +5264,19 @@ bool RetryOrDropKirikiriLookupHit(uint64_t seq) {
   // 永远重试。旧卡的异步结果已被 submit fence 作废，失败时也要收掉旧卡。
   g_lookup_processed_submit_seq = seq;
   ResetKirikiriLookupHitRetry(seq);
-  if (seq == g_lookup_submit_hit_seq) HideKirikiriLookupCard();
+  if (seq == g_lookup_submit_source_seq) HideKirikiriLookupCard();
   SetLookupDiag(fushi_voice_hook::kLookupDiagSensorFault);
   return true;
 }
 
 bool ObserveKirikiriLookupSubmitSeq(uint64_t seq) {
-  if (seq == 0 || seq <= g_lookup_submit_hit_seq) return false;
-  g_lookup_submit_hit_seq = seq;
-  if (seq > g_lookup_hit_seq) g_lookup_hit_seq = seq;
+  if (seq == 0 || seq <= g_lookup_submit_source_seq) return false;
+  g_lookup_submit_source_seq = seq;
+  // A newer source transaction immediately invalidates frames for the old
+  // wire hit. The accepted registry publication below installs its new wire
+  // identity; transient/failed snapshots remain fail closed at zero.
+  g_lookup_submit_hit_seq = 0;
+  g_lookup_hit_seq = 0;
   // 只有一个真正更新的耐久 submit 才能换代 retry epoch。hover、诊断和 input 的 notify
   // 不改 SubmitSeq，因而不能借 notify 清掉同一坏快照的有界失败计数或退避。
   g_lookup_submit_retry_seq = seq;
@@ -5315,8 +5327,7 @@ void ObserveKirikiriLookupDismissFence() {
 }
 
 bool PublishKirikiriLookupHit(bool new_notification) {
-  fushi_voice_hook::LookupHitSlot* slot = fushi_voice_hook::LookupHitOf(g_header);
-  if (slot == nullptr) return false;
+  if (!fushi_voice_hook::HasLookupRegion(g_header)) return false;
   int64_t submit_seq_value = 0;
   bool have_submit_seq = false;
   if (g_lookup_submit_retry_backoff > 0) {
@@ -5340,7 +5351,10 @@ bool PublishKirikiriLookupHit(bool new_notification) {
   if (EvaluateTjsInteger(L"global.fushiLookupVisualSeq", &visual_seq) &&
       visual_seq > 0) {
     const uint64_t visual = static_cast<uint64_t>(visual_seq);
-    if (visual > g_lookup_hit_seq) g_lookup_hit_seq = visual;
+    if (visual > g_lookup_visual_source_seq) {
+      g_lookup_visual_source_seq = visual;
+      if (visual != g_lookup_submit_source_seq) g_lookup_hit_seq = 0;
+    }
   }
 
   if (!have_submit_seq &&
@@ -5403,30 +5417,41 @@ bool PublishKirikiriLookupHit(bool new_notification) {
     return RetryKirikiriLookupSubmitTransient(hit_seq);
   }
 
-  // 单槽 seqlock：本地 staging 完成后，先把旧发布序清成 0，再触碰共享 payload。
-  // 否则快速连续 submit 时 host 可能看见“旧 seq + 新 payload”，两次复读仍相等，
-  // 最终把错行当成旧命中。lookup_hit_count 只在最终发布后递增，故 0 只表示写入中。
-  WriteKirikiriSharedU64(&slot->seq, 0);
-
-  slot->char_index = static_cast<uint32_t>(char_index);
-  slot->char_count = static_cast<uint32_t>(char_count);
-  slot->glyph_x = static_cast<int32_t>(glyph_x);
-  slot->glyph_y = static_cast<int32_t>(glyph_y);
-  slot->glyph_w = static_cast<int32_t>(glyph_w);
-  slot->glyph_h = static_cast<int32_t>(glyph_h);
-  slot->view_w = static_cast<int32_t>(view_w);
-  slot->view_h = static_cast<int32_t>(view_h);
-  slot->flags = fushi_voice_hook::kLookupHitFlagSubmit;
-  memcpy(slot->line_utf8, encoded_line, line_bytes);
-  slot->line_bytes = line_bytes;
-  // seq **最后**写：Interlocked 是全栅栏，保证上面的 payload 对 host 先可见。
-  WriteKirikiriSharedU64(&slot->seq, hit_seq);
+  fushi_voice_hook::LookupGeometryHitPublication publication;
+  publication.provider_kind =
+      fushi_voice_hook::kLookupGeometryProviderRuntimeLayout;
+  publication.provider_id =
+      fushi_voice_hook::kLookupGeometryProviderIdKirikiri;
+  publication.char_index = static_cast<uint32_t>(char_index);
+  publication.source_length = fushi_voice_hook::LookupUtf16SourceLength(
+      line, static_cast<uint32_t>(char_count),
+      static_cast<uint32_t>(char_index));
+  publication.char_count = static_cast<uint32_t>(char_count);
+  publication.coordinate_space =
+      fushi_voice_hook::kLookupCoordinateSpacePrimaryLayer;
+  publication.writing_mode = fushi_voice_hook::kLookupWritingModeHorizontal;
+  publication.text_generation = hit_seq;
+  publication.geometry_generation = hit_seq;
+  publication.glyph_x = static_cast<int32_t>(glyph_x);
+  publication.glyph_y = static_cast<int32_t>(glyph_y);
+  publication.glyph_w = static_cast<int32_t>(glyph_w);
+  publication.glyph_h = static_cast<int32_t>(glyph_h);
+  publication.view_w = static_cast<int32_t>(view_w);
+  publication.view_h = static_cast<int32_t>(view_h);
+  publication.flags = fushi_voice_hook::kLookupHitFlagSubmit;
+  publication.line_utf8 = encoded_line;
+  publication.line_bytes = line_bytes;
+  uint64_t published_seq = 0;
+  if (!fushi_voice_hook::g_geometry_provider_registry.PublishHit(g_header, publication,
+                                               &published_seq)) {
+    return false;
+  }
+  // Card frames answer the registry's global wire sequence, not the TJS-local
+  // SubmitSeq. Keep the TJS sequence only in processed/retry bookkeeping.
+  g_lookup_submit_hit_seq = published_seq;
+  g_lookup_hit_seq = g_lookup_visual_source_seq == hit_seq ? published_seq : 0;
   g_lookup_processed_submit_seq = hit_seq;
   ResetKirikiriLookupHitRetry(hit_seq);
-  InterlockedIncrement64(
-      reinterpret_cast<volatile LONGLONG*>(&g_header->lookup_hit_count));
-  SetLookupDiag(fushi_voice_hook::kLookupDiagGeometryObserved |
-                fushi_voice_hook::kLookupDiagHitSubmitted);
   return true;
 }
 
@@ -5472,6 +5497,9 @@ void PumpKirikiriLookup() {
   if (!enabled_now) {
     // 禁用边沿强制对齐一次 TJS/C++ 可见状态；禁用稳态不再每帧执行一段 TJS。
     if (g_lookup_enabled_last || g_lookup_card_shown) HideKirikiriLookupCard();
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header, fushi_voice_hook::kLookupGeometryProviderRuntimeLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdKirikiri);
     g_lookup_enabled_last = false;
     return;
   }
@@ -5511,6 +5539,12 @@ void PumpKirikiriLookup() {
     g_lookup_sensor_live = true;
     SetLookupDiag(fushi_voice_hook::kLookupDiagSensorInstalled);
   }
+  // A successful main-thread sensor read proves the current runtime layout is
+  // usable before any click can publish. Re-offering is idempotent and lets a
+  // transaction-deferred switch settle on the first neutral frame.
+  fushi_voice_hook::g_geometry_provider_registry.OfferReady(
+      g_header, fushi_voice_hook::kLookupGeometryProviderRuntimeLayout,
+      fushi_voice_hook::kLookupGeometryProviderIdKirikiri);
   // 采集面自证。**不能**挂在 notify 变化上：notify 只有用户真悬停到字上才动，而这两位
   // 恰恰是用来诊断「一个字都没采到」的——那种情况下 notify 永远不动，挂上去就等于永远读
   // 不到。改为低频轮询（约每 60 帧一次），读到 2（真捕到字形）就彻底停。

@@ -168,9 +168,19 @@ int main() {
   Push(u'文', 50, 20, &repeated);
   Push(u'同', 500, 600, &repeated);
   Push(u'文', 540, 600, &repeated);
+  size_t matched_end = 0;
   assert(BuildSiglusLookupGeometry(profile, repeated, kRepeated,
-                                   std::size(kRepeated) - 1u, &geometry));
+                                   std::size(kRepeated) - 1u, &geometry,
+                                   &matched_end));
+  assert(matched_end == repeated.count);
   assert(geometry.glyphs[0].rect.x == 500 && geometry.glyphs[0].rect.y == 600);
+  // Once the next frame starts, an older complete copy may still be found,
+  // but production must observe that it is no longer the newest full layout.
+  Push(u'同', 700, 800, &repeated);
+  assert(BuildSiglusLookupGeometry(profile, repeated, kRepeated,
+                                   std::size(kRepeated) - 1u, &geometry,
+                                   &matched_end));
+  assert(matched_end < repeated.count);
 
   // Matching is exact and contiguous: a changed code unit and an interleaved
   // renderer event are both rejected rather than normalized or guessed.
@@ -348,6 +358,28 @@ int main() {
   assert(ConsumeSiglusLookupShiftSample(0x0001u, &last_shift_down));
   assert(!last_shift_down);
   assert(!ConsumeSiglusLookupShiftSample(0x0000u, nullptr));
+
+  // Renderer events may repeat every frame. A production generation is stable
+  // for identical text+geometry and only advances for a real logical layout
+  // change. The down payload must also retain the exact client transform.
+  const SiglusLookupGeometry stable_geometry = geometry;
+  assert(SameSiglusLookupGeometry(stable_geometry, geometry));
+  auto moved_geometry = geometry;
+  assert(moved_geometry.glyph_count != 0);
+  ++moved_geometry.glyphs[0].rect.x;
+  assert(!SameSiglusLookupGeometry(stable_geometry, moved_geometry));
+  assert(NextSiglusLookupLogicalGeneration(0) == 1);
+  assert(NextSiglusLookupLogicalGeneration(UINT64_MAX) == 1);
+  const SiglusLookupClientSnapshot stable_client = {
+      0x1234u, -1920, 40, 1920, 1080};
+  assert(MatchesSiglusLookupGenerationAndClient(7, stable_client, 7,
+                                                stable_client));
+  auto resized_client = stable_client;
+  ++resized_client.width;
+  assert(!MatchesSiglusLookupGenerationAndClient(7, stable_client, 7,
+                                                 resized_client));
+  assert(!MatchesSiglusLookupGenerationAndClient(7, stable_client, 8,
+                                                 stable_client));
 
   return 0;
 }

@@ -205,6 +205,9 @@ class KiriKiriAdapter final : public fushi_voice_hook::EngineAdapter {
     }
   }
   void shutdown() override {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header, fushi_voice_hook::kLookupGeometryProviderRuntimeLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdKirikiri);
     StopKirikiriVoiceTasks();
     installed_ = false;
     decoder_ready_ = false;
@@ -256,6 +259,7 @@ class RenPyAdapter final : public fushi_voice_hook::EngineAdapter {
     }
   }
   void shutdown() override {
+    ShutdownRenpyLookup();
     StopRenpyWorker();
     installed_ = false;
     ready_ = false;

@@ -29,7 +29,7 @@ void Check(bool condition, const char* message) {
 
 void TestV16AndV17TailAbiAndDefaultDeny() {
   SharedHeader header{};
-  Check(fushi_voice_hook::kSharedVersion == 18, "shared ABI must be v18");
+  Check(fushi_voice_hook::kSharedVersion == 19, "shared ABI must be v19");
   Check(offsetof(SharedHeader, native_loopback_request_seq) ==
             offsetof(SharedHeader, native_loopback_requested) + 4,
         "request_seq must follow requested");
@@ -44,11 +44,11 @@ void TestV16AndV17TailAbiAndDefaultDeny() {
   Check(offsetof(SharedHeader, hook_module_sha256) ==
             offsetof(SharedHeader, native_loopback_applied_seq) + 4,
         "v17 digest must directly follow the final v16 word");
-  Check(sizeof(SharedHeader) ==
-            ((offsetof(SharedHeader, hook_module_sha256) +
-              fushi_voice_hook::kHookModuleDigestChars + 7u) /
-             8u) * 8u,
-        "v17 digest must be the exact SharedHeader tail (only 8-align padding)");
+  const size_t digest_end = offsetof(SharedHeader, hook_module_sha256) +
+                            fushi_voice_hook::kHookModuleDigestChars;
+  Check(offsetof(SharedHeader, lookup_geometry_active_kind) ==
+            (digest_end + 3u) / 4u * 4u,
+        "v19 fields must append after the naturally aligned v17 digest");
   Check(fushi_voice_hook::AtomicLoadShared32(
             &header.native_loopback_requested) ==
             fushi_voice_hook::kNativeLoopbackDeny,

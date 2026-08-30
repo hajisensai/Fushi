@@ -1,4 +1,4 @@
-// v15 游戏内查词区的**契约级**测试。
+// v19 游戏内查词区的**契约级**测试。
 //
 // 这块区的三条通道（hit / input / frame）是跨进程的，写侧在游戏进程里、读侧在 Hibiki
 // 里，两边只靠 voice_hook_ipc.h 的寻址函数对齐。所以下面钉死的不是"某个 adapter 怎么
@@ -635,8 +635,8 @@ void TestV14LookupRegionIsPureAppendOverV13() {
         "查词区必须追加在所有 v13 区之后");
 }
 
-void TestV16AndV17OnlyAppendOverV15() {
-  Check(kSharedVersion == 18, "本测试锁的是 v18 契约");
+void TestV16V17AndV19OnlyAppendOverV15() {
+  Check(kSharedVersion == 19, "本测试锁的是 v19 契约");
 
   // v14 的最后一个字段是 lookup_diag。v15 只能紧随其后追加一个 64 位 applied seq；
   // 把字段插进 v14 中间，或在 applied seq 后再偷偷长出别的字段，都必须判红。
@@ -664,10 +664,229 @@ void TestV16AndV17OnlyAppendOverV15() {
             offsetof(SharedHeader, native_loopback_applied_seq) +
                 sizeof(uint32_t),
         "v17 摘要必须紧跟 v16 末字段，不能移动任何既有字段");
+  // v19 从 v17 摘要后按字段自然对齐纯追加；v18 只改 keys 语义，没有新字段。
+  const size_t first_v19_field =
+      offsetof(SharedHeader, lookup_geometry_active_kind);
+  const size_t v17_payload_end =
+      only_v17_field + fushi_voice_hook::kHookModuleDigestChars;
+  Check(first_v19_field == (v17_payload_end + 3u) / 4u * 4u,
+        "v19 几何状态必须紧跟 v17 摘要的自然对齐尾部");
+  const size_t geometry_text_generation =
+      (first_v19_field + 4u * sizeof(uint32_t) + 7u) / 8u * 8u;
+  Check(offsetof(SharedHeader, lookup_geometry_active_id) ==
+            first_v19_field + 4u &&
+            offsetof(SharedHeader, lookup_geometry_status) ==
+                first_v19_field + 8u &&
+            offsetof(SharedHeader, lookup_geometry_text_generation) ==
+                geometry_text_generation &&
+            offsetof(SharedHeader, lookup_geometry_generation) ==
+                geometry_text_generation + 8u,
+        "v19 几何 active/status/generation 字段顺序固定");
+  const size_t shield_begin =
+      offsetof(SharedHeader, lookup_shield_request_seq);
+  Check(shield_begin == geometry_text_generation + 16u,
+        "v19 shield 控制必须紧跟几何状态");
+  Check(offsetof(SharedHeader, lookup_shield_owner_kind) == shield_begin + 4u &&
+            offsetof(SharedHeader, lookup_shield_target_hwnd) ==
+                shield_begin + 8u &&
+            offsetof(SharedHeader, lookup_shield_transaction_id) ==
+                shield_begin + 16u &&
+            offsetof(SharedHeader, lookup_shield_active_buttons) ==
+                shield_begin + 24u &&
+            offsetof(SharedHeader, lookup_shield_required_mask) ==
+                shield_begin + 32u &&
+            offsetof(SharedHeader, lookup_shield_applied_seq) ==
+                shield_begin + 56u,
+        "v19 shield request/status 字段顺序固定");
+  const size_t geometry_admission_begin =
+      offsetof(SharedHeader, lookup_geometry_admission_mode);
+  Check(geometry_admission_begin ==
+            offsetof(SharedHeader, lookup_shield_reserved2) + 4u &&
+            offsetof(SharedHeader, lookup_geometry_admission_flags) ==
+                geometry_admission_begin + 4u &&
+            offsetof(SharedHeader, lookup_geometry_admission_request_seq) ==
+                geometry_admission_begin + 8u &&
+            offsetof(SharedHeader, lookup_geometry_admission_applied_seq) ==
+                geometry_admission_begin + 12u,
+        "v19 geometry admission 必须纯追加在 shield 尾部，且 x86/x64 同步长");
   Check(sizeof(SharedHeader) ==
-            ((only_v17_field + fushi_voice_hook::kHookModuleDigestChars + 7u) /
+            ((offsetof(SharedHeader,
+                       lookup_geometry_admission_applied_seq) +
+              4u + 7u) /
              8u) * 8u,
-        "v17 末尾除 8 字节对齐填充外不得混入其他字段");
+        "v19 SharedHeader 尾部只能有 8 字节对齐填充");
+}
+
+void TestV19GeometryAdmissionPublication() {
+  SharedHeader h = {};
+  Check(!fushi_voice_hook::ReadLookupGeometryAdmission(&h).valid,
+        "seq=0 的 geometry admission 不得当成已发布请求");
+  const uint32_t first =
+      fushi_voice_hook::PublishLookupGeometryAdmission(
+          &h, fushi_voice_hook::kLookupGeometryAdmissionAuto, true);
+  const auto auto_attached =
+      fushi_voice_hook::ReadLookupGeometryAdmission(&h);
+  Check(first == 1u && auto_attached.valid && auto_attached.seq == first &&
+            auto_attached.mode ==
+                fushi_voice_hook::kLookupGeometryAdmissionAuto &&
+            auto_attached.attached_ready(),
+        "auto+attached-ready payload 必须 coherent round-trip");
+  Check(fushi_voice_hook::PublishLookupGeometryAdmission(
+            &h, fushi_voice_hook::kLookupGeometryAdmissionAuto, true) ==
+            first,
+        "重复 geometry admission 必须幂等，不制造假代际");
+  const uint32_t second =
+      fushi_voice_hook::PublishLookupGeometryAdmission(
+          &h, fushi_voice_hook::kLookupGeometryAdmissionNativeOnly, false);
+  const auto native_only =
+      fushi_voice_hook::ReadLookupGeometryAdmission(&h);
+  Check(second == 2u && native_only.valid &&
+            native_only.mode ==
+                fushi_voice_hook::kLookupGeometryAdmissionNativeOnly &&
+            !native_only.attached_ready(),
+        "owner policy edge 必须产生新 request generation");
+  fushi_voice_hook::AtomicStoreShared32(
+      &h.lookup_geometry_admission_request_seq,
+      fushi_voice_hook::kLookupGeometryAdmissionWriteInProgress | second);
+  Check(!fushi_voice_hook::ReadLookupGeometryAdmission(&h).valid,
+        "writer-held geometry admission 不得被读成 disable/半份 payload");
+  fushi_voice_hook::AtomicStoreShared32(
+      &h.lookup_geometry_admission_request_seq, second);
+  Check(fushi_voice_hook::PublishLookupGeometryAdmission(&h, 99u, true) == 0 &&
+            fushi_voice_hook::ReadLookupGeometryAdmission(&h).mode ==
+                fushi_voice_hook::kLookupGeometryAdmissionNativeOnly,
+        "非法 admission mode 必须拒绝且不改稳定请求");
+}
+
+void TestV19ShieldPublicationAndVerifiedGate() {
+  SharedHeader h = {};
+  const uint32_t request_seq = fushi_voice_hook::PublishLookupShieldRequest(
+      &h, fushi_voice_hook::kLookupShieldOwnerAttachedGlyph, 0x1234u, 9u,
+      fushi_voice_hook::kLookupShieldButtonLeft, false);
+  Check(request_seq == 1u, "fresh shield request 必须从 seq=1 发布");
+  const auto request = fushi_voice_hook::ReadLookupShieldRequest(&h);
+  Check(request.valid && request.seq == request_seq &&
+            request.owner_kind ==
+                fushi_voice_hook::kLookupShieldOwnerAttachedGlyph &&
+            request.target_hwnd == 0x1234u && request.transaction_id == 9u &&
+            request.active_buttons ==
+                fushi_voice_hook::kLookupShieldButtonLeft &&
+            !request.allow_risk,
+        "shield request payload/seq 必须 coherent round-trip");
+
+  fushi_voice_hook::AtomicStoreShared32(
+      &h.lookup_shield_request_seq,
+      request_seq | fushi_voice_hook::kLookupShieldRequestWriteInProgress);
+  Check(!fushi_voice_hook::ReadLookupShieldRequest(&h).valid,
+        "writer-held shield payload 必须不可读；generic risk 路径不能把半份请求当 verified");
+  fushi_voice_hook::AtomicStoreShared32(&h.lookup_shield_request_seq,
+                                        request_seq);
+
+  fushi_voice_hook::LookupShieldStatusPublication status;
+  status.required_mask =
+      fushi_voice_hook::kLookupShieldSurfaceLowLevelMouse |
+      fushi_voice_hook::kLookupShieldSurfaceDirectInputImmediate;
+  status.ready_mask = status.required_mask;
+  status.observed_mask = status.required_mask;
+  status.status_flags = fushi_voice_hook::kLookupShieldStatusVerified;
+  Check(fushi_voice_hook::PublishLookupShieldStatus(&h, request, status),
+        "完整 ready 且无风险/故障时必须能确认状态");
+  Check(h.lookup_shield_applied_seq == request_seq &&
+            (h.lookup_shield_status_flags &
+             fushi_voice_hook::kLookupShieldStatusVerified) != 0,
+        "verified 只能随 applied_seq 最后确认");
+
+  status.status_flags = fushi_voice_hook::kLookupShieldStatusVerified |
+                        fushi_voice_hook::kLookupShieldStatusRiskAllowed;
+  const uint32_t explicit_risk =
+      fushi_voice_hook::NormalizeLookupShieldStatusFlags(request, status);
+  Check((explicit_risk & fushi_voice_hook::kLookupShieldStatusVerified) == 0 &&
+            (explicit_risk & fushi_voice_hook::kLookupShieldStatusPartial) != 0 &&
+            (explicit_risk &
+             fushi_voice_hook::kLookupShieldStatusRiskAllowed) != 0,
+        "显式 risk 状态同样不得与 verified 并存");
+
+  const uint32_t mismatched_seq =
+      fushi_voice_hook::PublishLookupShieldRequest(
+          &h, fushi_voice_hook::kLookupShieldOwnerAttachedGlyph, 0x1234u,
+          91u, fushi_voice_hook::kLookupShieldButtonLeft, false);
+  const auto mismatched = fushi_voice_hook::ReadLookupShieldRequest(&h);
+  status.ready_mask =
+      status.required_mask | fushi_voice_hook::kLookupShieldSurfaceRawInputData;
+  status.status_flags = fushi_voice_hook::kLookupShieldStatusVerified;
+  Check(mismatched_seq == 2u &&
+            fushi_voice_hook::PublishLookupShieldStatus(&h, mismatched,
+                                                        status),
+        "mismatched shield masks 仍需 ack");
+  Check((h.lookup_shield_status_flags &
+         fushi_voice_hook::kLookupShieldStatusVerified) == 0 &&
+            (h.lookup_shield_status_flags &
+             fushi_voice_hook::kLookupShieldStatusPartial) != 0,
+        "required/ready 不完全相等时不得发布 verified");
+
+  const uint32_t risky_seq = fushi_voice_hook::PublishLookupShieldRequest(
+      &h, fushi_voice_hook::kLookupShieldOwnerAttachedGlyph, 0x1234u, 10u,
+      fushi_voice_hook::kLookupShieldButtonLeft, true);
+  const auto risky = fushi_voice_hook::ReadLookupShieldRequest(&h);
+  Check(risky_seq == 3u && risky.valid && risky.allow_risk,
+        "风险授权必须形成新 request generation");
+  status.ready_mask = status.required_mask;
+  status.fault_mask = 0;
+  status.status_flags = fushi_voice_hook::kLookupShieldStatusVerified;
+  Check(fushi_voice_hook::PublishLookupShieldStatus(&h, risky, status),
+        "风险状态仍需 ack");
+  Check((h.lookup_shield_status_flags &
+         fushi_voice_hook::kLookupShieldStatusVerified) == 0 &&
+            (h.lookup_shield_status_flags &
+             fushi_voice_hook::kLookupShieldStatusPartial) != 0 &&
+            (h.lookup_shield_status_flags &
+             fushi_voice_hook::kLookupShieldStatusRiskAllowed) != 0,
+        "allowRisk 路径绝不能冒充 verified");
+
+  const uint32_t fault_seq = fushi_voice_hook::PublishLookupShieldRequest(
+      &h, fushi_voice_hook::kLookupShieldOwnerNativeGlyph, 0x1234u, 11u,
+      fushi_voice_hook::kLookupShieldButtonLeft, false);
+  const auto fault_request = fushi_voice_hook::ReadLookupShieldRequest(&h);
+  status.fault_mask =
+      fushi_voice_hook::kLookupShieldSurfaceDirectInputImmediate;
+  status.status_flags = fushi_voice_hook::kLookupShieldStatusVerified;
+  Check(fault_seq == 4u && fushi_voice_hook::PublishLookupShieldStatus(
+                                &h, fault_request, status),
+        "fault 状态必须可确认");
+  Check((h.lookup_shield_status_flags &
+         fushi_voice_hook::kLookupShieldStatusFaulted) != 0 &&
+            (h.lookup_shield_status_flags &
+             fushi_voice_hook::kLookupShieldStatusVerified) == 0,
+        "任一 fault 面必须压过 verified");
+}
+
+void TestV19AttachedGeometryOwnershipSnapshot() {
+  SharedHeader h = {};
+  h.lookup_geometry_active_kind =
+      fushi_voice_hook::kLookupGeometryProviderAttachedCalibrated;
+  h.lookup_geometry_active_id =
+      fushi_voice_hook::kLookupGeometryProviderIdAttachedCalibrated;
+  h.lookup_geometry_status = fushi_voice_hook::kLookupGeometryStatusReady;
+  Check(fushi_voice_hook::LookupGeometryAttachedProviderOwns(&h),
+        "attached Ready 必须在首个 hit 前拥有 geometry");
+
+  h.lookup_geometry_status = fushi_voice_hook::kLookupGeometryStatusActive;
+  Check(!fushi_voice_hook::LookupGeometryAttachedProviderOwns(&h),
+        "attached Active 缺失 text/geometry generation 必须拒绝");
+  h.lookup_geometry_text_generation = 7;
+  h.lookup_geometry_generation = 9;
+  Check(fushi_voice_hook::LookupGeometryAttachedProviderOwns(&h),
+        "完整 attached Active generation 必须可拥有 geometry");
+
+  h.lookup_geometry_active_kind =
+      fushi_voice_hook::kLookupGeometryProviderRuntimeLayout;
+  h.lookup_geometry_active_id =
+      fushi_voice_hook::kLookupGeometryProviderIdRenpy;
+  h.lookup_geometry_status = fushi_voice_hook::kLookupGeometryStatusReady;
+  h.lookup_geometry_text_generation = 0;
+  h.lookup_geometry_generation = 0;
+  Check(!fushi_voice_hook::LookupGeometryAttachedProviderOwns(&h),
+        "native provider 抢占后旧 attached snapshot 不得继续拥有点击");
 }
 
 // 头里的冗余自洽字段必须与编译期常量一致——否则读侧按 header 值寻址、写侧按常量写，
@@ -683,6 +902,13 @@ void TestHeaderMirrorsCompileTimeConstants() {
         "header 输入槽数必须等于 kLookupInputSlotCount");
   Check(kLookupFrameCount >= 2, "位图必须至少双缓冲");
   Check(sizeof(LookupHitSlot) % 8 == 0, "hit 槽结构 8 对齐");
+  Check(offsetof(LookupHitSlot, provider_kind) == sizeof(uint64_t),
+        "v19 provider kind 必须紧跟 hit seq");
+  Check(offsetof(LookupHitSlot, source_length) >
+            offsetof(LookupHitSlot, char_index) &&
+            offsetof(LookupHitSlot, text_generation) <
+                offsetof(LookupHitSlot, glyph_x),
+        "v19 source span 与 generation 必须属于 hit payload");
   // 帧结构随 v14 收卡改造从 48 字节长到 64（加了 hit_seq / flags / reserved2）。
   // v15 只在 SharedHeader 末尾追加 ack，不能顺手改 LookupFrame 的跨进程步长。
   Check(sizeof(LookupFrame) == 64, "v15 不得改变 v14 的 64 字节帧结构");
@@ -698,6 +924,15 @@ void TestHeaderMirrorsCompileTimeConstants() {
         "输入 keys 的 Shift 固定为 WebView2 bit2，不得压成 bit0");
   Check(fushi_voice_hook::kLookupInputVirtualKeyControl == 0x0008u,
         "输入 keys 的 Control 固定为 WebView2 bit3");
+  Check(fushi_voice_hook::IsLookupCardCoordinateSpaceResolved(
+            fushi_voice_hook::kLookupCoordinateSpaceClientPhysicalPixels) &&
+            fushi_voice_hook::IsLookupCardCoordinateSpaceResolved(
+            fushi_voice_hook::kLookupCoordinateSpacePrimaryLayer) &&
+            !fushi_voice_hook::IsLookupCardCoordinateSpaceResolved(
+                fushi_voice_hook::kLookupCoordinateSpaceDesignSurface) &&
+            !fushi_voice_hook::IsLookupCardCoordinateSpaceResolved(
+                fushi_voice_hook::kLookupCoordinateSpaceLayoutLocal),
+        "client/primaryLayer 有完整 transform；design/layout-local 必须拒绝");
 }
 
 }  // namespace
@@ -715,7 +950,10 @@ int main() {
   TestCaptureSuppressHasExactControlIdentity();
   TestAcceptedFramesAlwaysFitInsideTheirBitmapSlot();
   TestV14LookupRegionIsPureAppendOverV13();
-  TestV16AndV17OnlyAppendOverV15();
+  TestV16V17AndV19OnlyAppendOverV15();
+  TestV19GeometryAdmissionPublication();
+  TestV19ShieldPublicationAndVerifiedGate();
+  TestV19AttachedGeometryOwnershipSnapshot();
   TestHeaderMirrorsCompileTimeConstants();
   if (g_failures != 0) {
     fprintf(stderr, "lookup ipc contract test failures: %d\n", g_failures);

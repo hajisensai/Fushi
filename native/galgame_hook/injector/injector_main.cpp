@@ -1685,6 +1685,32 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     header->lookup_bitmap_bytes = fushi_voice_hook::kLookupBitmapBytes;
     header->lookup_frame_count = fushi_voice_hook::kLookupFrameCount;
     header->lookup_input_slot_count = fushi_voice_hook::kLookupInputSlotCount;
+    // v19: a fresh mapping starts with no authoritative geometry provider and
+    // one coherent, inactive shield request. request_seq is published last by
+    // the shared helper; hook/host readers therefore never consume a half-
+    // initialised target or transaction.
+    header->lookup_geometry_active_kind =
+        fushi_voice_hook::kLookupGeometryProviderUnknown;
+    header->lookup_geometry_active_id =
+        fushi_voice_hook::kLookupGeometryProviderIdUnknown;
+    header->lookup_geometry_status =
+        fushi_voice_hook::kLookupGeometryStatusUnavailable;
+    if (fushi_voice_hook::PublishLookupGeometryAdmission(
+            header, fushi_voice_hook::kLookupGeometryAdmissionDisabled,
+            false) == 0) {
+      UnmapViewOfFile(header);
+      CloseHandle(mapping);
+      return FailWith(reason_out,
+                      LaunchFailureReason::kSharedMemoryUnavailable, 1);
+    }
+    if (fushi_voice_hook::PublishLookupShieldRequest(
+            header, fushi_voice_hook::kLookupShieldOwnerNone, 0, 0, 0,
+            false) == 0) {
+      UnmapViewOfFile(header);
+      CloseHandle(mapping);
+      return FailWith(reason_out,
+                      LaunchFailureReason::kSharedMemoryUnavailable, 1);
+    }
     // v17：把**本次注入所用 DLL** 的摘要留档。injector 就是注入者，只有它知道等一下
     // 驻留进游戏进程的是哪个构建；下一次 injector 见到这块映射时，拿这条记录跟那时
     // 磁盘上的 DLL 现算摘要比，才是「驻留构建 vs 请求构建」的真比较（两边都读磁盘

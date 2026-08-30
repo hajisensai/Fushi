@@ -36,6 +36,9 @@ struct SiglusLookupPayload {
   uint32_t text_units = 0;
   uint32_t char_index = 0;
   fushi_voice_hook::SiglusLookupRect rect;
+  uintptr_t game_window = 0;
+  int32_t client_screen_x = 0;
+  int32_t client_screen_y = 0;
   int32_t client_width = 0;
   int32_t client_height = 0;
   wchar_t text[kSiglusLookupMaxTextUnits] = {};
@@ -77,6 +80,8 @@ std::atomic<uint32_t> g_siglus_lookup_click_epoch{1};
 std::atomic<const fushi_voice_hook::SiglusLookupProfile *>
     g_siglus_lookup_profile{nullptr};
 volatile LONG g_siglus_lookup_profile_state = 0; // 0 unknown, 1 match, -1 miss
+volatile LONG g_siglus_exact_binary_structure_state =
+    0; // 0 unknown, 1 hydrated structure match, -1 reject
 
 SiglusLookupGlyphEvent
     g_siglus_lookup_glyph_events[kSiglusLookupGlyphEventSlots] = {};
@@ -391,60 +396,94 @@ bool IsSiglusLookupProfileMatched() {
   return matched;
 }
 
-bool MatchesSiglusGlyphLayoutEntry(const uint8_t *target) {
-  // Exact-hash sanity guard for the two measured live entries. Relocation
-  // operands at [6,10) and [27,31) are deliberately ignored; the two builds
-  // differ only in their local stack allocation (0xDC vs 0xEC).
-  static constexpr uint8_t kSignature[] = {
-      0x55, 0x8B, 0xEC, 0x6A, 0xFF, 0x68, 0x00, 0x00, 0x00, 0x00, 0x64,
-      0xA1, 0x00, 0x00, 0x00, 0x00, 0x50, 0x81, 0xEC, 0xDC, 0x00, 0x00,
-      0x00, 0x53, 0x56, 0x57, 0xA1, 0x00, 0x00, 0x00, 0x00, 0x33, 0xC5,
-      0x50, 0x8D, 0x45, 0xF4, 0x64, 0xA3, 0x00, 0x00, 0x00, 0x00, 0x8B,
-      0xF1, 0x80, 0x7E, 0x20, 0x00, 0x75, 0x16,
-  };
-  if (!IsReadableSpan(target, sizeof(kSignature)))
+bool IsSiglusExactBinaryStructureMatched(
+    const fushi_voice_hook::SiglusLookupProfile *profile, HMODULE module) {
+  if (profile == nullptr || module == nullptr)
     return false;
-  for (size_t index = 0; index < sizeof(kSignature); ++index) {
-    if ((index >= 6 && index < 10) || (index >= 27 && index < 31)) {
-      continue;
-    }
-    if (index == 19 && (target[index] == 0xDC || target[index] == 0xEC)) {
-      continue;
-    }
-    if (target[index] != kSignature[index])
-      return false;
+  const LONG cached = InterlockedCompareExchange(
+      &g_siglus_exact_binary_structure_state, 0, 0);
+  if (cached != 0)
+    return cached > 0;
+
+  fushi_voice_hook::exact_lookup::LoadedPeImage image;
+  const auto *input_pattern =
+      fushi_voice_hook::siglus_exact::InputMessagePatternForProfile(*profile);
+  const bool opened =
+      input_pattern != nullptr &&
+      fushi_voice_hook::exact_lookup::OpenLoadedPeImage(module, &image) &&
+      image.machine == IMAGE_FILE_MACHINE_I386 && image.pointer_bits == 32u;
+  fushi_voice_hook::exact_lookup::UniquePatternMatch glyph;
+  fushi_voice_hook::exact_lookup::UniquePatternMatch input;
+  if (opened) {
+    glyph = fushi_voice_hook::exact_lookup::
+        FindUniquePatternInExecutableSections(
+            image,
+            fushi_voice_hook::siglus_exact::kGlyphLayoutEntryPattern);
+    input = fushi_voice_hook::exact_lookup::
+        FindUniquePatternInExecutableSections(image, *input_pattern);
   }
-  return true;
+  const uintptr_t base = reinterpret_cast<uintptr_t>(module);
+  const auto executable_rva = [&image](uintptr_t rva, size_t bytes = 1u) {
+    return fushi_voice_hook::exact_lookup::SectionHasRole(
+        fushi_voice_hook::exact_lookup::FindSectionForRva(image, rva, bytes),
+        IMAGE_SCN_MEM_EXECUTE);
+  };
+  const bool exact_text_call_valid =
+      profile->exact_text_return_rva == 0u ||
+      (executable_rva(profile->exact_text_return_rva) &&
+       fushi_voice_hook::exact_lookup::MatchesRel32CallEndingAt(
+           image, profile->exact_text_return_rva, profile->exact_text_rva));
+  const bool matched =
+      opened && executable_rva(profile->glyph_layout_rva) &&
+      executable_rva(profile->dialogue_glyph_return_rva) &&
+      executable_rva(profile->exact_text_rva) &&
+      executable_rva(profile->get_key_state_return_rva) &&
+      executable_rva(profile->input_message_rva) &&
+      executable_rva(profile->main_input_message_return_rva) &&
+      glyph.count == 1u &&
+      reinterpret_cast<uintptr_t>(glyph.address) ==
+          base + profile->glyph_layout_rva &&
+      fushi_voice_hook::siglus_exact::IsMeasuredGlyphStackSize(
+          glyph.address) &&
+      input.count == 1u &&
+      reinterpret_cast<uintptr_t>(input.address) ==
+          base + profile->input_message_rva &&
+      fushi_voice_hook::exact_lookup::MatchesRel32CallEndingAt(
+          image, profile->dialogue_glyph_return_rva,
+          profile->glyph_layout_rva) &&
+      exact_text_call_valid &&
+      fushi_voice_hook::exact_lookup::MatchesExecutableCallEndingAt(
+          image, profile->get_key_state_return_rva) &&
+      fushi_voice_hook::exact_lookup::MatchesRel32CallEndingAt(
+          image, profile->main_input_message_return_rva,
+          profile->input_message_rva);
+  InterlockedExchange(&g_siglus_exact_binary_structure_state,
+                      matched ? 1 : -1);
+  return matched;
+}
+
+bool MatchesSiglusGlyphLayoutEntry(const uint8_t *target) {
+  return fushi_voice_hook::exact_lookup::IsReadableSpan(
+             target,
+             fushi_voice_hook::siglus_exact::kGlyphLayoutEntryPattern.size) &&
+         fushi_voice_hook::exact_lookup::MatchesMaskedPattern(
+             target,
+             fushi_voice_hook::siglus_exact::kGlyphLayoutEntryPattern) &&
+         fushi_voice_hook::siglus_exact::IsMeasuredGlyphStackSize(target);
 }
 
 bool MatchesSiglusInputMessageEntry(const uint8_t *target) {
-  // Exact-hash sanity guards for the two measured hydrated images. The
-  // absolute-global operands are relocation-dependent.
-  static constexpr uint8_t kAnemoiSignature[] = {
-      0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF8, 0x51, 0x8B, 0x45, 0x08, 0x56, 0x8B,
-      0x35, 0x00, 0x00, 0x00, 0x00, 0x3D, 0x01, 0x02, 0x00, 0x00, 0x77, 0x5C,
-      0x74, 0x45, 0x05, 0x00, 0xFF, 0xFF, 0xFF, 0x83, 0xF8, 0x05,
-  };
-  static constexpr uint8_t kSprbSignature[] = {
-      0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF8, 0x8B, 0x45, 0x08, 0x83, 0xEC, 0x08,
-      0x8B, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x3D, 0x01, 0x02, 0x00, 0x00, 0x77,
-      0x59, 0x74, 0x43, 0x05, 0x00, 0xFF, 0xFF, 0xFF, 0x83, 0xF8, 0x05,
-  };
-  const auto matches = [target](const uint8_t *signature, size_t bytes,
-                                size_t wildcard_begin,
-                                size_t wildcard_end) {
-    if (!IsReadableSpan(target, bytes))
-      return false;
-    for (size_t index = 0; index < bytes; ++index) {
-      if (index >= wildcard_begin && index < wildcard_end)
-        continue;
-      if (target[index] != signature[index])
-        return false;
-    }
-    return true;
-  };
-  return matches(kAnemoiSignature, sizeof(kAnemoiSignature), 13, 17) ||
-         matches(kSprbSignature, sizeof(kSprbSignature), 14, 18);
+  const auto *profile = ActiveSiglusLookupProfile();
+  const auto *pattern =
+      profile == nullptr
+          ? nullptr
+          : fushi_voice_hook::siglus_exact::InputMessagePatternForProfile(
+                *profile);
+  return pattern != nullptr &&
+         fushi_voice_hook::exact_lookup::IsReadableSpan(target,
+                                                        pattern->size) &&
+         fushi_voice_hook::exact_lookup::MatchesMaskedPattern(target,
+                                                              *pattern);
 }
 
 void PublishSiglusLookupGlyphEvent(uint16_t code_unit, int32_t design_x,
@@ -658,6 +697,11 @@ void InvalidateSiglusLookupClickTarget() {
   g_siglus_lookup_click_target.valid = 0;
   g_siglus_lookup_click_target.published_tick = GetTickCount64();
   g_siglus_lookup_click_target.game_window = 0;
+  g_siglus_lookup_click_target.client_screen_x = 0;
+  g_siglus_lookup_click_target.client_screen_y = 0;
+  g_siglus_lookup_click_target.client_width = 0;
+  g_siglus_lookup_click_target.client_height = 0;
+  g_siglus_lookup_click_target.geometry_generation = 0;
   g_siglus_lookup_click_target.text_units = 0;
   g_siglus_lookup_click_target.geometry = {};
   InterlockedExchange64(&g_siglus_lookup_click_target.seq,
@@ -667,8 +711,10 @@ void InvalidateSiglusLookupClickTarget() {
 void PublishSiglusLookupClickTarget(HWND game, const POINT &client_origin,
                                     int32_t client_width,
                                     int32_t client_height) {
-  if (!g_siglus_lookup_active_valid || game == nullptr || client_width <= 0 ||
-      client_height <= 0 || g_siglus_lookup_active_line_units == 0) {
+  if (!g_siglus_lookup_active_valid ||
+      g_siglus_lookup_geometry_generation == 0 || game == nullptr ||
+      client_width <= 0 || client_height <= 0 ||
+      g_siglus_lookup_active_line_units == 0) {
     InvalidateSiglusLookupClickTarget();
     return;
   }
@@ -709,7 +755,8 @@ bool ReadSiglusLookupClickTarget(SiglusLookupClickTarget *copy) {
          copy->text_units <= kSiglusLookupMaxTextUnits &&
          copy->geometry.glyph_count != 0 &&
          copy->geometry.glyph_count <=
-             fushi_voice_hook::kSiglusLookupMaxGlyphs &&
+              fushi_voice_hook::kSiglusLookupMaxGlyphs &&
+          copy->geometry_generation != 0 &&
          copy->published_tick != 0 && now >= copy->published_tick &&
          now - copy->published_tick <= kSiglusLookupClickTargetMaxAgeMs;
 }
@@ -762,6 +809,9 @@ bool BuildSiglusLookupPayloadAtPress(const SiglusLookupClickTarget &target,
     payload->text_units = target.text_units;
     payload->char_index = target.geometry.glyphs[index].char_index;
     payload->rect = client_rect;
+    payload->game_window = reinterpret_cast<uintptr_t>(game);
+    payload->client_screen_x = origin.x;
+    payload->client_screen_y = origin.y;
     payload->client_width = client_width;
     payload->client_height = client_height;
     memcpy(payload->text, target.text,
@@ -770,6 +820,31 @@ bool BuildSiglusLookupPayloadAtPress(const SiglusLookupClickTarget &target,
     return payload->char_index < payload->text_units;
   }
   return false;
+}
+
+fushi_voice_hook::SiglusLookupClientSnapshot SiglusLookupPayloadClientSnapshot(
+    const SiglusLookupPayload &payload) {
+  return {payload.game_window, payload.client_screen_x,
+          payload.client_screen_y, payload.client_width,
+          payload.client_height};
+}
+
+fushi_voice_hook::SiglusLookupClientSnapshot SiglusLookupTargetClientSnapshot(
+    const SiglusLookupClickTarget &target) {
+  return {target.game_window, target.client_screen_x,
+          target.client_screen_y, target.client_width,
+          target.client_height};
+}
+
+bool SiglusLookupPayloadMatchesPublishedTarget(
+    const SiglusLookupPayload &payload) {
+  SiglusLookupClickTarget target;
+  return ReadSiglusLookupClickTarget(&target) &&
+         fushi_voice_hook::MatchesSiglusLookupGenerationAndClient(
+             payload.geometry_generation,
+             SiglusLookupPayloadClientSnapshot(payload),
+             target.geometry_generation,
+             SiglusLookupTargetClientSnapshot(target));
 }
 
 void QueueSiglusLookupClickSubmit(const SiglusLookupPayload &payload) {
@@ -906,7 +981,11 @@ SHORT WINAPI Detour_SiglusGetKeyState(int virtual_key) {
     g_siglus_lookup_pending_click_valid = true;
   }
   if (decision.submit) {
-    if (g_siglus_lookup_pending_click_valid && runtime_enabled) {
+    // Freeze the glyph at down, then require the worker-published logical
+    // sentence, geometry, HWND and client transform to still match on up.
+    if (g_siglus_lookup_pending_click_valid && runtime_enabled &&
+        SiglusLookupPayloadMatchesPublishedTarget(
+            g_siglus_lookup_pending_click)) {
       QueueSiglusLookupClickSubmit(g_siglus_lookup_pending_click);
     }
     g_siglus_lookup_pending_click_valid = false;
@@ -1004,7 +1083,8 @@ bool InstallSiglusLookupSensor() {
   if (profile == nullptr)
     return false;
   HMODULE module = GetModuleHandleW(nullptr);
-  if (module == nullptr)
+  if (module == nullptr ||
+      !IsSiglusExactBinaryStructureMatched(profile, module))
     return false;
   const ULONGLONG now = GetTickCount64();
   const HWND cached_game =
@@ -1139,59 +1219,127 @@ void ConsumeSiglusLookupCaptures() {
   if (profile == nullptr)
     return;
   fushi_voice_hook::SiglusLookupGeometry geometry;
+  size_t matched_end = 0;
   if (fushi_voice_hook::BuildSiglusLookupGeometry(
           *profile, g_siglus_lookup_glyph_captures,
           reinterpret_cast<const char16_t *>(g_siglus_lookup_active_line),
-          g_siglus_lookup_active_line_units, &geometry)) {
+          g_siglus_lookup_active_line_units, &geometry, &matched_end) &&
+      matched_end == g_siglus_lookup_glyph_captures.count) {
+    const bool same_logical_geometry =
+        g_siglus_lookup_active_valid &&
+        fushi_voice_hook::SameSiglusLookupGeometry(
+            g_siglus_lookup_active_geometry, geometry);
+    if (!same_logical_geometry) {
+      g_siglus_lookup_geometry_generation =
+          fushi_voice_hook::NextSiglusLookupLogicalGeneration(
+              g_siglus_lookup_geometry_generation);
+    }
     g_siglus_lookup_active_geometry = geometry;
     g_siglus_lookup_active_valid = true;
-    ++g_siglus_lookup_geometry_generation;
     SetSiglusLookupDiag(fushi_voice_hook::kLookupDiagGeometryObserved);
+  } else {
+    // New glyph events exist but do not yet form the selected sentence's
+    // newest complete layout. Never keep publishing the preceding geometry
+    // while the renderer is between generations.
+    g_siglus_lookup_active_valid = false;
   }
 }
 
-void PublishSiglusLookupHit(const SiglusLookupPayload &payload) {
+bool PublishSiglusLookupHit(const SiglusLookupPayload &payload) {
   if (g_header == nullptr || payload.text_units == 0 ||
       payload.text_units > kSiglusLookupMaxTextUnits ||
       payload.char_index >= payload.text_units) {
-    return;
+    return false;
   }
-  fushi_voice_hook::LookupHitSlot *slot =
-      fushi_voice_hook::LookupHitOf(g_header);
-  if (slot == nullptr)
-    return;
   char utf8[fushi_voice_hook::kLookupLineBytes] = {};
   const int bytes = WideCharToMultiByte(
       CP_UTF8, 0, payload.text, static_cast<int>(payload.text_units), utf8,
       static_cast<int>(sizeof(utf8)), nullptr, nullptr);
-  if (bytes <= 0)
-    return;
-  const uint64_t next =
-      static_cast<uint64_t>(InterlockedCompareExchange64(
-          reinterpret_cast<volatile LONG64 *>(&g_header->lookup_hit_count), 0,
-          0)) +
-      1u;
-  InterlockedExchange64(reinterpret_cast<volatile LONG64 *>(&slot->seq), 0);
-  slot->char_index = payload.char_index;
-  slot->char_count = payload.text_units;
-  slot->glyph_x = payload.rect.x;
-  slot->glyph_y = payload.rect.y;
-  slot->glyph_w = payload.rect.width;
-  slot->glyph_h = payload.rect.height;
-  slot->view_w = payload.client_width;
-  slot->view_h = payload.client_height;
-  slot->flags = fushi_voice_hook::kLookupHitFlagSubmit;
-  slot->line_bytes = static_cast<uint32_t>(bytes);
-  memcpy(slot->line_utf8, utf8, static_cast<size_t>(bytes));
-  InterlockedExchange64(reinterpret_cast<volatile LONG64 *>(&slot->seq),
-                        static_cast<LONG64>(next));
-  InterlockedExchange64(
-      reinterpret_cast<volatile LONG64 *>(&g_header->lookup_hit_count),
-      static_cast<LONG64>(next));
-  SetSiglusLookupDiag(fushi_voice_hook::kLookupDiagHitSubmitted);
+  if (bytes <= 0 || payload.geometry_generation == 0)
+    return false;
+  fushi_voice_hook::LookupGeometryHitPublication publication;
+  publication.provider_kind =
+      fushi_voice_hook::kLookupGeometryProviderEngineExactLayout;
+  publication.provider_id =
+      fushi_voice_hook::kLookupGeometryProviderIdSiglus;
+  publication.char_index = payload.char_index;
+  publication.source_length = fushi_voice_hook::LookupUtf16SourceLength(
+      payload.text, payload.text_units, payload.char_index);
+  publication.char_count = payload.text_units;
+  publication.coordinate_space =
+      fushi_voice_hook::kLookupCoordinateSpaceClientPhysicalPixels;
+  publication.writing_mode = fushi_voice_hook::kLookupWritingModeHorizontal;
+  publication.text_generation = payload.geometry_generation;
+  publication.geometry_generation = payload.geometry_generation;
+  publication.glyph_x = payload.rect.x;
+  publication.glyph_y = payload.rect.y;
+  publication.glyph_w = payload.rect.width;
+  publication.glyph_h = payload.rect.height;
+  publication.view_w = payload.client_width;
+  publication.view_h = payload.client_height;
+  publication.flags = fushi_voice_hook::kLookupHitFlagSubmit;
+  publication.line_utf8 = reinterpret_cast<const uint8_t *>(utf8);
+  publication.line_bytes = static_cast<uint32_t>(bytes);
+  return fushi_voice_hook::g_geometry_provider_registry.PublishHit(g_header, publication);
+}
+
+bool IsSiglusLookupPayloadCurrent(const SiglusLookupPayload &payload) {
+  const auto *profile = ActiveSiglusLookupProfile();
+  const uint64_t latest_text = static_cast<uint64_t>(
+      InterlockedCompareExchange64(&g_siglus_lookup_text_count, 0, 0));
+  const uint64_t latest_glyph = static_cast<uint64_t>(
+      InterlockedCompareExchange64(&g_siglus_lookup_glyph_event_count, 0, 0));
+  if (profile == nullptr || !g_siglus_lookup_active_valid ||
+      g_siglus_lookup_geometry_generation == 0 || payload.text_units == 0 ||
+      latest_text != g_siglus_lookup_text_processed_seq ||
+      latest_glyph != g_siglus_lookup_glyph_processed_seq ||
+      payload.text_units != g_siglus_lookup_active_line_units ||
+      payload.char_index >= payload.text_units ||
+      memcmp(payload.text, g_siglus_lookup_active_line,
+             static_cast<size_t>(payload.text_units) * sizeof(wchar_t)) != 0) {
+    return false;
+  }
+
+  const HWND game = reinterpret_cast<HWND>(payload.game_window);
+  RECT client = {};
+  POINT origin = {0, 0};
+  if (game == nullptr || !IsWindow(game) || GetForegroundWindow() != game ||
+      g_siglus_sampled_input_game_window.load(std::memory_order_acquire) !=
+          game ||
+      !GetClientRect(game, &client) || !ClientToScreen(game, &origin)) {
+    return false;
+  }
+  const fushi_voice_hook::SiglusLookupClientSnapshot active_client = {
+      reinterpret_cast<uintptr_t>(game), origin.x, origin.y,
+      client.right - client.left, client.bottom - client.top};
+  if (!fushi_voice_hook::MatchesSiglusLookupGenerationAndClient(
+          payload.geometry_generation,
+          SiglusLookupPayloadClientSnapshot(payload),
+          g_siglus_lookup_geometry_generation, active_client)) {
+    return false;
+  }
+
+  for (size_t index = 0;
+       index < g_siglus_lookup_active_geometry.glyph_count; ++index) {
+    const auto &glyph = g_siglus_lookup_active_geometry.glyphs[index];
+    if (glyph.char_index != payload.char_index)
+      continue;
+    fushi_voice_hook::SiglusLookupRect expected;
+    if (!fushi_voice_hook::ScaleSiglusLookupRectToClient(
+            *profile, glyph.rect, active_client.width, active_client.height,
+            &expected)) {
+      return false;
+    }
+    return payload.rect.x == expected.x && payload.rect.y == expected.y &&
+           payload.rect.width == expected.width &&
+           payload.rect.height == expected.height;
+  }
+  return false;
 }
 
 bool PublishSiglusLookupPayload(const SiglusLookupPayload &payload) {
+  if (!IsSiglusLookupPayloadCurrent(payload))
+    return false;
   const ULONGLONG now = GetTickCount64();
   uint64_t identity = 1469598103934665603ull;
   const auto hash_value = [&identity](uint64_t value) {
@@ -1211,7 +1359,10 @@ bool PublishSiglusLookupPayload(const SiglusLookupPayload &payload) {
           kSiglusLookupDuplicateHitWindowMs) {
     return false;
   }
-  PublishSiglusLookupHit(payload);
+  if (!IsSiglusLookupPayloadCurrent(payload) ||
+      !PublishSiglusLookupHit(payload)) {
+    return false;
+  }
   g_siglus_lookup_last_hit_identity = identity;
   g_siglus_lookup_last_hit_tick = now;
   return true;
@@ -1221,6 +1372,12 @@ void ProcessSiglusLookupTick() {
   if (g_stop || g_header == nullptr ||
       !fushi_voice_hook::HasLookupRegion(g_header) ||
       g_header->lookup_enabled == 0) {
+    if (g_header != nullptr) {
+      fushi_voice_hook::g_geometry_provider_registry.Retire(
+          g_header,
+          fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+          fushi_voice_hook::kLookupGeometryProviderIdSiglus);
+    }
     SetSiglusLookupRuntimeEnabled(false);
     g_siglus_lookup_last_shift_down = false;
     g_siglus_lookup_active_valid = false;
@@ -1228,12 +1385,28 @@ void ProcessSiglusLookupTick() {
     return;
   }
   if (!InstallSiglusLookupSensor()) {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header,
+        fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdSiglus);
     SetSiglusLookupRuntimeEnabled(false);
     InvalidateSiglusLookupClickTarget();
     return;
   }
   SetSiglusLookupRuntimeEnabled(true);
   ConsumeSiglusLookupCaptures();
+
+  if (g_siglus_lookup_active_valid) {
+    fushi_voice_hook::g_geometry_provider_registry.OfferReady(
+        g_header,
+        fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdSiglus);
+  } else {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header,
+        fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdSiglus);
+  }
 
   SiglusLookupClickEvent click_event;
   uint64_t click_seq = 0;
@@ -1257,6 +1430,10 @@ void ProcessSiglusLookupTick() {
   POINT cursor = {};
   if (game == nullptr || !GetClientRect(game, &client) ||
       !ClientToScreen(game, &origin) || !GetCursorPos(&cursor)) {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header,
+        fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdSiglus);
     InvalidateSiglusLookupClickTarget();
     return;
   }
@@ -1293,6 +1470,12 @@ void ProcessSiglusLookupTick() {
 }
 
 void ShutdownSiglusLookup() {
+  if (g_header != nullptr) {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header,
+        fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdSiglus);
+  }
   SetSiglusLookupRuntimeEnabled(false);
   g_siglus_lookup_message_left_button_latched.store(false,
                                                     std::memory_order_release);

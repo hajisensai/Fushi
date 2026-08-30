@@ -54,6 +54,7 @@
 #include "catsystem2_int.h"
 #include "malie_lib.h"
 #include "ffmpeg_runtime.h"
+#include "lookup_v19_runtime.h"
 #include "hook_original_registry.h"
 #include "hunex_hfa.h"
 #include "siglus_ovk.h"
@@ -570,6 +571,7 @@ bool SignalReady(DWORD pid, bool legacy_hibiki_ipc) {
 #include "adapters/loopback_adapter.inc"
 #include "generated/adapter_includes.inc"
 
+#include "generic_input_shield.inc"
 #include "adapter_registry.inc"
 
 // 工作线程：打开共享内存 -> 校验契约 -> 标记 hooked -> 由 registry 安装 adapter -> 通知 injector。
@@ -609,7 +611,7 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
   }
 
   g_header->hooked = 1;
-
+  fushi_voice_hook::g_geometry_provider_registry.Reset(g_header);
   // 此时 DLL、共享内存与契约均已就绪，先让 injector 进入 hold 保住映射。
   // 后面的 MinHook/Siglus/KiriKiri 探测允许异步继续，不能阻塞 proof-of-life。
   if (!SignalReady(pid, legacy_hibiki_ipc)) return 1;
@@ -644,11 +646,15 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
     g_mh_init = true;
     g_capture_enabled = true;  // detour 上线（未加载时 hook 随后命中）。
     registry.InstallStartupAdapters();
+    TryInstallGenericLookupInputShield();
   }
 
   // registry 保留原有各 adapter 的 150 次重试预算和调用顺序；工作线程只管生命周期。
   while (!g_stop) {
     registry.Poll();
+    TryInstallGenericLookupInputShield();
+    ProcessGenericLookupInputShield();
+    fushi_voice_hook::g_geometry_provider_registry.Reconcile(g_header);
     // 通用位图呈现器：host 打开查词后才起，且只在没有引擎适配器认领呈现时起。
     // 放在 Poll 之后是因为认领发生在适配器安装里——先 Poll 再问，才不会在 KiriKiri
     // 认领之前抢跑起一个多余的分层窗口。它自带 UI 线程，这里只是点火，不阻塞本循环。
@@ -660,6 +666,7 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
   }
   // 呈现器先于 adapter 收尾停：它每 16ms 读一次 g_header，必须在解映射之前停稳。
   StopLookupOverlay();
+  ShutdownGenericLookupInputShield();
 
   // 收尾在工作线程里做（不在 loader lock 中）：先提交仍在组装的 legacy TextMesh
   // 末句，再在同一把 adapter 锁内关总开关，确保正常结束不会静默丢尾句。

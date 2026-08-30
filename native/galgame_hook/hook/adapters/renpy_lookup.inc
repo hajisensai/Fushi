@@ -593,45 +593,41 @@ const char* ReadRenpyGlobalBytes(void* main_dict, const char* name,
   return buffer;
 }
 
-// 把命中写进共享内存的单槽。写序与 KiriKiri 那条逐字一致：先把 seq 清 0，填 payload，
-// **最后**发布新 seq，再推进 lookup_hit_count。读侧靠这个顺序判「这一槽是不是完整的」。
-void PublishRenpyLookupHit(uint32_t char_index, uint32_t char_count,
-                           int32_t gx, int32_t gy, int32_t gw, int32_t gh,
-                           int32_t vw, int32_t vh, const char* line_utf8,
-                           size_t line_bytes) {
-  if (g_header == nullptr) return;
-  fushi_voice_hook::LookupHitSlot* slot = fushi_voice_hook::LookupHitOf(g_header);
-  if (slot == nullptr) return;
-  const uint64_t next =
-      static_cast<uint64_t>(InterlockedCompareExchange64(
-          reinterpret_cast<volatile LONG64*>(&g_header->lookup_hit_count), 0,
-          0)) +
-      1u;
-  InterlockedExchange64(reinterpret_cast<volatile LONG64*>(&slot->seq), 0);
-  slot->char_index = char_index;
-  slot->char_count = char_count;
-  slot->glyph_x = gx;
-  slot->glyph_y = gy;
-  slot->glyph_w = gw;
-  slot->glyph_h = gh;
-  slot->view_w = vw;
-  slot->view_h = vh;
-  slot->flags = fushi_voice_hook::kLookupHitFlagSubmit;
+// 组装 Ren'Py 的文本/几何原子快照；共享槽的单槽 seqlock 与 provider 仲裁统一由
+// GeometryProviderRegistry 完成，避免各引擎各自维护发布顺序。
+bool PublishRenpyLookupHit(uint64_t hit_generation, uint32_t char_index,
+                           uint32_t char_count, int32_t gx, int32_t gy,
+                           int32_t gw, int32_t gh, int32_t vw, int32_t vh,
+                           const char* line_utf8, size_t line_bytes) {
+  if (g_header == nullptr || hit_generation == 0) return false;
   size_t copy = line_bytes;
   if (copy > fushi_voice_hook::kLookupLineBytes) {
     copy = fushi_voice_hook::kLookupLineBytes;
   }
-  if (line_utf8 != nullptr && copy > 0) {
-    memcpy(slot->line_utf8, line_utf8, copy);
-  }
-  slot->line_bytes = static_cast<uint32_t>(copy);
-  InterlockedExchange64(reinterpret_cast<volatile LONG64*>(&slot->seq),
-                        static_cast<LONG64>(next));
-  InterlockedExchange64(
-      reinterpret_cast<volatile LONG64*>(&g_header->lookup_hit_count),
-      static_cast<LONG64>(next));
-  g_header->lookup_diag |= fushi_voice_hook::kLookupDiagGeometryObserved;
-  g_header->lookup_diag |= fushi_voice_hook::kLookupDiagHitSubmitted;
+  fushi_voice_hook::LookupGeometryHitPublication publication;
+  publication.provider_kind =
+      fushi_voice_hook::kLookupGeometryProviderRuntimeLayout;
+  publication.provider_id = fushi_voice_hook::kLookupGeometryProviderIdRenpy;
+  publication.char_index = char_index;
+  // The admitted legacy Ren'Py sensor reports Python-2 narrow-Unicode indices,
+  // so one reported glyph is exactly one UTF-16 code unit in this path.
+  publication.source_length = 1;
+  publication.char_count = char_count;
+  publication.coordinate_space =
+      fushi_voice_hook::kLookupCoordinateSpaceClientPhysicalPixels;
+  publication.writing_mode = fushi_voice_hook::kLookupWritingModeHorizontal;
+  publication.text_generation = hit_generation;
+  publication.geometry_generation = hit_generation;
+  publication.glyph_x = gx;
+  publication.glyph_y = gy;
+  publication.glyph_w = gw;
+  publication.glyph_h = gh;
+  publication.view_w = vw;
+  publication.view_h = vh;
+  publication.flags = fushi_voice_hook::kLookupHitFlagSubmit;
+  publication.line_utf8 = reinterpret_cast<const uint8_t*>(line_utf8);
+  publication.line_bytes = static_cast<uint32_t>(copy);
+  return fushi_voice_hook::g_geometry_provider_registry.PublishHit(g_header, publication);
 }
 
 // 后台线程只登记「该装了」，一个引擎调用都不做。真正的安装在 ProcessRenpyLookupTick
@@ -691,7 +687,12 @@ void ProcessRenpyLookupTick() {
     if (lookup_on) InstallRenpyLookupSensor();
     return;
   }
-  if (InterlockedCompareExchange(&g_renpy_lookup_state, 0, 0) != 2) return;
+  if (InterlockedCompareExchange(&g_renpy_lookup_state, 0, 0) != 2) {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header, fushi_voice_hook::kLookupGeometryProviderRuntimeLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdRenpy);
+    return;
+  }
 
   // 光标 → 游戏窗口客户区物理像素。用 Win32 而不是 hook 引擎输入：一来引擎无关，
   // 二来 Ren'Py 的事件在 Python 层，从 native 拦它反而更脆。
@@ -751,6 +752,9 @@ void ProcessRenpyLookupTick() {
   }
   // 关闸写完才早退。顺序反了这条修复就完全不存在——那正是原来的形态。
   if (!lookup_on) {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header, fushi_voice_hook::kLookupGeometryProviderRuntimeLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdRenpy);
     g_py_gil_release(gil);
     return;
   }
@@ -759,6 +763,9 @@ void ProcessRenpyLookupTick() {
   void* main_dict =
       main_module != nullptr ? g_py_module_get_dict(main_module) : nullptr;
   if (main_dict == nullptr) {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header, fushi_voice_hook::kLookupGeometryProviderRuntimeLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdRenpy);
     g_py_gil_release(gil);
     return;
   }
@@ -781,6 +788,18 @@ void ProcessRenpyLookupTick() {
     g_header->lookup_diag |= fushi_voice_hook::kLookupDiagSensorFault;
   }
 
+  const bool geometry_ready = ticks > 0 && on_main != 0 && glyphs > 0 &&
+                              client_w > 0 && client_h > 0;
+  if (geometry_ready) {
+    fushi_voice_hook::g_geometry_provider_registry.OfferReady(
+        g_header, fushi_voice_hook::kLookupGeometryProviderRuntimeLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdRenpy);
+  } else {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header, fushi_voice_hook::kLookupGeometryProviderRuntimeLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdRenpy);
+  }
+
   if (hit_seq != 0 && hit_seq != g_renpy_last_hit_seq) {
     const long idx = ReadRenpyGlobalInt(main_dict, "fushi_lookup_idx", -1);
     const long count = ReadRenpyGlobalInt(main_dict, "fushi_lookup_count", 0);
@@ -795,14 +814,24 @@ void ProcessRenpyLookupTick() {
                                             &line_bytes);
     if (idx >= 0 && count > 0 && idx < count) {
       // 必须在释放 GIL 之前拷走：line 指向 Python 对象内部缓冲。
-      PublishRenpyLookupHit(static_cast<uint32_t>(idx),
-                            static_cast<uint32_t>(count),
-                            static_cast<int32_t>(gx), static_cast<int32_t>(gy),
-                            static_cast<int32_t>(gw), static_cast<int32_t>(gh),
-                            static_cast<int32_t>(vw), static_cast<int32_t>(vh),
-                            line, line_bytes);
-      g_renpy_last_hit_seq = hit_seq;
+      if (PublishRenpyLookupHit(
+              hit_seq, static_cast<uint32_t>(idx),
+              static_cast<uint32_t>(count), static_cast<int32_t>(gx),
+              static_cast<int32_t>(gy), static_cast<int32_t>(gw),
+              static_cast<int32_t>(gh), static_cast<int32_t>(vw),
+              static_cast<int32_t>(vh), line, line_bytes)) {
+        g_renpy_last_hit_seq = hit_seq;
+      }
     }
   }
   g_py_gil_release(gil);
+}
+
+void ShutdownRenpyLookup() {
+  if (g_header != nullptr) {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header, fushi_voice_hook::kLookupGeometryProviderRuntimeLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdRenpy);
+  }
+  g_renpy_last_button_down = false;
 }

@@ -98,6 +98,12 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
   void onModuleLoaded(const wchar_t*) override {}
 
   void shutdown() override {
+    if (g_header != nullptr) {
+      fushi_voice_hook::g_geometry_provider_registry.Retire(
+          g_header,
+          fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+          fushi_voice_hook::kLookupGeometryProviderIdSgre);
+    }
     ShutdownSgreDirectInputShield();
     if (!installed_) return;
     UnregisterXAudioCompressedResourceHandler(&HandleSgreCompressedResource);
