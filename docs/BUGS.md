@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1847 条。点号进各自文件。
+> 共 1848 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1971](bugs/BUG-1971-library-tabs-overflow-cue.md) | ✅ | ✅ | 库页顶栏横向标签缺少后续内容提示 |
+| [BUG-1970](bugs/BUG-1970-onboarding-feature-tile-height.md) | ✅ | ✅ | 新手引导功能选中态高度变化 |
 | [BUG-1969](bugs/BUG-1969-organizer-filename-extra-collision.md) | ✅ | ✅ | 剧集整理把平铺 NCED 文件当正片，与同集正片撞号 |
 | [BUG-1968](bugs/BUG-1968-windows-manga-ocr-directml-runtime.md) | ✅ | ✅ | Windows 漫画 OCR detector 未实际启用 DirectML |
 | [BUG-1967](bugs/BUG-1967-dictionary-order-render-contract.md) | ✅ | ✅ | 词典管理顺序未约束弹窗释义卡顺序 |
