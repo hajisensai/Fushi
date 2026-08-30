@@ -687,6 +687,7 @@ void _requireOneVideoMetadataOwner({
   VideoDownloadJobSubtitles,
   VideoDownloadSubscriptions,
   VideoDownloadSubscriptionItems,
+  MangaChapterStates,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -717,7 +718,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 88;
+  int get schemaVersion => 89;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2746,6 +2747,20 @@ class FushiDatabase extends _$FushiDatabase
             if (await _tableExists('galgames') &&
                 !await _columnExists('galgames', 'language')) {
               await m.addColumn(galgames, galgames.language);
+            }
+          }
+          if (from < 89) {
+            // v89（漫画作品页·每章状态）：新表 manga_chapter_states，把「章」从
+            // `MihonLibraryEntry.currentChapterIndex` 这个单 int 升成一等实体。
+            //
+            // 无损：纯新增表，不动任何既有表和列。旧库升级后表为空 = 所有章都
+            // 「无状态」= 作品页章节列表全显示未读、继续阅读回退到
+            // `currentChapterIndex`（沿 v88 前的行为），零破坏。
+            //
+            // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被
+            // `_tableExists` 短路 no-op。
+            if (!await _tableExists('manga_chapter_states')) {
+              await m.createTable(mangaChapterStates);
             }
           }
         },

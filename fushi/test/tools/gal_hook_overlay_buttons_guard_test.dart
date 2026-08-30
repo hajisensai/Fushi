@@ -8,9 +8,18 @@ import 'package:path/path.dart' as p;
 /// 整排按钮相对居中布局漂移（浮窗是独立 native 窗口，Dart 侧测不到这层）。
 ///
 /// BUG-951 起工具栏是两个窗口（正文窗内嵌一份 + 穿透态的独立 HookToolbarWindow），
-/// 槽表因此上移到 `hook_toolbar_window.h` 的 `kSlotActions`；两窗同表索引，本守卫
-/// 也随之改成「槽数 / 槽表 / 字形 / 命中四者对齐」，而不是数已经不存在的
-/// `hook_button(N,` 与 `case N:` 字面量。
+/// 槽表因此上移到 `hook_toolbar_window.h`；两窗同表索引。
+///
+/// 此后同一个浮窗类又服务了第二种用途（有声书悬浮字幕：上一句 / 播放暂停 /
+/// 下一句 …），槽表**按用途分表**（`kGalHookSlotActions` / `kAudiobookSlotActions`），
+/// 分派一律「先取 action 字符串再分支」而不是按槽位下标 switch —— 两张表长度不同，
+/// 同一个下标在两表里是两回事，按下标分支必然在加表那天集体错位。
+///
+/// 本守卫因此从「单表 0..N-1 对齐」升级为：
+///  * 每张表的 action 条数 == 该表声明的槽数；
+///  * **两张表的每个 action** 都必须有字形分支 *和* 矢量画法（缺一个就是按钮画不
+///    出来 —— 打包字体是极小子集，新 action 十有八九没有字形，只能落矢量）；
+///  * 两个窗口的命中与绘制都走 SlotAction()/SlotCount()，不得各抄一份映射。
 void main() {
   final String runner = p.join('windows', 'runner');
   final File window = File(p.join(runner, 'floating_lyric_window.cpp'));
@@ -18,71 +27,92 @@ void main() {
   final File toolbar = File(p.join(runner, 'hook_toolbar_window.cpp'));
   final File host = File(p.join(runner, 'flutter_window.cpp'));
 
-  test('hook 工具栏槽数与绘制、命中映射三者一致', () {
+  test('每张 profile 槽表的槽数、字形、矢量画法、命中四者一致', () {
     final String source = window.readAsStringSync();
     final String header = toolbarHeader.readAsStringSync();
-
-    final Match? declared =
-        RegExp(r'kSlotCount\s*=\s*(\d+)\s*;').firstMatch(header);
-    expect(declared, isNotNull, reason: '找不到 hook_toolbar::kSlotCount 声明');
-    final int slots = int.parse(declared!.group(1)!);
-
-    // 正文窗不得再持有自己的槽数：必须从共享表推导。
-    expect(
-      source.contains('kHookTextControlSlotCount = hook_toolbar::kSlotCount'),
-      isTrue,
-      reason: '正文窗的槽数必须由 hook_toolbar::kSlotCount 推导，不得另开一份',
-    );
-
-    // 槽表必须正好有 N 个 action。
-    final int tableStart = header.indexOf('kSlotActions');
-    expect(tableStart, greaterThan(0));
-    final String table =
-        header.substring(tableStart, header.indexOf('};', tableStart));
-    expect(
-      RegExp('"([a-zA-Z]+)"').allMatches(table).length,
-      slots,
-      reason: 'kSlotActions 必须为每个槽位给出 action',
-    );
-
-    // 字形表必须覆盖 0..N-1（default 分支只是兜底，不算覆盖）。
     final String toolbarSource = toolbar.readAsStringSync();
-    final int glyphStart = toolbarSource.indexOf('const wchar_t* SlotGlyph');
-    expect(glyphStart, greaterThan(0), reason: '找不到 SlotGlyph 定义');
-    // 切片终点取**本函数**在第 0 列的收尾大括号，不要拿相邻函数当分隔符：
-    // 原实现以 'bool SlotActive' 为终点，SlotActive 被挪到 SlotGlyph 之前时
-    // indexOf 返回 -1，守卫直接崩在切片上而不是报出真正的问题。
-    final int glyphEnd = toolbarSource.indexOf('\n}', glyphStart);
-    expect(glyphEnd, greaterThan(glyphStart),
-        reason: 'SlotGlyph 必须有第 0 列的收尾大括号');
-    final String glyphBody = toolbarSource.substring(glyphStart, glyphEnd);
-    final List<int> glyphCases = RegExp(r'case (\d+):')
-        .allMatches(glyphBody)
-        .map((Match m) => int.parse(m.group(1)!))
-        .toList()
-      ..sort();
-    expect(
-      glyphCases,
-      List<int>.generate(slots, (int i) => i),
-      reason: 'SlotGlyph 必须为 0..N-1 每个槽位给出字形',
-    );
 
-    // 两个窗口的绘制与命中都必须遍历同一个槽数并索引同一张表。
+    /// 读出一张槽表声明的槽数与它实际列出的 action。
+    List<String> tableActions(String countName, String tableName) {
+      final Match? declared =
+          RegExp('$countName' r'\s*=\s*(\d+)\s*;').firstMatch(header);
+      expect(declared, isNotNull, reason: '找不到 hook_toolbar::$countName 声明');
+      final int slots = int.parse(declared!.group(1)!);
+
+      final int tableStart = header.indexOf('$tableName[');
+      expect(tableStart, greaterThan(0), reason: '找不到槽表 $tableName');
+      final String table =
+          header.substring(tableStart, header.indexOf('};', tableStart));
+      final List<String> actions = RegExp('"([a-zA-Z]+)"')
+          .allMatches(table)
+          .map((Match m) => m.group(1)!)
+          .toList();
+      expect(actions.length, slots,
+          reason: '$tableName 必须为每个槽位给出 action');
+      return actions;
+    }
+
+    final List<String> galActions =
+        tableActions('kGalHookSlotCount', 'kGalHookSlotActions');
+    final List<String> audiobookActions =
+        tableActions('kAudiobookSlotCount', 'kAudiobookSlotActions');
+    final Set<String> allActions = <String>{...galActions, ...audiobookActions};
+
+    /// 取一个函数体（从签名到第 0 列收尾大括号）。终点必须是本函数自己的收尾，
+    /// 不能拿相邻函数当分隔符 —— 相邻函数一挪位置守卫就崩在切片上，而不是报出
+    /// 真正的问题。
+    String functionBody(String signature) {
+      final int start = toolbarSource.indexOf(signature);
+      expect(start, greaterThan(0), reason: '找不到 $signature 定义');
+      final int end = toolbarSource.indexOf('\n}', start);
+      expect(end, greaterThan(start), reason: '$signature 必须有第 0 列收尾大括号');
+      return toolbarSource.substring(start, end);
+    }
+
+    final String glyphBody = functionBody('const wchar_t* SlotGlyph');
+    final String iconBody = functionBody('void DrawSlotIcon');
+
+    for (final String action in allActions) {
+      // 字形分支：给得出字体字形的返回码位，给不出的必须显式落到空串（由调用方
+      // 逐槽回退矢量）。两种都算「SlotGlyph 认识这个 action」。
+      expect(
+        glyphBody.contains('"$action"'),
+        isTrue,
+        reason: 'SlotGlyph 必须认识 action「$action」，否则该按钮画不出字形也不回退',
+      );
+      // 矢量画法是打包字体缺字形时的唯一出路，必须覆盖每个 action。
+      expect(
+        iconBody.contains('"$action"'),
+        isTrue,
+        reason: 'DrawSlotIcon 必须为 action「$action」给出矢量画法（字体是极小子集，'
+            '缺字形时只剩这条路）',
+      );
+    }
+
+    // 绘制与命中都必须按 profile 问槽数 / 槽表，不得另开一份。
     expect(
-      source.contains('for (int slot = 0; slot < kHookTextControlSlotCount;'),
+      source.contains('hook_toolbar::SlotCount(toolbar_profile_)'),
       isTrue,
-      reason: '正文窗 Render() 必须按槽数循环画出全部槽位',
+      reason: '正文窗必须按 profile 问槽数，不得持有自己的槽数常量',
     );
     expect(
-      source.contains('hook_toolbar::kSlotActions[slot]'),
+      source.contains('hook_toolbar::SlotAction(toolbar_profile_, slot)'),
       isTrue,
-      reason: 'ControlActionAt() 必须索引共享槽表，不得另抄一份映射',
+      reason: 'ControlActionAt() 必须索引 profile 槽表，不得另抄一份映射',
     );
     expect(
-      toolbarSource.contains('hook_toolbar::kSlotActions[slot]'),
+      toolbarSource.contains('hook_toolbar::SlotAction(profile_, slot)'),
       isTrue,
-      reason: '独立工具条窗的命中同样必须索引共享槽表',
+      reason: '独立工具条窗的命中同样必须索引 profile 槽表',
     );
+    // 分派按 action 而不是槽位下标：两张表长度不同，按下标 switch 必然错位。
+    for (final String body in <String>[glyphBody, iconBody]) {
+      expect(
+        RegExp(r'case \d+:').hasMatch(body),
+        isFalse,
+        reason: '槽位分派不得按下标 switch —— 两张 profile 表的同一下标是两回事',
+      );
+    }
   });
 
   test('语音控件 action 与 native 状态方法齐全', () {

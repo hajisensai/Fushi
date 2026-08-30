@@ -55,6 +55,9 @@ class MihonExtensionsPage extends ConsumerStatefulWidget {
 class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   MihonManager? _manager;
   String _language = '*';
+
+  /// 用户手动改过展开状态的仓库（覆盖默认判据）。没记录的仓库按条数自适应。
+  final Map<String, bool> _storeExpansionOverrides = <String, bool>{};
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -107,8 +110,8 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
             // 在出口处归一化一次，后面的 scheme 判定与 addStore 就都拿到
             // 半角地址；否则全角输入会让 `scheme == 'http'` 判空而漏掉
             // 明文确认。
-            onPressed: () =>
-                Navigator.pop(dialogContext, normalizeUrlInput(controller.text)),
+            onPressed: () => Navigator.pop(
+                dialogContext, normalizeUrlInput(controller.text)),
             child: Text(t.mihon_store_add),
           ),
         ],
@@ -159,8 +162,8 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           adaptiveDialogAction(
             context: dialogContext,
             isDefaultAction: true,
-            onPressed: () =>
-                Navigator.pop(dialogContext, normalizeUrlInput(controller.text)),
+            onPressed: () => Navigator.pop(
+                dialogContext, normalizeUrlInput(controller.text)),
             child: Text(t.mihon_store_edit),
           ),
         ],
@@ -677,6 +680,11 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         extension.packageName,
       ],
     );
+    final List<MihonExtensionListRow> groupedRows = buildMihonGroupedRows(
+      stores: manager.stores,
+      extensions: visibleAvailable,
+      expanded: _storeExpanded,
+    );
     return <Widget>[
       SliverList.builder(
         itemCount: manager.stores.length,
@@ -739,13 +747,36 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         ),
       const SliverToBoxAdapter(child: SizedBox(height: 8)),
       SliverList.builder(
-        itemCount: visibleAvailable.length,
+        itemCount: groupedRows.length,
         itemBuilder: (BuildContext context, int index) {
-          final MihonAvailableExtension extension = visibleAvailable[index];
+          final MihonExtensionListRow entry = groupedRows[index];
+          if (entry is MihonStoreHeaderRow) {
+            return _StoreGroupHeader(
+              indexUrl: entry.indexUrl,
+              label: entry.label,
+              count: entry.count,
+              expanded: entry.expanded,
+              // 搜索态是强制展开的，这时点表头没有意义（点了也还是展开）。
+              onTap: _searchQuery.trim().isNotEmpty
+                  ? null
+                  : () => _toggleStore(entry.indexUrl, entry.count),
+            );
+          }
+          final MihonAvailableExtension extension =
+              (entry as MihonExtensionEntryRow).extension;
           final MangaExtensionRow? row = installed[extension.packageName];
           final bool busy =
               manager.isExtensionActionBusy(extension.packageName);
           return _AvailableExtensionTile(
+            // 身份键，**必需**：这个 tile 是 StatefulWidget，自己持有
+            // `_showAllSources`（「展开全部源 / 收起源列表」）。
+            // SliverChildBuilderDelegate 按位置槽复用 Element，`Widget.canUpdate`
+            // 只看 runtimeType + key —— 都是 null 的话，折叠上方任一仓库分组、
+            // 改语言筛选、或输入搜索让行表一位移，同一个 index 上换了扩展，
+            // `_AvailableExtensionTileState` 连同 `_showAllSources` 被原样复用：
+            // 另一个扩展显示成「已展开全部源」，原来那个反而收了回去。
+            // 身份就是 packageName（同文件 toggle 按钮的 key 已经这么用了）。
+            key: ValueKey<String>(extension.packageName),
             extension: extension,
             installed: row,
             busy: busy,
@@ -797,6 +828,24 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     ];
   }
 
+  /// 某个仓库当前是否展开。
+  ///
+  /// 三段判据，从强到弱：
+  /// 1. **搜索态一律展开** —— 结果躲在收起的分组里等于搜索失效。
+  /// 2. 用户手动点过表头就听用户的。
+  /// 3. 否则按条数自适应（[kMihonStoreAutoCollapseThreshold]）。
+  bool _storeExpanded(String indexUrl, int count) {
+    if (_searchQuery.trim().isNotEmpty) return true;
+    return _storeExpansionOverrides[indexUrl] ??
+        count <= kMihonStoreAutoCollapseThreshold;
+  }
+
+  void _toggleStore(String indexUrl, int count) {
+    setState(() {
+      _storeExpansionOverrides[indexUrl] = !_storeExpanded(indexUrl, count);
+    });
+  }
+
   Widget _buildFilters(List<String> languages) {
     return MangaExtensionFilters(
       keyPrefix: 'mihon_extension',
@@ -823,8 +872,128 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
 /// （[MihonAvailableExtension.sources] 的名字 + 域名）和 NSFW 标记，以前这些数据
 /// 只喂给搜索匹配，一个字都没显示，用户只能靠扩展名猜。安装前能看清装的是什么，
 /// 是「预览」的第一层——不需要跑任何代码，也没有任何网络请求。
-class _AvailableExtensionTile extends StatelessWidget {
+/// 超过这个条数的仓库默认收起。
+///
+/// 不是拍脑袋的魔数，编码的是一条产品规则：**一眼扫得完的分组就没必要收起**。
+/// 装了三五个扩展的自建仓库全收起来只会让用户多点一下；而 keiyoushi 一家就
+/// 1900+ 个扩展，铺开时这一页除了滚动什么也做不了（用户「这里支持下根据仓库
+/// 折叠」）。收起态下表头仍显示扩展条数，不会让人以为列表空了。
+const int kMihonStoreAutoCollapseThreshold = 20;
+
+/// 把「按仓库分组 + 折叠」压平成一维行表，交给 [SliverList.builder] 懒建。
+///
+/// **不要**改回「每个仓库一个 Column / ExpansionTile」：keiyoushi 的 1900+ 扩展
+/// 塞进 Column 会一次性构建全部子树，这一页直接卡死（BUG-1441 就是这么来的）。
+/// 收起的仓库只贡献一行表头，展开的才把它的扩展铺进去，整表始终是懒建的。
+List<MihonExtensionListRow> buildMihonGroupedRows({
+  required List<MangaExtensionStoreRow> stores,
+  required List<MihonAvailableExtension> extensions,
+  required bool Function(String indexUrl, int count) expanded,
+}) {
+  final Map<String, List<MihonAvailableExtension>> byStore =
+      <String, List<MihonAvailableExtension>>{};
+  for (final MihonAvailableExtension extension in extensions) {
+    byStore
+        .putIfAbsent(extension.storeUrl, () => <MihonAvailableExtension>[])
+        .add(extension);
+  }
+  final List<MihonExtensionListRow> rows = <MihonExtensionListRow>[];
+  void emit(String indexUrl, String label) {
+    final List<MihonAvailableExtension>? group = byStore.remove(indexUrl);
+    if (group == null || group.isEmpty) return;
+    final bool isExpanded = expanded(indexUrl, group.length);
+    rows.add(MihonStoreHeaderRow(
+      indexUrl: indexUrl,
+      label: label,
+      count: group.length,
+      expanded: isExpanded,
+    ));
+    if (!isExpanded) return;
+    for (final MihonAvailableExtension extension in group) {
+      rows.add(MihonExtensionEntryRow(extension));
+    }
+  }
+
+  // 先按仓库表的顺序发（sortOrder 是用户排的），再兜底发孤儿分组：扩展的
+  // storeUrl 可能指向一个刚被删掉的仓库，那些条目不能凭空消失。
+  for (final MangaExtensionStoreRow store in stores) {
+    emit(store.indexUrl, store.name);
+  }
+  for (final String orphan in byStore.keys.toList(growable: false)) {
+    emit(orphan, orphan);
+  }
+  return rows;
+}
+
+/// 分组行表的一行：要么是仓库表头，要么是一个扩展条目。
+sealed class MihonExtensionListRow {
+  const MihonExtensionListRow();
+}
+
+class MihonStoreHeaderRow extends MihonExtensionListRow {
+  const MihonStoreHeaderRow({
+    required this.indexUrl,
+    required this.label,
+    required this.count,
+    required this.expanded,
+  });
+
+  final String indexUrl;
+  final String label;
+  final int count;
+  final bool expanded;
+}
+
+class MihonExtensionEntryRow extends MihonExtensionListRow {
+  const MihonExtensionEntryRow(this.extension);
+
+  final MihonAvailableExtension extension;
+}
+
+/// 仓库分组表头：名字 + 扩展条数 + 展开箭头。
+///
+/// 条数不是装饰：收起态下这是「这个仓库到底有没有东西」的唯一线索，没有它
+/// 折叠就等于让列表看起来空了。
+class _StoreGroupHeader extends StatelessWidget {
+  const _StoreGroupHeader({
+    required this.indexUrl,
+    required this.label,
+    required this.count,
+    required this.expanded,
+    required this.onTap,
+  });
+
+  /// key 用 indexUrl 而不是显示名：页面顶部的仓库**管理**卡也画着同一个 name，
+  /// 按名字定位会撞上那张卡（它没有 onTap，点了什么都不会发生）。
+  final String indexUrl;
+  final String label;
+  final int count;
+  final bool expanded;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return FushiCard(
+      padding: EdgeInsets.zero,
+      child: FushiListItem(
+        key: ValueKey<String>('mihon-store-group-$indexUrl'),
+        onTap: onTap,
+        leading: AnimatedRotation(
+          turns: expanded ? 0.25 : 0,
+          duration: const Duration(milliseconds: 150),
+          child: const Icon(Icons.chevron_right),
+        ),
+        title: Text(label, style: theme.textTheme.titleSmall),
+        subtitle: Text(t.mihon_store_extension_count(count: count)),
+      ),
+    );
+  }
+}
+
+class _AvailableExtensionTile extends StatefulWidget {
   const _AvailableExtensionTile({
+    super.key,
     required this.extension,
     required this.installed,
     required this.busy,
@@ -847,25 +1016,51 @@ class _AvailableExtensionTile extends StatelessWidget {
   final ValueChanged<bool>? onEnabledChanged;
 
   @override
+  State<_AvailableExtensionTile> createState() =>
+      _AvailableExtensionTileState();
+}
+
+class _AvailableExtensionTileState extends State<_AvailableExtensionTile> {
+  /// 「包含的源」默认只显示前 [_sourcePreviewCount] 条。
+  ///
+  /// 截图里那一屏的主因就是这里：Akuma 一个扩展铺了 30 行
+  /// `Akuma (xx) — https://akuma.moe`，把整页撑成一条看不到头的列表。
+  /// FushiListItem 的 subtitleMaxLines 管不到它（那是 DefaultTextStyle.merge，
+  /// 对 Column 里每个 Text 各自生效）。
+  static const int _sourcePreviewCount = 3;
+
+  bool _showAllSources = false;
+
+  @override
   Widget build(BuildContext context) {
+    final MihonAvailableExtension extension = widget.extension;
+    final MangaExtensionRow? installed = widget.installed;
     final bool update =
-        installed != null && extension.versionCode > installed!.versionCode;
+        installed != null && extension.versionCode > installed.versionCode;
     final ThemeData theme = Theme.of(context);
+    final int hiddenSources = _showAllSources
+        ? 0
+        : (extension.sources.length - _sourcePreviewCount)
+            .clamp(0, extension.sources.length);
+    final List<MihonAvailableSource> shownSources = _showAllSources
+        ? extension.sources
+        : extension.sources.take(_sourcePreviewCount).toList(growable: false);
     return MangaExtensionManagementTile(
       title: extension.name,
       iconUrl: extension.iconUrl,
       contentWarning: extension.contentWarning >= 3,
-      busy: busy,
+      busy: widget.busy,
       enabled: installed?.enabled,
-      onEnabledChanged: onEnabledChanged,
-      secondaryLabel: showPreview ? t.mihon_extension_preview : null,
-      onSecondary: onPreview,
+      onEnabledChanged: widget.onEnabledChanged,
+      secondaryLabel: widget.showPreview ? t.mihon_extension_preview : null,
+      onSecondary: widget.onPreview,
       primaryLabel: installed == null
           ? t.mihon_extension_install
           : update
               ? t.mihon_extension_update
               : t.mihon_extension_uninstall,
-      onPrimary: installed == null || update ? onInstall : onUninstall,
+      onPrimary:
+          installed == null || update ? widget.onInstall : widget.onUninstall,
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -880,13 +1075,33 @@ class _AvailableExtensionTile extends StatelessWidget {
               t.mihon_extension_sources_included,
               style: theme.textTheme.labelSmall,
             ),
-            for (final MihonAvailableSource source in extension.sources)
+            for (final MihonAvailableSource source in shownSources)
               Text(
                 source.baseUrl.isEmpty
                     ? '· ${source.name} (${source.language})'
                     : '· ${source.name} (${source.language}) — '
                         '${source.baseUrl}',
                 style: theme.textTheme.bodySmall,
+              ),
+            if (hiddenSources > 0 || _showAllSources)
+              TextButton(
+                key: ValueKey<String>(
+                  'mihon-sources-toggle-${extension.packageName}',
+                ),
+                onPressed: () =>
+                    setState(() => _showAllSources = !_showAllSources),
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: Text(
+                  _showAllSources
+                      ? t.mihon_extension_sources_less
+                      : t.mihon_extension_sources_more(
+                          count: extension.sources.length,
+                        ),
+                ),
               ),
           ],
         ],

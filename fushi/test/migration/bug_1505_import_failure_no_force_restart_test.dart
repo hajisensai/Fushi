@@ -66,15 +66,15 @@ void main() {
       // 断言必须收在 closeDatabase **方法体内**：变异实测发现，跨方法找下一处
       // `await _database.close();` 会匹配到 closeForPopup 那句，于是把顺序颠倒过来
       // 守卫照样绿——这条断言本身就是被变异测试咬出来的洞。
-      final int start =
-          appModel.indexOf('Future<void> closeDatabase() async {');
+      final int start = appModel
+          .indexOf('Future<void> closeDatabase({Duration? pipelineDrainTimeout})');
       expect(start, isNot(-1));
       final int end = appModel.indexOf('\n  }', start);
       expect(end, greaterThan(start));
       final String body = appModel.substring(start, end);
 
       final int quiesce =
-          body.indexOf('await quiesceBackgroundDatabaseWriters();');
+          body.indexOf('await quiesceBackgroundDatabaseWriters(');
       expect(quiesce, isNot(-1),
           reason: 'closeDatabase 只关连接不停任何人，下载流水线会继续撞已关闭的 drift 连接');
       final int close = body.indexOf('await _database.close();');
@@ -83,14 +83,42 @@ void main() {
     });
 
     test('quiesce 覆盖会后台写库的下载/订阅/漫画队列', () {
-      final int start = appModel
-          .indexOf('Future<void> quiesceBackgroundDatabaseWriters() async {');
+      final int start = appModel.indexOf(
+          'Future<void> quiesceBackgroundDatabaseWriters({');
       expect(start, isNot(-1));
       final String body = appModel.substring(start, start + 600);
       expect(body, contains('_animeDownloadService?.stop()'));
       expect(body, contains('_animeDownloadSubscriptionService?.stop()'));
-      expect(body, contains('_disposeVideoDownloadPipelineRuntime()'),
+      expect(body, contains('_disposeVideoDownloadPipelineRuntime('),
           reason: '用户日志里的 8 条 connection-closed 就来自这个流水线');
+    });
+
+    test('管线收尾的上界是可选的：只有退出路径给，迁移路径必须等到真收尾', () {
+      // 这是 BUG-1505 的另一半：把上界写死成 stop() 的全局语义，迁移/备份导入/
+      // 数据根迁移这三条**也走 closeDatabase** 的路径就会放行一个在飞的 `_process`
+      // —— 它随后被 `_videoDownloadBackend?.close()` 抽掉句柄，并在 `_database.close()`
+      // 之后继续打已关闭的连接。而它们关库后紧接着要在**文件层**合并/替换整个 DB
+      // 目录，那是数据安全问题，不是噪声问题。
+      final String pipeline = File(
+        'lib/src/media/video/download/video_download_pipeline_service.dart',
+      ).readAsStringSync();
+      expect(
+        pipeline,
+        contains('Future<void> stop({Duration? drainTimeout}) async {'),
+        reason: '上界必须是可选参数，不能是 stop() 的全局语义',
+      );
+      expect(
+        pipeline,
+        contains('Future<void> dispose({Duration? drainTimeout}) async {'),
+        reason: 'dispose 要能把「不设上界」传下去',
+      );
+      // 反向：closeDatabase 自己不得写死上界。
+      final int closeAt = appModel.indexOf(
+          'Future<void> closeDatabase({Duration? pipelineDrainTimeout})');
+      final String closeBody =
+          appModel.substring(closeAt, appModel.indexOf('\n  }', closeAt));
+      expect(closeBody, isNot(contains('stopDrainTimeout')),
+          reason: '上界由调用方给：写死在这里等于所有路径又都被放行了');
     });
   });
 }

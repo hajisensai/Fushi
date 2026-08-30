@@ -6,9 +6,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
+import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
@@ -131,6 +131,101 @@ SettingsDestination buildGameDestination() {
                 settingsContext,
                 t.gal_hook_ingame_lookup_exe_hash_copied,
               );
+            },
+          ),
+          // ── hook 台词浮窗的交互四件套 ───────────────────────────────────
+          // 都走 live setter：设置页一改，正在开着的浮窗立刻跟上，不必退出这一局
+          // 游戏再重开（与字号 applyFontSizeFromPreferences 同款纪律）。
+          SettingsSwitchItem(
+            id: 'game.gal_hook_click_lookup',
+            title: t.gal_hook_click_lookup,
+            subtitle: t.gal_hook_click_lookup_hint,
+            icon: Icons.touch_app_outlined,
+            visible: (_) => Platform.isWindows,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookClickLookup,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setGalHookClickLookup(value);
+              await GalHookTextOverlayChannel.setClickLookupEnabled(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSegmentedItem<int>(
+            id: 'game.gal_hook_lookup_trigger',
+            title: t.gal_hook_lookup_trigger,
+            subtitle: t.gal_hook_lookup_trigger_hint,
+            icon: Icons.mouse_outlined,
+            dropdown: true,
+            visible: (_) => Platform.isWindows,
+            options: <SettingsSegmentOption<int>>[
+              SettingsSegmentOption<int>(
+                value: 0,
+                label: t.gal_hook_lookup_trigger_left,
+              ),
+              SettingsSegmentOption<int>(
+                value: 1,
+                label: t.gal_hook_lookup_trigger_middle,
+              ),
+              SettingsSegmentOption<int>(
+                value: 2,
+                label: t.gal_hook_lookup_trigger_side,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookLookupTrigger,
+            onChanged: (SettingsContext settingsContext, int value) async {
+              await settingsContext.appModel.setGalHookLookupTrigger(value);
+              await GalHookTextOverlayChannel.setLookupTrigger(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'game.gal_hook_toolbar_auto_hide',
+            title: t.gal_hook_toolbar_auto_hide,
+            subtitle: t.gal_hook_toolbar_auto_hide_hint,
+            icon: Icons.visibility_off_outlined,
+            visible: (_) => Platform.isWindows,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookToolbarAutoHide,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setGalHookToolbarAutoHide(value);
+              await GalHookTextOverlayChannel.setToolbarAutoHide(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'game.gal_hook_passthrough_blocks_mouse',
+            title: t.gal_hook_passthrough_blocks_mouse,
+            subtitle: t.gal_hook_passthrough_blocks_mouse_hint,
+            icon: Icons.ads_click_outlined,
+            visible: (_) => Platform.isWindows,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookPassThroughBlocksMouse,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setGalHookPassThroughBlocksMouse(value);
+              await GalHookTextOverlayChannel.setPassThroughBlocksMouse(value);
+              settingsContext.refresh();
+            },
+          ),
+          // 一句台词被引擎分多次吐出来时折成一条（用户报的 Zato 症状：一段台词
+          // 分多次点击显示，工作台里第二句出现两次、字数被重复统计）。这是文本
+          // **采集**行为，跟浮窗样式无关，所以留在采集这一节。
+          SettingsSwitchItem(
+            id: 'game.fold_progressive_lines',
+            title: t.gal_hook_fold_progressive_lines,
+            subtitle: t.gal_hook_fold_progressive_lines_hint,
+            icon: Icons.merge_type,
+            // 与兄弟项 game.ingame_lookup 同门：折叠只对引擎 hook 行生效，而
+            // engineHook 行只由 Windows-only 的 GalHookSessionController 产出。
+            // 在其他平台露出来只会让用户对着一个永远不生效的开关。
+            visible: (_) => Platform.isWindows,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookFoldProgressiveLines,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setGalHookFoldProgressiveLines(value);
+              settingsContext.refresh();
             },
           ),
         ],

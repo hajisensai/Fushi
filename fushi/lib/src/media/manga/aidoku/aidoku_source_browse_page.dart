@@ -3,12 +3,18 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_reader_chapter.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
+import 'package:fushi/src/media/manga/library/manga_series_page.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
+import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/utils.dart';
 
 /// Catalog browser for one installed Aidoku source.
@@ -280,7 +286,15 @@ class _AidokuSourceBrowsePageState extends State<AidokuSourceBrowsePage> {
   }
 }
 
-class AidokuMangaDetailPage extends StatefulWidget {
+/// 源浏览里的作品页入口。
+///
+/// v88 前这里是个**瞬时**详情页：章节列表只活在 widget state 里，页面 pop 即丢；
+/// `aidoku/` 全目录一处 `insertEpubBook` 都没有，所以 Aidoku 的作品根本进不了
+/// 书架，读进度也无处可落。
+///
+/// 现在它只把 Aidoku 的包/作品翻译成运行时无关的 seed，页面本体交给
+/// [MangaSeriesPage] —— 加入书架、每章已读、断点续读从此与 Mihon 同一套。
+class AidokuMangaDetailPage extends ConsumerWidget {
   const AidokuMangaDetailPage({
     required this.package,
     required this.runtime,
@@ -295,106 +309,55 @@ class AidokuMangaDetailPage extends StatefulWidget {
   final String? sourceBaseUrl;
 
   @override
-  State<AidokuMangaDetailPage> createState() => _AidokuMangaDetailPageState();
-}
-
-class _AidokuMangaDetailPageState extends State<AidokuMangaDetailPage> {
-  Map<String, Object?>? _details;
-  Object? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_load());
-  }
-
-  Future<void> _load() async {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 拿不到 AppModel 是**正常状态**，不是错误：这一页展示所需的一切都在
+    // adapter 里，AppModel 只决定「能不能加入书架」。硬读会让这一页在没有
+    // ProviderScope 的树里直接崩（widget 测试正是这么立起来的）。
+    AppModel? appModel;
     try {
-      final Map<String, Object?> details = await widget.runtime.getDetails(
-        widget.package.packagePath,
-        widget.manga,
-      );
-      if (mounted) setState(() => _details = details);
-    } on Object catch (error) {
-      if (mounted) setState(() => _error = error);
+      appModel = ref.read(appProvider);
+    } on Object {
+      appModel = null;
     }
-  }
-
-  void _openChapter(Map<String, Object?> chapter) {
-    final Map<String, Object?>? details = _details;
-    if (details == null) return;
-    Navigator.of(context).push(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (BuildContext context) => _AidokuChapterReaderPage(
-          package: widget.package,
-          runtime: widget.runtime,
-          manga: details,
-          chapter: chapter,
+    return MangaSeriesPage(
+      target: SourceMangaSeriesTarget(
+        // 包与 runtime 都已在手：预置进去，别让作品页再去扫一遍已安装包列表。
+        adapter: AidokuLibraryAdapter(
+          runtime: runtime,
+          presetPackage: package,
+        ),
+        // 刻意不走 AppModel.onlineMangaLibraryService：那条分派恒用
+        // AidokuRuntimeFactory.create()，会把这里注入的 runtime（测试替身、
+        // 或浏览页已经建好的那一份）丢掉。拿不到 AppModel 时留空——展示照旧，
+        // 只是不能入库。
+        service: appModel == null
+            ? null
+            : OnlineMangaLibraryService(
+                database: appModel.database,
+                rootDirectory: appModel.aidokuLibraryRoot,
+                adapter: AidokuLibraryAdapter(
+                  runtime: runtime,
+                  presetPackage: package,
+                ),
+              ),
+        seed: OnlineMangaLibraryEntry(
+          runtime: OnlineMangaRuntimeKind.aidoku,
+          // Aidoku 是单源包：包 id 同时充当扩展身份和源身份。
+          extensionPackage: package.id,
+          sourceId: package.id,
+          series: AidokuLibraryAdapter.seriesOf(
+            manga,
+            fallbackKey: manga['key']?.toString() ?? '',
+          ),
+          // 网格上只有标题和封面；章节由作品页进页后自己拉。
+          chapters: const <OnlineMangaChapter>[],
+        ),
+        sourceLabel: package.name,
+        remoteCoverBuilder: (BuildContext context) => _AidokuCover(
+          url: manga['cover']?.toString(),
+          referer: _aidokuHttpsUrl(manga['url']) ?? sourceBaseUrl,
         ),
       ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final Map<String, Object?> details = _details ?? widget.manga;
-    final List<Map<String, Object?>> chapters =
-        (details['chapters'] as List<Object?>? ?? const <Object?>[])
-            .whereType<Map<Object?, Object?>>()
-            .map((Map<Object?, Object?> value) => value.cast<String, Object?>())
-            .toList(growable: false);
-    return FushiPageScaffold(
-      title: details['title']?.toString() ?? widget.package.name,
-      subtitle: widget.package.name,
-      body: _error != null
-          ? Center(child: Text(aidokuErrorMessage(_error)))
-          : _details == null
-              ? Center(child: adaptiveIndicator(context: context))
-              : ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: <Widget>[
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        SizedBox(
-                          width: 150,
-                          height: 220,
-                          child: ClipRRect(
-                            borderRadius: FushiBorderRadius.poster,
-                            child: _AidokuCover(
-                              url: details['cover']?.toString(),
-                              referer: _aidokuHttpsUrl(details['url']) ??
-                                  widget.sourceBaseUrl,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Text(details['description']?.toString() ?? ''),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    Text(
-                      t.mihon_chapters_title,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 8),
-                    for (final Map<String, Object?> chapter in chapters)
-                      FushiCard(
-                        padding: EdgeInsets.zero,
-                        child: FushiListItem(
-                          title: Text(
-                            _aidokuChapterTitle(chapter),
-                          ),
-                          subtitle: _aidokuChapterSubtitle(chapter),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => _openChapter(chapter),
-                        ),
-                      ),
-                  ],
-                ),
     );
   }
 }
@@ -467,7 +430,7 @@ class _AidokuChapterReaderPageState extends State<_AidokuChapterReaderPage> {
 
   @override
   Widget build(BuildContext context) {
-    final String chapterTitle = _aidokuChapterTitle(widget.chapter);
+    final String chapterTitle = aidokuChapterDisplayTitle(widget.chapter);
     final AidokuReaderChapter? resolved = _resolved;
     if (resolved != null) {
       final String identity = <String>[
@@ -508,7 +471,11 @@ String aidokuErrorMessage(Object? error) {
   return '$error';
 }
 
-String _aidokuChapterTitle(Map<String, Object?> chapter) {
+/// Aidoku 章节的展示标题：标题为空时回退到卷/话号。
+///
+/// 公开是因为 `AidokuLibraryAdapter.chaptersOf` 归一化章节时要用同一份
+/// 回退逻辑——复制一份必然和这里漂移。
+String aidokuChapterDisplayTitle(Map<String, Object?> chapter) {
   final String title = chapter['title']?.toString().trim() ?? '';
   if (title.isNotEmpty) return title;
   final String volume = _aidokuNumber(chapter['volume_number']);
@@ -521,16 +488,6 @@ String _aidokuChapterTitle(Map<String, Object?> chapter) {
   return chapter['key']?.toString() ?? '';
 }
 
-Widget? _aidokuChapterSubtitle(Map<String, Object?> chapter) {
-  final String scanlators =
-      (chapter['scanlators'] as List<Object?>? ?? const <Object?>[]).join(', ');
-  final String language = chapter['language']?.toString().trim() ?? '';
-  final String value = <String>[
-    if (language.isNotEmpty) language.toUpperCase(),
-    if (scanlators.isNotEmpty) scanlators,
-  ].join(' · ');
-  return value.isEmpty ? null : Text(value);
-}
 
 String _aidokuNumber(Object? value) {
   if (value is! num) return '';
