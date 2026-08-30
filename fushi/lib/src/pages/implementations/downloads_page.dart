@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_tasks_section.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
@@ -77,13 +78,13 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
     final List<MediaSourceRow> sources = backendReady
         ? await appModel.getManagedVideoDownloadSources()
         : const <MediaSourceRow>[];
-    VideoDownloadBackendIdentity? identity;
+    VideoDownloadBackendTarget? target;
     Object? identityError;
     // 没来源就别去连后端了：身份解析要打真后端，白连一趟还会把「缺来源」
     // 盖成一条连接错误。
     if (backendReady && sources.isNotEmpty) {
       try {
-        identity = await appModel.currentVideoDownloadBackendIdentity();
+        target = await appModel.currentVideoDownloadBackendTarget();
       } on Object catch (error) {
         identityError = error;
       }
@@ -93,14 +94,11 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
       managedSourceCount: sources.length,
       identityError: identityError,
     );
-    if (gap == null &&
-        registry != null &&
-        pipeline != null &&
-        identity != null) {
+    if (gap == null && registry != null && pipeline != null && target != null) {
       return _DownloadsResourceReady(
         registry: registry,
         pipeline: pipeline,
-        identity: identity,
+        target: target,
         sources: sources,
         defaultSourceId: appModel.prefsRepo.videoDownloadTargetSourceId,
       );
@@ -188,7 +186,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
             VideoDownloadEnqueueRequest(
               media: selection.media,
               resource: selection.resource,
-              backendIdentity: dependencies.identity,
+              backendTarget: dependencies.target,
               targetSourceId: selection.source.id,
               subtitlePolicy: selection.subtitlePolicy,
             ),
@@ -329,6 +327,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                             return Column(
                               children: <Widget>[
                                 const MokuroMoeTasksSection(),
+                                const DiscoveryDownloadTasksSection(),
                                 Expanded(
                                   child: VideoDownloadJobsPanel.database(
                                     database: ref.read(appProvider).database,
@@ -514,14 +513,14 @@ class _DownloadsResourceReady extends _DownloadsResourceState {
   const _DownloadsResourceReady({
     required this.registry,
     required this.pipeline,
-    required this.identity,
+    required this.target,
     required this.sources,
     required this.defaultSourceId,
   });
 
   final VideoResourceRegistry registry;
   final VideoDownloadPipelineService pipeline;
-  final VideoDownloadBackendIdentity identity;
+  final VideoDownloadBackendTarget target;
   final List<MediaSourceRow> sources;
   final int? defaultSourceId;
 }

@@ -9,6 +9,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:fushi/src/anki/lapis_backup_retention.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';
+import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/mining/immersion_mining_request.dart'
@@ -784,48 +785,17 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     }
   }
 
-  Widget _buildCreateLapisTile(AnkiUiState uiState, AnkiViewModel vm) {
-    return AdaptiveSettingsRow(
-      icon: Icons.note_add_outlined,
-      showIcon: true,
-      title: t.anki_create_lapis,
-      subtitle: t.anki_create_lapis_hint,
-      // spinner 只跟本行自己的在途动作（_creatingLapis），不再借 vm 的
-      // isFetching——否则点「刷新」时本行也凭空转圈。
-      trailing: _creatingLapis
-          ? SizedBox(
-              width: 20,
-              height: 20,
-              child: adaptiveIndicator(context: context, strokeWidth: 2),
-            )
-          : null,
-      onTap: uiState.isFetching || _creatingLapis
-          ? null
-          : () => _runCreateLapis(vm),
-    );
-  }
-
-  Future<void> _runCreateLapis(AnkiViewModel vm) async {
-    final messenger = ScaffoldMessenger.of(context);
-    setState(() => _creatingLapis = true);
-    final LapisSetupResult result;
-    try {
-      result = await vm.createLapisSetup();
-    } finally {
-      if (mounted) setState(() => _creatingLapis = false);
-    }
-    if (!mounted) return;
-    final String message;
-    switch (result.outcome) {
-      case LapisSetupOutcome.created:
-        message = t.anki_create_lapis_success;
-      case LapisSetupOutcome.alreadyExisted:
-        message = t.anki_create_lapis_exists;
-      case LapisSetupOutcome.failed:
-        message = t.anki_create_lapis_failed(error: result.message ?? '');
-    }
-    messenger.showSnackBar(SnackBar(content: Text(message)));
-  }
+  // BUG-1902：「一键创建 Lapis 卡组」同样搬进共享组件（含它自带的在途 spinner 约定：
+  // 只跟本行自己的动作，不借 vm 的 isFetching，否则点「刷新」时本行也凭空转圈）。
+  Widget _buildCreateLapisTile(AnkiUiState uiState, AnkiViewModel vm) =>
+      AnkiCreateLapisRow(
+        viewModel: vm,
+        isFetching: uiState.isFetching,
+        // 本页的「刷新牌组」行要靠这个标志把「获取中…」压住（见 _buildFetchTile）。
+        onBusyChanged: (bool busy) {
+          if (mounted) setState(() => _creatingLapis = busy);
+        },
+      );
 
   // ── Lapis 样式客制化 ─────────────────────────────────────────────────
 
@@ -1186,53 +1156,14 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     return name.replaceFirst('lapis-', '').replaceFirst('.json', '');
   }
 
-  Widget _buildDeckDropdown(AnkiSettings settings, AnkiViewModel vm) {
-    final decks = settings.availableDecks;
-    final selectedId = settings.selectedDeckId;
-    final int? validSelectedId =
-        decks.any((d) => d.id == selectedId) ? selectedId : null;
+  // BUG-1902：牌组 / 笔记类型选择行搬到 `anki/anki_config_controls.dart`，与新手引导
+  // 共用同一份实现——此前它们是本 State 的私有方法，跨文件不可见，引导页只能显示
+  // 三行只读文本。这里保留同名薄封装，本页其余调用点不动。
+  Widget _buildDeckDropdown(AnkiSettings settings, AnkiViewModel vm) =>
+      AnkiDeckPickerRow(settings: settings, viewModel: vm);
 
-    return AdaptiveSettingsPickerRow<int?>(
-      title: t.anki_deck,
-      controlBelow: true,
-      selected: validSelectedId,
-      options: decks
-          .map((d) => AdaptiveSettingsPickerOption<int?>(
-                value: d.id,
-                label: d.name,
-              ))
-          .toList(),
-      onChanged: (id) {
-        if (id == null) return;
-        final deck = decks.firstWhere((d) => d.id == id);
-        vm.selectDeck(deck);
-      },
-    );
-  }
-
-  Widget _buildNoteTypeDropdown(AnkiSettings settings, AnkiViewModel vm) {
-    final noteTypes = settings.availableNoteTypes;
-    final selectedId = settings.selectedNoteTypeId;
-    final int? validSelectedId =
-        noteTypes.any((n) => n.id == selectedId) ? selectedId : null;
-
-    return AdaptiveSettingsPickerRow<int?>(
-      title: t.anki_note_type,
-      controlBelow: true,
-      selected: validSelectedId,
-      options: noteTypes
-          .map((n) => AdaptiveSettingsPickerOption<int?>(
-                value: n.id,
-                label: n.name,
-              ))
-          .toList(),
-      onChanged: (id) {
-        if (id == null) return;
-        final noteType = noteTypes.firstWhere((n) => n.id == id);
-        vm.selectNoteType(noteType);
-      },
-    );
-  }
+  Widget _buildNoteTypeDropdown(AnkiSettings settings, AnkiViewModel vm) =>
+      AnkiNoteTypePickerRow(settings: settings, viewModel: vm);
 
   List<Widget> _buildFieldMappings(AnkiSettings settings, AnkiViewModel vm) {
     final noteType = settings.selectedNoteType;

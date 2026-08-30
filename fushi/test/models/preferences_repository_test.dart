@@ -498,57 +498,30 @@ void main() {
       repo2.dispose();
     });
 
-    test('desktop clipboard prefs round-trip', () async {
-      // galgame UX 统一后默认开（剪贴板 / galgame 台词共用查词面板去向，开箱即用）。
-      expect(repo.desktopClipboardEnabled, true);
-      expect(
-          repo.desktopClipboardWindowMode, DesktopClipboardWindowMode.normal);
-      await repo.setDesktopClipboardEnabled(false);
-      await repo.setDesktopClipboardEnabled(true);
-      await repo
-          .setDesktopClipboardWindowMode(DesktopClipboardWindowMode.always);
-      expect(repo.desktopClipboardEnabled, true);
-      expect(
-          repo.desktopClipboardWindowMode, DesktopClipboardWindowMode.always);
-      final repo2 = PreferencesRepository(db);
-      await repo2.loadFromDb();
-      expect(repo2.desktopClipboardEnabled, true);
-      expect(
-        repo2.desktopClipboardWindowMode,
-        DesktopClipboardWindowMode.always,
-      );
-      repo2.dispose();
-    });
-
-    test('desktopClipboardAutoLookup defaults true and round-trips', () async {
-      // 默认 true=保持现状（复制自动查词）；关掉后跨实例 reload 仍为 false
-      // （落 Drift preferences、记住设置）。与总开关 desktopClipboardEnabled 正交。
-      expect(repo.desktopClipboardAutoLookup, true);
-      await repo.setDesktopClipboardAutoLookup(false);
-      expect(repo.desktopClipboardAutoLookup, false);
-
+    test('lookupBlockCapture defaults false and round-trips on the frozen key',
+        () async {
+      // 存储键沿用历史名 clipboard_panel_block_capture（面板已删，键冻结）。
+      expect(repo.lookupBlockCapture, false);
+      await repo.setLookupBlockCapture(true);
+      expect(repo.lookupBlockCapture, true);
+      expect(repo.getPref('clipboard_panel_block_capture'), true);
       final PreferencesRepository repo2 = PreferencesRepository(db);
       await repo2.loadFromDb();
       addTearDown(repo2.dispose);
-      expect(repo2.desktopClipboardAutoLookup, false,
-          reason: '剪切板自动查词开关必须跨实例 reload 记住');
-
-      // 开回 true 也持久。
-      await repo.setDesktopClipboardAutoLookup(true);
-      final PreferencesRepository repo3 = PreferencesRepository(db);
-      await repo3.loadFromDb();
-      addTearDown(repo3.dispose);
-      expect(repo3.desktopClipboardAutoLookup, true);
+      expect(repo2.lookupBlockCapture, true);
     });
 
-    test('legacy desktop clipboard always-on-top pref maps to lookup mode',
+    test('lookupBlockCapture defaults false and round-trips on the frozen key',
         () async {
-      await repo.setPref('desktop_clipboard_always_on_top', true);
-
-      expect(
-        repo.desktopClipboardWindowMode,
-        DesktopClipboardWindowMode.lookup,
-      );
+      // 存储键沿用历史名 clipboard_panel_block_capture（面板已删，键冻结）。
+      expect(repo.lookupBlockCapture, false);
+      await repo.setLookupBlockCapture(true);
+      expect(repo.lookupBlockCapture, true);
+      expect(repo.getPref('clipboard_panel_block_capture'), true);
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      addTearDown(repo2.dispose);
+      expect(repo2.lookupBlockCapture, true);
     });
 
     test('reverseReaderBottomBar is independent of reverseNavigationBar',

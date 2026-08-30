@@ -32,8 +32,19 @@ namespace flutter_inappwebview_plugin
 
   WebViewChannelDelegate::CallJsHandlerCallback::CallJsHandlerCallback()
   {
+    // BUG-1918 根因：Dart 回复 null 时 StandardMethodCodec 走的是无参 Success()，
+    // 这里收到的 value 就是 nullptr（典型触发：JS 调了一个 Dart 侧没
+    // addJavaScriptHandler 注册的 handler 名）。直接 return value 会把空指针装进一个
+    // **已引发**的 optional（has_value() == true，值为 nullptr），于是下游那句
+    // `response.has_value() && !response.value()->IsNull()`（in_app_webview.cpp）直接解引用
+    // 空指针 → 0xC0000005 整个 app 闪退。空回复必须降成 nullopt，让那句守卫真的
+    // 能拦住——同文件其它 decodeResult 本来就都先判 `!value`。
     decodeResult = [](const flutter::EncodableValue* value)
+      -> std::optional<const flutter::EncodableValue*>
       {
+        if (!value) {
+          return std::nullopt;
+        }
         return value;
       };
   }
@@ -52,8 +63,14 @@ namespace flutter_inappwebview_plugin
 
   WebViewChannelDelegate::PermissionRequestCallback::PermissionRequestCallback()
   {
+    // 同 BUG-1918：Dart 侧 onPermissionRequest 回 null（或没接这个回调）时
+    // value 为 nullptr，裸 `*value` 同样是空解引用。
     decodeResult = [](const flutter::EncodableValue* value)
+      -> std::optional<std::shared_ptr<PermissionResponse>>
       {
+        if (!value || value->IsNull()) {
+          return std::nullopt;
+        }
         return std::make_shared<PermissionResponse>(std::get<flutter::EncodableMap>(*value));
       };
   }

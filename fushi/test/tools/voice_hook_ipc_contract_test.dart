@@ -38,7 +38,7 @@ void main() {
     // v17：在 v16 之上纯尾部追加「本次注入所用 hook DLL 的 SHA-256」。
     // 这个数字必须钉死：它是 wire identity，写错一位就是「旧 helper 静默绕过默认
     // deny」。改它必须同时改契约头顶部的版本沿革说明。
-    expect(source, contains('constexpr uint32_t kSharedVersion = 17;'));
+    expect(source, contains('constexpr uint32_t kSharedVersion = 18;'));
     // v17 字段本身也钉死：驻留 hook 身份门的驻留侧摘要只能从这里取，字段没了
     // 就只剩「两边都读磁盘」那条恒真的假校验。
     expect(
@@ -50,6 +50,35 @@ void main() {
       source,
       contains('constexpr uint32_t kHookModuleDigestChars = 65;'),
       reason: '64 位十六进制 + NUL；读侧的 strnlen 上界就是它',
+    );
+  });
+
+  test('v18：LookupInputSlot::keys 是 WebView2 位布局，且换语义必须升版本', () {
+    final String header = File(kIpcHeaderPath).readAsStringSync();
+    // 这四个数值就是 COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS 本身。它们是**跨进程
+    // wire 语义**：注入侧 helper 按这套编码写 keys，host 原样转交 SendMouseInput。
+    // 尤其 1 是左键、4 才是 Shift —— 与旧的 Shift=1 / Ctrl=2 / Alt=4 压缩表冲突，
+    // 混用的症状是「按住 Shift 划过卡片就开始拖选」，没有任何显式错误。
+    for (final String bit in <String>[
+      'constexpr uint32_t kLookupInputVirtualKeyLeftButton = 0x0001u;',
+      'constexpr uint32_t kLookupInputVirtualKeyRightButton = 0x0002u;',
+      'constexpr uint32_t kLookupInputVirtualKeyShift = 0x0004u;',
+      'constexpr uint32_t kLookupInputVirtualKeyControl = 0x0008u;',
+    ]) {
+      expect(header, contains(bit), reason: 'keys 的 wire 位值不能漂移：$bit');
+    }
+    expect(
+      header,
+      contains('uint32_t keys;          // kLookupInputVirtualKey*'),
+      reason: 'keys 字段必须自述它承载的是 WebView2 virtualKeys，不是 MK_* 压缩表',
+    );
+    // 布局没动而**解释方式**变了，同样必须升 kSharedVersion —— 这是本条的全部价值：
+    // 版本号锁的是解释方式，不只是偏移。没有这一行，「同布局异语义」的改动会照常
+    // 通过所有 offsetof 断言，然后靠一个残留的旧 helper 在用户机上炸（BUG-1881）。
+    expect(
+      header,
+      contains('// v18：`LookupInputSlot::keys` 的**取值语义**换成 WebView2 的'),
+      reason: 'keys 换语义那次必须在版本沿革里留档，否则下一次改语义又会忘记升版本',
     );
   });
 

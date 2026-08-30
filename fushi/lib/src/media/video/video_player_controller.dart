@@ -1316,8 +1316,12 @@ class VideoPlayerController extends ChangeNotifier
         ),
       );
       // TODO-1212：登记文件句柄释放（幂等，只在首次建 Player 时登记一次）。
-      _mediaHandleRegistration ??=
-          MediaHandleRegistry.instance.register(_releaseMediaHandles);
+      // mediaPath 每次现算：换集后这个 Player 握的是另一个文件，登记时快照会让
+      // 「删这一集前先放句柄」放错对象。
+      _mediaHandleRegistration ??= MediaHandleRegistry.instance.register(
+        _releaseMediaHandles,
+        mediaPath: () => videoPath,
+      );
       // BUG-739：设备切换后回补音量目标（详见 [_audioDeviceSub] 字段注释）。随 Player
       // 生命周期挂一次；换集复用同一 Player 不重挂，避免叠加订阅。
       _audioDeviceSub = player.stream.audioDevice.listen((_) {

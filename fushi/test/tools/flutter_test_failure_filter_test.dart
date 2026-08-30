@@ -176,6 +176,72 @@ void main() {
       );
     });
 
+    test('a widget-test failure carries its printed exception dump', () {
+      // flutter_test reports widget failures as the content-free
+      // "Test failed. See exception logs above." and dumps the real exception
+      // through `print` events. Dropping those made every widget-test red on
+      // CI unreadable: the summary named the test and explained nothing.
+      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
+        <String>[
+          '{"type":"suite","suite":{"id":0,"path":"test/pages/manga_test.dart"}}',
+          '{"type":"testStart","test":{"id":1,"name":"loads the book","suiteID":0}}',
+          '{"type":"print","testID":1,"message":"══╡ EXCEPTION CAUGHT BY WIDGETS ╞══"}',
+          '{"type":"print","testID":1,"message":"MissingPluginException(No implementation found for method isFullScreen)"}',
+          '{"type":"error","testID":1,"error":"Test failed. See exception logs above.","stackTrace":""}',
+          '{"type":"testDone","testID":1,"result":"failure"}',
+          '{"type":"done","success":false}',
+        ],
+      );
+
+      expect(summary.errors.single.printedOutput, hasLength(2));
+
+      final String rendered = renderFlutterTestFailureSummary(summary);
+      expect(rendered, contains('loads the book'));
+      expect(rendered, contains('--- test output ---'));
+      expect(rendered, contains('MissingPluginException'));
+    });
+
+    test('print events from passing tests never reach the summary', () {
+      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
+        <String>[
+          '{"type":"testStart","test":{"id":1,"name":"chatty pass","suiteID":0}}',
+          '{"type":"print","testID":1,"message":"noise from a green test"}',
+          '{"type":"testDone","testID":1,"result":"success"}',
+          '{"type":"testStart","test":{"id":2,"name":"the failure","suiteID":0}}',
+          '{"type":"error","testID":2,"error":"boom","stackTrace":""}',
+          '{"type":"testDone","testID":2,"result":"failure"}',
+          '{"type":"done","success":false}',
+        ],
+      );
+
+      final String rendered = renderFlutterTestFailureSummary(summary);
+      expect(rendered, contains('the failure'));
+      expect(rendered, isNot(contains('noise from a green test')));
+    });
+
+    test('print output is tail-limited so the dump survives a chatty test', () {
+      // The dump lands at the moment of failure, i.e. at the END of the test's
+      // output. A head-limited window would show 24 lines of setup logging and
+      // omit the one thing worth reading.
+      final List<String> events = <String>[
+        '{"type":"testStart","test":{"id":1,"name":"chatty failure","suiteID":0}}',
+        for (int i = 0; i < 60; i++)
+          '{"type":"print","testID":1,"message":"setup line $i"}',
+        '{"type":"print","testID":1,"message":"THE ACTUAL EXCEPTION"}',
+        '{"type":"error","testID":1,"error":"Test failed. See exception logs above.","stackTrace":""}',
+        '{"type":"testDone","testID":1,"result":"failure"}',
+        '{"type":"done","success":false}',
+      ];
+
+      final String rendered = renderFlutterTestFailureSummary(
+        parseFlutterTestJsonEvents(events),
+      );
+
+      expect(rendered, contains('THE ACTUAL EXCEPTION'));
+      expect(rendered, contains('omitted'));
+      expect(rendered, isNot(contains('setup line 0')));
+    });
+
     test('minimumTests can pin a baseline so a shrunken run fails', () {
       final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
         <String>[

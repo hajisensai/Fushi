@@ -952,6 +952,12 @@ bool shouldUseLunaPcHooksForExecutable(String executablePath) {
 
   final Directory directory = File(executablePath).parent;
   final String separator = Platform.pathSeparator;
+  final bool hasSiglusLayout =
+      File('${directory.path}${separator}Gameexe.dat').existsSync() &&
+      File('${directory.path}${separator}Scene.pck').existsSync();
+  if (hasSiglusLayout) {
+    return true;
+  }
   final bool hasUnityPlayer =
       File('${directory.path}${separator}UnityPlayer.dll').existsSync();
   if (!hasUnityPlayer) {

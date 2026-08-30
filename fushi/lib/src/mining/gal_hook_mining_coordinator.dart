@@ -80,9 +80,25 @@ class GalHookMiningResult {
   bool get aborted => outcome == null;
   bool get success => outcome?.result == MineResult.success;
 
-  Map<String, Object?> toPopupReply() => <String, Object?>{
+  /// BUG-1908：制卡失败是不是**因为 Anki 里已经有这张卡**。见
+  /// `MinePopupResult.duplicate` —— 浮窗据它区分「卡已存在」与「真的没制成」，
+  /// 不必回查 Anki（TODO-448 禁止失败后回查把按钮翻成 ✓）。
+  bool get duplicate => outcome?.result == MineResult.duplicate;
+
+  /// BUG-1908：[message] 是**失败时给用户看的原因**，由调用方（浮窗控制器）填入
+  /// 已本地化的文案。
+  ///
+  /// 此前这个回程只有两个字段，宿主即便算出了「没选卡组 / 字段映射对不上 / 截图
+  /// 失败」也没地方放；浮窗那边 `ankiConnect:false` 是正常 resolve、不抛，
+  /// 既不进 catch 也不进 if —— 整段没有 else，用户零反馈。而 galgame 浮窗是独立的
+  /// native WebView2 窗口，宿主的 Flutter toast 画在主 app 窗口的 Overlay 上，
+  /// 游戏全屏时主窗在后台，那些 toast 一个也看不见。
+  Map<String, Object?> toPopupReply({String? message}) => <String, Object?>{
         'ankiConnect': success,
         'noteId': success ? outcome?.noteId : null,
+        if (!success && message != null && message.isNotEmpty)
+          'message': message,
+        if (duplicate) 'duplicate': true,
       };
 }
 

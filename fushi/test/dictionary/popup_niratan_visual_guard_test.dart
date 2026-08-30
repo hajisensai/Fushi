@@ -82,19 +82,21 @@ void main() {
               'SVG 用 currentColor 跟随按钮颜色/主题（而非 SF-symbol 的 -webkit-mask macOS-only 分支）');
     });
 
-    test('四类动作按钮挂 inline-action-button 共享基类（制卡按钮除外，见还原守卫）', () {
+    test('五类动作按钮挂 inline-action-button 共享基类（制卡按钮只借布局不借 SVG）', () {
       // audio / favorite 两顶部按钮 + Hibiki 独有的 clear-draft / 句子上下文步进器。
-      // 制卡按钮已按 TODO-1325 还原为 ✓✓↩ 文本标记，不挂 inline-action-button。
+      // 制卡按钮按 TODO-1325 保留 ✓✓↩ 文本字形（不走 SVG），但 BUG-1895 起也挂共享
+      // 基类：它借的是基类的 inline-flex 居中与 pointer 光标，好让文本 '+' 与同排
+      // 1em SVG 图标目测齐平，跟「走不走 SVG」正交。「不走 SVG」的真判据在下面还原
+      // 守卫的 setButtonIcon / check / restore 断言里，不再拿 class 名当代理判据。
       for (final String cls in <String>[
         'inline-action-button audio-button',
         'inline-action-button favorite-button',
         'inline-action-button clear-draft-button',
         'inline-action-button context-stepper-btn',
+        'inline-action-button mine-button',
       ]) {
         expect(js, contains(cls), reason: '按钮 "$cls" 必须挂共享基类');
       }
-      expect(js.contains('inline-action-button mine-button'), isFalse,
-          reason: '制卡按钮已还原为 ✓✓↩ 文本标记，不再挂 inline-action-button');
     });
 
     test('audio/favorite 状态切换走图标名而非文字字形', () {
@@ -144,8 +146,10 @@ void main() {
           contains(
               "mineButton.textContent = isMined ? (latest ? '\u{2713}\u{21A9}\u{FE0E}' : '\u{2713}') : '+';"),
           reason: '制卡按钮状态切换用 ✓/✓↩ 文本字形，且 ↩ 带 VS15(U+FE0E)');
+      // class 列表允许带 inline-action-button 等布局基类前缀（BUG-1895）；这里守的
+      // 是「初始 textContent 是文本 '+' 而非 SVG」，不是 class 名的确切拼写。
       expect(
-          RegExp(r"className: 'mine-button',\s+textContent: '\+',")
+          RegExp(r"className: '[^']*\bmine-button',\s+textContent: '\+',")
               .hasMatch(js),
           isTrue,
           reason: '制卡按钮初始文本为 +（可制卡）');

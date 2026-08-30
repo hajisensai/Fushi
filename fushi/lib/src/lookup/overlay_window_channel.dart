@@ -1,12 +1,11 @@
-// spec 2026-07-10 — instance-level channel wrapper for a bare-WebView2 overlay
-// window. Extracted from the static GlobalLookupChannel (TODO-617, which stays
-// as a zero-churn delegating facade for the 1700-line controller) so the
-// SECOND window instance — the persistent clipboard panel — reuses the exact
-// same method contract on its own MethodChannel
-// (app.fushi.reader/clipboard_panel) instead of copy-pasting ~250 lines.
+// Instance-level channel wrapper for a bare-WebView2 overlay window. Extracted
+// from the static GlobalLookupChannel (TODO-617, which stays as a zero-churn
+// delegating facade for the 1700-line controller) so any second overlay
+// window instance can reuse the exact same method contract on its own
+// MethodChannel instead of copy-pasting ~250 lines.
 //
 // Native counterpart: windows/runner/global_lookup_window.cpp +
-// FlutterWindow::RegisterGlobalLookupChannel / RegisterClipboardPanelChannel.
+// FlutterWindow::RegisterGlobalLookupChannel.
 
 import 'dart:async';
 import 'dart:convert';
@@ -282,50 +281,10 @@ class OverlayWindowChannel {
 
   Future<bool> isShowing() async => (await _invoke<bool>('isShowing')) ?? false;
 
-  /// spec §6 — asks native for the Win11 acrylic system backdrop behind the
-  /// window's transparent pixels. Returns whether the OS accepted it (false on
-  /// Win10 / pre-22H2 / non-panel channels → caller keeps the surface opaque
-  /// and hides the opacity slider). Only wired on the clipboard-panel channel;
-  /// other channels answer notImplemented → false.
-  Future<bool> applyBackdrop() async {
-    try {
-      return (await _invoke<bool>('applyBackdrop')) ?? false;
-    } on MissingPluginException {
-      return false;
-    } on PlatformException {
-      return false;
-    }
-  }
-
-  /// spec 2026-07-10 panel pin — toggles HWND_TOPMOST. Only wired on the
-  /// clipboard-panel channel.
-  Future<void> setPinned(bool pinned) =>
-      _invoke<void>('setPinned', <String, Object?>{'pinned': pinned});
-
   /// 防截屏 — SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)：窗口对用户可见
-  /// 但从截图 / 录屏 / 屏幕共享里排除。Wired on BOTH channels（剪贴板面板 +
-  /// 瞬态全局查词窗——同一 pref clipboardPanelBlockCapture 保护两块表面）。
+  /// 但从截图 / 录屏 / 屏幕共享里排除（pref lookupBlockCapture）。
   Future<void> setBlockCapture(bool block) =>
       _invoke<void>('setBlockCapture', <String, Object?>{'block': block});
-
-  /// 面板抬前台 — 把已显示的面板重排到 z 序最上，绝不激活（不抢当前前台窗口
-  /// 焦点）。[topmost]=true（已 pin）直接置顶，false 则顶到非置顶带最上。
-  /// Only wired on the clipboard-panel channel.
-  Future<void> raise({required bool topmost}) =>
-      _invoke<void>('raise', <String, Object?>{'topmost': topmost});
-
-  /// 面板任务栏图标 — 任务栏按钮 / Alt-Tab 项的窗口标题（本地化文案）。
-  /// 窗口创建前设置则用于创建，已创建则即时更新。Only wired on the
-  /// clipboard-panel channel.
-  Future<void> setWindowTitle(String title) =>
-      _invoke<void>('setWindowTitle', <String, Object?>{'title': title});
-
-  /// spec §6 真机修正 — 整窗不透明度（WS_EX_LAYERED + LWA_ALPHA，30-100%）。
-  /// 真透视：整窗（含文字）统一变淡，透出底下的游戏/网页；acrylic backdrop
-  /// 实测经 windowed WebView2 呈现为不透明且毛玻璃本就不是「看见底下」。
-  /// Only wired on the clipboard-panel channel.
-  Future<void> setWindowAlpha(int percent) =>
-      _invoke<void>('setWindowAlpha', <String, Object?>{'percent': percent});
 
   /// Wires the overlay's reverse calls. [onGetMedia] resolves gaiji bytes for
   /// an `image://` url; [onJsMessage] receives raw bridge messages decoded

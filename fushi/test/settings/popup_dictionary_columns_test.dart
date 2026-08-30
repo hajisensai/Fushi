@@ -144,13 +144,11 @@ void main() {
       expect(find.text('${t.popup_dictionary_max_columns} (3)'), findsOneWidget,
           reason: 'BUG-806：桌面「最多列数」默认 3，标题带实时读数');
 
-      // 副标题 = hint + 实验性后缀，渲染成单个 Text。
-      final String expectedSubtitle =
-          t.popup_dictionary_max_columns_hint + t.settings_experimental_suffix;
-      expect(find.text(expectedSubtitle), findsOneWidget,
-          reason: '副标题展示 hint 文案并标注实验性后缀');
-      expect(expectedSubtitle, contains(t.settings_experimental_suffix.trim()),
-          reason: '后缀确实进了副标题');
+      // 副标题 = hint 本身，渲染成单个 Text。
+      // 实验性后缀已按用户要求整体删除（settings_experimental_suffix key 连同它的
+      // 四个叠加点一并移除），守卫见 test/i18n/no_experimental_labels_guard_test.dart。
+      expect(find.text(t.popup_dictionary_max_columns_hint), findsOneWidget,
+          reason: '副标题展示 hint 文案');
     });
 
     testWidgets('schema item is the production lookup.popup_dictionary_columns',
@@ -264,8 +262,10 @@ void main() {
       expect(block, contains('max: 4'));
       expect(block, contains('divisions: 3'));
       expect(block, contains('titleReadout: true'));
-      expect(block, contains('settings_experimental_suffix'),
-          reason: '副标题必须标注实验性');
+      // 「副标题必须标注实验性」这条断言已删除：应用户要求，实验性标注整体从界面
+      // 移除。反向守卫见 test/i18n/no_experimental_labels_guard_test.dart。
+      expect(block, contains('subtitle: t.popup_dictionary_max_columns_hint'),
+          reason: '副标题仍展示 hint 文案（确认上面那条不是因为整块读空而假绿）');
       // int↔double 桥接：value 用 .toDouble()，onChanged 用 .round()。
       expect(block, contains('.toDouble()'),
           reason: 'value 把 int 偏好桥接成滑条 double');

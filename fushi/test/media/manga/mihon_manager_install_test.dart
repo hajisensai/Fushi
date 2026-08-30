@@ -251,7 +251,12 @@ void main() {
         );
       }
       if (request.url.path.endsWith('/apk/fresh.apk')) {
-        return http.Response.bytes(<int>[9], HttpStatus.ok);
+        // ZIP 本地文件头魔数：下载器现在会拒收非 APK 的响应（公共镜像限流时
+        // 回的 200 + HTML 错误页），fixture 也得是个合法归档。
+        return http.Response.bytes(
+          <int>[0x50, 0x4b, 0x03, 0x04, 9],
+          HttpStatus.ok,
+        );
       }
       // 上游已经删掉的旧 release 资产。
       return http.Response('', HttpStatus.notFound);

@@ -69,12 +69,6 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
   required BuildContext context,
   required AppModel appModel,
   required DictionarySearchResult result,
-  String sentence = '',
-  double cardBgAlpha = 1.0,
-  bool panelRoot = false,
-  int sentenceHitStart = -1,
-  int sentenceHitLength = 0,
-  bool sentenceOnly = false,
 }) {
   final PopupStaticSettingsJs staticSettings = buildPopupStaticSettingsJs(
     appModel: appModel,
@@ -82,17 +76,9 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
     options: const PopupSettingsOptions(globalLookup: true),
   );
   final String entriesJs = buildPopupEntriesJs(result);
-  // spec 2026-07-10 §6 — 半透明卡背景变量。面板路径传用户值（且仅当 Win11
-  // acrylic backdrop 可用），瞬态窗恒 1.0；in-app 路径不经此处。**恒注入**当前
-  // 值（审查修正：面板 WebView 常驻不重建，若 1.0 时不注入，从 0.85 调回 100%
-  // 后 documentElement 上的旧 0.85 残留、面板停在半透明）。同一 alpha 下
-  // settingsJs 跨渲染字节稳定（host 以 settingsJs 变更为重渲判据）。
-  final String cardBgAlphaLine =
-      "document.documentElement.style.setProperty('--fushi-card-bg-alpha', "
-      "'${cardBgAlpha.toStringAsFixed(2)}');\n";
   // TODO-1231 P1 — `window.__hasChildPopup` is DELIBERATELY NOT part of this body
   // anymore. The flag flips whenever a child card opens/closes on top of THIS
-  // frame, but everything else in the body (theme/zoom/entries/sentence) is
+  // frame, but everything else in the body (theme/zoom/entries) is
   // invariant across that. Baking the flag in (TODO-1067 子4) made the parent's
   // settingsJs change on every nested open/close, so global_lookup_host.js
   // re-eval'd the WHOLE body — which ends in renderPopup() = a full card DOM
@@ -111,34 +97,15 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
   // self-guards against double-install (window.__fushiTopPullInstalled) and
   // reports through flutter_inappwebview.callHandler('topPullReleased'), which
   // the controller already gates on the enableSwipeToClose preference.
-  // 真机第 4 轮 — 仅面板 root 注入选词区标记 + 引擎命中区间（码点下标；
-  // popup.js 句子条据此走 panelSentenceLookup 原地更新语义并整词高亮）。
-  // 非面板帧（瞬态窗 / 嵌套子卡）恒为空串：同一帧同一结果下 settingsJs 跨
-  // 渲染字节稳定（host 以 settingsJs 变更为重渲判据），面板语义永不外溢。
-  final String panelRootLines = panelRoot
-      ? 'window.__globalLookupPanelRoot = true;\n'
-            '    window.__globalLookupSentenceHit = '
-            '{start: $sentenceHitStart, length: $sentenceHitLength};\n'
-      : '';
-  // 剪切板「关自动查词」纯文字态：面板只显示句子横幅（逐字可点），不显示词典结果。
-  // 传入的是空结果（无 entries），popup.js 会渲染句子横幅 + 一块「No results」提示；
-  // 这里在 renderPopup 之后就地摘掉那块提示节点，达成「只剩文字」。仅面板 root、仅
-  // sentenceOnly 时注入，故自动查词路径 settingsJs 逐字节不变（host 以此判重渲）。
-  // 走 app 侧渲染脚本而非改 popup.js，避开浏览器扩展三镜像 + content.css 重生成。
-  final String sentenceOnlyLine = sentenceOnly
-      ? 'var __fushiNoRes = document.querySelector(".no-results"); '
-            'if (__fushiNoRes) __fushiNoRes.remove();\n'
-      : '';
-  final String renderJs =
-      '''
+  //
+  // 同一帧同一结果下这段 renderJs 跨渲染字节稳定（host 以 settingsJs 变更为
+  // 重渲判据）：这里不得再掺任何每次查词都会变的上下文（曾经的句子横幅文本
+  // 注入已随桌面剪贴板查词一并移除）。
+  const String renderJs = '''
     $kPopupTopPullReleaseJs
-    $cardBgAlphaLine
     if (window.resetSentenceContextMirror) window.resetSentenceContextMirror();
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
-    window.__globalLookupSentence = ${jsonEncode(sentence)};
-    $panelRootLines
     window.renderPopup && window.renderPopup();
-    $sentenceOnlyLine
 ''';
   return GlobalLookupFrameSettingsJs(
     staticHeadJs: staticSettings.head,
@@ -153,23 +120,12 @@ String buildFrameSettingsJs({
   required BuildContext context,
   required AppModel appModel,
   required DictionarySearchResult result,
-  String sentence = '',
-  double cardBgAlpha = 1.0,
-  bool panelRoot = false,
-  int sentenceHitStart = -1,
-  int sentenceHitLength = 0,
-  bool sentenceOnly = false,
-}) => buildFrameSettingsJsParts(
-  context: context,
-  appModel: appModel,
-  result: result,
-  sentence: sentence,
-  cardBgAlpha: cardBgAlpha,
-  panelRoot: panelRoot,
-  sentenceHitStart: sentenceHitStart,
-  sentenceHitLength: sentenceHitLength,
-  sentenceOnly: sentenceOnly,
-).combined;
+}) =>
+    buildFrameSettingsJsParts(
+      context: context,
+      appModel: appModel,
+      result: result,
+    ).combined;
 
 /// One stacked lookup card as the host script expects it (TODO-867 P3b/P3c).
 /// [frame] supplies the stack identity/linkage (id, parentIndex); [result]
@@ -188,21 +144,10 @@ class GlobalLookupFramePayload {
     required this.frame,
     required this.result,
     this.anchorRect,
-    this.sentence = '',
-    this.sentenceOnly = false,
   });
 
   final GlobalLookupFrame frame;
   final DictionarySearchResult result;
-
-  /// 剪切板「关自动查词」纯文字态：只渲染句子横幅、摘掉「No results」结果块。
-  /// 仅面板 root 帧有意义（子卡/瞬态窗恒 false）。
-  final bool sentenceOnly;
-
-  /// TODO-1030 M0 — the current sentence to show as a context banner in this
-  /// card (only the ROOT frame carries it; empty = no banner). Body text stays
-  /// inside the frame realm and is never logged.
-  final String sentence;
 
   /// Screen-space CSS px anchor rect (selection / clicked word). Null when the
   /// caller has no anchor yet (placeholder cascade offset is used instead).
@@ -389,19 +334,6 @@ StackRenderScript buildStackRenderScript({
   // nearly full-height child is clamped across the selected word. Keep this
   // opt-in so the desktop global-lookup cascade remains unchanged.
   bool fitNestedHeightToAnchorSide = false,
-  // spec 2026-07-10 — 'panel' = 常驻剪贴板面板（root 撑满固定视口、host 短路
-  // measureAndReport）。默认 'cascade' 时 payload 不带 layoutMode 键，瞬态窗
-  // 载荷与改动前逐字节相同（Never break userspace）。
-  String layoutMode = 'cascade',
-  // BUG-1793 — per-origin UI capability. Galgame text-overlay lookups still use
-  // the desktop HWND/route, so the renderer must carry this explicit bit rather
-  // than asking host.js to infer it from route identity.
-  bool clipboardHistoryAvailable = true,
-  double cardBgAlpha = 1.0,
-  // 真机第 4 轮 — 面板选词区的引擎命中区间（码点下标），只作用于面板 root
-  // 帧的 settingsJs；cascade 模式忽略。
-  int sentenceHitStart = -1,
-  int sentenceHitLength = 0,
   // BUG-1833 — static settings revisions already acknowledged by this physical
   // host. The stable root iframe survives lookup-to-lookup, so a custom font
   // (two CJK faces already run to tens of MB once base64-inlined) must not ride
@@ -418,16 +350,16 @@ StackRenderScript buildStackRenderScript({
 }) {
   // 本次渲染开始时宿主已装载的版本（副本）；下面每发出一个新版本就往里加，
   // 同一次调用内的后续帧据此不再重复携带同一份静态段。
-  final Set<int> availableStaticRevisions = staticRevisions.snapshotFor(hostKey);
+  final Set<int> availableStaticRevisions =
+      staticRevisions.snapshotFor(hostKey);
   final Set<int> emittedStaticRevisions = <int>{};
   // TODO-867 P3c F2 — the host shell (.global-lookup-frame-shell) is built in the
   // TOP-LEVEL host document, which carries no data-theme of its own (the theme
   // vars live INSIDE each iframe). So the shell's dark/light border variant can't
   // read a CSS var; stamp the resolved brightness onto each popup descriptor and
   // host.js sets data-theme on the shell.
-  final String shellTheme = Theme.of(context).brightness == Brightness.dark
-      ? 'dark'
-      : 'light';
+  final String shellTheme =
+      Theme.of(context).brightness == Brightness.dark ? 'dark' : 'light';
   // TODO-1231（BUG-583/670 续）——根卡（anchorless 分支）的工作区钳位偏移。根卡是
   // 级联里唯一不经 computeFrameRect clamp 的卡；reserve-to-edge 地板把 C++ 的窗口
   // 右/下 clamp 变成 no-op 后，光标靠屏右/下时根卡越出工作区被窗口边裁掉（「弹窗
@@ -444,17 +376,10 @@ StackRenderScript buildStackRenderScript({
   final List<Map<String, Object?>> popups = <Map<String, Object?>>[];
   for (int i = 0; i < payloads.length; i++) {
     final GlobalLookupFramePayload p = payloads[i];
-    final bool isPanelRoot = layoutMode == 'panel' && p.frame.parentIndex < 0;
     final GlobalLookupFrameSettingsJs settings = buildFrameSettingsJsParts(
       context: context,
       appModel: appModel,
       result: p.result,
-      sentence: p.sentence,
-      cardBgAlpha: cardBgAlpha,
-      panelRoot: isPanelRoot,
-      sentenceHitStart: isPanelRoot ? sentenceHitStart : -1,
-      sentenceHitLength: isPanelRoot ? sentenceHitLength : 0,
-      sentenceOnly: isPanelRoot && p.sentenceOnly,
     );
     final Map<String, Object?> map = p.frame.toRenderMap();
     map['theme'] = shellTheme;
@@ -489,12 +414,7 @@ StackRenderScript buildStackRenderScript({
   }
   final Map<String, Object?> payloadObj = <String, Object?>{
     'popups': popups,
-    'clipboardHistoryAvailable': clipboardHistoryAvailable,
   };
-  // spec 2026-07-10 — 仅面板模式携带 layoutMode 键；cascade 载荷字节不变。
-  if (layoutMode == 'panel') {
-    payloadObj['layoutMode'] = 'panel';
-  }
   // TODO-1345 (BUG-583 深层根因续) — reserve cascade headroom toward the screen
   // interior so an up/left child lands INSIDE the window origin committed at the
   // first reveal; the host's measureAndReport then never moves the origin when the
@@ -510,8 +430,7 @@ StackRenderScript buildStackRenderScript({
   }
   final String payloadJson = jsonEncode(payloadObj);
   return (
-    script:
-        'window.__globalLookupHost && '
+    script: 'window.__globalLookupHost && '
         'window.__globalLookupHost.renderStack($payloadJson);',
     pendingRevisions: emittedStaticRevisions,
   );

@@ -198,17 +198,21 @@ void main() {
     test('建不出逃生工具条就必须取消穿透（正文内工具条此时已不绘制）', () {
       final String applier = functionBody(
           body, 'void FloatingLyricWindow::ApplyPassThroughExStyle()');
-      final int show = applier.indexOf('if (!pass_through_toolbar_.Show(');
-      expect(show, isNot(-1), reason: 'Show() 的结果必须被检查，不能忽略');
+      // 建窗现在收口在 ApplyToolbarVisibility()（它同时管自动隐藏），
+      // 返回值语义不变：false = 期望显示却没能上屏。
+      final int show = applier.indexOf('if (!ApplyToolbarVisibility()');
+      expect(show, isNot(-1), reason: '建窗结果必须被检查，不能忽略');
       final String afterShow = applier.substring(show);
       expect(afterShow.contains('pass_through_ = false;'), isTrue,
           reason: '建不出工具条就必须把穿透翻回 false，否则用户被困在'
               '「正文内工具条不画、独立工具条又没建出来」的无出口态');
+      // 判据从 `!(hook_text_mode_ && pass_through_)` 收紧成 `!hook_text_mode_`：
+      // hook 台词浮窗现在**无论穿不穿透**都只用那个独立短药丸窗，正文里一颗按钮
+      // 都不画。逃生窗因此更不可省——旧写法下非穿透态还有正文内工具条兜着。
       expect(
-        body.contains(
-            'draw_body_toolbar = !(hook_text_mode_ && pass_through_)'),
+        body.contains('draw_body_toolbar = !hook_text_mode_'),
         isTrue,
-        reason: '正文内工具条在穿透态不绘制，正是逃生窗不可省的原因',
+        reason: '正文内工具条在 hook 台词模式一律不绘制，正是逃生窗不可省的原因',
       );
     });
 
@@ -228,8 +232,10 @@ void main() {
     test('穿透态必须在文字行矩形内铺不可见 catch fill（BUG-1853）', () {
       final String render =
           functionBody(body, 'void FloatingLyricWindow::Render()');
-      final int catchFill = render.indexOf(
-          'if (hook_text_mode_ && pass_through_ && !text_.empty())');
+      // 判据多了一维 `passthrough_blocks_mouse_`（「穿透时是否仍拦鼠标」可配），
+      // 所以锚点只取到那一维之前；后面 `contains` 再确认它确实在同一个条件里。
+      final int catchFill =
+          render.indexOf('if (hook_text_mode_ && pass_through_ &&');
       expect(catchFill, isNot(-1),
           reason: '穿透态行矩形 catch fill 的守门条件必须存在，且只在'
               'hook 台词 + 穿透态下生效（歌词条 / 非穿透态整窗兜底已经可点）');
@@ -258,8 +264,11 @@ void main() {
     test('a toolbar that cannot be created cancels pass-through', () {
       final String applier = functionBody(
           body, 'void FloatingLyricWindow::ApplyPassThroughExStyle()');
-      expect(applier.contains('if (!pass_through_toolbar_.Show('), isTrue,
-          reason: 'The Show() result must be checked, not ignored.');
+      expect(applier.contains('if (!ApplyToolbarVisibility()'), isTrue,
+          reason: 'The result must be checked, not ignored. Window creation is '
+              'now funnelled through ApplyToolbarVisibility(), which also owns '
+              'the auto-hide decision; the false = "wanted on screen but is '
+              'not" contract is unchanged.');
       expect(applier.contains('pass_through_ = false;'), isTrue,
           reason: 'Better to drop the toggle than to strand the user behind '
               'an overlay they can no longer click.');
@@ -435,9 +444,14 @@ void main() {
 
     test('one dispatcher runs a button, whichever window was clicked', () {
       expect(bodyHeader.contains('void DispatchControlAction('), isTrue);
-      final String applier = functionBody(
-          body, 'void FloatingLyricWindow::ApplyPassThroughExStyle()');
-      expect(applier.contains('DispatchControlAction(action)'), isTrue,
+      // The binding moved out of ApplyPassThroughExStyle into its own
+      // BindToolbarCallbacks() (the toolbar is no longer pass-through-only, so
+      // the wiring can no longer live in the pass-through applier). The
+      // invariant is unchanged: whoever binds it must forward to the shared
+      // dispatcher.
+      final String binder = functionBody(
+          body, 'void FloatingLyricWindow::BindToolbarCallbacks()');
+      expect(binder.contains('DispatchControlAction(action)'), isTrue,
           reason: 'The toolbar action callback must reuse the body dispatcher, '
               'not a second copy of the lock / topmost logic.');
       // The lock + topmost toggles live in the dispatcher only.
@@ -480,9 +494,11 @@ void main() {
 
     test('the in-body toolbar is not painted while the body is click-through',
         () {
+      // Tightened from `!(hook_text_mode_ && pass_through_)`: the hook-text
+      // overlay now always uses the standalone pill window, click-through or
+      // not, so the body paints no buttons at all in that mode.
       expect(
-          body.contains(
-              'const bool draw_body_toolbar = !(hook_text_mode_ && pass_through_);'),
+          body.contains('const bool draw_body_toolbar = !hook_text_mode_;'),
           isTrue,
           reason: 'Two toolbars drawn at the same spot, one of them dead, is '
               'the UI lie this design exists to remove.');
@@ -492,5 +508,48 @@ void main() {
   test('the new translation unit is actually built', () {
     expect(cmake.contains('"hook_toolbar_window.cpp"'), isTrue,
         reason: 'A file missing from CMakeLists silently never ships.');
+  });
+
+  group('BUG-1926 · 移动正文窗只有一条原语，顶栏不可能掉队', () {
+    // 用户报的是「按住浮窗的文字拖，窗跟着动了，顶栏没跟上」。
+    //
+    // 穿透态下顶栏是**另一个顶层窗口**（正文窗必须整窗 click-through，单窗做不到
+    // 「正文穿透、顶栏可点」），它的位置由正文窗单向下推。而唯一的下推入口
+    // SyncPassThroughToolbar 从前只挂在 Render() 末尾 —— 拖窗分支自己裸调
+    // SetWindowPos 之后直接 return 0，而 layered 窗的 SWP_NOSIZE 移动既不产生
+    // WM_PAINT 也不产生 WM_SIZE，HandleMessage 里也没有 WM_MOVE 分支，于是整个
+    // 拖动过程一次 Render 都不发生，顶栏原地不动，直到下一句台词才瞬移过去。
+    //
+    // 必须剥注释：上面这段说明和 C++ 里的修复注释都写了 SetWindowPos / MoveBodyTo，
+    // 裸 indexOf 会先命中注释里那一份，守卫恒绿。
+    late String masked;
+    setUpAll(() => masked = maskComments(body));
+
+    test('MoveBodyTo 是那条原语：钳制 + 顶栏同步都在里面', () {
+      final String moveBody =
+          functionBody(masked, 'void FloatingLyricWindow::MoveBodyTo(int x, int y)');
+      expect(moveBody.contains('SyncPassThroughToolbar();'), isTrue,
+          reason: '移动正文窗后不同步顶栏，两个窗就会漂开。');
+      expect(moveBody.contains('ClampOriginToWorkArea('), isTrue,
+          reason: 'TODO-832 的工作区钳制也归这条原语，不该再被抄一份出去。');
+    });
+
+    test('拖正文的分支走 MoveBodyTo，不再自己裸 SetWindowPos', () {
+      final String dragBranch = functionBody(masked, 'if (dragging_)');
+      expect(dragBranch.contains('MoveBodyTo('), isTrue,
+          reason: '拖窗必须复用同一条原语，否则收尾的顶栏同步又会被抄漏。');
+      expect(dragBranch.contains('SetWindowPos('), isFalse,
+          reason: '裸 SetWindowPos 正是让顶栏掉队的那行 —— 它绕过了同步漏斗。');
+    });
+
+    test('WM_EXITSIZEMOVE 的边界钳制同样要把顶栏带上', () {
+      expect(
+          functionBody(masked,
+                  'void FloatingLyricWindow::ClampCurrentPositionToWindowMonitor()')
+              .contains('SyncPassThroughToolbar();'),
+          isTrue,
+          reason: '「凡是挪了正文窗的地方都同步顶栏」必须是个不变式，'
+              '而不是逐个调用点各记各的。');
+    });
   });
 }

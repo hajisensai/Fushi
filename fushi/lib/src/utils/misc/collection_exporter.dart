@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/utils/misc/fushi_time_format.dart';
+import 'package:fushi/src/utils/misc/safe_file_name.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 
@@ -37,17 +38,26 @@ class ExportSentence {
     required this.createdAt,
     this.chapterLabel,
     this.source,
+    this.bookKey,
   });
 
   final String text;
 
-  /// 分组键：恒非空（`FavoriteSentence.bookTitle` 是 required）。
+  /// **显示用**分组键：恒非空（`FavoriteSentence.bookTitle` 是 required）。
+  /// 只用于文内分组头与文件名——**不要**拿它当过滤判据，见 [bookKey]。
   final String bookTitle;
   final DateTime createdAt;
   final String? chapterLabel;
 
   /// 收藏来源（`book`/`video`/`audiobook`/`lyrics`），可空。
   final String? source;
+
+  /// BUG-1906：**身份**键（`FavoriteSentence.bookKey`：书 = bookKey，视频 = bookUid）。
+  ///
+  /// 导出范围此前按 [bookTitle] 这个**显示名字符串**相等过滤，于是：同名/改名后的
+  /// 两个条目会塌成一项，而「按合集导出」根本无从谈起——合集归属只能由身份反查
+  /// （`media_collection_items.entry_key`），显示名里没有这个信息。
+  final String? bookKey;
 }
 
 /// 导出用的轻量收藏词载体。
@@ -84,6 +94,7 @@ class ExportMinedSentence {
     required this.bookTitle,
     required this.createdAt,
     this.source,
+    this.bookKey,
   });
 
   /// 制卡时的整句上下文（可能为空：独立查词页制卡无句）。
@@ -92,12 +103,26 @@ class ExportMinedSentence {
   final String reading;
   final String glossary;
 
-  /// 分组键：恒非空（`documentTitle` 可空时回退到「制卡语句」占位）。
+  /// **显示用**分组键：恒非空（`documentTitle` 可空时回退到「制卡语句」占位）。
   final String bookTitle;
   final DateTime createdAt;
 
   /// 制卡来源（`book`/`video`/`audiobook`/`lyrics`），可空。
   final String? source;
+
+  /// BUG-1906：**身份**键（`MinedSentences.bookKey`）。理由同
+  /// [ExportSentence.bookKey]。
+  final String? bookKey;
+}
+
+/// BUG-1907：导出文件名清洗（Windows 非法字符 + 空名兜底）。
+///
+/// 原先是 `collections_page.dart` 的私有方法 `_sanitizeFileName`；字幕列表的
+/// 「导出收藏语句」也要用同一套规则，与其复制一份，不如提到导出器这一层
+/// ——它本来就是导出相关纯函数的家。
+String sanitizeExportFileName(String name) {
+  final String cleaned = safeWindowsFileName(name).trim();
+  return cleaned.isEmpty ? 'export' : cleaned;
 }
 
 /// 文件元信息：扩展名（不含点）+ MIME 类型。

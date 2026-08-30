@@ -76,6 +76,26 @@ enum DiscoveryDownloadStatus {
 class DiscoveryDownloadTask {
   DiscoveryDownloadTask._({required this.item, required this.destinationDir});
 
+  /// BUG-1911：测试种子。队列的真实任务只能由 [DiscoveryDownloadQueue.enqueue] 造出来
+  /// （它会立刻开始跑网络），而游戏库页的「下载中占位」只关心任务的**快照形状**
+  /// （名称 / 封面 / 状态 / 进度）。给它一个显式的构造口，好过为了测一张卡去起真下载。
+  @visibleForTesting
+  factory DiscoveryDownloadTask.forTesting({
+    required DiscoveryResourceItem item,
+    String destinationDir = '',
+    DiscoveryDownloadStatus status = DiscoveryDownloadStatus.queued,
+    int receivedBytes = 0,
+    int? totalBytes,
+  }) {
+    return DiscoveryDownloadTask._(
+      item: item,
+      destinationDir: destinationDir,
+    )
+      ..status = status
+      ..receivedBytes = receivedBytes
+      ..totalBytes = totalBytes;
+  }
+
   final DiscoveryResourceItem item;
 
   /// 落盘目录（按媒体域由组装点决定）。

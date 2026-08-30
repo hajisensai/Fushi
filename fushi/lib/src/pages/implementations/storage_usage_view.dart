@@ -34,6 +34,7 @@ class StorageUsageView extends ConsumerStatefulWidget {
     required this.deleteSrtBook,
     required this.deleteDictionary,
     required this.deleteDatabaseSnapshots,
+    required this.deleteFiles,
     this.anime4kBytesProvider = anime4kInstalledBytes,
     this.anime4kDelete = deleteAnime4kShaderFiles,
     super.key,
@@ -67,6 +68,14 @@ class StorageUsageView extends ConsumerStatefulWidget {
   /// 结果——部分文件被占用时其余照删，失败清单原样带给用户。
   final Future<DatabaseSnapshotDeletionResult> Function()
       deleteDatabaseSnapshots;
+
+  /// 删除 [StorageEntryKind.derivedFile] 明细指向的路径（文件或目录）。
+  ///
+  /// 只有 [kDeletableEntryCategories] 里的类目会产出这种明细 —— 那里装的都是派生
+  /// 数据 / 缓存 / 可重新获取的资源，没有 DB 行引用，所以这条原语就是裸删；本 widget
+  /// 自身仍不碰磁盘（真实现在 `settings_schema_storage.dart` 接线）。
+  /// 返回 null = 成功，非 null = 失败原因。
+  final Future<String?> Function(List<String> paths) deleteFiles;
 
   /// Anime4K 已下载字节数 / 删除（默认真实现；测试注临时目录版）。
   final Future<int> Function() anime4kBytesProvider;
@@ -205,6 +214,8 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
         t.storage_entry_delete_dictionary_confirm_body,
       StorageEntryKind.databaseSnapshots =>
         t.storage_entry_delete_database_snapshots_confirm_body,
+      StorageEntryKind.derivedFile =>
+        t.storage_entry_delete_files_confirm_body,
       StorageEntryKind.readOnly => throw StateError('read-only entry'),
     };
     if (!await _confirmDelete(_entryTitle(entry), body)) return;
@@ -229,6 +240,9 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
               await widget.deleteDatabaseSnapshots();
           changed = result.deleted.isNotEmpty;
           failure = _snapshotDeleteFailureReason(result);
+        case StorageEntryKind.derivedFile:
+          failure = await widget.deleteFiles(entry.paths);
+          changed = failure == null;
         case StorageEntryKind.readOnly:
           throw StateError('read-only entry');
       }
@@ -308,6 +322,8 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     StorageCategoryId.exports: Icons.output_outlined,
     StorageCategoryId.database: Icons.storage_outlined,
     StorageCategoryId.ocrModels: Icons.document_scanner_outlined,
+    StorageCategoryId.cache: Icons.cached_outlined,
+    StorageCategoryId.other: Icons.more_horiz_outlined,
   };
 
   String _categoryTitle(StorageCategoryId id) {
@@ -334,6 +350,10 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
         return t.storage_category_database;
       case StorageCategoryId.ocrModels:
         return t.storage_category_ocr_models;
+      case StorageCategoryId.cache:
+        return t.storage_category_cache;
+      case StorageCategoryId.other:
+        return t.storage_category_other;
     }
   }
 

@@ -9,6 +9,7 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/settings/settings_search.dart';
+import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
 import 'package:fushi/utils.dart';
 
 class SettingsHomePage extends BasePage {
@@ -233,6 +234,11 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
 
   Widget _buildEmbeddedShell(Widget content) {
     if (!widget.embedded) {
+      return content;
+    }
+    // Windows 主窗口已经由应用壳层提供当前 tab 标题；设置仍是普通 home tab，
+    // 左侧主导航始终可见，因此无需再画第二条「返回 + 设置」页头。
+    if (FushiWindowsTitleBar.isEnabled) {
       return content;
     }
     // Cupertino 手机（compact 走底栏导航、onBack 为空、无需返回出口）保持原生

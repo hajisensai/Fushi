@@ -5,7 +5,37 @@ import 'package:fushi/pages.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/utils.dart';
+
+/// 「功能模块」里的单个 tab 显隐开关。
+///
+/// 标题与图标一律从底栏/侧栏的**同一个**真值 [homeNavItemFor] 取，杜绝设置页再抄一份
+/// 标签（那是「设置里叫 Galgame、底栏叫游戏」这类不一致的成因）。[isTool] 区分库页与
+/// 工具页两句提示文案。
+SettingsSwitchItem _moduleSwitch({
+  required String id,
+  required HomeTab tab,
+  required SettingsSwitchGetter value,
+  required Future<void> Function(SettingsContext settingsContext, bool enabled)
+      setValue,
+  SettingsVisibility? visible,
+  bool isTool = false,
+}) {
+  final AdaptiveNavItem navItem = homeNavItemFor(tab);
+  return SettingsSwitchItem(
+    id: id,
+    title: navItem.label,
+    subtitle: isTool ? t.module_tool_toggle_hint : t.module_toggle_hint,
+    icon: navItem.icon,
+    visible: visible,
+    value: value,
+    onChanged: (SettingsContext settingsContext, bool enabled) async {
+      await setValue(settingsContext, enabled);
+      settingsContext.refresh();
+    },
+  );
+}
 
 SettingsDestination buildAppearanceDestination() {
   return SettingsDestination(
@@ -141,6 +171,87 @@ SettingsDestination buildAppearanceDestination() {
                 },
               );
             },
+          ),
+        ],
+      ),
+      // 「功能模块」：小说/漫画/视频/游戏/浏览器扩展五个库页 tab 加 下载/查词 两个
+      // 工具 tab 的显隐开关（库页那几项与新手引导的功能选择写同一真值）。首页/设置
+      // 恒在，不提供开关；games 仅 Windows、扩展仅桌面显示（读取端还叠加平台门控）。
+      // 顺序与底栏一致：库页 → 下载 → 查词 → 扩展。
+      //
+      // 本区管的是「底栏/侧栏出现哪些 tab」，与同分类的「反转导航栏」同域，故住外观
+      // 而不是系统（此前在 系统 › 功能模块）。item id 保留 `system.` 历史前缀不动
+      // ——id 与展示分类本就解耦（同款先例见下面 app_shell 里关于
+      // 'appearance.startup_default_dictionary_tab' 的注释），改 id 只会平白动摇
+      // 搜索定位锚点。
+      //
+      // 标题与图标**一律取底栏真值** [homeNavItemFor]，不再手写第二份：此前这里抄了
+      // 一套 module_*_label（'小说' 对底栏「书架」、'Galgame' 对底栏「游戏」、
+      // 英文 'Novels'/'Browser extension' 对 'Books'/'Extension'），两份真值各改各的
+      // 必然漂移，用户看到的就是设置项名字对不上底栏。现在底栏改名，这里自动跟着改。
+      SettingsSection(
+        title: t.settings_section_modules,
+        items: <SettingsItem>[
+          _moduleSwitch(
+            id: 'system.module_books',
+            tab: HomeTab.books,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.moduleBooksEnabled,
+            setValue: (SettingsContext settingsContext, bool value) =>
+                settingsContext.appModel.setModuleBooksEnabled(value),
+          ),
+          _moduleSwitch(
+            id: 'system.module_manga',
+            tab: HomeTab.manga,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.moduleMangaEnabled,
+            setValue: (SettingsContext settingsContext, bool value) =>
+                settingsContext.appModel.setModuleMangaEnabled(value),
+          ),
+          _moduleSwitch(
+            id: 'system.module_video',
+            tab: HomeTab.video,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.moduleVideoEnabled,
+            setValue: (SettingsContext settingsContext, bool value) =>
+                settingsContext.appModel.setModuleVideoEnabled(value),
+          ),
+          _moduleSwitch(
+            id: 'system.module_games',
+            tab: HomeTab.games,
+            visible: (_) => Platform.isWindows,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.moduleGamesEnabled,
+            setValue: (SettingsContext settingsContext, bool value) =>
+                settingsContext.appModel.setModuleGamesEnabled(value),
+          ),
+          _moduleSwitch(
+            id: 'system.module_downloads',
+            tab: HomeTab.downloads,
+            isTool: true,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.moduleDownloadsEnabled,
+            setValue: (SettingsContext settingsContext, bool value) =>
+                settingsContext.appModel.setModuleDownloadsEnabled(value),
+          ),
+          _moduleSwitch(
+            id: 'system.module_lookup',
+            tab: HomeTab.dictionaries,
+            isTool: true,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.moduleDictionariesEnabled,
+            setValue: (SettingsContext settingsContext, bool value) =>
+                settingsContext.appModel.setModuleDictionariesEnabled(value),
+          ),
+          _moduleSwitch(
+            id: 'system.module_browser_extension',
+            tab: HomeTab.browserExtension,
+            visible: (_) => DesktopLookupService.isDesktop,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.moduleBrowserExtensionEnabled,
+            setValue: (SettingsContext settingsContext, bool value) =>
+                settingsContext.appModel
+                    .setModuleBrowserExtensionEnabled(value),
           ),
         ],
       ),

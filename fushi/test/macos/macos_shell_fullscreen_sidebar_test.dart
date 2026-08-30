@@ -31,17 +31,32 @@ void main() {
     // 根因：window_manager.setFullScreen 与 macos_window_utils（NSWindow.delegate
     // 所有者）抢同一 NSWindow。macOS 全屏必须由 delegate 所有者 WindowManipulator
     // 统一驱动；windowManager.setFullScreen 只留给非 macOS 桌面。
-    final int toggleStart =
-        nav.indexOf('Future<void> _toggleWindowFullscreen()');
-    expect(toggleStart, isNonNegative);
-    final String body = nav.substring(toggleStart);
-    final int end = body.indexOf('\n}');
-    final String fn = end >= 0 ? body.substring(0, end) : body;
-    expect(fn, contains('Platform.isMacOS'),
-        reason: 'fullscreen toggle must branch macOS onto the single owner.');
-    expect(fn, contains('WindowManipulator.enterFullscreen'));
-    expect(fn, contains('WindowManipulator.exitFullscreen'));
-    expect(fn, contains('WindowManipulator.isWindowFullscreened'));
+    final String toggle = methodBody(
+      nav,
+      'Future<void> _toggleWindowFullscreen() async {',
+    );
+    final String read = methodBody(
+      nav,
+      'Future<bool?> readDesktopWindowFullscreen() async {',
+    );
+    final String set = methodBody(
+      nav,
+      'Future<bool?> setDesktopWindowFullscreen(bool fullscreen) async {',
+    );
+    expect(
+      toggle,
+      contains('toggleDesktopWindowFullscreen()'),
+      reason: 'the shortcut executor must delegate to the shared owner.',
+    );
+    expect(
+      read,
+      contains('Platform.isMacOS'),
+      reason: 'fullscreen toggle must branch macOS onto the single owner.',
+    );
+    expect(read, contains('WindowManipulator.isWindowFullscreened'));
+    expect(set, contains('Platform.isMacOS'));
+    expect(set, contains('WindowManipulator.enterFullscreen'));
+    expect(set, contains('WindowManipulator.exitFullscreen'));
   });
 
   test(

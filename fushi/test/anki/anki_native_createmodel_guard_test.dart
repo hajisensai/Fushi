@@ -35,10 +35,17 @@ void main() {
     final page = File(
       'lib/src/pages/implementations/anki_settings_page.dart',
     ).readAsStringSync();
+    // BUG-1902：这一行的实现搬进了共享组件 `anki/anki_config_controls.dart`，
+    // 好让新手引导用**同一份**实现（此前它是本页的私有方法，跨文件不可见，引导页
+    // 只能显示三行只读文本）。守卫跟着实现走：页面负责挂载，组件负责调用与文案。
+    final controls = File(
+      'lib/src/anki/anki_config_controls.dart',
+    ).readAsStringSync();
 
-    test('calls createLapisSetup and uses the i18n label', () {
-      expect(page, contains('createLapisSetup()'));
-      expect(page, contains('t.anki_create_lapis'));
+    test('page mounts the shared row and the row calls createLapisSetup', () {
+      expect(page, contains('AnkiCreateLapisRow('));
+      expect(controls, contains('createLapisSetup()'));
+      expect(controls, contains('t.anki_create_lapis'));
     });
   });
 }

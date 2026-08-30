@@ -15,7 +15,7 @@ Unity …）上，hit / input / frame 三通道和整条 Dart 编排层全都是
 1. `hook/dll_main.cpp` 必须 `#include "lookup_overlay_window.inc"`。
    不 include = 整份呈现器退回死代码，也就是上面那个历史状态。
 
-2. 该 include 必须排在第一条 `adapters/` include **之前**。
+2. 该 include 必须排在第一条 `adapters/*.inc` 实现 include **之前**。
    KiriKiri 适配器要调 `ClaimLookupPresenter()` 认领呈现；排在后面就是「未声明的标识符」
    编译错误。这是顺序不变量，不是拼写检查——所以断言的是两个 include 的相对位置。
 
@@ -54,7 +54,9 @@ OVERLAY_INC = HOOK_ROOT / "hook" / "lookup_overlay_window.inc"
 KIRIKIRI_INC = HOOK_ROOT / "hook" / "adapters" / "kirikiri_adapter.inc"
 
 OVERLAY_INCLUDE = '#include "lookup_overlay_window.inc"'
-ADAPTER_INCLUDE_RE = re.compile(r'^\s*#include\s+"adapters/[^"]+"', re.MULTILINE)
+ADAPTER_INCLUDE_RE = re.compile(
+    r'^\s*#include\s+"adapters/[^"]+\.inc"', re.MULTILINE
+)
 INCLUDE_RE = re.compile(r"^\s*#\s*include\b.*$", re.MULTILINE)
 
 START_CALL = "StartLookupOverlayIfUnclaimed"
@@ -117,7 +119,7 @@ def find_missing_overlay_include(dll_main_text: str) -> list[str]:
 
 
 def find_overlay_include_after_adapters(dll_main_text: str) -> list[str]:
-    """规则 2：呈现器 include 必须早于第一条 adapters/ include。"""
+    """规则 2：呈现器 include 必须早于第一条 adapters/*.inc 实现。"""
     stripped = strip_comments(dll_main_text)
     overlay_at = stripped.find(OVERLAY_INCLUDE)
     if overlay_at < 0:
@@ -330,6 +332,7 @@ DIRTY_INCLUDE_ONLY_IN_COMMENT = """
 """
 
 CLEAN_DLL_MAIN = """
+#include "adapters/leaf_aquaplus_voice_archive.h"
 #include "lookup_overlay_window.inc"
 #include "adapters/kirikiri_adapter.inc"
 

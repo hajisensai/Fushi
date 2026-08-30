@@ -267,6 +267,9 @@ class SyncRunReport {
   final Map<String, int> deletionTombstonesHighWaterMsByScope = <String, int>{};
 
   /// 记一条通道本轮复核到的删除时刻（取该通道的 max）。
+  ///
+  /// 调用方**必须**先确认本轮完整读到了该通道的全部远端墓碑：这个值一旦落地就成了
+  /// 「此刻之前的删除都已复核」的断言，而没读到的那些标记会被它连坐压制（BUG-1934）。
   void noteDeletionHighWater(SyncChannelScope scope, int deletedAt) {
     final int? prev = deletionTombstonesHighWaterMsByScope[scope.id];
     if (prev == null || deletedAt > prev) {
@@ -1092,6 +1095,10 @@ class SyncOrchestrator {
   /// 不自动 GC 远端标记：本设备仍持有该资产且 deletedAt <= 基线时，无法区分「保留」与
   /// 「删后重加」，误删标记会破坏其它设备的删除传播——书/视频不自动重导入，标记长存只是
   /// 极小的存储/新设备重弹成本，GC 留待 Phase F。整段 try/catch，错误进 report.errors。
+  ///
+  /// **完整观测不变式**（BUG-1934）：只有本轮把列出的标记**全部**读成了 marker，才登记
+  /// [SyncRunReport.noteDeletionHighWater]（=允许 UI 推进基线）。少读一条就闭嘴——基线
+  /// 是标量，推过头会把那条没读到的、deletedAt 更小的删除永久压成「旧闻」。
   Future<void> syncDeletionTombstones(SyncRunReport report) async {
     try {
       final String ns =
@@ -1116,6 +1123,10 @@ class SyncOrchestrator {
       // ── 消费：读远端标记 → deleteLocal 候选（过基线守卫）──
       final Map<String, Set<String>> remoteTombstones = <String, Set<String>>{};
       final Map<String, int> remoteDeletedAt = <String, int>{};
+      // 本轮是否**完整**观测了远端标记集合：列出来了却没读成 marker 的每一条都置假。
+      // 基线的语义是「已复核到此时刻的删除」，只有完整观测撑得起这句话（BUG-1934，
+      // 见下方推进点的长注释）。
+      bool scanComplete = true;
       final List<AssetEntry> children = await _backend.listChildren(ns);
       for (final AssetEntry e in children) {
         if (e.isFolder) continue;
@@ -1123,11 +1134,29 @@ class SyncOrchestrator {
         try {
           json = await _backend.getJsonAsset(e.id);
         } catch (err) {
+          scanComplete = false;
           report.noteError('deletion tombstone "${e.name}" unreadable', err);
           continue;
         }
+        if (json == null) {
+          // listChildren 刚列到它、读回来却是空：要么本轮被对端删了（下轮不再列出，
+          // 自愈），要么后端把读失败映射成了 null 而不是抛（[SftpSyncBackend
+          // .getJsonAsset] 就是这样吞 SyncBackendError 的）。两种都不是「已观测」，
+          // 按不完整处理——静默 continue 会让后者变成一次无声的永久压制。
+          scanComplete = false;
+          report.noteError(
+              'deletion tombstone "${e.name}" unreadable', 'empty response');
+          continue;
+        }
         final parsed = parseDeletionTombstoneJson(json);
-        if (parsed == null) continue;
+        if (parsed == null) {
+          // 读到了但内容不合法（截断上传 / 非本协议文件）。这是**永久**状态，重试不会
+          // 变好，故不置 scanComplete=false（否则基线被一个坏文件永久钉死，用户每轮
+          // 重看同一批确认框）。只如实记一条，别再静默丢。
+          report.noteError(
+              'deletion tombstone "${e.name}" malformed', 'skipped');
+          continue;
+        }
         remoteTombstones
             .putIfAbsent(parsed.mediaType, () => <String>{})
             .add(parsed.itemKey);
@@ -1143,6 +1172,7 @@ class SyncOrchestrator {
           await _collectPresentDeletionKeys();
       int baseline = await repo.getDeletionTombstonesBaselineMs(_scope);
       if (baseline > nextBaseline) baseline = nextBaseline; // 时钟回拨钳制。
+      bool heldBaseline = false;
 
       // deleteLocal 方向：远端有标记 ∧ 本地在库。localTombstones/remotePresent 传空
       // ⇒ 只产 deleteLocal，不产 deleteRemote（本设备的删除靠发布标记让对端各自消费）。
@@ -1157,7 +1187,21 @@ class SyncOrchestrator {
         final int? at = remoteDeletedAt['${c.mediaType}\u0000${c.itemKey}'];
         if (at == null || at <= baseline) continue; // 旧闻 / 已处理，不再弹。
         report.deletionCandidates.add(c);
-        report.noteDeletionHighWater(_scope, at);
+        // BUG-1934：读失败的标记必须挡住基线推进。基线是**标量**，UI 复核完这批就把它
+        // 推到本轮最大 deletedAt，于是任何 deletedAt 更小、本轮恰好没读出来的标记，下轮
+        // 就落进上面那句 `at <= baseline` 的旧闻分支——永久不再弹，用户在对端删掉的东西
+        // 在本机静默留存。触发它只要一次 TLS 握手失败（HandshakeException）。候选照常
+        // 上报（该弹的还得弹），只是不认领「已复核到此刻」这个断言，下轮读全了再推进。
+        // 互联通道无需同样处理：它一次 GET 取回全部墓碑，失败即整体抛出，无部分观测。
+        if (scanComplete) {
+          report.noteDeletionHighWater(_scope, at);
+        } else {
+          heldBaseline = true;
+        }
+      }
+      if (heldBaseline) {
+        report.errors.add('deletion tombstones scan incomplete; '
+            'consumption baseline held until a complete read');
       }
     } catch (e) {
       report.noteError('deletion tombstones sync', e);

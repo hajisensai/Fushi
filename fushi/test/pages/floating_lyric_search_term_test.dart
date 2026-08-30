@@ -3,7 +3,7 @@ import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart'
     show floatingLyricSearchTerm;
 
 /// TODO-376：桌面悬浮字幕条点词时，[floatingLyricSearchTerm] 从整句 + 点击字符
-/// 索引解析出真正要查的词，再交给剪贴板查词出口（DesktopLookupService）。
+/// 索引解析出真正要查的词，再交给桌面显式查词出口（DesktopLookupService）。
 ///
 /// 这里只钉纯函数的分词器优先 / 整句回退 / 双空 no-op 契约——分词本身由
 /// JapaneseLanguage.wordFromIndex 负责（见 popup_floating_lyric_charindex_test）。

@@ -953,6 +953,14 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupBoundX = 0;
 			global.fushiLookupBoundY = 0;
 			global.fushiLookupRefreshActive = false;
+			// KAG 复用同一个消息槽显示下一句；完整 candidate 提交时只排队，真正的
+			// renderer/layer 刷新留到账本事务外执行。游戏换场景时 primaryLayer 可能被
+			// 整体替换，而旧 Layer 仍保持 isvalid；只判 isvalid 会把卡片和高亮永久留在
+			// 已脱离活动树的旧 parent 下。
+			global.fushiLookupPendingSentenceRefresh = false;
+			global.fushiLookupPendingSubmitFence = false;
+			global.fushiLookupSentenceRefreshActive = false;
+			global.fushiLookupBridgePlugin = void;
 
 )TJS" LR"TJS(
 
@@ -1594,6 +1602,24 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				return 0;
 			};
 
+)TJS" LR"TJS(
+
+			// Probe 的存活真值是已提交的句子 slot，不是 kag.current 的瞬时对象身份。
+			// KAGEX 在人物口型/表情帧变化时会让 current 短暂不可得，或把同一
+			// (page,index) 换成另一个 MessageLayer 对象；只要 slot 的文本世代与
+			// activeEntry 没变，屏上的同一句就必须继续可点。严格对象身份仍由上面的
+			// helper 服务于 candidate takeover：它可以促使新 renderer 接管，但不能
+			// 单独宣告句界。没有 slot 的经典 KAG3 记录返回 0，继续走可见层回退。
+			global.fushiLookupActiveSentenceState = function(entry)
+			{
+				if(entry.slotPage == 0 || entry.slotIndex < 0) return 0;
+				var slot = global.fushiLookupFindSlot(entry.slotPage, entry.slotIndex);
+				if(slot === void || slot.generation != entry.slotGeneration ||
+					slot.line == "" || entry.line == "" || slot.line != entry.line ||
+					slot.line != entry.logicalLine || slot.activeEntry !== entry) return -1;
+				return 1;
+			};
+
 			global.fushiLookupVisible = function(layer)
 			{
 				var current = layer;
@@ -1619,6 +1645,192 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				catch(e) { return false; }
 			};
 
+			global.fushiLookupLayerOwnedByPrimary = function(layer, primary)
+			{
+				try
+				{
+					return layer !== void && layer !== null && isvalid layer &&
+						primary !== void && primary !== null && isvalid primary &&
+						layer.parent === primary;
+				}
+				catch(e) { return false; }
+			};
+
+			// 只在账本事务外调用。先从全局发布中摘掉旧对象，再 best-effort 隐藏/
+			// invalidate；这样 Layer setter 若重入，也只会看见“尚未创建”的新世代，
+			// 不会重新使用已经脱离当前 primary 的对象。
+			global.fushiLookupRetireDetachedLayer = function(layer)
+			{
+				try
+				{
+					if(layer !== void && layer !== null && isvalid layer)
+					{
+						layer.visible = false;
+						layer.update();
+					}
+				}
+				catch(e) { global.fushiLookupFault(); }
+				// 某些游戏已经把旧 primary 从窗口树摘掉，旧 Layer 的 update 会先抛错；
+				// invalidate 必须单独 best-effort，不能因此把脱离树的对象一直留活。
+				try
+				{
+					if(layer !== void && layer !== null && isvalid layer)
+						invalidate layer;
+				}
+				catch(e) { global.fushiLookupFault(); }
+			};
+
+			// KAG 的 primaryLayer 是 fore.base；fore/back 交换可能在同一句中改变对象身份。
+			// Layer.parent 是可写属性，同一 Window/primary tree 内可安全迁移。先用共同根坐标
+			// 算出 layer 在新 primary 下的位置，再改 parent；这只搬运位图 carrier，不改变
+			// WebView DOM、submit fence、route 或 CardSeq。
+			global.fushiLookupRehomeLayerToPrimary = function(layer, primary)
+			{
+				try
+				{
+					if(global.fushiLookupLayerOwnedByPrimary(layer, primary)) return true;
+					if(layer === void || layer === null || !isvalid layer ||
+						primary === void || primary === null || !isvalid primary) return false;
+					if(!global.fushiLookupComputeOffset(layer)) return false;
+					var newLeft = global.fushiLookupOffX;
+					var newTop = global.fushiLookupOffY;
+					if(primary !== global.kag.primaryLayer) return false;
+					layer.parent = primary;
+					layer.setPos(newLeft, newTop);
+					if(layer.parent !== primary) return false;
+					if(layer.visible) layer.update();
+					return true;
+				}
+				catch(e)
+				{
+					global.fushiLookupNoteError("layer.rehome", e);
+					global.fushiLookupFault();
+					return false;
+				}
+			};
+
+			// primary 在「读取」与「parent 赋值」之间被换掉，是 rehome 唯一一种下一次
+			// 输入必然看到不同状态、因而值得等的失败。判据只有这一条；读 primaryLayer
+			// 本身可能抛，抛了就当没换（不值得等），交给上层走确定动作。
+			global.fushiLookupPrimaryRacedSince = function(primary)
+			{
+				try { return primary !== global.kag.primaryLayer; }
+				catch(e) { return false; }
+			};
+
+)TJS" LR"TJS(
+
+			// stable/run 和输入预检只允许尝试迁移。过渡中的 primary 可能还没有
+			// 完成 fore/back 交换；此时 rehome 失败必须保留 Card/CardSeq/CardEntry，
+			// 等 stable=true 或下一次输入重试。只有确认的换句路径才能退休 carrier。
+			//
+			// 🔴 两条硬约束，缺任何一条都会让 leftClickHook 把玩家的左键永久吞掉、
+			// 剧情再也推不动：
+			//
+			// ① 不变式 `CardSeq != 0 ⇒ fushiLookupCard 是有效 Layer`。Prepare / Apply /
+			//    Reconcile 一旦判定 carrier 不可用，都会把 Card / CardSeq / CardEntry
+			//    三个一起清掉。本函数是**第四个**能观察到该不变式被引擎侧打破的地方
+			//    （kag.clear()、场景重载、全屏切换重建 primary 树会直接 invalidate 掉
+			//    Layer），所以也必须在这里把它修回来。把矛盾状态原样报成 "not ready"
+			//    的后果是：fushiLookupCardVisible() 只看 CardSeq 就返回 true，本函数
+			//    返回 false，两个函数对同一状态给出相反答案，leftClick 的
+			//    popupTransaction && !carrierSettled 恒成立——而 TJS 侧唯一无条件清
+			//    CardSeq 的入口在 C++ 下发的 dismiss 上，玩家点不到、也就永远解不开。
+			//
+			// ② 返回 false（= 请上层再等一次）只保留给 primary 竞态这一种失败。其余
+			//    失败（引擎拒绝 parent 赋值、层脱离窗口树、图层树成环、恢复 visible
+			//    抛错、这一刻拿不到 primary）等多久都不会好，一律返回 true，让
+			//    leftClickHook 走确定动作（转发进卡或收卡），绝不出现「吞掉这一击但
+			//    什么都不做」这种既不推进游戏也不推进查词的状态。
+			global.fushiLookupTryRehomeVisualParents = function()
+			{
+				var primary = void;
+				try { primary = global.kag.primaryLayer; }
+				catch(e) { return true; }
+				if(primary === void || primary === null || !isvalid primary) return true;
+
+				var highlight = global.fushiLookupHighlightLayer;
+				if(highlight !== void && highlight !== null &&
+					!global.fushiLookupLayerOwnedByPrimary(highlight, primary))
+					global.fushiLookupRehomeLayerToPrimary(highlight, primary);
+
+				var card = global.fushiLookupCard;
+				if(card === void || card === null || !isvalid card)
+				{
+					// carrier 已被引擎侧销毁，等不回来。就地恢复不变式，让
+					// fushiLookupCardVisible() 与本函数对同一状态给出同一答案；
+					// 这一击随后走正常收卡路径，而不是被静默吃掉。
+					global.fushiLookupCard = void;
+					global.fushiLookupCardSeq = 0;
+					global.fushiLookupCardEntry = void;
+					return true;
+				}
+				if(!global.fushiLookupLayerOwnedByPrimary(card, primary) &&
+					!global.fushiLookupRehomeLayerToPrimary(card, primary))
+				{
+					if(global.fushiLookupPrimaryRacedSince(primary)) return false;
+					// 迁移永久失败：与 Reconcile 同一处置，只换视觉 carrier，
+					// route/submit 账本仍由真实句界管理。
+					global.fushiLookupCard = void;
+					global.fushiLookupCardSeq = 0;
+					global.fushiLookupCardEntry = void;
+					global.fushiLookupRetireDetachedLayer(card);
+					return true;
+				}
+				try
+				{
+					// KAG transition 可暂时隐藏子层。已应用且未进入截图 suppress
+					// 的同一张卡应在 stable=true 后恢复，不重建 WebView/route。
+					if(global.fushiLookupCardSeq != 0 &&
+						!global.fushiLookupCaptureSuppressed && !card.visible)
+					{
+						card.visible = true;
+						card.update();
+					}
+				}
+				catch(e)
+				{
+					// carrier 已经挂在 current primary 下了；恢复 visible 失败是局部
+					// 视觉故障，不是「再等一次就会好」。报 false 会让每一次左键都被吞。
+					global.fushiLookupFault();
+				}
+				return true;
+			};
+
+			// 只由完整 candidate 确认的换句 leaf 调用。此时才可在迁移失败后
+			// 退休坏 Layer；这个 helper 不得出现在 stable/animation 或输入预检路径。
+			global.fushiLookupReconcileVisualParents = function()
+			{
+				var primary = void;
+				try { primary = global.kag.primaryLayer; }
+				catch(e) { return; }
+				if(primary === void || primary === null || !isvalid primary) return;
+
+				var highlight = global.fushiLookupHighlightLayer;
+				if(highlight !== void && highlight !== null &&
+					!global.fushiLookupLayerOwnedByPrimary(highlight, primary) &&
+					!global.fushiLookupRehomeLayerToPrimary(highlight, primary))
+				{
+					global.fushiLookupHighlightLayer = void;
+					global.fushiLookupHighlightRect = void;
+					global.fushiLookupPendingHighlightEraseRect = void;
+					global.fushiLookupRetireDetachedLayer(highlight);
+				}
+
+				var card = global.fushiLookupCard;
+				if(card !== void && card !== null &&
+					!global.fushiLookupLayerOwnedByPrimary(card, primary) &&
+					!global.fushiLookupRehomeLayerToPrimary(card, primary))
+				{
+					// 当前 carrier 已坏才摘引用；route/submit 账本仍由真实句界管理。
+					// 下一笔同 route full frame 可在 current primary 下重建 carrier。
+					global.fushiLookupCard = void;
+					global.fushiLookupCardSeq = 0;
+					global.fushiLookupCardEntry = void;
+					global.fushiLookupRetireDetachedLayer(card);
+				}
+			};
+
 			// 高亮层同样延迟到第一次真要高亮时才建。它是全视口的，但 hitThreshold=256 是
 			// 引擎里"永不命中"这个明确取值——与卡片依赖的 alpha 穿透不是一回事，不会把
 			// 输入吃掉。
@@ -1626,6 +1838,16 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			{
 				var primary = global.kag.primaryLayer;
 				var layer = global.fushiLookupHighlightLayer;
+				if(layer !== void && layer !== null &&
+					!global.fushiLookupLayerOwnedByPrimary(layer, primary) &&
+					!global.fushiLookupRehomeLayerToPrimary(layer, primary))
+				{
+					global.fushiLookupHighlightLayer = void;
+					global.fushiLookupHighlightRect = void;
+					global.fushiLookupPendingHighlightEraseRect = void;
+					global.fushiLookupRetireDetachedLayer(layer);
+					layer = void;
+				}
 				if(layer === void || !isvalid layer)
 				{
 					// 🔴 必须挂在 **primary 之下**，不是它的兄弟。
@@ -1738,6 +1960,20 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				global.fushiLookupHighlightRect = void;
 			};
 
+			// 只推进 submit fence/notify，不碰任何 Layer。资源切换时调用方必须先摘掉
+			// detached 对象的全局引用，再走这里；这样 notify 或 setter 重入都看不到旧层。
+			global.fushiLookupAdvanceDismissFence = function()
+			{
+				var submitSeq = global.fushiLookupSubmitSeq;
+				if(submitSeq > global.fushiLookupDismissedSubmitSeq)
+				{
+					global.fushiLookupDismissedSubmitSeq = submitSeq;
+					global.fushiLookupNotify++;
+					return true;
+				}
+				return false;
+			};
+
 			// 收起 = 层不可见。不可见层在引擎里既不绘制也不参与命中，这是引擎最基本的语义，
 			// 不像 alpha 穿透那样需要额外验证。层留着复用（下一次查词多半尺寸相近），只是
 			// 绝不会停在"可见且可命中"的状态上。
@@ -1762,6 +1998,41 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				global.fushiLookupClearHover();
 			};
 
+			// 资源/动画脚本恢复运行时只补采集桥，绝不能碰 lookup Layer、submit fence 或
+			// 当前 route。KAG stable->run 还覆盖 wait/movie/动画恢复，并不是句子边界；把这三
+			// 类状态绑在一起会在人物动画变化时重建 WebView 选区。
+			global.fushiLookupRefreshCaptureBridges = function()
+			{
+				global.fushiLookupInstallGetRenderBridge();
+				global.fushiLookupSweepMsgwinRenders();
+				global.fushiLookupAuditWrappers(true);
+			};
+
+			// 只有完整文本 candidate 证明已有逻辑槽的非空句子发生变化后才允许走这里：先退休脱离
+			// current primary 的视觉层，再补当前私有 msgwin plugin 的未来 getRender 入口并
+			// 扫最多 16 个既有 renderer。动画/资源帧只走上面的 bridge-only helper。
+			global.fushiLookupRefreshSentenceSurface = function()
+			{
+				// 重入早退必须**保留请求**——pending 位已经在 FlushVisualWork 里被清掉，
+				// 这里直接 return 会把这次换句的 surface 刷新永久丢掉，而
+				// FlushVisualWork 末尾重读 pending 位后还会报「已排空」。兄弟路径
+				// VisualFlushActive 的重入语义正是「保留 pending + 返回未排空」，这里
+				// 必须守同一条不变式：把请求放回去，让外层 flush 结束后重新排。
+				if(global.fushiLookupSentenceRefreshActive)
+				{
+					global.fushiLookupPendingSentenceRefresh = true;
+					return;
+				}
+				global.fushiLookupSentenceRefreshActive = true;
+				try
+				{
+					global.fushiLookupReconcileVisualParents();
+					global.fushiLookupRefreshCaptureBridges();
+				}
+				catch(e) { global.fushiLookupFault(); }
+				global.fushiLookupSentenceRefreshActive = false;
+			};
+
 			// Visual work is committed only after the registry/slot transaction has
 			// returned. Clear the flag before touching a Layer so reentrant rendering
 			// can queue another leaf without recursion or losing that later request.
@@ -1770,15 +2041,23 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				if(global.fushiLookupVisualFlushActive) return false;
 				global.fushiLookupVisualFlushActive = true;
 				var dismiss = global.fushiLookupPendingVisualDismiss;
+				var sentenceRefresh = global.fushiLookupPendingSentenceRefresh;
+				var submitFence = global.fushiLookupPendingSubmitFence;
 				global.fushiLookupPendingVisualDismiss = false;
+				global.fushiLookupPendingSentenceRefresh = false;
+				global.fushiLookupPendingSubmitFence = false;
 				try
 				{
+					if(submitFence) global.fushiLookupAdvanceDismissFence();
 					if(dismiss) global.fushiLookupDismissNow();
+					if(sentenceRefresh) global.fushiLookupRefreshSentenceSurface();
 					global.fushiLookupFlushPendingHighlightErase();
 				}
 				catch(e) { global.fushiLookupFault(); }
 				global.fushiLookupVisualFlushActive = false;
 				return !global.fushiLookupPendingVisualDismiss &&
+					!global.fushiLookupPendingSentenceRefresh &&
+					!global.fushiLookupPendingSubmitFence &&
 					global.fushiLookupPendingHighlightEraseRect === void;
 			};
 
@@ -1822,9 +2101,10 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				}
 			};
 
-			// 只给人工 Esc 使用；generic dismiss 还承担 host 收卡/禁用/失败回滚，不能让
-			// 那些路径推进人工取消 fence 或制造 notify 回环。没有可见卡时仍取消在途 submit，
-			// 但返回 false，让游戏自己的 Esc 行为继续执行。
+			// 给人工 Esc 与明确的卡外点击使用；generic dismiss 还承担 host 收卡/禁用/
+			// 失败回滚，不能让那些路径推进用户取消 fence 或制造 notify 回环。逐句/换层退休
+			// 则直接走 AdvanceDismissFence。没有可见卡时仍取消在途 submit，但返回 false，
+			// 让游戏自己的 Esc 行为继续执行。
 			global.fushiLookupCancelCurrent = function()
 			{
 				var hadVisibleCard = false;
@@ -1835,13 +2115,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						(card !== void && isvalid card && card.visible);
 				}
 				catch(e) {}
-				var submitSeq = global.fushiLookupSubmitSeq;
-				if(submitSeq > global.fushiLookupDismissedSubmitSeq)
-				{
-					// fence 先提交、notify 最后唤醒 DLL；这与 SubmitSeq 的 seqlock 发布顺序一致。
-					global.fushiLookupDismissedSubmitSeq = submitSeq;
-					global.fushiLookupNotify++;
-				}
+				global.fushiLookupAdvanceDismissFence();
 				global.fushiLookupDismiss();
 				return hadVisibleCard;
 			};
@@ -1853,7 +2127,20 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				try
 				{
 					if(cardW <= 0 || cardH <= 0) return;
+					var primary = global.kag.primaryLayer;
 					var card = global.fushiLookupCard;
+					if(card !== void && card !== null &&
+						!global.fushiLookupLayerOwnedByPrimary(card, primary) &&
+						!global.fushiLookupRehomeLayerToPrimary(card, primary))
+					{
+						// primary/fore-back 变化不是句界。迁移失败只换掉视觉 carrier；当前
+						// full frame 继续在新 primary 下重建，route 与 submit fence 原样保留。
+						global.fushiLookupCard = void;
+						global.fushiLookupCardSeq = 0;
+						global.fushiLookupCardEntry = void;
+						global.fushiLookupRetireDetachedLayer(card);
+						card = void;
+					}
 					if(card === void || !isvalid card)
 					{
 						// 先试带鼠标事件的子类；建不出来就退回普通 Layer。
@@ -1873,12 +2160,11 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						// 个坐标系里。高亮层此前踩的是同一个坑（缩放后偏移）。
 						if(global.fushiLookupCardClassOk)
 						{
-							card = new FushiLookupCardLayer(global.kag,
-								global.kag.primaryLayer);
+							card = new FushiLookupCardLayer(global.kag, primary);
 						}
 						else
 						{
-							card = new Layer(global.kag, global.kag.primaryLayer);
+							card = new Layer(global.kag, primary);
 							global.fushiLookupMark(32);
 						}
 						global.kag.add(card);
@@ -1941,6 +2227,19 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					}
 					var card = global.fushiLookupCard;
 					if(card === void || !isvalid card) return;
+					var primary = global.kag.primaryLayer;
+					if(!global.fushiLookupLayerOwnedByPrimary(card, primary) &&
+						!global.fushiLookupRehomeLayerToPrimary(card, primary))
+					{
+						// Prepare 与 Apply 之间又换了 primary：这是完整帧提交边界，
+						// 只退休写到旧树的 carrier，不改 route/fence。下一张 full frame
+						// 会在 current primary 下重建，不得留下仍带旧 CardSeq 的半写层。
+						global.fushiLookupCard = void;
+						global.fushiLookupCardSeq = 0;
+						global.fushiLookupCardEntry = void;
+						global.fushiLookupRetireDetachedLayer(card);
+						return;
+					}
 					if(card.imageWidth != cardW || card.imageHeight != cardH ||
 						card.left != anchorX || card.top != anchorY) return;
 					// 完整结构帧就是截图后的恢复提交；先解除抑制，再显示卡片并重画高亮。
@@ -2026,8 +2325,19 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				if(y > 32767) y = 32767;
 				if(wheel < -2048) wheel = -2048;
 				if(wheel > 2047) wheel = 2047;
+				// LookupInputSlot.keys 直接传给 WebView2 的 virtualKeys：1 是左键，
+				// Shift 是 4。旧实现把 Shift 写成 1，导致 hover/leave 被误报成拖拽；
+				// 而 fushiLookupShiftDown 没有 key-up hook，还会在松键后永久粘住。
 				var keys = 0;
-				if(global.fushiLookupShiftDown) keys = keys | 1;
+				try
+				{
+					if(System.getKeyState(0x10)) keys = keys | 4;
+				}
+				catch(e) {}
+				if(kind == 1) keys = keys | 1;
+				// WebView2 明确要求 LEAVE 使用 NONE；kind=5 是 host 控制事件，也不携带
+				// 当前键态，避免延迟消费时污染另一个 route。
+				if(kind == 4 || kind == 5) keys = 0;
 				queue.add((1 << 52) | ((y + 32768) << 36) | ((x + 32768) << 20) |
 					((wheel + 2048) << 8) | (keys << 4) | kind);
 				if(queue.count > 64) queue.erase(0);
@@ -2487,6 +2797,10 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						}
 						// Hide the previous card only after the new slot/entry snapshot is fully
 						// committed. A stale outer Capture must not hide a newer reentrant card.
+						if(slotAdoption !== void && slotAdoption.advanced)
+							global.fushiLookupPendingSubmitFence = true;
+						if(slotAdoption !== void && slotAdoption.advanced)
+							global.fushiLookupPendingSentenceRefresh = true;
 						if(slotAdoption !== void && slotAdoption.advanced)
 							global.fushiLookupPendingVisualDismiss = true;
 					}
@@ -3042,12 +3356,13 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						global.fushiLookupMark(1);
 						continue;
 					}
-					// 有声角色的口型/表情会把 drawCh 的短命 visibleHost 设 hidden，但 KAG
-					// current 消息对象仍是同一句的稳定身份。严格身份相等时继续使用消息层坐标；
-					// 身份不可得才回退 visibleHost，明确不一致则无条件拒绝旧 entry。
-					var currentIdentityState = global.fushiLookupCurrentIdentityState(entry);
-					if(currentIdentityState < 0 ||
-						(currentIdentityState == 0 &&
+					// 人物口型/表情帧既会隐藏短命 visibleHost，也会让 kag.current 短暂
+					// void/换壳；二者都不是句界。已识别 slot 只按完整 candidate 提交的
+					// line/generation/activeEntry 判存活；无 slot 的经典 KAG3 才回退可见层。
+					var activeSentenceState =
+						global.fushiLookupActiveSentenceState(entry);
+					if(activeSentenceState < 0 ||
+						(activeSentenceState == 0 &&
 							!global.fushiLookupEntryVisible(entry)))
 					{
 						if(traceOn && traced < 8)
@@ -3092,6 +3407,19 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				return false;
 			};
 
+			global.fushiLookupCardVisible = function()
+			{
+				try
+				{
+					var card = global.fushiLookupCard;
+					return global.fushiLookupCardSeq != 0 ||
+						(card !== void && card !== null && isvalid card && card.visible);
+				}
+				catch(e) { return global.fushiLookupCardSeq != 0; }
+			};
+
+)TJS" LR"TJS(
+
 			// 卡片子层命中时由 Layer 的 down/up 处理；这里判定 primary 路径是否仍落在
 			// 卡片矩形内，防止同一次点击意外继续推进剧情。坐标使用已由滚轮真机证明的
 			// primary 光标坐标减卡片位置。
@@ -3119,30 +3447,60 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				// ——我们注进去的传感器把别人的游戏搞挂了。C++ 那侧的泵早就守着这条边界
 				// （KiriKiriLookupPumpCallback 的 catch(...)），TJS 这侧必须同样守。
 				// 兜底一律返回 false = **不消费**这次事件：查词坏掉是小事，把玩家的点击
-				// 吞掉、剧情推不动是大事。
+				// 吞掉、剧情推不动是大事。异常路径的状态按定义是未知的，在未知状态上
+				// fail-closed 只会把「这一击不确定」放大成「每一击都被吃掉」。
+				var popupTransaction = false;
 				try
 				{
-					// 低频兜底：getRender 是未来实例的主入口；人工点击时再有界复核
-					// renders[]，覆盖游戏直接替换 textRender 而未经过 getRender 的路径。
-					global.fushiLookupInstallGetRenderBridge();
-					global.fushiLookupSweepMsgwinRenders();
-					global.fushiLookupAuditWrappers(true);
-					if(global.fushiLookupOverCard())
+					// 在刷新可能退休一张脱离 current primary 的旧卡之前冻结 popup 归属。
+					// 该点击既然始于可见查词事务，就不能因为刷新把 CardSeq 清零而落回剧情。
+					popupTransaction = global.fushiLookupCardVisible();
+					// primary 的 fore/back 身份变化只迁移 carrier，随后补 getRender/既有
+					// MsgwinRender；两步都不改变 route/fence，动画期间点击不会重建选区。
+					// 该 helper 只在 primary 竞态时报 false，其余不可用一律先把 card 身份
+					// 收干净——因此下面这个吞事件分支不可能连续成立。
+					var carrierSettled = global.fushiLookupTryRehomeVisualParents();
+					global.fushiLookupRefreshCaptureBridges();
+					// primary 在这一瞬被换掉时，这一击仍属于已显示 popup：只吞事件并
+					// 等下一次输入重试，不发 kind5、不 Cancel，否则用户点选区反而会把
+					// 同一 WebView route 关掉。
+					if(popupTransaction && !carrierSettled) return true;
+					if(global.fushiLookupCardVisible() && global.fushiLookupOverCard())
 					{
-						var card = global.fushiLookupCard;
-						var primary = global.kag.primaryLayer;
-						var localX = primary.cursorX - card.left;
-						var localY = primary.cursorY - card.top;
-						// WebView2 需要完整的一次指针序列。显式 move 还可在鼠标未先移动时
-						// 同步 hover target；QueueInput 会合并紧邻的重复 move。
-						global.fushiLookupQueueInput(0, localX, localY, 0);
-						global.fushiLookupQueueInput(1, localX, localY, 0);
-						global.fushiLookupQueueInput(2, localX, localY, 0);
+						try
+						{
+							var card = global.fushiLookupCard;
+							var primary = global.kag.primaryLayer;
+							var localX = primary.cursorX - card.left;
+							var localY = primary.cursorY - card.top;
+							// WebView2 需要完整的一次指针序列。显式 move 还可在鼠标未先移动时
+							// 同步 hover target；QueueInput 会合并紧邻的重复 move。
+							global.fushiLookupQueueInput(0, localX, localY, 0);
+							global.fushiLookupQueueInput(1, localX, localY, 0);
+							global.fushiLookupQueueInput(2, localX, localY, 0);
+						}
+						catch(e) { global.fushiLookupFault(); }
+						return true;
+					}
+					if(popupTransaction || global.fushiLookupCardVisible())
+					{
+						// KAG 的 leftClickHook 是 onPrimaryClick 的消费闸：true 会阻止
+						// conductor.trigger('click')。先把 direct WebView route 的控制事件
+						// 排进同一输入环，再本地立即隐藏并推进 submit fence；因此卡片外
+						// 空白处关闭不会把这一击继续交给下一句。
+						try { global.fushiLookupQueueInput(5, 0, 0, 0); }
+						catch(e) { global.fushiLookupFault(); }
+						try { global.fushiLookupCancelCurrent(); }
+						catch(e) { global.fushiLookupFault(); }
 						return true;
 					}
 					return global.fushiLookupProbe(true);
 				}
-				catch(e) { global.fushiLookupFault(); return false; }
+				catch(e)
+				{
+					global.fushiLookupFault();
+					return false;
+				}
 			};
 			global.fushiLookupMouseMoveHook = function(x, y)
 			{
@@ -4099,6 +4457,29 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				global.fushiLookupSweepMsgwinRenders();
 				installStage = 37;
 			}
+			// KAG stable=false(run) 在后续脚本之前，只适合补采集桥；
+			// stable=true 才是 transition/动画完成后修复新 primary 归属的时机。
+			// 两个边沿都只允许 attempt-only rehome，严禁推进 fence、关卡或
+			// 退休 carrier。真正的 lookup surface 生命周期只由完整
+			// candidate 的 slotAdoption.advanced 推进。
+			installStage = 38;
+			if(typeof global.kag.addPlugin == "Object")
+			{
+				global.fushiLookupBridgePlugin = %[
+					onStableStateChanged: function(stable)
+					{
+						try
+						{
+							global.fushiLookupTryRehomeVisualParents();
+							if(!stable) global.fushiLookupRefreshCaptureBridges();
+						}
+						catch(e) { global.fushiLookupFault(); }
+					}
+				];
+				try { global.kag.addPlugin(global.fushiLookupBridgePlugin); }
+				catch(e) { global.fushiLookupFault(); }
+			}
+			installStage = 39;
 
 )TJS" LR"TJS(
 
@@ -4248,7 +4629,7 @@ uint32_t g_lookup_retry_count = 0;
 uint64_t g_lookup_hit_seq = 0;
 uint64_t g_lookup_submit_hit_seq = 0;
 // 游戏侧 Esc 取消 submit 的单调 fence。它不复用 generic hide：收卡/禁用/失败回滚
-// 都不应取消未来或在途的用户查询；只有 fushiLookupCancelCurrent 会推进它。
+// 都不应取消未来或在途的用户查询；只有显式用户取消，或句子/表面世代退休路径会推进它。
 uint64_t g_lookup_dismissed_submit_seq = 0;
 uint64_t g_lookup_processed_submit_seq = 0;
 uint64_t g_lookup_submit_retry_seq = 0;

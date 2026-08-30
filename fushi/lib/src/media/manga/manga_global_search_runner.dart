@@ -12,6 +12,7 @@ library;
 
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
@@ -96,11 +97,15 @@ class MangaGlobalSearchRunner {
     required void Function() onRunUpdated,
     int maxConcurrent = 6,
   }) {
-    return runBoundedTasks(
-      runs,
-      maxConcurrent: maxConcurrent,
-      task: (MangaSourceSearchRun run) =>
-          _runOne(run, query, isCancelled, onRunUpdated),
+    // 抑制解题页：6 路扇出里被 Cloudflare 拦下的源不该无操作弹全屏 WebView，
+    // 按 [MangaSearchRunStatus.cloudflare] 标成徽标，用户点进源页再交互解题。
+    return AidokuCloudflareGate.runSuppressed(
+      () => runBoundedTasks(
+        runs,
+        maxConcurrent: maxConcurrent,
+        task: (MangaSourceSearchRun run) =>
+            _runOne(run, query, isCancelled, onRunUpdated),
+      ),
     );
   }
 
@@ -166,12 +171,11 @@ class MangaGlobalSearchRunner {
     if (!isCancelled()) onRunUpdated();
   }
 
-  /// Cloudflare 保护判型（Aidoku 结构化错误码 + 文案兜底）。
+  /// Cloudflare 保护判型（Aidoku 结构化错误码 + 文案兜底，兜非 Aidoku 来源）。
   static bool isCloudflareError(Object error) {
     if (error is AidokuRuntimeException) {
-      return error.code == 'CLOUDFLARE_CHALLENGE';
+      return error.code == kAidokuCloudflareChallengeCode;
     }
-    final String text = '$error';
-    return text.contains('Cloudflare') || text.contains('CF challenge');
+    return '$error'.contains('Cloudflare');
   }
 }

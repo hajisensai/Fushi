@@ -120,6 +120,13 @@ class VideoYearFilter {
 /// 看完状态筛选档位。
 enum VideoWatchStatusFilter { all, unwatched, watching, completed }
 
+/// 系列归属筛选档位（「全部视频」平铺视图）。
+///
+/// 「全部视频」逐条平铺整库，系列的每一集都在里面；用户要的是「只看还没归进
+/// 系列的散片」。这是条目在**系列视图里的折叠形态**这一维度上的筛选，与刮削
+/// 资格无关（BUG-1839：系列与全部视频的区别只是折叠方式）。
+enum VideoSeriesFilter { all, inSeries, standalone }
+
 /// A series member's playback facts in the collection's stable episode order.
 class VideoSeriesPlaybackState {
   const VideoSeriesPlaybackState({
@@ -221,6 +228,25 @@ bool matchesVideoWatchStatus({
       return !completed && lastPositionMs > 0;
     case VideoWatchStatusFilter.unwatched:
       return !completed && lastPositionMs <= 0;
+  }
+}
+
+/// 条目级系列归属判定（本地即筛）。
+///
+/// [inSeries] = 该条目在系列视图里会被折进一张合集卡（有主合集归属、且那个合集
+/// 真的存在）。归属指向已删除合集的孤儿条目在系列页本来就是散卡，这里同样按
+/// 「不在系列里」算——判据与 `_groupVideos` 的折叠判据同源，不许分叉。
+bool matchesVideoSeriesFilter({
+  required VideoSeriesFilter filter,
+  required bool inSeries,
+}) {
+  switch (filter) {
+    case VideoSeriesFilter.all:
+      return true;
+    case VideoSeriesFilter.inSeries:
+      return inSeries;
+    case VideoSeriesFilter.standalone:
+      return !inSeries;
   }
 }
 

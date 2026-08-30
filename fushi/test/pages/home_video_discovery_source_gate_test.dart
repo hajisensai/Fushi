@@ -157,12 +157,6 @@ class _DiscoveryGateAppModel extends AppModel {
 
   // ── 查词页最小桩：HomePage 用 IndexedStack 承载各 tab，查词 tab 即便不在前台
   // 也会被构建，缺这些桩会在首帧炸（与 home_hidden_tab_select_behavior_test 同构）。
-  @override
-  bool get desktopClipboardEnabled => false;
-
-  @override
-  DesktopClipboardWindowMode get desktopClipboardWindowMode =>
-      DesktopClipboardWindowMode.normal;
 
   @override
   List<DictionarySearchResult> get dictionaryHistory =>

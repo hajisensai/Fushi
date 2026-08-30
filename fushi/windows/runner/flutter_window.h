@@ -82,21 +82,8 @@ class FlutterWindow : public Win32Window {
   // Wires the floating_lyric MethodChannel to floating_lyric_window_.
   void RegisterFloatingLyricChannel();
 
-  // The transparent clipboard text window: a SECOND FloatingLyricWindow instance
-  // put in text-only mode (SetTextOnly(true)) — no transport / lock / close
-  // buttons, no resize grip, just draggable + tappable text over a per-pixel
-  // transparent background. Independent of the audiobook lyric strip so both can
-  // be shown at once. Tap lookup routes back over "lookupText" into the in-app
-  // dictionary overlay, exactly like the lyric strip.
-  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
-      clipboard_text_channel_;
-  std::unique_ptr<FloatingLyricWindow> clipboard_text_window_;
-
-  // Wires the clipboard_text MethodChannel to clipboard_text_window_.
-  void RegisterClipboardTextChannel();
-
-  // Dedicated galgame Hook text box: a THIRD FloatingLyricWindow instance in
-  // rich text-only mode. It must never contend with the clipboard destination.
+  // Dedicated galgame Hook text box: a SECOND FloatingLyricWindow instance in
+  // rich text-only mode, independent of the audiobook lyric strip.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       gal_hook_text_channel_;
   std::unique_ptr<FloatingLyricWindow> gal_hook_text_window_;
@@ -110,20 +97,10 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<GlobalLookupWindow> global_lookup_window_;
   void RegisterGlobalLookupChannel();
 
-  // spec 2026-07-10: the persistent clipboard-lookup panel — a SECOND
-  // GlobalLookupWindow instance (no dismiss hooks, own WebView2 user-data
-  // folder) driven by its own channel. See global_lookup_window.h.
-  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
-      clipboard_panel_channel_;
-  std::unique_ptr<GlobalLookupWindow> clipboard_panel_window_;
-  void RegisterClipboardPanelChannel();
-
-  // v14 游戏内查词：**第三个** GlobalLookupWindow 实例，专门给 KiriKiri 游戏内那张卡片
-  // 出像素。为什么不复用前两个：
-  //   * global_lookup_window_ 是会真的显示在屏幕上的浮窗，借它取帧等于把它的显隐状态
-  //     和游戏内卡片的生命周期绑死；
-  //   * clipboard_panel_window_ 明确 SetCompositionMode(false)，而 SendMouseInput 只有
-  //     composition 实例才有——游戏内卡片的交互全靠它。
+  // v14 游戏内查词：**第二个** GlobalLookupWindow 实例，专门给 KiriKiri 游戏内那张卡片
+  // 出像素。为什么不复用 global_lookup_window_：它是会真的显示在屏幕上的浮窗，借它
+  // 取帧等于把它的显隐状态和游戏内卡片的生命周期绑死；且 SendMouseInput 只有
+  // composition 实例才有——游戏内卡片的交互全靠它。
   // 本实例**永远离屏**（只 PrewarmWebView，从不 ShowAt），只当渲染器用。
   std::unique_ptr<GlobalLookupWindow> gal_lookup_card_window_;
   // 懒建：只有用户真开启游戏内查词才付 WebView2 的启动代价。

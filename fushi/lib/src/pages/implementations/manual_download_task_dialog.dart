@@ -18,18 +18,18 @@ import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.da
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart' show MediaSourceRow;
 
-/// 「管线 + 后端身份」的一次性解析结果。两者要么都有（可以开表单），要么就是
+/// 「管线 + 后端落点」的一次性解析结果。两者要么都有（可以开表单），要么就是
 /// 后端没配好——把它们收成一个值，调用方的重试路径才不用把三个变量各自搬一遍。
 class _ManualDownloadBackend {
-  const _ManualDownloadBackend({this.pipeline, this.identity, this.error});
+  const _ManualDownloadBackend({this.pipeline, this.target, this.error});
 
   final VideoDownloadPipelineService? pipeline;
-  final VideoDownloadBackendIdentity? identity;
+  final VideoDownloadBackendTarget? target;
 
   /// 身份解析抛出的原因（后端配了但连不上时透传给用户）。
   final Object? error;
 
-  bool get usable => pipeline != null && identity != null;
+  bool get usable => pipeline != null && target != null;
 }
 
 Future<_ManualDownloadBackend> _resolveBackend(AppModel appModel) async {
@@ -39,7 +39,7 @@ Future<_ManualDownloadBackend> _resolveBackend(AppModel appModel) async {
   try {
     return _ManualDownloadBackend(
       pipeline: pipeline,
-      identity: await appModel.currentVideoDownloadBackendIdentity(),
+      target: await appModel.currentVideoDownloadBackendTarget(),
     );
   } on Object catch (error) {
     return _ManualDownloadBackend(pipeline: pipeline, error: error);
@@ -78,7 +78,7 @@ Future<void> showManualDownloadTaskDialog({
     }
   }
   final VideoDownloadPipelineService pipeline = resolved.pipeline!;
-  final VideoDownloadBackendIdentity identity = resolved.identity!;
+  final VideoDownloadBackendTarget target = resolved.target!;
   final List<MediaSourceRow> sources =
       await appModel.getManagedVideoDownloadSources();
   if (!context.mounted) return;
@@ -86,7 +86,7 @@ Future<void> showManualDownloadTaskDialog({
     context: context,
     builder: (BuildContext _) => ManualDownloadTaskDialog(
       pipeline: pipeline,
-      identity: identity,
+      target: target,
       sources: sources,
       defaultSourceId: appModel.prefsRepo.videoDownloadTargetSourceId,
     ),
@@ -100,14 +100,14 @@ Future<void> showManualDownloadTaskDialog({
 class ManualDownloadTaskDialog extends StatefulWidget {
   const ManualDownloadTaskDialog({
     required this.pipeline,
-    required this.identity,
+    required this.target,
     required this.sources,
     required this.defaultSourceId,
     super.key,
   });
 
   final VideoDownloadPipelineService pipeline;
-  final VideoDownloadBackendIdentity identity;
+  final VideoDownloadBackendTarget target;
   final List<MediaSourceRow> sources;
   final int? defaultSourceId;
 
@@ -227,7 +227,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
       await widget.pipeline.enqueueManual(
         VideoDownloadManualEnqueueRequest(
           title: _titleController.text.trim(),
-          backendIdentity: widget.identity,
+          backendTarget: widget.target,
           magnetUri: _metainfo == null ? _magnetController.text.trim() : null,
           metainfo: _metainfo,
           discoveryKind: _discoveryKind,

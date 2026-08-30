@@ -541,6 +541,67 @@ abstract class BaseAnkiRepository {
     return fields;
   }
 
+  /// BUG-1900：只保留**属于 [noteType] 的字段**。
+  ///
+  /// AnkiConnect 按字段**名**匹配，不认识的名字被服务端静默丢弃。而
+  /// [fieldMappingsAfterFetch] 对非 Lapis 笔记类型直接 `return current.fieldMappings`
+  /// ——换了笔记类型，映射里的字段名可能一个都不属于新类型。此前这些名字原样送出，
+  /// Anki 收到一张全空的卡，`fields_check()` 判首字段空后返回
+  /// `cannot create note because it is empty`，用户既看不出是选错了笔记类型，也不知道
+  /// 去哪儿改（用户 2026-08-28 报告）。
+  ///
+  /// AnkiDroid 后端按 `noteType.fields` 的**位置**取值，天然免疫；这里把同一条纪律
+  /// 补给 AnkiConnect。
+  ///
+  /// [noteType] 的字段清单为空时**原样返回**：那说明我们手上没有可信的字段真相
+  /// （设置陈旧 / 从未 fetch 过），此时猜不如不猜，交由服务端裁决。
+  @protected
+  Map<String, String> fieldsForNoteType(
+    AnkiNoteType noteType,
+    Map<String, String> rendered,
+  ) {
+    if (noteType.fields.isEmpty) return rendered;
+    final Set<String> known = noteType.fields.toSet();
+    return <String, String>{
+      for (final MapEntry<String, String> e in rendered.entries)
+        if (known.contains(e.key)) e.key: e.value,
+    };
+  }
+
+  /// BUG-1900：本地预检，把服务端那句不可操作的英文原文换成能照着做的分类错误。
+  ///
+  /// Anki 的 `fields_check()` **只看第一个字段**：空就拒收整张卡。返回非 null 即表示
+  /// 这张卡送出去必然失败，调用方应回滚媒体事务并把它当作失败结果返回。
+  ///
+  /// [rendered] 是渲染出的原始字段（映射键），[outgoing] 是 [fieldsForNoteType] 过滤后
+  /// 真正会送出的字段——两者的差别正是「配置的字段名不属于当前笔记类型」这一情形，
+  /// 需要与「字段确实没渲染出内容」区分开，否则用户拿到的建议是错的。
+  @protected
+  MineOutcome? preflightNoteFields(
+    AnkiNoteType noteType,
+    Map<String, String> rendered,
+    Map<String, String> outgoing,
+  ) {
+    if (noteType.fields.isEmpty) return null;
+    final String firstField = noteType.fields.first;
+    if ((outgoing[firstField] ?? '').trim().isNotEmpty) return null;
+
+    if (outgoing.isEmpty && rendered.isNotEmpty) {
+      return MineOutcome.failure(
+        'None of the configured field names exist on note type '
+        '"${noteType.name}" (configured: ${rendered.keys.join(", ")}; '
+        'available: ${noteType.fields.join(", ")}). Re-map the fields in Anki '
+        'settings, or use "Create Lapis deck".',
+        errorCode: AnkiErrorCode.fieldMappingMismatch,
+      );
+    }
+    return MineOutcome.failure(
+      'The first field "$firstField" of note type "${noteType.name}" is empty; '
+      'Anki refuses such a note. Map a field to it in Anki settings.',
+      errorCode: AnkiErrorCode.firstFieldEmpty,
+    );
+  }
+
   /// 用已备好的媒体引用把 [payload] + [context] 组装成最终渲染结果。
   ///
   /// 两 backend 的差异只在「媒体引用怎么准备」（AnkiConnect 远程上传后内联

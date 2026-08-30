@@ -25,14 +25,12 @@ part of 'update_checker.dart';
 ///
 /// 与 `video_shader_downloader.dart` 的 `_kGhProxyPrefixes`（BUG-319/271）同一范式——
 /// 那个只下载 raw 资源、不命中 API，故不受本限制影响。
+///
+/// 名单本身已搬到 `src/utils/net/github_mirrors.dart` 的 [kGitHubMirrorPrefixes]
+/// 作全仓唯一真相源（BUG-1875：Mihon 扩展仓库拉取也要同一份镜像）；part 契约禁止
+/// part 内 import，所以由 barrel 引入、这里只保留别名与既有的测试可见名。
 @visibleForTesting
-const List<String> updateCheckProxyPrefixes = <String>[
-  'https://ghfast.top/',
-  'https://gh-proxy.com/',
-  'https://ghproxy.net/',
-  'https://ghproxy.cc/',
-  'https://gh.llkk.cc/',
-];
+const List<String> updateCheckProxyPrefixes = kGitHubMirrorPrefixes;
 
 /// 官网 Cloudflare Worker 暴露的版本化 R2 下载入口。
 ///

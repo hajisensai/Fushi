@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
+import 'package:fushi/src/pages/implementations/dict_style_visual_editor.dart';
 import 'package:fushi/src/pages/implementations/dictionary_settings_dialog_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
@@ -537,6 +538,58 @@ void main() {
     final settingsSource =
         File('lib/src/settings/settings_schema_lookup.dart').readAsStringSync();
     expect(settingsSource, contains('DictCssEditorDialog('));
+  });
+
+  // 尺寸对齐 `LapisStyleEditorPage`（用户诉求：「和 lapis 的一样大」）。Lapis 是整页 +
+  // 内容区 maxWidth 1180、宽于 820 时左预览右控件（控件定宽 340）。这里断言的是
+  // **几何**而不是「某个 widget 在不在」：宽屏下两块必须真的并排、对话框真的撑到
+  // 1180 宽和 0.88 屏高，否则改回小尺寸也能骗过测试。
+  testWidgets('宽屏下词典样式编辑器取 Lapis 的尺寸与左右分栏', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1600, 1000);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      _buildApp(
+        appModel: _FakeCssAppModel(),
+        home: const DictCssEditorDialog(previewBuilder: _stubPreview),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 量 FushiModalSheetFrame 而不是 Dialog：Dialog 的 RenderBox 是整个 overlay 区，
+    // 恒等于屏幕大小，拿它量宽度会恒真（旧的 compact 用例就只断言了它没出屏）。
+    final Rect dialogRect = tester.getRect(find.byType(FushiModalSheetFrame));
+    expect(dialogRect.width, closeTo(1180, 1));
+    // 高度撑满到 FushiDialogFrame 允许的 0.88 屏高（旧实现写死 0.55 屏高且 clamp 480）。
+    expect(dialogRect.height, closeTo(1000 * 0.88, 1));
+
+    final Rect previewRect = tester.getRect(find.textContaining('PREVIEW_CSS:'));
+    final Rect controlsRect = tester.getRect(find.byType(DictStyleVisualEditor));
+    expect(controlsRect.left, greaterThan(previewRect.right),
+        reason: '宽屏应是左预览右控件，不是上下堆叠');
+    expect(controlsRect.width, closeTo(340, 1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('窄屏下词典样式编辑器仍是上下堆叠', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(700, 900);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      _buildApp(
+        appModel: _FakeCssAppModel(),
+        home: const DictCssEditorDialog(previewBuilder: _stubPreview),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Rect previewRect = tester.getRect(find.textContaining('PREVIEW_CSS:'));
+    final Rect controlsRect = tester.getRect(find.byType(DictStyleVisualEditor));
+    expect(controlsRect.top, greaterThanOrEqualTo(previewRect.bottom),
+        reason: '窄屏应回到上下堆叠');
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('dictionary CSS editor fits a compact mobile dialog', (

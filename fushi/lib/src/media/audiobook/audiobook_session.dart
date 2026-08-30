@@ -303,6 +303,23 @@ class AudiobookSession extends ChangeNotifier {
     await _enqueueLifecycle<void>(_stopInternal);
   }
 
+  /// 当前正在播的书如果在 [bookKeys] 里，就先停掉会话并**真等到句柄放掉**
+  /// （[stop] 内部 `await disposeAndRelease()`）；否则空操作。
+  ///
+  /// 删除条目 + 「同时删除本地文件」的必经前置：不先停止引用就销毁实体，Windows 上
+  /// 音频文件句柄还开着，`File.delete()` 直接 errno 32——用户看到「删除成功」，回头
+  /// 发现盘上一个文件没少。
+  ///
+  /// [bookKeys] 要按 [SessionBookInfo.bookKey] 的口径给：EPUB 有声书是 EPUB 的
+  /// bookKey，纯字幕书是 srt_books 的 uid（见 `AudiobookSessionLauncher`）。调用方
+  /// 两种都塞进来即可，多给的键不会误伤——只有当前正在播的那个才可能命中。
+  Future<void> stopIfPlayingAny(Iterable<String> bookKeys) async {
+    final String? playing = _book?.bookKey;
+    if (!isActive || playing == null || playing.isEmpty) return;
+    if (!bookKeys.contains(playing)) return;
+    await stop();
+  }
+
   Future<void> _stopInternal() async {
     final AudiobookPlayerController? controller = _controller;
     _reader = null;

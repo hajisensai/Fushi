@@ -316,15 +316,15 @@ void main() {
 
   test('⑦ 不许靠改焦点模型来解决（瞬态查词窗必须保持不可激活）', () {
     expect(
-      winHdr.contains('bool activatable_ = false;'),
-      isTrue,
-      reason: '让查词卡抢焦点确实能挡住滚轮（剪贴板面板就是这么做的），但那会让'
-          'galgame 失焦——很多 VN 一失焦就暂停/变暗。design §5 保证 3 不得放弃',
+      winHdr.contains('SetActivatable'),
+      isFalse,
+      reason: '让查词卡抢焦点确实能挡住滚轮，但那会让 galgame 失焦——很多 VN '
+          '一失焦就暂停/变暗。design §5 保证 3 不得放弃：不得再给窗口加可激活开关',
     );
     expect(
-      winSrc.contains('(activatable_ ? 0 : WS_EX_NOACTIVATE)'),
+      winSrc.contains('WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE |'),
       isTrue,
-      reason: '瞬态覆盖窗的 NOACTIVATE 不得被顺手拿掉',
+      reason: '瞬态覆盖窗的 NOACTIVATE 不得被顺手拿掉（OverlayCreateExStyle）',
     );
   });
 }

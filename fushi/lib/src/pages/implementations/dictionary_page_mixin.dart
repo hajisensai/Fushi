@@ -372,7 +372,10 @@ mixin DictionaryPageMixin {
       // （AnkiConnect 非空，AnkiDroid 恒 null = 优雅降级进不了第三态）。
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
-    return const MinePopupResult();
+    // BUG-1908/1915：重复是「卡已在 Anki 里」而不是「没有卡」，把这个确定事实带回
+    // 弹窗，否则 ✓ 被画成 ＋ 且 ↗ 入口消失（弹窗侧不许回查 Anki——TODO-448）。
+    // 判据只住在 .failed(outcome) 一处。
+    return MinePopupResult.failed(outcome);
   }
 
   /// TODO-270 D：覆盖「最新制的那张卡」（[noteId]）的字段——走 repo.updateMinedNote
@@ -404,7 +407,7 @@ mixin DictionaryPageMixin {
     if (described.success) {
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
-    return const MinePopupResult();
+    return MinePopupResult.failed(outcome);
   }
 
   /// Resolves and plays the audio for [expression] / [reading]. [popupState] is
@@ -922,7 +925,9 @@ mixin DictionaryPageMixin {
     // 弹窗时不进搜索占位态：父弹窗全程提供上下文，子层就绪即 markPendingReveal→
     // revealRendered 直接在顶层出现，无层级翻转（reveal 时序仍受 BUG-170 保护）。
     if (!controller.hasVisiblePopup) {
-      controller.beginSearchUi(rect);
+      // 传目标 entry：盖板态由「这条 entry 仍在栈内且仍 searching/待翻出」派生，
+      // 关栈路径清掉它就自动落幕，不再依赖某条成功路径记得调 endSearchUi。
+      controller.beginSearchUi(rect, entry);
     }
     setState(() {});
     late final DictionarySearchResult result;
