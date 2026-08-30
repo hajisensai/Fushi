@@ -186,8 +186,8 @@ class GalLookupInput {
 enum GalLookupAdmissionState {
   /// 还不知道：helper 还没起来、或 adapter 还没上报。
   ///
-  /// 🔴 **绝不能**当成「不支持」去把开关灰掉：每局游戏启动的头几百毫秒都停在这里，
-  /// 混淆两者等于每次启动都误报一次"本引擎不支持"。
+  /// 🔴 **绝不能**当成「不支持」：每局游戏启动的头几百毫秒都停在这里，混淆两者等于
+  /// 每次启动都误报一次"本引擎不支持"的原因文案。
   unknown(0),
 
   /// 命中的引擎 adapter 压根没做查词传感器。等新版本，不是 bug。
@@ -209,7 +209,8 @@ enum GalLookupAdmissionState {
   /// 与 `voice_hook_ipc.h::LookupAdmissionState` 逐值对应的线上值。
   final int wireValue;
 
-  /// 这个状态是否把本局的游戏内查词整个挡在门外（UI 据此置灰并给出原因）。
+  /// 这个状态是否把本局的游戏内查词整个挡在门外（UI 据此换副标题说明原因、并把
+  /// 「复制 exe 摘要」那一行显示出来；**开关本身不置灰**，理由见 settings_schema_game.dart）。
   ///
   /// 🔴 判据只有这一份，别在 UI 层各写一遍。尤其 [unknown] **不在其内**：每局游戏
   /// 启动的头几百毫秒都停在 unknown（helper 还没起来 / adapter 还没上报），把它算作

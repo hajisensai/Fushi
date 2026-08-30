@@ -346,11 +346,19 @@ std::vector<const fushi_voice_hook::VoiceClip*> CollectValidClipsLocked(
 //
 // ══ v19 准入兜底：游戏主 exe 的 SHA-256 ══════════════════════════════════════
 //
-// 为什么 host 必须自己算：Leaf/AQUAPLUS（白色相簿2）与 SGRE 两家 adapter 的 probe()
+// 为什么 host 还要自己算：Leaf/AQUAPLUS（白色相簿2）与 SGRE 两家 adapter 的 probe()
 // **本身就是精确 exe SHA-256 门**。用户的 exe 不在白名单里时这些 adapter 直接 probe
-// 失败、根本不参与汇总，也就没有任何人有机会去填 lookup_executable_sha256——而这类
-// 用户最终落到的 kLookupAdmissionEngineUnsupported 恰恰是「把自己的 exe 摘要报上来」
-// 唯一能推进事情的状态。注入侧填不了的洞，只能由 host 补。
+// 失败、根本不参与汇总——而这类用户最终落到的 kLookupAdmissionEngineUnsupported
+// 恰恰是「把自己的 exe 摘要报上来」唯一能推进事情的状态。
+//
+// 注入侧现在会填（hook/host_executable_digest.h 的共享槽：profile 解析本来就算过这个
+// 摘要，存进一个不属于任何 adapter 的槽，由汇总处在这一档读出来），所以常态下走不到
+// 这里 —— NeedsHostExeDigest 的第一句就是"注入侧已经填了就别算"。
+//
+// 但这条兜底不能删，它覆盖注入侧够不着的两种情形：hook 还没走到 profile 解析就发布了
+// 快照，以及 hook 侧读自己 exe 失败。反过来也成立：**游戏提权而 Fushi 没提权**时
+// OpenProcess 必然失败，host 这条算不出来，而 hook 跑在游戏进程里读自己的 exe 反而没
+// 问题——两条路各能覆盖对方的盲区，优先级由 NeedsHostExeDigest 一处定死。
 //
 // 三条纪律：
 //  1. **只在 EngineUnsupported / IdentityRejected 两个状态下算**。exe 动辄几十 MB，

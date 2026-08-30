@@ -203,10 +203,12 @@ class GalIngameLookupController {
       GalHookTextOverlayChannel.supportsCurrentPlatform &&
       GlobalLookupController.isSupported;
 
-  /// 当前会话的查词准入。UI 据此决定「游戏内查词」开关要不要置灰、副标题说什么。
+  /// 当前会话的查词准入。UI 据此决定「游戏内查词」开关的副标题说什么、以及那行
+  /// 「复制 exe 摘要」要不要出现。**开关本身不置灰**——它是全局偏好（用户意图），
+  /// 准入是当前这一局的能力，两者正交（理由写在 settings_schema_game.dart 的开关处）。
   ///
   /// 没有会话时恒为 [GalLookupAdmission.unknown]——**「还不知道」不是「不支持」**，
-  /// 拿它去灰开关会让每次启动的头几百毫秒都误报。
+  /// 拿它当"挡住"会让每次启动的头几百毫秒都误报一次原因文案。
   ValueListenable<GalLookupAdmission> get admission => _admission;
 
   /// runner 推上来的准入快照。只存，不解释：状态机在注入侧，这里做任何"补全"

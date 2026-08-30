@@ -11,12 +11,10 @@ enum class AdapterCapability : uint32_t {
   kText = 1u << 0,
   kResourceAudio = 1u << 1,
   kPcmAudio = 1u << 2,
-  // v19：本 adapter 带游戏内查词传感器。加这一位是为了让「本引擎没做查词」成为
-  // **可推导**的事实，而不是让 host 去猜：registry 看见命中的 adapter 没有这位，
-  // 就直接得出 kLookupAdmissionEngineUnsupported。没有它，12 个不带传感器的 adapter
-  // 就得各自写一行"我不支持"，而漏写的那个会静默退化成"不知道"——这正是特殊情况繁殖
-  // 的方式。声明能力，而不是逐个否认。
-  kIngameLookup = 1u << 3,
+  // 这里**没有** kIngameLookup 位，是刻意的：「本 adapter 带不带查词传感器」已经由
+  // lookupAdmission() 的默认实现表达了（不 override 就是 EngineUnsupported，见下）。
+  // 再加一位就是同一个事实的第二处声明，而 registry 的汇总从头到尾不读 capabilities()
+  // ——那一位会变成写了没人读、且能与 override 悄悄对不上的东西。
 };
 
 constexpr AdapterCapability operator|(AdapterCapability left,
@@ -49,9 +47,10 @@ class EngineAdapter {
 
   // v19：本 adapter 对「游戏内查词能不能用」的当前结论。
   //
-  // **默认实现就是正确答案**——不带 kIngameLookup 能力的 adapter 一个字都不用写，
-  // 它们天然是 EngineUnsupported。只有真的带传感器的那几家才 override，去区分
-  // 「身份不符 / 身份通过但还没装上 / 已装上」。
+  // **默认实现就是正确答案**——没做查词传感器的 adapter 一个字都不用写，它们天然是
+  // EngineUnsupported。只有真的带传感器的那几家才 override，去区分「身份不符 /
+  // 身份通过但还没装上 / 已装上」。这条"不 override 即不支持"就是该事实的唯一声明处，
+  // 别再往 capabilities() 里加一位平行表达（见上）。
   //
   // 纯查询、不得有副作用：registry 每轮 Poll 都会调它，在这里装 hook 或算 SHA-256
   // 就等于把安装时序绑死在轮询节奏上。哈希这类昂贵结果必须由 adapter 自己缓存

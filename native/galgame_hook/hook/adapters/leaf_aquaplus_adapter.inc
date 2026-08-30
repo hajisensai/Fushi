@@ -2774,8 +2774,7 @@ public:
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kText |
            fushi_voice_hook::AdapterCapability::kResourceAudio |
-           fushi_voice_hook::AdapterCapability::kPcmAudio |
-           fushi_voice_hook::AdapterCapability::kIngameLookup;
+           fushi_voice_hook::AdapterCapability::kPcmAudio;
   }
   // v19 准入。这里只把已缓存的结论翻译成准入状态，不做任何判定。
   //

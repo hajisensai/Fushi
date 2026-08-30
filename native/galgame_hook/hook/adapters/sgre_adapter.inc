@@ -85,8 +85,7 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
 
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kText |
-           fushi_voice_hook::AdapterCapability::kResourceAudio |
-           fushi_voice_hook::AdapterCapability::kIngameLookup;
+           fushi_voice_hook::AdapterCapability::kResourceAudio;
   }
 
   // SGRE 的 probe() **本身就是** exe SHA-256 精确门（MatchesSgreProfile），所以能走到

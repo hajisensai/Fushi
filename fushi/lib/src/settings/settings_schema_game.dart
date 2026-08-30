@@ -494,7 +494,8 @@ GalLookupAdmission _ingameLookupAdmission() =>
 bool _isIngameLookupBlocked() =>
     _ingameLookupAdmission().state.blocksLookup;
 
-/// 开关被灰掉的原因文案；没被挡住时返回 null（回落静态 hint）。
+/// 开关**副标题**上的原因文案；没被挡住时返回 null（回落静态 hint）。
+/// 开关本身不置灰，理由见上面构造处。
 String? _ingameLookupBlockedReason() {
   switch (_ingameLookupAdmission().state) {
     case GalLookupAdmissionState.engineUnsupported:

@@ -76,8 +76,7 @@ class SiglusAdapter final : public fushi_voice_hook::EngineAdapter {
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kText |
            fushi_voice_hook::AdapterCapability::kResourceAudio |
-           fushi_voice_hook::AdapterCapability::kPcmAudio |
-           fushi_voice_hook::AdapterCapability::kIngameLookup;
+           fushi_voice_hook::AdapterCapability::kPcmAudio;
   }
   fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
     return SiglusLookupAdmission();
@@ -212,8 +211,7 @@ class KiriKiriAdapter final : public fushi_voice_hook::EngineAdapter {
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kText |
            fushi_voice_hook::AdapterCapability::kResourceAudio |
-           fushi_voice_hook::AdapterCapability::kPcmAudio |
-           fushi_voice_hook::AdapterCapability::kIngameLookup;
+           fushi_voice_hook::AdapterCapability::kPcmAudio;
   }
   void onModuleLoaded(const wchar_t* module_name) override {
     if (module_name == nullptr || ModuleNameEquals(module_name, L"wuvorbis.dll") ||
@@ -271,8 +269,7 @@ class RenPyAdapter final : public fushi_voice_hook::EngineAdapter {
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kText |
            fushi_voice_hook::AdapterCapability::kResourceAudio |
-           fushi_voice_hook::AdapterCapability::kPcmAudio |
-           fushi_voice_hook::AdapterCapability::kIngameLookup;
+           fushi_voice_hook::AdapterCapability::kPcmAudio;
   }
   void onModuleLoaded(const wchar_t* module_name) override {
     const auto ffmpeg = fushi_voice_hook::ParseFfmpegModuleName(module_name);
