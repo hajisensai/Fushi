@@ -220,6 +220,9 @@ class KiriKiriAdapter final : public fushi_voice_hook::EngineAdapter {
     }
   }
   void shutdown() override {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header, fushi_voice_hook::kLookupGeometryProviderRuntimeLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdKirikiri);
     StopKirikiriVoiceTasks();
     installed_ = false;
     decoder_ready_ = false;
@@ -280,6 +283,7 @@ class RenPyAdapter final : public fushi_voice_hook::EngineAdapter {
     }
   }
   void shutdown() override {
+    ShutdownRenpyLookup();
     StopRenpyWorker();
     installed_ = false;
     ready_ = false;
@@ -520,6 +524,10 @@ class AdapterRegistry {
     artemis_pfs_.install();
     catsystem2_.install();
     malie_libp_.install();
+    // HUNEX reuses the shared KernelBase broker installed by Siglus above.
+    // Install it before startup-ready resumes the suspended game so the first
+    // playback read cannot race ahead of handle tracking.
+    hunex_gge_.install();
     if (g_header != nullptr) {
       g_header->hook_diagnostics |= kDiagStartupAudioHooksReady;
     }
@@ -552,6 +560,7 @@ class AdapterRegistry {
     renpy_.ProcessPendingEvents();
     sgre_.ProcessPendingEvents();
     leaf_aquaplus_.ProcessPendingEvents();
+    hunex_gge_.ProcessPendingEvents();
     // These retry budgets and ordering intentionally match the old HookWorker. onModuleLoaded is
     // the stable seam; P3 can replace this bounded poll with real module events without changing
     // individual adapter contracts.

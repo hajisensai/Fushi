@@ -17,10 +17,22 @@ void main() {
       expect(p.fraction, isNull);
     });
 
-    test('completed-item count without a file fraction', () {
-      const p =
-          SyncProgress(phase: SyncPhase.books, itemIndex: 2, itemTotal: 4);
-      expect(p.fraction, closeTo(0.5, 1e-9));
+    test('atomic item follows the visible one-based ordinal', () {
+      const p = SyncProgress(
+        phase: SyncPhase.books,
+        itemIndex: 2,
+        itemTotal: 4,
+      );
+      expect(p.fraction, closeTo(0.75, 1e-9));
+    });
+
+    test('BUG-1973: final atomic item makes a 2/2 label a full bar', () {
+      const p = SyncProgress(
+        phase: SyncPhase.readingData,
+        itemIndex: 1,
+        itemTotal: 2,
+      );
+      expect(p.fraction, 1.0);
     });
 
     test('blends the in-flight file fraction into the current item', () {
@@ -42,6 +54,16 @@ void main() {
         fileFraction: 5.0,
       );
       expect(p.fraction, 1.0);
+    });
+
+    test('explicit measurable fraction still starts from zero', () {
+      const p = SyncProgress(
+        phase: SyncPhase.localAudio,
+        itemIndex: 0,
+        itemTotal: 2,
+        fileFraction: 0.0,
+      );
+      expect(p.fraction, 0.0);
     });
 
     test('clamps a negative file fraction', () {

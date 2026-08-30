@@ -78,8 +78,8 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
         _DownloadsResourceDomain.video => t.nav_video,
       };
 
-  void _selectResourceDomain(_DownloadsResourceDomain? domain) {
-    if (domain == null || domain == _resourceDomain) return;
+  void _selectResourceDomain(_DownloadsResourceDomain domain) {
+    if (domain == _resourceDomain) return;
     setState(() {
       _resourceDomain = domain;
       _visitedResourceDomains.add(domain);
@@ -103,8 +103,9 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
         _DownloadsResourceDomain.video => _buildVideoResourceTab(),
       };
 
-  /// 类型选择器只负责选择内容域；域内筛选、搜索与结果展示全部沿用各模块
-  /// 自己的生产发现页。首次访问后保持挂载，来回切换不丢搜索词、结果和滚动位置。
+  /// 分段条只负责选择内容域；域内筛选、搜索与结果展示全部沿用各模块
+  /// 自己的生产发现页。四个固定目的地直接可见，避免无标签的表单型下拉框
+  /// 单独悬在搜索区上方。首次访问后保持挂载，来回切换不丢搜索词、结果和滚动位置。
   Widget _buildResourceHub() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Column(
@@ -116,18 +117,20 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
             tokens.spacing.page,
             tokens.spacing.gap,
           ),
-          child: Align(
+          child: FushiSegmentedStrip<_DownloadsResourceDomain>(
+            key: const ValueKey<String>('downloads-resource-type-picker'),
+            segments: <ButtonSegment<_DownloadsResourceDomain>>[
+              for (final _DownloadsResourceDomain domain
+                  in _DownloadsResourceDomain.values)
+                ButtonSegment<_DownloadsResourceDomain>(
+                  value: domain,
+                  label: Text(_resourceDomainLabel(domain)),
+                ),
+            ],
+            selected: _resourceDomain,
+            onChanged: _selectResourceDomain,
+            minSegmentWidth: 72,
             alignment: Alignment.centerLeft,
-            child: SizedBox(
-              width: 240,
-              child: FushiDropdown<_DownloadsResourceDomain>(
-                key: const ValueKey<String>('downloads-resource-type-picker'),
-                options: _DownloadsResourceDomain.values,
-                initialOption: _resourceDomain,
-                generateLabel: _resourceDomainLabel,
-                onChanged: _selectResourceDomain,
-              ),
-            ),
           ),
         ),
         Expanded(

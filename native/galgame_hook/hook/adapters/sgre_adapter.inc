@@ -58,10 +58,10 @@ void ResolveSgreAnchorsOnce() {
   g_sgre_anchors =
       fushi_voice_hook::ResolveSgreRuntimeAnchors(&g_sgre_executable_sha256);
   g_sgre_anchors_resolved = true;
-  SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagSgreFamilyMatched);
-  SetXAudioDiagnostic(g_sgre_anchors.complete()
-                          ? fushi_voice_hook::kXAudioDiagSgreAnchorsResolved
-                          : fushi_voice_hook::kXAudioDiagSgreAnchorsUnresolved);
+  SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2SgreFamilyMatched);
+  SetXAudioDiagnostic2(g_sgre_anchors.complete()
+                          ? fushi_voice_hook::kXAudioDiag2SgreAnchorsResolved
+                          : fushi_voice_hook::kXAudioDiag2SgreAnchorsUnresolved);
 }
 
 class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
@@ -154,6 +154,12 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
   void onModuleLoaded(const wchar_t*) override {}
 
   void shutdown() override {
+    if (g_header != nullptr) {
+      fushi_voice_hook::g_geometry_provider_registry.Retire(
+          g_header,
+          fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+          fushi_voice_hook::kLookupGeometryProviderIdSgre);
+    }
     ShutdownSgreDirectInputShield();
     if (!installed_) return;
     UnregisterXAudioCompressedResourceHandler(&HandleSgreCompressedResource);

@@ -127,6 +127,47 @@ void main() {
     );
   });
 
+  // TYPEMOON x64 的剧情与顶部控制栏来自同一个 `typemoon` hook/face，但 LunaHook
+  // 按完整 ThreadParam（含 ctx）把它们保留为两条可独立选择的线程。Fushi 不能为了
+  // BUG-1159 的通用兼容，再把这两个明确分开的上下文合并回来。
+  const List<GalHookedLine> kTypeMoonLines = <GalHookedLine>[
+    GalHookedLine(
+      seq: 1,
+      timestampMs: 1000,
+      text: '劇情の台詞',
+      threadId: 5,
+      faceId: kFace,
+      sourceKind: 2,
+      eventFlags: GalHookedLine.flagExactThreadContext,
+      hookName: 'typemoon',
+    ),
+    GalHookedLine(
+      seq: 2,
+      timestampMs: 1100,
+      text: '前のシーン、選択肢までジャンプします',
+      threadId: 77,
+      faceId: kFace,
+      sourceKind: 2,
+      eventFlags: GalHookedLine.flagExactThreadContext,
+      hookName: 'typemoon',
+    ),
+  ];
+
+  test('TYPEMOON 只消费精确线程，不把同 face 的顶部控制栏并入剧情', () async {
+    final List<String> texts =
+        await run(lines: kTypeMoonLines, selectThreadId: 5);
+    expect(texts, contains('劇情の台詞'));
+    expect(texts, isNot(contains('前のシーン、選択肢までジャンプします')),
+        reason: 'LunaHook 把完整 ThreadParam 上下文分开，Fushi 必须保持相同边界');
+  });
+
+  test('TYPEMOON 顶部控制栏线程仍可被用户精确选择', () async {
+    final List<String> texts =
+        await run(lines: kTypeMoonLines, selectThreadId: 77);
+    expect(texts, contains('前のシーン、選択肢までジャンプします'));
+    expect(texts, isNot(contains('劇情の台詞')));
+  });
+
   test('换线程后把它此前留在自己那条道里的历史行补回来（v13 分道的直接收益）', () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
@@ -150,6 +191,30 @@ void main() {
     expect(texts, contains('同じフックの別呼び出し点'));
     expect(texts, isNot(contains('メニュー用スレッドの文字')),
         reason: '回捞只捞选定线程那条道，不是把所有道倒进来');
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('TYPEMOON 历史回捞也只恢复精确线程，不倒入同 face 控制栏', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _LaneEngine engine = _LaneEngine(lines: kTypeMoonLines);
+    final GalHookSessionController controller =
+        build(service: service, endpoints: endpoints, engine: engine);
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 24, pid: 558, title: 'typemoon game'),
+    );
+    for (int i = 0; i < 40; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(service.entries, isEmpty);
+
+    await controller.selectTextThread(5);
+    final List<String> texts =
+        service.entries.map((TexthookerLineEntry e) => e.text).toList();
+    expect(texts, contains('劇情の台詞'));
+    expect(texts, isNot(contains('前のシーン、選択肢までジャンプします')),
+        reason: '历史恢复必须沿用实时消费的 exact-context 判据');
     await controller.close();
     endpoints.dispose();
   });
