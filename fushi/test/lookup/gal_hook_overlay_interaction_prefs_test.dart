@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../helpers/source_guard.dart';
 import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -16,23 +18,6 @@ import 'package:fushi_core/fushi_core.dart';
 /// ①② 落在 runner 的 C++ 里（下半段的源码守卫），③④ 需要偏好 + 通道 + 设置项
 /// 三段接线，这里咬住偏好这一段与「设置项必须 live 下发」这条纪律。
 FushiDatabase _testDb() => FushiDatabase.forTesting(NativeDatabase.memory());
-
-/// 剥注释：所有「顺序 / 不存在」类断言都必须先剥，否则注释里出现同一个标识符会先
-/// 被 indexOf 命中，把守卫变成恒真或恒假。
-String stripComments(String source) {
-  final StringBuffer out = StringBuffer();
-  for (final String line in source.split('\n')) {
-    final String trimmed = line.trimLeft();
-    if (trimmed.startsWith('//')) continue;
-    final int inline = line.indexOf('//');
-    if (inline >= 0 && !line.contains('://')) {
-      out.writeln(line.substring(0, inline));
-      continue;
-    }
-    out.writeln(line);
-  }
-  return out.toString();
-}
 
 /// 精确截取一个 C++ 函数体（花括号配平）。
 ///
@@ -128,7 +113,7 @@ void main() {
     late String schema;
 
     setUpAll(() {
-      schema = stripComments(
+      schema = maskComments(
         File('lib/src/settings/settings_schema_game.dart').readAsStringSync(),
       );
     });
@@ -165,7 +150,7 @@ void main() {
     late String channel;
 
     setUpAll(() {
-      channel = stripComments(
+      channel = maskComments(
         File('lib/src/platform/gal_hook_text_overlay_channel.dart')
             .readAsStringSync(),
       );
@@ -190,7 +175,7 @@ void main() {
     late String window;
 
     setUpAll(() {
-      window = stripComments(
+      window = maskComments(
         runnerFile('floating_lyric_window.cpp').readAsStringSync(),
       );
     });
@@ -333,7 +318,7 @@ void main() {
 
     setUpAll(() {
       flutterWindow =
-          stripComments(runnerFile('flutter_window.cpp').readAsStringSync());
+          maskComments(runnerFile('flutter_window.cpp').readAsStringSync());
     });
 
     test('三个 live setter 都接上了', () {

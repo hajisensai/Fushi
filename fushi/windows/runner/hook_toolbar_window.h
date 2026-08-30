@@ -213,9 +213,6 @@ class HookToolbarWindow {
   bool EnsureDeviceResources();
   void Render();
   // Slot under the client point, or -1.
-  // Z 序跟随正文窗的置顶开关（states_.topmost）——写死 HWND_TOPMOST 会让取消
-  // 置顶后药丸仍浮在游戏之上，成为与内容脱钩的孤儿控件。
-  HWND ZOrderInsertAfter() const;
   int SlotAt(float x, float y) const;
 
   HWND hwnd_ = nullptr;

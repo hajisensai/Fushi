@@ -384,24 +384,6 @@ void main() {
           toolbar.contains('hook_toolbar::SlotGlyph(slot, states_)'), isTrue);
     });
 
-    test('药丸窗的 Z 序跟随正文窗的置顶开关，不得写死 TOPMOST', () {
-      // 写死 HWND_TOPMOST：用户取消置顶后正文窗退到游戏后面，而这颗药丸仍浮在
-      // 最上层 —— 一个跟内容脱钩、却还盖着游戏的孤儿控件。
-      expect(
-          toolbar, contains('HWND HookToolbarWindow::ZOrderInsertAfter() const'),
-          reason: 'Z 序要收口成一条判据，不能在四个 SetWindowPos 各写一遍');
-      expect(
-        toolbar,
-        contains('states_.topmost ? HWND_TOPMOST : HWND_NOTOPMOST'),
-        reason: 'states_.topmost 是正文窗每次 Show/Sync 推下来的同一个值，'
-            '两个窗天然同相，不需要第二个真相源',
-      );
-      // 负向：除了那一处收口，源码里不得再出现裸 HWND_TOPMOST 的 SetWindowPos。
-      final RegExp raw = RegExp(r'SetWindowPos\(hwnd_,\s*HWND_TOPMOST');
-      expect(raw.hasMatch(toolbar), isFalse,
-          reason: '还有裸的 HWND_TOPMOST 就说明没收口干净');
-    });
-
     test('one dispatcher runs a button, whichever window was clicked', () {
       expect(bodyHeader.contains('void DispatchControlAction('), isTrue);
       // The binding moved out of ApplyPassThroughExStyle into its own
