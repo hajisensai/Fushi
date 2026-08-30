@@ -3901,12 +3901,12 @@
   "gal_hook_ingame_lookup_exe_hash_copy": "نسخ SHA-256 لملف اللعبة التنفيذي",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "تعذّرت قراءة ملف اللعبة التنفيذي",
   "gal_hook_ingame_lookup_exe_hash_copied": "تم نسخ SHA-256 لملف اللعبة التنفيذي",
-  "download_tracker_section": "Tracker subscription",
-  "download_tracker_auto_add": "Automatically add subscription trackers to new downloads",
-  "download_tracker_auto_add_hint": "The list is cached for 6 hours. A subscription failure will not block the download.",
-  "download_tracker_url": "Subscription URL",
-  "download_tracker_refresh": "Fetch trackers",
-  "download_tracker_preview_empty": "Fetch the subscription to preview supported HTTP, HTTPS, and UDP trackers.",
-  "download_tracker_preview_count": "Fetched $count trackers",
-  "download_tracker_fetch_failed": "Could not fetch trackers: $message"
+  "download_tracker_section": "اشتراك المتعقّبات",
+  "download_tracker_auto_add": "إضافة متعقّبات الاشتراك تلقائيًا إلى التنزيلات الجديدة",
+  "download_tracker_auto_add_hint": "تُخزَّن القائمة مؤقتًا لست ساعات. فشل الاشتراك لا يمنع التنزيل.",
+  "download_tracker_url": "رابط الاشتراك",
+  "download_tracker_refresh": "جلب المتعقّبات",
+  "download_tracker_preview_empty": "اجلب الاشتراك لمعاينة متعقّبات HTTP وHTTPS وUDP المدعومة.",
+  "download_tracker_preview_count": "تم جلب $count متعقّبًا",
+  "download_tracker_fetch_failed": "تعذّر جلب المتعقّبات: $message"
 }

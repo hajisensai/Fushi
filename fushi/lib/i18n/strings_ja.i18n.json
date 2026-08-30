@@ -3901,12 +3901,12 @@
   "gal_hook_ingame_lookup_exe_hash_copy": "ゲーム実行ファイルの SHA-256 をコピー",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "ゲーム実行ファイルを読み取れません（権限不足の可能性）",
   "gal_hook_ingame_lookup_exe_hash_copied": "実行ファイルの SHA-256 をコピーしました",
-  "download_tracker_section": "Tracker subscription",
-  "download_tracker_auto_add": "Automatically add subscription trackers to new downloads",
-  "download_tracker_auto_add_hint": "The list is cached for 6 hours. A subscription failure will not block the download.",
-  "download_tracker_url": "Subscription URL",
-  "download_tracker_refresh": "Fetch trackers",
-  "download_tracker_preview_empty": "Fetch the subscription to preview supported HTTP, HTTPS, and UDP trackers.",
-  "download_tracker_preview_count": "Fetched $count trackers",
-  "download_tracker_fetch_failed": "Could not fetch trackers: $message"
+  "download_tracker_section": "トラッカー購読",
+  "download_tracker_auto_add": "新しいダウンロードに購読トラッカーを自動で追加する",
+  "download_tracker_auto_add_hint": "リストは 6 時間キャッシュされます。購読の取得に失敗してもダウンロードは止まりません。",
+  "download_tracker_url": "購読 URL",
+  "download_tracker_refresh": "トラッカーを取得",
+  "download_tracker_preview_empty": "購読を取得すると、対応している HTTP・HTTPS・UDP のトラッカーをプレビューできます。",
+  "download_tracker_preview_count": "$count 件のトラッカーを取得しました",
+  "download_tracker_fetch_failed": "トラッカーを取得できませんでした: $message"
 }

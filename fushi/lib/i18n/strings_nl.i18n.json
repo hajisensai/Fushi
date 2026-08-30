@@ -3901,12 +3901,12 @@
   "gal_hook_ingame_lookup_exe_hash_copy": "SHA-256 van het spelbestand kopiëren",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "Kan het spelbestand niet lezen",
   "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 van het spelbestand gekopieerd",
-  "download_tracker_section": "Tracker subscription",
-  "download_tracker_auto_add": "Automatically add subscription trackers to new downloads",
-  "download_tracker_auto_add_hint": "The list is cached for 6 hours. A subscription failure will not block the download.",
-  "download_tracker_url": "Subscription URL",
-  "download_tracker_refresh": "Fetch trackers",
-  "download_tracker_preview_empty": "Fetch the subscription to preview supported HTTP, HTTPS, and UDP trackers.",
-  "download_tracker_preview_count": "Fetched $count trackers",
-  "download_tracker_fetch_failed": "Could not fetch trackers: $message"
+  "download_tracker_section": "Tracker-abonnement",
+  "download_tracker_auto_add": "Geabonneerde trackers automatisch aan nieuwe downloads toevoegen",
+  "download_tracker_auto_add_hint": "De lijst wordt 6 uur gecachet. Een mislukt abonnement blokkeert de download niet.",
+  "download_tracker_url": "Abonnements-URL",
+  "download_tracker_refresh": "Trackers ophalen",
+  "download_tracker_preview_empty": "Haal het abonnement op om de ondersteunde HTTP-, HTTPS- en UDP-trackers te bekijken.",
+  "download_tracker_preview_count": "$count trackers opgehaald",
+  "download_tracker_fetch_failed": "Kan de trackers niet ophalen: $message"
 }

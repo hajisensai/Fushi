@@ -3901,12 +3901,12 @@
   "gal_hook_ingame_lookup_exe_hash_copy": "คัดลอก SHA-256 ของไฟล์เกม",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "อ่านไฟล์เกมไม่ได้",
   "gal_hook_ingame_lookup_exe_hash_copied": "คัดลอก SHA-256 ของไฟล์เกมแล้ว",
-  "download_tracker_section": "Tracker subscription",
-  "download_tracker_auto_add": "Automatically add subscription trackers to new downloads",
-  "download_tracker_auto_add_hint": "The list is cached for 6 hours. A subscription failure will not block the download.",
-  "download_tracker_url": "Subscription URL",
-  "download_tracker_refresh": "Fetch trackers",
-  "download_tracker_preview_empty": "Fetch the subscription to preview supported HTTP, HTTPS, and UDP trackers.",
-  "download_tracker_preview_count": "Fetched $count trackers",
-  "download_tracker_fetch_failed": "Could not fetch trackers: $message"
+  "download_tracker_section": "การสมัครรับแทร็กเกอร์",
+  "download_tracker_auto_add": "เพิ่มแทร็กเกอร์จากการสมัครรับลงในดาวน์โหลดใหม่โดยอัตโนมัติ",
+  "download_tracker_auto_add_hint": "รายการจะถูกแคชไว้ 6 ชั่วโมง หากดึงรายการไม่สำเร็จก็จะไม่ขัดขวางการดาวน์โหลด",
+  "download_tracker_url": "URL การสมัครรับ",
+  "download_tracker_refresh": "ดึงแทร็กเกอร์",
+  "download_tracker_preview_empty": "ดึงรายการที่สมัครรับเพื่อดูตัวอย่างแทร็กเกอร์ HTTP, HTTPS และ UDP ที่รองรับ",
+  "download_tracker_preview_count": "ดึงแทร็กเกอร์มาแล้ว $count รายการ",
+  "download_tracker_fetch_failed": "ดึงแทร็กเกอร์ไม่สำเร็จ: $message"
 }

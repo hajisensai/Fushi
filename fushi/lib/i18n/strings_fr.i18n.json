@@ -3901,12 +3901,12 @@
   "gal_hook_ingame_lookup_exe_hash_copy": "Copier le SHA-256 de l'exécutable du jeu",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "Impossible de lire l'exécutable du jeu",
   "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 de l'exécutable copié",
-  "download_tracker_section": "Tracker subscription",
-  "download_tracker_auto_add": "Automatically add subscription trackers to new downloads",
-  "download_tracker_auto_add_hint": "The list is cached for 6 hours. A subscription failure will not block the download.",
-  "download_tracker_url": "Subscription URL",
-  "download_tracker_refresh": "Fetch trackers",
-  "download_tracker_preview_empty": "Fetch the subscription to preview supported HTTP, HTTPS, and UDP trackers.",
-  "download_tracker_preview_count": "Fetched $count trackers",
-  "download_tracker_fetch_failed": "Could not fetch trackers: $message"
+  "download_tracker_section": "Abonnement aux trackers",
+  "download_tracker_auto_add": "Ajouter automatiquement les trackers de l’abonnement aux nouveaux téléchargements",
+  "download_tracker_auto_add_hint": "La liste est mise en cache pendant 6 heures. L’échec de l’abonnement ne bloque pas le téléchargement.",
+  "download_tracker_url": "URL de l’abonnement",
+  "download_tracker_refresh": "Récupérer les trackers",
+  "download_tracker_preview_empty": "Récupère l’abonnement pour prévisualiser les trackers HTTP, HTTPS et UDP pris en charge.",
+  "download_tracker_preview_count": "$count trackers récupérés",
+  "download_tracker_fetch_failed": "Impossible de récupérer les trackers : $message"
 }

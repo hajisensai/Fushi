@@ -3901,12 +3901,12 @@
   "gal_hook_ingame_lookup_exe_hash_copy": "Salin SHA-256 file eksekusi gim",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "Tidak dapat membaca file eksekusi gim",
   "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 file eksekusi disalin",
-  "download_tracker_section": "Tracker subscription",
-  "download_tracker_auto_add": "Automatically add subscription trackers to new downloads",
-  "download_tracker_auto_add_hint": "The list is cached for 6 hours. A subscription failure will not block the download.",
-  "download_tracker_url": "Subscription URL",
-  "download_tracker_refresh": "Fetch trackers",
-  "download_tracker_preview_empty": "Fetch the subscription to preview supported HTTP, HTTPS, and UDP trackers.",
-  "download_tracker_preview_count": "Fetched $count trackers",
-  "download_tracker_fetch_failed": "Could not fetch trackers: $message"
+  "download_tracker_section": "Langganan tracker",
+  "download_tracker_auto_add": "Otomatis tambahkan tracker langganan ke unduhan baru",
+  "download_tracker_auto_add_hint": "Daftar disimpan di cache selama 6 jam. Kegagalan langganan tidak menghentikan unduhan.",
+  "download_tracker_url": "URL langganan",
+  "download_tracker_refresh": "Ambil tracker",
+  "download_tracker_preview_empty": "Ambil langganan untuk melihat tracker HTTP, HTTPS, dan UDP yang didukung.",
+  "download_tracker_preview_count": "$count tracker diambil",
+  "download_tracker_fetch_failed": "Tidak dapat mengambil tracker: $message"
 }
