@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1843 条。点号进各自文件。
+> 共 1844 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1967](bugs/BUG-1967-dictionary-order-render-contract.md) | ✅ | ✅ | 词典管理顺序未约束弹窗释义卡顺序 |
 | [BUG-1966](bugs/BUG-1966-flutter-error-context-description.md) | ✅ | ✅ | Flutter 错误日志显示 ErrorDescription 实例名 |
 | [BUG-1965](bugs/BUG-1965-ankiconnect-bundled-addon-missing-modules.md) | ✅ | ✅ | 内置 AnkiConnect 插件包漏打 web/edit/util 三个模块，装上必 ImportError |
 | [BUG-1964](bugs/BUG-1964-ankiconnect-port-busy-timeout-misleading.md) | ✅ | ✅ | AnkiConnect 端口被占用时只报超时，提示指向防火墙且泄漏裸 TimeoutException |
