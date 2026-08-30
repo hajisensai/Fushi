@@ -17,6 +17,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
+import 'package:fushi/src/utils/misc/collection_exporter.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -29,6 +30,7 @@ import 'package:fushi/src/media/tracking/media_tracking_service.dart'
     show kMediaTrackingEnabled;
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
+import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
 // 只取语义枚举与调色板：视频页的通知一律走左上角 _showOsd，不得用 FushiToast
 // （BUG-931 有守卫），故刻意不 import 整套 toast API。
 import 'package:fushi/src/utils/misc/toast_severity.dart';
@@ -1103,6 +1105,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 本页 setState 重建（与标题 [_titleNotifier] 同源，BUG-120）。监听 notifier 才能
   /// 让窗口与全屏两种场景都随 L 键 / 入口按钮翻转可见。
   final ValueNotifier<bool> _subtitleListVisible = ValueNotifier<bool>(false);
+
+  /// BUG-1907：请求字幕列表面板展开搜索框的计数器（每 +1 一次请求）。
+  /// 见 `_requestSubtitleListSearch`——整表快捷键够不到面板，只能这样递话。
+  final ValueNotifier<int> _subtitleSearchRequests = ValueNotifier<int>(0);
 
   /// BUG-877：字幕列表面板左边缘拖拽中的临时宽度（逻辑像素）。仅拖动期间非 null，
   /// [_subtitleJumpSidePanel] 优先用它实时反映拖动；拖动结束落 Drift preferences 后复位 null，
@@ -3696,6 +3702,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   void dispose() {
     if (Platform.isWindows) {
       WindowsImeSpaceChannel.clearHandler(this);
+      // Abnormal route teardown must never leave the app frame hidden. The
+      // normal fullscreen exit releases this owner only after HWND restoration.
+      FushiWindowsTitleBar.setContentFullscreen(
+        owner: this,
+        enabled: false,
+      );
     }
     WidgetsBinding.instance.removeObserver(this);
     // TODO-658/BUG-383: 摘除系统栏可见性回调（全局单例，避免退页后仍回调已释放 State）。
@@ -3767,6 +3779,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _lookupOverlayActive.removeListener(_applyControlsVisibilityFromMediaKit);
     _lookupOverlayActive.dispose();
     _subtitleListVisible.dispose();
+    _subtitleSearchRequests.dispose();
     _episodeListVisible.dispose();
     _videoSidePanel.dispose();
     _controlPopoverHideTimer?.cancel();
@@ -4780,6 +4793,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 'L' = 开/关字幕跳转列表（TODO-069）。
       toggleSubtitleList: () => _runWhenImmersiveAllowsShortcuts(
         _toggleSubtitleJumpList,
+      ),
+      // BUG-1907：Ctrl+F = 开字幕列表并聚焦搜索框。
+      searchSubtitleList: () => _runWhenImmersiveAllowsShortcuts(
+        _requestSubtitleListSearch,
       ),
       // Shift+L = 切换锁定 / 沉浸模式（TODO-101）。
       toggleImmersiveLock: _toggleImmersiveLock,

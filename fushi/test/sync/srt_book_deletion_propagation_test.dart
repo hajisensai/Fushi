@@ -56,10 +56,10 @@ void main() {
     test('standalone + propagateDeletion → 写 srtbook 墓碑，itemKey=uid', () async {
       await db.upsertSrtBook(_srt(uid: 'srt/lonely'));
 
-      final int removed =
+      final SrtBookDeleteResult removed =
           await repo.delete('srt/lonely', propagateDeletion: true);
 
-      expect(removed, 1);
+      expect(removed.deleted, 1);
       final List<SyncDeletionTombstoneRow> rows = await srtTombstones();
       expect(rows, hasLength(1), reason: '这正是用户报的「纯字幕书勾了完全无效」——修好后必须落一条墓碑');
       expect(rows.single.itemKey, 'srt/lonely');
@@ -88,6 +88,25 @@ void main() {
     test('uid 不存在 → 不写墓碑（删了 0 行不该产生传播）', () async {
       await repo.delete('srt/ghost', propagateDeletion: true);
       expect(await srtTombstones(), isEmpty);
+    });
+
+    test('磁盘清理抛异常时墓碑仍然写下去（墓碑必须排在所有磁盘操作之前）', () async {
+      // 「同时删除本地文件」把一批会抛的磁盘操作塞进了删除链路（权限拒绝、网络盘
+      // 掉线、Windows 句柄占用）。这些尾活一旦排在墓碑前面，一次失败就静默吞掉
+      // 用户「从所有设备删除」的意图——而那正是本文件盯的那条契约。
+      await db.upsertSrtBook(_srt(uid: 'srt/throws'));
+      AudiobookStorage.documentsRootResolver =
+          () async => throw const FileSystemException('boom');
+
+      await expectLater(
+        repo.delete('srt/throws', propagateDeletion: true),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      final List<SyncDeletionTombstoneRow> rows = await srtTombstones();
+      expect(rows, hasLength(1), reason: '尾活炸了，但用户的删除意图必须已经落账');
+      expect(rows.single.itemKey, 'srt/throws');
+      expect(await db.getSrtBookByUid('srt/throws'), isNull, reason: '行也确实删了');
     });
 
     test('重新导入同 uid 的字幕书 → 清墓碑（防「删了又加、墓碑还在」）', () async {

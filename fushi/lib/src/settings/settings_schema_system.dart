@@ -5,7 +5,6 @@ import 'package:fushi/pages.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/sync_http.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
@@ -47,8 +46,7 @@ SettingsDestination buildSystemDestination() {
           SettingsSwitchItem(
             id: 'system.focus_navigation',
             title: t.focus_navigation_enabled,
-            subtitle: t.focus_navigation_enabled_hint +
-                t.settings_experimental_suffix,
+            subtitle: t.focus_navigation_enabled_hint,
             icon: Icons.gamepad_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.experimentalFocusNavigationEnabled,
@@ -104,6 +102,16 @@ SettingsDestination buildSystemDestination() {
             icon: Icons.info_outline,
             builder: _buildRuntimeAppVersionRow,
           ),
+          // 官网。与宽屏侧栏左上角的 app 图标是同一个入口（openOfficialWebsite），
+          // URL 只存在 official_links.dart 一处。
+          SettingsActionItem(
+            id: 'system.website',
+            title: t.options_website,
+            icon: Icons.language_outlined,
+            onTap: (_) async {
+              await openOfficialWebsite();
+            },
+          ),
           SettingsActionItem(
             id: 'system.github',
             title: t.options_github,
@@ -142,103 +150,6 @@ SettingsDestination buildSystemDestination() {
             subtitle: t.about_tmdb_attribution,
             icon: Icons.movie_outlined,
             builder: _buildTmdbAttributionRow,
-          ),
-        ],
-      ),
-      // 「功能模块」：小说/漫画/视频/游戏/浏览器扩展五个库页 tab 加 下载/查词 两个
-      // 工具 tab 的显隐开关（库页那几项与新手引导的功能选择写同一真值）。首页/设置
-      // 恒在，不提供开关；games 仅 Windows、扩展仅桌面显示（读取端还叠加平台门控）。
-      // 顺序与底栏一致：库页 → 下载 → 查词 → 扩展。
-      SettingsSection(
-        title: t.settings_section_modules,
-        items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'system.module_books',
-            title: t.module_books_label,
-            subtitle: t.module_toggle_hint,
-            icon: Icons.menu_book_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleBooksEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setModuleBooksEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'system.module_manga',
-            title: t.module_manga_label,
-            subtitle: t.module_toggle_hint,
-            icon: Icons.photo_library_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleMangaEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setModuleMangaEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'system.module_video',
-            title: t.module_video_label,
-            subtitle: t.module_toggle_hint,
-            icon: Icons.smart_display_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleVideoEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setModuleVideoEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'system.module_games',
-            title: t.module_games_label,
-            subtitle: t.module_toggle_hint,
-            icon: Icons.videogame_asset_outlined,
-            visible: (_) => Platform.isWindows,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleGamesEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setModuleGamesEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'system.module_downloads',
-            title: t.nav_downloads,
-            subtitle: t.module_tool_toggle_hint,
-            icon: Icons.download_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleDownloadsEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setModuleDownloadsEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'system.module_lookup',
-            title: t.nav_lookup,
-            subtitle: t.module_tool_toggle_hint,
-            icon: Icons.search_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleDictionariesEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setModuleDictionariesEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'system.module_browser_extension',
-            title: t.module_extension_label,
-            subtitle: t.module_toggle_hint,
-            icon: Icons.extension_outlined,
-            visible: (_) => DesktopLookupService.isDesktop,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleBrowserExtensionEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setModuleBrowserExtensionEnabled(value);
-              settingsContext.refresh();
-            },
           ),
         ],
       ),
@@ -526,22 +437,19 @@ const String kTmdbLogoAsset = 'assets/attribution/tmdb/logo_tmdb.png';
 /// - 同一行左侧的图标徽标是 30dp：`_SettingsIcon` 在 Material 下走
 ///   `FushiBadge(size: 18, padding: EdgeInsets.all(6))`，18+6*2 = 30
 ///   （`utils/components/settings_shared.dart`）。24dp 与之同量级。
-/// - 应用自身图标在 Flutter widget 树里**只有一个真渲染点**：设置 › 外观 ›
-///   应用图标 的预设瓦片（`miscellaneous_settings_page.dart` 的 `_AppIconTile`）。
+/// - 应用自身图标在 Flutter widget 树里有两个真渲染点。设置 › 外观 › 应用图标的
+///   预设瓦片（`miscellaneous_settings_page.dart` 的 `_AppIconTile`）中，
 ///   `SizedBox.square(72)` 扣掉 `FushiCard` 描边的 1dp 内缩与 `gap/2 = 4` 的
-///   双侧 padding，图片实得 62×62dp。TMDB 标识 24dp 高 = 其 38.7%；面积
-///   24×56.0 ≈ 1344dp²，是其 3844dp² 的 35%——两个维度都更小，满足条款的
-///   "less prominent"。
-/// - 除此之外应用图标一处都不画：本文件上方的关于分区只有版本文字，首页
-///   dashboard 与 home 外壳零图片，侧栏 rail 的 `leading` 槽
-///   （`utils/adaptive/adaptive_navigation.dart`）只有形参没有任何实参，
-///   loading/splash 只传颜色不传图，`AppModel.appIcon`（`models/app_model.dart`）
-///   是零读点死字段。且预设瓦片那一页仅 Android/Windows 可见，其余三端应用图标
-///   的渲染点数为 0。
+///   双侧 padding，图片实得 62×62dp；宽屏主导航 rail 的品牌位直接显示经过圆角
+///   裁切的 64×64dp 图片。取较大的 64dp 作比较，TMDB 标识 24dp 高 = 其 37.5%；
+///   面积 24×56.0 ≈ 1344dp²，是其 4096dp² 的 32.8%——
+///   两个维度都更小，满足条款的 "less prominent"。
+/// - 除上述预设瓦片和宽屏 rail 外应用图标不再重复绘制：首页 dashboard、
+///   loading/splash 都不传图；窄屏底栏也没有品牌位。
 ///
 /// 所以旧注释那句「远小于应用自身 logo 的**任何**展示尺寸」结论对、依据错：可比
-/// 的展示尺寸全仓只有 62×62dp 这一个。调整本值前请重跑上述核对——这段是「不得更
-/// 显眼」的唯一书面依据，守卫只能钉住上限（≤32dp），钉不住依据本身。
+/// 的最大展示尺寸现在是 64×64dp。调整本值前请重跑上述核对——这段是「不得更显眼」
+/// 的唯一书面依据，守卫只能钉住上限（≤32dp），钉不住依据本身。
 const double _kTmdbLogoHeight = 24;
 
 /// 原图 viewBox 是 `0 0 190.24 81.52`；宽度按该比例算死，配合 [BoxFit.contain]

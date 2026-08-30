@@ -20,6 +20,7 @@ import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi/src/sync/local_file_delete_feedback.dart';
 import 'package:fushi/utils.dart';
 
 /// 有声书导入/移除对话框。
@@ -998,10 +999,17 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   Future<void> _removeAudiobook(Audiobook ab) async {
     debugPrint('AudiobookImportDialog: remove tapped for ${widget.bookKey}');
+    final AppModel appModel =
+        ProviderScope.containerOf(context, listen: false).read(appProvider);
     final NavigatorState outerNavigator =
         Navigator.of(context, rootNavigator: true);
 
-    final DeleteScope? scope = await showDeleteScopeConfirm(
+    // 显式登记、且落在 app 持久目录之外的音频才是用户原件；纯 audioRoot 的旧行
+    // 与「导入时复制进来」的副本都没有可安全删除的清单，不摆勾选框。
+    final bool hasLocalFiles =
+        await resolveAudiobookHasLocalFiles(ab.audioPaths);
+    if (!mounted) return;
+    final DeleteDecision? decision = await showDeleteScopeConfirm(
       context,
       title: t.dialog_delete,
       message: t.audiobook_delete_confirm,
@@ -1009,15 +1017,29 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         target: DeletionDisclosureTarget.attachedAudiobook,
       ),
       db: widget.repo.database,
+      localFilesSubtitle: hasLocalFiles ? t.delete_local_files_audio_desc : null,
     );
-    debugPrint('AudiobookImportDialog: scope=$scope');
-    if (scope == null) return;
+    debugPrint('AudiobookImportDialog: decision=$decision');
+    if (decision == null) return;
 
     try {
-      await widget.repo.deleteAudiobook(
+      if (decision.deleteLocalFiles) {
+        // 先停止引用再销毁实体：正在播的就是这本时，句柄不放掉删除必然失败。
+        await appModel.audiobookSession.stopIfPlayingAny(<String>[
+          widget.bookKey,
+        ]);
+      }
+      final LocalFileDeleteReport report = await widget.repo.deleteAudiobook(
         widget.bookKey,
-        propagateDeletion: scope == DeleteScope.syncEverywhere,
+        propagateDeletion: decision.scope == DeleteScope.syncEverywhere,
+        deleteLocalFiles: decision.deleteLocalFiles,
       );
+      if (mounted) {
+        reportLocalFileDeleteFailures(
+          report,
+          source: 'AudiobookImport.deleteLocalFiles',
+        );
+      }
       debugPrint('AudiobookImportDialog: deleteAudiobook done');
     } catch (e, st) {
       ErrorLogService.instance.log('AudiobookImport.deleteAudiobook', e, st);

@@ -29,15 +29,75 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1771 条。点号进各自文件。
+> 共 1836 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1965](bugs/BUG-1965-ankiconnect-bundled-addon-missing-modules.md) | ✅ | ✅ | 内置 AnkiConnect 插件包漏打 web/edit/util 三个模块，装上必 ImportError |
+| [BUG-1964](bugs/BUG-1964-ankiconnect-port-busy-timeout-misleading.md) | ✅ | ✅ | AnkiConnect 端口被占用时只报超时，提示指向防火墙且泄漏裸 TimeoutException |
+| [BUG-1963](bugs/BUG-1963-windows-titlebar-focus-ring-offset.md) | ✅ | ✅ | Windows 自定义标题栏下焦点环整体向下错位 |
+| [BUG-1962](bugs/BUG-1962-windows-icon-shortcuts.md) | ✅ | ✅ | Windows 换图标未同步固定任务栏且启动后快捷方式不自愈 |
+| [BUG-1960](bugs/BUG-1960-app-wheel-scroll-jump.md) | ✅ | ✅ | App 桌面滚轮滚动逐事件瞬移不流畅 |
+| [BUG-1959](bugs/BUG-1959-dashboard-activity-scroll-jank.md) | ✅ | ✅ | Windows/Linux 粗鼠标滚轮一格跳动范围过大 |
+| [BUG-1958](bugs/BUG-1958-online-manga-local-ocr.md) | ✅ | ✅ | 在线漫画点击查词无视已下载本地模型并强制 Google Lens |
+| [BUG-1957](bugs/BUG-1957-galgame-xwma-card-audio.md) | ✅ | ✅ | Galgame 制卡把 xWMA 原样写入卡片，手机无法播放 |
+| [BUG-1956](bugs/BUG-1956-downloads-center-sections-global-search.md) | ✅ | ✅ | 下载中心四分区被移除且资源页发现入口失去模块复用 |
+| [BUG-1955](bugs/BUG-1955-selective-download-backend-target.md) | ✅ | ✅ | 选择性下载仍调用已删除的后端身份接口导致 Windows 构建失败 |
+| [BUG-1954](bugs/BUG-1954-downloads-dropdown-back-button.md) | ✅ | ✅ | 下载页展开下拉框时左上角误显返回键 |
+| [BUG-1953](bugs/BUG-1953-torrent-detail-missing-live-data-layout.md) | ✅ | ✅ | Torrent 详情缺少实时数据时空态布局失衡 |
+| [BUG-1952](bugs/BUG-1952-gal-progressive-line-fold.md) | ✅ | ✅ | 一句台词分多次显示时工作台重复出现且字数重复统计（Zato） |
+| [BUG-1946](bugs/BUG-1946-sukebei-rss-namespace-rejected.md) | ✅ | ✅ | Sukebei 发现源结果恒空：NyaaClient 严格解析硬编码 nyaa.si 命名空间，sukebei RSS 的 sukebei.nyaa.si/xmlns/nyaa 被判 invalidNamespace |
+| [BUG-1945](bugs/BUG-1945-video-fullscreen-exit-deactivated-context.md) | ✅ | ✅ | 视频取消全屏短暂闪现 deactivated widget 红屏 |
+| [BUG-1944](bugs/BUG-1944-mokuro-retry-cancel-test-wall-clock-race.md) | ✅ | ✅ | mokuro 退避取消测试拿真时钟当同步原语，CI 上偶发红 |
+| [BUG-1943](bugs/BUG-1943-subtitle-ruby-flattened.md) | ✅ | ✅ | 字幕振假名被当成正文与文字同级 |
+| [BUG-1942](bugs/BUG-1942-extension-lookup-no-auto-read.md) | ✅ | ✅ | 浏览器扩展查词不自动播放单词音频 |
+| [BUG-1941](bugs/BUG-1941-subtitle-row-blank-click-no-seek.md) | ✅ | ✅ | 点字幕行内空白不跳转只弹未识别提示 |
+| [BUG-1940](bugs/BUG-1940-page-lookup-close-click-leaks.md) | ✅ | ✅ | 关弹窗的点击与 Esc 漏给站点 |
+| [BUG-1939](bugs/BUG-1939-side-panel-lookup-popup-placement.md) | ✅ | ✅ | 侧栏查词弹窗不跟随位置且遮挡内容 |
+| [BUG-1938](bugs/BUG-1938-live-cue-seek-duplicate.md) | ✅ | ✅ | 实时采集轨在来回跳转后同一句重复入轨 |
+| [BUG-1937](bugs/BUG-1937-download-tasks-kind-filter.md) | ✅ | ✅ | 下载任务面板缺少类型筛选 |
+| [BUG-1936](bugs/BUG-1936-downloads-discovery-queue-invisible.md) | ✅ | ✅ | 发现页直链下载（游戏等）提示已加入下载，下载页任务 tab 却不显示 |
+| [BUG-1935](bugs/BUG-1935-gal-ingame-lookup-no-engine-gating.md) | ✅ | ✅ | 内嵌查词在 Siglus/白2 上 hash 钉定不中时静默失效且无任何提示 |
+| [BUG-1934](bugs/BUG-1934-tombstone-partial-read-baseline.md) | ✅ | ✅ | 远端删除墓碑单条读失败被跳过，基线照常推进 → 该条删除永久不再提示 |
+| [BUG-1932](bugs/BUG-1932-lookup-pending-dismiss-freezes-popup.md) | ✅ | ✅ | 挂起期关栈后查词界面卡死、播放控件再也唤不回 |
+| [BUG-1931](bugs/BUG-1931-backup-archive-cannot-be-deleted.md) | ✅ | ✅ | 导出的备份包无法删除，且移动端从不清理 |
+| [BUG-1930](bugs/BUG-1930-backup-export-cancelled-by-collapse.md) | ✅ | ✅ | 折叠「本地备份」分区会取消进行中的备份 |
+| [BUG-1929](bugs/BUG-1929-backup-export-no-progress.md) | ✅ | ✅ | 导出备份没有进度，只有一个转圈 |
+| [BUG-1928](bugs/BUG-1928-peer-delete-confirm-says-local-kept.md) | ✅ | ✅ | 远端卡「从远端删除」文案谎称本地数据保留 |
+| [BUG-1927](bugs/BUG-1927-mokuro-catalog-series-blank.md) | ✅ | ✅ | mokuro.moe 目录点进系列后一片空白 |
+| [BUG-1926](bugs/BUG-1926-gal-overlay-toolbar-not-following-drag.md) | ✅ | ✅ | 穿透态 galgame 浮窗：拖正文时顶栏不跟随 |
+| [BUG-1925](bugs/BUG-1925-sync-collections-resurrect-flaky.md) | 🚧 | 🚧 | 全量下 sync_orchestrator_collections 的 peer-republish 用例偶发红（4 次全量红 2 次，单跑绿） |
+| [BUG-1924](bugs/BUG-1924-manga-shelf-locked-to-first-chapter.md) | ✅ | ✅ | 漫画加入书架后只能看第一章：书架没有作品页、阅读器不换章 |
+| [BUG-1923](bugs/BUG-1923-lookup-popup-plus-optical-center.md) | ✅ | ✅ | 查词弹窗静息加号可见位置比同排图标低 |
+| [BUG-1922](bugs/BUG-1922-macos-aidoku-runtime-not-bundled.md) | ✅ | ✅ | macOS 发布包缺 Aidoku runtime，删除再添加 Aidoku 仓库报 RUNTIME_MISSING |
+| [BUG-1921](bugs/BUG-1921-settings-module-labels-mismatch.md) | ✅ | ✅ | 设置里的功能模块开关名字与底栏/侧栏对不上 |
+| [BUG-1920](bugs/BUG-1920-app-icon-rail-live-sync.md) | ✅ | ✅ | 应用图标切换未同步到主侧栏 |
+| [BUG-1919](bugs/BUG-1919-desktop-fullscreen-read-escapes-try.md) | ✅ | ✅ | Linux/macOS 上桌面全屏读写的异常逃出 try，漫画页 widget test 在 CI 上全红 |
+| [BUG-1918](bugs/BUG-1918-dict-style-preview-crash.md) | ✅ | ✅ | 打开词典样式可视化编辑器闪退（Windows） |
 | [BUG-1917](bugs/BUG-1917-win-resize-heatmap-repaint.md) | ✅ | ✅ | Windows 拖边缩放帧率低：首页仪表盘每步重画整张热力图 |
 | [BUG-1916](bugs/BUG-1916-win-resize-backdrop-layer.md) | ✅ | ✅ | 窗口缩放时露出深青底色层 |
+| [BUG-1915](bugs/BUG-1915-anki-dup-check-cross-model.md) | ✅ | ✅ | 查词弹窗查重与制卡判重不同源：跨笔记类型的重复卡画成可制卡 + |
+| [BUG-1914](bugs/BUG-1914-mine-button-lost-text-marker-restore.md) | ✅ | ✅ | 制卡按钮被加回 inline-action-button 基类，三条 TODO-1325 还原守卫在 develop 上已红 |
+| [BUG-1913](bugs/BUG-1913-wa2-directsound-audio-timeline.md) | ✅ | ✅ | WA2 DirectSound 制卡炸音且未取得 VOICE.PAK 源语音 |
+| [BUG-1912](bugs/BUG-1912-gal-ingame-same-line-replay-destroys-selection.md) | ✅ | ✅ | KiriKiri 人物动画重发同句时销毁游戏内查词 WebView 选区 |
+| [BUG-1911](bugs/BUG-1911-gal-download-library-placeholder.md) | ✅ | ✅ | 下载中的游戏不在库里占位：看不出到底加没加进来 |
+| [BUG-1910](bugs/BUG-1910-gal-discovery-localization-filter.md) | ✅ | ✅ | gal 下载缺少生肉/熟肉筛选：分类只以一句硬编码中文存在 |
+| [BUG-1909](bugs/BUG-1909-gal-hook-code-paste.md) | ✅ | ✅ | gal 特殊码只能靠手拼七列 TSV 导入：缺少粘贴入口与归一化 |
+| [BUG-1908](bugs/BUG-1908-gal-mining-failure-silent.md) | ✅ | ✅ | gal 浮窗制卡失败完全没有提示：回程只传布尔，失败分支没有 else |
+| [BUG-1907](bugs/BUG-1907-subtitle-list-search-and-export.md) | ✅ | ✅ | 字幕列表缺少搜索（Ctrl+F）与导出收藏语句 |
+| [BUG-1906](bugs/BUG-1906-export-panel-cannot-pick-collection.md) | ✅ | ✅ | 收藏夹导出面板挤在 bottom sheet、文案写死书籍、且没法按合集导出 |
+| [BUG-1905](bugs/BUG-1905-ios-storage-total-undercounts.md) | ✅ | ✅ | 存储统计漏算缓存根与白名单外顶层项：app 内 6.9GB vs 系统 13.68GB |
 | [BUG-1904](bugs/BUG-1904-dict-import-entry-cap-silent-truncation.md) | ✅ | ✅ | 词条数撞 100 万每 bank 上限被静默截断，仍报导入成功 |
 | [BUG-1903](bugs/BUG-1903-dict-zip-multi-mdx-only-first-imported.md) | ✅ | ✅ | 一个压缩包内含多本 MDX 词典时只导入第一本，其余静默丢弃且报成功 |
+| [BUG-1902](bugs/BUG-1902-onboarding-anki-missing-deck-controls.md) | ✅ | ✅ | 新手引导配置 Anki 缺少创建 Lapis 卡组/刷新/选牌组 |
+| [BUG-1901](bugs/BUG-1901-discovery-detail-title-not-selectable.md) | ✅ | ✅ | 番剧详情页标题不能选中复制：全页只有 2/15 个文本可选 |
+| [BUG-1900](bugs/BUG-1900-anki-empty-note-message-misleading.md) | ✅ | ✅ | AnkiConnect 制卡把字段映射不匹配报成 cannot create note because it is empty |
+| [BUG-1899](bugs/BUG-1899-custom-data-root-reported-as-db-damaged.md) | ✅ | ✅ | 自定义数据安装位置启动即 Database damaged：派生根目录从没被创建 |
+| [BUG-1898](bugs/BUG-1898-touching-ruby-units-overlap.md) | ✅ | ✅ | 紧邻的两个带注音基字振假名重叠：明鏡四字熟語糊成一团 |
+| [BUG-1897](bugs/BUG-1897-dict-css-double-scales-ruby.md) | ✅ | ✅ | 词典自带 rt 字号与注音盒相乘，小学館十二版振假名只剩 0.3em |
+| [BUG-1896](bugs/BUG-1896-video-episode-picker-unordered.md) | ✅ | ✅ | 播放器选集横排缩略图乱序：番剧下载入库从不重排合集 |
 | [BUG-1895](bugs/BUG-1895-lookup-popup-plus-short.md) | ✅ | ✅ | 查词弹窗静息加号比相邻操作图标矮 |
+| [BUG-1894](bugs/BUG-1894-theme-edit-button-duplicates-new.md) | ✅ | ✅ | 主题行铅笔按钮在无活跃自定义主题时退化成第二个新建入口 |
 | [BUG-1893](bugs/BUG-1893-storage-audiobook-size-missing-in-entries.md) | ✅ | ✅ | 存储页书籍条目不显示有声书音频大小 |
 | [BUG-1892](bugs/BUG-1892-galgame-attach-mode-no-play-session.md) | ✅ | ✅ | galgame 附着模式不记录游玩时长，停止捕获也不结算 |
 | [BUG-1891](bugs/BUG-1891-jellyfin-emby-full-library-enumeration.md) | ✅ | ✅ | Emby/Jellyfin 一进视频页就全库递归枚举且带 MediaSources 重字段 |
@@ -48,10 +108,15 @@
 | [BUG-1886](bugs/BUG-1886-global-fullscreen-gated-by-experimental-focus-nav.md) | ✅ | ✅ | F11 窗口全屏被实验性焦点导航开关门控，默认安装上按 F11 无反应 |
 | [BUG-1885](bugs/BUG-1885-conjugation-description-popup.md) | ✅ | ✅ | 动词变形说明弹窗样式异常且跨查询残留 |
 | [BUG-1884](bugs/BUG-1884-mihon-source-preferences-save.md) | ✅ | ✅ | Mihon 来源偏好没有保存按钮，未提交文本会丢失 |
+| [BUG-1883](bugs/BUG-1883-fushidicts-ffi-dll-missing-on-user-machine.md) | 🚧 | ✅ | 用户机报 Failed to load dynamic library 'fushidicts_ffi.dll' (126)，app 卡在初始化 |
 | [BUG-1882](bugs/BUG-1882-gal-ingame-outside-click-through.md) | ✅ | ✅ | 游戏内查词点外关闭时同一点击穿透到游戏推进台词 |
 | [BUG-1881](bugs/BUG-1881-galgame-debug-stale-helper-artifact.md) | ✅ | ✅ | Windows Debug 构建残留旧 helper 导致 SGRE 内嵌查词坐标回退 |
 | [BUG-1880](bugs/BUG-1880-video-resource-search-backend-gate.md) | ✅ | ✅ | 搜索资源被下载后端运行时前置门禁阻断 |
+| [BUG-1879](bugs/BUG-1879-download-category-in-backend-identity.md) | ✅ | ✅ | 改 qBittorrent 分类后全部在途下载任务卡死 needsAttention |
 | [BUG-1878](bugs/BUG-1878-lookup-popup-surface-forced-pure-white-black.md) | ✅ | ✅ | 查词弹窗底色被钉成纯白/纯黑，不跟随 MD3 主题 |
+| [BUG-1877](bugs/BUG-1877-cover-backfill-never-completes.md) | 🚧 | 🚧 | 封面回填永远跑不完：单条两次 ffmpeg 各 30s 上限 + 失败账本只在内存 + 每轮从头串行扫 |
+| [BUG-1876](bugs/BUG-1876-aidoku-ios-cloudflare-no-passthrough.md) | ✅ | ✅ | iOS Aidoku 源遇 Cloudflare 挑战无过盾能力只报 JsonParseError |
+| [BUG-1875](bugs/BUG-1875-mihon-store-github-no-mirror.md) | ✅ | ✅ | Mihon 扩展仓库索引拉取直连 GitHub 超时无镜像回退 |
 | [BUG-1874](bugs/BUG-1874-settings-downloads-open-page-subtitle-duplicate.md) | ✅ | ✅ | 「下载」设置分类里的下载页入口副标题也叫「下载设置」 |
 | [BUG-1873](bugs/BUG-1873-manga-discovery-loading-rows-bare-lines.md) | ✅ | ✅ | 漫画发现页来源热门行加载态是一排无标签的裸横线 |
 | [BUG-1872](bugs/BUG-1872-video-discovery-no-managed-source-snackbar.md) | ✅ | ✅ | 视频发现搜索资源/订阅在缺受管视频来源时只弹「暂无来源」snackbar |

@@ -41,6 +41,12 @@ void main() {
   final String sgreLookupSource = File(
     '../native/galgame_hook/hook/adapters/sgre_lookup.inc',
   ).readAsStringSync();
+  final String siglusLookupSource = File(
+    '../native/galgame_hook/hook/adapters/siglus_lookup.inc',
+  ).readAsStringSync();
+  final String leafAquaplusSource = File(
+    '../native/galgame_hook/hook/adapters/leaf_aquaplus_adapter.inc',
+  ).readAsStringSync();
 
   test('direct galCard 在首帧 Reveal 事务中绑定游戏，桌面 route 默认不吞', () {
     final String direct = methodBody(
@@ -227,12 +233,8 @@ void main() {
     final int ownerForTarget = hookProc.indexOf(
       'GetPropW(target,kConsumeOutsideOwnerProperty)',
     );
-    final int pointSnapshot = hookProc.indexOf(
-      'WindowFromPoint(info->pt)',
-    );
-    final int insideFromSnapshot = hookProc.indexOf(
-      'point_window==target',
-    );
+    final int pointSnapshot = hookProc.indexOf('WindowFromPoint(info->pt)');
+    final int insideFromSnapshot = hookProc.indexOf('point_window==target');
     final int consumeFromSnapshot = hookProc.indexOf(
       'ShouldConsumeGameClientClick(target,consume_owner,point_window,info->pt)',
     );
@@ -347,7 +349,37 @@ void main() {
       'PostMessage(target,kLowLevelMouseClickMessage',
     );
     final int decideDown = hookProc.indexOf('constboolconsume_click=');
-    final int markDown = hookProc.indexOf('g_swallowed_buttons.fetch_or(');
+    // 🔴 down 上的 fetch_or 恰好两处，两处都在吞 down：
+    //   ① tail request 发布失败时的提前 return 1；
+    //   ② 命中游戏客户区、决定关闭查词的那次 return 1。
+    // markDown 从 decideDown 起找，正是为了跳过 ①。跳过意味着 ① 完全没有顺序守卫，
+    // 所以必须在这里单独钉住它——不变式对两条路径一样：任何吞掉 down 的
+    // return 1 之前都必须先把同键事务位置上，否则配对的 up 会漏给游戏，
+    // 引擎收到一个永远不抬起的按键。
+    expect(
+      'g_swallowed_buttons.fetch_or('.allMatches(hookProc).length,
+      2,
+      reason: '新增吞 down 的路径必须同时在本守卫里补上顺序断言',
+    );
+    final int tailFailSwallow = hookProc.indexOf(
+      'if(!tail_published){'
+      'g_swallowed_buttons.fetch_or(bit,std::memory_order_relaxed);'
+      'return1;}',
+    );
+    expect(
+      tailFailSwallow,
+      greaterThanOrEqualTo(0),
+      reason: 'tail request 发布失败必须先冻结配对 up 事务再吞掉这次 down',
+    );
+    expect(
+      tailFailSwallow,
+      lessThan(decideDown),
+      reason: 'markDown 的搜索起点 decideDown 依赖这条早期路径排在它之前',
+    );
+    final int markDown = hookProc.indexOf(
+      'g_swallowed_buttons.fetch_or(',
+      decideDown,
+    );
     final int swallowDown = hookProc.indexOf('return1;', markDown);
     expect(decideDown, greaterThanOrEqualTo(0));
     expect(markDown, greaterThan(decideDown));
@@ -555,7 +587,8 @@ void main() {
         'constboolshield_active=direct_shield||bitmap_popup_visible;',
       ),
       isTrue,
-      reason: 'bitmap route 是注入侧自绘卡，进程内可见性即全部真相；'
+      reason:
+          'bitmap route 是注入侧自绘卡，进程内可见性即全部真相；'
           '两条 route 的语义不同，不得折成「有没有卡」一问',
     );
     expect(
@@ -566,6 +599,156 @@ void main() {
       reason: '轴必须保持原值；被屏蔽的 down 必须一直锁存到 raw up',
     );
   });
+
+  test(
+    'Siglus direct WebView 以 Required/Ready/Window 屏蔽 GetKeyState 到 matching up',
+    () {
+      final String shared = compactCode(ipcHeader);
+      final String install = compactCode(
+        methodBody(siglusLookupSource, 'bool InstallSiglusLookupSensor()'),
+      );
+      final String detour = compactCode(
+        methodBody(
+          siglusLookupSource,
+          'SHORT WINAPI Detour_SiglusGetKeyState(',
+        ),
+      );
+      final String messageDetour = compactCode(
+        methodBody(
+          siglusLookupSource,
+          'void __stdcall Detour_SiglusInputMessage(',
+        ),
+      );
+      final String readyPublish = compactCode(
+        methodBody(
+          siglusLookupSource,
+          'bool PublishSiglusSampledInputShieldReady()',
+        ),
+      );
+      final String validPopup = compactCode(
+        methodBody(
+          siglusLookupSource,
+          'HWND GetValidPublishedSiglusSampledInputShieldPopup(',
+        ),
+      );
+      final String tick = compactCode(
+        methodBody(siglusLookupSource, 'void ProcessSiglusLookupTick()'),
+      );
+
+      expect(
+        shared.contains('Fushi.Siglus.SampledInputShield.Required') &&
+            shared.contains('Fushi.Siglus.SampledInputShield.Ready') &&
+            shared.contains('Fushi.Siglus.SampledInputShield.Window'),
+        isTrue,
+        reason: 'Siglus 与 SGRE ABI 不同，属性命名必须独立但共享同一事务形状',
+      );
+      expect(
+        install.contains('PublishSiglusSampledInputShieldRequired()') &&
+            install.contains('HookFn(target,') &&
+            install.contains('PublishSiglusSampledInputShieldReady()') &&
+            install.indexOf('PublishSiglusSampledInputShieldRequired()') <
+                install.indexOf('HookFn(target,') &&
+            install.indexOf('PublishSiglusSampledInputShieldReady()') >
+                install.lastIndexOf('HookFn(target,'),
+        isTrue,
+        reason: 'Required 先声明 fail-closed，三个 exact hook 就绪后 Ready 才能最后提交',
+      );
+      expect(
+        readyPublish.contains(
+              'g_siglus_sampled_input_game_window.store(game',
+            ) &&
+            readyPublish.contains('SetPropW(') &&
+            readyPublish.indexOf(
+                  'g_siglus_sampled_input_game_window.store(game',
+                ) <
+                readyPublish.indexOf('SetPropW('),
+        isTrue,
+        reason: 'detour 的 game cache 必须先于跨进程 Ready commit 可见',
+      );
+      expect(
+        validPopup.contains('GetWindow(popup,GW_OWNER)!=game') &&
+            validPopup.contains('FushiGlobalLookupWindow'),
+        isTrue,
+        reason: '陈旧或伪造 popup HWND 不得屏蔽游戏输入',
+      );
+      expect(
+        detour.contains(
+              'GetValidPublishedSiglusSampledInputShieldPopup(published_game)',
+            ) &&
+            detour.contains(
+              'IsSiglusSampledInputShieldReadyPublished(published_game)',
+            ) &&
+            detour.contains(
+              'constboolpopup_shield=direct_shield||bitmap_popup_visible;',
+            ) &&
+            detour.contains(
+              'AdvanceSiglusLookupClickSample(button_down,popup_shield,',
+            ),
+        isTrue,
+        reason: 'direct WebView 与 bitmap fallback 都必须进入既有完整 click owner 状态机',
+      );
+      final int popupShield = detour.indexOf(
+        'constboolpopup_shield=direct_shield||bitmap_popup_visible;',
+      );
+      final int exactPollerGate = detour.indexOf('if(!admitted_lookup_poller)');
+      expect(popupShield, greaterThanOrEqualTo(0));
+      expect(exactPollerGate, greaterThan(popupShield));
+      expect(
+        detour.contains('g_siglus_lookup_left_button_filter_latched.load(') &&
+            detour.contains(
+              'FilterSiglusLookupGetKeyState('
+              'raw,popup_shield||lookup_press_latched)',
+            ) &&
+            detour.contains(
+              'if(decision.consume){'
+              'g_siglus_lookup_left_button_filter_latched.store(true',
+            ) &&
+            detour.contains(
+              'if(!button_down){'
+              'g_siglus_lookup_left_button_filter_latched.store(false',
+            ),
+        isTrue,
+        reason:
+            'Siglus 的其它 VK_LBUTTON 消费点必须在 exact poller 早退之前看见 WebView shield；'
+            '正文命中的 down 也必须跨 caller 锁存到 exact raw up',
+      );
+      expect(
+        install.contains('profile->input_message_rva') &&
+            install.contains('MatchesSiglusInputMessageEntry(target)') &&
+            install.contains('Detour_SiglusInputMessage') &&
+            install.contains('g_orig_SiglusInputMessage==nullptr'),
+        isTrue,
+        reason: 'Ready 前必须安装 Siglus 自己的 WM_LBUTTON 剧情边沿写入点',
+      );
+      expect(
+        messageDetour.contains(
+              'return_address-module!='
+              'profile->main_input_message_return_rva',
+            ) &&
+            messageDetour.contains('DecideSiglusLookupMouseMessage(') &&
+            messageDetour.contains(
+              'g_siglus_lookup_message_left_button_latched.store(',
+            ) &&
+            messageDetour.contains(
+              'if(decision.consume){'
+              'g_siglus_lookup_left_button_filter_latched.store(true',
+            ) &&
+            messageDetour.contains('return;}original(message,wparam,lparam);'),
+        isTrue,
+        reason:
+            '只允许主 HWND 的 exact caller 吞正文/弹窗事务；'
+            '命中后 DOWN 到 matching UP 都不能写入游戏的剧情推进状态',
+      );
+      expect(
+        tick.contains('constboolpopup_visible=') &&
+            tick.contains('direct_popup_visible') &&
+            tick.contains('if(!popup_visible)') &&
+            tick.contains('||popup_visible||!game_point'),
+        isTrue,
+        reason: 'WebView 显示期间不能继续发布正文 click target 或接受 Shift 新查词',
+      );
+    },
+  );
 
   test('Fushi 只在 helper ready 后发布 popup HWND，Hide/down-up 生命周期不 ABA', () {
     final String directPublish = compactCode(
@@ -592,6 +775,31 @@ void main() {
     final String revoke = compactCode(
       methodBody(hookSource, 'void RevokeDirectInputShieldIfIdle('),
     );
+    final String abortInvalid = compactCode(
+      methodBody(
+        hookSource,
+        'void AbortInvalidDirectInputShieldAfterBarrier()',
+      ),
+    );
+    final String leafRevoke = compactCode(
+      methodBody(leafAquaplusSource, 'void RevokeLeafSampledInputShieldReady('),
+    );
+    final String publishTail = compactCode(
+      methodBody(hookSource, 'bool PublishSampledInputTailRequest('),
+    );
+    final String refreshTail = compactCode(
+      methodBody(hookSource, 'void RefreshSampledInputTailAck('),
+    );
+    const String leafContractDeclaration =
+        'constexpr SampledInputShieldContract '
+        'kLeafAquaplusSampledInputShieldContract =';
+    final int leafContractStart = hookSource.indexOf(leafContractDeclaration);
+    final int leafContractEnd = hookSource.indexOf('};', leafContractStart);
+    expect(leafContractStart, greaterThanOrEqualTo(0));
+    expect(leafContractEnd, greaterThan(leafContractStart));
+    final String leafContract = compactCode(
+      hookSource.substring(leafContractStart, leafContractEnd),
+    );
     final String barrier = compactCode(
       methodBody(
         hookSource,
@@ -603,27 +811,77 @@ void main() {
     );
 
     expect(
-      directPublish.contains('kSgreDirectInputShieldRequiredProperty') &&
-          directPublish.contains('kSgreDirectInputShieldRequiredValue') &&
-          directPublish.contains('kSgreDirectInputShieldReadyProperty') &&
-          directPublish.contains('kSgreDirectInputShieldReadyValue') &&
-          directPublish.contains('SetPropW(game,') &&
-          directPublish.contains('kSgreDirectInputShieldWindowProperty') &&
+      hookSource.contains('kSgreSampledInputShieldContract') &&
+          hookSource.contains('kSiglusSampledInputShieldContract') &&
+          hookSource.contains('kLeafAquaplusSampledInputShieldContract') &&
+          directPublish.contains('SelectSampledInputShieldContract(') &&
+          directPublish.contains('SetPropW(game,contract->window_property') &&
           directPublish.contains(
-            'IsSgreDirectInputShieldContractReady(game)',
+            'IsSelectedSampledInputShieldContractReady(game,contract)',
           ) &&
-          directPublish.contains(
-            'GetPropW(game,fushi_voice_hook::kSgreDirectInputShieldWindowProperty)',
-          ) &&
+          directPublish.contains('GetPropW(game,contract->window_property)') &&
           directPublish.contains('returnfalse;'),
       isTrue,
-      reason: '同完整性 SetProp 失败（含 UIPI）必须在 popup 上屏前 fail closed',
+      reason:
+          'SGRE/Siglus/Leaf 任一声明的 sampled-input 契约不完整或 SetProp 失败时，'
+          '必须在 popup 上屏前 fail closed',
+    );
+    expect(
+      leafContract.contains(
+            'kLeafAquaplusSampledInputShieldTailRequestProperty',
+          ) &&
+          leafContract.contains(
+            'kLeafAquaplusSampledInputShieldTailAckProperty',
+          ) &&
+          !leafContract.contains('nullptr'),
+      isTrue,
+      reason:
+          'Leaf sampled-input 契约必须声明非空 TailRequest/TailAck；退化成 '
+          'SGRE/Siglus 的无 tail 初始化会重新暴露两次轮询之间的完整快点',
+    );
+    expect(
+      publishTail.contains('LeafAquaplusSampledInputTailButtons(previous)') &&
+          publishTail.contains(
+            'MakeLeafAquaplusSampledInputTailToken(generation,buttons)',
+          ) &&
+          publishTail.indexOf('SetPropW(game,contract->tail_request_property') <
+              publishTail.indexOf(
+                'g_direct_input_shield_tail_token.store(token',
+              ) &&
+          refreshTail.contains('if(ack!=token)return;') &&
+          refreshTail.contains(
+            'g_direct_input_shield_tail_token.compare_exchange_strong(',
+          ) &&
+          !refreshTail.contains('RemovePropW'),
+      isTrue,
+      reason:
+          'Leaf tail token 必须合并未确认按钮、先跨进程发布再取得本地所有权，且只由'
+          '精确 generation Ack 清零；陈旧 Ack 或回调并发不能提前撤销新事务',
+    );
+    expect(
+      directPublish.contains('(pending!=0||pending_tail!=0)') &&
+          directPublish.contains(
+            'HasSampledInputTailHandshake(contract)&&pending_tail==0',
+          ) &&
+          revoke.contains('RefreshSampledInputTailAck(game,contract)') &&
+          revoke.contains(
+            'g_direct_input_shield_tail_token.load(std::memory_order_acquire)!=0',
+          ),
+      isTrue,
+      reason:
+          '未收到精确 Ack 的 Leaf tail 必须跨 Hide 保留，并阻止另一 popup 复用 publication；'
+          '只有 pending_tail 已清零才可清理跨进程属性',
     );
     final int publish = directArm.indexOf(
       'PublishDirectInputShieldIfReady(target,consume_outside_owner)',
     );
+    final int abortStale = directArm.indexOf(
+      'AbortInvalidDirectInputShieldAfterBarrier()',
+    );
     final int exposeTarget = directArm.indexOf('g_target.store(target');
     expect(publish, greaterThanOrEqualTo(0));
+    expect(abortStale, greaterThanOrEqualTo(0));
+    expect(publish, greaterThan(abortStale));
     expect(exposeTarget, greaterThan(publish));
     expect(
       desktopArm.contains('PublishDirectInputShieldIfReady'),
@@ -635,6 +893,24 @@ void main() {
           hookProc.contains('RequestDirectInputShieldFinalize()'),
       isTrue,
       reason: 'popup 内外 down 都需从 DirectInput 隐藏；up 只投递串行撤销消息',
+    );
+    final int tailPublish = hookProc.indexOf(
+      'constbooltail_published=PublishSampledInputTailRequest(',
+    );
+    final int clickDispatch = hookProc.indexOf(
+      'PostMessage(target,kLowLevelMouseClickMessage',
+    );
+    expect(tailPublish, greaterThanOrEqualTo(0));
+    expect(clickDispatch, greaterThan(tailPublish));
+    expect(
+      hookProc.contains(
+        'if(!tail_published){g_swallowed_buttons.fetch_or('
+        'bit,std::memory_order_relaxed);return1;}',
+      ),
+      isTrue,
+      reason:
+          'Leaf TailRequest 发布失败时不得把 down 交给 WebView 或 dismiss：必须吞掉'
+          '整次事务并保留 popup，避免完整快点落在两次游戏轮询之间后穿透',
     );
     expect(
       hookProc.contains(
@@ -661,9 +937,7 @@ void main() {
     );
     expect(
       barrier.contains('returnHookThreadBarrierResult::kNotQueued;') &&
-          barrier.contains(
-            'returnHookThreadBarrierResult::kQueuedPending;',
-          ) &&
+          barrier.contains('returnHookThreadBarrierResult::kQueuedPending;') &&
           barrier.contains('returnHookThreadBarrierResult::kCrossed;') &&
           disarm.contains('barrier!=HookThreadBarrierResult::kQueuedPending'),
       isTrue,
@@ -678,6 +952,34 @@ void main() {
       2,
       reason: '没有钩子线程、以及 PostThreadMessage 失败，都属于「从未排队」',
     );
+    expect(
+      abortInvalid.contains(
+            'IsSelectedSampledInputShieldContractReady(game,contract)',
+          ) &&
+          abortInvalid.contains(
+            'GetPropW(game,contract->window_property))==popup',
+          ) &&
+          abortInvalid.contains(
+            'GetPropW(game,contract->tail_request_property)))==token',
+          ) &&
+          abortInvalid.contains('g_direct_input_shield_tail_token.store(0') &&
+          disarm.contains(
+            'barrier==HookThreadBarrierResult::kCrossed)'
+            '{AbortInvalidDirectInputShieldAfterBarrier();',
+          ),
+      isTrue,
+      reason:
+          'helper/game/window 失效后，只有跨过 callback barrier 才能取消永远不会再获真 Ack '
+          '的 Leaf tail；跨进程属性必须按本地 token 精确删除，不能误删新事务',
+    );
+    final int leafReadyRevoke = leafRevoke.indexOf(
+      'kLeafAquaplusSampledInputShieldReadyProperty',
+    );
+    final int leafWindowRevoke = leafRevoke.indexOf(
+      'kLeafAquaplusSampledInputShieldWindowProperty',
+    );
+    expect(leafReadyRevoke, greaterThanOrEqualTo(0));
+    expect(leafWindowRevoke, greaterThan(leafReadyRevoke));
     expect(
       requestFinalize.contains(
             'g_target.load(std::memory_order_acquire)!=popup',

@@ -181,21 +181,45 @@ class DictionaryPopupController extends ChangeNotifier {
   // ── 搜索期 UI（「搜索→就绪才显示」模式）───────────────────────────────
   // 弹窗目标搜索期隐藏，宿主据这两个字段在选中词位置画轻量加载占位卡，
   // 全程不显示空 WebView（与书内 base_source_page 同观感）。
-  bool _searchingUi = false;
-  bool get isSearchingUi => _searchingUi;
-  Rect? _pendingRect;
-  Rect? get pendingRect => _pendingRect;
+  //
+  // 这里**不存 bool 镜像**。旧实现有一个 `bool _searchingUi`，只有成功路径（宿主
+  // mixin 的 5 处 endSearchUi）会复位它，而 [dismissAt] / [truncateTo] /
+  // [pruneToWarmSlot] / [clear] 四条关栈路径一条都不复位 —— 在「结果已到、WebView
+  // 还没回 popupRendered」的挂起窗口里关掉弹窗，镜像就永久卡在 true：全屏 opaque 的
+  // LookupDismissBarrier 撤不掉（再点、Esc 都只是重走一遍 no-op 的 dismissAt），
+  // 视频页的 _lookupOverlayActive 也恒真、播放控件再也唤不回来。
+  //
+  // 根治办法是让它不再是第二真相源：上面四条路径**本来就已经**把目标 entry 的
+  // isSearching / revealOnRender 清了或把 entry 移出了栈 —— 它们已经表达了「这次
+  // 搜索结束了」，只是从前没人把这个事实翻译给 UI。改成派生值之后这条翻译没有失败
+  // 的可能，将来新增任何关栈路径都自动正确。
+  DictionaryPopupEntry? _searchTarget;
+  Rect? _pendingRectRaw;
 
-  void beginSearchUi(Rect rect) {
-    _searchingUi = true;
-    _pendingRect = rect;
+  /// 是否处于搜索期盖板态：有一个仍在栈内、且仍在搜索或仍等着渲染后翻出的目标。
+  bool get isSearchingUi {
+    final DictionaryPopupEntry? target = _searchTarget;
+    if (target == null) return false;
+    // identical 比较：热槽复用时 entry 身份不变，但被 _restoreWarmSeed 还原成种子
+    // 后 isSearching / revealOnRender 都是 false，下面的条件自然落 false。
+    if (!_entries.any((DictionaryPopupEntry e) => identical(e, target))) {
+      return false;
+    }
+    return target.isSearching || target.revealOnRender;
+  }
+
+  Rect? get pendingRect => isSearchingUi ? _pendingRectRaw : null;
+
+  void beginSearchUi(Rect rect, DictionaryPopupEntry target) {
+    _searchTarget = target;
+    _pendingRectRaw = rect;
     notifyListeners();
   }
 
   void endSearchUi() {
-    if (!_searchingUi && _pendingRect == null) return;
-    _searchingUi = false;
-    _pendingRect = null;
+    if (_searchTarget == null && _pendingRectRaw == null) return;
+    _searchTarget = null;
+    _pendingRectRaw = null;
     notifyListeners();
   }
 

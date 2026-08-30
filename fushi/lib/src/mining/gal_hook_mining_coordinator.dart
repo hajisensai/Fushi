@@ -32,28 +32,6 @@ typedef GalHookAudioCapture = Future<Uint8List?> Function({
   required String outputExtension,
 });
 
-/// 原始资源只有在实际产物是 RIFF/XWMA 时才保留 `.xwma`。
-/// `audioResourceId` 描述来源，不描述 capture 后的字节：同句多个 XWMA 会被
-/// 合并转码成 fallback 格式，因此不能用资源 ID 后缀给最终媒体命名。
-String galHookMinedAudioExtension({
-  required String fallback,
-  required Uint8List? bytes,
-}) {
-  if (bytes != null &&
-      bytes.length >= 12 &&
-      bytes[0] == 0x52 &&
-      bytes[1] == 0x49 &&
-      bytes[2] == 0x46 &&
-      bytes[3] == 0x46 &&
-      bytes[8] == 0x58 &&
-      bytes[9] == 0x57 &&
-      bytes[10] == 0x4d &&
-      bytes[11] == 0x41) {
-    return 'xwma';
-  }
-  return fallback;
-}
-
 class GalHookMiningResult {
   const GalHookMiningResult({
     this.outcome,
@@ -80,9 +58,25 @@ class GalHookMiningResult {
   bool get aborted => outcome == null;
   bool get success => outcome?.result == MineResult.success;
 
-  Map<String, Object?> toPopupReply() => <String, Object?>{
+  /// BUG-1908：制卡失败是不是**因为 Anki 里已经有这张卡**。见
+  /// `MinePopupResult.duplicate` —— 浮窗据它区分「卡已存在」与「真的没制成」，
+  /// 不必回查 Anki（TODO-448 禁止失败后回查把按钮翻成 ✓）。
+  bool get duplicate => outcome?.result == MineResult.duplicate;
+
+  /// BUG-1908：[message] 是**失败时给用户看的原因**，由调用方（浮窗控制器）填入
+  /// 已本地化的文案。
+  ///
+  /// 此前这个回程只有两个字段，宿主即便算出了「没选卡组 / 字段映射对不上 / 截图
+  /// 失败」也没地方放；浮窗那边 `ankiConnect:false` 是正常 resolve、不抛，
+  /// 既不进 catch 也不进 if —— 整段没有 else，用户零反馈。而 galgame 浮窗是独立的
+  /// native WebView2 窗口，宿主的 Flutter toast 画在主 app 窗口的 Overlay 上，
+  /// 游戏全屏时主窗在后台，那些 toast 一个也看不见。
+  Map<String, Object?> toPopupReply({String? message}) => <String, Object?>{
         'ankiConnect': success,
         'noteId': success ? outcome?.noteId : null,
+        if (!success && message != null && message.isNotEmpty)
+          'message': message,
+        if (duplicate) 'duplicate': true,
       };
 }
 
@@ -377,10 +371,6 @@ class GalHookMiningCoordinator {
       Error.throwWithStackTrace(audioError!, audioStack ?? StackTrace.current);
     }
     final bool sentenceAudioMissing = audioBytes == null || audioBytes.isEmpty;
-    final String minedAudioExtension = galHookMinedAudioExtension(
-      fallback: audioExtension,
-      bytes: audioBytes,
-    );
     // 只有最严格的 resourceOnly 才因为「没抓到音频」拒绝制卡。cleanOnly 的立场是
     // 「这句本来就没配音很正常」——旁白/心理描写句照样成卡，只是不带音频；把它也
     // 拦成制卡失败，等于逼用户在「收一段 BGM」和「这张卡做不了」之间二选一。
@@ -405,7 +395,7 @@ class GalHookMiningCoordinator {
           audioBytes: audioBytes,
           audioName: sentenceAudioMissing
               ? null
-              : 'galgame_audio.$minedAudioExtension',
+              : 'galgame_audio.$audioExtension',
           documentTitle:
               window.title.isEmpty ? 'External window' : window.title,
           // BUG-1137：gal 场景卡归「游戏」分类标签（曾吃默认 video 被误标）。

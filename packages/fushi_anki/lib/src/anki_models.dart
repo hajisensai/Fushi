@@ -1189,14 +1189,32 @@ class AnkiErrorCode {
   /// 「连远端进程/代理而非真 AnkiConnect」时把无 charset 的 GBK/UTF-8 错误页经
   /// package:http 的 latin1 默认解码弄成乱码。OS 原文只进诊断日志（[MineOutcome.error]）。
   ///
-  /// `connectionRefused`：连接被拒（AnkiConnect 没在监听 / Anki 没开）。
-  /// `connectionTimeout`：连接/响应超时（[TimeoutException]）。
+  /// `connectionRefused`：**建连**就没成（AnkiConnect 没在监听 / Anki 没开 / 地址不通）。
+  /// `connectionTimeout`：**连上了但不应答**——TCP 握手成功、请求已发出，却等不到
+  ///   AnkiConnect 的回复。连接工厂把一切建连失败标成 `AnkiConnectPreDeliveryException`
+  ///   并归到 `connectionRefused`，所以这个码只剩这一种含义：那个端口上有程序在监听，
+  ///   但它不是 AnkiConnect（端口被别的程序占了），或者 Anki 卡住了。
   /// `httpError`：HTTP 层错误（http.ClientException，非超时非 socket）。
   /// `connectionUnknown`：其余无法分类的连接异常。
   static const String connectionRefused = 'ANKI_CONNECTION_REFUSED';
   static const String connectionTimeout = 'ANKI_CONNECTION_TIMEOUT';
   static const String httpError = 'ANKI_HTTP_ERROR';
   static const String connectionUnknown = 'ANKI_CONNECTION_UNKNOWN';
+
+  /// BUG-1900：配置的字段名**一个都不属于**当前笔记类型。
+  ///
+  /// AnkiConnect 按字段**名**匹配，不认识的名字被静默丢弃；而
+  /// `BaseAnkiRepository.fieldMappingsAfterFetch` 对非 Lapis 笔记类型直接沿用旧映射
+  /// （`return current.fieldMappings`），换了笔记类型字段名就全对不上。此前用户拿到的
+  /// 是 AnkiConnect 透传的 `cannot create note because it is empty` —— 既看不出是自己
+  /// 选错了笔记类型，也不知道该去哪儿改。
+  static const String fieldMappingMismatch = 'ANKI_FIELD_MAPPING_MISMATCH';
+
+  /// BUG-1900：笔记类型的**第一个字段**为空。
+  ///
+  /// Anki 的 `fields_check()` 只看首字段，空就拒收整张卡（服务端原文同样是
+  /// `cannot create note because it is empty`）。本地预检把它变成一句能照着做的话。
+  static const String firstFieldEmpty = 'ANKI_FIRST_FIELD_EMPTY';
 }
 
 sealed class AnkiFetchResult {

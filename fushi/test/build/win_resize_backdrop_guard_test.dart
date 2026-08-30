@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// Source-scan guards for BUG-1916 (Windows 最大化/还原/缩放过渡露出深青「底色层」).
 ///
 /// The Win32 runner cannot run on the Dart host, so these pin the wiring that
@@ -20,10 +22,16 @@ import 'package:flutter_test/flutter_test.dart';
 /// * Dart's theme surface colour (`setCaptionColors`) is what replaces the
 ///   splash colour, and replacing it refills the surface immediately.
 ///
-/// Comments are stripped before the order checks so a stale explanatory
-/// comment cannot satisfy an `indexOf` on the real call site.
-String _stripLineComments(String source) =>
-    source.replaceAll(RegExp(r'//[^\n]*'), '');
+/// Comments are masked before the order checks so a stale explanatory comment
+/// cannot satisfy an `indexOf` on the real call site.
+///
+/// Masking goes through the shared `maskComments` (see
+/// `test/tools/source_guard_adoption_test.dart`) rather than a hand-rolled
+/// `RegExp(r'//[^\n]*')`: that form skips block comments entirely (a
+/// `/* PaintBackdrop(...) */` would satisfy a `contains`), skips trailing
+/// comments, and — because it *deletes* rather than blanks — shifts every
+/// later `indexOf` / `substring` offset off the original text, which is
+/// exactly what the order assertions below depend on.
 
 void main() {
   late String cpp;
@@ -32,14 +40,14 @@ void main() {
   late String mainDart;
 
   setUpAll(() {
-    cpp = _stripLineComments(
+    cpp = maskComments(
       File('windows/runner/win32_window.cpp').readAsStringSync(),
     );
     header = File('windows/runner/win32_window.h').readAsStringSync();
-    flutterWindow = _stripLineComments(
+    flutterWindow = maskComments(
       File('windows/runner/flutter_window.cpp').readAsStringSync(),
     );
-    mainDart = _stripLineComments(File('lib/main.dart').readAsStringSync());
+    mainDart = maskComments(File('lib/main.dart').readAsStringSync());
   });
 
   group('BUG-1916 Windows surface backdrop', () {

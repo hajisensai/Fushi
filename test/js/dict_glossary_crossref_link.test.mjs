@@ -48,7 +48,7 @@ const handlerSrc = extract("handleGlossaryAnchorClick");
 /**
  * 在 jsdom 页面里注入真实 handleGlossaryAnchorClick + 真实 dict-media.js + 桩，
  * 点击首个 <a>，回收结果。
- * 返回 { prevented, linkCalls, externalCalls, extHitCalls, playCalls }。
+ * 返回 { prevented, linkCalls, externalCalls, playCalls }。
  */
 function clickAnchor(anchorHtml) {
   const dom = new JSDOM(
@@ -60,14 +60,10 @@ function clickAnchor(anchorHtml) {
     prevented: false,
     linkCalls: [],
     externalCalls: [],
-    extHitCalls: 0,
     playCalls: [],
   };
   // 桩：记录被调情况。
   win.openExternalLink = (url) => results.externalCalls.push(url);
-  win.markGlobalLookupExtHit = () => {
-    results.extHitCalls++;
-  };
   win.playWordAudio = (url) => {
     results.playCalls.push(url);
     return Promise.resolve(true);
@@ -77,7 +73,7 @@ function clickAnchor(anchorHtml) {
       if (name === "onLinkClick") results.linkCalls.push(args);
     },
   };
-  // 把真实函数装进这个 window 作用域（它引用 openExternalLink / markGlobalLookupExtHit /
+  // 把真实函数装进这个 window 作用域（它引用 openExternalLink /
   // rewriteDictionaryMediaPath / playWordAudio / window.flutter_inappwebview 这些全局）。
   win.eval(`${dictMediaSrc}\n${handlerSrc}\nwindow.__handleGlossaryAnchorClick = handleGlossaryAnchorClick;`);
 

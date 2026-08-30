@@ -9,7 +9,9 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:fushi/src/anki/lapis_backup_retention.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';
+import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/ankiconnect_port_repair.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/mining/immersion_mining_request.dart'
     show MiningAnimatedFormat, MiningStillFormat, VideoMiningImageMode;
@@ -52,6 +54,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// （一个是 Anki 的插件目录，一个是 note type），互不阻塞。
   bool _addonInstallBusy = false;
 
+  /// 「换一个空闲端口」进行中。端口扫描是一串 bind 尝试，最坏情况会连试 200 次，
+  /// 必须防重入，否则两次点击会各挑一个端口、后完成的那次覆盖前一次。
+  bool _portRepairBusy = false;
+
   /// 媒体去重在途标记（扫描/执行互斥防重入）。
   bool _dedupBusy = false;
 
@@ -76,6 +82,14 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// 不了这个功能，更不会知道前提是先开 Anki。入口常显、点下去再探测并如实
   /// 告知「请先启动 Anki」，比静默消失有用。顺带也避免了每帧去枚举顶层窗口。
   static final bool _supportsAddonInstall = Platform.isWindows;
+
+  /// 是否提供「换一个空闲端口」入口。
+  ///
+  /// 桌面三端都行：改端口要同时写本机 Anki 的 `addons21/<id>/meta.json`，而
+  /// [locateAnkiDataDir] 在 Windows/macOS/Linux 都有实现（不像代装那样依赖 Win32
+  /// 进程枚举）。手机连的是局域网另一台机上的 Anki，插件配置不在本机，改不了。
+  static final bool _supportsPortRepair =
+      Platform.isWindows || Platform.isMacOS || Platform.isLinux;
 
   @override
   void initState() {
@@ -154,6 +168,28 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               keyboardType: TextInputType.number,
               onChanged: vm.updateAnkiConnectPort,
             ),
+            // 8765 被别的程序占着是这条链路最常见的失败，而它的症状只是一句超时：
+            // 占用者接受了 TCP 连接却不按 AnkiConnect 应答。手工解法要同时改两处
+            // （这里 + Anki 插件配置的 webBindPort），少改一处就仍然连不上——这一行
+            // 把「挑一个空闲端口 + 两处一起写」收成一次点击。
+            if (_supportsPortRepair)
+              AdaptiveSettingsRow(
+                icon: Icons.swap_horiz_outlined,
+                showIcon: true,
+                title: t.anki_connect_port_auto_fix,
+                subtitle: t.anki_connect_port_auto_fix_hint,
+                trailing: _portRepairBusy
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child:
+                            adaptiveIndicator(context: context, strokeWidth: 2),
+                      )
+                    : null,
+                onTap: _portRepairBusy
+                    ? null
+                    : () => _switchToFreeAnkiConnectPort(vm, settings),
+              ),
             _AnkiConnectionField(
               label: t.anki_connect_api_key,
               value: settings.ankiConnectApiKey,
@@ -784,48 +820,17 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     }
   }
 
-  Widget _buildCreateLapisTile(AnkiUiState uiState, AnkiViewModel vm) {
-    return AdaptiveSettingsRow(
-      icon: Icons.note_add_outlined,
-      showIcon: true,
-      title: t.anki_create_lapis,
-      subtitle: t.anki_create_lapis_hint,
-      // spinner 只跟本行自己的在途动作（_creatingLapis），不再借 vm 的
-      // isFetching——否则点「刷新」时本行也凭空转圈。
-      trailing: _creatingLapis
-          ? SizedBox(
-              width: 20,
-              height: 20,
-              child: adaptiveIndicator(context: context, strokeWidth: 2),
-            )
-          : null,
-      onTap: uiState.isFetching || _creatingLapis
-          ? null
-          : () => _runCreateLapis(vm),
-    );
-  }
-
-  Future<void> _runCreateLapis(AnkiViewModel vm) async {
-    final messenger = ScaffoldMessenger.of(context);
-    setState(() => _creatingLapis = true);
-    final LapisSetupResult result;
-    try {
-      result = await vm.createLapisSetup();
-    } finally {
-      if (mounted) setState(() => _creatingLapis = false);
-    }
-    if (!mounted) return;
-    final String message;
-    switch (result.outcome) {
-      case LapisSetupOutcome.created:
-        message = t.anki_create_lapis_success;
-      case LapisSetupOutcome.alreadyExisted:
-        message = t.anki_create_lapis_exists;
-      case LapisSetupOutcome.failed:
-        message = t.anki_create_lapis_failed(error: result.message ?? '');
-    }
-    messenger.showSnackBar(SnackBar(content: Text(message)));
-  }
+  // BUG-1902：「一键创建 Lapis 卡组」同样搬进共享组件（含它自带的在途 spinner 约定：
+  // 只跟本行自己的动作，不借 vm 的 isFetching，否则点「刷新」时本行也凭空转圈）。
+  Widget _buildCreateLapisTile(AnkiUiState uiState, AnkiViewModel vm) =>
+      AnkiCreateLapisRow(
+        viewModel: vm,
+        isFetching: uiState.isFetching,
+        // 本页的「刷新牌组」行要靠这个标志把「获取中…」压住（见 _buildFetchTile）。
+        onBusyChanged: (bool busy) {
+          if (mounted) setState(() => _creatingLapis = busy);
+        },
+      );
 
   // ── Lapis 样式客制化 ─────────────────────────────────────────────────
 
@@ -983,6 +988,49 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// 措辞上刻意不说「已安装」：装不装由用户在 Anki 自己弹的确认框里决定，之后
   /// 还要重启 Anki 才生效，Fushi 两件事都无从得知。能证明插件真的到位的只有
   /// 之后 AnkiConnect 能应答，那属于连接探活，不是这里该声称的。
+  /// 挑一个本机空闲端口，同时写进 Anki 的 AnkiConnect 插件配置和本 app 设置。
+  ///
+  /// 两处都写才算改完：AnkiConnect 的监听端口只由插件配置 `webBindPort` 决定
+  /// （上游没给它留环境变量口子），app 这边只是去连它。改完必须重启 Anki——插件
+  /// 只在加载时读一次配置，这一点由 SnackBar 如实告诉用户，不假装立刻生效。
+  ///
+  /// 找不到插件配置（Anki 没装 / 一次都没跑过 / 用了自定义基目录）时**仍然**改本
+  /// app 的端口，并把「请去 Anki 里把 webBindPort 也改成这个」写进提示：把用户留在
+  /// 一个「两边都是旧端口」的状态，等于这次点击什么也没发生。
+  Future<void> _switchToFreeAnkiConnectPort(
+    AnkiViewModel vm,
+    AnkiSettings settings,
+  ) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    setState(() => _portRepairBusy = true);
+    try {
+      // 排掉当前端口：调用这个功能的前提就是它不好使，把它选回来等于没动。
+      final int? port =
+          await findFreeAnkiConnectPort(exclude: settings.ankiConnectPort);
+      if (port == null) {
+        messenger.showSnackBar(
+          SnackBar(content: Text(t.anki_connect_port_auto_fix_none)),
+        );
+        return;
+      }
+      final AnkiConnectPortWriteResult result =
+          await writeAnkiConnectAddonPort(port);
+      await vm.updateAnkiConnectPort(port.toString());
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(switch (result.status) {
+            AnkiConnectPortWriteStatus.updated =>
+              t.anki_connect_port_auto_fix_done(port: port),
+            AnkiConnectPortWriteStatus.addonNotFound =>
+              t.anki_connect_port_auto_fix_manual(port: port),
+          }),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _portRepairBusy = false);
+    }
+  }
+
   Future<void> _installAnkiConnectAddon() async {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     setState(() => _addonInstallBusy = true);
@@ -1186,53 +1234,14 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     return name.replaceFirst('lapis-', '').replaceFirst('.json', '');
   }
 
-  Widget _buildDeckDropdown(AnkiSettings settings, AnkiViewModel vm) {
-    final decks = settings.availableDecks;
-    final selectedId = settings.selectedDeckId;
-    final int? validSelectedId =
-        decks.any((d) => d.id == selectedId) ? selectedId : null;
+  // BUG-1902：牌组 / 笔记类型选择行搬到 `anki/anki_config_controls.dart`，与新手引导
+  // 共用同一份实现——此前它们是本 State 的私有方法，跨文件不可见，引导页只能显示
+  // 三行只读文本。这里保留同名薄封装，本页其余调用点不动。
+  Widget _buildDeckDropdown(AnkiSettings settings, AnkiViewModel vm) =>
+      AnkiDeckPickerRow(settings: settings, viewModel: vm);
 
-    return AdaptiveSettingsPickerRow<int?>(
-      title: t.anki_deck,
-      controlBelow: true,
-      selected: validSelectedId,
-      options: decks
-          .map((d) => AdaptiveSettingsPickerOption<int?>(
-                value: d.id,
-                label: d.name,
-              ))
-          .toList(),
-      onChanged: (id) {
-        if (id == null) return;
-        final deck = decks.firstWhere((d) => d.id == id);
-        vm.selectDeck(deck);
-      },
-    );
-  }
-
-  Widget _buildNoteTypeDropdown(AnkiSettings settings, AnkiViewModel vm) {
-    final noteTypes = settings.availableNoteTypes;
-    final selectedId = settings.selectedNoteTypeId;
-    final int? validSelectedId =
-        noteTypes.any((n) => n.id == selectedId) ? selectedId : null;
-
-    return AdaptiveSettingsPickerRow<int?>(
-      title: t.anki_note_type,
-      controlBelow: true,
-      selected: validSelectedId,
-      options: noteTypes
-          .map((n) => AdaptiveSettingsPickerOption<int?>(
-                value: n.id,
-                label: n.name,
-              ))
-          .toList(),
-      onChanged: (id) {
-        if (id == null) return;
-        final noteType = noteTypes.firstWhere((n) => n.id == id);
-        vm.selectNoteType(noteType);
-      },
-    );
-  }
+  Widget _buildNoteTypeDropdown(AnkiSettings settings, AnkiViewModel vm) =>
+      AnkiNoteTypePickerRow(settings: settings, viewModel: vm);
 
   List<Widget> _buildFieldMappings(AnkiSettings settings, AnkiViewModel vm) {
     final noteType = settings.selectedNoteType;

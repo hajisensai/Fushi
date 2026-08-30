@@ -72,12 +72,6 @@ class _HomeShellAppModel extends AppModel {
   bool get onboardingCompleted => true;
 
   // ── 查词页需要的最小桩（与 home_dictionary_pending_on_mount_test 同构）──
-  @override
-  bool get desktopClipboardEnabled => false;
-
-  @override
-  DesktopClipboardWindowMode get desktopClipboardWindowMode =>
-      DesktopClipboardWindowMode.normal;
 
   @override
   List<DictionarySearchResult> get dictionaryHistory =>

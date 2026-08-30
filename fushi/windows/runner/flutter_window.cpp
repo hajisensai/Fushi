@@ -257,13 +257,47 @@ HICON CreateIconFromImageFile(const std::wstring& path, int size) {
   return icon;
 }
 
+// Resolves an existing file to the kernel's final DOS path so equivalent path
+// spellings (8.3 names, junctions, symlinks, \\?\ prefixes) compare by identity.
+// Returns empty when the file cannot be opened/resolved.
+std::wstring FinalPathForComparison(const std::wstring& path) {
+  if (path.empty()) {
+    return std::wstring();
+  }
+  HANDLE file = CreateFileW(path.c_str(), 0,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE |
+                                FILE_SHARE_DELETE,
+                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
+                            nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    return std::wstring();
+  }
+  const DWORD required = GetFinalPathNameByHandleW(
+      file, nullptr, 0, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+  if (required == 0) {
+    CloseHandle(file);
+    return std::wstring();
+  }
+  std::wstring resolved(required, L'\0');
+  const DWORD written = GetFinalPathNameByHandleW(
+      file, resolved.data(), required,
+      FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+  CloseHandle(file);
+  if (written == 0 || written >= required) {
+    return std::wstring();
+  }
+  resolved.resize(written);
+  return resolved;
+}
+
 // Rewrites the IconLocation of a single existing .lnk to |icon_path| (index 0),
 // preserving its target/args/workdir, then notifies the shell to re-read it.
 // Returns true on success. A missing .lnk (user deleted it, or a portable
 // unzip install with no shortcuts) is a soft no-op and returns false without
 // being an error.
 bool SetShortcutIconLocation(const std::wstring& lnk_path,
-                             const std::wstring& icon_path) {
+                             const std::wstring& icon_path,
+                             bool require_current_executable = false) {
   if (lnk_path.empty() || icon_path.empty()) {
     return false;
   }
@@ -287,6 +321,31 @@ bool SetShortcutIconLocation(const std::wstring& lnk_path,
   hr = persist_file->Load(lnk_path.c_str(), STGM_READWRITE);
   if (FAILED(hr)) {
     return false;
+  }
+  if (require_current_executable) {
+    std::vector<wchar_t> target(32768, L'\0');
+    WIN32_FIND_DATAW target_data = {};
+    hr = shell_link->GetPath(target.data(), static_cast<int>(target.size()),
+                             &target_data, SLGP_UNCPRIORITY);
+    if (FAILED(hr) || target.front() == L'\0') {
+      return false;
+    }
+    std::vector<wchar_t> executable(32768, L'\0');
+    const DWORD executable_size = GetModuleFileNameW(
+        nullptr, executable.data(), static_cast<DWORD>(executable.size()));
+    if (executable_size == 0 ||
+        executable_size >= static_cast<DWORD>(executable.size())) {
+      return false;
+    }
+    const std::wstring target_final = FinalPathForComparison(target.data());
+    const std::wstring executable_final =
+        FinalPathForComparison(executable.data());
+    if (target_final.empty() || executable_final.empty() ||
+        CompareStringOrdinal(target_final.c_str(), -1,
+                             executable_final.c_str(), -1, TRUE) !=
+            CSTR_EQUAL) {
+      return false;
+    }
   }
   hr = shell_link->SetIconLocation(icon_path.c_str(), 0);
   if (FAILED(hr)) {
@@ -328,9 +387,9 @@ std::wstring FushiShortcutInFolder(REFKNOWNFOLDERID folder_id,
 // at {userdesktop}\Fushi (Desktop\Fushi.lnk) and {group}\Fushi, where
 // {group} = {autoprograms}\{DefaultGroupName=Fushi} -> Programs\Fushi\Fushi.lnk
 // (DisableProgramGroupPage only hides the wizard page; the Fushi subfolder
-// still exists). Returns true if at least one shortcut was updated. Taskbar
-// pinned items are intentionally NOT touched (fragile, cached in the registry;
-// see plan).
+// still exists). The user's pinned taskbar shortcut is also updated, but only
+// when its target is this running executable so a stale/unrelated Fushi.lnk is
+// never rewritten. Returns true if at least one shortcut was updated.
 bool ApplyShortcutIcon(const std::wstring& icon_path) {
   if (icon_path.empty()) {
     return false;
@@ -346,6 +405,11 @@ bool ApplyShortcutIcon(const std::wstring& icon_path) {
       FushiShortcutInFolder(FOLDERID_Programs, L"Fushi\\Fushi.lnk");
   if (!programs_lnk.empty()) {
     any |= SetShortcutIconLocation(programs_lnk, icon_path);
+  }
+  const std::wstring taskbar_lnk = FushiShortcutInFolder(
+      FOLDERID_UserPinned, L"TaskBar\\Fushi.lnk");
+  if (!taskbar_lnk.empty()) {
+    any |= SetShortcutIconLocation(taskbar_lnk, icon_path, true);
   }
   // One global associations-changed notify so already-open Explorer views pick
   // the new icon up sooner (best-effort; shell icon cache is not guaranteed to
@@ -544,10 +608,8 @@ bool FlutterWindow::OnCreate() {
 
   RegisterImeGuardChannel();
   RegisterFloatingLyricChannel();
-  RegisterClipboardTextChannel();
   RegisterGalHookTextChannel();
   RegisterGlobalLookupChannel();
-  RegisterClipboardPanelChannel();
   RegisterForegroundSelectionChannel();
   RegisterWindowCaptureChannel();
   RegisterAudioLoopbackChannel();
@@ -847,6 +909,14 @@ struct WindowCapturePending {
 
 void FlutterWindow::RegisterFloatingLyricChannel() {
   floating_lyric_window_ = std::make_unique<FloatingLyricWindow>();
+  // 有声书悬浮字幕跑与 galgame hook 台词浮窗同一套富文本形态：换行、滚动条、
+  // 拖角改尺寸、鼠标穿透、一键透明、Shift-悬停查词、点字后卡片锚定到那个字。
+  // 旧的自绘 5 槽歌词条形态已删 —— 它是同一件事的第二份实现，且只有它还在用无坐标
+  // 的旧 LookupCallback（卡片只能跟着鼠标飘）。
+  floating_lyric_window_->SetHookTextMode(true);
+  // 但按钮语义不同：这里是上一句 / 播放暂停 / 下一句，不是试听 / 重捕 / 工作台。
+  floating_lyric_window_->SetToolbarProfile(
+      hook_toolbar::Profile::kAudiobook);
 
   floating_lyric_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
@@ -862,15 +932,55 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
         floating_lyric_channel_->InvokeMethod(
             action, std::make_unique<flutter::EncodableValue>());
       });
-  floating_lyric_window_->SetLookupCallback(
-      [this](const std::string& text, int char_index) {
+  // 带词矩形的查词回调（与 gal 台词浮窗同一条）：wordLeft/Top/Width/Height 是被点
+  // 那个字的屏幕逻辑 px 矩形，查词卡据此锚定到词而不是鼠标位置。老字段 text/index
+  // 原样保留，Dart 侧读不到词矩形时回落到光标锚定，逐像素与改造前一致。
+  floating_lyric_window_->SetContextLookupCallback(
+      [this](const std::string& line_id, const std::string& text,
+             int char_index, const D2D1_RECT_F& word_rect) {
         flutter::EncodableMap map{
+            {flutter::EncodableValue("lineId"),
+             flutter::EncodableValue(line_id)},
             {flutter::EncodableValue("text"), flutter::EncodableValue(text)},
             {flutter::EncodableValue("index"),
              flutter::EncodableValue(char_index)},
+            {flutter::EncodableValue("wordLeft"),
+             flutter::EncodableValue(static_cast<double>(word_rect.left))},
+            {flutter::EncodableValue("wordTop"),
+             flutter::EncodableValue(static_cast<double>(word_rect.top))},
+            {flutter::EncodableValue("wordWidth"),
+             flutter::EncodableValue(
+                 static_cast<double>(word_rect.right - word_rect.left))},
+            {flutter::EncodableValue("wordHeight"),
+             flutter::EncodableValue(
+                 static_cast<double>(word_rect.bottom - word_rect.top))},
         };
         floating_lyric_channel_->InvokeMethod(
             "lookupText",
+            std::make_unique<flutter::EncodableValue>(std::move(map)));
+      });
+  // 穿透被 native 否决时必须让 Dart 知道（工具条窗建不出来 = 不许把正文点穿，
+  // 否则用户被浮窗挡住且再也点不回来）。
+  floating_lyric_window_->SetPassThroughCallback([this](bool enabled) {
+    flutter::EncodableMap map{
+        {flutter::EncodableValue("passThrough"),
+         flutter::EncodableValue(enabled)},
+    };
+    floating_lyric_channel_->InvokeMethod(
+        "passThroughChanged",
+        std::make_unique<flutter::EncodableValue>(std::move(map)));
+  });
+  floating_lyric_window_->SetBoundsCallback(
+      [this](int left, int top, int width, int height) {
+        flutter::EncodableMap map{
+            {flutter::EncodableValue("left"), flutter::EncodableValue(left)},
+            {flutter::EncodableValue("top"), flutter::EncodableValue(top)},
+            {flutter::EncodableValue("width"), flutter::EncodableValue(width)},
+            {flutter::EncodableValue("height"),
+             flutter::EncodableValue(height)},
+        };
+        floating_lyric_channel_->InvokeMethod(
+            "windowRectChanged",
             std::make_unique<flutter::EncodableValue>(std::move(map)));
       });
   // The user toggling the lock button on the strip reports the new state back
@@ -895,14 +1005,32 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
           // permission exists, so it is always permitted.
           result->Success(flutter::EncodableValue(true));
         } else if (method == "show") {
+          // 工具条槽位悬停提示（与 kAudiobookSlotActions 同下标）。native 不持有
+          // i18n，文案按 locale 由 Dart 下发；表按 profile 分开存，不会和 gal
+          // 台词浮窗的提示互相覆盖。
+          hook_toolbar::SetSlotTooltips(
+              hook_toolbar::Profile::kAudiobook,
+              WideListFromValue(args, "slotTooltips"));
           floating_lyric_window_->UpdateStyle(StyleFromArgs(args));
           floating_lyric_window_->SetClickLookupEnabled(
               BoolFromValue(args, "clickLookupEnabled", true));
+          floating_lyric_window_->SetHoverAutoLookup(
+              BoolFromValue(args, "hoverAutoLookup", false));
+          // 置顶 / 穿透按会话复位：上一次关掉置顶后，这一次不该藏在别的窗口后面
+          // 让用户以为它没出来；穿透同理（开着穿透复原 = 用户点不到浮窗）。
+          floating_lyric_window_->SetTopmost(
+              BoolFromValue(args, "topmost", true));
           if (args != nullptr &&
               args->find(flutter::EncodableValue("locked")) != args->end()) {
             floating_lyric_window_->SetLocked(
                 BoolFromValue(args, "locked", false));
           }
+          floating_lyric_window_->SetPassThrough(
+              BoolFromValue(args, "passThrough", false));
+          floating_lyric_window_->SetInitialBounds(
+              IntFromValue(args, "left", 0), IntFromValue(args, "top", 0),
+              IntFromValue(args, "width", 0),
+              IntFromValue(args, "height", 0));
           const bool shown = floating_lyric_window_->Show(GetHandle());
           result->Success(flutter::EncodableValue(shown));
         } else if (method == "hide") {
@@ -917,7 +1045,9 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
           floating_lyric_window_->UpdateText(
               WideFromValue(args, "text", L""),
               IntFromValue(args, "currentLineStart", -1),
-              IntFromValue(args, "currentLineLength", 0));
+              IntFromValue(args, "currentLineLength", 0),
+              StringFromValue(args, "lineId", ""),
+              RubySpansFromValue(args, "rubySpans"));
           result->Success();
         } else if (method == "highlight") {
           floating_lyric_window_->Highlight(IntFromValue(args, "start", -1),
@@ -951,6 +1081,15 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
           // any user-driven toggle back over "lockChanged".
           floating_lyric_window_->SetLocked(
               BoolFromValue(args, "locked", false));
+          result->Success();
+        } else if (method == "setPassThrough") {
+          floating_lyric_window_->SetPassThrough(
+              BoolFromValue(args, "enabled", false));
+          result->Success();
+        } else if (method == "setHoverAutoLookup") {
+          // 「悬停即查词」live 下发：设置页一改，正开着的浮窗立刻跟上。
+          floating_lyric_window_->SetHoverAutoLookup(
+              BoolFromValue(args, "enabled", false));
           result->Success();
         } else {
           result->NotImplemented();
@@ -1009,89 +1148,6 @@ void FlutterWindow::RegisterImeGuardChannel() {
           return;
         }
         result->Success();
-      });
-}
-
-void FlutterWindow::RegisterClipboardTextChannel() {
-  // Second FloatingLyricWindow instance, text-only: the transparent clipboard
-  // text window. No transport / lock / close controls, no resize grip — only
-  // draggable, tappable text over a per-pixel transparent background. Tap lookup
-  // routes back over "lookupText" into the in-app dictionary overlay (same
-  // contract as the audiobook lyric strip). Independent instance so it can be
-  // shown alongside the lyric strip without either clobbering the other.
-  clipboard_text_window_ = std::make_unique<FloatingLyricWindow>();
-  clipboard_text_window_->SetTextOnly(true);
-
-  clipboard_text_channel_ =
-      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-          flutter_controller_->engine()->messenger(),
-          "app.fushi.reader/clipboard_text",
-          &flutter::StandardMethodCodec::GetInstance());
-
-  clipboard_text_window_->SetLookupCallback(
-      [this](const std::string& text, int char_index) {
-        flutter::EncodableMap map{
-            {flutter::EncodableValue("text"), flutter::EncodableValue(text)},
-            {flutter::EncodableValue("index"),
-             flutter::EncodableValue(char_index)},
-        };
-        clipboard_text_channel_->InvokeMethod(
-            "lookupText",
-            std::make_unique<flutter::EncodableValue>(std::move(map)));
-      });
-  // The only control action the text-only toolbar emits is "toggleTransparency"
-  // (the lock button toggles the drag lock natively). Forward it to Dart so the
-  // controller can flip the background-opacity pref (one-click transparency).
-  clipboard_text_window_->SetControlCallback(
-      [this](const std::string& action) {
-        clipboard_text_channel_->InvokeMethod(
-            action, std::make_unique<flutter::EncodableValue>());
-      });
-
-  clipboard_text_channel_->SetMethodCallHandler(
-      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
-             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
-                 result) {
-        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
-        const std::string& method = call.method_name();
-
-        if (method == "canDrawOverlays") {
-          // Runner-owned window — no OS overlay permission exists.
-          result->Success(flutter::EncodableValue(true));
-        } else if (method == "show") {
-          clipboard_text_window_->UpdateStyle(StyleFromArgs(args));
-          clipboard_text_window_->SetClickLookupEnabled(
-              BoolFromValue(args, "clickLookupEnabled", true));
-          // Localised taskbar / Alt+Tab label (seeds the title before the first
-          // Show creates the window, retitles it thereafter).
-          clipboard_text_window_->SetWindowTitle(
-              WideFromValue(args, "windowTitle", L""));
-          const bool shown = clipboard_text_window_->Show(GetHandle());
-          result->Success(flutter::EncodableValue(shown));
-        } else if (method == "hide") {
-          clipboard_text_window_->Hide();
-          result->Success();
-        } else if (method == "isShowing") {
-          result->Success(
-              flutter::EncodableValue(clipboard_text_window_->IsShowing()));
-        } else if (method == "updateText") {
-          // Clipboard text is a single string with no "current line" concept, so
-          // the multi-line dim range stays at the default (-1/0 = whole string
-          // full colour). rubySpans 缺省 = 无注音，排版逐像素与今天一致。
-          clipboard_text_window_->UpdateText(
-              WideFromValue(args, "text", L""), -1, 0, std::string(),
-              RubySpansFromValue(args, "rubySpans"));
-          result->Success();
-        } else if (method == "updateStyle") {
-          clipboard_text_window_->UpdateStyle(StyleFromArgs(args));
-          result->Success();
-        } else if (method == "setClickLookupEnabled") {
-          clipboard_text_window_->SetClickLookupEnabled(
-              BoolFromValue(args, "enabled", true));
-          result->Success();
-        } else {
-          result->NotImplemented();
-        }
       });
 }
 
@@ -1223,13 +1279,22 @@ void FlutterWindow::RegisterGalHookTextChannel() {
           // 按 locale 由 Dart 在 show 载荷里下发：native 不持有 i18n，正文内
           // 工具条与穿透工具条窗读的是这同一张表。缺键 = 无提示，老 payload
           // 不受影响。
-          hook_toolbar::SetSlotTooltips(WideListFromValue(args,
-                                                          "slotTooltips"));
+          hook_toolbar::SetSlotTooltips(
+              hook_toolbar::Profile::kGalHook,
+              WideListFromValue(args, "slotTooltips"));
           gal_hook_text_window_->UpdateStyle(StyleFromArgs(args));
           gal_hook_text_window_->SetClickLookupEnabled(
               BoolFromValue(args, "clickLookupEnabled", true));
           gal_hook_text_window_->SetHoverAutoLookup(
               BoolFromValue(args, "hoverAutoLookup", false));
+          // 查词触发方式 / 工具条自动隐藏 / 穿透时是否拦截鼠标：三项都是**偏好**
+          // 而不是会话状态，随 show 下发一次，改设置时再走各自的 live setter。
+          gal_hook_text_window_->SetLookupTrigger(
+              IntFromValue(args, "lookupTrigger", 0));
+          gal_hook_text_window_->SetToolbarAutoHide(
+              BoolFromValue(args, "toolbarAutoHide", true));
+          gal_hook_text_window_->SetPassThroughBlocksMouse(
+              BoolFromValue(args, "passThroughBlocksMouse", true));
           // 置顶按会话复位（与 locked / passThrough / following 同规矩）：上一局
           // 关掉置顶后，这一局的浮窗不该藏在全屏游戏后面让用户以为它没出来。
           gal_hook_text_window_->SetTopmost(
@@ -1273,6 +1338,18 @@ void FlutterWindow::RegisterGalHookTextChannel() {
           // 一局游戏（与字号 applyFontSizeFromPreferences 同款纪律）。
           gal_hook_text_window_->SetHoverAutoLookup(
               BoolFromValue(args, "enabled", false));
+          result->Success();
+        } else if (method == "setLookupTrigger") {
+          gal_hook_text_window_->SetLookupTrigger(
+              IntFromValue(args, "trigger", 0));
+          result->Success();
+        } else if (method == "setToolbarAutoHide") {
+          gal_hook_text_window_->SetToolbarAutoHide(
+              BoolFromValue(args, "enabled", true));
+          result->Success();
+        } else if (method == "setPassThroughBlocksMouse") {
+          gal_hook_text_window_->SetPassThroughBlocksMouse(
+              BoolFromValue(args, "enabled", true));
           result->Success();
         } else if (method == "setLocked") {
           gal_hook_text_window_->SetLocked(
@@ -1648,238 +1725,11 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           result->Success(
               flutter::EncodableValue(win->IsShowing()));
         } else if (method == "setBlockCapture") {
-          // 防截屏 — 与剪贴板面板同口径（WDA_EXCLUDEFROMCAPTURE）：瞬态查词窗
-          // 对用户可见但不进截图 / 录屏 / 屏幕共享。GlobalLookupWindow 记住该值，
-          // 窗口重建后由 ApplyBlockCapture 自动重加（同一 pref
-          // clipboardPanelBlockCapture，默认 true）。
+          // 防截屏（WDA_EXCLUDEFROMCAPTURE）：瞬态查词窗对用户可见但不进截图 /
+          // 录屏 / 屏幕共享。GlobalLookupWindow 记住该值，窗口重建后由
+          // ApplyBlockCapture 自动重加（pref lookupBlockCapture，默认关）。
           win->SetBlockCapture(
               BoolFromValue(args, "block", true));
-          result->Success();
-        } else {
-          result->NotImplemented();
-        }
-      });
-}
-
-// spec 2026-07-10 — the persistent clipboard-lookup panel: a SECOND
-// GlobalLookupWindow instance on its own channel. Mirrors
-// RegisterGlobalLookupChannel wiring (media/message/error/hidden callbacks +
-// the same method set) with the panel differences applied as data:
-// - SetArmDismissHooks(false): click-outside / foreground-switch never close it
-//   (persistent semantics; it also never touches the hook-owner singleton).
-// - SetUserDataLeaf(ClipboardPanelWebView2): its own WebView2 profile folder so
-//   its environment options never have to match the lookup overlay's
-//   (same-folder different-options fails with 0x8007139F).
-// - Extra methods: applyBackdrop (Win11 acrylic semi-transparency gate,
-//   spec §6) and setPinned (panel pin toggles HWND_TOPMOST).
-// - SetActivatable(true)（真机第 4 轮）: 点击面板时焦点落面板（游戏失焦），
-//   滚轮只滚面板不再穿透游戏；瞬态覆盖窗保持 NOACTIVATE 不变。
-void FlutterWindow::RegisterClipboardPanelChannel() {
-  clipboard_panel_window_ = std::make_unique<GlobalLookupWindow>();
-  clipboard_panel_window_->SetArmDismissHooks(false);
-  clipboard_panel_window_->SetActivatable(true);
-  // 面板任务栏图标 — 常驻面板有独立任务栏按钮（WS_EX_APPWINDOW）：面板未置顶
-  // （图钉关）被游戏/浏览器压底时，点任务栏图标即可激活+拉回前台。瞬态查词窗
-  // 不设，保持无任务栏项。
-  clipboard_panel_window_->SetTaskbarPresence(true);
-  // 背景逐像素透明（composition + DirectComposition）真机实测：窗口进了 composition
-  // 模式（WS_EX_NOREDIRECTIONBITMAP）但透明像素被合成成**黑**（DComp/WebView2 alpha
-  // 合成未生效），且 composition 下整窗 LWA_ALPHA 不透明度被 no-op → 反而把「之前能用
-  // 的整窗不透明度」弄坏了、两头空。故暂时**关闭** composition，面板退回 windowed：
-  // 整窗不透明度滑杆恢复工作。真·逐像素透明改走别的路线（悬浮歌词窗式 GDI per-pixel，
-  // 或先把 DComp 黑底修对）再单独开启。composition 代码保留、休眠（默认 false）。
-  clipboard_panel_window_->SetCompositionMode(false);
-  clipboard_panel_window_->SetWindowTitle(L"Fushi");
-  clipboard_panel_window_->SetUserDataLeaf(L"ClipboardPanelWebView2");
-
-  clipboard_panel_channel_ =
-      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-          flutter_controller_->engine()->messenger(),
-          "app.fushi.reader/clipboard_panel",
-          &flutter::StandardMethodCodec::GetInstance());
-
-  clipboard_panel_window_->SetMediaResolver(
-      [this](const std::string& url,
-             std::function<void(std::vector<uint8_t>)> respond) {
-        auto args = std::make_unique<flutter::EncodableValue>(
-            flutter::EncodableMap{{flutter::EncodableValue("url"),
-                                   flutter::EncodableValue(url)}});
-        auto result = std::make_unique<
-            flutter::MethodResultFunctions<flutter::EncodableValue>>(
-            [respond](const flutter::EncodableValue* ok) {
-              std::vector<uint8_t> bytes;
-              if (ok != nullptr) {
-                if (const auto* b =
-                        std::get_if<std::vector<uint8_t>>(ok)) {
-                  bytes = *b;
-                }
-              }
-              respond(std::move(bytes));
-            },
-            [respond](const std::string&, const std::string&,
-                      const flutter::EncodableValue*) { respond({}); },
-            [respond]() { respond({}); });
-        clipboard_panel_channel_->InvokeMethod("getMedia", std::move(args),
-                                               std::move(result));
-      });
-
-  clipboard_panel_window_->SetMessageCallback(
-      [this](const std::string& json,
-             const GlobalLookupWindow::RouteContext&) {
-        clipboard_panel_channel_->InvokeMethod(
-            "jsMessage", std::make_unique<flutter::EncodableValue>(json));
-      });
-
-  clipboard_panel_window_->SetErrorCallback([this](const std::string& message) {
-    clipboard_panel_channel_->InvokeMethod(
-        "nativeError", std::make_unique<flutter::EncodableValue>(message));
-  });
-
-  clipboard_panel_window_->SetHiddenCallback(
-      [this](const GlobalLookupWindow::RouteContext&) {
-        clipboard_panel_channel_->InvokeMethod(
-            "overlayHidden", std::make_unique<flutter::EncodableValue>());
-      });
-
-  clipboard_panel_channel_->SetMethodCallHandler(
-      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
-             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
-                 result) {
-        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
-        const std::string& method = call.method_name();
-        BindRouteContext(clipboard_panel_window_.get(), args, "desktop");
-
-        if (method == "prepare") {
-          clipboard_panel_window_->SetPopupAssetsDir(
-              WideFromValue(args, "assetsDir", L""));
-          result->Success();
-        } else if (method == "prewarmWebView") {
-          // 真机修复：面板窗必须是**无 owner** 的顶层窗（nullptr，不传主窗
-          // HWND）。owned window 有两个致命联动：owner 最小化时被系统一并隐藏
-          // （真机症状=最小化 app 面板跟着消失），且 Z 序变更会连带 owner
-          // （点图钉把主 app 拉到前台）。常驻面板的生命周期必须与主窗解耦。
-          // BUG-741：瞬态查词窗（悬浮字幕点词/热键）此前保持 owned，同一 Z 序
-          // 连带把主窗拉前台——用户否决「随主窗收纳」取舍，故也改无 owner。
-          clipboard_panel_window_->PrewarmWebView(
-              IntFromValue(args, "width", 420),
-              IntFromValue(args, "height", 600), nullptr);
-          result->Success();
-        } else if (method == "isWebViewReady") {
-          result->Success(flutter::EncodableValue(
-              clipboard_panel_window_->IsWebViewReady()));
-        } else if (method == "showAt") {
-          // The panel is placed at a FIXED remembered rect (Dart passes the
-          // final x/y; atCursor stays supported for parity but is unused).
-          int x = IntFromValue(args, "x", 0);
-          int y = IntFromValue(args, "y", 0);
-          POINT anchor = {x, y};
-          if (BoolFromValue(args, "atCursor", false)) {
-            POINT pt;
-            if (GetCursorPos(&pt)) {
-              anchor = pt;
-              x = pt.x + 8;
-              y = pt.y + 8;
-            }
-          }
-          // nullptr owner：同 prewarmWebView 的解耦理由（最小化联动/Z 序连带）。
-          const bool ok = clipboard_panel_window_->ShowAt(
-              x, y, IntFromValue(args, "width", 420),
-              IntFromValue(args, "height", 600), nullptr);
-          int work_w = 0;
-          int work_h = 0;
-          int anchor_work_x = 0;
-          int anchor_work_y = 0;
-          // BUG-859 — same monitor-dpr report as the transient overlay's
-          // showAt (panel parity: the shared Dart channel parses one shape).
-          double monitor_dpr = 0.0;
-          HMONITOR monitor =
-              MonitorFromPoint(anchor, MONITOR_DEFAULTTONEAREST);
-          MONITORINFO mi = {};
-          mi.cbSize = sizeof(mi);
-          if (GetMonitorInfo(monitor, &mi)) {
-            work_w = mi.rcWork.right - mi.rcWork.left;
-            work_h = mi.rcWork.bottom - mi.rcWork.top;
-            anchor_work_x = x - mi.rcWork.left;
-            anchor_work_y = y - mi.rcWork.top;
-            monitor_dpr = FlutterDesktopGetDpiForMonitor(monitor) / 96.0;
-          }
-          flutter::EncodableMap reply = {
-              {flutter::EncodableValue("ok"), flutter::EncodableValue(ok)},
-              {flutter::EncodableValue("workW"),
-               flutter::EncodableValue(work_w)},
-              {flutter::EncodableValue("workH"),
-               flutter::EncodableValue(work_h)},
-              {flutter::EncodableValue("cursorWorkX"),
-               flutter::EncodableValue(anchor_work_x)},
-              {flutter::EncodableValue("cursorWorkY"),
-               flutter::EncodableValue(anchor_work_y)},
-              {flutter::EncodableValue("monitorDpr"),
-               flutter::EncodableValue(monitor_dpr)},
-          };
-          result->Success(flutter::EncodableValue(reply));
-        } else if (method == "render") {
-          clipboard_panel_window_->RenderJson(
-              StringFromValue(args, "json", ""));
-          result->Success();
-        } else if (method == "resize") {
-          clipboard_panel_window_->ResizeTo(IntFromValue(args, "width", 0),
-                                            IntFromValue(args, "height", 0));
-          result->Success();
-        } else if (method == "reveal") {
-          clipboard_panel_window_->Reveal(IntFromValue(args, "width", 0),
-                                          IntFromValue(args, "height", 0));
-          result->Success();
-        } else if (method == "revealStack") {
-          clipboard_panel_window_->RevealStack(
-              IntFromValue(args, "dx", 0), IntFromValue(args, "dy", 0),
-              IntFromValue(args, "width", 0), IntFromValue(args, "height", 0),
-              DoubleFromValue(args, "left", 0.0),
-              DoubleFromValue(args, "top", 0.0),
-              Int64FromValue(args, "geometryEpoch", 0));
-          result->Success();
-        } else if (method == "resolveBridge") {
-          clipboard_panel_window_->ResolveBridge(
-              IntFromValue(args, "id", 0),
-              StringFromValue(args, "value", "null"));
-          result->Success();
-        } else if (method == "hide") {
-          clipboard_panel_window_->Hide(BoolFromValue(args, "notify", true));
-          result->Success();
-        } else if (method == "isShowing") {
-          result->Success(
-              flutter::EncodableValue(clipboard_panel_window_->IsShowing()));
-        } else if (method == "applyBackdrop") {
-          // spec §6 — Win11 acrylic backdrop behind the panel's transparent
-          // WebView2 pixels; returns whether the OS accepted it so Dart can
-          // gate the opacity slider (false -> panel stays opaque).
-          result->Success(flutter::EncodableValue(
-              clipboard_panel_window_->ApplySystemBackdrop()));
-        } else if (method == "setPinned") {
-          clipboard_panel_window_->SetTopmost(
-              BoolFromValue(args, "pinned", true));
-          result->Success();
-        } else if (method == "setBlockCapture") {
-          // 防截屏 — WDA_EXCLUDEFROMCAPTURE：面板对用户可见但不进截图 / 录屏 /
-          // 屏幕共享。默认 true（Dart pref clipboardPanelBlockCapture 默认开）。
-          clipboard_panel_window_->SetBlockCapture(
-              BoolFromValue(args, "block", true));
-          result->Success();
-        } else if (method == "raise") {
-          // 面板抬前台 — 每次查词把已显示的面板重排到 z 序最上，不抢焦点；
-          // topmost（已 pin）直接置顶，否则顶到非置顶带最上（见 RaiseToFront）。
-          clipboard_panel_window_->RaiseToFront(
-              BoolFromValue(args, "topmost", false));
-          result->Success();
-        } else if (method == "setWindowTitle") {
-          // 面板任务栏图标 — Dart 传本地化标题（任务栏按钮 / Alt-Tab 项）。
-          clipboard_panel_window_->SetWindowTitle(
-              Utf8ToWideString(StringFromValue(args, "title", "")));
-          result->Success();
-        } else if (method == "setWindowAlpha") {
-          // spec §6 真机修正 — 整窗 LWA_ALPHA 透明（真透视；acrylic 实测经
-          // windowed WebView2 呈现为不透明，且毛玻璃本就不是「看见底下」）。
-          clipboard_panel_window_->SetWindowAlpha(
-              IntFromValue(args, "percent", 100));
           result->Success();
         } else {
           result->NotImplemented();

@@ -88,11 +88,15 @@ void main() {
             reason: '字体栈不含彩色 emoji 字体');
       });
 
-      test('#8 静息制卡 + 单独放大字号，与相邻 1em SVG 图标目测齐平（BUG-932）', () {
+      test('#8 静息制卡 + 有独立的静息态规则块（BUG-932/1923）', () {
         // 制卡按钮静息态 '+' 是文本字形（TODO-1325 保留文本标记不走 SVG），与音量/
-        // 收藏/open-anki/tune 的内联 SVG 共用合并选择器 font-size:18px；但文本 '+'
-        // 只占 em 盒约一半高，SVG 铺满 1em，故同 18px 下加号目测明显更小。必须给
-        // 静息态（未制卡 = 无 .duplicate 类）单独放大字号补偿，否则回退成大小不一。
+        // 收藏/open-anki/tune 的内联 SVG 共用合并选择器 font-size:18px。BUG-932 起
+        // 靠放大这个字号去补偿「文本字形只占 em 盒约一半高」，但 BUG-1923 查明这条路
+        // 同时把可见位置绑在了字号上：字形的垂直位置只由字体度量决定，Windows 实测
+        // 偏低 0.125em，字号越大偏得越多。现在可见的十字由 ::before/::after 几何绘制
+        // （见 popup_mine_button_visual_guard_test.dart），这里的 font-size 只剩下
+        // 「决定按钮盒宽高、进而决定标题行行高」一个作用，改它不再影响加号本身。
+        // 本条只保证静息态仍有自己的规则块且字号未被并回 18px（并回去会改变行高）。
         final RegExpMatch? m =
             RegExp(r'\.mine-button:not\(\.duplicate\)\s*\{([^}]*)\}')
                 .firstMatch(css);

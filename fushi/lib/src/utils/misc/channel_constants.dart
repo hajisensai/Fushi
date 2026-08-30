@@ -34,16 +34,7 @@ abstract final class FushiChannels {
   // TODO-617: drives the desktop global lookup overlay (bare WebView2 window).
   static const MethodChannel globalLookup =
       MethodChannel('$_prefix/global_lookup');
-  // spec 2026-07-10: drives the persistent clipboard-lookup panel (the SECOND
-  // GlobalLookupWindow instance; Windows-only, no Java counterpart needed).
-  static const MethodChannel clipboardPanel =
-      MethodChannel('$_prefix/clipboard_panel');
-  // 真透明剪切板文字窗：复用 FloatingLyricWindow 的第二实例（text-only 模式，
-  // 逐像素透明背景 + 文字实心），剪贴板文本落这里，点字回 lookupText 弹瞬态卡。
-  // Windows-only，无 Java counterpart。
-  static const MethodChannel clipboardText =
-      MethodChannel('$_prefix/clipboard_text');
-  // Windows galgame Hook 台词浮窗：独立的第三个 FloatingLyricWindow 实例。
+  // Windows galgame Hook 台词浮窗：独立的 FloatingLyricWindow 实例。
   static const MethodChannel galHookText =
       MethodChannel('$_prefix/gal_hook_text');
   // TODO-1232 A3: render-backend experiment toggle (persist "disable Impeller"

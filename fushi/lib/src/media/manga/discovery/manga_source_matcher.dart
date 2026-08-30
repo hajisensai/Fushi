@@ -8,6 +8,7 @@ library;
 
 import 'dart:collection';
 
+import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_models.dart';
 import 'package:fushi/src/media/manga/discovery/manga_title_matcher.dart';
 
@@ -86,8 +87,12 @@ Future<List<MangaSourceMatch>> matchMangaAcrossSources({
 
   final int workers =
       maxConcurrent < sources.length ? maxConcurrent : sources.length;
-  await Future.wait<void>(
-    <Future<void>>[for (int i = 0; i < workers; i++) worker()],
+  // 抑制解题页：自动匹配是页面打开就跑的后台流，被 Cloudflare 拦下的源
+  // 静默跳过（本函数的既有语义），绝不无操作弹全屏 WebView。
+  await AidokuCloudflareGate.runSuppressed(
+    () => Future.wait<void>(
+      <Future<void>>[for (int i = 0; i < workers; i++) worker()],
+    ),
   );
   final List<MangaSourceMatch> matches = results
       .whereType<MangaSourceMatch>()

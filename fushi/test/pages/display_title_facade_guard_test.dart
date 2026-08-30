@@ -139,10 +139,15 @@ void main() {
     });
 
     test('导出分组名（给人看的导出）经门面；DB 全量两侧同口径', () {
+      // BUG-1906：导出**范围**改成按身份（bookKey / 合集）过滤后，原先那个
+      // 「把内存列表映射成导出载体」的 helper（_favoriteSentencesForExport）变成死
+      // 代码已删除——它唯一的用途是按显示名建可选书目，而按显示名筛正是这条 bug。
+      // 分组名经门面这个**不变量本身没变**：两条 DB 全量加载各自过
+      // _displayBookTitleFor，可选来源的标签过 _itemDisplayBookTitle。
       expect(
         collections,
-        contains(
-            'bookTitle: _itemDisplayBookTitle(item) ?? t.collection_sentence'),
+        contains('_itemDisplayBookTitle(item) ?? t.collection_sentence'),
+        reason: '可选来源的标签必须过 display-title 门面',
       );
       // _loadMinedForExport / _loadFavoritesForExport 各自过 _displayBookTitleFor。
       expect(

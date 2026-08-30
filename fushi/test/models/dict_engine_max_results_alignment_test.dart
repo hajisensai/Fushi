@@ -96,7 +96,7 @@ void main() {
           expect(fromCapped.entries[i].reading, fromFull.entries[i].reading);
           expect(fromCapped.entries[i].meaning, fromFull.entries[i].meaning);
         }
-        // bestLength 是用户可见的整词高亮长度（clipboard_panel_controller）。
+        // bestLength 是用户可见的整词高亮长度（global_lookup_controller）。
         expect(fromCapped.bestLength, fromFull.bestLength,
             reason: 'bestLength 变了会让横幅高亮跨度变化');
       });

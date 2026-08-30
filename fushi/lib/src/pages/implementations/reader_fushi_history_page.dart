@@ -27,6 +27,7 @@ import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/manga/book_format_convert.dart';
 import 'package:fushi/src/media/manga/book_format_rebuild.dart';
+import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
@@ -76,6 +77,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:fushi/src/sync/cloud_remote_book_client.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
+import 'package:fushi/src/sync/local_file_delete_feedback.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/deletion_propagation_availability.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
@@ -1487,10 +1489,18 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       final String? key = _looseSelectionKey(g.items.first.payload);
       if (key != null) visibleLooseKeys.add(key);
     }
-    _selection.setVisibleOrder(
-      loose: visibleLooseKeys,
-      collections: _visibleCollectionIds,
-    );
+    // 可见序真变了就补一帧：它是 build 期算出来的（搜索 / 标签筛选 / 排序的
+    // 结果），而底栏「已选 N」在同一帧更早的位置就读过选中集，会慢一拍且没有
+    // 后续 setState 补上。只在多选态补（非多选态选中集恒空）。
+    if (_selection.setVisibleOrder(
+          loose: visibleLooseKeys,
+          collections: _visibleCollectionIds,
+        ) &&
+        _selectionMode) {
+      WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+        if (mounted) setState(() {});
+      });
+    }
     _epubCoverUrisByBookKey = epubCoverUrisByBookKey;
     _epubBackedBookKeys = epubBackedBookKeys;
     _epubProgressByBookKey = epubProgressByBookKey;
@@ -1969,30 +1979,34 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     }
   }
 
-  /// 弹删除确认框，返回用户选择的删除范围（[DeleteScope.syncEverywhere] = 同步删除到
-  /// 其他设备 / [DeleteScope.keepLocalOnly] = 仅本机）；取消或已 unmount 返回 null。
-  Future<DeleteScope?> _confirmMediaDelete({
+  /// 弹删除确认框，返回用户的 [DeleteDecision]（scope：[DeleteScope.syncEverywhere]
+  /// = 同步删除到其他设备 / [DeleteScope.keepLocalOnly] = 仅本机；deleteLocalFiles：
+  /// 是否连原始音频文件一起删，仅 [localFilesSubtitle] 非 null 时可勾）；取消或已 unmount 返回
+  /// null。
+  Future<DeleteDecision?> _confirmMediaDelete({
     required String title,
     required String message,
     DeletionDisclosure? disclosure,
+    String? localFilesSubtitle,
   }) async {
     // TODO-2470 死角②：本机没有任何删除传播通道时不摆那个兑现不了的勾选框。
     // 纯本地零网络判据，在弹窗弹出前解析完（弹窗自身不做 IO）。
     final bool canSyncEverywhere =
         await hasDeletionPropagationChannel(SyncRepository(appModel.database));
     if (!mounted) return null;
-    final DeleteScope? scope = await showAppDialog<DeleteScope>(
+    final DeleteDecision? decision = await showAppDialog<DeleteDecision>(
       context: context,
       builder: (ctx) => ReaderHistoryDeleteDialog(
         title: title,
         message: message,
         disclosure: disclosure,
         showSyncScope: canSyncEverywhere,
-        onConfirm: (DeleteScope s) => Navigator.pop(ctx, s),
+        localFilesSubtitle: localFilesSubtitle,
+        onConfirm: (DeleteDecision d) => Navigator.pop(ctx, d),
       ),
     );
     if (!mounted) return null;
-    return scope;
+    return decision;
   }
 
   @override
@@ -2121,6 +2135,24 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             ),
       dragLabel: displayTitleForBook(item: item, rawTitle: item.title),
       onTap: () async {
+        // 漫画先进作品页，不直接开书。
+        //
+        // 作品页**刻意不走 `openMedia`**：那条路是「媒体会话」语义——沉浸模式、
+        // wakelock、audio handler、_currentMediaSource 全在里面开。作品页是个可
+        // 浏览的库页面（章节列表、已读标记、刷新），当媒体会话打开会让它顶着
+        // 隐藏的系统 UI、亮着屏。真正的会话由作品页内部再 `openMedia` 开阅读器
+        // 时启动，语义与 v88 前逐字相同。
+        if (_isMangaItem(item) && bookKey != null) {
+          await Navigator.of(context).push(
+            adaptivePageRoute<void>(
+              context: context,
+              builder: (BuildContext context) => MangaSeriesPage(
+                target: ShelfMangaSeriesTarget(bookKey, item: item),
+              ),
+            ),
+          );
+          return;
+        }
         final MediaSource source = item.getMediaSource(appModel: appModel);
         await appModel.openMedia(
           ref: ref,
@@ -2268,6 +2300,26 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           _isMangaItem(item) ? BookFormatTarget.book : BookFormatTarget.manga,
         ),
       ),
+      // 漫画作品页：卡片点击已经先进这里，但键盘/手柄用户长按 A 弹的是本对话框，
+      // 没有这一条就只能从对话框退出去再确认一次卡片。菜单里给出同一个入口。
+      if (_isMangaItem(item))
+        DialogListAction(
+          label: t.manga_series_open_series,
+          icon: Icons.auto_stories_outlined,
+          onPressed: () {
+            Navigator.pop(context);
+            unawaited(
+              Navigator.of(context).push(
+                adaptivePageRoute<void>(
+                  context: context,
+                  builder: (BuildContext context) => MangaSeriesPage(
+                    target: ShelfMangaSeriesTarget(bookKey, item: item),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
       // TODO-291 阶段2：书架长按「悬浮字幕」= 启动该书的后台听书会话（无正在播则用该书
       // 启动 + 拉起悬浮窗），不再只翻 bool。该书已是活动会话则改为「停止后台听书」。
       if (Platform.isAndroid || Platform.isWindows)

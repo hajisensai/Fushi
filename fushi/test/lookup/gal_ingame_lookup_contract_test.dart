@@ -18,8 +18,13 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/lookup/global_lookup_channel.dart';
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
+
+import '../helpers/test_platform_services.dart';
 
 /// 卡片与被点字形之间的间距（primaryLayer px），与控制器退化分支同值。
 const int _kCardGap = 4;
@@ -66,6 +71,9 @@ void main() {
 
   const String channelName = 'app.fushi.reader/gal_hook_text';
   const MethodChannel channel = MethodChannel(channelName);
+  const MethodChannel globalLookupChannel = MethodChannel(
+    'app.fushi.reader/global_lookup',
+  );
   const MethodCodec codec = StandardMethodCodec();
 
   Future<void> invokeFromNative(String method, Object? arguments) async {
@@ -74,13 +82,21 @@ void main() {
         .handlePlatformMessage(channelName, data, (_) {});
   }
 
-  setUp(() => GalHookTextOverlayChannel.platformOverride = true);
+  setUp(() {
+    // 门有两半，只覆盖一半等于没覆盖：非 Windows 上 GalIngameLookupController
+    // 的 isSupported 仍为 false，start 早退，行为用例全部空转。
+    GalHookTextOverlayChannel.platformOverride = true;
+    GlobalLookupController.platformOverride = true;
+  });
 
   tearDown(() {
     GalHookTextOverlayChannel.clearEventHandlers();
     GalHookTextOverlayChannel.platformOverride = null;
+    GlobalLookupController.platformOverride = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(globalLookupChannel, null);
   });
 
   group('runner → Dart：命中事件', () {
@@ -202,6 +218,121 @@ void main() {
       });
       expect(received, isNotNull);
       expect(received!.kind, GalLookupInput.dismissOutsideKind);
+    });
+  });
+
+  // ══ v19 查词准入 ═══════════════════════════════════════════════════════════
+  //
+  // 这条链回答的是「本局到底能不能游戏内查词」。它在 v19 之前**在协议里根本没有
+  // 位置**，症状就是查词在很多游戏上静默失效、用户与开发者都看不出卡在哪一步。
+  // 钉三样东西：线上值映射、"还不知道"绝不冒充"不支持"、以及会话换代必须复位。
+  group('runner → Dart：查词准入', () {
+    test('onGalLookupAdmission 逐字段解码（状态 + exe 摘要）', () async {
+      GalLookupAdmission? received;
+      GalHookTextOverlayChannel.setEventHandlers(
+        onGalLookupAdmission: (GalLookupAdmission admission) =>
+            received = admission,
+      );
+      const String sha =
+          '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08';
+      await invokeFromNative('onGalLookupAdmission', <String, Object?>{
+        'state': 2,
+        'executableSha256': sha,
+      });
+      expect(received, isNotNull);
+      expect(received!.state, GalLookupAdmissionState.identityRejected);
+      expect(received!.executableSha256, sha);
+    });
+
+    test('线上值与 voice_hook_ipc.h 的 LookupAdmissionState 逐值对应', () {
+      expect(GalLookupAdmissionState.unknown.wireValue, 0);
+      expect(GalLookupAdmissionState.engineUnsupported.wireValue, 1);
+      expect(GalLookupAdmissionState.identityRejected.wireValue, 2);
+      expect(GalLookupAdmissionState.identityAccepted.wireValue, 3);
+      expect(GalLookupAdmissionState.sensorInstalled.wireValue, 4);
+    });
+
+    test('本构建不认识的状态值回落 unknown，绝不猜成"不支持"', () async {
+      GalLookupAdmission? received;
+      GalHookTextOverlayChannel.setEventHandlers(
+        onGalLookupAdmission: (GalLookupAdmission admission) =>
+            received = admission,
+      );
+      await invokeFromNative('onGalLookupAdmission', <String, Object?>{
+        'state': 99,
+        'executableSha256': '',
+      });
+      expect(received!.state, GalLookupAdmissionState.unknown);
+    });
+
+    // 🔴 这一条是整块改造的核心不变式：把 unknown 当成"不支持"，每局游戏启动的头
+    // 几百毫秒都会误报一次。判据只有 blocksLookup 一份，UI 不得另写。
+    test('只有 engineUnsupported / identityRejected 挡住查词', () {
+      expect(GalLookupAdmissionState.unknown.blocksLookup, isFalse);
+      expect(GalLookupAdmissionState.engineUnsupported.blocksLookup, isTrue);
+      expect(GalLookupAdmissionState.identityRejected.blocksLookup, isTrue);
+      expect(GalLookupAdmissionState.identityAccepted.blocksLookup, isFalse);
+      expect(GalLookupAdmissionState.sensorInstalled.blocksLookup, isFalse);
+      // 枚举加了新状态却没在这里表态 = 默认被当成"不挡"，必须显式复核。
+      expect(GalLookupAdmissionState.values.length, 5);
+    });
+
+    test('会话换代复位成 unknown：上一局的准入不许留给下一局', () async {
+      // setSessionActive 会把开关意图下发给 runner；这里只关心准入复位，把 native
+      // 那半边收成一个成功应答，不然 MissingPluginException 会把断言前的路径炸掉。
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+        return <String, Object?>{'ok': true};
+      });
+      final GalIngameLookupController controller =
+          GalIngameLookupController.test();
+      controller.handleAdmission(
+        const GalLookupAdmission(
+          state: GalLookupAdmissionState.sensorInstalled,
+          executableSha256: '',
+        ),
+      );
+      expect(
+        controller.admission.value.state,
+        GalLookupAdmissionState.sensorInstalled,
+      );
+      await controller.setSessionActive(true);
+      expect(controller.admission.value, GalLookupAdmission.unknown);
+
+      controller.handleAdmission(
+        const GalLookupAdmission(
+          state: GalLookupAdmissionState.engineUnsupported,
+          executableSha256: 'abc',
+        ),
+      );
+      await controller.setSessionActive(false);
+      expect(controller.admission.value, GalLookupAdmission.unknown);
+    });
+
+    test('同内容的快照不重复通知（runner 补摘要后会再发一次同一份）', () {
+      final GalIngameLookupController controller =
+          GalIngameLookupController.test();
+      int notifications = 0;
+      void listener() => notifications++;
+      controller.admission.addListener(listener);
+      addTearDown(() => controller.admission.removeListener(listener));
+
+      const GalLookupAdmission blocked = GalLookupAdmission(
+        state: GalLookupAdmissionState.engineUnsupported,
+        executableSha256: '',
+      );
+      controller.handleAdmission(blocked);
+      controller.handleAdmission(blocked);
+      expect(notifications, 1);
+
+      // 摘要补上来了：内容变了，必须通知——设置页那一行要从"无法获取"换成真摘要。
+      controller.handleAdmission(
+        const GalLookupAdmission(
+          state: GalLookupAdmissionState.engineUnsupported,
+          executableSha256: 'deadbeef',
+        ),
+      );
+      expect(notifications, 2);
     });
   });
 
@@ -379,7 +510,7 @@ void main() {
       expect(result.error, 'lookup_region_missing');
     });
 
-    test('主路复用 Fushi popup，内嵌模式只隐藏顶部整句横幅', () {
+    test('主路复用 Fushi popup，不另造卡片', () {
       final String source = File(
         'lib/src/lookup/gal_ingame_lookup_controller.dart',
       ).readAsStringSync();
@@ -411,8 +542,9 @@ void main() {
       );
       expect(
         source,
-        contains('showSentenceBanner: false'),
-        reason: '内嵌模式只隐藏 popup 顶部整句横幅，不能另造一套卡片',
+        isNot(contains('showSentenceBanner')),
+        reason: 'popup 顶部整句横幅已随桌面剪贴板查词移除，不再有该开关；'
+            '内嵌模式复用同一份 popup，不能另造一套卡片',
       );
       expect(
         source,
@@ -510,6 +642,85 @@ void main() {
         ),
       );
       expect(source, contains('generation == _lookupGeneration'));
+    });
+
+    test('同句新 lineId 保留 active route，真换句才 dismiss→hide→invalidate', () async {
+      final List<String> lifecycle = <String>[];
+      final List<MethodCall> globalCalls = <MethodCall>[];
+      mockRunner((MethodCall call) {
+        lifecycle.add('gal:${call.method}');
+        return <String, Object?>{};
+      });
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(globalLookupChannel, (
+            MethodCall call,
+          ) async {
+            globalCalls.add(call);
+            lifecycle.add('global:${call.method}');
+            return null;
+          });
+
+      late GlobalLookupRoute activeRoute;
+      final GalIngameLookupController controller =
+          GalIngameLookupController.test(
+            preferenceReader:
+                (String key, {required Object? defaultValue}) =>
+                    key == GalIngameLookupController.enabledPreferenceKey
+                    ? true
+                    : defaultValue,
+            lookupRunner: (String query, GalLookupHit hit) async {
+              activeRoute = GlobalLookupChannel.currentRoute;
+              return true;
+            },
+          );
+      try {
+        await controller.start(appModel: AppModel(testPlatformServices()));
+        await controller.setSessionActive(true);
+        final GalLookupHit hit = _hit(seq: 41, line: '同一句台词');
+        await controller.handleHit(hit);
+
+        calls.clear();
+        globalCalls.clear();
+        lifecycle.clear();
+        expect(controller.debugActiveHit, same(hit));
+        expect(GlobalLookupChannel.isRouteValid(activeRoute), isTrue);
+
+        await controller.onLineChanged('同一句台词');
+
+        expect(
+          calls.where((MethodCall call) => call.method == 'galLookupDismiss'),
+          isEmpty,
+          reason: '人物动画只重发同句 occurrence，不得撤掉游戏内卡片',
+        );
+        expect(
+          globalCalls.where((MethodCall call) => call.method == 'hide'),
+          isEmpty,
+          reason: '同句重发不得隐藏离屏 WebView，否则 DOM 选区会消失',
+        );
+        expect(GlobalLookupChannel.isRouteValid(activeRoute), isTrue);
+        expect(controller.debugActiveHit, same(hit));
+
+        await controller.onLineChanged('下一句台词');
+
+        expect(lifecycle, <String>['gal:galLookupDismiss', 'global:hide']);
+        expect(calls, hasLength(1));
+        expect(calls.single.method, 'galLookupDismiss');
+        expect(calls.single.arguments, <String, Object?>{'seq': 41});
+        expect(globalCalls, hasLength(1));
+        final MethodCall hide = globalCalls.single;
+        expect(hide.method, 'hide');
+        final Map<Object?, Object?> hideArgs =
+            hide.arguments as Map<Object?, Object?>;
+        expect(hideArgs['notify'], isFalse);
+        expect(hideArgs['target'], 'galCard');
+        expect(hideArgs['source'], 'galCard');
+        expect(hideArgs['routeEpoch'], activeRoute.routeEpoch);
+        expect(hideArgs['lookupEpoch'], activeRoute.lookupEpoch);
+        expect(GlobalLookupChannel.isRouteValid(activeRoute), isFalse);
+        expect(controller.debugActiveHit, isNull);
+      } finally {
+        await controller.stopForTesting();
+      }
     });
 
     test('非 Windows 上三个调用一律不过桥，返回 unsupported', () async {
