@@ -3898,5 +3898,13 @@
   "gal_hook_ingame_lookup_version_unsupported": "Diese Spielversion steht noch nicht auf der Liste der unterstützten Versionen",
   "gal_hook_ingame_lookup_exe_hash_copy": "SHA-256 der Spieldatei kopieren",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "Die Spieldatei konnte nicht gelesen werden",
-  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 der Spieldatei kopiert"
+  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 der Spieldatei kopiert",
+  "download_tracker_section": "Tracker-Abonnement",
+  "download_tracker_auto_add": "Abonnierte Tracker automatisch zu neuen Downloads hinzufügen",
+  "download_tracker_auto_add_hint": "Die Liste wird 6 Stunden zwischengespeichert. Ein fehlgeschlagenes Abonnement blockiert den Download nicht.",
+  "download_tracker_url": "Abonnement-URL",
+  "download_tracker_refresh": "Tracker abrufen",
+  "download_tracker_preview_empty": "Rufe das Abonnement ab, um die unterstützten HTTP-, HTTPS- und UDP-Tracker anzuzeigen.",
+  "download_tracker_preview_count": "$count Tracker abgerufen",
+  "download_tracker_fetch_failed": "Tracker konnten nicht abgerufen werden: $message"
 }

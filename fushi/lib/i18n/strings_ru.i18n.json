@@ -3898,5 +3898,13 @@
   "gal_hook_ingame_lookup_version_unsupported": "Эта версия игры пока не в списке поддерживаемых",
   "gal_hook_ingame_lookup_exe_hash_copy": "Скопировать SHA-256 исполняемого файла игры",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "Не удалось прочитать исполняемый файл игры",
-  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 исполняемого файла скопирован"
+  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 исполняемого файла скопирован",
+  "download_tracker_section": "Подписка на трекеры",
+  "download_tracker_auto_add": "Автоматически добавлять трекеры из подписки в новые загрузки",
+  "download_tracker_auto_add_hint": "Список кэшируется на 6 часов. Сбой подписки не блокирует загрузку.",
+  "download_tracker_url": "URL подписки",
+  "download_tracker_refresh": "Получить трекеры",
+  "download_tracker_preview_empty": "Получите подписку, чтобы посмотреть поддерживаемые трекеры HTTP, HTTPS и UDP.",
+  "download_tracker_preview_count": "Получено трекеров: $count",
+  "download_tracker_fetch_failed": "Не удалось получить трекеры: $message"
 }

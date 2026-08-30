@@ -3898,5 +3898,13 @@
   "gal_hook_ingame_lookup_version_unsupported": "Questa versione del gioco non è ancora nell'elenco supportato",
   "gal_hook_ingame_lookup_exe_hash_copy": "Copia lo SHA-256 dell'eseguibile del gioco",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "Impossibile leggere l'eseguibile del gioco",
-  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 dell'eseguibile copiato"
+  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 dell'eseguibile copiato",
+  "download_tracker_section": "Abbonamento ai tracker",
+  "download_tracker_auto_add": "Aggiungi automaticamente i tracker dell’abbonamento ai nuovi download",
+  "download_tracker_auto_add_hint": "L’elenco resta in cache per 6 ore. Se l’abbonamento fallisce, il download non viene bloccato.",
+  "download_tracker_url": "URL dell’abbonamento",
+  "download_tracker_refresh": "Scarica i tracker",
+  "download_tracker_preview_empty": "Scarica l’abbonamento per vedere in anteprima i tracker HTTP, HTTPS e UDP supportati.",
+  "download_tracker_preview_count": "$count tracker scaricati",
+  "download_tracker_fetch_failed": "Impossibile scaricare i tracker: $message"
 }

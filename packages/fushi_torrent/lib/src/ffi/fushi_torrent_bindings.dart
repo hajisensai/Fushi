@@ -603,6 +603,39 @@ class FushiTorrentBindings {
       ffi.Pointer<ffi.Char> Function(
           ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
 
+  /// 给已有种子追加换行分隔的 tracker。返回新增数，-1 失败。
+  /// 调用前先看 [hasTrackerMutation]。
+  int ht_add_trackers(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+    ffi.Pointer<ffi.Char> tracker_urls,
+  ) {
+    return _ht_add_trackers(session, info_hash, tracker_urls);
+  }
+
+  late final _ht_add_trackersPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+              ffi.Pointer<ffi.Char>)>>('ht_add_trackers');
+  late final _ht_add_trackers = _ht_add_trackersPtr.asFunction<
+      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>)>();
+
+  /// 独立能力探测：旧随包 DLL 缺本符号时只禁用 tracker 后写，不影响详情页。
+  late final bool hasTrackerMutation = _probeTrackerMutation();
+
+  bool _probeTrackerMutation() {
+    try {
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+                  ffi.Pointer<ffi.Char>)>>('ht_add_trackers');
+      return true;
+    } on ArgumentError {
+      return false;
+    }
+  }
+
   /// TODO-2482：每个文件的下载优先级（0~7，0=不下载，下标=文件 index）；
   /// 返回 malloc JSON（ht_free_string 释放）。调用前先看 [hasDetailInfo]。
   ffi.Pointer<ffi.Char> ht_get_file_priorities(

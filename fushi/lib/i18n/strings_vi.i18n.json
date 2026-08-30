@@ -3898,5 +3898,13 @@
   "gal_hook_ingame_lookup_version_unsupported": "Phiên bản trò chơi này chưa có trong danh sách được hỗ trợ",
   "gal_hook_ingame_lookup_exe_hash_copy": "Sao chép SHA-256 của tệp thực thi trò chơi",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "Không đọc được tệp thực thi trò chơi",
-  "gal_hook_ingame_lookup_exe_hash_copied": "Đã sao chép SHA-256 của tệp thực thi"
+  "gal_hook_ingame_lookup_exe_hash_copied": "Đã sao chép SHA-256 của tệp thực thi",
+  "download_tracker_section": "Đăng ký tracker",
+  "download_tracker_auto_add": "Tự động thêm tracker từ đăng ký vào các tải xuống mới",
+  "download_tracker_auto_add_hint": "Danh sách được lưu đệm trong 6 giờ. Việc lấy đăng ký thất bại sẽ không chặn tải xuống.",
+  "download_tracker_url": "URL đăng ký",
+  "download_tracker_refresh": "Lấy tracker",
+  "download_tracker_preview_empty": "Lấy đăng ký để xem trước các tracker HTTP, HTTPS và UDP được hỗ trợ.",
+  "download_tracker_preview_count": "Đã lấy $count tracker",
+  "download_tracker_fetch_failed": "Không lấy được tracker: $message"
 }

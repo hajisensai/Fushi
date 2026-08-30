@@ -3898,5 +3898,13 @@
   "gal_hook_ingame_lookup_version_unsupported": "Esta versão do jogo ainda não está na lista de compatíveis",
   "gal_hook_ingame_lookup_exe_hash_copy": "Copiar o SHA-256 do executável do jogo",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "Não foi possível ler o executável do jogo",
-  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 do executável copiado"
+  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 do executável copiado",
+  "download_tracker_section": "Assinatura de trackers",
+  "download_tracker_auto_add": "Adicionar automaticamente os trackers da assinatura aos novos downloads",
+  "download_tracker_auto_add_hint": "A lista fica em cache por 6 horas. Uma falha na assinatura não bloqueia o download.",
+  "download_tracker_url": "URL da assinatura",
+  "download_tracker_refresh": "Buscar trackers",
+  "download_tracker_preview_empty": "Busque a assinatura para pré-visualizar os trackers HTTP, HTTPS e UDP compatíveis.",
+  "download_tracker_preview_count": "$count trackers obtidos",
+  "download_tracker_fetch_failed": "Não foi possível buscar os trackers: $message"
 }
