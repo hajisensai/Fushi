@@ -3891,8 +3891,6 @@
   "gal_hook_toolbar_auto_hide_hint": "ポインタが字幕枠に来るまでツールバーを隠します（LunaHook 方式）。隠すときは本当に消します——その分のピクセルはゲームに返ります。",
   "gal_hook_passthrough_blocks_mouse": "クリック透過中も字幕はクリックを受ける",
   "gal_hook_passthrough_blocks_mouse_hint": "オン：字幕の行はクリックを受け続けるので単語をタップできます。オフ：オーバーレイ全体がマウスに対して透明になり、下のものをクリックできますが、単語のタップはできなくなります。",
-  "floating_lyric_passthrough": "クリックを下のウィンドウに通す",
-  "floating_lyric_transparency": "背景を切り替える",
   "floating_lyric_topmost": "常に手前に表示",
   "gal_hook_fold_progressive_lines": "分割されたセリフ行をまとめる",
   "gal_hook_fold_progressive_lines_hint": "クリックのたびに行全体を描き直すエンジンがあり、同じ行が何度も取り込まれます。そのスナップショットを 1 行にまとめます。",

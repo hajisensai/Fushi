@@ -3891,8 +3891,6 @@
   "gal_hook_toolbar_auto_hide_hint": "平时把功能栏整条隐藏，鼠标移到台词框附近才现身（LunaHook 那样）。隐藏就是真隐藏，那块像素还给游戏。",
   "gal_hook_passthrough_blocks_mouse": "穿透时台词仍拦截点击",
   "gal_hook_passthrough_blocks_mouse_hint": "开：文字行仍接鼠标，能点字查词。关：整个浮窗对鼠标彻底透明，能点到底下的东西，但点字查词也就没了。",
-  "floating_lyric_passthrough": "鼠标穿透到下层窗口",
-  "floating_lyric_transparency": "切换底板",
   "floating_lyric_topmost": "保持置顶",
   "gal_hook_fold_progressive_lines": "合并分段吐出的台词",
   "gal_hook_fold_progressive_lines_hint": "有些引擎每次点击都重绘整行，一句台词会被抓成好几条。开启后把同一句的多次快照折成一条。",

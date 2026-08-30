@@ -3891,8 +3891,6 @@
   "gal_hook_toolbar_auto_hide_hint": "Oculta la barra hasta que el puntero llega al cuadro de texto, al estilo de LunaHook. Oculta significa oculta de verdad: esos píxeles vuelven al juego.",
   "gal_hook_passthrough_blocks_mouse": "El texto sigue recibiendo clics con el clic pasante",
   "gal_hook_passthrough_blocks_mouse_hint": "Activado: las líneas de texto siguen recibiendo clics, así puedes tocar una palabra. Desactivado: toda la superposición es transparente al ratón; puedes hacer clic en lo que haya debajo, pero tocar palabras deja de funcionar.",
-  "floating_lyric_passthrough": "Dejar pasar los clics a lo que hay debajo",
-  "floating_lyric_transparency": "Alternar el fondo",
   "floating_lyric_topmost": "Mantener al frente",
   "gal_hook_fold_progressive_lines": "Unir líneas de diálogo divididas",
   "gal_hook_fold_progressive_lines_hint": "Algunos motores redibujan la línea entera en cada clic, así que una misma línea se captura varias veces. Pliega esas instantáneas en una sola línea.",

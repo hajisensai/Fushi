@@ -255,7 +255,10 @@ void main() {
     checkTable(
       countName: 'kAudiobookSlotCount',
       tableName: 'kAudiobookSlotActions',
-      expectedSlots: 8,
+      // 8 → 6：PR#1050 删掉 togglePassThrough / toggleTransparency 两颗死键
+      // （native 收到后什么都不做）。这个数字是**规模哨兵**，故意写死——表一变就
+      // 逼人来这儿确认一次「Dart 提示表跟着删了没」，而不是让它自动跟随。
+      expectedSlots: 6,
       tooltipSource:
           File('lib/src/media/audiobook/audiobook_session.dart')
               .readAsStringSync(),
