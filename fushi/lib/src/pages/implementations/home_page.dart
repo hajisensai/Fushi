@@ -362,6 +362,8 @@ class _HomePageState extends BasePageState<HomePage>
   final FocusNode _keyboardFocusNode = FocusNode();
   final ValueNotifier<int> _dictFocusSignal = ValueNotifier<int>(0);
   final ValueNotifier<int> _videoLibraryRefreshSignal = ValueNotifier<int>(0);
+  final Map<HomeTab, ScrollController> _tabScrollControllers =
+      <HomeTab, ScrollController>{};
   VideoSourceScrapeCoordinator? _videoSourceScrapeCoordinator;
   VideoSourceScrapeTaskController? _videoSourceScrapeTaskController;
   String? _videoSourceScrapeConfigFingerprint;
@@ -624,6 +626,9 @@ class _HomePageState extends BasePageState<HomePage>
     _videoDiscoveryController = null;
     _dictFocusSignal.dispose();
     _videoLibraryRefreshSignal.dispose();
+    for (final ScrollController controller in _tabScrollControllers.values) {
+      controller.dispose();
+    }
     _keyboardFocusNode.dispose();
     WidgetsBinding.instance.removeObserver(this);
     appModelNoUpdate.databaseCloseNotifier.removeListener(refresh);
@@ -2356,11 +2361,9 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget _buildTabContent(HomeTab tab) {
-    switch (tab) {
-      case HomeTab.home:
-        return HomeDashboardPage(videoRepo: _videoRepository);
-      case HomeTab.video:
-        return VideoLibraryShell(
+    final Widget content = switch (tab) {
+      HomeTab.home => HomeDashboardPage(videoRepo: _videoRepository),
+      HomeTab.video => VideoLibraryShell(
           repository: _videoRepository,
           libraryRefreshSignal: _videoLibraryRefreshSignal,
           scrapeTaskController: _videoSourceScrapeController,
@@ -2372,29 +2375,31 @@ class _HomePageState extends BasePageState<HomePage>
           onLibraryChanged: _notifyVideoLibraryChanged,
           discoveryController: _productionVideoDiscoveryController,
           discoveryActions: _productionVideoDiscoveryActions,
-        );
-      case HomeTab.downloads:
-        return DownloadsPage(
+          ),
+      HomeTab.downloads => DownloadsPage(
           key: ValueKey<String>('downloads-$_downloadsGeneration'),
           initialTabIndex: _downloadsInitialTabIndex,
-        );
-      case HomeTab.dictionaries:
-        return HomeDictionaryPage(
+          ),
+      HomeTab.dictionaries => HomeDictionaryPage(
           focusSignal: _dictFocusSignal,
-        );
-      case HomeTab.games:
-        return const HomeGamePage();
-      case HomeTab.browserExtension:
-        return const BrowserExtensionPage();
-      case HomeTab.settings:
+          ),
+      HomeTab.games => const HomeGamePage(),
+      HomeTab.browserExtension => const BrowserExtensionPage(),
+      HomeTab.settings =>
         // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头；但仍需 PopScope 拦截系统
         // 返回键（否则冒泡到顶层 PopScope = 退出 app，见 BUG-236）。
-        return _buildSettingsTabContent(showBackButton: false);
-      case HomeTab.books:
-        return const HomeReaderPage();
-      case HomeTab.manga:
-        return const MangaLibraryPage();
-    }
+        _buildSettingsTabContent(showBackButton: false),
+      HomeTab.books => const HomeReaderPage(),
+      HomeTab.manga => const MangaLibraryPage(),
+    };
+    return PrimaryScrollController(
+      controller: _tabScrollControllers.putIfAbsent(
+        tab,
+        FushiScrollController.new,
+      ),
+      automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
+      child: content,
+    );
   }
 
   /// 设置 tab 的内容外壳。[showBackButton] 为 true 时（宽屏隐藏 3 图标侧栏的全屏

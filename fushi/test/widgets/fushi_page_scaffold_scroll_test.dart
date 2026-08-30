@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/focus/page_scroll_registry.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 import 'widget_test_helpers.dart';
 
@@ -129,5 +131,38 @@ void main() {
     await tester.pump();
     expect(PageScrollRegistry.debugDepth, 0,
         reason: 'the scaffold must pop its controller on dispose (no leak)');
+  });
+
+  testWidgets('BUG-1959：粗鼠标滚轮不再一格跳过完整原始 delta',
+      (WidgetTester tester) async {
+    PageScrollRegistry.debugClear();
+    await tester.pumpWidget(buildTestApp(
+      FushiPageScaffold(
+        title: 'Wheel',
+        body: ListView.builder(
+          itemCount: 60,
+          itemBuilder: (BuildContext context, int index) =>
+              SizedBox(height: 100, child: Text('wheel row $index')),
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    final ScrollController controller = PageScrollRegistry.current!;
+    final TestPointer wheel = TestPointer(1, PointerDeviceKind.mouse);
+    await tester.sendEventToBinding(
+      wheel.hover(tester.getCenter(find.text('wheel row 0'))),
+    );
+    await tester.sendEventToBinding(wheel.scroll(const Offset(0, 120)));
+    await tester.pump();
+    expect(controller.offset, refinedDesktopPointerScrollDelta(120));
+
+    await tester.sendEventToBinding(wheel.scroll(const Offset(0, 12)));
+    await tester.pump();
+    expect(
+      controller.offset,
+      refinedDesktopPointerScrollDelta(120) + 12,
+      reason: '小 delta 不得跟着粗滚轮一起打折',
+    );
   });
 }

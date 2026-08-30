@@ -66,6 +66,61 @@ ScrollPhysics desktopAwareScrollPhysics() {
       : const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics());
 }
 
+/// Windows/Linux 的传统鼠标滚轮通常一档上报约 100–120 logical px；Flutter 默认
+/// [ScrollPositionWithSingleContext.pointerScroll] 会把这个 delta 原样同步跳过去，
+/// 视觉上就是「一滚跳一整段」。触控板/高精度滚轮则连续上报小 delta，必须保持 1:1。
+///
+/// 因此只收敛绝对值 >= 80 的粗粒度事件：减半并把单事件封顶 120px。小 delta、方向、
+/// macOS 和移动端全部原样保留。这里不做 animateTo，避免连续滚轮事件互相取消动画而
+/// 产生输入延迟；缩小原子步长后仍走 Flutter 原生 pointerScroll 通知/边界路径。
+double refinedDesktopPointerScrollDelta(double delta) {
+  if (!(Platform.isWindows || Platform.isLinux)) return delta;
+  final double magnitude = delta.abs();
+  if (magnitude < 80) return delta;
+  final double reduced = magnitude * 0.5;
+  final double refined = reduced > 120 ? 120 : reduced;
+  return delta.isNegative ? -refined : refined;
+}
+
+/// 为 app 主纵向滚动区提供细化后的桌面滚轮步长。
+///
+/// 通过自定义 [ScrollPosition] 改写真正消费 pointer delta 的边界；仅换
+/// [ScrollPhysics] 无效，因为 Flutter 的 pointerScroll 会直接 forcePixels。
+class FushiScrollController extends ScrollController {
+  FushiScrollController({super.initialScrollOffset, super.keepScrollOffset});
+
+  @override
+  ScrollPosition createScrollPosition(
+    ScrollPhysics physics,
+    ScrollContext context,
+    ScrollPosition? oldPosition,
+  ) =>
+      _FushiScrollPosition(
+        physics: physics,
+        context: context,
+        initialPixels: initialScrollOffset,
+        keepScrollOffset: keepScrollOffset,
+        oldPosition: oldPosition,
+        debugLabel: debugLabel,
+      );
+}
+
+class _FushiScrollPosition extends ScrollPositionWithSingleContext {
+  _FushiScrollPosition({
+    required super.physics,
+    required super.context,
+    required super.initialPixels,
+    required super.keepScrollOffset,
+    super.oldPosition,
+    super.debugLabel,
+  });
+
+  @override
+  void pointerScroll(double delta) {
+    super.pointerScroll(refinedDesktopPointerScrollDelta(delta));
+  }
+}
+
 /// 让**横向**滚动区接受鼠标 / 触控板 / 触笔的拖动滚动。
 ///
 /// Flutter 桌面的默认 `MaterialScrollBehavior.dragDevices` 不含

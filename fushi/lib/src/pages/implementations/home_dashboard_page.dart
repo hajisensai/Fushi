@@ -2228,7 +2228,7 @@ class _HomeDashboardPageState
                         _visibleActivityEntryCount += _kActivityPageSize;
                       }),
                       icon: const Icon(Icons.expand_more),
-                      label: Text(t.options_expand),
+                      label: Text(t.discovery_load_more),
                     ),
                   ),
               ],
