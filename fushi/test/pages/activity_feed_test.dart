@@ -271,4 +271,87 @@ void main() {
       expect(aggregateActivityEvents(const <ActivityEventRow>[]), isEmpty);
     });
   });
+
+  group('takeActivityEntries', () {
+    ActivityEntry entry(String title, String dateKey, int timestampMs) =>
+        ActivityEntry(
+          title: title,
+          eventType: kActivityRead,
+          mediaType: 'book',
+          mediaKey: title,
+          dateKey: dateKey,
+          latestTimestampMs: timestampMs,
+          totalDurationMs: 0,
+          totalChars: 0,
+          sessionCount: 1,
+        );
+
+    test('BUG-1959：跨日期截断仍保留日期组结构和顺序', () {
+      final List<ActivityDateGroup> groups = <ActivityDateGroup>[
+        ActivityDateGroup(
+          dateKey: '2026-08-30',
+          entries: <ActivityEntry>[
+            entry('a', '2026-08-30', 3),
+            entry('b', '2026-08-30', 2),
+          ],
+        ),
+        ActivityDateGroup(
+          dateKey: '2026-08-29',
+          entries: <ActivityEntry>[
+            entry('c', '2026-08-29', 1),
+            entry('d', '2026-08-29', 0),
+          ],
+        ),
+      ];
+
+      final List<ActivityDateGroup> visible = takeActivityEntries(groups, 3);
+
+      expect(visible.map((ActivityDateGroup g) => g.dateKey),
+          <String>['2026-08-30', '2026-08-29']);
+      expect(visible[0].entries.map((ActivityEntry e) => e.title),
+          <String>['a', 'b']);
+      expect(visible[1].entries.map((ActivityEntry e) => e.title),
+          <String>['c']);
+      expect(groups[1].entries, hasLength(2), reason: '分页不得修改完整聚合结果');
+    });
+
+    test('零或负上限不构建任何活动行', () {
+      final List<ActivityDateGroup> groups = <ActivityDateGroup>[
+        ActivityDateGroup(
+          dateKey: '2026-08-30',
+          entries: <ActivityEntry>[entry('a', '2026-08-30', 1)],
+        ),
+      ];
+      expect(takeActivityEntries(groups, 0), isEmpty);
+      expect(takeActivityEntries(groups, -1), isEmpty);
+    });
+  });
+
+  group('sumTimeWindowsByDateKey', () {
+    final DateTime now = DateTime(2026, 7, 19, 12);
+    String key(DateTime d) =>
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+    test('今日/近7天/近30天/全部窗口正确求和', () {
+      final Iterable<(String, int)> rows = <(String, int)>[
+        (key(now), 1000), // 今日
+        (key(now.subtract(const Duration(days: 3))), 2000), // 本周内
+        (key(now.subtract(const Duration(days: 20))), 4000), // 本月内非本周
+        (key(now.subtract(const Duration(days: 60))), 8000), // 仅全部
+      ];
+      final DashboardTimeStats s = sumTimeWindowsByDateKey(rows, now);
+      expect(s.today, 1000);
+      expect(s.week, 1000 + 2000);
+      expect(s.month, 1000 + 2000 + 4000);
+      expect(s.all, 1000 + 2000 + 4000 + 8000);
+    });
+
+    test('非正时长跳过', () {
+      final DashboardTimeStats s = sumTimeWindowsByDateKey(
+        <(String, int)>[(key(now), 0), (key(now), -5)],
+        now,
+      );
+      expect(s.all, 0);
+    });
+  });
 }

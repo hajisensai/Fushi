@@ -198,17 +198,21 @@ void main() {
     test('建不出逃生工具条就必须取消穿透（正文内工具条此时已不绘制）', () {
       final String applier = functionBody(
           body, 'void FloatingLyricWindow::ApplyPassThroughExStyle()');
-      final int show = applier.indexOf('if (!pass_through_toolbar_.Show(');
-      expect(show, isNot(-1), reason: 'Show() 的结果必须被检查，不能忽略');
+      // 建窗现在收口在 ApplyToolbarVisibility()（它同时管自动隐藏），
+      // 返回值语义不变：false = 期望显示却没能上屏。
+      final int show = applier.indexOf('if (!ApplyToolbarVisibility()');
+      expect(show, isNot(-1), reason: '建窗结果必须被检查，不能忽略');
       final String afterShow = applier.substring(show);
       expect(afterShow.contains('pass_through_ = false;'), isTrue,
           reason: '建不出工具条就必须把穿透翻回 false，否则用户被困在'
               '「正文内工具条不画、独立工具条又没建出来」的无出口态');
+      // 判据从 `!(hook_text_mode_ && pass_through_)` 收紧成 `!hook_text_mode_`：
+      // hook 台词浮窗现在**无论穿不穿透**都只用那个独立短药丸窗，正文里一颗按钮
+      // 都不画。逃生窗因此更不可省——旧写法下非穿透态还有正文内工具条兜着。
       expect(
-        body.contains(
-            'draw_body_toolbar = !(hook_text_mode_ && pass_through_)'),
+        body.contains('draw_body_toolbar = !hook_text_mode_'),
         isTrue,
-        reason: '正文内工具条在穿透态不绘制，正是逃生窗不可省的原因',
+        reason: '正文内工具条在 hook 台词模式一律不绘制，正是逃生窗不可省的原因',
       );
     });
 
@@ -228,8 +232,10 @@ void main() {
     test('穿透态必须在文字行矩形内铺不可见 catch fill（BUG-1853）', () {
       final String render =
           functionBody(body, 'void FloatingLyricWindow::Render()');
-      final int catchFill = render.indexOf(
-          'if (hook_text_mode_ && pass_through_ && !text_.empty())');
+      // 判据多了一维 `passthrough_blocks_mouse_`（「穿透时是否仍拦鼠标」可配），
+      // 所以锚点只取到那一维之前；后面 `contains` 再确认它确实在同一个条件里。
+      final int catchFill =
+          render.indexOf('if (hook_text_mode_ && pass_through_ &&');
       expect(catchFill, isNot(-1),
           reason: '穿透态行矩形 catch fill 的守门条件必须存在，且只在'
               'hook 台词 + 穿透态下生效（歌词条 / 非穿透态整窗兜底已经可点）');
@@ -258,8 +264,11 @@ void main() {
     test('a toolbar that cannot be created cancels pass-through', () {
       final String applier = functionBody(
           body, 'void FloatingLyricWindow::ApplyPassThroughExStyle()');
-      expect(applier.contains('if (!pass_through_toolbar_.Show('), isTrue,
-          reason: 'The Show() result must be checked, not ignored.');
+      expect(applier.contains('if (!ApplyToolbarVisibility()'), isTrue,
+          reason: 'The result must be checked, not ignored. Window creation is '
+              'now funnelled through ApplyToolbarVisibility(), which also owns '
+              'the auto-hide decision; the false = "wanted on screen but is '
+              'not" contract is unchanged.');
       expect(applier.contains('pass_through_ = false;'), isTrue,
           reason: 'Better to drop the toggle than to strand the user behind '
               'an overlay they can no longer click.');
@@ -306,80 +315,143 @@ void main() {
   });
 
   group('BUG-951 · the two windows cannot drift apart', () {
-    test('slot -> action is one shared table', () {
-      // Both windows index hook_toolbar::kSlotActions, so button 3 is
-      // togglePassThrough in both or in neither.
-      expect(toolbarHeader.contains('kSlotActions'), isTrue);
-      expect(body.contains('hook_toolbar::kSlotActions[slot]'), isTrue,
+    test('slot -> action is one shared table per profile', () {
+      // 两个窗口都通过 SlotAction(profile, slot) 取 action，所以同一个 profile 下
+      // 第 3 颗按钮在两窗里要么都是 togglePassThrough，要么都不是。
+      expect(body.contains('hook_toolbar::SlotAction(toolbar_profile_, slot)'),
+          isTrue,
           reason: 'The body must not keep a private copy of the mapping.');
-      expect(toolbar.contains('hook_toolbar::kSlotActions[slot]'), isTrue);
+      expect(toolbar.contains('hook_toolbar::SlotAction(profile_, slot)'),
+          isTrue);
 
-      final String table = toolbarHeader.substring(
-          toolbarHeader.indexOf('kSlotActions'),
-          toolbarHeader.indexOf('};', toolbarHeader.indexOf('kSlotActions')));
-      // Spelled out on purpose: the row's left-to-right order is muscle memory
-      // (rightmost is always 关闭), so a reorder must be a deliberate edit here
-      // and not something a refactor can do quietly. `topmost` joined at slot 7
-      // in PR#749 — ahead of close, so slots 0..6 kept their index.
-      const List<String> expected = <String>[
-        'replayVoice',
-        'recaptureVoice',
-        'toggleFollow',
-        'togglePassThrough',
-        'toggleTransparency',
-        'lock',
-        'openWorkbench',
-        'topmost',
-        'close',
-      ];
-      final List<String> found = RegExp('"([a-zA-Z]+)"')
-          .allMatches(table)
-          .map((RegExpMatch m) => m.group(1)!)
-          .toList();
-      expect(found, expected,
-          reason: 'Slot order is the wire contract with the Dart controller.');
-      // Derived, not a second literal to keep in sync: a table that grows while
-      // kSlotCount does not is an out-of-bounds read in both windows.
-      expect(
-          toolbarHeader
-              .contains('constexpr int kSlotCount = ${expected.length}'),
-          isTrue,
-          reason: 'kSlotCount must equal the shared table length.');
-      expect(
-          body.contains('kHookTextControlSlotCount = hook_toolbar::kSlotCount'),
-          isTrue,
-          reason: 'The body must derive its slot count from the shared table.');
-
-      // No dead buttons. Every slot must actually be executed somewhere: either
-      // natively in DispatchControlAction (`lock` / `topmost` deliberately skip
-      // the Dart round-trip) or by the Dart controller's action switch. Without
-      // this, adding a slot to the table draws a button that does nothing —
-      // and the hardcoded list above would happily bless it.
       final String dispatcher = functionBody(body,
           'void FloatingLyricWindow::DispatchControlAction(const std::string& action)');
-      for (final String action in expected) {
-        final bool nativelyHandled = dispatcher.contains('== "$action"');
-        final bool dartHandled = dartChannel.contains("case '$action':");
-        expect(nativelyHandled || dartHandled, isTrue,
-            reason: 'Slot "$action" is drawn and hit-tested but nothing runs '
-                'it — neither DispatchControlAction nor the Dart controller '
-                'handles it.');
+
+      /// 一张槽表的完整检查：顺序字面量、声明槽数、无死键。
+      void checkTable({
+        required String countName,
+        required String tableName,
+        required List<String> expected,
+        required String dartConsumer,
+        required String dartExecutor,
+        required String executorRegisterCall,
+      }) {
+        final int tableStart = toolbarHeader.indexOf('$tableName[');
+        expect(tableStart, greaterThan(0), reason: 'missing table $tableName');
+        final String table = toolbarHeader.substring(
+            tableStart, toolbarHeader.indexOf('};', tableStart));
+        final List<String> found = RegExp('"([a-zA-Z]+)"')
+            .allMatches(table)
+            .map((RegExpMatch m) => m.group(1)!)
+            .toList();
+        // Spelled out on purpose: the row's left-to-right order is muscle
+        // memory (rightmost is always 关闭), so a reorder must be a deliberate
+        // edit here and not something a refactor can do quietly.
+        expect(found, expected,
+            reason: 'Slot order is the wire contract with the Dart controller.');
+        // Derived, not a second literal to keep in sync: a table that grows
+        // while its count does not is an out-of-bounds read in both windows.
+        expect(
+            toolbarHeader
+                .contains('constexpr int $countName = ${expected.length}'),
+            isTrue,
+            reason: '$countName must equal the $tableName length.');
+
+        // No dead buttons. Every slot must actually be executed somewhere:
+        // either natively in DispatchControlAction (`lock` / `topmost`
+        // deliberately skip the Dart round-trip) or by the Dart side's action
+        // switch. Without this, adding a slot to the table draws a button that
+        // does nothing — and the hardcoded list above would happily bless it.
+        // 判据必须落在**执行方**，不能只到 channel 的转发层。
+        //
+        // 原来只查 `dartConsumer.contains("case '$action':")` —— 那是 channel 里
+        // 一行 `_onX?.call()`，无论上游注册的是真实现还是一行 debugPrint 都命中。
+        // 有声书的 togglePassThrough / toggleTransparency 就是这么绿着的：画得出、
+        // 点得到、按下去什么也不发生。所以在「channel 有 case」之上再要求
+        // 「注册方真的把这个 handler 传进去了」。
+        final int registerAt = dartExecutor.indexOf(executorRegisterCall);
+        expect(registerAt, isNonNegative,
+            reason: '找不到 $executorRegisterCall 的注册点，判据会退化成恒真');
+        final String registration = dartExecutor.substring(
+            registerAt, dartExecutor.indexOf('\n    );', registerAt));
+        for (final String action in expected) {
+          final bool nativelyHandled = dispatcher.contains('== "$action"');
+          if (nativelyHandled) continue;
+          expect(dartConsumer.contains("case '$action':"), isTrue,
+              reason: 'Slot "$action" 在 channel 里没有转发分支。');
+          // channel 的字段名是 `_on<Action 首字母大写>`，注册参数名去掉下划线。
+          final String handler =
+              'on${action[0].toUpperCase()}${action.substring(1)}:';
+          expect(registration.contains(handler), isTrue,
+              reason: 'Slot "$action" 画得出、点得到，但注册方没给 $handler —— '
+                  'channel 那一行 `?.call()` 命中的是 null，按下去什么也不发生。'
+                  '要么接上真实现，要么把它从槽表里删掉。');
+        }
       }
+
+      checkTable(
+        countName: 'kGalHookSlotCount',
+        tableName: 'kGalHookSlotActions',
+        expected: const <String>[
+          'replayVoice',
+          'recaptureVoice',
+          'toggleFollow',
+          'togglePassThrough',
+          'toggleTransparency',
+          'lock',
+          'openWorkbench',
+          'topmost',
+          'close',
+        ],
+        dartConsumer: dartChannel,
+        dartExecutor:
+            File('lib/src/lookup/gal_hook_text_overlay_controller.dart')
+                .readAsStringSync(),
+        executorRegisterCall: 'GalHookTextOverlayChannel.setEventHandlers(',
+      );
+      checkTable(
+        countName: 'kAudiobookSlotCount',
+        tableName: 'kAudiobookSlotActions',
+        expected: const <String>[
+          'previousCue',
+          'playPause',
+          'nextCue',
+          'lock',
+          'topmost',
+          'close',
+        ],
+        dartConsumer:
+            File('lib/src/media/audiobook/floating_lyric_channel.dart')
+                .readAsStringSync(),
+        dartExecutor: File('lib/src/media/audiobook/audiobook_session.dart')
+            .readAsStringSync(),
+        executorRegisterCall: 'FloatingLyricChannel.setEventHandlers(',
+      );
     });
 
     test('glyph + active tint are shared too', () {
-      expect(body.contains('hook_toolbar::SlotGlyph(slot, tb_states)'), isTrue);
       expect(
-          body.contains('hook_toolbar::SlotActive(slot, tb_states)'), isTrue);
+          body.contains(
+              'hook_toolbar::SlotGlyph(toolbar_profile_, slot, tb_states)'),
+          isTrue);
       expect(
-          toolbar.contains('hook_toolbar::SlotGlyph(slot, states_)'), isTrue);
+          body.contains(
+              'hook_toolbar::SlotActive(toolbar_profile_, slot,'),
+          isTrue);
+      expect(toolbar.contains('hook_toolbar::SlotGlyph(profile_, slot, states_)'),
+          isTrue);
     });
 
     test('one dispatcher runs a button, whichever window was clicked', () {
       expect(bodyHeader.contains('void DispatchControlAction('), isTrue);
-      final String applier = functionBody(
-          body, 'void FloatingLyricWindow::ApplyPassThroughExStyle()');
-      expect(applier.contains('DispatchControlAction(action)'), isTrue,
+      // The binding moved out of ApplyPassThroughExStyle into its own
+      // BindToolbarCallbacks() (the toolbar is no longer pass-through-only, so
+      // the wiring can no longer live in the pass-through applier). The
+      // invariant is unchanged: whoever binds it must forward to the shared
+      // dispatcher.
+      final String binder = functionBody(
+          body, 'void FloatingLyricWindow::BindToolbarCallbacks()');
+      expect(binder.contains('DispatchControlAction(action)'), isTrue,
           reason: 'The toolbar action callback must reuse the body dispatcher, '
               'not a second copy of the lock / topmost logic.');
       // The lock + topmost toggles live in the dispatcher only.
@@ -422,9 +494,11 @@ void main() {
 
     test('the in-body toolbar is not painted while the body is click-through',
         () {
+      // Tightened from `!(hook_text_mode_ && pass_through_)`: the hook-text
+      // overlay now always uses the standalone pill window, click-through or
+      // not, so the body paints no buttons at all in that mode.
       expect(
-          body.contains(
-              'const bool draw_body_toolbar = !(hook_text_mode_ && pass_through_);'),
+          body.contains('const bool draw_body_toolbar = !hook_text_mode_;'),
           isTrue,
           reason: 'Two toolbars drawn at the same spot, one of them dead, is '
               'the UI lie this design exists to remove.');

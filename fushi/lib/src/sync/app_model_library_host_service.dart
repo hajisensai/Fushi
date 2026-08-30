@@ -512,8 +512,8 @@ class AppModelLibraryHostService
   @override
   Future<List<RemoteActivityEvent>> listActivityEvents(
       {int limit = 100}) async {
-    // v90：活动流唯一数据源是统一事实面（legacy 活动行 ∪ 段 ∪ 游玩会话合成行），
-    // 与本机首页同一份；否则 client 看不到 host 在 v90 之后的任何阅读 / 观看。
+    // v92：活动流唯一数据源是统一事实面（legacy 活动行 ∪ 段 ∪ 游玩会话合成行），
+    // 与本机首页同一份；否则 client 看不到 host 在 v92 之后的任何阅读 / 观看。
     final List<ActivityEventRow> rows =
         (await loadStatFacts(_db, activityLimit: limit)).activityRows;
     return <RemoteActivityEvent>[

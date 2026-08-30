@@ -6,7 +6,7 @@ import 'package:fushi/src/stats/stat_facts.dart';
 /// 只读 `reading_statistics`，视频字幕字数与游戏文本字数根本没进来，漫画又混在
 /// 「阅读」里且没有页数维度。这里锁定四来源的拆分、窗口求和与活跃日并集。
 ///
-/// v90：输入是统一事实面 [StatFact]（legacy 行与 study_segments 同形），来源按
+/// v92：输入是统一事实面 [StatFact]（legacy 行与 study_segments 同形），来源按
 /// mediaKind / format 判定，不再靠 title→format 反查表。
 StatFact _fact(
   String kind,

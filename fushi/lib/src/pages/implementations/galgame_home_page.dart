@@ -182,7 +182,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   Future<List<ActivityEventRow>> _loadTimelineRows(
     List<GalgameEntry> games,
   ) async {
-    // v90：活动流唯一数据源是统一事实面的 [StatFacts.activityRows]（legacy 活动行
+    // v92：活动流唯一数据源是统一事实面的 [StatFacts.activityRows]（legacy 活动行
     // ∪ hook 字数段 ∪ galgame_sessions 合成的游玩事件）；游玩不再写 activity 行。
     final StatFacts facts = await loadStatFacts(_db);
     final List<ActivityEventRow> gameRows = facts.activityRows

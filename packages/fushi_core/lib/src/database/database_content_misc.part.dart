@@ -178,7 +178,7 @@ mixin _FushiDbContentMisc
         ),
       );
 
-  /// v90：删某媒体的 `study_segments` 事实 + 立按身份的墓碑（同一事务）。段
+  /// v92：删某媒体的 `study_segments` 事实 + 立按身份的墓碑（同一事务）。段
   /// `updatedAt > deletedAt` 的后续新写自然复活，不需要显式清碑。
   Future<int> deleteStudySegmentsForMedia({
     required String mediaKind,
@@ -199,7 +199,7 @@ mixin _FushiDbContentMisc
         return removed;
       });
 
-  /// v90：清空某媒体种类的全部段（统计页「清空全部」）。与 legacy 的 clearAll* 同律：
+  /// v92：清空某媒体种类的全部段（统计页「清空全部」）。与 legacy 的 clearAll* 同律：
   /// 整体重置不逐媒体立碑（会永久毒化身份空间）。
   Future<int> clearStudySegments(String mediaKind) =>
       (delete(studySegments)..where((t) => t.mediaKind.equals(mediaKind))).go();
@@ -231,7 +231,7 @@ mixin _FushiDbContentMisc
   /// 只按 (dateKey, hour) 聚合、不带 title，无法按书精确清理，故不动（全局时段分布仍
   /// 含该书历史贡献，属已知精度边界）。
   ///
-  /// v90：[bookKey] 非空时同一事务连带删该书的 `study_segments` 事实并立按身份的
+  /// v92：[bookKey] 非空时同一事务连带删该书的 `study_segments` 事实并立按身份的
   /// 墓碑（legacy 行仍按 title 删、按 (title, sourceType) 立碑——两套墓碑各管各的
   /// wire 家族）。
   Future<void> deleteReadingStatisticsForTitle(
@@ -280,7 +280,7 @@ mixin _FushiDbContentMisc
     bool includeUnattributed = false,
   }) =>
       transaction(() async {
-        // v90：有身份即连带删 study_segments 事实 + 按身份立碑。
+        // v92：有身份即连带删 study_segments 事实 + 按身份立碑。
         if (bookUid != null && bookUid.isNotEmpty) {
           await deleteStudySegmentsForMedia(
               mediaKind: kActivityMediaVideo, mediaKey: bookUid);

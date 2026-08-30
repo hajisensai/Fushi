@@ -2,7 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-// v90 起累加 DAO（addVideoWatchStatistic / addVideoHourlyWatchTime / recordWatchFlush）
+// v92 起累加 DAO（addVideoWatchStatistic / addVideoHourlyWatchTime / recordWatchFlush）
 // 已删：本地写入面只写 study_segments 事实表（新语义见 study_segments_test.dart）。
 // video_watch_statistics / video_hourly_logs 冻结为 legacy，只剩同步落地的 OVERWRITE
 // 版 set*；本文件只守 legacy 表的键控 / 读取契约与 video_books.completed_at。

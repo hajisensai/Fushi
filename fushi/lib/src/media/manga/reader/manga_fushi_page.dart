@@ -39,10 +39,8 @@ import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
 import 'package:fushi/src/media/manga/mihon/mihon_online_ocr.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
 import 'package:fushi/src/media/manga/mokuro_payload.dart';
-import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_auto_start.dart';
-import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
 import 'package:fushi/src/media/manga/ocr/manga_region_rescan.dart';
 import 'package:fushi/src/media/manga/reader/manga_volume_key_paging_controller.dart';
@@ -862,7 +860,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   @override
   bool get popupVerticalWriting => _popupVerticalWriting;
 
-  /// v90：本页唯一的阅读时钟兼累计器（时长 / OCR 字数 / 页数同一段同一 uid），同
+  /// v92：本页唯一的阅读时钟兼累计器（时长 / OCR 字数 / 页数同一段同一 uid），同
   /// EPUB / PDF 侧。页面不再持有任何会话时长 / 字数 / 页数字段。（守卫
   /// manga_stats_dwell_guard_test 钉死旧的会话累计器形态不得回潮。）
   StudyClock? _studyClock;
@@ -888,7 +886,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// webtoon 页内滚动会连续触发 [_recordProgress]：同一页**不重置**计时，否则
   /// 慢速连续滚读永远攒不满停留门。
   void _armPageDwellCount() {
-    // v90 阅读空闲门：翻页 / 页内滚动 = 用户输入。
+    // v92 阅读空闲门：翻页 / 页内滚动 = 用户输入。
     _studyClock?.touch();
     final bool isWebtoon = _mode == MangaReadingMode.webtoon;
     final int key = isWebtoon ? _currentPage : _currentSpread;
@@ -2705,8 +2703,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       final OnlineMangaReaderChapter? online = _onlineChapter;
       final MangaOcrBackgroundJob? job;
       if (online != null) {
-        job = await _buildOnlineOcrJob(online);
-        if (job == null || !mounted) return;
+        final MangaOcrAutoStartResult result =
+            await _buildOnlineOcrJob(online);
+        if (!mounted) return;
+        if (!result.started) {
+          if (!result.cancelled) {
+            FushiToast.show(
+              msg: result.unavailableReason ?? t.manga_ocr_engine_none,
+              severity: ToastSeverity.warning,
+            );
+          }
+          return;
+        }
+        job = result.job;
       } else {
         job = await MangaModule.openBookOcr(
           context: context,
@@ -2824,22 +2833,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
       final OnlineMangaReaderChapter? online = _onlineChapter;
       if (online != null) {
-        // 在线章节的页面是网络流，本地没有图片目录，Lens 是唯一能读它的引擎。
-        // 这跟「绝不悄悄换引擎」并不矛盾——但必须说出来：设了离线引擎的用户点
-        // 一下就拿到 Lens，不告知就等于替他把上传的决定做了。上传同意门
-        // （ensureGoogleLensDisclosure）仍在 _buildOnlineOcrJob 里把关。
-        if (_preferredOfflineEngineForTapOcr() != null) {
-          FushiToast.show(
-            msg: t.manga_tap_ocr_online_lens_only,
-            severity: ToastSeverity.info,
-          );
-        }
-        final MangaOcrBackgroundJob? job = await _buildOnlineOcrJob(online);
-        if (job == null || !mounted) {
+        final MangaOcrAutoStartResult result =
+            await _buildOnlineOcrJob(online);
+        if (!mounted) return;
+        if (!result.started) {
           _pendingTapLookup = null;
+          if (result.cancelled) return;
+          FushiToast.show(
+            msg: result.unavailableReason ?? t.manga_ocr_engine_none,
+            severity: ToastSeverity.warning,
+          );
           return;
         }
-        _attachWholeVolumeOcrJob(job);
+        _attachWholeVolumeOcrJob(result.job!);
         return;
       }
 
@@ -2883,26 +2889,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
   }
 
-  /// 用户显式选了某个**离线**引擎时返回它，否则返回 null。
-  ///
-  /// 只用来决定在线章节要不要多说一句「这里只能用 Lens」：偏好本来就是 Lens
-  /// 或 auto 的用户不需要被提醒，提醒多了就成了噪音。
-  MangaOcrEngineId? _preferredOfflineEngineForTapOcr() {
-    final MangaOcrEngineId? explicit = MangaOcrEnginePreferenceKey.fromKey(
-      appModel.mangaOcrEnginePreference,
-    ).explicitEngine;
-    switch (explicit) {
-      case MangaOcrEngineId.localOnnx:
-      case MangaOcrEngineId.systemOcr:
-      case MangaOcrEngineId.externalMokuro:
-        return explicit;
-      case MangaOcrEngineId.googleLens:
-      case MangaOcrEngineId.pairedHost:
-      case null:
-        return null;
-    }
-  }
-
   /// 首次说明：这一点会触发一次识别，用的是设置里选的哪个引擎，去哪儿改。
   ///
   /// 只弹一次。它与 Lens 的上传告知是两件事——那条只讲「图片会发给 Google」，
@@ -2940,34 +2926,37 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
   }
 
-  /// 在线章节的 OCR 任务（Lens 逐页、当前页优先）。
+  /// 在线章节的 OCR 任务（按用户偏好；在线页先物化成本地缓存供离线引擎读取）。
   ///
   /// 抽出来是因为「点一下就识别」和顶栏整卷按钮要的是同一个任务，只是入口不同。
-  Future<MangaOcrBackgroundJob?> _buildOnlineOcrJob(
+  Future<MangaOcrAutoStartResult> _buildOnlineOcrJob(
     OnlineMangaReaderChapter online,
   ) async {
-    if (!await ensureGoogleLensDisclosure(context) || !mounted) return null;
     final MangaReaderSession? session = _pageSession;
     final MokuroPayload? payload = _payload;
-    if (session == null || payload == null) return null;
+    if (session == null || payload == null) {
+      return MangaOcrAutoStartResult.unavailable(
+        t.manga_ocr_engine_none,
+        null,
+      );
+    }
     _onlineGeometryPersistDebounce?.cancel();
     await _persistOnlinePayloadGeometry();
-    return MangaOcrBackgroundJob(
+    if (!mounted) {
+      return const MangaOcrAutoStartResult.cancelled();
+    }
+    return startOnlineMangaOcrWithPreferredEngine(
+      context: context,
+      db: appModel.database,
       bookKey: widget.bookKey,
-      managedDirectory: online.managedDirectory.path,
-      engine: MangaOcrEngineId.googleLens,
-      events: MihonOnlineMangaOcr(
-        session: session,
-        managedDirectory: online.managedDirectory,
-        initialPayload: payload,
-        startPage: _currentPage,
-        // 在线源自带内容语言（Mihon lang / Aidoku 单语言 manifest）；多语言
-        // 或未声明时回退用户的 Lens 语言偏好。
-        language: normalizeLensLanguage(
-          online.sourceLanguage,
-          fallback: appModel.mangaOcrLensLanguage,
-        ),
-      ).run(),
+      session: session,
+      managedDirectory: online.managedDirectory,
+      initialPayload: payload,
+      startPage: _currentPage,
+      lensLanguage: normalizeLensLanguage(
+        online.sourceLanguage,
+        fallback: appModel.mangaOcrLensLanguage,
+      ),
     );
   }
 
@@ -3662,12 +3651,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       pageIndices: pages,
       counted: _sessionCountedPages,
     );
-    // v90：字数 / 页数直接记进当前打开段（与时长同一 uid 同一行）。
+    // v92：字数 / 页数直接记进当前打开段（与时长同一 uid 同一行）。
     _studyClock?.addChars(added.chars);
     _studyClock?.addPages(added.pages);
   }
 
-  /// v90：建好并启动本页唯一的阅读时钟（幂等）。空闲门 + 生命周期前台门只对
+  /// v92：建好并启动本页唯一的阅读时钟（幂等）。空闲门 + 生命周期前台门只对
   /// 阅读面生效（用户拍板：视频以播放态为准）。
   void _ensureStudyClock(FushiDatabase db) {
     _studyClock ??= StudyClock(

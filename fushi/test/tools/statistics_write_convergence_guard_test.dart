@@ -1,4 +1,4 @@
-// v90 统计域守卫（2026-08-29 根本性重构）。
+// v92 统计域守卫（2026-08-29 根本性重构）。
 //
 // 数据结构结论：学习时长 / 字数 / 页数只有**一张事实表** `study_segments`，只有
 // **一种写法**（按 uid 绝对值 upsert，`FushiDatabase.upsertStudySegment`），只有
@@ -55,7 +55,7 @@ const List<String> kLegacyStatReaders = <String>[
 ///  - `lib/src/stats/stat_facts.dart`：统一事实面的唯一加载器；
 ///  - `lib/src/sync/**`：legacy wire 物化 / 备份 / 比对；
 ///  - `home_video_page.dart`：只取 `video_watch_statistics.lastModified` 做「最近观看」
-///    排序（不是统计展示），v90 起与 `getLatestStudyEndAtByMedia` 并集。
+///    排序（不是统计展示），v92 起与 `getLatestStudyEndAtByMedia` 并集。
 const List<String> kLegacyReaderExemptFiles = <String>[
   'lib/src/stats/stat_facts.dart',
   'lib/src/pages/implementations/home_video_page.dart',
@@ -127,7 +127,7 @@ void main() {
       offenders,
       isEmpty,
       reason:
-          'v90 起 reading_statistics / video_watch_statistics / *_hourly_logs '
+          'v92 起 reading_statistics / video_watch_statistics / *_hourly_logs '
           '冻结为 legacy，本地写入面只写 study_segments（经 StudyClock）：\n'
           '${offenders.join('\n')}',
     );
@@ -238,7 +238,7 @@ void main() {
           isFalse,
           reason:
               '$path 含 $shape：会话累计器是 BUG-1052 / 1107「第二本账被重锚吃掉 / '
-              '口径分叉」的根因，v90 起只有 StudyClock 持有累计',
+              '口径分叉」的根因，v92 起只有 StudyClock 持有累计',
         );
       }
       expect(
@@ -373,7 +373,7 @@ void main() {
       expect(
         RegExp('Future<void> $name\\(').hasMatch(core),
         isFalse,
-        reason: '$name 是 += 投影写入口，v90 起不得复活',
+        reason: '$name 是 += 投影写入口，v92 起不得复活',
       );
     }
   });

@@ -284,7 +284,7 @@ mixin _FushiDbInfra on _$FushiDatabase {
             'ON galgame_sessions (date_key)',
         'date_key'
       ],
-      // v90 study_segments：按媒体身份（per-media tile / 删除）、按日（窗口聚合 /
+      // v92 study_segments：按媒体身份（per-media tile / 删除）、按日（窗口聚合 /
       // 热力图）、按设备+更新时刻（同步 v2 增量水位）。
       [
         'study_segments',

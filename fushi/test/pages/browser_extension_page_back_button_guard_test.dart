@@ -10,13 +10,18 @@ import '../helpers/source_guard.dart';
 /// `MaterialPageRoute`（此时侧栏被整个盖住）。BUG-1658 把顶层 tab 页头统一成
 /// `FushiPageHeader` 大标题时只写了前一半，于是从设置进来的用户没有任何返回控件。
 ///
-/// 同仓 `DownloadsPage` 是完全同构的双身份页，它按 `Navigator.canPop()` 分流。
-/// 本守卫钉死「扩展页也必须按 canPop 分流给 leading」这个不变式。
+/// 同仓 `DownloadsPage` 是完全同构的双身份页。本守卫钉死「扩展页也必须按身份分流给
+/// leading」这个不变式。
+///
+/// BUG-1954：分流判据是**本页自己所在的 PageRoute 是不是首个**
+/// （`ModalRoute.of(context)?.isFirst == false`），不是 `Navigator.canPop()`——
+/// 本页的下拉框会临时 push 一个 PopupRoute，canPop() 会因此在下拉展开期间变成 true，
+/// 于是顶层 tab 身份下每开一次下拉就闪出一个按不动的返回箭头。
 ///
 /// 注释里会提到 leading、canPop、AppBar 这些词，裸 contains 会两个方向都
 /// 误判，故先经 [maskCommentsAndScriptLines] 掩掉注释与三引号语料。
 void main() {
-  test('BUG-1748：扩展页页头按 canPop 分流给返回键（顶层 tab 身份下仍不出箭头）', () {
+  test('BUG-1748/1954：扩展页页头按当前 PageRoute 分流返回键（顶层 tab 身份下仍不出箭头）', () {
     final File f =
         File('lib/src/pages/implementations/browser_extension_page.dart');
     expect(f.existsSync(), isTrue,
@@ -27,14 +32,18 @@ void main() {
     expect(headerAt, greaterThanOrEqualTo(0),
         reason: '页头必须仍是 FushiPageHeader（BUG-1658 的统一大标题几何）');
 
-    // 断言字面量：'leading: Navigator.of(context).canPop()'
+    // 断言字面量：'leading: ModalRoute.of(context)?.isFirst == false'
     // 必须是条件分流而不是无条件给 leading——作顶层 tab 时侧栏就在旁边，
     // 无条件出箭头会让 tab 页头凭空多一个不能用的返回键。
-    final int leadingAt =
-        code.indexOf('leading: Navigator.of(context).canPop()', headerAt);
+    final int leadingAt = code.indexOf(
+        'leading: ModalRoute.of(context)?.isFirst == false', headerAt);
     expect(leadingAt, greaterThan(headerAt),
         reason: '被设置 push 成全屏路由时侧栏被盖住，页头必须承接返回键；'
-            '且必须按 canPop 分流，顶层 tab 身份下不出箭头');
+            '且必须按当前 PageRoute 分流，顶层 tab 身份下不出箭头');
+
+    // BUG-1954：反向钉死旧判据不得复活——canPop() 在下拉框 push PopupRoute 期间为真。
+    expect(code, isNot(contains('leading: Navigator.of(context).canPop()')),
+        reason: '不得用 canPop() 当分流判据：下拉框的 PopupRoute 会让它变真');
 
     // 断言字面量：'maybePop()'——真正能退出去，而不是只画一个箭头。
     expect(code.substring(leadingAt, leadingAt + 400), contains('maybePop()'),

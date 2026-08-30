@@ -56,6 +56,7 @@ class MangaDiscoveryPage extends ConsumerStatefulWidget {
   const MangaDiscoveryPage({
     super.key,
     this.navigation,
+    this.embedded = false,
     this.provider,
     this.sourceFeedsOverride,
     this.catalogOverride,
@@ -63,6 +64,10 @@ class MangaDiscoveryPage extends ConsumerStatefulWidget {
 
   /// 库页视图导航条（由 `MediaLibraryShell` 传入，作为页头主内容）。
   final Widget? navigation;
+
+  /// 嵌入下载资源聚合页时，外层已经提供「资源」页头，这里只渲染
+  /// 漫画来源筛选、搜索与结果，避免再画一行「发现」。
+  final bool embedded;
 
   /// 数据源。为空时创建 AniList provider；测试注入假实现。
   final MangaDiscoveryProvider? provider;
@@ -341,7 +346,8 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          if (!isCupertinoPlatform(context)) _buildHeader(),
+          if (!widget.embedded && !isCupertinoPlatform(context))
+            _buildHeader(),
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: DiscoveryHeaderControls(

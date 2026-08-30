@@ -1,6 +1,6 @@
 # 统计域根本性重构：事实表单一真相源 + 同步协议 v2
 
-日期：2026-08-29 · 基线：origin/develop `13cc57a5ea`（schema v89 → 本次 v90） · 状态：用户已确认方案 3；PR A 实施中
+日期：2026-08-29 · 基线：origin/develop `13cc57a5ea`（schema v89 → 本次 v92） · 状态：用户已确认方案 3；PR A 实施中
 
 用户拍板（2026-08-29）：① 阅读空闲门默认 10 分钟 + 切屏（失焦 / 进后台）自动暂停，**只对小说 / PDF / 漫画**，视频以播放态为准、切走仍在播照常计时；② 首页每日目标分子只算阅读域（book+manga），且所有页面必须从同一份事实面取数（守卫钉死）；③ 接受互联两端须同升。
 
@@ -23,7 +23,7 @@
 | G | 四套同构聚合（阅读页/视频页/游戏页/dashboard）；dashboard 把书字+字幕字+hook 字相加当目标分子 | `home_dashboard_page.dart:675-715` |
 | H | 字幕字数 dateKey 用墙钟非 cue 时刻；单行零 clamp | `video_watch_tracker.dart:318` |
 
-## 2. 目标数据结构（schema v90）
+## 2. 目标数据结构（schema v92）
 
 ### 2.1 `study_segments`（唯一事实表，新写入面只写它）
 
@@ -64,7 +64,7 @@ media_kind, media_key, deleted_at   PRIMARY KEY (media_kind, media_key)
 
 `reading_statistics` / `video_watch_statistics` / `reading_hourly_logs` / `video_hourly_logs` /
 `activity_events`（read/watch 行）保持原样。本地写入面永不再写它们（守卫测试钉死）。
-读取侧 `StatQuery` 把 legacy 行与 segments **并集**（legacy 只覆盖 v90 之前的日期，segments 只覆盖之后，
+读取侧 `StatQuery` 把 legacy 行与 segments **并集**（legacy 只覆盖 v92 之前的日期，segments 只覆盖之后，
 时间上天然不相交——不做任何合成转换，就没有双计的可能）。`galgame_sessions` 照旧（它已经是事实表）。
 
 不迁移的理由：日汇总行没有 hour、小时行没有 title，两者是同一时间的两个不相交投影，
@@ -148,13 +148,13 @@ class StudyClock {
 ### 5.2 旧端兼容（明确的取舍）
 
 - 旧端 → 新端：旧端仍上传 legacy 字段（它们在旧端还在增长），新端照旧 MAX 进 legacy 表。**新端读侧并集 legacy+segments 时，legacy 表里来自旧端的新日期行会与本机 segments 同日并存**——这是两台设备各自的量，不重叠，求和正确。
-- 新端 → 旧端：新端的 legacy 字段冻结，旧端看不到新端 v90 之后的统计。**这是协议升级的必然代价**；互联两端应同时升级（用户拍板「根本性修复」，接受）。
+- 新端 → 旧端：新端的 legacy 字段冻结，旧端看不到新端 v92 之后的统计。**这是协议升级的必然代价**；互联两端应同时升级（用户拍板「根本性修复」，接受）。
 - 备份 ATTACH 合并（`backup_merge_engine.dart`）：`study_segments` 按 uid `NOT EXISTS` 插入 + `updated_at` 大者更新；墓碑同规则；legacy 表合并逻辑不动。
 
 ## 6. 分 PR 落地（三条，按序合入）
 
 ### PR A · 数据层 + 写入 + 读取（必须一起，否则新数据无处显示）
-1. `tables.dart` 加两表，`database.dart` v90 迁移（建表 + 索引，不动旧表）。
+1. `tables.dart` 加两表，`database.dart` v92 迁移（建表 + 索引，不动旧表）。
 2. `database_statistics.part.dart`：`upsertStudySegment` / `deleteStudySegmentsFor(mediaKind, mediaKey)` / `getStudySegments(window)` / 墓碑 DAO；删 §3.2 列出的 `add*`/`record*`。
 3. `StudyClock`（`packages/fushi_audio` 现有 tracker 位置，`ReadingTimeTracker` 改名为它，保留纯函数 `splitReadingTime`/`isContinuousReadingGap`）。
 4. 五个写入面改接（§3.2）。
@@ -182,7 +182,7 @@ class StudyClock {
 
 ## 7. 风险与不做的事
 
-- **schema 号撞车**：PR#1051 与 #1053 都写 v89；本计划取 v90，开 PR 前 `git fetch` 复核最新 `schemaVersion`。
+- **schema 号撞车**：PR#1051 与 #1053 都写 v89；本计划取 v92，开 PR 前 `git fetch` 复核最新 `schemaVersion`。
 - **互联跨版本**：新端 → 旧端的新统计不可见（§5.2），文档写明、发布说明写明。
 - **快照体积**：一年内无需分片；超过再做按月 asset。
 - **口径变化**：dashboard 目标分子改为 book+manga（假设）；阅读空闲门默认 10 分钟（假设）。两者用户可否决。

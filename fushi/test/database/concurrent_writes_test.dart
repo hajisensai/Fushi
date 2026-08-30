@@ -13,7 +13,7 @@ Future<FushiDatabase> _openDb() async {
 // correctly serializes interleaved async operations on a single isolate.
 // This matches the app's real usage pattern (single-isolate DB access).
 //
-// v90 起累加 DAO（addReadingStatistic / addHourlyReadingTime）已删，统计写入面
+// v92 起累加 DAO（addReadingStatistic / addHourlyReadingTime）已删，统计写入面
 // 只剩 study_segments 的按 uid 绝对值 upsert（写入方自己持有段累计器，DB 层不做
 // `+=`），因此这里压的是并发 upsertStudySegment：不同 uid 各成一行、同 uid 收敛到
 // 最后写入者。累加语义的并发用例随 DAO 一起删除。

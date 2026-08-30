@@ -1,6 +1,6 @@
-# 学习统计域规则（v90，2026-08-29 起）
+# 学习统计域规则（v92，2026-08-29 起）
 
-统计域在 v90 做过一次根本性重构（计划：[docs/plans/2026-08-29-statistics-fact-table-refactor.md](../plans/2026-08-29-statistics-fact-table-refactor.md)；BUG-1947 / BUG-1948）。这里只列**改代码时必须遵守的规则**，全部有守卫测试（`fushi/test/tools/statistics_write_convergence_guard_test.dart`）钉死。
+统计域在 v92 做过一次根本性重构（计划：[docs/plans/2026-08-29-statistics-fact-table-refactor.md](../plans/2026-08-29-statistics-fact-table-refactor.md)；BUG-1947 / BUG-1948）。这里只列**改代码时必须遵守的规则**，全部有守卫测试（`fushi/test/tools/statistics_write_convergence_guard_test.dart`）钉死。
 
 ## 数据结构（一句话）
 
@@ -26,7 +26,7 @@
 - `AggregateSnapshot` 版本仍是 1，`studySegments` / `studySegmentTombstones` 是 additive 字段（旧端忽略、缺失当空；bump 版本会让旧端整包降级为空）。
 - 段按 uid 并集、同 uid 取 `updatedAt` 大者（`AggregateMergeService.mergeStudySegments`）；墓碑 `deletedAt > updatedAt` 删除胜，有更新的段则墓碑退场（`arbitrateStudySegments`）。落地经 `upsertStudySegmentsIfNewer` / `applyStudySegmentTombstone`。备份 ATTACH 合并 `_mergeStudySegments` 同语义。
 - legacy 家族仍走 MAX-union / `setVideoWatchStatistic` 塌缩 / deficit-lift——那是旧数据的旧口径，**不要**把段接进去，也不要从段折叠回 legacy 字段（会双计）。
-- 已知取舍：新端 v90 之后的统计旧端看不到，互联两端须同升。
+- 已知取舍：新端 v92 之后的统计旧端看不到，互联两端须同升。
 
 ## 改统计相关代码前
 

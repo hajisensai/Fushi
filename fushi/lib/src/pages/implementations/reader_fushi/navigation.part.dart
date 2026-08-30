@@ -341,7 +341,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   /// 一次，确保最终静止位置一定被刷到，又不让 evaluateJavascript 堆积。轮询/恢复路径
   /// 仍直接调 [_refreshProgress]，不受此守卫影响。
   void _refreshProgressFromScroll() {
-    // v90 阅读空闲门：滚动 / 翻页回传 = 用户输入（听书自动翻页也经此），喂时钟。
+    // v92 阅读空闲门：滚动 / 翻页回传 = 用户输入（听书自动翻页也经此），喂时钟。
     // 10s 进度轮询走 [_refreshProgress] 不经这里，不会把挂机伪装成输入。
     _studyClock?.touch();
     if (_scrollProgressInFlight) {
@@ -1040,7 +1040,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     );
     _lastWatermarkAdvanceAt = nowForChars;
     _readChargeCreditMilliChars = delta.creditMilliChars;
-    // v90：新读字数直接记进当前打开段（与时长同一 uid 同一行），页面不再攒会话计数。
+    // v92：新读字数直接记进当前打开段（与时长同一 uid 同一行），页面不再攒会话计数。
     if (delta.charsAdded > 0) _ensureStudyClock().addChars(delta.charsAdded);
     _sessionMaxAbsoluteChars = delta.highWaterMark;
     // TODO-736（复核 b）：进度刷新无条件落库。曾经的 B-4 突降伪归零守卫已删——它想防的
@@ -1421,7 +1421,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   /// 供进程退出路径 await（TODO-086/BUG-191）；其余生命周期调用点 fire-and-forget
   /// （不 await 返回的 Future，行为同旧版）。计数器在发起写之前清零，保证同一段
   /// 时长/字数不会被重复累加。
-  /// v90：建好并启动本页唯一的阅读时钟（幂等；对已在跑的时钟 start() 是 no-op，
+  /// v92：建好并启动本页唯一的阅读时钟（幂等；对已在跑的时钟 start() 是 no-op，
   /// 重排版 / 重恢复不打断计时、不重锚任何账）。
   ///
   /// 时长与字数记到**同一段**（`study_segments` 同 uid 一行）：不存在第二本账可被

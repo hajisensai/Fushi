@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-// v90 统计域重构：StudyClock 是学习时长 / 字数 / 页数的唯一计时器兼累计器，写法
+// v92 统计域重构：StudyClock 是学习时长 / 字数 / 页数的唯一计时器兼累计器，写法
 // 只有「按 uid 绝对值 upsert」。本测试锁定它的结构性不变量：
 //  * 重复 flush / 并发 stop 不可能翻倍（同 uid 同值）；
 //  * 断档 / 活跃态 / 空闲三道守卫任一拒绝即整窗丢弃 + 封段；

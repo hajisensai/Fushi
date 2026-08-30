@@ -3,7 +3,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-// v90 统计域重构：study_segments 是学习统计的唯一事实表。本测试锁定 DAO 契约：
+// v92 统计域重构：study_segments 是学习统计的唯一事实表。本测试锁定 DAO 契约：
 // 按 uid 幂等 upsert（绝对值覆盖，永不 +=）、窗口查询、按身份删除 + 墓碑、按种类清空。
 Future<FushiDatabase> _openDb() async {
   final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());

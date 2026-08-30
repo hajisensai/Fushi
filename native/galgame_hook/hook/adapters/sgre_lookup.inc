@@ -1,11 +1,19 @@
-// SGRE in-game lookup sensor. The executable identity gate lives in
-// sgre_profile.h. UserHook1 (0x328e0) is a pre-layout stream: it can run ahead
-// of the visible dialogue and still contains MAGES controls. The sensor hooks
-// the admitted draw boundary instead, copies the renderer's flattened visible
-// glyph vector, and therefore receives both game-parsed text and live geometry.
-// UTF-8 conversion and IPC publication stay on HookWorker. The DirectInput
-// detour only copies a fixed snapshot and rechecks the physical point on a
-// fresh click; it never allocates, encodes, logs, or touches shared-memory IPC.
+// SGRE in-game lookup sensor. Family identity lives in sgre_profile.h and the
+// build-specific addresses come from the resolved anchor set below (measured
+// row or unique signature hit, see sgre_anchors.h). UserHook1 (0x328e0 in the
+// measured build) is a pre-layout stream: it can run ahead of the visible
+// dialogue and still contains MAGES controls. The sensor hooks the draw
+// boundary instead, copies the renderer's flattened visible glyph vector, and
+// therefore receives both game-parsed text and live geometry. UTF-8 conversion
+// and IPC publication stay on HookWorker. The DirectInput detour only copies a
+// fixed snapshot and rechecks the physical point on a fresh click; it never
+// allocates, encodes, logs, or touches shared-memory IPC.
+
+// Resolved once by SgreAdapter::install(). Every hook site checks its own
+// anchor: an unresolved anchor leaves that site inert, never guessed.
+fushi_voice_hook::SgreAnchorSet g_sgre_anchors;
+bool g_sgre_anchors_resolved = false;
+std::array<uint8_t, 32> g_sgre_executable_sha256 = {};
 
 constexpr size_t kSgreLookupCaptureSlots = 4;
 constexpr size_t kSgreLookupMaxTextUnits = 512;
@@ -569,7 +577,12 @@ bool PublishSgreDirectInputShieldReady() {
 
 bool InstallSgreDirectInputShield() {
   HMODULE executable = GetModuleHandleW(nullptr);
-  if (executable == nullptr) {
+  // Required is the family statement "this runtime polls DirectInput, fail
+  // closed without a working detour". It is published even when the device
+  // slot anchor is unresolved: a host must never treat an SGRE build as a
+  // plain HHOOK game just because this build has not been measured yet.
+  if (executable == nullptr ||
+      !g_sgre_anchors.direct_input_shield_available()) {
     PublishSgreDirectInputShieldRequired();
     MarkSgreDirectInputShieldNotReady();
     return false;
@@ -579,7 +592,7 @@ bool InstallSgreDirectInputShield() {
   __try {
     mouse_device = *reinterpret_cast<void**>(
         reinterpret_cast<uintptr_t>(executable) +
-        fushi_voice_hook::kSgreDirectInputMouseDeviceRva);
+        g_sgre_anchors.direct_input_mouse_device.rva);
     if (mouse_device != nullptr) {
       target = VtableSlot(
           mouse_device,
@@ -883,13 +896,15 @@ bool InstallSgreLookupSensor() {
     return true;
   }
   HMODULE executable = GetModuleHandleW(nullptr);
-  if (executable == nullptr) return false;
+  if (executable == nullptr || !g_sgre_anchors.lookup_sensor_available()) {
+    return false;
+  }
   auto* target =
       reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(executable) +
-                              fushi_voice_hook::kSgreTextDrawRva);
+                              g_sgre_anchors.text_draw.rva);
   g_sgre_scenario_text_vtable =
       reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(executable) +
-                              fushi_voice_hook::kSgreScenarioTextVtableRva);
+                              g_sgre_anchors.scenario_text_vtable.rva);
   const bool installed =
       HookFn(target, reinterpret_cast<void*>(&SgreTextDrawDetour),
              reinterpret_cast<void**>(&g_sgre_text_draw_original));

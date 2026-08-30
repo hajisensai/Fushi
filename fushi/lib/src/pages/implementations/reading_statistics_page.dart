@@ -40,7 +40,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   bool _loading = true;
   String? _error;
 
-  /// 阅读域（普通书 + 漫画）的日面事实：v90 起只从统一事实面 [loadStatFacts] 取
+  /// 阅读域（普通书 + 漫画）的日面事实：v92 起只从统一事实面 [loadStatFacts] 取
   /// （legacy `reading_statistics` 日行 + `study_segments` 段），不再直接读表。
   List<StatFact> _bookFacts = <StatFact>[];
 
@@ -137,7 +137,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   Future<void> _loadFromDatabase() async {
     try {
       final db = appModelNoUpdate.database;
-      // v90：统一事实面是**唯一**读取入口——legacy 日行的身份 / format（漫画从
+      // v92：统一事实面是**唯一**读取入口——legacy 日行的身份 / format（漫画从
       // 「阅读」里拆出来单列，页数是漫画独有的第三个量纲）已在里面按 title 反查
       // 库表补好，段自带身份。本页只取阅读域（书 + 漫画）的日面；统计页不需要
       // 活动行，activityLimit 传 0。
@@ -277,7 +277,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     _todayChars = readingGoalCharsForDay(_bookFacts, w.todayKey);
 
     // 按书：按身份分组（有 bookKey 用 bookKey，legacy 无身份行回退 title），
-    // 同一本书的 legacy 日行与 v90 段合成一个 tile；title 取首见快照作展示 / 计数键。
+    // 同一本书的 legacy 日行与 v92 段合成一个 tile；title 取首见快照作展示 / 计数键。
     for (final StatFact f in _bookFacts) {
       final _BookData book = bookMap.putIfAbsent(
         f.identityKey,
@@ -1265,7 +1265,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   }
 
   /// 长按 / 右键某本书那一行 → 确认 → 删除该书的纯统计并写 book 墓碑防复活，再从
-  /// DB 重新聚合刷新（TODO-1204 后续）。v90：带上 bookKey（tile 自带身份，legacy
+  /// DB 重新聚合刷新（TODO-1204 后续）。v92：带上 bookKey（tile 自带身份，legacy
   /// 无身份 tile 走 title 反查），DAO 同一事务连带删该书的 study_segments 并立按
   /// 身份的墓碑。
   Future<void> _confirmAndDeleteBook(_BookData book) async {

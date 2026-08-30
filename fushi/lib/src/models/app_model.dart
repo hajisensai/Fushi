@@ -21,6 +21,8 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:fushi/creator.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart'
+    show VideoHdrOutputMode;
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
@@ -61,13 +63,14 @@ import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
-import 'package:fushi/src/media/torrent/download_network_proxy.dart';
+import 'package:fushi/src/media/torrent/download_timeouts.dart';
 import 'package:fushi/src/media/torrent/download_relocate_service.dart';
 import 'package:fushi/src/media/torrent/download_save_root.dart';
 import 'package:fushi/src/media/torrent/embedded_torrent_host.dart';
 import 'package:fushi/src/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi/src/media/torrent/qbittorrent_client.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/tracker_subscription.dart';
 import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
 import 'package:fushi/src/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/media/torrent/torznab_client.dart';
@@ -81,6 +84,7 @@ import 'package:fushi/src/media/discovery/import/discovery_import_production.dar
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/alist_discovery_source.dart';
+import 'package:fushi/src/media/discovery/sources/core_audio_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/shinnku_discovery_source.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
@@ -160,6 +164,7 @@ import 'package:fushi/src/mining/youtube_clip_miner.dart';
 import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/sync/fushi_remote_api_handlers.dart'
     show RemotePopupDictionaryCss;
@@ -561,9 +566,9 @@ class AppModel with ChangeNotifier {
       // （与 client 下载远端视频落点一致，AppPaths.remoteVideosDirectory 同目录）。
       uploadedVideoRoot: Directory('${appDirectory.path}/remote_videos'),
       // 上传视频封面 best-effort 抽帧（桌面 ffmpeg；移动端无则留空占位）。
-      extractVideoCover:
-          ({required String videoPath, required String bookUid}) =>
-              extractVideoCover(videoPath: videoPath, bookUid: bookUid),
+      extractVideoCover: (
+              {required String videoPath, required String bookUid}) =>
+          extractVideoCover(videoPath: videoPath, bookUid: bookUid),
       removeLocalAudioEntry: (String displayName) async {
         // 按 displayName 在 LocalAudioManager 中找到对应 index 并删除。
         // LocalAudioManager.remove(int) 删除 DB 文件 + 从 prefs 移出 + 推 native。
@@ -703,10 +708,10 @@ class AppModel with ChangeNotifier {
           case SyncTombstoneKind.video:
             final bool deleted = await VideoBookRepository(database)
                 .deleteVideoBookAndReclaimAssets(
-                  c.itemKey,
-                  scope: DeleteScope.keepLocalOnly,
-                  compactDatabase: false,
-                );
+              c.itemKey,
+              scope: DeleteScope.keepLocalOnly,
+              compactDatabase: false,
+            );
             deletedVideoBook = deletedVideoBook || deleted;
           case SyncTombstoneKind.audiobook:
             await AudiobookRepository(database)
@@ -893,7 +898,7 @@ class AppModel with ChangeNotifier {
     floatingLyricStyle: _appLevelFloatingLyricStyle,
     floatingLyricContextLines: () => floatingLyricContextLines,
     floatingLyricClickLookup: () => floatingLyricClickLookup,
-    onFloatingLyricLookup: (String text, int index) {
+    onFloatingLyricLookup: (String text, int index, Rect? wordRect) {
       // app 级（无 reader attach）桌面悬浮窗点词：Windows 优先弹 867 app 外全局
       // 查词覆盖窗（TODO-872，主窗最小化/被遮挡也看得见）；覆盖窗不可用才回落
       // 常驻主窗口的 in-app 查词宿主 [FloatingLyricLookupHost]（main.dart 根
@@ -904,6 +909,7 @@ class AppModel with ChangeNotifier {
           appModel: this,
           text: text,
           index: index,
+          wordRect: wordRect,
         )) {
           return;
         }
@@ -2319,6 +2325,10 @@ class AppModel with ChangeNotifier {
         mediaHistoryRepo.loadFromDb(),
       ]);
       prefsRepo.addListener(notifyListeners);
+      // 偏好一装载就把折叠开关推给 TexthookerService（进程级单例、无 ref）。漏了这一步
+      // 开关就只在「本次会话里手动改过」时才生效，重启后静默退回默认值。
+      TexthookerService.instance.foldProgressiveLines =
+          prefsRepo.galHookFoldProgressiveLines;
       // 代理是**进程级**网络出口配置，却只存在偏好里；同步层的单例（GoogleDriveAuth 等）
       // 拿不到 AppModel，以前就只能各自裸连——BUG-1348 的谷歌云盘登录超时正是如此。偏好
       // 一装载好就把进程级读取器接上去，此后任何 applyAppProxy(client) 都自动拿到同一个值，
@@ -2335,7 +2345,9 @@ class AppModel with ChangeNotifier {
       // 装配出口——那正是全仓 40+ 条裸出站接不上代理层的结构性原因（初始化列表不能
       // await）。不 await 它：prime 只影响「GUI 系统代理」那一格，没 prime 前解析退化成
       // `env > DIRECT`，仍不比接线前差，没必要为它拖慢启动。
-      unawaited(primeAppProxy());
+      // 系统代理解析完后再下发一次 P2P 代理：宿主可能已经建好、而当时缓存
+      // 还是空的（只有 env/手填能命中）。
+      unawaited(primeAppProxy().then((_) => _applyEmbeddedTorrentProxy()));
       // BUG-1498：远程发音（Forvo / 词典音频源等公网 URL）的抓取住在 fushi_anki 包里，
       // 同样反向 import 不了 applyAppProxy。只接**远程媒体**这一条，AnkiConnect 自身
       // （localhost:8765，也可能是局域网另一台机）绝不经过它。
@@ -3359,6 +3371,12 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoFitMode(VideoFitMode mode) =>
       prefsRepo.setVideoFitMode(mode);
 
+  /// Windows HDR 直通 / 10-bit 输出模式（见 `video_hdr_output.dart`）。
+  VideoHdrOutputMode get videoHdrOutputMode => prefsRepo.videoHdrOutputMode;
+
+  Future<void> setVideoHdrOutputMode(VideoHdrOutputMode mode) =>
+      prefsRepo.setVideoHdrOutputMode(mode);
+
   String get videoAsbplayerConfig => prefsRepo.videoAsbplayerConfig;
 
   Future<void> setVideoAsbplayerConfig(String json) =>
@@ -3462,47 +3480,17 @@ class AppModel with ChangeNotifier {
   // 读写走 [galgameRepo]。这里刻意不再有全局 getter/setter —— 留着一个全局值就会
   // 有人接回去用，然后两份真值慢慢漂开。
 
-  DownloadNetworkProxyConfig get downloadNetworkProxyConfig =>
-      DownloadNetworkProxyConfig(
-        mode: DownloadNetworkProxyMode.parse(
-          prefsRepo.downloadNetworkProxyMode,
-        ),
-        customProxy: prefsRepo.downloadCustomProxy,
-      );
-
-  Future<void> setDownloadNetworkProxyMode(
-    DownloadNetworkProxyMode mode,
-  ) async {
-    final DownloadNetworkProxyConfig before = downloadNetworkProxyConfig;
-    await prefsRepo.setDownloadNetworkProxyMode(mode.name);
-    await _reloadPipelineIfProxyDirectiveChanged(before);
-  }
-
-  Future<void> setDownloadCustomProxy(String value) async {
-    final DownloadNetworkProxyConfig before = downloadNetworkProxyConfig;
-    await prefsRepo.setDownloadCustomProxy(value);
-    await _reloadPipelineIfProxyDirectiveChanged(before);
-  }
-
-  /// BUG-1738 放大器：自定义代理输入框逐键落库，改一个字符就整套重建下载
-  /// runtime（拆掉全部 service + registry 再起）。半截输入在 custom 模式下的
-  /// 有效指令恒为 `DIRECT`（见 [fixedDownloadProxyDirective] 的 fail-open），
-  /// 指令没变就没有重建的理由；auto↔custom(非法)、custom(非法)↔direct 这类
-  /// 行为等价的切换也一并被同一条规则吸收，不设特例。
-  Future<void> _reloadPipelineIfProxyDirectiveChanged(
-    DownloadNetworkProxyConfig before,
-  ) async {
-    final DownloadNetworkProxyConfig after = downloadNetworkProxyConfig;
-    if (fixedDownloadProxyDirective(before) ==
-        fixedDownloadProxyDirective(after)) {
-      return;
-    }
-    await reloadVideoDownloadPipelineRuntime();
-  }
-
-  /// Proxy-aware client shared by AniList, Nyaa and Jimaku call sites.
-  Future<http.Client> createDownloadHttpClient() =>
-      buildDownloadHttpClient(downloadNetworkProxyConfig);
+  /// 下载发现链路（AniList / Nyaa / Torznab / Jimaku / OpenSubtitles）共用的
+  /// client：全应用同一个代理出口 + 这条链路特有的 10s 建连超时。
+  ///
+  /// 没有独立的代理配置：出口由 `app_proxy.dart` 统一解析，用户手填值就是系统
+  /// 设置里那一项（`update_custom_proxy`），`findProxy` 请求时现读，所以改了
+  /// 代理不需要重建下载管线里持有的长活 client。
+  ///
+  /// 仍返回 `Future` 是为了不动十几个 `await` 调用点和测试替身的签名；构造本身
+  /// 是同步的。
+  Future<http.Client> createDownloadHttpClient() async =>
+      createAppHttpIoClient(connectionTimeout: kDownloadConnectionTimeout);
 
   /// 把配置里的内置引擎资源限制应用到常驻宿主（宿主不存在则 no-op）。
   void _applyEmbeddedTorrentLimits(QbConnectionConfig? config) {
@@ -3531,6 +3519,8 @@ class AppModel with ChangeNotifier {
     host.applyAntiLeechConfig(effective);
     // 上传/做种策略（默认关上传；开启后做种时长/分享率上限），即时生效。
     host.setUploadPolicy(effective);
+    // P2P 代理（默认直连；用户在系统设置里单独开启才跟全局代理）。
+    _applyEmbeddedTorrentProxy();
   }
 
   /// 番剧下载：计划存储（选种对话框写计划/暂存字幕，与完成监听服务共用同一实例）。
@@ -3668,6 +3658,24 @@ class AppModel with ChangeNotifier {
   /// NAT/conntrack 被小包撑爆 → 整机网络周期性高延迟，关掉 Hibiki 即恢复。
   EmbeddedTorrentHost? _embeddedTorrentHost;
   EmbeddedTorrentHost? get embeddedTorrentHost => _embeddedTorrentHost;
+
+  TrackerSubscriptionService? _trackerSubscriptionService;
+  TrackerSubscriptionService get _trackers =>
+      _trackerSubscriptionService ??= TrackerSubscriptionService(
+        httpClientFactory: createDownloadHttpClient,
+      );
+
+  Future<List<String>> refreshTrackerSubscription({
+    String? sourceUrl,
+    bool forceRefresh = true,
+  }) {
+    final QbConnectionConfig config =
+        effectiveTorrentConfig(prefsRepo.qbConnectionConfig);
+    return _trackers.fetch(
+      sourceUrl ?? config.trackerSubscriptionUrl,
+      forceRefresh: forceRefresh,
+    );
+  }
 
   /// 内置下载根集合（懒建 host 时需要）。[startAnimeDownloadService] 里算好存下，
   /// 避免懒建路径再去 await 一次目录解析。TODO-1961：活动根 = 用户配置目录（未配置
@@ -4014,14 +4022,23 @@ class AppModel with ChangeNotifier {
         config.resolveBackend(embeddedSupported: _supportsEmbeddedTorrent());
     if (resolved == QbConnectionConfig.backendEmbedded) {
       final EmbeddedTorrentHost? host = _ensureEmbeddedTorrentHost();
-      return host?.backendView();
+      return host?.backendView(
+        trackerSubscriptionService: _trackers,
+        autoAddTrackerSubscription: config.autoAddTrackerSubscription,
+        trackerSubscriptionUrl: config.trackerSubscriptionUrl,
+      );
     }
     if (config.baseUrl.trim().isEmpty) return null;
-    return QbTorrentBackend(QBittorrentClient(
-      baseUrl: config.baseUrl,
-      username: config.username,
-      password: config.password,
-    ));
+    return QbTorrentBackend(
+      QBittorrentClient(
+        baseUrl: config.baseUrl,
+        username: config.username,
+        password: config.password,
+      ),
+      trackerSubscriptionService: _trackers,
+      autoAddTrackerSubscription: config.autoAddTrackerSubscription,
+      trackerSubscriptionUrl: config.trackerSubscriptionUrl,
+    );
   }
 
   Future<void> _startVideoDownloadPipeline() async {
@@ -4219,7 +4236,9 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  Future<void> _disposeVideoDownloadPipelineRuntime() async {
+  Future<void> _disposeVideoDownloadPipelineRuntime({
+    Duration? pipelineDrainTimeout,
+  }) async {
     final VideoDownloadSubscriptionService? subscriptions =
         _videoDownloadSubscriptionService;
     _videoDownloadSubscriptionService = null;
@@ -4227,7 +4246,9 @@ class AppModel with ChangeNotifier {
     final VideoDownloadPipelineService? pipeline =
         _videoDownloadPipelineService;
     _videoDownloadPipelineService = null;
-    if (pipeline != null) await pipeline.dispose();
+    if (pipeline != null) {
+      await pipeline.dispose(drainTimeout: pipelineDrainTimeout);
+    }
     _videoResourceRegistry?.close();
     _videoResourceRegistry = null;
     _videoSubtitleRegistry?.close();
@@ -4308,6 +4329,9 @@ class AppModel with ChangeNotifier {
   MediaDiscoveryService get mediaDiscoveryService =>
       _mediaDiscoveryService ??= MediaDiscoveryService(
         sources: <MediaDiscoverySource>[
+          CoreAudioDiscoverySource(
+            httpClientFactory: createDownloadHttpClient,
+          ),
           NyaaDiscoverySource(
             id: 'nyaa',
             displayName: 'Nyaa',
@@ -4544,13 +4568,22 @@ class AppModel with ChangeNotifier {
             ? _ensureEmbeddedTorrentHost()
             : _embeddedTorrentHost;
     if (backend == QbConnectionConfig.backendEmbedded && host != null) {
-      return host.backendView();
+      return host.backendView(
+        trackerSubscriptionService: _trackers,
+        autoAddTrackerSubscription: config.autoAddTrackerSubscription,
+        trackerSubscriptionUrl: config.trackerSubscriptionUrl,
+      );
     }
-    return QbTorrentBackend(QBittorrentClient(
-      baseUrl: config.baseUrl,
-      username: config.username,
-      password: config.password,
-    ));
+    return QbTorrentBackend(
+      QBittorrentClient(
+        baseUrl: config.baseUrl,
+        username: config.username,
+        password: config.password,
+      ),
+      trackerSubscriptionService: _trackers,
+      autoAddTrackerSubscription: config.autoAddTrackerSubscription,
+      trackerSubscriptionUrl: config.trackerSubscriptionUrl,
+    );
   }
 
   /// 本平台是否具备内置 libtorrent 引擎。UI（后端选择器 / 配置引导）与运行时
@@ -6018,16 +6051,30 @@ class AppModel with ChangeNotifier {
   ///
   /// 只停「后台自己会写库」的那几个（下载/订阅/漫画队列），不碰查词、TTS 这类只读
   /// 子系统：closeDatabase 之后调用方一律走重启，停多了没收益、只增加爆炸半径。
-  Future<void> quiesceBackgroundDatabaseWriters() async {
+  ///
+  /// [pipelineDrainTimeout] 只在**退出路径**给：见
+  /// [VideoDownloadPipelineService.stop] 的注释——迁移导入 / 备份导入 / 数据根迁移
+  /// 也走这条链，它们在关库后要在文件层动整个 DB 目录，放行一个仍在飞的 `_process`
+  /// 会让它继续打已关闭的连接、并被随后的 `_videoDownloadBackend?.close()` 抽掉
+  /// 句柄。那些路径必须等到真收尾。
+  Future<void> quiesceBackgroundDatabaseWriters({
+    Duration? pipelineDrainTimeout,
+  }) async {
     _animeDownloadService?.stop();
     _animeDownloadSubscriptionService?.stop();
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
+    _discoveryDownloadQueue?.dispose();
+    _discoveryDownloadQueue = null;
+    _mediaDiscoveryService?.close();
+    _mediaDiscoveryService = null;
     _videoDownloadPipelineRuntimeWanted = false;
-    await _disposeVideoDownloadPipelineRuntime();
+    await _disposeVideoDownloadPipelineRuntime(
+      pipelineDrainTimeout: pipelineDrainTimeout,
+    );
   }
 
-  Future<void> closeDatabase() async {
+  Future<void> closeDatabase({Duration? pipelineDrainTimeout}) async {
     _isInitialised = false;
     // BUG-1569②：合集观察者持有本库的表订阅 + 未决防抖 Timer，关库前必须撤——
     // 否则防抖到点后 _runCollectionsSync 会对已关闭的 db 发起查询（drift「connection
@@ -6035,7 +6082,9 @@ class AppModel with ChangeNotifier {
     // 测试 teardown 调过 uninstall，生产三条关库路径全都不撤订阅。
     uninstallCollectionsSyncWatcher();
     databaseCloseNotifier.notifyListeners();
-    await quiesceBackgroundDatabaseWriters();
+    await quiesceBackgroundDatabaseWriters(
+      pipelineDrainTimeout: pipelineDrainTimeout,
+    );
     await _database.close();
   }
 
@@ -6084,6 +6133,10 @@ class AppModel with ChangeNotifier {
     unawaited(_disposeVideoDownloadPipelineRuntime());
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
+    _discoveryDownloadQueue?.dispose();
+    _discoveryDownloadQueue = null;
+    _mediaDiscoveryService?.close();
+    _mediaDiscoveryService = null;
     _mihonManager?.dispose();
     _mihonManager = null;
     _prefsRepo?.removeListener(notifyListeners);
@@ -6259,7 +6312,7 @@ class AppModel with ChangeNotifier {
   Future<void> setReadingGoalDailyChars(int value) =>
       prefsRepo.setReadingGoalDailyChars(value);
 
-  /// v90 阅读空闲门（分钟 / Duration 两种形态；阅读器建 StudyClock 时取后者）。
+  /// v92 阅读空闲门（分钟 / Duration 两种形态；阅读器建 StudyClock 时取后者）。
   /// 偏好层未就绪（精简初始化路径 / 测试 harness）时回落默认 10 分钟——阅读器
   /// 建时钟绝不能因为一个可选偏好没加载而整页崩掉。
   int get readingIdleTimeoutMinutes =>
@@ -6347,7 +6400,8 @@ class AppModel with ChangeNotifier {
 
   /// 防截屏（桌面查词浮窗，Windows）。存储键沿用历史名 `clipboard_panel_block_capture`。
   bool get lookupBlockCapture => prefsRepo.lookupBlockCapture;
-  Future<void> setLookupBlockCapture(bool v) => prefsRepo.setLookupBlockCapture(v);
+  Future<void> setLookupBlockCapture(bool v) =>
+      prefsRepo.setLookupBlockCapture(v);
 
   Map<String, String> get customDictCSS => prefsRepo.customDictCSS;
   String getCustomCSSForDict(String dictName) =>
@@ -6638,6 +6692,10 @@ class AppModel with ChangeNotifier {
       // 单词音频（1139②）：已启用音频源随查词响应下发，扩展弹窗据此渲染 ♪ 按钮
       // （点击 → /api/lookup/audio 解析 → HTML5 Audio 播放）。
       audioSourcesProvider: () => enabledAudioSources,
+      // 查词后自动朗读：与 app 内弹窗/app 外浮窗/剪贴板面板同一个全局偏好（读同一个
+      // ReaderFushiSource 真相源），扩展弹窗渲染后自动播首条词发音，不再只能手动点 ♪。
+      autoReadOnLookupProvider: () =>
+          ReaderFushiSource.instance.autoReadOnLookup,
       // BUG-726：内置扩展内容指纹随查词响应下发（`extensionBuild`），扩展 background
       // 与自身 FUSHI_DEFAULTS.build 比对，不一致即 chrome.runtime.reload() 从磁盘拉新。
       // 指纹由 refreshBrowserExtensionCopy 在启动时算好缓存；算好前返回 null（字段省略）。
@@ -6966,6 +7024,31 @@ class AppModel with ChangeNotifier {
   Future<void> setGalIngameLookupEnabled(bool value) =>
       prefsRepo.setGalIngameLookupEnabled(value);
 
+  // hook 台词浮窗的交互偏好四件套（仅 Windows 生效）。
+  bool get galHookClickLookup => prefsRepo.galHookClickLookup;
+  Future<void> setGalHookClickLookup(bool value) =>
+      prefsRepo.setGalHookClickLookup(value);
+
+  int get galHookLookupTrigger => prefsRepo.galHookLookupTrigger;
+  Future<void> setGalHookLookupTrigger(int value) =>
+      prefsRepo.setGalHookLookupTrigger(value);
+
+  bool get galHookToolbarAutoHide => prefsRepo.galHookToolbarAutoHide;
+  Future<void> setGalHookToolbarAutoHide(bool value) =>
+      prefsRepo.setGalHookToolbarAutoHide(value);
+
+  bool get galHookPassThroughBlocksMouse =>
+      prefsRepo.galHookPassThroughBlocksMouse;
+  Future<void> setGalHookPassThroughBlocksMouse(bool value) =>
+      prefsRepo.setGalHookPassThroughBlocksMouse(value);
+  // 折叠「同一句台词的多次快照」。TexthookerService 是没有 ref 的进程级单例，
+  // 拿不到偏好；真值由这里单向推给它（启动期一次 + 每次改开关一次）。
+  bool get galHookFoldProgressiveLines => prefsRepo.galHookFoldProgressiveLines;
+  Future<void> setGalHookFoldProgressiveLines(bool value) async {
+    await prefsRepo.setGalHookFoldProgressiveLines(value);
+    TexthookerService.instance.foldProgressiveLines = value;
+  }
+
   // TODO-370: 悬浮字幕透明度（按钮底色 / 文字），0..100 百分比，100=保持现观感。
   int get floatingLyricButtonBgOpacity =>
       prefsRepo.floatingLyricButtonBgOpacity;
@@ -7058,8 +7141,27 @@ class AppModel with ChangeNotifier {
       prefsRepo.setUpdateDebugChannel(value);
 
   String get updateCustomProxy => prefsRepo.updateCustomProxy;
-  Future<void> setUpdateCustomProxy(String value) =>
-      prefsRepo.setUpdateCustomProxy(value);
+  Future<void> setUpdateCustomProxy(String value) async {
+    await prefsRepo.setUpdateCustomProxy(value);
+    // HttpClient 侧的 findProxy 请求时现读，不用通知；libtorrent 是把值
+    // 固化进 session 的，改了就得重新下发。
+    _applyEmbeddedTorrentProxy();
+  }
+
+  /// P2P（torrent）传输是否也走全局代理；默认 false = 直连。
+  bool get p2pProxyEnabled => prefsRepo.p2pProxyEnabled;
+  Future<void> setP2pProxyEnabled(bool value) async {
+    await prefsRepo.setP2pProxyEnabled(value);
+    _applyEmbeddedTorrentProxy();
+  }
+
+  /// 把「P2P 该不该走代理、走哪个」下发给内置引擎（宿主不存在则 no-op；
+  /// 宿主建好时 [_applyEmbeddedTorrentLimits] 会再调一次）。
+  void _applyEmbeddedTorrentProxy() {
+    _embeddedTorrentHost?.applyProxy(
+      resolveP2pProxyHostPort(enabled: prefsRepo.p2pProxyEnabled),
+    );
+  }
 
   /// 外部 mokuro CLI 可执行路径（漫画 OCR 后备；空串=未设，退回 env/PATH 探测）。
   String get mangaExternalMokuroPath => prefsRepo.mangaExternalMokuroPath;
@@ -7075,7 +7177,8 @@ class AppModel with ChangeNotifier {
       prefsRepo.setMangaOcrLensLanguage(value);
 
   bool get mangaTapToOcr => prefsRepo.mangaTapToOcr;
-  Future<void> setMangaTapToOcr(bool value) => prefsRepo.setMangaTapToOcr(value);
+  Future<void> setMangaTapToOcr(bool value) =>
+      prefsRepo.setMangaTapToOcr(value);
 
   bool get mangaTapToOcrNoticeShown => prefsRepo.mangaTapToOcrNoticeShown;
   Future<void> setMangaTapToOcrNoticeShown(bool value) =>

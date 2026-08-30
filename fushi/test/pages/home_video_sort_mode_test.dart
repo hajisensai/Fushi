@@ -129,7 +129,7 @@ void main() {
       videoPath: const Value('/abs/a9.mp4'),
       importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
     ));
-    // v90：观看只写 `study_segments`，「最近观看」时刻取该 uid 段的 max(endAt)。
+    // v92：观看只写 `study_segments`，「最近观看」时刻取该 uid 段的 max(endAt)。
     final DateTime watchedAt = DateTime.now();
     await db.upsertStudySegment(StudySegmentsCompanion.insert(
       uid: FushiDatabase.newStudySegmentUid(),

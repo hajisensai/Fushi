@@ -13,7 +13,7 @@ import 'package:fushi_core/fushi_core.dart';
 ///  3. 键控：同名两个视频同一天各占一行（旧唯一键下第二行会撞约束/互串）；
 ///     遗留 NULL-uid 行与新键控行同 (title, date) 共存互不污染。
 ///
-/// v90 起累加 DAO（addVideoWatchStatistic）已删，legacy 表冻结；第 3 点改用 drift
+/// v92 起累加 DAO（addVideoWatchStatistic）已删，legacy 表冻结；第 3 点改用 drift
 /// 直插验证唯一键形状（同 uid 二次累计的用例随 DAO 删除，新事实进 study_segments）。
 void main() {
   Future<FushiDatabase> openV38Db() async {
@@ -85,7 +85,7 @@ CREATE TABLE video_watch_statistics (
     return db;
   }
 
-  /// 直插一行 legacy 观看统计（v90 后 legacy 表本地不再有累加写入面）。
+  /// 直插一行 legacy 观看统计（v92 后 legacy 表本地不再有累加写入面）。
   Future<void> insertWatch(
     FushiDatabase db, {
     required String title,

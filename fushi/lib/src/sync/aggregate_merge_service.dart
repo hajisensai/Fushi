@@ -79,7 +79,7 @@ class AggregateMergeService {
     return out;
   }
 
-  /// v90 学习事实段的并集（wire v2）：按 `uid` 并集，同 uid 取 `updatedAt` 大者
+  /// v92 学习事实段的并集（wire v2）：按 `uid` 并集，同 uid 取 `updatedAt` 大者
   /// （LWW；相等时保留 local，值本就相同）。**不是** MAX-union——段有幂等键，两端
   /// 各写各的 uid，并集天然不重复、不塌缩，四条不变量照样成立：只增（uid 不会丢）、
   /// 值不缩（同 uid 只被更新的覆盖）、幂等、交换。
@@ -97,7 +97,7 @@ class AggregateMergeService {
     return out;
   }
 
-  /// v90 段墓碑并集：同 (mediaKind, mediaKey) 取 max deletedAt。
+  /// v92 段墓碑并集：同 (mediaKind, mediaKey) 取 max deletedAt。
   static Map<String, StudyTombstoneRecord> mergeStudyTombstones(
     Iterable<StudyTombstoneRecord> local,
     Iterable<StudyTombstoneRecord> remote,

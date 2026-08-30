@@ -1557,7 +1557,7 @@ void main() {
     endpoints.dispose();
   });
 
-  // v90：hook 字数的默认写入方从 activity_events 改为 study_segments 的 chars-only
+  // v92：hook 字数的默认写入方从 activity_events 改为 study_segments 的 chars-only
   // 段，且**无稳定身份（mediaKey 空）不落**——统计永不按 title 认身份。attach 未识
   // 别游戏的三条用例因此改成注入假写入方（GalHookActivityWriter 契约不变）断言
   // 「交给写入方的字数」；默认写入方的落段 / 不落段行为由下面两条 DB 用例守。
@@ -1649,7 +1649,7 @@ void main() {
     endpoints.dispose();
   });
 
-  test('v90：无稳定身份（attach 未识别游戏）时默认写入方不落段、不写 activity 行', () async {
+  test('v92：无稳定身份（attach 未识别游戏）时默认写入方不落段、不写 activity 行', () async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final TexthookerService service = TexthookerService.test();
@@ -1710,7 +1710,7 @@ void main() {
     expect(
       await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]),
       isEmpty,
-      reason: 'v90 起 hook 字数不再写 activity_events（第二本账）',
+      reason: 'v92 起 hook 字数不再写 activity_events（第二本账）',
     );
 
     await controller.close();
@@ -1777,7 +1777,7 @@ void main() {
     expect(service.entries, hasLength(1));
 
     await controller.stopCapture();
-    // v90：默认写入方落 study_segments 一条 chars-only 段（时长恒 0：时长真相源
+    // v92：默认写入方落 study_segments 一条 chars-only 段（时长恒 0：时长真相源
     // 是 galgame_sessions）。flush 内写入是 unawaited，轮询等其完成。
     List<StudySegmentRow> rows = const <StudySegmentRow>[];
     for (int i = 0; i < 40 && rows.isEmpty; i++) {
@@ -1794,7 +1794,7 @@ void main() {
     expect(
       await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]),
       isEmpty,
-      reason: 'v90 起 hook 字数不再写 activity_events（第二本账）',
+      reason: 'v92 起 hook 字数不再写 activity_events（第二本账）',
     );
 
     await controller.close();
@@ -2097,13 +2097,13 @@ void _playTrackerLaunchWiring() {
       matches(RegExp(r'^\d{4}-\d{2}-\d{2}$')),
     );
 
-    // v90：游玩时长只落 galgame_sessions 这一张事实表；首页活动流 / 热力图从它
+    // v92：游玩时长只落 galgame_sessions 这一张事实表；首页活动流 / 热力图从它
     // 派生，不再另写带 durationMs 的 game 活动行（那是第二本账）。
     expect(session.gameId, 'galgame-row-42');
     expect(
       await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]),
       isEmpty,
-      reason: 'v90 起会话结算不写 activity_events，时长只有 galgame_sessions 一本账',
+      reason: 'v92 起会话结算不写 activity_events，时长只有 galgame_sessions 一本账',
     );
 
     // 统计事实面从 galgame_sessions 现算 GROUP BY (game, day)——时长不再恒 0
@@ -2412,13 +2412,13 @@ void _playTrackerAttachWiring() {
       greaterThanOrEqualTo(kMinSessionSeconds),
     );
 
-    // 会话身份是 galgames.id（窗口标题会变，不能当身份用）；v90 起时长只落
+    // 会话身份是 galgames.id（窗口标题会变，不能当身份用）；v92 起时长只落
     // galgame_sessions，不再另写 game 活动行。
     expect(sessions.single.gameId, 'galgame-attached-7');
     expect(
       await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]),
       isEmpty,
-      reason: 'v90 起会话结算不写 activity_events（第二本账）',
+      reason: 'v92 起会话结算不写 activity_events（第二本账）',
     );
 
     await harness.controller.close();

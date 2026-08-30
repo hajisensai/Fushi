@@ -171,7 +171,7 @@ class BackupMergeEngine {
         await _mergeFavoriteWords();
         await _mergeMinedSentences();
         await _mergeActivityEvents();
-        // v90：学习事实段按 uid LWW + 按身份墓碑（与 legacy 统计家族并行、互不触碰）。
+        // v92：学习事实段按 uid LWW + 按身份墓碑（与 legacy 统计家族并行、互不触碰）。
         await _mergeStudySegments();
         // galgame_sessions 刻意不合并（成文决策，不是遗漏）：游戏是本机局域
         // 身份，galgames 行本身就不搬运（见 tables.dart 的 GalgameTagMappings
@@ -925,7 +925,7 @@ class BackupMergeEngine {
   /// 代价：target 无 {event_type, ...} 复合索引，NOT EXISTS 对每条 src 行走
   /// 全表扫描（O(src×target)）。activity 是 session 粒度（每天几行~几十行），
   /// 年级数据也在万行内，SQLite 毫秒级，不值得为 merge 加索引。
-  /// v90 学习事实段（`study_segments`）+ 按身份墓碑（`study_segment_tombstones`）。
+  /// v92 学习事实段（`study_segments`）+ 按身份墓碑（`study_segment_tombstones`）。
   ///
   /// 语义与在线同步 [AggregateMergeService.mergeStudySegments] /
   /// [AggregateMergeService.arbitrateStudySegments] 完全一致，只是写成 SQL：
@@ -934,7 +934,7 @@ class BackupMergeEngine {
   ///     （LWW，同值重放 no-op）；
   ///  ③ 删掉目标里被（合并后）墓碑压制的段（updated_at < deleted_at）；
   ///  ④ 删掉被任一段（updated_at >= deleted_at）复活的墓碑。
-  /// 旧备份（v90 前）没有这两张表：ATTACH 前已迁到当前 schema，两侧必有表。
+  /// 旧备份（v92 前）没有这两张表：ATTACH 前已迁到当前 schema，两侧必有表。
   Future<void> _mergeStudySegments() async {
     await _db.customStatement(
       'INSERT INTO study_segment_tombstones (media_kind, media_key, deleted_at) '

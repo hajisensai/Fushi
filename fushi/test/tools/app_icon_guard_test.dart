@@ -102,9 +102,16 @@ void main() {
         reason: '原生切换成功后即使偏好写入失败，rail 也必须同步本次运行态');
     expect(page.contains('saveIconPresetKey('), isFalse);
     expect(page.contains('saveCustomIconPath('), isFalse);
-    expect(home.contains('child: const CurrentAppIcon()'), isTrue,
+    // rail 的品牌位已从 home_page 的私有方法抽成 NavRailBrandButton（它同时是
+    // 官网入口，需要独立可测）：home_page 只剩「rail 确实挂了品牌位」，图标真值
+    // 判据跟着实现搬进该组件。
+    final String brand =
+        read('lib/src/utils/components/nav_rail_brand_button.dart');
+    expect(home.contains('leading: const NavRailBrandButton()'), isTrue,
+        reason: 'rail 必须挂品牌位，否则下面两条判据会在一个没人用的文件上空转');
+    expect(brand.contains('child: const CurrentAppIcon()'), isTrue,
         reason: 'rail 不得再读取 AppModel 中固定的 assets/meta/icon.png');
-    expect(home.contains('child: DecoratedBox('), isFalse,
+    expect(brand.contains('child: DecoratedBox('), isFalse,
         reason: 'rail 应直接显示应用图标，不得再套卡片底色和描边');
     expect(component.contains('ValueListenableBuilder<AppIconSelection>'),
         isTrue);

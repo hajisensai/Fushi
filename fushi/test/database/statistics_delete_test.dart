@@ -5,12 +5,12 @@ import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-1204 后续：统计页长按删除某本书/视频的统计 + 防同步复活墓碑。
 ///
-/// v90 起累加 DAO（addReadingStatistic / addVideoWatchStatistic）已删：legacy 行在
+/// v92 起累加 DAO（addReadingStatistic / addVideoWatchStatistic）已删：legacy 行在
 /// 这里用 OVERWRITE 版 set* / drift 直插造数（行的最终值与原用例相同）；「新阅读 /
 /// 观看活动清 (title, sourceType) 墓碑」两条用例随累加 DAO 删除（本地写入面已不再
 /// 写 legacy 表；study_segments 的复活仲裁是 `updatedAt > deletedAt`，见
 /// study_segments_test.dart）。定向删除现在连带删本媒体的 study_segments 并按身份
-/// 立碑——见文件末尾 v90 组。
+/// 立碑——见文件末尾 v92 组。
 Future<FushiDatabase> _openDb() async {
   final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
@@ -53,7 +53,7 @@ Future<void> _insertWatch(
       lastModified: 1,
     ));
 
-/// 一段 study_segments 事实（v90）。
+/// 一段 study_segments 事实（v92）。
 Future<void> _seedSegment(
   FushiDatabase db, {
   required String mediaKind,
@@ -389,7 +389,7 @@ void main() {
     });
   });
 
-  group('v90: 定向删除连带 study_segments 事实 + 按媒体身份立碑', () {
+  group('v92: 定向删除连带 study_segments 事实 + 按媒体身份立碑', () {
     test(
         'deleteReadingStatisticsForTitle(bookKey:) removes the book segments '
         'and writes a (book, bookKey) segment tombstone; other books untouched',

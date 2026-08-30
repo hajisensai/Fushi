@@ -127,7 +127,7 @@ void main() {
   test('PDF 阅读统计不把页数当字数（时钟只记时长，永不 addChars）', () {
     final String src =
         read('lib/src/pages/implementations/reader_pdf_page.dart');
-    // v90：字数只有一个入口 StudyClock.addChars。PDF 无字数，页面里不得出现该
+    // v92：字数只有一个入口 StudyClock.addChars。PDF 无字数，页面里不得出现该
     // 调用——把页数塞进 chars 会污染统计页的「字数」口径（旧形态是 `charsRead: 0`）。
     expect(src.contains('addChars('), isFalse,
         reason: 'PDF 无字数；把页数塞进 chars 会污染统计页的「字数」口径');

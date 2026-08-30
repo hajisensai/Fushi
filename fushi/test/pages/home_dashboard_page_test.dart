@@ -163,7 +163,7 @@ void main() {
   Finder inSection(String title, Finder matching) =>
       find.descendant(of: sectionCard(title), matching: matching);
 
-  /// v90 起阅读只写 `study_segments`，`reading_statistics` 冻结为 legacy 只读投影
+  /// v92 起阅读只写 `study_segments`，`reading_statistics` 冻结为 legacy 只读投影
   /// （历史数据仍要进首页热力图 / 今日目标）。这里按 legacy 形状直插（OVERWRITE 版
   /// `setReadingStatistic`），语义与旧 `addReadingStatistic` 累加版在空表上等价。
   Future<void> seedLegacyReading({

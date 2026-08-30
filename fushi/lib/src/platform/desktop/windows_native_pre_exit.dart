@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -35,6 +36,10 @@ class WindowsNativePreExit {
   /// 每条退出路径独立的一次性守卫。同一路径内重复调用短路，但不同路径互不影响。
   static final Set<WindowsExitReason> _preparedReasons = <WindowsExitReason>{};
 
+  /// native teardown 的等待上界。这一步在平台线程上同步跑，Dart 侧只是等回执，
+  /// 所以超时能真正放行（UI isolate 不被它阻塞）。
+  static const Duration prepareTimeout = Duration(milliseconds: 2000);
+
   /// 平台判定钩子。生产恒为 `Platform.isWindows`；测试可覆盖以在任意平台验证守卫解耦逻辑。
   @visibleForTesting
   static bool Function() isWindows = () => Platform.isWindows;
@@ -51,7 +56,16 @@ class WindowsNativePreExit {
     if (!_preparedReasons.add(reason)) return;
 
     try {
-      await _channel.invokeMethod<void>('prepareForProcessExit');
+      await _channel
+          .invokeMethod<void>('prepareForProcessExit')
+          .timeout(prepareTimeout);
+    } on TimeoutException catch (e) {
+      // 原生侧在平台线程上同步析构每个 WebView2 controller + TextureBridge + 释放
+      // DirectComposition 会话，每个几百 ms（BUG-192 的原始根因，exit(0) 只跳过了
+      // window_manager 的全插件 teardown，这一份仍被显式执行）。它的**首要作用**
+      // ——SetProcessExiting() 短路 WGC 帧回调——在调用一进原生就已生效，剩下的
+      // clear() 只是提前归还马上就要被 OS 回收的资源。等不到就放行，别让它拖住退出。
+      debugPrint('[Fushi] Windows native pre-exit hook timed out: $e');
     } on MissingPluginException catch (e) {
       debugPrint('[Fushi] Windows native pre-exit hook unavailable: $e');
     } on PlatformException catch (e) {

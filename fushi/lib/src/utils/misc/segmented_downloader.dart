@@ -6,6 +6,7 @@ import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 import 'package:fushi/src/utils/misc/download_plan.dart';
+import 'package:fushi/src/utils/misc/source_speed_ledger.dart';
 import 'package:fushi/src/utils/misc/resumable_downloader.dart';
 
 /// 打开一次请求。与 [ResumableDownloadOpen] 同形（复用 [ResumableDownloadResponse]），
@@ -212,26 +213,70 @@ class SegmentedDownloader {
     }
   }
 
-  /// 取一片：按序轮换来源，直到取到或试满 [maxAttemptsPerPart] 次。
+  /// 各来源的实测吞吐账本，也是选源的唯一依据（见 [SourceSpeedLedger]）。
+  ///
+  /// 采样门槛跟着**最小的那片**走（半片），不写死字节数：门槛高于片长的话每个样本都
+  /// 会被丢掉，账本永远停在「谁都没测过」，选源退化成轮转——正是要修掉的那个行为。
+  late final SourceSpeedLedger _ledger = SourceSpeedLedger(
+    minSampleBytes: math.max(
+      1,
+      math.min(
+        1 << 20,
+        plan.parts.fold<int>(
+              plan.totalBytes,
+              (int least, DownloadPart p) => math.min(least, p.length),
+            ) ~/
+            2,
+      ),
+    ),
+  );
+
+  /// 单来源在飞上限：让快来源多拿片，但留得下另外几家的采样与带宽。
+  late final int _perSourceLimit = SourceSpeedLedger.perSourceLimitFor(
+    concurrency: concurrency,
+    sourceCount: plan.parts.fold<int>(
+      1,
+      (int most, DownloadPart p) => math.max(most, p.sources.length),
+    ),
+  );
+
+  /// 取一片：按**当前实测最快**的来源取，失败就换一家，直到取到或试满
+  /// [maxAttemptsPerPart] 次。
+  ///
+  /// 这里以前是 `part.sources[(part.index + attempt) % 来源数]`——片和源静态绑定，
+  /// 于是每个来源固定分到 1/N 的片，整包时长由**最慢**的那家决定，快的那家把自己
+  /// 那份下完就空转。选源改成运行时决策之后，快来源自然承担更多片。
   Future<void> _fetchPart(DownloadPart part) async {
     Object? lastError;
     StackTrace? lastStack;
+    final Set<String> failedHere = <String>{};
     for (int attempt = 0; attempt < maxAttemptsPerPart; attempt++) {
       _throwIfCancelled();
-      // 源轮换把**分片序号**也算进去：只按 attempt 取模的话，第一轮所有并发分片
-      // 全打 sources[0]，第二个源只有失败重试才用得上——那是故障转移，不是双源并拉。
-      // 加上 part.index 后，片 0→源 0、片 1→源 1……天然摊到所有来源；而 attempt+1
-      // 仍然换到下一个源，重试换源的性质原样保留。
-      final DownloadSource source =
-          part.sources[(part.index + attempt) % part.sources.length];
+      final DownloadSource source = _ledger.pick(
+        part.sources,
+        perSourceLimit: _perSourceLimit,
+        exclude: failedHere,
+      );
+      // 本次净增字节。切片来源被服务端忽略 Range 时（200，见 _fetchPartFrom）实际
+      // 传输量比这个大，吞吐会被略微低估——罕见路径，不值得为它把字节数一路回传。
+      final int before = _store.receivedOf(part.index);
+      final Stopwatch elapsed = Stopwatch()..start();
       try {
         await _fetchPartFrom(part, source);
+        _ledger.recordSuccess(
+          source.url,
+          bytes: part.length - before,
+          elapsed: elapsed.elapsed,
+        );
         return;
       } on SegmentedDownloadCancelledException {
         rethrow;
       } catch (e, st) {
         lastError = e;
         lastStack = st;
+        // 冷却是**跨片**的：这家挂了，别的片也别再撞上去。上层的 backoff 只管本片。
+        _ledger.recordFailure(source.url);
+        failedHere.add(source.url);
         if (attempt + 1 < maxAttemptsPerPart) {
           final Duration wait = (retryBackoff ?? _defaultBackoff)(attempt);
           if (wait > Duration.zero) {
@@ -239,6 +284,8 @@ class SegmentedDownloader {
             _throwIfCancelled();
           }
         }
+      } finally {
+        _ledger.release(source.url);
       }
     }
     Error.throwWithStackTrace(

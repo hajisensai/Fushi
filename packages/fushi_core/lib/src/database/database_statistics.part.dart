@@ -235,10 +235,10 @@ mixin _FushiDbStatistics
   /// 清空全部活动事件。刻意无生产调用方(见上方决策注释)。
   Future<int> clearAllActivityEvents() => delete(activityEvents).go();
 
-  // ── study_segments (v90 统计域唯一事实表) ───────────────────────
+  // ── study_segments (v92 统计域唯一事实表) ───────────────────────
   //
   // 写法只有一种：[upsertStudySegment] 绝对值 upsert（表注释见 tables.dart）。
-  // 本地写入面自 v90 起**只写本表**；上面的 reading_statistics /
+  // 本地写入面自 v92 起**只写本表**；上面的 reading_statistics /
   // video_watch_statistics / *_hourly_logs / activity_events(read|watch|game) 累加
   // DAO 已删除，剩下的 set* OVERWRITE 版只服务 legacy wire 的同步落地。
 
@@ -515,7 +515,7 @@ mixin _FushiDbStatistics
             ..limit(limit, offset: offset))
           .get();
 
-  /// 全库最近 [limit] 条游玩会话（按结束时刻倒序）：v90 起游玩不再写 activity 行，
+  /// 全库最近 [limit] 条游玩会话（按结束时刻倒序）：v92 起游玩不再写 activity 行，
   /// 首页活动流 / 游戏首页时间线从这里合成「游玩」事件。
   Future<List<GalgameSessionRow>> getRecentGalgameSessions({int limit = 200}) =>
       (select(galgameSessions)
@@ -532,7 +532,7 @@ mixin _FushiDbStatistics
   /// 游戏库（[galgames]）与首页活动时间线（[activityEvents]）是独立用户数据，
   /// 不能因统计页的「清空」操作被连带删除。
   Future<int> clearAllGalgameStatistics() => transaction(() async {
-        // v90：hook 字数段（chars-only）与游玩会话同属「游戏统计」，一起清。
+        // v92：hook 字数段（chars-only）与游玩会话同属「游戏统计」，一起清。
         await clearStudySegments(kActivityMediaGame);
         return delete(galgameSessions).go();
       });
@@ -640,7 +640,7 @@ mixin _FushiDbStatistics
             activityEvents,
             readingStatistics,
             videoWatchStatistics,
-            // v90：学习统计唯一事实表；本地写入面只写它，首页热力图 / 今日 /
+            // v92：学习统计唯一事实表；本地写入面只写它，首页热力图 / 今日 /
             // 活动流全部从它派生。
             studySegments,
             galgameSessions,

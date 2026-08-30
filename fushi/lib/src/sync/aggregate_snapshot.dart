@@ -78,7 +78,7 @@ class AggregateSnapshot {
   final List<AggregateTombstoneRecord> favoriteWordTombstones;
   final List<AggregateTombstoneRecord> favoriteSentenceTombstones;
 
-  /// v90 统计域 wire v2（additive 字段，走 [currentVersion] 注释的兼容不变量：
+  /// v92 统计域 wire v2（additive 字段，走 [currentVersion] 注释的兼容不变量：
   /// 旧端忽略本 key、缺失当空）：学习事实段全量 + 按媒体身份的删除墓碑。
   ///
   /// 合并语义与 legacy 统计家族**不同**：不是 MAX-union，而是按 `uid` 并集、同 uid
@@ -562,7 +562,7 @@ int _asInt(Object? v) {
 /// `FushiDatabase.favoriteWordItemKey`；句 =
 /// `FavoriteSentenceRepository.itemKeyOf`）；[deletedAt] 为删除毫秒戳，仲裁
 /// 「删除 vs 重收藏」用（见 `AggregateSyncService.mergeSnapshots`）。
-/// v90 学习事实段的 wire 形状（`study_segments` 一行一条，全字段透传）。
+/// v92 学习事实段的 wire 形状（`study_segments` 一行一条，全字段透传）。
 ///
 /// [uid] 是幂等键（写入方生成）；[updatedAt] 是 LWW 水位；其余字段是事实本身。
 /// 字段集与本地表一一对应，同步落地按 uid `INSERT ... ON CONFLICT DO UPDATE WHERE
@@ -651,7 +651,7 @@ class StudySegmentRecord {
   }
 }
 
-/// v90 按媒体身份的统计删除墓碑（`study_segment_tombstones` 一行一条）。
+/// v92 按媒体身份的统计删除墓碑（`study_segment_tombstones` 一行一条）。
 class StudyTombstoneRecord {
   const StudyTombstoneRecord({
     required this.mediaKind,

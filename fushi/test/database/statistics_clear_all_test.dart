@@ -6,7 +6,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 时段日志、查词 / 制卡计数），保留收藏词 / 制卡历史 / 书籍等用户内容，且阅读域与
 /// 视频域互不牵连。
 ///
-/// v90 起累加 DAO 已删（legacy 四表只剩同步落地的 OVERWRITE 版 set*），本文件用
+/// v92 起累加 DAO 已删（legacy 四表只剩同步落地的 OVERWRITE 版 set*），本文件用
 /// set* 造 legacy 行；clearAll* 现在连带清本域的 `study_segments` 事实（新事实表
 /// 语义见 study_segments_test.dart）。
 Future<FushiDatabase> _openDb() async {
@@ -55,7 +55,7 @@ Future<void> _seedVideoStats(FushiDatabase db) async {
   await db.addMiningCount(sourceType: 'video', dateKey: '2026-07-05');
 }
 
-/// 一段 study_segments 事实（v90）。
+/// 一段 study_segments 事实（v92）。
 Future<void> _seedSegment(
   FushiDatabase db, {
   required String mediaKind,
@@ -125,7 +125,7 @@ void main() {
     });
 
     test(
-        'v90: also wipes book study_segments, keeps video segments, and writes '
+        'v92: also wipes book study_segments, keeps video segments, and writes '
         'no per-media tombstone (整体重置不立碑)', () async {
       final FushiDatabase db = await _openDb();
       await _seedSegment(db, mediaKind: kActivityMediaBook, mediaKey: 'book/A');
@@ -180,7 +180,7 @@ void main() {
     });
 
     test(
-        'v90: also wipes video study_segments, keeps book segments, and writes '
+        'v92: also wipes video study_segments, keeps book segments, and writes '
         'no per-media tombstone', () async {
       final FushiDatabase db = await _openDb();
       await _seedSegment(db, mediaKind: kActivityMediaBook, mediaKey: 'book/A');

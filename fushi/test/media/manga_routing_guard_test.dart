@@ -112,7 +112,7 @@ void main() {
     // 两个口径同时被污染。下面从「钉一个字面量」改成「钉两个量纲的接线不交叉」。
     expect(src.contains('mangaAccumulateReadingStats'), isTrue,
         reason: '字数必须来自 OCR 文本记账，不能凭页数现编');
-    // v90：字数 / 页数直接记进 StudyClock 的当前段（`study_segments.chars` /
+    // v92：字数 / 页数直接记进 StudyClock 的当前段（`study_segments.chars` /
     // `.pages` 两列），页面不再持有会话累计器。
     expect(src.contains('_studyClock?.addChars(added.chars)'), isTrue,
         reason: 'OCR 字符数经 addChars 落段的 chars 列');

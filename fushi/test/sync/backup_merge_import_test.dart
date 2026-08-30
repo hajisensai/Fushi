@@ -134,7 +134,7 @@ void main() {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
     final cur = FushiDatabase(curDir.path);
-    // v90 起累加 DAO 已删（legacy 小时表只剩同步落地的 OVERWRITE 版 set*），
+    // v92 起累加 DAO 已删（legacy 小时表只剩同步落地的 OVERWRITE 版 set*），
     // 造数改绝对值；MAX-union 语义原样。
     await cur.setReadingHourlyLog(
         dateKey: '2026-01-01',
@@ -1261,7 +1261,7 @@ void main() {
     addTearDown(() => cleanupTempDir(curDir));
     final cur = FushiDatabase(curDir.path);
     // Device once had "A" stats then the user deleted them -> tombstone, and a
-    // surviving "Keep" book.（v90 起累加 DAO 已删，legacy 行用 OVERWRITE 版 set*
+    // surviving "Keep" book.（v92 起累加 DAO 已删，legacy 行用 OVERWRITE 版 set*
     // 造数，值与原用例相同。）
     await cur.setReadingStatistic(ReadingStatisticsCompanion.insert(
         title: 'A',

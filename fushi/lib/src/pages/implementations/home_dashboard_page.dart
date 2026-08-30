@@ -44,6 +44,7 @@ import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
+import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/misc/dashboard_remote_merge.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
@@ -387,6 +388,13 @@ const int _kTrackingUnlinkedLimit = 5;
 
 class _HomeDashboardPageState
     extends BaseModuleTabPageState<HomeDashboardPage> {
+  static const int _kActivityPageSize = 24;
+
+  /// 首页主纵向滚动区自己的控制器。走 [FushiScrollController]（全仓唯一那套桌面
+  /// 滚轮细化实现），**不再另起一个平行控制器**——两套都拦 pointerScroll，同时在
+  /// 场就是两层折扣，而且「粗滚轮阈值 / 倍率 / 要不要动画」会在两处各写一遍。
+  final ScrollController _dashboardScrollController = FushiScrollController();
+
   /// 「继续」横滑行：三类条目统一竖版海报槽（BUG-1299）。视频封面可能是刮削
   /// 落地的 2:3 竖版海报，旧「书竖 5:7 / 视频横 16:9」混排会把海报裁成中间一条；
   /// 现在与视频库主网格同源走 [PortraitCoverImage]——竖图铺满、横版截帧模糊
@@ -420,6 +428,9 @@ class _HomeDashboardPageState
   /// Activity 分类筛选：null=全部，否则 [kActivityRead]/[kActivityWatch]/
   /// [kActivityGame]/[kActivityAdded]（内存里先过滤 events 再聚合）。
   String? _activityFilter;
+
+  /// 活动预取与渲染解耦：数据保留完整，widget 树每次只增加一页。
+  int _visibleActivityEntryCount = _kActivityPageSize;
 
   /// [initState] 异步载入的视频库（继续观看 + 视频计数）。
   List<VideoBookRow> _videos = const <VideoBookRow>[];
@@ -467,7 +478,7 @@ class _HomeDashboardPageState
 
   /// 每日字数合计（dateKey → 字数，阅读 + 观看 + 游戏），热力图「全部」档 +
   /// 日明细 sheet 头部合计。**不是**今日目标的分子——目标只算阅读域，见
-  /// [readingGoalCharsForDay]（v90：与阅读统计页同一函数、同一口径）。
+  /// [readingGoalCharsForDay]（v92：与阅读统计页同一函数、同一口径）。
   Map<String, int> _readingCharsByDay = const <String, int>{};
 
   /// 每日学习时长合计（dateKey → 毫秒，阅读 + 观看 + 游戏），热力图气泡的第二维度
@@ -482,7 +493,7 @@ class _HomeDashboardPageState
   Map<String, int> _gameCharsByDay = const <String, int>{};
   Map<String, int> _gameTimeMsByDay = const <String, int>{};
 
-  /// 已加载的统一事实面日行（v90：[StatFacts.daily] 按 mediaKind 分三份；点选日
+  /// 已加载的统一事实面日行（v92：[StatFacts.daily] 按 mediaKind 分三份；点选日
   /// 明细 sheet 按 dateKey 过滤、今日目标分子按阅读域求和，免重查）。
   List<StatFact> _readingRows = const <StatFact>[];
   List<StatFact> _watchRows = const <StatFact>[];
@@ -492,7 +503,7 @@ class _HomeDashboardPageState
   /// - [_collectionNamesById]：collectionId → 合集名。
   /// - [_primaryCollectionByEntry]：'<mediaType>|<entryKey>' → 折叠归属主 collectionId。
   /// - [_bookKeyByTitle]：legacy 阅读事实行无身份（mediaKey ''）时经 epub_books
-  ///   按 title 反查 bookKey（v90 段自带 mediaKey，优先直用）。
+  ///   按 title 反查 bookKey（v92 段自带 mediaKey，优先直用）。
   /// - [_epubUidByBookKey]：v83 起成员表 epub entryKey = `epub_books.uid`，页面
   ///   手里的 bookKey 查归属映射前经此表换算（书架 `_epubUidByKey` 同款口径）。
   Map<int, String> _collectionNamesById = const <int, String>{};
@@ -591,6 +602,7 @@ class _HomeDashboardPageState
     _galgameRepo?.removeListener(_scheduleReload);
     _trackingRevision?.removeListener(_scheduleReload);
     _prefsRepoForRemoteGate?.removeListener(_onPrefsChangedForRemoteGate);
+    _dashboardScrollController.dispose();
     super.dispose();
   }
 
@@ -611,7 +623,7 @@ class _HomeDashboardPageState
     final AppModel appModel = ref.read(appProvider);
     final FushiDatabase db = appModel.database;
     final List<VideoBookRow> videos = await widget.videoRepo.listForShelf();
-    // v90：学习统计只经统一事实面读取（study_segments + 冻结的 legacy 投影表，
+    // v92：学习统计只经统一事实面读取（study_segments + 冻结的 legacy 投影表，
     // 游戏时长来自 galgame_sessions、游戏 hook 字数来自 legacy game 行 + 段），
     // 首页不再自己读六张表各自累加——与阅读/视频/游戏统计页同一份事实。
     final StatFacts facts = await loadStatFacts(db);
@@ -619,7 +631,7 @@ class _HomeDashboardPageState
     final List<StatFact> watch = facts.dailyVideos.toList(growable: false);
     final List<StatFact> game = facts.dailyGames.toList(growable: false);
     // 活动流唯一数据源 [StatFacts.activityRows]：legacy activity_events（含仍在写的
-    // added 导入事件）∪ v90 段映射行 ∪ galgame_sessions 合成的游玩事件，按时刻倒序
+    // added 导入事件）∪ v92 段映射行 ∪ galgame_sessions 合成的游玩事件，按时刻倒序
     // 截 200（与旧 getRecentActivityEvents(limit: 200) 对齐）。
     final List<ActivityEventRow> events = facts.activityRows;
     // P4：游戏库整表（日明细/时间轴的游戏显示名反查）。仓储缓存与表恒一致，
@@ -1002,6 +1014,7 @@ class _HomeDashboardPageState
           );
         }
         return ListView(
+          controller: _dashboardScrollController,
           padding: EdgeInsets.all(tokens.spacing.card),
           children: <Widget>[
             // 已迁移只读态（Fushi 迁移 P1-4，仅老包生效）：首屏常驻引导。
@@ -1645,12 +1658,14 @@ class _HomeDashboardPageState
     FushiDesignTokens tokens,
     VideoBookRow video, {
     bool landscapeSlot = false,
+    int decodeWidth = kLocalCoverDecodePixelWidth,
   }) {
     return _localCover(
       tokens,
       kind: MediaKind.video,
       path: video.coverPath,
       landscapeSlot: landscapeSlot,
+      decodeWidth: decodeWidth,
     );
   }
 
@@ -1661,12 +1676,14 @@ class _HomeDashboardPageState
     FushiDesignTokens tokens,
     GalgameEntry game, {
     bool landscapeSlot = false,
+    int decodeWidth = kLocalCoverDecodePixelWidth,
   }) {
     return _localCover(
       tokens,
       kind: MediaKind.game,
       path: game.coverPath,
       landscapeSlot: landscapeSlot,
+      decodeWidth: decodeWidth,
     );
   }
 
@@ -1675,10 +1692,12 @@ class _HomeDashboardPageState
     required MediaKind kind,
     required String? path,
     bool landscapeSlot = false,
+    int decodeWidth = kLocalCoverDecodePixelWidth,
   }) {
     final ImageProvider? provider = resolveMediaCoverImage(
       kind: kind,
       localPath: path,
+      decodeWidth: decodeWidth,
     );
     if (provider == null) {
       return _coverPlaceholder(tokens, mediaCoverFallbackIcon(kind));
@@ -1856,7 +1875,7 @@ class _HomeDashboardPageState
 
   /// 「今日目标」行：阅读域（普通书 + 漫画）今日字数 vs 每日字数目标（与阅读统计页
   /// 同一持久化 [AppModel.readingGoalDailyChars]、同一分子函数
-  /// [readingGoalCharsForDay]，不随热力图筛选变；v90 前首页把字幕字 / hook 字也
+  /// [readingGoalCharsForDay]，不随热力图筛选变；v92 前首页把字幕字 / hook 字也
   /// 加进分子，与统计页永远对不上）。目标为 0 → 只留设定入口按钮；否则进度条 +
   /// 「X / Y 字」，点击行弹编辑对话框。
   Widget _buildDailyGoalRow(FushiDesignTokens tokens) {
@@ -1958,7 +1977,7 @@ class _HomeDashboardPageState
 
   /// 点热力图某日 → 当日明细 sheet：头部=日期+当日合计（全来源），内容按
   /// 阅读/观看/游戏分节列出每条目的字数+时长（空节不显示）。三节都直接过滤
-  /// 已加载的事实行（v90：游戏节不再另查 activity_events）。
+  /// 已加载的事实行（v92：游戏节不再另查 activity_events）。
   Future<void> _showDayDetailSheet(String dateKey) async {
     final List<({String title, int chars, int timeMs})> reading =
         _readingDayRows(dateKey);
@@ -2002,7 +2021,7 @@ class _HomeDashboardPageState
     return byIdentity.values.toList(growable: false);
   }
 
-  /// 明细「阅读」节：阅读域当日事实行按身份聚合。显示名拼合集前缀（v90 段自带
+  /// 明细「阅读」节：阅读域当日事实行按身份聚合。显示名拼合集前缀（v92 段自带
   /// bookKey；legacy 行经 title→bookKey 反查，阅读统计页 _collectionNameForBook
   /// 同范式）；事实行仍按原身份聚合，不动历史数据身份。
   List<({String title, int chars, int timeMs})> _readingDayRows(
@@ -2040,13 +2059,13 @@ class _HomeDashboardPageState
 
   /// 阅读事实行 → 显示名：先过 display-title 门面（P4：改名 override 应用到明细
   /// 行；事实行 title 是快照恒 raw，仅上屏时替换），命中合集再拼「合集名 - 名字」。
-  /// 身份优先用行自带的 [mediaKey]（v90 段），为空再按 title 反查（legacy 行）；
+  /// 身份优先用行自带的 [mediaKey]（v92 段），为空再按 title 反查（legacy 行）；
   /// 两者都拿不到 bookKey（视频字幕书/已删书等）原样返回。
   String _readingStatDisplayTitle(String title, {String mediaKey = ''}) {
     final String? bookKey =
         mediaKey.isNotEmpty ? mediaKey : _bookKeyByTitle[title];
     if (bookKey == null) return title;
-    // 统计行 title 是聚合键恒 raw，只在上屏时经门面换显示名；v90 段自带身份
+    // 统计行 title 是聚合键恒 raw，只在上屏时经门面换显示名；v92 段自带身份
     // （mediaKey）时直接用它反查，legacy 行才回退 title→bookKey 表。
     final String display = displayTitleForStatRow(
       rawTitle: title,
@@ -2208,7 +2227,10 @@ class _HomeDashboardPageState
       header: _filterChips<String?>(
         tokens: tokens,
         selected: _activityFilter,
-        onSelected: (String? v) => setState(() => _activityFilter = v),
+        onSelected: (String? v) => setState(() {
+          _activityFilter = v;
+          _visibleActivityEntryCount = _kActivityPageSize;
+        }),
         options: <(String?, String)>[
           (null, t.home_filter_all),
           (kActivityRead, t.home_filter_read),
@@ -2222,9 +2244,28 @@ class _HomeDashboardPageState
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                for (final ActivityDateGroup g in groups)
+                for (final ActivityDateGroup g in takeActivityEntries(
+                  groups,
+                  _visibleActivityEntryCount,
+                ))
                   _buildActivityGroup(tokens, g, todayKey, yesterdayKey, now,
                       appModel, booksByKey, videosByUid),
+                if (groups.fold<int>(
+                      0,
+                      (int total, ActivityDateGroup group) =>
+                          total + group.entries.length,
+                    ) >
+                    _visibleActivityEntryCount)
+                  Align(
+                    alignment: AlignmentDirectional.center,
+                    child: TextButton.icon(
+                      onPressed: () => setState(() {
+                        _visibleActivityEntryCount += _kActivityPageSize;
+                      }),
+                      icon: const Icon(Icons.expand_more),
+                      label: Text(t.discovery_load_more),
+                    ),
+                  ),
               ],
             ),
     );
@@ -2402,7 +2443,11 @@ class _HomeDashboardPageState
           child: SizedBox(
             width: 40,
             height: 56,
-            child: _gameCover(tokens, game),
+            child: _gameCover(
+              tokens,
+              game,
+              decodeWidth: kActivityCoverDecodePixelWidth,
+            ),
           ),
         );
       }
@@ -2416,7 +2461,12 @@ class _HomeDashboardPageState
               width: 68,
               height: 40,
               // BUG-1299：横版槽，判定方向随槽走（海报垫底、截帧铺满）。
-              child: _videoCover(tokens, video, landscapeSlot: true),
+              child: _videoCover(
+                tokens,
+                video,
+                landscapeSlot: true,
+                decodeWidth: kActivityCoverDecodePixelWidth,
+              ),
             ),
           );
         }
@@ -2430,11 +2480,12 @@ class _HomeDashboardPageState
               height: 56,
               child: FadeInImage(
                 placeholder: MemoryImage(kTransparentImage),
-                image:
-                    ReaderFushiSource.instance.getDisplayThumbnailFromMediaItem(
+                image: resolveMediaCoverImage(
+                  kind: _bookMediaKind(book),
+                  book: book,
                   appModel: appModel,
-                  item: book,
-                ),
+                  decodeWidth: kActivityCoverDecodePixelWidth,
+                )!,
                 fit: BoxFit.cover,
                 imageErrorBuilder: (_, __, ___) =>
                     _coverPlaceholder(tokens, Icons.menu_book_outlined),

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 
-// v90：统计窗口阈值只有一个定义。此前四处手算 `now - 7d` 并 `>=` 比较，「近 7 天」
+// v92：统计窗口阈值只有一个定义。此前四处手算 `now - 7d` 并 `>=` 比较，「近 7 天」
 // 实际 8 天、「近 30 天」31 天，环比分母却恰 7 天——本周系统性偏大、环比结构性偏正。
 void main() {
   final StatWindow w = StatWindow(DateTime(2026, 8, 29, 15, 30));

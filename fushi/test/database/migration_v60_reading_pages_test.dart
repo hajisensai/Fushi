@@ -15,7 +15,7 @@ import 'package:fushi_core/fushi_core.dart';
 ///  ② 新列可写，且与字数互不影响；
 ///  ③ fresh 库由 onCreate 直接建出该列。
 ///
-/// v90 起累加 DAO（addReadingStatistic）已删、legacy 表冻结：这里用同步落地的
+/// v92 起累加 DAO（addReadingStatistic）已删、legacy 表冻结：这里用同步落地的
 /// OVERWRITE 版 [FushiDatabase.setReadingStatistic] 造行（累加用例随 DAO 删除，
 /// 新事实进 study_segments）。
 void main() {
@@ -64,7 +64,7 @@ CREATE TABLE statistics_tombstones (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 90, reason: 'v60 = reading_statistics.pages_read');
+    expect(db.schemaVersion, 92, reason: 'v60 = reading_statistics.pages_read');
 
     final List<ReadingStatisticRow> rows = await db.getAllReadingStatistics();
     expect(rows, hasLength(1));

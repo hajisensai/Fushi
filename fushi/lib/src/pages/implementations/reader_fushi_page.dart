@@ -1778,7 +1778,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   bool _pausedForLookup = false;
 
-  /// v90：本页**唯一**的阅读时钟兼累计器（时长 / 字数同一段同一 uid），取代旧的
+  /// v92：本页**唯一**的阅读时钟兼累计器（时长 / 字数同一段同一 uid），取代旧的
   /// `ReadingTimeTracker` + `_sessionReadingMs` / `_sessionCharsRead` 三处各算各的账
   /// （BUG-1052 / BUG-1107 的形状）。页面不再持有任何可被重锚的会话计数字段。
   StudyClock? _studyClock;

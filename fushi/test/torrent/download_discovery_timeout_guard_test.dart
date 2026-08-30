@@ -2,7 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/media/torrent/download_network_proxy.dart';
+import 'package:fushi/src/media/torrent/download_timeouts.dart';
+
+import '../helpers/source_guard.dart';
 
 /// BUG-1141：用户报：挂着代理搜 Nyaa，「发现」页只出
 /// `TimeoutException after 0:00:20.000000: Future not completed` + 「请点重试」。
@@ -70,16 +72,21 @@ void main() {
         inInclusiveRange(5, 20),
         reason: '太短会误杀慢代理握手，太长就失去「连不上快速失败」的意义',
       );
-      // 光有常量不算数——必须真的赋给 HttpClient，否则注释又在说代码没做的事。
-      final File proxy =
-          File('lib/src/media/torrent/download_network_proxy.dart');
-      expect(proxy.existsSync(), isTrue);
+      // 光有常量不算数——必须真的传给 client 工厂，否则注释又在说代码没做的事。
+      // 下载链路的 client 现在由 AppModel.createDownloadHttpClient 经统一装配点
+      // createAppHttpIoClient 建（代理出口全应用同一个），本链路特有的只剩这个
+      // 比默认 20s 短的建连超时，必须显式传进去。剥注释后匹配，防止只剩注释假绿。
+      final File appModel = File('lib/src/models/app_model.dart');
+      expect(appModel.existsSync(), isTrue);
+      final String code = compactCode(appModel.readAsStringSync());
       expect(
-        RegExp(r'connectionTimeout\s*=\s*kDownloadConnectionTimeout')
-            .hasMatch(proxy.readAsStringSync()),
-        isTrue,
-        reason: 'buildDownloadHttpClient 必须把 kDownloadConnectionTimeout '
-            '赋给 HttpClient.connectionTimeout',
+        code,
+        contains(
+          'createDownloadHttpClient()async=>createAppHttpIoClient('
+          'connectionTimeout:kDownloadConnectionTimeout)',
+        ),
+        reason: 'AppModel.createDownloadHttpClient 必须把 '
+            'kDownloadConnectionTimeout 传给 createAppHttpIoClient',
       );
     });
   });

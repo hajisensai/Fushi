@@ -6,7 +6,7 @@ import 'package:fushi/src/media/video/video_watch_tracker.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-// v90 统计域重构：观看时长不再由 VideoWatchTracker 自己计时 / 自己写活动行，而是
+// v92 统计域重构：观看时长不再由 VideoWatchTracker 自己计时 / 自己写活动行，而是
 // 交给注入的 [StudyClock]（活跃态 = 正在播放），字幕字数经 `clock.addChars` 记到
 // 同一段。因此本文件只剩三类断言：完成判定纯函数、字幕停留门（BUG-1763）、以及
 // tracker 与时钟的接线（stop 落库 / 幂等 / 不播放不计时）。
@@ -338,7 +338,7 @@ void main() {
     });
   });
 
-  group('观看时长接线（v90：经 StudyClock 落段，取代 recordActivity 活动行）', () {
+  group('观看时长接线（v92：经 StudyClock 落段，取代 recordActivity 活动行）', () {
     test('一次观看 session 结束落一条段，携带净观看时长', () async {
       final _Sink sink = _Sink();
       final _FakeSource src = _FakeSource()..isPlaying = true;

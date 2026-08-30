@@ -247,7 +247,7 @@ void main() {
 
     test('watchDashboardDataChanges 在写入学习事实段（study_segments）时也 emit',
         () async {
-      // v90：本地统计写入面只写 study_segments（累加 DAO 已删），首页热力图 /
+      // v92：本地统计写入面只写 study_segments（累加 DAO 已删），首页热力图 /
       // 今日 / 活动流全部从它派生，它必须在监听表集里。
       final db = await _openDb();
       final Future<void> emitted = db.watchDashboardDataChanges().first.timeout(

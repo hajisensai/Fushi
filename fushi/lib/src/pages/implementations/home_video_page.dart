@@ -614,7 +614,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     // UI v2 Phase B / v39：watch-stats 全量行 → 最近观看时间（内存聚合）。
     // v39 新行按 bookUid 键控；迁移遗留 NULL-uid 行按 title 建回退映射。
-    // v90 起 `video_watch_statistics` 冻结为 legacy 只读（历史数据还在），新的
+    // v92 起 `video_watch_statistics` 冻结为 legacy 只读（历史数据还在），新的
     // 观看只写 `study_segments`：两处的 (uid, 时刻) 一起喂 latestWatchAtByKey，
     // 同 uid 取最大，任一来源缺席都不影响另一来源。
     final List<VideoWatchStatisticRow> watchRows =

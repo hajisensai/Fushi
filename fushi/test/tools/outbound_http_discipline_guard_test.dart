@@ -63,8 +63,6 @@ const Map<String, String> kOutboundAssemblyPoints = <String, String>{
       '词典链路的 app 侧接线（BUG-1493）：把包内 dictionaryDioFactory 接到 applyAppProxy',
   'fushi/lib/src/sync/sync_http.dart':
       '云同步共享 client 的装配点（BUG-1348）：60s 连接超时 + applyAppProxy',
-  'fushi/lib/src/media/torrent/download_network_proxy.dart':
-      '下载发现链路的装配点：auto 走 applyAppProxy，direct/custom 是用户显式选定的固定出口',
   'fushi/lib/src/sync/tls/fushi_pinning_http.dart':
       '互联对端的证书指纹钉扎 client 装配点（自签证书，目标恒为局域网 peer）',
   'fushi/lib/src/utils/misc/update_checker_net.dart':
@@ -114,7 +112,7 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
 
 /// 登记在案的文件总数（装配点 + 豁免）。**这是自校验用的哨兵**：改清单必须同步改这个数，
 /// 光靠「新增未登记即红」挡不住「悄悄多登记一条」。
-const int kRegisteredOutboundFileCount = 20;
+const int kRegisteredOutboundFileCount = 19;
 
 /// 裸出站构造的判据。
 ///

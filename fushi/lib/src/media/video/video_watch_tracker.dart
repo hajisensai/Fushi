@@ -43,7 +43,7 @@ bool shouldCountCueDwell({
 }
 
 /// 视频观看统计采集器：字幕字数（停留门 + 单调去重，见 [shouldCountCueDwell]）+
-/// 完成标记。**观看时长不在这里算**——v90 起交给 [StudyClock]（活跃态 = 正在播放），
+/// 完成标记。**观看时长不在这里算**——v92 起交给 [StudyClock]（活跃态 = 正在播放），
 /// 本类只把「正在播放吗」与「每 tick 的完成判定」挂到时钟上，字幕字数经
 /// [StudyClock.addChars] 记到同一段。
 ///

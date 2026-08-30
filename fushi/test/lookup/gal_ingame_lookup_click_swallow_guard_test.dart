@@ -38,6 +38,9 @@ void main() {
   final String sgreLookupHeader = File(
     '../native/galgame_hook/hook/adapters/sgre_lookup.h',
   ).readAsStringSync();
+  final String sgreAnchorsHeader = File(
+    '../native/galgame_hook/hook/adapters/sgre_anchors.h',
+  ).readAsStringSync();
   final String sgreLookupSource = File(
     '../native/galgame_hook/hook/adapters/sgre_lookup.inc',
   ).readAsStringSync();
@@ -507,17 +510,33 @@ void main() {
       isTrue,
       reason: 'host/helper 的跨进程属性名必须只有 IPC 头这一份真值',
     );
+    final String anchorsHeader = compactCode(sgreAnchorsHeader);
     expect(
-      nativeHeader.contains('kSgreDirectInputMouseDeviceRva=0xA96E18u') &&
+      anchorsHeader.contains('kSgreDirectInputMouseDeviceRva=0xA96E18u') &&
+          anchorsHeader.contains('kSgreDirectInputMouseDeviceRva,') &&
           nativeHeader.contains(
             'kSgreDirectInputGetDeviceStateVtableIndex=9u',
           ) &&
           nativeHeader.contains('kSgreDirectInputMouseStateBytes=20u') &&
           nativeHeader.contains('kSgreDirectInputMouseButtonsOffset=12u'),
       isTrue,
-      reason: '只能使用已由 admitted SGRE binary 证明的 mouse slot / DIMOUSESTATE2 ABI',
+      reason:
+          '已量构建的 mouse slot 只能出现在 kSgreKnownBuilds 行里；'
+          'DIMOUSESTATE2 ABI 是 DirectInput 契约，不随构建变',
     );
-    expect(install.contains('kSgreDirectInputMouseDeviceRva'), isTrue);
+    // 地址只能来自解析结果（已量哈希行或唯一签名命中）；装钩点不许再读裸常量，
+    // 且锚点没解析出来时必须在读设备槽之前就返回。
+    expect(install.contains('kSgreDirectInputMouseDeviceRva'), isFalse);
+    // 两个串都必须先存在——indexOf 对缺失串返回 -1，裸比较顺序会把「门被删掉」判成通过。
+    const String shieldGate = '!g_sgre_anchors.direct_input_shield_available()';
+    const String deviceSlot = 'g_sgre_anchors.direct_input_mouse_device.rva';
+    expect(install.contains(shieldGate), isTrue, reason: '装钩前必须检查设备槽锚点是否已解析');
+    expect(install.contains(deviceSlot), isTrue);
+    expect(
+      install.indexOf(shieldGate) < install.indexOf(deviceSlot),
+      isTrue,
+      reason: '未解析的锚点必须在读槽之前 fail closed',
+    );
     expect(
       install.contains('VtableSlot(mouse_device,') &&
           install.contains('kSgreDirectInputGetDeviceStateVtableIndex'),

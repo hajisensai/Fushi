@@ -282,7 +282,7 @@ class AggregateSyncService {
           .getSyncDeletionTombstonesOfType(kFavoriteSentenceTombstoneType))
         row.itemKey: row.deletedAt,
     };
-    // v90：本地段墓碑压制的段不上行（merged 是 local ∪ peer，peer 那份仍带本机已删
+    // v92：本地段墓碑压制的段不上行（merged 是 local ∪ peer，peer 那份仍带本机已删
     // 媒体的旧段——与 BUG-1572 的 legacy 同病）；墓碑本身透传，删除才能传到对端。
     final Map<String, int> segmentTombstoned = <String, int>{
       for (final StudySegmentTombstoneRow t
@@ -383,7 +383,7 @@ class AggregateSyncService {
       keyOf: FavoriteSentenceRepository.itemKeyOf,
       createdAtOf: (FavoriteSentence s) => s.createdAt.millisecondsSinceEpoch,
     );
-    // v90 wire v2：段按 uid LWW 并集，墓碑按身份取 max，再仲裁「删除 vs 又读了」。
+    // v92 wire v2：段按 uid LWW 并集，墓碑按身份取 max，再仲裁「删除 vs 又读了」。
     final ({
       List<StudySegmentRecord> segments,
       List<StudyTombstoneRecord> tombstones
@@ -798,7 +798,7 @@ class AggregateSyncService {
         await _db.getAllLookupMiningCounters();
     final List<FavoriteWordRow> favWords = await _db.getAllFavoriteWords();
     final List<FavoriteSentence> favSentences = await _readFavoriteSentences();
-    // v90 wire v2：事实段与按身份墓碑全量上行（uid 幂等，对端按 LWW 并集）。
+    // v92 wire v2：事实段与按身份墓碑全量上行（uid 幂等，对端按 LWW 并集）。
     final List<StudySegmentRow> segments = await _db.getStudySegments();
     final List<StudySegmentTombstoneRow> segmentTombstones =
         await _db.getStudySegmentTombstones();
@@ -925,7 +925,7 @@ class AggregateSyncService {
         updatedAt: r.updatedAt,
       );
 
-  /// v90 wire v2 落地：先落墓碑（只写严格较新者，并删本地被压制的段），再按 uid
+  /// v92 wire v2 落地：先落墓碑（只写严格较新者，并删本地被压制的段），再按 uid
   /// LWW upsert 段（merge 侧已仲裁掉被墓碑压制的段；本地 DAO 再按 updatedAt 双保险）。
   /// 幂等：同一快照重放，墓碑不变、段同值不覆盖。
   Future<void> _applyStudySegments(AggregateSnapshot snapshot) async {
@@ -1105,7 +1105,7 @@ class AggregateSyncService {
         count: r.mineCount,
       );
     }
-    // v90 wire v2：事实段 + 按身份墓碑（与 legacy 统计家族互不触碰）。
+    // v92 wire v2：事实段 + 按身份墓碑（与 legacy 统计家族互不触碰）。
     await _applyStudySegments(snapshot);
     // 互联完整支持批次：快照墓碑先落本地（对端的取消收藏在本机生效并继续向外
     // 传播）——必须在下面的收藏 add/union 之前，使其墓碑抑制读到最新集合。

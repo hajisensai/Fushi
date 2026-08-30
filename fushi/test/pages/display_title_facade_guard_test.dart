@@ -74,7 +74,7 @@ void main() {
     });
 
     test('日明细「游戏」节与活动时间轴游戏行经 _gameDisplayTitle → displayTitleForGame', () {
-      // 日明细游戏节（v90：事实面自带 mediaKey，按身份精确命中再回落标题快照）。
+      // 日明细游戏节（v92：事实面自带 mediaKey，按身份精确命中再回落标题快照）。
       expect(
         dashboard,
         contains('_gameDisplayTitle(f.title, mediaKey: f.mediaKey)'),
@@ -236,7 +236,7 @@ void main() {
 
   group('身份面反向断言（统计聚合键 / 落库快照恒 raw）', () {
     test('reader 阅读统计时钟（navigation.part.dart）title 快照恒 raw', () {
-      // v90：统计落库走 StudyClock，title 快照在建时钟时取一次（study_segments
+      // v92：统计落库走 StudyClock，title 快照在建时钟时取一次（study_segments
       // 按 mediaKey 分组，title 只是回退显示）——仍必须是 raw 书名，禁过门面。
       final String fn = slice(
         navigationPart,

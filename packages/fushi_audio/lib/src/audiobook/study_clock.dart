@@ -9,7 +9,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 熄屏 / 长 GC 停顿致定时器被冻结后一次性补发），该段用户是否真在学习未知，整窗丢弃。
 ///
 /// 阅读侧此前缺失，导致整夜后台挂起被一次性计入阅读时长（BUG-892）；视频侧的
-/// `kMaxWatchGap` 与本常量同值同义，v90 起统一只剩这一个。
+/// `kMaxWatchGap` 与本常量同值同义，v92 起统一只剩这一个。
 const Duration kMaxReadingGap = Duration(seconds: 120);
 
 /// 「到达即计」治理的统一停留门（BUG-1761 漫画 / BUG-1763 视频）。
@@ -68,7 +68,7 @@ List<(String, int, int)> splitReadingTime(DateTime start, DateTime now) {
 DateTime hourBoundaryAfter(DateTime t) =>
     DateTime(t.year, t.month, t.day, t.hour + 1);
 
-/// 落库回调：v90 起所有学习时长 / 字数 / 页数只经 [FushiDatabase.upsertStudySegment]
+/// 落库回调：v92 起所有学习时长 / 字数 / 页数只经 [FushiDatabase.upsertStudySegment]
 /// 一个口进 `study_segments`；抽成 typedef 是给纯单测注入 fake。
 typedef StudySegmentSink = Future<void> Function(StudySegmentsCompanion row);
 
@@ -94,7 +94,7 @@ class _OpenSegment {
   bool dirty = false;
 }
 
-/// 学习时长 / 字数 / 页数的**唯一计时器**（v90 统计域重构）。
+/// 学习时长 / 字数 / 页数的**唯一计时器**（v92 统计域重构）。
 ///
 /// 取代 `ReadingTimeTracker`（阅读小时桶）+ `VideoWatchTracker` 的计时部分 + 各页面
 /// 自己持有的 `_sessionReadingMs` / `_sessionCharsRead` 会话累计器：三处各算各的账正是
@@ -319,7 +319,7 @@ class StudyClock {
     if (seg.dirty && _worthWriting(seg)) _enqueueWrite(seg);
   }
 
-  /// 落库门槛（与 v90 前各页面「<1s 且无内容账的段不记账」同一条判据）：不足 1 秒
+  /// 落库门槛（与 v92 前各页面「<1s 且无内容账的段不记账」同一条判据）：不足 1 秒
   /// 又没有字数 / 页数的段是生命周期抖动（开书秒关、失焦回焦），不值一行；
   /// [flushNow] 下段仍开着、保持 dirty 留到下次，[stop] / 封段则直接丢弃。
   /// 这也让「打开页面立刻 dispose」的路径零 DB 写——测试 harness 的 FakeAsync 在

@@ -74,7 +74,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   Timer? _saveDebounce;
   bool _restoreDone = false;
 
-  /// v90：本页唯一的阅读时钟兼累计器（同 EPUB 侧 `_studyClock`）。页面不再持有
+  /// v92：本页唯一的阅读时钟兼累计器（同 EPUB 侧 `_studyClock`）。页面不再持有
   /// 任何会话时长字段——旧的 `_sessionReadingMs` / `_sessionStartTime` 形态整个消失。
   StudyClock? _studyClock;
 
@@ -164,7 +164,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       _lastSavedPageIndex = saved.sectionIndex;
     }
 
-    // v90：唯一时钟（同 EPUB 侧）；空闲门 + 生命周期前台门只对阅读面生效。
+    // v92：唯一时钟（同 EPUB 侧）；空闲门 + 生命周期前台门只对阅读面生效。
     _studyClock ??= StudyClock(
       database: db,
       mediaKind: kActivityMediaBook,
@@ -193,7 +193,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     if (pageNumber == null) return;
     final int pageIndex = pageNumber - 1;
     if (pageIndex < 0) return;
-    // v90 阅读空闲门：翻页 = 用户输入。
+    // v92 阅读空闲门：翻页 = 用户输入。
     _studyClock?.touch();
     _currentPageIndex = pageIndex;
     // 500ms debounce（与 EPUB 阅读器同口径）：连续翻页只落最后一次。

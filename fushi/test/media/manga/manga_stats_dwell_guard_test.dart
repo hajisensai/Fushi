@@ -13,12 +13,12 @@ import '../../helpers/source_guard.dart';
 ///    400 页的一半根因）。
 /// 2. **续读预置**：去重集合只活在一次 State 里，重开这卷是空集；恢复存档时必须
 ///    把恢复位置之前的页预置为已计，否则每次重开都把已读区重算一遍（另一半根因）。
-/// 3. **单一时钟**（BUG-1052 同款，v90 形态）：时长 / 字数 / 页数全部记进
+/// 3. **单一时钟**（BUG-1052 同款，v92 形态）：时长 / 字数 / 页数全部记进
 ///    `StudyClock` 的当前段（断档守卫在时钟内逐 tick 生效）。页面侧不得再持有
 ///    `_sessionReadingMs` 这类会话累计器、不得拿整段墙钟过一次
 ///    `isContinuousReadingGap`（>120s 的正常会话会被整段判非连续丢弃）。
 ///
-/// v90 前的形态（`onDelta: (int deltaMs) => _sessionReadingMs += deltaMs` /
+/// v92 前的形态（`onDelta: (int deltaMs) => _sessionReadingMs += deltaMs` /
 /// `_readingTimeTracker?.sampleNow()` / `if (elapsedMs < 1000 && _sessionCharsRead
 /// <= 0 && _sessionPagesRead <= 0)`）随 `ReadingTimeTracker` 一起删除；对应断言改成
 /// 新形态（见第 3、4 条用例），语义不变：时长与内容账同一时钟、最后一段不丢。
@@ -81,7 +81,7 @@ void main() {
   });
 
   test('最后一段 flush 不许把已入账的页数/字数丢掉', () {
-    // v90 前这里是 `if (elapsedMs < 1000 && _sessionCharsRead <= 0 &&
+    // v92 前这里是 `if (elapsedMs < 1000 && _sessionCharsRead <= 0 &&
     // _sessionPagesRead <= 0)`——时长阈值与内容账分门。现在没有任何早退路径：
     // _flushReadingStats 只结算时钟（时长 / 字数 / 页数同一段、绝对值写回），
     // dispose 前最后一段哪怕 <1s，已停留入账的页也随段落库。

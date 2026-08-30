@@ -144,7 +144,7 @@ void main() {
   // 「最快日」421249 字·时⁻¹。生产库对账坐实——同一天 reading_statistics 记 84 分钟，
   // reading_hourly_logs 记 345 分钟；两条账目差 4 倍以上，前者是错的那条。
   //
-  // v90 形态：三个阅读器只剩一个 `StudyClock`（时长 / 字数 / 页数同一段、绝对值
+  // v92 形态：三个阅读器只剩一个 `StudyClock`（时长 / 字数 / 页数同一段、绝对值
   // 落库）——不存在第二本账可被重锚吃掉。此前「tracker.onDelta 累加进
   // `_sessionReadingMs`」「flush 前 sampleNow」那些中间形态随 `ReadingTimeTracker`
   // 一起删除，对应断言改成「这些形态一个都不许回潮」。

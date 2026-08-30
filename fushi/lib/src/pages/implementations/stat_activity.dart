@@ -26,7 +26,7 @@ String statDateKey(DateTime d) => FushiDatabase.statDateKeyOf(d);
 String statTodayKey() => statDateKey(DateTime.now());
 
 /// 纯函数：把 (dateKey, count) 事件按 [now] 的今日/本周/本月/全部窗口累加。
-/// 窗口阈值只来自 [StatWindow]（v90：近 7 天恰 7 天、近 30 天恰 30 天）。
+/// 窗口阈值只来自 [StatWindow]（v92：近 7 天恰 7 天、近 30 天恰 30 天）。
 StatActivityBuckets bucketActivityByDateKey(
   Iterable<(String dateKey, int count)> events,
   DateTime now,

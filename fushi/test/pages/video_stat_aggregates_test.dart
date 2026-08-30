@@ -3,7 +3,7 @@ import 'package:fushi/src/pages/implementations/video_stat_aggregates.dart';
 import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// v90：输入是统一事实面的视频事实；[uid] null/'' = legacy 无身份行。
+/// v92：输入是统一事实面的视频事实；[uid] null/'' = legacy 无身份行。
 StatFact _fact(String title, String? uid, String dateKey, int chars, int ms) =>
     StatFact(
       mediaKind: kActivityMediaVideo,

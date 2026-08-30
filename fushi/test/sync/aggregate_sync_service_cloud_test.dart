@@ -62,7 +62,7 @@ void main() {
 
   test('hourly formats: materialize splits, old-peer totals lift unattributed',
       () async {
-    // v67：本地按写入面分桶（epub 20s + manga 10s，同一小时）。v90 起累加 DAO
+    // v67：本地按写入面分桶（epub 20s + manga 10s，同一小时）。v92 起累加 DAO
     // 已删，legacy 小时表用 OVERWRITE 版 set* 造数。
     final FushiDatabase db = await _freshDb('agg_hourly_fmt_');
     addTearDown(db.close);
@@ -190,7 +190,7 @@ void main() {
   });
 
   test('sync 落地只写投影，不产 activity 行（P4 A3 负向断言）', () async {
-    // 发送端：三个统计家族各造一份 legacy 投影（v90 起 recordReadingSession /
+    // 发送端：三个统计家族各造一份 legacy 投影（v92 起 recordReadingSession /
     // recordWatchFlush 已删、本地写入面只写 study_segments；legacy 表用 OVERWRITE
     // 版 set* 造数——本用例只关心接收端落地面，不关心发送端怎么产生的）。
     final FushiDatabase src = await _freshDb('agg_act_src_');
@@ -476,7 +476,7 @@ void main() {
         reason: 'tombstone also blocks the lookup counter resurrection');
 
     // New local activity naming Ghost on B clears the tombstone; future syncs
-    // may revive it (matching the "重加书清墓碑" intent). v90 起本地不再写
+    // may revive it (matching the "重加书清墓碑" intent). v92 起本地不再写
     // legacy 阅读行，legacy (title, sourceType) 墓碑的本地清碑入口只剩查词 /
     // 制卡计数（addLookupCount / addMineCountPerBook）。
     await dbB.addLookupCount(
@@ -563,7 +563,7 @@ void main() {
     final FushiDatabase db = await _freshDb('agg_wfold_');
     addTearDown(db.close);
     // 同 (title, dateKey) 两条 per-uid 行只能 drift 直插：setVideoWatchStatistic
-    // 是 title 粒度 OVERWRITE，会把第二行塌缩掉（v90 起累加 DAO 已删）。
+    // 是 title 粒度 OVERWRITE，会把第二行塌缩掉（v92 起累加 DAO 已删）。
     await db.into(db.videoWatchStatistics).insert(
         VideoWatchStatisticsCompanion.insert(
             title: '同名',
@@ -603,7 +603,7 @@ void main() {
     final FushiDatabase db = await _freshDb('agg_colmax_');
     addTearDown(db.close);
     // 本地：chars=500 / ms=1500（wire 只见过 ms=1000 的旧状态）。drift 直插一条
-    // 本地 per-uid 行（v90 起累加 DAO 已删）。
+    // 本地 per-uid 行（v92 起累加 DAO 已删）。
     await db.into(db.videoWatchStatistics).insert(
         VideoWatchStatisticsCompanion.insert(
             title: 'T',

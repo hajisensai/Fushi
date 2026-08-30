@@ -4,7 +4,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 每组内按 (标题, 事件类型) 合并」的时间线条目，并把「相对时间」算成结构化描述
 /// 供 widget 层用 i18n 格式化（保持纯函数可单测、跨 17 语言一致）。
 ///
-/// v90 起事件流 = legacy `activity_events` 行（v90 前历史 + 导入事件）∪ 由
+/// v92 起事件流 = legacy `activity_events` 行（v92 前历史 + 导入事件）∪ 由
 /// `study_segments` 映射出的段行（`segmentsAsActivityRows`，一段 ≤ 1 小时、一坐
 /// 多段）。故 session 数不能直接取行数——用 [kActivitySessionGap] 时间间隔归并
 /// （>gap 才算新 session），两侧统一。
@@ -98,6 +98,28 @@ class ActivityDateGroup {
 
   final String dateKey;
   final List<ActivityEntry> entries;
+}
+
+/// 保留时间线的日期分组结构，只取最前面的 [limit] 条活动。
+///
+/// 首页会预取较多事件供筛选，但不应把它们一次性全部挂进 widget/render 树。这里在
+/// 聚合后分页，截断点落在某一天中间时仍保留该日标题；后续增加 limit 即可无损展开。
+List<ActivityDateGroup> takeActivityEntries(
+  List<ActivityDateGroup> groups,
+  int limit,
+) {
+  if (limit <= 0) return const <ActivityDateGroup>[];
+  int remaining = limit;
+  final List<ActivityDateGroup> result = <ActivityDateGroup>[];
+  for (final ActivityDateGroup group in groups) {
+    if (remaining == 0) break;
+    final List<ActivityEntry> entries = group.entries.length <= remaining
+        ? group.entries
+        : group.entries.take(remaining).toList(growable: false);
+    result.add(ActivityDateGroup(dateKey: group.dateKey, entries: entries));
+    remaining -= entries.length;
+  }
+  return result;
 }
 
 /// 纯函数：把事件流聚合成「按日期倒序分组、每组内条目按最近时刻倒序」的时间线。

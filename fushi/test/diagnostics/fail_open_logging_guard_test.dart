@@ -101,7 +101,7 @@ void main() {
     });
   });
 
-  // v90：观看时长的 DB 写挪进 StudyClock（`_flush` 已删），VideoWatchTracker 剩下的
+  // v92：观看时长的 DB 写挪进 StudyClock（`_flush` 已删），VideoWatchTracker 剩下的
   // 唯一 DB 写路径是完成标记 `_checkCompletion`（每 tick + stop 各查一次）。
   group('video_watch_tracker._checkCompletion fire-and-forget 补 log', () {
     test('_checkCompletion 的 DB 写包 try/catch 并补 ErrorLogService.log', () {
@@ -126,7 +126,7 @@ void main() {
 
     test('_flushReadingStats 只委托 StudyClock；时钟写链 fail-open 保持 dirty 并 debugPrint',
         () {
-      // v90：阅读统计的 DB 写挪进 fushi_audio 的 StudyClock（页面侧没有 try/catch 可
+      // v92：阅读统计的 DB 写挪进 fushi_audio 的 StudyClock（页面侧没有 try/catch 可
       // 补日志了）。fail-open 语义现在由时钟写链承担：写失败不冒泡、段留 dirty、
       // 下个 tick 用绝对值重写。fushi_audio 不依赖 ErrorLogService，只能 debugPrint。
       final String body = fnBody(src, 'Future<void> _flushReadingStats(');

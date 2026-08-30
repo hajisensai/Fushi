@@ -2431,7 +2431,7 @@ class GalgameSessions extends Table {
 }
 
 // ── study_segments ──────────────────────────────────────────────────
-/// v90（统计域根本性重构）：学习时长 / 字数 / 页数的**唯一事实表**。
+/// v92（统计域根本性重构）：学习时长 / 字数 / 页数的**唯一事实表**。
 ///
 /// 此前同一段学习被并行写进 `reading_statistics` / `video_watch_statistics`（日聚合）、
 /// `reading_hourly_logs` / `video_hourly_logs`（小时桶）、`activity_events`（session
@@ -2448,8 +2448,8 @@ class GalgameSessions extends Table {
 /// 日总量从同一批行派生、永不打架。一个 3 小时 session ≈ 3~4 行，年级数据千行量级，
 /// 读取端直接 GROUP BY。
 ///
-/// 旧四张投影表**冻结为 legacy**：v90 起本地写入面永不再写（守卫测试钉死），读取侧
-/// 把 legacy 行（v90 前日期）与本表并集（时间上不相交，零合成零双计）。不迁移旧数据：
+/// 旧四张投影表**冻结为 legacy**：v92 起本地写入面永不再写（守卫测试钉死），读取侧
+/// 把 legacy 行（v92 前日期）与本表并集（时间上不相交，零合成零双计）。不迁移旧数据：
 /// 日汇总行没 hour、小时行没 title，任何合成都得丢一维或双计。
 @DataClassName('StudySegmentRow')
 class StudySegments extends Table {
@@ -2497,7 +2497,7 @@ class StudySegments extends Table {
 }
 
 // ── study_segment_tombstones ────────────────────────────────────────
-/// v90：按**媒体身份**的统计删除墓碑，取代按 (title, sourceType) 的
+/// v92：按**媒体身份**的统计删除墓碑，取代按 (title, sourceType) 的
 /// [StatisticsTombstones]（那张只为 legacy 表的 title 粒度 wire 服务，冻结）。
 ///
 /// 删某媒体统计 = 删其全部 [StudySegments] + 立本碑。仲裁：段 `updatedAt > deletedAt`

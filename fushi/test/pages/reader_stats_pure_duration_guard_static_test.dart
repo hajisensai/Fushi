@@ -9,7 +9,7 @@ import 'reader_fushi_page_source_corpus.dart';
 ///
 /// 断点 A（时长丢失）：EPUB 的 `_flushReadingStats` 旧守卫
 /// `_sessionCharsRead <= 0 || _book == null` 拒写纯时长行——dispose 时最后一段
-/// 无新字数 / 歌词·听书全程不计字 ⇒ 时长蒸发。v90 起时长与字数进**同一段**
+/// 无新字数 / 歌词·听书全程不计字 ⇒ 时长蒸发。v92 起时长与字数进**同一段**
 /// （`StudyClock`，同 uid 一行），页面侧不再持有 `_sessionCharsRead` 之类的会话累计
 /// 器，也不存在任何「拒写」路径：`_flushReadingStats` 只结算时钟。守卫锁定这个
 /// 形态：函数体只含 `_studyClock?.flushNow()`、没有按字数早退；三个阅读器都不再

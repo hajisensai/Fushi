@@ -13,7 +13,7 @@ import 'package:path/path.dart' as p;
 import 'fake_asset_store.dart';
 import 'temp_dir_cleanup.dart';
 
-// v90 统计域 wire v2：学习事实段（study_segments）与按身份墓碑随聚合快照上行，
+// v92 统计域 wire v2：学习事实段（study_segments）与按身份墓碑随聚合快照上行，
 // 按 uid LWW 并集、墓碑仲裁「删除 vs 又读了」。本测试锁定：
 //  * 快照 round-trip 与旧 payload（无新 key）兼容；
 //  * 纯函数并集 / 仲裁的四条不变量；

@@ -68,7 +68,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       // 的重置），上一轮失败的 _error 不清会让本轮成功的数据被错误画面挡住。
       _error = null;
       final db = appModelNoUpdate.database;
-      // v90：观看事实只走统一事实面（legacy `video_watch_statistics` 日行 +
+      // v92：观看事实只走统一事实面（legacy `video_watch_statistics` 日行 +
       // `study_segments` 段，由 loadStatFacts 归一），本页不再直接读表。
       // activityLimit 0：统计页不需要活动流行。
       final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
@@ -158,7 +158,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     setState(() => _loading = false);
   }
 
-  /// 今日按小时观看时长：从事实面的小时面取 video 行**累加**。v90 起同一小时
+  /// 今日按小时观看时长：从事实面的小时面取 video 行**累加**。v92 起同一小时
   /// 会同时有 legacy 小时行与多条段，旧实现按行赋值（`=`）会让后来的行覆盖前面
   /// 的，只能用 `+=`。
   void _loadHourlyData(StatFacts facts) {

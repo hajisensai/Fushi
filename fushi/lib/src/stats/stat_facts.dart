@@ -1,10 +1,10 @@
 import 'package:fushi_core/fushi_core.dart';
 
-/// 一条学习统计事实的统一形状（v90 统计域重构）。
+/// 一条学习统计事实的统一形状（v92 统计域重构）。
 ///
-/// 读取侧只认这一种行：`study_segments`（v90 起唯一写入面）与四张 legacy 投影表
+/// 读取侧只认这一种行：`study_segments`（v92 起唯一写入面）与四张 legacy 投影表
 /// （`reading_statistics` / `video_watch_statistics` / `reading_hourly_logs` /
-/// `video_hourly_logs`，v90 前的历史数据、冻结不再写）都映射到它。页面 / 首页 /
+/// `video_hourly_logs`，v92 前的历史数据、冻结不再写）都映射到它。页面 / 首页 /
 /// 活动流不再各自读表、各自累加。
 ///
 /// 身份：[mediaKey] = 书 bookKey / 视频 bookUid / 游戏 galgames.id；legacy 行里
@@ -85,7 +85,7 @@ class StatFacts {
     epubRows: <EpubBookRow>[],
   );
 
-  /// 最近的游玩会话（v90 起游玩只写 galgame_sessions，活动流从这里合成）。
+  /// 最近的游玩会话（v92 起游玩只写 galgame_sessions，活动流从这里合成）。
   final List<GalgameSessionRow> recentGameSessions;
 
   /// galgames.id → 显示名（合成游玩事件的 title 快照）。
@@ -115,7 +115,7 @@ class StatFacts {
   /// 原始段（活动流的 session 归并需要 startAt / endAt）。
   final List<StudySegmentRow> segments;
 
-  /// legacy `activity_events` 行（v90 前的 read / watch / game 行 + 至今仍在写的
+  /// legacy `activity_events` 行（v92 前的 read / watch / game 行 + 至今仍在写的
   /// `added` 导入事件）。活动流把它与 [segmentsAsActivityRows] 并集。
   final List<ActivityEventRow> legacyActivity;
 
@@ -229,7 +229,7 @@ Future<StatFacts> loadStatFacts(
       ),
     );
   }
-  // legacy 活动行：v90 前的游戏 hook 字数只存在这里（chars-only game 行）；
+  // legacy 活动行：v92 前的游戏 hook 字数只存在这里（chars-only game 行）；
   // read / watch 行的时长 / 字数已在日投影里，**只**取 game 的字数进日面，
   // 时长一律不取（时长真相源是 galgame_sessions，取了就双计）。
   final List<ActivityEventRow> activity = await db.getRecentActivityEvents(
@@ -256,7 +256,7 @@ Future<StatFacts> loadStatFacts(
       ),
     );
   }
-  // v90 段：两面各一份。
+  // v92 段：两面各一份。
   final List<StudySegmentRow> segments = await db.getStudySegments();
   for (final StudySegmentRow s in segments) {
     final StatFact fact = StatFact(
@@ -295,7 +295,7 @@ Future<StatFacts> loadStatFacts(
   );
 }
 
-/// 把游玩会话映射成活动流行（id=0 哨兵）：v90 前 `GalgamePlayTracker` 会在
+/// 把游玩会话映射成活动流行（id=0 哨兵）：v92 前 `GalgamePlayTracker` 会在
 /// galgame_sessions 之外再写一条带 durationMs 的 game 活动行（第二本账），现在
 /// 只在读取时合成。title 取当前库内显示名（游戏已删则空串，展示层回退 mediaKey）。
 List<ActivityEventRow> galgameSessionsAsActivityRows(
@@ -318,7 +318,7 @@ List<ActivityEventRow> galgameSessionsAsActivityRows(
   ];
 }
 
-/// 把 v90 段映射成活动流行（id=0 哨兵，display-only 不落库——与互联远端行同一
+/// 把 v92 段映射成活动流行（id=0 哨兵，display-only 不落库——与互联远端行同一
 /// 手法），喂既有 [aggregateActivityEvents]：同日同媒体多段按 30 分钟 gap 归并成
 /// session 数，时长 / 字数求和。eventType 按 kind：book→read、video→watch、game→game。
 List<ActivityEventRow> segmentsAsActivityRows(List<StudySegmentRow> segments) {

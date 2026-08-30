@@ -845,7 +845,7 @@ SettingsDestination buildReadingDestination() {
           ),
         ],
       ),
-      // v90 统计域：阅读空闲门。只对阅读面生效（视频以播放态为准，用户拍板）；
+      // v92 统计域：阅读空闲门。只对阅读面生效（视频以播放态为准，用户拍板）；
       // 下次打开书生效（时钟在建书时读一次）。
       SettingsSection(
         title: t.settings_section_reading_stats,

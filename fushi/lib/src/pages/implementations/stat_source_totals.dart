@@ -44,7 +44,7 @@ StatBreakdownSource statSourceOf(StatFact f) {
   return f.isManga ? StatBreakdownSource.manga : StatBreakdownSource.book;
 }
 
-/// 逐来源、逐日的统计合计（v90：输入是统一事实面的**日面**，不再各表各读）。
+/// 逐来源、逐日的统计合计（v92：输入是统一事实面的**日面**，不再各表各读）。
 Map<StatBreakdownSource, Map<String, StatSourceTotals>>
 aggregateStatSourceDaily(Iterable<StatFact> daily) {
   final Map<StatBreakdownSource, Map<String, StatSourceTotals>> out =
