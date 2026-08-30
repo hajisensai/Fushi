@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "voice_clip_energy.h"
+#include "hunex_gge_trace.h"
 #include "leaf_d3d_trace.h"
 #include "voice_hook_ipc.h"
 #include "voice_hook_utterance_window.h"
@@ -794,12 +795,43 @@ struct alignas(8) LeafD3DTraceHeaderSnapshot {
   uint32_t input_poller_contended = 0;
 };
 
+struct alignas(8) HunexGgeTraceHeaderSnapshot {
+  uint32_t magic = 0;
+  uint32_t version = 0;
+  uint32_t event_size = 0;
+  uint32_t slot_size = 0;
+  uint32_t capacity = 0;
+  uint32_t scanner_status = 0;
+  int64_t next_sequence = 0;
+  int64_t dropped_busy = 0;
+  int64_t draw_calls = 0;
+  int64_t glyph_calls = 0;
+  int64_t input_calls = 0;
+  uint32_t module_machine = 0;
+  uint32_t draw_match_count = 0;
+  uint32_t glyph_match_count = 0;
+  uint32_t key_poller_match_count = 0;
+  uint32_t input_pump_match_count = 0;
+  uint32_t draw_rva = 0;
+  uint32_t glyph_rva = 0;
+  uint32_t key_poller_rva = 0;
+  uint32_t input_pump_rva = 0;
+  uint32_t generic_return_rva = 0;
+  uint32_t left_button_return_rva = 0;
+  uint32_t direct_first_glyph_return_rva = 0;
+  uint32_t direct_second_glyph_return_rva = 0;
+  uint32_t reserved = 0;
+};
+
 static_assert(sizeof(XAudioTraceHeaderSnapshot) ==
                   offsetof(fushi_voice_hook::XAudioTraceBuffer, slots),
               "remote XAudio trace header layout drifted");
 static_assert(sizeof(LeafD3DTraceHeaderSnapshot) ==
                   offsetof(fushi_voice_hook::LeafD3DTraceBuffer, slots),
               "remote Leaf D3D trace header layout drifted");
+static_assert(sizeof(HunexGgeTraceHeaderSnapshot) ==
+                  offsetof(fushi_voice_hook::HunexGgeTraceBuffer, slots),
+              "remote HUNEX/GGE trace header layout drifted");
 
 bool ReadRemoteExact(HANDLE process, uintptr_t address, void* destination,
                      size_t length) {
@@ -1081,6 +1113,159 @@ bool FindRemoteLeafD3DTrace(HANDLE process, DWORD pid,
   }
   if (error_code != nullptr) *error_code = ERROR_MOD_NOT_FOUND;
   return false;
+}
+
+bool FindRemoteHunexGgeTrace(HANDLE process, DWORD pid,
+                             RemoteHookModule* found_module,
+                             uint32_t* found_rva,
+                             HunexGgeTraceHeaderSnapshot* found_header,
+                             DWORD* error_code) {
+  if (found_module == nullptr || found_rva == nullptr ||
+      found_header == nullptr) {
+    return false;
+  }
+  std::vector<RemoteHookModule> modules;
+  if (!EnumerateRemoteModules(pid, &modules, error_code)) return false;
+  std::stable_sort(modules.begin(), modules.end(),
+                   [](const RemoteHookModule& left,
+                      const RemoteHookModule& right) {
+                     return IsExpectedHookModuleName(left.name) &&
+                            !IsExpectedHookModuleName(right.name);
+                   });
+
+  uint32_t valid_candidates = 0;
+  RemoteHookModule candidate_module;
+  uint32_t candidate_rva = 0;
+  HunexGgeTraceHeaderSnapshot candidate_header;
+  for (const RemoteHookModule& module : modules) {
+    uint32_t export_rva = 0;
+    if (!ResolveRemotePeExportRva(
+            process, module, fushi_voice_hook::kHunexGgeTraceExportName,
+            &export_rva)) {
+      continue;
+    }
+    uintptr_t address = 0;
+    HunexGgeTraceHeaderSnapshot header;
+    if (!RemoteModuleAddress(module, export_rva, sizeof(header), &address) ||
+        !ReadRemoteExact(process, address, &header, sizeof(header)) ||
+        header.magic != fushi_voice_hook::kHunexGgeTraceMagic ||
+        header.version != fushi_voice_hook::kHunexGgeTraceVersion) {
+      continue;
+    }
+    ++valid_candidates;
+    if (valid_candidates == 1u) {
+      candidate_module = module;
+      candidate_rva = export_rva;
+      candidate_header = header;
+    }
+  }
+  if (valid_candidates != 1u) {
+    if (error_code != nullptr) {
+      *error_code = valid_candidates == 0u ? ERROR_MOD_NOT_FOUND
+                                           : ERROR_DUP_NAME;
+    }
+    return false;
+  }
+  *found_module = candidate_module;
+  *found_rva = candidate_rva;
+  *found_header = candidate_header;
+  return true;
+}
+
+const char* HunexGgeTraceKindName(uint32_t kind) {
+  using Kind = fushi_voice_hook::HunexGgeTraceKind;
+  switch (static_cast<Kind>(kind)) {
+    case Kind::kDraw: return "draw";
+    case Kind::kGlyphDirectFirst: return "glyph_direct_first";
+    case Kind::kGlyphDirectSecond: return "glyph_direct_second";
+    case Kind::kInputGeneric: return "input_generic";
+    case Kind::kInputLeftButton: return "input_left_button";
+  }
+  return "unknown";
+}
+
+void PrintHunexGgeScannerStatus(uint32_t status) {
+  constexpr uint32_t kKnownStatus =
+      fushi_voice_hook::kHunexGgeTraceScannerProfileMatched |
+      fushi_voice_hook::kHunexGgeTraceScannerPe64 |
+      fushi_voice_hook::kHunexGgeTraceScannerDrawUnique |
+      fushi_voice_hook::kHunexGgeTraceScannerGlyphUnique |
+      fushi_voice_hook::kHunexGgeTraceScannerInputUnique |
+      fushi_voice_hook::kHunexGgeTraceScannerDrawCallsValid |
+      fushi_voice_hook::kHunexGgeTraceScannerInputCallsValid |
+      fushi_voice_hook::kHunexGgeTraceScannerHooksReady;
+  bool emitted = false;
+  printf(" scanner=0x%08x{", status);
+  const auto emit = [&emitted](const char* name) {
+    printf("%s%s", emitted ? "," : "", name);
+    emitted = true;
+  };
+  if ((status & fushi_voice_hook::kHunexGgeTraceScannerProfileMatched) != 0)
+    emit("profile_matched");
+  if ((status & fushi_voice_hook::kHunexGgeTraceScannerPe64) != 0)
+    emit("pe64");
+  if ((status & fushi_voice_hook::kHunexGgeTraceScannerDrawUnique) != 0)
+    emit("draw_unique");
+  if ((status & fushi_voice_hook::kHunexGgeTraceScannerGlyphUnique) != 0)
+    emit("glyph_unique");
+  if ((status & fushi_voice_hook::kHunexGgeTraceScannerInputUnique) != 0)
+    emit("input_unique");
+  if ((status & fushi_voice_hook::kHunexGgeTraceScannerDrawCallsValid) != 0)
+    emit("draw_calls_valid");
+  if ((status & fushi_voice_hook::kHunexGgeTraceScannerInputCallsValid) != 0)
+    emit("input_calls_valid");
+  if ((status & fushi_voice_hook::kHunexGgeTraceScannerHooksReady) != 0)
+    emit("hooks_ready");
+  const uint32_t unknown = status & ~kKnownStatus;
+  if (unknown != 0) {
+    printf("%sunknown=0x%08x", emitted ? "," : "", unknown);
+    emitted = true;
+  }
+  if (!emitted) printf("none");
+  printf("}");
+}
+
+template <size_t N>
+void PrintHunexGgeTraceWords(const char* label,
+                             const uint32_t (&words)[N]) {
+  printf(" %s={", label);
+  for (size_t index = 0; index < N; ++index) {
+    printf("%s%zu:%08x", index == 0 ? "" : ",", index, words[index]);
+  }
+  printf("}");
+}
+
+void PrintHunexGgeTraceEvent(
+    const fushi_voice_hook::HunexGgeTraceEvent& event) {
+  printf(
+      "hunex_gge seq=%llu ts=%llu draw=%llu kind=%s tid=%u caller=%08x "
+      "text_hash=%016llx units=%u/%u glyph_ordinal=%u utf16_index=%u "
+      "scalar_width=%u arg7=%u draw={x:%d,y:%d,width:%d,arg12_bits:%016llx,"
+      "arg13:%u} result=%d(raw=0x%08x)",
+      static_cast<unsigned long long>(event.sequence),
+      static_cast<unsigned long long>(event.timestamp_ms),
+      static_cast<unsigned long long>(event.draw_sequence),
+      HunexGgeTraceKindName(event.kind), event.thread_id, event.caller_rva,
+      static_cast<unsigned long long>(event.text_hash), event.text_units,
+      event.visible_units, event.glyph_ordinal, event.utf16_char_index,
+      event.scalar_width, event.arg7, event.draw_x, event.draw_y,
+      event.draw_width,
+      static_cast<unsigned long long>(event.draw_arg12_bits), event.draw_arg13,
+      event.result,
+      static_cast<uint32_t>(event.result));
+  using Kind = fushi_voice_hook::HunexGgeTraceKind;
+  const Kind kind = static_cast<Kind>(event.kind);
+  if (kind == Kind::kInputGeneric || kind == Kind::kInputLeftButton) {
+    constexpr uint16_t kAsyncKeyStateDownMask = 0x8000u;
+    constexpr uint16_t kAsyncKeyStatePressedMask = 0x0001u;
+    const uint16_t raw = static_cast<uint16_t>(event.result);
+    printf(" key_state={down:%u,pressed_since_read:%u}",
+           (raw & kAsyncKeyStateDownMask) != 0 ? 1u : 0u,
+           (raw & kAsyncKeyStatePressedMask) != 0 ? 1u : 0u);
+  }
+  PrintHunexGgeTraceWords("descriptor", event.descriptor_words);
+  PrintHunexGgeTraceWords("output", event.output_words);
+  printf("\n");
 }
 
 const char* XAudioTraceKindName(uint32_t kind) {
@@ -1488,6 +1673,135 @@ bool DumpLeafD3DTrace(DWORD pid) {
   return true;
 }
 
+bool DumpHunexGgeTrace(DWORD pid) {
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION |
+                                   PROCESS_VM_READ,
+                               FALSE, pid);
+  if (process == nullptr) {
+    fprintf(stderr, "OpenProcess(pid=%lu) failed: %lu\n", pid,
+            GetLastError());
+    return false;
+  }
+  RemoteHookModule module;
+  uint32_t export_rva = 0;
+  HunexGgeTraceHeaderSnapshot header;
+  DWORD module_error = ERROR_SUCCESS;
+  if (!FindRemoteHunexGgeTrace(process, pid, &module, &export_rva, &header,
+                               &module_error)) {
+    if (module_error == ERROR_DUP_NAME) {
+      fprintf(stderr,
+              "multiple live hook DLLs export valid %s data for pid=%lu; "
+              "refusing an ambiguous trace\n",
+              fushi_voice_hook::kHunexGgeTraceExportName, pid);
+    } else {
+      fprintf(stderr, "live hook DLL export %s not found for pid=%lu: %lu\n",
+              fushi_voice_hook::kHunexGgeTraceExportName, pid, module_error);
+    }
+    CloseHandle(process);
+    return false;
+  }
+  if (export_rva > module.image_size ||
+      sizeof(fushi_voice_hook::HunexGgeTraceBuffer) >
+          static_cast<size_t>(module.image_size - export_rva) ||
+      module.base > (std::numeric_limits<uintptr_t>::max)() - export_rva) {
+    fprintf(stderr, "HUNEX/GGE trace export exceeds remote module bounds\n");
+    CloseHandle(process);
+    return false;
+  }
+  if (header.magic != fushi_voice_hook::kHunexGgeTraceMagic ||
+      header.version != fushi_voice_hook::kHunexGgeTraceVersion ||
+      header.event_size != sizeof(fushi_voice_hook::HunexGgeTraceEvent) ||
+      header.slot_size != sizeof(fushi_voice_hook::HunexGgeTraceSlot) ||
+      header.capacity != fushi_voice_hook::kHunexGgeTraceCapacity ||
+      header.next_sequence < 0 || header.dropped_busy < 0 ||
+      header.draw_calls < 0 || header.glyph_calls < 0 ||
+      header.input_calls < 0) {
+    fprintf(stderr,
+            "HUNEX/GGE trace ABI mismatch: magic=0x%08x version=%u event=%u "
+            "slot=%u capacity=%u\n",
+            header.magic, header.version, header.event_size, header.slot_size,
+            header.capacity);
+    CloseHandle(process);
+    return false;
+  }
+
+  const uintptr_t trace_address = module.base + export_rva;
+  printf(
+      "hunex_gge_trace pid=%lu module=%ls base=0x%llx "
+      "export_rva=0x%08x next=%llu dropped_busy=%llu capacity=%u "
+      "calls={draw:%llu,glyph:%llu,input:%llu}",
+      pid, module.path.c_str(), static_cast<unsigned long long>(module.base),
+      export_rva, static_cast<unsigned long long>(header.next_sequence),
+      static_cast<unsigned long long>(header.dropped_busy), header.capacity,
+      static_cast<unsigned long long>(header.draw_calls),
+      static_cast<unsigned long long>(header.glyph_calls),
+      static_cast<unsigned long long>(header.input_calls));
+  PrintHunexGgeScannerStatus(header.scanner_status);
+  printf(
+      " machine=0x%04x matches={draw:%u,glyph:%u,key_poller:%u,"
+      "input_pump:%u} "
+      "rva={draw:%08x,glyph:%08x,key_poller:%08x,input_pump:%08x,"
+      "generic_return:%08x,"
+      "left_return:%08x,direct_first_glyph_return:%08x,"
+      "direct_second_glyph_return:%08x}"
+      "\n",
+      header.module_machine, header.draw_match_count, header.glyph_match_count,
+      header.key_poller_match_count, header.input_pump_match_count,
+      header.draw_rva, header.glyph_rva, header.key_poller_rva,
+      header.input_pump_rva, header.generic_return_rva,
+      header.left_button_return_rva, header.direct_first_glyph_return_rva,
+      header.direct_second_glyph_return_rva);
+
+  const uint64_t next = static_cast<uint64_t>(header.next_sequence);
+  const uint64_t first =
+      next > header.capacity ? next - header.capacity + 1u : 1u;
+  uint32_t accepted = 0;
+  uint32_t unstable = 0;
+  for (uint64_t expected = first; expected <= next; ++expected) {
+    const uint64_t index = (expected - 1u) % header.capacity;
+    const uint64_t slot_offset =
+        offsetof(fushi_voice_hook::HunexGgeTraceBuffer, slots) +
+        index * sizeof(fushi_voice_hook::HunexGgeTraceSlot);
+    if (slot_offset > (std::numeric_limits<uintptr_t>::max)() - trace_address) {
+      ++unstable;
+      continue;
+    }
+    const uintptr_t slot_address =
+        trace_address + static_cast<uintptr_t>(slot_offset);
+    const uintptr_t sequence_address =
+        slot_address + offsetof(fushi_voice_hook::HunexGgeTraceSlot, event) +
+        offsetof(fushi_voice_hook::HunexGgeTraceEvent, sequence);
+    LONG writing_before = 0;
+    LONG writing_after = 0;
+    uint64_t sequence_before = 0;
+    uint64_t sequence_after = 0;
+    fushi_voice_hook::HunexGgeTraceSlot slot;
+    const bool stable =
+        ReadRemoteExact(process, sequence_address, &sequence_before,
+                        sizeof(sequence_before)) &&
+        ReadRemoteExact(process, slot_address, &writing_before,
+                        sizeof(writing_before)) &&
+        ReadRemoteExact(process, slot_address, &slot, sizeof(slot)) &&
+        ReadRemoteExact(process, sequence_address, &sequence_after,
+                        sizeof(sequence_after)) &&
+        ReadRemoteExact(process, slot_address, &writing_after,
+                        sizeof(writing_after)) &&
+        writing_before == 0 && slot.writing == 0 && writing_after == 0 &&
+        sequence_before == expected && slot.event.sequence == expected &&
+        sequence_after == expected;
+    if (!stable) {
+      ++unstable;
+      continue;
+    }
+    ++accepted;
+    PrintHunexGgeTraceEvent(slot.event);
+  }
+  printf("hunex_gge_trace_summary accepted=%u gaps_or_unstable=%u\n", accepted,
+         unstable);
+  CloseHandle(process);
+  return true;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -1497,6 +1811,7 @@ int main(int argc, char** argv) {
             "  或导出: <pid> --dump-text | --dump-text-events | --list-clips\n"
             "         <pid> --dump-xaudio-trace\n"
             "         <pid> --dump-leaf-d3d-trace\n"
+            "         <pid> --dump-hunex-gge-trace\n"
             "         <pid> --select-text-thread <thread_id|0>\n"
             "         <pid> --dump-wav|--dump-utterance <ts_ms> <out.wav>\n"
             "         <pid> --dump-sources <ts_ms> <prefix>\n"
@@ -1517,6 +1832,9 @@ int main(int argc, char** argv) {
   }
   if (argc >= 3 && strcmp(argv[2], "--dump-leaf-d3d-trace") == 0) {
     return DumpLeafD3DTrace(pid) ? 0 : 2;
+  }
+  if (argc >= 3 && strcmp(argv[2], "--dump-hunex-gge-trace") == 0) {
+    return DumpHunexGgeTrace(pid) ? 0 : 2;
   }
 
   const std::wstring shm = SharedMemoryName(pid);

@@ -144,10 +144,35 @@ inline int LunaNormalizedTextLength(const wchar_t* text, int len) {
 
 inline int LunaNormalizedTextLengthForHook(const char* hook_name,
                                            const wchar_t* text, int len) {
-  if (hook_name == nullptr || std::strcmp(hook_name, "EmbedKrkrZ") != 0) {
+  // TYPEMOON/HUNEX uses the same structural double-write shape for the
+  // in-game toolbar: each control description can be emitted as a consecutive
+  // pair before the next description is appended.  Reuse the conservative
+  // all-blocks-must-pair rule above so both the native thread preview and the
+  // selected text lane see the same bounded first block.  The gate is Luna's
+  // semantic hook identity; no executable name/RVA or localized toolbar text
+  // participates in the decision.
+  const bool folds_paired_blocks =
+      hook_name != nullptr &&
+      (std::strcmp(hook_name, "EmbedKrkrZ") == 0 ||
+       std::strcmp(hook_name, "typemoon") == 0);
+  if (!folds_paired_blocks) {
     return len;
   }
   return LunaNormalizedTextLength(text, len);
+}
+
+// Luna's x64 TYPEMOON hook reports the story renderer and the in-game toolbar
+// through the same hook address/name while keeping them in separate
+// ThreadParam contexts. LunaHook's thread picker preserves that boundary.
+// Fushi normally accepts sibling contexts from the same hook face to survive
+// engines whose story callsite legitimately changes (BUG-1159), but doing so
+// for TYPEMOON merges toolbar descriptions into the selected story lane.
+//
+// This is deliberately keyed by Luna's engine hook identity, not by an EXE
+// basename, hash, RVA, or Japanese toolbar strings, so patched/renamed HUNEX
+// games retain the same structural policy.
+inline bool LunaTextRequiresExactThreadContext(const char* hook_name) {
+  return hook_name != nullptr && std::strcmp(hook_name, "typemoon") == 0;
 }
 
 inline bool LunaTextIsArtifact(const wchar_t* text, int len) {

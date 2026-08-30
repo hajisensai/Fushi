@@ -37,7 +37,9 @@ void main() {
   test('查询串从命中的那个字起算，交给引擎最长匹配', () {
     final String body = methodBody(
       page,
-      'void _onCharTap(\n    TexthookerLineEntry line,\n    int charIndex,\n    Rect rect,\n  )',
+      // 锚点跟随实际写法：#1093 之后这个签名是一行写完的。多行字面量锚点
+      // 一旦被格式化收行就恒不匹配，这是本仓反复出现的脆弱形状。
+      'void _onCharTap(TexthookerLineEntry line, int charIndex, Rect rect)',
     );
     expect(body.contains('lookupQueryFromIndex(line.text, charIndex)'), isTrue,
         reason: '查询串必须从命中字起算；传分词器切的那个词就等于没修');

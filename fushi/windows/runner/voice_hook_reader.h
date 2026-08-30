@@ -156,13 +156,20 @@ struct VoiceTrackInfo {
 struct VoiceHookLookupHit {
   uint64_t seq = 0;       // 单调；host 据此判新，也是回投帧的对号
   std::string line_utf8;  // **整行**台词，不截断（制卡要整句）
+  uint32_t provider_kind = 0;
+  uint32_t provider_id = 0;
   // 单位是 **UTF-16 code unit**，不是 UTF-8 字节、不是 code point（契约钉死在
   // voice_hook_ipc.h 的 LookupHitSlot 上）。两端天然都是 UTF-16——注入侧 TJS 的
   // tjs_char 是 wchar_t，Dart 的 String 下标也是 UTF-16 code unit——所以本 reader
   // **原样透传，绝不换算**：在这里做任何"顺手转成字节下标"都会让日文行整体偏移。
   // line_utf8 用 UTF-8 只是因为它要跨 C ABI，不影响本字段的单位。
   uint32_t char_index = 0;
+  uint32_t source_length = 0;  // 命中 source cluster 的 UTF-16 code units
   uint32_t char_count = 0;  // 本行 UTF-16 code unit 数（自洽校验）
+  uint64_t text_generation = 0;
+  uint64_t geometry_generation = 0;
+  uint32_t coordinate_space = 0;
+  uint32_t writing_mode = 0;
   int32_t glyph_x = 0;      // 命中字形矩形
   int32_t glyph_y = 0;
   int32_t glyph_w = 0;
@@ -221,6 +228,7 @@ enum class VoiceHookLookupError {
   kCaptureSuppressBusy,     // 已有一笔截图抑制正在等游戏线程确认
   kCaptureSuppressTimeout,  // 游戏线程未在有界时间内确认卡片已隐藏
   kFrameRejected,    // 帧不过 IsLookupFrameSane（宽/高/pitch/字节数自相矛盾）
+  kControlRejected,  // host→hook control seqlock 无法发布或 payload 非法
 };
 
 // [VoiceHookLookupError] → 机器可读 token（Dart 侧据此归类，跨语言契约的唯一名字）。
@@ -244,6 +252,46 @@ struct VoiceHookLookupWriteResult {
 struct VoiceHookLookupPublishResult {
   VoiceHookLookupError error = VoiceHookLookupError::kNone;
   uint64_t publish_seq = 0;
+
+  bool ok() const { return error == VoiceHookLookupError::kNone; }
+};
+
+// v19 通用裸左击输入盾状态。mask/flag 数值与 voice_hook_ipc.h 的
+// kLookupShieldSurface* / kLookupShieldStatus* 完全一致；runner 只透传，不在第二处
+// 复制枚举。request_seq==applied_seq 仅表示当前请求已由 hook 侧确认，release 请求还
+// 额外受每个输入面的 down/up/tail 锁存门控。
+struct VoiceHookLookupShieldStatus {
+  VoiceHookLookupError error = VoiceHookLookupError::kNone;
+  uint32_t request_seq = 0;
+  uint32_t applied_seq = 0;
+  uint32_t owner_kind = 0;
+  uint64_t target_hwnd = 0;
+  uint64_t transaction_id = 0;
+  uint32_t active_buttons = 0;
+  bool allow_risk = false;
+  uint32_t required_mask = 0;
+  uint32_t ready_mask = 0;
+  uint32_t observed_mask = 0;
+  uint32_t fault_mask = 0;
+  uint32_t status_flags = 0;
+
+  bool ok() const { return error == VoiceHookLookupError::kNone; }
+  bool acknowledged() const {
+    return ok() && request_seq != 0 && request_seq == applied_seq;
+  }
+};
+
+// Coherent v19 geometry-registry snapshot used by the host-side auto
+// arbitration. generation fences kind/id/status/text_generation and
+// lookup_diag so attached never races a retiring native provider.
+struct VoiceHookLookupGeometryStatus {
+  VoiceHookLookupError error = VoiceHookLookupError::kNone;
+  uint32_t provider_kind = 0;
+  uint32_t provider_id = 0;
+  uint32_t provider_status = 0;
+  uint32_t lookup_diag = 0;
+  uint64_t generation = 0;
+  uint64_t text_generation = 0;
 
   bool ok() const { return error == VoiceHookLookupError::kNone; }
 };
@@ -349,8 +397,10 @@ class VoiceHookReader {
   // 把一条游戏侧转发来的输入喂给离屏 WebView2（接
   // [GlobalLookupWindow::InjectLookupInput]）。
   using LookupInputSink = std::function<bool(uint32_t kind, int32_t x,
-                                             int32_t y, int32_t wheel,
-                                             uint32_t keys)>;
+                                              int32_t y, int32_t wheel,
+                                              uint32_t keys)>;
+  using LookupGeometryStatusSink =
+      std::function<void(const VoiceHookLookupGeometryStatus& status)>;
 
   // 建事件出口（host→Dart）并起轮询泵。**必须在平台线程调用**：泵用的是一个
   // HWND_MESSAGE 消息窗 + WM_TIMER，它的 WndProc 因此跑在平台线程的消息循环上——
@@ -390,6 +440,7 @@ class VoiceHookReader {
   void SetLookupDirectPresenter(LookupDirectPresenter presenter);
   void SetLookupCaptureRequest(LookupCaptureRequest request);
   void SetLookupInputSink(LookupInputSink sink);
+  void SetLookupGeometryStatusSink(LookupGeometryStatusSink sink);
 
   // 本会话是否真有查词区（HasLookupRegion）。false = 旧 injector / 旧会话；查词
   // 三个方法一律返回 kNoRegion 而不是崩或静默无效。
@@ -403,6 +454,36 @@ class VoiceHookReader {
   // host→hook 开关（header->lookup_enabled）。开启时同时起/停轮询定时器。
   VoiceHookLookupError SetLookupEnabled(bool enabled);
 
+  // v19 几何所有权控制。它与 lookup_enabled 分离：attachedReady 可让
+  // attached_calibrated 成为 registry 的 host-owned offer，同时 injected
+  // generic shield 继续运行。payload 先写、request_seq 最后发布。
+  VoiceHookLookupError SetLookupGeometryAdmission(
+      uint32_t mode, bool attached_ready, uint32_t* request_seq = nullptr,
+      uint32_t* applied_seq = nullptr);
+
+  // 发布 v19 输入盾事务。|target| 必须属于当前已打开的游戏 PID；begin 固定传
+  // active_buttons=kLookupShieldButtonLeft，matching up/cancel 以同一 transaction_id
+  // 再发布 active_buttons=0。payload 先写、request_seq 最后写由共享 helper 保证。
+  // 返回 0 表示当前没有兼容映射或目标 HWND 不属于会话。
+  uint32_t PublishLookupShieldTransaction(uint32_t owner_kind, HWND target,
+                                          uint64_t transaction_id,
+                                          uint32_t active_buttons,
+                                          bool allow_risk);
+
+  // Platform-thread preflight for the attached WH_MOUSE_LL fast path. It binds
+  // one already-validated game HWND to the current mapping. The hook callback
+  // then uses TryPublishLookupShieldTransaction: try_lock, no HWND queries and
+  // one shared-memory CAS only. A busy writer/reader returns 0 immediately.
+  bool PrepareLookupShieldTarget(HWND target);
+  uint32_t TryPublishLookupShieldTransaction(uint32_t owner_kind, HWND target,
+                                             uint64_t transaction_id,
+                                             uint32_t active_buttons,
+                                             bool allow_risk);
+
+  // 同一拍读取 coherent request + hook 状态，供 attached 工作台显示
+  // verified/partial/known-uncovered/faulted 与琥珀色 risk 标记。
+  VoiceHookLookupShieldStatus LookupShieldStatus();
+  VoiceHookLookupGeometryStatus LookupGeometryStatus();
   // 本会话是否有一段协议匹配的共享内存（查词区可以没有）。准入上报只需要这个，
   // 不需要查词区——「本引擎没做查词传感器」正是必须能报出来的那一类会话。
   bool HasSession();

@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "exact_lookup_signature.h"
 #include "sgre_anchors.h"
 
 namespace fushi_voice_hook {
@@ -23,6 +24,76 @@ inline constexpr size_t kSgreDirectInputMouseButtonsOffset = 12u;
 inline constexpr size_t kSgreDirectInputMouseButtonCount = 8u;
 inline constexpr size_t kSgreLookupPrimaryButtonIndex = 0u;
 inline constexpr uint8_t kSgreLookupPrimaryButtonMask = 0x01u;
+
+namespace sgre_exact {
+
+// All four anchors were measured from the executable admitted by
+// kSgreExecutableSha256. They are scanned as one candidate set across every
+// hydrated IMAGE_SCN_MEM_EXECUTE section. RIP displacements are wildcarded
+// only where the decoded module-relative target is checked below.
+inline constexpr uint8_t kTextDrawEntryBytes[] = {
+    0x48, 0x8b, 0xc4, 0x48, 0x89, 0x58, 0x08, 0x48, 0x89, 0x70, 0x10,
+    0x48, 0x89, 0x78, 0x18, 0x55, 0x48, 0x8d, 0x68, 0xa1, 0x48, 0x81,
+    0xec, 0xe0, 0x00, 0x00, 0x00, 0x0f, 0x29, 0x70, 0xe8, 0x0f, 0x29,
+    0x78, 0xd8, 0x44, 0x0f, 0x29, 0x40, 0xc8, 0x44, 0x0f, 0x29, 0x48,
+    0xb8, 0x44, 0x0f, 0x29, 0x50, 0xa8, 0x44, 0x0f, 0x29, 0x58, 0x98,
+    0x44, 0x0f, 0x29, 0x60, 0x88, 0x48, 0x8b, 0xf9, 0x44, 0x0f, 0x10,
+    0x91, 0xd8, 0x03, 0x00, 0x00, 0x32, 0xdb, 0x88, 0x5d, 0xd7,
+};
+inline constexpr exact_lookup::MaskedPattern kTextDrawEntryPattern = {
+    kTextDrawEntryBytes, nullptr, sizeof(kTextDrawEntryBytes)};
+
+inline constexpr uint8_t kScenarioVtableConstructorBytes[] = {
+    0x48, 0x89, 0x5c, 0x24, 0x08, 0x57, 0x48, 0x83, 0xec, 0x20,
+    0x48, 0x8d, 0x05, 0x00, 0x00, 0x00, 0x00, 0x8b, 0xda, 0x48,
+    0x89, 0x01, 0x48, 0x8b, 0xf9, 0x48, 0x8d, 0x05, 0x00, 0x00,
+    0x00, 0x00, 0x48, 0x89, 0x81, 0xb0, 0x00, 0x00, 0x00,
+};
+inline constexpr auto kScenarioVtableConstructorMask =
+    exact_lookup::MaskExceptRanges<sizeof(kScenarioVtableConstructorBytes)>(
+        13u, 17u, 28u, 32u);
+inline constexpr exact_lookup::MaskedPattern kScenarioVtableConstructorPattern = {
+    kScenarioVtableConstructorBytes, kScenarioVtableConstructorMask.data(),
+    sizeof(kScenarioVtableConstructorBytes)};
+inline constexpr size_t kScenarioVtableInstructionOffset = 10u;
+inline constexpr size_t kScenarioVtableDisplacementOffset = 3u;
+inline constexpr size_t kScenarioVtableInstructionBytes = 7u;
+
+inline constexpr uint8_t kMouseCreateDeviceBytes[] = {
+    // The preceding byte-store distinguishes the measured mouse creation
+    // path from the otherwise identical keyboard CreateDevice sequence.
+    0xc6, 0x05, 0x00, 0x00, 0x00, 0x00, 0x01, 0x48, 0x8b, 0x0d,
+    0x00, 0x00, 0x00, 0x00, 0x4c, 0x8d, 0x05, 0x00, 0x00, 0x00,
+    0x00, 0x45, 0x33, 0xc9, 0x48, 0x8d, 0x15, 0x00, 0x00, 0x00,
+    0x00, 0x48, 0x8b, 0x01, 0xff, 0x50, 0x18, 0x85, 0xc0,
+};
+inline constexpr auto kMouseCreateDeviceMask =
+    exact_lookup::MaskExceptRanges<sizeof(kMouseCreateDeviceBytes)>(
+        2u, 6u, 10u, 14u, 17u, 21u, 27u, 31u);
+inline constexpr exact_lookup::MaskedPattern kMouseCreateDevicePattern = {
+    kMouseCreateDeviceBytes, kMouseCreateDeviceMask.data(),
+    sizeof(kMouseCreateDeviceBytes)};
+inline constexpr size_t kMouseCreateDeviceOutputInstructionOffset = 14u;
+inline constexpr size_t kMouseCreateDeviceOutputDisplacementOffset = 3u;
+inline constexpr size_t kMouseCreateDeviceOutputInstructionBytes = 7u;
+
+inline constexpr uint8_t kMouseImmediatePollBytes[] = {
+    0x48, 0x8b, 0x0d, 0x00, 0x00, 0x00, 0x00, 0x48, 0x85, 0xc9,
+    0x0f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x48, 0x8b, 0x01, 0x4c,
+    0x8d, 0x44, 0x24, 0x30, 0xba, 0x14, 0x00, 0x00, 0x00, 0xff,
+    0x50, 0x48,
+};
+inline constexpr auto kMouseImmediatePollMask =
+    exact_lookup::MaskExceptRanges<sizeof(kMouseImmediatePollBytes)>(
+        3u, 7u, 12u, 16u);
+inline constexpr exact_lookup::MaskedPattern kMouseImmediatePollPattern = {
+    kMouseImmediatePollBytes, kMouseImmediatePollMask.data(),
+    sizeof(kMouseImmediatePollBytes)};
+inline constexpr size_t kMouseImmediatePollLoadInstructionOffset = 0u;
+inline constexpr size_t kMouseImmediatePollLoadDisplacementOffset = 3u;
+inline constexpr size_t kMouseImmediatePollLoadInstructionBytes = 7u;
+
+}  // namespace sgre_exact
 
 // Clear only DIMOUSESTATE2::rgbButtons while a direct lookup popup is
 // published. A local per-button latch survives popup teardown: once a down was
@@ -134,6 +205,61 @@ struct SgreLookupGlyphGeometry {
   float height = 0.0f;
   uint16_t line = 0;
 };
+
+struct SgreLookupClientSnapshot {
+  uintptr_t game_window = 0;
+  int32_t screen_x = 0;
+  int32_t screen_y = 0;
+  int32_t width = 0;
+  int32_t height = 0;
+};
+
+// Capture sequence is a transport detail: SGRE redraws an unchanged sentence
+// every frame.  Lookup generations instead identify a logical text+geometry
+// snapshot and only advance when that identity changes (or after invalidation).
+inline uint64_t NextSgreLookupLogicalGeneration(uint64_t generation) {
+  ++generation;
+  return generation == 0 ? 1 : generation;
+}
+
+inline bool SameSgreLookupLogicalSnapshot(
+    const char16_t* lhs_text, size_t lhs_text_units,
+    const SgreLookupGlyphGeometry* lhs_glyphs, size_t lhs_glyph_count,
+    float lhs_line_height, const char16_t* rhs_text, size_t rhs_text_units,
+    const SgreLookupGlyphGeometry* rhs_glyphs, size_t rhs_glyph_count,
+    float rhs_line_height) {
+  if (lhs_text_units != rhs_text_units || lhs_glyph_count != rhs_glyph_count ||
+      lhs_text_units != lhs_glyph_count || lhs_line_height != rhs_line_height ||
+      (lhs_text_units != 0 && (lhs_text == nullptr || rhs_text == nullptr)) ||
+      (lhs_glyph_count != 0 && (lhs_glyphs == nullptr || rhs_glyphs == nullptr))) {
+    return false;
+  }
+  for (size_t index = 0; index < lhs_text_units; ++index) {
+    if (lhs_text[index] != rhs_text[index]) return false;
+  }
+  for (size_t index = 0; index < lhs_glyph_count; ++index) {
+    const auto& lhs = lhs_glyphs[index];
+    const auto& rhs = rhs_glyphs[index];
+    if (lhs.x != rhs.x || lhs.y != rhs.y || lhs.width != rhs.width ||
+        lhs.height != rhs.height || lhs.line != rhs.line) {
+      return false;
+    }
+  }
+  return true;
+}
+
+inline bool MatchesSgreLookupGenerationAndClient(
+    uint64_t payload_generation, const SgreLookupClientSnapshot& payload_client,
+    uint64_t active_generation, const SgreLookupClientSnapshot& active_client) {
+  return payload_generation != 0 && payload_generation == active_generation &&
+         payload_client.game_window != 0 &&
+         payload_client.game_window == active_client.game_window &&
+         payload_client.screen_x == active_client.screen_x &&
+         payload_client.screen_y == active_client.screen_y &&
+         payload_client.width > 0 && payload_client.height > 0 &&
+         payload_client.width == active_client.width &&
+         payload_client.height == active_client.height;
+}
 
 struct SgreLookupRect {
   int32_t x = 0;

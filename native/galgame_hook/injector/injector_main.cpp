@@ -749,8 +749,12 @@ void WriteLunaTextLine(SharedHeader* header, const wchar_t* hookcode,
                        const char* hookname, const LunaThreadParam& tp,
                        uint64_t thread_id, uint64_t face_id,
                        const wchar_t* text, int wlen) {
+  const uint32_t event_flags =
+      fushi_voice_hook::LunaTextRequiresExactThreadContext(hookname)
+          ? fushi_voice_hook::kTextEventFlagExactThreadContext
+          : 0u;
   WriteLunaTextEvent(header, hookcode, hookname, tp, thread_id, face_id,
-                     fushi_voice_hook::kTextEventLine, 0, text, wlen);
+                     fushi_voice_hook::kTextEventLine, event_flags, text, wlen);
 }
 
 // ── 文本线程准入（LunaHook 伪影过滤 + 显式线程选择）────
@@ -973,11 +977,15 @@ void LunaThreadCreate(const wchar_t* hookcode, const char* hookname,
     return;
   }
   const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
+  const uint32_t event_flags =
+      (embedable ? 1u : 0u) |
+      (fushi_voice_hook::LunaTextRequiresExactThreadContext(hookname)
+           ? fushi_voice_hook::kTextEventFlagExactThreadContext
+           : 0u);
   WriteLunaTextEvent(
       g_luna.header, hookcode, hookname, tp, thread_id,
       LunaTextFaceId(hookcode, hookname, tp),
-      fushi_voice_hook::kTextEventThreadDiscovered, embedable ? 1u : 0u,
-      nullptr, 0);
+      fushi_voice_hook::kTextEventThreadDiscovered, event_flags, nullptr, 0);
 }
 // 移除事件不透传到线程目录，且不清 selected_text_thread_id / face map：同 ThreadParam 短暂
 // 重建仍沿用用户选择。这里只回收预览槽，避免累计超过 64 个历史线程后新线程永久没有预览。
@@ -1677,6 +1685,32 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     header->lookup_bitmap_bytes = fushi_voice_hook::kLookupBitmapBytes;
     header->lookup_frame_count = fushi_voice_hook::kLookupFrameCount;
     header->lookup_input_slot_count = fushi_voice_hook::kLookupInputSlotCount;
+    // v19: a fresh mapping starts with no authoritative geometry provider and
+    // one coherent, inactive shield request. request_seq is published last by
+    // the shared helper; hook/host readers therefore never consume a half-
+    // initialised target or transaction.
+    header->lookup_geometry_active_kind =
+        fushi_voice_hook::kLookupGeometryProviderUnknown;
+    header->lookup_geometry_active_id =
+        fushi_voice_hook::kLookupGeometryProviderIdUnknown;
+    header->lookup_geometry_status =
+        fushi_voice_hook::kLookupGeometryStatusUnavailable;
+    if (fushi_voice_hook::PublishLookupGeometryAdmission(
+            header, fushi_voice_hook::kLookupGeometryAdmissionDisabled,
+            false) == 0) {
+      UnmapViewOfFile(header);
+      CloseHandle(mapping);
+      return FailWith(reason_out,
+                      LaunchFailureReason::kSharedMemoryUnavailable, 1);
+    }
+    if (fushi_voice_hook::PublishLookupShieldRequest(
+            header, fushi_voice_hook::kLookupShieldOwnerNone, 0, 0, 0,
+            false) == 0) {
+      UnmapViewOfFile(header);
+      CloseHandle(mapping);
+      return FailWith(reason_out,
+                      LaunchFailureReason::kSharedMemoryUnavailable, 1);
+    }
     // v17：把**本次注入所用 DLL** 的摘要留档。injector 就是注入者，只有它知道等一下
     // 驻留进游戏进程的是哪个构建；下一次 injector 见到这块映射时，拿这条记录跟那时
     // 磁盘上的 DLL 现算摘要比，才是「驻留构建 vs 请求构建」的真比较（两边都读磁盘
