@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1836 条。点号进各自文件。
+> 共 1838 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -46,6 +46,7 @@
 | [BUG-1954](bugs/BUG-1954-downloads-dropdown-back-button.md) | ✅ | ✅ | 下载页展开下拉框时左上角误显返回键 |
 | [BUG-1953](bugs/BUG-1953-torrent-detail-missing-live-data-layout.md) | ✅ | ✅ | Torrent 详情缺少实时数据时空态布局失衡 |
 | [BUG-1952](bugs/BUG-1952-gal-progressive-line-fold.md) | ✅ | ✅ | 一句台词分多次显示时工作台重复出现且字数重复统计（Zato） |
+| [BUG-1950](bugs/BUG-1950-sgre-single-hash-gate-no-attempt.md) | ✅ | ✅ | STEINS;GATE RE:BOOT 内嵌查词对非首日构建静默失效：SGRE 适配把单个 exe 哈希当准入门，从不尝试其它构建 |
 | [BUG-1946](bugs/BUG-1946-sukebei-rss-namespace-rejected.md) | ✅ | ✅ | Sukebei 发现源结果恒空：NyaaClient 严格解析硬编码 nyaa.si 命名空间，sukebei RSS 的 sukebei.nyaa.si/xmlns/nyaa 被判 invalidNamespace |
 | [BUG-1945](bugs/BUG-1945-video-fullscreen-exit-deactivated-context.md) | ✅ | ✅ | 视频取消全屏短暂闪现 deactivated widget 红屏 |
 | [BUG-1944](bugs/BUG-1944-mokuro-retry-cancel-test-wall-clock-race.md) | ✅ | ✅ | mokuro 退避取消测试拿真时钟当同步原语，CI 上偶发红 |
@@ -59,6 +60,7 @@
 | [BUG-1936](bugs/BUG-1936-downloads-discovery-queue-invisible.md) | ✅ | ✅ | 发现页直链下载（游戏等）提示已加入下载，下载页任务 tab 却不显示 |
 | [BUG-1935](bugs/BUG-1935-gal-ingame-lookup-no-engine-gating.md) | ✅ | ✅ | 内嵌查词在 Siglus/白2 上 hash 钉定不中时静默失效且无任何提示 |
 | [BUG-1934](bugs/BUG-1934-tombstone-partial-read-baseline.md) | ✅ | ✅ | 远端删除墓碑单条读失败被跳过，基线照常推进 → 该条删除永久不再提示 |
+| [BUG-1933](bugs/BUG-1933-win-fullscreen-white-flash.md) | ✅ | ✅ | 全屏与取消全屏时闪一帧白色 |
 | [BUG-1932](bugs/BUG-1932-lookup-pending-dismiss-freezes-popup.md) | ✅ | ✅ | 挂起期关栈后查词界面卡死、播放控件再也唤不回 |
 | [BUG-1931](bugs/BUG-1931-backup-archive-cannot-be-deleted.md) | ✅ | ✅ | 导出的备份包无法删除，且移动端从不清理 |
 | [BUG-1930](bugs/BUG-1930-backup-export-cancelled-by-collapse.md) | ✅ | ✅ | 折叠「本地备份」分区会取消进行中的备份 |
@@ -74,7 +76,7 @@
 | [BUG-1920](bugs/BUG-1920-app-icon-rail-live-sync.md) | ✅ | ✅ | 应用图标切换未同步到主侧栏 |
 | [BUG-1919](bugs/BUG-1919-desktop-fullscreen-read-escapes-try.md) | ✅ | ✅ | Linux/macOS 上桌面全屏读写的异常逃出 try，漫画页 widget test 在 CI 上全红 |
 | [BUG-1918](bugs/BUG-1918-dict-style-preview-crash.md) | ✅ | ✅ | 打开词典样式可视化编辑器闪退（Windows） |
-| [BUG-1917](bugs/BUG-1917-win-drag-low-fps-unreproduced.md) | 🚧 | 🚧 | 窗口拖动帧率低（未复现） |
+| [BUG-1917](bugs/BUG-1917-win-resize-heatmap-repaint.md) | ✅ | ✅ | Windows 拖边缩放帧率低：首页仪表盘每步重画整张热力图 |
 | [BUG-1916](bugs/BUG-1916-win-resize-backdrop-layer.md) | ✅ | ✅ | 窗口缩放时露出深青底色层 |
 | [BUG-1915](bugs/BUG-1915-anki-dup-check-cross-model.md) | ✅ | ✅ | 查词弹窗查重与制卡判重不同源：跨笔记类型的重复卡画成可制卡 + |
 | [BUG-1914](bugs/BUG-1914-mine-button-lost-text-marker-restore.md) | ✅ | ✅ | 制卡按钮被加回 inline-action-button 基类，三条 TODO-1325 还原守卫在 develop 上已红 |

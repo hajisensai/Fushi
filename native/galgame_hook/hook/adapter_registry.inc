@@ -649,7 +649,7 @@ class AdapterRegistry {
 
   DWORD PollDelayMs() {
     if (loopback_.transition_pending()) return 10;
-    if (sgre_.probe() && g_header != nullptr &&
+    if (sgre_.lookup_sensor_available() && g_header != nullptr &&
         fushi_voice_hook::HasLookupRegion(g_header) &&
         g_header->lookup_enabled != 0) {
       return 16;

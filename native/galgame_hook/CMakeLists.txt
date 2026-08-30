@@ -72,6 +72,7 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/text_render_adapter.inc"
   "hook/adapters/loopback_adapter.inc"
   "hook/adapters/sgre_adapter.inc"
+  "hook/adapters/sgre_anchors.h"
   "hook/adapters/sgre_lookup.h"
   "hook/adapters/sgre_lookup.inc"
   "hook/adapters/sgre_profile.h"

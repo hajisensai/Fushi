@@ -352,6 +352,14 @@ constexpr uint32_t kXAudioDiagLeafLacReadObserved = 0x00800000u;
 constexpr uint32_t kXAudioDiagLeafLacVoiceQueued = 0x01000000u;
 constexpr uint32_t kXAudioDiagLeafLacTaskRejected = 0x02000000u;
 constexpr uint32_t kXAudioDiagLeafLacVoicePublished = 0x04000000u;
+// SGRE (M2 wind3d11) identity is two layers: the family (voice_body.bin next
+// to the executable) and the build-specific anchors (measured hash row or
+// unique signature hit). These three bits report where anchor resolution
+// ended so an unmeasured build reads as "engine recognised, anchors missing"
+// instead of silently doing nothing.
+constexpr uint32_t kXAudioDiagSgreFamilyMatched = 0x08000000u;
+constexpr uint32_t kXAudioDiagSgreAnchorsResolved = 0x10000000u;   // all three
+constexpr uint32_t kXAudioDiagSgreAnchorsUnresolved = 0x20000000u; // any missing
 
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM
