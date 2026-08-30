@@ -517,6 +517,7 @@ DictionarySearchResult buildResultFromLookup({
   required String searchTerm,
   required List<FushiLookupResult> results,
   required int maximumTerms,
+  List<String> dictionaryOrder = const <String>[],
 }) {
   int bestLength = 0;
   final entries = <DictionaryEntry>[];
@@ -540,7 +541,8 @@ DictionarySearchResult buildResultFromLookup({
       break outer;
     }
     headwords.add(headword);
-    for (final g in r.term.glossaries) {
+    for (final g
+        in _glossariesInDictionaryOrder(r.term.glossaries, dictionaryOrder)) {
       entries.add(DictionaryEntry(
         dictionaryName: g.dictName,
         word: r.term.expression,
@@ -574,6 +576,7 @@ String buildPopupJsonFromLookup({
   required List<FushiLookupResult> results,
   required int maximumTerms,
   required Set<String> hiddenDictionaries,
+  List<String> dictionaryOrder = const <String>[],
 }) {
   if (results.isEmpty) return '[]';
 
@@ -604,7 +607,8 @@ String buildPopupJsonFromLookup({
     if (!groupExpression.containsKey(key) && groupKeys.length >= maximumTerms) {
       break outer;
     }
-    for (final g in r.term.glossaries) {
+    for (final g
+        in _glossariesInDictionaryOrder(r.term.glossaries, dictionaryOrder)) {
       // 被用户关掉的词典在源头就不进 popupJson。此前这步只存在于渲染期的 JS
       // （靠宿主注入 window.hiddenDictionaryNames 驱动），app 内 WebView 注入了、浏览器
       // 扩展走的 HTTP 路径从来不下发它 ⇒ 关掉的词典在扩展里照旧出释义，
@@ -734,4 +738,34 @@ String buildPopupJsonFromLookup({
   }
   sb.write(']');
   return sb.toString();
+}
+
+/// Applies the user-managed dictionary priority at the Dart result boundary.
+///
+/// The native engine normally appends glossaries in dictionary registration
+/// order, but that is an implementation detail rather than part of the FFI
+/// payload. A warm/independent lookup surface can therefore hand this builder
+/// an older ordering even though the management page already exposes the new
+/// one. Sorting here makes both [DictionarySearchResult] and popup JSON consume
+/// the explicit current order. Unknown dictionaries stay last and stable.
+List<FushiGlossaryEntry> _glossariesInDictionaryOrder(
+  List<FushiGlossaryEntry> glossaries,
+  List<String> dictionaryOrder,
+) {
+  if (glossaries.length < 2 || dictionaryOrder.isEmpty) return glossaries;
+
+  final Map<String, int> rank = <String, int>{
+    for (int i = 0; i < dictionaryOrder.length; i++) dictionaryOrder[i]: i,
+  };
+  final List<({FushiGlossaryEntry glossary, int sourceIndex})> indexed =
+      <({FushiGlossaryEntry glossary, int sourceIndex})>[
+    for (int i = 0; i < glossaries.length; i++)
+      (glossary: glossaries[i], sourceIndex: i),
+  ];
+  indexed.sort((a, b) {
+    final int byRank = (rank[a.glossary.dictName] ?? dictionaryOrder.length)
+        .compareTo(rank[b.glossary.dictName] ?? dictionaryOrder.length);
+    return byRank != 0 ? byRank : a.sourceIndex.compareTo(b.sourceIndex);
+  });
+  return <FushiGlossaryEntry>[for (final item in indexed) item.glossary];
 }

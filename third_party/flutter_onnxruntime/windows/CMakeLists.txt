@@ -9,155 +9,92 @@ project(${PROJECT_NAME} LANGUAGES CXX)
 # This value is used when generating builds using this plugin, so it must not be changed.
 set(PLUGIN_NAME "flutter_onnxruntime_plugin")
 
-# === ONNX Runtime Configuration ===
-# Option 1: Use pre-installed ONNX Runtime (preferred for system packages)
-option(USE_SYSTEM_ONNXRUNTIME "Use system-installed ONNX Runtime" ON)
+# === ONNX Runtime DirectML configuration ===
+# Pin the official NuGet artifacts instead of using the generic GitHub release
+# archive. The generic Windows archive is CPU-only and therefore advertises no
+# DmlExecutionProvider even though the Dart API accepts DIRECT_ML.
+set(ONNXRUNTIME_VERSION "1.22.0")
+set(DIRECTML_VERSION "1.15.4")
+set(ONNXRUNTIME_NUPKG_SHA256 "29F9872D786236B79AA83F94482F3A17C14297E4833768D6D0ED4883EE732E60")
+set(DIRECTML_NUPKG_SHA256 "4E7CB7DDCE8CF837A7A75DC029209B520CA0101470FCDF275C1F49736A3615B9")
 
-if(USE_SYSTEM_ONNXRUNTIME)
-  # Try to find ONNX Runtime manually since pkg-config is less common on Windows
+if(CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|arm64|aarch64)$")
+  set(ONNXRUNTIME_RID "win-arm64")
+  set(DIRECTML_ARCH "arm64-win")
+elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
+  set(ONNXRUNTIME_RID "win-x64")
+  set(DIRECTML_ARCH "x64-win")
+else()
+  set(ONNXRUNTIME_RID "win-x86")
+  set(DIRECTML_ARCH "x86-win")
+endif()
 
-  # Specify custom paths where ONNX Runtime might be installed
-  set(ONNXRUNTIME_ROOT_DIR
-      ""
-      CACHE PATH "ONNX Runtime root directory")
+set(ONNXRUNTIME_DOWNLOAD_DIR "${CMAKE_CURRENT_BINARY_DIR}/onnxruntime-directml-${ONNXRUNTIME_VERSION}")
+set(ONNXRUNTIME_EXTRACT_DIR "${ONNXRUNTIME_DOWNLOAD_DIR}/onnxruntime")
+set(DIRECTML_EXTRACT_DIR "${ONNXRUNTIME_DOWNLOAD_DIR}/directml")
+set(ONNXRUNTIME_NUPKG "${ONNXRUNTIME_DOWNLOAD_DIR}/onnxruntime-directml.nupkg")
+set(DIRECTML_NUPKG "${ONNXRUNTIME_DOWNLOAD_DIR}/directml.nupkg")
 
-  # Look for the library
-  find_library(
-    ONNXRUNTIME_LIBRARY
-    NAMES onnxruntime
-    PATHS ${ONNXRUNTIME_ROOT_DIR}/lib
-    DOC "ONNX Runtime library")
-
-  # Look for the include directory
-  find_path(
-    ONNXRUNTIME_INCLUDE_DIR
-    NAMES onnxruntime_cxx_api.h
-    PATHS ${ONNXRUNTIME_ROOT_DIR}/include
-    DOC "ONNX Runtime include directory")
-
-  if(ONNXRUNTIME_LIBRARY AND ONNXRUNTIME_INCLUDE_DIR)
-    set(ONNXRUNTIME_FOUND TRUE)
-    set(ONNXRUNTIME_LIBRARIES ${ONNXRUNTIME_LIBRARY})
-    set(ONNXRUNTIME_INCLUDE_DIRS ${ONNXRUNTIME_INCLUDE_DIR})
-    message(STATUS "Found ONNX Runtime: ${ONNXRUNTIME_LIBRARY}")
-  else()
-    set(ONNXRUNTIME_FOUND FALSE)
-    message(STATUS "System ONNX Runtime not found. Falling back to downloaded version.")
-    set(USE_SYSTEM_ONNXRUNTIME OFF)
+if(NOT EXISTS "${ONNXRUNTIME_EXTRACT_DIR}/build/native/include/dml_provider_factory.h")
+  file(MAKE_DIRECTORY "${ONNXRUNTIME_DOWNLOAD_DIR}" "${ONNXRUNTIME_EXTRACT_DIR}")
+  file(
+    DOWNLOAD
+    "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/${ONNXRUNTIME_VERSION}/microsoft.ml.onnxruntime.directml.${ONNXRUNTIME_VERSION}.nupkg"
+    "${ONNXRUNTIME_NUPKG}"
+    EXPECTED_HASH "SHA256=${ONNXRUNTIME_NUPKG_SHA256}"
+    TLS_VERIFY ON
+    SHOW_PROGRESS)
+  execute_process(
+    COMMAND ${CMAKE_COMMAND} -E tar xf "${ONNXRUNTIME_NUPKG}"
+    WORKING_DIRECTORY "${ONNXRUNTIME_EXTRACT_DIR}"
+    RESULT_VARIABLE ONNXRUNTIME_EXTRACT_RESULT)
+  if(NOT ONNXRUNTIME_EXTRACT_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to extract ONNX Runtime DirectML package: ${ONNXRUNTIME_EXTRACT_RESULT}")
   endif()
 endif()
 
-# Option 2: Download ONNX Runtime if not using system installed version
-if(NOT USE_SYSTEM_ONNXRUNTIME)
-  include(FetchContent)
-
-  # Set ONNX Runtime version - make sure this is defined Only set if not already defined, to allow the parent project to
-  # override it
-  if(NOT DEFINED ONNXRUNTIME_VERSION)
-    set(ONNXRUNTIME_VERSION
-        "1.22.0"
-        CACHE STRING "ONNX Runtime version to use")
+if(NOT EXISTS "${DIRECTML_EXTRACT_DIR}/bin/${DIRECTML_ARCH}/DirectML.dll")
+  file(MAKE_DIRECTORY "${DIRECTML_EXTRACT_DIR}")
+  file(
+    DOWNLOAD
+    "https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/${DIRECTML_VERSION}/microsoft.ai.directml.${DIRECTML_VERSION}.nupkg"
+    "${DIRECTML_NUPKG}"
+    EXPECTED_HASH "SHA256=${DIRECTML_NUPKG_SHA256}"
+    TLS_VERIFY ON
+    SHOW_PROGRESS)
+  execute_process(
+    COMMAND ${CMAKE_COMMAND} -E tar xf "${DIRECTML_NUPKG}"
+    WORKING_DIRECTORY "${DIRECTML_EXTRACT_DIR}"
+    RESULT_VARIABLE DIRECTML_EXTRACT_RESULT)
+  if(NOT DIRECTML_EXTRACT_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to extract DirectML redistributable: ${DIRECTML_EXTRACT_RESULT}")
   endif()
-
-  # Check if version is not empty
-  if("${ONNXRUNTIME_VERSION}" STREQUAL "")
-    set(ONNXRUNTIME_VERSION "1.22.0")
-    message(STATUS "ONNX Runtime version was empty, defaulting to 1.22.0")
-  endif()
-
-  # Debug output
-  message(STATUS "ONNX Runtime version set to: ${ONNXRUNTIME_VERSION}")
-
-  # Determine architecture for download URL
-  if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(ONNXRUNTIME_ARCH "x64")
-  else()
-    set(ONNXRUNTIME_ARCH "x86")
-  endif()
-
-  # Set download URL with correct naming pattern for Windows
-  set(ONNXRUNTIME_URL
-      "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-win-${ONNXRUNTIME_ARCH}-${ONNXRUNTIME_VERSION}.zip"
-  )
-
-  message(STATUS "Downloading ONNX Runtime from: ${ONNXRUNTIME_URL}")
-
-  # Create a directory for the downloaded library
-  set(ONNXRUNTIME_DOWNLOAD_DIR "${CMAKE_CURRENT_BINARY_DIR}/onnxruntime")
-
-  # Download and extract ONNX Runtime - using file(DOWNLOAD) for more direct control
-  if(NOT
-     EXISTS
-     "${ONNXRUNTIME_DOWNLOAD_DIR}/onnxruntime-win-${ONNXRUNTIME_ARCH}-${ONNXRUNTIME_VERSION}/include/onnxruntime_cxx_api.h"
-  )
-    message(STATUS "Downloading ONNX Runtime...")
-    file(MAKE_DIRECTORY ${ONNXRUNTIME_DOWNLOAD_DIR})
-
-    # Download the zipfile
-    set(ONNXRUNTIME_ZIPFILE "${ONNXRUNTIME_DOWNLOAD_DIR}/onnxruntime.zip")
-    file(DOWNLOAD ${ONNXRUNTIME_URL} ${ONNXRUNTIME_ZIPFILE} SHOW_PROGRESS)
-
-    # Extract the zipfile
-    message(STATUS "Extracting ONNX Runtime...")
-    execute_process(COMMAND ${CMAKE_COMMAND} -E tar xf ${ONNXRUNTIME_ZIPFILE}
-                    WORKING_DIRECTORY ${ONNXRUNTIME_DOWNLOAD_DIR})
-
-    # Clean up the zipfile
-    file(REMOVE ${ONNXRUNTIME_ZIPFILE})
-  endif()
-
-  # Set paths to the extracted files
-  set(ONNXRUNTIME_EXTRACT_DIR "${ONNXRUNTIME_DOWNLOAD_DIR}/onnxruntime-win-${ONNXRUNTIME_ARCH}-${ONNXRUNTIME_VERSION}")
-
-  # Verify the directory exists
-  if(NOT EXISTS ${ONNXRUNTIME_EXTRACT_DIR})
-    message(FATAL_ERROR "ONNX Runtime extraction directory doesn't exist: ${ONNXRUNTIME_EXTRACT_DIR}")
-  endif()
-
-  # Set include and library directories
-  set(ONNXRUNTIME_INCLUDE_DIRS "${ONNXRUNTIME_EXTRACT_DIR}/include")
-
-  # Log directory contents to help with debugging
-  message(STATUS "ONNX Runtime extract directory: ${ONNXRUNTIME_EXTRACT_DIR}")
-  file(GLOB_RECURSE ONNXRUNTIME_FILES "${ONNXRUNTIME_EXTRACT_DIR}/*")
-  foreach(FILE ${ONNXRUNTIME_FILES})
-    message(STATUS "Found file: ${FILE}")
-  endforeach()
-
-  # Find the library files (.dll and .lib)
-  if(EXISTS "${ONNXRUNTIME_EXTRACT_DIR}/lib/onnxruntime.lib")
-    set(ONNXRUNTIME_LIBRARY "${ONNXRUNTIME_EXTRACT_DIR}/lib/onnxruntime.lib")
-    set(ONNXRUNTIME_DLL "${ONNXRUNTIME_EXTRACT_DIR}/lib/onnxruntime.dll")
-  else()
-    # Try to find the library in case the structure changed
-    file(GLOB_RECURSE ONNXRUNTIME_LIB_CANDIDATES "${ONNXRUNTIME_EXTRACT_DIR}/*onnxruntime*.lib")
-
-    if(ONNXRUNTIME_LIB_CANDIDATES)
-      list(GET ONNXRUNTIME_LIB_CANDIDATES 0 ONNXRUNTIME_LIBRARY)
-      # Find the corresponding DLL
-      get_filename_component(LIB_PATH ${ONNXRUNTIME_LIBRARY} DIRECTORY)
-      file(GLOB ONNXRUNTIME_DLL_CANDIDATES "${LIB_PATH}/*onnxruntime*.dll")
-      if(ONNXRUNTIME_DLL_CANDIDATES)
-        list(GET ONNXRUNTIME_DLL_CANDIDATES 0 ONNXRUNTIME_DLL)
-      endif()
-      message(STATUS "Found ONNX Runtime library: ${ONNXRUNTIME_LIBRARY}")
-      message(STATUS "Found ONNX Runtime DLL: ${ONNXRUNTIME_DLL}")
-    else()
-      message(FATAL_ERROR "Could not find ONNX Runtime library in extracted files")
-    endif()
-  endif()
-
-  set(ONNXRUNTIME_LIBRARIES ${ONNXRUNTIME_LIBRARY})
-
-  # Add to bundled libraries for distribution
-  set(flutter_onnxruntime_bundled_libraries ${ONNXRUNTIME_DLL})
 endif()
+
+set(ONNXRUNTIME_INCLUDE_DIRS "${ONNXRUNTIME_EXTRACT_DIR}/build/native/include")
+set(ONNXRUNTIME_NATIVE_DIR "${ONNXRUNTIME_EXTRACT_DIR}/runtimes/${ONNXRUNTIME_RID}/native")
+set(ONNXRUNTIME_LIBRARY "${ONNXRUNTIME_NATIVE_DIR}/onnxruntime.lib")
+set(ONNXRUNTIME_DLL "${ONNXRUNTIME_NATIVE_DIR}/onnxruntime.dll")
+set(ONNXRUNTIME_PROVIDERS_SHARED_DLL "${ONNXRUNTIME_NATIVE_DIR}/onnxruntime_providers_shared.dll")
+set(DIRECTML_DLL "${DIRECTML_EXTRACT_DIR}/bin/${DIRECTML_ARCH}/DirectML.dll")
+
+foreach(REQUIRED_FILE IN ITEMS "${ONNXRUNTIME_LIBRARY}" "${ONNXRUNTIME_DLL}"
+                               "${ONNXRUNTIME_PROVIDERS_SHARED_DLL}" "${DIRECTML_DLL}")
+  if(NOT EXISTS "${REQUIRED_FILE}")
+    message(FATAL_ERROR "Required ONNX Runtime DirectML artifact is missing: ${REQUIRED_FILE}")
+  endif()
+endforeach()
+
+set(ONNXRUNTIME_LIBRARIES "${ONNXRUNTIME_LIBRARY}")
+set(flutter_onnxruntime_bundled_libraries "${ONNXRUNTIME_DLL}" "${ONNXRUNTIME_PROVIDERS_SHARED_DLL}"
+                                           "${DIRECTML_DLL}")
 
 # Define Windows-specific preprocessor macros
 add_definitions(-DWIN32_LEAN_AND_MEAN -DNOMINMAX -DUNICODE -D_UNICODE)
 
 # Any new source files that you add to the plugin should be added here.
-list(APPEND PLUGIN_SOURCES "src/session_manager.cc" "src/value_conversion.cc" "src/tensor_manager.cc"
+list(APPEND PLUGIN_SOURCES "src/dml_provider.cc"
+  "src/session_manager.cc" "src/value_conversion.cc" "src/tensor_manager.cc"
      "src/windows_utils.cc")
 
 # Define the plugin library target. Its name must not be changed (see comment on PLUGIN_NAME above).
@@ -170,7 +107,7 @@ apply_standard_settings(${PLUGIN_NAME})
 # Symbols are hidden by default to reduce the chance of accidental conflicts between plugins. This should not be
 # removed; any symbols that should be exported should be explicitly exported with the FLUTTER_PLUGIN_EXPORT macro.
 set_target_properties(${PLUGIN_NAME} PROPERTIES CXX_VISIBILITY_PRESET hidden)
-target_compile_definitions(${PLUGIN_NAME} PRIVATE FLUTTER_PLUGIN_IMPL)
+target_compile_definitions(${PLUGIN_NAME} PRIVATE FLUTTER_PLUGIN_IMPL FLUTTER_ONNXRUNTIME_HAS_DIRECTML=1)
 
 # Add WINDOWS_EXPORT_ALL_SYMBOLS to ensure the generation of the import library (.lib file)
 set_target_properties(${PLUGIN_NAME} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
@@ -222,14 +159,15 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE ${ONNXRUNTIME_LIBRARIES})
 # Link against Windows Shell API library for PathRemoveFileSpecW
 target_link_libraries(${PLUGIN_NAME} PRIVATE Shlwapi)
 
-# Copy over ONNX Runtime DLL to the build directory
-if(NOT USE_SYSTEM_ONNXRUNTIME AND ONNXRUNTIME_DLL)
+# Copy the complete DirectML runtime next to the plugin for local runs. Flutter
+# also consumes flutter_onnxruntime_bundled_libraries when assembling the app.
+foreach(BUNDLED_LIBRARY IN LISTS flutter_onnxruntime_bundled_libraries)
   add_custom_command(
     TARGET ${PLUGIN_NAME}
     POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ONNXRUNTIME_DLL} $<TARGET_FILE_DIR:${PLUGIN_NAME}>
-    COMMENT "Copying ONNX Runtime DLL to build directory")
-endif()
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${BUNDLED_LIBRARY}" $<TARGET_FILE_DIR:${PLUGIN_NAME}>
+    COMMENT "Copying ${BUNDLED_LIBRARY} to plugin build directory")
+endforeach()
 
 # List of absolute paths to libraries that should be bundled with the plugin. This list could contain prebuilt
 # libraries, or libraries created by an external build triggered from this build file.
