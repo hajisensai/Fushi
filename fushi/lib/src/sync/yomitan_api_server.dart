@@ -72,6 +72,7 @@ class YomitanApiServer {
     FushiRemoteHistoryService? historyService,
     Map<String, String> Function()? themeColorsProvider,
     List<String> Function()? audioSourcesProvider,
+    bool Function()? autoReadOnLookupProvider,
     String? Function()? extensionBuildProvider,
     RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
@@ -89,6 +90,7 @@ class YomitanApiServer {
         _readingResolver = readingResolver,
         _themeColorsProvider = themeColorsProvider,
         _audioSourcesProvider = audioSourcesProvider,
+        _autoReadOnLookupProvider = autoReadOnLookupProvider,
         _extensionBuildProvider = extensionBuildProvider,
         _popupDictionaryCssProvider = popupDictionaryCssProvider,
         _onExtensionPopupSize = onExtensionPopupSize,
@@ -109,6 +111,10 @@ class YomitanApiServer {
   final Map<String, String> Function()? _themeColorsProvider;
   // 单词音频：当前 app 已启用的音频源供给器，随查词响应下发给扩展弹窗。
   final List<String> Function()? _audioSourcesProvider;
+
+  /// 查词后自动朗读偏好（`autoReadOnLookup`）：随查词响应下发给浏览器扩展，让扩展弹窗
+  /// 与 app 内/app 外三个表面用同一个开关自动发音。
+  final bool Function()? _autoReadOnLookupProvider;
   // BUG-726：app 内置扩展内容指纹供给器，随查词响应下发，驱动扩展自 reload 拉新。
   final String? Function()? _extensionBuildProvider;
   // BUG-1718：词典自带 CSS + 用户自定义 CSS 供给器，按 revision 门控随查词响应下发给扩展弹窗。
@@ -407,6 +413,7 @@ class YomitanApiServer {
       popupTiming: popupTiming,
       themeColorsProvider: _themeColorsProvider,
       audioSourcesProvider: _audioSourcesProvider,
+      autoReadOnLookupProvider: _autoReadOnLookupProvider,
       extensionBuildProvider: _extensionBuildProvider,
       popupDictionaryCssProvider: _popupDictionaryCssProvider,
     );

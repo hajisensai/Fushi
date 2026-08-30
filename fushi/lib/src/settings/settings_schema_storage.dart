@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'package:fushi_audio/fushi_audio.dart' show SrtBookRepository;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -128,6 +130,29 @@ SettingsDestination buildStorageDestination() {
       // BUG-1870：主库快照残留的删除原语在 fushi_core（与扫描侧识别口径同源）。
       deleteDatabaseSnapshots: () async =>
           deleteDatabaseSnapshotFiles(await AppPaths.supportRootDirectory()),
+      // 派生/缓存类明细（封面缩略图、浏览器数据、Anki 制卡暂存、OCR 模型、
+      // 着色器、临时文件——导出的备份包就在这里）的删除原语。这些路径没有任何
+      // DB 行引用，裸删不绕过墓碑/引用护栏；服务层只扫不删，删只在这一处发生。
+      // 已经不在磁盘上 = 目标状态已达成，按成功处理（与 deleteDictionary 同纪律）。
+      deleteFiles: (List<String> paths) async {
+        for (final String path in paths) {
+          try {
+            final FileSystemEntityType type =
+                await FileSystemEntity.type(path);
+            switch (type) {
+              case FileSystemEntityType.directory:
+                await Directory(path).delete(recursive: true);
+              case FileSystemEntityType.notFound:
+                break;
+              default:
+                await File(path).delete();
+            }
+          } catch (e) {
+            return '${p.basename(path)}: $e';
+          }
+        }
+        return null;
+      },
       deleteDictionary: (String name) async {
         // AppModel.deleteDictionary 内部 catch-all 不上抛（自弹失败 toast），
         // 「无异常」不等于成功——以「删除后该名是否仍在词典表」为准回报

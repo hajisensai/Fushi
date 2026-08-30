@@ -76,10 +76,12 @@ void main() {
     expect(source, contains('_videoDiscoveryService?.close()'));
   });
 
-  test('downloads first tab is resources rather than a second discovery page',
-      () {
+  test('downloads resources reuse the four production discovery surfaces', () {
     final String source = File(
       'lib/src/pages/implementations/downloads_page.dart',
+    ).readAsStringSync();
+    final String home = File(
+      'lib/src/pages/implementations/home_page.dart',
     ).readAsStringSync();
 
     // 首段的**承载形态**换过三次：`Tab(text: …)` → PR#820 与库页同构的
@@ -87,7 +89,24 @@ void main() {
     // `LibrarySectionTab(value: 0, label: …)`。本条守的**行为**三次都没变：第一段
     // 必须是「资源」，不是第二个 discovery 页。
     expect(source, contains('value: 0, label: t.download_resources_tab'));
-    expect(source, contains('VideoResourceSearchSurface('));
+    expect(
+      source,
+      contains('FushiDropdown<_DownloadsResourceDomain>('),
+      reason: '资源首页必须先用唯一类型下拉框选择内容域',
+    );
+    expect(source, contains('MediaDiscoveryPage('));
+    expect(source, contains('MangaDiscoveryPage('));
+    expect(source, contains('VideoDiscoveryPage('));
+    expect(source, contains('embedded: true'));
+    expect(
+      home,
+      contains('videoDiscoveryController: _productionVideoDiscoveryController'),
+      reason: '下载页视频发现不得落到 EmptyVideoDiscoveryController',
+    );
+    expect(
+      home,
+      contains('videoDiscoveryActions: _productionVideoDiscoveryActions'),
+    );
     expect(source, contains('VideoDownloadJobsPanel.database('));
     expect(source, contains('VideoDownloadSubscriptionsPanel()'));
     expect(source, isNot(contains('download_discover_tab')));

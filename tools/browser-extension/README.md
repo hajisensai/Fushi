@@ -12,7 +12,7 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 | `background.js` | service worker | 唯一网络出口：查词/制卡/字幕等所有 HTTP 请求 + 连接诊断 + 自更新执行 + 心跳 + Netflix 录制编排 |
 | `content.js` | 隔离 | Shift 悬停查词、查词暂停、弹窗渲染/定位、高亮、挖词队列、字幕轨 provider（textTracks 收割 / DOM 采样兜底 / 整集拦截接收端）、Netflix/YouTube 批量制卡驱动 |
 | `subtitle-panel.js` | 隔离 | 字幕轨状态控制器 + 视频覆盖层 + 外挂字幕安装 + 全轨时轴偏移 + 快捷键执行端；不渲染网页列表 |
-| `side-panel.html/js/css` | 扩展页 | 浏览器原生 Side Panel 字幕列表与词典抽屉；在侧边栏内完成取词/嵌套查词，经 tabs 消息读取轨道并执行跳转/制卡/偏移，不把列表或查词结果注入网页 |
+| `side-panel.html/js/css` | 扩展页 | 浏览器原生 Side Panel 字幕列表；侧边栏内取词，默认把词交给宿主页用页面弹窗渲染（见「侧边栏查词跨出面板」），经 tabs 消息读取轨道并执行跳转/制卡/偏移，不把字幕列表注入网页 |
 | `video-shortcuts.js` | 隔离 | 视频页快捷键判定（纯函数）+ 绑定；每个动作独立开关，动作交 subtitle-panel 执行 |
 | `netflix-bridge.js` | MAIN | Netflix 专用：JSON.parse hook 抓整集字幕 + 官方 player.seek（避开 DRM M7375） |
 | `youtube-bridge.js` | MAIN | YouTube 专用：按 asbplayer 顺序读取播放器运行态 captionTracks（含 POT）→ Android Innertube → player response，并一次下载完整 srv3/json3 轨；只读、不改宿主 DOM |
@@ -48,7 +48,7 @@ scripts/generate-content-css.mjs ──▶ 两处 vendor/content.css
 
 1. 本目录随 app 以 Flutter asset 打包（镜像 `fushi/assets/browser_extension/`）。
 2. app 扩展页「准备扩展」→ `browser_extension_installer.dart` 解压到
-   `<appSupport>/hibiki-browser-extension/`，并把**当前 server 真值**（host/port/token）与
+   `<appSupport>/fushi-browser-extension/`（改名前是 `hibiki-browser-extension/`；老用户浏览器仍按绝对路径指着旧目录，故旧目录存在时继续同步刷新），并把**当前 server 真值**（host/port/token）与
    **内容指纹 build**（全部文件排除 `fushi-defaults.js` 的 sha256 前 16 hex）写进
    `fushi-defaults.js` → 用户浏览器「加载已解压」后零配置可用。
 3. 用户可在 options 页覆盖连接参数（chrome.storage.local 优先于内置默认）。
@@ -77,6 +77,85 @@ app 升级
 `/api/duplicate` · 状态/心跳 `/api/extension/status` · 弹窗尺寸 `/api/extension/popup-size` ·
 YouTube 整集字幕 `/api/youtube/captions` · 外挂字幕解析 `/api/subtitle/parse`。
 服务端实现：`fushi/lib/src/sync/yomitan_api_server.dart`。
+
+## 侧边栏查词跨出面板
+
+Chrome 的 side panel 是浏览器自己的一份 web contents：**面板里的 DOM 画不出面板边界**，没有
+CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」不是落点逻辑的问题，改落点永远
+解决不了。唯一的真路径是把词交回宿主页：
+
+    侧栏取词 → fushiSubtitleSidePanelShowLookup（tabs 消息，带该行精确时间窗）
+      → subtitle-panel.js → content.js 的 fushiShowLookupFromSidePanel
+      → fushiSendLookup（页面自己发查词） → 页面弹窗（Shadow host）
+
+于是嵌套查词、发音、查重、制卡、「查词时暂停」全部沿用页面既有链路，与 Shift 划词同源。
+几个必须成立的点：
+
+- **落点跟着被点的那一行**：侧栏与宿主页是两个视口，绝对坐标没有意义，所以侧栏交的是
+  `anchorRatio`（被点行在侧栏视口里的纵向比例），页面按自己的视口还原：横向贴右缘（紧邻
+  侧栏），纵向落在那一行的高度上。固定糊在右上角会压住画面里正在读的文字。
+- **锚点是权威的**：侧栏交来的词在宿主页上没有对应选区，`anchorRect.authoritative` 让
+  `fushiRender` 跳过整段选区探测——否则 `highlightSelection` 的无选区兜底会把**上一轮**查词的
+  bbox 当锚点，弹窗落到上一个词旁边、还会把那处重新点亮。
+- **回落不可少**：宿主页没有内容脚本（`chrome://`、扩展页、标签正在跳转）时 tabs 消息拿不到
+  回复，此时退回面板内那份窄弹窗——绝不能变成查不了词。设置页「查词结果显示在网页上」
+  （`subtitleLookupOnPage`，默认开）关掉后也走这条。
+- **关窗回执**：页面弹窗关掉（点页面空白 / 侧栏 Esc / 手动播放）时 content.js 定向发
+  `fushiSidePanelLookupGone`，侧栏据此复位扫词去重键；没有它，鼠标停在同一个字上就永远
+  重查不了。页面自身的 Shift 查词关窗**不**发这条。
+
+- **关窗那一击不漏给站点**：Netflix 等把「点画面」当播放/暂停切换，用户点旁边只是想关弹窗，
+  却连带把视频停了。关窗后在 capture 阶段截住紧随其后的那一个 click（不 `preventDefault`，
+  聚焦/选区这些默认行为要留着）；没产生 click 时由定时器撤掉监听，不误吞后面的点击。
+- **Esc 关弹窗**：页面弹窗此前根本不认 Esc。现在 capture 阶段先关窗并截住这次按键，站点自己
+  的 Esc 处理不再同时发生。**但视频处于 Fullscreen API 全屏时，Esc 退出全屏是浏览器保留行为，
+  网页脚本拦不住**——这里能保证的只是「弹窗一定被关掉」。
+
+行为守卫：`side-panel-lookup-on-page.test.js`（两侧各一组，含落点跟随、锚点、回落、Esc、
+关窗吞击、去重复位、点空白跳转）。
+
+## 字幕里的振假名
+
+`<rt>` / `<rp>` / `<rtc>` 的内容**都不是正文**，只有 ruby base 是。两条采集路径都踩过这个坑
+（用户报「振假名变成和文字一个层级」）：DOM 采样用 `textContent`（真实 DOM 的 textContent
+**包含** `<rt>`），字符串路径 `stripCueTags` 只删标签保留内容——`<ruby>熱<rt>ねつ</rt></ruby>`
+两边都变成「熱ねつ」，被污染的不止显示，查词、制卡 sentence、字幕匹配吃的都是这份 cue.text。
+app 侧 `strip_html_tags.dart` 早为同一形状收过口（BUG-1161），扩展侧的正则判据逐条对齐它。
+
+现在：`cue.text` 只有正文，读音单独留在可选的 `cue.ruby`（「正文段 + 可选读音」的序列）。
+渲染由 `ruby-render.js` 一份实现负责，**字幕列表与视频覆盖层共用**。两条不变式：
+
+- 段拼接恒等于 `stripCueTags` 的正文——畸形注音（`<ruby>漢<rt かん</ruby>` 这类缺 `>` 的输入）
+  整行退回单段，宁可不画振假名，也不让「列表上看到的字」与「查到的词」分岔。
+- 段与 `cue.text` 对不上时不挂 `ruby`：DOM 快照是整句，而逐字扩长被切行后 cue.text 只是后缀，
+  照挂会把振假名标到别的字上。
+
+点振假名不会查到读音：`vendor/selection.js` 的 `getCharacterAtPoint` 命中 `<rt>` 时经
+`resolveRubyBase` 重定向到 ruby base。
+
+## 查词后自动朗读
+
+开关是 **app 的全局偏好**「查词后自动朗读」（`autoReadOnLookup`），扩展不另立一个——它随查词
+响应下发（`data.autoReadOnLookup`），改一处三端一致。这个偏好此前只接了 app 内弹窗、app 外
+瞬态浮窗和剪贴板面板三个表面，扩展是最后一个漏掉的（用户报「查词的时候单词音频没有自动
+播放」）；而「同一个开关在一个表面生效、另一个完全无效」正是 BUG-1210 修过的病，所以补上时
+**页面弹窗与侧边栏弹窗共用 `auto-read.js` 这一份**，不各写一份。
+
+解析走点 ♪ 的同一条路径（`callHandler('resolveWordAudio')` → background → `/api/lookup/audio`），
+播放走 popup.js 自己的 `playWordAudio`，音量、interrupt 语义和失败处理因此与手动点 ♪ 完全一致。
+两条不变式：没有已启用的音频源就不空跑（那时连 ♪ 按钮都不渲染）；换词与关窗作废在途解析——
+慢响应回来不得盖掉用户已经在看的那个新词。
+
+## 字幕列表的点击分工
+
+一行里三块区域各管一件事，互不抢：**时间戳**跳转、**文字**查词、**行内空白**跳转。
+文字块占满整行宽度，点文字右侧的空白同样落在它身上，所以「点文字=查词」必须**取到词才**
+`stopPropagation`；取不到词就把这一击让回给行的 seek。否则用户点空白既查不了词也跳不了，
+只剩一条「未识别到可查词文字」的 toast（用户报「点击空白位置不会跳转到这句」）。
+
+`lookupAtPointer(pointer, { explicit, announceMissing })` 的两个开关也是为此拆开的：`explicit`
+（点击 / 按下 Shift）放行在途闸，`announceMissing` 才决定取不到词时是否提示——它们曾是同一个
+参数，于是「点击」被迫既放行在途闸又必须弹那条 toast。
 
 ## 查词框大小（单一真相源 + 窄侧边栏自动收敛）
 

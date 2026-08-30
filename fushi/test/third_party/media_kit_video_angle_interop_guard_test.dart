@@ -325,13 +325,29 @@ void main() {
     });
 
     test('the software downgrade says that shaders stop applying', () {
+      // C++ 相邻字符串字面量是**一个**字符串，但源码里它们被换行和缩进隔开。
+      // 上一版断言的是精确整串 'glsl-shaders & scale filters are INERT'，于是给
+      // 这条日志补一句 HDR tone-mapping、顺手换行重排之后就恒假——钉住的是措辞，
+      // 不是「降级时到底有没有告诉用户」。这里先把相邻字面量拼回去，再判语义。
+      final String joined =
+          videoOutputCode.replaceAll(RegExp(r'"\s*"'), '');
+      final int inert = joined.indexOf('INERT');
       expect(
-        videoOutputCode.contains('glsl-shaders & scale filters are INERT'),
-        isTrue,
+        inert,
+        greaterThanOrEqualTo(0),
         reason:
             'S/W rendering silently disables 画质增强 / super-resolution; '
             'the log must say so or the next report is undiagnosable '
             '(BUG-1657).',
+      );
+      // 同一条日志里必须点名 glsl-shaders——只喊一句 INERT 而不说什么失效了，
+      // 排障时等于没说。窗口取 INERT 之前的 200 字符（这条日志远短于此）。
+      final String statement =
+          joined.substring(inert < 200 ? 0 : inert - 200, inert);
+      expect(
+        statement.contains('glsl-shaders'),
+        isTrue,
+        reason: 'the INERT log must name glsl-shaders, not just say "inert"',
       );
     });
 

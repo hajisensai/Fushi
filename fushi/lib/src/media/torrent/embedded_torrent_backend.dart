@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:fushi/src/media/torrent/download_save_root.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/torrent_task_display.dart';
+import 'package:fushi/src/media/torrent/tracker_subscription.dart';
 import 'package:fushi_torrent/fushi_torrent.dart';
 
 /// [TorrentBackend] 的内置 libtorrent 实现（阶段1b：Windows 先行）。
@@ -24,7 +25,10 @@ class EmbeddedTorrentBackend
         TorrentRemovalBackend,
         TorrentPauseBackend,
         TorrentDetailBackend,
-        TorrentMetainfoBackend {
+        TorrentMetainfoBackend,
+        TorrentPausedMetainfoBackend,
+        TorrentBulkFilePriorityBackend,
+        TorrentTrackerMutationBackend {
   EmbeddedTorrentBackend({
     required EmbeddedTorrentSession session,
     required TorrentSaveRoots saveRoots,
@@ -34,14 +38,20 @@ class EmbeddedTorrentBackend
     void Function()? endNetworkWake,
     void Function()? reconcileNetworkDiscovery,
     Directory? metainfoTempDirectory,
-  })  : _session = session,
-        _saveRoots = saveRoots,
-        _closesSession = closesSession,
-        _pauseControl = pauseControl,
-        _beginNetworkWake = beginNetworkWake,
-        _endNetworkWake = endNetworkWake,
-        _reconcileNetworkDiscovery = reconcileNetworkDiscovery,
-        _metainfoTempDirectory = metainfoTempDirectory;
+    TrackerSubscriptionService? trackerSubscriptionService,
+    bool autoAddTrackerSubscription = false,
+    String trackerSubscriptionUrl = '',
+  }) : _session = session,
+       _saveRoots = saveRoots,
+       _closesSession = closesSession,
+       _pauseControl = pauseControl,
+       _beginNetworkWake = beginNetworkWake,
+       _endNetworkWake = endNetworkWake,
+       _reconcileNetworkDiscovery = reconcileNetworkDiscovery,
+       _metainfoTempDirectory = metainfoTempDirectory,
+       _trackerSubscriptionService = trackerSubscriptionService,
+       _autoAddTrackerSubscription = autoAddTrackerSubscription,
+       _trackerSubscriptionUrl = trackerSubscriptionUrl;
 
   final EmbeddedTorrentSession _session;
 
@@ -70,6 +80,9 @@ class EmbeddedTorrentBackend
   final bool _closesSession;
 
   final Directory? _metainfoTempDirectory;
+  final TrackerSubscriptionService? _trackerSubscriptionService;
+  final bool _autoAddTrackerSubscription;
+  final String _trackerSubscriptionUrl;
 
   /// 已添加但 firstLastPiecePrio 尚未应用成功（等元数据）的种子。
   final Set<String> _pendingFirstLast = <String>{};
@@ -105,7 +118,7 @@ class EmbeddedTorrentBackend
     final bool isMagnet = magnetOrUrl.startsWith('magnet:');
     final bool isLocalTorrentFile =
         magnetOrUrl.toLowerCase().endsWith('.torrent') &&
-            !magnetOrUrl.contains('://');
+        !magnetOrUrl.contains('://');
     if (!isMagnet && !isLocalTorrentFile) {
       // http(s) .torrent URL：内置引擎不支持（见类注释）。
       return false;
@@ -131,6 +144,10 @@ class EmbeddedTorrentBackend
       _endNetworkWake?.call();
     }
     if (!result.ok || result.id == null) return false;
+    final List<String> trackers = await _subscriptionTrackers();
+    if (trackers.isNotEmpty) {
+      _session.addTrackers(result.id!, trackers);
+    }
     if (firstLastPiecePrio) {
       // 立即试一次（.torrent 文件路径元数据现成）；不成留待轮询补。
       if (_session.applyFirstLastPriority(result.id!) != 1) {
@@ -139,6 +156,26 @@ class EmbeddedTorrentBackend
     }
     return true;
   }
+
+  Future<List<String>> _subscriptionTrackers() async {
+    final TrackerSubscriptionService? service = _trackerSubscriptionService;
+    if (!_autoAddTrackerSubscription ||
+        service == null ||
+        _trackerSubscriptionUrl.trim().isEmpty) {
+      return const <String>[];
+    }
+    try {
+      return await service.fetch(_trackerSubscriptionUrl);
+    } on Object {
+      return const <String>[];
+    }
+  }
+
+  @override
+  Future<bool> addTrackers(
+    String torrentId,
+    Iterable<String> trackerUrls,
+  ) async => _session.addTrackers(torrentId, trackerUrls);
 
   @override
   Future<bool> addTorrentMetainfo(
@@ -153,8 +190,9 @@ class EmbeddedTorrentBackend
       await root.create(recursive: true);
       temporaryDirectory = await root.createTemp('fushi-metainfo-');
       final String fileName = _safeMetainfoFileName(payload.fileName);
-      final File file =
-          File('${temporaryDirectory.path}${Platform.pathSeparator}$fileName');
+      final File file = File(
+        '${temporaryDirectory.path}${Platform.pathSeparator}$fileName',
+      );
       await file.writeAsBytes(payload.bytes, flush: true);
       return addTorrent(
         file.path,
@@ -162,6 +200,60 @@ class EmbeddedTorrentBackend
         sequential: sequential,
         firstLastPiecePrio: firstLastPiecePrio,
       );
+    } on FileSystemException {
+      return false;
+    } finally {
+      if (temporaryDirectory != null) {
+        try {
+          await temporaryDirectory.delete(recursive: true);
+        } on FileSystemException {
+          // Best-effort cleanup. The OS temp directory remains the boundary.
+        }
+      }
+    }
+  }
+
+  @override
+  Future<bool> addTorrentMetainfoPaused(
+    TorrentMetainfoPayload payload, {
+    required String category,
+  }) async {
+    if (!pauseControlAvailable) return false;
+    Directory? temporaryDirectory;
+    String? addedTorrentId;
+    try {
+      final Directory root = _metainfoTempDirectory ?? Directory.systemTemp;
+      await root.create(recursive: true);
+      temporaryDirectory = await root.createTemp('fushi-metainfo-');
+      final String fileName = _safeMetainfoFileName(payload.fileName);
+      final File file = File(
+        '${temporaryDirectory.path}${Platform.pathSeparator}$fileName',
+      );
+      await file.writeAsBytes(payload.bytes, flush: true);
+      final String savePath = _categoryPath(category);
+      if (!await prepareCategory(category)) return false;
+      _beginNetworkWake?.call();
+      final FtAddResult result;
+      try {
+        result = _session.addTorrentFile(file.path, savePath: savePath);
+        if (!result.ok || result.id == null) return false;
+        final bool paused =
+            _pauseControl?.pause(result.id!) ??
+            _session.pauseTorrent(result.id!, pause: true);
+        if (!paused) {
+          _session.removeTorrent(result.id!, deleteFiles: false);
+          return false;
+        }
+        addedTorrentId = result.id!;
+        _localPaused.add(addedTorrentId.toLowerCase());
+      } finally {
+        _endNetworkWake?.call();
+      }
+      final List<String> trackers = await _subscriptionTrackers();
+      if (trackers.isNotEmpty) {
+        _session.addTrackers(addedTorrentId, trackers);
+      }
+      return true;
     } on FileSystemException {
       return false;
     } finally {
@@ -289,10 +381,10 @@ class EmbeddedTorrentBackend
             status: t.updating
                 ? TorrentTrackerStatus.updating
                 : t.working
-                    ? TorrentTrackerStatus.working
-                    : (t.fails > 0 || t.lastError.isNotEmpty)
-                        ? TorrentTrackerStatus.notWorking
-                        : TorrentTrackerStatus.notContacted,
+                ? TorrentTrackerStatus.working
+                : (t.fails > 0 || t.lastError.isNotEmpty)
+                ? TorrentTrackerStatus.notWorking
+                : TorrentTrackerStatus.notContacted,
             seeds: t.scrapeComplete,
             leeches: t.scrapeIncomplete,
             downloaded: t.scrapeDownloaded,
@@ -313,8 +405,8 @@ class EmbeddedTorrentBackend
           (int p) => p <= 0
               ? TorrentFilePriority.skip
               : p >= 6
-                  ? TorrentFilePriority.high
-                  : TorrentFilePriority.normal,
+              ? TorrentFilePriority.high
+              : TorrentFilePriority.normal,
         )
         .toList(growable: false);
   }
@@ -331,6 +423,20 @@ class EmbeddedTorrentBackend
       TorrentFilePriority.high => 7,
     };
     return _session.setFilePriority(torrentId, fileIndex, value);
+  }
+
+  @override
+  Future<bool> setFilePriorities(
+    String torrentId,
+    Iterable<int> fileIndexes,
+    TorrentFilePriority priority,
+  ) async {
+    // 当前 native ABI 只有单文件原语；能力仍收口在 backend，管线无需知道
+    // qB/embedded 的差异。后续 native 增加批量 ABI 时只替换这里。
+    for (final int index in fileIndexes.toSet()) {
+      if (!await setFilePriority(torrentId, index, priority)) return false;
+    }
+    return true;
   }
 
   @override
@@ -383,8 +489,7 @@ class EmbeddedTorrentBackend
   Future<TorrentStorageResult> moveStorage(
     String torrentId,
     String newSavePath,
-  ) async =>
-      _toStorageResult(_session.moveStorage(torrentId, newSavePath));
+  ) async => _toStorageResult(_session.moveStorage(torrentId, newSavePath));
 
   static TorrentStorageResult _toStorageResult(FtStorageOpResult r) =>
       TorrentStorageResult(ok: r.ok, path: r.path, error: r.error);

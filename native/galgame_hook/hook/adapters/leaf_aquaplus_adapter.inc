@@ -461,6 +461,13 @@ bool IsLeafAquaplusProfileMatched() {
                              digest.data(), digest.size(), machine)
           ? &fushi_voice_hook::kWhiteAlbum2LeafAquaplusProfile
           : nullptr;
+  // 摘要已算出，交给共享槽。白2 的准入是**单个** exe hash，用户拿到不同发行版/补丁版
+  // 就必然落空，此时唯一能推进事情的信息就是他这份 hash 是多少——而那一刻本 adapter
+  // 的 probe() 也跟着落空、不再被问话，所以摘要不能留在自己家里（见 host_executable_digest.h）。
+  // 本函数对**任何** x86 游戏都会跑到这里，于是共享槽在"谁都没认领"的场合也是满的。
+  if (executable_read) {
+    fushi_voice_hook::PublishHostExecutableSha256(digest.data(), digest.size());
+  }
   g_leaf_aquaplus_profile.store(profile, std::memory_order_release);
   if (profile != nullptr) {
     InterlockedOr(
@@ -2768,6 +2775,24 @@ public:
     return fushi_voice_hook::AdapterCapability::kText |
            fushi_voice_hook::AdapterCapability::kResourceAudio |
            fushi_voice_hook::AdapterCapability::kPcmAudio;
+  }
+  // v19 准入。这里只把已缓存的结论翻译成准入状态，不做任何判定。
+  //
+  // 本 adapter **报不出 IdentityRejected**，这不是漏写：registry 的汇总只对
+  // `probe()` 成立的 adapter 问话（adapter_registry.inc 的 consider()），而本家
+  // `probe() == IsLeafAquaplusProfileMatched()` —— 身份不符时它根本不会被问到。
+  // 「白2 的另一个发行版」因此落在**没有任何 adapter 认领**那一档，由汇总处按
+  // 模块表稳定后收敛成 EngineUnsupported 并附上共享槽里的 exe 摘要。
+  // 对照 Siglus：它的 probe() 是 `IsSiglusEngine()`（引擎探测），与 hash 门是两回事，
+  // 所以它的 IdentityRejected 真能走到。别照着它给这里补一条。
+  fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
+    fushi_voice_hook::LookupAdmissionReport report;
+    // 身份过了还要 D3D trace 真的装上——白2 的几何全靠那三个 vtable 槽，装不上就
+    // 只有身份没有传感器。这一步失败在真机上很常见（D3D9 设备还没建好就轮询到了）。
+    report.state = g_leaf_d3d_trace_ready.load(std::memory_order_acquire)
+                       ? fushi_voice_hook::kLookupAdmissionSensorInstalled
+                       : fushi_voice_hook::kLookupAdmissionIdentityAccepted;
+    return report;
   }
   void onModuleLoaded(const wchar_t *) override { install(); }
   void shutdown() override {

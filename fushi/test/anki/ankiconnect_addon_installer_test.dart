@@ -118,4 +118,49 @@ void main() {
         archive.files.firstWhere((ArchiveFile f) => f.name == 'config.json');
     expect(utf8.decode(config.content as List<int>), contains('8765'));
   });
+
+  test('bundled asset ships every module its __init__.py imports', () {
+    // 这一条不是形式主义：入库的资产曾经只打了 `__init__.py`/`config.json`/
+    // `config.md` 三个文件，而 `__init__.py` 顶部就 `from .web import …` /
+    // `from .edit import Edit` / `from . import web, util`。装上去的插件在 Anki
+    // 加载时必 ImportError，AnkiConnect 根本不会开始监听——用户只看到「连不上
+    // Anki」，看不出插件压根没起来。上面那条守卫只查文件在不在、字符串对不对，
+    // 结构上抓不到「少打了包内模块」。
+    //
+    // 判据是**行为反推**（扫源码里的相对导入），不是硬编码一份文件清单：将来换
+    // 上游版本、模块增减，这条守卫照样成立。
+    final File asset = File('assets/anki/ankiconnect.ankiaddon');
+    final Archive archive = ZipDecoder().decodeBytes(asset.readAsBytesSync());
+    final Set<String> packaged =
+        archive.files.map((ArchiveFile f) => f.name).toSet();
+    final ArchiveFile init =
+        archive.files.firstWhere((ArchiveFile f) => f.name == '__init__.py');
+    final String source = utf8.decode(init.content as List<int>);
+
+    final Set<String> imported = <String>{};
+    // `from .mod import x` / `from .mod.sub import x`
+    for (final RegExpMatch m
+        in RegExp(r'^from\s+\.(\w+)', multiLine: true).allMatches(source)) {
+      imported.add(m.group(1)!);
+    }
+    // `from . import a, b`
+    for (final RegExpMatch m
+        in RegExp(r'^from\s+\.\s+import\s+([\w,\s]+)$', multiLine: true)
+            .allMatches(source)) {
+      for (final String name in m.group(1)!.split(',')) {
+        final String trimmed = name.trim();
+        if (trimmed.isNotEmpty) imported.add(trimmed);
+      }
+    }
+
+    expect(imported, isNotEmpty,
+        reason: '解析不出任何相对导入，正则跟不上上游写法了，这条守卫已经空转');
+    for (final String module in imported) {
+      expect(
+        packaged.contains('$module.py') || packaged.contains('$module/'),
+        isTrue,
+        reason: '__init__.py 导入了 $module，但插件包里没有它——装上去会 ImportError',
+      );
+    }
+  });
 }

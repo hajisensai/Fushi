@@ -35,6 +35,7 @@ class VideoDiscoveryActions {
     this.onPlay,
     this.onOpenDownloads,
     this.onOpenSubscriptions,
+    this.onCancelDownloads,
   });
 
   final VideoDiscoveryDetailLoader? loadDetails;
@@ -45,6 +46,13 @@ class VideoDiscoveryActions {
   final VideoDiscoveryAction? onPlay;
   final VoidCallback? onOpenDownloads;
   final VoidCallback? onOpenSubscriptions;
+
+  /// 取消本作品当前在飞的下载任务（[VideoDiscoveryAcquisitionState.activeJobIds]）。
+  ///
+  /// 作品页此前**根本没有取消入口**：唯一的取消按钮在下载任务面板里，而详情页连
+  /// 「查看下载」都只在发现**列表**页渲染。用户「感觉下的源不对劲，想再下一个，
+  /// 但是下不了，只能取消或者等下载结束」——连取消都得先自己找到下载页。
+  final Future<void> Function(List<String> jobIds)? onCancelDownloads;
 }
 
 class VideoDiscoveryAcquisitionState {
@@ -53,12 +61,19 @@ class VideoDiscoveryAcquisitionState {
     this.isSubscribed = false,
     this.isInLibrary = false,
     this.isBusy = false,
+    this.activeJobIds = const <String>[],
   });
 
   final String? statusLabel;
   final bool isSubscribed;
   final bool isInLibrary;
   final bool isBusy;
+
+  /// 本作品当前处于 active 生命周期的下载任务 id。
+  ///
+  /// 聚合成一个 bool 是不够的：取消需要知道取消**哪几条**，而同一部作品现在可以
+  /// 并存多条下载（换源重下时旧的还在跑）。
+  final List<String> activeJobIds;
 }
 
 class VideoDiscoveryFact {
@@ -373,6 +388,8 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
             _buildActions(item, state),
             SizedBox(height: FushiDesignTokens.of(context).spacing.gap),
             _buildAcquisitionStatus(state),
+            if (state.isBusy && state.activeJobIds.isNotEmpty)
+              _buildBusyActions(state),
           ],
         );
       },
@@ -392,7 +409,12 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
           key: const ValueKey<String>(
             'video-discovery-search-resource',
           ),
-          onPressed: widget.actions.onSearchResource == null || state.isBusy
+          // 「下载中」不再门控这里。队列层**从来没有** per-series 并发限制
+          // （enqueue 不查重、claimNextVideoDownloadJob 无 per-series 谓词、
+          // 唯一的去重门是「同后端指纹 + 同 info hash」即同一个种子），限制只存在
+          // 于这颗按钮的 disabled 上。用户「感觉下的源不对劲，想再下一个，但是
+          // 下不了，只能取消或者等下载结束」——那是个纯 UI 造出来的死局。
+          onPressed: widget.actions.onSearchResource == null
               ? null
               : () => unawaited(
                     widget.actions.onSearchResource!(context, item),
@@ -479,6 +501,40 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
           ),
         ),
       ],
+    );
+  }
+
+  /// 在飞下载的操作行：取消 / 查看任务。
+  ///
+  /// **单独一行**，不塞进上面那个状态 Row：窗口下限是 360dp（
+  /// [DesktopWindowPlacement.minimumSize]），状态文案本身就已经在抢宽度，再并排
+  /// 两颗带图标的按钮必然溢出。Wrap 让它在更窄时自己换行。
+  Widget _buildBusyActions(VideoDiscoveryAcquisitionState state) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Padding(
+      padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+      child: Wrap(
+        spacing: tokens.spacing.gap,
+        runSpacing: tokens.spacing.gap / 2,
+        children: <Widget>[
+          if (widget.actions.onCancelDownloads != null)
+            TextButton.icon(
+              key: const ValueKey<String>('video-discovery-cancel-download'),
+              onPressed: () => unawaited(
+                widget.actions.onCancelDownloads!(state.activeJobIds),
+              ),
+              icon: const Icon(Icons.close, size: 16),
+              label: Text(t.cancel),
+            ),
+          if (widget.actions.onOpenDownloads != null)
+            TextButton.icon(
+              key: const ValueKey<String>('video-discovery-detail-downloads'),
+              onPressed: widget.actions.onOpenDownloads,
+              icon: const Icon(Icons.download_outlined, size: 16),
+              label: Text(t.download_tasks_tab),
+            ),
+        ],
+      ),
     );
   }
 
