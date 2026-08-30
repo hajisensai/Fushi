@@ -232,7 +232,7 @@ void main() {
 
     test('远端下载 / 导入两条落盘路径都登记', () {
       final String jimaku = region(
-        'Future<void> _openJimakuDialog(VideoPlayerController controller) async {',
+        'Future<void> _openSubtitleWorkbench(VideoPlayerController controller) async {',
         'Future<void> _pickAndImportSubtitle(',
       );
       final int remoteBranch = jimaku.indexOf('await _applyRemoteSubtitle(');

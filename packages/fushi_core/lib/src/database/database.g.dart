@@ -14854,6 +14854,28 @@ class $MediaCollectionsTable extends MediaCollections
         type: DriftSqlType.int,
         requiredDuringInsert: false,
       );
+  static const VerificationMeta _subtitleLanguageMeta = const VerificationMeta(
+    'subtitleLanguage',
+  );
+  @override
+  late final GeneratedColumn<String> subtitleLanguage = GeneratedColumn<String>(
+    'subtitle_language',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _subtitleReleaseGroupMeta =
+      const VerificationMeta('subtitleReleaseGroup');
+  @override
+  late final GeneratedColumn<String> subtitleReleaseGroup =
+      GeneratedColumn<String>(
+        'subtitle_release_group',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -14868,6 +14890,8 @@ class $MediaCollectionsTable extends MediaCollections
     audioTrackId,
     subtitleDelayMs,
     secondarySubtitleDelayMs,
+    subtitleLanguage,
+    subtitleReleaseGroup,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -14972,6 +14996,24 @@ class $MediaCollectionsTable extends MediaCollections
         ),
       );
     }
+    if (data.containsKey('subtitle_language')) {
+      context.handle(
+        _subtitleLanguageMeta,
+        subtitleLanguage.isAcceptableOrUnknown(
+          data['subtitle_language']!,
+          _subtitleLanguageMeta,
+        ),
+      );
+    }
+    if (data.containsKey('subtitle_release_group')) {
+      context.handle(
+        _subtitleReleaseGroupMeta,
+        subtitleReleaseGroup.isAcceptableOrUnknown(
+          data['subtitle_release_group']!,
+          _subtitleReleaseGroupMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -15028,6 +15070,14 @@ class $MediaCollectionsTable extends MediaCollections
       secondarySubtitleDelayMs: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}secondary_subtitle_delay_ms'],
+      ),
+      subtitleLanguage: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}subtitle_language'],
+      ),
+      subtitleReleaseGroup: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}subtitle_release_group'],
       ),
     );
   }
@@ -15112,6 +15162,20 @@ class MediaCollectionRow extends DataClass
   /// 主字幕调轴（v86 前行为）。无损迁移：nullable 无 default → 旧库既有行全 NULL =
   /// 行为与旧版一致（Never break userspace）。
   final int? secondarySubtitleDelayMs;
+
+  /// 系列级默认字幕语言代码（`ja` / `en` …，schema v91）。与 [subtitleDelayMs]
+  /// 同款「系列共享、nullable」语义：非 NULL 时覆盖合集内每一集的字幕语言选择。
+  /// **NULL = 没人配过 → 消费方回退视频内容语言链（`resolveContentLanguage`），
+  /// 绝不是 ja**——语言未知不许替用户猜。无损迁移：nullable 无 default → 旧库既有
+  /// 行全 NULL = 行为与旧版一致（Never break userspace）。
+  final String? subtitleLanguage;
+
+  /// 系列级偏好的字幕版本组键（schema v91）。值是
+  /// `subtitle_version_groups.dart` 的分组键（一个字符串），合集内多版本字幕
+  /// （不同字幕组/发布版本）时优先选这一组。与 [subtitleLanguage] 同款语义：
+  /// **NULL = 没人配过**（消费方走默认选轨），非 NULL 覆盖每集。无损迁移：
+  /// nullable 无 default → 旧库既有行全 NULL = 行为与旧版一致。
+  final String? subtitleReleaseGroup;
   const MediaCollectionRow({
     required this.id,
     required this.name,
@@ -15125,6 +15189,8 @@ class MediaCollectionRow extends DataClass
     this.audioTrackId,
     this.subtitleDelayMs,
     this.secondarySubtitleDelayMs,
+    this.subtitleLanguage,
+    this.subtitleReleaseGroup,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -15155,6 +15221,12 @@ class MediaCollectionRow extends DataClass
         secondarySubtitleDelayMs,
       );
     }
+    if (!nullToAbsent || subtitleLanguage != null) {
+      map['subtitle_language'] = Variable<String>(subtitleLanguage);
+    }
+    if (!nullToAbsent || subtitleReleaseGroup != null) {
+      map['subtitle_release_group'] = Variable<String>(subtitleReleaseGroup);
+    }
     return map;
   }
 
@@ -15184,6 +15256,12 @@ class MediaCollectionRow extends DataClass
       secondarySubtitleDelayMs: secondarySubtitleDelayMs == null && nullToAbsent
           ? const Value.absent()
           : Value(secondarySubtitleDelayMs),
+      subtitleLanguage: subtitleLanguage == null && nullToAbsent
+          ? const Value.absent()
+          : Value(subtitleLanguage),
+      subtitleReleaseGroup: subtitleReleaseGroup == null && nullToAbsent
+          ? const Value.absent()
+          : Value(subtitleReleaseGroup),
     );
   }
 
@@ -15207,6 +15285,10 @@ class MediaCollectionRow extends DataClass
       secondarySubtitleDelayMs: serializer.fromJson<int?>(
         json['secondarySubtitleDelayMs'],
       ),
+      subtitleLanguage: serializer.fromJson<String?>(json['subtitleLanguage']),
+      subtitleReleaseGroup: serializer.fromJson<String?>(
+        json['subtitleReleaseGroup'],
+      ),
     );
   }
   @override
@@ -15227,6 +15309,8 @@ class MediaCollectionRow extends DataClass
       'secondarySubtitleDelayMs': serializer.toJson<int?>(
         secondarySubtitleDelayMs,
       ),
+      'subtitleLanguage': serializer.toJson<String?>(subtitleLanguage),
+      'subtitleReleaseGroup': serializer.toJson<String?>(subtitleReleaseGroup),
     };
   }
 
@@ -15243,6 +15327,8 @@ class MediaCollectionRow extends DataClass
     Value<String?> audioTrackId = const Value.absent(),
     Value<int?> subtitleDelayMs = const Value.absent(),
     Value<int?> secondarySubtitleDelayMs = const Value.absent(),
+    Value<String?> subtitleLanguage = const Value.absent(),
+    Value<String?> subtitleReleaseGroup = const Value.absent(),
   }) => MediaCollectionRow(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -15260,6 +15346,12 @@ class MediaCollectionRow extends DataClass
     secondarySubtitleDelayMs: secondarySubtitleDelayMs.present
         ? secondarySubtitleDelayMs.value
         : this.secondarySubtitleDelayMs,
+    subtitleLanguage: subtitleLanguage.present
+        ? subtitleLanguage.value
+        : this.subtitleLanguage,
+    subtitleReleaseGroup: subtitleReleaseGroup.present
+        ? subtitleReleaseGroup.value
+        : this.subtitleReleaseGroup,
   );
   MediaCollectionRow copyWithCompanion(MediaCollectionsCompanion data) {
     return MediaCollectionRow(
@@ -15287,6 +15379,12 @@ class MediaCollectionRow extends DataClass
       secondarySubtitleDelayMs: data.secondarySubtitleDelayMs.present
           ? data.secondarySubtitleDelayMs.value
           : this.secondarySubtitleDelayMs,
+      subtitleLanguage: data.subtitleLanguage.present
+          ? data.subtitleLanguage.value
+          : this.subtitleLanguage,
+      subtitleReleaseGroup: data.subtitleReleaseGroup.present
+          ? data.subtitleReleaseGroup.value
+          : this.subtitleReleaseGroup,
     );
   }
 
@@ -15304,7 +15402,9 @@ class MediaCollectionRow extends DataClass
           ..write('anilistId: $anilistId, ')
           ..write('audioTrackId: $audioTrackId, ')
           ..write('subtitleDelayMs: $subtitleDelayMs, ')
-          ..write('secondarySubtitleDelayMs: $secondarySubtitleDelayMs')
+          ..write('secondarySubtitleDelayMs: $secondarySubtitleDelayMs, ')
+          ..write('subtitleLanguage: $subtitleLanguage, ')
+          ..write('subtitleReleaseGroup: $subtitleReleaseGroup')
           ..write(')'))
         .toString();
   }
@@ -15323,6 +15423,8 @@ class MediaCollectionRow extends DataClass
     audioTrackId,
     subtitleDelayMs,
     secondarySubtitleDelayMs,
+    subtitleLanguage,
+    subtitleReleaseGroup,
   );
   @override
   bool operator ==(Object other) =>
@@ -15339,7 +15441,9 @@ class MediaCollectionRow extends DataClass
           other.anilistId == this.anilistId &&
           other.audioTrackId == this.audioTrackId &&
           other.subtitleDelayMs == this.subtitleDelayMs &&
-          other.secondarySubtitleDelayMs == this.secondarySubtitleDelayMs);
+          other.secondarySubtitleDelayMs == this.secondarySubtitleDelayMs &&
+          other.subtitleLanguage == this.subtitleLanguage &&
+          other.subtitleReleaseGroup == this.subtitleReleaseGroup);
 }
 
 class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
@@ -15355,6 +15459,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
   final Value<String?> audioTrackId;
   final Value<int?> subtitleDelayMs;
   final Value<int?> secondarySubtitleDelayMs;
+  final Value<String?> subtitleLanguage;
+  final Value<String?> subtitleReleaseGroup;
   const MediaCollectionsCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
@@ -15368,6 +15474,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     this.audioTrackId = const Value.absent(),
     this.subtitleDelayMs = const Value.absent(),
     this.secondarySubtitleDelayMs = const Value.absent(),
+    this.subtitleLanguage = const Value.absent(),
+    this.subtitleReleaseGroup = const Value.absent(),
   });
   MediaCollectionsCompanion.insert({
     this.id = const Value.absent(),
@@ -15382,6 +15490,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     this.audioTrackId = const Value.absent(),
     this.subtitleDelayMs = const Value.absent(),
     this.secondarySubtitleDelayMs = const Value.absent(),
+    this.subtitleLanguage = const Value.absent(),
+    this.subtitleReleaseGroup = const Value.absent(),
   }) : name = Value(name),
        createdAt = Value(createdAt);
   static Insertable<MediaCollectionRow> custom({
@@ -15397,6 +15507,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     Expression<String>? audioTrackId,
     Expression<int>? subtitleDelayMs,
     Expression<int>? secondarySubtitleDelayMs,
+    Expression<String>? subtitleLanguage,
+    Expression<String>? subtitleReleaseGroup,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -15412,6 +15524,9 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       if (subtitleDelayMs != null) 'subtitle_delay_ms': subtitleDelayMs,
       if (secondarySubtitleDelayMs != null)
         'secondary_subtitle_delay_ms': secondarySubtitleDelayMs,
+      if (subtitleLanguage != null) 'subtitle_language': subtitleLanguage,
+      if (subtitleReleaseGroup != null)
+        'subtitle_release_group': subtitleReleaseGroup,
     });
   }
 
@@ -15428,6 +15543,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     Value<String?>? audioTrackId,
     Value<int?>? subtitleDelayMs,
     Value<int?>? secondarySubtitleDelayMs,
+    Value<String?>? subtitleLanguage,
+    Value<String?>? subtitleReleaseGroup,
   }) {
     return MediaCollectionsCompanion(
       id: id ?? this.id,
@@ -15443,6 +15560,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       subtitleDelayMs: subtitleDelayMs ?? this.subtitleDelayMs,
       secondarySubtitleDelayMs:
           secondarySubtitleDelayMs ?? this.secondarySubtitleDelayMs,
+      subtitleLanguage: subtitleLanguage ?? this.subtitleLanguage,
+      subtitleReleaseGroup: subtitleReleaseGroup ?? this.subtitleReleaseGroup,
     );
   }
 
@@ -15487,6 +15606,14 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
         secondarySubtitleDelayMs.value,
       );
     }
+    if (subtitleLanguage.present) {
+      map['subtitle_language'] = Variable<String>(subtitleLanguage.value);
+    }
+    if (subtitleReleaseGroup.present) {
+      map['subtitle_release_group'] = Variable<String>(
+        subtitleReleaseGroup.value,
+      );
+    }
     return map;
   }
 
@@ -15504,7 +15631,9 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
           ..write('anilistId: $anilistId, ')
           ..write('audioTrackId: $audioTrackId, ')
           ..write('subtitleDelayMs: $subtitleDelayMs, ')
-          ..write('secondarySubtitleDelayMs: $secondarySubtitleDelayMs')
+          ..write('secondarySubtitleDelayMs: $secondarySubtitleDelayMs, ')
+          ..write('subtitleLanguage: $subtitleLanguage, ')
+          ..write('subtitleReleaseGroup: $subtitleReleaseGroup')
           ..write(')'))
         .toString();
   }
@@ -58666,6 +58795,8 @@ typedef $$MediaCollectionsTableCreateCompanionBuilder =
       Value<String?> audioTrackId,
       Value<int?> subtitleDelayMs,
       Value<int?> secondarySubtitleDelayMs,
+      Value<String?> subtitleLanguage,
+      Value<String?> subtitleReleaseGroup,
     });
 typedef $$MediaCollectionsTableUpdateCompanionBuilder =
     MediaCollectionsCompanion Function({
@@ -58681,6 +58812,8 @@ typedef $$MediaCollectionsTableUpdateCompanionBuilder =
       Value<String?> audioTrackId,
       Value<int?> subtitleDelayMs,
       Value<int?> secondarySubtitleDelayMs,
+      Value<String?> subtitleLanguage,
+      Value<String?> subtitleReleaseGroup,
     });
 
 final class $$MediaCollectionsTableReferences
@@ -58908,6 +59041,16 @@ class $$MediaCollectionsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get subtitleLanguage => $composableBuilder(
+    column: $table.subtitleLanguage,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get subtitleReleaseGroup => $composableBuilder(
+    column: $table.subtitleReleaseGroup,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> mediaCollectionItemsRefs(
     Expression<bool> Function($$MediaCollectionItemsTableFilterComposer f) f,
   ) {
@@ -59129,6 +59272,16 @@ class $$MediaCollectionsTableOrderingComposer
     column: $table.secondarySubtitleDelayMs,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get subtitleLanguage => $composableBuilder(
+    column: $table.subtitleLanguage,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get subtitleReleaseGroup => $composableBuilder(
+    column: $table.subtitleReleaseGroup,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MediaCollectionsTableAnnotationComposer
@@ -59185,6 +59338,16 @@ class $$MediaCollectionsTableAnnotationComposer
 
   GeneratedColumn<int> get secondarySubtitleDelayMs => $composableBuilder(
     column: $table.secondarySubtitleDelayMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get subtitleLanguage => $composableBuilder(
+    column: $table.subtitleLanguage,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get subtitleReleaseGroup => $composableBuilder(
+    column: $table.subtitleReleaseGroup,
     builder: (column) => column,
   );
 
@@ -59396,6 +59559,8 @@ class $$MediaCollectionsTableTableManager
                 Value<String?> audioTrackId = const Value.absent(),
                 Value<int?> subtitleDelayMs = const Value.absent(),
                 Value<int?> secondarySubtitleDelayMs = const Value.absent(),
+                Value<String?> subtitleLanguage = const Value.absent(),
+                Value<String?> subtitleReleaseGroup = const Value.absent(),
               }) => MediaCollectionsCompanion(
                 id: id,
                 name: name,
@@ -59409,6 +59574,8 @@ class $$MediaCollectionsTableTableManager
                 audioTrackId: audioTrackId,
                 subtitleDelayMs: subtitleDelayMs,
                 secondarySubtitleDelayMs: secondarySubtitleDelayMs,
+                subtitleLanguage: subtitleLanguage,
+                subtitleReleaseGroup: subtitleReleaseGroup,
               ),
           createCompanionCallback:
               ({
@@ -59424,6 +59591,8 @@ class $$MediaCollectionsTableTableManager
                 Value<String?> audioTrackId = const Value.absent(),
                 Value<int?> subtitleDelayMs = const Value.absent(),
                 Value<int?> secondarySubtitleDelayMs = const Value.absent(),
+                Value<String?> subtitleLanguage = const Value.absent(),
+                Value<String?> subtitleReleaseGroup = const Value.absent(),
               }) => MediaCollectionsCompanion.insert(
                 id: id,
                 name: name,
@@ -59437,6 +59606,8 @@ class $$MediaCollectionsTableTableManager
                 audioTrackId: audioTrackId,
                 subtitleDelayMs: subtitleDelayMs,
                 secondarySubtitleDelayMs: secondarySubtitleDelayMs,
+                subtitleLanguage: subtitleLanguage,
+                subtitleReleaseGroup: subtitleReleaseGroup,
               ),
           withReferenceMapper: (p0) => p0
               .map(

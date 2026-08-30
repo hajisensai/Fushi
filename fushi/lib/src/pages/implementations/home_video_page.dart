@@ -66,7 +66,7 @@ import 'package:fushi/src/media/selection/media_selection_controller.dart';
 import 'package:fushi/src/media/selection/selection_gestures.dart';
 import 'package:fushi/src/media/tags/tag_drop.dart';
 import 'package:fushi/src/media/collections/collection_shelf_row.dart';
-import 'package:fushi/src/pages/implementations/jimaku_batch_dialog.dart';
+import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/pages/implementations/video_work_detail_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
@@ -5803,8 +5803,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 合集右键「为合集获取字幕」：与合集详情页 AppBar 同一 [JimakuBatchDialog]
-  /// （绑定 AniList 系列 → 逐集拉最佳字幕）。collection 行重取一次拿最新
+  /// 合集右键「为合集获取字幕」：与合集详情页 AppBar 同一 [SubtitleWorkbenchPage]
+  /// （合集作用域：绑定 AniList 系列 → 统一来源 → 逐集拉最佳字幕）。collection 行重取一次拿最新
   /// anilistId 快照作对话框初值；无本地视频成员时无从拉取，给可见提示而不是静默返回
   /// （避免菜单关闭后静默无响应）。
   Future<void> _openCollectionSubtitles(MediaCollectionRow collection) async {
@@ -5826,13 +5826,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       );
       return;
     }
-    await showDialog<void>(
-      context: context,
-      builder: (_) => JimakuBatchDialog(
-        database: db,
-        collection: fresh,
-        members: members,
-      ),
+    final String saveDir = (await AppPaths.videoSubtitlesDirectory()).path;
+    if (!mounted) return;
+    await SubtitleWorkbenchPage.open(
+      context,
+      host: AppSubtitleWorkbenchHost(ref.read(appProvider)),
+      saveDirectory: saveDir,
+      collection: SubtitleCollectionSpec(collection: fresh, members: members),
+      initialScope: SubtitleWorkbenchScope.collection,
     );
   }
 

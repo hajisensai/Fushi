@@ -2820,6 +2820,26 @@ class FushiDatabase extends _$FushiDatabase
               }
             });
           }
+          if (from < 91) {
+            // v91（合集级字幕偏好）：media_collections 加 subtitle_language、
+            // subtitle_release_group，给「这个系列默认用哪种语言 / 哪个字幕组的
+            // 字幕」一个系列级真值（镜像 v52 subtitle_delay_ms 的「系列共享、
+            // nullable」结构）。无损迁移：两列 nullable 无 default → 旧库既有行
+            // 全 NULL = 没人配过 = 消费方回退视频内容语言链 / 默认选轨，逐字节
+            // 保留 v91 前行为（Never break userspace）；绝不回填 ja。守卫幂等
+            // （fresh DB 已由 onCreate 建好，重复升级 _columnExists 短路 no-op）。
+            if (await _tableExists('media_collections') &&
+                !await _columnExists('media_collections', 'subtitle_language')) {
+              await m.addColumn(
+                  mediaCollections, mediaCollections.subtitleLanguage);
+            }
+            if (await _tableExists('media_collections') &&
+                !await _columnExists(
+                    'media_collections', 'subtitle_release_group')) {
+              await m.addColumn(
+                  mediaCollections, mediaCollections.subtitleReleaseGroup);
+            }
+          }
           if (from < 92) {
             // v92（统计域根本性重构）：学习统计唯一事实表 study_segments +
             // 按媒体身份的删除墓碑 study_segment_tombstones（表注释见 tables.dart）。

@@ -39,7 +39,7 @@ void main() {
 
   test('BUG-1329: Jimaku 下载完把新档就地并入字幕轨列表', () {
     final String body = region(
-      'Future<void> _openJimakuDialog(VideoPlayerController controller) async {',
+      'Future<void> _openSubtitleWorkbench(VideoPlayerController controller) async {',
       'Future<void> _pickAndImportSubtitle(',
     );
     expect(body.contains('_registerImportedSubtitleSource(downloaded)'), isTrue,
