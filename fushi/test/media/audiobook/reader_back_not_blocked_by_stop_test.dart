@@ -65,7 +65,7 @@ void main() {
         activeColor: 0,
       ),
       floatingLyricClickLookup: () => false,
-      onFloatingLyricLookup: (_, __) {},
+      onFloatingLyricLookup: (_, __, ___) {},
       controlStreams: AudioControlStreams(
         playStream: const Stream<void>.empty(),
         seekStream: const Stream<Duration>.empty(),

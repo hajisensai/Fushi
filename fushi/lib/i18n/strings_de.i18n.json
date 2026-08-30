@@ -3890,5 +3890,8 @@
   "gal_hook_toolbar_auto_hide": "Werkzeugleiste automatisch ausblenden",
   "gal_hook_toolbar_auto_hide_hint": "Blendet die Leiste aus, bis der Zeiger den Textkasten erreicht – wie bei LunaHook. Ausgeblendet heißt wirklich weg: Diese Pixel gehören wieder dem Spiel.",
   "gal_hook_passthrough_blocks_mouse": "Text nimmt Klicks trotz Durchklicken an",
-  "gal_hook_passthrough_blocks_mouse_hint": "An: Textzeilen nehmen weiter Klicks an, du kannst also ein Wort antippen. Aus: Das gesamte Overlay ist für die Maus durchlässig – du klickst, was darunter liegt, aber Wörter antippen geht nicht mehr."
+  "gal_hook_passthrough_blocks_mouse_hint": "An: Textzeilen nehmen weiter Klicks an, du kannst also ein Wort antippen. Aus: Das gesamte Overlay ist für die Maus durchlässig – du klickst, was darunter liegt, aber Wörter antippen geht nicht mehr.",
+  "floating_lyric_passthrough": "Klicks nach unten durchreichen",
+  "floating_lyric_transparency": "Hintergrund umschalten",
+  "floating_lyric_topmost": "Immer im Vordergrund"
 }

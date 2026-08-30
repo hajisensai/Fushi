@@ -148,7 +148,7 @@ void main() {
       String? lookupText;
       int? lookupIndex;
       FloatingLyricChannel.setEventHandlers(
-        onLookupText: (String text, int index) {
+        onLookupText: (String text, int index, Rect? wordRect) {
           lookupText = text;
           lookupIndex = index;
         },

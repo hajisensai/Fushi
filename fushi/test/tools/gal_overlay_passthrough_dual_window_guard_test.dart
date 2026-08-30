@@ -315,73 +315,131 @@ void main() {
   });
 
   group('BUG-951 · the two windows cannot drift apart', () {
-    test('slot -> action is one shared table', () {
-      // Both windows index hook_toolbar::kSlotActions, so button 3 is
-      // togglePassThrough in both or in neither.
-      expect(toolbarHeader.contains('kSlotActions'), isTrue);
-      expect(body.contains('hook_toolbar::kSlotActions[slot]'), isTrue,
+    test('slot -> action is one shared table per profile', () {
+      // 两个窗口都通过 SlotAction(profile, slot) 取 action，所以同一个 profile 下
+      // 第 3 颗按钮在两窗里要么都是 togglePassThrough，要么都不是。
+      expect(body.contains('hook_toolbar::SlotAction(toolbar_profile_, slot)'),
+          isTrue,
           reason: 'The body must not keep a private copy of the mapping.');
-      expect(toolbar.contains('hook_toolbar::kSlotActions[slot]'), isTrue);
+      expect(toolbar.contains('hook_toolbar::SlotAction(profile_, slot)'),
+          isTrue);
 
-      final String table = toolbarHeader.substring(
-          toolbarHeader.indexOf('kSlotActions'),
-          toolbarHeader.indexOf('};', toolbarHeader.indexOf('kSlotActions')));
-      // Spelled out on purpose: the row's left-to-right order is muscle memory
-      // (rightmost is always 关闭), so a reorder must be a deliberate edit here
-      // and not something a refactor can do quietly. `topmost` joined at slot 7
-      // in PR#749 — ahead of close, so slots 0..6 kept their index.
-      const List<String> expected = <String>[
-        'replayVoice',
-        'recaptureVoice',
-        'toggleFollow',
-        'togglePassThrough',
-        'toggleTransparency',
-        'lock',
-        'openWorkbench',
-        'topmost',
-        'close',
-      ];
-      final List<String> found = RegExp('"([a-zA-Z]+)"')
-          .allMatches(table)
-          .map((RegExpMatch m) => m.group(1)!)
-          .toList();
-      expect(found, expected,
-          reason: 'Slot order is the wire contract with the Dart controller.');
-      // Derived, not a second literal to keep in sync: a table that grows while
-      // kSlotCount does not is an out-of-bounds read in both windows.
-      expect(
-          toolbarHeader
-              .contains('constexpr int kSlotCount = ${expected.length}'),
-          isTrue,
-          reason: 'kSlotCount must equal the shared table length.');
-      expect(
-          body.contains('kHookTextControlSlotCount = hook_toolbar::kSlotCount'),
-          isTrue,
-          reason: 'The body must derive its slot count from the shared table.');
-
-      // No dead buttons. Every slot must actually be executed somewhere: either
-      // natively in DispatchControlAction (`lock` / `topmost` deliberately skip
-      // the Dart round-trip) or by the Dart controller's action switch. Without
-      // this, adding a slot to the table draws a button that does nothing —
-      // and the hardcoded list above would happily bless it.
       final String dispatcher = functionBody(body,
           'void FloatingLyricWindow::DispatchControlAction(const std::string& action)');
-      for (final String action in expected) {
-        final bool nativelyHandled = dispatcher.contains('== "$action"');
-        final bool dartHandled = dartChannel.contains("case '$action':");
-        expect(nativelyHandled || dartHandled, isTrue,
-            reason: 'Slot "$action" is drawn and hit-tested but nothing runs '
-                'it — neither DispatchControlAction nor the Dart controller '
-                'handles it.');
+
+      /// 一张槽表的完整检查：顺序字面量、声明槽数、无死键。
+      void checkTable({
+        required String countName,
+        required String tableName,
+        required List<String> expected,
+        required String dartConsumer,
+        required String dartExecutor,
+        required String executorRegisterCall,
+      }) {
+        final int tableStart = toolbarHeader.indexOf('$tableName[');
+        expect(tableStart, greaterThan(0), reason: 'missing table $tableName');
+        final String table = toolbarHeader.substring(
+            tableStart, toolbarHeader.indexOf('};', tableStart));
+        final List<String> found = RegExp('"([a-zA-Z]+)"')
+            .allMatches(table)
+            .map((RegExpMatch m) => m.group(1)!)
+            .toList();
+        // Spelled out on purpose: the row's left-to-right order is muscle
+        // memory (rightmost is always 关闭), so a reorder must be a deliberate
+        // edit here and not something a refactor can do quietly.
+        expect(found, expected,
+            reason: 'Slot order is the wire contract with the Dart controller.');
+        // Derived, not a second literal to keep in sync: a table that grows
+        // while its count does not is an out-of-bounds read in both windows.
+        expect(
+            toolbarHeader
+                .contains('constexpr int $countName = ${expected.length}'),
+            isTrue,
+            reason: '$countName must equal the $tableName length.');
+
+        // No dead buttons. Every slot must actually be executed somewhere:
+        // either natively in DispatchControlAction (`lock` / `topmost`
+        // deliberately skip the Dart round-trip) or by the Dart side's action
+        // switch. Without this, adding a slot to the table draws a button that
+        // does nothing — and the hardcoded list above would happily bless it.
+        // 判据必须落在**执行方**，不能只到 channel 的转发层。
+        //
+        // 原来只查 `dartConsumer.contains("case '$action':")` —— 那是 channel 里
+        // 一行 `_onX?.call()`，无论上游注册的是真实现还是一行 debugPrint 都命中。
+        // 有声书的 togglePassThrough / toggleTransparency 就是这么绿着的：画得出、
+        // 点得到、按下去什么也不发生。所以在「channel 有 case」之上再要求
+        // 「注册方真的把这个 handler 传进去了」。
+        final int registerAt = dartExecutor.indexOf(executorRegisterCall);
+        expect(registerAt, isNonNegative,
+            reason: '找不到 $executorRegisterCall 的注册点，判据会退化成恒真');
+        final String registration = dartExecutor.substring(
+            registerAt, dartExecutor.indexOf('\n    );', registerAt));
+        for (final String action in expected) {
+          final bool nativelyHandled = dispatcher.contains('== "$action"');
+          if (nativelyHandled) continue;
+          expect(dartConsumer.contains("case '$action':"), isTrue,
+              reason: 'Slot "$action" 在 channel 里没有转发分支。');
+          // channel 的字段名是 `_on<Action 首字母大写>`，注册参数名去掉下划线。
+          final String handler =
+              'on${action[0].toUpperCase()}${action.substring(1)}:';
+          expect(registration.contains(handler), isTrue,
+              reason: 'Slot "$action" 画得出、点得到，但注册方没给 $handler —— '
+                  'channel 那一行 `?.call()` 命中的是 null，按下去什么也不发生。'
+                  '要么接上真实现，要么把它从槽表里删掉。');
+        }
       }
+
+      checkTable(
+        countName: 'kGalHookSlotCount',
+        tableName: 'kGalHookSlotActions',
+        expected: const <String>[
+          'replayVoice',
+          'recaptureVoice',
+          'toggleFollow',
+          'togglePassThrough',
+          'toggleTransparency',
+          'lock',
+          'openWorkbench',
+          'topmost',
+          'close',
+        ],
+        dartConsumer: dartChannel,
+        dartExecutor:
+            File('lib/src/lookup/gal_hook_text_overlay_controller.dart')
+                .readAsStringSync(),
+        executorRegisterCall: 'GalHookTextOverlayChannel.setEventHandlers(',
+      );
+      checkTable(
+        countName: 'kAudiobookSlotCount',
+        tableName: 'kAudiobookSlotActions',
+        expected: const <String>[
+          'previousCue',
+          'playPause',
+          'nextCue',
+          'lock',
+          'topmost',
+          'close',
+        ],
+        dartConsumer:
+            File('lib/src/media/audiobook/floating_lyric_channel.dart')
+                .readAsStringSync(),
+        dartExecutor: File('lib/src/media/audiobook/audiobook_session.dart')
+            .readAsStringSync(),
+        executorRegisterCall: 'FloatingLyricChannel.setEventHandlers(',
+      );
     });
 
     test('glyph + active tint are shared too', () {
-      expect(body.contains('hook_toolbar::SlotGlyph(slot, tb_states)'), isTrue);
       expect(
-          body.contains('hook_toolbar::SlotActive(slot, tb_states)'), isTrue);
+          body.contains(
+              'hook_toolbar::SlotGlyph(toolbar_profile_, slot, tb_states)'),
+          isTrue);
       expect(
-          toolbar.contains('hook_toolbar::SlotGlyph(slot, states_)'), isTrue);
+          body.contains(
+              'hook_toolbar::SlotActive(toolbar_profile_, slot,'),
+          isTrue);
+      expect(toolbar.contains('hook_toolbar::SlotGlyph(profile_, slot, states_)'),
+          isTrue);
     });
 
     test('one dispatcher runs a button, whichever window was clicked', () {

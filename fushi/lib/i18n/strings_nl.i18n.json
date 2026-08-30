@@ -3890,5 +3890,8 @@
   "gal_hook_toolbar_auto_hide": "Werkbalk automatisch verbergen",
   "gal_hook_toolbar_auto_hide_hint": "Verbergt de werkbalk tot de aanwijzer het tekstvak bereikt, zoals LunaHook. Verborgen is echt verborgen — die pixels gaan terug naar het spel.",
   "gal_hook_passthrough_blocks_mouse": "Tekst vangt nog klikken tijdens doorklikken",
-  "gal_hook_passthrough_blocks_mouse_hint": "Aan: tekstregels blijven klikken aannemen, zodat je een woord kunt aantikken. Uit: de hele overlay is transparant voor de muis — je klikt wat eronder ligt, maar woorden aantikken werkt niet meer."
+  "gal_hook_passthrough_blocks_mouse_hint": "Aan: tekstregels blijven klikken aannemen, zodat je een woord kunt aantikken. Uit: de hele overlay is transparant voor de muis — je klikt wat eronder ligt, maar woorden aantikken werkt niet meer.",
+  "floating_lyric_passthrough": "Klikken doorlaten naar wat eronder ligt",
+  "floating_lyric_transparency": "Achtergrond omschakelen",
+  "floating_lyric_topmost": "Altijd op de voorgrond"
 }

@@ -3890,5 +3890,8 @@
   "gal_hook_toolbar_auto_hide": "Ocultar a barra automaticamente",
   "gal_hook_toolbar_auto_hide_hint": "Oculta a barra até o ponteiro chegar à caixa de legenda, no estilo do LunaHook. Oculto significa oculto de verdade — aqueles pixels voltam para o jogo.",
   "gal_hook_passthrough_blocks_mouse": "A legenda ainda recebe cliques durante o clique passante",
-  "gal_hook_passthrough_blocks_mouse_hint": "Ligado: as linhas de texto continuam recebendo cliques, então você pode tocar numa palavra. Desligado: toda a sobreposição fica transparente ao mouse — você clica no que está embaixo, mas tocar palavras não funciona mais."
+  "gal_hook_passthrough_blocks_mouse_hint": "Ligado: as linhas de texto continuam recebendo cliques, então você pode tocar numa palavra. Desligado: toda a sobreposição fica transparente ao mouse — você clica no que está embaixo, mas tocar palavras não funciona mais.",
+  "floating_lyric_passthrough": "Deixar os cliques passarem para baixo",
+  "floating_lyric_transparency": "Alternar o fundo",
+  "floating_lyric_topmost": "Manter sempre visível"
 }

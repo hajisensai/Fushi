@@ -845,6 +845,14 @@ struct WindowCapturePending {
 
 void FlutterWindow::RegisterFloatingLyricChannel() {
   floating_lyric_window_ = std::make_unique<FloatingLyricWindow>();
+  // 有声书悬浮字幕跑与 galgame hook 台词浮窗同一套富文本形态：换行、滚动条、
+  // 拖角改尺寸、鼠标穿透、一键透明、Shift-悬停查词、点字后卡片锚定到那个字。
+  // 旧的自绘 5 槽歌词条形态已删 —— 它是同一件事的第二份实现，且只有它还在用无坐标
+  // 的旧 LookupCallback（卡片只能跟着鼠标飘）。
+  floating_lyric_window_->SetHookTextMode(true);
+  // 但按钮语义不同：这里是上一句 / 播放暂停 / 下一句，不是试听 / 重捕 / 工作台。
+  floating_lyric_window_->SetToolbarProfile(
+      hook_toolbar::Profile::kAudiobook);
 
   floating_lyric_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
@@ -860,15 +868,55 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
         floating_lyric_channel_->InvokeMethod(
             action, std::make_unique<flutter::EncodableValue>());
       });
-  floating_lyric_window_->SetLookupCallback(
-      [this](const std::string& text, int char_index) {
+  // 带词矩形的查词回调（与 gal 台词浮窗同一条）：wordLeft/Top/Width/Height 是被点
+  // 那个字的屏幕逻辑 px 矩形，查词卡据此锚定到词而不是鼠标位置。老字段 text/index
+  // 原样保留，Dart 侧读不到词矩形时回落到光标锚定，逐像素与改造前一致。
+  floating_lyric_window_->SetContextLookupCallback(
+      [this](const std::string& line_id, const std::string& text,
+             int char_index, const D2D1_RECT_F& word_rect) {
         flutter::EncodableMap map{
+            {flutter::EncodableValue("lineId"),
+             flutter::EncodableValue(line_id)},
             {flutter::EncodableValue("text"), flutter::EncodableValue(text)},
             {flutter::EncodableValue("index"),
              flutter::EncodableValue(char_index)},
+            {flutter::EncodableValue("wordLeft"),
+             flutter::EncodableValue(static_cast<double>(word_rect.left))},
+            {flutter::EncodableValue("wordTop"),
+             flutter::EncodableValue(static_cast<double>(word_rect.top))},
+            {flutter::EncodableValue("wordWidth"),
+             flutter::EncodableValue(
+                 static_cast<double>(word_rect.right - word_rect.left))},
+            {flutter::EncodableValue("wordHeight"),
+             flutter::EncodableValue(
+                 static_cast<double>(word_rect.bottom - word_rect.top))},
         };
         floating_lyric_channel_->InvokeMethod(
             "lookupText",
+            std::make_unique<flutter::EncodableValue>(std::move(map)));
+      });
+  // 穿透被 native 否决时必须让 Dart 知道（工具条窗建不出来 = 不许把正文点穿，
+  // 否则用户被浮窗挡住且再也点不回来）。
+  floating_lyric_window_->SetPassThroughCallback([this](bool enabled) {
+    flutter::EncodableMap map{
+        {flutter::EncodableValue("passThrough"),
+         flutter::EncodableValue(enabled)},
+    };
+    floating_lyric_channel_->InvokeMethod(
+        "passThroughChanged",
+        std::make_unique<flutter::EncodableValue>(std::move(map)));
+  });
+  floating_lyric_window_->SetBoundsCallback(
+      [this](int left, int top, int width, int height) {
+        flutter::EncodableMap map{
+            {flutter::EncodableValue("left"), flutter::EncodableValue(left)},
+            {flutter::EncodableValue("top"), flutter::EncodableValue(top)},
+            {flutter::EncodableValue("width"), flutter::EncodableValue(width)},
+            {flutter::EncodableValue("height"),
+             flutter::EncodableValue(height)},
+        };
+        floating_lyric_channel_->InvokeMethod(
+            "windowRectChanged",
             std::make_unique<flutter::EncodableValue>(std::move(map)));
       });
   // The user toggling the lock button on the strip reports the new state back
@@ -893,14 +941,32 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
           // permission exists, so it is always permitted.
           result->Success(flutter::EncodableValue(true));
         } else if (method == "show") {
+          // 工具条槽位悬停提示（与 kAudiobookSlotActions 同下标）。native 不持有
+          // i18n，文案按 locale 由 Dart 下发；表按 profile 分开存，不会和 gal
+          // 台词浮窗的提示互相覆盖。
+          hook_toolbar::SetSlotTooltips(
+              hook_toolbar::Profile::kAudiobook,
+              WideListFromValue(args, "slotTooltips"));
           floating_lyric_window_->UpdateStyle(StyleFromArgs(args));
           floating_lyric_window_->SetClickLookupEnabled(
               BoolFromValue(args, "clickLookupEnabled", true));
+          floating_lyric_window_->SetHoverAutoLookup(
+              BoolFromValue(args, "hoverAutoLookup", false));
+          // 置顶 / 穿透按会话复位：上一次关掉置顶后，这一次不该藏在别的窗口后面
+          // 让用户以为它没出来；穿透同理（开着穿透复原 = 用户点不到浮窗）。
+          floating_lyric_window_->SetTopmost(
+              BoolFromValue(args, "topmost", true));
           if (args != nullptr &&
               args->find(flutter::EncodableValue("locked")) != args->end()) {
             floating_lyric_window_->SetLocked(
                 BoolFromValue(args, "locked", false));
           }
+          floating_lyric_window_->SetPassThrough(
+              BoolFromValue(args, "passThrough", false));
+          floating_lyric_window_->SetInitialBounds(
+              IntFromValue(args, "left", 0), IntFromValue(args, "top", 0),
+              IntFromValue(args, "width", 0),
+              IntFromValue(args, "height", 0));
           const bool shown = floating_lyric_window_->Show(GetHandle());
           result->Success(flutter::EncodableValue(shown));
         } else if (method == "hide") {
@@ -915,7 +981,9 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
           floating_lyric_window_->UpdateText(
               WideFromValue(args, "text", L""),
               IntFromValue(args, "currentLineStart", -1),
-              IntFromValue(args, "currentLineLength", 0));
+              IntFromValue(args, "currentLineLength", 0),
+              StringFromValue(args, "lineId", ""),
+              RubySpansFromValue(args, "rubySpans"));
           result->Success();
         } else if (method == "highlight") {
           floating_lyric_window_->Highlight(IntFromValue(args, "start", -1),
@@ -949,6 +1017,15 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
           // any user-driven toggle back over "lockChanged".
           floating_lyric_window_->SetLocked(
               BoolFromValue(args, "locked", false));
+          result->Success();
+        } else if (method == "setPassThrough") {
+          floating_lyric_window_->SetPassThrough(
+              BoolFromValue(args, "enabled", false));
+          result->Success();
+        } else if (method == "setHoverAutoLookup") {
+          // 「悬停即查词」live 下发：设置页一改，正开着的浮窗立刻跟上。
+          floating_lyric_window_->SetHoverAutoLookup(
+              BoolFromValue(args, "enabled", false));
           result->Success();
         } else {
           result->NotImplemented();
@@ -1138,8 +1215,9 @@ void FlutterWindow::RegisterGalHookTextChannel() {
           // 按 locale 由 Dart 在 show 载荷里下发：native 不持有 i18n，正文内
           // 工具条与穿透工具条窗读的是这同一张表。缺键 = 无提示，老 payload
           // 不受影响。
-          hook_toolbar::SetSlotTooltips(WideListFromValue(args,
-                                                          "slotTooltips"));
+          hook_toolbar::SetSlotTooltips(
+              hook_toolbar::Profile::kGalHook,
+              WideListFromValue(args, "slotTooltips"));
           gal_hook_text_window_->UpdateStyle(StyleFromArgs(args));
           gal_hook_text_window_->SetClickLookupEnabled(
               BoolFromValue(args, "clickLookupEnabled", true));

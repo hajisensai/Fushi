@@ -3890,5 +3890,8 @@
   "gal_hook_toolbar_auto_hide": "自動隱藏功能欄",
   "gal_hook_toolbar_auto_hide_hint": "指標移到字幕框才顯示功能欄（LunaHook 那種）。隱藏就是真的隱藏——那塊像素還給遊戲。",
   "gal_hook_passthrough_blocks_mouse": "穿透時字幕仍接點擊",
-  "gal_hook_passthrough_blocks_mouse_hint": "開：文字行仍然接點擊，所以點得到字。關：整個浮層對滑鼠完全透明——點得到下面的東西，但點字就失效了。"
+  "gal_hook_passthrough_blocks_mouse_hint": "開：文字行仍然接點擊，所以點得到字。關：整個浮層對滑鼠完全透明——點得到下面的東西，但點字就失效了。",
+  "floating_lyric_passthrough": "鼠標穿透到下層視窗",
+  "floating_lyric_transparency": "切換底板",
+  "floating_lyric_topmost": "保持置頂"
 }

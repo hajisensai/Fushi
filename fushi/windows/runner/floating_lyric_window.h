@@ -187,9 +187,18 @@ class FloatingLyricWindow {
   // 关闭时（默认）hook 浮窗只在**按住 Shift** 悬停时查词；打开时纯悬停即查。
   // Shift-悬停本身不受此开关控制，它是查词的通用手势。
   void SetHoverAutoLookup(bool enabled);
+  // 这个浮窗画哪张工具条槽表。hook 台词浮窗用 kGalHook（试听 / 重捕 / 工作台），
+  // 有声书悬浮字幕用 kAudiobook（上一句 / 播放暂停 / 下一句）。两者共用同一套富
+  // 文本渲染面（换行、滚动、resize、穿透、点字锚定查词），只有按钮语义不同 ——
+  // 这正是槽表按用途分表、而不是再复制一份窗口类的原因。
+  void SetToolbarProfile(hook_toolbar::Profile profile) {
+    toolbar_profile_ = profile;
+  }
+  hook_toolbar::Profile ToolbarProfile() const { return toolbar_profile_; }
+
   // Rich text-only mode used by the galgame Hook window: the strip draws the
   // draggable, tappable text (no playback / close controls) and enables
-  // wrapping, resizing, the shared-slot toolbar (hook_toolbar::kSlotActions),
+  // wrapping, resizing, the shared-slot toolbar (see SetToolbarProfile),
   // line-context lookup and body pass-through. Set once right after
   // construction (before Show); the audiobook lyric instance leaves it false so
   // its rendering + hit-testing stay byte-for-byte unchanged.
@@ -452,6 +461,10 @@ class FloatingLyricWindow {
   // lyric strip.
   bool text_only_ = false;
   bool hook_text_mode_ = false;
+  // 工具条槽表用途（见 SetToolbarProfile）。默认 kGalHook：hook 浮窗是这套工具条
+  // 的原始用户，默认值保持它零改动。
+  hook_toolbar::Profile toolbar_profile_ =
+      hook_toolbar::Profile::kGalHook;
   bool pass_through_ = false;
   // Mirrors the WS_EX_TRANSPARENT bit currently on hwnd_ so the ex-style is
   // only rewritten when it actually changes.

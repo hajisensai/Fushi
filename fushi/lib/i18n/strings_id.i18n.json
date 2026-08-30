@@ -3890,5 +3890,8 @@
   "gal_hook_toolbar_auto_hide": "Sembunyikan bilah otomatis",
   "gal_hook_toolbar_auto_hide_hint": "Sembunyikan bilah sampai penunjuk mencapai kotak teks, ala LunaHook. Tersembunyi artinya benar-benar hilang — piksel itu kembali ke game.",
   "gal_hook_passthrough_blocks_mouse": "Teks tetap menerima klik saat klik-tembus",
-  "gal_hook_passthrough_blocks_mouse_hint": "Aktif: baris teks tetap menerima klik sehingga kamu bisa mengetuk kata. Nonaktif: seluruh lapisan tembus bagi tetikus — kamu bisa mengeklik apa pun di bawahnya, tapi mengetuk kata tidak lagi berfungsi."
+  "gal_hook_passthrough_blocks_mouse_hint": "Aktif: baris teks tetap menerima klik sehingga kamu bisa mengetuk kata. Nonaktif: seluruh lapisan tembus bagi tetikus — kamu bisa mengeklik apa pun di bawahnya, tapi mengetuk kata tidak lagi berfungsi.",
+  "floating_lyric_passthrough": "Teruskan klik ke jendela di bawahnya",
+  "floating_lyric_transparency": "Alihkan latar belakang",
+  "floating_lyric_topmost": "Tetap di atas"
 }

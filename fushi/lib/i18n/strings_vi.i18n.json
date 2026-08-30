@@ -3890,5 +3890,8 @@
   "gal_hook_toolbar_auto_hide": "Tự ẩn thanh công cụ",
   "gal_hook_toolbar_auto_hide_hint": "Ẩn thanh công cụ cho tới khi con trỏ chạm vào khung phụ đề, kiểu LunaHook. Ẩn là ẩn thật — số điểm ảnh đó trả lại cho game.",
   "gal_hook_passthrough_blocks_mouse": "Phụ đề vẫn nhận nhấp chuột khi xuyên chuột",
-  "gal_hook_passthrough_blocks_mouse_hint": "Bật: các dòng chữ vẫn nhận nhấp chuột nên bạn chạm được vào từ. Tắt: toàn bộ lớp phủ trong suốt với chuột — bạn bấm được thứ bên dưới, nhưng chạm vào từ không còn tác dụng."
+  "gal_hook_passthrough_blocks_mouse_hint": "Bật: các dòng chữ vẫn nhận nhấp chuột nên bạn chạm được vào từ. Tắt: toàn bộ lớp phủ trong suốt với chuột — bạn bấm được thứ bên dưới, nhưng chạm vào từ không còn tác dụng.",
+  "floating_lyric_passthrough": "Cho phép nhấp xuyên xuống dưới",
+  "floating_lyric_transparency": "Bật/tắt nền",
+  "floating_lyric_topmost": "Luôn hiển thị trên cùng"
 }

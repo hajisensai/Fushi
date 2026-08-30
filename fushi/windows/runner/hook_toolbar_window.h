@@ -40,8 +40,9 @@
 // ---------------------------------
 //  * geometry is pushed in (HookToolbarLayout), never recomputed here, so the
 //    two windows cannot drift apart about where the buttons are;
-//  * slot -> action mapping lives in kSlotActions below and is shared with the
-//    body window's ControlActionAt(), so button 3 means the same thing in both;
+//  * slot -> action mapping lives in the per-profile tables below and is
+//    resolved through SlotAction(), shared with the body window's
+//    ControlActionAt(), so button 3 means the same thing in both;
 //  * dragging the toolbar background drags the OWNER window (the body), which
 //    is the only way to move the overlay while the body takes no mouse input.
 //
@@ -49,11 +50,25 @@
 
 namespace hook_toolbar {
 
+// 工具条用途。同一个浮窗类服务两种用途，两者的按钮**语义不同**，所以槽表按用途
+// 分表：galgame hook 台词浮窗要试听 / 重捕 / 工作台，有声书悬浮字幕要上一句 /
+// 播放暂停 / 下一句。
+//
+// 关键约束：SlotActive / SlotGlyph / DrawSlotIcon 一律**先取 action 字符串再分
+// 支**，绝不按槽位下标 switch。两张表长度不同、同一个下标在两表里是两回事，按
+// 下标分支必然在加表的那天集体错位（play 图标画到关闭键上）；按 action 分支则
+// 新增一张表只需要给没见过的 action 补一个 case，已有 action 一个字都不用动。
+enum class Profile {
+  kGalHook,    // galgame hook 台词浮窗
+  kAudiobook,  // 有声书悬浮字幕
+};
+
 // Draw / hit-test order of the galgame hook toolbar. Single source of truth:
-// FloatingLyricWindow::ControlActionAt() indexes the same table, so the body
-// window and the standalone toolbar can never disagree about what a slot does.
-constexpr int kSlotCount = 9;
-constexpr const char* kSlotActions[kSlotCount] = {
+// FloatingLyricWindow::ControlActionAt() resolves through SlotAction(), so the
+// body window and the standalone toolbar can never disagree about what a slot
+// does.
+constexpr int kGalHookSlotCount = 9;
+constexpr const char* kGalHookSlotActions[kGalHookSlotCount] = {
     "replayVoice",         // 0 replay the line's captured audio
     "recaptureVoice",      // 1 open a recapture window
     "toggleFollow",        // 2 follow / pause caption updates
@@ -69,6 +84,41 @@ constexpr const char* kSlotActions[kSlotCount] = {
     "topmost",
     "close",  // 8 close the overlay
 };
+
+// 有声书悬浮字幕的槽表。前三颗是播放控制（沿用旧歌词条的肌肉记忆顺序：上一句 /
+// 播放暂停 / 下一句），后五颗是窗口能力键，与 hook 表同名同义——同名 action 在
+// 两张表里永远是同一件事，这正是 action 驱动分支换来的性质。
+//
+// 没有 replayVoice / recaptureVoice / openWorkbench：那三颗是 galgame 捕获链专
+// 属，对有声书是死键。也没有 toggleFollow：有声书的「跟随」就是播放本身，
+// playPause 已经表达了它。
+//
+// **也没有 togglePassThrough / toggleTransparency**：这两个 action 不像 lock /
+// topmost 那样由 DispatchControlAction 就地翻转，它们经 on_control_ 转给 Dart，
+// 而有声书那一侧的处理函数（audiobook_session.dart）只有一行 debugPrint ——
+// 画得出、点得到、按下去什么也不发生。galgame 那边有真实现（穿透是 hook 浮窗的
+// 核心能力），有声书没有；在真接上之前，这里就不该画出来。
+// 要加回来：先在 audiobook_session 接上真正的翻转，再把 action 放回本表。
+constexpr int kAudiobookSlotCount = 6;
+constexpr const char* kAudiobookSlotActions[kAudiobookSlotCount] = {
+    "previousCue",  // 0 上一句
+    "playPause",    // 1 播放 / 暂停
+    "nextCue",      // 2 下一句
+    "lock",         // 3 位置锁定
+    "topmost",      // 4 置顶图钉（native 就地翻转）
+    "close",        // 5 关闭
+};
+
+// 任一 profile 的最大槽数：窗口最小宽度等「必须容得下最宽工具条」的几何常量按它
+// 取，不必随分表增删跟着改。
+constexpr int kMaxSlotCount = kGalHookSlotCount > kAudiobookSlotCount
+                                  ? kGalHookSlotCount
+                                  : kAudiobookSlotCount;
+
+// |profile| 的槽位数。
+int SlotCount(Profile profile);
+// |profile| 第 |slot| 槽的 action；越界返回 ""（空 action = 不是按钮命中）。
+const char* SlotAction(Profile profile, int slot);
 
 // Button states that change a slot's glyph or its active tint.
 struct States {
@@ -107,9 +157,13 @@ struct Layout {
 };
 
 // Whether |slot| draws with the active (highlight) colour under |states|.
-bool SlotActive(int slot, const States& states);
-// Material Symbols Rounded codepoint for |slot| under |states|.
-const wchar_t* SlotGlyph(int slot, const States& states);
+bool SlotActive(Profile profile, int slot, const States& states);
+// Material Symbols Rounded codepoint for |slot| under |states|, or L"" when the
+// bundled font subset has no glyph for that action — callers must fall back to
+// DrawSlotIcon() for those, per slot. 打包的是 11 个码位的极小子集
+// （assets/fonts/MaterialSymbolsRounded.ttf），新 action 若不在子集里，用字体画
+// 出来的是豆腐块，所以「有没有字形」必须由这里如实回答，不能让调用方假定全有。
+const wchar_t* SlotGlyph(Profile profile, int slot, const States& states);
 // Loads the bundled subset from Flutter's packaged assets into an isolated
 // DirectWrite collection. The caller owns the returned reference.
 bool LoadMaterialSymbolsRoundedFontCollection(
@@ -117,16 +171,18 @@ bool LoadMaterialSymbolsRoundedFontCollection(
 // Draws a font-independent, optically aligned vector icon for |slot|. Keeping
 // this as a missing-asset fallback keeps the pass-through escape hatch usable
 // even if an incomplete development bundle omits the packaged font.
-void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory, int slot,
-                  const States& states, const D2D1_RECT_F& bounds,
-                  ID2D1Brush* brush);
+void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory,
+                  Profile profile, int slot, const States& states,
+                  const D2D1_RECT_F& bounds, ID2D1Brush* brush);
 
 // 槽位悬停提示文案（本地化，由 Dart 在 show 载荷里按 locale 下发；未下发 /
-// 越界 = 空串 = 不显示）。与 kSlotActions 同下标，单一真相：正文内工具条和
+// 越界 = 空串 = 不显示）。与该 profile 的槽表同下标，单一真相：正文内工具条和
 // 穿透工具条问的是同一张表，两处提示不可能各说各话。主线程专用（与整个模块
 // 同一约束）。
-void SetSlotTooltips(std::vector<std::wstring> tooltips);
-const std::wstring& SlotTooltip(int slot);
+// 提示表按 profile 分开存：两种用途的按钮不是一回事，共用一张表意味着后 show 的
+// 那个浮窗会把另一个的提示文案整表覆盖掉（两个浮窗可以同时在屏上）。
+void SetSlotTooltips(Profile profile, std::vector<std::wstring> tooltips);
+const std::wstring& SlotTooltip(Profile profile, int slot);
 
 // 手动追踪式 Win32 tooltip（TOOLTIPS_CLASS + TTM_TRACKACTIVATE）。
 //
@@ -144,7 +200,8 @@ class SlotTooltipHost {
 
   // 在屏幕物理坐标 (|screen_x|, |screen_y|) 为 |slot| 显示提示。slot 未变则
   // no-op（提示钉在初次进入处，不随抖动跳）；slot < 0 或该槽文案为空则隐藏。
-  void Update(HWND owner, int slot, int screen_x, int screen_y);
+  void Update(HWND owner, Profile profile, int slot, int screen_x,
+              int screen_y);
   void Hide();
 
  private:
@@ -163,8 +220,8 @@ class SlotTooltipHost {
 
 class HookToolbarWindow {
  public:
-  // Reports a toolbar button press. The string is one of
-  // hook_toolbar::kSlotActions and is dispatched through exactly the same
+  // Reports a toolbar button press. The string is one of the current
+  // profile's slot actions and is dispatched through exactly the same
   // owner-side handler as a press on the in-body toolbar.
   using ActionCallback = std::function<void(const std::string& action)>;
   // Requested new top-left for the OWNER window (screen physical px) while the
@@ -191,7 +248,10 @@ class HookToolbarWindow {
   // Creates (if needed), positions and shows the toolbar. Returns false when
   // the OS window could not be created — the caller MUST then refuse to make
   // the body click-through, otherwise the user is locked out with no way back.
-  bool Show(const hook_toolbar::Layout& layout,
+  //
+  // |profile| 决定这条工具条画哪张槽表。它随每次 Show / Sync 推进来（而不是构造时
+  // 定死）：owner 是哪种用途只有 owner 知道，工具条窗自己不该猜。
+  bool Show(hook_toolbar::Profile profile, const hook_toolbar::Layout& layout,
             const hook_toolbar::Style& style,
             const hook_toolbar::States& states);
   void Hide();
@@ -200,7 +260,7 @@ class HookToolbarWindow {
   // Idempotent re-sync of geometry / colours / states. No-op (not even a
   // repaint) when nothing changed, so the owner can call it from every render
   // without turning caption updates into toolbar redraws.
-  void Sync(const hook_toolbar::Layout& layout,
+  void Sync(hook_toolbar::Profile profile, const hook_toolbar::Layout& layout,
             const hook_toolbar::Style& style,
             const hook_toolbar::States& states);
 
@@ -240,6 +300,8 @@ class HookToolbarWindow {
   hook_toolbar::Layout layout_;
   hook_toolbar::Style style_;
   hook_toolbar::States states_;
+  // 当前槽表用途。由 Show / Sync 推入，绘制与命中都问它，两者不可能各画各的。
+  hook_toolbar::Profile profile_ = hook_toolbar::Profile::kGalHook;
   bool has_layout_ = false;
 
   Microsoft::WRL::ComPtr<ID2D1Factory> d2d_factory_;

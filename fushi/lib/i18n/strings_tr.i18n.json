@@ -3890,5 +3890,8 @@
   "gal_hook_toolbar_auto_hide": "Araç çubuğunu otomatik gizle",
   "gal_hook_toolbar_auto_hide_hint": "İmleç altyazı kutusuna gelene kadar araç çubuğunu gizler, LunaHook tarzı. Gizli gerçekten gizli demek — o pikseller oyuna geri döner.",
   "gal_hook_passthrough_blocks_mouse": "Tıklama geçişi açıkken altyazı yine tıklama alır",
-  "gal_hook_passthrough_blocks_mouse_hint": "Açık: metin satırları tıklama almaya devam eder, böylece bir kelimeye dokunabilirsin. Kapalı: tüm katman fareye saydamdır — altındakine tıklarsın ama kelimelere dokunmak artık çalışmaz."
+  "gal_hook_passthrough_blocks_mouse_hint": "Açık: metin satırları tıklama almaya devam eder, böylece bir kelimeye dokunabilirsin. Kapalı: tüm katman fareye saydamdır — altındakine tıklarsın ama kelimelere dokunmak artık çalışmaz.",
+  "floating_lyric_passthrough": "Tıklamaları alttaki pencereye geçir",
+  "floating_lyric_transparency": "Arka planı değiştir",
+  "floating_lyric_topmost": "Her zaman üstte tut"
 }

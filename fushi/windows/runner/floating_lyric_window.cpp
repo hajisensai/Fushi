@@ -37,11 +37,13 @@ constexpr float kControlsTopDip = 8.0f;
 // Bottom-right resize grip and the min / max the user may drag the bar to.
 constexpr float kResizeGripDip = 18.0f;
 constexpr float kMinStripWidthDip = 280.0f;
-// Hook mode draws a centred 9-slot toolbar (9 * 32 + 8 * 4 = 320dip). The
-// generic 280dip floor would let the user drag the window narrower than its own
-// controls, clipping the leading voice buttons; hook mode therefore floors at
-// the toolbar width plus a small margin. Bump this whenever kSlotCount grows —
-// the floor is derived from the row width, not from a taste-based round number.
+// Hook mode draws a centred toolbar whose slot count depends on the profile
+// (gal hook 9 槽 = 9 * 32 + 8 * 4 = 320dip，有声书 8 槽更窄). The generic 280dip
+// floor would let the user drag the window narrower than its own controls,
+// clipping the leading buttons; hook mode therefore floors at the widest
+// toolbar's width plus a small margin. Bump this whenever
+// hook_toolbar::kMaxSlotCount grows — the floor is derived from that row width,
+// not from a taste-based round number（守卫按 kMaxSlotCount 复核）。
 constexpr float kHookTextMinStripWidthDip = 340.0f;
 // Shift-悬停查词的轮询表（只在鼠标停在浮窗里时挂着，见
 // StartHoverLookupPolling）。 60ms ≈
@@ -100,13 +102,9 @@ constexpr float kBaseStripHeightForFontDip = 96.0f;
 // lock, close. The lock button (slot 3) is the TODO-136 addition; both Render()
 // and ControlActionAt() derive their geometry from this single count so the
 // hit areas can never drift from what is drawn.
-constexpr int kControlSlotCount = 5;
-// Hook text toolbar slots, in draw / hit-test order: replay voice, replay +
-// recapture, follow, click-through, transparency, lock, workbench, close. The
-// two leading slots are the voice controls (replay the line's captured audio;
-// open a recapture window so the user can replay the line inside the game and
-// have it recorded onto that line).
-constexpr int kHookTextControlSlotCount = hook_toolbar::kSlotCount;
+// 工具条槽数不再是编译期常量：同一个窗口类现在服务两张槽表（galgame hook 9 槽 /
+// 有声书 8 槽），槽数只能在运行时按 toolbar_profile_ 问 hook_toolbar::SlotCount。
+// 几何（RowWidth）、命中（SlotAt）、绘制三处一律走它，谁也不许自己数。
 // BUG-951: padding between the standalone pass-through toolbar window's edge
 // and its button row. Small on purpose — this window sits ON TOP of the game
 // and every pixel of it is a pixel the player cannot click — but non-zero so
@@ -838,6 +836,8 @@ void FloatingLyricWindow::ApplyPassThroughExStyle() {
   // Escape hatch FIRST. The body may only stop taking clicks once the window
   // that can switch pass-through back off is actually on screen; if it cannot
   // be created we refuse the toggle instead of stranding the user.
+  // 建窗收口在 ApplyToolbarVisibility()（它同时管自动隐藏），profile 由那里的
+  // Show 调用传下去 —— 两个 PR 各改了这条链的一端，合并后只保留这一个入口。
   if (!ApplyToolbarVisibility() && pass_through_) {
     SetBodyExTransparent(false);
     pass_through_ = false;
@@ -968,7 +968,8 @@ bool FloatingLyricWindow::ApplyToolbarVisibility() {
     pass_through_toolbar_.Hide();
     return true;
   }
-  return pass_through_toolbar_.Show(ComputePassThroughToolbarLayout(),
+  return pass_through_toolbar_.Show(toolbar_profile_,
+                                    ComputePassThroughToolbarLayout(),
                                     ToolbarStyle(), ToolbarStates());
 }
 
@@ -1038,7 +1039,8 @@ void FloatingLyricWindow::SyncPassThroughToolbar() {
   if (!pass_through_toolbar_.IsShowing()) {
     return;
   }
-  pass_through_toolbar_.Sync(ComputePassThroughToolbarLayout(), ToolbarStyle(),
+  pass_through_toolbar_.Sync(toolbar_profile_,
+                             ComputePassThroughToolbarLayout(), ToolbarStyle(),
                              ToolbarStates());
 }
 
@@ -1203,7 +1205,8 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
                      : -1;
         POINT cursor;
         GetCursorPos(&cursor);
-        slot_tooltip_.Update(hwnd_, slot, cursor.x + 12, cursor.y + 22);
+        slot_tooltip_.Update(hwnd_, toolbar_profile_, slot, cursor.x + 12,
+                             cursor.y + 22);
       }
       return 0;
     }
@@ -2106,8 +2109,12 @@ void FloatingLyricWindow::Render() {
         if (icon_brush != nullptr) {
           const D2D1_RECT_F icon_rect =
               D2D1::RectF(bx, t_top, bx + t_btn, t_top + t_btn);
-          if (icon_format != nullptr) {
-            const wchar_t* glyph = hook_toolbar::SlotGlyph(slot, tb_states);
+          const wchar_t* glyph =
+              hook_toolbar::SlotGlyph(toolbar_profile_, slot, tb_states);
+          // 逐槽回退，不是整条二选一：打包字体是 11 个码位的极小子集，
+          // previousCue / nextCue 在里面没有字形，空串就必须落到矢量画法，
+          // 否则那两颗画出来是豆腐块。
+          if (icon_format != nullptr && glyph[0] != L'\0') {
             // 长度一律走 GlyphLength：写死 1 会把任何代理对字形（U+1F512 等）截半，
             // 画出一个替换方块。当前这些字形恰好都在 BMP，所以写死 1 也看不出问题
             // ——正因如此它才会一路溜到发布，必须在源头堵死而不是靠「现在没事」。
@@ -2115,7 +2122,8 @@ void FloatingLyricWindow::Render() {
                                       icon_format.Get(), icon_rect, icon_brush);
           } else {
             hook_toolbar::DrawSlotIcon(render_target_.Get(), d2d_factory_.Get(),
-                                       slot, tb_states, icon_rect, icon_brush);
+                                       toolbar_profile_, slot, tb_states,
+                                       icon_rect, icon_brush);
           }
         }
       };
@@ -2123,12 +2131,17 @@ void FloatingLyricWindow::Render() {
       // (btn + gap)。命中与绘制共用起点，两者不可能各画各的。
       // Render 的 |width| 是 client px 的 int；显式转 float 与改造前
       // 「(width - controls_total) / 2.0f」的隐式提升逐位等价。
+      //
+      // 这里**没有** else 分支了：develop 删掉了剪贴板文本窗那条按硬编码槽下标
+      // 画按钮的路（`draw_tbtn(trans_x, 4, …)`），而那正是本 PR 明令禁止的形状，
+      // 只是搬到了调用点。合并时必须采纳那次删除，否则等于把它带回来。
       const float left = HookToolbarRowLeft(static_cast<float>(width));
       // No second pill behind the row: the full-width hover strip is already
       // the toolbar surface. Only active buttons receive a local soft tint.
-      for (int slot = 0; slot < kHookTextControlSlotCount; ++slot) {
+      for (int slot = 0; slot < hook_toolbar::SlotCount(toolbar_profile_);
+           ++slot) {
         draw_tbtn(left + slot * (t_btn + t_gap), slot,
-                  hook_toolbar::SlotActive(slot, tb_states));
+                  hook_toolbar::SlotActive(toolbar_profile_, slot, tb_states));
       }
     }
 
@@ -2149,77 +2162,12 @@ void FloatingLyricWindow::Render() {
             stroke);
       }
     }
-  } else {
-    // Controls row (only fully visible while hovered, like QQ Music). The hit
-    // areas in ControlActionAt() stay live regardless so a deliberate click on
-    // a half-faded button still works.
-    const float btn = ScaleForDpi(kButtonSizeDip);
-    const float gap = ScaleForDpi(kButtonGapDip);
-    const float ctrl_top = ScaleForDpi(kControlsTopDip);
-    const float controls_total =
-        btn * kControlSlotCount + gap * (kControlSlotCount - 1);
-    const float ctrl_left = (width - controls_total) / 2.0f;
-    const float control_alpha = hovered_ ? 1.0f : 0.35f;
-
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_bg;
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_fg;
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_active;
-    render_target_->CreateSolidColorBrush(ColorFromArgb(style_.button_bg_color),
-                                          btn_bg.GetAddressOf());
-    render_target_->CreateSolidColorBrush(
-        ColorFromArgb(style_.button_text_color), btn_fg.GetAddressOf());
-    render_target_->CreateSolidColorBrush(ColorFromArgb(style_.active_color),
-                                          btn_active.GetAddressOf());
-    btn_bg->SetOpacity(control_alpha);
-    btn_fg->SetOpacity(control_alpha);
-    btn_active->SetOpacity(control_alpha);
-
-    auto draw_glyph = [&](int slot, const wchar_t* glyph, bool active) {
-      const float bx = ctrl_left + slot * (btn + gap);
-      D2D1_ROUNDED_RECT br =
-          D2D1::RoundedRect(D2D1::RectF(bx, ctrl_top, bx + btn, ctrl_top + btn),
-                            ScaleForDpi(6), ScaleForDpi(6));
-      render_target_->FillRoundedRectangle(br, btn_bg.Get());
-      Microsoft::WRL::ComPtr<IDWriteTextFormat> glyph_fmt;
-      dwrite_factory_->CreateTextFormat(
-          L"Segoe UI Symbol", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, btn * 0.5f, L"",
-          glyph_fmt.GetAddressOf());
-      if (glyph_fmt != nullptr) {
-        glyph_fmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-        glyph_fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        render_target_->DrawTextW(
-            glyph, GlyphLength(glyph), glyph_fmt.Get(),
-            D2D1::RectF(bx, ctrl_top, bx + btn, ctrl_top + btn),
-            active ? btn_active.Get() : btn_fg.Get());
-      }
-    };
-
-    draw_glyph(0, L"⏮", false);                    // previous
-    draw_glyph(1, playing_ ? L"⏸" : L"▶", false);  // pause / play
-    draw_glyph(2, L"⏭", false);                    // next
-    // Lock: padlock glyph, tinted with the active colour while locked so the
-    // state is visible at a glance (mirrors the Android lock button).
-    draw_glyph(3, locked_ ? L"\U0001F512" : L"\U0001F513", locked_);  // lock
-    draw_glyph(4, L"✕", false);                                       // close
-
-    // Bottom-right resize grip: three short diagonal ticks hinting the corner
-    // can be dragged to size the bar.
-    {
-      const float grip = ScaleForDpi(kResizeGripDip);
-      Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> grip_brush;
-      render_target_->CreateSolidColorBrush(
-          ColorFromArgb(style_.button_text_color), grip_brush.GetAddressOf());
-      grip_brush->SetOpacity(control_alpha * 0.7f);
-      const float stroke = std::max(1.0f, ScaleForDpi(1.5f));
-      for (int i = 1; i <= 3; ++i) {
-        const float off = grip * (i / 4.0f);
-        render_target_->DrawLine(D2D1::Point2F(width - off, height - 2.0f),
-                                 D2D1::Point2F(width - 2.0f, height - off),
-                                 grip_brush.Get(), stroke);
-      }
-    }
-  }  // else (lyric transport controls)
+  }
+  // 旧有声书歌词条的 5 槽自绘控件行（⏮ / ⏸▶ / ⏭ / 🔒 / ✕）曾经画在这里。它是
+  // 「按钮是什么」的第二份真相，与 hook_toolbar 的槽表并存；有声书改跑 hook 富文本
+  // 模式 + kAudiobook 槽表之后，命中（ControlActionAt）已经只认槽表，绘制若还留着
+  // 就会画出一排点不动的按钮 —— 比缺按钮更难查。所以两处一起删，非 text-only 模式
+  // 现在不画任何控件（也没有任何实例再跑那个模式）。
 
   HRESULT hr = render_target_->EndDraw();
   if (hr == D2DERR_RECREATE_TARGET) {
@@ -2292,8 +2240,8 @@ void FloatingLyricWindow::DispatchControlAction(const std::string& action) {
 float FloatingLyricWindow::HookToolbarRowWidth() const {
   const float btn = ScaleForDpi(kHookTextButtonSizeDip);
   const float gap = ScaleForDpi(kHookTextButtonGapDip);
-  return btn * kHookTextControlSlotCount +
-         gap * (kHookTextControlSlotCount - 1);
+  const int slots = hook_toolbar::SlotCount(toolbar_profile_);
+  return btn * slots + gap * (slots - 1);
 }
 
 float FloatingLyricWindow::HookToolbarRowLeft(float width) const {
@@ -2314,7 +2262,8 @@ int FloatingLyricWindow::HookToolbarSlotAt(float x, float y) const {
     return -1;
   }
   const float left = HookToolbarRowLeft(width);
-  for (int slot = 0; slot < kHookTextControlSlotCount; ++slot) {
+  for (int slot = 0; slot < hook_toolbar::SlotCount(toolbar_profile_);
+       ++slot) {
     const float bx = left + slot * (btn + gap);
     if (x >= bx && x <= bx + btn) {
       return slot;
@@ -2339,44 +2288,25 @@ std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
     if (y < ctrl_top || y > ctrl_top + btn) {
       return std::string();
     }
-    // Shared slot table (hook_toolbar::kSlotActions): the standalone
-    // pass-through toolbar indexes the very same array, so the two windows
-    // physically cannot disagree about what a button does. 几何走
-    // HookToolbarSlotAt——悬停提示问的是同一个入口，提示与命中永远指同一颗。
+    // 索引 profile 槽表：独立工具条窗查的是同一张表，两个窗因此不可能对「这颗
+    // 按钮是什么」各说各的。几何走 HookToolbarSlotAt —— 悬停提示问的是同一个
+    // 入口，提示与命中永远指同一颗。
+    //
+    // 合并注记：本 PR 原来把这段包在 `if (hook_text_mode_)` 里，而上面那条
+    // `hook_text_mode_ || !hovered_` 早退让它不可达；develop 侧则是直接索引
+    // `kSlotActions`（无 profile）。正确形态是 develop 的位置 + 本 PR 的
+    // profile 化 —— 两条守卫（gal_hook_overlay_buttons /
+    // gal_overlay_passthrough_dual_window）都钉着「ControlActionAt 必须索引
+    // profile 槽表，不得另抄一份映射」。
     const int slot = HookToolbarSlotAt(x, y);
-    return slot >= 0 ? hook_toolbar::kSlotActions[slot] : std::string();
+    return slot >= 0 ? hook_toolbar::SlotAction(toolbar_profile_, slot)
+                     : std::string();
   }
-  RECT rc;
-  GetClientRect(hwnd_, &rc);
-  const float width = static_cast<float>(rc.right - rc.left);
-  const float btn = ScaleForDpi(kButtonSizeDip);
-  const float gap = ScaleForDpi(kButtonGapDip);
-  const float ctrl_top = ScaleForDpi(kControlsTopDip);
-  const float controls_total =
-      btn * kControlSlotCount + gap * (kControlSlotCount - 1);
-  const float ctrl_left = (width - controls_total) / 2.0f;
-  if (y < ctrl_top || y > ctrl_top + btn) {
-    return std::string();
-  }
-  for (int slot = 0; slot < kControlSlotCount; ++slot) {
-    const float bx = ctrl_left + slot * (btn + gap);
-    if (x >= bx && x <= bx + btn) {
-      switch (slot) {
-        case 0:
-          return "previousCue";
-        case 1:
-          return "playPause";
-        case 2:
-          return "nextCue";
-        case 3:
-          return "lock";
-        case 4:
-          return "close";
-        default:
-          return std::string();
-      }
-    }
-  }
+  // 到这里说明既不是 text-only 也不是 hook 模式。有声书悬浮字幕以前走的就是这条
+  // 路（自绘 5 槽 previousCue/playPause/nextCue/lock/close 的硬编码 switch），
+  // 现在它跑 hook 富文本模式 + kAudiobook 槽表，这条分支再也到不了。留着等于把
+  // 「按钮是什么」这件事说两遍，而两份说法迟早会各说各的 —— 所以删掉，让
+  // ControlActionAt 只有一个真相源：hook_toolbar 的槽表。
   return std::string();
 }
 
