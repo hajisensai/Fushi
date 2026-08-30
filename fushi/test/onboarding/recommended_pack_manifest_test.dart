@@ -102,6 +102,87 @@ void main() {
         'halfway',
       );
     });
+
+    test(
+        'migrateLegacyArtifacts 不搬没有包体的孤儿进度文件'
+        '（否则配出「全零包体 + 满进度」的静默坏包）', () async {
+      final Directory dir =
+          await Directory.systemTemp.createTemp('recommended_pack_test');
+      addTearDown(() => dir.delete(recursive: true));
+      // 只有进度、没有包体：`.mpart` 搬失败（Windows 上别的句柄占着 9.5 GB 是
+      // 常态）或者上一轮预分配完就被杀，都会落在这个形状上。
+      File(p.join(dir.path, 'download.mpart.json')).writeAsStringSync('{}');
+
+      RecommendedPackDownloader.migrateLegacyArtifacts(dir);
+
+      // 搬过去的话：下一轮会按新名 truncate 出一个全零的 9.5 GB，而进度说每片都
+      // 收满了 —— 一片都不下；清单切片线路每片自带 sha256，整包校验被跳过，
+      // 全零的坏包会被直接扶正。所以这里必须一动不动。
+      expect(
+        File(p.join(dir.path, '$kRecommendedPackFileName.mpart.json'))
+            .existsSync(),
+        isFalse,
+        reason: '没有包体的进度文件描述的是一份不存在的字节，搬过去只会配错',
+      );
+      expect(
+        File(p.join(dir.path, 'download.mpart.json')).existsSync(),
+        isTrue,
+      );
+    });
+
+    test('migrateLegacyArtifacts 目标已存在时整组不搬，并清掉旧名那份',
+        () async {
+      final Directory dir =
+          await Directory.systemTemp.createTemp('recommended_pack_test');
+      addTearDown(() => dir.delete(recursive: true));
+      File(p.join(dir.path, 'download.mpart')).writeAsStringSync('old');
+      File(p.join(dir.path, 'download.mpart.json')).writeAsStringSync('{"o":1}');
+      File(p.join(dir.path, '$kRecommendedPackFileName.mpart'))
+          .writeAsStringSync('current');
+
+      RecommendedPackDownloader.migrateLegacyArtifacts(dir);
+
+      // 新名那一份才是当前进度的真相源；拿旧名的进度去补它必然配错。
+      expect(
+        File(p.join(dir.path, '$kRecommendedPackFileName.mpart'))
+            .readAsStringSync(),
+        'current',
+      );
+      expect(
+        File(p.join(dir.path, '$kRecommendedPackFileName.mpart.json'))
+            .existsSync(),
+        isFalse,
+        reason: '旧名的进度描述的是旧名那份包体，不能配到新名的包体上',
+      );
+      // 旧名那组从此再也不会被读到，留着就是白占一份 9.5 GB。
+      expect(File(p.join(dir.path, 'download.mpart')).existsSync(), isFalse);
+      expect(
+        File(p.join(dir.path, 'download.mpart.json')).existsSync(),
+        isFalse,
+      );
+    });
+
+    test('migrateLegacyArtifacts 单流组：.part 搬走时 .part.etag 跟着走',
+        () async {
+      final Directory dir =
+          await Directory.systemTemp.createTemp('recommended_pack_test');
+      addTearDown(() => dir.delete(recursive: true));
+      File(p.join(dir.path, 'download.part')).writeAsStringSync('half');
+      File(p.join(dir.path, 'download.part.etag')).writeAsStringSync('"abc"');
+
+      RecommendedPackDownloader.migrateLegacyArtifacts(dir);
+
+      expect(
+        File(p.join(dir.path, '$kRecommendedPackFileName.part'))
+            .readAsStringSync(),
+        'half',
+      );
+      expect(
+        File(p.join(dir.path, '$kRecommendedPackFileName.part.etag'))
+            .readAsStringSync(),
+        '"abc"',
+      );
+    });
   });
 
   group('parseRecommendedPackManifest', () {

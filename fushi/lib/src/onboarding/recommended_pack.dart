@@ -464,27 +464,74 @@ class RecommendedPackDownloader {
     }
   }
 
+  /// 旧落盘名的迁移单位：**组**，不是单个后缀。
+  ///
+  /// 每组第一个是主文件（承载字节的那个），其余是它的附属元数据。分开搬会配出
+  /// 「主文件缺失 + 元数据完整」这种自洽但错误的状态：
+  ///
+  /// - `.mpart`（预分配的包体）搬失败而 `.mpart.json`（每片已收字节）搬成功时，
+  ///   下一轮 `_preparePartFile` 会按新名 truncate 出一个**全零**的 9.5 GB，进度
+  ///   文件却说每片都收满了，于是一片都不下；而清单切片线路每片自带 sha256，
+  ///   整包校验被 `hasPerPartDigests` 跳过 —— 全零的坏包直接被扶正成正式包。
+  ///   （整包 Range 线路会被末尾整包 sha256 打回，代价只是白下一遍。）
+  /// - 反过来「主文件搬成功、元数据没搬」是安全的：读不到进度就从头下。
+  ///
+  /// 所以规则只有一条：**先搬主文件，主文件没搬成就整组不动**。不需要回滚。
+  static const List<List<String>> _legacyMigrationGroups = <List<String>>[
+    <String>[''], // 完整包，无附属
+    <String>['.part', '.part.etag'], // 单流续传：半截 + 校验子
+    <String>['.mpart', '.mpart.json'], // 分片续传：包体 + 每片已收字节
+  ];
+
   /// 旧落盘名迁移（目录级，幂等，best-effort）。
   ///
   /// 清单线路曾按 `manifest.url` 的 URL 尾段命名，落出来的是 `download` 一族
   /// （见 [_fileName]）。升级后名字改成 [kRecommendedPackFileName]，不搬的话
-  /// 已下了一半的 9.5 GB 直接作废。只在目标不存在时搬，所以重复调用无害。
+  /// 已下了一半的 9.5 GB 直接作废。
   static void migrateLegacyArtifacts(Directory packDir) {
     if (!packDir.existsSync()) return;
-    for (final String suffix in const <String>[
-      '',
-      '.part',
-      '.part.etag',
-      '.mpart',
-      '.mpart.json',
-    ]) {
-      final File legacy = File(p.join(packDir.path, 'download$suffix'));
-      final File target = File(p.join(packDir.path, '$_fileName$suffix'));
-      if (!legacy.existsSync() || target.existsSync()) continue;
+    for (final List<String> group in _legacyMigrationGroups) {
+      _migrateLegacyGroup(packDir, group);
+    }
+  }
+
+  static void _migrateLegacyGroup(Directory packDir, List<String> suffixes) {
+    File legacyOf(String suffix) =>
+        File(p.join(packDir.path, 'download$suffix'));
+    File targetOf(String suffix) =>
+        File(p.join(packDir.path, '$_fileName$suffix'));
+
+    final String primary = suffixes.first;
+    // 新名那一份已经在了：它才是当前进度的真相源，拿旧名去补它的另一半必然配错。
+    // 旧名那一组从此永远不会再被读到，留着就是白占一份 9.5 GB（本类的注释自己
+    // 声讨过「手机上就是 19 GB」），所以顺手删掉。
+    if (targetOf(primary).existsSync()) {
+      for (final String suffix in suffixes) {
+        final File legacy = legacyOf(suffix);
+        if (!legacy.existsSync()) continue;
+        try {
+          legacy.deleteSync();
+        } on FileSystemException {
+          // 删不掉只是占盘，不影响正确性。
+        }
+      }
+      return;
+    }
+    // 只有附属、没有主文件的孤儿元数据一律不搬：它描述的是一份不存在的字节。
+    if (!legacyOf(primary).existsSync()) return;
+    try {
+      legacyOf(primary).renameSync(targetOf(primary).path);
+    } on FileSystemException {
+      // 主文件搬不动就整组不动，附属留在旧名上：下次重试，或者从头下。
+      return;
+    }
+    for (final String suffix in suffixes.skip(1)) {
+      final File legacy = legacyOf(suffix);
+      if (!legacy.existsSync() || targetOf(suffix).existsSync()) continue;
       try {
-        legacy.renameSync(target.path);
+        legacy.renameSync(targetOf(suffix).path);
       } on FileSystemException {
-        // 搬不动就当没有旧半截：下载会从头开始，不影响正确性。
+        // 附属搬不动是安全的：读不到进度/校验子就从头下，不会配错。
       }
     }
   }

@@ -135,15 +135,24 @@ class SourceSpeedLedger {
     );
   }
 
-  /// 单来源在飞上限：允许快来源占到大约 [shareFactor] 倍的均分额度，但**必须给别家
-  /// 各留一条**。
+  /// 单来源在飞上限：允许快来源占到大约 [shareFactor] 倍的均分额度，但**不许把并发
+  /// 占满**。
   ///
   /// 均分（`并发 / 来源数`）会把慢来源也钉满场，尾巴被它拖住；完全不限则相反——两家
   /// 速度 100 与 99 时，快的那家每次都赢、占满全部并发，我们于是白白丢掉另一家将近
   /// 一半的带宽，而且它再也拿不到新样本，「后来变快」永远发现不了。
   ///
-  /// 所以两头都要夹：份额取 [shareFactor] 倍均分，再封顶到 `并发 - (来源数 - 1)`。
-  /// 4 并发 2 来源 → 3（快的拿 3、慢的还剩 1）；4 并发 3 来源 → 2。
+  /// 所以两头都要夹：份额取 [shareFactor] 倍均分，再封顶到 `并发 - 1`。
+  /// 4 并发 2 来源 → 3；4 并发 3 来源 → 3；4 并发 4 来源 → 2。
+  ///
+  /// 封顶留的是**一条给别家整体**，不是「给每一家各留一条」。后者写成
+  /// `并发 - (来源数 - 1)`，在 `来源数 >= 并发` 时恒 ≤ 1 —— 而那正是本模块最常见的
+  /// 部署形状：清单切片线路每片的来源数是 `分片基址数 + 主 URL + 镜像数`，两个切片
+  /// 基址 + 主 URL + 一个镜像就是 4，默认并发也是 4。上限塌成 1 之后选源退化成纯
+  /// 轮转，「按实测吞吐把片派给最快的那家」这半个卖点在生产配置下等于没做。
+  /// 留一条就够了：它保证的是「不会有人独占全部并发」——别家永远排得进去、拿得到
+  /// 新样本，一家卡住也不会把整轮堵死。谁在剩下的名额里，交给冷启动与过期重探的
+  /// 排序规则决定，不需要在这里再预留。
   static int perSourceLimitFor({
     required int concurrency,
     required int sourceCount,
@@ -151,8 +160,7 @@ class SourceSpeedLedger {
   }) {
     if (sourceCount <= 1) return math.max(1, concurrency);
     final int share = (concurrency * shareFactor / sourceCount).ceil();
-    final int leaveOneEach = concurrency - (sourceCount - 1);
-    return math.max(1, math.min(share, leaveOneEach));
+    return math.max(1, math.min(share, concurrency - 1));
   }
 
   _SourceStat _statOf(String url) =>

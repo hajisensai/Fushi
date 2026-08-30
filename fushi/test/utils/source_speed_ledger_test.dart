@@ -184,16 +184,21 @@ void main() {
       );
     });
 
-    test('全部来源都在冷却时仍然给得出一个，不会把片饿死', () {
+    test('全部来源都在冷却时退化成按在飞数轮转，不会把片饿死', () {
       final SourceSpeedLedger ledger = SourceSpeedLedger();
       final DateTime t0 = DateTime(2026, 8, 30, 12);
       for (final DownloadSource s in all) {
         ledger.recordFailure(s.url, now: t0);
       }
-      expect(
-        () => ledger.pick(all, perSourceLimit: 3, now: t0),
-        returnsNormally,
-      );
+      // `returnsNormally` 挡不住「恒返回同一家」这种退化——那也是「不抛」。
+      // 连取三次**不 release**，让在飞计数累积起来：全员冷却时判据一路平手，
+      // 摊开靠的就是在飞数，三次必须落在三家上。中间 release 的话每次都回到
+      // 平手，会退到 url 定序恒返回同一家——那测的是定序兜底，不是摊开。
+      final List<String> picks = <String>[
+        for (int i = 0; i < 3; i++)
+          ledger.pick(all, perSourceLimit: 3, now: t0).url,
+      ];
+      expect(picks.toSet(), <String>{a.url, b.url, c.url});
     });
   });
 
@@ -204,16 +209,31 @@ void main() {
       perSourceLimit: 3,
       exclude: <String>{a.url, b.url, c.url},
     );
-    expect(all.map((DownloadSource s) => s.url), contains(picked.url));
+    // 断言具体是哪一家：`contains(picked.url)` 按 pick 的构造不可能失败——它只可能
+    // 返回候选表里的元素，那条断言唯一能抓的是抛异常。全员被排除、谁都没测过、
+    // 在飞数都是 0，判据一路平手到 url 定序兜底，结果必须是字典序第一个。
+    expect(
+      picked.url,
+      <String>[a.url, b.url, c.url].reduce((String x, String y) =>
+          x.compareTo(y) <= 0 ? x : y),
+    );
   });
 
   test('release 不会把在飞数减成负数', () {
     final SourceSpeedLedger ledger = SourceSpeedLedger();
-    ledger.release(a.url);
-    ledger.release(a.url);
-    expect(ledger.inFlightOf(a.url), 0);
-    ledger.pick(all, perSourceLimit: 3);
+    // 先 pick 再多 release 一次：只 release 没 pick 过的 url 会走「stat 不存在
+    // 直接返回」那条早退，clamp 那行一次都执行不到，删掉它测试照样绿。
+    ledger.pick(<DownloadSource>[a], perSourceLimit: 3);
     expect(ledger.inFlightOf(a.url), 1);
+    ledger.release(a.url);
+    ledger.release(a.url);
+    expect(ledger.inFlightOf(a.url), 0, reason: '多余的 release 不得把计数减成负');
+    ledger.pick(<DownloadSource>[a], perSourceLimit: 3);
+    expect(
+      ledger.inFlightOf(a.url),
+      1,
+      reason: '若上一步减成 -1，这里会是 0，该来源会被永远当成「有空位」',
+    );
   });
 
   group('perSourceLimitFor', () {
@@ -224,7 +244,7 @@ void main() {
       );
     });
 
-    test('多来源时快的那家多拿，但每家至少留得下一条', () {
+    test('多来源时快的那家多拿，但不许占满并发', () {
       // 4 并发 2 来源：快的 3、慢的 1。若不封顶就是 4，慢的那家一条都排不进去，
       // 它的带宽和新样本一起没了。
       expect(
@@ -233,11 +253,33 @@ void main() {
       );
       expect(
         SourceSpeedLedger.perSourceLimitFor(concurrency: 4, sourceCount: 3),
-        2,
+        3,
       );
       expect(
         SourceSpeedLedger.perSourceLimitFor(concurrency: 8, sourceCount: 3),
         6,
+      );
+    });
+
+    test('来源数达到或超过并发数时不得塌成纯轮转（生产最常见的形状）', () {
+      // 清单切片线路每片的来源数 = 分片基址数 + 主 URL + 镜像数。两个切片基址
+      // + 主 URL + 一个镜像 = 4，而默认并发也是 4 —— 这不是极端情况，是默认部署。
+      //
+      // 旧公式 `并发 - (来源数 - 1)` 在这里算出 1，被 max(1, ...) 钉住，于是选源
+      // 退化成纯轮转：哪怕一家快 500 倍，它也一条连接都多不了，整条 PR 的卖点
+      // 在最常见的配置下等于没做。
+      expect(
+        SourceSpeedLedger.perSourceLimitFor(concurrency: 4, sourceCount: 4),
+        2,
+      );
+      expect(
+        SourceSpeedLedger.perSourceLimitFor(concurrency: 4, sourceCount: 5),
+        2,
+      );
+      expect(
+        SourceSpeedLedger.perSourceLimitFor(concurrency: 4, sourceCount: 8),
+        1,
+        reason: '来源数远超并发时确实只剩一条，那时轮转本来就是对的',
       );
     });
 
