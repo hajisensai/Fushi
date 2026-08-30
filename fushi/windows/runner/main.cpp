@@ -195,6 +195,23 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
       another_instance = false;  // 已接管单实例所有权：按首实例正常启动。
     }
   }
+  // 首实例可能正在**退出**：main.dart 的退出链第一步就 windowManager.hide()，此后
+  // 进程最长还要活约 6s（退出总预算看门狗）才真正消失，而互斥量在整个过程里一直被
+  // 它持有、隐藏窗口也照样被 FindWindowW 找得到。此时走下面那条「转交 + 前置 + 退出」
+  // 是两头落空：文件转交给一个马上就没的进程 = 路径整个丢掉；前置一个看不见的窗口
+  // = 用户双击视频「点了没反应」（TODO-904 修过的正是这个形态）。
+  //
+  // 判据用「主窗口不可见」：本 app 没有托盘，`windowManager.hide()` 全仓只有退出链
+  // 那一个调用点，所以不可见 ⇔ 正在退出。等它释放互斥量再按首实例正常启动——复用
+  // 重启标志那条路已经在用的等待机械，新实例自己就能打开那个视频。
+  if (another_instance && !test_runner) {
+    const HWND exiting = ::FindWindowW(nullptr, L"Fushi");
+    if (exiting != nullptr && !::IsWindowVisible(exiting)) {
+      if (WaitForSingleInstanceMutex(single_instance_mutex, 10000)) {
+        another_instance = false;
+      }
+    }
+  }
   if (another_instance) {
     // 已有实例在跑：找到首实例主窗口。
     HWND existing = ::FindWindowW(nullptr, L"Fushi");

@@ -2178,7 +2178,7 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   // gamepad LB/RB page-scroll fallback reaches it via
   // PrimaryScrollController.maybeOf even on pure-display pages with no focus
   // geometry (e.g. reading statistics), where D-pad edge takeover can't help.
-  final ScrollController _scrollController = ScrollController();
+  final ScrollController _scrollController = FushiScrollController();
 
   @override
   void initState() {

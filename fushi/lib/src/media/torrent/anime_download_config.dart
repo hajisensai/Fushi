@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:fushi/src/media/torrent/tracker_subscription.dart';
+
 /// qBittorrent WebUI 连接配置（偏好里存 JSON 字符串，codec 见
 /// [decodeQbConnectionConfig] / [encodeQbConnectionConfig]）。
 ///
@@ -36,6 +38,8 @@ class QbConnectionConfig {
     this.banRelativeProgressCheat = false,
     this.maxIpPortCount = 0,
     this.banTimeMinutes = 0,
+    this.autoAddTrackerSubscription = true,
+    this.trackerSubscriptionUrl = kDefaultTrackerSubscriptionUrl,
   });
 
   /// 加密策略：首选（尝试加密，允许明文回退）。
@@ -181,6 +185,13 @@ class QbConnectionConfig {
   /// 反吸血：封禁时长（分钟，0 = 永久）。
   final int banTimeMinutes;
 
+  /// 自动把 [trackerSubscriptionUrl] 的 Tracker 加到新下载。订阅失败不会
+  /// 阻止种子任务创建。
+  final bool autoAddTrackerSubscription;
+
+  /// 每行一个 Tracker 的 HTTP(S) 订阅地址。
+  final String trackerSubscriptionUrl;
+
   /// 是否已配置：内置引擎/自动无需连接参数恒为真（桌面开箱即用）；外接 qb
   /// 要求 [baseUrl] 非空。未配置时下载入队与完成监听均不动作。
   bool get isConfigured =>
@@ -215,6 +226,8 @@ class QbConnectionConfig {
     bool? banRelativeProgressCheat,
     int? maxIpPortCount,
     int? banTimeMinutes,
+    bool? autoAddTrackerSubscription,
+    String? trackerSubscriptionUrl,
   }) {
     return QbConnectionConfig(
       backend: backend ?? this.backend,
@@ -246,6 +259,10 @@ class QbConnectionConfig {
           banRelativeProgressCheat ?? this.banRelativeProgressCheat,
       maxIpPortCount: maxIpPortCount ?? this.maxIpPortCount,
       banTimeMinutes: banTimeMinutes ?? this.banTimeMinutes,
+      autoAddTrackerSubscription:
+          autoAddTrackerSubscription ?? this.autoAddTrackerSubscription,
+      trackerSubscriptionUrl:
+          trackerSubscriptionUrl ?? this.trackerSubscriptionUrl,
     );
   }
 }
@@ -335,6 +352,13 @@ QbConnectionConfig? decodeQbConnectionConfig(String raw) {
       banRelativeProgressCheat: json['banRelativeProgressCheat'] == true,
       maxIpPortCount: _nonNegInt(json['maxIpPortCount']),
       banTimeMinutes: _nonNegInt(json['banTimeMinutes']),
+      autoAddTrackerSubscription:
+          _boolOr(json['autoAddTrackerSubscription'], true),
+      trackerSubscriptionUrl:
+          json['trackerSubscriptionUrl'] is String &&
+                  (json['trackerSubscriptionUrl'] as String).trim().isNotEmpty
+              ? (json['trackerSubscriptionUrl'] as String).trim()
+              : kDefaultTrackerSubscriptionUrl,
     );
   } catch (_) {
     return null;
@@ -383,5 +407,7 @@ String encodeQbConnectionConfig(QbConnectionConfig config) {
     'banRelativeProgressCheat': config.banRelativeProgressCheat,
     'maxIpPortCount': config.maxIpPortCount,
     'banTimeMinutes': config.banTimeMinutes,
+    'autoAddTrackerSubscription': config.autoAddTrackerSubscription,
+    'trackerSubscriptionUrl': config.trackerSubscriptionUrl,
   });
 }

@@ -166,6 +166,15 @@ run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
 assert_nonempty "$WORK/frame.jpg"
 
 echo "[ffmpeg-min-smoke] exporting sentence audio"
+# Windows Galgame 资源链需要专用 xWMA demuxer；只有 wav demuxer + WMA decoder
+# 无法打开 RIFF/XWMA。真实游戏样本不入库，这里至少把随包二进制的能力位钉住。
+if [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* ]]; then
+  "$FFMPEG_MIN" -hide_banner -demuxers 2>&1 |
+    grep -Eq '^[[:space:]]*D[[:space:]]+xwma([[:space:]]|$)' || {
+      echo "[ffmpeg-min-smoke] missing Windows xwma demuxer" >&2
+      exit 1
+    }
+fi
 for input in \
   "$MP4_FIXTURE" \
   "$MKV_FIXTURE" \

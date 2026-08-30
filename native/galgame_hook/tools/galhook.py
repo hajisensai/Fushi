@@ -319,6 +319,9 @@ int main() {{ return fushi_voice_hook::Matches{class_name}Profile(nullptr) ? 1 :
     _append_unique(generated / "adapter_module.inc", f"        {engine_id}_.onModuleLoaded(entry.szModule);")
     _append_unique(generated / "adapter_shutdown.inc", f"    {engine_id}_.shutdown();")
     _append_unique(generated / "adapter_fields.inc", f"  {class_name}Adapter {engine_id}_;")
+    # 新 adapter 自动进入查词准入汇总面。漏登记的后果不是编译错误而是**静默错答**：
+    # 该引擎会一直上报 kLookupAdmissionUnknown，host 于是永远说"还在判定中"。
+    _append_unique(generated / "adapter_admission.inc", f"    consider({engine_id}_);")
     _append_unique(
         root / "CMakeLists.txt",
         f'''add_executable(fushi_{engine_id}_adapter_test "tests/{engine_id}_adapter_test.cpp")

@@ -112,6 +112,18 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
            fushi_voice_hook::AdapterCapability::kResourceAudio;
   }
 
+  // SGRE 的 probe() **本身就是** exe SHA-256 精确门（MatchesSgreProfile），所以能走到
+  // 这里就说明身份已经过了——没有 IdentityRejected 这一档可报。这也意味着"另一个版本的
+  // STEINS;GATE RE:BOOT"不会被本 adapter 认领，registry 那边会收敛成引擎不支持/未识别，
+  // 而不是谎称"是这个游戏但版本不对"（我们并不知道它是不是）。
+  fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
+    fushi_voice_hook::LookupAdmissionReport report;
+    report.state = g_sgre_text_draw_original != nullptr
+                       ? fushi_voice_hook::kLookupAdmissionSensorInstalled
+                       : fushi_voice_hook::kLookupAdmissionIdentityAccepted;
+    return report;
+  }
+
   void ProcessPendingEvents() {
     if (!probe() || !g_sgre_anchors_resolved) return;
     // Required/Ready is only meaningful while a lookup card can appear, i.e.

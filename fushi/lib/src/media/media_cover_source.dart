@@ -62,16 +62,26 @@ ImageProvider? resolveMediaCoverImage({
   int decodeWidth = kLocalCoverDecodePixelWidth,
 }) {
   if (book != null && appModel != null) {
-    return book
+    final ImageProvider<Object> provider = book
         .getMediaSource(appModel: appModel)
         .getDisplayThumbnailFromMediaItem(
           appModel: appModel,
           item: book,
           fallbackUrl: fallbackUrl,
         );
+    return decodeWidth == kLocalCoverDecodePixelWidth
+        ? provider
+        : ResizeImage(provider, width: decodeWidth, allowUpscaling: false);
   }
   if (remoteUrl != null && remoteUrl.isNotEmpty && remoteFetcher != null) {
-    return RemoteCoverImage(remoteUrl, remoteFetcher, cacheKey: remoteCacheKey);
+    final ImageProvider<Object> provider = RemoteCoverImage(
+      remoteUrl,
+      remoteFetcher,
+      cacheKey: remoteCacheKey,
+    );
+    return decodeWidth == kLocalCoverDecodePixelWidth
+        ? provider
+        : ResizeImage(provider, width: decodeWidth, allowUpscaling: false);
   }
   if (localPath != null && localPath.isNotEmpty) {
     return resizedFileImage(File(localPath), width: decodeWidth);
