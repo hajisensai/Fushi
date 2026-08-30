@@ -387,6 +387,14 @@ add_executable(fushi_module_settle_test tests/module_settle_test.cpp)
 target_include_directories(fushi_module_settle_test PRIVATE hook include)
 add_test(NAME fushi_module_settle_test COMMAND fushi_module_settle_test)
 
+# 宿主 exe 摘要共享槽（hook/host_executable_digest.h）。同样是纯头，钉住"一次性写入"
+# 和"算不出发空串、不发一串零"这两条——摘要是准入判成不支持时用户唯一能报上来的信息。
+add_executable(fushi_host_executable_digest_test
+  tests/host_executable_digest_test.cpp)
+target_include_directories(fushi_host_executable_digest_test PRIVATE hook include)
+add_test(NAME fushi_host_executable_digest_test
+  COMMAND fushi_host_executable_digest_test)
+
 add_executable(fushi_directsound_format_registry_test
   tests/directsound_format_registry_test.cpp)
 target_include_directories(fushi_directsound_format_registry_test PRIVATE hook)

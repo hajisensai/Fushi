@@ -637,6 +637,15 @@ class AdapterRegistry {
     if (!any_engine_claimed && module_settle_.settled(GetTickCount64()) &&
         best.state == fushi_voice_hook::kLookupAdmissionUnknown) {
       best.state = fushi_voice_hook::kLookupAdmissionEngineUnsupported;
+      // 上面那句"请把 exe 摘要报上来"得真给得出摘要。这一档的定义就是没有任何
+      // adapter 认领，各家私有缓冲在这里全部够不着，所以读共享槽（Leaf 的 profile
+      // 解析对任何 x86 游戏都会跑，顺手把它填满了）。算不出就留空串——host 要能说
+      // "算不出"，而不是显示 64 个 0 让用户以为那就是他的 hash。
+      // 两边都是 kHookModuleDigestChars，共享槽恒带 NUL（要么空串、要么 64 位十六进制
+      // + NUL），所以整段拷贝是精确的——与 Siglus 那处同一种写法。
+      std::memcpy(best.executable_sha256,
+                  fushi_voice_hook::HostExecutableSha256Hex(),
+                  sizeof(best.executable_sha256));
     }
     fushi_voice_hook::PublishLookupAdmission(g_header, best);
   }

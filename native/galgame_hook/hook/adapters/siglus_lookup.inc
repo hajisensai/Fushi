@@ -390,6 +390,10 @@ bool IsSiglusLookupProfileMatched() {
     fushi_voice_hook::FormatSha256Hex(digest.data(), digest.size(),
                                       g_siglus_lookup_executable_sha256,
                                       sizeof(g_siglus_lookup_executable_sha256));
+    // 同一串摘要再交共享槽一份。私有缓冲不能删：本家 probe() 是 IsSiglusEngine()
+    // （引擎探测），hash 不符时**仍然被问话**，那条 IdentityRejected 是活路径，要带上
+    // 自己的摘要。共享槽服务的是另一档——谁都没认领时的收敛（见 host_executable_digest.h）。
+    fushi_voice_hook::PublishHostExecutableSha256(digest.data(), digest.size());
   }
   const auto *profile =
       executable_read ? fushi_voice_hook::FindSiglusLookupProfile(

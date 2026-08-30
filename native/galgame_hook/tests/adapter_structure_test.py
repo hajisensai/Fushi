@@ -617,6 +617,62 @@ class AdapterStructureTest(unittest.TestCase):
             dispatch_code.index("module_settle_.OnScanCompleted("),
         )
 
+    def test_engine_unsupported_carries_the_host_executable_digest(self) -> None:
+        """判成「不支持或未识别」时必须附上 exe 摘要，否则那句承诺是空的。
+
+        这一档的定义就是**没有任何 adapter 认领**，各家私有摘要缓冲（Leaf/Siglus）
+        在那一刻全部够不着——所以只能读共享槽。少了这一步，用户报上来的只有
+        「用不了」，我们这边一点可查的东西都没有。
+        """
+        source = (ROOT / "hook" / "adapter_registry.inc").read_text(
+            encoding="utf-8"
+        )
+        publish = self._strip_comments(
+            self._member_body(source, "void PublishLookupAdmissionSummary()")
+        )
+        gate = publish.index("kLookupAdmissionEngineUnsupported")
+        # 摘要必须写在收敛那一支里面，而不是函数别处顺手填一下。
+        self.assertIn("HostExecutableSha256Hex()", publish[gate:])
+
+        # 共享槽必须真有人填：Leaf 的 profile 解析对任何 x86 游戏都会跑到，是这个槽
+        # 在「谁都没认领」场合仍然满着的唯一来源。它要是改回只写自己的私有缓冲，
+        # 上面那句就恒发空串——而空串是合法值，测不出来。
+        leaf = (
+            ROOT / "hook" / "adapters" / "leaf_aquaplus_adapter.inc"
+        ).read_text(encoding="utf-8")
+        self.assertIn("PublishHostExecutableSha256(", self._strip_comments(leaf))
+
+    def test_leaf_admission_does_not_claim_identity_rejected(self) -> None:
+        """Leaf 报不出 IdentityRejected —— 它的 probe() 本身就是 hash 门。
+
+        registry 只对 `probe()` 成立的 adapter 问话，而 Leaf 的
+        `probe() == IsLeafAquaplusProfileMatched()`：身份不符时它根本不会被问到，
+        写在那里的分支永远走不到，却会让人以为「白2 换个发行版会显示身份被拒」。
+        真实去向是「没人认领 → 模块表稳定后收敛成 EngineUnsupported」。
+        对照 Siglus：probe() 是 IsSiglusEngine()，与 hash 门是两回事，它那条是活的。
+        """
+        leaf = (
+            ROOT / "hook" / "adapters" / "leaf_aquaplus_adapter.inc"
+        ).read_text(encoding="utf-8")
+        admission = self._strip_comments(
+            self._member_body(
+                leaf,
+                "fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override",
+            )
+        )
+        self.assertNotIn("kLookupAdmissionIdentityRejected", admission)
+
+        siglus = (
+            ROOT / "hook" / "adapters" / "siglus_lookup.inc"
+        ).read_text(encoding="utf-8")
+        siglus_admission = self._strip_comments(
+            self._member_body(
+                siglus,
+                "fushi_voice_hook::LookupAdmissionReport SiglusLookupAdmission()",
+            )
+        )
+        self.assertIn("kLookupAdmissionIdentityRejected", siglus_admission)
+
     def test_unity_text_adapter_supports_legacy_ui_text(self) -> None:
         source = (
             ROOT / "hook" / "adapters" / "unity_adapter.inc"
