@@ -380,6 +380,13 @@ add_executable(fushi_adapter_contract_test tests/adapter_contract_test.cpp)
 target_include_directories(fushi_adapter_contract_test PRIVATE hook include)
 add_test(NAME fushi_adapter_contract_test COMMAND fushi_adapter_contract_test)
 
+# 「模块表稳定了吗」的判据（hook/module_settle.h）。纯头、零 Win32 依赖，所以
+# 能被 CTest 单独包含——adapter_registry.inc 依赖 dll_main 的全局与 MinHook，
+# 永远无法单测，而这条收敛规则恰恰是查词准入误报的根因所在。
+add_executable(fushi_module_settle_test tests/module_settle_test.cpp)
+target_include_directories(fushi_module_settle_test PRIVATE hook include)
+add_test(NAME fushi_module_settle_test COMMAND fushi_module_settle_test)
+
 add_executable(fushi_directsound_format_registry_test
   tests/directsound_format_registry_test.cpp)
 target_include_directories(fushi_directsound_format_registry_test PRIVATE hook)

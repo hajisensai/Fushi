@@ -11,6 +11,47 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class AdapterStructureTest(unittest.TestCase):
+    @staticmethod
+    def _strip_comments(source: str) -> str:
+        """剥掉 `//` 行注释与 `/* */` 块注释。
+
+        「顺序 / 不存在」类断言必须先剥：注释里出现同一个标识符会先被 index 命中，
+        把守卫变成恒真或恒假（本仓反复踩过的坑）。
+        """
+        out = []
+        i = 0
+        n = len(source)
+        while i < n:
+            if source.startswith("//", i):
+                j = source.find("\n", i)
+                i = n if j < 0 else j
+            elif source.startswith("/*", i):
+                j = source.find("*/", i + 2)
+                i = n if j < 0 else j + 2
+            else:
+                out.append(source[i])
+                i += 1
+        return "".join(out)
+
+    @staticmethod
+    def _member_body(source: str, signature: str) -> str:
+        """按大括号配平取成员函数体（含签名）。
+
+        **不要**改回「从签名往后取固定长度窗口」：这些成员是挨着定义的，窗口一溢出
+        就会读到下一个函数，断言恒真。
+        """
+        at = source.index(signature)
+        open_at = source.index("{", at)
+        depth = 0
+        for i in range(open_at, len(source)):
+            if source[i] == "{":
+                depth += 1
+            elif source[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    return source[at : i + 1]
+        raise AssertionError("unbalanced body for " + signature)
+
     def test_main_worker_only_uses_registry(self) -> None:
         source = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
         # 行数预算防的是「引擎逻辑重新爬回 dll_main」——真正的判据是下面那三条
@@ -548,6 +589,33 @@ class AdapterStructureTest(unittest.TestCase):
             self.assertIn(f'return "{engine_id}";', source)
         self.assertIn("DispatchNewModules();", source)
         self.assertIn("onModuleLoaded(entry.szModule);", source)
+
+    def test_lookup_admission_converges_on_a_settled_module_table(self) -> None:
+        """收敛闸必须是「模块表稳定了」，不能是「扫过一次」。
+
+        `modules_seeded_` 在注入完成的第 1 拍就成立，而 KiriKiri / Ren'Py / Unity
+        的 probe 全是迟到信号（KiriKiri 要等第一句有声台词把 wuvorbis.dll 拉进来）。
+        拿它当收敛闸 = 对着唯一已发布查词的引擎自信地说「本引擎没做查词」。
+        """
+        source = (ROOT / "hook" / "adapter_registry.inc").read_text(
+            encoding="utf-8"
+        )
+        publish = self._member_body(source, "void PublishLookupAdmissionSummary()")
+        # 先剥注释：下面那条 assertNotIn 查的是标识符，而这段代码的解释性注释里
+        # 就写着 modules_seeded_ —— 不剥的话守卫恒红（本仓「顺序守卫必剥注释」）。
+        publish_code = self._strip_comments(publish)
+        self.assertIn("module_settle_.settled(", publish_code)
+        self.assertNotIn("modules_seeded_", publish_code)
+
+        dispatch = self._member_body(source, "void DispatchNewModules()")
+        dispatch_code = self._strip_comments(dispatch)
+        self.assertIn("module_settle_.OnScanCompleted(", dispatch_code)
+        # 快照失败的早返回必须排在 OnScanCompleted 之前：那是「没观测到」，不是
+        # 「观测到没变」，混同会让连续失败的进程假装自己稳定了。
+        self.assertLess(
+            dispatch_code.index("if (snapshot == INVALID_HANDLE_VALUE) return;"),
+            dispatch_code.index("module_settle_.OnScanCompleted("),
+        )
 
     def test_unity_text_adapter_supports_legacy_ui_text(self) -> None:
         source = (

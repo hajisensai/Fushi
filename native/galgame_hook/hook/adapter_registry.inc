@@ -625,10 +625,16 @@ class AdapterRegistry {
     // 但 Unknown 不能是**终态**：有几家（Leaf/SGRE）的 probe() 本身就是精确 exe hash 门，
     // 所以「白2 的另一个发行版」这种情形下没有任何 adapter 会认领，best 会永远停在
     // Unknown，用户界面上就是永远"正在判定"——比直接说不支持还糟，因为它不给任何出路。
-    // 模块表扫完之后仍无人认领，就是一个确定的结论：这个游戏我们不认识，查词用不了。
-    // 这里合并了"认出引擎但它没传感器"和"压根没认出引擎"——对用户来说处置相同（用不了
-    // + 请把 exe 摘要报上来），host 文案按"不支持或未识别"表述即可。
-    if (!any_engine_claimed && modules_seeded_ &&
+    // 模块表**稳定**之后仍无人认领，才是一个确定的结论：这个游戏我们不认识，查词
+    // 用不了。这里合并了"认出引擎但它没传感器"和"压根没认出引擎"——对用户来说处置
+    // 相同（用不了 + 请把 exe 摘要报上来），host 文案按"不支持或未识别"表述即可。
+    //
+    // 判据必须是 module_settle_.settled()（连续 15 次 200ms 全量扫描无新模块，且距
+    // 首次扫描已过 5 秒），**不能**是 modules_seeded_ —— 后者在注入完成的第 1 拍就
+    // 成立，而 KiriKiri / Ren'Py / Unity 的 probe 全是迟到信号（前者要等第一句有声
+    // 台词把 wuvorbis.dll 拉进来）。用 modules_seeded_ 等于对着一个唯一已发布查词
+    // 的引擎自信地说「本引擎没做查词」，要等第一句语音才自愈。
+    if (!any_engine_claimed && module_settle_.settled(GetTickCount64()) &&
         best.state == fushi_voice_hook::kLookupAdmissionUnknown) {
       best.state = fushi_voice_hook::kLookupAdmissionEngineUnsupported;
     }
@@ -680,6 +686,7 @@ class AdapterRegistry {
     entry.dwSize = sizeof(entry);
     if (Module32FirstW(snapshot, &entry)) {
       const bool notify = modules_seeded_;
+      const size_t known_before = known_modules_.size();
       do {
         bool known = false;
         for (const std::wstring& module : known_modules_) {
@@ -703,6 +710,15 @@ class AdapterRegistry {
 #include "generated/adapter_module.inc"
       } while (Module32NextW(snapshot, &entry));
       modules_seeded_ = true;
+      // 首拍必然长出一整张表，那不是「变化」、只是第一次看见——但也不能当成
+      // 「没变化」去起算安静计数，否则满表落地那一刻就开始攒。首拍一律记成有新
+      // 模块，安静计数从第二拍才开始。
+      //
+      // known_modules_ 只增不减，所以 size() 变化就是「本拍发现了新模块」的精确
+      // 判据，不需要另设标志位。快照失败的早返回路径不调 OnScanCompleted ——
+      // 那是「没观测到」，不是「观测到没变」。
+      module_settle_.OnScanCompleted(
+          !notify || known_modules_.size() != known_before, now);
     }
     CloseHandle(snapshot);
   }
@@ -724,6 +740,9 @@ class AdapterRegistry {
   int renpy_retry_ = 0;
   int tyrano_retry_ = 0;
   ULONGLONG next_module_scan_ms_ = 0;
+  // 只表示「首拍已过」（用于抑制首张全表的 onModuleLoaded 风暴），**不表示稳定**。
   bool modules_seeded_ = false;
+  // 表示「模块表稳定了」。两者曾是同一个 bool，那正是准入在第 1 拍就误报的根因。
+  fushi_voice_hook::ModuleTableSettle module_settle_;
   std::vector<std::wstring> known_modules_;
 };
