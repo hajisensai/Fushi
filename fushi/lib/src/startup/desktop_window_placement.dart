@@ -8,6 +8,8 @@ import 'package:screen_retriever/screen_retriever.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:fushi/src/utils/window_caption_channel.dart';
+
 /// Desktop main-window sizing and placement policy.
 ///
 /// This intentionally lives outside [AppModel]: the window needs to be placed
@@ -96,14 +98,19 @@ class DesktopWindowPlacement {
     try {
       // 三个窗口状态查询各是一次 platform-channel 往返。它们互不依赖，串行 await
       // 会把退出路径的第一步拖成三个事件循环轮次 —— 一次并发取回。
+      //
+      // BUG-1933：Windows 全屏由 runner 自有实现拥有（WindowCaptionChannel），
+      // window_manager.isFullScreen 在 Windows 上恒 false——不加第四问就会把
+      // 「客户区盖满显示器」的巨窗矩形当普通 bounds 存盘，下次启动整窗贴屏。
       final List<bool> flags = await Future.wait(<Future<bool>>[
         windowManager.isMinimized(),
         windowManager.isMaximized(),
         windowManager.isFullScreen(),
+        WindowCaptionChannel.isFullscreen(),
       ]);
       final bool minimized = flags[0];
       final bool maximized = flags[1];
-      final bool fullScreen = flags[2];
+      final bool fullScreen = flags[2] || flags[3];
 
       // 最小化没有可用几何；全屏是播放器的临时态（下次冷启动直接全屏会挡住书架）。
       // 两者都保持上一次的记忆原样不动。

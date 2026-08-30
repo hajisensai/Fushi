@@ -493,6 +493,29 @@ bool FlutterWindow::OnCreate() {
             FlashWindowEx(&flash_info);
           }
           result->Success();
+        } else if (call.method_name() == "setFullscreen") {
+          // BUG-1933: runner-owned flash-free fullscreen (Win32Window::
+          // SetFullscreen). Dart routes F11 and the video player's native
+          // fullscreen here on Windows instead of window_manager / media_kit,
+          // whose style-stripping implementations reveal the redirection
+          // surface for a frame (white in a light theme).
+          const auto* fs_args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          bool enter = false;
+          if (fs_args != nullptr) {
+            const auto fs_it =
+                fs_args->find(flutter::EncodableValue("fullscreen"));
+            if (fs_it != fs_args->end()) {
+              const bool* value = std::get_if<bool>(&fs_it->second);
+              if (value != nullptr) {
+                enter = *value;
+              }
+            }
+          }
+          SetFullscreen(enter);
+          result->Success();
+        } else if (call.method_name() == "isFullscreen") {
+          result->Success(flutter::EncodableValue(IsFullscreen()));
         } else if (call.method_name() == "setWindowIcon") {
           // Runtime window/taskbar icon (preset or user-picked image). Decodes
           // the file to big+small HICONs and WM_SETICONs them. Cannot change the
@@ -2560,6 +2583,22 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     std::optional<LRESULT> result =
         flutter_controller_->HandleTopLevelWindowProc(hwnd, message, wparam,
                                                       lparam);
+    // BUG-1933: fullscreen deliberately sizes the window LARGER than the
+    // monitor (frame off-screen, see Win32Window::SetFullscreen). The default
+    // ptMaxTrackSize (SM_C*MAXTRACK) silently clamps that SetWindowPos and
+    // leaves a strip of desktop/taskbar exposed at the bottom. window_manager's
+    // delegate consumes WM_GETMINMAXINFO (it applies our minimum size), so the
+    // override must happen here, after the delegates ran: lift the max track
+    // size while fullscreen, keeping whatever minimums the plugins wrote.
+    if (message == WM_GETMINMAXINFO && IsFullscreen()) {
+      auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
+      if (info != nullptr) {
+        // Generous fixed headroom over any real monitor: monitor + frame.
+        info->ptMaxTrackSize.x = GetSystemMetrics(SM_CXVIRTUALSCREEN) + 256;
+        info->ptMaxTrackSize.y = GetSystemMetrics(SM_CYVIRTUALSCREEN) + 256;
+      }
+      return 0;
+    }
     if (result) {
       return *result;
     }
