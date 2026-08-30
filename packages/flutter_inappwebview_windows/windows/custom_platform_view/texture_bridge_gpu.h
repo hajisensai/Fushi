@@ -18,6 +18,7 @@ namespace flutter_inappwebview_plugin
     const FlutterDesktopGpuSurfaceDescriptor* GetSurfaceDescriptor(size_t width,
       size_t height);
 
+    void SetOutputSize(size_t width, size_t height, float scale_factor) override;
     bool SetShaders(const std::vector<std::string>& shader_texts) override;
 
   protected:
@@ -26,6 +27,8 @@ namespace flutter_inappwebview_plugin
   private:
     FlutterDesktopGpuSurfaceDescriptor surface_descriptor_ = {};
     Size surface_size_ = { 0, 0 };
+    Size output_size_ = { 0, 0 };
+    bool scale_failure_logged_ = false;
     winrt::com_ptr<ID3D11Texture2D> surface_{ nullptr };
     winrt::com_ptr<IDXGIResource> dxgi_surface_;
 
@@ -35,6 +38,6 @@ namespace flutter_inappwebview_plugin
     std::unique_ptr<class PlaceboPass> placebo_;
     bool placebo_unavailable_ = false;
 #endif
-    void EnsureSurface(uint32_t width, uint32_t height);
+    bool EnsureSurface(uint32_t width, uint32_t height);
   };
 }

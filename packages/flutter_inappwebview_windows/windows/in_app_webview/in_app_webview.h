@@ -127,7 +127,8 @@ namespace flutter_inappwebview_plugin
     {
       return surface_.get();
     }
-    void setSurfaceSize(size_t width, size_t height, float scale_factor);
+    void setSurfaceSize(size_t width, size_t height, float capture_scale_factor,
+      float device_scale_factor);
     void setPosition(size_t x, size_t y, float scale_factor);
     void setCursorPos(double x, double y);
     void setPointerUpdate(int32_t pointer, InAppWebViewPointerEventKind eventKind,
@@ -196,7 +197,11 @@ namespace flutter_inappwebview_plugin
     winrt::com_ptr<ABI::Windows::UI::Composition::IVisual> surface_;
     SurfaceSizeChangedCallback surfaceSizeChangedCallback_;
     CursorChangedCallback cursorChangedCallback_;
-    float scaleFactor_ = 1.0;
+    // Composition mode can deliberately capture below device DPR for a shader
+    // upscale pass. Raw WebView pointer coordinates follow capture; Flutter
+    // wheel deltas, CDP screenshot scale, and visual placement follow device DPR.
+    float captureScaleFactor_ = 1.0f;
+    float deviceScaleFactor_ = 1.0f;
     // 窗口宿主模式（surface_ 为空）：子 HWND 在 Flutter 视图客户区里的物理像素矩形，
     // 由 setPosition / setSurfaceSize 各更新一半、applyWindowedBounds 一起落地。
     int windowedX_ = 0;

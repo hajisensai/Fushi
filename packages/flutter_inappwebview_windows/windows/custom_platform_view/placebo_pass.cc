@@ -189,6 +189,11 @@ namespace flutter_inappwebview_plugin
       }
       hooks_.push_back(hook);
     }
+    if (!all_ok) {
+      // 解析失败必须整链 fail-open；调用方会恢复 full-DPR capture。保留半条链会
+      // 让 Dart 收到 false、native 却继续着色，并且源尺寸策略无法判定。
+      ClearHooks();
+    }
     return all_ok;
   }
 
@@ -254,7 +259,7 @@ namespace flutter_inappwebview_plugin
 
   bool PlaceboPass::Render(ID3D11Texture2D* src, ID3D11Texture2D* dst)
   {
-    if (!renderer_ || !gpu_ || hooks_.empty() || !src || !dst) {
+    if (!renderer_ || !gpu_ || !src || !dst) {
       return false;
     }
     if (!WrapCached(src, *src_) || !WrapCached(dst, *dst_)) {
@@ -267,7 +272,9 @@ namespace flutter_inappwebview_plugin
 
     // fast 预设（不做高阶缩放/抖动，页面帧本来就是 sRGB 8bit），只挂用户着色器。
     struct pl_render_params params = *api_->render_fast_params;
-    params.hooks = reinterpret_cast<const struct pl_hook* const*>(hooks_.data());
+    params.hooks = hooks_.empty()
+      ? nullptr
+      : reinterpret_cast<const struct pl_hook* const*>(hooks_.data());
     params.num_hooks = static_cast<int>(hooks_.size());
     return api_->render_image(static_cast<pl_renderer>(renderer_), &image, &target, &params);
   }

@@ -718,7 +718,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 89;
+  int get schemaVersion => 90;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2749,8 +2749,8 @@ class FushiDatabase extends _$FushiDatabase
               await m.addColumn(galgames, galgames.language);
             }
           }
-          if (from < 89) {
-            // v89（网页播放器自动制卡队列）：新表 web_mine_queue，设备本地、无 FK、
+          if (from < 90) {
+            // v90（网页播放器自动制卡队列）：新表 web_mine_queue，设备本地、无 FK、
             // 无索引（队列量级为几十行）。守卫幂等（fresh DB 由 onCreate 建好）。
             if (!await _tableExists('web_mine_queue')) {
               await m.createTable(webMineQueue);

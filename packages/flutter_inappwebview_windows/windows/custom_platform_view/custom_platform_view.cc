@@ -6,6 +6,8 @@
 #include <flutter/method_result_functions.h>
 
 #include <cstdio>
+#include <cmath>
+#include <limits>
 #include <string>
 
 #ifdef HAVE_FLUTTER_D3D_TEXTURE
@@ -197,9 +199,21 @@ namespace flutter_inappwebview_plugin
       texture_bridge_->SetOnFrameAvailable(
         [this]() { texture_registrar_->MarkTextureFrameAvailable(texture_id_); });
     }
-    // texture_bridge_->SetOnSurfaceSizeChanged([this](Size size) {
-    //  view->SetSurfaceSize(size.width, size.height);
-    //});
+    if (texture_bridge_) {
+      // SetOutputSize 先固定 Flutter 共享纹理的物理目标尺寸，再经此反馈更新
+      // WebView2/WGC 源 surface。两者各自保存尺寸，onSurfaceSizeChanged 只负责让
+      // WGC pool 跟随源尺寸，不会反写 output size，避免尺寸反馈环。
+      texture_bridge_->SetOnSurfaceSizeChanged(
+        [this](Size size, float capture_scale_factor,
+          float device_scale_factor)
+        {
+          if (view && size.width > 0 && size.height > 0 &&
+            capture_scale_factor > 0.0f && device_scale_factor > 0.0f) {
+            view->setSurfaceSize(size.width, size.height,
+              capture_scale_factor, device_scale_factor);
+          }
+        });
+    }
 
     const auto method_channel_name = "com.pichillilorenzo/custom_platform_view_" + std::to_string(texture_id_);
     method_channel_ =
@@ -381,15 +395,40 @@ namespace flutter_inappwebview_plugin
       if (size && view) {
         const auto [width, height, scale_factor] = size.value();
 
+        if (!std::isfinite(width) || !std::isfinite(height) ||
+          !std::isfinite(scale_factor) || width < 0.0 || height < 0.0 ||
+          scale_factor <= 0.0) {
+          return result->Error(kErrorInvalidArgs);
+        }
+
+        // Flutter 布局可能短暂上报 0x0；保留上一张有效 surface，且不要启动一个
+        // 无法创建帧池/目标纹理的捕获链。
+        if (width == 0.0 || height == 0.0) {
+          return result->Success();
+        }
+
+        const auto logical_width = static_cast<size_t>(width);
+        const auto logical_height = static_cast<size_t>(height);
+        const double physical_width = logical_width * scale_factor;
+        const double physical_height = logical_height * scale_factor;
+        if (logical_width == 0 || logical_height == 0 ||
+          physical_width < 1.0 || physical_height < 1.0 ||
+          physical_width > (std::numeric_limits<uint32_t>::max)() ||
+          physical_height > (std::numeric_limits<uint32_t>::max)()) {
+          return result->Error(kErrorInvalidArgs);
+        }
+
         WgcLog::Write("set-size", nullptr,
           SetSizeDetail(width, height, scale_factor, texture_id_,
             texture_bridge_.get()));
-        view->setSurfaceSize(static_cast<size_t>(width),
-          static_cast<size_t>(height),
-          static_cast<float>(scale_factor));
-
         if (texture_bridge_) {
+          texture_bridge_->SetOutputSize(logical_width, logical_height,
+            static_cast<float>(scale_factor));
           texture_bridge_->Start();
+        }
+        else {
+          view->setSurfaceSize(logical_width, logical_height,
+            static_cast<float>(scale_factor), static_cast<float>(scale_factor));
         }
         return result->Success();
       }

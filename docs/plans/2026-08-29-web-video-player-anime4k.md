@@ -144,8 +144,9 @@ mpv-hook 指令（HOOK/BIND/SAVE/WIDTH/HEIGHT/WHEN）运行器，GLSL 体原生�
 #### P2 落地（2026-08-30，方案 a libplacebo）
 
 - **产物**：`third_party/libplacebo-win/`——libplacebo v7.360.1 仅 D3D11 + shaderc（vulkan/opengl/lcms/dovi 全关），
-  MSYS2 MINGW64 本地构建（`tool` 配方复刻到 `.github/workflows/libplacebo-win.yml` workflow_dispatch），随包 6 个 DLL
-  （本体 1.4 MB + shaderc 10.6 MB + spirv-cross 3.4 MB + 3 个 MinGW 运行时），`bin/SHA256SUMS` + 守卫
+  MSYS2 MINGW64 本地构建（`tool/libplacebo/build_placebo.sh` 与 `.github/workflows/libplacebo-win.yml`
+  workflow_dispatch 共用同一配方）；shaderc、spirv-cross、libgcc、libstdc++、winpthread 全部静态链入，随包只剩
+  `libplacebo-360.dll`（14,745,901 bytes），`bin/SHA256SUMS` + 守卫
   `test/build/libplacebo_win_vendored_guard_test.dart`（哈希 / `PL_API_VER`=DLL 名=fork 字面量 / CMake 接入）。
 - **fork**：`custom_platform_view/placebo_pass.{h,cc}`——**LoadLibrary 动态加载**（不链导入库：MinGW `.dll.a` 对 MSVC
   不可靠，且缺 DLL 要 fail-open），只按头文件取结构体布局与 `decltype` 签名；`pl_d3d11_create(device=共享 D3D11 设备)`
@@ -163,9 +164,11 @@ mpv-hook 指令（HOOK/BIND/SAVE/WIDTH/HEIGHT/WHEN）运行器，GLSL 体原生�
   源存储序 + 目标恒等 → 颜色与直通一致（`observe-web-video-{shaded,unshaded}-paused.png`）。
 - **真机（builtin itest `FUSHI_WEB_VIDEO_SHADER_TIER=medium`）**：`texts=6 accepted=true`、`active=true`、帧非空，P3 重放同跑
   （audio 45 KB + cover 2.0 MB）。libplacebo 头文件在 MSVC 下只有 1 条 C4244 warning。
-- **尺寸语义**：WGC 帧 = 页面视觉尺寸 = 共享纹理尺寸（src==dst），Anime4K 的 `Upscale_x2` 在 `//!WHEN` 判 output 不大于
-  input 时自动跳过，只剩 Restore/Clamp 类 pass 起作用——与 Magpie 套浏览器窗口同档；真正放大链要等输出纹理按显示器物理
-  尺寸独立于源（`SetOnSurfaceSizeChanged` 反馈路径，fork 里仍注释着）。
+- **尺寸语义（2026-08-30 补齐真实放大链）**：`setSize` 的平台视图逻辑尺寸 × DPI 是独立的目标物理尺寸；
+  `TextureBridgeGpu` 按该目标创建共享纹理和 descriptor，WGC 帧只作源。src/dst 异尺寸时即使 shader hook 为空也走
+  libplacebo 直通缩放，`CopyResource` 严格只留给同尺寸；启用 Anime4K 时 `Upscale_x2` 的 `//!WHEN` 因真实 output/input
+  差异得以执行。bridge→`view->setSurfaceSize` 回调已接回且按逻辑尺寸/DPI 三元组去重，WGC 的 size callback 只重建源帧池，
+  不反写目标，避免反馈环。定向守卫 6/6 与 Windows 插件 MSVC 编译通过；live itest 的 high 档开/关截图仍以本轮验收为准。
 
 ### P3 制卡
 
@@ -196,7 +199,7 @@ mpv-hook 指令（HOOK/BIND/SAVE/WIDTH/HEIGHT/WHEN）运行器，GLSL 体原生�
 跑——同一个 WebView2、同一份登录态、同一条 JS 桥，省掉 cookie 同步和第二个环境。「观看用正常模式、制卡用
 1080p 稳定模式」由**入队/重放分离**实现，而不是双实例并存：
 
-- `web_mine_queue`（schema **v89**，`packages/fushi_core` tables.dart；设备本地，进 backup 的 device-local
+- `web_mine_queue`（schema **v90**，`packages/fushi_core` tables.dart；设备本地，进 backup 的 device-local
   三处清单）：`bookUid / videoKey / href / cueStartMs / cueEndMs / sentence / cueSentence / fieldsJson /
   status(pending|done|failed) / error / noteId / createdAt / minedAt`。`fieldsJson` 冻结弹窗点击那一刻的 Anki
   字段（词典释义等），重放只补媒体。Dart 侧 `WebMineQueueStore`（`fushi/lib/src/mining/web_mine_queue_store.dart`）。

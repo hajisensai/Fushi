@@ -1,6 +1,6 @@
-# third_party/libplacebo-win 的可复现构建（Windows x64，仅 D3D11 后端 + shaderc）。
+# third_party/libplacebo-win 的版本守卫构建（Windows x64，仅 D3D11 后端 + shaderc）。
 #
-# 消费模型与 ffmpeg-min.yml 相同：workflow_dispatch 手动跑 → 下载 artifact → 把 bin/*.dll、
+# 消费模型与 ffmpeg-min.yml 相同：workflow_dispatch 手动跑 → 下载 artifact → 把单个 bin/*.dll、
 # include/libplacebo/（含生成的 config.h）、SHA256SUMS 提交进 third_party/libplacebo-win/
 # （UPSTREAM.md 记版本与哈希）。app 构建不从网络拉，fork 运行期 LoadLibrary 动态加载。
 name: libplacebo-win
@@ -25,6 +25,7 @@ jobs:
           install: >-
             git
             mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-binutils
             mingw-w64-x86_64-meson
             mingw-w64-x86_64-ninja
             mingw-w64-x86_64-pkgconf
@@ -35,30 +36,19 @@ jobs:
             mingw-w64-x86_64-python-jinja
       - name: Build libplacebo (D3D11 only)
         shell: msys2 {0}
+        env:
+          PLACEBO_REF: ${{ inputs.placebo_ref }}
         run: |
           set -euo pipefail
-          git clone --depth 1 --branch "${{ github.event.inputs.placebo_ref }}" --recursive https://github.com/haasn/libplacebo.git
-          cd libplacebo
-          meson setup build --buildtype=release -Ddefault_library=shared \
-            -Dvulkan=disabled -Dopengl=disabled -Dd3d11=enabled -Dshaderc=enabled -Dglslang=disabled \
-            -Dlcms=disabled -Ddovi=disabled -Dlibdovi=disabled -Dxxhash=disabled -Dunwind=disabled \
-            -Ddemos=false -Dtests=false -Dbench=false -Dfuzz=false
-          ninja -C build
-          mkdir -p ../out/bin ../out/include
-          cp build/src/libplacebo-*.dll ../out/bin/
-          for d in libshaderc_shared.dll libspirv-cross-c-shared.dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll; do
-            cp "/mingw64/bin/$d" ../out/bin/
-          done
-          cp -r src/include/libplacebo ../out/include/
-          cp build/src/include/libplacebo/config.h ../out/include/libplacebo/config.h
-          rm -f ../out/include/libplacebo/config.h.in
-          cp LICENSE ../out/LICENSE.libplacebo
-          (cd ../out/bin && sha256sum *.dll > SHA256SUMS && cat SHA256SUMS)
-          ldd build/src/libplacebo-*.dll | grep -i mingw64 || true
-      - name: Smoke (exports present)
+          bash tool/libplacebo/build_placebo.sh \
+            --ref "$PLACEBO_REF" \
+            --output out
+      - name: Smoke (single self-contained DLL and exports present)
         shell: msys2 {0}
         run: |
           set -euo pipefail
+          test "$(find out/bin -maxdepth 1 -type f -name '*.dll' | wc -l)" -eq 1
+          ! ldd out/bin/libplacebo-*.dll | grep -qi '/mingw64/'
           objdump -p out/bin/libplacebo-*.dll | grep -E 'pl_d3d11_create|pl_mpv_user_shader_parse|pl_render_image|pl_log_create_'
       - uses: actions/upload-artifact@v4
         with:
