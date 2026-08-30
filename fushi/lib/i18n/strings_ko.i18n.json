@@ -3906,5 +3906,10 @@
   "download_tracker_refresh": "트래커 가져오기",
   "download_tracker_preview_empty": "구독을 가져오면 지원되는 HTTP, HTTPS, UDP 트래커를 미리 볼 수 있습니다.",
   "download_tracker_preview_count": "트래커 $count개를 가져왔습니다",
-  "download_tracker_fetch_failed": "트래커를 가져오지 못했습니다: $message"
+  "download_tracker_fetch_failed": "트래커를 가져오지 못했습니다: $message",
+  "anki_connect_port_auto_fix": "비어 있는 포트로 변경",
+  "anki_connect_port_auto_fix_hint": "비어 있는 포트를 골라 Hibiki와 AnkiConnect 애드온 설정 양쪽에 기록합니다. 적용하려면 Anki를 다시 시작하세요.",
+  "anki_connect_port_auto_fix_done": "AnkiConnect 포트를 ${port}(으)로 변경했습니다. Anki를 다시 시작한 뒤 다시 시도하세요.",
+  "anki_connect_port_auto_fix_manual": "Hibiki는 이제 포트 ${port}를 사용하지만 AnkiConnect 애드온 설정을 찾지 못했습니다. Anki의 [도구 → 애드온 → AnkiConnect → 설정]에서 webBindPort도 ${port}로 바꾼 뒤 Anki를 다시 시작하세요.",
+  "anki_connect_port_auto_fix_none": "이 컴퓨터에서 비어 있는 포트를 찾지 못했습니다."
 }

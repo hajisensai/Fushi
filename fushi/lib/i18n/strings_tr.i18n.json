@@ -3906,5 +3906,10 @@
   "download_tracker_refresh": "Trackerları getir",
   "download_tracker_preview_empty": "Desteklenen HTTP, HTTPS ve UDP trackerlarını önizlemek için aboneliği getir.",
   "download_tracker_preview_count": "$count tracker getirildi",
-  "download_tracker_fetch_failed": "Trackerlar getirilemedi: $message"
+  "download_tracker_fetch_failed": "Trackerlar getirilemedi: $message",
+  "anki_connect_port_auto_fix": "Boş bir bağlantı noktasına geç",
+  "anki_connect_port_auto_fix_hint": "Boş bir bağlantı noktası seçip hem Hibiki'ye hem de AnkiConnect eklenti yapılandırmasına yazar. Uygulamak için Anki'yi yeniden başlatın.",
+  "anki_connect_port_auto_fix_done": "AnkiConnect artık ${port} bağlantı noktasını kullanıyor. Anki'yi yeniden başlatıp tekrar deneyin.",
+  "anki_connect_port_auto_fix_manual": "Hibiki artık ${port} bağlantı noktasını kullanıyor ancak AnkiConnect eklenti yapılandırması bulunamadı. Anki'de (Araçlar → Eklentiler → AnkiConnect → Yapılandırma) webBindPort değerini de ${port} yapıp Anki'yi yeniden başlatın.",
+  "anki_connect_port_auto_fix_none": "Bu makinede boş bağlantı noktası bulunamadı."
 }

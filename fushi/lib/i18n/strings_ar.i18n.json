@@ -3906,5 +3906,10 @@
   "download_tracker_refresh": "جلب المتعقّبات",
   "download_tracker_preview_empty": "اجلب الاشتراك لمعاينة متعقّبات HTTP وHTTPS وUDP المدعومة.",
   "download_tracker_preview_count": "تم جلب $count متعقّبًا",
-  "download_tracker_fetch_failed": "تعذّر جلب المتعقّبات: $message"
+  "download_tracker_fetch_failed": "تعذّر جلب المتعقّبات: $message",
+  "anki_connect_port_auto_fix": "التبديل إلى منفذ حر",
+  "anki_connect_port_auto_fix_hint": "يختار منفذًا حرًا ويكتبه في Hibiki وفي إعدادات إضافة AnkiConnect معًا. أعد تشغيل Anki لتطبيق التغيير.",
+  "anki_connect_port_auto_fix_done": "تم تغيير منفذ AnkiConnect إلى ${port}. أعد تشغيل Anki ثم حاول مجددًا.",
+  "anki_connect_port_auto_fix_manual": "يستخدم Hibiki الآن المنفذ ${port}، لكن لم يُعثر على إعدادات إضافة AnkiConnect. اضبط webBindPort على ${port} في Anki (أدوات ← الإضافات ← AnkiConnect ← إعداد) ثم أعد تشغيل Anki.",
+  "anki_connect_port_auto_fix_none": "لم يُعثر على أي منفذ حر على هذا الجهاز."
 }

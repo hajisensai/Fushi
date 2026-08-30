@@ -847,9 +847,18 @@ String _escapeAnkiQuery(String value) => value.replaceAll('"', '\\"');
 /// 取代各处对 SocketException / http.ClientException 的 toString() 透传。
 String classifyAnkiConnectError(Object error) {
   if (error is AnkiConnectPreDeliveryException) {
-    return classifyAnkiConnectError(error.cause);
+    // 建连阶段就失败：一个 HTTP 请求都还没发出去。底层抛的是 SocketException
+    // 还是 `Socket.connect` 的超时，对用户是同一件事——那个地址上没人接。一律归
+    // refused，好让 connectionTimeout 保持**单一含义**（见下）。此前这里递归看
+    // cause，两个阶段的超时会撞进同一个码，提示也就只能含糊说「检查防火墙」。
+    return AnkiErrorCode.connectionRefused;
   }
   if (error is TimeoutException) {
+    // 走到这里的超时**一定是应答阶段**的：连接工厂已经把建连失败标成
+    // [AnkiConnectPreDeliveryException] 拦在上面，所以 TCP 是连上了、请求也发出去
+    // 了，只是没人按 AnkiConnect 的规矩回话。在 localhost 上这几乎只有两种可能：
+    // 这个端口上蹲着的根本不是 AnkiConnect（端口被别的程序占了），或者 Anki 卡住。
+    // 文案据此给出可操作的下一步（换端口），而不是泛泛的「网络超时」。
     return AnkiErrorCode.connectionTimeout;
   }
   if (error is SocketException) {
@@ -864,8 +873,18 @@ String classifyAnkiConnectError(Object error) {
   return AnkiErrorCode.connectionUnknown;
 }
 
+/// 是否是**传输层**失败（socket / 超时 / http），而不是 AnkiConnect 应答的业务错误、
+/// 也不是本地编程错误（payload 解析、空列表 firstWhere 之类）。
+///
+/// 这三选一原本在制卡失败映射、查重冷却、Lapis 一键配置三处各写了一份；判据同源才
+/// 不会漂成「一处认它是网络错、另一处不认」。
+bool isAnkiConnectTransportError(Object error) =>
+    error is SocketException ||
+    error is TimeoutException ||
+    error is http.ClientException;
+
 /// 给**设置页**（非 toast）用的英文可读提示：toast 走主 app 的本地化映射，这里仅服务
-/// checkConnection，文案与旧实现一致，但来源统一到稳定码（不再透传异常原文）。
+/// checkConnection；来源统一到稳定码（不再透传异常原文）。
 /// [host]/[port] 仅用于丰富英文回退文案；缺省时省略（用户看到的 toast 由主 app 按
 /// [code] 本地化，本回退串不含地址也无碍）。
 String ankiConnectErrorHint(String code, {String? host, int? port}) {
@@ -876,8 +895,10 @@ String ankiConnectErrorHint(String code, {String? host, int? port}) {
       return 'Connection refused$where (is Anki Desktop running?).\n'
           'Check that AnkiConnect add-on (2055492159) is installed.';
     case AnkiErrorCode.connectionTimeout:
-      return 'Connection timed out$where.\n'
-          'Check firewall settings or verify the host and port.';
+      return 'Connected to$where but got no answer.\n'
+          'Something is listening on that port and it is not answering as '
+          'AnkiConnect - the port is probably taken by another program '
+          '(or Anki is frozen). Switch AnkiConnect to a free port.';
     case AnkiErrorCode.httpError:
       return 'HTTP error connecting to AnkiConnect$where.';
     default:

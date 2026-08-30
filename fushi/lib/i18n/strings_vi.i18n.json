@@ -3906,5 +3906,10 @@
   "download_tracker_refresh": "Lấy tracker",
   "download_tracker_preview_empty": "Lấy đăng ký để xem trước các tracker HTTP, HTTPS và UDP được hỗ trợ.",
   "download_tracker_preview_count": "Đã lấy $count tracker",
-  "download_tracker_fetch_failed": "Không lấy được tracker: $message"
+  "download_tracker_fetch_failed": "Không lấy được tracker: $message",
+  "anki_connect_port_auto_fix": "Đổi sang cổng còn trống",
+  "anki_connect_port_auto_fix_hint": "Chọn một cổng còn trống rồi ghi vào cả Hibiki lẫn cấu hình tiện ích AnkiConnect. Khởi động lại Anki để áp dụng.",
+  "anki_connect_port_auto_fix_done": "AnkiConnect đã chuyển sang cổng ${port}. Hãy khởi động lại Anki rồi thử lại.",
+  "anki_connect_port_auto_fix_manual": "Hibiki hiện dùng cổng ${port}, nhưng không tìm thấy cấu hình tiện ích AnkiConnect. Hãy đặt webBindPort thành ${port} trong Anki (Công cụ → Tiện ích → AnkiConnect → Cấu hình) rồi khởi động lại Anki.",
+  "anki_connect_port_auto_fix_none": "Không tìm thấy cổng nào còn trống trên máy này."
 }

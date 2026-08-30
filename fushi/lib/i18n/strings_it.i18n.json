@@ -3906,5 +3906,10 @@
   "download_tracker_refresh": "Scarica i tracker",
   "download_tracker_preview_empty": "Scarica l’abbonamento per vedere in anteprima i tracker HTTP, HTTPS e UDP supportati.",
   "download_tracker_preview_count": "$count tracker scaricati",
-  "download_tracker_fetch_failed": "Impossibile scaricare i tracker: $message"
+  "download_tracker_fetch_failed": "Impossibile scaricare i tracker: $message",
+  "anki_connect_port_auto_fix": "Passa a una porta libera",
+  "anki_connect_port_auto_fix_hint": "Sceglie una porta libera e la scrive sia in Hibiki sia nella configurazione del componente aggiuntivo AnkiConnect. Riavvia Anki per applicarla.",
+  "anki_connect_port_auto_fix_done": "AnkiConnect ora usa la porta ${port}. Riavvia Anki e riprova.",
+  "anki_connect_port_auto_fix_manual": "Hibiki ora usa la porta ${port}, ma la configurazione del componente aggiuntivo AnkiConnect non è stata trovata. Imposta webBindPort su ${port} in Anki (Strumenti → Componenti aggiuntivi → AnkiConnect → Configurazione) e riavvia Anki.",
+  "anki_connect_port_auto_fix_none": "Nessuna porta libera trovata su questo computer."
 }

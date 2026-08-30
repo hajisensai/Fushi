@@ -3906,5 +3906,10 @@
   "download_tracker_refresh": "Fetch trackers",
   "download_tracker_preview_empty": "Fetch the subscription to preview supported HTTP, HTTPS, and UDP trackers.",
   "download_tracker_preview_count": "Fetched $count trackers",
-  "download_tracker_fetch_failed": "Could not fetch trackers: $message"
+  "download_tracker_fetch_failed": "Could not fetch trackers: $message",
+  "anki_connect_port_auto_fix": "Switch to a free port",
+  "anki_connect_port_auto_fix_hint": "Picks a free port and writes it to both Hibiki and the AnkiConnect add-on config. Restart Anki to apply.",
+  "anki_connect_port_auto_fix_done": "Switched AnkiConnect to port ${port}. Restart Anki to apply.",
+  "anki_connect_port_auto_fix_manual": "Hibiki now uses port ${port}, but the AnkiConnect add-on config was not found. Set webBindPort to ${port} in Anki (Tools -> Add-ons -> AnkiConnect -> Config), then restart Anki.",
+  "anki_connect_port_auto_fix_none": "No free port found on this machine."
 }

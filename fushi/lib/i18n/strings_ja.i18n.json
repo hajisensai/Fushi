@@ -3906,5 +3906,10 @@
   "download_tracker_refresh": "トラッカーを取得",
   "download_tracker_preview_empty": "購読を取得すると、対応している HTTP・HTTPS・UDP のトラッカーをプレビューできます。",
   "download_tracker_preview_count": "$count 件のトラッカーを取得しました",
-  "download_tracker_fetch_failed": "トラッカーを取得できませんでした: $message"
+  "download_tracker_fetch_failed": "トラッカーを取得できませんでした: $message",
+  "anki_connect_port_auto_fix": "空いているポートに変更",
+  "anki_connect_port_auto_fix_hint": "空いているポートを選び、Hibiki と Anki の AnkiConnect アドオン設定の両方に書き込みます。反映には Anki の再起動が必要です。",
+  "anki_connect_port_auto_fix_done": "AnkiConnect のポートを ${port} に変更しました。Anki を再起動してからもう一度お試しください。",
+  "anki_connect_port_auto_fix_manual": "Hibiki はポート ${port} を使うようになりましたが、AnkiConnect のアドオン設定が見つかりませんでした。Anki の「ツール → アドオン → AnkiConnect → 設定」で webBindPort も ${port} にしてから、Anki を再起動してください。",
+  "anki_connect_port_auto_fix_none": "このマシンに空いているポートが見つかりませんでした。"
 }

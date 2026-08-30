@@ -3906,5 +3906,10 @@
   "download_tracker_refresh": "获取 Tracker",
   "download_tracker_preview_empty": "获取订阅后可预览受支持的 HTTP、HTTPS 和 UDP Tracker。",
   "download_tracker_preview_count": "已获取 $count 个 Tracker",
-  "download_tracker_fetch_failed": "获取 Tracker 失败：$message"
+  "download_tracker_fetch_failed": "获取 Tracker 失败：$message",
+  "anki_connect_port_auto_fix": "换一个空闲端口",
+  "anki_connect_port_auto_fix_hint": "自动挑一个空闲端口，同时写进 Hibiki 和 Anki 的 AnkiConnect 插件配置。改完重启 Anki 生效。",
+  "anki_connect_port_auto_fix_done": "AnkiConnect 端口已改为 ${port}。请重启 Anki 后重试。",
+  "anki_connect_port_auto_fix_manual": "Hibiki 已改用端口 ${port}，但没找到 AnkiConnect 的插件配置。请在 Anki 的「工具 → 插件 → AnkiConnect → 配置」里把 webBindPort 也改成 ${port}，然后重启 Anki。",
+  "anki_connect_port_auto_fix_none": "本机没有找到空闲端口。"
 }

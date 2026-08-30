@@ -3906,5 +3906,10 @@
   "download_tracker_refresh": "ดึงแทร็กเกอร์",
   "download_tracker_preview_empty": "ดึงรายการที่สมัครรับเพื่อดูตัวอย่างแทร็กเกอร์ HTTP, HTTPS และ UDP ที่รองรับ",
   "download_tracker_preview_count": "ดึงแทร็กเกอร์มาแล้ว $count รายการ",
-  "download_tracker_fetch_failed": "ดึงแทร็กเกอร์ไม่สำเร็จ: $message"
+  "download_tracker_fetch_failed": "ดึงแทร็กเกอร์ไม่สำเร็จ: $message",
+  "anki_connect_port_auto_fix": "เปลี่ยนไปใช้พอร์ตที่ว่าง",
+  "anki_connect_port_auto_fix_hint": "เลือกพอร์ตที่ว่างแล้วเขียนลงทั้งใน Hibiki และการตั้งค่าส่วนเสริม AnkiConnect รีสตาร์ท Anki เพื่อให้มีผล",
+  "anki_connect_port_auto_fix_done": "เปลี่ยนพอร์ตของ AnkiConnect เป็น ${port} แล้ว รีสตาร์ท Anki แล้วลองอีกครั้ง",
+  "anki_connect_port_auto_fix_manual": "ตอนนี้ Hibiki ใช้พอร์ต ${port} แล้ว แต่ไม่พบการตั้งค่าส่วนเสริม AnkiConnect โปรดตั้ง webBindPort เป็น ${port} ใน Anki (เครื่องมือ → ส่วนเสริม → AnkiConnect → การตั้งค่า) แล้วรีสตาร์ท Anki",
+  "anki_connect_port_auto_fix_none": "ไม่พบพอร์ตที่ว่างบนเครื่องนี้"
 }

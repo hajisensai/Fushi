@@ -3906,5 +3906,10 @@
   "download_tracker_refresh": "Récupérer les trackers",
   "download_tracker_preview_empty": "Récupère l’abonnement pour prévisualiser les trackers HTTP, HTTPS et UDP pris en charge.",
   "download_tracker_preview_count": "$count trackers récupérés",
-  "download_tracker_fetch_failed": "Impossible de récupérer les trackers : $message"
+  "download_tracker_fetch_failed": "Impossible de récupérer les trackers : $message",
+  "anki_connect_port_auto_fix": "Passer à un port libre",
+  "anki_connect_port_auto_fix_hint": "Choisit un port libre et l'écrit à la fois dans Hibiki et dans la configuration du module AnkiConnect. Redémarrez Anki pour l'appliquer.",
+  "anki_connect_port_auto_fix_done": "AnkiConnect utilise désormais le port ${port}. Redémarrez Anki puis réessayez.",
+  "anki_connect_port_auto_fix_manual": "Hibiki utilise désormais le port ${port}, mais la configuration du module AnkiConnect est introuvable. Définissez webBindPort sur ${port} dans Anki (Outils → Modules complémentaires → AnkiConnect → Configuration), puis redémarrez Anki.",
+  "anki_connect_port_auto_fix_none": "Aucun port libre trouvé sur cette machine."
 }

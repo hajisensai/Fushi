@@ -3906,5 +3906,10 @@
   "download_tracker_refresh": "Obtener trackers",
   "download_tracker_preview_empty": "Obtén la suscripción para ver los trackers HTTP, HTTPS y UDP compatibles.",
   "download_tracker_preview_count": "$count trackers obtenidos",
-  "download_tracker_fetch_failed": "No se pudieron obtener los trackers: $message"
+  "download_tracker_fetch_failed": "No se pudieron obtener los trackers: $message",
+  "anki_connect_port_auto_fix": "Cambiar a un puerto libre",
+  "anki_connect_port_auto_fix_hint": "Elige un puerto libre y lo escribe tanto en Hibiki como en la configuración del complemento AnkiConnect. Reinicia Anki para aplicarlo.",
+  "anki_connect_port_auto_fix_done": "AnkiConnect ahora usa el puerto ${port}. Reinicia Anki y vuelve a intentarlo.",
+  "anki_connect_port_auto_fix_manual": "Hibiki ahora usa el puerto ${port}, pero no se encontró la configuración del complemento AnkiConnect. Pon webBindPort en ${port} dentro de Anki (Herramientas → Complementos → AnkiConnect → Configuración) y reinicia Anki.",
+  "anki_connect_port_auto_fix_none": "No se encontró ningún puerto libre en este equipo."
 }

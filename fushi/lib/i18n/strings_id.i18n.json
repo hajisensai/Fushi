@@ -3906,5 +3906,10 @@
   "download_tracker_refresh": "Ambil tracker",
   "download_tracker_preview_empty": "Ambil langganan untuk melihat tracker HTTP, HTTPS, dan UDP yang didukung.",
   "download_tracker_preview_count": "$count tracker diambil",
-  "download_tracker_fetch_failed": "Tidak dapat mengambil tracker: $message"
+  "download_tracker_fetch_failed": "Tidak dapat mengambil tracker: $message",
+  "anki_connect_port_auto_fix": "Ganti ke port yang kosong",
+  "anki_connect_port_auto_fix_hint": "Memilih port kosong lalu menuliskannya ke Hibiki dan ke konfigurasi add-on AnkiConnect. Mulai ulang Anki agar berlaku.",
+  "anki_connect_port_auto_fix_done": "AnkiConnect kini memakai port ${port}. Mulai ulang Anki lalu coba lagi.",
+  "anki_connect_port_auto_fix_manual": "Hibiki kini memakai port ${port}, tetapi konfigurasi add-on AnkiConnect tidak ditemukan. Setel webBindPort ke ${port} di Anki (Alat → Add-on → AnkiConnect → Konfigurasi), lalu mulai ulang Anki.",
+  "anki_connect_port_auto_fix_none": "Tidak ditemukan port kosong di komputer ini."
 }

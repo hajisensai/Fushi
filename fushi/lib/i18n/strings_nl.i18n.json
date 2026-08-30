@@ -3906,5 +3906,10 @@
   "download_tracker_refresh": "Trackers ophalen",
   "download_tracker_preview_empty": "Haal het abonnement op om de ondersteunde HTTP-, HTTPS- en UDP-trackers te bekijken.",
   "download_tracker_preview_count": "$count trackers opgehaald",
-  "download_tracker_fetch_failed": "Kan de trackers niet ophalen: $message"
+  "download_tracker_fetch_failed": "Kan de trackers niet ophalen: $message",
+  "anki_connect_port_auto_fix": "Naar een vrije poort wisselen",
+  "anki_connect_port_auto_fix_hint": "Kiest een vrije poort en schrijft die zowel in Hibiki als in de AnkiConnect-add-onconfiguratie. Herstart Anki om het toe te passen.",
+  "anki_connect_port_auto_fix_done": "AnkiConnect gebruikt nu poort ${port}. Herstart Anki en probeer het opnieuw.",
+  "anki_connect_port_auto_fix_manual": "Hibiki gebruikt nu poort ${port}, maar de AnkiConnect-add-onconfiguratie is niet gevonden. Zet webBindPort in Anki (Extra → Add-ons → AnkiConnect → Configuratie) ook op ${port} en herstart Anki.",
+  "anki_connect_port_auto_fix_none": "Geen vrije poort gevonden op deze machine."
 }

@@ -3906,5 +3906,10 @@
   "download_tracker_refresh": "Tracker abrufen",
   "download_tracker_preview_empty": "Rufe das Abonnement ab, um die unterstützten HTTP-, HTTPS- und UDP-Tracker anzuzeigen.",
   "download_tracker_preview_count": "$count Tracker abgerufen",
-  "download_tracker_fetch_failed": "Tracker konnten nicht abgerufen werden: $message"
+  "download_tracker_fetch_failed": "Tracker konnten nicht abgerufen werden: $message",
+  "anki_connect_port_auto_fix": "Auf freien Port wechseln",
+  "anki_connect_port_auto_fix_hint": "Wählt einen freien Port und trägt ihn sowohl in Hibiki als auch in die AnkiConnect-Add-on-Konfiguration ein. Starte Anki neu, damit es wirkt.",
+  "anki_connect_port_auto_fix_done": "AnkiConnect nutzt jetzt Port ${port}. Starte Anki neu und versuche es erneut.",
+  "anki_connect_port_auto_fix_manual": "Hibiki nutzt jetzt Port ${port}, aber die AnkiConnect-Add-on-Konfiguration wurde nicht gefunden. Setze webBindPort in Anki (Werkzeuge → Add-ons → AnkiConnect → Konfiguration) ebenfalls auf ${port} und starte Anki neu.",
+  "anki_connect_port_auto_fix_none": "Auf diesem Rechner wurde kein freier Port gefunden."
 }

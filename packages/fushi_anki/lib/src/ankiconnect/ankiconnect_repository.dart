@@ -6,7 +6,6 @@ import 'dart:isolate';
 import 'package:collection/collection.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 
 import '../anki_media_dedup.dart';
 import '../anki_models.dart';
@@ -635,9 +634,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   /// 'unexpected error: $e' 会泄漏乱码）。保持 mineEntry 的「永不抛出」契约（BUG-077）：
   /// 本方法不触网、不取服务，绝不抛。
   MineOutcome _mineFailureFor(Object e, StackTrace stack) {
-    if (e is SocketException ||
-        e is TimeoutException ||
-        e is http.ClientException) {
+    if (isAnkiConnectTransportError(e)) {
       final String code = classifyAnkiConnectError(e);
       return MineOutcome.failure(
         ankiConnectErrorHint(code),
@@ -1058,9 +1055,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       // 只有**传输层**失败才进冷却，与 _mineFailureFor 用同一套分类：AnkiConnect
       // 应答了业务错误（牌照不存在、字段不匹配等）说明主机可达，短路它只会让
       // 查重永久失灵。
-      if (e is SocketException ||
-          e is TimeoutException ||
-          e is http.ClientException) {
+      if (isAnkiConnectTransportError(e)) {
         _duplicateCheckUnreachableUntil = DateTime.now().add(
           kDuplicateCheckUnreachableCooldown,
         );

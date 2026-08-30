@@ -3906,5 +3906,10 @@
   "download_tracker_refresh": "Получить трекеры",
   "download_tracker_preview_empty": "Получите подписку, чтобы посмотреть поддерживаемые трекеры HTTP, HTTPS и UDP.",
   "download_tracker_preview_count": "Получено трекеров: $count",
-  "download_tracker_fetch_failed": "Не удалось получить трекеры: $message"
+  "download_tracker_fetch_failed": "Не удалось получить трекеры: $message",
+  "anki_connect_port_auto_fix": "Выбрать свободный порт",
+  "anki_connect_port_auto_fix_hint": "Подбирает свободный порт и записывает его и в Hibiki, и в настройки дополнения AnkiConnect. Перезапустите Anki, чтобы изменения вступили в силу.",
+  "anki_connect_port_auto_fix_done": "AnkiConnect переключён на порт ${port}. Перезапустите Anki и повторите попытку.",
+  "anki_connect_port_auto_fix_manual": "Hibiki теперь использует порт ${port}, но настройки дополнения AnkiConnect не найдены. Укажите webBindPort равным ${port} в Anki (Инструменты → Дополнения → AnkiConnect → Настройка) и перезапустите Anki.",
+  "anki_connect_port_auto_fix_none": "На этом компьютере не найдено свободных портов."
 }
