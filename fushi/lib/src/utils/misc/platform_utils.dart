@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:fushi/src/utils/app_ui_scale.dart';
 
 // Architecture decision: platform branching uses runtime Platform.is* checks
@@ -72,12 +73,18 @@ ScrollPhysics desktopAwareScrollPhysics() {
 /// 视觉上就是「一滚跳一整段」。触控板/高精度滚轮则连续上报小 delta，必须保持 1:1。
 ///
 /// 因此只收敛绝对值 >= 80 的粗粒度事件：减半并把单事件封顶 120px。小 delta、方向、
-/// macOS 和移动端全部原样保留。这里不做 animateTo，避免连续滚轮事件互相取消动画而
-/// 产生输入延迟；缩小原子步长后仍走 Flutter 原生 pointerScroll 通知/边界路径。
-double refinedDesktopPointerScrollDelta(double delta) {
+/// macOS 和移动端全部原样保留。
+///
+/// 本函数只负责**步长**。要不要补一段动画由 [_FushiScrollPosition] 决定，它只对粗
+/// 滚轮动画、且连续同向事件向同一个目标累积（不互相取消，所以不产生输入延迟）；
+/// 触控板的小 delta 走原生同步路径，不会被加上拖尾。
+/// [asCoarse] = 本次事件所属的**手势**已经被判成粗滚轮，即使这一帧的绝对值低于
+/// 阈值也照粗滚轮缩放。滚轮一档并不总是同一个 delta，一次拨动的尾帧可能只有十几
+/// px；只缩放超阈值的那几帧会让同一次拨动前段减半、尾段全量，总距离对不上手感。
+double refinedDesktopPointerScrollDelta(double delta, {bool asCoarse = false}) {
   if (!(Platform.isWindows || Platform.isLinux)) return delta;
   final double magnitude = delta.abs();
-  if (magnitude < 80) return delta;
+  if (!asCoarse && magnitude < 80) return delta;
   final double reduced = magnitude * 0.5;
   final double refined = reduced > 120 ? 120 : reduced;
   return delta.isNegative ? -refined : refined;
@@ -124,10 +131,60 @@ class _FushiScrollPosition extends ScrollPositionWithSingleContext {
   double? _wheelTarget;
   double? _lastCoarseDelta;
 
+  /// 本次手势被判成粗滚轮还是细指针；null = 还没有正在进行的手势。
+  ///
+  /// 为什么要按**手势**锁而不是逐事件判：滚轮一档并不总是同一个 delta——同一次拨动
+  /// 的尾帧可能小于阈值，逐事件判会让那几帧突然按 1:1 走，于是一次拨动里前段减半、
+  /// 尾段全量，滚动距离对不上手感。分类在手势首帧定下，整段沿用。
+  bool? _gestureIsCoarse;
+
+  /// 上一次 pointerScroll 的时刻。距上次超过 [_kWheelGestureIdle] 视为新手势，
+  /// 重新分类——否则第一次用滚轮之后，后面用触控板也会一直被当成粗滚轮。
+  Duration? _lastWheelStamp;
+
+  static const Duration _kWheelGestureIdle = Duration(milliseconds: 200);
+
+  /// 手势节流用的时钟。取调度器的帧时间戳而不是 `DateTime.now()`：widget 测试里
+  /// `pump(d)` 会推进它，于是「隔了多久算新手势」在测试里可控；真机上它就是真实
+  /// 帧时钟，精度远高于 200ms 的判据需要。
+  Duration _wheelClock() =>
+      SchedulerBinding.instance.currentSystemFrameTimeStamp;
+
   @override
   void pointerScroll(double delta) {
-    final double refined = refinedDesktopPointerScrollDelta(delta);
-    if (!isCoarseDesktopPointerScrollDelta(delta) ||
+    // delta == 0 是 Flutter 的惯性取消信号（换设备/手势结束），不是一次滚动：
+    // 清掉分类与目标，让下一次输入重新起判。漏掉这一步，触控板接在滚轮之后会
+    // 继承「粗滚轮」的分类。
+    if (delta == 0) {
+      final double? pending = _wheelTarget;
+      _gestureIsCoarse = null;
+      _lastWheelStamp = null;
+      _resetWheelTarget();
+      // 取消要停的是**动画**，不是用户已经拨出去的距离。裸 `super.pointerScroll(0)`
+      // 会 goIdle 把飞行中的 DrivenScrollActivity 掐断在半路，于是一次已经发生的
+      // 拨动只走了十几 px 就没了。这里直接落到既定目标：动画停了，距离不丢。
+      if (pending != null && pending != pixels) {
+        jumpTo(pending);
+        return;
+      }
+      super.pointerScroll(delta);
+      return;
+    }
+
+    final Duration now = _wheelClock();
+    final Duration? last = _lastWheelStamp;
+    if (last == null || now - last > _kWheelGestureIdle) {
+      _gestureIsCoarse = null;
+    }
+    _lastWheelStamp = now;
+    final bool coarse =
+        _gestureIsCoarse ??= isCoarseDesktopPointerScrollDelta(delta);
+
+    // 分类锁定后，缩放也照分类走：粗滚轮手势里的小尾帧同样减半，否则同一次拨动
+    // 前段减半、尾段全量。细指针手势整段 1:1。
+    final double refined =
+        coarse ? refinedDesktopPointerScrollDelta(delta, asCoarse: true) : delta;
+    if (!coarse ||
         MediaQuery.maybeDisableAnimationsOf(context.storageContext) == true) {
       _resetWheelTarget();
       super.pointerScroll(refined);

@@ -186,6 +186,10 @@ void main() {
     );
 
     controller.jumpTo(0);
+    // 上面刚发过一个细 delta（12）。设备分类按**手势**锁定、静默 200ms 才重判，
+    // 不隔开的话这两下 120 会继承「细指针」分类走 1:1，本条要测的粗滚轮累积就
+    // 根本没进到那条路径（实测：断言拿到 240 而不是 120）。
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.sendEventToBinding(wheel.scroll(const Offset(0, 120)));
     await tester.pump(const Duration(milliseconds: 40));
     await tester.sendEventToBinding(wheel.scroll(const Offset(0, 120)));

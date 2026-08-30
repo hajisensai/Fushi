@@ -388,6 +388,11 @@ class _HomeDashboardPageState
     extends BaseModuleTabPageState<HomeDashboardPage> {
   static const int _kActivityPageSize = 24;
 
+  /// 首页主纵向滚动区自己的控制器。走 [FushiScrollController]（全仓唯一那套桌面
+  /// 滚轮细化实现），**不再另起一个平行控制器**——两套都拦 pointerScroll，同时在
+  /// 场就是两层折扣，而且「粗滚轮阈值 / 倍率 / 要不要动画」会在两处各写一遍。
+  final ScrollController _dashboardScrollController = FushiScrollController();
+
   /// 「继续」横滑行：三类条目统一竖版海报槽（BUG-1299）。视频封面可能是刮削
   /// 落地的 2:3 竖版海报，旧「书竖 5:7 / 视频横 16:9」混排会把海报裁成中间一条；
   /// 现在与视频库主网格同源走 [PortraitCoverImage]——竖图铺满、横版截帧模糊
@@ -591,6 +596,7 @@ class _HomeDashboardPageState
     _galgameRepo?.removeListener(_scheduleReload);
     _trackingRevision?.removeListener(_scheduleReload);
     _prefsRepoForRemoteGate?.removeListener(_onPrefsChangedForRemoteGate);
+    _dashboardScrollController.dispose();
     super.dispose();
   }
 
@@ -999,6 +1005,7 @@ class _HomeDashboardPageState
           );
         }
         return ListView(
+          controller: _dashboardScrollController,
           padding: EdgeInsets.all(tokens.spacing.card),
           children: <Widget>[
             // 已迁移只读态（Fushi 迁移 P1-4，仅老包生效）：首屏常驻引导。
