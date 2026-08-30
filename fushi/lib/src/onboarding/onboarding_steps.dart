@@ -32,7 +32,7 @@ enum OnboardingFeature {
   /// 下载导入）。
   recommendedPack,
 
-  /// 不下载推荐包：手动导入词典，并按需导入有声书/配置发音来源。
+  /// 手动补充资源：导入词典，并按需导入有声书/配置发音来源；可与推荐包同时选。
   manualResources,
 
   /// Anki 制卡（AnkiConnect / AnkiDroid）。
@@ -54,26 +54,11 @@ const Set<OnboardingFeature> kOnboardingModuleFeatures = <OnboardingFeature>{
   OnboardingFeature.browserExtension,
 };
 
-/// 查词前的资源准备二选一：官方推荐包，或手动准备词典/音频。
+/// 能为查词教程提供词典资源的路径；两项独立多选，不互斥。
 const Set<OnboardingFeature> kOnboardingResourceFeatures = <OnboardingFeature>{
   OnboardingFeature.recommendedPack,
   OnboardingFeature.manualResources,
 };
-
-/// 功能选择页的一次点击。资源准备两项是单选，其余项维持普通多选。
-Set<OnboardingFeature> toggleOnboardingFeature({
-  required Set<OnboardingFeature> selected,
-  required OnboardingFeature feature,
-}) {
-  final Set<OnboardingFeature> next = Set<OnboardingFeature>.of(selected);
-  if (kOnboardingResourceFeatures.contains(feature)) {
-    return next
-      ..removeAll(kOnboardingResourceFeatures)
-      ..add(feature);
-  }
-  if (!next.remove(feature)) next.add(feature);
-  return next;
-}
 
 /// 第一张 Anki 卡教程的真实就绪判据。仅有旧的非空选择 id 不够：本次必须连接
 /// 成功，且两个 id 都仍存在于本次拉回的列表中。
