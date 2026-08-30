@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "2.2.4-debug.12746",
-  "tag": "v2.2.4-debug.12746+57dac23",
+  "version": "2.2.4-debug.12749",
+  "tag": "v2.2.4-debug.12749+6aa2a00",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 12746,
-  "notes": "Automated release-signed debug-channel build from develop @ 57dac23. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 12749,
+  "notes": "Automated desktop debug-channel build from develop @ 6aa2a00. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-2.2.4-debug.12742-ios.ipa",
@@ -26,15 +26,6 @@
       "sha256": "33579ab99d9ff03bc8ab5157a3c586f021f4bb266765b7296d12201688c8c78a"
     },
     {
-      "name": "fushi-2.2.4-debug.12742-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.12742-windows-setup.exe",
-      "releaseSequence": 12742,
-      "tag": "v2.2.4-debug.12742+b7f602c",
-      "version": "2.2.4-debug.12742",
-      "size": 249335965,
-      "sha256": "e3653893b0f1512c8d15eed2614d7182952e3b95e715d19c7631c5736ba5eddb"
-    },
-    {
       "name": "fushi-2.2.4-debug.12746-57dac23-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.12746-57dac23-debug.apk",
       "releaseSequence": 12746,
@@ -42,6 +33,15 @@
       "version": "2.2.4-debug.12746",
       "size": 268981807,
       "sha256": "74f3e1220e55dfbbd434e88c5400aae343b4f61153bee029c2cc2c069324f9b2"
+    },
+    {
+      "name": "fushi-2.2.4-debug.12749-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.12749-windows-setup.exe",
+      "releaseSequence": 12749,
+      "tag": "v2.2.4-debug.12749+6aa2a00",
+      "version": "2.2.4-debug.12749",
+      "size": 249351706,
+      "sha256": "27cbee432feb4417b1dacfc863c2be1d2c6fc4a65f1935450d62bc3d1d478140"
     }
   ]
 }
