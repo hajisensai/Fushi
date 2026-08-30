@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/utils.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 书架 / 漫画 / 视频 / 游戏四个模块的顶栏分区导航统一走 [LibrarySectionTabs]
 /// （唯一实现），形态是 MD3 primary tabs。
 ///
@@ -223,8 +225,13 @@ void main() {
     };
     for (final MapEntry<String, String> entry in topBarSources.entries) {
       final String src = File(entry.value).readAsStringSync();
+      // 下载页的资源子页另有一个合法的 section 级内容域分段条；这里只检查
+      // 顶层门头，防止把“顶层导航不得用分段按钮”误扩成整文件禁用。
+      final String topBarSource = entry.key == '下载'
+          ? methodBody(src, 'Widget _buildHeader(')
+          : src;
       expect(
-        src.contains('LibrarySectionTabs<'),
+        topBarSource.contains('LibrarySectionTabs<'),
         isTrue,
         reason: '${entry.key} 顶栏（${entry.value}）应使用共享的 LibrarySectionTabs',
       );
@@ -234,7 +241,7 @@ void main() {
         'TabBar(',
       ]) {
         expect(
-          src.contains(bypass),
+          topBarSource.contains(bypass),
           isFalse,
           reason: '${entry.key} 顶栏（${entry.value}）不应绕过共享组件手拼一排导航'
               '（发现的 `$bypass`：焦点约定与几何会随调用点漂移）',

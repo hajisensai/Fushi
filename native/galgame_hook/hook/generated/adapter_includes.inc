@@ -8,3 +8,4 @@
 #include "../adapters/elf_ai6_adapter.inc"
 #include "../adapters/sgre_adapter.inc"
 #include "../adapters/leaf_aquaplus_adapter.inc"
+#include "../adapters/hunex_gge_adapter.inc"

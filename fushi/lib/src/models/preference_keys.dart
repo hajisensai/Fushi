@@ -243,6 +243,7 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'audiobook_volume_',
   'current_source/',
   'gal_capture_memory::',
+  'gal_lookup_surface_v1::',
   'media_source_secret_',
   'src:',
   'video_danmaku_episode/',

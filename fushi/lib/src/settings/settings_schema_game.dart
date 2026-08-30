@@ -103,8 +103,8 @@ SettingsDestination buildGameDestination() {
               await settingsContext.appModel.setGalIngameLookupEnabled(value);
               // 与台词浮窗字号同款纪律：写完 pref 立刻推给编排器，否则开关只落了盘，
               // 本局游戏里不生效（要退出重进一局）。
-              await GalIngameLookupController.instance
-                  .applyEnabledFromPreferences();
+              await GalHookTextOverlayController.instance
+                  .applyIngameLookupEnabledFromPreferences();
               settingsContext.refresh();
             },
           ),
@@ -263,9 +263,9 @@ SettingsDestination buildGameDestination() {
             format: (double value) => '${value.round()} px',
             onChanged: (SettingsContext settingsContext, double value) =>
                 _commitGalHookAppearance(
-              settingsContext,
-              () => settingsContext.appModel.setGalHookTextFontSize(value),
-            ),
+                  settingsContext,
+                  () => settingsContext.appModel.setGalHookTextFontSize(value),
+                ),
           ),
           SettingsSliderItem(
             id: 'game.gal_hook_text_letter_spacing',
@@ -282,9 +282,11 @@ SettingsDestination buildGameDestination() {
                 settingsContext.appModel.galHookTextLetterSpacing,
             onChanged: (SettingsContext settingsContext, double value) =>
                 _commitGalHookAppearance(
-              settingsContext,
-              () => settingsContext.appModel.setGalHookTextLetterSpacing(value),
-            ),
+                  settingsContext,
+                  () => settingsContext.appModel.setGalHookTextLetterSpacing(
+                    value,
+                  ),
+                ),
           ),
           SettingsSliderItem(
             id: 'game.gal_hook_text_line_height',
@@ -301,9 +303,10 @@ SettingsDestination buildGameDestination() {
                 settingsContext.appModel.galHookTextLineHeight,
             onChanged: (SettingsContext settingsContext, double value) =>
                 _commitGalHookAppearance(
-              settingsContext,
-              () => settingsContext.appModel.setGalHookTextLineHeight(value),
-            ),
+                  settingsContext,
+                  () =>
+                      settingsContext.appModel.setGalHookTextLineHeight(value),
+                ),
           ),
           SettingsSwitchItem(
             id: 'game.gal_hook_text_bold',
@@ -314,9 +317,9 @@ SettingsDestination buildGameDestination() {
                 settingsContext.appModel.galHookTextBold,
             onChanged: (SettingsContext settingsContext, bool value) =>
                 _commitGalHookAppearance(
-              settingsContext,
-              () => settingsContext.appModel.setGalHookTextBold(value),
-            ),
+                  settingsContext,
+                  () => settingsContext.appModel.setGalHookTextBold(value),
+                ),
           ),
           SettingsSegmentedItem<String>(
             id: 'game.gal_hook_text_alignment',
@@ -336,9 +339,9 @@ SettingsDestination buildGameDestination() {
                 settingsContext.appModel.galHookTextAlignment,
             onChanged: (SettingsContext settingsContext, String value) =>
                 _commitGalHookAppearance(
-              settingsContext,
-              () => settingsContext.appModel.setGalHookTextAlignment(value),
-            ),
+                  settingsContext,
+                  () => settingsContext.appModel.setGalHookTextAlignment(value),
+                ),
           ),
           // BUG-1890：垂直对齐单列一项，不与水平对齐合成三选一——两者是正交的两个
           // 轴，合并会造出「选了顶部就没法同时左对齐」这种假互斥。
@@ -360,10 +363,10 @@ SettingsDestination buildGameDestination() {
                 settingsContext.appModel.galHookTextVerticalAlignment,
             onChanged: (SettingsContext settingsContext, String value) =>
                 _commitGalHookAppearance(
-              settingsContext,
-              () => settingsContext.appModel
-                  .setGalHookTextVerticalAlignment(value),
-            ),
+                  settingsContext,
+                  () => settingsContext.appModel
+                      .setGalHookTextVerticalAlignment(value),
+                ),
           ),
           _galHookColorItem(
             id: 'game.gal_hook_text_color',
@@ -405,9 +408,9 @@ SettingsDestination buildGameDestination() {
                 context.appModel.galHookTextBackgroundOpacity,
             onChanged: (SettingsContext context, double value) =>
                 _commitGalHookAppearance(
-              context,
-              () => context.appModel.setGalHookTextBackgroundOpacity(value),
-            ),
+                  context,
+                  () => context.appModel.setGalHookTextBackgroundOpacity(value),
+                ),
           ),
           _galHookColorItem(
             id: 'game.gal_hook_text_outline_color',
@@ -434,9 +437,9 @@ SettingsDestination buildGameDestination() {
                 context.appModel.galHookTextOutlineWidth,
             onChanged: (SettingsContext context, double value) =>
                 _commitGalHookAppearance(
-              context,
-              () => context.appModel.setGalHookTextOutlineWidth(value),
-            ),
+                  context,
+                  () => context.appModel.setGalHookTextOutlineWidth(value),
+                ),
           ),
           SettingsSliderItem(
             id: 'game.gal_hook_text_padding',
@@ -453,9 +456,9 @@ SettingsDestination buildGameDestination() {
                 context.appModel.galHookTextPadding,
             onChanged: (SettingsContext context, double value) =>
                 _commitGalHookAppearance(
-              context,
-              () => context.appModel.setGalHookTextPadding(value),
-            ),
+                  context,
+                  () => context.appModel.setGalHookTextPadding(value),
+                ),
           ),
           SettingsSliderItem(
             id: 'game.gal_hook_text_corner_radius',
@@ -472,9 +475,9 @@ SettingsDestination buildGameDestination() {
                 context.appModel.galHookTextCornerRadius,
             onChanged: (SettingsContext context, double value) =>
                 _commitGalHookAppearance(
-              context,
-              () => context.appModel.setGalHookTextCornerRadius(value),
-            ),
+                  context,
+                  () => context.appModel.setGalHookTextCornerRadius(value),
+                ),
           ),
         ],
       ),

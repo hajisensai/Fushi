@@ -1,0 +1,7 @@
+## BUG-1946 · HUNEX HFA/HW 源语音未与台词配对
+- **报告**：2026-08-30（用户：Wight）
+- **真实性**：✅ 真 bug。原始 WoH 1.0（`WoH.exe`，x64，SHA-256 `4475CC2F…63ADA`）可稳定捕获 `typemoon` 文本，但一条画面可确认有配音的台词仍显示 `line_has_no_voice`。此前 helper 没有 HUNEX GGE 的 HFA/HW 资源适配器；缺口位于共享文件 broker 到引擎资源发布之间，入口见 `native/galgame_hook/hook/adapters/hunex_gge_adapter.inc:1`。
+- **[ ] ① 已实现，未验收（`implemented_unverified`）** — 新增通用 HFA 索引与 HW/Ogg 校验层；WoH 标题 profile 仅把同目录 `data04000.hfa` 作为本地量测到的语音归档角色，不把该文件名提升为 HUNEX 家族不变量。adapter 复用既有 `CreateFileW/A`、`ReadFile`、`CloseHandle` broker，游戏线程只复制有界标量并排队，HookWorker 再按精确 member/payload 起点重开归档、校验完整 HW/Ogg 并经 `WriteVoiceOggAt` 发布源 Ogg。实现已进入 x64/x86 helper，但真实 `resource_observed` 门尚未复跑，因此本条仍不记为已修复。
+- **[x] ② 已加自动化测试** — `hunex_gge_adapter_test.cpp` 用纯合成字节覆盖 HFA/HW/Ogg 正负解析、mono/stereo、精确读取边界与畸形输入；`adapter_structure_test.py` 钉住共享 broker、worker-only 解析/落盘及生命周期；manifest/readiness 守卫钉住无 EXE hash gate、无家族级 `data04000.hfa` 签名，且 HUNEX Ready 单独不能冒充资源已发布。x64/x86 聚焦 CTest、结构/manifest 守卫和两个生成器检查均通过；按既定范围未跑全量测试。
+- **构建身份**：2026-08-30 重新生成的 helper 为 x64 `FCC4938F…F764B`、x86 `17AB0598…0F204`；`D:\codehibiki\fushi\build\windows\x64\runner\Debug` 已逐哈希确认包含这两份 DLL。
+- **验证缺口**：用户截图对应的 WoH 进程仍加载旧 runtime DLL `70CC68C6…E568FC`，探针只有 `xaudiodiag=0x00000001`，HUNEX Ready 位未出现；该会话没有执行到本轮实现，不能用来判定 HFA 读取是否命中。必须完整退出 WoH、从上述新 bundle 重开并核对进程内 DLL 哈希，然后按 Ready → Handle → Read → Queued/Rejected → Published 分阶段取证。达到 Published 前不得宣称音频匹配或制卡成功。
