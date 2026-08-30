@@ -26,6 +26,7 @@ class _FakeStore implements VideoExternalSettingsStore {
   final List<String> languageWrites = <String>[];
   final List<String> jimakuKeyWrites = <String>[];
   final List<bool> jimakuEnabledWrites = <bool>[];
+  final List<bool> ajattEnabledWrites = <bool>[];
   final List<(String, bool)> builtinSourceWrites = <(String, bool)>[];
 
   @override
@@ -49,6 +50,11 @@ class _FakeStore implements VideoExternalSettingsStore {
   @override
   Future<void> saveJimakuEnabled(bool enabled) async {
     jimakuEnabledWrites.add(enabled);
+  }
+
+  @override
+  Future<void> saveAjattEnabled(bool enabled) async {
+    ajattEnabledWrites.add(enabled);
   }
 
   @override

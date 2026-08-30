@@ -98,6 +98,22 @@ namespace flutter_inappwebview_plugin
     }
   }
 
+  // CDP `Network.getCookies` 的 `expires` 是**秒**（浮点，会话 cookie 为 -1），而
+  // platform-interface `Cookie.expiresDate` 是**毫秒**（`setCookie` 也按毫秒收、下面 /1000 再喂 CDP）。
+  // 旧代码把秒原样当毫秒回给 Dart：getCookies → setCookie 往返后 expires 落到 1970 年 → cookie 被
+  // 当场丢弃（环境间复制登录态静默失效）；读侧的 expiresAt 也小了 1000 倍。会话 cookie 回 null。
+  static flutter::EncodableValue cookieExpiresDateMs(const nlohmann::json& jsonCookie)
+  {
+    if (!jsonCookie.contains("expires") || !jsonCookie["expires"].is_number()) {
+      return make_fl_value();
+    }
+    const double expiresSec = jsonCookie["expires"].get<double>();
+    if (expiresSec < 0) {
+      return make_fl_value();
+    }
+    return make_fl_value(static_cast<int64_t>(expiresSec * 1000.0));
+  }
+
   void CookieManager::setCookie(WebViewEnvironment* webViewEnvironment, const flutter::EncodableMap& map, std::function<void(const bool&)> completionHandler) const
   {
     if (!plugin || !plugin->webViewEnvironmentManager) {
@@ -186,7 +202,7 @@ namespace flutter_inappwebview_plugin
                 {"value", jsonCookie["value"].get<std::string>()},
                 {"domain", jsonCookie["domain"].get<std::string>()},
                 {"path", jsonCookie["path"].get<std::string>()},
-                {"expiresDate", jsonCookie["expires"].get<int64_t>()},
+                {"expiresDate", cookieExpiresDateMs(jsonCookie)},
                 {"isHttpOnly", jsonCookie["httpOnly"].get<bool>()},
                 {"isSecure", jsonCookie["secure"].get<bool>()},
                 {"isSessionOnly", jsonCookie["session"].get<bool>()},
@@ -234,7 +250,7 @@ namespace flutter_inappwebview_plugin
               {"value", jsonCookie["value"].get<std::string>()},
               {"domain", jsonCookie["domain"].get<std::string>()},
               {"path", jsonCookie["path"].get<std::string>()},
-              {"expiresDate", jsonCookie["expires"].get<int64_t>()},
+              {"expiresDate", cookieExpiresDateMs(jsonCookie)},
               {"isHttpOnly", jsonCookie["httpOnly"].get<bool>()},
               {"isSecure", jsonCookie["secure"].get<bool>()},
               {"isSessionOnly", jsonCookie["session"].get<bool>()},

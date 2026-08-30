@@ -27,6 +27,8 @@ class AggregateSnapshot {
     this.favoriteSentences = const <FavoriteSentence>[],
     this.favoriteWordTombstones = const <AggregateTombstoneRecord>[],
     this.favoriteSentenceTombstones = const <AggregateTombstoneRecord>[],
+    this.studySegments = const <StudySegmentRecord>[],
+    this.studySegmentTombstones = const <StudyTombstoneRecord>[],
   });
 
   /// Wire format version. It is reserved for a genuinely BREAKING change (one
@@ -76,9 +78,21 @@ class AggregateSnapshot {
   final List<AggregateTombstoneRecord> favoriteWordTombstones;
   final List<AggregateTombstoneRecord> favoriteSentenceTombstones;
 
+  /// v92 统计域 wire v2（additive 字段，走 [currentVersion] 注释的兼容不变量：
+  /// 旧端忽略本 key、缺失当空）：学习事实段全量 + 按媒体身份的删除墓碑。
+  ///
+  /// 合并语义与 legacy 统计家族**不同**：不是 MAX-union，而是按 `uid` 并集、同 uid
+  /// 取 `updatedAt` 大者（LWW）；墓碑 `deletedAt > segment.updatedAt` → 删除胜。
+  /// 段有幂等键，两台设备各写各的 uid，并集天然不重复、不塌缩、不需要 deficit-lift。
+  /// legacy 四张表的字段冻结（本地不再写），旧端仍靠它们；新端之间的新统计只走这里。
+  final List<StudySegmentRecord> studySegments;
+  final List<StudyTombstoneRecord> studySegmentTombstones;
+
   /// True when nothing in the snapshot would change a peer: used to skip an
   /// empty upload on a device that has no aggregate state yet.
   bool get isEmpty =>
+      studySegments.isEmpty &&
+      studySegmentTombstones.isEmpty &&
       readingStats.isEmpty &&
       videoStats.isEmpty &&
       readingHourly.isEmpty &&
@@ -118,6 +132,11 @@ class AggregateSnapshot {
         'favoriteSentenceTombstones': favoriteSentenceTombstones
             .map((AggregateTombstoneRecord r) => r.toJson())
             .toList(),
+        'studySegments':
+            studySegments.map((StudySegmentRecord r) => r.toJson()).toList(),
+        'studySegmentTombstones': studySegmentTombstones
+            .map((StudyTombstoneRecord r) => r.toJson())
+            .toList(),
       };
 
   /// Decodes a snapshot from a backend JSON asset. A null / non-map payload, or
@@ -154,6 +173,10 @@ class AggregateSnapshot {
       favoriteSentenceTombstones: _decodeList(
           json['favoriteSentenceTombstones'],
           AggregateTombstoneRecord.fromJson),
+      studySegments:
+          _decodeList(json['studySegments'], StudySegmentRecord.fromJson),
+      studySegmentTombstones: _decodeList(
+          json['studySegmentTombstones'], StudyTombstoneRecord.fromJson),
     );
   }
 
@@ -194,6 +217,10 @@ class AggregateSnapshot {
       favoriteSentenceTombstones: favorites
           ? favoriteSentenceTombstones
           : const <AggregateTombstoneRecord>[],
+      // 段与其墓碑属统计族：「共享统计」关掉时一起置空（墓碑跟着它保护的族走）。
+      studySegments: stats ? studySegments : const <StudySegmentRecord>[],
+      studySegmentTombstones:
+          stats ? studySegmentTombstones : const <StudyTombstoneRecord>[],
     );
   }
 
@@ -535,6 +562,129 @@ int _asInt(Object? v) {
 /// `FushiDatabase.favoriteWordItemKey`；句 =
 /// `FavoriteSentenceRepository.itemKeyOf`）；[deletedAt] 为删除毫秒戳，仲裁
 /// 「删除 vs 重收藏」用（见 `AggregateSyncService.mergeSnapshots`）。
+/// v92 学习事实段的 wire 形状（`study_segments` 一行一条，全字段透传）。
+///
+/// [uid] 是幂等键（写入方生成）；[updatedAt] 是 LWW 水位；其余字段是事实本身。
+/// 字段集与本地表一一对应，同步落地按 uid `INSERT ... ON CONFLICT DO UPDATE WHERE
+/// excluded.updated_at > local.updated_at`——同值重放是 no-op。
+class StudySegmentRecord {
+  const StudySegmentRecord({
+    required this.uid,
+    required this.deviceId,
+    required this.mediaKind,
+    required this.mediaKey,
+    required this.format,
+    required this.title,
+    required this.startAt,
+    required this.endAt,
+    required this.dateKey,
+    required this.hour,
+    required this.durationMs,
+    required this.chars,
+    required this.pages,
+    required this.updatedAt,
+  });
+
+  final String uid;
+  final String deviceId;
+  final String mediaKind;
+  final String mediaKey;
+  final String format;
+  final String title;
+  final int startAt;
+  final int endAt;
+  final String dateKey;
+  final int hour;
+  final int durationMs;
+  final int chars;
+  final int pages;
+  final int updatedAt;
+
+  /// 墓碑键（与 [StudyTombstoneRecord.key] 同公式）。
+  String get mediaIdentity => '$mediaKind|$mediaKey';
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'uid': uid,
+        'deviceId': deviceId,
+        'mediaKind': mediaKind,
+        'mediaKey': mediaKey,
+        'format': format,
+        'title': title,
+        'startAt': startAt,
+        'endAt': endAt,
+        'dateKey': dateKey,
+        'hour': hour,
+        'durationMs': durationMs,
+        'chars': chars,
+        'pages': pages,
+        'updatedAt': updatedAt,
+      };
+
+  static StudySegmentRecord? fromJson(Map<String, Object?> json) {
+    final Object? uid = json['uid'];
+    final Object? mediaKind = json['mediaKind'];
+    final Object? mediaKey = json['mediaKey'];
+    final Object? dateKey = json['dateKey'];
+    if (uid is! String ||
+        uid.isEmpty ||
+        mediaKind is! String ||
+        mediaKey is! String ||
+        dateKey is! String) {
+      return null;
+    }
+    return StudySegmentRecord(
+      uid: uid,
+      deviceId: json['deviceId'] is String ? json['deviceId']! as String : '',
+      mediaKind: mediaKind,
+      mediaKey: mediaKey,
+      format: json['format'] is String ? json['format']! as String : '',
+      title: json['title'] is String ? json['title']! as String : '',
+      startAt: _asInt(json['startAt']),
+      endAt: _asInt(json['endAt']),
+      dateKey: dateKey,
+      hour: _asInt(json['hour']),
+      durationMs: _asInt(json['durationMs']),
+      chars: _asInt(json['chars']),
+      pages: _asInt(json['pages']),
+      updatedAt: _asInt(json['updatedAt']),
+    );
+  }
+}
+
+/// v92 按媒体身份的统计删除墓碑（`study_segment_tombstones` 一行一条）。
+class StudyTombstoneRecord {
+  const StudyTombstoneRecord({
+    required this.mediaKind,
+    required this.mediaKey,
+    required this.deletedAt,
+  });
+
+  final String mediaKind;
+  final String mediaKey;
+  final int deletedAt;
+
+  String get key => '$mediaKind|$mediaKey';
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'mediaKind': mediaKind,
+        'mediaKey': mediaKey,
+        'deletedAt': deletedAt,
+      };
+
+  static StudyTombstoneRecord? fromJson(Map<String, Object?> json) {
+    final Object? mediaKind = json['mediaKind'];
+    final Object? mediaKey = json['mediaKey'];
+    if (mediaKind is! String || mediaKey is! String || mediaKey.isEmpty) {
+      return null;
+    }
+    return StudyTombstoneRecord(
+      mediaKind: mediaKind,
+      mediaKey: mediaKey,
+      deletedAt: _asInt(json['deletedAt']),
+    );
+  }
+}
+
 class AggregateTombstoneRecord {
   const AggregateTombstoneRecord({
     required this.itemKey,

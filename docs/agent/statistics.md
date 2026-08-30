@@ -1,0 +1,34 @@
+# 学习统计域规则（v92，2026-08-29 起）
+
+统计域在 v92 做过一次根本性重构（计划：[docs/plans/2026-08-29-statistics-fact-table-refactor.md](../plans/2026-08-29-statistics-fact-table-refactor.md)；BUG-1947 / BUG-1948）。这里只列**改代码时必须遵守的规则**，全部有守卫测试（`fushi/test/tools/statistics_write_convergence_guard_test.dart`）钉死。
+
+## 数据结构（一句话）
+
+学习时长 / 字数 / 页数只有**一张事实表** `study_segments`（`packages/fushi_core/lib/src/database/tables.dart`），一段一行、按稳定媒体身份 `media_key`（bookKey / bookUid / galgames.id，**永不用 title**）键控、按 `uid` **绝对值 upsert**。旧四张投影表 `reading_statistics` / `video_watch_statistics` / `reading_hourly_logs` / `video_hourly_logs` 与 `activity_events` 的 read/watch/game 行是 **legacy：冻结、只读、不迁移**。
+
+## 写入面
+
+- 只有一个时钟 `StudyClock`（`packages/fushi_audio/lib/src/audiobook/study_clock.dart`）：断档（120s）/ 活跃态（视频 = isPlaying）/ 空闲门（阅读面，默认 10 分钟，设置项 `reading.stats_idle_timeout_minutes`）三道守卫，段不跨小时边界，`stop()` 结构性幂等（清引用在首个 await 之前）。
+- 页面**不许**持有 `_sessionReadingMs` / `_sessionCharsRead` 之类会话累计器；字数 / 页数经 `clock.addChars` / `addPages` 记到当前段；用户输入经 `clock.touch()` 喂空闲门（EPUB `_refreshProgressFromScroll` / PDF `_onPageChanged` / 漫画 `_armPageDwellCount`）。
+- 阅读面切屏（`paused` / `inactive`）必须 `stop()`、`resumed` 必须 `start()`；视频面 `inactive` **不**停（用户拍板：切走仍在播照常计时）。
+- `upsertStudySegment` 只有两个写入方：`StudyClock` 与 galgame hook 的 chars-only 段（`gal_hook_session_controller.dart`）。游玩时长只写 `galgame_sessions`。
+- legacy 表的 `set*` OVERWRITE 写入口只许 `lib/src/sync/**` 调（旧端 wire 家族落地）。`add*` 累加 DAO 已删，不得复活。
+
+## 读取面
+
+- 统计展示只经 `loadStatFacts`（`fushi/lib/src/stats/stat_facts.dart`）→ 统一事实面 `StatFact`（日面 / 小时面分列，legacy 行与段同形，**不许**把两面并进同一列表求和）。不许直读 legacy 表 / `activity_events` 做统计（豁免：`stat_facts.dart`、`lib/src/sync/**`、`home_video_page.dart` 的最近观看时刻）。
+- 窗口阈值只在 `StatWindow`（`stat_window.dart`）：近 7 天恰 7 天、近 30 天恰 30 天、上周窗口同长不重叠。页面不许自己 `now - 7d`。
+- 活动流唯一数据源 `StatFacts.activityRows` = legacy 活动行 ∪ `segmentsAsActivityRows` ∪ `galgameSessionsAsActivityRows`；首页、游戏首页、互联 host 的远端活动端点都吃它。
+- 首页每日目标分子与阅读统计页共用 `readingGoalCharsForDay`（只算 book+manga）。
+
+## 同步（wire v2）
+
+- `AggregateSnapshot` 版本仍是 1，`studySegments` / `studySegmentTombstones` 是 additive 字段（旧端忽略、缺失当空；bump 版本会让旧端整包降级为空）。
+- 段按 uid 并集、同 uid 取 `updatedAt` 大者（`AggregateMergeService.mergeStudySegments`）；墓碑 `deletedAt > updatedAt` 删除胜，有更新的段则墓碑退场（`arbitrateStudySegments`）。落地经 `upsertStudySegmentsIfNewer` / `applyStudySegmentTombstone`。备份 ATTACH 合并 `_mergeStudySegments` 同语义。
+- legacy 家族仍走 MAX-union / `setVideoWatchStatistic` 塌缩 / deficit-lift——那是旧数据的旧口径，**不要**把段接进去，也不要从段折叠回 legacy 字段（会双计）。
+- 已知取舍：新端 v92 之后的统计旧端看不到，互联两端须同升。
+
+## 改统计相关代码前
+
+1. 跑 `flutter test test/tools/statistics_write_convergence_guard_test.dart test/media/audiobook/study_clock_test.dart test/database/study_segments_test.dart test/sync/aggregate_study_segments_sync_test.dart --no-pub`。
+2. 新写入面 = 新的 `StudyClock` 实例，不是新表；新展示 = 从 `StatFacts` 派生，不是新查询。

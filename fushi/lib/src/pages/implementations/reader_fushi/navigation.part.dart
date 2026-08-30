@@ -64,7 +64,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         // BUG-1052：兜底超时也要起阅读计时。计时器原本只在 [_onRestoreComplete]
         // 里建/启，而这条路径正是「JS 迟迟不回 onRestoreComplete」——遮罩已摘、书能
         // 读，却一秒都不记时长（字数照常累计 ⇒ 速度又爆表）。
-        _ensureReadingTimeTracker();
+        _ensureStudyClock();
         FushiToast.show(
             msg: t.reader_content_timeout, severity: ToastSeverity.warning);
       },
@@ -155,9 +155,9 @@ extension _ReaderNavigation on _ReaderFushiPageState {
 
     // BUG-1052：这里**不再**重锚任何会话时钟。本方法（恢复完成）每次重排版/重恢复
     // 都会跑，旧代码在此重置 `_sessionStartTime`，把上一段还没落库的前台阅读时长整段
-    // 抹掉。[_ensureReadingTimeTracker] 的 start() 对已在跑的计时器是 no-op，重排版
+    // 抹掉。[_ensureStudyClock] 的 start() 对已在跑的时钟是 no-op，重排版
     // 不打断计时。
-    _ensureReadingTimeTracker();
+    _ensureStudyClock();
     // TODO-1192：session 水位只升不降。旧代码在此把水位无条件重置成恢复目标位置，
     // 跨章回读（往回翻章 → 恢复完成）会把水位下调到更靠前那章章首，导致重读那章
     // 正文被再次计入统计（字数虚高）。改用 [sessionWatermarkAfterRestore] 取
@@ -341,6 +341,9 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   /// 一次，确保最终静止位置一定被刷到，又不让 evaluateJavascript 堆积。轮询/恢复路径
   /// 仍直接调 [_refreshProgress]，不受此守卫影响。
   void _refreshProgressFromScroll() {
+    // v92 阅读空闲门：滚动 / 翻页回传 = 用户输入（听书自动翻页也经此），喂时钟。
+    // 10s 进度轮询走 [_refreshProgress] 不经这里，不会把挂机伪装成输入。
+    _studyClock?.touch();
     if (_scrollProgressInFlight) {
       _scrollProgressPending = true;
       return;
@@ -1037,7 +1040,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     );
     _lastWatermarkAdvanceAt = nowForChars;
     _readChargeCreditMilliChars = delta.creditMilliChars;
-    _sessionCharsRead += delta.charsAdded;
+    // v92：新读字数直接记进当前打开段（与时长同一 uid 同一行），页面不再攒会话计数。
+    if (delta.charsAdded > 0) _ensureStudyClock().addChars(delta.charsAdded);
     _sessionMaxAbsoluteChars = delta.highWaterMark;
     // TODO-736（复核 b）：进度刷新无条件落库。曾经的 B-4 突降伪归零守卫已删——它想防的
     // reflow 自发归零已被两墙完整覆盖（begin 换 CSS 触发的归零落在 _reanchorPending 期，由
@@ -1417,60 +1421,32 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   /// 供进程退出路径 await（TODO-086/BUG-191）；其余生命周期调用点 fire-and-forget
   /// （不 await 返回的 Future，行为同旧版）。计数器在发起写之前清零，保证同一段
   /// 时长/字数不会被重复累加。
-  /// BUG-1052：建好并启动阅读计时器（幂等）。
+  /// v92：建好并启动本页唯一的阅读时钟（幂等；对已在跑的时钟 start() 是 no-op，
+  /// 重排版 / 重恢复不打断计时、不重锚任何账）。
   ///
-  /// 它是本页**唯一**的阅读时钟：既写每小时桶（`reading_hourly_logs`），又经 `onDelta`
-  /// 把同一份 gap 守卫增量喂给 [_sessionReadingMs]，由 [_flushReadingStats] 落进
-  /// `reading_statistics`。两条账目同源，任何一处重锚都不可能再吃掉时长。
-  void _ensureReadingTimeTracker() {
-    _readingTimeTracker ??= ReadingTimeTracker(
-      appModel.database,
-      format: BookFormat.epub,
-      onDelta: (int deltaMs) => _sessionReadingMs += deltaMs,
+  /// 时长与字数记到**同一段**（`study_segments` 同 uid 一行）：不存在第二本账可被
+  /// 重锚吃掉（BUG-1052），也不存在「有时长没字数被拒写」的口径分叉（BUG-1107）。
+  /// 空闲门（[kDefaultReadingIdleTimeout]）+ 生命周期 stop/start 的前台门只对阅读
+  /// 面生效（用户拍板：视频以播放态为准）。
+  StudyClock _ensureStudyClock() {
+    final StudyClock clock = _studyClock ??= StudyClock(
+      database: appModel.database,
+      mediaKind: kActivityMediaBook,
+      mediaKey: widget.bookKey,
+      title: _book?.title ?? widget.bookKey,
+      format: BookFormat.epub.dbValue,
+      idleTimeout: appModel.readingIdleTimeout,
+      onWriteError: (Object e, StackTrace st) =>
+          ErrorLogService.instance.log('StudyClock.write(epub)', e, st),
     );
-    _readingTimeTracker!.start();
+    clock.start();
+    return clock;
   }
 
+  /// 把「上一次 tick 到现在」的部分窗口结算并落库（不停表）。章导航 / 退出 /
+  /// 生命周期节点调用，让最后一段不因随后的 dispose 而丢。写库失败由时钟 fail-open
+  /// 并在下个 tick 用绝对值重写，这里没有任何计数器可清、也没有任何东西能重复累加。
   Future<void> _flushReadingStats() async {
-    // BUG-1052：先把「上一次 tick 到现在」这段未满一个 tick 的窗口结算进
-    // [_sessionReadingMs]（不停表），否则每次落库都漏掉最多一个 tick 间隔。
-    _readingTimeTracker?.sampleNow();
-    // BUG-1107（断点 A·时长丢失）：旧守卫 `_sessionCharsRead <= 0` 早退，EPUB 拒写
-    // **纯时长行**——页面 dispose 时最后一段若无新字数，这段时长直接蒸发；歌词/听书
-    // 模式全程不计字（`_refreshProgress` 在 lyricsMode 早退）⇒ 时长 100% 丢，统计页
-    // 呈现「2213 字 / 0 分钟 / 1619597 字·时⁻¹」。PDF（reader_pdf_page.dart）与漫画
-    // （manga_fushi_page.dart）本就允许 `charsRead: 0` 的纯时长行，只有 EPUB 口径
-    // 分叉——这里对齐：无书才拒；无新字数时只要有已确认时长（>=1s，与 PDF 同口径的
-    // 生命周期抖动阈值；不足保留累计器留到下次 flush，不丢时长）也落库。
-    // 挂机膨胀不由「必须有字数」间接挡：时长增量在 [_readingTimeTracker]（BUG-892
-    // 的 `isContinuousReadingGap` gap 守卫）逐 tick 过滤，挂机窗口根本进不了
-    // [_sessionReadingMs]，这里无需重复设防。
-    if (_book == null) return;
-    if (_sessionCharsRead <= 0 && _sessionReadingMs < 1000) return;
-    final DateTime now = DateTime.now();
-    // BUG-1052：时长来自 [_readingTimeTracker] 的 gap 守卫增量累计，不再是
-    // `now - _sessionStartTime` 墙钟差。早退路径（无新字数且时长未达阈值）不消费
-    // 累计器，这段时长留到下次真正落库时一并计入——旧实现在这里蒸发。
-    final int elapsedMs = _sessionReadingMs;
-
-    final int charsRead = _sessionCharsRead;
-    final String title = _book!.title;
-    _sessionCharsRead = 0;
-    _sessionReadingMs = 0;
-    try {
-      // P4：事实（activity 时间轴行）+ 派生投影（日聚合）走单一复合入口。
-      await appModel.database.recordReadingSession(
-        title: title,
-        mediaKey: widget.bookKey,
-        charsRead: charsRead,
-        timeMs: elapsedMs,
-        at: now,
-      );
-    } catch (e, stack) {
-      // fail-open：本次统计增量丢弃（计数器已清零，不会重复累加），补 debugPrint +
-      // ErrorLogService.log 使 DB 写异常线上可诊断。
-      debugPrint('[ReaderFushi] stats flush error: $e');
-      ErrorLogService.instance.log('ReaderFushi._flushReadingStats', e, stack);
-    }
+    await _studyClock?.flushNow();
   }
 }
