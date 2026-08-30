@@ -490,7 +490,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
             secondarySubtitleDelayMs: Value<int?>(delayMs)),
       );
 
-  /// 更新系列（合集）级默认字幕语言代码（`ja` / `en` …，schema v89）。
+  /// 更新系列（合集）级默认字幕语言代码（`ja` / `en` …，schema v91）。
   /// [language] 为 null 时清除（加载回退视频内容语言链 `resolveContentLanguage`，
   /// 绝不是 ja）。
   Future<void> updateMediaCollectionSubtitleLanguage(

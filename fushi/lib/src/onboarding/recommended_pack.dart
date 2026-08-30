@@ -21,7 +21,8 @@ import 'package:path/path.dart' as p;
 /// GitHub Release 单资产上限 2 GB（所以包才要切片），R2 免费额度共 10 GB
 /// 且要留给 app 的发布镜像。Drive 是目前唯一还活着的整包源（实测 206、支持
 /// Range），所以这条只能是它。别把它改成 fushi.moe 下的路径，那只会得到 404。
-const String kRecommendedPackWholeFileUrl = kRecommendedPackGoogleDriveDirectUrl;
+const String kRecommendedPackWholeFileUrl =
+    kRecommendedPackGoogleDriveDirectUrl;
 const String kRecommendedPackGoogleDriveFileId =
     '1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp';
 const String kRecommendedPackGoogleDriveUrl =
@@ -52,7 +53,8 @@ const String kRecommendedPackFileName = 'fushi-recommended.fushi.zip';
 /// 首选清单地址：官网。Worker 的 `/pack` 路由把它代理到 `fushi-pack` 最新
 /// release 的 `manifest.json`，所以换包只需在那个仓库发一个 release，
 /// 这个地址永远不变。
-const String kRecommendedPackManifestUrl = 'https://fushi.moe/pack/manifest.json';
+const String kRecommendedPackManifestUrl =
+    'https://fushi.moe/pack/manifest.json';
 
 /// 清单候选，按序尝试。
 ///
@@ -313,9 +315,7 @@ class RecommendedPackDownloader {
     this.sha256Hex,
     this.manifest,
     this.concurrency = SegmentedDownloader.kDefaultDownloadConcurrency,
-    String? fileName,
-  })  : _packDir = packDir,
-        _fileName = fileName ?? Uri.parse(url).pathSegments.last;
+  }) : _packDir = packDir;
 
   /// 从清单构造：URL / sha256 / 分片计划一起跟着清单走。
   factory RecommendedPackDownloader.fromManifest({
@@ -347,12 +347,30 @@ class RecommendedPackDownloader {
   /// 并发段数。
   final int concurrency;
 
-  /// 落盘文件名：默认取 URL 尾段；URL 尾段不是文件名的线路（Google Drive
-  /// 直下）必须显式指定。
-  final String _fileName;
+  /// 落盘文件名。**恒为 [kRecommendedPackFileName]**，不再从 URL 尾段推导。
+  ///
+  /// 推导过一次，代价是清单线路把包落成了 `recommended_pack/download`：清单的
+  /// `url` 字段是整包镜像的 Drive 直下地址（`…/download?id=…&confirm=t`），URL
+  /// 尾段就是 `download`。于是同一份包在两条线路下落成两个名字，
+  /// 「半截文件天然可跨线路续传」这句注释从来没成立过——切一次线路就等于重下
+  /// 9.5 GB。名字统一之后它才是真的。
+  ///
+  /// 版本隔离本来就不靠文件名：续传进度绑的是清单的 version + sha256 + 总长
+  /// （见 `segmented_downloader.dart`），对不上整份作废重来。
+  static const String _fileName = kRecommendedPackFileName;
+
+  /// 包目录里那个下好的完整包（可能尚不存在）。
+  ///
+  /// 目录级：文件名恒定，所以「下好了没」与走哪条线路无关——UI 拿这个判断时
+  /// 不该、也不需要先挑出一个线路实例来问。
+  static File packFileIn(Directory packDir) =>
+      File(p.join(packDir.path, _fileName));
+
+  static bool hasCompletedFileIn(Directory packDir) =>
+      packFileIn(packDir).existsSync();
 
   /// 下载完成的推荐包文件（可能尚不存在）。
-  File get packFile => File(p.join(_packDir.path, _fileName));
+  File get packFile => packFileIn(_packDir);
 
   /// 单流续传的半截文件。
   File get _partFile => File(p.join(_packDir.path, '$_fileName.part'));
@@ -365,7 +383,8 @@ class RecommendedPackDownloader {
   File get _multiPartProgressFile =>
       File(p.join(_packDir.path, '$_fileName.mpart.json'));
 
-  File get _importedFlagFile => File(p.join(_packDir.path, 'imported.flag'));
+  static File _importedFlagFileIn(Directory packDir) =>
+      File(p.join(packDir.path, 'imported.flag'));
 
   /// 单流路径的服务端校验子（ETag / Last-Modified）落盘处，供跨进程续传带
   /// `If-Range`。分片路径把校验子记在自己的进度文件里，不用这个。
@@ -394,7 +413,7 @@ class RecommendedPackDownloader {
     }
   }
 
-  bool get hasCompletedFile => packFile.existsSync();
+  bool get hasCompletedFile => hasCompletedFileIn(_packDir);
 
   /// 已下字节（两条路合一）。分片路的 `.mpart` 是**预分配**的完整大小，长度不代表
   /// 进度，必须读进度文件——否则 UI 一进来就显示「已下 9.5 GB」。
@@ -427,18 +446,93 @@ class RecommendedPackDownloader {
   }
 
   /// 启动备份导入前打标；导入完成后进程重启，由 [cleanupIfImported] 收尾删包。
-  Future<void> markImportStarted() async {
-    _packDir.createSync(recursive: true);
-    await _importedFlagFile.writeAsString('1');
+  ///
+  /// 目录级（和 [cleanupIfImported] 一样）：打标写的是 `<包目录>/imported.flag`，
+  /// 与包是从哪条线路下来的无关。
+  static Future<void> markImportStarted(Directory packDir) async {
+    packDir.createSync(recursive: true);
+    await _importedFlagFileIn(packDir).writeAsString('1');
   }
 
   /// 若曾进入导入（flag 在），删除整个包目录（best-effort）。
-  Future<void> cleanupIfImported() async {
-    if (!_importedFlagFile.existsSync()) return;
+  static Future<void> cleanupIfImported(Directory packDir) async {
+    if (!_importedFlagFileIn(packDir).existsSync()) return;
     try {
-      if (_packDir.existsSync()) await _packDir.delete(recursive: true);
+      if (packDir.existsSync()) await packDir.delete(recursive: true);
     } on FileSystemException {
       // 占用/权限问题不阻断引导；下次进入再试。
+    }
+  }
+
+  /// 旧落盘名的迁移单位：**组**，不是单个后缀。
+  ///
+  /// 每组第一个是主文件（承载字节的那个），其余是它的附属元数据。分开搬会配出
+  /// 「主文件缺失 + 元数据完整」这种自洽但错误的状态：
+  ///
+  /// - `.mpart`（预分配的包体）搬失败而 `.mpart.json`（每片已收字节）搬成功时，
+  ///   下一轮 `_preparePartFile` 会按新名 truncate 出一个**全零**的 9.5 GB，进度
+  ///   文件却说每片都收满了，于是一片都不下；而清单切片线路每片自带 sha256，
+  ///   整包校验被 `hasPerPartDigests` 跳过 —— 全零的坏包直接被扶正成正式包。
+  ///   （整包 Range 线路会被末尾整包 sha256 打回，代价只是白下一遍。）
+  /// - 反过来「主文件搬成功、元数据没搬」是安全的：读不到进度就从头下。
+  ///
+  /// 所以规则只有一条：**先搬主文件，主文件没搬成就整组不动**。不需要回滚。
+  static const List<List<String>> _legacyMigrationGroups = <List<String>>[
+    <String>[''], // 完整包，无附属
+    <String>['.part', '.part.etag'], // 单流续传：半截 + 校验子
+    <String>['.mpart', '.mpart.json'], // 分片续传：包体 + 每片已收字节
+  ];
+
+  /// 旧落盘名迁移（目录级，幂等，best-effort）。
+  ///
+  /// 清单线路曾按 `manifest.url` 的 URL 尾段命名，落出来的是 `download` 一族
+  /// （见 [_fileName]）。升级后名字改成 [kRecommendedPackFileName]，不搬的话
+  /// 已下了一半的 9.5 GB 直接作废。
+  static void migrateLegacyArtifacts(Directory packDir) {
+    if (!packDir.existsSync()) return;
+    for (final List<String> group in _legacyMigrationGroups) {
+      _migrateLegacyGroup(packDir, group);
+    }
+  }
+
+  static void _migrateLegacyGroup(Directory packDir, List<String> suffixes) {
+    File legacyOf(String suffix) =>
+        File(p.join(packDir.path, 'download$suffix'));
+    File targetOf(String suffix) =>
+        File(p.join(packDir.path, '$_fileName$suffix'));
+
+    final String primary = suffixes.first;
+    // 新名那一份已经在了：它才是当前进度的真相源，拿旧名去补它的另一半必然配错。
+    // 旧名那一组从此永远不会再被读到，留着就是白占一份 9.5 GB（本类的注释自己
+    // 声讨过「手机上就是 19 GB」），所以顺手删掉。
+    if (targetOf(primary).existsSync()) {
+      for (final String suffix in suffixes) {
+        final File legacy = legacyOf(suffix);
+        if (!legacy.existsSync()) continue;
+        try {
+          legacy.deleteSync();
+        } on FileSystemException {
+          // 删不掉只是占盘，不影响正确性。
+        }
+      }
+      return;
+    }
+    // 只有附属、没有主文件的孤儿元数据一律不搬：它描述的是一份不存在的字节。
+    if (!legacyOf(primary).existsSync()) return;
+    try {
+      legacyOf(primary).renameSync(targetOf(primary).path);
+    } on FileSystemException {
+      // 主文件搬不动就整组不动，附属留在旧名上：下次重试，或者从头下。
+      return;
+    }
+    for (final String suffix in suffixes.skip(1)) {
+      final File legacy = legacyOf(suffix);
+      if (!legacy.existsSync() || targetOf(suffix).existsSync()) continue;
+      try {
+        legacy.renameSync(targetOf(suffix).path);
+      } on FileSystemException {
+        // 附属搬不动是安全的：读不到进度/校验子就从头下，不会配错。
+      }
     }
   }
 

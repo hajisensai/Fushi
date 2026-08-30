@@ -687,6 +687,7 @@ void _requireOneVideoMetadataOwner({
   VideoDownloadJobSubtitles,
   VideoDownloadSubscriptions,
   VideoDownloadSubscriptionItems,
+  MangaChapterStates,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -717,7 +718,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 89;
+  int get schemaVersion => 91;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2749,12 +2750,26 @@ class FushiDatabase extends _$FushiDatabase
             }
           }
           if (from < 89) {
-            // v89（合集级字幕偏好）：media_collections 加 subtitle_language、
+            // v89（漫画作品页·每章状态）：新表 manga_chapter_states，把「章」从
+            // `MihonLibraryEntry.currentChapterIndex` 这个单 int 升成一等实体。
+            //
+            // 无损：纯新增表，不动任何既有表和列。旧库升级后表为空 = 所有章都
+            // 「无状态」= 作品页章节列表全显示未读、继续阅读回退到
+            // `currentChapterIndex`（沿 v88 前的行为），零破坏。
+            //
+            // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被
+            // `_tableExists` 短路 no-op。
+            if (!await _tableExists('manga_chapter_states')) {
+              await m.createTable(mangaChapterStates);
+            }
+          }
+          if (from < 91) {
+            // v91（合集级字幕偏好）：media_collections 加 subtitle_language、
             // subtitle_release_group，给「这个系列默认用哪种语言 / 哪个字幕组的
             // 字幕」一个系列级真值（镜像 v52 subtitle_delay_ms 的「系列共享、
             // nullable」结构）。无损迁移：两列 nullable 无 default → 旧库既有行
             // 全 NULL = 没人配过 = 消费方回退视频内容语言链 / 默认选轨，逐字节
-            // 保留 v89 前行为（Never break userspace）；绝不回填 ja。守卫幂等
+            // 保留 v91 前行为（Never break userspace）；绝不回填 ja。守卫幂等
             // （fresh DB 已由 onCreate 建好，重复升级 _columnExists 短路 no-op）。
             if (await _tableExists('media_collections') &&
                 !await _columnExists('media_collections', 'subtitle_language')) {

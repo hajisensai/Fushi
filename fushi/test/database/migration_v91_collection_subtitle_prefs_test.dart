@@ -4,14 +4,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
-/// v89（合集级字幕偏好）：`media_collections` 加 `subtitle_language`（系列级默认
+/// v91（合集级字幕偏好）：`media_collections` 加 `subtitle_language`（系列级默认
 /// 字幕语言代码）与 `subtitle_release_group`（系列级偏好的字幕版本组键），镜像
 /// v52 `subtitle_delay_ms` 的「系列共享、nullable」结构。
 ///
 /// 本文件守三件事：
 ///  1. **加列不许并进已发布的版本号**：从「真实的 v88 库」出发（当前 schema 建满
 ///     → DROP 掉这两列 → user_version 写回 88），只有 88 这个起点能区分「列在
-///     v88 段」和「列在 v89 段」——塞进 `from < 88` 的列对已写成 88 的库永远不会
+///     v88 段」和「列在 v91 段」——塞进 `from < 88` 的列对已写成 88 的库永远不会
 ///     执行，读路径静默读成 NULL、写路径撞 no such column（v88 那次事故同款）。
 ///  2. **加列无损**：存量合集行一条不丢、既有系列级调轴值逐列不变。
 ///  3. **NULL = 没人配过**：升级后两列全 NULL，消费方回退视频内容语言链 /
@@ -22,7 +22,7 @@ void main() {
 
   setUp(() {
     tempDir =
-        Directory.systemTemp.createTempSync('fushi_v89_collection_subtitle');
+        Directory.systemTemp.createTempSync('fushi_v91_collection_subtitle');
     dbPath = '${tempDir.path}${Platform.pathSeparator}v88-source.db';
   });
 
@@ -32,7 +32,7 @@ void main() {
     }
   });
 
-  /// 建一个真实的 v88 形状库：当前 schema 建满，再摘掉 v89 的两列并把版本写回 88。
+  /// 建一个真实的 v88 形状库：当前 schema 建满，再摘掉 v91 的两列并把版本写回 88。
   Future<void> seedV88() async {
     final FushiDatabase fresh =
         FushiDatabase.atFile(dbPath, isMainProcess: false);
@@ -75,7 +75,7 @@ void main() {
     }
   });
 
-  test('v88 -> v89：两列补齐、默认 NULL、存量合集行与既有调轴值无损', () async {
+  test('v88 -> v91：两列补齐、默认 NULL、存量合集行与既有调轴值无损', () async {
     await seedV88();
 
     final FushiDatabase migrated =
@@ -95,7 +95,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 89);
+      expect(probe.select('PRAGMA user_version').first.values.first, 91);
       expect(
           hasColumn(probe, 'media_collections', 'subtitle_language'), isTrue);
       expect(hasColumn(probe, 'media_collections', 'subtitle_release_group'),

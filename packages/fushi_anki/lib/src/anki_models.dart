@@ -1189,8 +1189,11 @@ class AnkiErrorCode {
   /// 「连远端进程/代理而非真 AnkiConnect」时把无 charset 的 GBK/UTF-8 错误页经
   /// package:http 的 latin1 默认解码弄成乱码。OS 原文只进诊断日志（[MineOutcome.error]）。
   ///
-  /// `connectionRefused`：连接被拒（AnkiConnect 没在监听 / Anki 没开）。
-  /// `connectionTimeout`：连接/响应超时（[TimeoutException]）。
+  /// `connectionRefused`：**建连**就没成（AnkiConnect 没在监听 / Anki 没开 / 地址不通）。
+  /// `connectionTimeout`：**连上了但不应答**——TCP 握手成功、请求已发出，却等不到
+  ///   AnkiConnect 的回复。连接工厂把一切建连失败标成 `AnkiConnectPreDeliveryException`
+  ///   并归到 `connectionRefused`，所以这个码只剩这一种含义：那个端口上有程序在监听，
+  ///   但它不是 AnkiConnect（端口被别的程序占了），或者 Anki 卡住了。
   /// `httpError`：HTTP 层错误（http.ClientException，非超时非 socket）。
   /// `connectionUnknown`：其余无法分类的连接异常。
   static const String connectionRefused = 'ANKI_CONNECTION_REFUSED';

@@ -513,6 +513,123 @@ mixin _FushiDbContentMisc
         ),
       );
 
+  // ── manga_chapter_states（v89）─────────────────────────────────────
+  //
+  // 「章」的读取状态。为什么不并进 reader_positions：那张表 bookUid 是
+  // unique()，一本书恒一条，表达不了「这本书的第 37 章读到第 8 页」。
+
+  /// 一本书的全部章状态，按 `chapterKey` 索引。
+  ///
+  /// 作品页一次读全量而不是逐章查：章节列表本来就要整屏渲染，N 次单行查询在
+  /// 几百章的长篇上是纯粹的往返浪费。
+  Future<Map<String, MangaChapterStateRow>> getMangaChapterStates(
+    String bookUid,
+  ) async {
+    if (bookUid.isEmpty) return const <String, MangaChapterStateRow>{};
+    final List<MangaChapterStateRow> rows = await (select(mangaChapterStates)
+          ..where((t) => t.bookUid.equals(bookUid)))
+        .get();
+    return <String, MangaChapterStateRow>{
+      for (final MangaChapterStateRow row in rows) row.chapterKey: row,
+    };
+  }
+
+  Future<MangaChapterStateRow?> getMangaChapterState({
+    required String bookUid,
+    required String chapterKey,
+  }) {
+    if (bookUid.isEmpty || chapterKey.isEmpty) {
+      return Future<MangaChapterStateRow?>.value();
+    }
+    return (select(mangaChapterStates)
+          ..where(
+            (t) => t.bookUid.equals(bookUid) & t.chapterKey.equals(chapterKey),
+          ))
+        .getSingleOrNull();
+  }
+
+  /// 记录一次章内进度。
+  ///
+  /// [readAt] 只在**读完**该章时传：它是「已读」的唯一判据，一旦置上就不再被
+  /// 后续的普通进度写入抹掉（重读一遍不该把已读标记退回未读）。传 null 表示
+  /// 「本次不改变已读状态」，而不是「标记未读」——清除已读走
+  /// [clearMangaChapterRead]，让两种意图在调用点就分开。
+  Future<void> saveMangaChapterState({
+    required String bookUid,
+    required String chapterKey,
+    required int lastPage,
+    int lastFraction = -1,
+    int? pageCount,
+    int? readAt,
+  }) async {
+    if (bookUid.isEmpty || chapterKey.isEmpty) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final MangaChapterStateRow? existing = await getMangaChapterState(
+      bookUid: bookUid,
+      chapterKey: chapterKey,
+    );
+    await into(mangaChapterStates).insertOnConflictUpdate(
+      MangaChapterStatesCompanion.insert(
+        bookUid: bookUid,
+        chapterKey: chapterKey,
+        lastPage: Value<int>(lastPage),
+        lastFraction: Value<int>(lastFraction),
+        // 整行覆盖 upsert 会清空没传的列，所以未知页数必须回填既有值而不是
+        // 让它退回 NULL。
+        pageCount: Value<int?>(pageCount ?? existing?.pageCount),
+        readAt: Value<int?>(readAt ?? existing?.readAt),
+        updatedAt: now,
+      ),
+    );
+  }
+
+  /// 显式把一章标回未读（作品页的「标为未读」动作）。
+  Future<void> clearMangaChapterRead({
+    required String bookUid,
+    required String chapterKey,
+  }) async {
+    if (bookUid.isEmpty || chapterKey.isEmpty) return;
+    await (update(mangaChapterStates)
+          ..where(
+            (t) => t.bookUid.equals(bookUid) & t.chapterKey.equals(chapterKey),
+          ))
+        .write(
+      MangaChapterStatesCompanion(
+        readAt: const Value<int?>(null),
+        updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+  }
+
+  /// 批量标记已读（作品页的「标记此章及更早为已读」）。
+  Future<void> markMangaChaptersRead({
+    required String bookUid,
+    required List<String> chapterKeys,
+  }) async {
+    if (bookUid.isEmpty || chapterKeys.isEmpty) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await batch((Batch batch) {
+      for (final String chapterKey in chapterKeys) {
+        if (chapterKey.isEmpty) continue;
+        batch.insert(
+          mangaChapterStates,
+          MangaChapterStatesCompanion.insert(
+            bookUid: bookUid,
+            chapterKey: chapterKey,
+            readAt: Value<int?>(now),
+            updatedAt: now,
+          ),
+          onConflict: DoUpdate(
+            (_) => MangaChapterStatesCompanion(
+              readAt: Value<int?>(now),
+              updatedAt: Value<int>(now),
+            ),
+          ),
+        );
+      }
+    });
+  }
+
   /// Rewrites a book's on-disk content paths (full-data backup restore rebases
   /// absolute paths to this device's roots). Only supplied fields are written;
   /// null leaves a column unchanged.
@@ -606,6 +723,11 @@ mixin _FushiDbContentMisc
           await (delete(bookCustomCss)..where((t) => t.bookUid.equals(bookUid)))
               .go();
           await (delete(revealedImages)
+                ..where((t) => t.bookUid.equals(bookUid)))
+              .go();
+          // v89：每章状态同族（uid 键、刻意无 FK），随书一起清，否则重装同一部
+          // 在线漫画会捡到上一次的已读标记。
+          await (delete(mangaChapterStates)
                 ..where((t) => t.bookUid.equals(bookUid)))
               .go();
         }

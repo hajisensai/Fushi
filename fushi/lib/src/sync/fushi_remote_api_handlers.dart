@@ -70,6 +70,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   RemoteDictionaryPopupTiming? popupTiming,
   Map<String, String> Function()? themeColorsProvider,
   List<String> Function()? audioSourcesProvider,
+  bool Function()? autoReadOnLookupProvider,
   String? Function()? extensionBuildProvider,
   RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
 }) async {
@@ -81,6 +82,12 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   // BUG-726：app 内置扩展的内容指纹随查词响应下发。扩展 background 对比自身
   // FUSHI_DEFAULTS.build，不一致即 chrome.runtime.reload() 从磁盘拉新（磁盘副本由
   // app 启动时刷新）。null（未注入 / 指纹尚未算好）时不带该字段（向后兼容）。
+  // 查词后自动朗读：app 内弹窗、app 外浮窗、剪贴板面板三个表面早就按全局偏好
+  // `autoReadOnLookup` 自动发音（BUG-1210 已为「一个表面接了线、另一个没接」收过一次口），
+  // 浏览器扩展是最后一个漏掉的表面——用户在扩展里查词必须手动点 ♪。这里把同一个偏好随查词
+  // 响应下发，扩展据此在渲染后播首条词的发音；不新增扩展本地开关，免得两处语义漂开。
+  // null（未注入，如 sync host）时不带该字段（向后兼容）。
+  final bool? autoReadOnLookup = autoReadOnLookupProvider?.call();
   final String? extensionBuild = extensionBuildProvider?.call();
   // BUG-1718：弹窗「CSS 尾段」（词典自带 styles.css + 用户全局/单典自定义 CSS）。app 内弹窗由
   // popup_settings_injection 把 window.dictionaryStyles / globalDictCSS / customDictCSS 注入
@@ -99,6 +106,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   final Map<String, Object?> envelope = <String, Object?>{
     if (theme != null) 'theme': theme,
     if (audioSources != null) 'audioSources': audioSources,
+    if (autoReadOnLookup != null) 'autoReadOnLookup': autoReadOnLookup,
     if (extensionBuild != null) 'extensionBuild': extensionBuild,
     if (popupCss != null) 'dictionaryStylesRevision': popupCss.revision,
     if (cssStale) ...<String, Object?>{

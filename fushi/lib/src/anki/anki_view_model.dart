@@ -257,9 +257,24 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
           : LapisSetupOutcome.alreadyExisted);
     } catch (e, stack) {
       debugPrint('AnkiViewModel.createLapisSetup: $e\n$stack');
-      state = state.copyWith(isFetching: false, errorMessage: e.toString());
-      return LapisSetupResult(LapisSetupOutcome.failed, e.toString());
+      final String message = _lapisSetupFailureMessage(e);
+      state = state.copyWith(isFetching: false, errorMessage: message);
+      return LapisSetupResult(LapisSetupOutcome.failed, message);
     }
+  }
+
+  /// 一键配置 Lapis 失败时给用户看的那句话。
+  ///
+  /// 这里此前是裸的 `e.toString()`，于是 AnkiConnect 端口被别的程序占着（连得上、
+  /// 不应答）时，用户在新手引导里拿到的是一句
+  /// `TimeoutException after 0:00:10.000000: Future not completed`——看不出是什么坏了，
+  /// 更看不出下一步该干什么。传输层异常改走与 fetchConfiguration 同一套稳定码分类 +
+  /// 本地化（TODO-752a）；其余（payload / 空列表 firstWhere 之类的本地编程错误）不是
+  /// 连接问题，不套连接文案，保留原文供排障——它们不经 socket，不是乱码源。
+  static String _lapisSetupFailureMessage(Object e) {
+    if (!isAnkiConnectTransportError(e)) return e.toString();
+    final String code = classifyAnkiConnectError(e);
+    return localizeAnkiFetchError(ankiConnectErrorHint(code), code);
   }
 
   // ── Lapis 样式客制化（备份/恢复/应用见 LapisTemplateService）──────────

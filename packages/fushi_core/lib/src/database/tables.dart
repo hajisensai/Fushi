@@ -979,14 +979,14 @@ class MediaCollections extends Table {
   /// 行为与旧版一致（Never break userspace）。
   IntColumn get secondarySubtitleDelayMs => integer().nullable()();
 
-  /// 系列级默认字幕语言代码（`ja` / `en` …，schema v89）。与 [subtitleDelayMs]
+  /// 系列级默认字幕语言代码（`ja` / `en` …，schema v91）。与 [subtitleDelayMs]
   /// 同款「系列共享、nullable」语义：非 NULL 时覆盖合集内每一集的字幕语言选择。
   /// **NULL = 没人配过 → 消费方回退视频内容语言链（`resolveContentLanguage`），
   /// 绝不是 ja**——语言未知不许替用户猜。无损迁移：nullable 无 default → 旧库既有
   /// 行全 NULL = 行为与旧版一致（Never break userspace）。
   TextColumn get subtitleLanguage => text().nullable()();
 
-  /// 系列级偏好的字幕版本组键（schema v89）。值是
+  /// 系列级偏好的字幕版本组键（schema v91）。值是
   /// `subtitle_version_groups.dart` 的分组键（一个字符串），合集内多版本字幕
   /// （不同字幕组/发布版本）时优先选这一组。与 [subtitleLanguage] 同款语义：
   /// **NULL = 没人配过**（消费方走默认选轨），非 NULL 覆盖每集。无损迁移：
@@ -2542,4 +2542,51 @@ class MangaTrustedSigners extends Table {
 
   @override
   Set<Column> get primaryKey => {fingerprint};
+}
+
+// ── manga_chapter_states ────────────────────────────────────────────
+/// 在线漫画的**每章**阅读状态。
+///
+/// 为什么必须是独立一张表：`ReaderPositions.bookUid` 是 `unique()`——一本书恒一
+/// 条位置。在线漫画一本书下有几十上百章，那一条位置只能表达「当前章读到第几
+/// 页」，于是换章时只能把它清零（v88 前 `MihonLibraryService.selectChapter` 正是
+/// 这么做的），上一章的位置永久丢失，也无从知道哪些章读过。
+///
+/// 本表把「章」升成一等实体，同时解决三件事：
+/// - **已读标记**：`readAt != null` = 这章读完了（作品页章节列表据此分实心/空心）。
+/// - **换章不丢进度**：切回旧章时从 `lastPage` 恢复，不再归零。
+/// - **继续阅读**：作品页据 `updatedAt` 最大的一条决定「继续阅读」落到哪章哪页。
+///
+/// 身份用 `(bookUid, chapterKey)`：`bookUid` 对齐 v82 起的书稳定身份（与
+/// `ReaderPositions` 同族，改名不丢位置）；`chapterKey` 是**源内**章节身份
+/// （Mihon = `chapter.url`，Aidoku = `chapter['key']`）。源刷新后章节顺序和索引
+/// 都可能变，但 key 稳定——所以这里刻意不存 index。
+///
+/// 刻意无 FK：与 `ReaderPositions` 同样跨书族，孤儿防线在应用层
+/// （`deleteEpubBook` 显式清理）。
+@DataClassName('MangaChapterStateRow')
+class MangaChapterStates extends Table {
+  /// 书稳定身份，= `EpubBooks.uid`（与 `ReaderPositions.bookUid` 同一族）。
+  TextColumn get bookUid => text()();
+
+  /// 源内章节身份。Mihon = `chapter.url`；Aidoku = `chapter['key']`。
+  TextColumn get chapterKey => text()();
+
+  /// 该章读到的 0-based 页码。
+  IntColumn get lastPage => integer().withDefault(const Constant(0))();
+
+  /// webtoon 页内分数（千分比 0..1000），与 `ReaderPositions.charOffset` 同编码。
+  /// -1 = 无精确偏移。
+  IntColumn get lastFraction => integer().withDefault(const Constant(-1))();
+
+  /// 该章总页数；拉过页表才知道，未知为 NULL。
+  IntColumn get pageCount => integer().nullable()();
+
+  /// 读完时刻（毫秒）。NULL = 未读完（可能读了一部分，看 [lastPage]）。
+  IntColumn get readAt => integer().nullable()();
+
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {bookUid, chapterKey};
 }

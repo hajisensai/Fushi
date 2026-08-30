@@ -82,10 +82,12 @@ import 'package:fushi/src/media/video/video_danmaku_source.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_screenshot_filename.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/focus/panel_focus_scope.dart';
 import 'package:fushi/src/media/video/video_player_shortcuts.dart';
@@ -1815,6 +1817,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 设置面板改动经 [_setVideoFitMode] 落盘 + setState 重建 Video。
   VideoFitMode _videoFitMode = VideoFitMode.contain;
 
+  /// Windows HDR 直通 / 10-bit 输出模式（`video_hdr_output.dart`），init 时从
+  /// AppModel 读入，随控制器创建下发；改设置经 [_setVideoHdrOutputMode]。
+  VideoHdrOutputMode _videoHdrOutputMode = VideoHdrOutputMode.auto;
+
   bool get _isPlaylist => _episodes.length > 1;
 
   /// 收藏/制卡是否按集区分：本地每集是独立 VideoBooks 行（bookKey 已唯一定位集，单视频
@@ -2172,6 +2178,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _customActionBindingsNotifier.value = appModel.videoCustomActionBindings;
     _lockWindowAspectRatio = appModel.videoLockWindowAspectRatio;
     _videoFitMode = appModel.videoFitMode;
+    _videoHdrOutputMode = appModel.videoHdrOutputMode;
 
     // 统一合集 Phase 3：本集若作为某 playlist 合集的一集打开（widget.playlistCollectionId
     // 非空），从合集成员建兄弟集列表（剧集面板 / 上下集 / 连播上下文）。每集是独立
@@ -3187,6 +3194,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final bool isInitialVideoOpen = _controller == null;
     final VideoPlayerController controller =
         _controller ?? VideoPlayerController();
+    // HDR 直通模式 + 画面 fit 交给控制器（宿主窗模式下 fit 由 mpv 自己算）。
+    controller.configureHdrOutput(
+      mode: _videoHdrOutputMode,
+      fitMode: _videoFitMode,
+    );
     // BUG-772：首开新建的在途 controller 登记进字段，让页面 dispose 能主动取消它。
     // 换集复用同一 _controller 时不设，避免误 dispose 正在用的实例。
     if (isInitialVideoOpen) _pendingController = controller;
@@ -6496,8 +6508,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<void> _setVideoFitMode(VideoFitMode mode) async {
     if (_videoFitMode == mode) return;
     _videoFitMode = mode;
+    _controller?.configureHdrOutput(fitMode: mode);
     await appModel.setVideoFitMode(mode);
     if (mounted) setState(() {});
+  }
+
+  /// 切 HDR 直通 / 10-bit 输出模式：落盘 + 控制器当场重判（切宿主窗不重建播放器）。
+  Future<void> _setVideoHdrOutputMode(VideoHdrOutputMode mode) async {
+    if (_videoHdrOutputMode == mode) return;
+    _videoHdrOutputMode = mode;
+    _controller?.configureHdrOutput(mode: mode);
+    await appModel.setVideoHdrOutputMode(mode);
   }
 
   /// Persist + apply a new 9-slot control button layout (TODO-274/312 phase 2).
@@ -6952,6 +6973,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       },
       onLockWindowAspectRatioChanged: _setLockWindowAspectRatio,
       onVideoFitModeChanged: _setVideoFitMode,
+      onHdrOutputModeChanged: _setVideoHdrOutputMode,
       onImmersiveModeChanged: appModel.setVideoImmersiveMode,
       onDanmakuEnabledChanged: _setVideoDanmakuEnabled,
       onDanmakuOnlineEnabledChanged: _setVideoDanmakuOnlineEnabled,
@@ -7158,9 +7180,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // topButtonBar），外层再叠一条 AppBar 等于两条顶栏、互相重复（BUG-102）。改为
     // 把返回/标题/剧集导航全部并入视频内顶栏（见 [_desktopControlsTheme] /
     // [_mobileControlsTheme]），与播放控制一起随鼠标/触摸显隐，单一顶栏。
-    return Scaffold(
-      backgroundColor: cs.surface,
-      body: _failed
+    // HDR 直通（video_hdr_output.dart）：libmpv 宿主窗钉在主窗正后方，视频洞必须
+    // 一路透到底，页面底色随之透明；失败 / 加载 / 缺资源态与非 HDR 播放不受影响。
+    return ValueListenableBuilder<bool>(
+      valueListenable: controller?.hdrHostActive ?? _kHdrHostInactive,
+      builder: (BuildContext _, bool hdrHost, Widget? body) => Scaffold(
+        backgroundColor: hdrHost ? Colors.transparent : cs.surface,
+        body: body,
+      ),
+      child: _failed
           ? _buildFailedBody(cs)
           // TODO-897：本地资源缺失态——必须在转圈判据之前短路（缺失时不调 load，
           // _controller 维持 null 也会落进下面的 spinner 分支无限转圈）。

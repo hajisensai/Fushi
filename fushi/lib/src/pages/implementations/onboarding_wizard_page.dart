@@ -35,11 +35,6 @@ const String kAnkiDesktopDownloadUrl = 'https://apps.ankiweb.net/';
 const String kAnkiDroidDownloadUrl =
     'https://play.google.com/store/apps/details?id=com.ichi2.anki';
 
-/// 推荐包下载线路：两条线路指向同一份包。Cloudflare 是默认（走稳定清单 +
-/// sha256 校验），Google Drive 是备用镜像（应用内直下走 usercontent 直链，
-/// 浏览器打开走分享页）。
-enum _PackRoute { cloudflare, googleDrive }
-
 /// 新手引导向导：首次启动（`onboarding_completed == false`）由 [HomePage] 首帧
 /// 弹出，之后可从「设置 → 系统」重新打开。
 ///
@@ -73,43 +68,25 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   // ── 推荐包下载状态 ────────────────────────────────────────────────
   late final Directory _packDir =
       Directory(p.join(appModelNoUpdate.appDirectory.path, 'recommended_pack'));
-  late final RecommendedPackDownloader _packDownloader =
-      RecommendedPackDownloader(packDir: _packDir);
 
-  /// 稳定清单解析出的下载器（URL/sha256 随清单走）；清单拉不到时保持 null，
-  /// 用内置回退直链的 [_packDownloader]。
+  /// 稳定清单解析出的下载器。**来源不给用户选**：清单里同时挂着 GitHub Release 的
+  /// 分片、官网 CF 的同名分片，以及 Drive 整包镜像（每片按 Range 取），分片下载器
+  /// 按实测吞吐在这几家之间派活——哪家快，哪家多下（见 `SourceSpeedLedger`）。
+  ///
+  /// 让用户在「Cloudflare / Google Drive」里二选一是个错误的问题：一次下载本来就
+  /// 该同时用上所有能用的来源，而哪家当下更快，只有跑起来才知道，用户猜不出。
   RecommendedPackDownloader? _manifestDownloader;
 
-  /// Google 备用镜像的下载器（懒建）。文件名沿用内置直链的包名——两条线路是
-  /// 同一份包，半截文件天然可跨线路续传。
-  RecommendedPackDownloader? _googleDownloader;
+  /// 清单彻底拉不到（官网和 GitHub 两个候选都不可达）时的兜底：内置的 Drive 整包
+  /// 直链，单流下载。没有清单就没有分片表，混源无从谈起，只能退到这一条。
+  late final RecommendedPackDownloader _fallbackDownloader =
+      RecommendedPackDownloader(
+    packDir: _packDir,
+    url: kRecommendedPackGoogleDriveDirectUrl,
+  );
 
-  /// 当前选中的下载线路（分段按钮；下载中不可切换）。
-  _PackRoute _packRoute = _PackRoute.cloudflare;
-
-  RecommendedPackDownloader get _activeDownloader {
-    switch (_packRoute) {
-      case _PackRoute.cloudflare:
-        return _manifestDownloader ?? _packDownloader;
-      case _PackRoute.googleDrive:
-        return _googleDownloader ??= RecommendedPackDownloader(
-          packDir: _packDir,
-          url: kRecommendedPackGoogleDriveDirectUrl,
-          fileName: kRecommendedPackFileName,
-        );
-    }
-  }
-
-  /// 浏览器下载按钮的目标：CF 用直链（清单拉到过就用清单里的最新 URL），
-  /// Google 用分享页（浏览器场景让 Drive 自己处理确认页更稳）。
-  String get _packBrowserUrl {
-    switch (_packRoute) {
-      case _PackRoute.cloudflare:
-        return _manifestDownloader?.url ?? kRecommendedPackWholeFileUrl;
-      case _PackRoute.googleDrive:
-        return kRecommendedPackGoogleDriveUrl;
-    }
-  }
+  RecommendedPackDownloader get _activeDownloader =>
+      _manifestDownloader ?? _fallbackDownloader;
 
   final ValueNotifier<double> _packProgress = ValueNotifier<double>(0);
   final ValueNotifier<int> _packBytes = ValueNotifier<int>(0);
@@ -145,7 +122,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     }
     // 上一轮推荐包导入成功后进程已重启：把落盘的 9.5 GB zip 删掉（flag 判定，
     // 未导入过 / 半截下载不受影响）。
-    unawaited(_packDownloader.cleanupIfImported());
+    unawaited(RecommendedPackDownloader.cleanupIfImported(_packDir));
+    // 落盘名从「URL 尾段推导」改成恒定名之前下的半截包叫 `download*`，搬过来，
+    // 别让升级把已下的 9.5 GB 作废。
+    RecommendedPackDownloader.migrateLegacyArtifacts(_packDir);
   }
 
   @override
@@ -230,10 +210,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     });
     _packCancelToken = CancelToken();
     try {
-      // CF 线路先拉稳定清单拿最新包地址（换包零发版）；拉不到回退内置直链。
-      // 只解析一次并缓存——同一会话内 URL 抖动会打断续传。Google 线路是固定
-      // 备用镜像，不走清单。
-      if (_packRoute == _PackRoute.cloudflare && _manifestDownloader == null) {
+      // 先拉稳定清单拿分片表与来源表（换包零发版）。只解析一次并缓存——同一会话
+      // 内 URL 抖动会打断续传。拉不到就走 _fallbackDownloader 的整包直链。
+      if (_manifestDownloader == null) {
         final RecommendedPackManifest? manifest =
             await fetchRecommendedPackManifest();
         if (manifest != null) {
@@ -287,8 +266,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     await runBackupImportFlowForFile(
       appModel: appModel,
       filePath: path,
-      onImportConfirmed:
-          deleteAfterImport ? _activeDownloader.markImportStarted : null,
+      // 打标是包目录级操作（写 `<包目录>/imported.flag`），与走哪条线路无关。
+      onImportConfirmed: deleteAfterImport
+          ? () => RecommendedPackDownloader.markImportStarted(_packDir)
+          : null,
     );
   }
 
@@ -371,6 +352,88 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         ],
       ),
     );
+  }
+
+  /// Anki 步骤的动作表。
+  ///
+  /// 每条都必须回答「点了会发生什么、要不要点」——这一步的按钮最多，也最容易让人
+  /// 对着一排图标发呆。必要性跟着连接状态走：没连上时「测试连接」和「装 Anki」
+  /// 是必做，连上之后它降级成「刷新牌组」这种可选动作。
+  List<OnboardingAction> _ankiActions({
+    required AnkiUiState anki,
+    required bool connected,
+    required bool mobile,
+  }) {
+    final bool noDecks = anki.settings.availableDecks.isEmpty;
+    return <OnboardingAction>[
+      OnboardingAction(
+        icon: noDecks ? Icons.link_outlined : Icons.sync_outlined,
+        // BUG-1902：拉到牌组之后这颗按钮的实际作用就是「刷新牌组与笔记类型」
+        // （调的一直是 fetchConfiguration）。继续叫「测试连接」会让用户在 Anki
+        // 里新建了牌组后找不到刷新入口。
+        label: noDecks ? t.onboarding_anki_test_action : t.anki_fetch,
+        description: noDecks
+            ? t.onboarding_anki_action_test_desc
+            : t.onboarding_anki_action_refresh_desc,
+        necessity: noDecks
+            ? OnboardingActionNecessity.mustDo
+            : OnboardingActionNecessity.optional,
+        trailing: anki.isFetching
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : null,
+        onPressed:
+            anki.isFetching ? null : () => unawaited(_testAnkiConnection()),
+      ),
+      // 还没连上：给「先把 Anki 装起来」的出口（连上即收起；iOS 的 AnkiMobile 是
+      // 付费 App，说明文字带过，不放商店外链）。
+      if (!connected && Platform.isAndroid)
+        OnboardingAction(
+          icon: Icons.open_in_new_outlined,
+          label: t.onboarding_anki_get_ankidroid_action,
+          description: t.onboarding_anki_action_get_ankidroid_desc,
+          necessity: OnboardingActionNecessity.mustDo,
+          onPressed: () => launchUrl(
+            Uri.parse(kAnkiDroidDownloadUrl),
+            mode: LaunchMode.externalApplication,
+          ),
+        ),
+      if (!connected && !mobile) ...<OnboardingAction>[
+        OnboardingAction(
+          icon: Icons.open_in_new_outlined,
+          label: t.onboarding_anki_get_anki_action,
+          description: t.onboarding_anki_action_get_anki_desc,
+          necessity: OnboardingActionNecessity.mustDo,
+          onPressed: () => launchUrl(
+            Uri.parse(kAnkiDesktopDownloadUrl),
+            mode: LaunchMode.externalApplication,
+          ),
+        ),
+        // 内置插件包直接解压进 Anki 的 addons21，免去「获取插件填码」；手动路径
+        // （填码 2055492159）保留在上方说明文字里作后备。
+        OnboardingAction(
+          icon: Icons.extension_outlined,
+          label: t.onboarding_anki_install_addon_action,
+          description: t.onboarding_anki_action_install_addon_desc,
+          necessity: OnboardingActionNecessity.mustDo,
+          onPressed: () => unawaited(_installAnkiConnectAddonFromAsset()),
+        ),
+      ],
+      OnboardingAction(
+        icon: Icons.tune_outlined,
+        label: t.onboarding_step_anki_action,
+        description: t.onboarding_step_anki_action_desc,
+        necessity: OnboardingActionNecessity.optional,
+        onPressed: () => _pushPage(
+          (_) => SettingsDetailPage(
+            destination: buildCardCreationDestination(),
+          ),
+        ),
+      ),
+    ];
   }
 
   Widget _buildAnkiStep() {
@@ -468,70 +531,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           ),
           SizedBox(height: tokens.spacing.gap),
         ],
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: tokens.spacing.gap,
-          runSpacing: tokens.spacing.gap,
-          children: <Widget>[
-            FilledButton.tonalIcon(
-              icon: anki.isFetching
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(anki.settings.availableDecks.isEmpty
-                      ? Icons.link_outlined
-                      : Icons.sync_outlined),
-              // BUG-1902：已经拉到牌组之后，这颗按钮的实际作用就是「刷新牌组与笔记
-              // 类型」（它调的一直是 fetchConfiguration，与设置页刷新同一条路径）。
-              // 继续叫「测试连接」会让用户在 Anki 里新建了牌组后找不到刷新入口。
-              label: Text(anki.settings.availableDecks.isEmpty
-                  ? t.onboarding_anki_test_action
-                  : t.anki_fetch),
-              onPressed: anki.isFetching
-                  ? null
-                  : () => unawaited(_testAnkiConnection()),
-            ),
-            // 还没连上：给「先把 Anki 装起来」的出口（连上即收起；iOS 的
-            // AnkiMobile 是付费 App，说明文字带过，不放商店外链）。
-            if (!connected && Platform.isAndroid)
-              OutlinedButton.icon(
-                icon: const Icon(Icons.open_in_new_outlined),
-                label: Text(t.onboarding_anki_get_ankidroid_action),
-                onPressed: () => launchUrl(
-                  Uri.parse(kAnkiDroidDownloadUrl),
-                  mode: LaunchMode.externalApplication,
-                ),
-              ),
-            if (!connected && !mobile) ...<Widget>[
-              OutlinedButton.icon(
-                icon: const Icon(Icons.open_in_new_outlined),
-                label: Text(t.onboarding_anki_get_anki_action),
-                onPressed: () => launchUrl(
-                  Uri.parse(kAnkiDesktopDownloadUrl),
-                  mode: LaunchMode.externalApplication,
-                ),
-              ),
-              // 内置插件包直接解压进 Anki 的 addons21，免去「获取插件填码」；
-              // 手动路径（填码 2055492159）保留在上方说明文字里作后备。
-              OutlinedButton.icon(
-                icon: const Icon(Icons.extension_outlined),
-                label: Text(t.onboarding_anki_install_addon_action),
-                onPressed: () => unawaited(_installAnkiConnectAddonFromAsset()),
-              ),
-            ],
-            FilledButton.tonalIcon(
-              icon: const Icon(Icons.tune_outlined),
-              label: Text(t.onboarding_step_anki_action),
-              onPressed: () => _pushPage(
-                (_) => SettingsDetailPage(
-                  destination: buildCardCreationDestination(),
-                ),
-              ),
-            ),
-          ],
-        ),
+        for (final OnboardingAction action in _ankiActions(
+          anki: anki,
+          connected: connected,
+          mobile: mobile,
+        ))
+          OnboardingActionTile(action: action),
         // 移动端次级入口：本机改用 AnkiConnect 连电脑（默认收起，配置真值仍在
         // 制卡设置，不在向导里复制表单）。
         if (mobile) ...<Widget>[
@@ -560,15 +565,6 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
               ),
             ),
         ],
-        // FSRS：没有 AnkiConnect/AnkiDroid API 能替用户打开，只能把路径讲清。
-        SizedBox(height: tokens.spacing.card),
-        FushiListItem(
-          leading: const Icon(Icons.speed_outlined),
-          title: Text(t.onboarding_anki_fsrs_title),
-          subtitle: Text(t.onboarding_anki_fsrs_body),
-          // 说明是三句话，不能用默认两行截断。
-          subtitleMaxLines: 8,
-        ),
       ],
     );
   }
@@ -582,7 +578,21 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     final OnboardingStepId step = steps[_stepIndex];
     final bool isLast = _stepIndex == steps.length - 1;
 
+    // 单行页头：返回按钮和标题同一行。
+    //
+    // `showAppBar: true`（默认）会先排一条 title 为空、只有返回按钮的 AppBar，再在
+    // 它下面排一行大标题——两行，返回按钮和「新手引导」四个字对不上，向导这种
+    // 「一屏一步」的页面还白白吃掉一整行高度。`showAppBar: false` 时 [leading] 交给
+    // 页头自己那一行渲染（与 aidoku 源浏览页同一写法），脚手架的
+    // PrimaryScrollController / PageScrollRegistry（手柄 LB/RB 翻页）也照旧保留——
+    // 换成 FushiToolScaffold 就会把这两样一起丢掉。
     return FushiPageScaffold(
+      showAppBar: false,
+      headerCompact: true,
+      leading: BackButton(
+        key: const ValueKey<String>('onboarding_back'),
+        onPressed: () => Navigator.of(context).maybePop(),
+      ),
       title: t.onboarding_title,
       body: Column(
         children: <Widget>[
@@ -649,10 +659,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           icon: Icons.cloud_sync_outlined,
           title: t.onboarding_step_backup_title,
           body: t.onboarding_step_backup_body,
-          actions: <Widget>[
-            FilledButton.tonalIcon(
-              icon: const Icon(Icons.settings_backup_restore_outlined),
-              label: Text(t.onboarding_step_backup_action),
+          actions: <OnboardingAction>[
+            OnboardingAction(
+              icon: Icons.settings_backup_restore_outlined,
+              label: t.onboarding_step_backup_action,
+              description: t.onboarding_step_backup_action_desc,
+              necessity: OnboardingActionNecessity.optional,
               onPressed: () => _pushPage(
                 (_) => SettingsDetailPage(
                   destination: buildSyncBackupDestination(),
@@ -666,10 +678,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           icon: Icons.devices_other_outlined,
           title: t.onboarding_step_interconnect_title,
           body: t.onboarding_step_interconnect_body,
-          actions: <Widget>[
-            FilledButton.tonalIcon(
-              icon: const Icon(Icons.hub_outlined),
-              label: Text(t.onboarding_step_interconnect_action),
+          actions: <OnboardingAction>[
+            OnboardingAction(
+              icon: Icons.hub_outlined,
+              label: t.onboarding_step_interconnect_action,
+              description: t.onboarding_step_interconnect_action_desc,
+              necessity: OnboardingActionNecessity.optional,
               onPressed: () => _pushPage(
                 (_) => SettingsDetailPage(
                   destination: buildInterconnectDestination(),
@@ -683,10 +697,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           icon: Icons.extension_outlined,
           title: t.onboarding_step_extension_title,
           body: t.onboarding_step_extension_body,
-          actions: <Widget>[
-            FilledButton.tonalIcon(
-              icon: const Icon(Icons.open_in_new_outlined),
-              label: Text(t.onboarding_step_extension_action),
+          actions: <OnboardingAction>[
+            OnboardingAction(
+              icon: Icons.open_in_new_outlined,
+              label: t.onboarding_step_extension_action,
+              description: t.onboarding_step_extension_action_desc,
+              necessity: OnboardingActionNecessity.recommended,
               onPressed: () => _pushPage((_) => const BrowserExtensionPage()),
             ),
           ],
@@ -696,10 +712,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           icon: Icons.font_download_outlined,
           title: t.onboarding_step_fonts_title,
           body: t.onboarding_step_fonts_body,
-          actions: <Widget>[
-            FilledButton.tonalIcon(
-              icon: const Icon(Icons.font_download_outlined),
-              label: Text(t.custom_fonts_catalog_title),
+          actions: <OnboardingAction>[
+            OnboardingAction(
+              icon: Icons.font_download_outlined,
+              label: t.custom_fonts_catalog_title,
+              description: t.onboarding_step_fonts_action_desc,
+              necessity: OnboardingActionNecessity.optional,
               onPressed: () => _pushPage((_) => const CustomFontsPage()),
             ),
           ],
@@ -777,9 +795,69 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     );
   }
 
+  /// 推荐包步骤的动作表。
+  ///
+  /// 这一步同屏五个入口，光看标签分不出「必须点哪个、点了会发生什么」——所以每条
+  /// 都带一句说明和一个必要性徽标。只有第一条是主线，其余四条都是「不想下整包」
+  /// 或「学别的语言」时的替代路径。
+  List<OnboardingAction> _packActions(bool hasDownloaded) {
+    return <OnboardingAction>[
+      OnboardingAction(
+        icon: Icons.download_outlined,
+        label: hasDownloaded
+            ? t.onboarding_step_pack_import_existing_action
+            : '${t.onboarding_step_pack_download_action}'
+                ' ($kRecommendedPackSizeLabel)',
+        description: hasDownloaded
+            ? t.onboarding_pack_action_import_existing_desc
+            : t.onboarding_pack_action_download_desc,
+        necessity: OnboardingActionNecessity.recommended,
+        onPressed: () => unawaited(_downloadPackAndImport()),
+      ),
+      OnboardingAction(
+        icon: Icons.folder_open_outlined,
+        label: t.onboarding_step_pack_pick_action,
+        description: t.onboarding_pack_action_pick_desc,
+        necessity: OnboardingActionNecessity.optional,
+        onPressed: () => unawaited(_pickPackFileAndImport()),
+      ),
+      // 浏览器下载不再直接甩一条 9.5 GB 的裸直链：官网下载页上有分片直链
+      // （IDM / aria2 能用）、整包镜像和「导入方式选合并」的说明，比一条直链
+      // 更能让人下完之后知道下一步干什么。
+      OnboardingAction(
+        icon: Icons.open_in_new_outlined,
+        label: t.onboarding_pack_action_website,
+        description: t.onboarding_pack_action_website_desc,
+        necessity: OnboardingActionNecessity.optional,
+        onPressed: () => unawaited(openOfficialDownloadPage()),
+      ),
+      // 学其他语言 / 不想用推荐包：既有词典管理页（推荐词典目录 + 文件导入）
+      // 与音频来源对话框仍是完整入口。
+      OnboardingAction(
+        icon: Icons.menu_book_outlined,
+        label: t.onboarding_step_dictionary_action,
+        description: t.onboarding_pack_action_dictionary_desc,
+        necessity: OnboardingActionNecessity.optional,
+        onPressed: () => _pushPage((_) => const DictionaryDialogPage()),
+      ),
+      OnboardingAction(
+        icon: Icons.record_voice_over_outlined,
+        label: t.manage_audio_sources,
+        description: t.onboarding_pack_action_audio_desc,
+        necessity: OnboardingActionNecessity.optional,
+        onPressed: () => showAudioSourcesManagerDialog(
+          context: context,
+          appModel: appModel,
+        ),
+      ),
+    ];
+  }
+
   Widget _buildPackStep() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool hasDownloaded = _activeDownloader.hasCompletedFile;
+    // 「下好了没」是包目录的属性，不是某条线路的属性：两条线路落同一个文件名。
+    final bool hasDownloaded =
+        RecommendedPackDownloader.hasCompletedFileIn(_packDir);
     return ListView(
       padding: EdgeInsets.all(tokens.spacing.card),
       children: <Widget>[
@@ -833,66 +911,16 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
             ),
           ),
         ] else ...<Widget>[
-          // 下载线路：两条线路同一份包，应用内直下与浏览器下载都跟随此选择。
-          Center(
-            child: SegmentedButton<_PackRoute>(
-              segments: const <ButtonSegment<_PackRoute>>[
-                ButtonSegment<_PackRoute>(
-                  value: _PackRoute.cloudflare,
-                  label: Text('Cloudflare'),
-                ),
-                ButtonSegment<_PackRoute>(
-                  value: _PackRoute.googleDrive,
-                  label: Text('Google Drive'),
-                ),
-              ],
-              selected: <_PackRoute>{_packRoute},
-              onSelectionChanged: (Set<_PackRoute> selection) =>
-                  setState(() => _packRoute = selection.first),
-            ),
+          // 来源不给用户选：清单里挂着 GitHub 分片、官网 CF 分片和备用整包镜像，
+          // 下载器按实测吞吐自己派活。用户猜不出哪家当下更快，也不该被要求去猜。
+          Text(
+            t.onboarding_pack_sources_hint,
+            style: textTheme.bodySmall,
+            textAlign: TextAlign.center,
           ),
-          SizedBox(height: tokens.spacing.gap),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: tokens.spacing.gap,
-            runSpacing: tokens.spacing.gap,
-            children: <Widget>[
-              FilledButton.tonalIcon(
-                icon: const Icon(Icons.download_outlined),
-                label: Text(hasDownloaded
-                    ? t.onboarding_step_pack_import_existing_action
-                    : '${t.onboarding_step_pack_download_action}'
-                        ' ($kRecommendedPackSizeLabel)'),
-                onPressed: () => unawaited(_downloadPackAndImport()),
-              ),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.folder_open_outlined),
-                label: Text(t.onboarding_step_pack_pick_action),
-                onPressed: () => unawaited(_pickPackFileAndImport()),
-              ),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.open_in_new_outlined),
-                label: Text(t.onboarding_step_pack_browser_action),
-                onPressed: () => launchUrl(
-                  Uri.parse(_packBrowserUrl),
-                  mode: LaunchMode.externalApplication,
-                ),
-              ),
-              // 学其他语言 / 不想用推荐包：既有词典管理页（推荐词典目录 + 文件
-              // 导入）与音频来源对话框仍是完整入口。
-              TextButton(
-                onPressed: () => _pushPage((_) => const DictionaryDialogPage()),
-                child: Text(t.onboarding_step_dictionary_action),
-              ),
-              TextButton(
-                onPressed: () => showAudioSourcesManagerDialog(
-                  context: context,
-                  appModel: appModel,
-                ),
-                child: Text(t.manage_audio_sources),
-              ),
-            ],
-          ),
+          SizedBox(height: tokens.spacing.card),
+          for (final OnboardingAction action in _packActions(hasDownloaded))
+            OnboardingActionTile(action: action),
         ],
       ],
     );
@@ -1006,19 +1034,143 @@ class OnboardingFeatureTile extends StatelessWidget {
 
 /// 单个配置步骤的静态内容骨架（图标 + 标题 + 说明 + 动作按钮）。
 /// 独立成公开 widget 便于脱离 [AppModel] 做 widget 测试。
+/// 引导动作的「我要不要点」。
+///
+/// 用户盯着一屏按钮时的第一个问题不是「这是什么」，而是「我该不该点」。所以必要性
+/// 和说明文字一样是 [OnboardingAction] 的**必填**字段，而不是某些按钮碰巧带上的
+/// 装饰——结构上填不了「没说明的按钮」，才不会再长出一排看不懂的图标。
+enum OnboardingActionNecessity {
+  /// 不点这一步就走不通（例：还没连上 Anki 时的「测试连接」「安装 Anki」）。
+  mustDo,
+
+  /// 多数人应该点（例：推荐包的「下载并导入」）。
+  recommended,
+
+  /// 按需，跳过没有副作用（例：「打开词典管理」）。
+  optional,
+}
+
+/// 引导里的一个可执行动作：图标 + 标题 + **一句「点了会发生什么」** + 必要性。
+@immutable
+class OnboardingAction {
+  const OnboardingAction({
+    required this.icon,
+    required this.label,
+    required this.description,
+    required this.necessity,
+    required this.onPressed,
+    this.trailing,
+  });
+
+  final IconData icon;
+  final String label;
+
+  /// 点下去会发生什么。**不能省**：省掉它就退回「一排不知道干什么的按钮」。
+  final String description;
+
+  final OnboardingActionNecessity necessity;
+
+  /// null 表示当前不可点（例：正在拉取牌组时的刷新）。
+  final VoidCallback? onPressed;
+
+  /// 行尾附加件（进度圈等）。
+  final Widget? trailing;
+}
+
+/// 必要性徽标的两份取值：词 + 底色。**词**才是承载信息的那个——单色屏和色觉障碍
+/// 下也读得出「必做」还是「可选」，颜色只是加强。
+class _NecessityStyle {
+  const _NecessityStyle(this.label, this.color);
+
+  final String label;
+
+  /// null = 中性底（[FushiTagChip] 的默认 overlay 面），给「可选」用。
+  final Color? color;
+}
+
+_NecessityStyle _necessityStyle(
+  OnboardingActionNecessity necessity,
+  ColorScheme colors,
+) {
+  switch (necessity) {
+    case OnboardingActionNecessity.mustDo:
+      return _NecessityStyle(
+        t.onboarding_action_badge_required,
+        colors.errorContainer,
+      );
+    case OnboardingActionNecessity.recommended:
+      return _NecessityStyle(
+        t.onboarding_action_badge_recommended,
+        colors.primaryContainer,
+      );
+    case OnboardingActionNecessity.optional:
+      return _NecessityStyle(t.onboarding_action_badge_optional, null);
+  }
+}
+
+/// 「必做 / 推荐 / 可选」徽标。走共享的 [FushiTagChip]（圆角、字号、前景对比度都
+/// 由它统一算），不自己搭 Container + BoxDecoration。
+class OnboardingNecessityBadge extends StatelessWidget {
+  const OnboardingNecessityBadge({required this.necessity, super.key});
+
+  final OnboardingActionNecessity necessity;
+
+  @override
+  Widget build(BuildContext context) {
+    final _NecessityStyle style =
+        _necessityStyle(necessity, Theme.of(context).colorScheme);
+    return FushiTagChip(label: style.label, color: style.color);
+  }
+}
+
+/// 渲染一条 [OnboardingAction]：整行可点，标题右边挂必要性徽标，副标题是说明。
+class OnboardingActionTile extends StatelessWidget {
+  const OnboardingActionTile({required this.action, super.key});
+
+  final OnboardingAction action;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ThemeData theme = Theme.of(context);
+    final bool enabled = action.onPressed != null;
+    return FushiListItem(
+      leading: Icon(
+        action.icon,
+        color: enabled ? theme.colorScheme.primary : theme.disabledColor,
+      ),
+      title: Row(
+        children: <Widget>[
+          Flexible(child: Text(action.label, overflow: TextOverflow.ellipsis)),
+          SizedBox(width: tokens.spacing.gap / 2),
+          OnboardingNecessityBadge(necessity: action.necessity),
+        ],
+      ),
+      // 说明是完整的一两句话，默认两行会截断。
+      subtitle: Text(action.description),
+      subtitleMaxLines: 5,
+      trailing: action.trailing,
+      onTap: action.onPressed,
+    );
+  }
+}
+
 class OnboardingStepView extends StatelessWidget {
   const OnboardingStepView({
     required this.icon,
     required this.title,
     required this.body,
-    this.actions = const <Widget>[],
+    this.actions = const <OnboardingAction>[],
     super.key,
   });
 
   final IconData icon;
   final String title;
   final String body;
-  final List<Widget> actions;
+
+  /// 本步的可执行动作。类型是 [OnboardingAction] 而不是裸 [Widget]：说明和必要性
+  /// 因此是**结构上必填**的，而不是某些按钮碰巧带上的东西。
+  final List<OnboardingAction> actions;
 
   @override
   Widget build(BuildContext context) {
@@ -1037,12 +1189,8 @@ class OnboardingStepView extends StatelessWidget {
         Text(body, style: textTheme.bodyMedium, textAlign: TextAlign.center),
         if (actions.isNotEmpty) ...<Widget>[
           SizedBox(height: tokens.spacing.card),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: tokens.spacing.gap,
-            runSpacing: tokens.spacing.gap,
-            children: actions,
-          ),
+          for (final OnboardingAction action in actions)
+            OnboardingActionTile(action: action),
         ],
       ],
     );

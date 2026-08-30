@@ -47,7 +47,10 @@ void main() {
 
     await tester.tap(find.text('Latest fixture manga'));
     await tester.pump();
-    await tester.pump();
+    // 详情页并入共享的 MangaSeriesPage 后多了一次异步跳：页面先离线渲染，再由
+    // 自己去拉章节（旧详情页是在 initState 里一次拉完）。与 Mihon 侧同款用例
+    // 一致，给这次拉取一个 pump 窗口。
+    await tester.pump(const Duration(milliseconds: 50));
     expect(find.text('Ch. 13.5'), findsOneWidget);
   });
 }

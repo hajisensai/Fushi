@@ -182,33 +182,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 本页经仓储监听自动刷新。
   Future<void> _addGame() => addGameViaFilePicker(_repo);
 
-  /// 拖入文件导入：筛出新的 `.exe` 批量添加，toast 汇报数量；每条落库后走
-  /// 与「添加游戏」同一套 [_autoCover] 后台补齐封面（#370 目录级联 + exe 图标）。
+  /// 拖入文件导入：委托给共享动作 [addGamesFromPaths]（筛新 exe → 落库 → toast
+  /// 汇报数量 → 逐条后台补封面），与「导入」视图的拖放同一条路。
   Future<void> _handleDrop(List<String> paths, Offset _) async {
-    final List<String> exes = filterOutDuplicateGameExes(_games, paths);
-    if (exes.isEmpty) {
-      FushiToast.show(
-        msg: t.game_drop_no_exe,
-        severity: ToastSeverity.warning,
-      );
-      return;
-    }
-    // 批内 id 用「基准时刻 + 序号微秒」错开，避免同微秒撞 id。
-    final DateTime base = DateTime.now();
-    final List<GalgameEntry> added = <GalgameEntry>[
-      for (int i = 0; i < exes.length; i++)
-        newGalgameEntryFromExe(exes[i],
-            now: base.add(Duration(microseconds: i))),
-    ];
-    await _repo.addAll(added);
-    _refresh();
-    FushiToast.show(
-      msg: t.game_drop_imported(count: added.length),
-      severity: ToastSeverity.success,
-    );
-    for (final GalgameEntry entry in added) {
-      unawaited(_autoCover(entry, silent: true));
-    }
+    await addGamesFromPaths(_repo, paths, onImported: _refresh);
   }
 
   /// 自动获取封面：游戏目录里的封面图 → exe 内嵌图标（[autoResolveGameCover]）。

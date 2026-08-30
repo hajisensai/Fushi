@@ -147,7 +147,12 @@ void main() {
     expect(find.text(t.video_discovery_details_load_failed), findsNothing);
   });
 
-  testWidgets('活动下载只禁用新资源与订阅且仍可附加字幕', (WidgetTester tester) async {
+  // 契约变更（用户反馈「感觉下的源不对劲，想再下一个，但是下不了，只能取消或者等
+  // 下载结束」）：**资源搜索不再被 busy 门控**。队列层从来没有 per-series 并发限制，
+  // 这道禁用纯粹是 UI 造出来的死局。订阅仍然门控（它创建的是长期副作用，重复订阅
+  // 同一部作品没有意义），字幕照旧不门控。并发下载的正向用例与取消入口见
+  // test/pages/video_discovery_concurrent_download_test.dart。
+  testWidgets('活动下载只禁用订阅，资源与字幕都仍可发起', (WidgetTester tester) async {
     bool searchedSubtitle = false;
     final VideoDiscoveryItem item = _item('active', '下载中的作品');
     await tester.pumpWidget(
@@ -181,7 +186,8 @@ void main() {
     final FilledButton subscribe = tester.widget<FilledButton>(
       find.byKey(const ValueKey<String>('video-discovery-subscribe')),
     );
-    expect(resource.onPressed, isNull);
+    expect(resource.onPressed, isNotNull,
+        reason: '下载进行中要能换源重下；per-series 并发限制在队列层根本不存在。');
     expect(subscribe.onPressed, isNull);
     expect(subtitle.onPressed, isNotNull);
 

@@ -52,9 +52,11 @@ void main() {
         i = source.indexOf('_openDownloadsTab(', i + 1)) {
       calls.add(i);
     }
-    expect(calls.length, 3,
-        reason: '期望恰好三处：声明 + _popToDownloadsTab 内 + onOpenDownloads 端口。'
-            '新增调用点必须同时接上可达性门控，然后更新本守卫。');
+    expect(calls.length, 2,
+        reason: '期望恰好两处：声明 + _popToDownloadsTab 内。'
+            '所有端口都必须经 _popToDownloadsTab —— 它同时管可达性门控与「先回到 '
+            'home 这一层路由」，而 _openDownloadsTab 只 setState 切 tab、不动导航栈。'
+            '新增调用点必须走 _popToDownloadsTab，然后更新本守卫。');
 
     expect(
       source.contains('void _openDownloadsTab(int tabIndex) {'),
@@ -68,9 +70,11 @@ void main() {
     );
     expect(
       source.contains(
-          'onOpenDownloads: downloadsReachable ? () => _openDownloadsTab(0) : null,'),
+          'onOpenDownloads: downloadsReachable ? () => _popToDownloadsTab(0) : null,'),
       isTrue,
-      reason: '第三处是发现页「查看下载」端口，必须被 downloadsReachable 门控',
+      reason: '「查看下载」端口必须走 _popToDownloadsTab：作品**详情页**永远是 '
+          'pushed route，只切 tab 的话 tab 在底下换了、用户还停在详情页上，'
+          '看起来什么都没发生。内联在 home 里的发现页已在栈顶，popUntil 是 no-op。',
     );
   });
 

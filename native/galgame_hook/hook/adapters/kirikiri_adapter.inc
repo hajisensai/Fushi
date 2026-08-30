@@ -4644,6 +4644,9 @@ int64_t g_lookup_last_notify = -1;
 bool g_lookup_card_shown = false;
 bool g_lookup_enabled_last = false;
 bool g_lookup_sensor_live = false;
+// v19 准入上报用的只读访问器。传感器状态本身不外露给别的编译单元，registry 只需要
+// 这一个布尔——保持窄接口，别让准入汇总去读一堆 KiriKiri 内部状态。
+bool KirikiriLookupSensorLive() { return g_lookup_sensor_live; }
 // 经典 KAG3 采集面已自证（读到"真捕到字形"后不再求值）。
 bool g_lookup_classic_source_known = false;
 int g_lookup_classic_poll_ticks = 0;
@@ -6433,5 +6436,6 @@ bool TryHookKirikiriVoiceStream() {
 // KiriKiriZ 是 32 位引擎；x64 构建此路径为空实现（仅保证两架构都能编译）。
 bool TryHookKirikiriVoiceStream() { return true; }
 void PollKirikiriLookupInstall() {}
+bool KirikiriLookupSensorLive() { return false; }
 
 #endif  // _M_IX86

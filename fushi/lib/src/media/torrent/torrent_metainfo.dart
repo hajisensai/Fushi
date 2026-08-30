@@ -29,8 +29,10 @@ class InspectedTorrentMetainfo {
     required this.torrentId,
     required this.v1InfoHash,
     required this.v2InfoHash,
+    Iterable<InspectedTorrentFile> files = const <InspectedTorrentFile>[],
     this.suggestedName,
-  }) : bytes = Uint8List.fromList(bytes);
+  })  : bytes = Uint8List.fromList(bytes),
+        files = List<InspectedTorrentFile>.unmodifiable(files);
 
   final Uint8List bytes;
 
@@ -39,6 +41,10 @@ class InspectedTorrentMetainfo {
   final String torrentId;
   final String? v1InfoHash;
   final String? v2InfoHash;
+
+  /// 种子内文件清单；[InspectedTorrentFile.index] 与下载后端的文件 index 同域。
+  /// 这份清单在 add 副作用之前即可用于持久化“只下载哪些文件”的用户意图。
+  final List<InspectedTorrentFile> files;
 
   /// `info.name`（优先 `name.utf-8`）的展示名；缺失/非文本返回 null。
   /// 手动添加任务用它预填标题。
@@ -52,6 +58,18 @@ class InspectedTorrentMetainfo {
         v1InfoHash: v1InfoHash,
         v2InfoHash: v2InfoHash,
       );
+}
+
+class InspectedTorrentFile {
+  const InspectedTorrentFile({
+    required this.index,
+    required this.path,
+    required this.length,
+  });
+
+  final int index;
+  final String path;
+  final int length;
 }
 
 /// Validates bencode and hashes the exact raw `info` dictionary byte range.
@@ -125,8 +143,78 @@ InspectedTorrentMetainfo inspectTorrentMetainfo(
     torrentId: torrentId,
     v1InfoHash: v1InfoHash,
     v2InfoHash: v2InfoHash,
+    files: _inspectFiles(info),
     suggestedName: suggestedName,
   );
+}
+
+List<InspectedTorrentFile> _inspectFiles(Map<String, Object?> info) {
+  final Object? rawFiles = info['files'];
+  if (rawFiles is List<Object?>) {
+    final List<InspectedTorrentFile> files = <InspectedTorrentFile>[];
+    for (int index = 0; index < rawFiles.length; index++) {
+      final Object? rawFile = rawFiles[index];
+      if (rawFile is! Map<String, Object?>) {
+        throw TorrentMetainfoException(
+          TorrentMetainfoErrorCode.invalidBencode,
+          'info.files[$index] must be a dictionary',
+        );
+      }
+      final Object? rawLength = rawFile['length'];
+      final Object? rawPath = rawFile['path.utf-8'] ?? rawFile['path'];
+      if (rawLength is! int || rawLength < 0 || rawPath is! List<Object?>) {
+        throw TorrentMetainfoException(
+          TorrentMetainfoErrorCode.invalidBencode,
+          'info.files[$index] has an invalid length or path',
+        );
+      }
+      final List<String> components = <String>[];
+      for (final Object? rawComponent in rawPath) {
+        if (rawComponent is! Uint8List || rawComponent.isEmpty) {
+          throw TorrentMetainfoException(
+            TorrentMetainfoErrorCode.invalidBencode,
+            'info.files[$index] has an invalid path component',
+          );
+        }
+        components.add(utf8.decode(rawComponent, allowMalformed: true));
+      }
+      if (components.isEmpty) {
+        throw TorrentMetainfoException(
+          TorrentMetainfoErrorCode.invalidBencode,
+          'info.files[$index] has an empty path',
+        );
+      }
+      files.add(
+        InspectedTorrentFile(
+          index: index,
+          path: components.join('/'),
+          length: rawLength,
+        ),
+      );
+    }
+    return files;
+  }
+
+  final Object? rawLength = info['length'];
+  final Object? rawName = info['name.utf-8'] ?? info['name'];
+  if (rawLength is int &&
+      rawLength >= 0 &&
+      rawName is Uint8List &&
+      rawName.isNotEmpty) {
+    return <InspectedTorrentFile>[
+      InspectedTorrentFile(
+        index: 0,
+        path: utf8.decode(rawName, allowMalformed: true),
+        length: rawLength,
+      ),
+    ];
+  }
+
+  // Pure v2 torrents describe files through `file tree`. The current download
+  // backends still identify pure-v2 torrents by a truncated hash and do not
+  // guarantee a stable file-index order, so exposing guessed indexes would be
+  // unsafe for selective download. Hybrid/v1 torrents take the branch above.
+  return const <InspectedTorrentFile>[];
 }
 
 String? _normalizeExpectedHash(String? raw) {
