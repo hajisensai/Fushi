@@ -67,6 +67,21 @@ void main() {
 
     expect(launchedUrls, <String>['https://github.com/hajisensai/fushi']);
   });
+
+  test('openOfficialDownloadPage 落在下载页，而不是首页', () async {
+    expect(await openOfficialDownloadPage(), isTrue);
+
+    // 第三个官网入口，同样是「只差一段路径」的形状：漏了 /download 就退回首页，
+    // 用户看不到推荐包那一节的分片直链和「导入选合并」的说明，而引导页把用户
+    // 送到这里的全部理由就是那一节。
+    expect(launchedUrls, <String>[kOfficialDownloadPageUrl]);
+    expect(kOfficialDownloadPageUrl, 'https://fushi.moe/download');
+    expect(
+      kOfficialDownloadPageUrl.startsWith('$kOfficialWebsiteUrl/'),
+      isTrue,
+      reason: '下载页必须挂在官网域名下，换站点时两者一起走',
+    );
+  });
 }
 
 class _StubSettingsContext implements SettingsContext {

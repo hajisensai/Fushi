@@ -29,6 +29,9 @@ class _FakeHost {
   /// 这些 URL 回 206 但不带 Content-Range（畸形响应）。
   final Set<String> omitsContentRange = <String>{};
 
+  /// 这些 URL 每块投递前先等一会儿——用来做出「一家快一家慢」的真实差距。
+  final Map<String, Duration> slowUrls = <String, Duration>{};
+
   /// 每个 URL 收到的 Range 头，按序记录。
   final List<MapEntry<String, String?>> requests =
       <MapEntry<String, String?>>[];
@@ -72,7 +75,7 @@ class _FakeHost {
           'etag': etag,
           'content-length': '${body.length}',
         },
-        stream: _chunked(body, 0, body.length),
+        stream: _chunked(body, 0, body.length, delay: slowUrls[url]),
       );
     }
 
@@ -89,7 +92,7 @@ class _FakeHost {
         if (!omitsContentRange.contains(url))
           'content-range': 'bytes $start-$end/${body.length}',
       },
-      stream: _chunked(body, start, sendEnd + 1),
+      stream: _chunked(body, start, sendEnd + 1, delay: slowUrls[url]),
     );
   }
 
@@ -97,7 +100,12 @@ class _FakeHost {
   /// resume 后继续，cancel 后彻底停。真实 HTTP 流就是这样——消费端不读，服务端就
   /// 不会继续往下发。假服务器若无脑往缓冲区猛塞，[deliveredBytes] 量到的是生产者
   /// 而不是真实网络消耗，「取够就断」这类带宽断言会变成空的。
-  Stream<List<int>> _chunked(Uint8List body, int start, int endExclusive) {
+  Stream<List<int>> _chunked(
+    Uint8List body,
+    int start,
+    int endExclusive, {
+    Duration? delay,
+  }) {
     final StreamController<List<int>> controller =
         StreamController<List<int>>();
     bool cancelled = false;
@@ -123,6 +131,10 @@ class _FakeHost {
         if (gate != null) {
           await gate.future;
           continue;
+        }
+        if (delay != null && delay > Duration.zero) {
+          await Future<void>.delayed(delay);
+          if (cancelled) break;
         }
         final int stop = math.min(at + chunkSize, endExclusive);
         controller.add(body.sublist(at, stop));
@@ -217,6 +229,49 @@ void main() {
       await raf.truncate(4096);
       await raf.close();
       expect(f.lengthSync(), 4096);
+    });
+  });
+
+  group('多来源择快', () {
+    test('快的那家承担更多片，而不是和慢的对半分', () async {
+      // 这条用例钉的是「哪个快用哪个」。选源以前是 `(片序号 + 重试次数) % 来源数`
+      // ——片和源静态绑定，12 片两家就是雷打不动的 6 : 6，整包时长被慢的那家决定。
+      // 改成按实测吞吐派活之后，快的那家必须明显多干。
+      const int partSize = 4096;
+      const int partCount = 12;
+      final Uint8List body = _payload(partSize * partCount);
+      const String fast = 'https://fast/pack.zip';
+      const String slow = 'https://slow/pack.zip';
+      final _FakeHost host = _FakeHost()
+        ..chunkSize = partSize // 一片一块，慢的那家每片正好吃一次延迟
+        ..resources[fast] = body
+        ..resources[slow] = body
+        ..slowUrls[slow] = const Duration(milliseconds: 25);
+
+      final DownloadPlan plan = DownloadPlan.ranged(
+        urls: const <String>[fast, slow],
+        totalBytes: body.length,
+        partSize: partSize,
+        sha256: _sha256Of(body),
+      );
+      expect(plan.parts.length, partCount);
+
+      final File out = await build(plan, host).download();
+      expect(out.readAsBytesSync(), body, reason: '择快不能以下错字节为代价');
+
+      int served(String url) => host.requests
+          .where((MapEntry<String, String?> r) => r.key == url)
+          .length;
+      expect(
+        served(fast),
+        greaterThan(served(slow)),
+        reason: '静态轮换会给出 6 : 6；按吞吐派活必须偏向快的那家',
+      );
+      expect(
+        served(slow),
+        greaterThan(0),
+        reason: '慢的那家仍要分到片：多源并拉的总吞吐是各家之和，不该被掐掉',
+      );
     });
   });
 
