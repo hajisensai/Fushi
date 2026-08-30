@@ -97,7 +97,7 @@ void main() {
   test('TODO-016: 字幕菜单只补入当前持久化的导入字幕源', () {
     final String menu = region(
       'Future<void> _showSubtitleSourceMenu(',
-      'Future<void> _openJimakuDialog(',
+      'Future<SubtitleCollectionSpec?> _subtitleCollectionSpec(',
     );
     expect(menu.contains('_subtitleSourcesForMenu('), isTrue,
         reason: '菜单不能只用 listAllSubtitleSources；重进后还要补入当前视频持久化的导入字幕');
@@ -245,15 +245,15 @@ void main() {
         panel.contains('if (!_isRemote && _currentVideoPath != null)'), isFalse,
         reason: '旧的 !_isRemote 门控会让远端视频看不到「自动获取字幕」，必须移除');
     // 入口本体仍在（标题 + 打开对话框）。
-    expect(panel.contains('t.video_jimaku_fetch'), isTrue);
-    expect(panel.contains('_openJimakuDialog(controller)'), isTrue);
+    expect(panel.contains('t.video_subtitle_search_open'), isTrue);
+    expect(panel.contains('_openSubtitleWorkbench(controller)'), isTrue);
   });
 
   test('TODO-573: 远端 Jimaku query 取 host 标题，下载后走内存应用', () {
     // _jimakuQuery：本地用文件名解析 series，远端用 host 下发的标题。
     final String query = region(
       'String? _jimakuQuery() {',
-      'Future<void> _openJimakuDialog(',
+      'Future<SubtitleCollectionSpec?> _subtitleCollectionSpec(',
     );
     expect(query.contains('_currentVideoPath'), isTrue,
         reason: '本地视频仍用 _currentVideoPath 的文件名解析 series');
@@ -267,7 +267,7 @@ void main() {
     // _openJimakuDialog：远端下载后内存应用（_applyRemoteSubtitle，不写本地 DB），
     // 本地仍走 _selectSubtitleSource 持久化。
     final String dialog = region(
-      'Future<void> _openJimakuDialog(',
+      'Future<SubtitleCollectionSpec?> _subtitleCollectionSpec(',
       'Future<void> _pickAndImportSubtitle(',
     );
     expect(dialog.contains('_jimakuQuery()'), isTrue,

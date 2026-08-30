@@ -194,11 +194,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
       if (_jimakuQuery() != null)
         ListTile(
           leading: const Icon(Icons.cloud_download_outlined),
-          title: Text(t.video_jimaku_fetch),
+          title: Text(t.video_subtitle_search_open),
           enabled: !_subtitleLoadingShown,
           onTap: _subtitleLoadingShown
               ? null
-              : () => unawaited(_openJimakuDialog(controller)),
+              : () => unawaited(_openSubtitleWorkbench(controller)),
         ),
       ListTile(
         leading: const Icon(Icons.file_open_outlined),
@@ -1099,7 +1099,34 @@ extension _VideoSubtitle on _VideoFushiPageState {
   ///   [_applyRemoteSubtitle]（与远端「本地导入字幕」同一不落 DB 的链路）。
   ///
   /// 真实拉取需有效 Jimaku API key + 联网（验证待用户）。
-  Future<void> _openJimakuDialog(VideoPlayerController controller) async {
+  /// 本集所属合集的成员（有序）；不在合集里 / 读不到 → null（工作台只给「本集」）。
+  Future<SubtitleCollectionSpec?> _subtitleCollectionSpec() async {
+    final int? collectionId = widget.playlistCollectionId;
+    if (collectionId == null) return null;
+    try {
+      final MediaCollectionRow? collection =
+          await widget.repo.getMediaCollectionById(collectionId);
+      if (collection == null) return null;
+      final List<MediaCollectionItemRow> items =
+          await widget.repo.getCollectionItems(collectionId);
+      final List<VideoBookRow> members = <VideoBookRow>[];
+      for (final MediaCollectionItemRow item in items) {
+        if (item.mediaType != MediaKind.video.dbValue) continue;
+        final VideoBookRow? row = await widget.repo.getByBookUid(item.entryKey);
+        if (row != null) members.add(row);
+      }
+      if (members.isEmpty) return null;
+      return SubtitleCollectionSpec(collection: collection, members: members);
+    } on Object catch (error) {
+      ErrorLogService.instance
+          .logDiagnostic('VideoFushiPage._subtitleCollectionSpec', error);
+      return null;
+    }
+  }
+
+  /// 打开全屏字幕工作台（本集作用域；本集在合集里时可切到「整个合集」批量配字幕）。
+  /// 「本集」下载成功后把路径带回来当场应用。
+  Future<void> _openSubtitleWorkbench(VideoPlayerController controller) async {
     final String? query = _jimakuQuery();
     if (query == null) return;
     // TODO-1236：经 AppPaths 解析（跟随桌面自定义数据根 → `<dataRoot>/documents/`
@@ -1108,35 +1135,25 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (!context.mounted) return;
     // 语言记忆按系列（番名）粒度：seriesKey = query 归一（小写 + trim），与
     // PreferencesRepository 的 map key 约定一致。打开时读上次语言、选中时写回。
-    final String seriesKey = query.trim().toLowerCase();
-    // 该系列没有记忆时兜底设置页的默认字幕语言（三个 Jimaku 界面同一兜底）。
-    final String? preferredLanguage =
-        appModel.jimakuPreferredLanguages[seriesKey] ??
-            appModel.jimakuDefaultLanguageOrNull;
     // 身份种子（外部 ID + 日文原名）；seriesKey 仍按原 query 算，免得预填词一换就把
     // 用户此前的语言记忆全对不上。
     final SubtitleSearchSeed seed = await _buildJimakuSeed(query);
+    final SubtitleCollectionSpec? collection = await _subtitleCollectionSpec();
     if (!context.mounted) return;
-    final String? downloaded = await showDialog<String>(
-      context: context,
-      builder: (_) => JimakuSubtitleDialog(
+    final String? downloaded = await SubtitleWorkbenchPage.open(
+      context,
+      host: AppSubtitleWorkbenchHost(appModel),
+      saveDirectory: saveDir,
+      episode: SubtitleEpisodeSearchSpec(
+        initialQuery: seed.primaryQuery.isEmpty ? query : seed.primaryQuery,
+        seriesKey: query.trim().toLowerCase(),
         seed: seed,
         // 本地视频才有指纹可算（远端流恒 null），OpenSubtitles 据此按文件哈希精确匹配。
         videoPath: _isRemote ? null : _currentVideoPath,
-        initialQuery: seed.primaryQuery.isEmpty ? query : seed.primaryQuery,
-        initialApiKey: appModel.jimakuApiKey,
-        onApiKeyChanged: (String key) => appModel.setJimakuApiKey(key),
-        // 延迟解析：填 key 会重建 provider runtime，早绑的实例正是「刚填完 key
-        // 还是搜不到」的那个旧 registry。
-        subtitleRegistry: () => appModel.videoSubtitleRegistry,
-        saveDirectory: saveDir,
-        httpClientFactory: appModel.createDownloadHttpClient,
-        initialPreferredLanguage: preferredLanguage,
-        onPreferredLanguageChanged: (String lang) =>
-            appModel.setJimakuPreferredLanguage(seriesKey, lang),
       ),
+      collection: collection,
     );
-    // Jimaku 对话框内含联网搜索/下载，会夺焦；关闭后把焦点还给 Video。
+    // 工作台内含联网搜索/下载，会夺焦；关闭后把焦点还给 Video。
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
     if (downloaded == null || !context.mounted) return;
     if (_isRemote) {

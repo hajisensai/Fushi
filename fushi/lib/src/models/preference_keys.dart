@@ -204,6 +204,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_secondary_subtitle_obscure_hide',
   'video_shaders_enabled',
   'video_sort_mode',
+  // bool（默认 true）：AJATT 日语字幕库（kitsunekko 镜像）是否参与字幕搜索。
+  // 零配置源，没有 key 门控；默认开是因为它是没填 Jimaku/OpenSubtitles key 的
+  // 用户唯一能用的源。
+  'video_subtitle_ajatt_enabled',
   'video_subtitle_backfill_after_scrape',
   'video_subtitle_blur',
   'video_subtitle_list_auto_scroll',

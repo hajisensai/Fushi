@@ -23,6 +23,7 @@ import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/game_statistics_page.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 
@@ -181,12 +182,13 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   Future<List<ActivityEventRow>> _loadTimelineRows(
     List<GalgameEntry> games,
   ) async {
-    final List<ActivityEventRow> dbRows = await _db.getRecentActivityEvents(
-      limit: 200,
-      eventTypes: <String>[kActivityGame, kActivityAdded],
-    );
-    final List<ActivityEventRow> gameRows = dbRows
-        .where((ActivityEventRow r) => r.mediaType == kActivityMediaGame)
+    // v92：活动流唯一数据源是统一事实面的 [StatFacts.activityRows]（legacy 活动行
+    // ∪ hook 字数段 ∪ galgame_sessions 合成的游玩事件）；游玩不再写 activity 行。
+    final StatFacts facts = await loadStatFacts(_db);
+    final List<ActivityEventRow> gameRows = facts.activityRows
+        .where((ActivityEventRow r) =>
+            r.mediaType == kActivityMediaGame &&
+            (r.eventType == kActivityGame || r.eventType == kActivityAdded))
         .toList();
     final List<ActivityEventRow> synthesizedAdds = <ActivityEventRow>[
       for (final GalgameEntry g in games)

@@ -490,6 +490,24 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
             secondarySubtitleDelayMs: Value<int?>(delayMs)),
       );
 
+  /// 更新系列（合集）级默认字幕语言代码（`ja` / `en` …，schema v91）。
+  /// [language] 为 null 时清除（加载回退视频内容语言链 `resolveContentLanguage`，
+  /// 绝不是 ja）。
+  Future<void> updateMediaCollectionSubtitleLanguage(
+          int id, String? language) =>
+      (update(mediaCollections)..where((t) => t.id.equals(id))).write(
+        MediaCollectionsCompanion(subtitleLanguage: Value<String?>(language)),
+      );
+
+  /// 更新系列（合集）级偏好的字幕版本组键（`subtitle_version_groups.dart` 的
+  /// 分组键，schema v89）。[releaseGroup] 为 null 时清除（加载走默认选轨）。
+  Future<void> updateMediaCollectionSubtitleReleaseGroup(
+          int id, String? releaseGroup) =>
+      (update(mediaCollections)..where((t) => t.id.equals(id))).write(
+        MediaCollectionsCompanion(
+            subtitleReleaseGroup: Value<String?>(releaseGroup)),
+      );
+
   /// 新建合集，返回自增 id。sortOrder 默认排末尾（现有最大 +1，空表 0）。同事务清
   /// 同自然键的合集级删除墓碑（重建 = 撤销删除，仿插书清书墓碑 [insertEpubBook]
   /// 一律；不清成员墓碑——成员重加走 [addToCollection] 逐键清）。
