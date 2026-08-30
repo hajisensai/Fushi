@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -154,7 +156,20 @@ void main() {
       wheel.hover(tester.getCenter(find.text('wheel row 0'))),
     );
     await tester.sendEventToBinding(wheel.scroll(const Offset(0, 120)));
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    if (Platform.isWindows || Platform.isLinux) {
+      expect(
+        controller.offset,
+        allOf(
+          greaterThan(0),
+          lessThan(refinedDesktopPointerScrollDelta(120)),
+        ),
+        reason: '粗滚轮应在多帧内逐步到达目标，而不是第一帧瞬移',
+      );
+    } else {
+      expect(controller.offset, 120, reason: 'macOS 保持平台原生 pointer delta');
+    }
+    await tester.pumpAndSettle();
     expect(controller.offset, refinedDesktopPointerScrollDelta(120));
 
     await tester.sendEventToBinding(wheel.scroll(const Offset(0, 12)));
@@ -163,6 +178,17 @@ void main() {
       controller.offset,
       refinedDesktopPointerScrollDelta(120) + 12,
       reason: '小 delta 不得跟着粗滚轮一起打折',
+    );
+
+    controller.jumpTo(0);
+    await tester.sendEventToBinding(wheel.scroll(const Offset(0, 120)));
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.sendEventToBinding(wheel.scroll(const Offset(0, 120)));
+    await tester.pumpAndSettle();
+    expect(
+      controller.offset,
+      refinedDesktopPointerScrollDelta(120) * 2,
+      reason: '连续同向滚轮必须累积目标，不能因重启动画吃掉滚动距离',
     );
   });
 }
