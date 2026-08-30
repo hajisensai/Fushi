@@ -3898,5 +3898,13 @@
   "gal_hook_ingame_lookup_version_unsupported": "Versi gim ini belum ada dalam daftar yang didukung",
   "gal_hook_ingame_lookup_exe_hash_copy": "Salin SHA-256 file eksekusi gim",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "Tidak dapat membaca file eksekusi gim",
-  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 file eksekusi disalin"
+  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 file eksekusi disalin",
+  "download_tracker_section": "Langganan tracker",
+  "download_tracker_auto_add": "Otomatis tambahkan tracker langganan ke unduhan baru",
+  "download_tracker_auto_add_hint": "Daftar disimpan di cache selama 6 jam. Kegagalan langganan tidak menghentikan unduhan.",
+  "download_tracker_url": "URL langganan",
+  "download_tracker_refresh": "Ambil tracker",
+  "download_tracker_preview_empty": "Ambil langganan untuk melihat tracker HTTP, HTTPS, dan UDP yang didukung.",
+  "download_tracker_preview_count": "$count tracker diambil",
+  "download_tracker_fetch_failed": "Tidak dapat mengambil tracker: $message"
 }

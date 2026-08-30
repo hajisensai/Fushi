@@ -2377,6 +2377,8 @@ class _HomePageState extends BasePageState<HomePage>
         return DownloadsPage(
           key: ValueKey<String>('downloads-$_downloadsGeneration'),
           initialTabIndex: _downloadsInitialTabIndex,
+          videoDiscoveryController: _productionVideoDiscoveryController,
+          videoDiscoveryActions: _productionVideoDiscoveryActions,
         );
       case HomeTab.dictionaries:
         return HomeDictionaryPage(

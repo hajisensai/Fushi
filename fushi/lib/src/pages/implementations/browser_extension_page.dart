@@ -140,12 +140,16 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          // 本页是双身份页：作顶层 tab 时侧栏在旁边、canPop 为 false，不出箭头
+          // 本页是双身份页：作顶层 tab 时侧栏在旁边、本页就是首个路由，不出箭头
           // （页头几何与 BUG-1658 结论一致）；被「设置 → 查词 → 浏览器扩展」
           // push 成全屏路由时侧栏被盖住，这里承接返回键（同 DownloadsPage 范式）。
+          //
+          // 判据是**本页自己所在的 PageRoute 是不是首个**，不是 `Navigator.canPop()`：
+          // 本页的下拉框会临时 push 一个 PopupRoute，canPop() 会因此变成 true，
+          // 于是每开一次下拉都闪出一个返回箭头。
           FushiPageHeader(
             title: t.nav_browser_extension,
-            leading: Navigator.of(context).canPop()
+            leading: ModalRoute.of(context)?.isFirst == false
                 ? FushiIconButton(
                     icon: Icons.arrow_back,
                     tooltip: t.back,
@@ -166,6 +170,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: <Widget>[
+        // 返回键在页头的 leading 上（见 build），正文不再重复放一个。
         Text(t.browser_extension_page_intro, style: theme.textTheme.bodyMedium),
         const SizedBox(height: 16),
         _statusCard(theme,
