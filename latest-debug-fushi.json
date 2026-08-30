@@ -17,22 +17,22 @@
       "sha256": "4a4a7909400cc49da1265ce9bffb4f8978cbf373f7f3c84532f1d3c8a8438d34"
     },
     {
-      "name": "fushi-2.2.4-debug.12678-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.12678-ios.ipa",
-      "releaseSequence": 12678,
-      "tag": "v2.2.4-debug.12678+3a3d242",
-      "version": "2.2.4-debug.12678",
-      "size": 69209718,
-      "sha256": "69ae0ad030e1d76ed18851625b98d852eb94028e525d5365ba544e3022a5559b"
+      "name": "fushi-2.2.4-debug.12683-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.12683-ios.ipa",
+      "releaseSequence": 12683,
+      "tag": "v2.2.4-debug.12683+a8c60d3",
+      "version": "2.2.4-debug.12683",
+      "size": 69230440,
+      "sha256": "09b7009ada885462ffa507de428e928c71d79d20cb9323123c14971c102ef368"
     },
     {
-      "name": "fushi-2.2.4-debug.12678-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.12678-macos.zip",
-      "releaseSequence": 12678,
-      "tag": "v2.2.4-debug.12678+3a3d242",
-      "version": "2.2.4-debug.12678",
-      "size": 334050862,
-      "sha256": "c88a20d34d4d10af4137cc2390cb3e0c84aa2c65c0d7512bf3c5b4550a5381b9"
+      "name": "fushi-2.2.4-debug.12683-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.12683-macos.zip",
+      "releaseSequence": 12683,
+      "tag": "v2.2.4-debug.12683+a8c60d3",
+      "version": "2.2.4-debug.12683",
+      "size": 334101446,
+      "sha256": "4c00523ab1b9bcb9f89337fc341f0dc17baf8e07bc86ee529237d426a32fbcc6"
     },
     {
       "name": "fushi-2.2.4-debug.12683-windows-setup.exe",
