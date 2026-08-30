@@ -10,6 +10,8 @@ import 'package:fushi/src/media/video/download/video_download_path_mapping.dart'
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart'
+    show VideoHdrOutputMode, kVideoHdrOutputPref;
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
@@ -1208,6 +1210,17 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Windows HDR 直通 / 10-bit 输出模式（默认 auto：显示器 HDR 开着且片源 HDR 时直通）。
+  VideoHdrOutputMode get videoHdrOutputMode => VideoHdrOutputMode.fromStorage(
+        getPref(kVideoHdrOutputPref,
+            defaultValue: VideoHdrOutputMode.auto.storageValue) as String,
+      );
+
+  Future<void> setVideoHdrOutputMode(VideoHdrOutputMode mode) async {
+    await setPref(kVideoHdrOutputPref, mode.storageValue);
+    notifyListeners();
+  }
+
   String get videoAsbplayerConfig =>
       getPref('video_asbplayer_config', defaultValue: '') as String;
 
@@ -2050,6 +2063,86 @@ class PreferencesRepository extends ChangeNotifier {
   /// 去设置里翻开关、再重开一局才生效。
   static const bool galIngameLookupEnabledDefault = true;
 
+  /// hook 台词浮窗「单击查词」。native 侧一直支持（`clickLookupEnabled`），Dart
+  /// 侧此前写死 true，于是设置里根本没有这个开关。用户「至少开启穿透的时候我不是
+  /// 很想单击点到单词，还是习惯用侧键查」。
+  static const bool galHookClickLookupDefault = true;
+
+  bool get galHookClickLookup =>
+      getPref('gal_hook_click_lookup',
+          defaultValue: galHookClickLookupDefault) ==
+      true;
+
+  Future<void> setGalHookClickLookup(bool value) async {
+    await setPref('gal_hook_click_lookup', value);
+    notifyListeners();
+  }
+
+  /// 查词触发方式：0 = 左键单击（默认）/ 1 = 鼠标中键 / 2 = 鼠标侧键。
+  ///
+  /// 与 [galHookClickLookup] **正交**：前者决定「查不查」，本项决定「用哪个键查」。
+  /// 两者都关 = 浮窗上完全不查词，只用工具条。
+  static const int galHookLookupTriggerDefault = 0;
+
+  int get galHookLookupTrigger {
+    final Object? stored = getPref('gal_hook_lookup_trigger',
+        defaultValue: galHookLookupTriggerDefault);
+    final int value =
+        stored is num ? stored.toInt() : galHookLookupTriggerDefault;
+    // 值域收在读这一层：越界值直接退回默认，别让一个坏值把 native 的分派打成
+    // 「哪个键都不触发」。
+    return value >= 0 && value <= 2 ? value : galHookLookupTriggerDefault;
+  }
+
+  Future<void> setGalHookLookupTrigger(int value) async {
+    await setPref('gal_hook_lookup_trigger', value.clamp(0, 2));
+    notifyListeners();
+  }
+
+  /// 工具条自动隐藏（LunaHook 式）：平时整条隐藏，鼠标进入台词框才现身。
+  static const bool galHookToolbarAutoHideDefault = true;
+
+  bool get galHookToolbarAutoHide =>
+      getPref('gal_hook_toolbar_auto_hide',
+          defaultValue: galHookToolbarAutoHideDefault) ==
+      true;
+
+  Future<void> setGalHookToolbarAutoHide(bool value) async {
+    await setPref('gal_hook_toolbar_auto_hide', value);
+    notifyListeners();
+  }
+
+  /// 穿透态下浮窗是否仍拦截落在**文字行盒**上的鼠标（默认 true = 拦截，点字查词才
+  /// 成立）。关掉后整窗对游戏彻底透明——用户原话「穿透不彻底等于彻底不穿透」。
+  static const bool galHookPassThroughBlocksMouseDefault = true;
+
+  bool get galHookPassThroughBlocksMouse =>
+      getPref('gal_hook_passthrough_blocks_mouse',
+          defaultValue: galHookPassThroughBlocksMouseDefault) ==
+      true;
+
+  Future<void> setGalHookPassThroughBlocksMouse(bool value) async {
+    await setPref('gal_hook_passthrough_blocks_mouse', value);
+    notifyListeners();
+  }
+
+  /// 折叠「同一句台词的多次快照」（Zato 症状：一句台词分多次点击显示，工作台里
+  /// 第二句出现两次）。默认开——引擎逐段重绘是 galgame 常态；留开关是给「某个引擎的
+  /// 两句不同台词真的构成前缀关系」这种情形一个不改代码就能退回旧行为的逃生口。
+  static const bool galHookFoldProgressiveLinesDefault = true;
+
+  bool get galHookFoldProgressiveLines =>
+      getPref(
+        'gal_hook_fold_progressive_lines',
+        defaultValue: galHookFoldProgressiveLinesDefault,
+      ) ==
+      true;
+
+  Future<void> setGalHookFoldProgressiveLines(bool value) async {
+    await setPref('gal_hook_fold_progressive_lines', value);
+    notifyListeners();
+  }
+
   /// 游戏内查词总开关（仅 Windows 生效）。
   bool get galIngameLookupEnabled =>
       getPref(
@@ -2198,6 +2291,17 @@ class PreferencesRepository extends ChangeNotifier {
   }
 
   // ── update preferences ───────────────────────────────────────────────
+
+  /// P2P（torrent）传输是否也走全局代理。**默认 false = 直连**：走代理可能
+  /// 降速，且不少代理服务商禁止 BT 流量（限速/警告/封号），只有用户明确
+  /// 开了才下发给内置引擎（外接 qBittorrent 自管）。
+  bool get p2pProxyEnabled =>
+      getPref('network_proxy_p2p_enabled', defaultValue: false) as bool;
+
+  Future<void> setP2pProxyEnabled(bool value) async {
+    await setPref('network_proxy_p2p_enabled', value);
+    notifyListeners();
+  }
 
   bool get updateNeverRemind =>
       getPref('update_never_remind', defaultValue: false) as bool;
@@ -2413,24 +2517,9 @@ class PreferencesRepository extends ChangeNotifier {
   // 副本，不迁移到任何游戏；旧 Profile apply/JSON import 也会拒绝它复活。全局值
   // 无法映射成「每个游戏各自开不开」，新结构仍一律从关闭起步，用户按游戏自己开。
 
-  /// AniList/Nyaa/Jimaku requests: direct (default, BUG-1538 —— 下载域默认不走
-  /// 代理), auto (env > enabled system proxy > direct), or a user-provided
-  /// host:port proxy. 已显式存过 'auto' 的用户不受默认值变更影响。
-  String get downloadNetworkProxyMode =>
-      getPref('download_network_proxy_mode', defaultValue: 'direct') as String;
-
-  Future<void> setDownloadNetworkProxyMode(String value) async {
-    await setPref('download_network_proxy_mode', value);
-    notifyListeners();
-  }
-
-  String get downloadCustomProxy =>
-      getPref('download_custom_proxy', defaultValue: '') as String;
-
-  Future<void> setDownloadCustomProxy(String value) async {
-    await setPref('download_custom_proxy', value);
-    notifyListeners();
-  }
+  // 下载域曾有独立的代理三态（`download_network_proxy_mode` /
+  // `download_custom_proxy`），2026-08-29 合并进唯一的全局代理项
+  // [updateCustomProxy]；存量行由 schema v90 迁移归并后删除，这里不再有读写器。
 
   /// TODO-1961：内置下载引擎的下载根（新任务落点）。空串 = 未设置 → 用默认根
   /// `<documents>/anime_downloads/content`（与本 key 出现之前逐字节一致）。

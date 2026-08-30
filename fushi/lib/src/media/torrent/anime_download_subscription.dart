@@ -10,7 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_release_descriptor.dart';
-import 'package:fushi/src/media/torrent/download_network_proxy.dart'
+import 'package:fushi/src/media/torrent/download_timeouts.dart'
     show kDownloadDiscoveryTimeout;
 import 'package:fushi/src/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';

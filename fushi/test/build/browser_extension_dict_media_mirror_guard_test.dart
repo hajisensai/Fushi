@@ -187,10 +187,18 @@ void main() {
                 '$root content.js must thread a precise cue window for panel-row mining');
         expect(
             src.contains(
-                'cw ? { text: cw.text || \'\', startV: cw.startMs, endV: cw.endMs } : fushiCurrentCueWindowV()'),
+                '{ text: cw.text || \'\', startV: cw.startMs, endV: cw.endMs }'),
             isTrue,
             reason:
-                '$root content.js fushiEnqueue must prefer the precise window over DOM sampling');
+                '$root content.js fushiEnqueue must keep the panel-row precise window branch');
+        // 整轨优先仲裁三层：面板行精确窗 → 整轨按播放时间查 → DOM 采样兜底。整轨必须在
+        // `||` 左边——实时采集只能是降级，不能反过来当主路径。这里用单行片段而非跨行
+        // 字面串：多行字面量在 CRLF 检出下恒不匹配，守卫会退化成零断言空转。
+        expect(
+            src.contains('fushiFullTrackWindowAt() || fushiCurrentCueWindowV()'),
+            isTrue,
+            reason:
+                '$root content.js fushiEnqueue must prefer the full-episode track over DOM sampling');
         // 录制边距 + 去重不得丢（复核修订 5 红线）。
         expect(
             src.contains(

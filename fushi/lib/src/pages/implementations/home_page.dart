@@ -17,7 +17,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi_anki/fushi_anki.dart' show AnkiMediaDedupReport;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
-import 'package:fushi/src/utils/components/current_app_icon.dart';
+import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/src/pages/implementations/managed_video_source_prompt.dart';
@@ -362,6 +362,8 @@ class _HomePageState extends BasePageState<HomePage>
   final FocusNode _keyboardFocusNode = FocusNode();
   final ValueNotifier<int> _dictFocusSignal = ValueNotifier<int>(0);
   final ValueNotifier<int> _videoLibraryRefreshSignal = ValueNotifier<int>(0);
+  final Map<HomeTab, ScrollController> _tabScrollControllers =
+      <HomeTab, ScrollController>{};
   VideoSourceScrapeCoordinator? _videoSourceScrapeCoordinator;
   VideoSourceScrapeTaskController? _videoSourceScrapeTaskController;
   String? _videoSourceScrapeConfigFingerprint;
@@ -624,6 +626,9 @@ class _HomePageState extends BasePageState<HomePage>
     _videoDiscoveryController = null;
     _dictFocusSignal.dispose();
     _videoLibraryRefreshSignal.dispose();
+    for (final ScrollController controller in _tabScrollControllers.values) {
+      controller.dispose();
+    }
     _keyboardFocusNode.dispose();
     WidgetsBinding.instance.removeObserver(this);
     appModelNoUpdate.databaseCloseNotifier.removeListener(refresh);
@@ -1190,38 +1195,11 @@ class _HomePageState extends BasePageState<HomePage>
                 currentIndex: visualIndex,
                 onTap: selectVisual,
                 items: displayItems,
-                leading: _buildRailLeading(),
+                leading: const NavRailBrandButton(),
               ),
             ),
             Expanded(child: FocusTraversalGroup(child: _bodyWithMiniBar())),
           ],
-        ),
-      ),
-    );
-  }
-
-  /// 宽屏主导航的品牌位。应用图标直接占 rail 顶部固定区域，不再叠加卡片底色、
-  /// 描边或内边距；下面的目的地仍在剩余空间内独立居中。
-  Widget _buildRailLeading() {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 8 + 64 + 8 正好等于 kAdaptiveNavRailWidth（80），零余量。rail 外面是
-    // SafeArea(right: false)，left inset 一旦大于 0（带刘海的平板/折叠屏横屏）
-    // 可用宽度就不足 80，写死的 64 会溢出。用 FittedBox 兜住：有地方时仍是 64，
-    // 挤了就等比缩小，而不是画到框外。
-    return Padding(
-      padding: EdgeInsets.all(tokens.spacing.gap),
-      child: Semantics(
-        image: true,
-        label: 'Fushi',
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: SizedBox.square(
-            dimension: 64,
-            child: ClipRRect(
-              borderRadius: tokens.radii.controlRadius,
-              child: const CurrentAppIcon(),
-            ),
-          ),
         ),
       ),
     );
@@ -1354,10 +1332,65 @@ class _HomePageState extends BasePageState<HomePage>
       // 订阅本身与下载 tab 无关（订阅在后台照常拉取），故不随下载模块门控。
       onSubscribe: _openVideoDiscoverySubscription,
       onPlay: _openLocalVideoDiscoveryWork,
-      onOpenDownloads: downloadsReachable ? () => _openDownloadsTab(0) : null,
+      // 必须走 _popToDownloadsTab：作品**详情页**永远是 pushed route，而
+      // _openDownloadsTab 只 setState 切 home 的 tab、不动导航栈 —— tab 在
+      // 底下切了，用户还停在详情页上，看起来什么都没发生。
+      // 内联在 home 里的发现页已在栈顶，popUntil(isFirst) 对它是 no-op。
+      onOpenDownloads: downloadsReachable ? () => _popToDownloadsTab(0) : null,
       onOpenSubscriptions:
           downloadsReachable ? _openVideoDiscoverySubscriptionsPanel : null,
+      // 取消不经下载 tab，所以**不随** downloadsReachable 门控：下载模块被关掉的
+      // 用户照样可能有一条在飞的任务需要停掉。
+      onCancelDownloads: _cancelVideoDiscoveryDownloads,
     );
+  }
+
+  /// 取消本作品当前在飞的下载任务。
+  ///
+  /// 逐条调 [VideoDownloadPipelineService.cancelJob]：它对已完成的任务会拒绝，
+  /// 这里不预判——状态流是异步的，读到的 activeJobIds 可能已经过期，让服务层
+  /// 用真值裁决。任一条失败不影响其余（一条取消不了不该把其他几条也留下）。
+  Future<void> _cancelVideoDiscoveryDownloads(List<String> jobIds) async {
+    if (jobIds.isEmpty) return;
+    final VideoDownloadPipelineService? pipeline =
+        appModelNoUpdate.videoDownloadPipelineService;
+    if (pipeline == null) return;
+
+    // 一颗按钮会停掉**该作品全部**在飞任务，而这个入口的动机场景恰恰是「A 下错
+    // 了再下 B」—— 不确认就点等于把 A 和 B 一起干掉。条数摆出来让用户自己判断。
+    final BuildContext dialogContext = context;
+    final FushiDestructiveConfirmResult? confirmed =
+        await showAppDialog<FushiDestructiveConfirmResult>(
+      context: dialogContext,
+      builder: (BuildContext _) => FushiDestructiveConfirmDialog(
+        title: t.video_discovery_cancel_downloads_title,
+        message: t.video_discovery_cancel_downloads_body(n: jobIds.length),
+        confirmLabel: t.cancel,
+        leadingIcon: Icons.close,
+      ),
+    );
+    if (confirmed == null) return;
+
+    int cancelled = 0;
+    for (final String jobId in jobIds) {
+      try {
+        await pipeline.cancelJob(jobId);
+        cancelled++;
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('HomePage.cancelVideoDiscoveryDownload', e, stack);
+      }
+    }
+    // 一条都没取消掉必须说话：cancelJob 在 backendTaskId 还没落库、或后端解析不
+    // 出来时会失败，而 UI 这边什么都不变 —— 用户只看到「点了没反应，还在下」。
+    if (cancelled == 0 && mounted) {
+      _showVideoDiscoveryMessage(
+        context,
+        t.video_discovery_cancel_downloads_failed,
+      );
+    }
+    // 不必手动戳刷新信号：cancelJob 落库后 watchVideoDownloadJobs() 会自己让
+    // 状态流重新求值（见 _watchVideoDiscoveryStatus 的三条订阅）。
   }
 
   /// 「先回到 home 这一层路由，再切下载 tab 并定位子 tab」的唯一出口。
@@ -1825,8 +1858,17 @@ class _HomePageState extends BasePageState<HomePage>
         await _matchingVideoDiscoverySubscriptions(reference);
     final _LocalDiscoveryTarget? local =
         await _resolveLocalDiscoveryTarget(reference);
-    final VideoDownloadJobRow? job = jobs.firstOrNull;
-    final bool busy = job?.lifecycle == VideoDownloadJobLifecycle.active;
+    // 「在飞」是**任意一条** active，不是排序后第一条 active。同一部作品可以并存
+    // 多条下载（换源重下时旧的还在跑），而排序是 priority DESC, createdAt DESC
+    // —— 新提交的那条一旦完成，仍在跑的旧任务就会被判成「不忙」，取消入口跟着
+    // 消失、进度也不再显示。
+    final List<VideoDownloadJobRow> activeJobs = jobs
+        .where((VideoDownloadJobRow row) =>
+            row.lifecycle == VideoDownloadJobLifecycle.active)
+        .toList(growable: false);
+    // 状态文案优先讲还在跑的那条；都跑完了才退回排序首条（完成 / 失败 / 已取消）。
+    final VideoDownloadJobRow? job = activeJobs.firstOrNull ?? jobs.firstOrNull;
+    final bool busy = activeJobs.isNotEmpty;
     final bool subscribed = subscriptions.any(
       (VideoDownloadSubscriptionRow row) => row.enabled,
     );
@@ -1839,6 +1881,9 @@ class _HomePageState extends BasePageState<HomePage>
       isSubscribed: subscribed,
       isInLibrary: local != null,
       isBusy: busy,
+      activeJobIds: <String>[
+        for (final VideoDownloadJobRow row in activeJobs) row.jobId,
+      ],
     );
   }
 
@@ -2316,11 +2361,9 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget _buildTabContent(HomeTab tab) {
-    switch (tab) {
-      case HomeTab.home:
-        return HomeDashboardPage(videoRepo: _videoRepository);
-      case HomeTab.video:
-        return VideoLibraryShell(
+    final Widget content = switch (tab) {
+      HomeTab.home => HomeDashboardPage(videoRepo: _videoRepository),
+      HomeTab.video => VideoLibraryShell(
           repository: _videoRepository,
           libraryRefreshSignal: _videoLibraryRefreshSignal,
           scrapeTaskController: _videoSourceScrapeController,
@@ -2332,29 +2375,33 @@ class _HomePageState extends BasePageState<HomePage>
           onLibraryChanged: _notifyVideoLibraryChanged,
           discoveryController: _productionVideoDiscoveryController,
           discoveryActions: _productionVideoDiscoveryActions,
-        );
-      case HomeTab.downloads:
-        return DownloadsPage(
+          ),
+      HomeTab.downloads => DownloadsPage(
           key: ValueKey<String>('downloads-$_downloadsGeneration'),
           initialTabIndex: _downloadsInitialTabIndex,
-        );
-      case HomeTab.dictionaries:
-        return HomeDictionaryPage(
+          videoDiscoveryController: _productionVideoDiscoveryController,
+          videoDiscoveryActions: _productionVideoDiscoveryActions,
+          ),
+      HomeTab.dictionaries => HomeDictionaryPage(
           focusSignal: _dictFocusSignal,
-        );
-      case HomeTab.games:
-        return const HomeGamePage();
-      case HomeTab.browserExtension:
-        return const BrowserExtensionPage();
-      case HomeTab.settings:
+          ),
+      HomeTab.games => const HomeGamePage(),
+      HomeTab.browserExtension => const BrowserExtensionPage(),
+      HomeTab.settings =>
         // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头；但仍需 PopScope 拦截系统
         // 返回键（否则冒泡到顶层 PopScope = 退出 app，见 BUG-236）。
-        return _buildSettingsTabContent(showBackButton: false);
-      case HomeTab.books:
-        return const HomeReaderPage();
-      case HomeTab.manga:
-        return const MangaLibraryPage();
-    }
+        _buildSettingsTabContent(showBackButton: false),
+      HomeTab.books => const HomeReaderPage(),
+      HomeTab.manga => const MangaLibraryPage(),
+    };
+    return PrimaryScrollController(
+      controller: _tabScrollControllers.putIfAbsent(
+        tab,
+        FushiScrollController.new,
+      ),
+      automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
+      child: content,
+    );
   }
 
   /// 设置 tab 的内容外壳。[showBackButton] 为 true 时（宽屏隐藏 3 图标侧栏的全屏

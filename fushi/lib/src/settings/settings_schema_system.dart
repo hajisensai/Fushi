@@ -102,6 +102,16 @@ SettingsDestination buildSystemDestination() {
             icon: Icons.info_outline,
             builder: _buildRuntimeAppVersionRow,
           ),
+          // 官网。与宽屏侧栏左上角的 app 图标是同一个入口（openOfficialWebsite），
+          // URL 只存在 official_links.dart 一处。
+          SettingsActionItem(
+            id: 'system.website',
+            title: t.options_website,
+            icon: Icons.language_outlined,
+            onTap: (_) async {
+              await openOfficialWebsite();
+            },
+          ),
           SettingsActionItem(
             id: 'system.github',
             title: t.options_github,
@@ -140,6 +150,60 @@ SettingsDestination buildSystemDestination() {
             subtitle: t.about_tmdb_attribution,
             icon: Icons.movie_outlined,
             builder: _buildTmdbAttributionRow,
+          ),
+        ],
+      ),
+      SettingsSection(
+        title: t.section_network,
+        items: <SettingsItem>[
+          // 全应用唯一的代理项（TODO-871/862 起）：更新、云同步、词典、下载、字幕、
+          // 刮削……所有公网出站都由 `app_proxy.dart` 按「手填 > env > 系统代理 >
+          // 直连」解析，这里填的就是「手填」那一格。留空 = 自动（fake-ip/TUN 模式下
+          // 系统代理写注册表、Dart 读不到时才需要手填）。非空但格式非法时弹
+          // SnackBar 并仍存原串——运行时 normalizeUserProxyHostPort fail-open 忽略
+          // 非法值，绝不误切。持久化键名 `update_custom_proxy` 是历史遗留，冻结不改。
+          SettingsTextItem(
+            id: 'system.network_proxy',
+            title: t.network_proxy_label,
+            subtitle: t.network_proxy_auto_hint,
+            icon: Icons.dns_outlined,
+            placeholder: t.network_proxy_hint,
+            keyboardType: TextInputType.url,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.updateCustomProxy,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              final String trimmed = value.trim();
+              await settingsContext.appModel.setUpdateCustomProxy(trimmed);
+              // 云同步的共享 client 在首次使用时就把代理解析结果固化进 findProxy 了，
+              // 不丢弃它，用户改完代理仍走旧出口——那等于这条设置对同步不生效
+              // （BUG-1348）。更新检查每次新建 client，不受影响。
+              resetSyncHttpClient();
+              // 非空且无法归一成合法 host:port → 提示（仍保存原串，运行时忽略）。
+              if (trimmed.isNotEmpty &&
+                  normalizeUserProxyHostPort(trimmed) == null) {
+                final BuildContext ctx = settingsContext.context;
+                if (!ctx.mounted) return;
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(content: Text(t.network_proxy_invalid)),
+                );
+              }
+            },
+          ),
+          // P2P（torrent）传输单独列出：**默认直连**，用户明确开了才跟上面的
+          // 全局出口。副标题就是警告——走代理可能降速，且不少代理服务商禁止
+          // BT 流量（限速/警告/封号）。只对内置引擎生效；外接 qBittorrent 的
+          // 代理在它自己的 WebUI 里配，这里不越权改用户的 qB 设置。
+          SettingsSwitchItem(
+            id: 'system.network_proxy_p2p',
+            title: t.network_proxy_p2p_label,
+            subtitle: t.network_proxy_p2p_warning,
+            icon: Icons.swap_vert_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.p2pProxyEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setP2pProxyEnabled(value);
+              settingsContext.refresh();
+            },
           ),
         ],
       ),
@@ -223,37 +287,6 @@ SettingsDestination buildSystemDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setUpdateAutoInstall(value);
               settingsContext.refresh();
-            },
-          ),
-          // 「自定义更新代理」（TODO-871/862）：fake-ip/TUN 模式下系统代理写注册表、
-          // Dart HttpClient 读不到时的兜底入口。空串=清除（合法）；非空但格式非法时
-          // 弹 SnackBar 提示并仍存原串——运行时纯函数 normalizeUserProxyHostPort
-          // 兜底忽略非法值、不阻断检查。
-          SettingsTextItem(
-            id: 'system.update_custom_proxy',
-            title: t.update_custom_proxy_label,
-            subtitle: t.update_custom_proxy_auto_hint,
-            icon: Icons.dns_outlined,
-            placeholder: t.update_custom_proxy_hint,
-            keyboardType: TextInputType.url,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.updateCustomProxy,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              final String trimmed = value.trim();
-              await settingsContext.appModel.setUpdateCustomProxy(trimmed);
-              // 云同步的共享 client 在首次使用时就把代理解析结果固化进 findProxy 了，
-              // 不丢弃它，用户改完代理仍走旧出口——那等于这条设置对同步不生效
-              // （BUG-1348）。更新检查每次新建 client，不受影响。
-              resetSyncHttpClient();
-              // 非空且无法归一成合法 host:port → 提示（仍保存原串，运行时忽略）。
-              if (trimmed.isNotEmpty &&
-                  normalizeUserProxyHostPort(trimmed) == null) {
-                final BuildContext ctx = settingsContext.context;
-                if (!ctx.mounted) return;
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  SnackBar(content: Text(t.update_custom_proxy_invalid)),
-                );
-              }
             },
           ),
         ],

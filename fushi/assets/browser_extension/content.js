@@ -121,6 +121,37 @@ function fushiArmPlayDismiss(v) {
     }, { once: true });
   } catch (_) {}
 }
+// 本轮页面弹窗是不是侧栏（side panel）交过来的词。侧栏只知道自己把词递出去了，弹窗何时被关
+// （点页面空白、Esc、手动播放）只有这边知道；关窗时定向回一条 fushiSidePanelLookupGone，侧栏
+// 据此复位扫词去重键——否则鼠标停在同一个字上就永远重查不了。定向：页面自身 Shift 查词关窗
+// 不发这条，侧栏自己那份面板内弹窗不受影响。
+let fushiLookupFromSidePanel = false;
+function fushiNotifySidePanelLookupGone() {
+  if (!fushiLookupFromSidePanel) return;
+  fushiLookupFromSidePanel = false;
+  if (!fushiExtAlive()) return;
+  try {
+    chrome.runtime.sendMessage({ type: 'fushiSidePanelLookupGone' }, function () {
+      try { void chrome.runtime.lastError; } catch (_) {}
+    });
+  } catch (_) { /* 扩展重载中：侧栏也随之重建，无需回执 */ }
+}
+
+// 查词结束了，却没有弹窗在场（服务没开 / 空响应 / 上下文失效 / SW 被回收）。
+//
+// 这个出口有**两件**必须做的事，历史上只做了第一件：
+//   ① 被查词暂停的视频要有出口；
+//   ② 侧栏必须知道「那份页面弹窗没出现」—— 否则它的 pageLookupOpen 永远停在 true，
+//      side-panel.js 的扫词去重闸会把同一个词的再次点击一并吞掉，用户在侧栏点那个词
+//      既不查词也不跳转，零反馈（首次装扩展、查词服务没开时必然撞上）。
+// 「bool 镜像只有成功路径复位」是本仓反复出现的形状；收成一个原语而不是在四个失败
+// 出口各抄两行，以后再加出口也只有这一个地方要记。
+function fushiAbandonLookupWithoutPopup() {
+  if (fushiHost) return;
+  fushiResumePausedForLookup();
+  fushiNotifySidePanelLookupGone();
+}
+
 // 手动播放 → 关掉两处查词浮层。页面弹窗直接关（fushiRemoveContainer 幂等；其恢复步骤
 // 因标记已清而为 no-op）；Side Panel 是独立扩展页，发一条 runtime 消息让它自关。
 function fushiDismissLookupOnPlay() {
@@ -417,7 +448,12 @@ window.fushiEnqueue = function (fields, sentence) {
   // [startMs,endMs] 窗（稳过 DOM 采样）；否则回落 fushiCurrentCueWindowV 的 DOM 采样窗。下方
   // startV-200/endV+200 录制边距 + fushiQueueKey 去重两路不变。
   const cw = fushiPendingCueWindow;
-  const w = cw ? { text: cw.text || '', startV: cw.startMs, endV: cw.endMs } : fushiCurrentCueWindowV();
+  // 面板行查词带来的精确窗最强（用户显式点了那一行）；否则按当前播放时间到整轨里查
+  // ——此前这里直接回落 DOM 采样窗，整轨明明已在内存里却没人查，画面上直接查词制卡
+  // 拿到的一直是抖动窗。整轨查不中（间隙/未到达）才退 DOM 采样。
+  const w = cw
+      ? { text: cw.text || '', startV: cw.startMs, endV: cw.endMs }
+      : (fushiFullTrackWindowAt() || fushiCurrentCueWindowV());
   if (!w) return { ok: false, reason: 'no-cue' };
   // BUG-1416：**制卡那一刻**的视频时间就地采样并随队列项持久化。用户拍板「按制卡时候的时间来」，
   // 而这是唯一还知道那一刻的地方——之后的回放录制只知道句首，再也拿不回这个时刻。
@@ -1279,6 +1315,8 @@ function fushiRemoveContainer() {
   window.__fushiRoot = null;
   // TODO-1272：关窗即撤覆盖层高亮（被查词高亮跟随弹窗生命周期，弹窗在则在、弹窗关则撤）。
   fushiClearHighlightOverlay();
+  // 关窗即作废在途的自动朗读：弹窗都没了还响一声是纯噪音。
+  if (typeof window.fushiCancelAutoRead === 'function') window.fushiCancelAutoRead();
   // 「查词时暂停」的恢复侧：关窗即恢复（实现与不变式见 fushiResumePausedForLookup）。
   // 嵌套查词只换弹窗内容、不经此处，天然不会提前恢复——与 app「整栈关空才恢复」同语义。
   fushiResumePausedForLookup();
@@ -1316,6 +1354,7 @@ function fushiRemoveContainer() {
   }
   fushiPlaceAnchor = null;
   fushiUserResizedPopup = false;
+  fushiNotifySidePanelLookupGone();
 }
 
 // 流媒体字幕的取词兜底：Netflix 等在字幕**上面**盖了视频覆盖层（如 .watch-video--flag-container），
@@ -1447,10 +1486,11 @@ function fushiShowConnectionFailure(resp) {
 // 用户开启「查词时暂停」后，仅在确实发起了非空查词请求时暂停正在播放的视频，并记下
 // fushiPausedForLookup；关闭查词弹窗时自动恢复（fushiRemoveContainer）。关闭该设置时
 // 任何站点都不因查词被暂停。
-function fushiSendLookup(term, anchorRect, cueWindow) {
+function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel) {
   // TODO-1219 P3：每次查词刷新精确窗——面板行查词传 cueWindow（该行精确 [startMs,endMs]），
   // mousemove 划词不传则清空，使后续制卡回落 DOM 采样窗（live 视频 hover 取当前句）。
   fushiPendingCueWindow = cueWindow || null;
+  fushiLookupFromSidePanel = fromSidePanel === true; // 关窗回执只发给真正的侧栏路径
   if (!term || !term.trim()) return;
   if (!fushiExtAlive()) return; // 扩展已重载/失效：静默停手（重载页面恢复）
   // 已因查词暂停且视频仍停着：重复查词不必再扫（fushiFindPlayingVideo 也不会命中）。
@@ -1469,8 +1509,8 @@ function fushiSendLookup(term, anchorRect, cueWindow) {
   const fushiLookupIssuedAt = fushiPendingSince;
   try {
     setTimeout(() => {
-      if (fushiPending && fushiPendingSince === fushiLookupIssuedAt && !fushiHost) {
-        fushiResumePausedForLookup();
+      if (fushiPending && fushiPendingSince === fushiLookupIssuedAt) {
+        fushiAbandonLookupWithoutPopup();
       }
     }, 12000);
   } catch (_) {}
@@ -1505,7 +1545,7 @@ function fushiSendLookup(term, anchorRect, cueWindow) {
         fushiShowConnectionFailure(resp);
         // 失败且没有在场弹窗：不会有任何「关窗」动作可触发恢复——直接恢复被查词暂停的
         // 视频，否则服务未启动时 Shift 划词=视频被停住+只剩一条 toast、暂停无出口。
-        if (!fushiHost) fushiResumePausedForLookup();
+        fushiAbandonLookupWithoutPopup();
         return;
       }
       if (!resp.data || typeof resp.data.popupJson !== 'string') {
@@ -1516,7 +1556,7 @@ function fushiSendLookup(term, anchorRect, cueWindow) {
           term,
           error: 'missing popupJson',
         });
-        if (!fushiHost) fushiResumePausedForLookup();
+        fushiAbandonLookupWithoutPopup();
         return;
       }
       const servicePerf = resp.lookupPerf || {};
@@ -1556,10 +1596,18 @@ function fushiSendLookup(term, anchorRect, cueWindow) {
       // popup.js 读取的全局上——不落这一步 mdx 词典的自带样式在扩展里全失效。
       applyFushiPopupCss(resp.data);
       fushiRender(resp.data.popupJson, termLen, resp.data.theme, anchorRect);
+      // 查词后自动朗读：开关是 app 的全局偏好（随响应下发），解析与播放都走点 ♪ 的同一条
+      // 路径。扩展曾是唯一没接这条线的表面（app 内弹窗 / app 外浮窗 / 剪贴板面板都有）。
+      if (typeof window.fushiAutoReadFirstEntry === 'function') {
+        window.fushiAutoReadFirstEntry(window.lookupEntries, {
+          enabled: resp.data.autoReadOnLookup === true,
+          audioSources: window.audioSources,
+        });
+      }
     });
   } catch (_) {
     fushiPending = false; // 「Extension context invalidated」：静默，等用户重载页面
-    if (!fushiHost) fushiResumePausedForLookup(); // 暂停不能没有出口
+    fushiAbandonLookupWithoutPopup(); // 暂停不能没有出口，侧栏也不能被吊死
   }
 }
 
@@ -1608,6 +1656,45 @@ window.fushiPrepareLookupFromSidePanel = function (cueWindow) {
     try { const video = fushiFindPlayingVideo(); if (video) { video.pause(); fushiMarkPausedForLookup(video); } } catch (_) {}
     try { fushiArmPlayDismiss(fushiPausedForLookup || document.querySelector('video')); } catch (_) {}
   }
+  return true;
+};
+// 侧栏查词「跨出面板」（用户报：面板里的弹窗被那 ~400px 宽的面板夹住）。Chrome 的 side panel
+// 是浏览器自己的一份 web contents，面板内的 DOM 不管怎么定位都画不出面板边界——这是浏览器
+// 边界，不是我们的落点逻辑能绕开的。要更大的空间只有一条真路径：把词交回宿主页，由页面弹窗
+// （Shadow host）渲染，于是嵌套查词、发音、查重、制卡全部沿用页面既有链路，与 Shift 划词同源。
+// 取词发生在侧栏，宿主页这边并没有对应选区：先清掉上一轮的选区与高亮覆盖层，否则 fushiRender
+// 会拿上一个词的 rects 当锚点、并把那处词重新点亮。锚点给视口右上角的零宽矩形，经落点夹取后
+// 弹窗贴右缘展开——紧邻侧栏、也不压住底部字幕。
+window.fushiShowLookupFromSidePanel = function (term, cueWindow, anchorRatio) {
+  const value = String(term || '').trim();
+  if (!value) return false;
+  try {
+    if (window.fushiSelection && typeof window.fushiSelection.clearSelection === 'function') {
+      window.fushiSelection.clearSelection();
+    }
+  } catch (_) { /* selection 结构异常：继续，锚点回落到下面构造的 anchorRect */ }
+  fushiClearHighlightOverlay();
+  const margin = 8;
+  const edge = Math.max(margin, window.innerWidth - margin);
+  // 纵向跟随侧栏里被点的那一行（anchorRatio 是它在侧栏视口中的比例——两个视口高度不同，只有
+  // 比例可搬），横向贴右缘紧邻侧栏。固定糊在右上角的话，弹窗会压住画面里正在读的那段文字。
+  const ratio = typeof anchorRatio === 'number' && isFinite(anchorRatio)
+    ? Math.min(1, Math.max(0, anchorRatio))
+    : 0;
+  const y = Math.max(margin, Math.min(
+    Math.max(margin, window.innerHeight - margin), Math.round(window.innerHeight * ratio)));
+  const anchorRect = {
+    x: edge, y: y, width: 0, height: 0,
+    left: edge, top: y, right: edge, bottom: y,
+    authoritative: true, // 宿主页上没有对应选区，锚点以这份为准（见 fushiRender）
+  };
+  fushiSendLookup(value, anchorRect, cueWindow, true);
+  return true;
+};
+// 侧栏按 Esc 时关掉页面上的这份弹窗（面板内那份由侧栏自己关）。fushiRemoveContainer 幂等，
+// 且会把「查词时暂停」的视频恢复、并回一条 fushiSidePanelLookupGone。
+window.fushiCloseLookupFromSidePanel = function () {
+  try { fushiRemoveContainer(); } catch (_) { return false; }
   return true;
 };
 // Side Panel 查词面板真正关闭时由 subtitle-panel.js 转发到这里：恢复由查词暂停的视频。
@@ -2035,8 +2122,11 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
   // 直接改宿主页文本节点）：动态站点（React/Vue/视频字幕逐帧重渲染）框架 diff / MutationObserver
   // 会在下一帧把这个凭空多出的 span revert 掉 → 高亮闪一下就没（用户报「非常容易消失」）。改画
   // 扩展自有的顶层 fixed 覆盖层：宿主页重绘/事件都碰不到它，保持到弹窗关闭。高亮前 termLen 个字。
-  let wordRect = null;
-  try {
+  // authoritative 锚点=调用方明确知道宿主页上没有对应选区（侧栏交来的词）：跳过整段选区
+  // 探测。不跳的话，下面 highlightSelection 的无选区兜底会把**上一轮**查词的 bbox 当锚点，
+  // 弹窗落到上一个词旁边，还可能把那处重新点亮。
+  let wordRect = anchorRect && anchorRect.authoritative === true ? anchorRect : null;
+  if (!wordRect) try {
     const hl = fushiSelectionRects(termLen);
     if (hl.rects.length) {
       fushiDrawHighlightOverlay(hl.rects); // 覆盖层高亮：宿主页 DOM 重绘/事件冲不掉它
@@ -2153,6 +2243,35 @@ function fushiObservePopupResize() {
   fushiPlaceObserver.observe(fushiContainer);
 }
 
+// 关窗的那一击不再传给站点：Netflix 等把「点画面」当播放/暂停切换，用户点旁边只是想关掉
+// 弹窗，却连带把视频停了/放了。只吞紧随本次 mousedown 的那一个 click（capture 阶段截住，站点
+// 的 document/元素监听都收不到），不 preventDefault——聚焦、选区这些浏览器默认行为要留着。
+// 没产生 click（拖拽出界）时由定时器撤掉监听，不会误吞后面无关的点击。
+// 这一击落在扩展自绘的在页 UI 上吗？（字幕覆盖层等）
+//
+// 缺了这个判据，document capture 阶段的 stopImmediatePropagation 会把整条派发链
+// 掐断——**包括目标元素自身的 target-phase 监听**，也就是我们自己的覆盖层。
+function fushiOwnPageUiTarget(target) {
+  try {
+    return !!(target && target.closest && target.closest('#fushi-subtitle-overlay'));
+  } catch (_) {
+    return false;
+  }
+}
+
+function fushiSwallowClosingClick() {
+  const swallow = (ev) => {
+    ev.stopPropagation();
+    ev.stopImmediatePropagation();
+  };
+  try {
+    document.addEventListener('click', swallow, { capture: true, once: true });
+    setTimeout(() => {
+      try { document.removeEventListener('click', swallow, true); } catch (_) {}
+    }, 700);
+  } catch (_) { /* 老浏览器不支持 once：不吞就是旧行为，不影响关窗 */ }
+}
+
 document.addEventListener('mousedown', (e) => {
   // BUG-688：shadow 内点击 e.target 被 retarget 成 fushiHost，故 contains 判定天然把
   // 「点弹窗内部」算作命中（不关窗）；只有点 host 之外才关。
@@ -2162,5 +2281,24 @@ document.addEventListener('mousedown', (e) => {
       (e.target === fushiResizeGrip || fushiResizeGrip.contains(e.target))) {
     return;
   }
-  if (fushiHost && !fushiHost.contains(e.target)) fushiRemoveContainer();
-});
+  if (fushiHost && !fushiHost.contains(e.target)) {
+    fushiRemoveContainer();
+    // 「关窗」和「吞击」在这里必须分开取值：点扩展自绘的在页 UI（字幕覆盖层）是
+    // 「用扩展做下一件事」——旧弹窗该让位，但那一击必须送达我们自己的监听，否则
+    // 「看一句字幕连着查两三个词」每个词都要点两次（覆盖层的 click 走
+    // subtitle-panel.js 的 fushiLookupAtPoint）。只有站点自己的元素才需要挡，
+    // 那才是 BUG-1940 要防的（Netflix 点画面 = 播放/暂停）。
+    if (!fushiOwnPageUiTarget(e.target)) fushiSwallowClosingClick();
+  }
+}, true);
+
+// Esc 关弹窗（此前页面弹窗根本不认 Esc：全屏看片时按 Esc 只会退出全屏，弹窗还留在那）。
+// capture 阶段先关掉并截住这一次按键，站点自己的 Esc 处理（退出播放器等）不再同时发生。
+// 注意：视频处于 Fullscreen API 全屏时，Esc 退出全屏是浏览器保留行为，网页脚本拦不住——
+// 这里能保证的是「弹窗一定被关掉」，退全屏仍会发生。
+document.addEventListener('keydown', (e) => {
+  if (!fushiHost || e.key !== 'Escape' || e.defaultPrevented) return;
+  fushiRemoveContainer();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
+}, true);

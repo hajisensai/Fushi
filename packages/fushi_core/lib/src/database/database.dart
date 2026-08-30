@@ -687,6 +687,7 @@ void _requireOneVideoMetadataOwner({
   VideoDownloadJobSubtitles,
   VideoDownloadSubscriptions,
   VideoDownloadSubscriptionItems,
+  MangaChapterStates,
   WebMineQueue,
 ])
 class FushiDatabase extends _$FushiDatabase
@@ -718,7 +719,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 90;
+  int get schemaVersion => 93;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2749,8 +2750,75 @@ class FushiDatabase extends _$FushiDatabase
               await m.addColumn(galgames, galgames.language);
             }
           }
+          if (from < 89) {
+            // v89（漫画作品页·每章状态）：新表 manga_chapter_states，把「章」从
+            // `MihonLibraryEntry.currentChapterIndex` 这个单 int 升成一等实体。
+            //
+            // 无损：纯新增表，不动任何既有表和列。旧库升级后表为空 = 所有章都
+            // 「无状态」= 作品页章节列表全显示未读、继续阅读回退到
+            // `currentChapterIndex`（沿 v88 前的行为），零破坏。
+            //
+            // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被
+            // `_tableExists` 短路 no-op。
+            if (!await _tableExists('manga_chapter_states')) {
+              await m.createTable(mangaChapterStates);
+            }
+          }
           if (from < 90) {
-            // v90（网页播放器自动制卡队列）：新表 web_mine_queue，设备本地、无 FK、
+            // v90（统一代理）：下载域独立的代理三态（`download_network_proxy_mode`
+            // auto/direct/custom + `download_custom_proxy`）已删除，全应用只剩系统
+            // 设置里的一个代理项（`update_custom_proxy`，键名历史遗留、冻结不改），
+            // 留空 = 自动（env > 系统代理 > 直连）。
+            //
+            // 归并规则（never break userspace）：用户在下载页显式选了 custom 且填了
+            // 地址、而全局项仍为空 → 把地址搬进全局项，升级后搜番剧/字幕继续走
+            // 同一个代理。全局已有值以全局为准；mode 是 auto/direct 的没有可搬的
+            // 东西（direct 用户升级后跟随「自动」——这是产品决定，不是数据丢失）。
+            // 搬完删两行死键及其 pref Profile 副本，迁移一次性、幂等。
+            //
+            // 与 v63 同范式：读 + 写 + 删同一个事务，任一步失败整体回滚、
+            // user_version 停在旧版供重试。值编码沿用 PreferencesRepository 的
+            // `s:` 字符串前缀。
+            await transaction(() async {
+              if (await _tableExists('preferences')) {
+                final List<QueryRow> rows = await customSelect(
+                  'SELECT key, value FROM preferences WHERE key IN '
+                  "('download_network_proxy_mode', 'download_custom_proxy', "
+                  "'update_custom_proxy')",
+                ).get();
+                final Map<String, String> legacy = <String, String>{
+                  for (final QueryRow row in rows)
+                    row.read<String>('key'): row.read<String>('value'),
+                };
+                final String downloadProxy =
+                    (legacy['download_custom_proxy'] ?? 's:').substring(2).trim();
+                final bool globalEmpty =
+                    (legacy['update_custom_proxy'] ?? 's:').substring(2).trim().isEmpty;
+                if (legacy['download_network_proxy_mode'] == 's:custom' &&
+                    downloadProxy.isNotEmpty &&
+                    globalEmpty) {
+                  await customStatement(
+                    'INSERT OR REPLACE INTO preferences (key, value) '
+                    "VALUES ('update_custom_proxy', ?)",
+                    <Object?>['s:$downloadProxy'],
+                  );
+                }
+                await customStatement(
+                  'DELETE FROM preferences WHERE key IN '
+                  "('download_network_proxy_mode', 'download_custom_proxy')",
+                );
+              }
+              if (await _tableExists('profile_settings')) {
+                await customStatement(
+                  'DELETE FROM profile_settings '
+                  "WHERE category = 'pref' AND key IN "
+                  "('download_network_proxy_mode', 'download_custom_proxy')",
+                );
+              }
+            });
+          }
+          if (from < 93) {
+            // v93（网页播放器自动制卡队列）：新表 web_mine_queue，设备本地、无 FK、
             // 无索引（队列量级为几十行）。守卫幂等（fresh DB 由 onCreate 建好）。
             if (!await _tableExists('web_mine_queue')) {
               await m.createTable(webMineQueue);

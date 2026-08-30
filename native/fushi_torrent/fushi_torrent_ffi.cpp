@@ -795,6 +795,41 @@ HT_EXPORT int ht_apply_session_settings(
   }
 }
 
+// P2P 代理（用户在系统设置里单独开启；默认 none = 直连）。[proxy_type] 0=none
+// 1=http 2=socks5，[host]/[port] 仅 type != 0 时使用。开启时 peer 连接 / tracker
+// 请求 / 主机名解析三条链路全部经代理——只代理其中一条会让另外两条从真实出口
+// 漏出去，用户特意开这个开关就是不想漏；关闭时三项一并复位为直连。HTTP 代理
+// 只能承载 TCP，libtorrent 会自行放弃 uTP/UDP tracker，属于「走代理可能降速」
+// 的既知代价。参数非法（type != 0 但 host 空 / port 越界）按 none 处理，绝不
+// 把 session 留在半配置状态。返回 1 成功 0 失败。
+HT_EXPORT int ht_apply_proxy(void* session, int proxy_type, const char* host,
+                             int port) {
+  if (session == nullptr) return 0;
+  try {
+    lt::settings_pack sp;
+    const bool enabled = proxy_type != 0 && host != nullptr &&
+                         host[0] != '\0' && port > 0 && port <= 65535;
+    if (enabled) {
+      sp.set_int(lt::settings_pack::proxy_type,
+                 proxy_type == 2 ? lt::settings_pack::socks5
+                                 : lt::settings_pack::http);
+      sp.set_str(lt::settings_pack::proxy_hostname, host);
+      sp.set_int(lt::settings_pack::proxy_port, port);
+    } else {
+      sp.set_int(lt::settings_pack::proxy_type, lt::settings_pack::none);
+      sp.set_str(lt::settings_pack::proxy_hostname, "");
+      sp.set_int(lt::settings_pack::proxy_port, 0);
+    }
+    sp.set_bool(lt::settings_pack::proxy_peer_connections, enabled);
+    sp.set_bool(lt::settings_pack::proxy_tracker_connections, enabled);
+    sp.set_bool(lt::settings_pack::proxy_hostnames, enabled);
+    as_session(session)->apply_settings(std::move(sp));
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
 HT_EXPORT int ht_set_upload_mode(void* session, const char* info_hash,
                                  int upload_enabled) {
   if (session == nullptr) return 0;
@@ -1641,6 +1676,43 @@ HT_EXPORT char* ht_torrent_trackers(void* session, const char* info_hash) {
     return json_error(e.what());
   } catch (...) {
     return json_error("unknown error in ht_torrent_trackers");
+  }
+}
+
+HT_EXPORT int ht_add_trackers(void* session, const char* info_hash,
+                              const char* tracker_urls) {
+  if (session == nullptr || info_hash == nullptr || tracker_urls == nullptr) {
+    return -1;
+  }
+  try {
+    lt::torrent_handle h = find_torrent(as_session(session), info_hash);
+    if (!h.is_valid()) return -1;
+    const std::vector<lt::announce_entry> current = h.trackers();
+    std::vector<std::string> known;
+    known.reserve(current.size());
+    for (const lt::announce_entry& entry : current) known.push_back(entry.url);
+
+    int added = 0;
+    std::string input(tracker_urls);
+    std::size_t start = 0;
+    while (start <= input.size()) {
+      const std::size_t end = input.find('\n', start);
+      std::string url = input.substr(
+          start, end == std::string::npos ? std::string::npos : end - start);
+      if (!url.empty() && url.back() == '\r') url.pop_back();
+      if (!url.empty() &&
+          std::find(known.begin(), known.end(), url) == known.end()) {
+        h.add_tracker(lt::announce_entry(url));
+        known.push_back(url);
+        ++added;
+      }
+      if (end == std::string::npos) break;
+      start = end + 1;
+    }
+    if (added > 0) h.force_reannounce();
+    return added;
+  } catch (...) {
+    return -1;
   }
 }
 

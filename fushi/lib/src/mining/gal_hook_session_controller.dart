@@ -939,6 +939,71 @@ class GalHookSessionController extends ChangeNotifier {
       _pendingResourceMatches =
       <String, ({int timestampMs, int textEventId})>{};
 
+  /// 被折叠吞掉的行 id → 合并结果 id。
+  ///
+  /// [_redirectFoldedLines] 会把所有以 lineId 为键的会话态**即时**搬过去，但它
+  /// 搬不动**已经在途的异步闭包**——`_scheduleLineAudioAttach` /
+  /// `_settleLineUtterance` 捕获的是折叠前那个 `entry` 对象，最长要跑几秒。
+  /// 那些闭包写缓存 / 判可否收敛之前必须过 [_liveLineId]。
+  ///
+  /// 链不会形成：合并结果永远复用尾巴上**最老**那条的 id，它自己不会再被指走。
+  final Map<String, String> _foldedLineRedirect = <String, String>{};
+
+  String _liveLineId(String id) => _foldedLineRedirect[id] ?? id;
+
+  /// 折叠把 [absorbedIds] 这几行吞进了 [mergedId]：把以 lineId 为键的会话态搬过去。
+  ///
+  /// 时序：**先搬，再让调用方写本次事件**。本次事件的时间戳 / textEventId 随后会
+  /// 覆盖掉这里搬来的旧值，这正是想要的——合并结果的身份元数据已经前移到最新那次
+  /// 重绘（`TexthookerService` 的折叠分支同样把 sourceSequence / hookTimestampMs
+  /// 前移）。
+  void _redirectFoldedLines(List<String> absorbedIds, String mergedId) {
+    if (absorbedIds.isEmpty) return;
+    for (final String old in absorbedIds) {
+      if (old == mergedId) continue;
+      _foldedLineRedirect[old] = mergedId;
+
+      // ① 语音切片：折叠制造出**两条**都想写这一句的 settle 循环（被吞那条捕获的
+      //    旧 entry + 合并结果那条），各自的局部 bestBytes 互相看不见。缓存单调
+      //    变长这个不变式只能在写入点守，所以这里也只留更长的那份。
+      final GalAudioSlice? slice = _lineVoiceCache.remove(old);
+      if (slice != null) {
+        final GalAudioSlice? existing = _lineVoiceCache[mergedId];
+        if (existing == null || slice.pcm.length > existing.pcm.length) {
+          _lineVoiceCache[mergedId] = slice;
+        }
+      }
+
+      // ② 用户裁决：任一被吞行裁决过，合并结果就算裁决过——否则 `_isUserAdjudicated`
+      //    对新 id 恒 false，自动配对会把用户手动选的轨/补录盖回去。
+      if (_manualRecaptureLines.remove(old)) _manualRecaptureLines.add(mergedId);
+      final int? ptr = _lineVoiceSourcePtr.remove(old);
+      if (ptr != null) _lineVoiceSourcePtr[mergedId] = ptr;
+
+      // ③ 身份缓存**只删不搬**：合并结果的值由调用方紧接着按本次事件写入。留着死 id
+      //    的后果是实打实的——`_nextLineTimestampAfter` 会拿它当封口 grab 的时间
+      //    上界（窗口被截短），`_promoteLateResourceAudio` 会拿它重建 pending 并把
+      //    晚到的原件语音配到一条已经不存在的行上（`updateLineAudio` 返回 false，
+      //    静默丢弃）。
+      _lineTimestampCache.remove(old);
+      _lineTextEventIdCache.remove(old);
+      _pendingResourceMatches.remove(old);
+
+      // ④ loopback：掐掉被吞行的冻结定时器；起点取**最早**那个——这句话是从那一刻
+      //    开始说的，用晚的那个会把回取窗口算短。
+      _loopbackFreezeTimers.remove(old)?.cancel();
+      final DateTime? startedAt = _loopbackFreezeStartedAt.remove(old);
+      if (startedAt != null) {
+        final DateTime? current = _loopbackFreezeStartedAt[mergedId];
+        if (current == null || startedAt.isBefore(current)) {
+          _loopbackFreezeStartedAt[mergedId] = startedAt;
+        }
+      }
+      _loopbackCacheInFlight.remove(old);
+    }
+    _trimCache(_foldedLineRedirect);
+  }
+
   // ── 游戏活动记账（首页「游戏」活动的字符侧写入方；时长侧见 _playTracker）──
   /// 纯累计器：把 hook 文本行累计成活跃时长 + 字符数（挂机间隔封顶，见其实现）。
   final GalHookActivityAccumulator _activityAccumulator =
@@ -2271,6 +2336,7 @@ class GalHookSessionController extends ChangeNotifier {
         audioStatus: TexthookerLineAudioStatus.unavailable,
       );
       if (entry == null) continue;
+      _redirectFoldedLines(_textService.lastFoldedLineIds, entry.id);
       _lineTimestampCache[entry.id] = line.timestampMs;
       _lineTextEventIdCache[entry.id] = line.seq;
     }
@@ -3453,17 +3519,30 @@ class GalHookSessionController extends ChangeNotifier {
   /// 相邻重发、打字机递增、外部工具双通道全算成字数，统计虚高）。计 0 的行仍
   /// [GalHookActivityAccumulator.recordLine] 记时间戳——行到达本身是"人在读"
   /// 的活跃信号，flush 节奏不受去重影响。
-  void _recordActivityLine(String text, {required bool fromEngineHook}) {
-    if (text.isEmpty || _activityGameTitle == null) return;
+  /// 引擎 hook 路径：上游折叠已经给出增量，字数走 [GalgameLineCharCounter.countDelta]
+  /// （不再二次去重）。
+  ///
+  /// **空增量也要调用** —— 行到达本身就是「人在读」的活跃信号，心跳不该被去重影响。
+  /// 原来调用点写着 `if (countedText.isNotEmpty)`，于是一段全靠重绘推进的长台词会
+  /// 让活跃心跳整段停掉，`shouldFlush` 的节奏跟着断。
+  void _recordEngineDelta(String delta) =>
+      _recordActivity(_activityCharCounter.countDelta(delta),
+          fromEngineHook: true);
+
+  /// WS / 剪贴板路径：整行进来，去重与打字机增量仍由 [GalgameLineCharCounter] 负责
+  /// ——那边没有上游折叠，这是唯一一份。
+  void _recordExternalLine(String text) => _recordActivity(
+      _activityCharCounter.countLine(text),
+      fromEngineHook: false);
+
+  void _recordActivity(int chars, {required bool fromEngineHook}) {
+    if (_activityGameTitle == null) return;
     if (fromEngineHook) {
       _engineTextCounted = true;
     } else if (_engineTextCounted) {
       return; // 引擎 hook 是本会话计数源，外部通道的同句不再计（防双计）。
     }
-    _activityAccumulator.recordLine(
-      _activityCharCounter.countLine(text),
-      _now().millisecondsSinceEpoch,
-    );
+    _activityAccumulator.recordLine(chars, _now().millisecondsSinceEpoch);
     if (_activityAccumulator.shouldFlush) _flushGameActivity();
   }
 
@@ -3895,6 +3974,7 @@ class GalHookSessionController extends ChangeNotifier {
     _pollInFlight = false;
     _lastReadinessRefreshAt = null;
     _lineVoiceCache.clear();
+    _foldedLineRedirect.clear();
     _manualRecaptureLines.clear();
     _lineVoiceSourcePtr.clear();
     _lineTimestampCache.clear();
@@ -4173,6 +4253,7 @@ class GalHookSessionController extends ChangeNotifier {
     _engineSource = null;
     _lastTextSeq = 0;
     _lineVoiceCache.clear();
+    _foldedLineRedirect.clear();
     _manualRecaptureLines.clear();
     _lineVoiceSourcePtr.clear();
     _lineTimestampCache.clear();
@@ -4320,7 +4401,13 @@ class GalHookSessionController extends ChangeNotifier {
           continue;
         }
         receivedTextLine = true;
-        _recordActivityLine(entry.text, fromEngineHook: true);
+        // 折叠吞掉的那几条行的 id 在下面这一整批 map/timer 里还是活键，必须**先**
+        // 迁走再写本次事件（本次的时间戳 / seq 会覆盖掉搬来的旧值，那正是想要的）。
+        _redirectFoldedLines(_textService.lastFoldedLineIds, entry.id);
+        // 字数按 appendLine 报出来的**新增量**计，不按 entry.text 计：同一句台词被
+        // 引擎分多次重绘时会折成一条，按整条计会让这句话每重绘一次就再算一遍
+        // （增量为空 = 这次重绘没带来新字，不算新活动）。
+        _recordEngineDelta(_textService.lastAppendedDelta);
         _lineTimestampCache[entry.id] = line.timestampMs;
         _trimCache(_lineTimestampCache);
         _lineTextEventIdCache[entry.id] = line.seq;
@@ -4606,10 +4693,9 @@ class GalHookSessionController extends ChangeNotifier {
         return;
       }
       bestBytes = next.pcm.length;
-      _lineVoiceCache[entry.id] = next;
-      _trimCache(_lineVoiceCache);
+      if (!_cacheLineVoiceIfLonger(entry.id, next)) return;
       _textService.updateLineAudio(
-        entry.id,
+        _liveLineId(entry.id),
         status: TexthookerLineAudioStatus.matched,
         backend: 'engine_pcm',
         durationMs: (next.pcm.length * 1000) ~/ next.format.byteRate,
@@ -4646,9 +4732,9 @@ class GalHookSessionController extends ChangeNotifier {
         identical(_audioSource, engine) &&
         isLineInCurrentSession(entry) &&
         _recapturingLineId == null &&
-        !_isUserAdjudicated(entry.id) &&
-        _resourceIdForLine(entry.id) == null &&
-        !_pendingResourceMatches.containsKey(entry.id) &&
+        !_isUserAdjudicated(_liveLineId(entry.id)) &&
+        _resourceIdForLine(_liveLineId(entry.id)) == null &&
+        !_pendingResourceMatches.containsKey(_liveLineId(entry.id)) &&
         _lastTextSeq > line.seq;
     if (!stillOwnsClosingGrab()) return;
     final int? nextTs = _nextLineTimestampAfter(line.seq);
@@ -4669,10 +4755,9 @@ class GalHookSessionController extends ChangeNotifier {
       }
       // 等待/队列期间仍可能夹进一次易主，写回前再核一次。
       if (!stillOwnsClosingGrab()) return;
-      _lineVoiceCache[entry.id] = closing;
-      _trimCache(_lineVoiceCache);
+      if (!_cacheLineVoiceIfLonger(entry.id, closing)) return;
       _textService.updateLineAudio(
-        entry.id,
+        _liveLineId(entry.id),
         status: TexthookerLineAudioStatus.matched,
         backend: 'engine_pcm',
         durationMs: (closing.pcm.length * 1000) ~/ closing.format.byteRate,
@@ -4721,12 +4806,12 @@ class GalHookSessionController extends ChangeNotifier {
       // `_recapturingLineId != null` 守卫对称显式挡掉，否则收敛会把「录音中」刷成
       // matched/engine_pcm。
       _recapturingLineId == null &&
-      !_isUserAdjudicated(entry.id) &&
+      !_isUserAdjudicated(_liveLineId(entry.id)) &&
       // 这行已被延迟资源匹配升格成 game_resource（已配到原件，或正等着配）：原件永远
       // 优先于 PCM 拼接，收敛绝不能把 backend 改回 engine_pcm。与 [_cacheLoopbackForLine]
       // 里的同名判据同纪律。
-      _resourceIdForLine(entry.id) == null &&
-      !_pendingResourceMatches.containsKey(entry.id);
+      _resourceIdForLine(_liveLineId(entry.id)) == null &&
+      !_pendingResourceMatches.containsKey(_liveLineId(entry.id));
 
   /// 逐行语音抓取（原先内联在 [_pollHookedText] 循环里的三条降级分支，语义不变）：
   /// 引擎 PCM 整句 → 时间窗碎片 → loopback 环冻结 → 明确 missing。
@@ -4751,10 +4836,9 @@ class GalHookSessionController extends ChangeNotifier {
       if (engine != _engineSource) return;
     }
     if (clip != null && !clip.isEmpty) {
-      _lineVoiceCache[entry.id] = clip;
-      _trimCache(_lineVoiceCache);
+      if (!_cacheLineVoiceIfLonger(entry.id, clip)) return;
       _textService.updateLineAudio(
-        entry.id,
+        _liveLineId(entry.id),
         status: TexthookerLineAudioStatus.matched,
         backend: 'engine_pcm',
         durationMs: (clip.pcm.length * 1000) ~/ clip.format.byteRate,
@@ -5006,7 +5090,7 @@ class GalHookSessionController extends ChangeNotifier {
         } else {
           _state = _state.copyWith(textSignalReceived: true);
         }
-        _recordActivityLine(latest.text, fromEngineHook: false);
+        _recordExternalLine(latest.text);
         _scheduleLoopbackFreeze(latest);
       }
     }
@@ -5034,7 +5118,7 @@ class GalHookSessionController extends ChangeNotifier {
     if (!_state.audioFallbackPolicy.allowsLoopback ||
         _audioSource is! LoopbackGalAudioSource ||
         !isLineInCurrentSession(entry) ||
-        _isUserAdjudicated(entry.id) ||
+        _isUserAdjudicated(_liveLineId(entry.id)) ||
         _loopbackFreezeTimers.containsKey(entry.id) ||
         _loopbackCacheInFlight.contains(entry.id)) {
       return;
@@ -5109,7 +5193,7 @@ class GalHookSessionController extends ChangeNotifier {
     if (!_state.audioFallbackPolicy.allowsLoopback ||
         _audioSource is! LoopbackGalAudioSource ||
         !isLineInCurrentSession(entry) ||
-        _isUserAdjudicated(entry.id) ||
+        _isUserAdjudicated(_liveLineId(entry.id)) ||
         _loopbackFreezeTimers.containsKey(entry.id)) {
       return;
     }
@@ -5173,8 +5257,8 @@ class GalHookSessionController extends ChangeNotifier {
         !isLineInCurrentSession(entry) ||
         // 用户裁决与已配到的原始资源都优先：延迟冻结到点时它们可能已经落定，
         // 这一段回环混音绝不能反过来把它们盖掉。
-        _isUserAdjudicated(entry.id) ||
-        _resourceIdForLine(entry.id) != null ||
+        _isUserAdjudicated(_liveLineId(entry.id)) ||
+        _resourceIdForLine(_liveLineId(entry.id)) != null ||
         !_loopbackCacheInFlight.add(entry.id)) {
       return;
     }
@@ -5194,10 +5278,9 @@ class GalHookSessionController extends ChangeNotifier {
           return;
         }
       }
-      _lineVoiceCache[entry.id] = slice;
-      _trimCache(_lineVoiceCache);
+      if (!_cacheLineVoiceIfLonger(entry.id, slice)) return;
       _textService.updateLineAudio(
-        entry.id,
+        _liveLineId(entry.id),
         status: TexthookerLineAudioStatus.fallback,
         backend: 'system_loopback',
         durationMs: (slice.pcm.length * 1000) ~/ slice.format.byteRate,
@@ -5359,6 +5442,24 @@ class GalHookSessionController extends ChangeNotifier {
       _events.removeRange(0, _events.length - _eventLimit);
     }
     if (notify) notifyListeners();
+  }
+
+  /// 逐行语音缓存的**唯一**写入口：只在比缓存里那份更长时才写，并把 id 过一遍
+  /// [_liveLineId]。
+  ///
+  /// 为什么必须收在写入点：折叠让「被吞那条」和「合并结果那条」的两条 settle 循环
+  /// 并发写同一个 key，各自的局部 `bestBytes` 互相看不见——「缓存单调变长」这条
+  /// 不变式在局部变量里守不住，短的那份会把长的盖掉。
+  /// 返回是否真的写了，调用方据此决定要不要跟着推 `updateLineAudio`。
+  bool _cacheLineVoiceIfLonger(String lineId, GalAudioSlice slice) {
+    final String liveId = _liveLineId(lineId);
+    final GalAudioSlice? existing = _lineVoiceCache[liveId];
+    if (existing != null && slice.pcm.length <= existing.pcm.length) {
+      return false;
+    }
+    _lineVoiceCache[liveId] = slice;
+    _trimCache(_lineVoiceCache);
+    return true;
   }
 
   void _trimCache<T>(Map<String, T> cache) {

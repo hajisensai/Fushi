@@ -293,6 +293,41 @@ class FushiTorrentBindings {
           int Function(ffi.Pointer<ffi.Void>, int, int, int, int, int, int, int,
               int, int, int)>();
 
+  /// P2P 代理（0=none 1=http 2=socks5；none 时 host/port 忽略）。1 成功 0 失败。
+  ///
+  /// 调用前必须先看 [hasApplyProxy]——同 [ht_apply_limits_ex]：比本文件旧的
+  /// 预编译 DLL 里没有这个符号。
+  int ht_apply_proxy(
+    ffi.Pointer<ffi.Void> session,
+    int proxy_type,
+    ffi.Pointer<ffi.Char> host,
+    int port,
+  ) {
+    return _ht_apply_proxy(session, proxy_type, host, port);
+  }
+
+  late final _ht_apply_proxyPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int,
+              ffi.Pointer<ffi.Char>, ffi.Int)>>('ht_apply_proxy');
+  late final _ht_apply_proxy = _ht_apply_proxyPtr.asFunction<
+      int Function(ffi.Pointer<ffi.Void>, int, ffi.Pointer<ffi.Char>, int)>();
+
+  /// 已加载的库里是否有 [ht_apply_proxy]（理由同 [hasApplyLimitsEx]）。
+  late final bool hasApplyProxy = _probeApplyProxy();
+
+  bool _probeApplyProxy() {
+    try {
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int,
+                  ffi.Pointer<ffi.Char>, ffi.Int)>>('ht_apply_proxy');
+      return true;
+    } on ArgumentError {
+      return false;
+    }
+  }
+
   /// 添加磁力；返回 malloc JSON（ht_free_string 释放）。
   ffi.Pointer<ffi.Char> ht_add_magnet(
     ffi.Pointer<ffi.Void> session,
@@ -602,6 +637,39 @@ class FushiTorrentBindings {
   late final _ht_torrent_trackers = _ht_torrent_trackersPtr.asFunction<
       ffi.Pointer<ffi.Char> Function(
           ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+
+  /// 给已有种子追加换行分隔的 tracker。返回新增数，-1 失败。
+  /// 调用前先看 [hasTrackerMutation]。
+  int ht_add_trackers(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+    ffi.Pointer<ffi.Char> tracker_urls,
+  ) {
+    return _ht_add_trackers(session, info_hash, tracker_urls);
+  }
+
+  late final _ht_add_trackersPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+              ffi.Pointer<ffi.Char>)>>('ht_add_trackers');
+  late final _ht_add_trackers = _ht_add_trackersPtr.asFunction<
+      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>)>();
+
+  /// 独立能力探测：旧随包 DLL 缺本符号时只禁用 tracker 后写，不影响详情页。
+  late final bool hasTrackerMutation = _probeTrackerMutation();
+
+  bool _probeTrackerMutation() {
+    try {
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
+                  ffi.Pointer<ffi.Char>)>>('ht_add_trackers');
+      return true;
+    } on ArgumentError {
+      return false;
+    }
+  }
 
   /// TODO-2482：每个文件的下载优先级（0~7，0=不下载，下标=文件 index）；
   /// 返回 malloc JSON（ht_free_string 释放）。调用前先看 [hasDetailInfo]。

@@ -1,12 +1,16 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/video/video_black_flicker_detector.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/startup/media_handle_registry.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
+import 'package:fushi/src/models/preferences_repository.dart'
+    show VideoFitMode;
 import 'package:fushi/src/media/video/video_playback_source.dart';
 import 'package:fushi/src/media/video/video_shader_manager.dart';
 import 'package:fushi/src/media/video/video_subtitle_source.dart';
@@ -380,6 +384,35 @@ class VideoPlayerController extends ChangeNotifier
   /// 视频原始分辨率变化订阅（用于字幕 \pos letterbox 映射在分辨率到位后重定位）。
   StreamSubscription<int?>? _widthSub;
   StreamSubscription<int?>? _heightSub;
+
+  // ── Windows HDR 直通 / 10-bit 输出（video_hdr_output.dart）──────────────────
+  //
+  // 纹理路径常驻；直通只是把 libmpv 的 VO 在运行时切到 runner 宿主窗
+  // （`vo=gpu-next --wid`），不重建 Player。唯一判据在 [shouldUseHdrHostWindow]，
+  // 四个输入分别来自：平台、用户设置（[configureHdrOutput]）、显示器色彩空间
+  // （runner `displayInfo`，每次重判现读）、片源 `video-params`（[_onVideoParams]）。
+  /// `video-params` 订阅：primaries / gamma 决定片源是否 HDR。
+  StreamSubscription<VideoParams>? _videoParamsSub;
+
+  /// 宿主窗模式是否激活（页面据此把 Scaffold / 全屏 Material 底色改透明）。
+  final ValueNotifier<bool> hdrHostActive = ValueNotifier<bool>(false);
+
+  VideoHdrOutputMode _hdrOutputMode = VideoHdrOutputMode.auto;
+  VideoFitMode _hdrHostFitMode = VideoFitMode.contain;
+  bool _hdrSourceIsHdr = false;
+  Rect? _hdrHostRect;
+  HdrVideoHostChannel? _hdrHostChannel;
+
+  /// 重判串行链：`video-params` 在切 VO 期间会连发多次（每次解码器重配都发一次），
+  /// 若并发重判，在途的进入/退出会被后来者打断、甚至互相拆窗。所有重判排进同一条
+  /// Future 链顺序执行，每一轮开始时重新读状态，状态已一致就直接返回。
+  Future<void> _hdrEvalChain = Future<void>.value();
+
+  /// runner 只有**一个**宿主窗，这里记着当前占用它的控制器。外部打开等路径会在旧
+  /// 视频页仍在栈上时新建控制器：新控制器进入直通即接管宿主窗，旧控制器只把自己的
+  /// 直通位清掉（不拆窗、不改 VO——它的 Player 随页面弹出时一起释放）；旧控制器
+  /// dispose 时也只有仍是 owner 才拆窗，否则会拆掉新主人的窗。
+  static VideoPlayerController? _hdrHostOwner;
 
   /// TODO-1297：缓冲态变化订阅（始终挂，非诊断专用）。首开就绪判据
   /// [isReadyForFirstPaint] 依赖「缓冲结束」翻真，而缓冲结束可能不伴随宽高/播放态
@@ -1350,6 +1383,17 @@ class VideoPlayerController extends ChangeNotifier
           hwdec: resolvePlatformHwdec(mpvConfig.hwdec),
         ),
       );
+      // 测试 / 取证钩子（与 runner 的 FUSHI_TEST_* 同类）：FUSHI_TEST_MPV_LOG_FILE 指定
+      // 路径时让 libmpv 把 verbose 日志写到该文件（VO / 交换链 / hwdec 协商全在里面，
+      // HDR 直通真机取证靠它）。不设即零行为。
+      final String? mpvLogFile =
+          Platform.environment['FUSHI_TEST_MPV_LOG_FILE'];
+      if (mpvLogFile != null && mpvLogFile.isNotEmpty) {
+        unawaited(_setMpvProperties(<String, String>{
+          'log-file': mpvLogFile,
+          'msg-level': 'all=v',
+        }));
+      }
       // TODO-1212：登记文件句柄释放（幂等，只在首次建 Player 时登记一次）。
       // mediaPath 每次现算：换集后这个 Player 握的是另一个文件，登记时快照会让
       // 「删这一集前先放句柄」放错对象。
@@ -1547,6 +1591,11 @@ class VideoPlayerController extends ChangeNotifier
     _heightSub = player.stream.height.listen((_) {
       notifyListeners();
     });
+    // HDR 直通：片源色彩参数到位后重判是否切宿主窗（换集复用同一 Player 时只挂一次）。
+    // media_kit 的流是广播流：`video-params` 若在订阅前已到达就丢了，故订阅后立刻拿
+    // 当前快照补判一次（快照为空时 [_onVideoParams] 自己会忽略）。
+    _videoParamsSub ??= player.stream.videoParams.listen(_onVideoParams);
+    _onVideoParams(player.state.videoParams);
 
     // TODO-1297：缓冲态翻转即 notifyListeners，让页面首开就绪判据
     // [isReadyForFirstPaint]（首帧已出画且缓冲结束）能在缓冲结束时被重新评估。
@@ -2332,6 +2381,155 @@ class VideoPlayerController extends ChangeNotifier
     await _mpvCommand(<String>[forward ? 'frame-step' : 'frame-back-step']);
   }
 
+  // ── HDR 直通 ────────────────────────────────────────────────────────────────
+
+  HdrVideoHostChannel get _hdrChannel {
+    return _hdrHostChannel ??= HdrVideoHostChannel()
+      ..onDisplayChanged = () => unawaited(_evaluateHdrOutput());
+  }
+
+  /// 单测注入假通道（必须在任何重判之前调用）。
+  @visibleForTesting
+  set debugHdrHostChannel(HdrVideoHostChannel channel) {
+    _hdrHostChannel = channel
+      ..onDisplayChanged = () => unawaited(_evaluateHdrOutput());
+  }
+
+  /// 页面把用户设置（[mode]）和画面 fit（[fitMode]）交进来；任一变化都当场重判 /
+  /// 重下发，不重建播放器。
+  void configureHdrOutput({VideoHdrOutputMode? mode, VideoFitMode? fitMode}) {
+    bool modeChanged = false;
+    if (mode != null && mode != _hdrOutputMode) {
+      _hdrOutputMode = mode;
+      modeChanged = true;
+    }
+    if (fitMode != null && fitMode != _hdrHostFitMode) {
+      _hdrHostFitMode = fitMode;
+      if (hdrHostActive.value) {
+        unawaited(_setMpvProperties(hdrHostFitProperties(fitMode)));
+      }
+    }
+    if (modeChanged) unawaited(_evaluateHdrOutput());
+  }
+
+  /// [HdrHostRectReporter] 回报的 Video 物理像素矩形（主窗客户区坐标系）。非直通时
+  /// 只记着，进入直通那一刻先把矩形下发再切 VO，画面不会先出现在错误位置。
+  void reportHdrHostRect(Rect physical) {
+    if (_hdrHostRect == physical) return;
+    _hdrHostRect = physical;
+    if (hdrHostActive.value) unawaited(_hdrChannel.setRect(physical));
+  }
+
+  void _onVideoParams(VideoParams params) {
+    // 卸载 / 未知时 primaries 为 null：保持上次判断，等下一个文件的参数到位。
+    if (params.primaries == null) return;
+    final bool hdr = isHdrVideoParams(
+      primaries: params.primaries,
+      gamma: params.gamma,
+    );
+    if (hdr == _hdrSourceIsHdr && hdrHostActive.value == hdr) return;
+    debugPrint('[hdr-host] params primaries=${params.primaries} '
+        'gamma=${params.gamma} hdr=$hdr');
+    _hdrSourceIsHdr = hdr;
+    unawaited(_evaluateHdrOutput());
+  }
+
+  /// 排队一次重判（串行，见 [_hdrEvalChain]）。
+  Future<void> _evaluateHdrOutput() {
+    final Future<void> next = _hdrEvalChain.then((_) => _evaluateHdrOutputNow());
+    _hdrEvalChain = next.catchError((Object _) {});
+    return next;
+  }
+
+  Future<void> _evaluateHdrOutputNow() async {
+    if (!Platform.isWindows) return;
+    final Player? player = _player;
+    if (player == null) return;
+    bool displayHdr = false;
+    if (_hdrOutputMode == VideoHdrOutputMode.auto) {
+      displayHdr = (await _hdrChannel.displayInfo()).isHdr;
+      if (!identical(_player, player)) return;
+    }
+    final bool want = shouldUseHdrHostWindow(
+      isWindows: true,
+      mode: _hdrOutputMode,
+      displayHdr: displayHdr,
+      sourceHdr: _hdrSourceIsHdr,
+    );
+    debugPrint('[hdr-host] eval mode=${_hdrOutputMode.name} '
+        'display=$displayHdr source=$_hdrSourceIsHdr want=$want '
+        'active=${hdrHostActive.value}');
+    if (want == hdrHostActive.value) return;
+    if (want) {
+      await _enterHdrHost(player);
+    } else {
+      await _exitHdrHost(player);
+    }
+  }
+
+  Future<void> _enterHdrHost(Player player) async {
+    final int hwnd = await _hdrChannel.create();
+    if (!identical(_player, player)) return;
+    if (hwnd == 0) {
+      debugPrint('[hdr-host] create failed (hwnd=0)');
+      return;
+    }
+    final Rect? rect = _hdrHostRect;
+    if (rect != null) await _hdrChannel.setRect(rect);
+    // fit 属性先于宿主属性；`vo` 在 [hdrHostMpvProperties] 里恒最后。
+    await _setMpvProperties(<String, String>{
+      ...hdrHostFitProperties(_hdrHostFitMode),
+      ...hdrHostMpvProperties(hwnd),
+    });
+    if (!identical(_player, player)) return;
+    final VideoPlayerController? previous = _hdrHostOwner;
+    if (previous != null && !identical(previous, this)) {
+      previous._releaseHdrHostOwnership();
+    }
+    _hdrHostOwner = this;
+    _videoController?.hidden.value = true;
+    hdrHostActive.value = true;
+    hdrHostActiveGlobal.value = true;
+    notifyListeners();
+    debugPrint('[hdr-host] enter hwnd=$hwnd rect=$rect fit=$_hdrHostFitMode '
+        'videoController=${_videoController != null}');
+  }
+
+  Future<void> _exitHdrHost(Player player) async {
+    // 先把 VO 切回 render API 再拆宿主窗：gpu-next 还在跑时销毁它的父窗会让 VO 报错。
+    await _setMpvProperties(kTextureMpvProperties);
+    if (!identical(_player, player)) return;
+    _videoController?.hidden.value = false;
+    hdrHostActive.value = false;
+    notifyListeners();
+    if (identical(_hdrHostOwner, this)) {
+      _hdrHostOwner = null;
+      hdrHostActiveGlobal.value = false;
+      await _hdrChannel.destroy();
+    }
+    debugPrint('[hdr-host] exit');
+  }
+
+  /// 被另一个控制器接管宿主窗：只清自己的直通位，窗和全局位归新主人。
+  void _releaseHdrHostOwnership() {
+    _videoController?.hidden.value = false;
+    hdrHostActive.value = false;
+    notifyListeners();
+  }
+
+  /// 按 map **顺序**逐条下发 mpv 属性；单条失败跳过（与 [applyMpvConfigToPlayer] 同范式）。
+  Future<void> _setMpvProperties(Map<String, String> props) async {
+    final dynamic native = _player?.platform;
+    if (native == null) return;
+    for (final MapEntry<String, String> e in props.entries) {
+      try {
+        await native.setProperty(e.key, e.value);
+      } catch (_) {
+        // 非 libmpv / 属性不接受：跳过这条，继续下一条。
+      }
+    }
+  }
+
   /// 读一条 libmpv 字符串属性（[property]），best-effort：非 libmpv 后端（无
   /// `getProperty`）/ 属性不存在 / 抛异常时返回 `''`。与 [_mpvCommand]（写命令）/
   /// [applyMpvConfigToPlayer]（写属性）同范式，只是方向相反——读 `chapter-list/*`、
@@ -3088,6 +3286,19 @@ class VideoPlayerController extends ChangeNotifier
     _widthSub = null;
     unawaited(_heightSub?.cancel());
     _heightSub = null;
+    unawaited(_videoParamsSub?.cancel());
+    _videoParamsSub = null;
+    // HDR 直通：播放器随后整个释放（VO 一起没了），只需拆宿主窗 + 还原主窗透明。
+    // （`_player = null` 在下面，排队中的重判到点后看到空 Player 直接返回。）
+    if (hdrHostActive.value) {
+      _videoController?.hidden.value = false;
+      hdrHostActive.value = false;
+    }
+    if (identical(_hdrHostOwner, this)) {
+      _hdrHostOwner = null;
+      hdrHostActiveGlobal.value = false;
+      unawaited(_hdrChannel.destroy());
+    }
     unawaited(_bufferingReadySub?.cancel());
     _bufferingReadySub = null;
     unawaited(_durationReadySub?.cancel());

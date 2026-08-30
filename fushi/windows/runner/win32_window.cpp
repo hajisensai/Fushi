@@ -249,7 +249,42 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
   power_notify_ = RegisterPowerSettingNotification(
       window_handle_, &GUID_MONITOR_POWER_ON, DEVICE_NOTIFY_WINDOW_HANDLE);
 
+  ApplyTestTopmostPlacement(window);
+
   return OnCreate();
+}
+
+// FUSHI_TEST_TOPMOST="x,y,w,h" (test mode only, alongside FUSHI_TEST_ONSCREEN):
+// park the window there and make it TOPMOST so pixel-level evidence capture
+// (screen grab / desktop duplication) is never covered by the user's windows.
+// A background process' own HWND_TOPMOST is silently dropped by the shell
+// (WS_EX_TOPMOST never set — measured, HDR Phase 0), so borrow the foreground
+// thread's input state for the single SetWindowPos; no focus / foreground
+// change is made, the window stays WS_EX_NOACTIVATE.
+void Win32Window::ApplyTestTopmostPlacement(HWND window) {
+  if (!IsTestHiddenMode()) {
+    return;
+  }
+  wchar_t spec[64] = {0};
+  if (GetEnvironmentVariableW(L"FUSHI_TEST_TOPMOST", spec, 64) == 0) {
+    return;
+  }
+  int x = 0, y = 0, w = 0, h = 0;
+  if (swscanf_s(spec, L"%d,%d,%d,%d", &x, &y, &w, &h) != 4 || w <= 0 ||
+      h <= 0) {
+    return;
+  }
+  const HWND foreground = GetForegroundWindow();
+  const DWORD fg_thread =
+      foreground ? GetWindowThreadProcessId(foreground, nullptr) : 0;
+  const DWORD self_thread = GetCurrentThreadId();
+  const bool attached = fg_thread != 0 && fg_thread != self_thread &&
+                        AttachThreadInput(fg_thread, self_thread, TRUE);
+  SetWindowPos(window, HWND_TOPMOST, x, y, w, h,
+               SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  if (attached) {
+    AttachThreadInput(fg_thread, self_thread, FALSE);
+  }
 }
 
 // static
@@ -337,6 +372,16 @@ Win32Window::MessageHandler(HWND hwnd,
     // Braced: this case declares locals, and without its own scope MSVC rejects
     // the switch outright (C2360, initialization skipped by a later case label).
     case WM_ACTIVATE: {
+      // BUG-1933: fullscreen keeps the window HWND_TOPMOST so it covers the
+      // taskbar (see SetFullscreen). Holding topmost while another app is
+      // active would keep a screen-sized window over everything, so drop it on
+      // deactivation and take it back when the window is activated again.
+      if (fullscreen_) {
+        SetWindowPos(hwnd,
+                     LOWORD(wparam) == WA_INACTIVE ? HWND_NOTOPMOST
+                                                   : HWND_TOPMOST,
+                     0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+      }
       // WM_ACTIVATE is sent for both sides of an activation hand-off. When an
       // activatable Fushi auxiliary window starts its native move/size loop,
       // the main window receives WA_INACTIVE. Restoring focus from that
@@ -389,6 +434,7 @@ void Win32Window::Destroy() {
   // window messages; retaining it would turn a later HWND reuse into a focus or
   // resize operation against an unrelated window.
   child_content_ = nullptr;
+  ReleaseTransitionSnapshot();
   OnDestroy();
 
   // Release the monitor power-on notification registration before the window
@@ -454,7 +500,28 @@ void Win32Window::FillSurfaceBackdrop() {
   if (dc == nullptr) {
     return;
   }
-  PaintBackdrop(dc);
+  // BUG-1933: during a fullscreen transition, prefer the pre-transition frame
+  // over the solid brush — a raced composition then shows stretched app
+  // content instead of a colour flash. Everything else (interactive resize,
+  // theme pushes) has no snapshot and keeps the cheap brush fill.
+  bool painted = false;
+  if (transition_snapshot_ != nullptr) {
+    RECT rect = GetClientArea();
+    HDC mem = CreateCompatibleDC(dc);
+    if (mem != nullptr) {
+      HGDIOBJ old = SelectObject(mem, transition_snapshot_);
+      SetStretchBltMode(dc, COLORONCOLOR);
+      painted = StretchBlt(dc, 0, 0, rect.right - rect.left,
+                           rect.bottom - rect.top, mem, 0, 0,
+                           transition_snapshot_size_.cx,
+                           transition_snapshot_size_.cy, SRCCOPY) != 0;
+      SelectObject(mem, old);
+      DeleteDC(mem);
+    }
+  }
+  if (!painted) {
+    PaintBackdrop(dc);
+  }
   ReleaseDC(window_handle_, dc);
 }
 
@@ -464,6 +531,140 @@ void Win32Window::PaintBackdrop(HDC dc) {
   }
   RECT rect = GetClientArea();
   FillRect(dc, &rect, backdrop_brush_);
+}
+
+void Win32Window::SetFullscreen(bool fullscreen) {
+  HWND hwnd = window_handle_;
+  if (hwnd == nullptr || fullscreen == fullscreen_) {
+    return;
+  }
+  if (fullscreen) {
+    MONITORINFO monitor{};
+    monitor.cbSize = sizeof(MONITORINFO);
+    if (!GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST),
+                        &monitor)) {
+      return;
+    }
+    placement_before_fullscreen_.length = sizeof(WINDOWPLACEMENT);
+    if (!GetWindowPlacement(hwnd, &placement_before_fullscreen_)) {
+      placement_before_fullscreen_ = {};
+    }
+    CaptureTransitionSnapshot();
+    // A zoomed window ignores SetWindowPos sizes (the maximize geometry is
+    // enforced), so leave the maximized state first — straight onto the
+    // monitor rect, no intermediate small window. The saved placement above
+    // still records SW_SHOWMAXIMIZED, so exiting restores the maximized state.
+    if (IsZoomed(hwnd)) {
+      WINDOWPLACEMENT unzoom = placement_before_fullscreen_;
+      unzoom.length = sizeof(WINDOWPLACEMENT);
+      unzoom.showCmd = SW_SHOWNORMAL;
+      unzoom.rcNormalPosition = monitor.rcMonitor;
+      SetWindowPlacement(hwnd, &unzoom);
+    }
+    // Oversize by exactly the current frame so the CLIENT area covers the
+    // monitor and the frame hangs off-screen. The frame is MEASURED (window
+    // rect vs. client origin/size), not derived from the style bits:
+    // window_manager's hidden-title-bar mode reshapes the client area in
+    // WM_NCCALCSIZE (top border 0, sides/bottom trimmed), which
+    // AdjustWindowRectExForDpi knows nothing about. Styles are deliberately
+    // untouched (see the header comment).
+    RECT window_rect{};
+    GetWindowRect(hwnd, &window_rect);
+    RECT client_rect = GetClientArea();
+    POINT client_origin{0, 0};
+    ClientToScreen(hwnd, &client_origin);
+    const int border_left = client_origin.x - window_rect.left;
+    const int border_top = client_origin.y - window_rect.top;
+    const int border_right = (window_rect.right - window_rect.left) -
+                             (client_rect.right - client_rect.left) -
+                             border_left;
+    const int border_bottom = (window_rect.bottom - window_rect.top) -
+                              (client_rect.bottom - client_rect.top) -
+                              border_top;
+    fullscreen_ = true;
+    SetWindowPos(hwnd, HWND_TOPMOST, monitor.rcMonitor.left - border_left,
+                 monitor.rcMonitor.top - border_top,
+                 (monitor.rcMonitor.right - monitor.rcMonitor.left) +
+                     border_left + border_right,
+                 (monitor.rcMonitor.bottom - monitor.rcMonitor.top) +
+                     border_top + border_bottom,
+                 SWP_NOACTIVATE);
+    ReleaseTransitionSnapshot();
+  } else {
+    CaptureTransitionSnapshot();
+    fullscreen_ = false;
+    if (placement_before_fullscreen_.length == sizeof(WINDOWPLACEMENT)) {
+      const bool was_maximized =
+          placement_before_fullscreen_.showCmd == SW_SHOWMAXIMIZED;
+      WINDOWPLACEMENT restore = placement_before_fullscreen_;
+      if (was_maximized) {
+        // The zoomed flag survives the fullscreen SetWindowPos, so restoring a
+        // SW_SHOWMAXIMIZED placement onto an already-"maximized" window is a
+        // geometry no-op (the window would stay at the oversized fullscreen
+        // rect). Drop to the normal placement first, then re-maximize.
+        restore.showCmd = SW_SHOWNORMAL;
+      }
+      SetWindowPlacement(hwnd, &restore);
+      if (was_maximized) {
+        ShowWindow(hwnd, SW_MAXIMIZE);
+      }
+    }
+    SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    ReleaseTransitionSnapshot();
+  }
+}
+
+void Win32Window::CaptureTransitionSnapshot() {
+  ReleaseTransitionSnapshot();
+  if (window_handle_ == nullptr) {
+    return;
+  }
+  RECT client = GetClientArea();
+  const int width = client.right - client.left;
+  const int height = client.bottom - client.top;
+  if (width <= 0 || height <= 0) {
+    return;
+  }
+  POINT origin{0, 0};
+  ClientToScreen(window_handle_, &origin);
+  // Screen capture (not PrintWindow): the Flutter view presents via a flip
+  // swapchain that GDI cannot read from the window itself, but what is on
+  // screen is exactly the frame worth preserving. An occluded/off-screen
+  // window (test-hidden mode) fails or grabs stale pixels; both degrade to
+  // the brush fill / an invisible window, never a crash.
+  HDC screen = GetDC(nullptr);
+  if (screen == nullptr) {
+    return;
+  }
+  HDC mem = CreateCompatibleDC(screen);
+  HBITMAP bitmap = CreateCompatibleBitmap(screen, width, height);
+  if (mem != nullptr && bitmap != nullptr) {
+    HGDIOBJ old = SelectObject(mem, bitmap);
+    const bool copied = BitBlt(mem, 0, 0, width, height, screen, origin.x,
+                               origin.y, SRCCOPY) != 0;
+    SelectObject(mem, old);
+    if (copied) {
+      transition_snapshot_ = bitmap;
+      transition_snapshot_size_ = {width, height};
+      bitmap = nullptr;
+    }
+  }
+  if (bitmap != nullptr) {
+    DeleteObject(bitmap);
+  }
+  if (mem != nullptr) {
+    DeleteDC(mem);
+  }
+  ReleaseDC(nullptr, screen);
+}
+
+void Win32Window::ReleaseTransitionSnapshot() {
+  if (transition_snapshot_ != nullptr) {
+    DeleteObject(transition_snapshot_);
+    transition_snapshot_ = nullptr;
+    transition_snapshot_size_ = {};
+  }
 }
 
 HWND Win32Window::GetHandle() {
