@@ -616,13 +616,25 @@ void FloatingLyricWindow::SetLookupTrigger(int trigger) {
   lookup_trigger_ = trigger;
 }
 
+// 现在这一刻，自动隐藏该不该生效。
+//
+// **穿透态一律不生效**：穿透时正文窗不吃点击，工具条是屏幕上**唯一**还能点的
+// 东西——BUG-951 / PR#460 把这条写成了不变式（「工具条是一个独立窗口，永远可点，
+// 没有状态可竞争」）。让一个 120ms 的轮询表有权把它 SW_HIDE 掉，就是把「有没有
+// 逃生口」变成了一个可竞争的状态：光标恰好不在揭示区时它就没了，而用户此刻既点
+// 不动正文、也不知道要把鼠标移回哪里；Show 再失败一次（下面那条回滚就是为它准备
+// 的）就彻底困住。非穿透态没有这个问题——正文窗自己就能点、能拖、能右键。
+bool FloatingLyricWindow::ToolbarAutoHideActive() const {
+  return toolbar_auto_hide_ && !pass_through_;
+}
+
 void FloatingLyricWindow::SetToolbarAutoHide(bool enabled) {
   if (toolbar_auto_hide_ == enabled) {
     return;
   }
   toolbar_auto_hide_ = enabled;
   // 关掉自动隐藏 = 立刻恒显；打开 = 立刻按当前光标位置判一次，不必等下一拍。
-  toolbar_revealed_ = !enabled || CursorInToolbarRevealZone();
+  toolbar_revealed_ = !ToolbarAutoHideActive() || CursorInToolbarRevealZone();
   ApplyToolbarVisibility();
 }
 
@@ -948,7 +960,7 @@ bool FloatingLyricWindow::ApplyToolbarVisibility() {
     pass_through_toolbar_.Hide();
     return true;
   }
-  if (toolbar_auto_hide_ && !toolbar_revealed_) {
+  if (ToolbarAutoHideActive() && !toolbar_revealed_) {
     // **真隐藏**，不是降到低 alpha。这个窗口盖在游戏上，"every pixel of it is a
     // pixel the player cannot click"（BUG-951 的原话）——留一条几乎看不见却仍然
     // 吃点击的催化带，等于一直偷着游戏顶部这块区域，正是用户抱怨的那类"穿透不
@@ -1007,12 +1019,19 @@ void FloatingLyricWindow::UpdateToolbarReveal() {
   if (!hook_text_mode_ || hwnd_ == nullptr || !visible_) {
     return;
   }
-  const bool want = toolbar_auto_hide_ ? CursorInToolbarRevealZone() : true;
+  const bool want =
+      ToolbarAutoHideActive() ? CursorInToolbarRevealZone() : true;
   if (want == toolbar_revealed_) {
     return;
   }
   toolbar_revealed_ = want;
-  ApplyToolbarVisibility();
+  if (!ApplyToolbarVisibility()) {
+    // Show 失败（建窗/定位失败）时**必须把状态退回去**：这里丢弃返回值的话，
+    // `toolbar_revealed_` 已经是 true 而窗口并不在屏幕上，下一拍
+    // `want == toolbar_revealed_` 就直接早退——工具条再也回不来，而这正是穿透
+    // 态下唯一的逃生口。回滚后下一拍会重试。
+    toolbar_revealed_ = !want;
+  }
 }
 
 void FloatingLyricWindow::SyncPassThroughToolbar() {

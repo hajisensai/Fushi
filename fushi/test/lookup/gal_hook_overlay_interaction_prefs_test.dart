@@ -219,10 +219,46 @@ void main() {
     test('② 自动隐藏是真隐藏，不是降 alpha', () {
       final String body =
           cppBody(window, 'bool FloatingLyricWindow::ApplyToolbarVisibility');
-      expect(body, contains('toolbar_auto_hide_ && !toolbar_revealed_'));
-      expect(body, contains('pass_through_toolbar_.Hide()'),
+      final int branchAt = body.indexOf('ToolbarAutoHideActive() && !toolbar_revealed_');
+      expect(branchAt, isNonNegative);
+      // **必须只在自动隐藏那一支里取 Hide()**：函数上面还有一个「不是 hook 台词
+      // 模式 / 不可见」的 early-return，它也调 Hide()。整段 contains 会被那一处顶着
+      // ——把自动隐藏分支里的 Hide() 换成降 alpha 的 Sync(...)，断言照样绿，而这条
+      // 用例的 reason 说的恰恰就是「不许降 alpha」。
+      final int branchEnd = body.indexOf('  }', branchAt);
+      expect(branchEnd, greaterThan(branchAt));
+      expect(body.substring(branchAt, branchEnd),
+          contains('pass_through_toolbar_.Hide()'),
           reason: '这个窗口盖在游戏上，留一条低 alpha 的催化带 = 一直偷着游戏那块'
               '区域，正是用户抱怨的「穿透不彻底」。');
+    });
+
+    test('② 穿透态一律不自动隐藏（工具条是那时唯一的逃生口）', () {
+      final String body =
+          cppBody(window, 'bool FloatingLyricWindow::ToolbarAutoHideActive');
+      expect(body, contains('toolbar_auto_hide_ && !pass_through_'),
+          reason: '穿透时正文窗不吃点击，工具条是屏幕上唯一还能点的东西 —— '
+              'BUG-951/PR#460 把「永远可点、没有状态可竞争」写成了不变式，'
+              '让一张 120ms 的轮询表有权 SW_HIDE 它就是把它变回可竞争状态。');
+
+      // 判据必须真的被两个消费点用上，否则改了这个函数也白改。
+      final String apply =
+          cppBody(window, 'bool FloatingLyricWindow::ApplyToolbarVisibility');
+      expect(apply, contains('ToolbarAutoHideActive()'));
+      final String update =
+          cppBody(window, 'void FloatingLyricWindow::UpdateToolbarReveal');
+      expect(update, contains('ToolbarAutoHideActive()'));
+    });
+
+    test('② Show 失败必须回滚 toolbar_revealed_，否则工具条再也回不来', () {
+      final String body =
+          cppBody(window, 'void FloatingLyricWindow::UpdateToolbarReveal');
+      expect(body, contains('if (!ApplyToolbarVisibility()) {'),
+          reason: '返回值不能丢：false = 期望显示却没能上屏');
+      final int failAt = body.indexOf('if (!ApplyToolbarVisibility()) {');
+      expect(body.substring(failAt), contains('toolbar_revealed_ = !want;'),
+          reason: '不回滚的话 toolbar_revealed_ 已是 true 而窗口不在屏幕上，'
+              '下一拍 want == toolbar_revealed_ 直接早退 —— 逃生口永久消失');
     });
 
     test('② 揭示区包含工具条矩形，不只是正文窗', () {

@@ -296,6 +296,9 @@ class FloatingLyricWindow {
   void StopToolbarRevealPolling();
   void UpdateToolbarReveal();
   bool CursorInToolbarRevealZone() const;
+  // 自动隐藏此刻是否生效。穿透态恒 false——工具条是那时屏幕上唯一还能点的东西
+  // （BUG-951 不变式），不能让轮询表把它藏起来。
+  bool ToolbarAutoHideActive() const;
   // 把工具条窗调到当前该有的显隐状态。返回 false = 期望显示却没能上屏（穿透态下
   // 这就是「没有回退入口」，调用方必须据此拒绝开启穿透）。
   bool ApplyToolbarVisibility();

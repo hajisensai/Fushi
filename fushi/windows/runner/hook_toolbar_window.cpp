@@ -576,8 +576,8 @@ bool HookToolbarWindow::Show(const hook_toolbar::Layout& layout,
   style_ = style;
   states_ = states;
   has_layout_ = true;
-  SetWindowPos(hwnd_, HWND_TOPMOST, layout.rect.left, layout.rect.top, width,
-               height, SWP_NOACTIVATE);
+  SetWindowPos(hwnd_, ZOrderInsertAfter(), layout.rect.left, layout.rect.top,
+               width, height, SWP_NOACTIVATE);
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   visible_ = true;
   Render();
@@ -621,7 +621,7 @@ void HookToolbarWindow::Sync(const hook_toolbar::Layout& layout,
   if (!repaint) {
     // Still re-assert Z: the body window raises itself to HWND_TOPMOST on show
     // / clamp / DPI change, which would otherwise tint this pill from above.
-    SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
+    SetWindowPos(hwnd_, ZOrderInsertAfter(), 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     return;
   }
@@ -630,14 +630,22 @@ void HookToolbarWindow::Sync(const hook_toolbar::Layout& layout,
   states_ = states;
   has_layout_ = true;
   if (moved) {
-    SetWindowPos(hwnd_, HWND_TOPMOST, layout.rect.left, layout.rect.top,
+    SetWindowPos(hwnd_, ZOrderInsertAfter(), layout.rect.left, layout.rect.top,
                  layout.rect.right - layout.rect.left,
                  layout.rect.bottom - layout.rect.top, SWP_NOACTIVATE);
   } else {
-    SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
+    SetWindowPos(hwnd_, ZOrderInsertAfter(), 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
   }
   Render();
+}
+
+// 药丸窗的 Z 序**必须跟随正文窗的置顶开关**。写死 HWND_TOPMOST 的话，用户把
+// 浮窗取消置顶后正文窗会退到游戏后面，而这颗药丸仍浮在最上层——一个跟内容脱钩、
+// 却还盖着游戏的孤儿控件。`states_.topmost` 是正文窗每次 Show/Sync 推下来的同一个
+// 值（FloatingLyricWindow::ToolbarStates），所以两个窗天然同相，不需要第二个真相源。
+HWND HookToolbarWindow::ZOrderInsertAfter() const {
+  return states_.topmost ? HWND_TOPMOST : HWND_NOTOPMOST;
 }
 
 int HookToolbarWindow::SlotAt(float x, float y) const {
