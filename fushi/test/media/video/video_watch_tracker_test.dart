@@ -293,15 +293,18 @@ void main() {
       // fire-and-forget）会让本断言转红——锁住退出时统计不丢。
       final _Sink sink = _Sink(delay: const Duration(milliseconds: 20));
       final _FakeSource src = _FakeSource()..isPlaying = true;
+      // 段时长走注入时钟，不靠墙钟：落库门槛是「≥1 秒或有内容账」，等 30ms 真实
+      // 时间造出来的段过不了门槛，测的就成了墙钟而不是接线。
+      DateTime now = DateTime(2026, 1, 1, 12);
       final VideoWatchTracker tracker = VideoWatchTracker(
         bookUid: 'u1',
-        clock: _clock(sink),
+        clock: _clock(sink, now: () => now),
         markCompleted: (_) async {},
       )..attach(src);
 
       tracker.start();
       // 制造一段连续播放窗口（>0 且 <= kMaxReadingGap）。
-      await Future<void>.delayed(const Duration(milliseconds: 30));
+      now = now.add(const Duration(seconds: 30));
       await tracker.stop();
 
       expect(sink.writes, isNotEmpty,
@@ -342,14 +345,15 @@ void main() {
     test('一次观看 session 结束落一条段，携带净观看时长', () async {
       final _Sink sink = _Sink();
       final _FakeSource src = _FakeSource()..isPlaying = true;
+      DateTime now = DateTime(2026, 1, 1, 12);
       final VideoWatchTracker tracker = VideoWatchTracker(
         bookUid: 'u1',
-        clock: _clock(sink),
+        clock: _clock(sink, now: () => now),
         markCompleted: (_) async {},
       )..attach(src);
 
       tracker.start();
-      await Future<void>.delayed(const Duration(milliseconds: 30));
+      now = now.add(const Duration(seconds: 30));
       await tracker.stop();
 
       expect(sink.writes, hasLength(1));
@@ -362,14 +366,15 @@ void main() {
     test('二次 stop 幂等：不重复写段（时钟已封段、无累计器可再结算）', () async {
       final _Sink sink = _Sink();
       final _FakeSource src = _FakeSource()..isPlaying = true;
+      DateTime now = DateTime(2026, 1, 1, 12);
       final VideoWatchTracker tracker = VideoWatchTracker(
         bookUid: 'u1',
-        clock: _clock(sink),
+        clock: _clock(sink, now: () => now),
         markCompleted: (_) async {},
       )..attach(src);
 
       tracker.start();
-      await Future<void>.delayed(const Duration(milliseconds: 30));
+      now = now.add(const Duration(seconds: 30));
       await tracker.stop();
       await tracker.stop(); // 第二次不应再写（段已封、时钟已停）
       expect(sink.writes, hasLength(1));
@@ -378,14 +383,17 @@ void main() {
     test('从未播放（isPlaying=false，无净时长）不落段', () async {
       final _Sink sink = _Sink();
       final _FakeSource src = _FakeSource()..isPlaying = false;
+      // 同样推过 1 秒门槛：不推的话「没到门槛」也会让断言绿，这条就分不清是
+      // 活跃态守卫在起作用还是段太短，等于没测。
+      DateTime now = DateTime(2026, 1, 1, 12);
       final VideoWatchTracker tracker = VideoWatchTracker(
         bookUid: 'u1',
-        clock: _clock(sink),
+        clock: _clock(sink, now: () => now),
         markCompleted: (_) async {},
       )..attach(src);
 
       tracker.start();
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      now = now.add(const Duration(seconds: 30));
       await tracker.stop();
       expect(sink.writes, isEmpty,
           reason: '活跃态守卫（isPlaying）拒绝的窗口整窗丢弃，不开段不写');
