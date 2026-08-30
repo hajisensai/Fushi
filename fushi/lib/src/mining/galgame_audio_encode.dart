@@ -217,8 +217,8 @@ Future<Uint8List?> transcodeVoiceResourcesToMiningAudio({
   }
   if (resourcePaths.length == 1 ||
       !isSelfSynchronizingAudioContainer(outputExtension)) {
-    return transcodeVoiceOggToMiningAudio(
-      oggPath: resourcePaths.first,
+    return transcodeVoiceResourceToMiningAudio(
+      resourcePath: resourcePaths.first,
       tempDir: tempDir,
       outputExtension: outputExtension,
       audioChannels: audioChannels,
@@ -227,8 +227,8 @@ Future<Uint8List?> transcodeVoiceResourcesToMiningAudio({
   }
   final List<Uint8List> parts = <Uint8List>[];
   for (final String path in resourcePaths) {
-    final Uint8List? bytes = await transcodeVoiceOggToMiningAudio(
-      oggPath: path,
+    final Uint8List? bytes = await transcodeVoiceResourceToMiningAudio(
+      resourcePath: path,
       tempDir: tempDir,
       outputExtension: outputExtension,
       audioChannels: audioChannels,
@@ -248,26 +248,28 @@ Future<Uint8List?> transcodeVoiceResourcesToMiningAudio({
 }
 
 /// galgame 纯人声一键制卡（docs/specs/galgame-mining）：把注入 hook DLL dump 的**原始语音
-/// OGG 文件** [oggPath] 整段转码成制卡管线容器（桌面 `aac`）字节，供 `providedAudioBytes`
-/// 逐字节写盘。
+/// 资源** [resourcePath]（OGG/WAV/xWMA）整段转码成制卡管线容器（桌面 `aac`）字节，供
+/// `providedAudioBytes` 逐字节写盘。
 ///
-/// 为什么转码而非直接塞 OGG：`ImmersionMiningEngine` 把 `providedAudioBytes` 逐字节写成
+/// 为什么统一转码：`ImmersionMiningEngine` 把 `providedAudioBytes` 逐字节写成
 /// `immersion_audio.<扩展>`（引擎固定用制卡管线扩展名，桌面 = `aac`），Anki 按该扩展识别
-/// 媒体。OGG 字节塞进 `.aac` 名下既错又 Anki 不一定自动播；转成与句子音频同一条 AAC 容器
-/// （[extractAudioSegmentViaFfmpeg] 同款 `-c:a aac`）最稳。语音行本就短，整段转、不做区间
-/// 裁剪。[outputExtension] 由调用方按运行平台传（此路径 Windows 专属，恒为 `aac`）。ffmpeg
-/// 缺失 / 转码失败 / 空产出返回 null（调用方回退 PCM 采集链，Never break）。
-Future<Uint8List?> transcodeVoiceOggToMiningAudio({
-  required String oggPath,
+/// 媒体。原始 OGG/WAV/xWMA 字节直接塞进卡片会造成扩展名与容器不一致，或让手机播放器无法
+/// 解码；转成与句子音频同一条 AAC 容器（[extractAudioSegmentViaFfmpeg] 同款 `-c:a aac`）
+/// 最稳。语音行本就短，整段转、不做区间裁剪。[outputExtension] 由调用方按运行平台传（此
+/// 路径 Windows 专属，恒为 `aac`）。ffmpeg 缺失 / 转码失败 / 空产出返回 null（调用方回退
+/// PCM 采集链，Never break）。
+Future<Uint8List?> transcodeVoiceResourceToMiningAudio({
+  required String resourcePath,
   required String tempDir,
   required String outputExtension,
   int audioChannels = 1,
   String audioBitrate = '128k',
 }) async {
-  if (!File(oggPath).existsSync()) {
+  if (!File(resourcePath).existsSync()) {
     return null;
   }
-  final Directory dir = Directory('$tempDir/gal_voice_${oggPath.hashCode}');
+  final Directory dir =
+      Directory('$tempDir/gal_voice_${resourcePath.hashCode}');
   await dir.create(recursive: true);
   try {
     final String outPath = '${dir.path}/voice.$outputExtension';
@@ -275,7 +277,7 @@ Future<Uint8List?> transcodeVoiceOggToMiningAudio({
       <String>[
         '-y',
         '-i',
-        oggPath,
+        resourcePath,
         '-vn',
         '-ac',
         '$audioChannels',

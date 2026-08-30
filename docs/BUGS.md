@@ -29,11 +29,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1829 条。点号进各自文件。
+> 共 1834 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1963](bugs/BUG-1963-windows-titlebar-focus-ring-offset.md) | ✅ | ✅ | Windows 自定义标题栏下焦点环整体向下错位 |
+| [BUG-1962](bugs/BUG-1962-windows-icon-shortcuts.md) | ✅ | ✅ | Windows 换图标未同步固定任务栏且启动后快捷方式不自愈 |
+| [BUG-1960](bugs/BUG-1960-app-wheel-scroll-jump.md) | ✅ | ✅ | App 桌面滚轮滚动逐事件瞬移不流畅 |
+| [BUG-1959](bugs/BUG-1959-dashboard-activity-scroll-jank.md) | ✅ | ✅ | Windows/Linux 粗鼠标滚轮一格跳动范围过大 |
+| [BUG-1958](bugs/BUG-1958-online-manga-local-ocr.md) | ✅ | ✅ | 在线漫画点击查词无视已下载本地模型并强制 Google Lens |
+| [BUG-1957](bugs/BUG-1957-galgame-xwma-card-audio.md) | ✅ | ✅ | Galgame 制卡把 xWMA 原样写入卡片，手机无法播放 |
 | [BUG-1956](bugs/BUG-1956-downloads-center-sections-global-search.md) | ✅ | ✅ | 下载中心四分区被移除且资源页发现入口失去模块复用 |
 | [BUG-1955](bugs/BUG-1955-selective-download-backend-target.md) | ✅ | ✅ | 选择性下载仍调用已删除的后端身份接口导致 Windows 构建失败 |
 | [BUG-1954](bugs/BUG-1954-downloads-dropdown-back-button.md) | ✅ | ✅ | 下载页展开下拉框时左上角误显返回键 |
