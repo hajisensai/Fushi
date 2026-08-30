@@ -8,8 +8,8 @@
 /// 授权码，app 这半程走直连换不到 token。part 文件契约禁止 part 内 import，同步层没法
 /// 复用它，于是同一台机器上「更新检查能走代理、云同步不能」。
 ///
-/// 故本层提取为**独立库**：代理**怎么解析**（`env > GUI 系统代理 > DIRECT`、用户手填优先、
-/// PAC 降级）全应用只有这一份实现，接代理的调用方一律 import 这里，不再各自重写一遍优先级。
+/// 故本层提取为**独立库**：代理**怎么解析**（自动 / 直连 / 手动、PAC 降级）
+/// 全应用只有这一份实现，接代理的调用方一律 import 这里，不再各自重写一遍优先级。
 ///
 /// **覆盖面（BUG-1498 收敛后）**：出站装配不再是「每个调用点各自记得做」的事。
 ///   * 公网出站一律经 `utils/net/app_http.dart` 的 [createAppHttpClient] /
@@ -46,15 +46,51 @@ import 'package:fushi/src/utils/net/url_input_normalizer.dart';
 /// `env > GUI 系统代理 > DIRECT`，与接入前逐字等价。
 String Function() appUserProxyReader = () => '';
 
+/// 代理模式读取器。`legacy` 只供精简入口/旧测试兼容：手填地址非空时按 manual，
+/// 否则按 auto。AppModel 初始化后只会返回 auto/direct/manual。
+String Function() appUserProxyModeReader = () => 'legacy';
+
+/// 手动 HTTP 代理 Basic/Digest 认证凭据。密码只在代理发起 407 challenge 时交给
+/// [HttpClient.addProxyCredentials]，不拼进 URL / 日志 / findProxy 指令。
+String Function() appUserProxyUsernameReader = () => '';
+String Function() appUserProxyPasswordReader = () => '';
+
+String _effectiveProxyMode(String proxy) {
+  final String mode = appUserProxyModeReader();
+  if (mode == 'auto' || mode == 'direct' || mode == 'manual') return mode;
+  return proxy.trim().isEmpty ? 'auto' : 'manual';
+}
+
+void _installManualProxyCredentials(HttpClient client,
+    {bool forceManual = false}) {
+  client.authenticateProxy =
+      (String host, int port, String scheme, String? realm) async {
+    if (!forceManual &&
+        _effectiveProxyMode(appUserProxyReader()) != 'manual') {
+      return false;
+    }
+    final String username = appUserProxyUsernameReader();
+    if (username.isEmpty) return false;
+    client.addProxyCredentials(
+      host,
+      port,
+      realm ?? '',
+      HttpClientBasicCredentials(username, appUserProxyPasswordReader()),
+    );
+    return true;
+  };
+}
+
 /// **纯函数（TODO-871/862）**：把用户手填的「自定义更新代理」原始串归一成
-/// `host:port`，非法返 null（调用方据此 fail-open 落回默认 env>GUI>DIRECT 逻辑，绝不误切）。
+/// `host:port`，非法返 null。自动模式不调用本函数；手动模式非法时安全直连，
+/// 不会暗中改走机器上的另一个代理。
 ///
 /// 规则：trim → 剥可选 `http://` / `https://` 前缀 → 校验 `host:port`：
 /// * host = IPv4（四段 0-255）或主机名（字母数字 + `.` + `-`，至少一个非空标签）。
 /// * port = 纯数字、范围 1-65535。
 ///
 /// **【必改④】IPv6 字面量**（`[::1]:7890`，含方括号 / 多个冒号）本期**不支持**→ 直接返
-/// null（fail-open 落回默认）。空串 / 缺端口 / 非数字端口 / `0` / `70000` / 带路径 → null。
+/// null。空串 / 缺端口 / 非数字端口 / `0` / `70000` / 带路径 → null。
 ///
 /// 公开（非 @visibleForTesting）：除测试外，设置页输入框也实时调用它做格式校验
 /// （`settings_schema_system.dart`），故是真实生产 API。
@@ -146,15 +182,39 @@ bool _isValidProxyHost(String host) {
 /// 调用链穿参，穿漏一处就是一条不走代理的暗路）。显式传值仍然优先，故既有调用点行为
 /// 逐字不变。
 Future<void> applyAppProxy(HttpClient client, {String? userProxy}) async {
-  // 【必改③】用户手填代理优先：normalize 非 null → 直接短路，不进 environment 合并、
-  // 不参与 env>GUI>DIRECT 排序，消除「手填 vs 系统代理」覆盖顺序不确定（TODO-871/862）。
-  // fake-ip/TUN 模式下系统代理写注册表 Dart 读不到，这是唯一可靠出口。normalize 返 null
-  // （空/畸形/IPv6）则 fail-open 落回下面默认逻辑——绝不误切。
+  // 手动模式直接短路，不参与 env>GUI>DIRECT 排序，消除「手填 vs 系统代理」
+  // 覆盖顺序不确定（TODO-871/862）。
+  // fake-ip/TUN 模式下系统代理写注册表 Dart 读不到，这是唯一可靠出口。手动模式
+  // normalize 失败时明确直连，不偷用 env/系统代理；自动模式才进入下方默认解析。
+  final String processMode = appUserProxyModeReader();
+  final bool hasExplicitMode = processMode == 'auto' ||
+      processMode == 'direct' ||
+      processMode == 'manual';
+  final bool hasExplicitProxy = userProxy?.trim().isNotEmpty == true;
+  final String mode = hasExplicitMode
+      ? processMode
+      : hasExplicitProxy
+          ? 'manual'
+          : _effectiveProxyMode(appUserProxyReader());
+  final String configuredProxy = mode == 'manual' && hasExplicitProxy
+      ? userProxy!.trim()
+      : appUserProxyReader();
+  if (mode == 'direct') {
+    client.findProxy = (_) => 'DIRECT';
+    return;
+  }
   final String? normalizedUserProxy =
-      normalizeUserProxyHostPort(userProxy ?? appUserProxyReader());
-  if (normalizedUserProxy != null) {
-    client.findProxy = (Uri uri) =>
-        isDirectProxyTarget(uri.host) ? 'DIRECT' : 'PROXY $normalizedUserProxy';
+      mode == 'manual' ? normalizeUserProxyHostPort(configuredProxy) : null;
+  if (mode == 'manual') {
+    client.findProxy = normalizedUserProxy == null
+        ? (_) => 'DIRECT'
+        : (Uri uri) => isDirectProxyTarget(uri.host)
+            ? 'DIRECT'
+            : 'PROXY $normalizedUserProxy';
+    _installManualProxyCredentials(
+      client,
+      forceManual: !hasExplicitMode && hasExplicitProxy,
+    );
     return;
   }
   final Map<String, String> environment = <String, String>{
@@ -232,12 +292,13 @@ void debugSetCachedSystemProxyEnv(Map<String, String>? env) {
 
 /// **同步版** [applyAppProxy]：装一个请求时才求值的 `findProxy` 闭包。
 ///
-/// 优先级与异步版逐字一致（本机/局域网直连 > 用户手填 > env > GUI 系统代理 > DIRECT），
+/// 优先级与异步版逐字一致（本机/局域网直连 > 模式裁决 > 自动模式的 env/系统代理），
 /// 唯一差别是 GUI 系统代理那一格取自 [primeAppProxy] 缓存而不是现场 `Process.run`。
 /// **没 prime 过时该格为空**，于是退化成 `env > DIRECT`——与本函数存在之前那些裸
 /// `HttpClient()` 相比只多不少，绝不会更坏。
 void applyAppProxySync(HttpClient client) {
   client.findProxy = resolveAppProxyDirective;
+  _installManualProxyCredentials(client);
 }
 
 /// **纯查表**：一个 URI 该走什么出口。[applyAppProxySync] 装进 `findProxy` 的就是它。
@@ -246,9 +307,15 @@ void applyAppProxySync(HttpClient client) {
 /// 问「AnkiConnect / 局域网 peer 会不会被代理」，而不是去 mock 一个 HttpClient。
 String resolveAppProxyDirective(Uri uri) {
   if (isDirectProxyTarget(uri.host)) return 'DIRECT';
-  final String? normalizedUserProxy =
-      normalizeUserProxyHostPort(appUserProxyReader());
-  if (normalizedUserProxy != null) return 'PROXY $normalizedUserProxy';
+  final String proxy = appUserProxyReader();
+  final String mode = _effectiveProxyMode(proxy);
+  if (mode == 'direct') return 'DIRECT';
+  if (mode == 'manual') {
+    final String? normalizedUserProxy = normalizeUserProxyHostPort(proxy);
+    return normalizedUserProxy == null
+        ? 'DIRECT'
+        : 'PROXY $normalizedUserProxy';
+  }
   final Map<String, String> environment = <String, String>{
     ...Platform.environment,
   };
@@ -274,8 +341,8 @@ String? proxyHostPortFromDirective(String directive) {
   return null;
 }
 
-/// app 此刻会给**公网目标**用的代理 `host:port`（手填 > env > 缓存的 GUI 系统
-/// 代理），直连 → null。与 [resolveAppProxyDirective] 同一份裁决，只是把
+/// app 此刻会给**公网目标**用的代理 `host:port`，直连 → null。与
+/// [resolveAppProxyDirective] 同一份模式裁决，只是把
 /// 「按 URI 给指令」折成「一个出口」，供装不进 `findProxy` 的消费方（内置
 /// torrent 引擎的 libtorrent session）取用。探针 URI 是任意公网主机——只要不
 /// 落进 [isDirectProxyTarget] 的本机/局域网闸门，任何公网 host 得到的答案都一样。

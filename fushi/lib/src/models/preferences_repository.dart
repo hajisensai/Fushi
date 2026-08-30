@@ -2317,6 +2317,41 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 全局公网出口模式：auto = 环境/系统代理自动探测；direct = 强制直连；
+  /// manual = 使用 [updateCustomProxy]。旧安装没有本键时，已有手填地址自动沿用
+  /// manual，否则沿用历史 auto 语义。
+  String get networkProxyMode {
+    final String? stored =
+        getPref('network_proxy_mode', defaultValue: null) as String?;
+    if (stored == 'auto' || stored == 'direct' || stored == 'manual') {
+      return stored!;
+    }
+    return updateCustomProxy.trim().isEmpty ? 'auto' : 'manual';
+  }
+
+  Future<void> setNetworkProxyMode(String value) async {
+    final String normalized =
+        value == 'direct' || value == 'manual' ? value : 'auto';
+    await setPref('network_proxy_mode', normalized);
+    notifyListeners();
+  }
+
+  String get networkProxyUsername =>
+      getPref('network_proxy_username', defaultValue: '') as String;
+
+  Future<void> setNetworkProxyUsername(String value) async {
+    await setPref('network_proxy_username', value);
+    notifyListeners();
+  }
+
+  String get networkProxyPassword =>
+      getPref('network_proxy_password', defaultValue: '') as String;
+
+  Future<void> setNetworkProxyPassword(String value) async {
+    await setPref('network_proxy_password', value);
+    notifyListeners();
+  }
+
   bool get updateNeverRemind =>
       getPref('update_never_remind', defaultValue: false) as bool;
 
@@ -2357,6 +2392,16 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setUpdateCustomProxy(String value) async {
     await setPref('update_custom_proxy', value);
+    notifyListeners();
+  }
+
+  /// 更新资产首选下载源。auto = 既有智能顺序；r2 / github / proxy:<prefix>
+  /// 只改变首选顺序，失败时仍保留完整回退链。
+  String get updateDownloadSource =>
+      getPref('update_download_source', defaultValue: 'auto') as String;
+
+  Future<void> setUpdateDownloadSource(String value) async {
+    await setPref('update_download_source', value);
     notifyListeners();
   }
 

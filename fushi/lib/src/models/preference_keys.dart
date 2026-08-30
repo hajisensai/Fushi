@@ -133,7 +133,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'module_manga_enabled',
   'module_video_enabled',
   // bool：P2P（torrent）传输是否也走全局代理，默认 false（直连）。
+  'network_proxy_mode',
   'network_proxy_p2p_enabled',
+  'network_proxy_password',
+  'network_proxy_username',
   'onboarding_completed',
   'overlay_lookup_independent_size',
   'overlay_lookup_max_height',
@@ -168,6 +171,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'update_beta_channel',
   'update_custom_proxy',
   'update_debug_channel',
+  'update_download_source',
   'update_never_remind',
   'video_anime4k_prompt_shown',
   'video_asbplayer_config',
@@ -266,5 +270,7 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
 /// （`media_source_secret_<id>` 前缀族见 [kKnownPreferenceKeyPrefixes]。）
 const Set<String> kCredentialPreferenceKeys = <String>{
   'jimaku_api_key',
+  'network_proxy_password',
+  'network_proxy_username',
   'yomitan_api_key',
 };

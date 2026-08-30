@@ -103,6 +103,36 @@ void main() {
       );
     });
 
+    test('手动首选 GitHub / 代理站只重排首项，完整回退链不丢', () {
+      const String direct =
+          'https://github.com/hajisensai/Fushi/releases/download/v2.1.1/a.apk';
+      final List<String> automatic = updateDownloadUrls(direct);
+      final List<String> github = updateDownloadUrls(
+        direct,
+        preference: updateDownloadSourceGitHub,
+      );
+      expect(github.first, direct);
+      expect(github.toSet(), automatic.toSet());
+
+      final String prefix = updateCheckProxyPrefixes[2];
+      final List<String> proxy = updateDownloadUrls(
+        direct,
+        preference: updateDownloadSourceForProxy(prefix),
+      );
+      expect(proxy.first, '$prefix$direct');
+      expect(proxy.toSet(), automatic.toSet());
+      expect(proxy.length, automatic.length, reason: '选源不能删除灾备候选');
+    });
+
+    test('无效的存量首选值安全回退自动顺序', () {
+      const String direct =
+          'https://github.com/hajisensai/Fushi/releases/download/v2.1.1/a.apk';
+      expect(
+        updateDownloadUrls(direct, preference: 'proxy:https://dead.invalid/'),
+        updateDownloadUrls(direct),
+      );
+    });
+
     test('旧仓库、第三方 host、API 和非 HTTPS URL 不得映射到官网 R2', () {
       const List<String> unsupported = <String>[
         'https://github.com/hajisensai/hibiki/releases/download/v1/a.apk',
