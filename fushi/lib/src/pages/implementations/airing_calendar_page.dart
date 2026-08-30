@@ -8,7 +8,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
-import 'package:fushi/src/media/torrent/download_network_proxy.dart';
+import 'package:fushi/src/media/torrent/download_timeouts.dart';
 import 'package:fushi/src/media/video/airing_calendar_cache.dart';
 import 'package:fushi/src/media/video/airing_discovery_mapping.dart';
 import 'package:fushi/src/media/video/airing_week.dart';
@@ -28,7 +28,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 既有装配——旧版「不在库也没订阅就不可点」的死条目形态（用户原话「根本
 /// 下载不出来」）由此消除。数据走 AniList airingSchedules
 /// （[AniListClient.fetchAiringSchedulePage]，HTTP 客户端经
-/// [AppModel.createDownloadHttpClient] 走既有下载代理配置）；缓存内存 + 偏好
+/// [AppModel.createDownloadHttpClient] 走全应用统一代理出口）；缓存内存 + 偏好
 /// 两层（airing_calendar_cache.dart），**无 Drift schema 改动**。
 class AiringCalendarPage extends ConsumerStatefulWidget {
   const AiringCalendarPage({

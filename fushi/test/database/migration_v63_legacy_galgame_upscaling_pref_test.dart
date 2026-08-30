@@ -138,7 +138,10 @@ void main() {
       preferences.map((QueryRow row) =>
           (row.read<String>('key'), row.read<String>('value'))),
       <(String, String)>[
-        ('download_custom_proxy', 's:127.0.0.1:7890'),
+        // seed 里的 `download_custom_proxy` 走完阶梯后被 v90 删除：下载域独立
+        // 代理已并入全局项，没有 `download_network_proxy_mode = custom` 行的
+        // 孤立地址不归并（见 migration_v90_download_proxy_merge_test.dart）。
+        // 本用例的重点仍是 v63 只删自己那一个键、不动别的。
         ('theme', 's:dark'),
       ],
     );

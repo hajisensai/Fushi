@@ -63,7 +63,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
-import 'package:fushi/src/media/torrent/download_network_proxy.dart';
+import 'package:fushi/src/media/torrent/download_timeouts.dart';
 import 'package:fushi/src/media/torrent/download_relocate_service.dart';
 import 'package:fushi/src/media/torrent/download_save_root.dart';
 import 'package:fushi/src/media/torrent/embedded_torrent_host.dart';
@@ -2347,7 +2347,9 @@ class AppModel with ChangeNotifier {
       // 装配出口——那正是全仓 40+ 条裸出站接不上代理层的结构性原因（初始化列表不能
       // await）。不 await 它：prime 只影响「GUI 系统代理」那一格，没 prime 前解析退化成
       // `env > DIRECT`，仍不比接线前差，没必要为它拖慢启动。
-      unawaited(primeAppProxy());
+      // 系统代理解析完后再下发一次 P2P 代理：宿主可能已经建好、而当时缓存
+      // 还是空的（只有 env/手填能命中）。
+      unawaited(primeAppProxy().then((_) => _applyEmbeddedTorrentProxy()));
       // BUG-1498：远程发音（Forvo / 词典音频源等公网 URL）的抓取住在 fushi_anki 包里，
       // 同样反向 import 不了 applyAppProxy。只接**远程媒体**这一条，AnkiConnect 自身
       // （localhost:8765，也可能是局域网另一台机）绝不经过它。
@@ -3491,49 +3493,17 @@ class AppModel with ChangeNotifier {
   // 读写走 [galgameRepo]。这里刻意不再有全局 getter/setter —— 留着一个全局值就会
   // 有人接回去用，然后两份真值慢慢漂开。
 
-  DownloadNetworkProxyConfig get downloadNetworkProxyConfig =>
-      DownloadNetworkProxyConfig(
-        mode: DownloadNetworkProxyMode.parse(
-          prefsRepo.downloadNetworkProxyMode,
-        ),
-        customProxy: prefsRepo.downloadCustomProxy,
-      );
-
-  Future<void> setDownloadNetworkProxyMode(
-    DownloadNetworkProxyMode mode,
-  ) async {
-    final DownloadNetworkProxyConfig before = downloadNetworkProxyConfig;
-    await prefsRepo.setDownloadNetworkProxyMode(mode.name);
-    await _reloadPipelineIfProxyDirectiveChanged(before);
-  }
-
-  Future<void> setDownloadCustomProxy(String value) async {
-    final DownloadNetworkProxyConfig before = downloadNetworkProxyConfig;
-    await prefsRepo.setDownloadCustomProxy(value);
-    await _reloadPipelineIfProxyDirectiveChanged(before);
-  }
-
-  /// BUG-1738 放大器：自定义代理输入框逐键落库，改一个字符就整套重建下载
-  /// runtime（拆掉全部 service + registry 再起）。半截输入在 custom 模式下的
-  /// 有效指令恒为 `DIRECT`（见 [fixedDownloadProxyDirective] 的 fail-open），
-  /// 指令没变就没有重建的理由；auto↔custom(非法)、custom(非法)↔direct 这类
-  /// 行为等价的切换也一并被同一条规则吸收，不设特例。
-  Future<void> _reloadPipelineIfProxyDirectiveChanged(
-    DownloadNetworkProxyConfig before,
-  ) async {
-    final DownloadNetworkProxyConfig after = downloadNetworkProxyConfig;
-    if (fixedDownloadProxyDirective(before) ==
-        fixedDownloadProxyDirective(after)) {
-      return;
-    }
-    _mediaDiscoveryService?.close();
-    _mediaDiscoveryService = null;
-    await reloadVideoDownloadPipelineRuntime();
-  }
-
-  /// Proxy-aware client shared by AniList, Nyaa and Jimaku call sites.
-  Future<http.Client> createDownloadHttpClient() =>
-      buildDownloadHttpClient(downloadNetworkProxyConfig);
+  /// 下载发现链路（AniList / Nyaa / Torznab / Jimaku / OpenSubtitles）共用的
+  /// client：全应用同一个代理出口 + 这条链路特有的 10s 建连超时。
+  ///
+  /// 没有独立的代理配置：出口由 `app_proxy.dart` 统一解析，用户手填值就是系统
+  /// 设置里那一项（`update_custom_proxy`），`findProxy` 请求时现读，所以改了
+  /// 代理不需要重建下载管线里持有的长活 client。
+  ///
+  /// 仍返回 `Future` 是为了不动十几个 `await` 调用点和测试替身的签名；构造本身
+  /// 是同步的。
+  Future<http.Client> createDownloadHttpClient() async =>
+      createAppHttpIoClient(connectionTimeout: kDownloadConnectionTimeout);
 
   /// 把配置里的内置引擎资源限制应用到常驻宿主（宿主不存在则 no-op）。
   void _applyEmbeddedTorrentLimits(QbConnectionConfig? config) {
@@ -3562,6 +3532,8 @@ class AppModel with ChangeNotifier {
     host.applyAntiLeechConfig(effective);
     // 上传/做种策略（默认关上传；开启后做种时长/分享率上限），即时生效。
     host.setUploadPolicy(effective);
+    // P2P 代理（默认直连；用户在系统设置里单独开启才跟全局代理）。
+    _applyEmbeddedTorrentProxy();
   }
 
   /// 番剧下载：计划存储（选种对话框写计划/暂存字幕，与完成监听服务共用同一实例）。
@@ -7191,8 +7163,27 @@ class AppModel with ChangeNotifier {
       prefsRepo.setUpdateDebugChannel(value);
 
   String get updateCustomProxy => prefsRepo.updateCustomProxy;
-  Future<void> setUpdateCustomProxy(String value) =>
-      prefsRepo.setUpdateCustomProxy(value);
+  Future<void> setUpdateCustomProxy(String value) async {
+    await prefsRepo.setUpdateCustomProxy(value);
+    // HttpClient 侧的 findProxy 请求时现读，不用通知；libtorrent 是把值
+    // 固化进 session 的，改了就得重新下发。
+    _applyEmbeddedTorrentProxy();
+  }
+
+  /// P2P（torrent）传输是否也走全局代理；默认 false = 直连。
+  bool get p2pProxyEnabled => prefsRepo.p2pProxyEnabled;
+  Future<void> setP2pProxyEnabled(bool value) async {
+    await prefsRepo.setP2pProxyEnabled(value);
+    _applyEmbeddedTorrentProxy();
+  }
+
+  /// 把「P2P 该不该走代理、走哪个」下发给内置引擎（宿主不存在则 no-op；
+  /// 宿主建好时 [_applyEmbeddedTorrentLimits] 会再调一次）。
+  void _applyEmbeddedTorrentProxy() {
+    _embeddedTorrentHost?.applyProxy(
+      resolveP2pProxyHostPort(enabled: prefsRepo.p2pProxyEnabled),
+    );
+  }
 
   /// 外部 mokuro CLI 可执行路径（漫画 OCR 后备；空串=未设，退回 env/PATH 探测）。
   String get mangaExternalMokuroPath => prefsRepo.mangaExternalMokuroPath;

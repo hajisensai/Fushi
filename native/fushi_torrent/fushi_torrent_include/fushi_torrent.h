@@ -116,6 +116,13 @@ HT_EXPORT int ht_apply_session_settings(
     int enable_upnp, int enable_natpmp, int enc_policy, int anonymous_mode,
     int active_downloads, int active_seeds, int max_upload_slots);
 
+// P2P 代理（默认 none = 直连；用户在系统设置里单独开启）。[proxy_type]
+// 0=none 1=http 2=socks5；[host]/[port] 仅 type != 0 时使用。开启时 peer /
+// tracker / 主机名解析三条链路全部经代理，关闭时一并复位直连。参数非法按
+// none 处理。返回 1 成功 0 失败。
+HT_EXPORT int ht_apply_proxy(void* session, int proxy_type, const char* host,
+                             int port);
+
 // 添加磁力链接，落盘到 [save_path]；[sequential] 非 0 开顺序下载。
 // 成功 {"ok":true,"id":"<infohash>"}；失败 {"ok":false,"error":"..."}。
 // 重复添加同一种子返回已有种子的 id（ok:true）。

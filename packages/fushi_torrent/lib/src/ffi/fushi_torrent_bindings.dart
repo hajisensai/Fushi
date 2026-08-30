@@ -293,6 +293,41 @@ class FushiTorrentBindings {
           int Function(ffi.Pointer<ffi.Void>, int, int, int, int, int, int, int,
               int, int, int)>();
 
+  /// P2P 代理（0=none 1=http 2=socks5；none 时 host/port 忽略）。1 成功 0 失败。
+  ///
+  /// 调用前必须先看 [hasApplyProxy]——同 [ht_apply_limits_ex]：比本文件旧的
+  /// 预编译 DLL 里没有这个符号。
+  int ht_apply_proxy(
+    ffi.Pointer<ffi.Void> session,
+    int proxy_type,
+    ffi.Pointer<ffi.Char> host,
+    int port,
+  ) {
+    return _ht_apply_proxy(session, proxy_type, host, port);
+  }
+
+  late final _ht_apply_proxyPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int,
+              ffi.Pointer<ffi.Char>, ffi.Int)>>('ht_apply_proxy');
+  late final _ht_apply_proxy = _ht_apply_proxyPtr.asFunction<
+      int Function(ffi.Pointer<ffi.Void>, int, ffi.Pointer<ffi.Char>, int)>();
+
+  /// 已加载的库里是否有 [ht_apply_proxy]（理由同 [hasApplyLimitsEx]）。
+  late final bool hasApplyProxy = _probeApplyProxy();
+
+  bool _probeApplyProxy() {
+    try {
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int,
+                  ffi.Pointer<ffi.Char>, ffi.Int)>>('ht_apply_proxy');
+      return true;
+    } on ArgumentError {
+      return false;
+    }
+  }
+
   /// 添加磁力；返回 malloc JSON（ht_free_string 释放）。
   ffi.Pointer<ffi.Char> ht_add_magnet(
     ffi.Pointer<ffi.Void> session,
