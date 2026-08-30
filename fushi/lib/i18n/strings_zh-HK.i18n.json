@@ -3841,6 +3841,6 @@
   "sync_peer_book_delete_confirm": "確定從對端裝置刪除「$name」嗎？對端上的檔案與閱讀進度會被永久刪除，本機沒有副本，此操作不可撤銷。",
   "sync_peer_video_delete_confirm": "確定從對端裝置的媒體庫移除「$name」嗎？對端自己匯入的影片檔案會保留，此操作不可撤銷。",
   "storage_entry_delete_files_confirm_body": "將立即從磁碟刪除。媒體庫裡沒有項目引用它——這裡放的是快取、匯出或可重新取得的資料。",
-  "gal_hook_fold_progressive_lines": "Merge split dialogue lines",
-  "gal_hook_fold_progressive_lines_hint": "Some engines redraw the whole line on every click, so one line is captured several times. Fold those snapshots into a single line."
+  "gal_hook_fold_progressive_lines": "把分開顯示的台詞合成一條",
+  "gal_hook_fold_progressive_lines_hint": "有些引擎每點一次就重畫整行，於是同一行被抓到好幾次。把這些快照摺成一條。"
 }

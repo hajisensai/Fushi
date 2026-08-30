@@ -88,6 +88,80 @@ void main() {
       );
     }
 
+    test('websocket 源不折：那边的前缀关系是两句不同的话', () {
+      // 折叠原本装在 appendLine 顶层，而该入口也服务 WS 源（Textractor / mpv /
+      // 浏览器扩展），那条通道 5 平台都跑；而逃生开关在 Windows-only 的 game
+      // 设置页里。收窄成 engineHook 之后，这个来源门同时就是平台门。
+      TexthookerLineEntry? ws(String text, {int? seq}) => service.appendLine(
+            text,
+            source: TexthookerLineSource.websocket,
+            sourceLabel: 'ws://127.0.0.1:6677',
+            sourceSequence: seq,
+          );
+      ws(kZatoFirst, seq: 1);
+      ws(kZatoFullLine, seq: 2);
+      expect(service.entries.length, 2,
+          reason: 'WS 送来的是外部工具已经成句的输出，前缀关系不代表同一句');
+    });
+
+    test('同为 WS 的两个端点不得互折（守卫必须认 sourceLabel）', () {
+      // WS 路径下 textThreadKey 恒 null、source 恒 websocket，能区分 Textractor /
+      // mpv / 浏览器扩展的**只有** sourceLabel。这里借 engineHook 源验判据本身
+      // （WS 源已被上面那条门挡住，测不到这层）。
+      service.appendLine(kZatoFirst,
+          source: TexthookerLineSource.engineHook,
+          sourceLabel: 'engine_hook_a',
+          sourceSequence: 1,
+          textThreadKey: 'thread-a');
+      service.appendLine(kZatoFullLine,
+          source: TexthookerLineSource.engineHook,
+          sourceLabel: 'engine_hook_b',
+          sourceSequence: 2,
+          textThreadKey: 'thread-a');
+      expect(service.entries.length, 2,
+          reason: '不同端点的输出折成一条就是丢行');
+    });
+
+    test('折叠增量保留内部空白：拉丁文按词计数不能被焊成一个词', () {
+      append(kZatoFirst, seq: 1);
+      append(kZatoSecondSegment, seq: 2);
+      final String delta = service.lastAppendedDelta;
+      expect(delta, isNotEmpty);
+      expect(delta.contains(' '), isTrue,
+          reason: '在 normalizeForFold 的去空白坐标系里切增量，会把 '
+              '"a lovely way to put it" 焊成一个词 —— countGalgameChars 对拉丁'
+              '文本按词计数，空白是唯一的词边界，整段英文台词会被算成 1。');
+      expect(delta, kZatoSecondSegment,
+          reason: '第 ② 拍整段都是新字，增量应当就是它本身（两端 trim）');
+    });
+
+    test('折叠吞掉的行 id 必须被报出来（下游那批 map/timer 还拿它当活键）', () {
+      final TexthookerLineEntry? first = append(kZatoFirst, seq: 1);
+      final TexthookerLineEntry? second = append(kZatoSecondSegment, seq: 2);
+      expect(first, isNotNull);
+      expect(second, isNotNull);
+      final TexthookerLineEntry? merged = append(kZatoFullLine, seq: 3);
+      expect(merged, isNotNull);
+      // 合并结果复用**最早**那条的 id，所以它不算「被吞」；第 ② 拍那条才是。
+      expect(merged!.id, first!.id);
+      expect(service.lastFoldedLineIds, contains(second!.id),
+          reason: '不报出来的话，晚到的语音会写进死 id 被静默丢弃，'
+              '用户的手动裁决也随之失效');
+      expect(service.lastFoldedLineIds, isNot(contains(merged.id)),
+          reason: '合并结果自己的 id 还活着，重定向链不该形成');
+    });
+
+    test('制卡 / 收藏位取并集，徽章不会因折叠消失', () {
+      final TexthookerLineEntry? second0 = append(kZatoFirst, seq: 1);
+      final TexthookerLineEntry? second = append(kZatoSecondSegment, seq: 2);
+      expect(second0, isNotNull);
+      service.markLineMined(second!.id, noteId: 42);
+      final TexthookerLineEntry? merged = append(kZatoFullLine, seq: 3);
+      expect(merged!.mined, isTrue,
+          reason: '用户刚给第 ② 拍制的卡不该在第 ③ 拍折叠后从工作台上消失');
+      expect(merged.minedNoteId, 42);
+    });
+
     test('Zato 三拍最终只剩一条完整台词', () {
       append(kZatoFirst, seq: 1);
       append(kZatoSecondSegment, seq: 2);

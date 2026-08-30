@@ -3841,6 +3841,6 @@
   "sync_peer_book_delete_confirm": "Supprimer « $name » de l'appareil pair ? Ses fichiers et la progression de lecture qui s'y trouvent seront définitivement supprimés, et cet appareil n'en a aucune copie. Cette action est irréversible.",
   "sync_peer_video_delete_confirm": "Retirer « $name » de la bibliothèque de l'appareil pair ? Le fichier vidéo importé par l'appareil pair lui-même est conservé. Cette action est irréversible.",
   "storage_entry_delete_files_confirm_body": "Suppression immédiate du disque. Rien dans votre bibliothèque n'y fait référence : ce sont des données en cache, exportées ou re-téléchargeables.",
-  "gal_hook_fold_progressive_lines": "Merge split dialogue lines",
-  "gal_hook_fold_progressive_lines_hint": "Some engines redraw the whole line on every click, so one line is captured several times. Fold those snapshots into a single line."
+  "gal_hook_fold_progressive_lines": "Fusionner les répliques découpées",
+  "gal_hook_fold_progressive_lines_hint": "Certains moteurs redessinent toute la ligne à chaque clic, si bien qu'une même ligne est capturée plusieurs fois. Replie ces instantanés en une seule ligne."
 }

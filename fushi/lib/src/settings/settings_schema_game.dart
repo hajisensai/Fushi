@@ -105,6 +105,10 @@ SettingsDestination buildGameDestination() {
             title: t.gal_hook_fold_progressive_lines,
             subtitle: t.gal_hook_fold_progressive_lines_hint,
             icon: Icons.merge_type,
+            // 与兄弟项 game.ingame_lookup 同门：折叠只对引擎 hook 行生效，而
+            // engineHook 行只由 Windows-only 的 GalHookSessionController 产出。
+            // 在其他平台露出来只会让用户对着一个永远不生效的开关。
+            visible: (_) => Platform.isWindows,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.galHookFoldProgressiveLines,
             onChanged: (SettingsContext settingsContext, bool value) async {

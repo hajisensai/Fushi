@@ -3841,6 +3841,6 @@
   "sync_peer_book_delete_confirm": "\"$name\" eş cihazdan silinsin mi? Oradaki dosyaları ve okuma ilerlemesi kalıcı olarak kaldırılır ve bu cihazda kopyası yok. Bu işlem geri alınamaz.",
   "sync_peer_video_delete_confirm": "\"$name\" eş cihazın kitaplığından kaldırılsın mı? Eş cihazın kendi içe aktardığı video dosyası korunur. Bu işlem geri alınamaz.",
   "storage_entry_delete_files_confirm_body": "Diskten hemen silinir. Kitaplığınızdaki hiçbir şey buna başvurmuyor — bunlar önbellek, dışa aktarılmış veya yeniden indirilebilir verilerdir.",
-  "gal_hook_fold_progressive_lines": "Merge split dialogue lines",
-  "gal_hook_fold_progressive_lines_hint": "Some engines redraw the whole line on every click, so one line is captured several times. Fold those snapshots into a single line."
+  "gal_hook_fold_progressive_lines": "Bölünmüş diyalog satırlarını birleştir",
+  "gal_hook_fold_progressive_lines_hint": "Bazı motorlar her tıklamada satırın tamamını yeniden çizer, bu yüzden tek bir satır birkaç kez yakalanır. Bu anlık görüntüleri tek satırda topla."
 }

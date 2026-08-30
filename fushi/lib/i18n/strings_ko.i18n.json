@@ -3841,6 +3841,6 @@
   "sync_peer_book_delete_confirm": "상대 기기에서 \"$name\"을(를) 삭제할까요? 해당 기기의 파일과 읽기 진행률이 영구히 삭제되며, 이 기기에는 사본이 없습니다. 이 작업은 되돌릴 수 없습니다.",
   "sync_peer_video_delete_confirm": "상대 기기의 라이브러리에서 \"$name\"을(를) 제거할까요? 상대 기기가 직접 가져온 동영상 파일은 유지됩니다. 이 작업은 되돌릴 수 없습니다.",
   "storage_entry_delete_files_confirm_body": "디스크에서 즉시 삭제합니다. 라이브러리의 어떤 항목도 이를 참조하지 않습니다 — 캐시, 내보낸 파일, 또는 다시 받을 수 있는 데이터입니다.",
-  "gal_hook_fold_progressive_lines": "Merge split dialogue lines",
-  "gal_hook_fold_progressive_lines_hint": "Some engines redraw the whole line on every click, so one line is captured several times. Fold those snapshots into a single line."
+  "gal_hook_fold_progressive_lines": "나뉜 대사 줄 합치기",
+  "gal_hook_fold_progressive_lines_hint": "클릭할 때마다 줄 전체를 다시 그리는 엔진이 있어 같은 줄이 여러 번 캡처됩니다. 그 스냅숏들을 한 줄로 접습니다."
 }

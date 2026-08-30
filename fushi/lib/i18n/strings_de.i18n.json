@@ -3841,6 +3841,6 @@
   "sync_peer_book_delete_confirm": "„$name“ vom Partnergerät löschen? Die dortigen Dateien und der Lesefortschritt werden endgültig entfernt, und auf diesem Gerät liegt keine Kopie. Dies kann nicht rückgängig gemacht werden.",
   "sync_peer_video_delete_confirm": "„$name“ aus der Bibliothek des Partnergeräts entfernen? Die vom Partner selbst importierte Videodatei bleibt erhalten. Dies kann nicht rückgängig gemacht werden.",
   "storage_entry_delete_files_confirm_body": "Wird sofort von der Festplatte gelöscht. Nichts in deiner Bibliothek verweist darauf – es sind zwischengespeicherte, exportierte oder erneut herunterladbare Daten.",
-  "gal_hook_fold_progressive_lines": "Merge split dialogue lines",
-  "gal_hook_fold_progressive_lines_hint": "Some engines redraw the whole line on every click, so one line is captured several times. Fold those snapshots into a single line."
+  "gal_hook_fold_progressive_lines": "Aufgeteilte Dialogzeilen zusammenfassen",
+  "gal_hook_fold_progressive_lines_hint": "Manche Engines zeichnen bei jedem Klick die ganze Zeile neu, sodass eine Zeile mehrfach erfasst wird. Diese Schnappschüsse zu einer Zeile zusammenfalten."
 }

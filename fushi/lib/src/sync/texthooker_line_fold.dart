@@ -29,6 +29,45 @@ String normalizeForFold(String text) {
   return text.replaceAll(RegExp(r'\s+'), '');
 }
 
+final RegExp _foldWhitespace = RegExp(r'\s');
+
+/// [text] 里被 [candidate]（按 [normalizeForFold] 归一化后）盖住的**原始前缀长度**
+/// （UTF-16 code unit）；不是归一化前缀时返回 0。
+///
+/// 为什么需要它：折叠判据必须在**去空白**的坐标系里做（引擎重绘会在段间插换行 /
+/// 全角空格），但字数统计必须在**保留空白**的原文里切 —— `countGalgameChars` 对
+/// 拉丁文本按**词**计数，空白是唯一的词边界；在归一化串上切会把
+/// `"lovely way"` 焊成一个词，整段英文台词被算成 1。
+int rawPrefixCoverage(String text, String candidate) {
+  final String target = normalizeForFold(candidate);
+  if (target.isEmpty) return 0;
+  int matched = 0;
+  for (int i = 0; i < text.length; i++) {
+    final String ch = text[i];
+    if (_foldWhitespace.hasMatch(ch)) continue;
+    if (matched >= target.length || ch != target[matched]) return 0;
+    matched++;
+    if (matched == target.length) return i + 1;
+  }
+  return 0;
+}
+
+/// 对称的后缀版：返回被 [candidate] 盖住的**原始后缀长度**，不是后缀时 0。
+int rawSuffixCoverage(String text, String candidate) {
+  final String target = normalizeForFold(candidate);
+  if (target.isEmpty) return 0;
+  int matched = 0;
+  for (int i = text.length - 1; i >= 0; i--) {
+    final String ch = text[i];
+    if (_foldWhitespace.hasMatch(ch)) continue;
+    final int t = target.length - 1 - matched;
+    if (t < 0 || ch != target[t]) return 0;
+    matched++;
+    if (matched == target.length) return text.length - i;
+  }
+  return 0;
+}
+
 /// 短于这个长度的行不参与折叠。
 ///
 /// 「はい」「……」这类极短行做包含判断的假阳性率太高（任何长句都可能刚好以它开头或

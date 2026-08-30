@@ -109,6 +109,23 @@ class GalgameLineCharCounter {
     return delta;
   }
 
+  /// 上游已经算好增量时的计数入口：只做 [countGalgameChars] + [maxCountedChars]
+  /// 垃圾门，**不碰** [_lastText] / [_lastCount]。
+  ///
+  /// 为什么不能直接喂 [countLine]：那个方法的相邻去重与打字机前缀拿「整行」当状态，
+  /// 喂增量片段会把 `_lastText` 污染成半句话，此后每次判断都是拿增量比增量；两次
+  /// 相邻增量恰好相同时还会被静默吞成 0（在上游折叠之上再去重一次）。
+  ///
+  /// 引擎 hook 路径用它（TexthookerService 的折叠已经是「这一拍新增了什么」的
+  /// 权威）；WS / 剪贴板路径仍走 [countLine]——那边没有上游折叠，整行去重与打字机
+  /// 增量只有这一份。
+  int countDelta(String delta) {
+    final String trimmed = delta.trim();
+    if (trimmed.isEmpty) return 0;
+    final int count = countGalgameChars(trimmed);
+    return count > maxCountedChars ? 0 : count;
+  }
+
   /// 会话结束/换游戏时复位，下一段从零开始（跨会话不做前缀/去重比对）。
   void reset() {
     _lastText = null;

@@ -3841,6 +3841,6 @@
   "sync_peer_book_delete_confirm": "対向デバイスから「$name」を削除しますか？そちらのファイルと読書進捗は完全に削除され、この端末には控えがありません。この操作は取り消せません。",
   "sync_peer_video_delete_confirm": "対向デバイスのライブラリから「$name」を削除しますか？対向デバイスが自分で取り込んだ動画ファイルは残ります。この操作は取り消せません。",
   "storage_entry_delete_files_confirm_body": "ディスクからすぐに削除します。ライブラリのどの項目もこれを参照していません（キャッシュ・書き出し済みデータ・再取得できるデータです）。",
-  "gal_hook_fold_progressive_lines": "Merge split dialogue lines",
-  "gal_hook_fold_progressive_lines_hint": "Some engines redraw the whole line on every click, so one line is captured several times. Fold those snapshots into a single line."
+  "gal_hook_fold_progressive_lines": "分割されたセリフ行をまとめる",
+  "gal_hook_fold_progressive_lines_hint": "クリックのたびに行全体を描き直すエンジンがあり、同じ行が何度も取り込まれます。そのスナップショットを 1 行にまとめます。"
 }
