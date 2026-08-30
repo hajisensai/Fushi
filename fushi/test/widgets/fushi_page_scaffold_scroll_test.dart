@@ -156,6 +156,11 @@ void main() {
       wheel.hover(tester.getCenter(find.text('wheel row 0'))),
     );
     await tester.sendEventToBinding(wheel.scroll(const Offset(0, 120)));
+    // 先空 pump 一帧把 Ticker 起起来：AnimationController 第一次 tick 拿到的
+    // elapsed 恒为 0（起始时间就在那一帧上设），所以直接 `pump(40ms)` 落在的是
+    // 「动画刚开始、位移还是 0」那一帧，下面 `greaterThan(0)` 必然失败——那测的是
+    // Ticker 的记时约定，不是滚动行为。起完之后再推进 40ms 才是真的动画中途。
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 40));
     if (Platform.isWindows || Platform.isLinux) {
       expect(
