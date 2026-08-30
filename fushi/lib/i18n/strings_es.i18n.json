@@ -3948,5 +3948,8 @@
   "video_subtitle_collection_members_hint": "Los episodios se emparejan por el número del nombre de archivo; los packs de temporada se dividen automáticamente.",
   "video_subtitle_adjust_title": "Ajustes de subtítulos",
   "video_subtitle_adjust_collapse": "Contraer",
-  "video_subtitle_adjust_expand": "Expandir"
+  "video_subtitle_adjust_expand": "Expandir",
+  "settings_section_reading_stats": "Estadísticas de lectura",
+  "reading_stats_idle_timeout": "Tiempo de inactividad",
+  "reading_stats_idle_timeout_hint": "Dejar de contar el tiempo de lectura tras estos minutos sin pasar página, desplazarse o buscar una palabra. Solo para novelas, PDF y manga; el vídeo cuenta mientras se reproduce."
 }

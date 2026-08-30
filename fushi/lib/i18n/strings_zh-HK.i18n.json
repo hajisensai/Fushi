@@ -3948,5 +3948,8 @@
   "video_subtitle_collection_members_hint": "各集按檔名中的集數匹配；整季打包字幕自動拆分。",
   "video_subtitle_adjust_title": "字幕調整",
   "video_subtitle_adjust_collapse": "收起",
-  "video_subtitle_adjust_expand": "展開"
+  "video_subtitle_adjust_expand": "展開",
+  "settings_section_reading_stats": "閱讀統計",
+  "reading_stats_idle_timeout": "閒置判定時長",
+  "reading_stats_idle_timeout_hint": "這麼久沒有翻頁、捲動或查詞就停止計入閱讀時長。只對小說、PDF、漫畫生效；影片以播放狀態為準。"
 }

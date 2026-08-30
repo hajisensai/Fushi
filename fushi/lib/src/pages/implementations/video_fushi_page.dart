@@ -1633,7 +1633,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String get dictionarySourceType => kStatSourceVideo;
 
   /// TODO-1204：查词 / 制卡计数归属本视频——[title] 用 [_title]（剧集标题，与
-  /// 视频统计 tile 的 [addVideoWatchStatistic] title 聚合键对齐），[bookKey] 存
+  /// 视频统计 tile 的身份分组键对齐），[bookKey] 存
   /// [VideoFushiPage.bookUid]。远端视频无观看统计 tile，其计数仍进「查词」汇总。
   @override
   ({String? bookKey, String? title})? get lookupBookIdentity =>
@@ -3383,25 +3383,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (_bookRow != null && _watchTracker == null) {
       final FushiDatabase db = appModel.database;
       _watchTracker = VideoWatchTracker(
-        title: title,
         bookUid: widget.bookUid,
-        // P4 写侧收敛：两条统计路都走 DB 复合入口 recordWatchFlush。dateKey 由
-        // 采集器决定（字幕字数=cue 时刻；观看时长=各桶各自日期），直接透传，不在此
-        // 另算「今日」——否则跨午夜的 flush 会与小时日志的日归属不一致。
-        // v39：按视频稳定身份键控（同名不同视频统计不再互串）。本地视频每集独立
+        // v92：观看时长 + 字幕字数走唯一时钟 StudyClock（活跃态 = 正在播放，由
+        // tracker 挂上；视频面刻意不设空闲门 / 前台门——切走仍在播就照常计时）。
+        // 按视频稳定身份键控（v39：同名不同视频统计不再互串）。本地视频每集独立
         // 页面（pushReplacement 换集）→ widget.bookUid 恒为当前集。
-        recordFlush: (List<(String, int, int)> buckets) => db.recordWatchFlush(
+        clock: StudyClock(
+          database: db,
+          mediaKind: kActivityMediaVideo,
+          mediaKey: widget.bookUid,
           title: title,
-          bookUid: widget.bookUid,
-          buckets: buckets,
-        ),
-        addSubtitleChars: (String dateKey, int chars) => unawaited(
-          db.recordWatchFlush(
-            title: title,
-            bookUid: widget.bookUid,
-            subtitleChars: chars,
-            subtitleCharsDateKey: dateKey,
-          ),
+          onWriteError: (Object e, StackTrace st) =>
+              ErrorLogService.instance.log('StudyClock.write(video)', e, st),
         ),
         markCompleted: (String uid) =>
             db.markVideoCompleted(uid, DateTime.now()),
@@ -3415,19 +3408,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 _episodes.isNotEmpty && _currentEpisode == _episodes.length - 1,
           );
         },
-        // v49：一次观看 session 结束落一条活动事件，喂首页 Activity 时间轴。
-        recordActivity: (String t, String uid, String dateKey, int timestampMs,
-                int durationMs, int chars) =>
-            db.addActivityEvent(
-          eventType: kActivityWatch,
-          mediaType: kActivityMediaVideo,
-          title: t,
-          mediaKey: uid,
-          dateKey: dateKey,
-          timestampMs: timestampMs,
-          durationMs: durationMs,
-          charsDelta: chars,
-        ),
       )
         ..attach(controller)
         ..start();

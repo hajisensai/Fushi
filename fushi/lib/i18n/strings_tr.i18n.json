@@ -3948,5 +3948,8 @@
   "video_subtitle_collection_members_hint": "Bölümler dosya adındaki numaraya göre eşleştirilir; sezon paketleri otomatik olarak bölünür.",
   "video_subtitle_adjust_title": "Altyazı ayarları",
   "video_subtitle_adjust_collapse": "Daralt",
-  "video_subtitle_adjust_expand": "Genişlet"
+  "video_subtitle_adjust_expand": "Genişlet",
+  "settings_section_reading_stats": "Okuma istatistikleri",
+  "reading_stats_idle_timeout": "Boşta kalma süresi",
+  "reading_stats_idle_timeout_hint": "Sayfa çevirme, kaydırma veya sözcük arama olmadan bu kadar dakika geçince okuma süresini saymayı durdur. Yalnızca roman, PDF ve manga için; video oynatılırken sayılır."
 }

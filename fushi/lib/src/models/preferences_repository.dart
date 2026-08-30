@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:fushi_audio/fushi_audio.dart'
+    show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
@@ -2616,6 +2618,24 @@ class PreferencesRepository extends ChangeNotifier {
   // and write clamped so a corrupt/out-of-range stored value can never reach
   // the progress UI as an absurd goal. Per-Profile (not excluded in
   // ProfileKeys), so each profile keeps its own targets.
+
+  /// v90 阅读空闲门（分钟）：这么久没有翻页 / 滚动 / 查词等输入就视为没在读，
+  /// 之后的时长不入账。只对阅读面（小说 / PDF / 漫画）生效，视频以播放态为准
+  /// （用户拍板）。偏好键与 fushi_audio 的 [kStudyIdleTimeoutPrefKey] 同名。
+  static const int readingIdleTimeoutMinutesMin = 1;
+  static const int readingIdleTimeoutMinutesMax = 120;
+
+  int get readingIdleTimeoutMinutes => (getPref(kStudyIdleTimeoutPrefKey,
+          defaultValue: kDefaultReadingIdleTimeout.inMinutes) as int)
+      .clamp(readingIdleTimeoutMinutesMin, readingIdleTimeoutMinutesMax);
+
+  Future<void> setReadingIdleTimeoutMinutes(int value) async {
+    await setPref(
+      kStudyIdleTimeoutPrefKey,
+      value.clamp(readingIdleTimeoutMinutesMin, readingIdleTimeoutMinutesMax),
+    );
+    notifyListeners();
+  }
 
   int get readingGoalDailyChars =>
       (getPref('reading_goal_daily_chars', defaultValue: 0) as int)

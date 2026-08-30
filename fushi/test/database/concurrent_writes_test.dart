@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -11,116 +12,95 @@ Future<FushiDatabase> _openDb() async {
 // These tests verify that Drift's transaction-based read-modify-write
 // correctly serializes interleaved async operations on a single isolate.
 // This matches the app's real usage pattern (single-isolate DB access).
+//
+// v92 起累加 DAO（addReadingStatistic / addHourlyReadingTime）已删，统计写入面
+// 只剩 study_segments 的按 uid 绝对值 upsert（写入方自己持有段累计器，DB 层不做
+// `+=`），因此这里压的是并发 upsertStudySegment：不同 uid 各成一行、同 uid 收敛到
+// 最后写入者。累加语义的并发用例随 DAO 一起删除。
+
+/// 一段 study_segments 事实（uid 由调用方给定，便于同 uid 竞写）。
+StudySegmentsCompanion _segment({
+  required String uid,
+  required String mediaKey,
+  required int durationMs,
+}) =>
+    StudySegmentsCompanion.insert(
+      uid: uid,
+      deviceId: 'dev-test',
+      mediaKind: kActivityMediaBook,
+      mediaKey: mediaKey,
+      title: mediaKey,
+      startAt: 1000,
+      endAt: 1000 + durationMs,
+      dateKey: '2026-05-17',
+      hour: 14,
+      durationMs: Value(durationMs),
+      updatedAt: 1000 + durationMs,
+    );
+
 void main() {
-  group('Interleaved ReadingStatistics writes', () {
-    test('50 interleaved addReadingStatistic calls aggregate correctly',
+  group('Interleaved StudySegments writes', () {
+    test('50 interleaved upsertStudySegment with distinct uids all persist',
         () async {
       final db = await _openDb();
       const int n = 50;
-      const int charsPerCall = 10;
-      const int msPerCall = 1000;
 
       await Future.wait(
         List.generate(
           n,
-          (_) => db.addReadingStatistic(
-            title: 'Book',
-            dateKey: '2026-05-17',
-            charsRead: charsPerCall,
-            timeMs: msPerCall,
+          (int i) => db.upsertStudySegment(
+            _segment(uid: 'seg-$i', mediaKey: 'book/A', durationMs: 1000),
           ),
         ),
       );
 
-      final all = await db.getAllReadingStatistics();
+      final all = await db.getStudySegments();
+      expect(all, hasLength(n));
+      expect(all.map((StudySegmentRow r) => r.uid).toSet(), hasLength(n));
+    });
+
+    test('interleaved writes to different media stay independent', () async {
+      final db = await _openDb();
+      const int n = 20;
+
+      await Future.wait([
+        for (int i = 0; i < n; i++)
+          db.upsertStudySegment(
+            _segment(uid: 'a-$i', mediaKey: 'book/A', durationMs: 500),
+          ),
+        for (int i = 0; i < n; i++)
+          db.upsertStudySegment(
+            _segment(uid: 'b-$i', mediaKey: 'book/B', durationMs: 300),
+          ),
+      ]);
+
+      expect(
+          await db.getStudySegmentsForMedia(
+              mediaKind: kActivityMediaBook, mediaKey: 'book/A'),
+          hasLength(n));
+      expect(
+          await db.getStudySegmentsForMedia(
+              mediaKind: kActivityMediaBook, mediaKey: 'book/B'),
+          hasLength(n));
+    });
+
+    test('rapid upserts to the same uid converge to the last writer', () async {
+      final db = await _openDb();
+      const int n = 30;
+      // upsertStudySegment 是单连接串行的 insert-or-replace：最后提交的写
+      // （i == n-1）最后执行、必须胜出，行数恒 1（绝不累加成多行或 `+=`）。
+      await Future.wait(
+        List.generate(
+          n,
+          (int i) => db.upsertStudySegment(
+            _segment(uid: 'same', mediaKey: 'book/A', durationMs: (i + 1) * 100),
+          ),
+        ),
+      );
+
+      final all = await db.getStudySegments();
       expect(all, hasLength(1));
-      expect(all.single.charactersRead, n * charsPerCall);
-      expect(all.single.readingTimeMs, n * msPerCall);
-    });
-
-    test('interleaved writes to different titles stay independent', () async {
-      final db = await _openDb();
-      const int n = 20;
-
-      await Future.wait([
-        for (int i = 0; i < n; i++)
-          db.addReadingStatistic(
-            title: 'Book A',
-            dateKey: '2026-05-17',
-            charsRead: 5,
-            timeMs: 500,
-          ),
-        for (int i = 0; i < n; i++)
-          db.addReadingStatistic(
-            title: 'Book B',
-            dateKey: '2026-05-17',
-            charsRead: 3,
-            timeMs: 300,
-          ),
-      ]);
-
-      final all = await db.getAllReadingStatistics();
-      expect(all, hasLength(2));
-
-      final bookA = all.firstWhere((s) => s.title == 'Book A');
-      final bookB = all.firstWhere((s) => s.title == 'Book B');
-      expect(bookA.charactersRead, n * 5);
-      expect(bookB.charactersRead, n * 3);
-    });
-  });
-
-  group('Interleaved HourlyLogs writes', () {
-    test('50 interleaved addHourlyReadingTime calls aggregate correctly',
-        () async {
-      final db = await _openDb();
-      const int n = 50;
-      const int msPerCall = 200;
-
-      await Future.wait(
-        List.generate(
-          n,
-          (_) => db.addHourlyReadingTime(
-            dateKey: '2026-05-17',
-            hour: 14,
-            deltaMs: msPerCall,
-            format: BookFormat.epub,
-          ),
-        ),
-      );
-
-      final logs = await db.getHourlyLogsForDate('2026-05-17');
-      expect(logs, hasLength(1));
-      expect(logs.single.readingTimeMs, n * msPerCall);
-    });
-
-    test('interleaved writes to different hours stay independent', () async {
-      final db = await _openDb();
-      const int n = 20;
-
-      await Future.wait([
-        for (int i = 0; i < n; i++)
-          db.addHourlyReadingTime(
-            dateKey: '2026-05-17',
-            hour: 10,
-            deltaMs: 100,
-            format: BookFormat.epub,
-          ),
-        for (int i = 0; i < n; i++)
-          db.addHourlyReadingTime(
-            dateKey: '2026-05-17',
-            hour: 11,
-            deltaMs: 200,
-            format: BookFormat.epub,
-          ),
-      ]);
-
-      final logs = await db.getHourlyLogsForDate('2026-05-17');
-      expect(logs, hasLength(2));
-
-      final h10 = logs.firstWhere((l) => l.hour == 10);
-      final h11 = logs.firstWhere((l) => l.hour == 11);
-      expect(h10.readingTimeMs, n * 100);
-      expect(h11.readingTimeMs, n * 200);
+      expect(all.single.durationMs, n * 100);
     });
   });
 

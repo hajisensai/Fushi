@@ -134,33 +134,35 @@ void main() {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
     final cur = FushiDatabase(curDir.path);
-    await cur.addHourlyReadingTime(
+    // v92 起累加 DAO 已删（legacy 小时表只剩同步落地的 OVERWRITE 版 set*），
+    // 造数改绝对值；MAX-union 语义原样。
+    await cur.setReadingHourlyLog(
         dateKey: '2026-01-01',
         hour: 9,
-        deltaMs: 20000,
-        format: BookFormat.epub);
-    await cur.addHourlyReadingTime(
+        readingTimeMs: 20000,
+        format: BookFormat.epub.dbValue);
+    await cur.setReadingHourlyLog(
         dateKey: '2026-01-01',
         hour: 9,
-        deltaMs: 10000,
-        format: BookFormat.manga);
-    await cur.addVideoHourlyWatchTime(
-        dateKey: '2026-01-01', hour: 21, deltaMs: 1000);
+        readingTimeMs: 10000,
+        format: BookFormat.manga.dbValue);
+    await cur.setVideoHourlyLog(
+        dateKey: '2026-01-01', hour: 21, watchTimeMs: 1000);
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
     final src = FushiDatabase(srcDir.path);
-    await src.addHourlyReadingTime(
+    await src.setReadingHourlyLog(
         dateKey: '2026-01-01',
         hour: 9,
-        deltaMs: 30000,
-        format: BookFormat.epub);
+        readingTimeMs: 30000,
+        format: BookFormat.epub.dbValue);
     // 迁移自旧库的未区分行（format=''）也是普通一桶，照常并入。
     await src.addUnattributedHourlyReadingTime(
         dateKey: '2026-01-01', hour: 10, deltaMs: 5000);
-    await src.addVideoHourlyWatchTime(
-        dateKey: '2026-01-01', hour: 21, deltaMs: 4000);
+    await src.setVideoHourlyLog(
+        dateKey: '2026-01-01', hour: 21, watchTimeMs: 4000);
     final zipDir = await _tempDir('mg_zip_');
     addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
@@ -1259,25 +1261,38 @@ void main() {
     addTearDown(() => cleanupTempDir(curDir));
     final cur = FushiDatabase(curDir.path);
     // Device once had "A" stats then the user deleted them -> tombstone, and a
-    // surviving "Keep" book.
-    await cur.addReadingStatistic(
-        title: 'A', dateKey: '2026-01-01', charsRead: 100, timeMs: 6000);
+    // surviving "Keep" book.（v92 起累加 DAO 已删，legacy 行用 OVERWRITE 版 set*
+    // 造数，值与原用例相同。）
+    await cur.setReadingStatistic(ReadingStatisticsCompanion.insert(
+        title: 'A',
+        dateKey: '2026-01-01',
+        charactersRead: 100,
+        readingTimeMs: 6000,
+        lastStatisticModified: 1));
     await cur.addLookupCount(
         bookKey: 'book/A',
         title: 'A',
         sourceType: 'book',
         dateKey: '2026-01-01');
     await cur.deleteReadingStatisticsForTitle('A');
-    await cur.addReadingStatistic(
-        title: 'Keep', dateKey: '2026-01-01', charsRead: 10, timeMs: 600);
+    await cur.setReadingStatistic(ReadingStatisticsCompanion.insert(
+        title: 'Keep',
+        dateKey: '2026-01-01',
+        charactersRead: 10,
+        readingTimeMs: 600,
+        lastStatisticModified: 1));
     await cur.close();
 
     // An old backup still carries A's stats + counters.
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
     final src = FushiDatabase(srcDir.path);
-    await src.addReadingStatistic(
-        title: 'A', dateKey: '2026-01-01', charsRead: 999, timeMs: 99999);
+    await src.setReadingStatistic(ReadingStatisticsCompanion.insert(
+        title: 'A',
+        dateKey: '2026-01-01',
+        charactersRead: 999,
+        readingTimeMs: 99999,
+        lastStatisticModified: 1));
     await src.addLookupCount(
         bookKey: 'book/A',
         title: 'A',

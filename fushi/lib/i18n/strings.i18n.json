@@ -3948,5 +3948,8 @@
   "video_subtitle_collection_members_hint": "Episodes are matched by number from file names; season packs are split automatically.",
   "video_subtitle_adjust_title": "Subtitle adjustments",
   "video_subtitle_adjust_collapse": "Collapse",
-  "video_subtitle_adjust_expand": "Expand"
+  "video_subtitle_adjust_expand": "Expand",
+  "settings_section_reading_stats": "Reading statistics",
+  "reading_stats_idle_timeout": "Idle timeout",
+  "reading_stats_idle_timeout_hint": "Stop counting reading time after this many minutes without turning a page, scrolling, or looking up a word. Applies to novels, PDFs and manga only; video counts while playing."
 }

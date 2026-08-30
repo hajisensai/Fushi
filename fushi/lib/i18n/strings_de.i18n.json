@@ -3948,5 +3948,8 @@
   "video_subtitle_collection_members_hint": "Folgen werden anhand der Nummer im Dateinamen zugeordnet; Staffelpakete werden automatisch aufgeteilt.",
   "video_subtitle_adjust_title": "Untertitel anpassen",
   "video_subtitle_adjust_collapse": "Einklappen",
-  "video_subtitle_adjust_expand": "Ausklappen"
+  "video_subtitle_adjust_expand": "Ausklappen",
+  "settings_section_reading_stats": "Lesestatistik",
+  "reading_stats_idle_timeout": "Inaktivitäts-Timeout",
+  "reading_stats_idle_timeout_hint": "Lesezeit nach so vielen Minuten ohne Umblättern, Scrollen oder Wortsuche nicht mehr zählen. Gilt nur für Romane, PDFs und Manga; Video zählt, solange es läuft."
 }

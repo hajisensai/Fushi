@@ -2444,6 +2444,89 @@ class GalgameSessions extends Table {
   TextColumn get dateKey => text()();
 }
 
+// ── study_segments ──────────────────────────────────────────────────
+/// v92（统计域根本性重构）：学习时长 / 字数 / 页数的**唯一事实表**。
+///
+/// 此前同一段学习被并行写进 `reading_statistics` / `video_watch_statistics`（日聚合）、
+/// `reading_hourly_logs` / `video_hourly_logs`（小时桶）、`activity_events`（session
+/// 行）三种投影，全部 `+=` 累加、无任何幂等键——任何写入路径 flush 两次（dispose 与
+/// 进程退出并发、生命周期抖动、hot restart）日汇总就永久翻倍，且身份用 title
+/// （同名书 / 裸集号 `S01E01` 跨作品互串）。本表照 [GalgameSessions] 的模式重做：
+/// 一段一行、按稳定媒体身份键控、**绝对值 upsert**。
+///
+/// 写法只有一种：[FushiDatabase.upsertStudySegment] —— `INSERT ... ON CONFLICT(uid)
+/// DO UPDATE` 写**绝对值**。写入方持有自己当前打开段的内存累计器，每个 tick 把绝对值
+/// 写回同一 [uid]；重复 flush = 同值覆盖 = no-op，重复计数在数据结构上不可能。
+///
+/// 段不跨本地小时边界（写入方在边界换新 uid），故 [dateKey] / [hour] 精确，小时图与
+/// 日总量从同一批行派生、永不打架。一个 3 小时 session ≈ 3~4 行，年级数据千行量级，
+/// 读取端直接 GROUP BY。
+///
+/// 旧四张投影表**冻结为 legacy**：v92 起本地写入面永不再写（守卫测试钉死），读取侧
+/// 把 legacy 行（v92 前日期）与本表并集（时间上不相交，零合成零双计）。不迁移旧数据：
+/// 日汇总行没 hour、小时行没 title，任何合成都得丢一维或双计。
+@DataClassName('StudySegmentRow')
+class StudySegments extends Table {
+  /// 写入方生成的幂等键（32 位 hex，见 [FushiDatabase.newStudySegmentUid]）。
+  TextColumn get uid => text()();
+
+  /// 产生本段的设备（`sync_device_id` 偏好，见 [FushiDatabase.getOrCreateStudyDeviceId]）。
+  /// 同步 v2 按 (uid) 并集时它是 provenance，不进任何合并判据。
+  TextColumn get deviceId => text()();
+
+  /// 'book' | 'video' | 'game'（[ActivityMediaKind.dbValue] 同值域）。
+  TextColumn get mediaKind => text()();
+
+  /// 稳定媒体身份：书=bookKey，视频=bookUid，游戏=galgames.id。**永不用 title**。
+  TextColumn get mediaKey => text()();
+
+  /// 写入面：'epub' | 'pdf' | 'manga'（[BookFormat.dbValue]），非书面 ''。
+  TextColumn get format => text().withDefault(const Constant(''))();
+
+  /// 展示快照：库表 join 不到（媒体已删）时回退显示，不参与任何分组。
+  TextColumn get title => text()();
+
+  /// 段起始 / 结束毫秒戳。[endAt] 随 tick 前进；`endAt - startAt >= durationMs`。
+  IntColumn get startAt => integer()();
+  IntColumn get endAt => integer()();
+
+  /// [startAt] 的本地 `yyyy-MM-dd` 与小时（段不跨小时边界，故两者精确）。
+  TextColumn get dateKey => text()();
+  IntColumn get hour => integer()();
+
+  /// 活跃时长（毫秒，已过前台 / 播放态 / 空闲 / 断档守卫）。
+  IntColumn get durationMs => integer().withDefault(const Constant(0))();
+
+  /// 字数（书 / 漫画 OCR = 实义字符；视频 = 字幕字符；游戏 = hook 文本）。
+  IntColumn get chars => integer().withDefault(const Constant(0))();
+
+  /// 页数（漫画 / PDF；EPUB 恒 0）。
+  IntColumn get pages => integer().withDefault(const Constant(0))();
+
+  /// 最后写入毫秒戳：同步 v2 同 uid 取大者（LWW），墓碑仲裁用它与 deletedAt 比。
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {uid};
+}
+
+// ── study_segment_tombstones ────────────────────────────────────────
+/// v92：按**媒体身份**的统计删除墓碑，取代按 (title, sourceType) 的
+/// [StatisticsTombstones]（那张只为 legacy 表的 title 粒度 wire 服务，冻结）。
+///
+/// 删某媒体统计 = 删其全部 [StudySegments] + 立本碑。仲裁：段 `updatedAt > deletedAt`
+/// → 段胜（用户又读了 = 自然复活，不用显式清碑）；否则墓碑胜（同步 / 备份里的旧段不
+/// 复活）。
+@DataClassName('StudySegmentTombstoneRow')
+class StudySegmentTombstones extends Table {
+  TextColumn get mediaKind => text()();
+  TextColumn get mediaKey => text()();
+  IntColumn get deletedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {mediaKind, mediaKey};
+}
+
 // （v79：galgame_tag_mappings 已并入 [TagAssignments]。与游戏**元数据标签**
 // （bgm/vndb 刮削字符串，存 [GalgameSources].dataJson + [Galgames].customDataJson）
 // 仍是两条正交轴，刻意不合并：元数据标签是外部事实、动辄上百个且随刮削变动，

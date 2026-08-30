@@ -3948,5 +3948,8 @@
   "video_subtitle_collection_members_hint": "จับคู่แต่ละตอนตามหมายเลขในชื่อไฟล์ แพ็กทั้งซีซันจะถูกแยกอัตโนมัติ",
   "video_subtitle_adjust_title": "ปรับซับไตเติล",
   "video_subtitle_adjust_collapse": "ย่อ",
-  "video_subtitle_adjust_expand": "ขยาย"
+  "video_subtitle_adjust_expand": "ขยาย",
+  "settings_section_reading_stats": "สถิติการอ่าน",
+  "reading_stats_idle_timeout": "เวลาพักการอ่าน",
+  "reading_stats_idle_timeout_hint": "หยุดนับเวลาอ่านเมื่อไม่มีการพลิกหน้า เลื่อน หรือค้นหาคำนานเท่านี้นาที ใช้กับนิยาย PDF และมังงะเท่านั้น วิดีโอจะนับขณะเล่น"
 }

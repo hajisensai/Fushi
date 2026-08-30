@@ -3948,5 +3948,8 @@
   "video_subtitle_collection_members_hint": "Серии сопоставляются по номеру в имени файла; сезонные паки разбиваются автоматически.",
   "video_subtitle_adjust_title": "Настройка субтитров",
   "video_subtitle_adjust_collapse": "Свернуть",
-  "video_subtitle_adjust_expand": "Развернуть"
+  "video_subtitle_adjust_expand": "Развернуть",
+  "settings_section_reading_stats": "Статистика чтения",
+  "reading_stats_idle_timeout": "Тайм-аут бездействия",
+  "reading_stats_idle_timeout_hint": "Не засчитывать время чтения после стольких минут без перелистывания, прокрутки или поиска слова. Только для романов, PDF и манги; видео засчитывается, пока воспроизводится."
 }

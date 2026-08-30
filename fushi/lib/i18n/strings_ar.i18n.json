@@ -3948,5 +3948,8 @@
   "video_subtitle_collection_members_hint": "تُطابَق الحلقات بالرقم في اسم الملف؛ وتُقسَّم حزم المواسم تلقائيًا.",
   "video_subtitle_adjust_title": "ضبط الترجمة",
   "video_subtitle_adjust_collapse": "طيّ",
-  "video_subtitle_adjust_expand": "توسيع"
+  "video_subtitle_adjust_expand": "توسيع",
+  "settings_section_reading_stats": "إحصائيات القراءة",
+  "reading_stats_idle_timeout": "مهلة الخمول",
+  "reading_stats_idle_timeout_hint": "إيقاف احتساب وقت القراءة بعد هذا العدد من الدقائق دون تقليب صفحة أو تمرير أو بحث عن كلمة. ينطبق على الروايات وملفات PDF والمانغا فقط؛ يُحتسب الفيديو أثناء التشغيل."
 }

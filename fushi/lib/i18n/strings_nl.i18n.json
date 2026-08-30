@@ -3948,5 +3948,8 @@
   "video_subtitle_collection_members_hint": "Afleveringen worden gekoppeld op het nummer in de bestandsnaam; seizoenspakketten worden automatisch gesplitst.",
   "video_subtitle_adjust_title": "Ondertitels aanpassen",
   "video_subtitle_adjust_collapse": "Inklappen",
-  "video_subtitle_adjust_expand": "Uitklappen"
+  "video_subtitle_adjust_expand": "Uitklappen",
+  "settings_section_reading_stats": "Leesstatistieken",
+  "reading_stats_idle_timeout": "Inactiviteitstime-out",
+  "reading_stats_idle_timeout_hint": "Stop met het tellen van leestijd na dit aantal minuten zonder bladeren, scrollen of een woord opzoeken. Alleen voor romans, pdf's en manga; video telt zolang het afspeelt."
 }

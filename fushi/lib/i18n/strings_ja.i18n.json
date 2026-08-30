@@ -3948,5 +3948,8 @@
   "video_subtitle_collection_members_hint": "各話はファイル名の話数で照合され、シーズンパックは自動で分割されます。",
   "video_subtitle_adjust_title": "字幕の調整",
   "video_subtitle_adjust_collapse": "折りたたむ",
-  "video_subtitle_adjust_expand": "展開"
+  "video_subtitle_adjust_expand": "展開",
+  "settings_section_reading_stats": "読書統計",
+  "reading_stats_idle_timeout": "アイドル判定時間",
+  "reading_stats_idle_timeout_hint": "ページめくり・スクロール・辞書引きがこの分数ないと読書時間の計測を止めます。小説・PDF・漫画のみ対象。動画は再生中なら計測します。"
 }

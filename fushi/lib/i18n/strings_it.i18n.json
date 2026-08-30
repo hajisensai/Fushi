@@ -3948,5 +3948,8 @@
   "video_subtitle_collection_members_hint": "Gli episodi vengono abbinati dal numero nel nome file; i pacchetti di stagione vengono divisi automaticamente.",
   "video_subtitle_adjust_title": "Regolazioni sottotitoli",
   "video_subtitle_adjust_collapse": "Comprimi",
-  "video_subtitle_adjust_expand": "Espandi"
+  "video_subtitle_adjust_expand": "Espandi",
+  "settings_section_reading_stats": "Statistiche di lettura",
+  "reading_stats_idle_timeout": "Timeout di inattività",
+  "reading_stats_idle_timeout_hint": "Smetti di contare il tempo di lettura dopo questi minuti senza voltare pagina, scorrere o cercare una parola. Solo per romanzi, PDF e manga; il video conta mentre è in riproduzione."
 }

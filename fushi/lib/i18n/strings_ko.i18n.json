@@ -3948,5 +3948,8 @@
   "video_subtitle_collection_members_hint": "에피소드는 파일 이름의 화수로 매칭되며, 시즌 팩은 자동으로 분리됩니다.",
   "video_subtitle_adjust_title": "자막 조정",
   "video_subtitle_adjust_collapse": "접기",
-  "video_subtitle_adjust_expand": "펼치기"
+  "video_subtitle_adjust_expand": "펼치기",
+  "settings_section_reading_stats": "독서 통계",
+  "reading_stats_idle_timeout": "유휴 판정 시간",
+  "reading_stats_idle_timeout_hint": "페이지 넘김·스크롤·단어 검색이 이 시간(분) 동안 없으면 독서 시간 집계를 멈춥니다. 소설·PDF·만화에만 적용되며, 동영상은 재생 중이면 집계합니다."
 }
