@@ -26,6 +26,10 @@ void main() {
   final String native = File(
     '$pluginRoot/flutter_onnxruntime_plugin.cpp',
   ).readAsStringSync();
+  // DML 接线独占一个翻译单元：ORT 的 dml_provider_factory.h 与 Flutter 的
+  // flutter_windows.h 各在**全局作用域**声明了一个叫 Default 的枚举量，同处一个
+  // TU 必然 C2365（换 include 顺序只是换谁被判成重定义）。
+  final String dmlUnit = File('$pluginRoot/src/dml_provider.cc').readAsStringSync();
 
   group('Windows ONNX Runtime DirectML 接线', () {
     test('构建使用官方 DirectML Runtime 并随包带齐依赖 DLL', () {
@@ -52,15 +56,37 @@ void main() {
     });
 
     test('DIRECT_ML provider 真正 append 到 session', () {
-      expect(native, contains('#include <dml_provider_factory.h>'));
       expect(native, contains('provider == "DIRECT_ML"'));
-      expect(native, contains('GetExecutionProviderApi('));
-      expect(native, contains('SessionOptionsAppendExecutionProvider_DML('));
+      expect(native, contains('AppendDirectMLProvider(session_options'));
+      expect(dmlUnit, contains('#include <dml_provider_factory.h>'));
+      expect(dmlUnit, contains('GetExecutionProviderApi('));
+      expect(dmlUnit, contains('SessionOptionsAppendExecutionProvider_DML('));
       expect(
-        native,
+        dmlUnit,
         contains('SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL)'),
       );
-      expect(native, contains('DisableMemPattern()'));
+      expect(dmlUnit, contains('DisableMemPattern()'));
+    });
+
+    test('DML 翻译单元与 flutter 头互不相见（否则 C2365，Windows 直接编译不过）', () {
+      expect(
+        dmlUnit.contains('#include <flutter/'),
+        isFalse,
+        reason: 'dml_provider.cc 里加一行 flutter 头就会把 flutter_windows.h 的'
+            '全局 Default 拉进来，与 OrtDmlPerformancePreference::Default 撞成 C2365',
+      );
+      expect(
+        native.contains('#include <dml_provider_factory.h>'),
+        isFalse,
+        reason: '反向同理：plugin.cpp 已经含 flutter 头，不得再把 DML 头拉回来',
+      );
+      expect(
+        File('$pluginRoot/CMakeLists.txt')
+            .readAsStringSync()
+            .contains('src/dml_provider.cc'),
+        isTrue,
+        reason: '新翻译单元必须进源码表，否则 AppendDirectMLProvider 链接不到',
+      );
     });
   });
 }

@@ -93,7 +93,8 @@ set(flutter_onnxruntime_bundled_libraries "${ONNXRUNTIME_DLL}" "${ONNXRUNTIME_PR
 add_definitions(-DWIN32_LEAN_AND_MEAN -DNOMINMAX -DUNICODE -D_UNICODE)
 
 # Any new source files that you add to the plugin should be added here.
-list(APPEND PLUGIN_SOURCES "src/session_manager.cc" "src/value_conversion.cc" "src/tensor_manager.cc"
+list(APPEND PLUGIN_SOURCES "src/dml_provider.cc"
+  "src/session_manager.cc" "src/value_conversion.cc" "src/tensor_manager.cc"
      "src/windows_utils.cc")
 
 # Define the plugin library target. Its name must not be changed (see comment on PLUGIN_NAME above).
