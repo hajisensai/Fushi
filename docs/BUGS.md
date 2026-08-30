@@ -29,13 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1854 条。点号进各自文件。
+> 共 1855 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1978](bugs/BUG-1978-hunex-toolbar-thread-merged.md) | ✅ | ✅ | HUNEX 顶部控制栏线程被并入剧情台词 |
 | [BUG-1977](bugs/BUG-1977-hunex-hfa-voice-resource-pairing.md) | 🚧 | ✅ | HUNEX HFA/HW 源语音未与台词配对 |
 | [BUG-1976](bugs/BUG-1976-lookup-webview-text-blur.md) | ✅ | ✅ | Windows 查词 WebView 被超分通路无条件重采样导致字体发糊 |
+| [BUG-1975](bugs/BUG-1975-webpage-video-ffmpeg-cover.md) | ✅ | ✅ | 网页视频导入不应让 FFmpeg 抽 HTML 页面封面 |
 | [BUG-1974](bugs/BUG-1974-video-resource-unknown-group.md) | ✅ | ✅ | 资源搜索把未知发布组跨季误聚为合集 |
 | [BUG-1973](bugs/BUG-1973-sync-progress-ordinal-fraction.md) | ✅ | ✅ | 同步进度文案到 2/2 时进度条仍停在一半 |
 | [BUG-1972](bugs/BUG-1972-selected-glossary-mining.md) | ✅ | ✅ | 桌面选中释义制卡丢失选区 |

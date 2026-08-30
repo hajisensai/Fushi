@@ -611,6 +611,10 @@ class _VideoImportDialogState extends State<VideoImportDialog>
                 (String resolved) => title = resolved,
                 downloadCover: coverMetaStore != null,
               );
+            case StreamImportCoverStrategy.noAutomaticCover:
+              // BUG-1975：已知网页视频站的 URL 是 HTML 播放页，不是 ffmpeg 可解复用
+              // 的媒体输入。网页播放器仍照常导入/打开，封面用占位图。
+              coverPath = null;
             case StreamImportCoverStrategy.ffmpegFrame:
               // TODO-1304：直链/HLS 也出封面。videoPath 是可 seek 的流 URL → ffmpeg 抽一帧
               // （桌面 CLI / 移动端 ffmpeg-kit，均支持 http 输入，经 _isRemoteFfmpegInput 放行）。
