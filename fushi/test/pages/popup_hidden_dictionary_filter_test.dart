@@ -148,9 +148,16 @@ void main() {
 
     final int builderAt = lang.indexOf('String buildPopupJsonFromLookup(');
     expect(builderAt, greaterThanOrEqualTo(0));
-    final int glossaryLoop =
-        lang.indexOf('for (final g in r.term.glossaries) {', builderAt);
-    expect(glossaryLoop, greaterThan(builderAt));
+    // 锚点用正则而不是整串字面量：循环头会折行，中间还可能套一层排序包装
+    // （PR#1085 的 _glossariesInDictionaryOrder 就是）。要钉的是「遍历
+    // r.term.glossaries 的那个循环」，不是它当天的格式。
+    final RegExpMatch? loopMatch = RegExp(
+      r'for \(final g\s+in\s+[^)]*r\.term\.glossaries[^{]*\{',
+      dotAll: true,
+    ).firstMatch(lang.substring(builderAt));
+    expect(loopMatch, isNotNull,
+        reason: 'buildPopupJsonFromLookup 里必须有遍历 r.term.glossaries 的循环');
+    final int glossaryLoop = builderAt + loopMatch!.end;
 
     // 断言字面量：'if (hiddenDictionaries.contains(g.dictName)) continue;'
     // 必须 continue 整个 glossary 迭代，而不是只跳 groupGlossaries.add——
