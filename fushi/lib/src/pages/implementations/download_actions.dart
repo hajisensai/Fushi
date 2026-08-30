@@ -2,11 +2,14 @@ import 'dart:async' show unawaited;
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/magnet_utils.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/torrent_metainfo.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
+import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/torrent_upload_consent_dialog.dart';
 import 'package:fushi/utils.dart';
@@ -115,6 +118,50 @@ Future<GenericPushOutcome> pushGenericMagnet({
   }
   unawaited(appModel.animeDownloadService?.tick());
   return GenericPushOutcome.ok;
+}
+
+/// 把已经解析出单文件选择的 `.torrent` 放进 schema-v78 durable 管线。
+/// CoreAudio/TMW 不能走旧 [pushGenericMagnet]，因为后者只保存 infoHash，会丢掉
+/// “只下载这一卷”的选择意图。
+Future<GenericPushOutcome> enqueueSelectedDiscoveryTorrent({
+  required BuildContext context,
+  required AppModel appModel,
+  required String title,
+  required String resourceTitle,
+  required InspectedTorrentMetainfo metainfo,
+  required Set<int> selectedFileIndexes,
+  required DiscoveryMediaKind kind,
+  required bool importAfterDownload,
+  String? coverUrl,
+  String? metadataProvider,
+  String? externalId,
+}) async {
+  if (!torrentBackendReady(appModel)) return GenericPushOutcome.notReady;
+  final VideoDownloadPipelineService? pipeline =
+      appModel.videoDownloadPipelineService;
+  if (pipeline == null) return GenericPushOutcome.storeUnavailable;
+  await maybeShowTorrentUploadConsent(context, appModel);
+  try {
+    final VideoDownloadBackendTarget target =
+        await appModel.currentVideoDownloadBackendTarget();
+    await pipeline.enqueueManual(
+      VideoDownloadManualEnqueueRequest(
+        title: title,
+        resourceTitle: resourceTitle,
+        backendTarget: target,
+        metainfo: metainfo,
+        selectedFileIndexes: selectedFileIndexes,
+        discoveryKind: kind,
+        importAfterDownload: importAfterDownload,
+        coverUrl: coverUrl,
+        metadataProvider: metadataProvider,
+        externalId: externalId,
+      ),
+    );
+    return GenericPushOutcome.ok;
+  } on Object {
+    return GenericPushOutcome.pushFailed;
+  }
 }
 
 /// 把 [GenericPushOutcome] 映射成用户可读提示文案（i18n）。

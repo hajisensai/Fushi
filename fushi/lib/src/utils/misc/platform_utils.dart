@@ -1,9 +1,10 @@
-import 'dart:async';
+import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:fushi/src/utils/app_ui_scale.dart';
 
 // Architecture decision: platform branching uses runtime Platform.is* checks
@@ -67,111 +68,170 @@ ScrollPhysics desktopAwareScrollPhysics() {
       : const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics());
 }
 
-/// Windows 鼠标滚轮的粗粒度位移适配器。
+/// Windows/Linux 的传统鼠标滚轮通常一档上报约 100–120 logical px；Flutter 默认
+/// [ScrollPositionWithSingleContext.pointerScroll] 会把这个 delta 原样同步跳过去，
+/// 视觉上就是「一滚跳一整段」。触控板/高精度滚轮则连续上报小 delta，必须保持 1:1。
 ///
-/// Windows 传统滚轮通常一次派发约 100–120 logical pixels；Flutter 原样交给
-/// [ScrollPosition.pointerScroll] 后，单格滚动距离偏大，连续滚动会呈现明显跳跃。
-/// 这里仅把一个手势中首帧绝对值不小于 [coarseDeltaThreshold] 的输入判为粗滚轮，
-/// 并在 [gestureIdleTimeout] 内锁定 [coarseDeltaScale]。细粒度首帧（触控板等）
-/// 整段保持 1:1，避免同一手势尾部变小时倍率突然变化。
+/// 因此只收敛绝对值 >= 80 的粗粒度事件：减半并把单事件封顶 120px。小 delta、方向、
+/// macOS 和移动端全部原样保留。
 ///
-/// 不使用动画：仍由 Flutter 的 [ScrollPosition.pointerScroll] 同步处理边界、方向和
-/// 通知，因此不会给触控板引入惯性拖尾。非 Windows 默认关闭，行为与普通
-/// [ScrollController] 相同。
-class DesktopWheelScrollController extends ScrollController {
-  DesktopWheelScrollController({
-    bool? scaleCoarseWheelDeltas,
-    this.coarseDeltaThreshold = 60,
-    this.coarseDeltaScale = 0.48,
-    this.gestureIdleTimeout = const Duration(milliseconds: 200),
-    super.initialScrollOffset,
-    super.keepScrollOffset,
-    super.debugLabel,
-    super.onAttach,
-    super.onDetach,
-  }) : scaleCoarseWheelDeltas = scaleCoarseWheelDeltas ?? isWindowsPlatform;
+/// 本函数只负责**步长**。要不要补一段动画由 [_FushiScrollPosition] 决定，它只对粗
+/// 滚轮动画、且连续同向事件向同一个目标累积（不互相取消，所以不产生输入延迟）；
+/// 触控板的小 delta 走原生同步路径，不会被加上拖尾。
+/// [asCoarse] = 本次事件所属的**手势**已经被判成粗滚轮，即使这一帧的绝对值低于
+/// 阈值也照粗滚轮缩放。滚轮一档并不总是同一个 delta，一次拨动的尾帧可能只有十几
+/// px；只缩放超阈值的那几帧会让同一次拨动前段减半、尾段全量，总距离对不上手感。
+double refinedDesktopPointerScrollDelta(double delta, {bool asCoarse = false}) {
+  if (!(Platform.isWindows || Platform.isLinux)) return delta;
+  final double magnitude = delta.abs();
+  if (!asCoarse && magnitude < 80) return delta;
+  final double reduced = magnitude * 0.5;
+  final double refined = reduced > 120 ? 120 : reduced;
+  return delta.isNegative ? -refined : refined;
+}
 
-  final bool scaleCoarseWheelDeltas;
-  final double coarseDeltaThreshold;
-  final double coarseDeltaScale;
-  final Duration gestureIdleTimeout;
+bool isCoarseDesktopPointerScrollDelta(double delta) =>
+    (Platform.isWindows || Platform.isLinux) && delta.abs() >= 80;
+
+const Duration kDesktopWheelScrollDuration = Duration(milliseconds: 140);
+
+/// 为 app 主纵向滚动区提供细化后的桌面滚轮步长。
+///
+/// 通过自定义 [ScrollPosition] 改写真正消费 pointer delta 的边界；仅换
+/// [ScrollPhysics] 无效，因为 Flutter 的 pointerScroll 会直接 forcePixels。
+class FushiScrollController extends ScrollController {
+  FushiScrollController({super.initialScrollOffset, super.keepScrollOffset});
 
   @override
   ScrollPosition createScrollPosition(
     ScrollPhysics physics,
     ScrollContext context,
     ScrollPosition? oldPosition,
-  ) {
-    return _DesktopWheelScrollPosition(
-      physics: physics,
-      context: context,
-      oldPosition: oldPosition,
-      initialPixels: initialScrollOffset,
-      keepScrollOffset: keepScrollOffset,
-      debugLabel: debugLabel,
-      scaleCoarseWheelDeltas: scaleCoarseWheelDeltas,
-      coarseDeltaThreshold: coarseDeltaThreshold,
-      coarseDeltaScale: coarseDeltaScale,
-      gestureIdleTimeout: gestureIdleTimeout,
-    );
-  }
+  ) =>
+      _FushiScrollPosition(
+        physics: physics,
+        context: context,
+        initialPixels: initialScrollOffset,
+        keepScrollOffset: keepScrollOffset,
+        oldPosition: oldPosition,
+        debugLabel: debugLabel,
+      );
 }
 
-class _DesktopWheelScrollPosition extends ScrollPositionWithSingleContext {
-  _DesktopWheelScrollPosition({
+class _FushiScrollPosition extends ScrollPositionWithSingleContext {
+  _FushiScrollPosition({
     required super.physics,
     required super.context,
-    required this.scaleCoarseWheelDeltas,
-    required this.coarseDeltaThreshold,
-    required this.coarseDeltaScale,
-    required this.gestureIdleTimeout,
-    super.initialPixels,
-    super.keepScrollOffset,
+    required super.initialPixels,
+    required super.keepScrollOffset,
     super.oldPosition,
     super.debugLabel,
   });
 
-  final bool scaleCoarseWheelDeltas;
-  final double coarseDeltaThreshold;
-  final double coarseDeltaScale;
-  final Duration gestureIdleTimeout;
+  double? _wheelTarget;
+  double? _lastCoarseDelta;
 
-  Timer? _gestureIdleTimer;
-  double? _gestureScale;
+  /// 本次手势被判成粗滚轮还是细指针；null = 还没有正在进行的手势。
+  ///
+  /// 为什么要按**手势**锁而不是逐事件判：滚轮一档并不总是同一个 delta——同一次拨动
+  /// 的尾帧可能小于阈值，逐事件判会让那几帧突然按 1:1 走，于是一次拨动里前段减半、
+  /// 尾段全量，滚动距离对不上手感。分类在手势首帧定下，整段沿用。
+  bool? _gestureIsCoarse;
 
-  void _resetWheelGesture() {
-    _gestureIdleTimer?.cancel();
-    _gestureIdleTimer = null;
-    _gestureScale = null;
-  }
+  /// 上一次 pointerScroll 的时刻。距上次超过 [_kWheelGestureIdle] 视为新手势，
+  /// 重新分类——否则第一次用滚轮之后，后面用触控板也会一直被当成粗滚轮。
+  Duration? _lastWheelStamp;
+
+  static const Duration _kWheelGestureIdle = Duration(milliseconds: 200);
+
+  /// 手势节流用的时钟。取调度器的帧时间戳而不是 `DateTime.now()`：widget 测试里
+  /// `pump(d)` 会推进它，于是「隔了多久算新手势」在测试里可控；真机上它就是真实
+  /// 帧时钟，精度远高于 200ms 的判据需要。
+  Duration _wheelClock() =>
+      SchedulerBinding.instance.currentSystemFrameTimeStamp;
 
   @override
   void pointerScroll(double delta) {
-    if (!scaleCoarseWheelDeltas) {
-      super.pointerScroll(delta);
-      return;
-    }
-    // Flutter 用 pointerScroll(0) 投递 PointerScrollInertiaCancelEvent。它是
-    // 手势的显式终点；若只等 idle timer，紧随其后的另一种设备会继承旧分类。
+    // delta == 0 是 Flutter 的惯性取消信号（换设备/手势结束），不是一次滚动：
+    // 清掉分类与目标，让下一次输入重新起判。漏掉这一步，触控板接在滚轮之后会
+    // 继承「粗滚轮」的分类。
     if (delta == 0) {
-      _resetWheelGesture();
+      final double? pending = _wheelTarget;
+      _gestureIsCoarse = null;
+      _lastWheelStamp = null;
+      _resetWheelTarget();
+      // 取消要停的是**动画**，不是用户已经拨出去的距离。裸 `super.pointerScroll(0)`
+      // 会 goIdle 把飞行中的 DrivenScrollActivity 掐断在半路，于是一次已经发生的
+      // 拨动只走了十几 px 就没了。这里直接落到既定目标：动画停了，距离不丢。
+      if (pending != null && pending != pixels) {
+        jumpTo(pending);
+        return;
+      }
       super.pointerScroll(delta);
       return;
     }
 
-    _gestureScale ??=
-        delta.abs() >= coarseDeltaThreshold ? coarseDeltaScale : 1.0;
-    _gestureIdleTimer?.cancel();
-    _gestureIdleTimer = Timer(gestureIdleTimeout, () {
-      _resetWheelGesture();
-    });
-    super.pointerScroll(delta * _gestureScale!);
+    final Duration now = _wheelClock();
+    final Duration? last = _lastWheelStamp;
+    if (last == null || now - last > _kWheelGestureIdle) {
+      _gestureIsCoarse = null;
+    }
+    _lastWheelStamp = now;
+    final bool coarse =
+        _gestureIsCoarse ??= isCoarseDesktopPointerScrollDelta(delta);
+
+    // 分类锁定后，缩放也照分类走：粗滚轮手势里的小尾帧同样减半，否则同一次拨动
+    // 前段减半、尾段全量。细指针手势整段 1:1。
+    final double refined =
+        coarse ? refinedDesktopPointerScrollDelta(delta, asCoarse: true) : delta;
+    if (!coarse ||
+        MediaQuery.maybeDisableAnimationsOf(context.storageContext) == true) {
+      _resetWheelTarget();
+      super.pointerScroll(refined);
+      return;
+    }
+
+    // 连续同向滚轮事件必须向尚未到达的目标继续累积；若每次都从当前 pixels
+    // 重启动画，快速滚轮会不断取消前一段、实际滚动距离反而被吃掉。反向输入则从
+    // 当前视觉位置重新起步，保证用户一反拨就立即响应，而不是先偿还旧方向目标。
+    final bool continuesDrivenScroll = activity is DrivenScrollActivity &&
+        _wheelTarget != null &&
+        _lastCoarseDelta != null &&
+        _lastCoarseDelta!.isNegative == refined.isNegative;
+    final double base = continuesDrivenScroll ? _wheelTarget! : pixels;
+    final double target = (base + refined)
+        .clamp(minScrollExtent, maxScrollExtent)
+        .toDouble();
+    _wheelTarget = target;
+    _lastCoarseDelta = refined;
+    if (target == pixels) return;
+
+    unawaited(super.animateTo(
+      target,
+      duration: kDesktopWheelScrollDuration,
+      curve: Curves.easeOutCubic,
+    ));
+  }
+
+  void _resetWheelTarget() {
+    _wheelTarget = null;
+    _lastCoarseDelta = null;
   }
 
   @override
-  void dispose() {
-    _resetWheelGesture();
-    super.dispose();
+  void jumpTo(double value) {
+    _resetWheelTarget();
+    super.jumpTo(value);
+  }
+
+  @override
+  Future<void> animateTo(
+    double to, {
+    required Duration duration,
+    required Curve curve,
+  }) {
+    _resetWheelTarget();
+    return super.animateTo(to, duration: duration, curve: curve);
   }
 }
 

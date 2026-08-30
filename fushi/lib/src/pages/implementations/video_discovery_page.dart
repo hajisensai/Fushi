@@ -51,6 +51,7 @@ class VideoDiscoveryPage extends StatefulWidget {
     this.actions = const VideoDiscoveryActions(),
     this.onOpenItem,
     this.imageResolver,
+    this.embedded = false,
     super.key,
   });
 
@@ -59,6 +60,10 @@ class VideoDiscoveryPage extends StatefulWidget {
   final VideoDiscoveryActions actions;
   final ValueChanged<discovery.VideoDiscoveryItem>? onOpenItem;
   final VideoDiscoveryImageResolver? imageResolver;
+
+  /// 嵌入下载中心资源页时，外层已经提供下载中心页头；隐藏本页自己的视频库
+  /// 导航页头，但保留搜索、筛选、发现列表与详情动作。
+  final bool embedded;
 
   @override
   State<VideoDiscoveryPage> createState() => _VideoDiscoveryPageState();
@@ -343,7 +348,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          if (!isCupertinoPlatform(context)) _buildHeader(),
+          if (!widget.embedded && !isCupertinoPlatform(context)) _buildHeader(),
           _buildControls(),
           Expanded(child: _buildBody()),
         ],

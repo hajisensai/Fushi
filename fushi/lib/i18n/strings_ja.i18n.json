@@ -3898,5 +3898,13 @@
   "gal_hook_ingame_lookup_version_unsupported": "このゲームのバージョンはまだ対応リストにありません",
   "gal_hook_ingame_lookup_exe_hash_copy": "ゲーム実行ファイルの SHA-256 をコピー",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "ゲーム実行ファイルを読み取れません（権限不足の可能性）",
-  "gal_hook_ingame_lookup_exe_hash_copied": "実行ファイルの SHA-256 をコピーしました"
+  "gal_hook_ingame_lookup_exe_hash_copied": "実行ファイルの SHA-256 をコピーしました",
+  "download_tracker_section": "トラッカー購読",
+  "download_tracker_auto_add": "新しいダウンロードに購読トラッカーを自動で追加する",
+  "download_tracker_auto_add_hint": "リストは 6 時間キャッシュされます。購読の取得に失敗してもダウンロードは止まりません。",
+  "download_tracker_url": "購読 URL",
+  "download_tracker_refresh": "トラッカーを取得",
+  "download_tracker_preview_empty": "購読を取得すると、対応している HTTP・HTTPS・UDP のトラッカーをプレビューできます。",
+  "download_tracker_preview_count": "$count 件のトラッカーを取得しました",
+  "download_tracker_fetch_failed": "トラッカーを取得できませんでした: $message"
 }

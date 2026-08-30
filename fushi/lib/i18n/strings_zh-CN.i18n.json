@@ -3898,5 +3898,13 @@
   "gal_hook_ingame_lookup_version_unsupported": "当前游戏版本未在支持列表中",
   "gal_hook_ingame_lookup_exe_hash_copy": "复制游戏 exe 的 SHA-256",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "无法读取游戏 exe（可能权限不足）",
-  "gal_hook_ingame_lookup_exe_hash_copied": "已复制 exe 的 SHA-256"
+  "gal_hook_ingame_lookup_exe_hash_copied": "已复制 exe 的 SHA-256",
+  "download_tracker_section": "Tracker 订阅",
+  "download_tracker_auto_add": "自动把订阅 Tracker 加到新下载",
+  "download_tracker_auto_add_hint": "列表缓存 6 小时；订阅获取失败不会阻止下载任务创建。",
+  "download_tracker_url": "订阅地址",
+  "download_tracker_refresh": "获取 Tracker",
+  "download_tracker_preview_empty": "获取订阅后可预览受支持的 HTTP、HTTPS 和 UDP Tracker。",
+  "download_tracker_preview_count": "已获取 $count 个 Tracker",
+  "download_tracker_fetch_failed": "获取 Tracker 失败：$message"
 }

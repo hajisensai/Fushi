@@ -3898,5 +3898,13 @@
   "gal_hook_ingame_lookup_version_unsupported": "Cette version du jeu ne figure pas encore dans la liste prise en charge",
   "gal_hook_ingame_lookup_exe_hash_copy": "Copier le SHA-256 de l'exécutable du jeu",
   "gal_hook_ingame_lookup_exe_hash_unavailable": "Impossible de lire l'exécutable du jeu",
-  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 de l'exécutable copié"
+  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 de l'exécutable copié",
+  "download_tracker_section": "Abonnement aux trackers",
+  "download_tracker_auto_add": "Ajouter automatiquement les trackers de l’abonnement aux nouveaux téléchargements",
+  "download_tracker_auto_add_hint": "La liste est mise en cache pendant 6 heures. L’échec de l’abonnement ne bloque pas le téléchargement.",
+  "download_tracker_url": "URL de l’abonnement",
+  "download_tracker_refresh": "Récupérer les trackers",
+  "download_tracker_preview_empty": "Récupère l’abonnement pour prévisualiser les trackers HTTP, HTTPS et UDP pris en charge.",
+  "download_tracker_preview_count": "$count trackers récupérés",
+  "download_tracker_fetch_failed": "Impossible de récupérer les trackers : $message"
 }

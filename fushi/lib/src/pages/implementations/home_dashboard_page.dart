@@ -42,6 +42,7 @@ import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
+import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/misc/dashboard_remote_merge.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
@@ -385,8 +386,12 @@ const int _kTrackingUnlinkedLimit = 5;
 
 class _HomeDashboardPageState
     extends BaseModuleTabPageState<HomeDashboardPage> {
-  final ScrollController _dashboardScrollController =
-      DesktopWheelScrollController();
+  static const int _kActivityPageSize = 24;
+
+  /// 首页主纵向滚动区自己的控制器。走 [FushiScrollController]（全仓唯一那套桌面
+  /// 滚轮细化实现），**不再另起一个平行控制器**——两套都拦 pointerScroll，同时在
+  /// 场就是两层折扣，而且「粗滚轮阈值 / 倍率 / 要不要动画」会在两处各写一遍。
+  final ScrollController _dashboardScrollController = FushiScrollController();
 
   /// 「继续」横滑行：三类条目统一竖版海报槽（BUG-1299）。视频封面可能是刮削
   /// 落地的 2:3 竖版海报，旧「书竖 5:7 / 视频横 16:9」混排会把海报裁成中间一条；
@@ -421,6 +426,9 @@ class _HomeDashboardPageState
   /// Activity 分类筛选：null=全部，否则 [kActivityRead]/[kActivityWatch]/
   /// [kActivityGame]/[kActivityAdded]（内存里先过滤 events 再聚合）。
   String? _activityFilter;
+
+  /// 活动预取与渲染解耦：数据保留完整，widget 树每次只增加一页。
+  int _visibleActivityEntryCount = _kActivityPageSize;
 
   /// [initState] 异步载入的视频库（继续观看 + 视频计数）。
   List<VideoBookRow> _videos = const <VideoBookRow>[];
@@ -1641,12 +1649,14 @@ class _HomeDashboardPageState
     FushiDesignTokens tokens,
     VideoBookRow video, {
     bool landscapeSlot = false,
+    int decodeWidth = kLocalCoverDecodePixelWidth,
   }) {
     return _localCover(
       tokens,
       kind: MediaKind.video,
       path: video.coverPath,
       landscapeSlot: landscapeSlot,
+      decodeWidth: decodeWidth,
     );
   }
 
@@ -1657,12 +1667,14 @@ class _HomeDashboardPageState
     FushiDesignTokens tokens,
     GalgameEntry game, {
     bool landscapeSlot = false,
+    int decodeWidth = kLocalCoverDecodePixelWidth,
   }) {
     return _localCover(
       tokens,
       kind: MediaKind.game,
       path: game.coverPath,
       landscapeSlot: landscapeSlot,
+      decodeWidth: decodeWidth,
     );
   }
 
@@ -1671,10 +1683,12 @@ class _HomeDashboardPageState
     required MediaKind kind,
     required String? path,
     bool landscapeSlot = false,
+    int decodeWidth = kLocalCoverDecodePixelWidth,
   }) {
     final ImageProvider? provider = resolveMediaCoverImage(
       kind: kind,
       localPath: path,
+      decodeWidth: decodeWidth,
     );
     if (provider == null) {
       return _coverPlaceholder(tokens, mediaCoverFallbackIcon(kind));
@@ -2185,7 +2199,10 @@ class _HomeDashboardPageState
       header: _filterChips<String?>(
         tokens: tokens,
         selected: _activityFilter,
-        onSelected: (String? v) => setState(() => _activityFilter = v),
+        onSelected: (String? v) => setState(() {
+          _activityFilter = v;
+          _visibleActivityEntryCount = _kActivityPageSize;
+        }),
         options: <(String?, String)>[
           (null, t.home_filter_all),
           (kActivityRead, t.home_filter_read),
@@ -2199,9 +2216,28 @@ class _HomeDashboardPageState
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                for (final ActivityDateGroup g in groups)
+                for (final ActivityDateGroup g in takeActivityEntries(
+                  groups,
+                  _visibleActivityEntryCount,
+                ))
                   _buildActivityGroup(tokens, g, todayKey, yesterdayKey, now,
                       appModel, booksByKey, videosByUid),
+                if (groups.fold<int>(
+                      0,
+                      (int total, ActivityDateGroup group) =>
+                          total + group.entries.length,
+                    ) >
+                    _visibleActivityEntryCount)
+                  Align(
+                    alignment: AlignmentDirectional.center,
+                    child: TextButton.icon(
+                      onPressed: () => setState(() {
+                        _visibleActivityEntryCount += _kActivityPageSize;
+                      }),
+                      icon: const Icon(Icons.expand_more),
+                      label: Text(t.discovery_load_more),
+                    ),
+                  ),
               ],
             ),
     );
@@ -2379,7 +2415,11 @@ class _HomeDashboardPageState
           child: SizedBox(
             width: 40,
             height: 56,
-            child: _gameCover(tokens, game),
+            child: _gameCover(
+              tokens,
+              game,
+              decodeWidth: kActivityCoverDecodePixelWidth,
+            ),
           ),
         );
       }
@@ -2393,7 +2433,12 @@ class _HomeDashboardPageState
               width: 68,
               height: 40,
               // BUG-1299：横版槽，判定方向随槽走（海报垫底、截帧铺满）。
-              child: _videoCover(tokens, video, landscapeSlot: true),
+              child: _videoCover(
+                tokens,
+                video,
+                landscapeSlot: true,
+                decodeWidth: kActivityCoverDecodePixelWidth,
+              ),
             ),
           );
         }
@@ -2407,11 +2452,12 @@ class _HomeDashboardPageState
               height: 56,
               child: FadeInImage(
                 placeholder: MemoryImage(kTransparentImage),
-                image:
-                    ReaderFushiSource.instance.getDisplayThumbnailFromMediaItem(
+                image: resolveMediaCoverImage(
+                  kind: _bookMediaKind(book),
+                  book: book,
                   appModel: appModel,
-                  item: book,
-                ),
+                  decodeWidth: kActivityCoverDecodePixelWidth,
+                )!,
                 fit: BoxFit.cover,
                 imageErrorBuilder: (_, __, ___) =>
                     _coverPlaceholder(tokens, Icons.menu_book_outlined),
