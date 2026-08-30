@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
+import 'dart:math' show Random;
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:drift/drift.dart';
@@ -11,6 +12,7 @@ import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
 import '../utils/ttu_sanitize.dart';
 import '../utils/video_book_uid.dart';
+import 'activity_event_types.dart';
 import 'book_format.dart';
 import 'collection_order.dart';
 import 'media_kind.dart';
@@ -688,6 +690,8 @@ void _requireOneVideoMetadataOwner({
   VideoDownloadSubscriptions,
   VideoDownloadSubscriptionItems,
   MangaChapterStates,
+  StudySegmentTombstones,
+  StudySegments,
   WebMineQueue,
 ])
 class FushiDatabase extends _$FushiDatabase
@@ -2817,6 +2821,46 @@ class FushiDatabase extends _$FushiDatabase
               }
             });
           }
+          if (from < 91) {
+            // v91（合集级字幕偏好）：media_collections 加 subtitle_language、
+            // subtitle_release_group，给「这个系列默认用哪种语言 / 哪个字幕组的
+            // 字幕」一个系列级真值（镜像 v52 subtitle_delay_ms 的「系列共享、
+            // nullable」结构）。无损迁移：两列 nullable 无 default → 旧库既有行
+            // 全 NULL = 没人配过 = 消费方回退视频内容语言链 / 默认选轨，逐字节
+            // 保留 v91 前行为（Never break userspace）；绝不回填 ja。守卫幂等
+            // （fresh DB 已由 onCreate 建好，重复升级 _columnExists 短路 no-op）。
+            if (await _tableExists('media_collections') &&
+                !await _columnExists('media_collections', 'subtitle_language')) {
+              await m.addColumn(
+                  mediaCollections, mediaCollections.subtitleLanguage);
+            }
+            if (await _tableExists('media_collections') &&
+                !await _columnExists(
+                    'media_collections', 'subtitle_release_group')) {
+              await m.addColumn(
+                  mediaCollections, mediaCollections.subtitleReleaseGroup);
+            }
+          }
+          if (from < 92) {
+            // v92（统计域根本性重构）：学习统计唯一事实表 study_segments +
+            // 按媒体身份的删除墓碑 study_segment_tombstones（表注释见 tables.dart）。
+            //
+            // 无损：纯新增两表，旧四张投影表（reading_statistics / video_watch_statistics
+            // / reading_hourly_logs / video_hourly_logs）与 activity_events **原样保留、
+            // 冻结为 legacy**——不迁移、不改写、不删。读取侧并集 legacy + 新表；写入面
+            // 自本版起只写新表。不迁移的理由：日汇总行没 hour、小时行没 title，任何
+            // 合成都得丢一维或双计（Never break userspace = 老数字一个字节不动）。
+            //
+            // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被 _tableExists
+            // 短路 no-op；索引走 _ensureIndexes（IF NOT EXISTS）。
+            if (!await _tableExists('study_segments')) {
+              await m.createTable(studySegments);
+            }
+            if (!await _tableExists('study_segment_tombstones')) {
+              await m.createTable(studySegmentTombstones);
+            }
+            await _ensureIndexes();
+          }
           if (from < 93) {
             // v93（网页播放器自动制卡队列）：新表 web_mine_queue，设备本地、无 FK、
             // 无索引（队列量级为几十行）。守卫幂等（fresh DB 由 onCreate 建好）。
@@ -3576,6 +3620,14 @@ class FushiDatabase extends _$FushiDatabase
   /// 同一实现）。
   static String statDateKeyOf(DateTime d) =>
       _FushiDbStatistics.statDateKeyOf(d);
+
+  /// v92 学习事实段的幂等键生成（转发 [_FushiDbStatistics.newStudySegmentUid]；
+  /// mixin 的 static 不经类继承，这里给调用方一个稳定入口）。
+  static String newStudySegmentUid() => _FushiDbStatistics.newStudySegmentUid();
+
+  /// 段 provenance 用的设备身份偏好键（与 fushi 层 SyncRepository 同一把 key）。
+  static const String studyDeviceIdPrefKey =
+      _FushiDbStatistics.studyDeviceIdPrefKey;
 }
 
 int _epubBookUidCounter = 0;

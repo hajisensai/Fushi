@@ -14854,6 +14854,28 @@ class $MediaCollectionsTable extends MediaCollections
         type: DriftSqlType.int,
         requiredDuringInsert: false,
       );
+  static const VerificationMeta _subtitleLanguageMeta = const VerificationMeta(
+    'subtitleLanguage',
+  );
+  @override
+  late final GeneratedColumn<String> subtitleLanguage = GeneratedColumn<String>(
+    'subtitle_language',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _subtitleReleaseGroupMeta =
+      const VerificationMeta('subtitleReleaseGroup');
+  @override
+  late final GeneratedColumn<String> subtitleReleaseGroup =
+      GeneratedColumn<String>(
+        'subtitle_release_group',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -14868,6 +14890,8 @@ class $MediaCollectionsTable extends MediaCollections
     audioTrackId,
     subtitleDelayMs,
     secondarySubtitleDelayMs,
+    subtitleLanguage,
+    subtitleReleaseGroup,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -14972,6 +14996,24 @@ class $MediaCollectionsTable extends MediaCollections
         ),
       );
     }
+    if (data.containsKey('subtitle_language')) {
+      context.handle(
+        _subtitleLanguageMeta,
+        subtitleLanguage.isAcceptableOrUnknown(
+          data['subtitle_language']!,
+          _subtitleLanguageMeta,
+        ),
+      );
+    }
+    if (data.containsKey('subtitle_release_group')) {
+      context.handle(
+        _subtitleReleaseGroupMeta,
+        subtitleReleaseGroup.isAcceptableOrUnknown(
+          data['subtitle_release_group']!,
+          _subtitleReleaseGroupMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -15028,6 +15070,14 @@ class $MediaCollectionsTable extends MediaCollections
       secondarySubtitleDelayMs: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}secondary_subtitle_delay_ms'],
+      ),
+      subtitleLanguage: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}subtitle_language'],
+      ),
+      subtitleReleaseGroup: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}subtitle_release_group'],
       ),
     );
   }
@@ -15112,6 +15162,20 @@ class MediaCollectionRow extends DataClass
   /// 主字幕调轴（v86 前行为）。无损迁移：nullable 无 default → 旧库既有行全 NULL =
   /// 行为与旧版一致（Never break userspace）。
   final int? secondarySubtitleDelayMs;
+
+  /// 系列级默认字幕语言代码（`ja` / `en` …，schema v91）。与 [subtitleDelayMs]
+  /// 同款「系列共享、nullable」语义：非 NULL 时覆盖合集内每一集的字幕语言选择。
+  /// **NULL = 没人配过 → 消费方回退视频内容语言链（`resolveContentLanguage`），
+  /// 绝不是 ja**——语言未知不许替用户猜。无损迁移：nullable 无 default → 旧库既有
+  /// 行全 NULL = 行为与旧版一致（Never break userspace）。
+  final String? subtitleLanguage;
+
+  /// 系列级偏好的字幕版本组键（schema v91）。值是
+  /// `subtitle_version_groups.dart` 的分组键（一个字符串），合集内多版本字幕
+  /// （不同字幕组/发布版本）时优先选这一组。与 [subtitleLanguage] 同款语义：
+  /// **NULL = 没人配过**（消费方走默认选轨），非 NULL 覆盖每集。无损迁移：
+  /// nullable 无 default → 旧库既有行全 NULL = 行为与旧版一致。
+  final String? subtitleReleaseGroup;
   const MediaCollectionRow({
     required this.id,
     required this.name,
@@ -15125,6 +15189,8 @@ class MediaCollectionRow extends DataClass
     this.audioTrackId,
     this.subtitleDelayMs,
     this.secondarySubtitleDelayMs,
+    this.subtitleLanguage,
+    this.subtitleReleaseGroup,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -15155,6 +15221,12 @@ class MediaCollectionRow extends DataClass
         secondarySubtitleDelayMs,
       );
     }
+    if (!nullToAbsent || subtitleLanguage != null) {
+      map['subtitle_language'] = Variable<String>(subtitleLanguage);
+    }
+    if (!nullToAbsent || subtitleReleaseGroup != null) {
+      map['subtitle_release_group'] = Variable<String>(subtitleReleaseGroup);
+    }
     return map;
   }
 
@@ -15184,6 +15256,12 @@ class MediaCollectionRow extends DataClass
       secondarySubtitleDelayMs: secondarySubtitleDelayMs == null && nullToAbsent
           ? const Value.absent()
           : Value(secondarySubtitleDelayMs),
+      subtitleLanguage: subtitleLanguage == null && nullToAbsent
+          ? const Value.absent()
+          : Value(subtitleLanguage),
+      subtitleReleaseGroup: subtitleReleaseGroup == null && nullToAbsent
+          ? const Value.absent()
+          : Value(subtitleReleaseGroup),
     );
   }
 
@@ -15207,6 +15285,10 @@ class MediaCollectionRow extends DataClass
       secondarySubtitleDelayMs: serializer.fromJson<int?>(
         json['secondarySubtitleDelayMs'],
       ),
+      subtitleLanguage: serializer.fromJson<String?>(json['subtitleLanguage']),
+      subtitleReleaseGroup: serializer.fromJson<String?>(
+        json['subtitleReleaseGroup'],
+      ),
     );
   }
   @override
@@ -15227,6 +15309,8 @@ class MediaCollectionRow extends DataClass
       'secondarySubtitleDelayMs': serializer.toJson<int?>(
         secondarySubtitleDelayMs,
       ),
+      'subtitleLanguage': serializer.toJson<String?>(subtitleLanguage),
+      'subtitleReleaseGroup': serializer.toJson<String?>(subtitleReleaseGroup),
     };
   }
 
@@ -15243,6 +15327,8 @@ class MediaCollectionRow extends DataClass
     Value<String?> audioTrackId = const Value.absent(),
     Value<int?> subtitleDelayMs = const Value.absent(),
     Value<int?> secondarySubtitleDelayMs = const Value.absent(),
+    Value<String?> subtitleLanguage = const Value.absent(),
+    Value<String?> subtitleReleaseGroup = const Value.absent(),
   }) => MediaCollectionRow(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -15260,6 +15346,12 @@ class MediaCollectionRow extends DataClass
     secondarySubtitleDelayMs: secondarySubtitleDelayMs.present
         ? secondarySubtitleDelayMs.value
         : this.secondarySubtitleDelayMs,
+    subtitleLanguage: subtitleLanguage.present
+        ? subtitleLanguage.value
+        : this.subtitleLanguage,
+    subtitleReleaseGroup: subtitleReleaseGroup.present
+        ? subtitleReleaseGroup.value
+        : this.subtitleReleaseGroup,
   );
   MediaCollectionRow copyWithCompanion(MediaCollectionsCompanion data) {
     return MediaCollectionRow(
@@ -15287,6 +15379,12 @@ class MediaCollectionRow extends DataClass
       secondarySubtitleDelayMs: data.secondarySubtitleDelayMs.present
           ? data.secondarySubtitleDelayMs.value
           : this.secondarySubtitleDelayMs,
+      subtitleLanguage: data.subtitleLanguage.present
+          ? data.subtitleLanguage.value
+          : this.subtitleLanguage,
+      subtitleReleaseGroup: data.subtitleReleaseGroup.present
+          ? data.subtitleReleaseGroup.value
+          : this.subtitleReleaseGroup,
     );
   }
 
@@ -15304,7 +15402,9 @@ class MediaCollectionRow extends DataClass
           ..write('anilistId: $anilistId, ')
           ..write('audioTrackId: $audioTrackId, ')
           ..write('subtitleDelayMs: $subtitleDelayMs, ')
-          ..write('secondarySubtitleDelayMs: $secondarySubtitleDelayMs')
+          ..write('secondarySubtitleDelayMs: $secondarySubtitleDelayMs, ')
+          ..write('subtitleLanguage: $subtitleLanguage, ')
+          ..write('subtitleReleaseGroup: $subtitleReleaseGroup')
           ..write(')'))
         .toString();
   }
@@ -15323,6 +15423,8 @@ class MediaCollectionRow extends DataClass
     audioTrackId,
     subtitleDelayMs,
     secondarySubtitleDelayMs,
+    subtitleLanguage,
+    subtitleReleaseGroup,
   );
   @override
   bool operator ==(Object other) =>
@@ -15339,7 +15441,9 @@ class MediaCollectionRow extends DataClass
           other.anilistId == this.anilistId &&
           other.audioTrackId == this.audioTrackId &&
           other.subtitleDelayMs == this.subtitleDelayMs &&
-          other.secondarySubtitleDelayMs == this.secondarySubtitleDelayMs);
+          other.secondarySubtitleDelayMs == this.secondarySubtitleDelayMs &&
+          other.subtitleLanguage == this.subtitleLanguage &&
+          other.subtitleReleaseGroup == this.subtitleReleaseGroup);
 }
 
 class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
@@ -15355,6 +15459,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
   final Value<String?> audioTrackId;
   final Value<int?> subtitleDelayMs;
   final Value<int?> secondarySubtitleDelayMs;
+  final Value<String?> subtitleLanguage;
+  final Value<String?> subtitleReleaseGroup;
   const MediaCollectionsCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
@@ -15368,6 +15474,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     this.audioTrackId = const Value.absent(),
     this.subtitleDelayMs = const Value.absent(),
     this.secondarySubtitleDelayMs = const Value.absent(),
+    this.subtitleLanguage = const Value.absent(),
+    this.subtitleReleaseGroup = const Value.absent(),
   });
   MediaCollectionsCompanion.insert({
     this.id = const Value.absent(),
@@ -15382,6 +15490,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     this.audioTrackId = const Value.absent(),
     this.subtitleDelayMs = const Value.absent(),
     this.secondarySubtitleDelayMs = const Value.absent(),
+    this.subtitleLanguage = const Value.absent(),
+    this.subtitleReleaseGroup = const Value.absent(),
   }) : name = Value(name),
        createdAt = Value(createdAt);
   static Insertable<MediaCollectionRow> custom({
@@ -15397,6 +15507,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     Expression<String>? audioTrackId,
     Expression<int>? subtitleDelayMs,
     Expression<int>? secondarySubtitleDelayMs,
+    Expression<String>? subtitleLanguage,
+    Expression<String>? subtitleReleaseGroup,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -15412,6 +15524,9 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       if (subtitleDelayMs != null) 'subtitle_delay_ms': subtitleDelayMs,
       if (secondarySubtitleDelayMs != null)
         'secondary_subtitle_delay_ms': secondarySubtitleDelayMs,
+      if (subtitleLanguage != null) 'subtitle_language': subtitleLanguage,
+      if (subtitleReleaseGroup != null)
+        'subtitle_release_group': subtitleReleaseGroup,
     });
   }
 
@@ -15428,6 +15543,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     Value<String?>? audioTrackId,
     Value<int?>? subtitleDelayMs,
     Value<int?>? secondarySubtitleDelayMs,
+    Value<String?>? subtitleLanguage,
+    Value<String?>? subtitleReleaseGroup,
   }) {
     return MediaCollectionsCompanion(
       id: id ?? this.id,
@@ -15443,6 +15560,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       subtitleDelayMs: subtitleDelayMs ?? this.subtitleDelayMs,
       secondarySubtitleDelayMs:
           secondarySubtitleDelayMs ?? this.secondarySubtitleDelayMs,
+      subtitleLanguage: subtitleLanguage ?? this.subtitleLanguage,
+      subtitleReleaseGroup: subtitleReleaseGroup ?? this.subtitleReleaseGroup,
     );
   }
 
@@ -15487,6 +15606,14 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
         secondarySubtitleDelayMs.value,
       );
     }
+    if (subtitleLanguage.present) {
+      map['subtitle_language'] = Variable<String>(subtitleLanguage.value);
+    }
+    if (subtitleReleaseGroup.present) {
+      map['subtitle_release_group'] = Variable<String>(
+        subtitleReleaseGroup.value,
+      );
+    }
     return map;
   }
 
@@ -15504,7 +15631,9 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
           ..write('anilistId: $anilistId, ')
           ..write('audioTrackId: $audioTrackId, ')
           ..write('subtitleDelayMs: $subtitleDelayMs, ')
-          ..write('secondarySubtitleDelayMs: $secondarySubtitleDelayMs')
+          ..write('secondarySubtitleDelayMs: $secondarySubtitleDelayMs, ')
+          ..write('subtitleLanguage: $subtitleLanguage, ')
+          ..write('subtitleReleaseGroup: $subtitleReleaseGroup')
           ..write(')'))
         .toString();
   }
@@ -46798,6 +46927,1091 @@ class MangaChapterStatesCompanion
   }
 }
 
+class $StudySegmentTombstonesTable extends StudySegmentTombstones
+    with TableInfo<$StudySegmentTombstonesTable, StudySegmentTombstoneRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $StudySegmentTombstonesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mediaKindMeta = const VerificationMeta(
+    'mediaKind',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKind = GeneratedColumn<String>(
+    'media_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mediaKeyMeta = const VerificationMeta(
+    'mediaKey',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKey = GeneratedColumn<String>(
+    'media_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<int> deletedAt = GeneratedColumn<int>(
+    'deleted_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [mediaKind, mediaKey, deletedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'study_segment_tombstones';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<StudySegmentTombstoneRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('media_kind')) {
+      context.handle(
+        _mediaKindMeta,
+        mediaKind.isAcceptableOrUnknown(data['media_kind']!, _mediaKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaKindMeta);
+    }
+    if (data.containsKey('media_key')) {
+      context.handle(
+        _mediaKeyMeta,
+        mediaKey.isAcceptableOrUnknown(data['media_key']!, _mediaKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaKeyMeta);
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_deletedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {mediaKind, mediaKey};
+  @override
+  StudySegmentTombstoneRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return StudySegmentTombstoneRow(
+      mediaKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_kind'],
+      )!,
+      mediaKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_key'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}deleted_at'],
+      )!,
+    );
+  }
+
+  @override
+  $StudySegmentTombstonesTable createAlias(String alias) {
+    return $StudySegmentTombstonesTable(attachedDatabase, alias);
+  }
+}
+
+class StudySegmentTombstoneRow extends DataClass
+    implements Insertable<StudySegmentTombstoneRow> {
+  final String mediaKind;
+  final String mediaKey;
+  final int deletedAt;
+  const StudySegmentTombstoneRow({
+    required this.mediaKind,
+    required this.mediaKey,
+    required this.deletedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['media_kind'] = Variable<String>(mediaKind);
+    map['media_key'] = Variable<String>(mediaKey);
+    map['deleted_at'] = Variable<int>(deletedAt);
+    return map;
+  }
+
+  StudySegmentTombstonesCompanion toCompanion(bool nullToAbsent) {
+    return StudySegmentTombstonesCompanion(
+      mediaKind: Value(mediaKind),
+      mediaKey: Value(mediaKey),
+      deletedAt: Value(deletedAt),
+    );
+  }
+
+  factory StudySegmentTombstoneRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return StudySegmentTombstoneRow(
+      mediaKind: serializer.fromJson<String>(json['mediaKind']),
+      mediaKey: serializer.fromJson<String>(json['mediaKey']),
+      deletedAt: serializer.fromJson<int>(json['deletedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'mediaKind': serializer.toJson<String>(mediaKind),
+      'mediaKey': serializer.toJson<String>(mediaKey),
+      'deletedAt': serializer.toJson<int>(deletedAt),
+    };
+  }
+
+  StudySegmentTombstoneRow copyWith({
+    String? mediaKind,
+    String? mediaKey,
+    int? deletedAt,
+  }) => StudySegmentTombstoneRow(
+    mediaKind: mediaKind ?? this.mediaKind,
+    mediaKey: mediaKey ?? this.mediaKey,
+    deletedAt: deletedAt ?? this.deletedAt,
+  );
+  StudySegmentTombstoneRow copyWithCompanion(
+    StudySegmentTombstonesCompanion data,
+  ) {
+    return StudySegmentTombstoneRow(
+      mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
+      mediaKey: data.mediaKey.present ? data.mediaKey.value : this.mediaKey,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('StudySegmentTombstoneRow(')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('mediaKey: $mediaKey, ')
+          ..write('deletedAt: $deletedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(mediaKind, mediaKey, deletedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is StudySegmentTombstoneRow &&
+          other.mediaKind == this.mediaKind &&
+          other.mediaKey == this.mediaKey &&
+          other.deletedAt == this.deletedAt);
+}
+
+class StudySegmentTombstonesCompanion
+    extends UpdateCompanion<StudySegmentTombstoneRow> {
+  final Value<String> mediaKind;
+  final Value<String> mediaKey;
+  final Value<int> deletedAt;
+  final Value<int> rowid;
+  const StudySegmentTombstonesCompanion({
+    this.mediaKind = const Value.absent(),
+    this.mediaKey = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  StudySegmentTombstonesCompanion.insert({
+    required String mediaKind,
+    required String mediaKey,
+    required int deletedAt,
+    this.rowid = const Value.absent(),
+  }) : mediaKind = Value(mediaKind),
+       mediaKey = Value(mediaKey),
+       deletedAt = Value(deletedAt);
+  static Insertable<StudySegmentTombstoneRow> custom({
+    Expression<String>? mediaKind,
+    Expression<String>? mediaKey,
+    Expression<int>? deletedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (mediaKind != null) 'media_kind': mediaKind,
+      if (mediaKey != null) 'media_key': mediaKey,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  StudySegmentTombstonesCompanion copyWith({
+    Value<String>? mediaKind,
+    Value<String>? mediaKey,
+    Value<int>? deletedAt,
+    Value<int>? rowid,
+  }) {
+    return StudySegmentTombstonesCompanion(
+      mediaKind: mediaKind ?? this.mediaKind,
+      mediaKey: mediaKey ?? this.mediaKey,
+      deletedAt: deletedAt ?? this.deletedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (mediaKind.present) {
+      map['media_kind'] = Variable<String>(mediaKind.value);
+    }
+    if (mediaKey.present) {
+      map['media_key'] = Variable<String>(mediaKey.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<int>(deletedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('StudySegmentTombstonesCompanion(')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('mediaKey: $mediaKey, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $StudySegmentsTable extends StudySegments
+    with TableInfo<$StudySegmentsTable, StudySegmentRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $StudySegmentsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _uidMeta = const VerificationMeta('uid');
+  @override
+  late final GeneratedColumn<String> uid = GeneratedColumn<String>(
+    'uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deviceIdMeta = const VerificationMeta(
+    'deviceId',
+  );
+  @override
+  late final GeneratedColumn<String> deviceId = GeneratedColumn<String>(
+    'device_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mediaKindMeta = const VerificationMeta(
+    'mediaKind',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKind = GeneratedColumn<String>(
+    'media_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mediaKeyMeta = const VerificationMeta(
+    'mediaKey',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKey = GeneratedColumn<String>(
+    'media_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _formatMeta = const VerificationMeta('format');
+  @override
+  late final GeneratedColumn<String> format = GeneratedColumn<String>(
+    'format',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _startAtMeta = const VerificationMeta(
+    'startAt',
+  );
+  @override
+  late final GeneratedColumn<int> startAt = GeneratedColumn<int>(
+    'start_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _endAtMeta = const VerificationMeta('endAt');
+  @override
+  late final GeneratedColumn<int> endAt = GeneratedColumn<int>(
+    'end_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _dateKeyMeta = const VerificationMeta(
+    'dateKey',
+  );
+  @override
+  late final GeneratedColumn<String> dateKey = GeneratedColumn<String>(
+    'date_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _hourMeta = const VerificationMeta('hour');
+  @override
+  late final GeneratedColumn<int> hour = GeneratedColumn<int>(
+    'hour',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _durationMsMeta = const VerificationMeta(
+    'durationMs',
+  );
+  @override
+  late final GeneratedColumn<int> durationMs = GeneratedColumn<int>(
+    'duration_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _charsMeta = const VerificationMeta('chars');
+  @override
+  late final GeneratedColumn<int> chars = GeneratedColumn<int>(
+    'chars',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _pagesMeta = const VerificationMeta('pages');
+  @override
+  late final GeneratedColumn<int> pages = GeneratedColumn<int>(
+    'pages',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    uid,
+    deviceId,
+    mediaKind,
+    mediaKey,
+    format,
+    title,
+    startAt,
+    endAt,
+    dateKey,
+    hour,
+    durationMs,
+    chars,
+    pages,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'study_segments';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<StudySegmentRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('uid')) {
+      context.handle(
+        _uidMeta,
+        uid.isAcceptableOrUnknown(data['uid']!, _uidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_uidMeta);
+    }
+    if (data.containsKey('device_id')) {
+      context.handle(
+        _deviceIdMeta,
+        deviceId.isAcceptableOrUnknown(data['device_id']!, _deviceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_deviceIdMeta);
+    }
+    if (data.containsKey('media_kind')) {
+      context.handle(
+        _mediaKindMeta,
+        mediaKind.isAcceptableOrUnknown(data['media_kind']!, _mediaKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaKindMeta);
+    }
+    if (data.containsKey('media_key')) {
+      context.handle(
+        _mediaKeyMeta,
+        mediaKey.isAcceptableOrUnknown(data['media_key']!, _mediaKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaKeyMeta);
+    }
+    if (data.containsKey('format')) {
+      context.handle(
+        _formatMeta,
+        format.isAcceptableOrUnknown(data['format']!, _formatMeta),
+      );
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('start_at')) {
+      context.handle(
+        _startAtMeta,
+        startAt.isAcceptableOrUnknown(data['start_at']!, _startAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_startAtMeta);
+    }
+    if (data.containsKey('end_at')) {
+      context.handle(
+        _endAtMeta,
+        endAt.isAcceptableOrUnknown(data['end_at']!, _endAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_endAtMeta);
+    }
+    if (data.containsKey('date_key')) {
+      context.handle(
+        _dateKeyMeta,
+        dateKey.isAcceptableOrUnknown(data['date_key']!, _dateKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_dateKeyMeta);
+    }
+    if (data.containsKey('hour')) {
+      context.handle(
+        _hourMeta,
+        hour.isAcceptableOrUnknown(data['hour']!, _hourMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_hourMeta);
+    }
+    if (data.containsKey('duration_ms')) {
+      context.handle(
+        _durationMsMeta,
+        durationMs.isAcceptableOrUnknown(data['duration_ms']!, _durationMsMeta),
+      );
+    }
+    if (data.containsKey('chars')) {
+      context.handle(
+        _charsMeta,
+        chars.isAcceptableOrUnknown(data['chars']!, _charsMeta),
+      );
+    }
+    if (data.containsKey('pages')) {
+      context.handle(
+        _pagesMeta,
+        pages.isAcceptableOrUnknown(data['pages']!, _pagesMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {uid};
+  @override
+  StudySegmentRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return StudySegmentRow(
+      uid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}uid'],
+      )!,
+      deviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}device_id'],
+      )!,
+      mediaKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_kind'],
+      )!,
+      mediaKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_key'],
+      )!,
+      format: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}format'],
+      )!,
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      )!,
+      startAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}start_at'],
+      )!,
+      endAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}end_at'],
+      )!,
+      dateKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}date_key'],
+      )!,
+      hour: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}hour'],
+      )!,
+      durationMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration_ms'],
+      )!,
+      chars: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}chars'],
+      )!,
+      pages: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}pages'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $StudySegmentsTable createAlias(String alias) {
+    return $StudySegmentsTable(attachedDatabase, alias);
+  }
+}
+
+class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
+  /// 写入方生成的幂等键（32 位 hex，见 [FushiDatabase.newStudySegmentUid]）。
+  final String uid;
+
+  /// 产生本段的设备（`sync_device_id` 偏好，见 [FushiDatabase.getOrCreateStudyDeviceId]）。
+  /// 同步 v2 按 (uid) 并集时它是 provenance，不进任何合并判据。
+  final String deviceId;
+
+  /// 'book' | 'video' | 'game'（[ActivityMediaKind.dbValue] 同值域）。
+  final String mediaKind;
+
+  /// 稳定媒体身份：书=bookKey，视频=bookUid，游戏=galgames.id。**永不用 title**。
+  final String mediaKey;
+
+  /// 写入面：'epub' | 'pdf' | 'manga'（[BookFormat.dbValue]），非书面 ''。
+  final String format;
+
+  /// 展示快照：库表 join 不到（媒体已删）时回退显示，不参与任何分组。
+  final String title;
+
+  /// 段起始 / 结束毫秒戳。[endAt] 随 tick 前进；`endAt - startAt >= durationMs`。
+  final int startAt;
+  final int endAt;
+
+  /// [startAt] 的本地 `yyyy-MM-dd` 与小时（段不跨小时边界，故两者精确）。
+  final String dateKey;
+  final int hour;
+
+  /// 活跃时长（毫秒，已过前台 / 播放态 / 空闲 / 断档守卫）。
+  final int durationMs;
+
+  /// 字数（书 / 漫画 OCR = 实义字符；视频 = 字幕字符；游戏 = hook 文本）。
+  final int chars;
+
+  /// 页数（漫画 / PDF；EPUB 恒 0）。
+  final int pages;
+
+  /// 最后写入毫秒戳：同步 v2 同 uid 取大者（LWW），墓碑仲裁用它与 deletedAt 比。
+  final int updatedAt;
+  const StudySegmentRow({
+    required this.uid,
+    required this.deviceId,
+    required this.mediaKind,
+    required this.mediaKey,
+    required this.format,
+    required this.title,
+    required this.startAt,
+    required this.endAt,
+    required this.dateKey,
+    required this.hour,
+    required this.durationMs,
+    required this.chars,
+    required this.pages,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['uid'] = Variable<String>(uid);
+    map['device_id'] = Variable<String>(deviceId);
+    map['media_kind'] = Variable<String>(mediaKind);
+    map['media_key'] = Variable<String>(mediaKey);
+    map['format'] = Variable<String>(format);
+    map['title'] = Variable<String>(title);
+    map['start_at'] = Variable<int>(startAt);
+    map['end_at'] = Variable<int>(endAt);
+    map['date_key'] = Variable<String>(dateKey);
+    map['hour'] = Variable<int>(hour);
+    map['duration_ms'] = Variable<int>(durationMs);
+    map['chars'] = Variable<int>(chars);
+    map['pages'] = Variable<int>(pages);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  StudySegmentsCompanion toCompanion(bool nullToAbsent) {
+    return StudySegmentsCompanion(
+      uid: Value(uid),
+      deviceId: Value(deviceId),
+      mediaKind: Value(mediaKind),
+      mediaKey: Value(mediaKey),
+      format: Value(format),
+      title: Value(title),
+      startAt: Value(startAt),
+      endAt: Value(endAt),
+      dateKey: Value(dateKey),
+      hour: Value(hour),
+      durationMs: Value(durationMs),
+      chars: Value(chars),
+      pages: Value(pages),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory StudySegmentRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return StudySegmentRow(
+      uid: serializer.fromJson<String>(json['uid']),
+      deviceId: serializer.fromJson<String>(json['deviceId']),
+      mediaKind: serializer.fromJson<String>(json['mediaKind']),
+      mediaKey: serializer.fromJson<String>(json['mediaKey']),
+      format: serializer.fromJson<String>(json['format']),
+      title: serializer.fromJson<String>(json['title']),
+      startAt: serializer.fromJson<int>(json['startAt']),
+      endAt: serializer.fromJson<int>(json['endAt']),
+      dateKey: serializer.fromJson<String>(json['dateKey']),
+      hour: serializer.fromJson<int>(json['hour']),
+      durationMs: serializer.fromJson<int>(json['durationMs']),
+      chars: serializer.fromJson<int>(json['chars']),
+      pages: serializer.fromJson<int>(json['pages']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'uid': serializer.toJson<String>(uid),
+      'deviceId': serializer.toJson<String>(deviceId),
+      'mediaKind': serializer.toJson<String>(mediaKind),
+      'mediaKey': serializer.toJson<String>(mediaKey),
+      'format': serializer.toJson<String>(format),
+      'title': serializer.toJson<String>(title),
+      'startAt': serializer.toJson<int>(startAt),
+      'endAt': serializer.toJson<int>(endAt),
+      'dateKey': serializer.toJson<String>(dateKey),
+      'hour': serializer.toJson<int>(hour),
+      'durationMs': serializer.toJson<int>(durationMs),
+      'chars': serializer.toJson<int>(chars),
+      'pages': serializer.toJson<int>(pages),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  StudySegmentRow copyWith({
+    String? uid,
+    String? deviceId,
+    String? mediaKind,
+    String? mediaKey,
+    String? format,
+    String? title,
+    int? startAt,
+    int? endAt,
+    String? dateKey,
+    int? hour,
+    int? durationMs,
+    int? chars,
+    int? pages,
+    int? updatedAt,
+  }) => StudySegmentRow(
+    uid: uid ?? this.uid,
+    deviceId: deviceId ?? this.deviceId,
+    mediaKind: mediaKind ?? this.mediaKind,
+    mediaKey: mediaKey ?? this.mediaKey,
+    format: format ?? this.format,
+    title: title ?? this.title,
+    startAt: startAt ?? this.startAt,
+    endAt: endAt ?? this.endAt,
+    dateKey: dateKey ?? this.dateKey,
+    hour: hour ?? this.hour,
+    durationMs: durationMs ?? this.durationMs,
+    chars: chars ?? this.chars,
+    pages: pages ?? this.pages,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  StudySegmentRow copyWithCompanion(StudySegmentsCompanion data) {
+    return StudySegmentRow(
+      uid: data.uid.present ? data.uid.value : this.uid,
+      deviceId: data.deviceId.present ? data.deviceId.value : this.deviceId,
+      mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
+      mediaKey: data.mediaKey.present ? data.mediaKey.value : this.mediaKey,
+      format: data.format.present ? data.format.value : this.format,
+      title: data.title.present ? data.title.value : this.title,
+      startAt: data.startAt.present ? data.startAt.value : this.startAt,
+      endAt: data.endAt.present ? data.endAt.value : this.endAt,
+      dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
+      hour: data.hour.present ? data.hour.value : this.hour,
+      durationMs: data.durationMs.present
+          ? data.durationMs.value
+          : this.durationMs,
+      chars: data.chars.present ? data.chars.value : this.chars,
+      pages: data.pages.present ? data.pages.value : this.pages,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('StudySegmentRow(')
+          ..write('uid: $uid, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('mediaKey: $mediaKey, ')
+          ..write('format: $format, ')
+          ..write('title: $title, ')
+          ..write('startAt: $startAt, ')
+          ..write('endAt: $endAt, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('hour: $hour, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('chars: $chars, ')
+          ..write('pages: $pages, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    uid,
+    deviceId,
+    mediaKind,
+    mediaKey,
+    format,
+    title,
+    startAt,
+    endAt,
+    dateKey,
+    hour,
+    durationMs,
+    chars,
+    pages,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is StudySegmentRow &&
+          other.uid == this.uid &&
+          other.deviceId == this.deviceId &&
+          other.mediaKind == this.mediaKind &&
+          other.mediaKey == this.mediaKey &&
+          other.format == this.format &&
+          other.title == this.title &&
+          other.startAt == this.startAt &&
+          other.endAt == this.endAt &&
+          other.dateKey == this.dateKey &&
+          other.hour == this.hour &&
+          other.durationMs == this.durationMs &&
+          other.chars == this.chars &&
+          other.pages == this.pages &&
+          other.updatedAt == this.updatedAt);
+}
+
+class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
+  final Value<String> uid;
+  final Value<String> deviceId;
+  final Value<String> mediaKind;
+  final Value<String> mediaKey;
+  final Value<String> format;
+  final Value<String> title;
+  final Value<int> startAt;
+  final Value<int> endAt;
+  final Value<String> dateKey;
+  final Value<int> hour;
+  final Value<int> durationMs;
+  final Value<int> chars;
+  final Value<int> pages;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const StudySegmentsCompanion({
+    this.uid = const Value.absent(),
+    this.deviceId = const Value.absent(),
+    this.mediaKind = const Value.absent(),
+    this.mediaKey = const Value.absent(),
+    this.format = const Value.absent(),
+    this.title = const Value.absent(),
+    this.startAt = const Value.absent(),
+    this.endAt = const Value.absent(),
+    this.dateKey = const Value.absent(),
+    this.hour = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.chars = const Value.absent(),
+    this.pages = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  StudySegmentsCompanion.insert({
+    required String uid,
+    required String deviceId,
+    required String mediaKind,
+    required String mediaKey,
+    this.format = const Value.absent(),
+    required String title,
+    required int startAt,
+    required int endAt,
+    required String dateKey,
+    required int hour,
+    this.durationMs = const Value.absent(),
+    this.chars = const Value.absent(),
+    this.pages = const Value.absent(),
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : uid = Value(uid),
+       deviceId = Value(deviceId),
+       mediaKind = Value(mediaKind),
+       mediaKey = Value(mediaKey),
+       title = Value(title),
+       startAt = Value(startAt),
+       endAt = Value(endAt),
+       dateKey = Value(dateKey),
+       hour = Value(hour),
+       updatedAt = Value(updatedAt);
+  static Insertable<StudySegmentRow> custom({
+    Expression<String>? uid,
+    Expression<String>? deviceId,
+    Expression<String>? mediaKind,
+    Expression<String>? mediaKey,
+    Expression<String>? format,
+    Expression<String>? title,
+    Expression<int>? startAt,
+    Expression<int>? endAt,
+    Expression<String>? dateKey,
+    Expression<int>? hour,
+    Expression<int>? durationMs,
+    Expression<int>? chars,
+    Expression<int>? pages,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (uid != null) 'uid': uid,
+      if (deviceId != null) 'device_id': deviceId,
+      if (mediaKind != null) 'media_kind': mediaKind,
+      if (mediaKey != null) 'media_key': mediaKey,
+      if (format != null) 'format': format,
+      if (title != null) 'title': title,
+      if (startAt != null) 'start_at': startAt,
+      if (endAt != null) 'end_at': endAt,
+      if (dateKey != null) 'date_key': dateKey,
+      if (hour != null) 'hour': hour,
+      if (durationMs != null) 'duration_ms': durationMs,
+      if (chars != null) 'chars': chars,
+      if (pages != null) 'pages': pages,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  StudySegmentsCompanion copyWith({
+    Value<String>? uid,
+    Value<String>? deviceId,
+    Value<String>? mediaKind,
+    Value<String>? mediaKey,
+    Value<String>? format,
+    Value<String>? title,
+    Value<int>? startAt,
+    Value<int>? endAt,
+    Value<String>? dateKey,
+    Value<int>? hour,
+    Value<int>? durationMs,
+    Value<int>? chars,
+    Value<int>? pages,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return StudySegmentsCompanion(
+      uid: uid ?? this.uid,
+      deviceId: deviceId ?? this.deviceId,
+      mediaKind: mediaKind ?? this.mediaKind,
+      mediaKey: mediaKey ?? this.mediaKey,
+      format: format ?? this.format,
+      title: title ?? this.title,
+      startAt: startAt ?? this.startAt,
+      endAt: endAt ?? this.endAt,
+      dateKey: dateKey ?? this.dateKey,
+      hour: hour ?? this.hour,
+      durationMs: durationMs ?? this.durationMs,
+      chars: chars ?? this.chars,
+      pages: pages ?? this.pages,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (uid.present) {
+      map['uid'] = Variable<String>(uid.value);
+    }
+    if (deviceId.present) {
+      map['device_id'] = Variable<String>(deviceId.value);
+    }
+    if (mediaKind.present) {
+      map['media_kind'] = Variable<String>(mediaKind.value);
+    }
+    if (mediaKey.present) {
+      map['media_key'] = Variable<String>(mediaKey.value);
+    }
+    if (format.present) {
+      map['format'] = Variable<String>(format.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (startAt.present) {
+      map['start_at'] = Variable<int>(startAt.value);
+    }
+    if (endAt.present) {
+      map['end_at'] = Variable<int>(endAt.value);
+    }
+    if (dateKey.present) {
+      map['date_key'] = Variable<String>(dateKey.value);
+    }
+    if (hour.present) {
+      map['hour'] = Variable<int>(hour.value);
+    }
+    if (durationMs.present) {
+      map['duration_ms'] = Variable<int>(durationMs.value);
+    }
+    if (chars.present) {
+      map['chars'] = Variable<int>(chars.value);
+    }
+    if (pages.present) {
+      map['pages'] = Variable<int>(pages.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('StudySegmentsCompanion(')
+          ..write('uid: $uid, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('mediaKey: $mediaKey, ')
+          ..write('format: $format, ')
+          ..write('title: $title, ')
+          ..write('startAt: $startAt, ')
+          ..write('endAt: $endAt, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('hour: $hour, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('chars: $chars, ')
+          ..write('pages: $pages, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $WebMineQueueTable extends WebMineQueue
     with TableInfo<$WebMineQueueTable, WebMineQueueRow> {
   @override
@@ -47751,6 +48965,9 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   videoDownloadSubscriptionItems = $VideoDownloadSubscriptionItemsTable(this);
   late final $MangaChapterStatesTable mangaChapterStates =
       $MangaChapterStatesTable(this);
+  late final $StudySegmentTombstonesTable studySegmentTombstones =
+      $StudySegmentTombstonesTable(this);
+  late final $StudySegmentsTable studySegments = $StudySegmentsTable(this);
   late final $WebMineQueueTable webMineQueue = $WebMineQueueTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
@@ -47835,6 +49052,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     videoDownloadSubscriptions,
     videoDownloadSubscriptionItems,
     mangaChapterStates,
+    studySegmentTombstones,
+    studySegments,
     webMineQueue,
   ];
   @override
@@ -58386,6 +59605,8 @@ typedef $$MediaCollectionsTableCreateCompanionBuilder =
       Value<String?> audioTrackId,
       Value<int?> subtitleDelayMs,
       Value<int?> secondarySubtitleDelayMs,
+      Value<String?> subtitleLanguage,
+      Value<String?> subtitleReleaseGroup,
     });
 typedef $$MediaCollectionsTableUpdateCompanionBuilder =
     MediaCollectionsCompanion Function({
@@ -58401,6 +59622,8 @@ typedef $$MediaCollectionsTableUpdateCompanionBuilder =
       Value<String?> audioTrackId,
       Value<int?> subtitleDelayMs,
       Value<int?> secondarySubtitleDelayMs,
+      Value<String?> subtitleLanguage,
+      Value<String?> subtitleReleaseGroup,
     });
 
 final class $$MediaCollectionsTableReferences
@@ -58628,6 +59851,16 @@ class $$MediaCollectionsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get subtitleLanguage => $composableBuilder(
+    column: $table.subtitleLanguage,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get subtitleReleaseGroup => $composableBuilder(
+    column: $table.subtitleReleaseGroup,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> mediaCollectionItemsRefs(
     Expression<bool> Function($$MediaCollectionItemsTableFilterComposer f) f,
   ) {
@@ -58849,6 +60082,16 @@ class $$MediaCollectionsTableOrderingComposer
     column: $table.secondarySubtitleDelayMs,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get subtitleLanguage => $composableBuilder(
+    column: $table.subtitleLanguage,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get subtitleReleaseGroup => $composableBuilder(
+    column: $table.subtitleReleaseGroup,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MediaCollectionsTableAnnotationComposer
@@ -58905,6 +60148,16 @@ class $$MediaCollectionsTableAnnotationComposer
 
   GeneratedColumn<int> get secondarySubtitleDelayMs => $composableBuilder(
     column: $table.secondarySubtitleDelayMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get subtitleLanguage => $composableBuilder(
+    column: $table.subtitleLanguage,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get subtitleReleaseGroup => $composableBuilder(
+    column: $table.subtitleReleaseGroup,
     builder: (column) => column,
   );
 
@@ -59116,6 +60369,8 @@ class $$MediaCollectionsTableTableManager
                 Value<String?> audioTrackId = const Value.absent(),
                 Value<int?> subtitleDelayMs = const Value.absent(),
                 Value<int?> secondarySubtitleDelayMs = const Value.absent(),
+                Value<String?> subtitleLanguage = const Value.absent(),
+                Value<String?> subtitleReleaseGroup = const Value.absent(),
               }) => MediaCollectionsCompanion(
                 id: id,
                 name: name,
@@ -59129,6 +60384,8 @@ class $$MediaCollectionsTableTableManager
                 audioTrackId: audioTrackId,
                 subtitleDelayMs: subtitleDelayMs,
                 secondarySubtitleDelayMs: secondarySubtitleDelayMs,
+                subtitleLanguage: subtitleLanguage,
+                subtitleReleaseGroup: subtitleReleaseGroup,
               ),
           createCompanionCallback:
               ({
@@ -59144,6 +60401,8 @@ class $$MediaCollectionsTableTableManager
                 Value<String?> audioTrackId = const Value.absent(),
                 Value<int?> subtitleDelayMs = const Value.absent(),
                 Value<int?> secondarySubtitleDelayMs = const Value.absent(),
+                Value<String?> subtitleLanguage = const Value.absent(),
+                Value<String?> subtitleReleaseGroup = const Value.absent(),
               }) => MediaCollectionsCompanion.insert(
                 id: id,
                 name: name,
@@ -59157,6 +60416,8 @@ class $$MediaCollectionsTableTableManager
                 audioTrackId: audioTrackId,
                 subtitleDelayMs: subtitleDelayMs,
                 secondarySubtitleDelayMs: secondarySubtitleDelayMs,
+                subtitleLanguage: subtitleLanguage,
+                subtitleReleaseGroup: subtitleReleaseGroup,
               ),
           withReferenceMapper: (p0) => p0
               .map(
@@ -83769,6 +85030,566 @@ typedef $$MangaChapterStatesTableProcessedTableManager =
       MangaChapterStateRow,
       PrefetchHooks Function()
     >;
+typedef $$StudySegmentTombstonesTableCreateCompanionBuilder =
+    StudySegmentTombstonesCompanion Function({
+      required String mediaKind,
+      required String mediaKey,
+      required int deletedAt,
+      Value<int> rowid,
+    });
+typedef $$StudySegmentTombstonesTableUpdateCompanionBuilder =
+    StudySegmentTombstonesCompanion Function({
+      Value<String> mediaKind,
+      Value<String> mediaKey,
+      Value<int> deletedAt,
+      Value<int> rowid,
+    });
+
+class $$StudySegmentTombstonesTableFilterComposer
+    extends Composer<_$FushiDatabase, $StudySegmentTombstonesTable> {
+  $$StudySegmentTombstonesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaKey => $composableBuilder(
+    column: $table.mediaKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$StudySegmentTombstonesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $StudySegmentTombstonesTable> {
+  $$StudySegmentTombstonesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mediaKey => $composableBuilder(
+    column: $table.mediaKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$StudySegmentTombstonesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $StudySegmentTombstonesTable> {
+  $$StudySegmentTombstonesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get mediaKind =>
+      $composableBuilder(column: $table.mediaKind, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaKey =>
+      $composableBuilder(column: $table.mediaKey, builder: (column) => column);
+
+  GeneratedColumn<int> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+}
+
+class $$StudySegmentTombstonesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $StudySegmentTombstonesTable,
+          StudySegmentTombstoneRow,
+          $$StudySegmentTombstonesTableFilterComposer,
+          $$StudySegmentTombstonesTableOrderingComposer,
+          $$StudySegmentTombstonesTableAnnotationComposer,
+          $$StudySegmentTombstonesTableCreateCompanionBuilder,
+          $$StudySegmentTombstonesTableUpdateCompanionBuilder,
+          (
+            StudySegmentTombstoneRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $StudySegmentTombstonesTable,
+              StudySegmentTombstoneRow
+            >,
+          ),
+          StudySegmentTombstoneRow,
+          PrefetchHooks Function()
+        > {
+  $$StudySegmentTombstonesTableTableManager(
+    _$FushiDatabase db,
+    $StudySegmentTombstonesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$StudySegmentTombstonesTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$StudySegmentTombstonesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$StudySegmentTombstonesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> mediaKind = const Value.absent(),
+                Value<String> mediaKey = const Value.absent(),
+                Value<int> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => StudySegmentTombstonesCompanion(
+                mediaKind: mediaKind,
+                mediaKey: mediaKey,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String mediaKind,
+                required String mediaKey,
+                required int deletedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => StudySegmentTombstonesCompanion.insert(
+                mediaKind: mediaKind,
+                mediaKey: mediaKey,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$StudySegmentTombstonesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $StudySegmentTombstonesTable,
+      StudySegmentTombstoneRow,
+      $$StudySegmentTombstonesTableFilterComposer,
+      $$StudySegmentTombstonesTableOrderingComposer,
+      $$StudySegmentTombstonesTableAnnotationComposer,
+      $$StudySegmentTombstonesTableCreateCompanionBuilder,
+      $$StudySegmentTombstonesTableUpdateCompanionBuilder,
+      (
+        StudySegmentTombstoneRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $StudySegmentTombstonesTable,
+          StudySegmentTombstoneRow
+        >,
+      ),
+      StudySegmentTombstoneRow,
+      PrefetchHooks Function()
+    >;
+typedef $$StudySegmentsTableCreateCompanionBuilder =
+    StudySegmentsCompanion Function({
+      required String uid,
+      required String deviceId,
+      required String mediaKind,
+      required String mediaKey,
+      Value<String> format,
+      required String title,
+      required int startAt,
+      required int endAt,
+      required String dateKey,
+      required int hour,
+      Value<int> durationMs,
+      Value<int> chars,
+      Value<int> pages,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$StudySegmentsTableUpdateCompanionBuilder =
+    StudySegmentsCompanion Function({
+      Value<String> uid,
+      Value<String> deviceId,
+      Value<String> mediaKind,
+      Value<String> mediaKey,
+      Value<String> format,
+      Value<String> title,
+      Value<int> startAt,
+      Value<int> endAt,
+      Value<String> dateKey,
+      Value<int> hour,
+      Value<int> durationMs,
+      Value<int> chars,
+      Value<int> pages,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$StudySegmentsTableFilterComposer
+    extends Composer<_$FushiDatabase, $StudySegmentsTable> {
+  $$StudySegmentsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get uid => $composableBuilder(
+    column: $table.uid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaKey => $composableBuilder(
+    column: $table.mediaKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get format => $composableBuilder(
+    column: $table.format,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get startAt => $composableBuilder(
+    column: $table.startAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get endAt => $composableBuilder(
+    column: $table.endAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get dateKey => $composableBuilder(
+    column: $table.dateKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get hour => $composableBuilder(
+    column: $table.hour,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get chars => $composableBuilder(
+    column: $table.chars,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get pages => $composableBuilder(
+    column: $table.pages,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$StudySegmentsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $StudySegmentsTable> {
+  $$StudySegmentsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get uid => $composableBuilder(
+    column: $table.uid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mediaKey => $composableBuilder(
+    column: $table.mediaKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get format => $composableBuilder(
+    column: $table.format,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get startAt => $composableBuilder(
+    column: $table.startAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get endAt => $composableBuilder(
+    column: $table.endAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get dateKey => $composableBuilder(
+    column: $table.dateKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get hour => $composableBuilder(
+    column: $table.hour,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get chars => $composableBuilder(
+    column: $table.chars,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get pages => $composableBuilder(
+    column: $table.pages,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$StudySegmentsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $StudySegmentsTable> {
+  $$StudySegmentsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get uid =>
+      $composableBuilder(column: $table.uid, builder: (column) => column);
+
+  GeneratedColumn<String> get deviceId =>
+      $composableBuilder(column: $table.deviceId, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaKind =>
+      $composableBuilder(column: $table.mediaKind, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaKey =>
+      $composableBuilder(column: $table.mediaKey, builder: (column) => column);
+
+  GeneratedColumn<String> get format =>
+      $composableBuilder(column: $table.format, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<int> get startAt =>
+      $composableBuilder(column: $table.startAt, builder: (column) => column);
+
+  GeneratedColumn<int> get endAt =>
+      $composableBuilder(column: $table.endAt, builder: (column) => column);
+
+  GeneratedColumn<String> get dateKey =>
+      $composableBuilder(column: $table.dateKey, builder: (column) => column);
+
+  GeneratedColumn<int> get hour =>
+      $composableBuilder(column: $table.hour, builder: (column) => column);
+
+  GeneratedColumn<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get chars =>
+      $composableBuilder(column: $table.chars, builder: (column) => column);
+
+  GeneratedColumn<int> get pages =>
+      $composableBuilder(column: $table.pages, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$StudySegmentsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $StudySegmentsTable,
+          StudySegmentRow,
+          $$StudySegmentsTableFilterComposer,
+          $$StudySegmentsTableOrderingComposer,
+          $$StudySegmentsTableAnnotationComposer,
+          $$StudySegmentsTableCreateCompanionBuilder,
+          $$StudySegmentsTableUpdateCompanionBuilder,
+          (
+            StudySegmentRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $StudySegmentsTable,
+              StudySegmentRow
+            >,
+          ),
+          StudySegmentRow,
+          PrefetchHooks Function()
+        > {
+  $$StudySegmentsTableTableManager(
+    _$FushiDatabase db,
+    $StudySegmentsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$StudySegmentsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$StudySegmentsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$StudySegmentsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> uid = const Value.absent(),
+                Value<String> deviceId = const Value.absent(),
+                Value<String> mediaKind = const Value.absent(),
+                Value<String> mediaKey = const Value.absent(),
+                Value<String> format = const Value.absent(),
+                Value<String> title = const Value.absent(),
+                Value<int> startAt = const Value.absent(),
+                Value<int> endAt = const Value.absent(),
+                Value<String> dateKey = const Value.absent(),
+                Value<int> hour = const Value.absent(),
+                Value<int> durationMs = const Value.absent(),
+                Value<int> chars = const Value.absent(),
+                Value<int> pages = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => StudySegmentsCompanion(
+                uid: uid,
+                deviceId: deviceId,
+                mediaKind: mediaKind,
+                mediaKey: mediaKey,
+                format: format,
+                title: title,
+                startAt: startAt,
+                endAt: endAt,
+                dateKey: dateKey,
+                hour: hour,
+                durationMs: durationMs,
+                chars: chars,
+                pages: pages,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String uid,
+                required String deviceId,
+                required String mediaKind,
+                required String mediaKey,
+                Value<String> format = const Value.absent(),
+                required String title,
+                required int startAt,
+                required int endAt,
+                required String dateKey,
+                required int hour,
+                Value<int> durationMs = const Value.absent(),
+                Value<int> chars = const Value.absent(),
+                Value<int> pages = const Value.absent(),
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => StudySegmentsCompanion.insert(
+                uid: uid,
+                deviceId: deviceId,
+                mediaKind: mediaKind,
+                mediaKey: mediaKey,
+                format: format,
+                title: title,
+                startAt: startAt,
+                endAt: endAt,
+                dateKey: dateKey,
+                hour: hour,
+                durationMs: durationMs,
+                chars: chars,
+                pages: pages,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$StudySegmentsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $StudySegmentsTable,
+      StudySegmentRow,
+      $$StudySegmentsTableFilterComposer,
+      $$StudySegmentsTableOrderingComposer,
+      $$StudySegmentsTableAnnotationComposer,
+      $$StudySegmentsTableCreateCompanionBuilder,
+      $$StudySegmentsTableUpdateCompanionBuilder,
+      (
+        StudySegmentRow,
+        BaseReferences<_$FushiDatabase, $StudySegmentsTable, StudySegmentRow>,
+      ),
+      StudySegmentRow,
+      PrefetchHooks Function()
+    >;
 typedef $$WebMineQueueTableCreateCompanionBuilder =
     WebMineQueueCompanion Function({
       Value<int> id,
@@ -84345,6 +86166,13 @@ class $FushiDatabaseManager {
       );
   $$MangaChapterStatesTableTableManager get mangaChapterStates =>
       $$MangaChapterStatesTableTableManager(_db, _db.mangaChapterStates);
+  $$StudySegmentTombstonesTableTableManager get studySegmentTombstones =>
+      $$StudySegmentTombstonesTableTableManager(
+        _db,
+        _db.studySegmentTombstones,
+      );
+  $$StudySegmentsTableTableManager get studySegments =>
+      $$StudySegmentsTableTableManager(_db, _db.studySegments);
   $$WebMineQueueTableTableManager get webMineQueue =>
       $$WebMineQueueTableTableManager(_db, _db.webMineQueue);
 }

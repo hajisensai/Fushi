@@ -1,16 +1,25 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/video_stat_aggregates.dart';
+import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-VideoWatchStatisticRow _row(String title, String dateKey, int chars, int ms) =>
-    VideoWatchStatisticRow(
-      id: 0,
+/// v92：输入是统一事实面的视频事实；[uid] null/'' = legacy 无身份行。
+StatFact _fact(String title, String? uid, String dateKey, int chars, int ms) =>
+    StatFact(
+      mediaKind: kActivityMediaVideo,
+      mediaKey: uid ?? '',
       title: title,
+      format: '',
       dateKey: dateKey,
-      subtitleChars: chars,
-      watchTimeMs: ms,
-      lastModified: 0,
+      hour: -1,
+      ms: ms,
+      chars: chars,
+      pages: 0,
+      lastActiveMs: 0,
     );
+
+StatFact _row(String title, String dateKey, int chars, int ms) =>
+    _fact(title, title, dateKey, chars, ms);
 
 void main() {
   final now = DateTime(2026, 6, 6, 12);
@@ -81,17 +90,9 @@ void main() {
   });
 
   group('v76 身份分组（v39 展示层收尾）', () {
-    VideoWatchStatisticRow rowU(
+    StatFact rowU(
             String title, String? uid, String dateKey, int chars, int ms) =>
-        VideoWatchStatisticRow(
-          id: 0,
-          title: title,
-          bookUid: uid,
-          dateKey: dateKey,
-          subtitleChars: chars,
-          watchTimeMs: ms,
-          lastModified: 0,
-        );
+        _fact(title, uid, dateKey, chars, ms);
 
     test('同名双视频各自一张 tile，不再合并（互串的另一半根治）', () {
       final agg = computeVideoStats(

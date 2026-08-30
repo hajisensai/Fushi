@@ -326,32 +326,4 @@ void main() {
       expect(takeActivityEntries(groups, -1), isEmpty);
     });
   });
-
-  group('sumTimeWindowsByDateKey', () {
-    final DateTime now = DateTime(2026, 7, 19, 12);
-    String key(DateTime d) =>
-        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-    test('今日/近7天/近30天/全部窗口正确求和', () {
-      final Iterable<(String, int)> rows = <(String, int)>[
-        (key(now), 1000), // 今日
-        (key(now.subtract(const Duration(days: 3))), 2000), // 本周内
-        (key(now.subtract(const Duration(days: 20))), 4000), // 本月内非本周
-        (key(now.subtract(const Duration(days: 60))), 8000), // 仅全部
-      ];
-      final DashboardTimeStats s = sumTimeWindowsByDateKey(rows, now);
-      expect(s.today, 1000);
-      expect(s.week, 1000 + 2000);
-      expect(s.month, 1000 + 2000 + 4000);
-      expect(s.all, 1000 + 2000 + 4000 + 8000);
-    });
-
-    test('非正时长跳过', () {
-      final DashboardTimeStats s = sumTimeWindowsByDateKey(
-        <(String, int)>[(key(now), 0), (key(now), -5)],
-        now,
-      );
-      expect(s.all, 0);
-    });
-  });
 }

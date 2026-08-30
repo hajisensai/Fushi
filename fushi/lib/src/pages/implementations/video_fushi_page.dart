@@ -129,7 +129,8 @@ import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_overlay.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
-import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
+import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
 import 'package:fushi/src/media/video/video_quick_settings_sheet.dart';
 import 'package:fushi/src/media/video/video_sidecar.dart';
@@ -697,6 +698,11 @@ enum _VideoSidePanelKind {
   quality,
   // TODO-1376：弹幕手动搜索/选集匹配侧栏。
   danmakuMatch,
+  // 2026-08 字幕工作台 PR-C：字幕调整走**底部抽屉**而不是右侧栏——视频全幅可见、
+  // 继续播放，字幕在真实位置实时预览。内容仍是同一份 schema 投影的快捷设置面板
+  // （`initialCategory: 'subtitle'`），只是容器换成 [VideoTranslucentBottomDrawer]；
+  // 开关/互斥/焦点/逐级 Esc 全部沿用侧栏机制（它就是一种侧栏 kind）。
+  subtitleAdjust,
 }
 
 class _VideoSidePanelState {
@@ -1631,7 +1637,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String get dictionarySourceType => kStatSourceVideo;
 
   /// TODO-1204：查词 / 制卡计数归属本视频——[title] 用 [_title]（剧集标题，与
-  /// 视频统计 tile 的 [addVideoWatchStatistic] title 聚合键对齐），[bookKey] 存
+  /// 视频统计 tile 的身份分组键对齐），[bookKey] 存
   /// [VideoFushiPage.bookUid]。远端视频无观看统计 tile，其计数仍进「查词」汇总。
   @override
   ({String? bookKey, String? title})? get lookupBookIdentity =>
@@ -3399,25 +3405,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (_bookRow != null && _watchTracker == null) {
       final FushiDatabase db = appModel.database;
       _watchTracker = VideoWatchTracker(
-        title: title,
         bookUid: widget.bookUid,
-        // P4 写侧收敛：两条统计路都走 DB 复合入口 recordWatchFlush。dateKey 由
-        // 采集器决定（字幕字数=cue 时刻；观看时长=各桶各自日期），直接透传，不在此
-        // 另算「今日」——否则跨午夜的 flush 会与小时日志的日归属不一致。
-        // v39：按视频稳定身份键控（同名不同视频统计不再互串）。本地视频每集独立
+        // v92：观看时长 + 字幕字数走唯一时钟 StudyClock（活跃态 = 正在播放，由
+        // tracker 挂上；视频面刻意不设空闲门 / 前台门——切走仍在播就照常计时）。
+        // 按视频稳定身份键控（v39：同名不同视频统计不再互串）。本地视频每集独立
         // 页面（pushReplacement 换集）→ widget.bookUid 恒为当前集。
-        recordFlush: (List<(String, int, int)> buckets) => db.recordWatchFlush(
+        clock: StudyClock(
+          database: db,
+          mediaKind: kActivityMediaVideo,
+          mediaKey: widget.bookUid,
           title: title,
-          bookUid: widget.bookUid,
-          buckets: buckets,
-        ),
-        addSubtitleChars: (String dateKey, int chars) => unawaited(
-          db.recordWatchFlush(
-            title: title,
-            bookUid: widget.bookUid,
-            subtitleChars: chars,
-            subtitleCharsDateKey: dateKey,
-          ),
+          onWriteError: (Object e, StackTrace st) =>
+              ErrorLogService.instance.log('StudyClock.write(video)', e, st),
         ),
         markCompleted: (String uid) =>
             db.markVideoCompleted(uid, DateTime.now()),
@@ -3431,19 +3430,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 _episodes.isNotEmpty && _currentEpisode == _episodes.length - 1,
           );
         },
-        // v49：一次观看 session 结束落一条活动事件，喂首页 Activity 时间轴。
-        recordActivity: (String t, String uid, String dateKey, int timestampMs,
-                int durationMs, int chars) =>
-            db.addActivityEvent(
-          eventType: kActivityWatch,
-          mediaType: kActivityMediaVideo,
-          title: t,
-          mediaKey: uid,
-          dateKey: dateKey,
-          timestampMs: timestampMs,
-          durationMs: durationMs,
-          charsDelta: chars,
-        ),
       )
         ..attach(controller)
         ..start();
@@ -7089,6 +7075,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-1351：记住目标分类（音频轨/字幕轨按钮传 'audio'/'subtitle'，设置按钮传 null），
     // 供 _buildVideoQuickSettingsSheet 读；面板 didUpdateWidget 据其变化跳分类。
     _settingsInitialCategory = initialCategory;
+    // 字幕分类走底部抽屉（PR-C）：字幕轨按钮 / 右键「字幕轨」/ 字幕加载遮罩都传
+    // 'subtitle'，统一在这一处分流，不让调用方各记一个 kind。
+    if (initialCategory == 'subtitle') {
+      _showVideoSidePanel(
+        _VideoSidePanelKind.subtitleAdjust,
+        sourceSlot: sourceSlot,
+      );
+      return;
+    }
     _showVideoSidePanel(
       _VideoSidePanelKind.settings,
       sourceSlot: sourceSlot,

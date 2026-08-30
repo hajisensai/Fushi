@@ -1,8 +1,22 @@
+import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_playback_source.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
+
+// v92 统计域重构：观看时长不再由 VideoWatchTracker 自己计时 / 自己写活动行，而是
+// 交给注入的 [StudyClock]（活跃态 = 正在播放），字幕字数经 `clock.addChars` 记到
+// 同一段。因此本文件只剩三类断言：完成判定纯函数、字幕停留门（BUG-1763）、以及
+// tracker 与时钟的接线（stop 落库 / 幂等 / 不播放不计时）。
+//
+// 已删除的用例（被测对象不存在了）：
+//  * `splitWatchTime` / `isContinuousWatchGap` / `kMaxWatchGap` 两组纯函数——视频侧
+//    现在直接用 fushi_audio 的 `splitReadingTime` / `isContinuousReadingGap` /
+//    `kMaxReadingGap`，已由 `test/media/audiobook/study_clock_gap_test.dart` 覆盖；
+//  * 「活动事件 dateKey 取 stop 时刻」——段的 dateKey 由段起点决定（跨小时 / 跨天
+//    切段），语义已在 `study_clock_test.dart`「段边界与量纲」组覆盖。
 
 class _FakeSource extends ChangeNotifier implements VideoPlaybackSource {
   @override
@@ -60,6 +74,38 @@ void _playCueProductionCadence(
   // 换句才会再通知一次；本函数只负责走完这一句，换句由调用方发起。
 }
 
+/// 注入给 [StudyClock] 的落库替身：记录每次绝对值写；可注入延迟模拟后台 isolate
+/// 写 Drift（stop 是否真的 await 了写链只有这样才测得出来）。
+class _Sink {
+  _Sink({this.delay = Duration.zero});
+
+  final Duration delay;
+  final List<StudySegmentsCompanion> writes = <StudySegmentsCompanion>[];
+
+  Future<void> call(StudySegmentsCompanion row) async {
+    if (delay > Duration.zero) await Future<void>.delayed(delay);
+    writes.add(row);
+  }
+}
+
+/// 建一个全注入的时钟：DB 只是构造签名要求（sink / deviceId / uid 全部替身，
+/// 不会碰它）；`now` 不注入时走真实墙钟——接线用例靠真实 delay 制造窗口。
+StudyClock _clock(_Sink sink, {DateTime Function()? now}) {
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+  addTearDown(db.close);
+  int seq = 0;
+  return StudyClock(
+    database: db,
+    mediaKind: kActivityMediaVideo,
+    mediaKey: 'u1',
+    title: 'A',
+    sink: sink.call,
+    deviceId: () async => 'dev',
+    now: now,
+    uidFactory: () => 'seg${++seq}',
+  );
+}
+
 void main() {
   group('shouldMarkCompleted', () {
     test('true when >=90% and not yet completed', () {
@@ -79,75 +125,18 @@ void main() {
     });
   });
 
-  group('splitWatchTime', () {
-    test('same hour single bucket', () {
-      final r = splitWatchTime(
-          DateTime(2026, 6, 6, 9, 0, 0), DateTime(2026, 6, 6, 9, 0, 30));
-      expect(r, [('2026-06-06', 9, 30000)]);
-    });
-    test('crossing hour splits into two buckets', () {
-      final r = splitWatchTime(
-          DateTime(2026, 6, 6, 9, 59, 50), DateTime(2026, 6, 6, 10, 0, 10));
-      expect(r.length, 2);
-      expect(r[0].$1, '2026-06-06');
-      expect(r[0].$2, 9);
-      expect(r[1].$2, 10);
-    });
-    test('crossing midnight splits into two days', () {
-      final r = splitWatchTime(
-          DateTime(2026, 6, 6, 23, 59, 50), DateTime(2026, 6, 7, 0, 0, 10));
-      expect(r.length, 2);
-      expect(r[0], ('2026-06-06', 23, 10000));
-      expect(r[1], ('2026-06-07', 0, 10000));
-    });
-    test('zero or negative elapsed yields empty', () {
-      expect(
-          splitWatchTime(
-              DateTime(2026, 6, 6, 9, 0, 0), DateTime(2026, 6, 6, 9, 0, 0)),
-          isEmpty);
-    });
-  });
-
-  group('isContinuousWatchGap (clamp anomalous timer gaps)', () {
-    test('normal ~60s window is continuous', () {
-      expect(
-          isContinuousWatchGap(
-              DateTime(2026, 6, 6, 9, 0, 0), DateTime(2026, 6, 6, 9, 1, 0)),
-          isTrue);
-    });
-    test('boundary at exactly kMaxWatchGap is still continuous', () {
-      final DateTime s = DateTime(2026, 6, 6, 9, 0, 0);
-      expect(isContinuousWatchGap(s, s.add(kMaxWatchGap)), isTrue);
-    });
-    test('gap beyond kMaxWatchGap (suspend/sleep) is discarded', () {
-      final DateTime s = DateTime(2026, 6, 6, 9, 0, 0);
-      expect(isContinuousWatchGap(s, s.add(const Duration(hours: 3))), isFalse);
-      expect(
-          isContinuousWatchGap(
-              s, s.add(kMaxWatchGap + const Duration(seconds: 1))),
-          isFalse);
-    });
-    test('zero / negative gap is not continuous', () {
-      final DateTime s = DateTime(2026, 6, 6, 9, 0, 0);
-      expect(isContinuousWatchGap(s, s), isFalse);
-      expect(isContinuousWatchGap(s, s.subtract(const Duration(seconds: 5))),
-          isFalse);
-    });
-  });
-
   group('subtitle char counting (dwell gate + monotonic dedup, BUG-1763)', () {
     late _FakeSource src;
+    late _Sink sink;
+    late StudyClock clock;
     late VideoWatchTracker tracker;
-    late List<(String, int)> recorded;
     setUp(() {
-      recorded = <(String, int)>[];
       src = _FakeSource();
+      sink = _Sink();
+      clock = _clock(sink);
       tracker = VideoWatchTracker(
-        title: 'A',
         bookUid: 'u1',
-        recordFlush: (List<(String, int, int)> buckets) {},
-        addSubtitleChars: (String dateKey, int chars) =>
-            recorded.add((dateKey, chars)),
+        clock: clock,
         markCompleted: (_) async {},
       )..attach(src);
       _fakeNow = DateTime(2026, 1, 1, 12);
@@ -181,7 +170,7 @@ void main() {
       src.currentCue = _cue('か');
       src.emit();
       expect(tracker.debugSubtitleChars, 0);
-      expect(recorded, isEmpty);
+      expect(clock.debugOpenTotals, isNull, reason: '没有字数就不会开段');
     });
 
     test('播放中快速掠过（停留 < 门槛）不计', () {
@@ -242,16 +231,15 @@ void main() {
       src.currentCue = _cue('か', startMs: 10000, endMs: 20000);
       src.emit();
       expect(tracker.debugSubtitleChars, 0);
-      expect(recorded, isEmpty);
+      expect(clock.debugOpenTotals, isNull);
     });
 
-    test('addSubtitleChars 收到 yyyy-MM-dd dateKey', () {
+    test('达标的字幕字数记进时钟当前段（与观看时长同一段）', () {
       src.currentCueIndex = 0;
       src.currentCue = _cue('あいう');
       _playThrough(src, fromMs: 0, toMs: 2000);
-      expect(recorded, hasLength(1));
-      expect(recorded.single.$1, matches(r'^\d{4}-\d{2}-\d{2}$')); // dateKey
-      expect(recorded.single.$2, 3); // chars
+      expect(clock.debugOpenTotals, isNotNull);
+      expect(clock.debugOpenTotals!.chars, 3);
     });
 
     test('onEpisodeChanged resets dedup set', () {
@@ -298,34 +286,27 @@ void main() {
   });
 
   group('exit flush awaits async stat writes (TODO-086/BUG-192)', () {
-    test('stop() future completes only after the async flush write commits',
+    test('stop() future completes only after the async segment write commits',
         () async {
-      final List<int> committed = <int>[];
-      final _FakeSource src = _FakeSource()..isPlaying = true;
-      // recordFlush 模拟异步落库（后台 isolate 写 Drift）：只有当 tracker 真的
-      // await 它，stop() 返回时 committed 才非空。撤掉 _flush/stop 的 await（改回
+      // sink 模拟异步落库（后台 isolate 写 Drift）：只有当 tracker.stop 真的
+      // await 了时钟写链，stop() 返回时 writes 才非空。撤掉 stop 的 await（改回
       // fire-and-forget）会让本断言转红——锁住退出时统计不丢。
+      final _Sink sink = _Sink(delay: const Duration(milliseconds: 20));
+      final _FakeSource src = _FakeSource()..isPlaying = true;
       final VideoWatchTracker tracker = VideoWatchTracker(
-        title: 'A',
         bookUid: 'u1',
-        recordFlush: (List<(String, int, int)> buckets) async {
-          await Future<void>.delayed(const Duration(milliseconds: 20));
-          for (final (_, _, int ms) in buckets) {
-            if (ms > 0) committed.add(ms);
-          }
-        },
-        addSubtitleChars: (String dateKey, int chars) {},
+        clock: _clock(sink),
         markCompleted: (_) async {},
       )..attach(src);
 
       tracker.start();
-      // 制造一段连续播放窗口（>0 且 <= kMaxWatchGap）。
+      // 制造一段连续播放窗口（>0 且 <= kMaxReadingGap）。
       await Future<void>.delayed(const Duration(milliseconds: 30));
       await tracker.stop();
 
-      expect(committed, isNotEmpty,
+      expect(sink.writes, isNotEmpty,
           reason: 'stop() 必须 await 异步统计写——否则 exit(0) 丢观看时长');
-      expect(committed.first, greaterThan(0));
+      expect(sink.writes.first.durationMs.value, greaterThan(0));
     });
   });
 
@@ -337,10 +318,8 @@ void main() {
         ..positionMs = 90
         ..durationMs = 100;
       final VideoWatchTracker tracker = VideoWatchTracker(
-        title: 'A',
         bookUid: 'u1',
-        recordFlush: (List<(String, int, int)> buckets) {},
-        addSubtitleChars: (String dateKey, int chars) {},
+        clock: _clock(_Sink()),
         markCompleted: (_) async {},
         onEpisodeCompleted: () => completed++,
       )..attach(src);
@@ -359,106 +338,57 @@ void main() {
     });
   });
 
-  group('recordActivity (v49 首页 Activity 事件流)', () {
-    test('一次观看 session 结束落一条活动事件，携带累积净观看时长', () async {
-      final List<(String, String, int, int)> events =
-          <(String, String, int, int)>[];
+  group('观看时长接线（v92：经 StudyClock 落段，取代 recordActivity 活动行）', () {
+    test('一次观看 session 结束落一条段，携带净观看时长', () async {
+      final _Sink sink = _Sink();
       final _FakeSource src = _FakeSource()..isPlaying = true;
       final VideoWatchTracker tracker = VideoWatchTracker(
-        title: 'A',
         bookUid: 'u1',
-        recordFlush: (List<(String, int, int)> buckets) async {},
-        addSubtitleChars: (String dateKey, int chars) {},
+        clock: _clock(sink),
         markCompleted: (_) async {},
-        recordActivity: (String t, String uid, String dateKey, int timestampMs,
-            int durationMs, int chars) {
-          events.add((t, uid, durationMs, chars));
-        },
       )..attach(src);
 
       tracker.start();
       await Future<void>.delayed(const Duration(milliseconds: 30));
       await tracker.stop();
 
-      expect(events, hasLength(1));
-      expect(events.single.$1, 'A');
-      expect(events.single.$2, 'u1');
-      expect(events.single.$3, greaterThan(0)); // 净观看时长
+      expect(sink.writes, hasLength(1));
+      expect(sink.writes.single.mediaKind.value, kActivityMediaVideo);
+      expect(sink.writes.single.mediaKey.value, 'u1');
+      expect(sink.writes.single.title.value, 'A');
+      expect(sink.writes.single.durationMs.value, greaterThan(0)); // 净观看时长
     });
 
-    test('二次 stop 幂等：不重复写活动事件（累积已清零）', () async {
-      final List<int> durations = <int>[];
+    test('二次 stop 幂等：不重复写段（时钟已封段、无累计器可再结算）', () async {
+      final _Sink sink = _Sink();
       final _FakeSource src = _FakeSource()..isPlaying = true;
       final VideoWatchTracker tracker = VideoWatchTracker(
-        title: 'A',
         bookUid: 'u1',
-        recordFlush: (List<(String, int, int)> buckets) async {},
-        addSubtitleChars: (String dateKey, int chars) {},
+        clock: _clock(sink),
         markCompleted: (_) async {},
-        recordActivity: (String t, String uid, String dateKey, int timestampMs,
-                int durationMs, int chars) =>
-            durations.add(durationMs),
       )..attach(src);
 
       tracker.start();
       await Future<void>.delayed(const Duration(milliseconds: 30));
       await tracker.stop();
-      await tracker.stop(); // 第二次不应再写（会话累积已清零）
-      expect(durations, hasLength(1));
+      await tracker.stop(); // 第二次不应再写（段已封、时钟已停）
+      expect(sink.writes, hasLength(1));
     });
 
-    test('从未播放（无净时长）不落活动事件', () async {
-      final List<int> durations = <int>[];
+    test('从未播放（isPlaying=false，无净时长）不落段', () async {
+      final _Sink sink = _Sink();
       final _FakeSource src = _FakeSource()..isPlaying = false;
       final VideoWatchTracker tracker = VideoWatchTracker(
-        title: 'A',
         bookUid: 'u1',
-        recordFlush: (List<(String, int, int)> buckets) async {},
-        addSubtitleChars: (String dateKey, int chars) {},
+        clock: _clock(sink),
         markCompleted: (_) async {},
-        recordActivity: (String t, String uid, String dateKey, int timestampMs,
-                int durationMs, int chars) =>
-            durations.add(durationMs),
       )..attach(src);
 
       tracker.start();
       await Future<void>.delayed(const Duration(milliseconds: 20));
       await tracker.stop();
-      expect(durations, isEmpty);
-    });
-
-    test('活动事件 dateKey 取 stop 时刻（session 语义，刻意区别于桶归属）', () async {
-      // 防「顺手统一」：activity 行是 session 事件（stop 时刻 dateKey + 总量），
-      // 桶（recordFlush）各归各日。这里锁 activity 的 dateKey 形状与「= stop 当日」。
-      String? activityDateKey;
-      final _FakeSource src = _FakeSource()..isPlaying = true;
-      final VideoWatchTracker tracker = VideoWatchTracker(
-        title: 'A',
-        bookUid: 'u1',
-        recordFlush: (List<(String, int, int)> buckets) async {},
-        addSubtitleChars: (String dateKey, int chars) {},
-        markCompleted: (_) async {},
-        recordActivity: (String t, String uid, String dateKey, int timestampMs,
-                int durationMs, int chars) =>
-            activityDateKey = dateKey,
-      )..attach(src);
-
-      tracker.start();
-      await Future<void>.delayed(const Duration(milliseconds: 30));
-      final DateTime beforeStop = DateTime.now();
-      await tracker.stop();
-      final DateTime afterStop = DateTime.now();
-
-      expect(activityDateKey, isNotNull);
-      // stop 前后取到的「当日」至少有一个等于 activity 的 dateKey（测试恰跨午夜时
-      // 两者取其一），锁住「activity dateKey = stop 时刻当日」的语义。
-      final Set<String> stopDays = <String>{
-        '${beforeStop.year}-${beforeStop.month.toString().padLeft(2, '0')}-'
-            '${beforeStop.day.toString().padLeft(2, '0')}',
-        '${afterStop.year}-${afterStop.month.toString().padLeft(2, '0')}-'
-            '${afterStop.day.toString().padLeft(2, '0')}',
-      };
-      expect(stopDays, contains(activityDateKey));
+      expect(sink.writes, isEmpty,
+          reason: '活跃态守卫（isPlaying）拒绝的窗口整窗丢弃，不开段不写');
     });
   });
 }
