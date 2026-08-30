@@ -16,6 +16,8 @@ import 'package:macos_ui/macos_ui.dart'
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi_anki/fushi_anki.dart' show AnkiMediaDedupReport;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
+import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
+import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/src/pages/implementations/managed_video_source_prompt.dart';
@@ -126,7 +128,7 @@ List<HomeTab> homeActiveTabs({
     <HomeTab>[
       HomeTab.home,
       // 小说/漫画/视频/游戏/浏览器扩展五个库页 tab 与 下载/查词 两个工具 tab 都可
-      // 按「功能模块」偏好隐藏（设置 → 系统 → 功能模块；新手引导的功能选择只写
+      // 按「功能模块」偏好隐藏（设置 → 外观 → 功能模块；新手引导的功能选择只写
       // 库页那几项）；首页/设置恒在，是全部隐藏后的安全回退面。
       if (booksEnabled) HomeTab.books,
       if (mangaEnabled) HomeTab.manga,
@@ -1118,7 +1120,12 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
-    if (_visibleTab == HomeTab.settings) {
+    // Windows 自绘标题栏（[FushiWindowsTitleBar.isEnabled]）已经把当前 tab 名画在
+    // 应用顶栏上，主导航 rail 始终可见，再叠一层「隐藏 rail + 页头返回箭头」的全屏
+    // 设置就成了没有来源的第二条返回出口。**只有 Windows 走这个新路径**：macOS
+    // （交通灯预留 BUG-869）、Linux、横屏 Android 平板都保持原分支，它们的顶栏没有
+    // tab 名、也没有 rail 常驻的保证。
+    if (_visibleTab == HomeTab.settings && !FushiWindowsTitleBar.isEnabled) {
       // 设置标签（全部设计系统）：隐藏 3 图标侧栏，全屏二栏（内部
       // MaterialSupportingPaneLayout），左上返回箭头切回来源 tab（参考 Mihon
       // 宽屏设置）。Cupertino 桌面也走这里——叶子控件保持 Cupertino 皮肤，但外壳
@@ -1183,6 +1190,7 @@ class _HomePageState extends BasePageState<HomePage>
                 currentIndex: visualIndex,
                 onTap: selectVisual,
                 items: displayItems,
+                leading: const NavRailBrandButton(),
               ),
             ),
             Expanded(child: FocusTraversalGroup(child: _bodyWithMiniBar())),
@@ -1319,10 +1327,65 @@ class _HomePageState extends BasePageState<HomePage>
       // 订阅本身与下载 tab 无关（订阅在后台照常拉取），故不随下载模块门控。
       onSubscribe: _openVideoDiscoverySubscription,
       onPlay: _openLocalVideoDiscoveryWork,
-      onOpenDownloads: downloadsReachable ? () => _openDownloadsTab(0) : null,
+      // 必须走 _popToDownloadsTab：作品**详情页**永远是 pushed route，而
+      // _openDownloadsTab 只 setState 切 home 的 tab、不动导航栈 —— tab 在
+      // 底下切了，用户还停在详情页上，看起来什么都没发生。
+      // 内联在 home 里的发现页已在栈顶，popUntil(isFirst) 对它是 no-op。
+      onOpenDownloads: downloadsReachable ? () => _popToDownloadsTab(0) : null,
       onOpenSubscriptions:
           downloadsReachable ? _openVideoDiscoverySubscriptionsPanel : null,
+      // 取消不经下载 tab，所以**不随** downloadsReachable 门控：下载模块被关掉的
+      // 用户照样可能有一条在飞的任务需要停掉。
+      onCancelDownloads: _cancelVideoDiscoveryDownloads,
     );
+  }
+
+  /// 取消本作品当前在飞的下载任务。
+  ///
+  /// 逐条调 [VideoDownloadPipelineService.cancelJob]：它对已完成的任务会拒绝，
+  /// 这里不预判——状态流是异步的，读到的 activeJobIds 可能已经过期，让服务层
+  /// 用真值裁决。任一条失败不影响其余（一条取消不了不该把其他几条也留下）。
+  Future<void> _cancelVideoDiscoveryDownloads(List<String> jobIds) async {
+    if (jobIds.isEmpty) return;
+    final VideoDownloadPipelineService? pipeline =
+        appModelNoUpdate.videoDownloadPipelineService;
+    if (pipeline == null) return;
+
+    // 一颗按钮会停掉**该作品全部**在飞任务，而这个入口的动机场景恰恰是「A 下错
+    // 了再下 B」—— 不确认就点等于把 A 和 B 一起干掉。条数摆出来让用户自己判断。
+    final BuildContext dialogContext = context;
+    final FushiDestructiveConfirmResult? confirmed =
+        await showAppDialog<FushiDestructiveConfirmResult>(
+      context: dialogContext,
+      builder: (BuildContext _) => FushiDestructiveConfirmDialog(
+        title: t.video_discovery_cancel_downloads_title,
+        message: t.video_discovery_cancel_downloads_body(n: jobIds.length),
+        confirmLabel: t.cancel,
+        leadingIcon: Icons.close,
+      ),
+    );
+    if (confirmed == null) return;
+
+    int cancelled = 0;
+    for (final String jobId in jobIds) {
+      try {
+        await pipeline.cancelJob(jobId);
+        cancelled++;
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('HomePage.cancelVideoDiscoveryDownload', e, stack);
+      }
+    }
+    // 一条都没取消掉必须说话：cancelJob 在 backendTaskId 还没落库、或后端解析不
+    // 出来时会失败，而 UI 这边什么都不变 —— 用户只看到「点了没反应，还在下」。
+    if (cancelled == 0 && mounted) {
+      _showVideoDiscoveryMessage(
+        context,
+        t.video_discovery_cancel_downloads_failed,
+      );
+    }
+    // 不必手动戳刷新信号：cancelJob 落库后 watchVideoDownloadJobs() 会自己让
+    // 状态流重新求值（见 _watchVideoDiscoveryStatus 的三条订阅）。
   }
 
   /// 「先回到 home 这一层路由，再切下载 tab 并定位子 tab」的唯一出口。
@@ -1474,7 +1537,7 @@ class _HomePageState extends BasePageState<HomePage>
     }
     final List<MediaSourceRow> sources =
         await _managedVideoDownloadSourcesOrPrompt(context);
-    // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（identity 在
+    // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（target 在
     // onSubmit 里取），后端没配好也能先搜资源。但「有没有受管视频来源」是另一
     // 回事：没有落地文件夹时来源下拉是空的、提交按钮永远灰着，所以 BUG-1872 的
     // 引导必须留在打开页面之前。两个原因本来就是两条分支，别再合成一条。
@@ -1492,13 +1555,13 @@ class _HomePageState extends BasePageState<HomePage>
           // 失败态那句话才有一颗能真正解决它的按钮。
           onConfigureBackend: _promptDownloadBackendSetup,
           onSubmit: (VideoDiscoveryDownloadSelection selection) async {
-            final VideoDownloadBackendIdentity identity =
-                await appModelNoUpdate.currentVideoDownloadBackendIdentity();
+            final VideoDownloadBackendTarget target =
+                await appModelNoUpdate.currentVideoDownloadBackendTarget();
             await pipeline.enqueue(
               VideoDownloadEnqueueRequest(
                 media: selection.media,
                 resource: selection.resource,
-                backendIdentity: identity,
+                backendTarget: target,
                 targetSourceId: selection.source.id,
                 subtitlePolicy: selection.subtitlePolicy,
                 coverUrl: item.posterUrl,
@@ -1537,7 +1600,7 @@ class _HomePageState extends BasePageState<HomePage>
     }
     final List<MediaSourceRow> sources =
         await _managedVideoDownloadSourcesOrPrompt(context);
-    // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（identity 在
+    // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（target 在
     // onSubmit 里取），后端没配好也能先搜资源。但「有没有受管视频来源」是另一
     // 回事：没有落地文件夹时来源下拉是空的、提交按钮永远灰着，所以 BUG-1872 的
     // 引导必须留在打开页面之前。两个原因本来就是两条分支，别再合成一条。
@@ -1553,8 +1616,8 @@ class _HomePageState extends BasePageState<HomePage>
           // 同资源搜索页：后端没配好这条失败落在页面里，配置引导按端口注入。
           onConfigureBackend: _promptDownloadBackendSetup,
           onSubmit: (VideoDiscoverySubscriptionSelection selection) async {
-            final VideoDownloadBackendIdentity identity =
-                await appModelNoUpdate.currentVideoDownloadBackendIdentity();
+            final VideoDownloadBackendTarget target =
+                await appModelNoUpdate.currentVideoDownloadBackendTarget();
             final int now = DateTime.now().millisecondsSinceEpoch;
             final String subscriptionId =
                 videoDiscoverySubscriptionId(item.reference);
@@ -1583,10 +1646,10 @@ class _HomePageState extends BasePageState<HomePage>
                       : 'ongoing',
                 ),
                 startAfterEpisode: Value<int?>(selection.startAfterEpisode),
-                backendKind: identity.kind,
-                backendProfileId: Value<String?>(identity.profileId),
-                fingerprint: identity.fingerprint,
-                category: Value<String?>(identity.category),
+                backendKind: target.kind,
+                backendProfileId: Value<String?>(target.profileId),
+                fingerprint: target.fingerprint,
+                category: Value<String?>(target.category),
                 targetSourceId: Value<int?>(selection.download.source.id),
                 organizationPolicy: const Value<String>('library'),
                 subtitlePolicy:
@@ -1790,8 +1853,17 @@ class _HomePageState extends BasePageState<HomePage>
         await _matchingVideoDiscoverySubscriptions(reference);
     final _LocalDiscoveryTarget? local =
         await _resolveLocalDiscoveryTarget(reference);
-    final VideoDownloadJobRow? job = jobs.firstOrNull;
-    final bool busy = job?.lifecycle == VideoDownloadJobLifecycle.active;
+    // 「在飞」是**任意一条** active，不是排序后第一条 active。同一部作品可以并存
+    // 多条下载（换源重下时旧的还在跑），而排序是 priority DESC, createdAt DESC
+    // —— 新提交的那条一旦完成，仍在跑的旧任务就会被判成「不忙」，取消入口跟着
+    // 消失、进度也不再显示。
+    final List<VideoDownloadJobRow> activeJobs = jobs
+        .where((VideoDownloadJobRow row) =>
+            row.lifecycle == VideoDownloadJobLifecycle.active)
+        .toList(growable: false);
+    // 状态文案优先讲还在跑的那条；都跑完了才退回排序首条（完成 / 失败 / 已取消）。
+    final VideoDownloadJobRow? job = activeJobs.firstOrNull ?? jobs.firstOrNull;
+    final bool busy = activeJobs.isNotEmpty;
     final bool subscribed = subscriptions.any(
       (VideoDownloadSubscriptionRow row) => row.enabled,
     );
@@ -1804,6 +1876,9 @@ class _HomePageState extends BasePageState<HomePage>
       isSubscribed: subscribed,
       isInLibrary: local != null,
       isBusy: busy,
+      activeJobIds: <String>[
+        for (final VideoDownloadJobRow row in activeJobs) row.jobId,
+      ],
     );
   }
 
@@ -2302,6 +2377,8 @@ class _HomePageState extends BasePageState<HomePage>
         return DownloadsPage(
           key: ValueKey<String>('downloads-$_downloadsGeneration'),
           initialTabIndex: _downloadsInitialTabIndex,
+          videoDiscoveryController: _productionVideoDiscoveryController,
+          videoDiscoveryActions: _productionVideoDiscoveryActions,
         );
       case HomeTab.dictionaries:
         return HomeDictionaryPage(
@@ -2323,8 +2400,9 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   /// 设置 tab 的内容外壳。[showBackButton] 为 true 时（宽屏隐藏 3 图标侧栏的全屏
-  /// 设置）显示页头左上返回箭头；为 false 时（移动底栏 / 宽屏侧栏在侧，可直接切回）不
-  /// 显示箭头，系统返回手势仍由 [HomeSettingsTabContent] 内的 PopScope 拦截。
+  /// 设置）显示页头左上返回箭头；为 false 时（移动底栏 / 宽屏侧栏在侧 / Windows 自绘
+  /// 标题栏常驻 rail，可直接切回）不显示箭头，系统返回手势仍由
+  /// [HomeSettingsTabContent] 内的 PopScope 拦截。
   Widget _buildSettingsTabContent({required bool showBackButton}) {
     return HomeSettingsTabContent(
       showBackButton: showBackButton,

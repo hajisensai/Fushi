@@ -86,7 +86,12 @@ void main() {
       if (!targetsRt(selector) || size == null) continue;
 
       if (selector.contains('.ruby-rt')) {
-        if (RegExp(r'^(1em|inherit)$').hasMatch(size)) {
+        // BUG-1897：归一化声明允许带 `!important`。它只改层叠权重、不改值，而且是
+        // **必需**的：词典 zip 的 styles.css 被 constructDictCss 加前缀后是
+        // `[data-dictionary="X"] rt`，特异度 (0,1,1) 与本条打平却注入更晚，不加
+        // `!important` 就会被词典自己的 `rt{font-size:0.5em}` 覆盖，重新变成
+        // 0.6em × 0.5 = 0.3em 的双重缩放。这里只锁「值是 1em/inherit」这个不变量。
+        if (RegExp(r'^(1em|inherit)(\s*!important)?$').hasMatch(size)) {
           normalised = true;
         } else {
           reachesWrappedRt.add('`$selector` { font-size: $size }');

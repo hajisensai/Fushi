@@ -186,6 +186,7 @@ void main() {
         screenshot: noop,
         toggleFullscreen: noop,
         toggleSubtitleList: noop,
+        searchSubtitleList: noop,
         toggleImmersiveLock: noop,
         toggleSubtitleBlur: noop,
         cycleSubtitleObscure: noop,

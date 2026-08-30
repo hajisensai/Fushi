@@ -63,6 +63,18 @@ class FushiDatabaseDowngradeException implements Exception {
 /// generic init-error Retry button forever (TODO-905 root cause: a stale
 /// sidecar made `PRAGMA journal_mode=WAL` raise SqliteException(1546), and Retry
 /// re-ran open against the same untouched bad sidecar = infinite "can't open").
+/// BUG-1899：终态失败的两种**根本不同**的成因。此前它们共用一句「likely corrupt,
+/// must be restored from a backup or cleared」，把「路径压根打不开」说成了「数据坏了」，
+/// 并把用户引向清空数据——而那种情况下磁盘上一个字节都没损坏。
+enum FushiDatabaseFailureKind {
+  /// 文件在，但内容不是合法的 SQLite（或恢复阶梯已穷尽）。真的坏了：只能恢复备份或清空。
+  corrupt,
+
+  /// 根本打不开：父目录不存在、无权限、只读介质、盘断链。
+  /// **磁盘上什么都没坏**，让用户去清空数据是有害的误导。
+  cannotOpen,
+}
+
 class FushiDatabaseUnrecoverableException implements Exception {
   /// Absolute path of the database file that could not be recovered.
   final String dbPath;
@@ -70,16 +82,28 @@ class FushiDatabaseUnrecoverableException implements Exception {
   /// The underlying error from the final open attempt (kept for diagnostics).
   final Object cause;
 
+  /// 区分「文件坏了」与「路径打不开」，见 [FushiDatabaseFailureKind]。
+  final FushiDatabaseFailureKind kind;
+
   const FushiDatabaseUnrecoverableException({
     required this.dbPath,
     required this.cause,
+    this.kind = FushiDatabaseFailureKind.corrupt,
   });
 
   @override
-  String toString() =>
-      'FushiDatabaseUnrecoverableException: the database file at "$dbPath" '
-      'could not be opened even after WAL/sidecar recovery. It is likely '
-      'corrupt and must be restored from a backup or cleared. Cause: $cause';
+  String toString() => switch (kind) {
+        FushiDatabaseFailureKind.corrupt =>
+          'FushiDatabaseUnrecoverableException: the database file at "$dbPath" '
+              'could not be opened even after WAL/sidecar recovery. It is '
+              'likely corrupt and must be restored from a backup or cleared. '
+              'Cause: $cause',
+        FushiDatabaseFailureKind.cannotOpen =>
+          'FushiDatabaseUnrecoverableException: the database file at "$dbPath" '
+              'could not be opened and does not exist on disk — the folder is '
+              'missing, unwritable, or on a disconnected/read-only volume. '
+              'Nothing is corrupt; check the data location. Cause: $cause',
+      };
 }
 
 /// SQLite primary result codes that a stale/locked/corrupt `-wal`/`-shm`
@@ -185,7 +209,19 @@ Future<QueryExecutor> _openWithRecovery(
     // file. Otherwise it is a corrupt/missing main db → terminal, do NOT delete
     // any sidecar.
     if (!_mainDbHeaderIsValid(path)) {
-      throw FushiDatabaseUnrecoverableException(dbPath: path, cause: e);
+      // BUG-1899：这里必须分清两件事。sqlite 的 open 在父目录存在时会**自己创建**
+      // 缺失的 db 文件，所以走到这一步还「文件不存在」，只可能是连创建都失败了 ——
+      // 目录不存在 / 无权限 / 只读介质 / 盘断链。那不是「损坏」，把它说成损坏会把
+      // 用户引去清空数据（用户报告：自定义数据安装位置后启动即「Database damaged」，
+      // 实际只是 `<dataRoot>/support` 这个空目录没被创建）。
+      // 文件确实在但头不是 SQLite magic → 才是真的坏了。
+      throw FushiDatabaseUnrecoverableException(
+        dbPath: path,
+        cause: e,
+        kind: File(path).existsSync()
+            ? FushiDatabaseFailureKind.corrupt
+            : FushiDatabaseFailureKind.cannotOpen,
+      );
     }
     debugPrint('[fushi-db] sidecar open error on "$path" '
         '(main db healthy → recovering): $e\n$stack');
@@ -651,6 +687,7 @@ void _requireOneVideoMetadataOwner({
   VideoDownloadJobSubtitles,
   VideoDownloadSubscriptions,
   VideoDownloadSubscriptionItems,
+  MangaChapterStates,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -681,7 +718,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 88;
+  int get schemaVersion => 89;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2710,6 +2747,20 @@ class FushiDatabase extends _$FushiDatabase
             if (await _tableExists('galgames') &&
                 !await _columnExists('galgames', 'language')) {
               await m.addColumn(galgames, galgames.language);
+            }
+          }
+          if (from < 89) {
+            // v89（漫画作品页·每章状态）：新表 manga_chapter_states，把「章」从
+            // `MihonLibraryEntry.currentChapterIndex` 这个单 int 升成一等实体。
+            //
+            // 无损：纯新增表，不动任何既有表和列。旧库升级后表为空 = 所有章都
+            // 「无状态」= 作品页章节列表全显示未读、继续阅读回退到
+            // `currentChapterIndex`（沿 v88 前的行为），零破坏。
+            //
+            // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被
+            // `_tableExists` 短路 no-op。
+            if (!await _tableExists('manga_chapter_states')) {
+              await m.createTable(mangaChapterStates);
             }
           }
         },

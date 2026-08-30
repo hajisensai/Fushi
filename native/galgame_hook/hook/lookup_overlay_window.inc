@@ -115,10 +115,12 @@ void QueueOverlayInput(uint32_t kind, int32_t x, int32_t y, int32_t wheel,
 }
 
 uint32_t OverlayModifierKeys() {
-  uint32_t keys = 0;
-  if ((GetKeyState(VK_SHIFT) & 0x8000) != 0) keys |= 1u;
-  if ((GetKeyState(VK_CONTROL) & 0x8000) != 0) keys |= 2u;
-  if ((GetKeyState(VK_MENU) & 0x8000) != 0) keys |= 4u;
+  uint32_t keys = fushi_voice_hook::kLookupInputVirtualKeyNone;
+  if ((GetKeyState(VK_SHIFT) & 0x8000) != 0)
+    keys |= fushi_voice_hook::kLookupInputVirtualKeyShift;
+  if ((GetKeyState(VK_CONTROL) & 0x8000) != 0)
+    keys |= fushi_voice_hook::kLookupInputVirtualKeyControl;
+  // COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS 没有 Alt；不得把它压到别的位上。
   return keys;
 }
 
@@ -471,7 +473,8 @@ LRESULT CALLBACK LookupOverlayProc(HWND window, UINT message, WPARAM wparam,
     case WM_LBUTTONDOWN:
       QueueOverlayInput(fushi_voice_hook::kLookupInputLeftDown,
                         GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), 0,
-                        OverlayModifierKeys());
+                        OverlayModifierKeys() |
+                            fushi_voice_hook::kLookupInputVirtualKeyLeftButton);
       return 0;
     case WM_LBUTTONUP:
       QueueOverlayInput(fushi_voice_hook::kLookupInputLeftUp,

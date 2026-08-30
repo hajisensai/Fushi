@@ -206,15 +206,6 @@
   var galOriginRatchetLeft = Infinity;
   var galOriginRatchetTop = Infinity;
 
-  // spec 2026-07-10 — host layout mode. 'cascade' (default) = the transient
-  // global-lookup geometry (content-sized window, off-screen self-measure ->
-  // overlaySize -> reveal). 'panel' = the persistent clipboard panel: the
-  // window rect is FIXED (user-remembered), the ROOT shell fills the viewport
-  // below the panel bar (content scrolls inside the iframe), measureAndReport
-  // is short-circuited (no reveal-resize loop) and a blank click never
-  // dismisses (persistent semantics). Carried per renderStack payload so a
-  // cascade payload without the key is byte-identical to the pre-panel host.
-  var layoutMode = 'cascade';
   // BUG-1857 — 拖 root 卡右下角 grip 期间的「live-fit」状态。
   //
   // 拖拽走 native 模态 size 循环：窗口（viewport）每帧随光标长大，但 root 卡的
@@ -226,20 +217,9 @@
   // 且 CSS 增量 == 物理增量÷设备像素比），所以松手时 Dart 的权威重排只是把同一尺寸再写一遍
   // （高度封顶到内容那一步除外）。不写 Dart、不重渲染词条、不发 overlaySize，
   // 拖拽期间不会有第二个 SetWindowPos 和模态循环打架。
-  // 面板模式 root 本就 100% 跟 viewport，不走这条；嵌套子卡锚在父卡词上，不动。
+  // 嵌套子卡锚在父卡词上，不动。
   var liveResize = null;
   var LIVE_RESIZE_MIN_PX = 80;
-  // Panel top bar height (CSS px): grip + pin + close. Root shell top offset.
-  var PANEL_BAR_HEIGHT = 28;
-  // Panel pin VISUAL state. The truth source is the Dart-side pref (native
-  // SetTopmost applies it); Dart syncs this visual via setPanelPinnedVisual on
-  // panel show so the bar icon matches the remembered pref.
-  var panelPinnedVisual = true;
-  // Panel block-capture VISUAL state（防截屏）. Truth source is the Dart pref
-  // clipboardPanelBlockCapture (native SetWindowDisplayAffinity applies it);
-  // Dart syncs this visual via setPanelBlockCaptureVisual. Default true =
-  // capture blocked (shield bright); toggled off dims the shield (panel-block-off).
-  var panelBlockCaptureVisual = true;
 
   // Route identity for the lookup currently being rendered. Desktop callers
   // predating the routed galgame card contract omit this value and therefore
@@ -249,10 +229,6 @@
     routeEpoch: 0,
     lookupEpoch: 0,
   };
-  // BUG-1793 follow-up — the native host owns two physical lookup windows and
-  // therefore has the final, non-racy surface identity. Defaults on for legacy
-  // hosts; GlobalLookupWindow::RenderJson synchronizes it after every render.
-  var clipboardHistoryAvailable = true;
 
   function normalizeRoute(route, routeEpoch, lookupEpoch) {
     var source = 'desktop';
@@ -596,286 +572,19 @@
         '.global-lookup-frame-shell[data-theme="dark"] ' +
         '.global-lookup-close:hover{' +
         'background:rgba(235,235,245,0.16);color:rgba(235,235,245,0.92);}' +
-        // 剪贴板复制历史按钮（🕘）——瞬态覆盖窗 ROOT 卡左上角（与 close-X 右上角对称）。
-        // 必须挂 SHELL 内（z-index 高于 iframe、pointer-events:auto），否则被 native 按
-        // shell 卡矩形裁掉（同 close-X / resize-grip 的 BUG-749 约束）。面板模式另有面板
-        // 栏🕘，此按钮只在 cascade 的 root 卡出现。
-        '.global-lookup-frame-shell .global-lookup-history{' +
-        'position:absolute;top:2px;left:6px;z-index:5;' +
-        'width:22px;height:22px;line-height:22px;text-align:center;' +
-        'font-size:14px;cursor:pointer;pointer-events:auto;' +
-        'border-radius:11px;' +
-        'transition:background-color 120ms ease-out;}' +
-        '.global-lookup-frame-shell .global-lookup-history:hover{' +
-        'background:rgba(120,120,128,0.16);}' +
-        '.global-lookup-frame-shell[data-theme="dark"] ' +
-        '.global-lookup-history:hover{background:rgba(235,235,245,0.16);}' +
         // Phase C（弹窗尺寸精细化 2026-07-13）— 瞬态覆盖窗（cascade 模式）ROOT 卡的
-        // 右下角 resize grip：拖它进 native 模态 size 循环（beginWindowResize，与面板
-        // grip 同一通路）。必须挂在 SHELL 内（z-index 高于 iframe、pointer-events:auto），
+        // 右下角 resize grip：拖它进 native 模态 size 循环（beginWindowResize）。
+        // 必须挂在 SHELL 内（z-index 高于 iframe、pointer-events:auto），
         // 因为瞬态窗被 native 按 shell 卡矩形做区域裁剪（BUG-749 gap click-through）——
         // 挂在窗口层的角落 grip 会被裁掉不可见/不可点，只有 root 卡区域在裁剪区内。
-        // 透明无背景（cursor 提示可拖），与面板 grip 一致，避免遮挡卡片文字。
+        // 透明无背景（cursor 提示可拖），避免遮挡卡片文字。
         '.global-lookup-frame-shell .global-lookup-resize-grip{' +
         'position:absolute;right:0;bottom:0;width:16px;height:16px;' +
-        'z-index:6;cursor:nwse-resize;pointer-events:auto;}' +
-        // spec 2026-07-10 — panel top bar (grip + pin + close). Fixed to the
-        // window top, above the root shell (which starts at PANEL_BAR_HEIGHT).
-        // pointer-events:auto so the grip mousedown reaches the drag handler
-        // even though the layer beneath is pointer-events:none. Only created in
-        // panel mode (ensurePanelBar), so the transient overlay never carries
-        // this DOM/CSS.
-        // 浅色模式对比修复：bar 底 + grip 文字 + 按钮字形都是浅色主题下的默认样式，
-        // 原来 bar 底仅 10% 灰、字形 0.75 半透深灰，压在亮游戏上的半透明浅窗被冲淡
-        // 「看不清」。加深到接近全实心深灰，并给 bar 一条底边界定轮廓（dark 变体在下面
-        // 覆盖，深色窗不受影响）。
-        '#global-lookup-panel-bar{' +
-        'position:fixed;left:0;top:0;right:0;height:28px;' +
-        'display:flex;align-items:center;z-index:2147483001;' +
-        'pointer-events:auto;user-select:none;-webkit-user-select:none;' +
-        'background:rgba(120,120,128,0.18);' +
-        'border-bottom:1px solid rgba(120,120,128,0.20);' +
-        'border-radius:10px 10px 0 0;}' +
-        '#global-lookup-panel-bar .panel-grip{' +
-        'flex:1;height:100%;cursor:move;display:flex;align-items:center;' +
-        'padding-left:10px;font-family:"Segoe UI",sans-serif;font-size:11px;' +
-        'color:rgba(70,70,78,0.92);letter-spacing:2px;}' +
-        // BUG-768 — persistent chip background so the pin/close read as tappable
-        // affordances on ANY window surface (light or dark); glyph color is made
-        // theme-aware below so it stays legible against that chip.
-        '#global-lookup-panel-bar .panel-btn{' +
-        'width:24px;height:24px;line-height:24px;text-align:center;' +
-        'margin-right:4px;font-family:"Segoe UI Symbol","Segoe UI",sans-serif;' +
-        'font-size:14px;cursor:pointer;border-radius:12px;' +
-        'background:rgba(120,120,128,0.24);color:rgba(30,30,35,0.95);}' +
-        '#global-lookup-panel-bar .panel-btn:hover{' +
-        'background:rgba(120,120,128,0.36);color:rgba(20,20,24,1);}' +
-        // BUG-768 — dark-window variant (stamped via data-theme in renderStack):
-        // light glyph + light chip so the buttons don't vanish on a dark surface.
-        '#global-lookup-panel-bar[data-theme="dark"] .panel-btn{' +
-        'background:rgba(235,235,245,0.14);color:rgba(235,235,245,0.72);}' +
-        '#global-lookup-panel-bar[data-theme="dark"] .panel-btn:hover{' +
-        'background:rgba(235,235,245,0.24);color:rgba(235,235,245,0.95);}' +
-        // 深色窗:grip 提示文字改回浅色(默认的深灰在深色窗上会消失)。
-        '#global-lookup-panel-bar[data-theme="dark"] .panel-grip{' +
-        'color:rgba(235,235,245,0.66);}' +
-        '#global-lookup-panel-bar .panel-btn.panel-pin-off{opacity:0.62;}' +
-        // 防截屏按钮关闭态（允许截图）时同样调暗，与 pin-off 一致。
-        '#global-lookup-panel-bar .panel-btn.panel-block-off{opacity:0.62;}' +
-        // Bottom-right resize grip (posts beginWindowResize).
-        '#global-lookup-panel-resize{' +
-        'position:fixed;right:0;bottom:0;width:16px;height:16px;' +
-        'cursor:nwse-resize;z-index:2147483001;pointer-events:auto;}' +
-        // 真机反馈：面板 root 卡不画 per-shell 关闭 ×（与面板栏 × 重复；
-        // 嵌套子卡的 × 保留）。
-        '.global-lookup-frame-shell[data-panel-root="true"] ' +
-        '.global-lookup-close{display:none;}' +
-        // 剪贴板复制历史覆盖层（面板栏🕘 / 瞬态 root 卡🕘 触发）。渲染进 ROOT 卡
-        // shell 内（绝对铺满、盖住 iframe），避免瞬态窗被 native 按 shell 矩形裁剪
-        // 时历史面板落到透明裁剪区外看不见（与 BUG-749 gap click-through 同源）。
-        '.clipboard-history-overlay{' +
-        'position:absolute;left:0;top:0;width:100%;height:100%;' +
-        'box-sizing:border-box;z-index:5;display:flex;flex-direction:column;' +
-        'background:#ffffff;color:#1c1c1e;' +
-        'font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}' +
-        '.global-lookup-frame-shell[data-theme="dark"] .clipboard-history-overlay{' +
-        'background:#1c1c1e;color:rgba(235,235,245,0.92);}' +
-        '.clipboard-history-overlay .clipboard-history-head{' +
-        'display:flex;align-items:center;gap:8px;padding:8px 10px;' +
-        'border-bottom:1px solid rgba(120,120,128,0.24);flex:0 0 auto;}' +
-        '.clipboard-history-overlay .clipboard-history-title{' +
-        'flex:1 1 auto;font-weight:600;overflow:hidden;text-overflow:ellipsis;' +
-        'white-space:nowrap;}' +
-        '.clipboard-history-overlay .clipboard-history-btn{' +
-        'flex:0 0 auto;cursor:pointer;padding:2px 8px;border-radius:6px;' +
-        'user-select:none;color:inherit;opacity:0.8;}' +
-        '.clipboard-history-overlay .clipboard-history-btn:hover{' +
-        'background:rgba(120,120,128,0.16);opacity:1;}' +
-        '.clipboard-history-overlay .clipboard-history-list{' +
-        'flex:1 1 auto;overflow-y:auto;overflow-x:hidden;}' +
-        '.clipboard-history-overlay .clipboard-history-row{' +
-        'padding:8px 10px;border-bottom:1px solid rgba(120,120,128,0.16);' +
-        'cursor:pointer;user-select:none;}' +
-        '.clipboard-history-overlay .clipboard-history-row:hover{' +
-        'background:rgba(120,120,128,0.12);}' +
-        '.clipboard-history-overlay .clipboard-history-text{' +
-        'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;' +
-        'overflow:hidden;word-break:break-word;}' +
-        '.clipboard-history-overlay .clipboard-history-time{' +
-        'margin-top:2px;font-size:11px;opacity:0.5;}' +
-        '.clipboard-history-overlay .clipboard-history-empty{' +
-        'flex:1 1 auto;display:flex;align-items:center;justify-content:center;' +
-        'opacity:0.5;padding:24px;text-align:center;}';
+        'z-index:6;cursor:nwse-resize;pointer-events:auto;}';
     var head = document.head ||
         (document.getElementsByTagName &&
             document.getElementsByTagName('head')[0]);
     (head || document.documentElement || document.body).appendChild(style);
-  }
-
-  // spec 2026-07-10 — the panel top bar: drag grip + pin toggle + close. Host
-  // chrome (postToHost, no bridge id): beginWindowDrag/beginWindowResize are
-  // intercepted natively (HTCAPTION modal loop); panelPin/panelClose reach the
-  // Dart panel controller. Idempotent; only called from panel-mode renderStack.
-  function ensurePanelBar() {
-    if (!document || typeof document.createElement !== 'function') {
-      return null;
-    }
-    var existing = document.getElementById('global-lookup-panel-bar');
-    if (existing) {
-      return existing;
-    }
-    ensureStyle();
-    var bar = document.createElement('div');
-    bar.id = 'global-lookup-panel-bar';
-
-    var grip = document.createElement('div');
-    grip.className = 'panel-grip';
-    grip.textContent = '⋯';
-    grip.addEventListener('mousedown', function (event) {
-      if (event) {
-        if (typeof event.preventDefault === 'function') event.preventDefault();
-        if (typeof event.stopPropagation === 'function') {
-          event.stopPropagation();
-        }
-      }
-      postToHost('beginWindowDrag', []);
-    }, true);
-    bar.appendChild(grip);
-
-    // 剪贴板复制历史按钮（🕘）：postToHost('clipboardHistory') → Dart 从 DB 重载
-    // 历史并注入 showClipboardHistory 渲染覆盖层。与 pin/close 同一 host-chrome 范式
-    // （pointerdown 捕获 + stopPropagation，避免触发面板点外收子层）。
-    var historyBtn = document.createElement('div');
-    historyBtn.className = 'panel-btn panel-history';
-    historyBtn.setAttribute('role', 'button');
-    historyBtn.setAttribute('aria-label', 'Clipboard history');
-    historyBtn.textContent = '🕘';
-    historyBtn.addEventListener('pointerdown', function (event) {
-      if (event) {
-        if (typeof event.stopPropagation === 'function') {
-          event.stopPropagation();
-        }
-        if (typeof event.preventDefault === 'function') event.preventDefault();
-      }
-      postToHost('clipboardHistory', []);
-    }, true);
-    bar.appendChild(historyBtn);
-
-    var pinBtn = document.createElement('div');
-    pinBtn.className =
-        'panel-btn panel-pin' + (panelPinnedVisual ? '' : ' panel-pin-off');
-    pinBtn.setAttribute('role', 'button');
-    pinBtn.setAttribute('aria-label', 'Pin');
-    pinBtn.textContent = '📌';
-    var onPin = function (event) {
-      if (event) {
-        if (typeof event.stopPropagation === 'function') {
-          event.stopPropagation();
-        }
-        if (typeof event.preventDefault === 'function') event.preventDefault();
-      }
-      setPanelPinnedVisual(!panelPinnedVisual);
-      postToHost('panelPin', [panelPinnedVisual]);
-    };
-    pinBtn.addEventListener('pointerdown', onPin, true);
-    bar.appendChild(pinBtn);
-
-    // 防截屏按钮（🛡）：切换 SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)。
-    // 默认开（盾牌亮）= 面板不进截图/录屏；关（盾牌变暗）= 允许被截。视觉态由
-    // Dart 经 setPanelBlockCaptureVisual 同步（与 pin 同一范式）。
-    var blockBtn = document.createElement('div');
-    blockBtn.className =
-        'panel-btn panel-block' + (panelBlockCaptureVisual ? '' : ' panel-block-off');
-    blockBtn.setAttribute('role', 'button');
-    blockBtn.setAttribute('aria-label', 'Block screen capture');
-    blockBtn.textContent = '🛡';
-    var onBlock = function (event) {
-      if (event) {
-        if (typeof event.stopPropagation === 'function') {
-          event.stopPropagation();
-        }
-        if (typeof event.preventDefault === 'function') event.preventDefault();
-      }
-      setPanelBlockCaptureVisual(!panelBlockCaptureVisual);
-      postToHost('panelBlockCapture', [panelBlockCaptureVisual]);
-    };
-    blockBtn.addEventListener('pointerdown', onBlock, true);
-    bar.appendChild(blockBtn);
-
-    var closeBtn = document.createElement('div');
-    closeBtn.className = 'panel-btn panel-close';
-    closeBtn.setAttribute('role', 'button');
-    closeBtn.setAttribute('aria-label', 'Close');
-    closeBtn.textContent = '×';
-    var onClose = function (event) {
-      if (event) {
-        if (typeof event.stopPropagation === 'function') {
-          event.stopPropagation();
-        }
-        if (typeof event.preventDefault === 'function') event.preventDefault();
-      }
-      postToHost('panelClose', []);
-    };
-    closeBtn.addEventListener('pointerdown', onClose, true);
-    bar.appendChild(closeBtn);
-
-    (document.body || document.documentElement).appendChild(bar);
-
-    var resize = document.createElement('div');
-    resize.id = 'global-lookup-panel-resize';
-    resize.addEventListener('mousedown', function (event) {
-      if (event) {
-        if (typeof event.preventDefault === 'function') event.preventDefault();
-        if (typeof event.stopPropagation === 'function') {
-          event.stopPropagation();
-        }
-      }
-      postToHost('beginWindowResize', []);
-    }, true);
-    (document.body || document.documentElement).appendChild(resize);
-    return bar;
-  }
-
-  // spec 2026-07-10 — syncs the pin button's VISUAL state to the Dart pref
-  // (the truth source; native SetTopmost applies the actual z-order).
-  function setPanelPinnedVisual(pinned) {
-    panelPinnedVisual = !!pinned;
-    var bar = document.getElementById &&
-        document.getElementById('global-lookup-panel-bar');
-    if (!bar) {
-      return;
-    }
-    // children walk (not querySelector) so the node harness's minimal fake DOM
-    // exercises the same code path a real browser does.
-    var kids = bar.children || [];
-    for (var i = 0; i < kids.length; i++) {
-      var kid = kids[i];
-      if (kid && String(kid.className).indexOf('panel-pin') >= 0) {
-        kid.className =
-            'panel-btn panel-pin' + (panelPinnedVisual ? '' : ' panel-pin-off');
-        return;
-      }
-    }
-  }
-
-  // 防截屏 — 把 🛡 按钮视觉态同步到 Dart pref（真相源；native
-  // SetWindowDisplayAffinity 应用真正的捕获排除）。与 setPanelPinnedVisual 同构。
-  function setPanelBlockCaptureVisual(block) {
-    panelBlockCaptureVisual = !!block;
-    var bar = document.getElementById &&
-        document.getElementById('global-lookup-panel-bar');
-    if (!bar) {
-      return;
-    }
-    var kids = bar.children || [];
-    for (var i = 0; i < kids.length; i++) {
-      var kid = kids[i];
-      if (kid && String(kid.className).indexOf('panel-block') >= 0) {
-        kid.className = 'panel-btn panel-block' +
-            (panelBlockCaptureVisual ? '' : ' panel-block-off');
-        return;
-      }
-    }
   }
 
   function ensureLayer() {
@@ -906,27 +615,6 @@
     var theme = descriptor && descriptor.theme;
     if (theme === 'dark' || theme === 'light') {
       shell.setAttribute('data-theme', theme);
-    }
-    // spec 2026-07-10 panel — the ROOT shell ignores descriptor.frame and fills
-    // the fixed window viewport below the panel bar; the sentence + entries
-    // scroll INSIDE the iframe (fixed window = no reveal-resize loop, so a new
-    // clipboard sentence re-renders in place without any window motion).
-    // Nested children keep their Dart-computed cascade frames (bounded to the
-    // panel rect by the render side).
-    if (layoutMode === 'panel' && descriptor &&
-        typeof descriptor.parentIndex === 'number' &&
-        descriptor.parentIndex < 0) {
-      shell.style.position = 'absolute';
-      shell.style.left = '0px';
-      shell.style.top = PANEL_BAR_HEIGHT + 'px';
-      shell.style.width = '100%';
-      shell.style.height = 'calc(100% - ' + PANEL_BAR_HEIGHT + 'px)';
-      shell.style.zIndex = '0';
-      shell.style.pointerEvents = 'auto';
-      // 真机反馈：面板 root 卡的 per-shell 关闭 × 与面板栏的 × 重复——标记
-      // panel-root，CSS 隐藏 root 卡的 ×（嵌套子卡保留各自的 ×，关子层有用）。
-      shell.setAttribute('data-panel-root', 'true');
-      return;
     }
     shell.style.position = 'absolute';
     // TODO-1189 — establish a per-shell STACKING CONTEXT ordered by insertion
@@ -1215,7 +903,7 @@
   }
 
   function liveResizeRootRecord() {
-    if (layoutMode !== 'cascade' || !lastRootId) {
+    if (!lastRootId) {
       return null;
     }
     var record = frames.get(lastRootId);
@@ -1265,7 +953,7 @@
       return false;
     }
     var record = frames.get(liveResize.id);
-    if (!record || !record.shell || layoutMode !== 'cascade') {
+    if (!record || !record.shell) {
       liveResize = null;
       return false;
     }
@@ -1302,277 +990,6 @@
       grip.addEventListener('mousedown', onDown, true);
     }
     return grip;
-  }
-
-  // 剪贴板复制历史按钮（🕘）——瞬态覆盖窗 root 卡左上角。与面板栏🕘同一 host-chrome
-  // 范式：pointerdown 捕获 + stopPropagation（不触发 root 卡的点外收层），postToHost
-  // 让 Dart 从 DB 重载历史并回注 showClipboardHistory。
-  function createHistoryButton() {
-    if (!document || typeof document.createElement !== 'function') {
-      return null;
-    }
-    var btn = document.createElement('div');
-    btn.className = 'global-lookup-history';
-    btn.setAttribute('role', 'button');
-    btn.setAttribute('aria-label', 'Clipboard history');
-    if (typeof btn.textContent !== 'undefined') {
-      btn.textContent = '🕘';
-    }
-    var onOpen = function (event) {
-      if (event && typeof event.stopPropagation === 'function') {
-        event.stopPropagation();
-      }
-      if (event && typeof event.preventDefault === 'function') {
-        event.preventDefault();
-      }
-      postToHost('clipboardHistory', []);
-    };
-    if (typeof btn.addEventListener === 'function') {
-      btn.addEventListener('pointerdown', onOpen, true);
-      btn.addEventListener('click', onOpen, true);
-    }
-    return btn;
-  }
-
-  // BUG-1793 — clipboard history belongs to desktop/global lookup and the
-  // persistent clipboard panel.  A galCard is a game-scoped dictionary surface:
-  // exposing the process-wide copy history there both leaks unrelated desktop
-  // text into the game overlay and adds chrome the user did not ask for.
-  function routeAllowsClipboardHistory(routeSnapshot) {
-    return clipboardHistoryAvailable &&
-        normalizeRoute(routeSnapshot || activeRoute).source !== 'galCard';
-  }
-
-  // The stable root iframe/shell can be reused across routed lookups. Reconcile
-  // the host-chrome button on every render instead of deciding only at shell
-  // creation, otherwise a desktop -> galCard transition keeps the old clock (or
-  // a galCard -> desktop transition permanently loses it).
-  function syncRootHistoryButton(record) {
-    if (!record || !record.shell ||
-        typeof record.parentIndex !== 'number' || record.parentIndex >= 0) {
-      return;
-    }
-    var children = record.shell.children || [];
-    var existing = null;
-    for (var i = 0; i < children.length; i++) {
-      if (children[i] && children[i].className === 'global-lookup-history') {
-        existing = children[i];
-        break;
-      }
-    }
-    var shouldShow = layoutMode !== 'panel' &&
-        routeAllowsClipboardHistory(record.route);
-    if (!shouldShow) {
-      if (existing && typeof record.shell.removeChild === 'function') {
-        record.shell.removeChild(existing);
-      }
-      return;
-    }
-    if (!existing && typeof record.shell.appendChild === 'function') {
-      var historyBtn = createHistoryButton();
-      if (historyBtn) {
-        record.shell.appendChild(historyBtn);
-      }
-    }
-  }
-
-  // Called by the Windows physical-window host after each render. This is
-  // intentionally separate from beginLookup(): cached/replayed render scripts
-  // may transiently carry the legacy desktop route, but a galCard HWND can never
-  // become a desktop lookup window. Reconcile synchronously before WebView2 can
-  // present the rendered frame.
-  function setClipboardHistoryAvailable(available) {
-    clipboardHistoryAvailable = available === true;
-    if (!clipboardHistoryAvailable) {
-      hideClipboardHistory();
-    }
-    if (frames && typeof frames.forEach === 'function') {
-      frames.forEach(function (record) {
-        syncRootHistoryButton(record);
-      });
-    }
-  }
-
-  // 历史覆盖层渲染进 ROOT 卡 shell（parentIndex < 0；面板模式该卡带 data-panel-root，
-  // 瞬态模式即级联根卡）。挂进 shell 内而非窗口层：瞬态窗被 native 按 shell 卡矩形裁剪，
-  // 挂窗口层的覆盖层会落到透明裁剪区外不可见（BUG-749 同源）。返回 root shell 或 null。
-  function rootShellForHistory() {
-    var found = null;
-    if (frames && typeof frames.forEach === 'function') {
-      frames.forEach(function (record) {
-        if (found) return;
-        if (record && record.shell &&
-            typeof record.parentIndex === 'number' &&
-            record.parentIndex < 0) {
-          found = record.shell;
-        }
-      });
-    }
-    return found;
-  }
-
-  // 移除所有历史覆盖层（× 关闭 / 选中一条查词 / 重新打开前清旧层）。优先
-  // querySelectorAll，node harness 的极简 DOM 无此 API 时回退遍历各 shell 子节点。
-  function hideClipboardHistory() {
-    if (!document) return false;
-    var removed = false;
-    var existing = (typeof document.querySelectorAll === 'function')
-        ? document.querySelectorAll('.clipboard-history-overlay')
-        : null;
-    if (existing && existing.length) {
-      for (var i = existing.length - 1; i >= 0; i--) {
-        var node = existing[i];
-        if (node && node.parentNode &&
-            typeof node.parentNode.removeChild === 'function') {
-          node.parentNode.removeChild(node);
-          removed = true;
-        }
-      }
-      return removed;
-    }
-    if (frames && typeof frames.forEach === 'function') {
-      frames.forEach(function (record) {
-        if (!record || !record.shell) return;
-        var kids = record.shell.children || [];
-        for (var j = kids.length - 1; j >= 0; j--) {
-          var kid = kids[j];
-          if (kid &&
-              String(kid.className).indexOf('clipboard-history-overlay') >= 0 &&
-              typeof record.shell.removeChild === 'function') {
-            record.shell.removeChild(kid);
-            removed = true;
-          }
-        }
-      });
-    }
-    return removed;
-  }
-
-  // 由 Dart 注入渲染剪贴板复制历史覆盖层。payload（JSON 串或对象）：
-  //   { entries:[{text, time}], title, clearLabel, emptyLabel }
-  // entries 顺序=最新在前（Dart 已 reverse）。每行点选 → lookupClipboardHistoryEntry
-  // 让 Dart 重查该文本；清空 → clearClipboardHistory；× / 选中一条后自动关层。
-  function showClipboardHistory(payload) {
-    // Defense in depth for routed/stale native messages: even if a delayed
-    // clipboardHistory response arrives after the surface became galCard, never
-    // mount the process-wide history overlay into the game lookup card.
-    if (!routeAllowsClipboardHistory(activeRoute)) {
-      hideClipboardHistory();
-      return false;
-    }
-    var data = payload;
-    if (typeof payload === 'string') {
-      try {
-        data = JSON.parse(payload);
-      } catch (e) {
-        data = null;
-      }
-    }
-    if (!data || typeof data !== 'object') data = {};
-    var entries = (data.entries && data.entries.length) ? data.entries : [];
-    var title = data.title || 'Clipboard history';
-    var clearLabel = data.clearLabel || 'Clear';
-    var emptyLabel = data.emptyLabel || '';
-    var host = rootShellForHistory();
-    if (!host || typeof document.createElement !== 'function' ||
-        typeof host.appendChild !== 'function') {
-      return false;
-    }
-    hideClipboardHistory();
-
-    var overlay = document.createElement('div');
-    overlay.className = 'clipboard-history-overlay';
-
-    var head = document.createElement('div');
-    head.className = 'clipboard-history-head';
-    var titleEl = document.createElement('div');
-    titleEl.className = 'clipboard-history-title';
-    titleEl.textContent = title;
-    head.appendChild(titleEl);
-
-    var clearBtn = document.createElement('div');
-    clearBtn.className = 'clipboard-history-btn';
-    clearBtn.setAttribute('role', 'button');
-    clearBtn.textContent = clearLabel;
-    if (typeof clearBtn.addEventListener === 'function') {
-      clearBtn.addEventListener('pointerdown', function (event) {
-        if (event && typeof event.stopPropagation === 'function') {
-          event.stopPropagation();
-        }
-        if (event && typeof event.preventDefault === 'function') {
-          event.preventDefault();
-        }
-        postToHost('clearClipboardHistory', []);
-      }, true);
-    }
-    head.appendChild(clearBtn);
-
-    var closeBtn = document.createElement('div');
-    closeBtn.className = 'clipboard-history-btn';
-    closeBtn.setAttribute('role', 'button');
-    closeBtn.textContent = '×';
-    if (typeof closeBtn.addEventListener === 'function') {
-      closeBtn.addEventListener('pointerdown', function (event) {
-        if (event && typeof event.stopPropagation === 'function') {
-          event.stopPropagation();
-        }
-        if (event && typeof event.preventDefault === 'function') {
-          event.preventDefault();
-        }
-        hideClipboardHistory();
-      }, true);
-    }
-    head.appendChild(closeBtn);
-    overlay.appendChild(head);
-
-    if (!entries.length) {
-      var empty = document.createElement('div');
-      empty.className = 'clipboard-history-empty';
-      empty.textContent = emptyLabel;
-      overlay.appendChild(empty);
-    } else {
-      var list = document.createElement('div');
-      list.className = 'clipboard-history-list';
-      for (var k = 0; k < entries.length; k++) {
-        (function (entry) {
-          var row = document.createElement('div');
-          row.className = 'clipboard-history-row';
-          row.setAttribute('role', 'button');
-          var textEl = document.createElement('div');
-          textEl.className = 'clipboard-history-text';
-          textEl.textContent =
-              String(entry && entry.text != null ? entry.text : '');
-          row.appendChild(textEl);
-          if (entry && entry.time) {
-            var timeEl = document.createElement('div');
-            timeEl.className = 'clipboard-history-time';
-            timeEl.textContent = String(entry.time);
-            row.appendChild(timeEl);
-          }
-          var onPick = function (event) {
-            if (event && typeof event.stopPropagation === 'function') {
-              event.stopPropagation();
-            }
-            if (event && typeof event.preventDefault === 'function') {
-              event.preventDefault();
-            }
-            var text = entry && entry.text != null ? String(entry.text) : '';
-            if (!text) return;
-            hideClipboardHistory();
-            postToHost('lookupClipboardHistoryEntry', [text]);
-          };
-          if (typeof row.addEventListener === 'function') {
-            row.addEventListener('pointerdown', onPick, true);
-            row.addEventListener('click', onPick, true);
-          }
-          list.appendChild(row);
-        })(entries[k]);
-      }
-      overlay.appendChild(list);
-    }
-
-    host.appendChild(overlay);
-    return true;
   }
 
   function createRecord(layer, descriptor, standby) {
@@ -1626,23 +1043,14 @@
         shell.appendChild(closeBtn);
       }
     }
-    // Phase C — 只给瞬态覆盖窗（cascade）的 ROOT 卡（parentIndex < 0）挂 resize grip：
-    // 调整的是 overlay「最大卡尺寸」真值，子级级联卡由它派生，故不各自加把手；面板
-    // 模式另有窗口级 #global-lookup-panel-resize，不在此重复。
-    if (!standby && layoutMode !== 'panel' && descriptor &&
+    // Phase C — 只给 ROOT 卡（parentIndex < 0）挂 resize grip：调整的是 overlay
+    // 「最大卡尺寸」真值，子级级联卡由它派生，故不各自加把手。
+    if (!standby && descriptor &&
         typeof descriptor.parentIndex === 'number' &&
         descriptor.parentIndex < 0) {
       var grip = createResizeGrip();
       if (grip) {
         shell.appendChild(grip);
-      }
-      // 剪贴板复制历史按钮（🕘）只属于桌面瞬态查词。galCard 游戏浮窗不显示；
-      // syncRootHistoryButton 还会处理稳定 root shell 的跨路由复用。
-      if (routeAllowsClipboardHistory(activeRoute)) {
-        var histBtn = createHistoryButton();
-        if (histBtn) {
-          shell.appendChild(histBtn);
-        }
       }
     }
     layer.appendChild(shell);
@@ -1855,7 +1263,6 @@
       win.eval(
           staticSettings.head + STANDBY_EMPTY_ENTRIES_JS +
           staticSettings.tail +
-          'window.__globalLookupSentence="";' +
           'window.__hasChildPopup=false;' +
           'window.renderPopup&&window.renderPopup();');
       record.injectedStaticRevision = revision;
@@ -2164,7 +1571,7 @@
       return;
     }
     var isNested = typeof record.parentIndex === 'number' &&
-        record.parentIndex >= 0 && layoutMode !== 'panel';
+        record.parentIndex >= 0;
     var geometryCommitted = !isNested ||
         (record.requiredGeometryEpoch > 0 &&
          record.requiredGeometryEpoch === committedGeometryEpoch &&
@@ -2848,7 +2255,6 @@
            record.injectedRenderJs !== descriptor.renderJs)
         : record.injectedSettingsJs !== descriptor.settingsJs;
     bindRecordRoute(record, activeRoute);
-    syncRootHistoryButton(record);
     applyShellStyle(
         record.shell, descriptor, !contentChanged, logicalDepth);
     // D1 / TODO-1231 v3 — geometry is placed for this layer, so reveal-ready is
@@ -2943,8 +2349,8 @@
   // synchronous popupRendered from the new iframe already sees the transaction.
   function preparePendingSuffixSwap(incomingIds) {
     pendingSuffixSwap = null;
-    if (layoutMode === 'panel' || !Array.isArray(incomingIds) ||
-        incomingIds.length < 2 || !frames.size) {
+    if (!Array.isArray(incomingIds) || incomingIds.length < 2 ||
+        !frames.size) {
       return false;
     }
     var previousIds = [];
@@ -3238,31 +2644,9 @@
     var popups = (payload && payload.popups) || [];
     // BUG-1857 — Dart 的权威重排接管 root 尺寸；live-fit 到此为止。
     endLiveResize();
-    // BUG-1793 — this bit identifies the originating UI surface, not merely the
-    // physical HWND route. A galgame text-overlay tap intentionally uses the
-    // desktop lookup window, but still must not expose process-wide copy history.
-    // Missing = true for compatibility with older renderers.
-    setClipboardHistoryAvailable(
-        !payload || payload.clipboardHistoryAvailable !== false);
     // TODO-1345 — pick up this lookup's reserved origin floor BEFORE the diff +
     // measure so the very first reveal already commits the headroom-covered origin.
     applyOriginFloor(payload && payload.originFloor);
-    // spec 2026-07-10 — panel mode rides the payload (absent = cascade, so the
-    // transient overlay's payload/behaviour is byte-identical to pre-panel).
-    layoutMode = (payload && payload.layoutMode) === 'panel' ? 'panel' : 'cascade';
-    if (layoutMode === 'panel') {
-      var panelBar = ensurePanelBar();
-      // BUG-768 — the panel bar lives in document.body (fixed, OUTSIDE any shell),
-      // so it never inherits the per-shell data-theme. Without it the pin/close
-      // glyphs kept the light-theme dark-gray color (rgba(60,60,67,.6)) and
-      // vanished on a dark window. Stamp the root descriptor's resolved brightness
-      // onto the bar so the dark-theme .panel-btn variant applies (mirrors the
-      // per-shell .global-lookup-close dark variant).
-      var rootTheme = popups.length ? (popups[0] && popups[0].theme) : null;
-      if (panelBar && (rootTheme === 'dark' || rootTheme === 'light')) {
-        panelBar.setAttribute('data-theme', rootTheme);
-      }
-    }
     if (!popups.length) {
       pendingSuffixSwap = null;
       removeMissing([]);
@@ -3345,20 +2729,6 @@
     // static settings are missing. The routed resend will inject content and
     // schedule a fresh measurement; until then the shell must remain invisible.
     if (waitingForStatic) {
-      return;
-    }
-    // spec 2026-07-10 panel — the window rect is FIXED (user-remembered): no
-    // overlaySize report, no reveal-resize loop. The root shell fills the
-    // viewport (applyShellStyle) and content scrolls inside the iframe, so a
-    // new clipboard sentence re-renders with zero window motion. Shells still
-    // need their reveal gate flipped (normally done by the overlaySize path),
-    // so flip it here directly.
-    if (layoutMode === 'panel') {
-      frames.forEach(function (record) {
-        if (sameRoute(record.route, route)) {
-          setGateFlag(record, ATTR_REVEAL_READY, 'revealReady');
-        }
-      });
       return;
     }
     // TODO-1231 v2 (BUG-583) — the union bbox has two independently-sourced
@@ -3862,12 +3232,6 @@
   // clicks to popup.js's per-layer path fixes it (SUB5) while the close-X (SUB1)
   // gives the mouse an explicit per-layer affordance.
   function onHostPointerDown(event) {
-    // spec 2026-07-10 panel — persistent semantics: a blank click inside the
-    // fixed panel window (panel bar gaps etc.) never dismisses. The panel bar's
-    // own buttons stopPropagation before this handler anyway.
-    if (layoutMode === 'panel') {
-      return;
-    }
     var t = event && event.target;
     if (t && typeof t.closest === 'function' &&
         t.closest('.global-lookup-frame-shell')) {
@@ -3886,14 +3250,6 @@
   // stack race). Only a click OUTSIDE every shell (true gap) dismisses the root.
   // Returns whether the click hit any shell (C++ uses it for logging).
   function handleGlobalClick(x, y) {
-    // BUG-859 — persistent panel semantics: a blank click never dismisses the
-    // clipboard panel (mirrors the onHostPointerDown panel guard). Without this
-    // a forwarded gap-click would post dismissPopupAt(0) against the panel —
-    // and the panel root's percentage/calc() shell size parses to a 100×0 box
-    // in frameIdAtPoint, so EVERY panel click would mis-read as a gap.
-    if (layoutMode === 'panel') {
-      return true;
-    }
     var frameId = frameIdAtPoint(x, y);
     if (frameId != null) {
       return true; // Card hit: popup.js owns the per-layer decision.
@@ -4051,61 +3407,6 @@
       requestGalFrameDirty(record.route);
     }
     return acted;
-  }
-
-  // 剪贴板面板：把 ROOT 帧的滚动位置复位到顶部。面板的 root iframe 是**复用**的
-  // （renderStack 只换 #entries-container innerHTML，iframe / 其滚动容器不重建），
-  // 故上一句被滚动过的 scrollTop 会跨渲染保留——一条更长的新剪贴板内容渲染进来时
-  // 停在旧偏移而非从头看。Dart 面板控制器在「剪贴板内容更新」路径（update /
-  // _showTextOnly，均 seed 新 root）渲染后调本函数，让新句总是从顶部开始。点句中字
-  // 重查（_lookupFromBanner）/ 关子卡（_rerender）不调，保留其滚动位置。
-  // 面板 iframe 直接加载 popup.html（无 content.js shadow，__fushiRoot 为 null），
-  // 滚动落在 document 上；#entries-container 兜底（万一改用容器滚动）。no-op 当无
-  // root 帧 / 跨源守卫 / node harness。
-  function scrollRootToTop() {
-    var rootId = null;
-    frames.forEach(function (record, id) {
-      if (rootId === null) {
-        rootId = id;
-      }
-    });
-    var record = rootId !== null ? frames.get(rootId) : null;
-    if (!record) {
-      return;
-    }
-    var win = null;
-    var doc = null;
-    try {
-      win = record.iframe.contentWindow;
-      doc = record.iframe.contentDocument;
-    } catch (e) {
-      win = null;
-      doc = null;
-    }
-    try {
-      if (doc) {
-        if (doc.scrollingElement) {
-          doc.scrollingElement.scrollTop = 0;
-        }
-        if (doc.documentElement) {
-          doc.documentElement.scrollTop = 0;
-        }
-        if (doc.body) {
-          doc.body.scrollTop = 0;
-        }
-        var container = (typeof doc.getElementById === 'function')
-            ? doc.getElementById('entries-container')
-            : null;
-        if (container) {
-          container.scrollTop = 0;
-        }
-      }
-      if (win && typeof win.scrollTo === 'function') {
-        win.scrollTo(0, 0);
-      }
-    } catch (e) {
-      // no-op（跨源 / 未加载）。
-    }
   }
 
   // TODO-1188 — the contentWindow of a frame record, or null when unavailable
@@ -4334,14 +3635,6 @@
     commitLayerShiftAndArmCapture: commitLayerShiftAndArmCapture,
     frameGateState: frameGateState,
     dismissRootWithSlide: dismissRootWithSlide,
-    // spec 2026-07-10 — panel-mode hooks (no-ops in cascade mode).
-    setPanelPinnedVisual: setPanelPinnedVisual,
-    setPanelBlockCaptureVisual: setPanelBlockCaptureVisual,
-    scrollRootToTop: scrollRootToTop,
-    // 剪贴板复制历史覆盖层（Dart 注入渲染 / 关闭）。
-    setClipboardHistoryAvailable: setClipboardHistoryAvailable,
-    showClipboardHistory: showClipboardHistory,
-    hideClipboardHistory: hideClipboardHistory,
     // BUG-1857 — grip 拖拽期间 root 卡跟随 viewport；endLiveResize 由 native
     // WM_EXITSIZEMOVE 调，handleWindowResize 同时挂在 window resize 上（导出给
     // node harness 直接驱动）。

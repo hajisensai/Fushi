@@ -1421,6 +1421,23 @@ void main() {
       expect(shouldUseLunaPcHooksForExecutable(exe.path), isTrue);
     });
 
+    test('改名 Siglus 按 Gameexe.dat + Scene.pck 目录签名启用 PC hooks', () async {
+      final File exe = File(join(dir.path, 'summer.exe'));
+      await exe.writeAsBytes(_craftPe(0x014c), flush: true);
+      await File(join(dir.path, 'Gameexe.dat')).writeAsBytes(<int>[1]);
+      await File(join(dir.path, 'Scene.pck')).writeAsBytes(<int>[1]);
+
+      expect(shouldUseLunaPcHooksForExecutable(exe.path), isTrue);
+    });
+
+    test('改名普通 PE 只有一个 Siglus 数据文件时不启用 PC hooks', () async {
+      final File exe = File(join(dir.path, 'summer.exe'));
+      await exe.writeAsBytes(_craftPe(0x014c), flush: true);
+      await File(join(dir.path, 'Gameexe.dat')).writeAsBytes(<int>[1]);
+
+      expect(shouldUseLunaPcHooksForExecutable(exe.path), isFalse);
+    });
+
     test('Unity IL2CPP 布局启用 Luna PC hooks', () async {
       final File exe = File(join(dir.path, 'sample.exe'));
       await exe.writeAsBytes(_craftPe(0x8664), flush: true);

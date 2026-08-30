@@ -26,11 +26,12 @@ import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 
 const String _torrentHash = '0123456789abcdef0123456789abcdef01234567';
-const VideoDownloadBackendIdentity _backendIdentity =
-    VideoDownloadBackendIdentity(
-  kind: 'embedded',
-  profileId: 'embedded',
-  fingerprint: 'integration-installation',
+const VideoDownloadBackendTarget _backendTarget = VideoDownloadBackendTarget(
+  identity: VideoDownloadBackendIdentity(
+    kind: 'embedded',
+    profileId: 'embedded',
+    fingerprint: 'integration-installation',
+  ),
   category: 'fushi-video',
 );
 
@@ -99,7 +100,7 @@ void registerVideoDiscoveryDownloadPipelineTests() {
         subtitleRegistry: subtitleRegistry,
         backendResolver: (_) async => VideoDownloadBackendBinding(
           backend: backend,
-          identity: _backendIdentity,
+          identity: _backendTarget.identity,
           pathMappings: <VideoDownloadPathMapping>[
             VideoDownloadPathMapping(
               remoteRoot: '/downloads',
@@ -130,7 +131,7 @@ void registerVideoDiscoveryDownloadPipelineTests() {
             anilistId: 100,
           ),
           resource: resourceProvider.candidate,
-          backendIdentity: _backendIdentity,
+          backendTarget: _backendTarget,
           targetSourceId: sourceId,
           subtitlePolicy: VideoDownloadSubtitlePolicy.required,
         ),

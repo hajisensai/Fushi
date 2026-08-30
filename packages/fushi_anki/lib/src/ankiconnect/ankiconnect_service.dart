@@ -146,8 +146,7 @@ class AnkiConnectService {
     }
     if (result['error'] != null) {
       final String message = result['error'].toString();
-      if (action == 'addNote' &&
-          message == 'cannot create note because it is a duplicate') {
+      if (action == 'addNote' && message == kAnkiConnectDuplicateError) {
         throw AnkiConnectDuplicateException(message);
       }
       throw AnkiConnectException(message);
@@ -460,21 +459,75 @@ class AnkiConnectService {
     return result is int ? result : int.tryParse(result.toString());
   }
 
-  /// [scope] 默认 [AnkiDuplicateScope.deck]（= 旧行为：只查选中卡组及其子卡组），
-  /// 所以未传该参数的旧调用点与测试行为逐字不变。
-  Future<bool> isDuplicate({
+  /// 查重：把「这张卡加不加得进去」原样问 Anki 自己，与 [addNote] **物理同源**。
+  ///
+  /// BUG-1915 根因。此前这里走 `findNotes "<第一字段名>:<词>"`，而 [addNote] 的判重是
+  /// Anki 内建的**第一字段 checksum**（`duplicateScopeOptions`，含 `checkAllModels`）。
+  /// 两者判的根本不是一件事：
+  ///
+  ///   * `findNotes` 按**字段名**匹配 → 只能命中「恰好也有同名字段」的笔记类型；
+  ///   * Anki 按**第一字段位置**匹配 → 跨全部笔记类型，不管那个字段叫什么。
+  ///
+  /// 于是一个卡组里混装两种笔记类型（实测：1501 张第一字段名为 `Word` 的旧卡 +
+  /// 12 张第一字段名为 `Expression` 的新卡）时，旧卡里已有的词查重恒判「不重复」→
+  /// 弹窗画可制卡 `+`，用户一点却被 [addNote] 以重复拒绝。两条判据必须是同一条。
+  ///
+  /// 做法不是「让两边的条件长得一样」（那还会再漂移一次），而是**删掉第二条判据**：
+  /// 直接调 AnkiConnect 的 `canAddNotesWithErrorDetail`，它内部走的就是 [addNote]
+  /// 用的同一个 `isNoteDuplicateOrEmptyInScope`。options 也复用同一个
+  /// [_addNoteDuplicateOptions]，不再手写一份。
+  ///
+  /// 只传第一字段：Anki 的判重只看第一字段，其余字段留空不影响判定，也省掉在查词
+  /// 渲染路径上构造整张卡的开销。
+  ///
+  /// 已知边界（无法在查词时消除）：探测传的第一字段值是词条本身（[firstFieldValue]），
+  /// 而制卡时那一格是 `fieldMappings` 渲染的结果。第一字段映射成 `{expression}`
+  /// （Lapis 出厂默认）时两者逐字节相同；映射成依赖句子/媒体的模板时，查词阶段根本
+  /// 拿不到那些数据，任何实现都无法预知制卡时的第一字段。此时探测退化为「按词查」，
+  /// 与旧行为一致，不比现状差。
+  Future<bool> isDuplicateForAdd({
     required String deckName,
-    required String fieldName,
-    required String fieldValue,
+    required String modelName,
+    required String firstFieldName,
+    required String firstFieldValue,
     AnkiDuplicateScope scope = AnkiDuplicateScope.deck,
   }) async {
-    return (await findNotesByField(
-      deckName: deckName,
-      fieldName: fieldName,
-      fieldValue: fieldValue,
-      scope: scope,
-    ))
-        .isNotEmpty;
+    final Map<String, Object?> note = <String, Object?>{
+      'deckName': deckName,
+      'modelName': modelName,
+      'fields': <String, String>{firstFieldName: firstFieldValue},
+      // 探测问的是「Anki 认不认为这是重复」，与用户的「允许重复」偏好无关：
+      // 恒传 allowDuplicate:false。若跟随 settings.allowDupes，开了允许重复的
+      // 用户就永远等不到 canAdd:false，✓ 再也画不出来。
+      'options': _addNoteDuplicateOptions(
+        deckName: deckName,
+        allowDuplicate: false,
+        scope: scope,
+      ),
+    };
+    final dynamic result = await _request(
+      'canAddNotesWithErrorDetail',
+      <String, dynamic>{
+        'notes': <Object?>[note],
+      },
+    );
+    if (result is! List || result.isEmpty) {
+      throw AnkiConnectException(
+        'Unexpected AnkiConnect response for canAddNotesWithErrorDetail '
+        '(expected a non-empty list)',
+      );
+    }
+    final dynamic first = result.first;
+    if (first is! Map) {
+      throw AnkiConnectException(
+        'Unexpected AnkiConnect response for canAddNotesWithErrorDetail '
+        '(expected an object per note)',
+      );
+    }
+    if (first['canAdd'] == true) return false;
+    // canAdd:false 有多种原因（卡组/笔记类型不存在、第一字段为空……）。只有 Anki
+    // 明说是重复才算重复——把「配置过期」当成「已制卡」会让每个词都画上 ✓。
+    return first['error']?.toString() == kAnkiConnectDuplicateError;
   }
 
   Future<List<int>> findNotesByField({
@@ -779,6 +832,12 @@ class AnkiConnectService {
     await _request('guiBrowse', {'query': 'nid:$noteId'});
   }
 }
+
+/// AnkiConnect 在 `createNote` 里对重复卡抛出的固定文案。`addNote` 与
+/// `canAddNotesWithErrorDetail` 走的是同一段代码、同一句文案，所以两处判定复用
+/// 这一个字面量（BUG-1915：判据同源的前提是连错误文本都别各写一份）。
+const String kAnkiConnectDuplicateError =
+    'cannot create note because it is a duplicate';
 
 String _escapeAnkiQuery(String value) => value.replaceAll('"', '\\"');
 

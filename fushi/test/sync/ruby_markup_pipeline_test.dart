@@ -82,45 +82,30 @@ void main() {
     });
   });
 
-  group('剪切板：DesktopLookupService 请求携带纯文本 + 注音区间', () {
+  group('显式查词：DesktopLookupService 请求只携带剥掉注音标记的纯文本', () {
     setUp(() => DesktopLookupService.instance.debugReset());
     tearDown(() => DesktopLookupService.instance.debugReset());
 
-    test('剪贴板文本剥标记后进请求，区间对齐', () {
-      DesktopLookupService.instance.processClipboardText('空気を<rふる>震</r>わせる');
+    test('文本剥标记后进请求', () {
+      DesktopLookupService.instance.triggerLookup('空気を<rふる>震</r>わせる');
       final DesktopLookupRequest? request =
           DesktopLookupService.instance.pendingRequest;
       expect(request, isNotNull);
       expect(request!.text, '空気を震わせる');
-      expectAlignedSpan(request.text, request.rubySpans, 0,
-          base: '震', ruby: 'ふる');
     });
 
-    test('无注音时请求不带区间（native 走老渲染路径）', () {
-      DesktopLookupService.instance.processClipboardText('ただの文章');
-      final DesktopLookupRequest? request =
-          DesktopLookupService.instance.pendingRequest;
-      expect(request!.text, 'ただの文章');
-      expect(request.rubySpans, isEmpty);
+    test('无注音时原样进请求', () {
+      DesktopLookupService.instance.triggerLookup('ただの文章');
+      expect(DesktopLookupService.instance.pendingText, 'ただの文章');
     });
 
-    test('热键 / 点词来源同样收口（解析在 _queueLookupRequest 一处生效）', () {
-      DesktopLookupService.instance.triggerLookup('<rふる>震</r>');
-      final DesktopLookupRequest? request =
-          DesktopLookupService.instance.pendingRequest;
-      expect(request!.text, '震');
-      expectAlignedSpan(request.text, request.rubySpans, 0,
-          base: '震', ruby: 'ふる');
-    });
-
-    test('青空文庫式长文也认（剪贴板会喂到任意文本）', () {
+    test('青空文庫式长文也认（深链 / 悬浮字幕会喂到任意文本）', () {
       DesktopLookupService.instance
-          .processClipboardText('その優等生《ゆうとうせい》はご機嫌ななめ。');
-      final DesktopLookupRequest? request =
-          DesktopLookupService.instance.pendingRequest;
-      expect(request!.text, 'その優等生はご機嫌ななめ。');
-      expectAlignedSpan(request.text, request.rubySpans, 0,
-          base: '優等生', ruby: 'ゆうとうせい');
+          .triggerLookup('その優等生《ゆうとうせい》はご機嫌ななめ。');
+      expect(
+        DesktopLookupService.instance.pendingText,
+        'その優等生はご機嫌ななめ。',
+      );
     });
   });
 }

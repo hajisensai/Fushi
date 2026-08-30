@@ -50,9 +50,11 @@ import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/models/dictionary_directory.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
-import 'package:fushi/src/models/clipboard_history_repository.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
+import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
@@ -66,6 +68,7 @@ import 'package:fushi/src/media/torrent/embedded_torrent_host.dart';
 import 'package:fushi/src/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi/src/media/torrent/qbittorrent_client.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/tracker_subscription.dart';
 import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
 import 'package:fushi/src/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/media/torrent/torznab_client.dart';
@@ -79,6 +82,7 @@ import 'package:fushi/src/media/discovery/import/discovery_import_production.dar
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/alist_discovery_source.dart';
+import 'package:fushi/src/media/discovery/sources/core_audio_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/shinnku_discovery_source.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
@@ -158,6 +162,7 @@ import 'package:fushi/src/mining/youtube_clip_miner.dart';
 import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/sync/fushi_remote_api_handlers.dart'
     show RemotePopupDictionaryCss;
@@ -559,9 +564,9 @@ class AppModel with ChangeNotifier {
       // （与 client 下载远端视频落点一致，AppPaths.remoteVideosDirectory 同目录）。
       uploadedVideoRoot: Directory('${appDirectory.path}/remote_videos'),
       // 上传视频封面 best-effort 抽帧（桌面 ffmpeg；移动端无则留空占位）。
-      extractVideoCover:
-          ({required String videoPath, required String bookUid}) =>
-              extractVideoCover(videoPath: videoPath, bookUid: bookUid),
+      extractVideoCover: (
+              {required String videoPath, required String bookUid}) =>
+          extractVideoCover(videoPath: videoPath, bookUid: bookUid),
       removeLocalAudioEntry: (String displayName) async {
         // 按 displayName 在 LocalAudioManager 中找到对应 index 并删除。
         // LocalAudioManager.remove(int) 删除 DB 文件 + 从 prefs 移出 + 推 native。
@@ -701,10 +706,10 @@ class AppModel with ChangeNotifier {
           case SyncTombstoneKind.video:
             final bool deleted = await VideoBookRepository(database)
                 .deleteVideoBookAndReclaimAssets(
-                  c.itemKey,
-                  scope: DeleteScope.keepLocalOnly,
-                  compactDatabase: false,
-                );
+              c.itemKey,
+              scope: DeleteScope.keepLocalOnly,
+              compactDatabase: false,
+            );
             deletedVideoBook = deletedVideoBook || deleted;
           case SyncTombstoneKind.audiobook:
             await AudiobookRepository(database)
@@ -876,9 +881,6 @@ class AppModel with ChangeNotifier {
   /// 读词典（例如查词弹窗注入按词典语言分流的字体 CSS）的调用方必须先问这个。
   bool _dictionaryRepoReady = false;
   bool get isDictionaryRepoReady => _dictionaryRepoReady;
-  late ClipboardHistoryRepository clipboardHistoryRepo;
-  final ClipboardHistoryNotifier clipboardHistoryNotifier =
-      ClipboardHistoryNotifier();
 
   /// Extracted sub-managers.
   late final AudioController audioCtrl = AudioController();
@@ -894,7 +896,7 @@ class AppModel with ChangeNotifier {
     floatingLyricStyle: _appLevelFloatingLyricStyle,
     floatingLyricContextLines: () => floatingLyricContextLines,
     floatingLyricClickLookup: () => floatingLyricClickLookup,
-    onFloatingLyricLookup: (String text, int index) {
+    onFloatingLyricLookup: (String text, int index, Rect? wordRect) {
       // app 级（无 reader attach）桌面悬浮窗点词：Windows 优先弹 867 app 外全局
       // 查词覆盖窗（TODO-872，主窗最小化/被遮挡也看得见）；覆盖窗不可用才回落
       // 常驻主窗口的 in-app 查词宿主 [FloatingLyricLookupHost]（main.dart 根
@@ -905,6 +907,7 @@ class AppModel with ChangeNotifier {
           appModel: this,
           text: text,
           index: index,
+          wordRect: wordRect,
         )) {
           return;
         }
@@ -1209,6 +1212,43 @@ class AppModel with ChangeNotifier {
     backupImportProgress.value = fraction.clamp(0.0, 1.0);
   }
 
+  /// 本地备份「导出/创建」的所有权与进度。
+  ///
+  /// 导出**不** [closeDatabase]，app 全程可用，所以不像导入那样切全屏遮罩；但任务
+  /// 必须挂在这里，而不是设置页那一行的 State 上 ——「本地备份」分区收起时整棵 rows
+  /// 子树会从 widget tree 移除，State 随之 dispose，旧实现 createBackup 之后的
+  /// `if (!mounted) return` 就把已经打完的 zip 连同分享/另存/成功提示一起丢掉，用户
+  /// 看到的是「点一下折叠箭头，备份被取消了」。所有权挪到这里之后，折叠只是不再显示
+  /// 进度，任务本身与 UI 生命周期无关。
+  bool _backupExportActive = false;
+  bool get backupExportActive => _backupExportActive;
+
+  /// 打包阶段的确定进度（0..1）；null = 尚未进入打包。准备阶段（VACUUM INTO、按
+  /// 分类裁剪行、枚举待打包文件）没有可分的量，UI 此时走不确定动画。与导入侧同理用
+  /// [ValueNotifier]，让**只有进度条**随每个文件落盘重建，而不是整行重绘。
+  final ValueNotifier<double?> backupExportProgress =
+      ValueNotifier<double?>(null);
+
+  void beginBackupExport() {
+    if (_backupExportActive) return;
+    _backupExportActive = true;
+    backupExportProgress.value = null;
+    notifyListeners();
+  }
+
+  /// 由 [BackupService.createBackup] 的 onProgress 回调驱动（本 isolate 上被打包
+  /// isolate 的 SendPort 消息触发）。夹紧到 [0,1]。
+  void reportBackupExportProgress(double fraction) {
+    backupExportProgress.value = fraction.clamp(0.0, 1.0);
+  }
+
+  void endBackupExport() {
+    if (!_backupExportActive) return;
+    _backupExportActive = false;
+    backupExportProgress.value = null;
+    notifyListeners();
+  }
+
   /// TODO-1151：备份「读取/校验」阶段的作废 token。选完文件后 validate + previewMerge
   /// 会跑数十秒（后台 isolate，UI 不冻结但只有 24px 小圈）。进入 [beginBackupValidating]
   /// 时自增；用户点「取消」或开启新一轮校验会再自增作废旧 token——in-flight 的后台 isolate
@@ -1280,13 +1320,9 @@ class AppModel with ChangeNotifier {
   /// 这种**显式**查词手势，需要把主窗口从阅读器/任意 tab 切到查词 tab，让
   /// [HomeDictionaryPage] 挂载并消费 [DesktopLookupService.pendingText]。
   ///
-  /// 这是与被动剪贴板监听**正交**的显式导航原语：HomePage 监听本信号只切 tab，不监听
-  /// DesktopLookupService、也不在剪贴板被动命中时自动切 tab。
-  ///
-  /// spec 2026-07-10 §7 后的守卫新事实：DesktopLookupService 的 start/stop 已上移
-  /// AppModel（[applyDesktopClipboardLifecycle]，app 级监听），消费按
-  /// resolveDesktopLookupConsumer 分区——mainTab 分区仍只由 HomeDictionaryPage
-  /// 消费（tab 未挂载时 pending 排队），HomePage 根节点依旧不消费查词请求。
+  /// 这是显式导航原语：HomePage 监听本信号只切 tab，不监听 DesktopLookupService；
+  /// pending 只由 HomeDictionaryPage 消费（tab 未挂载时排队），HomePage 根节点
+  /// 依旧不消费查词请求。
   final ValueNotifier<int> homeDictionaryTabRequest = ValueNotifier<int>(0);
 
   /// 发一次「打开查词 tab」请求（桌面悬浮字幕点词等显式手势调）。
@@ -1562,23 +1598,6 @@ class AppModel with ChangeNotifier {
 
   List<DictionarySearchResult> get dictionaryHistory =>
       dictRepo.dictionaryHistory;
-
-  /// Desktop clipboard-copy history (data source for the panel / transient
-  /// popup history button).
-  List<ClipboardHistoryEntry> get clipboardHistory =>
-      clipboardHistoryRepo.entries;
-
-  /// Record one clipboard-copied text (from DesktopLookupService, origin=clipboard).
-  void addClipboardHistoryEntry(String text) {
-    clipboardHistoryRepo.add(text, DateTime.now());
-    clipboardHistoryNotifier.bump();
-  }
-
-  /// Clear clipboard-copy history (the history panel clear button).
-  Future<void> clearClipboardHistory() async {
-    await clipboardHistoryRepo.clear();
-    clipboardHistoryNotifier.bump();
-  }
 
   // ── audio & media streams (delegated to AudioController) ────────────
 
@@ -2295,7 +2314,6 @@ class AppModel with ChangeNotifier {
           isLowMemory: () => prefsRepo.lowMemoryMode);
       _dictionaryRepoReady = true;
       mediaHistoryRepo = MediaHistoryRepository(_database);
-      clipboardHistoryRepo = ClipboardHistoryRepository(_database);
 
       debugPrint('[Fushi] init: repositories (parallel)');
       await Future.wait(<Future<void>>[
@@ -2305,6 +2323,10 @@ class AppModel with ChangeNotifier {
         mediaHistoryRepo.loadFromDb(),
       ]);
       prefsRepo.addListener(notifyListeners);
+      // 偏好一装载就把折叠开关推给 TexthookerService（进程级单例、无 ref）。漏了这一步
+      // 开关就只在「本次会话里手动改过」时才生效，重启后静默退回默认值。
+      TexthookerService.instance.foldProgressiveLines =
+          prefsRepo.galHookFoldProgressiveLines;
       // 代理是**进程级**网络出口配置，却只存在偏好里；同步层的单例（GoogleDriveAuth 等）
       // 拿不到 AppModel，以前就只能各自裸连——BUG-1348 的谷歌云盘登录超时正是如此。偏好
       // 一装载好就把进程级读取器接上去，此后任何 applyAppProxy(client) 都自动拿到同一个值，
@@ -2693,8 +2715,6 @@ class AppModel with ChangeNotifier {
 
       mediaHistoryRepo = MediaHistoryRepository(_database);
       await mediaHistoryRepo.loadFromDb();
-      clipboardHistoryRepo = ClipboardHistoryRepository(_database);
-      await clipboardHistoryRepo.loadFromDb();
 
       // The popup process always runs this full branch (separate :popup
       // process, _isInitialised starts false). PopupDictApp.build() reads
@@ -3485,6 +3505,8 @@ class AppModel with ChangeNotifier {
         fixedDownloadProxyDirective(after)) {
       return;
     }
+    _mediaDiscoveryService?.close();
+    _mediaDiscoveryService = null;
     await reloadVideoDownloadPipelineRuntime();
   }
 
@@ -3574,6 +3596,43 @@ class AppModel with ChangeNotifier {
     return manager;
   }
 
+  /// 按 runtime 分派在线漫画书架服务。
+  ///
+  /// 书架条目和作品页手上只有 `bookKey` + 描述符里的 runtime，不知道该找哪个
+  /// 运行时；这里是唯一的分派点。
+  ///
+  /// **Aidoku 分支刻意不碰 [mihonManager]**：平台矩阵不重合——Mihon 是
+  /// Android/Windows/macOS，Aidoku 是 macOS/iOS。在 iOS 上读一条 Aidoku 书架
+  /// 条目时去取 mihonManager 会直接抛 `UnsupportedError`，把「打开这本书」变成
+  /// 崩溃。两个分支各自独立到底。
+  OnlineMangaLibraryService onlineMangaLibraryService(
+    OnlineMangaRuntimeKind runtime,
+  ) {
+    switch (runtime) {
+      case OnlineMangaRuntimeKind.mihon:
+        final MihonManager manager = mihonManager;
+        return OnlineMangaLibraryService(
+          database: manager.database,
+          rootDirectory: manager.rootDirectory,
+          adapter: MihonLibraryAdapter(manager),
+        );
+      case OnlineMangaRuntimeKind.aidoku:
+        return OnlineMangaLibraryService(
+          database: database,
+          rootDirectory: aidokuLibraryRoot,
+          adapter: AidokuLibraryAdapter(),
+        );
+    }
+  }
+
+  /// Aidoku 书架条目的本地落盘根（占位 manga.json、封面、章节页缓存）。
+  ///
+  /// 单独暴露是为了让源浏览的详情页能带着**自己那份**（可能是测试注入的）
+  /// `AidokuRuntime` 建服务，而不是被迫走上面那条恒用
+  /// `AidokuRuntimeFactory.create()` 的分派。
+  Directory get aidokuLibraryRoot =>
+      Directory(path.join(databaseDirectory.path, 'aidoku'));
+
   AnimeDownloadSubscriptionService? _animeDownloadSubscriptionService;
   AnimeDownloadSubscriptionService? get animeDownloadSubscriptionService =>
       _animeDownloadSubscriptionService;
@@ -3619,6 +3678,24 @@ class AppModel with ChangeNotifier {
   /// NAT/conntrack 被小包撑爆 → 整机网络周期性高延迟，关掉 Hibiki 即恢复。
   EmbeddedTorrentHost? _embeddedTorrentHost;
   EmbeddedTorrentHost? get embeddedTorrentHost => _embeddedTorrentHost;
+
+  TrackerSubscriptionService? _trackerSubscriptionService;
+  TrackerSubscriptionService get _trackers =>
+      _trackerSubscriptionService ??= TrackerSubscriptionService(
+        httpClientFactory: createDownloadHttpClient,
+      );
+
+  Future<List<String>> refreshTrackerSubscription({
+    String? sourceUrl,
+    bool forceRefresh = true,
+  }) {
+    final QbConnectionConfig config =
+        effectiveTorrentConfig(prefsRepo.qbConnectionConfig);
+    return _trackers.fetch(
+      sourceUrl ?? config.trackerSubscriptionUrl,
+      forceRefresh: forceRefresh,
+    );
+  }
 
   /// 内置下载根集合（懒建 host 时需要）。[startAnimeDownloadService] 里算好存下，
   /// 避免懒建路径再去 await 一次目录解析。TODO-1961：活动根 = 用户配置目录（未配置
@@ -3870,7 +3947,9 @@ class AppModel with ChangeNotifier {
       torrentMatcher: (LegacyTorrentProbe probe) async {
         final VideoDownloadBackendIdentity? confirmedIdentity = identity;
         if (confirmedIdentity == null) return null;
-        if (probe.category != confirmedIdentity.category) return null;
+        // 旧记录自己的分类就是它的事实：拿它去后端核对 hash+title 即可。
+        // 不能再要求它等于**当前配置**的分类——用户改一次分类（或升级后默认
+        // 分类漂移）会让全部旧任务无法被认领（BUG-1879）。
         final TorrentBackend? backend = _createExactTorrentBackend(config);
         if (backend == null) return null;
         try {
@@ -3927,12 +4006,22 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  /// 当前新任务必须绑定的真实后端身份。UI 只保存此快照，流水线执行时还会再次
-  /// 对比 fingerprint/profile/category，配置切换后不会被另一实例隐式接管。
-  Future<VideoDownloadBackendIdentity> currentVideoDownloadBackendIdentity() =>
-      _currentVideoDownloadBackendIdentity(
-        effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
-      );
+  /// 当前新任务的落点：后端实例身份 + 此刻设置里的投放分类。UI 只保存此快照，
+  /// 流水线执行时还会再次对比 kind/profile/fingerprint，配置切换后不会被另一
+  /// 实例隐式接管；分类则被快照进任务行，之后该任务始终用自己那一份，不再与
+  /// 当前设置比较（BUG-1879）。
+  ///
+  /// 这里**只暴露落点**：裸身份没有「往哪投」，曾经的
+  /// `currentVideoDownloadBackendIdentity()` 让调用方能拿到一个缺分类的落点，
+  /// 已随 BUG-1879 一并删除，别再加回来。
+  Future<VideoDownloadBackendTarget> currentVideoDownloadBackendTarget() async {
+    final QbConnectionConfig config =
+        effectiveTorrentConfig(prefsRepo.qbConnectionConfig);
+    return VideoDownloadBackendTarget(
+      identity: await _currentVideoDownloadBackendIdentity(config),
+      category: config.category,
+    );
+  }
 
   /// 只暴露当前设备可访问的本地受管视频来源，供发现页新任务/订阅选择。
   Future<List<MediaSourceRow>> getManagedVideoDownloadSources() async {
@@ -3953,14 +4042,23 @@ class AppModel with ChangeNotifier {
         config.resolveBackend(embeddedSupported: _supportsEmbeddedTorrent());
     if (resolved == QbConnectionConfig.backendEmbedded) {
       final EmbeddedTorrentHost? host = _ensureEmbeddedTorrentHost();
-      return host?.backendView();
+      return host?.backendView(
+        trackerSubscriptionService: _trackers,
+        autoAddTrackerSubscription: config.autoAddTrackerSubscription,
+        trackerSubscriptionUrl: config.trackerSubscriptionUrl,
+      );
     }
     if (config.baseUrl.trim().isEmpty) return null;
-    return QbTorrentBackend(QBittorrentClient(
-      baseUrl: config.baseUrl,
-      username: config.username,
-      password: config.password,
-    ));
+    return QbTorrentBackend(
+      QBittorrentClient(
+        baseUrl: config.baseUrl,
+        username: config.username,
+        password: config.password,
+      ),
+      trackerSubscriptionService: _trackers,
+      autoAddTrackerSubscription: config.autoAddTrackerSubscription,
+      trackerSubscriptionUrl: config.trackerSubscriptionUrl,
+    );
   }
 
   Future<void> _startVideoDownloadPipeline() async {
@@ -4158,7 +4256,9 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  Future<void> _disposeVideoDownloadPipelineRuntime() async {
+  Future<void> _disposeVideoDownloadPipelineRuntime({
+    Duration? pipelineDrainTimeout,
+  }) async {
     final VideoDownloadSubscriptionService? subscriptions =
         _videoDownloadSubscriptionService;
     _videoDownloadSubscriptionService = null;
@@ -4166,7 +4266,9 @@ class AppModel with ChangeNotifier {
     final VideoDownloadPipelineService? pipeline =
         _videoDownloadPipelineService;
     _videoDownloadPipelineService = null;
-    if (pipeline != null) await pipeline.dispose();
+    if (pipeline != null) {
+      await pipeline.dispose(drainTimeout: pipelineDrainTimeout);
+    }
     _videoResourceRegistry?.close();
     _videoResourceRegistry = null;
     _videoSubtitleRegistry?.close();
@@ -4247,6 +4349,9 @@ class AppModel with ChangeNotifier {
   MediaDiscoveryService get mediaDiscoveryService =>
       _mediaDiscoveryService ??= MediaDiscoveryService(
         sources: <MediaDiscoverySource>[
+          CoreAudioDiscoverySource(
+            httpClientFactory: createDownloadHttpClient,
+          ),
           NyaaDiscoverySource(
             id: 'nyaa',
             displayName: 'Nyaa',
@@ -4483,13 +4588,22 @@ class AppModel with ChangeNotifier {
             ? _ensureEmbeddedTorrentHost()
             : _embeddedTorrentHost;
     if (backend == QbConnectionConfig.backendEmbedded && host != null) {
-      return host.backendView();
+      return host.backendView(
+        trackerSubscriptionService: _trackers,
+        autoAddTrackerSubscription: config.autoAddTrackerSubscription,
+        trackerSubscriptionUrl: config.trackerSubscriptionUrl,
+      );
     }
-    return QbTorrentBackend(QBittorrentClient(
-      baseUrl: config.baseUrl,
-      username: config.username,
-      password: config.password,
-    ));
+    return QbTorrentBackend(
+      QBittorrentClient(
+        baseUrl: config.baseUrl,
+        username: config.username,
+        password: config.password,
+      ),
+      trackerSubscriptionService: _trackers,
+      autoAddTrackerSubscription: config.autoAddTrackerSubscription,
+      trackerSubscriptionUrl: config.trackerSubscriptionUrl,
+    );
   }
 
   /// 本平台是否具备内置 libtorrent 引擎。UI（后端选择器 / 配置引导）与运行时
@@ -5957,16 +6071,30 @@ class AppModel with ChangeNotifier {
   ///
   /// 只停「后台自己会写库」的那几个（下载/订阅/漫画队列），不碰查词、TTS 这类只读
   /// 子系统：closeDatabase 之后调用方一律走重启，停多了没收益、只增加爆炸半径。
-  Future<void> quiesceBackgroundDatabaseWriters() async {
+  ///
+  /// [pipelineDrainTimeout] 只在**退出路径**给：见
+  /// [VideoDownloadPipelineService.stop] 的注释——迁移导入 / 备份导入 / 数据根迁移
+  /// 也走这条链，它们在关库后要在文件层动整个 DB 目录，放行一个仍在飞的 `_process`
+  /// 会让它继续打已关闭的连接、并被随后的 `_videoDownloadBackend?.close()` 抽掉
+  /// 句柄。那些路径必须等到真收尾。
+  Future<void> quiesceBackgroundDatabaseWriters({
+    Duration? pipelineDrainTimeout,
+  }) async {
     _animeDownloadService?.stop();
     _animeDownloadSubscriptionService?.stop();
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
+    _discoveryDownloadQueue?.dispose();
+    _discoveryDownloadQueue = null;
+    _mediaDiscoveryService?.close();
+    _mediaDiscoveryService = null;
     _videoDownloadPipelineRuntimeWanted = false;
-    await _disposeVideoDownloadPipelineRuntime();
+    await _disposeVideoDownloadPipelineRuntime(
+      pipelineDrainTimeout: pipelineDrainTimeout,
+    );
   }
 
-  Future<void> closeDatabase() async {
+  Future<void> closeDatabase({Duration? pipelineDrainTimeout}) async {
     _isInitialised = false;
     // BUG-1569②：合集观察者持有本库的表订阅 + 未决防抖 Timer，关库前必须撤——
     // 否则防抖到点后 _runCollectionsSync 会对已关闭的 db 发起查询（drift「connection
@@ -5974,7 +6102,9 @@ class AppModel with ChangeNotifier {
     // 测试 teardown 调过 uninstall，生产三条关库路径全都不撤订阅。
     uninstallCollectionsSyncWatcher();
     databaseCloseNotifier.notifyListeners();
-    await quiesceBackgroundDatabaseWriters();
+    await quiesceBackgroundDatabaseWriters(
+      pipelineDrainTimeout: pipelineDrainTimeout,
+    );
     await _database.close();
   }
 
@@ -6023,6 +6153,10 @@ class AppModel with ChangeNotifier {
     unawaited(_disposeVideoDownloadPipelineRuntime());
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
+    _discoveryDownloadQueue?.dispose();
+    _discoveryDownloadQueue = null;
+    _mediaDiscoveryService?.close();
+    _mediaDiscoveryService = null;
     _mihonManager?.dispose();
     _mihonManager = null;
     _prefsRepo?.removeListener(notifyListeners);
@@ -6033,7 +6167,6 @@ class AppModel with ChangeNotifier {
     }
     dictionaryDownloadController.dispose();
     dictionaryEntriesNotifier.dispose();
-    clipboardHistoryNotifier.dispose();
     dictionarySearchAgainNotifier.dispose();
     dictionaryMenuNotifier.dispose();
     incognitoNotifier.dispose();
@@ -6270,88 +6403,15 @@ class AppModel with ChangeNotifier {
   Future<void> setGalgameLibraryView(String encoded) =>
       prefsRepo.setGalgameLibraryView(encoded);
 
-  bool get desktopClipboardEnabled => prefsRepo.desktopClipboardEnabled;
-  Future<void> setDesktopClipboardEnabled(bool v) async {
-    await prefsRepo.setDesktopClipboardEnabled(v);
-    await applyDesktopClipboardLifecycle();
-  }
-
-  /// 剪切板复制后是否自动查词（默认 true=现状）。false 时面板只显示文字、点词才查。
-  /// 与总开关 [desktopClipboardEnabled] 正交，不影响监听生命周期，故无需重跑
-  /// [applyDesktopClipboardLifecycle]。
-  bool get desktopClipboardAutoLookup => prefsRepo.desktopClipboardAutoLookup;
-  Future<void> setDesktopClipboardAutoLookup(bool v) =>
-      prefsRepo.setDesktopClipboardAutoLookup(v);
-
-  /// spec 2026-07-10 §7 生命周期上移：剪贴板监听归 AppModel 持有（开=start /
-  /// 关=stop），HomeDictionaryPage 退化为 destination==main 分区的消费者。此前
-  /// start/stop 绑词典 tab 挂载周期——那是「去向只有主窗 tab」时代的产物；
-  /// 面板/瞬态去向要求 app 级监听（tab 未挂载时 pending 排队语义 TODO-376 已有）。
-  /// 启动期由 main.dart 桌面块调用一次；设置开关切换时经
-  /// [setDesktopClipboardEnabled] 幂等重入（service.start 对已运行是 no-op）。
-  Future<void> applyDesktopClipboardLifecycle() async {
-    if (!DesktopLookupService.isDesktop) return;
-    // 剪贴板复制历史采集：真实剪贴板变化（origin=clipboard、去重通过）落历史。
-    DesktopLookupService.instance.onClipboardCaptured =
-        addClipboardHistoryEntry;
-    if (desktopClipboardEnabled) {
-      await DesktopLookupService.instance.start(
-        windowMode: desktopClipboardWindowMode,
-      );
-    } else {
-      await DesktopLookupService.instance.stop();
-    }
-  }
-
   // TODO-1030 M0 — 全局查词是否抓取选中文本上下文（隐私敏感，默认关）。
   bool get globalContextCaptureEnabled => prefsRepo.globalContextCaptureEnabled;
   Future<void> setGlobalContextCaptureEnabled(bool v) =>
       prefsRepo.setGlobalContextCaptureEnabled(v);
-  bool get desktopClipboardAlwaysOnTop => prefsRepo.desktopClipboardAlwaysOnTop;
-  Future<void> setDesktopClipboardAlwaysOnTop(bool v) =>
-      prefsRepo.setDesktopClipboardAlwaysOnTop(v);
-  DesktopClipboardWindowMode get desktopClipboardWindowMode =>
-      prefsRepo.desktopClipboardWindowMode;
-  Future<void> setDesktopClipboardWindowMode(
-      DesktopClipboardWindowMode v) async {
-    await prefsRepo.setDesktopClipboardWindowMode(v);
-    if (DesktopLookupService.isDesktop) {
-      await DesktopLookupService.instance.configureWindowMode(v);
-    }
-  }
 
-  // spec 2026-07-10 剪贴板独立弹窗 — 剪贴板查词去向 + 面板窗四项偏好（转发）。
-  DesktopClipboardDestination get desktopClipboardDestination =>
-      prefsRepo.desktopClipboardDestination;
-  Future<void> setDesktopClipboardDestination(DesktopClipboardDestination v) =>
-      prefsRepo.setDesktopClipboardDestination(v);
-  double get clipboardPanelOpacity => prefsRepo.clipboardPanelOpacity;
-  Future<void> setClipboardPanelOpacity(double v) =>
-      prefsRepo.setClipboardPanelOpacity(v);
-  // 真透明剪切板文字窗背景不透明度（0.0 = 全透只露文字）。
-  double get clipboardTextWindowBgOpacity =>
-      prefsRepo.clipboardTextWindowBgOpacity;
-  Future<void> setClipboardTextWindowBgOpacity(double v) =>
-      prefsRepo.setClipboardTextWindowBgOpacity(v);
-
-  /// 真透明剪切板文字窗的文字颜色 = 当前主题 onSurface（跟随明暗/配色方案）。背景
-  /// 仍由 [clipboardTextWindowBgOpacity] 滑杆控制、文字恒实心（满 alpha）。明暗解析
-  /// 与悬浮字幕 app 级样式同款（ThemeMode.system 按浅色，保持两处一致）。
-  int clipboardTextWindowTextColor() {
-    final Brightness brightness =
-        themeMode == ThemeMode.dark ? Brightness.dark : Brightness.light;
-    return buildColorScheme(brightness).onSurface.value;
-  }
-
-  String get clipboardPanelRect => prefsRepo.clipboardPanelRect;
-  Future<void> setClipboardPanelRect(String v) =>
-      prefsRepo.setClipboardPanelRect(v);
-  bool get clipboardPanelPinned => prefsRepo.clipboardPanelPinned;
-  Future<void> setClipboardPanelPinned(bool v) =>
-      prefsRepo.setClipboardPanelPinned(v);
-  bool get clipboardPanelBlockCapture => prefsRepo.clipboardPanelBlockCapture;
-  Future<void> setClipboardPanelBlockCapture(bool v) =>
-      prefsRepo.setClipboardPanelBlockCapture(v);
+  /// 防截屏（桌面查词浮窗，Windows）。存储键沿用历史名 `clipboard_panel_block_capture`。
+  bool get lookupBlockCapture => prefsRepo.lookupBlockCapture;
+  Future<void> setLookupBlockCapture(bool v) =>
+      prefsRepo.setLookupBlockCapture(v);
 
   Map<String, String> get customDictCSS => prefsRepo.customDictCSS;
   String getCustomCSSForDict(String dictName) =>
@@ -6642,6 +6702,10 @@ class AppModel with ChangeNotifier {
       // 单词音频（1139②）：已启用音频源随查词响应下发，扩展弹窗据此渲染 ♪ 按钮
       // （点击 → /api/lookup/audio 解析 → HTML5 Audio 播放）。
       audioSourcesProvider: () => enabledAudioSources,
+      // 查词后自动朗读：与 app 内弹窗/app 外浮窗/剪贴板面板同一个全局偏好（读同一个
+      // ReaderFushiSource 真相源），扩展弹窗渲染后自动播首条词发音，不再只能手动点 ♪。
+      autoReadOnLookupProvider: () =>
+          ReaderFushiSource.instance.autoReadOnLookup,
       // BUG-726：内置扩展内容指纹随查词响应下发（`extensionBuild`），扩展 background
       // 与自身 FUSHI_DEFAULTS.build 比对，不一致即 chrome.runtime.reload() 从磁盘拉新。
       // 指纹由 refreshBrowserExtensionCopy 在启动时算好缓存；算好前返回 null（字段省略）。
@@ -6970,6 +7034,31 @@ class AppModel with ChangeNotifier {
   Future<void> setGalIngameLookupEnabled(bool value) =>
       prefsRepo.setGalIngameLookupEnabled(value);
 
+  // hook 台词浮窗的交互偏好四件套（仅 Windows 生效）。
+  bool get galHookClickLookup => prefsRepo.galHookClickLookup;
+  Future<void> setGalHookClickLookup(bool value) =>
+      prefsRepo.setGalHookClickLookup(value);
+
+  int get galHookLookupTrigger => prefsRepo.galHookLookupTrigger;
+  Future<void> setGalHookLookupTrigger(int value) =>
+      prefsRepo.setGalHookLookupTrigger(value);
+
+  bool get galHookToolbarAutoHide => prefsRepo.galHookToolbarAutoHide;
+  Future<void> setGalHookToolbarAutoHide(bool value) =>
+      prefsRepo.setGalHookToolbarAutoHide(value);
+
+  bool get galHookPassThroughBlocksMouse =>
+      prefsRepo.galHookPassThroughBlocksMouse;
+  Future<void> setGalHookPassThroughBlocksMouse(bool value) =>
+      prefsRepo.setGalHookPassThroughBlocksMouse(value);
+  // 折叠「同一句台词的多次快照」。TexthookerService 是没有 ref 的进程级单例，
+  // 拿不到偏好；真值由这里单向推给它（启动期一次 + 每次改开关一次）。
+  bool get galHookFoldProgressiveLines => prefsRepo.galHookFoldProgressiveLines;
+  Future<void> setGalHookFoldProgressiveLines(bool value) async {
+    await prefsRepo.setGalHookFoldProgressiveLines(value);
+    TexthookerService.instance.foldProgressiveLines = value;
+  }
+
   // TODO-370: 悬浮字幕透明度（按钮底色 / 文字），0..100 百分比，100=保持现观感。
   int get floatingLyricButtonBgOpacity =>
       prefsRepo.floatingLyricButtonBgOpacity;
@@ -7079,7 +7168,8 @@ class AppModel with ChangeNotifier {
       prefsRepo.setMangaOcrLensLanguage(value);
 
   bool get mangaTapToOcr => prefsRepo.mangaTapToOcr;
-  Future<void> setMangaTapToOcr(bool value) => prefsRepo.setMangaTapToOcr(value);
+  Future<void> setMangaTapToOcr(bool value) =>
+      prefsRepo.setMangaTapToOcr(value);
 
   bool get mangaTapToOcrNoticeShown => prefsRepo.mangaTapToOcrNoticeShown;
   Future<void> setMangaTapToOcrNoticeShown(bool value) =>

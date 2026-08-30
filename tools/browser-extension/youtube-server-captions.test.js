@@ -113,6 +113,10 @@ function loadYoutube(opts) {
   const ctx = vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(ADAPTERS, 'utf8'), ctx, { filename: 'subtitle-adapters.js' });
   loadFushiDictMedia(ctx);
+  // manifest 里 popup-size.js 排在 content.js 之前（同隔离世界的顶层函数），
+  // content.js 的 fushiApplyTheme 直接调它的 fushiResolvePopupBox。
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'popup-size.js'), 'utf8'), sandbox,
+    { filename: 'popup-size.js' });
   vm.runInContext(fs.readFileSync(CONTENT, 'utf8'), ctx, { filename: 'content.js' });
   const fetcher = intervals.find((i) => i.ms === 1500);
   return {

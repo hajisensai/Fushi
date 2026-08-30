@@ -1,10 +1,13 @@
 import 'dart:ui' show BoxHeightStyle;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
+import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -448,6 +451,9 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     this.fontSize = 14,
     this.fontFamily,
     this.width = 320,
+    this.onExportFavorites,
+    this.searchActivators = const <ShortcutActivator>[],
+    this.searchRequests,
   });
 
   final VideoPlayerController controller;
@@ -508,12 +514,63 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   final String? fontFamily;
   final double width;
 
+  /// BUG-1907：「导出收藏语句」。
+  ///
+  /// 面板不碰文件 IO —— 它连 `AppModel` 都没有，落盘/分享要平台分流
+  /// （`saveOrShareExport` 桌面走 FilePicker、移动走 share_plus）。这里只负责把
+  /// **当前收藏档实际渲染的那批句子**交出去，与 [onCopyCue] / [onFavoriteCue]
+  /// 同一条纪律：面板给语义，页面层做副作用。null = 不显示导出按钮（测试 / 旧调用方）。
+  final Future<void> Function(List<AudioCue> favorites)? onExportFavorites;
+
+  /// BUG-1907：搜索的键盘 activator（默认 Ctrl+F）。
+  ///
+  /// 由页面层从 `FushiShortcutRegistry` 取出传入，**注册表是唯一真相源**——
+  /// 面板不自己写死 Ctrl+F，用户改绑后两处不会分叉。
+  ///
+  /// 为什么面板必须自带一份：视频页那张整表快捷键装在 media_kit controls 的
+  /// `CallbackShortcuts` 上，**只包住 controls 子树**，而本面板是它的兄弟节点
+  /// （`_videoWithSubtitlePanel` 把 `Row[Expanded(video), 面板列]` 包在 Video 外面）。
+  /// 焦点一旦进了面板，那张表收不到任何按键（见 layout.part.dart 的覆盖面注释）。
+  final List<ShortcutActivator> searchActivators;
+
+  /// BUG-1907：**页面层**请求打开搜索的通道（计数器，每 +1 一次请求）。
+  ///
+  /// 面板自己那份 Ctrl+F 只在焦点已经在面板里时才收得到。焦点在播放器上时，按键由
+  /// 视频页的整表快捷键接住 —— 那时列表可能还没打开，页面需要先开列表、再让面板
+  /// 聚焦搜索框。用计数器而不是 bool：连按两次 Ctrl+F 也要每次都重新聚焦。
+  ///
+  /// PR#1032 审查 B1 契约（**水位线，不是边沿事件**）：计数值的含义是「本次面板会话已请求到
+  /// 第 N 次搜索」，基线 0 由页面在打开列表时归零。消费端（本面板）负责在**挂载时**
+  /// 就把自己对齐到当前水位，而不是只听 +1 的那一下通知。
+  /// 原因：列表关着时按 Ctrl+F，页面先开列表、同一个微任务里就 +1，而面板要到下一帧
+  /// 才 mount —— 边沿语义下那一刻零监听者，请求必丢。边沿语义天生要求发送方和接收方
+  /// 的生命周期对齐，是坏契约；水位线语义下任何路径的 +1 都不会丢。
+  final ValueListenable<int>? searchRequests;
+
   @override
   State<VideoSubtitleJumpPanel> createState() => _VideoSubtitleJumpPanelState();
 }
 
 class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   late final ScrollController _scrollController;
+
+  /// BUG-1907：搜索框是否展开（收起时不占高度，也不影响过滤）。
+  bool _searchOpen = false;
+
+  /// PR#1032 审查 B1：本面板已服务到的搜索请求**水位线**（见
+  /// [VideoSubtitleJumpPanel.searchRequests] 的契约说明）。
+  ///
+  /// 页面层的计数器是「已请求到第 N 次」的水位线而不是边沿事件：面板每次挂载时
+  /// （[initState]）都先把自己对齐到当前水位，因此「列表还没打开 → 页面先开列表再
+  /// 立刻 +1 → 面板下一帧才 mount」这条路径不会把请求丢掉。面板会话开始时水位由页面
+  /// 归零（`_toggleSubtitleJumpList` 的打开分支），所以基线恒为 0。
+  int _handledSearchRequests = 0;
+
+  /// 当前搜索词。空串 = 不过滤。
+  String _searchQuery = '';
+
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode(debugLabel: 'subtitle-search');
 
   int _lastScrolledIndex = -1;
 
@@ -765,6 +822,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       initialScrollOffset: _initialScrollOffsetForCurrentCue(),
     );
     widget.controller.addListener(_onControllerChanged);
+    widget.searchRequests?.addListener(_onSearchRequested);
+    // PR#1032 审查 B1：挂载即对齐水位线。Ctrl+F 在列表关着时按下，页面会先开列表再立刻 +1，
+    // 而面板要到下一帧才 mount —— 那一刻 notifier 上零监听者。只靠 addListener 的边沿
+    // 通知必然丢掉这次请求（症状：第一次 Ctrl+F 只把列表开出来，要再按一次才出搜索框）。
+    // 这里直接读当前值补齐；仍在 initState，不能 setState，故直接落 [_searchOpen]，
+    // 首帧就带搜索态构建。
+    _syncSearchRequests(duringInit: true);
     // BUG-878：跟踪 Ctrl / ⌘ 键状态，供 Ctrl+滚轮缩字号时把列表滚动物理切成禁滚。
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     _scheduleScrollToCurrentCue();
@@ -844,6 +908,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       _retainRowKeyFor(_scrollTargetRawIndex);
       _scheduleScrollToCurrentCue();
     }
+    // PR#1032 审查 B1：换了请求通道就重挂监听并重新对齐水位线（新通道可能已经有未服务的请求）。
+    if (oldWidget.searchRequests != widget.searchRequests) {
+      oldWidget.searchRequests?.removeListener(_onSearchRequested);
+      widget.searchRequests?.addListener(_onSearchRequested);
+      _handledSearchRequests = 0;
+      _syncSearchRequests();
+    }
     _clearCueCaches();
   }
 
@@ -853,7 +924,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     widget.hitTester?.unbind();
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     widget.controller.removeListener(_onControllerChanged);
+    widget.searchRequests?.removeListener(_onSearchRequested);
     _scrollController.dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -1020,6 +1094,91 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// 条目集合（[_visibleCueIndexes] 的 favorites 分支）一一对应——同一个 `isCueFavorited`
   /// 谓词，故数量与列表完全一致。这是已删的「本集收藏」面板顶部计数 header 的归宿：收藏
   /// 统计并入字幕列表收藏档。
+  /// BUG-1907：按搜索词过滤（在 tab 过滤之后，二者是与的关系）。
+  ///
+  /// 走共享的 [matchesMediaSearch] 而不是裸 `toLowerCase().contains`：它统一做
+  /// 全角→半角、大写→小写、片假名→平假名、去标点的归一化。对日语字幕这不是锦上添花
+  /// ——用户打「ナレーション」要能命中「なれーしょん」，打半角要能命中全角。
+  /// CLAUDE.md 的术语表把这条列为硬性口径（禁裸 contains 做用户可见搜索）。
+  List<int> _applySearch(List<AudioCue> cues, List<int> base) {
+    final String query = _searchQuery.trim();
+    if (query.isEmpty) return base;
+    return <int>[
+      for (final int i in base)
+        if (matchesMediaSearch(
+          query: query,
+          titles: <String>[_rowCue(cues, i).text],
+        ))
+          i,
+    ];
+  }
+
+  /// BUG-1907：导出用的收藏句集合。
+  ///
+  /// 口径**刻意**是「收藏档在去重后实际渲染的那批行」（与「收藏 N 句」计数同源），
+  /// 而不是当前可见行——搜索着导出只导搜索结果会是个陷阱。
+  List<AudioCue> _favoriteCuesForExport(List<AudioCue> cues) => <AudioCue>[
+        for (final int i in _dedupedRawIndexes(cues))
+          if (widget.isCueFavorited(_rowCue(cues, i))) _rowCue(cues, i),
+      ];
+
+  /// BUG-1907：页面层（整表快捷键）请求打开搜索。
+  void _onSearchRequested() => _syncSearchRequests();
+
+  /// PR#1032 审查 B1：把面板对齐到页面层的搜索请求水位线。
+  ///
+  /// 水位比自己服务过的高就进入搜索态并重新抢焦点（连按两次 Ctrl+F 也要每次重聚焦），
+  /// 否则什么都不做——这条判据同时覆盖「挂载时就已经欠着一次请求」和「挂载后又来一次」，
+  /// 不依赖调用方在面板监听的那一瞬间恰好 +1。
+  ///
+  /// [duringInit] 为真表示在 [initState] 里调用：此时不能 setState，直接落状态即可，
+  /// 首帧就会带着搜索框构建。
+  void _syncSearchRequests({bool duringInit = false}) {
+    final int requested = widget.searchRequests?.value ?? 0;
+    if (requested <= _handledSearchRequests) return;
+    _handledSearchRequests = requested;
+    if (duringInit) {
+      _searchOpen = true;
+      _focusSearchAfterFrame();
+      return;
+    }
+    _toggleSearch(open: true);
+  }
+
+  /// BUG-1907：切换搜索框。展开即抢焦点（Ctrl+F 的期望行为）；收起时清空搜索词，
+  /// 否则列表会停在一个用户已经看不见输入框的过滤态上。
+  void _toggleSearch({bool? open}) {
+    final bool next = open ?? !_searchOpen;
+    setState(() {
+      _searchOpen = next;
+      if (!next) {
+        _searchController.clear();
+        _searchQuery = '';
+        _clearCueCaches();
+      }
+    });
+    if (next) {
+      _focusSearchAfterFrame();
+    }
+  }
+
+  /// 搜索框要等这一帧布局出来才存在，焦点请求必须排到帧后。
+  void _focusSearchAfterFrame() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocusNode.requestFocus();
+    });
+  }
+
+  void _onSearchChanged(String value) {
+    if (value == _searchQuery) return;
+    setState(() {
+      _searchQuery = value;
+      // 过滤集变 → 旧 visibleIndex→key 映射作废（与 _setFilter 同理）。
+      _rowKeys.clear();
+      _clearCueCaches();
+    });
+  }
+
   int _favoriteCueCount(List<AudioCue> cues) {
     // BUG-841：只数去重后的代表行，与 favorites 档实际渲染的行一一对应。
     int count = 0;
@@ -1136,7 +1295,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     // 后这三者都没变 → 命中陈旧成员集 → 列表延迟（计数 chip 走未缓存的
     // [_favoriteCueCount] 即时更新，列表却落后，TODO-632/BUG-359）。故收藏档**不缓存**：
     // 每次重算（收藏档条目通常不多，成本可接受）。`all` 仍按结构键缓存（纯结构）。
-    final bool cacheable = _filter != VideoSubtitleListFilter.favorites;
+    // BUG-1907：搜索词与收藏档同理**不缓存**——缓存键是 `(cues 身份, 长度, filter)`，
+    // 边打字边过滤时这三者都不变，命中缓存就等于搜索不生效。
+    final bool cacheable = _filter != VideoSubtitleListFilter.favorites &&
+        _searchQuery.trim().isEmpty;
     if (cacheable &&
         identical(_cachedCues, cues) &&
         _cachedCuesLength == cues.length &&
@@ -1147,7 +1309,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     // 再在代表行上过滤，计数 chip 走同一去重集合（[_favoriteCueCount]）
     // 故数量与列表一致。
     final List<int> base = _dedupedRawIndexes(cues);
-    late final List<int> indexes;
+    late List<int> indexes;
     switch (_filter) {
       case VideoSubtitleListFilter.all:
         indexes = base;
@@ -1159,6 +1321,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         ];
         break;
     }
+    indexes = _applySearch(cues, indexes);
     // [_visibleIndexForRawIndex] 非 all 档读 [_cachedVisibleIndexByRawIndex]，故收藏档
     // 即便不走 visibleIndexes 缓存，也必须每次同步刷新该 raw→visible 映射（用本次重算
     // 的 indexes）；否则收藏档自动滚动定位会按陈旧映射。`_cachedCues` / `_cachedFilter`
@@ -1253,7 +1416,16 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     _retainRowKeyFor(currentIndex >= 0 ? currentIndex : _scrollTargetRawIndex);
     final bool showLoading =
         cues.isEmpty && widget.controller.isSubtitleCuesLoading;
-    return Material(
+    // BUG-1907：Ctrl+F 必须由面板**自己**接一份。
+    //
+    // 视频页那张整表快捷键装在 media_kit controls 的 CallbackShortcuts 上，只包住
+    // controls 子树；本面板是它的兄弟节点（`_videoWithSubtitlePanel` 把
+    // `Row[Expanded(video), 面板列]` 包在 Video 外面），焦点一进面板那张表就收不到
+    // 任何按键。activator 由页面层从快捷键注册表取来传入，用户改绑后两处不会分叉。
+    //
+    // 这里用 CallbackShortcuts 是恰当的：它「匹配即 handled」，而打开搜索框本来就
+    // 没有「让开、别消费」的情形（与 BUG-1864 那个页级空格覆盖层不同）。
+    final Widget panel = Material(
       type: MaterialType.transparency,
       child: Container(
         width: widget.width,
@@ -1331,6 +1503,14 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         ),
       ),
     );
+    if (widget.searchActivators.isEmpty) return panel;
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        for (final ShortcutActivator a in widget.searchActivators)
+          a: () => _toggleSearch(open: true),
+      },
+      child: panel,
+    );
   }
 
   Widget _buildHeader(ColorScheme cs, List<AudioCue> cues) {
@@ -1353,6 +1533,18 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+              ),
+              // BUG-1907：搜索开关。放第一行是因为它是**列表模式**开关，与字号/自动
+              // 滚动/关闭同族；导出则放第二行「收藏 N 句」旁边（它导的就是那批句子）。
+              IconButton(
+                tooltip: t.video_subtitle_list_search,
+                icon: Icon(
+                  _searchOpen ? Icons.search_off : Icons.search,
+                  size: iconSize,
+                ),
+                color: _searchOpen ? cs.primary : cs.onSurfaceVariant,
+                onPressed: () => _toggleSearch(),
+                visualDensity: VisualDensity.compact,
               ),
               IconButton(
                 tooltip: t.video_subtitle_list_font_smaller,
@@ -1427,6 +1619,23 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                   ),
                 ),
               ),
+              // BUG-1907：导出收藏语句。只在收藏档出现——它导的就是这一档的内容，
+              // 放在计数旁边语义自洽；也避免把第一行挤爆（面板最窄 240px）。
+              if (_filter == VideoSubtitleListFilter.favorites &&
+                  widget.onExportFavorites != null)
+                IconButton(
+                  tooltip: t.video_subtitle_list_export_favorites,
+                  // 全平台统一 Material 分享图标（ios_share 是 iOS 专属视觉，巡检 PR-3；
+                  // 收藏夹页的导出按钮同此约定）。
+                  icon: Icon(Icons.share_outlined, size: iconSize),
+                  color: cs.onSurfaceVariant,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _favoriteCueCount(cues) == 0
+                      ? null
+                      : () => widget.onExportFavorites!(
+                            _favoriteCuesForExport(widget.controller.cues),
+                          ),
+                ),
               // TODO-631：收藏档收藏数。删了独立「本集收藏」面板后，其顶部「收藏 N」计数
               // 并入字幕列表收藏档——只在 favorites 档显示，让用户切到收藏档时一眼看到本
               // 视频已收藏多少句（与列表条目数一致，复用同一 isCueFavorited 谓词）。
@@ -1446,6 +1655,44 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 ),
             ],
           ),
+          // BUG-1907：搜索输入框。收起时完全不占高度——面板最窄 240px，常驻一行
+          // 输入框会实打实吃掉列表可视区。
+          if (_searchOpen)
+            Padding(
+              padding: const EdgeInsets.only(top: 6, right: 12),
+              child: TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                onChanged: _onSearchChanged,
+                textInputAction: TextInputAction.search,
+                style: TextStyle(fontSize: widget.fontSize),
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: t.video_subtitle_list_search_hint,
+                  hintStyle: TextStyle(fontSize: widget.fontSize - 1),
+                  prefixIcon: Icon(Icons.search, size: widget.fontSize + 2),
+                  prefixIconConstraints: BoxConstraints(
+                    minWidth: widget.fontSize + 14,
+                    minHeight: widget.fontSize + 2,
+                  ),
+                  suffixIcon: _searchQuery.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: MaterialLocalizations.of(context)
+                              .cancelButtonLabel,
+                          icon: Icon(Icons.close, size: widget.fontSize + 2),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () {
+                            _searchController.clear();
+                            _onSearchChanged('');
+                          },
+                        ),
+                  border: const OutlineInputBorder(),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -1476,6 +1723,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   String _emptyHintForFilter({required bool cuesLoaded}) {
     if (!cuesLoaded) return widget.emptyHint;
+    // BUG-1907：搜不到时说「没有匹配的台词」，而不是照搬「这一档是空的」——
+    // 后者会让用户以为收藏没了。
+    if (_searchQuery.trim().isNotEmpty) {
+      return t.video_subtitle_list_search_empty;
+    }
     switch (_filter) {
       case VideoSubtitleListFilter.favorites:
         return t.video_subtitle_filter_favorites_empty;

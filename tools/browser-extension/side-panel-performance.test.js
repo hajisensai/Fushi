@@ -25,7 +25,7 @@ test('Shift scans immediately at the last pointer without changing native select
   assert.match(SIDE_PANEL, /text\.addEventListener\('pointermove', rememberPointer/);
   assert.match(
     SIDE_PANEL,
-    /event\.key === 'Shift'[\s\S]*?!event\.repeat[\s\S]*?lookupAtPointer\(lastPointer, true\)/,
+    /event\.key === 'Shift'[\s\S]*?!event\.repeat[\s\S]*?lookupAtPointer\(lastPointer, \{ explicit: true, announceMissing: true \}\)/,
   );
   assert.doesNotMatch(SIDE_PANEL, /removeAllRanges|preventDefault\(\)/);
 });
@@ -33,11 +33,14 @@ test('Shift scans immediately at the last pointer without changing native select
 test('subtitle text click looks up the word (restored after native side-panel migration)', () => {
   // 行内文字单击=查词曾在 4ade5cae5f（迁原生 Side Panel）时随旧 UI 层一起丢失，用户复诉
   // 「点击查词不见了，只能 Shift 查」。钉三件事：text 有 click 监听、带选区守卫（保住双击
-  // 选择文本）、stopPropagation（不冒泡成 row 的 seek），且走显式手势分支（announceMissing=true）。
+  // 选择文本）、走显式手势分支（explicit），且**取到词才** stopPropagation。
   assert.match(
     SIDE_PANEL,
-    /text\.addEventListener\('click'[\s\S]*?isCollapsed[\s\S]*?stopPropagation\(\)[\s\S]*?lookupAtPointer\(\{[\s\S]*?\}, true\)/,
+    /text\.addEventListener\('click'[\s\S]*?isCollapsed[\s\S]*?lookupAtPointer\(\{[\s\S]*?\}, \{ explicit: true \}\)/,
   );
+  // 文字块占满整行宽度：点文字右侧空白同样落在它身上，取不到词时这一击必须继续冒泡到 row
+  // 的 seek（用户报「点击空白位置不会跳转到这句」，那时只剩一条「未识别到可查词文字」）。
+  assert.match(SIDE_PANEL, /var started = lookupAtPointer\([\s\S]*?if \(started\) event\.stopPropagation\(\);/);
 });
 
 test('lookup pane closes on manual play dismiss / panel blur / list scroll', () => {
@@ -52,8 +55,27 @@ test('lookup pane is user-resizable and persists via the popupSize channel', () 
   const css = fs.readFileSync(path.join(__dirname, 'side-panel.css'), 'utf8');
   assert.match(css, /\.lookup-pane \{[^}]*resize: both/);
   assert.match(SIDE_PANEL, /lookupUserResized = true;[\s\S]*?type: 'popupSize'/);
-  // 用户拖过后主题下发不得再覆盖宽高。
-  assert.match(SIDE_PANEL, /if \(!lookupUserResized\) \{[\s\S]*?--fushi-popup-max-width/);
+  // 用户拖过后主题下发不得再覆盖**宽高**——但只锁这两项。
+  assert.match(
+    SIDE_PANEL,
+    /if \(!lookupUserResized\) \{\s*lookupPaneEl\.style\.width = box\.width \+ 'px';[\s\S]*?lookupPaneEl\.style\.maxHeight = lookupBaseMaxHeight;\s*\}/,
+  );
+  // zoom 由 app 的「词典字号」下发，拖把手改不到它，因此必须留在门外无条件跟随。
+  // 早退整个函数会让用户拖过一次后再改字号永远不生效（本会话内不可恢复）。
+  assert.doesNotMatch(SIDE_PANEL, /if \(lookupUserResized\) return;/);
+  assert.match(
+    SIDE_PANEL,
+    /\}\s*lookupPaneEl\.style\.maxWidth = 'calc\(100vw - 16px\)';\s*lookupPaneEl\.style\.zoom = String\(box\.zoom\);/,
+  );
+  // 尺寸盒必须经 popup-size.js 的决策器并带上**本文档视口**：直接写 theme px 的老写法
+  // 在 CSS zoom 之下必然溢出窄侧边栏（右半边被 overflow-x 切掉）。
+  assert.match(
+    SIDE_PANEL,
+    /fushiResolvePopupBox\(\s*lookupThemeForBox, \{ width: window\.innerWidth, height: window\.innerHeight \}\)/,
+  );
+  assert.doesNotMatch(SIDE_PANEL, /style\.width = theme\[/);
+  // 侧边栏宽度可拖：视口一变就重算尺寸盒，否则变窄后仍按旧宽渲染 = 又被切。
+  assert.match(SIDE_PANEL, /addEventListener\('resize', function \(\) \{\s*applyLookupBox\(\)/);
 });
 
 test('side-panel lookup reuses the Shift popup host model and parsed results', () => {

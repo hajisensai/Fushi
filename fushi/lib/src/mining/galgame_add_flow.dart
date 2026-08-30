@@ -15,7 +15,14 @@ import 'package:fushi/utils.dart';
 ///
 /// 封面补齐与库页 `_autoCover(silent: true)` 同语义：添加即返回（卡片先用占位
 /// 图出现），目录封面图 / exe 图标解析在后台跑完回填，失败静默。
-Future<void> addGameViaFilePicker(GalgameRepository repo) async {
+///
+/// [onImported] 在**成功落库之后**回调，给「导入」视图跳转到游戏库用。用户报的
+/// 症状是「导成功没反应我还以为失败了重试了好几次」：新游戏出现在**另一个**
+/// section 里，停在导入页的屏幕上什么都不变，成功与失败在观感上完全一样。
+Future<void> addGameViaFilePicker(
+  GalgameRepository repo, {
+  void Function()? onImported,
+}) async {
   // 「导入」视图可能先于游戏库打开，仓储此刻未必载入过；查重需要全量列表。
   await repo.load();
   final FilePickerResult? picked = await FilePicker.platform.pickFiles(
@@ -37,7 +44,48 @@ Future<void> addGameViaFilePicker(GalgameRepository repo) async {
   }
   final GalgameEntry entry = newGalgameEntryFromExe(exe);
   await repo.addAll(<GalgameEntry>[entry]);
+  FushiToast.show(
+    msg: t.game_drop_imported(count: 1),
+    severity: ToastSeverity.success,
+  );
   unawaited(_autoCoverSilently(repo, entry));
+  onImported?.call();
+}
+
+/// 批量按路径添加游戏（拖放共用）：筛掉非 exe / 已在库的，落库，toast 汇报数量，
+/// 逐条后台补封面。
+///
+/// 游戏库页的拖放与「导入」视图的拖放走同一条路——两处各写一份的话，只要有一处
+/// 忘了 toast 或忘了补封面，用户就会在两个入口拿到不一样的行为。
+Future<void> addGamesFromPaths(
+  GalgameRepository repo,
+  List<String> paths, {
+  void Function()? onImported,
+}) async {
+  await repo.load();
+  final List<String> exes = filterOutDuplicateGameExes(repo.games, paths);
+  if (exes.isEmpty) {
+    FushiToast.show(
+      msg: t.game_drop_no_exe,
+      severity: ToastSeverity.warning,
+    );
+    return;
+  }
+  // 批内 id 用「基准时刻 + 序号微秒」错开，避免同微秒撞 id。
+  final DateTime base = DateTime.now();
+  final List<GalgameEntry> added = <GalgameEntry>[
+    for (int i = 0; i < exes.length; i++)
+      newGalgameEntryFromExe(exes[i], now: base.add(Duration(microseconds: i))),
+  ];
+  await repo.addAll(added);
+  FushiToast.show(
+    msg: t.game_drop_imported(count: added.length),
+    severity: ToastSeverity.success,
+  );
+  for (final GalgameEntry entry in added) {
+    unawaited(_autoCoverSilently(repo, entry));
+  }
+  onImported?.call();
 }
 
 /// 后台补封面（静默版）：目录封面图 → exe 内嵌图标；期间条目被删则空操作。

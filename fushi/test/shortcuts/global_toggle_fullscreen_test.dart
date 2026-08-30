@@ -101,9 +101,12 @@ void main() {
       );
     });
 
-    test('executor calls WindowManager.setFullScreen with inverted state', () {
-      expect(navSrc.contains('windowManager.isFullScreen()'), isTrue);
-      expect(navSrc.contains('windowManager.setFullScreen(!current)'), isTrue);
+    test('executor toggles through the shared desktop fullscreen owner', () {
+      expect(navSrc.contains('readDesktopWindowFullscreen()'), isTrue);
+      expect(
+        navSrc.contains('setDesktopWindowFullscreen(!current)'),
+        isTrue,
+      );
     });
 
     test('the toggle is fired from the global-navigation key handler', () {

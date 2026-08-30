@@ -9,6 +9,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
+import 'package:fushi/src/pages/implementations/crop_image_dialog_page.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
 import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
@@ -71,7 +72,10 @@ class MiscellaneousSettingsBody extends BasePage {
 
 class _MiscellaneousSettingsBodyState
     extends BasePageState<MiscellaneousSettingsBody> {
-  String _currentIcon = 'default';
+  /// 当前生效的预设 key。**不留本地副本**：唯一真值是
+  /// [currentAppIconSelection]（rail 与窗口图标读的也是它）。此前这里存了一份
+  /// `_currentIcon`，与那个 notifier 各写各的——正是本 PR 要消灭的形状。
+  String get _currentIcon => currentAppIconSelection.value.presetKey;
   bool _switching = false;
   bool _customSupported = false;
 
@@ -88,18 +92,34 @@ class _MiscellaneousSettingsBodyState
         FushiChannels.iconSwitch
             .invokeMethod<bool>('isCustomShortcutSupported'),
       ]);
+      await publishAppIconSelection(
+        AppIconSelection(
+          presetKey: (results[0] as String?) ?? 'default',
+        ),
+      );
       if (!mounted) return;
       setState(() {
-        _currentIcon = (results[0] as String?) ?? 'default';
         _customSupported = (results[1] as bool?) ?? false;
       });
     } else if (Platform.isWindows) {
-      final String key = await loadIconPresetKey();
+      await loadAppIconSelection();
       if (!mounted) return;
       setState(() {
-        _currentIcon = key;
         _customSupported = true; // Windows 支持任意图片
       });
+    }
+  }
+
+  Future<AppIconSelection> _persistAppliedIcon(
+    AppIconSelection selection,
+  ) async {
+    try {
+      return await saveAppIconSelection(selection);
+    } catch (e) {
+      // 原生窗口/launcher 图标已经成功切换时，偏好落盘失败不能让 rail 和设置
+      // 继续显示旧值；至少保证本次运行三处视觉状态一致，并留下诊断日志。
+      debugPrint('[Fushi] app icon preference persist failed: $e');
+      return await publishAppIconSelection(selection);
     }
   }
 
@@ -124,12 +144,12 @@ class _MiscellaneousSettingsBodyState
           await syncWindowsShortcutIcons(await File(path).readAsBytes());
         }
       }
-      if (ok && mounted) {
-        final messenger = ScaffoldMessenger.of(context);
-        await saveIconPresetKey(key);
+      if (ok) {
+        await _persistAppliedIcon(AppIconSelection(presetKey: key));
         if (!mounted) return;
-        setState(() => _currentIcon = key);
-        messenger.showSnackBar(
+        // 选中态由 _currentIcon getter 从已发布的真值读；这里只需触发重建。
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t.icon_switch_success)),
         );
       }
@@ -199,23 +219,39 @@ class _MiscellaneousSettingsBodyState
     final String? pickedPath = result.files.first.path;
     if (pickedPath == null) return;
 
+    // 裁剪步骤：图标最终按**正方形**渲染，直接拿一张长条照片去当图标只会被拉伸
+    // 变形，用户没有任何机会挑出想要的那一块。锁 1:1，取消裁剪 = 取消整个流程
+    // （裁剪框默认铺满整图，不想裁的人直接确认即可拿到等价于原图的结果）。
+    if (!mounted) return;
+    final File? cropped = await showCropImageDialog(
+      context,
+      File(pickedPath),
+      aspectRatio: 1,
+    );
+    if (cropped == null) return;
+    final String iconPath = cropped.path;
+
     bool ok = false;
     if (Platform.isAndroid) {
-      final bytes = await File(pickedPath).readAsBytes();
+      final bytes = await File(iconPath).readAsBytes();
       ok = (await FushiChannels.iconSwitch.invokeMethod<bool>(
             'createCustomShortcut',
             {'imageBytes': bytes},
           )) ==
           true;
     } else if (Platform.isWindows) {
-      final String persisted = await persistCustomIconFile(pickedPath);
+      final String persisted = await persistCustomIconFile(iconPath);
       ok = await WindowCaptionChannel.setWindowIcon(persisted);
       if (ok) {
-        await saveCustomIconPath(persisted);
-        await saveIconPresetKey(customIconKey);
+        await _persistAppliedIcon(
+          AppIconSelection(
+            presetKey: customIconKey,
+            customPath: persisted,
+          ),
+        );
         // TODO-901：同步桌面 / 开始菜单 .lnk 图标到用户自定义图。
         await syncWindowsShortcutIcons(await File(persisted).readAsBytes());
-        if (mounted) setState(() => _currentIcon = customIconKey);
+        if (mounted) setState(() {});
       }
     }
 

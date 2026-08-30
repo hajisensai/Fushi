@@ -607,10 +607,14 @@ class VideoDownloadSubscriptionService {
             externalIds: media.externalIds,
           ),
           resource: candidate,
-          backendIdentity: VideoDownloadBackendIdentity(
-            kind: subscription.backendKind,
-            profileId: subscription.backendProfileId!,
-            fingerprint: subscription.fingerprint,
+          backendTarget: VideoDownloadBackendTarget(
+            identity: VideoDownloadBackendIdentity(
+              kind: subscription.backendKind,
+              profileId: subscription.backendProfileId!,
+              fingerprint: subscription.fingerprint,
+            ),
+            // 订阅自己记录的投放分类，不读当前设置：订阅派生出的每一集都落在
+            // 订阅创建时选定的分类里（BUG-1879）。
             category: subscription.category!,
           ),
           targetSourceId: subscription.targetSourceId!,

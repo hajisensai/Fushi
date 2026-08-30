@@ -796,6 +796,10 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.needsAudio = true;
     window.lookupAudioVolume = $lookupAudioVolume;
     window.i18nNoAudioAvailable = ${jsonEncode(t.popup_no_audio_available)};
+    // BUG-1908：制卡失败在浮窗里的兜底文案（宿主没给出具体原因时用）。
+    // galgame 浮窗是独立 native WebView2 窗口，宿主的 Flutter toast 画在主 app 窗口上，
+    // 游戏全屏时用户看不见——失败必须就地说出来。
+    window.i18nMineFailed = ${jsonEncode(t.card_export_failed)};
     // BUG-1064：点已制卡 ✓ 的「卡片已在 Anki 中」操作面板归属。
     // true  = 宿主自己接了 `minedCardAction` JS handler，会弹 Flutter 居中对话框
     //         （dictionary_popup_webview 的三个 in-app 表面：app 内弹窗 / Android

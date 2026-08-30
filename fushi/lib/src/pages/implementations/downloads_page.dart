@@ -1,40 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart';
+import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_tasks_section.dart';
-import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
-import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
-import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
-import 'package:fushi/src/pages/implementations/downloads_resource_gap.dart';
-import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
+import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
-import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
+import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
+import 'package:fushi/src/pages/implementations/video_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart';
 import 'package:fushi/src/pages/implementations/video_download_subscriptions_panel.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/utils.dart';
-import 'package:fushi_core/fushi_core.dart'
-    show MediaSourceRow, VideoDownloadJobRow;
+import 'package:fushi_core/fushi_core.dart' show VideoDownloadJobRow;
 
-/// 独立「下载」页（顶层底栏 tab）＝统一下载中心：番剧下载流程 **直接内联**
-/// 铺在页面上（搜番 → 选种 → 配字幕 → 推送 + 下载任务），任务 tab 同时列出
-/// 漫画「在线目录」（mokuro.moe）的卷下载队列；页头「添加任务」支持手动粘贴
-/// 磁力 / 选 .torrent 文件入队（[ManualDownloadTaskDialog]）。设置 tab 配置
-/// 后端/限速/上传/做种/内存。完成后按内容类型自动入库（视频→视频库、书籍/
-/// 漫画/游戏/有声书→各域导入器，见 VideoDownloadPipelineService；漫画卷→
-/// 书架，见 MokuroMoeDownloadQueue）。
+/// 独立「下载」页：资源、任务、订阅、设置共用一个下载中心。
+///
+/// 资源页先选择内容类型，再直接复用书架、漫画、游戏、视频各自的发现页。
 class DownloadsPage extends ConsumerStatefulWidget {
   const DownloadsPage({
     super.key,
     this.initialShowSettings = false,
     this.initialTabIndex = 0,
+    this.videoDiscoveryController,
+    this.videoDiscoveryActions = const VideoDiscoveryActions(),
   });
 
   /// 初始即显示设置面板（「后端未配置」横幅的「去设置」从对话框入口 push
@@ -44,13 +41,20 @@ class DownloadsPage extends ConsumerStatefulWidget {
   /// 发现详情“管理订阅”等入口可直接落到对应子页。
   final int initialTabIndex;
 
+  /// 与视频模块共用同一套生产发现服务，避免下载页另起网络生命周期。
+  final VideoDiscoveryController? videoDiscoveryController;
+
+  /// 视频发现详情、资源搜索与订阅动作由首页组合根统一注入。
+  final VideoDiscoveryActions videoDiscoveryActions;
+
   @override
   ConsumerState<DownloadsPage> createState() => _DownloadsPageState();
 }
 
 class _DownloadsPageState extends ConsumerState<DownloadsPage> {
-  late Future<_DownloadsResourceState> _resourceDependencies;
-  VideoDownloadPipelineService? _resourcePipelineSnapshot;
+  _DownloadsResourceDomain _resourceDomain = _DownloadsResourceDomain.books;
+  final Set<_DownloadsResourceDomain> _visitedResourceDomains =
+      <_DownloadsResourceDomain>{_DownloadsResourceDomain.books};
   bool _hasLegacyAnimeTasks = false;
 
   void _setLegacyAnimeTaskPresence(bool present) {
@@ -58,169 +62,98 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
     setState(() => _hasLegacyAnimeTasks = present);
   }
 
-  @override
-  void initState() {
-    super.initState();
-    final AppModel appModel = ref.read(appProvider);
-    _resourcePipelineSnapshot = appModel.videoDownloadPipelineService;
-    _resourceDependencies = _loadResourceDependencies(appModel);
-  }
-
-  Future<_DownloadsResourceState> _loadResourceDependencies([
-    AppModel? current,
-  ]) async {
-    final AppModel appModel = current ?? ref.read(appProvider);
-    final VideoResourceRegistry? registry = appModel.videoResourceRegistry;
-    final VideoDownloadPipelineService? pipeline =
-        appModel.videoDownloadPipelineService;
-    final bool backendReady = registry != null && pipeline != null;
-    final List<MediaSourceRow> sources = backendReady
-        ? await appModel.getManagedVideoDownloadSources()
-        : const <MediaSourceRow>[];
-    VideoDownloadBackendIdentity? identity;
-    Object? identityError;
-    // 没来源就别去连后端了：身份解析要打真后端，白连一趟还会把「缺来源」
-    // 盖成一条连接错误。
-    if (backendReady && sources.isNotEmpty) {
-      try {
-        identity = await appModel.currentVideoDownloadBackendIdentity();
-      } on Object catch (error) {
-        identityError = error;
-      }
-    }
-    final DownloadsResourceGap? gap = findDownloadsResourceGap(
-      backendReady: backendReady,
-      managedSourceCount: sources.length,
-      identityError: identityError,
-    );
-    if (gap == null &&
-        registry != null &&
-        pipeline != null &&
-        identity != null) {
-      return _DownloadsResourceReady(
-        registry: registry,
-        pipeline: pipeline,
-        identity: identity,
-        sources: sources,
-        defaultSourceId: appModel.prefsRepo.videoDownloadTargetSourceId,
+  Widget _buildVideoResourceTab() => VideoDiscoveryPage(
+        key: const ValueKey<String>('downloads-resource-video-discovery'),
+        navigation: const SizedBox.shrink(),
+        embedded: true,
+        controller: widget.videoDiscoveryController,
+        actions: widget.videoDiscoveryActions,
       );
-    }
-    // gap == null 时上面三个必然非空，这条只是让类型收敛。
-    return _DownloadsResourceBlocked(
-      gap ?? const DownloadsResourceNoBackend(),
-    );
-  }
 
-  /// 「缺受管视频来源」空态的动作：就地开来源管理对话框加一个本地视频文件夹，
-  /// 关掉后重算前置条件——不用把用户支去别的页面再走回来。
-  Future<void> _addVideoSource() async {
-    await showDialog<void>(
-      context: context,
-      builder: (BuildContext _) => const MediaSourcesDialog(mediaKind: 'video'),
-    );
-    if (!mounted) return;
+  String _resourceDomainLabel(_DownloadsResourceDomain domain) =>
+      switch (domain) {
+        _DownloadsResourceDomain.books => t.books,
+        _DownloadsResourceDomain.manga => t.manga_library,
+        _DownloadsResourceDomain.games => t.nav_game,
+        _DownloadsResourceDomain.video => t.nav_video,
+      };
+
+  void _selectResourceDomain(_DownloadsResourceDomain? domain) {
+    if (domain == null || domain == _resourceDomain) return;
     setState(() {
-      _resourceDependencies = _loadResourceDependencies();
+      _resourceDomain = domain;
+      _visitedResourceDomains.add(domain);
     });
   }
 
-  /// 「后端没配好」空态的动作：就地弹配置引导，配完重算前置条件——与
-  /// [_addVideoSource] 同一姿态，不把用户支去设置 tab 再走回来。
-  ///
-  /// 返回「是否真配完了」：同一个出口还要接给资源 surface 的失败态按钮
-  /// （[VideoDownloadBackendSetupPrompt]），那边据此决定要不要重试原提交。
-  Future<bool> _openBackendSetup() async {
-    final bool done = await promptDownloadBackendSetup(
-      context: context,
-      appModel: ref.read(appProvider),
-    );
-    if (!mounted || !done) return false;
-    setState(() {
-      _resourceDependencies = _loadResourceDependencies();
-    });
-    return true;
-  }
+  Widget _buildResourceDomain(_DownloadsResourceDomain domain) =>
+      switch (domain) {
+        _DownloadsResourceDomain.books => const MediaDiscoveryPage(
+            kinds: <DiscoveryMediaKind>[
+              DiscoveryMediaKind.novel,
+              DiscoveryMediaKind.audiobook,
+            ],
+          ),
+        _DownloadsResourceDomain.manga => const MangaDiscoveryPage(
+            embedded: true,
+          ),
+        _DownloadsResourceDomain.games => const MediaDiscoveryPage(
+            kinds: <DiscoveryMediaKind>[DiscoveryMediaKind.game],
+          ),
+        _DownloadsResourceDomain.video => _buildVideoResourceTab(),
+      };
 
-  Widget _buildResourceTab() {
-    return FutureBuilder<_DownloadsResourceState>(
-      future: _resourceDependencies,
-      builder: (
-        BuildContext context,
-        AsyncSnapshot<_DownloadsResourceState> snapshot,
-      ) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final _DownloadsResourceState? state = snapshot.data;
-        if (state is! _DownloadsResourceReady) {
-          final DownloadsResourceGap gap = state is _DownloadsResourceBlocked
-              ? state.gap
-              : const DownloadsResourceNoBackend();
-          return switch (gap) {
-            DownloadsResourceNoManagedSource() => _buildResourceGate(
-                message: t.download_no_managed_video_source,
-                icon: Icons.create_new_folder_outlined,
-                label: t.download_add_video_source,
-                onPressed: _addVideoSource,
+  /// 类型选择器只负责选择内容域；域内筛选、搜索与结果展示全部沿用各模块
+  /// 自己的生产发现页。首次访问后保持挂载，来回切换不丢搜索词、结果和滚动位置。
+  Widget _buildResourceHub() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Column(
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            tokens.spacing.page,
+            0,
+            tokens.spacing.page,
+            tokens.spacing.gap,
+          ),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: SizedBox(
+              width: 240,
+              child: FushiDropdown<_DownloadsResourceDomain>(
+                key: const ValueKey<String>('downloads-resource-type-picker'),
+                options: _DownloadsResourceDomain.values,
+                initialOption: _resourceDomain,
+                generateLabel: _resourceDomainLabel,
+                onChanged: _selectResourceDomain,
               ),
-            // 空态动作直接开配置引导（同 [_addVideoSource] 的就地补齐姿态）：
-            // 「后端没配」缺的就是那三两个字段，不该把用户支到整页设置里找。
-            DownloadsResourceNoBackend(detail: final String? detail) =>
-              _buildResourceGate(
-                message: detail ?? t.download_backend_not_configured,
-                icon: Icons.download_outlined,
-                label: t.download_backend_setup_start,
-                onPressed: _openBackendSetup,
-              ),
-          };
-        }
-        final _DownloadsResourceReady dependencies = state;
-        return VideoResourceSearchSurface(
-          key: const ValueKey<String>('downloads-resource-search'),
-          registry: dependencies.registry,
-          sources: dependencies.sources,
-          defaultSourceId: dependencies.defaultSourceId,
-          // 页面打开之后后端才变得不可用时，surface 的失败态也要能就地补齐——
-          // 与上面两个空态门同一个出口，不再多一套写法。
-          onConfigureBackend: (BuildContext _) => _openBackendSetup(),
-          onSubmit: (VideoDiscoveryDownloadSelection selection) =>
-              dependencies.pipeline.enqueue(
-            VideoDownloadEnqueueRequest(
-              media: selection.media,
-              resource: selection.resource,
-              backendIdentity: dependencies.identity,
-              targetSourceId: selection.source.id,
-              subtitlePolicy: selection.subtitlePolicy,
             ),
           ),
-        );
-      },
-    );
-  }
-
-  /// 「资源」标签的空态：一句说清缺什么 + 一个直接补上它的按钮。
-  Widget _buildResourceGate({
-    required String message,
-    required IconData icon,
-    required String label,
-    required VoidCallback onPressed,
-  }) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(message, textAlign: TextAlign.center),
-            const SizedBox(height: 12),
-            FilledButton.tonalIcon(
-              onPressed: onPressed,
-              icon: Icon(icon),
-              label: Text(label),
-            ),
-          ],
         ),
-      ),
+        Expanded(
+          child: Stack(
+            children: <Widget>[
+              for (final _DownloadsResourceDomain domain
+                  in _DownloadsResourceDomain.values)
+                if (_visitedResourceDomains.contains(domain))
+                  Positioned.fill(
+                    child: Offstage(
+                      offstage: domain != _resourceDomain,
+                      child: TickerMode(
+                        enabled: domain == _resourceDomain,
+                        child: KeyedSubtree(
+                          key: ValueKey<String>(
+                            'downloads-resource-${domain.name}',
+                          ),
+                          child: _buildResourceDomain(domain),
+                        ),
+                      ),
+                    ),
+                  ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -243,9 +176,11 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
   /// 抄一遍；抄出来的指示器在横滑 TabBarView 时只能在越过一半时跳一下，共用同一个
   /// controller 才跟手连续滑动。
   Widget _buildHeader(BuildContext tabContext) {
-    final bool canPop = Navigator.of(context).canPop();
+    // 下拉框会临时 push PopupRoute；只看本页自己的 PageRoute，避免展开菜单时
+    // 左上角凭空出现返回键。
+    final bool showBackButton = ModalRoute.of(context)?.isFirst == false;
     return FushiPageHeader.customTitle(
-      leading: canPop
+      leading: showBackButton
           ? FushiIconButton(
               icon: Icons.arrow_back,
               tooltip: t.back,
@@ -278,14 +213,6 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final AppModel appModel = ref.watch(appProvider);
-    if (!identical(
-      _resourcePipelineSnapshot,
-      appModel.videoDownloadPipelineService,
-    )) {
-      _resourcePipelineSnapshot = appModel.videoDownloadPipelineService;
-      _resourceDependencies = _loadResourceDependencies(appModel);
-    }
     return DefaultTabController(
         initialIndex:
             widget.initialShowSettings ? 3 : widget.initialTabIndex.clamp(0, 2),
@@ -314,7 +241,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                   Expanded(
                     child: TabBarView(
                       children: <Widget>[
-                        _buildResourceTab(),
+                        _buildResourceHub(),
                         // 任务 tab：漫画目录卷下载队列（有任务才占位）+ torrent 任务，
                         // 统一下载中心的同屏任务视图。
                         //
@@ -329,6 +256,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                             return Column(
                               children: <Widget>[
                                 const MokuroMoeTasksSection(),
+                                const DiscoveryDownloadTasksSection(),
                                 Expanded(
                                   child: VideoDownloadJobsPanel.database(
                                     database: ref.read(appProvider).database,
@@ -496,32 +424,4 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
   }
 }
 
-/// 「资源」标签的前置条件解析结果：要么齐备可用，要么缺了具体某一环。
-/// 缺什么由 [findDownloadsResourceGap] 判定（BUG-1706）。
-sealed class _DownloadsResourceState {
-  const _DownloadsResourceState();
-}
-
-/// 前置条件没齐；[gap] 说清缺的是后端还是受管视频来源。
-class _DownloadsResourceBlocked extends _DownloadsResourceState {
-  const _DownloadsResourceBlocked(this.gap);
-
-  final DownloadsResourceGap gap;
-}
-
-/// 前置条件齐备，可以搜资源并推送下载。
-class _DownloadsResourceReady extends _DownloadsResourceState {
-  const _DownloadsResourceReady({
-    required this.registry,
-    required this.pipeline,
-    required this.identity,
-    required this.sources,
-    required this.defaultSourceId,
-  });
-
-  final VideoResourceRegistry registry;
-  final VideoDownloadPipelineService pipeline;
-  final VideoDownloadBackendIdentity identity;
-  final List<MediaSourceRow> sources;
-  final int? defaultSourceId;
-}
+enum _DownloadsResourceDomain { books, manga, games, video }

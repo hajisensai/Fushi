@@ -9,6 +9,18 @@
 #include "luna_hook_config.h"
 
 int main() {
+  fushi_voice_hook::LunaTargetIdentity wa2;
+  wa2.executable_sha256 =
+      "005e71107ed70e662c41cb526879cdcf0b9486e067c0e5a306308688c17409ed";
+  const auto wa2_profile = fushi_voice_hook::MatchLunaHookProfiles(
+      fushi_voice_hook::BuiltInLunaHookProfiles(), wa2);
+  if (wa2_profile.codepage != 932 || wa2_profile.enable_pc_hooks ||
+      wa2_profile.hook_codes.size() != 1 ||
+      wa2_profile.hook_codes.front() != L"HSX0:0@512BF:WA2.exe") {
+    std::fprintf(stderr, "WHITE ALBUM2 exact profile did not match\n");
+    return 9;
+  }
+
   fushi_voice_hook::LunaTargetIdentity nine;
   nine.executable_sha256 =
       "36448822f1a8bc3840b304d3993c07de912db6c803dddd8db1202ed676ba7019";

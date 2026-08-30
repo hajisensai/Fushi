@@ -109,11 +109,11 @@ void main() {
     );
   });
 
-  test('④ 两个通道解包 rubySpans，且越界区间被丢弃', () {
+  test('④ 通道解包 rubySpans，且越界区间被丢弃', () {
     expect(
       'rubySpans'.allMatches(channelHost).length,
-      greaterThanOrEqualTo(2),
-      reason: 'gal 台词窗与剪切板文字窗两处 updateText 都要解包 rubySpans',
+      greaterThanOrEqualTo(1),
+      reason: 'gal 台词窗 updateText 要解包 rubySpans',
     );
     expect(
       RegExp(r'gal_hook_text_window_->UpdateText\([\s\S]{0,200}?'
@@ -121,13 +121,6 @@ void main() {
           .hasMatch(channelHost),
       isTrue,
       reason: 'gal 台词浮窗必须下发注音区间',
-    );
-    expect(
-      RegExp(r'clipboard_text_window_->UpdateText\([\s\S]{0,200}?'
-              r'RubySpansFromValue\(args, "rubySpans"\)')
-          .hasMatch(channelHost),
-      isTrue,
-      reason: '剪切板文字窗必须下发注音区间',
     );
     // 越界保护：UpdateText 必须按最终文本长度过滤，绝不让错位注音飘在别的字上。
     expect(

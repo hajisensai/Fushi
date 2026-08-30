@@ -28,10 +28,11 @@ class _FailingService extends AnkiConnectService {
   final Object toThrow;
 
   @override
-  Future<bool> isDuplicate({
+  Future<bool> isDuplicateForAdd({
     required String deckName,
-    required String fieldName,
-    required String fieldValue,
+    required String modelName,
+    required String firstFieldName,
+    required String firstFieldValue,
     AnkiDuplicateScope scope = AnkiDuplicateScope.deck,
   }) async =>
       throw toThrow;

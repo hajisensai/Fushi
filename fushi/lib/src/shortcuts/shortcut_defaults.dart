@@ -312,6 +312,11 @@ class ShortcutDefaults {
     ], [
       _gStart
     ]),
+    // BUG-1907：字幕列表内搜索。video 组里 Ctrl+F 此前完全空闲（同键的
+    // readerOpenNavigation / homeFocusSearch 属不同 co-active 组，绝不同时激活）。
+    ShortcutAction.videoSearchSubtitleList: _kb([
+      _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl}),
+    ]),
     ShortcutAction.videoToggleImmersiveLock: _kb([
       _key(LogicalKeyboardKey.keyL, {ModifierKey.shift}),
     ]),

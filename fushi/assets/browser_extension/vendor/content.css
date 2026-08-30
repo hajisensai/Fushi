@@ -185,15 +185,15 @@
 .entry {
     padding: 8px 0;
     /* TODO-1325 #5 part1: fushiFocusDictionaryEntryMove 的 scrollIntoView 落点留白，
-       避免当前词条被顶部句子横幅(.global-lookup-sentence)或弹窗边缘贴死。 */
+       避免当前词条被顶部汉字卡或弹窗边缘贴死。 */
     scroll-margin-top: 14px;
     scroll-margin-bottom: 14px;
 }
 
 /* design-2026-08 讨论区反馈: 顶栏贴近词头——首词条不再叠加自己的 8px 顶距（顶部呼吸空间由
    Flutter 顶栏 + 振假名 0.55em 预留区承担），词条之间的 8px 节奏不变。
-   :first-child 的语义恰好精确：句子横幅(.global-lookup-sentence)或汉字卡
-   (kanjiSection)在场时首词条不是 first-child，自动保留原间距不贴死。 */
+   :first-child 的语义恰好精确：汉字卡(kanjiSection)在场时首词条不是
+   first-child，自动保留原间距不贴死。 */
 .entry:first-child {
     padding-top: 0;
 }
@@ -389,17 +389,59 @@
     font-size: 15px;
 }
 
-/* BUG-932/1895: 制卡按钮静息态 '+' 是文本字形（TODO-1325 应用户要求保留 + / ✓ / ✓↩ 文本
-   标记，不走 SVG），与相邻 audio/favorite/open-anki/tune 的 1em SVG 图标共用上面的
-   font-size:18px；但一个文本 '+' 字形只占 em 盒约一半高（≈9px），SVG 却铺满 1em
-   （可见 ≈14px），故静息加号目测明显比其余图标小/不齐。24px 的旧补偿在实际 WebView
-   里仍只画出约 14px 高；30px 才与 18px SVG 的可见轮廓齐平。仅给静息 '+' 态（未制卡 =
-   无 .duplicate 类）放大字号；已制卡 ✓ / ✓↩（.duplicate / .latest）是高字形本就接近、
-   且各有专属尺寸，保持不动。表头行高由词条大标题主导，放大按钮不改行高。按钮本体还
-   必须挂 inline-action-button，才能走同排的 inline-flex 居中与 pointer 光标。守卫见
-   popup_cards_nav_icon_guard #8。 */
+/* BUG-932/1895/1923: 制卡按钮静息态 '+' 是文本字形（TODO-1325 应用户要求保留
+   + / ✓ / ✓↩ 文本标记，不走 SVG），前两轮一直靠「放大 font-size 撑出可见高度」来补偿
+   文本字形只占 em 盒约一半的问题（18px → 24px → 30px）。这条路把「可见大小」和「可见
+   位置」绑死在同一个字号上，而字形的垂直位置根本不由布局决定，只由字体度量决定：
+   墨迹中心相对行几何中心的偏移 = (ascent - descent) / 2 - 数学轴。Edge 4x 像素实测
+   Segoe UI Symbol 与 Segoe UI 同为 +0.125em、DejaVu Sans +0.066em、Roboto ≈ +0.02em、
+   Arial 0.000em——也就是说 Windows 上 '+' 天生就比同排 SVG 图标低 0.125em，且字号越大
+   偏得越多：24px 偏低 3.0px，上一轮为补大小改到 30px 后变成偏低 3.75px（用户「加号还是
+   低了」）。按钮盒本身是精确居中的（.header-buttons 的 align-items:center，实测盒 cy 与
+   相邻按钮完全一致），偏的只有字形墨迹在 line box 里的位置，故任何「再调一次字号」或
+   「加一个 translateY 常量」都治不了：补偿量随平台实际命中的字体在 0 ~ 0.125em 之间变，
+   把 Windows 补正就会把 Arial/Roboto 那类字体反向补歪。
+
+   根治：静息 '+' 不再由字形绘制，改用两条以按钮盒为参照绝对居中的矩形拼出十字（与
+   .entry-current .entry-header::before 的纯 CSS 三角同法，零字体依赖），可见大小与可见
+   位置都不再受任何平台字体度量影响。textContent 仍是 '+'，setMineState 状态机、无障碍
+   朗读与守卫判据均不变，只是字形本身不再着色。已制卡 ✓ / ✓↩（.duplicate / .latest）是
+   高字形、本就接近且各有专属尺寸，仍走上面的单色符号字体栈，保持不动。
+   font-size:30px 保留：它现在只决定按钮盒的宽高（进而是标题行行高，保持零布局变化），
+   与加号的可见大小/位置都无关。守卫见 popup_cards_nav_icon_guard #8。 */
 .mine-button:not(.duplicate) {
     font-size: 30px;
+    position: relative;
+    /* 文本 '+' 只保留语义与盒尺寸，字形本身不着色。这里只关掉文本填充，color 不变，
+       故下面两条矩形的 currentColor 仍取到真实前景色，主题色 / eink 反色 / hover 与
+       disabled 的 opacity 全部照常跟随。 */
+    -webkit-text-fill-color: transparent;
+}
+
+/* 十字的两条臂。以按钮的 padding box（position:relative）为参照居中，与字体度量彻底
+   无关，故 '+' 的可见中心恒等于按钮盒中心，也就恒等于同排 SVG 图标的中心。 */
+.mine-button:not(.duplicate)::before,
+.mine-button:not(.duplicate)::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: currentColor;
+}
+
+/* 0.467em / 0.067em 在 font-size:30px 下 = 14px / 2px。14px 与相邻 favorite SVG 的可见
+   轮廓等高（实测同为 14.00px），2px 是同排 SVG 的线宽量级。必须用 em 而非绝对 px，才能
+   跟随弹窗内容缩放（同 .expression rt 处关于绝对 px 不跟踪 content zoom 的说明）。
+   横臂与竖臂互为转置，改一条就必须同步改另一条，否则十字不再等臂。 */
+.mine-button:not(.duplicate)::before {
+    width: 0.467em;
+    height: 0.067em;
+}
+
+.mine-button:not(.duplicate)::after {
+    width: 0.067em;
+    height: 0.467em;
 }
 
 .mine-button:disabled {
@@ -1118,8 +1160,25 @@
     line-height: 1;
 }
 
+/* BUG-1897 — `!important` 是必需的，不是保险丝。
+
+   词典 zip 自带的 styles.css 被 constructDictCss 逐规则加前缀后注入进该词典的
+   dictWrapper 内部（dict-media.js），所以词典里一条裸的 `rt { font-size: 0.5em }`
+   会变成 `[data-dictionary="X"] rt { font-size: 0.5em }` —— 特异度 (0,1,1)，与本条
+   归一化规则 `.ruby-rt rt`（同为 (0,1,1)）**打平**，而它注入得更晚，靠文档顺序赢。
+   于是 .ruby-rt 盒的 0.6em 再乘词典的 0.5 = 基字的 0.3em：15px 正文下振假名只剩
+   4.5px（用户报告「小学館例解学習国語 第十二版 振假名这么小」，该词典 styles.css
+   第 328 行正是 `rt { font-size: 0.5em; }`）。
+
+   词典作者写这条时假设的是**原生 ruby**——那里 rt 的字号只作用一次。本实现把 ruby
+   拆成 `.ruby-unit > .ruby-rt > rt` 三层手工模拟，字号由 .ruby-rt 这个盒统一承担
+   （见上面的 em 链注释），内层 <rt> 必须恒为 1em，否则任何词典的 rt 字号都会与盒
+   相乘。**振假名几何归弹窗所有**，词典的 rt 字号意图在这套布局下没有正确语义，只能
+   丢弃；rt 的颜色/字重/字体等非几何声明不受影响，仍照常生效。
+   用户自定义的 `.ruby-rt { font-size: X em !important }`（词典样式可视化编辑器）作用在
+   外层盒上，与本条不冲突，仍然可调。 */
 :where(.glossary-group, .glossary-content, .expression) .ruby-rt rt {
-    font-size: 1em;
+    font-size: 1em !important;
 }
 
 /* BUG-1778: the hidden reading twin must NOT participate in inline layout.
@@ -1145,6 +1204,26 @@
     visibility: hidden;
     -webkit-user-select: none;
     user-select: none;
+}
+
+/* BUG-1898 — 悬出与预留不是二选一，判据是「隔壁是不是也有注音」。
+
+   BUG-850 让 .ruby-reserve 永远 in-flow（每个基字都撑到 max(基字, 读音)）：相邻读音
+   不再相碰，但只要短基字配长读音（体/からだ）正文字距就被拉开。BUG-1778 反过来把它
+   永远 absolute：字距自然了，但 BUG-850 防的那个碰撞原样回来了 —— 明鏡「登場人物」
+   拆成紧邻的 登場(とうじょう) + 人物(じんぶつ) 两个单元，前者每侧溢出 0.5em、后者
+   0.2em，相碰 0.7em，读音糊成一团（用户报告「四字词语带振假名重叠」）。BUG-1655 把
+   注音从 0.5em 放大到 0.6em 让溢出又多了两成。
+
+   两次修复各自都对，只是判据下错了层：**注音悬出到普通文字上没有任何问题**（原生
+   ruby 的参考行为，也正是 BUG-1778 想要的），**只有当隔壁也是一个带注音的单元时才必须
+   给出空间**（BUG-850 的真实场景）。所以预留不再是全局开关，而由 postProcessRuby 在
+   DOM 上判定「两个 .ruby-unit 之间除空白外没有任何内容」后给两侧都打上 .ruby-tight，
+   仅这些单元把孪生体放回 in-flow —— 恰好只在会碰撞的地方付出字距代价，其余位置保持
+   BUG-1778 的紧凑正文。两个单元互相标记是安全的：孪生体宽度是 max-content，读音不比
+   基字宽时它撑不开任何东西，标了等于没标。 */
+:where(.glossary-group, .glossary-content, .expression) .ruby-unit.ruby-tight > .ruby-reserve {
+    position: static;
 }
 
 /* BUG-851: dark-mode legibility for dictionary inline-coloured tags (明鏡 の
@@ -1608,64 +1687,8 @@
    上面的 a.gloss-sc-a 规则保留：它还兜住词典自带 styles.css 对 <a> 的
    float/position（BUG-435 的次要成因），且 <a> 本就是行内元素零副作用。 */
 
-/* TODO-1030 M0 — app-external global-lookup sentence-context banner. Shows the
-   sentence the selected word sits in (captured via Windows UI Automation) above
-   the dictionary entries. Only rendered when window.__globalLookupSentence is
-   set (never for in-app popups). Uses the same injected theme vars as the rest
-   of the popup so it follows light/dark + ColorScheme. */
-.global-lookup-sentence {
-    margin: 0 0 8px 0;
-    padding: 8px 10px;
-    border-radius: var(--fushi-radius-card, 10px);
-    background: var(--surface-variant, rgba(128, 128, 128, 0.12));
-    /* 真机反馈（2026-07-10）：左侧 3px 强调色竖条（引用块样式）在面板里像
-       「搜索栏左边一块莫名深色」——去掉竖条，改四边细边框的普通搜索框外观。 */
-    border: 1px solid var(--md-outline-variant, rgba(120, 120, 128, 0.32));
-    color: var(--text-color-light1, #555555);
-    font-size: 0.85em;
-    line-height: 1.5;
-    word-break: break-word;
-    white-space: pre-wrap;
-}
-
-/* 真机第 4 轮 — 面板 root 的句子条是「选词区」：字号与底下词条正文一致
-   （1em，不再缩小），用正文主色（不是弱化的 context 灰）。瞬态覆盖窗的
-   横幅保持 0.85em context 条外观不变。 */
-.global-lookup-sentence-panel {
-    font-size: 1em;
-    color: var(--text-color, #333333);
-}
-
-/* spec 2026-07-10 — 句子横幅逐字可点（点字=该字到句尾后缀查词）。 */
-.global-lookup-sentence-char {
-    cursor: pointer;
-}
-
-/* 逐字 hover 框只留给瞬态窗（那里点字=嵌套子卡，需要逐字瞄准反馈）。
-   面板选词区是连续正常文本：不按字画格子，点击后由引擎分词结果整词高亮
-   （真机第 4 轮「不应该按照字来划分，应该按照正常的来断」）。 */
-.global-lookup-sentence:not(.global-lookup-sentence-panel) .global-lookup-sentence-char:hover {
-    background: var(--fushi-primary-highlight, rgba(56, 106, 88, 0.22));
-    border-radius: 2px;
-}
-
-/* 引擎匹配到的词（bestLength）在面板选词区的整词高亮——与查词高亮同色变量。 */
-.global-lookup-sentence-hit {
-    background: var(--fushi-primary-highlight, rgba(56, 106, 88, 0.22));
-    border-radius: 2px;
-}
-
 .ctx-adjust-button {
     opacity: 0.85;
-}
-
-/* 真机第 5 轮 — 面板释义区被点击、正在外部瞬态窗里查的那段文字的高亮
-   （markGlobalLookupExtHit；下次点击替换、重渲清除）。
-   BUG：上面 .ctx-adjust-button 规则原缺闭合 }，CSS 错误恢复把本条整规则当无效
-   声明吞掉（ext-hit 高亮从未生效）；补上闭合后本条恢复。 */
-.global-lookup-ext-hit {
-    background: var(--fushi-primary-highlight, rgba(56, 106, 88, 0.22));
-    border-radius: 2px;
 }
 
 /* =====================================================================
@@ -1926,22 +1949,6 @@
     color: var(--background-color);
 }
 
-/* 句子横幅的命中/外部查词高亮与逐字 hover：色块 → 下划线 / 描边。 */
-:where(#entries-container).eink .global-lookup-sentence-hit,
-:where(#entries-container).eink .global-lookup-ext-hit {
-    background: transparent;
-    text-decoration-line: underline;
-    text-decoration-color: currentColor;
-    text-decoration-thickness: 0.14em;
-    text-underline-offset: 0.15em;
-}
-
-:where(#entries-container).eink .global-lookup-sentence:not(.global-lookup-sentence-panel) .global-lookup-sentence-char:hover {
-    background: transparent;
-    outline: 1px solid currentColor;
-    outline-offset: -1px;
-}
-
 /* app 外全局查词卡壳：半透明灰描边 → 实线前景色描边，方角，不透明底。 */
 :where(#entries-container).eink.global-lookup body {
     border: 1px solid var(--text-color);
@@ -2093,6 +2100,25 @@
     white-space: pre-wrap;
     user-select: text;
     cursor: text;
+}
+
+/* 覆盖层里的振假名：与字幕列表同一套取向——读音在正文上方、不参与选择/取词。 */
+#fushi-subtitle-overlay ruby {
+    ruby-position: over;
+    ruby-align: center;
+}
+
+/* 同字幕列表：有振假名的那句要给上方读音留出行框。 */
+#fushi-subtitle-overlay:has(ruby) {
+    line-height: 2;
+}
+
+#fushi-subtitle-overlay rt {
+    font-size: 0.5em;
+    line-height: 1.1;
+    opacity: 0.82;
+    text-shadow: 0 1px 2px #000;
+    user-select: none;
 }
 
 /* 拖字幕文件时的单一全局提示；pointer-events:none，绝不抢宿主页 drop。 */

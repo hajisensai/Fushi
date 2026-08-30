@@ -6,8 +6,8 @@
 // JS bridge messages (jsMessage — dismiss/audio in later phases).
 //
 // spec 2026-07-10 — the implementation moved to the instance-level
-// [OverlayWindowChannel] (shared with the persistent clipboard panel's second
-// window). This file stays as the zero-churn static facade the 1700-line
+// [OverlayWindowChannel] (an instance-level wrapper reusable by any second
+// overlay window). This file stays as the zero-churn static facade the 1700-line
 // GlobalLookupController calls; every method is a one-line delegate to the
 // shared instance bound to the global_lookup MethodChannel.
 //

@@ -3,13 +3,14 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 
-/// BUG-730 — app-external mining (clipboard panel + transient global lookup)
-/// created cards whose `{sentence}` field was ALWAYS empty. The full pipeline
+/// BUG-730 — app-external mining (transient global lookup; the since-removed
+/// clipboard panel shared the path) created cards whose `{sentence}` field was
+/// ALWAYS empty. The full pipeline
 /// (➕ button, mine bridge, term, word audio, duplicate, overwrite) worked, but
 /// the SENTENCE never reached the mine context: `_mineEntry` read
 /// `fields['sentence']`, JS `buildMinePayload` never sends a `sentence` field
-/// for these surfaces, and the captured clipboard text / UIA line (already used
-/// for the sentence banner) was never threaded into the mine call.
+/// for these surfaces, and the captured clipboard text / UIA line was never
+/// threaded into the mine call.
 ///
 /// Fix: [maybeHandleOverlayDeferredBridge] takes a `sentenceContext`; each
 /// controller passes its `_currentSentence`; [resolveMineSentence] uses it as
@@ -73,17 +74,15 @@ void main() {
           reason: '制卡卡片 AnkiMiningContext 用解析后的 sentence');
     });
 
-    test('both overlay surfaces pass their captured _currentSentence', () {
-      for (final String path in <String>[
-        'lib/src/lookup/clipboard_panel_controller.dart',
-        'lib/src/lookup/global_lookup_controller.dart',
-      ]) {
-        expect(
-          read(path).contains('sentenceContext: _currentSentence'),
-          isTrue,
-          reason: '$path 必须把捕获到的句子传给制卡桥（否则该表面制卡句子恒空）',
-        );
-      }
+    test('overlay surface passes its captured _currentSentence', () {
+      // 剪贴板面板（clipboard_panel_controller.dart）已随桌面剪贴板查词整体删除，
+      // 只剩瞬态全局查词窗这一个 app 外制卡表面。
+      const String path = 'lib/src/lookup/global_lookup_controller.dart';
+      expect(
+        read(path).contains('sentenceContext: _currentSentence'),
+        isTrue,
+        reason: '$path 必须把捕获到的句子传给制卡桥（否则该表面制卡句子恒空）',
+      );
     });
   });
 }

@@ -55,6 +55,8 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/unity_adapter.inc"
   "hook/adapters/windows_audio_adapter.inc"
   "hook/adapters/siglus_adapter.inc"
+  "hook/adapters/siglus_lookup.h"
+  "hook/adapters/siglus_lookup.inc"
   "hook/adapters/bgi_ethornell_adapter.inc"
   "hook/adapters/bgi_ethornell_profile.h"
   "hook/adapters/artemis_adapter.inc"
@@ -74,6 +76,11 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/sgre_lookup.inc"
   "hook/adapters/sgre_profile.h"
   "hook/adapters/sgre_voice_archive.h"
+  "hook/adapters/leaf_aquaplus_profile.h"
+  "hook/adapters/leaf_aquaplus_lookup.h"
+  "hook/adapters/leaf_aquaplus_voice_archive.h"
+  "hook/adapters/leaf_aquaplus_adapter.inc"
+  "include/leaf_d3d_trace.h"
 )
 target_include_directories(fushi_voice_hook PRIVATE "include")
 target_compile_definitions(fushi_voice_hook PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
@@ -92,6 +99,27 @@ add_executable(fushi_siglus_text_test
 )
 target_include_directories(fushi_siglus_text_test PRIVATE "hook")
 add_test(NAME fushi_siglus_text_test COMMAND fushi_siglus_text_test)
+
+add_executable(fushi_siglus_lookup_test
+  "tests/siglus_lookup_test.cpp"
+)
+target_include_directories(fushi_siglus_lookup_test PRIVATE "hook")
+add_test(NAME fushi_siglus_lookup_test COMMAND fushi_siglus_lookup_test)
+
+add_executable(fushi_leaf_aquaplus_adapter_test
+  "tests/leaf_aquaplus_adapter_test.cpp"
+)
+target_include_directories(fushi_leaf_aquaplus_adapter_test PRIVATE "hook")
+add_test(NAME fushi_leaf_aquaplus_adapter_test
+  COMMAND fushi_leaf_aquaplus_adapter_test)
+
+add_executable(fushi_leaf_aquaplus_voice_archive_test
+  "tests/leaf_aquaplus_voice_archive_test.cpp"
+)
+target_include_directories(fushi_leaf_aquaplus_voice_archive_test
+  PRIVATE "hook/adapters")
+add_test(NAME fushi_leaf_aquaplus_voice_archive_test
+  COMMAND fushi_leaf_aquaplus_voice_archive_test)
 
 add_executable(fushi_resource_audio_ready_test
   "tests/resource_audio_ready_test.cpp"
@@ -137,6 +165,16 @@ target_compile_definitions(fushi_xaudio_trace_export_test
 add_dependencies(fushi_xaudio_trace_export_test fushi_voice_hook)
 add_test(NAME fushi_xaudio_trace_export_test
   COMMAND fushi_xaudio_trace_export_test "$<TARGET_FILE:fushi_voice_hook>")
+
+add_executable(fushi_leaf_d3d_trace_export_test
+  "tests/leaf_d3d_trace_export_test.cpp"
+)
+target_include_directories(fushi_leaf_d3d_trace_export_test PRIVATE "include")
+target_compile_definitions(fushi_leaf_d3d_trace_export_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_dependencies(fushi_leaf_d3d_trace_export_test fushi_voice_hook)
+add_test(NAME fushi_leaf_d3d_trace_export_test
+  COMMAND fushi_leaf_d3d_trace_export_test "$<TARGET_FILE:fushi_voice_hook>")
 
 add_executable(fushi_voice_resource_filename_test
   "tests/voice_resource_filename_test.cpp"
@@ -337,8 +375,25 @@ add_test(NAME fushi_unity_text_mesh_reassembler_test
   COMMAND fushi_unity_text_mesh_reassembler_test)
 
 add_executable(fushi_adapter_contract_test tests/adapter_contract_test.cpp)
-target_include_directories(fushi_adapter_contract_test PRIVATE hook)
+# v19 起 adapter.h 依赖 IPC 头（LookupAdmissionReport 是 adapter 契约的一部分：
+# adapter 要回答"本引擎的查词准入结论"，而那个结论的类型定义在跨进程契约里）。
+target_include_directories(fushi_adapter_contract_test PRIVATE hook include)
 add_test(NAME fushi_adapter_contract_test COMMAND fushi_adapter_contract_test)
+
+# 「模块表稳定了吗」的判据（hook/module_settle.h）。纯头、零 Win32 依赖，所以
+# 能被 CTest 单独包含——adapter_registry.inc 依赖 dll_main 的全局与 MinHook，
+# 永远无法单测，而这条收敛规则恰恰是查词准入误报的根因所在。
+add_executable(fushi_module_settle_test tests/module_settle_test.cpp)
+target_include_directories(fushi_module_settle_test PRIVATE hook include)
+add_test(NAME fushi_module_settle_test COMMAND fushi_module_settle_test)
+
+# 宿主 exe 摘要共享槽（hook/host_executable_digest.h）。同样是纯头，钉住"一次性写入"
+# 和"算不出发空串、不发一串零"这两条——摘要是准入判成不支持时用户唯一能报上来的信息。
+add_executable(fushi_host_executable_digest_test
+  tests/host_executable_digest_test.cpp)
+target_include_directories(fushi_host_executable_digest_test PRIVATE hook include)
+add_test(NAME fushi_host_executable_digest_test
+  COMMAND fushi_host_executable_digest_test)
 
 add_executable(fushi_directsound_format_registry_test
   tests/directsound_format_registry_test.cpp)

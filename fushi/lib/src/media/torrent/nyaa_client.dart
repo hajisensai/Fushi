@@ -10,7 +10,21 @@ import 'package:fushi/src/media/torrent/anime_release_descriptor.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
 
-const String _nyaaNamespace = 'https://nyaa.si/xmlns/nyaa';
+/// nyaa 扩展字段命名空间的固定路径。上游 nyaa 软件把命名空间拼成
+/// `<站点 origin>/xmlns/nyaa`（`url_for('main.home', _external=True)`），
+/// 所以 nyaa.si / sukebei.nyaa.si / 各镜像的 host 各不相同，只有路径恒定；
+/// 硬编码 `https://nyaa.si/xmlns/nyaa` 会把 sukebei 每条 item 判成
+/// invalidNamespace（BUG-1946）。
+const String _nyaaNamespacePath = '/xmlns/nyaa';
+
+/// [uri] 是否 nyaa 扩展字段命名空间（http(s) 且路径为 [_nyaaNamespacePath]）。
+bool isNyaaNamespace(String? uri) {
+  final Uri? parsed = uri == null ? null : Uri.tryParse(uri);
+  return parsed != null &&
+      (parsed.scheme == 'https' || parsed.scheme == 'http') &&
+      parsed.host.isNotEmpty &&
+      parsed.path == _nyaaNamespacePath;
+}
 
 /// 严格搜索契约的稳定错误码。调用方可以按 [code] 区分「空响应、编码、XML、
 /// RSS 结构、字段」而不必解析第三方 parser 的易变错误文本。
@@ -310,10 +324,10 @@ List<NyaaTorrent> _parseNyaaDocumentStrict(XmlDocument doc) {
           'item is missing nyaa:$name',
         );
       }
-      if (element.name.namespaceUri != _nyaaNamespace) {
+      if (!isNyaaNamespace(element.name.namespaceUri)) {
         throw NyaaFeedFormatException(
           NyaaFeedErrorCode.invalidNamespace,
-          '$name must use $_nyaaNamespace',
+          '$name must use <site>$_nyaaNamespacePath',
         );
       }
       return element.innerText.trim();
@@ -330,7 +344,7 @@ List<NyaaTorrent> _parseNyaaDocumentStrict(XmlDocument doc) {
       );
     }
 
-    final String sizeText = _childTextInNamespace(item, 'size', _nyaaNamespace);
+    final String sizeText = _nyaaChildText(item, 'size');
     out.add(
       NyaaTorrent(
         title: title,
@@ -342,10 +356,9 @@ List<NyaaTorrent> _parseNyaaDocumentStrict(XmlDocument doc) {
         downloads: _optionalNyaaInt(item, 'downloads'),
         sizeText: sizeText,
         sizeBytes: parseNyaaSize(sizeText),
-        categoryId: _childTextInNamespace(item, 'categoryId', _nyaaNamespace),
-        trusted:
-            _childTextInNamespace(item, 'trusted', _nyaaNamespace) == 'Yes',
-        remake: _childTextInNamespace(item, 'remake', _nyaaNamespace) == 'Yes',
+        categoryId: _nyaaChildText(item, 'categoryId'),
+        trusted: _nyaaChildText(item, 'trusted') == 'Yes',
+        remake: _nyaaChildText(item, 'remake') == 'Yes',
         pubDate: parseNyaaPubDate(_childTextInNamespace(item, 'pubDate', null)),
       ),
     );
@@ -356,10 +369,10 @@ List<NyaaTorrent> _parseNyaaDocumentStrict(XmlDocument doc) {
 int _optionalNyaaInt(XmlElement item, String name) {
   final XmlElement? element = _childElement(item, name);
   if (element == null) return 0;
-  if (element.name.namespaceUri != _nyaaNamespace) {
+  if (!isNyaaNamespace(element.name.namespaceUri)) {
     throw NyaaFeedFormatException(
       NyaaFeedErrorCode.invalidNamespace,
-      '$name must use $_nyaaNamespace',
+      '$name must use <site>$_nyaaNamespacePath',
     );
   }
   final String value = element.innerText.trim();
@@ -383,6 +396,17 @@ XmlElement? _childElement(XmlElement item, String local) {
 String _childTextInNamespace(XmlElement item, String local, String? namespace) {
   for (final XmlElement child in item.childElements) {
     if (child.name.local == local && child.name.namespaceUri == namespace) {
+      return child.innerText.trim();
+    }
+  }
+  return '';
+}
+
+/// 取 [item] 下 nyaa 扩展命名空间里本地名为 [local] 的第一个子元素文本；
+/// 没有返回空串。
+String _nyaaChildText(XmlElement item, String local) {
+  for (final XmlElement child in item.childElements) {
+    if (child.name.local == local && isNyaaNamespace(child.name.namespaceUri)) {
       return child.innerText.trim();
     }
   }

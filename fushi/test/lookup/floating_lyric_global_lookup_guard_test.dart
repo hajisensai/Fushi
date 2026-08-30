@@ -91,8 +91,8 @@ void main() {
 
     test('app 级路由（app_model.dart）：覆盖窗优先，in-app 宿主回落保留', () {
       final String src = read('lib/src/models/app_model.dart');
-      final int at =
-          src.indexOf('onFloatingLyricLookup: (String text, int index)');
+      final int at = src.indexOf(
+          'onFloatingLyricLookup: (String text, int index, Rect? wordRect)');
       expect(at, greaterThan(-1));
       // handler 闭包体（到下一个顶层参数 controlStreams 为止）。
       final int end = src.indexOf('controlStreams:', at);
@@ -115,7 +115,11 @@ void main() {
       expect(src.contains('floatingLyricSearchTerm('), isTrue,
           reason: '分词必须走与旧路由同一把 floatingLyricSearchTerm，防漂移');
       expect(src.contains('sentence: text.trim()'), isTrue,
-          reason: '整行字幕必须作为句子横幅/制卡 sentence 字段传给覆盖窗');
+          reason: '整行字幕必须作为制卡 sentence 字段传给覆盖窗');
+      // 被点字的屏幕矩形必须一路透传成覆盖窗的锚点。断了这条，卡片会退回「跟着
+      // 鼠标飘」——功能看起来还在，只是每次都弹偏，最难在回归里发现的那种。
+      expect(src.contains('anchorScreenRect: wordRect'), isTrue,
+          reason: 'native 回传的词矩形必须作为覆盖窗锚点，否则卡片退回光标锚定');
     });
   });
 }

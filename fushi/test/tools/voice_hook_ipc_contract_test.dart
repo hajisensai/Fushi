@@ -38,7 +38,7 @@ void main() {
     // v17：在 v16 之上纯尾部追加「本次注入所用 hook DLL 的 SHA-256」。
     // 这个数字必须钉死：它是 wire identity，写错一位就是「旧 helper 静默绕过默认
     // deny」。改它必须同时改契约头顶部的版本沿革说明。
-    expect(source, contains('constexpr uint32_t kSharedVersion = 17;'));
+    expect(source, contains('constexpr uint32_t kSharedVersion = 19;'));
     // v17 字段本身也钉死：驻留 hook 身份门的驻留侧摘要只能从这里取，字段没了
     // 就只剩「两边都读磁盘」那条恒真的假校验。
     expect(
@@ -50,6 +50,70 @@ void main() {
       source,
       contains('constexpr uint32_t kHookModuleDigestChars = 65;'),
       reason: '64 位十六进制 + NUL；读侧的 strnlen 上界就是它',
+    );
+  });
+
+  test('v18：LookupInputSlot::keys 是 WebView2 位布局，且换语义必须升版本', () {
+    final String header = File(kIpcHeaderPath).readAsStringSync();
+    // 这四个数值就是 COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS 本身。它们是**跨进程
+    // wire 语义**：注入侧 helper 按这套编码写 keys，host 原样转交 SendMouseInput。
+    // 尤其 1 是左键、4 才是 Shift —— 与旧的 Shift=1 / Ctrl=2 / Alt=4 压缩表冲突，
+    // 混用的症状是「按住 Shift 划过卡片就开始拖选」，没有任何显式错误。
+    for (final String bit in <String>[
+      'constexpr uint32_t kLookupInputVirtualKeyLeftButton = 0x0001u;',
+      'constexpr uint32_t kLookupInputVirtualKeyRightButton = 0x0002u;',
+      'constexpr uint32_t kLookupInputVirtualKeyShift = 0x0004u;',
+      'constexpr uint32_t kLookupInputVirtualKeyControl = 0x0008u;',
+    ]) {
+      expect(header, contains(bit), reason: 'keys 的 wire 位值不能漂移：$bit');
+    }
+    expect(
+      header,
+      contains('uint32_t keys;          // kLookupInputVirtualKey*'),
+      reason: 'keys 字段必须自述它承载的是 WebView2 virtualKeys，不是 MK_* 压缩表',
+    );
+    // 布局没动而**解释方式**变了，同样必须升 kSharedVersion —— 这是本条的全部价值：
+    // 版本号锁的是解释方式，不只是偏移。没有这一行，「同布局异语义」的改动会照常
+    // 通过所有 offsetof 断言，然后靠一个残留的旧 helper 在用户机上炸（BUG-1881）。
+    expect(
+      header,
+      contains('// v18：`LookupInputSlot::keys` 的**取值语义**换成 WebView2 的'),
+      reason: 'keys 换语义那次必须在版本沿革里留档，否则下一次改语义又会忘记升版本',
+    );
+  });
+
+  // v19：游戏内查词准入。这一组钉的是**跨语言的单值枚举**——Dart 侧
+  // `GalLookupAdmissionState.wireValue` 逐值对着这里。任一侧改了数值而另一侧没改，
+  // 症状是「设置页说的状态跟 hook 实际报的对不上」，两边都不会报错。
+  test('v19：查词准入是单值枚举 + 纯尾部追加字段', () {
+    final String header = File(kIpcHeaderPath).readAsStringSync();
+    for (final String token in <String>[
+      'enum LookupAdmissionState : uint32_t {',
+      'kLookupAdmissionUnknown = 0,',
+      'kLookupAdmissionEngineUnsupported = 1,',
+      'kLookupAdmissionIdentityRejected = 2,',
+      'kLookupAdmissionIdentityAccepted = 3,',
+      'kLookupAdmissionSensorInstalled = 4,',
+      'volatile uint32_t lookup_admission;',
+      'volatile uint32_t lookup_admission_seq;',
+      'char lookup_executable_sha256[kHookModuleDigestChars];',
+    ]) {
+      expect(header, contains(token), reason: 'v19 准入的 wire 面缺了：$token');
+    }
+    // 纯尾部追加：三个新字段必须排在 v17 的 hook_module_sha256 之后，否则前面所有
+    // 区的偏移都会动，而旧 helper 建的段读出来就是错位的垃圾。
+    final int legacyAt =
+        header.indexOf('char hook_module_sha256[kHookModuleDigestChars];');
+    final int admissionAt = header.indexOf('volatile uint32_t lookup_admission;');
+    expect(legacyAt, greaterThan(0));
+    expect(admissionAt, greaterThan(legacyAt),
+        reason: 'v19 三个字段必须纯追加在 SharedHeader 尾部');
+    // 读侧必须把 seq==0 如实报成 Unknown。省掉这一步（比如"0 就当没装传感器"）会让
+    // 每局游戏启动的头几百毫秒都误报一次"本引擎不支持"。
+    expect(
+      header,
+      contains('LookupAdmissionReport ReadLookupAdmission('),
+      reason: 'host 侧只能经这个有界读函数取准入，不许自己解字段',
     );
   });
 

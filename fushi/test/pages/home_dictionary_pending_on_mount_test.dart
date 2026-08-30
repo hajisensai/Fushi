@@ -4,37 +4,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
-import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// TODO-376 返工回归守卫：默认用户（剪贴板监听**关**、桌面悬浮字幕点词**开**）。
+/// TODO-376 返工回归守卫：桌面悬浮字幕点词 / 深链在词典页挂载前排入的 pending
+/// 必须在挂载时被消费。
 ///
-/// 悬浮字幕点词由 `floatingLyricClickLookup` 控制，与 `desktopClipboardEnabled`
-/// 无关：reader 路由的 `_lookupFromFloatingLyric` 先把待查词排进
+/// reader 路由的 `_lookupFromFloatingLyric` 先把待查词排进
 /// [DesktopLookupService.pendingText]（[triggerLookup]），再请主窗切到查词 tab。等
 /// [HomeDictionaryPage] 真正挂载时，那次设 pending 的 notify 早已发生（在本页
 /// addListener 之前），故必须在**挂载时无条件消费一次已存在的 pending**，否则查词
-/// 静默丢失。
-///
-/// 复核退回的高问题 1：上一轮把消费门控在 `desktopClipboardEnabled` 分支里，关了
-/// 剪贴板监听的默认用户点词后 pending 卡死。本测试钉「挂载即消费已存在 pending（不
-/// 受剪贴板开关门控）」；撤掉 initState 的无条件消费即红。
+/// 静默丢失。撤掉 initState 的无条件消费即红。
 class _PendingOnMountAppModel extends AppModel {
   _PendingOnMountAppModel() : super(testPlatformServices());
 
   final List<String> searchedTerms = <String>[];
-
-  // 关键：默认用户关掉了剪贴板监听（只开悬浮字幕点词）。
-  @override
-  bool get desktopClipboardEnabled => false;
-
-  @override
-  DesktopClipboardWindowMode get desktopClipboardWindowMode =>
-      DesktopClipboardWindowMode.normal;
 
   @override
   List<DictionarySearchResult> get dictionaryHistory =>
@@ -99,7 +86,7 @@ void main() {
   });
 
   testWidgets(
-      'default user (clipboard off): pending set BEFORE mount is consumed on '
+      'pending set BEFORE mount is consumed on '
       'mount and searched', (WidgetTester tester) async {
     final _PendingOnMountAppModel appModel = _PendingOnMountAppModel();
 
@@ -118,7 +105,7 @@ void main() {
 
     // 现在请求切到查词 tab → HomeDictionaryPage 挂载。
     await tester.pumpWidget(_wrap(appModel));
-    // 挂载后帧：无条件消费已存在的 pending（不受 desktopClipboardEnabled 门控）。
+    // 挂载后帧：无条件消费已存在的 pending。
     await tester.pump();
     await tester.pump();
 

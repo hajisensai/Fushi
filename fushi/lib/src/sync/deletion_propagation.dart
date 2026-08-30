@@ -18,6 +18,34 @@ enum DeleteScope {
   syncEverywhere,
 }
 
+/// 用户在删除确认框里做出的完整决定：传播范围 + 要不要连本地原始文件一起删。
+///
+/// 两个维度正交：[scope] 只管「其他设备删不删」（墓碑），[deleteLocalFiles] 只管
+/// 「本机磁盘上用户自己的原件删不删」（视频文件 / 有声书原始音频）。默认后者为
+/// false——现有所有入口的语义（只删库记录 + app 自己的副本）一个字都不变。
+class DeleteDecision {
+  const DeleteDecision({
+    required this.scope,
+    this.deleteLocalFiles = false,
+  });
+
+  final DeleteScope scope;
+  final bool deleteLocalFiles;
+
+  @override
+  bool operator ==(Object other) =>
+      other is DeleteDecision &&
+      other.scope == scope &&
+      other.deleteLocalFiles == deleteLocalFiles;
+
+  @override
+  int get hashCode => Object.hash(scope, deleteLocalFiles);
+
+  @override
+  String toString() =>
+      'DeleteDecision(${scope.name}, deleteLocalFiles: $deleteLocalFiles)';
+}
+
 /// 删除传播的方向：远端也删 / 本地也删。
 enum DeletionPropagationDirection {
   /// 本地已删（有墓碑）而远端仍在库 → 提示用户「远端也删除？」。

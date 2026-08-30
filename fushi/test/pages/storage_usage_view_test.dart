@@ -59,6 +59,7 @@ void main() {
     Future<String?> Function(String bookKey)? deleteBook,
     Future<String?> Function(String uid)? deleteSrtBook,
     Future<DatabaseSnapshotDeletionResult> Function()? deleteDatabaseSnapshots,
+    Future<String?> Function(List<String> paths)? deleteFiles,
     Future<int> Function()? anime4kBytes,
     Future<List<String>> Function()? anime4kDelete,
   }) {
@@ -74,6 +75,7 @@ void main() {
                 deleted: <String>[],
                 failures: <String, String>{},
               ),
+      deleteFiles: deleteFiles ?? (List<String> _) async => null,
       anime4kBytesProvider: anime4kBytes ?? () async => 0,
       anime4kDelete: anime4kDelete ?? () async => const <String>[],
     );
@@ -403,5 +405,63 @@ void main() {
 
     expect(find.text(t.storage_category_shaders), findsOneWidget);
     expect(find.byTooltip(t.storage_shaders_delete_anime4k), findsNothing);
+  });
+
+  testWidgets('派生类目（封面与缩略图）的明细可直接删，走注入的 deleteFiles 原语',
+      (WidgetTester tester) async {
+    // 用户报「导出的备份包在存储里没办法删」：这些纯派生 / 缓存 / 可重新获取的
+    // 类目此前每条明细都是 readOnly，UI 的删除按钮门控直接把它们全挡掉了。
+    final String cover = p.join(docs.path, 'video_covers', 'a.jpg');
+    writeFile(cover, 2048);
+    final List<List<String>> deleted = <List<String>>[];
+
+    await tester.pumpWidget(wrap(view(
+      service: service(),
+      deleteFiles: (List<String> paths) async {
+        deleted.add(paths);
+        for (final String path in paths) {
+          File(path).deleteSync();
+        }
+        return null;
+      },
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(t.storage_category_covers));
+    await tester.pumpAndSettle();
+    expect(find.text('video_covers/a.jpg'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, t.dialog_delete));
+    // 与书籍删除用例同款重扫驱动（FakeAsync 区里 async* 不启动）。
+    for (int i = 0; i < 20; i++) {
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+      if (deleted.isNotEmpty &&
+          find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+        break;
+      }
+    }
+
+    expect(deleted, <List<String>>[
+      <String>[cover]
+    ]);
+  });
+
+  testWidgets('有引用的类目（自定义字体）仍然不给明细删除按钮',
+      (WidgetTester tester) async {
+    // 负向控制：字体有配置指着（BUG-183 那条链），裸删会留下指向空文件的配置。
+    // 「能加的加按钮」不等于全都加——这条防的是以后有人顺手把它塞进可删清单。
+    writeFile(p.join(docs.path, 'custom_fonts', 'mine.ttf'), 512);
+
+    await tester.pumpWidget(wrap(view(service: service())));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(t.storage_category_custom_fonts));
+    await tester.pumpAndSettle();
+    expect(find.text('custom_fonts/mine.ttf'), findsOneWidget);
+    expect(find.byIcon(Icons.delete_outline), findsNothing);
   });
 }

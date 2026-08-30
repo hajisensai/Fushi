@@ -39,13 +39,19 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // （changed=true），生效点是 HomePage/macOS 侧栏的可见 tab 列表——harness 里没有
   // 挂 HomePage 外壳，探不到底栏。行为由 homeActiveTabs 纯函数用例咬住：各开关
   // =false 各自隐藏对应 tab、首页/设置恒在。
-  'system/Novels': 'test/pages/home_page_tabs_test.dart',
-  'system/Manga': 'test/pages/home_page_tabs_test.dart',
-  'system/Video': 'test/pages/home_page_tabs_test.dart',
-  'system/Galgame': 'test/pages/home_page_tabs_test.dart',
-  'system/Downloads': 'test/pages/home_page_tabs_test.dart',
-  'system/Lookup': 'test/pages/home_page_tabs_test.dart',
-  'system/Browser extension': 'test/pages/home_page_tabs_test.dart',
+  //
+  // 键的两半都随「功能模块」搬家改过：destId `system` → `appearance`（本区管底栏
+  // 出现哪些 tab，与「反转导航栏」同域），行标题不再是手抄的 module_*_label，而是
+  // 底栏真值 homeNavItemFor 的 label（Novels→Books、Galgame→Game、
+  // Browser extension→Extension）。键是 `$destId/${row.title}`，两处任一变了本表
+  // 就得跟着变。
+  'appearance/Books': 'test/pages/home_page_tabs_test.dart',
+  'appearance/Manga': 'test/pages/home_page_tabs_test.dart',
+  'appearance/Video': 'test/pages/home_page_tabs_test.dart',
+  'appearance/Game': 'test/pages/home_page_tabs_test.dart',
+  'appearance/Downloads': 'test/pages/home_page_tabs_test.dart',
+  'appearance/Lookup': 'test/pages/home_page_tabs_test.dart',
+  'appearance/Extension': 'test/pages/home_page_tabs_test.dart',
   // 漫画观看偏好五项。写 prefsRepo（changed=true），生效点全部在**漫画阅读器的
   // WebView 文档**里——这些值被注入成 CSS 过渡声明 / JS 常量（ZOOM_SENS、
   // TAP_ZONE_PAGING、IS_RTL、PAGE_ANIM），widget harness 里没有 WebView，也就没有
@@ -84,6 +90,26 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   //   ③ ruby-render 守卫：行距门控与默认行高恒等 1.0。
   // ②③ 那两条默认值断言是这批登记的前提：可配置化如果顺手改了默认观感，
   // 「没探针」就会变成「没人发现所有老用户的浮窗都变样了」。
+  // hook 台词浮窗的交互三件套（单击查词 / 工具条自动隐藏 / 穿透时是否拦截鼠标）。
+  // 写 prefsRepo（changed=true），生效点全在 runner 自有的 Win32 分层浮窗里：
+  // 前者是 native 的 click_lookup_enabled_ 门控，后两者一个决定工具条窗显不显示、
+  // 一个决定穿透态要不要铺行盒 catch fill——本进程内没有任何可探的渲染输入，故无
+  // 适用探针。由偏好行为用例 + runner 源码守卫咬住（含「设置项必须 live 下发」
+  // 这条：只落盘不推 channel = 开关本局不生效，要退出重进一局）。
+  //
+  // 「查词触发方式」是下拉不是开关，coverage 的 changed 判定够不到它，因此不在此表。
+  'game/Tap a word to look it up':
+      'test/lookup/gal_hook_overlay_interaction_prefs_test.dart',
+  'game/Auto-hide the toolbar':
+      'test/lookup/gal_hook_overlay_interaction_prefs_test.dart',
+  'game/Caption still catches clicks while clicking through':
+      'test/lookup/gal_hook_overlay_interaction_prefs_test.dart',
+  // 台词折叠开关。写 prefsRepo（changed=true），生效点在 TexthookerService 这个
+  // 进程级单例的 buffer 折叠上——harness 里没有跑着的 hook 会话，也就没有可探的
+  // 输入。由折叠判据的纯函数用例 + service 级行为用例咬住（前缀/后缀/等长/过短
+  // 四种形状 + 关掉开关必须退回旧的逐条追加行为）。
+  'game/Merge split dialogue lines':
+      'test/sync/texthooker_progressive_fold_test.dart',
   'game/In-game dictionary lookup':
       'test/lookup/gal_ingame_lookup_contract_test.dart + '
           'native/galgame_hook/tests/lookup_ipc_contract_test.cpp + '
@@ -311,7 +337,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Scan non-Japanese text': 'test/reader/todo861_hoshi_ports_test.dart',
   // TODO-1030 M0：全局查词（应用外）抓取选中文本上下文开关（隐私敏感，默认关，仅桌面）。
   // 焦点遍历能切到并写穿 DB（changed=true），但生效点在 Windows UIA native 捕获 +
-  // 纯函数句子裁剪 + popup.js 句子横幅注入（非 reader CSS / 主题树），无适用 T4 探针；
+  // 纯函数句子裁剪 + 制卡 {sentence} 上下文（非 reader CSS / 主题树），无适用 T4 探针；
   // 由纯函数守卫（含与阅读器分隔符表的双端一致性）+ pref 往返覆盖。
   'lookup/Capture selection context':
       'test/lookup/sentence_extraction_test.dart',
@@ -370,6 +396,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Hardware decoding': 'test/media/video/video_mpv_config_test.dart',
   'video/Debanding': 'test/media/video/video_mpv_config_test.dart',
   'video/Loop file': 'test/media/video/video_mpv_config_test.dart',
+  // HDR：值写穿 videoMpvConfig，生效点在 libmpv（tone-mapping /
+  // hdr-compute-peak），harness 探不到渲染输入。round-trip + 白名单挡脏值
+  // 由下面这个文件咬住；真实 HDR 片源的映射效果需桌面设备验。
+  'video/HDR tone mapping':
+      'test/media/video/video_hdr_tone_mapping_test.dart',
+  'video/Dynamic peak detection':
+      'test/media/video/video_hdr_tone_mapping_test.dart',
   // TODO-1247：把播放页内 mpv 详情（画质余项/几何/色彩/音频）平移到首页后，这些
   // 纯 pref 项写穿 videoMpvConfig（下次开视频 applyMpvConfig 应用）；结构化字段
   // round-trip + buildMpvProperties 生效由 video_mpv_config_test.dart 咬住，真实
@@ -448,6 +481,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // harness 里可达——全部登记（含反吸血二级开关，超集登记无害）。
   'downloads/Enable upload / seeding':
       'test/media/torrent/torrent_upload_policy_test.dart',
+  // 「自动为新任务添加订阅 tracker」：生效点是 addTorrent 之后**多打一次**
+  // `/api/v2/torrents/addTrackers`（qB 后端）／把 tracker 追加进 magnet（内置引擎），
+  // 都在 widget 树之外。torrent_backend_test 咬住的是真行为而不只是编解码：开关为真时
+  // 断言请求序列是 add → addTrackers 且 urls 正是订阅拉回来的那两条。
+  'downloads/Automatically add subscription trackers to new downloads':
+      'test/torrent/torrent_backend_test.dart',
   // 「限速也作用于局域网」：生效点在 native（ht_apply_limits_ex 把上限写进
   // libtorrent 的 local peer class），widget 测不到；由编解码 + 下发透传测试覆盖。
   'downloads/Apply limits to LAN peers':
@@ -518,22 +557,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'INTEGRATION: yomitan-api server lifecycle (test/sync/yomitan_api_server_manager_test.dart)',
   'lookup/Texthooker (receive text)':
       'INTEGRATION: texthooker WS client lifecycle (test/sync/texthooker_ws_client_manager_test.dart)',
-  'lookup/Desktop clipboard lookup':
-      'DEVICE: clipboard watcher + hotkey lifecycle (test/sync/desktop_lookup_service_test.dart)',
-  // galgame UX 统一后 desktop_clipboard_enabled 默认开（剪贴板 / galgame 台词都走
-  // 悬浮查词面板），下列三项子设置随之在 coverage 中可达；其运行时效果由 desktop
-  // lookup service 行为守卫 / 设备验证覆盖，非 widget-tree 可断言。
-  'lookup/Auto-look-up on copy':
-      'DEVICE: clipboard auto-lookup on copy (test/sync/desktop_lookup_service_test.dart)',
-  'lookup/Lookup popup position':
-      'DEVICE: clipboard lookup destination routing main/panel/transient (test/sync/desktop_lookup_service_test.dart)',
-  'lookup/Panel opacity':
-      'DEVICE: floating clipboard panel opacity (native/WebView render)',
   // 阶段 E：防截屏开关。效果是 native SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)
-  // （Windows-only，widget 树测不到）；写穿 + 即时重应用由专项测试咬住，
-  // 面板栏 🛡 按钮同路径由 clipboard_panel_controller_test 覆盖。
+  // （Windows-only，widget 树测不到）；写穿 + 即时重应用由专项测试咬住。
   'lookup/Block screen capture':
-      'test/settings/settings_block_capture_test.dart + test/lookup/clipboard_panel_controller_test.dart (native display affinity)',
+      'test/settings/settings_block_capture_test.dart (native display affinity)',
   'lookup/Auto read word on lookup': 'DEVICE: TTS auto-read',
   'lookup/Lookup audio volume':
       'test/reader/lookup_audio_volume_settings_test.dart + test/utils/misc/lookup_audio_volume_wiring_static_test.dart + test/settings/settings_renderer_test.dart',

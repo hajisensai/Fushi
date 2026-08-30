@@ -340,6 +340,92 @@ SettingsDestination buildVideoDestination() {
           ),
         ],
       ),
+      // HDR：这一节控制的是「HDR 片源压到 SDR 屏幕上」那一次不可避免的映射做得好不好，
+      // **不是 HDR 直通**。Windows 侧走 vo=libmpv → ANGLE → Flutter 外部纹理，共享纹理
+      // 格式写死 8-bit BGRA；Android 侧还额外强制 vf=format=yuv420p 降位（BUG-465）。
+      // 直通要动 vendored 的原生 surface 与 Flutter 合成，不在本节范围内。
+      SettingsSection(
+        title: t.video_setting_mpv_group_hdr,
+        collapsedByDefault: true,
+        items: <SettingsItem>[
+          SettingsSegmentedItem<String>(
+            id: 'video.hdr.tone_mapping',
+            title: t.video_setting_hdr_tone_mapping,
+            subtitle: t.video_setting_hdr_tone_mapping_hint,
+            icon: Icons.hdr_auto_outlined,
+            dropdown: true,
+            video: VideoPlacement(
+              // 72/74 而不是 70/71：mpv 组的扁平 order 已被占用（画质小节止于
+              // 70 = video.quality.correct_downscale，几何小节起于 80），而
+              // buildVideoGroupDestination 是把**相邻**同名 section 合并成小节。
+              // 撞号会让播放器快捷面板里出现「画质 → HDR → 画质 → 几何」这种
+              // 标题重复，且撞号两者的相对次序取决于不稳定的 List.sort。
+              // 全量设置页看不出来（那边 HDR 是独立声明的 section）。
+              group: VideoGroup.mpv,
+              order: 72,
+              section: t.video_setting_mpv_group_hdr,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'auto',
+                label: t.video_setting_hdr_auto,
+              ),
+              // 曲线名直接用 mpv 的标识符：这些是行业术语（BT.2390 等），翻译反而
+              // 让人对不上 mpv 文档和别处的教程。
+              //
+              // **从白名单派生，不要在这里再抄一份**：另一份清单意味着「UI 多列
+              // 一条、decode 白名单没有」这种分叉随时可能发生，而那条分叉是静默的
+              // （选了就被 decode 打回默认值，用户只看到「选了没保存」）。
+              // `Set` 字面量在 Dart 里是插入序，所以显示顺序仍由白名单那份决定。
+              for (final String curve
+                  in kHdrToneMappingValues.where((String c) => c != 'auto'))
+                SettingsSegmentOption<String>(value: curve, label: curve),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                currentVideoMpvConfig(settingsContext).hdrToneMapping,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(hdrToneMapping: value),
+              );
+            },
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'video.hdr.compute_peak',
+            title: t.video_setting_hdr_compute_peak,
+            subtitle: t.video_setting_hdr_compute_peak_hint,
+            icon: Icons.brightness_7_outlined,
+            dropdown: true,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 74,
+              section: t.video_setting_mpv_group_hdr,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'auto',
+                label: t.video_setting_hdr_auto,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'yes',
+                label: t.video_setting_hdr_on,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'no',
+                label: t.video_setting_hdr_off,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                currentVideoMpvConfig(settingsContext).hdrComputePeak,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(hdrComputePeak: value),
+              );
+            },
+          ),
+        ],
+      ),
       SettingsSection(
         title: t.video_setting_mpv_group_quality,
         collapsedByDefault: true,

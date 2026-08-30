@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_anki/fushi_anki.dart' show MineOutcome, MineResult;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
@@ -57,7 +58,33 @@ const Duration kPopupNativeSelectLongPressDuration =
 /// 再点 ✓ 时按 id 走 `updateEntry` 覆盖而非新建。AnkiDroid 恒 `null` → 永远进不了
 /// 第三态（优雅降级）。失败/重复/未配置时 [noteId] 为 `null`。
 class MinePopupResult {
-  const MinePopupResult({this.ankiConnect = false, this.noteId});
+  const MinePopupResult({
+    this.ankiConnect = false,
+    this.noteId,
+    this.duplicate = false,
+  });
+
+  /// BUG-1915：一次**未成功**的制卡结果。
+  ///
+  /// 此前所有失败结局（重复 / 未配置 / 出错 / addNote 响应丢失）都被压成同一个
+  /// `const MinePopupResult()`，弹窗只能看到 `ankiConnect:false`，于是它无法区分
+  /// 「Anki 明说这张卡已经在库里」和「这次 addNote 的结果根本不知道」。
+  ///
+  /// 两者该走相反的动作：
+  ///   * [MineResult.duplicate] 是**确定已知**的状态——Anki 查过了，卡就在那儿。
+  ///     弹窗应当立刻按真实状态把按钮重画成已制卡 ✓，否则就会出现「toast 说重复、
+  ///     按钮说可制卡」两个互相打架的说法。
+  ///   * 其余失败（尤其 addNote 送达但响应丢失的 commit-unknown）结果未知，必须
+  ///     维持 TODO-448 定的「不重画」——把未知结局粉饰成成功比不刷新更糟。
+  ///
+  /// 这个工厂是**唯一**的失败构造入口：8 个制卡表面（弹窗 mixin / 漫画 / 阅读器
+  /// 正文与覆写 / PDF / texthooker / 视频页 / gal 浮窗）此前各自散写
+  /// `MinePopupResult(duplicate: outcome.result == MineResult.duplicate)`，
+  /// 漏一处就是漏一个用户可见的表面——用户实报的正是被漏掉的视频页。
+  MinePopupResult.failed(MineOutcome outcome)
+      : ankiConnect = false,
+        noteId = null,
+        duplicate = outcome.result == MineResult.duplicate;
 
   /// 旧 `isAnkiConnect` 语义：true 表示制卡后可同步刷新 ✓ 状态。
   final bool ankiConnect;
@@ -65,10 +92,25 @@ class MinePopupResult {
   /// 后端返回的 note id；仅 AnkiConnect 成功制卡时非空。
   final int? noteId;
 
+  /// BUG-1908 / BUG-1915：这次失败是不是**因为 Anki 里已经有这张卡**
+  /// （[MineResult.duplicate]，见 [MinePopupResult.failed]）。
+  ///
+  /// [ankiConnect] 一位布尔把「重复」和「没配置 / 字段对不上 / 连接断了」压成同一个
+  /// false，弹窗只能猜。TODO-448 又（正确地）禁止弹窗在失败后回查 Anki 把按钮翻成 ✓
+  /// ——「先失败后成功」正是那次的用户投诉。于是 duplicate 被迫画成「可制卡 ＋」，
+  /// 但那张卡**确定**在 Anki 里，↗「在 Anki 中打开」还会跟着藏起来。
+  ///
+  /// 这一位把宿主手里的确定事实直接送到弹窗：不是猜、也不是回查，是同一条 reply 里的
+  /// 权威答复。仅重复时为真。
+  final bool duplicate;
+
   /// 序列化成 JS 可读的 Map（经 inappwebview callHandler 回传）。
   Map<String, Object?> toJson() => <String, Object?>{
         'ankiConnect': ankiConnect,
         'noteId': noteId,
+        // 只在为真时带上：popup.js 的 `reply.duplicate === true` 对缺字段与 false
+        // 同解，省一个恒 false 的字段；守卫 popup_mine_failure_hint_test 逐字钉这行。
+        if (duplicate) 'duplicate': true,
       };
 }
 
@@ -1447,15 +1489,33 @@ JSON.stringify((function(){
   /// 平台清单，迟早在某个平台上分叉成两种加载行为。
   static bool get shouldInlinePopupAssets => _shouldInlinePopupAssets;
 
-  /// 构造内联资产版的 popup HTML，供 [shouldInlinePopupAssets] 为真的平台使用。
+  /// 内联资产**就绪时**返回内联 popup HTML，否则返回 null（调用方回退 file:// URL）。
   ///
   /// 与 in-app 弹窗同一份 memo 路径，故预览与真实弹窗吃的是同一份 popup.js /
   /// popup.css，不会出现「预览好看、真弹窗不一样」。
-  static String buildInlinePopupHtml({
+  ///
+  /// BUG-1918 ②：此前对外只暴露裸的 [_buildInlinePopupHtml]，它假定四个
+  /// `_inline*` 静态字段已装载——而装载有两条路径：启动时 fire-and-forget 的
+  /// [preloadInlinePopupAssets]，以及真弹窗 build 里的同步兜底
+  /// [_ensureInlinePopupAssetsLoaded]。词典样式预览只调了裸构造，于是在预读
+  /// 尚未完成（或曾瞬时失败）时拼出 `<style></style><script></script>` 的空壳：
+  /// 没有 popup.css 也没有 popup.js，预览白屏且连 `window.renderPopup` 都不存在。
+  ///
+  /// 「确保装载 + 四项非空 + 拼装」是一个不可分的原语，任何调用点都不该再自己
+  /// 拼这三步——真弹窗的 build 也改用它，两个入口从此不可能漂移。
+  static String? buildInlinePopupHtmlIfReady({
     required String themeAttr,
     required String bgHex,
-  }) =>
-      _buildInlinePopupHtml(themeAttr: themeAttr, bgHex: bgHex);
+  }) {
+    _ensureInlinePopupAssetsLoaded();
+    if (_inlineCss == null ||
+        _inlineDictMediaJs == null ||
+        _inlineSelectionJs == null ||
+        _inlinePopupJs == null) {
+      return null;
+    }
+    return _buildInlinePopupHtml(themeAttr: themeAttr, bgHex: bgHex);
+  }
 
   /// 测试专用别名，保留既有调用点。
   @visibleForTesting
@@ -1511,13 +1571,13 @@ JSON.stringify((function(){
     InAppWebViewInitialData? popupInitialData;
     final bool shouldInlinePopupAssets = _shouldInlinePopupAssets;
     if (shouldInlinePopupAssets) {
-      _ensureInlinePopupAssetsLoaded();
-      if (_inlineCss != null &&
-          _inlineDictMediaJs != null &&
-          _inlineSelectionJs != null &&
-          _inlinePopupJs != null) {
+      final String? inlineHtml = buildInlinePopupHtmlIfReady(
+        themeAttr: themeAttr,
+        bgHex: bgHex,
+      );
+      if (inlineHtml != null) {
         popupInitialData = InAppWebViewInitialData(
-          data: _buildInlinePopupHtml(themeAttr: themeAttr, bgHex: bgHex),
+          data: inlineHtml,
           mimeType: 'text/html',
           encoding: 'utf-8',
         );

@@ -301,9 +301,9 @@ void main() {
     expect(search, contains('addPostFrameCallback'));
   });
 
-  test('阶段F：搜索「快捷键」同时命中快捷键设置导航项与剪贴板查词行（标题命中优先于摘要命中）', () {
+  test('阶段F：搜索「快捷键」同时命中快捷键设置导航项与上下文抓取行（标题命中优先于摘要命中）', () {
     // 术语统一（热键→快捷键）后：快捷键设置导航项标题含「快捷键」（标题命中，
-    // 排前）；剪贴板查词行标题不含、但摘要「…全局快捷键…」含（摘要命中，排后）。
+    // 排前）；上下文抓取行标题不含、但摘要「…全局快捷键…」含（摘要命中，排后）。
     // 摘要参与打分本就在 filterSettingsEntries 的元数据层（e.item.subtitle），
     // 故根因是术语不一致而非打分缺失——本测试锁住修好后两行都能被搜到。
     final List<SettingsSearchEntry> entries = <SettingsSearchEntry>[
@@ -315,25 +315,23 @@ void main() {
       ),
       entry(
         destTitle: '查词',
-        sectionTitle: '剪贴板与全局查词',
-        id: 'lookup.desktop_clipboard',
-        title: '监听剪贴板弹出查词窗',
-        subtitle: '监听剪贴板 + 全局快捷键弹出查词窗（桌面·实验性）',
+        sectionTitle: '查词触发',
+        id: 'lookup.global_context_capture',
+        title: '抓取选中文本的上下文',
+        subtitle: '按全局快捷键查词时读取前台应用选区前后的句子（桌面）',
       ),
     ];
     final List<String> ids = filterSettingsEntries(entries, '快捷键')
         .map((SettingsSearchEntry e) => e.item.id)
         .toList();
-    expect(
-        ids, <String>['system.keyboard_shortcuts', 'lookup.desktop_clipboard']);
+    expect(ids,
+        <String>['system.keyboard_shortcuts', 'lookup.global_context_capture']);
   });
 
   test('阶段F：zh-CN 设置文案已把「热键」统一为「快捷键」', () {
     final String zh =
         File('lib/i18n/strings_zh-CN.i18n.json').readAsStringSync();
-    // 剪贴板查词 hint 现含「全局快捷键」，可被搜索命中。
-    expect(zh, contains('全局快捷键弹出查词窗'));
-    // 三处旧「热键」全部改掉，zh-CN 不得残留。
+    // 旧「热键」全部改掉，zh-CN 不得残留。
     expect(zh, isNot(contains('热键')));
   });
 
