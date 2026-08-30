@@ -868,6 +868,10 @@ void GlobalLookupWindow::SetRouteContext(std::string source,
   route_context_ = {std::move(source), route_epoch, lookup_epoch};
   route_context_bound_ = true;
   if (route_changed) {
+    // A lookup created while an older card is capture-suppressed owns the HWND
+    // from this point on.  Retire the old restoration token without showing
+    // anything; ShowAt/Reveal for the new route will establish its own state.
+    CancelCaptureSuppression();
     ClearPendingShellGeometry();
     direct_process_client_active_ = false;
     direct_game_hwnd_ = nullptr;
@@ -1073,6 +1077,7 @@ void GlobalLookupWindow::ForgetDeadWindow() {
   recovering_ = false;
   visible_ = false;
   revealed_ = false;
+  CancelCaptureSuppression();
   offscreen_active_ = false;
   latest_geometry_epoch_ = 0;
   direct_process_client_active_ = false;
@@ -1194,7 +1199,7 @@ void GlobalLookupWindow::PrewarmWebView(int width, int height, HWND owner) {
 void GlobalLookupWindow::Reveal(int width, int height,
                                 bool clamp_to_work_area,
                                 HWND consume_outside_owner) {
-  if (hwnd_ == nullptr) {
+  if (hwnd_ == nullptr || capture_suppressed_) {
     return;
   }
   if (width <= 0 || height <= 0) {
@@ -1284,8 +1289,8 @@ void GlobalLookupWindow::Reveal(int width, int height,
 void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
                                      double bbox_left, double bbox_top,
                                      int64_t geometry_epoch) {
-  if (!BeginGeometryRequest(geometry_epoch) || hwnd_ == nullptr || width <= 0 ||
-      height <= 0) {
+  if (capture_suppressed_ || !BeginGeometryRequest(geometry_epoch) ||
+      hwnd_ == nullptr || width <= 0 || height <= 0) {
     return;
   }
   // The window moves to (cursor + dx, cursor + dy) and grows to the bbox size.
@@ -1678,6 +1683,10 @@ void GlobalLookupWindow::Hide(bool notify) {
   // hook, both fire on one click-outside) does not double-notify Dart.
   const bool was_showing = visible_ || offscreen_active_;
   const RouteContext hidden_route = route_context_;
+  // A genuine/programmatic dismissal wins over a pending capture restore.  Do
+  // this before clearing visible_ so RestoreAfterCapture can never reopen a
+  // card that was dismissed while the screenshot was in flight.
+  CancelCaptureSuppression();
   visible_ = false;
   revealed_ = false;
   offscreen_active_ = false;
@@ -1719,6 +1728,73 @@ bool GlobalLookupWindow::IsShowing() const {
   // can never report the overlay as showing — otherwise Dart's re-check skips
   // the rebuild and renders into a window that no longer exists.
   return visible_ && OwnsLiveWindow() && IsWindowVisible(hwnd_);
+}
+
+bool GlobalLookupWindow::CaptureRouteIsCurrent() const {
+  return route_context_bound_ &&
+         capture_route_.source == route_context_.source &&
+         capture_route_.route_epoch == route_context_.route_epoch &&
+         capture_route_.lookup_epoch == route_context_.lookup_epoch;
+}
+
+void GlobalLookupWindow::CancelCaptureSuppression() {
+  capture_suppressed_ = false;
+  capture_was_window_visible_ = false;
+  capture_generation_ = 0;
+  capture_route_ = RouteContext{};
+}
+
+bool GlobalLookupWindow::SuspendForCapture(int64_t capture_generation) {
+  if (capture_generation <= 0 || !route_context_bound_) {
+    return false;
+  }
+  if (capture_suppressed_) {
+    return capture_generation_ == capture_generation &&
+           CaptureRouteIsCurrent();
+  }
+
+  capture_generation_ = capture_generation;
+  capture_route_ = route_context_;
+  capture_was_window_visible_ =
+      OwnsLiveWindow() && IsWindowVisible(hwnd_) != FALSE;
+  capture_suppressed_ = true;
+
+  // The shadow is a separate top-level HWND and must leave the compositor in
+  // the same transaction as the card, otherwise a captured frame can retain a
+  // one-frame outline even though the WebView itself is gone.
+  shadow_.Hide();
+  if (OwnsLiveWindow()) {
+    ShowWindow(hwnd_, SW_HIDE);
+  }
+  const HRESULT barrier = DwmFlush();
+  if (FAILED(barrier)) {
+    // A failed barrier cannot prove screenshot cleanliness.  Restore the exact
+    // card immediately and make the mining caller fail closed.
+    if (capture_was_window_visible_ && CaptureRouteIsCurrent() &&
+        OwnsLiveWindow() && visible_ && revealed_) {
+      ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
+      SyncShadow();
+    }
+    CancelCaptureSuppression();
+    return false;
+  }
+  return true;
+}
+
+bool GlobalLookupWindow::RestoreAfterCapture(int64_t capture_generation) {
+  if (!capture_suppressed_ || capture_generation <= 0 ||
+      capture_generation_ != capture_generation || !CaptureRouteIsCurrent()) {
+    return false;
+  }
+  const bool restore = capture_was_window_visible_ && OwnsLiveWindow() &&
+                       visible_ && revealed_;
+  CancelCaptureSuppression();
+  if (restore) {
+    ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
+    ReassertTopmost();
+    SyncShadow();
+  }
+  return SUCCEEDED(DwmFlush());
 }
 
 std::wstring GlobalLookupWindow::LoadAdapterScript() const {
@@ -2087,6 +2163,7 @@ bool GlobalLookupWindow::RevealOverProcessClient(
     uint32_t pid, int32_t anchor_x, int32_t anchor_y, uint32_t card_width,
     uint32_t card_height, uint32_t view_width, uint32_t view_height) {
   ForgetDeadWindow();
+  if (capture_suppressed_) return false;
   if (hwnd_ == nullptr || composition_controller_ == nullptr ||
       !webview_ready_ || card_width == 0 || card_height == 0) {
     return false;

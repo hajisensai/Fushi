@@ -94,10 +94,15 @@ void PrintHit(const fushi_voice_hook::LookupHitSlot* hit) {
           : fushi_voice_hook::kLookupLineBytes;
   std::string line(reinterpret_cast<const char*>(hit->line_utf8), bytes);
   std::printf(
-      "  hit seq=%llu char=%u/%u glyph=(%d,%d %dx%d) view=%dx%d flags=%u\n",
-      static_cast<unsigned long long>(hit->seq), hit->char_index,
-      hit->char_count, hit->glyph_x, hit->glyph_y, hit->glyph_w, hit->glyph_h,
-      hit->view_w, hit->view_h, hit->flags);
+      "  hit seq=%llu provider=%u/%u source=[%u,+%u]/%u "
+      "generation=%llu/%llu coords=%u writing=%u "
+      "glyph=(%d,%d %dx%d) view=%dx%d flags=%u\n",
+      static_cast<unsigned long long>(hit->seq), hit->provider_kind,
+      hit->provider_id, hit->char_index, hit->source_length, hit->char_count,
+      static_cast<unsigned long long>(hit->text_generation),
+      static_cast<unsigned long long>(hit->geometry_generation),
+      hit->coordinate_space, hit->writing_mode, hit->glyph_x, hit->glyph_y,
+      hit->glyph_w, hit->glyph_h, hit->view_w, hit->view_h, hit->flags);
   std::printf("  line=%s\n", line.c_str());
 }
 
@@ -263,6 +268,24 @@ int main(int argc, char** argv) {
         static_cast<unsigned long long>(header->lookup_input_count),
         static_cast<unsigned long long>(header->lookup_frame_count_written),
         static_cast<unsigned long long>(header->lookup_frame_applied_seq));
+    std::printf(
+        "  geometry=%u/%u status=%u generation=%llu/%llu "
+        "shield=req:%u applied:%u owner:%u buttons:0x%02X risk:%u "
+        "required:0x%02X ready:0x%02X observed:0x%02X fault:0x%02X "
+        "status:0x%02X\n",
+        header->lookup_geometry_active_kind,
+        header->lookup_geometry_active_id, header->lookup_geometry_status,
+        static_cast<unsigned long long>(
+            header->lookup_geometry_text_generation),
+        static_cast<unsigned long long>(header->lookup_geometry_generation),
+        header->lookup_shield_request_seq,
+        header->lookup_shield_applied_seq, header->lookup_shield_owner_kind,
+        header->lookup_shield_active_buttons,
+        header->lookup_shield_allow_risk,
+        header->lookup_shield_required_mask, header->lookup_shield_ready_mask,
+        header->lookup_shield_observed_mask,
+        header->lookup_shield_fault_mask,
+        header->lookup_shield_status_flags);
     PrintDiag(header->lookup_diag);
     if (hit != nullptr && hit->seq != last_hit_seq) {
       last_hit_seq = hit->seq;
