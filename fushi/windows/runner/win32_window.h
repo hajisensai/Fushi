@@ -66,6 +66,23 @@ class Win32Window {
   // (0x00BBGGRR).
   void SetBackdropColor(COLORREF color);
 
+  // BUG-1933: flash-free fullscreen, owned by the runner. window_manager's
+  // SetFullScreen (and media_kit's EnterNativeFullscreen — same technique)
+  // strips WS_CAPTION|WS_THICKFRAME, which makes DWM rebuild the window's
+  // frame visual; for at least one composition the Flutter view's layer is
+  // absent and the redirection surface (theme surface colour — white in a
+  // light theme) shows full-window: the "one white frame" on every fullscreen
+  // enter/exit. Keeping the frame styles and instead oversizing the window so
+  // the client area covers the monitor (borders/caption hang off-screen) uses
+  // the same code path as maximize, which measurably never drops the view
+  // layer. HWND_TOPMOST covers the taskbar (the shell's fullscreen detection
+  // does not fire for an oversized framed window); topmost is dropped while
+  // the window is deactivated so other apps stay usable, and on exit the
+  // saved WINDOWPLACEMENT restores both geometry and a pre-fullscreen
+  // maximized state.
+  void SetFullscreen(bool fullscreen);
+  bool IsFullscreen() const { return fullscreen_; }
+
  protected:
   // Processes and route salient window messages for mouse handling,
   // size change and DPI. Delegates handling of these to member overloads that
@@ -133,6 +150,22 @@ class Win32Window {
   // Owned solid brush used by PaintBackdrop. Starts as the TODO-959 splash
   // colour and is replaced by SetBackdropColor; released in the destructor.
   HBRUSH backdrop_brush_ = nullptr;
+
+  // BUG-1933: captures the window's current on-screen client pixels into
+  // |transition_snapshot_| (screen BitBlt; fails soft to no snapshot). While a
+  // snapshot is held, FillSurfaceBackdrop stretches it onto the surface
+  // instead of the solid brush, so if DWM races the fullscreen geometry jump
+  // the revealed surface shows the previous frame's content (a barely
+  // noticeable stretch) rather than a solid colour flash. Snapshots live only
+  // across one SetFullscreen call; interactive resizing (WM_SIZE without a
+  // snapshot) keeps the cheap brush fill (BUG-1917 cadence unaffected).
+  void CaptureTransitionSnapshot();
+  void ReleaseTransitionSnapshot();
+
+  bool fullscreen_ = false;
+  WINDOWPLACEMENT placement_before_fullscreen_ = {};
+  HBITMAP transition_snapshot_ = nullptr;
+  SIZE transition_snapshot_size_ = {};
 
   // Registration handle for GUID_MONITOR_POWER_ON power-setting notifications.
   // Held so it can be unregistered on Destroy() (avoids a handle leak). nullptr

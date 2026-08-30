@@ -642,6 +642,132 @@ void main() {
     expect(result.error, contains('episode number'));
     expect(backend.operations, isEmpty);
   });
+  test('同一作品的两条 job 并发落位：第二条走「已存在」失败，不得覆盖', () async {
+    final Directory root =
+        await Directory.systemTemp.createTemp('fushi-organizer-race-');
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+
+    // finalLocalPath 是 (title, year, sourceRoot, season/episode) 的**纯函数**，
+    // 所以同一作品的两条 job 必然算出同一路径。此前查重只有 organize 里那一趟
+    // `exists()` 前置检查：并发进来时磁盘上还什么都没有，两条**双双通过**，随后
+    // 各自让后端往同一个路径搬。作品页允许「下载中再下一个」之后，这条路径从
+    // UI 不可达变成一键可达。
+    List<String> targetsOf(_MaterializingBackend b) => b.materialized;
+
+    VideoOrganizationRequest requestFor(String torrentId) =>
+        VideoOrganizationRequest(
+          torrentId: torrentId,
+          title: 'Race Show',
+          year: 2024,
+          kind: VideoOrganizationKind.episodic,
+          sourceRoot: root.path,
+          pathMapping: VideoDownloadPathMapping(
+            remoteRoot: '/library',
+            localRoot: root.path,
+          ),
+        );
+
+    final _MaterializingBackend first = _MaterializingBackend(root.path);
+    final _MaterializingBackend second = _MaterializingBackend(root.path);
+
+    final List<VideoOrganizationResult> results = await Future.wait(
+      <Future<VideoOrganizationResult>>[
+        const VideoDownloadOrganizer()
+            .organize(backend: first, request: requestFor('hash-a')),
+        const VideoDownloadOrganizer()
+            .organize(backend: second, request: requestFor('hash-b')),
+      ],
+    );
+
+    final int okCount =
+        results.where((VideoOrganizationResult r) => r.ok).length;
+    expect(okCount, 1,
+        reason: '两条都成功 = 后端被要求往同一路径搬两次（qBittorrent 的 '
+            'setLocation 不保证目标已存在时不覆盖），正是要挡的形状');
+    final VideoOrganizationResult failed =
+        results.firstWhere((VideoOrganizationResult r) => !r.ok);
+    expect(failed.error, contains('organization target already exists'),
+        reason: '第二条必须走正常的「已存在」失败路径，而不是覆盖');
+    // 只有一条真的落了盘。
+    expect(targetsOf(first).length + targetsOf(second).length, 1);
+  });
+}
+
+/// 会把目标文件真的落到磁盘的假后端 —— 只有这样第二条 job 的 `exists()` 才看得
+/// 到第一条的结果。普通的 [_FakeBackend] 只记操作、不碰文件系统。
+class _MaterializingBackend implements TorrentBackend {
+  _MaterializingBackend(this.localRoot);
+
+  /// 本机侧根：真后端把文件搬到 `savePath/<targetRelativePath>`，这里照做，
+  /// 这样第二条 job 的 `exists()` 才看得到第一条的结果。
+  final String localRoot;
+  final List<String> materialized = <String>[];
+  final List<String> _pendingRelative = <String>[];
+
+  @override
+  Future<List<TorrentFileEntry>> listFiles(String torrentId) async {
+    // 让两条 job 有机会都进到临界区之前（无闸时它们会双双通过 exists()）。
+    await Future<void>.delayed(Duration.zero);
+    return const <TorrentFileEntry>[
+      TorrentFileEntry(
+        name: 'Original/Race.S01E01.mkv',
+        size: 100,
+        progress: 1,
+        index: 0,
+      ),
+    ];
+  }
+
+  @override
+  Future<TorrentStorageResult> renameFile(
+    String torrentId,
+    int fileIndex,
+    String newPath,
+  ) async {
+    await Future<void>.delayed(Duration.zero);
+    _pendingRelative.add(newPath);
+    return TorrentStorageResult(ok: true, path: newPath);
+  }
+
+  @override
+  Future<TorrentStorageResult> moveStorage(
+    String torrentId,
+    String newSavePath,
+  ) async {
+    await Future<void>.delayed(Duration.zero);
+    for (final String relative in _pendingRelative) {
+      final File target =
+          File(p.joinAll(<String>[localRoot, ...p.posix.split(relative)]));
+      target.parent.createSync(recursive: true);
+      target.writeAsStringSync('moved');
+      materialized.add(target.path);
+    }
+    return TorrentStorageResult(ok: true, path: newSavePath);
+  }
+
+  @override
+  Future<bool> addTorrent(
+    String magnetOrUrl, {
+    required String category,
+    bool sequential = false,
+    bool firstLastPiecePrio = false,
+  }) async =>
+      true;
+
+  @override
+  void close() {}
+
+  @override
+  Future<List<TorrentSnapshot>> listTorrents({String? category}) async =>
+      const <TorrentSnapshot>[];
+
+  @override
+  Future<bool> prepareCategory(String category) async => true;
+
+  @override
+  Future<String?> probeConnection() async => 'fake';
 }
 
 class _FakeBackend implements TorrentBackend {

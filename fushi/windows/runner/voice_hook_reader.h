@@ -191,6 +191,21 @@ struct VoiceHookLookupPresent {
   uint32_t highlight_len = 0;    // 高亮字符数（0=不高亮）
 };
 
+// v19 游戏内查词准入快照（hook → host）。回答的是「本会话到底能不能游戏内查词，
+// 不能的话卡在哪一步」，而不是「投帧成功了吗」——后者是 [VoiceHookLookupError]。
+//
+// 与 lookup_enabled **正交**：准入由注入侧的 adapter registry 汇总上报，开关关着时
+// 照样有值（此时通常停在 kLookupAdmissionIdentityAccepted）。设置页据此决定要不要
+// 把「游戏内查词」开关灰掉并说明原因。
+struct VoiceHookLookupAdmission {
+  // fushi_voice_hook::kLookupAdmission* 单值（**不是位或**）。0 = 还不知道
+  // （helper 没起来 / 没上报）——绝不能当成"不支持"，见 voice_hook_ipc.h。
+  uint32_t state = 0;
+  // 当前游戏主 exe 的小写十六进制 SHA-256；只有 kLookupAdmissionIdentityRejected
+  // 时保证有值。空串 = 本次没算出 / 不适用。
+  std::string executable_sha256;
+};
+
 // 查词通道的**结构化**失败原因。和 [VoiceHookOpenError] 同一条纪律：原因是在
 // `return` 那一刻丢掉的，下游文案层补不回来。尤其 kNoRegion——它专指「helper 是
 // v14 以前的版本 / 本会话没有查词区」，处置是更新 helper，与"没开开关"完全不同。
@@ -387,6 +402,15 @@ class VoiceHookReader {
 
   // host→hook 开关（header->lookup_enabled）。开启时同时起/停轮询定时器。
   VoiceHookLookupError SetLookupEnabled(bool enabled);
+
+  // 本会话是否有一段协议匹配的共享内存（查词区可以没有）。准入上报只需要这个，
+  // 不需要查词区——「本引擎没做查词传感器」正是必须能报出来的那一类会话。
+  bool HasSession();
+
+  // 有**新**准入快照（lookup_admission_seq 相对上次消费变过；新段开出来后的第一拍
+  // 也算）时填 [out] 并返回 true。seq==0 如实报成 kLookupAdmissionUnknown，绝不
+  // 伪造成"不支持"。
+  bool PollLookupAdmission(VoiceHookLookupAdmission* out);
 
   // 有**新** hit（lookup_hit_count 变过且 seq 前进）时填 [out] 并返回 true。
   // 读法：先读 seq → 读 payload → 复查 seq 未变，变了就重读（单写单读

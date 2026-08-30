@@ -86,6 +86,9 @@ target_link_libraries(${BINARY_NAME} PRIVATE avrt)
 # 剪切板面板背景逐像素透明（global_lookup_window composition 模式）：DirectComposition
 # 视觉树承载 WebView2 composition controller 的透明像素，dxguid 提供 DComp/DXGI IID。
 target_link_libraries(${BINARY_NAME} PRIVATE dcomp dxguid)
+# v19 galgame 查词准入：注入侧算不出游戏 exe 摘要时由 host 兜底算 SHA-256
+# （voice_hook_reader.cpp 的 Sha256HexOfFile）。
+target_link_libraries(${BINARY_NAME} PRIVATE bcrypt)
 # BUG-1450: ImmAssociateContextEx — detach the IME from the window while no text
 # field has focus so CJK IMEs stop swallowing every shortcut key.
 target_link_libraries(${BINARY_NAME} PRIVATE imm32)

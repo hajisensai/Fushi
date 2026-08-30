@@ -51,6 +51,16 @@ class StatHeatmapCell {
 
   /// 强度等级 0..4（0 = 无活动；4 = 最活跃）。用于映射到颜色深浅。
   final int level;
+
+  @override
+  bool operator ==(Object other) =>
+      other is StatHeatmapCell &&
+      other.dateKey == dateKey &&
+      other.value == value &&
+      other.level == level;
+
+  @override
+  int get hashCode => Object.hash(dateKey, value, level);
 }
 
 /// 贡献热力图模型：按「周」分列（[weeks]，每列自上而下 周一..周日 共 7 天），
@@ -63,6 +73,38 @@ class StatHeatmapModel {
 
   /// 窗口内单日最大活动值（0 表示全窗口无活动）。用于等级分桶的分母。
   final int maxValue;
+
+  /// 值语义相等（BUG-1917）：[buildStatHeatmap] 每次 build 都造新对象——桌面拖边缩放
+  /// 时 [StatContributionHeatmap] 的 LayoutBuilder 每步都重跑——若只比身份，
+  /// `_HeatmapPainter.shouldRepaint` 永远为真，RepaintBoundary 的缓存层每步作废，
+  /// 一年 364 格 × 2 个圆角矩形全部重画（实测占仪表盘每步 raster 9.7ms 的大头）。
+  /// 内容没变就是相等，缓存层自然复用。
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! StatHeatmapModel ||
+        other.maxValue != maxValue ||
+        other.weeks.length != weeks.length) {
+      return false;
+    }
+    for (int w = 0; w < weeks.length; w++) {
+      final List<StatHeatmapCell> a = weeks[w];
+      final List<StatHeatmapCell> b = other.weeks[w];
+      if (a.length != b.length) return false;
+      for (int d = 0; d < a.length; d++) {
+        if (a[d] != b[d]) return false;
+      }
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        maxValue,
+        weeks.length,
+        weeks.isEmpty ? null : Object.hashAll(weeks.first),
+        weeks.isEmpty ? null : Object.hashAll(weeks.last),
+      );
 }
 
 /// 纯函数：把「日期键→活动值」映射构造成一段 [weeks] 周的贡献热力图模型。
@@ -524,18 +566,13 @@ class _HeatmapPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final Paint paint = Paint()..style = PaintingStyle.fill;
-    final Paint border = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..color = selectedBorderColor;
-    final Paint? emptyBorder = emptyBorderColor == null
-        ? null
-        : (Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1
-          ..color = emptyBorderColor!);
+    // BUG-1917：一年 364 格若逐格 drawRRect（填充 + 空格描边 ≈ 730 个 Skia op），
+    // raster 线程每帧光 op 调用开销就 ~9ms——RepaintBoundary 保留的 picture 每帧
+    // 仍逐 op 回放，引擎并不把它缓存成纹理。按等级把格子合成一条 Path 一次画：
+    // 5 个等级 + 1 条空格描边 + 选中框 ≤ 7 个 op，几何完全相同。
     final Radius radius = Radius.circular(cell * 0.25);
+    final List<Path> byLevel = List<Path>.generate(5, (_) => Path());
+    final Path emptyBorderPath = Path();
     Rect? selectedRect;
     for (int w = 0; w < model.weeks.length; w++) {
       final List<StatHeatmapCell> col = model.weeks[w];
@@ -546,12 +583,10 @@ class _HeatmapPainter extends CustomPainter {
         if (c.dateKey == null) continue;
         final double y = d * (cell + spacing);
         final Rect rect = Rect.fromLTWH(x, y, cell, cell);
-        paint.color = _colorFor(c.level);
-        canvas.drawRRect(RRect.fromRectAndRadius(rect, radius), paint);
-        if (c.level == 0 && emptyBorder != null) {
-          canvas.drawRRect(
+        byLevel[c.level].addRRect(RRect.fromRectAndRadius(rect, radius));
+        if (c.level == 0 && emptyBorderColor != null) {
+          emptyBorderPath.addRRect(
             RRect.fromRectAndRadius(rect.deflate(0.5), radius),
-            emptyBorder,
           );
         }
         if (selectedDateKey != null && c.dateKey == selectedDateKey) {
@@ -559,11 +594,28 @@ class _HeatmapPainter extends CustomPainter {
         }
       }
     }
+    final Paint paint = Paint()..style = PaintingStyle.fill;
+    for (int level = 0; level < byLevel.length; level++) {
+      paint.color = _colorFor(level);
+      canvas.drawPath(byLevel[level], paint);
+    }
+    if (emptyBorderColor != null) {
+      canvas.drawPath(
+        emptyBorderPath,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = emptyBorderColor!,
+      );
+    }
     // 选中格描边画在最后，避免被相邻格覆盖。
     if (selectedRect != null) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(selectedRect.inflate(0.5), radius),
-        border,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..color = selectedBorderColor,
       );
     }
   }

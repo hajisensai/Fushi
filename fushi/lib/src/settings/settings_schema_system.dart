@@ -102,6 +102,16 @@ SettingsDestination buildSystemDestination() {
             icon: Icons.info_outline,
             builder: _buildRuntimeAppVersionRow,
           ),
+          // 官网。与宽屏侧栏左上角的 app 图标是同一个入口（openOfficialWebsite），
+          // URL 只存在 official_links.dart 一处。
+          SettingsActionItem(
+            id: 'system.website',
+            title: t.options_website,
+            icon: Icons.language_outlined,
+            onTap: (_) async {
+              await openOfficialWebsite();
+            },
+          ),
           SettingsActionItem(
             id: 'system.github',
             title: t.options_github,
