@@ -16,28 +16,6 @@ List<OnboardingStepId> _steps(
 
 void main() {
   group('onboardingStepSequence', () {
-    test('resource preparation stays exactly one-of-two', () {
-      final Set<OnboardingFeature> manual = toggleOnboardingFeature(
-        selected: <OnboardingFeature>{
-          OnboardingFeature.recommendedPack,
-          OnboardingFeature.anki,
-        },
-        feature: OnboardingFeature.manualResources,
-      );
-      expect(manual, contains(OnboardingFeature.manualResources));
-      expect(manual, isNot(contains(OnboardingFeature.recommendedPack)));
-      expect(manual, contains(OnboardingFeature.anki));
-
-      final Set<OnboardingFeature> stillManual = toggleOnboardingFeature(
-        selected: manual,
-        feature: OnboardingFeature.manualResources,
-      );
-      expect(
-        stillManual.intersection(kOnboardingResourceFeatures),
-        <OnboardingFeature>{OnboardingFeature.manualResources},
-      );
-    });
-
     test('first card readiness rejects cached or stale Anki selections', () {
       expect(
         onboardingAnkiSelectionReady(
@@ -113,7 +91,7 @@ void main() {
       );
     });
 
-    test('manual resources replace the pack and unlock lookup tutorials', () {
+    test('manual resources independently unlock lookup tutorials', () {
       final List<OnboardingStepId> result = _steps(
         <OnboardingFeature>{OnboardingFeature.manualResources},
         globalLookupAvailable: true,
@@ -122,6 +100,23 @@ void main() {
       expect(result, isNot(contains(OnboardingStepId.recommendedPack)));
       expect(result, contains(OnboardingStepId.clickLookup));
       expect(result, contains(OnboardingStepId.globalLookup));
+    });
+
+    test('recommended pack and manual resources can both be selected', () {
+      final List<OnboardingStepId> result = _steps(
+        <OnboardingFeature>{
+          OnboardingFeature.recommendedPack,
+          OnboardingFeature.manualResources,
+        },
+      );
+      expect(
+        result,
+        containsAllInOrder(<OnboardingStepId>[
+          OnboardingStepId.recommendedPack,
+          OnboardingStepId.manualResources,
+          OnboardingStepId.clickLookup,
+        ]),
+      );
     });
 
     test('global tutorial still follows its platform capability gate', () {

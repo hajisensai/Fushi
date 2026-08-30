@@ -3990,9 +3990,7 @@
   "onboarding_global_lookup_android_continue_title": "Use the standalone popup",
   "onboarding_global_lookup_android_continue_body": "The lookup opens separately from the source app. You can tap more words inside it, then close it to return where you were.",
   "onboarding_feature_manual_resources": "Import dictionaries and audio manually",
-  "onboarding_feature_manual_resources_hint": "Skip the pack; import your own dictionaries, audiobooks, and pronunciation sources",
   "onboarding_step_manual_resources_title": "Prepare dictionaries and audio manually",
-  "onboarding_step_manual_resources_body": "Skip the recommended pack and prepare only what you need. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional.",
   "onboarding_manual_dictionary_action": "Import a dictionary",
   "onboarding_manual_dictionary_action_desc": "Open dictionary management and import at least one supported dictionary file or archive. Lookup tutorials are useful only after a query returns a definition.",
   "onboarding_manual_audiobook_action": "Import a book with audiobook audio",
@@ -4014,5 +4012,7 @@
   "onboarding_step_click_lookup_body": "First verify a word that your installed dictionary actually defines. Then use that same word to practise direct lookup in books, manga OCR text, and video subtitles.",
   "onboarding_click_lookup_tap_body": "On a phone, tap a character in the verified word. On a computer, left-click it. Fushi starts there and matches the longest word.",
   "onboarding_global_lookup_windows_select_body": "Highlight the same word you already verified has a dictionary definition, and leave the selection active.",
-  "onboarding_global_lookup_android_select_body": "Long-press the same word you already verified has a dictionary definition, then adjust the selection handles to cover it."
+  "onboarding_global_lookup_android_select_body": "Long-press the same word you already verified has a dictionary definition, then adjust the selection handles to cover it.",
+  "onboarding_feature_manual_resources_hint": "Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources",
+  "onboarding_step_manual_resources_body": "Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements."
 }

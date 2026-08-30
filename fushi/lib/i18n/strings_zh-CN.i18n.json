@@ -3990,9 +3990,7 @@
   "onboarding_global_lookup_android_continue_title": "在独立弹窗中继续",
   "onboarding_global_lookup_android_continue_body": "查词结果会独立打开；你可以继续点释义里的词，关闭后回到刚才的应用。",
   "onboarding_feature_manual_resources": "手动导入词典和音频",
-  "onboarding_feature_manual_resources_hint": "不下载推荐包，自己导入词典、有声书和单词发音来源",
   "onboarding_step_manual_resources_title": "手动准备词典和音频",
-  "onboarding_step_manual_resources_body": "不下载推荐包时，在这里按需准备资源。进入查词教程前至少导入一本词典；有声书音频和单词发音音频按需配置。",
   "onboarding_manual_dictionary_action": "导入词典",
   "onboarding_manual_dictionary_action_desc": "打开词典管理，导入至少一个受支持的词典文件或压缩包。只有查词能返回释义后，后面的操作教程才有实际结果。",
   "onboarding_manual_audiobook_action": "导入书籍和有声书音频",
@@ -4014,5 +4012,7 @@
   "onboarding_step_click_lookup_body": "先验证一个当前已安装词典确实能返回释义的词，再用同一个词练习书籍正文、漫画 OCR 文字和视频字幕里的点击查词。",
   "onboarding_click_lookup_tap_body": "手机轻点刚才验证过的词中的一个字，电脑用鼠标左键单击。Fushi 会从这里开始匹配最长的词。",
   "onboarding_global_lookup_windows_select_body": "拖选刚才已经验证能返回词典释义的同一个词，并保持文字处于选中状态。",
-  "onboarding_global_lookup_android_select_body": "长按刚才已经验证能返回词典释义的同一个词，再拖动选区手柄让它完整覆盖。"
+  "onboarding_global_lookup_android_select_body": "长按刚才已经验证能返回词典释义的同一个词，再拖动选区手柄让它完整覆盖。",
+  "onboarding_feature_manual_resources_hint": "可补充推荐包，也可单独导入自己的词典、有声书和单词发音来源",
+  "onboarding_step_manual_resources_body": "这一项可以与推荐包同时使用，也可以单独使用。进入查词教程前至少导入一本词典；有声书音频和单词发音音频属于按需补充。"
 }
