@@ -100,6 +100,28 @@ class ActivityDateGroup {
   final List<ActivityEntry> entries;
 }
 
+/// 保留时间线的日期分组结构，只取最前面的 [limit] 条活动。
+///
+/// 首页会预取较多事件供筛选，但不应把它们一次性全部挂进 widget/render 树。这里在
+/// 聚合后分页，截断点落在某一天中间时仍保留该日标题；后续增加 limit 即可无损展开。
+List<ActivityDateGroup> takeActivityEntries(
+  List<ActivityDateGroup> groups,
+  int limit,
+) {
+  if (limit <= 0) return const <ActivityDateGroup>[];
+  int remaining = limit;
+  final List<ActivityDateGroup> result = <ActivityDateGroup>[];
+  for (final ActivityDateGroup group in groups) {
+    if (remaining == 0) break;
+    final List<ActivityEntry> entries = group.entries.length <= remaining
+        ? group.entries
+        : group.entries.take(remaining).toList(growable: false);
+    result.add(ActivityDateGroup(dateKey: group.dateKey, entries: entries));
+    remaining -= entries.length;
+  }
+  return result;
+}
+
 /// 纯函数：把事件流聚合成「按日期倒序分组、每组内条目按最近时刻倒序」的时间线。
 ///
 /// 分组键 = (设备, dateKey, eventType, mediaType, mediaKey??title)。同键事件合并：

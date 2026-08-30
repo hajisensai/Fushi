@@ -3,7 +3,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// v89（统一代理）：下载域独立的代理三态（`download_network_proxy_mode` +
+/// v90（统一代理）：下载域独立的代理三态（`download_network_proxy_mode` +
 /// `download_custom_proxy`）删除，全应用只剩系统设置里的一个代理项
 /// `update_custom_proxy`（留空 = 自动）。
 ///
@@ -120,7 +120,7 @@ void main() {
     return db;
   }
 
-  test('v88 -> v89：custom + 地址 + 全局为空 → 地址搬进全局项，死键删除', () async {
+  test('v88 -> v90：custom + 地址 + 全局为空 → 地址搬进全局项，死键删除', () async {
     final FushiDatabase db = open(
       downloadMode: 'custom',
       downloadProxy: ' 127.0.0.1:7890 ',
@@ -129,8 +129,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 89);
-    expect(db.schemaVersion, 89);
+    expect(version.read<int>('user_version'), 90);
+    expect(db.schemaVersion, 90);
 
     expect(await _prefs(db), <String, String>{
       'theme': 's:dark',
@@ -192,7 +192,7 @@ void main() {
     expect(await db.getPref('update_custom_proxy'), 's:127.0.0.1:7890');
     // 用户在系统设置里清空 = 回到自动。
     await db.setPref('update_custom_proxy', 's:');
-    // 死键已经没了，v89 的归并条件永远不会再成立——这是把 mode/地址删掉而不是
+    // 死键已经没了，v90 的归并条件永远不会再成立——这是把 mode/地址删掉而不是
     // 留着的原因：留着的话「清空 → 重启 → 旧值回来」会变成一个新 bug。
     final Map<String, String> after = await _prefs(db);
     expect(after.containsKey('download_network_proxy_mode'), isFalse);

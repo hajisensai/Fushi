@@ -7,6 +7,7 @@ import 'package:fushi/src/media/torrent/anti_leech.dart';
 import 'package:fushi/src/media/torrent/download_save_root.dart';
 import 'package:fushi/src/media/torrent/embedded_torrent_backend.dart';
 import 'package:fushi/src/media/torrent/torrent_memory.dart';
+import 'package:fushi/src/media/torrent/tracker_subscription.dart';
 import 'package:fushi/src/media/torrent/torrent_upload_policy.dart';
 import 'package:fushi_torrent/fushi_torrent.dart';
 import 'package:path/path.dart' as p;
@@ -689,7 +690,11 @@ class EmbeddedTorrentHost {
   ///
   /// TODO-2481：暂停状态的真相在本宿主（适配器每 tick 重建，自持状态活
   /// 不过一轮），暂停/恢复/显示查询经 [EmbeddedPauseControl] 回注宿主。
-  EmbeddedTorrentBackend backendView() {
+  EmbeddedTorrentBackend backendView({
+    TrackerSubscriptionService? trackerSubscriptionService,
+    bool autoAddTrackerSubscription = false,
+    String trackerSubscriptionUrl = '',
+  }) {
     return EmbeddedTorrentBackend(
       session: _session,
       saveRoots: _saveRoots,
@@ -703,6 +708,9 @@ class EmbeddedTorrentHost {
       beginNetworkWake: beginNetworkWake,
       endNetworkWake: endNetworkWake,
       reconcileNetworkDiscovery: reconcileNetworkDiscoveryState,
+      trackerSubscriptionService: trackerSubscriptionService,
+      autoAddTrackerSubscription: autoAddTrackerSubscription,
+      trackerSubscriptionUrl: trackerSubscriptionUrl,
     );
   }
 

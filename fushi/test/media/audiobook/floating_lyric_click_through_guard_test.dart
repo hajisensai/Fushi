@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../helpers/win32_interactivity_guard.dart';
@@ -126,18 +128,38 @@ void main() {
 
   // ── TODO-136: desktop strip lock button + resize + draggable-from-text ──
   group('desktop floating-lyric lock / resize / drag-fix guards', () {
-    test('a fifth "lock" control slot exists and is hit-tested', () {
-      // The control row grew from 4 to 5 slots; both the renderer and the
-      // hit-tester must agree on the count, and the lock slot must be wired.
-      expect(cpp.contains('kControlSlotCount'), isTrue,
-          reason: 'Slot count must be a single source of truth.');
-      expect(cpp.contains('return "lock";'), isTrue,
-          reason: 'ControlActionAt must report the lock button.');
-      // The lock glyph (padlock) must be drawn, tinted by the locked state.
+    test('the "lock" control slot exists and is hit-tested', () {
+      // 有声书悬浮字幕原本是自绘 5 槽歌词条（kControlSlotCount + 硬编码 switch +
+      // emoji 挂锁字形）。它改跑与 galgame hook 台词浮窗同一套富文本形态之后，
+      // 按钮来自 hook_toolbar 的 kAudiobook 槽表，字形走 Material Symbols /
+      // 矢量画法 —— 旧的那几个字面量是被**有意**删掉的，不是回归。
+      //
+      // 这条守卫因此改成检查新形态下的等价事实：锁定键仍在这张槽表里，命中仍走
+      // 单一真相的槽表，且锁定 / 未锁定两种状态各有自己的字形。
+      final String header =
+          File(p.join('windows', 'runner', 'hook_toolbar_window.h'))
+              .readAsStringSync();
+      final int tableStart = header.indexOf('kAudiobookSlotActions[');
+      expect(tableStart, greaterThan(0), reason: '找不到有声书槽表');
+      final String table =
+          header.substring(tableStart, header.indexOf('};', tableStart));
+      expect(table.contains('"lock"'), isTrue,
+          reason: '有声书槽表必须仍有锁定键');
+
+      expect(cpp.contains('hook_toolbar::SlotAction(toolbar_profile_, slot)'),
+          isTrue,
+          reason: 'ControlActionAt must resolve the lock button through the '
+              'single source of truth slot table.');
+
+      // 锁定 / 未锁定必须是两个字形（Material Symbols lock / lock_open），
+      // 否则用户看不出自己锁没锁。
+      final String toolbarCpp =
+          File(p.join('windows', 'runner', 'hook_toolbar_window.cpp'))
+              .readAsStringSync();
       expect(
-        cpp.contains(r'\U0001F512') && cpp.contains(r'\U0001F513'),
+        toolbarCpp.contains(r'states.locked ? L"\uE899" : L"\uE898"'),
         isTrue,
-        reason: 'Locked / unlocked padlock glyphs must both be drawn.',
+        reason: 'Locked / unlocked glyphs must both be drawn.',
       );
     });
 

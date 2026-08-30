@@ -1075,6 +1075,25 @@ class EmbeddedTorrentSession {
     }
   }
 
+  /// 给已有种子追加 tracker。旧 DLL 缺能力或参数为空时返回 false。
+  bool addTrackers(String infoHash, Iterable<String> trackerUrls) {
+    if (isClosed || !_b.hasTrackerMutation) return false;
+    final String joined = trackerUrls
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty)
+        .toSet()
+        .join('\n');
+    if (joined.isEmpty) return false;
+    final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
+    final Pointer<Char> urls = joined.toNativeUtf8().cast<Char>();
+    try {
+      return _b.ht_add_trackers(_session, id, urls) >= 0;
+    } finally {
+      malloc.free(urls);
+      malloc.free(id);
+    }
+  }
+
   /// TODO-2482：每个文件的下载优先级（0~7，下标 = 文件 index）；
   /// 元数据未就绪/种子不存在/库不支持返回 null。
   List<int>? getFilePriorities(String infoHash) {

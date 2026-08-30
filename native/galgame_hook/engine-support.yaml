@@ -1949,7 +1949,7 @@
           ],
           "evidence": {
             "kind": "runtime_observation",
-            "reference": "MatchesSgreProfile requires the archive to exist next to the hashed executable; character voices live in voice_body.bin."
+            "reference": "MatchesSgreFamily is the family probe: the wind3d11 runtime keeps character voices in voice_body.bin next to the executable, and archive membership is the same data contract the audio proof checks. No executable name or hash takes part in family identity."
           }
         },
         "pe_imports": {
@@ -1970,7 +1970,7 @@
           ],
           "evidence": {
             "kind": "runtime_observation",
-            "reference": "Same executable SHA-256 the Luna text profile keys on, so text and audio identity cannot drift apart silently."
+            "reference": "Measured build row in hook/adapters/sgre_anchors.h (kSgreKnownBuilds): the hash selects the measured TextRender draw boundary, scenario-text vtable and DirectInput mouse-slot RVAs, and it is the same digest the Luna text profile keys on. A hash miss is no longer a rejection: the family is still claimed and each anchor is resolved by a unique byte signature (signature table currently empty), so an unmeasured build reports which anchors are missing instead of silently doing nothing."
           }
         }
       },
@@ -1979,13 +1979,14 @@
         "attach": "supported_for_objects_created_after_attach",
         "follow_child_processes": false,
         "notes": [
-          "The adapter registers a compressed-resource handler on the shared XAudio worker seam; the generic middleware holds no engine-specific knowledge."
+          "The adapter registers a compressed-resource handler on the shared XAudio worker seam; the generic middleware holds no engine-specific knowledge.",
+          "Identity is layered: family (voice_body.bin next to the executable) claims the process and installs the archive-membership audio proof for every family build; build-specific anchors come from the measured hash table or a unique signature hit with a structural check (code anchor inside an executable section, vtable slot 0 pointing into code, device slot inside writable data). The lookup sensor and the DirectInput shield each stay inert for an unresolved anchor; kXAudioDiagSgreFamilyMatched / kXAudioDiagSgreAnchorsResolved / kXAudioDiagSgreAnchorsUnresolved report where resolution ended."
         ]
       },
       "text": {
         "capabilities": [],
         "codepage": "not_applicable",
-        "thread_selection_hint": "Text comes from the Luna profile keyed by the same executable SHA-256, not from this adapter."
+        "thread_selection_hint": "Luna text still comes from the hash-keyed Luna profile row (config/luna_hook_profiles.tsv); the in-game lookup sensor takes game-parsed text and per-glyph geometry from the resolved TextRender draw anchor."
       },
       "audio": {
         "priority": [
@@ -2003,7 +2004,7 @@
         "No real-game session has been run against this adapter: process_found through card_e2e are all not_run.",
         "Archive membership is the role proof, and it only holds while the runtime keeps character voice in a separate voice_body.bin.",
         "The emitted .xwma file is not byte-identical to an archive entry: the RIFF envelope is synthesised here. Only the fmt/dpds/payload chunks are verbatim.",
-        "Identity is the executable SHA-256, so a game patch disables both text and audio capture at once. That is deliberate -- it prevents a silent text/audio mismatch -- but it does mean a patched build stops working until the hash is re-measured."
+        "The anchor signature table (kSgreTextDrawSignature / kSgreScenarioTextVtableSignature / kSgreDirectInputMouseDeviceSignature) is still empty: an executable outside kSgreKnownBuilds is claimed as family and gets archive-resource audio, but its lookup sensor and DirectInput shield resolve to signature_empty until patterns are measured from a real build. The Luna text hook code is still keyed by the measured hash row only."
       ],
       "adapter_path": "hook/adapters/sgre_adapter.inc",
       "fixture_paths": [],

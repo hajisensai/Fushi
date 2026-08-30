@@ -272,6 +272,11 @@ HT_EXPORT char* ht_load_resume_dir(void* session, const char* dir);
 // 种子不存在 {"ok":false,...}；无 tracker（纯 DHT 磁力）trackers 为空数组。
 HT_EXPORT char* ht_torrent_trackers(void* session, const char* info_hash);
 
+// 给已有种子追加 tracker。tracker_urls 为 UTF-8 换行分隔列表；空行、重复项
+// 忽略。返回成功新增数量，-1 = session/种子/参数无效或发生异常。
+HT_EXPORT int ht_add_trackers(void* session, const char* info_hash,
+                              const char* tracker_urls);
+
 // 每个文件的下载优先级（详情页 Files tab）：
 // {"ok":true,"priorities":[4,0,7,...]}（下标 = 文件 index；libtorrent
 // download_priority 值域 0~7：0 = 不下载、4 = 默认、7 = 最高）。

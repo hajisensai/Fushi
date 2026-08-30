@@ -2,16 +2,155 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/widgets.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
+import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_auto_start.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
 
 const int kMihonOnlineOcrMemoryPages = 24;
+
+/// 在线章节也按用户设置的 OCR 引擎启动。
+///
+/// 在线阅读会先把页图放进 [MangaReaderSession] 的本地缓存。Google Lens 原先已经
+/// 会把缓存复制到章节受管目录；离线引擎缺的只是同一层物化，而不是图片能力。非
+/// Lens 引擎因此先按 payload 页序物化全部页图，再复用本地书的统一 OCR 编排。
+Future<MangaOcrAutoStartResult> startOnlineMangaOcrWithPreferredEngine({
+  required BuildContext context,
+  required String bookKey,
+  required MangaReaderSession session,
+  required Directory managedDirectory,
+  required MokuroPayload initialPayload,
+  required int startPage,
+  required String lensLanguage,
+  FushiDatabase? db,
+  MangaOcrWizardEngines? enginesOverride,
+  GoogleLensDisclosureGate? lensDisclosureGate,
+  GoogleLensMangaOcrService? lensOverride,
+}) async {
+  final Directory imagesDirectory = Directory(
+    p.join(managedDirectory.path, 'images'),
+  );
+  final MangaOcrAutoStartResult selected =
+      await startMangaOcrWithPreferredEngine(
+    context: context,
+    db: db,
+    bookKey: bookKey,
+    imageDirPath: imagesDirectory.path,
+    startPage: startPage,
+    lensLanguage: lensLanguage,
+    enginesOverride: enginesOverride,
+    lensDisclosureGate: lensDisclosureGate,
+  );
+  if (!selected.started) return selected;
+
+  if (selected.engine == MangaOcrEngineId.googleLens) {
+    return MangaOcrAutoStartResult.started(
+      MangaOcrBackgroundJob(
+        bookKey: bookKey,
+        managedDirectory: managedDirectory.path,
+        engine: MangaOcrEngineId.googleLens,
+        events: MihonOnlineMangaOcr(
+          session: session,
+          managedDirectory: managedDirectory,
+          initialPayload: initialPayload,
+          startPage: startPage,
+          language: lensLanguage,
+          lens: lensOverride,
+        ).run(),
+      ),
+      MangaOcrEngineId.googleLens,
+    );
+  }
+
+  final MangaOcrBackgroundJob selectedJob = selected.job!;
+  return MangaOcrAutoStartResult.started(
+    MangaOcrBackgroundJob(
+      bookKey: bookKey,
+      managedDirectory: managedDirectory.path,
+      engine: selected.engine!,
+      events: _offlineOnlineOcrEvents(
+        session: session,
+        managedDirectory: managedDirectory,
+        initialPayload: initialPayload,
+        startPage: startPage,
+        selectedJob: selectedJob,
+      ),
+    ),
+    selected.engine,
+  );
+}
+
+Stream<MangaOcrBackgroundEvent> _offlineOnlineOcrEvents({
+  required MangaReaderSession session,
+  required Directory managedDirectory,
+  required MokuroPayload initialPayload,
+  required int startPage,
+  required MangaOcrBackgroundJob selectedJob,
+}) async* {
+  await materializeOnlineMangaPages(
+    session: session,
+    managedDirectory: managedDirectory,
+    initialPayload: initialPayload,
+    startPage: startPage,
+  );
+  yield* selectedJob.events;
+}
+
+/// 把在线页图稳定地复制成与 payload 一一对应的本地图片目录。
+Future<Directory> materializeOnlineMangaPages({
+  required MangaReaderSession session,
+  required Directory managedDirectory,
+  required MokuroPayload initialPayload,
+  required int startPage,
+}) async {
+  final int total = session.pageCount;
+  if (total <= 0 || initialPayload.images.length != total) {
+    throw const GoogleLensOcrException('no_pages');
+  }
+  final Directory imagesDirectory = Directory(
+    p.join(managedDirectory.path, 'images'),
+  );
+  await imagesDirectory.create(recursive: true);
+  final _OnlinePageIdentityManifest identities =
+      await _OnlinePageIdentityManifest.open(
+    File(p.join(imagesDirectory.path, '.mihon-pages.json')),
+    <String>[
+      for (int index = 0; index < total; index++) session.cacheIdentity(index),
+    ],
+  );
+  final int normalizedStart = startPage.clamp(0, total - 1);
+  final List<int> order = <int>[
+    for (int index = normalizedStart; index < total; index++) index,
+    for (int index = 0; index < normalizedStart; index++) index,
+  ];
+  final MihonOnlineMangaOcr materializer = MihonOnlineMangaOcr(
+    session: session,
+    managedDirectory: managedDirectory,
+    initialPayload: initialPayload,
+    startPage: startPage,
+    language: 'und',
+  );
+  for (final int pageIndex in order) {
+    await materializer._materializePage(
+      pageIndex: pageIndex,
+      relativeUrl: initialPayload.images[pageIndex].url,
+      imagesDirectory: imagesDirectory,
+      identities: identities,
+      isCancelled: () => false,
+    );
+  }
+  return imagesDirectory;
+}
 
 /// Current-page-first online Google Lens job.
 ///

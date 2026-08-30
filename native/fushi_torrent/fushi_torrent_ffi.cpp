@@ -1679,6 +1679,43 @@ HT_EXPORT char* ht_torrent_trackers(void* session, const char* info_hash) {
   }
 }
 
+HT_EXPORT int ht_add_trackers(void* session, const char* info_hash,
+                              const char* tracker_urls) {
+  if (session == nullptr || info_hash == nullptr || tracker_urls == nullptr) {
+    return -1;
+  }
+  try {
+    lt::torrent_handle h = find_torrent(as_session(session), info_hash);
+    if (!h.is_valid()) return -1;
+    const std::vector<lt::announce_entry> current = h.trackers();
+    std::vector<std::string> known;
+    known.reserve(current.size());
+    for (const lt::announce_entry& entry : current) known.push_back(entry.url);
+
+    int added = 0;
+    std::string input(tracker_urls);
+    std::size_t start = 0;
+    while (start <= input.size()) {
+      const std::size_t end = input.find('\n', start);
+      std::string url = input.substr(
+          start, end == std::string::npos ? std::string::npos : end - start);
+      if (!url.empty() && url.back() == '\r') url.pop_back();
+      if (!url.empty() &&
+          std::find(known.begin(), known.end(), url) == known.end()) {
+        h.add_tracker(lt::announce_entry(url));
+        known.push_back(url);
+        ++added;
+      }
+      if (end == std::string::npos) break;
+      start = end + 1;
+    }
+    if (added > 0) h.force_reannounce();
+    return added;
+  } catch (...) {
+    return -1;
+  }
+}
+
 HT_EXPORT char* ht_get_file_priorities(void* session, const char* info_hash) {
   if (session == nullptr) return json_error("session is null");
   try {

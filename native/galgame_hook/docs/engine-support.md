@@ -635,14 +635,14 @@ Tests：`tests/leaf_aquaplus_adapter_test.cpp`、`tests/leaf_aquaplus_voice_arch
 识别签名（所有非空项均带真实样本或运行时观察证据）：
 
 - `pe_architectures`：x64；证据：runtime_observation — Luna text profile config/luna_hook_profiles.tsv:5 records an x64 Steam build; the audio path has no independent hashed sample yet.
-- `directory_files_all`：wind3d11data/voice_body.bin；证据：runtime_observation — MatchesSgreProfile requires the archive to exist next to the hashed executable; character voices live in voice_body.bin.
-- `hashes`：75A83A0E2A7E22055417AE0474B47BE98418C4E42C695C548B558705C404B9D8；证据：runtime_observation — Same executable SHA-256 the Luna text profile keys on, so text and audio identity cannot drift apart silently.
+- `directory_files_all`：wind3d11data/voice_body.bin；证据：runtime_observation — MatchesSgreFamily is the family probe: the wind3d11 runtime keeps character voices in voice_body.bin next to the executable, and archive membership is the same data contract the audio proof checks. No executable name or hash takes part in family identity.
+- `hashes`：75A83A0E2A7E22055417AE0474B47BE98418C4E42C695C548B558705C404B9D8；证据：runtime_observation — Measured build row in hook/adapters/sgre_anchors.h (kSgreKnownBuilds): the hash selects the measured TextRender draw boundary, scenario-text vtable and DirectInput mouse-slot RVAs, and it is the same digest the Luna text profile keys on. A hash miss is no longer a rejection: the family is still claimed and each anchor is resolved by a unique byte signature (signature table currently empty), so an unmeasured build reports which anchors are missing instead of silently doing nothing.
 
 文本能力：
 
 - 不适用；文本由具体引擎 profile / Luna 线程处理。
 - codepage：not_applicable
-- 线程提示：Text comes from the Luna profile keyed by the same executable SHA-256, not from this adapter.
+- 线程提示：Luna text still comes from the hash-keyed Luna profile row (config/luna_hook_profiles.tsv); the in-game lookup sensor takes game-parsed text and per-glyph geometry from the resolved TextRender draw anchor.
 
 音频优先级：
 
@@ -656,7 +656,7 @@ Tests：`tests/leaf_aquaplus_adapter_test.cpp`、`tests/leaf_aquaplus_voice_arch
 - No real-game session has been run against this adapter: process_found through card_e2e are all not_run.
 - Archive membership is the role proof, and it only holds while the runtime keeps character voice in a separate voice_body.bin.
 - The emitted .xwma file is not byte-identical to an archive entry: the RIFF envelope is synthesised here. Only the fmt/dpds/payload chunks are verbatim.
-- Identity is the executable SHA-256, so a game patch disables both text and audio capture at once. That is deliberate -- it prevents a silent text/audio mismatch -- but it does mean a patched build stops working until the hash is re-measured.
+- The anchor signature table (kSgreTextDrawSignature / kSgreScenarioTextVtableSignature / kSgreDirectInputMouseDeviceSignature) is still empty: an executable outside kSgreKnownBuilds is claimed as family and gets archive-resource audio, but its lookup sensor and DirectInput shield resolve to signature_empty until patterns are measured from a real build. The Luna text hook code is still keyed by the measured hash row only.
 
 Fixtures：尚无（P5 补齐）
 

@@ -6,7 +6,7 @@
 /// `createAppHttpIoClient`。它曾经有一套独立的三态（auto / direct / custom，
 /// 默认 direct）——同一台机器上「更新能走代理、搜番剧不能」，用户得在两个设置页
 /// 各填一次代理；2026-08-29 按用户要求合并进系统设置的唯一代理项并默认自动，
-/// 旧 `download_network_proxy_mode` / `download_custom_proxy` 偏好由 schema v89
+/// 旧 `download_network_proxy_mode` / `download_custom_proxy` 偏好由 schema v90
 /// 迁移归并后删除。本文件只剩这条链路特有的两档超时。
 library;
 

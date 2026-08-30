@@ -2,8 +2,31 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi/src/media/torrent/tracker_subscription.dart';
 
 void main() {
+  test('tracker subscription defaults and codec round-trip', () {
+    const QbConnectionConfig defaults = QbConnectionConfig();
+    expect(defaults.autoAddTrackerSubscription, isTrue);
+    expect(defaults.trackerSubscriptionUrl, kDefaultTrackerSubscriptionUrl);
+
+    const QbConnectionConfig custom = QbConnectionConfig(
+      autoAddTrackerSubscription: false,
+      trackerSubscriptionUrl: 'https://example.test/trackers.txt',
+    );
+    final QbConnectionConfig decoded =
+        decodeQbConnectionConfig(encodeQbConnectionConfig(custom))!;
+    expect(decoded.autoAddTrackerSubscription, isFalse);
+    expect(
+      decoded.trackerSubscriptionUrl,
+      'https://example.test/trackers.txt',
+    );
+
+    final QbConnectionConfig legacy = decodeQbConnectionConfig('{}')!;
+    expect(legacy.autoAddTrackerSubscription, isTrue);
+    expect(legacy.trackerSubscriptionUrl, kDefaultTrackerSubscriptionUrl);
+  });
+
   test('backend defaults to auto (resolves per platform)', () {
     const QbConnectionConfig config = QbConnectionConfig();
     expect(config.backend, QbConnectionConfig.backendAuto);

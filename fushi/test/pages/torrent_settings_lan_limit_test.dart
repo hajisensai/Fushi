@@ -101,6 +101,24 @@ void main() {
       'full speed.';
   const String included = 'Also applies within your local network.';
 
+  testWidgets('tracker subscription controls show the configured default URL',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1000, 3200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_harness(_embedded));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Tracker subscription'), findsOneWidget);
+    expect(
+      find.text('Automatically add subscription trackers to new downloads'),
+      findsOneWidget,
+    );
+    expect(find.text('https://cf.trackerslist.com/best.txt'), findsOneWidget);
+    expect(find.text('Fetch trackers'), findsOneWidget);
+  });
+
   testWidgets('开关关闭时说明写「不作用于局域网」', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1000, 2400);
     tester.view.devicePixelRatio = 1.0;

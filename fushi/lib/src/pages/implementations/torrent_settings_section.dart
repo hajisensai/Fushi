@@ -49,12 +49,19 @@ class _TorrentSettingsSectionState
   /// TODO-1961：目录选择/校验进行中（按钮禁用防重入）。
   bool _pickingFolder = false;
 
+  bool _fetchingTrackers = false;
+  List<String> _trackerPreview = const <String>[];
+  String? _trackerFetchError;
+
   /// 分类输入框：持 controller 是为了失焦回填——清空时存储侧兜底 'fushi'，
   /// 失焦把实际生效值写回输入框，所见即所得（不再「显示空、实际 fushi」）。
   late final TextEditingController _categoryCtrl =
       TextEditingController(text: _config.category);
   late final FocusNode _categoryFocus = FocusNode()
     ..addListener(_onCategoryFocusChanged);
+  late final TextEditingController _trackerUrlCtrl = TextEditingController(
+    text: _config.trackerSubscriptionUrl,
+  );
 
   void _onCategoryFocusChanged() {
     if (_categoryFocus.hasFocus) return;
@@ -68,6 +75,7 @@ class _TorrentSettingsSectionState
   void dispose() {
     _categoryFocus.dispose();
     _categoryCtrl.dispose();
+    _trackerUrlCtrl.dispose();
     super.dispose();
   }
 
@@ -107,6 +115,34 @@ class _TorrentSettingsSectionState
     }
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _refreshTrackers() async {
+    if (_fetchingTrackers) return;
+    final String sourceUrl = _trackerUrlCtrl.text.trim();
+    await _commit(
+      (QbConnectionConfig c) => c.copyWith(trackerSubscriptionUrl: sourceUrl),
+    );
+    if (!mounted) return;
+    setState(() {
+      _fetchingTrackers = true;
+      _trackerFetchError = null;
+    });
+    try {
+      final List<String> trackers = await ref
+          .read(appProvider)
+          .refreshTrackerSubscription(sourceUrl: sourceUrl);
+      if (!mounted) return;
+      setState(() => _trackerPreview = trackers);
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _trackerPreview = const <String>[];
+        _trackerFetchError = error.toString();
+      });
+    } finally {
+      if (mounted) setState(() => _fetchingTrackers = false);
+    }
   }
 
   /// TODO-1961：选新的下载目录。校验不过**不写**配置，直接 snack 报原因（不静默）。
@@ -395,6 +431,70 @@ class _TorrentSettingsSectionState
           hint: t.video_setting_qb_category_hint,
           onChanged: (String v) => _commit((QbConnectionConfig c) =>
               c.copyWith(category: v.trim().isEmpty ? 'fushi' : v.trim())),
+        ),
+
+        _sectionLabel(theme, t.download_tracker_section),
+        _switch(
+          label: t.download_tracker_auto_add,
+          subtitle: t.download_tracker_auto_add_hint,
+          value: c.autoAddTrackerSubscription,
+          onChanged: (bool value) => _commit(
+            (QbConnectionConfig c) =>
+                c.copyWith(autoAddTrackerSubscription: value),
+          ),
+        ),
+        _text(
+          label: t.download_tracker_url,
+          controller: _trackerUrlCtrl,
+          keyboard: TextInputType.url,
+          onChanged: (String value) => _commit(
+            (QbConnectionConfig c) =>
+                c.copyWith(trackerSubscriptionUrl: value.trim()),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: _fetchingTrackers ? null : _refreshTrackers,
+              icon: _fetchingTrackers
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh, size: 18),
+              label: Text(t.download_tracker_refresh),
+            ),
+          ),
+        ),
+        // 预览框走共享卡片组件，不手搓 Container+BoxDecoration：eink 主题把所有
+        // surface container 塌缩成背景色（theme_notifier 的 eink scheme），手搓的
+        // 这只盒子在那儿会直接隐形，而 FushiCard 自己补描边。圆角/底色也一并交给
+        // 设计 token，不在这里重开一次本地决策。
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 160),
+          child: FushiCard(
+            padding: const EdgeInsets.all(10),
+            margin: const EdgeInsets.only(bottom: 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  _trackerFetchError != null
+                      ? t.download_tracker_fetch_failed(
+                          message: _trackerFetchError!,
+                        )
+                      : _trackerPreview.isEmpty
+                          ? t.download_tracker_preview_empty
+                          : '${t.download_tracker_preview_count(count: _trackerPreview.length)}\n\n'
+                              '${_trackerPreview.join('\n')}',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+            ),
+          ),
         ),
 
         // 内置引擎资源限制。

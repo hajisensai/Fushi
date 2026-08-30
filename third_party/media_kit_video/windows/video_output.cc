@@ -94,10 +94,14 @@ VideoOutput::VideoOutput(int64_t handle,
       std::cout << "media_kit: VideoOutput: Using S/W rendering." << std::endl;
       // HIBIKI FORK (BUG-1657): make the real cost of this downgrade visible.
       // MPV_RENDER_API_TYPE_SW is not vo=gpu, so libmpv's `glsl-shaders`
-      // (Anime4K / upscalers) and the `scale`/`cscale` filters silently stop
-      // applying -- users see "画质增强 stopped working" with no other symptom.
+      // (Anime4K / upscalers), the `scale`/`cscale` filters and the HDR
+      // tone-mapping options (`tone-mapping`, `hdr-compute-peak`) silently
+      // stop applying -- users see "画质增强 / HDR 设置 stopped working" with
+      // no other symptom. Keep this list in sync with every gpu-only property
+      // we expose in settings, otherwise the first triage step is missing.
       std::cout << "media_kit: VideoOutput: S/W rendering has no vo=gpu "
-                   "pipeline: libmpv glsl-shaders & scale filters are INERT."
+                   "pipeline: libmpv glsl-shaders, scale filters and HDR "
+                   "tone-mapping are INERT."
                 << std::endl;
       // Allocate a "large enough" buffer ahead of time.
       pixel_buffer_ =

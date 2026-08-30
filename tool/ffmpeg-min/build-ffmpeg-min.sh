@@ -252,7 +252,11 @@ EXTRA_CONFIG=(--enable-gnutls)
 case "$(uname -s)" in
   # Windows：静态链接，把 libwinpthread/zlib/libgcc/x264 等折进 exe → 发布单文件，
   # 不依赖 MSYS2 mingw64 运行时 DLL（用户机没有 MSYS2）。schannel 是系统 secur32，无外链。
-  MINGW*|MSYS*) EXTRA_CONFIG=(--target-os=mingw32 --arch=x86_64 --extra-ldflags=-static --pkg-config-flags=--static --enable-schannel) ;;
+  MINGW*|MSYS*)
+    # Windows-only galgame 卡可能捕获 RIFF/XWMA。它需要专用 xwma demuxer；只有 wav
+    # demuxer + WMA decoder 不足以打开该容器。输出仍走现有 AAC/ADTS 链。
+    EXTRA_CONFIG=(--target-os=mingw32 --arch=x86_64 --extra-ldflags=-static --pkg-config-flags=--static --enable-schannel --enable-demuxer=xwma)
+    ;;
   # macOS（BUG-1443）：本分支曾只传 --enable-securetransport，于是 Homebrew 装的
   # x264 / svt-av1 / webp 全部以**动态依赖**留在产物里：
   #   /opt/homebrew/opt/svt-av1/lib/libSvtAv1Enc.4.dylib

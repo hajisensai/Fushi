@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <utility>
 #include <vector>
 
@@ -82,48 +83,66 @@ bool SameStates(const hook_toolbar::States& a, const hook_toolbar::States& b) {
 
 namespace hook_toolbar {
 
-bool SlotActive(int slot, const States& states) {
-  switch (slot) {
-    case 0:
-      return states.replaying;
-    case 1:
-      return states.recapturing;
-    case 2:
-      return !states.playing;
-    case 3:
-      return states.pass_through;
-    case 5:
-      return states.locked;
-    case 7:
-      return states.topmost;
-    default:
-      return false;
-  }
+int SlotCount(Profile profile) {
+  return profile == Profile::kAudiobook ? kAudiobookSlotCount
+                                        : kGalHookSlotCount;
 }
 
-const wchar_t* SlotGlyph(int slot, const States& states) {
-  switch (slot) {
-    case 0:
-      return L"\uE042";  // replay
-    case 1:
-      return L"\uE31D";  // mic
-    case 2:
-      return states.playing ? L"\uE034" : L"\uE037";  // pause / play_arrow
-    case 3:
-      return L"\uE323";  // mouse
-    case 4:
-      return L"\uE91C";  // opacity
-    case 5:
-      return states.locked ? L"\uE899" : L"\uE898";  // lock / lock_open
-    case 6:
-      return L"\uE99B";  // dashboard_customize
-    case 7:
-      return L"\uF10D";  // push_pin
-    case 8:
-      return L"\uE5CD";  // close
-    default:
-      return L"";
+const char* SlotAction(Profile profile, int slot) {
+  if (slot < 0 || slot >= SlotCount(profile)) {
+    return "";
   }
+  return profile == Profile::kAudiobook ? kAudiobookSlotActions[slot]
+                                        : kGalHookSlotActions[slot];
+}
+
+bool SlotActive(Profile profile, int slot, const States& states) {
+  const char* action = SlotAction(profile, slot);
+  if (std::strcmp(action, "replayVoice") == 0) return states.replaying;
+  if (std::strcmp(action, "recaptureVoice") == 0) return states.recapturing;
+  // 「跟随」被关掉才高亮：默认态（跟随中）不上色，只有用户暂停了台词更新时才亮，
+  // 否则用户永远在看一颗亮着的灯。
+  if (std::strcmp(action, "toggleFollow") == 0) return !states.playing;
+  if (std::strcmp(action, "togglePassThrough") == 0) return states.pass_through;
+  if (std::strcmp(action, "lock") == 0) return states.locked;
+  if (std::strcmp(action, "topmost") == 0) return states.topmost;
+  // playPause 不高亮：它的图标本身就在 play / pause 之间切，再上一层色只会
+  // 让「正在播放」和「按钮被激活」两件事混在一起。
+  return false;
+}
+
+const wchar_t* SlotGlyph(Profile profile, int slot, const States& states) {
+  const char* action = SlotAction(profile, slot);
+  if (std::strcmp(action, "replayVoice") == 0) return L"\uE042";  // replay
+  if (std::strcmp(action, "recaptureVoice") == 0) return L"\uE31D";  // mic
+  if (std::strcmp(action, "toggleFollow") == 0) {
+    return states.playing ? L"\uE034" : L"\uE037";  // pause / play_arrow
+  }
+  if (std::strcmp(action, "playPause") == 0) {
+    return states.playing ? L"\uE034" : L"\uE037";  // pause / play_arrow
+  }
+  if (std::strcmp(action, "togglePassThrough") == 0) return L"\uE323";  // mouse
+  if (std::strcmp(action, "toggleTransparency") == 0) {
+    return L"\uE91C";  // opacity
+  }
+  if (std::strcmp(action, "lock") == 0) {
+    return states.locked ? L"\uE899" : L"\uE898";  // lock / lock_open
+  }
+  if (std::strcmp(action, "openWorkbench") == 0) {
+    return L"\uE99B";  // dashboard_customize
+  }
+  if (std::strcmp(action, "topmost") == 0) return L"\uF10D";   // push_pin
+  if (std::strcmp(action, "close") == 0) return L"\uE5CD";     // close
+  // previousCue / nextCue 显式声明「没有字体字形」：打包的字体是 11 个码位的极小
+  // 子集（skip_previous U+E045 / skip_next U+E044 不在其中），用字体画出来是豆腐
+  // 块。空串 = 告诉调用方「这颗没字形」，由它逐槽回退到 DrawSlotIcon 的矢量画法。
+  //
+  // 为什么要显式写出来、而不是让它们落到末尾那个 return：末尾的 return 同时也是
+  // 「这个 action 我不认识」的出口。两件事共用一个出口，拼错的 action 就会静默
+  // 变成一颗空按钮，而不是在守卫里当场暴露。
+  if (std::strcmp(action, "previousCue") == 0) return L"";
+  if (std::strcmp(action, "nextCue") == 0) return L"";
+  return L"";
 }
 
 bool LoadMaterialSymbolsRoundedFontCollection(
@@ -157,9 +176,9 @@ bool LoadMaterialSymbolsRoundedFontCollection(
   return true;
 }
 
-void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory, int slot,
-                  const States& states, const D2D1_RECT_F& bounds,
-                  ID2D1Brush* brush) {
+void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory,
+                  Profile profile, int slot, const States& states,
+                  const D2D1_RECT_F& bounds, ID2D1Brush* brush) {
   if (target == nullptr || factory == nullptr || brush == nullptr) {
     return;
   }
@@ -197,8 +216,15 @@ void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory, int slot,
     }
   };
 
-  switch (slot) {
-    case 0: {  // Replay captured voice.
+  // 与 SlotActive / SlotGlyph 同一条纪律：先取 action 再分支。槽位下标只是这张表
+  // 的位置，两个 profile 的同一下标是两件事，按下标画必然错位。
+  const char* action = SlotAction(profile, slot);
+  auto is = [action](const char* name) {
+    return std::strcmp(action, name) == 0;
+  };
+
+  if (is("replayVoice")) {  // Replay captured voice.
+    {
       Microsoft::WRL::ComPtr<ID2D1PathGeometry> arc;
       if (SUCCEEDED(factory->CreatePathGeometry(arc.GetAddressOf()))) {
         Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
@@ -222,9 +248,9 @@ void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory, int slot,
                        round_stroke.Get());
       target->DrawLine(point(0.30f, 0.50f), point(0.46f, 0.46f), brush, stroke,
                        round_stroke.Get());
-      break;
     }
-    case 1: {  // Recapture voice: microphone, not an ambiguous text dot.
+  } else if (is("recaptureVoice")) {  // Microphone, not an ambiguous dot.
+    {
       target->DrawRoundedRectangle(
           D2D1::RoundedRect(rect(0.43f, 0.24f, 0.57f, 0.56f), size * 0.07f,
                             size * 0.07f),
@@ -245,9 +271,11 @@ void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory, int slot,
                        round_stroke.Get());
       target->DrawLine(point(0.41f, 0.76f), point(0.59f, 0.76f), brush, stroke,
                        round_stroke.Get());
-      break;
     }
-    case 2: {  // Follow / pause.
+  } else if (is("toggleFollow") || is("playPause")) {
+    // 跟随开关与播放暂停共用同一组三角 / 双竖线：两者都用 states.playing 表达
+    // 「现在是播着的还是停着的」，画法一致，用户不用学两套符号。
+    {
       if (states.playing) {
         target->FillRoundedRectangle(
             D2D1::RoundedRect(rect(0.35f, 0.29f, 0.45f, 0.71f), size * 0.02f,
@@ -271,9 +299,9 @@ void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory, int slot,
           }
         }
       }
-      break;
     }
-    case 3: {  // Mouse pass-through: a proper pointer silhouette.
+  } else if (is("togglePassThrough")) {  // A proper pointer silhouette.
+    {
       Microsoft::WRL::ComPtr<ID2D1PathGeometry> cursor;
       if (SUCCEEDED(factory->CreatePathGeometry(cursor.GetAddressOf()))) {
         Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
@@ -290,9 +318,9 @@ void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory, int slot,
           target->FillGeometry(cursor.Get(), brush);
         }
       }
-      break;
     }
-    case 4: {  // Background transparency.
+  } else if (is("toggleTransparency")) {  // Background transparency.
+    {
       const D2D1_ELLIPSE circle =
           D2D1::Ellipse(point(0.50f, 0.50f), size * 0.23f, size * 0.23f);
       target->PushAxisAlignedClip(rect(0.25f, 0.25f, 0.50f, 0.75f),
@@ -300,9 +328,9 @@ void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory, int slot,
       target->FillEllipse(circle, brush);
       target->PopAxisAlignedClip();
       target->DrawEllipse(circle, brush, stroke, round_stroke.Get());
-      break;
     }
-    case 5: {  // Position lock / unlock.
+  } else if (is("lock")) {  // Position lock / unlock.
+    {
       target->DrawRoundedRectangle(
           D2D1::RoundedRect(rect(0.31f, 0.44f, 0.69f, 0.74f), size * 0.05f,
                             size * 0.05f),
@@ -327,9 +355,9 @@ void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory, int slot,
           draw_path(shackle.Get());
         }
       }
-      break;
     }
-    case 6: {  // Capture workbench / panel.
+  } else if (is("openWorkbench")) {  // Capture workbench / panel.
+    {
       target->DrawRoundedRectangle(
           D2D1::RoundedRect(rect(0.27f, 0.28f, 0.73f, 0.72f), size * 0.04f,
                             size * 0.04f),
@@ -342,9 +370,9 @@ void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory, int slot,
                        round_stroke.Get());
       target->DrawLine(point(0.53f, 0.60f), point(0.63f, 0.60f), brush, stroke,
                        round_stroke.Get());
-      break;
     }
-    case 7: {  // Always-on-top pin.
+  } else if (is("topmost")) {  // Always-on-top pin.
+    {
       Microsoft::WRL::ComPtr<ID2D1PathGeometry> pin;
       if (SUCCEEDED(factory->CreatePathGeometry(pin.GetAddressOf()))) {
         Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
@@ -364,36 +392,73 @@ void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory, int slot,
       }
       target->DrawLine(point(0.50f, 0.60f), point(0.50f, 0.77f), brush, stroke,
                        round_stroke.Get());
-      break;
     }
-    case 8: {  // Close.
+  } else if (is("close")) {  // Close.
+    {
       target->DrawLine(point(0.31f, 0.31f), point(0.69f, 0.69f), brush, stroke,
                        round_stroke.Get());
       target->DrawLine(point(0.69f, 0.31f), point(0.31f, 0.69f), brush, stroke,
                        round_stroke.Get());
-      break;
     }
-    default:
-      break;
+  } else if (is("previousCue")) {
+    // ⏮ 竖线 + 左指三角。打包字体子集里没有 skip_previous（U+E045），这条矢量
+    // 画法不是兜底而是这颗按钮的唯一画法，见 SlotGlyph 的空串约定。
+    target->FillRoundedRectangle(
+        D2D1::RoundedRect(rect(0.32f, 0.29f, 0.40f, 0.71f), size * 0.02f,
+                          size * 0.02f),
+        brush);
+    Microsoft::WRL::ComPtr<ID2D1PathGeometry> tri;
+    if (SUCCEEDED(factory->CreatePathGeometry(tri.GetAddressOf()))) {
+      Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+      if (SUCCEEDED(tri->Open(sink.GetAddressOf()))) {
+        sink->BeginFigure(point(0.70f, 0.28f), D2D1_FIGURE_BEGIN_FILLED);
+        sink->AddLine(point(0.70f, 0.72f));
+        sink->AddLine(point(0.43f, 0.50f));
+        sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+        sink->Close();
+        target->FillGeometry(tri.Get(), brush);
+      }
+    }
+  } else if (is("nextCue")) {
+    // ⏭ 右指三角 + 竖线（previousCue 的镜像，同样没有 skip_next U+E044 字形）。
+    Microsoft::WRL::ComPtr<ID2D1PathGeometry> tri;
+    if (SUCCEEDED(factory->CreatePathGeometry(tri.GetAddressOf()))) {
+      Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+      if (SUCCEEDED(tri->Open(sink.GetAddressOf()))) {
+        sink->BeginFigure(point(0.30f, 0.28f), D2D1_FIGURE_BEGIN_FILLED);
+        sink->AddLine(point(0.30f, 0.72f));
+        sink->AddLine(point(0.57f, 0.50f));
+        sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+        sink->Close();
+        target->FillGeometry(tri.Get(), brush);
+      }
+    }
+    target->FillRoundedRectangle(
+        D2D1::RoundedRect(rect(0.60f, 0.29f, 0.68f, 0.71f), size * 0.02f,
+                          size * 0.02f),
+        brush);
   }
 }
 
 namespace {
 
-std::vector<std::wstring>& SlotTooltipStore() {
-  static std::vector<std::wstring> store;
-  return store;
+// 一 profile 一张表。共用一张的话，两个浮窗同时在屏上时后 show 的那个会把另一个
+// 的提示整表覆盖 —— 表现是「鼠标悬在播放键上，弹出的是『打开捕获工作台』」。
+std::vector<std::wstring>& SlotTooltipStore(Profile profile) {
+  static std::vector<std::wstring> gal_hook_store;
+  static std::vector<std::wstring> audiobook_store;
+  return profile == Profile::kAudiobook ? audiobook_store : gal_hook_store;
 }
 
 }  // namespace
 
-void SetSlotTooltips(std::vector<std::wstring> tooltips) {
-  SlotTooltipStore() = std::move(tooltips);
+void SetSlotTooltips(Profile profile, std::vector<std::wstring> tooltips) {
+  SlotTooltipStore(profile) = std::move(tooltips);
 }
 
-const std::wstring& SlotTooltip(int slot) {
+const std::wstring& SlotTooltip(Profile profile, int slot) {
   static const std::wstring empty;
-  const std::vector<std::wstring>& store = SlotTooltipStore();
+  const std::vector<std::wstring>& store = SlotTooltipStore(profile);
   if (slot < 0 || slot >= static_cast<int>(store.size())) {
     return empty;
   }
@@ -443,9 +508,9 @@ bool SlotTooltipHost::EnsureWindow(HWND owner) {
   return true;
 }
 
-void SlotTooltipHost::Update(HWND owner, int slot, int screen_x,
-                             int screen_y) {
-  const std::wstring& text = SlotTooltip(slot);
+void SlotTooltipHost::Update(HWND owner, Profile profile, int slot,
+                             int screen_x, int screen_y) {
+  const std::wstring& text = SlotTooltip(profile, slot);
   if (slot < 0 || text.empty() || owner == nullptr) {
     Hide();
     return;
@@ -544,7 +609,8 @@ bool HookToolbarWindow::EnsureDeviceResources() {
   return true;
 }
 
-bool HookToolbarWindow::Show(const hook_toolbar::Layout& layout,
+bool HookToolbarWindow::Show(hook_toolbar::Profile profile,
+                             const hook_toolbar::Layout& layout,
                              const hook_toolbar::Style& style,
                              const hook_toolbar::States& states) {
   const int width = layout.rect.right - layout.rect.left;
@@ -572,6 +638,7 @@ bool HookToolbarWindow::Show(const hook_toolbar::Layout& layout,
       return false;
     }
   }
+  profile_ = profile;
   layout_ = layout;
   style_ = style;
   states_ = states;
@@ -609,22 +676,31 @@ bool HookToolbarWindow::IsShowing() const {
   return visible_ && hwnd_ != nullptr && IsWindowVisible(hwnd_);
 }
 
-void HookToolbarWindow::Sync(const hook_toolbar::Layout& layout,
+void HookToolbarWindow::Sync(hook_toolbar::Profile profile,
+                             const hook_toolbar::Layout& layout,
                              const hook_toolbar::Style& style,
                              const hook_toolbar::States& states) {
   if (hwnd_ == nullptr || !visible_) {
     return;
   }
   const bool moved = !has_layout_ || !SameLayout(layout, layout_);
-  const bool repaint =
-      moved || !SameStyle(style, style_) || !SameStates(states, states_);
+  // profile 也是重绘判据：槽表换了而几何 / 配色 / 状态恰好没变时，不重绘就会一直
+  // 画着上一张表的图标（按钮位置对、图标全错），这是最难查的一类「没反应」。
+  const bool repaint = moved || profile != profile_ ||
+                       !SameStyle(style, style_) || !SameStates(states, states_);
   if (!repaint) {
     // Still re-assert Z: the body window raises itself to HWND_TOPMOST on show
     // / clamp / DPI change, which would otherwise tint this pill from above.
+    //
+    // 🔴 **不要**把这里改成跟随 states_.topmost。看着像「药丸和正文脱钩了」，实际
+    // 是 BUG-951 的不变式：穿透态下这个独立小窗是用户**唯一**点得到的东西，跟着
+    // 取消置顶一起沉到游戏底下就是彻底失联。守卫在
+    // gal_overlay_shift_hover_pin_guard_test.dart「置顶只作用于正文窗」。
     SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     return;
   }
+  profile_ = profile;
   layout_ = layout;
   style_ = style;
   states_ = states;
@@ -648,7 +724,7 @@ int HookToolbarWindow::SlotAt(float x, float y) const {
   if (y < top || y > top + layout_.button_px) {
     return -1;
   }
-  for (int slot = 0; slot < hook_toolbar::kSlotCount; ++slot) {
+  for (int slot = 0; slot < hook_toolbar::SlotCount(profile_); ++slot) {
     const float bx =
         layout_.margin_px + slot * (layout_.button_px + layout_.gap_px);
     if (x >= bx && x <= bx + layout_.button_px) {
@@ -726,7 +802,8 @@ LRESULT HookToolbarWindow::HandleMessage(UINT message, WPARAM wparam,
         // 共用（hook_toolbar::SlotTooltip），空文案 / 空槽自动隐藏。
         POINT cursor;
         GetCursorPos(&cursor);
-        tooltip_.Update(hwnd_, hovered_slot_, cursor.x + 12, cursor.y + 22);
+        tooltip_.Update(hwnd_, profile_, hovered_slot_, cursor.x + 12,
+                        cursor.y + 22);
       }
       return 0;
     }
@@ -750,7 +827,7 @@ LRESULT HookToolbarWindow::HandleMessage(UINT message, WPARAM wparam,
         // Buttons fire on press, exactly like the in-body toolbar, so the
         // escape hatch responds to the same gesture the user already knows.
         if (on_action_) {
-          on_action_(hook_toolbar::kSlotActions[slot]);
+          on_action_(hook_toolbar::SlotAction(profile_, slot));
         }
         return 0;
       }
@@ -886,11 +963,11 @@ void HookToolbarWindow::Render() {
       icon_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     }
   }
-  for (int slot = 0; slot < hook_toolbar::kSlotCount; ++slot) {
+  for (int slot = 0; slot < hook_toolbar::SlotCount(profile_); ++slot) {
     const float bx = layout_.margin_px + slot * (btn + layout_.gap_px);
     const float by = layout_.margin_px;
     const D2D1_RECT_F cell = D2D1::RectF(bx, by, bx + btn, by + btn);
-    const bool active = hook_toolbar::SlotActive(slot, states_);
+    const bool active = hook_toolbar::SlotActive(profile_, slot, states_);
     if (active && btn_active != nullptr) {
       btn_active->SetOpacity(opacity * 0.16f);
       render_target_->FillRoundedRectangle(
@@ -906,12 +983,15 @@ void HookToolbarWindow::Render() {
     }
     ID2D1SolidColorBrush* brush = active ? btn_active.Get() : btn_fg.Get();
     if (brush != nullptr) {
-      if (icon_format != nullptr) {
-        const wchar_t* glyph = hook_toolbar::SlotGlyph(slot, states_);
+      // 逐槽回退，不是整条工具条二选一：打包字体是 11 个码位的极小子集，
+      // previousCue / nextCue 在里面没有字形。整条按「字体加载成功就全用字体」
+      // 分流的话，这两颗会画成豆腐块——空串 glyph 必须逐颗落到矢量画法。
+      const wchar_t* glyph = hook_toolbar::SlotGlyph(profile_, slot, states_);
+      if (icon_format != nullptr && glyph[0] != L'\0') {
         render_target_->DrawTextW(glyph, 1, icon_format.Get(), cell, brush);
       } else {
         hook_toolbar::DrawSlotIcon(render_target_.Get(), d2d_factory_.Get(),
-                                   slot, states_, cell, brush);
+                                   profile_, slot, states_, cell, brush);
       }
     }
   }

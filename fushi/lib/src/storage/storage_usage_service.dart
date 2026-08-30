@@ -121,7 +121,31 @@ enum StorageEntryKind {
 
   /// 类目根下的磁盘子项，只读展示（删它就是裸 `Directory.delete`，绕过墓碑/引用护栏）。
   readOnly,
+
+  /// 类目根下的磁盘子项，且**可以**直接删（`paths` = 待删路径）。只用于
+  /// [kDeletableEntryCategories] 里那些纯派生 / 缓存 / 可重新获取的类目 —— 那里的
+  /// 东西没有任何 DB 行引用，裸删不绕过任何护栏。
+  derivedFile,
 }
+
+/// 明细可**直接删**的类目。
+///
+/// 判据是「删了不会留下悬空引用」：这些根下装的要么是能重新生成的派生数据（封面/
+/// 缩略图），要么是缓存/暂存（浏览器数据、Anki 制卡暂存、临时文件 —— 导出的备份包
+/// 就落在这里），要么是能重新下载的资源（OCR 模型、着色器）。
+///
+/// 刻意**不含**：books / dictionaries（各有自己的删除原语，走 kind 分流）、
+/// videoDownloads / subtitles / customFonts（都有 DB 行或配置指着，裸删会留下孤儿行
+/// 和指向空文件的字体配置 —— 见本文件头注释的共享资产误删坑）、database（活库）、
+/// other（白名单之外，语义不明）。
+const Set<StorageCategoryId> kDeletableEntryCategories = <StorageCategoryId>{
+  StorageCategoryId.covers,
+  StorageCategoryId.web,
+  StorageCategoryId.exports,
+  StorageCategoryId.ocrModels,
+  StorageCategoryId.shaders,
+  StorageCategoryId.cache,
+};
 
 /// 一个类目内的单条可展开条目（一本书 / 一部词典 / 类目根下的一个子项）。
 class StorageEntryUsage {
@@ -629,7 +653,7 @@ class StorageUsageService {
       for (final Map<String, Object> e in snapshots) e['path'] as String,
     ];
     final List<StorageEntryUsage> entries = <StorageEntryUsage>[
-      ..._readOnlyEntries(raw, excludePaths: <String>{
+      ..._childEntries(raw, excludePaths: <String>{
         p.join(support.path, kOcrModelsSupportChild),
         ...snapshotPaths,
       }),
@@ -672,9 +696,13 @@ class StorageUsageService {
   ) async {
     final List<Map<String, Object>> raw =
         await _run(() => _childEntriesSync(roots));
-    final List<StorageEntryUsage> entries = _readOnlyEntries(raw)
-      ..sort((StorageEntryUsage a, StorageEntryUsage b) =>
-          b.bytes.compareTo(a.bytes));
+    final List<StorageEntryUsage> entries = _childEntries(
+      raw,
+      kind: kDeletableEntryCategories.contains(id)
+          ? StorageEntryKind.derivedFile
+          : StorageEntryKind.readOnly,
+    )..sort((StorageEntryUsage a, StorageEntryUsage b) =>
+        b.bytes.compareTo(a.bytes));
     return StorageCategoryUsage(
         id: id, bytes: _sumBytes(entries), entries: entries);
   }
@@ -734,7 +762,7 @@ class StorageUsageService {
         await _run(() => _childEntriesSync(<String>[docs.path]));
     const Set<String> known = AppPaths.fushiOwnedDocumentsEntries;
     final List<StorageEntryUsage> entries = <StorageEntryUsage>[
-      for (final StorageEntryUsage e in _readOnlyEntries(raw))
+      for (final StorageEntryUsage e in _childEntries(raw))
         if (!known.contains(p.basename(e.paths.single))) e,
     ]..sort((StorageEntryUsage a, StorageEntryUsage b) =>
         b.bytes.compareTo(a.bytes));
@@ -745,11 +773,13 @@ class StorageUsageService {
     );
   }
 
-  /// isolate 回传的原始子项 → 只读明细。[excludePaths] 里的子项既不计入明细也不
-  /// 计入总量（被别的类目单列、或已聚合进别的条目时用）。
-  static List<StorageEntryUsage> _readOnlyEntries(
+  /// isolate 回传的原始子项 → 明细。[excludePaths] 里的子项既不计入明细也不计入
+  /// 总量（被别的类目单列、或已聚合进别的条目时用）。[kind] 决定这批明细有没有
+  /// 删除入口，默认只读。
+  static List<StorageEntryUsage> _childEntries(
     final List<Map<String, Object>> raw, {
     final Set<String> excludePaths = const <String>{},
+    final StorageEntryKind kind = StorageEntryKind.readOnly,
   }) {
     return <StorageEntryUsage>[
       for (final Map<String, Object> e in raw)
@@ -760,7 +790,7 @@ class StorageUsageService {
             label: e['label'] as String,
             bytes: e['bytes'] as int,
             paths: <String>[e['path'] as String],
-            kind: StorageEntryKind.readOnly,
+            kind: kind,
           ),
     ];
   }

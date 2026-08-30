@@ -26,7 +26,7 @@ import '../helpers/source_guard.dart';
 ///      里持有的长活 client；非法值 fail-open，绝不产出 `PROXY garbage`。
 ///   C. 第二套代理配置不得复活：生产源码里不再有 `DownloadNetworkProxy*` /
 ///      `download_network_proxy_mode` / `download_custom_proxy`（唯一例外是
-///      fushi_core 的 v89 迁移，它删这两个键）。
+///      fushi_core 的 v90 迁移，它删这两个键）。
 ///   D. P2P（torrent）传输**默认直连**，用户在系统设置里单独打开开关才跟全局
 ///      出口；开关语义钉在 resolveP2pProxyHostPort 一处，torrent 宿主/绑定不碰
 ///      代理解析层，C ABI 桥只有 ht_apply_proxy 一处能改 libtorrent 代理。
@@ -94,7 +94,7 @@ void main() {
         '../packages/fushi_platform/lib',
       ];
       const Set<String> exempt = <String>{
-        // v89 迁移：归并 + 删除这两个键，字面量必然出现在 SQL 里。
+        // v90 迁移：归并 + 删除这两个键，字面量必然出现在 SQL 里。
         'packages/fushi_core/lib/src/database/database.dart',
       };
       const List<String> forbidden = <String>[
