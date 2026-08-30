@@ -11,6 +11,19 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 /// 同值：自然宽估算必须与真实布局同口径，否则页头的「摆不摆得下」会判错。
 const double _kSectionTabHorizontalPadding = 16.0;
 
+/// 横向 tab 还有离屏内容时，边缘渐隐占用的宽度（逻辑像素）。
+///
+/// 它只覆盖内容、不参与布局，也不拦截点击；比在 primary tabs 下方再画一根滚动条
+/// 更轻，并避免与选中指示器形成两条含义不同的横线。
+const double _kSectionTabOverflowFadeWidth = 24.0;
+
+const ValueKey<String> _kSectionTabLeadingOverflowCueKey = ValueKey<String>(
+  'library-section-tabs-leading-overflow-cue',
+);
+const ValueKey<String> _kSectionTabTrailingOverflowCueKey = ValueKey<String>(
+  'library-section-tabs-trailing-overflow-cue',
+);
+
 /// [LibrarySectionTabs] 的一段：值 + 用户可读标签。
 class LibrarySectionTab<T> {
   const LibrarySectionTab({required this.value, required this.label});
@@ -68,8 +81,8 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     required TabController this.controller,
     required this.focusIdPrefix,
     super.key,
-  })  : selected = null,
-        onChanged = null;
+  }) : selected = null,
+       onChanged = null;
 
   final List<LibrarySectionTab<T>> tabs;
 
@@ -123,14 +136,12 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
         return _focusShell(
           selectedValue: tabs[index].value,
           onSelect: (T value) {
-            final int target =
-                tabs.indexWhere((LibrarySectionTab<T> tab) => tab.value == value);
+            final int target = tabs.indexWhere(
+              (LibrarySectionTab<T> tab) => tab.value == value,
+            );
             if (target >= 0 && target != host.index) host.animateTo(target);
           },
-          child: FushiSectionTabBar<T>.controlled(
-            tabs: tabs,
-            controller: host,
-          ),
+          child: FushiSectionTabBar<T>.controlled(tabs: tabs, controller: host),
         );
       },
     );
@@ -158,8 +169,8 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
     required this.tabs,
     required TabController this.controller,
     super.key,
-  })  : selected = null,
-        onChanged = null;
+  }) : selected = null,
+       onChanged = null;
 
   final List<LibrarySectionTab<T>> tabs;
   final T? selected;
@@ -171,7 +182,8 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
 }
 
 class _FushiSectionTabBarState<T extends Object>
-    extends State<FushiSectionTabBar<T>> with TickerProviderStateMixin {
+    extends State<FushiSectionTabBar<T>>
+    with TickerProviderStateMixin {
   /// 自持形态下由本 State 创建并负责 dispose；宿主持有形态下恒为 null。
   TabController? _owned;
 
@@ -182,16 +194,17 @@ class _FushiSectionTabBarState<T extends Object>
   bool get _hostControlled => widget.controller != null;
 
   int get _selectedIndex {
-    final int index = widget.tabs
-        .indexWhere((LibrarySectionTab<T> tab) => tab.value == widget.selected);
+    final int index = widget.tabs.indexWhere(
+      (LibrarySectionTab<T> tab) => tab.value == widget.selected,
+    );
     return index < 0 ? 0 : index;
   }
 
   TabController _createController() => TabController(
-        length: widget.tabs.length,
-        initialIndex: _selectedIndex,
-        vsync: this,
-      );
+    length: widget.tabs.length,
+    initialIndex: _selectedIndex,
+    vsync: this,
+  );
 
   @override
   void initState() {
@@ -228,6 +241,49 @@ class _FushiSectionTabBarState<T extends Object>
 
   bool _projectionScheduled = false;
 
+  bool _showLeadingOverflowCue = false;
+  bool _showTrailingOverflowCue = false;
+  bool _overflowCueUpdateScheduled = false;
+  bool _pendingLeadingOverflowCue = false;
+  bool _pendingTrailingOverflowCue = false;
+
+  /// [TabBar] 把自己的横向 [ScrollController] 封在内部，外层拿不到；但内部
+  /// Scrollable 的 metrics notification 会正常向上冒泡。用它判断两端是否还有
+  /// 离屏内容，既不复制一套 tab 布局，也不接管 TabBar 自带的选中项滚入逻辑。
+  void _updateOverflowCues(ScrollMetrics metrics) {
+    if (metrics.axis != Axis.horizontal) return;
+    _pendingLeadingOverflowCue = metrics.extentBefore > 0.5;
+    _pendingTrailingOverflowCue = metrics.extentAfter > 0.5;
+    if (_overflowCueUpdateScheduled) return;
+    _overflowCueUpdateScheduled = true;
+    // ScrollMetricsNotification 在 layout 后发出；延到帧末更新，避免在布局阶段
+    // setState。若同一帧收到多条通知，pending 值始终保留最后一条。
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      _overflowCueUpdateScheduled = false;
+      if (!mounted) return;
+      final bool leading = _pendingLeadingOverflowCue;
+      final bool trailing = _pendingTrailingOverflowCue;
+      if (_showLeadingOverflowCue == leading &&
+          _showTrailingOverflowCue == trailing) {
+        return;
+      }
+      setState(() {
+        _showLeadingOverflowCue = leading;
+        _showTrailingOverflowCue = trailing;
+      });
+    });
+  }
+
+  bool _handleScrollMetrics(ScrollMetricsNotification notification) {
+    _updateOverflowCues(notification.metrics);
+    return false;
+  }
+
+  bool _handleScroll(ScrollNotification notification) {
+    _updateOverflowCues(notification.metrics);
+    return false;
+  }
+
   /// 把 controller 拉回 [widget.selected] 的投影。
   ///
   /// 判据只看 `_controller.index`——切换动画进行中它已经是**目标**下标，此时无需干预，
@@ -253,11 +309,9 @@ class _FushiSectionTabBarState<T extends Object>
     // 自然宽是纯 build 期可算量（只依赖文案 / 字号 / 缩放）：页头用它判定「左边摆得
     // 下吗」，据此决定是否把动作收进 ⋯ 菜单。
     FushiHeaderCrampScope.maybeOf(context)?.reportTitleNaturalWidth(
-      estimateSectionTabBarWidth(
-        context,
-        <String>[for (final LibrarySectionTab<T> tab in widget.tabs) tab.label],
-        horizontalPaddingPerTab: _kSectionTabHorizontalPadding,
-      ),
+      estimateSectionTabBarWidth(context, <String>[
+        for (final LibrarySectionTab<T> tab in widget.tabs) tab.label,
+      ], horizontalPaddingPerTab: _kSectionTabHorizontalPadding),
     );
 
     if (!_hostControlled) _scheduleProjection();
@@ -267,10 +321,43 @@ class _FushiSectionTabBarState<T extends Object>
     // 换控件时一起丢了——一旦溢出（窄窗 / 界面缩放 / 德俄长文案），桌面用户拖不动，
     // 只剩键盘、手柄或点那半截 tab。
     //
-    // 两样没跟过来，都是有意的：两侧渐隐（tabs 比等宽段窄约三分之一，溢出概率显著
-    // 下降），以及横向滚轮——[WheelToHorizontalScroll] 需要目标滚动区的
-    // ScrollController，而 TabBar 的内部 controller 取不到，接不上。
-    return HorizontalDragScrollable(child: _buildTabBar());
+    // 横向滚轮仍不接：[WheelToHorizontalScroll] 需要目标滚动区的 ScrollController，
+    // 而 TabBar 的内部 controller 取不到。两侧渐隐则不能省——即使 tabs 比旧等宽段窄，
+    // 窄窗、界面缩放与长译文仍会把尾部页签完整裁到视口外，用户实报看不出后面还有
+    // 内容（BUG-1971）。通过冒泡的 scroll metrics 动态显示渐隐，不需要拿 controller。
+    final Widget tabs = NotificationListener<ScrollMetricsNotification>(
+      onNotification: _handleScrollMetrics,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _handleScroll,
+        child: HorizontalDragScrollable(child: _buildTabBar()),
+      ),
+    );
+    return Stack(
+      clipBehavior: Clip.hardEdge,
+      children: <Widget>[
+        tabs,
+        if (_showLeadingOverflowCue)
+          const PositionedDirectional(
+            start: 0,
+            top: 0,
+            bottom: 0,
+            child: _SectionTabOverflowFade(
+              key: _kSectionTabLeadingOverflowCueKey,
+              leading: true,
+            ),
+          ),
+        if (_showTrailingOverflowCue)
+          const PositionedDirectional(
+            end: 0,
+            top: 0,
+            bottom: 0,
+            child: _SectionTabOverflowFade(
+              key: _kSectionTabTrailingOverflowCueKey,
+              leading: false,
+            ),
+          ),
+      ],
+    );
   }
 
   Widget _buildTabBar() {
@@ -297,6 +384,33 @@ class _FushiSectionTabBarState<T extends Object>
         for (final LibrarySectionTab<T> tab in widget.tabs)
           Tab(text: tab.label),
       ],
+    );
+  }
+}
+
+/// 不可交互的边缘渐隐：用当前 scaffold 背景盖住离屏方向的 tab 尾端，形成“内容仍在
+/// 延伸”的视觉线索。方向走 [PositionedDirectional]，RTL 下同样按逻辑首尾工作。
+class _SectionTabOverflowFade extends StatelessWidget {
+  const _SectionTabOverflowFade({required this.leading, super.key});
+
+  final bool leading;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color background = Theme.of(context).scaffoldBackgroundColor;
+    return IgnorePointer(
+      child: SizedBox(
+        width: _kSectionTabOverflowFadeWidth,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: leading ? Alignment.centerLeft : Alignment.centerRight,
+              end: leading ? Alignment.centerRight : Alignment.centerLeft,
+              colors: <Color>[background, background.withValues(alpha: 0)],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
