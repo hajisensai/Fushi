@@ -11,8 +11,9 @@ import 'package:fushi/src/lookup/overlay_window_channel.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 /// 第二实例的通道名（任意，只要与 global_lookup 不同）。
-const MethodChannel kSecondChannel =
-    MethodChannel('app.fushi.reader/test_second_overlay');
+const MethodChannel kSecondChannel = MethodChannel(
+  'app.fushi.reader/test_second_overlay',
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -36,9 +37,7 @@ void main() {
           return null;
         });
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(kSecondChannel, (
-          MethodCall call,
-        ) async {
+        .setMockMethodCallHandler(kSecondChannel, (MethodCall call) async {
           panelCalls.add(call.method);
           lastPanelCall = call;
           return null;
@@ -103,10 +102,32 @@ void main() {
     expect(args['top'], 6);
   });
 
+  test('capture suppression carries one exact generation and route', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(FushiChannels.globalLookup, (
+          MethodCall call,
+        ) async {
+          globalCalls.add(call.method);
+          lastGlobalCall = call;
+          return true;
+        });
+    final bool hidden = await GlobalLookupChannel.suspendForCapture(41);
+    expect(hidden, isTrue);
+    expect(lastGlobalCall?.method, 'suspendForCapture');
+    Map<Object?, Object?> args =
+        lastGlobalCall!.arguments as Map<Object?, Object?>;
+    expect(args['captureGeneration'], 41);
+    expect(args['source'], 'desktop');
+
+    final bool restored = await GlobalLookupChannel.restoreAfterCapture(41);
+    expect(restored, isTrue);
+    expect(lastGlobalCall?.method, 'restoreAfterCapture');
+    args = lastGlobalCall!.arguments as Map<Object?, Object?>;
+    expect(args['captureGeneration'], 41);
+  });
+
   test('第二实例走自己的 channel，与 global_lookup 互不串线', () async {
-    const OverlayWindowChannel panel = OverlayWindowChannel(
-      kSecondChannel,
-    );
+    const OverlayWindowChannel panel = OverlayWindowChannel(kSecondChannel);
     await panel.hide();
     await panel.setBlockCapture(true);
     expect(panelCalls, <String>['hide', 'setBlockCapture']);
@@ -114,9 +135,7 @@ void main() {
   });
 
   test('resolveBridge 保持双重 jsonEncode 契约（adapter JSON.parse(arg)）', () async {
-    const OverlayWindowChannel panel = OverlayWindowChannel(
-      kSecondChannel,
-    );
+    const OverlayWindowChannel panel = OverlayWindowChannel(kSecondChannel);
     await panel.resolveBridge(7, <String, Object?>{'ok': true});
     final Map<Object?, Object?> args =
         lastPanelCall!.arguments as Map<Object?, Object?>;
@@ -127,9 +146,7 @@ void main() {
 
   test('showAt 解析 native map 回复（work area + 窗口原点偏移）', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(kSecondChannel, (
-          MethodCall call,
-        ) async {
+        .setMockMethodCallHandler(kSecondChannel, (MethodCall call) async {
           return <String, Object?>{
             'ok': true,
             'workW': 2560,
@@ -141,9 +158,7 @@ void main() {
             'monitorDpr': 1.25,
           };
         });
-    const OverlayWindowChannel panel = OverlayWindowChannel(
-      kSecondChannel,
-    );
+    const OverlayWindowChannel panel = OverlayWindowChannel(kSecondChannel);
     final GlobalLookupShowResult r = await panel.showAt(
       x: 100,
       y: 60,
@@ -162,14 +177,10 @@ void main() {
     // BUG-859 — 旧 native / 查询失败：monitorDpr 缺省 0，controller 据此回退主窗口
     // dpr（行为与修复前逐字节一致，Never break userspace）。
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(kSecondChannel, (
-          MethodCall call,
-        ) async {
+        .setMockMethodCallHandler(kSecondChannel, (MethodCall call) async {
           return <String, Object?>{'ok': true, 'workW': 1920, 'workH': 1040};
         });
-    const OverlayWindowChannel panel = OverlayWindowChannel(
-      kSecondChannel,
-    );
+    const OverlayWindowChannel panel = OverlayWindowChannel(kSecondChannel);
     final GlobalLookupShowResult r = await panel.showAt(
       x: 0,
       y: 0,

@@ -32,6 +32,78 @@ ALLOWED_STATUSES = {
     "implemented_unverified",
     "unavailable",
 }
+LOOKUP_ACCEPTANCE_ENGINE_IDS = {
+    "kirikiri_z",
+    "renpy_ffmpeg",
+    "tyrano_nwjs",
+    "unity_il2cpp",
+    "elf_ai6",
+    "reallive",
+    "bgi_ethornell",
+    "catsystem2",
+    "malie_libp",
+    "qlie_filepack",
+    "artemis_pfs",
+    "siglus",
+    "leaf_aquaplus",
+    "hunex_gge",
+    "sgre",
+}
+LOOKUP_PROVIDERS = {
+    "runtime_layout",
+    "engine_exact_layout",
+    "positioned_text_api",
+    "attached_calibrated",
+    "pixel_template_experimental",
+    "typewriter_diff_experimental",
+}
+LOOKUP_EVIDENCE_AREAS = (
+    "geometry",
+    "verified_shield",
+    "risky_left_click",
+)
+LOOKUP_NATIVE_PROVIDER_KINDS = {
+    "runtime_layout",
+    "engine_exact_layout",
+    "positioned_text_api",
+}
+# The wire constants are append-only identities; this table is the explicit
+# bridge from an injected production publisher to its engine-level manifest
+# claim. A newly admitted provider must update both source and this mapping,
+# otherwise the generator fails instead of silently inventing support scope.
+LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS = {
+    (
+        "kLookupGeometryProviderRuntimeLayout",
+        "kLookupGeometryProviderIdKirikiri",
+    ): ("kirikiri_z", "runtime_layout"),
+    (
+        "kLookupGeometryProviderRuntimeLayout",
+        "kLookupGeometryProviderIdRenpy",
+    ): ("renpy_ffmpeg", "runtime_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdSiglus",
+    ): ("siglus", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdLeafAquaplus",
+    ): ("leaf_aquaplus", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdSgre",
+    ): ("sgre", "engine_exact_layout"),
+    # Reserved identity only. Its presence here lets the parity guard produce
+    # an engine-scoped failure if observation telemetry ever starts calling
+    # OfferReady/PublishHit before the manifest deliberately admits it.
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdHunexGge",
+    ): ("hunex_gge", "engine_exact_layout"),
+}
+LOOKUP_HUNEX_OBSERVATION_ONLY_PAIR = (
+    "kLookupGeometryProviderEngineExactLayout",
+    "kLookupGeometryProviderIdHunexGge",
+)
 SIGNATURE_FIELDS = (
     "executable_names",
     "pe_architectures",
@@ -233,6 +305,118 @@ def load_manifest(path: Path) -> dict[str, Any]:
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise ManifestError(message)
+
+
+_LOOKUP_OFFER_CALL = re.compile(
+    r"g_geometry_provider_registry\s*\.\s*OfferReady\s*\("
+)
+_LOOKUP_OFFER_PAIR = re.compile(
+    r"g_geometry_provider_registry\s*\.\s*OfferReady\s*\(\s*"
+    r"g_header\s*,\s*(?:fushi_voice_hook::)?"
+    r"(kLookupGeometryProvider[A-Za-z0-9_]+)\s*,\s*"
+    r"(?:fushi_voice_hook::)?"
+    r"(kLookupGeometryProviderId[A-Za-z0-9_]+)\s*\)",
+    re.DOTALL,
+)
+_LOOKUP_PUBLISH_CALL = re.compile(
+    r"g_geometry_provider_registry\s*\.\s*PublishHit\s*\("
+)
+_LOOKUP_PUBLICATION_PAIR = re.compile(
+    r"([A-Za-z_][A-Za-z0-9_]*)\.provider_kind\s*=\s*"
+    r"(?:fushi_voice_hook::)?"
+    r"(kLookupGeometryProvider[A-Za-z0-9_]+)\s*;\s*"
+    r"\1\.provider_id\s*=\s*(?:fushi_voice_hook::)?"
+    r"(kLookupGeometryProviderId[A-Za-z0-9_]+)\s*;",
+    re.DOTALL,
+)
+
+
+def discover_production_lookup_provider_pairs(
+    source_root: Path = ROOT,
+) -> set[tuple[str, str]]:
+    """Extract native providers that can both become ready and publish hits."""
+
+    adapter_root = source_root / "hook" / "adapters"
+    _require(adapter_root.is_dir(), f"missing lookup adapter root: {adapter_root}")
+    offered: set[tuple[str, str]] = set()
+    published: set[tuple[str, str]] = set()
+    for path in sorted(adapter_root.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in {
+            ".c",
+            ".cc",
+            ".cpp",
+            ".cxx",
+            ".h",
+            ".hpp",
+            ".inc",
+        }:
+            continue
+        source = path.read_text(encoding="utf-8")
+        offer_calls = list(_LOOKUP_OFFER_CALL.finditer(source))
+        offer_pairs = {
+            (match.group(1), match.group(2))
+            for match in _LOOKUP_OFFER_PAIR.finditer(source)
+        }
+        _require(
+            len(offer_calls) == len(list(_LOOKUP_OFFER_PAIR.finditer(source))),
+            f"{path.relative_to(source_root)} has a non-literal OfferReady provider pair",
+        )
+        offered.update(offer_pairs)
+
+        if _LOOKUP_PUBLISH_CALL.search(source) is None:
+            continue
+        publication_pairs = {
+            (match.group(2), match.group(3))
+            for match in _LOOKUP_PUBLICATION_PAIR.finditer(source)
+        }
+        _require(
+            len(publication_pairs) == 1,
+            f"{path.relative_to(source_root)} must bind PublishHit to one literal provider pair",
+        )
+        published.update(publication_pairs)
+
+    _require(bool(offered), "no production geometry provider OfferReady calls found")
+    _require(bool(published), "no production geometry provider PublishHit calls found")
+    _require(
+        offered == published,
+        "production geometry provider lifecycle drift: "
+        f"OfferReady-only={sorted(offered - published)}, "
+        f"PublishHit-only={sorted(published - offered)}",
+    )
+    return offered
+
+
+def _validate_lookup_provider_manifest_parity(
+    manifest: dict[str, Any], source_root: Path
+) -> None:
+    source_pairs = discover_production_lookup_provider_pairs(source_root)
+    _require(
+        LOOKUP_HUNEX_OBSERVATION_ONLY_PAIR not in source_pairs,
+        "HUNEX exact geometry is observation-only and must not OfferReady/PublishHit",
+    )
+
+    source_claims: dict[str, set[str]] = {}
+    for pair in source_pairs:
+        binding = LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS.get(pair)
+        _require(
+            binding is not None,
+            f"production geometry provider has no manifest binding: {pair}",
+        )
+        engine_id, provider = binding
+        source_claims.setdefault(engine_id, set()).add(provider)
+
+    manifest_claims: dict[str, set[str]] = {}
+    for record in manifest["lookup_support"]["engines"]:
+        providers = set(record["geometry"]["providers"]) & LOOKUP_NATIVE_PROVIDER_KINDS
+        if providers:
+            manifest_claims[record["engine_id"]] = providers
+
+    _require(
+        source_claims == manifest_claims,
+        "lookup provider manifest parity drift: "
+        f"source={dict(sorted(source_claims.items()))}, "
+        f"manifest={dict(sorted(manifest_claims.items()))}",
+    )
 
 
 def _sha256(path: Path) -> str:
@@ -780,6 +964,155 @@ def validate_manifest(
                 source_root,
             )
 
+    lookup = manifest.get("lookup_support")
+    _require(isinstance(lookup, dict), "lookup_support is required")
+    _require(
+        type(lookup.get("schema_version")) is int
+        and lookup["schema_version"] == 1,
+        "lookup_support.schema_version must be 1",
+    )
+    _require(
+        lookup.get("platforms") == ["windows_x86", "windows_x64"],
+        "lookup_support.platforms must be Windows x86/x64 only",
+    )
+    _require(
+        lookup.get("ocr_policy") == "forbidden",
+        "lookup_support.ocr_policy must remain forbidden",
+    )
+    _require(
+        lookup.get("experimental_providers_default_enabled") is False,
+        "experimental lookup providers must remain disabled by default",
+    )
+    lookup_engines = lookup.get("engines")
+    _require(
+        isinstance(lookup_engines, list),
+        "lookup_support.engines must be a list",
+    )
+    lookup_ids: set[str] = set()
+    for index, record in enumerate(lookup_engines):
+        prefix = f"lookup_support.engines[{index}]"
+        _require(isinstance(record, dict), f"{prefix} must be an object")
+        engine_id = record.get("engine_id")
+        _require(
+            isinstance(engine_id, str) and engine_id in seen_ids,
+            f"{prefix}.engine_id must reference an engine",
+        )
+        _require(
+            engine_id not in lookup_ids,
+            f"duplicate lookup engine id: {engine_id}",
+        )
+        lookup_ids.add(engine_id)
+        for area in LOOKUP_EVIDENCE_AREAS:
+            evidence = record.get(area)
+            _require(
+                isinstance(evidence, dict),
+                f"{prefix}.{area} must be an object",
+            )
+            status = evidence.get("status")
+            _require(
+                status in ALLOWED_STATUSES,
+                f"{prefix}.{area}.status is invalid",
+            )
+            _require(
+                isinstance(evidence.get("evidence"), str)
+                and bool(evidence["evidence"]),
+                f"{prefix}.{area}.evidence is required",
+            )
+            build_evidence = evidence.get("build_evidence", [])
+            _require(
+                isinstance(build_evidence, list),
+                f"{prefix}.{area}.build_evidence must be a list",
+            )
+            if status in {"partial", "verified"}:
+                scope = evidence.get("scope")
+                _require(
+                    scope in {"exact_build", "engine"},
+                    f"{prefix}.{area}.scope is required for promoted claims",
+                )
+                minimum_builds = 1 if scope == "exact_build" else 2
+                hashes = {
+                    item.get("exe_sha256")
+                    for item in build_evidence
+                    if isinstance(item, dict)
+                    and isinstance(item.get("exe_sha256"), str)
+                    and re.fullmatch(r"[0-9A-Fa-f]{64}", item["exe_sha256"])
+                }
+                _require(
+                    len(build_evidence) >= minimum_builds
+                    and len(hashes) >= minimum_builds,
+                    f"{prefix}.{area} needs {minimum_builds} independent real build(s)",
+                )
+                for build_index, item in enumerate(build_evidence):
+                    build_prefix = (
+                        f"{prefix}.{area}.build_evidence[{build_index}]"
+                    )
+                    _require(
+                        isinstance(item, dict)
+                        and type(item.get("negative_samples")) is int
+                        and item["negative_samples"] >= 100
+                        and type(item.get("same_session_card_e2e")) is int
+                        and item["same_session_card_e2e"] >= 3,
+                        f"{build_prefix} lacks negative or same-session E2E evidence",
+                    )
+                    if area == "geometry":
+                        _require(
+                            type(item.get("positive_probes")) is int
+                            and item["positive_probes"] >= 200
+                            and type(item.get("stale_generation_cases")) is int
+                            and item["stale_generation_cases"] >= 100
+                            and item.get("wrong_character_hits") == 0
+                            and item.get("negative_false_publish") == 0
+                            and item.get("stale_hits") == 0,
+                            f"{build_prefix} does not meet geometry acceptance gates",
+                        )
+                    elif area == "verified_shield":
+                        _require(
+                            type(item.get("shield_transactions")) is int
+                            and item["shield_transactions"] >= 1000
+                            and item.get("advance_leaks") == 0
+                            and item.get("outside_swallowed") == 0
+                            and item.get("stuck_buttons") == 0
+                            and item.get("focus_losses") == 0,
+                            f"{build_prefix} does not meet verified-shield gates",
+                        )
+                    else:
+                        leakage = item.get("advance_leak_rate")
+                        _require(
+                            type(leakage) in {int, float}
+                            and 0 <= leakage <= 1
+                            and item.get("crashes") == 0
+                            and item.get("stuck_buttons") == 0
+                            and item.get("non_left_corruption") == 0,
+                            f"{build_prefix} does not meet risky-click stability gates",
+                        )
+            if area == "geometry":
+                providers = evidence.get("providers")
+                _require(
+                    isinstance(providers, list)
+                    and bool(providers)
+                    and len(providers) == len(set(providers))
+                    and all(provider in LOOKUP_PROVIDERS for provider in providers),
+                    f"{prefix}.geometry.providers is invalid",
+                )
+                experimental = {
+                    "pixel_template_experimental",
+                    "typewriter_diff_experimental",
+                }.intersection(providers)
+                _require(
+                    not experimental or status == "implemented_unverified",
+                    f"{prefix}.geometry experimental providers are observation-only",
+                )
+    _require(
+        lookup_ids == LOOKUP_ACCEPTANCE_ENGINE_IDS,
+        "lookup_support must contain exactly the fixed 15-engine matrix; "
+        "xaudio2_directsound is an audio backend, not an engine",
+    )
+    # Temporary evidence-test roots contain only synthetic evidence ledgers.
+    # A real source checkout always has hook/adapters, where parity is a hard
+    # generator gate rather than a best-effort unit-test convention.
+    if (source_root / "hook" / "adapters").is_dir():
+        _validate_lookup_provider_manifest_parity(manifest, source_root)
+
 
 def _display_value(value: Any) -> str:
     if value is None:
@@ -836,6 +1169,43 @@ def render_manifest(manifest: dict[str, Any], source_root: Path = ROOT) -> str:
                 )
             )
             + " |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## 无 OCR 内嵌查词矩阵",
+            "",
+            "> 仅限 Windows x86/x64。OCR 被协议与范围守卫禁止；"
+            "`xaudio2_directsound` 是通用音频后端，不计作引擎。",
+            "",
+            "| 引擎 | 几何 provider | geometry | verified shield | risky left click |",
+            "|---|---|---|---|---|",
+        ]
+    )
+    for record in manifest["lookup_support"]["engines"]:
+        geometry = record["geometry"]
+        lines.append(
+            "| "
+            + " | ".join(
+                (
+                    f"`{_escape_table(record['engine_id'])}`",
+                    _escape_table(_join(geometry["providers"])),
+                    f"`{_escape_table(geometry['status'])}`",
+                    f"`{_escape_table(record['verified_shield']['status'])}`",
+                    f"`{_escape_table(record['risky_left_click']['status'])}`",
+                )
+            )
+            + " |"
+        )
+    lines.extend(["", "证据边界：", ""])
+    for record in manifest["lookup_support"]["engines"]:
+        lines.extend(
+            [
+                f"- `{record['engine_id']}` geometry：{record['geometry']['evidence']}",
+                f"  - verified shield：{record['verified_shield']['evidence']}",
+                f"  - risky left click：{record['risky_left_click']['evidence']}",
+            ]
         )
 
     lines.extend(["", "## 识别与能力明细", ""])

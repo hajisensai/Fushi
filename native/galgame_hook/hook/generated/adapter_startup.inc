@@ -4,3 +4,4 @@
     elf_ai6_.install();
     sgre_.install();
     leaf_aquaplus_.install();
+    hunex_gge_.install();

@@ -29,7 +29,11 @@ void main() {
         reason: '子页导航必须走库页共享的 LibrarySectionTabs；本页有 TabBarView，'
             '须用 controlled 形态与它共用同一个 TabController（镜像出第二份选中态会让'
             '横滑时指示器只能跳、不跟手）');
-    expect(code, isNot(contains('FushiSegmentedStrip<')),
+    final String header = methodBody(
+      f.readAsStringSync(),
+      'Widget _buildHeader(',
+    );
+    expect(header, isNot(contains('FushiSegmentedStrip<')),
         reason: 'MD3：分段按钮是 section 级单选控件，不得替代导航 tabs');
     expect(code, isNot(contains('appBar: AppBar(')),
         reason: '不得回退到独有的 AppBar 门头（与其它库页不一致）');

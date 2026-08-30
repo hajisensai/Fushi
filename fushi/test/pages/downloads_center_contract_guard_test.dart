@@ -88,22 +88,22 @@ void main() {
     expect(code, contains('Navigator.of(context).maybePop()'));
   });
 
-  test('BUG-1956：资源页用单个类型下拉框复用四个模块的发现页', () {
+  test('BUG-1956：资源页用单个内容域分段条复用四个模块的发现页', () {
     final String downloads = _read(_downloadsPath);
     final String code = maskCommentsAndScriptLines(downloads);
     final String downloadsStructural = maskCommentsAndStrings(downloads);
 
     expect(
       RegExp(
-        r'FushiDropdown\s*<\s*_DownloadsResourceDomain\s*>\s*\(',
+        r'FushiSegmentedStrip\s*<\s*_DownloadsResourceDomain\s*>\s*\(',
       ).allMatches(downloadsStructural),
       hasLength(1),
-      reason: '资源页只能有一个外层内容类型下拉框',
+      reason: '资源页只能有一个外层内容域分段条',
     );
     expect(
       code,
       contains("'downloads-resource-type-picker'"),
-      reason: '类型下拉框必须有稳定 key，便于焦点导航与行为验证',
+      reason: '内容域分段条必须有稳定 key，便于焦点导航与行为验证',
     );
     expect(
       code,
@@ -141,9 +141,11 @@ void main() {
     expect(code, contains('actions: widget.videoDiscoveryActions'));
 
     expect(
-      identifierCall('FushiSegmentedStrip').hasMatch(downloadsStructural),
+      RegExp(
+        r'FushiDropdown\s*<\s*_DownloadsResourceDomain\s*>\s*\(',
+      ).hasMatch(downloadsStructural),
       isFalse,
-      reason: '外层类型选择按用户裁定使用下拉框，不再铺成分段筛选条',
+      reason: '四个固定内容域应直接可见，不得退回无标签的表单型下拉框',
     );
     expect(code, contains('_visitedResourceDomains'));
     expect(identifierCall('Offstage').hasMatch(downloadsStructural), isTrue);

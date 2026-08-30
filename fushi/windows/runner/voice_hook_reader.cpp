@@ -28,6 +28,7 @@
 #include "../../../native/galgame_hook/include/voice_clip_energy.h"
 #include "../../../native/galgame_hook/include/voice_hook_ipc.h"
 #include "../../../native/galgame_hook/include/voice_hook_utterance_window.h"
+#include "lookup_hit_validation.h"
 
 // galgame 一键制卡 C 阶段 —— 引擎-hook 共享内存读侧实现。见 voice_hook_reader.h。
 // 纯 Win32 文件映射，无 COM、无异常（runner 以 _HAS_EXCEPTIONS=0 编译，全程句柄/契约校验）。
@@ -55,6 +56,9 @@ struct ReaderState {
   // 合一时收卡帧会复用刚 present 过的 seq，被注入侧的"这帧我处理过了"过滤当场丢掉，
   // 卡片永远挂在屏幕上。见 voice_hook_ipc.h 的 LookupFrame 注释。
   uint64_t lookup_publish_seq = 0;
+  // Validated outside WH_MOUSE_LL. The callback compares this exact handle and
+  // never calls IsWindow/GetWindowThreadProcessId while the system waits.
+  HWND lookup_shield_prevalidated_target = nullptr;
   // 用户的开关**意图**，与共享内存段的身份无关。
   //
   // 🔴 段会被换掉：退出一局再开一局 = 注入器建一段全新的共享内存，`lookup_enabled`
@@ -63,6 +67,9 @@ struct ReaderState {
   // 表面上开关还是开着的。段的身份只有这一层知道（Open 是唯一的映射点），所以重放
   // 的责任也只能在这里，不能指望上层记得。
   bool lookup_enabled_desired = false;
+  uint32_t lookup_geometry_admission_mode_desired =
+      fushi_voice_hook::kLookupGeometryAdmissionDisabled;
+  bool lookup_geometry_attached_ready_desired = false;
   // ── v19 查词准入游标（与上面同一把锁）───────────────────────────────────────
   // 上次向 Dart 报过的 lookup_admission_seq。[primed] 单独存在，是因为「新段刚开出来、
   // hook 还没上报」时共享 seq 就是 0，与游标 0 相等——只比 seq 会让新会话一条准入事件
@@ -84,6 +91,10 @@ bool ProtocolMatches(const SharedHeader* h) {
          h->luna_bridge_abi_version ==
              fushi_voice_hook::kLunaBridgeAbiVersion &&
          h->luna_vendored_version == fushi_voice_hook::kLunaVendoredVersion;
+}
+
+bool AttachedGeometryProviderOwns(const SharedHeader* h) {
+  return fushi_voice_hook::LookupGeometryAttachedProviderOwns(h);
 }
 
 // 无符号整数 → 十六进制字面（magic / vendored 版本按 hex 读才认得出来）。
@@ -205,6 +216,75 @@ VoiceHookLookupError LookupGateLocked(const SharedHeader* h,
   return VoiceHookLookupError::kNone;
 }
 
+// Callback-safe counterpart of PublishLookupShieldRequest. The regular helper
+// intentionally retries its writer claim for up to one second; WH_MOUSE_LL may
+// never do that because Windows synchronously stalls global input until the
+// callback returns. This path accepts one CAS attempt and otherwise fails open.
+uint32_t TryPublishLookupShieldRequestOnce(
+    SharedHeader* header, uint32_t owner_kind, uint64_t target_hwnd,
+    uint64_t transaction_id, uint32_t active_buttons, bool allow_risk) {
+  if (header == nullptr) return 0;
+  const uint32_t normalized_buttons =
+      active_buttons & fushi_voice_hook::kLookupShieldButtonMask;
+  const uint32_t normalized_risk = allow_risk ? 1u : 0u;
+  const fushi_voice_hook::LookupShieldRequestSnapshot stable =
+      fushi_voice_hook::ReadLookupShieldRequest(header);
+  if (stable.valid && stable.owner_kind == owner_kind &&
+      stable.target_hwnd == target_hwnd &&
+      stable.transaction_id == transaction_id &&
+      stable.active_buttons == normalized_buttons &&
+      stable.allow_risk == allow_risk) {
+    return stable.seq;
+  }
+
+  auto* seq = reinterpret_cast<volatile LONG*>(
+      &header->lookup_shield_request_seq);
+  const uint32_t current =
+      fushi_voice_hook::AtomicLoadShared32(&header->lookup_shield_request_seq);
+  if ((current & fushi_voice_hook::kLookupShieldRequestWriteInProgress) != 0) {
+    return 0;
+  }
+  const uint32_t token =
+      current | fushi_voice_hook::kLookupShieldRequestWriteInProgress;
+  const LONG observed = InterlockedCompareExchange(
+      seq, static_cast<LONG>(token), static_cast<LONG>(current));
+  if (static_cast<uint32_t>(observed) != current) return 0;
+
+  // The optimistic check in TryPublishLookupShieldTransaction avoids taking
+  // the writer token for a stale surface in the common case, but it cannot be
+  // the authority: the registry may complete an attached -> native switch
+  // between that check and this CAS.  Re-check only after owning the shared
+  // fence.  If native won first, restore the exact stable sequence and fail
+  // open; if this down won first, the registry cannot switch until its release
+  // tail is applied.  This is bounded atomic work and keeps WH_MOUSE_LL free of
+  // waits, mutex acquisition, and window calls.
+  if (owner_kind == fushi_voice_hook::kLookupShieldOwnerAttachedGlyph &&
+      (normalized_buttons & fushi_voice_hook::kLookupShieldButtonLeft) != 0 &&
+      !AttachedGeometryProviderOwns(header)) {
+    fushi_voice_hook::AtomicStoreShared32(
+        &header->lookup_shield_request_seq, current);
+    return 0;
+  }
+
+  fushi_voice_hook::AtomicStoreShared32(&header->lookup_shield_owner_kind,
+                                        owner_kind);
+  fushi_voice_hook::AtomicStorePreview64(&header->lookup_shield_target_hwnd,
+                                         target_hwnd);
+  fushi_voice_hook::AtomicStorePreview64(&header->lookup_shield_transaction_id,
+                                         transaction_id);
+  fushi_voice_hook::AtomicStoreShared32(&header->lookup_shield_active_buttons,
+                                        normalized_buttons);
+  fushi_voice_hook::AtomicStoreShared32(&header->lookup_shield_allow_risk,
+                                        normalized_risk);
+  uint32_t published =
+      (current & fushi_voice_hook::kLookupShieldRequestSequenceMask) + 1u;
+  published &= fushi_voice_hook::kLookupShieldRequestSequenceMask;
+  if (published == 0) published = 1;
+  fushi_voice_hook::AtomicStoreShared32(&header->lookup_shield_request_seq,
+                                        published);
+  return published;
+}
+
 // 把三个游标对齐到当前计数（"从现在开始"）。调用方持锁。
 void ResetLookupCursorsLocked(ReaderState& st, const SharedHeader* h) {
   st.lookup_hit_count = 0;
@@ -253,6 +333,7 @@ void CloseLocked(ReaderState& st) {
   st.lookup_hit_count = 0;
   st.lookup_hit_seq = 0;
   st.lookup_input_seq = 0;
+  st.lookup_shield_prevalidated_target = nullptr;
   st.lookup_admission_seq = 0;
   st.lookup_admission_primed = false;
 }
@@ -551,6 +632,9 @@ struct LookupPumpState {
   VoiceHookReader::LookupDirectPresenter direct_presenter;
   VoiceHookReader::LookupCaptureRequest capture;
   VoiceHookReader::LookupInputSink input_sink;
+  VoiceHookReader::LookupGeometryStatusSink geometry_status_sink;
+  VoiceHookLookupGeometryStatus last_geometry_status;
+  bool has_last_geometry_status = false;
   // CapturePreview completes asynchronously.  A dismiss or a newer present
   // must invalidate the older callback before it can publish another bitmap;
   // otherwise a card can reappear after the user closed it.  Platform-thread
@@ -628,10 +712,24 @@ flutter::EncodableValue LookupHitMap(const VoiceHookLookupHit& hit) {
       {flutter::EncodableValue("seq"),
        flutter::EncodableValue(static_cast<int64_t>(hit.seq))},
       {flutter::EncodableValue("line"), flutter::EncodableValue(hit.line_utf8)},
+      {flutter::EncodableValue("providerKind"),
+       flutter::EncodableValue(static_cast<int64_t>(hit.provider_kind))},
+      {flutter::EncodableValue("providerId"),
+       flutter::EncodableValue(static_cast<int64_t>(hit.provider_id))},
       {flutter::EncodableValue("charIndex"),
        flutter::EncodableValue(static_cast<int64_t>(hit.char_index))},
+      {flutter::EncodableValue("sourceLength"),
+       flutter::EncodableValue(static_cast<int64_t>(hit.source_length))},
       {flutter::EncodableValue("charCount"),
        flutter::EncodableValue(static_cast<int64_t>(hit.char_count))},
+      {flutter::EncodableValue("textGeneration"),
+       flutter::EncodableValue(static_cast<int64_t>(hit.text_generation))},
+      {flutter::EncodableValue("geometryGeneration"),
+       flutter::EncodableValue(static_cast<int64_t>(hit.geometry_generation))},
+      {flutter::EncodableValue("coordinateSpace"),
+       flutter::EncodableValue(static_cast<int64_t>(hit.coordinate_space))},
+      {flutter::EncodableValue("writingMode"),
+       flutter::EncodableValue(static_cast<int64_t>(hit.writing_mode))},
       {flutter::EncodableValue("glyphX"), flutter::EncodableValue(hit.glyph_x)},
       {flutter::EncodableValue("glyphY"), flutter::EncodableValue(hit.glyph_y)},
       {flutter::EncodableValue("glyphW"), flutter::EncodableValue(hit.glyph_w)},
@@ -689,6 +787,22 @@ void PumpLookupOnce() {
   if (!reader.HasSession()) {
     StopLookupPump();
     return;
+  }
+  const VoiceHookLookupGeometryStatus geometry = reader.LookupGeometryStatus();
+  const bool geometry_changed =
+      !pump.has_last_geometry_status ||
+      geometry.error != pump.last_geometry_status.error ||
+      geometry.provider_kind != pump.last_geometry_status.provider_kind ||
+      geometry.provider_id != pump.last_geometry_status.provider_id ||
+      geometry.provider_status != pump.last_geometry_status.provider_status ||
+      geometry.lookup_diag != pump.last_geometry_status.lookup_diag ||
+      geometry.generation != pump.last_geometry_status.generation ||
+      geometry.text_generation != pump.last_geometry_status.text_generation;
+  if (geometry_changed) {
+    pump.last_geometry_status = geometry;
+    pump.has_last_geometry_status = true;
+    if (pump.geometry_status_sink != nullptr)
+      pump.geometry_status_sink(geometry);
   }
   // v19 准入：与 lookup_enabled 正交，会话在就报。放在下面那道闸**之前**，因为
   // 「本引擎不支持」恰恰是查词开不起来时才需要说出口的话。
@@ -994,6 +1108,27 @@ bool HandleLookupCall(const flutter::MethodCall<flutter::EncodableValue>& call,
         {flutter::EncodableValue("ok"), flutter::EncodableValue(true)}}));
     return true;
   }
+  if (method == "galLookupSetGeometryAdmission") {
+    const uint32_t mode =
+        static_cast<uint32_t>(ReadLookupInt(call, "mode"));
+    const bool attached_ready = ReadLookupBool(call, "attachedReady");
+    uint32_t request_seq = 0;
+    uint32_t applied_seq = 0;
+    const VoiceHookLookupError error = reader.SetLookupGeometryAdmission(
+        mode, attached_ready, &request_seq, &applied_seq);
+    if (error != VoiceHookLookupError::kNone) {
+      result->Success(LookupErrorMap(error));
+      return true;
+    }
+    result->Success(flutter::EncodableValue(flutter::EncodableMap{
+        {flutter::EncodableValue("ok"), flutter::EncodableValue(true)},
+        {flutter::EncodableValue("requestSeq"),
+         flutter::EncodableValue(static_cast<int64_t>(request_seq))},
+        {flutter::EncodableValue("appliedSeq"),
+         flutter::EncodableValue(static_cast<int64_t>(applied_seq))},
+    }));
+    return true;
+  }
   if (method == "galLookupSuspendForCapture") {
     if (pump.capture_suppress_reply != nullptr) {
       result->Success(
@@ -1176,12 +1311,17 @@ VoiceHookOpenResult VoiceHookReader::Open(uint32_t pid) {
   // v14：查词游标对齐到「现在」。不这么做，会话重开时注入侧遗留的旧 hit 会被当成
   // 新命中重放，用户会看到一张莫名其妙的卡片弹出来。
   ResetLookupCursorsLocked(st, header);
-  // 段换了就把开关意图重放进新段（见 ReaderState::lookup_enabled_desired）。
-  // 走与 SetLookupEnabled 同一道闸：新段没有查词区时什么都不做，绝不盲写。
-  if (st.lookup_enabled_desired &&
-      LookupGateLocked(header, false) == VoiceHookLookupError::kNone) {
-    InterlockedExchange(
-        reinterpret_cast<volatile LONG*>(&header->lookup_enabled), 1);
+  // 段换了就先重放 geometry admission，再重放 lookup runtime。attachedOnly
+  // 仍会把 runtime 打开以保留 injected generic shield；两份意图都属于 reader，
+  // 不能依赖 Dart 猜 mapping 何时换代。
+  if (LookupGateLocked(header, false) == VoiceHookLookupError::kNone) {
+    (void)fushi_voice_hook::PublishLookupGeometryAdmission(
+        header, st.lookup_geometry_admission_mode_desired,
+        st.lookup_geometry_attached_ready_desired);
+    if (st.lookup_enabled_desired) {
+      InterlockedExchange(
+          reinterpret_cast<volatile LONG*>(&header->lookup_enabled), 1);
+    }
   }
   out.status = StatusFromHeaderLocked(header);
   }
@@ -1795,6 +1935,8 @@ const char* VoiceHookLookupErrorToken(VoiceHookLookupError error) {
       return "capture_suppress_timeout";
     case VoiceHookLookupError::kFrameRejected:
       return "frame_rejected";
+    case VoiceHookLookupError::kControlRejected:
+      return "control_rejected";
   }
   return "unknown";
 }
@@ -1848,6 +1990,13 @@ void VoiceHookReader::SetLookupCaptureRequest(LookupCaptureRequest request) {
 
 void VoiceHookReader::SetLookupInputSink(LookupInputSink sink) {
   Pump().input_sink = std::move(sink);
+}
+
+void VoiceHookReader::SetLookupGeometryStatusSink(
+    LookupGeometryStatusSink sink) {
+  LookupPumpState& pump = Pump();
+  pump.geometry_status_sink = std::move(sink);
+  pump.has_last_geometry_status = false;
 }
 
 bool VoiceHookReader::HasLookupChannel() {
@@ -1930,6 +2079,238 @@ VoiceHookLookupError VoiceHookReader::SetLookupEnabled(bool enabled) {
   return VoiceHookLookupError::kNone;
 }
 
+VoiceHookLookupError VoiceHookReader::SetLookupGeometryAdmission(
+    uint32_t mode, bool attached_ready, uint32_t* request_seq,
+    uint32_t* applied_seq) {
+  if (request_seq != nullptr) *request_seq = 0;
+  if (applied_seq != nullptr) *applied_seq = 0;
+  if (!fushi_voice_hook::IsLookupGeometryAdmissionMode(mode)) {
+    return VoiceHookLookupError::kControlRejected;
+  }
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  // Persist before the mapping gate for the same reason as lookup_enabled:
+  // Open() is the only layer that can replay intent into a replacement map.
+  st.lookup_geometry_admission_mode_desired = mode;
+  st.lookup_geometry_attached_ready_desired = attached_ready;
+  SharedHeader* h = st.header;
+  const VoiceHookLookupError gate = LookupGateLocked(h, false);
+  if (gate != VoiceHookLookupError::kNone) return gate;
+  const uint32_t published =
+      fushi_voice_hook::PublishLookupGeometryAdmission(
+          h, mode, attached_ready);
+  if (published == 0) return VoiceHookLookupError::kControlRejected;
+  if (request_seq != nullptr) *request_seq = published;
+  if (applied_seq != nullptr) {
+    *applied_seq = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_geometry_admission_applied_seq);
+  }
+  return VoiceHookLookupError::kNone;
+}
+
+bool VoiceHookReader::PrepareLookupShieldTarget(HWND target) {
+  if (target == nullptr || !IsWindow(target)) return false;
+  DWORD target_pid = 0;
+  if (GetWindowThreadProcessId(target, &target_pid) == 0 || target_pid == 0) {
+    return false;
+  }
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  if (LookupGateLocked(st.header, false) != VoiceHookLookupError::kNone ||
+      target_pid != st.pid) {
+    if (st.lookup_shield_prevalidated_target == target) {
+      st.lookup_shield_prevalidated_target = nullptr;
+    }
+    return false;
+  }
+  st.lookup_shield_prevalidated_target = target;
+  return true;
+}
+
+uint32_t VoiceHookReader::TryPublishLookupShieldTransaction(
+    uint32_t owner_kind, HWND target, uint64_t transaction_id,
+    uint32_t active_buttons, bool allow_risk) {
+  if (target == nullptr || transaction_id == 0 ||
+      owner_kind != fushi_voice_hook::kLookupShieldOwnerAttachedGlyph ||
+      (active_buttons & ~fushi_voice_hook::kLookupShieldButtonLeft) != 0) {
+    return 0;
+  }
+  ReaderState& st = State();
+  std::unique_lock<std::mutex> lock(st.mutex, std::try_to_lock);
+  if (!lock.owns_lock() || st.lookup_shield_prevalidated_target != target ||
+      LookupGateLocked(st.header, false) != VoiceHookLookupError::kNone ||
+      !AttachedGeometryProviderOwns(st.header)) {
+    return 0;
+  }
+  // GeometryProviderRegistry uses the same request writer bit as its switch
+  // fence. If ownership changes after the check above, exactly one side wins
+  // the CAS below: either this down becomes visible first and pins attached
+  // through its tail, or the callback fails open after the registry switches.
+  return TryPublishLookupShieldRequestOnce(
+      st.header, owner_kind,
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(target)),
+      transaction_id, active_buttons, allow_risk);
+}
+
+uint32_t VoiceHookReader::PublishLookupShieldTransaction(
+    uint32_t owner_kind, HWND target, uint64_t transaction_id,
+    uint32_t active_buttons, bool allow_risk) {
+  if (target == nullptr || transaction_id == 0) return 0;
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  SharedHeader* h = st.header;
+  if (LookupGateLocked(h, false) != VoiceHookLookupError::kNone) return 0;
+  DWORD target_pid = 0;
+  const bool live_target =
+      IsWindow(target) &&
+      GetWindowThreadProcessId(target, &target_pid) != 0 &&
+      target_pid != 0 && target_pid == st.pid;
+  if (!live_target) {
+    // A destroyed target must not prevent the owner from publishing the
+    // matching release.  Accept only the exact in-flight transaction; a new
+    // down against a dead/foreign HWND still fails closed.
+    const fushi_voice_hook::LookupShieldRequestSnapshot current =
+        fushi_voice_hook::ReadLookupShieldRequest(h);
+    const uint64_t raw_target =
+        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(target));
+    if (active_buttons != 0 || !current.valid ||
+        current.owner_kind != owner_kind ||
+        current.target_hwnd != raw_target ||
+        current.transaction_id != transaction_id) {
+      return 0;
+    }
+  }
+  switch (owner_kind) {
+    case fushi_voice_hook::kLookupShieldOwnerNativeGlyph:
+    case fushi_voice_hook::kLookupShieldOwnerAttachedGlyph:
+    case fushi_voice_hook::kLookupShieldOwnerPopup:
+    case fushi_voice_hook::kLookupShieldOwnerDismiss:
+      break;
+    default:
+      return 0;
+  }
+  // 首期只拥有裸左击。拒绝（而不是掩掉）其它位，避免调用方误以为右键/滚轮也受保护。
+  if ((active_buttons & ~fushi_voice_hook::kLookupShieldButtonLeft) != 0) {
+    return 0;
+  }
+  return fushi_voice_hook::PublishLookupShieldRequest(
+      h, owner_kind, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(target)),
+      transaction_id, active_buttons, allow_risk);
+}
+
+VoiceHookLookupShieldStatus VoiceHookReader::LookupShieldStatus() {
+  VoiceHookLookupShieldStatus out;
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  const SharedHeader* h = st.header;
+  out.error = LookupGateLocked(h, false);
+  if (out.error != VoiceHookLookupError::kNone) return out;
+  const fushi_voice_hook::LookupShieldRequestSnapshot request =
+      fushi_voice_hook::ReadLookupShieldRequest(h);
+  if (!request.valid) {
+    // v19 mapping is valid but no transaction has ever been published.  This
+    // is the defined unknown/idle state, not a channel failure.
+    return out;
+  }
+  out.request_seq = request.seq;
+  out.owner_kind = request.owner_kind;
+  out.target_hwnd = request.target_hwnd;
+  out.transaction_id = request.transaction_id;
+  out.active_buttons = request.active_buttons;
+  out.allow_risk = request.allow_risk;
+  // Status publication writes payload first and applied_seq last.  Read the
+  // sequence on both sides so a racing hook update cannot splice masks from a
+  // different request into this snapshot.
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    const uint32_t before = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_shield_applied_seq);
+    const uint32_t required = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_shield_required_mask);
+    const uint32_t ready = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_shield_ready_mask);
+    const uint32_t observed = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_shield_observed_mask);
+    const uint32_t fault = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_shield_fault_mask);
+    const uint32_t flags = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_shield_status_flags);
+    MemoryBarrier();
+    const uint32_t after = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_shield_applied_seq);
+    if (before != after) continue;
+    out.applied_seq = after;
+    out.required_mask = required;
+    out.ready_mask = ready;
+    out.observed_mask = observed;
+    out.fault_mask = fault;
+    out.status_flags = flags;
+    break;
+  }
+  return out;
+}
+
+VoiceHookLookupGeometryStatus VoiceHookReader::LookupGeometryStatus() {
+  VoiceHookLookupGeometryStatus out;
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  const SharedHeader* h = st.header;
+  out.error = LookupGateLocked(h, false);
+  if (out.error != VoiceHookLookupError::kNone) return out;
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    const uint64_t generation_before =
+        fushi_voice_hook::AtomicLoadPreview64(
+            &h->lookup_geometry_generation);
+    const uint32_t provider_kind = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_geometry_active_kind);
+    const uint32_t provider_id = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_geometry_active_id);
+    const uint32_t provider_status = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_geometry_status);
+    const uint64_t text_generation =
+        fushi_voice_hook::AtomicLoadPreview64(
+            &h->lookup_geometry_text_generation);
+    const uint32_t lookup_diag =
+        fushi_voice_hook::AtomicLoadShared32(&h->lookup_diag);
+    MemoryBarrier();
+    const uint64_t generation_after =
+        fushi_voice_hook::AtomicLoadPreview64(
+            &h->lookup_geometry_generation);
+    // Ready is intentionally published before the first geometry and keeps
+    // generation at zero.  Generation alone therefore cannot fence that
+    // provider-state publication.  Re-read the complete identity/lifecycle
+    // tuple as well, so the host never promotes a kind/id/status combination
+    // assembled across OfferReady/Retire stores.
+    const uint32_t provider_kind_after =
+        fushi_voice_hook::AtomicLoadShared32(
+            &h->lookup_geometry_active_kind);
+    const uint32_t provider_id_after =
+        fushi_voice_hook::AtomicLoadShared32(&h->lookup_geometry_active_id);
+    const uint32_t provider_status_after =
+        fushi_voice_hook::AtomicLoadShared32(&h->lookup_geometry_status);
+    const uint64_t text_generation_after =
+        fushi_voice_hook::AtomicLoadPreview64(
+            &h->lookup_geometry_text_generation);
+    const uint32_t lookup_diag_after =
+        fushi_voice_hook::AtomicLoadShared32(&h->lookup_diag);
+    if (generation_before != generation_after ||
+        provider_kind != provider_kind_after ||
+        provider_id != provider_id_after ||
+        provider_status != provider_status_after ||
+        text_generation != text_generation_after ||
+        lookup_diag != lookup_diag_after) {
+      continue;
+    }
+    out.provider_kind = provider_kind;
+    out.provider_id = provider_id;
+    out.provider_status = provider_status;
+    out.lookup_diag = lookup_diag;
+    out.generation = generation_after;
+    out.text_generation = text_generation;
+    return out;
+  }
+  return out;
+}
+
 bool VoiceHookReader::PollLookupHit(VoiceHookLookupHit* out) {
   if (out == nullptr) {
     return false;
@@ -1957,6 +2338,9 @@ bool VoiceHookReader::PollLookupHit(VoiceHookLookupHit* out) {
   // 变了就整条重读——手上那份可能是两次命中的拼接（前半行 A、后半行 B），拿去查词
   // 会得到一个谁都没说过的句子。四次仍不稳定就放弃，下一拍再来（16ms 后）。
   for (int attempt = 0; attempt < 4; attempt++) {
+    const uint64_t active_geometry_before =
+        fushi_voice_hook::AtomicLoadPreview64(
+            &h->lookup_geometry_generation);
     const uint64_t seq = fushi_voice_hook::AtomicLoadPreview64(&slot->seq);
     if (seq == 0 || seq <= st.lookup_hit_seq) {
       // 计数动了但 seq 没前进：注入侧的重复发布，不是新命中。这条路径上推进计数
@@ -1966,8 +2350,15 @@ bool VoiceHookReader::PollLookupHit(VoiceHookLookupHit* out) {
     }
     VoiceHookLookupHit hit;
     hit.seq = seq;
+    hit.provider_kind = slot->provider_kind;
+    hit.provider_id = slot->provider_id;
     hit.char_index = slot->char_index;
+    hit.source_length = slot->source_length;
     hit.char_count = slot->char_count;
+    hit.text_generation = slot->text_generation;
+    hit.geometry_generation = slot->geometry_generation;
+    hit.coordinate_space = slot->coordinate_space;
+    hit.writing_mode = slot->writing_mode;
     hit.glyph_x = slot->glyph_x;
     hit.glyph_y = slot->glyph_y;
     hit.glyph_w = slot->glyph_w;
@@ -1975,13 +2366,42 @@ bool VoiceHookReader::PollLookupHit(VoiceHookLookupHit* out) {
     hit.view_w = slot->view_w;
     hit.view_h = slot->view_h;
     hit.submit = (slot->flags & fushi_voice_hook::kLookupHitFlagSubmit) != 0;
-    uint32_t line_bytes = slot->line_bytes;
-    if (line_bytes > fushi_voice_hook::kLookupLineBytes) {
-      line_bytes = fushi_voice_hook::kLookupLineBytes;
+    const uint32_t line_bytes = slot->line_bytes;
+    if (line_bytes == 0 || line_bytes > fushi_voice_hook::kLookupLineBytes) {
+      continue;
     }
     hit.line_utf8.assign(reinterpret_cast<const char*>(slot->line_utf8),
                          line_bytes);
-    if (fushi_voice_hook::AtomicLoadPreview64(&slot->seq) != seq) {
+    const bool source_span_valid =
+        lookup_hit_validation::ValidateUtf8SourceSpan(
+            slot->line_utf8, line_bytes, hit.char_count, hit.char_index,
+            hit.source_length);
+    const bool provider_pair_valid =
+        lookup_hit_validation::IsProductionProviderPair(hit.provider_kind,
+                                                        hit.provider_id);
+    const bool geometry_valid = lookup_hit_validation::IsGeometryRectSane(
+        hit.glyph_x, hit.glyph_y, hit.glyph_w, hit.glyph_h, hit.view_w,
+        hit.view_h);
+    const uint64_t active_geometry_after =
+        fushi_voice_hook::AtomicLoadPreview64(
+            &h->lookup_geometry_generation);
+    if (fushi_voice_hook::AtomicLoadPreview64(&slot->seq) != seq ||
+        active_geometry_before == 0 ||
+        active_geometry_before != active_geometry_after ||
+        hit.geometry_generation != active_geometry_after ||
+        hit.text_generation != fushi_voice_hook::AtomicLoadPreview64(
+                                   &h->lookup_geometry_text_generation) ||
+        hit.provider_kind != fushi_voice_hook::AtomicLoadShared32(
+                                 &h->lookup_geometry_active_kind) ||
+        hit.provider_id != fushi_voice_hook::AtomicLoadShared32(
+                               &h->lookup_geometry_active_id) ||
+        fushi_voice_hook::AtomicLoadShared32(&h->lookup_geometry_status) !=
+            fushi_voice_hook::kLookupGeometryStatusActive ||
+        !provider_pair_valid || !source_span_valid || !geometry_valid ||
+        !fushi_voice_hook::IsLookupCardCoordinateSpaceResolved(
+            hit.coordinate_space) ||
+        hit.writing_mode != fushi_voice_hook::kLookupWritingModeHorizontal ||
+        hit.text_generation == 0 || hit.geometry_generation == 0) {
       continue;
     }
     st.lookup_hit_count = count;

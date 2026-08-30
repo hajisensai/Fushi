@@ -89,10 +89,17 @@ void main() {
     // `LibrarySectionTab(value: 0, label: …)`。本条守的**行为**三次都没变：第一段
     // 必须是「资源」，不是第二个 discovery 页。
     expect(source, contains('value: 0, label: t.download_resources_tab'));
+    // 承载形态第四次变化：下拉框 → 与库页同构的 FushiSegmentedStrip（#1097）。
+    // 判据按**泛型参数**认，与控件形态无关；再显式钉住「只有一个」——reason 里
+    // 「唯一」二字原来其实没被测到，contains 有一个就过。
+    final Iterable<RegExpMatch> domainSelectors = RegExp(
+      r'Fushi\w+<_DownloadsResourceDomain>\(',
+    ).allMatches(source);
     expect(
-      source,
-      contains('FushiDropdown<_DownloadsResourceDomain>('),
-      reason: '资源首页必须先用唯一类型下拉框选择内容域',
+      domainSelectors.length,
+      1,
+      reason: '资源首页必须先用**唯一**一个类型选择器选择内容域'
+          '（形态可换，个数不能变）',
     );
     expect(source, contains('MediaDiscoveryPage('));
     expect(source, contains('MangaDiscoveryPage('));

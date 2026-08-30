@@ -87,13 +87,28 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     这种**同布局、异语义**的变更同样要升版本：跨进程契约的版本号锁的是解释方式，
 //     不只是偏移。升到 18 之后旧 helper 建的映射会在三处既有门被拒（host 的
 //     ProtocolMatches、DLL 的 header 校验、injector 的驻留映射复用判据）。
-//  19: 尾部追加查词准入区（lookup_admission / lookup_admission_seq /
-//     lookup_executable_sha256）。纯追加，既有偏移一个都不动，但仍必须升版本——
-//     host 拿 admission 决定「开关要不要置灰、给用户看什么原因」，旧 helper 建的段
-//     那三个字节区是**未初始化内存**而不是 kLookupAdmissionUnknown，读它等于拿垃圾
-//     值去误导用户。版本门（host ProtocolMatches / DLL header 校验 / injector 驻留
-//     复用判据）在三处一起把旧段拒掉，比在读侧到处补"这字段可能是脏的"分支干净。
-constexpr uint32_t kSharedVersion = 19;
+// v20：本版把两条并行开发的 v19 合成一版。它们各自都叫 v19，但布局不兼容——
+//     一条是尾部纯追加（偏移不动），另一条改了 LookupHitSlot 步长与 SharedHeader
+//     长度。停在 19 就意味着任一边的旧 helper 建的映射会被三处版本门判成「对得上」，
+//     然后按错误偏移读；读到的不是空值而是垃圾。所以合并即升版本，两边内容都在：
+//
+//     (a) 查词命中槽增加几何 provider、UTF-16 source span、文本/几何代际、坐标域与
+//     书写方向；SharedHeader 尾部追加单一几何 provider 状态和统一输入盾 request/status
+//     控制块。命中仍是单槽 latest-wins，但只能经 GeometryProviderRegistry 发布：payload
+//     先写，seq 最后写，禁止不同 provider 的文本和几何拼接。输入盾 request_seq 同 v16
+//     loopback 使用最高位写令牌；状态先发布 required/ready/observed/fault/status，
+//     applied_seq 最后确认。
+//
+//     (b) 尾部追加查词准入区（lookup_admission / lookup_admission_seq /
+//     lookup_executable_sha256）。host 拿 admission 决定「开关要不要置灰、给用户看
+//     什么原因」，旧 helper 建的段那三个字节区是**未初始化内存**而不是
+//     kLookupAdmissionUnknown，读它等于拿垃圾值去误导用户。
+//
+//     (c) 新增 xaudio_diagnostics2：原 xaudio_diagnostics 的 32 位在本次合并中被
+//     两边的新引擎位同时要走（HUNEX HFA 5 位 + SGRE 家族/锚点 3 位，而低 27 位早已
+//     占满）。按本结构体既有先例（reserved_luna 满了之后另立 reserved_hook_diagnostics）
+//     另立一个字，而不是拓宽——拓宽要改 InterlockedOr 的原子写路径与每个读侧。
+constexpr uint32_t kSharedVersion = 20;
 constexpr uint32_t kStableIpcVersion = 1;
 
 // BUG-1882 — SGRE 的鼠标输入走 DirectInput immediate state，不经过普通
@@ -223,6 +238,11 @@ constexpr uint32_t kTextSourceUnityTmp = 3;
 constexpr uint32_t kTextSourceSiglus = 4;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
+// Some Luna engine hooks expose scenario text and system controls from the
+// same hook face but keep them separated by ThreadParam.ctx. Consumers must
+// not apply the usual same-face fallback to lines carrying this flag. Bit 0 is
+// already used by thread-discovery events for Luna's embedable attribute.
+constexpr uint32_t kTextEventFlagExactThreadContext = 0x00000002u;
 
 // 语音 clip 索引：最近 kClipCount 条语音片段的位置记录（按 source voice / DirectSound buffer
 // 的一次提交切一条；galgame 一句台词≈一条语音）。指向音频环形里的 [ring_offset, byte_len)。
@@ -352,14 +372,27 @@ constexpr uint32_t kXAudioDiagLeafLacReadObserved = 0x00800000u;
 constexpr uint32_t kXAudioDiagLeafLacVoiceQueued = 0x01000000u;
 constexpr uint32_t kXAudioDiagLeafLacTaskRejected = 0x02000000u;
 constexpr uint32_t kXAudioDiagLeafLacVoicePublished = 0x04000000u;
+// HUNEX GGE 的 HFA/HW 源资源链只复用共享 KernelBase 文件 broker。前四位
+// 分别证明档案索引、实际句柄、播放期读取和有界任务队列；最后一位保留拒绝原因。
+// HooksReady 不能单独算 resource-audio ready：只有 worker 成功发布逐字节取自
+// HW wrapper 后 Ogg payload 的文件时，才另外置 kXAudioDiagGameResourcePublished。
+constexpr uint32_t kXAudioDiagHunexHfaHooksReady = 0x08000000u;
+constexpr uint32_t kXAudioDiagHunexHfaHandleTracked = 0x10000000u;
+constexpr uint32_t kXAudioDiagHunexHfaReadObserved = 0x20000000u;
+constexpr uint32_t kXAudioDiagHunexHfaVoiceQueued = 0x40000000u;
+constexpr uint32_t kXAudioDiagHunexHfaTaskRejected = 0x80000000u;
 // SGRE (M2 wind3d11) identity is two layers: the family (voice_body.bin next
 // to the executable) and the build-specific anchors (measured hash row or
 // unique signature hit). These three bits report where anchor resolution
 // ended so an unmeasured build reads as "engine recognised, anchors missing"
 // instead of silently doing nothing.
-constexpr uint32_t kXAudioDiagSgreFamilyMatched = 0x08000000u;
-constexpr uint32_t kXAudioDiagSgreAnchorsResolved = 0x10000000u;   // all three
-constexpr uint32_t kXAudioDiagSgreAnchorsUnresolved = 0x20000000u; // any missing
+// 注意这三位落在 **xaudio_diagnostics2**（第二个诊断字），不是 xaudio_diagnostics：
+// 后者的 32 位在 v20 合并时已被占满（低 27 位既有 + HUNEX HFA 的高 5 位）。设置侧用
+// SetXAudioDiagnostic2，别误用 SetXAudioDiagnostic —— 那会把位或进错误的字，
+// 表现为「诊断一直是 0」而不是编译错误。
+constexpr uint32_t kXAudioDiag2SgreFamilyMatched = 0x00000001u;
+constexpr uint32_t kXAudioDiag2SgreAnchorsResolved = 0x00000002u;   // all three
+constexpr uint32_t kXAudioDiag2SgreAnchorsUnresolved = 0x00000004u; // any missing
 
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM
@@ -425,7 +458,7 @@ struct TextSlot {
   uint32_t hook_name_len;   // hook_name 有效字节数（不含结尾 0）
   uint32_t hook_code_len;   // hook_code 有效 wchar 数（不含结尾 0）
   uint32_t event_kind;      // kTextEvent*；0 保持旧写者默认语义为台词行
-  uint32_t event_flags;     // 预留（当前线程发现事件写 Luna embedable 到 bit 0）
+  uint32_t event_flags;     // bit 0: discovery embedable; bit 1: exact ctx only
   // hook「面」id（不含 ctx，见 luna_text_selector.h 的 LunaTextFaceIdFrom）。
   //
   // v13 把选定线程的过滤从采集期挪到消费期，这个字段是**挪过去还能等价**的前提：旧的
@@ -608,6 +641,115 @@ constexpr uint32_t kLookupDiagSiglusExecutableRead = 0x20000000u;
 constexpr uint32_t kLookupDiagSiglusHashMatched = 0x40000000u;
 constexpr uint32_t kLookupDiagSiglusMachineMatched = 0x80000000u;
 
+// v19 几何 provider 的稳定 wire id。kind 决定仲裁优先级；provider_id 标识具体实现，
+// 两者不能互相替代。新增 provider 只能追加 id，不能复用旧值改变含义。
+constexpr uint32_t kLookupGeometryProviderUnknown = 0u;
+constexpr uint32_t kLookupGeometryProviderRuntimeLayout = 1u;
+constexpr uint32_t kLookupGeometryProviderEngineExactLayout = 2u;
+constexpr uint32_t kLookupGeometryProviderPositionedTextApi = 3u;
+constexpr uint32_t kLookupGeometryProviderAttachedCalibrated = 4u;
+constexpr uint32_t kLookupGeometryProviderPixelTemplateExperimental = 5u;
+constexpr uint32_t kLookupGeometryProviderTypewriterDiffExperimental = 6u;
+
+constexpr uint32_t kLookupGeometryProviderIdUnknown = 0u;
+constexpr uint32_t kLookupGeometryProviderIdKirikiri = 1u;
+constexpr uint32_t kLookupGeometryProviderIdRenpy = 2u;
+constexpr uint32_t kLookupGeometryProviderIdSiglus = 3u;
+constexpr uint32_t kLookupGeometryProviderIdLeafAquaplus = 4u;
+constexpr uint32_t kLookupGeometryProviderIdSgre = 5u;
+constexpr uint32_t kLookupGeometryProviderIdTyranoDom = 6u;
+constexpr uint32_t kLookupGeometryProviderIdUnityTmp = 7u;
+constexpr uint32_t kLookupGeometryProviderIdUnityUgui = 8u;
+constexpr uint32_t kLookupGeometryProviderIdGdiPositioned = 9u;
+constexpr uint32_t kLookupGeometryProviderIdDwritePositioned = 10u;
+constexpr uint32_t kLookupGeometryProviderIdAttachedCalibrated = 11u;
+constexpr uint32_t kLookupGeometryProviderIdPixelTemplateExperimental = 12u;
+constexpr uint32_t kLookupGeometryProviderIdTypewriterDiffExperimental = 13u;
+// Reserved for the measured HUNEX/GGE exact-layout family.  The current
+// runtime trace remains observation-only; assigning a stable wire id does not
+// promote it to a production publisher or change engine-support evidence.
+constexpr uint32_t kLookupGeometryProviderIdHunexGge = 14u;
+
+constexpr uint32_t kLookupGeometryStatusUnavailable = 0u;
+constexpr uint32_t kLookupGeometryStatusReady = 1u;
+constexpr uint32_t kLookupGeometryStatusActive = 2u;
+constexpr uint32_t kLookupGeometryStatusSuspended = 3u;
+constexpr uint32_t kLookupGeometryStatusFaulted = 4u;
+
+// v19 host -> injected registry geometry admission.  This is deliberately
+// independent from lookup_enabled: attached calibrated lookup still needs the
+// injected generic input shield while native geometry publishers are retired.
+// Auto keeps observing native offers and uses the host-owned attached offer
+// only as the lowest-priority production fallback.
+constexpr uint32_t kLookupGeometryAdmissionDisabled = 0u;
+constexpr uint32_t kLookupGeometryAdmissionAuto = 1u;
+constexpr uint32_t kLookupGeometryAdmissionNativeOnly = 2u;
+constexpr uint32_t kLookupGeometryAdmissionAttachedOnly = 3u;
+constexpr uint32_t kLookupGeometryAdmissionFlagAttachedReady = 0x00000001u;
+constexpr uint32_t kLookupGeometryAdmissionFlagMask =
+    kLookupGeometryAdmissionFlagAttachedReady;
+constexpr uint32_t kLookupGeometryAdmissionWriteInProgress = 0x80000000u;
+constexpr uint32_t kLookupGeometryAdmissionSequenceMask = 0x7fffffffu;
+
+// LookupHitSlot 坐标域。生产 provider 必须明确声明；Unknown 会被 registry 拒绝。
+constexpr uint32_t kLookupCoordinateSpaceUnknown = 0u;
+constexpr uint32_t kLookupCoordinateSpaceClientPhysicalPixels = 1u;
+constexpr uint32_t kLookupCoordinateSpacePrimaryLayer = 2u;
+constexpr uint32_t kLookupCoordinateSpaceDesignSurface = 3u;
+constexpr uint32_t kLookupCoordinateSpaceLayoutLocal = 4u;
+
+// The host card compositor accepts either client physical pixels (the
+// RevealOverProcessClient path enforces a 1:1 client/view contract before
+// ClientToScreen) or in-process primaryLayer pixels. Design/layout-local wire
+// spaces remain observations until a unique transform lineage resolves them.
+inline constexpr bool IsLookupCardCoordinateSpaceResolved(
+    uint32_t coordinate_space) {
+  return coordinate_space == kLookupCoordinateSpaceClientPhysicalPixels ||
+         coordinate_space == kLookupCoordinateSpacePrimaryLayer;
+}
+
+constexpr uint32_t kLookupWritingModeUnknown = 0u;
+constexpr uint32_t kLookupWritingModeHorizontal = 1u;
+constexpr uint32_t kLookupWritingModeVertical = 2u;
+
+// v19 统一输入盾 ABI。required/ready/observed/fault 都使用同一 surface mask；粒度保留到
+// immediate/buffered 与 RawInput 两个入口，避免“DirectInput ready”掩盖只覆盖一半的情况。
+constexpr uint32_t kLookupShieldSurfaceWin32Messages = 0x00000001u;
+constexpr uint32_t kLookupShieldSurfaceLowLevelMouse = 0x00000002u;
+constexpr uint32_t kLookupShieldSurfaceKeyState = 0x00000004u;
+constexpr uint32_t kLookupShieldSurfaceDirectInputImmediate = 0x00000008u;
+constexpr uint32_t kLookupShieldSurfaceDirectInputBuffered = 0x00000010u;
+constexpr uint32_t kLookupShieldSurfaceRawInputData = 0x00000020u;
+constexpr uint32_t kLookupShieldSurfaceRawInputBuffer = 0x00000040u;
+constexpr uint32_t kLookupShieldSurfaceEnginePrivate = 0x00000080u;
+constexpr uint32_t kLookupShieldSurfaceMask = 0x000000ffu;
+
+constexpr uint32_t kLookupShieldOwnerNone = 0u;
+constexpr uint32_t kLookupShieldOwnerNativeGlyph = 1u;
+constexpr uint32_t kLookupShieldOwnerAttachedGlyph = 2u;
+constexpr uint32_t kLookupShieldOwnerPopup = 3u;
+constexpr uint32_t kLookupShieldOwnerDismiss = 4u;
+
+constexpr uint32_t kLookupShieldButtonLeft = 0x00000001u;
+constexpr uint32_t kLookupShieldButtonRight = 0x00000002u;
+constexpr uint32_t kLookupShieldButtonMiddle = 0x00000004u;
+constexpr uint32_t kLookupShieldButtonX1 = 0x00000008u;
+constexpr uint32_t kLookupShieldButtonX2 = 0x00000010u;
+constexpr uint32_t kLookupShieldButtonMask = 0x0000001fu;
+
+// status_flags 是互斥结论位 + 两个正交运行位。unknown 是零；Verified/Partial/
+// KnownUncovered/Faulted 最多只能有一个，helper 会归一化并禁止风险路径冒充 verified。
+constexpr uint32_t kLookupShieldStatusVerified = 0x00000001u;
+constexpr uint32_t kLookupShieldStatusPartial = 0x00000002u;
+constexpr uint32_t kLookupShieldStatusKnownUncovered = 0x00000004u;
+constexpr uint32_t kLookupShieldStatusFaulted = 0x00000008u;
+constexpr uint32_t kLookupShieldStatusRiskAllowed = 0x00000010u;
+constexpr uint32_t kLookupShieldStatusTransactionActive = 0x00000020u;
+constexpr uint32_t kLookupShieldStatusConclusionMask = 0x0000000fu;
+
+constexpr uint32_t kLookupShieldRequestWriteInProgress = 0x80000000u;
+constexpr uint32_t kLookupShieldRequestSequenceMask = 0x7fffffffu;
+
 // v17：hook DLL 摘要字段的固定长度 = 64 位十六进制 SHA-256 + 结尾 NUL。定长而不是变长，
 // 是因为它落在跨进程共享内存里：读侧必须能在不信任写侧的前提下有界读（strnlen 上界就是它）。
 // 定义点在 v19 从 SharedHeader 附近前移到这里：v19 的 LookupAdmissionReport 也要用它，
@@ -679,6 +821,8 @@ inline void FormatSha256Hex(const uint8_t* digest, size_t digest_bytes,
 // 最后用 Interlocked 发布新 `seq`，与 VoiceClip / LoopbackMarker 同一套纪律。
 struct LookupHitSlot {
   volatile uint64_t seq;   // 单调；host 据此判新。0=从未命中
+  uint32_t provider_kind;  // kLookupGeometryProvider*；决定 registry 优先级
+  uint32_t provider_id;    // kLookupGeometryProviderId*；具体实现的稳定身份
   // 光标落在第几个字符。**单位是 UTF-16 code unit**，不是 UTF-8 字节、不是 code point。
   //
   // 为什么是这个单位而不是随便挑一个：两端天然就都是 UTF-16——TJS 的 tjs_char 是 wchar_t
@@ -687,7 +831,12 @@ struct LookupHitSlot {
   // 非 BMP 字符的行整体偏移**——日文行必然含非 ASCII，也就是必错，但错得像"命中判定有点飘"
   // 而不像编码 bug，极难定位。line_utf8 用 UTF-8 只是因为它要跨 C ABI，不影响本字段单位。
   uint32_t char_index;
+  uint32_t source_length;  // 命中 cluster 的 UTF-16 code unit 长度（至少 1）
   uint32_t char_count;     // 本行 UTF-16 code unit 数（自洽校验：char_index < char_count）
+  uint32_t coordinate_space;  // kLookupCoordinateSpace*
+  uint32_t writing_mode;      // kLookupWritingMode*；首期只发布 Horizontal
+  uint64_t text_generation;      // 文本快照代际；0 非法
+  uint64_t geometry_generation;  // 几何快照代际；0 非法
   int32_t glyph_x;         // 命中字形矩形，primaryLayer 坐标
   int32_t glyph_y;
   int32_t glyph_w;
@@ -802,6 +951,9 @@ struct SharedHeader {
   uint32_t luna_bridge_abi_version;  // = kLunaBridgeAbiVersion
   uint32_t luna_vendored_version;    // packed 10.16.1.2
   volatile uint32_t xaudio_diagnostics;  // kXAudioDiag*（沿用原 protocol_reserved 槽）
+  // v20 第二个引擎诊断字：上面那个 32 位已满（低 27 位既有 + HUNEX HFA 高 5 位）。
+  // 同 reserved_luna→reserved_hook_diagnostics 的先例，另立而不是拓宽。kXAudioDiag2*。
+  volatile uint32_t xaudio_diagnostics2;
   uint32_t sample_rate;     // hook 首次拿到语音格式后填
   uint32_t channels;        //
   uint32_t bits_per_sample;  //
@@ -898,6 +1050,43 @@ struct SharedHeader {
   // 只在**新建映射**时写一次，复用既有映射时一个字节都不碰——那条记录属于当初真正
   // 完成注入的那次会话，被本次请求覆盖就等于把要比对的证据自己抹掉了。
   char hook_module_sha256[kHookModuleDigestChars];
+  // ── v19 单一几何 provider 状态（hook/host 共读；registry 单写）────────────
+  // active_kind/id/status/text_generation 先写，geometry_generation 最后发布。消费者看到
+  // generation==0 即尚无权威 provider，绝不能把别处文本与当前几何拼在一起。
+  volatile uint32_t lookup_geometry_active_kind;
+  volatile uint32_t lookup_geometry_active_id;
+  volatile uint32_t lookup_geometry_status;
+  uint32_t lookup_geometry_reserved;
+  volatile uint64_t lookup_geometry_text_generation;
+  volatile uint64_t lookup_geometry_generation;
+  // ── v19 统一输入盾控制（host→hook request；状态方→host ack）──────────────
+  // request_seq 的最高位是写令牌。发布顺序固定为：取得令牌 → 填 owner/target/transaction/
+  // buttons/risk → 最后写稳定 request_seq。active_buttons 非零表示 down/up transaction 尚未
+  // 排空，几何 registry 不得在此期间切换 provider。
+  volatile uint32_t lookup_shield_request_seq;
+  volatile uint32_t lookup_shield_owner_kind;
+  volatile uint64_t lookup_shield_target_hwnd;
+  volatile uint64_t lookup_shield_transaction_id;
+  volatile uint32_t lookup_shield_active_buttons;
+  volatile uint32_t lookup_shield_allow_risk;
+  // required/ready/observed/fault/status 先写，applied_seq 最后确认。不同输入面必须用各自位，
+  // 不得拿“装了某个 detour”推断另一输入面 ready。
+  volatile uint32_t lookup_shield_required_mask;
+  volatile uint32_t lookup_shield_ready_mask;
+  volatile uint32_t lookup_shield_observed_mask;
+  volatile uint32_t lookup_shield_fault_mask;
+  volatile uint32_t lookup_shield_status_flags;
+  uint32_t lookup_shield_reserved;
+  volatile uint32_t lookup_shield_applied_seq;
+  uint32_t lookup_shield_reserved2;
+  // ── v19 geometry admission（host→hook request；registry→host ack）──────
+  // mode/flags are payload; request_seq is published last.  applied_seq may
+  // advance only after the registry has reached the requested owner policy,
+  // including any deferred down/up/tail provider transition.
+  volatile uint32_t lookup_geometry_admission_mode;
+  volatile uint32_t lookup_geometry_admission_flags;
+  volatile uint32_t lookup_geometry_admission_request_seq;
+  volatile uint32_t lookup_geometry_admission_applied_seq;
   // ── v19 游戏内查词准入（纯追加；hook→host）──────────────────────────────
   // 写者唯一：AdapterRegistry::Poll 每轮汇总所有 adapter 的 lookupAdmission() 后写这里。
   // 各 adapter 自己不碰这三个字段——多写者会让「Leaf 说身份不符」和「Siglus 说本引擎没做」
@@ -912,6 +1101,35 @@ struct SharedHeader {
   char lookup_executable_sha256[kHookModuleDigestChars];
 };
 #pragma pack(pop)
+
+struct LookupGeometryAdmissionSnapshot {
+  uint32_t seq = 0;
+  uint32_t mode = kLookupGeometryAdmissionDisabled;
+  uint32_t flags = 0;
+  bool valid = false;
+
+  bool attached_ready() const {
+    return (flags & kLookupGeometryAdmissionFlagAttachedReady) != 0;
+  }
+};
+
+struct LookupShieldRequestSnapshot {
+  uint32_t seq = 0;
+  uint32_t owner_kind = kLookupShieldOwnerNone;
+  uint64_t target_hwnd = 0;
+  uint64_t transaction_id = 0;
+  uint32_t active_buttons = 0;
+  bool allow_risk = false;
+  bool valid = false;
+};
+
+struct LookupShieldStatusPublication {
+  uint32_t required_mask = 0;
+  uint32_t ready_mask = 0;
+  uint32_t observed_mask = 0;
+  uint32_t fault_mask = 0;
+  uint32_t status_flags = 0;
+};
 
 struct NativeLoopbackRequestSnapshot {
   uint32_t requested = kNativeLoopbackDeny;
@@ -939,6 +1157,293 @@ inline void AtomicOrShared32(volatile uint32_t* value, uint32_t bits) {
   if (value == nullptr) return;
   InterlockedOr(reinterpret_cast<volatile LONG*>(value),
                 static_cast<LONG>(bits));
+}
+
+// Host-side attached hit publication and the injected provider registry share
+// the shield request writer bit as their hand-off fence.  Callers which hold
+// that fence may use this bounded, lock-free snapshot to decide whether an
+// AttachedGlyph down still owns geometry.  Ready is deliberately usable before
+// the first hit; Active must name one complete text+geometry publication.
+inline bool LookupGeometryAttachedProviderOwns(const SharedHeader* header) {
+  if (header == nullptr) return false;
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    const uint64_t generation_before =
+        AtomicLoadPreview64(&header->lookup_geometry_generation);
+    const uint32_t kind =
+        AtomicLoadShared32(&header->lookup_geometry_active_kind);
+    const uint32_t id =
+        AtomicLoadShared32(&header->lookup_geometry_active_id);
+    const uint32_t status =
+        AtomicLoadShared32(&header->lookup_geometry_status);
+    const uint64_t text_generation =
+        AtomicLoadPreview64(&header->lookup_geometry_text_generation);
+    MemoryBarrier();
+    const uint64_t generation_after =
+        AtomicLoadPreview64(&header->lookup_geometry_generation);
+    if (generation_before != generation_after) continue;
+    if (kind != kLookupGeometryProviderAttachedCalibrated ||
+        id != kLookupGeometryProviderIdAttachedCalibrated) {
+      return false;
+    }
+    return status == kLookupGeometryStatusReady ||
+           (status == kLookupGeometryStatusActive && generation_after != 0 &&
+            text_generation != 0);
+  }
+  return false;
+}
+
+inline constexpr bool IsLookupGeometryAdmissionMode(uint32_t mode) {
+  return mode == kLookupGeometryAdmissionDisabled ||
+         mode == kLookupGeometryAdmissionAuto ||
+         mode == kLookupGeometryAdmissionNativeOnly ||
+         mode == kLookupGeometryAdmissionAttachedOnly;
+}
+
+inline LookupGeometryAdmissionSnapshot ReadLookupGeometryAdmission(
+    const SharedHeader* header) {
+  LookupGeometryAdmissionSnapshot result;
+  if (header == nullptr) return result;
+  for (int attempt = 0; attempt < 8; ++attempt) {
+    const uint32_t before =
+        AtomicLoadShared32(&header->lookup_geometry_admission_request_seq);
+    if (before == 0 ||
+        (before & kLookupGeometryAdmissionWriteInProgress) != 0) {
+      continue;
+    }
+    const uint32_t mode =
+        AtomicLoadShared32(&header->lookup_geometry_admission_mode);
+    const uint32_t flags =
+        AtomicLoadShared32(&header->lookup_geometry_admission_flags);
+    MemoryBarrier();
+    const uint32_t after =
+        AtomicLoadShared32(&header->lookup_geometry_admission_request_seq);
+    if (before == after &&
+        (after & kLookupGeometryAdmissionWriteInProgress) == 0 &&
+        IsLookupGeometryAdmissionMode(mode) &&
+        (flags & ~kLookupGeometryAdmissionFlagMask) == 0) {
+      result.seq = after;
+      result.mode = mode;
+      result.flags = flags;
+      result.valid = true;
+      return result;
+    }
+  }
+  return LookupGeometryAdmissionSnapshot{};
+}
+
+// Host-side publication.  Geometry ownership is a separate control plane
+// from lookup_enabled so switching to attached never tears down the injected
+// generic shield.  The helper is idempotent across repeated Flutter syncs.
+inline uint32_t PublishLookupGeometryAdmission(
+    SharedHeader* header, uint32_t mode, bool attached_ready) {
+  if (header == nullptr || !IsLookupGeometryAdmissionMode(mode)) return 0;
+  const uint32_t flags = attached_ready
+                             ? kLookupGeometryAdmissionFlagAttachedReady
+                             : 0u;
+  const LookupGeometryAdmissionSnapshot stable =
+      ReadLookupGeometryAdmission(header);
+  if (stable.valid && stable.mode == mode && stable.flags == flags) {
+    return stable.seq;
+  }
+
+  auto* seq = reinterpret_cast<volatile LONG*>(
+      &header->lookup_geometry_admission_request_seq);
+  uint32_t current = 0;
+  bool claimed = false;
+  const ULONGLONG claim_deadline = GetTickCount64() + 1000;
+  do {
+    current = AtomicLoadShared32(
+        &header->lookup_geometry_admission_request_seq);
+    if ((current & kLookupGeometryAdmissionWriteInProgress) != 0) {
+      SwitchToThread();
+      continue;
+    }
+    const uint32_t token =
+        current | kLookupGeometryAdmissionWriteInProgress;
+    const LONG observed = InterlockedCompareExchange(
+        seq, static_cast<LONG>(token), static_cast<LONG>(current));
+    if (static_cast<uint32_t>(observed) == current) {
+      claimed = true;
+      break;
+    }
+  } while (GetTickCount64() < claim_deadline);
+  if (!claimed) return 0;
+
+  AtomicStoreShared32(&header->lookup_geometry_admission_mode, mode);
+  AtomicStoreShared32(&header->lookup_geometry_admission_flags, flags);
+  uint32_t published =
+      (current & kLookupGeometryAdmissionSequenceMask) + 1u;
+  published &= kLookupGeometryAdmissionSequenceMask;
+  if (published == 0) published = 1;
+  AtomicStoreShared32(&header->lookup_geometry_admission_request_seq,
+                      published);
+  return published;
+}
+
+inline LookupShieldRequestSnapshot ReadLookupShieldRequest(
+    const SharedHeader* header) {
+  LookupShieldRequestSnapshot result;
+  if (header == nullptr) return result;
+  for (int attempt = 0; attempt < 8; ++attempt) {
+    const uint32_t before =
+        AtomicLoadShared32(&header->lookup_shield_request_seq);
+    if (before == 0 ||
+        (before & kLookupShieldRequestWriteInProgress) != 0) {
+      continue;
+    }
+    result.owner_kind =
+        AtomicLoadShared32(&header->lookup_shield_owner_kind);
+    result.target_hwnd =
+        AtomicLoadPreview64(&header->lookup_shield_target_hwnd);
+    result.transaction_id =
+        AtomicLoadPreview64(&header->lookup_shield_transaction_id);
+    result.active_buttons =
+        AtomicLoadShared32(&header->lookup_shield_active_buttons) &
+        kLookupShieldButtonMask;
+    result.allow_risk =
+        AtomicLoadShared32(&header->lookup_shield_allow_risk) != 0;
+    MemoryBarrier();
+    const uint32_t after =
+        AtomicLoadShared32(&header->lookup_shield_request_seq);
+    if (before == after &&
+        (after & kLookupShieldRequestWriteInProgress) == 0) {
+      result.seq = after;
+      result.valid = true;
+      return result;
+    }
+  }
+  return LookupShieldRequestSnapshot{};
+}
+
+inline bool LookupShieldRequestMatches(
+    const SharedHeader* header,
+    const LookupShieldRequestSnapshot& expected) {
+  const LookupShieldRequestSnapshot current = ReadLookupShieldRequest(header);
+  return expected.valid && current.valid && current.seq == expected.seq &&
+         current.owner_kind == expected.owner_kind &&
+         current.target_hwnd == expected.target_hwnd &&
+         current.transaction_id == expected.transaction_id &&
+         current.active_buttons == expected.active_buttons &&
+         current.allow_risk == expected.allow_risk;
+}
+
+// host 侧统一发布入口。active_buttons==0 是 release 请求；新的 release 仍是一个新代际，
+// 只有所有输入面排空 tail 并回写 applied_seq 后才能视为完成。
+inline uint32_t PublishLookupShieldRequest(
+    SharedHeader* header, uint32_t owner_kind, uint64_t target_hwnd,
+    uint64_t transaction_id, uint32_t active_buttons, bool allow_risk) {
+  if (header == nullptr) return 0;
+  const uint32_t normalized_buttons =
+      active_buttons & kLookupShieldButtonMask;
+  const uint32_t normalized_risk = allow_risk ? 1u : 0u;
+  const LookupShieldRequestSnapshot stable =
+      ReadLookupShieldRequest(header);
+  if (stable.valid && stable.owner_kind == owner_kind &&
+      stable.target_hwnd == target_hwnd &&
+      stable.transaction_id == transaction_id &&
+      stable.active_buttons == normalized_buttons &&
+      stable.allow_risk == allow_risk) {
+    return stable.seq;
+  }
+
+  auto* seq = reinterpret_cast<volatile LONG*>(
+      &header->lookup_shield_request_seq);
+  uint32_t current = 0;
+  bool claimed = false;
+  const ULONGLONG claim_deadline = GetTickCount64() + 1000;
+  do {
+    current = AtomicLoadShared32(&header->lookup_shield_request_seq);
+    if ((current & kLookupShieldRequestWriteInProgress) != 0) {
+      SwitchToThread();
+      continue;
+    }
+    const uint32_t token = current | kLookupShieldRequestWriteInProgress;
+    const LONG observed = InterlockedCompareExchange(
+        seq, static_cast<LONG>(token), static_cast<LONG>(current));
+    if (static_cast<uint32_t>(observed) == current) {
+      claimed = true;
+      break;
+    }
+  } while (GetTickCount64() < claim_deadline);
+  if (!claimed) return 0;
+
+  AtomicStoreShared32(&header->lookup_shield_owner_kind, owner_kind);
+  AtomicStorePreview64(&header->lookup_shield_target_hwnd, target_hwnd);
+  AtomicStorePreview64(&header->lookup_shield_transaction_id, transaction_id);
+  AtomicStoreShared32(&header->lookup_shield_active_buttons,
+                      normalized_buttons);
+  AtomicStoreShared32(&header->lookup_shield_allow_risk, normalized_risk);
+  uint32_t published =
+      (current & kLookupShieldRequestSequenceMask) + 1u;
+  published &= kLookupShieldRequestSequenceMask;
+  if (published == 0) published = 1;
+  AtomicStoreShared32(&header->lookup_shield_request_seq, published);
+  return published;
+}
+
+inline uint32_t NormalizeLookupShieldStatusFlags(
+    const LookupShieldRequestSnapshot& request,
+    const LookupShieldStatusPublication& publication) {
+  uint32_t runtime = publication.status_flags &
+                     (kLookupShieldStatusRiskAllowed |
+                      kLookupShieldStatusTransactionActive);
+  if (request.allow_risk) runtime |= kLookupShieldStatusRiskAllowed;
+  if (request.active_buttons != 0) {
+    runtime |= kLookupShieldStatusTransactionActive;
+  }
+  const uint32_t required = publication.required_mask &
+                            kLookupShieldSurfaceMask;
+  const uint32_t ready = publication.ready_mask & kLookupShieldSurfaceMask;
+  const uint32_t fault = publication.fault_mask & kLookupShieldSurfaceMask;
+  const uint32_t requested_conclusion =
+      publication.status_flags & kLookupShieldStatusConclusionMask;
+  if (fault != 0 ||
+      (requested_conclusion & kLookupShieldStatusFaulted) != 0) {
+    return runtime | kLookupShieldStatusFaulted;
+  }
+  if ((requested_conclusion & kLookupShieldStatusKnownUncovered) != 0) {
+    return runtime | kLookupShieldStatusKnownUncovered;
+  }
+  // verified is deliberately stricter than "covers required": an unexpected
+  // extra ready surface means the producer and consumer disagree about the
+  // transaction contract, so it must remain partial until the masks match.
+  const bool fully_ready = required != 0 && ready == required;
+  if ((requested_conclusion & kLookupShieldStatusVerified) != 0 &&
+      fully_ready &&
+      (runtime & kLookupShieldStatusRiskAllowed) == 0) {
+    return runtime | kLookupShieldStatusVerified;
+  }
+  if ((requested_conclusion & kLookupShieldStatusPartial) != 0 || ready != 0 ||
+      (requested_conclusion & kLookupShieldStatusVerified) != 0) {
+    return runtime | kLookupShieldStatusPartial;
+  }
+  return runtime;  // unknown
+}
+
+// 状态 payload 先写，applied_seq 最后写。verified 只有在 required 非空、ready 完全相等、
+// fault 为空且请求没有 allow_risk 时才保留；否则 helper 至少降为 partial。
+inline bool PublishLookupShieldStatus(
+    SharedHeader* header, const LookupShieldRequestSnapshot& request,
+    const LookupShieldStatusPublication& publication) {
+  if (header == nullptr || !LookupShieldRequestMatches(header, request)) {
+    return false;
+  }
+  const uint32_t required = publication.required_mask &
+                            kLookupShieldSurfaceMask;
+  const uint32_t ready = publication.ready_mask & kLookupShieldSurfaceMask;
+  const uint32_t observed = publication.observed_mask &
+                            kLookupShieldSurfaceMask;
+  const uint32_t fault = publication.fault_mask & kLookupShieldSurfaceMask;
+  const uint32_t status =
+      NormalizeLookupShieldStatusFlags(request, publication);
+  AtomicStoreShared32(&header->lookup_shield_required_mask, required);
+  AtomicStoreShared32(&header->lookup_shield_ready_mask, ready);
+  AtomicStoreShared32(&header->lookup_shield_observed_mask, observed);
+  AtomicStoreShared32(&header->lookup_shield_fault_mask, fault);
+  AtomicStoreShared32(&header->lookup_shield_status_flags, status);
+  if (!LookupShieldRequestMatches(header, request)) return false;
+  AtomicStoreShared32(&header->lookup_shield_applied_seq, request.seq);
+  return LookupShieldRequestMatches(header, request);
 }
 
 // v19 查词准入：hook 侧发布。payload 先落，seq 最后发布——读侧看到新 seq 就保证

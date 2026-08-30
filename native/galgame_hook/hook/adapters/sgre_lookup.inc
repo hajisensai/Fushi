@@ -59,8 +59,109 @@ std::wstring g_sgre_lookup_active_line;
 uint32_t g_sgre_lookup_active_char_indices[kSgreLookupMaxGlyphs] = {};
 size_t g_sgre_lookup_active_mapped = 0;
 bool g_sgre_lookup_active_valid = false;
-uint64_t g_sgre_lookup_active_capture_seq = 0;
+uint64_t g_sgre_lookup_active_generation = 0;
+uint64_t g_sgre_lookup_generation_counter = 0;
 ULONGLONG g_sgre_lookup_active_capture_tick = 0;
+volatile LONG g_sgre_exact_binary_structure_state = 0;
+
+bool IsSgreExactBinaryStructureMatched() {
+  const LONG cached = InterlockedCompareExchange(
+      &g_sgre_exact_binary_structure_state, 0, 0);
+  if (cached != 0) return cached > 0;
+
+  bool matched = false;
+#if defined(_M_X64)
+  HMODULE module = GetModuleHandleW(nullptr);
+  fushi_voice_hook::exact_lookup::LoadedPeImage image;
+  if (module != nullptr && fushi_voice_hook::MatchesSgreFamily() &&
+      fushi_voice_hook::exact_lookup::OpenLoadedPeImage(module, &image) &&
+      image.machine == IMAGE_FILE_MACHINE_AMD64 && image.pointer_bits == 64u) {
+    const auto* text_section =
+        fushi_voice_hook::exact_lookup::FindSectionForRva(
+            image, fushi_voice_hook::kSgreTextDrawRva,
+            sizeof(fushi_voice_hook::sgre_exact::kTextDrawEntryBytes));
+    const auto* vtable_section =
+        fushi_voice_hook::exact_lookup::FindSectionForRva(
+            image, fushi_voice_hook::kSgreScenarioTextVtableRva,
+            sizeof(uintptr_t) * 8u);
+    const auto* mouse_slot_section =
+        fushi_voice_hook::exact_lookup::FindSectionForRva(
+            image, fushi_voice_hook::kSgreDirectInputMouseDeviceRva,
+            sizeof(uintptr_t));
+    const uintptr_t base = reinterpret_cast<uintptr_t>(image.base);
+    const uintptr_t expected_draw =
+        base + fushi_voice_hook::kSgreTextDrawRva;
+    const uintptr_t expected_vtable =
+        base + fushi_voice_hook::kSgreScenarioTextVtableRva;
+    const uintptr_t expected_mouse_slot =
+        base + fushi_voice_hook::kSgreDirectInputMouseDeviceRva;
+    const auto draw = fushi_voice_hook::exact_lookup::
+        FindUniquePatternInExecutableSections(
+            image, fushi_voice_hook::sgre_exact::kTextDrawEntryPattern);
+    const auto constructor =
+        fushi_voice_hook::exact_lookup::
+            FindUniqueRipRelativePatternInExecutableSections(
+                image,
+                fushi_voice_hook::sgre_exact::
+                    kScenarioVtableConstructorPattern,
+                fushi_voice_hook::sgre_exact::
+                    kScenarioVtableInstructionOffset,
+                fushi_voice_hook::sgre_exact::
+                    kScenarioVtableDisplacementOffset,
+                fushi_voice_hook::sgre_exact::
+                    kScenarioVtableInstructionBytes,
+                expected_vtable);
+    const auto create_device =
+        fushi_voice_hook::exact_lookup::
+            FindUniqueRipRelativePatternInExecutableSections(
+                image,
+                fushi_voice_hook::sgre_exact::kMouseCreateDevicePattern,
+                fushi_voice_hook::sgre_exact::
+                    kMouseCreateDeviceOutputInstructionOffset,
+                fushi_voice_hook::sgre_exact::
+                    kMouseCreateDeviceOutputDisplacementOffset,
+                fushi_voice_hook::sgre_exact::
+                    kMouseCreateDeviceOutputInstructionBytes,
+                expected_mouse_slot);
+    const auto immediate_poll =
+        fushi_voice_hook::exact_lookup::
+            FindUniqueRipRelativePatternInExecutableSections(
+                image,
+                fushi_voice_hook::sgre_exact::kMouseImmediatePollPattern,
+                fushi_voice_hook::sgre_exact::
+                    kMouseImmediatePollLoadInstructionOffset,
+                fushi_voice_hook::sgre_exact::
+                    kMouseImmediatePollLoadDisplacementOffset,
+                fushi_voice_hook::sgre_exact::
+                    kMouseImmediatePollLoadInstructionBytes,
+                expected_mouse_slot);
+    DWORD64 runtime_image_base = 0u;
+    const auto* runtime = RtlLookupFunctionEntry(
+        static_cast<DWORD64>(expected_draw), &runtime_image_base, nullptr);
+    matched =
+        fushi_voice_hook::exact_lookup::SectionHasRole(
+            text_section, IMAGE_SCN_MEM_EXECUTE) &&
+        fushi_voice_hook::exact_lookup::SectionHasRole(
+            vtable_section, IMAGE_SCN_MEM_READ,
+            IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_WRITE) &&
+        fushi_voice_hook::exact_lookup::SectionHasRole(
+            mouse_slot_section, IMAGE_SCN_MEM_WRITE,
+            IMAGE_SCN_MEM_EXECUTE) &&
+        draw.count == 1u &&
+        reinterpret_cast<uintptr_t>(draw.address) == expected_draw &&
+        constructor.count == 1u && create_device.count == 1u &&
+        immediate_poll.count == 1u && runtime != nullptr &&
+        runtime_image_base == base &&
+        runtime->BeginAddress == fushi_voice_hook::kSgreTextDrawRva &&
+        runtime->EndAddress > runtime->BeginAddress &&
+        fushi_voice_hook::exact_lookup::PointerTableTargetsExecutableSections(
+            image, fushi_voice_hook::kSgreScenarioTextVtableRva, 8u);
+  }
+#endif
+  InterlockedExchange(&g_sgre_exact_binary_structure_state,
+                      matched ? 1 : -1);
+  return matched;
+}
 
 constexpr size_t kSgreLookupClickEventSlots = 4;
 constexpr ULONGLONG kSgreLookupClickTargetMaxAgeMs = 64;
@@ -68,10 +169,13 @@ constexpr ULONGLONG kSgreLookupActiveCaptureMaxAgeMs = 128;
 constexpr ULONGLONG kSgreLookupDuplicateHitWindowMs = 250;
 
 struct SgreLookupClickPayload {
-  uint64_t capture_seq = 0;
+  uint64_t logical_generation = 0;
   uint32_t text_units = 0;
   uint32_t char_index = 0;
   fushi_voice_hook::SgreLookupRect rect;
+  uintptr_t game_window = 0;
+  int32_t client_screen_x = 0;
+  int32_t client_screen_y = 0;
   int32_t client_width = 0;
   int32_t client_height = 0;
   wchar_t text[kSgreLookupMaxTextUnits] = {};
@@ -86,7 +190,7 @@ struct SgreLookupClickTarget {
   int32_t client_screen_y = 0;
   int32_t client_width = 0;
   int32_t client_height = 0;
-  uint64_t capture_seq = 0;
+  uint64_t logical_generation = 0;
   SgreLookupCapture capture;
 };
 
@@ -116,15 +220,18 @@ bool g_sgre_lookup_pending_click_valid = false;
 
 void FillSgreLookupClickPayload(
     SgreLookupClickPayload* payload, const SgreLookupCapture& capture,
-    uint64_t capture_seq, uint32_t char_index,
-    const fushi_voice_hook::SgreLookupRect& rect, int32_t client_width,
-    int32_t client_height) {
+    uint64_t logical_generation, uint32_t char_index,
+    const fushi_voice_hook::SgreLookupRect& rect, HWND game,
+    const POINT& client_origin, int32_t client_width, int32_t client_height) {
   if (payload == nullptr) return;
   *payload = SgreLookupClickPayload();
-  payload->capture_seq = capture_seq;
+  payload->logical_generation = logical_generation;
   payload->text_units = capture.text_units;
   payload->char_index = char_index;
   payload->rect = rect;
+  payload->game_window = reinterpret_cast<uintptr_t>(game);
+  payload->client_screen_x = client_origin.x;
+  payload->client_screen_y = client_origin.y;
   payload->client_width = client_width;
   payload->client_height = client_height;
   if (capture.text_units != 0) {
@@ -134,10 +241,11 @@ void FillSgreLookupClickPayload(
 }
 
 void PublishSgreLookupClickTarget(
-    const SgreLookupCapture& capture, uint64_t capture_seq,
+    const SgreLookupCapture& capture, uint64_t logical_generation,
     HWND game, const POINT& client_origin, int32_t client_width,
     int32_t client_height) {
-  if (game == nullptr || capture.valid != 1 || capture.text_units == 0 ||
+  if (game == nullptr || logical_generation == 0 || capture.valid != 1 ||
+      capture.text_units == 0 ||
       capture.text_units != capture.glyph_count ||
       capture.glyph_count > kSgreLookupMaxGlyphs) {
     return;
@@ -153,7 +261,7 @@ void PublishSgreLookupClickTarget(
   g_sgre_lookup_click_target.client_screen_y = client_origin.y;
   g_sgre_lookup_click_target.client_width = client_width;
   g_sgre_lookup_click_target.client_height = client_height;
-  g_sgre_lookup_click_target.capture_seq = capture_seq;
+  g_sgre_lookup_click_target.logical_generation = logical_generation;
   memcpy(&g_sgre_lookup_click_target.capture, &capture, sizeof(capture));
   InterlockedExchange64(&g_sgre_lookup_click_target.seq,
                         static_cast<LONG64>(next));
@@ -170,7 +278,7 @@ void InvalidateSgreLookupClickTarget() {
   g_sgre_lookup_click_target.client_screen_y = 0;
   g_sgre_lookup_click_target.client_width = 0;
   g_sgre_lookup_click_target.client_height = 0;
-  g_sgre_lookup_click_target.capture_seq = 0;
+  g_sgre_lookup_click_target.logical_generation = 0;
   memset(&g_sgre_lookup_click_target.capture, 0,
          sizeof(g_sgre_lookup_click_target.capture));
   InterlockedExchange64(&g_sgre_lookup_click_target.seq,
@@ -192,9 +300,10 @@ bool ReadSgreLookupClickTarget(SgreLookupClickTarget* copy) {
          copy->game_window != 0 && copy->client_width > 0 &&
          copy->client_height > 0 && copy->capture.valid == 1 &&
          copy->capture.text_units != 0 &&
-         copy->capture.text_units <= kSgreLookupMaxTextUnits &&
-         copy->capture.text_units == copy->capture.glyph_count &&
-         copy->capture.glyph_count <= kSgreLookupMaxGlyphs;
+          copy->capture.text_units <= kSgreLookupMaxTextUnits &&
+          copy->capture.text_units == copy->capture.glyph_count &&
+          copy->capture.glyph_count <= kSgreLookupMaxGlyphs &&
+          copy->logical_generation != 0;
 }
 
 bool BuildSgreLookupClickPayloadAtPress(const SgreLookupClickTarget& target,
@@ -234,10 +343,35 @@ bool BuildSgreLookupClickPayloadAtPress(const SgreLookupClickTarget& target,
       static_cast<uint32_t>(glyph_index) >= target.capture.text_units) {
     return false;
   }
-  FillSgreLookupClickPayload(payload, target.capture, target.capture_seq,
-                             static_cast<uint32_t>(glyph_index), rect,
-                             client_width, client_height);
+  FillSgreLookupClickPayload(
+      payload, target.capture, target.logical_generation,
+      static_cast<uint32_t>(glyph_index), rect, game, client_origin,
+      client_width, client_height);
   return true;
+}
+
+fushi_voice_hook::SgreLookupClientSnapshot SgreLookupPayloadClientSnapshot(
+    const SgreLookupClickPayload& payload) {
+  return {payload.game_window, payload.client_screen_x,
+          payload.client_screen_y, payload.client_width,
+          payload.client_height};
+}
+
+fushi_voice_hook::SgreLookupClientSnapshot SgreLookupTargetClientSnapshot(
+    const SgreLookupClickTarget& target) {
+  return {target.game_window, target.client_screen_x,
+          target.client_screen_y, target.client_width,
+          target.client_height};
+}
+
+bool SgreLookupPayloadMatchesPublishedTarget(
+    const SgreLookupClickPayload& payload) {
+  SgreLookupClickTarget target;
+  return ReadSgreLookupClickTarget(&target) &&
+         fushi_voice_hook::MatchesSgreLookupGenerationAndClient(
+             payload.logical_generation,
+             SgreLookupPayloadClientSnapshot(payload),
+             target.logical_generation, SgreLookupTargetClientSnapshot(target));
 }
 
 void QueueSgreLookupClickSubmit(const SgreLookupClickPayload& payload) {
@@ -416,7 +550,12 @@ HRESULT STDMETHODCALLTYPE SgreGetDeviceStateDetour(void* device,
         std::memory_order_acq_rel);
   } else if (click_action ==
              fushi_voice_hook::SgreLookupClickAction::kSubmit) {
-    if (g_sgre_lookup_pending_click_valid && lookup_allowed) {
+    // The down payload is immutable, but the renderer may replace the
+    // sentence or client transform while the button is held.  Re-read the
+    // worker-published logical target before queueing the up transaction.
+    if (g_sgre_lookup_pending_click_valid && lookup_allowed &&
+        SgreLookupPayloadMatchesPublishedTarget(
+            g_sgre_lookup_pending_click)) {
       QueueSgreLookupClickSubmit(g_sgre_lookup_pending_click);
     }
     g_sgre_lookup_pending_click_valid = false;
@@ -576,6 +715,11 @@ bool PublishSgreDirectInputShieldReady() {
 }
 
 bool InstallSgreDirectInputShield() {
+  if (!IsSgreExactBinaryStructureMatched()) {
+    PublishSgreDirectInputShieldRequired();
+    MarkSgreDirectInputShieldNotReady();
+    return false;
+  }
   HMODULE executable = GetModuleHandleW(nullptr);
   // Required is the family statement "this runtime polls DirectInput, fail
   // closed without a working detour". It is published even when the device
@@ -605,7 +749,26 @@ bool InstallSgreDirectInputShield() {
   const ULONGLONG now = GetTickCount64();
   const HWND cached_game =
       g_sgre_direct_input_game_window.load(std::memory_order_acquire);
-  if (mouse_device != nullptr && target != nullptr &&
+  void** device_vtable = nullptr;
+  if (mouse_device != nullptr &&
+      fushi_voice_hook::exact_lookup::IsReadableSpan(mouse_device,
+                                                     sizeof(void*))) {
+    memcpy(&device_vtable, mouse_device, sizeof(device_vtable));
+  }
+  const bool device_abi_valid =
+      device_vtable != nullptr &&
+      fushi_voice_hook::exact_lookup::IsReadableSpan(
+          device_vtable,
+          (fushi_voice_hook::kSgreDirectInputGetDeviceStateVtableIndex + 1u) *
+              sizeof(void*)) &&
+      target == device_vtable
+                    [fushi_voice_hook::
+                         kSgreDirectInputGetDeviceStateVtableIndex] &&
+      fushi_voice_hook::exact_lookup::IsExecutableAddress(target) &&
+      fushi_voice_hook::exact_lookup::IsExecutableAddress(device_vtable[0]) &&
+      fushi_voice_hook::exact_lookup::IsExecutableAddress(device_vtable[1]) &&
+      fushi_voice_hook::exact_lookup::IsExecutableAddress(device_vtable[2]);
+  if (mouse_device != nullptr && target != nullptr && device_abi_valid &&
       target == g_sgre_get_device_state_target &&
       mouse_device == g_sgre_mouse_device.load(std::memory_order_acquire) &&
       cached_game != nullptr &&
@@ -628,7 +791,7 @@ bool InstallSgreDirectInputShield() {
     MarkSgreDirectInputShieldNotReady();
     return false;
   }
-  if (mouse_device == nullptr || target == nullptr) {
+  if (mouse_device == nullptr || target == nullptr || !device_abi_valid) {
     if (g_sgre_get_device_state_target != nullptr &&
         g_sgre_mouse_device.load(std::memory_order_acquire) != nullptr &&
         GetValidPublishedSgreDirectInputShieldPopup(
@@ -889,6 +1052,7 @@ void __fastcall SgreTextDrawDetour(void* text_surface) {
 }
 
 bool InstallSgreLookupSensor() {
+  if (!IsSgreExactBinaryStructureMatched()) return false;
   if (g_sgre_text_draw_original != nullptr) {
     if (g_header != nullptr) {
       g_header->lookup_diag |= fushi_voice_hook::kLookupDiagSensorInstalled;
@@ -932,56 +1096,108 @@ bool ReadLatestSgreLookupCapture(SgreLookupCapture* copy, uint64_t* seq) {
   return true;
 }
 
-void PublishSgreLookupHit(const std::wstring& line, uint32_t char_index,
+bool PublishSgreLookupHit(uint64_t capture_generation,
+                          const std::wstring& line, uint32_t char_index,
                           const fushi_voice_hook::SgreLookupRect& rect,
                           int32_t client_width, int32_t client_height) {
-  if (g_header == nullptr || char_index >= line.size()) return;
-  fushi_voice_hook::LookupHitSlot* slot =
-      fushi_voice_hook::LookupHitOf(g_header);
-  if (slot == nullptr) return;
+  if (g_header == nullptr || capture_generation == 0 ||
+      char_index >= line.size()) return false;
   char utf8[fushi_voice_hook::kLookupLineBytes] = {};
   const int bytes = WideCharToMultiByte(
       CP_UTF8, 0, line.data(), static_cast<int>(line.size()), utf8,
       static_cast<int>(sizeof(utf8)), nullptr, nullptr);
-  if (bytes <= 0) return;
-  const uint64_t next =
-      static_cast<uint64_t>(InterlockedCompareExchange64(
-          reinterpret_cast<volatile LONG64*>(&g_header->lookup_hit_count), 0,
-          0)) +
-      1u;
-  InterlockedExchange64(reinterpret_cast<volatile LONG64*>(&slot->seq), 0);
-  slot->char_index = char_index;
-  slot->char_count = static_cast<uint32_t>(line.size());
-  slot->glyph_x = rect.x;
-  slot->glyph_y = rect.y;
-  slot->glyph_w = rect.width;
-  slot->glyph_h = rect.height;
-  slot->view_w = client_width;
-  slot->view_h = client_height;
-  slot->flags = fushi_voice_hook::kLookupHitFlagSubmit;
-  memcpy(slot->line_utf8, utf8, static_cast<size_t>(bytes));
-  slot->line_bytes = static_cast<uint32_t>(bytes);
-  InterlockedExchange64(reinterpret_cast<volatile LONG64*>(&slot->seq),
-                        static_cast<LONG64>(next));
-  InterlockedExchange64(
-      reinterpret_cast<volatile LONG64*>(&g_header->lookup_hit_count),
-      static_cast<LONG64>(next));
-  g_header->lookup_diag |= fushi_voice_hook::kLookupDiagGeometryObserved |
-                           fushi_voice_hook::kLookupDiagHitSubmitted;
+  if (bytes <= 0) return false;
+  fushi_voice_hook::LookupGeometryHitPublication publication;
+  publication.provider_kind =
+      fushi_voice_hook::kLookupGeometryProviderEngineExactLayout;
+  publication.provider_id = fushi_voice_hook::kLookupGeometryProviderIdSgre;
+  publication.char_index = char_index;
+  publication.source_length = fushi_voice_hook::LookupUtf16SourceLength(
+      line.data(), static_cast<uint32_t>(line.size()), char_index);
+  publication.char_count = static_cast<uint32_t>(line.size());
+  publication.coordinate_space =
+      fushi_voice_hook::kLookupCoordinateSpaceClientPhysicalPixels;
+  publication.writing_mode = fushi_voice_hook::kLookupWritingModeHorizontal;
+  publication.text_generation = capture_generation;
+  publication.geometry_generation = capture_generation;
+  publication.glyph_x = rect.x;
+  publication.glyph_y = rect.y;
+  publication.glyph_w = rect.width;
+  publication.glyph_h = rect.height;
+  publication.view_w = client_width;
+  publication.view_h = client_height;
+  publication.flags = fushi_voice_hook::kLookupHitFlagSubmit;
+  publication.line_utf8 = reinterpret_cast<const uint8_t*>(utf8);
+  publication.line_bytes = static_cast<uint32_t>(bytes);
+  return fushi_voice_hook::g_geometry_provider_registry.PublishHit(g_header, publication);
 }
 
 void ClearSgreLookupActiveCapture() {
+  if (g_header != nullptr) {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header,
+        fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdSgre);
+  }
   g_sgre_lookup_active_valid = false;
   g_sgre_lookup_active_line.clear();
   g_sgre_lookup_active_mapped = 0;
-  g_sgre_lookup_active_capture_seq = 0;
+  g_sgre_lookup_active_generation = 0;
   g_sgre_lookup_active_capture_tick = 0;
   InvalidateSgreLookupClickTarget();
 }
 
+bool IsSgreLookupPayloadCurrent(const SgreLookupClickPayload& payload) {
+  const uint64_t latest_capture = static_cast<uint64_t>(
+      InterlockedCompareExchange64(
+          reinterpret_cast<volatile LONG64*>(&g_sgre_lookup_capture_count), 0,
+          0));
+  if (!g_sgre_lookup_active_valid || g_sgre_lookup_active_generation == 0 ||
+      latest_capture != g_sgre_lookup_processed_seq ||
+      payload.text_units == 0 ||
+      payload.text_units != g_sgre_lookup_active_line.size() ||
+      payload.char_index >= payload.text_units ||
+      payload.char_index >= g_sgre_lookup_active_capture.glyph_count ||
+      memcmp(payload.text, g_sgre_lookup_active_line.data(),
+             static_cast<size_t>(payload.text_units) * sizeof(wchar_t)) != 0) {
+    return false;
+  }
+
+  const HWND game = reinterpret_cast<HWND>(payload.game_window);
+  RECT client = {};
+  POINT origin = {0, 0};
+  if (game == nullptr || !IsWindow(game) || GetForegroundWindow() != game ||
+      g_sgre_direct_input_game_window.load(std::memory_order_acquire) != game ||
+      !GetClientRect(game, &client) || !ClientToScreen(game, &origin)) {
+    return false;
+  }
+  const fushi_voice_hook::SgreLookupClientSnapshot active_client = {
+      reinterpret_cast<uintptr_t>(game), origin.x, origin.y,
+      client.right - client.left, client.bottom - client.top};
+  if (!fushi_voice_hook::MatchesSgreLookupGenerationAndClient(
+          payload.logical_generation, SgreLookupPayloadClientSnapshot(payload),
+          g_sgre_lookup_active_generation, active_client)) {
+    return false;
+  }
+
+  auto glyph = g_sgre_lookup_active_capture.glyphs[payload.char_index];
+  glyph.width = fushi_voice_hook::SgreLookupHitWidth(
+      g_sgre_lookup_active_capture.glyphs,
+      g_sgre_lookup_active_capture.glyph_count, payload.char_index);
+  fushi_voice_hook::SgreLookupRect expected;
+  if (!fushi_voice_hook::SgreLookupRectForGlyph(
+          glyph, active_client.width, active_client.height, &expected)) {
+    return false;
+  }
+  return payload.rect.x == expected.x && payload.rect.y == expected.y &&
+         payload.rect.width == expected.width &&
+         payload.rect.height == expected.height;
+}
+
 bool PublishSgreLookupClickPayload(const SgreLookupClickPayload& payload) {
   if (payload.text_units == 0 || payload.text_units > kSgreLookupMaxTextUnits ||
-      payload.char_index >= payload.text_units) {
+      payload.char_index >= payload.text_units ||
+      !IsSgreLookupPayloadCurrent(payload)) {
     return false;
   }
   const ULONGLONG now = GetTickCount64();
@@ -1009,8 +1225,13 @@ bool PublishSgreLookupClickPayload(const SgreLookupClickPayload& payload) {
     return false;
   }
   const std::wstring line(payload.text, payload.text + payload.text_units);
-  PublishSgreLookupHit(line, payload.char_index, payload.rect,
-                       payload.client_width, payload.client_height);
+  if (!IsSgreLookupPayloadCurrent(payload) ||
+      !PublishSgreLookupHit(payload.logical_generation, line,
+                            payload.char_index,
+                            payload.rect, payload.client_width,
+                            payload.client_height)) {
+    return false;
+  }
   g_sgre_lookup_last_hit_identity = identity;
   g_sgre_lookup_last_hit_tick = now;
   return true;
@@ -1019,6 +1240,12 @@ bool PublishSgreLookupClickPayload(const SgreLookupClickPayload& payload) {
 void ProcessSgreLookupTick() {
   if (g_stop || g_header == nullptr ||
       !fushi_voice_hook::HasLookupRegion(g_header)) {
+    if (g_header != nullptr) {
+      fushi_voice_hook::g_geometry_provider_registry.Retire(
+          g_header,
+          fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+          fushi_voice_hook::kLookupGeometryProviderIdSgre);
+    }
     g_sgre_lookup_click_runtime_enabled.store(false,
                                               std::memory_order_release);
     InvalidateSgreLookupClickTarget();
@@ -1041,6 +1268,60 @@ void ProcessSgreLookupTick() {
   }
   g_sgre_lookup_click_runtime_enabled.store(true, std::memory_order_release);
 
+  SgreLookupCapture capture;
+  uint64_t capture_seq = 0;
+  const ULONGLONG now = GetTickCount64();
+  if (ReadLatestSgreLookupCapture(&capture, &capture_seq)) {
+    g_sgre_lookup_processed_seq = capture_seq;
+    if (capture.valid == 1 && capture.text_units != 0 &&
+        capture.text_units == capture.glyph_count &&
+        capture.text_units <= kSgreLookupMaxTextUnits &&
+        capture.glyph_count <= kSgreLookupMaxGlyphs &&
+        capture.captured_tick != 0 && now >= capture.captured_tick &&
+        now - capture.captured_tick <= kSgreLookupActiveCaptureMaxAgeMs) {
+      const bool same_logical_snapshot =
+          g_sgre_lookup_active_valid &&
+          fushi_voice_hook::SameSgreLookupLogicalSnapshot(
+              reinterpret_cast<const char16_t*>(
+                  g_sgre_lookup_active_capture.text),
+              g_sgre_lookup_active_capture.text_units,
+              g_sgre_lookup_active_capture.glyphs,
+              g_sgre_lookup_active_capture.glyph_count,
+              g_sgre_lookup_active_capture.line_height,
+              reinterpret_cast<const char16_t*>(capture.text),
+              capture.text_units, capture.glyphs, capture.glyph_count,
+              capture.line_height);
+      if (!same_logical_snapshot) {
+        g_sgre_lookup_generation_counter =
+            fushi_voice_hook::NextSgreLookupLogicalGeneration(
+                g_sgre_lookup_generation_counter);
+      }
+      memcpy(&g_sgre_lookup_active_capture, &capture, sizeof(capture));
+      g_sgre_lookup_active_line.assign(
+          capture.text, capture.text + capture.text_units);
+      for (size_t i = 0; i < capture.glyph_count; ++i) {
+        // Draw-state characters are already game-parsed and are exactly
+        // one-to-one with the flattened visible glyph vector.
+        g_sgre_lookup_active_char_indices[i] = static_cast<uint32_t>(i);
+      }
+      g_sgre_lookup_active_mapped = capture.glyph_count;
+      g_sgre_lookup_active_valid = true;
+      g_sgre_lookup_active_generation = g_sgre_lookup_generation_counter;
+      g_sgre_lookup_active_capture_tick = capture.captured_tick;
+    } else {
+      ClearSgreLookupActiveCapture();
+    }
+  }
+  if (g_sgre_lookup_active_valid &&
+      (now < g_sgre_lookup_active_capture_tick ||
+       now - g_sgre_lookup_active_capture_tick >
+           kSgreLookupActiveCaptureMaxAgeMs)) {
+    ClearSgreLookupActiveCapture();
+  }
+
+  // Drain queued ups only after consuming the latest renderer snapshot.  The
+  // final publication gate below then compares the down epoch and client
+  // transform against this active logical generation.
   bool click_submitted = false;
   SgreLookupClickEvent click_event;
   uint64_t click_event_seq = 0;
@@ -1054,38 +1335,16 @@ void ProcessSgreLookupTick() {
     }
   }
 
-  SgreLookupCapture capture;
-  uint64_t capture_seq = 0;
-  const ULONGLONG now = GetTickCount64();
-  if (ReadLatestSgreLookupCapture(&capture, &capture_seq)) {
-    g_sgre_lookup_processed_seq = capture_seq;
-    if (capture.valid == 1 && capture.text_units != 0 &&
-        capture.text_units == capture.glyph_count &&
-        capture.text_units <= kSgreLookupMaxTextUnits &&
-        capture.glyph_count <= kSgreLookupMaxGlyphs &&
-        capture.captured_tick != 0 && now >= capture.captured_tick &&
-        now - capture.captured_tick <= kSgreLookupActiveCaptureMaxAgeMs) {
-      memcpy(&g_sgre_lookup_active_capture, &capture, sizeof(capture));
-      g_sgre_lookup_active_line.assign(
-          capture.text, capture.text + capture.text_units);
-      for (size_t i = 0; i < capture.glyph_count; ++i) {
-        // Draw-state characters are already game-parsed and are exactly
-        // one-to-one with the flattened visible glyph vector.
-        g_sgre_lookup_active_char_indices[i] = static_cast<uint32_t>(i);
-      }
-      g_sgre_lookup_active_mapped = capture.glyph_count;
-      g_sgre_lookup_active_valid = true;
-      g_sgre_lookup_active_capture_seq = capture_seq;
-      g_sgre_lookup_active_capture_tick = capture.captured_tick;
-    } else {
-      ClearSgreLookupActiveCapture();
-    }
-  }
-  if (g_sgre_lookup_active_valid &&
-      (now < g_sgre_lookup_active_capture_tick ||
-       now - g_sgre_lookup_active_capture_tick >
-           kSgreLookupActiveCaptureMaxAgeMs)) {
-    ClearSgreLookupActiveCapture();
+  if (g_sgre_lookup_active_valid && g_sgre_lookup_active_mapped != 0) {
+    fushi_voice_hook::g_geometry_provider_registry.OfferReady(
+        g_header,
+        fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdSgre);
+  } else {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header,
+        fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdSgre);
   }
 
   const uint16_t shift_state =
@@ -1104,6 +1363,10 @@ void ProcessSgreLookupTick() {
   POINT client_origin = {0, 0};
   if (game == nullptr || !GetClientRect(game, &client) ||
       !ClientToScreen(game, &client_origin) || !GetCursorPos(&cursor)) {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header,
+        fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdSgre);
     InvalidateSgreLookupClickTarget();
     return;
   }
@@ -1115,7 +1378,7 @@ void ProcessSgreLookupTick() {
       GetValidPublishedSgreDirectInputShieldPopup(click_game) != nullptr ||
       IsLookupOverlayInputShieldVisible();
   if (click_game == game && !popup_visible) {
-    PublishSgreLookupClickTarget(active, g_sgre_lookup_active_capture_seq, game,
+    PublishSgreLookupClickTarget(active, g_sgre_lookup_active_generation, game,
                                  client_origin, client_width, client_height);
   } else {
     InvalidateSgreLookupClickTarget();
@@ -1136,9 +1399,9 @@ void ProcessSgreLookupTick() {
       game_point) {
     SgreLookupClickPayload shift_payload;
     FillSgreLookupClickPayload(
-        &shift_payload, active, g_sgre_lookup_active_capture_seq,
-        g_sgre_lookup_active_char_indices[glyph_index], hit_rect, client_width,
-        client_height);
+        &shift_payload, active, g_sgre_lookup_active_generation,
+        g_sgre_lookup_active_char_indices[glyph_index], hit_rect, game,
+        client_origin, client_width, client_height);
     PublishSgreLookupClickPayload(shift_payload);
   }
 }

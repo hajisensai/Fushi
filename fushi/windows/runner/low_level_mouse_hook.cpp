@@ -1,11 +1,18 @@
 #include "low_level_mouse_hook.h"
 
+#include "attached_glyph_transaction_latch.h"
+#include "voice_hook_reader.h"
+
 #include "../../../native/galgame_hook/include/voice_hook_ipc.h"
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 namespace fushi {
 
@@ -15,6 +22,12 @@ namespace {
 constexpr UINT kThreadArm = WM_APP + 0x60;
 constexpr UINT kThreadDisarm = WM_APP + 0x61;
 constexpr UINT kThreadBarrier = WM_APP + 0x62;
+constexpr UINT kThreadReconcileAttached = WM_APP + 0x63;
+constexpr UINT kAttachedReleasePollMs = 10;
+// Once a real/safely reconciled physical up exists, an injected reducer that
+// never acknowledges down or neutral must not turn the process-wide LL hook
+// into a permanent left-click sink. This deadline never runs while held.
+constexpr ULONGLONG kAttachedShieldAcknowledgeTimeoutMs = 3000;
 
 // BUG-1077 — Disarm 的宽限期（毫秒）。嵌套查词的 reset(Hide) → RevealStack 间隔
 // 只有百毫秒级，立卸立装等于每次嵌套做两次全局钩子表变更（桌面级钩子链更新要与
@@ -44,6 +57,11 @@ constexpr ULONGLONG kSynchronousArmFreshnessMs =
 // 钩子线程与调用线程共享的唯一可变状态：目标窗口。回调只读它，故用 atomic 而不是锁——
 // 钩子回调必须尽快返回，任何可能阻塞（锁竞争、堆分配）的东西都不该出现在这条路径上。
 std::atomic<HWND> g_target{nullptr};
+// Non-null only when an attached surface deliberately fell back to the
+// HHOOK+v19 risk path because an exact sampled-input contract was declared but
+// could not be published.  Keep this separate from g_target so callers never
+// mistake hook installation for verified sampled-input coverage.
+std::atomic<HWND> g_attached_risky_target{nullptr};
 
 // BUG-1882 — direct galCard 的消费范围绑定在专用目标 HWND 上，而不是再放一个
 // 独立 relaxed atomic。修改属性前 ArmAndWait 会先清 g_target，再等钩子线程 ack
@@ -51,6 +69,13 @@ std::atomic<HWND> g_target{nullptr};
 // 看到 null，直到属性和 target 按此顺序发布。
 constexpr wchar_t kConsumeOutsideOwnerProperty[] =
     L"Fushi.LowLevelMouseHook.ConsumeOutsideOwner";
+// sampled-input publication 与“是否吞游戏客户区空白”是两件事。direct galCard 两者都要，
+// attached glyph surface 只要前者；复用一个 property 会把整块游戏客户区误吞。
+constexpr wchar_t kSampledShieldOwnerProperty[] =
+    L"Fushi.LowLevelMouseHook.SampledShieldOwner";
+constexpr wchar_t kSampledShieldTargetOnlyProperty[] =
+    L"Fushi.LowLevelMouseHook.SampledShieldTargetOnly";
+constexpr uintptr_t kSampledShieldTargetOnlyValue = 1u;
 
 constexpr uint32_t kSwallowedLeftButton = 1u << 0;
 constexpr uint32_t kSwallowedRightButton = 1u << 1;
@@ -62,6 +87,43 @@ constexpr uint32_t kSwallowedX2Button = 1u << 4;
 // 所以这份事务状态不能随 g_target 立即清空；回调必须先收掉配对 up，再看
 // target 是否还在。只有宽限期后真正卸钩才清理残留位。
 std::atomic<uint32_t> g_swallowed_buttons{0};
+
+struct AttachedGlyphHitSnapshot {
+  HWND surface = nullptr;
+  HWND game_owner = nullptr;
+  uint32_t token = 0;
+  bool allow_risk = false;
+  std::vector<RECT> screen_rects;
+};
+
+// C++17 supplies atomic operations for shared_ptr as free functions.  Updates
+// allocate/copy on the surface thread; WH_MOUSE_LL performs only an atomic
+// snapshot load and linear reads over immutable RECTs.
+std::shared_ptr<const AttachedGlyphHitSnapshot> g_attached_hit_snapshot;
+std::atomic<uint32_t> g_attached_hit_token{0};
+std::atomic<uint32_t> g_attached_transaction_counter{0};
+SRWLOCK g_attached_transaction_lock = SRWLOCK_INIT;
+
+struct AttachedGlyphActiveTransaction {
+  AttachedGlyphTransactionLatch latch;
+  size_t rect_index = 0;
+  POINT down_point{};
+  ULONGLONG physical_up_tick = 0;
+  std::shared_ptr<const AttachedGlyphHitSnapshot> snapshot;
+};
+
+AttachedGlyphActiveTransaction g_attached_active_transaction;
+// Callback-side ownership probes must not wait behind the release worker or
+// surface teardown. The SRW-protected object remains authoritative; this id is
+// only a conservative, lock-free indication that an up/down tail is live.
+std::atomic<uint64_t> g_attached_active_transaction_id{0};
+// A callback-side PostMessage failure may race the acknowledgement worker's
+// SRW ownership.  Defer only the lookup-submission cancellation; this must
+// never reuse the pending-up slot because no physical up was observed.
+std::atomic<uint64_t> g_attached_pending_cancel_transaction_id{0};
+std::atomic<uint64_t> g_attached_pending_up_transaction_id{0};
+std::atomic<WPARAM> g_attached_pending_up_point{0};
+std::atomic<bool> g_attached_pending_up_real{false};
 
 // SGRE helper ready 时，game HWND 的 Window property 指向当前 direct popup。
 // 与 g_swallowed_buttons 分开：卡片内部点击要继续交给 WebView2，但 DirectInput
@@ -133,6 +195,10 @@ std::atomic<ULONGLONG> g_callback_tick{0};
 std::mutex g_thread_mutex;
 // 只串行 Arm/Disarm 的发布与 direct cold-arm ack；钩子回调绝不碰这把锁。
 std::mutex g_binding_mutex;
+std::mutex g_attached_release_worker_mutex;
+std::condition_variable g_attached_release_worker_cv;
+std::once_flag g_attached_release_worker_once;
+std::atomic<bool> g_attached_release_work_requested{false};
 std::atomic<DWORD> g_thread_id{0};
 // 线程 id 发布完成的信号（进程生命周期常驻，不关闭）。
 HANDLE g_thread_ready = nullptr;
@@ -420,19 +486,28 @@ void RefreshSampledInputTailAck(
       token, 0, std::memory_order_acq_rel, std::memory_order_acquire);
 }
 
-bool PublishDirectInputShieldIfReady(HWND popup, HWND game) {
+enum class SampledShieldPublishResult {
+  kNotRequired,
+  kPublished,
+  kUnavailable,
+  kBusy,
+};
+
+SampledShieldPublishResult PublishDirectInputShieldIfReady(HWND popup,
+                                                           HWND game) {
   bool any_declared = false;
   const SampledInputShieldContract* contract =
       SelectSampledInputShieldContract(game, &any_declared);
   if (contract == nullptr && !any_declared) {
-    return true;  // Other engines retain the existing WH_MOUSE_LL-only path.
+    // Other engines retain the existing WH_MOUSE_LL-only path.
+    return SampledShieldPublishResult::kNotRequired;
   }
   if (!IsSelectedSampledInputShieldContractReady(game, contract)) {
     // An exact sampled-input engine declared protection mandatory, but its
     // detour is absent/not ready (or two contracts conflict).  Fail closed
     // instead of silently falling back to the HHOOK-only route already
     // disproved on both SGRE and Siglus.
-    return false;
+    return SampledShieldPublishResult::kUnavailable;
   }
   const uint32_t pending =
       g_direct_input_shield_buttons.load(std::memory_order_acquire);
@@ -444,7 +519,7 @@ bool PublishDirectInputShieldIfReady(HWND popup, HWND game) {
       g_direct_input_shield_tail_token.load(std::memory_order_acquire);
   if ((pending != 0 || pending_tail != 0) &&
       (previous_game != game || previous_popup != popup)) {
-    return false;
+    return SampledShieldPublishResult::kBusy;
   }
   if (HasSampledInputTailHandshake(contract) && pending_tail == 0) {
     RemovePropW(game, contract->tail_request_property);
@@ -455,7 +530,7 @@ bool PublishDirectInputShieldIfReady(HWND popup, HWND game) {
   // suppress an immediate physical-state poller.
   if (!SetPropW(game, contract->window_property,
                 reinterpret_cast<HANDLE>(popup))) {
-    return false;
+    return SampledShieldPublishResult::kUnavailable;
   }
   // Close the Ready -> Window TOCTOU with the helper's health worker: it may
   // revoke the contract between our first Ready read and SetProp.  Re-read both
@@ -469,12 +544,12 @@ bool PublishDirectInputShieldIfReady(HWND popup, HWND game) {
             GetPropW(game, contract->window_property)) == popup) {
       RemovePropW(game, contract->window_property);
     }
-    return false;
+    return SampledShieldPublishResult::kUnavailable;
   }
   g_direct_input_shield_contract.store(contract, std::memory_order_release);
   g_direct_input_shield_game.store(game, std::memory_order_release);
   g_direct_input_shield_popup.store(popup, std::memory_order_release);
-  return true;
+  return SampledShieldPublishResult::kPublished;
 }
 
 void RevokeDirectInputShieldIfIdle(HWND expected_popup) {
@@ -548,6 +623,500 @@ bool ShouldConsumeGameClientClick(HWND target, HWND game, HWND hit,
   return GetForegroundWindow() == game;
 }
 
+std::shared_ptr<const AttachedGlyphHitSnapshot>
+AttachedGlyphSnapshotForTarget(HWND target) {
+  const auto snapshot = std::atomic_load_explicit(
+      &g_attached_hit_snapshot, std::memory_order_acquire);
+  if (snapshot == nullptr || snapshot->surface != target ||
+      snapshot->game_owner == nullptr || snapshot->screen_rects.empty()) {
+    return nullptr;
+  }
+  return snapshot;
+}
+
+size_t AttachedGlyphRectAt(
+    const std::shared_ptr<const AttachedGlyphHitSnapshot>& snapshot,
+    POINT screen_point) {
+  if (snapshot == nullptr) return SIZE_MAX;
+  for (size_t index = 0; index < snapshot->screen_rects.size(); ++index) {
+    if (PtInRect(&snapshot->screen_rects[index], screen_point)) return index;
+  }
+  return SIZE_MAX;
+}
+
+bool BareLeftClickModifiersClear() {
+  constexpr int keys[] = {VK_SHIFT, VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN,
+                          VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2};
+  for (int key : keys) {
+    if ((GetAsyncKeyState(key) & 0x8000) != 0) return false;
+  }
+  return true;
+}
+
+uint64_t NextAttachedGlyphTransactionId(uint32_t snapshot_token) {
+  uint32_t sequence =
+      g_attached_transaction_counter.fetch_add(1, std::memory_order_acq_rel) +
+      1u;
+  if (sequence == 0) {
+    sequence =
+        g_attached_transaction_counter.fetch_add(1,
+                                                  std::memory_order_acq_rel) +
+        1u;
+  }
+  return (static_cast<uint64_t>(snapshot_token) << 32u) | sequence;
+}
+
+void RequestAttachedGlyphReleasePoll();
+
+void RequestAttachedGlyphPhysicalReconciliation() {
+  const DWORD thread_id = g_thread_id.load(std::memory_order_acquire);
+  if (thread_id != 0) {
+    // HookProc runs on this installing thread, so this is only a queue append.
+    // The thread timer performs the physical-state read after the normal 3s
+    // grace; the callback itself never guesses that a held button was released.
+    PostThreadMessage(thread_id, kThreadReconcileAttached, 0, 0);
+  }
+}
+
+bool BeginAttachedGlyphTransaction(
+    HWND target,
+    const std::shared_ptr<const AttachedGlyphHitSnapshot>& snapshot,
+    size_t rect_index, POINT screen_point, uint64_t* transaction_id) {
+  if (transaction_id != nullptr) *transaction_id = 0;
+  if (snapshot == nullptr || snapshot->surface != target ||
+      rect_index >= snapshot->screen_rects.size()) {
+    return false;
+  }
+  // WH_MOUSE_LL is a synchronous system hook. Contention with teardown or the
+  // acknowledgement worker must fail open before publishing any shield state,
+  // never park the system input thread on an SRW lock.
+  if (!TryAcquireSRWLockExclusive(&g_attached_transaction_lock)) return false;
+  if (g_attached_active_transaction.latch.active()) {
+    ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+    return false;
+  }
+  const auto current = std::atomic_load_explicit(
+      &g_attached_hit_snapshot, std::memory_order_acquire);
+  if (current.get() != snapshot.get()) {
+    ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+    return false;
+  }
+  const uint64_t id = NextAttachedGlyphTransactionId(snapshot->token);
+  const uint32_t request_seq =
+      VoiceHookReader::Instance().TryPublishLookupShieldTransaction(
+          fushi_voice_hook::kLookupShieldOwnerAttachedGlyph,
+          snapshot->game_owner, id,
+          fushi_voice_hook::kLookupShieldButtonLeft, snapshot->allow_risk);
+  const auto after_publish = std::atomic_load_explicit(
+      &g_attached_hit_snapshot, std::memory_order_acquire);
+  if (request_seq == 0 || after_publish.get() != snapshot.get()) {
+    if (request_seq != 0) {
+      // The published down already belongs to this physical transaction even
+      // though its immutable geometry was concurrently revoked.  Cancel only
+      // the lookup submission: treating revocation as a physical up would make
+      // GetAsyncKeyState/DirectInput/Raw Input expose the held button and its
+      // eventual up tail to the game.
+      g_attached_active_transaction.latch.Begin(id, request_seq);
+      g_attached_active_transaction.latch.Cancel();
+      g_attached_active_transaction.snapshot = snapshot;
+      g_attached_active_transaction_id.store(id, std::memory_order_release);
+      ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+      RequestAttachedGlyphReleasePoll();
+      RequestAttachedGlyphPhysicalReconciliation();
+      // A down request is already visible to the injected reducer. Swallow the
+      // corresponding Win32 down even though the geometry was concurrently
+      // revoked; failing open after publication would split one click across
+      // two owners.
+      if (transaction_id != nullptr) *transaction_id = id;
+      return true;
+    }
+    ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+    return false;
+  }
+  if (!g_attached_active_transaction.latch.Begin(id, request_seq)) {
+    // This is unreachable under the exclusive latch lock, but failing open is
+    // safer than blocking the system hook on a compensating publish.
+    ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+    return false;
+  }
+  g_attached_active_transaction.rect_index = rect_index;
+  g_attached_active_transaction.down_point = screen_point;
+  g_attached_active_transaction.snapshot = snapshot;
+  g_attached_active_transaction_id.store(id, std::memory_order_release);
+  ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+  RequestAttachedGlyphPhysicalReconciliation();
+
+  if (!PostMessageW(target, kLowLevelMouseAttachedGlyphDownMessage,
+                    static_cast<WPARAM>(id),
+                    static_cast<LPARAM>(PackMouseHookPoint(
+                        screen_point.x, screen_point.y)))) {
+    if (TryAcquireSRWLockExclusive(&g_attached_transaction_lock)) {
+      if (g_attached_active_transaction.latch.transaction_id() == id) {
+        g_attached_active_transaction.latch.Cancel();
+      }
+      ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+    } else {
+      // Lock contention cannot turn a failed UI notification into a synthetic
+      // button-up.  The worker applies this cancellation marker while the live
+      // physical transaction and its sampled-input latch remain owned.
+      g_attached_pending_cancel_transaction_id.store(id,
+                                                      std::memory_order_release);
+    }
+    RequestAttachedGlyphReleasePoll();
+    if (transaction_id != nullptr) *transaction_id = id;
+    return true;
+  }
+  if (transaction_id != nullptr) *transaction_id = id;
+  return true;
+}
+
+bool AdvanceAttachedGlyphReleaseIfAcknowledged();
+
+bool ApplyPendingAttachedGlyphCancellation() {
+  const uint64_t transaction_id =
+      g_attached_pending_cancel_transaction_id.exchange(
+          0, std::memory_order_acq_rel);
+  if (transaction_id == 0) return false;
+
+  AcquireSRWLockExclusive(&g_attached_transaction_lock);
+  const bool matches =
+      g_attached_active_transaction.latch.transaction_id() == transaction_id;
+  if (matches) g_attached_active_transaction.latch.Cancel();
+  ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+  return matches;
+}
+
+bool ApplyPendingAttachedGlyphPhysicalUp() {
+  const uint64_t transaction_id =
+      g_attached_pending_up_transaction_id.exchange(
+          0, std::memory_order_acq_rel);
+  if (transaction_id == 0) return false;
+  const POINT screen_point = UnpackMouseHookPoint(
+      g_attached_pending_up_point.load(std::memory_order_relaxed));
+  const bool real_up =
+      g_attached_pending_up_real.load(std::memory_order_relaxed);
+
+  AcquireSRWLockExclusive(&g_attached_transaction_lock);
+  if (g_attached_active_transaction.latch.transaction_id() != transaction_id ||
+      g_attached_active_transaction.snapshot == nullptr) {
+    ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+    return false;
+  }
+  const bool first_up =
+      g_attached_active_transaction.latch.MarkPhysicalUp();
+  if (first_up) {
+    g_attached_active_transaction.physical_up_tick = GetTickCount64();
+  }
+  const bool cancel_submission =
+      !real_up || g_attached_active_transaction.latch.cancelled();
+  const HWND surface = g_attached_active_transaction.snapshot->surface;
+  ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+  if (first_up) {
+    PostMessageW(surface,
+                 cancel_submission ? kLowLevelMouseAttachedGlyphCancelMessage
+                                   : kLowLevelMouseAttachedGlyphUpMessage,
+                 static_cast<WPARAM>(transaction_id),
+                 static_cast<LPARAM>(PackMouseHookPoint(
+                     screen_point.x, screen_point.y)));
+  }
+  return true;
+}
+
+void EnsureAttachedGlyphReleaseWorker() {
+  std::call_once(g_attached_release_worker_once, []() {
+    std::thread([]() {
+      std::unique_lock<std::mutex> lock(g_attached_release_worker_mutex);
+      for (;;) {
+        g_attached_release_worker_cv.wait(lock, []() {
+          return g_attached_release_work_requested.load(
+              std::memory_order_acquire);
+        });
+        g_attached_release_work_requested.store(false,
+                                                std::memory_order_release);
+        lock.unlock();
+        ApplyPendingAttachedGlyphCancellation();
+        ApplyPendingAttachedGlyphPhysicalUp();
+        while (AdvanceAttachedGlyphReleaseIfAcknowledged()) {
+          std::this_thread::sleep_for(
+              std::chrono::milliseconds(kAttachedReleasePollMs));
+        }
+        lock.lock();
+      }
+    }).detach();
+  });
+}
+
+void RequestAttachedGlyphReleasePoll() {
+  // The worker is created on the surface/platform thread before the immutable
+  // snapshot is published. Callback-side wake-up is therefore a lock-free
+  // atomic store plus notify; it never enters call_once or the worker mutex.
+  g_attached_release_work_requested.store(true, std::memory_order_release);
+  g_attached_release_worker_cv.notify_one();
+}
+
+bool ObserveAttachedGlyphPhysicalUp(POINT screen_point, bool real_up) {
+  AcquireSRWLockExclusive(&g_attached_transaction_lock);
+  if (!g_attached_active_transaction.latch.active() ||
+      g_attached_active_transaction.snapshot == nullptr) {
+    ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+    return false;
+  }
+  const bool first_up =
+      g_attached_active_transaction.latch.MarkPhysicalUp();
+  if (first_up) {
+    g_attached_active_transaction.physical_up_tick = GetTickCount64();
+  }
+  const uint64_t transaction_id =
+      g_attached_active_transaction.latch.transaction_id();
+  const bool cancel_submission =
+      !real_up || g_attached_active_transaction.latch.cancelled();
+  const HWND surface = g_attached_active_transaction.snapshot->surface;
+  ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+  if (first_up) {
+    PostMessageW(surface,
+                 cancel_submission ? kLowLevelMouseAttachedGlyphCancelMessage
+                                   : kLowLevelMouseAttachedGlyphUpMessage,
+                 static_cast<WPARAM>(transaction_id),
+                 static_cast<LPARAM>(
+                     PackMouseHookPoint(screen_point.x, screen_point.y)));
+  }
+  RequestAttachedGlyphReleasePoll();
+  return true;
+}
+
+bool TryObserveAttachedGlyphPhysicalUp(POINT screen_point, bool real_up) {
+  const uint64_t transaction_id =
+      g_attached_active_transaction_id.load(std::memory_order_acquire);
+  if (transaction_id == 0) return false;
+  if (!TryAcquireSRWLockExclusive(&g_attached_transaction_lock)) {
+    g_attached_pending_up_point.store(
+        PackMouseHookPoint(screen_point.x, screen_point.y),
+        std::memory_order_relaxed);
+    g_attached_pending_up_real.store(real_up, std::memory_order_relaxed);
+    g_attached_pending_up_transaction_id.store(transaction_id,
+                                                std::memory_order_release);
+    RequestAttachedGlyphReleasePoll();
+    return true;
+  }
+  if (g_attached_active_transaction.latch.transaction_id() != transaction_id ||
+      g_attached_active_transaction.snapshot == nullptr) {
+    ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+    return false;
+  }
+  const bool first_up =
+      g_attached_active_transaction.latch.MarkPhysicalUp();
+  if (first_up) {
+    g_attached_active_transaction.physical_up_tick = GetTickCount64();
+  }
+  const bool cancel_submission =
+      !real_up || g_attached_active_transaction.latch.cancelled();
+  const HWND surface = g_attached_active_transaction.snapshot->surface;
+  ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+  if (first_up) {
+    PostMessageW(surface,
+                 cancel_submission ? kLowLevelMouseAttachedGlyphCancelMessage
+                                   : kLowLevelMouseAttachedGlyphUpMessage,
+                 static_cast<WPARAM>(transaction_id),
+                 static_cast<LPARAM>(PackMouseHookPoint(
+                     screen_point.x, screen_point.y)));
+  }
+  RequestAttachedGlyphReleasePoll();
+  return true;
+}
+
+bool EndAttachedGlyphTransaction(POINT screen_point) {
+  return TryObserveAttachedGlyphPhysicalUp(screen_point, true);
+}
+
+bool HasActiveAttachedGlyphTransactionFast() {
+  return g_attached_active_transaction_id.load(std::memory_order_acquire) != 0;
+}
+
+bool HasActiveAttachedGlyphTransaction() {
+  AcquireSRWLockShared(&g_attached_transaction_lock);
+  const bool active = g_attached_active_transaction.latch.active();
+  ReleaseSRWLockShared(&g_attached_transaction_lock);
+  return active;
+}
+
+bool FailOpenRetireAttachedGlyphTransaction(uint64_t transaction_id) {
+  if (transaction_id == 0)
+    return false;
+  std::shared_ptr<const AttachedGlyphHitSnapshot> retired_snapshot;
+  AcquireSRWLockExclusive(&g_attached_transaction_lock);
+  if (g_attached_active_transaction.latch.transaction_id() != transaction_id ||
+      g_attached_active_transaction.snapshot == nullptr ||
+      g_attached_active_transaction.latch.FailOpenRetireAfterPhysicalUp() == 0) {
+    ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+    return false;
+  }
+  retired_snapshot = g_attached_active_transaction.snapshot;
+
+  // Revoke the admitting snapshot before publishing the lock-free inactive id.
+  // Otherwise HookProc could observe id==0, begin another transaction from the
+  // old snapshot, and overwrite the best-effort neutral in this tiny gap.
+  auto current = std::atomic_load_explicit(
+      &g_attached_hit_snapshot, std::memory_order_acquire);
+  while (current.get() == retired_snapshot.get()) {
+    std::shared_ptr<const AttachedGlyphHitSnapshot> empty;
+    if (std::atomic_compare_exchange_weak_explicit(
+            &g_attached_hit_snapshot, &current, empty,
+            std::memory_order_acq_rel, std::memory_order_acquire)) {
+      break;
+    }
+  }
+  HWND expected_target = retired_snapshot->surface;
+  g_target.compare_exchange_strong(expected_target, nullptr,
+                                   std::memory_order_acq_rel,
+                                   std::memory_order_acquire);
+  g_attached_active_transaction = {};
+  g_attached_active_transaction_id.store(0, std::memory_order_release);
+  ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+
+  // The platform-thread mirror must not submit a lookup whose sampled-input
+  // transaction could not be acknowledged. PostMessage remains non-blocking;
+  // a destroyed surface simply means there is no mirror left to cancel/hide.
+  PostMessageW(retired_snapshot->surface,
+               kLowLevelMouseAttachedGlyphAbortMessage,
+               static_cast<WPARAM>(transaction_id), 0);
+  return true;
+}
+
+// Device replacement or a removed hook can lose the physical up.  The normal
+// path must wait for WM_LBUTTONUP; only the existing three-second reconciliation
+// timer may synthesize release once physical state proves the button is up.
+bool ReconcileAttachedGlyphTransactionWithPhysicalState() {
+  if (!HasActiveAttachedGlyphTransaction()) return false;
+  AcquireSRWLockShared(&g_attached_transaction_lock);
+  const bool physical_up =
+      g_attached_active_transaction.latch.physical_up();
+  ReleaseSRWLockShared(&g_attached_transaction_lock);
+  if (!physical_up) {
+    if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0) return true;
+    POINT point{};
+    GetCursorPos(&point);
+    ObserveAttachedGlyphPhysicalUp(point, false);
+  }
+  return HasActiveAttachedGlyphTransaction();
+}
+
+// Advance the single-slot v19 request in two acknowledged phases. A fast
+// physical up must not overwrite the down request before the injected reducer
+// has observed it; likewise, ownership is retained until the neutral release
+// itself is acknowledged so provider handoff cannot cut through the tail.
+bool AdvanceAttachedGlyphReleaseIfAcknowledged() {
+  AcquireSRWLockShared(&g_attached_transaction_lock);
+  if (!g_attached_active_transaction.latch.active() ||
+      !g_attached_active_transaction.latch.physical_up() ||
+      g_attached_active_transaction.snapshot == nullptr) {
+    ReleaseSRWLockShared(&g_attached_transaction_lock);
+    return false;
+  }
+  const uint64_t transaction_id =
+      g_attached_active_transaction.latch.transaction_id();
+  const uint32_t down_request_seq =
+      g_attached_active_transaction.latch.down_request_seq();
+  uint32_t release_request_seq =
+      g_attached_active_transaction.latch.release_request_seq();
+  const ULONGLONG physical_up_tick =
+      g_attached_active_transaction.physical_up_tick;
+  const auto snapshot = g_attached_active_transaction.snapshot;
+  ReleaseSRWLockShared(&g_attached_transaction_lock);
+
+  VoiceHookLookupShieldStatus status =
+      VoiceHookReader::Instance().LookupShieldStatus();
+  const uint64_t raw_target =
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(snapshot->game_owner));
+  auto status_belongs_to_transaction = [&]() {
+    return status.ok() &&
+           status.owner_kind ==
+               fushi_voice_hook::kLookupShieldOwnerAttachedGlyph &&
+           status.target_hwnd == raw_target &&
+           status.transaction_id == transaction_id;
+  };
+  auto fail_open_after_best_effort_neutral = [&]() {
+    // Only an exact, coherently read request is safe to overwrite. If the IPC
+    // mapping is gone/invalid, or another owner has already replaced it, there
+    // is nothing this host can safely write; retire the already-physical-up LL
+    // latch so the process cannot become a global left-click sink.
+    if (status_belongs_to_transaction() && status.active_buttons != 0) {
+      (void)VoiceHookReader::Instance().PublishLookupShieldTransaction(
+          fushi_voice_hook::kLookupShieldOwnerAttachedGlyph,
+          snapshot->game_owner, transaction_id, 0, snapshot->allow_risk);
+    }
+    return !FailOpenRetireAttachedGlyphTransaction(transaction_id);
+  };
+  if (!status.ok()) {
+    return fail_open_after_best_effort_neutral();
+  }
+  const uint32_t expected_request_seq =
+      release_request_seq == 0 ? down_request_seq : release_request_seq;
+  if (!status_belongs_to_transaction() ||
+      status.request_seq != expected_request_seq) {
+    return fail_open_after_best_effort_neutral();
+  }
+  const bool shield_faulted =
+      status.fault_mask != 0 ||
+      (status.status_flags &
+       fushi_voice_hook::kLookupShieldStatusFaulted) != 0;
+  const bool acknowledgement_timed_out =
+      AttachedGlyphAcknowledgeTimedOut(
+          physical_up_tick, GetTickCount64(),
+          kAttachedShieldAcknowledgeTimeoutMs);
+  if (shield_faulted || acknowledgement_timed_out) {
+    return fail_open_after_best_effort_neutral();
+  }
+  if (release_request_seq == 0 && status.ok() &&
+      status.request_seq == down_request_seq &&
+      status.applied_seq == down_request_seq) {
+    const uint32_t release_seq =
+        VoiceHookReader::Instance().PublishLookupShieldTransaction(
+            fushi_voice_hook::kLookupShieldOwnerAttachedGlyph,
+            snapshot->game_owner, transaction_id, 0, snapshot->allow_risk);
+    AcquireSRWLockExclusive(&g_attached_transaction_lock);
+    if (g_attached_active_transaction.latch.transaction_id() ==
+            transaction_id &&
+        g_attached_active_transaction.latch.release_request_seq() == 0) {
+      g_attached_active_transaction.latch.RecordReleaseRequest(release_seq);
+      release_request_seq = release_seq;
+    }
+    ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+    if (release_seq == 0) {
+      return fail_open_after_best_effort_neutral();
+    }
+  }
+
+  if (release_request_seq != 0) {
+    status = VoiceHookReader::Instance().LookupShieldStatus();
+    if (!status.ok() || !status_belongs_to_transaction() ||
+        status.request_seq != release_request_seq) {
+      return fail_open_after_best_effort_neutral();
+    }
+    if (status.fault_mask != 0 ||
+        (status.status_flags &
+         fushi_voice_hook::kLookupShieldStatusFaulted) != 0 ||
+        AttachedGlyphAcknowledgeTimedOut(
+            physical_up_tick, GetTickCount64(),
+            kAttachedShieldAcknowledgeTimeoutMs)) {
+      return fail_open_after_best_effort_neutral();
+    }
+    AcquireSRWLockExclusive(&g_attached_transaction_lock);
+    if (g_attached_active_transaction.latch.transaction_id() ==
+            transaction_id &&
+        status.ok() && g_attached_active_transaction.latch.CanRetire(
+                           status.request_seq, status.applied_seq,
+                           status.active_buttons)) {
+      g_attached_active_transaction.latch.Retire();
+      g_attached_active_transaction = {};
+      g_attached_active_transaction_id.store(0, std::memory_order_release);
+      ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+      return false;
+    }
+    ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+  }
+  return true;
+}
+
 LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
   // BUG-1286 — 存活证据必须记在最前面：**移动事件**才是每秒都有的那类，用它证明
   // 钩子还在链上；记在过滤分支之后就只剩点击/滚轮能刷新，判据立刻失效。
@@ -574,6 +1143,9 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
   // 点击给那些在 button-up 推进的游戏。
   if (is_button_up) {
     const uint32_t bit = button_bit;
+    if (wparam == WM_LBUTTONUP) {
+      EndAttachedGlyphTransaction(info->pt);
+    }
     if (bit != 0) {
       const uint32_t previous = g_direct_input_shield_buttons.fetch_and(
           ~bit, std::memory_order_relaxed);
@@ -590,6 +1162,18 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
   }
   if (is_button_down) {
     const uint32_t bit = button_bit;
+    if (wparam == WM_LBUTTONDOWN &&
+        HasActiveAttachedGlyphTransactionFast()) {
+      // The previous physical up was lost or its neutral release is still
+      // waiting for injected acknowledgement. A repeated/injected down does
+      // not prove that the button was ever released, so it must never open the
+      // neutral tail. Swallow it and leave the original latch untouched; only
+      // a real up or the delayed three-second physical reconciliation may mark
+      // the transaction complete.
+      g_swallowed_buttons.fetch_or(kSwallowedLeftButton,
+                                    std::memory_order_relaxed);
+      return 1;
+    }
     if (bit != 0) {
       // A fresh down proves any older transaction for this same physical
       // button has already ended, even if its low-level up was lost (device
@@ -611,7 +1195,32 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
     }
   }
   const HWND target = g_target.load(std::memory_order_acquire);
-  if (target == nullptr || !IsWindow(target)) {
+  if (target == nullptr) {
+    return CallNextHookEx(nullptr, code, wparam, lparam);
+  }
+  // Attached runtime owns a fully prevalidated immutable screen-space
+  // snapshot. Handle it before any HWND/property/WindowFromPoint calls: the
+  // system is synchronously waiting for this callback, so a hit needs only the
+  // bounded modifier reads, rectangle scan and single-CAS v19 TryPublish path.
+  const auto attached_snapshot = AttachedGlyphSnapshotForTarget(target);
+  if (attached_snapshot != nullptr) {
+    if (wparam == WM_LBUTTONDOWN && BareLeftClickModifiersClear()) {
+      const size_t attached_rect =
+          AttachedGlyphRectAt(attached_snapshot, info->pt);
+      if (attached_rect != SIZE_MAX) {
+        uint64_t transaction_id = 0;
+        if (BeginAttachedGlyphTransaction(target, attached_snapshot,
+                                          attached_rect, info->pt,
+                                          &transaction_id)) {
+          g_swallowed_buttons.fetch_or(kSwallowedLeftButton,
+                                        std::memory_order_relaxed);
+          return 1;
+        }
+      }
+    }
+    return CallNextHookEx(nullptr, code, wparam, lparam);
+  }
+  if (!IsWindow(target)) {
     return CallNextHookEx(nullptr, code, wparam, lparam);
   }
   if (is_button_down) {
@@ -624,6 +1233,8 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
                          IsChild(target, point_window));
     const HWND consume_owner = reinterpret_cast<HWND>(
         GetPropW(target, kConsumeOutsideOwnerProperty));
+    const HWND sampled_owner = reinterpret_cast<HWND>(
+        GetPropW(target, kSampledShieldOwnerProperty));
     const uint32_t bit = button_bit;
     const HWND shield_game =
         g_direct_input_shield_game.load(std::memory_order_acquire);
@@ -631,7 +1242,7 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
         g_direct_input_shield_popup.load(std::memory_order_acquire);
     const SampledInputShieldContract* shield_contract =
         g_direct_input_shield_contract.load(std::memory_order_acquire);
-    if (bit != 0 && shield_game == consume_owner && shield_popup == target &&
+    if (bit != 0 && shield_game == sampled_owner && shield_popup == target &&
         shield_contract != nullptr &&
         reinterpret_cast<HWND>(
             GetPropW(shield_game, shield_contract->window_property)) == target) {
@@ -751,7 +1362,8 @@ void HookThreadMain() {
       // Keep/schedule the timer and reconcile only after the 3s grace.
       const bool has_pending_button =
           g_swallowed_buttons.load(std::memory_order_relaxed) != 0 ||
-          g_direct_input_shield_buttons.load(std::memory_order_relaxed) != 0;
+          g_direct_input_shield_buttons.load(std::memory_order_relaxed) != 0 ||
+          HasActiveAttachedGlyphTransaction();
       if (disarm_timer != 0 && !has_pending_button) {
         KillTimer(nullptr, disarm_timer);
         disarm_timer = 0;
@@ -816,6 +1428,14 @@ void HookThreadMain() {
       if (hook != nullptr && disarm_timer == 0) {
         disarm_timer = SetTimer(nullptr, 0, kDisarmGraceMs, nullptr);
       }
+    } else if (msg.message == kThreadReconcileAttached) {
+      // A live attached down needs the same delayed physical-state fallback
+      // even while its surface remains armed.  Scheduling this timer does not
+      // clear g_target or disarm the hook; it only reuses the established 3s
+      // reconciliation path if the low-level up is lost.
+      if (hook != nullptr && disarm_timer == 0) {
+        disarm_timer = SetTimer(nullptr, 0, kDisarmGraceMs, nullptr);
+      }
     } else if (msg.message == kThreadBarrier) {
       // PostThreadMessage is serialized with HookProc on this installing
       // thread.  Reaching this message proves every callback that could have
@@ -845,7 +1465,10 @@ void HookThreadMain() {
           ReconcileSwallowedButtonsWithPhysicalState();
       const uint32_t shield_still_held =
           ReconcileDirectInputShieldButtonsWithPhysicalState();
-      if (still_held != 0 || shield_still_held != 0) {
+      const bool attached_still_held =
+          ReconcileAttachedGlyphTransactionWithPhysicalState();
+      if (still_held != 0 || shield_still_held != 0 ||
+          attached_still_held) {
         disarm_timer = SetTimer(nullptr, 0, kDisarmGraceMs, nullptr);
         continue;
       }
@@ -997,20 +1620,141 @@ void ArmLowLevelMouseHook(HWND target) {
   // Desktop/global lookup owns a different GlobalLookupWindow instance from the
   // dedicated gal card, so this HWND never receives the consume-owner property.
   // Do not mutate properties here: async Arm has no callback barrier.
+  g_attached_risky_target.store(nullptr, std::memory_order_release);
   g_target.store(target, std::memory_order_release);
   PostThreadMessage(thread_id, kThreadArm, 0, 0);
 }
 
-bool ArmLowLevelMouseHookAndWait(HWND target, HWND consume_outside_owner) {
-  if (target == nullptr || consume_outside_owner == nullptr) return false;
+uint32_t UpdateLowLevelAttachedGlyphHitRegions(
+    HWND surface, HWND game_owner, const RECT* screen_rects,
+    size_t screen_rect_count, bool allow_risk) {
+  constexpr size_t kMaximumAttachedGlyphRects = 4096;
+  if (surface == nullptr || game_owner == nullptr || screen_rects == nullptr ||
+      screen_rect_count == 0 ||
+      screen_rect_count > kMaximumAttachedGlyphRects) {
+    return 0;
+  }
+  // Start the acknowledgement worker before the snapshot becomes reachable
+  // from WH_MOUSE_LL. Its callback wake-up path can then remain lock-free.
+  EnsureAttachedGlyphReleaseWorker();
+  auto snapshot = std::make_shared<AttachedGlyphHitSnapshot>();
+  snapshot->surface = surface;
+  snapshot->game_owner = game_owner;
+  snapshot->allow_risk = allow_risk;
+  snapshot->screen_rects.reserve(screen_rect_count);
+  for (size_t index = 0; index < screen_rect_count; ++index) {
+    const RECT rect = screen_rects[index];
+    if (rect.right <= rect.left || rect.bottom <= rect.top) return 0;
+    snapshot->screen_rects.push_back(rect);
+  }
+  uint32_t token =
+      g_attached_hit_token.fetch_add(1, std::memory_order_acq_rel) + 1u;
+  if (token == 0) {
+    token =
+        g_attached_hit_token.fetch_add(1, std::memory_order_acq_rel) + 1u;
+  }
+  snapshot->token = token;
+  std::shared_ptr<const AttachedGlyphHitSnapshot> immutable = snapshot;
+  std::atomic_store_explicit(&g_attached_hit_snapshot, std::move(immutable),
+                             std::memory_order_release);
+  return token;
+}
+
+void ClearLowLevelAttachedGlyphHitRegions(HWND surface) {
+  if (surface == nullptr) return;
+  auto snapshot = std::atomic_load_explicit(
+      &g_attached_hit_snapshot, std::memory_order_acquire);
+  while (snapshot != nullptr && snapshot->surface == surface) {
+    std::shared_ptr<const AttachedGlyphHitSnapshot> empty;
+    if (std::atomic_compare_exchange_weak_explicit(
+            &g_attached_hit_snapshot, &snapshot, empty,
+            std::memory_order_acq_rel, std::memory_order_acquire)) {
+      break;
+    }
+  }
+  AcquireSRWLockExclusive(&g_attached_transaction_lock);
+  if (g_attached_active_transaction.latch.active() &&
+      g_attached_active_transaction.snapshot != nullptr &&
+      g_attached_active_transaction.snapshot->surface == surface) {
+    // Geometry/epoch cancellation is not a physical button-up.  Retain the
+    // exact transaction (and its snapshot metadata) until HookProc observes the
+    // paired WM_LBUTTONUP; only then may v19 release the sampled-input tail.
+    g_attached_active_transaction.latch.Cancel();
+  }
+  ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+}
+
+namespace {
+
+bool AttachedBindingHealthy(HWND target, HWND game_owner,
+                            bool allow_sampled_risk) {
+  if (g_target.load(std::memory_order_acquire) != target ||
+      !g_hook_active.load(std::memory_order_acquire)) {
+    return false;
+  }
+  bool any_declared = false;
+  const SampledInputShieldContract* selected =
+      SelectSampledInputShieldContract(game_owner, &any_declared);
+  if (g_attached_risky_target.load(std::memory_order_acquire) == target) {
+    // Stay risky while exact coverage remains unavailable. If it recovers (or
+    // is no longer required), force one clean re-arm so state can upgrade.
+    return allow_sampled_risk && any_declared &&
+           !IsSelectedSampledInputShieldContractReady(game_owner, selected);
+  }
+  if (!any_declared) return true;
+  return selected != nullptr &&
+         IsSelectedSampledInputShieldContractReady(game_owner, selected) &&
+         g_direct_input_shield_game.load(std::memory_order_acquire) ==
+             game_owner &&
+         g_direct_input_shield_popup.load(std::memory_order_acquire) == target &&
+         g_direct_input_shield_contract.load(std::memory_order_acquire) ==
+             selected &&
+         reinterpret_cast<HWND>(
+             GetPropW(game_owner, selected->window_property)) == target;
+}
+
+bool AttachedArmHasConflictingTransaction() {
+  if (g_swallowed_buttons.load(std::memory_order_acquire) != 0 ||
+      g_direct_input_shield_buttons.load(std::memory_order_acquire) != 0 ||
+      g_direct_input_shield_tail_token.load(std::memory_order_acquire) != 0 ||
+      HasActiveAttachedGlyphTransaction()) {
+    return true;
+  }
+  const VoiceHookLookupShieldStatus status =
+      VoiceHookReader::Instance().LookupShieldStatus();
+  return !status.ok() || status.active_buttons != 0 ||
+         (status.request_seq != 0 && status.request_seq != status.applied_seq);
+}
+
+bool ArmLowLevelMouseHookWithSampledShield(HWND target, HWND game_owner,
+                                           bool target_only,
+                                           bool allow_sampled_risk,
+                                           bool idle_only) {
+  if (target == nullptr || game_owner == nullptr) return false;
+  if (idle_only &&
+      !VoiceHookReader::Instance().PrepareLookupShieldTarget(game_owner)) {
+    return false;
+  }
   const DWORD thread_id = EnsureHookThread();
   if (thread_id == 0 || g_arm_applied_event == nullptr) return false;
 
   std::lock_guard<std::mutex> guard(g_binding_mutex);
+  const HWND current = g_target.load(std::memory_order_acquire);
+  if (idle_only && current != nullptr && current != target) {
+    // Attached is the lower-priority transparent surface. Never clear or
+    // mutate the desktop/global popup's singleton binding.
+    return false;
+  }
+  if (idle_only && current == target &&
+      AttachedBindingHealthy(target, game_owner, allow_sampled_risk)) {
+    return true;
+  }
+  if (idle_only && AttachedArmHasConflictingTransaction()) return false;
   // Keep the already-created off-screen renderer non-consuming while the hook
   // thread installs/acknowledges HHOOK. Only after that succeeds do we publish
   // the direct target; Reveal moves it on-screen immediately after this returns.
   g_target.store(nullptr, std::memory_order_release);
+  g_attached_risky_target.store(nullptr, std::memory_order_release);
 
   ResetEvent(g_arm_applied_event);
   const uint32_t generation =
@@ -1036,15 +1780,65 @@ bool ArmLowLevelMouseHookAndWait(HWND target, HWND consume_outside_owner) {
   // the old target has completed, while newer callbacks see target == nullptr.
   // It is now safe to replace this dedicated HWND's game binding.
   AbortInvalidDirectInputShieldAfterBarrier();
-  if (!SetPropW(target, kConsumeOutsideOwnerProperty,
-                 reinterpret_cast<HANDLE>(consume_outside_owner))) {
+  RemovePropW(target, kConsumeOutsideOwnerProperty);
+  RemovePropW(target, kSampledShieldOwnerProperty);
+  RemovePropW(target, kSampledShieldTargetOnlyProperty);
+  if (!target_only &&
+      !SetPropW(target, kConsumeOutsideOwnerProperty,
+                reinterpret_cast<HANDLE>(game_owner))) {
     return false;
   }
-  if (!PublishDirectInputShieldIfReady(target, consume_outside_owner)) {
+  if (!SetPropW(target, kSampledShieldOwnerProperty,
+                reinterpret_cast<HANDLE>(game_owner))) {
+    RemovePropW(target, kConsumeOutsideOwnerProperty);
     return false;
   }
+  if (target_only &&
+      !SetPropW(target, kSampledShieldTargetOnlyProperty,
+                reinterpret_cast<HANDLE>(kSampledShieldTargetOnlyValue))) {
+    RemovePropW(target, kSampledShieldOwnerProperty);
+    return false;
+  }
+  const SampledShieldPublishResult sampled =
+      PublishDirectInputShieldIfReady(target, game_owner);
+  bool risk_fallback = false;
+  if (sampled == SampledShieldPublishResult::kUnavailable && target_only &&
+      allow_sampled_risk && !AttachedArmHasConflictingTransaction()) {
+    // Exact sampled-input coverage is unavailable, but the user explicitly
+    // accepted the HHOOK+v19 partial route and no other owner/transaction is
+    // live. This must remain visibly risky, never verified.
+    risk_fallback = true;
+  } else if (sampled == SampledShieldPublishResult::kUnavailable ||
+             sampled == SampledShieldPublishResult::kBusy) {
+    RemovePropW(target, kSampledShieldTargetOnlyProperty);
+    RemovePropW(target, kSampledShieldOwnerProperty);
+    RemovePropW(target, kConsumeOutsideOwnerProperty);
+    return false;
+  }
+  g_attached_risky_target.store(risk_fallback ? target : nullptr,
+                                std::memory_order_release);
   g_target.store(target, std::memory_order_release);
   return true;
+}
+
+}  // namespace
+
+bool ArmLowLevelMouseHookAndWait(HWND target, HWND consume_outside_owner) {
+  return ArmLowLevelMouseHookWithSampledShield(
+      target, consume_outside_owner, false, false, false);
+}
+
+bool ArmLowLevelMouseHookForAttachedGlyph(HWND target, HWND game_owner) {
+  const auto snapshot = AttachedGlyphSnapshotForTarget(target);
+  if (snapshot == nullptr || snapshot->game_owner != game_owner) return false;
+  return ArmLowLevelMouseHookWithSampledShield(
+      target, game_owner, true, snapshot->allow_risk, true);
+}
+
+bool LowLevelAttachedGlyphUsesRiskFallback(HWND target) {
+  return target != nullptr &&
+         g_target.load(std::memory_order_acquire) == target &&
+         g_attached_risky_target.load(std::memory_order_acquire) == target;
 }
 
 void FinalizeLowLevelMouseDirectInputShield(HWND target) {
@@ -1055,6 +1849,7 @@ void FinalizeLowLevelMouseDirectInputShield(HWND target) {
 
 void DisarmLowLevelMouseHook(HWND expected_target) {
   if (expected_target == nullptr) return;
+  ClearLowLevelAttachedGlyphHitRegions(expected_target);
   std::lock_guard<std::mutex> guard(g_binding_mutex);
   const HWND current = g_target.load(std::memory_order_acquire);
   const bool owns_binding = current == expected_target;
@@ -1062,6 +1857,10 @@ void DisarmLowLevelMouseHook(HWND expected_target) {
   if (owns_binding) {
     g_target.store(nullptr, std::memory_order_release);
   }
+  HWND risky_target = expected_target;
+  g_attached_risky_target.compare_exchange_strong(
+      risky_target, nullptr, std::memory_order_acq_rel,
+      std::memory_order_acquire);
   const DWORD thread_id = g_thread_id.load(std::memory_order_acquire);
   const bool owns_direct_publication =
       g_direct_input_shield_popup.load(std::memory_order_acquire) ==

@@ -14,6 +14,7 @@ using fushi_voice_hook::kDiagFfmpegResourceHooksReady;
 using fushi_voice_hook::kDiagVisualArtsOvkHooksReady;
 using fushi_voice_hook::kDiagSiglusOvkHooksReady;
 using fushi_voice_hook::kXAudioDiagGameResourcePublished;
+using fushi_voice_hook::kXAudioDiagHunexHfaHooksReady;
 using fushi_voice_hook::kXAudioDiagLeafLacHooksReady;
 using fushi_voice_hook::kDiagUnityIl2CppHooksReady;
 using fushi_voice_hook::kDiagUnityResourceExtractorReady;
@@ -29,6 +30,8 @@ int main() {
   assert(HasReadyGameResourceAudio(
       0, 0, 0, kXAudioDiagGameResourcePublished));
   assert(HasReadyGameResourceAudio(0, 0, 0, kXAudioDiagLeafLacHooksReady));
+  // HUNEX remains fail-closed until a real HFA/HW member has been published.
+  assert(!HasReadyGameResourceAudio(0, 0, 0, kXAudioDiagHunexHfaHooksReady));
 
   assert(!HasReadyGameResourceAudio(0, kDiagUnityIl2CppHooksReady));
   assert(!HasReadyGameResourceAudio(0, kDiagUnityResourceExtractorReady));
