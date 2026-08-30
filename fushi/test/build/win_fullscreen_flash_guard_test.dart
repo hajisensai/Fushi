@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// Source-scan guards for BUG-1933 (Windows 全屏/取消全屏闪一帧白色).
 ///
 /// window_manager's `SetFullScreen` and media_kit's `EnterNativeFullscreen`
@@ -16,11 +18,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// entry point routed through the `app.fushi/window` channel.
 ///
 /// The Win32 runner cannot run on the Dart host, so these pin the wiring.
-/// Comments are stripped before order checks so a stale explanatory comment
-/// cannot satisfy an `indexOf` on the real call site.
-String _stripLineComments(String source) =>
-    source.replaceAll(RegExp(r'//[^\n]*'), '');
-
+/// Comments are masked (not deleted) before order checks so a stale
+/// explanatory comment cannot satisfy an `indexOf` on the real call site,
+/// while every offset still lines up with the original source.
+/// `maskComments` is the shared lexical primitive — it also covers block
+/// comments, which a line-only regex lets through.
 void main() {
   late String cpp;
   late String header;
@@ -31,25 +33,25 @@ void main() {
   late String channelDart;
 
   setUpAll(() {
-    cpp = _stripLineComments(
+    cpp = maskComments(
       File('windows/runner/win32_window.cpp').readAsStringSync(),
     );
     header = File('windows/runner/win32_window.h').readAsStringSync();
-    flutterWindow = _stripLineComments(
+    flutterWindow = maskComments(
       File('windows/runner/flutter_window.cpp').readAsStringSync(),
     );
-    navDart = _stripLineComments(
+    navDart = maskComments(
       File('lib/src/shortcuts/global_navigation.dart').readAsStringSync(),
     );
-    videoFullscreenDart = _stripLineComments(
+    videoFullscreenDart = maskComments(
       File(
         'lib/src/pages/implementations/video_fushi/fullscreen.part.dart',
       ).readAsStringSync(),
     );
-    placementDart = _stripLineComments(
+    placementDart = maskComments(
       File('lib/src/startup/desktop_window_placement.dart').readAsStringSync(),
     );
-    channelDart = _stripLineComments(
+    channelDart = maskComments(
       File('lib/src/utils/window_caption_channel.dart').readAsStringSync(),
     );
   });
