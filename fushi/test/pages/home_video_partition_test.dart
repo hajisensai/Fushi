@@ -92,7 +92,7 @@ void main() {
     await db.addToCollection(collectionId, MediaKind.video, 'video/ep1');
     await db.addToCollection(collectionId, MediaKind.video, 'video/ep2');
 
-    // 散卡 A：watch-stats = now（「最近」序里排最前，旧布局会压在合集行之上）。
+    // 散卡 A：最近观看 = now（「最近」序里排最前，旧布局会压在合集行之上）。
     // 不设 lastPositionMs——带进度行的卡标题 y 会比无进度卡低，干扰同行断言。
     await db.upsertVideoBook(VideoBooksCompanion(
       bookUid: const Value('video/looseA'),
@@ -100,13 +100,22 @@ void main() {
       videoPath: const Value('/abs/loose_a.mp4'),
       importedAt: Value(DateTime(2026, 1, 5).millisecondsSinceEpoch),
     ));
-    await db.addVideoWatchStatistic(
+    // v92：观看只写 `study_segments`，「最近观看」时刻取该 uid 段的 max(endAt)。
+    final DateTime watchedAt = DateTime.now();
+    await db.upsertStudySegment(StudySegmentsCompanion.insert(
+      uid: FushiDatabase.newStudySegmentUid(),
+      deviceId: await db.getOrCreateStudyDeviceId(),
+      mediaKind: kActivityMediaVideo,
+      mediaKey: 'video/looseA',
       title: 'Loose New',
-      dateKey: '2026-07-12',
-      subtitleChars: 1,
-      watchTimeMs: 1000,
-      bookUid: 'video/looseA',
-    );
+      startAt: watchedAt.millisecondsSinceEpoch - 1000,
+      endAt: watchedAt.millisecondsSinceEpoch,
+      dateKey: FushiDatabase.statDateKeyOf(watchedAt),
+      hour: watchedAt.hour,
+      durationMs: const Value(1000),
+      chars: const Value(1),
+      updatedAt: watchedAt.millisecondsSinceEpoch,
+    ));
     // 散卡 B：importedAt 1/3（「最近」序里排在合集 1/4 之后——旧交错布局下
     // A 与 B 被合集行切成两个残段）。
     await db.upsertVideoBook(VideoBooksCompanion(

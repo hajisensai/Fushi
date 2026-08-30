@@ -214,7 +214,7 @@ void main() {
 
     final String subtitleMenu = body(
       'Future<void> _showSubtitleSourceMenu',
-      'Future<void> _openJimakuDialog',
+      'Future<SubtitleCollectionSpec?> _subtitleCollectionSpec(',
     );
     // TODO-590 batch9：_showAudioTrackMenu 已抽到 video_fushi/audio_track.part.dart。
     // TODO-1351：其紧邻后继改为 _buildAudioTrackSettingsSection（设置面板「音频」分类的

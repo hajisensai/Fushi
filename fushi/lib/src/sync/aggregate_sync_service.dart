@@ -282,12 +282,25 @@ class AggregateSyncService {
           .getSyncDeletionTombstonesOfType(kFavoriteSentenceTombstoneType))
         row.itemKey: row.deletedAt,
     };
+    // v92：本地段墓碑压制的段不上行（merged 是 local ∪ peer，peer 那份仍带本机已删
+    // 媒体的旧段——与 BUG-1572 的 legacy 同病）；墓碑本身透传，删除才能传到对端。
+    final Map<String, int> segmentTombstoned = <String, int>{
+      for (final StudySegmentTombstoneRow t
+          in await _db.getStudySegmentTombstones())
+        '${t.mediaKind}|${t.mediaKey}': t.deletedAt,
+    };
     if (statTombstoned.isEmpty &&
         favWordTombstoned.isEmpty &&
-        favSentenceTombstoned.isEmpty) {
+        favSentenceTombstoned.isEmpty &&
+        segmentTombstoned.isEmpty) {
       return snapshot;
     }
     return AggregateSnapshot(
+      studySegments: <StudySegmentRecord>[
+        for (final StudySegmentRecord s in snapshot.studySegments)
+          if ((segmentTombstoned[s.mediaIdentity] ?? 0) <= s.updatedAt) s,
+      ],
+      studySegmentTombstones: snapshot.studySegmentTombstones,
       readingStats: <ReadingStatRecord>[
         for (final ReadingStatRecord r in snapshot.readingStats)
           if (!statTombstoned.contains((r.title, FushiDatabase.statSourceBook)))
@@ -370,7 +383,20 @@ class AggregateSyncService {
       keyOf: FavoriteSentenceRepository.itemKeyOf,
       createdAtOf: (FavoriteSentence s) => s.createdAt.millisecondsSinceEpoch,
     );
+    // v92 wire v2：段按 uid LWW 并集，墓碑按身份取 max，再仲裁「删除 vs 又读了」。
+    final ({
+      List<StudySegmentRecord> segments,
+      List<StudyTombstoneRecord> tombstones
+    }) segmentsArb = AggregateMergeService.arbitrateStudySegments(
+      union: AggregateMergeService.mergeStudySegments(
+              local.studySegments, remote.studySegments)
+          .values,
+      tombstones: AggregateMergeService.mergeStudyTombstones(
+          local.studySegmentTombstones, remote.studySegmentTombstones),
+    );
     return AggregateSnapshot(
+      studySegments: segmentsArb.segments,
+      studySegmentTombstones: segmentsArb.tombstones,
       readingStats: _mergeReadingStats(local.readingStats, remote.readingStats),
       videoStats: _mergeVideoStats(local.videoStats, remote.videoStats),
       readingHourly: _mergeHourly(local.readingHourly, remote.readingHourly),
@@ -772,8 +798,23 @@ class AggregateSyncService {
         await _db.getAllLookupMiningCounters();
     final List<FavoriteWordRow> favWords = await _db.getAllFavoriteWords();
     final List<FavoriteSentence> favSentences = await _readFavoriteSentences();
+    // v92 wire v2：事实段与按身份墓碑全量上行（uid 幂等，对端按 LWW 并集）。
+    final List<StudySegmentRow> segments = await _db.getStudySegments();
+    final List<StudySegmentTombstoneRow> segmentTombstones =
+        await _db.getStudySegmentTombstones();
 
     return AggregateSnapshot(
+      studySegments: <StudySegmentRecord>[
+        for (final StudySegmentRow s in segments) _segmentRecordOf(s),
+      ],
+      studySegmentTombstones: <StudyTombstoneRecord>[
+        for (final StudySegmentTombstoneRow t in segmentTombstones)
+          StudyTombstoneRecord(
+            mediaKind: t.mediaKind,
+            mediaKey: t.mediaKey,
+            deletedAt: t.deletedAt,
+          ),
+      ],
       readingStats: <ReadingStatRecord>[
         for (final ReadingStatisticRow r in reading)
           ReadingStatRecord(
@@ -846,6 +887,60 @@ class AggregateSyncService {
               itemKey: row.itemKey, deletedAt: row.deletedAt),
       ],
     );
+  }
+
+  static StudySegmentRecord _segmentRecordOf(StudySegmentRow s) =>
+      StudySegmentRecord(
+        uid: s.uid,
+        deviceId: s.deviceId,
+        mediaKind: s.mediaKind,
+        mediaKey: s.mediaKey,
+        format: s.format,
+        title: s.title,
+        startAt: s.startAt,
+        endAt: s.endAt,
+        dateKey: s.dateKey,
+        hour: s.hour,
+        durationMs: s.durationMs,
+        chars: s.chars,
+        pages: s.pages,
+        updatedAt: s.updatedAt,
+      );
+
+  static StudySegmentsCompanion _segmentCompanionOf(StudySegmentRecord r) =>
+      StudySegmentsCompanion.insert(
+        uid: r.uid,
+        deviceId: r.deviceId,
+        mediaKind: r.mediaKind,
+        mediaKey: r.mediaKey,
+        format: Value(r.format),
+        title: r.title,
+        startAt: r.startAt,
+        endAt: r.endAt,
+        dateKey: r.dateKey,
+        hour: r.hour,
+        durationMs: Value(r.durationMs),
+        chars: Value(r.chars),
+        pages: Value(r.pages),
+        updatedAt: r.updatedAt,
+      );
+
+  /// v92 wire v2 落地：先落墓碑（只写严格较新者，并删本地被压制的段），再按 uid
+  /// LWW upsert 段（merge 侧已仲裁掉被墓碑压制的段；本地 DAO 再按 updatedAt 双保险）。
+  /// 幂等：同一快照重放，墓碑不变、段同值不覆盖。
+  Future<void> _applyStudySegments(AggregateSnapshot snapshot) async {
+    for (final StudyTombstoneRecord t in snapshot.studySegmentTombstones) {
+      await _db.applyStudySegmentTombstone(
+        mediaKind: t.mediaKind,
+        mediaKey: t.mediaKey,
+        deletedAt: t.deletedAt,
+      );
+    }
+    if (snapshot.studySegments.isEmpty) return;
+    await _db.upsertStudySegmentsIfNewer(<StudySegmentsCompanion>[
+      for (final StudySegmentRecord r in snapshot.studySegments)
+        _segmentCompanionOf(r),
+    ]);
   }
 
   /// 把快照里的收藏删除墓碑落进本地墓碑表（只写严格较新者，旧戳不降级），并删掉
@@ -1010,6 +1105,8 @@ class AggregateSyncService {
         count: r.mineCount,
       );
     }
+    // v92 wire v2：事实段 + 按身份墓碑（与 legacy 统计家族互不触碰）。
+    await _applyStudySegments(snapshot);
     // 互联完整支持批次：快照墓碑先落本地（对端的取消收藏在本机生效并继续向外
     // 传播）——必须在下面的收藏 add/union 之前，使其墓碑抑制读到最新集合。
     await _applySnapshotTombstones(snapshot);

@@ -38,6 +38,7 @@ class VideoExternalSettingsSnapshot {
     this.openSubtitlesConfig,
     this.jimakuApiKey = '',
     this.jimakuEnabled = true,
+    this.ajattEnabled = true,
     this.disabledBuiltinSourceIds = const <String>{},
     this.pathMappings = const <VideoDownloadBackendPathMappingConfig>[],
     this.managedVideoSources = const <ManagedVideoSourceOption>[],
@@ -59,6 +60,10 @@ class VideoExternalSettingsSnapshot {
   /// 升级后 Jimaku 无声失效。
   final bool jimakuEnabled;
 
+  /// AJATT 日语字幕库（kitsunekko 镜像）是否参与字幕搜索。零配置源，只有开关，
+  /// 默认 true（没填任何 key 的用户唯一能用的源）。
+  final bool ajattEnabled;
+
   /// 用户停用的内置资源索引器 id（[kBuiltinVideoResourceSources] 的子集）。
   /// 装的是「停用」而不是「启用」：新内置源上线即默认参与，不需要迁移写入。
   final Set<String> disabledBuiltinSourceIds;
@@ -79,6 +84,8 @@ abstract interface class VideoExternalSettingsStore {
   Future<void> saveJimakuApiKey(String apiKey);
 
   Future<void> saveJimakuEnabled(bool enabled);
+
+  Future<void> saveAjattEnabled(bool enabled);
 
   /// 开/关一个内置资源索引器（[kBuiltinVideoResourceSources] 里的 id）。
   Future<void> saveBuiltinSourceEnabled(String sourceId, bool enabled);
@@ -136,6 +143,7 @@ class AppVideoExternalSettingsStore implements VideoExternalSettingsStore {
       openSubtitlesConfig: appModel.prefsRepo.videoSubtitleOpenSubtitlesConfig,
       jimakuApiKey: appModel.jimakuApiKey,
       jimakuEnabled: appModel.jimakuEnabled,
+      ajattEnabled: appModel.videoSubtitleAjattEnabled,
       disabledBuiltinSourceIds: appModel.videoResourceDisabledSourceIds,
       pathMappings: appModel.prefsRepo.videoDownloadBackendPathMappings,
       managedVideoSources: sources,
@@ -167,6 +175,11 @@ class AppVideoExternalSettingsStore implements VideoExternalSettingsStore {
   // 同上：`setJimakuEnabled` 自己重建下载流水线运行时。
   Future<void> saveJimakuEnabled(bool enabled) =>
       appModel.setJimakuEnabled(enabled);
+
+  @override
+  // 同上：`setVideoSubtitleAjattEnabled` 自己重建下载流水线运行时。
+  Future<void> saveAjattEnabled(bool enabled) =>
+      appModel.setVideoSubtitleAjattEnabled(enabled);
 
   @override
   Future<void> saveBuiltinSourceEnabled(String sourceId, bool enabled) =>
@@ -247,6 +260,7 @@ class _VideoExternalProviderSettingsSectionState
   String _preferredLanguage = '';
   String _jimakuApiKey = '';
   bool _jimakuEnabled = true;
+  bool _ajattEnabled = true;
   Set<String> _disabledBuiltinSources = const <String>{};
   String _suggestedBackendProfileId = '';
   Timer? _torznabSaveDebounce;
@@ -309,6 +323,7 @@ class _VideoExternalProviderSettingsSectionState
         _preferredLanguage = snapshot.preferredSubtitleLanguage;
         _jimakuApiKey = snapshot.jimakuApiKey;
         _jimakuEnabled = snapshot.jimakuEnabled;
+        _ajattEnabled = snapshot.ajattEnabled;
         _disabledBuiltinSources = snapshot.disabledBuiltinSourceIds;
         _suggestedBackendProfileId = snapshot.suggestedBackendProfileId;
         _loading = false;
@@ -774,8 +789,34 @@ class _VideoExternalProviderSettingsSectionState
         icon: Icons.subtitles_outlined,
       ),
       _openSubtitlesFields(),
+      _sectionHeading(
+        theme,
+        // 品牌名，不进 i18n（同 Jimaku）。
+        'AJATT',
+        t.video_ajatt_settings_hint,
+        icon: Icons.subtitles_outlined,
+      ),
+      _ajattFields(),
       _subtitleLanguageField(),
     ];
+  }
+
+  /// AJATT 只有一个开关：零配置、无 key、无配额（见 `ajatt_catalog.dart` 文件头）。
+  Widget _ajattFields() {
+    return SwitchListTile.adaptive(
+      key: const ValueKey<String>('video-ajatt-enabled'),
+      contentPadding: EdgeInsets.zero,
+      dense: true,
+      title: Text(t.video_external_enabled),
+      subtitle: Text(t.video_ajatt_enabled_hint, maxLines: 3),
+      value: _ajattEnabled,
+      onChanged: (bool value) {
+        setState(() => _ajattEnabled = value);
+        _save(
+          (VideoExternalSettingsStore store) => store.saveAjattEnabled(value),
+        );
+      },
+    );
   }
 
   /// 随应用内置、零配置的资源来源，逐个可停用。

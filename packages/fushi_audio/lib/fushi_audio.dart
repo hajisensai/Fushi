@@ -25,7 +25,7 @@ export 'src/audiobook/srt_book_repository.dart';
 export 'src/audiobook/reader_position_model.dart';
 export 'src/audiobook/reader_position_repository.dart';
 export 'src/audiobook/reading_statistic_model.dart';
-export 'src/audiobook/reading_time_tracker.dart';
+export 'src/audiobook/study_clock.dart';
 export 'src/audiobook/bookmark_repository.dart';
 export 'src/audiobook/favorite_sentence_repository.dart';
 

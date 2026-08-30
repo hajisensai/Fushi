@@ -32,6 +32,7 @@ import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/utils/misc/flutter_error_log.dart';
 import 'package:fushi/src/utils/misc/present_watchdog.dart';
 import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
@@ -579,7 +580,7 @@ void main([List<String> args = const <String>[]]) {
       // TODO-607 P0-1：FlutterError 是致命级，用同步 flush 落盘——若这条错误紧接着把
       // 进程带崩（如 build/layout 期的 native 回调异常），异步 append 来不及写盘。
       ErrorLogService.instance.logFatal(
-        'FlutterError: ${details.context?.toString() ?? 'unknown'}',
+        flutterErrorLogSource(details),
         msg,
         details.stack,
       );
