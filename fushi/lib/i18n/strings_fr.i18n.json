@@ -3891,8 +3891,6 @@
   "gal_hook_toolbar_auto_hide_hint": "Masque la barre jusqu'à ce que le pointeur atteigne la zone de texte, à la manière de LunaHook. Masqué veut dire vraiment masqué : ces pixels reviennent au jeu.",
   "gal_hook_passthrough_blocks_mouse": "Le texte reçoit encore les clics en mode traversant",
   "gal_hook_passthrough_blocks_mouse_hint": "Activé : les lignes de texte reçoivent encore les clics, vous pouvez donc toucher un mot. Désactivé : toute la surcouche est transparente à la souris — vous cliquez ce qui est dessous, mais toucher un mot ne marche plus.",
-  "floating_lyric_passthrough": "Laisser passer les clics vers le dessous",
-  "floating_lyric_transparency": "Basculer l’arrière-plan",
   "floating_lyric_topmost": "Garder au premier plan",
   "gal_hook_fold_progressive_lines": "Fusionner les répliques découpées",
   "gal_hook_fold_progressive_lines_hint": "Certains moteurs redessinent toute la ligne à chaque clic, si bien qu'une même ligne est capturée plusieurs fois. Replie ces instantanés en une seule ligne.",
