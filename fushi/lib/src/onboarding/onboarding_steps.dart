@@ -70,19 +70,29 @@ enum OnboardingStepId {
 
   /// 阅读字体配置。
   fonts,
+
+  /// 应用内点击文字查词的操作教程（全平台）。
+  clickLookup,
+
+  /// 应用外全局查词的操作教程（当前仅 Windows / Android 有完整入口）。
+  globalLookup,
   finish,
 }
 
 /// 给定勾选集合与平台能力，返回向导要走的步骤序列。
 ///
 /// 恒以 [OnboardingStepId.welcome]、[OnboardingStepId.features] 开头，
-/// [OnboardingStepId.fonts]、[OnboardingStepId.finish] 结尾；中间配置步骤按固定
-/// 顺序（推荐包 → Anki → 备份 → 互联 → 扩展）出现：能力步骤只保留被勾选的，
+/// [OnboardingStepId.fonts]、[OnboardingStepId.clickLookup] 和
+/// [OnboardingStepId.finish] 结尾；中间配置步骤按固定顺序（推荐包 → Anki → 备份
+/// → 互联 → 扩展）出现：能力步骤只保留被勾选的，
 /// 浏览器扩展安装引导步骤 = [browserExtensionAvailable]（桌面平台）**且**扩展
-/// 模块被勾选。其余库页模块勾选不产生步骤。
+/// 模块被勾选。其余库页模块勾选不产生步骤。全局查词教程只在
+/// [globalLookupAvailable] 为 true（当前 Windows / Android）时出现，避免在没有
+/// 系统入口的平台教用户一个做不到的动作。
 List<OnboardingStepId> onboardingStepSequence({
   required Set<OnboardingFeature> selected,
   required bool browserExtensionAvailable,
+  required bool globalLookupAvailable,
 }) {
   return <OnboardingStepId>[
     OnboardingStepId.welcome,
@@ -97,6 +107,8 @@ List<OnboardingStepId> onboardingStepSequence({
         selected.contains(OnboardingFeature.browserExtension))
       OnboardingStepId.browserExtension,
     OnboardingStepId.fonts,
+    OnboardingStepId.clickLookup,
+    if (globalLookupAvailable) OnboardingStepId.globalLookup,
     OnboardingStepId.finish,
   ];
 }

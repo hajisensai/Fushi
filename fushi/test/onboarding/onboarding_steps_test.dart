@@ -8,11 +8,13 @@ void main() {
         onboardingStepSequence(
           selected: <OnboardingFeature>{},
           browserExtensionAvailable: true,
+          globalLookupAvailable: false,
         ),
         <OnboardingStepId>[
           OnboardingStepId.welcome,
           OnboardingStepId.features,
           OnboardingStepId.fonts,
+          OnboardingStepId.clickLookup,
           OnboardingStepId.finish,
         ],
       );
@@ -27,6 +29,7 @@ void main() {
         onboardingStepSequence(
           selected: withExtension,
           browserExtensionAvailable: true,
+          globalLookupAvailable: false,
         ),
         contains(OnboardingStepId.browserExtension),
       );
@@ -35,6 +38,7 @@ void main() {
         onboardingStepSequence(
           selected: withExtension,
           browserExtensionAvailable: false,
+          globalLookupAvailable: false,
         ),
         isNot(contains(OnboardingStepId.browserExtension)),
       );
@@ -43,6 +47,7 @@ void main() {
         onboardingStepSequence(
           selected: <OnboardingFeature>{},
           browserExtensionAvailable: true,
+          globalLookupAvailable: false,
         ),
         isNot(contains(OnboardingStepId.browserExtension)),
       );
@@ -53,6 +58,7 @@ void main() {
         onboardingStepSequence(
           selected: OnboardingFeature.values.toSet(),
           browserExtensionAvailable: true,
+          globalLookupAvailable: true,
         ),
         <OnboardingStepId>[
           OnboardingStepId.welcome,
@@ -63,28 +69,34 @@ void main() {
           OnboardingStepId.interconnect,
           OnboardingStepId.browserExtension,
           OnboardingStepId.fonts,
+          OnboardingStepId.clickLookup,
+          OnboardingStepId.globalLookup,
           OnboardingStepId.finish,
         ],
       );
     });
 
-    test('tab-only module features (books/manga/video/games) never add steps',
-        () {
-      final List<OnboardingStepId> withModules = onboardingStepSequence(
-        selected: <OnboardingFeature>{
-          OnboardingFeature.books,
-          OnboardingFeature.manga,
-          OnboardingFeature.video,
-          OnboardingFeature.games,
-        },
-        browserExtensionAvailable: false,
-      );
-      final List<OnboardingStepId> without = onboardingStepSequence(
-        selected: <OnboardingFeature>{},
-        browserExtensionAvailable: false,
-      );
-      expect(withModules, without);
-    });
+    test(
+      'tab-only module features (books/manga/video/games) never add steps',
+      () {
+        final List<OnboardingStepId> withModules = onboardingStepSequence(
+          selected: <OnboardingFeature>{
+            OnboardingFeature.books,
+            OnboardingFeature.manga,
+            OnboardingFeature.video,
+            OnboardingFeature.games,
+          },
+          browserExtensionAvailable: false,
+          globalLookupAvailable: false,
+        );
+        final List<OnboardingStepId> without = onboardingStepSequence(
+          selected: <OnboardingFeature>{},
+          browserExtensionAvailable: false,
+          globalLookupAvailable: false,
+        );
+        expect(withModules, without);
+      },
+    );
 
     test('each capability maps to exactly its own step', () {
       const Map<OnboardingFeature, OnboardingStepId> capabilitySteps =
@@ -94,15 +106,46 @@ void main() {
         OnboardingFeature.backup: OnboardingStepId.backup,
         OnboardingFeature.interconnect: OnboardingStepId.interconnect,
       };
-      capabilitySteps
-          .forEach((OnboardingFeature feature, OnboardingStepId step) {
+      capabilitySteps.forEach((
+        OnboardingFeature feature,
+        OnboardingStepId step,
+      ) {
         final List<OnboardingStepId> steps = onboardingStepSequence(
           selected: <OnboardingFeature>{feature},
           browserExtensionAvailable: false,
+          globalLookupAvailable: false,
         );
         expect(steps, contains(step), reason: '$feature 应产生 $step');
-        expect(steps, hasLength(5), reason: '$feature 应只追加一个配置步骤');
+        expect(steps, hasLength(6), reason: '$feature 应只追加一个配置步骤');
       });
     });
+
+    test(
+      'click tutorial is universal; global tutorial follows platform gate',
+      () {
+        final List<OnboardingStepId> unsupported = onboardingStepSequence(
+          selected: <OnboardingFeature>{},
+          browserExtensionAvailable: false,
+          globalLookupAvailable: false,
+        );
+        final List<OnboardingStepId> supported = onboardingStepSequence(
+          selected: <OnboardingFeature>{},
+          browserExtensionAvailable: false,
+          globalLookupAvailable: true,
+        );
+
+        expect(unsupported, contains(OnboardingStepId.clickLookup));
+        expect(unsupported, isNot(contains(OnboardingStepId.globalLookup)));
+        expect(
+          supported,
+          containsAllInOrder(<OnboardingStepId>[
+            OnboardingStepId.fonts,
+            OnboardingStepId.clickLookup,
+            OnboardingStepId.globalLookup,
+            OnboardingStepId.finish,
+          ]),
+        );
+      },
+    );
   });
 }
