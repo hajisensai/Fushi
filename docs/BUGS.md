@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1856 条。点号进各自文件。
+> 共 1857 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1990](bugs/BUG-1990-mokuro-cbz-embedded-ocr.md) | ✅ | ✅ | Mokuro CBZ 导入丢弃内嵌 OCR 文字层 |
 | [BUG-1988](bugs/BUG-1988-remote-mining-error-unlocalized.md) | ✅ | ✅ | 互联远端制卡不可达错误未本地化 |
 | [BUG-1978](bugs/BUG-1978-hunex-toolbar-thread-merged.md) | ✅ | ✅ | HUNEX 顶部控制栏线程被并入剧情台词 |
 | [BUG-1977](bugs/BUG-1977-hunex-hfa-voice-resource-pairing.md) | 🚧 | ✅ | HUNEX HFA/HW 源语音未与台词配对 |
