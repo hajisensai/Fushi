@@ -111,6 +111,29 @@ class FushiFocusController extends ChangeNotifier {
     return fallbackNode.context ?? _rootContext;
   }
 
+  /// The visual geometry context for [focusNode].
+  ///
+  /// Managed composite controls register a render anchor around their whole
+  /// interactive surface. Flutter's [FocusNode.context], however, belongs to
+  /// the framework's internal [Focus] widget and can describe only an inset
+  /// editable child (for example, [SearchBar]) or another implementation detail.
+  /// Consumers that draw or reveal focus must use this registered anchor so the
+  /// ring, directional geometry, and scroll target share one boundary.
+  /// Unmanaged focus nodes keep their native context as the fallback.
+  BuildContext? geometryContextFor(FocusNode? focusNode) {
+    if (focusNode == null) return null;
+    for (final FushiFocusTargetEntry entry in _entries.values) {
+      if (identical(entry.focusNode, focusNode) &&
+          entry.context.mounted &&
+          _isCurrentRoute(entry.context)) {
+        return entry.context;
+      }
+    }
+    final BuildContext? nativeContext = focusNode.context;
+    if (nativeContext == null || !nativeContext.mounted) return null;
+    return nativeContext;
+  }
+
   FushiFocusId? get activeId => _activeId;
 
   /// Whether the current [FocusManager.primaryFocus] is one of THIS controller's

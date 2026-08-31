@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/focus/focus_geometry.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -59,6 +60,7 @@ class _FushiFocusRingState extends State<FushiFocusRing>
   // reflow (must reveal + recompute) apart from a theme-only dependency change
   // (must only recompute the ring, never scroll).
   double? _lastUiScale;
+  FushiFocusController? _focusController;
 
   @override
   void initState() {
@@ -95,6 +97,7 @@ class _FushiFocusRingState extends State<FushiFocusRing>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _focusController = FushiFocusRoot.maybeControllerOf(context, listen: false);
     // Depend on the actual in-app UI scale. FushiAppUiScale exposes it via an
     // InheritedWidget (_AppUiScaleScope); a scale change always notifies this
     // dependent — unlike the old MediaQuery.textScaler aspect, which the
@@ -225,14 +228,24 @@ class _FushiFocusRingState extends State<FushiFocusRing>
   // (resize, autofocus, programmatic/gamepad focus).
   void _ensureVisibleIfHidden() {
     if (_fm.highlightMode != FocusHighlightMode.traditional) return;
-    final BuildContext? ctx = _fm.primaryFocus?.context;
+    final FocusNode? primaryFocus = _fm.primaryFocus;
+    final BuildContext? ctx =
+        _focusController?.geometryContextFor(primaryFocus) ??
+            primaryFocus?.context;
     if (ctx == null || !ctx.mounted) return;
     FushiFocusScroll.ensureVisibleIfHidden(ctx);
   }
 
   Rect? _computeFocusRect() {
     if (_fm.highlightMode != FocusHighlightMode.traditional) return null;
-    final BuildContext? ctx = _fm.primaryFocus?.context;
+    final FocusNode? primaryFocus = _fm.primaryFocus;
+    // Registered controls expose a render anchor around their whole visual
+    // surface. FocusNode.context can instead point at a framework-internal,
+    // inset child of composite inputs (SearchBar/TextFormField), which made the
+    // global ring frame the wrong rectangle across discovery and settings.
+    final BuildContext? ctx =
+        _focusController?.geometryContextFor(primaryFocus) ??
+            primaryFocus?.context;
     if (ctx == null) return null;
     // ON-SCREEN (view-coord) rect of the focused control: globalRectOfBox maps
     // both corners through localToGlobal so the rect carries the SCALED size.

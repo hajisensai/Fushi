@@ -2,8 +2,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_focus_ring.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 void main() {
   test('FushiFocusRing uses design token radius', () {
@@ -510,5 +512,64 @@ void main() {
     expect(controller.offset, 800.0,
         reason:
             'theme change must not scroll the manually-positioned viewport');
+  });
+
+  testWidgets(
+      'ring uses the registered visual bounds of a composite search field',
+      (WidgetTester tester) async {
+    final FocusManager fm = FocusManager.instance;
+    final FocusHighlightStrategy previous = fm.highlightStrategy;
+    fm.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
+    addTearDown(() => fm.highlightStrategy = previous);
+
+    final FocusNode node = FocusNode(debugLabel: 'registered-search');
+    final TextEditingController textController = TextEditingController();
+    addTearDown(node.dispose);
+    addTearDown(textController.dispose);
+
+    await tester.pumpWidget(MaterialApp(
+      home: FushiFocusRoot(
+        child: FushiFocusRing(
+          child: Scaffold(
+            body: Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: 900,
+                child: FushiSearchField(
+                  fieldKey: const ValueKey<String>('registered-search-field'),
+                  focusId: const FushiFocusId('registered-search'),
+                  controller: textController,
+                  focusNode: node,
+                  hintText: 'Search',
+                  onChanged: (_) {},
+                  onSubmitted: (_) {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+    node.requestFocus();
+    await tester.pump();
+    await tester.pump();
+
+    final Finder ring = find.descendant(
+      of: find.byType(FushiFocusRing),
+      matching: find.byWidgetPredicate((Widget widget) =>
+          widget is DecoratedBox &&
+          widget.decoration is BoxDecoration &&
+          (widget.decoration as BoxDecoration).border != null),
+    );
+    expect(ring, findsOneWidget);
+
+    final Rect fieldRect =
+        tester.getRect(find.byKey(const ValueKey('registered-search-field')));
+    final Rect ringRect = tester.getRect(ring);
+    expect(ringRect.left, closeTo(fieldRect.left - 2, 0.6));
+    expect(ringRect.top, closeTo(fieldRect.top - 2, 0.6));
+    expect(ringRect.right, closeTo(fieldRect.right + 2, 0.6));
+    expect(ringRect.bottom, closeTo(fieldRect.bottom + 2, 0.6));
   });
 }
