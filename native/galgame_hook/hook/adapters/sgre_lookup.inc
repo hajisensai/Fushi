@@ -1,6 +1,8 @@
-// SGRE in-game lookup sensor. Family identity lives in sgre_profile.h and the
-// build-specific addresses come from the resolved anchor set below (measured
-// row or unique signature hit, see sgre_anchors.h). UserHook1 (0x328e0 in the
+// SGRE in-game lookup sensor. Family identity is proven by the optional audio
+// archive or by the structurally validated anchor set below. Build-specific
+// addresses come only from intersected semantic signatures (see
+// sgre_anchors.h); known hashes add consistency checks, not address shortcuts.
+// UserHook1 (0x328e0 in the
 // measured build) is a pre-layout stream: it can run ahead of the visible
 // dialogue and still contains MAGES controls. The sensor hooks the draw
 // boundary instead, copies the renderer's flattened visible glyph vector, and
@@ -52,6 +54,7 @@ const void* g_sgre_scenario_text_vtable = nullptr;
 SgreLookupCapture g_sgre_lookup_captures[kSgreLookupCaptureSlots] = {};
 volatile LONG64 g_sgre_lookup_capture_count = 0;
 std::atomic<void*> g_sgre_lookup_scenario_surface{nullptr};
+std::atomic<void*> g_sgre_text_scenario_surface{nullptr};
 uint64_t g_sgre_lookup_processed_seq = 0;
 bool g_sgre_lookup_last_shift_down = false;
 SgreLookupCapture g_sgre_lookup_active_capture = {};
@@ -62,105 +65,127 @@ bool g_sgre_lookup_active_valid = false;
 uint64_t g_sgre_lookup_active_generation = 0;
 uint64_t g_sgre_lookup_generation_counter = 0;
 ULONGLONG g_sgre_lookup_active_capture_tick = 0;
-volatile LONG g_sgre_exact_binary_structure_state = 0;
+uint32_t g_sgre_last_text_units = 0;
+wchar_t g_sgre_last_text[kSgreLookupMaxTextUnits] = {};
+volatile LONG g_sgre_lookup_structure_state = 0;
+volatile LONG g_sgre_direct_input_structure_state = 0;
+volatile LONG g_sgre_lookup_structure_attempts = 0;
+volatile LONG g_sgre_direct_input_structure_attempts = 0;
+alignas(8) volatile LONG64 g_sgre_lookup_structure_next_retry_tick = 0;
+alignas(8) volatile LONG64 g_sgre_direct_input_structure_next_retry_tick = 0;
 
-bool IsSgreExactBinaryStructureMatched() {
-  const LONG cached = InterlockedCompareExchange(
-      &g_sgre_exact_binary_structure_state, 0, 0);
-  if (cached != 0) return cached > 0;
+constexpr LONG kSgreStructureUnknown = 0;
+constexpr LONG kSgreStructureMatched = 1;
+constexpr LONG kSgreStructureChecking = 2;
+constexpr LONG kSgreStructureRetryPending = 3;
+constexpr LONG kSgreStructureFault = -1;
+constexpr LONG kSgreStructureRetryLimit = 3;
+constexpr ULONGLONG kSgreStructureRetryDelayMs = 250;
+
+bool IsSgreResolvedStructureMatched(volatile LONG* cached_state,
+                                     volatile LONG* attempts,
+                                     volatile LONG64* next_retry_tick,
+                                     bool lookup_sensor) {
+  LONG cached = InterlockedCompareExchange(cached_state, 0, 0);
+  if (cached == kSgreStructureMatched) return true;
+  if (cached == kSgreStructureFault || cached == kSgreStructureChecking) {
+    return false;
+  }
+  const ULONGLONG now = GetTickCount64();
+  LONG expected = kSgreStructureUnknown;
+  if (cached == kSgreStructureRetryPending) {
+    const ULONGLONG retry_at = static_cast<ULONGLONG>(
+        InterlockedCompareExchange64(next_retry_tick, 0, 0));
+    if (now < retry_at) return false;
+    expected = kSgreStructureRetryPending;
+  } else if (cached != kSgreStructureUnknown) {
+    return false;
+  }
+  if (InterlockedCompareExchange(cached_state, kSgreStructureChecking,
+                                 expected) != expected) {
+    return false;
+  }
 
   bool matched = false;
+  bool transient_failure = false;
 #if defined(_M_X64)
+  // Anchor resolution already requires unique, mutually corroborated
+  // signatures. Re-read the live mapped image here and validate those exact
+  // resolved RVAs; never substitute the measured-build constants. This makes
+  // the known-hash row and a hash-miss candidate build pass the same ABI
+  // proof, while a stale row, patched image, or changed object layout remains
+  // fail-closed.
+  fushi_voice_hook::SgreImageView image;
   HMODULE module = GetModuleHandleW(nullptr);
-  fushi_voice_hook::exact_lookup::LoadedPeImage image;
-  if (module != nullptr && fushi_voice_hook::MatchesSgreFamily() &&
-      fushi_voice_hook::exact_lookup::OpenLoadedPeImage(module, &image) &&
-      image.machine == IMAGE_FILE_MACHINE_AMD64 && image.pointer_bits == 64u) {
-    const auto* text_section =
-        fushi_voice_hook::exact_lookup::FindSectionForRva(
-            image, fushi_voice_hook::kSgreTextDrawRva,
-            sizeof(fushi_voice_hook::sgre_exact::kTextDrawEntryBytes));
-    const auto* vtable_section =
-        fushi_voice_hook::exact_lookup::FindSectionForRva(
-            image, fushi_voice_hook::kSgreScenarioTextVtableRva,
-            sizeof(uintptr_t) * 8u);
-    const auto* mouse_slot_section =
-        fushi_voice_hook::exact_lookup::FindSectionForRva(
-            image, fushi_voice_hook::kSgreDirectInputMouseDeviceRva,
-            sizeof(uintptr_t));
-    const uintptr_t base = reinterpret_cast<uintptr_t>(image.base);
-    const uintptr_t expected_draw =
-        base + fushi_voice_hook::kSgreTextDrawRva;
-    const uintptr_t expected_vtable =
-        base + fushi_voice_hook::kSgreScenarioTextVtableRva;
-    const uintptr_t expected_mouse_slot =
-        base + fushi_voice_hook::kSgreDirectInputMouseDeviceRva;
-    const auto draw = fushi_voice_hook::exact_lookup::
-        FindUniquePatternInExecutableSections(
-            image, fushi_voice_hook::sgre_exact::kTextDrawEntryPattern);
-    const auto constructor =
-        fushi_voice_hook::exact_lookup::
-            FindUniqueRipRelativePatternInExecutableSections(
-                image,
-                fushi_voice_hook::sgre_exact::
-                    kScenarioVtableConstructorPattern,
-                fushi_voice_hook::sgre_exact::
-                    kScenarioVtableInstructionOffset,
-                fushi_voice_hook::sgre_exact::
-                    kScenarioVtableDisplacementOffset,
-                fushi_voice_hook::sgre_exact::
-                    kScenarioVtableInstructionBytes,
-                expected_vtable);
-    const auto create_device =
-        fushi_voice_hook::exact_lookup::
-            FindUniqueRipRelativePatternInExecutableSections(
-                image,
-                fushi_voice_hook::sgre_exact::kMouseCreateDevicePattern,
-                fushi_voice_hook::sgre_exact::
-                    kMouseCreateDeviceOutputInstructionOffset,
-                fushi_voice_hook::sgre_exact::
-                    kMouseCreateDeviceOutputDisplacementOffset,
-                fushi_voice_hook::sgre_exact::
-                    kMouseCreateDeviceOutputInstructionBytes,
-                expected_mouse_slot);
-    const auto immediate_poll =
-        fushi_voice_hook::exact_lookup::
-            FindUniqueRipRelativePatternInExecutableSections(
-                image,
-                fushi_voice_hook::sgre_exact::kMouseImmediatePollPattern,
-                fushi_voice_hook::sgre_exact::
-                    kMouseImmediatePollLoadInstructionOffset,
-                fushi_voice_hook::sgre_exact::
-                    kMouseImmediatePollLoadDisplacementOffset,
-                fushi_voice_hook::sgre_exact::
-                    kMouseImmediatePollLoadInstructionBytes,
-                expected_mouse_slot);
-    DWORD64 runtime_image_base = 0u;
-    const auto* runtime = RtlLookupFunctionEntry(
-        static_cast<DWORD64>(expected_draw), &runtime_image_base, nullptr);
-    matched =
-        fushi_voice_hook::exact_lookup::SectionHasRole(
-            text_section, IMAGE_SCN_MEM_EXECUTE) &&
-        fushi_voice_hook::exact_lookup::SectionHasRole(
-            vtable_section, IMAGE_SCN_MEM_READ,
-            IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_WRITE) &&
-        fushi_voice_hook::exact_lookup::SectionHasRole(
-            mouse_slot_section, IMAGE_SCN_MEM_WRITE,
-            IMAGE_SCN_MEM_EXECUTE) &&
-        draw.count == 1u &&
-        reinterpret_cast<uintptr_t>(draw.address) == expected_draw &&
-        constructor.count == 1u && create_device.count == 1u &&
-        immediate_poll.count == 1u && runtime != nullptr &&
-        runtime_image_base == base &&
-        runtime->BeginAddress == fushi_voice_hook::kSgreTextDrawRva &&
-        runtime->EndAddress > runtime->BeginAddress &&
-        fushi_voice_hook::exact_lookup::PointerTableTargetsExecutableSections(
-            image, fushi_voice_hook::kSgreScenarioTextVtableRva, 8u);
+  if (!g_sgre_anchors_resolved || module == nullptr) {
+    transient_failure = true;
+  } else if (!fushi_voice_hook::ReadSgreImageSections(module, &image)) {
+    transient_failure = true;
+  } else {
+    fushi_voice_hook::SgreAnchorSet live_anchors;
+    const bool reparsed = fushi_voice_hook::ResolveSgreAnchorsGuarded(
+        g_sgre_executable_sha256.data(), g_sgre_executable_sha256.size(),
+        &image, &live_anchors);
+    if (!reparsed) {
+      transient_failure = true;
+    } else {
+      matched = lookup_sensor
+                    ? live_anchors.lookup_sensor_available() &&
+                          live_anchors.text_draw.rva ==
+                              g_sgre_anchors.text_draw.rva &&
+                          live_anchors.scenario_text_vtable.rva ==
+                              g_sgre_anchors.scenario_text_vtable.rva &&
+                          fushi_voice_hook::ValidateSgreLookupAnchorStructure(
+                              live_anchors, image)
+                    : live_anchors.direct_input_shield_available() &&
+                          live_anchors.direct_input_mouse_device.rva ==
+                              g_sgre_anchors.direct_input_mouse_device.rva &&
+                          fushi_voice_hook::
+                              ValidateSgreDirectInputAnchorStructure(
+                                  live_anchors, image);
+    }
   }
 #endif
-  InterlockedExchange(&g_sgre_exact_binary_structure_state,
-                      matched ? 1 : -1);
+  if (matched) {
+    InterlockedExchange(attempts, 0);
+    InterlockedExchange(cached_state, kSgreStructureMatched);
+    return true;
+  }
+  if (transient_failure) {
+    const LONG attempt = InterlockedIncrement(attempts);
+    if (attempt < kSgreStructureRetryLimit) {
+      InterlockedExchange64(
+          next_retry_tick,
+          static_cast<LONG64>(now + kSgreStructureRetryDelayMs));
+      InterlockedExchange(cached_state, kSgreStructureRetryPending);
+      return false;
+    }
+  }
+  InterlockedExchange(cached_state, kSgreStructureFault);
   return matched;
+}
+
+bool IsSgreLookupStructureMatched() {
+  return IsSgreResolvedStructureMatched(
+      &g_sgre_lookup_structure_state, &g_sgre_lookup_structure_attempts,
+      &g_sgre_lookup_structure_next_retry_tick, true);
+}
+
+bool IsSgreDirectInputStructureMatched() {
+  return IsSgreResolvedStructureMatched(
+      &g_sgre_direct_input_structure_state,
+      &g_sgre_direct_input_structure_attempts,
+      &g_sgre_direct_input_structure_next_retry_tick, false);
+}
+
+bool IsSgreLookupStructureFaulted() {
+  return InterlockedCompareExchange(&g_sgre_lookup_structure_state, 0, 0) ==
+         kSgreStructureFault;
+}
+
+bool IsSgreDirectInputStructureFaulted() {
+  return InterlockedCompareExchange(&g_sgre_direct_input_structure_state, 0,
+                                    0) == kSgreStructureFault;
 }
 
 constexpr size_t kSgreLookupClickEventSlots = 4;
@@ -462,6 +487,16 @@ bool IsSgreDirectInputShieldReadyPublished(HWND game) {
          fushi_voice_hook::kSgreDirectInputShieldReadyValue;
 }
 
+bool IsSgreDirectInputShieldOperational() {
+  const HWND game =
+      g_sgre_direct_input_game_window.load(std::memory_order_acquire);
+  return g_sgre_get_device_state_target != nullptr &&
+         g_sgre_get_device_state_original != nullptr &&
+         g_sgre_mouse_device.load(std::memory_order_acquire) != nullptr &&
+         game != nullptr && IsWindow(game) &&
+         IsSgreDirectInputShieldReadyPublished(game);
+}
+
 HRESULT STDMETHODCALLTYPE SgreGetDeviceStateDetour(void* device,
                                                     DWORD state_bytes,
                                                     LPVOID state) {
@@ -715,7 +750,7 @@ bool PublishSgreDirectInputShieldReady() {
 }
 
 bool InstallSgreDirectInputShield() {
-  if (!IsSgreExactBinaryStructureMatched()) {
+  if (!IsSgreDirectInputStructureMatched()) {
     PublishSgreDirectInputShieldRequired();
     MarkSgreDirectInputShieldNotReady();
     return false;
@@ -751,23 +786,22 @@ bool InstallSgreDirectInputShield() {
       g_sgre_direct_input_game_window.load(std::memory_order_acquire);
   void** device_vtable = nullptr;
   if (mouse_device != nullptr &&
+      reinterpret_cast<uintptr_t>(mouse_device) % alignof(void*) == 0 &&
       fushi_voice_hook::exact_lookup::IsReadableSpan(mouse_device,
                                                      sizeof(void*))) {
     memcpy(&device_vtable, mouse_device, sizeof(device_vtable));
   }
   const bool device_abi_valid =
       device_vtable != nullptr &&
+      reinterpret_cast<uintptr_t>(device_vtable) % alignof(void*) == 0 &&
       fushi_voice_hook::exact_lookup::IsReadableSpan(
           device_vtable,
           (fushi_voice_hook::kSgreDirectInputGetDeviceStateVtableIndex + 1u) *
               sizeof(void*)) &&
       target == device_vtable
-                    [fushi_voice_hook::
-                         kSgreDirectInputGetDeviceStateVtableIndex] &&
-      fushi_voice_hook::exact_lookup::IsExecutableAddress(target) &&
-      fushi_voice_hook::exact_lookup::IsExecutableAddress(device_vtable[0]) &&
-      fushi_voice_hook::exact_lookup::IsExecutableAddress(device_vtable[1]) &&
-      fushi_voice_hook::exact_lookup::IsExecutableAddress(device_vtable[2]);
+                     [fushi_voice_hook::
+                          kSgreDirectInputGetDeviceStateVtableIndex] &&
+      fushi_voice_hook::exact_lookup::IsExecutableAddress(target);
   if (mouse_device != nullptr && target != nullptr && device_abi_valid &&
       target == g_sgre_get_device_state_target &&
       mouse_device == g_sgre_mouse_device.load(std::memory_order_acquire) &&
@@ -1009,22 +1043,96 @@ void PublishSgreLookupCaptureSnapshot(const SgreLookupCapture& snapshot) {
   InterlockedExchange64(&capture->seq, static_cast<LONG64>(seq));
 }
 
+void ResetSgreExactTextDedup() {
+  if (!g_text_cs_ready) return;
+  EnterCriticalSection(&g_text_cs);
+  g_sgre_last_text_units = 0;
+  memset(g_sgre_last_text, 0, sizeof(g_sgre_last_text));
+  LeaveCriticalSection(&g_text_cs);
+}
+
+void PublishSgreExactText(const SgreLookupCapture& snapshot,
+                          void* text_surface) {
+  if (!g_capture_enabled || g_header == nullptr || g_text_base == nullptr ||
+      !g_text_cs_ready || snapshot.text_units == 0 ||
+      snapshot.text_units > kSgreLookupMaxTextUnits) {
+    return;
+  }
+
+  // This identity describes the SGRE/wind3d11 scenario renderer ABI, not a
+  // measured RVA or executable hash. It does not encode the install path,
+  // ASLR base or resolved RVA either. Candidate builds still have to pass the
+  // complete anchor/ABI proof.
+  constexpr uint64_t kSgreTextComponentIdentity = 0x5347524554455854ull;
+  constexpr wchar_t kSgreTextHookCode[] = L"ENGINE:SGRE:wind3d11";
+  constexpr char kSgreTextHookName[] = "SGRE exact";
+  const uint64_t thread_id = fushi_voice_hook::NativeTextThreadIdFrom(
+      kSgreTextComponentIdentity, kSgreTextHookCode, kSgreTextHookName);
+
+  EnterCriticalSection(&g_text_cs);
+  const size_t bytes = static_cast<size_t>(snapshot.text_units) *
+                       sizeof(snapshot.text[0]);
+  const bool duplicate =
+      g_sgre_last_text_units == snapshot.text_units &&
+      memcmp(g_sgre_last_text, snapshot.text, bytes) == 0;
+  if (!duplicate) {
+    fushi_voice_hook::TextLaneWrite write;
+    write.thread_id = thread_id;
+    write.thread_address = g_sgre_anchors.text_draw.rva;
+    write.process_id = GetCurrentProcessId();
+    write.source_kind = fushi_voice_hook::kTextSourceSgre;
+    write.is_utf8 = 0;
+    write.text = snapshot.text;
+    write.byte_len = static_cast<uint32_t>(bytes);
+    write.hook_name = kSgreTextHookName;
+    write.hook_code = kSgreTextHookCode;
+    const uint64_t published = fushi_voice_hook::WriteTextLaneEvent(
+        g_header, fushi_voice_hook::kNativeThreadPreviewStart,
+        fushi_voice_hook::kTextLaneCount, write);
+    if (published != 0) {
+      memcpy(g_sgre_last_text, snapshot.text, bytes);
+      g_sgre_last_text_units = snapshot.text_units;
+    }
+  }
+  LeaveCriticalSection(&g_text_cs);
+
+  g_sgre_text_scenario_surface.store(text_surface,
+                                     std::memory_order_release);
+  // Exact engine text is cleaner than the GDI glyph fallback.  The historical
+  // field name says Luna, but its contract is simply "an exact text producer
+  // is active" (Siglus uses it the same way).
+  g_header->luna_active = 1;
+}
+
 void CaptureSgreLookupDrawState(void* text_surface) {
-  const bool capture_requested =
+  const bool text_requested =
+      !g_stop && g_capture_enabled && g_header != nullptr &&
+      g_text_base != nullptr && g_text_cs_ready;
+  const bool lookup_requested =
       !g_stop && g_header != nullptr &&
       fushi_voice_hook::HasLookupRegion(g_header) &&
       g_header->lookup_enabled != 0;
-  if (!capture_requested) return;
+  if (!text_requested && !lookup_requested) return;
   SgreLookupCapture snapshot;
   const SgreLookupCaptureResult capture_result =
       CopySgreLookupDrawState(text_surface, &snapshot);
   if (capture_result == SgreLookupCaptureResult::kOk) {
+    if (text_requested) PublishSgreExactText(snapshot, text_surface);
+    if (!lookup_requested) return;
     snapshot.valid = 1;
     snapshot.captured_tick = GetTickCount64();
     g_sgre_lookup_scenario_surface.store(text_surface,
                                          std::memory_order_release);
     g_header->lookup_diag |= fushi_voice_hook::kLookupDiagGeometryObserved;
   } else if (capture_result == SgreLookupCaptureResult::kNoGlyphs) {
+    void* expected_text_surface = text_surface;
+    if (text_requested &&
+        g_sgre_text_scenario_surface.compare_exchange_strong(
+            expected_text_surface, nullptr, std::memory_order_acq_rel,
+            std::memory_order_acquire)) {
+      ResetSgreExactTextDedup();
+    }
+    if (!lookup_requested) return;
     // kNoGlyphs is reached only after the exact scenario-surface vtable gate.
     // Publish a tombstone only for the same surface that last produced the
     // dialogue. Other idle instances of the same renderer class must not erase
@@ -1036,7 +1144,7 @@ void CaptureSgreLookupDrawState(void* text_surface) {
     memset(&snapshot, 0, sizeof(snapshot));
     snapshot.captured_tick = GetTickCount64();
   } else {
-    if (IsSgreLookupCaptureFault(capture_result)) {
+    if (lookup_requested && IsSgreLookupCaptureFault(capture_result)) {
       g_header->lookup_diag |= fushi_voice_hook::kLookupDiagSensorFault;
     }
     return;
@@ -1052,7 +1160,7 @@ void __fastcall SgreTextDrawDetour(void* text_surface) {
 }
 
 bool InstallSgreLookupSensor() {
-  if (!IsSgreExactBinaryStructureMatched()) return false;
+  if (!IsSgreLookupStructureMatched()) return false;
   if (g_sgre_text_draw_original != nullptr) {
     if (g_header != nullptr) {
       g_header->lookup_diag |= fushi_voice_hook::kLookupDiagSensorInstalled;
@@ -1148,12 +1256,13 @@ void ClearSgreLookupActiveCapture() {
 }
 
 bool IsSgreLookupPayloadCurrent(const SgreLookupClickPayload& payload) {
-  const uint64_t latest_capture = static_cast<uint64_t>(
-      InterlockedCompareExchange64(
-          reinterpret_cast<volatile LONG64*>(&g_sgre_lookup_capture_count), 0,
-          0));
+  // capture_count/processed_seq are transport cursors, not content identity.
+  // SGRE redraws an unchanged line every frame, so requiring those cursors to
+  // remain equal across mouse-down, mouse-up and the worker drain races the
+  // renderer and silently drops otherwise valid lookup submits.  The stable
+  // logical generation, text, client transform and glyph rectangle checks
+  // below still reject genuinely stale clicks.
   if (!g_sgre_lookup_active_valid || g_sgre_lookup_active_generation == 0 ||
-      latest_capture != g_sgre_lookup_processed_seq ||
       payload.text_units == 0 ||
       payload.text_units != g_sgre_lookup_active_line.size() ||
       payload.char_index >= payload.text_units ||
@@ -1252,6 +1361,16 @@ void ProcessSgreLookupTick() {
     DiscardPendingSgreLookupClickSubmits();
     return;
   }
+  // Install the structurally admitted draw hook for the engine-text lane even
+  // when the optional in-game lookup preference is off. Hash-miss candidate
+  // builds do not have a SHA-keyed Luna profile, so coupling installation to
+  // lookup_enabled would make their normal hook text disappear as well.
+  if (!InstallSgreLookupSensor()) {
+    g_sgre_lookup_click_runtime_enabled.store(false,
+                                              std::memory_order_release);
+    ClearSgreLookupActiveCapture();
+    return;
+  }
   if (g_header->lookup_enabled == 0) {
     g_sgre_lookup_click_runtime_enabled.store(false,
                                               std::memory_order_release);
@@ -1260,10 +1379,16 @@ void ProcessSgreLookupTick() {
     DiscardPendingSgreLookupClickSubmits();
     return;
   }
-  if (!InstallSgreLookupSensor()) {
+  if (!IsSgreDirectInputShieldOperational()) {
+    // The draw hook remains active for the exact engine-text lane, but no
+    // clickable geometry or click submit is admitted until the DirectInput
+    // detour has committed its Ready property. This prevents a stale host
+    // preference from re-enabling click-through while the shield is pending.
     g_sgre_lookup_click_runtime_enabled.store(false,
                                               std::memory_order_release);
+    g_sgre_lookup_last_shift_down = false;
     ClearSgreLookupActiveCapture();
+    DiscardPendingSgreLookupClickSubmits();
     return;
   }
   g_sgre_lookup_click_runtime_enabled.store(true, std::memory_order_release);

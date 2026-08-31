@@ -105,6 +105,7 @@ class GalIngameLookupController {
 
   /// galgame 会话是否在跑（由台词浮窗控制器的会话同步喂进来，不另起第二个监听）。
   bool _sessionActive = false;
+  int? _sessionEpochKey;
 
   /// 当前 host 仲裁是否允许 native geometry provider 把命中送进查词链。
   ///
@@ -116,6 +117,7 @@ class GalIngameLookupController {
   GalLookupGeometryAdmissionMode _geometryAdmissionMode =
       GalLookupGeometryAdmissionMode.disabled;
   bool _geometryAttachedReady = false;
+
   /// 本局游戏的**查词准入**（v19）。真值在注入侧的 adapter registry，经共享内存
   /// → runner → `onGalLookupAdmission` 推上来，本控制器只存不解释。
   ///
@@ -154,6 +156,13 @@ class GalIngameLookupController {
   /// 最近一次真正提交查词的命中。hover 也有自己的 seq，但它只在 TJS 内即时移动高亮，
   /// 不能作废正在查词的 submit，也不能拿来给卡片 present / dismiss 做身份。
   GalLookupHit? _latestSubmitHit;
+
+  /// A native dismiss is a lifecycle acknowledgement, not a fire-and-forget
+  /// visual hint. Preserve both the hit and route identities across transient
+  /// channel failures. Hit sequences restart with a replacement shared-memory
+  /// mapping, so a sequence from an older route epoch must never be written to
+  /// the current mapping.
+  ({int seq, int routeEpoch})? _pendingDismiss;
 
   /// 同一 submit 的重复文本 occurrence 只记一次诊断；KiriKiri 人物动画可能
   /// 持续重发，不能因为我们正在保护 route 反而每帧刷日志。
@@ -227,6 +236,31 @@ class GalIngameLookupController {
 
   @visibleForTesting
   bool get debugPushedEnabled => _pushedEnabled;
+
+  /// Whether the most recent native acknowledgement matches the controller's
+  /// current effective intent. Provider arbitration must not open a route on
+  /// a transport-level error that happened to complete without throwing.
+  bool get runtimeEnabledAcknowledged => _pushedEnabled == _enabledNow;
+
+  /// Reconciles the launch identity independently from the active boolean.
+  /// Two games can replace each other without an observable idle snapshot;
+  /// that active -> active rollover still needs a fresh route namespace and
+  /// must discard the previous game's admission report.
+  void setSessionEpoch(int? sessionEpochKey) {
+    if (_sessionEpochKey == sessionEpochKey) return;
+    _sessionEpochKey = sessionEpochKey;
+    _admission.value = GalLookupAdmission.unknown;
+    // Observe the lifecycle edge before attempting to retire the old route.
+    // The Reader may already have swapped mappings when the host receives the
+    // active -> active snapshot; advancing now makes every old dismiss
+    // unaddressable instead of accidentally applying its recycled seq to the
+    // replacement mapping.
+    if (_sessionActive) {
+      _sessionRouteEpoch++;
+      _lookupRouteEpoch = 0;
+    }
+    _providerAdmission = false;
+  }
 
   @visibleForTesting
   bool get debugProviderAdmission => _providerAdmission;
@@ -330,8 +364,10 @@ class GalIngameLookupController {
     _enableSyncPending = false;
     _enableSyncGeneration++;
     _pushedEnabled = false;
+    _sessionEpochKey = null;
     _activeHit = null;
     _latestSubmitHit = null;
+    _pendingDismiss = null;
     _pendingLookup = null;
     _draining = false;
     _drainCompleter = null;
@@ -344,16 +380,27 @@ class GalIngameLookupController {
 
   /// galgame 会话开始 / 结束。会话不在跑时游戏内查词必须彻底关掉——hook 侧
   /// `lookup_enabled=0` 即零写入，不留半开状态。
-  Future<void> setSessionActive(bool active) async {
+  Future<bool> setSessionActive(
+    bool active, {
+    bool Function()? stillCurrent,
+  }) async {
+    if (active && stillCurrent != null && !stillCurrent()) return false;
     if (_sessionActive == active) {
       // ReaderState owns mapping-generation replay: Open() reapplies its
       // persisted lookup_enabled_desired to every new shared-memory segment.
       // Session line/audio updates can arrive many times per second, so do not
       // resend the same platform call (and synchronously flush a diagnostic log)
       // after the desired state was acknowledged. A failed first send remains
-      // retryable because _pushedEnabled stays false.
-      if (active && !_pushedEnabled) await _syncEnabled();
-      return;
+      // retryable because [_pushedEnabled] remains the last acknowledged
+      // effective value. This must cover both directions: a failed disable
+      // must not leave a stale native input shield active indefinitely.
+      if (_pushedEnabled != _enabledNow) await _syncEnabled();
+      if (active && stillCurrent != null && !stillCurrent()) {
+        _sessionActive = false;
+        await _syncEnabled();
+        return false;
+      }
+      return true;
     }
     // 准入是**上一局**的事实，会话一换代/结束就必须丢掉。留着它，下一局（引擎不同、
     // exe 不同）的设置页会照着上一局说话。新段的第一份快照由 runner 在 Open 之后
@@ -365,6 +412,15 @@ class GalIngameLookupController {
     }
     _sessionActive = active;
     await _syncEnabled();
+    if (active && stillCurrent != null && !stillCurrent()) {
+      // The positive native edge may have completed after its lifecycle round
+      // was superseded. Compensate in the same serialized enable drain before
+      // returning so the queued current round starts from a closed shield.
+      _sessionActive = false;
+      await _syncEnabled();
+      return false;
+    }
+    return true;
   }
 
   /// Applies the central provider arbitration result without disabling the IPC
@@ -373,10 +429,29 @@ class GalIngameLookupController {
   /// Closing admission is a lifecycle edge, not merely an event filter: any
   /// card and queued lookup owned by the previous native provider are retired
   /// before the attached provider may publish its next transaction.
-  Future<void> setProviderAdmission(bool admitted) async {
-    if (_providerAdmission == admitted) return;
-    _providerAdmission = admitted;
-    if (!admitted) await _terminateCurrentLookup();
+  Future<bool> setProviderAdmission(
+    bool admitted, {
+    bool Function()? stillCurrent,
+  }) async {
+    if (!admitted) {
+      // Close the local publication gate first on every attempt. Route
+      // retirement talks to the native overlay and may fail transiently; a
+      // repeated false edge must retry that teardown instead of being skipped
+      // merely because the local gate is already closed.
+      _providerAdmission = false;
+      await _terminateCurrentLookup(requireNativeAck: true);
+      return true;
+    }
+    if (_pendingDismiss != null) {
+      await _terminateCurrentLookup(requireNativeAck: true);
+    }
+    // This check and the local positive edge are deliberately adjacent with no
+    // await between them. A lifecycle revision may change while the strict
+    // dismiss above is in flight; that older caller must not reopen the gate.
+    if (stillCurrent != null && !stillCurrent()) return false;
+    if (_providerAdmission) return true;
+    _providerAdmission = true;
+    return true;
   }
 
   /// Drives the injected registry owner independently from lookup_enabled.
@@ -387,13 +462,16 @@ class GalIngameLookupController {
   Future<GalLookupCallResult> setGeometryAdmission(
     GalLookupGeometryAdmissionMode mode, {
     required bool attachedReady,
+    bool Function()? stillCurrent,
   }) async {
     final GalLookupCallResult result =
         await GalHookTextOverlayChannel.galLookupSetGeometryAdmission(
           mode: mode,
           attachedReady: attachedReady,
         );
-    if (result.ok) {
+    if ((stillCurrent == null || stillCurrent()) &&
+        result.ok &&
+        result.requestSeq > 0) {
       _geometryAdmissionMode = mode;
       _geometryAttachedReady = attachedReady;
     }
@@ -652,9 +730,10 @@ class GalIngameLookupController {
     try {
       final GalLookupCallResult result =
           await GalHookTextOverlayChannel.galLookupSuspendForCapture(hit.seq);
-      if (!result.ok) {
+      if (!result.explicitOk) {
         throw GalHookCaptureSuppressionException(
-          'native capture suspend failed: ${result.error ?? "unknown"}',
+          'native capture suspend failed: '
+          '${result.error ?? "malformed_reply"}',
         );
       }
       // Direct composition is outside the injected game Layer, so the native
@@ -719,9 +798,22 @@ class GalIngameLookupController {
       if (suspendedSeq != null && suspendedSessionEpoch == _sessionRouteEpoch) {
         final GalLookupCallResult result =
             await GalHookTextOverlayChannel.galLookupDismiss(suspendedSeq);
+        final ({int seq, int routeEpoch}) pending = (
+          seq: suspendedSeq,
+          routeEpoch: suspendedSessionEpoch,
+        );
+        if ((result.explicitOk ||
+                _nativeLookupConsumerUnavailable(result.error)) &&
+            _pendingDismiss == pending) {
+          _pendingDismiss = null;
+        } else if (!result.explicitOk &&
+            !_nativeLookupConsumerUnavailable(result.error)) {
+          _pendingDismiss = pending;
+          _providerAdmission = false;
+        }
         glog(
           'gal-ingame: capture restore dismiss seq=$suspendedSeq '
-          '-> ${result.error ?? "ok"}',
+          '-> ${result.error ?? (result.explicitOk ? "ok" : "malformed_reply")}',
         );
       }
     } catch (error, stackTrace) {
@@ -730,8 +822,20 @@ class GalIngameLookupController {
       // dismiss 清掉 native suppress；下一次查询仍可按正常 full present 重建卡片。
       glog('gal-ingame: capture restore EXCEPTION $error\n$stackTrace');
       if (suspendedSeq != null && suspendedSessionEpoch == _sessionRouteEpoch) {
+        final ({int seq, int routeEpoch}) pending = (
+          seq: suspendedSeq,
+          routeEpoch: suspendedSessionEpoch,
+        );
+        _pendingDismiss = pending;
+        _providerAdmission = false;
         try {
-          await GalHookTextOverlayChannel.galLookupDismiss(suspendedSeq);
+          final GalLookupCallResult result =
+              await GalHookTextOverlayChannel.galLookupDismiss(suspendedSeq);
+          if ((result.explicitOk ||
+                  _nativeLookupConsumerUnavailable(result.error)) &&
+              _pendingDismiss == pending) {
+            _pendingDismiss = null;
+          }
         } catch (_) {}
       }
     }
@@ -740,6 +844,12 @@ class GalIngameLookupController {
   // ── 内部 ──────────────────────────────────────────────────────────────────
 
   bool get _enabledNow => _sessionActive && _readEnabledPreference();
+
+  static bool _nativeLookupConsumerUnavailable(String? error) {
+    return error == 'not_open' ||
+        error == 'no_lookup_region' ||
+        error == 'lookup_disabled';
+  }
 
   bool _readEnabledPreference() {
     final GalIngameLookupPreferenceReader? reader = _preferenceReader;
@@ -797,13 +907,15 @@ class GalIngameLookupController {
         if (generation != _enableSyncGeneration) continue;
 
         final bool latestDesired = _enabledNow;
-        if (result.ok && desired == latestDesired) {
+        final bool acknowledged =
+            result.explicitOk ||
+            (!desired && _nativeLookupConsumerUnavailable(result.error));
+        if (acknowledged && desired == latestDesired) {
           _pushedEnabled = desired;
-        } else if (!result.ok) {
-          // enable 失败必须保持 false，让后续同 active phase 通知可重试。
-          // disable 失败也不伪称仍已 enable；runner 会自行保留关闭意图。
-          _pushedEnabled = false;
         }
+        // On failure keep the last acknowledged value. In particular, a failed
+        // disable must remain distinguishable from a confirmed false reply so
+        // the next same-state sync retries instead of assuming the shield closed.
         glog(
           'gal-ingame: setEnabled=$desired session=$_sessionActive '
           '-> ${result.error ?? "ok"}',
@@ -1083,9 +1195,16 @@ class GalIngameLookupController {
   /// the channel boundary drop the hide and leave a stale WebView frame capable
   /// of reappearing. This is used for line changes, empty/refused lookups,
   /// genuine popup dismissal, session disable and test shutdown alike.
-  Future<void> _terminateCurrentLookup() async {
+  Future<void> _terminateCurrentLookup({bool requireNativeAck = false}) async {
     final GlobalLookupRoute? route = _activeRoute;
     final GalLookupHit? hit = _latestSubmitHit ?? _activeHit;
+    final ({int seq, int routeEpoch})? pending = _pendingDismiss;
+    final ({int seq, int routeEpoch})? dismiss = hit != null
+        ? (
+            seq: hit.seq,
+            routeEpoch: route?.routeEpoch ?? _sessionRouteEpoch,
+          )
+        : pending;
     _lookupGeneration++;
     _activeHit = null;
     _activeLookupGeneration = 0;
@@ -1094,15 +1213,58 @@ class GalIngameLookupController {
     _pendingLookup = null;
     _cancelRecapture();
     try {
-      if (hit != null && !_captureSuppressed) {
-        final GalLookupCallResult result =
-            await GalHookTextOverlayChannel.galLookupDismiss(hit.seq);
-        glog('gal-ingame: dismiss seq=${hit.seq} -> ${result.error ?? "ok"}');
-      } else if (hit != null) {
+      if (dismiss != null && dismiss.routeEpoch != _sessionRouteEpoch) {
+        // The mapping namespace has already changed. Writing this recycled hit
+        // sequence through the current Reader could dismiss a new game's first
+        // lookup, so the only safe retirement left is local route invalidation.
+        if (_pendingDismiss == dismiss) _pendingDismiss = null;
+        glog(
+          'gal-ingame: drop stale dismiss seq=${dismiss.seq} '
+          'route=${dismiss.routeEpoch} current=$_sessionRouteEpoch',
+        );
+      } else if (dismiss != null && !_captureSuppressed) {
+        _pendingDismiss = dismiss;
+        try {
+          final GalLookupCallResult result =
+              await GalHookTextOverlayChannel.galLookupDismiss(dismiss.seq);
+          final bool acknowledged =
+              result.explicitOk ||
+              _nativeLookupConsumerUnavailable(result.error);
+          glog(
+            'gal-ingame: dismiss seq=${dismiss.seq} -> '
+            '${result.error ?? (result.explicitOk ? "ok" : "malformed_reply")}',
+          );
+          if (acknowledged && _pendingDismiss == dismiss) {
+            _pendingDismiss = null;
+          } else {
+            _providerAdmission = false;
+            if (requireNativeAck) {
+              throw StateError(
+                'native lookup dismiss was not acknowledged: '
+                '${result.error ?? "malformed_reply"}',
+              );
+            }
+          }
+        } catch (error, stackTrace) {
+          _providerAdmission = false;
+          if (requireNativeAck) rethrow;
+          glog(
+            'gal-ingame: dismiss seq=${dismiss.seq} EXCEPTION '
+            '$error\n$stackTrace',
+          );
+        }
+      } else if (dismiss != null) {
         // capture-suppress 已经把 card/highlight 收掉；此刻普通 dismiss 会提前解除
         // native 的持续 suppress，让 WGC 采样后半段重新吃到 hover 高亮。lease release
         // 会在截图结束后做同会话 dismiss 补偿。
-        glog('gal-ingame: defer dismiss seq=${hit.seq} until capture release');
+        _pendingDismiss = dismiss;
+        _providerAdmission = false;
+        glog(
+          'gal-ingame: defer dismiss seq=${dismiss.seq} until capture release',
+        );
+        if (requireNativeAck) {
+          throw StateError('native lookup dismiss is deferred for capture');
+        }
       }
     } finally {
       await _hideThenInvalidateRoute(route);

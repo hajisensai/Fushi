@@ -39,23 +39,36 @@ std::vector<uint8_t> MakeArchive(const std::vector<uint8_t>& payload,
 void TestAnchorResolution() {
   using namespace fushi_voice_hook;
 
-  // Measured build: the hash row supplies every anchor and needs no image.
+  // A measured digest identifies a consistency row only. It must not bypass
+  // signature resolution or structural validation when no mapped image is
+  // available.
   SgreImageView empty;
   const SgreAnchorSet known =
       ResolveSgreAnchors(kSgreExecutableSha256.data(),
                          kSgreExecutableSha256.size(), empty);
-  assert(known.known_build && known.complete());
-  assert(known.text_draw.rva == 0x35aa0u &&
-         known.text_draw.source == SgreAnchorSource::kKnownBuild);
-  assert(known.scenario_text_vtable.rva == 0x5be330u &&
-         known.scenario_text_vtable.source == SgreAnchorSource::kKnownBuild);
-  assert(known.direct_input_mouse_device.rva == 0xA96E18u &&
-         known.direct_input_mouse_device.source ==
-             SgreAnchorSource::kKnownBuild);
+  assert(known.known_build && !known.complete());
+  assert(!known.lookup_sensor_available());
+  assert(!known.direct_input_shield_available());
+  assert(known.text_draw.source == SgreAnchorSource::kSignatureMissing);
+  assert(known.scenario_text_vtable.source ==
+         SgreAnchorSource::kSignatureMissing);
+  assert(known.direct_input_mouse_device.source ==
+         SgreAnchorSource::kSignatureMissing);
+  assert(known.text_draw.rva == 0 && known.scenario_text_vtable.rva == 0 &&
+         known.direct_input_mouse_device.rva == 0);
 
-  // Unknown build with the shipped (still empty) signatures: the attempt is
-  // made and every anchor reports why it stayed unresolved. Nothing is hooked
-  // at a guessed address.
+  // Unknown and unhashed builds take the same proof path. Published signatures
+  // are non-empty, but an empty mapped image has no evidence to resolve.
+  assert(kSgreTextDrawSignature.pattern != nullptr &&
+         kSgreTextDrawSignature.pattern[0] != '\0');
+  assert(kSgreScenarioTextVtableSignature.pattern != nullptr &&
+         kSgreScenarioTextVtableSignature.pattern[0] != '\0');
+  assert(kSgreScenarioTextVtableCorroborationSignature.pattern != nullptr &&
+         kSgreScenarioTextVtableCorroborationSignature.pattern[0] != '\0');
+  assert(kSgreDirectInputMouseDeviceSignature.pattern != nullptr &&
+         kSgreDirectInputMouseDeviceSignature.pattern[0] != '\0');
+  assert(kSgreDirectInputMouseDeviceCorroborationSignature.pattern != nullptr &&
+         kSgreDirectInputMouseDeviceCorroborationSignature.pattern[0] != '\0');
   auto other_build = kSgreExecutableSha256;
   other_build[31] ^= 0x01;
   const SgreAnchorSet unknown =
@@ -63,17 +76,17 @@ void TestAnchorResolution() {
   assert(!unknown.known_build);
   assert(!unknown.lookup_sensor_available());
   assert(!unknown.direct_input_shield_available());
-  assert(unknown.text_draw.source == SgreAnchorSource::kSignatureEmpty);
+  assert(unknown.text_draw.source == SgreAnchorSource::kSignatureMissing);
   assert(unknown.scenario_text_vtable.source ==
-         SgreAnchorSource::kSignatureEmpty);
+         SgreAnchorSource::kSignatureMissing);
   assert(unknown.direct_input_mouse_device.source ==
-         SgreAnchorSource::kSignatureEmpty);
+         SgreAnchorSource::kSignatureMissing);
   assert(unknown.text_draw.rva == 0 && unknown.scenario_text_vtable.rva == 0 &&
          unknown.direct_input_mouse_device.rva == 0);
   // A failed hash (no digest at all) takes the same path as an unknown one.
   const SgreAnchorSet unhashed = ResolveSgreAnchors(nullptr, 0, empty);
   assert(!unhashed.known_build &&
-         unhashed.text_draw.source == SgreAnchorSource::kSignatureEmpty);
+         unhashed.text_draw.source == SgreAnchorSource::kSignatureMissing);
 
   // Pattern grammar: space separated hex pairs or "??" wildcards, nothing else.
   SgrePatternByte bytes[8];
@@ -170,20 +183,21 @@ void TestAnchorResolution() {
   SgreResolvedAnchor vtable = ResolveSgreAnchorBySignature(vtable_sig, image);
   assert(vtable.source == SgreAnchorSource::kSignature &&
          vtable.rva == vtable_rva);
-  // Same bytes, but the referenced slot does not point into code: rejected.
+  // Primitive vtable resolution validates aligned read-only storage. SGRE's
+  // composite resolver separately cross-validates the consumed draw slot (4),
+  // so unrelated slot 0 contents must not reject a compatible layout.
   slot0 = image.image_base + 0x3000;
   std::memcpy(rdata + 0x08, &slot0, sizeof(slot0));
   assert(ResolveSgreAnchorBySignature(vtable_sig, image).source ==
-         SgreAnchorSource::kStructureRejected);
-  // A null / below-image slot is not a vtable either.
+         SgreAnchorSource::kSignature);
   slot0 = 0;
   std::memcpy(rdata + 0x08, &slot0, sizeof(slot0));
   assert(ResolveSgreAnchorBySignature(vtable_sig, image).source ==
-         SgreAnchorSource::kStructureRejected);
+         SgreAnchorSource::kSignature);
   slot0 = image.image_base - 0x10;
   std::memcpy(rdata + 0x08, &slot0, sizeof(slot0));
   assert(ResolveSgreAnchorBySignature(vtable_sig, image).source ==
-         SgreAnchorSource::kStructureRejected);
+         SgreAnchorSource::kSignature);
 
   // Writable global (the mouse device slot) located through
   //   mov rax, [rip+disp32]  (48 8B 05 disp32, 7 bytes) at .text+0x30.
@@ -209,14 +223,14 @@ void TestAnchorResolution() {
   assert(ResolveSgreAnchorBySignature(device_sig, image).source ==
          SgreAnchorSource::kStructureRejected);
 
-  // The shipped signature table is still empty, so even a scannable image
-  // resolves nothing for an unknown build -- reported, not guessed.
+  // This unrelated synthetic image does not satisfy the published SGRE
+  // signatures, so resolution fails closed instead of falling back to an RVA.
   const SgreAnchorSet shipped =
       ResolveSgreAnchors(other_build.data(), other_build.size(), image);
   assert(!shipped.lookup_sensor_available() &&
-         shipped.text_draw.source == SgreAnchorSource::kSignatureEmpty);
-  assert(std::strcmp(SgreAnchorSourceName(SgreAnchorSource::kSignatureEmpty),
-                     "signature_empty") == 0);
+          shipped.text_draw.source == SgreAnchorSource::kSignatureMissing);
+  assert(std::strcmp(SgreAnchorSourceName(SgreAnchorSource::kSignatureMissing),
+                     "signature_missing") == 0);
 }
 
 int main() {

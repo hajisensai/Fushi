@@ -277,6 +277,7 @@ class GalAttachedTextController extends ChangeNotifier {
   bool _textPushStagesProviderPending = false;
   int _textPushOperation = 0;
   int _operationGeneration = 0;
+  bool _activationDeferred = false;
   bool _attachedProviderClaimed = false;
   bool _forceAttachedProvider = false;
   final Set<int> _retiredTargetHwnds = <int>{};
@@ -330,7 +331,10 @@ class GalAttachedTextController extends ChangeNotifier {
     required int targetHwnd,
     String? sourceText,
     String? launchExePath,
+    bool inspectOnly = false,
+    bool Function()? stillCurrent,
   }) async {
+    if (stillCurrent != null && !stillCurrent()) return;
     final bool hasTarget =
         active &&
         sessionEpoch != null &&
@@ -361,13 +365,33 @@ class GalAttachedTextController extends ChangeNotifier {
         targetHwnd: targetHwnd,
         sourceText: nextText,
         launchExePath: nextLaunchExePath,
+        inspectOnly: inspectOnly,
+        stillCurrent: stillCurrent,
       );
       return;
     }
     final bool bodyArrived = _latestSourceText.isEmpty && nextText.isNotEmpty;
     _latestSourceText = nextText;
+    if (_activationDeferred) {
+      if (inspectOnly) return;
+      _activationDeferred = false;
+      await _evaluateAndActivate(
+        ++_operationGeneration,
+        current,
+        stillCurrent: stillCurrent,
+      );
+      return;
+    }
     if (bodyArrived && _status == GalAttachedTextStatus.waitingForBodyThread) {
-      await _evaluateAndActivate(++_operationGeneration, current);
+      if (inspectOnly) {
+        _activationDeferred = true;
+        return;
+      }
+      await _evaluateAndActivate(
+        ++_operationGeneration,
+        current,
+        stillCurrent: stillCurrent,
+      );
       return;
     }
     if (nextText.isEmpty && _status == GalAttachedTextStatus.activeAttached) {
@@ -384,8 +408,11 @@ class GalAttachedTextController extends ChangeNotifier {
     required int targetHwnd,
     required String sourceText,
     required String? launchExePath,
+    required bool inspectOnly,
+    bool Function()? stillCurrent,
   }) async {
     await detach();
+    if (stillCurrent != null && !stillCurrent()) return;
     _latestSourceText = sourceText;
     _launchExePath = launchExePath;
     final int operation = ++_operationGeneration;
@@ -401,7 +428,10 @@ class GalAttachedTextController extends ChangeNotifier {
       target,
       launchExePath: launchExePath,
     );
-    if (!_isCurrent(operation, target)) return;
+    if (!_isCurrent(operation, target) ||
+        (stillCurrent != null && !stillCurrent())) {
+      return;
+    }
     _adoptNativeMetadata(inspection);
     final String exePath = inspection.exePath ?? '';
     final String exeSha256 = inspection.exeSha256 ?? '';
@@ -417,7 +447,15 @@ class GalAttachedTextController extends ChangeNotifier {
     _exeSha256 = GalLookupSurfaceProfileV1.normalizeSha256(exeSha256);
     _currentClient = client;
     _loadProfile();
-    await _evaluateAndActivate(operation, target);
+    if (inspectOnly) {
+      _activationDeferred = true;
+      return;
+    }
+    await _evaluateAndActivate(
+      operation,
+      target,
+      stillCurrent: stillCurrent,
+    );
   }
 
   void _loadProfile() {
@@ -455,8 +493,10 @@ class GalAttachedTextController extends ChangeNotifier {
 
   Future<void> _evaluateAndActivate(
     int operation,
-    GalAttachedSurfaceTarget target,
-  ) async {
+    GalAttachedSurfaceTarget target, {
+    bool Function()? stillCurrent,
+  }) async {
+    if (stillCurrent != null && !stillCurrent()) return;
     final GalAttachedSurfaceTarget? callTarget = _target;
     if (callTarget == null || !_sameLogicalSurface(callTarget, target)) return;
     final GalLookupSurfaceProfileV1? profile = _profile;
@@ -536,6 +576,7 @@ class GalAttachedTextController extends ChangeNotifier {
       operation,
       callTarget,
       profileMode: mode,
+      stillCurrent: stillCurrent,
     )) {
       return;
     }
@@ -545,7 +586,10 @@ class GalAttachedTextController extends ChangeNotifier {
       mode: mode,
       riskAccepted: riskAccepted,
     );
-    if (!_isCurrent(operation, callTarget)) return;
+    if (!_isCurrent(operation, callTarget) ||
+        (stillCurrent != null && !stillCurrent())) {
+      return;
+    }
     _adoptNativeMetadata(result);
     if (result.shield.conclusion == GalAttachedShieldConclusion.faulted) {
       _activationFailure('input_shield_faulted');
@@ -1542,6 +1586,7 @@ class GalAttachedTextController extends ChangeNotifier {
     _textPushSource = null;
     _textPushStagesProviderPending = false;
     _retiredTargetHwnds.clear();
+    _activationDeferred = false;
     _clearDraft();
     _surfaceVisible = false;
     _nativeStatus = null;
@@ -1563,7 +1608,9 @@ class GalAttachedTextController extends ChangeNotifier {
     GalAttachedSurfaceTarget target, {
     required GalLookupSurfaceMode profileMode,
     bool forceAttached = false,
+    bool Function()? stillCurrent,
   }) async {
+    if (stillCurrent != null && !stillCurrent()) return false;
     _setAttachedProviderClaim(true, forceAttached: forceAttached);
     final GalAttachedBeforeActivationCallback? callback =
         _onBeforeAttachedActivation;
@@ -1577,6 +1624,10 @@ class GalAttachedTextController extends ChangeNotifier {
         }
         return false;
       }
+    }
+    if (stillCurrent != null && !stillCurrent()) {
+      _setAttachedProviderClaim(false);
+      return false;
     }
     return _isCurrent(operation, target);
   }

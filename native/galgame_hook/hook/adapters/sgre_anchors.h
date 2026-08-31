@@ -8,16 +8,18 @@
 // depot silently disabled text, geometry, input shield and audio at once.
 //
 // This header separates the three concerns:
-//   1. Family identity (does this process run the wind3d11 runtime?) lives in
-//      sgre_profile.h and never depends on a hash.
+//   1. Family identity never depends on a hash. The optional voice archive can
+//      prove the audio family, while a complete lookup anchor proof can admit
+//      text/lookup even when that archive is absent.
 //   2. Known builds: one row per measured executable, hash -> RVAs. A hash hit
-//      is the fast path and keeps verified builds byte-for-byte unchanged.
+//      is only an additional consistency check; it never bypasses the same
+//      signatures and structural proof required from an unknown build.
 //   3. Unknown builds: each anchor is resolved independently by a byte
-//      signature scanned over the mapped image. A signature must match exactly
-//      once and the result must pass a structural check for its anchor kind;
-//      otherwise that anchor stays unresolved and nothing is hooked at a
-//      guessed address. Empty signatures (not measured yet) resolve to
-//      kSignatureEmpty so the outcome is reported instead of silently absent.
+//      signature scanned over the mapped image. Raw hits are decoded and
+//      de-duplicated by final RVA; independent references must have exactly one
+//      structurally valid intersection. Otherwise the anchor stays unresolved
+//      and nothing is hooked at a guessed address. The draw function is also
+//      tied back to the scenario vtable and x64 unwind metadata.
 //
 // Everything here is pure: no Windows headers, no process access. The OS
 // facing wrapper that builds an SgreImageView from a loaded module lives in
@@ -36,7 +38,7 @@ namespace fushi_voice_hook {
 // rejected: the pattern matched bytes, but not the thing we intend to hook.
 enum class SgreAnchorKind : uint8_t {
   kCode = 0,         // function entry: must lie in an executable section
-  kVtable = 1,       // read-only vtable: slot 0 must point into code
+  kVtable = 1,       // aligned read-only vtable storage
   kWritableData = 2  // global pointer slot: must lie in a writable section
 };
 
@@ -139,7 +141,8 @@ inline const SgreBuildAnchors* FindSgreKnownBuild(const uint8_t* digest,
 // data anchors (vtable address, global device slot) from the code that
 // references them, which is far more stable across builds than data bytes.
 //
-// A pattern is always scanned inside `section` only.
+// `section == nullptr` scans every executable section and requires global
+// uniqueness. Tests and offline tools may still name one exact section.
 struct SgreAnchorSignature {
   const char* pattern;
   const char* section;
@@ -149,18 +152,71 @@ struct SgreAnchorSignature {
   int32_t rip_instr_len;
 };
 
-// Signatures are intentionally empty until measured from real builds. Fill
-// the pattern text only; everything else is the decoding contract for that
-// pattern. Keep one entry per anchor; do not add per-game rows here — that is
-// what kSgreKnownBuilds is for.
+// These patterns describe the SGRE/M2 object ABI used by the adapter rather
+// than one executable address. Offsets such as TextRender's glyph-vector
+// fields are deliberately retained: if a later build changes that layout, the
+// current capture code is no longer safe and resolution must fail closed.
+//
+// TextDraw is located inside the function body. ResolveSgreTextDraw() maps the
+// body candidates through the x64 PE exception directory to function entries
+// and requires the scenario vtable's draw slot to name the unique intersection.
 inline constexpr SgreAnchorSignature kSgreTextDrawSignature = {
-    "", ".text", SgreAnchorKind::kCode, 0, -1, 0};
-inline constexpr SgreAnchorSignature kSgreScenarioTextVtableSignature = {
-    "", ".text", SgreAnchorKind::kVtable, 0, -1, 0};
-inline constexpr SgreAnchorSignature kSgreDirectInputMouseDeviceSignature = {
-    "", ".text", SgreAnchorKind::kWritableData, 0, -1, 0};
+    "F3 0F 10 ?? B0 03 00 00 "
+    "F3 0F 58 ?? A8 03 00 00 "
+    "F3 0F 58 ?? C0 03 00 00 "
+    "F3 ?? 0F 10 ?? B4 03 00 00 "
+    "F3 ?? 0F 58 ?? AC 03 00 00 "
+    "F3 ?? 0F 58 ?? C4 03 00 00 "
+    "48 8B ?? D0 02 00 00 "
+    "48 3B ?? D8 02 00 00 "
+    "74 ?? "
+    "3B ?? CC 03 00 00 "
+    "7D ?? "
+    "4C 8B ??",
+    nullptr, SgreAnchorKind::kCode, 0, -1, 0};
 
-inline constexpr size_t kSgreSignatureMaxBytes = 64;
+// Two independent construction paths must decode the same read-only vtable.
+inline constexpr SgreAnchorSignature kSgreScenarioTextVtableSignature = {
+    "48 8D 05 ?? ?? ?? ?? "
+    "8B DA "
+    "48 89 01 "
+    "48 8B F9 "
+    "48 8D 05 ?? ?? ?? ?? "
+    "48 89 81 B0 00 00 00",
+    nullptr, SgreAnchorKind::kVtable, 0, 3, 7};
+inline constexpr SgreAnchorSignature
+    kSgreScenarioTextVtableCorroborationSignature = {
+        "48 8D 05 ?? ?? ?? ?? "
+        "48 89 06 "
+        "48 8D 05 ?? ?? ?? ?? "
+        "48 89 86 B0 00 00 00 "
+        "48 8D 8E 30 04 00 00",
+        nullptr, SgreAnchorKind::kVtable, 0, 3, 7};
+
+// CreateDevice's output pointer and the immediate GetDeviceState poll must
+// decode to the same writable, non-executable global device slot.
+inline constexpr SgreAnchorSignature kSgreDirectInputMouseDeviceSignature = {
+    "C6 05 ?? ?? ?? ?? 01 "
+    "48 8B 0D ?? ?? ?? ?? "
+    "4C 8D 05 ?? ?? ?? ?? "
+    "45 33 C9 "
+    "48 8D 15 ?? ?? ?? ?? "
+    "48 8B 01 "
+    "FF 50 18 "
+    "85 C0",
+    nullptr, SgreAnchorKind::kWritableData, 0, 17, 21};
+inline constexpr SgreAnchorSignature
+    kSgreDirectInputMouseDeviceCorroborationSignature = {
+        "48 8B 0D ?? ?? ?? ?? "
+        "48 85 C9 "
+        "0F 84 ?? ?? ?? ?? "
+        "48 8B 01 "
+        "4C 8D 44 24 30 "
+        "BA 14 00 00 00 "
+        "FF 50 48",
+        nullptr, SgreAnchorKind::kWritableData, 0, 3, 7};
+
+inline constexpr size_t kSgreSignatureMaxBytes = 96;
 
 struct SgrePatternByte {
   uint8_t value = 0;
@@ -222,6 +278,10 @@ inline constexpr size_t kSgreImageMaxSections = 32;
 
 struct SgreImageView {
   uintptr_t image_base = 0;  // address that absolute pointers are relative to
+  // PE OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION]. The
+  // directory is authoritative; linkers may rename or merge its section.
+  uintptr_t exception_directory_rva = 0;
+  size_t exception_directory_size = 0;
   SgreImageSection sections[kSgreImageMaxSections] = {};
   size_t section_count = 0;
 
@@ -246,6 +306,15 @@ struct SgreImageView {
 
 // ── Resolution ──────────────────────────────────────────────────────────────
 
+inline bool SgreImageSpanAvailable(const SgreImageView& image, uintptr_t rva,
+                                   size_t bytes) {
+  if (bytes == 0) return false;
+  const SgreImageSection* section = image.SectionContaining(rva);
+  if (section == nullptr || section->bytes == nullptr) return false;
+  const size_t offset = static_cast<size_t>(rva - section->rva);
+  return offset <= section->size && bytes <= section->size - offset;
+}
+
 inline bool SgreStructureAccepts(SgreAnchorKind kind, uintptr_t rva,
                                  const SgreImageView& image) {
   const SgreImageSection* home = image.SectionContaining(rva);
@@ -254,114 +323,419 @@ inline bool SgreStructureAccepts(SgreAnchorKind kind, uintptr_t rva,
     case SgreAnchorKind::kCode:
       return home->executable;
     case SgreAnchorKind::kWritableData:
-      return home->writable && !home->executable;
+      return home->writable && !home->executable &&
+             rva % alignof(uintptr_t) == 0 &&
+             SgreImageSpanAvailable(image, rva, sizeof(uintptr_t));
     case SgreAnchorKind::kVtable: {
-      if (home->executable || home->writable) return false;
-      const size_t offset = static_cast<size_t>(rva - home->rva);
-      if (home->size - offset < sizeof(uintptr_t)) return false;
-      uintptr_t slot0 = 0;
-      std::memcpy(&slot0, home->bytes + offset, sizeof(slot0));
-      if (slot0 < image.image_base) return false;
-      const SgreImageSection* target =
-          image.SectionContaining(slot0 - image.image_base);
-      return target != nullptr && target->executable;
+      // The sensor consumes slot 4 only. ResolveSgreTextDraw validates that
+      // slot; unrelated virtual methods may legitimately be folded or thunked
+      // outside the main image in a candidate build.
+      return !home->executable && !home->writable &&
+             rva % alignof(uintptr_t) == 0 &&
+             SgreImageSpanAvailable(image, rva, sizeof(uintptr_t));
     }
   }
   return false;
 }
 
-inline SgreResolvedAnchor ResolveSgreAnchorBySignature(
-    const SgreAnchorSignature& signature, const SgreImageView& image) {
-  SgreResolvedAnchor result;
-  if (signature.pattern == nullptr || signature.pattern[0] == '\0') {
-    result.source = SgreAnchorSource::kSignatureEmpty;
-    return result;
-  }
-  SgrePatternByte pattern[kSgreSignatureMaxBytes];
-  const size_t length =
-      ParseSgreSignaturePattern(signature.pattern, pattern,
-                                kSgreSignatureMaxBytes);
-  const bool rip_contract_broken =
-      signature.rip_disp_offset >= 0 &&
-      (signature.rip_instr_len <= 0 ||
-       static_cast<size_t>(signature.rip_disp_offset) + sizeof(int32_t) >
-           static_cast<size_t>(signature.rip_instr_len));
-  if (length == 0 || rip_contract_broken) {
-    result.source = SgreAnchorSource::kSignatureInvalid;
-    return result;
-  }
-  const SgreImageSection* section = image.FindSection(signature.section);
-  if (section == nullptr || section->bytes == nullptr ||
-      section->size < length) {
-    result.source = SgreAnchorSource::kSignatureMissing;
-    return result;
-  }
+inline constexpr size_t kSgreAnchorCandidateMax = 64;
 
-  size_t matches = 0;
-  size_t match_offset = 0;
-  for (size_t at = 0; at + length <= section->size; ++at) {
-    size_t i = 0;
-    for (; i < length; ++i) {
-      if (!pattern[i].wildcard && section->bytes[at + i] != pattern[i].value) {
-        break;
-      }
-    }
-    if (i != length) continue;
-    if (++matches > 1) break;
-    match_offset = at;
-  }
-  if (matches == 0) {
-    result.source = SgreAnchorSource::kSignatureMissing;
-    return result;
-  }
-  if (matches > 1) {
-    result.source = SgreAnchorSource::kSignatureAmbiguous;
-    return result;
-  }
+struct SgreAnchorCandidates {
+  std::array<uintptr_t, kSgreAnchorCandidateMax> rvas = {};
+  size_t count = 0;
+  SgreAnchorSource failure = SgreAnchorSource::kUnresolved;
+  bool overflow = false;
+};
 
-  uintptr_t rva = section->rva + match_offset;
+inline bool AddUniqueSgreAnchorCandidate(SgreAnchorCandidates* candidates,
+                                         uintptr_t rva) {
+  if (candidates == nullptr) return false;
+  for (size_t i = 0; i < candidates->count; ++i) {
+    if (candidates->rvas[i] == rva) return true;
+  }
+  if (candidates->count >= candidates->rvas.size()) {
+    candidates->overflow = true;
+    candidates->failure = SgreAnchorSource::kSignatureAmbiguous;
+    return false;
+  }
+  candidates->rvas[candidates->count++] = rva;
+  return true;
+}
+
+inline bool DecodeSgreSignatureMatch(const SgreAnchorSignature& signature,
+                                     const SgreImageSection& section,
+                                     size_t match_offset, uintptr_t* rva_out) {
+  if (rva_out == nullptr || match_offset >= section.size) return false;
+  int64_t decoded = static_cast<int64_t>(section.rva + match_offset);
   if (signature.rip_disp_offset >= 0) {
     const size_t disp_at =
         match_offset + static_cast<size_t>(signature.rip_disp_offset);
-    if (disp_at + sizeof(int32_t) > section->size) {
-      result.source = SgreAnchorSource::kStructureRejected;
-      return result;
+    if (disp_at > section.size ||
+        sizeof(int32_t) > section.size - disp_at) {
+      return false;
     }
-    int32_t disp = 0;
-    std::memcpy(&disp, section->bytes + disp_at, sizeof(disp));
-    rva = static_cast<uintptr_t>(
-        static_cast<intptr_t>(rva) + signature.rip_instr_len + disp);
+    int32_t displacement = 0;
+    std::memcpy(&displacement, section.bytes + disp_at,
+                sizeof(displacement));
+    decoded += static_cast<int64_t>(signature.rip_instr_len) + displacement;
   }
-  rva = static_cast<uintptr_t>(static_cast<intptr_t>(rva) +
-                               signature.anchor_offset);
-  if (!SgreStructureAccepts(signature.kind, rva, image)) {
-    result.source = SgreAnchorSource::kStructureRejected;
+  decoded += signature.anchor_offset;
+  if (decoded <= 0 ||
+      static_cast<uint64_t>(decoded) > static_cast<uint64_t>(UINTPTR_MAX)) {
+    return false;
+  }
+  *rva_out = static_cast<uintptr_t>(decoded);
+  return true;
+}
+
+// Collect every raw match across all selected executable sections, decode it,
+// discard structurally impossible targets, and de-duplicate by the final RVA.
+// Consumers can then intersect independent evidence instead of rejecting a
+// candidate build merely because the compiler emitted the same byte sequence
+// more than once.
+inline SgreAnchorCandidates CollectSgreAnchorCandidates(
+    const SgreAnchorSignature& signature, const SgreImageView& image) {
+  SgreAnchorCandidates result;
+  if (signature.pattern == nullptr || signature.pattern[0] == '\0') {
+    result.failure = SgreAnchorSource::kSignatureEmpty;
     return result;
   }
-  result.rva = rva;
-  result.source = SgreAnchorSource::kSignature;
+  SgrePatternByte pattern[kSgreSignatureMaxBytes];
+  const size_t length = ParseSgreSignaturePattern(
+      signature.pattern, pattern, kSgreSignatureMaxBytes);
+  const bool rip_contract_broken =
+      signature.rip_disp_offset >= 0 &&
+      (signature.rip_instr_len <= 0 ||
+       static_cast<size_t>(signature.rip_instr_len) > length ||
+       static_cast<size_t>(signature.rip_disp_offset) + sizeof(int32_t) >
+           length);
+  if (length == 0 || rip_contract_broken) {
+    result.failure = SgreAnchorSource::kSignatureInvalid;
+    return result;
+  }
+
+  size_t raw_matches = 0;
+  for (size_t section_index = 0; section_index < image.section_count;
+       ++section_index) {
+    const SgreImageSection& section = image.sections[section_index];
+    const bool section_selected = signature.section == nullptr
+                                      ? section.executable
+                                      : std::strncmp(
+                                            section.name, signature.section,
+                                            sizeof(section.name)) == 0;
+    if (!section_selected || section.bytes == nullptr ||
+        section.size < length) {
+      continue;
+    }
+    for (size_t at = 0; at + length <= section.size; ++at) {
+      size_t i = 0;
+      for (; i < length; ++i) {
+        if (!pattern[i].wildcard &&
+            section.bytes[at + i] != pattern[i].value) {
+          break;
+        }
+      }
+      if (i != length) continue;
+      ++raw_matches;
+      uintptr_t decoded = 0;
+      if (!DecodeSgreSignatureMatch(signature, section, at, &decoded) ||
+          !SgreStructureAccepts(signature.kind, decoded, image)) {
+        continue;
+      }
+      if (!AddUniqueSgreAnchorCandidate(&result, decoded)) return result;
+    }
+  }
+  if (result.count == 0) {
+    result.failure = raw_matches == 0
+                         ? SgreAnchorSource::kSignatureMissing
+                         : SgreAnchorSource::kStructureRejected;
+  } else if (result.count == 1) {
+    result.failure = SgreAnchorSource::kSignature;
+  } else {
+    result.failure = SgreAnchorSource::kSignatureAmbiguous;
+  }
   return result;
+}
+
+inline SgreResolvedAnchor ResolveSgreAnchorBySignature(
+    const SgreAnchorSignature& signature, const SgreImageView& image) {
+  const SgreAnchorCandidates candidates =
+      CollectSgreAnchorCandidates(signature, image);
+  if (!candidates.overflow && candidates.count == 1) {
+    return {candidates.rvas[0], SgreAnchorSource::kSignature};
+  }
+  SgreResolvedAnchor result;
+  result.source = candidates.failure;
+  return result;
+}
+
+inline SgreResolvedAnchor RejectSgreAnchorStructure() {
+  SgreResolvedAnchor result;
+  result.source = SgreAnchorSource::kStructureRejected;
+  return result;
+}
+
+inline bool ReadSgreImagePointer(const SgreImageView& image, uintptr_t rva,
+                                 uintptr_t* value) {
+  if (value == nullptr) return false;
+  const SgreImageSection* section = image.SectionContaining(rva);
+  if (section == nullptr || section->bytes == nullptr) return false;
+  const size_t offset = static_cast<size_t>(rva - section->rva);
+  if (offset > section->size ||
+      section->size - offset < sizeof(uintptr_t)) {
+    return false;
+  }
+  std::memcpy(value, section->bytes + offset, sizeof(*value));
+  return true;
+}
+
+inline bool SgreAbsolutePointerRva(const SgreImageView& image,
+                                   uintptr_t address, uintptr_t* rva) {
+  if (rva == nullptr || address < image.image_base) return false;
+  const uintptr_t candidate = address - image.image_base;
+  if (image.SectionContaining(candidate) == nullptr) return false;
+  *rva = candidate;
+  return true;
+}
+
+// The x64 PE exception directory is an array of RUNTIME_FUNCTION triples.
+// SgreImageView records the data-directory bounds from the PE header, so this
+// decoder does not depend on the linker naming its containing section .pdata.
+// Multiple or malformed entries are rejected rather than selecting the first.
+inline uintptr_t FindSgreContainingFunctionBegin(
+    const SgreImageView& image, uintptr_t code_rva) {
+  constexpr size_t kRuntimeFunctionBytes = sizeof(uint32_t) * 3u;
+  if (image.exception_directory_rva == 0 ||
+      image.exception_directory_size < kRuntimeFunctionBytes ||
+      image.exception_directory_size % kRuntimeFunctionBytes != 0 ||
+      !SgreImageSpanAvailable(image, image.exception_directory_rva,
+                              image.exception_directory_size)) {
+    return 0;
+  }
+  const SgreImageSection* directory =
+      image.SectionContaining(image.exception_directory_rva);
+  if (directory == nullptr || directory->bytes == nullptr) return 0;
+  const size_t directory_offset = static_cast<size_t>(
+      image.exception_directory_rva - directory->rva);
+  uintptr_t found = 0;
+  for (size_t offset = 0;
+       offset + kRuntimeFunctionBytes <= image.exception_directory_size;
+       offset += kRuntimeFunctionBytes) {
+    uint32_t begin = 0;
+    uint32_t end = 0;
+    uint32_t unwind = 0;
+    const uint8_t* entry = directory->bytes + directory_offset + offset;
+    std::memcpy(&begin, entry, sizeof(begin));
+    std::memcpy(&end, entry + sizeof(begin), sizeof(end));
+    std::memcpy(&unwind, entry + sizeof(begin) + sizeof(end), sizeof(unwind));
+    if (begin == 0 || end <= begin || code_rva < begin || code_rva >= end) {
+      continue;
+    }
+    const SgreImageSection* begin_section =
+        image.SectionContaining(static_cast<uintptr_t>(begin));
+    const SgreImageSection* end_section =
+        image.SectionContaining(static_cast<uintptr_t>(end - 1u));
+    if (begin_section == nullptr || end_section == nullptr || unwind == 0 ||
+        !begin_section->executable || !end_section->executable ||
+        !SgreImageSpanAvailable(image, unwind, sizeof(uint8_t))) {
+      return 0;
+    }
+    if (found != 0 && found != begin) return 0;
+    found = begin;
+  }
+  return found;
+}
+
+inline SgreResolvedAnchor ResolveSameSgreAnchor(
+    const SgreAnchorSignature& primary,
+    const SgreAnchorSignature& corroboration,
+    const SgreImageView& image) {
+  const SgreAnchorCandidates first =
+      CollectSgreAnchorCandidates(primary, image);
+  if (first.overflow || first.count == 0) {
+    SgreResolvedAnchor result;
+    result.source = first.failure;
+    return result;
+  }
+  const SgreAnchorCandidates second =
+      CollectSgreAnchorCandidates(corroboration, image);
+  if (second.overflow || second.count == 0) {
+    SgreResolvedAnchor result;
+    result.source = second.failure;
+    return result;
+  }
+  SgreAnchorCandidates intersection;
+  for (size_t i = 0; i < first.count; ++i) {
+    for (size_t j = 0; j < second.count; ++j) {
+      if (first.rvas[i] == second.rvas[j] &&
+          !AddUniqueSgreAnchorCandidate(&intersection, first.rvas[i])) {
+        SgreResolvedAnchor result;
+        result.source = SgreAnchorSource::kSignatureAmbiguous;
+        return result;
+      }
+    }
+  }
+  if (!intersection.overflow && intersection.count == 1) {
+    return {intersection.rvas[0], SgreAnchorSource::kSignature};
+  }
+  SgreResolvedAnchor result;
+  result.source = intersection.count == 0
+                      ? SgreAnchorSource::kStructureRejected
+                      : SgreAnchorSource::kSignatureAmbiguous;
+  return result;
+}
+
+inline SgreResolvedAnchor ResolveSgreScenarioTextVtable(
+    const SgreImageView& image) {
+  return ResolveSameSgreAnchor(
+      kSgreScenarioTextVtableSignature,
+      kSgreScenarioTextVtableCorroborationSignature, image);
+}
+
+inline SgreResolvedAnchor ResolveSgreTextDraw(
+    const SgreImageView& image,
+    const SgreResolvedAnchor& scenario_text_vtable) {
+  if (!scenario_text_vtable.resolved()) {
+    SgreResolvedAnchor result;
+    result.source = scenario_text_vtable.source;
+    return result;
+  }
+  const SgreAnchorCandidates bodies =
+      CollectSgreAnchorCandidates(kSgreTextDrawSignature, image);
+  if (bodies.overflow || bodies.count == 0) {
+    SgreResolvedAnchor result;
+    result.source = bodies.failure;
+    return result;
+  }
+  SgreAnchorCandidates functions;
+  for (size_t i = 0; i < bodies.count; ++i) {
+    const uintptr_t function_begin =
+        FindSgreContainingFunctionBegin(image, bodies.rvas[i]);
+    if (function_begin != 0 &&
+        SgreStructureAccepts(SgreAnchorKind::kCode, function_begin, image) &&
+        !AddUniqueSgreAnchorCandidate(&functions, function_begin)) {
+      SgreResolvedAnchor result;
+      result.source = SgreAnchorSource::kSignatureAmbiguous;
+      return result;
+    }
+  }
+
+  constexpr size_t kScenarioTextDrawVtableSlot = 4u;
+  constexpr size_t kScenarioTextDrawVtableSpan =
+      (kScenarioTextDrawVtableSlot + 1u) * sizeof(uintptr_t);
+  uintptr_t draw_address = 0;
+  uintptr_t draw_rva = 0;
+  if (scenario_text_vtable.rva >
+          UINTPTR_MAX - kScenarioTextDrawVtableSlot * sizeof(uintptr_t) ||
+      !SgreImageSpanAvailable(image, scenario_text_vtable.rva,
+                              kScenarioTextDrawVtableSpan) ||
+      !ReadSgreImagePointer(
+          image,
+          scenario_text_vtable.rva +
+              kScenarioTextDrawVtableSlot * sizeof(uintptr_t),
+          &draw_address) ||
+      !SgreAbsolutePointerRva(image, draw_address, &draw_rva)) {
+    return RejectSgreAnchorStructure();
+  }
+  size_t intersections = 0;
+  for (size_t i = 0; i < functions.count; ++i) {
+    if (functions.rvas[i] == draw_rva) ++intersections;
+  }
+  return intersections == 1
+             ? SgreResolvedAnchor{draw_rva, SgreAnchorSource::kSignature}
+             : RejectSgreAnchorStructure();
+}
+
+inline SgreResolvedAnchor ResolveSgreDirectInputMouseDevice(
+    const SgreImageView& image) {
+  return ResolveSameSgreAnchor(
+      kSgreDirectInputMouseDeviceSignature,
+      kSgreDirectInputMouseDeviceCorroborationSignature, image);
+}
+
+inline bool ValidateSgreLookupAnchorStructure(
+    const SgreAnchorSet& set, const SgreImageView& image) {
+  constexpr size_t kScenarioTextDrawVtableSlot = 4u;
+  constexpr size_t kScenarioTextDrawVtableSpan =
+      (kScenarioTextDrawVtableSlot + 1u) * sizeof(uintptr_t);
+  if (!set.lookup_sensor_available() ||
+      !SgreStructureAccepts(SgreAnchorKind::kCode, set.text_draw.rva, image) ||
+      !SgreStructureAccepts(SgreAnchorKind::kVtable,
+                            set.scenario_text_vtable.rva, image) ||
+      !SgreImageSpanAvailable(image, set.scenario_text_vtable.rva,
+                              kScenarioTextDrawVtableSpan) ||
+      FindSgreContainingFunctionBegin(image, set.text_draw.rva) !=
+          set.text_draw.rva) {
+    return false;
+  }
+  uintptr_t draw_address = 0;
+  uintptr_t draw_rva = 0;
+  return ReadSgreImagePointer(
+             image,
+             set.scenario_text_vtable.rva +
+                 kScenarioTextDrawVtableSlot * sizeof(uintptr_t),
+             &draw_address) &&
+         SgreAbsolutePointerRva(image, draw_address, &draw_rva) &&
+         draw_rva == set.text_draw.rva;
+}
+
+inline bool ValidateSgreDirectInputAnchorStructure(
+    const SgreAnchorSet& set, const SgreImageView& image) {
+  return set.direct_input_shield_available() &&
+         SgreStructureAccepts(SgreAnchorKind::kWritableData,
+                              set.direct_input_mouse_device.rva, image);
+}
+
+inline bool ValidateSgreAnchorSetStructure(const SgreAnchorSet& set,
+                                           const SgreImageView& image) {
+  return ValidateSgreLookupAnchorStructure(set, image) &&
+         ValidateSgreDirectInputAnchorStructure(set, image);
+}
+
+inline void RequireSgreKnownBuildRva(SgreResolvedAnchor* anchor,
+                                     uintptr_t expected_rva) {
+  if (anchor == nullptr || !anchor->resolved()) return;
+  if (anchor->rva != expected_rva) {
+    *anchor = RejectSgreAnchorStructure();
+    return;
+  }
+  anchor->source = SgreAnchorSource::kKnownBuild;
 }
 
 inline SgreAnchorSet ResolveSgreAnchors(const uint8_t* digest,
                                         size_t digest_bytes,
                                         const SgreImageView& image) {
   SgreAnchorSet set;
-  if (const SgreBuildAnchors* build =
-          FindSgreKnownBuild(digest, digest_bytes)) {
-    set.known_build = true;
-    set.text_draw = {build->text_draw_rva, SgreAnchorSource::kKnownBuild};
-    set.scenario_text_vtable = {build->scenario_text_vtable_rva,
-                                SgreAnchorSource::kKnownBuild};
-    set.direct_input_mouse_device = {build->direct_input_mouse_device_rva,
-                                     SgreAnchorSource::kKnownBuild};
-    return set;
+  const SgreBuildAnchors* build =
+      FindSgreKnownBuild(digest, digest_bytes);
+  set.known_build = build != nullptr;
+
+  // A measured hash does not bypass this path. Loaded-image patching, a stale
+  // row, or an ABI-changing rebuild must fail the same proof as any unknown
+  // executable instead of trusting addresses merely because the file hash was
+  // once recognized.
+  set.scenario_text_vtable = ResolveSgreScenarioTextVtable(image);
+  set.text_draw = ResolveSgreTextDraw(image, set.scenario_text_vtable);
+  set.direct_input_mouse_device =
+      ResolveSgreDirectInputMouseDevice(image);
+
+  if (set.lookup_sensor_available() &&
+      !ValidateSgreLookupAnchorStructure(set, image)) {
+    set.text_draw = RejectSgreAnchorStructure();
+    set.scenario_text_vtable = RejectSgreAnchorStructure();
   }
-  set.text_draw = ResolveSgreAnchorBySignature(kSgreTextDrawSignature, image);
-  set.scenario_text_vtable =
-      ResolveSgreAnchorBySignature(kSgreScenarioTextVtableSignature, image);
-  set.direct_input_mouse_device = ResolveSgreAnchorBySignature(
-      kSgreDirectInputMouseDeviceSignature, image);
+  if (set.direct_input_shield_available() &&
+      !ValidateSgreDirectInputAnchorStructure(set, image)) {
+    set.direct_input_mouse_device = RejectSgreAnchorStructure();
+  }
+
+  if (build != nullptr) {
+    RequireSgreKnownBuildRva(&set.text_draw, build->text_draw_rva);
+    RequireSgreKnownBuildRva(&set.scenario_text_vtable,
+                             build->scenario_text_vtable_rva);
+    RequireSgreKnownBuildRva(&set.direct_input_mouse_device,
+                             build->direct_input_mouse_device_rva);
+  }
   return set;
 }
 

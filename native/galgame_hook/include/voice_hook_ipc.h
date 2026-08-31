@@ -236,6 +236,7 @@ constexpr uint32_t kTextSourceGdi = 1;
 constexpr uint32_t kTextSourceLuna = 2;
 constexpr uint32_t kTextSourceUnityTmp = 3;
 constexpr uint32_t kTextSourceSiglus = 4;
+constexpr uint32_t kTextSourceSgre = 5;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the

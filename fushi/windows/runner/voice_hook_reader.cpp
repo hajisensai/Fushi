@@ -1062,7 +1062,9 @@ void HandleLookupPresent(
 bool HandleLookupCall(const flutter::MethodCall<flutter::EncodableValue>& call,
                       std::unique_ptr<LookupResult>& out_result) {
   const std::string& method = call.method_name();
-  if (method != "galLookupSetEnabled" && method != "galLookupPresent" &&
+  if (method != "galLookupSetEnabled" &&
+      method != "galLookupSetGeometryAdmission" &&
+      method != "galLookupPresent" &&
       method != "galLookupPresentHighlight" &&
       method != "galLookupDismiss" &&
       method != "galLookupSuspendForCapture" &&

@@ -133,6 +133,9 @@ void main() {
     final String publish = compactCode(
       methodBody(source, 'bool PublishSgreLookupClickPayload('),
     );
+    final String current = compactCode(
+      methodBody(source, 'bool IsSgreLookupPayloadCurrent('),
+    );
 
     expect(tick.contains('ReadLatestSgreLookupClickSubmit('), isTrue);
     expect(tick.contains('PublishSgreLookupClickTarget('), isTrue);
@@ -151,6 +154,13 @@ void main() {
       isFalse,
       reason: 'capture seq 每帧变化，Shift+click 去重必须使用稳定可见内容',
     );
+    expect(
+      current.contains('g_sgre_lookup_processed_seq'),
+      isFalse,
+      reason: '相同台词每帧重绘会推进 transport seq，不能让有效单击静默过期',
+    );
+    expect(current.contains('payload.logical_generation'), isTrue);
+    expect(current.contains('MatchesSgreLookupGenerationAndClient'), isTrue);
   });
 
   test('位图回退的卡外点击由 UI 单写者请求完整 dismiss', () {

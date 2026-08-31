@@ -916,6 +916,7 @@ class GalAttachedCallResult {
 class GalLookupCallResult {
   const GalLookupCallResult({
     this.error,
+    this.explicitOk = false,
     this.width = 0,
     this.height = 0,
     this.clamped = false,
@@ -931,6 +932,12 @@ class GalLookupCallResult {
 
   /// runner 给的错误 token；null = 成功。
   final String? error;
+
+  /// True only when the runner explicitly returned `{ok: true}`. [ok] stays
+  /// backward-compatible for payload-bearing replies, while lifecycle gates
+  /// use this bit (or an explicit sequence) so an empty/malformed reply cannot
+  /// silently advance a provider handoff.
+  final bool explicitOk;
 
   /// 实际写进共享内存的帧尺寸（仅 present 有值）。
   final int width;
@@ -958,6 +965,7 @@ class GalLookupCallResult {
     final Object? error = map['error'];
     return GalLookupCallResult(
       error: error is String && error.isNotEmpty ? error : null,
+      explicitOk: map['ok'] == true,
       width: _finiteWireInt(map['width']) ?? 0,
       height: _finiteWireInt(map['height']) ?? 0,
       clamped: map['clamped'] == true,
