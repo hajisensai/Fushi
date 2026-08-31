@@ -94,3 +94,14 @@ bool isProgressiveTextUpdate(String previous, String next) {
 
   return longer.startsWith(shorter) || longer.endsWith(shorter);
 }
+
+/// BUG-1983：是否为同一句的纯排版快照更新（只改变空白/换行，字符内容完全相同）。
+///
+/// Gal 引擎常先吐一条连续字符串，再按实际文本框重绘成带换行的同一句。它不是重复
+/// 台词：下游应保留同一个 lineId，并以**后到的原文**作为当前排版真值。完全相同的
+/// 两行仍返回 false，继续保留既有的“允许真实重复台词”语义。
+bool isWhitespaceOnlyLayoutRefresh(String previous, String next) {
+  if (previous == next) return false;
+  final String a = normalizeForFold(previous);
+  return a.isNotEmpty && a == normalizeForFold(next);
+}

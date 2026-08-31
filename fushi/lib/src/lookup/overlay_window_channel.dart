@@ -328,18 +328,32 @@ class OverlayWindowChannel {
             final Object? decoded = jsonDecode(raw);
             if (decoded is Map) {
               final message = decoded.cast<String, Object?>();
-              final String source =
-                  (envelope?['source'] as String?) ??
-                  (message['__source'] as String?) ??
-                  'desktop';
-              final int route =
-                  (envelope?['routeEpoch'] as num?)?.toInt() ??
-                  (message['__routeEpoch'] as num?)?.toInt() ??
-                  0;
-              final int lookup =
-                  (envelope?['lookupEpoch'] as num?)?.toInt() ??
-                  (message['__lookupEpoch'] as num?)?.toInt() ??
-                  0;
+              final Object? embeddedSource = message['__source'];
+              final Object? embeddedRoute = message['__routeEpoch'];
+              final Object? embeddedLookup = message['__lookupEpoch'];
+              // BUG-1982：The JSON fields are stamped when the browser event is emitted;
+              // the native envelope reads a mutable HWND route later. Consume
+              // the embedded identity only as one complete tuple so malformed
+              // content cannot mix old/new fields across those two clocks.
+              //
+              // 这四个局部必须保持 `final` 且不得重新赋值：`hasEmbeddedRoute` 的
+              // true 分支靠 Dart 的布尔局部变量提升把三个 `Object?` 提升成
+              // String/num/num，所以下面读它们时不需要 cast（写了反而是
+              // `unnecessary_cast`，CI 的 analyze 直接判红）。改成 `var` 或中途
+              // 赋值会让提升失效，这三行立刻变编译错误——不会静默降级。
+              final bool hasEmbeddedRoute =
+                  embeddedSource is String &&
+                  embeddedRoute is num &&
+                  embeddedLookup is num;
+              final String source = hasEmbeddedRoute
+                  ? embeddedSource
+                  : (envelope?['source'] as String?) ?? 'desktop';
+              final int route = hasEmbeddedRoute
+                  ? embeddedRoute.toInt()
+                  : (envelope?['routeEpoch'] as num?)?.toInt() ?? 0;
+              final int lookup = hasEmbeddedRoute
+                  ? embeddedLookup.toInt()
+                  : (envelope?['lookupEpoch'] as num?)?.toInt() ?? 0;
               final event = OverlayReverseEvent(
                 route: source == 'galCard'
                     ? GlobalLookupRoute.galCard(
