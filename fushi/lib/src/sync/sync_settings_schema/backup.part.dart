@@ -674,9 +674,6 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
 ///
 /// 刻意用「前缀 + 后缀」双重限定，而不是只认 `.fushi.zip` —— 临时目录里还可能躺着
 /// 推荐词典包 `fushi-recommended.fushi.zip` 这类同后缀、但绝不该被清掉的文件。
-final RegExp _kBackupArchiveName =
-    RegExp(r'^(fushi|hibiki)-backup-.*\.(fushi|hibiki)\.zip$');
-
 /// 清掉临时目录里上一次导出遗留的备份包。
 ///
 /// 移动端走系统分享面板，而 [FushiShare.shareFiles] 用的是**非结果变体**，Future 在
@@ -689,7 +686,7 @@ Future<void> _sweepStaleBackupArchives(Directory tmpDir) async {
     await for (final FileSystemEntity entity
         in tmpDir.list(followLinks: false)) {
       if (entity is! File) continue;
-      if (!_kBackupArchiveName.hasMatch(p.basename(entity.path))) continue;
+      if (!isBackupArchiveName(p.basename(entity.path))) continue;
       try {
         await entity.delete();
       } catch (_) {

@@ -6,6 +6,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 
+import '../../helpers/source_guard.dart';
 import '../../pages/video_fushi_page_source_corpus.dart';
 
 /// Source guard: video keyboard interaction + autoplay both need a real libmpv
@@ -49,12 +50,31 @@ void main() {
   group('video page Escape overrides media_kit default', () {
     final String page = readVideoFushiSource();
 
-    test('desktop controls theme overrides keyboardShortcuts', () {
+    test('media_kit 的 keyboardShortcuts 被显式清空，整表移到页级 press-time 通道', () {
+      final String code = maskComments(page);
+      // media_kit 那层必须传**空表**而不是 null：fork 的实现是
+      // `keyboardShortcuts ?? _defaultKeyboardShortcuts`，给 null 会把 media_kit
+      // 自带的默认键（Escape 只 exitFullscreen 等）装回来，与注册表打架。
       expect(
-          page.contains('keyboardShortcuts: _videoKeyboardShortcuts('), isTrue,
-          reason:
-              'media_kit default Escape only exits fullscreen; must replace '
-              'the whole table');
+        compactCode(code).contains(
+            'keyboardShortcuts:const<ShortcutActivator,VoidCallback>{}'),
+        isTrue,
+        reason: 'media_kit 那层只包 AdaptiveVideoControls 子树，够不到面板；'
+            '整表已移到页级，这里必须显式留空而不是给 null（给 null = 装回 '
+            'media_kit 默认表）',
+      );
+      // 唯一挂载点：窗口 build() 与全屏路由 pageBuilder 的共同外层。
+      expect(
+        code.contains('_handleVideoKeyboardShortcut(event)'),
+        isTrue,
+        reason: '视频快捷键主通道必须挂在 _wrapVideoGamepadControls 的 onKeyEvent 上',
+      );
+      expect(
+        code.contains('keyboardShortcuts: _videoKeyboardShortcuts('),
+        isFalse,
+        reason: '旧的 build 时冻结表挂载点不得复活——scope 是整页、挂载点却在 '
+            'controls 子树，正是 BUG-1864 的根因形状',
+      );
     });
 
     test('Escape exits page when windowed, exits fullscreen when fullscreen',
