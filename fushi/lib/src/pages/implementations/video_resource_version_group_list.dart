@@ -4,33 +4,8 @@ import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
     show ActivityRelativeTime, ActivityRelativeUnit, activityRelativeTime;
+import 'package:fushi/src/media/video/episode_span_format.dart';
 import 'package:fushi/utils.dart';
-
-/// 把真实集号集合压缩成连续段；非连续集合不能只拿 min/max 伪装成全集范围。
-/// `{1, 2, 4, 16, 17}` → `EP1–EP2, EP4, EP16–EP17`。
-String formatVideoResourceEpisodeSpans(Set<int> episodes) {
-  if (episodes.isEmpty) return '';
-  final List<int> sorted = episodes.toList()..sort();
-  final List<String> spans = <String>[];
-  int start = sorted.first;
-  int end = start;
-
-  void flush() {
-    spans.add(start == end ? 'EP$start' : 'EP$start–EP$end');
-  }
-
-  for (final int episode in sorted.skip(1)) {
-    if (episode == end + 1) {
-      end = episode;
-      continue;
-    }
-    flush();
-    start = episode;
-    end = episode;
-  }
-  flush();
-  return spans.join(', ');
-}
 
 /// 下载模式的资源「版本卡」列表：一张卡 = 一个「发布组 › 清晰度」版本，
 /// 组内逐集发布折在卡内展开。点卡：恰 1 条发布 → 直接选中；否则展开。
@@ -97,7 +72,7 @@ class _VideoResourceVersionGroupListState
     if (episodes.isNotEmpty) {
       parts.add(
         '${t.resource_version_episode_count(n: episodes.length)} '
-        '(${formatVideoResourceEpisodeSpans(episodes)})',
+        '(${formatEpisodeSpans(episodes)})',
       );
     }
     final DateTime? latest = group.latestPublishedAt;
