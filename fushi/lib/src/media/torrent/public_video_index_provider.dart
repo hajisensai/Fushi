@@ -30,9 +30,10 @@ bool _isPublicIndexSearchable(String value) =>
 /// 把资源请求转换成公共综合索引器真正能表达的查询。
 ///
 /// apibay 对 CJK 查询不会返回空集，而会把它当近似空查询返回当前热门榜；这比显式
-/// 失败更危险，因为 UI 会把完全不相关的条目伪装成正常搜索结果。当前查询若是媒体
-/// 自己的 CJK 标题，可以用同一元数据里的拉丁别名；用户另行手输的 CJK 查询不能
-/// 擅自退回原媒体别名（那会搜索另一个作品），只能让该 provider 判 unsupported。
+/// 失败更危险，因为 UI 会把完全不相关的条目伪装成正常搜索结果。当前查询若命中
+/// 媒体的展示标题、原名或别名，可以用同一元数据里的拉丁别名；日文和中文不会因为
+/// 都属于 CJK 就被判等。用户另行手输的 CJK 查询不能擅自退回原媒体别名（那会搜索
+/// 另一个作品），只能让该 provider 判 unsupported。
 String? publicVideoIndexSearchQuery(VideoResourceSearchRequest request) {
   final String requested = request.effectiveQuery.trim();
   if (requested.isEmpty) return null;
