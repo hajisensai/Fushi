@@ -1,6 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/utils/net/app_proxy.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// BUG-1980 的迁移判据：旧安装没有 `network_proxy_mode` 键时，`networkProxyMode`
@@ -17,6 +18,17 @@ import 'package:fushi_core/fushi_core.dart';
 void main() {
   late FushiDatabase db;
   late PreferencesRepository prefs;
+  final String Function() savedProxyReader = appUserProxyReader;
+  final String Function() savedModeReader = appUserProxyModeReader;
+  final String Function() savedUsernameReader = appUserProxyUsernameReader;
+  final String Function() savedPasswordReader = appUserProxyPasswordReader;
+
+  tearDownAll(() {
+    appUserProxyReader = savedProxyReader;
+    appUserProxyModeReader = savedModeReader;
+    appUserProxyUsernameReader = savedUsernameReader;
+    appUserProxyPasswordReader = savedPasswordReader;
+  });
 
   setUp(() async {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -60,5 +72,25 @@ void main() {
         reason: '用户显式选的 manual 该 fail-closed，这是新语义');
     await prefs.setPref('network_proxy_mode', 'direct');
     expect(prefs.networkProxyMode, 'direct');
+  });
+
+  group('偏好一装载就接上进程级代理读取器', () {
+    test('四个读取器都指向本仓库，不再落在 unresolved 兜底上', () async {
+      await prefs.setNetworkProxyMode(kProxyModeDirect);
+      await prefs.setPref('update_custom_proxy', '10.0.0.1:1080');
+      await prefs.setNetworkProxyUsername('alice');
+      await prefs.setNetworkProxyPassword('secret');
+
+      expect(appUserProxyModeReader(), kProxyModeDirect);
+      expect(appUserProxyReader(), '10.0.0.1:1080');
+      expect(appUserProxyUsernameReader(), 'alice');
+      expect(appUserProxyPasswordReader(), 'secret');
+      expect(hasResolvedProxyMode(), isTrue);
+      expect(
+          resolveAppProxyDirective(Uri.parse('https://example.com/')), 'DIRECT',
+          reason: '绑定点在「偏好变得可读的那一刻」，不是某一个调用点——弹窗词典进程'
+              '同样建仓库、同样读偏好，以前却没绑，整段生命周期都靠 unresolved 兜底'
+              '猜模式，而那个哨兵表达不了 direct');
+    });
   });
 }
