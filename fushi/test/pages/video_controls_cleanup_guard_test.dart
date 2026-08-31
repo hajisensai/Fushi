@@ -105,6 +105,16 @@ void main() {
               .hasMatch(src),
           isTrue,
           reason: '字幕轨菜单改为把设置面板开在「字幕」分类');
+      final String showPlayerSettings =
+          sourceMember(src, 'void _showPlayerSettings(');
+      expect(showPlayerSettings, contains('_VideoSidePanelKind.settings'),
+          reason: '字幕轨入口应继续使用右侧设置栏容器');
+      expect(
+          showPlayerSettings,
+          isNot(contains("initialCategory == 'subtitle'")),
+          reason: '字幕分类不应被单独分流到其它容器');
+      expect(src, isNot(contains('_VideoSidePanelKind.subtitleAdjust')),
+          reason: '字幕轨入口不得恢复底部调整抽屉分流');
       expect(src, isNot(contains('_buildSubtitleSourcesSidePanel')),
           reason: '浮动字幕源侧栏（builder）已删');
       expect(src, isNot(contains('_VideoSidePanelKind.subtitleSources')),
