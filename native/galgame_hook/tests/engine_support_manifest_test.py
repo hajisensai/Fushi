@@ -222,7 +222,7 @@ class EngineSupportManifestTest(unittest.TestCase):
         self.assertIn("tests/hunex_gge_adapter_test.cpp", hunex["test_paths"])
         self.assertTrue(
             any(
-                "resource_observed" in limitation
+                "no same-occurrence screenshot/audio card E2E" in limitation
                 for limitation in hunex["known_limitations"]
             )
         )
@@ -599,10 +599,14 @@ class EngineSupportManifestTest(unittest.TestCase):
 
     def test_lookup_native_publishers_and_manifest_have_bidirectional_parity(self) -> None:
         source_pairs = GENERATOR.discover_production_lookup_provider_pairs(ROOT)
-        self.assertNotIn(
-            GENERATOR.LOOKUP_HUNEX_OBSERVATION_ONLY_PAIR,
+        hunex_pair = (
+            "kLookupGeometryProviderEngineExactLayout",
+            "kLookupGeometryProviderIdHunexGge",
+        )
+        self.assertIn(
+            hunex_pair,
             source_pairs,
-            "HUNEX renderer telemetry must remain observation-only",
+            "HUNEX exact provider must remain visible to manifest parity",
         )
         GENERATOR.validate_manifest(self.manifest, ROOT)
 
@@ -611,7 +615,7 @@ class EngineSupportManifestTest(unittest.TestCase):
             for record in self.manifest["lookup_support"]["engines"]
             if record["engine_id"] == "hunex_gge"
         )
-        hunex["geometry"]["providers"].append("engine_exact_layout")
+        hunex["geometry"]["providers"].remove("engine_exact_layout")
         with self.assertRaisesRegex(
             GENERATOR.ManifestError, "lookup provider manifest parity drift"
         ):

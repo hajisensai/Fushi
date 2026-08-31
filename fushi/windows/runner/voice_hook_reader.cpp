@@ -70,6 +70,10 @@ struct ReaderState {
   uint32_t lookup_geometry_admission_mode_desired =
       fushi_voice_hook::kLookupGeometryAdmissionDisabled;
   bool lookup_geometry_attached_ready_desired = false;
+  // Host risk/provider admission for semantic native input.  It shares the
+  // v21 geometry-admission request generation and is replayed into every new
+  // mapping before lookup runtime is enabled.
+  bool lookup_native_input_allowed_desired = false;
   // ── v19 查词准入游标（与上面同一把锁）───────────────────────────────────────
   // 上次向 Dart 报过的 lookup_admission_seq。[primed] 单独存在，是因为「新段刚开出来、
   // hook 还没上报」时共享 seq 就是 0，与游标 0 相等——只比 seq 会让新会话一条准入事件
@@ -1063,6 +1067,8 @@ bool HandleLookupCall(const flutter::MethodCall<flutter::EncodableValue>& call,
                       std::unique_ptr<LookupResult>& out_result) {
   const std::string& method = call.method_name();
   if (method != "galLookupSetEnabled" && method != "galLookupPresent" &&
+      method != "galLookupSetGeometryAdmission" &&
+      method != "galLookupSetNativeInputAllowed" &&
       method != "galLookupPresentHighlight" &&
       method != "galLookupDismiss" &&
       method != "galLookupSuspendForCapture" &&
@@ -1116,6 +1122,25 @@ bool HandleLookupCall(const flutter::MethodCall<flutter::EncodableValue>& call,
     uint32_t applied_seq = 0;
     const VoiceHookLookupError error = reader.SetLookupGeometryAdmission(
         mode, attached_ready, &request_seq, &applied_seq);
+    if (error != VoiceHookLookupError::kNone) {
+      result->Success(LookupErrorMap(error));
+      return true;
+    }
+    result->Success(flutter::EncodableValue(flutter::EncodableMap{
+        {flutter::EncodableValue("ok"), flutter::EncodableValue(true)},
+        {flutter::EncodableValue("requestSeq"),
+         flutter::EncodableValue(static_cast<int64_t>(request_seq))},
+        {flutter::EncodableValue("appliedSeq"),
+         flutter::EncodableValue(static_cast<int64_t>(applied_seq))},
+    }));
+    return true;
+  }
+  if (method == "galLookupSetNativeInputAllowed") {
+    const bool allowed = ReadLookupBool(call, "allowed");
+    uint32_t request_seq = 0;
+    uint32_t applied_seq = 0;
+    const VoiceHookLookupError error = reader.SetLookupNativeInputAllowed(
+        allowed, &request_seq, &applied_seq);
     if (error != VoiceHookLookupError::kNone) {
       result->Success(LookupErrorMap(error));
       return true;
@@ -1317,7 +1342,8 @@ VoiceHookOpenResult VoiceHookReader::Open(uint32_t pid) {
   if (LookupGateLocked(header, false) == VoiceHookLookupError::kNone) {
     (void)fushi_voice_hook::PublishLookupGeometryAdmission(
         header, st.lookup_geometry_admission_mode_desired,
-        st.lookup_geometry_attached_ready_desired);
+        st.lookup_geometry_attached_ready_desired,
+        st.lookup_native_input_allowed_desired);
     if (st.lookup_enabled_desired) {
       InterlockedExchange(
           reinterpret_cast<volatile LONG*>(&header->lookup_enabled), 1);
@@ -2098,7 +2124,31 @@ VoiceHookLookupError VoiceHookReader::SetLookupGeometryAdmission(
   if (gate != VoiceHookLookupError::kNone) return gate;
   const uint32_t published =
       fushi_voice_hook::PublishLookupGeometryAdmission(
-          h, mode, attached_ready);
+          h, mode, attached_ready,
+          st.lookup_native_input_allowed_desired);
+  if (published == 0) return VoiceHookLookupError::kControlRejected;
+  if (request_seq != nullptr) *request_seq = published;
+  if (applied_seq != nullptr) {
+    *applied_seq = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_geometry_admission_applied_seq);
+  }
+  return VoiceHookLookupError::kNone;
+}
+
+VoiceHookLookupError VoiceHookReader::SetLookupNativeInputAllowed(
+    bool allowed, uint32_t* request_seq, uint32_t* applied_seq) {
+  if (request_seq != nullptr) *request_seq = 0;
+  if (applied_seq != nullptr) *applied_seq = 0;
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  // Persist before checking the current mapping.  Open() owns mapping identity
+  // and replays this fail-closed host intent into replacement segments.
+  st.lookup_native_input_allowed_desired = allowed;
+  SharedHeader* h = st.header;
+  const VoiceHookLookupError gate = LookupGateLocked(h, false);
+  if (gate != VoiceHookLookupError::kNone) return gate;
+  const uint32_t published =
+      fushi_voice_hook::PublishLookupNativeInputAllowed(h, allowed);
   if (published == 0) return VoiceHookLookupError::kControlRejected;
   if (request_seq != nullptr) *request_seq = published;
   if (applied_seq != nullptr) {

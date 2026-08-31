@@ -44,7 +44,7 @@
 | `artemis_pfs` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `siglus` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `leaf_aquaplus` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
-| `hunex_gge` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `hunex_gge` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `sgre` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 
 证据边界：
@@ -88,9 +88,9 @@
 - `leaf_aquaplus` geometry：The portable exact SHA-256 identity is followed by hydrated-image, all-executable-section unique masked signatures, module-relative relocated-operand checks, callgraph gates and a D3D9 ABI gate. Zero/multiple candidates and unknown hashes fail closed; lookup/card E2E is not recorded.
   - verified shield：Exact and generic shield code exists, but the 1,000-transaction real-build gate has not run.
   - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
-- `hunex_gge` geometry：The calibrated fallback is implemented. The HUNEX hydrated-image scanner requires unique executable-section renderer/input anchors plus callgraph/import validation, but remains observation-only and publishes no production provider or hit.
-  - verified shield：Generic shielding is present while the engine-private trace is observation-only; the real-build transaction gate has not run.
-  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+- `hunex_gge` geometry：The calibrated fallback and a fail-closed exact provider are implemented. The HUNEX hydrated-image scanner requires unique executable-section renderer/input/projection anchors plus callgraph, unwind and imported-API validation before it can publish geometry. The original WoH session has not yet produced a complete glyph-to-client projection or lookup/card E2E.
+  - verified shield：Generic shielding plus HUNEX semantic-submit ownership are implemented, but the real-build click, Shift and popup transaction gates have not run.
+  - risky left click：Per-executable risk gating and fail-closed native-input admission are implemented; no measured real-build click-leak rate is recorded.
 - `sgre` geometry：The portable exact SHA-256 identity is followed by hydrated-image unique draw/vtable/DirectInput signatures across all executable sections, decoded module-relative targets, x64 unwind bounds and vtable/COM ABI gates. Zero/multiple candidates and unknown hashes fail closed; lookup/card E2E is not recorded.
   - verified shield：Exact DirectInput and generic shield code exists, but the 1,000-transaction real-build gate has not run.
   - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
@@ -725,16 +725,16 @@ Tests：`tests/leaf_aquaplus_adapter_test.cpp`、`tests/exact_lookup_signature_t
 
 已知限制：
 
-- The first failed boundary in the observed WoH v1.0 session is resource_observed: text and thread selection passed, while the UI still reported line_has_no_voice and zero voiced lines.
-- No HFA/HW resource event, source-byte capture, clean-voice classification, text/audio pair, screenshot-card E2E or source-entry hash equality has passed on the original path.
+- The observed WoH v1.0 session proved Type-Moon text-lane selection and HFA/HW voice-resource pairing, but no same-occurrence screenshot/audio card E2E has passed.
+- The exact lookup provider currently fails closed while correlating the captured glyph/source descriptor with the final client-space sprite quad; single-click and Shift lookup remain implemented_unverified.
 - The data04000.hfa voice role is proved only by the local WoH v1.0 archive layout and is not a HUNEX-family invariant; other titles stay disabled until their archive role is independently mapped and evidenced.
 - Mono versus stereo is not a voice classifier. HW admission is structural and both channel layouts remain valid candidates until the title-scoped archive role is established.
 - The profile intentionally has no executable or module hash allowlist so patched WoH executables can remain eligible for structural probing; WoH.exe and data04000.hfa names alone must never bypass HFA/HW validation.
-- The signature-based x64 renderer/input trace remains observation-only even when every unique-anchor, callgraph, unwind and imported-API gate passes. It must not be advertised as engine_exact_layout or verified shielding until a versioned admission identity and same-session lookup/card E2E are recorded; production lookup uses attached_calibrated fallback.
+- The signature-based x64 exact provider is production-wired but remains implemented_unverified. Every ambiguous or missing renderer/input/projection anchor fails closed to attached_calibrated fallback; it must not be advertised as verified until same-session lookup/card and transaction E2E are recorded.
 
 Fixtures：尚无（P5 补齐）
 
-Tests：`tests/hunex_gge_adapter_test.cpp`、`tests/hunex_gge_lookup_test.cpp`、`tests/resource_audio_ready_test.cpp`、`tests/adapter_structure_test.py`、`tests/engine_support_manifest_test.py`
+Tests：`tests/hunex_gge_adapter_test.cpp`、`tests/hunex_gge_capture_bridge_test.cpp`、`tests/hunex_gge_lookup_test.cpp`、`tests/hunex_gge_selected_text_test.cpp`、`tests/resource_audio_ready_test.cpp`、`tests/adapter_structure_test.py`、`tests/engine_support_manifest_test.py`
 
 ### M2 wind3d11 runtime (STEINS;GATE RE:BOOT) (`sgre`)
 

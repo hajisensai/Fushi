@@ -636,7 +636,8 @@ void TestV14LookupRegionIsPureAppendOverV13() {
 }
 
 void TestV16V17AndV19OnlyAppendOverV15() {
-  Check(kSharedVersion == 20, "本测试锁的是 v20 契约（两条 v19 合版）");
+  Check(kSharedVersion == 21,
+        "本测试锁的是 v21 契约（NativeInputAllowed 改变 v20 flags 语义）");
 
   // v14 的最后一个字段是 lookup_diag。v15 只能紧随其后追加一个 64 位 applied seq；
   // 把字段插进 v14 中间，或在 applied seq 后再偷偷长出别的字段，都必须判红。
@@ -745,15 +746,31 @@ void TestV19GeometryAdmissionPublication() {
   Check(second == 2u && native_only.valid &&
             native_only.mode ==
                 fushi_voice_hook::kLookupGeometryAdmissionNativeOnly &&
-            !native_only.attached_ready(),
+            !native_only.attached_ready() &&
+            !native_only.native_input_allowed(),
         "owner policy edge 必须产生新 request generation");
+  const uint32_t native_input =
+      fushi_voice_hook::PublishLookupNativeInputAllowed(&h, true);
+  const auto native_input_allowed =
+      fushi_voice_hook::ReadLookupGeometryAdmission(&h);
+  Check(native_input == 3u && native_input_allowed.valid &&
+            native_input_allowed.seq == native_input &&
+            native_input_allowed.mode ==
+                fushi_voice_hook::kLookupGeometryAdmissionNativeOnly &&
+            !native_input_allowed.attached_ready() &&
+            native_input_allowed.native_input_allowed(),
+        "NativeInputAllowed 必须复用 geometry flags 且保留 owner policy");
+  Check(fushi_voice_hook::PublishLookupNativeInputAllowed(&h, true) ==
+            native_input,
+        "重复 NativeInputAllowed=true 必须幂等");
   fushi_voice_hook::AtomicStoreShared32(
       &h.lookup_geometry_admission_request_seq,
-      fushi_voice_hook::kLookupGeometryAdmissionWriteInProgress | second);
+      fushi_voice_hook::kLookupGeometryAdmissionWriteInProgress |
+          native_input);
   Check(!fushi_voice_hook::ReadLookupGeometryAdmission(&h).valid,
         "writer-held geometry admission 不得被读成 disable/半份 payload");
   fushi_voice_hook::AtomicStoreShared32(
-      &h.lookup_geometry_admission_request_seq, second);
+      &h.lookup_geometry_admission_request_seq, native_input);
   Check(fushi_voice_hook::PublishLookupGeometryAdmission(&h, 99u, true) == 0 &&
             fushi_voice_hook::ReadLookupGeometryAdmission(&h).mode ==
                 fushi_voice_hook::kLookupGeometryAdmissionNativeOnly,

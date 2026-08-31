@@ -44,12 +44,14 @@ import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 typedef GalIngameLookupPreferenceReader =
     Object? Function(String key, {required Object? defaultValue});
 
-/// 按台词文本回溯本局会话里的行，给出该行的 gal 制卡 handler（截图 + 语音 + 标签）。
+/// 按 native 文本代数回溯本局会话里的行，给出该行的 gal 制卡 handler（截图 + 语音 + 标签）。
 ///
 /// 制卡链本身在 [GalHookTextOverlayController] 里（`_mineFromLookup`）——它持有
-/// mining coordinator、Anki repo 与全部制卡偏好。这里只要一个「这句话对应哪一行」
-/// 的解析口，绝不复制那条链。找不到对应行返回 null（卡照样能建，只是没有 gal 媒体）。
-typedef GalIngameMiningResolver = OverlayMiningHandler? Function(String line);
+/// mining coordinator、Anki repo 与全部制卡偏好。这里只透传 native `TextSlot.seq`
+/// （[GalLookupHit.textGeneration]）和句子；resolver 用 seq 锁定 occurrence，只有旧载荷
+/// 没有合法 seq 时才允许文本回退。找不到对应行返回 null（卡照样能建，只是没有 gal 媒体）。
+typedef GalIngameMiningResolver =
+    OverlayMiningHandler? Function(String line, {required int? textGeneration});
 
 /// Test-only replacement for the shared popup lookup pipeline. Production
 /// instances leave this null and continue to call GlobalLookupController.
@@ -106,16 +108,33 @@ class GalIngameLookupController {
   /// galgame 会话是否在跑（由台词浮窗控制器的会话同步喂进来，不另起第二个监听）。
   bool _sessionActive = false;
 
-  /// 当前 host 仲裁是否允许 native geometry provider 把命中送进查词链。
+  /// 当前 Dart 本地接收门是否允许 native geometry provider 把命中送进查词链。
   ///
-  /// 这与 [_sessionActive] / 用户总开关刻意分离：`attachedOnly` 仍需保持 IPC v19
+  /// 这与 [_sessionActive] / 用户总开关刻意分离：`attachedOnly` 仍需保持 IPC v21
   /// mapping 与通用输入盾运行，但 native provider 的命中、卡片输入和旧 route 必须
-  /// 被拒绝。`auto` 在 attached 校准层取得 glyph surface 时也会暂时关掉这道门。
-  bool _providerAdmission = true;
+  /// 被拒绝。enable 时它先于 native allow 打开，disable 时只在 runner 接受并持久化
+  /// native deny 后关闭；因此任一侧的短暂不同步都不会先消费再无处交付。
+  bool _providerAdmission = false;
+
+  /// 中央 provider 仲裁的最新意图。它与本地接收门分开保存，因为 MethodChannel 调用
+  /// 可能在 await 期间失败或收到反向意图；只看 [_providerAdmission] 会让同值重试被
+  /// 误判成幂等并永久卡住。
+  bool _providerAdmissionDesired = false;
+
+  /// 最近一次被 runner 接受并持久化的 NativeInputAllowed 意图。null 表示调用结果
+  /// 未知（包括 MethodChannel 异常），下一次相同意图仍必须重发。
+  bool? _pushedProviderAdmission;
+  bool _providerAdmissionPushPending = true;
+
+  /// Provider admission 串行 drain。新意图只置 again；当前 channel 回执返回后重读
+  /// [_providerAdmissionDesired]，避免 enable/disable 并发乱序覆盖。
+  bool _providerAdmissionSyncAgain = false;
+  Completer<void>? _providerAdmissionSyncCompleter;
 
   GalLookupGeometryAdmissionMode _geometryAdmissionMode =
       GalLookupGeometryAdmissionMode.disabled;
   bool _geometryAttachedReady = false;
+
   /// 本局游戏的**查词准入**（v19）。真值在注入侧的 adapter registry，经共享内存
   /// → runner → `onGalLookupAdmission` 推上来，本控制器只存不解释。
   ///
@@ -232,6 +251,15 @@ class GalIngameLookupController {
   bool get debugProviderAdmission => _providerAdmission;
 
   @visibleForTesting
+  bool get debugProviderAdmissionDesired => _providerAdmissionDesired;
+
+  @visibleForTesting
+  bool? get debugPushedProviderAdmission => _pushedProviderAdmission;
+
+  @visibleForTesting
+  bool get debugProviderAdmissionPushPending => _providerAdmissionPushPending;
+
+  @visibleForTesting
   GalLookupGeometryAdmissionMode get debugGeometryAdmissionMode =>
       _geometryAdmissionMode;
 
@@ -317,7 +345,12 @@ class GalIngameLookupController {
     final Future<void>? lookupDrain = _drainCompleter?.future;
     if (lookupDrain != null) await lookupDrain;
     _started = false;
-    _providerAdmission = true;
+    _providerAdmissionDesired = false;
+    _providerAdmission = false;
+    _pushedProviderAdmission = null;
+    _providerAdmissionPushPending = true;
+    _providerAdmissionSyncAgain = false;
+    _providerAdmissionSyncCompleter = null;
     _geometryAdmissionMode = GalLookupGeometryAdmissionMode.disabled;
     _geometryAttachedReady = false;
     GlobalLookupController.instance.onRoutedDirty = null;
@@ -374,9 +407,94 @@ class GalIngameLookupController {
   /// card and queued lookup owned by the previous native provider are retired
   /// before the attached provider may publish its next transaction.
   Future<void> setProviderAdmission(bool admitted) async {
-    if (_providerAdmission == admitted) return;
-    _providerAdmission = admitted;
-    if (!admitted) await _terminateCurrentLookup();
+    _providerAdmissionDesired = admitted;
+    _providerAdmissionPushPending = _pushedProviderAdmission != admitted;
+    _providerAdmissionSyncAgain = true;
+
+    final Future<void>? syncing = _providerAdmissionSyncCompleter?.future;
+    if (syncing != null) {
+      await syncing;
+      return;
+    }
+
+    final Completer<void> completer = Completer<void>();
+    _providerAdmissionSyncCompleter = completer;
+    try {
+      while (_providerAdmissionSyncAgain) {
+        _providerAdmissionSyncAgain = false;
+        final bool desired = _providerAdmissionDesired;
+        await _syncProviderAdmissionTarget(desired);
+        if (_providerAdmissionDesired != desired) {
+          _providerAdmissionSyncAgain = true;
+        }
+      }
+    } finally {
+      if (!completer.isCompleted) completer.complete();
+      if (identical(_providerAdmissionSyncCompleter, completer)) {
+        _providerAdmissionSyncCompleter = null;
+      }
+    }
+  }
+
+  Future<void> _syncProviderAdmissionTarget(bool admitted) async {
+    if (admitted) {
+      // Enable ordering is intentional: Dart becomes willing to receive a hit
+      // first, then the applied native bit permits semantic input consumption.
+      // Until that request is applied the injected registry remains fail-closed.
+      _providerAdmission = true;
+    }
+
+    bool nativeAccepted =
+        !_providerAdmissionPushPending && _pushedProviderAdmission == admitted;
+    if (!nativeAccepted) {
+      nativeAccepted = await _pushProviderAdmission(admitted);
+    }
+
+    if (!admitted && nativeAccepted) {
+      // Disable ordering is the inverse: only an accepted/persisted native deny
+      // may close the local gate. If delivery is unknown, keeping Dart open is
+      // what prevents a still-allowed native owner from consuming a click and
+      // publishing a hit that Dart would then discard. The same value retries.
+      _providerAdmission = false;
+      await _terminateCurrentLookup();
+    }
+  }
+
+  Future<bool> _pushProviderAdmission(bool admitted) async {
+    bool accepted = false;
+    try {
+      final GalLookupCallResult result =
+          await GalHookTextOverlayChannel.galLookupSetNativeInputAllowed(
+            admitted,
+          );
+      // not_open still means VoiceHookReader persisted the desired bit and
+      // will replay it into the next mapping; other error tokens did not make
+      // the current mapping safe and must remain retryable.
+      if (result.ok || result.error == 'not_open') {
+        _pushedProviderAdmission = admitted;
+        accepted = true;
+      } else {
+        _pushedProviderAdmission = null;
+      }
+      glog(
+        'gal-ingame: nativeInputAllowed=$admitted '
+        'request=${result.requestSeq} applied=${result.appliedSeq} '
+        '-> ${result.error ?? "ok"}',
+      );
+    } catch (error) {
+      // A MethodChannel exception has unknown delivery semantics.  Never mark
+      // it as pushed: the next central sync (even with the same desired value)
+      // must retry instead of returning early on the local gate.
+      _pushedProviderAdmission = null;
+      glog(
+        'gal-ingame: nativeInputAllowed=$admitted channel_error=$error '
+        '(retry pending)',
+      );
+    } finally {
+      _providerAdmissionPushPending =
+          _pushedProviderAdmission != _providerAdmissionDesired;
+    }
+    return accepted;
   }
 
   /// Drives the injected registry owner independently from lookup_enabled.
@@ -914,7 +1032,10 @@ class GalIngameLookupController {
       return GlobalLookupController.instance.lookupText(
         query,
         sentence: hit.line,
-        miningHandler: _miningResolver?.call(hit.line),
+        miningHandler: _miningResolver?.call(
+          hit.line,
+          textGeneration: hit.textGeneration > 0 ? hit.textGeneration : null,
+        ),
       );
     });
     if (!_isCurrentLookup(generation, route)) {

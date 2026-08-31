@@ -32,13 +32,16 @@ void main() {
       'kDiagUnityResourceExtractorReady',
     ]) {
       expect(body, contains(bit), reason: '$bit 不在资源音频就绪判据里');
-      expect(source, contains('constexpr uint32_t $bit ='),
-          reason: '$bit 没在契约头里定义');
+      expect(
+        source,
+        contains('constexpr uint32_t $bit ='),
+        reason: '$bit 没在契约头里定义',
+      );
     }
     // v17：在 v16 之上纯尾部追加「本次注入所用 hook DLL 的 SHA-256」。
     // 这个数字必须钉死：它是 wire identity，写错一位就是「旧 helper 静默绕过默认
     // deny」。改它必须同时改契约头顶部的版本沿革说明。
-    expect(source, contains('constexpr uint32_t kSharedVersion = 20;'));
+    expect(source, contains('constexpr uint32_t kSharedVersion = 21;'));
     // v17 字段本身也钉死：驻留 hook 身份门的驻留侧摘要只能从这里取，字段没了
     // 就只剩「两边都读磁盘」那条恒真的假校验。
     expect(
@@ -102,12 +105,18 @@ void main() {
     }
     // 纯尾部追加：三个新字段必须排在 v17 的 hook_module_sha256 之后，否则前面所有
     // 区的偏移都会动，而旧 helper 建的段读出来就是错位的垃圾。
-    final int legacyAt =
-        header.indexOf('char hook_module_sha256[kHookModuleDigestChars];');
-    final int admissionAt = header.indexOf('volatile uint32_t lookup_admission;');
+    final int legacyAt = header.indexOf(
+      'char hook_module_sha256[kHookModuleDigestChars];',
+    );
+    final int admissionAt = header.indexOf(
+      'volatile uint32_t lookup_admission;',
+    );
     expect(legacyAt, greaterThan(0));
-    expect(admissionAt, greaterThan(legacyAt),
-        reason: 'v19 三个字段必须纯追加在 SharedHeader 尾部');
+    expect(
+      admissionAt,
+      greaterThan(legacyAt),
+      reason: 'v19 三个字段必须纯追加在 SharedHeader 尾部',
+    );
     // 读侧必须把 seq==0 如实报成 Unknown。省掉这一步（比如"0 就当没装传感器"）会让
     // 每局游戏启动的头几百毫秒都误报一次"本引擎不支持"。
     expect(
@@ -121,9 +130,7 @@ void main() {
     final String header = File(kIpcHeaderPath).readAsStringSync();
     expect(
       header,
-      contains(
-        'constexpr uint32_t kLookupFrameCaptureSuppress = 0x00000004u;',
-      ),
+      contains('constexpr uint32_t kLookupFrameCaptureSuppress = 0x00000004u;'),
       reason: 'CaptureSuppress 是 wire identity，不能漂移或复用 dismiss/highlight 位',
     );
     expect(
@@ -140,19 +147,16 @@ void main() {
       'void DrainKirikiriLookupInput()',
       presentAt,
     );
-    expect(
-      presentAt,
-      greaterThanOrEqualTo(0),
-      reason: '扫不到游戏线程帧消费入口',
-    );
+    expect(presentAt, greaterThanOrEqualTo(0), reason: '扫不到游戏线程帧消费入口');
     expect(presentEnd, greaterThan(presentAt), reason: '扫不到帧消费入口结尾');
     final String presentBody = adapter.substring(presentAt, presentEnd);
     final RegExp exactSuppressBranch = RegExp(
       r'if\s*\(staged\.flags\s*==\s*'
       r'fushi_voice_hook::kLookupFrameCaptureSuppress\s*\)',
     );
-    final RegExpMatch? exactSuppressMatch =
-        exactSuppressBranch.firstMatch(presentBody);
+    final RegExpMatch? exactSuppressMatch = exactSuppressBranch.firstMatch(
+      presentBody,
+    );
     expect(
       exactSuppressMatch,
       isNotNull,
@@ -197,11 +201,7 @@ void main() {
       'bool BlitLookupFrameGuarded(',
       commitAt,
     );
-    expect(
-      commitAt,
-      greaterThanOrEqualTo(0),
-      reason: '扫不到 applied ack 提交入口',
-    );
+    expect(commitAt, greaterThanOrEqualTo(0), reason: '扫不到 applied ack 提交入口');
     expect(commitEnd, greaterThan(commitAt), reason: '扫不到 applied ack 提交入口结尾');
     final List<RegExpMatch> appliedSeqReferences = RegExp(
       r'lookup_frame_applied_seq',
@@ -258,8 +258,11 @@ void main() {
       r'constexpr uint32_t kLookupBitmapBytes = (\d+)u \* 1024u \* 1024u;',
     );
     final RegExpMatch? headerMatch = headerRe.firstMatch(header);
-    expect(headerMatch, isNotNull,
-        reason: '扫不到契约头的 kLookupBitmapBytes —— 判红，别让空集假绿');
+    expect(
+      headerMatch,
+      isNotNull,
+      reason: '扫不到契约头的 kLookupBitmapBytes —— 判红，别让空集假绿',
+    );
 
     final String dart = File(
       'lib/src/lookup/gal_ingame_lookup_controller.dart',
@@ -268,8 +271,11 @@ void main() {
     final RegExpMatch? dartMatch = dartRe.firstMatch(dart);
     expect(dartMatch, isNotNull, reason: '扫不到 Dart 侧镜像常量 —— 判红');
 
-    expect(dartMatch!.group(1), headerMatch!.group(1),
-        reason: '两侧位图预算必须一致（单位 MiB）；改一处就要改另一处');
+    expect(
+      dartMatch!.group(1),
+      headerMatch!.group(1),
+      reason: '两侧位图预算必须一致（单位 MiB）；改一处就要改另一处',
+    );
   });
 
   test('host and native share the v12 thread preview seqlock contract', () {
@@ -304,9 +310,7 @@ void main() {
     );
     expect(
       sharedHeader,
-      contains(
-        'constexpr uint32_t kThreadPreviewFlagArtifact = 0x00000001u;',
-      ),
+      contains('constexpr uint32_t kThreadPreviewFlagArtifact = 0x00000001u;'),
     );
     expect(sharedHeader, contains('struct ThreadPreviewSlot {'));
     expect(nativeHeader, contains('uint32_t thread_preview_offset;'));
@@ -320,17 +324,12 @@ void main() {
     expect(sharedHeader, contains('uint64_t artifact_count;'));
     expect(
       sharedHeader,
-      contains(
-        'static_assert(offsetof(ThreadPreviewSlot, seq) == 0,',
-      ),
+      contains('static_assert(offsetof(ThreadPreviewSlot, seq) == 0,'),
     );
     // reader 只发布 odd/even 原子双读后的稳定快照，write_count 同样不能在 x86 裸读。
     expect(reader, contains('TryReadThreadPreviewSnapshot(slot, &snapshot)'));
     expect(reader, contains('AtomicLoadPreview64('));
-    expect(
-      sharedHeader,
-      contains('inline void PublishThreadPreviewChange('),
-    );
+    expect(sharedHeader, contains('inline void PublishThreadPreviewChange('));
   });
 
   test('v13：lane_seq 是完成标记，必须 volatile + 原子发布 + 最后写', () {
@@ -339,30 +338,42 @@ void main() {
     // 同文件里 VoiceClip::seq / LoopbackMarker::seq / ThreadPreviewSlot::seq 全是 volatile，
     // lane_seq 没有理由例外。
     final String header = File(kIpcHeaderPath).readAsStringSync();
-    expect(header, contains('volatile uint64_t lane_seq;'),
-        reason: 'lane_seq 是完成标记，必须 volatile');
+    expect(
+      header,
+      contains('volatile uint64_t lane_seq;'),
+      reason: 'lane_seq 是完成标记，必须 volatile',
+    );
 
     final int writeAt = header.indexOf('inline uint64_t WriteTextLaneEvent(');
     expect(writeAt, greaterThan(0), reason: '扫不到写侧实现 —— 判红，别让空集假绿');
     final int writeEnd = header.indexOf('\n}', writeAt);
     expect(writeEnd, greaterThan(writeAt));
     final String writeBody = header.substring(writeAt, writeEnd);
-    final int publishAt =
-        writeBody.indexOf('AtomicStorePreview64(&ts->lane_seq');
-    expect(publishAt, greaterThan(0),
-        reason: 'lane_seq 必须用 Interlocked 发布（全栅栏 + 不可撕裂），不能裸写');
+    final int publishAt = writeBody.indexOf(
+      'AtomicStorePreview64(&ts->lane_seq',
+    );
+    expect(
+      publishAt,
+      greaterThan(0),
+      reason: 'lane_seq 必须用 Interlocked 发布（全栅栏 + 不可撕裂），不能裸写',
+    );
     // 最后写：payload 的任意一处写都必须排在发布之前。取 byte_len 作代表——它决定
     // reader 读多少字节，排在发布之后就是最直接的半写窗口。
-    expect(writeBody.indexOf('ts->byte_len = byte_len;'), lessThan(publishAt),
-        reason: '完成标记必须是**最后**写，否则 reader 会读到半写槽');
+    expect(
+      writeBody.indexOf('ts->byte_len = byte_len;'),
+      lessThan(publishAt),
+      reason: '完成标记必须是**最后**写，否则 reader 会读到半写槽',
+    );
 
     final int readAt = header.indexOf('inline uint32_t CollectTextSlotsBySeq(');
     expect(readAt, greaterThan(0), reason: '扫不到读侧归并 —— 判红');
     final int readEnd = header.indexOf('\n}', readAt);
     expect(readEnd, greaterThan(readAt));
-    expect(header.substring(readAt, readEnd),
-        contains('AtomicLoadPreview64(&slot->lane_seq)'),
-        reason: '读侧同样不能裸读 64 位标记（x86 会撕裂）');
+    expect(
+      header.substring(readAt, readEnd),
+      contains('AtomicLoadPreview64(&slot->lane_seq)'),
+      reason: '读侧同样不能裸读 64 位标记（x86 会撕裂）',
+    );
   });
 
   test('v13：道用尽必须可降级且可观测，不得静默丢弃', () {
@@ -375,11 +386,17 @@ void main() {
     final int writeEnd = header.indexOf('\n}', writeAt);
     final String body = header.substring(writeAt, writeEnd);
     expect(body, contains('text_lane_overflow_count'), reason: '丢弃行必须计数');
-    expect(body, contains('text_lane_recycle_count'),
-        reason: '回收非选定道必须计数（这是压力的第一级）');
+    expect(
+      body,
+      contains('text_lane_recycle_count'),
+      reason: '回收非选定道必须计数（这是压力的第一级）',
+    );
     // 选定线程那条道是配对路径的输入，任何情况下不得被顶掉。
-    expect(body, contains('if (lanes[i].thread_id == selected) continue;'),
-        reason: '回收时必须跳过选定线程那条道');
+    expect(
+      body,
+      contains('if (lanes[i].thread_id == selected) continue;'),
+      reason: '回收时必须跳过选定线程那条道',
+    );
   });
 
   test('v13：采集期不再有任何线程过滤，只挡伪影（挤压已由分道解决）', () {
@@ -396,10 +413,7 @@ void main() {
     final String functionBody = injector.substring(functionStart, functionEnd);
 
     // hookcode/prefer 不能进入准入函数（旧 profile 快路会绕过用户选择）。
-    expect(
-      functionBody,
-      isNot(contains('preferred_hook_codes')),
-    );
+    expect(functionBody, isNot(contains('preferred_hook_codes')));
     expect(functionBody, isNot(contains('const wchar_t* hookcode')));
     // v13：采集期读选定线程 = 又在采集期丢行，分道之后没有任何理由这么做（丢掉的行
     // 换线程后就再也回不来）。选定线程只允许在消费侧使用。

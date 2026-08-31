@@ -461,6 +461,14 @@ class VoiceHookReader {
       uint32_t mode, bool attached_ready, uint32_t* request_seq = nullptr,
       uint32_t* applied_seq = nullptr);
 
+  // Host risk/provider admission for HUNEX semantic input.  This reuses the
+  // v21 geometry-admission flags/request generation: discovery remains live,
+  // while actual native input consumption and hit publication fail closed
+  // until this request is applied for the exact active provider.
+  VoiceHookLookupError SetLookupNativeInputAllowed(
+      bool allowed, uint32_t* request_seq = nullptr,
+      uint32_t* applied_seq = nullptr);
+
   // 发布 v19 输入盾事务。|target| 必须属于当前已打开的游戏 PID；begin 固定传
   // active_buttons=kLookupShieldButtonLeft，matching up/cancel 以同一 transaction_id
   // 再发布 active_buttons=0。payload 先写、request_seq 最后写由共享 helper 保证。

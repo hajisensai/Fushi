@@ -55,9 +55,9 @@ class AdapterStructureTest(unittest.TestCase):
     def test_main_worker_only_uses_registry(self) -> None:
         source = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
         # 行数预算防的是「引擎逻辑重新爬回 dll_main」——真正的判据是下面那三条
-        # （必须经 registry、不得出现 TryHook）。系统头 include 与其解释注释不属于
-        # 它要挡的东西，但也算行；上界随之从 700 抬到 720，判据本身不变。
-        self.assertLess(source.count("\n"), 720)
+        # （必须经 registry、不得出现 TryHook）。HUNEX 的跨 adapter 数据契约头和
+        # 通用 IPC 映射长度核验属于装配代码，但也算行；预算随之抬到 740，判据不变。
+        self.assertLess(source.count("\n"), 740)
         self.assertIn("AdapterRegistry registry;", source)
         self.assertIn("registry.InstallStartupAdapters();", source)
         self.assertIn("registry.Poll();", source)
@@ -98,11 +98,22 @@ class AdapterStructureTest(unittest.TestCase):
             if "g_geometry_provider_registry.PublishHit" not in source:
                 continue
             publishers.append(path.relative_to(adapter_root).as_posix())
-            self.assertIn("g_geometry_provider_registry.OfferReady", source)
-            self.assertIn("g_geometry_provider_registry.Retire", source)
+            lifecycle_source = source
+            if path.name == "hunex_gge_lookup_runtime.inc":
+                # 该 runtime 是 HUNEX adapter 的纯 include 单元；provider 的
+                # OfferReady/Retire 由包含它的 adapter worker/teardown 持有。
+                owner = (adapter_root / "hunex_gge_adapter.inc").read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn('#include "hunex_gge_lookup_runtime.inc"', owner)
+                lifecycle_source += owner
+            self.assertIn(
+                "g_geometry_provider_registry.OfferReady", lifecycle_source
+            )
+            self.assertIn("g_geometry_provider_registry.Retire", lifecycle_source)
 
-        self.assertEqual(5, len(publishers), publishers)
-        self.assertNotIn("hunex_gge_adapter.inc", publishers)
+        self.assertEqual(6, len(publishers), publishers)
+        self.assertIn("hunex_gge_lookup_runtime.inc", publishers)
 
         leaf = (ROOT / "hook" / "adapters" / "leaf_aquaplus_adapter.inc").read_text(
             encoding="utf-8"
@@ -262,9 +273,14 @@ class AdapterStructureTest(unittest.TestCase):
             self.assertNotIn("D:\\", source)
             self.assertNotIn("C:\\", source)
 
-    def test_hunex_lookup_trace_remains_observation_only(self) -> None:
+    def test_hunex_lookup_exact_provider_stays_fail_closed_and_registry_owned(
+        self,
+    ) -> None:
         source = (
             ROOT / "hook" / "adapters" / "hunex_gge_adapter.inc"
+        ).read_text(encoding="utf-8")
+        runtime = (
+            ROOT / "hook" / "adapters" / "hunex_gge_lookup_runtime.inc"
         ).read_text(encoding="utf-8")
         scanner = self._function_body(source, "bool ScanHunexGgeRuntimeAnchors()")
         for required in (
@@ -278,13 +294,18 @@ class AdapterStructureTest(unittest.TestCase):
             "imported_async_key_state != exported_async_key_state",
         ):
             self.assertIn(required, scanner)
-        self.assertNotIn("g_geometry_provider_registry.OfferReady", source)
-        self.assertNotIn("g_geometry_provider_registry.PublishHit", source)
-        self.assertNotIn("kLookupGeometryProviderIdHunex", source)
-        self.assertIn(
-            "return fushi_voice_hook::AdapterCapability::kResourceAudio;",
+        self.assertIn('#include "hunex_gge_lookup_runtime.inc"', source)
+        self.assertIn("g_geometry_provider_registry.OfferReady", source)
+        self.assertIn("g_geometry_provider_registry.Retire", source)
+        self.assertIn("g_geometry_provider_registry.PublishHit", runtime)
+        self.assertIn("kLookupGeometryProviderIdHunexGge", source)
+        self.assertIn("kLookupGeometryProviderIdHunexGge", runtime)
+        capabilities = self._function_body(
             source,
+            "fushi_voice_hook::AdapterCapability capabilities() const override",
         )
+        self.assertIn("AdapterCapability::kText", capabilities)
+        self.assertIn("AdapterCapability::kResourceAudio", capabilities)
 
     def test_native_loopback_is_policy_gated_and_generation_owned(self) -> None:
         registry = (ROOT / "hook" / "adapter_registry.inc").read_text(

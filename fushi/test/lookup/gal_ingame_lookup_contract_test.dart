@@ -424,8 +424,8 @@ void main() {
       // 那半边收成一个成功应答，不然 MissingPluginException 会把断言前的路径炸掉。
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall call) async {
-        return <String, Object?>{'ok': true};
-      });
+            return <String, Object?>{'ok': true};
+          });
       final GalIngameLookupController controller =
           GalIngameLookupController.test();
       controller.handleAdmission(
@@ -601,6 +601,17 @@ void main() {
       expect(result.ok, isTrue);
       expect(result.requestSeq, 7);
       expect(result.appliedSeq, 6, reason: 'down/up/tail 未排空时允许 ack 暂时落后');
+    });
+
+    test('NativeInputAllowed 复用 admission request/applied ack', () async {
+      mockRunner((_) => <String, Object?>{'requestSeq': 9, 'appliedSeq': 8});
+      final GalLookupCallResult result =
+          await GalHookTextOverlayChannel.galLookupSetNativeInputAllowed(true);
+      expect(calls.single.method, 'galLookupSetNativeInputAllowed');
+      expect(calls.single.arguments, <String, Object?>{'allowed': true});
+      expect(result.ok, isTrue);
+      expect(result.requestSeq, 9);
+      expect(result.appliedSeq, 8);
     });
 
     test('galLookupPresent 送出 anchor / 卡片 / 游戏视口，并识别 direct surface', () async {
@@ -787,7 +798,9 @@ void main() {
         reason: 'mapping 换代重放意图由持有真实 mapping 身份的 reader 负责',
       );
       expect(reader, contains('st.lookup_geometry_admission_mode_desired'));
+      expect(reader, contains('lookup_native_input_allowed_desired'));
       expect(reader, contains('PublishLookupGeometryAdmission('));
+      expect(reader, contains('PublishLookupNativeInputAllowed('));
       expect(reader, contains('if (st.lookup_enabled_desired)'));
     });
 
@@ -849,8 +862,91 @@ void main() {
         expect(lookupRuns, 0);
 
         await controller.setProviderAdmission(true);
+        expect(
+          calls.where(
+            (MethodCall call) =>
+                call.method == 'galLookupSetNativeInputAllowed' &&
+                (call.arguments as Map<Object?, Object?>)['allowed'] == true,
+          ),
+          hasLength(1),
+          reason: 'local admission 必须先打开，再发布 native allow request',
+        );
         await controller.handleHit(_hit(seq: 72));
         expect(lookupRuns, 1);
+      } finally {
+        await controller.stopForTesting();
+      }
+    });
+
+    test('NativeInputAllowed channel 异常保留同值重试与双向顺序', () async {
+      int enableAttempts = 0;
+      int disableAttempts = 0;
+      late GalIngameLookupController controller;
+      mockRunner((MethodCall call) {
+        if (call.method != 'galLookupSetNativeInputAllowed') {
+          return <String, Object?>{};
+        }
+        final bool allowed =
+            (call.arguments as Map<Object?, Object?>)['allowed']! as bool;
+        expect(
+          controller.debugProviderAdmission,
+          isTrue,
+          reason: allowed
+              ? 'enable 必须先开 local receive gate 再请求 native allow'
+              : 'disable 必须在 local gate 仍开着时先请求 native deny',
+        );
+        if (allowed) {
+          enableAttempts++;
+          if (enableAttempts == 1) {
+            throw PlatformException(code: 'transient-enable');
+          }
+        } else {
+          disableAttempts++;
+          if (disableAttempts == 1) {
+            throw PlatformException(code: 'transient-disable');
+          }
+        }
+        return <String, Object?>{
+          'requestSeq': enableAttempts + disableAttempts,
+          'appliedSeq': enableAttempts + disableAttempts,
+        };
+      });
+      controller = GalIngameLookupController.test(
+        preferenceReader: (String key, {required Object? defaultValue}) =>
+            key == GalIngameLookupController.enabledPreferenceKey
+            ? true
+            : defaultValue,
+      );
+      try {
+        await controller.start(appModel: AppModel(testPlatformServices()));
+        await controller.setSessionActive(true);
+
+        await controller.setProviderAdmission(true);
+        expect(controller.debugProviderAdmission, isTrue);
+        expect(controller.debugProviderAdmissionDesired, isTrue);
+        expect(controller.debugPushedProviderAdmission, isNull);
+        expect(controller.debugProviderAdmissionPushPending, isTrue);
+
+        await controller.setProviderAdmission(true);
+        expect(enableAttempts, 2, reason: '同值 enable 必须重试未知 delivery');
+        expect(controller.debugPushedProviderAdmission, isTrue);
+        expect(controller.debugProviderAdmissionPushPending, isFalse);
+
+        await controller.setProviderAdmission(false);
+        expect(
+          controller.debugProviderAdmission,
+          isTrue,
+          reason: 'native deny 未确认时不可让 native 吞点击、Dart 丢 hit',
+        );
+        expect(controller.debugProviderAdmissionDesired, isFalse);
+        expect(controller.debugPushedProviderAdmission, isNull);
+        expect(controller.debugProviderAdmissionPushPending, isTrue);
+
+        await controller.setProviderAdmission(false);
+        expect(disableAttempts, 2, reason: '同值 disable 必须重试未知 delivery');
+        expect(controller.debugProviderAdmission, isFalse);
+        expect(controller.debugPushedProviderAdmission, isFalse);
+        expect(controller.debugProviderAdmissionPushPending, isFalse);
       } finally {
         await controller.stopForTesting();
       }
@@ -902,6 +998,7 @@ void main() {
       try {
         await controller.start(appModel: AppModel(testPlatformServices()));
         await controller.setSessionActive(true);
+        await controller.setProviderAdmission(true);
         final GalLookupHit hit = _hit(seq: 41, line: '同一句台词');
         await controller.handleHit(hit);
 
