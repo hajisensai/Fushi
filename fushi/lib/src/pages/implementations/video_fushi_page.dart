@@ -5076,6 +5076,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     switch (resolution.dispatch) {
       case VideoKeyboardDispatch.ignore:
         return false;
+      case VideoKeyboardDispatch.swallowRepeat:
+        // 吃掉，什么都不做——见 VideoKeyboardDispatch.swallowRepeat 的文档。
+        return true;
       case VideoKeyboardDispatch.dismissPopup:
         _dismissTopVisiblePopup();
         return true;

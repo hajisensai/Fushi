@@ -55,6 +55,8 @@ void main() {
         panelHoldsFocusNavigation: panelHoldsFocusNavigation,
       );
       switch (resolution.dispatch) {
+        case VideoKeyboardDispatch.swallowRepeat:
+          return KeyEventResult.handled;
         case VideoKeyboardDispatch.ignore:
           return KeyEventResult.ignored;
         case VideoKeyboardDispatch.dismissPopup:
@@ -318,6 +320,14 @@ void main() {
         reason: '面板态必须喂进判决，否则方向键在面板里不会让位给焦点遍历');
     expect(body, contains('_videoFocusNode.hasPrimaryFocus'),
         reason: '画面持焦是 videoEnterCaret 放行判据的输入，不能省');
+    expect(body, contains('hasEditableFocus: focusedEditableText() != null'),
+        reason: 'BUG-962：文本框持焦判据必须真的接进判决输入。纯函数那半是对的，'
+            '页面不喂这个参数就等于没有——而现在**整张表**都过这条通道，'
+            '它一坏就是在 mpv.conf / 弹幕规则框里打 f 直接切全屏，'
+            '不再是旧实现那样「最多打不出空格」');
+    expect(body, contains('if (controller == null) return false;'),
+        reason: '加载态 / 资源缺失态没有 controller，主通道必须整条放行给全局路径，'
+            '不能解析出动作再去空指针（旧 decidePageSpaceOverride 有专条断言）');
 
     // ② 挂载点必须是 [_wrapVideoGamepadControls]——窗口 build() 与全屏路由
     // pageBuilder 的**唯一共同外层**。挂在 _buildScaffold 上时全屏路由（推到根

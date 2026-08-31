@@ -551,6 +551,17 @@ enum VideoKeyboardDispatch {
 
   /// 命中了某个视频动作，但有可见词典浮层：先关顶层浮层并消费（BUG-924）。
   dismissPopup,
+
+  /// 消费掉但**不执行**：命中了一个「长按不该连发」的动作的重复沿。
+  ///
+  /// 与 [ignore] 的区别是这次按键必须被吃掉。放行会漏给 WidgetsApp 默认的
+  /// space→ActivateIntent，长按空格就变成连点激活当前焦点控件——全局
+  /// `_neutralizeBareSpace` 只把**按下沿**中和成 DoNothingIntent，挡不住重复沿。
+  ///
+  /// 这是旧 `PageSpaceOverrideDecision.swallowRepeat` 的等价物。press-time 判决把
+  /// 「不消费」升成一等结论时必须把它一并带上，否则就是拿「命中但不消费」顶替
+  /// 「消费但不做」，两者在冒泡语义上根本不是一回事。
+  swallowRepeat,
 }
 
 /// [resolveVideoKeyboardShortcut] 的判决 + 命中的动作。
@@ -567,6 +578,8 @@ class VideoKeyboardResolution {
       VideoKeyboardResolution(VideoKeyboardDispatch.ignore);
   static const VideoKeyboardResolution dismissPopup =
       VideoKeyboardResolution(VideoKeyboardDispatch.dismissPopup);
+  static const VideoKeyboardResolution swallowedRepeat =
+      VideoKeyboardResolution(VideoKeyboardDispatch.swallowRepeat);
 
   @override
   bool operator ==(Object other) =>
@@ -687,6 +700,15 @@ VideoKeyboardResolution resolveVideoKeyboardShortcut(
   // 长按不连发的动作：重复沿不消费（等价旧表的 includeRepeats:false）。
   if (event is KeyRepeatEvent && kVideoPressEdgeOnlyActions.contains(action)) {
     return VideoKeyboardResolution.ignored;
+  }
+
+  // 播放/暂停的重复沿：消费但不重复执行（旧 PageSpaceOverrideDecision.swallowRepeat）。
+  // 这里不能像上面那样返回 ignored：放行会漏给 WidgetsApp 默认的
+  // space→ActivateIntent，长按空格变成连点激活当前焦点控件；返回 run 则是按 OS
+  // 重复率连点播放/暂停。两个都不对，所以必须是「消费但不做」。
+  if (event is KeyRepeatEvent &&
+      action == ShortcutAction.videoTogglePlayPause) {
+    return VideoKeyboardResolution.swallowedRepeat;
   }
 
   // 按住临时倍速：keyup 边沿语义，由页面的状态机独占（本函数之前一层已消费按下沿）。

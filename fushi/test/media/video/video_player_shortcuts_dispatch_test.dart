@@ -234,6 +234,8 @@ Future<void> _pumpEnterCaretHarness(
           panelHoldsFocusNavigation: false,
         );
         switch (resolution.dispatch) {
+          case VideoKeyboardDispatch.swallowRepeat:
+            return KeyEventResult.handled;
           case VideoKeyboardDispatch.ignore:
             return KeyEventResult.ignored;
           case VideoKeyboardDispatch.dismissPopup:
