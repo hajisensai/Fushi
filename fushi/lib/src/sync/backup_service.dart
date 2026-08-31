@@ -18,6 +18,13 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
+/// 本地备份导出物文件名口径。存储页与导出前清扫共用，避免一边展示、一边认不出。
+final RegExp backupArchiveNamePattern =
+    RegExp(r'^(fushi|hibiki)-backup-.*\.(fushi|hibiki)\.zip$');
+
+bool isBackupArchiveName(String name) =>
+    backupArchiveNamePattern.hasMatch(name);
+
 /// Optional file-tree categories a backup export can include. The database
 /// (`fushi.db`) is NOT a category - it carries every table's metadata
 /// (books / stats / favorites / profiles / settings / dictionary records) whose
