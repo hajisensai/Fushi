@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "2.2.4-debug.12905",
-  "tag": "v2.2.4-debug.12905+58b84b6",
+  "version": "2.2.4-debug.12909",
+  "tag": "v2.2.4-debug.12909+c0ff4de",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 12905,
-  "notes": "Automated release-signed debug-channel build from develop @ 58b84b6. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 12909,
+  "notes": "Automated desktop debug-channel build from develop @ c0ff4de. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-2.2.4-debug.12896-ios.ipa",
@@ -26,15 +26,6 @@
       "sha256": "083b87e16463b4b361df7764920ad6d4c418bcbe5d351d279c4b0dd2a54cd5d1"
     },
     {
-      "name": "fushi-2.2.4-debug.12896-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.12896-windows-setup.exe",
-      "releaseSequence": 12896,
-      "tag": "v2.2.4-debug.12896+48b4b21",
-      "version": "2.2.4-debug.12896",
-      "size": 263427358,
-      "sha256": "38a7b16a6c1c8ed93b553018098e5b3a619c5223a956b6148b291760abaa3eed"
-    },
-    {
       "name": "fushi-2.2.4-debug.12905-58b84b6-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.12905-58b84b6-debug.apk",
       "releaseSequence": 12905,
@@ -42,6 +33,15 @@
       "version": "2.2.4-debug.12905",
       "size": 269790364,
       "sha256": "e79c54262b444efae928452eb0c3aa904050a2a2b0571a7471ae2a59f1f9e4a9"
+    },
+    {
+      "name": "fushi-2.2.4-debug.12909-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.12909-windows-setup.exe",
+      "releaseSequence": 12909,
+      "tag": "v2.2.4-debug.12909+c0ff4de",
+      "version": "2.2.4-debug.12909",
+      "size": 263425624,
+      "sha256": "aedc8d8be25c8bf11e166a26cfb7723474b0b89f8673a2f8cd81c333b441adcb"
     }
   ]
 }
