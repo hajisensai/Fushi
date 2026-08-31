@@ -18,20 +18,19 @@ const String _hashB = '00112233445566778899aabbccddeeff00112233';
 VideoResourceSearchRequest _request({
   VideoDiscoveryCategory? category,
   int limit = 50,
-}) =>
-    VideoResourceSearchRequest(
-      query: 'Inception',
-      media: category == null
-          ? null
-          : VideoMediaReference(
-              providerId: 'tmdb',
-              mediaId: '27205',
-              mediaKind: VideoMetadataMediaKind.movie,
-              discoveryCategory: category,
-              title: 'Inception',
-            ),
-      limit: limit,
-    );
+}) => VideoResourceSearchRequest(
+  query: 'Inception',
+  media: category == null
+      ? null
+      : VideoMediaReference(
+          providerId: 'tmdb',
+          mediaId: '27205',
+          mediaKind: VideoMetadataMediaKind.movie,
+          discoveryCategory: category,
+          title: 'Inception',
+        ),
+  limit: limit,
+);
 
 void main() {
   group('normalizePublicVideoIndexInfoHash', () {
@@ -102,8 +101,10 @@ void main() {
           );
         }),
       );
-      final List<PublicVideoIndexTorrent> results =
-          await client.search('inception', categories: kApibayMovieCategories);
+      final List<PublicVideoIndexTorrent> results = await client.search(
+        'inception',
+        categories: kApibayMovieCategories,
+      );
       // 两个分类各打一次，同一个种子只留一条。
       expect(calls, hasLength(kApibayMovieCategories.length));
       expect(results, hasLength(1));
@@ -197,9 +198,101 @@ void main() {
   });
 
   group('public index providers', () {
+    test('BUG-1985 CJK 标题命中媒体身份时改用可信拉丁别名', () {
+      final VideoResourceSearchRequest request = VideoResourceSearchRequest(
+        query: '薬屋のひとりごと 第2期',
+        media: VideoMediaReference(
+          providerId: 'tmdb',
+          mediaId: '209867',
+          mediaKind: VideoMetadataMediaKind.tv,
+          discoveryCategory: VideoDiscoveryCategory.tv,
+          title: '薬屋のひとりごと 第2期',
+          aliases: const <String>[
+            'Kusuriya no Hitorigoto Season 2',
+            'The Apothecary Diaries Season 2',
+          ],
+        ),
+      );
+
+      expect(
+        publicVideoIndexSearchQuery(request),
+        'Kusuriya no Hitorigoto Season 2',
+      );
+    });
+
+    test('BUG-1985 apibay 传输层收到拉丁别名而不是原始 CJK', () async {
+      final List<String> queries = <String>[];
+      final ApibayVideoResourceProvider provider = ApibayVideoResourceProvider(
+        client: ApibayClient(
+          client: MockClient((http.Request request) async {
+            queries.add(request.url.queryParameters['q']!);
+            return http.Response('[]', 200);
+          }),
+        ),
+      );
+      final ProviderBatchResult<VideoResourceCandidate> result = await provider
+          .search(
+            VideoResourceSearchRequest(
+              query: '薬屋のひとりごと 第2期',
+              media: VideoMediaReference(
+                providerId: 'tmdb',
+                mediaId: '209867',
+                mediaKind: VideoMetadataMediaKind.tv,
+                discoveryCategory: VideoDiscoveryCategory.tv,
+                title: '薬屋のひとりごと 第2期',
+                aliases: const <String>['Kusuriya no Hitorigoto Season 2'],
+              ),
+            ),
+          );
+
+      expect(
+        queries,
+        List<String>.filled(
+          kApibayTvCategories.length,
+          'Kusuriya no Hitorigoto Season 2',
+        ),
+      );
+      expect(result.failures, isEmpty);
+      expect(result.successfulProviderCount, 1);
+    });
+
+    test('BUG-1985 手输的无别名 CJK 查询不发送给公共索引器', () async {
+      int calls = 0;
+      final ApibayVideoResourceProvider provider = ApibayVideoResourceProvider(
+        client: ApibayClient(
+          client: MockClient((http.Request request) async {
+            calls++;
+            return http.Response('[]', 200);
+          }),
+        ),
+      );
+      final ProviderBatchResult<VideoResourceCandidate> result = await provider
+          .search(
+            VideoResourceSearchRequest(
+              query: '薬屋のひとりごと 第2期',
+              media: VideoMediaReference(
+                providerId: 'tmdb',
+                mediaId: '194766',
+                mediaKind: VideoMetadataMediaKind.tv,
+                discoveryCategory: VideoDiscoveryCategory.tv,
+                title: 'Silo',
+                aliases: const <String>['Silo'],
+              ),
+            ),
+          );
+
+      expect(calls, 0, reason: 'apibay 会把 CJK 当空查询返回热门榜，必须在传输前拦住');
+      expect(result.items, isEmpty);
+      expect(
+        result.failures.single.kind,
+        ExternalProviderFailureKind.unsupported,
+      );
+    });
+
     test('apibay only serves movie and tv, never anime', () {
-      final ApibayVideoResourceProvider provider =
-          ApibayVideoResourceProvider(client: ApibayClient());
+      final ApibayVideoResourceProvider provider = ApibayVideoResourceProvider(
+        client: ApibayClient(),
+      );
       expect(provider.categories, <VideoDiscoveryCategory>{
         VideoDiscoveryCategory.movie,
         VideoDiscoveryCategory.tv,
@@ -212,8 +305,9 @@ void main() {
     });
 
     test('knaben only serves movie and tv, never anime', () {
-      final KnabenVideoResourceProvider provider =
-          KnabenVideoResourceProvider(client: KnabenClient());
+      final KnabenVideoResourceProvider provider = KnabenVideoResourceProvider(
+        client: KnabenClient(),
+      );
       expect(provider.categories, <VideoDiscoveryCategory>{
         VideoDiscoveryCategory.movie,
         VideoDiscoveryCategory.tv,
@@ -239,22 +333,27 @@ void main() {
       expect(seen.queryParameters['cat'], kApibayTvCategories.last.toString());
     });
 
-    test('a transport failure becomes a failure, not an empty result',
-        () async {
-      final ApibayVideoResourceProvider provider = ApibayVideoResourceProvider(
-        client: ApibayClient(
-          client: MockClient(
-            (http.Request request) async => http.Response('boom', 500),
-          ),
-        ),
-      );
-      final ProviderBatchResult<VideoResourceCandidate> result = await provider
-          .search(_request(category: VideoDiscoveryCategory.movie));
-      expect(result.failures, hasLength(1));
-      expect(result.successfulProviderCount, 0);
-      // 「零来源」与「来源答了但没有匹配」必须可区分（PR#896 的空态判据）。
-      expect(result.hasNoActiveProvider, isFalse);
-    });
+    test(
+      'a transport failure becomes a failure, not an empty result',
+      () async {
+        final ApibayVideoResourceProvider provider =
+            ApibayVideoResourceProvider(
+              client: ApibayClient(
+                client: MockClient(
+                  (http.Request request) async => http.Response('boom', 500),
+                ),
+              ),
+            );
+        final ProviderBatchResult<VideoResourceCandidate> result =
+            await provider.search(
+              _request(category: VideoDiscoveryCategory.movie),
+            );
+        expect(result.failures, hasLength(1));
+        expect(result.successfulProviderCount, 0);
+        // 「零来源」与「来源答了但没有匹配」必须可区分（PR#896 的空态判据）。
+        expect(result.hasNoActiveProvider, isFalse);
+      },
+    );
 
     test('resolve hands out the magnet and refuses foreign candidates', () {
       final PublicVideoIndexCandidate mine = PublicVideoIndexCandidate(

@@ -16,6 +16,51 @@ const List<int> kApibayTvCategories = <int>[208, 205];
 const int kKnabenMovieCategory = 3000000;
 const int kKnabenTvCategory = 2000000;
 
+final RegExp _publicIndexCjk = RegExp(
+  r'[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]',
+);
+final RegExp _publicIndexSearchable = RegExp(r'[A-Za-z0-9]');
+
+String _normalizedPublicIndexTitle(String value) =>
+    value.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+
+bool _isPublicIndexSearchable(String value) =>
+    _publicIndexSearchable.hasMatch(value) && !_publicIndexCjk.hasMatch(value);
+
+/// 把资源请求转换成公共综合索引器真正能表达的查询。
+///
+/// apibay 对 CJK 查询不会返回空集，而会把它当近似空查询返回当前热门榜；这比显式
+/// 失败更危险，因为 UI 会把完全不相关的条目伪装成正常搜索结果。当前查询若是媒体
+/// 自己的 CJK 标题，可以用同一元数据里的拉丁别名；用户另行手输的 CJK 查询不能
+/// 擅自退回原媒体别名（那会搜索另一个作品），只能让该 provider 判 unsupported。
+String? publicVideoIndexSearchQuery(VideoResourceSearchRequest request) {
+  final String requested = request.effectiveQuery.trim();
+  if (requested.isEmpty) return null;
+  if (_isPublicIndexSearchable(requested)) return requested;
+
+  final VideoMediaReference? media = request.media;
+  if (media == null) return null;
+  final String normalizedRequested = _normalizedPublicIndexTitle(requested);
+  final List<String> knownTitles = <String>[
+    media.title,
+    if (media.originalTitle != null) media.originalTitle!,
+    ...media.aliases,
+  ];
+  final bool isKnownTitle = knownTitles.any(
+    (String title) => _normalizedPublicIndexTitle(title) == normalizedRequested,
+  );
+  if (!isKnownTitle) return null;
+  for (final String candidate in <String>[
+    ...media.aliases,
+    if (media.originalTitle != null) media.originalTitle!,
+    media.title,
+  ]) {
+    final String value = candidate.trim();
+    if (_isPublicIndexSearchable(value)) return value;
+  }
+  return null;
+}
+
 /// 两家公共索引器共用的候选行。
 ///
 /// 一个 candidate 类而不是两个：它们的 `resolve` 都只是「把磁链交出去」，
@@ -27,23 +72,23 @@ class PublicVideoIndexCandidate extends VideoResourceCandidate {
     required String providerInstanceId,
     required int providerPriority,
   }) : super(
-          providerId: providerId,
-          providerInstanceId: providerInstanceId,
-          remoteId: torrent.infoHash,
-          title: torrent.title,
-          providerPriority: providerPriority,
-          infoHash: torrent.infoHash,
-          sizeBytes: torrent.sizeBytes,
-          seeders: torrent.seeders,
-          leechers: torrent.leechers,
-          completed: torrent.completed,
-          publishedAt: torrent.publishedAt,
-          category: torrent.category,
-          resolution: torrent.resolution,
-          releaseGroup: torrent.releaseGroup,
-          detailsUrl: torrent.detailsUrl,
-          magnetUri: torrent.magnet,
-        );
+         providerId: providerId,
+         providerInstanceId: providerInstanceId,
+         remoteId: torrent.infoHash,
+         title: torrent.title,
+         providerPriority: providerPriority,
+         infoHash: torrent.infoHash,
+         sizeBytes: torrent.sizeBytes,
+         seeders: torrent.seeders,
+         leechers: torrent.leechers,
+         completed: torrent.completed,
+         publishedAt: torrent.publishedAt,
+         category: torrent.category,
+         resolution: torrent.resolution,
+         releaseGroup: torrent.releaseGroup,
+         detailsUrl: torrent.detailsUrl,
+         magnetUri: torrent.magnet,
+       );
 
   final PublicVideoIndexTorrent torrent;
 }
@@ -57,8 +102,8 @@ class ApibayVideoResourceProvider implements VideoResourceProvider {
     required ApibayClient client,
     this.priority = 200,
     bool closesClient = false,
-  })  : _client = client,
-        _closesClient = closesClient;
+  }) : _client = client,
+       _closesClient = closesClient;
 
   final ApibayClient _client;
   final bool _closesClient;
@@ -71,22 +116,22 @@ class ApibayVideoResourceProvider implements VideoResourceProvider {
 
   @override
   Set<VideoDiscoveryCategory> get categories => const <VideoDiscoveryCategory>{
-        VideoDiscoveryCategory.movie,
-        VideoDiscoveryCategory.tv,
-      };
+    VideoDiscoveryCategory.movie,
+    VideoDiscoveryCategory.tv,
+  };
 
   @override
   Future<ProviderBatchResult<VideoResourceCandidate>> search(
     VideoResourceSearchRequest request,
   ) async {
-    final String query = request.effectiveQuery.trim();
-    if (query.isEmpty) {
+    final String? query = publicVideoIndexSearchQuery(request);
+    if (query == null) {
       return ProviderBatchResult<VideoResourceCandidate>.failure(
         const ExternalProviderFailure(
           providerId: kApibayResourceProviderId,
           operation: 'search',
           kind: ExternalProviderFailureKind.unsupported,
-          message: 'a search query is required',
+          message: 'a Latin-script search query or alias is required',
         ),
       );
     }
@@ -95,8 +140,8 @@ class ApibayVideoResourceProvider implements VideoResourceProvider {
         query,
         categories:
             request.media?.discoveryCategory == VideoDiscoveryCategory.tv
-                ? kApibayTvCategories
-                : kApibayMovieCategories,
+            ? kApibayTvCategories
+            : kApibayMovieCategories,
       );
       return ProviderBatchResult<VideoResourceCandidate>(
         items: deduplicateVideoResources(
@@ -138,8 +183,8 @@ class KnabenVideoResourceProvider implements VideoResourceProvider {
     required KnabenClient client,
     this.priority = 210,
     bool closesClient = false,
-  })  : _client = client,
-        _closesClient = closesClient;
+  }) : _client = client,
+       _closesClient = closesClient;
 
   final KnabenClient _client;
   final bool _closesClient;
@@ -152,22 +197,22 @@ class KnabenVideoResourceProvider implements VideoResourceProvider {
 
   @override
   Set<VideoDiscoveryCategory> get categories => const <VideoDiscoveryCategory>{
-        VideoDiscoveryCategory.movie,
-        VideoDiscoveryCategory.tv,
-      };
+    VideoDiscoveryCategory.movie,
+    VideoDiscoveryCategory.tv,
+  };
 
   @override
   Future<ProviderBatchResult<VideoResourceCandidate>> search(
     VideoResourceSearchRequest request,
   ) async {
-    final String query = request.effectiveQuery.trim();
-    if (query.isEmpty) {
+    final String? query = publicVideoIndexSearchQuery(request);
+    if (query == null) {
       return ProviderBatchResult<VideoResourceCandidate>.failure(
         const ExternalProviderFailure(
           providerId: kKnabenResourceProviderId,
           operation: 'search',
           kind: ExternalProviderFailureKind.unsupported,
-          message: 'a search query is required',
+          message: 'a Latin-script search query or alias is required',
         ),
       );
     }
