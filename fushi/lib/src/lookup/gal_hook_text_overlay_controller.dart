@@ -713,6 +713,13 @@ class GalHookTextOverlayController extends ChangeNotifier {
     if (_suppressedForSession) return;
     if (lines.isEmpty) return;
     final TexthookerLineEntry latest = lines.last;
+    // BUG-1981：`_visible` 只是上一次 MethodChannel show 的应答镜像，不是 HWND
+    // 真值。窗口被系统/外部 WM_CLOSE 销毁后，session 仍会继续送文本；若只信镜像，
+    // 后续永远只发 updateText，工具栏的“显示 Hook 浮窗”也没有可见窗口可抬起。
+    if (_visible && !await GalHookTextOverlayChannel.isShowing()) {
+      _visible = false;
+      notifyListeners();
+    }
     if (!_visible) {
       await GalHookTextOverlayChannel.updateText(
         lineId: latest.id,

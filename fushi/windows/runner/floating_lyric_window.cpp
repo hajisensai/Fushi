@@ -193,6 +193,16 @@ void FloatingLyricWindow::EnsureWindowClass() {
   class_registered_ = true;
 }
 
+bool FloatingLyricWindow::OwnsLiveWindow() const {
+  if (hwnd_ == nullptr || !IsWindow(hwnd_)) {
+    return false;
+  }
+  // IsWindow alone is insufficient because HWND values are recycled. The
+  // WM_NCCREATE back-pointer proves that this handle still names our body.
+  return reinterpret_cast<FloatingLyricWindow*>(
+             GetWindowLongPtr(hwnd_, GWLP_USERDATA)) == this;
+}
+
 bool FloatingLyricWindow::EnsureDeviceResources() {
   if (d2d_factory_ == nullptr) {
     HRESULT hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,
@@ -391,6 +401,16 @@ bool FloatingLyricWindow::Show(HWND owner) {
     return false;
   }
 
+  // BUG-1981：WM_CLOSE/外部 teardown 会销毁 HWND，但旧对象仍跨 gal 会话复用。
+  // 对失效（或已被系统复用）的句柄调用 ShowWindow/SetWindowPos 都不会抛，旧实现却
+  // 无条件返回 true，Dart 因而永久把一个不存在的窗口记成“已显示”。
+  if (hwnd_ != nullptr && !OwnsLiveWindow()) {
+    hwnd_ = nullptr;
+    visible_ = false;
+    pass_through_toolbar_.Hide();
+    slot_tooltip_.Hide();
+  }
+
   if (hwnd_ == nullptr) {
     // Initial position: bottom-centre of the active monitor, like a desktop
     // lyric bar. WS_EX_LAYERED for per-pixel alpha, WS_EX_TOPMOST to float over
@@ -449,8 +469,12 @@ bool FloatingLyricWindow::Show(HWND owner) {
   }
 
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
-  SetWindowPos(hwnd_, topmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
-               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  if (!SetWindowPos(hwnd_, topmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0,
+                    0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
+                           SWP_SHOWWINDOW)) {
+    visible_ = false;
+    return false;
+  }
   visible_ = true;
   // BUG-951: a re-show while pass-through is still on must re-create the
   // escape-hatch toolbar and re-arm the body's click-through in one place.
@@ -1131,6 +1155,20 @@ LRESULT CALLBACK FloatingLyricWindow::WndProc(HWND hwnd, UINT message,
 LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
                                            LPARAM lparam) noexcept {
   switch (message) {
+    case WM_NCDESTROY: {
+      // Clear ownership at the actual HWND lifetime boundary. Show() can then
+      // rebuild the body on the next automatic line or manual-open request.
+      HWND destroyed = hwnd_;
+      visible_ = false;
+      pass_through_toolbar_.Hide();
+      slot_tooltip_.Hide();
+      CancelPointerGesture();
+      StopHoverLookupPolling();
+      StopToolbarRevealPolling();
+      SetWindowLongPtr(destroyed, GWLP_USERDATA, 0);
+      hwnd_ = nullptr;
+      return DefWindowProc(destroyed, message, wparam, lparam);
+    }
     case WM_MOUSEMOVE: {
       // Mouse messages arrive immediately because the strip is not born
       // transparent. Here we drive hover affordances, drag, and the press->drag

@@ -328,18 +328,26 @@ class OverlayWindowChannel {
             final Object? decoded = jsonDecode(raw);
             if (decoded is Map) {
               final message = decoded.cast<String, Object?>();
-              final String source =
-                  (envelope?['source'] as String?) ??
-                  (message['__source'] as String?) ??
-                  'desktop';
-              final int route =
-                  (envelope?['routeEpoch'] as num?)?.toInt() ??
-                  (message['__routeEpoch'] as num?)?.toInt() ??
-                  0;
-              final int lookup =
-                  (envelope?['lookupEpoch'] as num?)?.toInt() ??
-                  (message['__lookupEpoch'] as num?)?.toInt() ??
-                  0;
+              final Object? embeddedSource = message['__source'];
+              final Object? embeddedRoute = message['__routeEpoch'];
+              final Object? embeddedLookup = message['__lookupEpoch'];
+              // BUG-1982：The JSON fields are stamped when the browser event is emitted;
+              // the native envelope reads a mutable HWND route later. Consume
+              // the embedded identity only as one complete tuple so malformed
+              // content cannot mix old/new fields across those two clocks.
+              final bool hasEmbeddedRoute =
+                  embeddedSource is String &&
+                  embeddedRoute is num &&
+                  embeddedLookup is num;
+              final String source = hasEmbeddedRoute
+                  ? embeddedSource as String
+                  : (envelope?['source'] as String?) ?? 'desktop';
+              final int route = hasEmbeddedRoute
+                  ? (embeddedRoute as num).toInt()
+                  : (envelope?['routeEpoch'] as num?)?.toInt() ?? 0;
+              final int lookup = hasEmbeddedRoute
+                  ? (embeddedLookup as num).toInt()
+                  : (envelope?['lookupEpoch'] as num?)?.toInt() ?? 0;
               final event = OverlayReverseEvent(
                 route: source == 'galCard'
                     ? GlobalLookupRoute.galCard(
