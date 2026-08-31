@@ -18,6 +18,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_charset_detector_platform_interface/decoding_result.dart';
 import 'package:flutter_charset_detector_platform_interface/flutter_charset_detector_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:fushi/src/epub/epub_storage.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
@@ -108,6 +109,13 @@ String _writeMokuro(String dir, {required String title}) {
   return mokuroPath;
 }
 
+void _writeMangaPage(String dir, String name) {
+  Directory(dir).createSync(recursive: true);
+  File(p.join(dir, name)).writeAsBytesSync(
+    img.encodePng(img.Image(width: 20, height: 40)),
+  );
+}
+
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -194,8 +202,8 @@ void main() {
       expect(plan.mangas, isEmpty);
     });
 
-    // 漫画扫描根：.mokuro 分类进 mangas，不混进 books/videos/playlists；
-    // 页图（jpg 等）不单独入计划（导入器自己按 mokuro 惯例探测同级图片）。
+    // 漫画扫描根：.mokuro 分类进 mangas，不混进 books/videos/playlists；未提供
+    // mangaRootPath 时保持通用分类器不猜目录语义。
     test('.mokuro classifies as manga; page images are not planned', () {
       final List<SourceFileEntry> files = <SourceFileEntry>[
         _file('/lib/vol1.mokuro'),
@@ -212,6 +220,56 @@ void main() {
       expect(plan.books.single.bookPath, '/lib/book.epub');
       expect(plan.videos.single.videoPath, '/lib/movie.mp4');
       expect(plan.playlists, isEmpty);
+      expect(plan.mangaFolders, isEmpty);
+    });
+
+    test('纯页图扫描根本身作为一卷', () {
+      final String root = p.join('library', 'volume-01');
+      final ScanPlan plan = planScanFromFileList(
+        <SourceFileEntry>[
+          _file(p.join(root, '001.jpg')),
+          _file(p.join(root, 'chapter', '002.png')),
+        ],
+        mangaRootPath: root,
+      );
+
+      expect(
+        plan.mangaFolders,
+        <ScanMangaFolderItem>[ScanMangaFolderItem(folderPath: root)],
+      );
+    });
+
+    test('选择页图卷的上级目录时，每个直接子目录各计划成一本', () {
+      final String root = p.join('library', 'series');
+      final String volume1 = p.join(root, 'volume-01');
+      final String volume2 = p.join(root, 'volume-02');
+      final ScanPlan plan = planScanFromFileList(
+        <SourceFileEntry>[
+          _file(p.join(volume2, 'images', '001.webp')),
+          _file(p.join(volume1, '001.jpg')),
+          _file(p.join(volume1, 'notes.txt')),
+        ],
+        mangaRootPath: root,
+      );
+
+      expect(
+        plan.mangaFolders.map((ScanMangaFolderItem i) => i.folderPath),
+        <String>[volume1, volume2],
+      );
+    });
+
+    test('mokuro 所在目录树的页图不再重复计划成裸图卷', () {
+      final String root = p.join('library', 'series');
+      final ScanPlan plan = planScanFromFileList(
+        <SourceFileEntry>[
+          _file(p.join(root, 'volume-01.mokuro')),
+          _file(p.join(root, 'images', '001.jpg')),
+        ],
+        mangaRootPath: root,
+      );
+
+      expect(plan.mangas, hasLength(1));
+      expect(plan.mangaFolders, isEmpty);
     });
 
     // TODO-1237: .m3u8/.m3u manifests classify as PLAYLISTS (multi-episode),
@@ -1375,10 +1433,7 @@ sub_b/ep2.mp4
     });
   });
 
-  // ── 漫画扫描根（mediaKind='manga'）：.mokuro 经 MangaImporter 落库 ─────────
-  // 首版边界：只认 .mokuro（不扫 CBZ/裸图，无 skipIfExists 身份契约会重复导入）、
-  // 仅 local transport（网络 manga 按视频先例整体拒绝）。重扫去重走 BUG-443 范式
-  // （skipIfExists -> DuplicateImportCancelledException 静默跳过）。
+  // ── 漫画扫描根（mediaKind='manga'）：mokuro / 纯页图目录经 MangaImporter 落库 ──
   group('SourceLibraryScanner.scan manga source', () {
     late Directory tmp;
     late Directory pp;
@@ -1431,6 +1486,73 @@ sub_b/ep2.mp4
 
       // DAO 计数分支：manga 源按 epub_books(format='manga') 反向 COUNT。
       expect(await db.countMediaBySourceId(sid, 'manga'), 1);
+    });
+
+    test('纯页图文件夹本身可扫描成漫画并回填 sourceId', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      _writeMangaPage(tmp.path, '001.png');
+      _writeMangaPage(p.join(tmp.path, 'chapter'), '002.jpg');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Manga images',
+        mediaKind: 'manga',
+        rootPath: tmp.path,
+        recursive: const Value(true),
+        createdAt: 1000,
+      ));
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+      final SourceScanSummary summary =
+          await SourceLibraryScanner(db).scan(source);
+
+      expect(summary.error, isNull);
+      expect(summary.importedMediaCount, 1);
+      expect(summary.discoveredPaths, <String>[tmp.path]);
+      final EpubBookRow book = (await db.getAllEpubBooks()).single;
+      expect(book.title, p.basename(tmp.path));
+      expect(book.format, BookFormat.manga.dbValue);
+      expect(book.chapterCount, 2);
+      expect(book.sourceId, sid);
+    });
+
+    test('选择上级目录可逐卷导入纯页图子目录，重扫静默去重', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Directory volume1 = Directory(p.join(tmp.path, 'volume-01'));
+      final Directory volume2 = Directory(p.join(tmp.path, 'volume-02'));
+      _writeMangaPage(volume1.path, '001.png');
+      _writeMangaPage(p.join(volume1.path, 'chapter'), '002.png');
+      _writeMangaPage(volume2.path, '001.png');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Manga parent',
+        mediaKind: 'manga',
+        rootPath: tmp.path,
+        recursive: const Value(true),
+        createdAt: 1000,
+      ));
+      SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+      final SourceScanSummary first =
+          await SourceLibraryScanner(db).scan(source);
+      expect(first.error, isNull);
+      expect(first.importedMediaCount, 2);
+      expect(first.discoveredPaths, <String>[volume1.path, volume2.path]);
+      expect(
+        (await db.getAllEpubBooks())
+            .map((EpubBookRow b) => b.title)
+            .toList()
+          ..sort(),
+        <String>['volume-01', 'volume-02'],
+      );
+
+      source = (await db.getMediaSourceById(sid))!;
+      final SourceScanSummary second =
+          await SourceLibraryScanner(db).scan(source);
+      expect(second.error, isNull);
+      expect(second.importedMediaCount, 0);
+      expect(await db.getAllEpubBooks(), hasLength(2));
     });
 
     test('re-scan skips the already-imported volume (silent dedup, 0 new)',
@@ -1509,16 +1631,18 @@ sub_b/ep2.mp4
     });
   });
 
-  // 漫画扫描守卫：_importManga 必须保持 mokuro-only 白名单 + skipIfExists 静默
-  // 去重接线（BUG-443 范式），防未来编辑悄悄放开 CBZ/裸图或退化成重复导入。
-  test('source guard: manga scan is mokuro-only with silent dedup', () {
+  // 漫画扫描守卫：manifest 与纯页图目录都复用既有 importer，并显式用 skip 策略
+  // 保证后台重扫不产生重复副本。
+  test('source guard: manga scan reuses importers with silent dedup', () {
     final String src = File(
       'lib/src/media/source_library/source_library_scanner.dart',
     ).readAsStringSync();
-    expect(src.contains("kScanMangaExtensions = <String>{'mokuro'}"), isTrue,
-        reason: '首版只认 .mokuro（CBZ/裸图无 DuplicatePolicy.skip() 依赖的身份契约）');
     expect(src.contains('MangaImporter.importFromMokuroPath'), isTrue,
-        reason: '漫画扫描必须复用既有 mokuro 导入链（不自造落库路径）');
+        reason: 'mokuro 扫描必须复用既有导入链');
+    expect(src.contains('MangaImporter.importFromImageFolder'), isTrue,
+        reason: '纯页图扫描必须复用既有目录导入链');
+    expect(src.contains('policy: const DuplicatePolicy.skip()'), isTrue,
+        reason: '后台扫描必须静默去重，不能重扫生成 X (2)');
   });
 }
 
