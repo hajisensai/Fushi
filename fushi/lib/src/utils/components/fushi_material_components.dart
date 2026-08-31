@@ -2148,7 +2148,7 @@ class FushiPageScaffold extends StatefulWidget {
     this.subtitle,
     this.actions = const <Widget>[],
     this.leading,
-    this.showAppBar = true,
+    this.automaticallyImplyLeading = true,
     this.floatingActionButton,
     this.floatingActionButtonLocation,
     this.headerBottom,
@@ -2161,7 +2161,13 @@ class FushiPageScaffold extends StatefulWidget {
   final Widget body;
   final List<Widget> actions;
   final Widget? leading;
-  final bool showAppBar;
+
+  /// Whether a route back button is inserted when [leading] is null.
+  ///
+  /// The button is rendered inside [FushiPageHeader], beside the title. Older
+  /// versions put it in a separate, otherwise-empty [AppBar], which wasted a
+  /// full row and left the title visually detached from its navigation action.
+  final bool automaticallyImplyLeading;
   final Widget? floatingActionButton;
   final FloatingActionButtonLocation? floatingActionButtonLocation;
   final Widget? headerBottom;
@@ -2201,6 +2207,8 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Widget? effectiveLeading = widget.leading ??
+        (widget.automaticallyImplyLeading ? _defaultLeading(context) : null);
     return PrimaryScrollController(
       controller: _scrollController,
       // Inherit on EVERY platform. The default is mobile-only, which would
@@ -2212,21 +2220,10 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
       automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
       child: Scaffold(
         backgroundColor: tokens.surfaces.page,
-        appBar: widget.showAppBar
-            ? AppBar(
-                leading: widget.leading,
-                title: const SizedBox.shrink(),
-                backgroundColor: tokens.surfaces.page,
-                surfaceTintColor: Colors.transparent,
-                elevation: 0,
-                scrolledUnderElevation: 0,
-              )
-            : null,
         floatingActionButton: widget.floatingActionButton,
         floatingActionButtonLocation: widget.floatingActionButtonLocation,
         bottomNavigationBar: widget.bottomNavigationBar,
         body: SafeArea(
-          top: !widget.showAppBar,
           // stretch (not start) so every page body receives a tight full-width
           // constraint. Under start the cross axis stays loose, and any body
           // that shrink-wraps its width (e.g. a vertical SingleChildScrollView
@@ -2239,16 +2236,26 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
               FushiPageHeader(
                 title: widget.title,
                 subtitle: widget.subtitle,
-                leading: widget.showAppBar ? null : widget.leading,
+                leading: effectiveLeading,
                 actions: widget.actions,
                 bottom: widget.headerBottom,
-                compact: widget.headerCompact ?? widget.showAppBar,
+                compact: widget.headerCompact ?? effectiveLeading != null,
               ),
               Expanded(child: widget.body),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget? _defaultLeading(BuildContext context) {
+    if (!Navigator.of(context).canPop()) return null;
+    return FushiIconButton(
+      tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+      icon: Icons.arrow_back,
+      padding: EdgeInsets.zero,
+      onTap: () => Navigator.of(context).maybePop(),
     );
   }
 }

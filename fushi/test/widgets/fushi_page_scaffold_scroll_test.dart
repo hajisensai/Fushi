@@ -12,6 +12,45 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'widget_test_helpers.dart';
 
 void main() {
+  testWidgets('back button and title share one page-header row',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (BuildContext context) => TextButton(
+          onPressed: () => Navigator.of(context).push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => const FushiPageScaffold(
+                title: 'Sync & backup',
+                subtitle: 'Cloud, LAN, and local backups',
+                body: SizedBox.shrink(),
+              ),
+            ),
+          ),
+          child: const Text('Open'),
+        ),
+      ),
+    ));
+
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AppBar), findsNothing,
+        reason: 'the back action must not occupy a separate empty app-bar row');
+    final Finder back = find.byIcon(Icons.arrow_back);
+    final Finder title = find.text('Sync & backup');
+    expect(back, findsOneWidget);
+    expect(title, findsOneWidget);
+    expect(
+      tester.getCenter(back).dy,
+      moreOrLessEquals(tester.getCenter(title).dy, epsilon: 12),
+      reason: 'back action and title must read as one header row',
+    );
+
+    await tester.tap(back);
+    await tester.pumpAndSettle();
+    expect(find.text('Open'), findsOneWidget);
+  });
+
   testWidgets(
       'FushiPageScaffold page-scrolls its body from a header-area context '
       '(where the gamepad focus actually sits) via PrimaryScrollController',
