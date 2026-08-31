@@ -38,7 +38,7 @@ void main() {
       hasVisiblePopup: hasVisiblePopup,
       // 画面持焦：让 videoEnterCaret 那条 contextual 判据不干扰本组的浮层语义。
       videoSurfaceHoldsFocus: true,
-      panelHoldsFocusNavigation: false,
+      videoNavigablePanelOpen: false,
     );
   }
 
