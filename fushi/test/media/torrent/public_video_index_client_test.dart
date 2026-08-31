@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/torrent/public_video_index_client.dart';
 import 'package:fushi/src/media/torrent/public_video_index_provider.dart';
+import 'package:fushi/src/media/torrent/search_query_script.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
@@ -198,6 +199,85 @@ void main() {
   });
 
   group('public index providers', () {
+    test('BUG-1985 书写系统判据：有拉丁词或纯 ASCII 才算可表达', () {
+      // 能表达：有拉丁词。混排不该被拦——apibay 对它并不退化（有拉丁词可匹配），
+      // 最坏是结果少，不是结果错。旧判据「含一个汉字就整条拦」把这些全误杀了。
+      for (final String q in <String>[
+        'Fate/stay night 劇場版',
+        'Kimetsu no Yaiba 鬼滅',
+        'Silo',
+        'Re:Zero',
+      ]) {
+        expect(isLatinScriptExpressible(q), isTrue, reason: '$q 有拉丁词，能表达');
+      }
+      // 能表达：整条纯 ASCII。按「有没有拉丁词」单条判会把这类合法标题误杀。
+      for (final String q in <String>['2012', '300', '9']) {
+        expect(isLatinScriptExpressible(q), isTrue, reason: '$q 是纯 ASCII 标题');
+      }
+      // 不能表达：没有拉丁词、也不是纯 ASCII。
+      for (final String q in <String>[
+        '薬屋のひとりごと 第2期', // 注意含 ASCII '2'——旧的「有字母数字」判据放它过去了
+        'ﾎﾟｹﾓﾝ', // 半角片假名：旧的 CJK 区段枚举漏掉了它
+        '오징어 게임', // 韩文
+        'Ведьмак', // 西里尔：旧判据把它当「非拉丁 = 不可搜」，方向对但理由错
+        'ตำนานสมเด็จพระนเรศวร', // 泰文
+      ]) {
+        expect(isLatinScriptExpressible(q), isFalse, reason: '$q 没有拉丁词可匹配');
+      }
+      expect(isLatinScriptExpressible('   '), isFalse);
+    });
+
+    test('BUG-1985 混排查询原样透传，不因含一个汉字就整条拦（走 provider 判据）', () {
+      // 这条必须打 publicVideoIndexSearchQuery，不能只测共享原语——否则判据换了
+      // 而 provider 没跟着换，测试照样绿（变异实测抓到过这一次空转）。
+      for (final String q in <String>[
+        'Fate/stay night 劇場版',
+        'Kimetsu no Yaiba 鬼滅',
+        '2012',
+      ]) {
+        expect(
+          publicVideoIndexSearchQuery(
+            VideoResourceSearchRequest(query: q),
+          ),
+          q,
+          reason: '$q 有拉丁词可匹配，apibay 对它并不退化；'
+              '含一个汉字就整条拦是过度拦截，实现范围大于实测证据范围',
+        );
+      }
+      // 反向：没有拉丁词、也不是纯 ASCII，且拿不到媒体身份 → 表达不了。
+      for (final String q in <String>['薬屋のひとりごと 第2期', 'ﾎﾟｹﾓﾝ', '오징어 게임']) {
+        expect(
+          publicVideoIndexSearchQuery(
+            VideoResourceSearchRequest(query: q),
+          ),
+          isNull,
+          reason: '$q 没有拉丁词，送进去只会拿回热门榜',
+        );
+      }
+    });
+
+    test('BUG-1985 全角 ASCII 折半角：第２期 与 第2期 必须归一', () {
+      expect(foldFullWidthAscii('第２期'), '第2期');
+      expect(foldFullWidthAscii('ＦＡＴＥ'), 'FATE');
+      expect(foldFullWidthAscii('a　b'), 'a b');
+      // 不折就会让「这条查询等于媒体自己的标题吗」因为用户从别处粘来全角数字而失配。
+      final VideoResourceSearchRequest request = VideoResourceSearchRequest(
+        query: '薬屋のひとりごと 第２期',
+        media: VideoMediaReference(
+          providerId: 'tmdb',
+          mediaId: '209867',
+          mediaKind: VideoMetadataMediaKind.tv,
+          discoveryCategory: VideoDiscoveryCategory.tv,
+          title: '药屋少女的呢喃 第2季',
+          originalTitle: '薬屋のひとりごと 第2期',
+          aliases: const <String>['Kusuriya no Hitorigoto Season 2'],
+        ),
+      );
+      expect(publicVideoIndexSearchQuery(request),
+          'Kusuriya no Hitorigoto Season 2',
+          reason: '全角数字不折，isKnownTitle 就失配，别名降级白做');
+    });
+
     test('BUG-1985 CJK 标题命中媒体身份时改用可信拉丁别名', () {
       final VideoResourceSearchRequest request = VideoResourceSearchRequest(
         query: '薬屋のひとりごと 第2期',
@@ -285,10 +365,49 @@ void main() {
 
       expect(calls, 0, reason: 'apibay 会把 CJK 当空查询返回热门榜，必须在传输前拦住');
       expect(result.items, isEmpty);
-      expect(
-        result.failures.single.kind,
-        ExternalProviderFailureKind.unsupported,
+      // 「表达不了」是未参与，不是失败。表达成 failure 会让订阅 / 下载流水线
+      // 每一轮定时任务都 throw（那两条路径重建 media 时结构上拿不到别名），
+      // 也会让 UI 弹「加载失败 + 重试」——而重试永远不可能成功。
+      expect(result.failures, isEmpty,
+          reason: 'unsupported 不得表达成 provider failure');
+      expect(result.successfulProviderCount, 0);
+      expect(result.hasNoActiveProvider, isTrue,
+          reason: '要落进既有的第三态，让聚合层与 UI 拿到「这家没参与」而不是「炸了」');
+      expect(result.isTotalFailure, isFalse);
+    });
+
+    test('BUG-1985 Knaben 不走拉丁词门：它是硬标题过滤，CJK 返回的是真的 0 条', () async {
+      final List<String> queries = <String>[];
+      final KnabenVideoResourceProvider provider = KnabenVideoResourceProvider(
+        client: KnabenClient(
+          client: MockClient((http.Request request) async {
+            queries.add(
+              (jsonDecode(request.body) as Map<String, Object?>)['query']!
+                  as String,
+            );
+            return http.Response('{"hits":[]}', 200);
+          }),
+        ),
       );
+      final ProviderBatchResult<VideoResourceCandidate> result = await provider
+          .search(
+            VideoResourceSearchRequest(
+              query: '薬屋のひとりごと 第2期',
+              media: VideoMediaReference(
+                providerId: 'tmdb',
+                mediaId: '194766',
+                mediaKind: VideoMetadataMediaKind.tv,
+                discoveryCategory: VideoDiscoveryCategory.tv,
+                title: 'Silo',
+                aliases: const <String>['Silo'],
+              ),
+            ),
+          );
+
+      expect(queries, <String>['薬屋のひとりごと 第2期'],
+          reason: 'Knaben 的 search_type:100% 是硬标题过滤，对 CJK 返回正确的 0 条；'
+              '把它一起拦掉是纯功能删除，删的正是它相对 apibay 的价值');
+      expect(result.failures, isEmpty);
     });
 
     test('apibay only serves movie and tv, never anime', () {

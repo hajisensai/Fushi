@@ -1,5 +1,6 @@
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/torrent/public_video_index_client.dart';
+import 'package:fushi/src/media/torrent/search_query_script.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
@@ -16,16 +17,25 @@ const List<int> kApibayTvCategories = <int>[208, 205];
 const int kKnabenMovieCategory = 3000000;
 const int kKnabenTvCategory = 2000000;
 
-final RegExp _publicIndexCjk = RegExp(
-  r'[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]',
-);
-final RegExp _publicIndexSearchable = RegExp(r'[A-Za-z0-9]');
+String _normalizedPublicIndexTitle(String value) => foldFullWidthAscii(value)
+    .trim()
+    .replaceAll(RegExp(r'\s+'), ' ')
+    .toLowerCase();
 
-String _normalizedPublicIndexTitle(String value) =>
-    value.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+/// 判据走共享的书写系统分类器，**不再枚举 CJK 区段**。
+///
+/// 旧判据是「有 ASCII 字母数字 **且** 不含 CJK」，两头都错：
+/// * 含一个汉字就整条拦 → `Fate/stay night 劇場版` 这类混排被误杀，而 apibay 对
+///   它并不退化（有拉丁词可匹配）；实测证据只覆盖纯 CJK 查询，实现范围却大于
+///   证据范围。
+/// * `[A-Za-z0-9]` 把西里尔 / 希腊 / 泰文 / 阿拉伯文也一并判成「不可搜」，是
+///   「非拉丁 = 不可搜」的反向假设；同时半角片假名、Hangul 兼容字母都漏在区段
+///   外，照旧会触发原 bug。
+///
+/// 另外注意报告里那条真实用例 `薬屋のひとりごと 第2期` 含一个 ASCII `2`——按
+/// 「有 ASCII 字母数字」判它反而是「可搜」的，旧判据全靠 CJK 排除才拦住。
 
-bool _isPublicIndexSearchable(String value) =>
-    _publicIndexSearchable.hasMatch(value) && !_publicIndexCjk.hasMatch(value);
+bool _isPublicIndexSearchable(String value) => isLatinScriptExpressible(value);
 
 /// 把资源请求转换成公共综合索引器真正能表达的查询。
 ///
@@ -127,13 +137,23 @@ class ApibayVideoResourceProvider implements VideoResourceProvider {
   ) async {
     final String? query = publicVideoIndexSearchQuery(request);
     if (query == null) {
-      return ProviderBatchResult<VideoResourceCandidate>.failure(
-        const ExternalProviderFailure(
-          providerId: kApibayResourceProviderId,
-          operation: 'search',
-          kind: ExternalProviderFailureKind.unsupported,
-          message: 'a Latin-script search query or alias is required',
-        ),
+      // 「这条查询我表达不了」是**未参与**，不是失败。
+      //
+      // 表达成 failure 有两个真实后果：
+      // ① 订阅 / 下载流水线把 provider failure 直接 `throw`
+      //    （video_download_subscription_service.dart 的 _failureBelongsToProvider /
+      //    isTotalFailure 两条路径）。而这两条路径重建 VideoMediaReference 时
+      //    结构上拿不到 aliases（订阅行与 job 都不持久化别名），于是 CJK 标题的
+      //    订阅每一轮定时任务必然抛、永不自愈——「单来源配额 = 自杀开关」的形状。
+      // ② UI 侧 ExternalProviderFailureKind 全仓没有一处按值分支，failure.message
+      //    也从不进任何 Text，所以 unsupported 与超时/限流完全等价：用户看到的是
+      //    「加载失败 + 重试」，而重试永远不可能成功，唯一可行动作（换罗马字标题）
+      //    拿不到。
+      //
+      // 返回零条 + successfulProviderCount 0 让它落进既有的 hasNoActiveProvider
+      // 第三态：聚合层照常合并其它 provider，只有这家没参与。
+      return ProviderBatchResult<VideoResourceCandidate>(
+        items: const <VideoResourceCandidate>[],
       );
     }
     try {
@@ -206,15 +226,16 @@ class KnabenVideoResourceProvider implements VideoResourceProvider {
   Future<ProviderBatchResult<VideoResourceCandidate>> search(
     VideoResourceSearchRequest request,
   ) async {
-    final String? query = publicVideoIndexSearchQuery(request);
-    if (query == null) {
-      return ProviderBatchResult<VideoResourceCandidate>.failure(
-        const ExternalProviderFailure(
-          providerId: kKnabenResourceProviderId,
-          operation: 'search',
-          kind: ExternalProviderFailureKind.unsupported,
-          message: 'a Latin-script search query or alias is required',
-        ),
+    // Knaben **不走**公共索引器的拉丁词门。它的 `search_type: '100%'` 是硬标题
+    // 过滤（见 public_video_index_client.dart 里那条注释：`score` 会把 query 当
+    // 权重提示返回无关热门，`100%` 才是「标题必须含关键词」），对 CJK 查询返回的
+    // 是**正确的 0 条**，不是热门榜。把它一起拦掉是纯功能删除——恰恰删掉了
+    // Knaben 相对 apibay 的价值（它聚合的站里有带原文标题的发布）。
+    // 按能力分流，不按「两家都在这个文件里」分流。
+    final String query = request.effectiveQuery.trim();
+    if (query.isEmpty) {
+      return ProviderBatchResult<VideoResourceCandidate>(
+        items: const <VideoResourceCandidate>[],
       );
     }
     try {
