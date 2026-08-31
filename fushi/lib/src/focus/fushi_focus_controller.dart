@@ -120,18 +120,26 @@ class FushiFocusController extends ChangeNotifier {
   /// Consumers that draw or reveal focus must use this registered anchor so the
   /// ring, directional geometry, and scroll target share one boundary.
   /// Unmanaged focus nodes keep their native context as the fallback.
+  /// 几何**刻意不看** `canFocus`：这里回答的是「该画在哪个矩形上」，被 disable
+  /// 的控件矩形依然有效。其余 4 处按节点身份找 entry 的地方（
+  /// [primaryFocusIsManagedTarget] / `_currentEntry` / `_isUsablePrimary` /
+  /// `_handleFocusChange`）问的是「还能不能聚焦」，所以走 `_entryCanFocus`。
+  /// 两个问题不同，判据不同是有意的，别顺手"统一"过来。
   BuildContext? geometryContextFor(FocusNode? focusNode) {
     if (focusNode == null) return null;
     for (final FushiFocusTargetEntry entry in _entries.values) {
-      if (identical(entry.focusNode, focusNode) &&
-          entry.context.mounted &&
-          _isCurrentRoute(entry.context)) {
-        return entry.context;
-      }
+      if (!identical(entry.focusNode, focusNode)) continue;
+      // 一旦按节点身份认出这是受管控件，锚点不可用就**不画**（返回 null），
+      // 而不是 continue 落到下面的 native context 回退——那等于「锚点暂时不可用
+      // 就悄悄退回已知错位的内框」，画一个确定错的框比不画更糟。
+      // `_isCurrentRoute` 第一行已经查过 `context.mounted`，这里不再重复。
+      return _isCurrentRoute(entry.context) ? entry.context : null;
     }
-    final BuildContext? nativeContext = focusNode.context;
-    if (nativeContext == null || !nativeContext.mounted) return null;
-    return nativeContext;
+    // 未受管：原样交回 Flutter 的 context。mounted 由消费侧各自把关
+    // （`globalRectOfContext` 与 `FushiFocusScroll.ensureVisibleIfHidden` 都查），
+    // 在这里再查一遍是空转：两个调用点都写着 `?? primaryFocus?.context`，
+    // 返回 null 会被 `??` 把同一个 unmounted context 立刻递回去。
+    return focusNode.context;
   }
 
   FushiFocusId? get activeId => _activeId;

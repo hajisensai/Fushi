@@ -534,7 +534,10 @@ void main() {
             body: Align(
               alignment: Alignment.topCenter,
               child: SizedBox(
-                width: 900,
+                // 600 而不是 900：测试面只有 800 宽，900 会被 constraints 夹到 800，
+                // 而 _computeFocusRect 的近全屏早退门槛是 sw * 0.92 = 736——那时只靠
+                // 高度 56 < 552 才没触发，离静默返回 null（整条断言空转）只差一个条件。
+                width: 600,
                 child: FushiSearchField(
                   fieldKey: const ValueKey<String>('registered-search-field'),
                   focusId: const FushiFocusId('registered-search'),
@@ -568,6 +571,92 @@ void main() {
         tester.getRect(find.byKey(const ValueKey('registered-search-field')));
     final Rect ringRect = tester.getRect(ring);
     expect(ringRect.left, closeTo(fieldRect.left - 2, 0.6));
+    expect(ringRect.top, closeTo(fieldRect.top - 2, 0.6));
+    expect(ringRect.right, closeTo(fieldRect.right + 2, 0.6));
+    expect(ringRect.bottom, closeTo(fieldRect.bottom + 2, 0.6));
+  });
+
+  testWidgets(
+      'BUG-1984 焦点导航在第一帧之后才打开时，环仍然贴合登记锚点（冷启动时序）',
+      (WidgetTester tester) async {
+    // 上面那条从第一帧起 FushiFocusRoot 就是 enabled，所以它证明了算法对、
+    // 完全证明不了接线对。生产时序恰恰相反：main.dart 的 runApp() 在
+    // initialise() 之前执行（先给用户看加载页而不是白屏），第一帧
+    // experimentalFocusNavigationEnabled 恒读默认 false。若环把控制器缓存在
+    // didChangeDependencies 里，而 listen:false 又不建立 inherited 依赖，
+    // 缓存就永远停在那个 null——冷启动（偏好已开）、运行时翻开关、以及全部
+    // 集成测试（focus_driver 就是「app 起来后再翻开关」）三条路径全废。
+    final FocusManager fm = FocusManager.instance;
+    final FocusHighlightStrategy previous = fm.highlightStrategy;
+    fm.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
+    addTearDown(() => fm.highlightStrategy = previous);
+
+    final FocusNode node = FocusNode(debugLabel: 'late-enabled-search');
+    final TextEditingController textController = TextEditingController();
+    addTearDown(node.dispose);
+    addTearDown(textController.dispose);
+
+    bool enabled = false;
+    late StateSetter setOuter;
+
+    await tester.pumpWidget(MaterialApp(
+      home: StatefulBuilder(
+        builder: (BuildContext context, StateSetter setState) {
+          setOuter = setState;
+          // 与 main.dart 的 _wrapFocusNavigation 同构：两层吃同一个开关，
+          // 且结构恒定（那边特意保证 Element 全保留，连重挂载自愈都没有）。
+          return FushiFocusRoot(
+            enabled: enabled,
+            child: FushiFocusRing(
+              enabled: enabled,
+              child: Scaffold(
+                body: Align(
+                  alignment: Alignment.topCenter,
+                  child: SizedBox(
+                    width: 600,
+                    child: FushiSearchField(
+                      fieldKey: const ValueKey<String>('late-enabled-field'),
+                      focusId: const FushiFocusId('late-enabled-search'),
+                      controller: textController,
+                      focusNode: node,
+                      hintText: 'Search',
+                      onChanged: (_) {},
+                      onSubmitted: (_) {},
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    ));
+    await tester.pump();
+
+    // 偏好加载完 / 用户翻开关：结构不变，只有 enabled 变 → 只走 didUpdateWidget。
+    setOuter(() => enabled = true);
+    await tester.pump();
+    node.requestFocus();
+    // 注册锚点经 post-frame onReady 回传，再等环重算 + 重建。
+    for (int i = 0; i < 4; i++) {
+      await tester.pump();
+    }
+
+    final Finder ring = find.descendant(
+      of: find.byType(FushiFocusRing),
+      matching: find.byWidgetPredicate((Widget widget) =>
+          widget is DecoratedBox &&
+          widget.decoration is BoxDecoration &&
+          (widget.decoration as BoxDecoration).border != null),
+    );
+    expect(ring, findsOneWidget, reason: '开关翻开后焦点环必须出现');
+
+    final Rect fieldRect =
+        tester.getRect(find.byKey(const ValueKey('late-enabled-field')));
+    final Rect ringRect = tester.getRect(ring);
+    expect(ringRect.left, closeTo(fieldRect.left - 2, 0.6),
+        reason: '控制器在第一帧之后才可用；环不得缓存它，否则退回 EditableText '
+            '内嵌编辑区（左边界被 leading 图标 + padding 内缩约 40px）');
     expect(ringRect.top, closeTo(fieldRect.top - 2, 0.6));
     expect(ringRect.right, closeTo(fieldRect.right + 2, 0.6));
     expect(ringRect.bottom, closeTo(fieldRect.bottom + 2, 0.6));

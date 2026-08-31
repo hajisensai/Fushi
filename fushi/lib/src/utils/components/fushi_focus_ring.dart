@@ -60,7 +60,6 @@ class _FushiFocusRingState extends State<FushiFocusRing>
   // reflow (must reveal + recompute) apart from a theme-only dependency change
   // (must only recompute the ring, never scroll).
   double? _lastUiScale;
-  FushiFocusController? _focusController;
 
   @override
   void initState() {
@@ -97,7 +96,6 @@ class _FushiFocusRingState extends State<FushiFocusRing>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _focusController = FushiFocusRoot.maybeControllerOf(context, listen: false);
     // Depend on the actual in-app UI scale. FushiAppUiScale exposes it via an
     // InheritedWidget (_AppUiScaleScope); a scale change always notifies this
     // dependent — unlike the old MediaQuery.textScaler aspect, which the
@@ -226,26 +224,45 @@ class _FushiFocusRingState extends State<FushiFocusRing>
   // avoids a second, differently-aligned scroll on ordinary Tab traversal
   // (which Flutter already reveals) while still covering the off-screen paths
   // (resize, autofocus, programmatic/gamepad focus).
+  /// 焦点控件的**视觉几何** context：受管控件用登记的渲染锚点，其余回退原生
+  /// context。绘制（[_computeFocusRect]）与 reveal（[_ensureVisibleIfHidden]）
+  /// 必须共用这一份——两处各算一遍迟早漂移。
+  ///
+  /// **不缓存**：`_FushiFocusScope.controller` 随实验开关在 null↔controller 之间
+  /// 翻转，而 `listen: false` 走 `getInheritedWidgetOfExactType`、**不建立
+  /// inherited 依赖**，`didChangeDependencies` 不会因此重跑。缓存下来就会永远停在
+  /// 冷启动第一帧读到的 null——`main.dart` 的 `runApp()` 在 `initialise()` 之前
+  /// 执行（为了先给用户看加载页而不是白屏），那一帧偏好还没加载完，
+  /// `experimentalFocusNavigationEnabled` 恒读默认 false。于是冷启动（偏好已开）、
+  /// 运行时翻开关、以及全部集成测试（`focus_driver` 就是「app 起来后再翻开关」）
+  /// 三条路径全废，修复整场会话静默失效。
+  ///
+  /// 就地解析的代价是每次一次哈希查表；两个调用点都在 post-frame，读取合法。
+  /// **绝不要改成 `listen: true`**：`_FushiFocusScope` 是 `InheritedNotifier`，
+  /// 那会让本层在每次焦点变化时整层重建。
+  BuildContext? _focusGeometryContext() {
+    if (!mounted) return null;
+    final FocusNode? primary = _fm.primaryFocus;
+    if (primary == null) return null;
+    final FushiFocusController? controller =
+        FushiFocusRoot.maybeControllerOf(context, listen: false);
+    return controller?.geometryContextFor(primary) ?? primary.context;
+  }
+
   void _ensureVisibleIfHidden() {
     if (_fm.highlightMode != FocusHighlightMode.traditional) return;
-    final FocusNode? primaryFocus = _fm.primaryFocus;
-    final BuildContext? ctx =
-        _focusController?.geometryContextFor(primaryFocus) ??
-            primaryFocus?.context;
+    final BuildContext? ctx = _focusGeometryContext();
     if (ctx == null || !ctx.mounted) return;
     FushiFocusScroll.ensureVisibleIfHidden(ctx);
   }
 
   Rect? _computeFocusRect() {
     if (_fm.highlightMode != FocusHighlightMode.traditional) return null;
-    final FocusNode? primaryFocus = _fm.primaryFocus;
     // Registered controls expose a render anchor around their whole visual
     // surface. FocusNode.context can instead point at a framework-internal,
     // inset child of composite inputs (SearchBar/TextFormField), which made the
     // global ring frame the wrong rectangle across discovery and settings.
-    final BuildContext? ctx =
-        _focusController?.geometryContextFor(primaryFocus) ??
-            primaryFocus?.context;
+    final BuildContext? ctx = _focusGeometryContext();
     if (ctx == null) return null;
     // ON-SCREEN (view-coord) rect of the focused control: globalRectOfBox maps
     // both corners through localToGlobal so the rect carries the SCALED size.
