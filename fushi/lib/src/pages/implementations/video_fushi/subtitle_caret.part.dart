@@ -14,8 +14,7 @@ part of '../video_fushi_page.dart';
 ///   B/Esc=退出、LT/RT=跳词典段、,/.=切词条），手柄在
 ///   [_VideoFushiPageState._handleVideoGamepadButton] 顶部**先于注册表**截获
 ///   （阅读器 caret.part 同款 contextual 路由）；键盘经
-///   [guardVideoShortcutsWithSubtitleCaret]（注册表已绑键）+ 页面最外层
-///   Focus.onKeyEvent（未绑键）两层接管。
+///   页面最外层 press-time 键盘通道接管。
 /// * 主面几何真相源在 [VideoSubtitleOverlay] 的字符登记表（点击查词同源），经
 ///   [VideoSubtitleHitTester.bindCaretView] 读取；移动是纯函数
 ///   [moveSubtitleCaretEntry]。确认查词直接走 [_handleSubtitleLookupTap] →
@@ -193,8 +192,7 @@ extension _VideoSubtitleCaret on _VideoFushiPageState {
     return true;
   }
 
-  /// 键盘光标键执行（[guardVideoShortcutsWithSubtitleCaret] 与页面最外层
-  /// Focus.onKeyEvent 共用）。返回是否已消费。
+  /// 键盘光标键执行（页面最外层 Focus.onKeyEvent 调用）。返回是否已消费。
   bool _runCaretKeyboardKey(LogicalKeyboardKey key, {required bool shift}) {
     if (!_videoCaretActive) return false;
     final CaretAction? action = ReaderCaretRouter.decideKeyboard(
@@ -206,16 +204,29 @@ extension _VideoSubtitleCaret on _VideoFushiPageState {
     return true;
   }
 
-  /// 页面最外层 Focus.onKeyEvent 的光标分支：接住**未进注册表 activator 表**的光标键
-  /// （Tab / [ / ] / , / . 及未被用户绑定的方向键、Esc 等；已绑键在内层
-  /// [guardVideoShortcutsWithSubtitleCaret] 就被接管、不会冒泡到这里）。
+  /// 页面最外层 Focus.onKeyEvent 的光标分支：光标激活期把**所有**光标键（方向 /
+  /// Enter / Esc / Tab / `[` `]` / `,` `.`）在注册表解析之前截获。
+  ///
+  /// 方案 D 之前这里只接「未进 activator 表」的那部分，已绑键由内层
+  /// media_kit 表上的 caret 守卫接管；现在键盘只剩这一条通道，两半合并到这里。
+  ///
+  /// 「该不该抢在注册表解析之前」的判据是纯函数
+  /// [videoCaretKeyboardTakesPrecedence]（含 Ctrl/Alt/Meta 组合键的豁免——Ctrl+←
+  /// 上一句在光标激活时照常执行，跳句后 [_onCaretControllerTick] 会自动重锚）；
+  /// 本方法只负责取页面态并执行。
   bool _handleCaretUnboundKey(KeyEvent event) {
-    if (!_videoCaretActive) return false;
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
-    if (focusedEditableText() != null) return false;
+    final HardwareKeyboard keyboard = HardwareKeyboard.instance;
+    if (!videoCaretKeyboardTakesPrecedence(
+      event: event,
+      modifiers: currentKeyboardModifiers(keyboard),
+      caretActive: _videoCaretActive,
+      hasEditableFocus: focusedEditableText() != null,
+    )) {
+      return false;
+    }
     return _runCaretKeyboardKey(
       event.logicalKey,
-      shift: HardwareKeyboard.instance.isShiftPressed,
+      shift: keyboard.isShiftPressed,
     );
   }
 

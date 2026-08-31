@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
+import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';
 
 String _section(String src, String startToken, String endToken) {
@@ -108,11 +109,23 @@ void main() {
     expect(overlayIdx, greaterThanOrEqualTo(0));
     expect(overlayIdx, greaterThan(controlsIdx),
         reason: '字幕查词 overlay 必须叠在 controls 之上，锁定态点字幕仍能查词');
-    // 锁定态绝不能把快捷键表清空 / gate 掉：keyboardShortcuts 仍整表传给主题。
+    // 锁定态绝不能把整条键盘通道 gate 掉。方案 D 之后快捷键不再是传给 media_kit 的
+    // 一张表，而是页级 press-time 派发 [_handleVideoKeyboardShortcut]；沉浸锁的门控
+    // 只允许落在**单个动作**上（_runWhenImmersiveAllowsShortcuts，见 exitLock 等
+    // 白名单），绝不允许提到派发入口上——提上去就等于锁定态整表失效。
+    final String masked = maskComments(src);
+    final int dispatchAt =
+        masked.indexOf('_handleVideoKeyboardShortcut(event)');
+    expect(dispatchAt, greaterThanOrEqualTo(0),
+        reason: '视频快捷键主通道派发点必须存在（锁定态快捷键不被禁用的前提）');
+    // 派发点所在那一行不得带任何沉浸锁条件（`if (_immersiveAllowsShortcuts) ...`）。
+    final int lineStart = masked.lastIndexOf('\n', dispatchAt) + 1;
+    final int lineEnd = masked.indexOf('\n', dispatchAt);
     expect(
-        src.contains('keyboardShortcuts: _videoKeyboardShortcuts(controller)'),
-        isTrue,
-        reason: '快捷键表必须始终传给 media_kit 主题（锁定态快捷键不被禁用）');
+      masked.substring(lineStart, lineEnd).contains('_immersiveAllows'),
+      isFalse,
+      reason: '沉浸锁门控只能落在单个动作上，不能门住整条键盘派发',
+    );
   });
 
   test('④ 锁屏入口可达：视频左侧锁按钮 + 上下文菜单项（TODO-126 已移出 topButtonBar）', () {

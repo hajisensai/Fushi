@@ -156,19 +156,49 @@ SettingsDestination buildSystemDestination() {
       SettingsSection(
         title: t.section_network,
         items: <SettingsItem>[
-          // 全应用唯一的代理项（TODO-871/862 起）：更新、云同步、词典、下载、字幕、
-          // 刮削……所有公网出站都由 `app_proxy.dart` 按「手填 > env > 系统代理 >
-          // 直连」解析，这里填的就是「手填」那一格。留空 = 自动（fake-ip/TUN 模式下
-          // 系统代理写注册表、Dart 读不到时才需要手填）。非空但格式非法时弹
-          // SnackBar 并仍存原串——运行时 normalizeUserProxyHostPort fail-open 忽略
-          // 非法值，绝不误切。持久化键名 `update_custom_proxy` 是历史遗留，冻结不改。
+          // 全应用唯一的代理项：自动 = env > 系统代理 > 直连；直连 = 明确禁用；
+          // 手动 = 下方地址与可选认证。持久化地址键 `update_custom_proxy` 是历史遗留，
+          // 冻结不改；旧安装若已有地址且还没有模式键，会自动投影成手动模式。
+          SettingsSegmentedItem<String>(
+            id: 'system.network_proxy_mode',
+            title: t.network_proxy_mode_label,
+            icon: Icons.dns_outlined,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'auto',
+                label: t.network_proxy_mode_auto,
+                icon: Icons.sync_outlined,
+                tooltip: t.network_proxy_mode_auto_hint,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'direct',
+                label: t.network_proxy_mode_direct,
+                icon: Icons.link_off_outlined,
+                tooltip: t.network_proxy_mode_direct_hint,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'manual',
+                label: t.network_proxy_mode_manual,
+                icon: Icons.tune_outlined,
+                tooltip: t.network_proxy_mode_manual_hint,
+              ),
+            ],
+            selected: (SettingsContext c) => c.appModel.networkProxyMode,
+            onChanged: (SettingsContext c, String value) async {
+              await c.appModel.setNetworkProxyMode(value);
+              resetSyncHttpClient();
+              c.refresh();
+            },
+          ),
           SettingsTextItem(
             id: 'system.network_proxy',
             title: t.network_proxy_label,
-            subtitle: t.network_proxy_auto_hint,
+            subtitle: t.network_proxy_manual_hint,
             icon: Icons.dns_outlined,
             placeholder: t.network_proxy_hint,
             keyboardType: TextInputType.url,
+            visible: (SettingsContext c) =>
+                c.appModel.networkProxyMode == 'manual',
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.updateCustomProxy,
             onChanged: (SettingsContext settingsContext, String value) async {
@@ -187,6 +217,31 @@ SettingsDestination buildSystemDestination() {
                   SnackBar(content: Text(t.network_proxy_invalid)),
                 );
               }
+            },
+          ),
+          SettingsTextItem(
+            id: 'system.network_proxy_username',
+            title: t.network_proxy_username,
+            icon: Icons.person_outline,
+            visible: (SettingsContext c) =>
+                c.appModel.networkProxyMode == 'manual',
+            value: (SettingsContext c) => c.appModel.networkProxyUsername,
+            onChanged: (SettingsContext c, String value) async {
+              await c.appModel.setNetworkProxyUsername(value.trim());
+              resetSyncHttpClient();
+            },
+          ),
+          SettingsTextItem(
+            id: 'system.network_proxy_password',
+            title: t.network_proxy_password,
+            icon: Icons.password_outlined,
+            secret: true,
+            visible: (SettingsContext c) =>
+                c.appModel.networkProxyMode == 'manual',
+            value: (SettingsContext c) => c.appModel.networkProxyPassword,
+            onChanged: (SettingsContext c, String value) async {
+              await c.appModel.setNetworkProxyPassword(value);
+              resetSyncHttpClient();
             },
           ),
           // P2P（torrent）传输单独列出：**默认直连**，用户明确开了才跟上面的
@@ -241,6 +296,43 @@ SettingsDestination buildSystemDestination() {
             ],
             selected: _selectedUpdateChannel,
             onChanged: setUpdateChannel,
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'system.update_download_source',
+            title: t.update_download_source_preference,
+            subtitle: t.update_download_source_preference_hint,
+            icon: Icons.cloud_download_outlined,
+            dropdown: true,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: updateDownloadSourceAutomatic,
+                label: t.update_download_source_auto,
+                tooltip: t.update_download_source_auto,
+              ),
+              SettingsSegmentOption<String>(
+                value: updateDownloadSourceCloudflare,
+                label: t.update_download_source_cloudflare,
+                tooltip: t.update_download_source_cloudflare,
+              ),
+              SettingsSegmentOption<String>(
+                value: updateDownloadSourceGitHub,
+                label: t.update_download_source_github,
+                tooltip: t.update_download_source_github,
+              ),
+              for (final String prefix in updateCheckProxyPrefixes)
+                SettingsSegmentOption<String>(
+                  value: updateDownloadSourceForProxy(prefix),
+                  label: t.update_download_source_proxy(
+                    host: Uri.parse(prefix).host,
+                  ),
+                  tooltip: Uri.parse(prefix).host,
+                ),
+            ],
+            selected: (SettingsContext c) => c.appModel.updateDownloadSource,
+            onChanged: (SettingsContext c, String value) async {
+              await c.appModel.setUpdateDownloadSource(value);
+              c.refresh();
+            },
           ),
           // TODO-898：手动「立即检查更新」。分区已被 platformSupportsUpdateCheck()
           // 网关，按钮全平台可见（不能自装的平台仍可「检查→打开发布页」）。

@@ -29,7 +29,6 @@ part of 'update_checker.dart';
 /// 名单本身已搬到 `src/utils/net/github_mirrors.dart` 的 [kGitHubMirrorPrefixes]
 /// 作全仓唯一真相源（BUG-1875：Mihon 扩展仓库拉取也要同一份镜像）；part 契约禁止
 /// part 内 import，所以由 barrel 引入、这里只保留别名与既有的测试可见名。
-@visibleForTesting
 const List<String> updateCheckProxyPrefixes = kGitHubMirrorPrefixes;
 
 /// 官网 Cloudflare Worker 暴露的版本化 R2 下载入口。
@@ -39,6 +38,18 @@ const List<String> updateCheckProxyPrefixes = kGitHubMirrorPrefixes;
 /// 始终指向 [url] 里的同一个 tag / asset。`src=r2` 还把「该文件没有镜像」收敛为 404，
 /// 让下载引擎继续回退 GitHub；不带它会由官网 302 到 GitHub，和后续直连候选重复。
 const String _kOfficialUpdateMirrorHost = 'fushi.moe';
+
+const String updateDownloadSourceAutomatic = 'auto';
+const String updateDownloadSourceCloudflare = 'r2';
+const String updateDownloadSourceGitHub = 'github';
+const String updateDownloadSourceProxyPrefix = 'proxy:';
+
+/// 进程级更新资产首选源。设置只改变候选顺序，完整回退链始终保留。
+String Function() appUpdateDownloadSourceReader =
+    () => updateDownloadSourceAutomatic;
+
+String updateDownloadSourceForProxy(String prefix) =>
+    '$updateDownloadSourceProxyPrefix$prefix';
 
 /// **纯函数**：把本仓 GitHub Release 资产直链映射到官网 R2 的不可变版本路径。
 ///
@@ -79,12 +90,33 @@ String? officialR2UrlForUpdateAsset(String url) {
 /// GitHub 直连 + 公共 gh 代理回退链。检查 manifest/API 仍使用 [updateCheckUrls]，不会把
 /// 非下载请求误送进 R2。
 @visibleForTesting
-List<String> updateDownloadUrls(String url) {
+List<String> updateDownloadUrls(String url, {String? preference}) {
   final String? officialMirror = officialR2UrlForUpdateAsset(url);
-  return <String>[
+  final List<String> candidates = <String>[
     if (officialMirror != null) officialMirror,
     ...updateCheckUrls(url),
   ];
+  final String selected = preference ?? appUpdateDownloadSourceReader();
+  final String? preferred = switch (selected) {
+    updateDownloadSourceCloudflare => officialMirror,
+    updateDownloadSourceGitHub => url,
+    String value when value.startsWith(updateDownloadSourceProxyPrefix) =>
+      _selectedProxyCandidate(value, url),
+    _ => null,
+  };
+  if (preferred == null || !candidates.contains(preferred)) return candidates;
+  return <String>[
+    preferred,
+    for (final String candidate in candidates)
+      if (candidate != preferred) candidate,
+  ];
+}
+
+String? _selectedProxyCandidate(String preference, String directUrl) {
+  final String prefix =
+      preference.substring(updateDownloadSourceProxyPrefix.length);
+  if (!updateCheckProxyPrefixes.contains(prefix)) return null;
+  return '$prefix$directUrl';
 }
 
 /// **纯函数**：为一个 GitHub API / 直链 [url] 生成按优先级排序的候选 URL 列表。

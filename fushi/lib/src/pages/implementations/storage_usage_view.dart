@@ -149,10 +149,14 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
       },
       onError: (Object e) {
         debugPrint('[storage] scan failed: $e');
-        if (mounted && epoch == _scanEpoch) setState(() => _scanning = false);
+        if (mounted && epoch == _scanEpoch) {
+          setState(() => _scanning = false);
+        }
       },
       onDone: () {
-        if (mounted && epoch == _scanEpoch) setState(() => _scanning = false);
+        if (mounted && epoch == _scanEpoch) {
+          setState(() => _scanning = false);
+        }
       },
     );
   }
@@ -202,6 +206,8 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
   String _entryTitle(StorageEntryUsage entry) =>
       entry.kind == StorageEntryKind.databaseSnapshots
           ? t.storage_entry_database_snapshots_label(n: entry.paths.length)
+          : entry.kind == StorageEntryKind.backupArchives
+              ? t.storage_entry_backups_label(n: entry.paths.length)
           : entry.label;
 
   Future<void> _deleteEntry(StorageEntryUsage entry) async {
@@ -214,6 +220,8 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
         t.storage_entry_delete_dictionary_confirm_body,
       StorageEntryKind.databaseSnapshots =>
         t.storage_entry_delete_database_snapshots_confirm_body,
+      StorageEntryKind.backupArchives =>
+        t.storage_entry_delete_backups_confirm_body,
       StorageEntryKind.derivedFile =>
         t.storage_entry_delete_files_confirm_body,
       StorageEntryKind.readOnly => throw StateError('read-only entry'),
@@ -240,6 +248,9 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
               await widget.deleteDatabaseSnapshots();
           changed = result.deleted.isNotEmpty;
           failure = _snapshotDeleteFailureReason(result);
+        case StorageEntryKind.backupArchives:
+          failure = await widget.deleteFiles(entry.paths);
+          changed = failure == null;
         case StorageEntryKind.derivedFile:
           failure = await widget.deleteFiles(entry.paths);
           changed = failure == null;
@@ -320,6 +331,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     StorageCategoryId.customFonts: Icons.font_download_outlined,
     StorageCategoryId.web: Icons.public_outlined,
     StorageCategoryId.exports: Icons.output_outlined,
+    StorageCategoryId.backups: Icons.backup_outlined,
     StorageCategoryId.database: Icons.storage_outlined,
     StorageCategoryId.ocrModels: Icons.document_scanner_outlined,
     StorageCategoryId.cache: Icons.cached_outlined,
@@ -346,6 +358,8 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
         return t.storage_category_web;
       case StorageCategoryId.exports:
         return t.storage_category_exports;
+      case StorageCategoryId.backups:
+        return t.storage_category_backups;
       case StorageCategoryId.database:
         return t.storage_category_database;
       case StorageCategoryId.ocrModels:

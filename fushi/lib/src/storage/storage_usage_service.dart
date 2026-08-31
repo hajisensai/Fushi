@@ -11,6 +11,7 @@ import 'package:fushi/src/storage/books_directory.dart'
     show kLegacyBooksDirectoryName;
 import 'package:fushi/src/storage/export_directory.dart'
     show kLegacyExportDirectoryName;
+import 'package:fushi/src/sync/backup_service.dart' show isBackupArchiveName;
 
 /// 存储占用扫描服务（设置 → 存储）。
 ///
@@ -62,6 +63,10 @@ enum StorageCategoryId {
 
   /// 导出文件：`fushiExport` + `hibikiExport`。
   exports,
+
+  /// 移动端分享后留在 app 临时目录里的本地备份归档。单列而不是混进缓存，
+  /// 让总量来源可解释，并提供稳定的聚合清理入口（BUG-1979）。
+  backups,
 
   /// 数据库与内部数据：support 根的直接子项减去 OCR 模型子目录（主库
   /// `fushi.db`、本地发音库副本 `local_audio_*.db` 等都在明细里）。
@@ -118,6 +123,9 @@ enum StorageEntryKind {
   /// support 根下全部主库快照残留聚成的**一条**（`paths` = 文件清单；删除走
   /// fushi_core `deleteDatabaseSnapshotFiles`，识别口径同源）。
   databaseSnapshots,
+
+  /// 临时目录内的本地备份归档聚合项；删除仍走通用文件删除原语。
+  backupArchives,
 
   /// 类目根下的磁盘子项，只读展示（删它就是裸 `Directory.delete`，绕过墓碑/引用护栏）。
   readOnly,
@@ -525,6 +533,8 @@ class StorageUsageService {
           ]);
         case StorageCategoryId.cache:
           yield await _scanCache();
+        case StorageCategoryId.backups:
+          yield await _scanBackups();
         case StorageCategoryId.other:
           yield await _scanOther(docs);
         default:
@@ -739,9 +749,60 @@ class StorageUsageService {
     if (roots.isEmpty) {
       return const StorageCategoryUsage(id: StorageCategoryId.cache, bytes: 0);
     }
-    return _scanGeneric(
-      StorageCategoryId.cache,
-      <String>[for (final Directory d in roots) d.path],
+    final List<Map<String, Object>> raw = await _run(() => _childEntriesSync(
+        <String>[for (final Directory d in roots) d.path]));
+    final List<StorageEntryUsage> entries = _childEntries(
+      raw,
+      excludePaths: <String>{
+        for (final Map<String, Object> entry in raw)
+          if (entry['isFile'] as bool &&
+              isBackupArchiveName(p.basename(entry['path'] as String)))
+            entry['path'] as String,
+      },
+      kind: StorageEntryKind.derivedFile,
+    )..sort((StorageEntryUsage a, StorageEntryUsage b) =>
+        b.bytes.compareTo(a.bytes));
+    return StorageCategoryUsage(
+      id: StorageCategoryId.cache,
+      bytes: _sumBytes(entries),
+      entries: entries,
+    );
+  }
+
+  Future<StorageCategoryUsage> _scanBackups() async {
+    final List<Directory> roots = await _cacheRoots();
+    if (roots.isEmpty) {
+      return const StorageCategoryUsage(
+          id: StorageCategoryId.backups, bytes: 0);
+    }
+    final List<Map<String, Object>> raw = await _run(() => _childEntriesSync(
+        <String>[for (final Directory d in roots) d.path]));
+    final List<Map<String, Object>> backups = <Map<String, Object>>[
+      for (final Map<String, Object> entry in raw)
+        if (entry['isFile'] as bool &&
+            isBackupArchiveName(p.basename(entry['path'] as String)))
+          entry,
+    ];
+    final List<String> paths = <String>[
+      for (final Map<String, Object> entry in backups)
+        entry['path'] as String,
+    ];
+    final int bytes = backups.fold<int>(0,
+        (int sum, Map<String, Object> entry) => sum + (entry['bytes'] as int));
+    return StorageCategoryUsage(
+      id: StorageCategoryId.backups,
+      bytes: bytes,
+      entries: paths.isEmpty
+          ? const <StorageEntryUsage>[]
+          : <StorageEntryUsage>[
+              StorageEntryUsage(
+                id: 'backup-archives',
+                label: 'backup archives',
+                bytes: bytes,
+                paths: paths,
+                kind: StorageEntryKind.backupArchives,
+              ),
+            ],
     );
   }
 

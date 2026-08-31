@@ -2336,6 +2336,10 @@ class AppModel with ChangeNotifier {
       // 一装载好就把进程级读取器接上去，此后任何 applyAppProxy(client) 都自动拿到同一个值，
       // 不必沿调用链穿参（穿漏一处 = 一条不走代理的暗路）。
       appUserProxyReader = () => prefsRepo.updateCustomProxy;
+      appUserProxyModeReader = () => prefsRepo.networkProxyMode;
+      appUserProxyUsernameReader = () => prefsRepo.networkProxyUsername;
+      appUserProxyPasswordReader = () => prefsRepo.networkProxyPassword;
+      appUpdateDownloadSourceReader = () => prefsRepo.updateDownloadSource;
       // BUG-1493：词典包与 index.json 全托管在 github / raw.githubusercontent /
       // huggingface 上，而 fushi_dictionary 用的是裸 Dio——`findProxy` 为 null，既不读
       // HTTP_PROXY 也不读系统代理，于是「浏览器秒开 GitHub、app 里下 30MB 词典却像卡
@@ -7186,6 +7190,26 @@ class AppModel with ChangeNotifier {
     // 固化进 session 的，改了就得重新下发。
     _applyEmbeddedTorrentProxy();
   }
+
+  String get networkProxyMode => prefsRepo.networkProxyMode;
+  Future<void> setNetworkProxyMode(String value) async {
+    await prefsRepo.setNetworkProxyMode(value);
+    _applyEmbeddedTorrentProxy();
+  }
+
+  String get networkProxyUsername => prefsRepo.networkProxyUsername;
+  Future<void> setNetworkProxyUsername(String value) async {
+    await prefsRepo.setNetworkProxyUsername(value);
+  }
+
+  String get networkProxyPassword => prefsRepo.networkProxyPassword;
+  Future<void> setNetworkProxyPassword(String value) async {
+    await prefsRepo.setNetworkProxyPassword(value);
+  }
+
+  String get updateDownloadSource => prefsRepo.updateDownloadSource;
+  Future<void> setUpdateDownloadSource(String value) =>
+      prefsRepo.setUpdateDownloadSource(value);
 
   /// P2P（torrent）传输是否也走全局代理；默认 false = 直连。
   bool get p2pProxyEnabled => prefsRepo.p2pProxyEnabled;
