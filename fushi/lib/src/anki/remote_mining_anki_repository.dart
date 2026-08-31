@@ -57,6 +57,13 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   static const String tokenRejectedMessage =
       'The paired device rejected the interconnect token. Re-pair the device.';
 
+  /// 没有互联主机可接收制卡请求时，同时说明失败结果和两条恢复路径。
+  /// 避免把内部术语 "server-side mining" 暴露给只想完成制卡的用户。
+  static const String pairedDeviceUnreachableMessage =
+      "Couldn't create the card because no paired device could be reached. "
+      'Make sure Fushi is running on the paired device, or turn off '
+      '"Mine to paired device" to create cards locally.';
+
   final BaseAnkiRepository _local;
   final RemoteMineSender _client;
   final DictMediaByteLoader _dictMediaLoader;
@@ -215,7 +222,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   MineOutcome _outcomeFromResponse(Map<String, dynamic>? json) {
     if (json == null) {
       return MineOutcome.failure(
-        'No paired device is reachable for server-side mining.',
+        pairedDeviceUnreachableMessage,
         errorCode: AnkiErrorCode.connectionUnknown,
       );
     }
