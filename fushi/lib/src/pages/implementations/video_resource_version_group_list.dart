@@ -6,6 +6,32 @@ import 'package:fushi/src/pages/implementations/activity_feed.dart'
     show ActivityRelativeTime, ActivityRelativeUnit, activityRelativeTime;
 import 'package:fushi/utils.dart';
 
+/// 把真实集号集合压缩成连续段；非连续集合不能只拿 min/max 伪装成全集范围。
+/// `{1, 2, 4, 16, 17}` → `EP1–EP2, EP4, EP16–EP17`。
+String formatVideoResourceEpisodeSpans(Set<int> episodes) {
+  if (episodes.isEmpty) return '';
+  final List<int> sorted = episodes.toList()..sort();
+  final List<String> spans = <String>[];
+  int start = sorted.first;
+  int end = start;
+
+  void flush() {
+    spans.add(start == end ? 'EP$start' : 'EP$start–EP$end');
+  }
+
+  for (final int episode in sorted.skip(1)) {
+    if (episode == end + 1) {
+      end = episode;
+      continue;
+    }
+    flush();
+    start = episode;
+    end = episode;
+  }
+  flush();
+  return spans.join(', ');
+}
+
 /// 下载模式的资源「版本卡」列表：一张卡 = 一个「发布组 › 清晰度」版本，
 /// 组内逐集发布折在卡内展开。点卡：恰 1 条发布 → 直接选中；否则展开。
 /// 点发布行 → 选中（选中态与外层提交按钮共用既有 `_selected` 模型）。
@@ -69,12 +95,9 @@ class _VideoResourceVersionGroupListState
     final Set<int> episodes = group.episodes;
     final List<String> parts = <String>[];
     if (episodes.isNotEmpty) {
-      final int first = episodes.reduce((int a, int b) => a < b ? a : b);
-      final int last = episodes.reduce((int a, int b) => a > b ? a : b);
-      final String range =
-          episodes.length == 1 ? 'EP$first' : 'EP$first–EP$last';
       parts.add(
-        '${t.resource_version_episode_count(n: episodes.length)} ($range)',
+        '${t.resource_version_episode_count(n: episodes.length)} '
+        '(${formatVideoResourceEpisodeSpans(episodes)})',
       );
     }
     final DateTime? latest = group.latestPublishedAt;
@@ -99,9 +122,12 @@ class _VideoResourceVersionGroupListState
 
   Widget _buildCard(ThemeData theme, VideoResourceVersionGroup group) {
     final bool expanded = _expanded.contains(group.key);
-    final bool containsSelection = widget.selectedIdentityKey != null &&
-        group.members.any((VideoResourceCandidate member) =>
-            member.identityKey == widget.selectedIdentityKey);
+    final bool containsSelection =
+        widget.selectedIdentityKey != null &&
+        group.members.any(
+          (VideoResourceCandidate member) =>
+              member.identityKey == widget.selectedIdentityKey,
+        );
     return FushiCard(
       key: ValueKey<String>('resource-version-${group.key}'),
       padding: const EdgeInsets.all(12),
@@ -190,8 +216,9 @@ class _VideoResourceVersionGroupListState
     ];
     return FushiListItem(
       key: ValueKey<String>('resource-release-${member.identityKey}'),
-      density:
-          widget.compact ? FushiListDensity.compact : FushiListDensity.standard,
+      density: widget.compact
+          ? FushiListDensity.compact
+          : FushiListDensity.standard,
       padding: const EdgeInsets.symmetric(horizontal: 4),
       selected: widget.selectedIdentityKey == member.identityKey,
       onTap: widget.onSelect == null ? null : () => widget.onSelect!(member),

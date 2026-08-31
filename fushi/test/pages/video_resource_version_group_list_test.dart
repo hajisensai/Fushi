@@ -13,6 +13,7 @@ import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
+import 'package:fushi/src/pages/implementations/video_resource_version_group_list.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart'
     show TorrentAddPayload;
 import 'package:fushi_core/fushi_core.dart' show MediaSourceRow;
@@ -48,8 +49,7 @@ class _SeededProvider implements VideoResourceProvider {
   @override
   Future<ProviderBatchResult<VideoResourceCandidate>> search(
     VideoResourceSearchRequest request,
-  ) async =>
-      ProviderBatchResult<VideoResourceCandidate>.success(items);
+  ) async => ProviderBatchResult<VideoResourceCandidate>.success(items);
 
   @override
   Future<TorrentAddPayload> resolve(VideoResourceCandidate candidate) async =>
@@ -60,40 +60,54 @@ class _SeededProvider implements VideoResourceProvider {
 }
 
 List<VideoResourceCandidate> _items() => <VideoResourceCandidate>[
-      for (int ep = 1; ep <= 3; ep++)
-        _FakeResource(
-          remoteId: 'sp$ep',
-          title: '[SubsPlease] Show - 0$ep (1080p)',
-          releaseGroup: 'SubsPlease',
-          resolution: '1080p',
-          seeders: 30,
-        ),
-      _FakeResource(
-        remoteId: 'movie',
-        title: '[Erai-raws] Show Movie [720p]',
-        releaseGroup: 'Erai-raws',
-        resolution: '720p',
-        seeders: 5,
-      ),
-    ];
+  for (int ep = 1; ep <= 3; ep++)
+    _FakeResource(
+      remoteId: 'sp$ep',
+      title: '[SubsPlease] Show - 0$ep (1080p)',
+      releaseGroup: 'SubsPlease',
+      resolution: '1080p',
+      seeders: 30,
+    ),
+  _FakeResource(
+    remoteId: 'movie',
+    title: '[Erai-raws] Show Movie [720p]',
+    releaseGroup: 'Erai-raws',
+    resolution: '720p',
+    seeders: 5,
+  ),
+];
 
 VideoDiscoveryItem _item() => VideoDiscoveryItem(
-      reference: VideoMediaReference(
-        providerId: 'anilist',
-        mediaId: '42',
-        mediaKind: VideoMetadataMediaKind.tv,
-        discoveryCategory: VideoDiscoveryCategory.anime,
-        title: 'Show',
-        anilistId: 42,
-      ),
-    );
+  reference: VideoMediaReference(
+    providerId: 'anilist',
+    mediaId: '42',
+    mediaKind: VideoMetadataMediaKind.tv,
+    discoveryCategory: VideoDiscoveryCategory.anime,
+    title: 'Show',
+    anilistId: 42,
+  ),
+);
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
+  test('BUG-1986 非连续集号按真实连续段显示，不伪装成 min-max 全范围', () {
+    expect(
+      formatVideoResourceEpisodeSpans(<int>{17, 1, 4, 2, 16}),
+      'EP1–EP2, EP4, EP16–EP17',
+    );
+  });
+
+  test('BUG-1986 单集与完整连续集保持紧凑显示', () {
+    expect(formatVideoResourceEpisodeSpans(<int>{7}), 'EP7');
+    expect(formatVideoResourceEpisodeSpans(<int>{1, 2, 3, 4}), 'EP1–EP4');
+    expect(formatVideoResourceEpisodeSpans(<int>{}), isEmpty);
+  });
+
   Future<void> pumpSurface(
     WidgetTester tester, {
     VideoDiscoveryDownloadSubmit? onSubmit,
+    List<VideoResourceCandidate>? items,
   }) async {
     tester.view.physicalSize = const Size(1100, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -105,9 +119,9 @@ void main() {
           home: Scaffold(
             body: VideoDiscoveryResourceSearchDialog(
               item: _item(),
-              registry: VideoResourceRegistry(
-                <VideoResourceProvider>[_SeededProvider(_items())],
-              ),
+              registry: VideoResourceRegistry(<VideoResourceProvider>[
+                _SeededProvider(items ?? _items()),
+              ]),
               sources: const <MediaSourceRow>[
                 MediaSourceRow(
                   id: 1,
@@ -122,7 +136,8 @@ void main() {
                 ),
               ],
               defaultSourceId: 1,
-              onSubmit: onSubmit ??
+              onSubmit:
+                  onSubmit ??
                   (VideoDiscoveryDownloadSelection selection) async {},
             ),
           ),
@@ -152,6 +167,28 @@ void main() {
       find.byKey(const ValueKey<String>('video-resource-submit')),
     );
     expect(submit.onPressed, isNotNull, reason: '选中即可提交');
+  });
+
+  testWidgets('BUG-1986 版本卡元信息展示真实非连续集号段', (WidgetTester tester) async {
+    await pumpSurface(
+      tester,
+      items: <VideoResourceCandidate>[
+        for (final int episode in <int>[1, 2, 4, 16, 17])
+          _FakeResource(
+            remoteId: 'episode-$episode',
+            title: '[Group] Show S02E$episode 1080p WEB H264',
+            releaseGroup: 'Group',
+            resolution: '1080p',
+          ),
+      ],
+    );
+
+    expect(find.textContaining('EP1–EP2, EP4, EP16–EP17'), findsOneWidget);
+    expect(
+      find.textContaining('(EP1–EP17)'),
+      findsNothing,
+      reason: '5 个离散集号不能显示成包含 17 集的连续范围',
+    );
   });
 
   testWidgets('多条组点卡展开、点行选中', (WidgetTester tester) async {
@@ -202,11 +239,11 @@ void main() {
         );
       },
     );
-    final VideoResourceVersionGroup movie = buildVideoResourceVersionGroups(
-      _items(),
-    ).firstWhere(
-      (VideoResourceVersionGroup group) => group.releaseGroup == 'Erai-raws',
-    );
+    final VideoResourceVersionGroup movie =
+        buildVideoResourceVersionGroups(_items()).firstWhere(
+          (VideoResourceVersionGroup group) =>
+              group.releaseGroup == 'Erai-raws',
+        );
     await tester.tap(
       find.byKey(ValueKey<String>('resource-version-${movie.key}')),
     );
