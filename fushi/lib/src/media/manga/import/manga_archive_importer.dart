@@ -8,10 +8,17 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/epub/epub_book.dart';
 import 'package:fushi/src/epub/epub_parser.dart';
 import 'package:fushi/src/epub/book_title_conflict.dart';
+import 'package:fushi/src/media/discovery/import/discovery_archive_extractor.dart';
 import 'package:fushi/src/media/manga/manga_importer.dart';
 import 'package:fushi/src/media/manga/manga_storage.dart';
 
 const int _maximumArchiveExpandedBytes = 2 * 1024 * 1024 * 1024;
+
+const Set<String> _kSevenZipMangaArchiveExtensions = <String>{
+  '.rar',
+  '.cbr',
+  '.cb7',
+};
 
 /// Yomitan/Yomichan 词典包的**结构**标记：包根下的数据库文件名前缀。
 ///
@@ -30,6 +37,143 @@ const List<String> _kYomitanBankPrefixes = <String>[
 /// Yomitan 词典包的清单文件名（包根）。`prepareNameYomichanFormat` 就靠它读
 /// 词典标题。
 const String _kYomitanIndexEntry = 'index.json';
+
+/// 7-Zip-backed extractor for RAR/CBR/CB7 comic archives.
+///
+/// Windows releases bundle `7za.exe`; macOS/Linux may use `7za`/`7z` from
+/// PATH. The listing pass validates every member path and sums image sizes
+/// before extraction, while include filters ensure non-image payloads are
+/// never written to the temporary directory.
+class MangaSevenZipExtractor {
+  MangaSevenZipExtractor({
+    DiscoveryProcessRunner? runProcess,
+    String? sevenZipOverride,
+  })  : _runProcess = runProcess ?? Process.run,
+        _locator = DiscoveryArchiveExtractor(
+          runProcess: runProcess,
+          sevenZipOverride: sevenZipOverride,
+        );
+
+  final DiscoveryProcessRunner _runProcess;
+  final DiscoveryArchiveExtractor _locator;
+
+  Future<void> extractImages({
+    required String archivePath,
+    required Directory staging,
+  }) async {
+    final String? sevenZip = await _locator.findSevenZip();
+    if (sevenZip == null) {
+      throw const MangaImportException(
+        'RAR/CBR/CB7 import requires 7-Zip (7za or 7z)',
+      );
+    }
+
+    final ProcessResult listing = await _runProcess(
+      sevenZip,
+      <String>['l', '-slt', '-sccUTF-8', '-p-', archivePath],
+    );
+    if (listing.exitCode != 0) {
+      throw MangaImportException(
+        'Could not list manga archive (7z exit ${listing.exitCode})',
+      );
+    }
+    _validateListing(listing.stdout.toString());
+
+    final List<String> imageFilters = <String>[
+      for (final String extension in kMangaImageExtensions)
+        '-ir!*$extension',
+    ];
+    final ProcessResult extraction = await _runProcess(
+      sevenZip,
+      <String>[
+        'x',
+        '-y',
+        '-aoa',
+        '-p-',
+        '-sccUTF-8',
+        '-ssc-',
+        '-smemx2g',
+        '-o${staging.path}',
+        ...imageFilters,
+        archivePath,
+      ],
+    );
+    if (extraction.exitCode != 0) {
+      throw MangaImportException(
+        'Could not extract manga archive (7z exit ${extraction.exitCode})',
+      );
+    }
+    await _validateExtractedImages(staging);
+  }
+
+  void _validateListing(String output) {
+    final String normalized = output.replaceAll('\r\n', '\n');
+    final int marker = normalized.indexOf('\n----------\n');
+    if (marker < 0) {
+      throw const MangaImportException('Could not parse 7-Zip archive listing');
+    }
+    final String records = normalized.substring(marker + 12);
+    int imageCount = 0;
+    int expandedImageBytes = 0;
+    for (final String block in records.split(RegExp(r'\n\s*\n'))) {
+      final Map<String, String> fields = <String, String>{};
+      for (final String line in block.split('\n')) {
+        final int separator = line.indexOf(' = ');
+        if (separator <= 0) continue;
+        fields[line.substring(0, separator)] = line.substring(separator + 3);
+      }
+      final String? entryPath = fields['Path'];
+      if (entryPath == null || entryPath.isEmpty) continue;
+      if (sanitizeArchiveEntryPath(entryPath) == null ||
+          fields.containsKey('Symbolic Link')) {
+        throw MangaImportException('Unsafe manga archive entry: $entryPath');
+      }
+      final String attributes = fields['Attributes'] ?? '';
+      if (attributes.toUpperCase().contains('D')) continue;
+      final String extension =
+          p.posix.extension(entryPath.replaceAll('\\', '/')).toLowerCase();
+      if (!kMangaImageExtensions.contains(extension)) continue;
+      final int? size = int.tryParse(fields['Size'] ?? '');
+      if (size == null || size < 0) {
+        throw MangaImportException(
+          'Invalid manga archive entry size: $entryPath',
+        );
+      }
+      expandedImageBytes += size;
+      if (expandedImageBytes > _maximumArchiveExpandedBytes) {
+        throw const MangaImportException('Manga archive is too large');
+      }
+      imageCount++;
+    }
+    if (imageCount == 0) {
+      throw const MangaImportException('Manga archive has no images');
+    }
+  }
+
+  Future<void> _validateExtractedImages(Directory staging) async {
+    int imageCount = 0;
+    int expandedImageBytes = 0;
+    await for (final FileSystemEntity entity
+        in staging.list(recursive: true, followLinks: false)) {
+      if (entity is Link) {
+        throw MangaImportException('Unsafe manga archive link: ${entity.path}');
+      }
+      if (entity is! File ||
+          !kMangaImageExtensions
+              .contains(p.extension(entity.path).toLowerCase())) {
+        continue;
+      }
+      expandedImageBytes += await entity.length();
+      if (expandedImageBytes > _maximumArchiveExpandedBytes) {
+        throw const MangaImportException('Manga archive is too large');
+      }
+      imageCount++;
+    }
+    if (imageCount == 0) {
+      throw const MangaImportException('Manga archive has no images');
+    }
+  }
+}
 
 abstract final class MangaArchiveImporter {
   /// [book]（已解压的 EPUB）是不是「纯图漫画」：每个 `linear && !isNav` 章节都只有
@@ -50,6 +194,9 @@ abstract final class MangaArchiveImporter {
 
   static bool looksLikeImageArchive(String archivePath) {
     final String extension = p.extension(archivePath).toLowerCase();
+    if (_kSevenZipMangaArchiveExtensions.contains(extension)) {
+      return true;
+    }
     if (extension == '.epub') {
       return _looksLikeImageEpub(archivePath);
     }
@@ -108,36 +255,47 @@ abstract final class MangaArchiveImporter {
     String? title,
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
+    int? sourceId,
+    MangaSevenZipExtractor? sevenZipExtractor,
   }) async {
-    final Archive archive = _decode(archivePath);
+    final String extension = p.extension(archivePath).toLowerCase();
+    Archive? archive;
     final Directory staging =
         await Directory.systemTemp.createTemp('hibiki_manga_archive_');
     Directory? epubExtraction;
     try {
-      int expandedBytes = 0;
-      for (final ArchiveFile entry in archive) {
-        _validateEntry(entry);
-        expandedBytes += entry.size;
-        if (expandedBytes > _maximumArchiveExpandedBytes) {
-          throw const MangaImportException('Manga archive is too large');
-        }
-      }
-
-      if (p.extension(archivePath).toLowerCase() == '.epub') {
-        epubExtraction =
-            await Directory.systemTemp.createTemp('hibiki_manga_epub_');
-        final EpubBook book = EpubParser.parseSyncFromPath(
-          archivePath,
-          epubExtraction.path,
+      if (_kSevenZipMangaArchiveExtensions.contains(extension)) {
+        await (sevenZipExtractor ?? MangaSevenZipExtractor()).extractImages(
+          archivePath: archivePath,
+          staging: staging,
         );
-        if (!_isPureImageEpub(book)) {
-          throw const MangaImportException(
-            'EPUB contains readable text pages and is not a pure image manga',
-          );
-        }
-        await _copyEpubPages(book, staging);
       } else {
-        await _extractArchiveImages(archive, staging);
+        archive = _decode(archivePath);
+        int expandedBytes = 0;
+        for (final ArchiveFile entry in archive) {
+          _validateEntry(entry);
+          expandedBytes += entry.size;
+          if (expandedBytes > _maximumArchiveExpandedBytes) {
+            throw const MangaImportException('Manga archive is too large');
+          }
+        }
+
+        if (extension == '.epub') {
+          epubExtraction =
+              await Directory.systemTemp.createTemp('hibiki_manga_epub_');
+          final EpubBook book = EpubParser.parseSyncFromPath(
+            archivePath,
+            epubExtraction.path,
+          );
+          if (!_isPureImageEpub(book)) {
+            throw const MangaImportException(
+              'EPUB contains readable text pages and is not a pure image manga',
+            );
+          }
+          await _copyEpubPages(book, staging);
+        } else {
+          await _extractArchiveImages(archive, staging);
+        }
       }
 
       return await MangaImporter.importFromImageFolder(
@@ -148,9 +306,10 @@ abstract final class MangaArchiveImporter {
             : p.basenameWithoutExtension(archivePath),
         policy: policy,
         onProgress: onProgress,
+        sourceId: sourceId,
       );
     } finally {
-      archive.clearSync();
+      archive?.clearSync();
       if (staging.existsSync()) {
         await staging.delete(recursive: true);
       }

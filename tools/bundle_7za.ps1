@@ -1,10 +1,12 @@
-# Bundle the standalone 7-Zip console (7za.exe, LGPL) into the Windows release
+# Bundle the full 7-Zip console (7z.exe + 7z.dll) into the Windows release
 # so the discovery page can auto-extract downloaded 7z/rar game/novel archives
-# offline (DiscoveryArchiveExtractor probes <exe dir>\7za\7za.exe first).
+# offline (DiscoveryArchiveExtractor probes <exe dir>\7za\7z.exe first).
 #
-# Source: the official 7-Zip GitHub mirror (ip7z/7zip) "extra" package, pinned
+# Source: the official 7-Zip GitHub mirror (ip7z/7zip) x64 installer, pinned
 # by SHA-256. Verify-before-use: a swapped upstream archive must fail the build,
 # not ship. Extraction uses the runner's preinstalled full 7-Zip.
+# The previous extra-package 7za.exe supported only 7z/xz/cab/zip/gzip/bzip2/tar;
+# RAR requires the full 7z.exe + 7z.dll pair.
 #
 # Usage:
 #   pwsh -File tools/bundle_7za.ps1 -BundleDirectory <app Release dir> [-DownloadCache <dir>]
@@ -17,10 +19,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$Version = '24.09'
-$ArchiveName = '7z2409-extra.7z'
+$Version = '26.02'
+$ArchiveName = '7z2602-x64.exe'
 $Url = "https://github.com/ip7z/7zip/releases/download/$Version/$ArchiveName"
-$ExpectedSha256 = '43AE97658D0FC5B4EEC4D409D85F7BED74A80945FD5704333A3599E0BD79B5FC'
+$ExpectedSha256 = '6745FA76DC2EA031596D8678F6F6B99C3C1B435B4164A63485ADBBC7B8D82EF0'
 
 if (-not (Test-Path -LiteralPath $BundleDirectory -PathType Container)) {
   throw "BundleDirectory not found: $BundleDirectory"
@@ -65,11 +67,15 @@ if (Test-Path -LiteralPath $extractDir) {
 & $sevenZip x '-y' "-o$extractDir" $archivePath | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "7z extraction failed ($LASTEXITCODE)" }
 
-# The extra package ships x86 7za.exe at the root and the x64 build under x64\.
-$sourceExe = Join-Path $extractDir 'x64\7za.exe'
+# The full installer carries the console executable and its format/codecs DLL.
+$sourceExe = Join-Path $extractDir '7z.exe'
+$sourceDll = Join-Path $extractDir '7z.dll'
 $licenseFile = Join-Path $extractDir 'License.txt'
 if (-not (Test-Path -LiteralPath $sourceExe -PathType Leaf)) {
-  throw "x64\7za.exe missing from $ArchiveName (upstream layout changed?)"
+  throw "7z.exe missing from $ArchiveName (upstream layout changed?)"
+}
+if (-not (Test-Path -LiteralPath $sourceDll -PathType Leaf)) {
+  throw "7z.dll missing from $ArchiveName (upstream layout changed?)"
 }
 if (-not (Test-Path -LiteralPath $licenseFile -PathType Leaf)) {
   throw "License.txt missing from $ArchiveName"
@@ -77,6 +83,7 @@ if (-not (Test-Path -LiteralPath $licenseFile -PathType Leaf)) {
 
 $targetDir = Join-Path $BundleDirectory '7za'
 New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
-Copy-Item -LiteralPath $sourceExe -Destination (Join-Path $targetDir '7za.exe') -Force
+Copy-Item -LiteralPath $sourceExe -Destination (Join-Path $targetDir '7z.exe') -Force
+Copy-Item -LiteralPath $sourceDll -Destination (Join-Path $targetDir '7z.dll') -Force
 Copy-Item -LiteralPath $licenseFile -Destination (Join-Path $targetDir 'License.txt') -Force
-Write-Host "Bundled 7za.exe $Version into $targetDir"
+Write-Host "Bundled full 7z.exe $Version into $targetDir"

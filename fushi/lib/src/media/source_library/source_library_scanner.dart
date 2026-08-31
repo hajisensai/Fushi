@@ -45,6 +45,7 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show kDragPlaylistExtensions;
 import 'package:fushi/src/media/import/sidecar_finder.dart';
 import 'package:fushi/src/media/media_extensions.dart';
+import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
 import 'package:fushi/src/media/manga/manga_importer.dart';
 import 'package:fushi/src/media/manga/manga_storage.dart'
     show MangaImportException;
@@ -88,6 +89,13 @@ const Set<String> kScanVideoSubtitleExts = <String>{'srt', 'vtt', 'ass', 'ssa'};
 /// 漫画 manifest 扩展名白名单（小写、不带点）。页图目录不靠扩展名代表整卷，
 /// 由 [planScanFromFileList] 按目录结构另行归组。
 const Set<String> kScanMangaExtensions = <String>{'mokuro'};
+
+/// Local or remote manga archives handled by the 7-Zip-backed importer.
+const Set<String> kScanMangaArchiveExtensions = <String>{
+  'rar',
+  'cbr',
+  'cb7',
+};
 
 /// One pending book item: EPUB path + optional same-stem sidecar subtitle/audio.
 ///
@@ -203,6 +211,20 @@ class ScanMangaItem {
   int get hashCode => mokuroPath.hashCode;
 }
 
+@immutable
+class ScanMangaArchiveItem {
+  const ScanMangaArchiveItem({required this.archivePath});
+
+  final String archivePath;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ScanMangaArchiveItem && other.archivePath == archivePath;
+
+  @override
+  int get hashCode => archivePath.hashCode;
+}
+
 /// One pending pure-image manga folder scanned from a local manga source.
 @immutable
 class ScanMangaFolderItem {
@@ -227,6 +249,7 @@ class ScanPlan {
     this.videos = const <ScanVideoItem>[],
     this.playlists = const <ScanPlaylistItem>[],
     this.mangas = const <ScanMangaItem>[],
+    this.mangaArchives = const <ScanMangaArchiveItem>[],
     this.mangaFolders = const <ScanMangaFolderItem>[],
   });
 
@@ -241,6 +264,9 @@ class ScanPlan {
 
   /// Pending manga items (`.mokuro` volume manifests).
   final List<ScanMangaItem> mangas;
+
+  /// Pending RAR/CBR/CB7 manga archives.
+  final List<ScanMangaArchiveItem> mangaArchives;
 
   /// Pending local pure-image manga folders.
   final List<ScanMangaFolderItem> mangaFolders;
@@ -315,6 +341,7 @@ ScanPlan planScanFromFileList(
   final List<ScanVideoItem> videos = <ScanVideoItem>[];
   final List<ScanPlaylistItem> playlists = <ScanPlaylistItem>[];
   final List<ScanMangaItem> mangas = <ScanMangaItem>[];
+  final List<ScanMangaArchiveItem> mangaArchives = <ScanMangaArchiveItem>[];
 
   for (final SourceFileEntry e in files) {
     if (e.isDirectory) continue;
@@ -330,6 +357,10 @@ ScanPlan planScanFromFileList(
     // `.mokuro` 漫画卷（与其余白名单两两不相交，book/video 分类零影响）。
     if (kScanMangaExtensions.contains(ext)) {
       mangas.add(ScanMangaItem(mokuroPath: e.path));
+      continue;
+    }
+    if (kScanMangaArchiveExtensions.contains(ext)) {
+      mangaArchives.add(ScanMangaArchiveItem(archivePath: e.path));
       continue;
     }
     if (kScanBookExtensions.contains(ext)) {
@@ -375,6 +406,7 @@ ScanPlan planScanFromFileList(
     videos: videos,
     playlists: playlists,
     mangas: mangas,
+    mangaArchives: mangaArchives,
     mangaFolders: mangaRootPath == null
         ? const <ScanMangaFolderItem>[]
         : _planLocalMangaImageFolders(
@@ -440,10 +472,15 @@ List<ScanMangaFolderItem> _planLocalMangaImageFolders({
 /// Source-library scanner: scans one [SourceLibraryRow] root, inserts the media
 /// owned by this source, and writes back the scan result.
 class SourceLibraryScanner {
-  SourceLibraryScanner(this._db) : _videoRepo = VideoBookRepository(_db);
+  SourceLibraryScanner(
+    this._db, {
+    MangaSevenZipExtractor? mangaSevenZipExtractor,
+  })  : _videoRepo = VideoBookRepository(_db),
+        _mangaSevenZipExtractor = mangaSevenZipExtractor;
 
   final FushiDatabase _db;
   final VideoBookRepository _videoRepo;
+  final MangaSevenZipExtractor? _mangaSevenZipExtractor;
 
   /// 从来源行解析文件系统：local → LocalSourceFileSystem；网络 → 解出连接参数
   /// （configJson）+ 凭据（SourceLibraryCredentialStore）构造 NetworkSourceFileSystem。
@@ -572,6 +609,8 @@ class SourceLibraryScanner {
         for (final ScanVideoItem item in plan.videos) item.videoPath,
         for (final ScanPlaylistItem item in plan.playlists) item.playlistPath,
         for (final ScanMangaItem item in plan.mangas) item.mokuroPath,
+        for (final ScanMangaArchiveItem item in plan.mangaArchives)
+          item.archivePath,
         for (final ScanMangaFolderItem item in plan.mangaFolders)
           item.folderPath,
       ];
@@ -791,6 +830,22 @@ class SourceLibraryScanner {
             '${e.title} (${item.mokuroPath})');
       }
     }
+    for (final ScanMangaArchiveItem item in plan.mangaArchives) {
+      try {
+        await MangaArchiveImporter.importArchive(
+          db: _db,
+          archivePath: item.archivePath,
+          title: p.basenameWithoutExtension(item.archivePath),
+          sourceId: sourceId,
+          policy: const DuplicatePolicy.skip(),
+          sevenZipExtractor: _mangaSevenZipExtractor,
+        );
+        count++;
+      } on DuplicateImportCancelledException catch (e) {
+        debugPrint('SourceLibraryScanner skip duplicate manga '
+            '${e.title} (${item.archivePath})');
+      }
+    }
     for (final ScanMangaFolderItem item in plan.mangaFolders) {
       try {
         await MangaImporter.importFromImageFolder(
@@ -828,7 +883,7 @@ class SourceLibraryScanner {
     int sourceId,
     SourceFileSystem fs,
   ) async {
-    if (plan.mangas.isEmpty) return 0;
+    if (plan.mangas.isEmpty && plan.mangaArchives.isEmpty) return 0;
     final List<EpubBookRow> existingBooks = await _db.getAllEpubBooks();
     final Set<String> existingTitleKeys = existingBooks
         .map((EpubBookRow b) => sanitizeTtuFilename(b.title))
@@ -940,6 +995,40 @@ class SourceLibraryScanner {
         } on DuplicateImportCancelledException catch (e) {
           debugPrint('SourceLibraryScanner skip duplicate manga '
               '${e.title} (${item.mokuroPath})');
+        }
+      } finally {
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    }
+    for (final ScanMangaArchiveItem item in plan.mangaArchives) {
+      final String archiveName = sourceEntryBasename(item.archivePath);
+      final String title = p.basenameWithoutExtension(archiveName);
+      if (existingTitleKeys.contains(sanitizeTtuFilename(title))) {
+        debugPrint('SourceLibraryScanner skip duplicate manga '
+            '$title (${item.archivePath})');
+        continue;
+      }
+      final Directory tmp =
+          Directory.systemTemp.createTempSync('m1c_scan_manga_archive_');
+      try {
+        final String localArchive =
+            await fs.copyToLocal(item.archivePath, tmp.path);
+        try {
+          await MangaArchiveImporter.importArchive(
+            db: _db,
+            archivePath: localArchive,
+            title: title,
+            sourceId: sourceId,
+            policy: const DuplicatePolicy.skip(),
+            sevenZipExtractor: _mangaSevenZipExtractor,
+          );
+          count++;
+          existingTitleKeys.add(sanitizeTtuFilename(title));
+        } on DuplicateImportCancelledException catch (e) {
+          debugPrint('SourceLibraryScanner skip duplicate manga '
+              '${e.title} (${item.archivePath})');
         }
       } finally {
         try {

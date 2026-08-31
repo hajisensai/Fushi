@@ -21,6 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:fushi/src/epub/epub_storage.dart';
+import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
@@ -200,6 +201,7 @@ void main() {
       expect(plan.videos, isEmpty);
       expect(plan.playlists, isEmpty);
       expect(plan.mangas, isEmpty);
+      expect(plan.mangaArchives, isEmpty);
     });
 
     // 漫画扫描根：.mokuro 分类进 mangas，不混进 books/videos/playlists；未提供
@@ -221,6 +223,20 @@ void main() {
       expect(plan.videos.single.videoPath, '/lib/movie.mp4');
       expect(plan.playlists, isEmpty);
       expect(plan.mangaFolders, isEmpty);
+    });
+
+    test('.rar / .cbr / .cb7 classify as manga archives', () {
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        _file('/lib/vol1.rar'),
+        _file('/lib/vol2.cbr'),
+        _file('/lib/vol3.cb7'),
+      ]);
+
+      expect(
+        plan.mangaArchives
+            .map((ScanMangaArchiveItem item) => item.archivePath),
+        <String>['/lib/vol1.rar', '/lib/vol2.cbr', '/lib/vol3.cb7'],
+      );
     });
 
     test('纯页图扫描根本身作为一卷', () {
@@ -1516,6 +1532,58 @@ sub_b/ep2.mp4
       expect(book.sourceId, sid);
     });
 
+    test('RAR 漫画包可扫描导入并回填 sourceId', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final File rar = File(p.join(tmp.path, 'volume-03.rar'))
+        ..writeAsBytesSync(<int>[0x52, 0x61, 0x72, 0x21]);
+      final List<int> png =
+          img.encodePng(img.Image(width: 20, height: 40));
+      final MangaSevenZipExtractor extractor = MangaSevenZipExtractor(
+        sevenZipOverride: 'fake-7z',
+        runProcess: (String executable, List<String> arguments) async {
+          if (arguments.first == 'l') {
+            return ProcessResult(1, 0, '''
+Path = ${rar.path}
+Type = Rar
+
+----------
+Path = 001.png
+Size = ${png.length}
+Attributes = A
+''', '');
+          }
+          final String outputArg =
+              arguments.firstWhere((String arg) => arg.startsWith('-o'));
+          File(p.join(outputArg.substring(2), '001.png'))
+              .writeAsBytesSync(png);
+          return ProcessResult(2, 0, '', '');
+        },
+      );
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'RAR manga',
+        mediaKind: 'manga',
+        rootPath: tmp.path,
+        recursive: const Value(true),
+        createdAt: 1000,
+      ));
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+      final SourceScanSummary summary = await SourceLibraryScanner(
+        db,
+        mangaSevenZipExtractor: extractor,
+      ).scan(source);
+
+      expect(summary.error, isNull);
+      expect(summary.importedMediaCount, 1);
+      expect(summary.discoveredPaths, <String>[rar.path]);
+      final EpubBookRow book = (await db.getAllEpubBooks()).single;
+      expect(book.title, 'volume-03');
+      expect(book.format, BookFormat.manga.dbValue);
+      expect(book.sourceId, sid);
+    });
+
     test('选择上级目录可逐卷导入纯页图子目录，重扫静默去重', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
@@ -1641,6 +1709,8 @@ sub_b/ep2.mp4
         reason: 'mokuro 扫描必须复用既有导入链');
     expect(src.contains('MangaImporter.importFromImageFolder'), isTrue,
         reason: '纯页图扫描必须复用既有目录导入链');
+    expect(src.contains('MangaArchiveImporter.importArchive'), isTrue,
+        reason: 'RAR/CBR/CB7 扫描必须复用既有压缩包导入链');
     expect(src.contains('policy: const DuplicatePolicy.skip()'), isTrue,
         reason: '后台扫描必须静默去重，不能重扫生成 X (2)');
   });
