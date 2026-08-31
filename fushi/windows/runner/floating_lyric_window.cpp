@@ -203,6 +203,39 @@ bool FloatingLyricWindow::OwnsLiveWindow() const {
              GetWindowLongPtr(hwnd_, GWLP_USERDATA)) == this;
 }
 
+// 窗口没了以后必须归零的**全部**每窗口交互状态。只此一份。
+//
+// BUG-1981 初版在 Show() 的死句柄分支和 WM_NCDESTROY 里各写了一份复位表，两份
+// 还互不相等，都漏了 `tracking_mouse_leave_`：它卡在 true 之后，WM_MOUSEMOVE 里
+// 的 `if (!tracking_mouse_leave_)` 恒假 → 新 HWND 上永远不再调 TrackMouseEvent
+// → 永远收不到 WM_MOUSELEAVE → `hovered_` 也清不掉，悬停效果和工具条自动隐藏
+// 本会话整个作废。逐路径补复位早晚会再漏一项，所以收成这一个原语。
+//
+// 与 Hide() 的状态复位半段逐项一致；Hide() 另有窗口操作（ApplyPassThroughExStyle /
+// ShowWindow）和「窗口还活着，只是藏起来」的语义，故不并入这里。
+void FloatingLyricWindow::ResetWindowInteractionState() {
+  visible_ = false;
+  hovered_ = false;
+  tracking_mouse_leave_ = false;
+  toolbar_revealed_ = false;
+  pass_through_toolbar_.Hide();
+  slot_tooltip_.Hide();
+  CancelPointerGesture();
+  StopHoverLookupPolling();
+  StopToolbarRevealPolling();
+  ResetHoverLookupAnchor();
+}
+
+// 句柄已不是我方活窗（外部 WM_CLOSE、teardown，或被系统回收）时把它彻底忘掉，
+// 让下一次 Show() 从零重建。活窗时是 no-op，可以无条件在 Show() 开头调。
+void FloatingLyricWindow::ForgetDeadWindow() {
+  if (OwnsLiveWindow()) {
+    return;
+  }
+  hwnd_ = nullptr;
+  ResetWindowInteractionState();
+}
+
 bool FloatingLyricWindow::EnsureDeviceResources() {
   if (d2d_factory_ == nullptr) {
     HRESULT hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,
@@ -404,12 +437,7 @@ bool FloatingLyricWindow::Show(HWND owner) {
   // BUG-1981：WM_CLOSE/外部 teardown 会销毁 HWND，但旧对象仍跨 gal 会话复用。
   // 对失效（或已被系统复用）的句柄调用 ShowWindow/SetWindowPos 都不会抛，旧实现却
   // 无条件返回 true，Dart 因而永久把一个不存在的窗口记成“已显示”。
-  if (hwnd_ != nullptr && !OwnsLiveWindow()) {
-    hwnd_ = nullptr;
-    visible_ = false;
-    pass_through_toolbar_.Hide();
-    slot_tooltip_.Hide();
-  }
+  ForgetDeadWindow();
 
   if (hwnd_ == nullptr) {
     // Initial position: bottom-centre of the active monitor, like a desktop
@@ -521,7 +549,10 @@ void FloatingLyricWindow::Hide() {
 }
 
 bool FloatingLyricWindow::IsShowing() const {
-  return visible_ && hwnd_ != nullptr && IsWindowVisible(hwnd_);
+  // 裸 `hwnd_ != nullptr` 是 BUG 回归 signature：HWND 会被系统回收给别的窗口，
+  // 那时 IsWindowVisible(回收句柄) 照样返 true，Dart 侧镜像便永远不复位、
+  // 自动重开和工具栏按钮双双失灵（BUG-1981）。身份判据只能是 OwnsLiveWindow()。
+  return visible_ && OwnsLiveWindow() && IsWindowVisible(hwnd_);
 }
 
 void FloatingLyricWindow::UpdateText(const std::wstring& text,
@@ -1159,12 +1190,10 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       // Clear ownership at the actual HWND lifetime boundary. Show() can then
       // rebuild the body on the next automatic line or manual-open request.
       HWND destroyed = hwnd_;
-      visible_ = false;
-      pass_through_toolbar_.Hide();
-      slot_tooltip_.Hide();
-      CancelPointerGesture();
-      StopHoverLookupPolling();
-      StopToolbarRevealPolling();
+      // 走与 Show() 死句柄分支同一张复位表。这里不能用 ForgetDeadWindow()：
+      // WM_NCDESTROY 期间窗口尚未真正消失，OwnsLiveWindow() 仍为真，会被它的
+      // 幂等守卫挡掉。
+      ResetWindowInteractionState();
       SetWindowLongPtr(destroyed, GWLP_USERDATA, 0);
       hwnd_ = nullptr;
       return DefWindowProc(destroyed, message, wparam, lparam);

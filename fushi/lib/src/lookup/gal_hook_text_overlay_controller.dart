@@ -720,6 +720,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
       _visible = false;
       notifyListeners();
     }
+    // 上面这个 await 是新开的挂起点：用户在它挂起期间点「关闭浮窗」会置位
+    // `_suppressedForSession` 并把窗口收掉，恢复执行时 `_visible` 恰好是 false，
+    // 于是下面这段会把用户刚关掉的浮窗又弹回来。挂起点之后必须重检一次。
+    if (_suppressedForSession) return;
     if (!_visible) {
       await GalHookTextOverlayChannel.updateText(
         lineId: latest.id,

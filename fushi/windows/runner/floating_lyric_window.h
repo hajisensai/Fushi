@@ -239,6 +239,8 @@ class FloatingLyricWindow {
 
   void EnsureWindowClass();
   bool OwnsLiveWindow() const;
+  void ResetWindowInteractionState();
+  void ForgetDeadWindow();
   bool EnsureDeviceResources();
   void DiscardDeviceResources();
   bool EnsureTextResources();

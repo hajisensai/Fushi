@@ -34,7 +34,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1983](bugs/BUG-1983-gal-layout-whitespace-fold.md) | ✅ | ✅ | Gal 同句换行快照未原地折叠导致换行错乱 |
-| [BUG-1982](bugs/BUG-1982-global-lookup-stale-route-flash.md) | ✅ | ✅ | 全局查词旧尺寸消息冒充新查询导致首次闪跳 |
+| [BUG-1982](bugs/BUG-1982-global-lookup-stale-route-flash.md) | 🚧 | ✅ | 全局查词旧尺寸消息冒充新查询导致首次闪跳 |
 | [BUG-1981](bugs/BUG-1981-hook-overlay-dead-window-reopen.md) | ✅ | ✅ | Hook 浮窗 HWND 失效后自动与手动打开都无窗口 |
 | [BUG-1978](bugs/BUG-1978-hunex-toolbar-thread-merged.md) | ✅ | ✅ | HUNEX 顶部控制栏线程被并入剧情台词 |
 | [BUG-1977](bugs/BUG-1977-hunex-hfa-voice-resource-pairing.md) | 🚧 | ✅ | HUNEX HFA/HW 源语音未与台词配对 |
