@@ -61,14 +61,21 @@ void main() {
   late GalHookSessionController session;
   late GalHookTextOverlayController controller;
   late Map<String, Object?> preferences;
+  late bool nativeShowing;
 
   setUp(() {
     nativeCalls = <MethodCall>[];
     preferences = <String, Object?>{};
+    nativeShowing = false;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
           nativeCalls.add(call);
-          if (call.method == 'show' || call.method == 'isShowing') return true;
+          if (call.method == 'show') {
+            nativeShowing = true;
+            return true;
+          }
+          if (call.method == 'hide') nativeShowing = false;
+          if (call.method == 'isShowing') return nativeShowing;
           return null;
         });
     GalHookTextOverlayChannel.platformOverride = true;
@@ -198,6 +205,31 @@ void main() {
       expect(controller.isSuppressedForSession, isFalse);
     },
   );
+
+  test('native HWND 消失后自动重建，手动按钮不再只信 Dart 可见镜像', () async {
+    await controller.start(appModel: AppModel(testPlatformServices()));
+    await startSession();
+    final TexthookerLineEntry first = textService.appendLine(
+      '最初の台詞',
+      source: TexthookerLineSource.websocket,
+    )!;
+    await _waitUntil(() => controller.displayedLineId == first.id);
+    final int initialShows = nativeCalls
+        .where((MethodCall call) => call.method == 'show')
+        .length;
+
+    // 模拟 HWND 被系统销毁：Dart 仍保留上一次 show=true 的镜像。
+    nativeShowing = false;
+    textService.appendLine('次の台詞', source: TexthookerLineSource.websocket);
+
+    await _waitUntil(
+      () =>
+          nativeCalls.where((MethodCall call) => call.method == 'show').length >
+          initialShows,
+    );
+    expect(nativeShowing, isTrue);
+    expect(controller.isVisible, isTrue);
+  });
 
   test('selected text thread alone drives the floating line', () async {
     await controller.start(appModel: AppModel(testPlatformServices()));

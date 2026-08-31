@@ -272,13 +272,29 @@ void main() {
   });
 }
 
-/// 只捕获 `findProxy` 的最小 [HttpClient] 桩。
+/// 只捕获 `findProxy` / `authenticateProxy` 的最小 [HttpClient] 桩。
 ///
 /// 不用真 `HttpClient()`：flutter_test 默认装了 `HttpOverrides`，`HttpClient()` 拿到的是
 /// 框架的 mock，`findProxy` 未必存得住——那样测的就是 mock 的行为而不是本仓代码的。
+///
+/// BUG-1980 起 `applyAppProxy` 在手动模式下还会装 `authenticateProxy`（407 challenge
+/// 时注入凭据）。桩必须把用到的成员都模型化：`noSuchMethod` 走的是 `Object` 的实现、
+/// 对任何未显式实现的成员直接抛，漏一个就是整组用例 error 而不是断言失败。
 class _CapturingHttpClient implements HttpClient {
   @override
   String Function(Uri url)? findProxy;
+
+  @override
+  Future<bool> Function(String host, int port, String scheme, String? realm)?
+      authenticateProxy;
+
+  @override
+  void addProxyCredentials(
+    String host,
+    int port,
+    String realm,
+    HttpClientCredentials credentials,
+  ) {}
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

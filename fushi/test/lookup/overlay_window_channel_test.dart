@@ -189,4 +189,38 @@ void main() {
     );
     expect(r.monitorDpr, 0);
   });
+
+  test('JS 自带的查询路由优先于 native 窗口当前路由', () async {
+    const StandardMethodCodec codec = StandardMethodCodec();
+    const OverlayWindowChannel panel = OverlayWindowChannel(kSecondChannel);
+    OverlayReverseEvent? received;
+    panel.setHandlers(
+      onGetMedia: (_) async => Uint8List(0),
+      onJsMessage: (_) {},
+      onRoutedJsMessage: (OverlayReverseEvent event) => received = event,
+    );
+
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          kSecondChannel.name,
+          codec.encodeMethodCall(
+            const MethodCall('jsMessage', <String, Object?>{
+              'payload':
+                  '{"handler":"overlaySize","__source":"desktop",'
+                  '"__routeEpoch":2,"__lookupEpoch":3}',
+              // ShowAt 已把 native HWND 改绑到新查询，但这条消息是在改绑前
+              // 由旧页面排队的；消息内 epoch 才是事件发生时的不可变身份。
+              'source': 'desktop',
+              'routeEpoch': 9,
+              'lookupEpoch': 10,
+            }),
+          ),
+          (_) {},
+        );
+
+    expect(
+      received?.route,
+      const GlobalLookupRoute.desktop(routeEpoch: 2, lookupEpoch: 3),
+    );
+  });
 }
