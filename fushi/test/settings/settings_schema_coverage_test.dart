@@ -349,6 +349,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Capture selection context':
       'test/lookup/sentence_extraction_test.dart',
   'system/Enable debug log': 'test/utils/misc/debug_log_service_test.dart',
+  // BUG-1980 代理模式三态（自动/直连/手动）：写 prefsRepo（changed=true），生效点是
+  // app_proxy.dart 的出口裁决与 HttpClient.findProxy / authenticateProxy 装配——
+  // harness 里没有真实公网出站可探。三态语义（direct 忽略 env 与已填地址、manual
+  // 归一失败时安全直连不偷用系统代理、legacy 存量值 fail-open、407 凭据只交付一次）
+  // 由 app_proxy_local_bypass_test 的纯判据用例咬住。
+  'system/Proxy mode': 'test/utils/net/app_proxy_local_bypass_test.dart',
   // P2P 走代理开关：写 prefsRepo（changed=true），生效点是 libtorrent session 的
   // proxy 设置，harness 里没有原生引擎可探。开关语义（默认直连 / 开了才跟全局
   // 出口）由 resolveP2pProxyHostPort 纯函数用例 + C ABI 桥源码守卫咬住。

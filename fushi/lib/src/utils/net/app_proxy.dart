@@ -50,7 +50,8 @@ String Function() appUserProxyReader = () => '';
 /// 否则按 auto。AppModel 初始化后只会返回 auto/direct/manual。
 String Function() appUserProxyModeReader = () => 'legacy';
 
-/// 手动 HTTP 代理 Basic/Digest 认证凭据。密码只在代理发起 407 challenge 时交给
+/// 手动 HTTP 代理 **Basic** 认证凭据（Digest 未实现，challenge 时直接放弃而不是
+/// 塞一份永远匹配不上的 Basic 凭据进无限重试环）。密码只在代理发起 407 challenge 时交给
 /// [HttpClient.addProxyCredentials]，不拼进 URL / 日志 / findProxy 指令。
 String Function() appUserProxyUsernameReader = () => '';
 String Function() appUserProxyPasswordReader = () => '';
@@ -58,19 +59,38 @@ String Function() appUserProxyPasswordReader = () => '';
 String _effectiveProxyMode(String proxy) {
   final String mode = appUserProxyModeReader();
   if (mode == 'auto' || mode == 'direct' || mode == 'manual') return mode;
-  return proxy.trim().isEmpty ? 'auto' : 'manual';
+  // legacy 兜底判据必须是「归一得出来」而不是「非空」：设置页历来对非法地址只弹
+  // SnackBar 却仍存原串，所以存量里有 `[::1]:7890`（IPv6 不支持）、带路径、带空格
+  // 等「存下来了但归一失败」的值。按非空推成 manual，manual 归一失败又硬走 DIRECT
+  // = 存量用户升级即全应用断网。旧行为在这种值上是 fail-open（落回 env > 系统代理），
+  // 判据换成归一成功与否，与旧短路条件逐字等价。
+  return normalizeUserProxyHostPort(proxy) == null ? 'auto' : 'manual';
 }
 
 void _installManualProxyCredentials(HttpClient client,
     {bool forceManual = false}) {
+  // 没配用户名 = 没有可交付的凭据。装一个恒返 false 的回调只有副作用：全应用每个
+  // HttpClient 都白挂一个捕获 client 的闭包。代价是凭据变成早绑定——用户中途填了
+  // 用户名，已建好的 client 拿不到钩子；设置页三个 onChanged 都调了
+  // resetSyncHttpClient()、更新检查每次新建 client，只有 dictionary_dio 那个进程级
+  // Dio 要等重启，可接受。
+  if (appUserProxyUsernameReader().isEmpty) return;
+  // 同一 (host, port, scheme, realm) 只交付一次凭据。dart:io 的 retry() 没有深度
+  // 计数器：密码错时它会「407 → 移除已用凭据 → 再问回调 → 又加同一份 → retry」
+  // 无限打转，请求永不返回、用户只看到转圈。被问第二次就说明上一份被代理拒了。
+  final Set<String> attempted = <String>{};
   client.authenticateProxy =
       (String host, int port, String scheme, String? realm) async {
     if (!forceManual &&
         _effectiveProxyMode(appUserProxyReader()) != 'manual') {
       return false;
     }
+    // 只支持 Basic。塞 Basic 凭据去应付 Digest challenge，findCredentials 永远
+    // 匹配不到，同样进无限环。
+    if (scheme.toLowerCase() != 'basic') return false;
     final String username = appUserProxyUsernameReader();
     if (username.isEmpty) return false;
+    if (!attempted.add('$host:$port|$scheme|${realm ?? ''}')) return false;
     client.addProxyCredentials(
       host,
       port,
@@ -179,8 +199,12 @@ bool _isValidProxyHost(String host) {
 /// [resolveLinuxSystemProxyEnvironment]）。
 ///
 /// [userProxy] 省略时取进程级真相源 [appUserProxyReader]（见其文档：全局配置不该靠逐条
-/// 调用链穿参，穿漏一处就是一条不走代理的暗路）。显式传值仍然优先，故既有调用点行为
-/// 逐字不变。
+/// 调用链穿参，穿漏一处就是一条不走代理的暗路）。
+///
+/// ⚠️ BUG-1980 起进程级模式一旦是 auto/direct/manual 之一（AppModel 初始化后恒成立），
+/// [userProxy] **会被完全忽略**——它只在没有显式模式的精简入口/旧测试里还起作用。
+/// 生产的三个调用点传的都是同一个 `updateCustomProxy`，行为等价；但别再指望用这个
+/// 参数「给某个 client 单独指定一个代理」，那会被静默吞掉。
 Future<void> applyAppProxy(HttpClient client, {String? userProxy}) async {
   // 手动模式直接短路，不参与 env>GUI>DIRECT 排序，消除「手填 vs 系统代理」
   // 覆盖顺序不确定（TODO-871/862）。

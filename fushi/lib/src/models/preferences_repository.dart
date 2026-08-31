@@ -19,6 +19,10 @@ import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
+// 迁移判据要用「这个存量代理地址归一得出来吗」，与 applyAppProxy 同一份实现，
+// 不在这里重写一遍（重写就会漂移，而漂移的后果是存量用户升级即断网）。
+import 'package:fushi/src/utils/net/app_proxy.dart'
+    show normalizeUserProxyHostPort;
 import 'package:fushi/src/mining/immersion_mining_request.dart'
     show MiningAnimatedFormat, MiningStillFormat, VideoMiningImageMode;
 import 'package:fushi/src/models/audio_source_config.dart';
@@ -2326,7 +2330,12 @@ class PreferencesRepository extends ChangeNotifier {
     if (stored == 'auto' || stored == 'direct' || stored == 'manual') {
       return stored!;
     }
-    return updateCustomProxy.trim().isEmpty ? 'auto' : 'manual';
+    // 迁移判据是「这个存量地址归一得出来吗」，不是「非空吗」。设置页对非法地址只
+    // 弹 SnackBar 但仍存原串，非空判据会把这类值推成 manual，而 manual 归一失败
+    // 时硬走 DIRECT —— 存量用户升级即断网。只有「显式选了 manual」才该 fail-closed。
+    return normalizeUserProxyHostPort(updateCustomProxy) == null
+        ? 'auto'
+        : 'manual';
   }
 
   Future<void> setNetworkProxyMode(String value) async {

@@ -271,6 +271,56 @@ void main() {
       expect(client.addedCredential?.$3, 'realm');
       expect(client.addedCredential?.$4, isA<HttpClientBasicCredentials>());
     });
+
+    test('同一 challenge 只交付一次凭据——密码错时不得进无限重试环（BUG-1980）',
+        () async {
+      // dart:io 的 retry() 没有深度计数器：回调每次都 addProxyCredentials + 返回
+      // true 的话，密码错就会「407 → 移除已用凭据 → 再问回调 → 又加同一份 → retry」
+      // 无限打转，请求永不返回、用户只看到转圈。被问第二次 = 上一份被代理拒了。
+      appUserProxyReader = () => '1.2.3.4:8080';
+      appUserProxyModeReader = () => 'manual';
+      appUserProxyUsernameReader = () => 'alice';
+      appUserProxyPasswordReader = () => 'wrong-password';
+      final _CapturingHttpClient client = _CapturingHttpClient();
+
+      applyAppProxySync(client);
+      expect(await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'realm'),
+          isTrue,
+          reason: '第一次必须交付，否则认证代理根本用不了');
+      expect(await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'realm'),
+          isFalse,
+          reason: '第二次必须收手，让 dart:io 把 407 抛给调用方而不是无限重试');
+      // 另一个 realm 是另一次 challenge，不受上一次影响。
+      expect(await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'other'),
+          isTrue);
+    });
+
+    test('Digest challenge 直接放弃，不塞永远匹配不上的 Basic 凭据（BUG-1980）',
+        () async {
+      appUserProxyReader = () => '1.2.3.4:8080';
+      appUserProxyModeReader = () => 'manual';
+      appUserProxyUsernameReader = () => 'alice';
+      appUserProxyPasswordReader = () => 'secret';
+      final _CapturingHttpClient client = _CapturingHttpClient();
+
+      applyAppProxySync(client);
+      expect(await client.capturedAuth!('1.2.3.4', 8080, 'Digest', 'realm'),
+          isFalse,
+          reason: 'findCredentials(Digest) 永远匹配不到 Basic 凭据，返 true 就是'
+              '「无凭据 → 问回调 → 加 Basic → retry」的无限环');
+      expect(client.addedCredential, isNull);
+    });
+
+    test('没配用户名时根本不装认证钩子（不给每个 client 白挂捕获闭包）', () {
+      appUserProxyReader = () => '1.2.3.4:8080';
+      appUserProxyModeReader = () => 'manual';
+      appUserProxyUsernameReader = () => '';
+      appUserProxyPasswordReader = () => '';
+      final _CapturingHttpClient client = _CapturingHttpClient();
+
+      applyAppProxySync(client);
+      expect(client.capturedAuth, isNull);
+    });
     test('装上的闭包非空——裸 HttpClient 的 findProxy 恒为 null，那正是根因形态', () {
       final _CapturingHttpClient client = _CapturingHttpClient();
       expect(client.captured, isNull);
