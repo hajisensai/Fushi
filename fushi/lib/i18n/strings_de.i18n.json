@@ -4073,5 +4073,6 @@
   "game_lookup_attached_profile_clear_title": "Clear lookup profile?",
   "game_lookup_attached_profile_clear_body": "The saved rectangle, text layout, and executable-specific click authorization will be removed.",
   "game_lookup_attached_probe_waiting": "Waiting for matching in-game click",
-  "delete_choices_remember": "Diese Auswahl merken"
+  "delete_choices_remember": "Diese Auswahl merken",
+  "anki_error_paired_device_unreachable": "Couldn't create the card because no paired device could be reached. Make sure Fushi is running on the paired device, or turn off Mine to paired device in Anki settings to create cards locally."
 }

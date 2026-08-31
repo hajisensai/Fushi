@@ -62,7 +62,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   static const String pairedDeviceUnreachableMessage =
       "Couldn't create the card because no paired device could be reached. "
       'Make sure Fushi is running on the paired device, or turn off '
-      '"Mine to paired device" to create cards locally.';
+      'Mine to paired device in Anki settings to create cards locally.';
 
   final BaseAnkiRepository _local;
   final RemoteMineSender _client;
@@ -223,7 +223,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     if (json == null) {
       return MineOutcome.failure(
         pairedDeviceUnreachableMessage,
-        errorCode: AnkiErrorCode.connectionUnknown,
+        errorCode: AnkiErrorCode.pairedDeviceUnreachable,
       );
     }
     final String result = json['result']?.toString() ?? MineResult.error.name;

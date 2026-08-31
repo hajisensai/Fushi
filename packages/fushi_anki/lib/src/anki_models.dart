@@ -1201,6 +1201,12 @@ class AnkiErrorCode {
   static const String httpError = 'ANKI_HTTP_ERROR';
   static const String connectionUnknown = 'ANKI_CONNECTION_UNKNOWN';
 
+  /// BUG-1988：互联远端制卡没有任何已配对设备可达。
+  /// 与本机 AnkiConnect 连接错误分开，让主 app 能提示用户启动对端 Fushi，
+  /// 或关闭「制卡到已配对设备」改为本机制卡。
+  static const String pairedDeviceUnreachable =
+      'ANKI_PAIRED_DEVICE_UNREACHABLE';
+
   /// BUG-1900：配置的字段名**一个都不属于**当前笔记类型。
   ///
   /// AnkiConnect 按字段**名**匹配，不认识的名字被静默丢弃；而

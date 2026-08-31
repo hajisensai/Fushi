@@ -4073,5 +4073,6 @@
   "game_lookup_attached_profile_clear_title": "清除查词档案？",
   "game_lookup_attached_profile_clear_body": "将删除已保存的正文框、文字布局及该 exe 的点击风险授权。",
   "game_lookup_attached_probe_waiting": "等待游戏内对应字形点击",
-  "delete_choices_remember": "记住这些选择"
+  "delete_choices_remember": "记住这些选择",
+  "anki_error_paired_device_unreachable": "无法制卡：当前没有可连接的已配对设备。请确认配对设备上的 Fushi 正在运行；如果要在本机制卡，请关闭「制卡到已配对设备」。"
 }

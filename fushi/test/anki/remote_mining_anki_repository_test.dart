@@ -241,7 +241,7 @@ void main() {
           rawPayloadJson: '{}',
           context: const AnkiMiningContext(sentence: ''));
 
-      expect(outcome.errorCode, AnkiErrorCode.connectionUnknown);
+      expect(outcome.errorCode, AnkiErrorCode.pairedDeviceUnreachable);
       expect(
         outcome.errorDetail,
         RemoteMiningAnkiRepository.pairedDeviceUnreachableMessage,
