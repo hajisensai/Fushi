@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
+import 'package:fushi/src/sync/backup_service.dart' show isBackupArchiveName;
 
 void main() {
   late Directory tempRoot;
@@ -558,6 +559,28 @@ void main() {
         usage.entries.map((StorageEntryUsage e) => e.bytes).toList(),
         <int>[6000, 4000],
         reason: '明细按字节降序，与其余类目同口径',
+      );
+    });
+
+    test('本地备份独立聚合且不再重复计入缓存（BUG-1979）', () async {
+      writeFile(p.join(cache.path, 'fushi-backup-2026-08-31.fushi.zip'), 9000);
+      writeFile(p.join(cache.path, 'hibiki-backup-old.hibiki.zip'), 3000);
+      writeFile(p.join(cache.path, 'ordinary-cache.bin'), 700);
+
+      final StorageCategoryUsage backups =
+          await categoryOf(StorageCategoryId.backups);
+      final StorageCategoryUsage cached =
+          await categoryOf(StorageCategoryId.cache);
+
+      expect(backups.bytes, 12000);
+      expect(backups.entries, hasLength(1));
+      expect(backups.entries.single.kind, StorageEntryKind.backupArchives);
+      expect(backups.entries.single.paths, hasLength(2));
+      expect(cached.bytes, 700, reason: '总计必须每个字节只算一次');
+      expect(
+        cached.entries.any((StorageEntryUsage e) =>
+            e.paths.any((String path) => isBackupArchiveName(p.basename(path)))),
+        isFalse,
       );
     });
 

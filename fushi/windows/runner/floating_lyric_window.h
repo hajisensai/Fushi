@@ -238,6 +238,9 @@ class FloatingLyricWindow {
   LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) noexcept;
 
   void EnsureWindowClass();
+  bool OwnsLiveWindow() const;
+  void ResetWindowInteractionState();
+  void ForgetDeadWindow();
   bool EnsureDeviceResources();
   void DiscardDeviceResources();
   bool EnsureTextResources();

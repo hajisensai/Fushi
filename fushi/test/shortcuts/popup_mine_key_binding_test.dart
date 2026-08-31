@@ -215,21 +215,52 @@ void main() {
           contains(r'window.__fushiPopupKeyBindings = $popupKeyBindings;'));
     });
 
-    test('视频页：制卡键合并在「浮层可见先关浮层」守卫之后', () {
-      // 这是本次接线最容易做错、且做错了完全没功能的一处：
-      // guardVideoShortcutsWithPopupDismiss 把整张视频快捷键表包成「浮层可见时先关浮层
-      // 并吞掉按键」，其前提是「视频 scope 没有任何作用于浮层本身的快捷键」。而制卡恰恰
-      // 只在浮层可见时才有意义——若把它放进被守卫的表里，按下去只会关掉浮层。
-      final String dart =
+    test('视频页：制卡键的判决必须早于「浮层可见先关浮层」', () {
+      // 这是本次接线最容易做错、且做错了完全没功能的一处：视频键盘通道有一条
+      // 「浮层可见 → 任一已绑视频键先关浮层并吞掉按键」（BUG-924），其前提是
+      // 「视频 scope 没有任何作用于浮层本身的快捷键」。而制卡恰恰只在浮层可见时才有
+      // 意义——判决顺序一旦反过来，按下去只会把浮层关掉，永远制不了卡。
+      //
+      // 方案 D 之后这条顺序住在 press-time 判决函数里（旧实现靠「合并在守卫产物之后」
+      // 达到同样效果）。判据必须**剥注释**：上面这段说明里就同时出现了两个 needle，
+      // 裸 indexOf 会先命中注释、把顺序断言变成永远自洽的空转。
+      final String code = maskComments(
+        File('lib/src/media/video/video_player_shortcuts.dart')
+            .readAsStringSync(),
+      );
+      final int fnAt =
+          code.indexOf('VideoKeyboardResolution resolveVideoKeyboardShortcut(');
+      expect(fnAt, greaterThanOrEqualTo(0),
+          reason: 'press-time 判决函数必须存在（视频键盘通道的唯一真相源）');
+      // 搜索范围必须**框死在这个函数体内**：同文件后面的 `_resolveVideoKeyboardAction`
+      // 也提到 popupMineEntry，不框范围的话「把本函数里的制卡分支整段删掉」仍会命中
+      // 那一处、顺序断言靠位置侥幸自洽。变异实测过。
+      //
+      // 收口判据只能是「整行就是一个 `}`」：`indexOf('\n}')` 会先命中具名参数列表
+      // 收尾的 `\n})` （本函数签名恰好是那个形状），切出来的「函数体」只剩签名——
+      // 那样变异前后都红，红了什么也证明不了。这条坑同样是变异实测抓出来的。
+      final RegExpMatch? closer =
+          RegExp(r'^\}$', multiLine: true).firstMatch(code.substring(fnAt));
+      expect(closer, isNotNull, reason: '判决函数体应以顶格 } 收口');
+      final String body = code.substring(fnAt, fnAt + closer!.start);
+      expect(body, contains('hasEditableFocus'),
+          reason: '切出来的必须是真的函数体（含它的具名参数消费），不是只剩签名');
+      final int mineAt = body.indexOf('ShortcutAction.popupMineEntry');
+      final int dismissAt = body.indexOf(
+        'if (hasVisiblePopup) return VideoKeyboardResolution.dismissPopup;',
+      );
+      expect(mineAt, greaterThanOrEqualTo(0), reason: '判决函数里缺制卡分支');
+      expect(dismissAt, greaterThanOrEqualTo(0),
+          reason: '判决函数里缺「浮层可见先关浮层」分支');
+      expect(mineAt, lessThan(dismissAt),
+          reason: '制卡分支必须先于「先关浮层」返回，否则按下去只会关掉浮层');
+
+      final String page =
           File('lib/src/pages/implementations/video_fushi_page.dart')
               .readAsStringSync();
-      final int guardAt = dart.indexOf('guardVideoShortcutsWithPopupDismiss(');
-      final int mineAt = dart.indexOf('ShortcutAction.popupMineEntry');
-      expect(guardAt, greaterThanOrEqualTo(0));
-      expect(mineAt, greaterThan(guardAt),
-          reason: '制卡绑定必须在守卫产物之后合并，才不会被改判成「关浮层」');
-      expect(dart, contains('.keyboardBindings'));
-      expect(dart, contains('mineFirstVisibleEntry()'));
+      expect(page, contains('_mineFromTopPopup()'),
+          reason: '页面必须把制卡判决接到真正的执行体上');
+      expect(page, contains('mineFirstVisibleEntry()'));
     });
   });
 }

@@ -16,10 +16,7 @@ const String kZatoFullLine =
 void main() {
   group('折叠判据', () {
     test('前缀增长（同一句越写越长）算同一句', () {
-      expect(
-        isProgressiveTextUpdate(kZatoFirst, kZatoFullLine),
-        isTrue,
-      );
+      expect(isProgressiveTextUpdate(kZatoFirst, kZatoFullLine), isTrue);
     });
 
     test('后缀增长（引擎补画整行，旧文本落在末尾）算同一句', () {
@@ -32,10 +29,7 @@ void main() {
     });
 
     test('两句无关的台词不折', () {
-      expect(
-        isProgressiveTextUpdate('おはようございます。', 'いってきます。'),
-        isFalse,
-      );
+      expect(isProgressiveTextUpdate('おはようございます。', 'いってきます。'), isFalse);
     });
 
     test('完全相同的两行不折（游戏确实会连着输出两遍同样的「……」）', () {
@@ -47,20 +41,16 @@ void main() {
     });
 
     test('中缀不算（只认前缀 / 后缀）', () {
-      expect(
-        isProgressiveTextUpdate('abcdefg', 'xxxxabcdefgxxxx'),
-        isFalse,
-      );
+      expect(isProgressiveTextUpdate('abcdefg', 'xxxxabcdefgxxxx'), isFalse);
     });
 
     test('比较前去空白：引擎在段间插的换行不该让同一句判成两句', () {
-      expect(
-        isProgressiveTextUpdate(
-          'あのね、',
-          'あのね、\n  きょうはいいてんきですね',
-        ),
-        isTrue,
-      );
+      expect(isProgressiveTextUpdate('あのね、', 'あのね、\n  きょうはいいてんきですね'), isTrue);
+    });
+
+    test('字符相同但换行变化是排版刷新，完全相同文本仍不是', () {
+      expect(isWhitespaceOnlyLayoutRefresh('前半後半', '前半\n後半'), isTrue);
+      expect(isWhitespaceOnlyLayoutRefresh('前半後半', '前半後半'), isFalse);
     });
   });
 
@@ -93,33 +83,39 @@ void main() {
       // 浏览器扩展），那条通道 5 平台都跑；而逃生开关在 Windows-only 的 game
       // 设置页里。收窄成 engineHook 之后，这个来源门同时就是平台门。
       TexthookerLineEntry? ws(String text, {int? seq}) => service.appendLine(
-            text,
-            source: TexthookerLineSource.websocket,
-            sourceLabel: 'ws://127.0.0.1:6677',
-            sourceSequence: seq,
-          );
+        text,
+        source: TexthookerLineSource.websocket,
+        sourceLabel: 'ws://127.0.0.1:6677',
+        sourceSequence: seq,
+      );
       ws(kZatoFirst, seq: 1);
       ws(kZatoFullLine, seq: 2);
-      expect(service.entries.length, 2,
-          reason: 'WS 送来的是外部工具已经成句的输出，前缀关系不代表同一句');
+      expect(
+        service.entries.length,
+        2,
+        reason: 'WS 送来的是外部工具已经成句的输出，前缀关系不代表同一句',
+      );
     });
 
     test('同为 WS 的两个端点不得互折（守卫必须认 sourceLabel）', () {
       // WS 路径下 textThreadKey 恒 null、source 恒 websocket，能区分 Textractor /
       // mpv / 浏览器扩展的**只有** sourceLabel。这里借 engineHook 源验判据本身
       // （WS 源已被上面那条门挡住，测不到这层）。
-      service.appendLine(kZatoFirst,
-          source: TexthookerLineSource.engineHook,
-          sourceLabel: 'engine_hook_a',
-          sourceSequence: 1,
-          textThreadKey: 'thread-a');
-      service.appendLine(kZatoFullLine,
-          source: TexthookerLineSource.engineHook,
-          sourceLabel: 'engine_hook_b',
-          sourceSequence: 2,
-          textThreadKey: 'thread-a');
-      expect(service.entries.length, 2,
-          reason: '不同端点的输出折成一条就是丢行');
+      service.appendLine(
+        kZatoFirst,
+        source: TexthookerLineSource.engineHook,
+        sourceLabel: 'engine_hook_a',
+        sourceSequence: 1,
+        textThreadKey: 'thread-a',
+      );
+      service.appendLine(
+        kZatoFullLine,
+        source: TexthookerLineSource.engineHook,
+        sourceLabel: 'engine_hook_b',
+        sourceSequence: 2,
+        textThreadKey: 'thread-a',
+      );
+      expect(service.entries.length, 2, reason: '不同端点的输出折成一条就是丢行');
     });
 
     test('折叠增量保留内部空白：拉丁文按词计数不能被焊成一个词', () {
@@ -127,12 +123,19 @@ void main() {
       append(kZatoSecondSegment, seq: 2);
       final String delta = service.lastAppendedDelta;
       expect(delta, isNotEmpty);
-      expect(delta.contains(' '), isTrue,
-          reason: '在 normalizeForFold 的去空白坐标系里切增量，会把 '
-              '"a lovely way to put it" 焊成一个词 —— countGalgameChars 对拉丁'
-              '文本按词计数，空白是唯一的词边界，整段英文台词会被算成 1。');
-      expect(delta, kZatoSecondSegment,
-          reason: '第 ② 拍整段都是新字，增量应当就是它本身（两端 trim）');
+      expect(
+        delta.contains(' '),
+        isTrue,
+        reason:
+            '在 normalizeForFold 的去空白坐标系里切增量，会把 '
+            '"a lovely way to put it" 焊成一个词 —— countGalgameChars 对拉丁'
+            '文本按词计数，空白是唯一的词边界，整段英文台词会被算成 1。',
+      );
+      expect(
+        delta,
+        kZatoSecondSegment,
+        reason: '第 ② 拍整段都是新字，增量应当就是它本身（两端 trim）',
+      );
     });
 
     test('折叠吞掉的行 id 必须被报出来（下游那批 map/timer 还拿它当活键）', () {
@@ -144,11 +147,18 @@ void main() {
       expect(merged, isNotNull);
       // 合并结果复用**最早**那条的 id，所以它不算「被吞」；第 ② 拍那条才是。
       expect(merged!.id, first!.id);
-      expect(service.lastFoldedLineIds, contains(second!.id),
-          reason: '不报出来的话，晚到的语音会写进死 id 被静默丢弃，'
-              '用户的手动裁决也随之失效');
-      expect(service.lastFoldedLineIds, isNot(contains(merged.id)),
-          reason: '合并结果自己的 id 还活着，重定向链不该形成');
+      expect(
+        service.lastFoldedLineIds,
+        contains(second!.id),
+        reason:
+            '不报出来的话，晚到的语音会写进死 id 被静默丢弃，'
+            '用户的手动裁决也随之失效',
+      );
+      expect(
+        service.lastFoldedLineIds,
+        isNot(contains(merged.id)),
+        reason: '合并结果自己的 id 还活着，重定向链不该形成',
+      );
     });
 
     test('制卡 / 收藏位取并集，徽章不会因折叠消失', () {
@@ -157,8 +167,7 @@ void main() {
       expect(second0, isNotNull);
       service.markLineMined(second!.id, noteId: 42);
       final TexthookerLineEntry? merged = append(kZatoFullLine, seq: 3);
-      expect(merged!.mined, isTrue,
-          reason: '用户刚给第 ② 拍制的卡不该在第 ③ 拍折叠后从工作台上消失');
+      expect(merged!.mined, isTrue, reason: '用户刚给第 ② 拍制的卡不该在第 ③ 拍折叠后从工作台上消失');
       expect(merged.minedNoteId, 42);
     });
 
@@ -167,10 +176,24 @@ void main() {
       append(kZatoSecondSegment, seq: 2);
       append(kZatoFullLine, seq: 3);
 
-      expect(service.entries.length, 1,
-          reason: '① 是 ③ 的前缀、② 是 ③ 的后缀，尾巴要一次性回吞干净；'
-              '只折紧邻上一条的话 ① 会留下，第一句照样出现两次。');
+      expect(
+        service.entries.length,
+        1,
+        reason:
+            '① 是 ③ 的前缀、② 是 ③ 的后缀，尾巴要一次性回吞干净；'
+            '只折紧邻上一条的话 ① 会留下，第一句照样出现两次。',
+      );
       expect(service.entries.single.text, kZatoFullLine);
+    });
+
+    test('同句仅更新换行时原地采用最新排版，不新增重复行', () {
+      final TexthookerLineEntry? first = append('大丈夫、話してみた感じ、後半', seq: 1);
+      final TexthookerLineEntry? refreshed = append('大丈夫、話してみた感じ、\n後半', seq: 2);
+
+      expect(service.entries, hasLength(1));
+      expect(refreshed!.id, first!.id, reason: '排版刷新不能换掉制卡/查词使用的行身份');
+      expect(service.entries.single.text, '大丈夫、話してみた感じ、\n後半');
+      expect(service.lastAppendedDelta, isEmpty, reason: '仅换行不应重复计入学习字数');
     });
 
     test('折叠后 lineId 保持最早那条（浮窗/游戏内卡片的身份不跳）', () {
@@ -194,12 +217,18 @@ void main() {
       expect(service.lastAppendedDelta, kZatoFirst);
 
       append(kZatoSecondSegment, seq: 2);
-      expect(service.lastAppendedDelta, kZatoSecondSegment,
-          reason: '② 与 ① 无前后缀关系，是货真价实的新字。');
+      expect(
+        service.lastAppendedDelta,
+        kZatoSecondSegment,
+        reason: '② 与 ① 无前后缀关系，是货真价实的新字。',
+      );
 
       append(kZatoFullLine, seq: 3);
-      expect(service.lastAppendedDelta, isEmpty,
-          reason: '③ = ① + ②，两头都已被计过，这一拍一个新字都没有。');
+      expect(
+        service.lastAppendedDelta,
+        isEmpty,
+        reason: '③ = ① + ②，两头都已被计过，这一拍一个新字都没有。',
+      );
     });
 
     test('纯前缀累积：只计新长出来的那一段', () {
@@ -251,8 +280,10 @@ void main() {
       append('Nothing in common with the previous line.', seq: 3);
 
       expect(service.entries.length, 2);
-      expect(service.entries.last.text,
-          'Nothing in common with the previous line.');
+      expect(
+        service.entries.last.text,
+        'Nothing in common with the previous line.',
+      );
     });
   });
 }
