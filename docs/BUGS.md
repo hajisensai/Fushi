@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1876 条。点号进各自文件。
+> 共 1880 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -41,6 +41,10 @@
 | [BUG-2006](bugs/BUG-2006-win-fullscreen-top-accent-border.md) | ✅ | ✅ | Windows 上视频最顶部有一条 1px 强调色线（窗口铺满屏幕时） |
 | [BUG-2005](bugs/BUG-2005-recent-added-portrait-slot.md) | ✅ | ✅ | 首页「最近添加」行视频卡恒竖槽，横版截帧被模糊垫底成白条 |
 | [BUG-2002](bugs/BUG-2002-video-home-cards-hover-lift.md) | ✅ | ✅ | 视频首页横滚卡/合集墙卡/远端卡缺悬停放大效果 |
+| [BUG-2001](bugs/BUG-2001-scrape-planner-playlist-extras-works.md) | ✅ | ✅ | 计划器把播放列表合集与无集号特典当独立作品刮削 |
+| [BUG-2000](bugs/BUG-2000-scrape-unscraped-series-never-auto.md) | ✅ | ✅ | 未刮削系列没有任何自动刮削入口，存量库永远无资料 |
+| [BUG-1999](bugs/BUG-1999-scrape-source-enabled-not-exposed.md) | ✅ | ✅ | 来源刮削 enabled 开关未暴露，用户无法关闭强制刮削 |
+| [BUG-1998](bugs/BUG-1998-scrape-manual-bind-worknotfound.md) | ✅ | ✅ | 手动指定作品对已不在计划的作品裸抛 VideoSourceScrapeWorkNotFound 进 UI |
 | [BUG-1993](bugs/BUG-1993-daily-goal-study-scope.md) | ✅ | ✅ | 首页每日目标只算阅读域纯视频游戏日显示零 |
 | [BUG-1991](bugs/BUG-1991-subtitle-track-bottom-drawer.md) | ✅ | ✅ | 字幕轨入口误开底部字幕调整抽屉而非右侧设置栏 |
 | [BUG-1990](bugs/BUG-1990-mokuro-cbz-embedded-ocr.md) | ✅ | ✅ | Mokuro CBZ 导入丢弃内嵌 OCR 文字层 |

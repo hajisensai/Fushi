@@ -32,6 +32,40 @@ void main() {
     if (await root.exists()) await root.delete(recursive: true);
   });
 
+  test('手动搜索：作品不在当前计划时不抛异常，双形态搜索按身份合并（BUG-1998）', () async {
+    final int sourceId = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'Empty source',
+        mediaKind: 'video',
+        rootPath: root.path,
+        createdAt: 1,
+      ),
+    );
+    final _FakeAniDbProvider provider = _FakeAniDbProvider();
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+      database: db,
+      config: const VideoSourceScrapeGlobalConfig(),
+      registry:
+          VideoMetadataProviderRegistry(<VideoMetadataProvider>[provider]),
+    );
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+
+    // 旧行为：先按标题回查计划、查不到直接抛 VideoSourceScrapeWorkNotFound，
+    // 裸异常一路进 UI。现在搜索不依赖计划命中：电影+剧集各搜一次并按
+    // (mediaKind, externalId) 去重。
+    final List<VideoSourceScrapeConfirmationCandidate> candidates =
+        await coordinator.searchManualCandidates(
+      source: source,
+      workTitle: '哆啦A梦：大雄的秘密道具博物馆',
+      query: 'ドラえもん',
+    );
+
+    expect(candidates, hasLength(1));
+    expect(candidates.single.lookup.externalId, '42');
+    expect(provider.searchCount, 2, reason: '计划缺席时按 tv+movie 双形态各搜一次');
+  });
+
   test('按作品抓取一次并写规范表、兼容投影和安全 TV NFO', () async {
     final Directory seasonDir =
         Directory(p.join(root.path, 'Show', 'Season 01'));
