@@ -74,7 +74,7 @@ import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
-import 'package:fushi/src/pages/implementations/video_statistics_page.dart';
+import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
@@ -1605,11 +1605,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   void _openStatistics() {
+    // 阶段 2：统一进统计中心的观看 tab（独立 VideoStatisticsPage 路由保留）。
     Navigator.push(
       context,
       adaptivePageRoute<void>(
         context: context,
-        builder: (_) => const VideoStatisticsPage(),
+        builder: (_) =>
+            const StatisticsCenterPage(initialTab: StatsCenterTab.video),
       ),
     );
   }

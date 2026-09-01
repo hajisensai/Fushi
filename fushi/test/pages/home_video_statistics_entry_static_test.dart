@@ -13,17 +13,20 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final File src = File('lib/src/pages/implementations/home_video_page.dart');
 
-  test('home_video_page wires the statistics entry to VideoStatisticsPage', () {
+  test('home_video_page wires the statistics entry to the stats center', () {
+    // 阶段 2（统计中心大一统）：视频页统计入口改为统计中心的观看 tab。
     final String text = src.readAsStringSync();
     expect(
       text.contains(
-          "import 'package:fushi/src/pages/implementations/video_statistics_page.dart';"),
+          "import 'package:fushi/src/pages/implementations/statistics_center_page.dart';"),
       isTrue,
-      reason: '视频页应导入 VideoStatisticsPage',
+      reason: '视频页应导入 StatisticsCenterPage',
     );
     expect(text.contains('_openStatistics'), isTrue,
         reason: '应有 _openStatistics 处理器');
-    expect(text.contains('VideoStatisticsPage()'), isTrue,
-        reason: '_openStatistics 应 push VideoStatisticsPage');
+    expect(
+        text.contains('StatisticsCenterPage(initialTab: StatsCenterTab.video)'),
+        isTrue,
+        reason: '_openStatistics 应 push 统计中心并落在观看 tab');
   });
 }

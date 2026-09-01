@@ -18,7 +18,10 @@ import 'package:fushi_core/fushi_core.dart';
 /// 完全隔离（视频专用表）。展示观看时长 + 完成视频数 + 制卡/收藏计数（不再展示
 /// 字幕字数：字数仍在 DB 里采集，只是统计页不再呈现）。
 class VideoStatisticsPage extends BasePage {
-  const VideoStatisticsPage({super.key});
+  const VideoStatisticsPage({super.key, this.embedded = false});
+
+  /// true = 作为统计中心的一个 tab 嵌入（不套 FushiPageScaffold，动作行内联）。
+  final bool embedded;
 
   @override
   BasePageState<VideoStatisticsPage> createState() =>
@@ -183,32 +186,35 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final List<Widget> actions = <Widget>[
+      FushiIconButton(
+        icon: Icons.refresh,
+        tooltip: t.stat_refresh,
+        enabled: !_loading,
+        onTap: _syncAndLoad,
+      ),
+      FushiIconButton(
+        icon: Icons.delete_sweep_outlined,
+        tooltip: t.stat_clear_all,
+        enabled: !_loading,
+        onTap: _confirmAndClearAll,
+      ),
+    ];
+    final Widget body = buildStatPageBody(
+      loading: _loading,
+      error: _error,
+      isEmpty: !_hasData,
+      loadingBuilder: () =>
+          buildLoading(size: 25, color: theme.colorScheme.primary),
+      errorBuilder: (String error) => buildError(error: error),
+      emptyMessage: t.video_stat_no_data,
+      contentBuilder: _buildContent,
+    );
+    if (widget.embedded) return buildEmbeddedStatTab(context, actions, body);
     return FushiPageScaffold(
       title: t.video_statistics,
-      actions: <Widget>[
-        FushiIconButton(
-          icon: Icons.refresh,
-          tooltip: t.stat_refresh,
-          enabled: !_loading,
-          onTap: _syncAndLoad,
-        ),
-        FushiIconButton(
-          icon: Icons.delete_sweep_outlined,
-          tooltip: t.stat_clear_all,
-          enabled: !_loading,
-          onTap: _confirmAndClearAll,
-        ),
-      ],
-      body: buildStatPageBody(
-        loading: _loading,
-        error: _error,
-        isEmpty: !_hasData,
-        loadingBuilder: () =>
-            buildLoading(size: 25, color: theme.colorScheme.primary),
-        errorBuilder: (String error) => buildError(error: error),
-        emptyMessage: t.video_stat_no_data,
-        contentBuilder: _buildContent,
-      ),
+      actions: actions,
+      body: body,
     );
   }
 

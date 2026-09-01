@@ -11,7 +11,7 @@ import 'package:fushi/src/mining/galgame_add_flow.dart';
 import 'package:fushi/src/pages/implementations/galgame_home_page.dart';
 import 'package:fushi/src/pages/implementations/game_diagnostics_page.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
-import 'package:fushi/src/pages/implementations/game_statistics_page.dart';
+import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
@@ -127,9 +127,11 @@ class _HomeGamePageState extends State<HomeGamePage> {
   void _showDiagnostics() => _showSection(GameSection.diagnostics);
   void _showSettings() => _showSection(GameSection.settings);
 
+  // 阶段 2：统一进统计中心的游戏 tab（独立 GameStatisticsPage 路由保留）。
   Future<void> _openStatistics() => Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (BuildContext context) => const GameStatisticsPage(),
+          builder: (BuildContext context) =>
+              const StatisticsCenterPage(initialTab: StatsCenterTab.game),
         ),
       );
 

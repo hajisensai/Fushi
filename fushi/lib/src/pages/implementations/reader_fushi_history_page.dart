@@ -805,11 +805,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   }
 
   void _openReadingStatistics() {
+    // 阶段 2：统一进统计中心的阅读 tab（独立 ReadingStatisticsPage 路由保留，
+    // 只是入口不再直连）。
     Navigator.push(
       context,
       adaptivePageRoute(
         context: context,
-        builder: (_) => const ReadingStatisticsPage(),
+        builder: (_) =>
+            const StatisticsCenterPage(initialTab: StatsCenterTab.reading),
       ),
     );
   }

@@ -3,14 +3,19 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('两套游戏首页都接入独立游戏统计页', () {
+  test('两套游戏首页都接入统计中心的游戏 tab', () {
+    // 阶段 2（统计中心大一统）：游戏首页统计入口改为统计中心的游戏 tab。
     for (final String path in <String>[
       'lib/src/pages/implementations/galgame_home_page.dart',
       'lib/src/pages/implementations/home_game_page.dart',
     ]) {
       final String source = File(path).readAsStringSync();
-      expect(source, contains('game_statistics_page.dart'), reason: path);
-      expect(source, contains('GameStatisticsPage()'), reason: path);
+      expect(source, contains('statistics_center_page.dart'), reason: path);
+      expect(
+        source,
+        contains('StatisticsCenterPage(initialTab: StatsCenterTab.game)'),
+        reason: path,
+      );
     }
   });
 

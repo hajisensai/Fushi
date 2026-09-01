@@ -32,7 +32,10 @@ const double _kWideBreakpoint = 720;
 const double _kMaxContentWidth = 1040;
 
 class ReadingStatisticsPage extends BasePage {
-  const ReadingStatisticsPage({super.key});
+  const ReadingStatisticsPage({super.key, this.embedded = false});
+
+  /// true = 作为统计中心的一个 tab 嵌入（不套 FushiPageScaffold，动作行内联）。
+  final bool embedded;
 
   @override
   BasePageState<ReadingStatisticsPage> createState() =>
@@ -436,41 +439,44 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final List<Widget> actions = <Widget>[
+      // BUG-970：目标设置入口恒驻顶栏——目标卡在两目标皆 0 时整块隐藏
+      // (_buildGoalPanel -> SizedBox.shrink)，卡内 edit 图标随之消失，
+      // 否则从未设过目标的用户没有任何 UI 能首次设置目标。
+      FushiIconButton(
+        icon: Icons.flag_outlined,
+        tooltip: t.stat_goal_set,
+        enabled: !_loading,
+        onTap: _editGoals,
+      ),
+      FushiIconButton(
+        icon: Icons.refresh,
+        tooltip: t.stat_refresh,
+        enabled: !_loading,
+        onTap: _syncAndLoad,
+      ),
+      FushiIconButton(
+        icon: Icons.delete_sweep_outlined,
+        tooltip: t.stat_clear_all,
+        enabled: !_loading,
+        onTap: _confirmAndClearAll,
+      ),
+    ];
+    final Widget body = buildStatPageBody(
+      loading: _loading,
+      error: _error,
+      isEmpty: _bookFacts.isEmpty,
+      loadingBuilder: () =>
+          buildLoading(size: 25, color: theme.colorScheme.primary),
+      errorBuilder: (String error) => buildError(error: error),
+      emptyMessage: t.stat_no_data,
+      contentBuilder: _buildContent,
+    );
+    if (widget.embedded) return buildEmbeddedStatTab(context, actions, body);
     return FushiPageScaffold(
       title: t.reading_statistics,
-      actions: <Widget>[
-        // BUG-970：目标设置入口恒驻顶栏——目标卡在两目标皆 0 时整块隐藏
-        // (_buildGoalPanel -> SizedBox.shrink)，卡内 edit 图标随之消失，
-        // 否则从未设过目标的用户没有任何 UI 能首次设置目标。
-        FushiIconButton(
-          icon: Icons.flag_outlined,
-          tooltip: t.stat_goal_set,
-          enabled: !_loading,
-          onTap: _editGoals,
-        ),
-        FushiIconButton(
-          icon: Icons.refresh,
-          tooltip: t.stat_refresh,
-          enabled: !_loading,
-          onTap: _syncAndLoad,
-        ),
-        FushiIconButton(
-          icon: Icons.delete_sweep_outlined,
-          tooltip: t.stat_clear_all,
-          enabled: !_loading,
-          onTap: _confirmAndClearAll,
-        ),
-      ],
-      body: buildStatPageBody(
-        loading: _loading,
-        error: _error,
-        isEmpty: _bookFacts.isEmpty,
-        loadingBuilder: () =>
-            buildLoading(size: 25, color: theme.colorScheme.primary),
-        errorBuilder: (String error) => buildError(error: error),
-        emptyMessage: t.stat_no_data,
-        contentBuilder: _buildContent,
-      ),
+      actions: actions,
+      body: body,
     );
   }
 

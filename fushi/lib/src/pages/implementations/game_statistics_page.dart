@@ -21,7 +21,10 @@ import 'package:fushi_core/fushi_core.dart';
 /// 阅读、视频、游戏各自拥有独立统计页；本页的时长与次数只从
 /// `galgame_sessions` 事实表 GROUP BY 得出，活动时间线不参与统计。
 class GameStatisticsPage extends BasePage {
-  const GameStatisticsPage({super.key});
+  const GameStatisticsPage({super.key, this.embedded = false});
+
+  /// true = 作为统计中心的一个 tab 嵌入（不套 FushiPageScaffold，动作行内联）。
+  final bool embedded;
 
   @override
   BasePageState<GameStatisticsPage> createState() => _GameStatisticsPageState();
@@ -86,32 +89,35 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final List<Widget> actions = <Widget>[
+      FushiIconButton(
+        icon: Icons.refresh,
+        tooltip: t.stat_refresh,
+        enabled: !_loading,
+        onTap: _load,
+      ),
+      FushiIconButton(
+        icon: Icons.delete_sweep_outlined,
+        tooltip: t.stat_clear_all,
+        enabled: !_loading,
+        onTap: _confirmAndClearAll,
+      ),
+    ];
+    final Widget body = buildStatPageBody(
+      loading: _loading,
+      error: _error,
+      isEmpty: _aggregate.allSessions == 0,
+      loadingBuilder: () =>
+          buildLoading(size: 25, color: theme.colorScheme.primary),
+      errorBuilder: (String error) => buildError(error: error),
+      emptyMessage: t.game_stat_no_sessions,
+      contentBuilder: _buildContent,
+    );
+    if (widget.embedded) return buildEmbeddedStatTab(context, actions, body);
     return FushiPageScaffold(
       title: t.game_statistics,
-      actions: <Widget>[
-        FushiIconButton(
-          icon: Icons.refresh,
-          tooltip: t.stat_refresh,
-          enabled: !_loading,
-          onTap: _load,
-        ),
-        FushiIconButton(
-          icon: Icons.delete_sweep_outlined,
-          tooltip: t.stat_clear_all,
-          enabled: !_loading,
-          onTap: _confirmAndClearAll,
-        ),
-      ],
-      body: buildStatPageBody(
-        loading: _loading,
-        error: _error,
-        isEmpty: _aggregate.allSessions == 0,
-        loadingBuilder: () =>
-            buildLoading(size: 25, color: theme.colorScheme.primary),
-        errorBuilder: (String error) => buildError(error: error),
-        emptyMessage: t.game_stat_no_sessions,
-        contentBuilder: _buildContent,
-      ),
+      actions: actions,
+      body: body,
     );
   }
 

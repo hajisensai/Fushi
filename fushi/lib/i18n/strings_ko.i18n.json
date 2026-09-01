@@ -4094,5 +4094,7 @@
   "update_download_source_github": "GitHub direct",
   "update_download_source_proxy": "Proxy: $host",
   "stat_detail_ungrouped": "Ungrouped",
-  "stat_detail_empty": "No activity in this period"
+  "stat_detail_empty": "No activity in this period",
+  "stat_center_title": "Statistics center",
+  "stat_center_tab_overview": "Overview"
 }
