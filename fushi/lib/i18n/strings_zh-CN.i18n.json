@@ -4092,5 +4092,7 @@
   "update_download_source_auto": "自动（推荐）",
   "update_download_source_cloudflare": "Cloudflare 镜像",
   "update_download_source_github": "GitHub 直连",
-  "update_download_source_proxy": "代理站：$host"
+  "update_download_source_proxy": "代理站：$host",
+  "stat_detail_ungrouped": "未分组",
+  "stat_detail_empty": "此时段暂无记录"
 }

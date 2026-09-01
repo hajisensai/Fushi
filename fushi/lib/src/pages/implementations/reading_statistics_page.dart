@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
@@ -6,6 +8,7 @@ import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_kpi_strip.dart';
+import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_ring.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/stat_source_totals.dart';
@@ -734,17 +737,23 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   }
 
   Widget _buildSummaryCards() {
+    // 时段谓词在点击时现算（跨日打开页面后点卡，明细按点击时刻的窗口取数）。
+    final StatWindow w = StatWindow(DateTime.now());
     return buildStatPeriodSummaryGrid(
       context,
       <StatPeriodSummary>[
         _periodSummary(t.stat_today, _todayChars, _todayMs, _lookup.today,
-            _mined.today, _favorited.today, _favoritedSentences.today),
+            _mined.today, _favorited.today, _favoritedSentences.today,
+            contains: w.isToday),
         _periodSummary(t.stat_this_week, _weekChars, _weekMs, _lookup.week,
-            _mined.week, _favorited.week, _favoritedSentences.week),
+            _mined.week, _favorited.week, _favoritedSentences.week,
+            contains: w.inWeek),
         _periodSummary(t.stat_this_month, _monthChars, _monthMs, _lookup.month,
-            _mined.month, _favorited.month, _favoritedSentences.month),
+            _mined.month, _favorited.month, _favoritedSentences.month,
+            contains: w.inMonth),
         _periodSummary(t.stat_all_time, _allChars, _allMs, _lookup.all,
-            _mined.all, _favorited.all, _favoritedSentences.all),
+            _mined.all, _favorited.all, _favoritedSentences.all,
+            contains: (String _) => true),
       ],
     );
   }
@@ -756,11 +765,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     int lookup,
     int mined,
     int favorited,
-    int favoritedSentences,
-  ) {
+    int favoritedSentences, {
+    required bool Function(String dateKey) contains,
+  }) {
     return StatPeriodSummary(
       label: label,
       primaryValue: _formatChars(chars),
+      onTap: () => _showPeriodDetail(label, contains),
       lines: <StatSummaryLine>[
         StatSummaryLine(value: formatStatTime(ms)),
         StatSummaryLine(label: t.stat_lookup, value: '$lookup'),
@@ -771,6 +782,46 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           value: '$favoritedSentences',
         ),
       ],
+    );
+  }
+
+  /// 时段卡 → 时段明细 sheet（阶段 1 统一组件；本页是阅读统计，明细只吃阅读域
+  /// 切片 [_bookFacts]——域=行集，与 [studyGoalCharsForDay] 同原则）。
+  void _showPeriodDetail(
+    String label,
+    bool Function(String dateKey) contains,
+  ) {
+    unawaited(showStatPeriodDetailSheet(
+      context,
+      periodLabel: label,
+      contains: contains,
+      facts: _bookFacts,
+      resolvers: StatPeriodDetailResolvers(
+        titleOf: _statFactDisplayTitle,
+        collectionOf: _statFactCollectionName,
+      ),
+    ));
+  }
+
+  /// 事实行 → 显示名（[_bookDisplayTitle] 的事实行版：override 书名上屏生效，
+  /// 合集名走 sheet 组头不拼前缀）。
+  String _statFactDisplayTitle(StatFact f) {
+    final String? bookKey =
+        f.mediaKey.isNotEmpty ? f.mediaKey : _bookKeyByTitle[f.title];
+    if (bookKey == null) return f.title;
+    return ReaderFushiSource.instance.overrideTitleForBookKey(bookKey) ??
+        f.title;
+  }
+
+  /// 事实行 → 所属合集名（[_collectionNameForBook] 的事实行版，同一 v83 键契约）。
+  String? _statFactCollectionName(StatFact f) {
+    final String? bookKey =
+        f.mediaKey.isNotEmpty ? f.mediaKey : _bookKeyByTitle[f.title];
+    if (bookKey == null) return null;
+    return statCollectionName(
+      MediaKind.epub.compositeKey(_epubUidByBookKey[bookKey] ?? bookKey),
+      _primaryCollectionByEntry,
+      _collectionNamesById,
     );
   }
 

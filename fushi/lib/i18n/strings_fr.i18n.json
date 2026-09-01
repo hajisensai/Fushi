@@ -4092,5 +4092,7 @@
   "update_download_source_auto": "Automatic (recommended)",
   "update_download_source_cloudflare": "Cloudflare mirror",
   "update_download_source_github": "GitHub direct",
-  "update_download_source_proxy": "Proxy: $host"
+  "update_download_source_proxy": "Proxy: $host",
+  "stat_detail_ungrouped": "Ungrouped",
+  "stat_detail_empty": "No activity in this period"
 }
