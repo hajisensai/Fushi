@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1888 条。点号进各自文件。
+> 共 1890 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -39,6 +39,8 @@
 | [BUG-2012](bugs/BUG-2012-epub-opf-namespace-prefix.md) | ✅ | ✅ | 带 opf: 前缀的 OPF 导致 manifest/spine 解析为空、EPUB 导入失败 |
 | [BUG-2011](bugs/BUG-2011-clip-export-container-portability.md) | ✅ | ✅ | 视频片段导出产物只有 mpv 能播，进度条显示整集时长 |
 | [BUG-2009](bugs/BUG-2009-desktop-wheel-scroll-speed-halved.md) | ✅ | ✅ | 桌面滚轮平滑修复把滚动速度砍半 |
+| [BUG-2008](bugs/BUG-2008-subtitle-collection-panel-guessed-identity.md) | ✅ | ✅ | 合集字幕批量搜索只用合集名与裸 anilistId，无视已刮削的规范身份 |
+| [BUG-2007](bugs/BUG-2007-organize-multi-movie-extras-swallow.md) | ✅ | ✅ | 多部电影一个种子时仅最大文件算正片，其余被扔进 Extras 不入库不刮削 |
 | [BUG-2006](bugs/BUG-2006-win-fullscreen-top-accent-border.md) | ✅ | ✅ | Windows 上视频最顶部有一条 1px 强调色线（窗口铺满屏幕时） |
 | [BUG-2005](bugs/BUG-2005-recent-added-portrait-slot.md) | ✅ | ✅ | 首页「最近添加」行视频卡恒竖槽，横版截帧被模糊垫底成白条 |
 | [BUG-2004](bugs/BUG-2004-download-scrape-inverted-forcing.md) | ✅ | ✅ | 下载管线对错命名空间身份强制刮削致歧义卡死，无身份反而直接完成 |

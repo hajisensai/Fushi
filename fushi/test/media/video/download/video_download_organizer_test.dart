@@ -144,6 +144,82 @@ void main() {
     },
   );
 
+  test(
+    'movie organizer keeps sibling standalone movies out of Extras and '
+    'mirrors their source names without lossy renaming (BUG-2007)',
+    () async {
+      final Directory root = await Directory.systemTemp.createTemp(
+        'fushi-organizer-multimovie-',
+      );
+      addTearDown(() async {
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+      final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+        VideoOrganizationRequest(
+          torrentId: 'hash',
+          title: 'Doraemon Movie 1',
+          year: 2013,
+          kind: VideoOrganizationKind.movie,
+          sourceRoot: root.path,
+          pathMapping: VideoDownloadPathMapping(
+            remoteRoot: '/library',
+            localRoot: root.path,
+          ),
+        ),
+        <TorrentFileEntry>[
+          const TorrentFileEntry(
+            name: 'Movies/Doraemon 2013.mkv',
+            size: 200,
+            progress: 1,
+            index: 0,
+          ),
+          // 前編/後編：文件名解析会把两者归约成同一个标题——目标路径绝不允许
+          // 用有损解析结果命名，否则这里撞名、整条 job 硬失败（BUG-2007 重做：
+          // 并列正片沿用 Extras 同款「镜像源结构」，唯一性由源路径保证）。
+          const TorrentFileEntry(
+            name: 'Movies/Gekijouban Aoi Zenpen (2011).mkv',
+            size: 150,
+            progress: 1,
+            index: 1,
+          ),
+          const TorrentFileEntry(
+            name: 'Movies/Gekijouban Aoi Kouhen (2011).mkv',
+            size: 150,
+            progress: 1,
+            index: 2,
+          ),
+          // 特典目录照旧进 Extras，体量够大也不例外。
+          const TorrentFileEntry(
+            name: 'Movies/SPs/Bonus Feature.mkv',
+            size: 150,
+            progress: 1,
+            index: 3,
+          ),
+          // 小文件（< 主片 1/4）照旧进 Extras。
+          const TorrentFileEntry(
+            name: 'Movies/CM Collection.mkv',
+            size: 20,
+            progress: 1,
+            index: 4,
+          ),
+        ],
+      );
+
+      expect(
+        plan.files.map(
+          (VideoOrganizationFilePlan file) => file.targetRelativePath,
+        ),
+        <String>[
+          'Doraemon Movie 1 (2013)/Doraemon Movie 1 (2013).mkv',
+          'Doraemon Movie 1 (2013)/Gekijouban Aoi Zenpen (2011).mkv',
+          'Doraemon Movie 1 (2013)/Gekijouban Aoi Kouhen (2011).mkv',
+          'Doraemon Movie 1 (2013)/Extras/SPs/Bonus Feature.mkv',
+          'Doraemon Movie 1 (2013)/Extras/CM Collection.mkv',
+        ],
+      );
+    },
+  );
+
   test('episodic organizer routes unnumbered specials to Extras (BUG-1785)', () async {
     final Directory root = await Directory.systemTemp.createTemp(
       'fushi-organizer-extras-',
