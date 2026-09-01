@@ -2826,6 +2826,31 @@ window.fushiReader = {
   // 不注入 --reader-viewport-height、getScrollContext 也不引用它。但属性仍声明 0
   // （补点2 防 stale）：两个 fushiReader 实例属性表保持对齐，避免误读 undefined。
   viewportHeight: 0,
+  // BUG-2013：竖排连续模式是**横向**滚动，桌面 WebView2 的水平滚动条是占位式的
+  // （移动端是不占位的 overlay，所以这条只在桌面复现），它从视口底部吃掉约 15px。
+  // window.innerHeight 与 Dart 传来的 MediaQuery 高度（dartPageHeight /
+  // updatePageSize 的 cssHeight）都是**视口外框**高度、不扣这条；而 body 是
+  // box-sizing: border-box + height: var(--fushi-continuous-height)
+  // （见 reader_content_styles.dart 的 _continuousLayoutCss 竖排分支），于是 body
+  // 最底部那 15px 落在滚动条之下，末行文字被裁掉大半——用户截图里每列底部的字
+  // 只剩上半个，正是这个。documentElement.clientHeight 是唯一扣掉滚动条的
+  // **可视内容**高度。
+  //
+  // 实测（Chromium 1200x800 + 竖排长文）：innerHeight=705 / clientHeight=690 /
+  // 水平滚动条 15px。喂 705 → 文字底 705 > 可视 690（溢出）；改喂 690 → 文字底
+  // 690（不溢出）；再量一轮仍 690（不震荡）；内容短到没有滚动条时 clientHeight
+  // 回到 705（不误缩）。
+  //
+  // 不震荡的原因：竖排水平滚动条的有无只由内容宽度（列数）决定，与 body 高度无
+  // 关；高度调小只让每列变短、列数变多，滚动条照样在，clientHeight 保持稳定。
+  //
+  // 刻意**不**改 __fushiApplyReaderMargins / _contH 的入参：那两个要的就是视口外
+  // 框高度。本 bug 的根因正是「视口外框高度」和「可视内容高度」被当成同一个数，
+  // 修法是把这两个概念分开，而不是把另一处也一起改掉。
+  _visibleViewportHeight: function(fallback) {
+    var visible = document.documentElement.clientHeight;
+    return (visible && visible > 0) ? visible : fallback;
+  },
 $_sharedJs
   scrollToChapterStart: function() {
     var root = document.scrollingElement || document.documentElement;
@@ -3353,7 +3378,9 @@ $_sharedInitViewport
   var dartH = C.dartPageHeight;
   var contHeight = dartH || window.innerHeight;
   window.__fushiApplyReaderMargins(C.dartPageWidth || window.innerWidth, contHeight);
-  document.documentElement.style.setProperty('--fushi-continuous-height', contHeight + 'px');
+  // BUG-2013：写进 CSS 的必须是扣掉水平滚动条的可视高度，不是视口外框高度。
+  document.documentElement.style.setProperty(
+      '--fushi-continuous-height', this._visibleViewportHeight(contHeight) + 'px');
   var __imgBox = this._imageMaxBox();
   document.documentElement.style.setProperty('--fushi-image-max-width', __imgBox.w + 'px');
   document.documentElement.style.setProperty('--fushi-image-max-height', __imgBox.h + 'px');
@@ -3386,7 +3413,9 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   // rAF is in flight, only update the layout and let it restore position.
   var inFlight = this._reanchorPending === true;
   var progress = (changed && !inFlight) ? this.calculateProgress() : 0;
-  document.documentElement.style.setProperty('--fushi-continuous-height', newHeight + 'px');
+  // BUG-2013：同 initialize——CSS 变量要可视高度，_contH / applyReaderMargins 要外框高度。
+  document.documentElement.style.setProperty(
+      '--fushi-continuous-height', this._visibleViewportHeight(newHeight) + 'px');
   window.__fushiApplyReaderMargins(newWidth, newHeight);
   var __imgBox = this._imageMaxBox();
   document.documentElement.style.setProperty('--fushi-image-max-width', __imgBox.w + 'px');

@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1863 条。点号进各自文件。
+> 共 1864 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2013](bugs/BUG-2013-reader-vertical-scroll-height-ignores-scrollbar.md) | ✅ | ✅ | 竖排滚动模式 body 高度未扣水平滚动条，末行文字被裁 |
 | [BUG-2012](bugs/BUG-2012-epub-opf-namespace-prefix.md) | ✅ | ✅ | 带 opf: 前缀的 OPF 导致 manifest/spine 解析为空、EPUB 导入失败 |
 | [BUG-2009](bugs/BUG-2009-desktop-wheel-scroll-speed-halved.md) | ✅ | ✅ | 桌面滚轮平滑修复把滚动速度砍半 |
 | [BUG-2005](bugs/BUG-2005-recent-added-portrait-slot.md) | ✅ | ✅ | 首页「最近添加」行视频卡恒竖槽，横版截帧被模糊垫底成白条 |
