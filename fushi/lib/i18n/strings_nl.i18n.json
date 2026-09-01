@@ -3467,7 +3467,7 @@
   "mihon_store_remove": "Extensiewinkel verwijderen",
   "video_import_folder_as_source_hint": "Blijf deze map scannen op nieuwe video's",
   "manga_import_folder_as_source_hint": "Blijf deze map scannen op nieuwe manga",
-  "download_no_managed_video_source": "Nog geen beheerde videobron. Downloads hebben een lokale videomap nodig om in te landen.",
+  "download_no_managed_video_source": "Nog geen beheerde videobron. Voeg een lokale map toe om de gedownloade bestanden in te bewaren, zodat voltooide video's in de bibliotheek landen.",
   "download_add_video_source": "Videobron toevoegen",
   "video_subtitle_prev_cue_align": "Vorige regel uitlijnen op nu",
   "video_subtitle_next_cue_align": "Volgende regel uitlijnen op nu",
@@ -4106,5 +4106,6 @@
   "stat_detail_ungrouped": "Ungrouped",
   "stat_detail_empty": "No activity in this period",
   "stat_center_title": "Statistics center",
-  "stat_center_tab_overview": "Overview"
+  "stat_center_tab_overview": "Overview",
+  "shortcut_action_video_dismiss_dict": "Dismiss dictionary"
 }

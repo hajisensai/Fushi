@@ -278,7 +278,7 @@ void main() {
       apkUrl: 'https://repo.example/apk/deleted-release.apk',
       iconUrl: 'https://repo.example/icons/fixture.png',
       libVersion: '1.6',
-      versionCode: 8,
+      extensionVersionCode: 8,
       versionName: '1.6.8',
       language: 'en',
       contentWarning: 1,
@@ -294,7 +294,206 @@ void main() {
     );
     expect(requested, contains('https://repo.example/apk/fresh.apk'));
     expect(proposal.expected!.apkUrl, 'https://repo.example/apk/fresh.apk');
-    expect(proposal.expected!.versionCode, 9);
+    expect(proposal.expected!.extensionVersionCode, 9);
+  });
+
+  // BUG-1996：keiyoushi 的真实形状（2026-09-01 直连 `repo/index.pb` 实测，gzip 解压
+  // 688322 字节 + protobuf raw decode）——索引 field 5 与 APK manifest 的
+  // android:versionCode **是同一个量**，逐字相同：SamuraiScan 两侧都是 104069、
+  // Manga Mura 两侧都是 104005，versionName 分别是 '1.4.69' / '1.4.5'。上游
+  // `ExtensionPlugin.kt` 把同一个 `androidVersionCodeProvider` 同时喂给 APK output
+  // 与索引元数据，构造上不可能分叉。
+  //
+  // ⚠️ 本文档/注释第一版声称「索引是裸的 69、APK 是 104069、两侧不同尺度」——那是
+  // **臆测，已被上面的实测证伪**，别再照它推理（见 docs/bugs/BUG-1996-*.md）。
+  //
+  // 这条用例真正锁的是**编码**而不是尺度：`index.json` 是 protobuf-JSON，int64 按
+  // 规范编成**字符串**（`"versionCode": "104069"`），裸 `as num?` 会当场抛 TypeError
+  // 把整份仓库索引炸掉。旧 fixture 用裸数字造索引，结构上测不到这条。
+  test(
+    'BUG-1996: index.json encodes int64 versionCode as a STRING; it parses '
+    'and matches the APK versionCode exactly',
+    () async {
+      await database.upsertMangaExtensionStore(
+        MangaExtensionStoresCompanion.insert(
+          indexUrl: 'https://repo.example/index.json',
+          name: 'Fixture repository',
+          format: MihonStoreFormat.currentJson.name,
+          signingKey: const Value<String?>('aabb'),
+        ),
+      );
+      manager.dispose();
+
+      final MockClient httpClient = MockClient((http.Request request) async {
+        if (request.url.path.endsWith('/index.json')) {
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              'name': 'Fixture repository',
+              'badgeLabel': 'Fixture',
+              'signingKey': 'aabb',
+              'extensionList': <String, Object?>{
+                'extensions': <Object?>[
+                  <String, Object?>{
+                    'name': 'Fixture extension',
+                    'packageName': 'org.example.fixture',
+                    'resources': <String, Object?>{
+                      'apkUrl': 'apk/fresh.apk',
+                      'iconUrl': 'icons/fixture.png',
+                    },
+                    'extensionLib': '1.4',
+                    // 索引侧：**字符串**编码的 int64（protobuf-JSON 规范），
+                    // 值与下面 APK 的 android:versionCode 完全相同。
+                    'versionCode': '104069',
+                    'versionName': '1.4.69',
+                    'contentWarning': 'CONTENT_WARNING_SAFE',
+                    'sources': <Object?>[],
+                  },
+                ],
+              },
+            }),
+            HttpStatus.ok,
+          );
+        }
+        if (request.url.path.endsWith('/apk/fresh.apk')) {
+          return http.Response.bytes(
+            <int>[0x50, 0x4b, 0x03, 0x04, 69],
+            HttpStatus.ok,
+          );
+        }
+        return http.Response('', HttpStatus.notFound);
+      });
+      manager = MihonManager(
+        database: database,
+        rootDirectory: root,
+        runtime: runtime,
+        storeClient: MihonExtensionStoreClient(client: httpClient),
+      );
+      await manager.initialise();
+      // APK 侧：android:versionCode，与索引同值（不是「另一个尺度」）。
+      runtime.inspection = _inspection(
+        versionCode: 104069,
+        signer: 'aabb',
+        versionName: '1.4.69',
+        libVersion: '1.4',
+      );
+
+      final MihonAvailableExtension available = MihonAvailableExtension(
+        storeUrl: 'https://repo.example/index.json',
+        name: 'Fixture extension',
+        packageName: 'org.example.fixture',
+        apkUrl: 'https://repo.example/apk/fresh.apk',
+        iconUrl: 'https://repo.example/icons/fixture.png',
+        libVersion: '1.4',
+        extensionVersionCode: 104069,
+        versionName: '1.4.69',
+        language: 'en',
+        contentWarning: 1,
+        sources: const <MihonAvailableSource>[],
+      );
+
+      // 修复前：`json['versionCode'] as num?` 对字符串抛 TypeError，索引解析整个失败。
+      final MihonInstallProposal proposal =
+          await manager.prepareStoreInstall(available);
+
+      expect(proposal.expected!.extensionVersionCode, 104069,
+          reason: '字符串编码的 int64 必须解析成数，裸 as num? 会抛 TypeError');
+      expect(proposal.inspection.apkVersionCode,
+          proposal.expected!.extensionVersionCode,
+          reason: '索引与 APK 的 versionCode 是同一个量，身份门比的就是它');
+      expect(proposal.inspection.versionName, proposal.expected!.versionName);
+    },
+  );
+
+  // 身份门补上 versionName 之后（versionCode 判据**保留**，不是放宽），必须证明新加
+  // 的那一条真的会拒：versionCode 两侧同为 104070、只有 versionName 不同仍要拒，且
+  // 异常 message 要带上两侧实际值（这条 bug 暴露的真缺口是可诊断性）。
+  test('BUG-1996: a mismatched versionName is still rejected', () async {
+    await database.upsertMangaExtensionStore(
+      MangaExtensionStoresCompanion.insert(
+        indexUrl: 'https://repo.example/index.json',
+        name: 'Fixture repository',
+        format: MihonStoreFormat.currentJson.name,
+        signingKey: const Value<String?>('aabb'),
+      ),
+    );
+    manager.dispose();
+
+    final MockClient httpClient = MockClient((http.Request request) async {
+      if (request.url.path.endsWith('/index.json')) {
+        return http.Response(
+          jsonEncode(<String, Object?>{
+            'name': 'Fixture repository',
+            'badgeLabel': 'Fixture',
+            'signingKey': 'aabb',
+            'extensionList': <String, Object?>{
+              'extensions': <Object?>[
+                <String, Object?>{
+                  'name': 'Fixture extension',
+                  'packageName': 'org.example.fixture',
+                  'resources': <String, Object?>{
+                    'apkUrl': 'apk/fresh.apk',
+                    'iconUrl': 'icons/fixture.png',
+                  },
+                  'extensionLib': '1.4',
+                  'versionCode': '104070',
+                  'versionName': '1.4.69',
+                  'contentWarning': 'CONTENT_WARNING_SAFE',
+                  'sources': <Object?>[],
+                },
+              ],
+            },
+          }),
+          HttpStatus.ok,
+        );
+      }
+      if (request.url.path.endsWith('/apk/fresh.apk')) {
+        return http.Response.bytes(
+          <int>[0x50, 0x4b, 0x03, 0x04, 70],
+          HttpStatus.ok,
+        );
+      }
+      return http.Response('', HttpStatus.notFound);
+    });
+    manager = MihonManager(
+      database: database,
+      rootDirectory: root,
+      runtime: runtime,
+      storeClient: MihonExtensionStoreClient(client: httpClient),
+    );
+    await manager.initialise();
+    // 索引说 1.4.69，APK 却是 1.4.70：不是我点的那一个。
+    runtime.inspection = _inspection(
+      versionCode: 104070,
+      signer: 'aabb',
+      versionName: '1.4.70',
+      libVersion: '1.4',
+    );
+
+    final MihonAvailableExtension available = MihonAvailableExtension(
+      storeUrl: 'https://repo.example/index.json',
+      name: 'Fixture extension',
+      packageName: 'org.example.fixture',
+      apkUrl: 'https://repo.example/apk/fresh.apk',
+      iconUrl: 'https://repo.example/icons/fixture.png',
+      libVersion: '1.4',
+      // versionCode 与 APK 侧**相同**（104070），只有 versionName 不同：
+      // 证明 versionName 这条判据独立生效，不是被 versionCode 顺带拦下的。
+      extensionVersionCode: 104070,
+      versionName: '1.4.69',
+      language: 'en',
+      contentWarning: 1,
+      sources: const <MihonAvailableSource>[],
+    );
+
+    await expectLater(
+      manager.prepareStoreInstall(available),
+      throwsA(isA<MihonRuntimeException>()
+          .having(
+              (MihonRuntimeException e) => e.code, 'code', 'METADATA_MISMATCH')
+          .having((MihonRuntimeException e) => e.message, 'message',
+              allOf(contains('1.4.69'), contains('1.4.70')))),
+      reason: '异常必须带上两侧实际值，否则下一份用户报告依然不可诊断',
+    );
   });
 
   test('store install reports an extension pulled from the repository',
@@ -338,7 +537,7 @@ void main() {
       apkUrl: 'https://repo.example/apk/deleted-release.apk',
       iconUrl: 'https://repo.example/icons/fixture.png',
       libVersion: '1.6',
-      versionCode: 8,
+      extensionVersionCode: 8,
       versionName: '1.6.8',
       language: 'en',
       contentWarning: 1,
@@ -368,16 +567,23 @@ Future<File> _fixtureApk(
   return file;
 }
 
+/// [versionCode] 是 **APK 尺度**（`android:versionCode`）。
+///
+/// [versionName] 可单独指定：真实的 keiyoushi APK 里 versionCode 带 libVersion
+/// 前缀（`104069`）而 versionName 不带（`1.4.69`），两者**不是**一个数的两种写法。
+/// 默认值仍按旧的「同源」形状，只为不动既有用例；BUG-1996 的用例必须显式传两个。
 MihonExtensionInspection _inspection({
   required int versionCode,
   required String signer,
+  String? versionName,
+  String libVersion = '1.6',
 }) =>
     MihonExtensionInspection(
       packageName: 'org.example.fixture',
       name: 'Fixture extension',
-      versionCode: versionCode,
-      versionName: '1.6.$versionCode',
-      libVersion: '1.6',
+      apkVersionCode: versionCode,
+      versionName: versionName ?? '1.6.$versionCode',
+      libVersion: libVersion,
       signerSha256: signer,
       sourceClasses: const <String>['FixtureSource'],
     );

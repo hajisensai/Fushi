@@ -203,9 +203,20 @@ double subtitleTimestampColumnWidth(double effectiveFontSize, bool hasHours) {
 /// 「ら 只露半个」）。所以文本列宽必须由**同一组常量**同时喂给测量与渲染，不能各算各的。
 ///
 /// 行内水平结构（见 `_buildRow`）：
-/// `padding.left(8) | 时间戳列 | 间隙 8 | 文本(Expanded) | 动作列 | padding.right(4)`
+/// `padding.left(8) | 时间戳列 | 间隙 8 | 文本(Expanded) | 动作列 | padding.right(4+gutter)`
 const double kSubtitleRowPaddingLeft = 8;
 const double kSubtitleRowPaddingRight = 4;
+
+/// 行右侧再让出的滚动条通道（BUG-1997）。
+///
+/// 桌面端 `MaterialScrollBehavior` 给这个 ListView 自动包了一层常驻 `Scrollbar`，
+/// 它是**覆盖式**的（不占布局），而本行右内缩被压到 4px 以把宽度还给文本列——星标
+/// 按钮的图标盒右缘离面板右缘只有 6px，滚动条盖住它并吞掉点击。
+///
+/// 这里让出通道，而不是靠「滚动条恰好够细」：宽度取自 [kFushiScrollbarGutter]，跟着
+/// 主题的粗细走。用行 padding 而不是 `ListView(padding:)`——后者会让行背景/选中高亮
+/// 不铺满、右侧露一条底色，还会改变 `itemExtentBuilder` 拿到的 crossAxisExtent。
+const double kSubtitleRowScrollbarGutter = kFushiScrollbarGutter;
 
 /// 行垂直内缩（上 8 + 下 8）。
 const double kSubtitleRowPaddingVertical = 16;
@@ -229,6 +240,7 @@ double subtitleRowTextWidth({
   final double width = rowWidth -
       kSubtitleRowPaddingLeft -
       kSubtitleRowPaddingRight -
+      kSubtitleRowScrollbarGutter -
       timestampColumnWidth -
       kSubtitleRowTimestampGap -
       subtitleRowActionsWidth(effectiveFontSize);
@@ -1802,7 +1814,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             left: favorited
                 ? kSubtitleRowPaddingLeft - kSubtitleRowFavoriteBarWidth
                 : kSubtitleRowPaddingLeft,
-            right: kSubtitleRowPaddingRight,
+            // BUG-1997：+gutter 给常驻滚动条让出通道，与 [subtitleRowTextWidth]
+            // 扣的是同一个常量（测量与渲染同源，别单改一边）。
+            right: kSubtitleRowPaddingRight + kSubtitleRowScrollbarGutter,
             top: kSubtitleRowPaddingVertical / 2,
             bottom: kSubtitleRowPaddingVertical / 2,
           ),

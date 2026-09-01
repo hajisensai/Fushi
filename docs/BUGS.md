@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1882 条。点号进各自文件。
+> 共 1886 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -46,6 +46,10 @@
 | [BUG-2000](bugs/BUG-2000-scrape-unscraped-series-never-auto.md) | ✅ | ✅ | 未刮削系列没有任何自动刮削入口，存量库永远无资料 |
 | [BUG-1999](bugs/BUG-1999-scrape-source-enabled-not-exposed.md) | ✅ | ✅ | 来源刮削 enabled 开关未暴露，用户无法关闭强制刮削 |
 | [BUG-1998](bugs/BUG-1998-scrape-manual-bind-worknotfound.md) | ✅ | ✅ | 手动指定作品对已不在计划的作品裸抛 VideoSourceScrapeWorkNotFound 进 UI |
+| [BUG-1997](bugs/BUG-1997-dark-scrollbar-covers-list-trailing-actions.md) | ✅ | ✅ | 深色主题滚动条 8px 盖住并吞掉列表右侧操作按钮 |
+| [BUG-1996](bugs/BUG-1996-mihon-extension-install-metadata-mismatch.md) | ✅ | ✅ | 漫画扩展装不上：METADATA_MISMATCH（根因未定位） |
+| [BUG-1995](bugs/BUG-1995-video-mouse-side-button-dismiss-dict.md) | ✅ | ✅ | 视频页鼠标侧键关词典无效（video scope 无鼠标通道） |
+| [BUG-1994](bugs/BUG-1994-profile-switch-prunes-dictionary-metadata.md) | ✅ | ✅ | 切换 profile 会删掉其他 profile 导入的词典元数据行 |
 | [BUG-1993](bugs/BUG-1993-daily-goal-study-scope.md) | ✅ | ✅ | 首页每日目标只算阅读域纯视频游戏日显示零 |
 | [BUG-1991](bugs/BUG-1991-subtitle-track-bottom-drawer.md) | ✅ | ✅ | 字幕轨入口误开底部字幕调整抽屉而非右侧设置栏 |
 | [BUG-1990](bugs/BUG-1990-mokuro-cbz-embedded-ocr.md) | ✅ | ✅ | Mokuro CBZ 导入丢弃内嵌 OCR 文字层 |

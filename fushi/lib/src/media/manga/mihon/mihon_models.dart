@@ -42,7 +42,7 @@ class MihonExtensionInspection {
   const MihonExtensionInspection({
     required this.packageName,
     required this.name,
-    required this.versionCode,
+    required this.apkVersionCode,
     required this.versionName,
     required this.libVersion,
     required this.signerSha256,
@@ -53,7 +53,7 @@ class MihonExtensionInspection {
       MihonExtensionInspection(
         packageName: json['packageName']! as String,
         name: json['name']! as String,
-        versionCode: (json['versionCode']! as num).toInt(),
+        apkVersionCode: (json['versionCode']! as num).toInt(),
         versionName: json['versionName']! as String,
         libVersion: json['libVersion']! as String,
         signerSha256: json['signerSha256']! as String,
@@ -64,7 +64,19 @@ class MihonExtensionInspection {
 
   final String packageName;
   final String name;
-  final int versionCode;
+
+  /// APK manifest 的 `android:versionCode`。名字只标**出处**（来自 APK），不标尺度。
+  ///
+  /// 与仓库索引的 [MihonAvailableExtension.extensionVersionCode] **是同一个量**，
+  /// 可直接比较。BUG-1996 一度写成「两侧不同尺度、索引是裸的 69、APK 是 104069」，
+  /// 那是错的：keiyoushi 两侧都由 gradle 的同一个 `androidVersionCodeProvider`
+  /// 产出（`ExtensionPlugin.kt` 同时喂给 APK output 与索引元数据），实测
+  /// `repo/index.pb` 的 field 5 与 APK 的 `android:versionCode` 逐字相同：
+  /// SamuraiScan 两侧都是 104069、Manga Mura 两侧都是 104005。
+  ///
+  /// DB 里 `manga_extensions.versionCode` 存的也是它（列名冻结），所以身份门、
+  /// 降级门 `DOWNGRADE_REJECTED`、「有更新」角标三处两侧同量、自洽。
+  final int apkVersionCode;
   final String versionName;
   final String libVersion;
   final String signerSha256;

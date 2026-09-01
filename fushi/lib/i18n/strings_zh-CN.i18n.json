@@ -3467,7 +3467,7 @@
   "mihon_store_remove": "移除扩展仓库",
   "video_import_folder_as_source_hint": "以后自动扫描此文件夹里的新视频",
   "manga_import_folder_as_source_hint": "以后自动扫描此文件夹里的新漫画",
-  "download_no_managed_video_source": "还没有受管视频来源。下载完成的视频需要一个本地视频文件夹才能入库。",
+  "download_no_managed_video_source": "还没有受管视频来源。请添加一个存放下载文件的本地文件夹，下载完成的视频才能入库。",
   "download_add_video_source": "添加视频来源",
   "video_subtitle_prev_cue_align": "上一句对齐到当前",
   "video_subtitle_next_cue_align": "下一句对齐到当前",
@@ -4106,5 +4106,6 @@
   "stat_detail_ungrouped": "未分组",
   "stat_detail_empty": "此时段暂无记录",
   "stat_center_title": "统计中心",
-  "stat_center_tab_overview": "总览"
+  "stat_center_tab_overview": "总览",
+  "shortcut_action_video_dismiss_dict": "关闭词典"
 }

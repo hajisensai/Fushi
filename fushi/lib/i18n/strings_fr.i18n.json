@@ -3467,7 +3467,7 @@
   "mihon_store_remove": "Supprimer la boutique d'extensions",
   "video_import_folder_as_source_hint": "Scanner continuellement ce dossier pour de nouvelles vidéos",
   "manga_import_folder_as_source_hint": "Scanner continuellement ce dossier pour de nouveaux manga",
-  "download_no_managed_video_source": "Aucune source vidéo gérée. Les téléchargements ont besoin d'un dossier vidéo local.",
+  "download_no_managed_video_source": "Aucune source vidéo gérée. Ajoutez un dossier local où stocker les fichiers téléchargés pour que les vidéos terminées entrent dans la bibliothèque.",
   "download_add_video_source": "Ajouter une source vidéo",
   "video_subtitle_prev_cue_align": "Aligner la ligne précédente sur maintenant",
   "video_subtitle_next_cue_align": "Aligner la ligne suivante sur maintenant",
@@ -4106,5 +4106,6 @@
   "stat_detail_ungrouped": "Ungrouped",
   "stat_detail_empty": "No activity in this period",
   "stat_center_title": "Statistics center",
-  "stat_center_tab_overview": "Overview"
+  "stat_center_tab_overview": "Overview",
+  "shortcut_action_video_dismiss_dict": "Dismiss dictionary"
 }
