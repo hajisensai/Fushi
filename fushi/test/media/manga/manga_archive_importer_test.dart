@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
@@ -8,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/epub/epub_storage.dart';
 import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
 import 'package:fushi/src/media/manga/manga_storage.dart';
+import 'package:fushi/src/media/manga/mokuro_payload.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
@@ -34,37 +36,176 @@ void main() {
   });
 
   test('CBZ images import in natural order', () async {
-    final Uint8List png =
-        Uint8List.fromList(img.encodePng(img.Image(width: 40, height: 80)));
-    final String path = _writeArchive(
-      root,
-      <ArchiveFile>[
-        ArchiveFile('10.png', png.length, png),
-        ArchiveFile('2.png', png.length, png),
-        ArchiveFile('1.png', png.length, png),
-      ],
+    final Uint8List png = Uint8List.fromList(
+      img.encodePng(img.Image(width: 40, height: 80)),
     );
+    final String path = _writeArchive(root, <ArchiveFile>[
+      ArchiveFile('10.png', png.length, png),
+      ArchiveFile('2.png', png.length, png),
+      ArchiveFile('1.png', png.length, png),
+    ]);
     final String key = await MangaArchiveImporter.importArchive(
       db: db,
       archivePath: path,
     );
     final EpubBookRow row = (await db.getEpubBook(key))!;
-    final String json =
-        File(p.join(row.extractDir, MangaStorage.kMangaJsonFileName))
-            .readAsStringSync();
+    final String json = File(
+      p.join(row.extractDir, MangaStorage.kMangaJsonFileName),
+    ).readAsStringSync();
     expect(
-        json.indexOf('images/1.png'), lessThan(json.indexOf('images/2.png')));
+      json.indexOf('images/1.png'),
+      lessThan(json.indexOf('images/2.png')),
+    );
     expect(
-        json.indexOf('images/2.png'), lessThan(json.indexOf('images/10.png')));
+      json.indexOf('images/2.png'),
+      lessThan(json.indexOf('images/10.png')),
+    );
   });
 
-  test('rejects traversal before extracting any archive entry', () async {
-    final String path = _writeArchive(
-      root,
-      <ArchiveFile>[
-        ArchiveFile('../escape.png', 3, <int>[1, 2, 3])
-      ],
+  for (final String extension in <String>['.cbz', '.zip']) {
+    test('embedded root Mokuro OCR survives $extension import', () async {
+      final Uint8List png = Uint8List.fromList(
+        img.encodePng(img.Image(width: 40, height: 80)),
+      );
+      final String path = _writeArchive(root, <ArchiveFile>[
+        _textEntry('book.mokuro', _mokuroJson('images/001.png', '埋め込み')),
+        _textEntry('legacy.html', '<html>legacy mokuro reader</html>'),
+        ArchiveFile('images/001.png', png.length, png),
+      ], name: 'book$extension');
+      expect(MangaArchiveImporter.looksLikeImageArchive(path), isTrue);
+
+      final String key = await MangaArchiveImporter.importArchive(
+        db: db,
+        archivePath: path,
+      );
+      final MokuroPayload payload = await _readImportedPayload(db, key);
+      expect(payload.images, hasLength(1));
+      expect(payload.images.single.url, 'images/001.png');
+      expect(payload.images.single.size.width, 40);
+      final MokuroBlock block = payload.images.single.blocks.single;
+      expect(block.lines, <String>['埋め込み']);
+      expect(block.rectangle, const Rect.fromLTRB(1, 2, 30, 40));
+      expect(block.isVertical, isTrue);
+      expect(block.fontSize, 17);
+      expect(block.linesCoords, isNotNull);
+    });
+  }
+
+  test('exact sibling .mokuro supplies OCR for a CBZ', () async {
+    final Uint8List png = Uint8List.fromList(
+      img.encodePng(img.Image(width: 40, height: 80)),
     );
+    final String path = _writeArchive(root, <ArchiveFile>[
+      ArchiveFile('001.png', png.length, png),
+    ]);
+    File(
+      p.join(root.path, 'book.mokuro'),
+    ).writeAsStringSync(_mokuroJson('001.png', 'サイドカー'));
+
+    final String key = await MangaArchiveImporter.importArchive(
+      db: db,
+      archivePath: path,
+    );
+    final MokuroPayload payload = await _readImportedPayload(db, key);
+    expect(payload.images.single.blocks.single.lines, <String>['サイドカー']);
+  });
+
+  test(
+    'nested manifest resolves its volume subdirectory without cross-binding',
+    () async {
+      final Uint8List wanted = Uint8List.fromList(
+        img.encodePng(img.Image(width: 41, height: 80)),
+      );
+      final Uint8List decoy = Uint8List.fromList(
+        img.encodePng(img.Image(width: 99, height: 80)),
+      );
+      final String path = _writeArchive(root, <ArchiveFile>[
+        _textEntry(
+          'Series/Vol.mokuro',
+          _mokuroJson('001.png', '正しい巻', width: 41),
+        ),
+        ArchiveFile('Series/Vol/001.png', wanted.length, wanted),
+        ArchiveFile('Other/001.png', decoy.length, decoy),
+      ]);
+
+      final String key = await MangaArchiveImporter.importArchive(
+        db: db,
+        archivePath: path,
+      );
+      final MokuroPayload payload = await _readImportedPayload(db, key);
+      expect(payload.images.single.size.width, 41);
+      expect(payload.images.single.blocks.single.lines, <String>['正しい巻']);
+    },
+  );
+
+  test('Windows separators in Mokuro and ZIP entries are normalized', () async {
+    final Uint8List png = Uint8List.fromList(
+      img.encodePng(img.Image(width: 40, height: 80)),
+    );
+    final String path = _writeArchive(root, <ArchiveFile>[
+      _textEntry('book.mokuro', _mokuroJson(r'images\001.png', 'Windows path')),
+      ArchiveFile(r'images\001.png', png.length, png),
+    ]);
+
+    final String key = await MangaArchiveImporter.importArchive(
+      db: db,
+      archivePath: path,
+    );
+    final MokuroPayload payload = await _readImportedPayload(db, key);
+    expect(payload.images.single.url, isNot(contains(r'\')));
+    expect(payload.images.single.blocks.single.lines, <String>['Windows path']);
+  });
+
+  test(
+    'multiple manifests deterministically prefer the matching archive name',
+    () async {
+      final Uint8List png = Uint8List.fromList(
+        img.encodePng(img.Image(width: 40, height: 80)),
+      );
+      final String path = _writeArchive(root, <ArchiveFile>[
+        _textEntry('decoy.mokuro', _mokuroJson('missing.png', 'wrong')),
+        _textEntry('book.mokuro', _mokuroJson('001.png', 'right')),
+        ArchiveFile('001.png', png.length, png),
+      ]);
+
+      final String key = await MangaArchiveImporter.importArchive(
+        db: db,
+        archivePath: path,
+      );
+      final MokuroPayload payload = await _readImportedPayload(db, key);
+      expect(payload.images.single.blocks.single.lines, <String>['right']);
+    },
+  );
+
+  test(
+    'invalid embedded Mokuro fails instead of silently discarding OCR',
+    () async {
+      final Uint8List png = Uint8List.fromList(
+        img.encodePng(img.Image(width: 40, height: 80)),
+      );
+      final String path = _writeArchive(root, <ArchiveFile>[
+        _textEntry('book.mokuro', '{not json'),
+        ArchiveFile('001.png', png.length, png),
+      ]);
+
+      await expectLater(
+        MangaArchiveImporter.importArchive(db: db, archivePath: path),
+        throwsA(
+          isA<MangaImportException>().having(
+            (MangaImportException error) => error.message,
+            'message',
+            contains('Mokuro OCR metadata'),
+          ),
+        ),
+      );
+      expect(await db.getAllEpubBooks(), isEmpty);
+    },
+  );
+
+  test('rejects traversal before extracting any archive entry', () async {
+    final String path = _writeArchive(root, <ArchiveFile>[
+      ArchiveFile('../escape.png', 3, <int>[1, 2, 3]),
+    ]);
     await expectLater(
       MangaArchiveImporter.importArchive(db: db, archivePath: path),
       throwsA(isA<MangaImportException>()),
@@ -94,15 +235,17 @@ void main() {
     );
     final EpubBookRow row = (await db.getEpubBook(key))!;
     final img.Image importedFirst = img.decodeImage(
-      File(p.join(row.extractDir, 'images', 'page_000000.png'))
-          .readAsBytesSync(),
+      File(
+        p.join(row.extractDir, 'images', 'page_000000.png'),
+      ).readAsBytesSync(),
     )!;
     expect(importedFirst.width, 30);
   });
 
   test('EPUB containing a text spine page stays a normal EPUB', () {
-    final Uint8List png =
-        Uint8List.fromList(img.encodePng(img.Image(width: 20, height: 40)));
+    final Uint8List png = Uint8List.fromList(
+      img.encodePng(img.Image(width: 20, height: 40)),
+    );
     final String path = _writeImageEpub(
       root,
       first: png,
@@ -114,14 +257,58 @@ void main() {
   });
 }
 
-String _writeArchive(Directory root, List<ArchiveFile> entries) {
+String _writeArchive(
+  Directory root,
+  List<ArchiveFile> entries, {
+  String name = 'book.cbz',
+}) {
   final Archive archive = Archive();
   for (final ArchiveFile entry in entries) {
     archive.addFile(entry);
   }
-  final String path = p.join(root.path, 'book.cbz');
+  final String path = p.join(root.path, name);
   File(path).writeAsBytesSync(ZipEncoder().encode(archive)!);
   return path;
+}
+
+ArchiveFile _textEntry(String name, String value) {
+  final List<int> bytes = utf8.encode(value);
+  return ArchiveFile(name, bytes.length, bytes);
+}
+
+String _mokuroJson(String imagePath, String text, {int width = 40}) {
+  return jsonEncode(<String, Object?>{
+    'title': 'Book',
+    'pages': <Object?>[
+      <String, Object?>{
+        'img_path': imagePath,
+        'img_width': width,
+        'img_height': 80,
+        'blocks': <Object?>[
+          <String, Object?>{
+            'box': <int>[1, 2, 30, 40],
+            'vertical': true,
+            'font_size': 17,
+            'lines': <String>[text],
+            'lines_coords': <Object?>[
+              <Object?>[
+                <int>[1, 2],
+                <int>[30, 40],
+              ],
+            ],
+          },
+        ],
+      },
+    ],
+  });
+}
+
+Future<MokuroPayload> _readImportedPayload(FushiDatabase db, String key) async {
+  final EpubBookRow row = (await db.getEpubBook(key))!;
+  final String json = File(
+    p.join(row.extractDir, MangaStorage.kMangaJsonFileName),
+  ).readAsStringSync();
+  return parseMangaJson(json);
 }
 
 String _writeImageEpub(

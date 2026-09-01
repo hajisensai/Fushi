@@ -477,8 +477,8 @@ class _HomeDashboardPageState
   PreferencesRepository? _prefsRepoForRemoteGate;
 
   /// 每日字数合计（dateKey → 字数，阅读 + 观看 + 游戏），热力图「全部」档 +
-  /// 日明细 sheet 头部合计。**不是**今日目标的分子——目标只算阅读域，见
-  /// [readingGoalCharsForDay]（v92：与阅读统计页同一函数、同一口径）。
+  /// 日明细 sheet 头部合计。今日目标的分子不读这张表——它直接对事实行求和，见
+  /// [studyGoalCharsForDay]（BUG-1993：与阅读统计页同一函数、同一学习域口径）。
   Map<String, int> _readingCharsByDay = const <String, int>{};
 
   /// 每日学习时长合计（dateKey → 毫秒，阅读 + 观看 + 游戏），热力图气泡的第二维度
@@ -498,6 +498,12 @@ class _HomeDashboardPageState
   List<StatFact> _readingRows = const <StatFact>[];
   List<StatFact> _watchRows = const <StatFact>[];
   List<StatFact> _gameRows = const <StatFact>[];
+
+  /// 完整日面（阅读 + 观看 + 游戏），今日目标 / 近 7 日日均的分子数据源
+  /// （BUG-1993：目标口径 = 学习域，与热力图「全部」档同覆盖面；热力图的来源
+  /// 筛选档不影响它）。派生 getter，不另存状态。
+  Iterable<StatFact> get _dailyRows =>
+      _readingRows.followedBy(_watchRows).followedBy(_gameRows);
 
   /// 合集归属映射（统计页/书架同源，显示名规则「非合集上下文拼合集名」用）：
   /// - [_collectionNamesById]：collectionId → 合集名。
@@ -1875,11 +1881,11 @@ class _HomeDashboardPageState
     }
   }
 
-  /// 「今日目标」行：阅读域（普通书 + 漫画）今日字数 vs 每日字数目标（与阅读统计页
-  /// 同一持久化 [AppModel.readingGoalDailyChars]、同一分子函数
-  /// [readingGoalCharsForDay]，不随热力图筛选变；v92 前首页把字幕字 / hook 字也
-  /// 加进分子，与统计页永远对不上）。目标为 0 → 只留设定入口按钮；否则进度条 +
-  /// 「X / Y 字」，点击行弹编辑对话框。
+  /// 「今日目标」行：学习域（书 + 视频字幕 + 游戏 hook 文本）今日字数 vs 每日
+  /// 字数目标（与阅读统计页目标卡同一持久化 [AppModel.readingGoalDailyChars]、
+  /// 同一分子函数 [studyGoalCharsForDay]，不随热力图筛选变）。v92 曾把分子收窄
+  /// 成只算阅读域，纯视频/游戏日与上方热力图「全部」档对不上（BUG-1993）。
+  /// 目标为 0 → 只留设定入口按钮；否则进度条 + 「X / Y 字」，点击行弹编辑对话框。
   Widget _buildDailyGoalRow(FushiDesignTokens tokens) {
     final int goal = ref.read(appProvider).readingGoalDailyChars;
     if (goal <= 0) {
@@ -1914,7 +1920,7 @@ class _HomeDashboardPageState
       );
     }
     final String todayKey = StatWindow(DateTime.now()).todayKey;
-    final int todayChars = readingGoalCharsForDay(_readingRows, todayKey);
+    final int todayChars = studyGoalCharsForDay(_dailyRows, todayKey);
     final double fraction = (todayChars / goal).clamp(0.0, 1.0);
     return InkWell(
       onTap: () => unawaited(_editDailyGoal()),
@@ -1964,15 +1970,15 @@ class _HomeDashboardPageState
     if (mounted) setState(() {});
   }
 
-  /// 近 [days] 天（含今天）的日均字数，**与目标同口径**（阅读域
-  /// [readingGoalCharsForDay]）：给「我该填多少」一个真实参考值（BUG-1075）。
+  /// 近 [days] 天（含今天）的日均字数，**与目标同口径**（学习域
+  /// [studyGoalCharsForDay]）：给「我该填多少」一个真实参考值（BUG-1075）。
   /// 无数据日按 0 计入分母（真实反映日均，不是活跃日均）。
   int _recentDailyAverageChars({int days = 7}) {
     if (days <= 0) return 0;
     final StatWindow w = StatWindow(DateTime.now());
     int total = 0;
     for (final String key in w.lastDayKeys(days)) {
-      total += readingGoalCharsForDay(_readingRows, key);
+      total += studyGoalCharsForDay(_dailyRows, key);
     }
     return total ~/ days;
   }
