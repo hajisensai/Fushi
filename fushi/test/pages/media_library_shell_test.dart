@@ -320,6 +320,42 @@ void main() {
             '照「壳在」渲染出来的按钮点了什么都不会发生');
     expect(scope.actionFor(MediaLibraryViewKind.library), isNotNull);
   });
+
+  testWidgets('触屏横滑按声明序切相邻视图，端头不越界', (WidgetTester tester) async {
+    // 叶子文案与页签文案错开：页签条上也有一份 label 文本，撞名会让 finder 歧义。
+    MediaLibraryViewSpec leafSpec(
+      MediaLibraryViewKind kind,
+      String tabLabel,
+      String leafLabel,
+    ) {
+      return MediaLibraryViewSpec(
+        kind: kind,
+        label: tabLabel,
+        builder: (BuildContext context, Widget navigation) => Column(
+          children: <Widget>[navigation, Text(leafLabel)],
+        ),
+      );
+    }
+
+    await tester.pumpWidget(harness(<MediaLibraryViewSpec>[
+      leafSpec(MediaLibraryViewKind.library, '书架', 'leaf-library'),
+      leafSpec(MediaLibraryViewKind.browse, '浏览', 'leaf-browse'),
+    ]));
+    await tester.pump();
+
+    await tester.fling(find.text('leaf-library'), const Offset(-260, 0), 1000);
+    await tester.pumpAndSettle();
+    expect(find.text('leaf-browse'), findsOneWidget);
+    expect(find.text('leaf-library'), findsNothing);
+
+    await tester.fling(find.text('leaf-browse'), const Offset(-260, 0), 1000);
+    await tester.pumpAndSettle();
+    expect(find.text('leaf-browse'), findsOneWidget, reason: '末位继续向左甩不越界');
+
+    await tester.fling(find.text('leaf-browse'), const Offset(260, 0), 1000);
+    await tester.pumpAndSettle();
+    expect(find.text('leaf-library'), findsOneWidget);
+  });
 }
 
 /// 压在壳上面的页面：可以再推一层，也可以按引导按钮切壳视图。

@@ -412,6 +412,7 @@ Future<File> downloadUpdateAsset({
   required UpdateDownloadOpen openUrl,
   int connectionCount = _kDefaultDownloadConnections,
   int minSegmentBytes = _kDefaultMinSegmentBytes,
+  String? pinnedCandidateUrl,
   void Function(double value)? onProgress,
   UpdateDownloadDiagnosticsCallback? onDiagnostics,
   UpdateDownloadSourceFailure? onSourceFailure,
@@ -429,6 +430,7 @@ Future<File> downloadUpdateAsset({
     openUrl: openUrl,
     connectionCount: connectionCount,
     minSegmentBytes: minSegmentBytes,
+    pinnedCandidateUrl: pinnedCandidateUrl,
     onProgress: onProgress,
     onDiagnostics: onDiagnostics,
     onSourceFailure: onSourceFailure,
@@ -459,6 +461,7 @@ Future<File> _downloadUpdateAssetUncoalesced({
   required UpdateDownloadOpen openUrl,
   int connectionCount = 1,
   int minSegmentBytes = _kDefaultMinSegmentBytes,
+  String? pinnedCandidateUrl,
   void Function(double value)? onProgress,
   UpdateDownloadDiagnosticsCallback? onDiagnostics,
   UpdateDownloadSourceFailure? onSourceFailure,
@@ -510,6 +513,7 @@ Future<File> _downloadUpdateAssetUncoalesced({
     minSegmentBytes: minSegmentBytes,
     metadata: metadata,
     openUrl: openUrl,
+    pinnedCandidateUrl: pinnedCandidateUrl,
   );
 
   final List<UpdateDownloadAttemptFailure> failures =
