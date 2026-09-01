@@ -1453,6 +1453,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   int _currentChapter = 0;
   bool _readerContentReady = false;
+  // BUG-2015：连续模式跨章前捕获旧视口，加载期间继续展示，目标章就绪后淡出。
+  // 这张图只跨一次章节导航存活；不用于分页/手动跳转，也不落盘。
+  MemoryImage? _chapterTransitionSnapshot;
+  bool _chapterTransitionCaptureInFlight = false;
   bool _hasEverLoaded = false;
   bool _readerTextContextMenuActive = false;
   // BUG-1236：移动端长按拖选后的非模态选区操作条。旧 showMenu 的全屏
@@ -2523,6 +2527,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _scrollProgressThrottleTimer?.cancel();
     _contentReadyTimer?.cancel();
     _contentReadyDeadline = null;
+    final MemoryImage? chapterTransitionSnapshot = _chapterTransitionSnapshot;
+    _chapterTransitionSnapshot = null;
+    if (chapterTransitionSnapshot != null) {
+      unawaited(chapterTransitionSnapshot.evict());
+    }
     _resizeRepaginateDebounce?.cancel();
     _chromeAutoHideTimer?.cancel();
     _clearGamepadAHold();
@@ -2903,9 +2912,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                     Positioned.fill(
                       child: _buildBody(),
                     ),
-                    if (!_readerContentReady)
+                    if (!_readerContentReady ||
+                        _chapterTransitionSnapshot != null)
                       Positioned.fill(
-                        child: ColoredBox(color: bgColor),
+                        child: _buildChapterTransitionOverlay(bgColor),
                       ),
                     if (_readerContentReady)
                       const SizedBox.shrink(
@@ -3040,6 +3050,39 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     );
     if (independentDocumentPadding == EdgeInsets.zero) return webView;
     return Padding(padding: independentDocumentPadding, child: webView);
+  }
+
+  Widget _buildChapterTransitionOverlay(Color backgroundColor) {
+    final MemoryImage? snapshot = _chapterTransitionSnapshot;
+    if (snapshot == null) return ColoredBox(color: backgroundColor);
+    final Duration fadeDuration = appModel.einkMode
+        ? Duration.zero
+        : const Duration(milliseconds: 140);
+    return IgnorePointer(
+      child: ColoredBox(
+        color: backgroundColor,
+        child: AnimatedOpacity(
+          key: const ValueKey<String>('fushi_chapter_transition_snapshot'),
+          opacity: _readerContentReady ? 0 : 1,
+          duration: fadeDuration,
+          curve: Curves.easeOut,
+          onEnd: () {
+            if (!_readerContentReady ||
+                !identical(_chapterTransitionSnapshot, snapshot)) {
+              return;
+            }
+            _rebuild(() => _chapterTransitionSnapshot = null);
+            unawaited(snapshot.evict());
+          },
+          child: Image(
+            image: snapshot,
+            fit: BoxFit.fill,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.low,
+          ),
+        ),
+      ),
+    );
   }
 
   String _buildStyleTag() {

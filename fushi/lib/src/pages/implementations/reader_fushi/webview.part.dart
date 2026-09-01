@@ -672,6 +672,8 @@ extension _ReaderWebView on _ReaderFushiPageState {
       debugLogging: DebugLogService.instance.enabled,
       swipeDistThreshold: swipeThresholds.dist,
       swipeFastDistThreshold: swipeThresholds.fastDist,
+      wheelGestureQuietMs:
+          ReaderFushiSource.instance.wheelPageTurnInterval.clamp(150, 800),
       furiganaMode: s.furiganaMode,
       caretColor: _caretRingColorCss(),
       caretInsetTop: _readerTopOffset,
@@ -1387,12 +1389,12 @@ install: function(C) {
     var sel = window.getSelection && window.getSelection();
     if (sel && !sel.isCollapsed) sel.removeAllRanges();
   }, true);
-  // BUG-369: 滚动模式滚轮跨章的「arm-then-fire 二次确认」状态——记上一次已武装
-  // 的边界方向（null=未武装）。惯性/竖排缓动擦边的单次瞬态只武装、不跨章；同方向
-  // 再来一次才真正跨章，消除「还没到章首就切上一章」。与纯函数
-  // ReaderPaginationScripts.continuousWheelBoundaryEmit 同款语义。
-  var _wheelBoundaryArmed = null;
 $kPagedWheelGestureHelperJs
+  // BUG-2015：连续模式的章节边界必须按「手势」而不是 wheel tick 判定。记录正文
+  // document 内上一拍时间：从章中滚到末尾的同一段触摸板惯性只能把尾部留白滚完，
+  // 只有静默后、起点已经在边界的新手势才表达跨章意图。真正跨 document 的残余惯性
+  // 仍由 Dart 的 chapter-turn cooldown 承接。
+  var _continuousWheelLastTickAt = 0;
   // TODO-656: 横排连续模式放行原生滚动时，记上一拍 scrollTop，下一拍无变化（原生卡
   // 在边界滚不动）才算到边界——替代瞬时 scrollTop<=2 几何。-1 = 尚无基线（首拍不卡）。
   var _wheelLastScrollPos = -1;
@@ -1433,6 +1435,11 @@ $kPagedWheelGestureHelperJs
       // 正常滚动，不打断滚动手感。统一手势纯谓词 continuousWheelBoundaryDirection。
       var root = document.scrollingElement || document.documentElement;
       var vertical = r && r.isVertical && r.isVertical();
+      var wheelTickAt = Date.now();
+      var wheelQuietMs = Math.max(150, C.wheelGestureQuietMs || 450);
+      var startsNewWheelGesture = _continuousWheelLastTickAt === 0
+        || wheelTickAt - _continuousWheelLastTickAt >= wheelQuietMs;
+      _continuousWheelLastTickAt = wheelTickAt;
       // delta>0 一律归一化为「沿书写轴前进」：横排向下(deltaY>0)、竖排投影向前都为
       // forward（见纯函数注释）。
       var wheelDelta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
@@ -1444,6 +1451,7 @@ $kPagedWheelGestureHelperJs
       if (wheelDelta === 0) return;
       e.preventDefault();
       var wheelDir = wheelDelta > 0 ? 'forward' : 'backward';
+      var pointerKind = _isTrackpadWheel(e) ? 'trackpad' : 'wheel';
       var sign = vertical
         ? ((window.getComputedStyle(document.body).writingMode === 'vertical-rl') ? -1 : 1)
         : 1;
@@ -1455,32 +1463,28 @@ $kPagedWheelGestureHelperJs
       else { window.scrollBy({left: 0, top: wheelDelta, behavior: 'auto'}); }
       var after = vertical ? window.scrollX : root.scrollTop;
       var moved = Math.abs(after - before) > 1;
-      // 诊断：仅在「滚不动」或「已武装」时打印，供真机定位为何不动（同时打 window.scrollX 与
+      // 诊断：仅在「滚不动」时打印，供真机定位为何不动（同时打 window.scrollX 与
       // root.scrollLeft，看哪个真的跟随滚动）。
-      if (!moved || _wheelBoundaryArmed) {
+      if (!moved) {
         console.log('[xchapter] wheel vertical=' + (vertical ? 1 : 0)
           + ' wheelDelta=' + Math.round(wheelDelta) + ' wheelDir=' + wheelDir
           + ' before=' + Math.round(before) + ' after=' + Math.round(after)
-          + ' moved=' + (moved ? 1 : 0) + ' armed=' + _wheelBoundaryArmed
+          + ' moved=' + (moved ? 1 : 0) + ' kind=' + pointerKind
+          + ' newGesture=' + (startsNewWheelGesture ? 1 : 0)
           + ' winX=' + Math.round(window.scrollX) + ' winY=' + Math.round(window.scrollY)
           + ' rootL=' + Math.round(root.scrollLeft) + ' rootT=' + Math.round(root.scrollTop)
           + ' scrollW=' + root.scrollWidth + ' innerW=' + window.innerWidth);
       }
       if (moved) {
-        // 真的滚动了 = 没到边界，不跨章；解武装。
-        _wheelBoundaryArmed = null;
+        // 真的滚动了 = 没到边界，不跨章。
         return;
       }
-      // 真的滚不动了 = 到边界 → arm-then-fire 二次确认（吸收单次擦边）才跨章。
-      // TODO-737: 节流闸门已统一到 Dart 侧（onBoundarySwipe handler 的 _lastPaginateTime
-      // 时间戳），JS 不再自持 _wheelTimer。arm-then-fire 二次确认（_wheelBoundaryArmed）
-      // 才是防 BUG-369 擦边误跨章的防线，与节流无关、完整保留。
-      if (_wheelBoundaryArmed === wheelDir) {
-        _wheelBoundaryArmed = null;
-        window.flutter_inappwebview.callHandler('onBoundarySwipe', wheelDir);
-      } else {
-        _wheelBoundaryArmed = wheelDir;
-      }
+      // 触摸板：本手势若从章内一路滚到边界，余下的惯性 tick 全部停在这里；用户
+      // 必须松手、静默后再滑一次才跨章。离散滚轮/数位板旋钮：一格通常只有一个
+      // WheelEvent，不能再要求 arm-then-fire 的第二拍，否则设备会表现为完全无响应。
+      if (pointerKind === 'trackpad' && !startsNewWheelGesture) return;
+      window.flutter_inappwebview.callHandler(
+        'onBoundarySwipe', wheelDir, pointerKind);
       return;
     }
     if (!r || !('paginationMetrics' in r)) return;
@@ -2249,7 +2253,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
 
         controller.addJavaScriptHandler(
           handlerName: 'onBoundarySwipe',
-          callback: (List<dynamic> args) {
+          callback: (List<dynamic> args) async {
             if (args.isEmpty || _lyricsMode) return;
             // TODO-1229 案A：跨章手势绕过 _paginate 入口直接调 _handlePageTurnLimit，
             // 故守卫在此单独收口——导航/恢复在飞时丢弃，否则连续滚轮跨章会在前一次章
@@ -2264,6 +2268,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             // (BUG-136); reclaim it so ESC keeps exiting after a chapter flip.
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
             final String dir = args[0] as String;
+            if (!_hasChapterTurnTarget(dir)) return;
             // TODO-737 节流分流（4 必补点 #1）：连续滚轮跨章直接调
             // _handlePageTurnLimit、**绕过 _paginate 入口闸门**，否则归一节流后连续
             // 滚轮跨章不受任何节流。这里就地用与 _paginate 同款 _lastPaginateTime
@@ -2282,6 +2287,10 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             // onBoundarySwipe 仅惯性/触摸路径，
             // 无键盘调用，故无条件过闸门。
             if (_chapterTurnCoolingDown()) return;
+            if (!await _prepareContinuousChapterTransition()) return;
+            if (!mounted || _paginationInFlight || !_hasChapterTurnTarget(dir)) {
+              return;
+            }
             // BUG-369/TODO-656 诊断：跨章手势汇合点（滚轮/触摸/指针都经此）。
             debugPrint('[xchapter] onBoundarySwipe dir=$dir '
                 'chapter=$_currentChapter');

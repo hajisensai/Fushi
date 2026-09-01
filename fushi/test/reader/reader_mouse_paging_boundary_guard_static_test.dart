@@ -5,8 +5,8 @@ import '../pages/reader_fushi_page_source_corpus.dart';
 /// 源码守卫（headless WebView 不可用，锁注入 JS 行为）：
 /// - BUG-368：分页模式鼠标在正文上横向拖动必须像触摸横滑一样翻页（pointermove 里把
 ///   native-text-start 的明确横向拖动转换成 onSwipe 翻页），否则桌面鼠标分页「翻不了页」。
-/// - BUG-369：滚动模式滚轮跨章必须 arm-then-fire 二次确认，杜绝向上滚动惯性/缓动擦边
-///   时「还没到章首就切上一章」。
+/// - BUG-369 / BUG-2015：滚动模式先真试滚；触摸板必须静默后从边界开始新手势才
+///   跨章，离散滚轮一拍可跨，不能再让同一段惯性或单事件设备误触/失灵。
 ///
 /// TODO-2616 假绿收口。本文件此前每一个窗口都是**裸 `substring`**——`_between` 直接在
 /// 原文上 `indexOf`、listener 用 `'}, {passive:'` 这个字面量当结束标记、Dart handler 用
@@ -88,32 +88,26 @@ void main() {
     });
   });
 
-  group('BUG-369 scroll-mode wheel boundary arm-then-fire confirmation', () {
-    test('wheel listener no longer crosses on the first boundary tick', () {
+  group('BUG-2015 continuous wheel boundary gesture ownership', () {
+    test('trackpad inertia cannot cross; a new boundary gesture can', () {
       final String wheel = _listenerBody(setupScript, 'wheel');
-      expect(containsCodeLine(wheel, '_wheelBoundaryArmed'), isTrue,
-          reason: '滚轮跨章必须经 arm-then-fire 武装态，禁止真滚不动后一次就跨章');
-      // 同方向二次确认才 callHandler；首次到边界只武装。
       expect(
-          containsCodeLine(wheel, '_wheelBoundaryArmed === wheelDir'), isTrue,
-          reason: '只有同方向二次到边界才跨章');
-      expect(containsCodeLine(wheel, '_wheelBoundaryArmed = wheelDir'), isTrue,
-          reason: '首次到边界仅武装本方向');
-      expect(containsCodeLine(wheel, '_wheelBoundaryArmed = null'), isTrue,
-          reason: '真的滚动了（moved）必须解除武装');
-      // 跨章回传仍走 onBoundarySwipe，且在二次确认分支内。下标跑在**掩码**窗口上，
-      // 注释里出现同名符号不会把先后顺序算歪。
-      final int confirmBranch =
-          wheel.indexOf('_wheelBoundaryArmed === wheelDir');
-      expect(confirmBranch, isNonNegative);
-      final int handlerCall =
-          wheel.indexOf("callHandler('onBoundarySwipe'", confirmBranch);
-      final int armBranch = wheel.indexOf('_wheelBoundaryArmed = wheelDir');
-      expect(handlerCall, isNonNegative);
-      expect(armBranch, isNonNegative);
-      expect(handlerCall, greaterThan(confirmBranch),
-          reason: 'onBoundarySwipe 必须在「同方向二次确认」分支内回传');
-      expect(handlerCall, lessThan(armBranch), reason: '首次武装分支（不跨章）必须排在确认分支之后');
+          containsCodeLine(setupScript, 'var _continuousWheelLastTickAt = 0'),
+          isTrue,
+          reason: '必须记录连续模式 wheel 手势的尾沿');
+      expect(
+          containsCodeLine(
+              wheel, "pointerKind === 'trackpad' && !startsNewWheelGesture"),
+          isTrue,
+          reason: '同一段触摸板惯性到边界后必须停住，不能替用户确认跨章');
+      expect(containsCodeLine(wheel, '_wheelBoundaryArmed'), isFalse,
+          reason: '单事件滚轮不能再依赖第二拍 arm-then-fire，否则数位板旋钮无响应');
+      final int trackpadGate = wheel.indexOf(
+          "pointerKind === 'trackpad' && !startsNewWheelGesture");
+      final int handlerCall = wheel.indexOf(
+          "'onBoundarySwipe'", trackpadGate);
+      expect(handlerCall, greaterThan(trackpadGate),
+          reason: '跨章回传必须位于触摸板旧手势早退之后');
     });
 
     test('wheel boundary uses real try-scroll (scrollBy + moved) (TODO-656)',
@@ -223,20 +217,16 @@ void main() {
           reason: 'wheel 块不得再回传 onSwipe（onSwipe 专属触摸/鼠标拖动）');
     });
 
-    test('arm-then-fire 二次确认仍完整（删 _wheelTimer 不回归 BUG-369）', () {
+    test('连续模式按设备类型分流，不再依赖 arm-then-fire', () {
       final String wheel = _listenerBody(setupScript, 'wheel');
-      // arm 才是防 BUG-369 擦边误跨章的防线（与节流无关），删 _wheelTimer 后必须保留。
       expect(
-          containsCodeLine(wheel, '_wheelBoundaryArmed === wheelDir'), isTrue,
-          reason: 'arm-then-fire 同方向二次确认逻辑保留');
-      expect(containsCodeLine(wheel, '_wheelBoundaryArmed = wheelDir'), isTrue,
-          reason: '首次到边界仅武装本方向');
-      // onBoundarySwipe 仍在二次确认分支内回传（紧跟 arm 命中后清武装）。
-      final int confirm = wheel.indexOf('_wheelBoundaryArmed === wheelDir');
-      expect(confirm, isNonNegative);
-      final int call = wheel.indexOf("callHandler('onBoundarySwipe'", confirm);
-      expect(call, greaterThan(confirm),
-          reason: 'onBoundarySwipe 必须在二次确认分支内回传');
+          containsCodeLine(wheel,
+              "var pointerKind = _isTrackpadWheel(e) ? 'trackpad' : 'wheel'"),
+          isTrue,
+          reason: '连续模式必须区分惯性触摸板与离散滚轮/旋钮');
+      expect(containsCodeLine(wheel, 'C.wheelGestureQuietMs'), isTrue,
+          reason: '新手势静默窗必须来自 per-nav 配置，而不是散落魔数');
+      expect(containsCodeLine(wheel, '_wheelBoundaryArmed'), isFalse);
     });
 
     test('onWheelPaginate Dart handler 不读 invertSwipeDirection，传 throttleMs',
