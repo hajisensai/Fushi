@@ -3,7 +3,7 @@
 - **真实性**：✅ 真 bug。根因是 `fushi/lib/src/pages/implementations/video_work_detail_page.dart:57` 把 `FutureBuilder.future` 写在 `build()` 里现取（`database.getMediaCollectionById(collectionId)`），`VideoWorkDetailPage` 当时还是 `StatelessWidget`。于是**每次重建都产生一个新 Future**，FutureBuilder 走 `didUpdateWidget` → `_snapshot.inState(ConnectionState.none)` → 该 builder 判的 `snapshot.connectionState != ConnectionState.done` 成立 → 整页落回 `Scaffold(body: Center(adaptiveIndicator))`；同时子页 `MediaCollectionDetailPage` 从树上消失、以**全新 State** 重建，它自己的 `_loading`（`media_collection_detail_page.dart:115`，全文件只有初值 `true` 与 `:358` 置 `false` 两个赋值点）一并复位 → 剧集列表整份重查。用户截到的正是这一帧。
   - **重建从哪来**：`fushi/lib/main.dart:780` 在 `AppLifecycleState.resumed` 调 `AppModel.refreshSystemPalette()`，而桌面端每次窗口激活都会走一遍 resumed；`theme_notifier.dart:462` 当时是**无条件** `notifyListeners()`（只要 `appThemeKey == 'system-theme'`，即动态取色主题），系统色一动没动也照发 → 主题变更 → 全树重建。两者叠加 = 「一拉到前台就闪」。
   - **同形状但不闪的两处**（一并修，但性质不同，勿混记）：`collection_detail_shared.dart:59`（标签 chip 行）与 `collection_relations_section.dart:267`（相关作品区）也把 future 写在 build 里，但它们的 builder 只读 `snap.data`，而上面那个 `inState(ConnectionState.none)` **保留 data**，所以旧结果继续渲染、并不闪。它们的代价是**每次重建都白查一次库**。这点经变异实测确认：最初按「也会闪」写的断言在变异下不红，判断已纠正。
-- **[x] ① 已修复** — `PENDING_COMMIT`：
+- **[x] ① 已修复** — `969f2d43e7`：
   1. `VideoWorkDetailPage` 由 `StatelessWidget` 改为 `StatefulWidget`，合集行查询缓存在 State，身份只由 `(collectionId, database)` 决定，`didUpdateWidget` 里才重取；
   2. `collection_relations_section.dart` 把查询提进 State（`initState` / `didUpdateWidget` / 绑定成功后重取），顺带消除了只为翻 `key` 而存在的 `_refresh` 计数器——future 的身份变化本身就是「该重取」的信号；
   3. `collection_detail_shared.dart` 的标签查询改记忆化 getter，身份 = `(合集 id, detailTagsRefresh)`；
