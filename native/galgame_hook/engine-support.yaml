@@ -235,7 +235,7 @@
         "geometry": {
           "status": "implemented_unverified",
           "providers": ["engine_exact_layout", "attached_calibrated"],
-          "evidence": "The calibrated fallback and a fail-closed exact provider are implemented. The HUNEX hydrated-image scanner requires unique executable-section renderer/input/projection anchors plus callgraph, unwind and imported-API validation before it can publish geometry. The original WoH session has not yet produced a complete glyph-to-client projection or lookup/card E2E."
+          "evidence": "The calibrated fallback and a fail-closed exact provider are implemented. The HUNEX hydrated-image scanner requires unique executable-section renderer/input/projection anchors plus callgraph, unwind and imported-API validation before it can publish geometry. The original WoH session has not yet produced a complete glyph-to-client projection or lookup/card E2E. The engine_exact_layout entry above is a deliberate 2026-08-31 graduation from observation-only; only the geometry provider layer graduated, and the resource-capture and pairing gates stay not_verified."
         },
         "verified_shield": {
           "status": "implemented_unverified",
@@ -2271,6 +2271,7 @@
         "The data04000.hfa voice role is proved only by the local WoH v1.0 archive layout and is not a HUNEX-family invariant; other titles stay disabled until their archive role is independently mapped and evidenced.",
         "Mono versus stereo is not a voice classifier. HW admission is structural and both channel layouts remain valid candidates until the title-scoped archive role is established.",
         "The profile intentionally has no executable or module hash allowlist so patched WoH executables can remain eligible for structural probing; WoH.exe and data04000.hfa names alone must never bypass HFA/HW validation.",
+        "Deliberate 2026-08-31 graduation, recorded because it removed a guard: the x64 hydrated-image renderer/input scanner was promoted from observation-only to a production lookup provider, and the generator assertion 'HUNEX exact geometry is observation-only and must not OfferReady/PublishHit' was deleted to permit it. Only the geometry provider layer graduated. geometry.status stays implemented_unverified and the HFA/HW resource-capture and text/audio pairing gates stay not_verified; promoting the provider is not evidence for resource capture, pairing or any card E2E.",
         "The signature-based x64 exact provider is production-wired but remains implemented_unverified. Every ambiguous or missing renderer/input/projection anchor fails closed to attached_calibrated fallback; it must not be advertised as verified until same-session lookup/card and transaction E2E are recorded."
       ],
       "adapter_path": "hook/adapters/hunex_gge_adapter.inc",

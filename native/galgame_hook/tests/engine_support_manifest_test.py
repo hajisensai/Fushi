@@ -233,6 +233,42 @@ class EngineSupportManifestTest(unittest.TestCase):
             )
         )
 
+    def test_hunex_geometry_graduation_is_recorded_with_unverified_gates(self) -> None:
+        # The exact geometry provider was deliberately graduated out of
+        # observation-only, which deleted generate_engine_support.py's
+        # "must not OfferReady/PublishHit" assertion. Pin the graduation record
+        # and the still-unverified gates together, in one known_limitations
+        # entry, so a later edit cannot keep the promotion while dropping the
+        # caveat -- and so this guard cannot be satisfied by narrative that
+        # only states one of the two.
+        hunex = self.engines["hunex_gge"]
+        lookup = next(
+            record
+            for record in self.manifest["lookup_support"]["engines"]
+            if record["engine_id"] == "hunex_gge"
+        )
+        self.assertIn("engine_exact_layout", lookup["geometry"]["providers"])
+        self.assertEqual("implemented_unverified", lookup["geometry"]["status"])
+        self.assertEqual("implemented_unverified", hunex["current_status"])
+        self.assertEqual(
+            "not_verified", hunex["audio"]["priority"][0]["clean_voice"]
+        )
+        self.assertEqual([], hunex["verified_games"])
+        required = (
+            "observation-only",
+            "OfferReady/PublishHit",
+            "implemented_unverified",
+            "not_verified",
+        )
+        self.assertTrue(
+            any(
+                all(token in limitation for token in required)
+                for limitation in hunex["known_limitations"]
+            ),
+            "one known_limitations entry must record the graduation out of "
+            "observation-only together with the gates that stay unverified",
+        )
+
     def test_support_status_and_capability_promotions_require_evidence(self) -> None:
         reallive = self.engines["reallive"]
         reallive["current_status"] = "verified"
