@@ -72,6 +72,14 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   int _todayMs = 0;
   int _weekChars = 0;
   int _weekMs = 0;
+  // 学习域目标分子（今日 / 本周，书 + 视频字幕 + 游戏 hook 文本）：目标卡与
+  // 「今天」环形卡的目标环用它，与首页「今日目标」同函数同口径
+  // （[studyGoalCharsForDay]，BUG-1993）。本页其余 KPI / 趋势 / CPH 仍是
+  // 阅读域（[_todayChars] 等），两组数并存不混用。
+  int _todayStudyChars = 0;
+  int _weekStudyChars = 0;
+  // 完整日面（全部来源），学习域目标分子的数据源。
+  List<StatFact> _dailyFacts = <StatFact>[];
   // 上周字数（第 8–14 天窗口）：仅用于顶部 KPI 的本周字数环比，[8,14) 与本周 [0,7) 不重叠。
   int _prevWeekChars = 0;
   int _monthChars = 0;
@@ -143,6 +151,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       // 活动行，activityLimit 传 0。
       final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
       _bookFacts = facts.dailyBooks.toList();
+      _dailyFacts = facts.daily;
       _sourceDaily = aggregateStatSourceDaily(_bookFacts);
       _computeAggregates();
       // 加载事实时顺带取的书表：下面的 title→bookKey（合集归属 / legacy 行回退）
@@ -235,6 +244,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     _todayMs = 0;
     _weekChars = 0;
     _weekMs = 0;
+    _todayStudyChars = 0;
+    _weekStudyChars = 0;
     _prevWeekChars = 0;
     _monthChars = 0;
     _monthMs = 0;
@@ -245,7 +256,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final bookMap = <String, _BookData>{};
 
     // 阅读统计只合并阅读域的普通书与漫画。视频 / 游戏有各自统计页，不进入本页
-    // KPI、趋势、目标进度或活跃天数。
+    // KPI、趋势或活跃天数；唯一例外是目标进度——目标是学习域概念（BUG-1993），
+    // 分子在下方单独按完整日面求和。
     for (final StatBreakdownSource source in const <StatBreakdownSource>[
       StatBreakdownSource.book,
       StatBreakdownSource.manga,
@@ -273,8 +285,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       });
     }
 
-    // 今日字数与首页「今日目标」同源同函数（阅读域当日字数），两处永远对得上。
-    _todayChars = readingGoalCharsForDay(_bookFacts, w.todayKey);
+    // 今日阅读字数（阅读域切片，喂概览「今日」与 CPH）；目标分子另算学习域
+    // （完整日面，与首页「今日目标」同源同函数，BUG-1993）。
+    _todayChars = studyGoalCharsForDay(_bookFacts, w.todayKey);
+    _todayStudyChars = studyGoalCharsForDay(_dailyFacts, w.todayKey);
+    for (final StatFact f in _dailyFacts) {
+      if (w.inWeek(f.dateKey)) _weekStudyChars += f.chars;
+    }
 
     // 按书：按身份分组（有 bookKey 用 bookKey，legacy 无身份行回退 title），
     // 同一本书的 legacy 日行与 v92 段合成一个 tile；title 取首见快照作展示 / 计数键。
@@ -757,10 +774,11 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  /// TODO-1046: daily/weekly reading goal card. Both goals 0 => no card at all
+  /// TODO-1046: daily/weekly study goal card. Both goals 0 => no card at all
   /// (SizedBox.shrink), so an install that never set a goal sees zero visual
-  /// change on the statistics page. Reuses the already-computed [_todayChars] /
-  /// [_weekChars] aggregates (no extra DB query).
+  /// change on the statistics page. Reuses the already-computed
+  /// [_todayStudyChars] / [_weekStudyChars] aggregates (no extra DB query;
+  /// study-domain numerators, BUG-1993).
   Widget _buildGoalPanel() {
     final int dailyGoal = appModelNoUpdate.readingGoalDailyChars;
     final int weeklyGoal = appModelNoUpdate.readingGoalWeeklyChars;
@@ -772,13 +790,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
     final List<Widget> rows = <Widget>[];
     if (dailyGoal > 0) {
-      rows.add(_buildGoalRow(t.stat_goal_daily, _todayChars, dailyGoal));
+      rows.add(_buildGoalRow(t.stat_goal_daily, _todayStudyChars, dailyGoal));
     }
     if (dailyGoal > 0 && weeklyGoal > 0) {
       rows.add(SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2));
     }
     if (weeklyGoal > 0) {
-      rows.add(_buildGoalRow(t.stat_goal_weekly, _weekChars, weeklyGoal));
+      rows.add(_buildGoalRow(t.stat_goal_weekly, _weekStudyChars, weeklyGoal));
     }
 
     return Padding(
@@ -957,7 +975,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
     final int dailyGoal = appModelNoUpdate.readingGoalDailyChars;
     final int charGoal = dailyGoal > 0 ? dailyGoal : _kDailyCharGoalFallback;
-    final double charFrac = goalFraction(_todayChars, charGoal);
+    // 目标环用学习域分子（BUG-1993，与目标卡 / 首页同口径）；下方 CPH 仍是
+    // 阅读域字数 ÷ 阅读时长，量纲不混。
+    final double charFrac = goalFraction(_todayStudyChars, charGoal);
     final int todayMinutes = _todayMs ~/ 60000;
     final double timeFrac = goalFraction(todayMinutes, _kDailyTimeGoalMinutes);
     // BUG-1107：今日速度同样过最小样本门槛（[computeCph] 内建，不足 1 分钟返回
@@ -983,7 +1003,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                 color: scheme.primary,
                 trackColor: scheme.surfaceContainerHighest,
                 value: '${(charFrac * 100).round()}%',
-                detail: '$_todayChars/$charGoal',
+                detail: '$_todayStudyChars/$charGoal',
                 caption: t.stat_goal,
               ),
               StatRing(

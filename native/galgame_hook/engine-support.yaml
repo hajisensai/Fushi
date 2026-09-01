@@ -2380,7 +2380,7 @@
         "No real-game session has been run against this adapter: process_found through card_e2e are all not_run.",
         "Archive membership is the role proof, and it only holds while the runtime keeps character voice in a separate voice_body.bin.",
         "The emitted .xwma file is not byte-identical to an archive entry: the RIFF envelope is synthesised here. Only the fmt/dpds/payload chunks are verbatim.",
-        "Identity is the executable SHA-256, which recognizes the same bytes on any machine and is not tied to a local path. A game patch, unknown hash, non-unique hydrated signature, decoded-target mismatch, unwind mismatch or ABI mismatch disables exact lookup (and the hash change disables the paired text/audio profile) until that build is measured independently."
+        "Identity is the executable SHA-256, which recognizes the same bytes on any machine and is not tied to a local path. A game patch, unknown hash, non-unique hydrated signature, decoded-target mismatch, unwind mismatch or ABI mismatch disables exact lookup (and the hash change disables the paired text/audio profile) until that build is measured independently.",
         "The anchor signature table (kSgreTextDrawSignature / kSgreScenarioTextVtableSignature / kSgreDirectInputMouseDeviceSignature) is still empty: an executable outside kSgreKnownBuilds is claimed as family and gets archive-resource audio, but its lookup sensor and DirectInput shield resolve to signature_empty until patterns are measured from a real build. The Luna text hook code is still keyed by the measured hash row only."
       ],
       "adapter_path": "hook/adapters/sgre_adapter.inc",

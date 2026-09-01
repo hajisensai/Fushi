@@ -4094,5 +4094,6 @@
   "storage_category_backups": "Arsip cadangan tersisa",
   "storage_entry_backups_label": "$n arsip yang tersisa dari ekspor terakhir",
   "update_download_source_unavailable": "$source tidak tersedia untuk berkas ini; kembali ke urutan otomatis",
-  "network_proxy_credentials_scope_hint": "Kredensial hanya berlaku untuk permintaan HTTP; mesin torrent bawaan tidak dapat menggunakannya"
+  "network_proxy_credentials_scope_hint": "Kredensial hanya berlaku untuk permintaan HTTP; mesin torrent bawaan tidak dapat menggunakannya",
+  "anki_error_paired_device_unreachable": "Couldn't create the card because no paired device could be reached. Make sure Fushi is running on the paired device, or turn off Mine to paired device in Anki settings to create cards locally."
 }

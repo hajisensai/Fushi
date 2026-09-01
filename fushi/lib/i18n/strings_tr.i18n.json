@@ -4094,5 +4094,6 @@
   "storage_category_backups": "Artakalan yedek arşivleri",
   "storage_entry_backups_label": "Son dışa aktarmadan kalan $n arşiv",
   "update_download_source_unavailable": "$source bu dosya için kullanılamıyor; otomatik sıraya geri dönüldü",
-  "network_proxy_credentials_scope_hint": "Kimlik bilgileri yalnızca HTTP istekleri için geçerlidir; yerleşik torrent motoru bunları kullanamaz"
+  "network_proxy_credentials_scope_hint": "Kimlik bilgileri yalnızca HTTP istekleri için geçerlidir; yerleşik torrent motoru bunları kullanamaz",
+  "anki_error_paired_device_unreachable": "Couldn't create the card because no paired device could be reached. Make sure Fushi is running on the paired device, or turn off Mine to paired device in Anki settings to create cards locally."
 }
