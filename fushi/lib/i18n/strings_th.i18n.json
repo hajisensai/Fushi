@@ -4094,5 +4094,6 @@
   "storage_category_backups": "ไฟล์สำรองข้อมูลที่ตกค้าง",
   "storage_entry_backups_label": "ไฟล์เก็บถาวร $n รายการที่ตกค้างจากการส่งออกครั้งล่าสุด",
   "update_download_source_unavailable": "$source ใช้กับไฟล์นี้ไม่ได้ จึงกลับไปใช้ลำดับอัตโนมัติ",
-  "network_proxy_credentials_scope_hint": "ข้อมูลรับรองใช้ได้กับคำขอ HTTP เท่านั้น เอนจิน torrent ในตัวไม่สามารถใช้ได้"
+  "network_proxy_credentials_scope_hint": "ข้อมูลรับรองใช้ได้กับคำขอ HTTP เท่านั้น เอนจิน torrent ในตัวไม่สามารถใช้ได้",
+  "anki_error_paired_device_unreachable": "Couldn't create the card because no paired device could be reached. Make sure Fushi is running on the paired device, or turn off Mine to paired device in Anki settings to create cards locally."
 }

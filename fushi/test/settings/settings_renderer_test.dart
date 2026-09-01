@@ -239,7 +239,7 @@ void main() {
     );
 
     expect(find.byType(Scaffold), findsOneWidget);
-    expect(find.byType(AppBar), findsOneWidget);
+    expect(find.byType(AppBar), findsNothing);
     expect(find.text('Action'), findsOneWidget);
     expect(
       find.byWidgetPredicate(
