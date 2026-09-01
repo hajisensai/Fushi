@@ -974,6 +974,20 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 库内自动补刮总闸（默认开）。
+  ///
+  /// 与上面的 [videoAutoScrape] **不是**一件事，也不能复用它：那个键的契约明写
+  /// 「不会发起元数据网络请求」，且早已从设置页撤下、用户无从更改。库内自动补刮
+  /// 会下载 AniDB 每日标题包、并在配了客户端身份时打 AniDB/TMDB，是一项会联网的
+  /// 后台行为，必须有自己的、用户可见可关的开关。
+  bool get videoLibraryAutoBackfillScrape =>
+      getPref('video_library_auto_backfill_scrape', defaultValue: true) as bool;
+
+  Future<void> setVideoLibraryAutoBackfillScrape(bool value) async {
+    await setPref('video_library_auto_backfill_scrape', value);
+    notifyListeners();
+  }
+
   /// TODO-1119 / BUG-545：用户是否已在「Windows 黑屏闪烁」运行时提示里点了「不再提示」。
   /// 默认 false = 允许提示。置 true 后播放器不再弹该运行时提示条（静态「已知问题」说明行
   /// 仍在画质设置里）。getPref 仅在该 key 从未写过时返回默认 false。

@@ -10,6 +10,8 @@ import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 ///
 /// 这里守卫修复后的口径：漫画载体被认出来 → importNewManga；认得出但导不了的
 /// RAR 系 → 明确提示而非静默；漫画库拖入非漫画 → 明确提示而非悄悄导去别的书架。
+// RAR/CBR/CB7 are now supported manga carriers; older unsupported wording in
+// the historical context above describes the pre-fix behavior.
 void main() {
   group('classifyDroppedFiles — 漫画载体', () {
     test('.mokuro 归 mangas', () {
@@ -25,12 +27,12 @@ void main() {
       expect(files.unknown, isEmpty);
     });
 
-    test('.cbr/.rar 归 unsupportedMangas（认得出但 archive 包不解 RAR）', () {
+    test('.cbr/.rar/.cb7 归 mangas', () {
       final DroppedFiles files =
-          classifyDroppedFiles(<String>['/a/v.cbr', '/a/v.rar']);
-      expect(files.unsupportedMangas, <String>['/a/v.cbr', '/a/v.rar']);
-      expect(files.mangas, isEmpty);
-      expect(files.hasAny, isTrue, reason: '必须能触发提示，不能落进静默的 ignore');
+          classifyDroppedFiles(<String>['/a/v.cbr', '/a/v.rar', '/a/v.cb7']);
+      expect(files.mangas, <String>['/a/v.cbr', '/a/v.rar', '/a/v.cb7']);
+      expect(files.unsupportedMangas, isEmpty);
+      expect(files.hasAny, isTrue);
     });
 
     test('目录经 isDirectory 谓词归 mangas（页图文件夹）', () {
@@ -156,14 +158,14 @@ void main() {
       );
     });
 
-    test('RAR 系 -> unsupportedMangaArchive（明确提示，不静默）', () {
+    test('RAR 系 -> importNewManga', () {
       expect(
         decideDropIntent(
           surface: DropSurface.manga,
-          files: files(unsupportedMangas: <String>['/a/v.cbr']),
+          files: files(mangas: <String>['/a/v.cbr']),
           cardHit: false,
         ),
-        DropIntent.unsupportedMangaArchive,
+        DropIntent.importNewManga,
       );
     });
 
@@ -274,14 +276,14 @@ void main() {
       );
     });
 
-    test('books 表面的 RAR 系也给提示', () {
+    test('books 表面的 RAR 系也导入漫画', () {
       expect(
         decideDropIntent(
           surface: DropSurface.books,
-          files: files(unsupportedMangas: <String>['/a/v.cbr']),
+          files: files(mangas: <String>['/a/v.cbr']),
           cardHit: false,
         ),
-        DropIntent.unsupportedMangaArchive,
+        DropIntent.importNewManga,
       );
     });
   });

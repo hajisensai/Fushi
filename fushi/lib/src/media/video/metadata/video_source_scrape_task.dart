@@ -9,6 +9,8 @@ import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart'
+    show VideoSourceScrapeWork;
 import 'package:fushi_core/fushi_core.dart';
 
 enum VideoSourceScrapePhase {
@@ -280,12 +282,16 @@ typedef VideoSourceScrapeProgressCallback = void Function(
 );
 
 abstract interface class VideoSourceScrapeRunner {
+  /// [plannedWorks] 非空时只处理这个子集（库内自动补刮传「未识别作品」），
+  /// 为空时由 runner 自己按来源计划全量展开；[runScope] 落进 run 审计行。
   Future<SourceScrapeReport> scrapeSource(
     SourceLibraryRow source, {
     required VideoSourceScrapeCancellationToken cancellationToken,
     required VideoSourceScrapeProgressCallback onProgress,
     VideoSourceScrapeConfirmationCallback? onConfirmation,
     VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
   });
 }
 
@@ -374,6 +380,25 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
             source.mediaKind == 'video' && source.transport == 'local'),
         interactive: interactive,
         allowProtectedOverwrite: allowProtectedOverwrite,
+      );
+
+  /// 库内自动补刮批次：只刮各来源给定的「未识别作品」子集，run 记
+  /// scope='sweep'。与手动批次共用同一把互斥门、同一个进度面板；已有批次在
+  /// 跑时直接返回那个批次（不排队），由调用方先看 [isBusy] 决定要不要发起。
+  Future<SourceScrapeReport> scrapeWorkSubsets(
+    Map<SourceLibraryRow, List<VideoSourceScrapeWork>> worksBySource,
+  ) =>
+      _start(
+        worksBySource.keys.where((SourceLibraryRow source) =>
+            source.mediaKind == 'video' && source.transport == 'local'),
+        interactive: false,
+        allowProtectedOverwrite: false,
+        plannedWorksBySource: <int, List<VideoSourceScrapeWork>>{
+          for (final MapEntry<SourceLibraryRow,
+              List<VideoSourceScrapeWork>> entry in worksBySource.entries)
+            entry.key.id: entry.value,
+        },
+        runScope: 'sweep',
       );
 
   /// 当前 runner 是否支持事后手动指定作品。
@@ -484,6 +509,8 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
     Iterable<SourceLibraryRow> sourceIterable, {
     required bool interactive,
     required bool allowProtectedOverwrite,
+    Map<int, List<VideoSourceScrapeWork>>? plannedWorksBySource,
+    String runScope = 'source',
   }) {
     if (_disposed) {
       return Future<SourceScrapeReport>.error(
@@ -518,6 +545,8 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
       sources,
       token,
       interactive: interactive,
+      plannedWorksBySource: plannedWorksBySource,
+      runScope: runScope,
     );
     _active = future;
     // 后台入口依赖 listener 立即展示全局任务按钮；必须在 _active 就绪后通知，
@@ -541,6 +570,8 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
     List<SourceLibraryRow> sources,
     VideoSourceScrapeCancellationToken token, {
     required bool interactive,
+    Map<int, List<VideoSourceScrapeWork>>? plannedWorksBySource,
+    String runScope = 'source',
   }) async {
     SourceScrapeReport aggregate = SourceScrapeReport(
       sourceIds: <int>[
@@ -558,6 +589,8 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
           onProgress: _publish,
           onConfirmation: interactive ? _requestConfirmation : null,
           batchContext: batchContext,
+          plannedWorks: plannedWorksBySource?[source.id],
+          runScope: runScope,
         );
         aggregate = aggregate.merge(report);
       }

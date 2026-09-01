@@ -342,6 +342,23 @@ SettingsDestination buildVideoDestination() {
         items: <SettingsItem>[
           // AniDB 客户端身份 / TMDB key 已迁到「在线服务」分区（第三方凭据一个家，
           // 见 settings_schema_services.dart）；这里只留刮削行为本身的偏好。
+          //
+          // 库内自动补刮的总闸。这项会联网（AniDB 每日标题包，配了客户端身份时还
+          // 会打 httpapi/TMDB），所以必须有一个用户看得见、关得掉的开关：早先它挂
+          // 在 video_auto_scrape 上，而那个键的契约明写「不发元数据网络请求」且已
+          // 从设置页撤下——等于给一项后台联网行为配了个不存在的开关。
+          SettingsSwitchItem(
+            id: 'video.library.scrape_auto_backfill',
+            title: t.video_library_scrape_auto_backfill,
+            subtitle: t.video_library_scrape_auto_backfill_hint,
+            icon: Icons.auto_fix_high_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoLibraryAutoBackfillScrape,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setVideoLibraryAutoBackfillScrape(value);
+            },
+          ),
           SettingsTextItem(
             id: 'video.library.metadata_locale',
             title: t.video_source_scrape_locale,

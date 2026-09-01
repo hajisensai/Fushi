@@ -84,6 +84,7 @@ class MangaImporter {
     String? title,
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
+    int? sourceId,
   }) async {
     final Directory root = Directory(imageDirPath);
     final MokuroPayload payload = await payloadFromImageFolder(root);
@@ -97,6 +98,7 @@ class MangaImporter {
       proposedTitle: proposedTitle,
       policy: policy,
       onProgress: onProgress,
+      sourceId: sourceId,
     );
   }
 
