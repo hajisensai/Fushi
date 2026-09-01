@@ -51,6 +51,20 @@ void main() {
     });
   });
 
+  group('allVideoThumbnailTargetWidthForWidth', () {
+    test('桌面宽屏使用更大的 16:9 缩略图目标宽', () {
+      expect(allVideoThumbnailTargetWidthForWidth(1991), 320);
+      expect(allVideoThumbnailTargetWidthForWidth(1440), 300);
+      expect(allVideoThumbnailTargetWidthForWidth(1100), 280);
+      expect(allVideoThumbnailTargetWidthForWidth(800), 240);
+    });
+
+    test('手机保持双列所需的紧凑目标宽', () {
+      expect(allVideoThumbnailTargetWidthForWidth(599), 150);
+      expect(allVideoThumbnailTargetWidthForWidth(360), 150);
+    });
+  });
+
   group('videoHeroHeightForWidth', () {
     test('21:9 影院比例，夹在 [220, 420]', () {
       expect(videoHeroHeightForWidth(840), closeTo(360, 0.001));

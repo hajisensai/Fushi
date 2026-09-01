@@ -157,7 +157,7 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    // 本地卡在，远端占位卡在（同一主混排墙 Wrap 混排，TODO-2486），远端占位带云角标。
+    // 本地卡在，远端占位卡在（同一 16:9 等宽网格），远端占位带云角标。
     expect(
       find.byKey(const ValueKey<String>('home_video_video/local-1')),
       findsOneWidget,
@@ -171,10 +171,22 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.ancestor(of: remoteCard, matching: find.byType(Wrap)),
+      find.ancestor(of: remoteCard, matching: find.byType(SliverGrid)),
       findsOneWidget,
-      reason: '远端占位卡必须是主混排墙（Wrap）的一个 cell（混排，非独立分区）',
+      reason: '远端占位卡必须是“全部视频”主 SliverGrid 的一个 cell（非独立分区）',
     );
+    final Finder localCard =
+        find.byKey(const ValueKey<String>('home_video_video/local-1'));
+    expect(tester.getSize(localCard), tester.getSize(remoteCard),
+        reason: '本地与远端视频卡必须使用同一个等宽网格尺寸');
+    final AspectRatio localCover = tester.widget<AspectRatio>(
+      find.descendant(of: localCard, matching: find.byType(AspectRatio)).first,
+    );
+    final AspectRatio remoteCover = tester.widget<AspectRatio>(
+      find.descendant(of: remoteCard, matching: find.byType(AspectRatio)).first,
+    );
+    expect(localCover.aspectRatio, 16 / 9);
+    expect(remoteCover.aspectRatio, 16 / 9);
   });
 
   testWidgets('本地已有同 bookUid 的视频不重复渲染远端占位', (WidgetTester tester) async {

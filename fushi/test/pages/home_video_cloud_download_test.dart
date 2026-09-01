@@ -169,10 +169,24 @@ void main() {
       findsOneWidget,
       reason: '云视频占位卡必须带云角标 ☁',
     );
+    // BUG-1989 起「全部视频」散卡区是 16:9 等宽 SliverGrid（系列墙才留 Wrap）。
+    // 只断言「有网格祖先」不够——云占位自成独立分区时也自带一个 SliverGrid；
+    // 判据必须落在「与本地散卡同一个 SliverGrid 实例」上，才真的钉住混排。
+    final Finder localCard =
+        find.byKey(const ValueKey<String>('home_video_video/local-1'));
+    final Finder cloudGrid =
+        find.ancestor(of: cloudCard, matching: find.byType(SliverGrid));
+    final Finder localGrid =
+        find.ancestor(of: localCard, matching: find.byType(SliverGrid));
     expect(
-      find.ancestor(of: cloudCard, matching: find.byType(Wrap)),
+      cloudGrid,
       findsOneWidget,
       reason: '云视频占位卡是主散卡网格的一个 cell（混排，非独立分区）',
+    );
+    expect(
+      tester.element(cloudGrid),
+      same(tester.element(localGrid)),
+      reason: '云视频占位卡必须与本地散卡同属一个网格，不得自成独立分区',
     );
   });
 
