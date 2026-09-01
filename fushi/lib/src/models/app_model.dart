@@ -2332,13 +2332,10 @@ class AppModel with ChangeNotifier {
       TexthookerService.instance.foldProgressiveLines =
           prefsRepo.galHookFoldProgressiveLines;
       // 代理是**进程级**网络出口配置，却只存在偏好里；同步层的单例（GoogleDriveAuth 等）
-      // 拿不到 AppModel，以前就只能各自裸连——BUG-1348 的谷歌云盘登录超时正是如此。偏好
-      // 一装载好就把进程级读取器接上去，此后任何 applyAppProxy(client) 都自动拿到同一个值，
-      // 不必沿调用链穿参（穿漏一处 = 一条不走代理的暗路）。
-      appUserProxyReader = () => prefsRepo.updateCustomProxy;
-      appUserProxyModeReader = () => prefsRepo.networkProxyMode;
-      appUserProxyUsernameReader = () => prefsRepo.networkProxyUsername;
-      appUserProxyPasswordReader = () => prefsRepo.networkProxyPassword;
+      // 拿不到 AppModel，以前就只能各自裸连——BUG-1348 的谷歌云盘登录超时正是如此。四个
+      // 代理读取器的绑定已下沉到 `PreferencesRepository.loadFromDb()`（偏好变得可读的
+      // 那一刻），这样弹窗词典等**其它**入口不必各自记得补一行——漏一处就是一整个进程
+      // 拿不到用户选的模式/凭据。这里只留更新专用的那个。
       appUpdateDownloadSourceReader = () => prefsRepo.updateDownloadSource;
       // BUG-1493：词典包与 index.json 全托管在 github / raw.githubusercontent /
       // huggingface 上，而 fushi_dictionary 用的是裸 Dio——`findProxy` 为 null，既不读

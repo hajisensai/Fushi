@@ -88,8 +88,12 @@ void main() {
     // `_dismissTopForegroundLayer`，键盘 Esc / [PopScope] 系统返回键 / 手柄 B 共用同一
     // 份（此前 [PopScope] 那条只关词典浮层，侧栏开着按 Esc 会直接退掉整页）。这里断言
     // 的行为没变：字幕列表比侧栏更前台，两者都排在退页之前。
-    final int escIdx = src.indexOf('escape: () {');
-    expect(escIdx, greaterThanOrEqualTo(0), reason: '缺 escape 回调');
+    // 执行体已抽成具名方法 [_handleVideoEscapeAction]（整张动作表里唯一不需要
+    // VideoPlayerController 的动作，加载态下键盘 / 手柄要能绕开表单独调到它）。
+    final int escIdx = src.indexOf('void _handleVideoEscapeAction() {');
+    expect(escIdx, greaterThanOrEqualTo(0), reason: '缺 escape 执行体');
+    expect(src.contains('escape: _handleVideoEscapeAction,'), isTrue,
+        reason: 'globalBack 的执行体必须仍接在 VideoPlayerShortcutActions.escape 上');
     final int dismissIdx = src.indexOf('_dismissTopForegroundLayer()', escIdx);
     final int exitIdx = src.indexOf('_handleBackOrExit()', escIdx);
     expect(dismissIdx, greaterThanOrEqualTo(0), reason: 'Esc 未先逐级关前台层');
