@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1870 条。点号进各自文件。
+> 共 1872 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -39,7 +39,9 @@
 | [BUG-2005](bugs/BUG-2005-recent-added-portrait-slot.md) | ✅ | ✅ | 首页「最近添加」行视频卡恒竖槽，横版截帧被模糊垫底成白条 |
 | [BUG-2002](bugs/BUG-2002-video-home-cards-hover-lift.md) | ✅ | ✅ | 视频首页横滚卡/合集墙卡/远端卡缺悬停放大效果 |
 | [BUG-1991](bugs/BUG-1991-subtitle-track-bottom-drawer.md) | ✅ | ✅ | 字幕轨入口误开底部字幕调整抽屉而非右侧设置栏 |
+| [BUG-1990](bugs/BUG-1990-mokuro-cbz-embedded-ocr.md) | ✅ | ✅ | Mokuro CBZ 导入丢弃内嵌 OCR 文字层 |
 | [BUG-1989](bugs/BUG-1989-all-video-uniform-grid.md) | ✅ | ✅ | 全部视频横竖混排导致缩略图比例不一致并在宽屏留下大块空白 |
+| [BUG-1988](bugs/BUG-1988-remote-mining-error-unlocalized.md) | ✅ | ✅ | 互联远端制卡不可达错误未本地化 |
 | [BUG-1986](bugs/BUG-1986-resource-episode-span-summary.md) | ✅ | ✅ | 资源版本卡把非连续集号显示成连续范围 |
 | [BUG-1985](bugs/BUG-1985-apibay-cjk-hot-list.md) | ✅ | ✅ | apibay 把 CJK 查询退化为热门榜 |
 | [BUG-1984](bugs/BUG-1984-focus-ring-registered-geometry.md) | ✅ | ✅ | 复合控件焦点环读取内部 Focus context 导致边界错位 |
