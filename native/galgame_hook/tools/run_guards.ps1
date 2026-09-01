@@ -72,6 +72,12 @@ try {
   Invoke-Checked $python 'tests/renpy_lookup_source_guard_test.py'
   Invoke-Checked $python 'tests/evidence_contract_test.py'
   Invoke-Checked $python 'tests/galhook_workflow_test.py'
+  # 每个原生测试都必须在任何 include 之前 `#undef NDEBUG`，否则 CI 的
+  # `--config Release` 会把裸 assert 整条编译掉，测试恒绿。这条守卫本身
+  # 必须登记在此：它曾经写好却没接进来，于是 generic_input_shield_test.cpp
+  # 的 47 条断言在 develop 上一直空跑（BUG-2025）。清单不再靠人记——
+  # galhook_workflow_test.py 会枚举 tests/*_test.py 核对本清单无遗漏。
+  Invoke-Checked $python 'tests/assert_liveness_guard_test.py'
 }
 finally {
   Pop-Location
