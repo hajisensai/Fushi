@@ -2847,9 +2847,39 @@ window.fushiReader = {
   // 刻意**不**改 __fushiApplyReaderMargins / _contH 的入参：那两个要的就是视口外
   // 框高度。本 bug 的根因正是「视口外框高度」和「可视内容高度」被当成同一个数，
   // 修法是把这两个概念分开，而不是把另一处也一起改掉。
+  //
+  // 夹在 fallback（视口外框高度）以内：可视内容高度按定义不可能超过外框高度。这
+  // 不是「保险起见」的兜底，而是这个量的**定义域**——一旦超出就说明读到的不是本
+  // 次布局的值：
+  //   · iOS：连续 shell 的 initialize 里，共用的 viewport meta 重写（见
+  //     sharedInitViewportJs）刚删掉并重建 meta[name=viewport]，隔 5 条语句就读
+  //     clientHeight。BUG-1688 实测 WKWebView 在这次重写生效前按
+  //     默认 980 CSS px 布局（innerHeight=1743，而 Dart 权威值 667）。若 WebKit 的
+  //     重排不是同任务同步生效，这里会量到 1743 → 竖排 body 高度爆到 2.6 倍。而
+  //     iOS 是**不占位**的 overlay 滚动条，本修复在 iOS 上收益为零——不能让一个
+  //     零收益的平台替桌面的修复背回归。
+  //   · quirks mode：章节文档是**书自己给的** XHTML，Fushi 只做净化并注入 style、
+  //     全程不补 doctype（webview.part.dart:345 _buildSanitizedChapterHtmlBytes），
+  //     而下发的 Content-Type 恒为 text/html（同文件:206-210）⇒ 走 HTML5 解析、
+  //     由 doctype 定模式。书没写 doctype 就落 quirks，clientHeight 退化成 html
+  //     自身 padding box 高度，不再是视口量。
+  // 桌面竖排的正常值 690 <= 705，夹子不改变本 bug 的修复效果。
   _visibleViewportHeight: function(fallback) {
     var visible = document.documentElement.clientHeight;
-    return (visible && visible > 0) ? visible : fallback;
+    return (visible && visible > 0 && visible <= fallback) ? visible : fallback;
+  },
+  // `--fushi-continuous-height` 的**唯一**写入点（守卫钉死：全 shell 只此一处
+  // setProperty 该变量）。调用方三个：initialize / updatePageSize / beginStyleReanchor。
+  //
+  // 为什么 beginStyleReanchor 也必须写：BUG-2013 之前这个变量只由**视口外框高度**
+  // 决定，而外框高度只在 resize 时变，所以两处赋值就够。改取**可视高度**后它变成
+  // 内容相关量——水平滚动条的有无由内容宽度（列数）决定，而改字号正是改列数。于是
+  // 「首屏内容短 → 无滚动条 → 写 705」的书，用户放大字号后滚动条出现、变量仍是
+  // 705，末行照旧被裁，要等下一次 resize 才自愈。写入点必须跟上这个**新出现的**
+  // 失效源，否则修复恰好在最常见的「改字号」路径上漏掉。
+  _applyContinuousHeight: function(fallback) {
+    document.documentElement.style.setProperty(
+        '--fushi-continuous-height', this._visibleViewportHeight(fallback) + 'px');
   },
 $_sharedJs
   scrollToChapterStart: function() {
@@ -3332,6 +3362,10 @@ $_sharedJs
     // 已有重锚在飞（setChromeInsets/updatePageSize 等）→ 让既有序列接管，只换 CSS 不重采样。
     if (this._reanchorPending === true) {
       if (styleEl) styleEl.textContent = css;
+      // BUG-2013：换样式/改字号会改列数 → 改水平滚动条的有无 → 改可视高度。
+      // 这里不重写，放大字号后滚动条新出现的书末行照旧被裁，要等 resize 才自愈。
+      this._applyContinuousHeight(
+          this._contH || C.dartPageHeight || window.innerHeight);
       this._resetImageMaxVars();
       return -1;
     }
@@ -3341,6 +3375,10 @@ $_sharedJs
     var hint = this._readContinuousScroll();
     if (styleEl) styleEl.textContent = css;
     if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
+    // BUG-2013：换样式/改字号会改列数 → 改水平滚动条的有无 → 改可视高度。
+    // 这里不重写，放大字号后滚动条新出现的书末行照旧被裁，要等 resize 才自愈。
+    this._applyContinuousHeight(
+          this._contH || C.dartPageHeight || window.innerHeight);
     this._resetImageMaxVars();
     if (charOffset < 0) return -1;
     this._setReanchorPending(true);
@@ -3379,8 +3417,7 @@ $_sharedInitViewport
   var contHeight = dartH || window.innerHeight;
   window.__fushiApplyReaderMargins(C.dartPageWidth || window.innerWidth, contHeight);
   // BUG-2013：写进 CSS 的必须是扣掉水平滚动条的可视高度，不是视口外框高度。
-  document.documentElement.style.setProperty(
-      '--fushi-continuous-height', this._visibleViewportHeight(contHeight) + 'px');
+  this._applyContinuousHeight(contHeight);
   var __imgBox = this._imageMaxBox();
   document.documentElement.style.setProperty('--fushi-image-max-width', __imgBox.w + 'px');
   document.documentElement.style.setProperty('--fushi-image-max-height', __imgBox.h + 'px');
@@ -3414,8 +3451,7 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   var inFlight = this._reanchorPending === true;
   var progress = (changed && !inFlight) ? this.calculateProgress() : 0;
   // BUG-2013：同 initialize——CSS 变量要可视高度，_contH / applyReaderMargins 要外框高度。
-  document.documentElement.style.setProperty(
-      '--fushi-continuous-height', this._visibleViewportHeight(newHeight) + 'px');
+  this._applyContinuousHeight(newHeight);
   window.__fushiApplyReaderMargins(newWidth, newHeight);
   var __imgBox = this._imageMaxBox();
   document.documentElement.style.setProperty('--fushi-image-max-width', __imgBox.w + 'px');

@@ -24,6 +24,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/epub/epub_book.dart';
 import 'package:fushi/src/epub/epub_parser.dart';
 
+import '../helpers/source_guard.dart';
+
 void main() {
   group('EpubParser 命名空间前缀 (BUG-2012)', () {
     late Directory extractDir;
@@ -52,6 +54,21 @@ void main() {
       expect(book.language, 'ja');
       expect(book.coverHref, contains('cover.jpg'),
           reason: '<opf:meta name="cover"> 同样按 qualified name 匹配不到');
+    });
+
+    test('完全不写 xmlns 的简陋 EPUB 仍能解析（向后兼容：按 local-name 匹配是纯放宽）',
+        () {
+      final EpubBook book =
+          EpubParser.parseSync(_buildBareEpub(), extractDir.path);
+
+      expect(book.chapters, hasLength(2),
+          reason: 'OPF 元素落在**无命名空间**里，按 local-name 匹配必须照样命中。'
+              '若为 0 章说明原语被换成了「按命名空间 URI 精确匹配」——那会让这类'
+              '原本能导入的书变成 no readable chapters，是真回归');
+      expect(book.title, '白夜行');
+      expect(book.coverHref, contains('cover.jpg'));
+      expect(book.toc, hasLength(2),
+          reason: '无命名空间的 NCX 同样要解析出目录');
     });
 
     test('带前缀与不带前缀解析出完全一致的结果（前缀不改变任何语义）', () {
@@ -138,11 +155,11 @@ void main() {
       final String source =
           File('lib/src/epub/epub_parser.dart').readAsStringSync();
 
-      // 剥掉注释，否则文档里解释坑的那几行会被判据自己命中（假红）。
-      final String code = source
-          .split('\n')
-          .where((String line) => !line.trimLeft().startsWith('//'))
-          .join('\n');
+      // 剥掉注释，否则文档里解释这个坑的那几行会被判据自己命中（假红）。
+      // 必须走共享原语：手写的「跳 `//` 开头整行」只管行首注释，行尾注释与
+      // `/* */` 块注释一概放行——「禁止出现」型断言会漏，下面三条「必须出现」
+      // 型锚点更会被「实现删光、注释里留同样字面量」骗绿。
+      final String code = maskComments(source);
 
       // 裸 findAllElements('foo') —— 即不带 namespace 参数的调用。
       final RegExp bareFindAll =
@@ -168,6 +185,20 @@ void main() {
           reason: '_childElement 原语被改名/删除，本组守卫已失去锚点');
       expect(RegExp(r'_elements\(').allMatches(code).length, greaterThan(5),
           reason: '解析器应有多处走 _elements；数量塌到个位说明查找被改回裸调用');
+
+      // `_attribute` 原语的守卫：属性名里不许硬编码命名空间前缀。这正是本 bug 的
+      // 形态——`epub:` / `opf:` 只是**惯例**，XML 允许把同一个命名空间绑到任意前缀，
+      // 硬编码一种写法等于只修了惯例那一种。无前缀属性（id / href / media-type）
+      // 按规范就落在「无命名空间」里，裸 getAttribute 是对的，故只拦带冒号的字面量。
+      final RegExp prefixedAttr = RegExp(r"getAttribute\(\s*'[^':]*:[^']*'");
+      expect(
+          prefixedAttr.allMatches(code).map((Match m) => m.group(0)).toList(),
+          isEmpty,
+          reason: '硬编码 epub:/opf: 前缀只覆盖惯例写法；换个前缀绑同一个命名空间'
+              '照样取不到。改走 _attribute()');
+      expect(code.contains("getAttribute(localName, namespace: '*')"), isTrue,
+          reason: '_attribute 原语被改名/删除，上一条断言会因「一处调用都没有」'
+              '而恒真空转');
     });
   });
 }
@@ -176,6 +207,29 @@ void main() {
 
 /// 复刻用户样本 白夜行_backup.epub 的形状：OPF **在 zip 根目录**（不是 OEBPS/），
 /// [prefixed] 为 true 时 OPF 与 NCX 整份带前缀。
+/// 完全不写 `xmlns` 的简陋 EPUB（老工具链产物）：元素落在**无命名空间**里。
+///
+/// 这是本次改动唯一的向后兼容面。`package:xml` 6.6.1 的 `createNameMatcher` 在
+/// `namespace == '*'` 分支只比 `named.name.local`、**完全不看 namespaceUri**，所以
+/// 从裸调用改成 `namespace: '*'` 是纯放宽、不会窄掉这类书。这条用例把该性质钉住：
+/// 将来若有人把原语换成「按 OPF 命名空间 URI 精确匹配」（看着更严谨），这类书就会
+/// 从「能导入」变成 0 章 —— 那才是真回归，必须在这里红。
+Uint8List _buildBareEpub() {
+  return _encodeArchive(<ArchiveFile>[
+    _textFile('META-INF/container.xml', _stripDefaultXmlns(_containerXmlPlain)),
+    _textFile('content.opf', _stripDefaultXmlns(_opf(prefixed: false))),
+    _textFile('text/chapter-1.xhtml', _chapterXhtml('第一章', '本文その一。')),
+    _textFile('text/chapter-2.xhtml', _chapterXhtml('第二章', '本文その二。')),
+    _textFile('toc.ncx', _stripDefaultXmlns(_ncx(prefixed: false))),
+    _binaryFile('images/cover.jpg'),
+  ]);
+}
+
+/// 去掉默认命名空间声明 `xmlns="…"`，保留 `xmlns:dc` 这类前缀声明——真实的简陋
+/// EPUB 就是这个形状（dc: 还在，OPF 元素裸奔），全删掉反而成了未声明前缀的畸形档。
+String _stripDefaultXmlns(String xml) =>
+    xml.replaceAll(RegExp(r'\s*xmlns="[^"]*"'), '');
+
 Uint8List _buildEpub({required bool prefixed}) {
   return _encodeArchive(<ArchiveFile>[
     _textFile('META-INF/container.xml', _containerXmlPlain),
