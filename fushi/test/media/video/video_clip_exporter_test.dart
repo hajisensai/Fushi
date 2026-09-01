@@ -37,10 +37,14 @@ void main() {
         '0:a:1?',
         '-sn',
         '-dn',
+        // 片段绝不继承源整集的章节表（BUG-2011）：不丢的话 mp4 muxer 会建一条与整集
+        // 等长的 text track，把 mvhd.duration 拉满，5 秒的片段显示成整集的进度条。
+        '-map_chapters',
+        '-1',
         '-c',
         'copy',
-        '-avoid_negative_ts',
-        'make_zero',
+        // 这里**没有** `-avoid_negative_ts make_zero`：视频 copy 时它会把关键帧前导
+        // 从「edit list 跳过」变成正片内容，片段平白多出一个 GOP（BUG-2011）。
         '/video/clip.mkv',
       ]);
     });
@@ -193,9 +197,9 @@ void main() {
       expect(result.isSuccess, isTrue);
       expect(result.outputPath, output.path);
       // Both attempts ran: first stream-copy, then the libx264 fallback.
-      expect(backend.calls.length, 2);
-      expect(backend.calls.first.contains('copy'), isTrue);
-      expect(backend.calls[1].contains('libx264'), isTrue);
+      expect(backend.clipCalls.length, 2);
+      expect(backend.clipCalls.first.contains('copy'), isTrue);
+      expect(backend.clipCalls[1].contains('libx264'), isTrue);
       expect(output.existsSync(), isTrue);
     });
 
@@ -221,7 +225,7 @@ void main() {
       );
 
       expect(result.failure, VideoClipExportFailure.ffmpegFailed);
-      expect(backend.calls.length, 2);
+      expect(backend.clipCalls.length, 2);
       expect(output.existsSync(), isFalse);
     });
 
@@ -439,12 +443,14 @@ void main() {
         '-map',
         '2:s:0',
         '-dn',
+        // 带字幕这条路径同样不继承源章节（BUG-2011）。
+        '-map_chapters',
+        '-1',
         '-c',
         'copy',
         '-c:s',
         'mov_text',
-        '-avoid_negative_ts',
-        'make_zero',
+        // 视频 copy → 不给 `-avoid_negative_ts`，关键帧前导交给 edit list（BUG-2011）。
         '/video/clip.mp4',
       ]);
       // -sn 会把刚 map 进来的字幕流一起禁掉，带字幕时绝不能出现。
@@ -612,10 +618,10 @@ void main() {
       expect(result.subtitleTrackCount, 0, reason: '降级后不能谎称带了字幕');
       expect(output.existsSync(), isTrue);
       // 带字幕的 copy + 重编码两轮失败后，才重跑无字幕的 copy 轮。
-      expect(backend.calls.length, 3);
-      expect(backend.calls[0].contains('-c:s'), isTrue);
-      expect(backend.calls[1].contains('-c:s'), isTrue);
-      expect(backend.calls[2].contains('-c:s'), isFalse);
+      expect(backend.clipCalls.length, 3);
+      expect(backend.clipCalls[0].contains('-c:s'), isTrue);
+      expect(backend.clipCalls[1].contains('-c:s'), isTrue);
+      expect(backend.clipCalls[2].contains('-c:s'), isFalse);
     });
 
     test('skips subtitles entirely for containers that cannot carry them',
@@ -645,9 +651,9 @@ void main() {
 
       expect(result.isSuccess, isTrue);
       expect(result.subtitleTrackCount, 0);
-      expect(
-          backend.calls.single.any((String a) => a.endsWith('.srt')), isFalse);
-      expect(backend.calls.single.contains('-sn'), isTrue);
+      expect(backend.clipCalls.single.any((String a) => a.endsWith('.srt')),
+          isFalse);
+      expect(backend.clipCalls.single.contains('-sn'), isTrue);
     });
 
     test('blank subtitle content is ignored', () async {
@@ -676,7 +682,7 @@ void main() {
 
       expect(result.isSuccess, isTrue);
       expect(result.subtitleTrackCount, 0);
-      expect(backend.calls.single.contains('-c:s'), isFalse);
+      expect(backend.clipCalls.single.contains('-c:s'), isFalse);
     });
   });
 
@@ -763,6 +769,205 @@ Input #0, matroska,webm, from 'a.mkv':
       expect(result.detail, isNot(contains('Input #0')));
     });
   });
+
+  // BUG-2011：导出的片段在 mpv 之外播不了、进度条显示成整集时长。三条独立根因，
+  // 这一组把它们各钉一条守卫。
+  group('source codec gating (BUG-2011)', () {
+    const String realWorldLog =
+        '''Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'clip.mp4':
+  Metadata:
+    encoder         : Lavf61.7.103
+  Duration: 00:00:10.59, start: 0.000000, bitrate: 5541 kb/s
+  Chapters:
+    Chapter #0:0: start 0.000000, end 339.630000
+  Stream #0:0[0x1](und): Video: hevc (Main 10) (hev1 / 0x31766568), yuv420p10le(tv, bt709/unknown/unknown), 1920x1080, 3774 kb/s, SAR 1:1 DAR 16:9, 23.98 fps, 23.98 tbr, 16k tbn, start 0.083000 (default)
+  Stream #0:1[0x2](jpn): Audio: flac (fLaC / 0x43614C66), 48000 Hz, stereo, s32 (24 bit), 1444 kb/s, start 0.110000 (default)
+  Stream #0:2[0x3](jpn): Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 185 kb/s, start 0.087000
+  Stream #0:4[0x5](und): Subtitle: mov_text (tx3g / 0x67337874), 0 kb/s (default)
+At least one output file must be specified''';
+
+    test('parses the real ffmpeg -i log of the reported file', () {
+      final ClipSourceCodecs codecs = parseClipSourceCodecs(realWorldLog);
+      expect(codecs.videoCodec, 'hevc');
+      // 括号里的 `(tv, bt709/unknown/unknown)` 自带逗号，不剥括号就会把像素格式切碎。
+      expect(codecs.videoPixFmt, 'yuv420p10le');
+      // 全部音轨都要收：`-map 0:a?` 会把它们统统带进输出，一条不可播产物就是坏的。
+      expect(codecs.audioCodecs, <String>['flac', 'aac']);
+      expect(codecs.isEmpty, isFalse);
+    });
+
+    test('plans a full re-encode for the reported file', () {
+      final ClipCodecPlan plan =
+          resolveClipCodecPlan(parseClipSourceCodecs(realWorldLog));
+      // 10-bit HEVC：Windows / 浏览器的通用解码路径放不了。
+      expect(plan.copyVideo, isFalse);
+      // FLAC-in-mp4：系统解码器不认，而且它还是 default 轨。
+      expect(plan.copyAudio, isFalse);
+      // 视频重编码后输出是 H.264，绝不能再挂 hvc1 tag。
+      expect(plan.videoTag, isNull);
+      expect(plan.isFullCopy, isFalse);
+    });
+
+    test('keeps the fast path for an already portable source', () {
+      final ClipCodecPlan plan = resolveClipCodecPlan(
+        const ClipSourceCodecs(
+          videoCodec: 'h264',
+          videoPixFmt: 'yuv420p',
+          audioCodecs: <String>['aac'],
+        ),
+      );
+      expect(plan.isFullCopy, isTrue);
+      expect(plan.videoTag, isNull);
+      expect(buildClipCodecArgs(plan: plan), <String>['-c', 'copy']);
+    });
+
+    test('8-bit HEVC stays a copy but gets retagged hvc1', () {
+      final ClipCodecPlan plan = resolveClipCodecPlan(
+        const ClipSourceCodecs(
+          videoCodec: 'hevc',
+          videoPixFmt: 'yuv420p',
+          audioCodecs: <String>['aac'],
+        ),
+      );
+      expect(plan.copyVideo, isTrue);
+      expect(plan.copyAudio, isTrue);
+      // `hev1` 把参数集放带内，Apple 生态 / 浏览器 / Media Foundation 只认 `hvc1`；
+      // 改 tag 不碰码流，所以仍然是瞬时的 copy。
+      expect(plan.videoTag, 'hvc1');
+      expect(buildClipCodecArgs(plan: plan),
+          <String>['-c', 'copy', '-tag:v', 'hvc1']);
+    });
+
+    test('re-encodes only the audio when just the audio is unplayable', () {
+      final ClipCodecPlan plan = resolveClipCodecPlan(
+        const ClipSourceCodecs(
+          videoCodec: 'h264',
+          videoPixFmt: 'yuv420p',
+          audioCodecs: <String>['aac', 'flac'],
+        ),
+      );
+      // 视频照旧 copy（瞬时），只有音频转 AAC —— 5 秒音频的编码代价可以忽略。
+      expect(plan.copyVideo, isTrue);
+      expect(plan.copyAudio, isFalse);
+      expect(buildClipCodecArgs(plan: plan),
+          <String>['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k']);
+    });
+
+    test('nv12 is 8-bit and must not be mistaken for 12-bit', () {
+      // 守卫「按名字尾巴猜位深」这个诱人但错误的实现：nv12 结尾是 12，却是 8-bit。
+      final ClipCodecPlan plan = resolveClipCodecPlan(
+        const ClipSourceCodecs(
+          videoCodec: 'h264',
+          videoPixFmt: 'nv12',
+          audioCodecs: <String>['aac'],
+        ),
+      );
+      expect(plan.copyVideo, isTrue);
+    });
+
+    test('an unparseable probe degrades to the pre-gating behaviour', () {
+      // 探测是优化判据，不是导出的前置条件：探不出来就按老样子全 copy，
+      // 绝不能把原本瞬时的导出变成整段重编码。
+      final ClipSourceCodecs codecs =
+          parseClipSourceCodecs('ffmpeg: command not found');
+      expect(codecs.isEmpty, isTrue);
+      final ClipCodecPlan plan = resolveClipCodecPlan(codecs);
+      expect(plan.isFullCopy, isTrue);
+      expect(buildClipCodecArgs(plan: plan), <String>['-c', 'copy']);
+    });
+
+    test('both arg builders always drop the source chapters', () {
+      // 不丢章节，mp4 muxer 会按源整集的章节表建一条整集长的 text track，
+      // 把 mvhd.duration 拉满 —— 这就是「5 秒片段显示 21 分钟进度条」的直接来源。
+      final List<String> copyArgs = buildFfmpegVideoClipExportArgs(
+        inputPath: '/v/in.mkv',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '/v/out.mp4',
+      );
+      final List<String> reencodeArgs = buildFfmpegVideoClipReencodeArgs(
+        inputPath: '/v/in.mkv',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '/v/out.mp4',
+      );
+      for (final List<String> args in <List<String>>[copyArgs, reencodeArgs]) {
+        expect(args, containsAllInOrder(<String>['-map_chapters', '-1']));
+      }
+    });
+
+    test('avoid_negative_ts is given only when the video is re-encoded', () {
+      // 视频 copy 时输出必然从 `-ss` 之前那个关键帧起；那段前导本该由 mp4 edit list
+      // 表达成「播放时跳过」。make_zero 会把它平移成正片内容，5.4 秒的片段于是变成
+      // 10.8 秒。重编码时 accurate seek 精确切在请求点，没有前导可跳，归零无副作用。
+      List<String> argsFor(ClipCodecPlan plan) =>
+          buildFfmpegVideoClipExportArgs(
+            inputPath: '/v/in.mkv',
+            startMs: 1000,
+            endMs: 6000,
+            outputPath: '/v/out.mp4',
+            codecPlan: plan,
+          );
+
+      expect(argsFor(ClipCodecPlan.fullCopy).contains('-avoid_negative_ts'),
+          isFalse);
+      expect(
+          argsFor(const ClipCodecPlan(copyVideo: true, copyAudio: false))
+              .contains('-avoid_negative_ts'),
+          isFalse);
+      expect(argsFor(const ClipCodecPlan(copyVideo: false, copyAudio: false)),
+          containsAllInOrder(<String>['-avoid_negative_ts', 'make_zero']));
+      // 重编码兜底路径恒重编码视频，那条必须一直带着。
+      expect(
+          buildFfmpegVideoClipReencodeArgs(
+            inputPath: '/v/in.mkv',
+            startMs: 1000,
+            endMs: 6000,
+            outputPath: '/v/out.mp4',
+          ),
+          containsAllInOrder(<String>['-avoid_negative_ts', 'make_zero']));
+    });
+
+    test('the probe runs before the clip and does not carry -ss', () async {
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_probe');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File input = File('${dir.path}/source.mp4')
+        ..writeAsBytesSync(<int>[1]);
+      final File output = File('${dir.path}/clip.mp4');
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
+        onRun: (List<String> args) {
+          if (!args.contains('-ss')) {
+            // 探测那一轮：ffmpeg 没有输出文件时**必然**非 0 退出，流信息却已经打进
+            // 日志。所以探测只能读输出、不能看退出码。
+            return const FfmpegRunResult(
+              returnCode: 1,
+              output: realWorldLog,
+            );
+          }
+          output.writeAsBytesSync(<int>[9]);
+          return const FfmpegRunResult(returnCode: 0, output: 'ok');
+        },
+      );
+
+      final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+        inputPath: input.path,
+        startMs: 0,
+        endMs: 2000,
+        outputPath: output.path,
+        backend: backend,
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect(backend.calls.first, <String>['-hide_banner', '-i', input.path]);
+      // 探测认出 10-bit HEVC + FLAC，于是这一轮裁剪必须是重编码，而不是 `-c copy`。
+      final List<String> clip = backend.clipCalls.single;
+      expect(clip.contains('libx264'), isTrue);
+      expect(clip, containsAllInOrder(<String>['-c:a', 'aac']));
+      expect(clip.contains('copy'), isFalse);
+      expect(clip, containsAllInOrder(<String>['-map_chapters', '-1']));
+    });
+  });
 }
 
 typedef _RunHandler = FutureOr<FfmpegRunResult> Function(List<String> args);
@@ -776,6 +981,13 @@ class _FakeFfmpegBackend implements FfmpegBackend {
 
   final _RunHandler? onRun;
   final List<List<String>> calls = <List<String>>[];
+
+  /// 只含**裁剪**命令的调用记录：滤掉 BUG-2011 引入的源编码探测那一次
+  /// （`-hide_banner -i <input>`，是全部调用里唯一不带 `-ss` 的）。断言裁剪参数一律
+  /// 用它，否则探测调用会把下标和条数全部推移一位。
+  List<List<String>> get clipCalls => calls
+      .where((List<String> args) => args.contains('-ss'))
+      .toList(growable: false);
 
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {

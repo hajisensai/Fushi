@@ -34,10 +34,22 @@ String _read(String path) {
 /// 断言比的是本地化 getter 本身，与具体语言无关。
 void main() {
   group('applyAppProxy: 进程级代理配置必须能到达不传参的调用方（BUG-1348）', () {
+    // 本组走「只有手填地址、没有已解析模式」那条兜底路径，故模式读取器必须显式置成
+    // 未解析：它是进程级全局，同一进程里任何一个 `PreferencesRepository.loadFromDb()`
+    // 都会把它接到真偏好上（偏好一读出来就接，见 app_proxy.dart 的
+    // kProxyModeUnresolved 文档），只存不设就等于让结论跟着用例顺序走。
     late String Function() savedReader;
+    late String Function() savedModeReader;
 
-    setUp(() => savedReader = appUserProxyReader);
-    tearDown(() => appUserProxyReader = savedReader);
+    setUp(() {
+      savedReader = appUserProxyReader;
+      savedModeReader = appUserProxyModeReader;
+      appUserProxyModeReader = () => kProxyModeUnresolved;
+    });
+    tearDown(() {
+      appUserProxyReader = savedReader;
+      appUserProxyModeReader = savedModeReader;
+    });
 
     test('省略 userProxy 时取 appUserProxyReader —— 同步层正是这么调的', () async {
       appUserProxyReader = () => '127.0.0.1:7890';
@@ -234,16 +246,21 @@ void main() {
 
   group('共享 sync client：并发首调不得各建一个（BUG-1348 收口）', () {
     late String Function() savedReader;
+    late String Function() savedModeReader;
 
     setUp(() {
       savedReader = appUserProxyReader;
+      savedModeReader = appUserProxyModeReader;
       // 短路掉 reg query / scutil / gsettings，测的是缓存语义不是平台探测。
+      // 模式同样要显式钉住（理由见上一组注释）。
+      appUserProxyModeReader = () => kProxyModeUnresolved;
       appUserProxyReader = () => '127.0.0.1:7890';
       resetSyncHttpClient();
     });
     tearDown(() {
       resetSyncHttpClient();
       appUserProxyReader = savedReader;
+      appUserProxyModeReader = savedModeReader;
     });
 
     test('两个后端同时首调，拿到同一个 client', () async {
