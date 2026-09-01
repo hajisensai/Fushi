@@ -4097,5 +4097,8 @@
   "video_source_scrape_work_missing": "该作品已不在当前来源计划中（文件可能已改名、移动或删除）。请重新刮削此来源刷新待确认列表。",
   "video_source_scrape_pending_works": "待确认作品",
   "video_source_scrape_pending_works_hint": "这些条目还没有确认的作品身份。搜索并选中正确的作品即可完成刮削。",
-  "video_source_scrape_enabled_toggle": "启用此来源的刮削"
+  "video_source_scrape_enabled_toggle": "启用此来源的刮削",
+  "video_discovery_anidb_identity_confirm_title": "确认作品身份",
+  "video_discovery_anidb_identity_confirm_hint": "AniDB 上有多个可能的匹配。选中正确的作品后，下载导入将直接按该身份刮削；跳过则可稍后在待确认列表手动指定。",
+  "video_discovery_anidb_identity_not_found": "未能在 AniDB 识别该作品：仍会正常下载，导入后在待确认列表等待手动指定身份。"
 }

@@ -39896,6 +39896,17 @@ class $VideoDownloadJobsTable extends VideoDownloadJobs
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _identityJsonMeta = const VerificationMeta(
+    'identityJson',
+  );
+  @override
+  late final GeneratedColumn<String> identityJson = GeneratedColumn<String>(
+    'identity_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _backendKindMeta = const VerificationMeta(
     'backendKind',
   );
@@ -40188,6 +40199,7 @@ class $VideoDownloadJobsTable extends VideoDownloadJobs
     year,
     season,
     coverUrl,
+    identityJson,
     backendKind,
     backendTaskId,
     backendProfileId,
@@ -40335,6 +40347,15 @@ class $VideoDownloadJobsTable extends VideoDownloadJobs
       context.handle(
         _coverUrlMeta,
         coverUrl.isAcceptableOrUnknown(data['cover_url']!, _coverUrlMeta),
+      );
+    }
+    if (data.containsKey('identity_json')) {
+      context.handle(
+        _identityJsonMeta,
+        identityJson.isAcceptableOrUnknown(
+          data['identity_json']!,
+          _identityJsonMeta,
+        ),
       );
     }
     if (data.containsKey('backend_kind')) {
@@ -40602,6 +40623,10 @@ class $VideoDownloadJobsTable extends VideoDownloadJobs
         DriftSqlType.string,
         data['${effectivePrefix}cover_url'],
       ),
+      identityJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}identity_json'],
+      ),
       backendKind: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}backend_kind'],
@@ -40734,6 +40759,11 @@ class VideoDownloadJobRow extends DataClass
   final int? season;
   final String? coverUrl;
 
+  /// v94：发现页完整身份快照（`VideoMediaReference` 的 JSON：原名/别名/全部
+  /// 外部 id）。修 BUG-2003——修前入队只留显示名 + 单 provider id，刮削与字幕
+  /// 在下游各自从残渣重新猜身份。NULL = 旧任务/手动任务，走旧行为。
+  final String? identityJson;
+
   /// 后端连接身份与去重身份。敏感凭据不进数据库；backendProfileId 是下载配置档
   /// 的字符串身份，不是 Hibiki 用户 Profile，故没有 FK 到 Profiles。
   final String backendKind;
@@ -40781,6 +40811,7 @@ class VideoDownloadJobRow extends DataClass
     this.year,
     this.season,
     this.coverUrl,
+    this.identityJson,
     required this.backendKind,
     this.backendTaskId,
     this.backendProfileId,
@@ -40840,6 +40871,9 @@ class VideoDownloadJobRow extends DataClass
     }
     if (!nullToAbsent || coverUrl != null) {
       map['cover_url'] = Variable<String>(coverUrl);
+    }
+    if (!nullToAbsent || identityJson != null) {
+      map['identity_json'] = Variable<String>(identityJson);
     }
     map['backend_kind'] = Variable<String>(backendKind);
     if (!nullToAbsent || backendTaskId != null) {
@@ -40924,6 +40958,9 @@ class VideoDownloadJobRow extends DataClass
       coverUrl: coverUrl == null && nullToAbsent
           ? const Value.absent()
           : Value(coverUrl),
+      identityJson: identityJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(identityJson),
       backendKind: Value(backendKind),
       backendTaskId: backendTaskId == null && nullToAbsent
           ? const Value.absent()
@@ -40999,6 +41036,7 @@ class VideoDownloadJobRow extends DataClass
       year: serializer.fromJson<int?>(json['year']),
       season: serializer.fromJson<int?>(json['season']),
       coverUrl: serializer.fromJson<String?>(json['coverUrl']),
+      identityJson: serializer.fromJson<String?>(json['identityJson']),
       backendKind: serializer.fromJson<String>(json['backendKind']),
       backendTaskId: serializer.fromJson<String?>(json['backendTaskId']),
       backendProfileId: serializer.fromJson<String?>(json['backendProfileId']),
@@ -41047,6 +41085,7 @@ class VideoDownloadJobRow extends DataClass
       'year': serializer.toJson<int?>(year),
       'season': serializer.toJson<int?>(season),
       'coverUrl': serializer.toJson<String?>(coverUrl),
+      'identityJson': serializer.toJson<String?>(identityJson),
       'backendKind': serializer.toJson<String>(backendKind),
       'backendTaskId': serializer.toJson<String?>(backendTaskId),
       'backendProfileId': serializer.toJson<String?>(backendProfileId),
@@ -41089,6 +41128,7 @@ class VideoDownloadJobRow extends DataClass
     Value<int?> year = const Value.absent(),
     Value<int?> season = const Value.absent(),
     Value<String?> coverUrl = const Value.absent(),
+    Value<String?> identityJson = const Value.absent(),
     String? backendKind,
     Value<String?> backendTaskId = const Value.absent(),
     Value<String?> backendProfileId = const Value.absent(),
@@ -41134,6 +41174,7 @@ class VideoDownloadJobRow extends DataClass
     year: year.present ? year.value : this.year,
     season: season.present ? season.value : this.season,
     coverUrl: coverUrl.present ? coverUrl.value : this.coverUrl,
+    identityJson: identityJson.present ? identityJson.value : this.identityJson,
     backendKind: backendKind ?? this.backendKind,
     backendTaskId: backendTaskId.present
         ? backendTaskId.value
@@ -41203,6 +41244,9 @@ class VideoDownloadJobRow extends DataClass
       year: data.year.present ? data.year.value : this.year,
       season: data.season.present ? data.season.value : this.season,
       coverUrl: data.coverUrl.present ? data.coverUrl.value : this.coverUrl,
+      identityJson: data.identityJson.present
+          ? data.identityJson.value
+          : this.identityJson,
       backendKind: data.backendKind.present
           ? data.backendKind.value
           : this.backendKind,
@@ -41279,6 +41323,7 @@ class VideoDownloadJobRow extends DataClass
           ..write('year: $year, ')
           ..write('season: $season, ')
           ..write('coverUrl: $coverUrl, ')
+          ..write('identityJson: $identityJson, ')
           ..write('backendKind: $backendKind, ')
           ..write('backendTaskId: $backendTaskId, ')
           ..write('backendProfileId: $backendProfileId, ')
@@ -41323,6 +41368,7 @@ class VideoDownloadJobRow extends DataClass
     year,
     season,
     coverUrl,
+    identityJson,
     backendKind,
     backendTaskId,
     backendProfileId,
@@ -41366,6 +41412,7 @@ class VideoDownloadJobRow extends DataClass
           other.year == this.year &&
           other.season == this.season &&
           other.coverUrl == this.coverUrl &&
+          other.identityJson == this.identityJson &&
           other.backendKind == this.backendKind &&
           other.backendTaskId == this.backendTaskId &&
           other.backendProfileId == this.backendProfileId &&
@@ -41407,6 +41454,7 @@ class VideoDownloadJobsCompanion extends UpdateCompanion<VideoDownloadJobRow> {
   final Value<int?> year;
   final Value<int?> season;
   final Value<String?> coverUrl;
+  final Value<String?> identityJson;
   final Value<String> backendKind;
   final Value<String?> backendTaskId;
   final Value<String?> backendProfileId;
@@ -41447,6 +41495,7 @@ class VideoDownloadJobsCompanion extends UpdateCompanion<VideoDownloadJobRow> {
     this.year = const Value.absent(),
     this.season = const Value.absent(),
     this.coverUrl = const Value.absent(),
+    this.identityJson = const Value.absent(),
     this.backendKind = const Value.absent(),
     this.backendTaskId = const Value.absent(),
     this.backendProfileId = const Value.absent(),
@@ -41488,6 +41537,7 @@ class VideoDownloadJobsCompanion extends UpdateCompanion<VideoDownloadJobRow> {
     this.year = const Value.absent(),
     this.season = const Value.absent(),
     this.coverUrl = const Value.absent(),
+    this.identityJson = const Value.absent(),
     required String backendKind,
     this.backendTaskId = const Value.absent(),
     this.backendProfileId = const Value.absent(),
@@ -41537,6 +41587,7 @@ class VideoDownloadJobsCompanion extends UpdateCompanion<VideoDownloadJobRow> {
     Expression<int>? year,
     Expression<int>? season,
     Expression<String>? coverUrl,
+    Expression<String>? identityJson,
     Expression<String>? backendKind,
     Expression<String>? backendTaskId,
     Expression<String>? backendProfileId,
@@ -41579,6 +41630,7 @@ class VideoDownloadJobsCompanion extends UpdateCompanion<VideoDownloadJobRow> {
       if (year != null) 'year': year,
       if (season != null) 'season': season,
       if (coverUrl != null) 'cover_url': coverUrl,
+      if (identityJson != null) 'identity_json': identityJson,
       if (backendKind != null) 'backend_kind': backendKind,
       if (backendTaskId != null) 'backend_task_id': backendTaskId,
       if (backendProfileId != null) 'backend_profile_id': backendProfileId,
@@ -41623,6 +41675,7 @@ class VideoDownloadJobsCompanion extends UpdateCompanion<VideoDownloadJobRow> {
     Value<int?>? year,
     Value<int?>? season,
     Value<String?>? coverUrl,
+    Value<String?>? identityJson,
     Value<String>? backendKind,
     Value<String?>? backendTaskId,
     Value<String?>? backendProfileId,
@@ -41664,6 +41717,7 @@ class VideoDownloadJobsCompanion extends UpdateCompanion<VideoDownloadJobRow> {
       year: year ?? this.year,
       season: season ?? this.season,
       coverUrl: coverUrl ?? this.coverUrl,
+      identityJson: identityJson ?? this.identityJson,
       backendKind: backendKind ?? this.backendKind,
       backendTaskId: backendTaskId ?? this.backendTaskId,
       backendProfileId: backendProfileId ?? this.backendProfileId,
@@ -41736,6 +41790,9 @@ class VideoDownloadJobsCompanion extends UpdateCompanion<VideoDownloadJobRow> {
     }
     if (coverUrl.present) {
       map['cover_url'] = Variable<String>(coverUrl.value);
+    }
+    if (identityJson.present) {
+      map['identity_json'] = Variable<String>(identityJson.value);
     }
     if (backendKind.present) {
       map['backend_kind'] = Variable<String>(backendKind.value);
@@ -41832,6 +41889,7 @@ class VideoDownloadJobsCompanion extends UpdateCompanion<VideoDownloadJobRow> {
           ..write('year: $year, ')
           ..write('season: $season, ')
           ..write('coverUrl: $coverUrl, ')
+          ..write('identityJson: $identityJson, ')
           ..write('backendKind: $backendKind, ')
           ..write('backendTaskId: $backendTaskId, ')
           ..write('backendProfileId: $backendProfileId, ')
@@ -43809,6 +43867,17 @@ class $VideoDownloadSubscriptionsTable extends VideoDownloadSubscriptions
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _identityJsonMeta = const VerificationMeta(
+    'identityJson',
+  );
+  @override
+  late final GeneratedColumn<String> identityJson = GeneratedColumn<String>(
+    'identity_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _searchQueryMeta = const VerificationMeta(
     'searchQuery',
   );
@@ -44087,6 +44156,7 @@ class $VideoDownloadSubscriptionsTable extends VideoDownloadSubscriptions
     year,
     season,
     coverUrl,
+    identityJson,
     searchQuery,
     filterJson,
     mode,
@@ -44201,6 +44271,15 @@ class $VideoDownloadSubscriptionsTable extends VideoDownloadSubscriptions
       context.handle(
         _coverUrlMeta,
         coverUrl.isAcceptableOrUnknown(data['cover_url']!, _coverUrlMeta),
+      );
+    }
+    if (data.containsKey('identity_json')) {
+      context.handle(
+        _identityJsonMeta,
+        identityJson.isAcceptableOrUnknown(
+          data['identity_json']!,
+          _identityJsonMeta,
+        ),
       );
     }
     if (data.containsKey('search_query')) {
@@ -44445,6 +44524,10 @@ class $VideoDownloadSubscriptionsTable extends VideoDownloadSubscriptions
         DriftSqlType.string,
         data['${effectivePrefix}cover_url'],
       ),
+      identityJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}identity_json'],
+      ),
       searchQuery: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}search_query'],
@@ -44559,6 +44642,10 @@ class VideoDownloadSubscriptionRow extends DataClass
   final int? season;
   final String? coverUrl;
 
+  /// v94：发现页完整身份快照（同 `video_download_jobs.identity_json`）。订阅
+  /// 轮询用它恢复原名/别名做多名字资源搜索兜底。NULL = 旧订阅，走旧行为。
+  final String? identityJson;
+
   /// searchQuery + filterJson 是来源无关的订阅选择快照；filterJson 禁止放凭据。
   final String searchQuery;
   final String filterJson;
@@ -44594,6 +44681,7 @@ class VideoDownloadSubscriptionRow extends DataClass
     this.year,
     this.season,
     this.coverUrl,
+    this.identityJson,
     required this.searchQuery,
     required this.filterJson,
     required this.mode,
@@ -44642,6 +44730,9 @@ class VideoDownloadSubscriptionRow extends DataClass
     }
     if (!nullToAbsent || coverUrl != null) {
       map['cover_url'] = Variable<String>(coverUrl);
+    }
+    if (!nullToAbsent || identityJson != null) {
+      map['identity_json'] = Variable<String>(identityJson);
     }
     map['search_query'] = Variable<String>(searchQuery);
     map['filter_json'] = Variable<String>(filterJson);
@@ -44715,6 +44806,9 @@ class VideoDownloadSubscriptionRow extends DataClass
       coverUrl: coverUrl == null && nullToAbsent
           ? const Value.absent()
           : Value(coverUrl),
+      identityJson: identityJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(identityJson),
       searchQuery: Value(searchQuery),
       filterJson: Value(filterJson),
       mode: Value(mode),
@@ -44783,6 +44877,7 @@ class VideoDownloadSubscriptionRow extends DataClass
       year: serializer.fromJson<int?>(json['year']),
       season: serializer.fromJson<int?>(json['season']),
       coverUrl: serializer.fromJson<String?>(json['coverUrl']),
+      identityJson: serializer.fromJson<String?>(json['identityJson']),
       searchQuery: serializer.fromJson<String>(json['searchQuery']),
       filterJson: serializer.fromJson<String>(json['filterJson']),
       mode: serializer.fromJson<String>(json['mode']),
@@ -44824,6 +44919,7 @@ class VideoDownloadSubscriptionRow extends DataClass
       'year': serializer.toJson<int?>(year),
       'season': serializer.toJson<int?>(season),
       'coverUrl': serializer.toJson<String?>(coverUrl),
+      'identityJson': serializer.toJson<String?>(identityJson),
       'searchQuery': serializer.toJson<String>(searchQuery),
       'filterJson': serializer.toJson<String>(filterJson),
       'mode': serializer.toJson<String>(mode),
@@ -44861,6 +44957,7 @@ class VideoDownloadSubscriptionRow extends DataClass
     Value<int?> year = const Value.absent(),
     Value<int?> season = const Value.absent(),
     Value<String?> coverUrl = const Value.absent(),
+    Value<String?> identityJson = const Value.absent(),
     String? searchQuery,
     String? filterJson,
     String? mode,
@@ -44899,6 +44996,7 @@ class VideoDownloadSubscriptionRow extends DataClass
     year: year.present ? year.value : this.year,
     season: season.present ? season.value : this.season,
     coverUrl: coverUrl.present ? coverUrl.value : this.coverUrl,
+    identityJson: identityJson.present ? identityJson.value : this.identityJson,
     searchQuery: searchQuery ?? this.searchQuery,
     filterJson: filterJson ?? this.filterJson,
     mode: mode ?? this.mode,
@@ -44959,6 +45057,9 @@ class VideoDownloadSubscriptionRow extends DataClass
       year: data.year.present ? data.year.value : this.year,
       season: data.season.present ? data.season.value : this.season,
       coverUrl: data.coverUrl.present ? data.coverUrl.value : this.coverUrl,
+      identityJson: data.identityJson.present
+          ? data.identityJson.value
+          : this.identityJson,
       searchQuery: data.searchQuery.present
           ? data.searchQuery.value
           : this.searchQuery,
@@ -45030,6 +45131,7 @@ class VideoDownloadSubscriptionRow extends DataClass
           ..write('year: $year, ')
           ..write('season: $season, ')
           ..write('coverUrl: $coverUrl, ')
+          ..write('identityJson: $identityJson, ')
           ..write('searchQuery: $searchQuery, ')
           ..write('filterJson: $filterJson, ')
           ..write('mode: $mode, ')
@@ -45069,6 +45171,7 @@ class VideoDownloadSubscriptionRow extends DataClass
     year,
     season,
     coverUrl,
+    identityJson,
     searchQuery,
     filterJson,
     mode,
@@ -45107,6 +45210,7 @@ class VideoDownloadSubscriptionRow extends DataClass
           other.year == this.year &&
           other.season == this.season &&
           other.coverUrl == this.coverUrl &&
+          other.identityJson == this.identityJson &&
           other.searchQuery == this.searchQuery &&
           other.filterJson == this.filterJson &&
           other.mode == this.mode &&
@@ -45144,6 +45248,7 @@ class VideoDownloadSubscriptionsCompanion
   final Value<int?> year;
   final Value<int?> season;
   final Value<String?> coverUrl;
+  final Value<String?> identityJson;
   final Value<String> searchQuery;
   final Value<String> filterJson;
   final Value<String> mode;
@@ -45179,6 +45284,7 @@ class VideoDownloadSubscriptionsCompanion
     this.year = const Value.absent(),
     this.season = const Value.absent(),
     this.coverUrl = const Value.absent(),
+    this.identityJson = const Value.absent(),
     this.searchQuery = const Value.absent(),
     this.filterJson = const Value.absent(),
     this.mode = const Value.absent(),
@@ -45215,6 +45321,7 @@ class VideoDownloadSubscriptionsCompanion
     this.year = const Value.absent(),
     this.season = const Value.absent(),
     this.coverUrl = const Value.absent(),
+    this.identityJson = const Value.absent(),
     required String searchQuery,
     this.filterJson = const Value.absent(),
     this.mode = const Value.absent(),
@@ -45259,6 +45366,7 @@ class VideoDownloadSubscriptionsCompanion
     Expression<int>? year,
     Expression<int>? season,
     Expression<String>? coverUrl,
+    Expression<String>? identityJson,
     Expression<String>? searchQuery,
     Expression<String>? filterJson,
     Expression<String>? mode,
@@ -45295,6 +45403,7 @@ class VideoDownloadSubscriptionsCompanion
       if (year != null) 'year': year,
       if (season != null) 'season': season,
       if (coverUrl != null) 'cover_url': coverUrl,
+      if (identityJson != null) 'identity_json': identityJson,
       if (searchQuery != null) 'search_query': searchQuery,
       if (filterJson != null) 'filter_json': filterJson,
       if (mode != null) 'mode': mode,
@@ -45333,6 +45442,7 @@ class VideoDownloadSubscriptionsCompanion
     Value<int?>? year,
     Value<int?>? season,
     Value<String?>? coverUrl,
+    Value<String?>? identityJson,
     Value<String>? searchQuery,
     Value<String>? filterJson,
     Value<String>? mode,
@@ -45369,6 +45479,7 @@ class VideoDownloadSubscriptionsCompanion
       year: year ?? this.year,
       season: season ?? this.season,
       coverUrl: coverUrl ?? this.coverUrl,
+      identityJson: identityJson ?? this.identityJson,
       searchQuery: searchQuery ?? this.searchQuery,
       filterJson: filterJson ?? this.filterJson,
       mode: mode ?? this.mode,
@@ -45428,6 +45539,9 @@ class VideoDownloadSubscriptionsCompanion
     }
     if (coverUrl.present) {
       map['cover_url'] = Variable<String>(coverUrl.value);
+    }
+    if (identityJson.present) {
+      map['identity_json'] = Variable<String>(identityJson.value);
     }
     if (searchQuery.present) {
       map['search_query'] = Variable<String>(searchQuery.value);
@@ -45517,6 +45631,7 @@ class VideoDownloadSubscriptionsCompanion
           ..write('year: $year, ')
           ..write('season: $season, ')
           ..write('coverUrl: $coverUrl, ')
+          ..write('identityJson: $identityJson, ')
           ..write('searchQuery: $searchQuery, ')
           ..write('filterJson: $filterJson, ')
           ..write('mode: $mode, ')
@@ -80289,6 +80404,7 @@ typedef $$VideoDownloadJobsTableCreateCompanionBuilder =
       Value<int?> year,
       Value<int?> season,
       Value<String?> coverUrl,
+      Value<String?> identityJson,
       required String backendKind,
       Value<String?> backendTaskId,
       Value<String?> backendProfileId,
@@ -80331,6 +80447,7 @@ typedef $$VideoDownloadJobsTableUpdateCompanionBuilder =
       Value<int?> year,
       Value<int?> season,
       Value<String?> coverUrl,
+      Value<String?> identityJson,
       Value<String> backendKind,
       Value<String?> backendTaskId,
       Value<String?> backendProfileId,
@@ -80563,6 +80680,11 @@ class $$VideoDownloadJobsTableFilterComposer
 
   ColumnFilters<String> get coverUrl => $composableBuilder(
     column: $table.coverUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get identityJson => $composableBuilder(
+    column: $table.identityJson,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -80884,6 +81006,11 @@ class $$VideoDownloadJobsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get identityJson => $composableBuilder(
+    column: $table.identityJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get backendKind => $composableBuilder(
     column: $table.backendKind,
     builder: (column) => ColumnOrderings(column),
@@ -81105,6 +81232,11 @@ class $$VideoDownloadJobsTableAnnotationComposer
 
   GeneratedColumn<String> get coverUrl =>
       $composableBuilder(column: $table.coverUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get identityJson => $composableBuilder(
+    column: $table.identityJson,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get backendKind => $composableBuilder(
     column: $table.backendKind,
@@ -81382,6 +81514,7 @@ class $$VideoDownloadJobsTableTableManager
                 Value<int?> year = const Value.absent(),
                 Value<int?> season = const Value.absent(),
                 Value<String?> coverUrl = const Value.absent(),
+                Value<String?> identityJson = const Value.absent(),
                 Value<String> backendKind = const Value.absent(),
                 Value<String?> backendTaskId = const Value.absent(),
                 Value<String?> backendProfileId = const Value.absent(),
@@ -81422,6 +81555,7 @@ class $$VideoDownloadJobsTableTableManager
                 year: year,
                 season: season,
                 coverUrl: coverUrl,
+                identityJson: identityJson,
                 backendKind: backendKind,
                 backendTaskId: backendTaskId,
                 backendProfileId: backendProfileId,
@@ -81464,6 +81598,7 @@ class $$VideoDownloadJobsTableTableManager
                 Value<int?> year = const Value.absent(),
                 Value<int?> season = const Value.absent(),
                 Value<String?> coverUrl = const Value.absent(),
+                Value<String?> identityJson = const Value.absent(),
                 required String backendKind,
                 Value<String?> backendTaskId = const Value.absent(),
                 Value<String?> backendProfileId = const Value.absent(),
@@ -81504,6 +81639,7 @@ class $$VideoDownloadJobsTableTableManager
                 year: year,
                 season: season,
                 coverUrl: coverUrl,
+                identityJson: identityJson,
                 backendKind: backendKind,
                 backendTaskId: backendTaskId,
                 backendProfileId: backendProfileId,
@@ -83012,6 +83148,7 @@ typedef $$VideoDownloadSubscriptionsTableCreateCompanionBuilder =
       Value<int?> year,
       Value<int?> season,
       Value<String?> coverUrl,
+      Value<String?> identityJson,
       required String searchQuery,
       Value<String> filterJson,
       Value<String> mode,
@@ -83049,6 +83186,7 @@ typedef $$VideoDownloadSubscriptionsTableUpdateCompanionBuilder =
       Value<int?> year,
       Value<int?> season,
       Value<String?> coverUrl,
+      Value<String?> identityJson,
       Value<String> searchQuery,
       Value<String> filterJson,
       Value<String> mode,
@@ -83215,6 +83353,11 @@ class $$VideoDownloadSubscriptionsTableFilterComposer
 
   ColumnFilters<String> get coverUrl => $composableBuilder(
     column: $table.coverUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get identityJson => $composableBuilder(
+    column: $table.identityJson,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -83458,6 +83601,11 @@ class $$VideoDownloadSubscriptionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get identityJson => $composableBuilder(
+    column: $table.identityJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get searchQuery => $composableBuilder(
     column: $table.searchQuery,
     builder: (column) => ColumnOrderings(column),
@@ -83658,6 +83806,11 @@ class $$VideoDownloadSubscriptionsTableAnnotationComposer
 
   GeneratedColumn<String> get coverUrl =>
       $composableBuilder(column: $table.coverUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get identityJson => $composableBuilder(
+    column: $table.identityJson,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get searchQuery => $composableBuilder(
     column: $table.searchQuery,
@@ -83882,6 +84035,7 @@ class $$VideoDownloadSubscriptionsTableTableManager
                 Value<int?> year = const Value.absent(),
                 Value<int?> season = const Value.absent(),
                 Value<String?> coverUrl = const Value.absent(),
+                Value<String?> identityJson = const Value.absent(),
                 Value<String> searchQuery = const Value.absent(),
                 Value<String> filterJson = const Value.absent(),
                 Value<String> mode = const Value.absent(),
@@ -83917,6 +84071,7 @@ class $$VideoDownloadSubscriptionsTableTableManager
                 year: year,
                 season: season,
                 coverUrl: coverUrl,
+                identityJson: identityJson,
                 searchQuery: searchQuery,
                 filterJson: filterJson,
                 mode: mode,
@@ -83954,6 +84109,7 @@ class $$VideoDownloadSubscriptionsTableTableManager
                 Value<int?> year = const Value.absent(),
                 Value<int?> season = const Value.absent(),
                 Value<String?> coverUrl = const Value.absent(),
+                Value<String?> identityJson = const Value.absent(),
                 required String searchQuery,
                 Value<String> filterJson = const Value.absent(),
                 Value<String> mode = const Value.absent(),
@@ -83989,6 +84145,7 @@ class $$VideoDownloadSubscriptionsTableTableManager
                 year: year,
                 season: season,
                 coverUrl: coverUrl,
+                identityJson: identityJson,
                 searchQuery: searchQuery,
                 filterJson: filterJson,
                 mode: mode,

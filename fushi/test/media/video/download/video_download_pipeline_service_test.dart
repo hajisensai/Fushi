@@ -18,6 +18,7 @@ import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi/src/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
@@ -30,6 +31,21 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 const String _torrentHash = '0123456789abcdef0123456789abcdef01234567';
+
+/// 带 AniDB 规范身份的入队快照（P1 契约下 scrape 阶段的唯一入场券）。
+VideoMediaReference _anidbReference() => VideoMediaReference(
+      providerId: 'anilist',
+      mediaId: '100',
+      mediaKind: VideoMetadataMediaKind.tv,
+      discoveryCategory: VideoDiscoveryCategory.anime,
+      title: 'Show',
+      originalTitle: 'ショー',
+      aliases: const <String>['Show'],
+      year: 2026,
+      season: 1,
+      anidbId: 42,
+      anilistId: 100,
+    );
 const VideoDownloadBackendIdentity _expectedIdentity =
     VideoDownloadBackendIdentity(
   kind: 'embedded',
@@ -729,12 +745,13 @@ void main() {
     );
 
     environment.service.wake();
+    // P1 契约：anilist 身份不是 AniDB 规范身份 → import 后直接完成（进视频页
+    // 待确认队列），不再被强制刮到 needsAttention。
     await _waitForJob(
       environment.database,
       jobId,
       (VideoDownloadJobRow row) =>
-          row.stage == VideoDownloadJobStage.scrape &&
-          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
     );
 
     expect(backend.moveStoragePaths, <String>['/media']);
@@ -870,12 +887,12 @@ void main() {
     );
 
     environment.service.wake();
+    // P1 契约：无 AniDB 身份 → import 后直接完成，见上一个用例的注释。
     await _waitForJob(
       environment.database,
       jobId,
       (VideoDownloadJobRow row) =>
-          row.stage == VideoDownloadJobStage.scrape &&
-          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
     );
 
     final String absoluteSource =
@@ -1058,12 +1075,12 @@ void main() {
     );
 
     environment.service.wake();
+    // P1 契约：无 AniDB 身份 → import 后直接完成，字幕落位断言不受影响。
     await _waitForJob(
       environment.database,
       jobId,
       (VideoDownloadJobRow row) =>
-          row.stage == VideoDownloadJobStage.scrape &&
-          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
     );
 
     final VideoDownloadJobSubtitleRow subtitle =
@@ -1089,9 +1106,12 @@ void main() {
     );
     addTearDown(environment.close);
     const String jobId = 'exact-scrape-path-job';
+    // P1 起 scrape 阶段只对带 AniDB 规范身份的任务运行；本用例守的是
+    // 「身份确认后也绝不按标题回退映射」，故显式带上 anidb 身份。
     await environment.insertJob(
       jobId: jobId,
       stage: VideoDownloadJobStage.scrape,
+      identityJson: encodeVideoMediaReference(_anidbReference()),
     );
     await environment.database.upsertVideoBook(
       VideoBooksCompanion(
@@ -1127,6 +1147,80 @@ void main() {
     );
 
     expect(job.lastError, contains('mapped exactly'));
+  });
+
+  test(
+      'a scrape-stage job without an AniDB identity completes instead of '
+      'getting pinned on needsAttention (BUG-2004)', () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'anilist-only-scrape-job';
+    // insertJob 默认身份是 anilist:100 —— 修前它会被强制模糊刮到歧义卡死。
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.scrape,
+    );
+
+    environment.service.wake();
+    await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
+    );
+  });
+
+  test(
+      'an AniDB identity from the enqueue snapshot enters scrape as a '
+      'confirmed lookup', () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'anidb-confirmed-scrape-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.scrape,
+      identityJson: encodeVideoMediaReference(_anidbReference()),
+    );
+    final String videoPath = p.join(environment.root.path, 'Show.mkv');
+    await environment.database.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/anidb-show'),
+        title: const Value<String>('Show'),
+        videoPath: Value<String>(videoPath),
+        sourceId: Value<int?>(environment.sourceId),
+      ),
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: 'Show.mkv',
+        currentRelativePath: 'Show.mkv',
+        finalAbsolutePath: Value<String?>(videoPath),
+        kind: const Value<String>('video'),
+        status: const Value<String>(VideoDownloadJobFileStatus.imported),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    final VideoDownloadJobRow job = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+    );
+
+    // 测试环境的 registry 没有可用 AniDB provider，coordinator 对已确认身份
+    // fail closed —— 报「主资料源不可用」而不是完成/模糊匹配，证明 anidb
+    // lookup 真正进入了刮削管线。
+    expect(job.lastError, contains('AniDB'));
   });
 
   test('retry resets an actionable job and wakes the persisted stage',
@@ -1876,6 +1970,7 @@ class _PipelineEnvironment {
     String backendKind = 'embedded',
     String lifecycle = VideoDownloadJobLifecycle.active,
     String category = _expectedCategory,
+    String? identityJson,
   }) {
     final int now = DateTime.now().millisecondsSinceEpoch;
     return database.upsertVideoDownloadJob(
@@ -1890,6 +1985,7 @@ class _PipelineEnvironment {
         torrentHash: const Value<String?>(_torrentHash),
         metadataProvider: const Value<String?>('anilist'),
         externalId: const Value<String?>('100'),
+        identityJson: Value<String?>(identityJson),
         mediaKind: VideoMetadataMediaKind.tv.name,
         discoveryCategory: Value<String?>(VideoDiscoveryCategory.anime.name),
         title: 'Show',
