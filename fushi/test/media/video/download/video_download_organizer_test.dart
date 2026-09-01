@@ -13,9 +13,8 @@ import 'package:path/path.dart' as p;
 /// Linux CI 上它不是绝对路径，`p.absolute` 会给它前置 CWD 变成
 /// `/…/cwd/C:\Media\Downloads`，拼出来的结果与期望值必然不等——「本机 Windows 绿、
 /// CI 必红」。本机路径按平台原生给才是这个类的真实用法，所以修的是用例的平台假设。
-final String _localRoot = Platform.isWindows
-    ? r'C:\Media\Downloads'
-    : '/Media/Downloads';
+final String _localRoot =
+    Platform.isWindows ? r'C:\Media\Downloads' : '/Media/Downloads';
 
 void main() {
   test('remote/local path mapping is bidirectional and prefix-safe', () {
@@ -38,6 +37,63 @@ void main() {
       '/srv/downloads/Show/E01.mkv',
     );
     expect(mapping.remoteToLocal('/srv/downloads-other/E01.mkv'), isNull);
+  });
+
+  test('多部电影一个种子：并列正片各排各的电影目录，小附件仍进 Extras（BUG-2007）', () {
+    final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+      VideoOrganizationRequest(
+        torrentId: 'hash',
+        title: '哆啦A梦剧场版',
+        kind: VideoOrganizationKind.movie,
+        sourceRoot: _localRoot,
+        pathMapping: VideoDownloadPathMapping(
+          remoteRoot: '/library',
+          localRoot: _localRoot,
+        ),
+      ),
+      const <TorrentFileEntry>[
+        TorrentFileEntry(
+          name: 'Pack/First Movie.mkv',
+          size: 1000,
+          progress: 1,
+          index: 0,
+        ),
+        TorrentFileEntry(
+          name: 'Pack/Another Doraemon Movie.mkv',
+          size: 900,
+          progress: 1,
+          index: 1,
+        ),
+        // 特典目录：不管体量都不许被抬成正片。
+        TorrentFileEntry(
+          name: 'Pack/CM/spot.mkv',
+          size: 400,
+          progress: 1,
+          index: 2,
+        ),
+        // 根目录小文件：体量 < 最大正片的 1/4，不够并列正片门槛。
+        TorrentFileEntry(
+          name: 'Pack/tiny-featurette.mkv',
+          size: 30,
+          progress: 1,
+          index: 3,
+        ),
+      ],
+    );
+    final Map<int, String> byIndex = <int, String>{
+      for (final VideoOrganizationFilePlan f in plan.files)
+        f.backendFileIndex: f.targetRelativePath,
+    };
+    expect(byIndex[0], '哆啦A梦剧场版/哆啦A梦剧场版.mkv',
+        reason: '最大文件仍是主正片，沿用任务标题（旧行为不变）');
+    expect(
+      byIndex[1],
+      // 文件名解析器把「Movie」当发布噪音词剥掉（既有清洗行为），标题取剩下的主干。
+      'Another Doraemon/Another Doraemon.mkv',
+      reason: '修前它被扔进 Extras——从此不入库不刮削（BUG-2007）',
+    );
+    expect(byIndex[2], startsWith('哆啦A梦剧场版/Extras/'));
+    expect(byIndex[3], startsWith('哆啦A梦剧场版/Extras/'));
   });
 
   test(
@@ -65,22 +121,22 @@ void main() {
 
       final VideoOrganizationResult result =
           await const VideoDownloadOrganizer().organize(
-            backend: backend,
-            request: VideoOrganizationRequest(
-              torrentId: 'hash',
-              title: 'Show: Name',
-              year: 2024,
-              kind: VideoOrganizationKind.episodic,
-              sourceRoot: root.path,
-              pathMapping: VideoDownloadPathMapping(
-                remoteRoot: '/library',
-                localRoot: root.path,
-              ),
-            ),
-            onFileCommitted: (VideoOrganizationFilePlan value) async {
-              committed.add(value);
-            },
-          );
+        backend: backend,
+        request: VideoOrganizationRequest(
+          torrentId: 'hash',
+          title: 'Show: Name',
+          year: 2024,
+          kind: VideoOrganizationKind.episodic,
+          sourceRoot: root.path,
+          pathMapping: VideoDownloadPathMapping(
+            remoteRoot: '/library',
+            localRoot: root.path,
+          ),
+        ),
+        onFileCommitted: (VideoOrganizationFilePlan value) async {
+          committed.add(value);
+        },
+      );
 
       expect(result.ok, isTrue, reason: result.error);
       expect(
@@ -144,7 +200,8 @@ void main() {
     },
   );
 
-  test('episodic organizer routes unnumbered specials to Extras (BUG-1785)', () async {
+  test('episodic organizer routes unnumbered specials to Extras (BUG-1785)',
+      () async {
     final Directory root = await Directory.systemTemp.createTemp(
       'fushi-organizer-extras-',
     );
@@ -167,8 +224,7 @@ void main() {
       ),
       <TorrentFileEntry>[
         const TorrentFileEntry(
-          name:
-              '$releaseRoot/'
+          name: '$releaseRoot/'
               '[VCB-Studio] Hibike! Euphonium 2 [01][Ma10p_1080p][x265_flac].mkv',
           size: 900,
           progress: 1,
@@ -176,16 +232,14 @@ void main() {
         ),
         // 内置引擎在 Windows 上报反斜杠路径（用户原始报错原样）。
         const TorrentFileEntry(
-          name:
-              '$releaseRoot\\Previews\\'
+          name: '$releaseRoot\\Previews\\'
               '[VCB-Studio] Hibike! Euphonium 2 [WEB Preview02][Ma10p_1080p][x265_flac].mkv',
           size: 30,
           progress: 1,
           index: 1,
         ),
         const TorrentFileEntry(
-          name:
-              '$releaseRoot/SPs/'
+          name: '$releaseRoot/SPs/'
               '[VCB-Studio] Hibike! Euphonium 2 [NCOP][Ma10p_1080p][x265_flac].mkv',
           size: 40,
           progress: 1,
@@ -196,9 +250,9 @@ void main() {
 
     final Map<int, VideoOrganizationFilePlan> byIndex =
         <int, VideoOrganizationFilePlan>{
-          for (final VideoOrganizationFilePlan file in plan.files)
-            file.backendFileIndex: file,
-        };
+      for (final VideoOrganizationFilePlan file in plan.files)
+        file.backendFileIndex: file,
+    };
     expect(
       byIndex[0]!.targetRelativePath,
       '響け！ユーフォニアム 2 (2016)/Season 02/'
@@ -218,7 +272,8 @@ void main() {
     );
   });
 
-  test('numbered specials in an EXTRA directory never claim episode targets '
+  test(
+      'numbered specials in an EXTRA directory never claim episode targets '
       '(BUG-1865)', () async {
     final Directory root = await Directory.systemTemp.createTemp(
       'fushi-organizer-numbered-extras-',
@@ -247,40 +302,35 @@ void main() {
       ),
       <TorrentFileEntry>[
         const TorrentFileEntry(
-          name:
-              '$releaseRoot/EXTRA/[Moozzi2] Hibike! Euphonium S3 '
+          name: '$releaseRoot/EXTRA/[Moozzi2] Hibike! Euphonium S3 '
               '[SP05] Making Video Collection - 05 $suffix',
           size: 30,
           progress: 1,
           index: 11,
         ),
         const TorrentFileEntry(
-          name:
-              '$releaseRoot/EXTRA/[Moozzi2] Hibike! Euphonium S3 '
+          name: '$releaseRoot/EXTRA/[Moozzi2] Hibike! Euphonium S3 '
               '[SP08] Extra Episode - 05 $suffix',
           size: 31,
           progress: 1,
           index: 16,
         ),
         const TorrentFileEntry(
-          name:
-              '$releaseRoot/EXTRA/[Moozzi2] Hibike! Euphonium S3 '
+          name: '$releaseRoot/EXTRA/[Moozzi2] Hibike! Euphonium S3 '
               '[SP00] Menu - 05 [ Ver.01 ] $suffix',
           size: 32,
           progress: 1,
           index: 26,
         ),
         const TorrentFileEntry(
-          name:
-              '$releaseRoot/EXTRA/[Moozzi2] Hibike! Euphonium S3 '
+          name: '$releaseRoot/EXTRA/[Moozzi2] Hibike! Euphonium S3 '
               '[SP01] NCOP $suffix',
           size: 33,
           progress: 1,
           index: 13,
         ),
         const TorrentFileEntry(
-          name:
-              '$releaseRoot/[Moozzi2] Hibike! Euphonium S3 - 05 '
+          name: '$releaseRoot/[Moozzi2] Hibike! Euphonium S3 - 05 '
               '(BD 1920x1080 x265-10Bit FLACx3).mkv',
           size: 900,
           progress: 1,
@@ -291,9 +341,9 @@ void main() {
 
     final Map<int, VideoOrganizationFilePlan> byIndex =
         <int, VideoOrganizationFilePlan>{
-          for (final VideoOrganizationFilePlan file in plan.files)
-            file.backendFileIndex: file,
-        };
+      for (final VideoOrganizationFilePlan file in plan.files)
+        file.backendFileIndex: file,
+    };
     // 唯一的正片拿到 Season 目标，且拿到的是它自己的集号。
     expect(
       byIndex[64]!.targetRelativePath,
@@ -349,8 +399,7 @@ void main() {
             index: 0,
           ),
           const TorrentFileEntry(
-            name:
-                '[Shiniori-Raws] Kusuriya no Hitorigoto - 24 NCED Version '
+            name: '[Shiniori-Raws] Kusuriya no Hitorigoto - 24 NCED Version '
                 '$suffix',
             size: 40,
             progress: 1,
@@ -374,7 +423,8 @@ void main() {
     },
   );
 
-  test('numbered specials in SPs/Previews directories stay out of Season '
+  test(
+      'numbered specials in SPs/Previews directories stay out of Season '
       '(BUG-1865)', () async {
     final Directory root = await Directory.systemTemp.createTemp(
       'fushi-organizer-vcb-extras-',
@@ -406,32 +456,28 @@ void main() {
       ),
       <TorrentFileEntry>[
         const TorrentFileEntry(
-          name:
-              '$releaseRoot/'
+          name: '$releaseRoot/'
               '[VCB-Studio] Hibike! Euphonium 2 [05][Ma10p_1080p][x265_flac_2aac].mkv',
           size: 900,
           progress: 1,
           index: 0,
         ),
         const TorrentFileEntry(
-          name:
-              '$releaseRoot\\SPs\\'
+          name: '$releaseRoot\\SPs\\'
               '[VCB-Studio] Hibike! Euphonium 2 [SP05][Ma10p_1080p][x265_flac].mkv',
           size: 40,
           progress: 1,
           index: 1,
         ),
         const TorrentFileEntry(
-          name:
-              '$releaseRoot/SPs/'
+          name: '$releaseRoot/SPs/'
               '[VCB-Studio] Hibike! Euphonium 2 [Menu05][Ma10p_1080p][x265_flac].mkv',
           size: 41,
           progress: 1,
           index: 2,
         ),
         const TorrentFileEntry(
-          name:
-              '$releaseRoot/Previews/'
+          name: '$releaseRoot/Previews/'
               '[VCB-Studio] Hibike! Euphonium 2 [WEB Preview05][Ma10p_1080p][x265_flac].mkv',
           size: 42,
           progress: 1,
@@ -440,8 +486,7 @@ void main() {
         // 负向对照的承重件：这条**解得出** `episode=5`（`- 05`），只有目录判定
         // 拦得住它。
         const TorrentFileEntry(
-          name:
-              '$releaseRoot/SPs/'
+          name: '$releaseRoot/SPs/'
               '[VCB-Studio] Hibike! Euphonium 2 [SP] Bonus Interview - 05 '
               '[Ma10p_1080p][x265_flac].mkv',
           size: 43,
@@ -453,9 +498,9 @@ void main() {
 
     final Map<int, VideoOrganizationFilePlan> byIndex =
         <int, VideoOrganizationFilePlan>{
-          for (final VideoOrganizationFilePlan file in plan.files)
-            file.backendFileIndex: file,
-        };
+      for (final VideoOrganizationFilePlan file in plan.files)
+        file.backendFileIndex: file,
+    };
     expect(
       byIndex[0]!.targetRelativePath,
       '響け！ユーフォニアム 2 (2016)/Season 02/'
@@ -490,7 +535,8 @@ void main() {
     );
   });
 
-  test('a specials-only torrent falls back to filename parsing instead of '
+  test(
+      'a specials-only torrent falls back to filename parsing instead of '
       'failing (BUG-1865)', () {
     // 纯特典种子（用户单独下的 SP 盘）：所有视频都在 `SPs/` 下，先分类会一集都
     // 认不出。这时必须退回旧口径按文件名解集号，而不是抛
@@ -692,18 +738,18 @@ void main() {
 
       final VideoOrganizationResult result =
           await const VideoDownloadOrganizer().organize(
-            backend: backend,
-            request: VideoOrganizationRequest(
-              torrentId: 'hash',
-              title: 'Show',
-              kind: VideoOrganizationKind.episodic,
-              sourceRoot: root.path,
-              pathMapping: VideoDownloadPathMapping(
-                remoteRoot: '/library',
-                localRoot: root.path,
-              ),
-            ),
-          );
+        backend: backend,
+        request: VideoOrganizationRequest(
+          torrentId: 'hash',
+          title: 'Show',
+          kind: VideoOrganizationKind.episodic,
+          sourceRoot: root.path,
+          pathMapping: VideoDownloadPathMapping(
+            remoteRoot: '/library',
+            localRoot: root.path,
+          ),
+        ),
+      );
 
       expect(result.ok, isFalse);
       expect(result.error, contains('episode number'));
@@ -743,24 +789,22 @@ void main() {
 
     final List<VideoOrganizationResult> results =
         await Future.wait(<Future<VideoOrganizationResult>>[
-          const VideoDownloadOrganizer().organize(
-            backend: first,
-            request: requestFor('hash-a'),
-          ),
-          const VideoDownloadOrganizer().organize(
-            backend: second,
-            request: requestFor('hash-b'),
-          ),
-        ]);
+      const VideoDownloadOrganizer().organize(
+        backend: first,
+        request: requestFor('hash-a'),
+      ),
+      const VideoDownloadOrganizer().organize(
+        backend: second,
+        request: requestFor('hash-b'),
+      ),
+    ]);
 
-    final int okCount = results
-        .where((VideoOrganizationResult r) => r.ok)
-        .length;
+    final int okCount =
+        results.where((VideoOrganizationResult r) => r.ok).length;
     expect(
       okCount,
       1,
-      reason:
-          '两条都成功 = 后端被要求往同一路径搬两次（qBittorrent 的 '
+      reason: '两条都成功 = 后端被要求往同一路径搬两次（qBittorrent 的 '
           'setLocation 不保证目标已存在时不覆盖），正是要挡的形状',
     );
     final VideoOrganizationResult failed = results.firstWhere(
@@ -835,7 +879,8 @@ class _MaterializingBackend implements TorrentBackend {
     required String category,
     bool sequential = false,
     bool firstLastPiecePrio = false,
-  }) async => true;
+  }) async =>
+      true;
 
   @override
   void close() {}
@@ -863,7 +908,8 @@ class _FakeBackend implements TorrentBackend {
     required String category,
     bool sequential = false,
     bool firstLastPiecePrio = false,
-  }) async => true;
+  }) async =>
+      true;
 
   @override
   void close() {}

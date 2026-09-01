@@ -1223,6 +1223,115 @@ void main() {
     expect(job.lastError, contains('AniDB'));
   });
 
+  test('多部电影一个种子：import 逐部入库而不是只入最大的那部（BUG-2007）', () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'multi-movie-import-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.import,
+      mediaKind: VideoMetadataMediaKind.movie.name,
+      subtitlePolicy: VideoDownloadSubtitlePolicy.none,
+    );
+    final List<String> paths = <String>[];
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    for (final (int index, String name) in const <(int, String)>[
+      (0, 'Show/Show.mkv'),
+      (1, 'Another Movie/Another Movie.mkv'),
+    ]) {
+      final File video = File(
+        p.joinAll(<String>[environment.root.path, ...name.split('/')]),
+      );
+      await video.parent.create(recursive: true);
+      await video.writeAsBytes(<int>[0, 1, 2, 3], flush: true);
+      paths.add(video.path);
+      await environment.database.upsertVideoDownloadJobFile(
+        VideoDownloadJobFilesCompanion.insert(
+          jobId: jobId,
+          backendFileIndex: Value<int?>(index),
+          originalRelativePath: name,
+          currentRelativePath: name,
+          targetRelativePath: Value<String?>(name),
+          finalAbsolutePath: Value<String?>(video.path),
+          kind: const Value<String>('video'),
+          status: const Value<String>(VideoDownloadJobFileStatus.organized),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+    }
+
+    environment.service.wake();
+    await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
+    );
+
+    final List<VideoBookRow> books = await environment.database.allVideoBooks();
+    expect(books, hasLength(2), reason: '修前只有 files.first 会入库');
+    final Map<String, String> titleByPath = <String, String>{
+      for (final VideoBookRow book in books) book.videoPath: book.title,
+    };
+    expect(titleByPath[paths[0]], 'Show', reason: '首个文件沿用任务标题（旧行为）');
+    expect(titleByPath[paths[1]], 'Another Movie', reason: '并列正片用自己的整理后文件名');
+  });
+
+  test('多部电影批次带单一身份：scrape 不强绑任何一部，整批正常完成（BUG-2007）', () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'multi-movie-scrape-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.scrape,
+      mediaKind: VideoMetadataMediaKind.movie.name,
+      identityJson: encodeVideoMediaReference(_anidbReference()),
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    for (final (int index, String name) in const <(int, String)>[
+      (0, 'Show.mkv'),
+      (1, 'Another Movie.mkv'),
+    ]) {
+      final String videoPath = p.join(environment.root.path, name);
+      await environment.database.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value<String>('video/multi-$index'),
+          title: Value<String>(p.basenameWithoutExtension(name)),
+          videoPath: Value<String>(videoPath),
+          sourceId: Value<int?>(environment.sourceId),
+        ),
+      );
+      await environment.database.upsertVideoDownloadJobFile(
+        VideoDownloadJobFilesCompanion.insert(
+          jobId: jobId,
+          backendFileIndex: Value<int?>(index),
+          originalRelativePath: name,
+          currentRelativePath: name,
+          finalAbsolutePath: Value<String?>(videoPath),
+          kind: const Value<String>('video'),
+          status: const Value<String>(VideoDownloadJobFileStatus.imported),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+    }
+
+    environment.service.wake();
+    // 一条 job 落成多个独立作品而身份只有一份——绑给谁都可能误绑，必须正常
+    // 完成并把作品交给待确认队列，而不是 needsAttention 卡死。
+    await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
+    );
+  });
+
   test('retry resets an actionable job and wakes the persisted stage',
       () async {
     final _FakeTorrentBackend backend = _FakeTorrentBackend(
@@ -1971,6 +2080,7 @@ class _PipelineEnvironment {
     String lifecycle = VideoDownloadJobLifecycle.active,
     String category = _expectedCategory,
     String? identityJson,
+    String? mediaKind,
   }) {
     final int now = DateTime.now().millisecondsSinceEpoch;
     return database.upsertVideoDownloadJob(
@@ -1986,7 +2096,7 @@ class _PipelineEnvironment {
         metadataProvider: const Value<String?>('anilist'),
         externalId: const Value<String?>('100'),
         identityJson: Value<String?>(identityJson),
-        mediaKind: VideoMetadataMediaKind.tv.name,
+        mediaKind: mediaKind ?? VideoMetadataMediaKind.tv.name,
         discoveryCategory: Value<String?>(VideoDiscoveryCategory.anime.name),
         title: 'Show',
         year: const Value<int?>(2026),

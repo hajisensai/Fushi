@@ -70,8 +70,8 @@ class VideoOrganizationResult {
   final String? error;
 }
 
-typedef VideoOrganizationFileCommitted =
-    Future<void> Function(VideoOrganizationFilePlan file);
+typedef VideoOrganizationFileCommitted = Future<void> Function(
+    VideoOrganizationFilePlan file);
 
 /// 只通过 torrent backend 改名和移动的受管来源整理器。
 class VideoDownloadOrganizer {
@@ -85,9 +85,8 @@ class VideoDownloadOrganizer {
       throw const FormatException('torrent has no files');
     }
     final String title = _safeSegment(request.title);
-    final String displayRoot = request.year == null
-        ? title
-        : '$title (${request.year})';
+    final String displayRoot =
+        request.year == null ? title : '$title (${request.year})';
     final String? remoteRoot = request.pathMapping.localToRemote(
       request.sourceRoot,
     );
@@ -105,12 +104,13 @@ class VideoDownloadOrganizer {
     }
     final TorrentFileEntry? mainMovie =
         request.kind == VideoOrganizationKind.movie
-        ? (videoFiles.toList()..sort(
-                (TorrentFileEntry a, TorrentFileEntry b) =>
-                    b.size.compareTo(a.size),
-              ))
-              .first
-        : null;
+            ? (videoFiles.toList()
+                  ..sort(
+                    (TorrentFileEntry a, TorrentFileEntry b) =>
+                        b.size.compareTo(a.size),
+                  ))
+                .first
+            : null;
     final String? sharedRoot = _sharedRootSegment(videoFiles);
     // 先按目录判正片/特典、再解析集号（BUG-1865）。纯特典种子（用户单独下的
     // SP 盘）在这一口径下会一集都认不出——那不是「种子与 kind 不符」，只是这个
@@ -204,6 +204,17 @@ class VideoDownloadOrganizer {
           displayRoot,
           '$displayRoot$extension',
         ]);
+      } else if (mainMovie != null &&
+          _isStandaloneMovieCandidate(
+            file,
+            mainMovie: mainMovie,
+            sharedRoot: sharedRoot,
+          )) {
+        // 多部电影一个种子（BUG-2007）：修前只有最大文件算正片，其余剧场版被
+        // 镜像进 Extras——下游标成 `kind: 'extra'`，从此不入库、不刮削。够体量
+        // 且能解析出独立标题的正片各排各的电影目录，与单部下载同一层级布局。
+        final String movieTitle = _standaloneMovieTitle(file);
+        relative = _portableJoin(<String>[movieTitle, '$movieTitle$extension']);
       } else {
         relative = _portableJoin(<String>[
           displayRoot,
@@ -211,9 +222,8 @@ class VideoDownloadOrganizer {
           ..._extraSegments(file.name, sharedRoot: sharedRoot),
         ]);
       }
-      final String targetKey = Platform.isWindows
-          ? relative.toLowerCase()
-          : relative;
+      final String targetKey =
+          Platform.isWindows ? relative.toLowerCase() : relative;
       // 冲突消息必须点名**两个**源文件：只报目标名的话，用户看到
       // 「S03E05 撞了」根本不知道是哪两个文件在抢，也就无从判断该删哪个。
       final String? claimedBy = claimedTargets[targetKey];
@@ -304,12 +314,11 @@ class VideoDownloadOrganizer {
     // 查重 → 改名 → 落位必须是一个不可分割的段（见 [_withTargetLock]）。
     // 闸的键取本次计划的全部目标路径：同一作品的两条 job 键相同、排队；不同作品
     // 的 job 键不同、照常并行，不引入无谓的全局串行。
-    final String lockKey =
-        (planned.files
-                .map((VideoOrganizationFilePlan f) => f.finalLocalPath)
-                .toList()
-              ..sort())
-            .join('\u0000');
+    final String lockKey = (planned.files
+            .map((VideoOrganizationFilePlan f) => f.finalLocalPath)
+            .toList()
+          ..sort())
+        .join('\u0000');
     return _withTargetLock(lockKey, () async {
       for (final VideoOrganizationFilePlan file in planned.files) {
         if (await File(file.finalLocalPath).exists()) {
@@ -357,20 +366,20 @@ class VideoDownloadOrganizer {
   }
 
   static bool _isVideo(String value) => const <String>{
-    '.3gp',
-    '.avi',
-    '.flv',
-    '.m2ts',
-    '.m4v',
-    '.mkv',
-    '.mov',
-    '.mp4',
-    '.mpeg',
-    '.mpg',
-    '.ts',
-    '.webm',
-    '.wmv',
-  }.contains(p.extension(value).toLowerCase());
+        '.3gp',
+        '.avi',
+        '.flv',
+        '.m2ts',
+        '.m4v',
+        '.mkv',
+        '.mov',
+        '.mp4',
+        '.mpeg',
+        '.mpg',
+        '.ts',
+        '.webm',
+        '.wmv',
+      }.contains(p.extension(value).toLowerCase());
 
   static String _safeSegment(String value) {
     final String safe = safeWindowsFileName(
@@ -456,6 +465,28 @@ class VideoDownloadOrganizer {
     '予告',
     '菜单',
   };
+
+  /// 并列正片判据（BUG-2007，只在 movie 形态种子里用）：
+  /// * 不在发布组标记的特典目录、文件名也不是显式附件（NCOP/PV 等）；
+  /// * 体量 ≥ 最大正片的 1/4——菜单/CM/预告即使躺在根目录也够不着这个门；
+  /// * 文件名不带集号（带集号的是误标 kind 的剧集，不在本判据修复范围）；
+  /// * 能解析出非空标题。
+  static bool _isStandaloneMovieCandidate(
+    TorrentFileEntry file, {
+    required TorrentFileEntry mainMovie,
+    required String? sharedRoot,
+  }) {
+    if (_isExplicitExtra(file.name, sharedRoot: sharedRoot)) return false;
+    if (file.size * 4 < mainMovie.size) return false;
+    final VideoNameInfo parsed = parseVideoFilename(_segments(file.name).last);
+    if (parsed.episode != null) return false;
+    return parsed.series.trim().isNotEmpty;
+  }
+
+  /// 并列正片的目录/文件名：取自它自己的文件名解析出的标题（发布名里的字幕组、
+  /// 分辨率等噪音已被解析器剥掉）。
+  static String _standaloneMovieTitle(TorrentFileEntry file) =>
+      _safeSegment(parseVideoFilename(_segments(file.name).last).series);
 
   /// 该文件是否躺在发布组标记的特典目录里（共享根与文件名段都不参与判定）。
   static bool _isInExtraDirectory(String name, {String? sharedRoot}) {

@@ -51,11 +51,11 @@ class SubtitleCollectionSource {
     required this.label,
     required List<VideoSubtitleCandidate> candidates,
     String? preferredLanguage,
-  }) : candidates = List<VideoSubtitleCandidate>.unmodifiable(candidates),
-       index = SubtitleEpisodeIndex.fromCandidates(
-         candidates,
-         preferredLanguage: preferredLanguage,
-       );
+  })  : candidates = List<VideoSubtitleCandidate>.unmodifiable(candidates),
+        index = SubtitleEpisodeIndex.fromCandidates(
+          candidates,
+          preferredLanguage: preferredLanguage,
+        );
 
   final String key;
   final String providerId;
@@ -70,9 +70,9 @@ class SubtitleCollectionSource {
 
   /// 来源里出现过的语言（去重，稳定顺序）。
   List<String> get languages => <String>{
-    for (final VideoSubtitleCandidate c in candidates)
-      if (c.language.isNotEmpty) c.language,
-  }.toList();
+        for (final VideoSubtitleCandidate c in candidates)
+          if (c.language.isNotEmpty) c.language,
+      }.toList();
 }
 
 /// 把 registry 一次搜索的候选按来源分组。纯函数，便于单测。
@@ -95,8 +95,8 @@ List<SubtitleCollectionSource> groupSubtitleCollectionSources(
       () => c.collectionLabel?.trim().isNotEmpty == true
           ? c.collectionLabel!.trim()
           : (c.releaseName?.trim().isNotEmpty == true
-                ? c.releaseName!.trim()
-                : c.providerId),
+              ? c.releaseName!.trim()
+              : c.providerId),
     );
   }
   return <SubtitleCollectionSource>[
@@ -117,7 +117,8 @@ bool canRunSubtitleCollectionBatch({
   required SubtitleCollectionSource? selected,
   required bool searching,
   required bool running,
-}) => selected != null && !searching && !running && !selected.index.isEmpty;
+}) =>
+    selected != null && !searching && !running && !selected.index.isEmpty;
 
 class SubtitleCollectionPanel extends StatefulWidget {
   const SubtitleCollectionPanel({
@@ -155,7 +156,7 @@ class SubtitleCollectionPanel extends StatefulWidget {
 
   /// 远端/流媒体集的持久化（无本地 DB 行可写 → prefs）。
   final Future<void> Function(String bookUid, String path)
-  onRemoteSubtitlePersist;
+      onRemoteSubtitlePersist;
 
   /// 该系列的语言记忆（prefs，按番名 key）；合集列 `subtitleLanguage` 非空时优先于它。
   final String? initialPreferredLanguage;
@@ -198,6 +199,13 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   String? _notice;
   bool _noticeIsError = false;
 
+  /// 已刮削合集的规范身份（BUG-2008）：查询词优先日文原名、请求带全部已知
+  /// 外部 id——不再拿合集显示名裸猜。null = 该合集还没刮出规范作品，走旧路径。
+  VideoMetadataWorkRow? _canonicalWork;
+  Map<String, String> _canonicalIds = const <String, String>{};
+
+  int? get _canonicalAnilistId => int.tryParse(_canonicalIds['anilist'] ?? '');
+
   /// 用户显式选的字幕语言；null = 「全部」= 不限（回退视频自身语言链）。
   String? _language;
 
@@ -224,6 +232,38 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     if (widget.collection.anilistId != null) {
       unawaited(_searchSources(anilistId: widget.collection.anilistId));
     }
+    unawaited(_loadCanonicalIdentity());
+  }
+
+  /// 读回该合集刮削出的规范作品与身份（BUG-2008）。用户没改过查询词时把它换成
+  /// 日文原名；合集没绑 AniList 而刮削身份里有 anilist id 时直接按 id 搜来源。
+  Future<void> _loadCanonicalIdentity() async {
+    final VideoMetadataWorkRow? work = await widget.database
+        .getVideoMetadataWorkByCollection(widget.collection.id);
+    if (work == null || !mounted) return;
+    final List<VideoMetadataProviderIdentityRow> identities = await widget
+        .database
+        .getVideoMetadataProviderIdentities(workId: work.id);
+    if (!mounted) return;
+    final bool queryUntouched =
+        _queryCtrl.text.trim() == _initialQuery().trim();
+    setState(() {
+      _canonicalWork = work;
+      _canonicalIds = <String, String>{
+        for (final VideoMetadataProviderIdentityRow row in identities)
+          row.provider: row.externalId,
+      };
+      final String? original = work.originalTitle?.trim();
+      if (queryUntouched && original != null && original.isNotEmpty) {
+        _queryCtrl.text = original;
+      }
+    });
+    if (widget.collection.anilistId == null &&
+        _selectedSeriesId == null &&
+        _canonicalAnilistId != null &&
+        !_searching) {
+      unawaited(_searchSources(anilistId: _canonicalAnilistId));
+    }
   }
 
   @override
@@ -247,12 +287,11 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
 
   /// 批量真正采用的语言：显式选择 → 视频自身语言链（BUG-1700）。
   String? get _effectiveLanguage => resolveSubtitleDownloadLanguage(
-    explicitSubtitlePreference: _language,
-    videoContentLanguage: widget.members.isEmpty
-        ? null
-        : widget.members.first.language,
-    globalDefaultContentLanguage: widget.globalDefaultContentLanguage,
-  );
+        explicitSubtitlePreference: _language,
+        videoContentLanguage:
+            widget.members.isEmpty ? null : widget.members.first.language,
+        globalDefaultContentLanguage: widget.globalDefaultContentLanguage,
+      );
 
   /// 选中来源里的版本组（版本选择器同一聚类）。
   List<SubtitleVersionGroup> get _versionGroups {
@@ -388,35 +427,40 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       _notice = null;
     });
     try {
-      final ProviderBatchResult<VideoSubtitleCandidate> result = await registry
-          .search(
-            VideoSubtitleSearchRequest(
-              media: VideoMediaReference(
-                providerId: 'anilist',
-                mediaId: anilistId?.toString() ?? query,
-                mediaKind: VideoMetadataMediaKind.tv,
-                discoveryCategory: VideoDiscoveryCategory.anime,
-                title: query,
-                anilistId: anilistId,
-              ),
-              query: query,
-            ),
-          );
+      // 规范身份优先（BUG-2008）：形态取刮削结论、原名/tmdb id 一起带上——
+      // Jimaku 的 id 检索与文本兜底都不再只靠合集显示名裸猜。
+      final int? effectiveAnilistId = anilistId ?? _canonicalAnilistId;
+      final ProviderBatchResult<VideoSubtitleCandidate> result =
+          await registry.search(
+        VideoSubtitleSearchRequest(
+          media: VideoMediaReference(
+            providerId: 'anilist',
+            mediaId: effectiveAnilistId?.toString() ?? query,
+            mediaKind: _canonicalWork?.mediaType == 'movie'
+                ? VideoMetadataMediaKind.movie
+                : VideoMetadataMediaKind.tv,
+            discoveryCategory: VideoDiscoveryCategory.anime,
+            title: query,
+            originalTitle: _canonicalWork?.originalTitle,
+            anilistId: effectiveAnilistId,
+            tmdbId: int.tryParse(_canonicalIds['tmdb'] ?? ''),
+          ),
+          query: query,
+        ),
+      );
       if (!mounted || requestGeneration != _generation) return;
       final List<SubtitleCollectionSource> sources =
           groupSubtitleCollectionSources(
-            result.items,
-            preferredLanguage: _effectiveLanguage,
-          );
-      final ExternalProviderFailure? failure = sources.isEmpty
-          ? primarySubtitleFailure(result.failures)
-          : null;
+        result.items,
+        preferredLanguage: _effectiveLanguage,
+      );
+      final ExternalProviderFailure? failure =
+          sources.isEmpty ? primarySubtitleFailure(result.failures) : null;
       setState(() {
         _sources = sources;
-        _selectedSourceKey =
-            sources.any(
-              (SubtitleCollectionSource s) => s.key == _selectedSourceKey,
-            )
+        _selectedSourceKey = sources.any(
+          (SubtitleCollectionSource s) => s.key == _selectedSourceKey,
+        )
             ? _selectedSourceKey
             : (sources.isEmpty ? null : sources.first.key);
         _statusByUid.clear();
@@ -461,8 +505,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   }
 
   List<SubtitleBatchTarget> _targets() => <SubtitleBatchTarget>[
-    for (int i = 0; i < widget.members.length; i++) _targetAt(i),
-  ];
+        for (int i = 0; i < widget.members.length; i++) _targetAt(i),
+      ];
 
   SubtitleBatchTarget _targetAt(int index) {
     final VideoBookRow member = widget.members[index];
@@ -583,7 +627,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
             item.language == null
                 ? t.video_jimaku_downloaded
                 : '${t.video_jimaku_downloaded} · '
-                      '${jimakuLanguageLabel(item.language!)}',
+                    '${jimakuLanguageLabel(item.language!)}',
           );
         case SubtitleBatchStatus.noMatch:
           return Text(t.video_jimaku_no_results);
@@ -783,8 +827,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool canDownload =
-        canRunSubtitleCollectionBatch(
+    final bool canDownload = canRunSubtitleCollectionBatch(
           selected: _selectedSource,
           searching: _searching,
           running: _running,

@@ -152,6 +152,9 @@ class VideoSubtitleBackfillService {
       result = await registry.search(
         VideoSubtitleSearchRequest(
           media: target.media,
+          // 刮削出的别名（罗马字/英文名）进文本兜底链：Jimaku 的 id 检索空手
+          // 而归时，别名比中文显示名可靠得多（刮削重设计 P3）。
+          alternateTitles: target.media.aliases,
           season: target.media.season,
           episode: target.media.episode,
           languages: preferredLanguages,
