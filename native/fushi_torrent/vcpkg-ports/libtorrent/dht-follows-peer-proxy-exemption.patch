@@ -1,0 +1,32 @@
+--- a/src/udp_socket.cpp
++++ b/src/udp_socket.cpp
+@@ -287,7 +287,13 @@
+ 	bool const use_proxy
+ 		= ((flags & peer_connection) && m_proxy_settings.proxy_peer_connections)
+ 		|| ((flags & tracker_connection) && m_proxy_settings.proxy_tracker_connections)
+-		|| !(flags & (tracker_connection | peer_connection))
++		// Fushi: DHT/other un-flagged UDP traffic follows the peer plane, so a
++		// "mixed" session (proxy_peer_connections=false, trackers proxied) keeps
++		// DHT alive on the direct route instead of force-dropping it when the
++		// proxy cannot carry UDP. Receive path already admits unwrapped packets
++		// whenever either exemption flag is off, so this only aligns the send side.
++		|| (!(flags & (tracker_connection | peer_connection))
++			&& m_proxy_settings.proxy_peer_connections)
+ 		;
+ 
+ 	if (use_proxy && m_proxy_settings.type != settings_pack::none)
+@@ -325,7 +331,13 @@
+ 	bool const use_proxy
+ 		= ((flags & peer_connection) && m_proxy_settings.proxy_peer_connections)
+ 		|| ((flags & tracker_connection) && m_proxy_settings.proxy_tracker_connections)
+-		|| !(flags & (tracker_connection | peer_connection))
++		// Fushi: DHT/other un-flagged UDP traffic follows the peer plane, so a
++		// "mixed" session (proxy_peer_connections=false, trackers proxied) keeps
++		// DHT alive on the direct route instead of force-dropping it when the
++		// proxy cannot carry UDP. Receive path already admits unwrapped packets
++		// whenever either exemption flag is off, so this only aligns the send side.
++		|| (!(flags & (tracker_connection | peer_connection))
++			&& m_proxy_settings.proxy_peer_connections)
+ 		;
+ 
+ 	if (use_proxy && m_proxy_settings.type != settings_pack::none)

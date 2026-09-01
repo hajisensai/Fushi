@@ -3930,8 +3930,6 @@
   "network_proxy_invalid": "وكيل غير صالح. استخدم المضيف:المنفذ",
   "network_proxy_label": "وكيل الشبكة",
   "section_network": "الشبكة",
-  "network_proxy_p2p_label": "تمرير حركة P2P (torrent) عبر الوكيل",
-  "network_proxy_p2p_warning": "معطّل افتراضيًا؛ يتصل P2P مباشرة. قد يؤدي التمرير عبر الوكيل إلى خفض السرعة، وكثير من مزودي الوكلاء يحظرون حركة BitTorrent: قد يتم تقييد حساب الوكيل أو تحذيره أو إنهاؤه. ينطبق على المحرك المدمج فقط؛ يستخدم qBittorrent الخارجي إعدادات الوكيل الخاصة به.",
   "video_ajatt_settings_hint": "أرشيف مجاني للترجمات اليابانية (مرآة kitsunekko). لا يتطلب حسابًا؛ تُنزَّل ملفات الترجمة من GitHub.",
   "video_ajatt_enabled_hint": "عند الإيقاف يتم تخطي أرشيف AJATT عند البحث عن الترجمات.",
   "video_subtitle_workbench_title": "الترجمات",
@@ -4092,5 +4090,10 @@
   "update_download_source_auto": "Automatic (recommended)",
   "update_download_source_cloudflare": "Cloudflare mirror",
   "update_download_source_github": "GitHub direct",
-  "update_download_source_proxy": "Proxy: $host"
+  "update_download_source_proxy": "Proxy: $host",
+  "network_proxy_p2p_label": "P2P (torrent) proxy",
+  "network_proxy_p2p_warning": "Direct by default. Via proxy: all P2P traffic goes through the global proxy — speed may drop, and many proxy providers forbid BitTorrent traffic (throttling, warnings, or account termination). Mixed: tracker requests go through the proxy while DHT and peer connections stay direct — widest peer discovery, but your real IP is visible to trackers, DHT and peers (connectivity only, not privacy). Built-in engine only; external qBittorrent uses its own proxy settings.",
+  "network_proxy_p2p_mode_direct": "Direct",
+  "network_proxy_p2p_mode_proxy": "Via proxy",
+  "network_proxy_p2p_mode_mixed": "Mixed"
 }

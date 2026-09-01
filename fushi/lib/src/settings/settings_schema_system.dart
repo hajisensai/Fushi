@@ -244,19 +244,39 @@ SettingsDestination buildSystemDestination() {
               resetSyncHttpClient();
             },
           ),
-          // P2P（torrent）传输单独列出：**默认直连**，用户明确开了才跟上面的
-          // 全局出口。副标题就是警告——走代理可能降速，且不少代理服务商禁止
-          // BT 流量（限速/警告/封号）。只对内置引擎生效；外接 qBittorrent 的
-          // 代理在它自己的 WebUI 里配，这里不越权改用户的 qB 设置。
-          SettingsSwitchItem(
+          // P2P（torrent）传输单独列出：**默认直连**，用户明确改档才跟上面的
+          // 全局出口。三档：direct 直连；proxy 全代理（可能降速，且不少代理
+          // 服务商禁止 BT 流量：限速/警告/封号）；mixed 混合——tracker 经代理、
+          // DHT 与 peer 直连，节点获取范围最大，但真实 IP 暴露给 DHT/peer/
+          // tracker（连通性工具，非隐私工具）。副标题就是警告。只对内置引擎
+          // 生效；外接 qBittorrent 的代理在它自己的 WebUI 里配，这里不越权改
+          // 用户的 qB 设置。
+          SettingsSegmentedItem<String>(
             id: 'system.network_proxy_p2p',
             title: t.network_proxy_p2p_label,
             subtitle: t.network_proxy_p2p_warning,
             icon: Icons.swap_vert_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.p2pProxyEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setP2pProxyEnabled(value);
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'direct',
+                label: t.network_proxy_p2p_mode_direct,
+                icon: Icons.link_off_outlined,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'proxy',
+                label: t.network_proxy_p2p_mode_proxy,
+                icon: Icons.dns_outlined,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'mixed',
+                label: t.network_proxy_p2p_mode_mixed,
+                icon: Icons.alt_route_outlined,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.p2pProxyMode,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await settingsContext.appModel.setP2pProxyMode(value);
               settingsContext.refresh();
             },
           ),

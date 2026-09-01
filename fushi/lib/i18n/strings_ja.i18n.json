@@ -3930,8 +3930,6 @@
   "network_proxy_invalid": "無効なプロキシです。ホスト:ポートの形式で入力してください",
   "network_proxy_label": "ネットワークプロキシ",
   "section_network": "ネットワーク",
-  "network_proxy_p2p_label": "P2P（torrent）通信をプロキシ経由にする",
-  "network_proxy_p2p_warning": "既定ではオフで、P2P は直接接続します。プロキシ経由にすると速度が低下する場合があり、多くのプロキシ事業者は BitTorrent 通信を禁止しているため、プロキシアカウントが帯域制限・警告・停止される恐れがあります。内蔵エンジンにのみ適用され、外部 qBittorrent は自身のプロキシ設定を使用します。",
   "video_ajatt_settings_hint": "無料の日本語字幕アーカイブ（kitsunekko ミラー）。アカウント不要。字幕ファイルは GitHub からダウンロードされます。",
   "video_ajatt_enabled_hint": "オフにすると字幕検索時に AJATT アーカイブをスキップします。",
   "video_subtitle_workbench_title": "字幕",
@@ -4092,5 +4090,10 @@
   "update_download_source_auto": "Automatic (recommended)",
   "update_download_source_cloudflare": "Cloudflare mirror",
   "update_download_source_github": "GitHub direct",
-  "update_download_source_proxy": "Proxy: $host"
+  "update_download_source_proxy": "Proxy: $host",
+  "network_proxy_p2p_label": "P2P (torrent) proxy",
+  "network_proxy_p2p_warning": "Direct by default. Via proxy: all P2P traffic goes through the global proxy — speed may drop, and many proxy providers forbid BitTorrent traffic (throttling, warnings, or account termination). Mixed: tracker requests go through the proxy while DHT and peer connections stay direct — widest peer discovery, but your real IP is visible to trackers, DHT and peers (connectivity only, not privacy). Built-in engine only; external qBittorrent uses its own proxy settings.",
+  "network_proxy_p2p_mode_direct": "Direct",
+  "network_proxy_p2p_mode_proxy": "Via proxy",
+  "network_proxy_p2p_mode_mixed": "Mixed"
 }

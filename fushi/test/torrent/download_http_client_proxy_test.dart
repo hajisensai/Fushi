@@ -27,9 +27,12 @@ import '../helpers/source_guard.dart';
 ///   C. 第二套代理配置不得复活：生产源码里不再有 `DownloadNetworkProxy*` /
 ///      `download_network_proxy_mode` / `download_custom_proxy`（唯一例外是
 ///      fushi_core 的 v90 迁移，它删这两个键）。
-///   D. P2P（torrent）传输**默认直连**，用户在系统设置里单独打开开关才跟全局
-///      出口；开关语义钉在 resolveP2pProxyHostPort 一处，torrent 宿主/绑定不碰
-///      代理解析层，C ABI 桥只有 ht_apply_proxy 一处能改 libtorrent 代理。
+///   D. P2P（torrent）传输**默认直连**，三档 direct / proxy / mixed（混合：
+///      tracker 经代理、DHT 与 peer 直连）；开关语义钉在 resolveP2pProxyHostPort
+///      一处，torrent 宿主/绑定不碰代理解析层，C ABI 桥只有 apply_proxy_impl
+///      一处能改 libtorrent 代理（两个导出都只是委托）。
+///   E. 混合档的 DHT 直连依赖 vcpkg overlay 里的 libtorrent 补丁（上游把无
+///      flag UDP 无条件塞进代理）；监听接口默认 v4+v6 双栈。
 void main() {
   group('A. 建连超时', () {
     test('下载 client 的建连超时是 kDownloadConnectionTimeout 而不是 app 默认', () {
@@ -133,17 +136,40 @@ void main() {
     setUp(() => savedReader = appUserProxyReader);
     tearDown(() => appUserProxyReader = savedReader);
 
-    test('fresh PreferencesRepository：P2P 走代理默认 false', () async {
+    test('fresh PreferencesRepository：P2P 代理档位默认 direct', () async {
       final FushiDatabase db = FushiDatabase.forTesting(
         DatabaseConnection(NativeDatabase.memory()),
       );
       addTearDown(db.close);
       final PreferencesRepository repo = PreferencesRepository(db);
       await repo.loadFromDb();
-      expect(repo.p2pProxyEnabled, isFalse,
-          reason: '走代理可能降速且不少代理服务商禁 BT，必须由用户明确开启');
-      await repo.setP2pProxyEnabled(true);
-      expect(repo.p2pProxyEnabled, isTrue);
+      expect(repo.p2pProxyMode, 'direct',
+          reason: '走代理可能降速且不少代理服务商禁 BT，必须由用户明确改档');
+      await repo.setP2pProxyMode('mixed');
+      expect(repo.p2pProxyMode, 'mixed');
+      await repo.setP2pProxyMode('proxy');
+      expect(repo.p2pProxyMode, 'proxy');
+    });
+
+    test('旧布尔键迁移：mode 键未写过时 true → proxy；set 写穿旧键保降级一致',
+        () async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        DatabaseConnection(NativeDatabase.memory()),
+      );
+      addTearDown(db.close);
+      final PreferencesRepository repo = PreferencesRepository(db);
+      await repo.loadFromDb();
+      // 模拟老版本只写过布尔开关的库。
+      await repo.setPref('network_proxy_p2p_enabled', true);
+      expect(repo.p2pProxyMode, 'proxy',
+          reason: '旧版本开过代理的用户升级后不能被静默改回直连');
+      // 三态写入后写穿旧键：降级回老版本读到一致语义（mixed 按「开」处理）。
+      await repo.setP2pProxyMode('mixed');
+      expect(
+          repo.getPref('network_proxy_p2p_enabled', defaultValue: false), true);
+      await repo.setP2pProxyMode('direct');
+      expect(repo.getPref('network_proxy_p2p_enabled', defaultValue: true),
+          false);
     });
 
     test('开关关 → 下发 null（直连），哪怕全局手填了代理；开 → 与全局同一出口', () {
@@ -217,31 +243,40 @@ void main() {
           reason: 'torrent 宿主/绑定不得自己碰代理解析层 → $offenders');
     });
 
-    test('C ABI 桥：libtorrent 代理设置只住在 ht_apply_proxy 里，开 session 不带代理', () {
+    test('C ABI 桥：libtorrent 代理设置只住在 apply_proxy_impl 里，开 session 不带代理', () {
       final File bridge = File('../native/fushi_torrent/fushi_torrent_ffi.cpp');
       expect(bridge.existsSync(), isTrue);
       final String code = maskComments(bridge.readAsStringSync());
-      final int start = code.indexOf('HT_EXPORT int ht_apply_proxy(');
-      expect(start, greaterThan(0), reason: '桥必须导出 ht_apply_proxy');
+      final int start = code.indexOf('static int apply_proxy_impl(');
+      expect(start, greaterThan(0), reason: '桥必须有 apply_proxy_impl 单点');
       final int end = code.indexOf('HT_EXPORT', start + 1);
       expect(end, greaterThan(start));
       final String body = code.substring(start, end);
-      // 三条链路必须一起切换（只代理 peer 会让 tracker/DNS 从真实出口漏出去）。
+      // 三条链路必须在同一处裁决（散落多处会让某条从真实出口漏出去）。
       for (final String key in <String>[
         'proxy_peer_connections',
         'proxy_tracker_connections',
         'proxy_hostnames',
       ]) {
         expect(body, contains('settings_pack::$key'),
-            reason: 'ht_apply_proxy 必须同时设置 $key');
+            reason: 'apply_proxy_impl 必须同时设置 $key');
       }
+      // 混合档语义钉死：peer 面（含 DHT，见 overlay 补丁）在 mixed 时豁免，
+      // tracker / 主机名解析仍经代理。
+      expect(body, contains('proxy_peer_connections, enabled && !mixed'));
+      expect(body, contains('proxy_tracker_connections, enabled)'));
+      // 两个导出都存在且只委托（导出体里不得再碰 settings_pack::proxy_*）。
+      expect(code, contains('HT_EXPORT int ht_apply_proxy('),
+          reason: '旧 ABI 必须保留（老 Dart 层/外部调用者）');
+      expect(code, contains('HT_EXPORT int ht_apply_proxy_mode('),
+          reason: '混合档依赖新导出');
       final String outside = code.substring(0, start) + code.substring(end);
       expect(outside, isNot(contains('settings_pack::proxy_')),
           reason: '开 session / 其它设置入口不得偷偷带上代理：'
-              'P2P 默认直连，只有 ht_apply_proxy 一处能改');
+              'P2P 默认直连，只有 apply_proxy_impl 一处能改');
     });
 
-    test('设置页：P2P 开关列在网络分区，副标题就是降速/封号警告', () {
+    test('设置页：P2P 三档列在网络分区，副标题就是降速/封号/暴露 IP 警告', () {
       final String code = compactCode(
         File('lib/src/settings/settings_schema_system.dart').readAsStringSync(),
       );
@@ -249,8 +284,57 @@ void main() {
       expect(code, contains('subtitle:t.network_proxy_p2p_warning'));
       expect(
           code,
-          contains('value:(SettingsContextsettingsContext)=>'
-              'settingsContext.appModel.p2pProxyEnabled'));
+          contains('selected:(SettingsContextsettingsContext)=>'
+              'settingsContext.appModel.p2pProxyMode'));
+      // 三档一个不能少；值与 prefs 层字面量一致。
+      for (final String value in <String>['direct', 'proxy', 'mixed']) {
+        expect(code, contains("value:'$value'"),
+            reason: 'P2P 代理三档缺 $value');
+      }
+    });
+  });
+
+  group('E. 混合档 DHT 直连补丁与双栈监听', () {
+    test('libtorrent overlay 补丁存在、被 portfile 引用、构建脚本挂 overlay', () {
+      final File patch = File(
+          '../native/fushi_torrent/vcpkg-ports/libtorrent/'
+          'dht-follows-peer-proxy-exemption.patch');
+      expect(patch.existsSync(), isTrue,
+          reason: '混合档 DHT 直连依赖此补丁：上游 udp_socket.cpp 把无 flag '
+              'UDP（DHT）在配了代理时无条件塞进代理，HTTP 代理下 DHT 判死');
+      final String patchText = patch.readAsStringSync();
+      // 发送路径两处 use_proxy 表达式都要打上（send_hostname + send）。
+      expect(
+          RegExp(r'\+\s+&& m_proxy_settings\.proxy_peer_connections\)')
+              .allMatches(patchText)
+              .length,
+          2,
+          reason: 'DHT 豁免必须同时对齐两条发送路径');
+      final String portfile = File(
+              '../native/fushi_torrent/vcpkg-ports/libtorrent/portfile.cmake')
+          .readAsStringSync();
+      expect(portfile, contains('dht-follows-peer-proxy-exemption.patch'),
+          reason: '补丁文件在而 portfile 不引用 = 构建出的库没有豁免');
+      for (final String script in <String>[
+        '../native/fushi_torrent/build_windows_dll.ps1',
+        '../native/fushi_torrent/build_android_so.ps1',
+        // CI（release.yml）走的是 bash 版，本机走 .ps1——两套都得挂 overlay。
+        '../native/fushi_torrent/build_android_so.sh',
+      ]) {
+        expect(File(script).readAsStringSync(),
+            contains('VCPKG_OVERLAY_PORTS'),
+            reason: '$script 不挂 overlay ports = 补丁静默失效');
+      }
+    });
+
+    test('监听接口默认 v4+v6 双栈（与 ht_apply_session_settings 端口重设同形）', () {
+      final String host = maskComments(
+        File('lib/src/media/torrent/embedded_torrent_host.dart')
+            .readAsStringSync(),
+      );
+      expect(host, contains("listenInterfaces = '0.0.0.0:6881,[::]:6881'"),
+          reason: '此前建号 v4-only、用户改端口后才双栈——同一开关两种行为；'
+              'IPv6 DHT/peer 是节点获取范围的重要组成');
     });
   });
 }

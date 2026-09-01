@@ -3930,8 +3930,6 @@
   "network_proxy_invalid": "代理格式无效，请用 host:port",
   "network_proxy_label": "网络代理",
   "section_network": "网络",
-  "network_proxy_p2p_label": "P2P（torrent）传输走代理",
-  "network_proxy_p2p_warning": "默认关闭，P2P 直连。走代理可能降低速度；且不少代理服务商禁止 BT 流量，可能导致代理账号被限速、警告甚至封禁。仅对内置引擎生效，外接 qBittorrent 请在其自身设置中配置。",
   "video_ajatt_settings_hint": "免费日语字幕库（kitsunekko 镜像）。无需账号；字幕文件从 GitHub 下载。",
   "video_ajatt_enabled_hint": "关闭后搜索字幕时跳过 AJATT 字幕库。",
   "video_subtitle_workbench_title": "字幕",
@@ -4092,5 +4090,10 @@
   "update_download_source_auto": "自动（推荐）",
   "update_download_source_cloudflare": "Cloudflare 镜像",
   "update_download_source_github": "GitHub 直连",
-  "update_download_source_proxy": "代理站：$host"
+  "update_download_source_proxy": "代理站：$host",
+  "network_proxy_p2p_label": "P2P（torrent）代理",
+  "network_proxy_p2p_warning": "默认直连。走代理：全部 P2P 流量经全局代理——可能降速，且不少代理服务商禁止 BT 流量（限速、警告甚至封号）。混合：tracker 请求经代理、DHT 与 peer 直连——节点获取范围最大，但真实 IP 会暴露给 tracker/DHT/peer（只解决连通性，无隐私作用）。仅对内置引擎生效，外接 qBittorrent 请在其自身设置中配置。",
+  "network_proxy_p2p_mode_direct": "直连",
+  "network_proxy_p2p_mode_proxy": "走代理",
+  "network_proxy_p2p_mode_mixed": "混合"
 }

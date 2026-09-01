@@ -211,6 +211,8 @@ Flutter 3.44.0 下部分上游依赖未适配，两种补法并存（对个别�
 
 > `carousel_slider` / `fading_edge_scrollview` / `network_to_file_image` 两边都有：`dependency_overrides` 生效，pub-cache 同名补丁因版本对不上被自动跳过，以 vendored 为准。
 
+第三种（native 依赖）：**vcpkg overlay ports**。`native/fushi_torrent/vcpkg-ports/` 是 libtorrent 2.0.11 port 的原样拷贝 + 本仓补丁（DHT 混合代理豁免，P2P 代理混合档依赖它），三个构建脚本（`build_windows_dll.ps1` / `build_android_so.ps1` / `build_android_so.sh`，含 CI）都用 `-DVCPKG_OVERLAY_PORTS` 挂上；overlay 无条件优先于 registry。补丁存在性/引用/挂载由 `fushi/test/torrent/download_http_client_proxy_test.dart` E 组守卫钉住，动机与清理条件见 `native/fushi_torrent/vcpkg-ports/README.md`。
+
 ## galgame 引擎-hook 注入器 helper（同仓源码，隔离二进制随 Windows 主包）
 
 galgame 一键制卡的引擎-hook 注入器（injector.exe + hook.dll + vendored LunaHook/Host DLL）含

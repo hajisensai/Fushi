@@ -3930,8 +3930,6 @@
   "network_proxy_invalid": "พร็อกซีไม่ถูกต้อง ใช้รูปแบบ host:port",
   "network_proxy_label": "พร็อกซีเครือข่าย",
   "section_network": "เครือข่าย",
-  "network_proxy_p2p_label": "ส่งการรับส่งข้อมูล P2P (torrent) ผ่านพร็อกซี",
-  "network_proxy_p2p_warning": "ปิดตามค่าเริ่มต้น P2P จะเชื่อมต่อโดยตรง การส่งผ่านพร็อกซีอาจทำให้ความเร็วลดลง และผู้ให้บริการพร็อกซีจำนวนมากห้ามการรับส่งข้อมูล BitTorrent บัญชีพร็อกซีของคุณอาจถูกจำกัดความเร็ว เตือน หรือยกเลิก มีผลเฉพาะเอนจินในตัวเท่านั้น qBittorrent ภายนอกใช้การตั้งค่าพร็อกซีของตัวเอง",
   "video_ajatt_settings_hint": "คลังซับไตเติลภาษาญี่ปุ่นฟรี (มิเรอร์ kitsunekko) ไม่ต้องใช้บัญชี ไฟล์ซับไตเติลดาวน์โหลดจาก GitHub",
   "video_ajatt_enabled_hint": "ปิดหมายถึงข้ามคลัง AJATT เมื่อค้นหาซับไตเติล",
   "video_subtitle_workbench_title": "ซับไตเติล",
@@ -4092,5 +4090,10 @@
   "update_download_source_auto": "Automatic (recommended)",
   "update_download_source_cloudflare": "Cloudflare mirror",
   "update_download_source_github": "GitHub direct",
-  "update_download_source_proxy": "Proxy: $host"
+  "update_download_source_proxy": "Proxy: $host",
+  "network_proxy_p2p_label": "P2P (torrent) proxy",
+  "network_proxy_p2p_warning": "Direct by default. Via proxy: all P2P traffic goes through the global proxy — speed may drop, and many proxy providers forbid BitTorrent traffic (throttling, warnings, or account termination). Mixed: tracker requests go through the proxy while DHT and peer connections stay direct — widest peer discovery, but your real IP is visible to trackers, DHT and peers (connectivity only, not privacy). Built-in engine only; external qBittorrent uses its own proxy settings.",
+  "network_proxy_p2p_mode_direct": "Direct",
+  "network_proxy_p2p_mode_proxy": "Via proxy",
+  "network_proxy_p2p_mode_mixed": "Mixed"
 }
