@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1886 条。点号进各自文件。
+> 共 1888 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -41,6 +41,8 @@
 | [BUG-2009](bugs/BUG-2009-desktop-wheel-scroll-speed-halved.md) | ✅ | ✅ | 桌面滚轮平滑修复把滚动速度砍半 |
 | [BUG-2006](bugs/BUG-2006-win-fullscreen-top-accent-border.md) | ✅ | ✅ | Windows 上视频最顶部有一条 1px 强调色线（窗口铺满屏幕时） |
 | [BUG-2005](bugs/BUG-2005-recent-added-portrait-slot.md) | ✅ | ✅ | 首页「最近添加」行视频卡恒竖槽，横版截帧被模糊垫底成白条 |
+| [BUG-2004](bugs/BUG-2004-download-scrape-inverted-forcing.md) | ✅ | ✅ | 下载管线对错命名空间身份强制刮削致歧义卡死，无身份反而直接完成 |
+| [BUG-2003](bugs/BUG-2003-download-identity-dropped-at-enqueue.md) | ✅ | ✅ | 发现页完整身份在入队时被降维，刮削/字幕只剩显示名与单 id |
 | [BUG-2002](bugs/BUG-2002-video-home-cards-hover-lift.md) | ✅ | ✅ | 视频首页横滚卡/合集墙卡/远端卡缺悬停放大效果 |
 | [BUG-2001](bugs/BUG-2001-scrape-planner-playlist-extras-works.md) | ✅ | ✅ | 计划器把播放列表合集与无集号特典当独立作品刮削 |
 | [BUG-2000](bugs/BUG-2000-scrape-unscraped-series-never-auto.md) | ✅ | ✅ | 未刮削系列没有任何自动刮削入口，存量库永远无资料 |

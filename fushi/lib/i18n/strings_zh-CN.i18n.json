@@ -4107,5 +4107,8 @@
   "stat_detail_empty": "此时段暂无记录",
   "stat_center_title": "统计中心",
   "stat_center_tab_overview": "总览",
-  "shortcut_action_video_dismiss_dict": "关闭词典"
+  "shortcut_action_video_dismiss_dict": "关闭词典",
+  "video_discovery_anidb_identity_confirm_title": "确认作品身份",
+  "video_discovery_anidb_identity_confirm_hint": "AniDB 上有多个可能的匹配。选中正确的作品后，下载导入将直接按该身份刮削；跳过则可稍后在待确认列表手动指定。",
+  "video_discovery_anidb_identity_not_found": "未能在 AniDB 识别该作品：仍会正常下载，导入后在待确认列表等待手动指定身份。"
 }

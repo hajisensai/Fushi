@@ -2060,6 +2060,11 @@ class VideoDownloadJobs extends Table {
   IntColumn get season => integer().nullable()();
   TextColumn get coverUrl => text().nullable()();
 
+  /// v94：发现页完整身份快照（`VideoMediaReference` 的 JSON：原名/别名/全部
+  /// 外部 id）。修 BUG-2003——修前入队只留显示名 + 单 provider id，刮削与字幕
+  /// 在下游各自从残渣重新猜身份。NULL = 旧任务/手动任务，走旧行为。
+  TextColumn get identityJson => text().nullable()();
+
   /// 后端连接身份与去重身份。敏感凭据不进数据库；backendProfileId 是下载配置档
   /// 的字符串身份，不是 Hibiki 用户 Profile，故没有 FK 到 Profiles。
   TextColumn get backendKind => text()();
@@ -2233,6 +2238,10 @@ class VideoDownloadSubscriptions extends Table {
   IntColumn get year => integer().nullable()();
   IntColumn get season => integer().nullable()();
   TextColumn get coverUrl => text().nullable()();
+
+  /// v94：发现页完整身份快照（同 `video_download_jobs.identity_json`）。订阅
+  /// 轮询用它恢复原名/别名做多名字资源搜索兜底。NULL = 旧订阅，走旧行为。
+  TextColumn get identityJson => text().nullable()();
 
   /// searchQuery + filterJson 是来源无关的订阅选择快照；filterJson 禁止放凭据。
   TextColumn get searchQuery => text()();

@@ -30,6 +30,7 @@ import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_download_organizer.dart';
+import 'package:fushi/src/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
@@ -851,6 +852,9 @@ class VideoDownloadPipelineService {
         externalId: Value<String?>(request.media.mediaId),
         mediaKind: Value<String>(request.media.mediaKind.name),
         discoveryCategory: Value<String?>(request.media.discoveryCategory.name),
+        // v94（BUG-2003）：发现页完整身份随任务落库。原名/别名/全部外部 id 是
+        // subtitle 阶段与 scrape 阶段的输入，不能在入队这一刻降维成显示名。
+        identityJson: Value<String?>(encodeVideoMediaReference(request.media)),
         title: Value<String>(request.media.title),
         year: Value<int?>(request.media.year),
         season: Value<int?>(request.media.season),
@@ -3404,10 +3408,13 @@ class VideoDownloadPipelineService {
       );
     }
     database.notifyVideoLibraryChanged();
-    // 没有确认过的发现身份（手动任务）时 scrape 阶段永远不可能成功——那一步
-    // 的第一件事就是要求 provider/externalId。直接完成，别把任务钉在
-    // needsAttention 上让用户困惑。
-    if (legacy || job.metadataProvider == null || job.externalId == null) {
+    // 刮削只认 AniDB 规范身份（BUG-2004）。修前的判据方向正好反了：带
+    // anilist/bangumi 等杂牌 id 的任务被强制进 scrape，解析层却整条丢弃这些
+    // lookup、退回拿显示名模糊搜 → 歧义 → needsAttention 卡死且管线内无法
+    // 交互确认；而没有任何 id 的任务反而直接完成。现在判据只有一条：入队
+    // 快照里有已确认的 AniDB id 才进 scrape；否则任务正常完成，作品留在
+    // 视频页的待确认队列（刮削重设计 P2）由用户补身份或由自动补刮认领。
+    if (legacy || _confirmedAniDbId(job) == null) {
       await _releaseLeaseWith(
         () => database.completeVideoDownloadJob(
           jobId: job.jobId,
@@ -3418,6 +3425,18 @@ class VideoDownloadPipelineService {
       return;
     }
     await _advance(job, VideoDownloadJobStage.scrape, nowAt: now);
+  }
+
+  /// 任务携带的已确认 AniDB 身份：优先 v94 identity_json 快照，回退旧行
+  /// （metadataProvider == 'anidb' 的 externalId）。null = 无规范身份。
+  int? _confirmedAniDbId(VideoDownloadJobRow job) {
+    final VideoMediaReference? stored =
+        decodeVideoMediaReference(job.identityJson);
+    if (stored?.anidbId != null) return stored!.anidbId;
+    if (job.metadataProvider == 'anidb') {
+      return int.tryParse(job.externalId ?? '');
+    }
+    return null;
   }
 
   /// 手动「按域入库」任务的 import：整包绝对路径交给 [discoveryImporter]
@@ -3482,14 +3501,20 @@ class VideoDownloadPipelineService {
   Future<void> _scrapeMedia(VideoDownloadJobRow job) async {
     _ensureLeaseHeld();
     final MediaSourceRow source = await _managedSource(job);
-    final VideoMetadataProviderKind? provider = VideoMetadataProviderKind.values
-        .asNameMap()[job.metadataProvider];
+    final int? anidbId = _confirmedAniDbId(job);
     final VideoMetadataMediaKind? mediaKind = VideoMetadataMediaKind.values
         .asNameMap()[job.mediaKind];
-    if (provider == null || mediaKind == null || job.externalId == null) {
-      throw const VideoDownloadPipelineActionRequired(
-        'Confirmed discovery identity is missing; automatic fuzzy matching was not run',
+    if (anidbId == null || mediaKind == null) {
+      // 防御分支：import 阶段的闸已保证只有带 AniDB 身份的任务进到这里。
+      // 万一（旧行重试/竞态）没有身份，按同一判据正常完成而不是卡死。
+      await _releaseLeaseWith(
+        () => database.completeVideoDownloadJob(
+          jobId: job.jobId,
+          workerId: workerId,
+          completedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
       );
+      return;
     }
     final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
       database,
@@ -3531,11 +3556,13 @@ class VideoDownloadPipelineService {
         'Imported media could not be mapped exactly back to its managed source',
       );
     }
+    // AniDB 是唯一能直接确认主身份的 provider（解析层对其余 provider 的
+    // confirmedLookup 一律降级，见 VideoSourceScrapeCoordinator._resolveWork）。
     final report = await scrapeCoordinator.scrapeImportedWork(
       work,
       lookup: VideoMetadataLookup(
-        provider: provider,
-        externalId: job.externalId!,
+        provider: VideoMetadataProviderKind.anidb,
+        externalId: '$anidbId',
         mediaKind: mediaKind,
       ),
     );
@@ -3769,6 +3796,31 @@ class VideoDownloadPipelineService {
         (mediaKind == VideoMetadataMediaKind.movie
             ? VideoDiscoveryCategory.movie
             : VideoDiscoveryCategory.tv);
+    // v94（BUG-2003）：身份面（原名/别名/全部外部 id）从入队快照恢复——字幕
+    // 搜索从此拿得到日文原名与罗马字别名。任务列（title/year/season/kind）仍是
+    // 用户可见与流程真值。旧行（NULL 快照）走修前的单 id 重建。
+    final VideoMediaReference? stored =
+        decodeVideoMediaReference(job.identityJson);
+    if (stored != null) {
+      return VideoMediaReference(
+        providerId: stored.providerId,
+        mediaId: stored.mediaId,
+        mediaKind: mediaKind,
+        discoveryCategory: category,
+        title: job.title,
+        originalTitle: stored.originalTitle,
+        aliases: stored.aliases,
+        year: job.year ?? stored.year,
+        season: job.season ?? stored.season,
+        tmdbId: stored.tmdbId,
+        imdbId: stored.imdbId,
+        tvdbId: stored.tvdbId,
+        anidbId: stored.anidbId,
+        anilistId: stored.anilistId,
+        bangumiId: stored.bangumiId,
+        externalIds: stored.externalIds,
+      );
+    }
     final String provider = job.metadataProvider ?? 'unknown';
     final String id = job.externalId ?? job.title;
     return VideoMediaReference(
@@ -3845,6 +3897,7 @@ extension on VideoMediaReference {
         discoveryCategory: discoveryCategory,
         title: title,
         originalTitle: originalTitle,
+        aliases: aliases,
         year: year,
         season: season ?? this.season,
         episode: episode ?? this.episode,

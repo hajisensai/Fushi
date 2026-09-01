@@ -4107,5 +4107,8 @@
   "stat_detail_empty": "No activity in this period",
   "stat_center_title": "Statistics center",
   "stat_center_tab_overview": "Overview",
-  "shortcut_action_video_dismiss_dict": "Dismiss dictionary"
+  "shortcut_action_video_dismiss_dict": "Dismiss dictionary",
+  "video_discovery_anidb_identity_confirm_title": "Confirm the work identity",
+  "video_discovery_anidb_identity_confirm_hint": "AniDB has more than one possible match. Pick the right work and the imported download will scrape with that identity directly; skip and you can assign it later from the pending list.",
+  "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification."
 }
