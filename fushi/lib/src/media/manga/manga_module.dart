@@ -106,6 +106,7 @@ abstract final class MangaModule {
     String? title,
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
+    int? sourceId,
   }) =>
       MangaArchiveImporter.importArchive(
         db: db,
@@ -113,6 +114,7 @@ abstract final class MangaModule {
         title: title,
         policy: policy,
         onProgress: onProgress,
+        sourceId: sourceId,
       );
 
   /// 未入库的裸图片文件夹 → 选引擎 → 整卷 OCR → 落库，返回新建 bookKey。

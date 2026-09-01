@@ -77,7 +77,8 @@ const Set<String> kDragDictionaryExtensions = <String>{
 /// 漫画扩展名（不带点，小写）：**明确**的漫画载体，落点表面一见即知。
 ///
 /// - `mokuro`：mokuro v0.2+ 的 OCR 结果文件（+ 同级图片），走 `MangaImporter`；
-/// - `cbz`：图片压缩包，走 `MangaArchiveImporter`。
+/// - `cbz`：ZIP 图片压缩包，走 `MangaArchiveImporter`；
+/// - `cbr` / `rar` / `cb7`：7-Zip 解包的图片压缩包（Windows 发布包自带）。
 ///
 /// 不含 `zip`：它同时是词典包扩展名，光看扩展名分不出「一包页图」还是 Yomitan
 /// 词典包，故走 [kDragImageArchiveProbeExtensions] + `isImageArchive` 注入判据。
@@ -90,6 +91,9 @@ const Set<String> kDragDictionaryExtensions = <String>{
 const Set<String> kDragMangaExtensions = <String>{
   'mokuro',
   'cbz',
+  'cbr',
+  'rar',
+  'cb7',
 };
 
 /// 需要**真读包内容**才能定性的容器扩展名（不带点，小写）。
@@ -109,11 +113,8 @@ const Set<String> kDragImageArchiveProbeExtensions = <String>{
 /// `archive` 包不解 RAR，故 cbr/cb7/rar 无法导入。单列一类只为一件事：让落点
 /// 给出明确的「不支持」提示，而不是归进 unknown 后静默无反应（用户实报「拖进去
 /// 一点反应都没有」）。
-const Set<String> kDragUnsupportedMangaExtensions = <String>{
-  'cbr',
-  'cb7',
-  'rar',
-};
+/// Superseded by the supported set above; RAR/CBR/CB7 no longer enter here.
+const Set<String> kDragUnsupportedMangaExtensions = <String>{};
 
 /// 音频扩展名（不带点，小写）。镜像 AudiobookStorage.audioExtensions（守卫测试钉死同步）。
 const Set<String> kDragAudioExtensions = <String>{
@@ -155,9 +156,9 @@ class DroppedFiles {
   final List<String> playlists;
   final List<String> dictionaries;
 
-  /// 漫画载体：`.mokuro` / `.cbz`，以及被 [classifyDroppedFiles] 的 `isDirectory`
-  /// 谓词判定为**目录**的路径（整目录页图导入，manga_importer 的
-  /// `importFromImageFolder` 路径）。
+  /// 漫画载体：`.mokuro` / `.cbz` / `.cbr` / `.rar` / `.cb7`，以及被
+  /// [classifyDroppedFiles] 的 `isDirectory` 谓词判定为**目录**的路径
+  /// （整目录页图导入，manga_importer 的 `importFromImageFolder` 路径）。
   final List<String> mangas;
 
   /// 认得出是漫画包但导入器不支持的（cbr/cb7/rar，见

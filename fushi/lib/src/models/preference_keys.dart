@@ -192,6 +192,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_download_target_source_id',
   'video_fit_mode',
   'video_immersive_mode',
+  'video_library_auto_backfill_scrape',
   'video_lock_window_aspect_ratio',
   'video_mining_animated_format',
   'video_mining_image_mode',

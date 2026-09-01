@@ -4096,5 +4096,16 @@
   "update_download_source_unavailable": "$source ist für diese Datei nicht verfügbar; es wird auf die automatische Reihenfolge zurückgegriffen",
   "network_proxy_credentials_scope_hint": "Zugangsdaten gelten nur für HTTP-Anfragen; die integrierte Torrent-Engine kann sie nicht verwenden",
   "anki_error_paired_device_unreachable": "Couldn't create the card because no paired device could be reached. Make sure Fushi is running on the paired device, or turn off Mine to paired device in Anki settings to create cards locally.",
+  "video_source_scrape_enabled_toggle_hint": "When off, manual, post-scan, post-download and background scraping all skip this source.",
+  "video_source_scrape_work_missing": "This work is no longer in the current source plan (its files may have been renamed, moved or deleted). Rescrape the source to refresh the pending list.",
+  "video_source_scrape_pending_works": "Works awaiting identification",
+  "video_source_scrape_pending_works_hint": "These entries have no confirmed identity yet. Search and pick the right work to scrape them.",
+  "video_source_scrape_enabled_toggle": "Enable scraping for this source",
+  "video_library_scrape_auto_backfill": "Auto-fill missing series info",
+  "video_library_scrape_auto_backfill_hint": "Entering the video library scrapes entries that still have no confirmed identity. Turn off to stop all background metadata downloads.",
+  "stat_detail_ungrouped": "Ungrouped",
+  "stat_detail_empty": "No activity in this period",
+  "stat_center_title": "Statistics center",
+  "stat_center_tab_overview": "Overview",
   "shortcut_action_video_dismiss_dict": "Dismiss dictionary"
 }
