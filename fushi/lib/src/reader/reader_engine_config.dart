@@ -31,6 +31,7 @@ class ReaderEngineConfig {
     required this.debugLogging,
     required this.swipeDistThreshold,
     required this.swipeFastDistThreshold,
+    required this.wheelGestureQuietMs,
     required this.furiganaMode,
     required this.caretColor,
     required this.caretInsetTop,
@@ -74,6 +75,7 @@ class ReaderEngineConfig {
   final bool debugLogging;
   final int swipeDistThreshold;
   final int swipeFastDistThreshold;
+  final int wheelGestureQuietMs;
 
   /// `off` / `partial` / `toggle`（`ReaderSettings.furiganaMode` 的值域）。
   final String furiganaMode;
@@ -130,6 +132,7 @@ class ReaderEngineConfig {
         'debugLogging': debugLogging,
         'swipeDistThreshold': swipeDistThreshold,
         'swipeFastDistThreshold': swipeFastDistThreshold,
+        'wheelGestureQuietMs': wheelGestureQuietMs,
         'furiganaMode': furiganaMode,
         'caretColor': caretColor,
         'caretInsetTop': caretInsetTop,

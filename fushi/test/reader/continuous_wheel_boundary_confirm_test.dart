@@ -1,86 +1,45 @@
-// 覆盖边界（勿误读）：本文件只验 reader 侧 JS 载荷的**语义**——生成函数返回的那个字符串
-// 里有什么、行为契约对不对。它证明不了这个载荷真的被拼进最终注入 WebView 的 setup 脚本。
-// 「装配完整性」（每个子载荷都被拼进去、压缩后还在）由
-// test/reader/reader_script_compactor_test.dart 的「setup 装配完整性」一组集中守——
-// 那里删掉模板中的 $caretJs / $selectionJs / $longPressDragJs 会立刻转红，本文件不会。
-// 改这里前先分清你要锁的是语义还是注入，别在本文件里重造装配断言。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 
-/// BUG-369：滚动（连续）模式下，向上滚动「还没到章节开头就提前切到上一章」。
-/// 根因 = 滚轮边界判定用单次瞬时 `scrollTop<=2` 读数，惯性/竖排 rAF 缓动把 scrollTop
-/// 异步滑向 0 时连发的 wheel 会在「仍在滑动、内容未贴住章首」的某帧擦到 `<=2` → 提前
-/// 跨章。修法 = arm-then-fire 二次确认（同方向第一次到边界只武装、第二次才跨章），由
-/// 纯函数 [ReaderPaginationScripts.continuousWheelBoundaryEmit] 锁定。
+/// BUG-2015：连续模式跨章必须区分「触摸板的一段惯性」和「离散滚轮的一格」。
 ///
-/// 这是 reader_fushi_page.dart 滚轮监听器边界确认逻辑的纯 Dart 影子（headless WebView
-/// 不可用，按项目范式：纯函数单测 + 源码守卫）。
+/// 触摸板从正文滚到边界后仍会连续喷 tick；旧 arm-then-fire 会把其中第二拍当成
+/// 跨章确认，导致末尾尚未停稳就跳走。新契约要求触摸板先静默、再从边界开始一次
+/// 新手势；鼠标滚轮/数位板旋钮则允许一格跨章，避免单事件设备完全无响应。
 void main() {
-  ({bool emit, String? nextArmedDir}) confirm({
-    required String? boundaryDir,
-    required String? armedDir,
-  }) =>
-      ReaderPaginationScripts.continuousWheelBoundaryEmit(
-        boundaryDir: boundaryDir,
-        armedDir: armedDir,
+  bool shouldTurn({
+    required bool moved,
+    required bool trackpad,
+    required bool newGesture,
+  }) => ReaderPaginationScripts.continuousWheelShouldTurnChapter(
+    moved: moved,
+    isTrackpad: trackpad,
+    startsNewGesture: newGesture,
+  );
+
+  test('触摸板同一手势从正文滚到边界后，残余惯性不跨章', () {
+    expect(shouldTurn(moved: true, trackpad: true, newGesture: true), isFalse);
+    for (int i = 0; i < 20; i++) {
+      expect(
+        shouldTurn(moved: false, trackpad: true, newGesture: false),
+        isFalse,
       );
-
-  group('arm-then-fire backward (the buggy direction)', () {
-    test('first wheel at top only arms, does NOT cross to previous chapter',
-        () {
-      final r = confirm(boundaryDir: 'backward', armedDir: null);
-      expect(r.emit, isFalse, reason: '第一次到章首只武装，吸收惯性/缓动擦边瞬态，不能立即切上一章');
-      expect(r.nextArmedDir, 'backward');
-    });
-
-    test('second wheel at top (same direction) crosses to previous chapter',
-        () {
-      final r = confirm(boundaryDir: 'backward', armedDir: 'backward');
-      expect(r.emit, isTrue, reason: '同方向二次确认才真正跨章');
-      expect(r.nextArmedDir, isNull, reason: '跨章后清武装（已重锚到新章）');
-    });
+    }
   });
 
-  group('arm-then-fire forward (symmetric)', () {
-    test('first wheel at bottom only arms', () {
-      final r = confirm(boundaryDir: 'forward', armedDir: null);
-      expect(r.emit, isFalse);
-      expect(r.nextArmedDir, 'forward');
-    });
-
-    test('second wheel at bottom crosses to next chapter', () {
-      final r = confirm(boundaryDir: 'forward', armedDir: 'forward');
-      expect(r.emit, isTrue);
-      expect(r.nextArmedDir, isNull);
-    });
+  test('静默后从边界开始的新触摸板手势跨章', () {
+    expect(shouldTurn(moved: false, trackpad: true, newGesture: true), isTrue);
   });
 
-  group('disarm', () {
-    test('leaving the boundary mid-scroll disarms (no cross)', () {
-      // 已武装 backward，但这次滚动未到边界（中途）→ 解除武装。
-      final r = confirm(boundaryDir: null, armedDir: 'backward');
-      expect(r.emit, isFalse, reason: '中途滚动不能在已武装态下跨章——必须先解除武装');
-      expect(r.nextArmedDir, isNull);
-    });
-
-    test('direction reversal at opposite boundary re-arms, does not cross', () {
-      // 已武装 backward（顶部），但现在到的是 forward（底部）→ 不跨章，改武装 forward。
-      final r = confirm(boundaryDir: 'forward', armedDir: 'backward');
-      expect(r.emit, isFalse, reason: '方向反转不能凭旧武装直接跨章');
-      expect(r.nextArmedDir, 'forward');
-    });
+  test('离散滚轮或数位板旋钮在边界的一拍即可跨章', () {
+    expect(
+      shouldTurn(moved: false, trackpad: false, newGesture: false),
+      isTrue,
+    );
   });
 
-  test('inertial single-tick scrape never crosses (regression scenario)', () {
-    // 模拟惯性/缓动擦边：向上快速回滚，scrollTop 在某一帧擦到 <=2（boundaryDir=backward）
-    // 但下一帧又离开边界（仍在滑动，内容未贴住章首）。arm-then-fire 下：擦边帧只武装，
-    // 离开帧立即解除武装 → 全程 emit 恒 false，绝不提前切上一章。
-    final armed = confirm(boundaryDir: 'backward', armedDir: null);
-    expect(armed.emit, isFalse);
-    expect(armed.nextArmedDir, 'backward');
-    final leftBoundary =
-        confirm(boundaryDir: null, armedDir: armed.nextArmedDir);
-    expect(leftBoundary.emit, isFalse, reason: '擦边后离开边界的瞬态必须解除武装，杜绝提前跨章');
-    expect(leftBoundary.nextArmedDir, isNull);
+  test('任何设备只要正文仍在滚动就绝不跨章', () {
+    expect(shouldTurn(moved: true, trackpad: false, newGesture: true), isFalse);
+    expect(shouldTurn(moved: true, trackpad: true, newGesture: true), isFalse);
   });
 }

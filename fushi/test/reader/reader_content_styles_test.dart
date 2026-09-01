@@ -1314,6 +1314,31 @@ void main() {
     });
   });
 
+  group('BUG-2015 连续模式章末操作留白', () {
+    test('横排沿 block 轴预留 36vh，分页模式不注入', () async {
+      final ReaderSettings settings = await _defaultSettings();
+      await settings.setWritingMode('horizontal-tb');
+      await settings.setViewMode('continuous');
+      final String continuous = ReaderContentStyles.css(settings: settings);
+      expect(continuous, contains('body::after {'));
+      expect(continuous, contains('block-size: 36vh !important;'));
+
+      await settings.setViewMode('paginated');
+      final String paginated = ReaderContentStyles.css(settings: settings);
+      expect(paginated, isNot(contains('body::after {')));
+    });
+
+    test('竖排沿 block 轴预留 36vw', () async {
+      final ReaderSettings settings = await _defaultSettings();
+      await settings.setWritingMode('vertical-rl');
+      await settings.setViewMode('continuous');
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('block-size: 36vw !important;'));
+      expect(css, contains('inline-size: 100% !important;'));
+      expect(css, contains('pointer-events: none !important;'));
+    });
+  });
+
   // TODO-861①（段落间距）：纯 CSS，按书写轴选 margin 轴，=0 不注入。
   group('TODO-861① paragraph spacing CSS', () {
     test('横排 paragraphSpacing>0 注入 top/bottom margin', () async {
