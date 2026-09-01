@@ -2043,9 +2043,13 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
         if (leading != null) {
           children.add(
             Padding(
-              padding: EdgeInsets.only(
+              // 方向性内边距：RTL（ar / he）下 [Row] 会把 leading 排到行尾（视觉右
+              // 侧），此时「leading 与标题之间的空隙」在它的**左**边。写死物理 right
+              // 会让空隙跑到屏幕边缘那侧，返回键直接贴上标题。以前只有两个页面显式
+              // 传 leading，现在脚手架默认给每个可返回页插一个，这条必须是 directional。
+              padding: EdgeInsetsDirectional.only(
                 top: tokens.spacing.gap / 2,
-                right: leadingGap,
+                end: leadingGap,
               ),
               child: leading,
             ),
@@ -2249,12 +2253,31 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     );
   }
 
+  /// 页头默认返回键（[leading] 为 null 且当前路由可 pop 时插入）。
+  ///
+  /// 命中盒必须撑到 [kMinInteractiveDimension]（48）：被它取代的
+  /// `Scaffold.appBar` 自动 [BackButton] 本就是 48×48 的 [IconButton]，而
+  /// [FushiIconButton] 在 `padding: EdgeInsets.zero` + 无 constraints 下只有图标
+  /// 本体那么大（24×24）——手机触屏上就成了「点不中的返回箭头」，也与
+  /// 本脚手架**显式**传入的 [BackButton]（aidoku 源浏览 / 新手引导）不是
+  /// 同一命中口径。图标视觉尺寸不变，只把 InkWell 命中盒撑开。
+  ///
+  /// 与 [FushiToolScaffold] 同名方法看着一样但**不能合并**：那边整条工具条
+  /// 只有 44 高，它在外层用 `SizedBox.square(40)` 自己撑命中盒，塞不下 48。
+  ///
+  /// [Navigator.maybeOf]：脚手架被用在没有 Navigator 的场景（裸组件测试 /
+  /// 嵌入式外壳）时只是没有返回键，不该整页抛异常。
   Widget? _defaultLeading(BuildContext context) {
-    if (!Navigator.of(context).canPop()) return null;
+    final NavigatorState? navigator = Navigator.maybeOf(context);
+    if (navigator == null || !navigator.canPop()) return null;
     return FushiIconButton(
       tooltip: MaterialLocalizations.of(context).backButtonTooltip,
       icon: Icons.arrow_back,
       padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(
+        minWidth: kMinInteractiveDimension,
+        minHeight: kMinInteractiveDimension,
+      ),
       onTap: () => Navigator.of(context).maybePop(),
     );
   }
