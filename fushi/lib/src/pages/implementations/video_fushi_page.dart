@@ -4836,24 +4836,36 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // videoEnterCaret：进入字级选词光标 / 已激活时对光标字符查词（双语义，
       // 沉浸查词门控在 _enterSubtitleCaret 内按 _immersiveAllowsLookup 判）。
       enterCaret: () => _handleEnterCaretAction(controller),
-      escape: () {
-        // 逐级退出：字幕跳转列表 / 剧集列表 / 侧栏 / 沉浸锁等前台层开着时先关一层，
-        // 不退页也不退全屏。层级表是 [_dismissTopForegroundLayer] 单点（BUG-1862 起与
-        // [PopScope]、系统返回键、手柄 B、屏幕返回按钮共用同一份），这里只保留「没有前台
-        // 层可关」之后的两级：全屏 → 退全屏；窗口 → 退页。
-        //
-        // 「退全屏」这一级**只**能留在这里、进不了 [_handleBackOrExit]：全屏是推到根
-        // navigator 的独立路由，全屏期间栈顶是它、本页 [PopScope] 根本轮不到（框架先 pop
-        // 全屏路由），把它并进汇聚点等于写一条永远不执行的分支。
-        if (_dismissTopForegroundLayer()) return;
-        final BuildContext? ctx = _videoControlsContext;
-        if (ctx != null && ctx.mounted && isFullscreen(ctx)) {
-          unawaited(_exitVideoFullscreen(ctx));
-        } else {
-          unawaited(_handleBackOrExit());
-        }
-      },
+      escape: _handleVideoEscapeAction,
     );
+  }
+
+  /// 「返回上一级」（[ShortcutAction.globalBack]，默认 Esc / Alt+← / 手柄 B）在视频页的
+  /// 执行体：逐级退出阶梯。
+  ///
+  /// 抽成具名方法、不留在 [_buildVideoShortcutActions] 的闭包里，是因为它是整张表里
+  /// **唯一一个不碰 [VideoPlayerController] 的动作**，而那张表只能用一个非空 controller
+  /// 构造。加载态 / 资源缺失态（`_controller == null`）下两条输入通道要能单独调到它——
+  /// 否则转圈时按 Esc / 手柄 B 根本不经本页解析，一路落到全局 universal 兜底，而
+  /// [_buildLoadingBody] 专门留了「转圈时随时可退出」的返回入口，那条可达性在键盘和
+  /// 手柄上就断了。
+  ///
+  /// 逐级退出：字幕跳转列表 / 剧集列表 / 侧栏 / 沉浸锁等前台层开着时先关一层，
+  /// 不退页也不退全屏。层级表是 [_dismissTopForegroundLayer] 单点（BUG-1862 起与
+  /// [PopScope]、系统返回键、手柄 B、屏幕返回按钮共用同一份），这里只保留「没有前台
+  /// 层可关」之后的两级：全屏 → 退全屏；窗口 → 退页。
+  ///
+  /// 「退全屏」这一级**只**能留在这里、进不了 [_handleBackOrExit]：全屏是推到根
+  /// navigator 的独立路由，全屏期间栈顶是它、本页 [PopScope] 根本轮不到（框架先 pop
+  /// 全屏路由），把它并进汇聚点等于写一条永远不执行的分支。
+  void _handleVideoEscapeAction() {
+    if (_dismissTopForegroundLayer()) return;
+    final BuildContext? ctx = _videoControlsContext;
+    if (ctx != null && ctx.mounted && isFullscreen(ctx)) {
+      unawaited(_exitVideoFullscreen(ctx));
+    } else {
+      unawaited(_handleBackOrExit());
+    }
   }
 
   /// TODO-1342：把一次手柄按键解析成视频动作并执行。桌面（GameInput/GameController
@@ -4871,7 +4883,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _videoInputClock.elapsed,
     );
     final VideoPlayerController? controller = _controller;
-    if (controller == null) return false;
     // videoEnterCaret：选词光标激活期，方向/确认/退出等在注册表解析**之前**截获
     // （阅读器 caret.part 同款 contextual 路由）；未激活返回 false 走正常解析
     // （进入光标本身是注册表动作 videoEnterCaret，经下方 callback 执行）。
@@ -4910,6 +4921,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _dismissTopVisiblePopup();
       return true;
     }
+    // 与键盘通道同款：「返回上一级」（手柄 B）的执行体不碰播放器，必须分流在
+    // controller 门之前，否则加载态下手柄 B 退不出转圈中的视频页。
+    if (action == ShortcutAction.globalBack) {
+      _handleVideoEscapeAction();
+      return true;
+    }
+    if (controller == null) return false;
     final VoidCallback? callback =
         videoActionCallbacks(_buildVideoShortcutActions(controller))[action];
     if (callback == null) return false;
@@ -5056,7 +5074,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 同一动作时行为逐字一致（含 [_runWhenImmersiveAllowsShortcuts] 沉浸锁门控）。
   bool _handleVideoKeyboardShortcut(KeyEvent event) {
     final VideoPlayerController? controller = _controller;
-    if (controller == null) return false;
     final VideoKeyboardResolution resolution = resolveVideoKeyboardShortcut(
       appModel.shortcutRegistry,
       event,
@@ -5066,7 +5083,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 「视频画面精确持焦」与 [_focusOwnership] 是同一个真相源（它 reclaim 的就是
       // 这个节点）：焦点落到控制条按钮或面板行上时 hasPrimaryFocus 自然为 false。
       videoSurfaceHoldsFocus: _videoFocusNode.hasPrimaryFocus,
-      panelHoldsFocusNavigation: _videoNavigablePanelOpen,
+      videoNavigablePanelOpen: _videoNavigablePanelOpen,
     );
     switch (resolution.dispatch) {
       case VideoKeyboardDispatch.ignore:
@@ -5084,6 +5101,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _mineFromTopPopup();
           return true;
         }
+        // 「返回上一级」的执行体是本页的逐级退出阶梯，整条不碰播放器
+        // （[_handleVideoEscapeAction]），所以它必须分流在下面那道 controller 门**之前**：
+        // 加载态 / 资源缺失态下 `_controller` 恒为 null，跟着整表一起被挡在门外就等于
+        // 转圈时 Esc 不再走本页阶梯（[_buildLoadingBody] 的「随时可退出」在键盘上够不着）。
+        if (action == ShortcutAction.globalBack) {
+          _handleVideoEscapeAction();
+          return true;
+        }
+        // 其余动作的执行体全部从 [_buildVideoShortcutActions] 取，而它要求一个非空
+        // controller——播放器还没建好时那些动作本来也无事可做。不消费，交回既有路径。
+        if (controller == null) return false;
         final Map<ShortcutAction, VoidCallback> callbacks =
             videoActionCallbacks(_buildVideoShortcutActions(controller));
         final VoidCallback? callback = callbacks[action];

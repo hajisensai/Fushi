@@ -1018,6 +1018,9 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
   static GalHookTextEventHandler? _onToggleTransparency;
   static GalHookTextEventHandler? _onOpenWorkbench;
   static GalHookTextEventHandler? _onClose;
+  // native 的 HWND 生命周期终点（WM_NCDESTROY）。消费端的可见性镜像靠它被动
+  // 复位，而不是每行台词打一次 isShowing() 往返去轮询同一件事。
+  static GalHookTextEventHandler? _onOverlayDestroyed;
   static GalHookTextEventHandler? _onReplayVoice;
   static GalHookTextEventHandler? _onRecaptureVoice;
   static GalHookTextLockHandler? _onLockChanged;
@@ -1039,6 +1042,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     GalHookTextEventHandler? onToggleTransparency,
     GalHookTextEventHandler? onOpenWorkbench,
     GalHookTextEventHandler? onClose,
+    GalHookTextEventHandler? onOverlayDestroyed,
     GalHookTextEventHandler? onReplayVoice,
     GalHookTextEventHandler? onRecaptureVoice,
     GalHookTextLockHandler? onLockChanged,
@@ -1058,6 +1062,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     _onToggleTransparency = onToggleTransparency;
     _onOpenWorkbench = onOpenWorkbench;
     _onClose = onClose;
+    _onOverlayDestroyed = onOverlayDestroyed;
     _onReplayVoice = onReplayVoice;
     _onRecaptureVoice = onRecaptureVoice;
     _onLockChanged = onLockChanged;
@@ -1080,6 +1085,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     _onToggleTransparency = null;
     _onOpenWorkbench = null;
     _onClose = null;
+    _onOverlayDestroyed = null;
     _onReplayVoice = null;
     _onRecaptureVoice = null;
     _onLockChanged = null;
@@ -1135,6 +1141,12 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
         break;
       case 'close':
         await _onClose?.call();
+        break;
+      // 用户按关闭 ('close') 与窗口句柄消失 ('overlayDestroyed') 是两件事：
+      // 前者表达意图（本会话别再自动弹），后者只是陈述事实（窗口没了，镜像该
+      // 复位）。合成一条就会让「窗口被外部销毁」被当成用户不想要它。
+      case 'overlayDestroyed':
+        await _onOverlayDestroyed?.call();
         break;
       case 'lockChanged':
         await _onLockChanged?.call(args['locked'] == true);

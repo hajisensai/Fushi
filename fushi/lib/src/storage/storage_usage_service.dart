@@ -144,8 +144,14 @@ enum StorageEntryKind {
 ///
 /// 刻意**不含**：books / dictionaries（各有自己的删除原语，走 kind 分流）、
 /// videoDownloads / subtitles / customFonts（都有 DB 行或配置指着，裸删会留下孤儿行
-/// 和指向空文件的字体配置 —— 见本文件头注释的共享资产误删坑）、database（活库）、
+/// 和指向空文件的字体配置 —— 见本文件头注释的共享资产误删坑）、database（活库，其中
+/// 快照残留是 [StorageEntryKind.databaseSnapshots] 专用原语、不走裸删）、
 /// other（白名单之外，语义不明）。
+///
+/// [StorageCategoryId.backups] 在内：它产出的
+/// [StorageEntryKind.backupArchives] 聚合项同样接通用文件删除原语，装的是上次导出
+/// 遗留的临时包、无任何 DB 行引用。以前它在事实上可删却不在本集合里，集合的文档
+/// 与事实分家（守卫 `storage_usage_service_test.dart` 钉住这条契约）。
 const Set<StorageCategoryId> kDeletableEntryCategories = <StorageCategoryId>{
   StorageCategoryId.covers,
   StorageCategoryId.web,
@@ -153,6 +159,15 @@ const Set<StorageCategoryId> kDeletableEntryCategories = <StorageCategoryId>{
   StorageCategoryId.ocrModels,
   StorageCategoryId.shaders,
   StorageCategoryId.cache,
+  StorageCategoryId.backups,
+};
+
+/// 明细「可直接删」的 kind —— 与 [kDeletableEntryCategories] 是同一件事的两个面：
+/// 前者说哪个类目会产出可删明细，后者说这些明细长什么样。UI 的删除分流按 kind 走
+/// （`storage_usage_view.dart`），扫描侧按类目走，两边必须对得上。
+const Set<StorageEntryKind> kDirectlyDeletableEntryKinds = <StorageEntryKind>{
+  StorageEntryKind.derivedFile,
+  StorageEntryKind.backupArchives,
 };
 
 /// 一个类目内的单条可展开条目（一本书 / 一部词典 / 类目根下的一个子项）。
@@ -518,6 +533,8 @@ class StorageUsageService {
   }) async* {
     final Directory docs = await _documentsRoot();
     final Directory support = await _supportRoot();
+    // 缓存/临时根的一次性列举结果，cache 与 backups 两个类目共用（见下方分流）。
+    List<Map<String, Object>>? cacheRootEntries;
 
     for (final StorageCategoryId id in StorageCategoryId.values) {
       switch (id) {
@@ -531,10 +548,14 @@ class StorageUsageService {
           yield await _scanGeneric(id, <String>[
             p.join(support.path, kOcrModelsSupportChild),
           ]);
-        case StorageCategoryId.cache:
-          yield await _scanCache();
-        case StorageCategoryId.backups:
-          yield await _scanBackups();
+        case StorageCategoryId.cache || StorageCategoryId.backups:
+          // 两个类目住在**同一棵**缓存/临时树上，扫一次再按谓词分流。各扫各的就是
+          // 起两个 isolate、把整棵树递归 stat 两遍——iOS 上 `Library/Caches` + 沙盒
+          // `tmp` 是 GB 级大头，那是实打实的双倍耗时。
+          cacheRootEntries ??= await _cacheRootEntries();
+          yield id == StorageCategoryId.cache
+              ? _scanCache(cacheRootEntries)
+              : _scanBackups(cacheRootEntries);
         case StorageCategoryId.other:
           yield await _scanOther(docs);
         default:
@@ -743,14 +764,17 @@ class StorageUsageService {
     ];
   }
 
-  /// BUG-1905：缓存与临时文件。根的选取与理由见 [_defaultCacheRoots]。
-  Future<StorageCategoryUsage> _scanCache() async {
+  /// 缓存/临时根下的直接子项，**只列举一次**：cache 与 backups 两个类目按谓词分流。
+  Future<List<Map<String, Object>>> _cacheRootEntries() async {
     final List<Directory> roots = await _cacheRoots();
-    if (roots.isEmpty) {
-      return const StorageCategoryUsage(id: StorageCategoryId.cache, bytes: 0);
-    }
-    final List<Map<String, Object>> raw = await _run(() => _childEntriesSync(
-        <String>[for (final Directory d in roots) d.path]));
+    if (roots.isEmpty) return const <Map<String, Object>>[];
+    return _run(() =>
+        _childEntriesSync(<String>[for (final Directory d in roots) d.path]));
+  }
+
+  /// BUG-1905：缓存与临时文件（[raw] 来自 [_cacheRootEntries]）。根的选取与理由见
+  /// [_defaultCacheRoots]；备份包由 [_scanBackups] 单列，这里排除掉不重复计数。
+  StorageCategoryUsage _scanCache(final List<Map<String, Object>> raw) {
     final List<StorageEntryUsage> entries = _childEntries(
       raw,
       excludePaths: <String>{
@@ -769,14 +793,8 @@ class StorageUsageService {
     );
   }
 
-  Future<StorageCategoryUsage> _scanBackups() async {
-    final List<Directory> roots = await _cacheRoots();
-    if (roots.isEmpty) {
-      return const StorageCategoryUsage(
-          id: StorageCategoryId.backups, bytes: 0);
-    }
-    final List<Map<String, Object>> raw = await _run(() => _childEntriesSync(
-        <String>[for (final Directory d in roots) d.path]));
+  /// 临时根里上一次导出遗留的备份包（[raw] 来自 [_cacheRootEntries]）。
+  StorageCategoryUsage _scanBackups(final List<Map<String, Object>> raw) {
     final List<Map<String, Object>> backups = <Map<String, Object>>[
       for (final Map<String, Object> entry in raw)
         if (entry['isFile'] as bool &&
@@ -797,7 +815,13 @@ class StorageUsageService {
           : <StorageEntryUsage>[
               StorageEntryUsage(
                 id: 'backup-archives',
-                label: 'backup archives',
+                // 与快照聚合项同口径：label 是**路径形状的身份串**，不是 UI 文案
+                // （真正的显示名由 UI 按 paths.length 翻译，见 `_entryTitle`）。
+                // 以前这里写死英文 'backup archives'，一旦有第二个消费方读
+                // entry.label 就会漏出一句永远不会被翻译的英文。
+                label: '${p.basename(p.dirname(paths.first))}/'
+                    '${p.basename(paths.first)}'
+                    '${paths.length > 1 ? ' +${paths.length - 1}' : ''}',
                 bytes: bytes,
                 paths: paths,
                 kind: StorageEntryKind.backupArchives,
