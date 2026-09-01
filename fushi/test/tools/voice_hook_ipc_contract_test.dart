@@ -38,7 +38,7 @@ void main() {
     // v17：在 v16 之上纯尾部追加「本次注入所用 hook DLL 的 SHA-256」。
     // 这个数字必须钉死：它是 wire identity，写错一位就是「旧 helper 静默绕过默认
     // deny」。改它必须同时改契约头顶部的版本沿革说明。
-    expect(source, contains('constexpr uint32_t kSharedVersion = 20;'));
+    expect(source, contains('constexpr uint32_t kSharedVersion = 21;'));
     // v17 字段本身也钉死：驻留 hook 身份门的驻留侧摘要只能从这里取，字段没了
     // 就只剩「两边都读磁盘」那条恒真的假校验。
     expect(

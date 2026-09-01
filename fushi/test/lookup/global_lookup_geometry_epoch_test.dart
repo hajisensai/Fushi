@@ -91,7 +91,7 @@ void main() {
       final String source = File(
         'lib/src/lookup/global_lookup_controller.dart',
       ).readAsStringSync();
-      final int lookupStart = source.indexOf('Future<void> _lookupExternal(');
+      final int lookupStart = source.indexOf('Future<bool> _lookupExternal(');
       final int reset = source.indexOf(
         '_resetGeometryHandshakeForLookup();',
         lookupStart,

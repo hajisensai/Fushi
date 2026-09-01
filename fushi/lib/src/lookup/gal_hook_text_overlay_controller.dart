@@ -171,7 +171,11 @@ class GalHookTextOverlayController extends ChangeNotifier {
   bool _attachedSyncNeedsReconcile = false;
 
   Future<GalLookupCallResult>? _geometrySyncInFlight;
-  ({GalLookupGeometryAdmissionMode mode, bool attachedReady})?
+  ({
+    GalLookupGeometryAdmissionMode mode,
+    bool attachedReady,
+    bool nativeInputReady,
+  })?
   _geometrySyncDesiredRequest;
   bool _geometrySyncNeedsReconcile = false;
 
@@ -349,6 +353,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     await _ingameLookup.setGeometryAdmission(
       GalLookupGeometryAdmissionMode.disabled,
       attachedReady: false,
+      nativeInputReady: false,
     );
     await _ingameLookup.setSessionActive(false);
     await GalHookTextOverlayChannel.hide();
@@ -658,6 +663,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     final GalLookupCallResult? result = await _setGeometryAdmissionBounded(
       _geometryAdmissionMode(profileMode, forceAttached: forceAttached),
       attachedReady: true,
+      nativeInputReady: false,
       stage: 'attached-handoff',
     );
     if (result == null) {
@@ -675,10 +681,15 @@ class GalHookTextOverlayController extends ChangeNotifier {
   Future<GalLookupCallResult?> _setGeometryAdmissionBounded(
     GalLookupGeometryAdmissionMode mode, {
     required bool attachedReady,
+    required bool nativeInputReady,
     required String stage,
     bool Function()? stillCurrent,
   }) async {
-    final request = (mode: mode, attachedReady: attachedReady);
+    final request = (
+      mode: mode,
+      attachedReady: attachedReady,
+      nativeInputReady: nativeInputReady,
+    );
     _geometrySyncDesiredRequest = request;
     final Future<GalLookupCallResult>? active = _geometrySyncInFlight;
     if (active != null) {
@@ -691,11 +702,12 @@ class GalHookTextOverlayController extends ChangeNotifier {
         .setGeometryAdmission(
           mode,
           attachedReady: attachedReady,
+          nativeInputReady: nativeInputReady,
           stillCurrent: () =>
               _started &&
               _geometrySyncDesiredRequest == request &&
               (stillCurrent == null || stillCurrent()),
-    );
+        );
     _geometrySyncInFlight = operation;
     _geometrySyncNeedsReconcile = false;
     unawaited(
@@ -721,12 +733,12 @@ class GalHookTextOverlayController extends ChangeNotifier {
       }
       glog(
         'gal-ingame: geometryAdmission stage=$stage mode=${mode.name} '
-        'timed out; provider remains closed',
+        'nativeInputReady=$nativeInputReady timed out; provider remains closed',
       );
     } catch (error, stackTrace) {
       glog(
         'gal-ingame: geometryAdmission stage=$stage mode=${mode.name} '
-        'EXCEPTION $error\n$stackTrace',
+        'nativeInputReady=$nativeInputReady EXCEPTION $error\n$stackTrace',
       );
     }
     return null;
@@ -734,12 +746,16 @@ class GalHookTextOverlayController extends ChangeNotifier {
 
   void _completeGeometrySync(
     Future<GalLookupCallResult> operation,
-    ({GalLookupGeometryAdmissionMode mode, bool attachedReady}) request,
+    ({
+      GalLookupGeometryAdmissionMode mode,
+      bool attachedReady,
+      bool nativeInputReady,
+    })
+    request,
   ) {
     if (!identical(_geometrySyncInFlight, operation)) return;
     final bool reconcile =
-        _geometrySyncNeedsReconcile ||
-        _geometrySyncDesiredRequest != request;
+        _geometrySyncNeedsReconcile || _geometrySyncDesiredRequest != request;
     _geometrySyncInFlight = null;
     _geometrySyncNeedsReconcile = false;
     if (reconcile && _started) _scheduleSync();
@@ -829,8 +845,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
   ) {
     if (!identical(_attachedSyncInFlight, operation)) return;
     final bool reconcile =
-        _attachedSyncNeedsReconcile ||
-        _attachedSyncDesiredRequest != request;
+        _attachedSyncNeedsReconcile || _attachedSyncDesiredRequest != request;
     _attachedSyncInFlight = null;
     _attachedSyncNeedsReconcile = false;
     if (reconcile && _started) _scheduleSync();
@@ -937,6 +952,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
           await _setGeometryAdmissionBounded(
             GalLookupGeometryAdmissionMode.disabled,
             attachedReady: false,
+            nativeInputReady: false,
             stage: 'session-rollover',
             stillCurrent: () =>
                 _isSyncSnapshotCurrent(syncRevision, nextSessionKey),
@@ -1076,13 +1092,23 @@ class GalHookTextOverlayController extends ChangeNotifier {
         lookupSurfaceActive &&
         !forceAttached &&
         _nativeProviderAdmitted(lookupMode, _attachedText.status);
-    if (!nativeProviderDesired) {
-      final bool providerClosed = await _setProviderAdmissionIsolated(false);
-      if (!providerClosed ||
-          !_isSyncSnapshotCurrent(syncRevision, nextSessionKey)) {
-        return;
-      }
+    // The Dart route must be ready before native input is armed. Opening this
+    // local gate has no platform await; the v21 flag below is the final edge
+    // that can actually consume a game click. On exclusion the order is the
+    // reverse: close/retire the route first, then clear the native input flag.
+    final bool providerUpdated = await _setProviderAdmissionIsolated(
+      nativeProviderDesired,
+      stillCurrent: nativeProviderDesired ? stillCurrent : null,
+    );
+    if (!providerUpdated ||
+        !_isSyncSnapshotCurrent(syncRevision, nextSessionKey)) {
+      return;
     }
+    // Keep native geometry discovery alive while risk acceptance is pending:
+    // the injected provider must be able to reach Ready before Dart can report
+    // that the current executable supports native lookup. Click consumption is
+    // a distinct v21 flag and stays false until [_nativeProviderAdmitted] has
+    // passed the profile/risk gate. Attached ownership remains independent.
     final GalLookupGeometryAdmissionMode geometryMode = lookupSurfaceActive
         ? _geometryAdmissionMode(lookupMode, forceAttached: forceAttached)
         : GalLookupGeometryAdmissionMode.disabled;
@@ -1090,24 +1116,29 @@ class GalHookTextOverlayController extends ChangeNotifier {
         await _setGeometryAdmissionBounded(
           geometryMode,
           attachedReady: attachedReady,
+          nativeInputReady: nativeProviderDesired,
           stage: 'central-sync',
           stillCurrent: stillCurrent,
         );
-    if (!_isSyncSnapshotCurrent(syncRevision, nextSessionKey)) return;
-    // Provider publication is the final edge: never reopen it from profile or
-    // health inference alone. Missing/malformed replies used to parse as an
-    // empty "ok" result; require the runner's positive request sequence before
-    // admitting a native provider.
-    final bool geometryAcknowledged = _hasExplicitGeometryAck(geometryResult);
-    final bool providerUpdated = await _setProviderAdmissionIsolated(
-      nativeProviderDesired && geometryAcknowledged,
-      stillCurrent: nativeProviderDesired && geometryAcknowledged
-          ? stillCurrent
-          : null,
-    );
-    if (!providerUpdated ||
-        !_isSyncSnapshotCurrent(syncRevision, nextSessionKey)) {
+    if (!_isSyncSnapshotCurrent(syncRevision, nextSessionKey)) {
+      // The native call may have crossed the revision edge after publishing
+      // its payload. Close the local route immediately; the queued central
+      // sync will clear nativeInputReady for the new snapshot.
+      if (nativeProviderDesired) {
+        await _setProviderAdmissionIsolated(false);
+      }
       return;
+    }
+    // Missing/malformed replies used to parse as an empty "ok" result. Require
+    // the runner's positive request sequence; if the final native-input edge
+    // was not acknowledged, retire the already-open local route again.
+    final bool geometryAcknowledged = _hasExplicitGeometryAck(geometryResult);
+    if (nativeProviderDesired && !geometryAcknowledged) {
+      final bool providerClosed = await _setProviderAdmissionIsolated(false);
+      if (!providerClosed ||
+          !_isSyncSnapshotCurrent(syncRevision, nextSessionKey)) {
+        return;
+      }
     }
     if (!sessionPushSucceeded ||
         (lookupActive && !attachedSynchronized) ||

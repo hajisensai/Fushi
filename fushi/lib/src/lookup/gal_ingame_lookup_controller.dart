@@ -117,6 +117,7 @@ class GalIngameLookupController {
   GalLookupGeometryAdmissionMode _geometryAdmissionMode =
       GalLookupGeometryAdmissionMode.disabled;
   bool _geometryAttachedReady = false;
+  bool _geometryNativeInputReady = false;
 
   /// 本局游戏的**查词准入**（v19）。真值在注入侧的 adapter registry，经共享内存
   /// → runner → `onGalLookupAdmission` 推上来，本控制器只存不解释。
@@ -273,6 +274,9 @@ class GalIngameLookupController {
   bool get debugGeometryAttachedReady => _geometryAttachedReady;
 
   @visibleForTesting
+  bool get debugGeometryNativeInputReady => _geometryNativeInputReady;
+
+  @visibleForTesting
   GalLookupHit? get debugActiveHit => _activeHit;
 
   /// 接线。幂等；非 Windows 上直接空转（不是崩）。
@@ -354,6 +358,7 @@ class GalIngameLookupController {
     _providerAdmission = true;
     _geometryAdmissionMode = GalLookupGeometryAdmissionMode.disabled;
     _geometryAttachedReady = false;
+    _geometryNativeInputReady = false;
     GlobalLookupController.instance.onRoutedDirty = null;
     // 若此刻正有 enable 在 channel 里，不能直接作废 drain：它可能
     // 在 stop 后才成功把 native 打开。留一个 pending，让同一串行 drain
@@ -462,22 +467,26 @@ class GalIngameLookupController {
   Future<GalLookupCallResult> setGeometryAdmission(
     GalLookupGeometryAdmissionMode mode, {
     required bool attachedReady,
+    required bool nativeInputReady,
     bool Function()? stillCurrent,
   }) async {
     final GalLookupCallResult result =
         await GalHookTextOverlayChannel.galLookupSetGeometryAdmission(
           mode: mode,
           attachedReady: attachedReady,
+          nativeInputReady: nativeInputReady,
         );
     if ((stillCurrent == null || stillCurrent()) &&
         result.ok &&
         result.requestSeq > 0) {
       _geometryAdmissionMode = mode;
       _geometryAttachedReady = attachedReady;
+      _geometryNativeInputReady = nativeInputReady;
     }
     glog(
       'gal-ingame: geometryAdmission=${mode.name} '
-      'attachedReady=$attachedReady request=${result.requestSeq} '
+      'attachedReady=$attachedReady nativeInputReady=$nativeInputReady '
+      'request=${result.requestSeq} '
       'applied=${result.appliedSeq} -> ${result.error ?? "ok"}',
     );
     return result;
@@ -524,7 +533,16 @@ class GalIngameLookupController {
   /// 「悬停要不要自动查词」由 hook 侧决定并体现在 submit 上，Dart 不再解释一遍——
   /// 两处各判一次必然漂。
   Future<void> handleHit(GalLookupHit hit) async {
-    if (!_started || !_enabledNow || !_providerAdmission) return;
+    if (!_started || !_enabledNow || !_providerAdmission) {
+      if (hit.submit) {
+        glog(
+          'gal-ingame: rejected hit seq=${hit.seq} '
+          'started=$_started enabled=$_enabledNow '
+          'providerAdmission=$_providerAdmission',
+        );
+      }
+      return;
+    }
     if (!hit.submit) {
       // hover 高亮已在游戏线程的 fushiLookupReport 中同步绘制；再投一张 host→hook
       // highlight 帧不仅重复，还会和查词卡争双缓冲的最新发布序。
@@ -1200,10 +1218,7 @@ class GalIngameLookupController {
     final GalLookupHit? hit = _latestSubmitHit ?? _activeHit;
     final ({int seq, int routeEpoch})? pending = _pendingDismiss;
     final ({int seq, int routeEpoch})? dismiss = hit != null
-        ? (
-            seq: hit.seq,
-            routeEpoch: route?.routeEpoch ?? _sessionRouteEpoch,
-          )
+        ? (seq: hit.seq, routeEpoch: route?.routeEpoch ?? _sessionRouteEpoch)
         : pending;
     _lookupGeneration++;
     _activeHit = null;

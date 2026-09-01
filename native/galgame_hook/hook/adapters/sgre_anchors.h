@@ -64,6 +64,23 @@ struct SgreResolvedAnchor {
 
 struct SgreAnchorSet {
   SgreResolvedAnchor text_draw;
+  // RawImageEx.drawText/drawTextAlign share this native boundary. It is a
+  // second renderer path used by PSB/Squirrel UI labels (item titles, menus),
+  // independent from the scenario TextDraw surface above. Keep it optional:
+  // a build may retain scenario lookup while changing this UI ABI.
+  SgreResolvedAnchor ui_draw_text;
+  // RawImageEx UI lookup is a chained proof. drawText only supplies UTF-8
+  // identity; VectorFont rasterization supplies glyph-local cells, RawImage
+  // upload transfers those cells to LayerRawTex, and LayerRawTex::draw plus
+  // ComputeScreenAabb supplies the live client-pixel transform.  The vtable
+  // and renderer-context slot independently bind the two terminal anchors to
+  // the engine object graph.  None of these anchors is safe in isolation.
+  SgreResolvedAnchor ui_raster_text;
+  SgreResolvedAnchor ui_raw_image_upload;
+  SgreResolvedAnchor ui_layer_raw_tex_draw;
+  SgreResolvedAnchor ui_layer_raw_tex_vtable;
+  SgreResolvedAnchor ui_compute_screen_aabb;
+  SgreResolvedAnchor ui_renderer_context;
   SgreResolvedAnchor scenario_text_vtable;
   SgreResolvedAnchor direct_input_mouse_device;
   bool known_build = false;
@@ -75,6 +92,15 @@ struct SgreAnchorSet {
   }
   bool direct_input_shield_available() const {
     return direct_input_mouse_device.resolved();
+  }
+  bool ui_draw_text_available() const { return ui_draw_text.resolved(); }
+  bool ui_lookup_chain_available() const {
+    return ui_draw_text.resolved() && ui_raster_text.resolved() &&
+           ui_raw_image_upload.resolved() &&
+           ui_layer_raw_tex_draw.resolved() &&
+           ui_layer_raw_tex_vtable.resolved() &&
+           ui_compute_screen_aabb.resolved() &&
+           ui_renderer_context.resolved();
   }
   bool complete() const {
     return lookup_sensor_available() && direct_input_shield_available();
@@ -175,6 +201,143 @@ inline constexpr SgreAnchorSignature kSgreTextDrawSignature = {
     "4C 8B ??",
     nullptr, SgreAnchorKind::kCode, 0, -1, 0};
 
+// RawImageEx.drawText/drawTextAlign native implementation. The first
+// signature identifies the seven-argument x64 ABI at the function entry:
+//   (RawImageEx, font descriptor, UTF-8 text, x, y, hAlign, vAlign).
+// The second signature independently proves the style layout consumed by that
+// implementation: destination origin/extent at +0x60..+0x6c followed by the
+// colour/effect words at +0x70..+0x84. Both hits are mapped through the PE
+// exception directory and must name the same unique function. This is an
+// engine/codegen signature, never a build RVA or executable-hash shortcut.
+inline constexpr SgreAnchorSignature kSgreUiDrawTextEntrySignature = {
+    "48 85 D2 "
+    "0F 84 ?? ?? ?? ?? "
+    "48 8B C4 "
+    "53 55 56 57 41 54 41 55 41 56 41 57 "
+    "48 81 EC ?? ?? 00 00 "
+    "0F 29 70 ?? "
+    "0F 29 78 ?? "
+    "48 8B 05 ?? ?? ?? ?? "
+    "48 33 C4 "
+    "48 89 84 24 ?? ?? 00 00 "
+    "41 8B F9 "
+    "44 89 8C 24 ?? ?? 00 00 "
+    "49 8B D8 "
+    "4C 8B E9",
+    nullptr, SgreAnchorKind::kCode, 0, -1, 0};
+
+inline constexpr SgreAnchorSignature kSgreUiDrawTextLayoutSignature = {
+    "41 8B 9D 84 00 00 00 "
+    "41 8B BD 80 00 00 00 "
+    "41 8B 75 7C "
+    "41 8B 6D 78 "
+    "45 8B 75 74 "
+    "45 8B 7D 70 "
+    "45 8B 65 6C "
+    "45 8B 6D 68 "
+    "48 8B ?? ?? ?? 00 00 00 "
+    "8B 42 64 "
+    "89 84 24 ?? ?? 00 00 "
+    "8B 42 60 "
+    "89 84 24 ?? ?? 00 00",
+    nullptr, SgreAnchorKind::kCode, 0, -1, 0};
+
+// The drawText common calls VectorFont rasterization after laying out the
+// glyph-vector records.  Resolve the call target and independently map a
+// raster body signature through x64 unwind metadata; their intersection is
+// the only ABI admitted by the detour.
+inline constexpr SgreAnchorSignature kSgreUiRasterCallSignature = {
+    "89 5C 24 70 89 7C 24 68 89 74 24 60 89 6C 24 58 "
+    "44 89 74 24 50 44 89 7C 24 48 F3 0F 11 74 24 40 "
+    "F3 0F 11 7C 24 38 48 8D 84 24 C0 00 00 00 "
+    "48 89 44 24 30 44 89 64 24 28 44 89 6C 24 20 "
+    "44 8B 8C 24 84 00 00 00 44 8B 84 24 88 00 00 00 "
+    "48 8B 8C 24 98 00 00 00 E8 ?? ?? ?? ?? "
+    "48 8B 84 24 90 00 00 00 C6 40 58 01",
+    nullptr, SgreAnchorKind::kCode, 0, 0x56, 0x5a};
+inline constexpr SgreAnchorSignature kSgreUiRasterEntrySignature = {
+    "48 8B C4 55 53 56 57 41 54 41 55 41 56 41 57 "
+    "48 8D 68 88 48 81 EC 38 01 00 00 "
+    "0F 29 70 A8 0F 29 78 98 44 0F 29 40 88 "
+    "44 0F 29 88 78 FF FF FF 48 8B 05 ?? ?? ?? ?? 48 33 C4 "
+    "48 89 45 E8 41 8B F1 44 89 4C 24 40 44 89 44 24 44 "
+    "4C 8B E2 48 89 54 24 48 4C 8B E9 8B 41 50 "
+    "45 0F 57 C0 F3 4C 0F 2A C0 F3 44 0F 58 85 C0 00 00 00",
+    nullptr, SgreAnchorKind::kCode, 0, -1, 0};
+inline constexpr SgreAnchorSignature kSgreUiRasterBodySignature = {
+    "41 8B 5C 24 18 C1 E3 02 48 8D 4D D8 E8 ?? ?? ?? ?? 90 "
+    "41 0F AF 74 24 18 03 74 24 44 C1 E6 02 8B CE "
+    "49 8B 14 24 49 8B 44 24 08 48 2B C2 48 3B C1",
+    nullptr, SgreAnchorKind::kCode, 0, -1, 0};
+
+// RawImage -> native LayerRawTex pixel upload.  The entry proves RawImage
+// width/height at +0x18/+0x1c and the body proves row-wise transfer followed
+// by texture commit.  Both signatures must map to one function entry.
+inline constexpr SgreAnchorSignature kSgreUiRawImageUploadEntrySignature = {
+    "40 57 41 55 48 83 EC 48 "
+    "8B 42 18 48 8B FA 0F 29 74 24 20 4C 8B E9 0F 57 F6 "
+    "F3 48 0F 2A F0 E8 ?? ?? ?? ?? 0F 2E F0 "
+    "0F 8A ?? ?? ?? ?? 0F 85 ?? ?? ?? ?? 8B 47 1C",
+    nullptr, SgreAnchorKind::kCode, 0, -1, 0};
+inline constexpr SgreAnchorSignature kSgreUiRawImageUploadBodySignature = {
+    "4C 8B C5 48 8B D3 48 8B CF E8 ?? ?? ?? ?? "
+    "49 03 DE 49 03 FF 48 83 EE 01 75 ?? "
+    "4C 8B 7C 24 ?? 4C 8B 74 24 ?? "
+    "49 8B 8D B0 00 00 00 E8 ?? ?? ?? ??",
+    nullptr, SgreAnchorKind::kCode, 0, -1, 0};
+
+// Native LayerRawTex draw.  Its local image origin is +0xb8/+0xbc; the body
+// corroborates the colour/vertex packing performed before the engine draw.
+inline constexpr SgreAnchorSignature kSgreUiLayerRawTexDrawEntrySignature = {
+    "40 53 48 83 EC 40 48 8B 01 48 8D 54 24 50 48 8B D9 "
+    "FF 50 50 F3 0F 10 83 B8 00 00 00 F3 0F 10 8B BC 00 00 00 "
+    "0F B6 93 C4 00 00 00 0B 93 C0 00 00 00",
+    nullptr, SgreAnchorKind::kCode, 0, -1, 0};
+inline constexpr SgreAnchorSignature kSgreUiLayerRawTexDrawBodySignature = {
+    "F3 0F 11 44 24 30 F3 0F 58 00 "
+    "F3 0F 11 4C 24 34 F3 0F 58 48 04 "
+    "0F B6 C2 C1 E0 08 44 0B C0 F3 0F 11 44 24 38 "
+    "8B C2 41 C1 E0 08 C1 E8 10 0F B6 C8",
+    nullptr, SgreAnchorKind::kCode, 0, -1, 0};
+
+// LayerRawTex constructor installs this vtable.  Slot 4 is the draw method
+// and must equal the independently resolved draw entry above.
+inline constexpr SgreAnchorSignature kSgreUiLayerRawTexVtableSignature = {
+    "48 8D 05 ?? ?? ?? ?? 48 89 06 33 FF "
+    "48 89 BE B8 00 00 00 C7 86 C0 00 00 00 00 FF FF FF "
+    "48 C7 86 C4 00 00 00 FF 00 00 00 C6 86 CC 00 00 00 01 "
+    "C7 86 D0 00 00 00 03 00 00 00",
+    nullptr, SgreAnchorKind::kVtable, 0, 3, 7};
+
+// Engine client-pixel AABB helper.  Entry and body map to one function, and
+// the M2 camera locator callsite must call that exact entry.  The same unique
+// callsite also exposes the renderer-context global slot.
+inline constexpr SgreAnchorSignature kSgreUiScreenAabbEntrySignature = {
+    "48 8B C4 48 89 58 18 55 56 57 48 8D 68 D8 "
+    "48 81 EC 10 01 00 00 0F 29 70 D8 0F 29 78 C8 "
+    "44 0F 29 40 B8 44 0F 29 48 A8 44 0F 29 50 98 44 0F 29 58 88",
+    nullptr, SgreAnchorKind::kCode, 0, -1, 0};
+inline constexpr SgreAnchorSignature kSgreUiScreenAabbBodySignature = {
+    "48 8B 41 40 48 8B F2 48 8B 51 70 48 83 E9 80 "
+    "F3 45 0F 10 28 48 83 EA 30 F3 41 0F 10 70 04 "
+    "F3 45 0F 10 40 08 F3 45 0F 10 60 0C "
+    "4C 8D 44 24 40 8B 58 0C 8B 78 10",
+    nullptr, SgreAnchorKind::kCode, 0, -1, 0};
+inline constexpr SgreAnchorSignature kSgreUiScreenAabbCallSignature = {
+    "48 8B 0D ?? ?? ?? ?? 4C 8D 44 24 30 48 8D 54 24 50 "
+    "48 8B D8 E8 ?? ?? ?? ?? F3 44 0F 10 40 08 F3 44 0F 10 08",
+    nullptr, SgreAnchorKind::kCode, 0, 21, 25};
+inline constexpr SgreAnchorSignature kSgreUiRendererContextSignature = {
+    "48 8B 0D ?? ?? ?? ?? 4C 8D 44 24 30 48 8D 54 24 50 "
+    "48 8B D8 E8 ?? ?? ?? ?? F3 44 0F 10 40 08 F3 44 0F 10 08",
+    nullptr, SgreAnchorKind::kWritableData, 0, 3, 7};
+inline constexpr SgreAnchorSignature
+    kSgreUiRendererContextShutdownSignature = {
+        "48 83 EC 28 48 8B 0D ?? ?? ?? ?? 48 85 C9 74 ?? "
+        "48 8B 01 BA 01 00 00 00 FF 10 "
+        "48 C7 05 ?? ?? ?? ?? 00 00 00 00 48 83 C4 28 C3",
+        nullptr, SgreAnchorKind::kWritableData, 0, 7, 11};
+
 // Two independent construction paths must decode the same read-only vtable.
 inline constexpr SgreAnchorSignature kSgreScenarioTextVtableSignature = {
     "48 8D 05 ?? ?? ?? ?? "
@@ -216,7 +379,7 @@ inline constexpr SgreAnchorSignature
         "FF 50 48",
         nullptr, SgreAnchorKind::kWritableData, 0, 3, 7};
 
-inline constexpr size_t kSgreSignatureMaxBytes = 96;
+inline constexpr size_t kSgreSignatureMaxBytes = 128;
 
 struct SgrePatternByte {
   uint8_t value = 0;
@@ -585,6 +748,72 @@ inline SgreResolvedAnchor ResolveSameSgreAnchor(
   return result;
 }
 
+inline SgreAnchorCandidates CollectSgreContainingFunctions(
+    const SgreAnchorSignature& signature, const SgreImageView& image) {
+  const SgreAnchorCandidates matches =
+      CollectSgreAnchorCandidates(signature, image);
+  if (matches.overflow || matches.count == 0) return matches;
+  SgreAnchorCandidates functions;
+  for (size_t i = 0; i < matches.count; ++i) {
+    const uintptr_t function_begin =
+        FindSgreContainingFunctionBegin(image, matches.rvas[i]);
+    if (function_begin == 0 ||
+        !SgreStructureAccepts(SgreAnchorKind::kCode, function_begin, image)) {
+      continue;
+    }
+    if (!AddUniqueSgreAnchorCandidate(&functions, function_begin)) {
+      functions.failure = SgreAnchorSource::kSignatureAmbiguous;
+      return functions;
+    }
+  }
+  if (functions.count == 0) {
+    functions.failure = SgreAnchorSource::kStructureRejected;
+  } else if (functions.count == 1) {
+    functions.failure = SgreAnchorSource::kSignature;
+  } else {
+    functions.failure = SgreAnchorSource::kSignatureAmbiguous;
+  }
+  return functions;
+}
+
+inline SgreResolvedAnchor ResolveSameSgreFunction(
+    const SgreAnchorSignature& entry, const SgreAnchorSignature& body,
+    const SgreImageView& image) {
+  const SgreAnchorCandidates entries =
+      CollectSgreContainingFunctions(entry, image);
+  if (entries.overflow || entries.count == 0) {
+    SgreResolvedAnchor result;
+    result.source = entries.failure;
+    return result;
+  }
+  const SgreAnchorCandidates bodies =
+      CollectSgreContainingFunctions(body, image);
+  if (bodies.overflow || bodies.count == 0) {
+    SgreResolvedAnchor result;
+    result.source = bodies.failure;
+    return result;
+  }
+  SgreAnchorCandidates intersection;
+  for (size_t i = 0; i < entries.count; ++i) {
+    for (size_t j = 0; j < bodies.count; ++j) {
+      if (entries.rvas[i] == bodies.rvas[j] &&
+          !AddUniqueSgreAnchorCandidate(&intersection, entries.rvas[i])) {
+        SgreResolvedAnchor result;
+        result.source = SgreAnchorSource::kSignatureAmbiguous;
+        return result;
+      }
+    }
+  }
+  if (!intersection.overflow && intersection.count == 1) {
+    return {intersection.rvas[0], SgreAnchorSource::kSignature};
+  }
+  SgreResolvedAnchor result;
+  result.source = intersection.count == 0
+                      ? SgreAnchorSource::kStructureRejected
+                      : SgreAnchorSource::kSignatureAmbiguous;
+  return result;
+}
+
 inline SgreResolvedAnchor ResolveSgreScenarioTextVtable(
     const SgreImageView& image) {
   return ResolveSameSgreAnchor(
@@ -646,6 +875,56 @@ inline SgreResolvedAnchor ResolveSgreTextDraw(
              : RejectSgreAnchorStructure();
 }
 
+inline SgreResolvedAnchor ResolveSgreUiDrawText(
+    const SgreImageView& image) {
+  return ResolveSameSgreFunction(kSgreUiDrawTextEntrySignature,
+                                 kSgreUiDrawTextLayoutSignature, image);
+}
+
+inline SgreResolvedAnchor ResolveSgreUiRasterText(
+    const SgreImageView& image) {
+  const SgreResolvedAnchor function = ResolveSameSgreFunction(
+      kSgreUiRasterEntrySignature, kSgreUiRasterBodySignature, image);
+  if (!function.resolved()) return function;
+  const SgreResolvedAnchor call_target =
+      ResolveSgreAnchorBySignature(kSgreUiRasterCallSignature, image);
+  return call_target.resolved() && call_target.rva == function.rva
+             ? function
+             : RejectSgreAnchorStructure();
+}
+
+inline SgreResolvedAnchor ResolveSgreUiRawImageUpload(
+    const SgreImageView& image) {
+  return ResolveSameSgreFunction(kSgreUiRawImageUploadEntrySignature,
+                                 kSgreUiRawImageUploadBodySignature, image);
+}
+
+inline SgreResolvedAnchor ResolveSgreUiLayerRawTexDraw(
+    const SgreImageView& image) {
+  return ResolveSameSgreFunction(kSgreUiLayerRawTexDrawEntrySignature,
+                                 kSgreUiLayerRawTexDrawBodySignature, image);
+}
+
+inline SgreResolvedAnchor ResolveSgreUiComputeScreenAabb(
+    const SgreImageView& image) {
+  const SgreResolvedAnchor function =
+      ResolveSameSgreFunction(kSgreUiScreenAabbEntrySignature,
+                              kSgreUiScreenAabbBodySignature, image);
+  if (!function.resolved()) return function;
+  const SgreResolvedAnchor call_target = ResolveSgreAnchorBySignature(
+      kSgreUiScreenAabbCallSignature, image);
+  return call_target.resolved() && call_target.rva == function.rva
+             ? function
+             : RejectSgreAnchorStructure();
+}
+
+inline SgreResolvedAnchor ResolveSgreUiRendererContext(
+    const SgreImageView& image) {
+  return ResolveSameSgreAnchor(kSgreUiRendererContextSignature,
+                               kSgreUiRendererContextShutdownSignature,
+                               image);
+}
+
 inline SgreResolvedAnchor ResolveSgreDirectInputMouseDevice(
     const SgreImageView& image) {
   return ResolveSameSgreAnchor(
@@ -686,6 +965,61 @@ inline bool ValidateSgreDirectInputAnchorStructure(
                               set.direct_input_mouse_device.rva, image);
 }
 
+inline bool ValidateSgreUiDrawTextAnchorStructure(
+    const SgreAnchorSet& set, const SgreImageView& image) {
+  constexpr size_t kLayerRawTexDrawVtableSlot = 4u;
+  constexpr size_t kLayerRawTexDrawVtableSpan =
+      (kLayerRawTexDrawVtableSlot + 1u) * sizeof(uintptr_t);
+  if (!set.ui_lookup_chain_available() ||
+      !SgreStructureAccepts(SgreAnchorKind::kCode,
+                            set.ui_draw_text.rva, image) ||
+      !SgreStructureAccepts(SgreAnchorKind::kCode,
+                            set.ui_raster_text.rva, image) ||
+      !SgreStructureAccepts(SgreAnchorKind::kCode,
+                            set.ui_raw_image_upload.rva, image) ||
+      !SgreStructureAccepts(SgreAnchorKind::kCode,
+                            set.ui_layer_raw_tex_draw.rva, image) ||
+      !SgreStructureAccepts(SgreAnchorKind::kVtable,
+                            set.ui_layer_raw_tex_vtable.rva, image) ||
+      !SgreStructureAccepts(SgreAnchorKind::kCode,
+                            set.ui_compute_screen_aabb.rva, image) ||
+      !SgreStructureAccepts(SgreAnchorKind::kWritableData,
+                            set.ui_renderer_context.rva, image) ||
+      !SgreImageSpanAvailable(image, set.ui_layer_raw_tex_vtable.rva,
+                              kLayerRawTexDrawVtableSpan)) {
+    return false;
+  }
+  const uintptr_t function_rvas[] = {
+      set.ui_draw_text.rva, set.ui_raster_text.rva,
+      set.ui_raw_image_upload.rva, set.ui_layer_raw_tex_draw.rva,
+      set.ui_compute_screen_aabb.rva};
+  for (const uintptr_t function_rva : function_rvas) {
+    if (FindSgreContainingFunctionBegin(image, function_rva) != function_rva) {
+      return false;
+    }
+  }
+  uintptr_t draw_address = 0;
+  uintptr_t draw_rva = 0;
+  return ReadSgreImagePointer(
+             image,
+             set.ui_layer_raw_tex_vtable.rva +
+                 kLayerRawTexDrawVtableSlot * sizeof(uintptr_t),
+             &draw_address) &&
+         SgreAbsolutePointerRva(image, draw_address, &draw_rva) &&
+         draw_rva == set.ui_layer_raw_tex_draw.rva;
+}
+
+inline void RejectSgreUiLookupChain(SgreAnchorSet* set) {
+  if (set == nullptr) return;
+  set->ui_draw_text = RejectSgreAnchorStructure();
+  set->ui_raster_text = RejectSgreAnchorStructure();
+  set->ui_raw_image_upload = RejectSgreAnchorStructure();
+  set->ui_layer_raw_tex_draw = RejectSgreAnchorStructure();
+  set->ui_layer_raw_tex_vtable = RejectSgreAnchorStructure();
+  set->ui_compute_screen_aabb = RejectSgreAnchorStructure();
+  set->ui_renderer_context = RejectSgreAnchorStructure();
+}
+
 inline bool ValidateSgreAnchorSetStructure(const SgreAnchorSet& set,
                                            const SgreImageView& image) {
   return ValidateSgreLookupAnchorStructure(set, image) &&
@@ -716,6 +1050,14 @@ inline SgreAnchorSet ResolveSgreAnchors(const uint8_t* digest,
   // once recognized.
   set.scenario_text_vtable = ResolveSgreScenarioTextVtable(image);
   set.text_draw = ResolveSgreTextDraw(image, set.scenario_text_vtable);
+  set.ui_draw_text = ResolveSgreUiDrawText(image);
+  set.ui_raster_text = ResolveSgreUiRasterText(image);
+  set.ui_raw_image_upload = ResolveSgreUiRawImageUpload(image);
+  set.ui_layer_raw_tex_draw = ResolveSgreUiLayerRawTexDraw(image);
+  set.ui_layer_raw_tex_vtable = ResolveSgreAnchorBySignature(
+      kSgreUiLayerRawTexVtableSignature, image);
+  set.ui_compute_screen_aabb = ResolveSgreUiComputeScreenAabb(image);
+  set.ui_renderer_context = ResolveSgreUiRendererContext(image);
   set.direct_input_mouse_device =
       ResolveSgreDirectInputMouseDevice(image);
 
@@ -727,6 +1069,18 @@ inline SgreAnchorSet ResolveSgreAnchors(const uint8_t* digest,
   if (set.direct_input_shield_available() &&
       !ValidateSgreDirectInputAnchorStructure(set, image)) {
     set.direct_input_mouse_device = RejectSgreAnchorStructure();
+  }
+  const bool any_ui_anchor =
+      set.ui_draw_text.resolved() || set.ui_raster_text.resolved() ||
+      set.ui_raw_image_upload.resolved() ||
+      set.ui_layer_raw_tex_draw.resolved() ||
+      set.ui_layer_raw_tex_vtable.resolved() ||
+      set.ui_compute_screen_aabb.resolved() ||
+      set.ui_renderer_context.resolved();
+  if (any_ui_anchor &&
+      (!set.ui_lookup_chain_available() ||
+       !ValidateSgreUiDrawTextAnchorStructure(set, image))) {
+    RejectSgreUiLookupChain(&set);
   }
 
   if (build != nullptr) {

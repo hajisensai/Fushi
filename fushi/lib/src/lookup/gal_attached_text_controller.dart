@@ -451,11 +451,7 @@ class GalAttachedTextController extends ChangeNotifier {
       _activationDeferred = true;
       return;
     }
-    await _evaluateAndActivate(
-      operation,
-      target,
-      stillCurrent: stillCurrent,
-    );
+    await _evaluateAndActivate(operation, target, stillCurrent: stillCurrent);
   }
 
   void _loadProfile() {
@@ -519,7 +515,6 @@ class GalAttachedTextController extends ChangeNotifier {
     }
     if (_nativeProviderReady(
       mode: mode,
-      status: _nativeStatus,
       providerKind: _providerKind,
       providerId: _providerId,
       providerStatus: _providerStatus,
@@ -605,7 +600,6 @@ class GalAttachedTextController extends ChangeNotifier {
     }
     if (_nativeProviderReady(
       mode: mode,
-      status: result.status,
       providerKind: result.providerKind,
       providerId: result.providerId,
       providerStatus: result.providerStatus,
@@ -931,7 +925,6 @@ class GalAttachedTextController extends ChangeNotifier {
     }
     if (_nativeProviderReady(
       mode: mode,
-      status: event.status,
       providerKind: event.providerKind,
       providerId: event.providerId,
       providerStatus: event.providerStatus,
@@ -1757,7 +1750,6 @@ class GalAttachedTextController extends ChangeNotifier {
 
   static bool _nativeProviderReady({
     required GalLookupSurfaceMode mode,
-    required String? status,
     required int? providerKind,
     required int? providerId,
     required int? providerStatus,
@@ -1771,15 +1763,16 @@ class GalAttachedTextController extends ChangeNotifier {
         providerId != null &&
         isGalLookupProductionProviderPair(providerKind, providerId);
     final bool readyOrActive = providerStatus == 1 || providerStatus == 2;
-    final bool nativeState =
-        status == 'activeNative' ||
-        status == 'nativeProviderReady' ||
-        // InspectTarget reports its own surface lifecycle as `ready`; the
-        // provider identity/status fields are the authoritative native
-        // lifecycle. Requiring both preserves the pair whitelist while letting
-        // a fresh Ready(generation=0) provider win auto before configuration.
-        status == 'ready';
-    return productionPair && readyOrActive && nativeState;
+    // `status` belongs to the optional desktop attached surface, not to the
+    // in-process geometry provider. In particular, switching to nativeOnly
+    // deliberately detaches that surface while SGRE/Siglus/Leaf remains the
+    // registry's Ready/Active owner. Requiring an attached-surface token here
+    // leaves a coherent native provider permanently suspended after that
+    // handoff. The production kind/id pair and provider lifecycle are the
+    // authoritative native readiness proof. Callers still pass the shield
+    // fault gate and [_activateNativeOrRequestRisk], so this does not weaken
+    // per-executable risk acceptance.
+    return productionPair && readyOrActive;
   }
 }
 

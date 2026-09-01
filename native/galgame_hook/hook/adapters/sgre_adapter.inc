@@ -141,10 +141,31 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
            !IsSgreDirectInputStructureFaulted();
   }
 
+  // The injector keeps a newly launched process suspended until the startup
+  // ready bit is published. RawImageEx labels are commonly rasterized and
+  // uploaded during the first frame, so installing this optional trace from
+  // the ordinary generated-adapter block (which runs after that bit) is too
+  // late: the engine can cache the label before the detour exists. Keep this
+  // pre-resume hook narrow and independent from audio/lookup admission; a
+  // missing optional UI anchor must never delay or fail process startup.
+  void InstallPreResumeUiTrace() {
+    if (!probe() || !g_sgre_anchors_resolved) return;
+    if (g_sgre_anchors.ui_draw_text_available()) {
+      InstallSgreUiDrawTextTrace();
+    }
+  }
+
   bool install() override {
     if (installed_) return true;
     if (!probe()) return false;
     ResolveSgreAnchorsOnce();
+    // RawImageEx UI labels are rasterized once and then cached by the engine.
+    // Install this optional sensor as soon as family/anchor admission succeeds;
+    // waiting for the scenario TextDraw structure check can miss every label
+    // created during the first scripted screen transition.
+    if (g_sgre_anchors.ui_draw_text_available()) {
+      InstallSgreUiDrawTextTrace();
+    }
     // Device creation normally predates helper injection. Do not make audio
     // support depend on this optional input guard, but install now and retry on
     // every worker tick until the mouse slot is ready. Without a sensor no
@@ -208,6 +229,11 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
 
   void ProcessPendingEvents() {
     if (!probe() || !g_sgre_anchors_resolved) return;
+    // Retry independently from the scenario lookup sensor.  The UI renderer
+    // has its own optional ABI and must not inherit TextDraw's runtime gate.
+    if (g_sgre_anchors.ui_draw_text_available()) {
+      InstallSgreUiDrawTextTrace();
+    }
     // Required/Ready is only meaningful while a lookup card can appear, i.e.
     // while the sensor is available; the shield itself additionally needs its
     // own anchor and reports NotReady without it.

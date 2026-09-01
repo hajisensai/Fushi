@@ -168,6 +168,14 @@ class AdapterStructureTest(unittest.TestCase):
             sgre_worker.index("ReadLatestSgreLookupCapture"),
             sgre_worker.index("ReadLatestSgreLookupClickSubmit"),
         )
+        self.assertLess(
+            sgre_worker.index("g_geometry_provider_registry.OfferReady"),
+            sgre_worker.index("ReadLatestSgreLookupClickSubmit"),
+        )
+        self.assertLess(
+            sgre_worker.index("ReadLatestSgreLookupClickSubmit"),
+            sgre_worker.index("PublishSgreLookupClickPayload(click_event.payload)"),
+        )
         sgre_publish = self._function_body(
             sgre, "bool PublishSgreLookupClickPayload("
         )

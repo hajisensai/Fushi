@@ -424,8 +424,8 @@ void main() {
       // 那半边收成一个成功应答，不然 MissingPluginException 会把断言前的路径炸掉。
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall call) async {
-        return <String, Object?>{'ok': true};
-      });
+            return <String, Object?>{'ok': true};
+          });
       final GalIngameLookupController controller =
           GalIngameLookupController.test();
       controller.handleAdmission(
@@ -592,11 +592,13 @@ void main() {
           await GalHookTextOverlayChannel.galLookupSetGeometryAdmission(
             mode: GalLookupGeometryAdmissionMode.attachedOnly,
             attachedReady: true,
+            nativeInputReady: false,
           );
       expect(calls.single.method, 'galLookupSetGeometryAdmission');
       expect(calls.single.arguments, <String, Object?>{
         'mode': 3,
         'attachedReady': true,
+        'nativeInputReady': false,
       });
       expect(result.ok, isTrue);
       expect(result.requestSeq, 7);
@@ -787,6 +789,11 @@ void main() {
         reason: 'mapping 换代重放意图由持有真实 mapping 身份的 reader 负责',
       );
       expect(reader, contains('st.lookup_geometry_admission_mode_desired'));
+      expect(
+        reader,
+        contains('lookup_geometry_native_input_ready_desired'),
+        reason: '原生点击授权必须随 mapping 身份单独保存并受成功发布约束',
+      );
       expect(reader, contains('PublishLookupGeometryAdmission('));
       expect(reader, contains('if (st.lookup_enabled_desired)'));
     });
@@ -803,6 +810,7 @@ void main() {
       final GalLookupCallResult result = await controller.setGeometryAdmission(
         GalLookupGeometryAdmissionMode.auto,
         attachedReady: true,
+        nativeInputReady: true,
       );
       expect(result.ok, isTrue);
       expect(
@@ -810,6 +818,7 @@ void main() {
         GalLookupGeometryAdmissionMode.auto,
       );
       expect(controller.debugGeometryAttachedReady, isTrue);
+      expect(controller.debugGeometryNativeInputReady, isTrue);
       expect(calls, hasLength(1));
       expect(calls.single.method, 'galLookupSetGeometryAdmission');
       expect(

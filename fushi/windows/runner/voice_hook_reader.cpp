@@ -70,6 +70,7 @@ struct ReaderState {
   uint32_t lookup_geometry_admission_mode_desired =
       fushi_voice_hook::kLookupGeometryAdmissionDisabled;
   bool lookup_geometry_attached_ready_desired = false;
+  bool lookup_geometry_native_input_ready_desired = false;
   // ── v19 查词准入游标（与上面同一把锁）───────────────────────────────────────
   // 上次向 Dart 报过的 lookup_admission_seq。[primed] 单独存在，是因为「新段刚开出来、
   // hook 还没上报」时共享 seq 就是 0，与游标 0 相等——只比 seq 会让新会话一条准入事件
@@ -1114,10 +1115,12 @@ bool HandleLookupCall(const flutter::MethodCall<flutter::EncodableValue>& call,
     const uint32_t mode =
         static_cast<uint32_t>(ReadLookupInt(call, "mode"));
     const bool attached_ready = ReadLookupBool(call, "attachedReady");
+    const bool native_input_ready =
+        ReadLookupBool(call, "nativeInputReady");
     uint32_t request_seq = 0;
     uint32_t applied_seq = 0;
     const VoiceHookLookupError error = reader.SetLookupGeometryAdmission(
-        mode, attached_ready, &request_seq, &applied_seq);
+        mode, attached_ready, native_input_ready, &request_seq, &applied_seq);
     if (error != VoiceHookLookupError::kNone) {
       result->Success(LookupErrorMap(error));
       return true;
@@ -1319,7 +1322,8 @@ VoiceHookOpenResult VoiceHookReader::Open(uint32_t pid) {
   if (LookupGateLocked(header, false) == VoiceHookLookupError::kNone) {
     (void)fushi_voice_hook::PublishLookupGeometryAdmission(
         header, st.lookup_geometry_admission_mode_desired,
-        st.lookup_geometry_attached_ready_desired);
+        st.lookup_geometry_attached_ready_desired,
+        st.lookup_geometry_native_input_ready_desired);
     if (st.lookup_enabled_desired) {
       InterlockedExchange(
           reinterpret_cast<volatile LONG*>(&header->lookup_enabled), 1);
@@ -2082,8 +2086,8 @@ VoiceHookLookupError VoiceHookReader::SetLookupEnabled(bool enabled) {
 }
 
 VoiceHookLookupError VoiceHookReader::SetLookupGeometryAdmission(
-    uint32_t mode, bool attached_ready, uint32_t* request_seq,
-    uint32_t* applied_seq) {
+    uint32_t mode, bool attached_ready, bool native_input_ready,
+    uint32_t* request_seq, uint32_t* applied_seq) {
   if (request_seq != nullptr) *request_seq = 0;
   if (applied_seq != nullptr) *applied_seq = 0;
   if (!fushi_voice_hook::IsLookupGeometryAdmissionMode(mode)) {
@@ -2095,13 +2099,19 @@ VoiceHookLookupError VoiceHookReader::SetLookupGeometryAdmission(
   // Open() is the only layer that can replay intent into a replacement map.
   st.lookup_geometry_admission_mode_desired = mode;
   st.lookup_geometry_attached_ready_desired = attached_ready;
+  // A positive input edge is safe to replay only after it was published to a
+  // live mapping. A not_open request must not arm the replacement mapping
+  // before Dart has reopened its local route. Negative edges always revoke any
+  // prior replayable permission immediately.
+  st.lookup_geometry_native_input_ready_desired = false;
   SharedHeader* h = st.header;
   const VoiceHookLookupError gate = LookupGateLocked(h, false);
   if (gate != VoiceHookLookupError::kNone) return gate;
   const uint32_t published =
       fushi_voice_hook::PublishLookupGeometryAdmission(
-          h, mode, attached_ready);
+          h, mode, attached_ready, native_input_ready);
   if (published == 0) return VoiceHookLookupError::kControlRejected;
+  st.lookup_geometry_native_input_ready_desired = native_input_ready;
   if (request_seq != nullptr) *request_seq = published;
   if (applied_seq != nullptr) {
     *applied_seq = fushi_voice_hook::AtomicLoadShared32(
