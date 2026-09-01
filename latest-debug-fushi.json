@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "2.2.4-debug.12993",
-  "tag": "v2.2.4-debug.12993+993ea5d",
+  "version": "2.2.4-debug.13018",
+  "tag": "v2.2.4-debug.13018+f7d4106",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 12993,
-  "notes": "Automated release-signed debug-channel build from develop @ 993ea5d. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 13018,
+  "notes": "Automated desktop debug-channel build from develop @ f7d4106. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-2.2.4-debug.12956-ios.ipa",
@@ -26,15 +26,6 @@
       "sha256": "12a2db879f38a9dd9a68ffd57f151086c70b308b114d08660fe6328177a63223"
     },
     {
-      "name": "fushi-2.2.4-debug.12956-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.12956-windows-setup.exe",
-      "releaseSequence": 12956,
-      "tag": "v2.2.4-debug.12956+d50c6de",
-      "version": "2.2.4-debug.12956",
-      "size": 263450847,
-      "sha256": "8c76119579a301d7424f8b4cd2a579fe2e8973688917ab82702f48ed3efece44"
-    },
-    {
       "name": "fushi-2.2.4-debug.12993-993ea5d-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.12993-993ea5d-debug.apk",
       "releaseSequence": 12993,
@@ -42,6 +33,15 @@
       "version": "2.2.4-debug.12993",
       "size": 269921568,
       "sha256": "3e140bbe0a307cf64762d7441722f7a835e6b6d34e63bc2aa6692f527085bfd1"
+    },
+    {
+      "name": "fushi-2.2.4-debug.13018-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13018-windows-setup.exe",
+      "releaseSequence": 13018,
+      "tag": "v2.2.4-debug.13018+f7d4106",
+      "version": "2.2.4-debug.13018",
+      "size": 263814592,
+      "sha256": "bde393927d6d72b3137f2d3d3c9c60d5c2de896ba6b90c25c1cdec2265efe1d6"
     }
   ]
 }
