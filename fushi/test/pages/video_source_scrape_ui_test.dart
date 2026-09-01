@@ -12,6 +12,8 @@ import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart'
+    show VideoSourceScrapeWork;
 import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -85,6 +87,8 @@ class _HoldingScrapeRunner implements VideoSourceScrapeRunner {
     required VideoSourceScrapeProgressCallback onProgress,
     VideoSourceScrapeConfirmationCallback? onConfirmation,
     VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
   }) async {
     calls++;
     onProgress(
@@ -121,6 +125,8 @@ class _ManualBindingRunner
     required VideoSourceScrapeProgressCallback onProgress,
     VideoSourceScrapeConfirmationCallback? onConfirmation,
     VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
   }) async =>
       SourceScrapeReport(sourceIds: <int>[source.id]);
 
@@ -362,6 +368,9 @@ void main() {
     expect(find.text('Bangumi'), findsNothing);
     expect(find.text('Douban'), findsNothing);
     expect(find.text('AniList'), findsNothing);
+    // BUG-1999：enabled 是此来源刮削的总闸，UI 必须可改且真写穿 DB（旧实现
+    // 根本没画这个开关、保存时硬编码回写旧值）。
+    await tester.tap(find.text('Enable scraping for this source'));
     await tester.tap(find.text('Scrape after scanning'));
     await tester.tap(find.text('Write image files'));
     await tester.tap(find.text('SAVE'));
@@ -369,6 +378,7 @@ void main() {
 
     final VideoSourceScrapeSettingRow settings =
         (await db.getVideoSourceScrapeSettings(sourceId))!;
+    expect(settings.enabled, isFalse);
     expect(settings.providerOverride, isNull);
     expect(settings.autoAfterScan, isTrue);
     expect(settings.writeNfo, isTrue);

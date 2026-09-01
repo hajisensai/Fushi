@@ -71,6 +71,29 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('BUG-1986 字幕版本卡也按真实连续段显示集号', (WidgetTester tester) async {
+    // 与视频资源卡同源：这里原本也是 min/max + 'EP$first–EP$last'，会把
+    // {1,2,4,16,17} 显示成「5 集 (EP1–EP17)」，暗示 EP1..EP17 全都有。
+    // 两处是同一个 bug 的两个副本，共用 formatEpisodeSpans 才叫根因修复。
+    final List<VideoSubtitleCandidate> discrete = <VideoSubtitleCandidate>[
+      for (final int ep in <int>[1, 2, 4, 16, 17])
+        _FakeCandidate(
+          remoteId: '9:[SubsPlease] Show - ${ep.toString().padLeft(2, '0')}.ass',
+          fileName: '[SubsPlease] Show - ${ep.toString().padLeft(2, '0')}.ass',
+          episode: ep,
+          fileSize: 30000 + ep,
+          collectionId: '9',
+          collectionLabel: 'Show (2026)',
+        ),
+    ];
+    final List<SubtitleVersionGroup> groups =
+        buildSubtitleVersionGroups(discrete);
+    await pumpList(tester, groups: groups, onPick: (_) {});
+    expect(find.textContaining('EP1–EP2, EP4, EP16–EP17'), findsOneWidget);
+    expect(find.textContaining('(EP1–EP17)'), findsNothing,
+        reason: 'min/max 伪装成连续范围正是 BUG-1986 本体');
+  });
+
   testWidgets('一版本一卡：ass 与 srt 两组各渲染一张卡', (WidgetTester tester) async {
     final List<SubtitleVersionGroup> groups =
         buildSubtitleVersionGroups(_seasonPack());

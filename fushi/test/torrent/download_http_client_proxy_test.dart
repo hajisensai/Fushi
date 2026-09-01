@@ -48,9 +48,21 @@ void main() {
   });
 
   group('B. 出口跟随全局代理，请求时现读', () {
+    // 本组断言的是「只有手填地址、没有已解析模式」那条兜底路径，所以模式读取器必须
+    // 由本组**显式**置成未解析：进程级读取器是全局的，同一进程里任何一个
+    // `PreferencesRepository.loadFromDb()`（例如 D 组那条）都会把它接到真偏好上，
+    // 结论就会随用例顺序变。只存不设 = 拿运气当断言。
     late String Function() savedReader;
-    setUp(() => savedReader = appUserProxyReader);
-    tearDown(() => appUserProxyReader = savedReader);
+    late String Function() savedModeReader;
+    setUp(() {
+      savedReader = appUserProxyReader;
+      savedModeReader = appUserProxyModeReader;
+      appUserProxyModeReader = () => kProxyModeUnresolved;
+    });
+    tearDown(() {
+      appUserProxyReader = savedReader;
+      appUserProxyModeReader = savedModeReader;
+    });
 
     test('手填代理改变后，同一个 findProxy 立刻给出新出口', () {
       final HttpClient client =
@@ -134,9 +146,21 @@ void main() {
   });
 
   group('D. P2P 传输：默认直连，单独开关才跟全局代理', () {
+    // 同 B 组：本组也走「只有手填地址」那条兜底路径，而组内第一条用例自己就会建一个
+    // PreferencesRepository 并 loadFromDb()——那一步会把进程级模式读取器接到该仓库上
+    // （偏好一读出来就接，见 app_proxy.dart 的 kProxyModeUnresolved 文档），后面的
+    // 用例若不显式复位就会拿到 auto、落回机器上的 env 代理。
     late String Function() savedReader;
-    setUp(() => savedReader = appUserProxyReader);
-    tearDown(() => appUserProxyReader = savedReader);
+    late String Function() savedModeReader;
+    setUp(() {
+      savedReader = appUserProxyReader;
+      savedModeReader = appUserProxyModeReader;
+      appUserProxyModeReader = () => kProxyModeUnresolved;
+    });
+    tearDown(() {
+      appUserProxyReader = savedReader;
+      appUserProxyModeReader = savedModeReader;
+    });
 
     test('fresh PreferencesRepository：P2P 代理档位默认 direct', () async {
       final FushiDatabase db = FushiDatabase.forTesting(

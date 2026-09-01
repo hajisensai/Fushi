@@ -555,7 +555,10 @@ extension _ReaderCaret on _ReaderFushiPageState {
           clearDictionaryResult();
           return KeyEventResult.handled;
         }
-        unawaited(Navigator.of(context).maybePop());
+        // ③ 窗口全屏中 → 先退全屏、留在书里；不在全屏才真的退书。用户裁定「Esc 也可以
+        //    退出全屏」，次序见 [_exitWindowFullscreenOrPopReader]。非全屏时它只多读一次
+        //    窗口状态就落回原来的 maybePop，退书路径本身没变。
+        unawaited(_exitWindowFullscreenOrPopReader());
         return KeyEventResult.handled;
       case ShortcutAction.readerToggleChrome:
         if (isDictionaryShown) {

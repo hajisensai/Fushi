@@ -204,6 +204,22 @@ class VideoDownloadOrganizer {
           displayRoot,
           '$displayRoot$extension',
         ]);
+      } else if (mainMovie != null &&
+          _isStandaloneMovieCandidate(
+            file,
+            mainMovie: mainMovie,
+            sharedRoot: sharedRoot,
+          )) {
+        // 多部电影一个种子（BUG-2007）：修前只有最大文件算正片，其余剧场版被
+        // 镜像进 Extras——下游标成 `kind: 'extra'`，从此不入库、不刮削。够体量
+        // 的并列正片沿用与 Extras 完全相同的「镜像源目录结构」落位（源路径唯一
+        // ⇒ 目标唯一），只是不进 `Extras/` 段，让下游按 `kind: 'video'` 入库。
+        // 目录名**不做任何有损重命名**：拿解析出的标题当目录名会把
+        // 「劇場版 X ～前編～」「～後編～」归约成同名，撞名后整条 job 硬失败。
+        relative = _portableJoin(<String>[
+          displayRoot,
+          ..._extraSegments(file.name, sharedRoot: sharedRoot),
+        ]);
       } else {
         relative = _portableJoin(<String>[
           displayRoot,
@@ -456,6 +472,20 @@ class VideoDownloadOrganizer {
     '予告',
     '菜单',
   };
+
+  /// 并列正片判据（BUG-2007，只在 movie 形态种子里用）：
+  /// * 不在发布组标记的特典目录、文件名也不是显式附件（NCOP/PV 等）；
+  /// * 体量 ≥ 最大正片的 1/4——菜单/CM/预告即使躺在根目录也够不着这个门；
+  /// * 文件名不带集号（带集号的是误标 kind 的剧集，不在本判据修复范围）。
+  static bool _isStandaloneMovieCandidate(
+    TorrentFileEntry file, {
+    required TorrentFileEntry mainMovie,
+    required String? sharedRoot,
+  }) {
+    if (_isExplicitExtra(file.name, sharedRoot: sharedRoot)) return false;
+    if (file.size * 4 < mainMovie.size) return false;
+    return parseVideoFilename(_segments(file.name).last).episode == null;
+  }
 
   /// 该文件是否躺在发布组标记的特典目录里（共享根与文件名段都不参与判定）。
   static bool _isInExtraDirectory(String name, {String? sharedRoot}) {

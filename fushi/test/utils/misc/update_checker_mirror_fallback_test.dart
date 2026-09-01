@@ -147,6 +147,67 @@ void main() {
     });
   });
 
+  group('resolveUpdateDownloadPlan (所选来源钉在哪个候选上 + 用没用上)', () {
+    const String official =
+        'https://github.com/hajisensai/Fushi/releases/download/v2.1.1/a.apk';
+    const String legacyRepo =
+        'https://github.com/hajisensai/hibiki/releases/download/v1/a.apk';
+
+    test('自动：不钉候选，也不算「没用上所选来源」', () {
+      final UpdateDownloadPlan plan = resolveUpdateDownloadPlan(
+        official,
+        preference: updateDownloadSourceAutomatic,
+      );
+      expect(plan.pinnedUrl, isNull);
+      expect(plan.hasExplicitSource, isFalse);
+      expect(plan.preferenceUnavailable, isFalse);
+      expect(plan.candidates, updateDownloadUrls(official));
+    });
+
+    test('显式选源：钉住首项候选，完整回退链不变', () {
+      for (final MapEntry<String, String> pair in <String, String>{
+        updateDownloadSourceCloudflare: officialR2UrlForUpdateAsset(official)!,
+        updateDownloadSourceGitHub: official,
+        updateDownloadSourceForProxy(updateCheckProxyPrefixes[1]):
+            '${updateCheckProxyPrefixes[1]}$official',
+      }.entries) {
+        final UpdateDownloadPlan plan =
+            resolveUpdateDownloadPlan(official, preference: pair.key);
+        expect(plan.pinnedUrl, pair.value, reason: pair.key);
+        expect(plan.candidates.first, pair.value, reason: pair.key);
+        expect(plan.preferenceUnavailable, isFalse, reason: pair.key);
+        expect(plan.candidates.toSet(),
+            resolveUpdateDownloadPlan(official).candidates.toSet(),
+            reason: '选源只重排、不删候选');
+      }
+    });
+
+    test('所选来源对本资产不适用 → 回退行为不变，但降级可观测', () {
+      // 旧仓库直链映射不出官网 R2（officialR2UrlForUpdateAsset 返 null）。以前这里
+      // 只是静默退回自动顺序：UI 零提示，用户以为自己锁定了 Cloudflare。
+      final UpdateDownloadPlan plan = resolveUpdateDownloadPlan(
+        legacyRepo,
+        preference: updateDownloadSourceCloudflare,
+      );
+      expect(plan.pinnedUrl, isNull);
+      expect(plan.hasExplicitSource, isTrue);
+      expect(plan.preferenceUnavailable, isTrue);
+      expect(plan.candidates, updateCheckUrls(legacyRepo),
+          reason: '不适用时候选序与自动完全一致（回退行为零变化）');
+      expect(plan.requestedSource, updateDownloadSourceCloudflare,
+          reason: '要告诉用户「没用上的是哪一个」，请求值必须留住');
+    });
+
+    test('已下线的镜像前缀同样算「没用上所选来源」', () {
+      final UpdateDownloadPlan plan = resolveUpdateDownloadPlan(
+        official,
+        preference: 'proxy:https://dead.invalid/',
+      );
+      expect(plan.pinnedUrl, isNull);
+      expect(plan.preferenceUnavailable, isTrue);
+    });
+  });
+
   group('fetchFirstSuccessfulBody (并发竞速选最快活源，注入 fetcher)', () {
     test('直连合法成功 → 直连胜出（候选并发发起，不再串行逐个等）', () async {
       final List<String> attempted = <String>[];

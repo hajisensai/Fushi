@@ -61,9 +61,21 @@ class ProfileSettingEntry {
 }
 
 class ProfileRepository {
-  ProfileRepository(this._db, this._ankiRepo);
+  ProfileRepository(
+    this._db,
+    this._ankiRepo, {
+    bool Function(String name)? isDictionaryInstalled,
+  }) : _isDictionaryInstalled = isDictionaryInstalled;
   final FushiDatabase _db;
   final BaseAnkiRepository _ankiRepo;
+
+  /// 「这本词典**真的装着**吗」的唯一真值源：磁盘上有没有
+  /// `dictionaryResourceDirectory/<name>/`。元数据行的存在性**不是**这个判据——
+  /// BUG-1994 的旧 prune 恰恰会把已安装词典的行删掉。
+  ///
+  /// 可空：不注入时 [applyProfile] 一律不回插（等于「无法证明装着」）。测试与
+  /// 不关心词典的调用方保持零依赖。
+  final bool Function(String name)? _isDictionaryInstalled;
 
   Future<List<ProfileRow>> getAllProfiles() => _db.getAllProfiles();
 
@@ -224,23 +236,45 @@ class ProfileRepository {
           await _db.deletePref(key);
         }
       }
-      // TODO-1077: replace dictionary_metadata with the profile snapshot
-      // ("snapshot wins"): upsert every snapshot row, then delete live rows the
-      // snapshot does not contain (mirrors the pref prune above). Guarded by
-      // `hasDictMeta` so a pre-TODO-1077 snapshot (no dictionary_meta rows) is
-      // NEVER mistaken for "empty dictionaries" and does not wipe the shared
-      // table — never break userspace.
+      // BUG-1994: profile 只拥有「怎么排、开不开」，**不拥有「装了哪些」**。
+      //
+      // TODO-1077 原来的做法是「快照即真相」：upsert 快照里的每一行，再删掉快照
+      // 没有的 live 行（照抄上面 pref 的 prune）。那等于把「这本词典启用中」编码
+      // 成「元数据行存在」，可这一行同时还承载「这本词典已安装」这个**全局**事实
+      // ——两个正交语义挤进同一个存在性判据。后果是在 A 里导入的词典，切到更早
+      // 建的 B 时被当成「B 没启用它」而整行删掉，B 的词典库里直接消失（明镜/牛津
+      // 只差一个「在 B 建立之前还是之后导入」）。开关和顺序本来就是行内的列
+      // （hiddenLanguagesJson / order），行的存在性根本不该再兼任开关。
+      //
+      // 所以：不再 prune，只把 profile 拥有的四列写回**已存在**的行。
+      //
+      // 更新命中 0 行 = 快照有这个名字、库里没有这一行。这里有两种真实成因，靠
+      // 「磁盘上有没有 `dictionaryResourceDirectory/<name>/`」区分——**元数据行在
+      // 不在**从来就不是「装没装」的判据（那正是本 bug 的病根）：
+      //   * 目录不存在 → 词典真的被删了，快照比库旧。跳过，绝不 insert（插进去
+      //     就是一行没有磁盘目录的幽灵元数据）。
+      //   * 目录还在   → 这一行是被旧版本的 prune 删掉的**真行**，词典还躺在磁盘
+      //     上。按快照整行补回来。旧实现里这条自愈是 `upsertDictionaryMeta` 顺带
+      //     给的（用户报告 T5「切回 A 牛津又出现」），一并砍掉会把「切回去就有」
+      //     变成「永远没有」——升级时正停在受害 profile 的用户直接永久丢失。
+      //     never break userspace：自愈保留，只是判据从「快照即真相」换成磁盘。
+      // `hasDictMeta` 保留：前 TODO-1077 的旧快照没有 dictionary_meta 行，跳过整
+      // 段即可，不能被误当成「没有词典」。
       if (hasDictMeta) {
-        final List<DictionaryMetaRow> liveDicts =
-            await _db.getAllDictionaryMetadata();
-        for (final DictionaryMetaRow live in liveDicts) {
-          if (!dictMetaMap.containsKey(live.name)) {
-            await _db.deleteDictionaryMeta(live.name);
+        for (final MapEntry<String, DictionaryMetadataCompanion> entry
+            in dictMetaMap.entries) {
+          final DictionaryMetadataCompanion companion = entry.value;
+          final int updated = await _db.applyDictionaryMetaProfileColumns(
+            name: entry.key,
+            order: companion.order.value,
+            hiddenLanguagesJson: companion.hiddenLanguagesJson.value,
+            collapsedLanguagesJson: companion.collapsedLanguagesJson.value,
+            languageOverride: companion.languageOverride.value,
+          );
+          if (updated == 0 &&
+              (_isDictionaryInstalled?.call(entry.key) ?? false)) {
+            await _db.upsertDictionaryMeta(companion);
           }
-        }
-        for (final DictionaryMetadataCompanion companion
-            in dictMetaMap.values) {
-          await _db.upsertDictionaryMeta(companion);
         }
       }
       for (final entry in prefMap.entries) {

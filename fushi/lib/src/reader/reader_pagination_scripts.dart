@@ -575,42 +575,19 @@ class ReaderPaginationScripts {
     return atStart ? ReaderNavigationDirection.backward.jsValue : null;
   }
 
-  /// BUG-369 纯谓词：滚动（连续）模式下，到达内容轴边界的滚轮事件是否应「立即跨章」。
+  /// BUG-2015：连续模式滚轮到了真实边界后，是否应把这一拍解释为跨章。
   ///
-  /// 旧实现里 [continuousWheelBoundaryDirection] 一旦在某次 wheel 事件读到
-  /// `atStart`/`atEnd` 就立刻回传 `onBoundarySwipe` 跨章。但 `atStart`（`scrollTop<=2`
-  /// 或竖排 `|scrollLeft|<=2`）是单次**瞬时**几何读数：向上快速回滚时，浏览器原生惯性
-  /// / 竖排 rAF 缓动会把 scrollTop 异步滑向 0，连发的 wheel 事件会在「内容尚未真正贴住
-  /// 章首、仍在滑动」的某一帧擦到 `<=2` → 提前误判到顶 → 还没到章节开头就切到上一章。
-  /// 向下（`atEnd = scrollTop+innerHeight >= scrollHeight-2`）是位置相对判定，要滚满整章
-  /// 才命中，惯性几像素抖动可忽略，故只有向上提前触发——这是「向上提前换章、向下正常」
-  /// 不对称的根因。
-  ///
-  /// 修法（对齐分页模式 BUG-240「重建后仍翻不动才回 limit」的确认范式）：边界跨章改为
-  /// **arm-then-fire 二次确认**——同一方向第一次到边界只「武装」(arm) 不跨章（此时内容
-  /// 已贴边、惯性/缓动那一帧的瞬态被吸收）；只有在仍处该边界时再来一次同方向滚轮才真正
-  /// 跨章。任何「未到边界」或「方向反转」的滚轮事件都会解除武装。这样惯性/缓动擦边的单次
-  /// 瞬态永远只停在「武装」态、不会跨章，用户「滚到章首后再滚一下」才跨章（与移动端心智
-  /// 一致）。纯函数、无副作用，供单测锁定。
-  ///
-  /// 入参：[boundaryDir] = 本次 wheel 几何判定出的边界方向（[continuousWheelBoundaryDirection]
-  /// 的返回值，`null`=未到边界）；[armedDir] = 上一次已武装的边界方向（`null`=未武装）。
-  /// 返回：`emit` = 是否本次真正跨章；`nextArmedDir` = 跨章/解武装后应保存的新武装态。
+  /// 触摸板的同一手势会先滚正文、再靠惯性喷出多拍卡在边界；这些卡住拍不能替用户
+  /// 发起跨章，只有静默后「手势起点就在边界」的新手势才放行。离散滚轮/数位板旋钮
+  /// 一格可能只有一个 WheelEvent，因此真实边界上的单拍就应放行。
   @visibleForTesting
-  static ({bool emit, String? nextArmedDir}) continuousWheelBoundaryEmit({
-    required String? boundaryDir,
-    required String? armedDir,
+  static bool continuousWheelShouldTurnChapter({
+    required bool moved,
+    required bool isTrackpad,
+    required bool startsNewGesture,
   }) {
-    if (boundaryDir == null) {
-      // 未到边界（含中途滚动、方向反转后未及边界）：解除武装，不跨章。
-      return (emit: false, nextArmedDir: null);
-    }
-    if (armedDir == boundaryDir) {
-      // 同方向二次确认：真正跨章。跨章后清武装（跨章会重锚到新章，旧边界态无意义）。
-      return (emit: true, nextArmedDir: null);
-    }
-    // 首次到边界或方向变化：仅武装本方向，吸收惯性/缓动擦边的单次瞬态。
-    return (emit: false, nextArmedDir: boundaryDir);
+    if (moved) return false;
+    return !isTrackpad || startsNewGesture;
   }
 
   /// TODO-656 根治：触摸/指针边界手势跨章判据，替代 `_bEnd` 旧的瞬时 `scrollTop<=2`。
@@ -644,8 +621,8 @@ class ReaderPaginationScripts {
   /// 看「内容是否真的滚不动」：横排放行原生滚动 → 相邻 wheel 事件 scrollTop 无变化
   /// （[scrollFrom]=上一拍、[scrollTo]=这一拍）；竖排 rAF 缓动 → 投影 target 被 clamp
   /// 卡死（[scrollFrom]=base、[scrollTo]=clamp 后 target）。两轴同形：位移≤1px 即卡边界，
-  /// 返回卡住的越界方向（交给 [continuousWheelBoundaryEmit] arm-then-fire 二次确认），
-  /// 还能滚（位移>1px）则返回 null。纯函数、无副作用，供单测。
+  /// 返回卡住的越界方向（再按输入设备与手势起点决定是否跨章），还能滚（位移>1px）
+  /// 则返回 null。纯函数、无副作用，供单测。
   @visibleForTesting
   static String? wheelBoundaryStuckDir({
     required String? wheelDir,
@@ -2826,6 +2803,61 @@ window.fushiReader = {
   // 不注入 --reader-viewport-height、getScrollContext 也不引用它。但属性仍声明 0
   // （补点2 防 stale）：两个 fushiReader 实例属性表保持对齐，避免误读 undefined。
   viewportHeight: 0,
+  // BUG-2013：竖排连续模式是**横向**滚动，桌面 WebView2 的水平滚动条是占位式的
+  // （移动端是不占位的 overlay，所以这条只在桌面复现），它从视口底部吃掉约 15px。
+  // window.innerHeight 与 Dart 传来的 MediaQuery 高度（dartPageHeight /
+  // updatePageSize 的 cssHeight）都是**视口外框**高度、不扣这条；而 body 是
+  // box-sizing: border-box + height: var(--fushi-continuous-height)
+  // （见 reader_content_styles.dart 的 _continuousLayoutCss 竖排分支），于是 body
+  // 最底部那 15px 落在滚动条之下，末行文字被裁掉大半——用户截图里每列底部的字
+  // 只剩上半个，正是这个。documentElement.clientHeight 是唯一扣掉滚动条的
+  // **可视内容**高度。
+  //
+  // 实测（Chromium 1200x800 + 竖排长文）：innerHeight=705 / clientHeight=690 /
+  // 水平滚动条 15px。喂 705 → 文字底 705 > 可视 690（溢出）；改喂 690 → 文字底
+  // 690（不溢出）；再量一轮仍 690（不震荡）；内容短到没有滚动条时 clientHeight
+  // 回到 705（不误缩）。
+  //
+  // 不震荡的原因：竖排水平滚动条的有无只由内容宽度（列数）决定，与 body 高度无
+  // 关；高度调小只让每列变短、列数变多，滚动条照样在，clientHeight 保持稳定。
+  //
+  // 刻意**不**改 __fushiApplyReaderMargins / _contH 的入参：那两个要的就是视口外
+  // 框高度。本 bug 的根因正是「视口外框高度」和「可视内容高度」被当成同一个数，
+  // 修法是把这两个概念分开，而不是把另一处也一起改掉。
+  //
+  // 夹在 fallback（视口外框高度）以内：可视内容高度按定义不可能超过外框高度。这
+  // 不是「保险起见」的兜底，而是这个量的**定义域**——一旦超出就说明读到的不是本
+  // 次布局的值：
+  //   · iOS：连续 shell 的 initialize 里，共用的 viewport meta 重写（见
+  //     sharedInitViewportJs）刚删掉并重建 meta[name=viewport]，隔 5 条语句就读
+  //     clientHeight。BUG-1688 实测 WKWebView 在这次重写生效前按
+  //     默认 980 CSS px 布局（innerHeight=1743，而 Dart 权威值 667）。若 WebKit 的
+  //     重排不是同任务同步生效，这里会量到 1743 → 竖排 body 高度爆到 2.6 倍。而
+  //     iOS 是**不占位**的 overlay 滚动条，本修复在 iOS 上收益为零——不能让一个
+  //     零收益的平台替桌面的修复背回归。
+  //   · quirks mode：章节文档是**书自己给的** XHTML，Fushi 只做净化并注入 style、
+  //     全程不补 doctype（webview.part.dart:345 _buildSanitizedChapterHtmlBytes），
+  //     而下发的 Content-Type 恒为 text/html（同文件:206-210）⇒ 走 HTML5 解析、
+  //     由 doctype 定模式。书没写 doctype 就落 quirks，clientHeight 退化成 html
+  //     自身 padding box 高度，不再是视口量。
+  // 桌面竖排的正常值 690 <= 705，夹子不改变本 bug 的修复效果。
+  _visibleViewportHeight: function(fallback) {
+    var visible = document.documentElement.clientHeight;
+    return (visible && visible > 0 && visible <= fallback) ? visible : fallback;
+  },
+  // `--fushi-continuous-height` 的**唯一**写入点（守卫钉死：全 shell 只此一处
+  // setProperty 该变量）。调用方三个：initialize / updatePageSize / beginStyleReanchor。
+  //
+  // 为什么 beginStyleReanchor 也必须写：BUG-2013 之前这个变量只由**视口外框高度**
+  // 决定，而外框高度只在 resize 时变，所以两处赋值就够。改取**可视高度**后它变成
+  // 内容相关量——水平滚动条的有无由内容宽度（列数）决定，而改字号正是改列数。于是
+  // 「首屏内容短 → 无滚动条 → 写 705」的书，用户放大字号后滚动条出现、变量仍是
+  // 705，末行照旧被裁，要等下一次 resize 才自愈。写入点必须跟上这个**新出现的**
+  // 失效源，否则修复恰好在最常见的「改字号」路径上漏掉。
+  _applyContinuousHeight: function(fallback) {
+    document.documentElement.style.setProperty(
+        '--fushi-continuous-height', this._visibleViewportHeight(fallback) + 'px');
+  },
 $_sharedJs
   scrollToChapterStart: function() {
     var root = document.scrollingElement || document.documentElement;
@@ -3307,6 +3339,10 @@ $_sharedJs
     // 已有重锚在飞（setChromeInsets/updatePageSize 等）→ 让既有序列接管，只换 CSS 不重采样。
     if (this._reanchorPending === true) {
       if (styleEl) styleEl.textContent = css;
+      // BUG-2013：换样式/改字号会改列数 → 改水平滚动条的有无 → 改可视高度。
+      // 这里不重写，放大字号后滚动条新出现的书末行照旧被裁，要等 resize 才自愈。
+      this._applyContinuousHeight(
+          this._contH || C.dartPageHeight || window.innerHeight);
       this._resetImageMaxVars();
       return -1;
     }
@@ -3316,6 +3352,10 @@ $_sharedJs
     var hint = this._readContinuousScroll();
     if (styleEl) styleEl.textContent = css;
     if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
+    // BUG-2013：换样式/改字号会改列数 → 改水平滚动条的有无 → 改可视高度。
+    // 这里不重写，放大字号后滚动条新出现的书末行照旧被裁，要等 resize 才自愈。
+    this._applyContinuousHeight(
+          this._contH || C.dartPageHeight || window.innerHeight);
     this._resetImageMaxVars();
     if (charOffset < 0) return -1;
     this._setReanchorPending(true);
@@ -3353,7 +3393,8 @@ $_sharedInitViewport
   var dartH = C.dartPageHeight;
   var contHeight = dartH || window.innerHeight;
   window.__fushiApplyReaderMargins(C.dartPageWidth || window.innerWidth, contHeight);
-  document.documentElement.style.setProperty('--fushi-continuous-height', contHeight + 'px');
+  // BUG-2013：写进 CSS 的必须是扣掉水平滚动条的可视高度，不是视口外框高度。
+  this._applyContinuousHeight(contHeight);
   var __imgBox = this._imageMaxBox();
   document.documentElement.style.setProperty('--fushi-image-max-width', __imgBox.w + 'px');
   document.documentElement.style.setProperty('--fushi-image-max-height', __imgBox.h + 'px');
@@ -3386,7 +3427,8 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   // rAF is in flight, only update the layout and let it restore position.
   var inFlight = this._reanchorPending === true;
   var progress = (changed && !inFlight) ? this.calculateProgress() : 0;
-  document.documentElement.style.setProperty('--fushi-continuous-height', newHeight + 'px');
+  // BUG-2013：同 initialize——CSS 变量要可视高度，_contH / applyReaderMargins 要外框高度。
+  this._applyContinuousHeight(newHeight);
   window.__fushiApplyReaderMargins(newWidth, newHeight);
   var __imgBox = this._imageMaxBox();
   document.documentElement.style.setProperty('--fushi-image-max-width', __imgBox.w + 'px');

@@ -317,7 +317,12 @@ final fushiDatabaseProvider = Provider<FushiDatabase>((ref) {
 final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
   final db = ref.watch(fushiDatabaseProvider);
   final ankiRepo = ref.watch(ankiRepositoryProvider);
-  return ProfileRepository(db, ankiRepo);
+  return ProfileRepository(
+    db,
+    ankiRepo,
+    // BUG-1994：回插被旧 prune 删掉的词典行时，「装没装」只认磁盘目录。
+    isDictionaryInstalled: ref.read(appProvider).isDictionaryInstalledOnDisk,
+  );
 });
 
 /// 临时 UI 草稿所绑定的 Profile 应用代次。

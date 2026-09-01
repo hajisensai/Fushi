@@ -489,6 +489,17 @@ List<String> buildFfmpegClipArgs({
     '-i',
     inputPath,
     '-vn',
+    // BUG-2011：源整集/整本的章节表绝不能跟进句子音频。ffmpeg 默认等价
+    // `-map_chapters 0`，mp4 系容器的 muxer 会为此建一条与最后一个章节等长的
+    // chapter text track，把 `mvhd.duration` 拉满 —— 一段 3 秒的句子音频，容器头
+    // 会写着整集的 21 分钟，播放器据此画进度条。
+    //
+    // 桌面/Android 的输出是 `.aac`（裸 ADTS，无容器，本就不受影响），但 **iOS 走
+    // `.m4a`**（[immersionMiningAudioExtensionFor]），那条链路是真中招的。这里无
+    // 条件给而不按扩展名分支：实测 `.aac` 加与不加产出的字节数完全一致，多一个
+    // 分支只会多一处能写错的地方。
+    '-map_chapters',
+    '-1',
     if (explicitAudio != null) ...<String>[
       '-map',
       // 尾随 '?'：越界音轨映射降级回退默认轨而非硬失败（BUG-345）。

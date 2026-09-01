@@ -879,6 +879,79 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     return ReaderFushiSource.epubUrl(resolved);
   }
 
+  bool _hasChapterTurnTarget(String direction) {
+    final EpubBook? book = _book;
+    if (book == null) return false;
+    final EpubSpreadMap? spreadMap = _spreadMap;
+    if (spreadMap != null) {
+      final int currentVirtual =
+          spreadMap.virtualPageForChapter(_currentChapter);
+      if (direction == 'forward') return currentVirtual + 1 < spreadMap.length;
+      if (direction == 'backward') return currentVirtual > 0;
+      return false;
+    }
+    if (direction == 'forward') {
+      return _currentChapter < book.chapters.length - 1;
+    }
+    if (direction == 'backward') return _currentChapter > 0;
+    return false;
+  }
+
+  /// BUG-2015：单文档阅读器仍要 load 下一章，但不再把加载过程直接暴露成整页黑屏。
+  /// 截图和解码都发生在旧 WebView 仍可见时；成功后才让导航开始。截图属于可选视觉
+  /// 增强，平台不支持或超过交互预算时正常导航，不能让跨章本身卡住。
+  Future<bool> _prepareContinuousChapterTransition() async {
+    if (_settings?.isContinuousMode != true ||
+        !_readerContentReady ||
+        _controller == null) {
+      return true;
+    }
+    if (_chapterTransitionCaptureInFlight) return false;
+    _chapterTransitionCaptureInFlight = true;
+    final InAppWebViewController controller = _controller!;
+    try {
+      final bytes = await controller.takeScreenshot().timeout(
+            const Duration(milliseconds: 450),
+            onTimeout: () => null,
+          );
+      if (bytes == null || bytes.isEmpty) return true;
+      if (!mounted) return false;
+      final MemoryImage snapshot = MemoryImage(bytes);
+      await precacheImage(snapshot, context);
+      if (!mounted ||
+          !identical(_controller, controller) ||
+          !_readerContentReady) {
+        unawaited(snapshot.evict());
+        return false;
+      }
+      final MemoryImage? previous = _chapterTransitionSnapshot;
+      _rebuild(() => _chapterTransitionSnapshot = snapshot);
+      if (previous != null) unawaited(previous.evict());
+      return true;
+    } catch (error) {
+      debugPrint(
+        '[ReaderFushi] chapter transition snapshot unavailable: $error',
+      );
+      return true;
+    } finally {
+      _chapterTransitionCaptureInFlight = false;
+    }
+  }
+
+  /// BUG-2015 收口：跨章快照只在**导航真的开始**（`_beginNavigation` 已把
+  /// `_readerContentReady` 置 false）时才有意义。拿到快照却没进导航的路径
+  /// （分页在飞 / 目标章不存在 / `_handlePageTurnLimit` 内部命中 spread 边界或
+  /// nav 页守卫）必须当场丢弃：否则这帧旧视口会一直挂在遮罩里，被**下一次**
+  /// `_readerContentReady` 归 false（换字号重排、歌词模式切换）当成「上一章画面」
+  /// 淡出——那正是 reader_fushi_lyrics_transition_static_test 要防的整屏遮罩。
+  void _discardIdleChapterTransitionSnapshot() {
+    if (!_readerContentReady) return;
+    final MemoryImage? snapshot = _chapterTransitionSnapshot;
+    if (snapshot == null) return;
+    _rebuild(() => _chapterTransitionSnapshot = null);
+    unawaited(snapshot.evict());
+  }
+
   void _handlePageTurnLimit(String direction, {bool inertia = false}) {
     if (_book == null) {
       return;

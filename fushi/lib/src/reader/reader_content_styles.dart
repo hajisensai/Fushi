@@ -1099,6 +1099,10 @@ body {
         : '''
 width: 100vw !important;
   min-height: 100vh !important;''';
+    // BUG-2015：连续阅读的章末保留一段沿书写轴的空白，让最后几行能先滚进视口
+    // 舒适区，触摸板惯性也有距离可消耗；真正边界落在留白之后。用 ::after 而不是
+    // body padding，避免改写用户边距与 restoreToChapterEnd 对最后真实元素的定位。
+    final String chapterTailReserve = isVertical ? '36vw' : '36vh';
 
     return '''
 $overflowRule
@@ -1129,6 +1133,13 @@ body {
   $textIndentCss
   $vertKerningCss
   $vpalCss
+}
+body::after {
+  content: '' !important;
+  display: block !important;
+  block-size: $chapterTailReserve !important;
+  inline-size: 100% !important;
+  pointer-events: none !important;
 }''';
   }
 

@@ -99,7 +99,7 @@ void main() {
         reason: '视频合集详情页开集必须带 playlistCollectionId 直接换集');
   });
 
-  test('TODO-2486 hayase 式视频首页形态：hero 轮播 + 双横滚行 + 朝向自适应媒体库墙', () {
+  test('TODO-2486 hayase 式视频首页形态：hero 轮播 + 双横滚行 + 分区化媒体库墙', () {
     // 用户拍板设计稿（2026-08-01）：顶部全宽 backdrop hero 轮播（最近在看前 5
     // 合集）→「继续观看」/「最近添加」横滚行 → 竖横混排媒体库墙。撤任一接线
     // 或回退到恒 2:3 单一网格即转红。
@@ -121,13 +121,16 @@ void main() {
     expect(homeSrc.contains('WheelToHorizontalScroll('), isFalse,
         reason: '视频首页横滚行不得包 WheelToHorizontalScroll（会抢走整页纵滚，'
             'BUG-1536）；Shift+滚轮横滚由 Flutter 内建提供');
-    // 媒体库墙：行高固定、宽随封面朝向的流式换行（Wrap），不得回退单一网格。
+    // 系列墙：行高固定、宽随封面朝向的流式换行（Wrap）。全部视频则固定为
+    // 16:9 等宽网格，避免横竖卡混排在宽屏留下大洞（BUG-1989）。
     expect(homeSrc.contains('_buildVideoWallSliver'), isTrue,
-        reason: '媒体库墙必须走 _buildVideoWallSliver（Wrap 流式混排）');
+        reason: '系列墙必须保留 _buildVideoWallSliver（Wrap 流式混排）');
     expect(homeSrc.contains('CoverOrientationBuilder('), isTrue,
-        reason: '卡片朝向必须由 CoverOrientationBuilder 探测（共享 aspect 内核）');
-    expect(homeSrc.contains('SliverGrid.builder('), isFalse,
-        reason: '不得回退到恒定卡宽的 SliverGrid 网格（朝向自适应墙已取代）');
+        reason: '系列卡片朝向必须由 CoverOrientationBuilder 探测（共享 aspect 内核）');
+    expect(homeSrc.contains('_buildAllVideoGridSliver'), isTrue,
+        reason: '全部视频必须走独立的 16:9 等宽网格');
+    expect(homeSrc.contains('SliverGrid.builder('), isTrue,
+        reason: '全部视频必须用 SliverGrid 等分整行，不能回退到左对齐 Wrap');
     // 年份 / 看完状态筛选（本地即筛，纯函数测试同源）。
     expect(homeSrc.contains('VideoYearFilter'), isTrue,
         reason: '筛选条必须有年份下拉（airDate 派生，未知桶不消失）');

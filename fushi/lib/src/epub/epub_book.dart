@@ -89,8 +89,24 @@ class EpubBook {
   /// Used by EpubSrtMatcher and sasayaki rematch for audiobook alignment.
   String chapterPlainText(int index) {
     if (index < 0 || index >= chapters.length) return '';
-    final html_dom.Document doc = html_parser.parse(chapters[index].html);
+    final html_dom.Document doc = parseChapterHtml(chapters[index].html);
     return _chapterPlainTextFromBody(doc.body);
+  }
+
+  /// BUG-2017：章节 XHTML 的**唯一** DOM 解析入口。
+  ///
+  /// EPUB 章节是 XML（`application/xhtml+xml`），WebView 按该 MIME 走 XML 解析，
+  /// 于是 `<script src="…"/>` / `<title/>` 是合法空元素。但这里的 HTML5 解析器
+  /// 不认 raw-text 元素的自闭合写法：`<script/>` 被当成**未闭合的开标签**，
+  /// tokenizer 进入 script data 状态，一路把文档剩余部分（含整个 `<body>`）
+  /// 吞成该元素的文本，`doc.body` 于是为空。kobo 处理过的日文 EPUB 正是这种
+  /// 形态（head 里一行自闭合 `<script src="../../js/kobo.js"/>`、全文无
+  /// `</script>`），导致每章纯文本为空 —— 有声书对齐匹配率 0、每章字数落库 0、
+  /// 每章都被 [isImageOnlyChapter] 判成纯图片章。
+  ///
+  /// 归一化自闭合 raw-text 标签后再交给 HTML 解析器，两侧解析结果重新一致。
+  static html_dom.Document parseChapterHtml(String html) {
+    return html_parser.parse(normalizeSelfClosingRawTextTags(html));
   }
 
   /// TODO-1192: chapter [index] 的「实义字符数」——只数假名 / 汉字 / 叠字符 /
@@ -157,7 +173,7 @@ class EpubBook {
         hints[index] > _imageChapterMaxTextChars) {
       return _imageOnlyChapterMemo[index] = false;
     }
-    final html_dom.Document doc = html_parser.parse(chapters[index].html);
+    final html_dom.Document doc = parseChapterHtml(chapters[index].html);
     final bool value = _chapterImageRefs(doc).isNotEmpty &&
         _chapterPlainTextFromBody(doc.body).length <= _imageChapterMaxTextChars;
     return _imageOnlyChapterMemo[index] = value;
@@ -177,7 +193,7 @@ class EpubBook {
   /// or SVG-`<image>` illustration page never loses an illustration when merged.
   List<String> chapterImageSrcs(int index) {
     if (index < 0 || index >= chapters.length) return const <String>[];
-    final html_dom.Document doc = html_parser.parse(chapters[index].html);
+    final html_dom.Document doc = parseChapterHtml(chapters[index].html);
     return _chapterImageRefs(doc);
   }
 
@@ -253,7 +269,7 @@ class EpubBook {
     int order = 0;
     for (int i = 0; i < chapters.length; i++) {
       final String chapterHref = chapters[i].href;
-      final html_dom.Document doc = html_parser.parse(chapters[i].html);
+      final html_dom.Document doc = parseChapterHtml(chapters[i].html);
       for (final html_dom.Element img in doc.querySelectorAll('img')) {
         final String? src = img.attributes['src'];
         if (src == null || src.trim().isEmpty) continue;
@@ -511,6 +527,111 @@ String decodeEpubText(List<int> rawBytes) {
     bytes = bytes.sublist(3);
   }
   return utf8.decode(bytes, allowMalformed: true);
+}
+
+/// BUG-2017：HTML5 里内容会一路读到**显式结束标签**才终止的元素。
+///
+/// 对这些元素，tokenizer 见到开标签就切进 raw-text / escapable-raw-text /
+/// plaintext 状态，此后的 `<` 不再当标签看。因此 XML 风格的自闭合写法
+/// （`<script/>`）在 HTML 解析器眼里是个**永不闭合的开标签**：文档剩余部分
+/// 整体成为该元素的文本，`<body>` 连同全部正文一起消失。
+///
+/// 空元素（`<br/>` `<img/>` `<meta/>`）不在此列——它们本就无内容，自闭合写法
+/// 在两种解析器下等价，不能碰。
+const Set<String> kRawTextTags = <String>{
+  'script',
+  'style',
+  'textarea',
+  'title',
+  'iframe',
+  'noembed',
+  'noframes',
+  'noscript',
+  'xmp',
+  'plaintext',
+};
+
+/// BUG-2017：把 XHTML 里自闭合的 raw-text 标签（`<script src="…"/>`）改写成
+/// 显式闭合（`<script src="…"></script>`），使 HTML 解析器得到与 XML 解析器
+/// （WebView 按 `application/xhtml+xml` 走的那条）一致的文档树。
+///
+/// 只改 [kRawTextTags] 里的标签，且只在其**自身**以 `/>` 结束时改写，所以对
+/// 合法 HTML 是恒等变换：普通 HTML 不会把 `<script/>` 当空元素写，真写了也
+/// 本就是当前这种「吞掉后文」的坏形态。注释 / CDATA / DOCTYPE / XML 声明整段
+/// 原样透传，属性值里的 `>` 由引号状态机跳过，都不会被误判成标签边界。
+String normalizeSelfClosingRawTextTags(String html) {
+  if (!html.contains('/>')) return html;
+  final StringBuffer out = StringBuffer();
+  int i = 0;
+  while (i < html.length) {
+    final int lt = html.indexOf('<', i);
+    if (lt < 0) {
+      out.write(html.substring(i));
+      break;
+    }
+    out.write(html.substring(i, lt));
+    final int passthrough = _markupPassthroughEnd(html, lt);
+    if (passthrough >= 0) {
+      out.write(html.substring(lt, passthrough));
+      i = passthrough;
+      continue;
+    }
+    final int gt = _tagCloseIndex(html, lt);
+    if (gt < 0) {
+      out.write(html.substring(lt));
+      break;
+    }
+    out.write(_expandSelfClosingRawTextTag(html.substring(lt, gt + 1)));
+    i = gt + 1;
+  }
+  return out.toString();
+}
+
+/// 注释 / CDATA / DOCTYPE / 处理指令的结束下标（exclusive）；[lt] 处不是这类
+/// 标记时返回 -1。未闭合时吃到串尾，与 HTML 解析器的 bogus-comment 收尾一致。
+int _markupPassthroughEnd(String s, int lt) {
+  if (s.startsWith('<!--', lt)) {
+    final int end = s.indexOf('-->', lt + 4);
+    return end < 0 ? s.length : end + 3;
+  }
+  if (s.startsWith('<![CDATA[', lt)) {
+    final int end = s.indexOf(']]>', lt + 9);
+    return end < 0 ? s.length : end + 3;
+  }
+  if (s.startsWith('<!', lt) || s.startsWith('<?', lt)) {
+    final int end = s.indexOf('>', lt);
+    return end < 0 ? s.length : end + 1;
+  }
+  return -1;
+}
+
+/// 从 [lt]（指向 `<`）扫到该标签的 `>` 下标；引号内的 `>` 不算边界。未闭合
+/// 返回 -1。
+int _tagCloseIndex(String s, int lt) {
+  String? quote;
+  for (int i = lt + 1; i < s.length; i++) {
+    final String c = s[i];
+    if (quote != null) {
+      if (c == quote) quote = null;
+      continue;
+    }
+    if (c == '"' || c == "'") {
+      quote = c;
+    } else if (c == '>') {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/// 自闭合的 raw-text 标签 → 显式闭合；其余标签原样返回。
+String _expandSelfClosingRawTextTag(String tag) {
+  if (!tag.endsWith('/>')) return tag;
+  final Match? m = RegExp(r'^<([A-Za-z][A-Za-z0-9]*)').firstMatch(tag);
+  if (m == null) return tag;
+  final String name = m.group(1)!.toLowerCase();
+  if (!kRawTextTags.contains(name)) return tag;
+  return '${tag.substring(0, tag.length - 2)}></$name>';
 }
 
 /// TODO-1192: 存进 [EpubBooks.chaptersJson] 每章 `characters` 字段用的计数口径版本。

@@ -11,7 +11,6 @@ import 'package:fushi/src/mining/galgame_add_flow.dart';
 import 'package:fushi/src/pages/implementations/galgame_home_page.dart';
 import 'package:fushi/src/pages/implementations/game_diagnostics_page.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
-import 'package:fushi/src/pages/implementations/game_statistics_page.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
@@ -126,12 +125,6 @@ class _HomeGamePageState extends State<HomeGamePage> {
   void _showMonitor() => _showSection(GameSection.monitor);
   void _showDiagnostics() => _showSection(GameSection.diagnostics);
   void _showSettings() => _showSection(GameSection.settings);
-
-  Future<void> _openStatistics() => Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (BuildContext context) => const GameStatisticsPage(),
-        ),
-      );
 
   @override
   Widget build(BuildContext context) {
@@ -339,14 +332,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
       child: Column(
         children: <Widget>[
           FushiPageHeader.customTitle(
-            actions: <Widget>[
-              FushiIconButton(
-                icon: Icons.bar_chart_outlined,
-                tooltip: t.game_statistics,
-                label: t.game_statistics,
-                onTap: _openStatistics,
-              ),
-            ],
+            // 统计入口已收敛到首页 dashboard（用户定案 2026-09-01）。
             title: GameSectionTabs(
               selected: GameSection.library,
               focusIdPrefix: 'game-library-tab',

@@ -72,10 +72,13 @@ extension _VideoLayout on _VideoFushiPageState {
     // 两层主题嵌套：[AdaptiveVideoControls] 按平台互斥择一渲染（桌面读 Desktop
     // 主题、移动读 Material 主题），故同时提供两套互不干扰，让字幕/音轨/设置入口
     // 在桌面、移动、全屏三种场景都可达。嵌套顺序不影响——各自被对应平台 controls 读取。
-    // 'B' 切换字幕模糊（TODO-134）现已并入可重映射注册表（video scope），随其它视频键
-    // 一起经 media_kit 的 keyboardShortcuts 整表安装，不再需要本页内层的独立
-    // CallbackShortcuts；press-edge-only（includeRepeats:false）由
-    // buildVideoPlayerShortcutsFromRegistry 对该 action 保留。
+    // 'B' 切换字幕模糊（TODO-134）已并入可重映射注册表（video scope），随其它视频键
+    // 一起走**页级 press-time 单通道**（[_handleVideoKeyboardShortcut] →
+    // [resolveVideoKeyboardShortcut]，挂在 [_wrapVideoGamepadControls] 上），不再需要
+    // 本页内层的独立 CallbackShortcuts。media_kit 那层的 `keyboardShortcuts` 现在是
+    // 显式空表（见 controls_theme.part.dart）——它只包 `AdaptiveVideoControls` 子树，
+    // 够不到面板，正是 BUG-1864 的 scope≠mount 根因。「长按不连发」由
+    // [kVideoPressEdgeOnlyActions] 在那条通道上翻译成「重复沿不消费」。
     return VideoControlsThemePair(
       mobile: controlsTheme.mobile,
       desktop: controlsTheme.desktop,
@@ -173,22 +176,27 @@ extension _VideoLayout on _VideoFushiPageState {
   /// BUG-1862：把「返回上一级」键的兜底装在 controls builder 的**最外层**，覆盖那些
   /// 挂在 media_kit controls 旁边、却不在它快捷键表作用域里的自建 overlay。
   ///
-  /// media_kit 的整表快捷键（[_videoKeyboardShortcuts]）由它自己的 [CallbackShortcuts]
-  /// 承载，而那层只包住 media_kit 的 controls 子树；本页的设置 / 速度 / 章节侧栏、side
-  /// rail、控制按钮 popover、布局编辑层都是本 builder 里 [Stack] 的**兄弟节点**。侧栏
-  /// 打开时 `PanelFocusScope` 会把键盘焦点领进侧栏，于是 Esc 的冒泡路径根本不经过那张
-  /// 表，一路走到全局 back 把整页 pop 掉——用户看到「侧栏开着按 Esc，页面退了、侧栏还
-  /// 在」。本层是这些 overlay 的共同祖先，且窗口与全屏复用同一 controls builder，两种
-  /// 场景一并覆盖。
+  /// 历史成因：当时视频快捷键是一张冻结的 activator 表，装在 media_kit 自己的
+  /// [CallbackShortcuts] 上，而那层只包住 media_kit 的 controls 子树；本页的设置 / 速度
+  /// / 章节侧栏、side rail、控制按钮 popover、布局编辑层都是本 builder 里 [Stack] 的
+  /// **兄弟节点**。侧栏打开时 `PanelFocusScope` 会把键盘焦点领进侧栏，于是 Esc 的冒泡
+  /// 路径根本不经过那张表，一路走到全局 back 把整页 pop 掉——用户看到「侧栏开着按 Esc，
+  /// 页面退了、侧栏还在」。本层是这些 overlay 的共同祖先，两种场景一并覆盖。
   ///
-  /// **覆盖面到此为止**：只盖得住本 builder [Stack] 内的兄弟层（side panel / rail /
-  /// popover / 布局编辑层）。push-aside 字幕跳转列表（TODO-314）与剧集轨（TODO-638）由
-  /// [_videoWithSubtitlePanel] 包在 `Video` **外面**（`Row[Expanded(video), 面板列]`），
-  /// 是 controls builder 的兄弟而非后代，本层不在它们的祖先链上。窗口模式下它们的 Esc
-  /// 仍由本页 [PopScope] → [_dismissTopForegroundLayer] 接住，闭合；**全屏模式下是已知
-  /// 缺口**——全屏路由没有 [PopScope]，焦点被 `PanelFocusScope` 领进这两个面板后按 Esc
-  /// 会走全局 back 把全屏路由 pop 掉（退出全屏），面板仍开着。该缺口 BUG-1862 之前就
-  /// 存在、本次未修；要修得把兜底层再上提到 [_videoWithSubtitlePanel] 之外。
+  /// **BUG-1864 之后那个根因已经在上游修掉**：整表上提到 [_wrapVideoGamepadControls] 的
+  /// press-time 单通道（窗口 `build()` 与全屏路由 `pageBuilder` 的唯一共同外层，也是
+  /// 面板的祖先），media_kit 那层只留一张显式空表。当年「面板持焦 ⇒ 够不着那张表」的
+  /// 缺口——包括这段注释原来记为「全屏模式下是已知缺口」的 push-aside 字幕跳转列表
+  /// （TODO-314）与剧集轨（TODO-638）——都由页级通道覆盖了。
+  ///
+  /// 本层因此**不再是 Esc 的唯一依靠，但也不是死代码**：它是页级通道的后代，冒泡先到
+  /// 这里，且判据比页级那条宽一档——页级通道在文本框持焦时按 [editableFocusClaimsKey]
+  /// 整条让位（裸 Esc 属于让位范围），本层不看文本框、照常吃 Esc 去关一层。于是「本
+  /// builder [Stack] 内某个兄弟层（侧栏等）的输入框里按 Esc 先关掉那一层」只有本层给得
+  /// 出。覆盖面仍以本 builder 的 [Stack] 为界：push-aside 字幕跳转列表与剧集轨由
+  /// [_videoWithSubtitlePanel] 包在 `Video` **外面**，是本 builder 的兄弟而非后代，它们
+  /// 的 Esc 走页级通道。两层的执行体是同一个 [_dismissTopForegroundLayer]，且本层只在
+  /// **真的关掉了一层**时消费，语义不会打架。
   ///
   /// 只在 [_dismissTopForegroundLayer] **真的关掉了一层**时消费按键；没有前台层可关时
   /// 返回 [KeyEventResult.ignored] 原样放行，退全屏 / 退页仍走既有路径——不新增第二条
