@@ -648,14 +648,11 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
 
     // 单行页头：返回按钮和标题同一行。
     //
-    // `showAppBar: true`（默认）会先排一条 title 为空、只有返回按钮的 AppBar，再在
-    // 它下面排一行大标题——两行，返回按钮和「新手引导」四个字对不上，向导这种
-    // 「一屏一步」的页面还白白吃掉一整行高度。`showAppBar: false` 时 [leading] 交给
-    // 页头自己那一行渲染（与 aidoku 源浏览页同一写法），脚手架的
-    // PrimaryScrollController / PageScrollRegistry（手柄 LB/RB 翻页）也照旧保留——
-    // 换成 FushiToolScaffold 就会把这两样一起丢掉。
+    // 手动返回按钮与标题共用 [FushiPageHeader]；关闭自动推导，避免将来本页在可返回
+    // route 中嵌套时重复插入第二个返回按钮。脚手架的 PrimaryScrollController /
+    // PageScrollRegistry（手柄 LB/RB 翻页）照旧保留。
     return FushiPageScaffold(
-      showAppBar: false,
+      automaticallyImplyLeading: false,
       headerCompact: true,
       leading: BackButton(
         key: const ValueKey<String>('onboarding_back'),
