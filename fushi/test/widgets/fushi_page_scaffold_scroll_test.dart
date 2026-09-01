@@ -11,6 +11,91 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'widget_test_helpers.dart';
 
 void main() {
+  /// è¿åé®ç**å½ä¸­ç**ï¼InkWellï¼ç©å½¢ââä¸æ¯å¾æ å­å½¢ç©å½¢ã
+  /// ä¸¤èå¨ `padding: EdgeInsets.zero` ä¸æ  constraints æ¶æ°å¥½éåï¼
+  /// æä»¥å¿é¡»é InkWellï¼å¦å 24Ã24 çéåå¨æ­è¨éçä¸åºæ¥ã
+  Rect backHitRect(WidgetTester tester) => tester.getRect(
+        find
+            .ancestor(
+              of: find.byIcon(Icons.arrow_back),
+              matching: find.byType(InkWell),
+            )
+            .first,
+      );
+
+  Widget headerProbeApp({TextDirection? textDirection}) => MaterialApp(
+        builder: textDirection == null
+            ? null
+            : (BuildContext context, Widget? child) => Directionality(
+                  textDirection: textDirection,
+                  child: child!,
+                ),
+        home: Builder(
+          builder: (BuildContext context) => TextButton(
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => const FushiPageScaffold(
+                  title: 'Sync & backup',
+                  subtitle: 'Cloud, LAN, and local backups',
+                  body: SizedBox.shrink(),
+                ),
+              ),
+            ),
+            child: const Text('Open'),
+          ),
+        ),
+      );
+
+  testWidgets('back button and title share one page-header row',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(headerProbeApp());
+
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AppBar), findsNothing,
+        reason: 'the back action must not occupy a separate empty app-bar row');
+    final Finder back = find.byIcon(Icons.arrow_back);
+    final Finder title = find.text('Sync & backup');
+    expect(back, findsOneWidget);
+    expect(title, findsOneWidget);
+    final Rect backRect = backHitRect(tester);
+    final Rect titleRect = tester.getRect(title);
+    // ãåä¸è¡ã= ä¸¤èçºµååºé´ç¸äº¤ãæ¯æ¯ä¸­å¿è·ç¨³ï¼æ é¢
+    // åé«åº¦éå¯æ é¢/æè¡/æå­ç¼©æ¾åï¼ä¸­å¿è·ä¼è·çæ¼ï¼åæ¥ç
+    // epsilon: 12 æ°å¥½å¡å¨è¨çå¼ä¸ï¼ï¼èãå æä¸¤è¡ãçéåæ¯çºµååºé´ä¸ç¸äº¤ã
+    expect(backRect.top, lessThan(titleRect.bottom),
+        reason: 'back action and title must read as one header row');
+    expect(titleRect.top, lessThan(backRect.bottom),
+        reason: 'back action and title must read as one header row');
+    // è§¦å±å¯è¾¾æ§ä¸éï¼è¢«åä»£ç AppBar èªå¨ BackButton æ¬å°±æ¯ 48Ã48ã
+    expect(backRect.width, greaterThanOrEqualTo(kMinInteractiveDimension),
+        reason: 'header back button must keep a 48dp-wide tap target');
+    expect(backRect.height, greaterThanOrEqualTo(kMinInteractiveDimension),
+        reason: 'header back button must keep a 48dp-tall tap target');
+
+    await tester.tap(back);
+    await tester.pumpAndSettle();
+    expect(find.text('Open'), findsOneWidget);
+  });
+
+  testWidgets('RTL: the header keeps the gap between back action and title',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(headerProbeApp(textDirection: TextDirection.rtl));
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    final Rect backRect = backHitRect(tester);
+    final Rect titleRect = tester.getRect(find.text('Sync & backup'));
+    // RTL ä¸ leading æå°è¡å°¾ï¼è§è§å³ä¾§ï¼ï¼é´è·å¨å®çå·¦è¾¹ã
+    // åæ­»ç©ç `right` ä¼æé´è·æ¾å°å±å¹è¾¹ç¼é£ä¾§ï¼è¿åé®ç´æ¥è´´ä¸æ é¢ã
+    expect(backRect.left - titleRect.right, greaterThanOrEqualTo(8.0),
+        reason: 'the leading gap must be directional, not a hard-coded right '
+            'padding that lands on the screen edge under RTL');
+    expect(backRect.left, greaterThanOrEqualTo(titleRect.right),
+        reason: 'RTL puts the back action after the title');
+  });
+
   testWidgets(
       'FushiPageScaffold page-scrolls its body from a header-area context '
       '(where the gamepad focus actually sits) via PrimaryScrollController',

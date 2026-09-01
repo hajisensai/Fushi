@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1868 条。点号进各自文件。
+> 共 1872 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -41,6 +41,10 @@
 | [BUG-2000](bugs/BUG-2000-scrape-unscraped-series-never-auto.md) | ✅ | ✅ | 未刮削系列没有任何自动刮削入口，存量库永远无资料 |
 | [BUG-1999](bugs/BUG-1999-scrape-source-enabled-not-exposed.md) | ✅ | ✅ | 来源刮削 enabled 开关未暴露，用户无法关闭强制刮削 |
 | [BUG-1998](bugs/BUG-1998-scrape-manual-bind-worknotfound.md) | ✅ | ✅ | 手动指定作品对已不在计划的作品裸抛 VideoSourceScrapeWorkNotFound 进 UI |
+| [BUG-1989](bugs/BUG-1989-all-video-uniform-grid.md) | ✅ | ✅ | 全部视频横竖混排导致缩略图比例不一致并在宽屏留下大块空白 |
+| [BUG-1986](bugs/BUG-1986-resource-episode-span-summary.md) | ✅ | ✅ | 资源版本卡把非连续集号显示成连续范围 |
+| [BUG-1985](bugs/BUG-1985-apibay-cjk-hot-list.md) | ✅ | ✅ | apibay 把 CJK 查询退化为热门榜 |
+| [BUG-1984](bugs/BUG-1984-focus-ring-registered-geometry.md) | ✅ | ✅ | 复合控件焦点环读取内部 Focus context 导致边界错位 |
 | [BUG-1983](bugs/BUG-1983-gal-layout-whitespace-fold.md) | ✅ | ✅ | Gal 同句换行快照未原地折叠导致换行错乱 |
 | [BUG-1982](bugs/BUG-1982-global-lookup-stale-route-flash.md) | 🚧 | ✅ | 全局查词首帧落在工作区角上再闪回光标处 |
 | [BUG-1981](bugs/BUG-1981-hook-overlay-dead-window-reopen.md) | ✅ | ✅ | Hook 浮窗 HWND 失效后自动与手动打开都无窗口 |
