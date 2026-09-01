@@ -360,6 +360,7 @@ ReaderEngineConfig _sampleConfig({String? sentenceAudioCuesJson}) =>
       debugLogging: false,
       swipeDistThreshold: 44,
       swipeFastDistThreshold: 22,
+      wheelGestureQuietMs: 450,
       furiganaMode: 'toggle',
       caretColor: 'rgba(0,0,0,0.5)',
       caretInsetTop: 0,
