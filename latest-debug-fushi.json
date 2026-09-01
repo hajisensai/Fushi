@@ -1,30 +1,12 @@
 {
   "schemaVersion": 1,
-  "version": "2.2.4-debug.13018",
-  "tag": "v2.2.4-debug.13018+f7d4106",
+  "version": "2.2.4-debug.13037",
+  "tag": "v2.2.4-debug.13037+d7c762c",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 13018,
-  "notes": "Automated desktop debug-channel build from develop @ f7d4106. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 13037,
+  "notes": "Automated release-signed debug-channel build from develop @ d7c762c. Push releases are always prerelease and never Latest.",
   "assets": [
-    {
-      "name": "fushi-2.2.4-debug.12981-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.12981-macos.zip",
-      "releaseSequence": 12981,
-      "tag": "v2.2.4-debug.12981+2c324fa",
-      "version": "2.2.4-debug.12981",
-      "size": 335009907,
-      "sha256": "12c6f7e603c9143e452130920d8846e42c6a05358f3dea9de9bb7132267e8b8f"
-    },
-    {
-      "name": "fushi-2.2.4-debug.12993-993ea5d-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.12993-993ea5d-debug.apk",
-      "releaseSequence": 12993,
-      "tag": "v2.2.4-debug.12993+993ea5d",
-      "version": "2.2.4-debug.12993",
-      "size": 269921568,
-      "sha256": "3e140bbe0a307cf64762d7441722f7a835e6b6d34e63bc2aa6692f527085bfd1"
-    },
     {
       "name": "fushi-2.2.4-debug.13018-windows-setup.exe",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13018-windows-setup.exe",
@@ -33,6 +15,15 @@
       "version": "2.2.4-debug.13018",
       "size": 263814592,
       "sha256": "bde393927d6d72b3137f2d3d3c9c60d5c2de896ba6b90c25c1cdec2265efe1d6"
+    },
+    {
+      "name": "fushi-2.2.4-debug.13037-d7c762c-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13037-d7c762c-debug.apk",
+      "releaseSequence": 13037,
+      "tag": "v2.2.4-debug.13037+d7c762c",
+      "version": "2.2.4-debug.13037",
+      "size": 270052640,
+      "sha256": "bfcd606cc851d7c61fcb4cedff9d5ca9967e6d20ed9a05c4fa32b09db77cfae5"
     }
   ]
 }
