@@ -111,20 +111,35 @@ void main() {
         reason: '字幕查词 overlay 必须叠在 controls 之上，锁定态点字幕仍能查词');
     // 锁定态绝不能把整条键盘通道 gate 掉。方案 D 之后快捷键不再是传给 media_kit 的
     // 一张表，而是页级 press-time 派发 [_handleVideoKeyboardShortcut]；沉浸锁的门控
-    // 只允许落在**单个动作**上（_runWhenImmersiveAllowsShortcuts，见 exitLock 等
-    // 白名单），绝不允许提到派发入口上——提上去就等于锁定态整表失效。
-    final String masked = maskComments(src);
-    final int dispatchAt =
-        masked.indexOf('_handleVideoKeyboardShortcut(event)');
-    expect(dispatchAt, greaterThanOrEqualTo(0),
-        reason: '视频快捷键主通道派发点必须存在（锁定态快捷键不被禁用的前提）');
-    // 派发点所在那一行不得带任何沉浸锁条件（`if (_immersiveAllowsShortcuts) ...`）。
-    final int lineStart = masked.lastIndexOf('\n', dispatchAt) + 1;
-    final int lineEnd = masked.indexOf('\n', dispatchAt);
+    // 只允许落在**单个动作**上（_runWhenImmersiveAllowsShortcuts），绝不允许提到通道
+    // 上——提上去就等于锁定态整表失效。
+    //
+    // 判据必须覆盖**整条通道的两段**，不能只看派发那一行：上一行加个
+    // `if (_immersiveAllowsShortcuts)` 就能绕过单行否定，而那正是要禁的形态。
+    // 两段 = 派发方法体（判决与执行）+ 挂载它的 wrapper（键事件入口）。
+    for (final String signature in <String>[
+      'bool _handleVideoKeyboardShortcut(',
+      'Widget _wrapVideoGamepadControls(',
+    ]) {
+      final String body = maskComments(methodBody(src, signature));
+      expect(
+        body.contains('_immersiveAllows'),
+        isFalse,
+        reason: '$signature 的方法体里出现了沉浸锁条件——门控只能落在单个动作上，'
+            '门住通道的任何一段都等于锁定态整表失效（快捷键 / 查词全死，'
+            '而锁定的本意只是挡触摸误触）',
+      );
+    }
+    // 活性自证：上面两条是**否定**断言，门控被整个删光时它们也全绿。真相是门控确实
+    // 存在、且落在逐个动作上（[_buildVideoShortcutActions] 里几乎每个实参都包了一层）。
+    final String actions =
+        maskComments(methodBody(src, 'VideoPlayerShortcutActions '
+            '_buildVideoShortcutActions('));
     expect(
-      masked.substring(lineStart, lineEnd).contains('_immersiveAllows'),
-      isFalse,
-      reason: '沉浸锁门控只能落在单个动作上，不能门住整条键盘派发',
+      '_runWhenImmersiveAllowsShortcuts('.allMatches(actions).length,
+      greaterThan(20),
+      reason: '沉浸锁门控必须真的逐个动作包着——它整个消失时上面两条否定断言会一起'
+          '变成空转，这条负责把「门控还在」钉住',
     );
   });
 
@@ -293,16 +308,24 @@ void main() {
     // BUG-1862：逐级退出的层级表收进 `_dismissTopForegroundLayer` 单点（键盘 Esc /
     // [PopScope] 系统返回键 / 手柄 B 共用），escape 回调只剩「先关一层，关不动才退全屏
     // / 退页」。断言的行为没变：锁定态必须在任何退出动作之前被吃掉。
-    final int escIdx = src.indexOf('escape: () {');
-    expect(escIdx, greaterThanOrEqualTo(0), reason: '缺 escape 回调');
-    final int dismissIdx = src.indexOf('_dismissTopForegroundLayer()', escIdx);
+    // 执行体已从 `escape: () { … }` 闭包抽成具名方法（它是整张动作表里唯一不需要
+    // VideoPlayerController 的动作，加载态下键盘 / 手柄要能单独调到它）。锚点跟着换成
+    // 方法体本身——比原来「从 `escape: () {` 起在**整份剩余语料**里 indexOf」更严：
+    // 那种写法即使执行体搬到别处、闭包里什么都不做，也照样能在后文里撞到这三个 token。
+    final String escapeBody =
+        maskComments(methodBody(src, 'void _handleVideoEscapeAction() {'));
+    final int dismissIdx = escapeBody.indexOf('_dismissTopForegroundLayer()');
     final int fullscreenExitIdx =
-        src.indexOf('_exitVideoFullscreen(ctx)', escIdx);
-    final int exitIdx = src.indexOf('_handleBackOrExit()', escIdx);
+        escapeBody.indexOf('_exitVideoFullscreen(ctx)');
+    final int exitIdx = escapeBody.indexOf('_handleBackOrExit()');
     expect(dismissIdx, greaterThanOrEqualTo(0), reason: 'Esc 未先逐级关前台层');
-    expect(dismissIdx, lessThan(fullscreenExitIdx),
+    expect(fullscreenExitIdx, greaterThan(dismissIdx),
         reason: 'Esc 关前台层必须排在退全屏之前');
-    expect(dismissIdx, lessThan(exitIdx), reason: 'Esc 关前台层必须排在退页之前（逐级退出）');
+    expect(exitIdx, greaterThan(dismissIdx),
+        reason: 'Esc 关前台层必须排在退页之前（逐级退出）');
+    // 它确实还是 globalBack 的执行体（抽成具名方法之后不能忘了接回去）。
+    expect(src.contains('escape: _handleVideoEscapeAction,'), isTrue,
+        reason: 'globalBack 的执行体必须仍接在 VideoPlayerShortcutActions.escape 上');
 
     // 解锁确实还在那张共用层级表里。
     final int tableIdx = src.indexOf('bool _dismissTopForegroundLayer() {');

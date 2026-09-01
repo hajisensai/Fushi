@@ -584,6 +584,81 @@ void main() {
       );
     });
 
+    test('缓存根整树只列举一次：cache 与 backups 共用同一份 raw', () async {
+      writeFile(p.join(cache.path, 'fushi-backup-2026-08-31.fushi.zip'), 9000);
+      writeFile(p.join(cache.path, 'ordinary-cache.bin'), 700);
+      // 两个类目各起一个 isolate、各把整棵树递归 stat 一遍时，注入的根解析器会被
+      // 问两次。iOS 上 `Library/Caches` + 沙盒 `tmp` 是 GB 级大头，那是实打实的
+      // 双倍耗时——所以「问了几次根」正是「扫了几遍树」的忠实代理。
+      int cacheRootsCalls = 0;
+      final StorageUsageService svc = StorageUsageService(
+        documentsRoot: () async => docs,
+        supportRoot: () async => support,
+        cacheRoots: () async {
+          cacheRootsCalls++;
+          return <Directory>[cache];
+        },
+        documentsRootIsFushiOwned: () async => true,
+      );
+      final List<StorageCategoryUsage> all = await svc.scanCategories(
+        books: const <StorageBookRef>[],
+        dictionaryNames: const <String>[],
+      ).toList();
+
+      expect(cacheRootsCalls, 1, reason: '两个类目共用一次列举，不得各扫一遍');
+      expect(
+        all
+            .firstWhere(
+                (StorageCategoryUsage u) => u.id == StorageCategoryId.backups)
+            .bytes,
+        9000,
+      );
+      expect(
+        all
+            .firstWhere(
+                (StorageCategoryUsage u) => u.id == StorageCategoryId.cache)
+            .bytes,
+        700,
+      );
+    });
+
+    test('可直接删的明细，其类目必须登记在 kDeletableEntryCategories', () async {
+      // 集合的文档说「只有该集合里的类目会产出 deleteFiles 明细」，而 backups 明明
+      // 也接通用文件删除原语。契约与事实分家时，这条断言先红。
+      writeFile(p.join(cache.path, 'fushi-backup-2026-08-31.fushi.zip'), 9000);
+      writeFile(p.join(cache.path, 'ordinary-cache.bin'), 700);
+      writeFile(p.join(docs.path, 'video_covers', 'c.jpg'), 100);
+
+      final List<StorageCategoryUsage> all = await service().scanCategories(
+        books: const <StorageBookRef>[],
+        dictionaryNames: const <String>[],
+      ).toList();
+
+      final Set<StorageCategoryId> deletableSeen = <StorageCategoryId>{};
+      for (final StorageCategoryUsage usage in all) {
+        for (final StorageEntryUsage entry in usage.entries) {
+          if (!kDirectlyDeletableEntryKinds.contains(entry.kind)) continue;
+          deletableSeen.add(usage.id);
+          expect(kDeletableEntryCategories, contains(usage.id),
+              reason: '${usage.id} 产出了可直接删的明细（${entry.kind}），'
+                  '却不在 kDeletableEntryCategories 里');
+        }
+      }
+      expect(deletableSeen, contains(StorageCategoryId.backups),
+          reason: '本用例必须真的走到备份聚合项，否则断言是空转');
+      expect(deletableSeen, contains(StorageCategoryId.cache));
+    });
+
+    test('备份聚合项的 label 是路径形状身份串，不是写死的英文 UI 文案', () async {
+      writeFile(p.join(cache.path, 'fushi-backup-2026-08-31.fushi.zip'), 9000);
+      final StorageCategoryUsage backups =
+          await categoryOf(StorageCategoryId.backups);
+      final String label = backups.entries.single.label;
+      expect(label, contains('fushi-backup-2026-08-31.fushi.zip'));
+      expect(label, isNot(contains('backup archives')),
+          reason: '显示名由 UI 按 paths.length 翻译；服务层不产出未翻译的英文');
+    });
+
     test('other 类目收白名单之外的顶层项（video_clips / 日志，BUG-1905）', () async {
       // 白名单内的目录：必须归它自己的类目，绝不能在 other 里被重复计一次。
       writeFile(p.join(docs.path, 'video_covers', 'c.jpg'), 100);

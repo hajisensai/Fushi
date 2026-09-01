@@ -22,7 +22,15 @@ import 'package:fushi/src/mining/galgame_library.dart';
 // 迁移判据要用「这个存量代理地址归一得出来吗」，与 applyAppProxy 同一份实现，
 // 不在这里重写一遍（重写就会漂移，而漂移的后果是存量用户升级即断网）。
 import 'package:fushi/src/utils/net/app_proxy.dart'
-    show normalizeUserProxyHostPort;
+    show
+        appUserProxyModeReader,
+        appUserProxyPasswordReader,
+        appUserProxyReader,
+        appUserProxyUsernameReader,
+        kProxyModeAuto,
+        kProxyModeDirect,
+        kProxyModeManual,
+        normalizeUserProxyHostPort;
 import 'package:fushi/src/mining/immersion_mining_request.dart'
     show MiningAnimatedFormat, MiningStillFormat, VideoMiningImageMode;
 import 'package:fushi/src/models/audio_source_config.dart';
@@ -100,6 +108,22 @@ class PreferencesRepository extends ChangeNotifier {
     DandanplayConfig.current = DandanplayConfig.decode(
       getPref('video_danmaku_config', defaultValue: '') as String,
     );
+    _installAppProxyReaders();
+  }
+
+  /// 把进程级代理读取器接到本仓库上。**绑定点必须是「偏好变得可读的那一刻」**，不是
+  /// 某一个调用点：以前只有 `AppModel.initialise()` 绑，而弹窗词典进程
+  /// （`AppModel.initialiseForDictionaryPopup`）同样建了本仓库、同样读了偏好，却没绑，
+  /// 于是那个进程整段生命周期都落在 [kProxyModeUnresolved] 兜底上——选了「直连」的用户
+  /// 在弹窗里照样走系统代理（哨兵表达不了 direct）。绑在这里，任何读得到偏好的入口都
+  /// 自动拿到用户的真实选择，不必各自记得补一行。
+  ///
+  /// 读取器是闭包而非快照：设置页改完立刻生效，`findProxy` 请求时才求值。
+  void _installAppProxyReaders() {
+    appUserProxyReader = () => updateCustomProxy;
+    appUserProxyModeReader = () => networkProxyMode;
+    appUserProxyUsernameReader = () => networkProxyUsername;
+    appUserProxyPasswordReader = () => networkProxyPassword;
   }
 
   Map<String, String> get prefsSnapshot =>
@@ -2341,20 +2365,24 @@ class PreferencesRepository extends ChangeNotifier {
   String get networkProxyMode {
     final String? stored =
         getPref('network_proxy_mode', defaultValue: null) as String?;
-    if (stored == 'auto' || stored == 'direct' || stored == 'manual') {
+    if (stored == kProxyModeAuto ||
+        stored == kProxyModeDirect ||
+        stored == kProxyModeManual) {
       return stored!;
     }
     // 迁移判据是「这个存量地址归一得出来吗」，不是「非空吗」。设置页对非法地址只
     // 弹 SnackBar 但仍存原串，非空判据会把这类值推成 manual，而 manual 归一失败
     // 时硬走 DIRECT —— 存量用户升级即断网。只有「显式选了 manual」才该 fail-closed。
     return normalizeUserProxyHostPort(updateCustomProxy) == null
-        ? 'auto'
-        : 'manual';
+        ? kProxyModeAuto
+        : kProxyModeManual;
   }
 
   Future<void> setNetworkProxyMode(String value) async {
     final String normalized =
-        value == 'direct' || value == 'manual' ? value : 'auto';
+        value == kProxyModeDirect || value == kProxyModeManual
+            ? value
+            : kProxyModeAuto;
     await setPref('network_proxy_mode', normalized);
     notifyListeners();
   }
