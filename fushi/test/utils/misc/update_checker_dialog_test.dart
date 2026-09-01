@@ -139,6 +139,52 @@ void main() {
     );
   });
 
+  testWidgets('下载遮罩把「本次没用上所选来源」说出来，没事时不占位',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(420, 520);
+    addTearDown(tester.view.reset);
+
+    final ValueNotifier<double> progress = ValueNotifier<double>(0);
+    final ValueNotifier<String> status =
+        ValueNotifier<String>(t.update_connecting);
+    final ValueNotifier<UpdateDownloadDiagnostics?> diagnostics =
+        ValueNotifier<UpdateDownloadDiagnostics?>(null);
+    final ValueNotifier<String?> notice = ValueNotifier<String?>(null);
+    addTearDown(progress.dispose);
+    addTearDown(status.dispose);
+    addTearDown(diagnostics.dispose);
+    addTearDown(notice.dispose);
+
+    await tester.pumpWidget(
+      buildApp(
+        Stack(
+          children: <Widget>[
+            buildUpdateDownloadOverlayForTest(
+              progress: progress,
+              status: status,
+              diagnostics: diagnostics,
+              notice: notice,
+              onHide: () {},
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final String message = t.update_download_source_unavailable(
+      source: t.update_download_source_cloudflare,
+    );
+    expect(find.text(message), findsNothing,
+        reason: '无事可报时不该占一行');
+
+    // 「所选来源对这个资产不适用」以前是纯静默降级：UI 零提示，用户以为自己锁定了
+    // Cloudflare。现在它是一等信息，必须能在遮罩上看见。
+    notice.value = message;
+    await tester.pump();
+    expect(find.text(message), findsOneWidget);
+  });
+
   testWidgets('download diagnostics only shows the resume line when it resumed',
       (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;

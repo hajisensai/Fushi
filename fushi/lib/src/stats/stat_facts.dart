@@ -343,13 +343,17 @@ List<ActivityEventRow> segmentsAsActivityRows(List<StudySegmentRow> segments) {
   ];
 }
 
-/// 首页「今日目标」与阅读统计页共用的**同一条**口径：阅读域（普通书 + 漫画）当日
-/// 字数。首页此前把书字 + 字幕字 + hook 字三种「字」相加当分子、统计页只算阅读域，
-/// 两处共用一个目标偏好却永远对不上——现在只有这一个函数。
-int readingGoalCharsForDay(Iterable<StatFact> daily, String dateKey) {
+/// 首页「今日目标」与阅读统计页目标卡共用的**同一条**口径：给定日面行的当日字数
+/// 合计。目标概念是「每日学习目标」——传整张日面（[StatFacts.daily]）时覆盖阅读 +
+/// 视频字幕 + 游戏 hook 三个来源，与热力图「全部」档同覆盖面；只算某一域时传对应
+/// 切片（如 [StatFacts.dailyBooks]）。v92 曾把分子硬编码成只算阅读域，纯视频 /
+/// 游戏日目标恒 0、与上方热力图对不上（BUG-1993）——现在函数只按 dateKey 求和，
+/// 域由调用方传的行集决定，没有特殊情况。目标偏好键沿用 `readingGoalDailyChars`
+/// （存量持久化名冻结，语义已是学习目标）。
+int studyGoalCharsForDay(Iterable<StatFact> daily, String dateKey) {
   int total = 0;
   for (final StatFact f in daily) {
-    if (f.isBook && f.dateKey == dateKey) total += f.chars;
+    if (f.dateKey == dateKey) total += f.chars;
   }
   return total;
 }

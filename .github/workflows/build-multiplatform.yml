@@ -673,10 +673,10 @@ jobs:
             }
             Copy-Item -LiteralPath $source -Destination (Join-Path $targetDir $file) -Force
           }
-      - name: Bundle standalone 7za for discovery auto-extract
+      - name: Bundle full 7-Zip for discovery and manga extraction
         shell: pwsh
         run: |
-          # 发现页下载的 7z/rar 游戏/小说压缩包离线自动解压依赖随包 7za.exe
+          # 发现页与漫画导入的 7z/rar 离线解压依赖随包 7z.exe + 7z.dll
           # （LGPL，官方 GitHub 镜像 + SHA-256 钉死，fail-closed）。
           pwsh -NoProfile -ExecutionPolicy Bypass -File tools/bundle_7za.ps1 `
             -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Debug" `

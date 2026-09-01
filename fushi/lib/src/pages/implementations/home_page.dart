@@ -908,7 +908,8 @@ class _HomePageState extends BasePageState<HomePage>
       _currentTab = tab;
     });
     // 进视频页触发一次库内自动补刮（每进程一次；sweepOnce 自身幂等且受
-    // videoAutoScrape 总闸与刮削互斥门约束，见 VideoLibraryScrapeSweep）。
+    // videoLibraryAutoBackfillScrape 总闸与刮削互斥门约束，见
+    // VideoLibraryScrapeSweep）。
     if (tab == HomeTab.video) {
       unawaited(_videoLibraryScrapeSweep.sweepOnce());
     }
@@ -2176,7 +2177,7 @@ class _HomePageState extends BasePageState<HomePage>
     _videoScrapeSweep = VideoLibraryScrapeSweep(
       database: appModel.database,
       controller: controller,
-      isEnabled: () => appModelNoUpdate.videoAutoScrape,
+      isEnabled: () => appModelNoUpdate.videoLibraryAutoBackfillScrape,
     );
     return controller;
   }

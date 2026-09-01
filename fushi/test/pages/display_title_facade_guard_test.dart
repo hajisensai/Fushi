@@ -63,13 +63,13 @@ void main() {
   });
 
   group('dashboard 上屏面（home_dashboard_page.dart）', () {
-    test('热力图日明细「阅读」节经 displayTitleForStatRow', () {
-      final String fn = slice(
-        dashboard,
-        'String _readingStatDisplayTitle(',
-        'String _gameDisplayTitle(',
-        where: '_readingStatDisplayTitle',
-      );
+    test('时段明细 sheet 事实行「书」分支经 displayTitleForStatRow', () {
+      // 原锚点是 `String _readingStatDisplayTitle(` 起点 + 邻居 `_gameDisplayTitle(`
+      // 终点。统计中心大改造把按域拆的三个行构造器合并成一个按 StatFact 种类分派的
+      // 解析器 _statEntryTitle（注入 showStatPeriodDetailSheet 的 titleOf），起点与
+      // 终点双双失效——正是下面 115 行那条已写死的教训：别把邻居长什么样当成本函数
+      // 的不变量。改用 methodBody 的花括号配对定边界，只依赖本函数自己的签名。
+      final String fn = methodBody(dashboard, 'String _statEntryTitle(');
       expect(fn, contains('displayTitleForStatRow('));
     });
 
@@ -84,13 +84,9 @@ void main() {
         dashboard,
         contains('_gameDisplayTitle(entry.title, mediaKey: entry.mediaKey)'),
       );
-      // helper 委托门面。
-      final String fn = slice(
-        dashboard,
-        'String _gameDisplayTitle(',
-        'List<({String title, int chars, int timeMs})> _watchDayRows',
-        where: '_gameDisplayTitle',
-      );
+      // helper 委托门面。终点锚原是邻居 `_watchDayRows`，统计中心大改造把它合并进
+      // showStatPeriodDetailSheet 后消失；helper 本体一字未改，同上改用 methodBody。
+      final String fn = methodBody(dashboard, 'String _gameDisplayTitle(');
       expect(fn, contains('displayTitleForGame(entry: entry'));
     });
   });
@@ -123,18 +119,28 @@ void main() {
       expect(fn, contains('displayTitleForBook('));
     });
 
-    test('列表副标题与详情弹窗副标题走 _itemDisplayBookTitle，不裸读快照列', () {
+    test('列表书名与详情弹窗副标题走 _itemDisplayBookTitle，不裸读快照列', () {
       // 详情弹窗。
       expect(
         collections,
         contains(
             'final String? bookDisplayTitle = _itemDisplayBookTitle(item);'),
       );
-      // 列表副标题（快照列 item.bookTitle 不得再直接进 subtitle join）。
+      // 「收藏夹按合集分节」把书名的上屏位置从行副标题 join 上移到媒体小节头。
+      // 不变量没变——那个书名必须过门面；只是位置换了，正向锚跟着迁到分组构建处。
+      final String grouped =
+          methodBody(collections, 'Widget _buildGroupedListView()');
       expect(
-        collections,
-        contains(
-            RegExp(r'_itemDisplayBookTitle\(item\),\s*item\.chapterLabel')),
+        grouped,
+        contains('mediaLabelOf: _itemDisplayBookTitle,'),
+        reason: '媒体小节头的书名必须过 display-title 门面',
+      );
+      // 负向锚钉死旧位置：行副标题不得回潮裸读快照列 item.bookTitle。
+      final String row = methodBody(collections, 'Widget _buildItem(');
+      expect(
+        row,
+        isNot(contains('item.bookTitle')),
+        reason: '行副标题不得裸读快照列 item.bookTitle',
       );
     });
 

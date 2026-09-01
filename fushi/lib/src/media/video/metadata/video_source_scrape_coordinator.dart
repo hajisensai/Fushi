@@ -351,7 +351,22 @@ class VideoSourceScrapeCoordinator
         ));
       }
 
-      for (int index = 0; hasProvider && index < works.length; index++) {
+      // AniDB 明确下发 banned 后整批停手。封禁按客户端 IP 记在服务端、是 endpoint
+      // 级的，继续按 3s 一条往下走：每条都注定失败，且每条都在延长封禁。provider
+      // 侧已经闩住不再发请求（见 AniDbVideoMetadataProvider.isBanned），这里负责把
+      // 「剩下的没做」如实结账成一条可操作说明，而不是让用户对着 N 条一模一样的分
+      // 集抓取失败去猜发生了什么。
+      final AniDbVideoMetadataProvider? anidb =
+          switch (registry.provider(VideoMetadataProviderKind.anidb)) {
+        final AniDbVideoMetadataProvider provider => provider,
+        _ => null,
+      };
+      int startedWorks = 0;
+
+      for (int index = 0;
+          hasProvider && anidb?.isBanned != true && index < works.length;
+          index++) {
+        startedWorks++;
         cancellationToken.throwIfCancelled();
         final VideoSourceScrapeWork localWork = works[index];
         await _publish(
@@ -492,6 +507,18 @@ class VideoSourceScrapeCoordinator
             pendingConfirmations: pending,
           );
         }
+      }
+
+      final Duration? banRemaining = anidb?.banRemaining;
+      final int skippedByBan = works.length - startedWorks;
+      if (banRemaining != null && hasProvider && skippedByBan > 0) {
+        failed += skippedByBan;
+        errors.add(SourceScrapeIssue(
+          workTitle: source.label,
+          message: 'AniDB 已封禁本客户端，本轮剩余 $skippedByBan 个作品全部跳过'
+              '（约 ${banRemaining.inHours + 1} 小时后自动恢复）。'
+              '封禁期间继续请求只会延长封禁。',
+        ));
       }
 
       final SourceScrapeReport report = SourceScrapeReport(

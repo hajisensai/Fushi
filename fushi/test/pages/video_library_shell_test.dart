@@ -77,6 +77,7 @@ void main() {
   late ChangeNotifier refreshSignal;
   late int localInitCount;
   late int discoveryInitCount;
+  VideoLibrarySection? lastLocalSection;
 
   setUp(() {
     LocaleSettings.setLocale(AppLocale.zhCn);
@@ -85,6 +86,7 @@ void main() {
     refreshSignal = ChangeNotifier();
     localInitCount = 0;
     discoveryInitCount = 0;
+    lastLocalSection = null;
   });
 
   tearDown(() async {
@@ -107,15 +109,19 @@ void main() {
             onVideoScanCompleted: (_, __) async {},
             onOpenScrapeTasks: () {},
             onLibraryChanged: () {},
-            localLibraryPageBuilder: (_, Widget navigation, __) => Column(
+            localLibraryPageBuilder:
+                (_, Widget navigation, VideoLibrarySection section) {
+              lastLocalSection = section;
+              return Column(
               children: <Widget>[
                 navigation,
-                _StatefulProbeLeaf(
-                  label: 'local leaf',
-                  onInit: () => localInitCount += 1,
-                ),
-              ],
-            ),
+                  _StatefulProbeLeaf(
+                    label: 'local leaf',
+                    onInit: () => localInitCount += 1,
+                  ),
+                ],
+              );
+            },
             discoveryPageBuilder: (_, Widget navigation) => Column(
               children: <Widget>[
                 navigation,
@@ -223,5 +229,37 @@ void main() {
     );
     expect(focusGate.excluding, isTrue);
     expect(discoveryInitCount, 1, reason: '排除焦点不能销毁发现页状态');
+  });
+
+  // 触屏横滑切分区（与页签同一份视觉序）。用户反馈的原始诉求：视频首页从右往左
+  // 划进右边的「系列」。
+  testWidgets('触屏横滑：首页向左甩切到系列，端头向右甩不越界', (WidgetTester tester) async {
+    await tester.pumpWidget(harness());
+    await tester.pump();
+    expect(lastLocalSection, VideoLibrarySection.home);
+
+    await tester.fling(find.text('local leaf'), const Offset(-260, 0), 1000);
+    await tester.pumpAndSettle();
+    expect(lastLocalSection, VideoLibrarySection.series);
+
+    await select(tester, VideoLibrarySection.home);
+    await tester.fling(find.text('local leaf'), const Offset(260, 0), 1000);
+    await tester.pumpAndSettle();
+    expect(lastLocalSection, VideoLibrarySection.home,
+        reason: '首页已是首位，向右甩无事发生');
+  });
+
+  testWidgets('触屏横滑跨到非本地分区：全部视频向左甩进发现', (WidgetTester tester) async {
+    await tester.pumpWidget(harness());
+    await tester.pump();
+    await select(tester, VideoLibrarySection.allVideos);
+    expect(discoveryInitCount, 0);
+
+    await tester.fling(find.text('local leaf'), const Offset(-260, 0), 1000);
+    await tester.pumpAndSettle();
+
+    expect(discoveryInitCount, 1, reason: '横滑与页签同一条 _select 路径，'
+        '首次进入发现才惰性构建');
+    expect(find.text('discover leaf'), findsOneWidget);
   });
 }

@@ -1650,6 +1650,13 @@ void FlutterWindow::RegisterGalHookTextChannel() {
         "passThroughChanged",
         std::make_unique<flutter::EncodableValue>(std::move(map)));
   });
+  // HWND 没了就立刻告诉 Dart。Dart 的 `_visible` 是派生镜像，靠这条事件被动
+  // 复位；没有它，消费端只能每行台词打一次 isShowing() 往返来轮询同一件事。
+  gal_hook_text_window_->SetDestroyedCallback([this]() {
+    if (!gal_hook_text_channel_) return;
+    gal_hook_text_channel_->InvokeMethod(
+        "overlayDestroyed", std::make_unique<flutter::EncodableValue>());
+  });
   gal_hook_text_window_->SetBoundsCallback(
       [this](int left, int top, int width, int height) {
         flutter::EncodableMap map{

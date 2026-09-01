@@ -56,6 +56,12 @@ void main() {
       expect(classify('/m/vol1.cbz'), ImportCarrier.mangaArchive);
     });
 
+    test('.cbr / .rar / .cb7 → mangaArchive，无需读包', () {
+      expect(classify('/m/vol1.cbr'), ImportCarrier.mangaArchive);
+      expect(classify('/m/vol1.rar'), ImportCarrier.mangaArchive);
+      expect(classify('/m/vol1.cb7'), ImportCarrier.mangaArchive);
+    });
+
     test('图片型 .zip → mangaArchive', () {
       expect(
         classify('/m/vol1.zip', imageArchives: <String>{'/m/vol1.zip'}),
@@ -156,10 +162,13 @@ void main() {
   });
 
   group('读包判据只在真正二义时才被调用', () {
-    test('.cbz / .mokuro / .pdf / .txt 都不触发读包', () {
+    test('.cbz / .cbr / .rar / .cb7 / .mokuro / .pdf / .txt 都不触发读包', () {
       final List<String> probed = <String>[];
       for (final String path in <String>[
         '/x/a.cbz',
+        '/x/a.cbr',
+        '/x/a.rar',
+        '/x/a.cb7',
         '/x/a.mokuro',
         '/x/a.pdf',
         '/x/a.txt',
@@ -214,6 +223,8 @@ void main() {
   group('大小写与路径分隔符', () {
     test('扩展名大小写不敏感', () {
       expect(classify('/m/VOL1.CBZ'), ImportCarrier.mangaArchive);
+      expect(classify('/m/VOL1.RAR'), ImportCarrier.mangaArchive);
+      expect(classify('/m/VOL1.CBR'), ImportCarrier.mangaArchive);
       expect(classify('/m/VOL1.MOKURO'), ImportCarrier.mangaMokuro);
       expect(classify('/b/DOC.PDF'), ImportCarrier.pdf);
     });

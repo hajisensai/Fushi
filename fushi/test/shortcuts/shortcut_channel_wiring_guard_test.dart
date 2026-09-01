@@ -57,9 +57,12 @@ void main() {
   ///
   /// **现在是空的**——本守卫落地时登记的 7 条已全部销账，全部走「摘掉通道」而非
   /// 「接上解析入口」，因为它们无一例外是按构造不可接：
-  ///   · `video/home/global.mouse`：mouse 通道在本 app 的唯一运行时输入源是 WebView
-  ///     的 DOM `mousedown`，这三个页面都是纯 Flutter 表面，Flutter 侧根本不存在
+  ///   · `home/global.mouse`：mouse 通道在本 app 原本的唯一运行时输入源是 WebView
+  ///     的 DOM `mousedown`，这两个页面都是纯 Flutter 表面，Flutter 侧不存在
   ///     PointerDownEvent → MouseBinding → 派发的管线；
+  ///     （`video.mouse` 曾与它们同列，BUG-1995 已按「接上解析入口」那一侧销账：
+  ///     `video_fushi_page.dart` 的页面根 Listener 现在真的收 onPointerDown 并
+  ///     `resolveMouse(scope: video)` 派发，所以它不再出现在本清单里。）
   ///   · `gamepad.keyboard/mouse`：dpad 四向只由 `GamepadService._dispatchButton` 按
   ///     `GamepadButton` 解析，键盘/鼠标绑定没有也不可能有读取方；
   ///   · `globalExternal.gamepad/mouse`：OS 级热键走 win32 `RegisterHotKey`，
