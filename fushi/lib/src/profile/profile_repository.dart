@@ -224,23 +224,31 @@ class ProfileRepository {
           await _db.deletePref(key);
         }
       }
-      // TODO-1077: replace dictionary_metadata with the profile snapshot
-      // ("snapshot wins"): upsert every snapshot row, then delete live rows the
-      // snapshot does not contain (mirrors the pref prune above). Guarded by
-      // `hasDictMeta` so a pre-TODO-1077 snapshot (no dictionary_meta rows) is
-      // NEVER mistaken for "empty dictionaries" and does not wipe the shared
-      // table — never break userspace.
+      // BUG-1994: profile 只拥有「怎么排、开不开」，**不拥有「装了哪些」**。
+      //
+      // TODO-1077 原来的做法是「快照即真相」：upsert 快照里的每一行，再删掉快照
+      // 没有的 live 行（照抄上面 pref 的 prune）。那等于把「这本词典启用中」编码
+      // 成「元数据行存在」，可这一行同时还承载「这本词典已安装」这个**全局**事实
+      // ——两个正交语义挤进同一个存在性判据。后果是在 A 里导入的词典，切到更早
+      // 建的 B 时被当成「B 没启用它」而整行删掉，B 的词典库里直接消失（明镜/牛津
+      // 只差一个「在 B 建立之前还是之后导入」）。开关和顺序本来就是行内的列
+      // （hiddenLanguagesJson / order），行的存在性根本不该再兼任开关。
+      //
+      // 所以：不再 prune，也不再 insert，只把 profile 拥有的四列写回**已存在**的
+      // 行。快照里有、库里没有的名字（在别处删掉的词典）返回 0 行、跳过——插进去
+      // 就是一行没有磁盘目录的幽灵元数据。`hasDictMeta` 保留：前 TODO-1077 的旧
+      // 快照没有 dictionary_meta 行，跳过整段即可，不能被误当成「没有词典」。
       if (hasDictMeta) {
-        final List<DictionaryMetaRow> liveDicts =
-            await _db.getAllDictionaryMetadata();
-        for (final DictionaryMetaRow live in liveDicts) {
-          if (!dictMetaMap.containsKey(live.name)) {
-            await _db.deleteDictionaryMeta(live.name);
-          }
-        }
-        for (final DictionaryMetadataCompanion companion
-            in dictMetaMap.values) {
-          await _db.upsertDictionaryMeta(companion);
+        for (final MapEntry<String, DictionaryMetadataCompanion> entry
+            in dictMetaMap.entries) {
+          final DictionaryMetadataCompanion companion = entry.value;
+          await _db.applyDictionaryMetaProfileColumns(
+            name: entry.key,
+            order: companion.order.value,
+            hiddenLanguagesJson: companion.hiddenLanguagesJson.value,
+            collapsedLanguagesJson: companion.collapsedLanguagesJson.value,
+            languageOverride: companion.languageOverride.value,
+          );
         }
       }
       for (final entry in prefMap.entries) {

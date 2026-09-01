@@ -1035,8 +1035,15 @@ class _AvailableExtensionTileState extends State<_AvailableExtensionTile> {
   Widget build(BuildContext context) {
     final MihonAvailableExtension extension = widget.extension;
     final MangaExtensionRow? installed = widget.installed;
+    // BUG-1996：这里原本比 `extension.versionCode > installed.versionCode`，可左边是
+    // 仓库尺度（69）、右边是 DB 里存的 APK 尺度（104069），跨尺度比大小 —— keiyoushi
+    // 扩展的「有更新」角标因此**永远不会亮**（静默失效，没人报，因为它只是不显示）。
+    //
+    // 改比 versionName：两侧同义、逐字可比，且仓库索引只放最新版，所以「装的版本名
+    // 与仓库给的不一样」即「有更新」。不去解析 `1.4.69` 的语义做大小比较——真正的
+    // 降级由安装路径的 DOWNGRADE_REJECTED 拦，这里不需要第二套版本序。
     final bool update =
-        installed != null && extension.versionCode > installed.versionCode;
+        installed != null && extension.versionName != installed.versionName;
     final ThemeData theme = Theme.of(context);
     final int hiddenSources = _showAllSources
         ? 0

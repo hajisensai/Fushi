@@ -29,10 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1860 条。点号进各自文件。
+> 共 1864 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1997](bugs/BUG-1997-dark-scrollbar-covers-list-trailing-actions.md) | ✅ | ✅ | 深色主题滚动条 8px 盖住并吞掉列表右侧操作按钮 |
+| [BUG-1996](bugs/BUG-1996-mihon-extension-versioncode-scale-mismatch.md) | ✅ | ✅ | 漫画扩展装不上：索引 versionCode 与 APK android:versionCode 尺度不同 |
+| [BUG-1995](bugs/BUG-1995-video-mouse-side-button-dismiss-dict.md) | ✅ | ✅ | 视频页鼠标侧键关词典无效（video scope 无鼠标通道） |
+| [BUG-1994](bugs/BUG-1994-profile-switch-prunes-dictionary-metadata.md) | ✅ | ✅ | 切换 profile 会删掉其他 profile 导入的词典元数据行 |
 | [BUG-1983](bugs/BUG-1983-gal-layout-whitespace-fold.md) | ✅ | ✅ | Gal 同句换行快照未原地折叠导致换行错乱 |
 | [BUG-1982](bugs/BUG-1982-global-lookup-stale-route-flash.md) | 🚧 | ✅ | 全局查词旧尺寸消息冒充新查询导致首次闪跳 |
 | [BUG-1981](bugs/BUG-1981-hook-overlay-dead-window-reopen.md) | ✅ | ✅ | Hook 浮窗 HWND 失效后自动与手动打开都无窗口 |

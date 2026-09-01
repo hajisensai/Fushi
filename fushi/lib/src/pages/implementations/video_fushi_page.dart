@@ -106,7 +106,13 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
         focusedEditableText,
         tryDictionaryPopupGamepadButton;
 import 'package:fushi/src/shortcuts/input_binding.dart'
-    show GamepadButton, InputBinding, activeModifierKeys;
+    show
+        GamepadButton,
+        InputBinding,
+        activeModifierKeys,
+        domMouseButtonFromPointerButtons;
+import 'package:fushi/src/shortcuts/shortcut_registry.dart'
+    show FushiShortcutRegistry;
 import 'package:fushi/src/shortcuts/reader_caret_router.dart'
     show CaretAction, ReaderCaretRouter;
 import 'package:fushi/src/shortcuts/shortcut_action.dart'
@@ -5046,6 +5052,36 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
   }
 
+  /// 视频页的**鼠标绑定通道**（BUG-1995）：页面根 [Listener] 的 `onPointerDown` 入口。
+  ///
+  /// 与键盘 / 手柄两条通道同构：按下当场问注册表要动作（press-time 解析，不冻结表），
+  /// 命中后走与它们完全相同的执行体。按钮号折叠用 [domMouseButtonFromPointerButtons]
+  /// —— 设置页的按键录制用的是同一个函数，两侧不共用就会出现「设置里录到侧键、运行时
+  /// 按另一个号解析」的错位。左键不可绑（那里返回 null），正常点击 / 划词零影响。
+  ///
+  /// 浮层可见时的语义与 [guardVideoShortcutsWithPopupDismiss] 和手柄通道一致：**任一**
+  /// 已绑定的鼠标键先关顶层浮层，不再往下执行底层动作（否则侧键既关了词典又顺手翻了
+  /// 一句字幕）。[ShortcutAction.videoDismissDict] 本身没有别的执行体，浮层不可见时
+  /// 按它就是无事发生——这正是它存在的意义。
+  void _handleVideoPointerDown(PointerDownEvent event) {
+    final int? button = domMouseButtonFromPointerButtons(event.buttons);
+    if (button == null) return;
+    final FushiShortcutRegistry registry = appModel.shortcutRegistry;
+    // scope 未命中时回落 universal（「返回上一级」），与页面其它通道同口径。
+    final ShortcutAction? action =
+        registry.resolveMouse(button, scope: ShortcutScope.video) ??
+            registry.resolveMouse(button, scope: ShortcutScope.universal);
+    if (action == null) return;
+    if (_hasVisiblePopup) {
+      _dismissTopVisiblePopup();
+      return;
+    }
+    if (action == ShortcutAction.videoDismissDict) return;
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    videoActionCallbacks(_buildVideoShortcutActions(controller))[action]?.call();
+  }
+
   /// 视频页键盘通道的**唯一**派发点（方案 D）：每次按键当场问注册表，与手柄
   /// [_handleVideoGamepadButton] 逐段同构。
   ///
@@ -5166,6 +5202,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             if (_isSyntheticControlsHover(event)) return;
             _lastGlobalPointerPos = event.position;
           },
+          // BUG-1995：视频页此前**没有**「PointerDownEvent → MouseBinding → 派发」
+          // 这条链路（video scope 的 mouse 通道因此是关的，设置页连绑定入口都不给）。
+          // reader 能用鼠标侧键关词典，靠的是它正文是 WebView、侧键走 DOM mousedown
+          // 回传 Dart —— 视频页没有 WebView 正文，那条路复制不过来，只能把这条链路
+          // 真的建出来。挂在已有的页面根 Listener 上，不新增层级。
+          //
+          // `Listener` 不进手势 arena、不消费点击，media_kit 控件 / 进度条 / 字幕
+          // 查词的既有手势行为零变化。
+          onPointerDown: _handleVideoPointerDown,
           child: child,
         ),
       ),

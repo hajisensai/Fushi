@@ -505,8 +505,9 @@ void main() {
     });
   });
 
-  group('dictionary_metadata follows profile (TODO-1077)', () {
-    test('snapshot + apply round-trips enable list / order / hidden', () async {
+  group('dictionary_metadata follows profile (TODO-1077 / BUG-1994)', () {
+    test('snapshot + apply round-trips order / hidden onto installed rows',
+        () async {
       final db = await _openDb();
       final repo = _repo(db);
       final pidA = await repo.createProfile('A');
@@ -515,20 +516,69 @@ void main() {
       await _seedDict(db, name: 'Daijirin', order: 1, hidden: ['en']);
       await repo.snapshotCurrentSettings(pidA);
 
-      // A no-op apply would leave THIS mutated state in place.
-      await db.clearAllDictionaryMeta();
-      await _seedDict(db, name: 'Other', order: 0);
+      // A no-op apply would leave THIS mutated state in place. 只动 profile
+      // 拥有的列（order / hidden）——BUG-1994 之后「装了哪些」不再由 apply 改写，
+      // 所以这里不能再用 clearAllDictionaryMeta 来表达「另一个 profile 的状态」。
+      await _seedDict(db, name: 'JMdict', order: 7);
+      await _seedDict(db, name: 'Daijirin', order: 9);
 
       await repo.applyProfile(pidA);
 
       final byName = await _dictByName(db);
-      expect(byName.keys.toSet(), <String>{'JMdict', 'Daijirin'},
-          reason:
-              'enable list follows profile (Other pruned, JMdict re-added)');
+      expect(byName.keys.toSet(), <String>{'JMdict', 'Daijirin'});
       expect(byName['JMdict']!.order, 0);
       expect(byName['Daijirin']!.order, 1);
       expect(jsonDecode(byName['Daijirin']!.hiddenLanguagesJson), ['en'],
           reason: 'hidden languages follow profile');
+    });
+
+    test(
+        'BUG-1994: a dictionary imported AFTER another profile was created '
+        'stays visible in that profile', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+
+      // T1: 只有明镜。T2: 建 B —— B 的快照就此定格在 {明镜}。
+      final pidA = await repo.createProfile('A');
+      await _seedDict(db, name: 'Meikyo', order: 0);
+      await repo.snapshotCurrentSettings(pidA);
+      final pidB = await repo.createProfile('B');
+      await repo.snapshotCurrentSettings(pidB);
+
+      // T3: 在 A 里导入牛津。导入路径只写全局 dictionary_metadata，
+      // 不碰任何 profile 快照 —— B 的快照永远不会知道它。
+      await repo.applyProfile(pidA);
+      await _seedDict(db, name: 'Oxford', order: 1);
+
+      // T4: 切到 B。改之前这里会把牛津整行删掉，B 的词典库里直接消失。
+      await repo.applyProfile(pidB);
+
+      final byName = await _dictByName(db);
+      expect(byName.containsKey('Oxford'), isTrue,
+          reason: 'BUG-1994: profile 只管顺序和开关，不管装了哪些词典');
+      expect(byName.containsKey('Meikyo'), isTrue);
+    });
+
+    test(
+        'BUG-1994: snapshot row for a dictionary that is no longer installed '
+        'must NOT be resurrected as a ghost row', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final pid = await repo.createProfile('A');
+
+      await _seedDict(db, name: 'Gone', order: 0);
+      await _seedDict(db, name: 'Kept', order: 1);
+      await repo.snapshotCurrentSettings(pid);
+
+      // 用户卸载了 'Gone'（磁盘目录连同元数据行一起没了）。
+      await db.deleteDictionaryMeta('Gone');
+
+      await repo.applyProfile(pid);
+
+      final byName = await _dictByName(db);
+      expect(byName.containsKey('Gone'), isFalse,
+          reason: 'insert 回来就是一行没有磁盘目录的幽灵元数据');
+      expect(byName.containsKey('Kept'), isTrue);
     });
 
     test('order change follows profile switch', () async {
@@ -617,9 +667,10 @@ void main() {
       await repo.applyProfile(pid);
 
       final byName = await _dictByName(db);
-      // 'Good' skipped (corrupt), 'Live' pruned (not in snapshot) => empty.
-      expect(byName.containsKey('Good'), isFalse);
-      expect(byName.containsKey('Live'), isFalse);
+      expect(byName.containsKey('Good'), isFalse,
+          reason: '损坏的快照行被跳过，不会把一本没装的词典造回来');
+      expect(byName.containsKey('Live'), isTrue,
+          reason: 'BUG-1994: apply 永远不删已安装的词典，哪怕快照里没有它');
     });
   });
 }

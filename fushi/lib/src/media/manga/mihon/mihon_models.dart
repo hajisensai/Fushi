@@ -42,7 +42,7 @@ class MihonExtensionInspection {
   const MihonExtensionInspection({
     required this.packageName,
     required this.name,
-    required this.versionCode,
+    required this.apkVersionCode,
     required this.versionName,
     required this.libVersion,
     required this.signerSha256,
@@ -53,7 +53,7 @@ class MihonExtensionInspection {
       MihonExtensionInspection(
         packageName: json['packageName']! as String,
         name: json['name']! as String,
-        versionCode: (json['versionCode']! as num).toInt(),
+        apkVersionCode: (json['versionCode']! as num).toInt(),
         versionName: json['versionName']! as String,
         libVersion: json['libVersion']! as String,
         signerSha256: json['signerSha256']! as String,
@@ -64,7 +64,19 @@ class MihonExtensionInspection {
 
   final String packageName;
   final String name;
-  final int versionCode;
+
+  /// APK manifest 的 `android:versionCode`，**Android 尺度**。
+  ///
+  /// 与仓库索引的 [MihonAvailableExtension.extensionVersionCode] **不是同一个量**：
+  /// keiyoushi 的构建脚本从 2026-05-15（`153fbece5 "Rework Gradle build logic"`）
+  /// 起给它加了 libVersion 前缀 —— `pack("1.4")*1000 + 69 = 104069`，而索引里写的
+  /// 仍是裸的 `69`。改版前两者相等，所以旧代码那条等值断言当初是对的；改版后
+  /// keiyoushi 的**每一个**扩展都必然不等（BUG-1996）。名字分开就是为了让类型系统
+  /// 挡住下一次「看到两个都叫 versionCode 就拿来比」。
+  ///
+  /// 只可与**同为 APK 尺度**的量比较：DB 里 `manga_extensions.versionCode` 存的就是
+  /// 它（列名冻结，语义即此），降级门 `DOWNGRADE_REJECTED` 两侧同尺度、自洽。
+  final int apkVersionCode;
   final String versionName;
   final String libVersion;
   final String signerSha256;

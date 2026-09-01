@@ -63,7 +63,7 @@ class MihonAvailableExtension {
     required this.apkUrl,
     required this.iconUrl,
     required this.libVersion,
-    required this.versionCode,
+    required this.extensionVersionCode,
     required this.versionName,
     required this.language,
     required this.contentWarning,
@@ -76,7 +76,13 @@ class MihonAvailableExtension {
   final String apkUrl;
   final String iconUrl;
   final String libVersion;
-  final int versionCode;
+
+  /// 仓库索引里的扩展版本号，**仓库尺度**（keiyoushi `index.pb` field 5）。
+  ///
+  /// 与 APK manifest 的 [MihonExtensionInspection.apkVersionCode] **不是同一个量**
+  /// ——见那里的注释（BUG-1996）。索引里是裸的 `69`，APK 里是加了 libVersion 前缀的
+  /// `104069`。别拿它和任何 APK 尺度的量比大小或比相等。
+  final int extensionVersionCode;
   final String versionName;
   final String language;
   final int contentWarning;
@@ -729,7 +735,7 @@ class MihonExtensionStoreClient {
           .resolve(resources['iconUrl']?.toString() ?? '')
           .toString(),
       libVersion: json['extensionLib']?.toString() ?? '',
-      versionCode: (json['versionCode'] as num?)?.toInt() ?? 0,
+      extensionVersionCode: (json['versionCode'] as num?)?.toInt() ?? 0,
       versionName: json['versionName']?.toString() ?? '',
       language:
           sources.map((MihonAvailableSource s) => s.language).toSet().length ==
@@ -777,7 +783,7 @@ class MihonExtensionStoreClient {
       libVersion: versionName.contains('.')
           ? versionName.substring(0, versionName.lastIndexOf('.'))
           : versionName,
-      versionCode: (json['code'] as num?)?.toInt() ?? 0,
+      extensionVersionCode: (json['code'] as num?)?.toInt() ?? 0,
       versionName: versionName,
       language: language,
       contentWarning: (json['nsfw'] as num?)?.toInt() == 1 ? 3 : 1,
@@ -905,7 +911,7 @@ class MihonExtensionStoreClient {
       apkUrl: documentUrl.resolve(apkUrl).toString(),
       iconUrl: documentUrl.resolve(iconUrl).toString(),
       libVersion: libVersion,
-      versionCode: versionCode,
+      extensionVersionCode: versionCode,
       versionName: versionName,
       language: languages.length == 1 ? languages.first : 'all',
       contentWarning: warning,

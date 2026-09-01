@@ -514,9 +514,24 @@ class MihonManager extends ChangeNotifier {
           'Extension lib ${inspection.libVersion} is not supported',
         );
       }
+      // BUG-1996：身份门只比**两侧同义**的字段（包名 + versionName）。
+      //
+      // 原来这里还比 `versionCode`，但索引侧与 APK 侧的 versionCode 从上游改版起
+      // 就不是同一个量了（69 vs 104069，详见两个模型字段上的注释），于是 keiyoushi
+      // 的每一个扩展都必然 METADATA_MISMATCH、一个都装不上。
+      //
+      // 不改成「枚举新旧两种编码」：那要把 keiyoushi 构建脚本的 `pack(libVersion)
+      // *1000 + code` 规则复制进来，等于把上游的实现细节焊死在我们的校验里，下次
+      // 上游再调构建逻辑照样挂。versionName（`1.4.69`）两侧逐字相同、且本身就编码了
+      // libVersion + 扩展版本号，约束强度不低于原来那条等值——这是把不同义的量从
+      // 判据里拿掉，不是放宽。
+      //
+      // 真实性不由本门负责：APK 是不是仓库签的由下面 SIGNATURE_MISMATCH 对
+      // `signingKey` 保证，是不是与已装版本同一签名由 SIGNATURE_CHANGED 保证。
+      // 本门的职责只是「我拿到的是不是我点的那一个」。
       if (expected != null) {
         if (inspection.packageName != expected.packageName ||
-            inspection.versionCode != expected.versionCode) {
+            inspection.versionName != expected.versionName) {
           throw const MihonRuntimeException(
             'METADATA_MISMATCH',
             'Downloaded APK does not match the extension store metadata',
@@ -536,7 +551,8 @@ class MihonManager extends ChangeNotifier {
       final MangaExtensionRow? current =
           await database.getMangaExtension(inspection.packageName);
       if (current != null) {
-        if (inspection.versionCode < current.versionCode) {
+        // 两侧同为 APK 尺度（DB 列存的就是 `apkVersionCode`），自洽，BUG-1996 不动它。
+        if (inspection.apkVersionCode < current.versionCode) {
           throw const MihonRuntimeException(
             'DOWNGRADE_REJECTED',
             'Extension downgrade is not allowed',
@@ -627,7 +643,8 @@ class MihonManager extends ChangeNotifier {
             packageName: packageName,
             storeUrl: Value(proposal.expected?.storeUrl),
             name: proposal.inspection.name,
-            versionCode: proposal.inspection.versionCode,
+            // 列名冻结，语义 = APK 尺度（见 [MihonExtensionInspection.apkVersionCode]）。
+            versionCode: proposal.inspection.apkVersionCode,
             versionName: proposal.inspection.versionName,
             libVersion: proposal.inspection.libVersion,
             language: proposal.expected?.language ??

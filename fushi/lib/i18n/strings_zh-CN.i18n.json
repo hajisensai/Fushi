@@ -3467,7 +3467,7 @@
   "mihon_store_remove": "移除扩展仓库",
   "video_import_folder_as_source_hint": "以后自动扫描此文件夹里的新视频",
   "manga_import_folder_as_source_hint": "以后自动扫描此文件夹里的新漫画",
-  "download_no_managed_video_source": "还没有受管视频来源。下载完成的视频需要一个本地视频文件夹才能入库。",
+  "download_no_managed_video_source": "还没有受管视频来源。请添加一个存放下载文件的本地文件夹，下载完成的视频才能入库。",
   "download_add_video_source": "添加视频来源",
   "video_subtitle_prev_cue_align": "上一句对齐到当前",
   "video_subtitle_next_cue_align": "下一句对齐到当前",
@@ -4092,5 +4092,6 @@
   "update_download_source_auto": "自动（推荐）",
   "update_download_source_cloudflare": "Cloudflare 镜像",
   "update_download_source_github": "GitHub 直连",
-  "update_download_source_proxy": "代理站：$host"
+  "update_download_source_proxy": "代理站：$host",
+  "shortcut_action_video_dismiss_dict": "关闭词典"
 }

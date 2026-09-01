@@ -16,7 +16,7 @@ import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 /// 过快捷键设置的用户，其快照里该 action 仍是「旧版本的完整默认」（仅 F），覆盖后新键
 /// （F12）永久丢失 —— 表现为「按 F12 没反应」。迁移只对「用户从未动过该 action（键集
 /// 恰等于旧默认全集）」的快照补回新键，绝不碰用户主动改/删过的绑定。
-const int kShortcutSchemaVersion = 10;
+const int kShortcutSchemaVersion = 11;
 
 /// 持久化 JSON 里记录写入时 schema 版本的保留 key（不是某个 action 的绑定，故单独
 /// 处理，不进 _unknownEntries，也不会被 [ShortcutAction.fromKey] 误解析）。
@@ -258,6 +258,27 @@ class FushiShortcutRegistry extends ChangeNotifier {
         ShortcutAction.popupMineEntry,
       ]) {
         _seedGamepadDefaultIfUnset(action, defaults);
+      }
+    }
+    // v10 -> v11（BUG-1995）：视频页的鼠标通道被重新打开。
+    //
+    // 它**历史上开过**（video 与 reader/audiobook 共用一个 case 分支的连带产物），
+    // 那期间设置页允许给任意 video 动作添加鼠标按键，而运行时没有任何派发管线——绑上
+    // 去永不触发。后来通道被摘掉，那些绑定既不会触发、也没被清理，就一直躺在老用户的
+    // 快照里。现在管线建好了，它们会**突然复活**：一个几个月前随手绑上、以为没用而
+    // 忘掉的侧键，升级后会开始真的执行「下一句」「切换全屏」。
+    //
+    // 所以在重开通道的同一版把这批死绑定清掉：它们从来没有生效过，清掉不会改变任何
+    // 用户**观察到**的行为；留着才是行为反转。只清 video scope（reader/audiobook 的
+    // 鼠标绑定一直是真实生效的，绝不能碰），且只清鼠标通道。
+    if (from < 11) {
+      for (final ShortcutAction action
+          in ShortcutAction.actionsForScope(ShortcutScope.video)) {
+        final ShortcutBindingSet current = bindingsFor(action);
+        if (current.mouseBindings.isEmpty) continue;
+        _bindings[action] = current.copyWith(
+          mouseBindings: const <MouseBinding>[],
+        );
       }
     }
   }

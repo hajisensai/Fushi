@@ -3467,7 +3467,7 @@
   "mihon_store_remove": "Xóa cửa hàng tiện ích mở rộng",
   "video_import_folder_as_source_hint": "Tiếp tục quét thư mục này để tìm video mới",
   "manga_import_folder_as_source_hint": "Tiếp tục quét thư mục này để tìm truyện tranh mới",
-  "download_no_managed_video_source": "Chưa có nguồn video được quản lý. Tải xuống cần một thư mục video cục bộ để lưu.",
+  "download_no_managed_video_source": "Chưa có nguồn video được quản lý. Hãy thêm một thư mục cục bộ để lưu các tệp đã tải xuống, video hoàn tất mới vào được thư viện.",
   "download_add_video_source": "Thêm nguồn video",
   "video_subtitle_prev_cue_align": "Căn dòng trước đến thời điểm hiện tại",
   "video_subtitle_next_cue_align": "Căn dòng tiếp theo đến thời điểm hiện tại",
@@ -4092,5 +4092,6 @@
   "update_download_source_auto": "Automatic (recommended)",
   "update_download_source_cloudflare": "Cloudflare mirror",
   "update_download_source_github": "GitHub direct",
-  "update_download_source_proxy": "Proxy: $host"
+  "update_download_source_proxy": "Proxy: $host",
+  "shortcut_action_video_dismiss_dict": "Đóng từ điển"
 }

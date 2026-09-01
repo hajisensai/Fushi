@@ -128,19 +128,28 @@ enum ShortcutScope {
           ShortcutChannel.gamepad,
           ShortcutChannel.mouse,
         };
-      // 首页 / 全局 / 视频页：键盘与手柄都有解析入口（home_page 的 resolveKeyboard、
-      // global_navigation、video_player_shortcuts 的 keyboardBindings、各页
-      // GamepadButtonIntent），但**鼠标没有**——这三个页面都是纯 Flutter 表面，没有
-      // WebView 接管 mousedown，也没有任何 Flutter 侧鼠标绑定派发管线。曾经开着
-      // mouse 通道纯属与 reader/audiobook 共用一个 case 分支的连带产物：设置页给出
-      // 「添加鼠标按键」入口，绑上去永不触发。要重开必须先真的建一条
-      // PointerDownEvent → MouseBinding → 派发的链路并验证。
+      // 首页 / 全局：键盘与手柄都有解析入口（home_page 的 resolveKeyboard、
+      // global_navigation、各页 GamepadButtonIntent），但**鼠标没有**——这两个页面
+      // 是纯 Flutter 表面，没有 WebView 接管 mousedown，也没有任何 Flutter 侧鼠标
+      // 绑定派发管线。曾经开着 mouse 通道纯属与 reader/audiobook 共用一个 case
+      // 分支的连带产物：设置页给出「添加鼠标按键」入口，绑上去永不触发。要重开必须
+      // 先真的建一条 PointerDownEvent → MouseBinding → 派发的链路并验证。
       case home:
       case global:
+        return const <ShortcutChannel>{
+          ShortcutChannel.keyboard,
+          ShortcutChannel.gamepad,
+        };
+      // 视频页：BUG-1995 把上面那条缺失的链路真的建出来了——页面根的 [Listener]
+      // （`video_fushi_page.dart` 的 `_wrapVideoGamepadControls`）现在收 onPointerDown，
+      // 经 `domMouseButtonFromPointerButtons` → `resolveMouse(scope: video)` 派发，
+      // 与 reader 走 WebView DOM mousedown 到达的是同一个 registry 判据。用户报的
+      // 「关闭词典快捷键小说鼠标侧键可以，视频不行」就是这条链路整个不存在。
       case video:
         return const <ShortcutChannel>{
           ShortcutChannel.keyboard,
           ShortcutChannel.gamepad,
+          ShortcutChannel.mouse,
         };
       // universal（「返回上一级」）：键盘与手柄都有解析入口——每个表面在自身 scope
       // 未命中后按 `resolveKeyboard/resolveGamepad(scope: universal)` 兜底
@@ -299,6 +308,13 @@ enum ShortcutAction {
   // 播放控制 → 字幕/章节跳转 → 字幕显示 → 字幕对轴 → 音量 → 画面/杂项
   // 分簇排列，重要动作靠前；重排只影响展示，持久化走字符串 key、与声明序无关。
   // 「逐级退出」不在本组——它是全 app 共用的 [globalBack]（universal scope）。
+
+  // 「只关词典、绝不做别的」的可选专用动作（**默认无绑定**，与 [readerDismissDict] /
+  // [mangaDismissDict] 同形）。BUG-1995：没有它的话，想用鼠标侧键关词典就只能把侧键
+  // 绑到某个**真实**的视频动作（「下一句」之类），浮层不可见时那个动作会照常执行——
+  // reader 之所以干净，正是因为它有这个专用空绑定动作。
+  // 退出视频仍走 universal 的 [globalBack] 阶梯（浮层可见先关浮层，否则退出）。
+  videoDismissDict(ShortcutScope.video, 'video_dismiss_dict'),
 
   // 播放控制
   videoTogglePlayPause(ShortcutScope.video, 'video_toggle_play_pause'),

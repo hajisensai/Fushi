@@ -3467,7 +3467,7 @@
   "mihon_store_remove": "Eklenti mağazasını kaldır",
   "video_import_folder_as_source_hint": "Yeni videolar için bu klasörü taramaya devam et",
   "manga_import_folder_as_source_hint": "Yeni manga için bu klasörü taramaya devam et",
-  "download_no_managed_video_source": "Henüz yönetilen bir video kaynağı yok. İndirmelerin ineceği yerel bir video klasörü gerekiyor.",
+  "download_no_managed_video_source": "Henüz yönetilen bir video kaynağı yok. İndirilen dosyaların saklanacağı yerel bir klasör ekleyin ki tamamlanan videolar kitaplığa girsin.",
   "download_add_video_source": "Video kaynağı ekle",
   "video_subtitle_prev_cue_align": "Önceki satırı şimdiye hizala",
   "video_subtitle_next_cue_align": "Sonraki satırı şimdiye hizala",
@@ -4092,5 +4092,6 @@
   "update_download_source_auto": "Automatic (recommended)",
   "update_download_source_cloudflare": "Cloudflare mirror",
   "update_download_source_github": "GitHub direct",
-  "update_download_source_proxy": "Proxy: $host"
+  "update_download_source_proxy": "Proxy: $host",
+  "shortcut_action_video_dismiss_dict": "Sözlüğü Kapat"
 }
