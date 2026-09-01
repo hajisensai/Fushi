@@ -4095,6 +4095,7 @@
   "storage_entry_backups_label": "上次导出遗留的 $n 个备份包",
   "update_download_source_unavailable": "$source 不适用于该文件，已回退到自动顺序",
   "network_proxy_credentials_scope_hint": "凭据仅用于 HTTP 请求；内置 torrent 引擎无法使用",
+  "anki_error_paired_device_unreachable": "无法制卡：当前没有可连接的已配对设备。请确认配对设备上的 Fushi 正在运行；如果要在本机制卡，请关闭「制卡到已配对设备」。",
   "stat_detail_ungrouped": "未分组",
   "stat_detail_empty": "此时段暂无记录",
   "stat_center_title": "统计中心",

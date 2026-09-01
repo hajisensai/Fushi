@@ -359,16 +359,41 @@ void main() {
           reason: '无弹窗时不消费（ignored），不得吞键');
     });
 
-    test('阅读器 globalBack 分支 = 先关词典、再 maybePop 退书（BUG-782 闸门）', () {
+    test('阅读器 globalBack 分支 = 先关词典、再退全屏、最后 maybePop 退书（BUG-782 闸门）', () {
       final String slice =
           caseSlice(File(readerPath).readAsStringSync(), 'globalBack');
       expect(slice.contains('isDictionaryShown'), isTrue,
           reason: '第一级：词典弹窗可见时只关弹窗，留在书里');
       expect(slice.contains('clearDictionaryResult'), isTrue);
-      expect(slice.contains('maybePop('), isTrue,
-          reason: '第二级：退书必须经 maybePop 触发 PopScope→onWillPop');
+      // 第二级（用户裁定「Esc 也可以退出全屏」）：窗口全屏中先退全屏、留在书里。退书
+      // 这一级随之搬进同一个 helper，所以 BUG-782 那条不变式（退书必须经 maybePop、
+      // 不得裸 pop）跟着挪到下面对 helper 的断言上——**钉的位置变了，强度没放宽**：
+      // 两处切片各自都要证明自己没有绕过 PopScope 的裸 pop()。
+      expect(
+        slice.contains('_exitWindowFullscreenOrPopReader('),
+        isTrue,
+        reason: '第二/三级：全屏 → 退书的阶梯统一由该 helper 承担',
+      );
       expect(
         RegExp(r'(?<!maybe)\.pop\(').hasMatch(slice),
+        isFalse,
+        reason: '不得出现绕过 PopScope 的裸 pop()（BUG-782）',
+      );
+
+      final String helper = methodBody(
+        File('lib/src/pages/implementations/reader_fushi/chrome.part.dart')
+            .readAsStringSync(),
+        'Future<void> _exitWindowFullscreenOrPopReader() async {',
+      );
+      expect(
+        helper.contains('exitWindowFullscreenIfActive('),
+        isTrue,
+        reason: '退全屏必须排在退书之前，否则 Esc 会连人带全屏一起退出书籍',
+      );
+      expect(helper.contains('maybePop('), isTrue,
+          reason: '最后一级：退书必须经 maybePop 触发 PopScope→onWillPop');
+      expect(
+        RegExp(r'(?<!maybe)\.pop\(').hasMatch(helper),
         isFalse,
         reason: '不得出现绕过 PopScope 的裸 pop()（BUG-782）',
       );

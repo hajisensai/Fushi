@@ -152,7 +152,7 @@ class MangaImporter {
       // sanitizeRelSegments 对含 `..` 的 img_path 抛 MangaImportException（防穿越红线）。
       final List<String> segments = MangaStorage.sanitizeRelSegments(page.url);
       destRels.add(MangaStorage.uniqueDestRel(segments, usedDestRels));
-      final File src = _sourceFile(srcDir.path, page.url);
+      final File src = mokuroPageFile(srcDir.path, page.url);
       if (!src.existsSync()) {
         throw MangaImportException('Missing manga page image: ${page.url}');
       }
@@ -179,7 +179,7 @@ class MangaImporter {
     for (int i = 0; i < total; i++) {
       final MokuroImage page = payload.images[i];
       final String destRel = destRels[i];
-      final File src = _sourceFile(srcDir.path, page.url);
+      final File src = mokuroPageFile(srcDir.path, page.url);
       final File dest = MangaStorage.destFile(bookDir, destRel);
       dest.parent.createSync(recursive: true);
       await src.copy(dest.path);
@@ -237,7 +237,8 @@ class MangaImporter {
     final List<String>? pageRoot = resolveMokuroPageRoot(
       payload: payload,
       volumeName: volumeName,
-      pageExists: (String rel) => _sourceFile(mokuroDir.path, rel).existsSync(),
+      pageExists: (String rel) =>
+          mokuroPageFile(mokuroDir.path, rel).existsSync(),
     );
     if (pageRoot == null) {
       // 两种惯例都不成立：把搜过的目录逐条报出来。这条文案是用户唯一能拿到的线索，
@@ -424,7 +425,13 @@ class MangaImporter {
   }
 
   /// 把相对 [rawUrl]（正斜杠或反斜杠）解析成 [srcDirPath] 下的源图 [File]。
-  static File _sourceFile(String srcDirPath, String rawUrl) =>
+  ///
+  /// 公开是因为「造出一个 mokuro 卷目录」与「读一个 mokuro 卷目录」必须是同一套
+  /// 口径：[MangaArchiveImporter] 把压缩包里的页图铺进临时目录时，如果另用一套
+  /// 路径派生（例如 `MangaStorage.sanitizeRelSegments`——它会剥掉前导 `images/`
+  /// 段、还会改写 Windows 非法字符），铺出来的文件名在读取侧永远找不到，整卷导入
+  /// 必报 `Missing manga page image`。写入方与读取方共用本函数即消除该错位。
+  static File mokuroPageFile(String srcDirPath, String rawUrl) =>
       File(p.joinAll(<String>[srcDirPath, ...rawUrl.split(RegExp(r'[\\/]+'))]));
 
   /// 从 mokuro 顶层 `title` + `volume` 派生显示标题（进而派生 bookKey）。组合 `title volume`

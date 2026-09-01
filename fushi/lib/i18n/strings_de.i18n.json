@@ -4095,6 +4095,7 @@
   "storage_entry_backups_label": "$n Archiv(e) vom letzten Export übrig",
   "update_download_source_unavailable": "$source ist für diese Datei nicht verfügbar; es wird auf die automatische Reihenfolge zurückgegriffen",
   "network_proxy_credentials_scope_hint": "Zugangsdaten gelten nur für HTTP-Anfragen; die integrierte Torrent-Engine kann sie nicht verwenden",
+  "anki_error_paired_device_unreachable": "Couldn't create the card because no paired device could be reached. Make sure Fushi is running on the paired device, or turn off Mine to paired device in Anki settings to create cards locally.",
   "stat_detail_ungrouped": "Ungrouped",
   "stat_detail_empty": "No activity in this period",
   "stat_center_title": "Statistics center",

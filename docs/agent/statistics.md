@@ -19,7 +19,7 @@
 - 统计展示只经 `loadStatFacts`（`fushi/lib/src/stats/stat_facts.dart`）→ 统一事实面 `StatFact`（日面 / 小时面分列，legacy 行与段同形，**不许**把两面并进同一列表求和）。不许直读 legacy 表 / `activity_events` 做统计（豁免：`stat_facts.dart`、`lib/src/sync/**`、`home_video_page.dart` 的最近观看时刻）。
 - 窗口阈值只在 `StatWindow`（`stat_window.dart`）：近 7 天恰 7 天、近 30 天恰 30 天、上周窗口同长不重叠。页面不许自己 `now - 7d`。守卫 ④ 是本域唯一按**命名清单** `kStatPages` 扫描的（其余全树枚举），所以新增统计页漏登记时目录枚举守卫和定向测试都挑不到——④a 自校验兜底：**用了 `StatWindow` 就必须在 `kStatPages` 里**，漏登记直接红。
 - 活动流唯一数据源 `StatFacts.activityRows` = legacy 活动行 ∪ `segmentsAsActivityRows` ∪ `galgameSessionsAsActivityRows`；首页、游戏首页、互联 host 的远端活动端点都吃它。
-- 首页每日目标分子与阅读统计页共用 `studyGoalCharsForDay`（**学习域**：书 + 视频字幕 + 游戏 hook）。BUG-1993 之前它叫 `readingGoalCharsForDay` 且函数体内硬编码 `f.isBook`，纯视频/游戏日目标恒 0；现在**域由调用方传的行集决定**，两页必须都传完整日面（首页 `_dailyRows`、统计页 `_dailyFacts`），传单域切片会让 BUG-1993 原地复发。守卫 ⑧ 同时钉函数名与这两处实参。
+- 首页每日目标分子与阅读统计页目标卡共用 `studyGoalCharsForDay`（BUG-1993）：函数只按 `dateKey` 求和，**域由调用方传的行集决定**。目标是「每日学习目标」——两处都传完整日面（`StatFacts.daily`，阅读 + 视频字幕 + 游戏 hook），与热力图「全部」档同覆盖面；只算某一域时传对应切片（如 `dailyBooks`，统计页概览「今日字数」与 CPH 仍是阅读域）。v92 曾把分子硬编码 `isBook`，纯视频/游戏日目标恒 0、与同一张卡上方的热力图对不上。偏好键 `readingGoalDailyChars` / `readingGoalWeeklyChars` 冻结不动，语义已是学习目标。守卫 ⑧ 同时钉函数名与这两处实参。
 - 统计上屏入口收敛到首页 dashboard 的统计中心（`statistics_center_page.dart`，总览 + 阅读/视频/游戏三 tab）。三个统计页保留独立页形态，另经 `embedded: true` 走 `buildEmbeddedStatTab`（`stat_shared.dart`）嵌进 tab——**页头动作必须同时喂给两条渲染路径**，只改独立页会让 tab 里的入口静默丢失。书架/视频/游戏页头不再各挂统计入口。
 - 时段明细统一走 `showStatPeriodDetailSheet`（`stat_period_detail_sheet.dart`），它只吃调用方传进来的 `StatFact`、不碰 DB。**只许传日面切片**（`facts.daily` 系）：日面与小时面共享同一批 `StatFact` 实例，`hour` 不能当判别位，sheet 自己无法拒绝小时面，传错即双计。
 
