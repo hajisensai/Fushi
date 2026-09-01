@@ -206,6 +206,15 @@ class SlotTooltipHost {
 
  private:
   bool EnsureWindow(HWND owner);
+  // BUG-1981 同一 bug 家族。这个提示窗以宿主窗为 owner 创建（WS_POPUP +
+  // hWndParent=owner），宿主被 DestroyWindow 时系统连带销毁它，而本对象跨
+  // 会话复用、收不到任何通知。判据必须与 FloatingLyricWindow::OwnsLiveWindow
+  // 同形：IsWindow 单独不足以排除 HWND 被系统回收给别的窗口，还要核对
+  // GWLP_USERDATA 上的实例 back-pointer。
+  bool OwnsLiveWindow() const;
+  // 句柄已不是我方活窗时，把它连同全部每窗口状态忘掉，让下一次 EnsureWindow
+  // 从零重建。活窗时是 no-op，可以无条件调用。
+  void ForgetDeadWindow();
 
   HWND hwnd_ = nullptr;
   int active_slot_ = -1;
