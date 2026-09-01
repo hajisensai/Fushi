@@ -3,7 +3,7 @@
 - **报告**：2026-09-01（用户：EPUB + 同名 SRT 配对，匹配率 0）
 - **真实性**：✅ 真 bug，根因 `fushi/lib/src/epub/epub_book.dart:92`（原 `chapterPlainText` 里的 `html_parser.parse(chapters[index].html)`）
 - **[x] ① 已修复** — `fushi/lib/src/epub/epub_book.dart`：新增 `normalizeSelfClosingRawTextTags()` + 统一解析入口 `EpubBook.parseChapterHtml()`，章节 XHTML 的 DOM 解析全部收敛到该入口——`epub_book.dart` 内四处（`chapterPlainText` / `isImageOnlyChapter` / `chapterImageSrcs` / `images`）**加上**审查补收的第五处 `fushi/lib/src/media/audiobook/audiobook_bridge.dart:772` `_chapterDomText`（全书搜索的 isolate 取文入口，同一根因下这类书搜索恒零结果）
-- **[x] ② 已加自动化测试** — `fushi/test/epub/epub_selfclosing_rawtext_tag_test.dart`（14 条，已做变异实测：把归一化改成直通后 8 条转红；把 `_chapterDomText` 改回裸 `html_parser.parse` 后新增的搜索用例单独转红，还原后 sha256 回基线）
+- **[x] ② 已加自动化测试** — `fushi/test/epub/epub_selfclosing_rawtext_tag_test.dart`（14 条，已做变异实测：把归一化改成直通后 8 条转红；把 `_chapterDomText` 改回裸 `html_parser.parse` 后新增的搜索用例单独转红，还原后 sha256 回基线；另加源码守卫 `fushi/test/tools/epub_chapter_parse_entry_guard_test.dart`——正向枚举 `fushi/lib` + `packages/*/lib`（实测 1342 个 .dart）里对 package:html `parse()` 的调用，白名单只放入口实现本体与真 HTML5 网页抓取两处，同一变异下它会直接点名漏网文件行号）
 - **备注**：见下
 
 ### 复现
