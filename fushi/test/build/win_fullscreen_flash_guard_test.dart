@@ -301,4 +301,140 @@ void main() {
       expect(readBoundsAt, greaterThan(checkAt));
     });
   });
+
+  group('BUG-2006 edge-to-edge windows suppress the DWM frame chrome', () {
+    // Windows 11 paints the thin window border and rounds the window's
+    // corners in the compositor, ON TOP of the client area — neither belongs
+    // to the non-client area window_manager's hidden-title-bar WM_NCCALCSIZE
+    // leaves this window. Whenever the client reaches the screen edges that
+    // chrome lands on app content: measured on Windows 11 26200, a normal
+    // (SW_SHOWNORMAL, not zoomed) Hibiki window sized to the monitor has
+    // 3830/3840 pixels of screen row 0 painted in the accent colour and the
+    // desktop showing through all four corners — the user's report.
+    //
+    // The suppression is therefore NOT fullscreen-only: it must cover every
+    // way this window presents edge to edge.
+
+    test('the policy covers fullscreen, maximized AND screen-sized', () {
+      final int fnAt = cpp.indexOf('void Win32Window::UpdateFrameChrome()');
+      expect(
+        fnAt,
+        isNonNegative,
+        reason:
+            'a single policy point decides whether DWM may paint chrome over '
+            'the client area.',
+      );
+      final int fnEnd = cpp.indexOf('\n}', fnAt);
+      expect(fnEnd, greaterThan(fnAt));
+      final String body = cpp.substring(fnAt, fnEnd);
+
+      expect(
+        body.contains('fullscreen_'),
+        isTrue,
+        reason: 'runner-owned fullscreen covers the monitor.',
+      );
+      expect(
+        body.contains('IsZoomed(hwnd)'),
+        isTrue,
+        reason:
+            'Windows drops the border and the rounding for a maximized '
+            'window on its own; a custom-frame window has to ask.',
+      );
+      expect(
+        body.contains('ClientCoversMonitor(hwnd)'),
+        isTrue,
+        reason:
+            'the reported state was a NORMAL, not-zoomed window whose client '
+            'happened to cover the monitor (measured 3830/3840 accent pixels '
+            'on screen row 0) — a fullscreen-only guard would miss it.',
+      );
+      expect(
+        body.contains('frame_chrome_suppressed_'),
+        isTrue,
+        reason:
+            'transition-only: a DwmSetWindowAttribute round trip on every '
+            'WM_SIZE would tax interactive resizing (BUG-1917 cadence).',
+      );
+    });
+
+    test('both DWM attributes are set, and both are restorable', () {
+      final int fnAt = cpp.indexOf('void ApplyFrameChrome(');
+      expect(fnAt, isNonNegative);
+      final int fnEnd = cpp.indexOf('\n}', fnAt);
+      final String body = cpp.substring(fnAt, fnEnd);
+
+      expect(
+        body.contains('DWMWA_BORDER_COLOR'),
+        isTrue,
+        reason:
+            'DWMWA_BORDER_COLOR=DWMWA_COLOR_NONE is the measured fix for the '
+            'top line (600/600 chrome pixels on the client top row before, '
+            '0/600 after, and the line returns when the default is restored).',
+      );
+      expect(body.contains('DWMWA_COLOR_NONE'), isTrue);
+      expect(
+        body.contains('DWMWA_COLOR_DEFAULT'),
+        isTrue,
+        reason:
+            'an ordinary windowed Hibiki must keep its normal border — this '
+            'is a state-dependent policy, not a permanent window attribute.',
+      );
+      expect(
+        body.contains('DWMWA_WINDOW_CORNER_PREFERENCE'),
+        isTrue,
+        reason:
+            'the rounded corners clip the client and show the desktop '
+            'through all four corners; DWMWCP_DONOTROUND is a separate fix '
+            'from the border colour (measured: it alone leaves the top line '
+            'untouched, and the border colour alone leaves the corners cut).',
+      );
+      expect(body.contains('DWMWCP_DONOTROUND'), isTrue);
+      expect(body.contains('DWMWCP_DEFAULT'), isTrue);
+      expect(
+        cpp.contains('#include <dwmapi.h>'),
+        isTrue,
+        reason: 'DwmSetWindowAttribute needs the DWM header.',
+      );
+    });
+
+    test('every geometry change re-evaluates the policy', () {
+      final int sizeAt = cpp.indexOf('case WM_SIZE:');
+      expect(sizeAt, isNonNegative);
+      final int sizeEnd = cpp.indexOf('case WM_ERASEBKGND', sizeAt);
+      expect(sizeEnd, greaterThan(sizeAt));
+      expect(
+        cpp.substring(sizeAt, sizeEnd).contains('UpdateFrameChrome()'),
+        isTrue,
+        reason:
+            'maximize / restore / drag-resize all cross the edge-to-edge '
+            'boundary; without a WM_SIZE hook the chrome would only ever be '
+            'updated by the fullscreen toggle.',
+      );
+
+      final int fnAt = cpp.indexOf('void Win32Window::SetFullscreen(');
+      final int fnEnd = cpp.indexOf('\n}', fnAt);
+      final String body = cpp.substring(fnAt, fnEnd);
+      final int enterChromeAt = body.indexOf('UpdateFrameChrome()');
+      final int topmostAt = body.indexOf('SetWindowPos(hwnd, HWND_TOPMOST');
+      expect(enterChromeAt, isNonNegative);
+      expect(
+        topmostAt,
+        greaterThan(enterChromeAt),
+        reason:
+            'suppress the chrome before the jump, or the compositor paints '
+            'the border over a client area that already covers the monitor.',
+      );
+
+      final int notopmostAt = body.indexOf('HWND_NOTOPMOST');
+      final int exitChromeAt = body.indexOf('UpdateFrameChrome()', notopmostAt);
+      expect(notopmostAt, isNonNegative);
+      expect(
+        exitChromeAt,
+        greaterThan(notopmostAt),
+        reason:
+            're-evaluate only once the geometry is back, so the policy sees '
+            'the restored window instead of the still-oversized one.',
+      );
+    });
+  });
 }

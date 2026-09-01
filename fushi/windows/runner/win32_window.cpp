@@ -2,6 +2,7 @@
 
 #include "window_activation_policy.h"
 
+#include <dwmapi.h>
 #include <flutter_windows.h>
 
 #include "resource.h"
@@ -332,6 +333,12 @@ Win32Window::MessageHandler(HWND hwnd,
       return 0;
     }
     case WM_SIZE: {
+      // BUG-2006: the client area just changed; re-evaluate whether this
+      // window now presents edge to edge and therefore must not have DWM
+      // paint its border / rounded corners over app content. Transition-only
+      // (see UpdateFrameChrome), so a drag-resize costs one comparison per
+      // WM_SIZE, not a DwmSetWindowAttribute round trip.
+      UpdateFrameChrome();
       RECT rect = GetClientArea();
       // BUG-1916: the surface just changed size; its new area is uninitialised
       // (black) and its old area may carry an older fill. Paint it whole,
@@ -533,6 +540,78 @@ void Win32Window::PaintBackdrop(HDC dc) {
   FillRect(dc, &rect, backdrop_brush_);
 }
 
+namespace {
+
+// BUG-2006: true when the window's client area covers its monitor edge to
+// edge. window_manager's hidden-title-bar WM_NCCALCSIZE gives this window a
+// client area that reaches the frame, so a screen-covering window puts app
+// content under every pixel of DWM-painted chrome — measured on Windows 11
+// 26200: a normal (SW_SHOWNORMAL, not zoomed) Hibiki window sized to the
+// monitor has 3830/3840 pixels of screen row 0 painted in the accent colour,
+// and the desktop showing through all four rounded corners.
+bool ClientCoversMonitor(HWND hwnd) {
+  MONITORINFO monitor{};
+  monitor.cbSize = sizeof(MONITORINFO);
+  if (!GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST),
+                      &monitor)) {
+    return false;
+  }
+  RECT client{};
+  if (!GetClientRect(hwnd, &client)) {
+    return false;
+  }
+  POINT origin{0, 0};
+  if (!ClientToScreen(hwnd, &origin)) {
+    return false;
+  }
+  return origin.x <= monitor.rcMonitor.left &&
+         origin.y <= monitor.rcMonitor.top &&
+         origin.x + (client.right - client.left) >= monitor.rcMonitor.right &&
+         origin.y + (client.bottom - client.top) >= monitor.rcMonitor.bottom;
+}
+
+// Drop (or restore) the compositor-painted border and corner rounding.
+//
+// Measured on Windows 11 26200 with a faithful standalone repro (a window with
+// window_manager's WM_NCCALCSIZE reshaping, client filled a known colour, the
+// screen sampled): with the border enabled 600/600 pixels of the client's top
+// row are chrome; with DWMWA_BORDER_COLOR=DWMWA_COLOR_NONE it is 0/600; and
+// restoring the default brings the line straight back. DWMWCP_DONOTROUND is a
+// separate fix for the corners — it alone leaves the top line untouched
+// (measured), and the border colour alone leaves the corners clipped.
+//
+// Both attributes are Windows 11 (build 22000+) only; DwmSetWindowAttribute
+// fails harmlessly on older Windows, which has no rounded corners and where
+// window_manager already keeps a 1 px top border out of the client area.
+void ApplyFrameChrome(HWND hwnd, bool suppress) {
+  DWORD corner_preference = suppress ? DWMWCP_DONOTROUND : DWMWCP_DEFAULT;
+  DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                        &corner_preference, sizeof(corner_preference));
+  COLORREF border_color = suppress ? DWMWA_COLOR_NONE : DWMWA_COLOR_DEFAULT;
+  DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &border_color,
+                        sizeof(border_color));
+}
+
+}  // namespace
+
+void Win32Window::UpdateFrameChrome() {
+  HWND hwnd = window_handle_;
+  if (hwnd == nullptr) {
+    return;
+  }
+  // The three ways this window presents edge to edge. Windows drops the
+  // border and the rounding for a maximized window on its own; a
+  // custom-frame window has to ask, and the runner-owned fullscreen and a
+  // screen-sized normal window need exactly the same treatment.
+  const bool suppress =
+      fullscreen_ || IsZoomed(hwnd) != 0 || ClientCoversMonitor(hwnd);
+  if (suppress == frame_chrome_suppressed_) {
+    return;
+  }
+  frame_chrome_suppressed_ = suppress;
+  ApplyFrameChrome(hwnd, suppress);
+}
+
 void Win32Window::SetFullscreen(bool fullscreen) {
   HWND hwnd = window_handle_;
   if (hwnd == nullptr || fullscreen == fullscreen_) {
@@ -582,6 +661,9 @@ void Win32Window::SetFullscreen(bool fullscreen) {
                               (client_rect.bottom - client_rect.top) -
                               border_top;
     fullscreen_ = true;
+    // Before the jump, so the compositor never paints the border/rounded
+    // corners over a client area that already covers the monitor (BUG-2006).
+    UpdateFrameChrome();
     SetWindowPos(hwnd, HWND_TOPMOST, monitor.rcMonitor.left - border_left,
                  monitor.rcMonitor.top - border_top,
                  (monitor.rcMonitor.right - monitor.rcMonitor.left) +
@@ -611,6 +693,10 @@ void Win32Window::SetFullscreen(bool fullscreen) {
     }
     SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    // After the geometry is back, so the policy is evaluated against the
+    // restored window instead of the still-oversized one (a window that was
+    // already screen-sized before fullscreen keeps the chrome suppressed).
+    UpdateFrameChrome();
     ReleaseTransitionSnapshot();
   }
 }
