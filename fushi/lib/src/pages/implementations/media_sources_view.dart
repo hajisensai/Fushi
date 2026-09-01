@@ -1038,7 +1038,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     await _db.upsertVideoSourceScrapeSettings(
       VideoSourceScrapeSettingsCompanion.insert(
         sourceId: Value<int>(row.id),
-        enabled: Value<bool>(existing?.enabled ?? true),
+        enabled: Value<bool>(draft.enabled),
         // 旧列保留作数据库兼容；新保存一律清空，AniDB 是固定主身份源。
         providerOverride: const Value<String?>(null),
         autoAfterScan: Value<bool>(draft.autoAfterScan),
@@ -1199,6 +1199,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
 
 class _VideoSourceScrapeSettingsDraft {
   const _VideoSourceScrapeSettingsDraft({
+    required this.enabled,
     required this.autoAfterScan,
     required this.writeNfo,
     required this.writeImages,
@@ -1211,6 +1212,7 @@ class _VideoSourceScrapeSettingsDraft {
     VideoSourceScrapeSettingRow? row,
   ) {
     return _VideoSourceScrapeSettingsDraft(
+      enabled: row?.enabled ?? true,
       autoAfterScan: row?.autoAfterScan ?? false,
       writeNfo: row?.writeNfo ?? true,
       writeImages: row?.writeImages ?? true,
@@ -1220,6 +1222,9 @@ class _VideoSourceScrapeSettingsDraft {
     );
   }
 
+  /// 此来源的刮削总闸。协调器早就检查它（关 = 手动/扫描后/导入后/补刮全部
+  /// 短路），但 UI 从没画过这个开关、保存时还硬编码回写旧值（BUG-1999）。
+  final bool enabled;
   final bool autoAfterScan;
   final bool writeNfo;
   final bool writeImages;
@@ -1245,6 +1250,7 @@ class _VideoSourceScrapeSettingsDialog extends StatefulWidget {
 
 class _VideoSourceScrapeSettingsDialogState
     extends State<_VideoSourceScrapeSettingsDialog> {
+  late bool _enabled = widget.initial.enabled;
   late bool _autoAfterScan = widget.initial.autoAfterScan;
   late bool _writeNfo = widget.initial.writeNfo;
   late bool _writeImages = widget.initial.writeImages;
@@ -1256,6 +1262,7 @@ class _VideoSourceScrapeSettingsDialogState
     Navigator.pop(
       context,
       _VideoSourceScrapeSettingsDraft(
+        enabled: _enabled,
         autoAfterScan: _autoAfterScan,
         writeNfo: _writeNfo,
         writeImages: _writeImages,
@@ -1276,6 +1283,12 @@ class _VideoSourceScrapeSettingsDialogState
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              AdaptiveSettingsSwitchRow(
+                title: t.video_source_scrape_enabled_toggle,
+                subtitle: t.video_source_scrape_enabled_toggle_hint,
+                value: _enabled,
+                onChanged: (bool value) => setState(() => _enabled = value),
+              ),
               AdaptiveSettingsSwitchRow(
                 title: t.video_source_scrape_auto_after_scan,
                 subtitle: t.video_source_scrape_auto_after_scan_hint,
