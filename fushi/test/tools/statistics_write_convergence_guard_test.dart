@@ -19,7 +19,7 @@
 //  ⑥ 阅读面切屏暂停：三个阅读器 paused/inactive 分支 stop、resumed 分支 start；
 //     视频面 inactive **不**停（用户拍板：视频以播放态为准）；
 //  ⑦ `StudyClock.stop()` 结构性幂等：清引用在第一个 await 之前；
-//  ⑧ 首页每日目标分子与阅读统计页同函数（`readingGoalCharsForDay`）。
+//  ⑧ 首页每日目标分子与阅读统计页同函数（`studyGoalCharsForDay`，学习域口径）。
 
 import 'dart:io';
 
@@ -349,11 +349,11 @@ void main() {
       'lib/src/pages/implementations/reading_statistics_page.dart',
     ]) {
       expect(
-        containsIdentifierCall(read(path), 'readingGoalCharsForDay'),
+        containsIdentifierCall(read(path), 'studyGoalCharsForDay'),
         isTrue,
         reason:
-            '$path：目标分子必须走 readingGoalCharsForDay（只算阅读域），'
-            '首页此前把字幕字 + hook 字一起加进分子，与统计页永远对不上',
+            '$path：目标分子必须走 studyGoalCharsForDay（学习域：书 + 字幕 + '
+            '游戏 hook，BUG-1993），首页与统计页各自手搓求和迟早再对不上',
       );
     }
   });

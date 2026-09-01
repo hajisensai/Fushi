@@ -142,19 +142,36 @@ void main() {
     });
   });
 
-  group('readingGoalCharsForDay（首页目标与阅读统计页同源）', () {
-    test('只算阅读域（普通书 + 漫画）当日字数，字幕字 / hook 字不进分子', () {
-      expect(readingGoalCharsForDay(daily, '2026-07-27'), 1000 + 300);
+  group('studyGoalCharsForDay（首页目标与阅读统计页目标卡同源，学习域口径）', () {
+    test('混合日：书 + 漫画当日字数合计', () {
+      expect(studyGoalCharsForDay(daily, '2026-07-27'), 1000 + 300);
+    });
+
+    test('字幕字进分子（BUG-1993 回归：此前只算阅读域，看视频的日子恒 0）', () {
       expect(
-        readingGoalCharsForDay(daily, '2026-07-28'),
-        150,
-        reason: '同日 500 字幕字不计',
+        studyGoalCharsForDay(daily, '2026-07-28'),
+        150 + 500,
+        reason: '漫画 150 + 字幕 500，与热力图「全部」档同覆盖面',
       );
+    });
+
+    test('纯游戏日：hook 字进分子，纯时长行（chars=0）不虚增', () {
       expect(
-        readingGoalCharsForDay(daily, '2026-07-26'),
-        0,
-        reason: '只有游戏 hook 字的日子 = 0',
+        studyGoalCharsForDay(daily, '2026-07-26'),
+        2000,
+        reason: '只有游戏记录的日子目标不再是 0；时长行只有 ms 不贡献字数',
       );
+    });
+
+    test('跨日边界：无记录日 = 0，不吞相邻日', () {
+      expect(studyGoalCharsForDay(daily, '2026-07-25'), 0);
+      expect(studyGoalCharsForDay(daily, '2026-07-29'), 0);
+    });
+
+    test('域由传入行集决定：传阅读域切片 = 阅读域求和（统计页概览沿用）', () {
+      final Iterable<StatFact> books = daily.where((StatFact f) => f.isBook);
+      expect(studyGoalCharsForDay(books, '2026-07-28'), 150);
+      expect(studyGoalCharsForDay(books, '2026-07-26'), 0);
     });
   });
 }
