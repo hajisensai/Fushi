@@ -38,7 +38,6 @@ enum class HunexGgeSelectedTextFailure : uint32_t {
   kInvalidEventAfterMatch = 9,
   kUnstableSelectedSlot = 10,
   kMultipleSelectedLanes = 11,
-  kExactRawLineSuperseded = 12,
 };
 
 struct HunexGgeSelectedTextRequest {
@@ -271,7 +270,6 @@ ReadHunexGgeSelectedLunaText(const HunexGgeSelectedTextRequest &request) {
   uint32_t selected_lane_count = 0;
   uint64_t matched_seq = 0;
   uint64_t invalid_after_match_seq = 0;
-  uint64_t last_strict_selected_line_seq = 0;
   for (uint32_t lane_index = 0; lane_index < kTextLaneCount; ++lane_index) {
     const TextLane *lane = &lanes[lane_index];
     const uint64_t lane_thread_before = AtomicReadLaneField(&lane->thread_id);
@@ -308,7 +306,6 @@ ReadHunexGgeSelectedLunaText(const HunexGgeSelectedTextRequest &request) {
         }
         continue;
       }
-      last_strict_selected_line_seq = snapshot.seq;
       result.latest_strict_selected_line_seq = snapshot.seq;
       if (!SameRawLine(snapshot, request))
         continue;
@@ -357,19 +354,13 @@ ReadHunexGgeSelectedLunaText(const HunexGgeSelectedTextRequest &request) {
                          : HunexGgeSelectedTextFailure::kInvalidSelectedEvent;
     return result;
   }
-  if (last_strict_selected_line_seq > matched_seq) {
-    // The renderer supplied the inclusive upper fence for this capture. An
-    // exact line inside that window is current only when no later, fully
-    // shaped selected-line event supersedes it. Treat a later different line
-    // as stale instead of falling back to the older exact payload.
-    result.disposition = HunexGgeSelectedTextDisposition::kNoMatch;
-    result.failure = HunexGgeSelectedTextFailure::kExactRawLineSuperseded;
-    result.matched_seq = 0;
-    result.timestamp_ms = 0;
-    result.text_units = 0;
-    std::memset(result.text, 0, sizeof(result.text));
-    return result;
-  }
+  // Only an *unidentifiable* later selected-lane event can invalidate the
+  // match. A later, fully shaped selected line is Luna prefetching ahead of
+  // the renderer, which this engine does routinely; the renderer's inclusive
+  // |window_through_seq| fence plus the exact raw bytes are the current-line
+  // proof, so recency must never become an admission requirement. The newest
+  // strict line is reported through |latest_strict_selected_line_seq| for the
+  // caller's retention-revocation check only.
   if (invalid_after_match_seq > matched_seq) {
     result.disposition = HunexGgeSelectedTextDisposition::kInvalidSelectedEvent;
     result.failure = HunexGgeSelectedTextFailure::kInvalidEventAfterMatch;

@@ -222,7 +222,7 @@ class EngineSupportManifestTest(unittest.TestCase):
         self.assertIn("tests/hunex_gge_adapter_test.cpp", hunex["test_paths"])
         self.assertTrue(
             any(
-                "no same-occurrence screenshot/audio card E2E" in limitation
+                "resource_observed" in limitation
                 for limitation in hunex["known_limitations"]
             )
         )
