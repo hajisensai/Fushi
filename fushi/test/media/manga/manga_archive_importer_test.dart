@@ -62,6 +62,102 @@ void main() {
     );
   });
 
+  test(
+    'RAR images import through 7-Zip with path and size preflight',
+    () async {
+      final Uint8List png = Uint8List.fromList(
+        img.encodePng(img.Image(width: 40, height: 80)),
+      );
+      final String archivePath = p.join(root.path, 'book.rar');
+      File(archivePath).writeAsBytesSync(<int>[0x52, 0x61, 0x72, 0x21]);
+      final int sourceId = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'RAR manga',
+          mediaKind: 'manga',
+          rootPath: root.path,
+          createdAt: 1000,
+        ),
+      );
+      final List<List<String>> calls = <List<String>>[];
+      final MangaSevenZipExtractor extractor = MangaSevenZipExtractor(
+        sevenZipOverride: 'fake-7z',
+        runProcess: (String executable, List<String> arguments) async {
+          calls.add(arguments);
+          if (arguments.first == 'l') {
+            return ProcessResult(1, 0, '''
+Path = $archivePath
+Type = Rar
+
+----------
+Path = pages\\001.png
+Size = ${png.length}
+Attributes = A
+
+Path = notes.txt
+Size = 5000000000
+Attributes = A
+''', '');
+          }
+          final String outputArg = arguments.firstWhere(
+            (String arg) => arg.startsWith('-o'),
+          );
+          final File page = File(
+            p.join(outputArg.substring(2), 'pages', '001.png'),
+          );
+          page.parent.createSync(recursive: true);
+          page.writeAsBytesSync(png);
+          return ProcessResult(2, 0, '', '');
+        },
+      );
+
+      final String key = await MangaArchiveImporter.importArchive(
+        db: db,
+        archivePath: archivePath,
+        sourceId: sourceId,
+        sevenZipExtractor: extractor,
+      );
+
+      expect((await db.getEpubBook(key))!.sourceId, sourceId);
+      expect(calls.map((List<String> args) => args.first), <String>['l', 'x']);
+      expect(calls.last, contains('-ir!*.png'));
+    },
+  );
+
+  test('RAR traversal is rejected before extraction', () async {
+    final String archivePath = p.join(root.path, 'unsafe.cbr');
+    File(archivePath).writeAsBytesSync(<int>[0x52, 0x61, 0x72, 0x21]);
+    bool extracted = false;
+    final MangaSevenZipExtractor extractor = MangaSevenZipExtractor(
+      sevenZipOverride: 'fake-7z',
+      runProcess: (String executable, List<String> arguments) async {
+        if (arguments.first == 'l') {
+          return ProcessResult(1, 0, '''
+Path = $archivePath
+Type = Rar
+
+----------
+Path = ..\\escape.png
+Size = 3
+Attributes = A
+''', '');
+        }
+        extracted = true;
+        return ProcessResult(2, 0, '', '');
+      },
+    );
+
+    await expectLater(
+      MangaArchiveImporter.importArchive(
+        db: db,
+        archivePath: archivePath,
+        sevenZipExtractor: extractor,
+      ),
+      throwsA(isA<MangaImportException>()),
+    );
+    expect(extracted, isFalse);
+    expect(await db.getAllEpubBooks(), isEmpty);
+  });
+
   for (final String extension in <String>['.cbz', '.zip']) {
     test('embedded root Mokuro OCR survives $extension import', () async {
       final Uint8List png = Uint8List.fromList(
