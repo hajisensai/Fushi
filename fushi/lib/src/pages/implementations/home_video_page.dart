@@ -2753,12 +2753,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   // 卡目标宽与书架同源（[readerShelfGridExtentForWidth]）：手机窄屏
                   // （宽<600）用 150 → 至少 2 列，不再「1 列铺满整屏、卡片过大」；宽屏
                   // 按断点收敛列数。此前硬编码 240 使手机可用宽≈380 时 floor 出 1 列。
+                  final double availableWallWidth =
+                      constraints.maxWidth - tokens.spacing.card * 2;
                   final ({int columns, double cardWidth}) cardLayout =
                       unifiedShelfCardLayout(
-                    availableWidth:
-                        constraints.maxWidth - tokens.spacing.card * 2,
+                    availableWidth: availableWallWidth,
                     targetWidth:
                         readerShelfGridExtentForWidth(constraints.maxWidth),
+                  );
+                  final ({int columns, double cardWidth}) allVideosCardLayout =
+                      unifiedShelfCardLayout(
+                    availableWidth: availableWallWidth,
+                    targetWidth: allVideoThumbnailTargetWidthForWidth(
+                      constraints.maxWidth,
+                    ),
                   );
                   return CustomScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
@@ -2784,7 +2792,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                             all, ordered, remoteVideos, cardLayout),
                       if (widget.section == VideoLibrarySection.allVideos)
                         ..._buildAllVideoSlivers(
-                            all, ordered, remoteVideos, cardLayout),
+                            all, ordered, remoteVideos, allVideosCardLayout),
                       // 首页只有 hero + 横滚行，横滚行卡不参与勾选，所以这一帧
                       // 没有任何可勾选的格。必须如实登记空可见序：三个分区共用
                       // 同一个 State，多选态下从「全部视频」切到首页时，可见序
@@ -4264,19 +4272,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       ];
     }
     return <Widget>[
-      _buildVideoWallSliver(
+      _buildAllVideoGridSliver(
         <_VideoWallEntry>[
           for (final VideoBookRow book in ordered)
             _VideoWallEntry(
               cover: _localCoverProvider(book),
-              build: (VideoCardOrientation orientation) =>
-                  _buildCard(book, orientation: orientation),
+              build: (_) => _buildCard(
+                book,
+                orientation: VideoCardOrientation.landscape,
+              ),
             ),
           for (final RemoteVideoInfo video in remoteVideos)
             _VideoWallEntry(
               cover: _remoteCoverProvider(video),
-              build: (VideoCardOrientation orientation) =>
-                  _buildRemoteVideoCard(video, orientation: orientation),
+              build: (_) => _buildRemoteVideoCard(
+                video,
+                orientation: VideoCardOrientation.landscape,
+              ),
             ),
         ],
         EdgeInsets.all(tokens.spacing.card),
@@ -5791,6 +5803,36 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// “全部视频”固定 16:9 等宽网格。
+  ///
+  /// 这里的条目粒度是单个可播放视频，统一缩略图槽比比按图片朝向改变卡宽更利于
+  /// 扫读。竖版海报仍由 [PortraitCoverImage] 的 `landscapeSlot` 路径完整显示并以
+  /// 同图模糊垫底，不裁切、不变形。系列页继续走 [_buildVideoWallSliver] 的 2:3 /
+  /// 16:9 混排墙，两种页面语义互不牵连。
+  Widget _buildAllVideoGridSliver(
+    List<_VideoWallEntry> cells,
+    EdgeInsetsGeometry padding,
+    ({int columns, double cardWidth}) cardLayout,
+  ) {
+    final double coverHeight =
+        cardLayout.cardWidth / kVideoLandscapeCardAspect;
+    final double cellHeight = coverHeight + _videoCardTextBlock(context);
+    return SliverPadding(
+      padding: padding,
+      sliver: SliverGrid.builder(
+        itemCount: cells.length,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: cardLayout.columns,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          childAspectRatio: cardLayout.cardWidth / cellHeight,
+        ),
+        itemBuilder: (BuildContext context, int index) =>
+            cells[index].build(VideoCardOrientation.landscape),
       ),
     );
   }

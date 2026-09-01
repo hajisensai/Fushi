@@ -128,7 +128,7 @@ class SubtitleWorkbenchTarget {
 |---|---|---|---|
 | PR-A ✅ 2026-08-29 | AJATT provider + 目录缓存 + 设置开关 + 装配 | 是 | 真实 HTML fixture 单测（index/drama/作品页/`.kitsuinfo.json`，`test/media/video/ajatt_*_test.dart`）；真联网冒烟：目录 12686 条 0.96s / 缓存 2.4MB 二次 64ms / AniList 5680 搜索 1.6s 得 4 条 K-ON! ep1 / 真实下载 36114B。**App 内 UI 真机验证未做**（provider 走 registry，播放页/设置页只多一张卡）。踩坑：站点 `unsorted` 行 class 是 `entry_name missing_meta`（正则按前缀匹配，否则 426 条整体漏）；`http.Response(String)` 桩默认 latin1，含日文必抛 |
 | PR-B ✅ 2026-08-29 | 判据泛化 + `SubtitleWorkbenchPage`（单集+合集作用域，改走 registry）+ 三处入口 + 合集级语言/版本组列（v89） | 是 | 定向 380 条绿（含 8 份存量 jimaku 页面测试、MD3/源码守卫、迁移）。**未做**：Windows 真机点击验证；发现页 `VideoDiscoverySubtitleSearchPage` 仍是独立状态机（第三宿主，后续）；`JimakuSubtitleDialog` 壳只剩测试在用（8 份测试待迁到面板后删）；`runJimakuBatch` 留给老订阅路径。**撞号提醒**：PR#1051（统一代理）也用 v89，后合入者改 v90 |
-| PR-C ✅ 2026-08-29 | 字幕调整改底部抽屉：`_VideoSidePanelKind.subtitleAdjust` + `VideoTranslucentBottomDrawer`（内容仍是同一份快捷设置面板 `initialCategory: 'subtitle'`；开关/互斥/焦点/逐级 Esc 全沿用侧栏机制） | 是 | 抽屉 widget 测试（贴底 42% / 拖高夹 20%..90% / 收起卸载内容 / 关闭回调）+ 接线守卫（分流点唯一、共用面板、包 FushiAppUiScale）+ 11 份侧栏枚举守卫。**未做**：新快捷键动作（未要求）；Windows 真机/离屏像素验证 |
+| PR-C ↩ 2026-08-31 | 撤回字幕入口的底部抽屉分流；字幕轨按钮继续打开右侧设置栏并直达「字幕」分类，避免轨选择入口改变既有容器位置 | 是 | 源码守卫锁定 `_showPlayerSettings(initialCategory: 'subtitle')` 仍使用 `_VideoSidePanelKind.settings`，并禁止 `subtitleAdjust` 专用分流。**未做**：Windows 真机/离屏像素验证 |
 
 ## 6. 需要你拍板的点
 
