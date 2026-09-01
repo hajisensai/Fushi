@@ -103,11 +103,16 @@ void main() {
     test('动作按钮用 FushiIconButton（与书架按钮位置/样式统一）', () {
       expect(videoSrc.contains('FushiIconButton('), isTrue);
       // 旧实现用 Material IconButton(onPressed: ...)；统一后走 FushiIconButton(onTap:)。
-      expect(videoSrc.contains('onTap: _openStatistics'), isTrue);
+      // 正反锚原先挂在页头统计钮上，统计入口收敛到首页 dashboard 后那颗钮已撤——
+      // 只删正锚会让反锚 `onPressed: _openStatistics` 变成对不存在符号的恒真断言，
+      // 整条不变式零覆盖。锚点迁到仍在页头的收藏夹钮。
+      expect(videoSrc.contains('onTap: _openCollections'), isTrue);
+      expect(videoSrc.contains('onPressed: _openCollections'), isFalse,
+          reason: '不应再用裸 Material IconButton(onPressed:) 作页头动作');
+      expect(videoSrc.contains('_openStatistics'), isFalse,
+          reason: '视频页头统计入口已收敛到首页 dashboard');
       expect(videoSrc.contains('onTap: _openImport'), isFalse,
           reason: '常规单视频导入按钮已从视频媒体库删除');
-      expect(videoSrc.contains('onPressed: _openStatistics'), isFalse,
-          reason: '不应再用裸 Material IconButton(onPressed:) 作页头动作');
       expect(videoSrc.contains('onPressed: _openImport'), isFalse);
     });
 

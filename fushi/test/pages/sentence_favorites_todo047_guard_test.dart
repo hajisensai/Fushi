@@ -98,13 +98,43 @@ void main() {
       expect(src, contains('CollectionsPage()'));
     });
 
-    test('页头有收藏夹按钮（collections 图标）排在统计前', () {
-      expect(src, contains('Icons.collections_bookmark_outlined'));
-      expect(src, contains('t.collections'));
-      final int collIdx = src.indexOf('Icons.collections_bookmark_outlined');
-      final int statIdx = src.indexOf('Icons.bar_chart_outlined');
-      expect(collIdx, greaterThanOrEqualTo(0));
-      expect(statIdx, greaterThan(collIdx), reason: '图标顺序统一为 收藏夹 → 统计（与书架一致）');
+    test('页头有收藏夹入口，且与书架页头动作序一致', () {
+      // 旧判据「收藏夹图标下标 < 统计图标下标」有两处烂：
+      //   1) 两个 indexOf 都在整文件上找，collIdx 命中的其实是长按卡片弹窗里的
+      //      「加入合集」DialogQuickAction（行号远小于页头），页头统计图标行号天然
+      //      更大——这条顺序断言在本 PR 之前就已经恒真，一天也没真守住过；
+      //   2) 统计入口收敛到首页 dashboard 后统计图标整个不在了，参照物消失。
+      // 修法不是改数字，是把窗口收进 _buildPageHeader() 方法体，并把「顺序」换成
+      // 「两页头动作集合一致 + 参照物在 dashboard 有落点」的双向约束。
+      final String videoHeader = methodBody(src, 'Widget _buildPageHeader()');
+      final String shelfHeader = methodBody(
+        read('lib/src/pages/implementations/reader_fushi_history_page.dart'),
+        'Widget _buildPageHeader()',
+      );
+      // C 的核心：视频页头收藏夹入口可达。
+      expect(
+          containsCodeLine(videoHeader, 'Icons.collections_bookmark_outlined'),
+          isTrue);
+      expect(containsCodeLine(videoHeader, 'onTap: _openCollections'), isTrue);
+      expect(containsCodeLine(videoHeader, 'tooltip: t.collections'), isTrue);
+      // 「与书架一致」：书架页头同样有收藏夹。
+      expect(
+          containsCodeLine(shelfHeader, 'Icons.collections_bookmark_outlined'),
+          isTrue);
+      expect(containsCodeLine(shelfHeader, 'onTap: _openCollections'), isTrue);
+      // 两页头都不得再各挂一个统计入口。
+      expect(containsCodeLine(videoHeader, 'Icons.bar_chart_outlined'), isFalse,
+          reason: '统计入口已收敛到首页 dashboard，视频页头不再挂');
+      expect(containsCodeLine(shelfHeader, 'Icons.bar_chart_outlined'), isFalse,
+          reason: '统计入口已收敛到首页 dashboard，书架页头不再挂');
+      // 参照物没有凭空消失：统计中心入口必须真的落在首页 dashboard 页头。
+      final String dashboard =
+          read('lib/src/pages/implementations/home_dashboard_page.dart');
+      expect(
+          containsCodeLine(dashboard, 'onTap: _openStatisticsCenter'), isTrue,
+          reason: '统计中心入口必须在首页 dashboard 可达');
+      expect(containsCodeLine(dashboard, 'icon: Icons.bar_chart_outlined'),
+          isTrue);
     });
   });
 
