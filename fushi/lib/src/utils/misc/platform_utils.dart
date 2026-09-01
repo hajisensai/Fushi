@@ -68,34 +68,25 @@ ScrollPhysics desktopAwareScrollPhysics() {
       : const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics());
 }
 
-/// Windows/Linux 的传统鼠标滚轮通常一档上报约 100–120 logical px；Flutter 默认
-/// [ScrollPositionWithSingleContext.pointerScroll] 会把这个 delta 原样同步跳过去，
-/// 视觉上就是「一滚跳一整段」。触控板/高精度滚轮则连续上报小 delta，必须保持 1:1。
+/// Windows/Linux 的传统鼠标滚轮一档上报约 100–120 logical px；Flutter 默认的
+/// [ScrollPositionWithSingleContext.pointerScroll] 把这个 delta 单帧
+/// `forcePixels` 过去，视觉上就是「一滚跳一整段」。
 ///
-/// 因此只收敛绝对值 >= 80 的粗粒度事件：减半并把单事件封顶 120px。小 delta、方向、
-/// macOS 和移动端全部原样保留。
+/// 🔴 不流畅的根因是**缺插值**，不是**距离太大**。一档该走多远由系统「每次滚动
+/// 行数」决定，那是用户自己的设置，app 无权打折。BUG-1960 首版把粗滚轮 delta
+/// 减半、再把单事件封顶 120px 当平滑手段，于是滚动速度直接砍半（BUG-2009 用户
+/// 实报「不掉帧了但是速度慢了」）；平滑那一半本来就由 [_FushiScrollPosition] 的
+/// [kDesktopWheelScrollDuration] 动画负责，减半是叠在上面的第二重手段，只扣速度
+/// 不加流畅。现在距离一律 1:1，平滑只由动画给。
 ///
-/// 本函数只负责**步长**。要不要补一段动画由 [_FushiScrollPosition] 决定，它只对粗
-/// 滚轮动画、且连续同向事件向同一个目标累积（不互相取消，所以不产生输入延迟）；
-/// 触控板的小 delta 走原生同步路径，不会被加上拖尾。
-/// [asCoarse] = 本次事件所属的**手势**已经被判成粗滚轮，即使这一帧的绝对值低于
-/// 阈值也照粗滚轮缩放。滚轮一档并不总是同一个 delta，一次拨动的尾帧可能只有十几
-/// px；只缩放超阈值的那几帧会让同一次拨动前段减半、尾段全量，总距离对不上手感。
-double refinedDesktopPointerScrollDelta(double delta, {bool asCoarse = false}) {
-  if (!(Platform.isWindows || Platform.isLinux)) return delta;
-  final double magnitude = delta.abs();
-  if (!asCoarse && magnitude < 80) return delta;
-  final double reduced = magnitude * 0.5;
-  final double refined = reduced > 120 ? 120 : reduced;
-  return delta.isNegative ? -refined : refined;
-}
-
+/// 分类本身仍然要保留：粗滚轮一档一个大 delta，需要补间；触控板 / 高精度滚轮本来
+/// 就连续上报小 delta，再套一层动画只会拖尾，必须走原生同步路径。
 bool isCoarseDesktopPointerScrollDelta(double delta) =>
     (Platform.isWindows || Platform.isLinux) && delta.abs() >= 80;
 
 const Duration kDesktopWheelScrollDuration = Duration(milliseconds: 140);
 
-/// 为 app 主纵向滚动区提供细化后的桌面滚轮步长。
+/// 给 app 主纵向滚动区的粗鼠标滚轮补上补间动画（距离不变，1:1）。
 ///
 /// 通过自定义 [ScrollPosition] 改写真正消费 pointer delta 的边界；仅换
 /// [ScrollPhysics] 无效，因为 Flutter 的 pointerScroll 会直接 forcePixels。
@@ -180,14 +171,13 @@ class _FushiScrollPosition extends ScrollPositionWithSingleContext {
     final bool coarse =
         _gestureIsCoarse ??= isCoarseDesktopPointerScrollDelta(delta);
 
-    // 分类锁定后，缩放也照分类走：粗滚轮手势里的小尾帧同样减半，否则同一次拨动
-    // 前段减半、尾段全量。细指针手势整段 1:1。
-    final double refined =
-        coarse ? refinedDesktopPointerScrollDelta(delta, asCoarse: true) : delta;
+    // 分类按**手势**锁定，动画与否也照分类走：粗滚轮手势里的小尾帧同样走动画。
+    // 尾帧若改走同步路径，会在动画飞行途中 forcePixels 把 DrivenScrollActivity
+    // 掐断在半路，一次拨动的距离反而被吃掉。细指针手势整段同步。
     if (!coarse ||
         MediaQuery.maybeDisableAnimationsOf(context.storageContext) == true) {
       _resetWheelTarget();
-      super.pointerScroll(refined);
+      super.pointerScroll(delta);
       return;
     }
 
@@ -197,13 +187,13 @@ class _FushiScrollPosition extends ScrollPositionWithSingleContext {
     final bool continuesDrivenScroll = activity is DrivenScrollActivity &&
         _wheelTarget != null &&
         _lastCoarseDelta != null &&
-        _lastCoarseDelta!.isNegative == refined.isNegative;
+        _lastCoarseDelta!.isNegative == delta.isNegative;
     final double base = continuesDrivenScroll ? _wheelTarget! : pixels;
-    final double target = (base + refined)
+    final double target = (base + delta)
         .clamp(minScrollExtent, maxScrollExtent)
         .toDouble();
     _wheelTarget = target;
-    _lastCoarseDelta = refined;
+    _lastCoarseDelta = delta;
     if (target == pixels) return;
 
     unawaited(super.animateTo(
