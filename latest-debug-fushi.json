@@ -8,6 +8,24 @@
   "notes": "Automated release-signed debug-channel build from develop @ 46a4d42. Push releases are always prerelease and never Latest.",
   "assets": [
     {
+      "name": "fushi-2.2.4-debug.12978-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.12978-ios.ipa",
+      "releaseSequence": 12978,
+      "tag": "v2.2.4-debug.12978+c2370cb",
+      "version": "2.2.4-debug.12978",
+      "size": 69681732,
+      "sha256": "eb80cda4eb3c686d798bc107df30b8290ed9b002e31bd4b0af55703e20329161"
+    },
+    {
+      "name": "fushi-2.2.4-debug.12978-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.12978-macos.zip",
+      "releaseSequence": 12978,
+      "tag": "v2.2.4-debug.12978+c2370cb",
+      "version": "2.2.4-debug.12978",
+      "size": 335010084,
+      "sha256": "a740b8dc4141ec5ccd4011bb6925b4896efba653e031859472d8e0472e7c8155"
+    },
+    {
       "name": "fushi-2.2.4-debug.13018-windows-setup.exe",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13018-windows-setup.exe",
       "releaseSequence": 13018,
