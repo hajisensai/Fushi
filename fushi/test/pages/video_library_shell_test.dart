@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart'
+    show VideoSourceScrapeWork;
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/pages/implementations/video_library_shell.dart';
@@ -17,6 +19,8 @@ class _NoopScrapeRunner implements VideoSourceScrapeRunner {
     required VideoSourceScrapeProgressCallback onProgress,
     VideoSourceScrapeConfirmationCallback? onConfirmation,
     VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
   }) async {
     return SourceScrapeReport(sourceIds: <int>[source.id]);
   }
@@ -142,8 +146,7 @@ void main() {
   // 本地库的各视图（首页 / 系列 / 全部视频）排完才是在线发现，最后才是管理类分区
   // ——与书 / 漫画 / 游戏同位。发现曾夹在首页与系列之间，一排里「自己的库 → 推荐 →
   // 自己的库」来回跳（2026-08-24 用户反馈），是四个模块里唯一的例外。
-  testWidgets('页签顺序固定为首页、系列、全部视频、发现、来源、设置',
-      (WidgetTester tester) async {
+  testWidgets('页签顺序固定为首页、系列、全部视频、发现、来源、设置', (WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.pump();
 

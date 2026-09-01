@@ -4092,5 +4092,10 @@
   "update_download_source_auto": "Automatic (recommended)",
   "update_download_source_cloudflare": "Cloudflare mirror",
   "update_download_source_github": "GitHub direct",
-  "update_download_source_proxy": "Proxy: $host"
+  "update_download_source_proxy": "Proxy: $host",
+  "video_source_scrape_enabled_toggle_hint": "When off, manual, post-scan, post-download and background scraping all skip this source.",
+  "video_source_scrape_work_missing": "This work is no longer in the current source plan (its files may have been renamed, moved or deleted). Rescrape the source to refresh the pending list.",
+  "video_source_scrape_pending_works": "Works awaiting identification",
+  "video_source_scrape_pending_works_hint": "These entries have no confirmed identity yet. Search and pick the right work to scrape them.",
+  "video_source_scrape_enabled_toggle": "Enable scraping for this source"
 }

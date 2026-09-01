@@ -46,6 +46,7 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart'
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
+import 'package:fushi/src/media/video/metadata/video_library_scrape_sweep.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
@@ -367,6 +368,7 @@ class _HomePageState extends BasePageState<HomePage>
   VideoSourceScrapeCoordinator? _videoSourceScrapeCoordinator;
   VideoSourceScrapeTaskController? _videoSourceScrapeTaskController;
   String? _videoSourceScrapeConfigFingerprint;
+  VideoLibraryScrapeSweep? _videoScrapeSweep;
   bool _videoSourceScrapePanelOpen = false;
   VideoDiscoveryService? _videoDiscoveryService;
   VideoDiscoveryController? _videoDiscoveryController;
@@ -420,6 +422,11 @@ class _HomePageState extends BasePageState<HomePage>
         .addListener(_onHomeDictionaryTabRequested);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // 启动即落在视频 tab（用户配置的初始 tab）时也要触发一次自动补刮，
+      // 与 _selectTab 的进页触发同一入口、同样幂等。
+      if (mounted && _currentTab == HomeTab.video) {
+        unawaited(_videoLibraryScrapeSweep.sweepOnce());
+      }
       if (appModel.isFirstTimeSetup) {
         appModel.setLastSelectedDictionaryFormat(
             JapaneseLanguage.instance.standardFormat);
@@ -895,6 +902,11 @@ class _HomePageState extends BasePageState<HomePage>
       }
       _currentTab = tab;
     });
+    // 进视频页触发一次库内自动补刮（每进程一次；sweepOnce 自身幂等且受
+    // videoAutoScrape 总闸与刮削互斥门约束，见 VideoLibraryScrapeSweep）。
+    if (tab == HomeTab.video) {
+      unawaited(_videoLibraryScrapeSweep.sweepOnce());
+    }
     // Reflect the selection into the shared notifier so the macOS root sidebar
     // (built outside HomePage) stays in sync. Guarded by value-equality inside
     // ValueNotifier, so this never re-enters _onShellTabRequested pointlessly.
@@ -2106,7 +2118,20 @@ class _HomePageState extends BasePageState<HomePage>
     final VideoSourceScrapeTaskController controller =
         VideoSourceScrapeTaskController(coordinator)
           ..addListener(_onVideoSourceScrapeTaskChanged);
-    return _videoSourceScrapeTaskController = controller;
+    _videoSourceScrapeTaskController = controller;
+    // 补刮调度器跟随 controller 重建，绝不持有已 dispose 的旧 controller。
+    _videoScrapeSweep = VideoLibraryScrapeSweep(
+      database: appModel.database,
+      controller: controller,
+      isEnabled: () => appModelNoUpdate.videoAutoScrape,
+    );
+    return controller;
+  }
+
+  VideoLibraryScrapeSweep get _videoLibraryScrapeSweep {
+    // 确保 controller/sweep 已按当前配置构建。
+    final VideoSourceScrapeTaskController _ = _videoSourceScrapeController;
+    return _videoScrapeSweep!;
   }
 
   void _onVideoSourceScrapeTaskChanged() {
@@ -2123,6 +2148,7 @@ class _HomePageState extends BasePageState<HomePage>
         loadRuns: () => appModel.database.getVideoSourceScrapeRuns(limit: 20),
         loadSource: (int sourceId) =>
             appModel.database.getMediaSourceById(sourceId),
+        loadPendingWorks: () => _videoLibraryScrapeSweep.pendingWorks(),
         onRetry: (VideoSourceScrapeRunRow run) async {
           final int? sourceId = run.sourceId;
           if (sourceId == null) return;
@@ -2260,6 +2286,7 @@ class _HomePageState extends BasePageState<HomePage>
     _videoSourceScrapeTaskController = null;
     _videoSourceScrapeCoordinator = null;
     _videoSourceScrapeConfigFingerprint = null;
+    _videoScrapeSweep = null;
     if (controller == null) {
       coordinator?.close();
       return;
@@ -2375,16 +2402,16 @@ class _HomePageState extends BasePageState<HomePage>
           onLibraryChanged: _notifyVideoLibraryChanged,
           discoveryController: _productionVideoDiscoveryController,
           discoveryActions: _productionVideoDiscoveryActions,
-          ),
+        ),
       HomeTab.downloads => DownloadsPage(
           key: ValueKey<String>('downloads-$_downloadsGeneration'),
           initialTabIndex: _downloadsInitialTabIndex,
           videoDiscoveryController: _productionVideoDiscoveryController,
           videoDiscoveryActions: _productionVideoDiscoveryActions,
-          ),
+        ),
       HomeTab.dictionaries => HomeDictionaryPage(
           focusSignal: _dictFocusSignal,
-          ),
+        ),
       HomeTab.games => const HomeGamePage(),
       HomeTab.browserExtension => const BrowserExtensionPage(),
       HomeTab.settings =>

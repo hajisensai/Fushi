@@ -115,27 +115,44 @@ class VideoSourceScrapeCoordinator
     if (trimmed.isEmpty) {
       return const <VideoSourceScrapeConfirmationCandidate>[];
     }
-    final VideoSourceScrapeWork work = await _plannedWork(source, workTitle);
+    // 作品可能已不在当前计划里（文件改名/移动/删除后标题漂移，BUG-1998）。
+    // 搜索只需要「电影还是剧集」这一个参数：拿不到就双形态各搜一次再按身份
+    // 去重合并，绝不让只读的候选搜索因为计划回查失败而整个抛异常。
+    final VideoSourceScrapeWork? work =
+        await _plannedWorkOrNull(source, workTitle);
     final VideoMetadataProvider? provider =
         _manualSearchProvider(await _sourceProvider(source));
     if (provider == null) {
       return const <VideoSourceScrapeConfirmationCandidate>[];
     }
-    final List<VideoMetadataWork> results = await provider.search(
-      VideoMetadataSearchRequest(
-        title: trimmed,
-        mediaKind: _manualMediaKind(work),
-      ),
-    );
-    return <VideoSourceScrapeConfirmationCandidate>[
-      for (final VideoMetadataWork candidate in results)
+    final List<VideoMetadataMediaKind> kinds = work == null
+        ? const <VideoMetadataMediaKind>[
+            VideoMetadataMediaKind.tv,
+            VideoMetadataMediaKind.movie,
+          ]
+        : <VideoMetadataMediaKind>[_manualMediaKind(work)];
+    final List<VideoSourceScrapeConfirmationCandidate> candidates =
+        <VideoSourceScrapeConfirmationCandidate>[];
+    final Set<String> seenLookups = <String>{};
+    for (final VideoMetadataMediaKind kind in kinds) {
+      final List<VideoMetadataWork> results = await provider.search(
+        VideoMetadataSearchRequest(title: trimmed, mediaKind: kind),
+      );
+      for (final VideoMetadataWork candidate in results) {
         if (_lookupForCandidate(candidate, provider.providerKind)
-            case final VideoMetadataLookup lookup)
-          VideoSourceScrapeConfirmationCandidate(
+            case final VideoMetadataLookup lookup) {
+          if (!seenLookups
+              .add('${lookup.mediaKind.name}:${lookup.externalId}')) {
+            continue;
+          }
+          candidates.add(VideoSourceScrapeConfirmationCandidate(
             lookup: lookup,
             work: candidate,
-          ),
-    ];
+          ));
+        }
+      }
+    }
+    return candidates;
   }
 
   @override
@@ -162,13 +179,20 @@ class VideoSourceScrapeCoordinator
   Future<VideoSourceScrapeWork> _plannedWork(
     SourceLibraryRow source,
     String workTitle,
+  ) async =>
+      await _plannedWorkOrNull(source, workTitle) ??
+      (throw VideoSourceScrapeWorkNotFound(workTitle));
+
+  Future<VideoSourceScrapeWork?> _plannedWorkOrNull(
+    SourceLibraryRow source,
+    String workTitle,
   ) async {
     final List<VideoSourceScrapeWork> works =
         await VideoSourceWorkPlanner(database).plan(source);
     for (final VideoSourceScrapeWork work in works) {
       if (work.title == workTitle) return work;
     }
-    throw VideoSourceScrapeWorkNotFound(workTitle);
+    return null;
   }
 
   Future<VideoMetadataProviderKind> _sourceProvider(

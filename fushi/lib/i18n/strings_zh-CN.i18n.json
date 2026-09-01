@@ -4092,5 +4092,10 @@
   "update_download_source_auto": "自动（推荐）",
   "update_download_source_cloudflare": "Cloudflare 镜像",
   "update_download_source_github": "GitHub 直连",
-  "update_download_source_proxy": "代理站：$host"
+  "update_download_source_proxy": "代理站：$host",
+  "video_source_scrape_enabled_toggle_hint": "关闭后：手动、扫描后、下载导入后与后台自动补刮都会跳过此来源。",
+  "video_source_scrape_work_missing": "该作品已不在当前来源计划中（文件可能已改名、移动或删除）。请重新刮削此来源刷新待确认列表。",
+  "video_source_scrape_pending_works": "待确认作品",
+  "video_source_scrape_pending_works_hint": "这些条目还没有确认的作品身份。搜索并选中正确的作品即可完成刮削。",
+  "video_source_scrape_enabled_toggle": "启用此来源的刮削"
 }
