@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1897 条。点号进各自文件。
+> 共 1898 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2026](bugs/BUG-2026-hunex-capture-bridge-test-dead-and-racy.md) | ✅ | ✅ | hunex_gge_capture_bridge_test 的 79 条 assert 在 Release 下空跑，唤醒后 TestWorkerNeverReadsATornSnapshot 50% 概率红 |
 | [BUG-2025](bugs/BUG-2025-galgame-assert-liveness-guard-unregistered.md) | ✅ | ✅ | generic_input_shield_test.cpp 的 47 条 assert 在 Release 下整批空跑（守卫写了但没接进 run_guards.ps1） |
 | [BUG-2024](bugs/BUG-2024-hunex-single-click-lookup-passthrough.md) | 🚧 | ✅ | WoH/HUNEX 单击文字无法查词且点击穿透到游戏 |
 | [BUG-2022](bugs/BUG-2022-schema-v94-test-assertions-stale.md) | ✅ | ✅ | 刮削 P1 升 schema 到 94 但漏改 43 处测试断言，堆叠 PR 拿不到真单测门导致一路合进 develop |

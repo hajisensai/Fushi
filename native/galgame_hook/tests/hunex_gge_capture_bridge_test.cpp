@@ -1,3 +1,8 @@
+// CI 走 `--config Release`，MSVC 在该配置下定义 NDEBUG，裸 assert 会被整条编译掉，
+// 于是这个测试无论断言对不对都恒绿——与 BUG-1157「零测试执行伪装成通过」同一族。
+// 必须在任何 include 之前撤销它。守卫：tests/assert_liveness_guard_test.py
+#undef NDEBUG
+
 #include "hunex_gge_capture_bridge.h"
 
 #include <atomic>
@@ -192,9 +197,20 @@ void TestWorkerNeverReadsATornSnapshot() {
   assert(capture_bridge.Reset());
   std::atomic<bool> writer_started{false};
   std::atomic<bool> writer_done{false};
+  // 读者拿到过多少次「完整未撕裂」的快照。写者用它当终止条件，而不是跑
+  // 固定圈数就收工：seqlock 在写者满负荷时会持续把读者顶回去，实测 300
+  // 代固定圈数下这个数落在 0..46，8 次里有 2 次是 0 —— 断言本身变成掷骰子。
+  // 让写者一直产出到读者真的攒够并发证据为止，竞态就从判据里消失了。
+  constexpr size_t kMinStableReads = 8u;
+  constexpr uint32_t kMaxGenerations = 200000u;
+  std::atomic<size_t> stable_reads{0u};
   std::thread writer([&]() {
     writer_started.store(true, std::memory_order_release);
-    for (uint32_t generation = 1u; generation <= 300u; ++generation) {
+    for (uint32_t generation = 1u;
+         generation <= 300u ||
+         (stable_reads.load(std::memory_order_acquire) < kMinStableReads &&
+          generation <= kMaxGenerations);
+         ++generation) {
       const uint32_t scalar = u'A' + (generation % 26u);
       const int32_t base_x = static_cast<int32_t>(generation * 1000u);
       for (uint32_t index = 0u; index < 32u; ++index) {
@@ -216,14 +232,13 @@ void TestWorkerNeverReadsATornSnapshot() {
 
   while (!writer_started.load(std::memory_order_acquire))
     std::this_thread::yield();
-  size_t stable_reads = 0u;
   do {
     bridge::TraversalSnapshot snapshot;
     if (!capture_bridge.ReadLatest(&snapshot)) {
       std::this_thread::yield();
       continue;
     }
-    ++stable_reads;
+    stable_reads.fetch_add(1u, std::memory_order_release);
     assert(snapshot.glyph_count == 32u);
     const uint32_t scalar = snapshot.glyphs[0].scalar;
     const int32_t base_x = snapshot.glyphs[0].logical_rect.x;
@@ -241,7 +256,9 @@ void TestWorkerNeverReadsATornSnapshot() {
   bridge::TraversalSnapshot latest;
   assert(capture_bridge.ReadLatest(&latest));
   assert(latest.glyph_count == 32u);
-  assert(stable_reads != 0u);
+  // 确定性：写者不满足这个条件不会退出，所以读到 kMinStableReads 次
+  // 未撕裂快照是必然事件，而上面那一整圈逐字段校验才真正跑过。
+  assert(stable_reads.load(std::memory_order_acquire) >= kMinStableReads);
 }
 
 } // namespace
