@@ -44,7 +44,9 @@ void main() {
     );
     expect(pressGate.contains('GetClientRect(game,&client)'), isTrue);
     expect(pressGate.contains('ClientToScreen(game,&client_origin)'), isTrue);
-    expect(pressGate.contains('FindSgreLookupGlyph('), isTrue);
+    // 锚点随 #1119 重命名为 FindSgreCapturedLookupGlyph（重命中的是捕获快照里的
+    // 字形）；钉的依旧是「按下瞬间重新命中字形」这个行为，不是符号名。
+    expect(pressGate.contains('FindSgreCapturedLookupGlyph('), isTrue);
 
     final int readTarget = detour.indexOf('ReadSgreLookupClickTarget(');
     final int advance = detour.indexOf('AdvanceSgreLookupClickGesture(');

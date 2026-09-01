@@ -168,7 +168,7 @@ MihonStore _store(String indexUrl) => MihonStore(
           apkUrl: '$indexUrl/rawkuma.apk',
           iconUrl: '',
           libVersion: '1.6',
-          versionCode: 1,
+          extensionVersionCode: 1,
           versionName: '1.6.1',
           language: 'ja',
           contentWarning: 0,

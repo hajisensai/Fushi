@@ -573,6 +573,8 @@ String? localizeAnkiMineError(String? code) {
       return t.anki_error_http;
     case AnkiErrorCode.connectionUnknown:
       return t.anki_error_connection_unknown;
+    case AnkiErrorCode.pairedDeviceUnreachable:
+      return t.anki_error_paired_device_unreachable;
     // BUG-1900：此前这两种情形都由 AnkiConnect 透传同一句
     // `cannot create note because it is empty`——用户既看不出是自己选错了笔记类型 /
     // 没配好字段映射，也不知道该去哪儿改。现在由本地预检分类后给可操作的文案。

@@ -2259,7 +2259,7 @@ function flushTimers() {
     'beginLookup retires state without reusing the geometry epoch counter');
 }
 
-// BUG-1988: WebView2 can expose requestAnimationFrame while suspending every
+// BUG-2019: WebView2 can expose requestAnimationFrame while suspending every
 // callback for a permanently off-screen galCard HWND. The bounded timer must
 // publish the matching route/epoch exactly once, and late rAF callbacks must not
 // duplicate or steal a newer schedule.

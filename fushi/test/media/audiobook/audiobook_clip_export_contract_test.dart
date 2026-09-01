@@ -70,6 +70,12 @@ void main() {
         containsAllInOrder(<String>['-map', '0:v:0', '-map', '1:a:0']),
       );
       expect(args, containsAllInOrder(<String>['-c:a', 'aac']));
+      // BUG-2011：输出是 mp4，ffmpeg 默认等价 `-map_chapters 0`。只要有一路输入带
+      // 章节，mp4 muxer 就会建一条与最后一个章节等长的 chapter text track，把
+      // mvhd.duration 拉满（几秒的片段显示成整本的进度条）。今天两路输入都不带章节
+      // （图片/帧序列 + 已裁好的裸 ADTS .aac），但那是靠调用方维持的隐式契约；
+      // 就地钉死比指望远处的约定不被改动可靠，且没有章节可丢时它是空操作。
+      expect(args, containsAllInOrder(<String>['-map_chapters', '-1']));
     }
 
     test('static card maps video input 0 and audio input 1', () {

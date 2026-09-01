@@ -62,11 +62,23 @@ void main() {
   late GalHookTextOverlayController controller;
   late Map<String, Object?> preferences;
   late bool nativeShowing;
+  late int lookupRequestSeq;
+
+  // 真 runner 对每条查词控制面调用都给显式 ack（`ok` + 单调递增的
+  // `requestSeq`）。会话换代时 GalHookTextOverlayController 要求拿到这份
+  // 显式 ack 才算旧路线已退役；假 runner 不答就等于把台词浮窗连坐掉，
+  // 那是 harness 缺口、不是被测行为。
+  Map<String, Object?> lookupAck() => <String, Object?>{
+    'ok': true,
+    'requestSeq': ++lookupRequestSeq,
+    'appliedSeq': lookupRequestSeq,
+  };
 
   setUp(() {
     nativeCalls = <MethodCall>[];
     preferences = <String, Object?>{};
     nativeShowing = false;
+    lookupRequestSeq = 0;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
           nativeCalls.add(call);
@@ -76,6 +88,7 @@ void main() {
           }
           if (call.method == 'hide') nativeShowing = false;
           if (call.method == 'isShowing') return nativeShowing;
+          if (call.method.startsWith('galLookup')) return lookupAck();
           return null;
         });
     GalHookTextOverlayChannel.platformOverride = true;
@@ -121,6 +134,17 @@ void main() {
     await session.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 77, pid: 1234, title: 'Game'),
     );
+  }
+
+  /// 模拟 native → Dart 的事件推送（runner 在 WM_NCDESTROY 里发的那条）。
+  Future<void> emitFromNative(String method) async {
+    const StandardMethodCodec codec = StandardMethodCodec();
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          channel.name,
+          codec.encodeMethodCall(MethodCall(method)),
+          (_) {},
+        );
   }
 
   test('first line auto-shows, pause freezes, and resume catches up', () async {
@@ -206,7 +230,7 @@ void main() {
     },
   );
 
-  test('native HWND 消失后自动重建，手动按钮不再只信 Dart 可见镜像', () async {
+  test('native 推 overlayDestroyed 后镜像被动复位，下一条台词重建窗口', () async {
     await controller.start(appModel: AppModel(testPlatformServices()));
     await startSession();
     final TexthookerLineEntry first = textService.appendLine(
@@ -218,10 +242,18 @@ void main() {
         .where((MethodCall call) => call.method == 'show')
         .length;
 
-    // 模拟 HWND 被系统销毁：Dart 仍保留上一次 show=true 的镜像。
+    // HWND 被系统 / 外部 WM_CLOSE 销毁：runner 在 WM_NCDESTROY 里推事件。
     nativeShowing = false;
-    textService.appendLine('次の台詞', source: TexthookerLineSource.websocket);
+    await emitFromNative('overlayDestroyed');
+    await _waitUntil(() => !controller.isVisible);
+    expect(
+      controller.isSuppressedForSession,
+      isFalse,
+      reason: '窗口被外部销毁不是用户不想要它 —— 那是 close 的语义，两条事件'
+          '不能合并',
+    );
 
+    textService.appendLine('次の台詞', source: TexthookerLineSource.websocket);
     await _waitUntil(
       () =>
           nativeCalls.where((MethodCall call) => call.method == 'show').length >
@@ -229,6 +261,58 @@ void main() {
     );
     expect(nativeShowing, isTrue);
     expect(controller.isVisible, isTrue);
+  });
+
+  test('可见性是派生状态：每条台词都不再往 native 打 isShowing 轮询', () async {
+    await controller.start(appModel: AppModel(testPlatformServices()));
+    await startSession();
+    final TexthookerLineEntry first = textService.appendLine(
+      '一行目',
+      source: TexthookerLineSource.websocket,
+    )!;
+    await _waitUntil(() => controller.displayedLineId == first.id);
+
+    final int probesAfterShow = nativeCalls
+        .where((MethodCall call) => call.method == 'isShowing')
+        .length;
+    for (final String text in <String>['二行目', '三行目', '四行目']) {
+      final TexthookerLineEntry line = textService.appendLine(
+        text,
+        source: TexthookerLineSource.websocket,
+      )!;
+      await _waitUntil(() => controller.displayedLineId == line.id);
+    }
+
+    expect(
+      nativeCalls
+          .where((MethodCall call) => call.method == 'isShowing')
+          .length,
+      probesAfterShow,
+      reason: '窗口在不在是 native 的事实，它会用 overlayDestroyed 推过来；'
+          '按行回头问就是把派生状态退化成轮询',
+    );
+  });
+
+  test('兜底对账仍在：会话开始时发现窗口已不在就复位镜像', () async {
+    await controller.start(appModel: AppModel(testPlatformServices()));
+    await startSession();
+    final TexthookerLineEntry first = textService.appendLine(
+      '会话一',
+      source: TexthookerLineSource.websocket,
+    )!;
+    await _waitUntil(() => controller.displayedLineId == first.id);
+    expect(controller.isVisible, isTrue);
+
+    // 事件丢了（handler 还没挂上的那段时间窗）：native 已经没窗口，Dart 镜像
+    // 还停在 true。开新会话时的一次性对账必须把它拉回来。
+    nativeShowing = false;
+    await startSession();
+    await _waitUntil(() => !controller.isVisible || nativeShowing);
+    expect(
+      nativeCalls.where((MethodCall call) => call.method == 'isShowing'),
+      isNotEmpty,
+      reason: '兜底对账被整个删掉的话，镜像永远校不回来',
+    );
   });
 
   test('selected text thread alone drives the floating line', () async {

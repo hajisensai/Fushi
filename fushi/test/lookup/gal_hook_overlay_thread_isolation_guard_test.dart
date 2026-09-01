@@ -22,15 +22,15 @@ import '../helpers/test_platform_services.dart';
 /// 本守卫钉住「选了哪条线程就只看哪条」这条 v12 之前就成立、且 BUG-1315 不该动的不变量。
 class _IsolationTestEngine extends EngineHookGalAudioSource {
   _IsolationTestEngine()
-      : super(targetPid: 0, launchExe: null, injectorPath: 'fake.exe');
+    : super(targetPid: 0, launchExe: null, injectorPath: 'fake.exe');
 
   @override
   Future<PcmFormat?> start() async => const PcmFormat(
-        sampleRate: 44100,
-        channels: 1,
-        bitsPerSample: 16,
-        isFloat: false,
-      );
+    sampleRate: 44100,
+    channels: 1,
+    bitsPerSample: 16,
+    isFloat: false,
+  );
 
   @override
   Future<GalTextPoll?> pollText(int sinceSeq) async =>
@@ -46,8 +46,7 @@ class _IsolationTestEngine extends EngineHookGalAudioSource {
     int? textEventId,
     String? resourceId,
     bool allowLatestSessionFallback = true,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<void> stop() async {}
@@ -61,12 +60,24 @@ void main() {
   late GalHookSessionController session;
   late GalHookTextOverlayController controller;
 
+  int lookupRequestSeq = 0;
+
   setUp(() {
+    lookupRequestSeq = 0;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
-      if (call.method == 'show' || call.method == 'isShowing') return true;
-      return null;
-    });
+          if (call.method == 'show' || call.method == 'isShowing') return true;
+          // 真 runner 对每条查词控制面调用都给显式 ack；会话换代时
+          // GalHookTextOverlayController 拿不到它就不会推台词，那是 harness 缺口。
+          if (call.method.startsWith('galLookup')) {
+            return <String, Object?>{
+              'ok': true,
+              'requestSeq': ++lookupRequestSeq,
+              'appliedSeq': lookupRequestSeq,
+            };
+          }
+          return null;
+        });
     GalHookTextOverlayChannel.platformOverride = true;
     textService = TexthookerService.test();
     session = GalHookSessionController(
@@ -74,18 +85,18 @@ void main() {
       isWindows: true,
       targetWow64Probe: (_) async => false,
       injectorResolver: ({required bool is32Bit}) async => 'fake.exe',
-      engineSourceFactory: ({
-        required int targetPid,
-        required String? launchExe,
-        required String injectorPath,
-        required bool lunaPcHooks,
-        int? lunaCodepage,
-        List<String> launchArguments = const <String>[],
-        String launchWorkdir = '',
-        GalJapaneseLocaleMode japaneseLocaleMode =
-            kGalDefaultJapaneseLocaleMode,
-      }) =>
-          _IsolationTestEngine(),
+      engineSourceFactory:
+          ({
+            required int targetPid,
+            required String? launchExe,
+            required String injectorPath,
+            required bool lunaPcHooks,
+            int? lunaCodepage,
+            List<String> launchArguments = const <String>[],
+            String launchWorkdir = '',
+            GalJapaneseLocaleMode japaneseLocaleMode =
+                kGalDefaultJapaneseLocaleMode,
+          }) => _IsolationTestEngine(),
       endpointStatusLoader: () => const [],
     );
     controller = GalHookTextOverlayController.test(
@@ -115,10 +126,7 @@ void main() {
     await session.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 77, pid: 1234, title: 'Game'),
     );
-    expect(
-      await session.selectTextThread(11, threadKey: 'luna:first'),
-      isTrue,
-    );
+    expect(await session.selectTextThread(11, threadKey: 'luna:first'), isTrue);
 
     final TexthookerLineEntry hooked = textService.appendLine(
       '引擎线程台词',

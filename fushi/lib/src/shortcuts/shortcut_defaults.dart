@@ -214,6 +214,10 @@ class ShortcutDefaults {
     // 由 shortcut_defaults_test 的 video no-shadow 守卫保证）。核心遥控键：
     //   A=播放/暂停、B=退出全屏/返回、LB/RB 与 dpad 左右=快退/快进、dpad 上下=音量、
     //   X/Y=上/下一句字幕、LT=重听当前句、RT=全屏、Start=字幕跳转列表。
+    // BUG-1995：「只关词典」的可选专用动作，**默认空绑定**（与 readerDismissDict
+    // 同形）。存在的意义是给鼠标侧键一个没有副作用的落点——绑到真实视频动作上，
+    // 浮层不可见时那个动作会照常执行。退出视频仍走 universal 的 globalBack。
+    ShortcutAction.videoDismissDict: const ShortcutBindingSet(),
     ShortcutAction.videoTogglePlayPause: _kb([
       _key(LogicalKeyboardKey.space),
       _key(LogicalKeyboardKey.keyP),

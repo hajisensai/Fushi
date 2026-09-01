@@ -10,6 +10,7 @@ import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi/src/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
@@ -595,6 +596,7 @@ class VideoDownloadSubscriptionService {
             discoveryCategory: media.discoveryCategory,
             title: media.title,
             originalTitle: media.originalTitle,
+            aliases: media.aliases,
             year: media.year,
             season: item.season ?? media.season,
             episode: item.episode,
@@ -904,6 +906,31 @@ class _SubscriptionFilter {
 VideoMediaReference _mediaReference(
   VideoDownloadSubscriptionRow subscription,
 ) {
+  // v94（BUG-2003）：优先入队快照——订阅轮询从此拿得到日文原名与罗马字别名，
+  // nyaa 的多名字搜索兜底不再退化成「只有 searchQuery 这一个词」。订阅列
+  // （title/year/season/kind）仍是流程真值。旧行（NULL 快照）走修前重建。
+  final VideoMediaReference? stored =
+      decodeVideoMediaReference(subscription.identityJson);
+  if (stored != null) {
+    return VideoMediaReference(
+      providerId: stored.providerId,
+      mediaId: stored.mediaId,
+      mediaKind: _mediaKind(subscription.mediaKind),
+      discoveryCategory: _discoveryCategory(subscription),
+      title: subscription.title,
+      originalTitle: stored.originalTitle,
+      aliases: stored.aliases,
+      year: subscription.year ?? stored.year,
+      season: subscription.season ?? stored.season,
+      tmdbId: stored.tmdbId,
+      imdbId: stored.imdbId,
+      tvdbId: stored.tvdbId,
+      anidbId: stored.anidbId,
+      anilistId: stored.anilistId,
+      bangumiId: stored.bangumiId,
+      externalIds: stored.externalIds,
+    );
+  }
   final String provider =
       subscription.metadataProvider?.trim().isNotEmpty == true
           ? subscription.metadataProvider!.trim()

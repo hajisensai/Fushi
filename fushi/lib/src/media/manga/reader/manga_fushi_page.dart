@@ -53,6 +53,8 @@ import 'package:fushi/src/shortcuts/global_navigation.dart'
         desktopWindowFullscreenSupported,
         readDesktopWindowFullscreen,
         setDesktopWindowFullscreen;
+import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
+    show WindowFullscreenHost;
 import 'package:fushi/src/shortcuts/input_binding.dart'
     show
         GamepadButton,
@@ -1080,8 +1082,20 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   Future<void> _toggleMangaFullscreen() => _changeMangaFullscreen();
 
+  /// 「返回上一级」在漫画页的一级：全屏中先退全屏，返回 true 吞掉这次返回。
+  ///
+  /// 判据不再只认 [_ownsWindowFullscreen]（「这次全屏是我进的」）：用户用快捷键
+  /// （默认 F11）进的全屏不会置那个标志，可他眼里那和按全屏按钮进的是同一个全屏，
+  /// Esc 都该先把它退掉，而不是连人带全屏一起退出漫画。所有权标志仍然保留——它管的是
+  /// 另一件事（页面在 native 往返途中被拆掉时由谁负责把全屏还回去）。
+  ///
+  /// 非全屏时只多读一次窗口状态，随后照常退页。
   Future<bool> _exitOwnedFullscreenBeforePop() async {
-    if (!_ownsWindowFullscreen) return false;
+    if (!_ownsWindowFullscreen &&
+        (await readDesktopWindowFullscreen()) != true) {
+      return false;
+    }
+    if (!mounted) return false;
     await _setMangaFullscreen(false);
     return true;
   }
@@ -3948,7 +3962,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
+    // 漫画页是**窗口全屏的合法宿主**之一：全屏键（默认 F11）只在小说 / 漫画 / 视频里
+    // 能进入全屏，靠的就是下面那层 [WindowFullscreenHost] 声明。用局部变量而不是把
+    // 整棵树往里缩一级，纯粹是为了不给这个文件制造一次全量重缩进的 diff。
+    final Widget page = PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, dynamic result) async {
         if (didPop) return;
@@ -4045,6 +4062,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ),
       ),
     );
+    return WindowFullscreenHost(child: page);
   }
 
   /// BUG-1888：切换界面可见性。移动端联动系统栏——隐藏界面即进入沉浸式全屏；

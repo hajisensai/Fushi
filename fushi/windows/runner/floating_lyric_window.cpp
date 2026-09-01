@@ -169,6 +169,10 @@ UINT32 GlyphLength(const wchar_t* glyph) {
 FloatingLyricWindow::FloatingLyricWindow() = default;
 
 FloatingLyricWindow::~FloatingLyricWindow() {
+  // 先退订再拆窗：下面这次 DestroyWindow 会同步走一遍 WM_NCDESTROY，而本对象
+  // 正在析构、宿主（FlutterWindow）的 MethodChannel 成员可能已经先一步没了。
+  // 拆自己的窗口不需要通知任何人。
+  on_destroyed_ = nullptr;
   if (hwnd_ != nullptr) {
     DestroyWindow(hwnd_);
     hwnd_ = nullptr;
@@ -1178,24 +1182,35 @@ LRESULT CALLBACK FloatingLyricWindow::WndProc(HWND hwnd, UINT message,
   auto* self = reinterpret_cast<FloatingLyricWindow*>(
       GetWindowLongPtr(hwnd, GWLP_USERDATA));
   if (self != nullptr) {
-    return self->HandleMessage(message, wparam, lparam);
+    return self->HandleMessage(hwnd, message, wparam, lparam);
   }
   return DefWindowProc(hwnd, message, wparam, lparam);
 }
 
-LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
+LRESULT FloatingLyricWindow::HandleMessage(HWND hwnd, UINT message,
+                                           WPARAM wparam,
                                            LPARAM lparam) noexcept {
   switch (message) {
     case WM_NCDESTROY: {
       // Clear ownership at the actual HWND lifetime boundary. Show() can then
       // rebuild the body on the next automatic line or manual-open request.
-      HWND destroyed = hwnd_;
-      // 走与 Show() 死句柄分支同一张复位表。这里不能用 ForgetDeadWindow()：
-      // WM_NCDESTROY 期间窗口尚未真正消失，OwnsLiveWindow() 仍为真，会被它的
-      // 幂等守卫挡掉。
-      ResetWindowInteractionState();
+      //
+      // 身份必须取**消息自带的** |hwnd|，不是成员 hwnd_：一旦出现「旧窗口的
+      // NCDESTROY 晚于新窗口创建」的排列，成员早已指向新窗口，用它撤
+      // back-pointer 就是把活着的新窗口拆掉、还顺手把 hwnd_ 清成 null。
+      const HWND destroyed = hwnd;
       SetWindowLongPtr(destroyed, GWLP_USERDATA, 0);
-      hwnd_ = nullptr;
+      // 成员句柄与复位表只在「死的正是我方当前这一个」时才动。走的是与
+      // Show() 死句柄分支同一张复位表；这里不能用 ForgetDeadWindow()：
+      // WM_NCDESTROY 期间窗口尚未真正消失，OwnsLiveWindow() 仍为真，会被它
+      // 的幂等守卫挡掉。
+      if (hwnd_ == destroyed) {
+        ResetWindowInteractionState();
+        hwnd_ = nullptr;
+        // 通知在复位之后：消费端收到事件时，本对象已经是「无窗口」的干净
+        // 状态，它随时可以回头调 Show() 重建。
+        if (on_destroyed_) on_destroyed_();
+      }
       return DefWindowProc(destroyed, message, wparam, lparam);
     }
     case WM_MOUSEMOVE: {
@@ -1210,7 +1225,7 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
         TRACKMOUSEEVENT tme = {};
         tme.cbSize = sizeof(tme);
         tme.dwFlags = TME_LEAVE;
-        tme.hwndTrack = hwnd_;
+        tme.hwndTrack = hwnd;
         if (TrackMouseEvent(&tme)) {
           tracking_mouse_leave_ = true;
         }
@@ -1252,7 +1267,7 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
         const int threshold = static_cast<int>(ScaleForDpi(kDragThresholdDip));
         if (dx * dx + dy * dy >= threshold * threshold) {
           RECT rc;
-          GetWindowRect(hwnd_, &rc);
+          GetWindowRect(hwnd, &rc);
           drag_anchor_.x = cursor.x - rc.left;
           drag_anchor_.y = cursor.y - rc.top;
           dragging_ = true;
@@ -1272,7 +1287,7 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
                      : -1;
         POINT cursor;
         GetCursorPos(&cursor);
-        slot_tooltip_.Update(hwnd_, toolbar_profile_, slot, cursor.x + 12,
+        slot_tooltip_.Update(hwnd, toolbar_profile_, slot, cursor.x + 12,
                              cursor.y + 22);
       }
       return 0;
@@ -1283,7 +1298,7 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
         return 0;
       }
       if (wparam != kHoverLookupTimerId) {
-        return DefWindowProc(hwnd_, message, wparam, lparam);
+        return DefWindowProc(hwnd, message, wparam, lparam);
       }
       // 轮询只补一件 WM_MOUSEMOVE 补不了的事：光标不动、用户刚按下 Shift。光标位置
       // 现问系统（不缓存），落在窗口外就直接停表——WM_MOUSELEAVE 偶尔会因为窗口 Z
@@ -1293,13 +1308,13 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
         return 0;
       }
       RECT rc;
-      if (!GetWindowRect(hwnd_, &rc) || !PtInRect(&rc, cursor)) {
+      if (!GetWindowRect(hwnd, &rc) || !PtInRect(&rc, cursor)) {
         StopHoverLookupPolling();
         ResetHoverLookupAnchor();
         return 0;
       }
       POINT client = cursor;
-      ScreenToClient(hwnd_, &client);
+      ScreenToClient(hwnd, &client);
       MaybeHoverLookup(static_cast<float>(client.x),
                        static_cast<float>(client.y));
       return 0;
@@ -1350,7 +1365,7 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       press_was_text_ = click_lookup_enabled_ && lookup_trigger_ == 0 &&
                         CharIndexAt(x, y) >= 0 &&
                         (on_lookup_ || on_context_lookup_);
-      SetCapture(hwnd_);
+      SetCapture(hwnd);
       return 0;
     }
     // BUG-1471: the system took our capture away (foreground window changed —
@@ -1371,7 +1386,7 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       POINT cursor;
       if (GetCursorPos(&cursor)) {
         RECT rc;
-        if (GetWindowRect(hwnd_, &rc) && !PtInRect(&rc, cursor) && hovered_) {
+        if (GetWindowRect(hwnd, &rc) && !PtInRect(&rc, cursor) && hovered_) {
           hovered_ = false;
           tracking_mouse_leave_ = false;
           RequestRender();
@@ -1431,7 +1446,7 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       // keep answering HTBOTTOMRIGHT / HTCLIENT and nothing else.
       POINT screen = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
       POINT client = screen;
-      ScreenToClient(hwnd_, &client);
+      ScreenToClient(hwnd, &client);
       if (ResizeGripContains(static_cast<float>(client.x),
                              static_cast<float>(client.y))) {
         return HTBOTTOMRIGHT;
@@ -1459,7 +1474,7 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
           return 0;
         }
       }
-      return DefWindowProc(hwnd_, message, wparam, lparam);
+      return DefWindowProc(hwnd, message, wparam, lparam);
     }
     case WM_SIZE: {
       // A system resize (corner drag) changed the window rect; recompute the
@@ -1508,7 +1523,7 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       return 0;
     }
     default:
-      return DefWindowProc(hwnd_, message, wparam, lparam);
+      return DefWindowProc(hwnd, message, wparam, lparam);
   }
 }
 

@@ -22,6 +22,91 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 
 enum _CollectionType { sentence, mined, word }
 
+/// 分组视图的一行（阶段 3，统计中心大改造：收藏夹按「合集 → 媒体」两级分节）。
+enum CollectionGroupRowKind { collectionHeader, mediaHeader, item }
+
+class CollectionGroupRow<T> {
+  const CollectionGroupRow._(
+    this.kind, {
+    this.collectionId,
+    this.mediaLabel,
+    this.item,
+  });
+
+  final CollectionGroupRowKind kind;
+
+  /// [CollectionGroupRowKind.collectionHeader]：所属合集 id；null = 未分组节。
+  final int? collectionId;
+
+  /// [CollectionGroupRowKind.mediaHeader]：媒体显示名（书/视频/游戏标题）。
+  final String? mediaLabel;
+
+  /// [CollectionGroupRowKind.item]：收藏行本体。
+  final T? item;
+}
+
+/// 纯函数：把已按时间倒序的收藏行折成「合集节 → 媒体小节 → 行」的扁平行模型。
+///
+/// 排序契约：合集节按节内最新行倒序（未分组节恒殿后，且只有别的节存在时才出
+/// 「未分组」头）；节内媒体小节同样按最新行倒序；行保持输入的时间倒序。媒体键
+/// 为空的行不出媒体头、直接平铺在节内媒体小节之后。
+@visibleForTesting
+List<CollectionGroupRow<T>> groupCollectionItems<T>({
+  required List<T> items,
+  required int? Function(T) collectionIdOf,
+  required String Function(T) mediaKeyOf,
+  required String? Function(T) mediaLabelOf,
+}) {
+  // 树：合集 → 媒体键 → 行（Map 插入序 = 输入的时间倒序，「组内最新」即首行）。
+  final Map<int?, Map<String, List<T>>> tree = <int?, Map<String, List<T>>>{};
+  for (final T item in items) {
+    tree
+        .putIfAbsent(collectionIdOf(item), () => <String, List<T>>{})
+        .putIfAbsent(mediaKeyOf(item), () => <T>[])
+        .add(item);
+  }
+  // LinkedHashMap 键序已是「节内最新行」倒序（首见即最新）；只把未分组（null）
+  // 挪到末尾。不用 sort：Dart List.sort 不稳定，比较器返回 0 会打乱首见序。
+  final List<int?> collectionIds = <int?>[
+    for (final int? id in tree.keys)
+      if (id != null) id,
+    if (tree.containsKey(null)) null,
+  ];
+  final List<CollectionGroupRow<T>> rows = <CollectionGroupRow<T>>[];
+  final bool hasNamedSection = collectionIds.any((int? id) => id != null);
+  for (final int? cid in collectionIds) {
+    if (cid != null || hasNamedSection) {
+      rows.add(CollectionGroupRow<T>._(
+        CollectionGroupRowKind.collectionHeader,
+        collectionId: cid,
+      ));
+    }
+    final Map<String, List<T>> byMedia = tree[cid]!;
+    // 无媒体键的行殿后平铺；有媒体键的小节按首见序（= 最新行倒序）。
+    for (final MapEntry<String, List<T>> media in byMedia.entries) {
+      if (media.key.isEmpty) continue;
+      final String? label = mediaLabelOf(media.value.first);
+      if (label != null && label.isNotEmpty) {
+        rows.add(CollectionGroupRow<T>._(
+          CollectionGroupRowKind.mediaHeader,
+          mediaLabel: label,
+        ));
+      }
+      for (final T item in media.value) {
+        rows.add(
+          CollectionGroupRow<T>._(CollectionGroupRowKind.item, item: item),
+        );
+      }
+    }
+    for (final T item in byMedia[''] ?? const <Never>[]) {
+      rows.add(
+        CollectionGroupRow<T>._(CollectionGroupRowKind.item, item: item),
+      );
+    }
+  }
+  return rows;
+}
+
 @visibleForTesting
 ({int? episodeIndex, int? startMs}) resolveVideoFavoriteOpenTarget({
   required VideoBookRow row,
@@ -183,6 +268,15 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   /// [resolveVideoFavoriteAudioClip] / [_playVideoFavoriteAudio]）。
   Map<String, VideoBookRow> _videoRowMap = {};
 
+  /// 阶段 3（收藏夹按合集分节）：合集归属解析。v83 成员表键是
+  /// '<mediaType>|<entryKey>' 且 epub/srt 的 entryKey 是 **uid**，收藏行里的
+  /// bookKey 必须先换算（此前导出面板拿 raw bookKey 试遍前缀，epub 域归组恒
+  /// 失败落「未归合集」）。
+  Map<String, int> _primaryCollectionByEntry = <String, int>{};
+  Map<int, String> _collectionNamesById = <int, String>{};
+  Map<String, String> _epubUidByBookKey = <String, String>{};
+  Map<String, String> _srtUidByBookKey = <String, String>{};
+
   /// 正在截取/播放音频的**那一行**的列表键（[_itemKey]）；null = 无进行中播放。
   /// 旧实现是全局 bool——一行在播，全列表按钮统一变沙漏且禁点（巡检 PR-3）。
   String? _playingItemKey;
@@ -231,6 +325,20 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
     final srtBooks = await srtBookRepo.listAll();
     final bookTitleMap = <String, String>{};
+    // 阶段 3：合集归属解析用的换算表（v83 成员表 entryKey：epub/srt = uid）。
+    final srtUidByBookKey = <String, String>{
+      for (final b in srtBooks)
+        if (b.bookKey.isNotEmpty) b.bookKey: b.uid,
+    };
+    final epubUidByBookKey = <String, String>{
+      for (final EpubBookRow r in await db.getAllEpubBooks())
+        if (r.uid.isNotEmpty) r.bookKey: r.uid,
+    };
+    final collectionNamesById = <int, String>{
+      for (final MediaCollectionRow c in await db.getAllMediaCollections())
+        c.id: c.name,
+    };
+    final primaryCollectionByEntry = await db.getPrimaryCollectionIdByEntry();
     for (final b in srtBooks) {
       if (b.bookKey.isNotEmpty) {
         // P4：反查表的值即显示名——过 display-title 门面应用编辑弹窗写入的
@@ -289,8 +397,12 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         _CollectionItem(
           type: _CollectionType.word,
           createdAt: DateTime.fromMillisecondsSinceEpoch(w.createdAt),
-          // text=词形（标题行）、chapterLabel=释义（副标题行）；无 bookKey（不可跳转，
-          // 收藏词不携带原文定位）。删除复合键由 wordReading/wordSourceType 保留。
+          // text=词形（标题行）、chapterLabel=释义（副标题行）。bookKey/bookTitle
+          // 是「首次收藏时的归属快照」（唯一键不含 bookKey，跨书重复收藏只留首
+          // 次）——阶段 3 起用于按合集/媒体分节；仍无原文定位，跳转判据按类型
+          // 排除 word。删除复合键由 wordReading/wordSourceType 保留。
+          bookTitle: w.title.isNotEmpty ? w.title : null,
+          bookKey: w.bookKey,
           text: w.expression,
           chapterLabel: w.glossary.isNotEmpty ? w.glossary : null,
           wordReading: w.reading,
@@ -387,9 +499,51 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         _cueMap = cueMap;
         _audioFileMap = audioFileMap;
         _videoRowMap = videoRowMap;
+        _primaryCollectionByEntry = primaryCollectionByEntry;
+        _collectionNamesById = collectionNamesById;
+        _epubUidByBookKey = epubUidByBookKey;
+        _srtUidByBookKey = srtUidByBookKey;
         _loading = false;
       });
     }
+  }
+
+  /// 收藏行 bookKey → 主合集 id。v83 成员表键：epub/srt 的 entryKey 是 uid
+  /// （行里的 bookKey 先换算），视频行的 bookKey 就是 bookUid 直接命中；老数据
+  /// entryKey 仍是 bookKey 的行走全 kind 兜底（v83 迁移前遗留）。
+  int? _collectionIdForBookKey(String bookKey, {required bool isVideo}) {
+    if (isVideo) {
+      return _primaryCollectionByEntry[MediaKind.video.compositeKey(bookKey)];
+    }
+    final String? epubUid = _epubUidByBookKey[bookKey];
+    if (epubUid != null) {
+      final int? id =
+          _primaryCollectionByEntry[MediaKind.epub.compositeKey(epubUid)];
+      if (id != null) return id;
+    }
+    final String? srtUid = _srtUidByBookKey[bookKey];
+    if (srtUid != null) {
+      final int? id =
+          _primaryCollectionByEntry[MediaKind.srt.compositeKey(srtUid)];
+      if (id != null) return id;
+    }
+    for (final MediaKind kind in MediaKind.values) {
+      final int? id = _primaryCollectionByEntry[kind.compositeKey(bookKey)];
+      if (id != null) return id;
+    }
+    return null;
+  }
+
+  /// 该收藏行的 bookKey 是不是视频 bookUid（词行按 wordSourceType，句/制卡行按
+  /// source）。
+  bool _itemIsVideo(_CollectionItem item) => item.type == _CollectionType.word
+      ? item.wordSourceType == kFavoriteSentenceSourceVideo
+      : item.source == kFavoriteSentenceSourceVideo;
+
+  int? _collectionIdForItem(_CollectionItem item) {
+    final String? key = item.bookKey;
+    if (key == null || key.isEmpty) return null;
+    return _collectionIdForBookKey(key, isVideo: _itemIsVideo(item));
   }
 
   /// P4：收藏/制卡/收藏词行「所属书/视频」的显示名统一解析。
@@ -836,20 +990,14 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   /// `bookKey`，两者不是同一套词汇；与其猜一个映射，不如拿 bookKey 去**试遍**
   /// 四种 mediaType——map 已在内存里，命中即得，猜错的成本是零。
   Future<List<_ExportSourceOption>> _exportSourceOptions() async {
-    final Map<String, int> primaryCollection =
+    // 归属映射取最新（打开导出面板时合集可能已变），换算表沿用 _load 的快照。
+    _primaryCollectionByEntry =
         await appModel.database.getPrimaryCollectionIdByEntry();
-
-    int? collectionIdOf(String bookKey) {
-      for (final MediaKind kind in MediaKind.values) {
-        final int? id = primaryCollection['${kind.dbValue}|$bookKey'];
-        if (id != null) return id;
-      }
-      return null;
-    }
 
     // 收藏句 + 制卡句都参与：来源列表要能覆盖两个勾选范围，否则选了合集却发现
     // 制卡句段没被过滤，就成了另一个「两端口径不一致」。
     final Map<String, String> labelByKey = <String, String>{};
+    final Map<String, bool> isVideoByKey = <String, bool>{};
     for (final _CollectionItem item in _items) {
       if (item.type != _CollectionType.sentence &&
           item.type != _CollectionType.mined) {
@@ -859,12 +1007,18 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       if (key == null || key.isEmpty) continue;
       labelByKey.putIfAbsent(
           key, () => _itemDisplayBookTitle(item) ?? t.collection_sentence);
+      isVideoByKey.putIfAbsent(key, () => _itemIsVideo(item));
     }
 
     final Map<int, Set<String>> byCollection = <int, Set<String>>{};
     final List<_ExportSourceOption> loose = <_ExportSourceOption>[];
     for (final MapEntry<String, String> e in labelByKey.entries) {
-      final int? collectionId = collectionIdOf(e.key);
+      // 阶段 3 修缺陷：旧实现拿 raw bookKey 试遍 kind 前缀，v83 后 epub/srt 成员
+      // 键是 uid，书域从不命中、全落 loose——统一走带换算的解析。
+      final int? collectionId = _collectionIdForBookKey(
+        e.key,
+        isVideo: isVideoByKey[e.key] ?? false,
+      );
       if (collectionId != null) {
         byCollection.putIfAbsent(collectionId, () => <String>{}).add(e.key);
       } else {
@@ -1165,8 +1319,12 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     // BUG-1120：四值来源穷尽 switch（旧 isVideoSentence bool 把 audiobook/lyrics
     // 静默展示成书）。audiobook/lyrics 的 bookKey 共享 hoshi://book/ 身份，打开
     // 目的地仍是 _openBook（reader 内处理有声书/歌词模式），仅展示层区分。
+    // 阶段 3：word 行开始携带归属 bookKey（分节用），但仍无原文定位——跳转判据
+    // 显式按类型排除，不再依赖「word 行恰好没 bookKey」。
     final SentenceSourceKind kind = item.sourceKind;
-    final canNavigate = item.bookKey != null && item.bookKey!.isNotEmpty;
+    final canNavigate = item.type != _CollectionType.word &&
+        item.bookKey != null &&
+        item.bookKey!.isNotEmpty;
     final hasAudio = _hasAudio(item);
     final displayTitle = item.text ?? '';
     // P4：副标题（所属书/视频名）过 display-title 门面（快照列保持 raw 身份）。
@@ -1293,10 +1451,82 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                     message: t.no_collections,
                   ),
                 )
-              : ListView.builder(
-                  itemCount: _items.length,
-                  itemBuilder: (context, index) => _buildItem(_items[index]),
+              : _buildGroupedListView(),
+    );
+  }
+
+  /// 阶段 3（统计中心大改造）：收藏列表按「合集 → 媒体」两级分节（合集名在左作
+  /// 节头；未分组殿后；节/小节按最新收藏倒序，行保持时间倒序）。
+  Widget _buildGroupedListView() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final List<CollectionGroupRow<_CollectionItem>> rows = groupCollectionItems(
+      items: _items,
+      collectionIdOf: _collectionIdForItem,
+      // 媒体键：有 bookKey 按身份分组；legacy 无身份行按标题快照回退；两者皆无
+      // 不出媒体头（平铺）。前缀区分两个键空间，杜绝 bookKey 与标题恰好同串。
+      mediaKeyOf: (_CollectionItem item) {
+        final String? key = item.bookKey;
+        if (key != null && key.isNotEmpty) return 'k|$key';
+        final String? title = item.bookTitle;
+        return (title != null && title.isNotEmpty) ? 't|$title' : '';
+      },
+      mediaLabelOf: _itemDisplayBookTitle,
+    );
+    return ListView.builder(
+      itemCount: rows.length,
+      itemBuilder: (BuildContext context, int index) {
+        final CollectionGroupRow<_CollectionItem> row = rows[index];
+        switch (row.kind) {
+          case CollectionGroupRowKind.collectionHeader:
+            final String name = row.collectionId == null
+                ? t.stat_detail_ungrouped
+                : (_collectionNamesById[row.collectionId] ??
+                    t.stat_detail_ungrouped);
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                tokens.spacing.card,
+                tokens.spacing.card,
+                tokens.spacing.gap / 2,
+              ),
+              child: Row(
+                children: <Widget>[
+                  Icon(Icons.folder_outlined, size: 18, color: scheme.primary),
+                  SizedBox(width: tokens.spacing.gap / 2),
+                  Expanded(
+                    child: Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          case CollectionGroupRowKind.mediaHeader:
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.card + tokens.spacing.gap,
+                tokens.spacing.gap / 2,
+                tokens.spacing.card,
+                0,
+              ),
+              child: Text(
+                row.mediaLabel!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: tokens.type.metadata.copyWith(
+                  color: scheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
                 ),
+              ),
+            );
+          case CollectionGroupRowKind.item:
+            return _buildItem(row.item!);
+        }
+      },
     );
   }
 
@@ -1380,13 +1610,17 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       title = item.text ?? '';
       subtitle = [
         sourcePrefix,
-        // P4：所属书/视频名过 display-title 门面（快照列保持 raw 身份）。
-        _itemDisplayBookTitle(item),
+        // 阶段 3：所属书/视频名升级为媒体小节头（[_buildGroupedListView]），
+        // 行副标题不再重复拼书名，只留来源前缀 + 章节。
         item.chapterLabel,
       ].where((s) => s != null && s.isNotEmpty).join(' · ');
     }
 
-    final canNavigate = item.bookKey != null && item.bookKey!.isNotEmpty;
+    // 阶段 3：word 行开始携带归属 bookKey（分节用）但无原文定位，跳转判据按
+    // 类型显式排除（与条目菜单同判据）。
+    final canNavigate = item.type != _CollectionType.word &&
+        item.bookKey != null &&
+        item.bookKey!.isNotEmpty;
 
     final String key = _itemKey(item);
     final bool playingThis = _playingItemKey == key;

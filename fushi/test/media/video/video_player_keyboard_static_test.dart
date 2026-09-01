@@ -85,8 +85,12 @@ void main() {
           defaultHasKey(ShortcutAction.globalBack, LogicalKeyboardKey.escape),
           isTrue,
           reason: 'globalBack default must bind Escape');
-      expect(page.contains('escape: () {'), isTrue,
+      // 执行体抽成了具名方法（整张表里唯一不碰 controller 的动作，加载态要能单独
+      // 调到），接线点仍必须在 VideoPlayerShortcutActions.escape 上。
+      expect(page.contains('escape: _handleVideoEscapeAction,'), isTrue,
           reason: 'page must wire the Escape action to real exit logic');
+      expect(page.contains('void _handleVideoEscapeAction() {'), isTrue,
+          reason: 'the named exit-ladder method must exist');
       expect(page.contains('isFullscreen('), isTrue,
           reason: 'fullscreen Escape exits fullscreen');
       expect(page.contains('_exitVideoFullscreen('), isTrue,
@@ -101,7 +105,8 @@ void main() {
       // `topVideoForegroundLayer`（纯函数）单点后，escape 回调只剩「先关一层，关不动
       // 才退全屏 / 退页」。断言的行为没变：编辑态必须在任何退出动作之前被吃掉，只是
       // 门从 escape 回调里挪到了那张共用层级表上（[PopScope] / 手柄 B 因此也照吃）。
-      final String escapeBody = region(page, 'escape: () {', '},\n      ),');
+      final String escapeBody =
+          methodBody(page, 'void _handleVideoEscapeAction() {');
       final int dismissGate =
           escapeBody.indexOf('_dismissTopForegroundLayer()');
       final int fullscreenExit = escapeBody.indexOf('_exitVideoFullscreen(');

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/pages/implementations/game_shared.dart';
 
 import '../helpers/source_guard.dart';
 
@@ -108,12 +109,27 @@ TorrentSettingsSection()
       reason: '视频顶部导航缺少设置页',
     );
 
+    // 2026-09 起游戏页签序收敛进 [kGameSectionTabOrder]（横滑切区与页签共用同
+    // 一份真相），tab 行由它循环生成——旧锚点 `value: GameSection.settings` 的
+    // 字面不复存在。守的行为不变，锚点跟着搬：源码上钉「页签确实从序生成」，
+    // 行为上直接钉序的内容（比字面扫描更强）。
     final String game = source(
       'lib/src/pages/implementations/game_shared.dart',
     );
-    expect(_containsCode(game, 'value: GameSection.settings'), isTrue);
-    expect(_containsCode(game, 'value: GameSection.diagnostics'), isFalse,
+    expect(
+      _containsCode(
+        game,
+        'for (final GameSection section in kGameSectionTabOrder)',
+      ),
+      isTrue,
+      reason: '游戏页签必须由 kGameSectionTabOrder 循环生成（序的唯一真相）',
+    );
+    expect(kGameSectionTabOrder.contains(GameSection.settings), isTrue,
+        reason: '游戏顶部导航缺少设置页');
+    expect(kGameSectionTabOrder.contains(GameSection.diagnostics), isFalse,
         reason: '兼容性诊断不能继续占用游戏顶部高频 tab');
+    expect(kGameSectionTabOrder.last, GameSection.settings,
+        reason: '设置恒排末位，与书 / 漫画 / 视频库页同构');
   });
 
   test('下载把设置作为第四个顶部 tab，而不是临时齿轮模式', () {

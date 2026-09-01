@@ -146,6 +146,43 @@ void main() {
       );
     });
 
+    // BUG-1997：桌面端每个列表右侧常驻一条覆盖式滚动条（不占布局、且吞点击）。
+    // 最右一列是星标按钮，行右内缩只有 4px，星标图标盒离面板右缘 6px —— 被盖住
+    // 一半还点不动。行必须给滚动条让出 gutter。
+    //
+    // 纯几何断言：flutter_test 默认 platform 是 android，不会自动包 Scrollbar，
+    // 所以这里不依赖「真渲染出一条滚动条」，只断言让位的距离够。
+    testWidgets('GUARD: 最右侧星标按钮为滚动条让出 gutter（BUG-1997）', (
+      WidgetTester tester,
+    ) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, _kLongCue)]);
+
+      await tester.pumpWidget(_wrap(_panel(controller: controller)));
+      await tester.pump();
+
+      // 量**可点区域**（InkResponse）而不是 Icon：被滚动条吞掉的是命中测试，而
+      // Icon 的 rect 不含按钮自身那 2px padding —— 拿 Icon 量会多出 2px 余量，
+      // 把 gutter 去掉这条守卫照样绿（空转）。
+      final Finder starButton = find.ancestor(
+        of: find.byIcon(Icons.star_border).first,
+        matching: find.byType(InkResponse),
+      );
+      expect(starButton, findsOneWidget);
+      final Rect buttonRect = tester.getRect(starButton);
+      final Rect panelRect = tester.getRect(
+        find.byType(VideoSubtitleJumpPanel),
+      );
+
+      expect(
+        panelRect.right - buttonRect.right,
+        greaterThanOrEqualTo(kSubtitleRowScrollbarGutter),
+        reason: '星标可点区域右缘到面板右缘的距离必须 ≥ 滚动条通道宽度，'
+            '否则滚动条盖住它并吞掉点击',
+      );
+    });
+
     testWidgets('收藏行的左侧竖色条不挤占文本列宽度', (WidgetTester tester) async {
       final VideoPlayerController controller = VideoPlayerController();
       addTearDown(controller.dispose);

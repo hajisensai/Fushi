@@ -499,7 +499,7 @@ void main() {
       contains('if(helperAccepted!==false)return;'),
       reason: 'host helper 明确拒绝 epoch 时必须进入兼容回退，不能无条件 return',
     );
-    expect(galResize, contains("window.setTimeout(post,120)"));
+    expect(galResize, contains('window.setTimeout(post,120)'));
     expect(
       galResize,
       contains('if(done||window.__fushiGalCaptureReadyToken!==token)'),
