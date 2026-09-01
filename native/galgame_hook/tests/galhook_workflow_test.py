@@ -156,5 +156,33 @@ class GalhookWorkflowTest(unittest.TestCase):
         )
 
 
+
+class GuardRegistryTest(unittest.TestCase):
+    """run_guards.ps1 的清单是人工维护的，漏登记 = 守卫静默失效。
+
+    assert_liveness_guard_test.py 就是这么丢的：文件写好了、断言是对的，
+    但从没被任何 CI 入口执行，于是 generic_input_shield_test.cpp 的 47 条
+    assert 在 Release 下空跑了整整一个发布周期都没人发现（BUG-2025）。
+
+    这条守卫用目录枚举而不是再写一份名单：新增 tests/<x>_test.py 时它自动
+    进入扫描面，不需要任何人记得同步第二处。
+    """
+
+    def test_every_python_guard_is_registered_in_run_guards(self) -> None:
+        runner = (ROOT / "tools" / "run_guards.ps1").read_text(encoding="utf-8")
+        discovered = {p.name for p in (ROOT / "tests").glob("*_test.py")}
+        self.assertGreater(len(discovered), 5, "guard discovery looks broken")
+        missing = sorted(
+            name for name in discovered
+            if f"tests/{name}" not in runner
+        )
+        self.assertEqual(
+            missing,
+            [],
+            "这些守卫存在但没被 tools/run_guards.ps1 执行，等于没写："
+            f"{missing}。把它们加进 run_guards.ps1 的 Invoke-Checked 清单。",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
