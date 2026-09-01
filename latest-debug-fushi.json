@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "2.2.4-debug.13039",
-  "tag": "v2.2.4-debug.13039+168cf7f",
+  "version": "2.2.4-debug.13045",
+  "tag": "v2.2.4-debug.13045+33217a9",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 13039,
-  "notes": "Automated release-signed debug-channel build from develop @ 168cf7f. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 13045,
+  "notes": "Automated release-signed debug-channel build from develop @ 33217a9. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-2.2.4-debug.13018-windows-setup.exe",
@@ -17,13 +17,13 @@
       "sha256": "bde393927d6d72b3137f2d3d3c9c60d5c2de896ba6b90c25c1cdec2265efe1d6"
     },
     {
-      "name": "fushi-2.2.4-debug.13039-168cf7f-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13039-168cf7f-debug.apk",
-      "releaseSequence": 13039,
-      "tag": "v2.2.4-debug.13039+168cf7f",
-      "version": "2.2.4-debug.13039",
-      "size": 270052640,
-      "sha256": "6cdb8b2f6788f6ec032c24cf2a02f186d4b19d7bd056aec331e1bea4c7f0939f"
+      "name": "fushi-2.2.4-debug.13045-33217a9-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13045-33217a9-debug.apk",
+      "releaseSequence": 13045,
+      "tag": "v2.2.4-debug.13045+33217a9",
+      "version": "2.2.4-debug.13045",
+      "size": 270052644,
+      "sha256": "ce7f192e18da2fc8cc44de201885c687ff20230c94575f33e91de33574509954"
     }
   ]
 }
