@@ -199,7 +199,13 @@ class _HomeGamePageState extends State<HomeGamePage> {
     };
     return Material(
       type: MaterialType.transparency,
-      child: IndexedStack(
+      // 触屏横滑按页签**视觉序**（[kGameSectionTabOrder]）切相邻子区；诊断不在
+      // 页签序里，停在诊断时横滑不响应（导航层级只对页签序负责）。
+      child: SectionSwipeNavigator<GameSection>(
+        sections: kGameSectionTabOrder,
+        selected: _section,
+        onSelect: _showSection,
+        child: IndexedStack(
         index: _section.index,
         children: <Widget>[
           for (final GameSection section in GameSection.values)
@@ -214,6 +220,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
               child: sections[section]!,
             ),
         ],
+        ),
       ),
     );
   }
