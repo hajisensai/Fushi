@@ -32,8 +32,9 @@ import '../helpers/source_guard.dart';
 ///      一处，torrent 宿主/绑定不碰代理解析层，C ABI 桥只有 apply_proxy_impl
 ///      一处能改 libtorrent 代理（两个导出都只是委托）。
 ///   E. 混合档的 DHT 直连依赖 vcpkg overlay 里的 libtorrent 补丁（上游把无
-///      flag UDP 无条件塞进代理）；监听接口默认 v4+v6 双栈；节点获取默认
-///      开满（逐 tracker announce + DHT 多引导点）。
+///      flag UDP 无条件塞进代理，且 SOCKS5 隧道一起来就丢掉所有非代理来源的
+///      回包——发送/接收两侧都得对齐）；监听接口默认 v4+v6 双栈；节点获取
+///      默认开满（逐 tracker announce + DHT 多引导点）。
 void main() {
   group('A. 建连超时', () {
     test('下载 client 的建连超时是 kDownloadConnectionTimeout 而不是 app 默认', () {
@@ -311,6 +312,22 @@ void main() {
               .length,
           2,
           reason: 'DHT 豁免必须同时对齐两条发送路径');
+      // 接收路径也必须一起对齐：上游只要 SOCKS5 隧道起来了（active_socks5()），
+      // 就把**所有**源地址不是代理的 UDP 包丢掉——只改发送侧的混合档是「查询
+      // 直发出去、回包全被吃掉」的半死状态。判据钉在解包门的形状上：从
+      // `active_socks5()` 变成「隧道起来了 **且** 这个包确实来自代理」，非代理
+      // 来源的包落回原来的 proxy_only 分支（全代理档恒为真→照旧丢弃，行为与
+      // 上游逐位一致；混合档为假→裸包放行）。
+      expect(
+          patchText,
+          contains('+\t\t\tif (active_socks5() && '
+              'p.from == m_socks5_connection->target())'),
+          reason: 'SOCKS5 混合档的 DHT/uTP 回包要能进来，接收侧必须一起对齐');
+      expect(
+          patchText,
+          contains(
+              '-\t\t\t\tif (p.from != m_socks5_connection->target()) continue;'),
+          reason: '旧的无条件丢弃必须被删掉，否则接收侧对齐只是加了行注释');
       final String portfile = File(
               '../native/fushi_torrent/vcpkg-ports/libtorrent/portfile.cmake')
           .readAsStringSync();
