@@ -4094,5 +4094,13 @@
   "storage_category_backups": "Arsip cadangan tersisa",
   "storage_entry_backups_label": "$n arsip yang tersisa dari ekspor terakhir",
   "update_download_source_unavailable": "$source tidak tersedia untuk berkas ini; kembali ke urutan otomatis",
-  "network_proxy_credentials_scope_hint": "Kredensial hanya berlaku untuk permintaan HTTP; mesin torrent bawaan tidak dapat menggunakannya"
+  "network_proxy_credentials_scope_hint": "Kredensial hanya berlaku untuk permintaan HTTP; mesin torrent bawaan tidak dapat menggunakannya",
+  "anki_error_paired_device_unreachable": "Couldn't create the card because no paired device could be reached. Make sure Fushi is running on the paired device, or turn off Mine to paired device in Anki settings to create cards locally.",
+  "video_source_scrape_enabled_toggle_hint": "When off, manual, post-scan, post-download and background scraping all skip this source.",
+  "video_source_scrape_work_missing": "This work is no longer in the current source plan (its files may have been renamed, moved or deleted). Rescrape the source to refresh the pending list.",
+  "video_source_scrape_pending_works": "Works awaiting identification",
+  "video_source_scrape_pending_works_hint": "These entries have no confirmed identity yet. Search and pick the right work to scrape them.",
+  "video_source_scrape_enabled_toggle": "Enable scraping for this source",
+  "video_library_scrape_auto_backfill": "Auto-fill missing series info",
+  "video_library_scrape_auto_backfill_hint": "Entering the video library scrapes entries that still have no confirmed identity. Turn off to stop all background metadata downloads."
 }

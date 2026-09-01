@@ -123,6 +123,14 @@ import 'package:fushi/src/shortcuts/dictionary_caret_controller.dart';
 export 'package:fushi/src/shortcuts/dictionary_caret_controller.dart'
     show CaretSurface;
 import 'package:fushi/src/shortcuts/reader_space_override.dart';
+import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
+    show WindowFullscreenHost;
+import 'package:fushi/src/shortcuts/global_navigation.dart'
+    show
+        desktopWindowFullscreenSupported,
+        exitWindowFullscreenIfActive,
+        readDesktopWindowFullscreen,
+        setDesktopWindowFullscreen;
 
 part 'reader_fushi/lyrics.part.dart';
 part 'reader_fushi/mining.part.dart';
@@ -1790,6 +1798,16 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // TODO-291 阶段2：audioHandler 控制流（play/seek/skip/悬浮字幕翻转）订阅已上移到
   // [AudiobookSession]（进程级），reader 不再持有这些订阅。
 
+  /// 底栏全屏按钮的图标状态（进/出全屏两个图标）。
+  ///
+  /// 只是**显示用的镜像**，不是真相源：真相在 native 窗口那边，每次切换都先读它再取反
+  /// （见 `_changeReaderWindowFullscreen`）。用户改用快捷键（默认 F11）切换时这份镜像
+  /// 会短暂落后一帧图标——不影响任何行为，下一次按按钮仍按真值走。
+  bool _isWindowFullscreen = false;
+
+  /// 全屏切换的串行闸：native 往返期间再点按钮不重入。
+  bool _windowFullscreenTransitioning = false;
+
   bool _showChrome = true;
   // TODO-975: floating chrome (顶部进度 / 底栏) 的「被点击唤出、临时可见」态。挤压
   // 模式恒忽略此旗；悬浮模式下唤出置 true + 武装 _chromeAutoHideTimer，计时到 / 再点
@@ -1977,6 +1995,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       return true;
     }());
     WidgetsBinding.instance.addObserver(this);
+    // 底栏全屏按钮的图标镜像：进页时问一次 native 真值。不问的话，「在已经全屏的窗口里
+    // 打开这本书」从第一帧起图标就是错的（镜像默认 false）。与漫画页的
+    // `_readInitialFullscreenState` 同款；桌面才有窗口可全屏。
+    if (desktopWindowFullscreenSupported) {
+      unawaited(_readInitialWindowFullscreenState());
+    }
     _exitFlushCallback =
         ExitFlushRegistry.instance.register(_flushAllForProcessExit);
     // BUG-1744：macOS 全屏进出必须重算顶部让位并把新 inset 回喂给 WebView。
@@ -2861,7 +2885,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // reader 子树。constraints.biggest 与 _syncPageSize 读的 MediaQuery.size 同处反缩放
     // 还原后的坐标空间，数值等价，故两条 resize 通道靠 _lastSyncedWidth/Height 基线去重。
     // 约束由布局系统每帧驱动，比 didChangeMetrics 更早更可靠（Windows 拖边框时后者滞后）。
-    return LayoutBuilder(
+    // 小说页是**窗口全屏的合法宿主**之一：全屏键（默认 F11）只在小说 / 漫画 / 视频里
+    // 能进入全屏，靠的就是下面那层 [WindowFullscreenHost] 声明。用局部变量而不是把整棵
+    // 树往里缩一级，纯粹是为了不给这个文件制造一次全量重缩进的 diff。
+    final Widget page = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         _onReaderConstraintsChanged(constraints);
         return Actions(
@@ -3024,6 +3051,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         );
       },
     );
+    return WindowFullscreenHost(child: page);
   }
 
   Widget _buildBody() {

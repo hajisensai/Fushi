@@ -4094,5 +4094,13 @@
   "storage_category_backups": "遗留的备份包",
   "storage_entry_backups_label": "上次导出遗留的 $n 个备份包",
   "update_download_source_unavailable": "$source 不适用于该文件，已回退到自动顺序",
-  "network_proxy_credentials_scope_hint": "凭据仅用于 HTTP 请求；内置 torrent 引擎无法使用"
+  "network_proxy_credentials_scope_hint": "凭据仅用于 HTTP 请求；内置 torrent 引擎无法使用",
+  "anki_error_paired_device_unreachable": "无法制卡：当前没有可连接的已配对设备。请确认配对设备上的 Fushi 正在运行；如果要在本机制卡，请关闭「制卡到已配对设备」。",
+  "video_source_scrape_enabled_toggle_hint": "关闭后：手动、扫描后、下载导入后与后台自动补刮都会跳过此来源。",
+  "video_source_scrape_work_missing": "该作品已不在当前来源计划中（文件可能已改名、移动或删除）。请重新刮削此来源刷新待确认列表。",
+  "video_source_scrape_pending_works": "待确认作品",
+  "video_source_scrape_pending_works_hint": "这些条目还没有确认的作品身份。搜索并选中正确的作品即可完成刮削。",
+  "video_source_scrape_enabled_toggle": "启用此来源的刮削",
+  "video_library_scrape_auto_backfill": "自动补齐缺失的作品资料",
+  "video_library_scrape_auto_backfill_hint": "进入视频库时，自动刮削仍未确认身份的条目。关闭后不再有任何后台元数据下载。"
 }

@@ -360,8 +360,33 @@ class EpubParser {
     return caseInsensitiveHit;
   }
 
+  // ── XML lookup primitives ──────────────────────────────────────────────────
+
+  /// EPUB 允许用任意前缀绑定 OPF / OCF / NCX 命名空间：Calibre 4.x 导出的包文档
+  /// 就写成 `<opf:package><opf:manifest><opf:item/>`。而 package:xml 的
+  /// [XmlNode.findAllElements] 在不传 `namespace` 时按 **qualified name** 匹配，
+  /// `'item'` 匹配不到 `<opf:item>` —— 于是 manifest 解析成空 map、spine 里每个
+  /// itemref 都查不到条目被逐条静默跳过，最后整本书 0 章，
+  /// [parseSyncFromPath] 抛 `EPUB spine contains no readable chapters`，
+  /// 表现为「这本 EPUB 导入不了」。
+  ///
+  /// 修法不是逐个调用点补 `namespace: '*'`（那样下次新增查找还会漏第 12 处），
+  /// 而是让按 local-name 匹配成为本文件里**唯一**的查找方式：所有按标签名的
+  /// 查找一律走这三个原语。守卫见 `test/epub/epub_parser_namespace_test.dart`。
+  static Iterable<XmlElement> _elements(XmlNode node, String localName) =>
+      node.findAllElements(localName, namespace: '*');
+
+  /// 直接子元素版的 [_elements]。
+  static XmlElement? _childElement(XmlElement parent, String localName) =>
+      parent.getElement(localName, namespace: '*');
+
+  /// 属性版的 [_elements]：`epub:type` / `opf:role` 这类带前缀的属性同样按
+  /// qualified name 匹配，裸 `getAttribute('type')` 取不到 `epub:type`。
+  static String? _attribute(XmlElement el, String localName) =>
+      el.getAttribute(localName) ?? el.getAttribute(localName, namespace: '*');
+
   static String? _findRootfilePath(XmlDocument container) {
-    for (final XmlElement el in container.findAllElements('rootfile')) {
+    for (final XmlElement el in _elements(container, 'rootfile')) {
       final String? fullPath = el.getAttribute('full-path');
       if (fullPath != null && fullPath.isNotEmpty) {
         // Percent-decode to match the decoded manifest/chapter hrefs
@@ -380,7 +405,7 @@ class EpubParser {
     String extractDir,
   ) {
     final Map<String, _ManifestItem> result = <String, _ManifestItem>{};
-    for (final XmlElement item in opf.findAllElements('item')) {
+    for (final XmlElement item in _elements(opf, 'item')) {
       final String? id = item.getAttribute('id');
       final String? href = item.getAttribute('href');
       final String? mediaType = item.getAttribute('media-type');
@@ -413,7 +438,7 @@ class EpubParser {
     // incremented `index` on only some `continue` paths, producing
     // inconsistent stored values.
     final List<XmlElement> itemrefs =
-        opf.findAllElements('itemref').toList(growable: false);
+        _elements(opf, 'itemref').toList(growable: false);
     for (int index = 0; index < itemrefs.length; index++) {
       final XmlElement itemref = itemrefs[index];
       final String? idref = itemref.getAttribute('idref');
@@ -487,9 +512,8 @@ class EpubParser {
   // ── Metadata ───────────────────────────────────────────────────────────────
 
   static String? _parseMetadata(XmlDocument opf, String localName) {
-    // dc:title, dc:creator etc. — namespace: '*' matches any prefix
-    for (final XmlElement el
-        in opf.findAllElements(localName, namespace: '*')) {
+    // dc:title, dc:creator etc. — [_elements] matches any prefix
+    for (final XmlElement el in _elements(opf, localName)) {
       final String text = el.innerText.trim();
       if (text.isNotEmpty) {
         return text;
@@ -513,7 +537,7 @@ class EpubParser {
       }
     }
     // EPUB 2: <meta name="cover" content="cover-id"/>
-    for (final XmlElement meta in opf.findAllElements('meta')) {
+    for (final XmlElement meta in _elements(opf, 'meta')) {
       if (meta.getAttribute('name')?.toLowerCase() == 'cover') {
         final String? coverId = meta.getAttribute('content');
         if (coverId != null && manifest.containsKey(coverId)) {
@@ -575,7 +599,7 @@ class EpubParser {
       }
     }
     // EPUB 2: NCX
-    for (final XmlElement spine in opf.findAllElements('spine')) {
+    for (final XmlElement spine in _elements(opf, 'spine')) {
       final String? tocId = spine.getAttribute('toc');
       if (tocId != null && manifest.containsKey(tocId)) {
         final _ManifestItem ncxItem = manifest[tocId]!;
@@ -606,11 +630,10 @@ class EpubParser {
   ) {
     try {
       final XmlDocument doc = XmlDocument.parse(navHtml);
-      for (final XmlElement nav in doc.findAllElements('nav')) {
-        final String? epubType =
-            nav.getAttribute('type') ?? nav.getAttribute('epub:type');
+      for (final XmlElement nav in _elements(doc, 'nav')) {
+        final String? epubType = _attribute(nav, 'type');
         if (epubType == 'toc') {
-          final XmlElement? ol = nav.getElement('ol');
+          final XmlElement? ol = _childElement(nav, 'ol');
           if (ol != null) {
             return _parseNavOl(ol, navDir, extractDir);
           }
@@ -670,7 +693,7 @@ class EpubParser {
   ) {
     try {
       final XmlDocument doc = XmlDocument.parse(ncxContent);
-      final Iterable<XmlElement> navMaps = doc.findAllElements('navMap');
+      final Iterable<XmlElement> navMaps = _elements(doc, 'navMap');
       if (navMaps.isEmpty) {
         return <EpubTocItem>[];
       }
@@ -696,7 +719,7 @@ class EpubParser {
       String? href;
       for (final XmlElement child in navPoint.childElements) {
         if (child.name.local == 'navLabel') {
-          final XmlElement? text = child.getElement('text');
+          final XmlElement? text = _childElement(child, 'text');
           if (text != null) {
             label = text.innerText.trim();
           }
@@ -758,9 +781,9 @@ class EpubParser {
   /// 这个形式同时是 [EpubBook.resources] 的键，阅读器拦截器（BUG-1203）按同构造
   /// 的相对路径回查 OPF 声明的 media-type，两侧必须一致。
   static String _relHref(String absPath, String extractDir) {
-    return normalizeHref(
-        p.relative(absPath, from: p.normalize(extractDir))
-            .replaceAll('\\', '/'));
+    return normalizeHref(p
+        .relative(absPath, from: p.normalize(extractDir))
+        .replaceAll('\\', '/'));
   }
 
   static String? _resolveTocHref(
@@ -792,7 +815,7 @@ class EpubParser {
   }
 
   static String? _parseRenditionSpread(XmlDocument opf) {
-    for (final XmlElement meta in opf.findAllElements('meta')) {
+    for (final XmlElement meta in _elements(opf, 'meta')) {
       final String? property = meta.getAttribute('property');
       if (property == 'rendition:spread') {
         final String value = meta.innerText.trim().toLowerCase();
