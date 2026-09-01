@@ -59,11 +59,12 @@ void main() {
 
   test('Escape 快捷键回调复用同一个层级表，不另抄一份 if 链', () {
     final String src = read(page);
-    final int at = src.indexOf('      escape: () {');
-    expect(at, greaterThan(0), reason: '找不到 escape 快捷键回调');
-    final int end = src.indexOf('\n      },\n', at);
-    expect(end, greaterThan(at), reason: 'escape 回调没有闭合');
-    final String body = src.substring(at, end);
+    // 执行体已从 `escape: () { … }` 闭包抽成具名方法 [_handleVideoEscapeAction]：它是
+    // 整张动作表里唯一不需要 VideoPlayerController 的动作，加载态（`_controller == null`）
+    // 下键盘 / 手柄必须能绕开表、单独调到它。锚点跟着搬。
+    expect(src.contains('escape: _handleVideoEscapeAction,'), isTrue,
+        reason: 'globalBack 的执行体必须仍接在 VideoPlayerShortcutActions.escape 上');
+    final String body = methodBody(src, 'void _handleVideoEscapeAction() {');
     expect(
       body.contains('if (_dismissTopForegroundLayer()) return;'),
       isTrue,
@@ -105,11 +106,8 @@ void main() {
         methodBody(src, 'bool _dismissTopForegroundLayer() {');
     final String exitPoint =
         methodBody(src, 'Future<void> _handleBackOrExit() async {');
-    final int escapeAt = src.indexOf('      escape: () {');
-    expect(escapeAt, greaterThan(0), reason: '找不到 escape 快捷键回调');
-    final int escapeEnd = src.indexOf('\n      },\n', escapeAt);
-    expect(escapeEnd, greaterThan(escapeAt), reason: 'escape 回调没有闭合');
-    final String escapeBody = src.substring(escapeAt, escapeEnd);
+    final String escapeBody =
+        methodBody(src, 'void _handleVideoEscapeAction() {');
 
     // 判据是**作用域**不是出现次数：数次数会被任何一处合法的新调用点误伤，报错
     // 文案还会误导成「层级表被抄了一份」。真正的不变式是「关闭动作只在层级表里

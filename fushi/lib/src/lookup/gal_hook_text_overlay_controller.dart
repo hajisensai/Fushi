@@ -282,6 +282,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       onToggleTransparency: toggleTransparency,
       onOpenWorkbench: openWorkbench,
       onClose: closeForCurrentSession,
+      onOverlayDestroyed: _onOverlayDestroyed,
       onReplayVoice: replayCurrentLine,
       onRecaptureVoice: recaptureCurrentLine,
       onLockChanged: _onLockChanged,
@@ -610,6 +611,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       await GalHookTextOverlayChannel.setFollowing(true);
       await GalHookTextOverlayChannel.setPassThrough(false);
       await GalHookTextOverlayChannel.setLocked(false);
+      await _reconcileVisibilityWithNative();
       notifyListeners();
     }
 
@@ -713,17 +715,13 @@ class GalHookTextOverlayController extends ChangeNotifier {
     if (_suppressedForSession) return;
     if (lines.isEmpty) return;
     final TexthookerLineEntry latest = lines.last;
-    // BUG-1981：`_visible` 只是上一次 MethodChannel show 的应答镜像，不是 HWND
-    // 真值。窗口被系统/外部 WM_CLOSE 销毁后，session 仍会继续送文本；若只信镜像，
-    // 后续永远只发 updateText，工具栏的“显示 Hook 浮窗”也没有可见窗口可抬起。
-    if (_visible && !await GalHookTextOverlayChannel.isShowing()) {
-      _visible = false;
-      notifyListeners();
-    }
-    // 上面这个 await 是新开的挂起点：用户在它挂起期间点「关闭浮窗」会置位
-    // `_suppressedForSession` 并把窗口收掉，恢复执行时 `_visible` 恰好是 false，
-    // 于是下面这段会把用户刚关掉的浮窗又弹回来。挂起点之后必须重检一次。
-    if (_suppressedForSession) return;
+    // BUG-1981：`_visible` 是**派生镜像**，不是 HWND 真值。窗口被系统 / 外部
+    // WM_CLOSE 销毁后 session 仍会继续送文本；镜像不复位的话后续永远只发
+    // updateText，工具栏的「显示 Hook 浮窗」也没有可见窗口可抬起。
+    // 复位由 native 的 `overlayDestroyed` 事件推过来（见 [_onOverlayDestroyed]），
+    // 这里不再每行打一次 isShowing() 往返 —— 那是拿 O(台词数) 次 MethodChannel
+    // 轮询去问一个 native 本来就会主动告诉我们的事实，Zato 那种逐字重绘一句话
+    // 就是十几次。兜底对账收在每局会话开始处（见 [_reconcileVisibilityWithNative]）。
     if (!_visible) {
       await GalHookTextOverlayChannel.updateText(
         lineId: latest.id,
@@ -1000,6 +998,45 @@ class GalHookTextOverlayController extends ChangeNotifier {
     if (next == _pushedHoverAutoLookup) return;
     _pushedHoverAutoLookup = next;
     await GalHookTextOverlayChannel.setHoverAutoLookup(next);
+  }
+
+  /// native 报告浮窗 HWND 的生命周期结束（WM_NCDESTROY）。
+  ///
+  /// `_visible` 由此**被动**复位：窗口是 native 的事实，Dart 只持有它的镜像，
+  /// 事实变了就该由持有事实的一侧推过来，而不是消费端定期回头问。复位后下一条
+  /// 台词会走 [_syncFromSession] 的 `!_visible` 分支重新 show，工具栏的
+  /// 「显示 Hook 浮窗」也重新有窗口可抬。
+  ///
+  /// 与用户主动关闭（`onClose` → [closeForCurrentSession]）严格分开：那条要置
+  /// `_suppressedForSession`（本会话别再自动弹），这条**不能**——窗口被外部销毁
+  /// 不代表用户不想要它。
+  Future<void> _onOverlayDestroyed() async {
+    if (!_visible) return;
+    _visible = false;
+    // 没有窗口就没有「正在显示的那一行」；不清的话重建后 `latest.id ==
+    // _displayedLineId` 会让重推被跳过，新窗口停在空文本上。
+    _displayedLineId = null;
+    _displayedLineText = null;
+    notifyListeners();
+  }
+
+  /// 兜底对账：把 `_visible` 与 native 的真实窗口状态校准一次。
+  ///
+  /// 正常路径是 [_onOverlayDestroyed] 的被动复位，本进程内不会丢。保留这条
+  /// 兜底是因为事件依赖「Dart 侧已挂上 handler」：热重启、`stopForTesting()`
+  /// 之后重新 `start()`、或 App 启动时游戏会话已经在跑，都会留下一段没有订阅者
+  /// 的时间窗，那段时间里发生的销毁没人报。
+  ///
+  /// 只在**每局会话开始**打一次（不是每行）：staleness 因此被一局游戏封顶，而
+  /// 代价从 O(台词数) 次 MethodChannel 往返降到 O(会话数) 次；且 `_visible`
+  /// 为 false 时直接早退，实际开销通常是零。
+  Future<void> _reconcileVisibilityWithNative() async {
+    if (!_visible) return;
+    if (await GalHookTextOverlayChannel.isShowing()) return;
+    _visible = false;
+    _displayedLineId = null;
+    _displayedLineText = null;
+    notifyListeners();
   }
 
   Future<void> _onLockChanged(bool locked) async {

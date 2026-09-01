@@ -46,9 +46,25 @@ import 'package:fushi/src/utils/net/url_input_normalizer.dart';
 /// `env > GUI 系统代理 > DIRECT`，与接入前逐字等价。
 String Function() appUserProxyReader = () => '';
 
-/// 代理模式读取器。`legacy` 只供精简入口/旧测试兼容：手填地址非空时按 manual，
-/// 否则按 auto。AppModel 初始化后只会返回 auto/direct/manual。
-String Function() appUserProxyModeReader = () => 'legacy';
+/// 进程级代理模式的三个合法值。这是**用户意图**的全部值域，[kProxyModeUnresolved]
+/// 不在其中——它表示「还没人把偏好接上来」，不是第四种意图。
+const String kProxyModeAuto = 'auto';
+const String kProxyModeDirect = 'direct';
+const String kProxyModeManual = 'manual';
+
+/// 「偏好还没接上」的哨兵。**它表达不了 `direct`**：没接上就意味着这个进程手里根本
+/// 没有用户的选择，只能从手填地址反推 auto/manual（见 [_effectiveProxyMode]）。
+///
+/// 所以真正的修法不是给哨兵编一个更聪明的猜法，而是让「偏好一读出来就接上」——绑定
+/// 住在 `PreferencesRepository.loadFromDb()`（偏好值变得可读的那一刻），而不是某一个
+/// 调用点。以前只有 `AppModel.initialise()` 绑，弹窗词典进程
+/// （`initialiseForDictionaryPopup`，同样读了偏好却没绑）整段生命周期都落在本哨兵上：
+/// 选了「直连」的用户在弹窗进程里照样走系统代理，那不是一个空窗口，是一整个会话。
+const String kProxyModeUnresolved = 'unresolved';
+
+/// 代理模式读取器。默认 [kProxyModeUnresolved]；[PreferencesRepository.loadFromDb]
+/// 一读出偏好就把它接到真值上。
+String Function() appUserProxyModeReader = () => kProxyModeUnresolved;
 
 /// 手动 HTTP 代理 **Basic** 认证凭据（Digest 未实现，challenge 时直接放弃而不是
 /// 塞一份永远匹配不上的 Basic 凭据进无限重试环）。密码只在代理发起 407 challenge 时交给
@@ -56,19 +72,38 @@ String Function() appUserProxyModeReader = () => 'legacy';
 String Function() appUserProxyUsernameReader = () => '';
 String Function() appUserProxyPasswordReader = () => '';
 
-String _effectiveProxyMode(String proxy) {
+/// 进程级模式是否已经是用户的真实选择（而不是 [kProxyModeUnresolved] 哨兵）。
+bool hasResolvedProxyMode() {
   final String mode = appUserProxyModeReader();
-  if (mode == 'auto' || mode == 'direct' || mode == 'manual') return mode;
-  // legacy 兜底判据必须是「归一得出来」而不是「非空」：设置页历来对非法地址只弹
+  return mode == kProxyModeAuto ||
+      mode == kProxyModeDirect ||
+      mode == kProxyModeManual;
+}
+
+String _effectiveProxyMode(String proxy) {
+  if (hasResolvedProxyMode()) return appUserProxyModeReader();
+  // 未接线兜底判据必须是「归一得出来」而不是「非空」：设置页历来对非法地址只弹
   // SnackBar 却仍存原串，所以存量里有 `[::1]:7890`（IPv6 不支持）、带路径、带空格
   // 等「存下来了但归一失败」的值。按非空推成 manual，manual 归一失败又硬走 DIRECT
   // = 存量用户升级即全应用断网。旧行为在这种值上是 fail-open（落回 env > 系统代理），
   // 判据换成归一成功与否，与旧短路条件逐字等价。
-  return normalizeUserProxyHostPort(proxy) == null ? 'auto' : 'manual';
+  return normalizeUserProxyHostPort(proxy) == null
+      ? kProxyModeAuto
+      : kProxyModeManual;
+}
+
+/// 本次请求该按哪个地址、哪个模式出站。[legacyUserProxy] 只在**没有**已解析模式时顶替
+/// 进程级地址（旧入口的 `applyAppProxy(client, userProxy: ...)` 语义）；一旦模式接上来，
+/// 用户的选择优先，参数被忽略（见 [applyAppProxy] 文档）。
+({String mode, String proxy}) _resolveProxyDecision(String? legacyUserProxy) {
+  final String proxy = !hasResolvedProxyMode() && legacyUserProxy != null
+      ? legacyUserProxy
+      : appUserProxyReader();
+  return (mode: _effectiveProxyMode(proxy), proxy: proxy);
 }
 
 void _installManualProxyCredentials(HttpClient client,
-    {bool forceManual = false}) {
+    {String? legacyUserProxy}) {
   // 没配用户名 = 没有可交付的凭据。装一个恒返 false 的回调只有副作用：全应用每个
   // HttpClient 都白挂一个捕获 client 的闭包。代价是凭据变成早绑定——用户中途填了
   // 用户名，已建好的 client 拿不到钩子；设置页三个 onChanged 都调了
@@ -81,8 +116,7 @@ void _installManualProxyCredentials(HttpClient client,
   final Set<String> attempted = <String>{};
   client.authenticateProxy =
       (String host, int port, String scheme, String? realm) async {
-    if (!forceManual &&
-        _effectiveProxyMode(appUserProxyReader()) != 'manual') {
+    if (_resolveProxyDecision(legacyUserProxy).mode != kProxyModeManual) {
       return false;
     }
     // 只支持 Basic。塞 Basic 凭据去应付 Digest challenge，findCredentials 永远
@@ -201,55 +235,46 @@ bool _isValidProxyHost(String host) {
 /// [userProxy] 省略时取进程级真相源 [appUserProxyReader]（见其文档：全局配置不该靠逐条
 /// 调用链穿参，穿漏一处就是一条不走代理的暗路）。
 ///
-/// ⚠️ BUG-1980 起进程级模式一旦是 auto/direct/manual 之一（AppModel 初始化后恒成立），
-/// [userProxy] **会被完全忽略**——它只在没有显式模式的精简入口/旧测试里还起作用。
+/// ⚠️ BUG-1980 起进程级模式一旦已解析（[hasResolvedProxyMode]，偏好一装载即恒成立），
+/// [userProxy] **会被完全忽略**——它只在还没接上偏好的精简入口/旧测试里还起作用。
 /// 生产的三个调用点传的都是同一个 `updateCustomProxy`，行为等价；但别再指望用这个
 /// 参数「给某个 client 单独指定一个代理」，那会被静默吞掉。
+///
+/// 本函数与 [applyAppProxySync] 走**同一条**装配路（[_installAppProxy]），唯一差别是
+/// 自动模式那一格的 GUI 系统代理由这里现场解析、同步版取 [primeAppProxy] 缓存。
 Future<void> applyAppProxy(HttpClient client, {String? userProxy}) async {
-  // 手动模式直接短路，不参与 env>GUI>DIRECT 排序，消除「手填 vs 系统代理」
-  // 覆盖顺序不确定（TODO-871/862）。
-  // fake-ip/TUN 模式下系统代理写注册表 Dart 读不到，这是唯一可靠出口。手动模式
-  // normalize 失败时明确直连，不偷用 env/系统代理；自动模式才进入下方默认解析。
-  final String processMode = appUserProxyModeReader();
-  final bool hasExplicitMode = processMode == 'auto' ||
-      processMode == 'direct' ||
-      processMode == 'manual';
-  final bool hasExplicitProxy = userProxy?.trim().isNotEmpty == true;
-  final String mode = hasExplicitMode
-      ? processMode
-      : hasExplicitProxy
-          ? 'manual'
-          : _effectiveProxyMode(appUserProxyReader());
-  final String configuredProxy = mode == 'manual' && hasExplicitProxy
-      ? userProxy!.trim()
-      : appUserProxyReader();
-  if (mode == 'direct') {
-    client.findProxy = (_) => 'DIRECT';
-    return;
-  }
-  final String? normalizedUserProxy =
-      mode == 'manual' ? normalizeUserProxyHostPort(configuredProxy) : null;
-  if (mode == 'manual') {
-    client.findProxy = normalizedUserProxy == null
-        ? (_) => 'DIRECT'
-        : (Uri uri) => isDirectProxyTarget(uri.host)
-            ? 'DIRECT'
-            : 'PROXY $normalizedUserProxy';
-    _installManualProxyCredentials(
-      client,
-      forceManual: !hasExplicitMode && hasExplicitProxy,
-    );
-    return;
-  }
-  final Map<String, String> environment = <String, String>{
-    ...Platform.environment,
-  };
-  // env 变量优先：用户显式 set 的不该被 GUI 系统代理覆盖。仅当 env 没给代理时才按平台补 GUI
-  // 系统代理。三平台共用同一闸门，杜绝优先级不一致（TODO-704）。
-  if (!_hasEnvProxy(environment)) {
-    environment.addAll(await resolveSystemProxyEnvironment());
-  }
-  client.findProxy = (Uri uri) => _directiveFor(uri, environment);
+  final String? trimmed = userProxy?.trim();
+  final String? legacyUserProxy =
+      !hasResolvedProxyMode() && trimmed != null && trimmed.isNotEmpty
+          ? trimmed
+          : null;
+  // 自动模式那一格要的是**此刻**的平台 GUI 系统代理（fake-ip/TUN 下注册表刚被改过也能
+  // 跟上），故仍现场解析一次；同步入口取 [primeAppProxy] 的缓存。非自动模式不解析：
+  // 省掉 `reg query` / `scutil` 子进程，而且这一格反正不会被查到。
+  final Map<String, String>? systemEnv =
+      _resolveProxyDecision(legacyUserProxy).mode == kProxyModeAuto
+          ? await resolveSystemProxyEnvironment()
+          : null;
+  _installAppProxy(client,
+      legacyUserProxy: legacyUserProxy, systemEnvOverride: systemEnv);
+}
+
+/// **唯一装配路**（两个入口共用）：装一个**请求时求值**的 `findProxy` 闭包 + 凭据钩子。
+///
+/// 「请求时求值」是这次收敛的关键。异步入口以前把模式裁决**烘焙**进闭包、并且只在
+/// manual 分支里装凭据钩子：用户在 auto 模式下建好的 client，之后改成 manual，那些
+/// client 既不会改走手填代理、也永远拿不到 407 应答。两个装配点从此不可能给出不同答案。
+void _installAppProxy(
+  HttpClient client, {
+  String? legacyUserProxy,
+  Map<String, String>? systemEnvOverride,
+}) {
+  client.findProxy = (Uri uri) => resolveAppProxyDirective(
+        uri,
+        legacyUserProxy: legacyUserProxy,
+        systemEnvOverride: systemEnvOverride,
+      );
+  _installManualProxyCredentials(client, legacyUserProxy: legacyUserProxy);
 }
 
 /// env 里有没有给代理（`https_proxy` / `http_proxy`，大小写不敏感）。
@@ -258,13 +283,6 @@ bool _hasEnvProxy(Map<String, String> environment) =>
       final String lower = k.toLowerCase();
       return lower == 'https_proxy' || lower == 'http_proxy';
     });
-
-/// 统一的「一个 URI 该走什么出口」判定：**先过本机/局域网直连闸门**，再交给
-/// `findProxyFromEnvironment`。同步版与异步版共用，两条路不可能给出不同答案。
-String _directiveFor(Uri uri, Map<String, String> environment) =>
-    isDirectProxyTarget(uri.host)
-        ? 'DIRECT'
-        : HttpClient.findProxyFromEnvironment(uri, environment: environment);
 
 /// 按平台读 GUI 系统代理（Windows 注册表 / macOS scutil / Linux gsettings）。
 /// 其余平台返回空 map。
@@ -320,22 +338,26 @@ void debugSetCachedSystemProxyEnv(Map<String, String>? env) {
 /// 唯一差别是 GUI 系统代理那一格取自 [primeAppProxy] 缓存而不是现场 `Process.run`。
 /// **没 prime 过时该格为空**，于是退化成 `env > DIRECT`——与本函数存在之前那些裸
 /// `HttpClient()` 相比只多不少，绝不会更坏。
-void applyAppProxySync(HttpClient client) {
-  client.findProxy = resolveAppProxyDirective;
-  _installManualProxyCredentials(client);
-}
+void applyAppProxySync(HttpClient client) => _installAppProxy(client);
 
 /// **纯查表**：一个 URI 该走什么出口。[applyAppProxySync] 装进 `findProxy` 的就是它。
 ///
 /// 公开（非 `@visibleForTesting`）是因为它是这条纪律的可断言表面：守卫与单测要能直接
 /// 问「AnkiConnect / 局域网 peer 会不会被代理」，而不是去 mock 一个 HttpClient。
-String resolveAppProxyDirective(Uri uri) {
+String resolveAppProxyDirective(
+  Uri uri, {
+  String? legacyUserProxy,
+  Map<String, String>? systemEnvOverride,
+}) {
   if (isDirectProxyTarget(uri.host)) return 'DIRECT';
-  final String proxy = appUserProxyReader();
-  final String mode = _effectiveProxyMode(proxy);
-  if (mode == 'direct') return 'DIRECT';
-  if (mode == 'manual') {
-    final String? normalizedUserProxy = normalizeUserProxyHostPort(proxy);
+  final ({String mode, String proxy}) decision =
+      _resolveProxyDecision(legacyUserProxy);
+  if (decision.mode == kProxyModeDirect) return 'DIRECT';
+  // 手动模式不参与 env>GUI>DIRECT 排序，消除「手填 vs 系统代理」覆盖顺序不确定
+  // （TODO-871/862）；normalize 失败时明确直连，不偷用 env/系统代理。
+  if (decision.mode == kProxyModeManual) {
+    final String? normalizedUserProxy =
+        normalizeUserProxyHostPort(decision.proxy);
     return normalizedUserProxy == null
         ? 'DIRECT'
         : 'PROXY $normalizedUserProxy';
@@ -343,8 +365,12 @@ String resolveAppProxyDirective(Uri uri) {
   final Map<String, String> environment = <String, String>{
     ...Platform.environment,
   };
+  // env 变量优先：用户显式 set 的不该被 GUI 系统代理覆盖。仅当 env 没给代理时才补 GUI
+  // 系统代理——异步入口现场解析的那一份优先，否则取 [primeAppProxy] 缓存（TODO-704）。
   if (!_hasEnvProxy(environment)) {
-    environment.addAll(_cachedSystemProxyEnv ?? const <String, String>{});
+    environment.addAll(
+      systemEnvOverride ?? _cachedSystemProxyEnv ?? const <String, String>{},
+    );
   }
   return HttpClient.findProxyFromEnvironment(uri, environment: environment);
 }

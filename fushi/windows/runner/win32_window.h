@@ -162,7 +162,22 @@ class Win32Window {
   void CaptureTransitionSnapshot();
   void ReleaseTransitionSnapshot();
 
+  // BUG-2006: Windows 11 paints the thin window border and rounds the corners
+  // in the compositor, ON TOP of the client area — neither belongs to the
+  // non-client area window_manager's hidden-title-bar WM_NCCALCSIZE leaves us.
+  // Whenever the client reaches the screen edges that chrome lands on app
+  // content: a 1 px accent-coloured line across the very top (measured
+  // 3830/3840 pixels of screen row 0) and four corner notches showing the
+  // desktop through. Windows itself drops both for a maximized window, so the
+  // policy here is the same one: suppress while the window presents
+  // edge-to-edge (runner fullscreen, maximized, or a normal window whose
+  // client covers the monitor), restore for an ordinary window. Applied only
+  // on transitions — a redundant DwmSetWindowAttribute per WM_SIZE would add
+  // work to every interactive resize frame (BUG-1917 cadence).
+  void UpdateFrameChrome();
+
   bool fullscreen_ = false;
+  bool frame_chrome_suppressed_ = false;
   WINDOWPLACEMENT placement_before_fullscreen_ = {};
   HBITMAP transition_snapshot_ = nullptr;
   SIZE transition_snapshot_size_ = {};

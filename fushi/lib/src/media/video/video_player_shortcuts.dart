@@ -298,10 +298,15 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
 /// 长按**不**连发的视频动作（按一下翻一次）。TODO-840 Part B 起是模糊切换 / 遮蔽
 /// 循环 / 隐藏切换；进入选词光标与制卡同属此类（长按不该连发查词 / 连发制卡）。
 ///
-/// 两条键盘通道共用这一份真相源：弹窗复用的 activator 表把它翻译成
-/// `includeRepeats: false`（[buildVideoPlayerShortcutsFromRegistry]），页级
-/// press-time 通道把它翻译成「[KeyRepeatEvent] 不消费」
-/// （[resolveVideoKeyboardShortcut]）。
+/// **真正逐条生效的只有页级 press-time 通道**：[resolveVideoKeyboardShortcut] 把本集合
+/// 翻译成「[KeyRepeatEvent] 不消费」，5 个成员条条管用。
+///
+/// 还在用 activator 表的那条路径（[buildVideoPlayerShortcutsFromRegistry]，只服务字幕
+/// 对轴弹窗与网页视频页）只翻译得到其中 3 个：`videoEnterCaret` 被那个函数显式
+/// `continue` 掉、根本不进表；`popupMineEntry` 属 dictionaryPopup scope，压根不在
+/// [videoActionCallbacks] 里、也就不在被遍历的动作集合里。所以这不是「两条通道逐字
+/// 等价」的真相源，而是「press-time 通道的真相源 + activator 表尽力翻译的子集」——
+/// 读成前者就会以为往集合里加一个动作两边都生效，那正是漏改一侧的起点。
 const Set<ShortcutAction> kVideoPressEdgeOnlyActions = <ShortcutAction>{
   ShortcutAction.videoToggleSubtitleBlur,
   ShortcutAction.videoCycleSubtitleObscure,
@@ -482,19 +487,24 @@ HoldSpeedKeyTransition resolveHoldSpeedKeyTransition({
 ///
 /// 修饰键取 [HardwareKeyboard] 实时状态（与 SingleActivator 同口径）；physicalKey
 /// 透传给 [FushiShortcutRegistry.resolveKeyboard] 供 IME 改写回退（TODO-847）。
-/// [hasEditableFocus] 为 true（文本框持焦）时恒不命中，避免输入时误触加速。
+/// [hasEditableFocus] 为 true 时按**与主通道同一条** [editableFocusClaimsKey] 判：文本框
+/// 自己会用的键让位（默认裸 E 正是这一类，输入时不会误触加速），它用不上的硬修饰组合
+/// 照常命中。这条通道排在主通道之前，判据必须与主通道同源，否则两条路径会在同一个键上
+/// 给出相反答案。
 bool keyDownMatchesHoldSpeed(
   FushiShortcutRegistry registry,
   KeyDownEvent event, {
   required bool hasEditableFocus,
 }) {
-  if (hasEditableFocus) return false;
-  final Set<ModifierKey> modifiers = <ModifierKey>{
-    if (HardwareKeyboard.instance.isControlPressed) ModifierKey.ctrl,
-    if (HardwareKeyboard.instance.isShiftPressed) ModifierKey.shift,
-    if (HardwareKeyboard.instance.isAltPressed) ModifierKey.alt,
-    if (HardwareKeyboard.instance.isMetaPressed) ModifierKey.meta,
-  };
+  final Set<ModifierKey> modifiers =
+      currentKeyboardModifiers(HardwareKeyboard.instance);
+  if (hasEditableFocus &&
+      editableFocusClaimsKey(
+        logicalKey: event.logicalKey,
+        modifiers: modifiers,
+      )) {
+    return false;
+  }
   return registry.resolveKeyboard(
         event.logicalKey,
         modifiers: modifiers,
@@ -529,8 +539,11 @@ bool isVideoPanelFocusNavButton(GamepadButton button) {
 /// 它绑着 [ShortcutAction.videoEnterCaret]，由「视频画面**精确**持焦才算选词键」
 /// 那条 contextual 判据天然让位（面板持焦时画面必不持焦），不必在这里重复列一遍。
 ///
-/// 只对**无修饰**方向键成立：Ctrl+←/→（上/下一句字幕）、Ctrl+Shift+←/→（字幕偏移
-/// 对齐）是明确的视频动作，面板开着时照常执行——这条判据由调用方
+/// 让位只对**不带硬修饰**（Ctrl/Alt/Meta）的方向键成立：Ctrl+←/→（上/下一句字幕）、
+/// Ctrl+Shift+←/→（字幕偏移对齐）是明确的视频动作，面板开着时照常执行。Shift 不算硬
+/// 修饰（Shift+方向键在列表里是扩选，仍归焦点遍历），用的是与
+/// [videoCaretKeyboardTakesPrecedence] / [editableFocusClaimsKey] 同一条
+/// [hasHardModifier]。这条判据与「焦点确实已不在画面上」一起由调用方
 /// [resolveVideoKeyboardShortcut] 施加。
 bool isVideoPanelFocusNavKey(LogicalKeyboardKey key) {
   return key == LogicalKeyboardKey.arrowUp ||
@@ -604,6 +617,71 @@ Set<ModifierKey> currentKeyboardModifiers(HardwareKeyboard keyboard) {
   };
 }
 
+/// 「硬修饰键」= Ctrl / Alt / Meta。**Shift 不算**。
+///
+/// 视频页有两个会临时抢走键盘的模态输入宿主——字级选词光标与文本框——「这次按键归
+/// 宿主还是归视频通道」用的是同一条线：宿主只认领**不带硬修饰**的键。理由两边一致：
+/// 裸键与 Shift 组合是宿主的正常输入（移动光标 / Shift+Tab 后退一字 / 打大写字母），
+/// 而 Ctrl/Alt/Meta 组合从来不是「输入一个字符」，那是命令。面板持焦时的方向键让位
+/// （[isVideoPanelFocusNavKey]）同理。
+///
+/// 两个宿主之间**只有一处差异，且是宿主自身能力的差异、不是第二套模型**：文本框对一小
+/// 撮硬修饰组合另有用途（Ctrl+←/→ 按词移动、Ctrl+A/C/V/X/Z 编辑），那份清单在
+/// [isTextEditingCombination]；光标那份是空集，所以它不需要第二个判据。
+bool hasHardModifier(Set<ModifierKey> modifiers) {
+  return modifiers.contains(ModifierKey.ctrl) ||
+      modifiers.contains(ModifierKey.alt) ||
+      modifiers.contains(ModifierKey.meta);
+}
+
+/// 文本框在**带硬修饰**时仍会自己消费的键。
+///
+/// 这不是「所有能在文本框里按的键」，而是 Flutter 桌面端 `DefaultTextEditingShortcuts`
+/// 真正注册了 Ctrl/Alt/Meta 组合的那一小撮：按词 / 按行移动与扩选（方向键、Home/End）、
+/// 按词删除（Backspace/Delete）、剪贴板与撤销重做（A/C/V/X/Z/Y）。
+///
+/// 为什么必须显式列出来，而不是「有硬修饰就一律归视频」：video scope 的 Ctrl+←/→ 是
+/// 「上/下一句字幕」。不排除的话，用户在 mpv.conf 编辑框 / 弹幕规则框 / 侧栏搜索框里按
+/// Ctrl+← 就不再是按词左移而是跳字幕——那是**新造**的回归（旧实现里文本框根本够不到那张
+/// 表）。反过来 Ctrl+Enter（制卡）、Ctrl+F（字幕列表搜索）、Ctrl+D（收藏句子）不在表里，
+/// 文本框对它们没有任何用途，交回视频通道才是对的。
+///
+/// 判据只看**逻辑键**、不看按的是哪个修饰键：macOS 的 Meta+←/A/C/V 与 Windows/Linux 的
+/// Ctrl+… 是同一批键，一份清单同时覆盖两端。
+bool isTextEditingCombination(LogicalKeyboardKey key) {
+  return key == LogicalKeyboardKey.arrowLeft ||
+      key == LogicalKeyboardKey.arrowRight ||
+      key == LogicalKeyboardKey.arrowUp ||
+      key == LogicalKeyboardKey.arrowDown ||
+      key == LogicalKeyboardKey.home ||
+      key == LogicalKeyboardKey.end ||
+      key == LogicalKeyboardKey.backspace ||
+      key == LogicalKeyboardKey.delete ||
+      key == LogicalKeyboardKey.keyA ||
+      key == LogicalKeyboardKey.keyC ||
+      key == LogicalKeyboardKey.keyV ||
+      key == LogicalKeyboardKey.keyX ||
+      key == LogicalKeyboardKey.keyY ||
+      key == LogicalKeyboardKey.keyZ;
+}
+
+/// 文本框持焦时，这次按键是否归**文本框**（= 视频键盘通道必须整条让位）。
+///
+/// BUG-962 的本体是第一条：不带硬修饰的键一律让位——裸空格、裸字母、裸方向键、
+/// Shift+字母（打大写）、Shift+方向键（扩选）全在内。少了它就是在 mpv.conf 多行框里
+/// 打一个 `f` 直接切全屏。
+///
+/// 第二条只在带硬修饰时才问：那是不是文本框自己也要用的组合（[isTextEditingCombination]）。
+/// 两条合起来正好是「宿主认领它用得上的键，用不上的交回视频」，与
+/// [videoCaretKeyboardTakesPrecedence] 同一个模型（光标那侧第二条恒为假）。
+bool editableFocusClaimsKey({
+  required LogicalKeyboardKey logicalKey,
+  required Set<ModifierKey> modifiers,
+}) {
+  if (!hasHardModifier(modifiers)) return true;
+  return isTextEditingCombination(logicalKey);
+}
+
 /// 字级选词光标激活期，一次键盘事件是否**先于注册表解析**交给光标路由
 /// （`ReaderCaretRouter.decideKeyboard`）。
 ///
@@ -611,6 +689,8 @@ Set<ModifierKey> currentKeyboardModifiers(HardwareKeyboard keyboard) {
 /// （Ctrl/Alt/Meta）的组合键不是光标键**——Ctrl+←/→ 是上/下一句字幕、Ctrl+Shift+←/→
 /// 是字幕偏移对齐，光标激活时照常执行（跳句后页面会自动重锚）。Shift 不算硬修饰：
 /// 它是光标语义的一部分（Shift+Tab = 后退一字，与阅读器一致），透传给光标路由。
+/// 判据就是共享的 [hasHardModifier]——与文本框那侧同一条线；光标不像文本框那样对硬
+/// 修饰组合另有用途，所以这里不需要 [isTextEditingCombination] 那份清单。
 ///
 /// 方案 D 之前这条豁免写在套在 media_kit 表外面的 caret 守卫里，键盘通道合并为一条
 /// 之后搬到这里。少了它，光标一开 Ctrl+← 就变成「光标左移一字」。
@@ -623,9 +703,7 @@ bool videoCaretKeyboardTakesPrecedence({
   if (!caretActive) return false;
   if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
   if (hasEditableFocus) return false;
-  return !modifiers.contains(ModifierKey.ctrl) &&
-      !modifiers.contains(ModifierKey.alt) &&
-      !modifiers.contains(ModifierKey.meta);
+  return !hasHardModifier(modifiers);
 }
 
 /// 给仍使用 activator 表的网页视频页增加「词典浮层优先关闭」语义。
@@ -633,6 +711,12 @@ bool videoCaretKeyboardTakesPrecedence({
 /// 原生视频页已经改为 [resolveVideoKeyboardShortcut] 的页级 press-time 单通道，不再
 /// 调用本函数；网页视频页仍持有短生命周期的 [CallbackShortcuts] 表，因此继续复用
 /// 这个无页面依赖的包装器。浮层可见时只关闭顶层浮层并消费按键，否则执行原动作。
+///
+/// 与主通道的两处**有意**差异（网页视频页那张表的形状决定的，不要照抄原生页语义）：
+/// ① 无条件包住表里**每一个** activator，没有制卡豁免——`popupMineEntry` 不在
+///    [videoActionCallbacks] 里，那张表里根本没有制卡键可豁免；
+/// ② 只作用于表里已有的键，未绑定的键不进表、也就不会被吞。
+/// 回归覆盖在 `test/media/video/web_video_popup_dismiss_guard_test.dart`。
 Map<ShortcutActivator, VoidCallback> guardVideoShortcutsWithPopupDismiss(
   Map<ShortcutActivator, VoidCallback> base, {
   required bool Function() isPopupVisible,
@@ -672,20 +756,35 @@ VideoKeyboardResolution resolveVideoKeyboardShortcut(
   required bool hasEditableFocus,
   required bool hasVisiblePopup,
   required bool videoSurfaceHoldsFocus,
-  required bool panelHoldsFocusNavigation,
+  required bool videoNavigablePanelOpen,
 }) {
   // 只解析按下 / 重复沿。keyup 属于按住倍速状态机（页面在本函数之前一层处理）。
   if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
     return VideoKeyboardResolution.ignored;
   }
-  // 文本框持焦（含 IME composing）：整条键盘通道让位给输入，一个视频动作都不解析。
-  if (hasEditableFocus) return VideoKeyboardResolution.ignored;
+  // 文本框持焦（含 IME composing）：文本框认领的键整条通道让位，一个视频动作都不解析。
+  // 判据是 [editableFocusClaimsKey]——与选词光标那侧同一条修饰键模型：不带硬修饰的键
+  // 全让（BUG-962 的本体），带硬修饰的只让文本框自己也要用的那一小撮编辑组合。
+  if (hasEditableFocus &&
+      editableFocusClaimsKey(
+        logicalKey: event.logicalKey,
+        modifiers: modifiers,
+      )) {
+    return VideoKeyboardResolution.ignored;
+  }
 
-  // 手柄重设计 P3 的键盘对应物：面板持焦时裸方向键让位给通用焦点遍历（见
-  // [isVideoPanelFocusNavKey]）。必须在解析之前——方向键在注册表里绑着 seek / 音量，
-  // 解析之后再让位就等于「先执行再后悔」。
-  if (panelHoldsFocusNavigation &&
-      modifiers.isEmpty &&
+  // 手柄重设计 P3 的键盘对应物：可导航面板打开、且焦点确实已不在画面上时，不带硬修饰
+  // 的方向键让位给通用焦点遍历（见 [isVideoPanelFocusNavKey]）。必须在解析之前——方向
+  // 键在注册表里绑着 seek / 音量，解析之后再让位就等于「先执行再后悔」。
+  //
+  // `!videoSurfaceHoldsFocus` 这一半不是冗余：让位的**理由**是「焦点在面板里、方向键
+  // 此刻是在面板内选行」。今天这个前提由**另一个模块**的门控间接成立（页面的
+  // `_canOwnVideoFocus` 在面板打开时不抢焦），本函数拿不到任何保证。那条门控一改，
+  // 面板开着而焦点仍在画面上时裸方向键就既不移焦、也不 seek——静默失效，没有任何报错。
+  // 把前提就地判掉，这个远程依赖就不存在了。
+  if (videoNavigablePanelOpen &&
+      !videoSurfaceHoldsFocus &&
+      !hasHardModifier(modifiers) &&
       isVideoPanelFocusNavKey(event.logicalKey)) {
     return VideoKeyboardResolution.ignored;
   }

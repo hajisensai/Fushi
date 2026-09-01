@@ -142,9 +142,12 @@ void main() {
     );
     final int w = src.indexOf('case WM_MOUSEWHEEL:');
     final String wheelCase = src.substring(w, src.indexOf('case WM_SIZE:', w));
+    // 实参是 WndProc 透传进 HandleMessage 的**消息自带** hwnd（不是成员 hwnd_，
+    // BUG-1981：旧窗口的晚到消息会拿成员冒充自己的宿主）。这里钉的是「不接管就
+    // 落回 DefWindowProc」这条行为，不是那个符号叫什么。
     expect(
       wheelCase
-          .contains('return DefWindowProc(hwnd_, message, wparam, lparam);'),
+          .contains('return DefWindowProc(hwnd, message, wparam, lparam);'),
       isTrue,
       reason: '不接管的滚轮必须落回 DefWindowProc',
     );
