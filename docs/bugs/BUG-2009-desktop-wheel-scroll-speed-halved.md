@@ -1,0 +1,9 @@
+## BUG-2009 · 桌面滚轮平滑修复把滚动速度砍半
+- **报告**：2026-09-01（用户：「拖动窗口掉帧修了然后我发现引入了新的问题，不掉帧了但是速度慢了」→「优化到又快帧率又高」）
+- **真实性**：✅ 真 bug，且是 BUG-1960 修复引入的回归。根因 `fushi/lib/src/utils/misc/platform_utils.dart` 的 `refinedDesktopPointerScrollDelta`：Windows/Linux 上把绝对值 ≥ 80 的粗滚轮 delta **乘 0.5 再封顶 120px**，一档从系统给的约 100–120px 变成约 48–60px。经 `FushiScrollController` 接在首页 `ListView`（`home_dashboard_page.dart`）和页面骨架（`fushi_material_components.dart:2181`）上，等于全 app 主纵滚都减半。
+  - 用户话里的「拖动窗口掉帧」指的是另一条线（BUG-1916/1917 拖边缩放），那条**没有回归**：同负载下 8/16 修复前旧包 vs 当前 12909 交错各两轮，放大 p50 15.5→11.4~12.5ms、p90 23.0→14.7~15.3ms，缩小 p50 15.0→13.8~14.1ms、p90 21.5→16.4~16.6ms，窗口边跟光标滞后 4.1~4.8px→3.5~4.2px；拖标题栏移动 120 次/s、滞后 8px。另外实测 BUG-1916 加在每个 `WM_SIZE` 上的 `FillSurfaceBackdrop` 在 3840×2160 只要 0.058ms（p99 0.127ms），不是开销来源。真正变慢的是滚轮。
+- **[x] ① 已修复** — 距离与平滑是正交的两件事，BUG-1960 把「一滚跳一整段」误判成「距离太大」，于是两重手段叠着上：`_FushiScrollPosition` 的 `kDesktopWheelScrollDuration`（140ms `animateTo`）已经把瞬移变成补间，×0.5 + 封顶只扣速度、不加流畅。本次直接删掉 `refinedDesktopPointerScrollDelta` 整个函数（连同 0.5 和 120px 两个没有依据的旋钮），粗/细分类只保留一个用途：**要不要补间**。粗滚轮走 `animateTo` 累积目标，细指针（触控板/高精度滚轮）走原生同步路径，距离一律 1:1，一档走多远回归系统「每次滚动行数」设置。手势内锁定分类保留且理由变了——尾帧若改走同步路径，`pointerScroll` 会先 `goIdle` 掐断飞行中的 `DrivenScrollActivity` 再 `forcePixels`，一次拨动的距离反而被吃掉。
+- **[x] ② 已加自动化测试** — `fushi/test/utils/misc/desktop_wheel_scroll_controller_test.dart`（8 条）把每条距离断言改成平台无关的 1:1（120→120、12+120→132），平台差异只留在「分帧到达还是单帧到达」；新增「粗滚轮分帧到达，不是单帧瞬移」（Windows/Linux 断言中途 0<offset<120，macOS 断言单帧 120）与「粗滚轮手势里的小尾帧不得走同步路径掐断动画」。`fushi/test/utils/misc/desktop_scroll_physics_test.dart` 反向钉死 `refinedDesktopPointerScrollDelta` 不得复活（源码扫描）。`fushi/test/widgets/fushi_page_scaffold_scroll_test.dart` 的四处期望换成字面值 120/132/240。
+- **备注**：
+  - 词典弹窗内部另有一套 `POPUP_WHEEL_PIXEL_FACTOR = 0.48`（`fushi/assets/popup/popup.js`，BUG-870），成因不同——那是 WebView 原生粗步长被 zoom 放大，且用户没报，本次**刻意不动**。
+  - 「帧率」那半边不是本次改动引入的自由度：滚动多远不影响每帧的绘制成本，把距离恢复回 1:1 不会掉帧。真机复测见下方证据。
