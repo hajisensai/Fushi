@@ -826,7 +826,14 @@ class TexthookerService extends ChangeNotifier {
             tail.textThreadKey != textThreadKey) {
           break;
         }
-        if (!isProgressiveTextUpdate(tail.text, mergedText)) break;
+        final bool layoutRefresh =
+            isWhitespaceOnlyLayoutRefresh(tail.text, mergedText);
+        if (!layoutRefresh && !isProgressiveTextUpdate(tail.text, mergedText)) {
+          break;
+        }
+        // 前/后缀折叠保留信息量更大的那一份。排版刷新不需要在这里额外分支：
+        // 它的两侧去空白后逐字符相同、长度必然相等，`>` 是严格比较，天然不会
+        // 回退，**后到的那份排版**因此自动胜出。
         if (normalizeForFold(tail.text).length >
             normalizeForFold(mergedText).length) {
           mergedText = tail.text;

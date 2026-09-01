@@ -62,6 +62,36 @@ void main() {
         isTrue,
       );
     });
+
+    test('字符相同但换行变化是排版刷新，完全相同文本仍不是', () {
+      expect(isWhitespaceOnlyLayoutRefresh('前半後半', '前半\n後半'), isTrue);
+      expect(isWhitespaceOnlyLayoutRefresh('前半後半', '前半後半'), isFalse);
+    });
+
+    test('两句不同的台词不会被空白折叠判成排版刷新', () {
+      // 负向覆盖。判据是「去空白后**完全相等**」，不是包含关系：两句不同的话
+      // （含互为前缀的那种）一条都不该命中，否则用户会看着一句台词被下一句原地
+      // 顶掉，上一句连同它的制卡/收藏一起从工作台上消失。
+      expect(isWhitespaceOnlyLayoutRefresh('はい', 'いいえ'), isFalse);
+      expect(
+        isWhitespaceOnlyLayoutRefresh(
+          'あのね、',
+          'あのね、\n  きょうはいいてんきですね',
+        ),
+        isFalse,
+        reason: '前缀增长归 isProgressiveTextUpdate 管，不是排版刷新',
+      );
+    });
+
+    test('极短行的排版刷新照样折：等值判据没有 kMinFoldableLength 门', () {
+      // 两条判据的下限**故意不对称**，不是漏了。kMinFoldableLength 是给
+      // isProgressiveTextUpdate 的**包含**判据设的（任何长句都可能刚好以
+      // 「はい」开头或结尾）。等值判据没有那个假阳性面：去空白后完全相同的两
+      // 行，内容上本来就是同一句。给它补一个下限只会让下面这种真排版刷新漏折，
+      // 在工作台上留一条重复短行 —— 那正是 BUG-1983 要消的症状。
+      expect(isWhitespaceOnlyLayoutRefresh('はい', 'は い'), isTrue);
+      expect(isWhitespaceOnlyLayoutRefresh('…', '…\n'), isTrue);
+    });
   });
 
   group('TexthookerService 折叠行为', () {
@@ -171,6 +201,28 @@ void main() {
           reason: '① 是 ③ 的前缀、② 是 ③ 的后缀，尾巴要一次性回吞干净；'
               '只折紧邻上一条的话 ① 会留下，第一句照样出现两次。');
       expect(service.entries.single.text, kZatoFullLine);
+    });
+
+    test('同句仅更新换行时原地采用最新排版，不新增重复行', () {
+      final TexthookerLineEntry? first = append('大丈夫、話してみた感じ、後半', seq: 1);
+      final TexthookerLineEntry? refreshed =
+          append('大丈夫、話してみた感じ、\n後半', seq: 2);
+
+      expect(service.entries, hasLength(1));
+      expect(refreshed!.id, first!.id, reason: '排版刷新不能换掉制卡/查词使用的行身份');
+      expect(service.entries.single.text, '大丈夫、話してみた感じ、\n後半');
+      expect(service.lastAppendedDelta, isEmpty, reason: '仅换行不应重复计入学习字数');
+    });
+
+    test('两句不同的台词不会被排版刷新折成一条', () {
+      // 服务层的负向对照：判据一旦从「等值」放宽成「包含」，这两条就会折成一
+      // 条、第一句连同它的行 id 一起消失。
+      append('はい', seq: 1);
+      append('いいえ', seq: 2);
+
+      expect(service.entries, hasLength(2));
+      expect(service.entries.first.text, 'はい');
+      expect(service.entries.last.text, 'いいえ');
     });
 
     test('折叠后 lineId 保持最早那条（浮窗/游戏内卡片的身份不跳）', () {

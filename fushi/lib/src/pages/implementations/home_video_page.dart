@@ -2753,12 +2753,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   // 卡目标宽与书架同源（[readerShelfGridExtentForWidth]）：手机窄屏
                   // （宽<600）用 150 → 至少 2 列，不再「1 列铺满整屏、卡片过大」；宽屏
                   // 按断点收敛列数。此前硬编码 240 使手机可用宽≈380 时 floor 出 1 列。
+                  final double availableWallWidth =
+                      constraints.maxWidth - tokens.spacing.card * 2;
                   final ({int columns, double cardWidth}) cardLayout =
                       unifiedShelfCardLayout(
-                    availableWidth:
-                        constraints.maxWidth - tokens.spacing.card * 2,
+                    availableWidth: availableWallWidth,
                     targetWidth:
                         readerShelfGridExtentForWidth(constraints.maxWidth),
+                  );
+                  final ({int columns, double cardWidth}) allVideosCardLayout =
+                      unifiedShelfCardLayout(
+                    availableWidth: availableWallWidth,
+                    targetWidth: allVideoThumbnailTargetWidthForWidth(
+                      constraints.maxWidth,
+                    ),
                   );
                   return CustomScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
@@ -2784,7 +2792,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                             all, ordered, remoteVideos, cardLayout),
                       if (widget.section == VideoLibrarySection.allVideos)
                         ..._buildAllVideoSlivers(
-                            all, ordered, remoteVideos, cardLayout),
+                            all, ordered, remoteVideos, allVideosCardLayout),
                       // 首页只有 hero + 横滚行，横滚行卡不参与勾选，所以这一帧
                       // 没有任何可勾选的格。必须如实登记空可见序：三个分区共用
                       // 同一个 State，多选态下从「全部视频」切到首页时，可见序
@@ -3673,6 +3681,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     required List<_VideoRowItem> items,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double rowCardHeight = coverHeight + _videoRowCardTextBlock(context);
+    // BUG-2002：悬停放大是纯绘制变换（AnimatedScale 以卡中心放大），行视口高度
+    // 恰等于卡高时，放大溢出的上下 (scale-1)/2 会被 ListView 视口裁成平边——
+    // 墙格没这个问题（格间不裁、只有视口边缘裁），横滚行每张卡都贴着视口上下沿。
+    // 行高留出溢出余量、卡片自身尺寸不变；不能用 Clip.none：懒加载 cacheExtent
+    // 里已构建的卡会画到行外。
+    final double liftHeadroom = rowCardHeight * (kFushiHoverLiftScale - 1) / 2;
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.gap),
       child: Column(
@@ -3683,16 +3698,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             child: Text(title, style: tokens.type.sectionLabel),
           ),
           SizedBox(
-            height: coverHeight + _videoRowCardTextBlock(context),
-            child: HorizontalDragScrollable(
-              child: ListView.separated(
-                controller: controller,
-                scrollDirection: Axis.horizontal,
-                physics: desktopAwareScrollPhysics(),
-                itemCount: items.length,
-                separatorBuilder: (BuildContext _, int __) =>
-                    SizedBox(width: tokens.spacing.gap),
-                itemBuilder: (BuildContext context, int i) => items[i].build(),
+            height: rowCardHeight + liftHeadroom * 2,
+            // [SectionSwipeCascade]：首页几乎整屏都是横滚行，行内横滑归行；行已
+            // 滚到边缘后继续拖，交给 [SectionSwipeNavigator] 级联切到相邻分区。
+            child: SectionSwipeCascade(
+              child: HorizontalDragScrollable(
+                child: ListView.separated(
+                  controller: controller,
+                  scrollDirection: Axis.horizontal,
+                  physics: desktopAwareScrollPhysics(),
+                  itemCount: items.length,
+                  separatorBuilder: (BuildContext _, int __) =>
+                      SizedBox(width: tokens.spacing.gap),
+                  itemBuilder: (BuildContext context, int i) => Padding(
+                    padding: EdgeInsets.symmetric(vertical: liftHeadroom),
+                    child: items[i].build(),
+                  ),
+                ),
               ),
             ),
           ),
@@ -3860,7 +3882,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       );
     }
 
-    return CoverOrientationBuilder(image: cover, builder: buildCard);
+    // BUG-2002 悬停抬升：与墙卡 [_buildCard] 同一个壳（含墨水屏/减弱动态效果
+    // 两处降级）。横滚卡不参与勾选，但多选态下点击已置 null（见上方纪律注释），
+    // 指针反馈一并关掉，与墙卡同一口径。
+    return FushiHoverLift(
+      enabled: !_selectionMode,
+      builder: (BuildContext _, bool __) =>
+          CoverOrientationBuilder(image: cover, builder: buildCard),
+    );
   }
 
   /// 继续观看行·本地散卡：点击直接续播；多集显集数角标 + 按集进度条（单视频无
@@ -4243,19 +4272,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       ];
     }
     return <Widget>[
-      _buildVideoWallSliver(
+      _buildAllVideoGridSliver(
         <_VideoWallEntry>[
           for (final VideoBookRow book in ordered)
             _VideoWallEntry(
               cover: _localCoverProvider(book),
-              build: (VideoCardOrientation orientation) =>
-                  _buildCard(book, orientation: orientation),
+              build: (_) => _buildCard(
+                book,
+                orientation: VideoCardOrientation.landscape,
+              ),
             ),
           for (final RemoteVideoInfo video in remoteVideos)
             _VideoWallEntry(
               cover: _remoteCoverProvider(video),
-              build: (VideoCardOrientation orientation) =>
-                  _buildRemoteVideoCard(video, orientation: orientation),
+              build: (_) => _buildRemoteVideoCard(
+                video,
+                orientation: VideoCardOrientation.landscape,
+              ),
             ),
         ],
         EdgeInsets.all(tokens.spacing.card),
@@ -4756,10 +4789,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ],
       ),
     );
+    // BUG-2002 悬停抬升：与散卡 [_buildCard] 同壳同纪律（多选态关掉；嵌套顺序
+    // 同散卡：lift 在内、拖放目标在外）。
+    final Widget liftedCard = FushiHoverLift(
+      enabled: !_selectionMode,
+      builder: (BuildContext _, bool __) => card,
+    );
     // 长按扫选身份标记：合集区自成一段区间，扫选可在合集之间连选。
     final SelectionSlot slot = SelectionSlot.collection(collection.id);
     // 选择态下禁用标签拖放命中（与散卡一致：避免选卡时误触拖标签）。
-    if (_selectionMode) return SelectionSlotTarget(slot: slot, child: card);
+    if (_selectionMode) {
+      return SelectionSlotTarget(slot: slot, child: liftedCard);
+    }
     // 视频合集是封面卡（不是 CollectionShelfRow 行头——`unified_collections_
     // architecture_guard_test` 明令禁止视频页回退用行式布局），故接收端直接包在
     // 卡上：拖视频卡落到合集封面 = 加入该合集。
@@ -4772,7 +4813,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           bookId: 'collection:${collection.id}',
           onTagDropped: (BookTagRow tag) =>
               _addTagToVideoCollection(collection.id, tag),
-          child: card,
+          child: liftedCard,
         ),
       ),
     );
@@ -4937,7 +4978,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final List<_VideoTagChip> remoteTags = _remoteTagChips(video.tags);
     // 不再固定 260 宽：和本地 [_buildCard] 一样让卡片填满网格 cell，宽度由
     // 响应式网格决定（TODO-593）。
-    return FushiCard(
+    final Widget card = FushiCard(
       key: ValueKey<String>('remote_video_card_$safeKey'),
       focusId: FushiFocusId('home-video-remote-$safeKey'),
       padding: EdgeInsets.zero,
@@ -5044,6 +5085,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           ),
         ],
       ),
+    );
+    // BUG-2002 悬停抬升：与本地散卡同壳（多选态关掉；远端占位卡不可单独勾选，
+    // 指针纪律与本地卡一致）。
+    return FushiHoverLift(
+      enabled: !_selectionMode,
+      builder: (BuildContext _, bool __) => card,
     );
   }
 
@@ -5756,6 +5803,36 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// “全部视频”固定 16:9 等宽网格。
+  ///
+  /// 这里的条目粒度是单个可播放视频，统一缩略图槽比比按图片朝向改变卡宽更利于
+  /// 扫读。竖版海报仍由 [PortraitCoverImage] 的 `landscapeSlot` 路径完整显示并以
+  /// 同图模糊垫底，不裁切、不变形。系列页继续走 [_buildVideoWallSliver] 的 2:3 /
+  /// 16:9 混排墙，两种页面语义互不牵连。
+  Widget _buildAllVideoGridSliver(
+    List<_VideoWallEntry> cells,
+    EdgeInsetsGeometry padding,
+    ({int columns, double cardWidth}) cardLayout,
+  ) {
+    final double coverHeight =
+        cardLayout.cardWidth / kVideoLandscapeCardAspect;
+    final double cellHeight = coverHeight + _videoCardTextBlock(context);
+    return SliverPadding(
+      padding: padding,
+      sliver: SliverGrid.builder(
+        itemCount: cells.length,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: cardLayout.columns,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          childAspectRatio: cardLayout.cardWidth / cellHeight,
+        ),
+        itemBuilder: (BuildContext context, int index) =>
+            cells[index].build(VideoCardOrientation.landscape),
       ),
     );
   }

@@ -50,6 +50,20 @@ double videoCardWidthForOrientation({
 double videoCoverHeightForPortraitWidth(double portraitCardWidth) =>
     portraitCardWidth * 3 / 2;
 
+/// “全部视频”16:9 缩略图网格的目标卡宽。
+///
+/// 该分区展示的是可直接播放的单个视频文件，不沿用系列墙的 2:3 海报目标宽：
+/// 横卡若按 210px 书架卡宽排，会在桌面缩得过小；若沿用混排墙的“竖卡高换横卡宽”，
+/// 又会膨胀到 600px 左右并在 [Wrap] 行尾留下大洞。这里按内容宽度给等宽网格一个
+/// 稳定目标，配合 `unifiedShelfCardLayout` 等分整行。
+double allVideoThumbnailTargetWidthForWidth(double width) {
+  if (width >= 1600) return 320;
+  if (width >= 1280) return 300;
+  if (width >= 960) return 280;
+  if (width >= 600) return 240;
+  return 150;
+}
+
 /// 全宽 hero 轮播高度：宽屏压成 21:9 影院比例，夹在 [220, 420] 之间——手机竖屏
 /// 不至于占满半屏，桌面超宽不至于无限长高。
 double videoHeroHeightForWidth(double width) =>

@@ -668,28 +668,25 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
 
 }
 
-
-/// 导出包的文件名形状（[BackupService.defaultFilename] 产出
-/// `fushi-backup-<日期>.fushi.zip`；`hibiki-backup-*.hibiki.zip` 是改名前的老包）。
+/// 清掉临时目录里**上一次导出遗留的**备份包（识别口径见
+/// [backupArchiveNamePattern]，它自己带着「为什么是前缀+后缀双重限定」的理由）。
 ///
-/// 刻意用「前缀 + 后缀」双重限定，而不是只认 `.fushi.zip` —— 临时目录里还可能躺着
-/// 推荐词典包 `fushi-recommended.fushi.zip` 这类同后缀、但绝不该被清掉的文件。
-final RegExp _kBackupArchiveName =
-    RegExp(r'^(fushi|hibiki)-backup-.*\.(fushi|hibiki)\.zip$');
-
-/// 清掉临时目录里上一次导出遗留的备份包。
+/// 为什么这个清扫是必要的、且必须发生在**下一次导出之前**：移动端走系统分享面板，而
+/// [FushiShare.shareFiles] 用的是**非结果变体**，Future 在面板呈现后就完成、拿不到
+/// 「用户存完了」的时机 —— 当场删会把文件从接收方手里抽走。桌面分支的
+/// `finally { tmpFile.delete() }` 移动端一次都没执行过，几 GB 的包就这么一份份攒着。
+/// 挪到导出前清扫后，磁盘上最多滞留**一份**。
 ///
-/// 移动端走系统分享面板，而 [FushiShare.shareFiles] 用的是**非结果变体**，Future 在
-/// 面板呈现后就完成、拿不到「用户存完了」的时机 —— 当场删会把文件从接收方手里抽走。
-/// 所以清理挪到**下一次导出之前**：磁盘上最多滞留一份，而不是每导出一次就永久堆一份
-/// 完整备份（旧实现的 `finally { tmpFile.delete() }` 只写在桌面分支里，移动端一次都
-/// 没删过，几 GB 的包就这么攒着，而且存储页里也没有删除入口）。
+/// 因此这里删的是「上一次导出的中间物」，不是用户的备份资产：用户的那一份要么已经
+/// 被分享面板交给了目标 app，要么（桌面）已经 copy 到用户选的路径。存储页把这一类
+/// 展示成「上次导出遗留的备份包」而不是「本地备份」，正是为了让展示口径与这个生命
+/// 周期一致——否则用户会以为那 200MB 是自己的存档，点一次导出却发现它没了。
 Future<void> _sweepStaleBackupArchives(Directory tmpDir) async {
   try {
     await for (final FileSystemEntity entity
         in tmpDir.list(followLinks: false)) {
       if (entity is! File) continue;
-      if (!_kBackupArchiveName.hasMatch(p.basename(entity.path))) continue;
+      if (!isBackupArchiveName(p.basename(entity.path))) continue;
       try {
         await entity.delete();
       } catch (_) {

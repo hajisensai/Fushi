@@ -2332,10 +2332,11 @@ class AppModel with ChangeNotifier {
       TexthookerService.instance.foldProgressiveLines =
           prefsRepo.galHookFoldProgressiveLines;
       // 代理是**进程级**网络出口配置，却只存在偏好里；同步层的单例（GoogleDriveAuth 等）
-      // 拿不到 AppModel，以前就只能各自裸连——BUG-1348 的谷歌云盘登录超时正是如此。偏好
-      // 一装载好就把进程级读取器接上去，此后任何 applyAppProxy(client) 都自动拿到同一个值，
-      // 不必沿调用链穿参（穿漏一处 = 一条不走代理的暗路）。
-      appUserProxyReader = () => prefsRepo.updateCustomProxy;
+      // 拿不到 AppModel，以前就只能各自裸连——BUG-1348 的谷歌云盘登录超时正是如此。四个
+      // 代理读取器的绑定已下沉到 `PreferencesRepository.loadFromDb()`（偏好变得可读的
+      // 那一刻），这样弹窗词典等**其它**入口不必各自记得补一行——漏一处就是一整个进程
+      // 拿不到用户选的模式/凭据。这里只留更新专用的那个。
+      appUpdateDownloadSourceReader = () => prefsRepo.updateDownloadSource;
       // BUG-1493：词典包与 index.json 全托管在 github / raw.githubusercontent /
       // huggingface 上，而 fushi_dictionary 用的是裸 Dio——`findProxy` 为 null，既不读
       // HTTP_PROXY 也不读系统代理，于是「浏览器秒开 GitHub、app 里下 30MB 词典却像卡
@@ -7186,6 +7187,26 @@ class AppModel with ChangeNotifier {
     // 固化进 session 的，改了就得重新下发。
     _applyEmbeddedTorrentProxy();
   }
+
+  String get networkProxyMode => prefsRepo.networkProxyMode;
+  Future<void> setNetworkProxyMode(String value) async {
+    await prefsRepo.setNetworkProxyMode(value);
+    _applyEmbeddedTorrentProxy();
+  }
+
+  String get networkProxyUsername => prefsRepo.networkProxyUsername;
+  Future<void> setNetworkProxyUsername(String value) async {
+    await prefsRepo.setNetworkProxyUsername(value);
+  }
+
+  String get networkProxyPassword => prefsRepo.networkProxyPassword;
+  Future<void> setNetworkProxyPassword(String value) async {
+    await prefsRepo.setNetworkProxyPassword(value);
+  }
+
+  String get updateDownloadSource => prefsRepo.updateDownloadSource;
+  Future<void> setUpdateDownloadSource(String value) =>
+      prefsRepo.setUpdateDownloadSource(value);
 
   /// P2P（torrent）传输是否也走全局代理；默认 false = 直连。
   bool get p2pProxyEnabled => prefsRepo.p2pProxyEnabled;

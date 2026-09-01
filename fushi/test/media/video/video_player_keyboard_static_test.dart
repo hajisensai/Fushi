@@ -6,6 +6,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 
+import '../../helpers/source_guard.dart';
 import '../../pages/video_fushi_page_source_corpus.dart';
 
 /// Source guard: video keyboard interaction + autoplay both need a real libmpv
@@ -49,12 +50,31 @@ void main() {
   group('video page Escape overrides media_kit default', () {
     final String page = readVideoFushiSource();
 
-    test('desktop controls theme overrides keyboardShortcuts', () {
+    test('media_kit 的 keyboardShortcuts 被显式清空，整表移到页级 press-time 通道', () {
+      final String code = maskComments(page);
+      // media_kit 那层必须传**空表**而不是 null：fork 的实现是
+      // `keyboardShortcuts ?? _defaultKeyboardShortcuts`，给 null 会把 media_kit
+      // 自带的默认键（Escape 只 exitFullscreen 等）装回来，与注册表打架。
       expect(
-          page.contains('keyboardShortcuts: _videoKeyboardShortcuts('), isTrue,
-          reason:
-              'media_kit default Escape only exits fullscreen; must replace '
-              'the whole table');
+        compactCode(code).contains(
+            'keyboardShortcuts:const<ShortcutActivator,VoidCallback>{}'),
+        isTrue,
+        reason: 'media_kit 那层只包 AdaptiveVideoControls 子树，够不到面板；'
+            '整表已移到页级，这里必须显式留空而不是给 null（给 null = 装回 '
+            'media_kit 默认表）',
+      );
+      // 唯一挂载点：窗口 build() 与全屏路由 pageBuilder 的共同外层。
+      expect(
+        code.contains('_handleVideoKeyboardShortcut(event)'),
+        isTrue,
+        reason: '视频快捷键主通道必须挂在 _wrapVideoGamepadControls 的 onKeyEvent 上',
+      );
+      expect(
+        code.contains('keyboardShortcuts: _videoKeyboardShortcuts('),
+        isFalse,
+        reason: '旧的 build 时冻结表挂载点不得复活——scope 是整页、挂载点却在 '
+            'controls 子树，正是 BUG-1864 的根因形状',
+      );
     });
 
     test('Escape exits page when windowed, exits fullscreen when fullscreen',
@@ -65,8 +85,12 @@ void main() {
           defaultHasKey(ShortcutAction.globalBack, LogicalKeyboardKey.escape),
           isTrue,
           reason: 'globalBack default must bind Escape');
-      expect(page.contains('escape: () {'), isTrue,
+      // 执行体抽成了具名方法（整张表里唯一不碰 controller 的动作，加载态要能单独
+      // 调到），接线点仍必须在 VideoPlayerShortcutActions.escape 上。
+      expect(page.contains('escape: _handleVideoEscapeAction,'), isTrue,
           reason: 'page must wire the Escape action to real exit logic');
+      expect(page.contains('void _handleVideoEscapeAction() {'), isTrue,
+          reason: 'the named exit-ladder method must exist');
       expect(page.contains('isFullscreen('), isTrue,
           reason: 'fullscreen Escape exits fullscreen');
       expect(page.contains('_exitVideoFullscreen('), isTrue,
@@ -81,7 +105,8 @@ void main() {
       // `topVideoForegroundLayer`（纯函数）单点后，escape 回调只剩「先关一层，关不动
       // 才退全屏 / 退页」。断言的行为没变：编辑态必须在任何退出动作之前被吃掉，只是
       // 门从 escape 回调里挪到了那张共用层级表上（[PopScope] / 手柄 B 因此也照吃）。
-      final String escapeBody = region(page, 'escape: () {', '},\n      ),');
+      final String escapeBody =
+          methodBody(page, 'void _handleVideoEscapeAction() {');
       final int dismissGate =
           escapeBody.indexOf('_dismissTopForegroundLayer()');
       final int fullscreenExit = escapeBody.indexOf('_exitVideoFullscreen(');

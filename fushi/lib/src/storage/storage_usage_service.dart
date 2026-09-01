@@ -11,6 +11,7 @@ import 'package:fushi/src/storage/books_directory.dart'
     show kLegacyBooksDirectoryName;
 import 'package:fushi/src/storage/export_directory.dart'
     show kLegacyExportDirectoryName;
+import 'package:fushi/src/sync/backup_service.dart' show isBackupArchiveName;
 
 /// 存储占用扫描服务（设置 → 存储）。
 ///
@@ -62,6 +63,10 @@ enum StorageCategoryId {
 
   /// 导出文件：`fushiExport` + `hibikiExport`。
   exports,
+
+  /// 移动端分享后留在 app 临时目录里的本地备份归档。单列而不是混进缓存，
+  /// 让总量来源可解释，并提供稳定的聚合清理入口（BUG-1979）。
+  backups,
 
   /// 数据库与内部数据：support 根的直接子项减去 OCR 模型子目录（主库
   /// `fushi.db`、本地发音库副本 `local_audio_*.db` 等都在明细里）。
@@ -119,6 +124,9 @@ enum StorageEntryKind {
   /// fushi_core `deleteDatabaseSnapshotFiles`，识别口径同源）。
   databaseSnapshots,
 
+  /// 临时目录内的本地备份归档聚合项；删除仍走通用文件删除原语。
+  backupArchives,
+
   /// 类目根下的磁盘子项，只读展示（删它就是裸 `Directory.delete`，绕过墓碑/引用护栏）。
   readOnly,
 
@@ -136,8 +144,14 @@ enum StorageEntryKind {
 ///
 /// 刻意**不含**：books / dictionaries（各有自己的删除原语，走 kind 分流）、
 /// videoDownloads / subtitles / customFonts（都有 DB 行或配置指着，裸删会留下孤儿行
-/// 和指向空文件的字体配置 —— 见本文件头注释的共享资产误删坑）、database（活库）、
+/// 和指向空文件的字体配置 —— 见本文件头注释的共享资产误删坑）、database（活库，其中
+/// 快照残留是 [StorageEntryKind.databaseSnapshots] 专用原语、不走裸删）、
 /// other（白名单之外，语义不明）。
+///
+/// [StorageCategoryId.backups] 在内：它产出的
+/// [StorageEntryKind.backupArchives] 聚合项同样接通用文件删除原语，装的是上次导出
+/// 遗留的临时包、无任何 DB 行引用。以前它在事实上可删却不在本集合里，集合的文档
+/// 与事实分家（守卫 `storage_usage_service_test.dart` 钉住这条契约）。
 const Set<StorageCategoryId> kDeletableEntryCategories = <StorageCategoryId>{
   StorageCategoryId.covers,
   StorageCategoryId.web,
@@ -145,6 +159,15 @@ const Set<StorageCategoryId> kDeletableEntryCategories = <StorageCategoryId>{
   StorageCategoryId.ocrModels,
   StorageCategoryId.shaders,
   StorageCategoryId.cache,
+  StorageCategoryId.backups,
+};
+
+/// 明细「可直接删」的 kind —— 与 [kDeletableEntryCategories] 是同一件事的两个面：
+/// 前者说哪个类目会产出可删明细，后者说这些明细长什么样。UI 的删除分流按 kind 走
+/// （`storage_usage_view.dart`），扫描侧按类目走，两边必须对得上。
+const Set<StorageEntryKind> kDirectlyDeletableEntryKinds = <StorageEntryKind>{
+  StorageEntryKind.derivedFile,
+  StorageEntryKind.backupArchives,
 };
 
 /// 一个类目内的单条可展开条目（一本书 / 一部词典 / 类目根下的一个子项）。
@@ -510,6 +533,8 @@ class StorageUsageService {
   }) async* {
     final Directory docs = await _documentsRoot();
     final Directory support = await _supportRoot();
+    // 缓存/临时根的一次性列举结果，cache 与 backups 两个类目共用（见下方分流）。
+    List<Map<String, Object>>? cacheRootEntries;
 
     for (final StorageCategoryId id in StorageCategoryId.values) {
       switch (id) {
@@ -523,8 +548,14 @@ class StorageUsageService {
           yield await _scanGeneric(id, <String>[
             p.join(support.path, kOcrModelsSupportChild),
           ]);
-        case StorageCategoryId.cache:
-          yield await _scanCache();
+        case StorageCategoryId.cache || StorageCategoryId.backups:
+          // 两个类目住在**同一棵**缓存/临时树上，扫一次再按谓词分流。各扫各的就是
+          // 起两个 isolate、把整棵树递归 stat 两遍——iOS 上 `Library/Caches` + 沙盒
+          // `tmp` 是 GB 级大头，那是实打实的双倍耗时。
+          cacheRootEntries ??= await _cacheRootEntries();
+          yield id == StorageCategoryId.cache
+              ? _scanCache(cacheRootEntries)
+              : _scanBackups(cacheRootEntries);
         case StorageCategoryId.other:
           yield await _scanOther(docs);
         default:
@@ -733,15 +764,69 @@ class StorageUsageService {
     ];
   }
 
-  /// BUG-1905：缓存与临时文件。根的选取与理由见 [_defaultCacheRoots]。
-  Future<StorageCategoryUsage> _scanCache() async {
+  /// 缓存/临时根下的直接子项，**只列举一次**：cache 与 backups 两个类目按谓词分流。
+  Future<List<Map<String, Object>>> _cacheRootEntries() async {
     final List<Directory> roots = await _cacheRoots();
-    if (roots.isEmpty) {
-      return const StorageCategoryUsage(id: StorageCategoryId.cache, bytes: 0);
-    }
-    return _scanGeneric(
-      StorageCategoryId.cache,
-      <String>[for (final Directory d in roots) d.path],
+    if (roots.isEmpty) return const <Map<String, Object>>[];
+    return _run(() =>
+        _childEntriesSync(<String>[for (final Directory d in roots) d.path]));
+  }
+
+  /// BUG-1905：缓存与临时文件（[raw] 来自 [_cacheRootEntries]）。根的选取与理由见
+  /// [_defaultCacheRoots]；备份包由 [_scanBackups] 单列，这里排除掉不重复计数。
+  StorageCategoryUsage _scanCache(final List<Map<String, Object>> raw) {
+    final List<StorageEntryUsage> entries = _childEntries(
+      raw,
+      excludePaths: <String>{
+        for (final Map<String, Object> entry in raw)
+          if (entry['isFile'] as bool &&
+              isBackupArchiveName(p.basename(entry['path'] as String)))
+            entry['path'] as String,
+      },
+      kind: StorageEntryKind.derivedFile,
+    )..sort((StorageEntryUsage a, StorageEntryUsage b) =>
+        b.bytes.compareTo(a.bytes));
+    return StorageCategoryUsage(
+      id: StorageCategoryId.cache,
+      bytes: _sumBytes(entries),
+      entries: entries,
+    );
+  }
+
+  /// 临时根里上一次导出遗留的备份包（[raw] 来自 [_cacheRootEntries]）。
+  StorageCategoryUsage _scanBackups(final List<Map<String, Object>> raw) {
+    final List<Map<String, Object>> backups = <Map<String, Object>>[
+      for (final Map<String, Object> entry in raw)
+        if (entry['isFile'] as bool &&
+            isBackupArchiveName(p.basename(entry['path'] as String)))
+          entry,
+    ];
+    final List<String> paths = <String>[
+      for (final Map<String, Object> entry in backups)
+        entry['path'] as String,
+    ];
+    final int bytes = backups.fold<int>(0,
+        (int sum, Map<String, Object> entry) => sum + (entry['bytes'] as int));
+    return StorageCategoryUsage(
+      id: StorageCategoryId.backups,
+      bytes: bytes,
+      entries: paths.isEmpty
+          ? const <StorageEntryUsage>[]
+          : <StorageEntryUsage>[
+              StorageEntryUsage(
+                id: 'backup-archives',
+                // 与快照聚合项同口径：label 是**路径形状的身份串**，不是 UI 文案
+                // （真正的显示名由 UI 按 paths.length 翻译，见 `_entryTitle`）。
+                // 以前这里写死英文 'backup archives'，一旦有第二个消费方读
+                // entry.label 就会漏出一句永远不会被翻译的英文。
+                label: '${p.basename(p.dirname(paths.first))}/'
+                    '${p.basename(paths.first)}'
+                    '${paths.length > 1 ? ' +${paths.length - 1}' : ''}',
+                bytes: bytes,
+                paths: paths,
+                kind: StorageEntryKind.backupArchives,
+              ),
+            ],
     );
   }
 

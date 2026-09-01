@@ -156,19 +156,49 @@ SettingsDestination buildSystemDestination() {
       SettingsSection(
         title: t.section_network,
         items: <SettingsItem>[
-          // 全应用唯一的代理项（TODO-871/862 起）：更新、云同步、词典、下载、字幕、
-          // 刮削……所有公网出站都由 `app_proxy.dart` 按「手填 > env > 系统代理 >
-          // 直连」解析，这里填的就是「手填」那一格。留空 = 自动（fake-ip/TUN 模式下
-          // 系统代理写注册表、Dart 读不到时才需要手填）。非空但格式非法时弹
-          // SnackBar 并仍存原串——运行时 normalizeUserProxyHostPort fail-open 忽略
-          // 非法值，绝不误切。持久化键名 `update_custom_proxy` 是历史遗留，冻结不改。
+          // 全应用唯一的代理项：自动 = env > 系统代理 > 直连；直连 = 明确禁用；
+          // 手动 = 下方地址与可选认证。持久化地址键 `update_custom_proxy` 是历史遗留，
+          // 冻结不改；旧安装若已有地址且还没有模式键，会自动投影成手动模式。
+          SettingsSegmentedItem<String>(
+            id: 'system.network_proxy_mode',
+            title: t.network_proxy_mode_label,
+            icon: Icons.dns_outlined,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: kProxyModeAuto,
+                label: t.network_proxy_mode_auto,
+                icon: Icons.sync_outlined,
+                tooltip: t.network_proxy_mode_auto_hint,
+              ),
+              SettingsSegmentOption<String>(
+                value: kProxyModeDirect,
+                label: t.network_proxy_mode_direct,
+                icon: Icons.link_off_outlined,
+                tooltip: t.network_proxy_mode_direct_hint,
+              ),
+              SettingsSegmentOption<String>(
+                value: kProxyModeManual,
+                label: t.network_proxy_mode_manual,
+                icon: Icons.tune_outlined,
+                tooltip: t.network_proxy_mode_manual_hint,
+              ),
+            ],
+            selected: (SettingsContext c) => c.appModel.networkProxyMode,
+            onChanged: (SettingsContext c, String value) async {
+              await c.appModel.setNetworkProxyMode(value);
+              resetSyncHttpClient();
+              c.refresh();
+            },
+          ),
           SettingsTextItem(
             id: 'system.network_proxy',
             title: t.network_proxy_label,
-            subtitle: t.network_proxy_auto_hint,
+            subtitle: t.network_proxy_address_hint,
             icon: Icons.dns_outlined,
             placeholder: t.network_proxy_hint,
             keyboardType: TextInputType.url,
+            visible: (SettingsContext c) =>
+                c.appModel.networkProxyMode == kProxyModeManual,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.updateCustomProxy,
             onChanged: (SettingsContext settingsContext, String value) async {
@@ -187,6 +217,37 @@ SettingsDestination buildSystemDestination() {
                   SnackBar(content: Text(t.network_proxy_invalid)),
                 );
               }
+            },
+          ),
+          SettingsTextItem(
+            id: 'system.network_proxy_username',
+            title: t.network_proxy_username,
+            // 认证的作用面必须说清：凭据是 dart:io `HttpClient.authenticateProxy`
+            // 的 407 应答，只覆盖 app 自己发的 HTTP 出站。内置 torrent 引擎的 C ABI
+            // （`ht_apply_proxy`）只接 type/host/port，libtorrent 的
+            // `settings_pack::proxy_username/password` 根本没被导出，凭据到不了
+            // P2P 那一侧；不写出来用户会以为「开了 P2P 走代理」就连上了。
+            subtitle: t.network_proxy_credentials_scope_hint,
+            icon: Icons.person_outline,
+            visible: (SettingsContext c) =>
+                c.appModel.networkProxyMode == kProxyModeManual,
+            value: (SettingsContext c) => c.appModel.networkProxyUsername,
+            onChanged: (SettingsContext c, String value) async {
+              await c.appModel.setNetworkProxyUsername(value.trim());
+              resetSyncHttpClient();
+            },
+          ),
+          SettingsTextItem(
+            id: 'system.network_proxy_password',
+            title: t.network_proxy_password,
+            icon: Icons.password_outlined,
+            secret: true,
+            visible: (SettingsContext c) =>
+                c.appModel.networkProxyMode == kProxyModeManual,
+            value: (SettingsContext c) => c.appModel.networkProxyPassword,
+            onChanged: (SettingsContext c, String value) async {
+              await c.appModel.setNetworkProxyPassword(value);
+              resetSyncHttpClient();
             },
           ),
           // P2P（torrent）传输单独列出：**默认直连**，用户明确开了才跟上面的
@@ -241,6 +302,34 @@ SettingsDestination buildSystemDestination() {
             ],
             selected: _selectedUpdateChannel,
             onChanged: setUpdateChannel,
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'system.update_download_source',
+            title: t.update_download_source_preference,
+            subtitle: t.update_download_source_preference_hint,
+            icon: Icons.cloud_download_outlined,
+            dropdown: true,
+            // 标签走 updateDownloadSourceLabel 这一份真相源：下载遮罩的「本次没用上
+            // 所选来源」通告要说出同一个名字，两处各写一套迟早对不上。
+            options: <SettingsSegmentOption<String>>[
+              for (final String value in <String>[
+                updateDownloadSourceAutomatic,
+                updateDownloadSourceCloudflare,
+                updateDownloadSourceGitHub,
+                for (final String prefix in updateCheckProxyPrefixes)
+                  updateDownloadSourceForProxy(prefix),
+              ])
+                SettingsSegmentOption<String>(
+                  value: value,
+                  label: updateDownloadSourceLabel(value),
+                  tooltip: updateDownloadSourceLabel(value),
+                ),
+            ],
+            selected: (SettingsContext c) => c.appModel.updateDownloadSource,
+            onChanged: (SettingsContext c, String value) async {
+              await c.appModel.setUpdateDownloadSource(value);
+              c.refresh();
+            },
           ),
           // TODO-898：手动「立即检查更新」。分区已被 platformSupportsUpdateCheck()
           // 网关，按钮全平台可见（不能自装的平台仍可「检查→打开发布页」）。
