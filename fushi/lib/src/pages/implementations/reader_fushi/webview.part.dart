@@ -2289,6 +2289,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             if (_chapterTurnCoolingDown()) return;
             if (!await _prepareContinuousChapterTransition()) return;
             if (!mounted || _paginationInFlight || !_hasChapterTurnTarget(dir)) {
+              _discardIdleChapterTransitionSnapshot();
               return;
             }
             // BUG-369/TODO-656 诊断：跨章手势汇合点（滚轮/触摸/指针都经此）。
@@ -2300,6 +2301,10 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             } else if (dir == 'backward') {
               _handlePageTurnLimit('backward', inertia: true);
             }
+            // 导航真的开始时 _beginNavigation 已把 _readerContentReady 置 false（同步，
+            // 早于本行）；仍为 true 就说明这次跨章被 _handlePageTurnLimit 内部守卫吃掉，
+            // 快照没有消费者，必须就地丢弃。
+            _discardIdleChapterTransitionSnapshot();
             if (throttleMs > 0) {
               _lastPaginateTime = DateTime.now();
             }

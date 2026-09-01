@@ -10,6 +10,14 @@
 - **[x] ① 已修复** — `76b8f51fc5`：连续模式章末增加 36% 视口的 block-axis 留白；触摸板必须
   静默后从边界重新起手势才跨章，离散滚轮/数位板旋钮一拍可跨；跨章前捕获并预解码旧
   WebView 视口，目标章 ready 后 140ms 淡出，截图不可用或 450ms 超预算时安全降级为原导航。
+- **[x] ①b 审查补修** — 复审发现两处：① 拿到快照却没真正进导航的路径（分页在飞 / 无目标章 /
+  `_handlePageTurnLimit` 内部 spread 边界与 nav 页守卫）不丢弃快照，那帧旧视口会挂到**下一次**
+  `_readerContentReady` 归 false（换字号重排、歌词模式切换）被当成「上一章画面」整屏淡出——
+  新增 `_discardIdleChapterTransitionSnapshot()`（`navigation.part.dart`）并在两条闲置路径调用；
+  ② 两条既有守卫被本 PR 打红（`reader_image_metrics_invalidate_guard_static_test.dart` 的
+  `onBoundarySwipe` 字面量被折行 + 新增第三实参打掉、`reader_fushi_lyrics_transition_static_test.dart`
+  的 `if (!_readerContentReady)` 锚点被条件扩写打掉），已按语义等价物修复而非删断言，
+  并把后者扩窗跟进 `_buildChapterTransitionOverlay()`，避免它对新的淡出层永久失明。
 - **[x] ② 已加自动化测试** —
   `fushi/test/reader/continuous_wheel_boundary_confirm_test.dart` 覆盖触摸板惯性/新手势/离散
   旋钮真值表；`reader_content_styles_test.dart` 覆盖横竖排章末留白；

@@ -938,6 +938,20 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     }
   }
 
+  /// BUG-2015 收口：跨章快照只在**导航真的开始**（`_beginNavigation` 已把
+  /// `_readerContentReady` 置 false）时才有意义。拿到快照却没进导航的路径
+  /// （分页在飞 / 目标章不存在 / `_handlePageTurnLimit` 内部命中 spread 边界或
+  /// nav 页守卫）必须当场丢弃：否则这帧旧视口会一直挂在遮罩里，被**下一次**
+  /// `_readerContentReady` 归 false（换字号重排、歌词模式切换）当成「上一章画面」
+  /// 淡出——那正是 reader_fushi_lyrics_transition_static_test 要防的整屏遮罩。
+  void _discardIdleChapterTransitionSnapshot() {
+    if (!_readerContentReady) return;
+    final MemoryImage? snapshot = _chapterTransitionSnapshot;
+    if (snapshot == null) return;
+    _rebuild(() => _chapterTransitionSnapshot = null);
+    unawaited(snapshot.evict());
+  }
+
   void _handlePageTurnLimit(String direction, {bool inertia = false}) {
     if (_book == null) {
       return;
