@@ -1517,9 +1517,33 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 跨 async gap 用 BuildContext 是 lint 明令禁止的（也确实会炸）。
   Future<void> _exitWindowFullscreenOrPopReader() async {
     final NavigatorState navigator = Navigator.of(context);
-    if (await exitWindowFullscreenIfActive()) return;
+    if (await exitWindowFullscreenIfActive()) {
+      // 镜像必须在**这条**路径上也复位。只在按钮那条成功路径上复位是不够的：Esc 退掉
+      // 的是同一个全屏，不同步的话底栏图标会稳定停在「退出全屏」上，而窗口早已不是全屏
+      // 了 —— 图标撒谎，而且不会自愈（下一次按按钮读的是 native 真值，图标只是在那之后
+      // 才碰巧变对）。
+      if (mounted && _isWindowFullscreen) {
+        _rebuild(() => _isWindowFullscreen = false);
+      }
+      return;
+    }
     if (!mounted) return;
     await navigator.maybePop();
+  }
+
+  /// 进页时把底栏全屏按钮的图标镜像对到 native 真值一次。
+  ///
+  /// 没有这一次读取，「在别处（漫画页 / 视频页 / 上一本书）进的全屏里打开本书」会让图标
+  /// 从第一帧起就是错的 —— 镜像默认 false，而窗口是全屏的。漫画页的
+  /// `_readInitialFullscreenState` 是同一件事的同一份做法。
+  ///
+  /// 只读不写：读到什么就照着画什么图标，绝不在进页时替用户改窗口状态。
+  Future<void> _readInitialWindowFullscreenState() async {
+    final bool? fullscreen = await readDesktopWindowFullscreen();
+    if (!mounted || fullscreen == null || fullscreen == _isWindowFullscreen) {
+      return;
+    }
+    _rebuild(() => _isWindowFullscreen = fullscreen);
   }
 
   Widget _buildSettingsBar() {

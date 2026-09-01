@@ -89,7 +89,7 @@ class _WindowFullscreenHostState extends State<WindowFullscreenHost> {
   /// 这是「全屏只属于内容模块」的另一半：进入被门在宿主内（见
   /// [WindowFullscreenHosts]），离场就必须还回去，否则退回首页会留下一个全屏窗口，
   /// 而首页的全屏键已经被门掉——用户没有任何出口。Esc 阶梯（
-  /// [exitWindowFullscreenForBack]）覆盖的是「人主动退全屏」，这里覆盖的是「页面以
+  /// [exitWindowFullscreenIfActive]）覆盖的是「人主动退全屏」，这里覆盖的是「页面以
   /// 别的方式没了」（返回按钮、换书、被替换掉）。归还走的是同一个
   /// [exitWindowFullscreenIfActive]：它先读真值，非全屏时一次 channel 都不打。
   ///

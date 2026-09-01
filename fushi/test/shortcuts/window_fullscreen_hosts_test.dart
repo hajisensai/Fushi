@@ -188,6 +188,75 @@ void main() {
       );
     });
 
+    test('小说页底栏全屏图标的镜像三条路径都同步', () {
+      // 镜像型 bool 的经典塌法：只有「自己那条成功路径」会复位，其余入口改了状态它
+      // 一无所知，于是图标停在一个稳定的错值上、而且不会自愈。这里把三条会改变窗口
+      // 全屏状态的路径各钉一条：
+      //   ① 进页 —— 在别处进的全屏里打开本书，镜像默认 false 就是错的；
+      //   ② 底栏按钮 —— 自己那条路；
+      //   ③ Esc 阶梯 —— 退的是同一个全屏，不复位图标就撒谎。
+      final String chrome = maskComments(
+        File('lib/src/pages/implementations/reader_fushi/chrome.part.dart')
+            .readAsStringSync(),
+      );
+
+      final String initial = methodBody(
+        chrome,
+        'Future<void> _readInitialWindowFullscreenState() async {',
+      );
+      expect(
+        initial,
+        contains('readDesktopWindowFullscreen()'),
+        reason: '① 进页必须问一次 native 真值，而不是相信镜像的初值',
+      );
+      expect(initial, contains('_isWindowFullscreen = fullscreen'));
+
+      final String change = methodBody(
+        chrome,
+        'Future<void> _changeReaderWindowFullscreen() async {',
+      );
+      expect(
+        change,
+        contains('_isWindowFullscreen = applied'),
+        reason: '② 按钮那条路必须按 native 回读的实际结果更新镜像',
+      );
+
+      final String esc = methodBody(
+        chrome,
+        'Future<void> _exitWindowFullscreenOrPopReader() async {',
+      );
+      expect(
+        esc,
+        contains('_isWindowFullscreen = false'),
+        reason: '③ Esc 退掉全屏后图标必须跟着回到「进入全屏」，否则它稳定撒谎',
+      );
+    });
+
+    test('小说页进页时真的会去读一次全屏真值', () {
+      // 上一条只证明 helper 写对了；这条证明它**被调用**——helper 存在但没人调，
+      // 是同一个 bug 的另一种活法。
+      final String page = maskComments(
+        File('lib/src/pages/implementations/reader_fushi_page.dart')
+            .readAsStringSync(),
+      );
+      final int idxInit = page.indexOf('void initState() {');
+      expect(idxInit, isNonNegative, reason: 'initState 锚点没了，守卫失去判据');
+      final int idxDispose = page.indexOf('void dispose() {', idxInit);
+      expect(idxDispose, greaterThan(idxInit));
+      final int idxCall =
+          page.indexOf('_readInitialWindowFullscreenState()', idxInit);
+      expect(
+        idxCall,
+        inInclusiveRange(idxInit, idxDispose),
+        reason: '初次读取必须发生在 initState 里，否则第一帧的图标就是错的',
+      );
+      expect(
+        page.indexOf('desktopWindowFullscreenSupported', idxInit),
+        lessThan(idxCall),
+        reason: '移动端没有可全屏的窗口，这次读取必须被桌面门控挡住',
+      );
+    });
+
     test('漫画页的返回阶梯不再只认「自己进的」全屏', () {
       // 用户用 F11 进的全屏不会置所有权标志，但在他眼里那和按钮进的是同一个全屏，
       // Esc 都该先退它，而不是连人带全屏一起退出漫画。

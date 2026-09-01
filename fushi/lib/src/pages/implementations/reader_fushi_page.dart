@@ -1991,6 +1991,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       return true;
     }());
     WidgetsBinding.instance.addObserver(this);
+    // 底栏全屏按钮的图标镜像：进页时问一次 native 真值。不问的话，「在已经全屏的窗口里
+    // 打开这本书」从第一帧起图标就是错的（镜像默认 false）。与漫画页的
+    // `_readInitialFullscreenState` 同款；桌面才有窗口可全屏。
+    if (desktopWindowFullscreenSupported) {
+      unawaited(_readInitialWindowFullscreenState());
+    }
     _exitFlushCallback =
         ExitFlushRegistry.instance.register(_flushAllForProcessExit);
     // BUG-1744：macOS 全屏进出必须重算顶部让位并把新 inset 回喂给 WebView。
