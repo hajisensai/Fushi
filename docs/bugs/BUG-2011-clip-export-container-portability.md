@@ -44,8 +44,25 @@
   变异实测（三处根因各改回坏的样子，改完 sha256 对账回原状）：去掉 `-map_chapters -1`
   → 红 4 条（含专门守卫）；`-avoid_negative_ts` 改回无条件 → 红 3 条；把 8-bit 白名单换成
   「按名字尾巴猜位深」→ 精确红 `nv12` 那条。
+- **同根因全仓排查**（已完成，19 个 ffmpeg 参数构建器 + 3 处内联探测逐个过）：根因 ①
+  （章节被继承）不只在视频片段导出。判据 = **输出是 mp4 系容器 且 输入可能带章节**。
+  - `fushi/lib/src/utils/misc/desktop_audio_clipper.dart` 的 `buildFfmpegClipArgs`
+    （制卡/句子音频）**真中招，已一并修**。桌面/Android 输出 `.aac`（裸 ADTS，无容器，
+    不受影响），但 **iOS 走 `.m4a`**（`immersionMiningAudioExtensionFor`）—— 覆盖沉浸制卡
+    （Netflix/YouTube/应用内视频）、galgame 制卡、外部窗口制卡、互联 host 端裁剪全部路径。
+    实测：源=上报样本，裁 3 秒 → `.m4a` 产物 `MVHD 1272.124s` + 一条整集长 text 轨；
+    加 `-map_chapters -1` 后 `MVHD 3.000s`、text 轨消失。**无条件给而不按扩展名分支**：
+    实测 `.aac` 加与不加产出字节数完全一致（25349 = 25349），多一个分支只多一处能写错的地方。
+  - `fushi/lib/src/media/audiobook/audiobook_clip_export.dart` 的
+    `buildFfmpegImageAudioToVideoArgs` / `buildFfmpegImageSeqAudioToVideoArgs`：输出是 mp4，
+    但两路输入（图片/帧序列 + 已由 `extractAudioSegmentViaFfmpeg` 裁好的裸 `.aac`）今天都
+    不带章节，**当前不会复现**。不过那是个靠调用方维持的**隐式契约**，所以仍就地补上
+    `-map_chapters -1` 钉死 —— 没有章节可丢时它是空操作，代价为零。
+  - 不需要修的：输出为图片（cover/frame/embedded cover）、gif/webp/avif（这些 muxer 没有
+    「为章节建等长 text track」的语义）、字幕文本（srt/ass）、以及全部纯探测调用
+    （`-f null -`、ffprobe、`-i` only、dump-attachment —— 不产出容器）。
+    `transcodeVoiceResourceToMiningAudio` 在 iOS 虽产 `.m4a`，但输入是 hook dump 的游戏
+    语音资源（OGG/WAV/xWMA），不是带章节的媒体容器。
+  根因 ②③ 只对「`-c copy` 裁剪」成立，上述路径全是重编码，不适用。
 - **备注**：`-map 0:a?` 带全部音轨是 BUG-345 的有意设计（多音轨番剧默认轨常不是 0，赌错
   会导出错语言），本次不动它；门控保证的是这些音轨条条可播，而不是砍到一条。
-  同构的有声书片段导出 `fushi/lib/src/media/audiobook/audiobook_clip_export.dart`
-  （文件头自述「镜像 `exportVideoClipViaFfmpeg`」）未在本轮排查范围内，若它也 `-c copy`
-  且不丢章节，同样的三条根因可能成立 —— 留作后续单独核查。
