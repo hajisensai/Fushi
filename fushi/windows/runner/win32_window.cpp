@@ -545,10 +545,17 @@ namespace {
 // BUG-2006: true when the window's client area covers its monitor edge to
 // edge. window_manager's hidden-title-bar WM_NCCALCSIZE gives this window a
 // client area that reaches the frame, so a screen-covering window puts app
-// content under every pixel of DWM-painted chrome — measured on Windows 11
-// 26200: a normal (SW_SHOWNORMAL, not zoomed) Hibiki window sized to the
-// monitor has 3830/3840 pixels of screen row 0 painted in the accent colour,
-// and the desktop showing through all four rounded corners.
+// content under every pixel of DWM-painted chrome.
+//
+// Measured on Windows 11 26200: in the runner's own fullscreen (the BUG-1933
+// framed giant window — SW_SHOWNORMAL and not zoomed, because entering
+// un-maximizes first) the frame insets are 8/1/8/8, so the 1 px top border
+// lands on screen row 0 and 3830/3840 of it is the accent colour, with the
+// desktop showing through all four rounded corners. A genuinely maximized
+// window measured 11/11/11/11 on the same machine and showed no line at all
+// — which is exactly why the test is "does the client reach the edges", not
+// "which window state is this": the insets are a function of WM_NCCALCSIZE,
+// DPI and Windows version, not of the state name.
 bool ClientCoversMonitor(HWND hwnd) {
   MONITORINFO monitor{};
   monitor.cbSize = sizeof(MONITORINFO);

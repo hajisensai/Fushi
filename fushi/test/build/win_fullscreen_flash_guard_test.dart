@@ -307,13 +307,18 @@ void main() {
     // corners in the compositor, ON TOP of the client area — neither belongs
     // to the non-client area window_manager's hidden-title-bar WM_NCCALCSIZE
     // leaves this window. Whenever the client reaches the screen edges that
-    // chrome lands on app content: measured on Windows 11 26200, a normal
-    // (SW_SHOWNORMAL, not zoomed) Hibiki window sized to the monitor has
-    // 3830/3840 pixels of screen row 0 painted in the accent colour and the
-    // desktop showing through all four corners — the user's report.
+    // chrome lands on app content: measured on Windows 11 26200, the runner's
+    // own fullscreen (the BUG-1933 framed giant window) has frame insets
+    // 8/1/8/8, so its 1 px top border lands on screen row 0 — 3830/3840 of
+    // that row is the accent colour, with the desktop showing through all
+    // four corners. That is the user's report.
     //
-    // The suppression is therefore NOT fullscreen-only: it must cover every
-    // way this window presents edge to edge.
+    // The condition pinned here is "does the client reach the screen edges",
+    // NOT "which window state is this": the insets come out of WM_NCCALCSIZE,
+    // DPI and Windows version (window_manager itself branches on
+    // IsWindows11OrGreater), so a genuinely maximized window measured
+    // 11/11/11/11 and no line on this machine while another machine may put
+    // its border back on screen.
 
     test('the policy covers fullscreen, maximized AND screen-sized', () {
       final int fnAt = cpp.indexOf('void Win32Window::UpdateFrameChrome()');
@@ -344,9 +349,11 @@ void main() {
         body.contains('ClientCoversMonitor(hwnd)'),
         isTrue,
         reason:
-            'the reported state was a NORMAL, not-zoomed window whose client '
-            'happened to cover the monitor (measured 3830/3840 accent pixels '
-            'on screen row 0) — a fullscreen-only guard would miss it.',
+            'the geometry test is the durable one: the frame insets that '
+            'decide whether the border lands on screen come out of '
+            'WM_NCCALCSIZE, DPI and Windows version, not out of the window '
+            'state name, so "does the client reach the edges" must be a '
+            'condition in its own right.',
       );
       expect(
         body.contains('frame_chrome_suppressed_'),
