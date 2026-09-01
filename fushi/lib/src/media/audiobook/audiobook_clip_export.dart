@@ -512,6 +512,16 @@ List<String> buildFfmpegImageAudioToVideoArgs({
     '0:v:0',
     '-map',
     '1:a:0',
+    // BUG-2011：输出是 mp4，而 ffmpeg 默认等价 `-map_chapters 0` —— 一旦某个输入带
+    // 章节，mp4 muxer 就会建一条与最后一个章节等长的 chapter text track，把
+    // `mvhd.duration` 拉满（几秒的片段显示成整本的进度条）。
+    //
+    // 今天两路输入都不带章节（图片/帧序列 + 已由 extractAudioSegmentViaFfmpeg 裁好
+    // 的裸 ADTS `.aac`），所以现在是安全的 —— 但那是个**隐式契约**，靠调用方永远传
+    // 中间产物而不是原始 m4b/视频来维持。就地钉死，比指望远处的约定不被改动可靠；
+    // 代价为零（没有章节可丢时这两个参数是空操作）。
+    '-map_chapters',
+    '-1',
     ..._clipVideoCodecArgs,
     '-r',
     '$fps',
@@ -657,6 +667,16 @@ List<String> buildFfmpegImageSeqAudioToVideoArgs({
     '0:v:0',
     '-map',
     '1:a:0',
+    // BUG-2011：输出是 mp4，而 ffmpeg 默认等价 `-map_chapters 0` —— 一旦某个输入带
+    // 章节，mp4 muxer 就会建一条与最后一个章节等长的 chapter text track，把
+    // `mvhd.duration` 拉满（几秒的片段显示成整本的进度条）。
+    //
+    // 今天两路输入都不带章节（图片/帧序列 + 已由 extractAudioSegmentViaFfmpeg 裁好
+    // 的裸 ADTS `.aac`），所以现在是安全的 —— 但那是个**隐式契约**，靠调用方永远传
+    // 中间产物而不是原始 m4b/视频来维持。就地钉死，比指望远处的约定不被改动可靠；
+    // 代价为零（没有章节可丢时这两个参数是空操作）。
+    '-map_chapters',
+    '-1',
     // TODO-2357：全平台 H.264（帧间压缩把逐句高亮的大量重复帧压到近零）。
     ..._clipVideoCodecArgs,
     '-vf',
