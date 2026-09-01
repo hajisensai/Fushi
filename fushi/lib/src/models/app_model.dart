@@ -1355,6 +1355,20 @@ class AppModel with ChangeNotifier {
   late Directory _databaseDirectory;
 
   /// Directory where database data is persisted.
+  /// 磁盘上是否真装着名为 [name] 的词典（`dictionaryResourceDirectory/<name>/`）。
+  ///
+  /// BUG-1994：`dictionary_metadata` 行的存在性**不是**「已安装」的判据——旧的
+  /// profile prune 会把已安装词典的行删掉。切 profile 回插时只信这个。
+  ///
+  /// 刻意**不**加「资源目录还没就绪就返回 false」的兜底：唯一调用方是
+  /// [ProfileRepository.applyProfile]，四个入口全是用户操作（切换 / 导入覆盖 /
+  /// 删除激活 profile 后回落），必在初始化之后。真要在初始化前被调到，`late` 抛
+  /// 出来才是对的——静默返回 false =「判定成没装」= 不回插 = 正好重演本 bug 的
+  /// 数据丢失，那是最不该选的失败模式。
+  bool isDictionaryInstalledOnDisk(String name) =>
+      Directory(path.join(_dictionaryResourceDirectory.path, name))
+          .existsSync();
+
   Directory get dictionaryResourceDirectory => _dictionaryResourceDirectory;
   late Directory _dictionaryResourceDirectory;
 
@@ -2312,7 +2326,13 @@ class AppModel with ChangeNotifier {
       _prefsRepo = PreferencesRepository(_database);
       final BaseAnkiRepository ankiRepo =
           platformServices.createAnkiRepository();
-      final profileRepo = ProfileRepository(_database, ankiRepo);
+      final profileRepo = ProfileRepository(
+        _database,
+        ankiRepo,
+        // BUG-1994：切 profile 时「这本词典装没装」只认磁盘目录。闭包是惰性的，
+        // 只在 applyProfile（用户操作）里调，那时 late 的资源目录早已就位。
+        isDictionaryInstalled: isDictionaryInstalledOnDisk,
+      );
       dictRepo = DictionaryRepository(_database,
           onCacheRebuild: _rebuildDictPathsCache,
           isLowMemory: () => prefsRepo.lowMemoryMode);
@@ -2332,13 +2352,10 @@ class AppModel with ChangeNotifier {
       TexthookerService.instance.foldProgressiveLines =
           prefsRepo.galHookFoldProgressiveLines;
       // 代理是**进程级**网络出口配置，却只存在偏好里；同步层的单例（GoogleDriveAuth 等）
-      // 拿不到 AppModel，以前就只能各自裸连——BUG-1348 的谷歌云盘登录超时正是如此。偏好
-      // 一装载好就把进程级读取器接上去，此后任何 applyAppProxy(client) 都自动拿到同一个值，
-      // 不必沿调用链穿参（穿漏一处 = 一条不走代理的暗路）。
-      appUserProxyReader = () => prefsRepo.updateCustomProxy;
-      appUserProxyModeReader = () => prefsRepo.networkProxyMode;
-      appUserProxyUsernameReader = () => prefsRepo.networkProxyUsername;
-      appUserProxyPasswordReader = () => prefsRepo.networkProxyPassword;
+      // 拿不到 AppModel，以前就只能各自裸连——BUG-1348 的谷歌云盘登录超时正是如此。四个
+      // 代理读取器的绑定已下沉到 `PreferencesRepository.loadFromDb()`（偏好变得可读的
+      // 那一刻），这样弹窗词典等**其它**入口不必各自记得补一行——漏一处就是一整个进程
+      // 拿不到用户选的模式/凭据。这里只留更新专用的那个。
       appUpdateDownloadSourceReader = () => prefsRepo.updateDownloadSource;
       // BUG-1493：词典包与 index.json 全托管在 github / raw.githubusercontent /
       // huggingface 上，而 fushi_dictionary 用的是裸 Dio——`findProxy` 为 null，既不读
@@ -3313,6 +3330,14 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoAutoScrape(bool value) =>
       prefsRepo.setVideoAutoScrape(value);
+
+  /// 库内自动补刮总闸（落 Drift preferences，默认开）。为什么它不能和
+  /// [videoAutoScrape] 合成一个键，见 PreferencesRepository 里的说明。
+  bool get videoLibraryAutoBackfillScrape =>
+      prefsRepo.videoLibraryAutoBackfillScrape;
+
+  Future<void> setVideoLibraryAutoBackfillScrape(bool value) =>
+      prefsRepo.setVideoLibraryAutoBackfillScrape(value);
 
   bool get videoDanmakuEnabled => prefsRepo.videoDanmakuEnabled;
 
@@ -6361,7 +6386,8 @@ class AppModel with ChangeNotifier {
   int get readingIdleTimeoutMinutes =>
       _prefsRepo?.readingIdleTimeoutMinutes ??
       kDefaultReadingIdleTimeout.inMinutes;
-  Duration get readingIdleTimeout => Duration(minutes: readingIdleTimeoutMinutes);
+  Duration get readingIdleTimeout =>
+      Duration(minutes: readingIdleTimeoutMinutes);
   Future<void> setReadingIdleTimeoutMinutes(int value) =>
       prefsRepo.setReadingIdleTimeoutMinutes(value);
 

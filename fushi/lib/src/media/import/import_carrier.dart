@@ -27,7 +27,8 @@ enum ImportCarrier {
   /// 走 `MangaModule.importMokuro`。
   mangaMokuro,
 
-  /// 图片压缩包：`.cbz`，或真读包确认装的是页图的 `.zip` / `.epub`。
+  /// 图片压缩包：`.cbz` / `.cbr` / `.rar` / `.cb7`，或真读包确认装的是
+  /// 页图的 `.zip` / `.epub`。
   /// 走 `MangaModule.importArchive`。
   mangaArchive,
 
@@ -78,6 +79,9 @@ enum ImportCarrier {
 const Set<String> kMangaCarrierFileExtensions = <String>{
   '.mokuro',
   '.cbz',
+  '.cbr',
+  '.rar',
+  '.cb7',
   '.zip',
   '.epub',
   '.pdf',
@@ -124,7 +128,9 @@ ImportCarrier classifyImportCarrier(
   // .mokuro 同理：它的 JSON 内容会被文本分支当纯文本吞掉。
   if (ext == '.mokuro') return ImportCarrier.mangaMokuro;
 
-  if (ext == '.cbz') return ImportCarrier.mangaArchive;
+  if (<String>{'.cbz', '.cbr', '.rar', '.cb7'}.contains(ext)) {
+    return ImportCarrier.mangaArchive;
+  }
   if (_ambiguousArchiveExtensions.contains(ext) && isImageArchive(path)) {
     return ImportCarrier.mangaArchive;
   }

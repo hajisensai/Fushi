@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:html/parser.dart' as html_parser;
 import 'package:html/dom.dart' as html_dom;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -769,8 +768,13 @@ List<BookSearchResult> _searchIsolate(_SearchParams params) {
 /// Extract text matching JS TreeWalker output: concatenate text nodes,
 /// skip rt/rp content, NO whitespace folding. This produces the same
 /// coordinate space as JS scrollToSearchMatch().
+///
+/// BUG-2017：全书搜索必须与 [EpubBook.chapterPlainText] 共用同一个 DOM 解析入口
+/// [EpubBook.parseChapterHtml]。裸 HTML5 解析在 kobo 化 XHTML（head 里一行自闭合
+/// `<script src="…"/>`、全文无 `</script>`）上会把整个 `<body>` 吞成 script 文本
+/// → `doc.body` 为空 → 这类书全书搜索恒零结果。
 String _chapterDomText(String html) {
-  final html_dom.Document doc = html_parser.parse(html);
+  final html_dom.Document doc = EpubBook.parseChapterHtml(html);
   final html_dom.Element? body = doc.body;
   if (body == null) return '';
   final StringBuffer buf = StringBuffer();

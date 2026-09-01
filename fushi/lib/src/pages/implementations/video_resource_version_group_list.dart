@@ -4,6 +4,7 @@ import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
     show ActivityRelativeTime, ActivityRelativeUnit, activityRelativeTime;
+import 'package:fushi/src/media/video/episode_span_format.dart';
 import 'package:fushi/utils.dart';
 
 /// 下载模式的资源「版本卡」列表：一张卡 = 一个「发布组 › 清晰度」版本，
@@ -69,12 +70,9 @@ class _VideoResourceVersionGroupListState
     final Set<int> episodes = group.episodes;
     final List<String> parts = <String>[];
     if (episodes.isNotEmpty) {
-      final int first = episodes.reduce((int a, int b) => a < b ? a : b);
-      final int last = episodes.reduce((int a, int b) => a > b ? a : b);
-      final String range =
-          episodes.length == 1 ? 'EP$first' : 'EP$first–EP$last';
       parts.add(
-        '${t.resource_version_episode_count(n: episodes.length)} ($range)',
+        '${t.resource_version_episode_count(n: episodes.length)} '
+        '(${formatEpisodeSpans(episodes)})',
       );
     }
     final DateTime? latest = group.latestPublishedAt;
@@ -99,9 +97,12 @@ class _VideoResourceVersionGroupListState
 
   Widget _buildCard(ThemeData theme, VideoResourceVersionGroup group) {
     final bool expanded = _expanded.contains(group.key);
-    final bool containsSelection = widget.selectedIdentityKey != null &&
-        group.members.any((VideoResourceCandidate member) =>
-            member.identityKey == widget.selectedIdentityKey);
+    final bool containsSelection =
+        widget.selectedIdentityKey != null &&
+        group.members.any(
+          (VideoResourceCandidate member) =>
+              member.identityKey == widget.selectedIdentityKey,
+        );
     return FushiCard(
       key: ValueKey<String>('resource-version-${group.key}'),
       padding: const EdgeInsets.all(12),
@@ -190,8 +191,9 @@ class _VideoResourceVersionGroupListState
     ];
     return FushiListItem(
       key: ValueKey<String>('resource-release-${member.identityKey}'),
-      density:
-          widget.compact ? FushiListDensity.compact : FushiListDensity.standard,
+      density: widget.compact
+          ? FushiListDensity.compact
+          : FushiListDensity.standard,
       padding: const EdgeInsets.symmetric(horizontal: 4),
       selected: widget.selectedIdentityKey == member.identityKey,
       onTap: widget.onSelect == null ? null : () => widget.onSelect!(member),

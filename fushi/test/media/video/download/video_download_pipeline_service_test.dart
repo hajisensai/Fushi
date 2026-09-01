@@ -18,6 +18,7 @@ import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi/src/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
@@ -30,6 +31,21 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 const String _torrentHash = '0123456789abcdef0123456789abcdef01234567';
+
+/// 带 AniDB 规范身份的入队快照（P1 契约下 scrape 阶段的唯一入场券）。
+VideoMediaReference _anidbReference() => VideoMediaReference(
+      providerId: 'anilist',
+      mediaId: '100',
+      mediaKind: VideoMetadataMediaKind.tv,
+      discoveryCategory: VideoDiscoveryCategory.anime,
+      title: 'Show',
+      originalTitle: 'ショー',
+      aliases: const <String>['Show'],
+      year: 2026,
+      season: 1,
+      anidbId: 42,
+      anilistId: 100,
+    );
 const VideoDownloadBackendIdentity _expectedIdentity =
     VideoDownloadBackendIdentity(
   kind: 'embedded',
@@ -729,12 +745,13 @@ void main() {
     );
 
     environment.service.wake();
+    // P1 契约：anilist 身份不是 AniDB 规范身份 → import 后直接完成（进视频页
+    // 待确认队列），不再被强制刮到 needsAttention。
     await _waitForJob(
       environment.database,
       jobId,
       (VideoDownloadJobRow row) =>
-          row.stage == VideoDownloadJobStage.scrape &&
-          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
     );
 
     expect(backend.moveStoragePaths, <String>['/media']);
@@ -870,12 +887,12 @@ void main() {
     );
 
     environment.service.wake();
+    // P1 契约：无 AniDB 身份 → import 后直接完成，见上一个用例的注释。
     await _waitForJob(
       environment.database,
       jobId,
       (VideoDownloadJobRow row) =>
-          row.stage == VideoDownloadJobStage.scrape &&
-          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
     );
 
     final String absoluteSource =
@@ -1058,12 +1075,12 @@ void main() {
     );
 
     environment.service.wake();
+    // P1 契约：无 AniDB 身份 → import 后直接完成，字幕落位断言不受影响。
     await _waitForJob(
       environment.database,
       jobId,
       (VideoDownloadJobRow row) =>
-          row.stage == VideoDownloadJobStage.scrape &&
-          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
     );
 
     final VideoDownloadJobSubtitleRow subtitle =
@@ -1089,9 +1106,12 @@ void main() {
     );
     addTearDown(environment.close);
     const String jobId = 'exact-scrape-path-job';
+    // P1 起 scrape 阶段只对带 AniDB 规范身份的任务运行；本用例守的是
+    // 「身份确认后也绝不按标题回退映射」，故显式带上 anidb 身份。
     await environment.insertJob(
       jobId: jobId,
       stage: VideoDownloadJobStage.scrape,
+      identityJson: encodeVideoMediaReference(_anidbReference()),
     );
     await environment.database.upsertVideoBook(
       VideoBooksCompanion(
@@ -1127,6 +1147,304 @@ void main() {
     );
 
     expect(job.lastError, contains('mapped exactly'));
+  });
+
+  test(
+      'a scrape-stage job without an AniDB identity completes instead of '
+      'getting pinned on needsAttention (BUG-2004)', () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'anilist-only-scrape-job';
+    // insertJob 默认身份是 anilist:100 —— 修前它会被强制模糊刮到歧义卡死。
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.scrape,
+    );
+
+    environment.service.wake();
+    await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
+    );
+  });
+
+  test(
+      'an AniDB identity from the enqueue snapshot enters scrape as a '
+      'confirmed lookup', () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'anidb-confirmed-scrape-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.scrape,
+      identityJson: encodeVideoMediaReference(_anidbReference()),
+    );
+    final String videoPath = p.join(environment.root.path, 'Show.mkv');
+    await environment.database.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/anidb-show'),
+        title: const Value<String>('Show'),
+        videoPath: Value<String>(videoPath),
+        sourceId: Value<int?>(environment.sourceId),
+      ),
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: 'Show.mkv',
+        currentRelativePath: 'Show.mkv',
+        finalAbsolutePath: Value<String?>(videoPath),
+        kind: const Value<String>('video'),
+        status: const Value<String>(VideoDownloadJobFileStatus.imported),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    final VideoDownloadJobRow job = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+    );
+
+    // 测试环境的 registry 没有可用 AniDB provider，coordinator 对已确认身份
+    // fail closed —— 报「主资料源不可用」而不是完成/模糊匹配，证明 anidb
+    // lookup 真正进入了刮削管线。
+    expect(job.lastError, contains('AniDB'));
+  });
+
+  test(
+      'a multi-movie torrent imports every standalone movie with its own '
+      'title (BUG-2007)', () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'multi-movie-import-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.import,
+      mediaKind: VideoMetadataMediaKind.movie.name,
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    // 故意让主片（最大文件）排在最后：主片判据是体积（与组织器抬正片一致），
+    // 谁排在 files.first 不作数。
+    final List<List<Object>> entries = <List<Object>>[
+      <Object>['[A] Suzume [1080p].mkv', 150, 0],
+      <Object>['[B] Suzume [720p].mkv', 140, 1],
+      <Object>['[C] Aoi Hana [1080p].mkv', 130, 2],
+      <Object>['Show (2026)/Show (2026).mkv', 200, 3],
+    ];
+    for (final List<Object> entry in entries) {
+      final String rel = entry[0] as String;
+      await environment.database.upsertVideoDownloadJobFile(
+        VideoDownloadJobFilesCompanion.insert(
+          jobId: jobId,
+          backendFileIndex: Value<int?>(entry[2] as int),
+          originalRelativePath: rel,
+          currentRelativePath: rel,
+          finalAbsolutePath: Value<String?>(
+            p.joinAll(<String>[environment.root.path, ...rel.split('/')]),
+          ),
+          kind: const Value<String>('video'),
+          sizeBytes: Value<int?>(entry[1] as int),
+          status: const Value<String>(VideoDownloadJobFileStatus.organized),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+    }
+
+    environment.service.wake();
+    // 默认身份是 anilist:100（无 AniDB）→ import 后直接完成（P1 契约）。
+    await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
+    );
+
+    final List<VideoBookRow> books = await environment.database.allVideoBooks();
+    expect(books, hasLength(4));
+    // 主片（最大文件）沿用 job.title；解析标题唯一的并列正片用解析结果；
+    // 前編/後編 式的解析撞名退回整理后文件名——有损解析绝不承担唯一性。
+    expect(
+      books.map((VideoBookRow book) => book.title).toSet(),
+      <String>{
+        'Show',
+        'Aoi Hana',
+        '[A] Suzume [1080p]',
+        '[B] Suzume [720p]',
+      },
+    );
+  });
+
+  test(
+      'movie subtitle search only targets the main movie; sibling standalone '
+      'movies wait for their own identities (BUG-2007)', () async {
+    final Uint8List subtitleBytes = Uint8List.fromList(<int>[49, 10, 50, 10]);
+    final _FakeSubtitleProvider subtitleProvider = _FakeSubtitleProvider(
+      bytes: subtitleBytes,
+    );
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+      subtitleProvider: subtitleProvider,
+    );
+    addTearDown(environment.close);
+    const String jobId = 'multi-movie-subtitle-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.subtitle,
+      mediaKind: VideoMetadataMediaKind.movie.name,
+    );
+    final Directory movieDir = Directory(
+      p.join(environment.root.path, 'Show (2026)'),
+    );
+    await movieDir.create(recursive: true);
+    final File main = File(p.join(movieDir.path, 'Show (2026).mkv'));
+    await main.writeAsBytes(<int>[0, 1, 2, 3], flush: true);
+    final File sibling = File(p.join(movieDir.path, 'Zoku Show.mkv'));
+    await sibling.writeAsBytes(<int>[0, 1], flush: true);
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    // 并列正片故意排在前面；主片 = 最大 sizeBytes。
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: 'Zoku Show.mkv',
+        currentRelativePath: 'Zoku Show.mkv',
+        finalAbsolutePath: Value<String?>(sibling.path),
+        kind: const Value<String>('video'),
+        sizeBytes: const Value<int?>(100),
+        status: const Value<String>(VideoDownloadJobFileStatus.organized),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(1),
+        originalRelativePath: 'Show (2026).mkv',
+        currentRelativePath: 'Show (2026).mkv',
+        finalAbsolutePath: Value<String?>(main.path),
+        kind: const Value<String>('video'),
+        sizeBytes: const Value<int?>(400),
+        status: const Value<String>(VideoDownloadJobFileStatus.organized),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
+    );
+
+    // 只搜了主片一次：并列正片拿 job 身份去搜只会装上主片的字幕，必须留给
+    // 刮削后按各自规范身份的补齐链路。
+    expect(subtitleProvider.searchCalls, 1);
+    final List<VideoDownloadJobFileRow> files =
+        await environment.database.getVideoDownloadJobFiles(jobId);
+    final int mainFileId = files
+        .singleWhere(
+          (VideoDownloadJobFileRow row) =>
+              row.originalRelativePath == 'Show (2026).mkv',
+        )
+        .id;
+    for (final VideoDownloadJobSubtitleRow row
+        in await environment.database.getVideoDownloadJobSubtitles(jobId)) {
+      expect(row.jobFileId, mainFileId);
+    }
+  });
+
+  test(
+      'a multi-movie scrape binds the confirmed identity to the main movie '
+      'instead of dropping it (BUG-2007)', () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'multi-movie-scrape-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.scrape,
+      mediaKind: VideoMetadataMediaKind.movie.name,
+      identityJson: encodeVideoMediaReference(_anidbReference()),
+    );
+    final String mainPath = p.join(environment.root.path, 'Show Main.mkv');
+    final String siblingPath = p.join(environment.root.path, 'Zoku Show.mkv');
+    await environment.database.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/multi-main'),
+        title: const Value<String>('Show Main'),
+        videoPath: Value<String>(mainPath),
+        sourceId: Value<int?>(environment.sourceId),
+      ),
+    );
+    await environment.database.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/multi-sibling'),
+        title: const Value<String>('Zoku Show'),
+        videoPath: Value<String>(siblingPath),
+        sourceId: Value<int?>(environment.sourceId),
+      ),
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: 'Zoku Show.mkv',
+        currentRelativePath: 'Zoku Show.mkv',
+        finalAbsolutePath: Value<String?>(siblingPath),
+        kind: const Value<String>('video'),
+        sizeBytes: const Value<int?>(100),
+        status: const Value<String>(VideoDownloadJobFileStatus.imported),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(1),
+        originalRelativePath: 'Show Main.mkv',
+        currentRelativePath: 'Show Main.mkv',
+        finalAbsolutePath: Value<String?>(mainPath),
+        kind: const Value<String>('video'),
+        sizeBytes: const Value<int?>(400),
+        status: const Value<String>(VideoDownloadJobFileStatus.imported),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    // 首版实现把多作品批次直接 complete——用户在下载确认时选定的 AniDB 身份
+    // 被静默丢弃。现在必须绑给主片所在作品并真正进入刮削：测试环境没有可用
+    // AniDB provider，coordinator 对已确认身份 fail closed，报「主资料源不可
+    // 用」即证明 lookup 进了管线而不是被丢掉。
+    final VideoDownloadJobRow job = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+    );
+    expect(job.lastError, contains('AniDB'));
   });
 
   test('retry resets an actionable job and wakes the persisted stage',
@@ -1876,6 +2194,8 @@ class _PipelineEnvironment {
     String backendKind = 'embedded',
     String lifecycle = VideoDownloadJobLifecycle.active,
     String category = _expectedCategory,
+    String? identityJson,
+    String? mediaKind,
   }) {
     final int now = DateTime.now().millisecondsSinceEpoch;
     return database.upsertVideoDownloadJob(
@@ -1890,7 +2210,8 @@ class _PipelineEnvironment {
         torrentHash: const Value<String?>(_torrentHash),
         metadataProvider: const Value<String?>('anilist'),
         externalId: const Value<String?>('100'),
-        mediaKind: VideoMetadataMediaKind.tv.name,
+        identityJson: Value<String?>(identityJson),
+        mediaKind: mediaKind ?? VideoMetadataMediaKind.tv.name,
         discoveryCategory: Value<String?>(VideoDiscoveryCategory.anime.name),
         title: 'Show',
         year: const Value<int?>(2026),

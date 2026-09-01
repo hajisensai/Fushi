@@ -55,9 +55,20 @@ class AdapterStructureTest(unittest.TestCase):
     def test_main_worker_only_uses_registry(self) -> None:
         source = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
         # 行数预算防的是「引擎逻辑重新爬回 dll_main」——真正的判据是下面那三条
-        # （必须经 registry、不得出现 TryHook）。HUNEX 的跨 adapter 数据契约头和
-        # 通用 IPC 映射长度核验属于装配代码，但也算行；预算随之抬到 740，判据不变。
-        self.assertLess(source.count("\n"), 740)
+        # （必须经 registry、不得出现 TryHook）。系统头 include 与其解释注释不属于
+        # 它要挡的东西，但也算行；上界随之从 700 抬到 720，判据本身不变。
+        #
+        # 不要改回「数总行数」：系统头 include、空行与解释注释都不是它要挡的东西，
+        # 却一样计入总行。上界因此被反复顶破而一路抬（700 -> 720），每次都只是改数字；
+        # BUG-2016 那次直接是两行 #include 把 719 推到 721，把 develop 打红。只改数字
+        # 等于拆守卫：阈值跟着噪声漂，真正要挡的引擎逻辑反而有了越来越大的余地。
+        # 改成只量代码行（剔注释、去空行、去 #include），量的就是判据本身想拦的那东西。
+        code_lines = [
+            line
+            for line in self._strip_comments(source).splitlines()
+            if line.strip() and not line.lstrip().startswith("#include")
+        ]
+        self.assertLess(len(code_lines), 520)
         self.assertIn("AdapterRegistry registry;", source)
         self.assertIn("registry.InstallStartupAdapters();", source)
         self.assertIn("registry.Poll();", source)

@@ -184,8 +184,8 @@ void main() {
     for (final String token in <String>[
       '_buildAllVideoListRow(book)',
       '_buildAllVideoRemoteListRow(video)',
-      '_buildCard(book, orientation: orientation)',
-      '_buildRemoteVideoCard(video, orientation: orientation)',
+      'orientation: VideoCardOrientation.landscape',
+      '_buildAllVideoGridSliver(',
     ]) {
       expect(
         allVideosBuilder,

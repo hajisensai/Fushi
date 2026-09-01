@@ -85,35 +85,11 @@ void main() {
     });
   });
 
-  group('滚轮 stuck + arm-then-fire 组合：卡边界二次确认才跨章', () {
-    test('卡边界首次只武装、同向二次才跨章', () {
-      final String? d1 = ReaderPaginationScripts.wheelBoundaryStuckDir(
-          wheelDir: 'backward', scrollFrom: 0, scrollTo: 0);
-      final arm1 = ReaderPaginationScripts.continuousWheelBoundaryEmit(
-          boundaryDir: d1, armedDir: null);
-      expect(arm1.emit, isFalse);
-      expect(arm1.nextArmedDir, 'backward');
-      final String? d2 = ReaderPaginationScripts.wheelBoundaryStuckDir(
-          wheelDir: 'backward', scrollFrom: 0, scrollTo: 0);
-      final arm2 = ReaderPaginationScripts.continuousWheelBoundaryEmit(
-          boundaryDir: d2, armedDir: arm1.nextArmedDir);
-      expect(arm2.emit, isTrue);
-    });
-    test('武装后又能滚（位置变了）→ 解武装不跨章', () {
-      final String? d = ReaderPaginationScripts.wheelBoundaryStuckDir(
-          wheelDir: 'backward', scrollFrom: 0, scrollTo: 60);
-      final arm = ReaderPaginationScripts.continuousWheelBoundaryEmit(
-          boundaryDir: d, armedDir: 'backward');
-      expect(arm.emit, isFalse);
-      expect(arm.nextArmedDir, isNull);
-    });
-  });
-
   group('JS 接线守卫：触摸/滚轮跨章不再用瞬时几何', () {
     late String paginationScripts;
     late String corpus;
     setUpAll(() {
-      // TODO-2527: 两份语料都先掩码——`downSPos` / `_wheelBoundaryArmed` 这类符号
+      // TODO-2527: 两份语料都先掩码——`downSPos` / `startsNewWheelGesture` 这类符号
       // 本来就原样写在生产注释里（webview.part.dart 的 TODO-656 说明段就有），裸
       // contains 会被注释满足：把实现删光只留注释，旧写法照样全绿。
       paginationScripts = maskCommentsAndScriptLines(
@@ -162,9 +138,14 @@ void main() {
           reason: '不得再用瞬时 scrollTop<=2 几何');
       expect(containsCodeLine(wheel, '_wheelLastScrollPos'), isFalse,
           reason: '不得再用相邻拍位置推算（时序坏 → 横排中部误翻）');
-      // arm-then-fire 二次确认仍在。
-      expect(containsCodeLine(wheel, '_wheelBoundaryArmed'), isTrue,
-          reason: '保留 arm-then-fire 二次确认吸收单帧擦边');
+      // BUG-2015：真边界之后按手势来源分流——触摸板旧惯性早退，离散滚轮一拍可跨。
+      expect(
+          containsCodeLine(
+              wheel, "pointerKind === 'trackpad' && !startsNewWheelGesture"),
+          isTrue,
+          reason: '触摸板必须静默后从边界开始新手势才跨章');
+      expect(containsCodeLine(wheel, '_wheelBoundaryArmed'), isFalse,
+          reason: '单事件滚轮/数位板旋钮不得再依赖第二拍 arm-then-fire');
     });
   });
 }

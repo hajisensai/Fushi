@@ -106,9 +106,17 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
         focusedEditableText,
         tryDictionaryPopupGamepadButton;
 import 'package:fushi/src/shortcuts/input_binding.dart'
-    show GamepadButton, InputBinding, activeModifierKeys;
+    show
+        GamepadButton,
+        InputBinding,
+        activeModifierKeys,
+        domMouseButtonFromPointerButtons;
+import 'package:fushi/src/shortcuts/shortcut_registry.dart'
+    show FushiShortcutRegistry;
 import 'package:fushi/src/shortcuts/reader_caret_router.dart'
     show CaretAction, ReaderCaretRouter;
+import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
+    show WindowFullscreenHost;
 import 'package:fushi/src/shortcuts/shortcut_action.dart'
     show ShortcutAction, ShortcutScope;
 import 'package:fushi/src/media/video/video_foreground_layers.dart'
@@ -698,11 +706,6 @@ enum _VideoSidePanelKind {
   quality,
   // TODO-1376：弹幕手动搜索/选集匹配侧栏。
   danmakuMatch,
-  // 2026-08 字幕工作台 PR-C：字幕调整走**底部抽屉**而不是右侧栏——视频全幅可见、
-  // 继续播放，字幕在真实位置实时预览。内容仍是同一份 schema 投影的快捷设置面板
-  // （`initialCategory: 'subtitle'`），只是容器换成 [VideoTranslucentBottomDrawer]；
-  // 开关/互斥/焦点/逐级 Esc 全部沿用侧栏机制（它就是一种侧栏 kind）。
-  subtitleAdjust,
 }
 
 class _VideoSidePanelState {
@@ -4508,6 +4511,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                       sensitivity:
                           ReaderFushiSource.instance.dismissSwipeSensitivity,
                       onPointerHover: _onDismissBarrierHover,
+                      // BUG-1995：指针在**浮窗之外**按侧键时唯一还能接到事件的地方
+                      // （barrier 命中行为 opaque，页面根 Listener 收不到）。
+                      onNonPrimaryButtonDown: _onDismissBarrierButtonDown,
                     ),
                   ),
                 // 搜索期加载占位卡（与书内同观感：就绪才显示真正浮层）。
@@ -4650,6 +4656,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // universal scope，不在 video 组里，漏掉就等于 BUG-1269 那半边重开。
         ShortcutAction.globalBack,
       };
+
+  /// BUG-1995 的另一半：指针落在**浮窗矩形之外**按下鼠标非主键。
+  ///
+  /// 浮层可见时，那片区域被根 Overlay 的 [LookupDismissBarrier] 完全占住
+  /// （`Positioned.fill` + 叶子 `ColoredBox`，命中行为 opaque），页面根的
+  /// [Listener]（[_handleVideoPointerDown]）因此收不到任何指针事件——所以
+  /// 「侧键压在浮窗上能关、把鼠标移开一点就关不掉」。这里把 barrier 上的那一半
+  /// 接回**同一个**落地入口。
+  ///
+  /// 判据与弹窗表面那条路逐字相同：同一个 [dictionaryPopupInputSpec]（已减去
+  /// dictionaryPopup scope 自己占用的按钮）、同一个 [dictionaryPopupPointerToken]
+  /// 折 token、同一个 [onDictionaryPopupInputToken] 落地（含选词光标分流）。
+  /// 两个表面共用一份判据，就不可能再出现「一半能用一半不能用」。
+  ///
+  /// 与弹窗表面天然互斥：barrier 只在弹窗矩形之外可命中（弹窗层在同一个 Stack 里
+  /// 排在 barrier 之后＝更靠上），同一次按下不会两条路各触发一次。
+  void _onDismissBarrierButtonDown(int buttons) {
+    final String? token = dictionaryPopupPointerToken(
+      buttons: buttons,
+      spec: dictionaryPopupInputSpec,
+    );
+    if (token == null) return;
+    onDictionaryPopupInputToken(token);
+  }
 
   /// 视频的语义是「关**顶层**浮层」（逐层关，保留隐藏热槽 BUG-092），不是清整栈，
   /// 故不走基类默认的 `clearDictionaryResult()`，改用与守卫完全同一个执行体。
@@ -4841,24 +4871,36 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // videoEnterCaret：进入字级选词光标 / 已激活时对光标字符查词（双语义，
       // 沉浸查词门控在 _enterSubtitleCaret 内按 _immersiveAllowsLookup 判）。
       enterCaret: () => _handleEnterCaretAction(controller),
-      escape: () {
-        // 逐级退出：字幕跳转列表 / 剧集列表 / 侧栏 / 沉浸锁等前台层开着时先关一层，
-        // 不退页也不退全屏。层级表是 [_dismissTopForegroundLayer] 单点（BUG-1862 起与
-        // [PopScope]、系统返回键、手柄 B、屏幕返回按钮共用同一份），这里只保留「没有前台
-        // 层可关」之后的两级：全屏 → 退全屏；窗口 → 退页。
-        //
-        // 「退全屏」这一级**只**能留在这里、进不了 [_handleBackOrExit]：全屏是推到根
-        // navigator 的独立路由，全屏期间栈顶是它、本页 [PopScope] 根本轮不到（框架先 pop
-        // 全屏路由），把它并进汇聚点等于写一条永远不执行的分支。
-        if (_dismissTopForegroundLayer()) return;
-        final BuildContext? ctx = _videoControlsContext;
-        if (ctx != null && ctx.mounted && isFullscreen(ctx)) {
-          unawaited(_exitVideoFullscreen(ctx));
-        } else {
-          unawaited(_handleBackOrExit());
-        }
-      },
+      escape: _handleVideoEscapeAction,
     );
+  }
+
+  /// 「返回上一级」（[ShortcutAction.globalBack]，默认 Esc / Alt+← / 手柄 B）在视频页的
+  /// 执行体：逐级退出阶梯。
+  ///
+  /// 抽成具名方法、不留在 [_buildVideoShortcutActions] 的闭包里，是因为它是整张表里
+  /// **唯一一个不碰 [VideoPlayerController] 的动作**，而那张表只能用一个非空 controller
+  /// 构造。加载态 / 资源缺失态（`_controller == null`）下两条输入通道要能单独调到它——
+  /// 否则转圈时按 Esc / 手柄 B 根本不经本页解析，一路落到全局 universal 兜底，而
+  /// [_buildLoadingBody] 专门留了「转圈时随时可退出」的返回入口，那条可达性在键盘和
+  /// 手柄上就断了。
+  ///
+  /// 逐级退出：字幕跳转列表 / 剧集列表 / 侧栏 / 沉浸锁等前台层开着时先关一层，
+  /// 不退页也不退全屏。层级表是 [_dismissTopForegroundLayer] 单点（BUG-1862 起与
+  /// [PopScope]、系统返回键、手柄 B、屏幕返回按钮共用同一份），这里只保留「没有前台
+  /// 层可关」之后的两级：全屏 → 退全屏；窗口 → 退页。
+  ///
+  /// 「退全屏」这一级**只**能留在这里、进不了 [_handleBackOrExit]：全屏是推到根
+  /// navigator 的独立路由，全屏期间栈顶是它、本页 [PopScope] 根本轮不到（框架先 pop
+  /// 全屏路由），把它并进汇聚点等于写一条永远不执行的分支。
+  void _handleVideoEscapeAction() {
+    if (_dismissTopForegroundLayer()) return;
+    final BuildContext? ctx = _videoControlsContext;
+    if (ctx != null && ctx.mounted && isFullscreen(ctx)) {
+      unawaited(_exitVideoFullscreen(ctx));
+    } else {
+      unawaited(_handleBackOrExit());
+    }
   }
 
   /// TODO-1342：把一次手柄按键解析成视频动作并执行。桌面（GameInput/GameController
@@ -4876,7 +4918,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _videoInputClock.elapsed,
     );
     final VideoPlayerController? controller = _controller;
-    if (controller == null) return false;
     // videoEnterCaret：选词光标激活期，方向/确认/退出等在注册表解析**之前**截获
     // （阅读器 caret.part 同款 contextual 路由）；未激活返回 false 走正常解析
     // （进入光标本身是注册表动作 videoEnterCaret，经下方 callback 执行）。
@@ -4915,6 +4956,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _dismissTopVisiblePopup();
       return true;
     }
+    // 与键盘通道同款：「返回上一级」（手柄 B）的执行体不碰播放器，必须分流在
+    // controller 门之前，否则加载态下手柄 B 退不出转圈中的视频页。
+    if (action == ShortcutAction.globalBack) {
+      _handleVideoEscapeAction();
+      return true;
+    }
+    if (controller == null) return false;
     final VoidCallback? callback =
         videoActionCallbacks(_buildVideoShortcutActions(controller))[action];
     if (callback == null) return false;
@@ -5046,6 +5094,43 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
   }
 
+  /// 视频页的**鼠标绑定通道**（BUG-1995）：页面根 [Listener] 的 `onPointerDown` 入口。
+  ///
+  /// 与键盘 / 手柄两条通道同构：按下当场问注册表要动作（press-time 解析，不冻结表），
+  /// 命中后走与它们完全相同的执行体。按钮号折叠用 [domMouseButtonFromPointerButtons]
+  /// —— 设置页的按键录制用的是同一个函数，两侧不共用就会出现「设置里录到侧键、运行时
+  /// 按另一个号解析」的错位。左键不可绑（那里返回 null），正常点击 / 划词零影响。
+  ///
+  /// ⚠️ **本入口只在词典浮层不可见时可达**，所以这里**不写**任何「关浮层」逻辑。
+  ///
+  /// 浮层可见（或查词搜索中）时，[_buildPopupOverlay] 会在**根 Overlay**里挂一层
+  /// `Positioned.fill` 的 [LookupDismissBarrier]。它虽然自称 translucent，内层却是
+  /// `ColoredBox`——`_RenderColoredBox` 的命中行为是 **opaque**（颜色透明 ≠ 命中透明），
+  /// 于是整个 barrier 子树 hitTest 返回 true，Overlay 的 Stack 就此停止向下测试，
+  /// 事件根本到不了本页面。实测：barrier 显示时页面根 Listener 收到 0 个 pointerDown。
+  /// 守卫见 `test/shortcuts/video_pointer_channel_reachability_test.dart`。
+  ///
+  /// 「浮层可见时按侧键关词典」由**另一条**路承担：浮层是原生 WebView，指针落在它上面
+  /// 时由 [DictionaryPopupLayer] 自己的 Listener 折出 token 回传
+  /// （[dictionaryPopupForwardedActions] → [onDictionaryPopupInputToken]）。那条路读的是
+  /// `bindingsFor` / `resolveMouse`，与本入口共用同一份绑定，但不经过这里。
+  void _handleVideoPointerDown(PointerDownEvent event) {
+    final int? button = domMouseButtonFromPointerButtons(event.buttons);
+    if (button == null) return;
+    final FushiShortcutRegistry registry = appModel.shortcutRegistry;
+    // scope 未命中时回落 universal（「返回上一级」），与页面其它通道同口径。
+    final ShortcutAction? action =
+        registry.resolveMouse(button, scope: ShortcutScope.video) ??
+            registry.resolveMouse(button, scope: ShortcutScope.universal);
+    if (action == null) return;
+    // 「只关词典」在浮层不可见时按下 = 无事发生，这正是它存在的意义（给侧键一个
+    // 没有副作用的落点）。
+    if (action == ShortcutAction.videoDismissDict) return;
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    videoActionCallbacks(_buildVideoShortcutActions(controller))[action]?.call();
+  }
+
   /// 视频页键盘通道的**唯一**派发点（方案 D）：每次按键当场问注册表，与手柄
   /// [_handleVideoGamepadButton] 逐段同构。
   ///
@@ -5061,7 +5146,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 同一动作时行为逐字一致（含 [_runWhenImmersiveAllowsShortcuts] 沉浸锁门控）。
   bool _handleVideoKeyboardShortcut(KeyEvent event) {
     final VideoPlayerController? controller = _controller;
-    if (controller == null) return false;
     final VideoKeyboardResolution resolution = resolveVideoKeyboardShortcut(
       appModel.shortcutRegistry,
       event,
@@ -5071,7 +5155,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 「视频画面精确持焦」与 [_focusOwnership] 是同一个真相源（它 reclaim 的就是
       // 这个节点）：焦点落到控制条按钮或面板行上时 hasPrimaryFocus 自然为 false。
       videoSurfaceHoldsFocus: _videoFocusNode.hasPrimaryFocus,
-      panelHoldsFocusNavigation: _videoNavigablePanelOpen,
+      videoNavigablePanelOpen: _videoNavigablePanelOpen,
     );
     switch (resolution.dispatch) {
       case VideoKeyboardDispatch.ignore:
@@ -5089,6 +5173,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _mineFromTopPopup();
           return true;
         }
+        // 「返回上一级」的执行体是本页的逐级退出阶梯，整条不碰播放器
+        // （[_handleVideoEscapeAction]），所以它必须分流在下面那道 controller 门**之前**：
+        // 加载态 / 资源缺失态下 `_controller` 恒为 null，跟着整表一起被挡在门外就等于
+        // 转圈时 Esc 不再走本页阶梯（[_buildLoadingBody] 的「随时可退出」在键盘上够不着）。
+        if (action == ShortcutAction.globalBack) {
+          _handleVideoEscapeAction();
+          return true;
+        }
+        // 其余动作的执行体全部从 [_buildVideoShortcutActions] 取，而它要求一个非空
+        // controller——播放器还没建好时那些动作本来也无事可做。不消费，交回既有路径。
+        if (controller == null) return false;
         final Map<ShortcutAction, VoidCallback> callbacks =
             videoActionCallbacks(_buildVideoShortcutActions(controller));
         final VoidCallback? callback = callbacks[action];
@@ -5166,6 +5261,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             if (_isSyntheticControlsHover(event)) return;
             _lastGlobalPointerPos = event.position;
           },
+          // BUG-1995：视频页此前**没有**「PointerDownEvent → MouseBinding → 派发」
+          // 这条链路（video scope 的 mouse 通道因此是关的，设置页连绑定入口都不给）。
+          // reader 能用鼠标侧键关词典，靠的是它正文是 WebView、侧键走 DOM mousedown
+          // 回传 Dart —— 视频页没有 WebView 正文，那条路复制不过来，只能把这条链路
+          // 真的建出来。挂在已有的页面根 Listener 上，不新增层级。
+          //
+          // `Listener` 不进手势 arena、不消费点击，media_kit 控件 / 进度条 / 字幕
+          // 查词的既有手势行为零变化。
+          onPointerDown: _handleVideoPointerDown,
           child: child,
         ),
       ),
@@ -7029,15 +7133,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-1351：记住目标分类（音频轨/字幕轨按钮传 'audio'/'subtitle'，设置按钮传 null），
     // 供 _buildVideoQuickSettingsSheet 读；面板 didUpdateWidget 据其变化跳分类。
     _settingsInitialCategory = initialCategory;
-    // 字幕分类走底部抽屉（PR-C）：字幕轨按钮 / 右键「字幕轨」/ 字幕加载遮罩都传
-    // 'subtitle'，统一在这一处分流，不让调用方各记一个 kind。
-    if (initialCategory == 'subtitle') {
-      _showVideoSidePanel(
-        _VideoSidePanelKind.subtitleAdjust,
-        sourceSlot: sourceSlot,
-      );
-      return;
-    }
     _showVideoSidePanel(
       _VideoSidePanelKind.settings,
       sourceSlot: sourceSlot,
@@ -7105,24 +7200,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final VideoPlayerController? controller = _controller;
     final VideoController? videoController = controller?.videoController;
     final ColorScheme cs = Theme.of(context).colorScheme;
+    // 视频页是**窗口全屏的合法宿主**之一：全屏键（默认 F11）只在小说 / 漫画 / 视频
+    // 里能进入全屏，靠的就是这层声明（见 [WindowFullscreenHosts]）。它零布局、零行为，
+    // 只在挂载期间登记自己所在的路由。
+    //
     // TODO-1342：最外层包一层手柄输入层，让桌面轮询的 [GamepadButtonIntent] 与
     // Android 原生手柄按键都能落到本页的视频动作（play/pause、seek、音量、字幕、全屏、
     // 返回）。放在 [PopScope] 之上 ⇒ 是 [_videoFocusNode] 及所有子焦点节点的祖先，
     // 冒泡/派发都能命中；wrapper 自身不夺焦（见 [_wrapVideoGamepadControls]）。
-    return _wrapVideoGamepadControls(
-      PopScope(
-        // 始终 `canPop: false` 自管退出：① 浮层栈非空时 back 先关栈（一层一层退），
-        // 浮层在根 Overlay 退出视频路由不会自动清它，必须在 pop 前拦截；② 栈空真退出
-        // 时，**先 await `flushPosition()` 把退出瞬间位置可靠落库再手动 pop**——否则只剩
-        // controller.dispose() 里 fire-and-forget 的 `_forceSavePositionSync()`，drift
-        // 写库 Future 与 Navigator 同步销毁 State 竞争、常写不完，导致「退出再进没回到
-        // 上次位置」（对齐阅读器 `onWillPop` 先 await 落库再 pop 的做法）。
-        canPop: false,
-        onPopInvokedWithResult: (bool didPop, Object? _) async {
-          if (didPop) return;
-          await _handleBackOrExit();
-        },
-        child: _buildScaffold(controller, videoController, cs),
+    return WindowFullscreenHost(
+      child: _wrapVideoGamepadControls(
+        PopScope(
+          // 始终 `canPop: false` 自管退出：① 浮层栈非空时 back 先关栈（一层一层退），
+          // 浮层在根 Overlay 退出视频路由不会自动清它，必须在 pop 前拦截；② 栈空真退出
+          // 时，**先 await `flushPosition()` 把退出瞬间位置可靠落库再手动 pop**——否则只剩
+          // controller.dispose() 里 fire-and-forget 的 `_forceSavePositionSync()`，drift
+          // 写库 Future 与 Navigator 同步销毁 State 竞争、常写不完，导致「退出再进没回到
+          // 上次位置」（对齐阅读器 `onWillPop` 先 await 落库再 pop 的做法）。
+          canPop: false,
+          onPopInvokedWithResult: (bool didPop, Object? _) async {
+            if (didPop) return;
+            await _handleBackOrExit();
+          },
+          child: _buildScaffold(controller, videoController, cs),
+        ),
       ),
     );
   }

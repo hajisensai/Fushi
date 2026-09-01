@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/external_provider.dart';
+import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
@@ -127,8 +128,152 @@ void main() {
     );
   }
 
+  /// 给合集挂一条已刮削的规范作品 + provider 身份行。
+  Future<void> seedCanonicalWork({
+    required int collectionId,
+    required String mediaType,
+    required String title,
+    String? originalTitle,
+    int? year,
+    required Map<String, String> externalIds,
+  }) async {
+    final int workId = await db.upsertVideoMetadataWork(
+      VideoMetadataWorksCompanion.insert(
+        collectionId: Value<int?>(collectionId),
+        mediaType: mediaType,
+        title: title,
+        originalTitle: Value<String?>(originalTitle),
+        year: Value<int?>(year),
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    await db.replaceVideoMetadataProviderIdentities(
+      workId: workId,
+      identities: <VideoMetadataProviderIdentitiesCompanion>[
+        for (final MapEntry<String, String> entry in externalIds.entries)
+          VideoMetadataProviderIdentitiesCompanion.insert(
+            identityKey: 'work:$workId:${entry.key}',
+            workId: Value<int?>(workId),
+            provider: entry.key,
+            externalId: entry.value,
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+      ],
+    );
+  }
+
   Finder downloadButton() =>
       find.byKey(const ValueKey<String>('subtitle-collection-download-all'));
+
+  testWidgets('已刮削合集的首搜带规范身份：外部 id / 原名 / 年份全带，分类由 id 推（BUG-2008）', (
+    WidgetTester tester,
+  ) async {
+    final VideoBookRow member = await seedMember();
+    // 合集已绑 AniList = 面板 initState 会自动首搜。首搜必须等规范身份读回来，
+    // 否则「刮过的合集」这条最常见路径永远还是裸显示名。
+    final MediaCollectionRow collection = await seedCollection(anilistId: 21);
+    await seedCanonicalWork(
+      collectionId: collection.id,
+      mediaType: 'tv',
+      title: 'Show',
+      originalTitle: '進撃の巨人',
+      year: 2013,
+      externalIds: <String, String>{
+        'anidb': '8692',
+        'anilist': '16498',
+        'tmdb': '1429',
+        'imdb': 'tt2560140',
+      },
+    );
+    final List<VideoSubtitleSearchRequest> requests =
+        <VideoSubtitleSearchRequest>[];
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        onSearch: (VideoSubtitleSearchRequest request) async {
+          requests.add(request);
+          return ProviderBatchResult<VideoSubtitleCandidate>.success(
+            const <VideoSubtitleCandidate>[],
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(requests, hasLength(1));
+    final VideoMediaReference media = requests.single.media!;
+    expect(media.anidbId, 8692);
+    expect(media.tmdbId, 1429);
+    expect(media.imdbId, 'tt2560140');
+    expect(media.originalTitle, '進撃の巨人');
+    expect(media.year, 2013);
+    expect(media.discoveryCategory, VideoDiscoveryCategory.anime);
+    // 用户没动过查询词 → 换成日文原名。
+    expect(requests.single.effectiveQuery, '進撃の巨人');
+    // 合集绑定的 AniList id 仍是检索键。
+    expect(media.anilistId, 21);
+  });
+
+  testWidgets('真人剧合集不再写死 anime 分类（BUG-2008 / BUG-1694）', (
+    WidgetTester tester,
+  ) async {
+    final VideoBookRow member = await seedMember();
+    // 真人剧没有 AniList 身份：合集不绑 anilistId，刮削身份只有 tmdb/imdb。
+    final MediaCollectionRow collection = await seedCollection();
+    await seedCanonicalWork(
+      collectionId: collection.id,
+      mediaType: 'tv',
+      title: 'Live Action Show',
+      year: 2011,
+      externalIds: <String, String>{'tmdb': '1396', 'imdb': 'tt0903747'},
+    );
+    Future<http.Client> factory() async {
+      return MockClient((http.Request request) async {
+        if (request.url.host == 'graphql.anilist.co') {
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              'data': <String, Object?>{
+                'Page': <String, Object?>{'media': <Object?>[]},
+              },
+            }),
+            200,
+          );
+        }
+        return http.Response('not found', 404);
+      });
+    }
+
+    final List<VideoSubtitleSearchRequest> requests =
+        <VideoSubtitleSearchRequest>[];
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        httpClientFactory: factory,
+        onSearch: (VideoSubtitleSearchRequest request) async {
+          requests.add(request);
+          return ProviderBatchResult<VideoSubtitleCandidate>.success(
+            const <VideoSubtitleCandidate>[],
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.video_jimaku_find_sources));
+    await tester.pumpAndSettle();
+
+    expect(requests, hasLength(1));
+    final VideoMediaReference media = requests.single.media!;
+    // 没有 anidb/anilist 身份 = 不是动画：Jimaku 的 anime 硬过滤必须走 false 档，
+    // 写死 anime 会让真人剧合集一条字幕都搜不到（BUG-1694）。
+    expect(media.discoveryCategory, VideoDiscoveryCategory.tv);
+    // OpenSubtitles 的强键：imdb 直查，命中率与文本搜不在一个量级。
+    expect(media.imdbId, 'tt0903747');
+    expect(media.tmdbId, 1396);
+    expect(media.year, 2011);
+    expect(media.anilistId, isNull);
+  });
 
   testWidgets('来源搜索失败 → 面板内提示，下载保持禁用', (WidgetTester tester) async {
     final VideoBookRow member = await seedMember();

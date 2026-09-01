@@ -5,6 +5,8 @@ import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart'
+    show VideoSourceScrapeWork;
 
 void main() {
   SourceLibraryRow source(int id) => SourceLibraryRow(
@@ -168,6 +170,8 @@ class _BlockingRunner implements VideoSourceScrapeRunner {
     required VideoSourceScrapeProgressCallback onProgress,
     VideoSourceScrapeConfirmationCallback? onConfirmation,
     VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
   }) async {
     calls.add(source.id);
     batchContexts.add(batchContext);
@@ -214,6 +218,8 @@ class _ConfirmationRunner implements VideoSourceScrapeRunner {
     required VideoSourceScrapeProgressCallback onProgress,
     VideoSourceScrapeConfirmationCallback? onConfirmation,
     VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
   }) async {
     confirmation = VideoSourceScrapeConfirmation(
       sourceId: source.id,
