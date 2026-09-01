@@ -2,8 +2,8 @@
 
 - **报告**：2026-09-01（用户：EPUB + 同名 SRT 配对，匹配率 0）
 - **真实性**：✅ 真 bug，根因 `fushi/lib/src/epub/epub_book.dart:92`（原 `chapterPlainText` 里的 `html_parser.parse(chapters[index].html)`）
-- **[x] ① 已修复** — `fushi/lib/src/epub/epub_book.dart`：新增 `normalizeSelfClosingRawTextTags()` + 统一解析入口 `EpubBook.parseChapterHtml()`，章节 XHTML 的四处 DOM 解析全部收敛到该入口
-- **[x] ② 已加自动化测试** — `fushi/test/epub/epub_selfclosing_rawtext_tag_test.dart`（13 条，已做变异实测：把归一化改成直通后 8 条转红）
+- **[x] ① 已修复** — `fushi/lib/src/epub/epub_book.dart`：新增 `normalizeSelfClosingRawTextTags()` + 统一解析入口 `EpubBook.parseChapterHtml()`，章节 XHTML 的 DOM 解析全部收敛到该入口——`epub_book.dart` 内四处（`chapterPlainText` / `isImageOnlyChapter` / `chapterImageSrcs` / `images`）**加上**审查补收的第五处 `fushi/lib/src/media/audiobook/audiobook_bridge.dart:772` `_chapterDomText`（全书搜索的 isolate 取文入口，同一根因下这类书搜索恒零结果）
+- **[x] ② 已加自动化测试** — `fushi/test/epub/epub_selfclosing_rawtext_tag_test.dart`（14 条，已做变异实测：把归一化改成直通后 8 条转红；把 `_chapterDomText` 改回裸 `html_parser.parse` 后新增的搜索用例单独转红，还原后 sha256 回基线）
 - **备注**：见下
 
 ### 复现
@@ -41,12 +41,13 @@ WebView 按该 MIME 走 XML 解析，这是合法空元素，所以**阅读器�
 章节纯文本恒为空，波及所有以它为输入的消费方：
 
 1. 有声书对齐 —— `audiobook_alignment_service.dart:78` 的 `EpubSection.text` 全空，matcher 必然 0（用户报的症状）
+1. 全书搜索 —— `audiobook_bridge.dart:772` 的 `_chapterDomText` 同样裸走 HTML5 解析，`doc.body` 为空 → `AudiobookBridge.searchBook` 在这类书上恒返回空列表（审查补收）
 2. 每章字数落库 —— `epub_importer.dart:496` 的 `chapterCharacterCount` 恒 0，全书字数 0，阅读统计/阅读速度失真
 3. 纯图片章误判 —— `isImageOnlyChapter` 的文本阈值恒满足，正文章被判成插图页，影响 `EpubSpreadMap` / `EpubSpreadAnalyzer` 跨页配对与图片合并，`manga_archive_importer.dart:243` 也据此判漫画
 4. 章节图片索引 —— `chapterImageSrcs` / `images` 同样解析不到 `<body>` 里的 `<img>`
 
 ### 修复
 
-单一入口 `EpubBook.parseChapterHtml()`：先把自闭合的 raw-text 标签归一化成显式闭合，再交给 HTML 解析器，使其与 WebView 的 XML 解析结果一致。章节 XHTML 的四处解析（`chapterPlainText` / `isImageOnlyChapter` / `chapterImageSrcs` / `images`）全部收敛到它。
+单一入口 `EpubBook.parseChapterHtml()`：先把自闭合的 raw-text 标签归一化成显式闭合，再交给 HTML 解析器，使其与 WebView 的 XML 解析结果一致。章节 XHTML 的五处解析（`epub_book.dart` 的 `chapterPlainText` / `isImageOnlyChapter` / `chapterImageSrcs` / `images`，以及 `audiobook_bridge.dart` 的 `_chapterDomText`）全部收敛到它。
 
 归一化只动 HTML5 里内容读到显式结束标签才终止的元素（`kRawTextTags`：script / style / textarea / title / iframe / noembed / noframes / noscript / xmp / plaintext），且只在其自身以 `/>` 结束时改写；空元素（`<br/>` `<img/>` `<meta/>`）不碰——它们自闭合在两种解析器下本就等价。注释 / CDATA / DOCTYPE / XML 声明整段透传，属性值里的 `>` 由引号状态机跳过。因此对既有正常 EPUB 是恒等变换，向后兼容。

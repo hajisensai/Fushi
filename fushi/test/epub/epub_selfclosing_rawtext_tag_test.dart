@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/epub/epub_book.dart';
+import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 
 /// BUG-2017 回归：EPUB 章节是 XML（`application/xhtml+xml`），WebView 按该 MIME
 /// 走 XML 解析，`<script src="…"/>` 是合法空元素；而 Dart 侧的 HTML5 解析器把
@@ -131,6 +132,20 @@ void main() {
         _koboChapter('<p><img src="i.png"/></p>'),
       );
       expect(book.chapterImageSrcs(0), contains('i.png'));
+    });
+  });
+
+  group('全书搜索走同一解析入口（BUG-2017 第二条失败路径）', () {
+    test('kobo 化章节仍能被 searchBook 命中', () async {
+      final EpubBook book = _bookWith(
+        _koboChapter('<p>一月二十二日、午後七時二十分頃、</p>'),
+      );
+      final List<BookSearchResult> hits =
+          await AudiobookBridge.searchBook(book, '午後七時');
+      expect(hits, isNotEmpty,
+          reason: '搜索与 chapterPlainText 必须共用 EpubBook.parseChapterHtml，'
+              '否则这类书全书搜索恒零结果');
+      expect(hits.first.sectionIndex, 0);
     });
   });
 }
