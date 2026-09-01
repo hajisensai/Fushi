@@ -465,7 +465,33 @@ const std::wstring& SlotTooltip(Profile profile, int slot) {
   return store[static_cast<size_t>(slot)];
 }
 
+bool SlotTooltipHost::OwnsLiveWindow() const {
+  if (hwnd_ == nullptr || !IsWindow(hwnd_)) {
+    return false;
+  }
+  // IsWindow alone is insufficient because HWND values are recycled. The
+  // back-pointer stamped right after CreateWindowExW proves that this handle
+  // still names OUR tooltip.
+  return reinterpret_cast<const SlotTooltipHost*>(
+             GetWindowLongPtr(hwnd_, GWLP_USERDATA)) == this;
+}
+
+// 窗口没了以后必须归零的**全部**每窗口状态。只此一份 —— 逐路径手写复位表正是
+// BUG-1981 初版漏项的来源。
+void SlotTooltipHost::ForgetDeadWindow() {
+  if (OwnsLiveWindow()) {
+    return;
+  }
+  hwnd_ = nullptr;
+  active_slot_ = -1;
+  current_text_.clear();
+  tool_ = {};
+}
+
 SlotTooltipHost::~SlotTooltipHost() {
+  // 先忘掉死句柄：宿主已经把这个 owned popup 带走时，hwnd_ 里躺的可能是被系统
+  // 回收给别人的值，无条件 DestroyWindow 就是去拆别人的窗口。
+  ForgetDeadWindow();
   if (hwnd_ != nullptr) {
     DestroyWindow(hwnd_);
     hwnd_ = nullptr;
@@ -473,6 +499,11 @@ SlotTooltipHost::~SlotTooltipHost() {
 }
 
 bool SlotTooltipHost::EnsureWindow(HWND owner) {
+  // 死句柄必须在幂等守卫**之前**忘掉。反过来写（先 `if (hwnd_ != nullptr)
+  // return true;`）的话，宿主浮窗被外部 WM_CLOSE / teardown 销毁后系统连带
+  // 销毁了这个提示窗，而 hwnd_ 还是旧值，这里从此永久短路 —— 浮窗重建后槽位
+  // 提示整会话再也不出（BUG-1981 的同一形状，只是换了个窗口）。
+  ForgetDeadWindow();
   if (hwnd_ != nullptr) {
     return true;
   }
@@ -494,6 +525,10 @@ bool SlotTooltipHost::EnsureWindow(HWND owner) {
   if (hwnd_ == nullptr) {
     return false;
   }
+  // 身份 back-pointer。TOOLTIPS_CLASS 的窗口过程归 comctl32，它把自己的状态
+  // 放在窗口 extra bytes 里，GWLP_USERDATA 这一格是留给宿主的，写它安全。
+  // OwnsLiveWindow 靠它把「HWND 被系统回收给别人」和「还是我那一个」分开。
+  SetWindowLongPtr(hwnd_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
   tool_ = {};
   tool_.cbSize = sizeof(tool_);
   // TTF_TRACK|TTF_ABSOLUTE：位置完全由宿主的 TTM_TRACKPOSITION 决定——宿主窗
@@ -540,6 +575,7 @@ void SlotTooltipHost::Update(HWND owner, Profile profile, int slot,
 
 void SlotTooltipHost::Hide() {
   active_slot_ = -1;
+  ForgetDeadWindow();
   if (hwnd_ == nullptr) {
     return;
   }

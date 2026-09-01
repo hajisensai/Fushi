@@ -100,7 +100,7 @@ void main() {
 
   setUp(() {
     appUserProxyReader = () => '';
-    appUserProxyModeReader = () => 'legacy';
+    appUserProxyModeReader = () => kProxyModeUnresolved;
     appUserProxyUsernameReader = () => '';
     appUserProxyPasswordReader = () => '';
     resetAppProxyCacheForTest();
@@ -357,6 +357,42 @@ void main() {
       expect(c, isA<HttpClient>());
       expect(createAppHttpIoClient(), isNotNull);
       expect(createAppDio(), isNotNull);
+    });
+  });
+
+  group('两个装配点走同一条路（异步版不得再自成一套）', () {
+    test('自动模式下异步版同样装上 407 凭据钩子', () async {
+      appUserProxyReader = () => '1.2.3.4:8080';
+      appUserProxyModeReader = () => kProxyModeAuto;
+      appUserProxyUsernameReader = () => 'alice';
+      appUserProxyPasswordReader = () => 'secret';
+      final _CapturingHttpClient client = _CapturingHttpClient();
+
+      await applyAppProxy(client);
+
+      expect(client.capturedAuth, isNotNull,
+          reason: '凭据钩子以前只装在 manual 分支里——用户在 auto 模式下建好的 client '
+              '之后改成 manual，那些 client 永远拿不到 407 应答');
+      expect(await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'r'), isFalse,
+          reason: '钩子装上了，但当前模式不是 manual 时不该交付凭据');
+    });
+
+    test('异步版装的是请求时求值的闭包：client 建好之后改模式立刻跟上', () async {
+      appUserProxyReader = () => '1.2.3.4:8080';
+      appUserProxyModeReader = () => kProxyModeDirect;
+      final _CapturingHttpClient client = _CapturingHttpClient();
+
+      await applyAppProxy(client);
+      expect(client.captured!(Uri.parse('https://example.com/')), 'DIRECT');
+
+      appUserProxyModeReader = () => kProxyModeManual;
+      expect(client.captured!(Uri.parse('https://example.com/')),
+          'PROXY 1.2.3.4:8080',
+          reason: '异步版以前把模式裁决烘焙进闭包：初始化前建好的 client 之后永远'
+              '停在当时那个模式上——这正是「初始化前那一发」的真实形状');
+
+      appUserProxyModeReader = () => kProxyModeDirect;
+      expect(client.captured!(Uri.parse('https://example.com/')), 'DIRECT');
     });
   });
 }

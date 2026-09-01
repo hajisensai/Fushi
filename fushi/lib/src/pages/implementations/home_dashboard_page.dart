@@ -1214,10 +1214,11 @@ class _HomeDashboardPageState
 
   /// 横滑卡片行本体（「继续」与「最近添加」共用）：定高横向 ListView。
   ///
-  /// [videoLandscape]：续播区传 true——视频卡 16:9 横槽（用户拍板「续播行只对
-  /// 视频改横版，书/游戏维持竖版」，Jellyfin Continue Watching 口径）；「最近
-  /// 添加」传 false 维持全竖版现状。行高不变：两种卡封面同高、宽度不同，底边
-  /// 天然对齐（video_home_layout 同款几何）。
+  /// [videoLandscape]：传 true——视频卡朝向随封面自适应（探测到横图走 16:9 横槽，
+  /// 只有竖版海报才留竖槽；书/游戏恒竖版，Jellyfin Continue Watching 口径）。
+  /// 「继续」与「最近添加」两行同口径（BUG-2005：后者原先恒竖版，16:9 抽帧被塞
+  /// 进 94×132 竖槽只能模糊垫底出白条）。行高不变：两种卡封面同高、宽度不同，
+  /// 底边天然对齐（video_home_layout 同款几何）。
   Widget _continueCardsRow(
     FushiDesignTokens tokens,
     AppModel appModel,
@@ -1323,7 +1324,7 @@ class _HomeDashboardPageState
     return _sectionCard(
       tokens,
       title: t.home_recently_added,
-      child: _continueCardsRow(tokens, appModel, top),
+      child: _continueCardsRow(tokens, appModel, top, videoLandscape: true),
     );
   }
 
@@ -1437,11 +1438,12 @@ class _HomeDashboardPageState
     _ContinueEntry entry, {
     bool videoLandscape = false,
   }) {
-    // 续播区视频卡：单行允许横竖混排（用户拍板「继续观看只有一行，混排不破
-    // 排版；书架里不可以」）——朝向随**选图链选中的那张图**探测：titleCard /
+    // 首页横滑行的视频卡：单行允许横竖混排（用户拍板「继续观看只有一行，混排
+    // 不破排版；书架里不可以」）——朝向随**选图链选中的那张图**探测：titleCard /
     // backdrop（天然 16:9）→ 横卡；只有竖版海报 → 自然竖卡，不强制模糊垫底成
-    // 16:9。书 / 游戏 /「最近添加」行恒竖版（BUG-1299 口径不变）。探测与卡内
-    // 渲染共用同一 provider 键，零额外解码（CoverOrientationBuilder 契约）。
+    // 16:9。「继续」与「最近添加」两行同口径（BUG-2005）；书 / 游戏恒竖版
+    // （BUG-1299 口径不变）。探测与卡内渲染共用同一 provider 键，零额外解码
+    // （CoverOrientationBuilder 契约）。
     if (videoLandscape && entry.isVideo) {
       final ImageProvider? probe =
           _continueArtworkProvider(entry) ?? _continueVideoCoverProvider(entry);

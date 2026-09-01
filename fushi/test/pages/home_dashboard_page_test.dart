@@ -593,6 +593,67 @@ void main() {
     );
   });
 
+  testWidgets('BUG-2005：「最近添加」与「继续」同口径，横版封面的视频卡走 16:9 横槽',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 真实可解码的 16:9 封面：朝向探测读的是解码宽高比，假路径只会走占位（恒竖卡）。
+    final File cover = File('${storeDir.path}/landscape_cover.png')
+      ..writeAsBytesSync(_kLandscapePng);
+    // 只导入 → 只进「最近添加」；有断点 → 只进「继续」。两行各一张视频卡，断言
+    // 按区块隔开（同名文本会互相兜住）。
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value('recent-landscape'),
+      title: const Value('刚导入的横版视频'),
+      videoPath: const Value('/abs/recent-landscape.mp4'),
+      coverPath: Value(cover.path),
+      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+    ));
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value('continue-landscape'),
+      title: const Value('在看的横版视频'),
+      videoPath: const Value('/abs/continue-landscape.mp4'),
+      coverPath: Value(cover.path),
+      lastPositionMs: const Value(60000),
+    ));
+
+    // 两段都必须在**同一个** runAsync 里：卡片是 `_loadDashboardData` 回填后才建
+    // 的，那次 pump 之前根本没有 ImageStream；而退出 runAsync 再 pump 的话，解码
+    // 这段真异步 I/O 在 fakeAsync 下永不完成，探测停在「朝向未知 → 竖卡」，两行
+    // 都恒量到竖槽宽（实测踩过）。
+    await tester.runAsync(() async {
+      await tester.pumpWidget(buildApp());
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await tester.pump(); // 用真数据重建 → 卡出现 → 封面开始解码
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await tester.pump(); // 应用探测回来的朝向
+    });
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    // 卡宽 = 封面槽宽：竖槽 94，横槽 132×16/9 ≈ 234.7。断言「明显宽于竖槽」而不是
+    // 精确值，免得日后调封面高度就得改数字（数字变了不代表行为坏了）。
+    const double portraitWidth = 94;
+    for (final (String, String) row in <(String, String)>[
+      (t.home_recently_added, '刚导入的横版视频'),
+      (t.home_continue, '在看的横版视频'),
+    ]) {
+      final Finder card = inSection(
+        row.$1,
+        find.ancestor(of: find.text(row.$2), matching: find.byType(InkWell)),
+      ).first;
+      expect(
+        tester.getSize(card).width,
+        greaterThan(portraitWidth * 1.5),
+        reason: '${row.$1} 行的视频卡应随横版封面自适应成 16:9 横槽，'
+            '恒竖槽会把 16:9 抽帧模糊垫底成白条',
+      );
+    }
+  });
+
   /// BUG-1111/BUG-1112 公共装配：塞一个游戏行；[playedAt] 非空则再塞一条游玩会话
   /// （仓储的 lastPlayedMs 由 `galgame_sessions` 现算，不是 `galgames` 上的列）。
   Future<void> seedGame({
@@ -1464,6 +1525,21 @@ void main() {
     });
   });
 }
+
+/// 16x9 横版 PNG：朝向探测（`CoverOrientationBuilder`）读的是**解码出来的固有
+/// 宽高比**，1x1 方图会被判成竖卡，测不出横卡分流，故另备一张真横图。
+const List<int> _kLandscapePng = <int>[
+  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
+  0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+  0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x09,
+  0x08, 0x06, 0x00, 0x00, 0x00, 0x3B, 0x2A, 0xAC,
+  0x32, 0x00, 0x00, 0x00, 0x16, 0x49, 0x44, 0x41,
+  0x54, 0x78, 0xDA, 0x63, 0xF8, 0xCF, 0xC0, 0xF0,
+  0x9F, 0x12, 0xCC, 0x30, 0x6A, 0xC0, 0xA8, 0x01,
+  0x40, 0x0C, 0x00, 0xDC, 0x62, 0x1E, 0xF0, 0xA7,
+  0x42, 0xC0, 0xCB, 0x00, 0x00, 0x00, 0x00, 0x49,
+  0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+];
 
 /// 1x1 透明 PNG：BUG-1112 需要一个**真实可解码**的封面文件（`Image.file` 对不存在
 /// 或损坏的文件走 errorBuilder，断言不到 FileImage）。
