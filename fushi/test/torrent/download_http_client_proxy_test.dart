@@ -32,7 +32,8 @@ import '../helpers/source_guard.dart';
 ///      一处，torrent 宿主/绑定不碰代理解析层，C ABI 桥只有 apply_proxy_impl
 ///      一处能改 libtorrent 代理（两个导出都只是委托）。
 ///   E. 混合档的 DHT 直连依赖 vcpkg overlay 里的 libtorrent 补丁（上游把无
-///      flag UDP 无条件塞进代理）；监听接口默认 v4+v6 双栈。
+///      flag UDP 无条件塞进代理）；监听接口默认 v4+v6 双栈；节点获取默认
+///      开满（逐 tracker announce + DHT 多引导点）。
 void main() {
   group('A. 建连超时', () {
     test('下载 client 的建连超时是 kDownloadConnectionTimeout 而不是 app 默认', () {
@@ -335,6 +336,38 @@ void main() {
       expect(host, contains("listenInterfaces = '0.0.0.0:6881,[::]:6881'"),
           reason: '此前建号 v4-only、用户改端口后才双栈——同一开关两种行为；'
               'IPv6 DHT/peer 是节点获取范围的重要组成');
+    });
+
+    test('节点获取默认开满：逐 tracker announce 双开 + DHT 多引导点，且设在建号处', () {
+      final String code = maskComments(
+        File('../native/fushi_torrent/fushi_torrent_ffi.cpp')
+            .readAsStringSync(),
+      );
+      // 必须设在 ht_session_create（建号一次长效）；ht_apply_session_settings
+      // 的 pack 不含这些键，出现在别处说明有人把语义挪散了。
+      final int start = code.indexOf('HT_EXPORT void* ht_session_create(');
+      expect(start, greaterThan(0));
+      final int end = code.indexOf('HT_EXPORT', start + 1);
+      final String body = code.substring(start, end);
+      expect(body, contains('announce_to_all_trackers, true'),
+          reason: 'libtorrent 默认只向同 tier 第一个应答的 tracker 要 peer，'
+              '多 tracker 种子的其余 tracker 全闲置');
+      expect(body, contains('announce_to_all_tiers, true'));
+      expect(body, contains('dht_bootstrap_nodes'),
+          reason: '默认引导点只有 dht.libtorrent.org 一个，冷启动单点');
+      for (final String node in <String>[
+        'dht.libtorrent.org:25401',
+        'router.bittorrent.com:6881',
+        'router.utorrent.com:6881',
+        'dht.transmissionbt.com:6881',
+      ]) {
+        expect(body, contains(node), reason: 'DHT 引导点清单缺 $node');
+      }
+      final String outside = code.substring(0, start) + code.substring(end);
+      expect(outside, isNot(contains('announce_to_all')),
+          reason: '逐 tracker announce 只在建号处裁决一次');
+      expect(outside, isNot(contains('dht_bootstrap_nodes')),
+          reason: 'DHT 引导点只在建号处裁决一次');
     });
   });
 }

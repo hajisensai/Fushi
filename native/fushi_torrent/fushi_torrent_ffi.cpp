@@ -622,6 +622,19 @@ HT_EXPORT void* ht_session_create(const char* listen_interfaces,
     // 空串 = 不绑定/监听任何端口（阶段1a 空壳语义，零网络副作用）。
     sp.set_str(lt::settings_pack::listen_interfaces, listen);
     sp.set_bool(lt::settings_pack::enable_dht, enable_dht != 0);
+    // 节点获取默认开满（建号设一次即长效——ht_apply_session_settings 的
+    // settings_pack 不含这些键，apply_settings 只覆盖出现的键）：
+    // 多 tracker 种子（nyaa 普遍带 5~10 个）libtorrent 默认只向同 tier 第一个
+    // 应答的 tracker 要 peer 列表，其余全部闲置；双开后逐条 announce，
+    // 对齐 qBittorrent 默认。代价是每种子多几个轻量请求。
+    sp.set_bool(lt::settings_pack::announce_to_all_trackers, true);
+    sp.set_bool(lt::settings_pack::announce_to_all_tiers, true);
+    // DHT 引导点默认只有 dht.libtorrent.org 一个：全新安装（无 resume 旧节点）
+    // 时它不可达 = 路由表冷启动失败。扩到 qBittorrent 同款清单，任一可达即可。
+    sp.set_str(lt::settings_pack::dht_bootstrap_nodes,
+               "dht.libtorrent.org:25401,router.bittorrent.com:6881,"
+               "router.utorrent.com:6881,dht.transmissionbt.com:6881,"
+               "dht.aelitis.com:6881");
     // 发现协议按阶段1b范围保持关闭；后续阶段随设置开放。
     sp.set_bool(lt::settings_pack::enable_lsd, false);
     sp.set_bool(lt::settings_pack::enable_upnp, false);
