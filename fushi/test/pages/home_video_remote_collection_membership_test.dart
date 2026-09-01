@@ -215,10 +215,26 @@ void main() {
         .byKey(const ValueKey<String>('remote_video_card_video_remote-orphan'));
     expect(remoteCard, findsOneWidget);
     // 归属解析不到 → 散卡降级：进主散卡网格，且不在任何合集横排行内。
+    // BUG-1989 起「全部视频」散卡区是 16:9 等宽 SliverGrid（系列墙才留 Wrap），
+    // 判据同步换容器；且不能只断言「有网格祖先」——远端自成独立分区时它也自带
+    // 一个 SliverGrid，照样通过。判据必须落在「与本地散卡同一个 SliverGrid
+    // 实例」上，才真的钉住混排。
+    final Finder localCard =
+        find.byKey(const ValueKey<String>('home_video_video/local-1'));
+    expect(localCard, findsOneWidget, reason: '本地散卡基线必须渲染');
+    final Finder remoteGrid =
+        find.ancestor(of: remoteCard, matching: find.byType(SliverGrid));
+    final Finder localGrid =
+        find.ancestor(of: localCard, matching: find.byType(SliverGrid));
     expect(
-      find.ancestor(of: remoteCard, matching: find.byType(Wrap)),
+      remoteGrid,
       findsOneWidget,
       reason: '归属解析不到本地合集 → 占位卡落散卡网格（散卡降级）',
+    );
+    expect(
+      tester.element(remoteGrid),
+      same(tester.element(localGrid)),
+      reason: '降级后的占位卡必须与本地散卡同属一个网格，不得自成独立分区',
     );
   });
 
