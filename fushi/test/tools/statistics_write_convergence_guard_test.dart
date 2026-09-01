@@ -20,6 +20,7 @@
 //     视频面 inactive **不**停（用户拍板：视频以播放态为准）；
 //  ⑦ `StudyClock.stop()` 结构性幂等：清引用在第一个 await 之前；
 //  ⑧ 首页每日目标分子与阅读统计页同函数（`studyGoalCharsForDay`，学习域口径）。
+//  ⑨ 三个统计页的异步加载 setState 都过 mounted 门（embedded tab 离屏即卸载）。
 
 import 'dart:io';
 
@@ -395,6 +396,44 @@ void main() {
       isTrue,
       reason: '统计页目标分子的实参必须是完整日面 _dailyFacts，与首页同口径',
     );
+  });
+
+  test('⑨ 三个统计页的异步加载 setState 都过 mounted 门（embedded tab 离屏即卸载）', () {
+    // 统计中心把三页塞进 TabBarView，没有 keepAlive——离屏即 unmount。
+    // 「点开 tab → loadStatFacts 还在查 → 切到另一个 tab」是一秒可复现的常规
+    // 操作，而三页的加载函数在首帧 postFrameCallback 与多次 await 之后各有一处
+    // setState。改造前它们是独立路由，要在几百毫秒的查询窗口里按返回键才撞得上，
+    // 所以裸 setState 存量地活了很久；tab 化把可达性放大了两个数量级。
+    // 三页曾经不一致（只有 game 页有门），这里把三页一起钉住。
+    const Map<String, String> loaders = <String, String>{
+      'lib/src/pages/implementations/reading_statistics_page.dart':
+          'Future<void> _syncAndLoad() async {',
+      'lib/src/pages/implementations/video_statistics_page.dart':
+          'Future<void> _syncAndLoad() async {',
+      'lib/src/pages/implementations/game_statistics_page.dart':
+          'Future<void> _load() async {',
+    };
+    loaders.forEach((String path, String signature) {
+      final String body = methodBody(read(path), signature);
+      expect(
+        containsCodeLine(body, 'if (!mounted) return;'),
+        isTrue,
+        reason: '$path：加载入口首帧由 postFrameCallback 触发，State 可能已 dispose，'
+            '第一处 setState 前必须过 mounted 门',
+      );
+    });
+    // 收尾那处 setState 在多次 await 之后，裸调即 use-after-dispose。
+    for (final String path in loaders.keys) {
+      final String src = read(path);
+      expect(
+        containsCodeLine(src, 'setState(() => _loading = false);') &&
+            !containsCodeLine(
+                src, 'if (mounted) setState(() => _loading = false);'),
+        isFalse,
+        reason: '$path：await 之后的收尾 setState 必须写成 '
+            '`if (mounted) setState(() => _loading = false);`',
+      );
+    }
   });
 
   test('legacy 累加 DAO 已从 DB 层彻底删除（编译层守卫的文本镜像）', () {

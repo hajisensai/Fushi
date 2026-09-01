@@ -140,7 +140,12 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncAndLoad());
   }
 
+  /// 统计中心把三页塞进 TabBarView（无 keepAlive，离屏即 unmount），
+  /// 「点开 tab → DB 还在查 → 切走」是一秒可复现的常规操作：首帧 postFrameCallback
+  /// 与多次 await 之后的两处 setState 都必须过 mounted 门，否则 debug 断言
+  /// `setState() called after dispose()`、release 打在已置空的 _element 上。
   Future<void> _syncAndLoad() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -220,7 +225,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       ErrorLogService.instance.log('ReadingStatisticsPage.load', e, stack);
       _error = e.toString();
     }
-    setState(() => _loading = false);
+    if (mounted) setState(() => _loading = false);
   }
 
   /// 今日时段图：从事实面的**小时面**取今日阅读域行（legacy `reading_hourly_logs`

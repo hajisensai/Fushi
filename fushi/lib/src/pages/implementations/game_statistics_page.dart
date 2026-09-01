@@ -55,7 +55,12 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
+  /// 统计中心把三页塞进 TabBarView（无 keepAlive，离屏即 unmount），
+  /// 「点开 tab → DB 还在查 → 切走」是一秒可复现的常规操作：首帧 postFrameCallback
+  /// 与多次 await 之后的两处 setState 都必须过 mounted 门，否则 debug 断言
+  /// `setState() called after dispose()`、release 打在已置空的 _element 上。
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;

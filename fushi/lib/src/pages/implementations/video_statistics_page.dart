@@ -65,7 +65,12 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncAndLoad());
   }
 
+  /// 统计中心把三页塞进 TabBarView（无 keepAlive，离屏即 unmount），
+  /// 「点开 tab → DB 还在查 → 切走」是一秒可复现的常规操作：首帧 postFrameCallback
+  /// 与多次 await 之后的两处 setState 都必须过 mounted 门，否则 debug 断言
+  /// `setState() called after dispose()`、release 打在已置空的 _element 上。
   Future<void> _syncAndLoad() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -167,7 +172,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       ErrorLogService.instance.log('VideoStatisticsPage.load', e, stack);
       _error = e.toString();
     }
-    setState(() => _loading = false);
+    if (mounted) setState(() => _loading = false);
   }
 
   /// 今日按小时观看时长：从事实面的小时面取 video 行**累加**。v92 起同一小时
