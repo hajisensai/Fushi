@@ -1480,6 +1480,72 @@ extension _ReaderChrome on _ReaderFushiPageState {
     );
   }
 
+  /// 小说页的窗口全屏切换（底栏按钮的执行体）。
+  ///
+  /// 与漫画页 `_changeMangaFullscreen` 同一范式：**先读 native 真值再取反**，而不是翻
+  /// 自己那份镜像——用户可能刚用快捷键（默认 F11）切过，镜像会落后，按镜像取反就会
+  /// 出现「点一下没反应、要点两下」。镜像只用来选图标。
+  ///
+  /// 串行闸 [_ReaderFushiPageState._windowFullscreenTransitioning] 挡住 native 往返
+  /// 期间的重入；按钮本身不置灰（状态更新常早于 finally 清闸，置灰会让按钮闪一下）。
+  Future<void> _changeReaderWindowFullscreen() async {
+    if (!desktopWindowFullscreenSupported || _windowFullscreenTransitioning) {
+      return;
+    }
+    _windowFullscreenTransitioning = true;
+    try {
+      final bool next =
+          !((await readDesktopWindowFullscreen()) ?? _isWindowFullscreen);
+      if (!mounted) return;
+      final bool? applied = await setDesktopWindowFullscreen(next);
+      if (!mounted || applied == null) return;
+      if (_isWindowFullscreen != applied) {
+        _rebuild(() => _isWindowFullscreen = applied);
+      }
+    } finally {
+      _windowFullscreenTransitioning = false;
+    }
+  }
+
+  /// 「返回上一级」在小说页的最后一级：**先退窗口全屏，没有全屏才退书**。
+  ///
+  /// 用户裁定 Esc 也要能退全屏。放在退书之前是唯一合理的次序——全屏是盖在书上面的一层
+  /// 呈现态，而「返回」在本页一贯是「退掉最上面那层」（词典弹窗先于退书是同一条阶梯）。
+  /// 漫画页的 PopScope 里有等价的一级，视频页则由它自己的全屏路由阶梯负责。
+  ///
+  /// [Navigator.of] 必须在第一个 await **之前**取：await 之后 context 可能已失效，
+  /// 跨 async gap 用 BuildContext 是 lint 明令禁止的（也确实会炸）。
+  Future<void> _exitWindowFullscreenOrPopReader() async {
+    final NavigatorState navigator = Navigator.of(context);
+    if (await exitWindowFullscreenIfActive()) {
+      // 镜像必须在**这条**路径上也复位。只在按钮那条成功路径上复位是不够的：Esc 退掉
+      // 的是同一个全屏，不同步的话底栏图标会稳定停在「退出全屏」上，而窗口早已不是全屏
+      // 了 —— 图标撒谎，而且不会自愈（下一次按按钮读的是 native 真值，图标只是在那之后
+      // 才碰巧变对）。
+      if (mounted && _isWindowFullscreen) {
+        _rebuild(() => _isWindowFullscreen = false);
+      }
+      return;
+    }
+    if (!mounted) return;
+    await navigator.maybePop();
+  }
+
+  /// 进页时把底栏全屏按钮的图标镜像对到 native 真值一次。
+  ///
+  /// 没有这一次读取，「在别处（漫画页 / 视频页 / 上一本书）进的全屏里打开本书」会让图标
+  /// 从第一帧起就是错的 —— 镜像默认 false，而窗口是全屏的。漫画页的
+  /// `_readInitialFullscreenState` 是同一件事的同一份做法。
+  ///
+  /// 只读不写：读到什么就照着画什么图标，绝不在进页时替用户改窗口状态。
+  Future<void> _readInitialWindowFullscreenState() async {
+    final bool? fullscreen = await readDesktopWindowFullscreen();
+    if (!mounted || fullscreen == null || fullscreen == _isWindowFullscreen) {
+      return;
+    }
+    _rebuild(() => _isWindowFullscreen = fullscreen);
+  }
+
   Widget _buildSettingsBar() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool reversed = appModel.reverseReaderBottomBar;
@@ -1500,6 +1566,26 @@ extension _ReaderChrome on _ReaderFushiPageState {
         onPressed: _openGallery,
       ),
       const Spacer(),
+      // 小说页此前**没有任何全屏入口**，只能靠全局快捷键（默认 F11）。全屏收窄到内容
+      // 模块之后，一个看得见的入口是必需的，否则「小说能全屏」这件事对不用快捷键的
+      // 用户等于不存在。与漫画页同图标、同 tooltip（复用同一条快捷键文案）。
+      // 桌面才有窗口可全屏，移动端不渲染这颗按钮。
+      if (desktopWindowFullscreenSupported)
+        Semantics(
+          identifier: 'hibiki.reader.bottom.fullscreen',
+          child: IconButton(
+            key: const ValueKey<String>('fushi_reader_fullscreen_button'),
+            icon: Icon(
+              _isWindowFullscreen
+                  ? Icons.fullscreen_exit_rounded
+                  : Icons.fullscreen_rounded,
+              color: _themeTextColor(),
+            ),
+            iconSize: 22,
+            tooltip: t.shortcut_action_global_toggle_fullscreen,
+            onPressed: () => unawaited(_changeReaderWindowFullscreen()),
+          ),
+        ),
       Semantics(
         identifier: 'hibiki.reader.bottom.settings',
         child: IconButton(
