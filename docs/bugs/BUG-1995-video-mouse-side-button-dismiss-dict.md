@@ -55,6 +55,29 @@
     不是派发门**——变成会红的断言，而不只是注释。
   - 变异实测：把关浮层分支加回入口 → 源码守卫红；barrier 叶子从 `ColoredBox` 换成
     非 opaque 的 `SizedBox` → widget 守卫红。均按唯一锚点还原。
-  - **仍未修**：复审指出的「指针落在浮窗之外按侧键，原症状复现」这半边。根治方向按
-    复审建议——`LookupDismissBarrier` 内部那个不入竞技场的 `Listener.onPointerDown`
-    接上同一份绑定判据（barrier 的语义本就是「点它就关」）。需真机验证后单独一条。
+- **本轮第三次修复（承接复审第 3(b) 条）——「浮窗之外按侧键」那半边**：
+  - 根因：浮层可见期间，**弹窗矩形之外**的整屏被根 Overlay 的 `LookupDismissBarrier`
+    占住（`Positioned.fill` + 叶子 `ColoredBox`，命中行为 opaque），而 barrier 的
+    `Listener.onPointerDown` 只做滑关轨迹跟踪、对鼠标非主键什么都不做。于是这片表面
+    **根本没有鼠标绑定通道**：侧键压在浮窗上能关（弹窗表面桥），移开一点就关不掉。
+    前两次修复都没碰到这一层，所以用户症状只消了一半。
+  - 修复（`fushi/lib/src/utils/misc/lookup_dismiss_barrier.dart`）：给 barrier 加可选
+    `onNonPrimaryButtonDown(int buttons)`，在它那个**不入竞技场**的 `Listener` 里、
+    **滑关开关判据之前**分发；主键与触摸由 `domMouseButtonFromPointerButtons` 恒挡在
+    外面（返回 null），点击关窗 / 横拖关一层零变化。纯附加：不 return、不改滑关状态机
+    任何一行，没接这个参数的三个表面（reader/audiobook、首页词典、texthooker）行为逐字
+    不变。
+  - 落地（`video_fushi_page.dart` 的 `_onDismissBarrierButtonDown`）：用与弹窗表面
+    **同一个** `dictionaryPopupInputSpec` + **同一个** `dictionaryPopupPointerToken`
+    折 token，再进**同一个** `onDictionaryPopupInputToken`（含选词光标分流）。两个表面
+    共用一份判据，不可能再一半能用一半不能用。两条路天然互斥：barrier 只在弹窗矩形
+    之外可命中（弹窗层在同一 Stack 里排在其后＝更靠上）。
+  - 守卫（追加进 `test/shortcuts/video_pointer_channel_reachability_test.dart`）：
+    ① 真 `LookupDismissBarrier` 上按后退键 → 宿主收到 `kBackMouseButton`；
+    ② 主键 / 触摸不进这条通道，且两次点击仍照常 `onTapDismiss`；
+    ③ **`swipeEnabled: false` 时侧键通道照样活着**（钉住「分发必须在 `!_swipeActive`
+    早退之前」这条几何位置——写在后面就是「设置里绑得上、按下去没反应」的死绑定）；
+    ④ 纯函数 + 源码守卫：视频页确实接了这条通道，且复用同一个折 token 函数。
+  - 变异实测（三条，均按唯一锚点还原 + `sha256sum` 核回基线）：分发移到 `!_swipeActive`
+    之后 → ③ 红；去掉主键过滤 → ② 红；视频页拆掉 `onNonPrimaryButtonDown` 接线 → ④ 红。
+  - **仍缺**：真机 E2E（Windows 视频页实按侧键）未做。

@@ -4514,6 +4514,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                       sensitivity:
                           ReaderFushiSource.instance.dismissSwipeSensitivity,
                       onPointerHover: _onDismissBarrierHover,
+                      // BUG-1995：指针在**浮窗之外**按侧键时唯一还能接到事件的地方
+                      // （barrier 命中行为 opaque，页面根 Listener 收不到）。
+                      onNonPrimaryButtonDown: _onDismissBarrierButtonDown,
                     ),
                   ),
                 // 搜索期加载占位卡（与书内同观感：就绪才显示真正浮层）。
@@ -4656,6 +4659,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // universal scope，不在 video 组里，漏掉就等于 BUG-1269 那半边重开。
         ShortcutAction.globalBack,
       };
+
+  /// BUG-1995 的另一半：指针落在**浮窗矩形之外**按下鼠标非主键。
+  ///
+  /// 浮层可见时，那片区域被根 Overlay 的 [LookupDismissBarrier] 完全占住
+  /// （`Positioned.fill` + 叶子 `ColoredBox`，命中行为 opaque），页面根的
+  /// [Listener]（[_handleVideoPointerDown]）因此收不到任何指针事件——所以
+  /// 「侧键压在浮窗上能关、把鼠标移开一点就关不掉」。这里把 barrier 上的那一半
+  /// 接回**同一个**落地入口。
+  ///
+  /// 判据与弹窗表面那条路逐字相同：同一个 [dictionaryPopupInputSpec]（已减去
+  /// dictionaryPopup scope 自己占用的按钮）、同一个 [dictionaryPopupPointerToken]
+  /// 折 token、同一个 [onDictionaryPopupInputToken] 落地（含选词光标分流）。
+  /// 两个表面共用一份判据，就不可能再出现「一半能用一半不能用」。
+  ///
+  /// 与弹窗表面天然互斥：barrier 只在弹窗矩形之外可命中（弹窗层在同一个 Stack 里
+  /// 排在 barrier 之后＝更靠上），同一次按下不会两条路各触发一次。
+  void _onDismissBarrierButtonDown(int buttons) {
+    final String? token = dictionaryPopupPointerToken(
+      buttons: buttons,
+      spec: dictionaryPopupInputSpec,
+    );
+    if (token == null) return;
+    onDictionaryPopupInputToken(token);
+  }
 
   /// 视频的语义是「关**顶层**浮层」（逐层关，保留隐藏热槽 BUG-092），不是清整栈，
   /// 故不走基类默认的 `clearDictionaryResult()`，改用与守卫完全同一个执行体。

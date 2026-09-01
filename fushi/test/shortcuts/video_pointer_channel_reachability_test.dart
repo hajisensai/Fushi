@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
+import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 
 /// BUG-1995 复盘守卫：**页面根 [Listener] 在词典浮层可见时收不到指针事件**。
 ///
@@ -119,6 +121,149 @@ void main() {
         body.contains('_hasVisiblePopup'),
         isFalse,
         reason: '同上：本入口只在浮层不可见时可达，不需要也不该判这个',
+      );
+    },
+  );
+
+  // ── BUG-1995 的另一半：浮窗**之外**的那片表面 ───────────────────────────────
+  //
+  // 上面两条只证明了「页面根 Listener 不可达」，并没有让侧键在浮窗之外真的生效。
+  // 症状原话是「侧键压在浮窗上能关，把鼠标移开一点就关不掉」——移开之后指针落在
+  // barrier 上，而 barrier 此前对非主键**什么都不做**。下面三条钉住补上的那条通道。
+
+  testWidgets(
+    'BUG-1995: barrier 上按侧键会把 buttons 交回宿主（浮窗之外那半边的唯一入口）',
+    (WidgetTester tester) async {
+      final List<int> seen = <int>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LookupDismissBarrier(
+            onTapDismiss: (Offset _) {},
+            onSwipeDismiss: () {},
+            swipeEnabled: true,
+            sensitivity: 0.5,
+            onNonPrimaryButtonDown: seen.add,
+          ),
+        ),
+      );
+
+      final TestGesture back = await tester.startGesture(
+        const Offset(200, 200),
+        buttons: kBackMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await back.up();
+      await tester.pump();
+
+      expect(
+        seen,
+        <int>[kBackMouseButton],
+        reason: '后退键（DOM 3）必须到达宿主 —— 这正是用户绑「关词典」最常用的那个键',
+      );
+    },
+  );
+
+  testWidgets(
+    'BUG-1995: barrier 的主键 / 触摸不进这条通道（点击关窗与滑关语义零变化）',
+    (WidgetTester tester) async {
+      final List<int> seen = <int>[];
+      int taps = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LookupDismissBarrier(
+            onTapDismiss: (Offset _) => taps++,
+            onSwipeDismiss: () {},
+            swipeEnabled: true,
+            sensitivity: 0.5,
+            onNonPrimaryButtonDown: seen.add,
+          ),
+        ),
+      );
+
+      // 鼠标左键。
+      final TestGesture primary = await tester.startGesture(
+        const Offset(200, 200),
+        buttons: kPrimaryMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await primary.up();
+      await tester.pump();
+      // 触摸。
+      final TestGesture touch = await tester.startGesture(const Offset(210, 210));
+      await touch.up();
+      await tester.pump();
+
+      expect(seen, isEmpty, reason: '主键/触摸恒不进非主键通道，否则正常点击会被当成绑定');
+      expect(taps, 2, reason: '两次点击仍照常走 onTapDismiss 关窗（never break userspace）');
+    },
+  );
+
+  testWidgets(
+    'BUG-1995: 关掉「滑动关闭」偏好后，侧键通道照样活着',
+    (WidgetTester tester) async {
+      // 回归闸门：滑关状态机的第一行就是 `if (!_swipeActive) return;`。侧键分发若写在
+      // 它后面，桌面用户（默认可能关掉滑关）会得到一个「设置里绑得上、按下去没反应」
+      // 的死绑定 —— 与本 bug 同型。
+      final List<int> seen = <int>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LookupDismissBarrier(
+            onTapDismiss: (Offset _) {},
+            onSwipeDismiss: () {},
+            swipeEnabled: false,
+            sensitivity: 0.5,
+            onNonPrimaryButtonDown: seen.add,
+          ),
+        ),
+      );
+
+      final TestGesture back = await tester.startGesture(
+        const Offset(200, 200),
+        buttons: kBackMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await back.up();
+      await tester.pump();
+
+      expect(seen, <int>[kBackMouseButton]);
+    },
+  );
+
+  test(
+    'BUG-1995: barrier 与弹窗表面共用同一份 token 判据（不许各判各的）',
+    () {
+      // 宿主两侧都调 dictionaryPopupPointerToken(buttons:, spec:)：spec 里有的按钮
+      // 才折出 token，没有的一律 null。这是「浮窗上能用、浮窗外也能用」的根据。
+      const DictionaryPopupInputSpec spec =
+          DictionaryPopupInputSpec(mouseButtons: <int>[3]);
+      expect(
+        dictionaryPopupPointerToken(buttons: kBackMouseButton, spec: spec),
+        'Mouse3',
+      );
+      expect(
+        dictionaryPopupPointerToken(buttons: kForwardMouseButton, spec: spec),
+        isNull,
+        reason: '没绑的按钮在 barrier 上必须无效，不能变成「点哪都关」',
+      );
+
+      // 源码守卫：视频页真的把 barrier 的非主键接到了那个入口。
+      final File page = File(
+        'lib/src/pages/implementations/video_fushi_page.dart',
+      );
+      final String source = page.readAsStringSync();
+      expect(
+        source.contains('onNonPrimaryButtonDown: _onDismissBarrierButtonDown'),
+        isTrue,
+        reason: 'barrier 不接这条通道 = 浮窗之外按侧键原症状复现',
+      );
+      expect(
+        RegExp(
+          r'void _onDismissBarrierButtonDown\(int buttons\) \{[^}]*'
+          r'dictionaryPopupPointerToken\(',
+          dotAll: true,
+        ).hasMatch(source),
+        isTrue,
+        reason: '必须复用弹窗表面同一个折 token 函数，不许在这里另写一套判据',
       );
     },
   );

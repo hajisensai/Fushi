@@ -297,14 +297,19 @@ void main() {
     expect(proposal.expected!.extensionVersionCode, 9);
   });
 
-  // BUG-1996：keiyoushi 的真实形状——索引 field 5 是裸的扩展版本号（69），而 APK
-  // manifest 的 android:versionCode 从上游 `153fbece5 "Rework Gradle build logic"`
-  // （2026-05-15）起带上了 libVersion 前缀：pack('1.4')*1000 + 69 = 104069。
-  // versionName 两侧都是 '1.4.69'。
+  // BUG-1996：keiyoushi 的真实形状（2026-09-01 直连 `repo/index.pb` 实测，gzip 解压
+  // 688322 字节 + protobuf raw decode）——索引 field 5 与 APK manifest 的
+  // android:versionCode **是同一个量**，逐字相同：SamuraiScan 两侧都是 104069、
+  // Manga Mura 两侧都是 104005，versionName 分别是 '1.4.69' / '1.4.5'。上游
+  // `ExtensionPlugin.kt` 把同一个 `androidVersionCodeProvider` 同时喂给 APK output
+  // 与索引元数据，构造上不可能分叉。
   //
-  // 这条用例的价值全在「两个数字**不同源**」上：旧 fixture 用同一个整数同时造两侧
-  // （`versionCode: n` + `versionName: '1.6.$n'`），正是踩坑的那个假设，所以结构上
-  // 抓不到这个 bug。
+  // ⚠️ 本文档/注释第一版声称「索引是裸的 69、APK 是 104069、两侧不同尺度」——那是
+  // **臆测，已被上面的实测证伪**，别再照它推理（见 docs/bugs/BUG-1996-*.md）。
+  //
+  // 这条用例真正锁的是**编码**而不是尺度：`index.json` 是 protobuf-JSON，int64 按
+  // 规范编成**字符串**（`"versionCode": "104069"`），裸 `as num?` 会当场抛 TypeError
+  // 把整份仓库索引炸掉。旧 fixture 用裸数字造索引，结构上测不到这条。
   test(
     'BUG-1996: index.json encodes int64 versionCode as a STRING; it parses '
     'and matches the APK versionCode exactly',
@@ -336,7 +341,8 @@ void main() {
                       'iconUrl': 'icons/fixture.png',
                     },
                     'extensionLib': '1.4',
-                    // 仓库尺度：裸扩展版本号。
+                    // 索引侧：**字符串**编码的 int64（protobuf-JSON 规范），
+                    // 值与下面 APK 的 android:versionCode 完全相同。
                     'versionCode': '104069',
                     'versionName': '1.4.69',
                     'contentWarning': 'CONTENT_WARNING_SAFE',
@@ -363,7 +369,7 @@ void main() {
         storeClient: MihonExtensionStoreClient(client: httpClient),
       );
       await manager.initialise();
-      // APK 尺度：pack('1.4') * 1000 + 69。
+      // APK 侧：android:versionCode，与索引同值（不是「另一个尺度」）。
       runtime.inspection = _inspection(
         versionCode: 104069,
         signer: 'aabb',
@@ -385,7 +391,7 @@ void main() {
         sources: const <MihonAvailableSource>[],
       );
 
-      // 修复前：METADATA_MISMATCH（69 != 104069），keiyoushi 一个扩展都装不上。
+      // 修复前：`json['versionCode'] as num?` 对字符串抛 TypeError，索引解析整个失败。
       final MihonInstallProposal proposal =
           await manager.prepareStoreInstall(available);
 
@@ -398,8 +404,9 @@ void main() {
     },
   );
 
-  // 身份门放宽到「不比 versionCode」之后，必须证明它**没有**变成一张空门：
-  // 拿到一个 versionName 对不上的 APK 仍要拒。
+  // 身份门补上 versionName 之后（versionCode 判据**保留**，不是放宽），必须证明新加
+  // 的那一条真的会拒：versionCode 两侧同为 104070、只有 versionName 不同仍要拒，且
+  // 异常 message 要带上两侧实际值（这条 bug 暴露的真缺口是可诊断性）。
   test('BUG-1996: a mismatched versionName is still rejected', () async {
     await database.upsertMangaExtensionStore(
       MangaExtensionStoresCompanion.insert(
