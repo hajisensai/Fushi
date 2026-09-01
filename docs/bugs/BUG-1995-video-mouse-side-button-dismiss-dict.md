@@ -1,11 +1,8 @@
 ## BUG-1995 · 视频页鼠标侧键关词典无效（video scope 无鼠标通道）
 - **报告**：2026-09-01（用户：关闭词典快捷键，小说鼠标侧键可以，视频不行）
-- **真实性**：✅ 真 bug。根因 `fushi/lib/src/shortcuts/shortcut_action.dart:138-144`（`ShortcutScope.channels` 里 `video` 与 `home`/`global` 共用一个 case，返回 `{keyboard, gamepad}`——**mouse 通道被显式摘掉**）。
+- **真实性**：✅ 真 bug。根因 `fushi/lib/src/shortcuts/shortcut_action.dart`（`ShortcutScope.channels` 里 `video` 与 `home`/`global` 共用一个 case，返回 `{keyboard, gamepad}`——**mouse 通道被摘掉**）。
 
-  不是「被谁挡住了」，而是这条链在视频页**根本不存在**：
-  - 设置页因此连入口都不给（`binding_edit_dialog.part.dart:597-598` 的 `canAddMouse` 判 `channels.contains(mouse)`），用户绑都绑不上；
-  - `dictionaryPopupInputSpecFor` 从 video scope 收集到的 `mouseButtons` 恒为空，连 BUG-1347 修好的弹窗表面那条路在视频里也是空转；
-  - 视频页根虽有一个包住整页的 `Listener`（`video_fushi_page.dart:5163`），但只挂了 `onPointerHover`，没有 `onPointerDown`。
+  直接后果是**设置页不给「添加鼠标按键」入口**（`binding_edit_dialog.part.dart` 的 `canAddMouse` 判 `channels.contains(mouse)`），用户根本绑不上这个键。reader 那边能用是另一条路：它正文是 WebView，侧键走 DOM `mousedown` → `callHandler('onPointerSeek')` → `resolveMouse(scope: reader)`（`reader_fushi/webview.part.dart`）。
 
   reader 之所以能用，是因为它正文是 WebView：侧键走 DOM `mousedown` → `callHandler('onPointerSeek')` → `resolveMouse(scope: reader)`（`reader_fushi/webview.part.dart:2435`）。视频页没有 WebView 正文，这条路复制不过来。全仓 `resolveMouse(` 原本只有 3 个消费点，无一个 scope 是 video。
 - **[x] ① 已修复** — 把那条缺失的管线真的建出来，而不是在视频页复制一份 reader 的逻辑：
@@ -42,3 +39,22 @@
   3. `resolveMouse(button, scope: ShortcutScope.universal)` 那条回落是死分支
      （`ShortcutScope.universal.channels` 不开 mouse，设置页不给绑）；其注释里「Flutter 侧
      至今没有 PointerDownEvent → MouseBinding 派发管线」的理由已被本 PR 自己证伪。
+- **本轮后续修复（承接复审第 2 条）**：
+  - **页级 `_handleVideoPointerDown` 里的浮层分支已删除**。它在正常路径上不可达，留着
+    只会让读代码的人以为「侧键关词典」由它承担。同时把该方法的文档改写成事实：
+    本入口**只服务「浮层不可见」的表面**；浮层可见时指针事件被根 Overlay 的 barrier
+    吃掉，关浮层由弹窗表面自己的回传路承担。
+  - 新增 `fushi/test/shortcuts/video_pointer_channel_reachability_test.dart`（两条）：
+    ① **widget 守卫**——用与真实结构同形的最小复刻（根 Overlay 两个 entry：页面层
+    `Listener` + `Positioned.fill` 的 translucent/translucent/`ColoredBox` barrier）
+    实测 `pageDowns=0 / barrierDowns=1`，把「barrier 吞指针」这个几何事实钉死；
+    ② **源码守卫**——禁止 `_handleVideoPointerDown` 体内再出现 `_dismissTopVisiblePopup`
+    / `_hasVisiblePopup`。
+  - `shortcut_registry_mouse_test.dart` 补一条「channels 不含 mouse 的 scope，已有鼠标
+    绑定仍可解析」（用 home scope），把复审第 1 条的判据——**channels 是设置页的录入门、
+    不是派发门**——变成会红的断言，而不只是注释。
+  - 变异实测：把关浮层分支加回入口 → 源码守卫红；barrier 叶子从 `ColoredBox` 换成
+    非 opaque 的 `SizedBox` → widget 守卫红。均按唯一锚点还原。
+  - **仍未修**：复审指出的「指针落在浮窗之外按侧键，原症状复现」这半边。根治方向按
+    复审建议——`LookupDismissBarrier` 内部那个不入竞技场的 `Listener.onPointerDown`
+    接上同一份绑定判据（barrier 的语义本就是「点它就关」）。需真机验证后单独一条。

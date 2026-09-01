@@ -140,11 +140,18 @@ enum ShortcutScope {
           ShortcutChannel.keyboard,
           ShortcutChannel.gamepad,
         };
-      // 视频页：BUG-1995 把上面那条缺失的链路真的建出来了——页面根的 [Listener]
-      // （`video_fushi_page.dart` 的 `_wrapVideoGamepadControls`）现在收 onPointerDown，
-      // 经 `domMouseButtonFromPointerButtons` → `resolveMouse(scope: video)` 派发，
-      // 与 reader 走 WebView DOM mousedown 到达的是同一个 registry 判据。用户报的
-      // 「关闭词典快捷键小说鼠标侧键可以，视频不行」就是这条链路整个不存在。
+      // 视频页：BUG-1995。用户报「关闭词典快捷键小说鼠标侧键可以，视频不行」——根因是
+      // 这里没开 mouse 通道，导致**设置页不给「添加鼠标按键」入口，用户压根绑不上**。
+      //
+      // ⚠️ 注意通道开关的真实作用域：它只管**设置页的录入入口**。已经存在的鼠标绑定
+      // 一直是可派发的——词典弹窗表面那条路（`dictionaryPopupInputSpecFor` →
+      // `resolveDictionaryPopupInputToken`）读 `bindingsFor` / `resolveMouse`，
+      // **不查本 getter**。所以「通道关着」≠「该 scope 的鼠标绑定不生效」，别再据此
+      // 推出「这些绑定是死的、可以清掉」（那条 v10→v11 迁移正是这么错的，已撤销）。
+      //
+      // 配套建出的 Flutter 侧派发管线（`video_fushi_page.dart` 的
+      // `_handleVideoPointerDown`）只覆盖**浮层不可见**的表面：浮层可见时根 Overlay 的
+      // barrier 会吃掉指针事件，那半边由弹窗表面自己回传，见该方法的文档。
       case video:
         return const <ShortcutChannel>{
           ShortcutChannel.keyboard,

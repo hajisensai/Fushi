@@ -86,5 +86,34 @@ void main() {
       const <MouseBinding>[MouseBinding(3)],
       reason: 'reader 的鼠标绑定同样不能被任何迁移误伤',
     );
+    // 仍然可解析——这是「它是活的」最直接的证据。
+    expect(
+      reg.resolveMouse(3, scope: ShortcutScope.video),
+      ShortcutAction.videoTogglePlayPause,
+    );
+  });
+
+  // 同一件事的另一面：通道**关着**的 scope，其鼠标绑定照样解析得出来。
+  // 这条钉住「channels 只是设置页的录入门，不是派发门」这个契约本身——只要有人再想
+  // 拿「通道没开」推出「绑定是死的」，这里就会红。
+  test('BUG-1995: channels 不含 mouse 的 scope，已有鼠标绑定仍可解析', () {
+    expect(
+      ShortcutScope.home.channels.contains(ShortcutChannel.mouse),
+      isFalse,
+      reason: '前提：home 至今没有开鼠标通道（开了就换一个仍关着的 scope）',
+    );
+
+    final FushiShortcutRegistry reg = FushiShortcutRegistry()
+      ..loadDefaults(TargetPlatform.windows);
+    reg.updateBinding(
+      ShortcutAction.homeTabNext,
+      const ShortcutBindingSet(mouseBindings: <MouseBinding>[MouseBinding(4)]),
+    );
+
+    expect(
+      reg.resolveMouse(4, scope: ShortcutScope.home),
+      ShortcutAction.homeTabNext,
+      reason: 'resolveMouse 不查 channels —— 通道开关管不着已存在的绑定能否派发',
+    );
   });
 }

@@ -5059,10 +5059,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// —— 设置页的按键录制用的是同一个函数，两侧不共用就会出现「设置里录到侧键、运行时
   /// 按另一个号解析」的错位。左键不可绑（那里返回 null），正常点击 / 划词零影响。
   ///
-  /// 浮层可见时的语义与 [guardVideoShortcutsWithPopupDismiss] 和手柄通道一致：**任一**
-  /// 已绑定的鼠标键先关顶层浮层，不再往下执行底层动作（否则侧键既关了词典又顺手翻了
-  /// 一句字幕）。[ShortcutAction.videoDismissDict] 本身没有别的执行体，浮层不可见时
-  /// 按它就是无事发生——这正是它存在的意义。
+  /// ⚠️ **本入口只在词典浮层不可见时可达**，所以这里**不写**任何「关浮层」逻辑。
+  ///
+  /// 浮层可见（或查词搜索中）时，[_buildPopupOverlay] 会在**根 Overlay**里挂一层
+  /// `Positioned.fill` 的 [LookupDismissBarrier]。它虽然自称 translucent，内层却是
+  /// `ColoredBox`——`_RenderColoredBox` 的命中行为是 **opaque**（颜色透明 ≠ 命中透明），
+  /// 于是整个 barrier 子树 hitTest 返回 true，Overlay 的 Stack 就此停止向下测试，
+  /// 事件根本到不了本页面。实测：barrier 显示时页面根 Listener 收到 0 个 pointerDown。
+  /// 守卫见 `test/shortcuts/video_pointer_channel_reachability_test.dart`。
+  ///
+  /// 「浮层可见时按侧键关词典」由**另一条**路承担：浮层是原生 WebView，指针落在它上面
+  /// 时由 [DictionaryPopupLayer] 自己的 Listener 折出 token 回传
+  /// （[dictionaryPopupForwardedActions] → [onDictionaryPopupInputToken]）。那条路读的是
+  /// `bindingsFor` / `resolveMouse`，与本入口共用同一份绑定，但不经过这里。
   void _handleVideoPointerDown(PointerDownEvent event) {
     final int? button = domMouseButtonFromPointerButtons(event.buttons);
     if (button == null) return;
@@ -5072,10 +5081,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         registry.resolveMouse(button, scope: ShortcutScope.video) ??
             registry.resolveMouse(button, scope: ShortcutScope.universal);
     if (action == null) return;
-    if (_hasVisiblePopup) {
-      _dismissTopVisiblePopup();
-      return;
-    }
+    // 「只关词典」在浮层不可见时按下 = 无事发生，这正是它存在的意义（给侧键一个
+    // 没有副作用的落点）。
     if (action == ShortcutAction.videoDismissDict) return;
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
