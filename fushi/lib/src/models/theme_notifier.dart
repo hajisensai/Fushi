@@ -1069,9 +1069,12 @@ class ThemeNotifier extends ChangeNotifier {
           borderSide: BorderSide(color: cs.primary, width: 2),
         ),
       ),
+      // BUG-1997：两个亮度用同一个粗细。原来深色是 `null`（退回 Material 默认 8），
+      // 而全局 `thumbVisibility: true` + 桌面端自动包 Scrollbar 意味着那 8+2px 是
+      // **常驻**覆盖在每个列表右侧的，压住并吞掉最右一列的操作按钮。仓库里 9 处
+      // RawScrollbar 都硬写 3，说明 3 才是设计意图，深色只是漏钉。
       scrollbarTheme: ScrollbarThemeData(
-        thickness:
-            brightness == Brightness.light ? WidgetStateProperty.all(3) : null,
+        thickness: WidgetStateProperty.all(kFushiScrollbarThickness),
         thumbVisibility: WidgetStateProperty.all(true),
       ),
       sliderTheme: SliderThemeData(

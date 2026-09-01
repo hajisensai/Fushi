@@ -1035,8 +1035,14 @@ class _AvailableExtensionTileState extends State<_AvailableExtensionTile> {
   Widget build(BuildContext context) {
     final MihonAvailableExtension extension = widget.extension;
     final MangaExtensionRow? installed = widget.installed;
-    final bool update =
-        installed != null && extension.versionCode > installed.versionCode;
+    // 两侧同量（DB 列存的就是 APK 的 android:versionCode，索引给的是同一个数），
+    // 比大小自洽。BUG-1996 一度改成 `versionName !=`，理由是「跨尺度比大小、角标
+    // 永不亮」——前提已被实测证伪（见 [MihonExtensionInspection.apkVersionCode]），
+    // 且 `!=` 会在**已装版本比仓库新**时（本地侧载 / 同包多仓库）误报「有更新」并
+    // 顶掉下面的「卸载」按钮，点下去必得 DOWNGRADE_REJECTED。`>` 结构上不可能有
+    // 这个假阳性，保留。
+    final bool update = installed != null &&
+        extension.extensionVersionCode > installed.versionCode;
     final ThemeData theme = Theme.of(context);
     final int hiddenSources = _showAllSources
         ? 0

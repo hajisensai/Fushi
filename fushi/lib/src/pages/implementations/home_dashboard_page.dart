@@ -33,7 +33,9 @@ import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show openLocalVideoBook;
+import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
 import 'package:fushi/src/stats/stat_facts.dart';
@@ -1790,15 +1792,30 @@ class _HomeDashboardPageState
     final Widget card = _sectionCard(
       tokens,
       title: t.reading_activity,
-      header: _filterChips<int>(
-        tokens: tokens,
-        selected: _heatmapFilter,
-        onSelected: (int v) => setState(() => _heatmapFilter = v),
-        options: <(int, String)>[
-          (0, t.home_filter_all),
-          (1, t.home_filter_read),
-          (2, t.home_filter_watch),
-          (3, t.home_filter_game),
+      // 统计入口的唯一落点（用户定案 2026-09-01：各媒体页头的「xx统计」全部
+      // 撤掉，统一从首页热力图卡右上进统计中心总览）。
+      header: Row(
+        children: <Widget>[
+          Expanded(
+            child: _filterChips<int>(
+              tokens: tokens,
+              selected: _heatmapFilter,
+              onSelected: (int v) => setState(() => _heatmapFilter = v),
+              options: <(int, String)>[
+                (0, t.home_filter_all),
+                (1, t.home_filter_read),
+                (2, t.home_filter_watch),
+                (3, t.home_filter_game),
+              ],
+            ),
+          ),
+          SizedBox(width: tokens.spacing.gap),
+          FushiIconButton(
+            tooltip: t.stat_center_title,
+            label: t.stat_center_title,
+            icon: Icons.bar_chart_outlined,
+            onTap: _openStatisticsCenter,
+          ),
         ],
       ),
       child: Column(
@@ -1983,110 +2000,108 @@ class _HomeDashboardPageState
     return total ~/ days;
   }
 
-  /// 点热力图某日 → 当日明细 sheet：头部=日期+当日合计（全来源），内容按
-  /// 阅读/观看/游戏分节列出每条目的字数+时长（空节不显示）。三节都直接过滤
-  /// 已加载的事实行（v92：游戏节不再另查 activity_events）。
+  /// 统计中心入口（唯一入口：各媒体页头的「xx统计」已撤，统一从首页进总览）。
+  void _openStatisticsCenter() {
+    Navigator.push(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const StatisticsCenterPage(),
+      ),
+    );
+  }
+
+  /// 点热力图某日 → 时段明细 sheet（阶段 1 统一组件 [showStatPeriodDetailSheet]：
+  /// 单日=退化时段，与统计页时段卡同一实现——来源分节 + 合集分组 + 时长倒序 +
+  /// 条目跳转）。
   Future<void> _showDayDetailSheet(String dateKey) async {
-    final List<({String title, int chars, int timeMs})> reading =
-        _readingDayRows(dateKey);
-    final List<({String title, int chars, int timeMs})> watch =
-        _watchDayRows(dateKey);
-    final List<({String title, int chars, int timeMs})> game =
-        _gameDayRows(dateKey);
-    await adaptiveModalSheet<void>(
-      context: context,
-      builder: (BuildContext sheetContext) =>
-          _buildDayDetailSheet(sheetContext, dateKey, reading, watch, game),
+    await showStatPeriodDetailSheet(
+      context,
+      periodLabel: formatStatHeatmapDay(dateKey),
+      contains: (String key) => key == dateKey,
+      facts: _dailyRows,
+      resolvers: StatPeriodDetailResolvers(
+        titleOf: _statEntryTitle,
+        collectionOf: _statEntryCollection,
+        onEntryTap: _openStatEntry,
+      ),
     );
   }
 
-  /// 把 [rows] 里 [dateKey] 当日的事实行按 [StatFact.identityKey] 聚合（有身份按
-  /// 身份、legacy 无身份行按 title 回退——沿用 v76 分组契约），每组保留首个非空的
-  /// mediaKey / title 供显示名解析（游戏时长行 title 为 ''，与同 id 的 hook 字数段
-  /// 并组后拿到标题快照）。三节明细共用。
-  static List<StatFact> _dayGroups(List<StatFact> rows, String dateKey) {
-    final Map<String, StatFact> byIdentity = <String, StatFact>{};
-    for (final StatFact f in rows) {
-      if (f.dateKey != dateKey) continue;
-      final StatFact? prev = byIdentity[f.identityKey];
-      byIdentity[f.identityKey] = prev == null
-          ? f
-          : StatFact(
-              mediaKind: prev.mediaKind,
-              mediaKey: prev.mediaKey.isNotEmpty ? prev.mediaKey : f.mediaKey,
-              title: prev.title.isNotEmpty ? prev.title : f.title,
-              format: prev.format,
-              dateKey: prev.dateKey,
-              hour: -1,
-              ms: prev.ms + f.ms,
-              chars: prev.chars + f.chars,
-              pages: prev.pages + f.pages,
-              lastActiveMs: prev.lastActiveMs > f.lastActiveMs
-                  ? prev.lastActiveMs
-                  : f.lastActiveMs,
-            );
+  /// 事实行 → 展示标题（合集名由 sheet 组头承担，这里**不**拼合集前缀）。
+  /// 书行过 display-title 门面（改名 override 上屏生效）；游戏行按 galgames.id/
+  /// 快照反查库内显示名，已删游戏回落 id；视频/legacy 行原样 title。
+  String _statEntryTitle(StatFact f) {
+    if (f.isGame) {
+      final String name = _gameDisplayTitle(f.title, mediaKey: f.mediaKey);
+      return name.isEmpty ? f.mediaKey : name;
     }
-    return byIdentity.values.toList(growable: false);
+    if (f.isBook) {
+      final String? bookKey =
+          f.mediaKey.isNotEmpty ? f.mediaKey : _bookKeyByTitle[f.title];
+      if (bookKey == null) return f.title;
+      return displayTitleForStatRow(
+        rawTitle: f.title,
+        bookKeyByTitle: <String, String>{f.title: bookKey},
+      );
+    }
+    return f.title;
   }
 
-  /// 明细「阅读」节：阅读域当日事实行按身份聚合。显示名拼合集前缀（v92 段自带
-  /// bookKey；legacy 行经 title→bookKey 反查，阅读统计页 _collectionNameForBook
-  /// 同范式）；事实行仍按原身份聚合，不动历史数据身份。
-  List<({String title, int chars, int timeMs})> _readingDayRows(
-    String dateKey,
-  ) {
-    return <({String title, int chars, int timeMs})>[
-      for (final StatFact f in _dayGroups(_readingRows, dateKey))
-        (
-          title: _readingStatDisplayTitle(f.title, mediaKey: f.mediaKey),
-          chars: f.chars,
-          timeMs: f.ms,
-        ),
-    ];
-  }
-
-  /// 明细「游戏」节：游戏域当日事实行（galgame_sessions 时长行 + hook 字数行）按
-  /// 身份聚合。P4：title 是落库时的标题快照（时长行为 ''），上屏前按 mediaKey
-  /// （galgames.id）/ 快照反查库内显示名（用户改名后明细跟着变；查不到原样显示
-  /// 快照）。
-  List<({String title, int chars, int timeMs})> _gameDayRows(String dateKey) {
-    return <({String title, int chars, int timeMs})>[
-      for (final StatFact f in _dayGroups(_gameRows, dateKey))
-        (
-          // 已从库里删掉、当日又只有时长行（快照 ''）的游戏：显示名解析两头都
-          // 落空，退回 id 而不是空行。
-          title: switch (_gameDisplayTitle(f.title, mediaKey: f.mediaKey)) {
-            '' => f.mediaKey,
-            final String name => name,
-          },
-          chars: f.chars,
-          timeMs: f.ms,
-        ),
-    ];
-  }
-
-  /// 阅读事实行 → 显示名：先过 display-title 门面（P4：改名 override 应用到明细
-  /// 行；事实行 title 是快照恒 raw，仅上屏时替换），命中合集再拼「合集名 - 名字」。
-  /// 身份优先用行自带的 [mediaKey]（v92 段），为空再按 title 反查（legacy 行）；
-  /// 两者都拿不到 bookKey（视频字幕书/已删书等）原样返回。
-  String _readingStatDisplayTitle(String title, {String mediaKey = ''}) {
-    final String? bookKey =
-        mediaKey.isNotEmpty ? mediaKey : _bookKeyByTitle[title];
-    if (bookKey == null) return title;
-    // 统计行 title 是聚合键恒 raw，只在上屏时经门面换显示名；v92 段自带身份
-    // （mediaKey）时直接用它反查，legacy 行才回退 title→bookKey 表。
-    final String display = displayTitleForStatRow(
-      rawTitle: title,
-      bookKeyByTitle: <String, String>{title: bookKey},
+  /// 事实行 → 所属合集名（v83 键契约：epub 经 bookKey→uid 换算，video=bookUid，
+  /// game=galgames.id）；解析不到返回 null 落「未分组」。
+  String? _statEntryCollection(StatFact f) {
+    if (f.isBook) {
+      final String? bookKey =
+          f.mediaKey.isNotEmpty ? f.mediaKey : _bookKeyByTitle[f.title];
+      if (bookKey == null) return null;
+      return statCollectionName(
+        MediaKind.epub.compositeKey(_epubUidByBookKey[bookKey] ?? bookKey),
+        _primaryCollectionByEntry,
+        _collectionNamesById,
+      );
+    }
+    if (f.mediaKey.isEmpty) return null;
+    return statCollectionName(
+      (f.isVideo ? MediaKind.video : MediaKind.game).compositeKey(f.mediaKey),
+      _primaryCollectionByEntry,
+      _collectionNamesById,
     );
-    // v83：归属映射 epub 键 = uid，bookKey 经换算表转一跳。
-    return collectionQualifiedTitle(
-      entryKey:
-          MediaKind.epub.compositeKey(_epubUidByBookKey[bookKey] ?? bookKey),
-      rawTitle: display,
-      primaryByEntry: _primaryCollectionByEntry,
-      collectionNamesById: _collectionNamesById,
-    );
+  }
+
+  /// 明细条目 → 打开对应媒体：视频直达播放、书直达阅读器；游戏与查不到的条目
+  /// 切对应 tab（BUG-1111：首页不静默拉起游戏）。判据与 [_openActivityEntry]
+  /// 同构，身份来源换成事实行的 mediaKind/mediaKey。
+  Future<void> _openStatEntry(String mediaKind, String mediaKey) async {
+    final AppModel appModel = ref.read(appProvider);
+    if (mediaKey.isNotEmpty) {
+      if (mediaKind == kActivityMediaVideo &&
+          _videos.any((VideoBookRow v) => v.bookUid == mediaKey)) {
+        await _openLocalVideo(mediaKey);
+        return;
+      }
+      if (mediaKind == kActivityMediaBook) {
+        final List<MediaItem> books = ref
+                .read(fushiBooksProvider(JapaneseLanguage.instance))
+                .valueOrNull ??
+            const <MediaItem>[];
+        for (final MediaItem item in books) {
+          final String? key =
+              ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
+                  ReaderFushiSource.parseSrtBookUid(item.mediaIdentifier);
+          if (key == mediaKey) {
+            final MediaSource source = item.getMediaSource(appModel: appModel);
+            await appModel.openMedia(ref: ref, mediaSource: source, item: item);
+            return;
+          }
+        }
+      }
+    }
+    homeShellTabNotifier.value = switch (mediaKind) {
+      kActivityMediaBook => HomeTab.books,
+      kActivityMediaGame => HomeTab.games,
+      _ => HomeTab.video,
+    };
   }
 
   /// 游戏活动标题 → 显示名（P4）：先按 [mediaKey]（galgames.id）精确命中，
@@ -2099,105 +2114,6 @@ class _HomeDashboardPageState
       title: rawTitle,
     );
     return displayTitleForGame(entry: entry, rawTitle: rawTitle);
-  }
-
-  /// 明细「观看」节：视频域当日事实行按身份聚合；有 bookUid（mediaKey 非空）的
-  /// 直接拼合集前缀，legacy 无身份行按 title 分组、原样显示。
-  List<({String title, int chars, int timeMs})> _watchDayRows(String dateKey) {
-    return <({String title, int chars, int timeMs})>[
-      for (final StatFact f in _dayGroups(_watchRows, dateKey))
-        (
-          title: f.mediaKey.isEmpty
-              ? f.title
-              : collectionQualifiedTitle(
-                  entryKey: MediaKind.video.compositeKey(f.mediaKey),
-                  rawTitle: f.title,
-                  primaryByEntry: _primaryCollectionByEntry,
-                  collectionNamesById: _collectionNamesById,
-                ),
-          chars: f.chars,
-          timeMs: f.ms,
-        ),
-    ];
-  }
-
-  /// 当日明细 sheet 本体：日期头 + 合计行 + 三节（阅读/观看/游戏）。
-  Widget _buildDayDetailSheet(
-    BuildContext context,
-    String dateKey,
-    List<({String title, int chars, int timeMs})> reading,
-    List<({String title, int chars, int timeMs})> watch,
-    List<({String title, int chars, int timeMs})> game,
-  ) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final int totalChars = _readingCharsByDay[dateKey] ?? 0;
-    final int totalMs = _readingTimeMsByDay[dateKey] ?? 0;
-    final String summary = totalMs > 0
-        ? '${formatStatChars(totalChars)} · ${formatStatTime(totalMs)}'
-        : formatStatChars(totalChars);
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: EdgeInsets.all(tokens.spacing.card),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(
-              formatStatHeatmapDay(dateKey),
-              style: tokens.type.sectionLabel,
-            ),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Text(summary, style: tokens.type.metadata),
-            ..._dayDetailSection(
-                tokens, t.home_filter_read, Icons.menu_book, reading),
-            ..._dayDetailSection(
-                tokens, t.home_filter_watch, Icons.movie, watch),
-            ..._dayDetailSection(
-                tokens, t.home_filter_game, Icons.videogame_asset, game),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 明细 sheet 的一节：节标题 + 每行「图标 + 显示名 + 字数 · 时长」；空节不渲染。
-  List<Widget> _dayDetailSection(
-    FushiDesignTokens tokens,
-    String label,
-    IconData icon,
-    List<({String title, int chars, int timeMs})> rows,
-  ) {
-    if (rows.isEmpty) return const <Widget>[];
-    return <Widget>[
-      SizedBox(height: tokens.spacing.gap + 4),
-      Text(label, style: tokens.type.sectionLabel),
-      SizedBox(height: tokens.spacing.gap / 2),
-      for (final ({String title, int chars, int timeMs}) row in rows)
-        Padding(
-          padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-          child: Row(
-            children: <Widget>[
-              Icon(icon, size: 18, color: tokens.surfaces.primary),
-              SizedBox(width: tokens.spacing.gap),
-              Expanded(
-                child: Text(
-                  row.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: tokens.type.listTitle,
-                ),
-              ),
-              SizedBox(width: tokens.spacing.gap),
-              Text(
-                row.timeMs > 0
-                    ? '${formatStatChars(row.chars)} · ${formatStatTime(row.timeMs)}'
-                    : formatStatChars(row.chars),
-                style: tokens.type.metadata,
-              ),
-            ],
-          ),
-        ),
-    ];
   }
 
   // ── 区块 4：Activity 时间轴 ──────────────────────────────────────────────

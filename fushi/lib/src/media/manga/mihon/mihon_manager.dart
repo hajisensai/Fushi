@@ -340,8 +340,8 @@ class MihonManager extends ChangeNotifier {
       // 索引可能把我们重定向到另一个入口地址（legacy 分支跟随 index_v2），
       // 落库的身份必须是解析后的那个，不是用户输入的那个。
       if (store.indexUrl != oldIndexUrl &&
-          stores.any((MangaExtensionStoreRow row) =>
-              row.indexUrl == store.indexUrl)) {
+          stores.any(
+              (MangaExtensionStoreRow row) => row.indexUrl == store.indexUrl)) {
         throw const MihonRuntimeException(
           'STORE_DUPLICATE',
           'Another extension store already uses this URL',
@@ -514,12 +514,31 @@ class MihonManager extends ChangeNotifier {
           'Extension lib ${inspection.libVersion} is not supported',
         );
       }
+      // 身份门：「我拿到的 APK 是不是我点的那一个」。三个字段都是两侧同义量，
+      // 全等才放行。
+      //
+      // BUG-1996 曾把 versionCode 从判据里拿掉，理由是「索引 69 / APK 104069 不同
+      // 尺度」——**那个前提经实测证伪**：keiyoushi 的索引与 APK 由 gradle 的同一个
+      // `androidVersionCodeProvider` 产出，直连 `repo/index.pb` 实测 SamuraiScan
+      // field5 = 104069、Manga Mura = 104005，与各自 APK 的 android:versionCode
+      // 逐字相同。判据因此原样保留，并补上 versionName（严格更强，不是放宽）。
+      //
+      // 用户报的「扩展装不上」根因**仍未定位**（见 BUG-1996）。所以这里改的是可
+      // 诊断性：把两侧实际值写进异常，下一份报告才有得看——原来是一句常量。
+      //
+      // 真实性不由本门负责：APK 是不是仓库签的由下面 SIGNATURE_MISMATCH 对
+      // `signingKey` 保证，是不是与已装版本同一签名由 SIGNATURE_CHANGED 保证。
       if (expected != null) {
         if (inspection.packageName != expected.packageName ||
-            inspection.versionCode != expected.versionCode) {
-          throw const MihonRuntimeException(
+            inspection.apkVersionCode != expected.extensionVersionCode ||
+            inspection.versionName != expected.versionName) {
+          throw MihonRuntimeException(
             'METADATA_MISMATCH',
-            'Downloaded APK does not match the extension store metadata',
+            'Downloaded APK does not match the extension store metadata '
+                '(store: ${expected.packageName} '
+                'v${expected.extensionVersionCode}/${expected.versionName}; '
+                'apk: ${inspection.packageName} '
+                'v${inspection.apkVersionCode}/${inspection.versionName})',
           );
         }
       }
@@ -536,7 +555,8 @@ class MihonManager extends ChangeNotifier {
       final MangaExtensionRow? current =
           await database.getMangaExtension(inspection.packageName);
       if (current != null) {
-        if (inspection.versionCode < current.versionCode) {
+        // 两侧同为 APK 尺度（DB 列存的就是 `apkVersionCode`），自洽，BUG-1996 不动它。
+        if (inspection.apkVersionCode < current.versionCode) {
           throw const MihonRuntimeException(
             'DOWNGRADE_REJECTED',
             'Extension downgrade is not allowed',
@@ -627,7 +647,8 @@ class MihonManager extends ChangeNotifier {
             packageName: packageName,
             storeUrl: Value(proposal.expected?.storeUrl),
             name: proposal.inspection.name,
-            versionCode: proposal.inspection.versionCode,
+            // 列名冻结，语义 = APK 尺度（见 [MihonExtensionInspection.apkVersionCode]）。
+            versionCode: proposal.inspection.apkVersionCode,
             versionName: proposal.inspection.versionName,
             libVersion: proposal.inspection.libVersion,
             language: proposal.expected?.language ??

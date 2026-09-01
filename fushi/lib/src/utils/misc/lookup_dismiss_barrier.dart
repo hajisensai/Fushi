@@ -1,6 +1,8 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/shortcuts/input_binding.dart'
+    show domMouseButtonFromPointerButtons;
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart'
     show swipeDismissThreshold;
 
@@ -47,6 +49,7 @@ class LookupDismissBarrier extends StatefulWidget {
     required this.sensitivity,
     this.onPointerHover,
     this.onPointerSignal,
+    this.onNonPrimaryButtonDown,
     super.key,
   });
 
@@ -72,6 +75,25 @@ class LookupDismissBarrier extends StatefulWidget {
   /// 滚轮等指针信号（桌面：滚轮穿透到正文/缩放）。
   final void Function(PointerSignalEvent event)? onPointerSignal;
 
+  /// BUG-1995：指针落在 barrier 上（＝**所有弹窗矩形之外**的真空白）按下**非主键**
+  /// （中键/右键/侧键）时的落点。参数是 [PointerDownEvent.buttons] 位掩码原样。
+  ///
+  /// 为什么这条通道必须住在 barrier 里：barrier 是根 Overlay 里的 `Positioned.fill`，
+  /// 叶子 `ColoredBox` 的命中行为是 **opaque**（见上文「实测澄清」），所以浮层可见期间
+  /// **宿主页面根的 [Listener] 一个指针事件都收不到**（守卫
+  /// `test/shortcuts/video_pointer_channel_reachability_test.dart`）。指针落在弹窗
+  /// **矩形之内**的那半边由弹窗表面自己的桥承担（`dictionaryPopupPointerToken` /
+  /// JS `mousedown` 回传）；**矩形之外**这半边此前没有任何鼠标通道 —— 症状就是
+  /// 「侧键压在浮窗上能关，移开一点就关不掉」。
+  ///
+  /// 宿主应当用与弹窗表面**同一个** `dictionaryPopupPointerToken` 折 token、同一个
+  /// `resolveDictionaryPopupInputToken` 解析，两个表面才不会各判各的。
+  ///
+  /// 不接（null）＝非主键在 barrier 上无任何效果，与本参数出现之前逐字一致。
+  /// 主键与触摸永远不进这里（[domMouseButtonFromPointerButtons] 对它们返回 null），
+  /// 故点击关窗 / 横拖关一层的既有语义零变化。
+  final void Function(int buttons)? onNonPrimaryButtonDown;
+
   @override
   State<LookupDismissBarrier> createState() => _LookupDismissBarrierState();
 }
@@ -87,6 +109,13 @@ class _LookupDismissBarrierState extends State<LookupDismissBarrier> {
   bool get _swipeActive => widget.swipeEnabled;
 
   void _onPointerDown(PointerDownEvent event) {
+    // BUG-1995：非主键先交给宿主按绑定分发。**纯附加**——不 return、不改下面任何一
+    // 行滑关状态机，所以没接 [LookupDismissBarrier.onNonPrimaryButtonDown] 的表面
+    // 行为逐字不变。主键/触摸在此恒为 null，进不来。
+    if (widget.onNonPrimaryButtonDown != null &&
+        domMouseButtonFromPointerButtons(event.buttons) != null) {
+      widget.onNonPrimaryButtonDown!(event.buttons);
+    }
     if (!_swipeActive) return;
     // 不按设备类型过滤：TODO-716 的整个目的就是「桌面对齐手机」——桌面开了滑关
     // 开关后，**鼠标**在 barrier 上横拖同样要能关一层。这与弹窗**本体**的

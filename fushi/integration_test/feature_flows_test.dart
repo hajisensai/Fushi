@@ -11,8 +11,8 @@ import 'package:fushi/src/pages/implementations/anki_settings_page.dart'
     show AnkiSettingsBody;
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomePage, HomeTab;
-import 'package:fushi/src/pages/implementations/reading_statistics_page.dart'
-    show ReadingStatisticsPage;
+import 'package:fushi/src/pages/implementations/statistics_center_page.dart'
+    show StatisticsCenterPage;
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/utils.dart' show t;
@@ -150,57 +150,30 @@ void main() {
       debugPrint('[M3] ✓ F5: Profile management accessible');
       await _goBack(tester);
 
-      // === F8: Reading Statistics ===
-      debugPrint('[M3] === F8: Reading Statistics ===');
+      // === F8: Statistics Center (entry lives on the home dashboard) ===
+      debugPrint('[M3] === F8: Statistics Center ===');
       // rail 的焦点可达性已在 F2/F5 从干净遍历起点断言过。settings schema 页有
       // 上百个 focusable，从其深处 Tab wrap 回 rail 超出任何合理步数预算——后续
       // 区块的 tab 切换改走确定性测试钩子（与 showBooksTab helper 同一
       // HomePage.debugSelectTab 生产钩子，非坐标点击）。
-      await _selectTab(tester, HomeTab.books);
-
-      // Look for statistics access point (usually in the top bar)
-      final statsIcon = find.byIcon(Icons.bar_chart);
-      final statsIconOutlined = find.byIcon(Icons.bar_chart_outlined);
-      final statsIcon2 = find.byIcon(Icons.insert_chart);
-      final statsIcon3 = find.byIcon(Icons.analytics);
-
-      Finder? statsButton;
-      if (statsIconOutlined.evaluate().isNotEmpty) {
-        statsButton = statsIconOutlined;
-      } else if (statsIcon.evaluate().isNotEmpty) {
-        statsButton = statsIcon;
-      } else if (statsIcon2.evaluate().isNotEmpty) {
-        statsButton = statsIcon2;
-      } else if (statsIcon3.evaluate().isNotEmpty) {
-        statsButton = statsIcon3;
-      }
-
-      if (statsButton != null) {
-        expect(await driver.requestFocusInside(statsButton.first), isTrue,
-            reason: 'Reading Statistics icon must own a focus node');
-        await driver.activate();
-      } else {
-        // 手机窄屏时 FushiPageHeader 会把全部 FushiIconButton 收进 ⋯，
-        // 统计入口仍存在于菜单，不应把“图标没直接渲染”误判成入口缺失。
-        final Finder overflow = find.byIcon(Icons.more_vert);
-        expect(overflow, findsWidgets,
-            reason: 'Cramped Books header must expose its overflow menu');
-        expect(await driver.requestFocusInside(overflow.first), isTrue,
-            reason: 'Books overflow button must own a focus node');
-        await driver.activate();
-        await tester.pump(const Duration(milliseconds: 250));
-        final Finder statisticsMenuItem = find.text(t.reading_statistics);
-        expect(statisticsMenuItem, findsOneWidget,
-            reason: 'Books overflow must contain Reading Statistics');
-        expect(await driver.focusWidget(statisticsMenuItem), isTrue,
-            reason: 'Reading Statistics overflow item must be focus reachable');
-        await driver.activate();
-      }
+      // 2026-09-01 入口收敛：各媒体页头的「xx统计」已撤，唯一入口在首页
+      // dashboard 热力图卡右上（bar_chart 图标）。
+      await _selectTab(tester, HomeTab.home);
       await tester.pump(const Duration(milliseconds: 500));
-      expect(find.byType(ReadingStatisticsPage), findsOneWidget,
-          reason: 'Reading Statistics action must open the page');
-      debugPrint('[M3] ✓ F8: Reading statistics page opened');
-      await takeScreenshot(binding, 'm3_reading_statistics');
+
+      final Finder statsButton = find.byIcon(Icons.bar_chart_outlined);
+      expect(statsButton, findsWidgets,
+          reason:
+              'Home dashboard heatmap card must expose the statistics entry');
+      expect(await driver.requestFocusInside(statsButton.first), isTrue,
+          reason: 'Statistics center icon must own a focus node');
+      await driver.activate();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byType(StatisticsCenterPage), findsOneWidget,
+          reason: 'Dashboard statistics entry must open the statistics center');
+      // 总览 tab 是默认落点；阅读/观看/游戏内容按需切 tab，本流只验入口链路。
+      debugPrint('[M3] ✓ F8: Statistics center opened from dashboard');
+      await takeScreenshot(binding, 'm3_statistics_center');
       await _goBack(tester);
 
       // === F10: Sync Settings ===
