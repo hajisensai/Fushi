@@ -457,8 +457,17 @@ class ThemeNotifier extends ChangeNotifier {
         accent = null;
       }
     }
+    // 值没变就不广播（BUG-2010）。本方法挂在 `AppLifecycleState.resumed` 上，而
+    // 桌面端每次窗口激活都会走一遍 resumed，于是「无条件 notifyListeners」＝
+    // 「每把 Fushi 拉到前台一次就让整棵树重建一次」。重建本身无害，但它会引爆
+    // 任何把 FutureBuilder 的 future 写在 build 里的页面——那种页面会退回
+    // waiting、内容整块消失一帧（用户报的「一拉到前台就闪」）。系统调色板本就
+    // 极少变，这里只在真变了时才通知；订阅方少一次无谓重建，闪的放大器就没了。
+    final bool unchanged =
+        palette == _systemPalette && accent == _systemAccentColor;
     _systemPalette = palette;
     _systemAccentColor = accent;
+    if (unchanged) return;
     if (appThemeKey == 'system-theme') notifyListeners();
   }
 

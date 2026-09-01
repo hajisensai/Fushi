@@ -27,7 +27,7 @@ class VideoWorkRef {
 
 /// Unified work-level route. Collection works retain the mature episode and
 /// management surface; standalone works use the same canonical v77 data.
-class VideoWorkDetailPage extends StatelessWidget {
+class VideoWorkDetailPage extends StatefulWidget {
   const VideoWorkDetailPage({
     required this.database,
     required this.repository,
@@ -50,11 +50,48 @@ class VideoWorkDetailPage extends StatelessWidget {
   final Future<void> Function(List<VideoBookRow> members)? onDeleteMembersMedia;
 
   @override
+  State<VideoWorkDetailPage> createState() => _VideoWorkDetailPageState();
+}
+
+class _VideoWorkDetailPageState extends State<VideoWorkDetailPage> {
+  /// 合集行查询。**必须持久化在 State 里，不能写在 build 里现取**（BUG-2010）：
+  /// 写在 build 里 = 每次重建都换一个新 Future，FutureBuilder 认出 future 变了就
+  /// 丢弃旧 snapshot 退回 waiting，整页落回加载指示器；更糟的是下面的
+  /// [MediaCollectionDetailPage] 会被当成新子树重建，它自己的 `_loading` 一并复
+  /// 位 → 剧集列表整份重查。而重建源不受本页控制：app 一拉到前台就走
+  /// `AppLifecycleState.resumed` → 重取系统调色板 → 通知主题 → 全树重建，于是
+  /// 「切回 Fushi 就闪一下」。future 的身份必须只由 (collectionId, database) 决定。
+  ///
+  /// 独立作品（[VideoWorkRef.book]）没有合集行要查，此处恒 null。
+  Future<MediaCollectionRow?>? _collectionFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _collectionFuture = _loadCollection();
+  }
+
+  @override
+  void didUpdateWidget(covariant VideoWorkDetailPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.workRef.collectionId != widget.workRef.collectionId ||
+        oldWidget.database != widget.database) {
+      _collectionFuture = _loadCollection();
+    }
+  }
+
+  Future<MediaCollectionRow?>? _loadCollection() {
+    final int? collectionId = widget.workRef.collectionId;
+    if (collectionId == null) return null;
+    return widget.database.getMediaCollectionById(collectionId);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final int? collectionId = workRef.collectionId;
+    final int? collectionId = widget.workRef.collectionId;
     if (collectionId != null) {
       return FutureBuilder<MediaCollectionRow?>(
-        future: database.getMediaCollectionById(collectionId),
+        future: _collectionFuture,
         builder: (BuildContext context,
             AsyncSnapshot<MediaCollectionRow?> snapshot) {
           final MediaCollectionRow? collection = snapshot.data;
@@ -72,16 +109,16 @@ class VideoWorkDetailPage extends StatelessWidget {
             );
           }
           return MediaCollectionDetailPage(
-            database: database,
+            database: widget.database,
             collection: collection,
             // 成员解析走共享的 [loadCollectionEpisodeSlots]：合集清单是跨端 union，
             // 「本机没有这一行」不等于「这一集不存在」（BUG-1704）。
             loadEpisodes: () => loadCollectionEpisodeSlots(
-              repository: repository,
+              repository: widget.repository,
               collectionId: collection.id,
-              loadRemoteVideos: remote?.loadRemoteVideos,
+              loadRemoteVideos: widget.remote?.loadRemoteVideos,
             ),
-            remote: remote,
+            remote: widget.remote,
             onOpenEpisode: (VideoBookRow episode) {
               Navigator.push<void>(
                 context,
@@ -89,23 +126,23 @@ class VideoWorkDetailPage extends StatelessWidget {
                   context: context,
                   builder: (_) => VideoFushiPage.neutralized(
                     bookUid: episode.bookUid,
-                    repo: repository,
+                    repo: widget.repository,
                     playlistCollectionId: collection.id,
                   ),
                 ),
               );
             },
-            onChanged: onChanged,
-            onDeleteMembersMedia: onDeleteMembersMedia,
+            onChanged: widget.onChanged,
+            onDeleteMembersMedia: widget.onDeleteMembersMedia,
           );
         },
       );
     }
     return _StandaloneVideoWorkDetail(
-      database: database,
-      repository: repository,
-      bookUid: workRef.bookUid!,
-      onChanged: onChanged,
+      database: widget.database,
+      repository: widget.repository,
+      bookUid: widget.workRef.bookUid!,
+      onChanged: widget.onChanged,
     );
   }
 }
