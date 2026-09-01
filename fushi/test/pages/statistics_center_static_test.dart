@@ -42,13 +42,12 @@ void main() {
     }
   });
 
-  test('书架统计入口落统计中心的阅读 tab', () {
+  test('统计入口唯一落点在首页 dashboard（书架不再直连）', () {
+    // 用户定案 2026-09-01：入口收敛。首页入口的正向断言在
+    // home_video_statistics_entry_static_test，这里只钉书架侧不回潮。
     final String shelf = File(
       'lib/src/pages/implementations/reader_fushi_history_page.dart',
     ).readAsStringSync();
-    expect(
-      shelf,
-      contains('StatisticsCenterPage(initialTab: StatsCenterTab.reading)'),
-    );
+    expect(shelf, isNot(contains('StatisticsCenterPage(')));
   });
 }

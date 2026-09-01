@@ -748,11 +748,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         icon: Icons.collections_bookmark_outlined,
         onTap: _openCollections,
       ),
-      _headerAction(
-        tooltip: t.reading_statistics,
-        icon: Icons.bar_chart_outlined,
-        onTap: _openReadingStatistics,
-      ),
+      // 统计入口已收敛到首页 dashboard（用户定案 2026-09-01：各媒体页头不再
+      // 各挂一个「xx统计」，统一从首页进统计中心）。
     ];
     final Widget? navigation = _pageWidget.navigation;
     if (navigation != null) {
@@ -800,19 +797,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       adaptivePageRoute(
         context: context,
         builder: (_) => const CollectionsPage(),
-      ),
-    );
-  }
-
-  void _openReadingStatistics() {
-    // 阶段 2：统一进统计中心的阅读 tab（独立 ReadingStatisticsPage 路由保留，
-    // 只是入口不再直连）。
-    Navigator.push(
-      context,
-      adaptivePageRoute(
-        context: context,
-        builder: (_) =>
-            const StatisticsCenterPage(initialTab: StatsCenterTab.reading),
       ),
     );
   }

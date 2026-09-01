@@ -35,6 +35,7 @@ import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show openLocalVideoBook;
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
 import 'package:fushi/src/stats/stat_facts.dart';
@@ -1789,15 +1790,30 @@ class _HomeDashboardPageState
     final Widget card = _sectionCard(
       tokens,
       title: t.reading_activity,
-      header: _filterChips<int>(
-        tokens: tokens,
-        selected: _heatmapFilter,
-        onSelected: (int v) => setState(() => _heatmapFilter = v),
-        options: <(int, String)>[
-          (0, t.home_filter_all),
-          (1, t.home_filter_read),
-          (2, t.home_filter_watch),
-          (3, t.home_filter_game),
+      // 统计入口的唯一落点（用户定案 2026-09-01：各媒体页头的「xx统计」全部
+      // 撤掉，统一从首页热力图卡右上进统计中心总览）。
+      header: Row(
+        children: <Widget>[
+          Expanded(
+            child: _filterChips<int>(
+              tokens: tokens,
+              selected: _heatmapFilter,
+              onSelected: (int v) => setState(() => _heatmapFilter = v),
+              options: <(int, String)>[
+                (0, t.home_filter_all),
+                (1, t.home_filter_read),
+                (2, t.home_filter_watch),
+                (3, t.home_filter_game),
+              ],
+            ),
+          ),
+          SizedBox(width: tokens.spacing.gap),
+          FushiIconButton(
+            tooltip: t.stat_center_title,
+            label: t.stat_center_title,
+            icon: Icons.bar_chart_outlined,
+            onTap: _openStatisticsCenter,
+          ),
         ],
       ),
       child: Column(
@@ -1980,6 +1996,17 @@ class _HomeDashboardPageState
       total += studyGoalCharsForDay(_dailyRows, key);
     }
     return total ~/ days;
+  }
+
+  /// 统计中心入口（唯一入口：各媒体页头的「xx统计」已撤，统一从首页进总览）。
+  void _openStatisticsCenter() {
+    Navigator.push(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const StatisticsCenterPage(),
+      ),
+    );
   }
 
   /// 点热力图某日 → 时段明细 sheet（阶段 1 统一组件 [showStatPeriodDetailSheet]：
