@@ -518,8 +518,19 @@ abstract final class MangaArchiveImporter {
     for (int index = 0; index < candidate.payload.images.length; index++) {
       final MokuroImage page = candidate.payload.images[index];
       final ArchiveFile entry = candidate.pageEntries[index];
-      final List<String> segments = MangaStorage.sanitizeRelSegments(page.url);
-      final File output = File(p.joinAll(<String>[staging.path, ...segments]));
+      // 铺出来的目录随后原样交给 importFromMokuroPath 解析，所以落盘名必须与那一侧
+      // 的读取口径（MangaImporter.mokuroPageFile，纯按原始 img_path 拆段）逐字节
+      // 同构。这里曾用 MangaStorage.sanitizeRelSegments —— 它是**书目录内**的
+      // destRel 口径：会剥掉前导 `images/` 段、还会用 safeWindowsFileName 改写字符，
+      // 于是 `img_path: images/001.png` 被写成 `<staging>/001.png`，读取侧却去找
+      // `<staging>/images/001.png`，整卷导入必报 Missing manga page image。
+      // 防穿越不靠那次 sanitize：`..` 在这里显式拒绝。
+      if (_hasTraversalSegment(page.url)) {
+        throw MangaImportException(
+          'Unsafe manga image path (traversal): ${page.url}',
+        );
+      }
+      final File output = MangaImporter.mokuroPageFile(staging.path, page.url);
       await output.parent.create(recursive: true);
       final Object? content = entry.content;
       if (content is! List<int>) {
@@ -530,6 +541,12 @@ abstract final class MangaArchiveImporter {
       await output.writeAsBytes(content, flush: true);
     }
   }
+
+  /// `img_path` 是否含 `..` 段（与 [MangaStorage.sanitizeRelSegments] 同判据，
+  /// 拆段规则与 [MangaImporter.mokuroPageFile] 保持一致）。
+  static bool _hasTraversalSegment(String rawUrl) => rawUrl
+      .split(RegExp(r'[\\/]+'))
+      .any((String segment) => segment.trim() == '..');
 
   static String _normalizeArchiveName(String raw) {
     String normalized = normalizeMangaUrl(raw).replaceAll(RegExp(r'^\./+'), '');
