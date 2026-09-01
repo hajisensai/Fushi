@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart'
     show jimakuLanguageLabel;
 import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
+import 'package:fushi/src/media/video/episode_span_format.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
@@ -79,12 +80,11 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
     final Set<int> episodes = group.episodes;
     final List<String> parts = <String>[];
     if (episodes.isNotEmpty) {
-      final int first = episodes.reduce((int a, int b) => a < b ? a : b);
-      final int last = episodes.reduce((int a, int b) => a > b ? a : b);
-      final String range =
-          episodes.length == 1 ? 'EP$first' : 'EP$first–EP$last';
+      // BUG-1986：与视频资源卡共用同一份段压缩。这里原本也是 min/max，会把
+      // `{1,2,4,16,17}` 显示成 `5 集 (EP1–EP17)`，暗示 EP1..EP17 全都有。
       parts.add(
-        '${t.subtitle_version_episode_count(n: episodes.length)} ($range)',
+        '${t.subtitle_version_episode_count(n: episodes.length)} '
+        '(${formatEpisodeSpans(episodes)})',
       );
     }
     if (group.unnumberedCount > 0) {

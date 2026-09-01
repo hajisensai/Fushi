@@ -477,8 +477,8 @@ class _HomeDashboardPageState
   PreferencesRepository? _prefsRepoForRemoteGate;
 
   /// 每日字数合计（dateKey → 字数，阅读 + 观看 + 游戏），热力图「全部」档 +
-  /// 日明细 sheet 头部合计。**不是**今日目标的分子——目标只算阅读域，见
-  /// [readingGoalCharsForDay]（v92：与阅读统计页同一函数、同一口径）。
+  /// 日明细 sheet 头部合计。今日目标的分子不读这张表——它直接对事实行求和，见
+  /// [studyGoalCharsForDay]（BUG-1993：与阅读统计页同一函数、同一学习域口径）。
   Map<String, int> _readingCharsByDay = const <String, int>{};
 
   /// 每日学习时长合计（dateKey → 毫秒，阅读 + 观看 + 游戏），热力图气泡的第二维度
@@ -498,6 +498,12 @@ class _HomeDashboardPageState
   List<StatFact> _readingRows = const <StatFact>[];
   List<StatFact> _watchRows = const <StatFact>[];
   List<StatFact> _gameRows = const <StatFact>[];
+
+  /// 完整日面（阅读 + 观看 + 游戏），今日目标 / 近 7 日日均的分子数据源
+  /// （BUG-1993：目标口径 = 学习域，与热力图「全部」档同覆盖面；热力图的来源
+  /// 筛选档不影响它）。派生 getter，不另存状态。
+  Iterable<StatFact> get _dailyRows =>
+      _readingRows.followedBy(_watchRows).followedBy(_gameRows);
 
   /// 合集归属映射（统计页/书架同源，显示名规则「非合集上下文拼合集名」用）：
   /// - [_collectionNamesById]：collectionId → 合集名。
@@ -1214,10 +1220,11 @@ class _HomeDashboardPageState
 
   /// 横滑卡片行本体（「继续」与「最近添加」共用）：定高横向 ListView。
   ///
-  /// [videoLandscape]：续播区传 true——视频卡 16:9 横槽（用户拍板「续播行只对
-  /// 视频改横版，书/游戏维持竖版」，Jellyfin Continue Watching 口径）；「最近
-  /// 添加」传 false 维持全竖版现状。行高不变：两种卡封面同高、宽度不同，底边
-  /// 天然对齐（video_home_layout 同款几何）。
+  /// [videoLandscape]：传 true——视频卡朝向随封面自适应（探测到横图走 16:9 横槽，
+  /// 只有竖版海报才留竖槽；书/游戏恒竖版，Jellyfin Continue Watching 口径）。
+  /// 「继续」与「最近添加」两行同口径（BUG-2005：后者原先恒竖版，16:9 抽帧被塞
+  /// 进 94×132 竖槽只能模糊垫底出白条）。行高不变：两种卡封面同高、宽度不同，
+  /// 底边天然对齐（video_home_layout 同款几何）。
   Widget _continueCardsRow(
     FushiDesignTokens tokens,
     AppModel appModel,
@@ -1323,7 +1330,7 @@ class _HomeDashboardPageState
     return _sectionCard(
       tokens,
       title: t.home_recently_added,
-      child: _continueCardsRow(tokens, appModel, top),
+      child: _continueCardsRow(tokens, appModel, top, videoLandscape: true),
     );
   }
 
@@ -1437,11 +1444,12 @@ class _HomeDashboardPageState
     _ContinueEntry entry, {
     bool videoLandscape = false,
   }) {
-    // 续播区视频卡：单行允许横竖混排（用户拍板「继续观看只有一行，混排不破
-    // 排版；书架里不可以」）——朝向随**选图链选中的那张图**探测：titleCard /
+    // 首页横滑行的视频卡：单行允许横竖混排（用户拍板「继续观看只有一行，混排
+    // 不破排版；书架里不可以」）——朝向随**选图链选中的那张图**探测：titleCard /
     // backdrop（天然 16:9）→ 横卡；只有竖版海报 → 自然竖卡，不强制模糊垫底成
-    // 16:9。书 / 游戏 /「最近添加」行恒竖版（BUG-1299 口径不变）。探测与卡内
-    // 渲染共用同一 provider 键，零额外解码（CoverOrientationBuilder 契约）。
+    // 16:9。「继续」与「最近添加」两行同口径（BUG-2005）；书 / 游戏恒竖版
+    // （BUG-1299 口径不变）。探测与卡内渲染共用同一 provider 键，零额外解码
+    // （CoverOrientationBuilder 契约）。
     if (videoLandscape && entry.isVideo) {
       final ImageProvider? probe =
           _continueArtworkProvider(entry) ?? _continueVideoCoverProvider(entry);
@@ -1873,11 +1881,11 @@ class _HomeDashboardPageState
     }
   }
 
-  /// 「今日目标」行：阅读域（普通书 + 漫画）今日字数 vs 每日字数目标（与阅读统计页
-  /// 同一持久化 [AppModel.readingGoalDailyChars]、同一分子函数
-  /// [readingGoalCharsForDay]，不随热力图筛选变；v92 前首页把字幕字 / hook 字也
-  /// 加进分子，与统计页永远对不上）。目标为 0 → 只留设定入口按钮；否则进度条 +
-  /// 「X / Y 字」，点击行弹编辑对话框。
+  /// 「今日目标」行：学习域（书 + 视频字幕 + 游戏 hook 文本）今日字数 vs 每日
+  /// 字数目标（与阅读统计页目标卡同一持久化 [AppModel.readingGoalDailyChars]、
+  /// 同一分子函数 [studyGoalCharsForDay]，不随热力图筛选变）。v92 曾把分子收窄
+  /// 成只算阅读域，纯视频/游戏日与上方热力图「全部」档对不上（BUG-1993）。
+  /// 目标为 0 → 只留设定入口按钮；否则进度条 + 「X / Y 字」，点击行弹编辑对话框。
   Widget _buildDailyGoalRow(FushiDesignTokens tokens) {
     final int goal = ref.read(appProvider).readingGoalDailyChars;
     if (goal <= 0) {
@@ -1912,7 +1920,7 @@ class _HomeDashboardPageState
       );
     }
     final String todayKey = StatWindow(DateTime.now()).todayKey;
-    final int todayChars = readingGoalCharsForDay(_readingRows, todayKey);
+    final int todayChars = studyGoalCharsForDay(_dailyRows, todayKey);
     final double fraction = (todayChars / goal).clamp(0.0, 1.0);
     return InkWell(
       onTap: () => unawaited(_editDailyGoal()),
@@ -1962,15 +1970,15 @@ class _HomeDashboardPageState
     if (mounted) setState(() {});
   }
 
-  /// 近 [days] 天（含今天）的日均字数，**与目标同口径**（阅读域
-  /// [readingGoalCharsForDay]）：给「我该填多少」一个真实参考值（BUG-1075）。
+  /// 近 [days] 天（含今天）的日均字数，**与目标同口径**（学习域
+  /// [studyGoalCharsForDay]）：给「我该填多少」一个真实参考值（BUG-1075）。
   /// 无数据日按 0 计入分母（真实反映日均，不是活跃日均）。
   int _recentDailyAverageChars({int days = 7}) {
     if (days <= 0) return 0;
     final StatWindow w = StatWindow(DateTime.now());
     int total = 0;
     for (final String key in w.lastDayKeys(days)) {
-      total += readingGoalCharsForDay(_readingRows, key);
+      total += studyGoalCharsForDay(_dailyRows, key);
     }
     return total ~/ days;
   }

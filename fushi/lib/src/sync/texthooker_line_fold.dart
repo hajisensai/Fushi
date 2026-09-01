@@ -100,6 +100,14 @@ bool isProgressiveTextUpdate(String previous, String next) {
 /// Gal 引擎常先吐一条连续字符串，再按实际文本框重绘成带换行的同一句。它不是重复
 /// 台词：下游应保留同一个 lineId，并以**后到的原文**作为当前排版真值。完全相同的
 /// 两行仍返回 false，继续保留既有的“允许真实重复台词”语义。
+///
+/// **为什么这里没有 [kMinFoldableLength] 下限**（与 [isProgressiveTextUpdate]
+/// 故意不对称，不是漏了）：那个下限是给**包含**判据设的 —— 前缀/后缀命中在短串
+/// 上假阳性率极高，任何长句都可能刚好以「はい」开头或结尾。本函数是**等值**判据：
+/// 去掉空白后两行逐字符完全相同，那它们在内容上本来就是同一句，串多短都不改变这
+/// 个结论，没有可被短串放大的假阳性面。反过来，硬加一个下限只会让「はい」→
+/// 「は\nい」这类真排版刷新漏折，在工作台上留一条重复短行 —— 正是本 BUG 要消的
+/// 症状。负向与短行覆盖见 `test/sync/texthooker_progressive_fold_test.dart`。
 bool isWhitespaceOnlyLayoutRefresh(String previous, String next) {
   if (previous == next) return false;
   final String a = normalizeForFold(previous);

@@ -420,6 +420,73 @@ void main() {
       }, reason: '官网 R2 是候选首项，近似速度下应由它承担实际分段下载');
     });
 
+    // 用户在设置里显式选了下载来源时，竞速**必须**让位：探针只比「谁首字节快」，
+    // 让它重排就会把所选源顶掉，只剩 500ms 的 tie-break 宽限，设置页承诺的
+    // 「优先尝试所选来源」根本不成立。下面一正一反两条钉住这个分流。
+    test('未钉源（自动）：探针竞速把更快的镜像提首位，实际分段走它', () async {
+      final List<int> payload = _largePayload();
+      final UpdateAsset asset = _asset(payload);
+      final String fastMirror = 'https://fast.example/${asset.url}';
+      final List<String> segmentHosts = <String>[];
+
+      final File file = await downloadUpdateAsset(
+        asset: asset,
+        version: '1.2.0',
+        updatesDir: updatesDir,
+        candidateUrls: <String>[asset.url, fastMirror],
+        connectionCount: 4,
+        minSegmentBytes: _minSeg,
+        openUrl: (Uri uri, Map<String, String> headers) async {
+          final String? range = headers[HttpHeaders.rangeHeader];
+          final bool isProbe = range == 'bytes=0-0';
+          // 直连探针慢到超出 500ms tie-break 窗口 → 镜像干净胜出。
+          if (uri.host == 'github.com' && isProbe) {
+            await Future<void>.delayed(const Duration(milliseconds: 700));
+          }
+          if (!isProbe) segmentHosts.add(uri.host);
+          return _rangeResponse(payload, range);
+        },
+      );
+
+      expect(await file.readAsBytes(), payload);
+      expect(segmentHosts.toSet(), <String>{'fast.example'},
+          reason: '自动模式下竞速仍然生效：明显更快的镜像承担分段');
+    });
+
+    test('钉住所选源：不竞速、不探其它候选，分段就走所选源', () async {
+      final List<int> payload = _largePayload();
+      final UpdateAsset asset = _asset(payload);
+      final String fastMirror = 'https://fast.example/${asset.url}';
+      final List<String> segmentHosts = <String>[];
+      final List<String> allHosts = <String>[];
+
+      final File file = await downloadUpdateAsset(
+        asset: asset,
+        version: '1.2.0',
+        updatesDir: updatesDir,
+        candidateUrls: <String>[asset.url, fastMirror],
+        connectionCount: 4,
+        minSegmentBytes: _minSeg,
+        pinnedCandidateUrl: asset.url,
+        openUrl: (Uri uri, Map<String, String> headers) async {
+          final String? range = headers[HttpHeaders.rangeHeader];
+          final bool isProbe = range == 'bytes=0-0';
+          allHosts.add(uri.host);
+          if (uri.host == 'github.com' && isProbe) {
+            await Future<void>.delayed(const Duration(milliseconds: 700));
+          }
+          if (!isProbe) segmentHosts.add(uri.host);
+          return _rangeResponse(payload, range);
+        },
+      );
+
+      expect(await file.readAsBytes(), payload);
+      expect(segmentHosts.toSet(), <String>{'github.com'},
+          reason: '显式选择优先于测速：所选源再慢也先用它');
+      expect(allHosts, isNot(contains('fast.example')),
+          reason: '竞速被跳过 → 其它候选连探针都不该发');
+    });
+
     test('竞速全失败（坏镜像 + 直连失败）→ failures 锚定直连（TODO-666 不破坏）', () async {
       final List<int> payload = _largePayload();
       final UpdateAsset asset = _asset(payload);
