@@ -183,6 +183,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 同一实例下轮即刮）。
   'video/Auto-fetch series info':
       'test/media/video/scraper/auto_scrape_service_test.dart',
+  // 库内自动补刮总闸。写 prefsRepo（changed=true），生效点在
+  // VideoLibraryScrapeSweep.sweepOnce 的进场门（关=不发起任何补刮批次），不是
+  // reader CSS / 主题树，无适用探针；由专项测试咬住（总闸关=不补刮但队列仍可见、
+  // 总闸开=只补无规范身份的作品）。
+  'video/Auto-fill missing series info':
+      'test/media/video/metadata/video_library_scrape_sweep_test.dart',
   // BUG-1698：刮削完成后给仍缺字幕的视频补一条在线字幕。写 prefsRepo
   // （changed=true），生效点在 AppModel._backfillSubtitlesForScrapedWork 的进场门
   // （关=刮削回调直接 return，零字幕网络请求），不是 reader CSS / 主题树，无适用

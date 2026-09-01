@@ -16,6 +16,14 @@ import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
 
+/// AniDB 明确下发的封禁（HTTP 200 + `<error>banned</error>`）。
+///
+/// 与普通网络故障分开的理由：普通故障重试是对的，封禁期间的每一次请求都在延长
+/// 封禁。调用方靠类型分流，而不是靠解析 message。
+class AniDbBannedException extends VideoMetadataNetworkException {
+  const AniDbBannedException(super.message);
+}
+
 typedef AniDbProviderNow = DateTime Function();
 typedef AniDbProviderSleep = Future<void> Function(Duration duration);
 
@@ -65,6 +73,9 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
   };
   static const int _maxAnimeXmlLength = 24 * 1024 * 1024;
   static const Duration _minimumRequestInterval = Duration(seconds: 2);
+
+  /// AniDB 文档里的封禁时长。到点自动解闩，长驻的桌面进程不必重启才能恢复。
+  static const Duration _banCooldown = Duration(hours: 24);
   static const Duration _animeCacheTtl = Duration(hours: 24);
   static const String catalogOnlyPayloadKey = 'anidbCatalogOnly';
   static final AniDbTitleCatalog _sharedTitleCatalog = AniDbTitleCatalog();
@@ -103,8 +114,19 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
         _clientName.isNotEmpty &&
         version != null &&
         version > 0 &&
-        !_reservedShokoClientNames.contains(_clientName.toLowerCase());
+        !_reservedShokoClientNames.contains(_clientName.toLowerCase()) &&
+        !isBanned;
   }
+
+  /// AniDB 是否正处在它自己下发的封禁窗口内。
+  ///
+  /// 闩住的是 endpoint（与限流队列共用同一个 [_AniDbRequestGate]），不是本实例：
+  /// 配置指纹一变协调器就换一个 provider 实例，实例级的闩一换就没了，而封禁是按
+  /// 客户端 IP 记在服务端的。批量调用方据此整批停手，而不是逐条撞墙。
+  bool get isBanned => _requestGate.isBannedAt(_now());
+
+  /// 距封禁窗口结束还有多久；未封禁为 null。
+  Duration? get banRemaining => _requestGate.banRemainingAt(_now());
 
   @override
   Future<List<VideoMetadataWork>> search(
@@ -188,6 +210,12 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
     final int animeId = _validateLookup(lookup);
     if (lookup.mediaKind == VideoMetadataMediaKind.movie || seasonNumber != 1) {
       return const <VideoMetadataEpisode>[];
+    }
+    if (isBanned) {
+      throw const AniDbBannedException(
+        'AniDB has temporarily banned this client; episode hydration is '
+        'suspended until the ban expires',
+      );
     }
     if (!isHttpApiAvailable) {
       throw const VideoMetadataNetworkException(
@@ -300,7 +328,16 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
     final XmlElement root = document.rootElement;
     if (root.name.local == 'error') {
       final String message = root.innerText.trim();
-      if (message.toLowerCase().contains('not found')) return null;
+      final String normalized = message.toLowerCase();
+      if (normalized.contains('not found')) return null;
+      // 封禁是 HTTP 200 + `<error>banned</error>`，传输层看不出异常。不闩住它，批量刮削
+      // 会按 3s 一条把整个库打完，而每一条都在延长封禁。
+      if (normalized.contains('banned')) {
+        _requestGate.latchBan(_now().add(_banCooldown));
+        throw AniDbBannedException(
+          message.isEmpty ? 'AniDB has banned this client' : message,
+        );
+      }
       throw VideoMetadataNetworkException(
         message.isEmpty
             ? 'AniDB anime request returned an error'
@@ -832,6 +869,25 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
 class _AniDbRequestGate {
   Future<void> _queue = Future<void>.value();
   DateTime? _lastStartedAt;
+  DateTime? _bannedUntil;
+
+  void latchBan(DateTime until) {
+    final DateTime? current = _bannedUntil;
+    if (current == null || until.isAfter(current)) _bannedUntil = until;
+  }
+
+  bool isBannedAt(DateTime now) => banRemainingAt(now) != null;
+
+  Duration? banRemainingAt(DateTime now) {
+    final DateTime? until = _bannedUntil;
+    if (until == null) return null;
+    final Duration remaining = until.difference(now);
+    if (remaining <= Duration.zero) {
+      _bannedUntil = null;
+      return null;
+    }
+    return remaining;
+  }
 
   Future<T> run<T>(
     Future<T> Function() request, {

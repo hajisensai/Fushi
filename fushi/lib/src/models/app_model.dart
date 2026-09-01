@@ -3314,6 +3314,14 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoAutoScrape(bool value) =>
       prefsRepo.setVideoAutoScrape(value);
 
+  /// 库内自动补刮总闸（落 Drift preferences，默认开）。为什么它不能和
+  /// [videoAutoScrape] 合成一个键，见 PreferencesRepository 里的说明。
+  bool get videoLibraryAutoBackfillScrape =>
+      prefsRepo.videoLibraryAutoBackfillScrape;
+
+  Future<void> setVideoLibraryAutoBackfillScrape(bool value) =>
+      prefsRepo.setVideoLibraryAutoBackfillScrape(value);
+
   bool get videoDanmakuEnabled => prefsRepo.videoDanmakuEnabled;
 
   Future<void> setVideoDanmakuEnabled(bool value) =>

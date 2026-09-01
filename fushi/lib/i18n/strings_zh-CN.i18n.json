@@ -4097,5 +4097,7 @@
   "video_source_scrape_work_missing": "该作品已不在当前来源计划中（文件可能已改名、移动或删除）。请重新刮削此来源刷新待确认列表。",
   "video_source_scrape_pending_works": "待确认作品",
   "video_source_scrape_pending_works_hint": "这些条目还没有确认的作品身份。搜索并选中正确的作品即可完成刮削。",
-  "video_source_scrape_enabled_toggle": "启用此来源的刮削"
+  "video_source_scrape_enabled_toggle": "启用此来源的刮削",
+  "video_library_scrape_auto_backfill": "自动补齐缺失的作品资料",
+  "video_library_scrape_auto_backfill_hint": "进入视频库时，自动刮削仍未确认身份的条目。关闭后不再有任何后台元数据下载。"
 }

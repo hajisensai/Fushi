@@ -4097,5 +4097,7 @@
   "video_source_scrape_work_missing": "This work is no longer in the current source plan (its files may have been renamed, moved or deleted). Rescrape the source to refresh the pending list.",
   "video_source_scrape_pending_works": "Works awaiting identification",
   "video_source_scrape_pending_works_hint": "These entries have no confirmed identity yet. Search and pick the right work to scrape them.",
-  "video_source_scrape_enabled_toggle": "Enable scraping for this source"
+  "video_source_scrape_enabled_toggle": "Enable scraping for this source",
+  "video_library_scrape_auto_backfill": "Auto-fill missing series info",
+  "video_library_scrape_auto_backfill_hint": "Entering the video library scrapes entries that still have no confirmed identity. Turn off to stop all background metadata downloads."
 }
