@@ -20,6 +20,7 @@
 //     视频面 inactive **不**停（用户拍板：视频以播放态为准）；
 //  ⑦ `StudyClock.stop()` 结构性幂等：清引用在第一个 await 之前；
 //  ⑧ 首页每日目标分子与阅读统计页同函数（`studyGoalCharsForDay`，学习域口径）。
+//  ⑨ 三个统计页的异步加载 setState 都过 mounted 门（embedded tab 离屏即卸载）。
 
 import 'dart:io';
 
@@ -81,6 +82,8 @@ const List<String> kStatPages = <String>[
   'lib/src/pages/implementations/video_statistics_page.dart',
   'lib/src/pages/implementations/game_statistics_page.dart',
   'lib/src/pages/implementations/home_dashboard_page.dart',
+  'lib/src/pages/implementations/statistics_center_page.dart',
+  'lib/src/pages/implementations/stat_period_detail_sheet.dart',
   'lib/src/pages/implementations/video_stat_aggregates.dart',
   'lib/src/pages/implementations/game_stat_aggregates.dart',
   'lib/src/pages/implementations/stat_activity.dart',
@@ -91,13 +94,12 @@ const List<String> kStatPages = <String>[
 void main() {
   final Directory libDir = Directory('lib');
 
-  List<File> dartFiles() =>
-      libDir
-          .listSync(recursive: true)
-          .whereType<File>()
-          .where((File f) => f.path.endsWith('.dart'))
-          .toList()
-        ..sort((File a, File b) => a.path.compareTo(b.path));
+  List<File> dartFiles() => libDir
+      .listSync(recursive: true)
+      .whereType<File>()
+      .where((File f) => f.path.endsWith('.dart'))
+      .toList()
+    ..sort((File a, File b) => a.path.compareTo(b.path));
 
   String norm(String path) => p.split(path).join('/');
   String read(String path) => maskComments(File(path).readAsStringSync());
@@ -149,8 +151,7 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason:
-          '页面 / 仓库不得自己拼段：时长与字数必须经 StudyClock 进同一段同一 uid，'
+      reason: '页面 / 仓库不得自己拼段：时长与字数必须经 StudyClock 进同一段同一 uid，'
           '否则又是第二本账：\n${offenders.join('\n')}',
     );
     // fushi_audio 侧：StudyClock 是唯一持有 sink 默认值的地方。
@@ -176,8 +177,7 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason:
-          '首页与统计页数字必须同源（用户拍板）：只许经 loadStatFacts 的统一事实面，'
+      reason: '首页与统计页数字必须同源（用户拍板）：只许经 loadStatFacts 的统一事实面，'
           '不许各页各读各表：\n${offenders.join('\n')}',
     );
     for (final String path in <String>[
@@ -191,6 +191,28 @@ void main() {
         reason: '$path 必须经 loadStatFacts 取数',
       );
     }
+  });
+
+  test('④a kStatPages 清单自校验：用 StatWindow 的页面必须已登记', () {
+    // ④ 是本文件里唯一按**命名清单**扫描的守卫（①②③⑤都 listSync 全树枚举），
+    // 所以新增统计页漏登记时，目录枚举守卫整批和按功能域挑的定向测试**结构上都
+    // 挑不到它**——统计中心大改造新增的 statistics_center_page /
+    // stat_period_detail_sheet 就是这么漏进来的。修法不是「记得手加」，是让漏登记
+    // 本身变红：谁用了 StatWindow 谁就在做窗口统计，谁就必须受 ④ 管辖。
+    final List<String> unregistered = <String>[];
+    for (final File f in dartFiles()) {
+      final String path = norm(f.path);
+      // StatWindow 的定义方与它自己的测试语料不在管辖范围内。
+      if (path.startsWith('lib/src/stats/')) continue;
+      if (!containsIdentifier(f.readAsStringSync(), 'StatWindow')) continue;
+      if (!kStatPages.contains(path)) unregistered.add(path);
+    }
+    expect(
+      unregistered,
+      isEmpty,
+      reason: '这些文件用了 StatWindow 却没进 kStatPages，④ 的窗口阈值扫描'
+          '看不见它们：$unregistered',
+    );
   });
 
   test('④ 窗口阈值只在 StatWindow 定义（近 7 天恰 7 天，不再 8 天）', () {
@@ -209,8 +231,7 @@ void main() {
         expect(
           src.contains(shape),
           isFalse,
-          reason:
-              '$path 含 $shape：不得自己算窗口起点——此前四处手算 `now-7d` + '
+          reason: '$path 含 $shape：不得自己算窗口起点——此前四处手算 `now-7d` + '
               '`>=` 让「近 7 天」含 8 天、环比分母却 7 天；只许用 StatWindow',
         );
       }
@@ -236,8 +257,7 @@ void main() {
         expect(
           containsIdentifier(src, shape),
           isFalse,
-          reason:
-              '$path 含 $shape：会话累计器是 BUG-1052 / 1107「第二本账被重锚吃掉 / '
+          reason: '$path 含 $shape：会话累计器是 BUG-1052 / 1107「第二本账被重锚吃掉 / '
               '口径分叉」的根因，v92 起只有 StudyClock 持有累计',
         );
       }
@@ -328,8 +348,7 @@ void main() {
     expect(
       firstAwait,
       greaterThan(clearOpen),
-      reason:
-          '旧 VideoWatchTracker.stop 在 await 之后才清零累计器：dispose 与进程退出'
+      reason: '旧 VideoWatchTracker.stop 在 await 之后才清零累计器：dispose 与进程退出'
           '并发各写一条活动行（时长翻倍）。清引用必须在任何 await 之前',
     );
     expect(firstAwait, greaterThan(clearTimer));
@@ -351,9 +370,68 @@ void main() {
       expect(
         containsIdentifierCall(read(path), 'studyGoalCharsForDay'),
         isTrue,
-        reason:
-            '$path：目标分子必须走 studyGoalCharsForDay（学习域：书 + 字幕 + '
+        reason: '$path：目标分子必须走 studyGoalCharsForDay（学习域：书 + 字幕 + '
             '游戏 hook，BUG-1993），首页与统计页各自手搓求和迟早再对不上',
+      );
+    }
+    // 光钉函数名不够：v92 时域是写死在函数体里的 `f.isBook`，所以「同函数」自动
+    // 等价于「同口径」；BUG-1993 把域上移成调用方传的行集之后，两页传不同切片
+    // 照样能让守卫全绿。而 reading_statistics_page 本来就有两处调用（阅读域
+    // _bookFacts 供 CPH、学习域 _dailyFacts 供目标），文件级 contains 分辨不出
+    // 目标分子用的是哪一处——必须把**目标分子那一处的实参**一起钉死。
+    expect(
+      containsCodeLine(
+        read('lib/src/pages/implementations/home_dashboard_page.dart'),
+        'studyGoalCharsForDay(_dailyRows,',
+      ),
+      isTrue,
+      reason: '首页目标分子的实参必须是完整日面 _dailyRows（书 ∪ 视频 ∪ 游戏），'
+          '换成任何单域切片都会让 BUG-1993 原地复发',
+    );
+    expect(
+      containsCodeLine(
+        read('lib/src/pages/implementations/reading_statistics_page.dart'),
+        'studyGoalCharsForDay(_dailyFacts,',
+      ),
+      isTrue,
+      reason: '统计页目标分子的实参必须是完整日面 _dailyFacts，与首页同口径',
+    );
+  });
+
+  test('⑨ 三个统计页的异步加载 setState 都过 mounted 门（embedded tab 离屏即卸载）', () {
+    // 统计中心把三页塞进 TabBarView，没有 keepAlive——离屏即 unmount。
+    // 「点开 tab → loadStatFacts 还在查 → 切到另一个 tab」是一秒可复现的常规
+    // 操作，而三页的加载函数在首帧 postFrameCallback 与多次 await 之后各有一处
+    // setState。改造前它们是独立路由，要在几百毫秒的查询窗口里按返回键才撞得上，
+    // 所以裸 setState 存量地活了很久；tab 化把可达性放大了两个数量级。
+    // 三页曾经不一致（只有 game 页有门），这里把三页一起钉住。
+    const Map<String, String> loaders = <String, String>{
+      'lib/src/pages/implementations/reading_statistics_page.dart':
+          'Future<void> _syncAndLoad() async {',
+      'lib/src/pages/implementations/video_statistics_page.dart':
+          'Future<void> _syncAndLoad() async {',
+      'lib/src/pages/implementations/game_statistics_page.dart':
+          'Future<void> _load() async {',
+    };
+    loaders.forEach((String path, String signature) {
+      final String body = methodBody(read(path), signature);
+      expect(
+        containsCodeLine(body, 'if (!mounted) return;'),
+        isTrue,
+        reason: '$path：加载入口首帧由 postFrameCallback 触发，State 可能已 dispose，'
+            '第一处 setState 前必须过 mounted 门',
+      );
+    });
+    // 收尾那处 setState 在多次 await 之后，裸调即 use-after-dispose。
+    for (final String path in loaders.keys) {
+      final String src = read(path);
+      expect(
+        containsCodeLine(src, 'setState(() => _loading = false);') &&
+            !containsCodeLine(
+                src, 'if (mounted) setState(() => _loading = false);'),
+        isFalse,
+        reason: '$path：await 之后的收尾 setState 必须写成 '
+            '`if (mounted) setState(() => _loading = false);`',
       );
     }
   });

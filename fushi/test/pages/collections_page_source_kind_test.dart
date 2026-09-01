@@ -108,16 +108,11 @@ void main() {
         ),
       );
 
-  /// 取「包含 [marker] 的副标题 Text」的完整字符串（列表行元数据）。
-  String subtitleContaining(WidgetTester tester, String marker) {
-    final Iterable<Text> texts = tester
-        .widgetList<Text>(find.textContaining(marker))
-        .where((Text w) => (w.data ?? '').contains(' · ') || w.data == marker);
-    expect(texts, isNotEmpty, reason: '找不到含 "$marker" 的副标题');
-    return texts.first.data!;
-  }
-
-  testWidgets('列表副标题按四值来源标注前缀（book 无前缀）', (WidgetTester tester) async {
+  testWidgets('列表按来源标注前缀（book 无前缀），书名升级为媒体小节头', (
+    WidgetTester tester,
+  ) async {
+    // 阶段 3（收藏夹按合集/媒体分节）：所属书/视频名不再拼进行副标题，而是
+    // 作为媒体小节头独立成行；来源前缀（BUG-1120 四值穷尽）仍在行副标题。
     await seedFourSourceFavorites();
 
     await tester.pumpWidget(buildPage());
@@ -129,23 +124,17 @@ void main() {
     expect(find.text('朗読の文です。'), findsOneWidget);
     expect(find.text('歌詞の文です。'), findsOneWidget);
 
-    // video 行：前缀 nav_video。
-    final String videoSub = subtitleContaining(tester, 'VIDEOTITLE_B');
-    expect(videoSub, startsWith('${t.nav_video} · '));
+    // 四个媒体小节头（书名/视频名独立成行，不再藏在副标题里）。
+    expect(find.text('BOOKTITLE_A'), findsOneWidget);
+    expect(find.text('VIDEOTITLE_B'), findsOneWidget);
+    expect(find.text('AUDIOBOOKTITLE_C'), findsOneWidget);
+    expect(find.text('LYRICSTITLE_D'), findsOneWidget);
 
-    // audiobook 行：前缀 section_audiobook（旧 bool 降维下无前缀=展示成书）。
-    final String abSub = subtitleContaining(tester, 'AUDIOBOOKTITLE_C');
-    expect(abSub, startsWith('${t.section_audiobook} · '));
-
-    // lyrics 行：前缀 lyrics_mode。
-    final String lySub = subtitleContaining(tester, 'LYRICSTITLE_D');
-    expect(lySub, startsWith('${t.lyrics_mode} · '));
-
-    // book 行：无任何来源前缀。
-    final String bookSub = subtitleContaining(tester, 'BOOKTITLE_A');
-    expect(bookSub, startsWith('BOOKTITLE_A'));
-    expect(bookSub, isNot(contains(t.section_audiobook)));
-    expect(bookSub, isNot(contains(t.lyrics_mode)));
+    // 来源前缀各自恰好一处（四行只有对应行标注；book 行无前缀，故各前缀
+    // findsOneWidget 同时排除了「book 行被贴前缀」的旧降维回归）。
+    expect(find.textContaining(t.nav_video), findsOneWidget);
+    expect(find.textContaining(t.section_audiobook), findsOneWidget);
+    expect(find.textContaining(t.lyrics_mode), findsOneWidget);
   });
 
   testWidgets('长按弹窗：audiobook/lyrics 行专属图标 + 打开按钮为 dialog_read', (

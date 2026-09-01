@@ -4102,5 +4102,9 @@
   "video_source_scrape_pending_works_hint": "These entries have no confirmed identity yet. Search and pick the right work to scrape them.",
   "video_source_scrape_enabled_toggle": "Enable scraping for this source",
   "video_library_scrape_auto_backfill": "Auto-fill missing series info",
-  "video_library_scrape_auto_backfill_hint": "Entering the video library scrapes entries that still have no confirmed identity. Turn off to stop all background metadata downloads."
+  "video_library_scrape_auto_backfill_hint": "Entering the video library scrapes entries that still have no confirmed identity. Turn off to stop all background metadata downloads.",
+  "stat_detail_ungrouped": "Ungrouped",
+  "stat_detail_empty": "No activity in this period",
+  "stat_center_title": "Statistics center",
+  "stat_center_tab_overview": "Overview"
 }

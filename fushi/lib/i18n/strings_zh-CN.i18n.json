@@ -4102,5 +4102,9 @@
   "video_source_scrape_pending_works_hint": "这些条目还没有确认的作品身份。搜索并选中正确的作品即可完成刮削。",
   "video_source_scrape_enabled_toggle": "启用此来源的刮削",
   "video_library_scrape_auto_backfill": "自动补齐缺失的作品资料",
-  "video_library_scrape_auto_backfill_hint": "进入视频库时，自动刮削仍未确认身份的条目。关闭后不再有任何后台元数据下载。"
+  "video_library_scrape_auto_backfill_hint": "进入视频库时，自动刮削仍未确认身份的条目。关闭后不再有任何后台元数据下载。",
+  "stat_detail_ungrouped": "未分组",
+  "stat_detail_empty": "此时段暂无记录",
+  "stat_center_title": "统计中心",
+  "stat_center_tab_overview": "总览"
 }
