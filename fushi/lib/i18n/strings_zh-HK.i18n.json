@@ -3467,7 +3467,7 @@
   "mihon_store_remove": "移除擴展倉庫",
   "video_import_folder_as_source_hint": "以後自動掃描此資料夾裡的新影片",
   "manga_import_folder_as_source_hint": "以後自動掃描此資料夾裡的新漫畫",
-  "download_no_managed_video_source": "還沒有受管影片來源。下載完成的影片需要一個本地影片資料夾才能入庫。",
+  "download_no_managed_video_source": "還沒有受管影片來源。請新增一個存放下載檔案的本機資料夾，下載完成的影片才能入庫。",
   "download_add_video_source": "添加影片來源",
   "video_subtitle_prev_cue_align": "上一句對齊到當前",
   "video_subtitle_next_cue_align": "下一句對齊到當前",
@@ -4102,5 +4102,13 @@
   "video_source_scrape_pending_works_hint": "These entries have no confirmed identity yet. Search and pick the right work to scrape them.",
   "video_source_scrape_enabled_toggle": "Enable scraping for this source",
   "video_library_scrape_auto_backfill": "Auto-fill missing series info",
-  "video_library_scrape_auto_backfill_hint": "Entering the video library scrapes entries that still have no confirmed identity. Turn off to stop all background metadata downloads."
+  "video_library_scrape_auto_backfill_hint": "Entering the video library scrapes entries that still have no confirmed identity. Turn off to stop all background metadata downloads.",
+  "stat_detail_ungrouped": "Ungrouped",
+  "stat_detail_empty": "No activity in this period",
+  "stat_center_title": "Statistics center",
+  "stat_center_tab_overview": "Overview",
+  "shortcut_action_video_dismiss_dict": "Dismiss dictionary",
+  "video_discovery_anidb_identity_confirm_title": "Confirm the work identity",
+  "video_discovery_anidb_identity_confirm_hint": "AniDB has more than one possible match. Pick the right work and the imported download will scrape with that identity directly; skip and you can assign it later from the pending list.",
+  "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification."
 }

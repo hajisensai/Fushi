@@ -74,7 +74,6 @@ import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
-import 'package:fushi/src/pages/implementations/video_statistics_page.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
@@ -1600,16 +1599,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     messenger.showSnackBar(
       SnackBar(
         content: Text(subtitleAttachMessage(result, title: book.title)),
-      ),
-    );
-  }
-
-  void _openStatistics() {
-    Navigator.push(
-      context,
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => const VideoStatisticsPage(),
       ),
     );
   }
@@ -5243,12 +5232,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         icon: Icons.collections_bookmark_outlined,
         onTap: _openCollections,
       ),
-      FushiIconButton(
-        tooltip: t.video_statistics,
-        label: t.video_statistics,
-        icon: Icons.bar_chart_outlined,
-        onTap: _openStatistics,
-      ),
+      // 统计入口已收敛到首页 dashboard（用户定案 2026-09-01）。
       // 旧后台流水线仍会在进页面 / 新视频入库时补本地 sidecar；在线元数据刮削
       // 统一从来源页进入 canonical coordinator。
       // 「刷新」按钮已删：下拉刷新（[_pullToRefresh]）仍是手动同步入口，页头不再

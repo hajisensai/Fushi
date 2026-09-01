@@ -22,6 +22,7 @@ import 'package:fushi/src/media/video/jimaku_client.dart'
     show jimakuLanguageLabel;
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
+import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_batch.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_language_preference.dart';
@@ -198,6 +199,13 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   String? _notice;
   bool _noticeIsError = false;
 
+  /// 已刮削合集的规范身份（BUG-2008）：查询词优先日文原名、请求带已知外部
+  /// id——不再拿合集显示名裸猜。null = 该合集还没刮出规范作品，走旧路径。
+  VideoMetadataWorkRow? _canonicalWork;
+  Map<String, String> _canonicalIds = const <String, String>{};
+
+  int? get _canonicalAnilistId => int.tryParse(_canonicalIds['anilist'] ?? '');
+
   /// 用户显式选的字幕语言；null = 「全部」= 不限（回退视频自身语言链）。
   String? _language;
 
@@ -220,10 +228,92 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         widget.collection.subtitleLanguage ?? widget.initialPreferredLanguage;
     _releaseGroup = widget.collection.subtitleReleaseGroup;
     _selectedSeriesId = widget.collection.anilistId;
-    // 合集已绑定 AniList 系列 → 直接搜来源，免去用户再点一次。
-    if (widget.collection.anilistId != null) {
-      unawaited(_searchSources(anilistId: widget.collection.anilistId));
+    // 首搜由 [_loadCanonicalIdentity] 在读回规范身份**之后**发起（BUG-2008）：
+    // `_searchSources` 在第一个 await 之前就把请求身份同步构造好了，先发后读
+    // 等于「已绑定 AniList 的合集」——也就是绝大多数刮削过的合集——首搜永远
+    // 还是裸显示名 + 裸 anilistId，而这个面板绝大多数场景只搜这一次。
+    unawaited(_loadCanonicalIdentity());
+  }
+
+  /// 读回该合集刮削出的规范作品与身份（BUG-2008），再发起首搜。
+  ///
+  /// 用户没改过查询词时把它换成日文原名；合集绑了 AniList 就按它搜，没绑而刮削
+  /// 身份里有 anilist id 就按后者搜。读库失败或压根没刮过一律**降级为旧路径**
+  /// （裸显示名 + 合集 anilistId），绝不因此挡住首搜。
+  Future<void> _loadCanonicalIdentity() async {
+    try {
+      final VideoMetadataWorkRow? work = await widget.database
+          .getVideoMetadataWorkByCollection(widget.collection.id);
+      if (!mounted) return;
+      if (work != null) {
+        final List<VideoMetadataProviderIdentityRow> identities = await widget
+            .database
+            .getVideoMetadataProviderIdentities(workId: work.id);
+        if (!mounted) return;
+        final bool queryUntouched =
+            _queryCtrl.text.trim() == _initialQuery().trim();
+        setState(() {
+          _canonicalWork = work;
+          _canonicalIds = <String, String>{
+            for (final VideoMetadataProviderIdentityRow row in identities)
+              row.provider.trim().toLowerCase(): row.externalId,
+          };
+          final String? original = work.originalTitle?.trim();
+          if (queryUntouched && original != null && original.isNotEmpty) {
+            _queryCtrl.text = original;
+          }
+        });
+      }
+    } on Object catch (error) {
+      ErrorLogService.instance.logDiagnostic(
+        'SubtitleCollectionPanel.loadCanonicalIdentity',
+        error,
+      );
     }
+    if (!mounted) return;
+    final int? seedId = widget.collection.anilistId ?? _canonicalAnilistId;
+    if (seedId != null && !_searching) {
+      unawaited(_searchSources(anilistId: seedId));
+    }
+  }
+
+  /// 本次检索交给 provider 的身份。
+  ///
+  /// 刮出规范作品时走仓库唯一的身份原语 [identityMediaReference]：外部 id
+  /// （anilist / tmdb / **imdb** —— OpenSubtitles 的强键）、日文原名、年份、以及
+  /// 由 id 推出的 [VideoDiscoveryCategory] 一起带上。写死 anime 会让真人剧合集
+  /// 踩回 Jimaku 的 anime 硬过滤（BUG-1694）。
+  ///
+  /// 还没刮过的合集保持旧路径逐字节不变：裸 anilistId + 显示名 + anime 档。
+  VideoMediaReference _searchIdentity({
+    required String query,
+    required int? anilistId,
+  }) {
+    final VideoMetadataWorkRow? work = _canonicalWork;
+    if (work == null) {
+      return VideoMediaReference(
+        providerId: 'anilist',
+        mediaId: anilistId?.toString() ?? query,
+        mediaKind: VideoMetadataMediaKind.tv,
+        discoveryCategory: VideoDiscoveryCategory.anime,
+        title: query,
+        anilistId: anilistId,
+      );
+    }
+    return identityMediaReference(
+      providerId: 'anilist',
+      kind: work.mediaType == 'movie'
+          ? VideoMetadataMediaKind.movie
+          : VideoMetadataMediaKind.tv,
+      // 用户当场选定的系列压过刮削快照里的 anilist id。
+      externalIds: <String, String>{
+        ..._canonicalIds,
+        if (anilistId != null) 'anilist': '$anilistId',
+      },
+      title: query,
+      originalTitle: work.originalTitle,
+      year: work.year,
+    );
   }
 
   @override
@@ -388,16 +478,13 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       _notice = null;
     });
     try {
+      // 规范身份优先（BUG-2008），构造见 [_searchIdentity]。
       final ProviderBatchResult<VideoSubtitleCandidate> result = await registry
           .search(
             VideoSubtitleSearchRequest(
-              media: VideoMediaReference(
-                providerId: 'anilist',
-                mediaId: anilistId?.toString() ?? query,
-                mediaKind: VideoMetadataMediaKind.tv,
-                discoveryCategory: VideoDiscoveryCategory.anime,
-                title: query,
-                anilistId: anilistId,
+              media: _searchIdentity(
+                query: query,
+                anilistId: anilistId ?? _canonicalAnilistId,
               ),
               query: query,
             ),

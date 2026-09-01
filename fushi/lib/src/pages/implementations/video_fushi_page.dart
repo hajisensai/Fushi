@@ -106,7 +106,13 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
         focusedEditableText,
         tryDictionaryPopupGamepadButton;
 import 'package:fushi/src/shortcuts/input_binding.dart'
-    show GamepadButton, InputBinding, activeModifierKeys;
+    show
+        GamepadButton,
+        InputBinding,
+        activeModifierKeys,
+        domMouseButtonFromPointerButtons;
+import 'package:fushi/src/shortcuts/shortcut_registry.dart'
+    show FushiShortcutRegistry;
 import 'package:fushi/src/shortcuts/reader_caret_router.dart'
     show CaretAction, ReaderCaretRouter;
 import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
@@ -4505,6 +4511,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                       sensitivity:
                           ReaderFushiSource.instance.dismissSwipeSensitivity,
                       onPointerHover: _onDismissBarrierHover,
+                      // BUG-1995：指针在**浮窗之外**按侧键时唯一还能接到事件的地方
+                      // （barrier 命中行为 opaque，页面根 Listener 收不到）。
+                      onNonPrimaryButtonDown: _onDismissBarrierButtonDown,
                     ),
                   ),
                 // 搜索期加载占位卡（与书内同观感：就绪才显示真正浮层）。
@@ -4647,6 +4656,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // universal scope，不在 video 组里，漏掉就等于 BUG-1269 那半边重开。
         ShortcutAction.globalBack,
       };
+
+  /// BUG-1995 的另一半：指针落在**浮窗矩形之外**按下鼠标非主键。
+  ///
+  /// 浮层可见时，那片区域被根 Overlay 的 [LookupDismissBarrier] 完全占住
+  /// （`Positioned.fill` + 叶子 `ColoredBox`，命中行为 opaque），页面根的
+  /// [Listener]（[_handleVideoPointerDown]）因此收不到任何指针事件——所以
+  /// 「侧键压在浮窗上能关、把鼠标移开一点就关不掉」。这里把 barrier 上的那一半
+  /// 接回**同一个**落地入口。
+  ///
+  /// 判据与弹窗表面那条路逐字相同：同一个 [dictionaryPopupInputSpec]（已减去
+  /// dictionaryPopup scope 自己占用的按钮）、同一个 [dictionaryPopupPointerToken]
+  /// 折 token、同一个 [onDictionaryPopupInputToken] 落地（含选词光标分流）。
+  /// 两个表面共用一份判据，就不可能再出现「一半能用一半不能用」。
+  ///
+  /// 与弹窗表面天然互斥：barrier 只在弹窗矩形之外可命中（弹窗层在同一个 Stack 里
+  /// 排在 barrier 之后＝更靠上），同一次按下不会两条路各触发一次。
+  void _onDismissBarrierButtonDown(int buttons) {
+    final String? token = dictionaryPopupPointerToken(
+      buttons: buttons,
+      spec: dictionaryPopupInputSpec,
+    );
+    if (token == null) return;
+    onDictionaryPopupInputToken(token);
+  }
 
   /// 视频的语义是「关**顶层**浮层」（逐层关，保留隐藏热槽 BUG-092），不是清整栈，
   /// 故不走基类默认的 `clearDictionaryResult()`，改用与守卫完全同一个执行体。
@@ -5061,6 +5094,43 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
   }
 
+  /// 视频页的**鼠标绑定通道**（BUG-1995）：页面根 [Listener] 的 `onPointerDown` 入口。
+  ///
+  /// 与键盘 / 手柄两条通道同构：按下当场问注册表要动作（press-time 解析，不冻结表），
+  /// 命中后走与它们完全相同的执行体。按钮号折叠用 [domMouseButtonFromPointerButtons]
+  /// —— 设置页的按键录制用的是同一个函数，两侧不共用就会出现「设置里录到侧键、运行时
+  /// 按另一个号解析」的错位。左键不可绑（那里返回 null），正常点击 / 划词零影响。
+  ///
+  /// ⚠️ **本入口只在词典浮层不可见时可达**，所以这里**不写**任何「关浮层」逻辑。
+  ///
+  /// 浮层可见（或查词搜索中）时，[_buildPopupOverlay] 会在**根 Overlay**里挂一层
+  /// `Positioned.fill` 的 [LookupDismissBarrier]。它虽然自称 translucent，内层却是
+  /// `ColoredBox`——`_RenderColoredBox` 的命中行为是 **opaque**（颜色透明 ≠ 命中透明），
+  /// 于是整个 barrier 子树 hitTest 返回 true，Overlay 的 Stack 就此停止向下测试，
+  /// 事件根本到不了本页面。实测：barrier 显示时页面根 Listener 收到 0 个 pointerDown。
+  /// 守卫见 `test/shortcuts/video_pointer_channel_reachability_test.dart`。
+  ///
+  /// 「浮层可见时按侧键关词典」由**另一条**路承担：浮层是原生 WebView，指针落在它上面
+  /// 时由 [DictionaryPopupLayer] 自己的 Listener 折出 token 回传
+  /// （[dictionaryPopupForwardedActions] → [onDictionaryPopupInputToken]）。那条路读的是
+  /// `bindingsFor` / `resolveMouse`，与本入口共用同一份绑定，但不经过这里。
+  void _handleVideoPointerDown(PointerDownEvent event) {
+    final int? button = domMouseButtonFromPointerButtons(event.buttons);
+    if (button == null) return;
+    final FushiShortcutRegistry registry = appModel.shortcutRegistry;
+    // scope 未命中时回落 universal（「返回上一级」），与页面其它通道同口径。
+    final ShortcutAction? action =
+        registry.resolveMouse(button, scope: ShortcutScope.video) ??
+            registry.resolveMouse(button, scope: ShortcutScope.universal);
+    if (action == null) return;
+    // 「只关词典」在浮层不可见时按下 = 无事发生，这正是它存在的意义（给侧键一个
+    // 没有副作用的落点）。
+    if (action == ShortcutAction.videoDismissDict) return;
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    videoActionCallbacks(_buildVideoShortcutActions(controller))[action]?.call();
+  }
+
   /// 视频页键盘通道的**唯一**派发点（方案 D）：每次按键当场问注册表，与手柄
   /// [_handleVideoGamepadButton] 逐段同构。
   ///
@@ -5191,6 +5261,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             if (_isSyntheticControlsHover(event)) return;
             _lastGlobalPointerPos = event.position;
           },
+          // BUG-1995：视频页此前**没有**「PointerDownEvent → MouseBinding → 派发」
+          // 这条链路（video scope 的 mouse 通道因此是关的，设置页连绑定入口都不给）。
+          // reader 能用鼠标侧键关词典，靠的是它正文是 WebView、侧键走 DOM mousedown
+          // 回传 Dart —— 视频页没有 WebView 正文，那条路复制不过来，只能把这条链路
+          // 真的建出来。挂在已有的页面根 Listener 上，不新增层级。
+          //
+          // `Listener` 不进手势 arena、不消费点击，media_kit 控件 / 进度条 / 字幕
+          // 查词的既有手势行为零变化。
+          onPointerDown: _handleVideoPointerDown,
           child: child,
         ),
       ),

@@ -83,6 +83,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_audiobook_prev_sentence;
       case ShortcutAction.audiobookSeekToClickedSentence:
         return t.shortcut_action_audiobook_seek_clicked;
+      case ShortcutAction.videoDismissDict:
+        return t.shortcut_action_video_dismiss_dict;
       case ShortcutAction.videoTogglePlayPause:
         return t.shortcut_action_video_toggle_play_pause;
       case ShortcutAction.videoPlay:

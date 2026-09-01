@@ -723,7 +723,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 93;
+  int get schemaVersion => 94;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2866,6 +2866,23 @@ class FushiDatabase extends _$FushiDatabase
             // 无索引（队列量级为几十行）。守卫幂等（fresh DB 由 onCreate 建好）。
             if (!await _tableExists('web_mine_queue')) {
               await m.createTable(webMineQueue);
+            }
+          }
+          if (from < 94) {
+            // v94（刮削重设计 P1，BUG-2003）：video_download_jobs /
+            // video_download_subscriptions 各加 identity_json——发现页完整身份
+            // （原名/别名/全部外部 id）的 JSON 快照，让刮削与字幕不再从
+            // 「显示名 + 单 id」的残渣里重新猜身份。无损：nullable 无 default，
+            // 旧行全 NULL = 走旧行为。守卫幂等（fresh DB 由 onCreate 建好）。
+            if (await _tableExists('video_download_jobs') &&
+                !await _columnExists('video_download_jobs', 'identity_json')) {
+              await m.addColumn(videoDownloadJobs, videoDownloadJobs.identityJson);
+            }
+            if (await _tableExists('video_download_subscriptions') &&
+                !await _columnExists(
+                    'video_download_subscriptions', 'identity_json')) {
+              await m.addColumn(videoDownloadSubscriptions,
+                  videoDownloadSubscriptions.identityJson);
             }
           }
         },

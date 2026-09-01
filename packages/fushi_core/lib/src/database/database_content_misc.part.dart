@@ -15,6 +15,31 @@ mixin _FushiDbContentMisc
   Future<int> deleteDictionaryMeta(String name) =>
       (delete(dictionaryMetadata)..where((t) => t.name.equals(name))).go();
 
+  /// 把 profile 快照拥有的四列（顺序 + 语言可见性 + 折叠 + 语言覆盖）写回一本
+  /// **已安装**的词典行，返回受影响行数。
+  ///
+  /// 0 = 这本词典当前不在库里（快照比库旧，或它在别处被删了）。调用方据此**跳过**
+  /// 而不是插一行——`insertOnConflictUpdate` 会凭空造出一行没有磁盘目录的幽灵元
+  /// 数据，之后每次查词都会去 load 一个不存在的词典。
+  ///
+  /// 刻意不碰 `formatKey` / `type` / `metadataJson`：那三列是「装的是什么」的安装
+  /// 事实，唯一写者是导入路径；profile 只拥有「怎么排、开不开」（BUG-1994）。
+  Future<int> applyDictionaryMetaProfileColumns({
+    required String name,
+    required int order,
+    required String hiddenLanguagesJson,
+    required String collapsedLanguagesJson,
+    required String? languageOverride,
+  }) =>
+      (update(dictionaryMetadata)..where((t) => t.name.equals(name))).write(
+        DictionaryMetadataCompanion(
+          order: Value(order),
+          hiddenLanguagesJson: Value(hiddenLanguagesJson),
+          collapsedLanguagesJson: Value(collapsedLanguagesJson),
+          languageOverride: Value(languageOverride),
+        ),
+      );
+
   Future<int> clearAllDictionaryMeta() => delete(dictionaryMetadata).go();
 
   // ── dictionary history ──────────────────────────────────────────
