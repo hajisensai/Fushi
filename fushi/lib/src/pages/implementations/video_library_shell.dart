@@ -124,8 +124,9 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
 
   @override
   Widget build(BuildContext context) {
-    final Widget navigation = LibrarySectionTabs<VideoLibrarySection>(
-      tabs: <LibrarySectionTab<VideoLibrarySection>>[
+    // 页签与横滑切区（[SectionSwipeNavigator]）共用同一份序：加减分区只改这里。
+    final List<LibrarySectionTab<VideoLibrarySection>> tabs =
+        <LibrarySectionTab<VideoLibrarySection>>[
         LibrarySectionTab<VideoLibrarySection>(
           value: VideoLibrarySection.home,
           label: t.nav_home,
@@ -154,11 +155,25 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           value: VideoLibrarySection.settings,
           label: t.settings,
         ),
-      ],
+      ];
+    final Widget navigation = LibrarySectionTabs<VideoLibrarySection>(
+      tabs: tabs,
       selected: _section,
       onChanged: _select,
       focusIdPrefix: 'video-library-view',
     );
+    return SectionSwipeNavigator<VideoLibrarySection>(
+      sections: <VideoLibrarySection>[
+        for (final LibrarySectionTab<VideoLibrarySection> tab in tabs)
+          tab.value,
+      ],
+      selected: _section,
+      onSelect: _select,
+      child: _buildSections(navigation),
+    );
+  }
+
+  Widget _buildSections(Widget navigation) {
     return Stack(
       children: <Widget>[
         Offstage(

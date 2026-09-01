@@ -167,7 +167,14 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
     return MediaLibraryShellScope(
       kinds: kinds,
       select: _select,
-      child: Stack(
+      // 触屏横滑切到相邻视图，序即 [views] 声明序（与分段条同一份真相）。
+      child: SectionSwipeNavigator<MediaLibraryViewKind>(
+        sections: <MediaLibraryViewKind>[
+          for (final MediaLibraryViewSpec spec in views) spec.kind,
+        ],
+        selected: views[_currentIndex].kind,
+        onSelect: _select,
+        child: Stack(
         children: <Widget>[
           for (int i = 0; i < views.length; i++)
             if (_visited.contains(i))
@@ -193,6 +200,7 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
                 ),
               ),
         ],
+        ),
       ),
     );
   }

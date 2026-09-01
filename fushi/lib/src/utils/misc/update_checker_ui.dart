@@ -449,10 +449,12 @@ Widget buildUpdateDownloadOverlayForTest({
   required ValueNotifier<UpdateDownloadDiagnostics?> diagnostics,
   required VoidCallback onHide,
   VoidCallback? onCancel,
+  ValueNotifier<String?>? notice,
 }) {
   return _DownloadOverlay(
     progress: progress,
     status: status,
+    notice: notice ?? ValueNotifier<String?>(null),
     diagnostics: diagnostics,
     onHide: onHide,
     onCancel: onCancel ?? () {},
@@ -463,12 +465,17 @@ class _DownloadOverlay extends StatelessWidget {
   const _DownloadOverlay({
     required this.progress,
     required this.status,
+    required this.notice,
     required this.diagnostics,
     required this.onHide,
     required this.onCancel,
   });
   final ValueNotifier<double> progress;
   final ValueNotifier<String> status;
+
+  /// 整轮下载都成立的一句通告（当前唯一来源：所选下载来源对本资产不适用）。
+  /// null = 无事可报，不占位。
+  final ValueNotifier<String?> notice;
   final ValueNotifier<UpdateDownloadDiagnostics?> diagnostics;
   final VoidCallback onHide;
   final VoidCallback onCancel;
@@ -500,6 +507,20 @@ class _DownloadOverlay extends StatelessWidget {
                         style: Theme.of(context).textTheme.titleMedium,
                         textAlign: TextAlign.center,
                       ),
+                    ),
+                    ValueListenableBuilder<String?>(
+                      valueListenable: notice,
+                      builder: (_, value, __) {
+                        if (value == null) return const SizedBox.shrink();
+                        return Padding(
+                          padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+                          child: Text(
+                            value,
+                            style: Theme.of(context).textTheme.bodySmall,
+                            textAlign: TextAlign.center,
+                          ),
+                        );
+                      },
                     ),
                     SizedBox(height: tokens.spacing.gap),
                     ValueListenableBuilder<double>(

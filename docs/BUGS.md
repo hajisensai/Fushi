@@ -29,12 +29,21 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1857 条。点号进各自文件。
+> 共 1866 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2011](bugs/BUG-2011-clip-export-container-portability.md) | ✅ | ✅ | 视频片段导出产物只有 mpv 能播，进度条显示整集时长 |
+| [BUG-2009](bugs/BUG-2009-desktop-wheel-scroll-speed-halved.md) | ✅ | ✅ | 桌面滚轮平滑修复把滚动速度砍半 |
+| [BUG-2006](bugs/BUG-2006-win-fullscreen-top-accent-border.md) | ✅ | ✅ | Windows 上视频最顶部有一条 1px 强调色线（窗口铺满屏幕时） |
+| [BUG-2005](bugs/BUG-2005-recent-added-portrait-slot.md) | ✅ | ✅ | 首页「最近添加」行视频卡恒竖槽，横版截帧被模糊垫底成白条 |
 | [BUG-1990](bugs/BUG-1990-mokuro-cbz-embedded-ocr.md) | ✅ | ✅ | Mokuro CBZ 导入丢弃内嵌 OCR 文字层 |
 | [BUG-1988](bugs/BUG-1988-remote-mining-error-unlocalized.md) | ✅ | ✅ | 互联远端制卡不可达错误未本地化 |
+| [BUG-1983](bugs/BUG-1983-gal-layout-whitespace-fold.md) | ✅ | ✅ | Gal 同句换行快照未原地折叠导致换行错乱 |
+| [BUG-1982](bugs/BUG-1982-global-lookup-stale-route-flash.md) | 🚧 | ✅ | 全局查词首帧落在工作区角上再闪回光标处 |
+| [BUG-1981](bugs/BUG-1981-hook-overlay-dead-window-reopen.md) | ✅ | ✅ | Hook 浮窗 HWND 失效后自动与手动打开都无窗口 |
+| [BUG-1980](bugs/BUG-1980-proxy-mode-auth.md) | ✅ | ✅ | 网络代理无法显式禁用且不支持认证 |
+| [BUG-1979](bugs/BUG-1979-storage-backup-cleanup.md) | ✅ | ✅ | 存储页备份被隐藏且无法清理 |
 | [BUG-1978](bugs/BUG-1978-hunex-toolbar-thread-merged.md) | ✅ | ✅ | HUNEX 顶部控制栏线程被并入剧情台词 |
 | [BUG-1977](bugs/BUG-1977-hunex-hfa-voice-resource-pairing.md) | 🚧 | ✅ | HUNEX HFA/HW 源语音未与台词配对 |
 | [BUG-1976](bugs/BUG-1976-lookup-webview-text-blur.md) | ✅ | ✅ | Windows 查词 WebView 被超分通路无条件重采样导致字体发糊 |
@@ -148,7 +157,7 @@
 | [BUG-1867](bugs/BUG-1867-cover-backfill-hollow-m2ts.md) | ✅ | ✅ | 封面回填把 best-effort 失败刷进用户错误日志，且对未落盘文件仍走 ffmpeg |
 | [BUG-1866](bugs/BUG-1866-resolve-public-indexer-needs-network.md) | ✅ | ✅ | 公共索引器重解析非要联网重搜，搜不中就把活资源误报 notFound |
 | [BUG-1865](bugs/BUG-1865-organizer-numbered-extras.md) | ✅ | ✅ | 剧集整理把带编号的特典当正片，与真正片撞号整批失败 |
-| [BUG-1864](bugs/BUG-1864-video-fullscreen-space-pause-panel.md) | ✅ | ✅ | 视频全屏路由漏掉页级裸空格覆盖：焦点在字幕列表面板时按空格不暂停 |
+| [BUG-1864](bugs/BUG-1864-video-fullscreen-space-pause-panel.md) | ✅ | ✅ | 视频字幕列表持焦后整张快捷键表失效 |
 | [BUG-1863](bugs/BUG-1863-video-resume-gray-static-areas.md) | ✅ | ✅ | 从后台切回视频静止区域变成灰色 |
 | [BUG-1862](bugs/BUG-1862-video-esc-skips-overlay-dismiss.md) | ✅ | ✅ | 视频页 Esc/返回键在侧栏等前台浮层打开时直接退出页面，未逐级关闭 |
 | [BUG-1861](bugs/BUG-1861-video-subtitle-imported-not-listed.md) | ✅ | ✅ | 获取的字幕能应用上却不出现在字幕轨列表里 |

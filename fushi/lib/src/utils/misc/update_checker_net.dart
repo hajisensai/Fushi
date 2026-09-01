@@ -29,7 +29,6 @@ part of 'update_checker.dart';
 /// 名单本身已搬到 `src/utils/net/github_mirrors.dart` 的 [kGitHubMirrorPrefixes]
 /// 作全仓唯一真相源（BUG-1875：Mihon 扩展仓库拉取也要同一份镜像）；part 契约禁止
 /// part 内 import，所以由 barrel 引入、这里只保留别名与既有的测试可见名。
-@visibleForTesting
 const List<String> updateCheckProxyPrefixes = kGitHubMirrorPrefixes;
 
 /// 官网 Cloudflare Worker 暴露的版本化 R2 下载入口。
@@ -39,6 +38,18 @@ const List<String> updateCheckProxyPrefixes = kGitHubMirrorPrefixes;
 /// 始终指向 [url] 里的同一个 tag / asset。`src=r2` 还把「该文件没有镜像」收敛为 404，
 /// 让下载引擎继续回退 GitHub；不带它会由官网 302 到 GitHub，和后续直连候选重复。
 const String _kOfficialUpdateMirrorHost = 'fushi.moe';
+
+const String updateDownloadSourceAutomatic = 'auto';
+const String updateDownloadSourceCloudflare = 'r2';
+const String updateDownloadSourceGitHub = 'github';
+const String updateDownloadSourceProxyPrefix = 'proxy:';
+
+/// 进程级更新资产首选源。设置只改变候选顺序，完整回退链始终保留。
+String Function() appUpdateDownloadSourceReader =
+    () => updateDownloadSourceAutomatic;
+
+String updateDownloadSourceForProxy(String prefix) =>
+    '$updateDownloadSourceProxyPrefix$prefix';
 
 /// **纯函数**：把本仓 GitHub Release 资产直链映射到官网 R2 的不可变版本路径。
 ///
@@ -72,19 +83,118 @@ String? officialR2UrlForUpdateAsset(String url) {
   ).toString();
 }
 
-/// **纯函数**：生成 release 资产的下载候选。
+/// 一次资产下载的**候选计划**：候选顺序 + 用户所选来源在**这个资产**上的落实结果。
+///
+/// 为什么不是一个裸 `List<String>`：候选顺序和「所选来源用上了没有」本就是同一次决策的
+/// 两个面，只返回列表会把两件事一起丢掉——
+///   1. 下游（竞速门控 [orderedCandidatesAfterRace]）分不出「首项是用户钉的」还是
+///      「首项只是默认排序」，于是探针测速把用户显式选的源顶掉（设置页承诺的
+///      「优先尝试所选来源」不成立）；
+///   2. 「用户选了 Cloudflare，但这个资产不在官网 R2 桶里」（旧仓库直链 / 第三方 host /
+///      畸形路径 → [officialR2UrlForUpdateAsset] 返 null）与「用户没选」完全同形，
+///      于是静默降级：UI 零提示，用户以为锁定了 Cloudflare。
+///
+/// 把 [pinnedUrl] 与 [requestedSource] 一起带出来，这两件事就都成了可断言、可展示的
+/// 一等信息。**回退行为不变**：[candidates] 始终是完整回退链。
+@visibleForTesting
+class UpdateDownloadPlan {
+  const UpdateDownloadPlan({
+    required this.candidates,
+    required this.requestedSource,
+    required this.pinnedUrl,
+  });
+
+  /// 完整回退链。[pinnedUrl] 非 null 时它就是首项。
+  final List<String> candidates;
+
+  /// 用户在设置里选的来源（[updateDownloadSourceAutomatic] = 没有显式选择）。
+  final String requestedSource;
+
+  /// 所选来源在本资产上解析出的候选 url；null = 本次**没能用上**所选来源。
+  final String? pinnedUrl;
+
+  /// 用户做了显式选择（不是「自动」）。
+  bool get hasExplicitSource =>
+      requestedSource != updateDownloadSourceAutomatic;
+
+  /// 用户显式选了来源，但它对**这个资产**不适用。行为上照常完整回退，但这是要让
+  /// 用户看得见的降级，不该静默（见类文档第 2 点）。
+  bool get preferenceUnavailable => hasExplicitSource && pinnedUrl == null;
+}
+
+/// **纯函数**：生成 release 资产的下载候选计划。
 ///
 /// 官网 R2 不可变版本路径排第一，优先获得 Cloudflare/R2 的低延迟与免费出网；R2 未镜像
 /// （预发布默认不入桶、单文件超过镜像上限、工作流失败等）会快速 404，随后完整保留原来的
 /// GitHub 直连 + 公共 gh 代理回退链。检查 manifest/API 仍使用 [updateCheckUrls]，不会把
 /// 非下载请求误送进 R2。
+///
+/// 用户显式选了来源且该来源在本资产上解析得出候选时，把它提到首位并记进
+/// [UpdateDownloadPlan.pinnedUrl]；解析不出（如对旧仓库资产选了 Cloudflare）时候选序
+/// 不变，由 [UpdateDownloadPlan.preferenceUnavailable] 把这个降级暴露给调用方。
 @visibleForTesting
-List<String> updateDownloadUrls(String url) {
+UpdateDownloadPlan resolveUpdateDownloadPlan(String url, {String? preference}) {
   final String? officialMirror = officialR2UrlForUpdateAsset(url);
-  return <String>[
+  final List<String> candidates = <String>[
     if (officialMirror != null) officialMirror,
     ...updateCheckUrls(url),
   ];
+  final String selected = preference ?? appUpdateDownloadSourceReader();
+  final String? requested = switch (selected) {
+    updateDownloadSourceCloudflare => officialMirror,
+    updateDownloadSourceGitHub => url,
+    String value when value.startsWith(updateDownloadSourceProxyPrefix) =>
+      _selectedProxyCandidate(value, url),
+    _ => null,
+  };
+  final String? pinned =
+      requested != null && candidates.contains(requested) ? requested : null;
+  return UpdateDownloadPlan(
+    candidates: pinned == null
+        ? candidates
+        : <String>[
+            pinned,
+            for (final String candidate in candidates)
+              if (candidate != pinned) candidate,
+          ],
+    requestedSource: selected,
+    pinnedUrl: pinned,
+  );
+}
+
+/// [resolveUpdateDownloadPlan] 的候选序（保留原名，供只关心顺序的调用方与既有测试）。
+@visibleForTesting
+List<String> updateDownloadUrls(String url, {String? preference}) =>
+    resolveUpdateDownloadPlan(url, preference: preference).candidates;
+
+/// **纯函数**：下载来源值 → 用户可读标签。设置页的选项标签与「本次没用上所选来源」
+/// 通告共用这一份，避免同一个来源在两处叫不同名字。未知值按「自动」处理。
+String updateDownloadSourceLabel(String source) => switch (source) {
+      updateDownloadSourceCloudflare => t.update_download_source_cloudflare,
+      updateDownloadSourceGitHub => t.update_download_source_github,
+      String value when value.startsWith(updateDownloadSourceProxyPrefix) =>
+        t.update_download_source_proxy(
+          host: Uri.parse(
+            value.substring(updateDownloadSourceProxyPrefix.length),
+          ).host,
+        ),
+      _ => t.update_download_source_auto,
+    };
+
+/// 所选下载来源对本资产不适用时的用户可见通告；用上了 / 没显式选 → null。
+/// 下载遮罩与诊断日志共用它，「静默降级」从此有唯一一句可展示的话。
+String? _downloadSourceUnavailableNotice(UpdateDownloadPlan plan) {
+  if (!plan.preferenceUnavailable) return null;
+  return t.update_download_source_unavailable(
+    source: updateDownloadSourceLabel(plan.requestedSource),
+  );
+}
+
+String? _selectedProxyCandidate(String preference, String directUrl) {
+  final String prefix =
+      preference.substring(updateDownloadSourceProxyPrefix.length);
+  if (!updateCheckProxyPrefixes.contains(prefix)) return null;
+  return '$prefix$directUrl';
 }
 
 /// **纯函数**：为一个 GitHub API / 直链 [url] 生成按优先级排序的候选 URL 列表。
