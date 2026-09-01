@@ -53,6 +53,8 @@ import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
     show resolveVideoLookupAnchorCue, subtitleLookupTerm;
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
+    show WindowFullscreenHost;
 import 'package:fushi/src/sync/fushi_library_host_service.dart'
     show videoRemotePositionEpisodeAtPrefKey, videoRemotePositionEpisodePrefKey;
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
@@ -1561,7 +1563,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     if (row == null || scripts == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    return CallbackShortcuts(
+    // 网页流媒体页属于视频模块，同样是**窗口全屏的合法宿主**（见
+    // [WindowFullscreenHosts]）。上面两条早退分支（加载失败 / 尚未就绪）故意不声明：
+    // 那两种状态下页面还没有内容，没有可全屏的东西。
+    final Widget page = CallbackShortcuts(
       bindings: _keyboardShortcuts(),
       child: Focus(
         focusNode: _focusNode,
@@ -1604,6 +1609,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         ),
       ),
     );
+    return WindowFullscreenHost(child: page);
   }
 
   PreferredSizeWidget _buildAppBar(VideoBookRow row, ColorScheme cs) {

@@ -109,6 +109,8 @@ import 'package:fushi/src/shortcuts/input_binding.dart'
     show GamepadButton, InputBinding, activeModifierKeys;
 import 'package:fushi/src/shortcuts/reader_caret_router.dart'
     show CaretAction, ReaderCaretRouter;
+import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
+    show WindowFullscreenHost;
 import 'package:fushi/src/shortcuts/shortcut_action.dart'
     show ShortcutAction, ShortcutScope;
 import 'package:fushi/src/media/video/video_foreground_layers.dart'
@@ -7105,24 +7107,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final VideoPlayerController? controller = _controller;
     final VideoController? videoController = controller?.videoController;
     final ColorScheme cs = Theme.of(context).colorScheme;
+    // 视频页是**窗口全屏的合法宿主**之一：全屏键（默认 F11）只在小说 / 漫画 / 视频
+    // 里能进入全屏，靠的就是这层声明（见 [WindowFullscreenHosts]）。它零布局、零行为，
+    // 只在挂载期间登记自己所在的路由。
+    //
     // TODO-1342：最外层包一层手柄输入层，让桌面轮询的 [GamepadButtonIntent] 与
     // Android 原生手柄按键都能落到本页的视频动作（play/pause、seek、音量、字幕、全屏、
     // 返回）。放在 [PopScope] 之上 ⇒ 是 [_videoFocusNode] 及所有子焦点节点的祖先，
     // 冒泡/派发都能命中；wrapper 自身不夺焦（见 [_wrapVideoGamepadControls]）。
-    return _wrapVideoGamepadControls(
-      PopScope(
-        // 始终 `canPop: false` 自管退出：① 浮层栈非空时 back 先关栈（一层一层退），
-        // 浮层在根 Overlay 退出视频路由不会自动清它，必须在 pop 前拦截；② 栈空真退出
-        // 时，**先 await `flushPosition()` 把退出瞬间位置可靠落库再手动 pop**——否则只剩
-        // controller.dispose() 里 fire-and-forget 的 `_forceSavePositionSync()`，drift
-        // 写库 Future 与 Navigator 同步销毁 State 竞争、常写不完，导致「退出再进没回到
-        // 上次位置」（对齐阅读器 `onWillPop` 先 await 落库再 pop 的做法）。
-        canPop: false,
-        onPopInvokedWithResult: (bool didPop, Object? _) async {
-          if (didPop) return;
-          await _handleBackOrExit();
-        },
-        child: _buildScaffold(controller, videoController, cs),
+    return WindowFullscreenHost(
+      child: _wrapVideoGamepadControls(
+        PopScope(
+          // 始终 `canPop: false` 自管退出：① 浮层栈非空时 back 先关栈（一层一层退），
+          // 浮层在根 Overlay 退出视频路由不会自动清它，必须在 pop 前拦截；② 栈空真退出
+          // 时，**先 await `flushPosition()` 把退出瞬间位置可靠落库再手动 pop**——否则只剩
+          // controller.dispose() 里 fire-and-forget 的 `_forceSavePositionSync()`，drift
+          // 写库 Future 与 Navigator 同步销毁 State 竞争、常写不完，导致「退出再进没回到
+          // 上次位置」（对齐阅读器 `onWillPop` 先 await 落库再 pop 的做法）。
+          canPop: false,
+          onPopInvokedWithResult: (bool didPop, Object? _) async {
+            if (didPop) return;
+            await _handleBackOrExit();
+          },
+          child: _buildScaffold(controller, videoController, cs),
+        ),
       ),
     );
   }
