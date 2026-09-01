@@ -2654,8 +2654,17 @@ class VideoDownloadPipelineService {
                   row.kind == 'video' && row.finalAbsolutePath != null,
             )
             .toList();
+    // 多部电影一个种子（BUG-2007）：job 携带的身份只描述用户确认的那一部
+    // （= 主片，最大文件，与组织器抬正片同判据）。并列正片拿 job 标题去搜
+    // 只会装上主片的字幕，这里直接跳过——等它们刮出各自规范身份后由刮削后
+    // 字幕补齐链路（VideoSubtitleBackfillService）接手。
+    final VideoDownloadJobFileRow? movieMain =
+        job.mediaKind == VideoMetadataMediaKind.movie.name
+            ? _mainMovieRow(files)
+            : null;
     bool anyInstalled = false;
     for (final VideoDownloadJobFileRow file in files) {
+      if (movieMain != null && file.id != movieMain.id) continue;
       final List<VideoDownloadJobSubtitleRow> existing = await database
           .getVideoDownloadJobSubtitles(job.jobId);
       final VideoDownloadJobSubtitleRow? prior = existing
@@ -3332,46 +3341,61 @@ class VideoDownloadPipelineService {
         );
       }
     } else {
-      final VideoDownloadJobFileRow file = files.first;
+      // 多部电影一个种子（BUG-2007）：organize 已把够体量的并列正片保成
+      // `kind: 'video'`，这里逐部入库。主片（最大文件，与组织器抬正片同判据）
+      // 沿用 job.title；并列正片的标题见 [_standaloneMovieTitles]。
+      final VideoDownloadJobFileRow? movieMain = _mainMovieRow(files);
+      final Map<int, String> siblingTitles = _standaloneMovieTitles(
+        files,
+        mainFileId: movieMain?.id,
+        mainTitle: job.title,
+      );
       final List<VideoBookRow> existing = await database.allVideoBooks();
-      VideoBookRow? book;
-      final String normalized = normalizeVideoPath(file.finalAbsolutePath!);
-      for (final VideoBookRow row in existing) {
-        if (normalizeVideoPath(row.videoPath) == normalized) {
-          book = row;
-          break;
+      final Set<String> taken = existing
+          .map((VideoBookRow row) => row.bookUid)
+          .toSet();
+      String? firstCreatedUid;
+      for (final VideoDownloadJobFileRow file in files) {
+        VideoBookRow? book;
+        final String normalized = normalizeVideoPath(file.finalAbsolutePath!);
+        for (final VideoBookRow row in existing) {
+          if (normalizeVideoPath(row.videoPath) == normalized) {
+            book = row;
+            break;
+          }
         }
+        if (book == null) {
+          final String uid = coreUniqueVideoBookUid(
+            coreSingleVideoBookUid(file.finalAbsolutePath!),
+            taken,
+          );
+          taken.add(uid);
+          await _videoRepository.saveVideoBook(
+            VideoBooksCompanion(
+              bookUid: Value<String>(uid),
+              title: Value<String>(
+                file.id == movieMain?.id
+                    ? job.title
+                    : siblingTitles[file.id] ?? job.title,
+              ),
+              videoPath: Value<String>(file.finalAbsolutePath!),
+              embeddedSubtitleTrack: const Value<int?>(0),
+              importedAt: Value<int?>(DateTime.now().millisecondsSinceEpoch),
+            ),
+            sourceId: source?.id,
+          );
+          _ensureLeaseHeld();
+          book = await database.getVideoBookByBookUid(uid);
+          firstCreatedUid ??= book?.bookUid;
+        } else if (!legacy && book.sourceId == null) {
+          await _videoRepository.assignSourceIfNull(book.bookUid, source!.id);
+        }
+        if (book == null) throw StateError('video import did not create a row');
+        bookUidByFileId[file.id] = book.bookUid;
       }
-      bool created = false;
-      if (book == null) {
-        final Set<String> taken = existing
-            .map((VideoBookRow row) => row.bookUid)
-            .toSet();
-        final String uid = coreUniqueVideoBookUid(
-          coreSingleVideoBookUid(file.finalAbsolutePath!),
-          taken,
-        );
-        await _videoRepository.saveVideoBook(
-          VideoBooksCompanion(
-            bookUid: Value<String>(uid),
-            title: Value<String>(job.title),
-            videoPath: Value<String>(file.finalAbsolutePath!),
-            embeddedSubtitleTrack: const Value<int?>(0),
-            importedAt: Value<int?>(DateTime.now().millisecondsSinceEpoch),
-          ),
-          sourceId: source?.id,
-        );
-        _ensureLeaseHeld();
-        book = await database.getVideoBookByBookUid(uid);
-        created = true;
-      } else if (!legacy && book.sourceId == null) {
-        await _videoRepository.assignSourceIfNull(book.bookUid, source!.id);
-      }
-      if (book == null) throw StateError('video import did not create a row');
-      bookUidByFileId[file.id] = book.bookUid;
-      if (created) {
+      if (firstCreatedUid != null) {
         await _videoRepository.recordVideoImportActivity(
-          bookUid: book.bookUid,
+          bookUid: firstCreatedUid,
           title: job.title,
         );
       }
@@ -3520,12 +3544,13 @@ class VideoDownloadPipelineService {
       database,
     ).plan(source);
     _ensureLeaseHeld();
-    final Set<String> importedPaths =
-        (await database.getVideoDownloadJobFiles(job.jobId))
-            .map((VideoDownloadJobFileRow row) => row.finalAbsolutePath)
-            .whereType<String>()
-            .map(normalizeVideoPath)
-            .toSet();
+    final List<VideoDownloadJobFileRow> rows = await database
+        .getVideoDownloadJobFiles(job.jobId);
+    final Set<String> importedPaths = rows
+        .map((VideoDownloadJobFileRow row) => row.finalAbsolutePath)
+        .whereType<String>()
+        .map(normalizeVideoPath)
+        .toSet();
     final List<VideoSourceScrapeWork> pathMatches = works
         .where(
           (VideoSourceScrapeWork value) => value.members.any(
@@ -3550,6 +3575,33 @@ class VideoDownloadPipelineService {
       work ??= pathMatches.length == 1 ? pathMatches.single : null;
     } else if (pathMatches.length == 1) {
       work = pathMatches.single;
+    } else if (pathMatches.length > 1 &&
+        job.mediaKind == VideoMetadataMediaKind.movie.name) {
+      // 多部电影一个种子（BUG-2007）：一条 job 落成多个独立作品，而 job 携带
+      // 的已确认身份只属于用户在下载确认时选定的那一部（= 主片）。绑给主片
+      // 所在作品；并列正片留在待确认队列（刮削重设计 P2）由自动补刮/人工
+      // 认领——整批完成会把用户确认过的身份也丢掉，整批强绑则必然误绑。
+      final VideoDownloadJobFileRow? movieMain = _mainMovieRow(
+        rows
+            .where(
+              (VideoDownloadJobFileRow row) =>
+                  row.kind == 'video' && row.finalAbsolutePath != null,
+            )
+            .toList(),
+      );
+      if (movieMain != null) {
+        final String mainPath = normalizeVideoPath(
+          movieMain.finalAbsolutePath!,
+        );
+        work = pathMatches
+            .where(
+              (VideoSourceScrapeWork value) => value.members.any(
+                (VideoBookRow member) =>
+                    normalizeVideoPath(member.videoPath) == mainPath,
+              ),
+            )
+            .firstOrNull;
+      }
     }
     if (work == null) {
       throw const VideoDownloadPipelineActionRequired(
@@ -3847,6 +3899,50 @@ class VideoDownloadPipelineService {
       if (row.backendFileIndex == index) return row;
     }
     return null;
+  }
+
+  /// movie 形态 job 的主片行：最大 `sizeBytes`（与组织器抬正片的判据一致；
+  /// 平手取列表里先出现的行）。旧行没记体积时按 0 参与比较。
+  static VideoDownloadJobFileRow? _mainMovieRow(
+    List<VideoDownloadJobFileRow> files,
+  ) {
+    VideoDownloadJobFileRow? main;
+    for (final VideoDownloadJobFileRow file in files) {
+      if (main == null || (file.sizeBytes ?? 0) > (main.sizeBytes ?? 0)) {
+        main = file;
+      }
+    }
+    return main;
+  }
+
+  /// 并列正片的入库标题（BUG-2007）：优先文件名解析出的标题（剥字幕组/分辨率
+  /// 噪音）；解析为空、与主片标题相同或与其他并列正片撞名时退回整理后文件名。
+  /// 有损解析（前編/後編 会归约成同名）只用来选展示标题，绝不承担唯一性——
+  /// 唯一性由 bookUid 与磁盘路径保证。
+  static Map<int, String> _standaloneMovieTitles(
+    List<VideoDownloadJobFileRow> files, {
+    required int? mainFileId,
+    required String mainTitle,
+  }) {
+    final Map<int, String> raw = <int, String>{};
+    final Map<int, String> parsed = <int, String>{};
+    final Map<String, int> hits = <String, int>{};
+    for (final VideoDownloadJobFileRow file in files) {
+      if (file.id == mainFileId || file.finalAbsolutePath == null) continue;
+      final String stem = p.basenameWithoutExtension(file.finalAbsolutePath!);
+      final String series = parseVideoFilename(stem).series.trim();
+      raw[file.id] = stem;
+      parsed[file.id] = series;
+      hits[series] = (hits[series] ?? 0) + 1;
+    }
+    return <int, String>{
+      for (final int id in raw.keys)
+        id: parsed[id]!.isEmpty ||
+                parsed[id] == mainTitle ||
+                hits[parsed[id]]! > 1
+            ? raw[id]!
+            : parsed[id]!,
+    };
   }
 
   static int _compareJobFiles(
