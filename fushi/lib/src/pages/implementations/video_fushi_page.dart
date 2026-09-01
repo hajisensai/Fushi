@@ -109,6 +109,8 @@ import 'package:fushi/src/shortcuts/input_binding.dart'
     show GamepadButton, InputBinding, activeModifierKeys;
 import 'package:fushi/src/shortcuts/reader_caret_router.dart'
     show CaretAction, ReaderCaretRouter;
+import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
+    show WindowFullscreenHost;
 import 'package:fushi/src/shortcuts/shortcut_action.dart'
     show ShortcutAction, ShortcutScope;
 import 'package:fushi/src/media/video/video_foreground_layers.dart'
@@ -698,11 +700,6 @@ enum _VideoSidePanelKind {
   quality,
   // TODO-1376：弹幕手动搜索/选集匹配侧栏。
   danmakuMatch,
-  // 2026-08 字幕工作台 PR-C：字幕调整走**底部抽屉**而不是右侧栏——视频全幅可见、
-  // 继续播放，字幕在真实位置实时预览。内容仍是同一份 schema 投影的快捷设置面板
-  // （`initialCategory: 'subtitle'`），只是容器换成 [VideoTranslucentBottomDrawer]；
-  // 开关/互斥/焦点/逐级 Esc 全部沿用侧栏机制（它就是一种侧栏 kind）。
-  subtitleAdjust,
 }
 
 class _VideoSidePanelState {
@@ -7057,15 +7054,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-1351：记住目标分类（音频轨/字幕轨按钮传 'audio'/'subtitle'，设置按钮传 null），
     // 供 _buildVideoQuickSettingsSheet 读；面板 didUpdateWidget 据其变化跳分类。
     _settingsInitialCategory = initialCategory;
-    // 字幕分类走底部抽屉（PR-C）：字幕轨按钮 / 右键「字幕轨」/ 字幕加载遮罩都传
-    // 'subtitle'，统一在这一处分流，不让调用方各记一个 kind。
-    if (initialCategory == 'subtitle') {
-      _showVideoSidePanel(
-        _VideoSidePanelKind.subtitleAdjust,
-        sourceSlot: sourceSlot,
-      );
-      return;
-    }
     _showVideoSidePanel(
       _VideoSidePanelKind.settings,
       sourceSlot: sourceSlot,
@@ -7133,24 +7121,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final VideoPlayerController? controller = _controller;
     final VideoController? videoController = controller?.videoController;
     final ColorScheme cs = Theme.of(context).colorScheme;
+    // 视频页是**窗口全屏的合法宿主**之一：全屏键（默认 F11）只在小说 / 漫画 / 视频
+    // 里能进入全屏，靠的就是这层声明（见 [WindowFullscreenHosts]）。它零布局、零行为，
+    // 只在挂载期间登记自己所在的路由。
+    //
     // TODO-1342：最外层包一层手柄输入层，让桌面轮询的 [GamepadButtonIntent] 与
     // Android 原生手柄按键都能落到本页的视频动作（play/pause、seek、音量、字幕、全屏、
     // 返回）。放在 [PopScope] 之上 ⇒ 是 [_videoFocusNode] 及所有子焦点节点的祖先，
     // 冒泡/派发都能命中；wrapper 自身不夺焦（见 [_wrapVideoGamepadControls]）。
-    return _wrapVideoGamepadControls(
-      PopScope(
-        // 始终 `canPop: false` 自管退出：① 浮层栈非空时 back 先关栈（一层一层退），
-        // 浮层在根 Overlay 退出视频路由不会自动清它，必须在 pop 前拦截；② 栈空真退出
-        // 时，**先 await `flushPosition()` 把退出瞬间位置可靠落库再手动 pop**——否则只剩
-        // controller.dispose() 里 fire-and-forget 的 `_forceSavePositionSync()`，drift
-        // 写库 Future 与 Navigator 同步销毁 State 竞争、常写不完，导致「退出再进没回到
-        // 上次位置」（对齐阅读器 `onWillPop` 先 await 落库再 pop 的做法）。
-        canPop: false,
-        onPopInvokedWithResult: (bool didPop, Object? _) async {
-          if (didPop) return;
-          await _handleBackOrExit();
-        },
-        child: _buildScaffold(controller, videoController, cs),
+    return WindowFullscreenHost(
+      child: _wrapVideoGamepadControls(
+        PopScope(
+          // 始终 `canPop: false` 自管退出：① 浮层栈非空时 back 先关栈（一层一层退），
+          // 浮层在根 Overlay 退出视频路由不会自动清它，必须在 pop 前拦截；② 栈空真退出
+          // 时，**先 await `flushPosition()` 把退出瞬间位置可靠落库再手动 pop**——否则只剩
+          // controller.dispose() 里 fire-and-forget 的 `_forceSavePositionSync()`，drift
+          // 写库 Future 与 Navigator 同步销毁 State 竞争、常写不完，导致「退出再进没回到
+          // 上次位置」（对齐阅读器 `onWillPop` 先 await 落库再 pop 的做法）。
+          canPop: false,
+          onPopInvokedWithResult: (bool didPop, Object? _) async {
+            if (didPop) return;
+            await _handleBackOrExit();
+          },
+          child: _buildScaffold(controller, videoController, cs),
+        ),
       ),
     );
   }

@@ -4094,5 +4094,6 @@
   "storage_category_backups": "남아 있는 백업 아카이브",
   "storage_entry_backups_label": "마지막 내보내기에서 남은 아카이브 $n 개",
   "update_download_source_unavailable": "이 파일에는 $source 을(를) 사용할 수 없어 자동 순서로 되돌렸습니다",
-  "network_proxy_credentials_scope_hint": "자격 증명은 HTTP 요청에만 적용되며, 내장 토렌트 엔진은 사용할 수 없습니다"
+  "network_proxy_credentials_scope_hint": "자격 증명은 HTTP 요청에만 적용되며, 내장 토렌트 엔진은 사용할 수 없습니다",
+  "anki_error_paired_device_unreachable": "Couldn't create the card because no paired device could be reached. Make sure Fushi is running on the paired device, or turn off Mine to paired device in Anki settings to create cards locally."
 }

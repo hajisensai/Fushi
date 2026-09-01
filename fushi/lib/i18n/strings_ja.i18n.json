@@ -4094,5 +4094,6 @@
   "storage_category_backups": "残っているバックアップ書庫",
   "storage_entry_backups_label": "前回のエクスポートで残った $n 個の書庫",
   "update_download_source_unavailable": "$source はこのファイルでは利用できないため、自動順に戻しました",
-  "network_proxy_credentials_scope_hint": "認証情報は HTTP 通信にのみ適用されます。内蔵 torrent エンジンでは使用できません"
+  "network_proxy_credentials_scope_hint": "認証情報は HTTP 通信にのみ適用されます。内蔵 torrent エンジンでは使用できません",
+  "anki_error_paired_device_unreachable": "Couldn't create the card because no paired device could be reached. Make sure Fushi is running on the paired device, or turn off Mine to paired device in Anki settings to create cards locally."
 }
