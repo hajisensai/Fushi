@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1862 条。点号进各自文件。
+> 共 1863 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2011](bugs/BUG-2011-clip-export-container-portability.md) | ✅ | ✅ | 视频片段导出产物只有 mpv 能播，进度条显示整集时长 |
 | [BUG-2009](bugs/BUG-2009-desktop-wheel-scroll-speed-halved.md) | ✅ | ✅ | 桌面滚轮平滑修复把滚动速度砍半 |
 | [BUG-2005](bugs/BUG-2005-recent-added-portrait-slot.md) | ✅ | ✅ | 首页「最近添加」行视频卡恒竖槽，横版截帧被模糊垫底成白条 |
 | [BUG-1983](bugs/BUG-1983-gal-layout-whitespace-fold.md) | ✅ | ✅ | Gal 同句换行快照未原地折叠导致换行错乱 |
