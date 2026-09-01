@@ -6,4 +6,6 @@
 - **[x] ② 已加自动化测试** — `fushi/test/utils/misc/desktop_wheel_scroll_controller_test.dart`（8 条）把每条距离断言改成平台无关的 1:1（120→120、12+120→132），平台差异只留在「分帧到达还是单帧到达」；新增「粗滚轮分帧到达，不是单帧瞬移」（Windows/Linux 断言中途 0<offset<120，macOS 断言单帧 120）与「粗滚轮手势里的小尾帧不得走同步路径掐断动画」。`fushi/test/utils/misc/desktop_scroll_physics_test.dart` 反向钉死 `refinedDesktopPointerScrollDelta` 不得复活（源码扫描）。`fushi/test/widgets/fushi_page_scaffold_scroll_test.dart` 的四处期望换成字面值 120/132/240。
 - **备注**：
   - 词典弹窗内部另有一套 `POPUP_WHEEL_PIXEL_FACTOR = 0.48`（`fushi/assets/popup/popup.js`，BUG-870），成因不同——那是 WebView 原生粗步长被 zoom 放大，且用户没报，本次**刻意不动**。
-  - 「帧率」那半边不是本次改动引入的自由度：滚动多远不影响每帧的绘制成本，把距离恢复回 1:1 不会掉帧。真机复测见下方证据。
+  - **真机实测（2026-09-01，本机 3840×2160 客户区，profile 包 + VM service 时间线，`wheelinject` 注入 40 档 @120ms）**：滚动过程中引擎产帧 **131 帧/s**，UI 线程 `Animator::BeginFrame` p50 **1.30ms** / p90 5.94 / max 8.44（>8.3ms 仅 1 帧，>16.7ms **0 帧**），raster `GPURasterizer::Draw` p50 **0.83ms** / max 2.91，`FlutterCompositorPresentLayers` p50 0.06ms。「又快」和「帧率高」同时成立。
+  - **一档实际位移**：屏幕采样探针（垂直位移 SAD 匹配）在本机量到系统一档 = **116px**（3 档 358px，119.3px/档）。这就是新代码原样透传的量；旧代码 `magnitude * 0.5` 会把它压到 **58px**。
+  - ⚠️ 上面这条位移是在**设置页**量的，而设置页右栏有自己的 `ScrollController`，**不走** `FushiScrollController`（后者是 `FushiPageScaffold` 持有的 *primary* controller，只接管没有显式 controller 的 primary ScrollView），所以新旧包在那一页都是 116px——它证明的是探针可信 + 系统一档的真实量，不是折扣被去掉。折扣路径（首页 dashboard `ListView` / scaffold primary 滚动区）在空 profile 的隔离实例里内容不够长、滚不动，没能在真机上做成 before/after；那一半由 widget 测试覆盖（120→120，塞回 ×0.5 立刻变 60）。
