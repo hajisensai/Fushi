@@ -214,6 +214,95 @@ void main() {
     );
 
     test(
+      'AniDB 下发 banned 后闩住 endpoint：封禁期间零请求，到期自动恢复',
+      () async {
+        final _CatalogFixture fixture = await _catalogFixture();
+        addTearDown(fixture.dispose);
+        DateTime now = DateTime.utc(2026, 9, 1, 12);
+        int apiCalls = 0;
+        final AniDbVideoMetadataProvider provider = AniDbVideoMetadataProvider(
+          clientName: 'fushitest',
+          clientVersion: 7,
+          language: 'zh-CN',
+          titleCatalog: fixture.catalog,
+          now: () => now,
+          sleep: (Duration duration) async => now = now.add(duration),
+          client: MockClient((http.Request request) async {
+            apiCalls++;
+            // 封禁是 HTTP 200 + <error>banned</error>，传输层看不出异常。
+            return http.Response.bytes(
+              utf8.encode('<error>banned</error>'),
+              200,
+              headers: const <String, String>{
+                'content-type': 'application/xml',
+              },
+            );
+          }),
+        );
+        addTearDown(provider.close);
+
+        // 目录里没有 999，没有可降级的目录身份，封禁如实抛到调用方。
+        await expectLater(
+          provider.fetchWork(
+            const VideoMetadataLookup(
+              provider: VideoMetadataProviderKind.anidb,
+              externalId: '999',
+              mediaKind: VideoMetadataMediaKind.tv,
+            ),
+          ),
+          throwsA(isA<AniDbBannedException>()),
+        );
+        expect(apiCalls, 1);
+        expect(provider.isBanned, isTrue);
+        expect(provider.isHttpApiAvailable, isFalse,
+            reason: '闸必须在发请求之前就关掉 httpapi');
+        expect(provider.banRemaining, isNotNull);
+
+        // 批量刮削的下一个作品：一次请求都不许再发，退回目录身份。
+        final VideoMetadataWork? next = await provider.fetchWork(
+          const VideoMetadataLookup(
+            provider: VideoMetadataProviderKind.anidb,
+            externalId: '42',
+            mediaKind: VideoMetadataMediaKind.tv,
+          ),
+        );
+        expect(apiCalls, 1, reason: '封禁期间继续请求只会延长封禁');
+        expect(next?.ids.single.value, '42');
+
+        // 分集抓取按封禁如实报错，不谎称「缺客户端身份」。
+        await expectLater(
+          provider.fetchEpisodes(
+            const VideoMetadataLookup(
+              provider: VideoMetadataProviderKind.anidb,
+              externalId: '42',
+              mediaKind: VideoMetadataMediaKind.tv,
+            ),
+            seasonNumber: 1,
+          ),
+          throwsA(isA<AniDbBannedException>()),
+        );
+        expect(apiCalls, 1);
+
+        // 到期自动解闩：长驻进程不必重启才能恢复。
+        now = now.add(const Duration(hours: 24, minutes: 1));
+        expect(provider.isBanned, isFalse);
+        expect(provider.banRemaining, isNull);
+        expect(provider.isHttpApiAvailable, isTrue);
+        await expectLater(
+          provider.fetchWork(
+            const VideoMetadataLookup(
+              provider: VideoMetadataProviderKind.anidb,
+              externalId: '999',
+              mediaKind: VideoMetadataMediaKind.tv,
+            ),
+          ),
+          throwsA(isA<AniDbBannedException>()),
+        );
+        expect(apiCalls, 2, reason: '解闩后重新允许请求');
+      },
+    );
+
+    test(
       'falls back to catalog identity when the configured HTTP API fails',
       () async {
         final _CatalogFixture fixture = await _catalogFixture();

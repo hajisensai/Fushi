@@ -200,13 +200,11 @@ class _VideoSourceScrapeRunDetailDialogState
     final VideoSourceScrapeTaskController? controller = widget.controller;
     if (source == null || controller == null) return;
     final VideoSourceScrapeConfirmationCandidate? candidate =
-        await showAppDialog<VideoSourceScrapeConfirmationCandidate>(
+        await showVideoSourceScrapeManualBindingDialog(
       context: context,
-      builder: (BuildContext context) => _ManualBindingDialog(
-        controller: controller,
-        source: source,
-        workTitle: issue.workTitle,
-      ),
+      controller: controller,
+      source: source,
+      workTitle: issue.workTitle,
     );
     if (candidate == null || !mounted) return;
     setState(() {
@@ -224,6 +222,11 @@ class _VideoSourceScrapeRunDetailDialogState
         _changed = true;
         _resolved.add(issue.workTitle);
       });
+    } on VideoSourceScrapeWorkNotFound {
+      // 历史 run 记的是当时的作品标题；文件改名/移动/删除后它就不在当前计划
+      // 里了。给用户能照着做的中文说明，而不是裸异常（BUG-1998）。
+      if (!mounted) return;
+      setState(() => _error = t.video_source_scrape_work_missing);
     } on Object catch (error) {
       if (!mounted) return;
       setState(() => _error = error.toString());
@@ -232,6 +235,24 @@ class _VideoSourceScrapeRunDetailDialogState
     }
   }
 }
+
+/// 手动搜索资料源并挑一个作品（共享入口：run 详情与待确认队列都用它）。
+/// 返回选中的候选；取消返回 null。
+Future<VideoSourceScrapeConfirmationCandidate?>
+    showVideoSourceScrapeManualBindingDialog({
+  required BuildContext context,
+  required VideoSourceScrapeTaskController controller,
+  required SourceLibraryRow source,
+  required String workTitle,
+}) =>
+        showAppDialog<VideoSourceScrapeConfirmationCandidate>(
+          context: context,
+          builder: (BuildContext context) => _ManualBindingDialog(
+            controller: controller,
+            source: source,
+            workTitle: workTitle,
+          ),
+        );
 
 /// 手动搜索资料源并挑一个作品。结果行与批次内确认是同一个
 /// [VideoSourceScrapeCandidateTile]，选中后返回同一种候选对象。
@@ -282,7 +303,9 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
       if (!mounted) return;
       setState(() {
         _results = const <VideoSourceScrapeConfirmationCandidate>[];
-        _error = error.toString();
+        _error = error is VideoSourceScrapeWorkNotFound
+            ? t.video_source_scrape_work_missing
+            : error.toString();
       });
     } finally {
       if (mounted) setState(() => _searching = false);
