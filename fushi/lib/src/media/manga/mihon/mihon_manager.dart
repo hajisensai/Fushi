@@ -340,8 +340,8 @@ class MihonManager extends ChangeNotifier {
       // 索引可能把我们重定向到另一个入口地址（legacy 分支跟随 index_v2），
       // 落库的身份必须是解析后的那个，不是用户输入的那个。
       if (store.indexUrl != oldIndexUrl &&
-          stores.any((MangaExtensionStoreRow row) =>
-              row.indexUrl == store.indexUrl)) {
+          stores.any(
+              (MangaExtensionStoreRow row) => row.indexUrl == store.indexUrl)) {
         throw const MihonRuntimeException(
           'STORE_DUPLICATE',
           'Another extension store already uses this URL',
@@ -514,27 +514,31 @@ class MihonManager extends ChangeNotifier {
           'Extension lib ${inspection.libVersion} is not supported',
         );
       }
-      // BUG-1996：身份门只比**两侧同义**的字段（包名 + versionName）。
+      // 身份门：「我拿到的 APK 是不是我点的那一个」。三个字段都是两侧同义量，
+      // 全等才放行。
       //
-      // 原来这里还比 `versionCode`，但索引侧与 APK 侧的 versionCode 从上游改版起
-      // 就不是同一个量了（69 vs 104069，详见两个模型字段上的注释），于是 keiyoushi
-      // 的每一个扩展都必然 METADATA_MISMATCH、一个都装不上。
+      // BUG-1996 曾把 versionCode 从判据里拿掉，理由是「索引 69 / APK 104069 不同
+      // 尺度」——**那个前提经实测证伪**：keiyoushi 的索引与 APK 由 gradle 的同一个
+      // `androidVersionCodeProvider` 产出，直连 `repo/index.pb` 实测 SamuraiScan
+      // field5 = 104069、Manga Mura = 104005，与各自 APK 的 android:versionCode
+      // 逐字相同。判据因此原样保留，并补上 versionName（严格更强，不是放宽）。
       //
-      // 不改成「枚举新旧两种编码」：那要把 keiyoushi 构建脚本的 `pack(libVersion)
-      // *1000 + code` 规则复制进来，等于把上游的实现细节焊死在我们的校验里，下次
-      // 上游再调构建逻辑照样挂。versionName（`1.4.69`）两侧逐字相同、且本身就编码了
-      // libVersion + 扩展版本号，约束强度不低于原来那条等值——这是把不同义的量从
-      // 判据里拿掉，不是放宽。
+      // 用户报的「扩展装不上」根因**仍未定位**（见 BUG-1996）。所以这里改的是可
+      // 诊断性：把两侧实际值写进异常，下一份报告才有得看——原来是一句常量。
       //
       // 真实性不由本门负责：APK 是不是仓库签的由下面 SIGNATURE_MISMATCH 对
       // `signingKey` 保证，是不是与已装版本同一签名由 SIGNATURE_CHANGED 保证。
-      // 本门的职责只是「我拿到的是不是我点的那一个」。
       if (expected != null) {
         if (inspection.packageName != expected.packageName ||
+            inspection.apkVersionCode != expected.extensionVersionCode ||
             inspection.versionName != expected.versionName) {
-          throw const MihonRuntimeException(
+          throw MihonRuntimeException(
             'METADATA_MISMATCH',
-            'Downloaded APK does not match the extension store metadata',
+            'Downloaded APK does not match the extension store metadata '
+                '(store: ${expected.packageName} '
+                'v${expected.extensionVersionCode}/${expected.versionName}; '
+                'apk: ${inspection.packageName} '
+                'v${inspection.apkVersionCode}/${inspection.versionName})',
           );
         }
       }

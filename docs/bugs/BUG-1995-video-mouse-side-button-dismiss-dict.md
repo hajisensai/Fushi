@@ -19,3 +19,26 @@
   - 变异实测：把 `if (from < 11)` 改成 `if (false)` → 迁移用例正确变红；已还原。
   - 同时更新 `shortcut_action_wiring_guard_test.dart` 的执行体清单（登记 `video_fushi_page.dart`——鼠标是位置型输入，收在页面根 Listener 而非 `video_player_shortcuts.dart` 那份纯函数判决表里）与 `shortcut_channel_wiring_guard_test.dart` 里已过期的 `video/home/global.mouse` 注释（`knownUnconsumedChannels` 仍是空集，本次按「接上解析入口」销账）。
 - **备注**：未做真机验证——本轮四个 bug 的验证都停在 `flutter test` 层。视频页鼠标侧键这条建议在 Windows 上手测一次（绑侧键到「关闭词典」→ 视频里查词 → 按侧键关浮层 → 浮层不可见时按侧键应无事发生）。`web_video_fushi_page.dart:380` 同样声明 video scope，改完自动跟随，未单独改。
+
+- **复审补充（两条必须记的账）**：
+  1. **v10 → v11 的「清掉老快照里 video scope 鼠标绑定」已撤销**。它的理由「通道关着的
+     那段时间那些绑定从来没生效过」是错的：`dictionaryPopupInputSpecFor`
+     （`dictionary_popup_input_bridge.dart`）读的是 `registry.bindingsFor(action)`，
+     **完全不看 `scope.channels`**（`shortcut_registry.dart` 全文也没有任何按 channels
+     做的装载期清洗），而视频页把整份 video scope 转发给词典浮层。所以老快照里那些绑定
+     今天就在生效——指针压在浮层上按侧键，浮层 WebView 的 DOM mousedown 会回传并关掉
+     浮层，恰恰就是本次报 bug 的用户最可能已经配好的那条。清掉 = 静默删用户正在用的
+     配置。版本号仍留在 11（已发出去的快照写了 11 不能回退），只是不做迁移。
+  2. **页级 `_handleVideoPointerDown` 里的浮层分支在正常路径上不可达**，功能只做到「半通」。
+     词典浮层住在**根 Overlay**（`video_fushi_page.dart` 的 `_buildPopupOverlay`，跨路由
+     生存），浮层可见时 `Positioned.fill(LookupDismissBarrier)` 铺满全屏，其内层
+     `ColoredBox` 命中测试实心，`_RenderTheatre.hitTestChildren` 命中即 return，页面路由
+     整棵跳过。同一文件里的 `_onDismissBarrierHover` 就是为「barrier 盖住后收不到 hover」
+     而存在的铁证。**净效果**：指针压在词典浮窗上按侧键 → 通（走的是浮层输入桥那条老路，
+     本 PR 只是打开了 video scope 的 mouse 通道让用户能绑）；指针落在浮窗之外（屏幕绝大
+     部分面积）再按 → **原始症状仍然复现**。根治方向：`LookupDismissBarrier` 内部已有一个
+     不入竞技场的 `Listener.onPointerDown`（滑关判轴用），把非主键那一路接到同一判据即可
+     ——barrier 的语义本来就是「点它就关」。本轮未做，需真机验证后单独一条。
+  3. `resolveMouse(button, scope: ShortcutScope.universal)` 那条回落是死分支
+     （`ShortcutScope.universal.channels` 不开 mouse，设置页不给绑）；其注释里「Flutter 侧
+     至今没有 PointerDownEvent → MouseBinding 派发管线」的理由已被本 PR 自己证伪。

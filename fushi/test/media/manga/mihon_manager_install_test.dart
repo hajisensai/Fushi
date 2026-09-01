@@ -306,8 +306,8 @@ void main() {
   // （`versionCode: n` + `versionName: '1.6.$n'`），正是踩坑的那个假设，所以结构上
   // 抓不到这个 bug。
   test(
-    'BUG-1996: keiyoushi APK whose android:versionCode carries the libVersion '
-    'prefix still installs (index and APK versionCode are different scales)',
+    'BUG-1996: index.json encodes int64 versionCode as a STRING; it parses '
+    'and matches the APK versionCode exactly',
     () async {
       await database.upsertMangaExtensionStore(
         MangaExtensionStoresCompanion.insert(
@@ -337,7 +337,7 @@ void main() {
                     },
                     'extensionLib': '1.4',
                     // 仓库尺度：裸扩展版本号。
-                    'versionCode': 69,
+                    'versionCode': '104069',
                     'versionName': '1.4.69',
                     'contentWarning': 'CONTENT_WARNING_SAFE',
                     'sources': <Object?>[],
@@ -378,7 +378,7 @@ void main() {
         apkUrl: 'https://repo.example/apk/fresh.apk',
         iconUrl: 'https://repo.example/icons/fixture.png',
         libVersion: '1.4',
-        extensionVersionCode: 69,
+        extensionVersionCode: 104069,
         versionName: '1.4.69',
         language: 'en',
         contentWarning: 1,
@@ -389,10 +389,12 @@ void main() {
       final MihonInstallProposal proposal =
           await manager.prepareStoreInstall(available);
 
-      expect(proposal.inspection.apkVersionCode, 104069);
-      expect(proposal.expected!.extensionVersionCode, 69);
-      expect(proposal.inspection.versionName, proposal.expected!.versionName,
-          reason: 'versionName 才是两侧同义、可比的那个量');
+      expect(proposal.expected!.extensionVersionCode, 104069,
+          reason: '字符串编码的 int64 必须解析成数，裸 as num? 会抛 TypeError');
+      expect(proposal.inspection.apkVersionCode,
+          proposal.expected!.extensionVersionCode,
+          reason: '索引与 APK 的 versionCode 是同一个量，身份门比的就是它');
+      expect(proposal.inspection.versionName, proposal.expected!.versionName);
     },
   );
 
@@ -426,7 +428,7 @@ void main() {
                     'iconUrl': 'icons/fixture.png',
                   },
                   'extensionLib': '1.4',
-                  'versionCode': 69,
+                  'versionCode': '104070',
                   'versionName': '1.4.69',
                   'contentWarning': 'CONTENT_WARNING_SAFE',
                   'sources': <Object?>[],
@@ -467,7 +469,9 @@ void main() {
       apkUrl: 'https://repo.example/apk/fresh.apk',
       iconUrl: 'https://repo.example/icons/fixture.png',
       libVersion: '1.4',
-      extensionVersionCode: 69,
+      // versionCode 与 APK 侧**相同**（104070），只有 versionName 不同：
+      // 证明 versionName 这条判据独立生效，不是被 versionCode 顺带拦下的。
+      extensionVersionCode: 104070,
       versionName: '1.4.69',
       language: 'en',
       contentWarning: 1,
@@ -477,8 +481,11 @@ void main() {
     await expectLater(
       manager.prepareStoreInstall(available),
       throwsA(isA<MihonRuntimeException>()
-          .having((MihonRuntimeException e) => e.code, 'code',
-              'METADATA_MISMATCH')),
+          .having(
+              (MihonRuntimeException e) => e.code, 'code', 'METADATA_MISMATCH')
+          .having((MihonRuntimeException e) => e.message, 'message',
+              allOf(contains('1.4.69'), contains('1.4.70')))),
+      reason: '异常必须带上两侧实际值，否则下一份用户报告依然不可诊断',
     );
   });
 

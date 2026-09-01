@@ -581,6 +581,82 @@ void main() {
       expect(byName.containsKey('Kept'), isTrue);
     });
 
+    test(
+        'BUG-1994: a row destroyed by the OLD prune is restored when the '
+        'dictionary is still installed on disk (self-heal must survive)',
+        () async {
+      final db = await _openDb();
+      // 「装没装」只认磁盘目录：这里 Oxford 目录还在，Gone 已被卸载。
+      final repo = ProfileRepository(
+        db,
+        _FakeAnkiRepository(),
+        isDictionaryInstalled: (String name) => name == 'Oxford',
+      );
+      final pid = await repo.createProfile('A');
+
+      await _seedDict(db, name: 'Oxford', order: 3, hidden: <String>['en']);
+      await _seedDict(db, name: 'Gone', order: 4);
+      await repo.snapshotCurrentSettings(pid);
+
+      // 旧版本的 prune 在别的 profile 里把两行都删了（磁盘目录没动）。
+      await db.clearAllDictionaryMeta();
+
+      await repo.applyProfile(pid);
+
+      final byName = await _dictByName(db);
+      expect(byName.containsKey('Oxford'), isTrue,
+          reason: '磁盘上还装着 → 这是被旧 prune 删掉的真行，必须回插；'
+              '不回插就是把「切回去就有」变成「永远没有」');
+      expect(byName['Oxford']!.order, 3);
+      expect(jsonDecode(byName['Oxford']!.hiddenLanguagesJson), <String>['en']);
+      expect(byName.containsKey('Gone'), isFalse,
+          reason: '磁盘上没有 → 仍然是幽灵行，判据是磁盘不是快照');
+    });
+
+    test('BUG-1994: apply 写回 profile 拥有的四列，且不覆盖三列安装事实', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final pid = await repo.createProfile('A');
+
+      await db.upsertDictionaryMeta(const DictionaryMetadataCompanion(
+        name: Value('D'),
+        formatKey: Value('yomitan'),
+        order: Value(0),
+        type: Value('term'),
+        metadataJson: Value('{"snapshot":1}'),
+        hiddenLanguagesJson: Value('["en"]'),
+        collapsedLanguagesJson: Value('["ja"]'),
+        languageOverride: Value('ja'),
+      ));
+      await repo.snapshotCurrentSettings(pid);
+
+      // live 行整体变样：四列（profile 拥有）+ 三列（安装事实）全改掉。
+      await db.upsertDictionaryMeta(const DictionaryMetadataCompanion(
+        name: Value('D'),
+        formatKey: Value('mdx'),
+        order: Value(9),
+        type: Value('kanji'),
+        metadataJson: Value('{"live":2}'),
+        hiddenLanguagesJson: Value('[]'),
+        collapsedLanguagesJson: Value('[]'),
+        languageOverride: Value(null),
+      ));
+
+      await repo.applyProfile(pid);
+
+      final DictionaryMetaRow row = (await _dictByName(db))['D']!;
+      // profile 拥有的四列回滚到快照值。
+      expect(row.order, 0);
+      expect(row.hiddenLanguagesJson, '["en"]');
+      expect(row.collapsedLanguagesJson, '["ja"]');
+      expect(row.languageOverride, 'ja');
+      // 安装事实三列保持 live 值，绝不被旧快照盖回去。
+      expect(row.formatKey, 'mdx', reason: 'formatKey 是安装事实，唯一写者是导入路径');
+      expect(row.type, 'kanji', reason: 'type 是安装事实');
+      expect(row.metadataJson, '{"live":2}',
+          reason: 'metadataJson 会被重导/在线更新整体重建，快照不得回写');
+    });
+
     test('order change follows profile switch', () async {
       final db = await _openDb();
       final repo = _repo(db);

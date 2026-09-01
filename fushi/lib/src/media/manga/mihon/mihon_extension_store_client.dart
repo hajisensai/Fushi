@@ -16,6 +16,14 @@ const int mihonExtensionApkMaxBytes = 100 * 1024 * 1024;
 
 enum MihonStoreFormat { currentJson, currentProtobuf, legacy }
 
+/// 索引里的整数字段：protobuf-JSON 把 int64 编成字符串（keiyoushi 的 `index.json`
+/// 实测 `"versionCode": "104069"`），legacy JSON 用裸数字。两种都收，非法值当 0。
+int _parseStoreInt(Object? value) {
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value) ?? 0;
+  return 0;
+}
+
 @immutable
 class MihonStore {
   const MihonStore({
@@ -77,11 +85,11 @@ class MihonAvailableExtension {
   final String iconUrl;
   final String libVersion;
 
-  /// 仓库索引里的扩展版本号，**仓库尺度**（keiyoushi `index.pb` field 5）。
+  /// 仓库索引里的扩展版本号（keiyoushi `index.pb` field 5 / `index.json` 的
+  /// `versionCode`）。名字只标**出处**（来自索引），不标尺度。
   ///
-  /// 与 APK manifest 的 [MihonExtensionInspection.apkVersionCode] **不是同一个量**
-  /// ——见那里的注释（BUG-1996）。索引里是裸的 `69`，APK 里是加了 libVersion 前缀的
-  /// `104069`。别拿它和任何 APK 尺度的量比大小或比相等。
+  /// 与 APK manifest 的 [MihonExtensionInspection.apkVersionCode] **是同一个量**：
+  /// 上游由同一个 gradle provider 产出，实测两侧逐字相同——见那里的注释。
   final int extensionVersionCode;
   final String versionName;
   final String language;
@@ -735,7 +743,10 @@ class MihonExtensionStoreClient {
           .resolve(resources['iconUrl']?.toString() ?? '')
           .toString(),
       libVersion: json['extensionLib']?.toString() ?? '',
-      extensionVersionCode: (json['versionCode'] as num?)?.toInt() ?? 0,
+      // keiyoushi 的 `index.json` 是 protobuf-JSON：int64 按规范编码成**字符串**
+      // （实测 `"versionCode": "104069"`），裸 `as num?` 会当场抛 TypeError 把整个
+      // 仓库索引解析炸掉。两种编码都收。
+      extensionVersionCode: _parseStoreInt(json['versionCode']),
       versionName: json['versionName']?.toString() ?? '',
       language:
           sources.map((MihonAvailableSource s) => s.language).toSet().length ==
@@ -783,7 +794,7 @@ class MihonExtensionStoreClient {
       libVersion: versionName.contains('.')
           ? versionName.substring(0, versionName.lastIndexOf('.'))
           : versionName,
-      extensionVersionCode: (json['code'] as num?)?.toInt() ?? 0,
+      extensionVersionCode: _parseStoreInt(json['code']),
       versionName: versionName,
       language: language,
       contentWarning: (json['nsfw'] as num?)?.toInt() == 1 ? 3 : 1,

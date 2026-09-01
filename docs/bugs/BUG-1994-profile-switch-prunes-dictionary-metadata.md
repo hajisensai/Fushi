@@ -18,6 +18,10 @@
 
   不是数据丢失（磁盘 `dictionaryResourceDirectory/牛津英汉/` 完好），但有隐患：在 B 里执行「清空词典数据库」时 `AppModel.deleteDictionaries` 枚举的是**磁盘目录**而非元数据表，会把 B 看不见的牛津一起物理删掉。
 - **[x] ① 已修复** — `applyProfile` 不再 prune、也不再 insert，只把 profile 真正拥有的四列（`order` / `hiddenLanguagesJson` / `collapsedLanguagesJson` / `languageOverride`）写回**已存在**的行。新增 DB 原语 `applyDictionaryMetaProfileColumns`（`packages/fushi_core/lib/src/database/database_content_misc.part.dart`），它按 name 更新、返回受影响行数：0 = 这本词典不在库里 → 跳过，绝不 insert（`insertOnConflictUpdate` 会造出一行没有磁盘目录的幽灵元数据）。`formatKey` / `type` / `metadataJson` 三列不再被快照覆盖——那是安装事实，唯一写者是导入路径。`hasDictMeta` 哨兵保留（前 TODO-1077 的旧快照没有 dictionary_meta 行，跳过整段）。
+
+  **复审补充（自愈必须保留）**：只「不 insert」会把**已经被咬的用户**从「切回 A 就有」变成「永远没有」——旧实现里 T5 的自愈正是 `upsertDictionaryMeta` 顺带给的，升级时如果正停在受害 profile（行已被删），新代码 UPDATE 命中 0 行、直接跳过，而且下一次 `switchProfile` 的 `snapshotCurrentSettings` 还会把它从来源 profile 的快照里一并抹掉。全仓没有任何从磁盘回填元数据的逻辑，唯一出路是重新导入。
+
+  所以判据不是「表里有没有这一行」（那正是本 bug 的病根），而是**磁盘上有没有 `dictionaryResourceDirectory/<name>/`**：UPDATE 命中 0 行时，目录还在 → 这是被旧 prune 删掉的真行，按快照整行补回；目录不在 → 才是幽灵，跳过。判据经 `ProfileRepository` 的可选构造参数 `isDictionaryInstalled` 注入（`AppModel.isDictionaryInstalledOnDisk`），不注入时一律不回插，测试零依赖。
 - **[x] ② 已加自动化测试** — `fushi/test/profile/profile_repository_test.dart`：
   - 新增 `BUG-1994: a dictionary imported AFTER another profile was created stays visible in that profile`，按上表 T1→T4 复刻时序；
   - 新增 `BUG-1994: snapshot row for a dictionary that is no longer installed must NOT be resurrected as a ghost row`（防止修法从「删多了」翻成「插多了」）；

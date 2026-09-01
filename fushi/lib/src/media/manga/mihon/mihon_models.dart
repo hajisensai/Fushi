@@ -65,17 +65,17 @@ class MihonExtensionInspection {
   final String packageName;
   final String name;
 
-  /// APK manifest 的 `android:versionCode`，**Android 尺度**。
+  /// APK manifest 的 `android:versionCode`。名字只标**出处**（来自 APK），不标尺度。
   ///
-  /// 与仓库索引的 [MihonAvailableExtension.extensionVersionCode] **不是同一个量**：
-  /// keiyoushi 的构建脚本从 2026-05-15（`153fbece5 "Rework Gradle build logic"`）
-  /// 起给它加了 libVersion 前缀 —— `pack("1.4")*1000 + 69 = 104069`，而索引里写的
-  /// 仍是裸的 `69`。改版前两者相等，所以旧代码那条等值断言当初是对的；改版后
-  /// keiyoushi 的**每一个**扩展都必然不等（BUG-1996）。名字分开就是为了让类型系统
-  /// 挡住下一次「看到两个都叫 versionCode 就拿来比」。
+  /// 与仓库索引的 [MihonAvailableExtension.extensionVersionCode] **是同一个量**，
+  /// 可直接比较。BUG-1996 一度写成「两侧不同尺度、索引是裸的 69、APK 是 104069」，
+  /// 那是错的：keiyoushi 两侧都由 gradle 的同一个 `androidVersionCodeProvider`
+  /// 产出（`ExtensionPlugin.kt` 同时喂给 APK output 与索引元数据），实测
+  /// `repo/index.pb` 的 field 5 与 APK 的 `android:versionCode` 逐字相同：
+  /// SamuraiScan 两侧都是 104069、Manga Mura 两侧都是 104005。
   ///
-  /// 只可与**同为 APK 尺度**的量比较：DB 里 `manga_extensions.versionCode` 存的就是
-  /// 它（列名冻结，语义即此），降级门 `DOWNGRADE_REJECTED` 两侧同尺度、自洽。
+  /// DB 里 `manga_extensions.versionCode` 存的也是它（列名冻结），所以身份门、
+  /// 降级门 `DOWNGRADE_REJECTED`、「有更新」角标三处两侧同量、自洽。
   final int apkVersionCode;
   final String versionName;
   final String libVersion;

@@ -53,17 +53,21 @@ void main() {
   test('BUG-1995: videoDismissDict 默认无绑定（不抢用户已有的键）', () {
     final FushiShortcutRegistry reg = FushiShortcutRegistry()
       ..loadDefaults(TargetPlatform.windows);
-    final ShortcutBindingSet set =
-        reg.bindingsFor(ShortcutAction.videoDismissDict);
+    final ShortcutBindingSet set = reg.bindingsFor(
+      ShortcutAction.videoDismissDict,
+    );
     expect(set.mouseBindings, isEmpty);
     expect(set.keyboardBindings, isEmpty);
     expect(set.gamepadBindings, isEmpty);
   });
 
-  // v11 迁移：video scope 的鼠标通道**历史上开过**，那期间绑上去的键从来没有生效过
-  // （没有派发管线）。现在管线建好了，若不清理，那些被遗忘的绑定会突然开始真的执行
-  // ——「下一句」「切换全屏」在用户眼里就是升级后侧键行为凭空变了。
-  test('BUG-1995: v11 迁移清掉老快照里 video scope 的死鼠标绑定', () {
+  // v10 → v11 **不得**清理老快照里 video scope 的鼠标绑定。
+  //
+  // 曾经加过这样一条迁移，理由是「通道关着的那段时间它们从来没生效过」。那是错的：
+  // 弹窗输入桥 `dictionaryPopupInputSpecFor` 读的是 `bindingsFor(action)`，不看
+  // `scope.channels`；视频页又把整份 video scope 转发给词典浮层。所以那些绑定
+  // 今天就在生效（浮层上按侧键关浮层），清掉 = 静默删除用户正在用的配置。
+  test('BUG-1995: v11 升级不得删除老快照里 video scope 的鼠标绑定', () {
     final FushiShortcutRegistry reg = FushiShortcutRegistry();
     reg.loadFromJsonString(
       '{"__schema_version__": 10,'
@@ -74,13 +78,13 @@ void main() {
 
     expect(
       reg.bindingsFor(ShortcutAction.videoTogglePlayPause).mouseBindings,
-      isEmpty,
-      reason: '从未生效过的 video 鼠标绑定必须清掉，否则升级后突然开始触发',
+      const <MouseBinding>[MouseBinding(3)],
+      reason: '这条绑定经词典浮层输入桥今天就在生效，升级不得静默删掉它',
     );
     expect(
       reg.bindingsFor(ShortcutAction.readerDismissDict).mouseBindings,
       const <MouseBinding>[MouseBinding(3)],
-      reason: 'reader 的鼠标绑定一直是真实生效的，绝不能被这条迁移误伤',
+      reason: 'reader 的鼠标绑定同样不能被任何迁移误伤',
     );
   });
 }
