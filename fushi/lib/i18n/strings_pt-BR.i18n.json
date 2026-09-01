@@ -4095,6 +4095,7 @@
   "storage_entry_backups_label": "$n arquivo(s) deixado(s) pela última exportação",
   "update_download_source_unavailable": "$source não está disponível para este arquivo; voltando à ordem automática",
   "network_proxy_credentials_scope_hint": "As credenciais valem apenas para requisições HTTP; o motor de torrent integrado não consegue usá-las",
+  "anki_error_paired_device_unreachable": "Couldn't create the card because no paired device could be reached. Make sure Fushi is running on the paired device, or turn off Mine to paired device in Anki settings to create cards locally.",
   "video_source_scrape_enabled_toggle_hint": "When off, manual, post-scan, post-download and background scraping all skip this source.",
   "video_source_scrape_work_missing": "This work is no longer in the current source plan (its files may have been renamed, moved or deleted). Rescrape the source to refresh the pending list.",
   "video_source_scrape_pending_works": "Works awaiting identification",

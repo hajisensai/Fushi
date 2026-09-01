@@ -19,7 +19,7 @@
 - 统计展示只经 `loadStatFacts`（`fushi/lib/src/stats/stat_facts.dart`）→ 统一事实面 `StatFact`（日面 / 小时面分列，legacy 行与段同形，**不许**把两面并进同一列表求和）。不许直读 legacy 表 / `activity_events` 做统计（豁免：`stat_facts.dart`、`lib/src/sync/**`、`home_video_page.dart` 的最近观看时刻）。
 - 窗口阈值只在 `StatWindow`（`stat_window.dart`）：近 7 天恰 7 天、近 30 天恰 30 天、上周窗口同长不重叠。页面不许自己 `now - 7d`。
 - 活动流唯一数据源 `StatFacts.activityRows` = legacy 活动行 ∪ `segmentsAsActivityRows` ∪ `galgameSessionsAsActivityRows`；首页、游戏首页、互联 host 的远端活动端点都吃它。
-- 首页每日目标分子与阅读统计页共用 `readingGoalCharsForDay`（只算 book+manga）。
+- 首页每日目标分子与阅读统计页目标卡共用 `studyGoalCharsForDay`（BUG-1993）：函数只按 `dateKey` 求和，**域由调用方传的行集决定**。目标是「每日学习目标」——两处都传完整日面（`StatFacts.daily`，阅读 + 视频字幕 + 游戏 hook），与热力图「全部」档同覆盖面；只算某一域时传对应切片（如 `dailyBooks`，统计页概览「今日字数」与 CPH 仍是阅读域）。v92 曾把分子硬编码 `isBook`，纯视频/游戏日目标恒 0、与同一张卡上方的热力图对不上。偏好键 `readingGoalDailyChars` / `readingGoalWeeklyChars` 冻结不动，语义已是学习目标。
 
 ## 同步（wire v2）
 

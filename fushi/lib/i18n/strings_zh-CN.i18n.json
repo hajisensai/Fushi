@@ -4095,6 +4095,7 @@
   "storage_entry_backups_label": "上次导出遗留的 $n 个备份包",
   "update_download_source_unavailable": "$source 不适用于该文件，已回退到自动顺序",
   "network_proxy_credentials_scope_hint": "凭据仅用于 HTTP 请求；内置 torrent 引擎无法使用",
+  "anki_error_paired_device_unreachable": "无法制卡：当前没有可连接的已配对设备。请确认配对设备上的 Fushi 正在运行；如果要在本机制卡，请关闭「制卡到已配对设备」。",
   "video_source_scrape_enabled_toggle_hint": "关闭后：手动、扫描后、下载导入后与后台自动补刮都会跳过此来源。",
   "video_source_scrape_work_missing": "该作品已不在当前来源计划中（文件可能已改名、移动或删除）。请重新刮削此来源刷新待确认列表。",
   "video_source_scrape_pending_works": "待确认作品",
