@@ -16,7 +16,7 @@ import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 /// 过快捷键设置的用户，其快照里该 action 仍是「旧版本的完整默认」（仅 F），覆盖后新键
 /// （F12）永久丢失 —— 表现为「按 F12 没反应」。迁移只对「用户从未动过该 action（键集
 /// 恰等于旧默认全集）」的快照补回新键，绝不碰用户主动改/删过的绑定。
-const int kShortcutSchemaVersion = 10;
+const int kShortcutSchemaVersion = 11;
 
 /// 持久化 JSON 里记录写入时 schema 版本的保留 key（不是某个 action 的绑定，故单独
 /// 处理，不进 _unknownEntries，也不会被 [ShortcutAction.fromKey] 误解析）。
@@ -260,6 +260,21 @@ class FushiShortcutRegistry extends ChangeNotifier {
         _seedGamepadDefaultIfUnset(action, defaults);
       }
     }
+    // v10 -> v11（BUG-1995）：视频页的鼠标通道被重新打开。**这一版不做任何迁移。**
+    //
+    // 曾经写过一段「清掉老快照里 video scope 的鼠标绑定」，理由是「通道关着的那段
+    // 时间它们从来没生效过，清掉不改变任何用户观察到的行为」。那个理由是错的：
+    // 弹窗输入桥 `dictionaryPopupInputSpecFor`（`dictionary_popup_input_bridge.dart`）
+    // 直接读 `registry.bindingsFor(action).mouseBindings`，**完全不看
+    // `scope.channels`**（本文件全文也没有任何按 channels 做的装载期清洗）。视频页
+    // 又把整份 video scope 转发给弹窗（`video_fushi_page.dart` 的
+    // `dictionaryPopupInputScope` / `forwardedActions`）。所以老快照里那些绑定**今天
+    // 就在生效**：词典浮层可见、指针压在浮层上时按侧键，浮层 WebView 的 DOM
+    // mousedown 会回传并关掉浮层——恰恰就是本次报 bug 的用户最可能已经配好的那条。
+    // 清掉它 = 静默删除一个正在用的绑定，never break userspace。
+    //
+    // 版本号仍然 bump 到 11（已发出去的快照会写 11，不能回退），只是循环体为空。
+    // 若将来真要清理无效绑定，判据必须是「弹窗桥也解析不到」，不是「通道没开」。
   }
 
   /// v10：仅当 [action] 的手柄绑定**为空**时，把当前默认表的手柄绑定播种进去；

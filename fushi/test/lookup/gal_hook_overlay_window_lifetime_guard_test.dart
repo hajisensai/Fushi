@@ -13,6 +13,14 @@ import 'package:flutter_test/flutter_test.dart';
 /// 3. `ForgetDeadWindow()`：句柄非我方活窗时清 `hwnd_` + 走上面那张表。
 /// 4. `Show()` 在创建/幂等守卫前先 `ForgetDeadWindow()`。
 /// 5. `IsShowing()` 用 `OwnsLiveWindow()` 而不是裸 `hwnd_ != nullptr`。
+/// 6. `HandleMessage()` 用 **WndProc 透传进来的消息 hwnd**，不读成员 `hwnd_`：
+///    旧窗口的 `WM_NCDESTROY` 可以晚于新窗口创建，用成员会把活着的新窗口拆掉。
+/// 7. `hook_toolbar::SlotTooltipHost` 是同一 bug 家族的第二处：提示窗以宿主窗
+///    为 owner 创建，宿主销毁时系统连带销毁它，所以它也要 `OwnsLiveWindow()` +
+///    在 `EnsureWindow()` 的幂等守卫**之前** `ForgetDeadWindow()`。
+/// 8. 窗口消失由 native 在 `WM_NCDESTROY` 里**推**给 Dart（`overlayDestroyed`），
+///    Dart 的可见性镜像被动复位；没有这条事件，消费端只能退回按行 `isShowing()`
+///    轮询。方法名是两侧的 wire 契约，必须同名。
 ///
 /// 浮窗真弹出依赖 native Direct2D + 桌面合成，headless 测不了，故用源码扫描钉住。
 void main() {
@@ -76,6 +84,8 @@ void main() {
   late String cpp;
   late String compact;
   late String header;
+  late String hookCpp;
+  late String hookHeader;
 
   setUpAll(() {
     cpp = maskComments(
@@ -84,6 +94,12 @@ void main() {
     compact = cpp.replaceAll(RegExp(r'\s+'), '');
     header = File(
       'windows/runner/floating_lyric_window.h',
+    ).readAsStringSync().replaceAll(RegExp(r'\s+'), '');
+    hookCpp = maskComments(
+      File('windows/runner/hook_toolbar_window.cpp').readAsStringSync(),
+    );
+    hookHeader = File(
+      'windows/runner/hook_toolbar_window.h',
     ).readAsStringSync().replaceAll(RegExp(r'\s+'), '');
   });
 
@@ -181,18 +197,171 @@ void main() {
     );
   });
 
-  test('WM_NCDESTROY 走同一张复位表并撤回 back-pointer', () {
+  test('WM_NCDESTROY 认消息自带的 hwnd，撤 back-pointer 后才动成员与复位表', () {
     expect(
       compact,
       contains('caseWM_NCDESTROY:'),
       reason: '窗口生命周期结束点必须同步清 Dart 复用对象持有的原生句柄',
     );
-    expect(compact, contains('ResetWindowInteractionState();'));
     expect(
       compact,
-      contains('SetWindowLongPtr(destroyed,GWLP_USERDATA,0);hwnd_=nullptr;'),
-      reason: 'WM_NCDESTROY 必须同时撤回 back-pointer 与成员句柄',
+      contains(
+        'constHWNDdestroyed=hwnd;'
+        'SetWindowLongPtr(destroyed,GWLP_USERDATA,0);',
+      ),
+      reason: '被销毁的是消息自带的那一个窗口，back-pointer 必须从它身上撤',
     );
+    expect(
+      compact,
+      contains(
+        'if(hwnd_==destroyed){ResetWindowInteractionState();hwnd_=nullptr;',
+      ),
+      reason:
+          '成员句柄与复位表只能在「死的正是我方当前这一个」时才动 —— 旧窗口的\n'
+          'NCDESTROY 晚于新窗口创建时，无条件清零会把活着的新窗口拆了',
+    );
+  });
+
+  test('HandleMessage 收 WndProc 透传的 hwnd，函数体不再读成员 hwnd_', () {
+    expect(
+      header,
+      contains(
+        'LRESULTHandleMessage(HWNDhwnd,UINTmessage,WPARAMwparam,'
+        'LPARAMlparam)noexcept;',
+      ),
+      reason: '签名不带 hwnd 就只能拿成员冒充，这正是要根除的形状',
+    );
+    expect(
+      compact,
+      contains('returnself->HandleMessage(hwnd,message,wparam,lparam);'),
+      reason: 'WndProc 必须把消息自己的 hwnd 透传下去',
+    );
+    final String body = functionBody(
+      cpp,
+      'LRESULT FloatingLyricWindow::HandleMessage(',
+    );
+    // 唯一允许的两处成员用法就是 WM_NCDESTROY 里的「是不是我这一个」比较和
+    // 随之而来的清零；其余任何 `hwnd_` 都是拿成员冒充消息宿主。
+    final List<String> offenders = RegExp(r'hwnd_.{0,14}')
+        .allMatches(body)
+        .map((Match m) => m.group(0)!)
+        .where(
+          (String use) =>
+              !use.startsWith('hwnd_==destroyed') &&
+              !use.startsWith('hwnd_=nullptr;'),
+        )
+        .toList();
+    expect(
+      offenders,
+      isEmpty,
+      reason: 'HandleMessage 处理的是 |hwnd| 那个窗口的消息，不是「当前成员」的',
+    );
+  });
+
+  test('窗口消失由 native 推事件，不靠 Dart 按行轮询', () {
+    final String body = functionBody(
+      cpp,
+      'LRESULT FloatingLyricWindow::HandleMessage(',
+    );
+    expect(
+      body,
+      contains('if(on_destroyed_)on_destroyed_();'),
+      reason: 'HWND 生命周期终点是唯一能如实报告「窗口没了」的地方',
+    );
+    expect(header, contains('usingDestroyedCallback=std::function<void()>;'));
+    final String wiring = maskComments(
+      File('windows/runner/flutter_window.cpp').readAsStringSync(),
+    ).replaceAll(RegExp(r'\s+'), '');
+    expect(
+      wiring,
+      contains('gal_hook_text_window_->SetDestroyedCallback('),
+      reason: 'native 不推事件的话，消费端只能退回按行 isShowing() 往返',
+    );
+    expect(
+      wiring,
+      contains('InvokeMethod("overlayDestroyed"'),
+      reason:
+          '方法名是与 GalHookTextOverlayChannel 的 wire 契约；改一侧不改另一侧，'
+          '事件静默消失、镜像永不复位（回到 BUG-1981 的症状）',
+    );
+  });
+
+  group('SlotTooltipHost（同一 bug 家族的第二处死句柄）', () {
+    test('头文件声明 OwnsLiveWindow / ForgetDeadWindow', () {
+      expect(hookHeader, contains('boolOwnsLiveWindow()const;'));
+      expect(hookHeader, contains('voidForgetDeadWindow();'));
+    });
+
+    test('OwnsLiveWindow 核对实例 back-pointer，不只判 IsWindow', () {
+      final String body = functionBody(
+        hookCpp,
+        'bool SlotTooltipHost::OwnsLiveWindow() const {',
+      );
+      expect(body, contains('IsWindow(hwnd_)'));
+      expect(
+        body,
+        contains('GetWindowLongPtr(hwnd_,GWLP_USERDATA))==this;'),
+        reason: 'IsWindow 单独不足以排除 HWND 被系统回收给别的窗口',
+      );
+    });
+
+    test('ForgetDeadWindow 活窗 no-op，死窗清全部每窗口状态', () {
+      final String body = functionBody(
+        hookCpp,
+        'void SlotTooltipHost::ForgetDeadWindow() {',
+      );
+      expect(
+        body,
+        contains('if(OwnsLiveWindow()){return;}'),
+        reason: '活窗必须原样返回，否则每次 Update 都会把好提示窗拆了',
+      );
+      for (final String reset in <String>[
+        'hwnd_=nullptr;',
+        'active_slot_=-1;',
+        'current_text_.clear();',
+        'tool_={};',
+      ]) {
+        expect(body, contains(reset), reason: '死窗复位表漏了 \$reset');
+      }
+    });
+
+    test('EnsureWindow 在幂等守卫之前先忘掉死句柄，并给新窗打 back-pointer', () {
+      final String body = functionBody(
+        hookCpp,
+        'bool SlotTooltipHost::EnsureWindow(HWND owner) {',
+      );
+      final int forget = body.indexOf('ForgetDeadWindow();');
+      final int guard = body.indexOf('if(hwnd_!=nullptr){returntrue;}');
+      expect(
+        forget,
+        greaterThanOrEqualTo(0),
+        reason: '宿主窗被销毁会连带销毁这个 owned popup，hwnd_ 却不会被通知',
+      );
+      expect(
+        guard,
+        greaterThan(forget),
+        reason: '幂等守卫在前就永久短路：浮窗重建后槽位提示整会话再也不出',
+      );
+      expect(
+        body,
+        contains(
+          'SetWindowLongPtr(hwnd_,GWLP_USERDATA,'
+          'reinterpret_cast<LONG_PTR>(this));',
+        ),
+        reason: '不打 back-pointer 的话 OwnsLiveWindow 的第二条判据恒假',
+      );
+    });
+
+    test('析构先忘死句柄再 DestroyWindow，不去拆被回收的别人家窗口', () {
+      final String body = functionBody(
+        hookCpp,
+        'SlotTooltipHost::~SlotTooltipHost() {',
+      );
+      final int forget = body.indexOf('ForgetDeadWindow();');
+      final int destroy = body.indexOf('DestroyWindow(hwnd_);');
+      expect(forget, greaterThanOrEqualTo(0));
+      expect(destroy, greaterThan(forget));
+    });
   });
 
   test('抬窗失败回 false，不让 Dart 把无窗口记成已显示', () {

@@ -45,7 +45,8 @@ class VideoLibraryScrapeSweep {
   final FushiDatabase _database;
   final VideoSourceScrapeTaskController _controller;
 
-  /// 自动刮削总闸（`AppModel.videoAutoScrape`，默认开）。null = 不设闸（测试）。
+  /// 自动补刮总闸（`AppModel.videoLibraryAutoBackfillScrape`，默认开，设置页
+  /// 「视频 → 媒体库」可关）。null = 不设闸（测试）。
   final bool Function()? _isEnabled;
 
   bool _swept = false;

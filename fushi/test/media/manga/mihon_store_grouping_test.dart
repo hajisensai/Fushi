@@ -31,7 +31,7 @@ MihonAvailableExtension _ext(
     apkUrl: 'https://repo.example/$name.apk',
     iconUrl: '',
     libVersion: '1.6',
-    versionCode: 1,
+    extensionVersionCode: 1,
     versionName: '1.6.1',
     language: 'all',
     contentWarning: 0,

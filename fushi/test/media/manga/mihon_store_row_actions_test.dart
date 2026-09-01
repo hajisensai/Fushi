@@ -211,7 +211,7 @@ MihonAvailableExtension _extension() => const MihonAvailableExtension(
       apkUrl: 'https://repo.example/sample.apk',
       iconUrl: '',
       libVersion: '1.4',
-      versionCode: 1,
+      extensionVersionCode: 1,
       versionName: '1.0.0',
       language: 'en',
       contentWarning: 0,

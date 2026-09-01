@@ -11,6 +11,7 @@ import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart';
 import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show
@@ -371,10 +372,41 @@ KeyEventResult _neutralizeBareSpace(KeyEvent event) {
 /// 任何 platform-channel 失败都以 debug 日志吞掉，杂散按键永不崩应用。
 Future<void> _toggleWindowFullscreen() async {
   try {
+    // 用户裁定：全屏是**内容模块**（小说 / 漫画 / 视频）的能力，首页 / 书架 / 设置页
+    // 按全屏键不该把整个窗口变成无边框全屏。判据不写成「路由名 == …」的 if 阶梯
+    // （那是把页面清单硬编码进快捷键层，新增内容页必漏改），而是问一个由内容页自己
+    // 声明的布尔量——见 [WindowFullscreenHosts]。
+    //
+    // 门是**非对称**的，这不是疏漏而是必须：只门住「进入」，「退出」永远放行。若两边
+    // 都门住，用户在内容页进全屏、退回首页之后，就再没有任何键能退出全屏——桌面全屏
+    // 是 runner 自绘的保边框巨窗（BUG-1933），系统并不提供第二个出口，那等于把人锁死
+    // 在全屏里。宿主可见时布尔量直接短路，不会多花一次 platform channel 往返；只有
+    // 「非宿主页面按了全屏键」这一种情况才需要读一次真值来判断是不是退出。
+    if (!WindowFullscreenHosts.hasVisibleHost &&
+        (await readDesktopWindowFullscreen()) != true) {
+      return;
+    }
     await toggleDesktopWindowFullscreen();
   } catch (e) {
     debugPrint('[Fushi] window fullscreen toggle skipped: $e');
   }
+}
+
+/// 当前若处于窗口全屏就退出它，并返回「确实退了」。
+///
+/// 两个调用场景共用这一个原语：
+///   · 内容页「返回上一级」阶梯里的**先退全屏**那一级（用户裁定：Esc 也能退全屏）。
+///     返回 true 表示这次返回已被全屏消费，调用方**不该**再退页。
+///   · 最后一个 [WindowFullscreenHost] 离场时的归还（见该类文档）。
+///
+/// 判据只认 native 真值，不认「这次全屏是不是我进的」：用户按 F11 进的全屏和按页面
+/// 全屏按钮进的全屏，在他眼里是同一个全屏，Esc 都该先把它退掉。先读后写而不是无条件
+/// 写 false，是为了不在「本来就不是全屏」的常态路径上白打一次 platform channel。
+Future<bool> exitWindowFullscreenIfActive() async {
+  if (!desktopWindowFullscreenSupported) return false;
+  if ((await readDesktopWindowFullscreen()) != true) return false;
+  await setDesktopWindowFullscreen(false);
+  return true;
 }
 
 /// Reads the desktop window fullscreen state from its single native owner.

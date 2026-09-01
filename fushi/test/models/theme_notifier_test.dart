@@ -11,6 +11,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 
 FushiDatabase _testDb() {
@@ -192,6 +193,26 @@ void main() {
     test('darkTheme returns valid ThemeData', () {
       expect(notifier.darkTheme, isA<ThemeData>());
       expect(notifier.darkTheme.colorScheme.brightness, Brightness.dark);
+    });
+
+    // BUG-1997：深色曾把 scrollbar thickness 留成 `null`，退回 Material 默认 8px。
+    // 桌面端 MaterialScrollBehavior 给每个垂直 Scrollable 自动包 Scrollbar，加上全局
+    // thumbVisibility=true，那条 8+2px 的覆盖式滚动条常驻在每个列表右侧，压住并
+    // **吞掉**最右一列操作按钮的点击（字幕面板的星标）。两个亮度必须同粗细。
+    test('GUARD: scrollbar thickness is pinned and identical in both '
+        'brightnesses (BUG-1997)', () {
+      final double? light =
+          notifier.theme.scrollbarTheme.thickness?.resolve(<WidgetState>{});
+      final double? dark =
+          notifier.darkTheme.scrollbarTheme.thickness?.resolve(<WidgetState>{});
+
+      expect(light, isNotNull,
+          reason: 'null 会退回 Material 默认 8px 的覆盖式滚动条');
+      expect(dark, isNotNull,
+          reason: 'null 会退回 Material 默认 8px 的覆盖式滚动条');
+      expect(dark, light,
+          reason: '深浅两套主题的滚动条粗细必须一致，否则布局 gutter 只在一种主题下够用');
+      expect(light, kFushiScrollbarThickness);
     });
 
     test('default customThemeSeed is teal', () {

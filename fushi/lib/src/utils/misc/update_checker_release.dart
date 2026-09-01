@@ -938,6 +938,10 @@ class UpdateChecker {
     final status = ValueNotifier<String>(t.update_connecting);
     final statusController = UpdateDownloadStatusController(status);
     final diagnostics = ValueNotifier<UpdateDownloadDiagnostics?>(null);
+    // 「本次没用上你选的下载来源」通告：所选来源对某些资产解析不出候选（旧仓库直链 /
+    // 第三方 host / 镜像前缀已下线）时行为上照常回退，但降级必须看得见，否则用户会以为
+    // 自己锁定了 Cloudflare（见 [UpdateDownloadPlan.preferenceUnavailable]）。
+    final sourceNotice = ValueNotifier<String?>(null);
     final overlayVisible = ValueNotifier<bool>(true);
     // 取消令牌（TODO-738）：遮罩「取消」按钮按下后置位，下载引擎在候选边界看到即中断。
     final cancellation = UpdateDownloadCancellation();
@@ -950,6 +954,7 @@ class UpdateChecker {
           return _DownloadOverlay(
             progress: progress,
             status: status,
+            notice: sourceNotice,
             diagnostics: diagnostics,
             onHide: () => overlayVisible.value = false,
             onCancel: () {
@@ -987,11 +992,21 @@ class UpdateChecker {
       // 进度/诊断/取消接线，而不复制下载参数。
       final HttpClient downloadClient = client;
       Future<File> downloadAsset(UpdateAsset target) {
+        // 候选计划一次算清：候选序 + 用户所选来源钉在哪个候选上（钉住就不竞速，
+        // 见 orderedCandidatesAfterRace）+ 所选来源是否根本不适用于本资产。
+        final UpdateDownloadPlan plan = resolveUpdateDownloadPlan(target.url);
+        sourceNotice.value = _downloadSourceUnavailableNotice(plan);
+        final String? notice = sourceNotice.value;
+        if (notice != null) {
+          ErrorLogService.instance
+              .logDiagnostic('UpdateChecker.download', notice);
+        }
         return downloadUpdateAsset(
           asset: target,
           version: version,
           updatesDir: updatesDir,
-          candidateUrls: updateDownloadUrls(target.url),
+          candidateUrls: plan.candidates,
+          pinnedCandidateUrl: plan.pinnedUrl,
           openUrl: (Uri uri, Map<String, String> headers) =>
               _openHttpDownload(downloadClient, uri, headers, version),
           onProgress: (double value) {

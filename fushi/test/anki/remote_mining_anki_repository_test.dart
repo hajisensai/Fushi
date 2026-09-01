@@ -229,6 +229,28 @@ void main() {
       expect(await run(null), MineResult.error); // 无可达主机
     });
 
+    test('不可达提示说明失败结果和恢复路径，不暴露内部术语', () async {
+      final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+        local: _FakeLocal(),
+        client: _FakeSender(null),
+        fileByteLoader: (String p) async => null,
+        dictMediaLoader: (String d, String p) => null,
+      );
+
+      final MineOutcome outcome = await repo.mineEntry(
+          rawPayloadJson: '{}',
+          context: const AnkiMiningContext(sentence: ''));
+
+      expect(outcome.errorCode, AnkiErrorCode.pairedDeviceUnreachable);
+      expect(
+        outcome.errorDetail,
+        RemoteMiningAnkiRepository.pairedDeviceUnreachableMessage,
+      );
+      expect(outcome.errorDetail, contains('Fushi is running'));
+      expect(outcome.errorDetail, contains('Mine to paired device'));
+      expect(outcome.errorDetail, isNot(contains('server-side mining')));
+    });
+
     test('BUG-1549 主机回传 deckName → 成功 outcome 带主机牌组名', () async {
       final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
         local: _FakeLocal(),

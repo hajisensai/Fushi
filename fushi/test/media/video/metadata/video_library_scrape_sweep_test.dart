@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +7,7 @@ import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/metadata/video_library_scrape_sweep.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// BUG-2000：库内自动补刮只认「从未刮出规范身份」这一条判据，批次 scope 记
@@ -162,6 +165,69 @@ void main() {
     expect(await service.pendingWorks(), hasLength(1));
     await service.sweepOnce();
     expect(runner.sourceIds, isEmpty);
+  });
+
+  // 总闸的根因守卫：库内自动补刮会联网（AniDB 每日标题包，配了客户端身份时还会打
+  // httpapi/TMDB），所以它必须挂在一个用户看得见、关得掉的**自己的**偏好上。修前
+  // 它借用 video_auto_scrape——那个键的契约明写「不会发起元数据网络请求」、且早已
+  // 从设置页撤下，等于给一项后台联网行为配了个不存在的开关。
+  group('自动补刮总闸是独立且用户可控的偏好', () {
+    test('默认开，读写往返，且与旧的 video_auto_scrape 互不影响', () async {
+      final FushiDatabase prefsDb =
+          FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(prefsDb.close);
+      final PreferencesRepository repo = PreferencesRepository(prefsDb);
+      await repo.loadFromDb();
+
+      expect(repo.videoLibraryAutoBackfillScrape, isTrue,
+          reason: '默认开——存量用户升级后行为不变');
+
+      await repo.setVideoLibraryAutoBackfillScrape(false);
+      expect(repo.videoLibraryAutoBackfillScrape, isFalse);
+      expect(repo.videoAutoScrape, isTrue,
+          reason: '关掉补刮不得连带改动旧的本地封面 sweep 开关');
+
+      await repo.setVideoAutoScrape(false);
+      await repo.setVideoLibraryAutoBackfillScrape(true);
+      expect(repo.videoAutoScrape, isFalse,
+          reason: '两个键必须是两份独立状态，不是同一个键的两个名字');
+      expect(repo.videoLibraryAutoBackfillScrape, isTrue);
+
+      await repo.loadFromDb();
+      expect(repo.videoLibraryAutoBackfillScrape, isTrue,
+          reason: '跨 reload 持久化');
+    });
+
+    test('sweep 的接线读新偏好，且设置页真画了这个开关', () {
+      final String homePage = File(
+        'lib/src/pages/implementations/home_page.dart',
+      ).readAsStringSync();
+      expect(
+        homePage,
+        contains(
+            'isEnabled: () => appModelNoUpdate.videoLibraryAutoBackfillScrape'),
+        reason: 'sweep 必须挂在自己的总闸上',
+      );
+      expect(
+        homePage,
+        isNot(contains('videoAutoScrape')),
+        reason: '不得回退到契约写着「不联网」且用户改不了的 video_auto_scrape',
+      );
+
+      final String videoSettings = File(
+        'lib/src/settings/settings_schema_video.dart',
+      ).readAsStringSync();
+      expect(
+        videoSettings,
+        contains("id: 'video.library.scrape_auto_backfill'"),
+        reason: '联网的后台行为必须在设置页有一个能关的开关',
+      );
+      expect(
+        videoSettings,
+        contains('setVideoLibraryAutoBackfillScrape'),
+        reason: '开关必须真写穿到 sweep 读的那个偏好',
+      );
+    });
   });
 
   test('每进程只跑一轮', () async {
