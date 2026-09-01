@@ -3691,17 +3691,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           ),
           SizedBox(
             height: rowCardHeight + liftHeadroom * 2,
-            child: HorizontalDragScrollable(
-              child: ListView.separated(
-                controller: controller,
-                scrollDirection: Axis.horizontal,
-                physics: desktopAwareScrollPhysics(),
-                itemCount: items.length,
-                separatorBuilder: (BuildContext _, int __) =>
-                    SizedBox(width: tokens.spacing.gap),
-                itemBuilder: (BuildContext context, int i) => Padding(
-                  padding: EdgeInsets.symmetric(vertical: liftHeadroom),
-                  child: items[i].build(),
+            // [SectionSwipeCascade]：首页几乎整屏都是横滚行，行内横滑归行；行已
+            // 滚到边缘后继续拖，交给 [SectionSwipeNavigator] 级联切到相邻分区。
+            child: SectionSwipeCascade(
+              child: HorizontalDragScrollable(
+                child: ListView.separated(
+                  controller: controller,
+                  scrollDirection: Axis.horizontal,
+                  physics: desktopAwareScrollPhysics(),
+                  itemCount: items.length,
+                  separatorBuilder: (BuildContext _, int __) =>
+                      SizedBox(width: tokens.spacing.gap),
+                  itemBuilder: (BuildContext context, int i) => Padding(
+                    padding: EdgeInsets.symmetric(vertical: liftHeadroom),
+                    child: items[i].build(),
+                  ),
                 ),
               ),
             ),
