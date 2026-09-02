@@ -43,6 +43,7 @@ add_library(fushi_voice_hook SHARED
   "hook/adapter.h"
   "hook/ffmpeg_runtime.h"
   "hook/hook_original_registry.h"
+  "hook/tracked_handle_table.h"
   "hook/geometry_provider_registry.h"
   "hook/lookup_v19_runtime.h"
   "hook/generic_input_shield.inc"
@@ -206,6 +207,15 @@ add_executable(fushi_hook_original_registry_test
 target_include_directories(fushi_hook_original_registry_test PRIVATE "hook")
 add_test(NAME fushi_hook_original_registry_test
   COMMAND fushi_hook_original_registry_test)
+
+add_executable(fushi_tracked_handle_table_test
+  "tests/tracked_handle_table_test.cpp"
+)
+target_include_directories(fushi_tracked_handle_table_test PRIVATE "hook")
+target_compile_definitions(fushi_tracked_handle_table_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_tracked_handle_table_test
+  COMMAND fushi_tracked_handle_table_test)
 
 add_executable(fushi_xaudio_trace_export_test
   "tests/xaudio_trace_export_test.cpp"

@@ -580,6 +580,37 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // 游戏内查词卡（galgame hook 直接贴进游戏画面的那张）是**第三个形态**。它与 app 外
+  // 覆盖窗曾共用 overlay 那组键，于是「游戏里合适」和「桌面上合适」只能二选一——真机上
+  // 表现为一个过小、另一个过大。合适尺寸本就不同：覆盖窗浮在整块桌面上，游戏内卡片要
+  // 挤在游戏客户区里且不能遮住正文，所以给它自己的键。默认同样 independent=false，
+  // 跟随 app 内共享值，解锁后才用自己的宽高（解锁瞬间不跳尺寸）。
+  bool get galCardLookupIndependentSize =>
+      getPref('gal_card_lookup_independent_size', defaultValue: false) as bool;
+
+  Future<void> setGalCardLookupIndependentSize(bool value) async {
+    await setPref('gal_card_lookup_independent_size', value);
+    notifyListeners();
+  }
+
+  double get galCardLookupMaxWidth =>
+      getPref('gal_card_lookup_max_width', defaultValue: defaultPopupMaxWidth)
+          as double;
+
+  void setGalCardLookupMaxWidth(double width) async {
+    await setPref('gal_card_lookup_max_width', width);
+    notifyListeners();
+  }
+
+  double get galCardLookupMaxHeight =>
+      getPref('gal_card_lookup_max_height', defaultValue: defaultPopupMaxHeight)
+          as double;
+
+  void setGalCardLookupMaxHeight(double height) async {
+    await setPref('gal_card_lookup_max_height', height);
+    notifyListeners();
+  }
+
   bool get extensionPopupIndependentSize =>
       getPref('extension_popup_independent_size', defaultValue: false) as bool;
 

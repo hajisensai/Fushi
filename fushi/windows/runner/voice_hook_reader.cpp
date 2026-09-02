@@ -1,5 +1,7 @@
 #include "voice_hook_reader.h"
 
+#include "game_client_extent.h"
+
 #include <windows.h>
 
 // v19 准入兜底：注入侧算不出游戏 exe 摘要时由 host 自己算（见 [ExeDigestCache]）。
@@ -741,6 +743,10 @@ flutter::EncodableValue LookupHitMap(const VoiceHookLookupHit& hit) {
       {flutter::EncodableValue("glyphH"), flutter::EncodableValue(hit.glyph_h)},
       {flutter::EncodableValue("viewW"), flutter::EncodableValue(hit.view_w)},
       {flutter::EncodableValue("viewH"), flutter::EncodableValue(hit.view_h)},
+      {flutter::EncodableValue("clientW"),
+       flutter::EncodableValue(hit.client_w)},
+      {flutter::EncodableValue("clientH"),
+       flutter::EncodableValue(hit.client_h)},
       {flutter::EncodableValue("submit"), flutter::EncodableValue(hit.submit)},
   });
 }
@@ -840,6 +846,10 @@ void PumpLookupOnce() {
   }
   VoiceHookLookupHit hit;
   if (reader.PollLookupHit(&hit) && pump.channel != nullptr) {
+    // 客户区**现量现报**：host 的卡片尺寸上界要按屏幕物理像素算，而它必须在
+    // 查词开始之前就知道。量不到就留 0，host 退回画布口径（保守但不越界）。
+    fushi::game_client_extent::QueryGameClientExtent(
+        reader.CurrentPid(), &hit.client_w, &hit.client_h);
     pump.channel->InvokeMethod(
         "onGalLookupHit",
         std::make_unique<flutter::EncodableValue>(LookupHitMap(hit)));
@@ -991,10 +1001,18 @@ void HandleLookupPresent(
   const uint32_t card_height = ReadLookupDimension(call, "cardHeight");
   const uint32_t view_width = ReadLookupDimension(call, "viewWidth");
   const uint32_t view_height = ReadLookupDimension(call, "viewHeight");
+  const int32_t glyph_x = static_cast<int32_t>(ReadLookupInt(call, "glyphX"));
+  const int32_t glyph_y = static_cast<int32_t>(ReadLookupInt(call, "glyphY"));
+  const uint32_t glyph_w = ReadLookupDimension(call, "glyphW");
+  const uint32_t glyph_h = ReadLookupDimension(call, "glyphH");
+  uint32_t client_width = 0;
+  uint32_t client_height = 0;
   if (pump.direct_presenter && card_width > 0 && card_height > 0 &&
       view_width > 0 && view_height > 0) {
     if (pump.direct_presenter(meta.anchor_x, meta.anchor_y, card_width,
-                              card_height, view_width, view_height)) {
+                              card_height, view_width, view_height, glyph_x,
+                              glyph_y, glyph_w, glyph_h, &client_width,
+                              &client_height)) {
       // Only retire the old bitmap AFTER the live composition surface is in
       // place. Dismissing first created a guaranteed blank interval whenever
       // direct presentation failed and CapturePreview had to recover.
@@ -1011,6 +1029,15 @@ void HandleLookupPresent(
            flutter::EncodableValue(static_cast<int64_t>(card_width))},
           {flutter::EncodableValue("height"),
            flutter::EncodableValue(static_cast<int64_t>(card_height))},
+          // 游戏客户区尺寸。Dart 手上只有画布(view)尺寸，用画布像素去夹屏幕像素会把
+          // 卡片系统性压小，所以把真实上界回报过去。
+          // 诊断用。**不是**卡片尺寸上界的来源：那个来源是每条 hit 上的
+          // clientW/clientH（现量现报）。从 present 回执反推 cap 会晚一次查词，
+          // 正是 BUG-2066 的原始症状，别再走回去。
+          {flutter::EncodableValue("clientWidth"),
+           flutter::EncodableValue(static_cast<int64_t>(client_width))},
+          {flutter::EncodableValue("clientHeight"),
+           flutter::EncodableValue(static_cast<int64_t>(client_height))},
       }));
       return;
     }

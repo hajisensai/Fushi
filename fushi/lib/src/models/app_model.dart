@@ -6008,6 +6008,28 @@ class AppModel with ChangeNotifier {
   void setExtensionPopupMaxHeight(double height) =>
       prefsRepo.setExtensionPopupMaxHeight(height);
 
+  bool get galCardLookupIndependentSize =>
+      prefsRepo.galCardLookupIndependentSize;
+  Future<void> setGalCardLookupIndependentSize(bool value) =>
+      prefsRepo.setGalCardLookupIndependentSize(value);
+  double get galCardLookupMaxWidth => prefsRepo.galCardLookupMaxWidth;
+  void setGalCardLookupMaxWidth(double width) =>
+      prefsRepo.setGalCardLookupMaxWidth(width);
+  double get galCardLookupMaxHeight => prefsRepo.galCardLookupMaxHeight;
+  void setGalCardLookupMaxHeight(double height) =>
+      prefsRepo.setGalCardLookupMaxHeight(height);
+
+  /// 游戏内查词卡的「有效最大宽高」（跟随 app 内 / 解锁后独立）。
+  /// 与 [overlayLookupEffectiveSize] 分开：卡片贴在游戏客户区里，合适尺寸与浮在整块
+  /// 桌面上的覆盖窗本就不同，共用一个值必然一大一小。
+  LookupSize get galCardLookupEffectiveSize => effectiveLookupSize(
+        independent: galCardLookupIndependentSize,
+        sceneWidth: galCardLookupMaxWidth,
+        sceneHeight: galCardLookupMaxHeight,
+        sharedWidth: popupMaxWidth,
+        sharedHeight: popupMaxHeight,
+      );
+
   /// app 外覆盖查词卡的「有效最大宽高」（跟随 app 内 / 解锁后独立）。
   /// controller 的窗口尺寸测算读它，而不是直接读 [popupMaxWidth]/[popupMaxHeight]。
   LookupSize get overlayLookupEffectiveSize => effectiveLookupSize(
