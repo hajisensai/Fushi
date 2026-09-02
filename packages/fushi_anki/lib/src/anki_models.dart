@@ -615,6 +615,8 @@ class AnkiMiningContext {
     this.source,
     this.bookTitleTag,
     this.collectionTag,
+    this.clipStartMs,
+    this.clipEndMs,
   });
   final String sentence;
   final String? cueSentence;
@@ -644,6 +646,16 @@ class AnkiMiningContext {
   /// 二者字面量不同则各成一个 tag（Anki 里可按系列聚合、也可按单集/单本区分）；相同时由
   /// [buildNoteTags] 去重合并。见视频 `lookup_mining` / reader `mining` 注入点。
   final String? collectionTag;
+
+  /// 本张卡截取的媒体片段起止（毫秒，媒体时间轴上的**偏移**，非 wall-clock 时刻，
+  /// 故按术语表用 `Ms` 后缀）。渲染 `{clip-timestamp}` 用。
+  ///
+  /// 只有带时间轴的来源才有值：视频页 / 网页视频 / YouTube 由
+  /// `ImmersionMiningRequest.clipStartMs|clipEndMs`（已过
+  /// `miningClipTimeMs` 的字幕轴→播放器轴校正）经引擎原样透传；书籍、galgame
+  /// 没有时间窗，恒为 `null` → 占位符渲染成空串，不硬造时间。
+  final int? clipStartMs;
+  final int? clipEndMs;
 }
 
 class AnkiHandlebarRenderer {
@@ -727,6 +739,8 @@ class AnkiHandlebarRenderer {
         return payload.phoneticTranscriptions;
       case '{document-title}':
         return context.documentTitle ?? '';
+      case '{clip-timestamp}':
+        return formatClipTimestamp(context.clipStartMs, context.clipEndMs);
       // {card-image} 是通用图片键（书籍封面 / 视频 GIF 共用，语义中性、名副其实）：
       // 阅读器场景 coverPath 是书籍封面，视频场景 coverPath 是 GIF/降级帧（见 video
       // lookup_mining）。这是 Lapis Picture 字段的默认映射（TODO-1298）。
@@ -747,6 +761,31 @@ class AnkiHandlebarRenderer {
       default:
         return '';
     }
+  }
+
+  /// 把媒体片段起止（毫秒偏移）渲染成人类可读的 `HH:MM:SS - HH:MM:SS`。
+  ///
+  /// 「有没有有效时间窗」的判据**只有这一条**：`endMs > startMs`。它与音频裁剪用的
+  /// `ImmersionMiningRequest.hasRange` 同语义（包不能依赖主 app，故各自自足而非
+  /// 复制出第二套规则），所以所有上游——引擎、远端转发——一律**原样传原值**，
+  /// 不在各自那头先判一遍再决定传不传 `null`。
+  ///
+  /// 于是两种「本来就没有时间窗」的情形自然落进同一个出口：无时间轴来源
+  /// （书 / galgame）两端为 `null`；视频侧取不到 cue 时兜底成 0/0（`end == start`）。
+  /// 都渲染成空串，卡片上不会留下 `00:00:00 - 00:00:00` 这种伪信息。
+  static String formatClipTimestamp(int? startMs, int? endMs) {
+    if (startMs == null || endMs == null) return '';
+    if (endMs <= startMs) return '';
+    return '${_clipClockToken(startMs)} - ${_clipClockToken(endMs)}';
+  }
+
+  /// 毫秒偏移 → `HH:MM:SS`（截断到秒；负值钳到 0）。
+  static String _clipClockToken(int ms) {
+    final int totalSeconds = (ms < 0 ? 0 : ms) ~/ 1000;
+    final String hh = (totalSeconds ~/ 3600).toString().padLeft(2, '0');
+    final String mm = ((totalSeconds % 3600) ~/ 60).toString().padLeft(2, '0');
+    final String ss = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$hh:$mm:$ss';
   }
 
   static String _singleGlossaryForDictionary(
@@ -815,6 +854,7 @@ class AnkiHandlebarOptions {
     '{pitch-accent-categories}',
     '{phonetic-transcriptions}',
     '{document-title}',
+    '{clip-timestamp}',
     '{card-image}',
     '{book-cover}',
     '{video-clip}',

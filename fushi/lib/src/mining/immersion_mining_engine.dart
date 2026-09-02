@@ -463,6 +463,12 @@ class ImmersionMiningEngine {
       source: req.source,
       bookTitleTag: req.bookTitleTag,
       collectionTag: req.collectionTag,
+      // 片段时间窗（渲染 `{clip-timestamp}`）：原样透传，有效性不在这里判——
+      // 唯一判据在 [AnkiHandlebarRenderer.formatClipTimestamp]（`end > start`，
+      // 与 [hasRange] 同语义）。无时间轴的来源（书 / galgame）两端都是 0，
+      // 到那里自然渲染成空串。
+      clipStartMs: req.clipStartMs,
+      clipEndMs: req.clipEndMs,
     );
 
     final MineOutcome outcome = req.updateNoteId == null

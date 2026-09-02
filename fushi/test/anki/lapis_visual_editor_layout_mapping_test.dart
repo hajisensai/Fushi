@@ -379,7 +379,13 @@ void main() {
       // 映射行 = 区域自己选中的字段（chips 里也有同名文本，故用 findsWidgets）。
       expect(find.text('Frequency'), findsWidgets);
       expect(find.text('{frequencies}'), findsOneWidget);
-      expect(find.text('{document-title}'), findsOneWidget);
+      // 断言的是「MiscInfo 那行列的是 MiscInfo 自己的映射」，不是某个具体占位符：
+      // 从出厂默认取值，改出厂默认（如给 MiscInfo 补上 {clip-timestamp}）不该让
+      // 这条布局断言变红。
+      expect(
+        find.text(LapisNoteType.defaultFieldMappings['MiscInfo']!),
+        findsOneWidget,
+      );
       // 不属于这个区域的字段不该出现映射行。
       expect(find.text('{expression}'), findsNothing);
     });
@@ -419,7 +425,10 @@ void main() {
           await tester.tap(find.text(t.anki_lapis_visual_block_name(index: 1)));
           await tester.pumpAndSettle();
           // 映射行在滚动区里，先滚过去再点，否则 tap 静默 miss。
-          final Finder row = find.text('{document-title}');
+          // 用 MiscInfo 的**当前映射**定位它那一行（而非硬编码某个占位符字面量），
+          // 出厂默认变了也照样点得中。
+          final Finder row =
+              find.text(LapisNoteType.defaultFieldMappings['MiscInfo']!);
           await tester.ensureVisible(row);
           await tester.pumpAndSettle();
           await tester.tap(row);

@@ -77,6 +77,19 @@ abstract class BaseAnkiRepository {
   /// 清理条件：无（SharedPreferences 无版本阶梯，载入期改写即是它的迁移通道）。
   static const String _legacySentenceAudioAlias = '{sasayaki-audio}';
 
+  /// 载入期一次性迁移：存量配置里 `MiscInfo` 的映射**一字不差**还是旧出厂默认
+  /// `{document-title}` 时，补成新出厂默认 `{document-title} {clip-timestamp}`，
+  /// 让卡片底部「=== Details ===」栏带上片段时间窗（见 [LapisNoteType]）。
+  ///
+  /// 为什么只认「等于旧默认」：这等价于「用户从没碰过这个字段」，补齐是在替他
+  /// 跟进出厂默认。凡是被改过的值——清空、换成别的占位符、已经含
+  /// `{clip-timestamp}`、或自己拼过别的组合——一律不动，不覆盖用户意图。
+  /// 幂等：改写后值不再等于旧默认。清理条件：无（SharedPreferences 无版本阶梯，
+  /// 载入期改写即是它的迁移通道，与上面的别名改写同构）。
+  static const String _legacyMiscInfoMapping = '{document-title}';
+  static const String _miscInfoMappingWithClipTime =
+      '{document-title} {clip-timestamp}';
+
   /// 读原始设置 JSON 的**唯一通道**：两个载入期迁移（W2-7 键搬移 + W2-2 别名
   /// 改写）都收敛在这里。子类若覆写 [loadSettings]（AnkiDroid 的 legacy deck
   /// 迁移）也必须经由本方法取原始串，否则迁移被绕过。返回 null = 从未存过。
@@ -95,7 +108,36 @@ abstract class BaseAnkiRepository {
       raw = raw.replaceAll(_legacySentenceAudioAlias, '{sentence-audio}');
       await prefs.setString(settingsKey, raw);
     }
+    if (raw != null) {
+      final String? upgraded = upgradeMiscInfoMapping(raw);
+      if (upgraded != null) {
+        await prefs.setString(settingsKey, upgraded);
+        raw = upgraded;
+      }
+    }
     return raw;
+  }
+
+  /// [_legacyMiscInfoMapping] → [_miscInfoMappingWithClipTime] 的纯改写。
+  /// 返回改写后的 JSON 串；**不需要改写时返回 `null`**（调用方据此决定要不要回写
+  /// 持久层，避免每次启动都白写一遍）。
+  ///
+  /// 串不可解析 / 结构不对时同样返回 `null`：迁移不是校验器，损坏串该由既有的
+  /// [loadSettings] try-catch 报告并退回默认设置，这里静默跳过不改变那条诊断路径。
+  @visibleForTesting
+  static String? upgradeMiscInfoMapping(String raw) {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      return null;
+    }
+    if (decoded is! Map<String, dynamic>) return null;
+    final Object? mappings = decoded['fieldMappings'];
+    if (mappings is! Map) return null;
+    if (mappings['MiscInfo'] != _legacyMiscInfoMapping) return null;
+    mappings['MiscInfo'] = _miscInfoMappingWithClipTime;
+    return jsonEncode(decoded);
   }
 
   Future<AnkiSettings> loadSettings() async {
