@@ -1,0 +1,16 @@
+## BUG-2044 · 删除墓碑确认弹窗把本机删后重加的收藏句当成其他设备已删除
+- **报告**：2026-09-02（用户：看视频时突然弹「其他设备已删除」，问的是一条收藏句；用户确认没有在任何其他设备删过它，只在本机取消过收藏）
+- **真实性**：✅ 真 bug。根因 `fushi/lib/src/sync/deletion_propagation.dart:96`（`computeDeletionPropagation` 把「在库」建模成 `Set<String>` 布尔存在性，丢掉「从什么时候开始在库」这一维）。
+  - **现场取证**（用户本机 `HIBIKI_date/support/fushi.db`，只读快照）：弹窗那条收藏句仍在库、`createdAt` 是当天 15:18:31；它在 `sync_deletion_tombstones` 里 **0 行**；整表「本地墓碑 ∩ 本地在库」overlap = 0；`sync_deletion_tombstones_baseline` 键**不存在** → baseline = 0。
+  - deleteLocal 候选的充要条件是「远端墓碑含该 key ∧ 本地在库含该 key」，故弹窗出现即反证**远端挂着一条本机已无对应行的孤儿墓碑**。
+  - 孤儿是这么来的：取消收藏默认写传播墓碑（`FavoriteSentenceRepository.removeByContent/removeById/removeAt` 的 `propagateDeletion` 默认 `true`）→ 发布成远端 `__tombstones__/` 标记；之后用户重新收藏，`add()` 调 `clearSyncDeletionTombstone` **只删本地行**（`database_tags_sync.part.dart:597` 是纯本地 DELETE），远端标记永不 GC（`sync_orchestrator.dart` 自述「不自动 GC 远端标记」），本机从此再无线索去清它。
+  - 远端墓碑 JSON（`deletionTombstoneJson`）**不带写入设备身份**，消费端结构上无法自我过滤 → 本机把自己写的墓碑当成别人的读回来，文案「其他设备已删除」在这个场景是假话。
+  - 唯一的守卫是标量基线 `at <= baseline`，而基线只在用户点过「删除选中」后才推进，用户从没点过 → 恒 0 → 闸门失效。
+  - **判据不一致才是本质**：`AggregateSnapshot` 那条通道早在 BUG-1642 就有等价仲裁（`_arbitrateFavorites`：墓碑 `deletedAt` **严格大于**收藏 `createdAt` 才让收藏出局，否则判「重收藏胜、墓碑退场」），本通道却只做集合交、从不比时刻。同一份数据两条通道给出相反结论——aggregate 侧让重收藏活下来，弹窗侧却问用户要不要删掉它。（书标签 sidecar 的 `max(add) vs max(removed)` 同属这个既有范式，删除墓碑通道是唯一漏网的。）
+- **[x] ① 已修复** — 把「在库」从布尔存在性升级成**存在起始时刻**，两个方向共用一条判据，不加按资产种类分叉的特例：
+  - `deletion_propagation.dart`：新增 `DeletionPresentEntries`（`itemKey → 存在起始时刻`，可空）/ `DeletionTombstoneEntries`（`itemKey → deletedAt`）与纯谓词 `tombstoneAppliesTo`；`computeDeletionPropagation` 四个入参全部改成带时刻的对称结构，deleteLocal / deleteRemote 两个方向都过同一条 `tombstoneAppliesTo`。时刻未知（`null`）保守判「管得着」——宁可多问一次，也不因缺时刻静默压制一次真实的跨端删除。
+  - `sync_orchestrator.dart`：`_collectPresentDeletionKeys` 返回值带上各资产的存在起始时刻（book/srtbook/video 用 `importedAt`，favoriteword/favoritesentence 用 `createdAt`；`localaudio` 与 `audiobook` 无自身时刻列 → `null`，**不借 epub 的 importedAt 编造**）。两条消费通道（云 `syncDeletionTombstones` / 互联 `_syncDeletionTombstonesLive`）同步改造，顺带消除了 `remoteDeletedAt` 这个用 NUL 拼 `mediaType`+`itemKey` 的影子 map——deletedAt 现在就住在 `remoteTombstones` 里。
+  - 未动远端标记 GC：那是另一个权衡（无法区分「保留」与「删后重加」正是本 bug 的病根，仲裁修好后标记长存只剩极小的存储/比对成本）。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/deletion_propagation_test.dart`：既有 5 例升级到带时刻的结构；新增 `删后重加仲裁（BUG-2044）` 组 5 例（重加晚于墓碑→不产候选的真实场景回归 / 本地早于墓碑→仍产候选，真实跨端删除不被压制 / 时刻相等判给重加 / 时刻 null 保持旧语义 / deleteRemote 方向共用同一判据）+ `tombstoneAppliesTo` 谓词 3 例。
+  - **变异实测**：把 `tombstoneAppliesTo` 的判据改成恒 `true`（即旧的纯集合行为），4 个用例转红；还原后 sha256 与改前一致、25 例全绿。`flutter test test/sync/` 全域 2411 例通过。
+- **备注**：同一次调查还发现**第二个独立缺陷**——这个弹窗本不该在媒体播放中出现（`deletion_prompt.dart` 的 `shouldPrompt` 对 `ConflictSource.auto` 写死 `if (inBook) return false`，而视频页经 `openMedia` 打开、播放期间 `isMediaOpen` 恒 true），但用户是在看视频时被弹的。已查到媒体页基类 `base_source_page.dart:229` 的 `onWillPop` 会在 `closeMedia()`（`isMediaOpen` 转 false）之后触发 `triggerAutoSyncAfterClose`，但 `inBook` 的求值点在呈现前最后一刻，时序上仍应被挡——**未定性到根因，本次不动**。复现时需要 `[sync]` 前缀日志 + 弹窗时刻的 `isMediaOpen` 值才能定性。
