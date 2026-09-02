@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
+import '../helpers/scan_scale.dart';
 
 /// BUG-1995 复盘守卫：**页面根 [Listener] 在词典浮层可见时收不到指针事件**。
 ///
@@ -142,7 +143,7 @@ void main() {
             onSwipeDismiss: () {},
             swipeEnabled: true,
             sensitivity: 0.5,
-            onNonPrimaryButtonDown: seen.add,
+            onNonPrimaryButtonDown: (PointerDownEvent e) => seen.add(e.buttons),
           ),
         ),
       );
@@ -175,7 +176,7 @@ void main() {
             onSwipeDismiss: () {},
             swipeEnabled: true,
             sensitivity: 0.5,
-            onNonPrimaryButtonDown: seen.add,
+            onNonPrimaryButtonDown: (PointerDownEvent e) => seen.add(e.buttons),
           ),
         ),
       );
@@ -212,7 +213,7 @@ void main() {
             onSwipeDismiss: () {},
             swipeEnabled: false,
             sensitivity: 0.5,
-            onNonPrimaryButtonDown: seen.add,
+            onNonPrimaryButtonDown: (PointerDownEvent e) => seen.add(e.buttons),
           ),
         ),
       );
@@ -246,24 +247,144 @@ void main() {
         reason: '没绑的按钮在 barrier 上必须无效，不能变成「点哪都关」',
       );
 
-      // 源码守卫：视频页真的把 barrier 的非主键接到了那个入口。
-      final File page = File(
-        'lib/src/pages/implementations/video_fushi_page.dart',
+      // 落地实现只有一份（[DictionaryPageMixin] / [BaseSourcePageState] 各一个同名
+      // 钩子），必须复用弹窗表面那个折 token 函数，不许另写一套判据。
+      //
+      // BUG-2031 加强：同时钉住**认领协议**。这个钩子第一版是「调完回调就往下走」，
+      // 一个 claim 都没有——而 barrier 的祖先正是 app 根那层鼠标兜底 [Listener]
+      // （opaque 不排除祖先），于是浮层可见时一次侧键被两层各派发一次：关词典 **+**
+      // 退书。签名带 [PointerDownEvent] 就是为了能认领；只留 `int buttons` 表达不了。
+      for (final String path in <String>[
+        'lib/src/pages/base_source_page.dart',
+        'lib/src/pages/implementations/dictionary_page_mixin.dart',
+      ]) {
+        final String src = File(path).readAsStringSync();
+        expect(
+          RegExp(
+            r'void onDismissBarrierNonPrimaryButton\(PointerDownEvent event\) \{'
+            r'.*?dictionaryPopupPointerToken\(',
+            dotAll: true,
+          ).hasMatch(src),
+          isTrue,
+          reason: '$path 的 barrier 鼠标钩子必须复用 dictionaryPopupPointerToken，'
+              '且签名必须带 PointerDownEvent（认领要 pointer id）',
+        );
+        expect(
+          RegExp(
+            r'void onDismissBarrierNonPrimaryButton\(PointerDownEvent event\) \{'
+            r'.*?dispatchClaimedMouseAction\(',
+            dotAll: true,
+          ).hasMatch(src),
+          isTrue,
+          reason: '$path 的 barrier 鼠标钩子必须经 dispatchClaimedMouseAction 派发，'
+              '否则 app 根会对同一次按下再派发一次（关词典 + 退书）',
+        );
+      }
+    },
+  );
+
+  /// BUG-2031 收尾：**每一条折弹窗指针 token 的腿都必须经认领入口派发。**
+  ///
+  /// 上一条只钉了 barrier 那两个钩子（弹窗矩形**之外**）。同一个几何问题还有另一半：
+  /// 矩形**之内**由 `DictionaryPopupLayer._maybeWrapHostPointerInput` 接
+  /// （Windows 上宿主拥有指针，弹窗 DOM 里根本收不到侧键）。它当时也是「折完 token
+  /// 调 sink 就往下走」，一个 claim 都没有——症状与 barrier 那半边一模一样，只是从
+  /// 「浮窗外按」挪到了「浮窗上按」：一次侧键 = 关词典 **+** 退书。
+  ///
+  /// 所以判据不能是「barrier 的两个钩子」这种固定清单，而要**枚举所有折 token 的腿**：
+  /// `dictionaryPopupPointerToken(` 的每个消费点都必须在同一文件里经
+  /// [dispatchClaimedMouseAction] 派发。第四条腿加进来时会自动落进扫描面。
+  ///
+  /// 限制（写明以免被误当成更强的保证）：这里比的是**同文件内的出现次数**，不是把每个
+  /// 调用点解析回它的语法父节点。它挡的是真实发生过两次的形态「新加一条腿、忘了认领」；
+  /// 一个文件里两条腿而只有一处认领同样会红。
+  test(
+    'GUARD: 每条折弹窗指针 token 的腿都经 dispatchClaimedMouseAction 派发',
+    () {
+      // 定义处本身不是消费点。
+      const String definition =
+          'pages/implementations/dictionary_popup_input_bridge.dart';
+      final List<File> legs = Directory('lib')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((File f) => f.path.endsWith('.dart'))
+          .where((File f) =>
+              f.readAsStringSync().contains('dictionaryPopupPointerToken('))
+          .where((File f) =>
+              !f.path.replaceAll(r'\', '/').endsWith(definition))
+          .toList();
+
+      expectScanScale(
+        legs.length,
+        what: 'lib/ 下折弹窗指针 token 的腿',
+        atLeast: 2,
+        measured: 3,
       );
-      final String source = page.readAsStringSync();
+
+      final List<String> unclaimed = <String>[];
+      for (final File leg in legs) {
+        final String src = leg.readAsStringSync();
+        final int folds = 'dictionaryPopupPointerToken('.allMatches(src).length;
+        final int claims =
+            'dispatchClaimedMouseAction('.allMatches(src).length;
+        if (claims < folds) {
+          unclaimed.add('${leg.path} ($folds 折 / $claims 认领)');
+        }
+      }
       expect(
-        source.contains('onNonPrimaryButtonDown: _onDismissBarrierButtonDown'),
-        isTrue,
-        reason: 'barrier 不接这条通道 = 浮窗之外按侧键原症状复现',
+        unclaimed,
+        isEmpty,
+        reason: '这些腿折了弹窗指针 token 却没经认领入口派发：$unclaimed。'
+            '它们全是 app 根鼠标兜底 Listener 的**后代**，而 opaque / deferToChild '
+            '只影响同层兄弟、从不排除祖先——不认领就是一次按下被派发两次'
+            '（关词典 + 退书），而键盘 Esc 在同样状态下只关词典。',
       );
+    },
+  );
+
+  /// **每一个** [LookupDismissBarrier] 宿主都必须接 `onNonPrimaryButtonDown`。
+  ///
+  /// 为什么是目录枚举而不是钉住某一页：这条通道落地时只有视频页接了，另外四个宿主
+  /// （阅读器基类 / 首页词典 / texthooker / 网页视频）全漏了，症状一模一样——
+  /// 「侧键压在浮窗上能关、把鼠标移开一点就关不掉」。钉住单页的守卫对这种漏接**结构上
+  /// 挑不到**：它扫的文件里根本没有那四个宿主。新增第六个宿主时同样会被这条拦下。
+  test(
+    'GUARD: 每个 LookupDismissBarrier 宿主都接了 onNonPrimaryButtonDown',
+    () {
+      final List<File> hosts = Directory('lib')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((File f) => f.path.endsWith('.dart'))
+          // 词边界是必需的：`shouldShowLookupDismissBarrier(`（判据函数，几乎每个
+          // 宿主都调）以同样的字符结尾，裸 contains 会把只调判据、不构造 barrier 的
+          // 文件（如 dictionary_popup_layer.dart）也算成宿主 → 假红。
+          .where((File f) => RegExp(r'\bLookupDismissBarrier\(')
+              .hasMatch(f.readAsStringSync()))
+          .toList();
+      // 定义处（widget 自身的构造函数）不是宿主，排掉后才是真正的接线点集合。
+      hosts.removeWhere((File f) => f.path
+          .replaceAll(r'\', '/')
+          .endsWith('utils/misc/lookup_dismiss_barrier.dart'));
+
+      expectScanScale(
+        hosts.length,
+        what: 'lib/ 下构造 LookupDismissBarrier 的宿主文件',
+        atLeast: 4,
+        measured: 5,
+      );
+
+      final List<String> missing = <String>[];
+      for (final File host in hosts) {
+        if (!host.readAsStringSync().contains('onNonPrimaryButtonDown:')) {
+          missing.add(host.path);
+        }
+      }
       expect(
-        RegExp(
-          r'void _onDismissBarrierButtonDown\(int buttons\) \{[^}]*'
-          r'dictionaryPopupPointerToken\(',
-          dotAll: true,
-        ).hasMatch(source),
-        isTrue,
-        reason: '必须复用弹窗表面同一个折 token 函数，不许在这里另写一套判据',
+        missing,
+        isEmpty,
+        reason: '这些 barrier 宿主没接鼠标非主键通道：$missing。'
+            'barrier 的命中行为是 opaque，它显示期间页面根 Listener 一个指针事件都'
+            '收不到——不接就是「侧键压在浮窗上能关、移开一点就关不掉」。',
       );
     },
   );

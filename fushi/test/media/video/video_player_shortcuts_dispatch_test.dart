@@ -1,8 +1,12 @@
+import 'package:flutter/gestures.dart' show kBackMouseButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/video_player_shortcuts.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart'
+    show ModifierKey, MouseBinding, ShortcutBindingSet;
+import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
@@ -198,6 +202,73 @@ void main() {
           reason: '这张表现在只服务字幕对轴弹窗，但它仍是一个 CallbackShortcuts：'
               '匹配即无条件消费，一旦含裸 Enter，弹窗里每颗按钮的确认就没救了');
     });
+  });
+
+  /// BUG-2031：**鼠标与键盘的「返回上一级」必须落在同一个执行体上。**
+  ///
+  /// `shortcut_channel_wiring_guard_test` 里那条枚举守卫钉的是「每条鼠标阶梯都含
+  /// universal」——那只保证鼠标**解析得到** `globalBack`。本条钉的是另一半：解析到
+  /// 之后拿到的回调，与键盘 Esc 拿到的**是同一个对象**（视频页的逐级退出
+  /// `_handleVideoEscapeAction`，经 `VideoPlayerShortcutActions.escape` 注入）。
+  ///
+  /// 两半都要：阶梯对了但 `videoActionCallbacks` 里没有 `globalBack` 这一项，鼠标那条
+  /// 腿就是死项（解析得到、执行不了、还因为没执行而不认领，最后由 app 根的平
+  /// `maybePop()` 兜底）——症状与阶梯修窄时**一模一样**，而枚举守卫看不见。
+  test('GUARD: 鼠标 / 键盘解析出的 globalBack 落在同一个执行体（视频页逐级退出）', () {
+    final FushiShortcutRegistry registry = FushiShortcutRegistry()
+      ..loadDefaults(TargetPlatform.windows);
+    // 只加鼠标键、保留 globalBack 的默认键盘绑定（整份覆盖会把 Esc 一起抹掉，
+    // 那样键盘侧解析成 null，本条就变成测试环境自造的假红）。
+    final ShortcutBindingSet current =
+        registry.bindingsFor(ShortcutAction.globalBack);
+    registry.updateBinding(
+      ShortcutAction.globalBack,
+      ShortcutBindingSet(
+        keyboardBindings: current.keyboardBindings,
+        gamepadBindings: current.gamepadBindings,
+        wheelBindings: current.wheelBindings,
+        mouseBindings: const <MouseBinding>[MouseBinding(3)],
+      ),
+    );
+
+    // 鼠标腿：阶梯与 `_VideoFushiPageState.kVideoMouseLadder` 同形（该常量是私有
+    // static，取不到；「它必须含 universal」由上面提到的枚举守卫另行钉死）。
+    final ShortcutAction? byMouse = resolveMouseBindingAction(
+      registry: registry,
+      buttons: kBackMouseButton,
+      ladder: const <ShortcutScope>[
+        ShortcutScope.video,
+        ShortcutScope.universal,
+      ],
+    );
+    expect(byMouse, ShortcutAction.globalBack);
+
+    // 键盘腿：同一个动作。
+    final ShortcutAction? byKeyboard = registry.resolveKeyboard(
+      LogicalKeyboardKey.escape,
+      modifiers: const <ModifierKey>{},
+      scope: ShortcutScope.universal,
+    );
+    expect(byKeyboard, ShortcutAction.globalBack);
+
+    final List<String> log = <String>[];
+    final VideoPlayerShortcutActions actions = _recordingVideoActions(log);
+    final Map<ShortcutAction, VoidCallback> callbacks =
+        videoActionCallbacks(actions);
+
+    expect(
+      callbacks[byMouse],
+      isNotNull,
+      reason: '解析得到却没有执行体 = 鼠标那条腿是死项，会静默降级成 app 根的平 pop',
+    );
+    expect(identical(callbacks[byMouse], callbacks[byKeyboard]), isTrue);
+    expect(
+      identical(callbacks[byMouse], actions.escape),
+      isTrue,
+      reason: 'globalBack 必须映到 escape（= 本页逐级退出），不是别的动作',
+    );
+    callbacks[byMouse]!();
+    expect(log, <String>['escape']);
   });
 }
 
