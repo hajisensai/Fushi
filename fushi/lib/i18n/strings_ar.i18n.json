@@ -4137,6 +4137,7 @@
   "onboarding_lookup_practice_desc": "يفتح صفحة البحث والجملة محمّلة فيها. انقر هناك على كلمة لترى معناها؛ وإن لم يظهر شيء فالقواميس لم تُثبَّت بعد.",
   "onboarding_first_anki_lookup_desc": "افتح جملة التدريب وانقر على كلمة.",
   "onboarding_first_anki_action_desc": "يفتح جملة التدريب في صفحة البحث. انقر على كلمة، ثم على +، وراجع الحقول ثم احفظ.",
+  "video_subtitle_source_search_hint": "اضغط على “البحث عن ترجمات” في الأعلى، ثم اختر مصدرًا من هنا.",
   "game_session_japanese_locale_evidence": "الأدلة: ${evidence}",
   "game_session_japanese_locale_skipped": "لم تُطبَّق الإعدادات المحلية",
   "game_session_japanese_locale_skipped_hint": "بدأت اللعبة بدون الإعدادات المحلية اليابانية (الحكم التلقائي: ${evidence}). إذا ظهر النص مشوّهًا، فاضبط الإعدادات المحلية اليابانية لهذه اللعبة على «تشغيل دائم».",

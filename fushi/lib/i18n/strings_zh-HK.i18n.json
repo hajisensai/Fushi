@@ -4137,6 +4137,7 @@
   "onboarding_lookup_practice_desc": "在查詞頁打開這句話，點其中的詞看釋義。查不到就是詞典還沒裝好。",
   "onboarding_first_anki_lookup_desc": "打開練習句子，點一個詞。",
   "onboarding_first_anki_action_desc": "在查詞頁打開練習句子。點詞、點加號、檢查欄位、儲存。",
+  "video_subtitle_source_search_hint": "先點上方的「查找字幕」，再在這裡挑一個來源。",
   "game_session_japanese_locale_evidence": "判據：${evidence}",
   "game_session_japanese_locale_skipped": "未轉區",
   "game_session_japanese_locale_skipped_hint": "本局未轉區（自動判定：${evidence}）。若遊戲文字亂碼，可把該遊戲的日語區域改為「始終開啟」。",

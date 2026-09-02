@@ -4137,6 +4137,7 @@
   "onboarding_lookup_practice_desc": "Apre la pagina di ricerca con la frase già caricata. Tocca lì una parola per vederne il significato; se non compare nulla, i dizionari non sono ancora installati.",
   "onboarding_first_anki_lookup_desc": "Apri la frase di esercizio e tocca una parola.",
   "onboarding_first_anki_action_desc": "Apre la frase di esercizio nella pagina di ricerca. Tocca una parola, tocca +, controlla i campi e salva.",
+  "video_subtitle_source_search_hint": "Tocca “Trova sottotitoli” in alto, poi scegli una sorgente qui.",
   "game_session_japanese_locale_evidence": "Indizi: ${evidence}",
   "game_session_japanese_locale_skipped": "Impostazioni locali non applicate",
   "game_session_japanese_locale_skipped_hint": "Il gioco è stato avviato senza impostazioni locali giapponesi (verdetto automatico: ${evidence}). Se il testo appare illeggibile, imposta le impostazioni locali giapponesi di questo gioco su «Sempre attivo».",

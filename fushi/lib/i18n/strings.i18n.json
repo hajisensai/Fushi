@@ -4137,6 +4137,7 @@
   "onboarding_lookup_practice_desc": "Opens the lookup page with the sentence loaded. Tap a word there to see its definition; if nothing comes back, your dictionaries are not installed yet.",
   "onboarding_first_anki_lookup_desc": "Open the practice sentence and tap a word.",
   "onboarding_first_anki_action_desc": "Opens the practice sentence in the lookup page. Tap a word, tap +, check the fields and save.",
+  "video_subtitle_source_search_hint": "Tap “Find subtitles” above, then pick a source here.",
   "game_session_japanese_locale_evidence": "Evidence: ${evidence}",
   "game_session_japanese_locale_skipped": "Locale not applied",
   "game_session_japanese_locale_skipped_hint": "The game was started without a Japanese locale (auto verdict: ${evidence}). If its text looks garbled, set this game's Japanese locale to Always on.",
