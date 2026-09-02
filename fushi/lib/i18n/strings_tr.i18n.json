@@ -3930,8 +3930,8 @@
   "network_proxy_invalid": "Geçersiz proxy. sunucu:port kullanın",
   "network_proxy_label": "Ağ proxy'si",
   "section_network": "Ağ",
-  "network_proxy_p2p_label": "P2P (torrent) trafiğini proxy üzerinden yönlendir",
-  "network_proxy_p2p_warning": "Varsayılan olarak kapalı; P2P doğrudan bağlanır. Proxy üzerinden geçmek hızı düşürebilir ve birçok proxy sağlayıcısı BitTorrent trafiğini yasaklar: proxy hesabınız kısıtlanabilir, uyarılabilir veya kapatılabilir. Yalnızca yerleşik motor için geçerlidir; harici qBittorrent kendi proxy ayarlarını kullanır.",
+  "network_proxy_p2p_label": "P2P (torrent) proxy",
+  "network_proxy_p2p_warning": "Direct by default. Via proxy: all P2P traffic goes through the global proxy — speed may drop, and many proxy providers forbid BitTorrent traffic (throttling, warnings, or account termination). Mixed: tracker requests go through the proxy while DHT and peer connections stay direct — widest peer discovery, but your real IP is visible to trackers, DHT and peers (connectivity only, not privacy). Built-in engine only; external qBittorrent uses its own proxy settings.",
   "video_ajatt_settings_hint": "Ücretsiz Japonca altyazı arşivi (kitsunekko yansıması). Hesap gerekmez; altyazı dosyaları GitHub'dan indirilir.",
   "video_ajatt_enabled_hint": "Kapalıysa altyazı aranırken AJATT arşivi atlanır.",
   "video_subtitle_workbench_title": "Altyazılar",
@@ -4110,5 +4110,8 @@
   "shortcut_action_video_dismiss_dict": "Dismiss dictionary",
   "video_discovery_anidb_identity_confirm_title": "Confirm the work identity",
   "video_discovery_anidb_identity_confirm_hint": "AniDB has more than one possible match. Pick the right work and the imported download will scrape with that identity directly; skip and you can assign it later from the pending list.",
-  "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification."
+  "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
+  "network_proxy_p2p_mode_direct": "Direct",
+  "network_proxy_p2p_mode_proxy": "Via proxy",
+  "network_proxy_p2p_mode_mixed": "Mixed"
 }

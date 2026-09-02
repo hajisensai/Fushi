@@ -3930,8 +3930,8 @@
   "network_proxy_invalid": "Proxy không hợp lệ. Dùng host:port",
   "network_proxy_label": "Proxy mạng",
   "section_network": "Mạng",
-  "network_proxy_p2p_label": "Định tuyến lưu lượng P2P (torrent) qua proxy",
-  "network_proxy_p2p_warning": "Mặc định tắt — P2P kết nối trực tiếp. Đi qua proxy có thể làm giảm tốc độ, và nhiều nhà cung cấp proxy cấm lưu lượng BitTorrent: tài khoản proxy của bạn có thể bị giới hạn, cảnh báo hoặc chấm dứt. Chỉ áp dụng cho engine tích hợp; qBittorrent bên ngoài dùng cài đặt proxy riêng.",
+  "network_proxy_p2p_label": "P2P (torrent) proxy",
+  "network_proxy_p2p_warning": "Direct by default. Via proxy: all P2P traffic goes through the global proxy — speed may drop, and many proxy providers forbid BitTorrent traffic (throttling, warnings, or account termination). Mixed: tracker requests go through the proxy while DHT and peer connections stay direct — widest peer discovery, but your real IP is visible to trackers, DHT and peers (connectivity only, not privacy). Built-in engine only; external qBittorrent uses its own proxy settings.",
   "video_ajatt_settings_hint": "Kho phụ đề tiếng Nhật miễn phí (bản sao kitsunekko). Không cần tài khoản; tệp phụ đề tải từ GitHub.",
   "video_ajatt_enabled_hint": "Tắt nghĩa là bỏ qua kho AJATT khi tìm phụ đề.",
   "video_subtitle_workbench_title": "Phụ đề",
@@ -4110,5 +4110,8 @@
   "shortcut_action_video_dismiss_dict": "Dismiss dictionary",
   "video_discovery_anidb_identity_confirm_title": "Confirm the work identity",
   "video_discovery_anidb_identity_confirm_hint": "AniDB has more than one possible match. Pick the right work and the imported download will scrape with that identity directly; skip and you can assign it later from the pending list.",
-  "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification."
+  "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
+  "network_proxy_p2p_mode_direct": "Direct",
+  "network_proxy_p2p_mode_proxy": "Via proxy",
+  "network_proxy_p2p_mode_mixed": "Mixed"
 }

@@ -119,9 +119,17 @@ HT_EXPORT int ht_apply_session_settings(
 // P2P 代理（默认 none = 直连；用户在系统设置里单独开启）。[proxy_type]
 // 0=none 1=http 2=socks5；[host]/[port] 仅 type != 0 时使用。开启时 peer /
 // tracker / 主机名解析三条链路全部经代理，关闭时一并复位直连。参数非法按
-// none 处理。返回 1 成功 0 失败。
+// none 处理。返回 1 成功 0 失败。旧 ABI，等价 ht_apply_proxy_mode 的 mode=1。
 HT_EXPORT int ht_apply_proxy(void* session, int proxy_type, const char* host,
                              int port);
+
+// 带档位的 P2P 代理。[mode] 0=直连复位；1=全代理（同 ht_apply_proxy）；
+// 2=混合：tracker 请求 + 主机名解析经代理，peer 连接与 DHT 直连（节点获取
+// 范围最大，但真实 IP 暴露给 DHT/peer/tracker——连通性工具，非隐私工具；
+// DHT 直连豁免依赖 vcpkg-ports/libtorrent 的本仓补丁）。参数非法按直连处理。
+// 返回 1 成功 0 失败。
+HT_EXPORT int ht_apply_proxy_mode(void* session, int proxy_type,
+                                  const char* host, int port, int mode);
 
 // 添加磁力链接，落盘到 [save_path]；[sequential] 非 0 开顺序下载。
 // 成功 {"ok":true,"id":"<infohash>"}；失败 {"ok":false,"error":"..."}。

@@ -622,6 +622,19 @@ HT_EXPORT void* ht_session_create(const char* listen_interfaces,
     // 空串 = 不绑定/监听任何端口（阶段1a 空壳语义，零网络副作用）。
     sp.set_str(lt::settings_pack::listen_interfaces, listen);
     sp.set_bool(lt::settings_pack::enable_dht, enable_dht != 0);
+    // 节点获取默认开满（建号设一次即长效——ht_apply_session_settings 的
+    // settings_pack 不含这些键，apply_settings 只覆盖出现的键）：
+    // 多 tracker 种子（nyaa 普遍带 5~10 个）libtorrent 默认只向同 tier 第一个
+    // 应答的 tracker 要 peer 列表，其余全部闲置；双开后逐条 announce，
+    // 对齐 qBittorrent 默认。代价是每种子多几个轻量请求。
+    sp.set_bool(lt::settings_pack::announce_to_all_trackers, true);
+    sp.set_bool(lt::settings_pack::announce_to_all_tiers, true);
+    // DHT 引导点默认只有 dht.libtorrent.org 一个：全新安装（无 resume 旧节点）
+    // 时它不可达 = 路由表冷启动失败。扩到 qBittorrent 同款清单，任一可达即可。
+    sp.set_str(lt::settings_pack::dht_bootstrap_nodes,
+               "dht.libtorrent.org:25401,router.bittorrent.com:6881,"
+               "router.utorrent.com:6881,dht.transmissionbt.com:6881,"
+               "dht.aelitis.com:6881");
     // 发现协议按阶段1b范围保持关闭；后续阶段随设置开放。
     sp.set_bool(lt::settings_pack::enable_lsd, false);
     sp.set_bool(lt::settings_pack::enable_upnp, false);
@@ -795,20 +808,26 @@ HT_EXPORT int ht_apply_session_settings(
   }
 }
 
-// P2P 代理（用户在系统设置里单独开启；默认 none = 直连）。[proxy_type] 0=none
-// 1=http 2=socks5，[host]/[port] 仅 type != 0 时使用。开启时 peer 连接 / tracker
-// 请求 / 主机名解析三条链路全部经代理——只代理其中一条会让另外两条从真实出口
-// 漏出去，用户特意开这个开关就是不想漏；关闭时三项一并复位为直连。HTTP 代理
-// 只能承载 TCP，libtorrent 会自行放弃 uTP/UDP tracker，属于「走代理可能降速」
-// 的既知代价。参数非法（type != 0 但 host 空 / port 越界）按 none 处理，绝不
-// 把 session 留在半配置状态。返回 1 成功 0 失败。
-HT_EXPORT int ht_apply_proxy(void* session, int proxy_type, const char* host,
-                             int port) {
+// P2P 代理内部实现——libtorrent 代理设置唯一允许触碰的地方（守卫
+// download_http_client_proxy_test.dart 钉此约束），两个导出都只是委托。
+// [mode] 0=直连复位；1=全代理：peer 连接 / tracker 请求 / 主机名解析三条链路
+// 全部经代理——只代理其中一条会让另外两条从真实出口漏出去；2=混合：tracker
+// 请求 + 主机名解析经代理（够到直连不可达的 tracker），peer 连接与 DHT 直连
+// （节点获取范围最大；DHT 的直连豁免来自 vcpkg-ports/libtorrent 的本仓补丁，
+// 上游会把无 flag 的 UDP 无条件塞进代理）。混合档把真实 IP 暴露给 DHT/peer/
+// tracker 网络——它只是连通性工具，不是隐私工具，UI 文案已挑明。HTTP 代理
+// 只能承载 TCP，libtorrent 会自行放弃经代理的 uTP/UDP tracker，属于「走代理
+// 可能降速」的既知代价。参数非法（mode/type 越界、host 空、port 越界）按直连
+// 处理，绝不把 session 留在半配置状态。返回 1 成功 0 失败。
+static int apply_proxy_impl(void* session, int proxy_type, const char* host,
+                            int port, int mode) {
   if (session == nullptr) return 0;
   try {
     lt::settings_pack sp;
-    const bool enabled = proxy_type != 0 && host != nullptr &&
-                         host[0] != '\0' && port > 0 && port <= 65535;
+    const bool enabled = (mode == 1 || mode == 2) && proxy_type != 0 &&
+                         host != nullptr && host[0] != '\0' && port > 0 &&
+                         port <= 65535;
+    const bool mixed = enabled && mode == 2;
     if (enabled) {
       sp.set_int(lt::settings_pack::proxy_type,
                  proxy_type == 2 ? lt::settings_pack::socks5
@@ -820,7 +839,7 @@ HT_EXPORT int ht_apply_proxy(void* session, int proxy_type, const char* host,
       sp.set_str(lt::settings_pack::proxy_hostname, "");
       sp.set_int(lt::settings_pack::proxy_port, 0);
     }
-    sp.set_bool(lt::settings_pack::proxy_peer_connections, enabled);
+    sp.set_bool(lt::settings_pack::proxy_peer_connections, enabled && !mixed);
     sp.set_bool(lt::settings_pack::proxy_tracker_connections, enabled);
     sp.set_bool(lt::settings_pack::proxy_hostnames, enabled);
     as_session(session)->apply_settings(std::move(sp));
@@ -828,6 +847,20 @@ HT_EXPORT int ht_apply_proxy(void* session, int proxy_type, const char* host,
   } catch (...) {
     return 0;
   }
+}
+
+// 旧 ABI（保留给老 Dart 层）：带合法代理参数即全代理，type=0 即直连复位。
+HT_EXPORT int ht_apply_proxy(void* session, int proxy_type, const char* host,
+                             int port) {
+  return apply_proxy_impl(session, proxy_type, host, port,
+                          proxy_type != 0 ? 1 : 0);
+}
+
+// 带档位的 P2P 代理（见 apply_proxy_impl 注释）。[mode] 0=直连 1=全代理
+// 2=混合（tracker 经代理、peer/DHT 直连）。返回 1 成功 0 失败。
+HT_EXPORT int ht_apply_proxy_mode(void* session, int proxy_type,
+                                  const char* host, int port, int mode) {
+  return apply_proxy_impl(session, proxy_type, host, port, mode);
 }
 
 HT_EXPORT int ht_set_upload_mode(void* session, const char* info_hash,

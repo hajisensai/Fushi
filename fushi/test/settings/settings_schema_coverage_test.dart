@@ -364,10 +364,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 归一失败时安全直连不偷用系统代理、legacy 存量值 fail-open、407 凭据只交付一次）
   // 由 app_proxy_local_bypass_test 的纯判据用例咬住。
   'system/Proxy mode': 'test/utils/net/app_proxy_local_bypass_test.dart',
-  // P2P 走代理开关：写 prefsRepo（changed=true），生效点是 libtorrent session 的
-  // proxy 设置，harness 里没有原生引擎可探。开关语义（默认直连 / 开了才跟全局
-  // 出口）由 resolveP2pProxyHostPort 纯函数用例 + C ABI 桥源码守卫咬住。
-  'system/Route P2P (torrent) traffic through the proxy':
+  // P2P 代理三档（direct/proxy/mixed）：写 prefsRepo（changed=true），生效点是
+  // libtorrent session 的 proxy 设置，harness 里没有原生引擎可探。档位语义
+  // （默认直连 / 改档才跟全局出口 / mixed=tracker 经代理、DHT 与 peer 直连）
+  // 由 resolveP2pProxyHostPort 纯函数用例 + C ABI 桥源码守卫 + overlay 补丁
+  // 守卫咬住。
+  'system/P2P (torrent) proxy':
       'test/torrent/download_http_client_proxy_test.dart',
   'syncBackup/Auto sync': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync statistics': 'test/sync/sync_gating_test.dart',

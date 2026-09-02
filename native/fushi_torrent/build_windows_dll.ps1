@@ -42,9 +42,13 @@ if (-not (Test-Path $toolchain)) {
 Assert-VcpkgBaseline -VcpkgRoot $VcpkgRoot -ManifestPath (Join-Path $scriptDir "vcpkg.json")
 
 Write-Host "==> CMake configure ($Triplet)"
+# overlay ports：本仓对 libtorrent 2.0.11 的私有补丁（DHT 混合代理豁免），
+# 见 vcpkg-ports/README.md。overlay 无条件优先于 registry 版本解析。
+$overlayPorts = Join-Path $scriptDir "vcpkg-ports"
 cmake -B $buildDir -S $scriptDir -A x64 `
     "-DCMAKE_TOOLCHAIN_FILE=$toolchain" `
-    "-DVCPKG_TARGET_TRIPLET=$Triplet"
+    "-DVCPKG_TARGET_TRIPLET=$Triplet" `
+    "-DVCPKG_OVERLAY_PORTS=$overlayPorts"
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 
 Write-Host "==> CMake build ($Config)"

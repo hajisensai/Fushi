@@ -202,7 +202,9 @@ class EmbeddedTorrentHost {
   /// 打开宿主。[libraryPath] 显式 DLL 路径（缺省按平台默认名搜系统路径）；
   /// [baseSavePath] 内置下载根目录（新任务落点）；[legacySavePaths] 历史下载根
   /// （用户改过下载目录时的旧根，只参与列表过滤，永不写入）；[listenInterfaces]
-  /// 监听接口（桌面默认全网 6881，端口占用时 libtorrent 自行回退）；[clockMs]
+  /// 监听接口（默认 v4+v6 双栈 6881，与 `ht_apply_session_settings` 的端口
+  /// 重设保持同形——此前建号 v4-only、改端口后才双栈，同一开关两种行为；
+  /// 端口占用时 libtorrent 自行回退）；[clockMs]
   /// 单调毫秒时钟注入（反吸血引擎判定基准，测试可注入假时钟）。
   /// 任何失败（DLL 加载 / session 创建）返回 null。
   static EmbeddedTorrentHost? open({
@@ -211,7 +213,7 @@ class EmbeddedTorrentHost {
     Iterable<String> legacySavePaths = const <String>[],
     required String resumeDir,
     Set<String>? restoreIds,
-    String listenInterfaces = '0.0.0.0:6881',
+    String listenInterfaces = '0.0.0.0:6881,[::]:6881',
     bool enableDht = true,
     int Function()? clockMs,
   }) {
@@ -500,25 +502,40 @@ class EmbeddedTorrentHost {
   /// 为 false 表示还没下发过——新建 session 本身就是直连，所以「要直连」时
   /// 不必为此走一次 FFI（老 DLL 没这个符号也不会白报一次失败）。
   String? _appliedProxyHostPort;
+  bool _appliedProxyMixed = false;
   bool _hasAppliedProxy = false;
 
-  /// 下发 P2P 代理：[hostPort] null/空 = 直连（默认）。只在目标变化时走 FFI。
+  /// 下发 P2P 代理：[hostPort] null/空 = 直连（默认）；[mixed] true = 混合档
+  /// （tracker 经代理、peer/DHT 直连；仅在有代理目标时有意义）。只在目标或
+  /// 档位变化时走 FFI。
   ///
   /// 这里不 import 代理解析层——host 只认「一个 host:port 或没有」，决定「该不该
   /// 走、走哪个」是 AppModel 的事（`resolveP2pProxyHostPort`）；守卫
   /// `download_http_client_proxy_test.dart` 钉死 torrent 宿主不碰 app_proxy。
-  bool applyProxy(String? hostPort) {
+  bool applyProxy(String? hostPort, {bool mixed = false}) {
     final String trimmed = hostPort?.trim() ?? '';
     final String? target = trimmed.isEmpty ? null : trimmed;
-    if (_hasAppliedProxy && _appliedProxyHostPort == target) return true;
+    final bool effectiveMixed = target != null && mixed;
+    if (_hasAppliedProxy &&
+        _appliedProxyHostPort == target &&
+        _appliedProxyMixed == effectiveMixed) {
+      return true;
+    }
     if (!_hasAppliedProxy && target == null) {
       _hasAppliedProxy = true;
       return true;
     }
-    final bool ok = _session.applyProxy(hostPort: target);
+    if (effectiveMixed && !_session.supportsProxyMode) {
+      // 老 DLL 无 ht_apply_proxy_mode：engine 会降级全代理。说清降级而不是
+      // 假装混合生效。
+      debugPrint('[torrent] mixed proxy mode unsupported by loaded library; '
+          'falling back to full proxy');
+    }
+    final bool ok = _session.applyProxy(hostPort: target, mixed: mixed);
     if (ok) {
       _hasAppliedProxy = true;
       _appliedProxyHostPort = target;
+      _appliedProxyMixed = effectiveMixed;
     } else {
       debugPrint('[torrent] proxy apply failed (${target ?? 'direct'}): '
           '${_session.supportsProxy ? 'native rejected' : 'library lacks ht_apply_proxy'}');

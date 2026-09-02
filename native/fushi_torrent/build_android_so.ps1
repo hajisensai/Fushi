@@ -77,10 +77,14 @@ foreach ($abi in $Abis) {
     # 不参与就会静默退回 vcpkg 自带 arm64-android（API 28），即 vcpkg-triplets/ 注释
     # 里那个 aligned_alloc undefined symbol。
     $overlay = Join-Path $scriptDir "vcpkg-triplets"
+    # overlay ports：libtorrent 2.0.11 私有补丁（DHT 混合代理豁免），
+    # 见 vcpkg-ports/README.md；与 Windows 脚本同一套。
+    $overlayPorts = Join-Path $scriptDir "vcpkg-ports"
     cmake -G Ninja -B $buildDir -S $scriptDir `
         "-DCMAKE_TOOLCHAIN_FILE=$vcpkgToolchain" `
         "-DVCPKG_TARGET_TRIPLET=$triplet" `
         "-DVCPKG_OVERLAY_TRIPLETS=$overlay" `
+        "-DVCPKG_OVERLAY_PORTS=$overlayPorts" `
         "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$androidToolchain" `
         "-DANDROID_ABI=$abi" `
         "-DANDROID_PLATFORM=android-24" `
