@@ -176,6 +176,17 @@ struct VoiceHookLookupHit {
   int32_t glyph_h = 0;
   int32_t view_w = 0;   // primaryLayer 尺寸；host 据此定位与钳制卡片
   int32_t view_h = 0;
+  // 本次命中这一刻游戏窗口的客户区物理尺寸（0 = 量不到）。
+  //
+  // 与 view_* 的区别是**域**：coordinate_space==ClientPhysicalPixels 时两者
+  // 相等；KiriKiri（PrimaryLayer）放大运行时 view 是引擎画布、远小于客户区。
+  // 卡片是屏幕空间的真实窗口、尺寸是屏幕物理像素，所以它的尺寸上界只能按客户区
+  // 算。这一对随每条 hit 现量现报，host 侧因此不需要任何会话级缓存，也就没有
+  // 「本局第一次查词还不知道」和「玩家中途全屏↔窗口化后读到旧值」这两个坑
+  // （BUG-2066）。**不是**跨进程 IPC 字段：注入侧不知道也不该知道窗口尺寸，
+  // 这是 runner 在本进程用 GetClientRect 量出来的。
+  int32_t client_w = 0;
+  int32_t client_h = 0;
   bool submit = false;  // true=点击提交，false=悬停预览
 };
 
@@ -391,9 +402,13 @@ class VoiceHookReader {
       uint32_t max_width, uint32_t max_height, LookupCaptureCallback done)>;
   // 已渲染 WebView2 的零拷贝呈现主路。返回 true 表示 composition HWND 已直接贴到
   // 游戏客户区；false 时调用方保留 CapturePreview 位图回退。
+  // glyph_* 是命中字形在**游戏画布**坐标系的矩形。卡片在直连路径上保持自身物理像素，
+  // 不随画布缩放，所以贴附要以字形为基准在屏幕空间重排；anchor_* 只在字形缺失时回退。
   using LookupDirectPresenter = std::function<bool(
       int32_t anchor_x, int32_t anchor_y, uint32_t card_width,
-      uint32_t card_height, uint32_t view_width, uint32_t view_height)>;
+      uint32_t card_height, uint32_t view_width, uint32_t view_height,
+      int32_t glyph_x, int32_t glyph_y, uint32_t glyph_w, uint32_t glyph_h,
+      uint32_t* out_client_width, uint32_t* out_client_height)>;
   // 把一条游戏侧转发来的输入喂给离屏 WebView2（接
   // [GlobalLookupWindow::InjectLookupInput]）。
   using LookupInputSink = std::function<bool(uint32_t kind, int32_t x,

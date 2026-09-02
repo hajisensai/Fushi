@@ -31,7 +31,7 @@ enum _ChannelMount {
 /// ② 而「接住的地方」历史上一直不是整页：先是 media_kit controls 的
 ///    `keyboardShortcuts`（只包 `AdaptiveVideoControls` 子树），后是页面 Scaffold 上的
 ///    局部覆盖（全屏是推到根 navigator 的独立路由、不经过 Scaffold）。焦点一落到那两个
-///    子树之外（[PanelFocusScope] 把焦点领进字幕列表 / 剧集轨 / 侧栏就是最常见的一种），
+///    子树之外（[PanelFocusScope] 把焦点领进剧集轨 / 侧栏就是最常见的一种），
 ///    裸空格就上浮到全局中和层被吞 =「按了没反应」。
 ///
 /// 方案 D 之后键盘只剩**一个**挂载点：[_wrapVideoGamepadControls] 的
@@ -162,8 +162,8 @@ void main() {
   );
 
   /// BUG-1864 的真实拓扑复刻：**全屏是推到根 navigator 的独立路由**，页面 Scaffold
-  /// 不在它的祖先链上。路由内容里挂真的 [PanelFocusScope]——它正是字幕列表 / 剧集轨 /
-  /// 侧栏打开时把焦点从视频画面抢走的那个组件。
+  /// 不在它的祖先链上。路由内容里挂真的 [PanelFocusScope]——它正是剧集轨 / 侧栏
+  /// 打开时把焦点从视频画面抢走的那个组件（字幕列表自 BUG-2040 起不再领焦点）。
   ///
   /// [mount] 决定**那唯一一份键盘通道挂在哪**。两个取值下通道都真实存在、真实接线，
   /// 差别只有挂载位：

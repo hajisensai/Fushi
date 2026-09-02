@@ -17,6 +17,7 @@ export 'src/formats/abbyy_lingvo_format.dart';
 export 'src/formats/migaku_dictionary_format.dart';
 export 'src/formats/mdict_format.dart';
 export 'src/language/language.dart';
+export 'src/language/transform_description_i18n.dart';
 export 'src/language/language_utils.dart';
 export 'src/language/ruby_text.dart';
 export 'src/language/implementations/japanese_language.dart';

@@ -139,6 +139,54 @@ class AdapterStructureTest(unittest.TestCase):
             leaf_publication,
         )
 
+    def test_geometry_publishers_declare_an_admitted_coordinate_space(self) -> None:
+        """每个几何发布者的坐标域必须是被 host 直连路径认过的两种之一。
+
+        host 的直连覆盖窗（fushi/windows/runner/gal_direct_card_geometry.h）把
+        `view` 按等比缩放 + 居中映射到游戏客户区，再以字形矩形贴附卡片。该映射的正确性
+        建立在一条**跨仓约定**上：
+
+          * ClientPhysicalPixels 的发布者，view 必须就是客户区 —— 此时 scale 恒为 1、
+            信箱边为 0，映射退化成恒等变换，与放开 1:1 闸门之前逐像素相同；
+          * PrimaryLayer 的发布者（目前只有 KiriKiri），view 是引擎画布 —— 正是需要
+            那次缩放的那一个。
+
+        若将来有适配器发布 LayoutLocal（IPC 枚举允许，见 voice_hook_ipc.h 的
+        IsPublicationSane 上界），它的坐标既不是客户区也不是画布，host 仍会照着上面
+        两条之一去缩放，症状是「卡片贴在离谱的位置」，而三边都不报错。本守卫让这种
+        新增在**编译期之外的最早时刻**变红，逼调用方回来改 host 的映射，而不是等真机。
+        """
+        adapter_root = ROOT / "hook" / "adapters"
+        admitted = {
+            "kLookupCoordinateSpaceClientPhysicalPixels",
+            "kLookupCoordinateSpacePrimaryLayer",
+        }
+        seen: dict[str, str] = {}
+        for path in sorted(adapter_root.rglob("*.inc")):
+            source = self._strip_comments(path.read_text(encoding="utf-8"))
+            if "g_geometry_provider_registry.PublishHit" not in source:
+                continue
+            name = path.relative_to(adapter_root).as_posix()
+            marker = "publication.coordinate_space ="
+            at = source.find(marker)
+            self.assertNotEqual(-1, at, f"{name} 必须显式声明 coordinate_space")
+            tail = source[at + len(marker) : at + len(marker) + 200]
+            spaces = [c for c in admitted if c in tail]
+            self.assertEqual(
+                1,
+                len(spaces),
+                f"{name} 的 coordinate_space 不在 host 直连路径认过的集合里：{tail.strip()[:80]}",
+            )
+            seen[name] = spaces[0]
+
+        self.assertEqual(6, len(seen), seen)
+        # PrimaryLayer 是唯一需要 host 做画布→客户区缩放的域；它多一个成员就意味着
+        # 多一个引擎走那条缩放路径，必须连同 host 的映射与其单测一起复核。
+        primary = sorted(
+            n for n, c in seen.items() if c == "kLookupCoordinateSpacePrimaryLayer"
+        )
+        self.assertEqual(["kirikiri_adapter.inc"], primary, seen)
+
     def test_sgre_lookup_uses_game_parsed_draw_state(self) -> None:
         source = (
             ROOT / "hook" / "adapters" / "sgre_lookup.inc"

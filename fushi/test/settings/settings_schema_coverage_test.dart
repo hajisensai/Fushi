@@ -125,6 +125,16 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
           'native/galgame_hook/tests/lookup_ipc_contract_test.cpp + '
           'native/galgame_hook/tests/lookup_session_replay_test.cpp + '
           'native/galgame_hook/tests/kirikiri_lookup_source_guard_test.py',
+  // BUG-2066：游戏内查词卡独立尺寸开关。写 prefsRepo（changed=true），生效点在
+  // runner 的直连覆盖窗（真实 HWND + WebView2），本进程内没有可探的渲染输入。
+  // 由 test/lookup/gal_card_size_cap_test.dart 咬住这个开关唯一的行为后果：
+  // galCard route 读 gal 那组键、桌面 route 继续读 overlay 那组，两组值不互串；
+  // 关掉开关时跟随 app 内共享值。
+  // 归属：与 #938 同一条理由，本项已从 settings_schema_lookup.dart 移进
+  // settings_schema_game.dart 的双重 Platform.isWindows 门后，故 destId 是 game。
+  // 兄弟两项（最大宽/高滑杆）带 visible 门、不进覆盖清单，不需要登记。
+  'game/Independent in-game card size':
+      'test/lookup/gal_card_size_cap_test.dart',
   // BUG-1095：galgame Hook 台词浮窗字号。写 prefsRepo（changed=true），生效点在
   // runner 自有的 Win32 分层浮窗（Direct2D/DirectWrite 直绘，不是 Flutter widget
   // 树），本进程内没有任何可探的渲染输入，故无适用探针；由三层专项测试咬住：

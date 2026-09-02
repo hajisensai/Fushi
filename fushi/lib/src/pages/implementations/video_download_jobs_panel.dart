@@ -16,6 +16,8 @@ import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/torrent_task_display.dart';
 import 'package:fushi/src/media/video/download/video_download_error_presentation.dart';
+import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart'
+    show downloadOnlyKindOfOrganizationPolicy;
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 import 'package:fushi/utils.dart';
 
@@ -243,6 +245,17 @@ enum VideoDownloadJobKindFilter {
 DiscoveryMediaKind? videoDownloadJobDiscoveryKind(VideoDownloadJobRow job) =>
     DiscoveryMediaKind.values.asNameMap()[job.mediaKind];
 
+/// 「下完了，但还成不了一本书」的有声书任务。
+///
+/// `download-only-audiobook` 策略落地的是**孤立音频**（CoreAudio/TMW 单卷 m4b
+/// 就是这个形状）。本仓的有声书是字幕对齐驱动的：光有音频进不了对齐导入器，
+/// 任务却是正常完成的——用户这时看不出还差什么，文件就烂在下载目录里。
+/// 面板据此给一个直达导入对话框的补救入口（音频预填，用户只需再给一个字幕）。
+bool videoDownloadJobNeedsAudiobookPairing(VideoDownloadJobRow job) =>
+    job.lifecycle == VideoDownloadJobLifecycle.completed &&
+    downloadOnlyKindOfOrganizationPolicy(job.organizationPolicy) ==
+        DiscoveryMediaKind.audiobook;
+
 /// 类型筛选（纯函数）。
 List<VideoDownloadJobRow> filterVideoDownloadJobsByKind(
   List<VideoDownloadJobRow> jobs,
@@ -281,6 +294,7 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     this.onResume,
     this.onCancel,
     this.onOpenDetails,
+    this.onPairAudiobook,
     this.onSetPriority,
     this.locationLoader,
     this.onDelete,
@@ -298,6 +312,7 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     VideoDownloadJobAction? onResume,
     VideoDownloadJobAction? onCancel,
     VideoDownloadJobAction? onOpenDetails,
+    VideoDownloadJobAction? onPairAudiobook,
     VideoDownloadJobPriorityAction? onSetPriority,
     VideoDownloadJobLocationLoader? locationLoader,
     VideoDownloadJobDeleteAction? onDelete,
@@ -314,6 +329,7 @@ class VideoDownloadJobsPanel extends StatefulWidget {
         onResume: onResume,
         onCancel: onCancel,
         onOpenDetails: onOpenDetails,
+        onPairAudiobook: onPairAudiobook,
         onSetPriority: onSetPriority,
         locationLoader: locationLoader,
         onDelete: onDelete,
@@ -331,6 +347,10 @@ class VideoDownloadJobsPanel extends StatefulWidget {
   final VideoDownloadJobAction? onResume;
   final VideoDownloadJobAction? onCancel;
   final VideoDownloadJobAction? onOpenDetails;
+
+  /// 有声书任务下完只有孤立音频时的补救入口（见
+  /// [videoDownloadJobNeedsAudiobookPairing]）。传 null 表示宿主没接这个能力。
+  final VideoDownloadJobAction? onPairAudiobook;
   final VideoDownloadJobPriorityAction? onSetPriority;
   final VideoDownloadJobLocationLoader? locationLoader;
   final VideoDownloadJobDeleteAction? onDelete;
@@ -617,6 +637,10 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
         onOpenDetails: widget.onOpenDetails == null
             ? null
             : () => _runAction(job, widget.onOpenDetails!),
+        onPairAudiobook: widget.onPairAudiobook == null ||
+                !videoDownloadJobNeedsAudiobookPairing(job)
+            ? null
+            : () => _runAction(job, widget.onPairAudiobook!),
         onSetPriority: widget.onSetPriority == null
             ? null
             : (int priority) => _runAction(
@@ -789,6 +813,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
     required this.onResume,
     required this.onCancel,
     required this.onOpenDetails,
+    required this.onPairAudiobook,
     required this.onSetPriority,
     required this.onOpenLocation,
     required this.onDelete,
@@ -805,6 +830,9 @@ class _VideoDownloadJobCard extends StatelessWidget {
   final VoidCallback? onResume;
   final VoidCallback? onCancel;
   final VoidCallback? onOpenDetails;
+
+  /// 非 null 时该任务下完只有孤立音频，露出「补对齐文件」入口。
+  final VoidCallback? onPairAudiobook;
 
   /// 传 null 表示宿主没接这个能力（例如只读的历史面板）。
   final void Function(int priority)? onSetPriority;
@@ -969,9 +997,32 @@ class _VideoDownloadJobCard extends StatelessWidget {
               ),
             ),
           ],
+          if (onPairAudiobook != null) ...<Widget>[
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Icon(
+                  Icons.playlist_add_check_circle_outlined,
+                  size: 16,
+                  color: colors.tertiary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    t.download_task_audiobook_needs_alignment,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colors.tertiary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           if ((_canRetry && onRetry != null) ||
               (_canResume && onResume != null) ||
               (_canCancel && onCancel != null) ||
+              onPairAudiobook != null ||
               onOpenDetails != null ||
               onOpenLocation != null ||
               onSetPriority != null ||
@@ -983,6 +1034,15 @@ class _VideoDownloadJobCard extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 6,
                 children: <Widget>[
+                  if (onPairAudiobook != null)
+                    FilledButton.tonalIcon(
+                      key: ValueKey<String>(
+                        'video-download-job-pair-audiobook-${job.jobId}',
+                      ),
+                      onPressed: busy ? null : onPairAudiobook,
+                      icon: const Icon(Icons.library_add_outlined, size: 18),
+                      label: Text(t.download_task_audiobook_pair),
+                    ),
                   if (onOpenDetails != null)
                     OutlinedButton.icon(
                       key: ValueKey<String>(
