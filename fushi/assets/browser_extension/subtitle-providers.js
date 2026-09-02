@@ -11,6 +11,9 @@ function fushiSite() {
   const h = location.hostname;
   if (h.endsWith('netflix.com')) return 'netflix';
   if (h.endsWith('youtube.com') || h === 'youtu.be') return 'youtube';
+  // bilibili.com（大陆站）。注意与 bilibili.tv（国际站，走 stream-bridge 抓字幕）不同域，
+  // 两者的接口与字幕来源都不一样，别合成一个判定。
+  if (h === 'bilibili.com' || h.endsWith('.bilibili.com')) return 'bilibili';
   return 'other';
 }
 function fushiYoutubeId() {
@@ -49,7 +52,28 @@ function fushiClipSource() {
     const id = fushiNetflixId();
     return id ? { kind: 'netflix', id: id, mode: 'queue' } : null;
   }
+  if (site === 'bilibili') {
+    const b = fushiBilibiliRef();
+    // 非 DRM，服务端拿 {bvid, 分P, 时间窗} 就能从原始 DASH 音轨直接裁 → 点一下即出卡。
+    return b ? { kind: 'bilibili', id: b.bvid, part: b.page, mode: 'immediate' } : null;
+  }
   return null;
+}
+// bilibili.com 稿件页的 `BVxxxxxxxxxx` 与分 P 号。纯 URL 解析，不读页面内部变量
+// （`__INITIAL_STATE__` 那类全局在隔离世界里本来也读不到，且随站点改版就会碎）。
+// cid 由服务端用 bvid 现查（`x/web-interface/view`），扩展不必知道它。
+//
+// 只认 `/video/BV...` 稿件页：番剧 `/bangumi/play/ep|ss` 走的是另一套 pgc 接口（epid→cid），
+// 服务端还没有对应解析器，这里就不谎报能裁——返回 null，制卡照常出「解码帧 + 例句」的卡。
+function fushiBilibiliRef() {
+  const m = location.pathname.match(/\/video\/(BV[0-9A-Za-z]{10})/);
+  if (!m) return null;
+  let page = 1;
+  try {
+    const p = parseInt(new URL(location.href).searchParams.get('p') || '1', 10);
+    if (Number.isFinite(p) && p >= 1) page = p;
+  } catch (_) { /* 畸形 URL：按第 1 P */ }
+  return { bvid: m[1], page: page };
 }
 function fushiVideoTimeMs(video) {
   const v = video || document.querySelector('video');

@@ -844,6 +844,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             ...(typeof msg.mineAtMs === 'number' ? { mineAtMs: msg.mineAtMs } : {}),
             ...(msg.clipSourceKind ? { clipSourceKind: msg.clipSourceKind } : {}),
             ...(msg.clipSourceId ? { clipSourceId: msg.clipSourceId } : {}),
+            ...(typeof msg.clipSourcePart === 'number'
+              ? { clipSourcePart: msg.clipSourcePart } : {}),
             ...(msg.documentTitle ? { documentTitle: msg.documentTitle } : {}),
           }),
         });

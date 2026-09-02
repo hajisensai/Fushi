@@ -157,6 +157,7 @@ import 'package:fushi/src/media/video/video_cover_extractor.dart'
     show extractVideoCover;
 import 'package:fushi/src/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/immersion_mine_payload.dart';
+import 'package:fushi/src/mining/bilibili_clip_miner.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
@@ -7344,6 +7345,9 @@ class AppModel with ChangeNotifier {
 /// 是 const 构造，无法挂非 const 的可变缓存字段。
 final YoutubeClipMiner _youtubeClipMiner = YoutubeClipMiner();
 
+/// 同上，bilibili 那条的流解析器（同样是进程级 TTL 缓存）。
+final BilibiliClipMiner _bilibiliClipMiner = BilibiliClipMiner();
+
 /// TODO-1303：把一次 [MineOutcome] 映射成 [RemoteMineResult]，并**把失败写进错误日志**。
 /// 远端挖词（浏览器扩展）此前只回结果名、失败既不回传原因也不记日志 → 「制卡失败报成功 +
 /// 诊断黑洞」。这里复用 app 内同一 [logMineFailure]（写 error+stack 进 [ErrorLogService]、
@@ -7691,6 +7695,86 @@ class _AppModelRemoteLookupService
             detail: ytRes.abortReason);
       }
       return remoteMineResultFromOutcome(ytRes.outcome! as MineOutcome);
+    }
+    // 优先级 0'（通用可裁流，目前 bilibili）：非 DRM 站点，句子音频从**原始音轨**按时间窗裁，
+    // 不录屏、不录音、不回放。与上面 YouTube 那条同一范式，两点不同都已实测：
+    //   · 封面不从流里抽——扩展已经在页面里取到了**当前解码帧**（原始分辨率、无弹幕/UI/字幕层，
+    //     见 `frame-capture.js`），比服务端再解析一路视频轨更准（那还会撞上「未登录只拿得到
+    //     480P 视频轨」），所以这里 mediaSource 留空，只解析音轨。
+    //   · 不需要 range 物化（那是 googlevideo 限速的专属绕行），见
+    //     `audioSourceNeedsRangeMaterialization`。
+    if (payload.clipSourceKind == 'bilibili' &&
+        payload.clipSourceId != null &&
+        payload.clipStartMs != null &&
+        payload.clipEndMs != null) {
+      // 零/负长度窗（字幕时间异常）→ 直接失败，不出无声卡：这条路 requireAudio=true，
+      // 而 requireAudio 在 hasRange=false 时不会中止 → 否则静默降级成一张只有图的卡。
+      if (payload.clipEndMs! <= payload.clipStartMs!) {
+        return remoteMineError(
+          'Anki.mineImmersion.bilibili',
+          'bilibili 字幕时间窗无效（零/负长度），未制卡',
+          detail: 'clip window <= 0 '
+              '(${payload.clipStartMs}..${payload.clipEndMs})',
+        );
+      }
+      final BilibiliClipRequest bi;
+      try {
+        bi = await _bilibiliClipMiner.buildRequest(
+          bvid: payload.clipSourceId!,
+          page: payload.clipSourcePart ?? 1,
+          startMs: payload.clipStartMs!,
+          endMs: payload.clipEndMs!,
+          fields: payload.fields,
+          sentence: payload.sentence,
+          cueSentence: payload.cueSentence,
+          documentTitle: payload.documentTitle,
+        );
+      } catch (e, st) {
+        // 视频不可用 / 无 DASH 音轨 / 网络失败都抛 StateError 或 IO 异常；两个 server 的
+        // /api/mine 只 catch FormatException，这里不兜住会 500 整张卡。
+        return remoteMineError(
+          'Anki.mineImmersion.bilibili',
+          'bilibili 视频流解析失败，未制卡',
+          detail: 'resolve failed: $e',
+          error: e,
+          stackTrace: st,
+        );
+      }
+      final ImmersionMiningResult biRes = await ImmersionMiningEngine().mine(
+        ImmersionMiningRequest(
+          fields: bi.fields,
+          // 只解析音轨：封面走 providedCoverBytes（扩展的解码帧）。
+          mediaSource: null,
+          audioSource: bi.audioSource,
+          clipStartMs: bi.clipStartMs,
+          clipEndMs: bi.clipEndMs,
+          sentence: bi.sentence,
+          cueSentence: bi.cueSentence,
+          documentTitle: bi.documentTitle,
+          source: AnkiMiningSource.video,
+          providedCoverBytes: payload.screenshotBytes,
+          // 与 buildImmersionRequest 的非 Netflix 来源同名：媒体库里一眼看得出这张图
+          // 是网页解码帧那条路来的。字节由扩展直接给、不经我们编码，恒 JPEG。
+          providedCoverName:
+              payload.screenshotBytes == null ? null : 'web_shot.jpg',
+          // 有真实音频源 → 缺音频即失败（与 YouTube、app 内一致），不出无声卡。
+          requireAudio: true,
+          animatedFormat: animatedFormat,
+          imageMode: _appModel.videoMiningImageMode,
+          stillFormat: _appModel.videoMiningStillFormat,
+        ),
+        compression: compression,
+        tempDir: Directory.systemTemp.path,
+        repo: repo,
+        onFailure: (String s) => ErrorLogService.instance
+            .logDiagnostic('Anki.mineImmersion.bilibili.extract', s),
+      );
+      if (biRes.aborted) {
+        return remoteMineError('Anki.mineImmersion.bilibili',
+            'bilibili 制卡失败：${biRes.abortReason ?? '媒体抽取失败'}',
+            detail: biRes.abortReason);
+      }
+      return remoteMineResultFromOutcome(biRes.outcome! as MineOutcome);
     }
     // 捕获来源优先级（Netflix GIF）：① 扩展在播放中录到的字幕片段 webm → ffmpeg 转 GIF+音频
     // （唯一不回放的 Netflix GIF 路径，需用户关硬件加速才非黑）；② 后台软解 native 实例（未建

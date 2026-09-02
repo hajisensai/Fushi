@@ -55,6 +55,11 @@ window.flutter_inappwebview = {
             if (ctx && ctx.clip && ctx.clip.mode === 'immediate') {
               msg.clipSourceKind = ctx.clip.kind;
               msg.clipSourceId = ctx.clip.id;
+              // 分 P / 分集号：B 站不同分 P 是不同 cid，少了它服务端会去裁第 1 P 的音轨
+              // —— 出一张「图和句子是这一集、声音是上一集」的卡。
+              if (typeof ctx.clip.part === 'number') {
+                msg.clipSourcePart = ctx.clip.part;
+              }
             }
             // 页面标题当 Anki 的「视频名」字段：此前这条路一个都不发，服务端只好回落硬编码的
             // 'Netflix'，B 站的卡上写着 Netflix。

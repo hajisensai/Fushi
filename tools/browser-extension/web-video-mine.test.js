@@ -151,14 +151,28 @@ test('Netflix 字幕 DOM 直读仍是最高优先级（与画面上那行严格�
 
 test('immediate 档：立即出卡并带上可裁流身份，供服务端裁原始音轨', async () => {
   const ctx = bilibiliContext();
-  ctx.clip = { kind: 'bilibili', id: 'BV1xx411c7mD', mode: 'immediate' };
+  ctx.clip = {
+    kind: 'bilibili', id: 'BV1xx411c7mD', part: 13, mode: 'immediate',
+  };
   const { call, sent } = load({ mineContext: ctx, frame: { base64: 'SU1H' } });
   await call('mineEntry', FIELDS);
   assert.strictEqual(sent[0].type, 'mine');
   assert.strictEqual(sent[0].clipSourceKind, 'bilibili');
   assert.strictEqual(sent[0].clipSourceId, 'BV1xx411c7mD');
+  assert.strictEqual(sent[0].clipSourcePart, 13,
+    '少了分 P 号，服务端会裁第 1 P 的音轨 → 图和句子是这一集、声音是上一集');
   assert.strictEqual(sent[0].clipStartMs, 61000);
   assert.strictEqual(sent[0].clipEndMs, 64500);
+});
+
+test('无可裁源时不得发出半个 clipSource（服务端据它决定要不要解析流）', async () => {
+  const { call, sent } = load({
+    mineContext: bilibiliContext(), frame: { base64: 'SU1H' },
+  });
+  await call('mineEntry', FIELDS);
+  assert.strictEqual('clipSourceKind' in sent[0], false);
+  assert.strictEqual('clipSourceId' in sent[0], false);
+  assert.strictEqual('clipSourcePart' in sent[0], false);
 });
 
 test('普通网页（无轨无视频）：不报「没找到当前字幕」，回落弹窗选区照常出卡', async () => {

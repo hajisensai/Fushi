@@ -525,7 +525,11 @@ class ImmersionMiningEngine {
     // 只下小段、效率更高）不走物化、保持不变。物化失败回退直接对 URL 裁（best-effort，不劣于旧）。
     String cutInput = audioSrc;
     String? materialized;
-    if (req.audioSource != null && _isRemoteHttp(req.audioSource!)) {
+    // 判据是「这个源需不需要物化」而不是「有没有分离音轨」——见
+    // [audioSourceNeedsRangeMaterialization]：`range=` 查询参数分片是 googlevideo 专属绕行，
+    // 别的站点的分离音轨（bilibili 的 audio-only m4s 等）走进来会把同一个流反复下满
+    // maxBytes；它们直接对 URL `-ss` 裁即可（实测 3 秒片段约 1 秒出）。
+    if (audioSourceNeedsRangeMaterialization(req.audioSource)) {
       materialized = await _materialize(
         audioUrl: req.audioSource!,
         outputPath: '$tempDir/immersion_audio_src',
