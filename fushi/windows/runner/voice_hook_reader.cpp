@@ -1031,6 +1031,9 @@ void HandleLookupPresent(
            flutter::EncodableValue(static_cast<int64_t>(card_height))},
           // 游戏客户区尺寸。Dart 手上只有画布(view)尺寸，用画布像素去夹屏幕像素会把
           // 卡片系统性压小，所以把真实上界回报过去。
+          // 诊断用。**不是**卡片尺寸上界的来源：那个来源是每条 hit 上的
+          // clientW/clientH（现量现报）。从 present 回执反推 cap 会晚一次查词，
+          // 正是 BUG-2066 的原始症状，别再走回去。
           {flutter::EncodableValue("clientWidth"),
            flutter::EncodableValue(static_cast<int64_t>(client_width))},
           {flutter::EncodableValue("clientHeight"),

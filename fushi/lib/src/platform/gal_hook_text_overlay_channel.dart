@@ -952,8 +952,6 @@ class GalLookupCallResult {
     this.height = 0,
     this.clamped = false,
     this.directSurface = false,
-    this.clientWidth = 0,
-    this.clientHeight = 0,
     this.requestSeq = 0,
     this.appliedSeq = 0,
   });
@@ -983,14 +981,6 @@ class GalLookupCallResult {
   /// DOM/滚动由浏览器合成器原生刷新，不再需要 CapturePreview dirty 帧。
   final bool directSurface;
 
-  /// 游戏客户区的物理尺寸（仅 direct present 有值，0 = 未知）。
-  ///
-  /// 卡片尺寸的上界必须按它算。Dart 手上只有 hook 报的画布(primaryLayer)尺寸，游戏放大
-  /// 运行时画布远小于客户区，拿画布像素去夹屏幕像素会把卡片系统性压小——真机上纵向被
-  /// 钉死在 0.6×720=432 物理像素，用户把「最大高度」调多大都没用。
-  final int clientWidth;
-  final int clientHeight;
-
   /// Host→hook control generation and the last registry-acknowledged
   /// generation. Geometry admission may be accepted before an in-flight
   /// mouse tail lets the registry apply it, so these values need not match in
@@ -1011,8 +1001,6 @@ class GalLookupCallResult {
       height: _finiteWireInt(map['height']) ?? 0,
       clamped: map['clamped'] == true,
       directSurface: map['directSurface'] == true,
-      clientWidth: _finiteWireInt(map['clientWidth']) ?? 0,
-      clientHeight: _finiteWireInt(map['clientHeight']) ?? 0,
       requestSeq: _finiteWireInt(map['requestSeq']) ?? 0,
       appliedSeq: _finiteWireInt(map['appliedSeq']) ?? 0,
     );
