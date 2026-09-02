@@ -11,6 +11,7 @@ import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/media/video/download/video_media_reference_codec.dart';
+import 'package:fushi/src/media/video/download/subscription_check_schedule.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
@@ -108,8 +109,13 @@ class VideoDownloadSubscriptionService {
     this.checkInterval = const Duration(minutes: 15),
     this.leaseDuration = const Duration(minutes: 2),
     this.autoRetryBudget = kVideoDownloadSubscriptionAutoRetryBudget,
+    SubscriptionCheckCadence? cadence,
     DateTime Function()? now,
-  })  : _enqueue = enqueue,
+  })  : cadence = cadence ??
+            SubscriptionCheckCadence(
+              baseInterval: checkInterval,
+            ),
+        _enqueue = enqueue,
         workerId =
             workerId ?? 'video-sub-${generateVideoDownloadInstallationId()}',
         _now = now ?? DateTime.now {
@@ -130,6 +136,9 @@ class VideoDownloadSubscriptionService {
   final String workerId;
   final Duration checkInterval;
   final Duration leaseDuration;
+
+  /// 每周更新点的检查节奏参数。默认把 [checkInterval] 当作退化时的均匀间隔。
+  final SubscriptionCheckCadence cadence;
   final int autoRetryBudget;
   final DateTime Function() _now;
 
@@ -138,10 +147,13 @@ class VideoDownloadSubscriptionService {
   bool _disposed = false;
   VideoDownloadLeaseGuard? _activeLease;
 
-  /// 启动时立刻领取所有当前到期订阅，之后固定每 15 分钟（或注入间隔）检查。
+  /// 启动时立刻领取所有当前到期订阅，之后睡到「下一条订阅真正到期」再醒。
+  ///
+  /// 这里刻意不是 [Timer.periodic]：固定脉冲既是加密的硬下限（把 nextCheckAt
+  /// 设到 3 分钟后也得等下一拍），也是冷窗的固定开销（一条订阅都不到期照样
+  /// 每 15 分钟醒一次）。改成按到期时刻重排的单次定时器后两头一起解决。
   void start() {
     if (_disposed || _timer != null) return;
-    _timer = Timer.periodic(checkInterval, (_) => unawaited(checkNow()));
     unawaited(checkNow());
   }
 
@@ -152,9 +164,37 @@ class VideoDownloadSubscriptionService {
     late final Future<void> run;
     run = _drain().whenComplete(() {
       if (identical(_activeCheck, run)) _activeCheck = null;
+      // 所有入口（启动、定时器、面板里的手动检查与新建订阅）都汇到这里重排，
+      // 新订阅不会卡在上一轮排好的长睡眠里。
+      unawaited(_scheduleNextWake());
     });
     _activeCheck = run;
     return run;
+  }
+
+  /// 按 DB 里最早的到期时刻重排唤醒。
+  Future<void> _scheduleNextWake() async {
+    if (_disposed) return;
+    Duration delay;
+    try {
+      final int? dueAt = await database.nextVideoDownloadSubscriptionDueAt();
+      if (dueAt == null) {
+        // 没有启用中的订阅：不必醒，等 UI 侧新建/启用时显式 checkNow 唤醒。
+        _timer?.cancel();
+        _timer = null;
+        return;
+      }
+      final int nowAt = _now().millisecondsSinceEpoch;
+      delay = Duration(milliseconds: dueAt - nowAt);
+    } on Object {
+      // 查不出下一次到期不能让调度器停摆，退回均匀间隔。
+      delay = checkInterval;
+    }
+    if (_disposed) return;
+    if (delay < cadence.minInterval) delay = cadence.minInterval;
+    if (delay > cadence.coldInterval) delay = cadence.coldInterval;
+    _timer?.cancel();
+    _timer = Timer(delay, () => unawaited(checkNow()));
   }
 
   Future<void> stop() async {
@@ -211,12 +251,13 @@ class VideoDownloadSubscriptionService {
     try {
       final _SubscriptionCheckOutcome outcome = await _check(subscription);
       final int checkedAt = _now().millisecondsSinceEpoch;
+      final Duration nextDelay = await _successDelay(subscription, checkedAt);
       await _releaseLeaseWith(
         () => database.completeVideoDownloadSubscriptionCheck(
           subscriptionId: subscription.subscriptionId,
           workerId: workerId,
           checkedAt: checkedAt,
-          nextCheckAt: checkedAt + checkInterval.inMilliseconds,
+          nextCheckAt: checkedAt + nextDelay.inMilliseconds,
           matchedAt: outcome.matched ? checkedAt : null,
           fulfillOneShot:
               subscription.mode == 'oneShot' && outcome.hasPersistentJob,
@@ -719,6 +760,34 @@ class VideoDownloadSubscriptionService {
     _mediaKind(subscription.mediaKind);
     _discoveryCategory(subscription);
     _subtitlePolicy(subscription.subtitlePolicy);
+  }
+
+  /// 一次成功检查之后隔多久再查。
+  ///
+  /// 连载订阅按自己的历史发布时刻学出每周更新点，热窗加密、冷窗拉长；样本不足
+  /// 或没有稳定周期时退回均匀间隔，与改动前行为一致。样本必须在 `_check` **之后**
+  /// 重新读：本轮新命中的那一集刚刚写进 items，而它恰恰是最有价值的一个样本。
+  Future<Duration> _successDelay(
+    VideoDownloadSubscriptionRow subscription,
+    int checkedAt,
+  ) async {
+    // oneShot 没有周期语义，学不出也不该学。
+    if (subscription.mode == 'oneShot') return checkInterval;
+    try {
+      final List<int> publishedAt =
+          await database.getVideoDownloadSubscriptionPublishedAt(
+        subscription.subscriptionId,
+        limit: cadence.maxSamples,
+      );
+      return nextSubscriptionCheckDelay(
+        recentPublishedAtMs: publishedAt,
+        nowMs: checkedAt,
+        cadence: cadence,
+      );
+    } on Object {
+      // 读不出历史不影响这一轮的检查结果，退回均匀间隔即可。
+      return checkInterval;
+    }
   }
 
   Duration _retryDelay(
