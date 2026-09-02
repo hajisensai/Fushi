@@ -13,7 +13,7 @@
 
 namespace lookup = fushi_voice_hook::hunex_lookup;
 
-static_assert(sizeof(fushi_voice_hook::HunexGgeTraceEvent) == 240u);
+static_assert(sizeof(fushi_voice_hook::HunexGgeTraceEvent) == 456u);
 static_assert(offsetof(fushi_voice_hook::HunexGgeTraceEvent,
                        draw_arg12_bits) == 32u);
 static_assert(offsetof(fushi_voice_hook::HunexGgeTraceEvent, caller_rva) ==
@@ -24,8 +24,26 @@ static_assert(offsetof(fushi_voice_hook::HunexGgeTraceEvent,
                        utf16_char_index) == 64u);
 static_assert(offsetof(fushi_voice_hook::HunexGgeTraceEvent, draw_arg13) ==
               76u);
-static_assert(sizeof(fushi_voice_hook::HunexGgeTraceSlot) == 248u);
-static_assert(offsetof(fushi_voice_hook::HunexGgeTraceBuffer, slots) == 120u);
+static_assert(offsetof(fushi_voice_hook::HunexGgeTraceEvent, evidence_flags) ==
+              96u);
+static_assert(offsetof(fushi_voice_hook::HunexGgeTraceEvent, render_x) ==
+              108u);
+static_assert(offsetof(fushi_voice_hook::HunexGgeTraceEvent,
+                       outer_caller_rva) == 144u);
+static_assert(offsetof(fushi_voice_hook::HunexGgeTraceEvent,
+                       story_line_base) == 152u);
+static_assert(offsetof(fushi_voice_hook::HunexGgeTraceEvent,
+                       story_scalar_present) == 168u);
+static_assert(offsetof(fushi_voice_hook::HunexGgeTraceEvent,
+                       descriptor_words) == 184u);
+static_assert(offsetof(fushi_voice_hook::HunexGgeTraceEvent, output_words) ==
+              216u);
+static_assert(offsetof(fushi_voice_hook::HunexGgeTraceEvent,
+                       render_item_words) == 328u);
+static_assert(offsetof(fushi_voice_hook::HunexGgeTraceEvent,
+                       lookup_gate_mask) == 440u);
+static_assert(sizeof(fushi_voice_hook::HunexGgeTraceSlot) == 464u);
+static_assert(offsetof(fushi_voice_hook::HunexGgeTraceBuffer, slots) == 184u);
 
 namespace {
 
