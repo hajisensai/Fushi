@@ -3881,13 +3881,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (cause != FocusReclaimCause.popupDismissed && _hasVisiblePopup) {
       return false;
     }
-    // 手柄重设计 P3：可导航浮层面板（剧集轨 / 字幕列表 / 侧栏）打开期间焦点归
-    // PanelFocusScope 所有，页面不抢。少了这一条就是纯回归：字幕列表是 push-aside，
-    // 视频区全程可点，用户点一下画面（reclaim(gesture)）或从字幕行查完词关浮层
-    // （reclaim(popupDismissed)）焦点就被拽回页面节点，而 PanelFocusScope 只在
-    // visible 边沿认领一次、不复领 ⇒ 面板仍开着，_handleVideoGamepadButton 继续让
-    // dpad/A 给焦点兜底，于是 dpad 既进不了面板、也不再调音量/seek —— 比 P3 之前
-    // 更差（之前至少还能调音量）。面板关闭时通知先翻假，归还路径不受影响。
+    // 手柄重设计 P3：可导航浮层面板（剧集轨 / 侧栏）打开期间焦点归 PanelFocusScope
+    // 所有，页面不抢。少了这一条就是纯回归：面板开着时画面仍可点，用户点一下画面
+    // （reclaim(gesture)）或查完词关浮层（reclaim(popupDismissed)）焦点就被拽回页面
+    // 节点，而 PanelFocusScope 只在 visible 边沿认领一次、不复领 ⇒ 面板仍开着，
+    // _handleVideoGamepadButton 继续让 dpad/A 给焦点兜底，于是 dpad 既进不了面板、
+    // 也不再调音量/seek —— 比 P3 之前更差（之前至少还能调音量）。面板关闭时通知先
+    // 翻假，归还路径不受影响。字幕列表不在集内（BUG-2040）：它不领焦点，列表开着时
+    // 页面照常收回焦点。
     if (_videoNavigablePanelOpen) return false;
     // 生命周期回前台是全局回调，本页上方可能压着设置对话框 / 菜单 / 导入遮罩
     // （键盘所有者路由：窗口模式=本页路由，全屏期间=全屏路由）。此时抢焦点会
@@ -3952,13 +3953,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 在搜索期就已挂上并接管全屏命中，那一刻起光标就该归浮层管。
   final ValueNotifier<bool> _lookupOverlayActive = ValueNotifier<bool>(false);
 
-  /// 手柄重设计 P3：可用 D-pad 逐行浏览的三类面板任一打开（字幕列表 / 剧集轨 /
-  /// 侧栏）。与 [_hasVideoOverlay] 刻意不同集：控件 popover 与控制条编辑模式不是
-  /// 「行浏览」表面，D-pad 在那里仍按 video scope 解析。
+  /// 手柄重设计 P3：可用 D-pad 逐行浏览的两类面板任一打开（剧集轨 / 侧栏）。与
+  /// [_hasVideoOverlay] 刻意不同集：控件 popover 与控制条编辑模式不是「行浏览」
+  /// 表面，D-pad 在那里仍按 video scope 解析。
+  ///
+  /// 字幕列表（[_subtitleListVisible]）**刻意不在集内**（BUG-2040）：它不领焦点
+  /// （subtitle.part.dart 里没包 PanelFocusScope），列表开着时焦点仍在画面上，裸方向键
+  /// / D-pad 照常是 seek / 音量而不是在列表里选行。本 getter 是键盘 resolver 让位
+  /// （[resolveVideoKeyboardShortcut]）、手柄让位（[_handleVideoGamepadButton]）与
+  /// 页面拒抢焦（[_canOwnVideoFocus]）三条门的共同真相源，这里少一项三条门一起放开；
+  /// 若把字幕列表加回来而不同时包 PanelFocusScope，就是「dpad 既进不了列表也不调音量」。
   bool get _videoNavigablePanelOpen =>
-      _subtitleListVisible.value ||
-      _episodeListVisible.value ||
-      _videoSidePanel.value != null;
+      _episodeListVisible.value || _videoSidePanel.value != null;
 
   // BUG-371：字幕跳转列表是 **push-aside** 侧栏（[_videoWithSubtitlePanel] 的
   // `Row[Expanded(video), 面板列]`，TODO-314），把画面挤窄到左侧、**不遮挡**叠在画面上
@@ -5171,7 +5177,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   ///
   /// 挂在 [_wrapVideoGamepadControls] 的 `Focus.onKeyEvent` 上——窗口 `build()` 与
   /// 全屏路由 `pageBuilder` 的唯一共同外层，也是**所有**子焦点节点（视频画面、
-  /// media_kit 控制条、[PanelFocusScope] 圈起来的字幕列表 / 剧集轨 / 侧栏）的共同
+  /// media_kit 控制条、字幕列表、[PanelFocusScope] 圈起来的剧集轨 / 侧栏）的共同
   /// 祖先。BUG-1864 的根因就是「注册表声明的作用域是整页（[ShortcutScope.video]），
   /// 挂载点却只在 media_kit controls 子树」——面板是 `Video` 的**兄弟**，焦点一进
   /// 面板，整张表就够不着了。scope 与挂载点在这里第一次对齐。

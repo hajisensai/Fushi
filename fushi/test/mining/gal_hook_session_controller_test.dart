@@ -108,6 +108,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -161,6 +162,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       windowListLoader: () async => const <ExternalWindowInfo>[],
@@ -218,6 +220,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -284,6 +287,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -366,6 +370,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -447,6 +452,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -494,6 +500,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -547,6 +554,7 @@ void main() {
           String launchWorkdir = '',
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
         }) =>
             engine,
         loopbackSourceFactory: () => loopback,
@@ -605,6 +613,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -667,6 +676,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -731,6 +741,7 @@ void main() {
           String launchWorkdir = '',
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
         }) =>
             _FakeEngineSource(pairedBytes: Uint8List(0), rawReady: true),
         loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -812,6 +823,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) {
         capturedLunaPcHooks = lunaPcHooks;
         return engine;
@@ -875,6 +887,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -945,6 +958,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -1016,6 +1030,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -1106,6 +1121,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -1203,6 +1219,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -1267,6 +1284,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -1349,6 +1367,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       textPollInterval: const Duration(milliseconds: 5),
@@ -1407,6 +1426,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -1462,6 +1482,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -1527,6 +1548,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -1603,6 +1625,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -1684,6 +1707,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -1751,6 +1775,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -1849,6 +1874,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -1919,6 +1945,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -1998,6 +2025,7 @@ void _playTrackerLaunchWiring() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           _FakeEngineSource(
         pairedBytes: Uint8List(0),
@@ -2321,6 +2349,7 @@ void _playTrackerAttachWiring() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           _FakeEngineSource(
         pairedBytes: Uint8List(0),
@@ -2706,6 +2735,7 @@ void _bug950Guard() {
           String launchWorkdir = '',
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
         }) =>
             queue.isEmpty ? recovered : queue.removeAt(0),
         loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -2788,6 +2818,7 @@ void _bug950Guard() {
           String launchWorkdir = '',
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
         }) {
           factoryCalls++;
           return denied;
@@ -2849,6 +2880,7 @@ void _bug950Guard() {
           String launchWorkdir = '',
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
         }) {
           factoryCalls++;
           return stale;
@@ -2916,6 +2948,7 @@ void _bug950Guard() {
           String launchWorkdir = '',
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
         }) {
           factoryCalls++;
           return queue.isEmpty ? recovered : queue.removeAt(0);
@@ -2977,6 +3010,7 @@ void _bug950Guard() {
           String launchWorkdir = '',
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
         }) =>
             queue.isEmpty ? recovered : queue.removeAt(0),
         loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -3034,6 +3068,7 @@ void _bug950Guard() {
           String launchWorkdir = '',
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
         }) =>
             failing,
         loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -3127,6 +3162,7 @@ void _bug950Guard() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,

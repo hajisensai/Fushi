@@ -1,0 +1,181 @@
+## BUG-2050 · Windows OCR 从不探测 DirectML 可用性，每次任务白付一次注定失败的建会话
+- **报告**：2026-09-02（用户：）
+- **真实性**：✅ 真 bug，两层，且第二层比报告描述的更严重。
+  - **第一层（白付代价）**：`fushi/lib/src/ocr/manga_ocr_service_impl.dart:193`
+    只探测 CUDA（`isCudaAvailable()`），而
+    `fushi/lib/src/ocr/ocr_inference.dart:141`（旧行号）的 Windows 分支直接**硬
+    假设 DirectML 可用**。运行时里没有 DML 时（BUG-1968 之前打的是 CPU-only
+    archive，或 DML DLL 没随包），每个任务都要先建一次注定失败的 DML 会话再退
+    CPU。`getAvailableProviders()` 本来就在同一处被调用一次，native 侧
+    `third_party/flutter_onnxruntime/windows/flutter_onnxruntime_plugin.cpp:618`
+    也明确把 `DmlExecutionProvider` 映射成 `DIRECT_ML` 回报出来——**可用性一直
+    问得到，代码只是没问**。代价不是每卷一次：`manga_region_rescan.dart:118`
+    的「重新识别框选区域」走的是单图 folder job，每点一次就重开 isolate + 重建
+    三个 session，等于**每次交互都付一次**。
+  - **第二层（回退根本不触发）**：`ocr_inference_ort.dart:84`（旧行号）的回退
+    条件是错误码白名单 `error.code == 'INVALID_PROVIDER'`。这个判据只在旧世界
+    成立——那时插件的 Windows 分支没有 DML 实现，会在碰到 ORT **之前**整张
+    provider 列表拒掉。BUG-1968 把真 DML EP 接进来之后前提消失：失败改从 ORT
+    内部出来，错误码变成 `PROVIDER_ERROR`（`AppendDirectMLProvider` 抛，含建不
+    出 D3D12 设备）/ `ORT_ERROR`（`Ort::Session` 构造抛）/
+    `SESSION_CREATION_ERROR`，**三条全部不命中白名单 → `rethrow` → 整卷 OCR
+    任务直接报错**，而不是报告里说的「退 CPU」。
+    `fushi/test/ocr/ocr_inference_ort_test.dart:81`（旧行号）那条
+    `non-provider session errors are not hidden by CPU fallback` 还把
+    `SESSION_CREATION_ERROR` 明确断言成「不回退」，等于把这个洞焊死。
+- **[x] ① 已修复** — 根因是「平台偏好」与「本机可用性」被揉成一个硬编码分支，
+  以及「provider 问题」被用错误码代理。按这两条分别拆开：
+  - `ocr_inference.dart`：拆出纯函数 `acceleratedProviderPreference`（平台/模型
+    种类想要什么加速 EP，**不含 CPU**，与本机装了什么无关），
+    `selectOcrExecutionProviders` 改为「偏好 ∩ 可用性」——取偏好里第一个真实
+    可用的加速 EP + CPU 兜底，一个都不可用就纯 CPU。原来三层嵌套的
+    `if (cudaAvailable) / if (kind == detection)` 特殊情况全部消失。
+  - `ocr_inference_ort.dart`：`isCudaAvailable()` → `availableAcceleratedProviders()`，
+    一次探测回报整个加速 EP 集合（CUDA/DirectML/CoreML）。文档写明这是**必要
+    不充分**条件：EP 编译进来了不代表此刻能建出会话。
+  - `ocr_inference_ort.dart`：回退判据由错误码白名单改为
+    `preferred != cpu && providers.contains(cpu)`——**只看这次请求的首选是不是
+    加速 provider，不看错误码**。模型损坏无需特判：CPU 那次同样失败、异常照抛，
+    且抛的是更有诊断价值的 CPU 那条。维护「哪些码算 provider 问题」这张清单
+    本身就是错的，native 每改一次错误映射它就悄悄过期一次。
+
+    **归属更正（别看成两次修复）**：这一条**不是本 bug 落地的**。BUG-2034 /
+    PR #1147 已经先合进 `develop`（merge `3161b674ca`），判据逐字相同。本分支
+    从 #1147 之前的 `0439ff2a60` 切出，于是两边各写了一份，合并时冲突。**已按
+    develop 侧解**：catch 宽度取 `on Exception`（而非本分支的
+    `on PlatformException`）+ 内层 try/catch 两次留痕 + `_describeProviderFailure`。
+    理由是实测的：native 送来非 UTF-8 错误字节时 Dart 抛的是 `FormatException`，
+    `on PlatformException` 接不住 → 异常直接逃逸、**一次 CPU 都不试** →
+    BUG-2034 复活（把 develop 的 `a non-PlatformException from the channel still
+    falls back` 用例注入本分支实现即可复现：`FormatException: Unexpected
+    extension byte (at offset 228)` 从 `createOcrSessionWithProviderFallback`
+    逃出）。本 bug 在这条上的真实增量只有：`_acceleratedProviders` 映射表 +
+    `availableAcceleratedProviders()` 探测改造，以及测试用例取两边并集。
+  - `manga_ocr_service_impl.dart`：把「请求前就能定下的 EP 决策」收成
+    `OcrAccelerationPlan` + 纯函数 `planOcrAcceleration`，唯一出口
+    `plan.toAcceleration()` 无条件带出降级说明。**这条不能省**：修好之后该路径
+    不再产生 session 失败，BUG-1163 要求的降级可观测性会跟着一起消失（用户原先
+    至少还能看到 `detector: directml -> cpu (INVALID_PROVIDER)`），所以要在新的
+    决策点上补记。
+    最初写成 isolate 里的两句 `recordUnavailable(...)`，审查变异 M5 实测**删掉
+    两句 144 条测试全绿**——`_volumeJobIsolateMain` 跑在 `Isolate.spawn` 里直连
+    真 ORT，单测够不到它。现在 provider 列表与降级说明装在同一个对象里：isolate
+    拿了列表就必然带着说明，想丢只能改被单测覆盖的 `planOcrAcceleration` /
+    `toAcceleration`，外加一条源码守卫钉住 isolate 不许手搓
+    `MangaOcrAcceleration(...)` 绕过出口。
+  提交：本提交。
+- **[x] ② 已加自动化测试** — 全部经**变异实测**确认为活断言（变异后转红、还原后
+  两个源文件 sha256 逐字节一致）：
+  - `fushi/test/ocr/ocr_inference_ort_test.dart`：三条参数化用例钉住
+    `PROVIDER_ERROR` / `ORT_ERROR` / `SESSION_CREATION_ERROR` 都必须回退 CPU 并
+    回报原因；一条钉住「CPU 那次也失败时抛 CPU 的错误且只重试一次」（取代原先
+    那条把洞焊死的断言）；`BUG-2050 加速 EP 探测` 组用 `_FakeOnnxRuntime` 钉住
+    DirectML 能被探测到、CPU-only 运行时探测出空集、CPU 与不选的 EP 不进结果集、
+    探测异常不被吞。
+  - `fushi/test/ocr/manga_ocr_service_impl_test.dart`：新增「运行时没有 DirectML
+    时检测直接纯 CPU、绝不请求 DML」「探测到的 EP 不在平台偏好里时不会被误选」
+    「偏好表与可用性是两个独立概念」；BUG-1613 的 Apple 用例改成**故意把 CoreML
+    报成可用**——旧签名下 CoreML 可用性根本无法表达，那条测的只是「代码里没写
+    coreml 这个词」，现在才真正测到「就算能用也不许选」。
+  - `fushi/test/ocr/manga_ocr_service_impl_test.dart` 的
+    `BUG-2050 请求前的加速计划（planOcrAcceleration）` 组：五端偏好表全空 ⇒ 零
+    降级说明（同时是「偏好表被填回非空」的绊线）、探测失败必须留一条可读降级、
+    `toAcceleration` 无条件合并两批说明且产出不可变、源码守卫钉住 isolate 只经
+    `plan.toAcceleration(` 出口。
+  - 变异实测记录：① 回退判据退回 `error.code == 'INVALID_PROVIDER'` → 4 条红；
+    ② `selectOcrExecutionProviders` 忽略可用性 → 3 条红（Apple 那条不红是对的，
+    它偏好表为空、循环不执行）；③ 探测映射摘掉 `DIRECT_ML` → 1 条红。
+  - 本轮审查后补跑的变异（每条还原后 sha256 与基线逐字节一致）：
+    | 变异 | 改哪 | 结果 |
+    |---|---|---|
+    | M1 | `ocr_inference_ort.dart` catch 收窄回 `on PlatformException` | 🔴 `a non-PlatformException from the channel still falls back` — `FormatException: Unexpected extension byte (at offset 228)` |
+    | M2 | Windows 偏好表塞回 `[cuda]` | 🔴 4 条（含「五端偏好表全空 ⇒ 零降级说明」） |
+    | M5a | `toAcceleration` 丢掉 `...degradeReasons` | 🔴 2 条 |
+    | M5b | isolate 手搓 `MangaOcrAcceleration(...)` 绕过出口 | 🔴 源码守卫 |
+    | M5c | `planOcrAcceleration` 吞掉探测失败原因 | 🔴 1 条 |
+    | M5d | 删掉「想要的 EP 没编进运行时」那条 `reasons.add` | 🟢 **仍绿**（155 条全过）——该分支在五端偏好表全空下不可达，如实记在备注里，不算已覆盖 |
+- **[x] ③ 已实测定性，并据此改掉 EP 默认策略** — 2026-09-02 本机实测
+  （RTX 5090 / Win11 / ORT 1.22.0 DirectML build / DirectML 1.15.4）。运行时用
+  与 `CMakeLists.txt` **同一组 SHA-256 钉死的 nupkg**（`29F9872D…` / `4E7CB7DD…`
+  逐位核对通过），模型用清单里的真档（`detector-v4-s_int8.onnx`，11,120,765 B
+  = 清单 `expectedBytes` 精确一致）。量具已收进仓库：`tool/ocr_dml_probe/`。
+
+  探针分三段互不推断，结果：
+
+  | 段 | 结果 |
+  |---|---|
+  | ① `GetAvailableProviders()` | **列出 `DmlExecutionProvider`** ⇒ 打包没问题，BUG-1968 的修复是有效的 |
+  | ② `D3D12CreateDevice(HARDWARE)` | **OK** ⇒ 排除本机 GPU 客户端饱和那条已知波动路径 |
+  | ③ `Ort::Session` + DML | **失败**，`ORT_RUNTIME_EXCEPTION`，`MLOperatorAuthorImpl.cpp(2851)`，`E_INVALIDARG (0x80070057)` |
+
+  同架构 fp32 对照组把变量精确隔离出来：
+
+  |  | DML 建会话 | DML 稳态 | CPU 建会话 | CPU 稳态 |
+  |---|---|---|---|---|
+  | **int8（出包用）** | **❌ 失败，白付 1546.9ms** | — | 733.8ms | **81.5ms** |
+  | fp32（对照） | ✅ 2957.1ms | 21.6ms | 1461.2ms | 419.4ms |
+
+  fp32 在**同一台机器、同一个运行时**上建得起来且比 CPU 快 **19.4 倍** ⇒ 不是
+  显卡、不是 D3D12、不是打包 ⇒ **变量就是 int8 量化**。用户的归因完全正确。
+
+  **改动**：`acceleratedProviderPreference` 的 Windows 档**清空**（与 Apple /
+  linux / android 同档，一个加速 EP 都不要）。保留 DirectML 只会让每个任务白付
+  1547ms 换零收益，而且按 BUG-1968 之后的错误码，那次失败会以 `ORT_ERROR`
+  出现——修复前它连回退都不触发。
+
+  **为什么连 CUDA 也一起去掉**（本轮审查前置 2，独立复核过）：Windows 上
+  `availableAcceleratedProviders()` **永远拿不到 CUDA**，写 `[cuda]` 是一条恒不
+  可满足的偏好，只会让 `planOcrAcceleration` 每卷产出两条
+  `cuda not built into this ONNX Runtime -> cpu`，原样进 amber toast
+  （`fushi/lib/src/media/manga/reader/manga_fushi_page.dart:3063`，每个整卷任务 /
+  每次「重新识别框选区域」各弹一次），成为**用户永远消不掉的假告警**——而能力
+  与写空表逐字相同（都是纯 CPU）。证据：
+
+  - `third_party/flutter_onnxruntime/windows/CMakeLists.txt:16-19` 按 SHA-256
+    钉死 NuGet `microsoft.ml.onnxruntime.directml 1.22.0`；`:80-89` 只把
+    `onnxruntime.dll` / `onnxruntime_providers_shared.dll` / `DirectML.dll`
+    三个加进 `flutter_onnxruntime_bundled_libraries`，**没有任何 CUDA provider
+    DLL**。
+  - 本机已解包的那份 nupkg 逐位复核：`sha256 = 29f9872d…e732e60`，与
+    `ONNXRUNTIME_NUPKG_SHA256` 一致；`runtimes/win-x64/native/` 下只有
+    `onnxruntime.dll` / `onnxruntime.lib` / `onnxruntime_providers_shared.dll`。
+  - 逐字节扫那份 `onnxruntime.dll`（16,471,584 B，
+    `sha256 = 95366724919f4e95ecc60010912ed538ad9804b6683fbd0aad389749102834b9`）：
+    `OrtSessionOptionsAppendExecutionProvider_CUDA` / `cudart64` / `cudnn64` /
+    `CUDA_PATH` **全部 0 命中**；`OrtSessionOptionsAppendExecutionProvider_DML`
+    1 命中、`DmlExecutionProvider` 109 命中。仅有的 2 处
+    `onnxruntime_providers_cuda.dll`（UTF-16）落在
+    `provider_bridge_ort.cc` 的**共享 provider 懒加载文件名表**里——任何 ORT
+    构建都带这张表，与是否编进 CUDA EP 无关；`CUDAExecutionProvider` 的 1 处
+    ASCII 命中同样只在 domain/EP 名字符串表里。
+  - `Ort::GetAvailableProviders()` 回报的是**编译进来**的 EP
+    （`flutter_onnxruntime_plugin.cpp:618` 直接转发），所以 DirectML 版运行时
+    上它不会出现 CUDA。
+
+  要把 CUDA 加回来，前提是**换掉出包的 ORT NuGet**（换成带 CUDA EP 的包并随包
+  发 `onnxruntime_providers_cuda.dll` + CUDA/cuDNN 运行库），不是改这个常量。
+  守卫：`五端偏好表全空 ⇒ 一条降级说明都不产生`——谁把偏好表填回非空，这条当场
+  红，逼着一起想清楚「想要的 EP 没编进运行时」这条降级说明怎么办。
+
+  **「~25 倍」的真相**：那个数量的是 **fp32 档**（本次实测 19.4x，同量级）。
+  检测器后来换成 int8 小档（11MB vs 168MB，且 int8 在 CPU 上反而比 fp32 快 5 倍：
+  81.5ms vs 419.4ms），加速前提随之消失，注释却留了下来。已在
+  `ocr_inference.dart` 里把整段实测数据和「换模型才是重新评估的前提」写清楚，
+  并加守卫测试 `BUG-2050 DirectML 不出现在任何平台/模型种类的偏好表里`。
+- **备注**：
+  - 未做「进程内记住本机 DML 建不起来」的缓存——现在更没必要了：失败是确定性的
+    算子层不兼容（不是会波动的环境状态），直接不请求即可，不需要运行期记忆。
+  - **fp32 + DML 不是免费的更优解**，别看到 21.6ms 就想换档：模型 168MB（vs
+    11MB），建会话 2957ms + 首次推理 8817ms 的暖机，对「重新识别框选区域」这种
+    单图交互是净亏（int8+CPU 全程约 1 秒）。整卷长任务另算，但那是带下载体积
+    代价的产品决策，不在本 bug 范围。
+  - 探针是独立 exe，不参与构建、不被 app 引用；DML 会话选项与
+    `dml_provider.cc` 严格一致，改那边要同步改探针。
+  - 未在真实 app 内跑整卷 OCR 复测（模型 470MB 未下载、无 Windows 构建产物）。
+    但探针用的是同一份运行时字节 + 同一个模型文件 + 同一套 DML 会话选项，
+    ③ 的失败点在 ORT 会话初始化内部，与 Flutter 层无关。
+  - 偏好表清空后，`planOcrAcceleration` 里「想要的 EP 没编进运行时」那条分支在
+    当前五端**不可达**（`wanted.isEmpty` 全部命中先 `continue`），因此单测覆盖
+    不到、变异删它也不会红。留着它是因为它是偏好表重新变非空时的观测契约，绊线
+    由「五端偏好表全空 ⇒ 零降级说明」那条测试提供。这一点如实记在这里，不算已
+    覆盖。
