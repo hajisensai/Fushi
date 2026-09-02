@@ -216,6 +216,22 @@ add_custom_target(fushi_windows_attached_layout_validation_gate
 )
 add_dependencies(${BINARY_NAME} fushi_windows_attached_layout_validation_gate)
 
+# 直连覆盖窗的画布→客户区映射决定卡片贴在哪、以及它是否还留在游戏画面内。这段几何
+# 一旦回归就表现为「卡片偏位/跑到画面外」，而 1:1 的等价性（scale==1、信箱边为 0）更
+# 是放开非 1:1 时不得破坏的既有行为，故保持纯函数且可执行。
+add_executable(fushi_windows_gal_direct_card_geometry_test
+  "tests/gal_direct_card_geometry_test.cpp"
+)
+apply_standard_settings(fushi_windows_gal_direct_card_geometry_test)
+target_compile_definitions(fushi_windows_gal_direct_card_geometry_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_gal_direct_card_geometry_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_gal_direct_card_geometry_test>"
+  DEPENDS fushi_windows_gal_direct_card_geometry_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_gal_direct_card_geometry_gate)
+
 # Attached catch pixels are useful only while the mapped presentation HWND is
 # actually composable above the game.  Keep the fail-closed decision pure and
 # executable so borderless/Magpie admission cannot regress into a fullscreen

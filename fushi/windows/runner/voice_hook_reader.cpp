@@ -987,10 +987,18 @@ void HandleLookupPresent(
   const uint32_t card_height = ReadLookupDimension(call, "cardHeight");
   const uint32_t view_width = ReadLookupDimension(call, "viewWidth");
   const uint32_t view_height = ReadLookupDimension(call, "viewHeight");
+  const int32_t glyph_x = static_cast<int32_t>(ReadLookupInt(call, "glyphX"));
+  const int32_t glyph_y = static_cast<int32_t>(ReadLookupInt(call, "glyphY"));
+  const uint32_t glyph_w = ReadLookupDimension(call, "glyphW");
+  const uint32_t glyph_h = ReadLookupDimension(call, "glyphH");
+  uint32_t client_width = 0;
+  uint32_t client_height = 0;
   if (pump.direct_presenter && card_width > 0 && card_height > 0 &&
       view_width > 0 && view_height > 0) {
     if (pump.direct_presenter(meta.anchor_x, meta.anchor_y, card_width,
-                              card_height, view_width, view_height)) {
+                              card_height, view_width, view_height, glyph_x,
+                              glyph_y, glyph_w, glyph_h, &client_width,
+                              &client_height)) {
       // Only retire the old bitmap AFTER the live composition surface is in
       // place. Dismissing first created a guaranteed blank interval whenever
       // direct presentation failed and CapturePreview had to recover.
@@ -1007,6 +1015,12 @@ void HandleLookupPresent(
            flutter::EncodableValue(static_cast<int64_t>(card_width))},
           {flutter::EncodableValue("height"),
            flutter::EncodableValue(static_cast<int64_t>(card_height))},
+          // 游戏客户区尺寸。Dart 手上只有画布(view)尺寸，用画布像素去夹屏幕像素会把
+          // 卡片系统性压小，所以把真实上界回报过去。
+          {flutter::EncodableValue("clientWidth"),
+           flutter::EncodableValue(static_cast<int64_t>(client_width))},
+          {flutter::EncodableValue("clientHeight"),
+           flutter::EncodableValue(static_cast<int64_t>(client_height))},
       }));
       return;
     }

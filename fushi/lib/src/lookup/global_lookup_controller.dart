@@ -307,7 +307,7 @@ class GlobalLookupController {
       final double dpr = _devicePixelRatio();
       // 弹窗尺寸精细化：app 外覆盖窗默认跟随 app 内，解锁后用 overlay 自己的键。
       final LookupSize overlaySize = _clampToPhysicalCap(
-        model.overlayLookupEffectiveSize,
+        _effectiveLookupSizeForCurrentRoute(model),
         model,
         dpr,
       );
@@ -552,6 +552,16 @@ class GlobalLookupController {
 
   /// 把逻辑尺寸夹到 [_physicalCap]。等比缩小而不是各轴独立裁剪：独立裁剪会改变
   /// 卡片的宽高比，排版跟着变形；等比缩小只是变小。
+  /// 当前 route 所属形态的「有效最大宽高」。
+  ///
+  /// 游戏内查词卡与 app 外覆盖窗是**两个形态**：前者贴在游戏客户区里、不能压住正文，
+  /// 后者浮在整块桌面上；合适尺寸本就不同。两者曾共读 overlay 那一组键，于是只能
+  /// 二选一——真机上就是「游戏内过小、浮窗过大」。这里按 route 分流，形态各读各的键。
+  LookupSize _effectiveLookupSizeForCurrentRoute(AppModel model) =>
+      GlobalLookupChannel.currentRoute.source == 'galCard'
+      ? model.galCardLookupEffectiveSize
+      : model.overlayLookupEffectiveSize;
+
   LookupSize _clampToPhysicalCap(LookupSize size, AppModel model, double dpr) {
     final ({int w, int h})? cap = _physicalCap;
     if (cap == null) return size;
@@ -746,7 +756,7 @@ class GlobalLookupController {
       // computeRootShellOffset), so a single-frame lookup still reveals exactly
       // at the card size after the bbox trims the bounds — no regression.
       final LookupSize overlaySize = _clampToPhysicalCap(
-        model.overlayLookupEffectiveSize,
+        _effectiveLookupSizeForCurrentRoute(model),
         model,
         dpr,
       );
@@ -1100,7 +1110,7 @@ class GlobalLookupController {
       return;
     }
     final double dpr = _devicePixelRatio();
-    final LookupSize current = model.overlayLookupEffectiveSize;
+    final LookupSize current = _effectiveLookupSizeForCurrentRoute(model);
     final LookupSize size = resolveOverlayResizeFromDelta(
       currentWidth: current.width,
       currentHeight: current.height,
@@ -1734,7 +1744,7 @@ class GlobalLookupController {
     // trims the window down to the real extent.
     final double dpr = _devicePixelRatio();
     final LookupSize overlaySize = _clampToPhysicalCap(
-      model.overlayLookupEffectiveSize,
+      _effectiveLookupSizeForCurrentRoute(model),
       model,
       dpr,
     );
@@ -2077,7 +2087,7 @@ class GlobalLookupController {
   /// scrollHeight, exactly as before D2. Kept as a fallback so a frame that
   /// somehow reports the scalar form still sizes correctly.
   void _applyOverlayScalar(AppModel model, double dpr, double physH) {
-    final LookupSize overlaySize = model.overlayLookupEffectiveSize;
+    final LookupSize overlaySize = _effectiveLookupSizeForCurrentRoute(model);
     final int width = (overlaySize.width * model.appUiScale * dpr).round();
     final double maxHeight = overlaySize.height * model.appUiScale * dpr;
     final int height = (physH > maxHeight ? maxHeight : physH).round();

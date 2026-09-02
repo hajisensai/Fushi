@@ -391,9 +391,13 @@ class VoiceHookReader {
       uint32_t max_width, uint32_t max_height, LookupCaptureCallback done)>;
   // 已渲染 WebView2 的零拷贝呈现主路。返回 true 表示 composition HWND 已直接贴到
   // 游戏客户区；false 时调用方保留 CapturePreview 位图回退。
+  // glyph_* 是命中字形在**游戏画布**坐标系的矩形。卡片在直连路径上保持自身物理像素，
+  // 不随画布缩放，所以贴附要以字形为基准在屏幕空间重排；anchor_* 只在字形缺失时回退。
   using LookupDirectPresenter = std::function<bool(
       int32_t anchor_x, int32_t anchor_y, uint32_t card_width,
-      uint32_t card_height, uint32_t view_width, uint32_t view_height)>;
+      uint32_t card_height, uint32_t view_width, uint32_t view_height,
+      int32_t glyph_x, int32_t glyph_y, uint32_t glyph_w, uint32_t glyph_h,
+      uint32_t* out_client_width, uint32_t* out_client_height)>;
   // 把一条游戏侧转发来的输入喂给离屏 WebView2（接
   // [GlobalLookupWindow::InjectLookupInput]）。
   using LookupInputSink = std::function<bool(uint32_t kind, int32_t x,

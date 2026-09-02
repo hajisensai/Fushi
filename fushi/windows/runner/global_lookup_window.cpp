@@ -5,6 +5,7 @@
 #include <wincodec.h>  // WIC：CapturePreview 压缩流 → BGRA8 直通 alpha 位图
 #include <windowsx.h>  // GET_X_LPARAM / GET_KEYSTATE_WPARAM（composition 鼠标转发）
 
+#include "gal_direct_card_geometry.h"
 #include "low_level_mouse_hook.h"
 #include "resource.h"
 
@@ -1462,9 +1463,6 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
                                   IsWindowVisible(hwnd_);
   bool resized_in_place = false;
   bool transient_direct_failure = false;
-  bool deterministic_non_one_to_one = false;
-  int observed_client_width = 0;
-  int observed_client_height = 0;
   if (was_direct_visible &&
       (direct_game_hwnd_ == nullptr || !IsWindow(direct_game_hwnd_) ||
        direct_view_width_ == 0 || direct_view_height_ == 0 || width <= 0 ||
@@ -1479,40 +1477,47 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
     } else {
       const int client_width = client.right - client.left;
       const int client_height = client.bottom - client.top;
-      observed_client_width = client_width;
-      observed_client_height = client_height;
       if (client_width <= 0 || client_height <= 0) {
         transient_direct_failure = true;
       }
-      // SetWindowPos changes the WebView controller Bounds (Chromium viewport);
-      // it does NOT scale an existing texture. Until the DComp visual owns an
-      // explicit scale transform, direct composition is therefore safe only in
-      // the 1:1 game-view/client case.
-      const bool one_to_one =
-          std::abs(client_width - static_cast<int>(direct_view_width_)) <= 1 &&
-          std::abs(client_height - static_cast<int>(direct_view_height_)) <= 1;
-      deterministic_non_one_to_one =
-          !transient_direct_failure && !one_to_one;
-      if (!transient_direct_failure && one_to_one) {
-        // The +/-1 tolerance absorbs integer rounding only. Fractionally scaling
-        // width/height would fire WM_SIZE -> put_Bounds and reflow Chromium.
-        constexpr double scale = 1.0;
+      // 与 PresentDirect 同一套映射：画布等比缩放进客户区并居中，只换算位置，卡片
+      // 保持自身物理像素。缩放 HWND 才会 WM_SIZE -> put_Bounds 让 Chromium 重排，
+      // 这里不缩放，所以非 1:1 也是安全的（1:1 时 scale==1、信箱边为 0，与旧行为
+      // 逐像素相同）。
+      const double scale = fushi::gal_direct_card_geometry::CanvasToClientScale(
+          client_width, client_height, direct_view_width_, direct_view_height_);
+      if (!transient_direct_failure && scale <= 0.0) {
+        transient_direct_failure = true;
+      }
+      if (!transient_direct_failure) {
         const double content_left =
-            (static_cast<double>(client_width) - direct_view_width_ * scale) *
-            0.5;
+            fushi::gal_direct_card_geometry::LetterboxOffset(
+                client_width, direct_view_width_, scale);
         const double content_top =
-            (static_cast<double>(client_height) - direct_view_height_ * scale) *
-            0.5;
-        const int screen_x = origin.x + static_cast<int>(std::lround(
-                                           content_left +
-                                           (direct_root_anchor_x_ + dx) * scale));
-        const int screen_y = origin.y + static_cast<int>(std::lround(
-                                           content_top +
-                                           (direct_root_anchor_y_ + dy) * scale));
-        const int screen_width =
-            std::max(1, static_cast<int>(std::lround(width * scale)));
-        const int screen_height =
-            std::max(1, static_cast<int>(std::lround(height * scale)));
+            fushi::gal_direct_card_geometry::LetterboxOffset(
+                client_height, direct_view_height_, scale);
+        const int screen_width = std::max(1, width);
+        const int screen_height = std::max(1, height);
+        // 嵌套 resize 必须复用 present 时的同一贴附基准，否则同一次查词里卡片会跳位。
+        double local_x = 0.0;
+        double local_y = 0.0;
+        if (direct_glyph_valid_) {
+          const auto placed =
+              fushi::gal_direct_card_geometry::GlyphAnchoredCardOrigin(
+                  direct_glyph_left_, direct_glyph_top_, direct_glyph_width_,
+                  direct_glyph_height_, screen_width, screen_height);
+          local_x = placed.left;
+          local_y = placed.top;
+        } else {
+          local_x = content_left + (direct_root_anchor_x_ + dx) * scale;
+          local_y = content_top + (direct_root_anchor_y_ + dy) * scale;
+        }
+        const int screen_x =
+            origin.x + fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
+                           local_x, screen_width, client_width);
+        const int screen_y =
+            origin.y + fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
+                           local_y, screen_height, client_height);
         if (SetWindowPos(hwnd_, HWND_TOPMOST, screen_x, screen_y, screen_width,
                          screen_height,
                          SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW)) {
@@ -1530,21 +1535,10 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
   }
   if (!resized_in_place) {
     if (was_direct_visible) {
-      // Neither failure class may park a live direct HWND at OffscreenX: that is
-      // the reported all-card flash. A transient Win32 failure may recover on the
-      // bounded retry. A valid non-1:1 client will not, but it cannot advance to
-      // bitmap fallback until that path can retire this HWND only AFTER the new
-      // bitmap is committed; otherwise the transition is blank or leaves the
-      // stale direct surface above the bitmap.
-      if (deterministic_non_one_to_one) {
-        NativeGlog(
-            "gal direct resize retained old HWND: non-1:1 client=" +
-            std::to_string(observed_client_width) + "x" +
-            std::to_string(observed_client_height) + " view=" +
-            std::to_string(direct_view_width_) + "x" +
-            std::to_string(direct_view_height_) +
-            " (two-phase bitmap retirement not available)");
-      } else if (transient_direct_failure) {
+      // 失败绝不能把还活着的直连 HWND 停到 OffscreenX：那就是用户报过的整卡闪烁。
+      // 现在非 1:1 已由几何映射直接支持，剩下的只有可在有界重试里自愈的瞬时 Win32
+      // 失败（窗口查询或 SetWindowPos），所以保留旧 HWND 等下一拍。
+      if (transient_direct_failure) {
         NativeGlog(
             "gal direct resize retained old HWND: transient game-window query "
             "or SetWindowPos failure");
@@ -2168,7 +2162,9 @@ void GlobalLookupWindow::CaptureBgraAsync(uint32_t max_width,
 
 bool GlobalLookupWindow::RevealOverProcessClient(
     uint32_t pid, int32_t anchor_x, int32_t anchor_y, uint32_t card_width,
-    uint32_t card_height, uint32_t view_width, uint32_t view_height) {
+    uint32_t card_height, uint32_t view_width, uint32_t view_height,
+    int32_t glyph_x, int32_t glyph_y, uint32_t glyph_w, uint32_t glyph_h,
+    uint32_t* out_client_width, uint32_t* out_client_height) {
   ForgetDeadWindow();
   if (capture_suppressed_) return false;
   if (hwnd_ == nullptr || composition_controller_ == nullptr ||
@@ -2186,37 +2182,72 @@ bool GlobalLookupWindow::RevealOverProcessClient(
   const int client_width = client.right - client.left;
   const int client_height = client.bottom - client.top;
   if (client_width <= 0 || client_height <= 0) return false;
+  // 回报给 Dart：卡片尺寸的上界要按**游戏客户区**算。Dart 手上只有画布(view)尺寸，
+  // 拿画布像素去夹屏幕像素会把卡片系统性压小（真机上纵向被钉在 0.6×720=432）。
+  if (out_client_width != nullptr) {
+    *out_client_width = static_cast<uint32_t>(client_width);
+  }
+  if (out_client_height != nullptr) {
+    *out_client_height = static_cast<uint32_t>(client_height);
+  }
 
-  // See ResizeStackForGal: changing HWND dimensions is a Chromium viewport
-  // resize, not texture scaling. Direct mode is currently gated to the 1:1
-  // game-view/client geometry; non-1:1 runtime behaviour remains on bitmap
-  // fallback until a DComp visual transform and inverse input mapping are added.
-  if (view_width == 0 || view_height == 0 ||
-      std::abs(client_width - static_cast<int>(view_width)) > 1 ||
-      std::abs(client_height - static_cast<int>(view_height)) > 1) {
+  if (view_width == 0 || view_height == 0) {
     direct_process_client_active_ = false;
     direct_game_hwnd_ = nullptr;
     return false;
   }
 
-  // The +/-1 gate is integer-rounding tolerance, not permission to scale the
-  // WebView. Keep its physical-pixel viewport unchanged; otherwise WM_SIZE feeds
-  // a fractional game/client ratio back into Chromium and reflows the card.
-  constexpr double scale = 1.0;
-  const double content_left =
-      (static_cast<double>(client_width) - view_width * scale) * 0.5;
-  const double content_top =
-      (static_cast<double>(client_height) - view_height * scale) * 0.5;
+  // 画布(primaryLayer) → 客户区的映射。引擎把画布等比缩放进客户区并居中，所以
+  // scale 取两轴较小者，content_* 就是信箱边；1:1 时 scale==1、content_*==0，与
+  // 旧行为逐像素相同。
+  //
+  // 关键：**只映射位置，不缩放卡片**。卡片是屏幕空间的真实窗口，保持它自身的物理
+  // 像素既是它清晰的原因，也让它与台词浮窗同一尺度。缩放 HWND 会改 Chromium 视口
+  // 并让卡片重排——那正是原先把直连锁死在 1:1 的顾虑，这里不做，所以顾虑不成立。
+  // 输入也不需要逆映射：直连成功时宿主不再推位图帧（见 _present 的 directSurface
+  // 分支），引擎 Layer 是空的，鼠标由系统直接投递给这个窗口。
+  const double scale = fushi::gal_direct_card_geometry::CanvasToClientScale(
+      client_width, client_height, view_width, view_height);
+  if (scale <= 0.0) {
+    direct_process_client_active_ = false;
+    direct_game_hwnd_ = nullptr;
+    return false;
+  }
+  const double content_left = fushi::gal_direct_card_geometry::LetterboxOffset(
+      client_width, view_width, scale);
+  const double content_top = fushi::gal_direct_card_geometry::LetterboxOffset(
+      client_height, view_height, scale);
   POINT origin = {0, 0};
   if (!ClientToScreen(game, &origin)) return false;
-  const int screen_x = origin.x + static_cast<int>(std::lround(
-                                      content_left + anchor_x * scale));
-  const int screen_y = origin.y + static_cast<int>(std::lround(
-                                      content_top + anchor_y * scale));
-  const int screen_width =
-      std::max(1, static_cast<int>(std::lround(card_width * scale)));
-  const int screen_height =
-      std::max(1, static_cast<int>(std::lround(card_height * scale)));
+  const int screen_width = std::max(1, static_cast<int>(card_width));
+  const int screen_height = std::max(1, static_cast<int>(card_height));
+
+  // 贴附基准。字形有效时以它在屏幕上的矩形重排（卡片不是画布单位，anchor 不能直接乘
+  // scale——那正是卡片飘到字形上方一大截的原因）。字形缺失时退回旧的 anchor 映射，
+  // 1:1 下两者等价。
+  double local_x = 0.0;
+  double local_y = 0.0;
+  direct_glyph_valid_ = glyph_w > 0 && glyph_h > 0;
+  if (direct_glyph_valid_) {
+    direct_glyph_left_ = content_left + glyph_x * scale;
+    direct_glyph_top_ = content_top + glyph_y * scale;
+    direct_glyph_width_ = glyph_w * scale;
+    direct_glyph_height_ = glyph_h * scale;
+    const auto placed = fushi::gal_direct_card_geometry::GlyphAnchoredCardOrigin(
+        direct_glyph_left_, direct_glyph_top_, direct_glyph_width_,
+        direct_glyph_height_, screen_width, screen_height);
+    local_x = placed.left;
+    local_y = placed.top;
+  } else {
+    local_x = content_left + anchor_x * scale;
+    local_y = content_top + anchor_y * scale;
+  }
+  const int screen_x =
+      origin.x + fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
+                     local_x, screen_width, client_width);
+  const int screen_y =
+      origin.y + fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
+                     local_y, screen_height, client_height);
 
   // Popup owner 与父子窗口不同：不改 Fushi/WebView2 的线程与 DPI 上下文，只让 Z 序
   // 跟随游戏。WS_EX_NOACTIVATE 保证点卡片时游戏仍持有键盘焦点。

@@ -251,6 +251,10 @@ class GalIngameLookupController {
     if (_sessionEpochKey == sessionEpochKey) return;
     _sessionEpochKey = sessionEpochKey;
     _admission.value = GalLookupAdmission.unknown;
+    // 换局：上一局游戏的客户区尺寸对新局无效（分辨率/窗口模式都可能不同），
+    // 必须丢弃，让新局第一次 direct present 重新回报。
+    _gameClientWidth = 0;
+    _gameClientHeight = 0;
     // Observe the lifecycle edge before attempting to retire the old route.
     // The Reader may already have swapped mappings when the host receives the
     // active -> active snapshot; advancing now makes every old dismiss
@@ -975,14 +979,31 @@ class GalIngameLookupController {
   static const int _kCardBitmapBytes = 8 * 1024 * 1024;
   static const double _kCardViewportFraction = 0.6;
 
+  /// runner 在上一次 direct present 回报的游戏客户区物理尺寸（0 = 还不知道）。
+  ///
+  /// 卡片上界要按**客户区**算，不能按 hook 报的画布(view)算：游戏放大运行时画布远小于
+  /// 客户区，而卡片是屏幕空间的真实窗口、其尺寸是屏幕物理像素。拿画布像素去夹屏幕像素
+  /// 会把卡片系统性压小（真机 1280x720 画布 → 纵向被钉死在 432），用户把「最大高度」
+  /// 调多大都不生效。本局第一次查词还没有回报，此时退回画布口径（保守但不越界）。
+  int _gameClientWidth = 0;
+  int _gameClientHeight = 0;
+
   void _applyCardSizeCap(GalLookupHit hit) {
     if (hit.viewW <= 0 || hit.viewH <= 0) {
       _rootCardAnchor = null;
       GlobalLookupController.instance.setPhysicalCap();
       return;
     }
-    double w = hit.viewW * _kCardViewportFraction;
-    double h = hit.viewH * _kCardViewportFraction;
+    // 卡片**尺寸**的上界按游戏客户区算，不是按画布(view)算。两者在放大运行的游戏上
+    // 相差一个缩放系数：卡片是屏幕空间的真实窗口、尺寸是屏幕物理像素，而画布可以远小于
+    // 客户区。混用的后果是纵向被钉死在 0.6×画布高（真机 1280x720 → 432 物理像素），
+    // 用户把「最大高度」调多大都不生效。客户区要等本局第一次 direct present 才知道，
+    // 在那之前退回画布口径——保守，但绝不越界。
+    final bool haveClient = _gameClientWidth > 0 && _gameClientHeight > 0;
+    final int boundW = haveClient ? _gameClientWidth : hit.viewW;
+    final int boundH = haveClient ? _gameClientHeight : hit.viewH;
+    double w = boundW * _kCardViewportFraction;
+    double h = boundH * _kCardViewportFraction;
     const int budgetPixels = _kCardBitmapBytes ~/ 4;
     final double area = w * h;
     if (area > budgetPixels) {
@@ -992,17 +1013,26 @@ class GalIngameLookupController {
     }
     final int capW = w.floor();
     final int capH = h.floor();
+    // anchor 是**画布**坐标（位图回退路径按它把卡片贴进 primaryLayer），所以解 anchor
+    // 必须用画布口径的尺寸，不能把客户区口径的 cap 混进来。直连路径已改为以字形矩形
+    // 在屏幕空间重排，不再读这个 anchor；它只服务于回退路径。
+    final int anchorCapW = (hit.viewW * _kCardViewportFraction).floor();
+    final int anchorCapH = (hit.viewH * _kCardViewportFraction).floor();
     // Use the cap-sized root for both the layout origin and presentation. The
     // rendered body may be shorter, but keeping this one conservative anchor
     // removes a pre-render/post-render zero-point change and guarantees that the
     // complete nested union stays inside the reported game viewport.
-    final ({int x, int y}) rootAnchor = _resolveAnchor(hit, capW, capH);
+    final ({int x, int y}) rootAnchor = _resolveAnchor(
+      hit,
+      anchorCapW,
+      anchorCapH,
+    );
     _rootCardAnchor = rootAnchor;
     GlobalLookupController.instance.setPhysicalCap(
       width: capW,
       height: capH,
-      workWidth: hit.viewW,
-      workHeight: hit.viewH,
+      workWidth: boundW,
+      workHeight: boundH,
       workOriginX: rootAnchor.x,
       workOriginY: rootAnchor.y,
     );
@@ -1156,6 +1186,10 @@ class GalIngameLookupController {
     _cardPhysicalDx = 0;
     _cardPhysicalDy = 0;
     _rootCardAnchor = null;
+    // 注意：**不清** _gameClientWidth/_gameClientHeight。本函数每次查词结束都会跑，
+    // 在这里清等于每次查词都退回画布口径的上界，卡片被永久夹在 0.6×画布高，
+    // 「游戏内查词卡最大高度」这个设置就完全不起作用。游戏客户区是**会话级**事实，
+    // 只在换局（setSessionActive）时才失效。
   }
 
   Future<void> _present(
@@ -1178,6 +1212,10 @@ class GalIngameLookupController {
           cardHeight: _cardPhysicalHeight,
           viewWidth: hit.viewW,
           viewHeight: hit.viewH,
+          glyphX: hit.glyphX,
+          glyphY: hit.glyphY,
+          glyphW: hit.glyphW,
+          glyphH: hit.glyphH,
         );
     if (_captureSuppressed || !_isCurrentLookup(generation, route)) return;
     if (!result.ok) {
@@ -1187,6 +1225,10 @@ class GalIngameLookupController {
     // A successful present is the authoritative mode transition. In
     // particular, direct composition may become unavailable after a mining
     // hide; a successful bitmap fallback must re-enable dirty recaptures.
+    if (result.clientWidth > 0 && result.clientHeight > 0) {
+      _gameClientWidth = result.clientWidth;
+      _gameClientHeight = result.clientHeight;
+    }
     _directSurfaceActive = result.directSurface;
     if (_directSurfaceActive) {
       _recaptureDirty = false;

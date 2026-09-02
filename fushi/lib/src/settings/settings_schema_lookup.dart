@@ -46,9 +46,8 @@ void _showYomitanPortConflictSnackBar(SettingsContext settingsContext) {
       action: PortProcessTerminator.isSupported
           ? SnackBarAction(
               label: t.yomitan_port_kill_action,
-              onPressed: () => unawaited(
-                _terminatePortOwnerAndRetry(settingsContext, port),
-              ),
+              onPressed: () =>
+                  unawaited(_terminatePortOwnerAndRetry(settingsContext, port)),
             )
           : null,
     ),
@@ -63,8 +62,10 @@ Future<void> _terminatePortOwnerAndRetry(
   // 杀前必须确认：弹窗展示实际占用者（进程名 + PID + 路径；hibiki 旧实例
   // 特别标注），关键系统进程直接拒杀。端口是用户可配置偏好，占用者完全可能
   // 是 IDE 辅助进程/dev server，未经确认一键 taskkill 不可接受。
-  final PortKillDecision decision =
-      await decidePortKill(settingsContext.context, port: port);
+  final PortKillDecision decision = await decidePortKill(
+    settingsContext.context,
+    port: port,
+  );
   switch (decision.kind) {
     case PortKillDecisionKind.cancelled:
       return;
@@ -96,7 +97,7 @@ Future<void> _terminatePortOwnerAndRetry(
   // 占用进程已结束（或本就已退出）：重试开启。进程退出后 OS 释放端口可能有极短
   // 延迟，端口仍占时再等一拍重试一次，仍失败按端口冲突报出。
   await appModel.setYomitanApiServerEnabled(true);
-  for (int attempt = 0;; attempt++) {
+  for (int attempt = 0; ; attempt++) {
     try {
       await appModel.startYomitanApiServer();
       break;
@@ -215,15 +216,13 @@ SettingsDestination buildLookupDestination() {
             icon: Icons.ads_click_outlined,
             visible: (SettingsContext settingsContext) =>
                 DesktopLookupService.isDesktop,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 5,
-            ),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 5),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.hoverAutoLookup,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.readerSource
-                  .setHoverAutoLookup(value: value);
+              await settingsContext.readerSource.setHoverAutoLookup(
+                value: value,
+              );
               // galgame Hook 台词浮窗是独立 native 窗口，读不到 Dart 侧偏好：不 live
               // 推一次，用户得关掉浮窗重开才生效（阅读器 / 视频页由
               // notifyReaderSettingsChanged 覆盖，浮窗不在那条链路上）。
@@ -281,8 +280,9 @@ SettingsDestination buildLookupDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.globalContextCaptureEnabled,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setGlobalContextCaptureEnabled(value);
+              await settingsContext.appModel.setGlobalContextCaptureEnabled(
+                value,
+              );
               settingsContext.refresh();
             },
           ),
@@ -330,8 +330,9 @@ SettingsDestination buildLookupDestination() {
                 settingsContext.appModel.popupAutoExpandDictionaries.toDouble(),
             label: (double value) => value.round().toString(),
             onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel
-                  .setPopupAutoExpandDictionaries(value.round());
+              settingsContext.appModel.setPopupAutoExpandDictionaries(
+                value.round(),
+              );
               settingsContext.refresh();
             },
           ),
@@ -436,10 +437,7 @@ SettingsDestination buildLookupDestination() {
             id: 'lookup.auto_read_on_lookup',
             title: t.auto_read_on_lookup,
             icon: Icons.record_voice_over_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 0,
-            ),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 0),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.autoReadOnLookup,
             onChanged: (SettingsContext settingsContext, bool value) {
@@ -451,10 +449,7 @@ SettingsDestination buildLookupDestination() {
             id: 'lookup.audio_volume',
             title: t.lookup_audio_volume,
             icon: Icons.volume_up_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 1,
-            ),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 1),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.lookupAudioVolume.toDouble(),
             min: 0,
@@ -475,10 +470,7 @@ SettingsDestination buildLookupDestination() {
             id: 'lookup.pause_on_lookup',
             title: t.pause_on_lookup,
             icon: Icons.pause_circle_outline,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 2,
-            ),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 2),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.pauseOnLookup,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -540,8 +532,9 @@ SettingsDestination buildLookupDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.overlayLookupIndependentSize,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setOverlayLookupIndependentSize(value);
+              await settingsContext.appModel.setOverlayLookupIndependentSize(
+                value,
+              );
               settingsContext.refresh();
             },
           ),
@@ -581,6 +574,60 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // 弹窗尺寸精细化：游戏内查词卡独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
+          // 关闭时跟随 app 内最大宽高（galCardLookupEffectiveSize 解析）。
+          // 与上面的覆盖窗分开：卡片贴在游戏客户区里、要避开正文，浮窗浮在整块桌面上，
+          // 两者合适尺寸本就不同；共用一组键时只能二选一（游戏内过小 / 浮窗过大）。
+          SettingsSwitchItem(
+            id: 'lookup.gal_card_lookup_independent_size',
+            title: t.gal_card_lookup_independent_size,
+            subtitle: t.gal_card_lookup_independent_size_hint,
+            icon: Icons.videogame_asset_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galCardLookupIndependentSize,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setGalCardLookupIndependentSize(
+                value,
+              );
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'lookup.gal_card_lookup_max_width',
+            titleReadout: true,
+            title: t.gal_card_lookup_max_width,
+            icon: Icons.open_in_full_outlined,
+            min: 250,
+            max: 2000,
+            divisions: 175,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galCardLookupIndependentSize,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galCardLookupMaxWidth,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setGalCardLookupMaxWidth(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'lookup.gal_card_lookup_max_height',
+            titleReadout: true,
+            title: t.gal_card_lookup_max_height,
+            icon: Icons.height_outlined,
+            min: 200,
+            max: 1600,
+            divisions: 140,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galCardLookupIndependentSize,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galCardLookupMaxHeight,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setGalCardLookupMaxHeight(value);
+              settingsContext.refresh();
+            },
+          ),
           // 弹窗尺寸精细化：浏览器扩展弹窗独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
           // 关闭时跟随 app 内最大宽高（extensionPopupEffectiveSize 解析，经 theme 下发）。
           SettingsSwitchItem(
@@ -591,8 +638,9 @@ SettingsDestination buildLookupDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.extensionPopupIndependentSize,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setExtensionPopupIndependentSize(value);
+              await settingsContext.appModel.setExtensionPopupIndependentSize(
+                value,
+              );
               settingsContext.refresh();
             },
           ),
@@ -666,10 +714,7 @@ SettingsDestination buildLookupDestination() {
             id: 'reading_controls.enable_swipe_to_close',
             title: t.enable_swipe_to_close,
             icon: Icons.swipe_left_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 3,
-            ),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 3),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.enableSwipeToClose,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -687,16 +732,14 @@ SettingsDestination buildLookupDestination() {
             min: 0.1,
             max: 1,
             divisions: 9,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 4,
-            ),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 4),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.dismissSwipeSensitivity,
             label: (double value) => value.toStringAsFixed(1),
             onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.readerSource
-                  .setDismissSwipeSensitivity(value);
+              await settingsContext.readerSource.setDismissSwipeSensitivity(
+                value,
+              );
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
@@ -777,8 +820,9 @@ SettingsDestination buildLookupDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setTexthookerEnabled(value);
               if (value) {
-                TexthookerWsClientManager.instance
-                    .start(settingsContext.appModel.texthookerUrls);
+                TexthookerWsClientManager.instance.start(
+                  settingsContext.appModel.texthookerUrls,
+                );
               } else {
                 await TexthookerWsClientManager.instance.stop();
               }
@@ -827,14 +871,14 @@ Future<void> showAudioSourcesManagerDialog({
   return showAppDialog(
     context: context,
     builder: (_) => AudioSourcesDialog(
-      sources: List<AudioSourceConfig>.from(
-        appModel.audioSourceConfigs,
-      ),
+      sources: List<AudioSourceConfig>.from(appModel.audioSourceConfigs),
       // 本地音频源是跨设备同步的共享池（__local_audio__）：移除一个源默认传播删除
       // （syncEverywhere），接收设备仍会逐条确认后才删本地，用户控制在接收端保留。
       // 列表编辑式 UX 无单条删除确认时机，故不在源端逐条弹选择。
-      onSave: (List<AudioSourceConfig> next) => appModel
-          .setAudioSourceConfigs(next, scope: DeleteScope.syncEverywhere),
+      onSave: (List<AudioSourceConfig> next) => appModel.setAudioSourceConfigs(
+        next,
+        scope: DeleteScope.syncEverywhere,
+      ),
       onPickLocalDb: (bool reference) async {
         // BUG-1667：本地音频库曾是全 app 唯一还在用裸 `FilePicker.pickFiles()`
         // 的大文件导入入口，偏偏承载体积最大的文件（Yomitan 本地音频服务器的
@@ -859,8 +903,10 @@ Future<void> showAudioSourcesManagerDialog({
             'AudioSourcesDialog.pickLocalDb',
             'unexpected file selection: count=${e.count}, pathNull=true',
           );
-          throw Exception('picked audio db has no file path (platform '
-              'returned bytes without a path)');
+          throw Exception(
+            'picked audio db has no file path (platform '
+            'returned bytes without a path)',
+          );
         }
         // 用户取消选择：返回 null，正常无声返回（不是失败）。
         if (picked == null) return null;

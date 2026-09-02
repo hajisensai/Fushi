@@ -4113,5 +4113,9 @@
   "video_discovery_anidb_identity_not_found": "未能在 AniDB 识别该作品：仍会正常下载，导入后在待确认列表等待手动指定身份。",
   "network_proxy_p2p_mode_direct": "直连",
   "network_proxy_p2p_mode_proxy": "走代理",
-  "network_proxy_p2p_mode_mixed": "混合"
+  "network_proxy_p2p_mode_mixed": "混合",
+  "gal_card_lookup_independent_size": "游戏内查词卡独立尺寸",
+  "gal_card_lookup_independent_size_hint": "让游戏内查词卡与桌面覆盖查词窗各自设置大小",
+  "gal_card_lookup_max_width": "游戏内查词卡最大宽度",
+  "gal_card_lookup_max_height": "游戏内查词卡最大高度"
 }

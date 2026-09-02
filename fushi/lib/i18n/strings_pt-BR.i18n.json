@@ -4113,5 +4113,9 @@
   "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
   "network_proxy_p2p_mode_direct": "Direct",
   "network_proxy_p2p_mode_proxy": "Via proxy",
-  "network_proxy_p2p_mode_mixed": "Mixed"
+  "network_proxy_p2p_mode_mixed": "Mixed",
+  "gal_card_lookup_independent_size": "Independent in-game card size",
+  "gal_card_lookup_independent_size_hint": "Size the in-game lookup card separately from the desktop overlay card",
+  "gal_card_lookup_max_width": "In-game card max width",
+  "gal_card_lookup_max_height": "In-game card max height"
 }

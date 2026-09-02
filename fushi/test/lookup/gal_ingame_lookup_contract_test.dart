@@ -628,6 +628,10 @@ void main() {
             cardHeight: 320,
             viewWidth: hit.viewW,
             viewHeight: hit.viewH,
+            glyphX: hit.glyphX,
+            glyphY: hit.glyphY,
+            glyphW: hit.glyphW,
+            glyphH: hit.glyphH,
           );
       expect(calls.single.method, 'galLookupPresent');
       expect(calls.single.arguments, <String, Object?>{
@@ -640,6 +644,12 @@ void main() {
         'cardHeight': 320,
         'viewWidth': 1280,
         'viewHeight': 720,
+        // 字形矩形必须原样过线：直连覆盖窗要靠它在屏幕空间贴附卡片，丢了就退回按
+        // 画布尺寸排的 anchor，放大运行时卡片会飘离命中的字。
+        'glyphX': hit.glyphX,
+        'glyphY': hit.glyphY,
+        'glyphW': hit.glyphW,
+        'glyphH': hit.glyphH,
       });
       expect(result.ok, isTrue);
       expect(result.width, 480);
@@ -668,6 +678,10 @@ void main() {
             cardHeight: 320,
             viewWidth: 1280,
             viewHeight: 720,
+            glyphX: 0,
+            glyphY: 0,
+            glyphW: 24,
+            glyphH: 24,
           );
       expect(result.ok, isFalse);
       expect(result.error, 'lookup_region_missing');
@@ -1003,6 +1017,10 @@ void main() {
           cardHeight: 320,
           viewWidth: 1280,
           viewHeight: 720,
+          glyphX: 0,
+          glyphY: 0,
+          glyphW: 24,
+          glyphH: 24,
         )).error,
         'unsupported_platform',
       );
