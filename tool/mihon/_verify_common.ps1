@@ -20,6 +20,10 @@ function Get-MihonFreeLoopbackPort {
 # 一次性 bearer token：32 字节 CSPRNG → base64（去掉尾部 padding）。
 function New-MihonAuthToken {
     $tokenBytes = [byte[]]::new(32)
-    [Security.Cryptography.RandomNumberGenerator]::Fill($tokenBytes)
+    # BUG-2033 / PR#1157：RandomNumberGenerator::Fill 是 .NET Core/5+ 的静态方法，
+    # Windows PowerShell 5.1（.NET Framework）上会 MethodNotFound 直接中断。
+    # Create().GetBytes() 在 5.1 与 pwsh 7 上都可用。抽成共享函数后这条只修一处。
+    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($tokenBytes) } finally { $rng.Dispose() }
     return [Convert]::ToBase64String($tokenBytes).TrimEnd("=")
 }

@@ -158,6 +158,102 @@ class _JobIsolateArgs {
   final MangaOcrModelPaths modelPaths;
 }
 
+/// 请求 ORT 之前就能定下的 EP 决策：三个会话各请求哪些 provider，以及此刻**已经
+/// 能断定**的降级说明。
+///
+/// 做成一个对象、并且只经 [toAcceleration] 出口产出 [MangaOcrAcceleration]，是
+/// 为了让「决策」与「可观测性」不可分割。`_volumeJobIsolateMain` 跑在
+/// `Isolate.spawn` 里、直连真 ORT，单测够不到它；早先那版把降级说明散成 isolate
+/// 里的两句 `recordUnavailable(...)`，删掉这两句测试全绿——降级从此静默，没人
+/// 会发现（BUG-2050 审查 M5）。现在 provider 列表和降级说明装在同一个对象里，
+/// isolate 拿了列表就必然带着说明，想丢只能改这个可单测的类。
+class OcrAccelerationPlan {
+  const OcrAccelerationPlan({
+    required this.detectionProviders,
+    required this.recognitionProviders,
+    required this.degradeReasons,
+  });
+
+  /// 检测会话要提交给 ORT 的 provider 列表（末位永远是 CPU）。
+  final List<OcrExecutionProvider> detectionProviders;
+
+  /// 识别（encoder + decoder）会话要提交给 ORT 的 provider 列表。
+  final List<OcrExecutionProvider> recognitionProviders;
+
+  /// 请求前就能断定的降级说明（探测失败 / 想要的 EP 没编进运行时）。
+  final List<String> degradeReasons;
+
+  /// 合并「请求前」与「建会话时」两批降级说明，产出上报 UI 的加速状态。
+  ///
+  /// [runtimeDegradeReasons] 是 `createOcrSessionWithProviderFallback` 真回退时
+  /// 记下的那批；[degradeReasons] 无条件排在它前面（时间顺序）。
+  MangaOcrAcceleration toAcceleration({
+    required OcrExecutionProvider detection,
+    required OcrExecutionProvider recognition,
+    List<String> runtimeDegradeReasons = const <String>[],
+  }) {
+    return MangaOcrAcceleration(
+      detection: detection,
+      recognition: recognition,
+      degradeReasons: List<String>.unmodifiable(<String>[
+        ...degradeReasons,
+        ...runtimeDegradeReasons,
+      ]),
+    );
+  }
+}
+
+/// 由平台偏好与本机真实可用的加速 EP 推出 [OcrAccelerationPlan]（纯函数）。
+///
+/// [probeError] 非 null 表示 `availableAcceleratedProviders()` 自己抛了——那本身
+/// 就是一条降级（有 N 卡也会退到 CPU），不许静默（BUG-1163）。
+///
+/// 「平台想要加速 EP，但运行时里一个都没编译进来」也记一条：BUG-2050 修好之后
+/// 这条路径不再产生 session 创建失败，可观测性不能跟着一起消失——原先用户至少
+/// 还能从 `detector: directml -> cpu (INVALID_PROVIDER)` 看出来。
+///
+/// 反过来，平台**本来就该走纯 CPU**（偏好表为空：Windows 见 BUG-2050、Apple 见
+/// BUG-1613、linux/android 同档）不是降级，一条都不记——否则 Windows 每卷都会
+/// 弹一条用户永远消不掉的黄条。
+OcrAccelerationPlan planOcrAcceleration({
+  required OcrPlatform platform,
+  required Set<OcrExecutionProvider> availableProviders,
+  Object? probeError,
+}) {
+  final List<String> reasons = <String>[];
+  if (probeError != null) {
+    reasons.add('accelerated provider probe failed: $probeError');
+  }
+  final Map<String, OcrModelKind> roles = <String, OcrModelKind>{
+    'detector': OcrModelKind.detection,
+    'recognition': OcrModelKind.recognition,
+  };
+  final Map<OcrModelKind, List<OcrExecutionProvider>> chosen =
+      <OcrModelKind, List<OcrExecutionProvider>>{};
+  for (final MapEntry<String, OcrModelKind> role in roles.entries) {
+    final List<OcrExecutionProvider> providers = selectOcrExecutionProviders(
+      kind: role.value,
+      platform: platform,
+      availableProviders: availableProviders,
+    );
+    chosen[role.value] = providers;
+    if (providers.first != OcrExecutionProvider.cpu) continue;
+    final List<OcrExecutionProvider> wanted = acceleratedProviderPreference(
+      kind: role.value,
+      platform: platform,
+    );
+    if (wanted.isEmpty) continue;
+    final String names =
+        wanted.map((OcrExecutionProvider p) => p.name).join('/');
+    reasons.add('${role.key}: $names not built into this ONNX Runtime -> cpu');
+  }
+  return OcrAccelerationPlan(
+    detectionProviders: chosen[OcrModelKind.detection]!,
+    recognitionProviders: chosen[OcrModelKind.recognition]!,
+    degradeReasons: List<String>.unmodifiable(reasons),
+  );
+}
+
 /// isolate 入口：EP 探测/选择 → 建三个 ORT 会话 → 跑目录任务 → 回发事件。
 Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
   final ReceivePort control = ReceivePort();
@@ -187,40 +283,41 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
       );
     }
     final OrtOcrSessionFactory factory = OrtOcrSessionFactory();
-    final List<String> degradeReasons = <String>[];
-    bool cudaAvailable = false;
+    Set<OcrExecutionProvider> availableProviders =
+        const <OcrExecutionProvider>{};
+    Object? probeError;
     try {
-      cudaAvailable = await factory.isCudaAvailable();
+      availableProviders = await factory.availableAcceleratedProviders();
     } catch (error) {
-      // BUG-1163：探测失败也是降级（有 N 卡也会退到 DirectML/CPU），
+      // BUG-1163：探测失败也是降级（有 N 卡也会退到 CPU），
       // 必须留痕，不能 catch (_) 吞掉。
-      cudaAvailable = false;
-      degradeReasons.add('CUDA provider probe failed: $error');
+      availableProviders = const <OcrExecutionProvider>{};
+      probeError = error;
       developer.log(
-        'manga OCR CUDA provider probe failed; assuming unavailable',
+        'manga OCR accelerated provider probe failed; assuming CPU only',
         name: kOcrLogName,
         error: error,
       );
     }
     final OcrPlatform platform = resolveOcrPlatform(Platform.operatingSystem);
+    final OcrAccelerationPlan plan = planOcrAcceleration(
+      platform: platform,
+      availableProviders: availableProviders,
+      probeError: probeError,
+    );
     final List<OcrExecutionProvider> detectionProviders =
-        selectOcrExecutionProviders(
-      kind: OcrModelKind.detection,
-      platform: platform,
-      cudaAvailable: cudaAvailable,
-    );
+        plan.detectionProviders;
     final List<OcrExecutionProvider> recognitionProviders =
-        selectOcrExecutionProviders(
-      kind: OcrModelKind.recognition,
-      platform: platform,
-      cudaAvailable: cudaAvailable,
-    );
+        plan.recognitionProviders;
 
     OcrExecutionProvider detectionEffective = detectionProviders.first;
     OcrExecutionProvider recognitionEffective = recognitionProviders.first;
+    // 建会话过程中才知道的降级（BUG-1163）；请求前就能断定的那批由 [plan] 带着，
+    // 在 `plan.toAcceleration` 里与这批合并——本 isolate 没法把它漏掉。
+    final List<String> runtimeDegradeReasons = <String>[];
     void record(String role, OcrProviderResolution resolution) {
       if (!resolution.didFallBack) return;
-      degradeReasons.add('$role: ${resolution.requested.first.name} -> '
+      runtimeDegradeReasons.add('$role: ${resolution.requested.first.name} -> '
           '${resolution.effective.name} (${resolution.fallbackReason})');
     }
 
@@ -248,10 +345,10 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
         record('recognition decoder', resolution);
       },
     );
-    final MangaOcrAcceleration acceleration = MangaOcrAcceleration(
+    final MangaOcrAcceleration acceleration = plan.toAcceleration(
       detection: detectionEffective,
       recognition: recognitionEffective,
-      degradeReasons: List<String>.unmodifiable(degradeReasons),
+      runtimeDegradeReasons: runtimeDegradeReasons,
     );
     developer.log(
       'manga OCR volume job acceleration: $acceleration',

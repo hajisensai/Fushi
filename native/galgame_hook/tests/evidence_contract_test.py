@@ -399,6 +399,57 @@ class EvidenceContractTest(unittest.TestCase):
             [item["name"] for item in report["lunadiag"]["set"]],
         )
 
+    def test_diagnostic_words_do_not_bleed_into_each_other(self) -> None:
+        """每个诊断字只能拿到自己那一段常量。
+
+        `load_diag_constants` 用锚点位置切片分段，段边界就是下一个字的锚点。
+        少登记一个字**不会报错**：它的全部位会被静默折进前面那个字。真实事故
+        是 `xaudio_diagnostics2` 没被登记，于是 `kXAudioDiag2*` 整批被算成
+        `xaudio_diagnostics` 的位——掩码不相交时毫无症状，一旦相交（0x8 /
+        0x800 / 0x2000）就直接把 Leaf 的分型位念成 XAudio2 队列位。
+
+        这里用两条与命名/格式无关的不变式钉死：
+        ① 同一个字里不允许出现重复掩码（折叠必然产生重复：两个字都从 0x1 起）；
+        ② 常量名前缀必须落在对应的字里（`kXAudioDiag2*` → `xaudiodiag2`）。
+        """
+        constants = load_diag_constants(ROOT / "include" / "voice_hook_ipc.h")
+        self.assertIn("xaudiodiag2", constants)
+
+        for field, entries in constants.items():
+            masks = [mask for _, mask in entries]
+            duplicates = sorted({f"0x{m:08x}" for m in masks if masks.count(m) > 1})
+            self.assertEqual(
+                [],
+                duplicates,
+                f"{field} 里出现重复掩码 {duplicates}——多半是相邻诊断字被折进了同一段",
+            )
+
+        first_word = [name for name, _ in constants["xaudiodiag"]]
+        second_word = [name for name, _ in constants["xaudiodiag2"]]
+        self.assertEqual(
+            [],
+            [name for name in first_word if name.startswith("kXAudioDiag2")],
+            "kXAudioDiag2* 属于第二个诊断字，不得出现在 xaudiodiag 段里",
+        )
+        self.assertTrue(second_word)
+        self.assertEqual(
+            [],
+            [name for name in second_word if not name.startswith("kXAudioDiag2")],
+            "xaudiodiag2 段里只应有 kXAudioDiag2* 常量",
+        )
+
+        # 本 PR 新增的三位正好与第一个字的既有掩码相交，是这条守卫的原始触发场景。
+        report = decode_diagnostics(constants, {"xaudiodiag2": 0x00002808})
+        self.assertEqual(
+            [
+                "kXAudioDiag2LeafProfileUnmatched",
+                "kXAudioDiag2LeafRasterAnchorMissed",
+                "kXAudioDiag2LeafEmbedAnchorMissed",
+            ],
+            [item["name"] for item in report["xaudiodiag2"]["set"]],
+        )
+        self.assertEqual("0x00000000", report["xaudiodiag2"]["unknown_bits"])
+
     def test_check_dry_run_lists_native_matrix_without_creating_builds(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             fake_root = Path(raw)

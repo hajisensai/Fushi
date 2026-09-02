@@ -532,8 +532,8 @@ bool isVideoPanelFocusNavButton(GamepadButton button) {
   }
 }
 
-/// [isVideoPanelFocusNavButton] 的**键盘对应物**：浮层面板（字幕列表 / 剧集轨 /
-/// 侧栏）持焦时让位给 Flutter 通用焦点遍历的按键。
+/// [isVideoPanelFocusNavButton] 的**键盘对应物**：浮层面板（剧集轨 / 侧栏；字幕
+/// 列表不领焦点，见 BUG-2040）持焦时让位给 Flutter 通用焦点遍历的按键。
 ///
 /// D-pad 四向 ↔ 裸方向键，一一对应。手柄那侧的 A（激活聚焦行）在键盘侧是 Enter，
 /// 它绑着 [ShortcutAction.videoEnterCaret]，由「视频画面**精确**持焦才算选词键」
