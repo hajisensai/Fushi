@@ -482,6 +482,7 @@ def command_explain_diag(args: argparse.Namespace) -> int:
             "hookdiag": args.hookdiag,
             "hookio": args.hookio,
             "xaudiodiag": args.xaudiodiag,
+            "xaudiodiag2": args.xaudiodiag2,
             "lunadiag": args.lunadiag,
         },
     )
@@ -592,6 +593,7 @@ def build_parser() -> argparse.ArgumentParser:
     explain.add_argument("--hookdiag", type=_uint32, default=0)
     explain.add_argument("--hookio", type=_uint32, default=0)
     explain.add_argument("--xaudiodiag", type=_uint32, default=0)
+    explain.add_argument("--xaudiodiag2", type=_uint32, default=0)
     explain.add_argument("--lunadiag", type=_uint32, default=0)
     explain.add_argument(
         "--header", default=str(ROOT / "include" / "voice_hook_ipc.h")

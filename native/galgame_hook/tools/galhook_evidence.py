@@ -797,18 +797,33 @@ def validate_evidence(document: Any) -> dict[str, Any]:
 
 def load_diag_constants(header: Path) -> dict[str, list[tuple[str, int]]]:
     text = header.read_text(encoding="utf-8")
-    anchors = {
-        "hookdiag": "constexpr uint32_t kDiagStartupAudioHooksReady",
-        "hookio": "constexpr uint32_t kDiagMalieArchiveHandleTracked",
-        "xaudiodiag": "constexpr uint32_t kXAudioDiagQueueReady",
-        "lunadiag": "constexpr uint32_t kDiagKirikiriVoiceStreamHookReady",
-    }
-    offsets = {name: text.index(anchor) for name, anchor in anchors.items()}
+    # 每个诊断字一个锚点，**顺序即分段边界**：一个字的常量段从它自己的锚点起、
+    # 到下一个字的锚点止。少登记一个字不会报错，只会把那个字的全部位静默地
+    # 折进它前面那个字——于是 explain-diag 把 xaudio_diagnostics2 的位当成
+    # xaudio_diagnostics 的位念出来，掩码一旦相交就直接给出错误的分型结论。
+    # 新增诊断字必须同时登记在这里。
+    anchors = [
+        ("hookdiag", "constexpr uint32_t kDiagStartupAudioHooksReady"),
+        ("hookio", "constexpr uint32_t kDiagMalieArchiveHandleTracked"),
+        ("xaudiodiag", "constexpr uint32_t kXAudioDiagQueueReady"),
+        ("xaudiodiag2", "constexpr uint32_t kXAudioDiag2SgreFamilyMatched"),
+        ("lunadiag", "constexpr uint32_t kDiagKirikiriVoiceStreamHookReady"),
+    ]
+    offsets = [(name, text.index(anchor)) for name, anchor in anchors]
+    if [offset for _, offset in offsets] != sorted(
+        offset for _, offset in offsets
+    ):
+        raise ValueError(
+            "diagnostic word anchors must appear in header order; "
+            "otherwise sections overlap"
+        )
     sections = {
-        "hookdiag": text[offsets["hookdiag"] : offsets["hookio"]],
-        "hookio": text[offsets["hookio"] : offsets["xaudiodiag"]],
-        "xaudiodiag": text[offsets["xaudiodiag"] : offsets["lunadiag"]],
-        "lunadiag": text[offsets["lunadiag"] :],
+        name: (
+            text[offset : offsets[index + 1][1]]
+            if index + 1 < len(offsets)
+            else text[offset:]
+        )
+        for index, (name, offset) in enumerate(offsets)
     }
     result: dict[str, list[tuple[str, int]]] = {}
     for field, section in sections.items():
