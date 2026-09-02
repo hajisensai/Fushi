@@ -61,7 +61,10 @@ import 'package:fushi/src/shortcuts/input_binding.dart'
         InputBinding,
         ModifierKey,
         MouseBinding,
-        activeModifierKeys;
+        activeModifierKeys,
+        domMouseButtonFromPointerButtons;
+import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
+    show dispatchClaimedMouseAction, resolveMouseBindingActionForButton;
 import 'package:fushi/src/shortcuts/manga_arrow_override.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -137,7 +140,30 @@ enum MangaReaderInputAction {
 /// 一次键盘平移移动的视口比例。按比例而非像素，1080p 与 4K 手感一致。
 const double kMangaPanStepFraction = 0.15;
 
-enum _MangaReaderInputSource { flutter, nativeWebView, volumeKey, gamepad }
+enum _MangaReaderInputSource {
+  flutter,
+  nativeWebView,
+  volumeKey,
+  gamepad,
+  mouse
+}
+
+/// 漫画页 **Flutter 侧**鼠标通道的解析阶梯：只有 manga 自己的 scope。
+///
+/// `universal`（返回上一级）/ `global`（全屏、整页滚动）由 app 根的
+/// `_handleGlobalPointerDown` 统一兜底并执行——与键盘「页面没接就冒泡到最外层」同构。
+/// 页面再解析一遍就会与根兜底对同一次按下各派发一次（一键退两级）。
+/// BUG-2031 修正：Flutter 腿与 JS 腿**共用这一条**，且与键盘那条
+/// `_resolveMangaKeyAction` 逐段一致。第一版 Flutter 侧只放 `manga`，于是
+/// `globalBack` 在页内解析不到 —— 而 [MangaFushiPage.inputActionForShortcut] 早就
+/// 把它映成逐级的 [MangaReaderInputAction.backOrExit]（弹窗可见先关弹窗，没弹窗才
+/// 退出漫画）。够不着它的结果是侧键退出直接落到 app 根的平 `maybePop()`，比键盘
+/// Esc 少了一级。防双派发靠 [MouseBindingDispatch] 认领，不靠把阶梯修窄。
+const List<ShortcutScope> _kMangaMouseLadder = <ShortcutScope>[
+  ShortcutScope.manga,
+  ShortcutScope.universal,
+  ShortcutScope.global,
+];
 
 /// Serializes burst page-turn input across asynchronous WebView window loads.
 ///
@@ -483,6 +509,46 @@ class MangaFushiPage extends BaseSourcePage {
     forwardRepeats: true,
     stopPropagation: true,
   );
+
+  /// 第三座桥：**鼠标按钮**。
+  ///
+  /// 与前两座（键盘）分开的两个理由，都不是风格问题：
+  ///   · 按钮表必须**按当前绑定实时生成**——桥只回传列在表里的按钮号，硬编码就等于
+  ///     「改了绑定，WebView 持有指针时还按老按钮响应」；
+  ///   · 复用键盘那两座的 handlerName 会连带把它们的**键表覆盖成空**（脚本每次注入
+  ///     都重写 `window[keysVar]`），翻页键当场失效。
+  ///
+  /// 只在**指针归 WebView** 的平台安装（[hostOwnsWebViewPointerInput] 为 false）。
+  /// Windows 上指针先到 Flutter，页面根 [Listener] 已经接住，再装一份 JS 监听会让
+  /// 中键/右键各触发两次（翻页会翻两页）。
+  @visibleForTesting
+  static String mouseBridgeScript(List<int> buttons) => webViewKeyBridgeScript(
+        handlerName: 'onMangaMouseButton',
+        mouseButtons: buttons,
+        installMouseListeners: true,
+        stopPropagation: true,
+      );
+
+  /// 本页鼠标桥要拦截的按钮号：manga / universal / global 三段阶梯上**所有**已绑
+  /// 按钮的并集（与 [_kMangaMouseLadder] 同源）。
+  ///
+  /// 取并集而不是只取 manga：桥不做解析，它只决定「哪些按钮值得回传」，解析仍由
+  /// Dart 侧的 [_handleNativeNavigationKey] 按完整阶梯做。漏一个按钮号，那个绑定在
+  /// WebView 持有指针时就是死的。
+  @visibleForTesting
+  static List<int> mouseBridgeButtons(FushiShortcutRegistry registry) {
+    final List<int> buttons = <int>[];
+    for (final ShortcutScope scope in _kMangaMouseLadder) {
+      for (final ShortcutAction action
+          in ShortcutAction.actionsForScope(scope)) {
+        for (final MouseBinding binding
+            in registry.bindingsFor(action).mouseBindings) {
+          if (!buttons.contains(binding.button)) buttons.add(binding.button);
+        }
+      }
+    }
+    return buttons;
+  }
 
   /// 纯路径解析 + 穿越守卫。[relative] 在 [imagesRoot] 内解析到存在的文件时返回
   /// 规范绝对路径（**保留磁盘上的真实大小写**），否则 null（越界/缺文件都不 serve）。
@@ -2474,14 +2540,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       };
 
   @override
-  void onDictionaryPopupInputToken(String token) {
+  bool onDictionaryPopupInputToken(String token) {
     // 鼠标 token 不参与「跨页方向校正」（那是方向键专属语义），交回基类按注册表
     // 动作直接执行（关词典）。
     if (MouseBinding.deserialize(token) != null) {
-      super.onDictionaryPopupInputToken(token);
-      return;
+      return super.onDictionaryPopupInputToken(token);
     }
-    _handleNativeNavigationKey(token);
+    return _handleNativeNavigationKey(token);
   }
 
   /// 词典弹窗渲染完成（指针唤出路径）：把 Flutter 焦点收回正文。
@@ -2592,7 +2657,73 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     return true;
   }
 
-  void _handleNativeNavigationKey(String key) {
+  /// 鼠标按钮 → 本页动作。与 [_resolveMangaKeyAction] 共用同一个上下文门控
+  /// [MangaFushiPage.inputActionForShortcut]，所以「弹窗可见时让位 / webtoon 纵向让位
+  /// 原生滚动」两条既有语义对鼠标一并成立。
+  ///
+  /// `crossPageStep: false`：跨页步进语义是**方向键专属**（左右方向键要按 rtl 校正
+  /// 朝向），鼠标按钮没有方向可言，与空格/PageDown 这类前进键同类。
+  MangaReaderInputAction? _resolveMangaMouseAction(
+    int button,
+    List<ShortcutScope> ladder,
+  ) {
+    final ShortcutAction? bound = resolveMouseBindingActionForButton(
+      registry: appModel.shortcutRegistry,
+      button: button,
+      ladder: ladder,
+    );
+    return MangaFushiPage.inputActionForShortcut(
+      action: bound,
+      crossPageStep: false,
+      dictionaryShown: isDictionaryShown,
+      mode: _mode,
+    );
+  }
+
+  /// 漫画页 Flutter 侧的鼠标绑定入口（挂在 build 的页面根 [Listener] 上）。
+  void _handleMangaPointerDown(PointerDownEvent event) {
+    // BUG-2031 审查②：两条腿的互斥必须是**构造性**的，不能只门控一侧。
+    //
+    // 原先只有 JS 那条腿带 [hostOwnsWebViewPointerInput] 门控，本 Flutter 腿是**无条件
+    // 挂载**的，注释却写着「两条路按平台互斥」。那个判据是从查词弹窗那边提上来的——
+    // 弹窗在 Android 上是独立 Activity，确实在 Flutter 命中树之外；但本页正文的 WebView
+    // 是**树内 platform view**，祖先 [Listener] 照样收得到指针（同一条「opaque 只排除
+    // 兄弟、不排除祖先」的事实）。于是非 Windows 上同一次按下可能被 Flutter 腿与 JS 腿
+    // 各执行一次，而 JS 腿没有 pointer id、无法参与认领协议。
+    //
+    // 补上这道门后，任一平台恒只有一条腿活着。代价是非 Windows 上**页面外壳**（正文
+    // WebView 之外）的鼠标绑定不生效——那恰是本轮之前的行为（本页当时根本没有 Flutter
+    // 侧鼠标腿），故不是回归；正文区照常由 JS 腿覆盖完整阶梯。
+    if (!hostOwnsWebViewPointerInput) return;
+    final int? button = domMouseButtonFromPointerButtons(event.buttons);
+    if (button == null) return;
+    final MangaReaderInputAction? action =
+        _resolveMangaMouseAction(button, _kMangaMouseLadder);
+    if (action == null) return;
+    dispatchClaimedMouseAction(event, () {
+      _executeReaderInputAction(action, source: _MangaReaderInputSource.mouse);
+      return true;
+    });
+  }
+
+  /// 返回**本次是否真的执行了**动作。BUG-2031：查词弹窗 barrier 那条路要靠这个
+  /// 回答决定要不要向 `MouseBindingDispatch` 认领这次鼠标按下。
+  bool _handleNativeNavigationKey(String key) {
+    // 鼠标桥回传的是 `Mouse<n>`（与键盘 token 取值域天然不相交：
+    // `InputBinding.deserialize('Mouse3')` 与 `MouseBinding.deserialize('Escape')`
+    // 都是 null），故先试鼠标、再试键盘，不需要额外的类型标记位。与查词弹窗桥
+    // [resolveDictionaryPopupInputToken] 同一范式。
+    final MouseBinding? mouse = MouseBinding.deserialize(key);
+    if (mouse != null) {
+      final MangaReaderInputAction? mouseAction =
+          _resolveMangaMouseAction(mouse.button, _kMangaMouseLadder);
+      if (mouseAction == null) return false;
+      _executeReaderInputAction(
+        mouseAction,
+        source: _MangaReaderInputSource.nativeWebView,
+      );
+      return true;
+    }
     // token 按 [InputBinding.serialize] 解析：正文 WebView 的桥发裸 `event.key`
     // （`ArrowLeft`），弹窗桥发注册表 token（可能是任意键名、可能带修饰键前缀），
     // 两者都能被同一个 deserialize 吃下——旧的三分支 switch 只认硬编码的方向键与
@@ -2601,17 +2732,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final InputBinding? binding = key == 'Esc'
         ? const InputBinding(key: LogicalKeyboardKey.escape)
         : InputBinding.deserialize(key);
-    if (binding == null) return;
+    if (binding == null) return false;
     final MangaReaderInputAction? action = _resolveMangaKeyAction(
       binding.key,
       binding.modifiers,
     );
-    if (action != null) {
-      _executeReaderInputAction(
-        action,
-        source: _MangaReaderInputSource.nativeWebView,
-      );
-    }
+    if (action == null) return false;
+    _executeReaderInputAction(
+      action,
+      source: _MangaReaderInputSource.nativeWebView,
+    );
+    return true;
   }
 
   @override
@@ -4004,7 +4135,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             focusNode: _focusNode,
             autofocus: true,
             onKeyEvent: _handleReaderKey,
-            child: Stack(
+            // 鼠标通道与键盘/手柄挂在同一层，作用域同样是「正文 WebView + chrome +
+            // 词典弹层」的共同祖先。`translucent` 让本层自己占住命中（默认
+            // deferToChild 在空白区收不到按下）；[Listener] 不进手势竞技场也不消费
+            // 事件，下层 WebView / 弹层照常收到同一次按下。
+            //
+            // ⚠️ 本 Listener 只覆盖**指针归 Flutter 的**那部分：原生 WebView（正文页图
+            // 与 OCR 文本层）在 Windows 之外会把指针整个吃掉，那片区域由页内 JS 的鼠标
+            // 桥回传（见注入处）。两条路按平台互斥，不会重复触发。
+            child: Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: _handleMangaPointerDown,
+              child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
                 Positioned.fill(child: _buildBody()),
@@ -4057,6 +4199,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                     ),
                   ),
               ],
+            ),
             ),
           ),
         ),
@@ -4414,6 +4557,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             _handleNativeNavigationKey(args[0] as String);
           },
         );
+        // 鼠标桥（第三座，只在指针归 WebView 的平台安装）。回调同样汇进
+        // [_handleNativeNavigationKey]——它按 token 先试 MouseBinding 再试
+        // InputBinding，动作由绑定决定而不是由桥决定。
+        controller.addJavaScriptHandler(
+          handlerName: 'onMangaMouseButton',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty || args[0] is! String) return;
+            _handleNativeNavigationKey(args[0] as String);
+          },
+        );
         controller.addJavaScriptHandler(
           handlerName: 'onMangaContextMenu',
           callback: (List<dynamic> args) {
@@ -4525,6 +4678,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
     if (!mounted || !_windowGate.owns(ticket)) {
       return;
+    }
+    // 鼠标桥：只在**指针归 WebView** 的平台装。Windows 上指针先到 Flutter，页面根
+    // [Listener]（[_handleMangaPointerDown]）已经接住，再装一份就会双触发。
+    // 按钮表按当前绑定实时生成，改绑后换窗即生效。
+    if (!hostOwnsWebViewPointerInput) {
+      await controller.evaluateJavascript(
+        source: MangaFushiPage.mouseBridgeScript(
+          MangaFushiPage.mouseBridgeButtons(appModel.shortcutRegistry),
+        ),
+      );
+      if (!mounted || !_windowGate.owns(ticket)) {
+        return;
+      }
     }
     if (_mode == MangaReadingMode.webtoon) {
       await controller.evaluateJavascript(
