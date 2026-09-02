@@ -99,23 +99,23 @@ typedef DeletionTombstoneEntries = Map<String, Map<String, int>>;
 /// 这条墓碑管不管得着那一端现存的这条同名条目。
 ///
 /// 「在库」不是一个布尔量，而是一段**从某个时刻开始**的存在。墓碑说的是「这个身份在
-/// [deletedAt] 被删过」；若该端现存的这条是在那之后才建立的（[presentSinceMs] >=
+/// [deletedAt] 被删过」；若该端现存的这条是在那之后才建立的（[presentSinceAt] >=
 /// [deletedAt]），它就不是墓碑指的那一条，而是**删除之后重新加回来的新条目**——墓碑对
 /// 它无效。
 ///
 /// BUG-2044：这正是删除确认弹窗曾把「本机自己取消收藏、之后又重新收藏」的句子当成
 /// 「其他设备已删除」来问用户要不要删的原因。聚合快照那条通道早就有等价仲裁
-/// （`AggregateMergeService._arbitrateFavorites`，BUG-1642：墓碑 deletedAt **严格大于**
-/// 收藏 createdAt 才让收藏出局），本通道却只做集合交、从不比时刻，同一份数据两条通道
-/// 给出相反结论。
+/// （`AggregateSyncService._arbitrateFavorites`，`aggregate_sync_service.dart:454`，
+/// BUG-1642：墓碑 deletedAt **严格大于**收藏 createdAt 才让收藏出局），本通道却只做
+/// 集合交、从不比时刻，同一份数据两条通道给出相反结论。
 ///
-/// 时刻未知（[presentSinceMs] == null）时保守返回 true：宁可多问一次，也不因为缺时刻
+/// 时刻未知（[presentSinceAt] == null）时保守返回 true：宁可多问一次，也不因为缺时刻
 /// 而静默压制一次真实的跨端删除。
 bool tombstoneAppliesTo({
   required int deletedAt,
-  required int? presentSinceMs,
+  required int? presentSinceAt,
 }) =>
-    presentSinceMs == null || deletedAt > presentSinceMs;
+    presentSinceAt == null || deletedAt > presentSinceAt;
 
 /// 纯函数：给定两端删除墓碑与两端当前在库条目，算出双向删除传播候选。
 ///
@@ -147,7 +147,7 @@ List<DeletionPropagationCandidate> computeDeletionPropagation({
         in (localTombstones[mt] ?? const <String, int>{}).entries) {
       if (!remoteHere.containsKey(e.key)) continue;
       if (!tombstoneAppliesTo(
-          deletedAt: e.value, presentSinceMs: remoteHere[e.key])) {
+          deletedAt: e.value, presentSinceAt: remoteHere[e.key])) {
         continue;
       }
       out.add(DeletionPropagationCandidate(
@@ -162,7 +162,7 @@ List<DeletionPropagationCandidate> computeDeletionPropagation({
         in (remoteTombstones[mt] ?? const <String, int>{}).entries) {
       if (!localHere.containsKey(e.key)) continue;
       if (!tombstoneAppliesTo(
-          deletedAt: e.value, presentSinceMs: localHere[e.key])) {
+          deletedAt: e.value, presentSinceAt: localHere[e.key])) {
         continue;
       }
       out.add(DeletionPropagationCandidate(

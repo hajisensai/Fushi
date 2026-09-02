@@ -165,14 +165,14 @@ void main() {
 
   group('tombstoneAppliesTo', () {
     test('删除晚于存在起始时刻 → 管得着', () {
-      expect(tombstoneAppliesTo(deletedAt: t1, presentSinceMs: t0), isTrue);
+      expect(tombstoneAppliesTo(deletedAt: t1, presentSinceAt: t0), isTrue);
     });
     test('删除早于/等于存在起始时刻 → 管不着', () {
-      expect(tombstoneAppliesTo(deletedAt: t1, presentSinceMs: t2), isFalse);
-      expect(tombstoneAppliesTo(deletedAt: t1, presentSinceMs: t1), isFalse);
+      expect(tombstoneAppliesTo(deletedAt: t1, presentSinceAt: t2), isFalse);
+      expect(tombstoneAppliesTo(deletedAt: t1, presentSinceAt: t1), isFalse);
     });
     test('存在起始时刻未知 → 保守判管得着', () {
-      expect(tombstoneAppliesTo(deletedAt: t1, presentSinceMs: null), isTrue);
+      expect(tombstoneAppliesTo(deletedAt: t1, presentSinceAt: null), isTrue);
     });
   });
 
