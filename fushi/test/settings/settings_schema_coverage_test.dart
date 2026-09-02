@@ -125,7 +125,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
           'native/galgame_hook/tests/lookup_ipc_contract_test.cpp + '
           'native/galgame_hook/tests/lookup_session_replay_test.cpp + '
           'native/galgame_hook/tests/kirikiri_lookup_source_guard_test.py',
-  // BUG-2058：游戏内查词卡独立尺寸开关。写 prefsRepo（changed=true），生效点在
+  // BUG-2066：游戏内查词卡独立尺寸开关。写 prefsRepo（changed=true），生效点在
   // runner 的直连覆盖窗（真实 HWND + WebView2），本进程内没有可探的渲染输入。
   // 由 test/lookup/gal_card_size_cap_test.dart 咬住这个开关唯一的行为后果：
   // galCard route 读 gal 那组键、桌面 route 继续读 overlay 那组，两组值不互串；

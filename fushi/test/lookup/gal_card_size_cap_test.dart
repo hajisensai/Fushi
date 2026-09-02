@@ -8,7 +8,6 @@ import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
-import 'package:fushi/src/lookup/overlay_window_channel.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
@@ -16,7 +15,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// BUG-2058 / BUG-2057 —— 游戏内查词卡的**尺寸上界**与**布局工作区**。
+/// BUG-2066 / BUG-2065 —— 游戏内查词卡的**尺寸上界**与**布局工作区**。
 ///
 /// 为什么必须有这个文件：这两条修复此前一条测试都没有。把 `_applyCardSizeCap` 里
 /// 「按客户区算上界」整段撤销，`test/lookup` 719 条**一条都不红**（实测）；把
@@ -37,7 +36,7 @@ void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
 
-  // 真机实测形态（BUG-2058）：KiriKiri 画布 1280x720 被放大进 1902x1069 客户区。
+  // 真机实测形态（BUG-2066）：KiriKiri 画布 1280x720 被放大进 1902x1069 客户区。
   const int kCanvasW = 1280;
   const int kCanvasH = 720;
   const int kClientW = 1902;
@@ -94,7 +93,7 @@ void main() {
       expect(cap, isNotNull);
       // 0.6 x 1069 = 641.4 -> 641。旧的画布口径是 0.6 x 720 = 432，
       // 也正是"用户把最大高度调多大都不生效"的那个数。
-      expect(cap!.h, 641, reason: '第一次查词就必须按客户区高算；432 = 退回画布口径 = BUG-2058 复发');
+      expect(cap!.h, 641, reason: '第一次查词就必须按客户区高算；432 = 退回画布口径 = BUG-2066 复发');
       expect(cap.w, 1141, reason: '0.6 x 1902 = 1141.2 -> 1141');
     });
 
@@ -279,7 +278,7 @@ void main() {
       expect(
         inGame,
         const LookupSize(700.0, 900.0),
-        reason: '共读 overlay 键会拿到 500x650——这正是 BUG-2058 ① 的形态',
+        reason: '共读 overlay 键会拿到 500x650——这正是 BUG-2066 ① 的形态',
       );
 
       const GlobalLookupRoute desktopRoute = GlobalLookupRoute.desktop();

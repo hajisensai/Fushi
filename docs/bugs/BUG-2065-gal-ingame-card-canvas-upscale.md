@@ -1,4 +1,4 @@
-## BUG-2049 · 游戏内查词卡在放大运行的游戏里模糊且过大：直连覆盖窗被 1:1 闸门挡掉，回退成画布内位图合成
+## BUG-2065 · 游戏内查词卡在放大运行的游戏里模糊且过大：直连覆盖窗被 1:1 闸门挡掉，回退成画布内位图合成
 - **报告**：2026-09-02（用户：「游戏内查词这一块……分辨率很低而且缩放很大，和 galgame 浮窗弹出来的不一致」）
 - **真实性**：✅ 真 bug。根因 `fushi/windows/runner/global_lookup_window.cpp:2194`（present 入口的 1:1 闸门）
   与同文件 `ResizeStackForGal` 里的 `one_to_one` 分支。
@@ -22,7 +22,18 @@
 - **[x] ① 已修复** — `09cf2a93ca`。放开 1:1 闸门，改为按引擎的「等比缩放 + 居中」把画布映射到
   客户区（`fushi/windows/runner/gal_direct_card_geometry.h` 的 `CanvasToClientScale` /
   `LetterboxOffset`），present 与嵌套 resize 共用同一套映射；卡片宽高原样使用，绝不乘 scale。
-  1:1 时 scale 恰为 1、信箱边为 0，与旧行为逐像素相同。
+  1:1 时 scale 恰为 1、信箱边为 0。
+
+  **更正（审查发现，勿再照抄）**：「1:1 时与旧行为逐像素相同」这句在
+  `gal_direct_card_geometry.h`、`runner/CMakeLists.txt` 与测试三处都写过，但它是**假的**。
+  1:1 只是这三个**映射函数**的恒等性质；整条直连路径在 1:1 下的落点确实变了，因为
+  `GlyphAnchoredCardOrigin` 在字形有效时**无条件**接管定位，绕开 Dart 已算好的 anchor：
+  水平由「左边缘对齐字形左边」改成「中心对齐字形中心」，垂直由「优先下方 + 4px 间隙 +
+  6px 边界夹取」改成「优先上方 + 零间隙」。563 宽卡片配 24 宽字形，1:1 下水平差约 270px。
+  这是**有意**的策略变更（卡片保持自身物理像素后，它相对字形的正确位置只能在屏幕空间
+  重排），代价是改动前唯一能走直连的那批 1:1 用户会看到位置变化。三处措辞已改为如实
+  记录，对照表放在 `gal_direct_card_geometry.h` 头部；只有字形缺失（`glyph_w/h == 0`）
+  的回退分支在 1:1 下才真的与旧行为逐像素相同。
 
   修复过程中第一版只把 anchor 乘了 scale 却让卡片保持自然尺寸，导致卡片离命中的字
   (scale−1)×卡片高（真机全屏 3 倍时约 1000px，用户当场报「没有出现在选词的正上方」）。
@@ -40,6 +51,35 @@
   钉的是 `constexpr double scale = 1.0;` 与 `const bool one_to_one`，现改为钉**真正的不变式**
   ——卡片宽高必须原样使用、不得乘 scale，且必须经 `CanvasToClientScale` 映射、
   `GlyphAnchoredCardOrigin` 贴附、`ClampDirectCardOrigin` 夹取。
+
+  **第二轮补强（审查发现，三条守卫原本没牙）**：
+  - `contains('GlyphAnchoredCardOrigin')` / `contains('ClampDirectCardOrigin')` 只是**名字
+    出现性**断言。把整条字形路径退役（`direct_glyph_valid_ = false;`）或只夹一根轴，名字
+    都还在函数体里，两次变异都绿。已改为钉启用条件本身
+    （`direct_glyph_valid_=glyph_w>0&&glyph_h>0;`）与两根轴各自的实参
+    （`ClampDirectCardOrigin(local_x,screen_width,client_width)` / `local_y,...,client_height`）。
+  - `isNot(contains('one_to_one'))` **恒真**——`one_to_one` 这个标识符在退役后整个仓库里
+    一处都没有，断言永远为真，改名重新引入同一道门时它一声不吭。已改为钉**门的形状**：
+    禁止把客户区尺寸与画布尺寸放进同一个比较（`==` / `!=` / `abs(a-b)<=1` 三种写法都覆盖），
+    而合法用法里两者之间只隔逗号、不会命中。
+  - 该守卫文件**没有注释掩码**，任何一句 `// 见 GlyphAnchoredCardOrigin` 就能让 contains
+    型断言永久变绿。已接上 `test/helpers/source_guard.dart` 的 `maskComments` /
+    `maskJsComments`（等长空白替换，文件里那些拿 `indexOf` 比先后顺序的断言下标语义不变）。
+  四条变异逐条实测为红（退役字形路径 / 拆掉纵轴夹取 / 换名重新引入 1:1 门 / 真实现删掉只在
+  注释里留同一句话），还原后 sha256 与基线一致。
+- **[x] ③ release 构建被这条测试直接打断（审查发现）** —
+  `gal_direct_card_geometry_test.cpp` 缺 `#undef NDEBUG`，而 `fushi/windows/CMakeLists.txt`
+  的 `apply_standard_settings` 挂 `/W4 /WX`。release-like（`/DNDEBUG /O2`）下 NDEBUG 把
+  30 条 assert 编成空语句，三个 `scale` 局部变量随之无人引用，`warning C4189` 被 `/WX` 提成
+  `error C2220`，cl 退出码 2（实测）。而 `fushi/windows/runner/CMakeLists.txt` 把它挂进
+  `add_dependencies(${BINARY_NAME} ...)`，所以 `flutter build windows --release` 会**先于
+  runner 失败**。与 `a6925b6382` 修过的是同一族问题。
+  已给 `fushi/windows/runner/tests/` 下 8 个缺 undef 的测试统一补上（其中
+  `attached_layout_validation_test`、`lookup_hit_validation_test` 共 36 条断言此前在 Release
+  下整批空跑，唤醒后实测通过），并把 `native/galgame_hook/tests/assert_liveness_guard_test.py`
+  的扫描面从「只扫 native/galgame_hook」扩到同时扫 `fushi/windows/runner/tests/`——这个缺口
+  此前没有任何守卫，本 bug 正是从这里漏进去的。新扫描面已做变异实测（拿掉一个 undef → 守卫
+  变红；按唯一锚点还原后 sha256 回基线）。
 - **备注**：已按 CLAUDE.md 验证纪律在真机复测原始失败路径：9-nine Episode 1 窗口与全屏各一次，
   日志出现 `gal-ingame: direct WebView surface active`（改动前非 1:1 必然回退位图、绝不会有这行），
   卡片清晰且贴在命中字的正上方，用户截图确认。

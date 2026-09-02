@@ -23,7 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 # fushi/windows/runner/tests 里的测试由 fushi/windows/runner/CMakeLists.txt 挂进
 # `add_dependencies(${BINARY_NAME} ...)`，`flutter build windows --release` 会
 # 直接编译并运行它们——那是与本目录完全同一族的失效面，此前却没有任何守卫覆盖
-# （BUG-2057 的 gal_direct_card_geometry_test.cpp 就是从这个缺口漏进去的）。
+# （BUG-2065 的 gal_direct_card_geometry_test.cpp 就是从这个缺口漏进去的）。
 NATIVE_TEST_DIRS = (
     ROOT / "tests",
     REPO_ROOT / "fushi" / "windows" / "runner" / "tests",
