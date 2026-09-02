@@ -27,7 +27,10 @@ $listener.Start()
 $port = ([Net.IPEndPoint] $listener.LocalEndpoint).Port
 $listener.Stop()
 $tokenBytes = [byte[]]::new(32)
-[Security.Cryptography.RandomNumberGenerator]::Fill($tokenBytes)
+# RandomNumberGenerator::Fill 是 .NET Core/5+ 静态方法；Windows PowerShell 5.1
+# 会 MethodNotFound。Create().GetBytes() 在 5.1 与 pwsh 7 上都可用。
+$rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+try { $rng.GetBytes($tokenBytes) } finally { $rng.Dispose() }
 $token = [Convert]::ToBase64String($tokenBytes).TrimEnd("=")
 $dataRoot = Join-Path ([IO.Path]::GetTempPath()) ("hibiki-mihon-smoke-" + [Guid]::NewGuid().ToString("N"))
 [IO.Directory]::CreateDirectory($dataRoot) | Out-Null

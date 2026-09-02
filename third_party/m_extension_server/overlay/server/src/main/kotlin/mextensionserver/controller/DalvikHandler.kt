@@ -18,6 +18,8 @@ import okhttp3.HttpUrl
  * otherwise preserve the concrete sealed subtype, which makes TriState and
  * Sort indistinguishable to clients.
  */
+private const val MAX_STACK_TRACE_CHARS = 16_000
+
 class DalvikHandler {
     private val logger = KotlinLogging.logger {}
     private val objectMapper = jacksonObjectMapper()
@@ -118,10 +120,17 @@ class DalvikHandler {
                 }
                 else -> NanoHTTPD.Response.Status.INTERNAL_ERROR
             }
+        // 桌面端此前只回 `error`（= e.message），Java 栈仅存在于本进程 stdout，而宿主
+        // 把 sidecar 的 stdout/stderr 直接丢弃，于是扩展加载类错误（NoSuchMethodError /
+        // InstantiationError / ClassCastException）在 UI 上只剩一行没有出处的文本，
+        // 无法定位是哪个扩展的哪个方法。把类型与栈一并回传，宿主填进
+        // MihonRuntimeException.details，与 Android 路径对齐。
         val responseJson =
             objectMapper.writeValueAsString(
                 mapOf(
                     "error" to (error.message ?: error.javaClass.simpleName),
+                    "errorType" to error.javaClass.name,
+                    "stackTrace" to error.stackTraceToString().take(MAX_STACK_TRACE_CHARS),
                     "code" to
                         if (error is eu.kanade.tachiyomi.network.HttpException) {
                             error.code
