@@ -38,7 +38,18 @@ class FushiShare {
   // 因此锚点不是「调用方可选的美化项」，而是分享入口必须自带的**不变式**：
   // 由本类统一解析当前 view 的逻辑尺寸并给出居中的合法锚点，调用点不需要、
   // 也不应该各自传坐标（分散传参必然漏，漏一处就是一处崩溃）。
-  // 非 iOS 平台的 share_plus 实现忽略该参数，无平台分支。
+  //
+  // 平台消费面（BUG-2064 复核实测，别照抄「只有 iOS 读锚点」）：
+  // - iOS：见上，缺锚点在 iPad / iPhone 横屏必崩，这是本参数存在的理由。
+  // - macOS：**同样消费**。`SharePlusMacosPlugin.originRect()` 在缺参时取
+  //   `NSMakeRect(0,0,0,0)`，再交给 `picker.show(relativeTo:of:preferredEdge:)`；
+  //   AppKit 约定空 rect 退化成 view 的 bounds。所以统一改传居中 1×1 锚点之后，
+  //   macOS 分享面板的落点会从窗口边沿移到**窗口正中**；iPad popover 的箭头同理
+  //   指向屏幕正中，而不是触发分享的那个按钮。拿这点观感换掉 iOS 上的必崩，是
+  //   有意的取舍——锚点的合法性是硬约束，落点只是美观。
+  // - Android / Windows / Linux：确实忽略该参数（`MethodCallHandler.kt`、
+  //   `share_plus_plugin.cpp`、`share_plus_linux.dart` 都不读它）。
+  // 因此仍然不需要平台分支：给出一个恒合法的锚点，五个平台都能正确处理。
 
   /// 防重入：全 App 同一时刻只允许一个系统分享面板在途。
   static bool _sharing = false;
