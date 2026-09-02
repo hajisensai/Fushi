@@ -2246,7 +2246,6 @@
   "video_screenshot_failed_reason": "فشلت لقطة الشاشة: ${reason}",
   "video_screenshot_ready": "لقطة الشاشة جاهزة: ${file}",
   "video_screenshot_saved_to": "تم حفظ لقطة الشاشة: ${path}",
-  "video_secondary_subtitle_hint": "يُعرض بواسطة المشغّل (لا يمكن البحث فيه)",
   "video_secondary_subtitle_sources": "ترجمة ثانوية",
   "video_setting_auto_play_next": "التشغيل التلقائي للحلقة التالية",
   "video_setting_auto_scrape": "جلب معلومات المسلسل تلقائياً",

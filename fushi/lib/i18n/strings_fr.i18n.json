@@ -2246,7 +2246,6 @@
   "video_screenshot_failed_reason": "Échec de la capture d'écran : ${reason}",
   "video_screenshot_ready": "Capture d'écran prête : ${file}",
   "video_screenshot_saved_to": "Capture d'écran enregistrée : ${path}",
-  "video_secondary_subtitle_hint": "Affiché par le lecteur (non consultable)",
   "video_secondary_subtitle_sources": "Sous-titre secondaire",
   "video_setting_auto_play_next": "Lecture auto de l'épisode suivant",
   "video_setting_auto_scrape": "Récupérer automatiquement les infos de série",

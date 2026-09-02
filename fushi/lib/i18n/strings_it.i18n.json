@@ -2246,7 +2246,6 @@
   "video_screenshot_failed_reason": "Screenshot non riuscito: ${reason}",
   "video_screenshot_ready": "Screenshot pronto: ${file}",
   "video_screenshot_saved_to": "Screenshot salvato: ${path}",
-  "video_secondary_subtitle_hint": "Renderizzato dal player (non cercabile)",
   "video_secondary_subtitle_sources": "Sottotitolo secondario",
   "video_setting_auto_play_next": "Riproduci automaticamente l'episodio successivo",
   "video_setting_auto_scrape": "Recupero automatico info serie",

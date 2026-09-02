@@ -2246,7 +2246,6 @@
   "video_screenshot_failed_reason": "截圖失敗：${reason}",
   "video_screenshot_ready": "截圖已準備好：${file}",
   "video_screenshot_saved_to": "截圖已儲存：${path}",
-  "video_secondary_subtitle_hint": "由播放器渲染（不可查詞）",
   "video_secondary_subtitle_sources": "副字幕",
   "video_setting_auto_play_next": "自動連播下一集",
   "video_setting_auto_scrape": "自動刮削條目資料",
