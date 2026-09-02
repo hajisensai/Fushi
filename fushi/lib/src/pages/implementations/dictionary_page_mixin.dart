@@ -797,7 +797,24 @@ mixin DictionaryPageMixin {
           // char count (0 = no entries -> no highlight, preserving prior look).
           final int count = await onPush(text, childRect);
           if (count > 0) {
-            entry.webViewKey.currentState?.highlightSelection(count);
+            final Rect? wordRect =
+                await entry.webViewKey.currentState?.highlightSelection(count);
+            // BUG-2054：同一次高亮顺带取回整词 bbox，把刚打开的子层从「点击的首
+            // 字符」重锚到整词矩形——跨行选区时首字符矩形只覆盖第一行，子弹窗会
+            // 正好盖住选区的第二行。expectedTerm 是身份门：eval 往返期间用户再点
+            // 一个词时，同一下标上会是另一个词的子层（beginTop 同步压栈）。mixin
+            // 家族不监听 controller，改了要自己重建。
+            if (mounted &&
+                reanchorNestedPopupToWord(
+                  controller: controller,
+                  parentWebViewKey: entry.webViewKey,
+                  parentIndex: index,
+                  expectedTerm: text,
+                  wordLocalRect: wordRect,
+                  fallback: childRect,
+                )) {
+              setState(() {});
+            }
           }
         },
         onLinkClick: (query, localRect) async {
@@ -813,7 +830,20 @@ mixin DictionaryPageMixin {
           // headword/link target in this parent card after the child search.
           final int count = await onPush(query, childRect);
           if (count > 0) {
-            entry.webViewKey.currentState?.highlightSelection(count);
+            // BUG-2054：与 onTextSelected 对称——点词头/链接同样按整词 bbox 重锚子层。
+            final Rect? wordRect =
+                await entry.webViewKey.currentState?.highlightSelection(count);
+            if (mounted &&
+                reanchorNestedPopupToWord(
+                  controller: controller,
+                  parentWebViewKey: entry.webViewKey,
+                  parentIndex: index,
+                  expectedTerm: query,
+                  wordLocalRect: wordRect,
+                  fallback: childRect,
+                )) {
+              setState(() {});
+            }
           }
         },
         onMineEntry: onMineEntry,

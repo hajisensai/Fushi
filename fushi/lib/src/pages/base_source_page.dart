@@ -811,7 +811,24 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             selectionRect: childRect,
           );
           if (count > 0) {
-            item.webViewKey.currentState?.highlightSelection(count);
+            final int generation = activeLookupGeneration;
+            final Rect? wordRect =
+                await item.webViewKey.currentState?.highlightSelection(count);
+            // BUG-2054：同一次高亮顺带取回整词 bbox，把刚 push 的子层从「点击的首
+            // 字符」重锚到整词矩形（跨行选区时首字符矩形只覆盖第一行，子弹窗会盖住
+            // 选区的第二行）。eval 往返期间可能已有更新的查词占住同一下标，故叠
+            // BUG-717② 的代次门 + expectedTerm 词形门两道身份校验。阅读器车道监听
+            // controller，reanchorEntry 的 notifyListeners 已触发重定位，无需 setState。
+            if (mounted && generation == activeLookupGeneration) {
+              reanchorNestedPopupToWord(
+                controller: _popup,
+                parentWebViewKey: item.webViewKey,
+                parentIndex: index,
+                expectedTerm: text,
+                wordLocalRect: wordRect,
+                fallback: childRect,
+              );
+            }
           }
         },
         onLinkClick: (query, localRect) async {
@@ -832,7 +849,20 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             selectionRect: childRect,
           );
           if (count > 0) {
-            item.webViewKey.currentState?.highlightSelection(count);
+            // BUG-2054：与 onTextSelected 对称（含两道身份门）。
+            final int generation = activeLookupGeneration;
+            final Rect? wordRect =
+                await item.webViewKey.currentState?.highlightSelection(count);
+            if (mounted && generation == activeLookupGeneration) {
+              reanchorNestedPopupToWord(
+                controller: _popup,
+                parentWebViewKey: item.webViewKey,
+                parentIndex: index,
+                expectedTerm: query,
+                wordLocalRect: wordRect,
+                fallback: childRect,
+              );
+            }
           }
         },
         // TODO-962：弹窗滚到底时若该层结果可能被截断（!allLoaded）就续查下一批词头

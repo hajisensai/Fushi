@@ -208,6 +208,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_mining_image_mode',
   'video_mining_still_format',
   'video_mpv_config',
+  // String（[MpvLuaCapability] 的 name）：随包 libmpv 有没有编入 Lua 解释器，
+  // 视频页建 Player 后读 `mpv-configuration` 探到并缓存。全局设置页没有播放器，
+  // 靠这份缓存如实说明脚本开关在本平台是否可用。默认 unknown = 从未播过视频。
+  // 见 media/video/video_lua_capability.dart（BUG-2032）。
+  'video_mpv_lua_capability',
   'video_mpv_lua_scripts_enabled',
   'video_mpv_shader_dir',
   'video_remote_subtitle',
