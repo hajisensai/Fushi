@@ -945,8 +945,10 @@ struct LeafVoiceArchive {
   uint32_t range_count = 0;
 };
 
+// 无锁句柄表（tracked_handle_table.h）：Forget 走 CloseHandle detour，不得进 g_cs（BUG-2046）。
 struct LeafVoiceHandle {
   HANDLE handle = INVALID_HANDLE_VALUE;
+  volatile LONG seq = 0;
   uint32_t archive_index = 0;
 };
 
@@ -1183,8 +1185,7 @@ bool LoadLeafVoiceArchives() {
 
 void RememberLeafAquaplusVoicePak(HANDLE handle, const wchar_t *path) {
   if (InterlockedCompareExchange(&g_leaf_voice_enabled, 0, 0) == 0 ||
-      handle == INVALID_HANDLE_VALUE || !IsLeafVoicePakPath(path) ||
-      !g_cs_ready) {
+      handle == INVALID_HANDLE_VALUE || !IsLeafVoicePakPath(path)) {
     return;
   }
   LeafVoiceFileIdentity identity;
@@ -1194,51 +1195,25 @@ void RememberLeafAquaplusVoicePak(HANDLE handle, const wchar_t *path) {
   if (archive_index < 0)
     return;
 
-  EnterCriticalSection(&g_cs);
-  for (int index = 0; index < kLeafVoiceHandleSlots; ++index) {
-    if (g_leaf_voice_handles[index].handle == INVALID_HANDLE_VALUE ||
-        g_leaf_voice_handles[index].handle == handle) {
-      g_leaf_voice_handles[index].handle = handle;
-      g_leaf_voice_handles[index].archive_index =
-          static_cast<uint32_t>(archive_index);
-      SetXAudioDiagnostic(
-          fushi_voice_hook::kXAudioDiagLeafLacHandleTracked);
-      break;
-    }
+  if (fushi_voice_hook::RememberTrackedHandle(
+          g_leaf_voice_handles, handle, [archive_index](LeafVoiceHandle &slot) {
+            slot.archive_index = static_cast<uint32_t>(archive_index);
+          })) {
+    SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagLeafLacHandleTracked);
   }
-  LeaveCriticalSection(&g_cs);
 }
 
 bool CopyLeafVoiceArchiveIndex(HANDLE handle, uint32_t *archive_index) {
-  if (handle == INVALID_HANDLE_VALUE || archive_index == nullptr ||
-      !g_cs_ready) {
+  if (archive_index == nullptr)
     return false;
-  }
-  bool found = false;
-  EnterCriticalSection(&g_cs);
-  for (int index = 0; index < kLeafVoiceHandleSlots; ++index) {
-    if (g_leaf_voice_handles[index].handle == handle) {
-      *archive_index = g_leaf_voice_handles[index].archive_index;
-      found = true;
-      break;
-    }
-  }
-  LeaveCriticalSection(&g_cs);
-  return found;
+  return fushi_voice_hook::ReadTrackedHandle(
+      g_leaf_voice_handles, handle, [archive_index](const LeafVoiceHandle &slot) {
+        *archive_index = slot.archive_index;
+      });
 }
 
 void ForgetLeafAquaplusVoicePak(HANDLE handle) {
-  if (handle == INVALID_HANDLE_VALUE || !g_cs_ready)
-    return;
-  EnterCriticalSection(&g_cs);
-  for (int index = 0; index < kLeafVoiceHandleSlots; ++index) {
-    if (g_leaf_voice_handles[index].handle == handle) {
-      g_leaf_voice_handles[index].handle = INVALID_HANDLE_VALUE;
-      g_leaf_voice_handles[index].archive_index = 0;
-      break;
-    }
-  }
-  LeaveCriticalSection(&g_cs);
+  fushi_voice_hook::ForgetTrackedHandle(g_leaf_voice_handles, handle);
 }
 
 bool QueueLeafVoice(uint32_t archive_index, uint64_t offset,
@@ -1458,14 +1433,7 @@ bool TryHookLeafAquaplusResourceAudio() {
 
 void StopLeafAquaplusResourceAudio() {
   InterlockedExchange(&g_leaf_voice_enabled, 0);
-  if (g_cs_ready) {
-    EnterCriticalSection(&g_cs);
-    for (int index = 0; index < kLeafVoiceHandleSlots; ++index) {
-      g_leaf_voice_handles[index].handle = INVALID_HANDLE_VALUE;
-      g_leaf_voice_handles[index].archive_index = 0;
-    }
-    LeaveCriticalSection(&g_cs);
-  }
+  fushi_voice_hook::ClearTrackedHandles(g_leaf_voice_handles);
   // 🔴 顺序不可颠倒：先把 count 撤成 0（这是任何消费者判定「档案表可用」的唯一
   // 闸门），再摘指针，最后才 free。反过来写会让 free 与「还没被撤发布的表」重叠。
   // 与 catsystem2_adapter.inc 的 StopCatSystem2PcmVoice 同一模式。
