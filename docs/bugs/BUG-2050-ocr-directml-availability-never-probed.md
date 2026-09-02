@@ -60,21 +60,49 @@
   - 变异实测记录：① 回退判据退回 `error.code == 'INVALID_PROVIDER'` → 4 条红；
     ② `selectOcrExecutionProviders` 忽略可用性 → 3 条红（Apple 那条不红是对的，
     它偏好表为空、循环不执行）；③ 探测映射摘掉 `DIRECT_ML` → 1 条红。
+- **[x] ③ 已实测定性，并据此改掉 EP 默认策略** — 2026-09-02 本机实测
+  （RTX 5090 / Win11 / ORT 1.22.0 DirectML build / DirectML 1.15.4）。运行时用
+  与 `CMakeLists.txt` **同一组 SHA-256 钉死的 nupkg**（`29F9872D…` / `4E7CB7DD…`
+  逐位核对通过），模型用清单里的真档（`detector-v4-s_int8.onnx`，11,120,765 B
+  = 清单 `expectedBytes` 精确一致）。量具已收进仓库：`tool/ocr_dml_probe/`。
+
+  探针分三段互不推断，结果：
+
+  | 段 | 结果 |
+  |---|---|
+  | ① `GetAvailableProviders()` | **列出 `DmlExecutionProvider`** ⇒ 打包没问题，BUG-1968 的修复是有效的 |
+  | ② `D3D12CreateDevice(HARDWARE)` | **OK** ⇒ 排除本机 GPU 客户端饱和那条已知波动路径 |
+  | ③ `Ort::Session` + DML | **失败**，`ORT_RUNTIME_EXCEPTION`，`MLOperatorAuthorImpl.cpp(2851)`，`E_INVALIDARG (0x80070057)` |
+
+  同架构 fp32 对照组把变量精确隔离出来：
+
+  |  | DML 建会话 | DML 稳态 | CPU 建会话 | CPU 稳态 |
+  |---|---|---|---|---|
+  | **int8（出包用）** | **❌ 失败，白付 1546.9ms** | — | 733.8ms | **81.5ms** |
+  | fp32（对照） | ✅ 2957.1ms | 21.6ms | 1461.2ms | 419.4ms |
+
+  fp32 在**同一台机器、同一个运行时**上建得起来且比 CPU 快 **19.4 倍** ⇒ 不是
+  显卡、不是 D3D12、不是打包 ⇒ **变量就是 int8 量化**。用户的归因完全正确。
+
+  **改动**：`acceleratedProviderPreference` 的 Windows 档去掉 DirectML，检测与
+  识别都只剩 CUDA（理由不同：检测是模型建不出会话，识别是自回归解码的架构性
+  负优化）。保留 DirectML 只会让每个任务白付 1547ms 换零收益，而且按 BUG-1968
+  之后的错误码，那次失败会以 `ORT_ERROR` 出现——修复前它连回退都不触发。
+
+  **「~25 倍」的真相**：那个数量的是 **fp32 档**（本次实测 19.4x，同量级）。
+  检测器后来换成 int8 小档（11MB vs 168MB，且 int8 在 CPU 上反而比 fp32 快 5 倍：
+  81.5ms vs 419.4ms），加速前提随之消失，注释却留了下来。已在
+  `ocr_inference.dart` 里把整段实测数据和「换模型才是重新评估的前提」写清楚，
+  并加守卫测试 `BUG-2050 DirectML 不出现在任何平台/模型种类的偏好表里`。
 - **备注**：
-  - **本 PR 不改 EP 默认策略**。用户报告里「int8 检测器在 ORT 1.22.0 的 DML EP
-    上根本建不起来」这个归因尚未定性，而且与观测到的「退 CPU」互相矛盾——按上面
-    第二层，真 DML 建不起来时当前代码只会整卷报错，不会退 CPU。要定性只需一条
-    原始错误串（`dart:developer` 通道 `hibiki.ocr`），三向分流：
-    `INVALID_PROVIDER: Provider is not supported: DIRECT_ML` ⇒ DML 分支没进跑的
-    二进制，查构建；`PROVIDER_ERROR` + `0x8007000E` ⇒ 本机 D3D12 建不出设备的
-    已知波动状态（GPU 客户端饱和时任何新进程都中招），环境问题非代码；
-    `ORT_ERROR` + 算子/类型信息 ⇒ 这才是「int8 模型在 DML 上不成立」，那时才
-    该改默认值。
-  - `ocr_inference.dart` 里「DirectML 实测比 CPU 快 ~25 倍」是更早 ORT/模型组合
-    上量的数，当前 int8 RT-DETR-v2 + ORT 1.22.0 这一组**未经真机复测**。本次
-    保留 DirectML 作为 Windows 检测的首选加速档 = 延续既有行为、不做无数据的
-    策略变更，但已在注释里标注该数字过期待复测，避免重演 BUG-1613（照着一句
-    从未被执行过的类比结论把 CoreML 带到真机）。
-  - 未做「进程内记住本机 DML 建不起来」的缓存。在拿到失败耗时实测之前那是解决
-    可能不存在的问题，且 D3D 那个状态会自行波动，缓存会把临时状态焊成永久降级。
-  - 真机 Windows GPU 复测未做（无构建产物/设备），本条不据此宣称真机已验证。
+  - 未做「进程内记住本机 DML 建不起来」的缓存——现在更没必要了：失败是确定性的
+    算子层不兼容（不是会波动的环境状态），直接不请求即可，不需要运行期记忆。
+  - **fp32 + DML 不是免费的更优解**，别看到 21.6ms 就想换档：模型 168MB（vs
+    11MB），建会话 2957ms + 首次推理 8817ms 的暖机，对「重新识别框选区域」这种
+    单图交互是净亏（int8+CPU 全程约 1 秒）。整卷长任务另算，但那是带下载体积
+    代价的产品决策，不在本 bug 范围。
+  - 探针是独立 exe，不参与构建、不被 app 引用；DML 会话选项与
+    `dml_provider.cc` 严格一致，改那边要同步改探针。
+  - 未在真实 app 内跑整卷 OCR 复测（模型 470MB 未下载、无 Windows 构建产物）。
+    但探针用的是同一份运行时字节 + 同一个模型文件 + 同一套 DML 会话选项，
+    ③ 的失败点在 ORT 会话初始化内部，与 Flutter 层无关。

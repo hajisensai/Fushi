@@ -462,31 +462,40 @@ void main() {
       }
     });
 
-    test('Windows 无 CUDA 但有 DirectML：检测 DirectML→CPU，识别纯 CPU', () {
-      expect(
-        selectOcrExecutionProviders(
-          kind: OcrModelKind.detection,
+    test('BUG-2050 Windows 无 CUDA 但有 DirectML：检测与识别都走纯 CPU', () {
+      // 2026-09-02 本机实测拍板（RTX 5090 / ORT 1.22.0 DirectML build）：出包用的
+      // int8 RT-DETR-v2 在 DML EP 上**建不出会话**——挂在
+      // MLOperatorAuthorImpl.cpp(2851)，E_INVALIDARG，白付 1547ms。
+      // 对照组隔离出变量：同架构 fp32 档在同一台机器同一个运行时上建得起来、
+      // 且比 CPU 快 19.4 倍，D3D12CreateDevice 也正常 ⇒ 不是显卡、不是打包，
+      // 就是 int8 量化。所以 DirectML 即使可用也不该被请求。
+      for (final OcrModelKind kind in OcrModelKind.values) {
+        final List<OcrExecutionProvider> got = selectOcrExecutionProviders(
+          kind: kind,
           platform: resolveOcrPlatform('windows'),
           availableProviders: const <OcrExecutionProvider>{
             OcrExecutionProvider.directml,
           },
-        ),
-        <OcrExecutionProvider>[
-          OcrExecutionProvider.directml,
-          OcrExecutionProvider.cpu,
-        ],
-      );
-      expect(
-        selectOcrExecutionProviders(
-          kind: OcrModelKind.recognition,
-          platform: resolveOcrPlatform('windows'),
-          availableProviders: const <OcrExecutionProvider>{
-            OcrExecutionProvider.directml,
-          },
-        ),
-        <OcrExecutionProvider>[OcrExecutionProvider.cpu],
-        reason: 'DirectML 对自回归逐步解码是负优化，识别永远不选它',
-      );
+        );
+        expect(got, <OcrExecutionProvider>[OcrExecutionProvider.cpu],
+            reason: '$kind：DirectML 可用也不选（int8 建不出会话 / 解码负优化）');
+        expect(got, isNot(contains(OcrExecutionProvider.directml)));
+      }
+    });
+
+    test('BUG-2050 DirectML 不出现在任何平台/模型种类的偏好表里', () {
+      // 这条是「别再凭那句 ~25 倍把 DirectML 加回来」的守卫。那个数量的是 fp32
+      // 档（实测 19.4x，同量级），检测器换成 int8 小档后前提就没了。要加回来，
+      // 前提是换模型 + 重新在真机上拿数，而不是改这条测试。
+      for (final OcrPlatform platform in OcrPlatform.values) {
+        for (final OcrModelKind kind in OcrModelKind.values) {
+          expect(
+            acceleratedProviderPreference(kind: kind, platform: platform),
+            isNot(contains(OcrExecutionProvider.directml)),
+            reason: '$platform/$kind 不该偏好 DirectML（BUG-2050 实测）',
+          );
+        }
+      }
     });
 
     test('BUG-2050 Windows 运行时没有 DirectML：检测直接纯 CPU，不请求 DML', () {
@@ -566,23 +575,16 @@ void main() {
 
     test('BUG-2050 偏好表与可用性是两个独立概念', () {
       // 偏好表只说「想要什么」，与本机装了什么无关——它必须是纯的。
-      expect(
-        acceleratedProviderPreference(
-          kind: OcrModelKind.detection,
-          platform: OcrPlatform.windows,
-        ),
-        <OcrExecutionProvider>[
-          OcrExecutionProvider.cuda,
-          OcrExecutionProvider.directml,
-        ],
-      );
-      expect(
-        acceleratedProviderPreference(
-          kind: OcrModelKind.recognition,
-          platform: OcrPlatform.windows,
-        ),
-        <OcrExecutionProvider>[OcrExecutionProvider.cuda],
-      );
+      for (final OcrModelKind kind in OcrModelKind.values) {
+        expect(
+          acceleratedProviderPreference(
+            kind: kind,
+            platform: OcrPlatform.windows,
+          ),
+          <OcrExecutionProvider>[OcrExecutionProvider.cuda],
+          reason: 'Windows/$kind 只偏好 CUDA（DirectML 见 BUG-2050 实测）',
+        );
+      }
       for (final OcrPlatform platform in <OcrPlatform>[
         OcrPlatform.macos,
         OcrPlatform.ios,

@@ -112,13 +112,37 @@ enum OcrPlatform { windows, macos, ios, linux, android }
 ///
 /// 策略依据（用户拍板 + 本机实测）：
 ///
-/// - Windows 检测：CUDA 优先，其次 DirectML。**注意**：旧注释里「DirectML 实测
-///   比 CPU 快 ~25 倍」是更早 ORT/模型组合上量的，当前 int8 RT-DETR-v2 +
-///   ORT 1.22.0 这一组尚未真机复测（BUG-2050）。这里保留 DirectML 作为检测的
-///   首选加速档是延续既有行为、不做无数据的策略变更；真要改默认值，先按
-///   BUG-2050 里的三向分流拿到本机错误串再说。
+/// - **Windows 检测：只考虑 CUDA，不要 DirectML**（BUG-2050 实测拍板）。
+///   我们出包用的检测器是 **int8** 量化的 RT-DETR-v2
+///   （`detector-v4-s_int8.onnx`），它在 ORT 1.22.0 的 DML EP 上**根本建不出
+///   会话**——挂在 DML 算子授权层
+///   `DmlExecutionProvider/src/MLOperatorAuthorImpl.cpp(2851)`，
+///   `E_INVALIDARG (0x80070057)`，错误码 `ORT_RUNTIME_EXCEPTION`。
+///
+///   2026-09-02 本机实测（RTX 5090 / ORT 1.22.0 DirectML build / DirectML
+///   1.15.4 / 同一 640×640 输入、1 次预热 + 3 次取最优）：
+///
+///   | 模型 | DML 建会话 | DML 稳态 | CPU 建会话 | CPU 稳态 |
+///   |---|---|---|---|---|
+///   | **int8（出包用）** | **❌ 失败，白付 1547ms** | — | 734ms | **81.5ms** |
+///   | fp32（同架构对照） | ✅ 2957ms | 21.6ms | 1461ms | 419.4ms |
+///
+///   对照组是关键：fp32 档在同一台机器、同一个运行时上**建得起来且比 CPU 快
+///   19.4 倍**，`D3D12CreateDevice` 也正常——所以这不是显卡、不是 WDDM 状态、
+///   不是打包问题，**变量精确就是 int8 量化**。
+///
+///   旧注释里那句「DirectML 实测比 CPU 快 ~25 倍」量的就是 **fp32 档**（19.4x
+///   与之同量级）。后来检测器换成 int8 小档（11MB vs 168MB，且 int8 在 CPU 上
+///   反而比 fp32 快 5 倍：81.5ms vs 419.4ms），加速前提就没了，那句话却留了
+///   下来——于是每个任务白付一次 1.5 秒的失败建会话。**别再凭那句话把
+///   DirectML 加回来**：换模型才是重新评估的前提，要加先用 BUG-2050 里的探针
+///   在真机上重新拿数。
 /// - Windows 识别：只考虑 CUDA —— 实测 DirectML 对自回归逐步解码是负优化
 ///   （每步 GPU 往返开销远大于小 batch 计算本身）。
+///
+///   注意：检测与识别当前**恰好**都只剩 CUDA，但理由完全不同（检测是模型建不
+///   起来，识别是架构上的负优化）。所以 [kind] 这个轴保留——任一条前提变了它们
+///   就会重新分叉。
 /// - **macOS / iOS：不要任何加速 EP**（BUG-1613）。这里曾经按 Windows 的
 ///   类比给检测选 CoreML，但那段分支写下时 Apple 的 ORT native 整个被 gate 掉，
 ///   从未被执行过。2026-08-14 打开 Apple 本地 OCR 后真机对拍（同一页、1 次预热
@@ -145,12 +169,10 @@ List<OcrExecutionProvider> acceleratedProviderPreference({
 }) {
   switch (platform) {
     case OcrPlatform.windows:
-      if (kind == OcrModelKind.detection) {
-        return const <OcrExecutionProvider>[
-          OcrExecutionProvider.cuda,
-          OcrExecutionProvider.directml,
-        ];
-      }
+      // 检测与识别当前**恰好**都只剩 CUDA，所以这里不按 [kind] 分支——两条
+      // 返回同一个值的分支只是噪音。它们排除 DirectML 的理由不同（检测是 int8
+      // 模型建不出会话，识别是自回归解码的架构性负优化，见上），任一条前提变了
+      // 就在这里重新分叉，[kind] 为此保留在签名里。
       return const <OcrExecutionProvider>[OcrExecutionProvider.cuda];
     // BUG-1613：Apple 两端与 linux/android 同档，一个加速 EP 都不要（实测见上表）。
     case OcrPlatform.macos:
