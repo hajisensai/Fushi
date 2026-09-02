@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
 
 import 'package:fushi/src/media/torrent/anime_release_descriptor.dart';
+import 'package:fushi/src/media/torrent/public_trackers.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
 
@@ -47,13 +48,12 @@ class NyaaFeedFormatException extends FormatException {
   final NyaaFeedErrorCode code;
 }
 
-/// Nyaa 磁链标准 tracker 列表（nyaa.si 站点磁链默认附带的公开 tracker）。
+/// Nyaa 磁链 tracker 列表：站点专属 tracker 排最前，后面跟内置公开兜底集
+/// [kPublicTrackers]。nyaa 自己的 tracker 只覆盖本站种子，公开的那批才是
+/// 「站点 tracker 挂了/种子已从本站下架」时还能连上 peer 的那条路。
 const List<String> kNyaaTrackers = <String>[
   'http://nyaa.tracker.wf:7777/announce',
-  'udp://open.stunner.irish:80/announce',
-  'udp://tracker.opentrackr.org:1337/announce',
-  'udp://open.tracker.cl:1337/announce',
-  'udp://exodus.desync.com:6969/announce',
+  ...kPublicTrackers,
 ];
 
 /// 成对括号块（字幕组 / 画质 / 年份 tag）：`[...]` `(...)`。
