@@ -604,6 +604,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         gameTitle: game.displayName,
         japaneseLocaleMode:
             galJapaneseLocaleModeFromKey(game.japaneseLocaleMode),
+        // BUG-2047：内容语言是转区 auto 判定的人工真值，entry 本来就在手上。
+        contentLanguage: game.language,
       );
       if (!mounted) return;
       // 每种结果都播报（BUG-1089）。旧实现只在 `!launched` 时说话，可注入降级和

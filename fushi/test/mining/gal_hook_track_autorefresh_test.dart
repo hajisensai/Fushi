@@ -152,6 +152,7 @@ GalHookSessionController _controller({
       List<String> launchArguments = const <String>[],
       String launchWorkdir = '',
       GalJapaneseLocaleMode japaneseLocaleMode = kGalDefaultJapaneseLocaleMode,
+      String? contentLanguage,
     }) =>
         engine,
     loopbackSourceFactory: _SilentLoopback.new,
