@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_audio/fushi_audio.dart'
+    show AudiobookRepository, AudiobookStorage, SrtBookRepository;
+import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart';
 import 'package:fushi/src/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
@@ -20,7 +24,8 @@ import 'package:fushi/src/pages/implementations/video_external_provider_settings
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/utils.dart';
-import 'package:fushi_core/fushi_core.dart' show VideoDownloadJobRow;
+import 'package:fushi_core/fushi_core.dart'
+    show VideoDownloadJobFileRow, VideoDownloadJobRow;
 
 /// 独立「下载」页：资源、任务、订阅、设置共用一个下载中心。
 ///
@@ -60,6 +65,39 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
   void _setLegacyAnimeTaskPresence(bool present) {
     if (!mounted || _hasLegacyAnimeTasks == present) return;
     setState(() => _hasLegacyAnimeTasks = present);
+  }
+
+  /// 「补对齐文件」：把已下完的孤立音频直接喂进统一导入对话框。
+  ///
+  /// 本仓有声书是字幕对齐驱动的，`download-only-audiobook` 任务落地的只有音频
+  /// （CoreAudio/TMW 单卷 m4b），自动导入链路进不去。这里把该任务真实落盘的音频
+  /// 预填进 [BookImportDialog]，用户只需再给一个字幕就能成书。
+  ///
+  /// 取不到音频路径（文件被手动删掉/移走）时照常开框、只是不预填——把死路留成
+  /// 用户仍可自选文件的活路，好过弹一句错误后什么也做不了。
+  Future<void> _pairDownloadedAudiobook(VideoDownloadJobRow job) async {
+    final AppModel appModel = ref.read(appProvider);
+    final List<VideoDownloadJobFileRow> rows =
+        await appModel.database.getVideoDownloadJobFiles(job.jobId);
+    final List<String> audioPaths = <String>[
+      for (final VideoDownloadJobFileRow row in rows)
+        if (row.selected &&
+            (row.finalAbsolutePath?.trim().isNotEmpty ?? false) &&
+            AudiobookStorage.audioExtensions.contains(
+              p.extension(row.finalAbsolutePath!).toLowerCase(),
+            ))
+          row.finalAbsolutePath!,
+    ]..sort();
+    if (!mounted) return;
+    await showAppDialog<bool>(
+      context: context,
+      builder: (_) => BookImportDialog(
+        repo: SrtBookRepository(appModel.database),
+        audiobookRepo: AudiobookRepository(appModel.database),
+        db: appModel.database,
+        initialAudioPaths: audioPaths.isEmpty ? null : audioPaths,
+      ),
+    );
   }
 
   Widget _buildVideoResourceTab() => VideoDiscoveryPage(
@@ -284,6 +322,10 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                           .read(appProvider)
                                           .videoDownloadPipelineService
                                           ?.cancelJob(job.jobId);
+                                    },
+                                    onPairAudiobook:
+                                        (VideoDownloadJobRow job) async {
+                                      await _pairDownloadedAudiobook(job);
                                     },
                                     onOpenDetails:
                                         (VideoDownloadJobRow job) async {

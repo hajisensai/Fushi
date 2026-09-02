@@ -4113,5 +4113,7 @@
   "video_discovery_anidb_identity_not_found": "未能在 AniDB 识别该作品：仍会正常下载，导入后在待确认列表等待手动指定身份。",
   "network_proxy_p2p_mode_direct": "直连",
   "network_proxy_p2p_mode_proxy": "走代理",
-  "network_proxy_p2p_mode_mixed": "混合"
+  "network_proxy_p2p_mode_mixed": "混合",
+  "download_task_audiobook_needs_alignment": "只下到音频 - 还需要一个对齐文件（字幕）才能作为书打开。",
+  "download_task_audiobook_pair": "补对齐文件"
 }

@@ -4113,5 +4113,7 @@
   "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
   "network_proxy_p2p_mode_direct": "Direct",
   "network_proxy_p2p_mode_proxy": "Via proxy",
-  "network_proxy_p2p_mode_mixed": "Mixed"
+  "network_proxy_p2p_mode_mixed": "Mixed",
+  "download_task_audiobook_needs_alignment": "Audio only - an alignment file (subtitle) is still needed before this can open as a book.",
+  "download_task_audiobook_pair": "Add alignment file"
 }

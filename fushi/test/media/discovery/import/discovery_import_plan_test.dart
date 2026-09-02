@@ -47,10 +47,32 @@ void main() {
       expect(plan.exePaths, <String>[r'D:\games\atri.exe']);
     });
 
-    test('有声书:单文件永远不够料', () {
+    test('有声书:单文件永远不够料,但缺的那一样要报准', () {
+      // 孤立音频（TMW 单卷 m4b 的真实形状）缺的是字幕,不是音频。
       expect(
-        classifyDiscoveryFile(DiscoveryMediaKind.audiobook, 'x.mp3'),
-        isA<UnsupportedPlan>(),
+        (classifyDiscoveryFile(DiscoveryMediaKind.audiobook, 'x.mp3')
+                as UnsupportedPlan)
+            .blocker,
+        DiscoveryImportBlocker.audiobookMissingSubtitle,
+      );
+      expect(
+        (classifyDiscoveryFile(DiscoveryMediaKind.audiobook, r'D:\a\vol1.m4b')
+                as UnsupportedPlan)
+            .blocker,
+        DiscoveryImportBlocker.audiobookMissingSubtitle,
+      );
+      // 孤立字幕/正文则确实缺音频。
+      expect(
+        (classifyDiscoveryFile(DiscoveryMediaKind.audiobook, 'x.srt')
+                as UnsupportedPlan)
+            .blocker,
+        DiscoveryImportBlocker.audiobookMissingAudio,
+      );
+      expect(
+        (classifyDiscoveryFile(DiscoveryMediaKind.audiobook, 'x.epub')
+                as UnsupportedPlan)
+            .blocker,
+        DiscoveryImportBlocker.audiobookMissingAudio,
       );
     });
   });
