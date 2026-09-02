@@ -719,11 +719,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   // 恒为真名（它同时是 CSS 作用域 key、媒体 URL 参数、隐藏/折叠/排序 key 和
   // Anki `{single-glossary-<名>}` token 的 key，替换它会静默打断上述全部），
   // popup.js 只在**渲染词典名文本**的那几处查这张表。只装真正改过名的条目。
-  final String dictionaryDisplayNames = jsonEncode(<String, String>{
-    for (final Dictionary d in appModel.dictionaries)
-      if (d.displayName != null && d.displayName!.trim().isNotEmpty)
-        d.name: d.displayName!.trim(),
-  });
+  final String dictionaryDisplayNames =
+      jsonEncode(appModel.dictionaryDisplayNameOverrides);
   // effective* = 可视化规则的编译产物 + 用户手写（产物在前、手写在后）。这里
   // 绝不能用裸 globalDictCSS / customDictCSS——那是编辑器回填用的原文。
   final String globalDictCSS = appModel.effectiveGlobalDictCSS;

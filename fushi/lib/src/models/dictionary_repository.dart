@@ -74,6 +74,11 @@ class DictionaryRepository {
 
   List<Dictionary> get dictionaries => List.unmodifiable(_dictionariesCache);
 
+  /// 改名投影（真名 -> 显示名，只含改过名的）。推导在
+  /// [dictionaryDisplayNameOverridesOf] 单点完成。
+  Map<String, String> get displayNameOverrides =>
+      dictionaryDisplayNameOverridesOf(_dictionariesCache);
+
   List<Dictionary> get termDictionaries =>
       _dictionariesCache.where((d) => d.type == DictionaryType.term).toList();
 

@@ -213,11 +213,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
       // 路径，词典仓库可能还没建好（dictRepo 是 late 字段，直接读会抛），未就绪
       // 时给空表 = 全部显示真名。
       dictionaryDisplayNames: appModel.isDictionaryRepoReady
-          ? <String, String>{
-              for (final Dictionary d in appModel.dictionaries)
-                if (d.displayName != null && d.displayName!.trim().isNotEmpty)
-                  d.name: d.displayName!.trim(),
-            }
+          ? appModel.dictionaryDisplayNameOverrides
           : const <String, String>{},
     );
   }

@@ -102,11 +102,8 @@ SettingsDestination buildStorageDestination() {
         for (final Dictionary d in c.appModel.dictionaries) d.name,
       ],
       // 只翻译明细行的 label；上面那份真名列表照旧驱动目录扫描与删除路由。
-      dictionaryDisplayNamesProvider: () async => <String, String>{
-        for (final Dictionary d in c.appModel.dictionaries)
-          if (d.displayName != null && d.displayName!.trim().isNotEmpty)
-            d.name: d.displayName!.trim(),
-      },
+      dictionaryDisplayNamesProvider: () async =>
+          c.appModel.dictionaryDisplayNameOverrides,
       deleteBook: (String bookKey) async {
         final DeleteBookResult result =
             await ReaderFushiSource.instance.deleteBook(

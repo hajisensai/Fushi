@@ -2,6 +2,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// 词典改名（v95）的行为契约。
@@ -190,6 +191,71 @@ void main() {
       final Dictionary back = Dictionary.fromJson(old.toJson());
       expect(back.displayName, isNull);
       expect(back.effectiveDisplayName, 'JMdict');
+    });
+  });
+
+  group('改名投影与归一化（唯一真相源）', () {
+    late FushiDatabase db;
+    late DictionaryRepository repo;
+
+    setUp(() async {
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      repo = DictionaryRepository(db);
+      await repo.persistDictionary(Dictionary(
+        name: 'JMdict [2026-05-17]',
+        formatKey: 'yomitan',
+        order: 0,
+      ));
+      await repo.persistDictionary(Dictionary(
+        name: '明鏡',
+        formatKey: 'yomitan',
+        order: 1,
+      ));
+    });
+
+    tearDown(() async => db.close());
+
+    test('没人改过名时投影是空表，不装等值条目', () {
+      expect(
+        repo.displayNameOverrides,
+        isEmpty,
+        reason: '空条目要被序列化进 JS、还要进 memo key——装等值条目既占带宽又'
+            '让指纹无谓地变',
+      );
+    });
+
+    test('只装改过名的那本', () {
+      repo.setDictionaryDisplayName(repo.dictionaries.first, '日汉大辞典');
+      expect(
+        repo.displayNameOverrides,
+        <String, String>{'JMdict [2026-05-17]': '日汉大辞典'},
+      );
+    });
+
+    test('改成与真名相同 → 存 null，投影里不出现', () {
+      final Dictionary d = repo.dictionaries.first;
+      repo.setDictionaryDisplayName(d, d.name);
+      expect(
+        d.displayName,
+        isNull,
+        reason: '等值不该留一行冗余覆盖，否则投影会装进一条永远等于真名的条目',
+      );
+      expect(repo.displayNameOverrides, isEmpty);
+    });
+
+    test('空串 / 纯空白 → 存 null（等于清除改名）', () {
+      final Dictionary d = repo.dictionaries.first;
+      repo.setDictionaryDisplayName(d, '日汉');
+      expect(d.displayName, '日汉');
+
+      repo.setDictionaryDisplayName(d, '   ');
+      expect(d.displayName, isNull);
+      expect(repo.displayNameOverrides, isEmpty);
+    });
+
+    test('投影的值已 trim', () {
+      repo.setDictionaryDisplayName(repo.dictionaries.first, '  日汉  ');
+      expect(repo.displayNameOverrides.values.single, '日汉');
     });
   });
 }

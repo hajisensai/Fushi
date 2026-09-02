@@ -1455,6 +1455,15 @@ class AppModel with ChangeNotifier {
   // ── dictionary delegates (DictionaryRepository) ────────────────────
 
   List<Dictionary> get dictionaries => dictRepo.dictionaries;
+
+  /// 词典改名投影（真名 -> 显示名，只含改过名的）。推导在
+  /// [dictionaryDisplayNameOverridesOf] 单点完成。
+  ///
+  /// 走 [dictionaries] 而不是直接读 `dictRepo`：那个 getter 是子类的覆盖点
+  /// （测试替身靠它喂词典列表），绕过去就会在 `dictRepo` 这个 late 字段上炸
+  /// LateInitializationError——实测过。
+  Map<String, String> get dictionaryDisplayNameOverrides =>
+      dictionaryDisplayNameOverridesOf(dictionaries);
   List<Dictionary> get termDictionaries => dictRepo.termDictionaries;
   List<Dictionary> get freqDictionaries => dictRepo.freqDictionaries;
   List<Dictionary> get pitchDictionaries => dictRepo.pitchDictionaries;
@@ -2938,13 +2947,9 @@ class AppModel with ChangeNotifier {
     // popup.js 在两个宿主里呈现不一致。
     final String globalCss = effectiveGlobalDictCSS;
     final Map<String, String> customCss = effectiveCustomDictCSS;
-    // 词典改名（v95）：真名 -> 显示名，只含真正改过名的。必须一并进下面的缓存
-    // 判定——否则改完名命中旧实例、revision 不变，扩展永远拉不到新名。
-    final Map<String, String> displayNames = <String, String>{
-      for (final Dictionary d in dictionaries)
-        if (d.displayName != null && d.displayName!.trim().isNotEmpty)
-          d.name: d.displayName!.trim(),
-    };
+    // 词典改名（v95）：必须一并进下面的缓存判定——否则改完名命中旧实例、
+    // revision 不变，扩展永远拉不到新名。
+    final Map<String, String> displayNames = dictionaryDisplayNameOverrides;
     final RemotePopupDictionaryCss? cached = _browserExtensionPopupCss;
     if (cached != null &&
         identical(cached.dictionaryStyles, styles) &&
