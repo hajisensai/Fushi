@@ -94,6 +94,115 @@ void main() {
       );
     });
 
+    test('重新导入同名词典不吞掉本机的改名与内容语言', () async {
+      // `upsertDictionaryMeta` 是整行覆盖，而 manifest 只带随包走的那几列。
+      // 用户设置列（display_name 改名、language_override 手动指定的内容语言）
+      // 是**本机的**，不属于词典包——导入端必须先捞出来带上，否则从同步重新
+      // 下载一本已有的同名词典，用户的改名和语言指定会被静默清空（表现是
+      // 「同步了一下，词典名字变回那个又长又带日期的原名」）。
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'hibiki-dict-package-preserve-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+      final FushiDatabase sourceDb = _testDb();
+      final FushiDatabase targetDb = _testDb();
+      addTearDown(sourceDb.close);
+      addTearDown(targetDb.close);
+
+      final Directory sourceResources =
+          Directory(p.join(temp.path, 'source-dictionaries'));
+      final Directory targetResources =
+          Directory(p.join(temp.path, 'target-dictionaries'));
+      await Directory(p.join(sourceResources.path, 'JMdict')).create(
+        recursive: true,
+      );
+      await File(p.join(sourceResources.path, 'JMdict', 'blobs.bin'))
+          .writeAsString('dictionary index');
+
+      // 导出端：一本没改过名的词典。
+      await sourceDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
+        name: 'JMdict',
+        formatKey: 'yomichan',
+        order: 1,
+      ));
+      final File package = await SyncAssetPackageService(db: sourceDb)
+          .exportDictionaryPackage(
+        dictionaryName: 'JMdict',
+        dictionaryResourceRoot: sourceResources,
+        outputFile: File(p.join(temp.path, 'jmdict.hibiki-dictionary.zip')),
+      );
+
+      // 本机：同名词典已经在，且用户改过名、指定过内容语言。
+      await targetDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
+        name: 'JMdict',
+        formatKey: 'yomichan',
+        order: 3,
+        displayName: const Value<String?>('日汉大辞典'),
+        languageOverride: const Value<String?>('ja'),
+      ));
+
+      await SyncAssetPackageService(db: targetDb).importDictionaryPackage(
+        packageFile: package,
+        dictionaryResourceRoot: targetResources,
+      );
+
+      final DictionaryMetaRow row =
+          (await targetDb.getAllDictionaryMetadata()).single;
+      expect(
+        row.displayName,
+        '日汉大辞典',
+        reason: '用户的改名属于本机设置，重新导入不能把它冲掉',
+      );
+      expect(
+        row.languageOverride,
+        'ja',
+        reason: '手动指定的内容语言同理',
+      );
+      // 包里带的那几列照常被更新（这才是导入的意义）。
+      expect(row.order, 1);
+    });
+
+    test('新装词典的用户设置列是 null——没有旧行可继承时不凭空造值', () async {
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'hibiki-dict-package-fresh-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+      final FushiDatabase sourceDb = _testDb();
+      final FushiDatabase targetDb = _testDb();
+      addTearDown(sourceDb.close);
+      addTearDown(targetDb.close);
+
+      final Directory sourceResources =
+          Directory(p.join(temp.path, 'source-dictionaries'));
+      await Directory(p.join(sourceResources.path, 'JMdict')).create(
+        recursive: true,
+      );
+      await File(p.join(sourceResources.path, 'JMdict', 'blobs.bin'))
+          .writeAsString('x');
+      await sourceDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
+        name: 'JMdict',
+        formatKey: 'yomichan',
+        order: 1,
+      ));
+      final File package = await SyncAssetPackageService(db: sourceDb)
+          .exportDictionaryPackage(
+        dictionaryName: 'JMdict',
+        dictionaryResourceRoot: sourceResources,
+        outputFile: File(p.join(temp.path, 'jmdict.hibiki-dictionary.zip')),
+      );
+
+      await SyncAssetPackageService(db: targetDb).importDictionaryPackage(
+        packageFile: package,
+        dictionaryResourceRoot:
+            Directory(p.join(temp.path, 'target-dictionaries')),
+      );
+
+      final DictionaryMetaRow row =
+          (await targetDb.getAllDictionaryMetadata()).single;
+      expect(row.displayName, isNull);
+      expect(row.languageOverride, isNull);
+    });
+
     test('import rejects dictionary package path traversal', () async {
       final Directory temp = await Directory.systemTemp.createTemp(
         'hibiki-dict-traversal-',
