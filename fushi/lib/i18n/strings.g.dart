@@ -3,7 +3,7 @@
 /// Locales: 17
 /// Strings: 70057 (4121 per locale)
 ///
-/// Built on 2026-09-02 at 04:24 UTC
+/// Built on 2026-09-02 at 04:43 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -158902,17 +158902,17 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get network_proxy_p2p_mode_mixed => 'Mixed';
   @override
-  String get media_source_rename => 'Rename';
+  String get media_source_rename => '重命名';
   @override
-  String get media_source_rename_label => 'Source name';
+  String get media_source_rename_label => '來源名稱';
   @override
-  String get book_rename => 'Rename';
+  String get book_rename => '重命名';
   @override
-  String get book_rename_label => 'Title';
+  String get book_rename_label => '標題';
   @override
-  String get dict_rename => 'Rename';
+  String get dict_rename => '重命名';
   @override
-  String get dict_rename_label => 'Dictionary name';
+  String get dict_rename_label => '詞典名稱';
 }
 
 /// Flat map(s) containing all translations.
@@ -302684,17 +302684,17 @@ extension on _StringsZhHk {
       case 'network_proxy_p2p_mode_mixed':
         return 'Mixed';
       case 'media_source_rename':
-        return 'Rename';
+        return '重命名';
       case 'media_source_rename_label':
-        return 'Source name';
+        return '來源名稱';
       case 'book_rename':
-        return 'Rename';
+        return '重命名';
       case 'book_rename_label':
-        return 'Title';
+        return '標題';
       case 'dict_rename':
-        return 'Rename';
+        return '重命名';
       case 'dict_rename_label':
-        return 'Dictionary name';
+        return '詞典名稱';
       default:
         return null;
     }
