@@ -23,9 +23,11 @@ import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_hook_code_profile.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
+import 'package:fushi/src/mining/galgame_japanese_locale_text.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
+import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/pages/implementations/gal_capture_setup_dialog.dart';
 import 'package:fushi/src/pages/implementations/gal_attached_lookup_workbench.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
@@ -929,6 +931,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         japaneseLocaleMode: galJapaneseLocaleModeFromKey(
           known?.japaneseLocaleMode,
         ),
+        // BUG-2047：内容语言是转区 auto 判定的人工真值；库里没有 → null = 只靠自动证据。
+        contentLanguage: known?.language,
       );
       if (!mounted) return;
       // 与游戏库页共用同一条结果播报（BUG-1089）。旧实现在这里自己判 `boundWindow`
@@ -1267,7 +1271,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         _captureSetupDialogScheduled) {
       return;
     }
-    final attachedText = GalHookTextOverlayController.instance.attachedText;
+    final GalAttachedTextController attachedText =
+        GalHookTextOverlayController.instance.attachedText;
     final GalHookSessionState state = _session.state;
     final DateTime? sessionStartedAt = state.sessionStartedAt;
     if (!shouldPromptGalCaptureSetup(
@@ -1300,7 +1305,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       }
       _captureSetupShownForSession = sessionStartedAt;
       _captureSetupDialogOpen = true;
-      await showAppDialog<void>(
+      final GalCaptureSetupOutcome? outcome =
+          await showAppDialog<GalCaptureSetupOutcome>(
         context: context,
         builder: (BuildContext dialogContext) => GalCaptureSetupDialog(
           session: _session,
@@ -1314,6 +1320,15 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         ),
       );
       _captureSetupDialogOpen = false;
+      // 「本会话已提示过」这个标记的唯一用途，是让**用户主动关掉**弹窗后不再被每来
+      // 一行台词就弹一次（选中线程有自己的判据 selectedTextThreadKey == null，不靠
+      // 它）。给点击风险确认让位不是用户的意思：标记落在 showAppDialog 之前，让位
+      // 又把弹窗关掉，于是确认完风险之后本会话再也拿不到捕获设置——右栏独有的采集源
+      // 判读 / 语音轨试听 / BGM 排除全都没了，而且全仓只有这一个构造点，没有手动重开
+      // 入口。所以只回滚这一条出口，用户自己关掉的照旧不再提示。
+      if (outcome == GalCaptureSetupOutcome.yieldedToRiskConsent) {
+        _captureSetupShownForSession = null;
+      }
     });
   }
 
@@ -2297,11 +2312,35 @@ class _SessionOverviewCard extends StatelessWidget {
     final String audio = galHookAudioBackendLabel(state.audioBackend);
     final String phase = galHookSessionPhaseLabel(state.phase);
     // 转区标记**窄屏也留着**：它和降级原因同属「不显示就没有第二处能看到」的事实。
-    // `auto` 档在设置页只显示「自动」，真正转没转是启动时按系统 ACP + 目标位数现算的，
-    // 判错时用户看到的只有游戏文字乱码，没有任何线索指向 Hibiki 改了区域。
+    // `auto` 档在设置页只显示「自动」，真正转没转是启动时按证据判定 + 系统 ACP + 目标
+    // 位数现算的，判错时用户看到的只有游戏文字乱码，没有任何线索指向 Hibiki 改了区域。
+    // BUG-2047：`auto` 判为「不需要 / 证据不足」而未转区时同样要亮短标记——证据空白的
+    // 日文原版会先乱码，用户得知道是「没转」而不是「转坏了」，才会去改「始终开启」。
+    final GalJapaneseLocaleVerdict? verdict = state.japaneseLocaleVerdict;
+    final GalJapaneseLocaleSkipReason? skipReason =
+        state.japaneseLocaleSkipReason;
+    // 原因分两类说话：语义门（证据不足 / 判为不需要）提示改「始终开启」；工程门
+    // （64 位 / 系统本就日文区）改档位也没用，得直说，否则用户会白改一轮。
+    final String? localeSkippedHint = state.japaneseLocaleApplied ||
+            verdict == null ||
+            skipReason == null
+        ? null
+        : switch (skipReason) {
+            GalJapaneseLocaleSkipReason.notNeeded ||
+            GalJapaneseLocaleSkipReason.unknown =>
+              t.game_session_japanese_locale_skipped_hint(
+                evidence: galJapaneseLocaleEvidenceListLabel(verdict.evidence),
+              ),
+            GalJapaneseLocaleSkipReason.systemAlreadyJapanese =>
+              t.game_session_japanese_locale_skipped_hint_system_japanese,
+            GalJapaneseLocaleSkipReason.targetNot32Bit =>
+              t.game_session_japanese_locale_skipped_hint_not_32bit,
+          };
     final String localeSuffix = state.japaneseLocaleApplied
         ? ' · ${t.game_session_japanese_locale}'
-        : '';
+        : localeSkippedHint != null
+            ? ' · ${t.game_session_japanese_locale_skipped}'
+            : '';
     final String? format = state.audioFormat == null
         ? null
         : '${state.audioFormat!.sampleRate} Hz · '
@@ -2355,7 +2394,27 @@ class _SessionOverviewCard extends StatelessWidget {
                 // 一行。compact 下省掉：窄屏留短标记即可，长句会把整张卡挤爆。
                 if (state.japaneseLocaleApplied && !compact)
                   Text(
-                    t.game_session_japanese_locale_hint,
+                    // `auto` 判定转区时把判据列在处置后面：用户看到「版本资源为日语」
+                    // 才知道 Hibiki 凭什么转、判错了该怀疑哪条。`on` 档没有判定，只有处置。
+                    verdict == null || verdict.evidence.isEmpty
+                        ? t.game_session_japanese_locale_hint
+                        : '${t.game_session_japanese_locale_hint}\n'
+                            '${t.game_session_japanese_locale_evidence(
+                            evidence: galJapaneseLocaleEvidenceListLabel(
+                              verdict.evidence,
+                            ),
+                          )}',
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                  ),
+                // BUG-2047：`auto` 未转区的处置——说清是「判为不需要（列判据）」还是
+                // 「证据不足」，并指向另一头的兜底档「始终开启」。
+                if (localeSkippedHint != null && !compact)
+                  Text(
+                    localeSkippedHint,
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(

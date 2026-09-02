@@ -41,6 +41,7 @@ void main() {
           String launchWorkdir = '',
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
         }) =>
             engine,
         textPollInterval: const Duration(milliseconds: 5),

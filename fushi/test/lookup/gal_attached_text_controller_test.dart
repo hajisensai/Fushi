@@ -1152,7 +1152,59 @@ void main() {
     expect(controller.status, GalAttachedTextStatus.suspended);
     expect(controller.surfaceVisible, isFalse);
     expect(port.calls, <String>['inspect']);
+    expect(
+      controller.needsUnsafeRiskAcceptance,
+      isFalse,
+      reason:
+          'suspended 是注入 registry 起来前的常态：没铸过风险 token 就不能报「需要'
+          '确认」。这一位恒真会让 shouldPromptGalCaptureSetup 的 '
+          'lookupRiskAcceptancePending 常驻，每局一开局捕获设置弹窗就被压制。',
+    );
+    expect(controller.unsafeRiskAcceptanceRequest, isNull);
   });
+
+  test(
+    'pending neutral without a minted token never claims risk acceptance',
+    () async {
+      // needsUnsafeRiskAcceptance 的收口点是 `_unsafeRiskAcceptanceRequestToken
+      // != null`。这个用例把**其余每一个合取项都摆成真**，只留 token 为空：
+      //   status  = suspended（nativeProviderPendingNeutral，注入 registry 起来
+      //             前的常态，_setStatus 对 suspended 刻意不清 token）
+      //   target / exePath / exeSha256 = 已 attach，全非空
+      //   profile = auto（≠off）且 unsafeLeftClickAccepted = false
+      //   shield  = statusFlags 0x02 → partial（≠verified、≠faulted）
+      // 所以这条断言只会被 token 判据救下来。它退化 = 这一位在每局开局恒真 →
+      // shouldPromptGalCaptureSetup 的 lookupRiskAcceptancePending 常驻 →
+      // 捕获设置弹窗每局都被压制。
+      preferences[key()] = jsonEncode(
+        _profile(mode: GalLookupSurfaceMode.nativeOnly, accepted: false)
+            .toJson(),
+      );
+      port.configureResult = const GalAttachedCallResult(
+        status: 'nativeProviderPendingNeutral',
+        shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+      );
+
+      await sync();
+
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      expect(controller.target, isNotNull);
+      expect(
+        controller.shieldStatus.conclusion,
+        isNot(GalAttachedShieldConclusion.verified),
+      );
+      expect(
+        controller.shieldStatus.conclusion,
+        isNot(GalAttachedShieldConclusion.faulted),
+      );
+      expect(
+        controller.needsUnsafeRiskAcceptance,
+        isFalse,
+        reason: 'pendingNeutral 只是等注入侧就绪，不是「需要用户确认点击风险」',
+      );
+      expect(controller.unsafeRiskAcceptanceRequest, isNull);
+    },
+  );
 
   test(
     'auto configure native win and pending neutral never push text',
@@ -1185,6 +1237,18 @@ void main() {
       expect(controller.surfaceVisible, isFalse);
       expect(port.calls, <String>['inspect', 'configure:auto:true']);
       expect(port.texts, isEmpty);
+      // 这是 attach 成功之后落到 suspended：target/exePath/sha256 都在、profile
+      // 未接受、shield 未定论——needsUnsafeRiskAcceptance 的每一个合取项都成立，
+      // 唯独没铸过风险 token。这就是 token 判据唯一的收口点。它一旦退化，
+      // 「注入 registry 起来前的常态」会让这一位恒真，shouldPromptGalCaptureSetup
+      // 的 lookupRiskAcceptancePending 常驻，每局一开局捕获设置弹窗就被压制。
+      expect(controller.target, isNotNull);
+      expect(
+        controller.needsUnsafeRiskAcceptance,
+        isFalse,
+        reason: 'pendingNeutral 只是等注入侧就绪，不是「需要用户确认点击风险」',
+      );
+      expect(controller.unsafeRiskAcceptanceRequest, isNull);
     },
   );
 
@@ -1600,6 +1664,11 @@ void main() {
     expect(controller.status, GalAttachedTextStatus.suspended);
     expect(controller.statusReason, 'capture_fail_closed_detach_unconfirmed');
     expect(controller.surfaceVisible, isFalse);
+    expect(
+      controller.needsUnsafeRiskAcceptance,
+      isFalse,
+      reason: 'fail-closed 的 suspended 同样没有铸过风险 token',
+    );
     expect(
       await controller.acquireMiningCaptureLease(),
       isNull,

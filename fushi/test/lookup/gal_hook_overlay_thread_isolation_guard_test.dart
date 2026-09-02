@@ -97,6 +97,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           _IsolationTestEngine(),
       endpointStatusLoader: () => const [],

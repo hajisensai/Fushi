@@ -624,8 +624,10 @@ struct HunexVoiceArchive {
   uint32_t range_count = 0;
 };
 
+// 无锁句柄表（tracked_handle_table.h）：Forget 走 CloseHandle detour，不得进 g_cs（BUG-2046）。
 struct HunexVoiceHandle {
   HANDLE handle = INVALID_HANDLE_VALUE;
+  volatile LONG seq = 0;
   uint32_t archive_index = 0;
 };
 
@@ -875,7 +877,7 @@ int FindHunexVoiceArchive(const HunexVoiceFileIdentity& identity) {
 void RememberHunexVoiceHfa(HANDLE handle, const wchar_t* path) {
   if (InterlockedCompareExchange(&g_hunex_voice_enabled, 0, 0) == 0 ||
       handle == INVALID_HANDLE_VALUE ||
-      !fushi_voice_hook::IsHunexGgeVoiceArchivePath(path) || !g_cs_ready) {
+      !fushi_voice_hook::IsHunexGgeVoiceArchivePath(path)) {
     return;
   }
   HunexVoiceFileIdentity identity;
@@ -883,50 +885,26 @@ void RememberHunexVoiceHfa(HANDLE handle, const wchar_t* path) {
   const int archive_index = FindHunexVoiceArchive(identity);
   if (archive_index < 0) return;
 
-  EnterCriticalSection(&g_cs);
-  for (int index = 0; index < kHunexVoiceHandleSlots; ++index) {
-    if (g_hunex_voice_handles[index].handle == INVALID_HANDLE_VALUE ||
-        g_hunex_voice_handles[index].handle == handle) {
-      g_hunex_voice_handles[index].handle = handle;
-      g_hunex_voice_handles[index].archive_index =
-          static_cast<uint32_t>(archive_index);
-      SetXAudioDiagnostic(
-          fushi_voice_hook::kXAudioDiagHunexHfaHandleTracked);
-      break;
-    }
+  if (fushi_voice_hook::RememberTrackedHandle(
+          g_hunex_voice_handles, handle,
+          [archive_index](HunexVoiceHandle& slot) {
+            slot.archive_index = static_cast<uint32_t>(archive_index);
+          })) {
+    SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagHunexHfaHandleTracked);
   }
-  LeaveCriticalSection(&g_cs);
 }
 
 bool CopyHunexVoiceArchiveIndex(HANDLE handle, uint32_t* archive_index) {
-  if (handle == INVALID_HANDLE_VALUE || archive_index == nullptr ||
-      !g_cs_ready) {
-    return false;
-  }
-  bool found = false;
-  EnterCriticalSection(&g_cs);
-  for (int index = 0; index < kHunexVoiceHandleSlots; ++index) {
-    if (g_hunex_voice_handles[index].handle == handle) {
-      *archive_index = g_hunex_voice_handles[index].archive_index;
-      found = true;
-      break;
-    }
-  }
-  LeaveCriticalSection(&g_cs);
-  return found;
+  if (archive_index == nullptr) return false;
+  return fushi_voice_hook::ReadTrackedHandle(
+      g_hunex_voice_handles, handle,
+      [archive_index](const HunexVoiceHandle& slot) {
+        *archive_index = slot.archive_index;
+      });
 }
 
 void ForgetHunexVoiceHfa(HANDLE handle) {
-  if (handle == INVALID_HANDLE_VALUE || !g_cs_ready) return;
-  EnterCriticalSection(&g_cs);
-  for (int index = 0; index < kHunexVoiceHandleSlots; ++index) {
-    if (g_hunex_voice_handles[index].handle == handle) {
-      g_hunex_voice_handles[index] = {};
-      g_hunex_voice_handles[index].handle = INVALID_HANDLE_VALUE;
-      break;
-    }
-  }
-  LeaveCriticalSection(&g_cs);
+  fushi_voice_hook::ForgetTrackedHandle(g_hunex_voice_handles, handle);
 }
 
 bool QueueHunexVoice(uint32_t archive_index, uint64_t offset,
@@ -1142,14 +1120,7 @@ bool TryHookHunexGgeResourceAudio() {
 void StopHunexGgeResourceAudio() {
   InterlockedExchange(&g_hunex_voice_enabled, 0);
   InterlockedIncrement(&g_hunex_voice_generation);
-  if (g_cs_ready) {
-    EnterCriticalSection(&g_cs);
-    for (int index = 0; index < kHunexVoiceHandleSlots; ++index) {
-      g_hunex_voice_handles[index] = {};
-      g_hunex_voice_handles[index].handle = INVALID_HANDLE_VALUE;
-    }
-    LeaveCriticalSection(&g_cs);
-  }
+  fushi_voice_hook::ClearTrackedHandles(g_hunex_voice_handles);
   InterlockedExchange(&g_hunex_voice_archive_count, 0);
   HunexVoiceRange* ranges = g_hunex_voice_archive.ranges;
   g_hunex_voice_archive = {};
