@@ -91,6 +91,10 @@ void main() {
         expect(props, isNotEmpty, reason: '展开态必须有朝向声明，否则三角不会变成指下');
         expect(props, contains('transform'),
             reason: '展开态朝向必须靠 transform 旋转（transform 不参与布局）');
+        expect(ruleBody(css, '.glossary-group[open] > summary::before'),
+            contains('transform: rotate(90deg)'),
+            reason: '展开态必须是绕盒心旋转 90° 的下向三角；'
+                '只声明 transform 属性名不够——transform: none / rotate(0deg) 会让两态图标同形');
         // 白名单而非黑名单：任何新属性都得先想清楚它会不会改盒子。border-* 会（边框
         // 三角的盒尺寸=两组对边之和），width/height/margin/padding/display/font-size
         // 也会——它们一旦出现，词典名就会随展开状态横向跳动（BUG-2049 原始症状）。
