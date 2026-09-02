@@ -653,10 +653,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// 非逐字行不在表内，[_rowCue] 回落原 cue（既有行为逐像素不变）。
   Map<int, AudioCue> _cachedMergedByRep = const <int, AudioCue>{};
 
-  /// 行高保底下界（TODO-340 的历史视觉密度）：内容比它矮的行仍占这么高，内容更高的行
-  /// 按 [_measureRowExtent] 的真实测量值走。
-  double get _minRowExtent => 56 * _fontScaleSteps;
-
   /// 行高测量缓存（BUG-1034），key = `加粗位 + 文本`。宽度 / 字号 / textScaler 变化时整体
   /// 作废，见 [_rowExtentForCue]。
   final Map<String, double> _rowExtentCache = <String, double>{};
@@ -759,9 +755,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     if (content < timestampHeight) content = timestampHeight;
     final double actionHeight = _effectiveFontSize + 6;
     if (content < actionHeight) content = actionHeight;
-    final double extent = kSubtitleRowPaddingVertical + content;
-    // 保底最小行高（历史视觉密度，TODO-340）：只抬高内容矮于它的行，绝不压低内容。
-    return extent < _minRowExtent ? _minRowExtent : extent;
+    // BUG-2057：行高**只由内容决定**，不再另设保底下界。行内可点内容（时间戳单行、
+    // 3 个动作图标）已经进了上面的取最大值，保底那一档纯粹是 asbplayer 版列表
+    // `static const double _itemExtent = 56` 的遗留：改自适应行高时把它留成了
+    // `56 * 字号档` 的下界，于是默认字号下 1 行（16+17.5=33.5）和 2 行（16+35=51）
+    // 双双被抬到 56——两种行一样高，单行行里 65% 是空白。英文译文最常只占 1 行，
+    // 用户看到的就是「英语的上下间距特别高」。
+    return kSubtitleRowPaddingVertical + content;
   }
 
   double _measureTextHeight({
