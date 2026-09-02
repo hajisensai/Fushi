@@ -3865,6 +3865,13 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
     }
     
     details.appendChild(dictWrapper);
+
+    // MDX 词典的条目 HTML 自带 <script>（NLT 的頻度条形图、OALDPEX 的配置界面和
+    // 中文翻译开关）。经 innerHTML 插入的 script 按规范不会执行，这里补上——作用域
+    // 根就是 dictWrapper，所以脚本的 document 查询看不到别的词典。取源码要过桥，
+    // 是异步的；渲染不等它，脚本就绪后自行改写自己的子树。
+    runDictScripts(dictWrapper, dictName);
+
     return details;
 }
 

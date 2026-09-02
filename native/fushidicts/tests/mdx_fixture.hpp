@@ -51,6 +51,98 @@ inline std::vector<uint8_t> make_zlib_block(const std::vector<uint8_t>& payload)
 // (Encrypted=0) from ordered (key, record) pairs. When `null_terminate` is true
 // (MDX text records) each record is NUL-terminated; when false (MDD binary
 // files) records are concatenated byte-exact. `title` becomes the <Title>.
+// How the container describes itself, and how its keys are encoded. Real .mdd
+// files written by MDTT and friends use the `<Library_Data …>` root with an
+// EMPTY Encoding attribute and UTF-16LE keys; .mdx uses `<Dictionary …>` and
+// honours Encoding. build_mdx_plain/build_mdd_plain keep the original
+// UTF-8/`<Dictionary>` shape; build_mdd_utf16 produces the real .mdd shape.
+struct ContainerShape {
+  const char* root_element = "Dictionary";
+  const char* encoding_attr = "UTF-8";
+  bool utf16_keys = false;
+};
+
+// ASCII-only headwords widen to UTF-16LE by interleaving zero bytes, which is
+// all the fixtures need (paths like "\\scripts\\x.js").
+inline void append_key_bytes(std::vector<uint8_t>& out, const std::string& key, bool utf16) {
+  for (char c : key) {
+    out.push_back(static_cast<uint8_t>(c));
+    if (utf16) out.push_back(0);
+  }
+}
+
+inline void append_key_terminator(std::vector<uint8_t>& out, bool utf16) {
+  out.push_back(0);
+  if (utf16) out.push_back(0);
+}
+
+inline std::vector<uint8_t> build_container_shaped(
+    const std::string& title, const std::vector<std::pair<std::string, std::string>>& entries,
+    bool null_terminate, const ContainerShape& shape) {
+  std::vector<uint8_t> records;
+  std::vector<uint64_t> offsets;
+  for (const auto& [k, d] : entries) {
+    (void)k;
+    offsets.push_back(records.size());
+    records.insert(records.end(), d.begin(), d.end());
+    if (null_terminate) records.push_back(0);
+  }
+
+  std::vector<uint8_t> key_entries;
+  for (size_t i = 0; i < entries.size(); i++) {
+    put_be64(key_entries, offsets[i]);
+    append_key_bytes(key_entries, entries[i].first, shape.utf16_keys);
+    append_key_terminator(key_entries, shape.utf16_keys);
+  }
+  std::vector<uint8_t> key_block = make_zlib_block(key_entries);
+
+  // first/last headword lengths are CHARACTER counts (the reader multiplies by
+  // 2 for UTF-16), and the inline copies use the same width as the keys.
+  std::vector<uint8_t> kbi_plain;
+  put_be64(kbi_plain, entries.size());
+  const std::string& first = entries.front().first;
+  const std::string& last = entries.back().first;
+  put_be16(kbi_plain, uint16_t(first.size()));
+  append_key_bytes(kbi_plain, first, shape.utf16_keys);
+  append_key_terminator(kbi_plain, shape.utf16_keys);
+  put_be16(kbi_plain, uint16_t(last.size()));
+  append_key_bytes(kbi_plain, last, shape.utf16_keys);
+  append_key_terminator(kbi_plain, shape.utf16_keys);
+  put_be64(kbi_plain, key_block.size());
+  put_be64(kbi_plain, key_entries.size());
+  std::vector<uint8_t> kbi = make_zlib_block(kbi_plain);
+
+  std::vector<uint8_t> record_block = make_zlib_block(records);
+  std::vector<uint8_t> record_block_info;
+  put_be64(record_block_info, record_block.size());
+  put_be64(record_block_info, records.size());
+
+  std::vector<uint8_t> file;
+  std::string header = std::string("<") + shape.root_element +
+                       " GeneratedByEngineVersion=\"2.0\" Encrypted=\"0\" Encoding=\"" +
+                       shape.encoding_attr + "\" Title=\"" + title + "\"/>";
+  put_be32(file, uint32_t(header.size()));
+  file.insert(file.end(), header.begin(), header.end());
+  put_be32(file, 0);
+
+  put_be64(file, 1);
+  put_be64(file, entries.size());
+  put_be64(file, kbi_plain.size());
+  put_be64(file, kbi.size());
+  put_be64(file, key_block.size());
+  put_be32(file, 0);
+  file.insert(file.end(), kbi.begin(), kbi.end());
+  file.insert(file.end(), key_block.begin(), key_block.end());
+
+  put_be64(file, 1);
+  put_be64(file, entries.size());
+  put_be64(file, record_block_info.size());
+  put_be64(file, record_block.size());
+  file.insert(file.end(), record_block_info.begin(), record_block_info.end());
+  file.insert(file.end(), record_block.begin(), record_block.end());
+  return file;
+}
+
 inline std::vector<uint8_t> build_container(
     const std::string& title, const std::vector<std::pair<std::string, std::string>>& entries,
     bool null_terminate) {
@@ -129,6 +221,19 @@ inline std::vector<uint8_t> build_mdx_plain(
 inline std::vector<uint8_t> build_mdd_plain(
     const std::string& title, const std::vector<std::pair<std::string, std::string>>& entries) {
   return build_container(title, entries, /*null_terminate=*/false);
+}
+
+// MDD as real writers emit it: `<Library_Data …>` root, EMPTY Encoding
+// attribute, UTF-16LE keys. Defaulting that empty attribute to UTF-8 walks the
+// key scan through the wrong byte width and the parse dies with
+// "record block info overflow", dropping the whole media companion.
+inline std::vector<uint8_t> build_mdd_utf16_library_data(
+    const std::string& title, const std::vector<std::pair<std::string, std::string>>& entries) {
+  ContainerShape shape;
+  shape.root_element = "Library_Data";
+  shape.encoding_attr = "";
+  shape.utf16_keys = true;
+  return build_container_shaped(title, entries, /*null_terminate=*/false, shape);
 }
 
 }  // namespace mdx_fixture

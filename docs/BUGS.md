@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1917 条。点号进各自文件。
+> 共 1919 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2063](bugs/BUG-2063-dict-bundled-scripts-never-run.md) | ✅ | ✅ | 词典自带的 JS 从不执行 |
+| [BUG-2059](bugs/BUG-2059-mdd-empty-encoding-media-lost.md) | ✅ | ✅ | mdd 的 Encoding 为空时整个媒体库丢失 |
 | [BUG-2053](bugs/BUG-2053-yomitan-zip-wrapper-directory.md) | ✅ | ✅ | 带顶层文件夹的 Yomitan zip 导入失败 |
 | [BUG-2052](bugs/BUG-2052-mdx-linked-css-name-mismatch.md) | ✅ | ✅ | MDX 附属 CSS 与 mdx 不同名时样式完全不生效 |
 | [BUG-2049](bugs/BUG-2049-popup-disclosure-toggle-shifts-header.md) | ✅ | ✅ | 查词弹窗词典分组展开/收起时卡头位移且卡片凭空增高 |

@@ -126,9 +126,19 @@ add_fushi_test(simple_dict_css_test simple_dict_css_test.cpp
 # the fallback, and a ../ href must not escape the dictionary directory.
 add_fushi_test(mdx_linked_css_name_test mdx_linked_css_name_test.cpp
     "${FUSHI_ROOT}/fushidicts_external/libdeflate")
+# Scripts referenced by a bare <script src> sit next to the .mdx, not in the
+# .mdd; they must join the media store so assets have ONE fetch-by-name channel.
+add_fushi_test(mdx_sibling_script_media_test mdx_sibling_script_media_test.cpp
+    "${FUSHI_ROOT}/fushidicts_external/libdeflate")
 # Phase A: MDD (MDX media companion) parses byte-exact and auto-mounts into the
 # dict as media.bin/idx; get_media_file returns the bytes by normalized path.
 add_fushi_test(mdd_media_import_test mdd_media_import_test.cpp
+    "${FUSHI_SRC}/mdx"
+    "${FUSHI_ROOT}/fushidicts_external/libdeflate")
+# Real .mdd writers emit `<Library_Data … Encoding="">` with UTF-16LE keys;
+# defaulting that empty attribute to UTF-8 lost the entire media companion
+# (fonts/images/audio/scripts) while the import still reported success.
+add_fushi_test(mdd_empty_encoding_test mdd_empty_encoding_test.cpp
     "${FUSHI_SRC}/mdx"
     "${FUSHI_ROOT}/fushidicts_external/libdeflate")
 # import_breadcrumb_test includes "util/import_breadcrumb.hpp" rooted at
