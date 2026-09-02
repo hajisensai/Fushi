@@ -87,8 +87,11 @@ extension _VideoFullscreen on _VideoFushiPageState {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_didInitialFullscreen || !mounted) return;
       // 失败/缺失态 controls 永不建 → context 永为 null；超时兜底防逐帧死循环。
+      // BUG-2043：放弃重进全屏路由时必须把接管来的原生全屏还回去，否则窗口停在
+      // 无全屏路由的原生全屏态（标题栏隐着、ESC 退页后书架铺满整屏）。
       if (_failed || _missingResource || _initialFullscreenRetries > 30) {
         _didInitialFullscreen = true;
+        _releaseHandedOverNativeFullscreen();
         return;
       }
       final BuildContext? ctx = _videoControlsContext;
@@ -98,8 +101,32 @@ extension _VideoFullscreen on _VideoFushiPageState {
         return;
       }
       _didInitialFullscreen = true;
+      // 全屏路由压上后，原生全屏的退出由路由 pop 收口（media_kit PopScope →
+      // [_exitVideoNativeFullscreen]），接管所有权就此移交给路由。
+      _ownsHandedOverNativeFullscreen = false;
       if (!isFullscreen(ctx)) unawaited(_pushNeutralizedVideoFullscreen(ctx));
     });
+  }
+
+  /// BUG-2043：从全屏页换集而来的新页（[VideoFushiPage.initialFullscreen]）在 initState
+  /// 认领旧页留下的**原生**全屏：旧页不再退原生全屏就被摘掉，窗口此刻仍是原生全屏、
+  /// 但栈上没有全屏路由（要等本页就绪才压）。认领 = 记下「本页负责收尾」+ Windows 上
+  /// 立刻持有 app 标题栏 owner（旧页 dispose 会释放它自己的 owner；没有本页这份，
+  /// 标题栏会在全屏尺寸的窗口顶部闪出一条）。
+  void _claimHandedOverNativeFullscreen() {
+    if (!widget.initialFullscreen || isMobilePlatform) return;
+    _ownsHandedOverNativeFullscreen = true;
+    if (Platform.isWindows) {
+      FushiWindowsTitleBar.setContentFullscreen(owner: this, enabled: true);
+    }
+  }
+
+  /// BUG-2043：本页还持有接管来的原生全屏、却不会再压全屏路由（就绪失败 / 超时 /
+  /// 加载中被退出）时，亲自退原生全屏。幂等；所有权已移交路由或下一集时 no-op。
+  void _releaseHandedOverNativeFullscreen() {
+    if (!_ownsHandedOverNativeFullscreen) return;
+    _ownsHandedOverNativeFullscreen = false;
+    unawaited(_exitVideoNativeFullscreen());
   }
 
   Future<void> _pushNeutralizedVideoFullscreen(BuildContext context) async {

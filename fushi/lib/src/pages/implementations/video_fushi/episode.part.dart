@@ -121,19 +121,26 @@ extension _VideoEpisode on _VideoFushiPageState {
     final String? targetUid = _episodes[index].bookUid;
     if (targetUid == null) return;
     // BUG-839：全屏播放时 app 全屏路由压在剧集页之上（fullscreen.part.dart 推到 root
-    // navigator）。若不先退，下面的 pushReplacement 会替换掉栈顶的**全屏路由**、把本集页
-    // 漏在栈里 → 每连播一集就残留一层、ESC 需逐层退。故换集前先经既有汇聚点退全屏路由，
-    // 让剧集页回到栈顶，pushReplacement 才正确替换本集页（栈恒平、ESC 一次退出）；并记
-    // wasFullscreen，给新页 initialFullscreen 让其就绪后重进全屏，保持连播全屏沉浸。
-    final BuildContext? fsCtx = _videoControlsContext;
-    final bool wasFullscreen =
-        fsCtx != null && fsCtx.mounted && isFullscreen(fsCtx);
-    if (fsCtx != null && wasFullscreen) {
-      await _exitVideoFullscreen(fsCtx);
-      if (!context.mounted) return;
-    }
-    // 捕获 NavigatorState（在 await 前），避免跨 async gap 用 context。
+    // navigator）。裸 pushReplacement 会替换掉栈顶的**全屏路由**、把本集页漏在栈里 →
+    // 每连播一集残留一层、ESC 需逐层退。
+    //
+    // BUG-2043：BUG-839 的第一版修法是「先 pop 全屏路由再 pushReplacement、新页就绪再重进
+    // 全屏」。pop 会经 media_kit 的 PopScope 触发一次**原生退全屏**（Windows：runner 还原
+    // 窗口矩形 + app 标题栏闪现），新页就绪后再进一次——一次换集窗口尺寸来回抖两轮，
+    // Windows 同步 resize 与 media_kit 纹理拆建叠在一起偶发卡死 / 布局错位；字幕列表
+    // 也随旧页一起丢。现在改为**接管**：新页直接压在全屏路由之上（原生全屏全程不退），
+    // 以 initialFullscreen 承接原生全屏所有权、就绪后压自己的全屏路由；本页随即用
+    // removeRoute 静默摘掉旧全屏路由与本页——removeRoute 不经 pop，不触发 PopScope 的
+    // 原生退全屏，栈仍恒平（[home, 新集页] → 新集页就绪后 [home, 新集页, 新全屏路由]）。
+    // 新页若就绪失败 / 中途退出，由它自己释放原生全屏（[_releaseHandedOverNativeFullscreen]）。
+    final PageRoute<void>? oldFullscreenRoute = _videoFullscreenRoute;
+    final bool wasFullscreen = (oldFullscreenRoute?.isActive ?? false) ||
+        _ownsHandedOverNativeFullscreen;
+    // 捕获 NavigatorState / 本页路由（在 await 前），避免跨 async gap 用 context。
     final NavigatorState navigator = Navigator.of(context);
+    final NavigatorState rootNavigator =
+        Navigator.of(context, rootNavigator: true);
+    final Route<Object?>? currentRoute = ModalRoute.of(context);
     final int? curPos = _controller?.positionMs;
     if (curPos != null) {
       await _persistPosition(widget.bookUid, curPos);
@@ -145,17 +152,30 @@ extension _VideoEpisode on _VideoFushiPageState {
     // 不再依赖延迟 dispose。远端换集复用同一 player + open() 顶替，天然不双开，故只本地分支处理。
     await _controller?.pause();
     if (!context.mounted) return;
-    await navigator.pushReplacement<void, void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => VideoFushiPage.neutralized(
-          bookUid: targetUid,
-          repo: widget.repo,
-          playlistCollectionId: widget.playlistCollectionId,
-          initialFullscreen: wasFullscreen,
-        ),
+    final Route<void> nextRoute = adaptivePageRoute<void>(
+      context: context,
+      builder: (_) => VideoFushiPage.neutralized(
+        bookUid: targetUid,
+        repo: widget.repo,
+        playlistCollectionId: widget.playlistCollectionId,
+        // BUG-2043：字幕列表随集常驻——换集前开着就带到新页，不再随旧页一起丢。
+        initialSubtitleListVisible: _subtitleListVisible.value,
+        initialFullscreen: wasFullscreen,
       ),
     );
+    if (!wasFullscreen || currentRoute == null) {
+      await navigator.pushReplacement<void, void>(nextRoute);
+      return;
+    }
+    // 原生全屏所有权随 initialFullscreen 交给新页：本页不再在 dispose 里释放它，
+    // 挂着的一次性重进全屏回调也不得再压路由（本页马上被摘）。
+    _ownsHandedOverNativeFullscreen = false;
+    _didInitialFullscreen = true;
+    unawaited(navigator.push<void>(nextRoute));
+    if (oldFullscreenRoute != null && oldFullscreenRoute.isActive) {
+      rootNavigator.removeRoute<void>(oldFullscreenRoute);
+    }
+    navigator.removeRoute<Object?>(currentRoute);
   }
 
   /// 剧集列表入口（控制条剧集按钮）。保留 `_showEpisodeList` 作为控制条入口，
