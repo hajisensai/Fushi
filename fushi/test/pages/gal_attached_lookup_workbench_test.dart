@@ -201,7 +201,10 @@ void main() {
       sourceText: '別の本文です',
     );
     await tester.pumpAndSettle();
-    expect(controller.unsafeRiskAcceptanceRequest?.token, isNot(requestToken));
+    // `?.` 在 request 整个消失时给 null，而 null != requestToken 照样通过——
+    // 本意是「换 target 要换新 token」，光这一条连「request 没了」都判绿。
+    expect(controller.unsafeRiskAcceptanceRequest, isNotNull);
+    expect(controller.unsafeRiskAcceptanceRequest!.token, isNot(requestToken));
     expect(
       find.byKey(const ValueKey<String>('game-attached-lookup-risk-confirm')),
       findsOneWidget,
