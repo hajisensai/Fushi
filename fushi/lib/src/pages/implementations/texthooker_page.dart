@@ -37,6 +37,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:fushi/src/shortcuts/input_binding.dart' show InputBinding;
 import 'package:fushi/src/shortcuts/shortcut_action.dart' show ShortcutAction;
 import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/sync/texthooker_word_cache.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/media.dart';
@@ -425,7 +426,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 分词结果缓存：行文本按 id 不可变，缓存 textToWords 避免每次 rebuild 重复分词
   /// （每来一行整页 setState）。行对象随音频/制卡/收藏态 copyWith 换新但 id/text 不变，
   /// 按 id 缓存恒安全。上限略高于行 buffer 上限，越界淘汰最旧插入项。
-  final _TexthookerWordCache _wordCache = _TexthookerWordCache();
+  final TexthookerWordCache _wordCache = TexthookerWordCache(
+    tokenize: JapaneseLanguage.instance.textToWords,
+  );
 
   /// 缓存的 [AppModel] 引用（`appProvider` 为单例，实例不变）。在 [initState] 一次性
   /// 读取：浮层层在 `LayoutBuilder` 回调里访问 `mixinAppModel`，widget 失活后再
@@ -2943,7 +2946,7 @@ class _StatusPill extends StatelessWidget {
 }
 
 /// 一行文本：日语分词成可点 span（引擎未初始化时按字符降级，widget 测试不崩）。
-/// [words] 由页级 [_TexthookerWordCache] 按行 id 预分词后注入（本 widget 不再自行
+/// [words] 由页级 [TexthookerWordCache] 按行 id + 文本预分词后注入（本 widget 不再自行
 /// textToWords），避免每来一行整页 rebuild 时重复分词。
 class _TexthookerLine extends ConsumerWidget {
   const _TexthookerLine({
@@ -3399,25 +3402,5 @@ class _CharSpan extends StatelessWidget {
       },
       child: Text(grapheme, style: style),
     );
-  }
-}
-
-/// 行分词结果缓存：行文本按 id 不可变（copyWith 只改音频/制卡/收藏态，不动 id/text），
-/// 故按 id 缓存 [JapaneseLanguage.textToWords] 恒安全。每来一行整页 setState，无缓存时
-/// 每行每帧都重新分词——本缓存把它降为「每行只分一次」。默认 Map 保持插入序，越界时
-/// 淘汰最旧插入项（上限略高于行 buffer 上限 [TexthookerService.maxLines]，可见行不会被淘汰）。
-class _TexthookerWordCache {
-  static const int _maxEntries = 800;
-  final Map<String, List<String>> _cache = <String, List<String>>{};
-
-  List<String> wordsFor(String id, String text) {
-    final List<String>? cached = _cache[id];
-    if (cached != null) return cached;
-    final List<String> words = JapaneseLanguage.instance.textToWords(text);
-    _cache[id] = words;
-    if (_cache.length > _maxEntries) {
-      _cache.remove(_cache.keys.first);
-    }
-    return words;
   }
 }

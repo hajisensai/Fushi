@@ -3064,6 +3064,106 @@ void _bug950Guard() {
       endpoints.dispose();
     });
   });
+  test('engine exact text thread is selected automatically without memory',
+      () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    GalHookedLine exact(int seq, String text) => GalHookedLine(
+          seq: seq,
+          timestampMs: 1000 + seq,
+          text: text,
+          threadId: 77,
+          threadAddress: 0x35aa0,
+          sourceKind: 2,
+          eventKind: text.isEmpty
+              ? GalTextEventKind.threadDiscovered
+              : GalTextEventKind.line,
+          hookName: 'SGRE exact',
+          hookCode: 'ENGINE:SGRE:wind3d11',
+        );
+    GalHookedLine luna(int seq, String text) => GalHookedLine(
+          seq: seq,
+          timestampMs: 1000 + seq,
+          text: text,
+          threadId: 5,
+          threadAddress: 0xf94600,
+          sourceKind: 2,
+          eventKind: text.isEmpty
+              ? GalTextEventKind.threadDiscovered
+              : GalTextEventKind.line,
+          hookName: 'TextRender',
+          hookCode: 'HS932@f94600',
+        );
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      polledLines: <GalHookedLine>[
+        luna(1, ''),
+        exact(2, ''),
+        // Luna 启发式线程出行更多也不能被自动选中：只有引擎精确线程可以。
+        luna(3, 'メニュー'),
+        luna(4, 'セーブ'),
+        luna(5, 'ロード'),
+        luna(6, 'コンフィグ'),
+        exact(7, 'エル'),
+        exact(8, 'エル・プ'),
+        exact(9, 'エル・プサイ'),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'SGRE'),
+    );
+    // 不手选线程：session 应在引擎精确线程真出过行之后自己选中它。
+    for (int i = 0;
+        i < 100 && controller.selectedNativeTextThreadId != 77;
+        i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+
+    expect(controller.selectedNativeTextThreadId, 77);
+    final TexthookerTextThread chosen = service.textThreads.firstWhere(
+      (TexthookerTextThread thread) => thread.nativeThreadId == 77,
+    );
+    expect(isEngineExactTextThread(chosen), isTrue);
+    expect(controller.selectedTextThreadKey, chosen.key);
+    expect(
+      controller.events.map((GalHookEvent event) => event.code),
+      contains('text.thread_engine_exact_selected'),
+    );
+    expect(
+      controller.events.map((GalHookEvent event) => event.code),
+      isNot(contains('text.thread_memory_restored')),
+    );
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
 }
 
 class _FakeEngineSource extends EngineHookGalAudioSource {

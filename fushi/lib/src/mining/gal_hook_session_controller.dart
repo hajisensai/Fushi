@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi/src/mining/adts_duration.dart';
 import 'package:fushi/src/mining/gal_hook_activity_accumulator.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_char_count.dart';
@@ -2750,9 +2751,15 @@ class GalHookSessionController extends ChangeNotifier {
   /// 行数此消彼长导致选择反复跳动。
   void _maybeRestoreTextThread() {
     if (_textThreadMemoryApplied || _selectedTextThreadKey != null) return;
-    if (!_ensureCaptureMemoryLoaded()) return;
-    final String? wanted = _captureMemory.textThreadFingerprint;
-    if (wanted == null) return;
+    // 记忆未接入 / 本局拿不到游戏 key / 记忆里没有线程指纹，三种情况都落到
+    // 引擎精确线程的自动选择；只有真有记忆时才按指纹恢复（用户显式选择优先）。
+    final String? wanted = _ensureCaptureMemoryLoaded()
+        ? _captureMemory.textThreadFingerprint
+        : null;
+    if (wanted == null) {
+      _maybeAutoSelectEngineExactThread();
+      return;
+    }
     TexthookerTextThread? best;
     for (final TexthookerTextThread thread in _textService.textThreads) {
       if (textThreadFingerprint(thread) != wanted) continue;
@@ -2777,6 +2784,44 @@ class GalHookSessionController extends ChangeNotifier {
           'text',
           'text.thread_memory_restored',
           'Restored the text thread remembered for this game',
+          details: <String, Object?>{'threadKey': best!.key},
+        );
+      }),
+    );
+  }
+
+  /// 没有跨会话记忆时，自动选定**引擎精确文本线程**（SGRE / Siglus 等适配器自己
+  /// 从渲染边界取到的整句，hook code 以 `ENGINE:` 开头，见
+  /// [isEngineExactTextThread]）。
+  ///
+  /// v12 取消的是 Luna 线程的自动选择：那些线程是启发式抓的，选错会把系统 UI
+  /// 灌进工作台，所以交给用户。引擎精确线程不同——它由引擎适配器在已证明的
+  /// 绘制边界上产出、一游戏只有一条、内容就是屏幕上那句，让用户第一次启动还要
+  /// 在十几条 MultiByteToWideChar 噪声线程里手挑它，只是把确定的事推给人。
+  /// 判据与记忆恢复同款：必须真出过 [_textThreadRestoreMinLines] 行，避免只登记
+  /// 未出行的线程被选中后一行不来。选中后本会话不再自动改。
+  void _maybeAutoSelectEngineExactThread() {
+    TexthookerTextThread? best;
+    for (final TexthookerTextThread thread in _textService.textThreads) {
+      if (!isEngineExactTextThread(thread)) continue;
+      if (thread.nativeThreadId == null || thread.nativeThreadId == 0) continue;
+      if (thread.observedLineCount < _textThreadRestoreMinLines) continue;
+      if (best == null || thread.observedLineCount > best.observedLineCount) {
+        best = thread;
+      }
+    }
+    if (best == null) return;
+    _textThreadMemoryApplied = true;
+    unawaited(
+      selectTextThread(best.nativeThreadId, threadKey: best.key).then((
+        bool selected,
+      ) {
+        if (!selected) return;
+        _record(
+          GalHookEventSeverity.info,
+          'text',
+          'text.thread_engine_exact_selected',
+          'Selected the engine exact text thread automatically',
           details: <String, Object?>{'threadKey': best!.key},
         );
       }),
@@ -2881,6 +2926,10 @@ class GalHookSessionController extends ChangeNotifier {
           // 资源来源可能是 Siglus OVK OGG，也可能是 Unity Addressables WAV；
           // 统一用不泄漏容器格式的名称，避免把 Unity 资源误报成 OGG。
           backend: 'game_resource',
+          // PCM 路径在 [_encodeLineSlice] 里按采样数写时长；资源路径拿到的已是
+          // 转码后的 ADTS 字节，从帧头读回来。制卡动图要按整句时长抓帧，缺这个
+          // 数它只能退回默认 1.25 s。iOS 的 m4a 容器读不出 → null，按未知处理。
+          durationMs: adtsDurationMs(paired),
         );
         _record(
           GalHookEventSeverity.success,

@@ -170,6 +170,12 @@ const String kGalCleanSourceSuppressedReason = 'clean_source_suppressed';
 /// 先按线程取行，再按本枚举过滤。
 enum TexthookerLineFilter { all, withAudio, mined, favorited }
 
+/// 引擎适配器自产的**精确文本线程**（SGRE `ENGINE:SGRE:wind3d11`、Siglus
+/// TextRender 等）：hook code 以 `ENGINE:` 为前缀，与 Luna 启发式 hook 的
+/// `HQFN-24@...` 一类码区分。native 侧命名契约见各 adapter 的 `k*TextHookCode`。
+bool isEngineExactTextThread(TexthookerTextThread thread) =>
+    (thread.hookCode ?? '').startsWith('ENGINE:');
+
 /// 一条可由用户选择的文本 Hook 线程。
 ///
 /// [key] 在一次捕获会话内稳定；LunaHook 使用 ThreadParam + hookcode 的哈希，

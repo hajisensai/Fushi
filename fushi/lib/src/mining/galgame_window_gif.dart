@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -57,6 +58,30 @@ class GalHookCaptureSuppressionException implements Exception {
 /// [hwnd] 目标窗口句柄；[frames] 尝试抓的帧数；[intervalMs] 帧间隔（WGC 捕获本身有延迟，
 /// 帧率尽力而为）；[fps] 输出帧率；[maxWidth] 输出最大宽度（高度按比例）。
 /// 抓到 <2 帧时返回 null（单帧不成动图，交回退）。
+/// 制卡动图最长覆盖的整句时长。galgame 一句语音通常 1～6 s；再长的是长独白，
+/// 动图撑到 8 s 还没播完就截断，卡片体积（AVIF 约 3 KB/帧）和抓帧时间都不该无界。
+const Duration kGalAnimatedMaxDuration = Duration(seconds: 8);
+
+/// 动图该抓多少帧：以 [fps] 回放时至少覆盖整句语音 [target]，不少于 [baseFrames]
+/// （无时长信息时的旧行为 = 10 帧 / 1.25 s），不多于 [kGalAnimatedMaxDuration]。
+///
+/// [pending] = 整句时长还没算出来（引擎 PCM 要等语音播完才知道长度）：此时不能
+/// 停——语音还在播，画面正是这句的画面，继续采样直到时长到达或撞上限。
+/// 时长到达但为 null（iOS m4a / 非 ADTS）→ 回退基线帧数。
+int galAnimatedFrameBudget({
+  required int baseFrames,
+  required int fps,
+  required Duration? target,
+  required bool pending,
+}) {
+  final int maxFrames = (kGalAnimatedMaxDuration.inMilliseconds * fps) ~/ 1000;
+  if (pending) return maxFrames;
+  if (target == null || target <= Duration.zero) return baseFrames;
+  final int wanted = (target.inMilliseconds * fps + 999) ~/ 1000;
+  if (wanted <= baseFrames) return baseFrames;
+  return wanted > maxFrames ? maxFrames : wanted;
+}
+
 Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
   required int hwnd,
   int frames = 10,
@@ -67,6 +92,10 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
   // 与测试不受影响）；真实调用点传用户偏好 `gal_mining_animated_format`。
   MiningAnimatedFormat format = MiningAnimatedFormat.gif,
   GalHookCaptureLeaseFactory? captureLeaseFactory,
+  // 本句语音时长（异步：制卡时音频与画面并行采集，资源音频立刻可知、引擎 PCM 要
+  // 等整句播完）。给了就把动图抓到覆盖整句为止（上限 [kGalAnimatedMaxDuration]）；
+  // null / 解析出 null 都退回 [frames] 帧的旧行为。见 [galAnimatedFrameBudget]。
+  Future<Duration?>? targetDuration,
 }) async {
   // 只在桌面有 CLI ffmpeg 时可用；移动端无 CLI ffmpeg，直接回退单帧（且外部窗口捕获
   // 本就只有 Windows）。不做平台早退硬编码——ffmpeg 后端跑不起来时下面自然 fail-open。
@@ -77,11 +106,34 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
     int captured = 0;
     final GalHookCaptureLease? captureLease =
         captureLeaseFactory == null ? null : await captureLeaseFactory();
+    // 整句时长的到达状态：未到达期间维持采样（语音还在播，画面正是这句的画面），
+    // 到达后按 [galAnimatedFrameBudget] 收口；永不到达则由上限兜底。
+    bool targetResolved = targetDuration == null;
+    Duration? resolvedTarget;
+    if (targetDuration != null) {
+      unawaited(
+        targetDuration.then((Duration? value) {
+          resolvedTarget = value;
+          targetResolved = true;
+        }, onError: (Object _) {
+          targetResolved = true;
+        }),
+      );
+    }
     try {
       // BUG-1096：native 的成功路径诊断（光标抑制是否真的生效 / 捕获目标是否被从
       // Magpie 缩放窗重定向）。每轮只记一次，逐帧刷会把日志淹掉。
       String? loggedDiagnostics;
-      for (int i = 0; i < frames; i++) {
+      for (int i = 0;; i++) {
+        if (i >= frames) {
+          final int budget = galAnimatedFrameBudget(
+            baseFrames: frames,
+            fps: fps,
+            target: targetResolved ? resolvedTarget : null,
+            pending: !targetResolved,
+          );
+          if (i >= budget) break;
+        }
         if (i > 0 && intervalMs > 0) {
           await Future<void>.delayed(Duration(milliseconds: intervalMs));
         }

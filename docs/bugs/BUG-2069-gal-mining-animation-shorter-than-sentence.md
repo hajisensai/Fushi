@@ -1,0 +1,6 @@
+## BUG-2069 · galgame 制卡动图固定 1.25 秒不覆盖整句语音
+- **报告**：2026-09-03（用户要求「制卡要有视频、完整句子音频」；SGRE 真机 E2E 制出的卡：SentenceAudio 3.19 s AAC 是整句，Picture 却是 10 帧 / 8 fps = 1.25 s 的 AVIF 动图，比语音短一大截）
+- **真实性**：✅ 真 bug（与需求不符）。`fushi/lib/src/mining/galgame_window_gif.dart` `captureWindowGifBytes` 的帧数是常量 `frames = 10`，与本句时长无关；`fushi/lib/src/mining/gal_hook_mining_coordinator.dart:300` 音频与动图并行采集，但两者之间没有任何数据流，动图不知道语音多长。资源音频路径（`gal_hook_session_controller.dart` `game_resource` 分支）也从不写 `durationMs`，条目上没有时长可用（PCM 路径在 `_encodeLineSlice` 里写了）。Lapis 模板的 `Picture` 字段是 `<img>`，卡片里的「视频」就是这张动图（`{video-clip}` 只是 `{card-image}` 的旧别名），所以动图时长 = 卡片视频时长。
+- **[x] ① 已修复** — ① `galgame_window_gif.dart`：新增 `targetDuration: Future<Duration?>`，采样循环至少抓基线 10 帧，之后按 `galAnimatedFrameBudget`（回放 fps 下覆盖整句、上限 `kGalAnimatedMaxDuration` 8 s）收口；时长尚未到达（引擎 PCM 要等语音播完）期间继续采样——语音在播的正是这句的画面。② `gal_hook_session_controller.dart` 资源音频路径用 `adts_duration.dart`（纯 Dart 读 ADTS 帧头）把 `durationMs` 写到行条目。③ `gal_hook_mining_coordinator.dart` 生产路径把「音频字节回来后从条目读 `audioDurationMs`」作为异步目标喂给采样循环；注入捕获器的测试路径不变（本提交）。
+- **[x] ② 已加自动化测试** — `fushi/test/mining/gal_animated_frame_budget_test.dart`（3.19 s → 26 帧、未知时长维持基线、未到达期间维持采样、8 s 上限）、`fushi/test/mining/adts_duration_test.dart`（帧头求和、截断尾帧不计、非 ADTS/保留采样率返回 null）（本提交）。
+- **备注**：动图在制卡时刻开始抓，不是回放式的「这句期间」录像；用户在语音播完很久后再制卡，画面就是当时的静止画面。要做到真正按台词时间窗回放，需要会话期间常驻环形抓帧（WGC 连续采样 + 卡片可见期间剔帧），本轮未做。真机复验待新构建。

@@ -1,0 +1,6 @@
+## BUG-2068 · 引擎精确文本线程首次启动需手动选择
+- **报告**：2026-09-03（SGRE 真机 E2E：首次由 Fushi 启动游戏，探针已 `luna_known_hook_ready`、正文在写，工作台却停在「等待选择台词线程」，要在十几条 MultiByteToWideChar 噪声线程里手挑「SGRE exact · 0x35aa0」；第二次启动才由跨会话记忆自动恢复）
+- **真实性**：✅ 真 bug（通用性缺口）。`fushi/lib/src/mining/gal_hook_session_controller.dart:2751` `_maybeRestoreTextThread` 只在跨会话记忆里有线程指纹时才自动选；没有记忆（首次启动）时直接 return，且 `_ensureCaptureMemoryLoaded()` 返回 false（记忆未接入 / 拿不到游戏 key）时连指纹都不看。v12 取消自动选线程针对的是 Luna 启发式线程（选错会把系统 UI 灌进工作台），但引擎适配器自产的精确线程（hook code `ENGINE:SGRE:wind3d11`、`ENGINE:Siglus…`，见各 adapter 的 `k*TextHookCode`）由已证明的绘制边界产出、一游戏一条，无歧义，仍要求用户手选只是把确定的事推给人。
+- **[x] ① 已修复** — `gal_hook_session_controller.dart` 新增 `_maybeAutoSelectEngineExactThread`：无记忆指纹（含记忆未接入）时，在 `hookCode` 以 `ENGINE:` 开头（`texthooker_service.dart` `isEngineExactTextThread`）、有 native thread id、且已观测 ≥3 行的线程里选观测行最多的一条，复用记忆恢复的一次性闸门，选中记事件 `text.thread_engine_exact_selected`；用户显式选择与记忆指纹仍优先（本提交）。
+- **[x] ② 已加自动化测试** — `fushi/test/mining/gal_hook_session_controller_test.dart`「engine exact text thread is selected automatically without memory」：Luna 线程出 4 行、引擎精确线程出 3 行，不手选时必须选中精确线程且不触发记忆恢复事件（本提交）。
+- **备注**：这条改的是消费端线程选择，不动 native；SGRE 之外凡 adapter 用 `ENGINE:` 前缀发布精确线程的引擎（Siglus TextRender 等）同样受益。
