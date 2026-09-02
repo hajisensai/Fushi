@@ -5,12 +5,22 @@ index a61155b..027527d 100644
 @@ -1,7 +1,7 @@
  [versions]
  kotlin = "2.2.21"
- coroutines = "1.10.2"
+-coroutines = "1.10.2"
 -serialization = "1.9.0"
++coroutines = "1.11.0"
 +serialization = "1.11.0"
  okhttp = "5.3.2" # Major version is locked by Tachiyomi extensions
  jackson = "2.18.3" # jackson version locked by javalin, ref: `io.javalin.core.util.OptionalDependency`
  dex2jar = "2.4.33"
+@@ -45,7 +45,7 @@
+ # dependencies of Tachiyomi extensions
+ rxjava = "io.reactivex:rxjava:1.3.8"
+ rxkotlin = "io.reactivex:rxkotlin:1.0.0"
+-jsoup = "org.jsoup:jsoup:1.21.2"
++jsoup = "org.jsoup:jsoup:1.22.2"
+ icu4j-charset = "com.ibm.icu:icu4j-charset:78.1"
+ 
+ # Config
 diff --git a/server/build.gradle.kts b/server/build.gradle.kts
 index e105c56..9fe540c 100644
 --- a/server/build.gradle.kts
@@ -113,6 +123,21 @@ index f77332c..6b07a8a 100644
                                  }
                              }
                          }
+diff --git a/server/src/main/kotlin/mextensionserver/util/PackageTools.kt b/server/src/main/kotlin/mextensionserver/util/PackageTools.kt
+--- a/server/src/main/kotlin/mextensionserver/util/PackageTools.kt
++++ b/server/src/main/kotlin/mextensionserver/util/PackageTools.kt
+@@ -77,6 +77,11 @@
+             handler.dump(errorFile, emptyArray<String>())
+         } else {
+             BytecodeEditor.fixAndroidClasses(jarFilePath)
++            // dex2jar 会把控制流上合并的分配点泛化成公共父类；父类是
++            // 抽象类时产出 `NEW <abstract>`，运行到就是 InstantiationError
++            // （实测 koharu 的 getFilterList）。回到原始 dex 用真值对账修回来，
++            // 无法唯一确定就原样放过。
++            DexAllocationRepair.restore(dexFile.toPath(), jarFilePath)
+         }
+     }
+ 
 diff --git a/server/src/main/kotlin/mextensionserver/model/DataBody.kt b/server/src/main/kotlin/mextensionserver/model/DataBody.kt
 index f3ec3c1..da50e07 100644
 --- a/server/src/main/kotlin/mextensionserver/model/DataBody.kt
