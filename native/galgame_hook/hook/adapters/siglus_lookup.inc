@@ -342,6 +342,12 @@ bool Sha256FileForSiglusLookup(const wchar_t *path,
   return ok;
 }
 
+// 见 leaf_aquaplus_adapter.inc 里同名函数的说明：不可逆的抢占决策必须问三态，
+// 不能拿「压成 bool 的 false」当「确定不是这个引擎」。
+bool IsSiglusLookupIdentityUndecided() {
+  return InterlockedCompareExchange(&g_siglus_lookup_profile_state, 0, 0) == 0;
+}
+
 bool IsSiglusLookupProfileMatched() {
   const LONG cached =
       InterlockedCompareExchange(&g_siglus_lookup_profile_state, 0, 0);
@@ -1525,6 +1531,7 @@ void ShutdownSiglusLookup() {
 #else
 
 bool IsSiglusLookupProfileMatched() { return false; }
+bool IsSiglusLookupIdentityUndecided() { return false; }
 void ProcessSiglusLookupTick() {}
 void ShutdownSiglusLookup() {}
 
