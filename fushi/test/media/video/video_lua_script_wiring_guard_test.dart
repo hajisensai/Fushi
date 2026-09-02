@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/source_guard.dart';
+
 /// BUG-2032 接线守卫：Lua 脚本"导入了但用不了"的四条根因各自有一个接线点，
 /// 任何一处被回退都会退化成静默失效，而这些接线在 widget/单元层没有可探的
 /// 渲染输入（真播放器 + 真 mpv 日志），只能靠源码守卫咬住。
@@ -13,7 +15,8 @@ void main() {
   const String schemaPath = 'lib/src/settings/settings_schema_video.dart';
   const String pagePath = 'lib/src/pages/implementations/video_fushi_page.dart';
 
-  String code(String path) => _stripComments(File(path).readAsStringSync());
+  // 等长掩码（helpers/source_guard.dart），下标与原文一致，顺序断言可直接比较。
+  String code(String path) => maskComments(File(path).readAsStringSync());
 
   group('VideoPlayerController', () {
     late String src;
@@ -140,13 +143,4 @@ void main() {
       );
     });
   });
-}
-
-/// 剥掉 `//` 行注释（不处理字符串里的 `//`——本仓源码里带 `//` 的字符串极少且
-/// 与这里的锚点无关）。
-String _stripComments(String source) {
-  return source.split('\n').map((String line) {
-    final int idx = line.indexOf('//');
-    return idx < 0 ? line : line.substring(0, idx);
-  }).join('\n');
 }

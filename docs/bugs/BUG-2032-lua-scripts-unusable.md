@@ -6,7 +6,7 @@
   - ③ **脚本报错零诊断**：`video_lua_script_manager.dart:92` `catch (_) {}`，media_kit 层 `mpv_command_async` 错误只进 debug 日志，仓库无任何 `stream.log` 订阅——语法错/`require` 失败/路径失效对用户完全不可见。
   - ④ **`mp.osd_message` 被丢弃**：media_kit 建 handle 写死 `osd-level=0`（`media_kit-1.2.6 real.dart:2421`），mpv `player/osd.c` `set_osd_msg_va` 里 `level > osd_level` 直接 return——脚本最常用的"我活着"信号一个字都画不出来。
   - 另一条**设计边界**（不是 bug、但用户不知道）：键盘/鼠标事件由 Flutter 层消费、到不了 libmpv，`mp.add_key_binding` / OSC 类脚本无处触发。
-- **[x] ① 已修复** — 见提交（本 PR）：
+- **[x] ① 已修复** — `944b75e34a`（分支 `worktree-lua-scripts-rootfix`）：
   - 能力门控（①）：新增 `video_lua_capability.dart`（`MpvLuaCapability` + `parseMpvLuaCapability`），controller 建 Player 后读 `mpv-configuration` 探测、页面落 pref `video_mpv_lua_capability`，开关副标题在 `unavailable` 时如实说明（按 `settings_schema_widgets.dart:168` 约定：能力只走副标题、不禁用开关）。不按 `Platform.isAndroid` 硬编码——jar 重编带 Lua 后自动翻绿。
   - 导入即启用（②）：`_setVideoLuaScriptsEnabled` 成为开关行与导入按钮的唯一写穿点，导入后置 true（host 在场即时把目录含新脚本装进活播放器，幂等）；提示改为"脚本已导入并启用"。
   - 诊断面（③）：controller 订阅 `player.stream.log`，`matchLuaLogToScripts` 把 `cplayer` 装载失败（按完整路径）与脚本前缀 `Lua error`/`mp.msg.error`（按 mpv 客户端名 `luaScriptNameForPath`）归到脚本，`luaScriptStates` 经 `VideoQuickSettingsHost.luaScriptStates` 喂给新增设置项 `video.player.mpv_lua_scripts_list`（每脚本一行：未装载 / 已装载无报错 / 报错原文），列表底部原样说明输入边界。
