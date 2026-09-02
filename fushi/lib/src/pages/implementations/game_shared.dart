@@ -53,6 +53,7 @@ bool shouldPromptGalCaptureSetup({
   required String? selectedTextThreadKey,
   required int textThreadCount,
   required bool sessionAlreadyPrompted,
+  required bool lookupRiskAcceptancePending,
 }) =>
     state.sessionStartedAt != null &&
     switch (state.phase) {
@@ -65,6 +66,7 @@ bool shouldPromptGalCaptureSetup({
     hasEngineSource &&
     selectedTextThreadKey == null &&
     textThreadCount > 0 &&
+    !lookupRiskAcceptancePending &&
     !sessionAlreadyPrompted;
 
 /// Hook 会话音频后端的用户可读标签。
