@@ -16,7 +16,11 @@ import 'package:fushi/utils.dart';
 /// 因此零域依赖。
 ///
 /// 返回值语义：`null` = 用户取消；非空 = 已 trim 的新名字。**空名不会返回**
-/// （输入框留空时确认键直接不响应），调用方无需再判空。
+/// （留空时确认键置灰），调用方无需再判空。
+///
+/// 收编进度：合集 / 视频 / 书 / 扫描根 / 词典五处已走本原语；游戏的
+/// `_RenameGameDialog` 与 `ProfileNameDialog` 仍是各自的独立实现（它们的空名
+/// 规则是「照样 pop 空串、由调用点各自判空」），尚未收编。
 Future<String?> showNameInputDialog({
   required BuildContext context,
   required String title,
@@ -65,10 +69,22 @@ class _NameInputDialogState extends State<_NameInputDialog> {
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initialName);
+    // 空名时把确认键**置灰**，而不是让它可点但按下去毫无反应。后者是这个原语
+    // 第一版的行为：弹窗不关、无提示、回车也静默——用户只会以为程序卡了。
+    _controller.addListener(_syncCanSubmit);
+    _canSubmit = _controller.text.trim().isNotEmpty;
+  }
+
+  bool _canSubmit = false;
+
+  void _syncCanSubmit() {
+    final bool next = _controller.text.trim().isNotEmpty;
+    if (next != _canSubmit) setState(() => _canSubmit = next);
   }
 
   @override
   void dispose() {
+    _controller.removeListener(_syncCanSubmit);
     // controller 由 State 持有并在此释放。调用方**不要**在 await 弹窗返回后
     // 自己 dispose：那时 widget 树还没拆完，属于过早释放。
     _controller.dispose();
@@ -135,7 +151,8 @@ class _NameInputDialogState extends State<_NameInputDialog> {
             adaptiveDialogAction(
               context: context,
               isDefaultAction: true,
-              onPressed: _submit,
+              // null = 各平台原生置灰态。空名不可提交这件事因此是**看得见**的。
+              onPressed: _canSubmit ? _submit : null,
               child: Text(t.dialog_ok),
             ),
           ],

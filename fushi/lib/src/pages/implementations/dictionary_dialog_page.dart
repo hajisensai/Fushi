@@ -422,11 +422,15 @@ class _DictionaryDialogPageState extends BasePageState {
 
   Future<void> showDictionaryDeleteDialog(Dictionary dictionary) {
     return _showDictionaryActionConfirmDialog(
-      title: t.dialog_title_dictionary_delete(name: dictionary.name),
+      // 确认框与进度页都是给人看的，用显示名；真正的删除按 `dictionary` 对象走
+      // （deleteDictionary 内部用真名找磁盘目录）。
+      title: t.dialog_title_dictionary_delete(
+        name: dictionary.effectiveDisplayName,
+      ),
       content: t.dialog_content_dictionary_delete,
       confirmLabel: t.dialog_delete,
       run: () => appModel.deleteDictionary(dictionary),
-      progressName: dictionary.name,
+      progressName: dictionary.effectiveDisplayName,
     );
   }
 
@@ -1797,7 +1801,10 @@ class _DictionaryDialogPageState extends BasePageState {
     required DictionaryDownloadJob job,
     required Map<String, String> sourceOverride,
   }) async {
-    final String name = dictionary.name;
+    // 只喂文案（进度行 / 导入阶段提示 / 完成 toast），无身份用途——身份走
+    // `dictionary` 对象本身（downloadUrl / 目录名）。所以这里用显示名：用户改过名
+    // 之后，进度条里还蹦出那个又长又带日期的原名会让人以为在更新别的东西。
+    final String name = dictionary.effectiveDisplayName;
     final ValueNotifier<String> progressNotifier = job.message;
     final ValueNotifier<double> downloadProgress = job.progress;
     final Directory tempDir = Directory(
@@ -1869,7 +1876,8 @@ class _DictionaryDialogPageState extends BasePageState {
             },
           );
           return DictionaryDownloadOutcome(
-            message: t.dict_update_done(name: dictionary.name),
+            message: t.dict_update_done(
+                name: dictionary.effectiveDisplayName),
             severity: ToastSeverity.success,
           );
         } catch (e, stack) {
@@ -1942,7 +1950,8 @@ class _DictionaryDialogPageState extends BasePageState {
     if (!mounted) return;
 
     await _runWithDownloadProgressDialog(
-      initialMessage: t.dict_update_updating(name: dictionary.name),
+      initialMessage:
+          t.dict_update_updating(name: dictionary.effectiveDisplayName),
       body: (DictionaryDownloadJob job) async {
         // 本地文件覆盖更新**全程都是导入阶段**（没有下载），故整条路径不可取消：
         // 进入 body 就切 importing，取消按钮从头到尾是灰的（BUG-1499）。
@@ -1957,7 +1966,8 @@ class _DictionaryDialogPageState extends BasePageState {
           );
           // 覆盖导入没抛异常即成功。
           return DictionaryDownloadOutcome(
-            message: t.dict_update_done(name: dictionary.name),
+            message: t.dict_update_done(
+                name: dictionary.effectiveDisplayName),
             severity: ToastSeverity.success,
           );
         } catch (e, stack) {
