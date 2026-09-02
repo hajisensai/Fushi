@@ -4,6 +4,7 @@ import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
+import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/torznab_client.dart';
@@ -1091,6 +1092,33 @@ class PreferencesRepository extends ChangeNotifier {
       'video_resource_torznab_config',
       jsonEncode(encodeTorznabIndexerConfigs(configs)),
     );
+    notifyListeners();
+  }
+
+  /// 用户自配的 OPDS 书目服务器清单（设备本地；含 base64 密码）。
+  ///
+  /// 逐条容错在 [decodeOpdsServerConfigs] 里：一条记录坏掉只丢那一条，不让
+  /// 整份服务器列表消失（否则用户会看到「我的书库全没了」）。
+  List<OpdsServerConfig> get discoveryOpdsServers {
+    final String raw =
+        getPref('discovery_opds_servers', defaultValue: '') as String;
+    if (raw.trim().isEmpty) return const <OpdsServerConfig>[];
+    try {
+      return decodeOpdsServerConfigs(raw);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.discoveryOpdsServers.decode',
+        error,
+        stack,
+      );
+      return const <OpdsServerConfig>[];
+    }
+  }
+
+  Future<void> setDiscoveryOpdsServers(
+    Iterable<OpdsServerConfig> servers,
+  ) async {
+    await setPref('discovery_opds_servers', encodeOpdsServerConfigs(servers));
     notifyListeners();
   }
 

@@ -88,6 +88,9 @@ abstract final class PrefRedactionPolicy {
     // 必须显式点名。两者也在 deviceLocalPrefKeys 中，双重声明便于安全审计。
     'video_resource_torznab_config',
     'video_subtitle_opensubtitles_config',
+    // 同形：JSON 内含 base64 的 OPDS 服务器密码，键名本身没有 credential 形状。
+    // 也在 deviceLocalPrefKeys 中，双重声明便于安全审计。
+    'discovery_opds_servers',
   };
 
   /// key 是否属于「设备本地 / 凭据」，即备份、Profile 快照与 Profile 分享 JSON

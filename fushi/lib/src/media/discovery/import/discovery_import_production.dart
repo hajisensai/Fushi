@@ -10,6 +10,9 @@
 ///   （与对话框 `_importEpubWithAlignment` 同路，进度/文案省略）
 /// - 游戏：`filterOutDuplicateGameExes` 查重 → `newGalgameEntryFromExe` →
 ///   `GalgameRepository.addAll`（批内 id 微秒错开，同拖拽入库）
+/// - 漫画图包：`MangaModule.importArchive`（= `MangaArchiveImporter`，与手动
+///   导入对话框的 `mangaArchive` 分支同一条路：自建 staging、7-Zip/内置解码
+///   解包、识别包内 `.mokuro` sidecar、防穿越、失败回滚）
 library;
 
 import 'dart:io';
@@ -25,6 +28,7 @@ import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart';
 import 'package:fushi/src/media/audiobook/text_to_epub.dart';
 import 'package:fushi/src/media/discovery/import/discovery_import_executor.dart';
 import 'package:fushi/src/media/discovery/import/discovery_import_plan.dart';
+import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
@@ -99,6 +103,22 @@ DiscoveryDomainImporters buildProductionDiscoveryImporters({
         audioPaths: plan.audioPaths,
       );
       return bookKey;
+    },
+    importMangaArchive: (String archivePath) async {
+      try {
+        return await MangaModule.importArchive(
+          db: db,
+          path: archivePath,
+          title: _stem(archivePath),
+          // 与本文件其余各域一致：批量后台导入不弹交互，同名已在库即跳过。
+          // `MangaModule.importArchive` 的默认策略是 `.suffix()`（留副本），
+          // 那适合用户手动点的导入；自动入库留副本会让重复下载悄悄堆出
+          // 「XXX (2)」「XXX (3)」。
+          policy: const DuplicatePolicy.skip(),
+        );
+      } on DuplicateImportCancelledException {
+        return null;
+      }
     },
     registerGameExes: (List<String> exePaths) async {
       final List<String> fresh =

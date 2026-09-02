@@ -161,6 +161,93 @@ void main() {
     });
   });
 
+  group('漫画图包', () {
+    test('cbz/cbr/cb7 在漫画域走整包导入', () {
+      for (final String path in <String>['v1.cbz', 'v2.CBR', 'v3.cb7']) {
+        expect(
+          classifyDiscoveryFile(DiscoveryMediaKind.manga, path),
+          isA<ImportMangaArchivePlan>(),
+          reason: '$path 应整包交给 MangaArchiveImporter',
+        );
+      }
+    });
+
+    test(
+      '.rar/.zip 在漫画域不许被通用解压器截胡（否则包内 .mokuro OCR 层被静默丢弃）',
+      () {
+        // 这是本次改动的核心不变式：两个扩展名同时落在
+        // kDiscoveryArchiveExtensions 与 kDiscoveryMangaArchiveExtensions 里，
+        // 判定顺序反了就会解成散图、丢掉 OCR 层，而且不报任何错。
+        for (final String path in <String>['vol.rar', 'vol.zip']) {
+          expect(
+            classifyDiscoveryFile(DiscoveryMediaKind.manga, path),
+            isA<ImportMangaArchivePlan>(),
+            reason: '$path 在漫画域必须先于通用解压判定命中',
+          );
+          // 其它域维持原行为：仍走通用解压。
+          expect(
+            classifyDiscoveryFile(DiscoveryMediaKind.novel, path),
+            isA<ExtractArchivePlan>(),
+            reason: '$path 在小说域行为不得改变',
+          );
+          expect(
+            classifyDiscoveryFile(DiscoveryMediaKind.game, path),
+            isA<ExtractArchivePlan>(),
+          );
+        }
+      },
+    );
+
+    test('漫画域不认 pdf/epub——它们恒归小说域，免得同一文件按页签进不同的库', () {
+      for (final String path in <String>['book.pdf', 'book.epub']) {
+        expect(
+          classifyDiscoveryFile(DiscoveryMediaKind.manga, path),
+          isA<UnsupportedPlan>(),
+        );
+      }
+    });
+
+    test('单张图片不成卷', () {
+      expect(
+        classifyDiscoveryFile(DiscoveryMediaKind.manga, 'page01.jpg'),
+        isA<UnsupportedPlan>(),
+      );
+    });
+
+    test('目录树里的多个图包各成一卷', () {
+      final DiscoveryImportPlan plan = classifyDiscoveryDirectory(
+        DiscoveryMediaKind.manga,
+        <String>['/m/v1.cbz', '/m/v2.cbz', '/m/cover.jpg'],
+      );
+      expect(plan, isA<MultiPlan>());
+      expect((plan as MultiPlan).children, hasLength(2));
+      expect(
+          plan.children
+              .every((DiscoveryImportPlan c) => c is ImportMangaArchivePlan),
+          isTrue);
+    });
+
+    test('目录树只有一个图包时不套 MultiPlan', () {
+      expect(
+        classifyDiscoveryDirectory(
+          DiscoveryMediaKind.manga,
+          <String>['/m/only.cbz', '/m/readme.txt'],
+        ),
+        isA<ImportMangaArchivePlan>(),
+      );
+    });
+
+    test('目录树里没有图包仍是 unsupported', () {
+      expect(
+        classifyDiscoveryDirectory(
+          DiscoveryMediaKind.manga,
+          <String>['/m/a.txt', '/m/b.jpg'],
+        ),
+        isA<UnsupportedPlan>(),
+      );
+    });
+  });
+
   group('sanitizeArchiveEntryPath', () {
     test('拒绝 zip-slip 与绝对路径', () {
       expect(sanitizeArchiveEntryPath('../evil.txt'), isNull);

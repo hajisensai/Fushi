@@ -83,9 +83,11 @@ import 'package:fushi/src/media/discovery/import/discovery_import_executor.dart'
 import 'package:fushi/src/media/discovery/import/discovery_import_production.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
+import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/discovery/sources/alist_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/core_audio_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
+import 'package:fushi/src/media/discovery/sources/opds_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/shinnku_discovery_source.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
@@ -4422,9 +4424,39 @@ class AppModel with ChangeNotifier {
             kinds: const <DiscoveryMediaKind>{DiscoveryMediaKind.game},
           ),
           ShinnkuDiscoverySource(),
+          // 用户自配的 OPDS 服务器：**运行期**由偏好展开，一条配置 = 一个源
+          // 实例。停用的条目直接不进注册表（而不是进了再靠停用清单挡）——
+          // 源开关列表遍历的就是本注册表，两套「关掉」的语义并存只会让设置页
+          // 出现一个既在清单里又被排除的幽灵条目。
+          for (final OpdsServerConfig server in prefsRepo.discoveryOpdsServers)
+            if (server.enabled) OpdsDiscoverySource(config: server),
         ],
       );
   MediaDiscoveryService? _mediaDiscoveryService;
+
+  /// 重建发现源注册表：用户增删改 OPDS 服务器后必须调。
+  ///
+  /// 注册表是**构造期快照**（懒建后 app 生命周期常驻），不重建的话新加的服务器
+  /// 要等下次冷启动才出现——这正是视频域 [setVideoResourceSourceEnabled] 里
+  /// 「改完必须重建下载流水线运行时」踩过的同一个坑。
+  ///
+  /// 旧实例先 close 再丢弃，否则每改一次配置就漏一个 HTTP client。
+  Future<void> reloadDiscoverySources() async {
+    _mediaDiscoveryService?.close();
+    _mediaDiscoveryService = null;
+    notifyListeners();
+  }
+
+  /// 增删改一台 OPDS 服务器后的统一写回口：落偏好 → 重建注册表。
+  ///
+  /// 只经这一个入口，免得每个调用点各写一遍「写完别忘了重建」——忘了的那次
+  /// 表现为「我明明保存了，发现页里却没有」。
+  Future<void> setDiscoveryOpdsServers(
+    Iterable<OpdsServerConfig> servers,
+  ) async {
+    await prefsRepo.setDiscoveryOpdsServers(servers);
+    await reloadDiscoverySources();
+  }
 
   /// 「全部源」聚合排除的源 id（用户显式单选某源时不受限）。
   Set<String> get discoveryDisabledSourceIds => <String>{

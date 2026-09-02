@@ -20,6 +20,7 @@ class DiscoveryDomainImporters {
     required this.importText,
     required this.importPdf,
     required this.importAudiobook,
+    required this.importMangaArchive,
     required this.registerGameExes,
   });
 
@@ -27,6 +28,10 @@ class DiscoveryDomainImporters {
   final Future<String?> Function(String filePath) importText;
   final Future<String?> Function(String filePath) importPdf;
   final Future<String?> Function(AlignAudiobookPlan plan) importAudiobook;
+
+  /// 漫画图包整包导入（cbz/cbr/cb7/rar/zip）。解包与 `.mokuro` sidecar 识别
+  /// 都在域导入器内部完成，执行层只递一个路径进去。
+  final Future<String?> Function(String archivePath) importMangaArchive;
 
   /// 返回真正新登记的条目数（查重后可能为 0）。
   final Future<int> Function(List<String> exePaths) registerGameExes;
@@ -131,6 +136,8 @@ class DiscoveryImportExecutor {
         return _single(await _importers.importPdf(plan.filePath));
       case AlignAudiobookPlan():
         return _single(await _importers.importAudiobook(plan));
+      case ImportMangaArchivePlan():
+        return _single(await _importers.importMangaArchive(plan.archivePath));
       case RegisterGameExesPlan():
         final int registered = await _importers.registerGameExes(plan.exePaths);
         return DiscoveryImportOutcome(
