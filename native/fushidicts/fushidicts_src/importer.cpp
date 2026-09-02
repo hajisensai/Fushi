@@ -73,8 +73,8 @@ Files get_files(const Zip& zip) {
     // directory stores "MyDict/term_bank_1.json", and matching the raw name sent
     // every bank into media_files, leaving offsets empty -> "empty dictionary".
     const std::string_view name = zip.logical_name(i);
-    if (name.empty() || name.back() == '/') {
-      continue;
+    if (name.empty() || name.back() == '/' || is_packaging_noise(name)) {
+      continue;  // BUG-2053: "__MACOSX/..." / ".DS_Store" are not dictionary media
     }
 
     if (name.starts_with("term_bank_")) {

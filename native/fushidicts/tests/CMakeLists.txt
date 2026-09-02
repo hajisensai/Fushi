@@ -71,7 +71,8 @@ add_fushi_test(media_import_query_test media_import_query_test.cpp)
 # Re-zipping an extracted dictionary wraps every entry in one directory; the
 # importer must address entries by their dictionary-relative name so such an
 # archive imports identically (media keys included), while an archive spanning
-# two top-level directories stays unrecognised.
+# two top-level directories stays unrecognised. Also pins the macOS Finder
+# shapes (__MACOSX/ + .DS_Store), nested wrappers and directory-marker entries.
 add_fushi_test(zip_wrapper_directory_test zip_wrapper_directory_test.cpp)
 add_fushi_test(freq_pitch_import_query_test freq_pitch_import_query_test.cpp)
 add_fushi_test(freq_pitch_merge_query_test freq_pitch_merge_query_test.cpp)

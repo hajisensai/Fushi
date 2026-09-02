@@ -73,6 +73,15 @@ Zip::~Zip() {
   memory::unmap(file);
 }
 
+bool is_packaging_noise(std::string_view name) {
+  if (name.starts_with("__MACOSX/")) {
+    return true;  // AppleDouble resource forks emitted by Finder "Compress"
+  }
+  const auto slash = name.rfind('/');
+  const std::string_view base = slash == std::string_view::npos ? name : name.substr(slash + 1);
+  return base == ".DS_Store";
+}
+
 // The wrapper directory shared by every entry, or "" when there is none.
 //
 // Only a layer that contains the WHOLE archive is stripped: the first path
@@ -85,6 +94,10 @@ Zip::~Zip() {
 // Nesting is peeled repeatedly, so "MyDict/MyDict-v2/index.json" reduces the
 // same way a single layer does; peeling stops as soon as a file appears at the
 // current level or the entries fan out into sibling directories.
+// Entries that is_packaging_noise() names (macOS "__MACOSX/..." resource forks
+// and ".DS_Store") are skipped: they are not payload, and letting them vote
+// turned every Finder-compressed dictionary into a fan-out that never got
+// stripped.
 static std::string compute_root_prefix(const std::vector<ZipEntry>& entries) {
   std::string prefix;
 
@@ -94,8 +107,8 @@ static std::string compute_root_prefix(const std::vector<ZipEntry>& entries) {
     bool fan_out = false;
 
     for (const auto& e : entries) {
-      if (e.name.empty() || e.name.back() == '/') {
-        continue;  // directory marker
+      if (e.name.empty() || e.name.back() == '/' || is_packaging_noise(e.name)) {
+        continue;  // directory marker, or macOS packaging noise (see zip.hpp)
       }
       if (e.name.size() <= prefix.size() || e.name.compare(0, prefix.size(), prefix) != 0) {
         return prefix;  // shouldn't happen; leave the prefix as-is
