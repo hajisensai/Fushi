@@ -51,6 +51,23 @@ on:
         required: false
         default: true
         type: boolean
+      kazumi_adhoc:
+        description: 'One-off: sign the upstream Kazumi 2.3.0 IPA for two registered devices.'
+        required: false
+        default: false
+        type: boolean
+      kazumi_device_1_name:
+        description: 'Kazumi Ad Hoc device 1 name.'
+        required: false
+      kazumi_device_1_udid:
+        description: 'Kazumi Ad Hoc device 1 UDID.'
+        required: false
+      kazumi_device_2_name:
+        description: 'Kazumi Ad Hoc device 2 name.'
+        required: false
+      kazumi_device_2_udid:
+        description: 'Kazumi Ad Hoc device 2 UDID.'
+        required: false
 
 concurrency:
   group: fushi-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
@@ -58,6 +75,7 @@ concurrency:
 
 jobs:
   windows:
+    if: ${{ github.event.inputs.kazumi_adhoc != 'true' }}
     runs-on: windows-2022
     permissions:
       contents: write
@@ -705,6 +723,7 @@ jobs:
           retention-days: 14
 
   macos:
+    if: ${{ github.event.inputs.kazumi_adhoc != 'true' }}
     runs-on: macos-latest
     permissions:
       contents: write
@@ -1217,6 +1236,7 @@ jobs:
           retention-days: 14
 
   ios:
+    if: ${{ github.event.inputs.kazumi_adhoc != 'true' }}
     runs-on: macos-latest
     permissions:
       contents: write
@@ -1674,9 +1694,39 @@ jobs:
             --apiKey "$APPSTORE_API_KEY_ID" --apiIssuer "$APPSTORE_API_ISSUER_ID"
           echo "已上传 TestFlight；App Store Connect 处理完成（通常 5-30 分钟）后才会出现在测试员列表里。"
 
+  kazumi-adhoc:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.kazumi_adhoc == 'true' }}
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Sign Kazumi for registered devices
+        shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_DIST_CERT_P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_P12_PASSWORD }}
+          KAZUMI_DEVICE_1_NAME: ${{ github.event.inputs.kazumi_device_1_name }}
+          KAZUMI_DEVICE_1_UDID: ${{ github.event.inputs.kazumi_device_1_udid }}
+          KAZUMI_DEVICE_2_NAME: ${{ github.event.inputs.kazumi_device_2_name }}
+          KAZUMI_DEVICE_2_UDID: ${{ github.event.inputs.kazumi_device_2_udid }}
+          KAZUMI_OUTPUT_DIR: ${{ runner.temp }}/kazumi-output
+        run: bash tool/sign_kazumi_adhoc.sh
+      - name: Upload signed Kazumi IPA
+        uses: actions/upload-artifact@v7
+        with:
+          name: kazumi-2.3.0-internal-adhoc
+          path: ${{ runner.temp }}/kazumi-output/*
+          if-no-files-found: error
+          retention-days: 14
+
   publish:
     needs: [windows, macos, ios]
-    if: ${{ always() }}
+    if: ${{ always() && github.event.inputs.kazumi_adhoc != 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
