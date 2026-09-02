@@ -2225,6 +2225,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           ),
           onPop: (int index) => popNestedPopupAt(index, _popup),
         ),
+      ...buildParkedRealmLayers(screen: screen, controller: _popup),
     ];
   }
 

@@ -1090,10 +1090,31 @@ JSON.stringify((function(){
     // unrelated dependency changes (MediaQuery, locale, …).
     if (!_ready || _controller == null) return;
     unawaited(_pushInstantScrollPreference());
-    final String themeVarsJs = _themeVariablesJs();
+    // 主题变量段与静态段同源（builder 按输入 memo，无关的依赖变化命中缓存、零
+    // 拼串）。只重注这一段；静态段版本基线不动，下一次查词若真变了会整体重发。
+    final String themeVarsJs = _buildStaticSettings().themeVarsJs;
     if (themeVarsJs == _lastThemeVarsJs) return;
     _lastThemeVarsJs = themeVarsJs;
     _controller!.evaluateJavascript(source: themeVarsJs);
+  }
+
+  /// in-app 弹窗的静态段（主题变量 + 字体 + 全部 window.* 设置）。与
+  /// [_pushResults] 共用同一组实参，保证主题热切换与查词注入拿到的是同一份产物。
+  PopupStaticSettingsJs _buildStaticSettings() {
+    return buildPopupStaticSettingsJs(
+      appModel: ref.read(appProvider),
+      theme: Theme.of(context),
+      // 导入字体以 URL 引用下发，字节由本 WebView 的 shouldInterceptRequest 供
+      // （见 dictionaryFontWebResourceResponse）。仅在宿主真有能带 CORS 头的拦截器
+      // 时启用——否则字体会被静默拒绝，那比慢更糟。见 kInAppPopupFontUrlSupported。
+      fontUrlBuilder: kInAppPopupFontUrlSupported ? dictionaryFontUrl : null,
+      options: PopupSettingsOptions(
+        // TODO-1065：app 外 / 悬浮字幕独立查词窗令 <html> 透明消除泛白（见字段 doc）。
+        mobileExternal: widget.transparentDocumentBackground,
+        sentenceDraftEnabled: kSentenceContextPickerEnabled &&
+            widget.onSetSentenceContext != null,
+      ),
+    );
   }
 
   Future<void> _pushInstantScrollPreference() async {
@@ -1102,47 +1123,6 @@ JSON.stringify((function(){
     await _controller!.evaluateJavascript(
       source: ReaderCaretScripts.instantScrollInvocation(enabled),
     );
-  }
-
-  /// JS that pushes the theme-derived CSS custom properties + `data-theme`
-  /// onto the popup document. Kept separate from entry rendering so it can be
-  /// re-evaluated on a theme switch without rebuilding the result list.
-  String _themeVariablesJs() {
-    final ThemeData theme = Theme.of(context);
-    final bool isDark = theme.brightness == Brightness.dark;
-    final ColorScheme scheme = theme.colorScheme;
-    final appModel = ref.read(appProvider);
-    // 变量取值统一来自 buildPopupThemeCssVars（与扩展/另一注入器同一真源）；
-    // TODO-776: --dict-columns 随主题变量一起重注（live theme switch 也重应用），
-    // popup CSS 在属性缺席时回退 1（经典单列不受影响）。
-    final Map<String, String> vars = buildPopupThemeCssVars(
-      scheme: scheme,
-      // 卡面底色跟随主题 scheme.surface，override 优先级不变。
-      backgroundColor: popupCardSurface(
-          scheme: scheme, override: appModel.overrideDictionaryColor),
-      surfaceContainerHigh: scheme.surfaceContainerHigh,
-      dictionaryColumns: appModel.popupDictionaryColumns,
-    );
-    // TODO-1065：app 外 / 悬浮字幕独立查词窗给 <html> 打透明标记（见 popup.css
-    // html.mobile-external），消除 documentElement 不透明填充铺满视口的泛白。in-app
-    // （transparentDocumentBackground=false）不加，桌面 global-lookup 走独立路径。
-    final String docClassLine = widget.transparentDocumentBackground
-        ? "document.documentElement.classList.add('mobile-external');\n"
-        : '';
-    return '''
-      $docClassLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
-      document.documentElement.style.setProperty('--fushi-primary-highlight', '${vars['--fushi-primary-highlight']}');
-      document.documentElement.style.setProperty('--text-color', '${vars['--text-color']}');
-      document.documentElement.style.setProperty('--background-color', '${vars['--background-color']}');
-      document.documentElement.style.setProperty('--md-surface-container', '${vars['--md-surface-container']}');
-      document.documentElement.style.setProperty('--md-surface-container-high', '${vars['--md-surface-container-high']}');
-      document.documentElement.style.setProperty('--md-outline-variant', '${vars['--md-outline-variant']}');
-      document.documentElement.style.setProperty('--md-on-surface-variant', '${vars['--md-on-surface-variant']}');
-      document.documentElement.style.setProperty('--md-primary', '${vars['--md-primary']}');
-      document.documentElement.style.setProperty('--md-on-primary', '${vars['--md-on-primary']}');
-      document.documentElement.style.setProperty('--fushi-radius-card', '${vars['--fushi-radius-card']}');
-      document.documentElement.style.setProperty('--dict-columns', '${vars['--dict-columns']}');
-''';
   }
 
   void _pushResults() {
@@ -1179,20 +1159,7 @@ JSON.stringify((function(){
     // entries + renderPopup。任何主题/设置/词典集变化都会换 revision → 自动随
     // 下一次推送重发。BUG-717 ③：比较从 MB 级全串换成 revision 整数（builder 按
     // 输入 memo，同内容 ⇒ 同实例同 revision），combined 只在真要发时才拼一次。
-    final PopupStaticSettingsJs staticSettings = buildPopupStaticSettingsJs(
-      appModel: appModel,
-      theme: Theme.of(context),
-      // 导入字体以 URL 引用下发，字节由本 WebView 的 shouldInterceptRequest 供
-      // （见 dictionaryFontWebResourceResponse）。仅在宿主真有能带 CORS 头的拦截器
-      // 时启用——否则字体会被静默拒绝，那比慢更糟。见 kInAppPopupFontUrlSupported。
-      fontUrlBuilder: kInAppPopupFontUrlSupported ? dictionaryFontUrl : null,
-      options: PopupSettingsOptions(
-        // TODO-1065：app 外 / 悬浮字幕独立查词窗令 <html> 透明消除泛白（见字段 doc）。
-        mobileExternal: widget.transparentDocumentBackground,
-        sentenceDraftEnabled: kSentenceContextPickerEnabled &&
-            widget.onSetSentenceContext != null,
-      ),
-    );
+    final PopupStaticSettingsJs staticSettings = _buildStaticSettings();
     final bool staticChanged =
         staticSettings.revision != _lastSentStaticRevision;
     if (staticChanged) {
@@ -1215,7 +1182,9 @@ JSON.stringify((function(){
         ? _inAppStaticExtrasJs(sentencePreviewEnabled: sentencePreviewEnabled)
         : '';
     final String entriesJs = buildPopupEntriesJs(widget.result);
-    _lastThemeVarsJs = _themeVariablesJs();
+    // 主题变量段随静态段一起（或已经）在 WebView 里生效；记下它供
+    // didChangeDependencies 的主题热切换去重，不再另拼一份删减版拷贝。
+    _lastThemeVarsJs = staticSettings.themeVarsJs;
     final bool popupInstantScroll = appModel.popupInstantScroll;
 
     final bool needsScrollCheck = widget.onScrolledToBottom != null;

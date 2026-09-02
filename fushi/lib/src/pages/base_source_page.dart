@@ -640,6 +640,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                       screen,
                       isTop: i == visibleTopIndex,
                     ),
+                  // BUG-2039 ③：停驻的嵌套 realm 屏外挂着，下一次嵌套直接接管热 WebView。
+                  for (final GlobalKey<DictionaryPopupWebViewState> key
+                      in _popup.parkedRealms)
+                    parkedRealmPopupLayer(
+                      webViewKey: key,
+                      screen: screen,
+                      isDark: (appModel.overrideDictionaryTheme ?? theme)
+                              .brightness ==
+                          Brightness.dark,
+                      overrideFillColor: appModel.overrideDictionaryColor,
+                    ),
                 ],
               );
             },

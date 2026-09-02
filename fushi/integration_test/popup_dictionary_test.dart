@@ -259,6 +259,56 @@ void main() {
       expect(favorited, isFalse,
           reason: 'second favorite activation must remove the same DB row');
 
+      // ── Phase 5: BUG-2039 ③ 嵌套 realm 停驻与接管（真 WebView2 平台视图）──
+      // 嵌套 → 关掉 → 再嵌套：第二次必须接管第一次那个 WebView State（同一把
+      // GlobalKey 被 Flutter 整体搬位，不拆不建原生表面），且内容照常渲染出来。
+      Future<Duration> openNestedAndWaitRendered() async {
+        final Stopwatch sw = Stopwatch()..start();
+        final int matches = await popupDebug.debugOpenNestedPopup('testword');
+        expect(matches, greaterThan(0));
+        // 嵌套层走 markPendingReveal：popupRendered 之前 visible=false，顶层可见层
+        // 仍是父层——必须等可见深度真的变成 2，再看新顶层的 DOM。
+        bool rendered = false;
+        for (int i = 0; i < 200; i++) {
+          await tester.pump(const Duration(milliseconds: 50));
+          if (popupDebug.debugPopupStackShape.depth != 2) continue;
+          final dynamic raw = await popupDebug.debugEvaluateTopPopup(
+            "document.querySelectorAll('.favorite-button').length",
+          );
+          if (raw == 1 && popupDebug.debugTopPopupAutoFitHeight != null) {
+            rendered = true;
+            break;
+          }
+        }
+        sw.stop();
+        expect(rendered, isTrue,
+            reason: 'nested popup must reveal (popupRendered) and render its '
+                'DOM controls');
+        return sw.elapsed;
+      }
+
+      final Duration nestedCold = await openNestedAndWaitRendered();
+      expect(popupDebug.debugPopupStackShape.depth, 2);
+      final Object? nestedState = popupDebug.debugTopPopupWebViewState;
+      expect(nestedState, isNotNull);
+
+      popupDebug.debugClosePopup(); // 只关嵌套层，父层仍在
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(popupDebug.debugPopupStackShape,
+          (depth: 1, parkedRealms: 1),
+          reason: 'the dismissed nested realm must be parked, not destroyed');
+
+      final Duration nestedWarm = await openNestedAndWaitRendered();
+      expect(popupDebug.debugPopupStackShape, (depth: 2, parkedRealms: 0));
+      expect(identical(popupDebug.debugTopPopupWebViewState, nestedState), isTrue,
+          reason: 'the second nested lookup must take over the parked WebView '
+              'State (same GlobalKey ⇒ same element, no cold platform view)');
+      debugPrint('[popup-test] nested realm reuse: cold=${nestedCold.inMilliseconds}ms '
+          'warm=${nestedWarm.inMilliseconds}ms');
+
+      popupDebug.debugClosePopup();
+      await tester.pump(const Duration(milliseconds: 300));
+
       popupDebug.debugClosePopup();
       await tester.pump(const Duration(milliseconds: 300));
 

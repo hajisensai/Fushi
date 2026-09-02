@@ -51,17 +51,23 @@ void main() {
       expect(body.contains('#94a6eb'), isFalse, reason: '禁止照抄 Niratan 的硬编码颜色');
     });
 
-    test('Dart 侧两个注入点都注入了 --md-on-primary（药丸文字色的真值来源）', () {
-      for (final String path in <String>[
+    test('Dart 侧唯一注入点注入了 --md-on-primary（药丸文字色的真值来源）', () {
+      // BUG-2039 ③：主题变量段只剩 popup_settings_injection 一处；in-app 弹窗
+      // WebView 的主题热切换重注同一段产物（themeVarsJs），不再自拼第二份。
+      final String injection = File(
         'lib/src/pages/implementations/popup_settings_injection.dart',
+      ).readAsStringSync();
+      expect(injection, contains("'--md-on-primary'"),
+          reason: 'popup_settings_injection 应注入 --md-on-primary');
+      final String webview = File(
         'lib/src/pages/implementations/dictionary_popup_webview.dart',
-      ]) {
-        final String src = File(path).readAsStringSync();
-        expect(src, contains("'--md-on-primary'"),
-            reason: '$path 应注入 --md-on-primary');
-      }
+      ).readAsStringSync();
+      expect(webview, isNot(contains("setProperty('--md-on-primary'")),
+          reason: '弹窗 WebView 不得再维护第二份主题变量注入（会与真源漂移）');
+      expect(webview, contains('.themeVarsJs'),
+          reason: '弹窗 WebView 主题热切换必须消费静态段产物里的同一段');
       // 取值已收敛到共享真源 popup_theme_css.dart：on-primary 仍取自
-      // ColorScheme.onPrimary，两个注入点经 buildPopupThemeCssVars 消费。
+      // ColorScheme.onPrimary，注入点经 buildPopupThemeCssVars 消费。
       final String shared =
           File('lib/src/utils/popup_theme_css.dart').readAsStringSync();
       expect(shared, contains('scheme.onPrimary'),

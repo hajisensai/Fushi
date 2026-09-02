@@ -70,6 +70,8 @@ void main() {
       final Completer<InAppWebViewController> ready =
           Completer<InAppWebViewController>();
       int popupRenderedCalls = 0;
+      // 宿主每次收到的高度；连续相同的高度是「没变也回报」的冗余重定尺。
+      final List<num> reportedHeights = <num>[];
 
       await tester.pumpWidget(
         MaterialApp(
@@ -85,6 +87,8 @@ void main() {
                     handlerName: 'popupRendered',
                     callback: (List<dynamic> args) {
                       popupRenderedCalls++;
+                      final Object? h = args.isNotEmpty ? args[0] : null;
+                      reportedHeights.add(h is num ? h : -1);
                       return null;
                     },
                   );
@@ -143,9 +147,11 @@ void main() {
         // 每个场景跑两遍，第一遍暖 JIT / CSS memo，只报第二遍。
         for (int round = 0; round < 2; round++) {
           popupRenderedCalls = 0;
+          reportedHeights.clear();
           final String entriesJson = _buildEntriesJson(s.entries, s.dicts);
+          final String stylesJson = _buildDictionaryStylesJson(s.dicts);
           await controller.evaluateJavascript(
-            source: 'window.__perfBegin($entriesJson);',
+            source: 'window.__perfBegin($entriesJson, $stylesJson);',
           );
           Map<String, dynamic>? result;
           for (int i = 0; i < 600; i++) {
@@ -160,6 +166,13 @@ void main() {
           }
           expect(result, isNotNull, reason: 'render tail never settled');
           result!['reports'] = popupRenderedCalls;
+          int distinct = 0;
+          num? last;
+          for (final num h in reportedHeights) {
+            if (h != last) distinct++;
+            last = h;
+          }
+          result['distinctReports'] = distinct;
           result['entries'] = s.entries;
           result['dicts'] = s.dicts;
           result['round'] = round;
@@ -179,6 +192,26 @@ const String _instrumentationJs = r'''
   window.requestAnimationFrame = function(cb) {
     P.raf++;
     return nativeRaf(function(ts) { P.lastRaf = performance.now(); cb(ts); });
+  };
+  // 分段计时：尾批宏任务（纯 DOM 构建）与 masonry（含被迫的样式重算 + 布局）各自的
+  // 墙钟时间；剩下的就是帧间等待。popup.js 顶层函数声明是全局对象属性，裸标识符
+  // 调用经全局对象解析，故此处替换即生效。
+  const origTail = window.scheduleRenderTail;
+  window.scheduleRenderTail = function(task) {
+    return origTail(function() {
+      const s = performance.now();
+      try { task(); } finally { P.tailTasks++; P.tailTaskMs += performance.now() - s; }
+    });
+  };
+  const origMasonry = window.layoutMasonry;
+  window.layoutMasonry = function(bodies) {
+    const s = performance.now();
+    try { return origMasonry(bodies); } finally { P.masonryCalls++; P.masonryMs += performance.now() - s; }
+  };
+  const origCreate = document.createElement.bind(document);
+  document.createElement = function(tag, opts) {
+    if (String(tag).toLowerCase() === 'style') P.styleElements++;
+    return origCreate(tag, opts);
   };
   const hDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
   Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
@@ -205,9 +238,12 @@ const String _instrumentationJs = r'''
       P.completeMs = +(P.terminalAt - P.t0).toFixed(1);
     }
   };
-  window.__perfBegin = function(entries) {
+  window.__perfBegin = function(entries, dictionaryStyles) {
+    window.dictionaryStyles = dictionaryStyles || {};
     P.raf = 0; P.lastRaf = 0; P.offsetHeightReads = 0;
     P.longTasks = 0; P.longTaskMs = 0; P.layoutShifts = 0; P.layoutShiftScore = 0;
+    P.tailTasks = 0; P.tailTaskMs = 0; P.masonryCalls = 0; P.masonryMs = 0;
+    P.styleElements = 0;
     P.phases = []; P.terminalAt = 0; P.completeMs = -1;
     window.lookupEntries = entries;
     window.kanjiResults = [];
@@ -232,6 +268,11 @@ const String _instrumentationJs = r'''
       longTaskMs: +P.longTaskMs.toFixed(1),
       layoutShifts: P.layoutShifts,
       layoutShiftScore: +P.layoutShiftScore.toFixed(4),
+      tailTasks: P.tailTasks,
+      tailTaskMs: +P.tailTaskMs.toFixed(1),
+      masonryCalls: P.masonryCalls,
+      masonryMs: +P.masonryMs.toFixed(1),
+      styleElements: P.styleElements,
       cards: cards.length,
       hiddenCards: hidden,
       masonryBodies: document.querySelectorAll('.category-body[data-masonry-cols]').length,
@@ -241,6 +282,26 @@ const String _instrumentationJs = r'''
   };
 })();
 ''';
+
+/// 每本词典一份自带 CSS（真实 Yomitan 词典包普遍带几十条规则）。它决定每个词典块
+/// 的样式注入代价：constructDictCss 有 memo，但 `<style>` 元素的解析与全文档样式
+/// 失效是每次插入都付的。
+String _buildDictionaryStylesJson(int dicts) {
+  final Map<String, String> styles = <String, String>{};
+  for (int d = 0; d < dicts; d++) {
+    final StringBuffer css = StringBuffer();
+    for (int r = 0; r < 24; r++) {
+      css.write(
+        '.gloss-$r { color: #${(r * 37 % 256).toRadixString(16).padLeft(2, '0')}'
+        '4488; margin: ${r % 3}px 0; }\n',
+      );
+    }
+    css.write('ul[data-sc-content="glossary"] li { line-height: 1.4; }\n');
+    css.write('span[data-sc-content="tag"] { font-size: 0.85em; }\n');
+    styles['Dict $d'] = css.toString();
+  }
+  return jsonEncode(styles);
+}
 
 /// 合成 E 词条 × D 词典。释义用结构化内容，按 (entry, dict) 变化行数，让 masonry
 /// 的列高真的参差（全等高的卡片测不出最短列打包与重排代价）。

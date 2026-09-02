@@ -3639,6 +3639,48 @@ function autoExpandCount(totalDicts) {
 // So the per-dict flag short-circuits both auto-expand and the global switch; a
 // non-collapsed block still follows the old rule (auto-expanded, or global collapse
 // off). Users can still open a collapsed block by hand -- <details> stays clickable.
+// 每本词典一份 <style>（BUG-2039 ②）。词典样式的选择器本来就是 `[data-dictionary="名"]`
+// 全局作用域，与它挂在哪个块里无关；旧实现却给**每个词典块**都塞一份逐字相同的
+// <style>——N 词条 × M 词典就是 N×M 个样式表，每插一个都让整个文档样式失效、下一次
+// 布局读（masonry 量高）就得把全部卡片重算一遍，尾批越长越慢。现在按词典名去重：
+// 首次见到就建一个挂到 head（扩展是 shadow root），文本变了（设置改了 compact / 词典
+// CSS 换了）就地改 textContent。层叠顺序必须与旧位置等价：基础 popup.css（更早）<
+// 词典样式 < 用户自定义 CSS（applyCustomCSS 追加在末尾）——所以同一容器里若已有
+// `style.fushi-custom-css`，新样式插在它前面，否则追加到末尾。
+const __fushiDictStyleNodes = new Map();
+function __fushiDictStyleParent() {
+    return window.__fushiRoot || document.head || document.body;
+}
+function __fushiFirstCustomCssNode(parent) {
+    const children = parent && parent.children;
+    if (!children) return null;
+    for (const child of children) {
+        if (child.classList && child.classList.contains('fushi-custom-css')) return child;
+    }
+    return null;
+}
+function ensureDictionaryStyle(dictName, styleText) {
+    const parent = __fushiDictStyleParent();
+    let node = __fushiDictStyleNodes.get(dictName);
+    if (node && node.parentNode !== parent) {
+        try { node.remove(); } catch (_) { /* 已被换掉的 realm 根 */ }
+        node = null;
+    }
+    if (!node) {
+        node = el('style', { className: 'fushi-dict-style', textContent: styleText });
+        node.setAttribute('data-dictionary', dictName);
+        const anchor = __fushiFirstCustomCssNode(parent);
+        if (anchor && typeof parent.insertBefore === 'function') {
+            parent.insertBefore(node, anchor);
+        } else {
+            parent.appendChild(node);
+        }
+        __fushiDictStyleNodes.set(dictName, node);
+        return;
+    }
+    if (node.textContent !== styleText) node.textContent = styleText;
+}
+
 function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts) {
     const details = el('details', { className: 'glossary-group' });
     const perDictCollapsed = (window.collapsedDictionaryNames || []).includes(dictName);
@@ -3726,8 +3768,8 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
     if (dictStyle) {
         styleText += '\n' + constructDictCss(dictStyle, dictName);
     }
-    dictWrapper.appendChild(el('style', { textContent: styleText }));
-    
+    ensureDictionaryStyle(dictName, styleText);
+
     const termTags = [...new Set(parseTags(contents[0]?.termTags))];
     const renderContent = (parent, content) => {
         if (typeof content === 'string') {
@@ -4520,6 +4562,7 @@ function layoutMasonry(targetBodies) {
             const transform = `translate(${c * (columnWidth + gap)}px, ${heights[c]}px)`;
             setStyleIfChanged(item, 'transform', transform);
             item.style.visibility = ''; // BUG-1727：增量预藏的卡片定位完成即恢复可见
+            item.__fushiMasonryHeight = itemHeights[index]; // 供 ResizeObserver 判「真变了没」
             heights[c] += itemHeights[index] + gap;
         });
         body.dataset.masonryCols = String(cols);
@@ -4533,10 +4576,22 @@ function observeMasonryTargets() {
         // 卡片尺寸变化只标脏它所在的 body（其它词条纹丝不动）；找不到所属 body 时退化全量。
         masonryObserver = new ResizeObserver(observed => {
             let scoped = true;
+            let changed = false;
             observed.forEach(entry => {
-                const body = masonryBodyOf(entry.target);
+                const target = entry.target;
+                // masonry 刚按列宽写完、量完的卡片，ResizeObserver 会在同一轮渲染管线
+                // 末尾再报一次（首次 observe 也必报一次）。高度与上一轮量到的一致就
+                // 不是「内容变了」，不必再铺一帧——只有 <details> 开关、图片/字体到位
+                // 这类真实高度变化才重排。回调跑在布局之后，此处读 offsetHeight 不强制回流。
+                if (target.__fushiMasonryHeight !== undefined &&
+                    target.__fushiMasonryHeight === target.offsetHeight) {
+                    return;
+                }
+                changed = true;
+                const body = masonryBodyOf(target);
                 if (body) markMasonryDirty(body); else scoped = false;
             });
+            if (!changed) return;
             if (scoped) scheduleMasonry(); else scheduleMasonryAll();
         });
     }
@@ -4565,7 +4620,10 @@ function scheduleMasonry() {
         if (generation !== window._renderGeneration) return;
         layoutMasonry(all ? undefined : dirty);
         // 铺完复报高度（容器高度已由 masonry 改写），让宿主给弹窗重新定尺。
-        _reportPopupHeight();
+        // 尾批在途（首发与末发 popupRendered 之间）的中间高度不报：那些帧的高度
+        // 每帧都变，宿主每收一次就重定尺一次弹窗——这就是「弹窗高度反复变」的抖动
+        // 本体。宿主要的只有两个稳定值：首词条高度（撤盖板）与全部建完的终高。
+        if (!window._renderInProgress) _reportPopupHeight();
     });
 }
 
@@ -4663,6 +4721,15 @@ window.renderPopup = function() {
     // returned before advancing this generation, so an old multi-entry timer
     // could append stale cards into the freshly-rendered empty state.
     const gen = ++window._renderGeneration;
+    // 上一轮的 masonry ResizeObserver 还观察着即将被 innerHTML='' 摘掉的全部卡片：
+    // 观察目标被 observer 强引用，热槽 WebView 跨成百上千次查词不重载，这些
+    // 已脱离文档的卡片子树就一直攒在内存里。换代时整体断开，新卡片由收尾的
+    // observeMasonryTargets 重新观察（幂等）。
+    if (masonryObserver) {
+        try { masonryObserver.disconnect(); } catch (_) { /* no-op */ }
+    }
+    masonryDirtyBodies.clear();
+    masonryDirtyAll = false;
     // 变形说明属于上一轮查词结果，不能独立于查询会话存活。它挂在 entries-container
     // 外面，单纯重建词条 DOM 不会移除，因此每轮渲染必须显式关闭并清空。
     closeOverlay();

@@ -9,6 +9,12 @@
 //   ③ 渲染尾批一个宏任务里连续建多块（时间预算），而不是一块一任务——但仍然让出主线程
 //      （宏任务数 ≥ 2）。
 //   ④ scheduleRenderTail 有 MessageChannel 时走它（FIFO），没有时回落 setTimeout(fn, 0)。
+//   ⑤ 尾批在途（_renderInProgress）的 masonry 帧不回报高度——回到逐帧回报就是宿主逐帧
+//      重定尺弹窗（「弹窗高度反复变」的抖动本体）；尾批收尾后照常复报。
+//   ⑥ 每本词典一份 <style>（按词典名去重、文本变了就地改），挂 head / shadow root，且插在
+//      `style.fushi-custom-css` 之前——回到每块一份就是 N×M 个样式表逐个让全文档样式失效。
+//   ⑦ ResizeObserver 通知的高度与上一轮 masonry 量到的一致时不重铺；真实变化才排一帧；
+//      renderPopup 换代断开旧 observer（热槽跨查词不攒已摘除卡片的强引用）。
 //
 // Run: node fushi/test/pages/popup_render_tail_batching_test.js
 // (also driven from popup_render_tail_batching_test.dart inside `flutter test`).
@@ -90,7 +96,15 @@ function makeElement(tag, log) {
       }
       this.children.push(child);
       this.childNodes.push(child);
-      if (child && typeof child === 'object') child.parentElement = this;
+      if (child && typeof child === 'object') { child.parentElement = this; child.parentNode = this; }
+      return child;
+    },
+    insertBefore(child, ref) {
+      const idx = ref ? this.children.indexOf(ref) : -1;
+      if (idx < 0) return this.appendChild(child);
+      this.children.splice(idx, 0, child);
+      this.childNodes.splice(idx, 0, child);
+      if (child && typeof child === 'object') { child.parentElement = this; child.parentNode = this; }
       return child;
     },
     append(...nodes) {
@@ -172,7 +186,7 @@ function makeSandbox(opts) {
   };
   const documentObj = {
     documentElement: { style: { setProperty() {} }, classList: makeClassList() },
-    head: { appendChild() {} },
+    head: makeElement('head', log),
     body: makeElement('body', log),
     _byId: {},
     getElementById(id) { return this._byId[id] || null; },
@@ -229,7 +243,12 @@ function makeSandbox(opts) {
     sandbox.__frames = [];
     sandbox.requestAnimationFrame = (cb) => { sandbox.__frames.push(cb); return sandbox.__frames.length; };
     sandbox.cancelAnimationFrame = () => {};
-    sandbox.ResizeObserver = class { observe() {} disconnect() {} };
+    // 记录回调与观察目标，供 ⑦ 手动触发「尺寸通知」。
+    sandbox.ResizeObserver = class {
+      constructor(cb) { this.cb = cb; this.targets = []; sandbox.__ro = this; }
+      observe(t) { if (!this.targets.includes(t)) this.targets.push(t); }
+      disconnect() { this.targets = []; sandbox.__roDisconnects = (sandbox.__roDisconnects || 0) + 1; }
+    };
   }
   if (o.MessageChannel) sandbox.MessageChannel = o.MessageChannel;
   sandbox.globalThis = sandbox;
@@ -242,7 +261,7 @@ function loadPopup(opts) {
   const exported = source + `
     ;window.__test = {
       layoutMasonry, markMasonryDirty, scheduleMasonry, scheduleMasonryAll,
-      scheduleRenderTail,
+      scheduleRenderTail, observeMasonryTargets, ensureDictionaryStyle,
     };
   `;
   vm.runInContext(exported, sandbox, { filename: 'popup.js' });
@@ -421,6 +440,87 @@ function drainFrames(sb) {
   const sb2 = loadPopup({ masonry: false });
   sb2.window.__test.scheduleRenderTail(() => order.push('c'));
   assert.strictEqual(sb2.__timers.length, 1, 'without MessageChannel, falls back to setTimeout');
+}
+
+// ---------- ⑤ 尾批在途（_renderInProgress）时 masonry 帧不回报高度 ----------
+{
+  const sb = loadPopup({ dictColumns: 2 });
+  const container = setupContainer(sb);
+  const body = makeBody(sb, container, 3);
+  const reports = [];
+  sb.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'popupRendered') reports.push(name);
+    return Promise.resolve(false);
+  };
+  sb.window._renderInProgress = true;
+  sb.window.__test.markMasonryDirty(body);
+  sb.window.__test.scheduleMasonry();
+  assert.strictEqual(drainFrames(sb), 1);
+  assert.strictEqual(reports.length, 0,
+    'mid-tail masonry frames must not report height (host would resize the popup every frame)');
+  assert.strictEqual(body.dataset.masonryCols, '2', 'the layout itself still runs');
+
+  sb.window._renderInProgress = false;
+  sb.window.__test.markMasonryDirty(body);
+  sb.window.__test.scheduleMasonry();
+  drainFrames(sb);
+  assert.strictEqual(reports.length, 1, 'once the tail settled, the corrected height is reported');
+}
+
+// ---------- ⑥ 每本词典一份 <style>：挂在 head / shadow root，且插在自定义 CSS 之前 ----------
+{
+  const sb = loadPopup({ dictColumns: 1 });
+  const head = sb.document.head;
+  const styles = () => head.children.filter(c => c.tagName === 'STYLE');
+  sb.window.__test.ensureDictionaryStyle('JMdict', '.a{}');
+  sb.window.__test.ensureDictionaryStyle('JMdict', '.a{}');
+  sb.window.__test.ensureDictionaryStyle('大辞林', '.b{}');
+  assert.strictEqual(styles().length, 2, 'same dictionary name shares one style node');
+  assert.strictEqual(styles()[0].getAttribute('data-dictionary'), 'JMdict');
+  sb.window.__test.ensureDictionaryStyle('JMdict', '.a2{}');
+  assert.strictEqual(styles().length, 2, 'changed text updates in place instead of adding a node');
+  assert.strictEqual(styles()[0].textContent, '.a2{}');
+
+  // shadow root（浏览器扩展）：用户自定义 CSS 已在末尾时，词典样式必须插在它前面，
+  // 保持「基础 css < 词典样式 < 自定义 CSS」的层叠顺序与旧位置等价。
+  const root = sb.document.createElement('div');
+  const custom = sb.document.createElement('style');
+  custom.className = 'fushi-custom-css';
+  custom.classList.add('fushi-custom-css');
+  root.appendChild(custom);
+  sb.window.__fushiRoot = root;
+  sb.window.__test.ensureDictionaryStyle('JMdict', '.a{}');
+  assert.strictEqual(root.children.length, 2);
+  assert.strictEqual(root.children[0].tagName, 'STYLE');
+  assert.strictEqual(root.children[0].getAttribute('data-dictionary'), 'JMdict');
+  assert.strictEqual(root.children[1], custom, 'dictionary style precedes the custom-css node');
+  assert.strictEqual(styles().length, 1, 'node re-homed from head into the shadow root');
+  delete sb.window.__fushiRoot;
+}
+
+// ---------- ⑦ ResizeObserver：高度与上一轮 masonry 量到的一致 → 不重铺 ----------
+{
+  const sb = loadPopup({ dictColumns: 2 });
+  const container = setupContainer(sb);
+  const body = makeBody(sb, container, 3);
+  sb.window.__test.layoutMasonry();
+  sb.window.__test.observeMasonryTargets();
+  const ro = sb.__ro;
+  assert.ok(ro && ro.targets.length === 3, 'every card is observed');
+  ro.cb(ro.targets.map(t => ({ target: t })));
+  assert.strictEqual(sb.__frames.length, 0,
+    'initial/steady-state notifications with unchanged height must not queue a relayout');
+  ro.targets[1]._height += 30; // <details> 展开这类真实高度变化
+  ro.cb([{ target: ro.targets[1] }]);
+  assert.strictEqual(sb.__frames.length, 1, 'a real height change queues one relayout');
+  drainFrames(sb);
+  assert.strictEqual(ro.targets[1].__fushiMasonryHeight, ro.targets[1]._height,
+    'the relayout records the new height as the next baseline');
+
+  // renderPopup 换代必须断开旧 observer（否则热槽跨查词攒着已摘除卡片的强引用）。
+  sb.window.lookupEntries = [];
+  sb.window.renderPopup();
+  assert.ok((sb.__roDisconnects || 0) >= 1, 'renderPopup disconnects the previous observer');
 }
 
 console.log('all assertions passed');

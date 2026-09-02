@@ -4524,6 +4524,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   ),
                 for (int i = 0; i < _popup.entries.length; i++)
                   _buildNestedPopupLayer(i, screen),
+                ...buildParkedRealmLayers(screen: screen, controller: _popup),
               ],
             );
           },

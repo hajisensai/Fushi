@@ -9,13 +9,22 @@
   - `layoutMasonry` 每张卡片「写 6 个样式 → 读 `offsetHeight`」（旧 :4437-4445）；
   - `dict-media.js:43` `__dictCssCache` 满 64 桶整表 `clear()`。
 - **[x] ① 已修复** — 本分支（`worktree-popup-render-tail`）：masonry 三相批处理 + 脏 body
-  集合、尾批 MessageChannel + 时间预算分片、CSS memo LRU（256 桶）
+  集合、尾批 MessageChannel + 时间预算分片、CSS memo LRU（256 桶）；第二批（同分支）：
+  每本词典一份 `<style>`（原每块一份）、尾批在途不回报高度（原逐帧回报 = 宿主逐帧重定尺）、
+  ResizeObserver 高度未变不重铺、renderPopup 换代断开旧 observer（热槽跨查词攒已摘除卡片
+  的强引用）、**嵌套层 WebView 键停驻与接管**（原每次嵌套查词冷建 WebView）、in-app 主题
+  变量注入收成单一真相源（原第二份拷贝缺 eink / 卡底色 RGB）
 - **[x] ② 已加自动化测试** — `fushi/test/pages/popup_render_tail_batching_test.{js,dart}`（新，
-  node 真执行 popup.js，4 条变异各红）、`fushi/test/dictionary/popup_render_signal_guard_test.dart`
+  node 真执行 popup.js，4 条变异各红；第二批加 ⑤⑥⑦ 三条、5 条变异各红）、
+  `fushi/test/dictionary/popup_render_signal_guard_test.dart`
   （尾批原语改锚 + 新增 ⑤ 宏任务原语守卫）、`fushi/test/utils/misc/popup_dict_css_memo_test.{js,dart}`
   （④ 改 LRU 语义：反复命中的桶不得被淘汰）、`fushi/integration_test/popup_render_tail_perf_itest.dart`
-  （新，Windows 离屏计时，不做性能断言）
-- **备注**：
+  （新，Windows 离屏计时，不做性能断言）、`fushi/test/pages/dictionary_popup_controller_test.dart`
+  （新组「嵌套 realm 停驻与接管」5 条）、`fushi/integration_test/popup_dictionary_test.dart`
+  （新 Phase 5：真 WebView2 上嵌套→关→再嵌套断言接管同一 WebView State）
+- **备注**：查词 FFI 挪独立 isolate **判定不做**——真实词典实测引擎段首查 0～6ms、复查 0～3ms
+  （见下「引擎段实测」），收益为零而阻塞三处（同步分词 API 的 7 个同步调用点、删词典前的
+  mmap 释放跨 isolate 时序、`FushiDicts.dictionaryStyles` map 身份记忆化契约）。
 
 ### 现象与量级（Windows 离屏实测，`tool/run_windows_itest.ps1`，真 WebView2 + 真 popup.js，不启动 app）
 
@@ -81,11 +90,58 @@ itest 把 popup.css / dict-media.js / selection.js / popup.js 按生产 Windows 
 | 分片 while 条件改 `false`（一块一任务） | ③ 红 |
 | `scheduleRenderTail` 无视 MessageChannel 恒 setTimeout | ④ 红 |
 
+### 第二批（用户「还有没有能再优化的」→「全部根本性实现、修复」）
+
+itest 加了分段计时（尾批宏任务 / masonry 各自墙钟、`<style>` 元素数、宿主收到的高度
+去重后个数）并给每本词典配了 24 条规则的自带 CSS（真实 Yomitan 词典包普遍如此）。热态：
+
+| 场景 | complete | 尾批构建 | masonry | RAF 帧 | `<style>` 新建 | 高度回报（去重） |
+|---|---|---|---|---|---|---|
+| 10×5＝50 | 44 → **41 ms** | 20 → **14** | 15 → 18 | 5 → 5 | 50 → **0** | 7(6) → **4(3)** |
+| 30×5＝150 | 194 → **129 ms** | 97 → **55** | 66 → 52 | 17 → 11 | 150 → **0** | 19(18) → **4(3)** |
+| 3×12＝36 | 27 → **23 ms** | 11 → 11 | 9 → 6 | 4 → 2 | 36 → **0** | 6(4) → **3(3)** |
+
+（`<style>` 列的 0 是第二轮：同名词典的样式节点第一轮已建好、之后只比对文本。）
+
+5. **每个词典块一份 `<style>`**。词典样式的选择器本来就是 `[data-dictionary="名"]` 全局作用域，
+   与它挂在哪个块里无关；每插一个样式表整个文档样式失效，下一次布局读（masonry 量高）就把
+   全部卡片重算一遍。改 `ensureDictionaryStyle(dictName, text)`：按词典名去重、文本变了就地
+   改 textContent、挂 head（扩展是 shadow root，插在 `style.fushi-custom-css` 之前，层叠顺序
+   「基础 css < 词典样式 < 自定义 CSS」与旧位置等价）。
+6. **尾批在途逐帧回报高度**。宿主每收一次就 `setState` + 重定尺平台视图一次——这才是「弹窗
+   高度反复变」的本体。masonry 帧只在 `!window._renderInProgress` 时回报；宿主要的只有首词条
+   高度（撤盖板）与全部建完的终高两个稳定值。150 块从 19 次回报降到 4 次。
+7. **ResizeObserver 二次重铺**。masonry 写完列宽、量完高，RO 会在同一轮管线末尾再报一次
+   （首次 observe 也必报）；高度与刚量到的 `__fushiMasonryHeight` 一致就不排帧。顺手修了
+   renderPopup 换代不断开旧 observer 的泄漏：RO 强引用观察目标，热槽 WebView 跨成百上千次
+   查词不重载，已摘除卡片子树一直攒在内存里。
+8. **嵌套查词每层冷建 WebView**（`dictionary_popup_controller.dart`）。常驻热槽只服务第一层；
+   嵌套层被裁掉即销毁，下一次嵌套再来一遍 ~300KB 内联 HTML/CSS/JS 解析 + 全量静态段重注入
+   + 首次布局 JIT。现在 `_retireEntries` 把非热槽层的 `webViewKey` 停到 `parkedRealms`
+   （上限 `kMaxParkedRealms=1`，低内存不停），六个宿主把每把键渲染成屏外隐藏层
+   （`parkedRealmPopupLayer`），`beginTop` / `pushChild` 建非热槽层时 `_takeRealmKey()` 接管
+   ——同一把 GlobalKey ⇒ Flutter 整体搬 element，不拆不建原生表面。停驻的是**键**不是
+   entry：在途的旧查词握着旧 entry，`entries.contains` 恒假，绝不会把旧词结果灌进新层。
+9. **in-app 主题变量第二份拷贝**。`dictionary_popup_webview._themeVariablesJs()` 每次查词
+   都拼一份只为主题热切换去重，且比真源少 eink toggle 与 `--fushi-card-bg-rgb`；删掉，
+   `PopupStaticSettingsJs` 带出 `themeVarsJs`，热切换重注同一段。
+
+### 引擎段实测（判定「查词 FFI 挪独立 isolate」不做）
+
+`lookup_latency_perf_itest.dart` + 真实词典（実用日本語表現辞典 Extended 9.4MB + Jiten
+Novel 频率 4.6MB，`isolated-root/fixtures/perf-dicts/`）：`[perf-engine]` 首查 10 条
+0～6ms、复查 0～3ms；`[perf-e2e]` 冷 13ms、复查 43～50ms（含 WebView 渲染）。引擎段不是
+瓶颈；isolate 化要付端口往返 + 结果序列化，还要先解决同步分词 API 的 7 个同步调用点、
+删词典前跨 isolate 释放 mmap、样式 map 身份记忆化三处阻塞。除非词典集把引擎段推到几十
+毫秒以上，否则不值得。
+
 ### 未覆盖 / 未做
 
 - 只在 **Windows WebView2** 实测；Android / iOS / 扩展浏览器同一份 popup.js，机制无平台分叉
   （MessageChannel / ResizeObserver / RAF 三者都是基线 API），但没有真机数字。
 - 「显示」里用户感知的抖动本轮通过「高度回报次数 / 帧数」间接量化；Layout Instability API
   不计 transform 位移，`layoutShiftScore` 前后都 ≈0，不能作抖动证据（已在 itest 注释说明）。
-- BUG-1868 档案里其余「尚未处理」项（嵌套 `entriesJs` 全栈重传、standby 池=1、查词 FFI 主
-  isolate）本轮不动。
+- app 外全局查词窗 `global_lookup_host.js` 的 standby 池仍是 1：每次取用后双 rAF 即补货
+  （≈ 一次 iframe 装载），只有两次嵌套间隔短于补货窗口才会吃到冷 realm，人手点词达不到；
+  多停一个就多一份 realm 内存，没有测得的收益不加。
+- 嵌套时 `entriesJs` 的重传随 realm 接管已经只发本层词条，不再需要反向回补通道。

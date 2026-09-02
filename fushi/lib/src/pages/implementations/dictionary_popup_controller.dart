@@ -31,7 +31,8 @@ class DictionaryPopupEntry {
     this.visible = true,
     this.isWarmSlot = false,
     this.allLoaded = false,
-  });
+    GlobalKey<DictionaryPopupWebViewState>? webViewKey,
+  }) : webViewKey = webViewKey ?? GlobalKey<DictionaryPopupWebViewState>();
 
   String searchTerm;
   Rect selectionRect;
@@ -60,8 +61,12 @@ class DictionaryPopupEntry {
   /// 仅常驻热槽为 true：其 WebView 全程挂载复用，关栈时隐藏而非销毁。
   final bool isWarmSlot;
 
-  final GlobalKey<DictionaryPopupWebViewState> webViewKey =
-      GlobalKey<DictionaryPopupWebViewState>();
+  /// 本层 WebView 的身份。BUG-2039 ③：嵌套层被裁掉时这把键不随 entry 一起死——
+  /// 它进 [DictionaryPopupController.parkedRealms]，宿主继续把它渲染在屏外，下一条
+  /// 嵌套层就用它建 entry（同一把 GlobalKey ⇒ 同一个 WebView element ⇒ 静态段、
+  /// 字体、JIT 全部还热）。键复用而不是 entry 复用：仍在途的旧异步查词握着旧 entry，
+  /// `entries.contains(旧 entry)` 恒假，绝不会把旧词的结果灌进新层。
+  final GlobalKey<DictionaryPopupWebViewState> webViewKey;
 }
 
 /// 与 UI 无关的查词弹窗**栈原语**：书内（base_source_page）、视频、首页查词 tab、
@@ -157,6 +162,50 @@ class DictionaryPopupController extends ChangeNotifier {
       <DictionaryPopupEntry, Timer>{};
 
   final List<DictionaryPopupEntry> _entries = <DictionaryPopupEntry>[];
+
+  /// BUG-2039 ③：停驻的嵌套 realm 上限。此前每次嵌套查词都新建一个 WebView（约 300KB
+  /// 内联 HTML/CSS/JS 解析 + 全量静态段重注入 + 首次布局 JIT，实测比热 realm 慢两个
+  /// 数量级），关掉就销毁，下一次嵌套再来一遍。常驻热槽只服务第一层，第二层永远是
+  /// 冷的。现在被裁掉的嵌套层把 WebView 键停到这里，宿主继续在屏外挂着它，下一条嵌套
+  /// 层直接接管。上限 1：绝大多数嵌套只有两层，多停一个 realm 就多一份 WebView 进程
+  /// 内存；更深层次仍冷建。低内存模式不停驻（与热槽同一策略）。
+  static const int kMaxParkedRealms = 1;
+
+  final List<GlobalKey<DictionaryPopupWebViewState>> _parkedRealms =
+      <GlobalKey<DictionaryPopupWebViewState>>[];
+
+  late final List<GlobalKey<DictionaryPopupWebViewState>> _parkedRealmsView =
+      UnmodifiableListView<GlobalKey<DictionaryPopupWebViewState>>(
+    _parkedRealms,
+  );
+
+  /// 停驻中的嵌套 realm 键（最近用过的在末尾）。宿主必须把每一把键渲染成一层屏外
+  /// 隐藏弹窗（[parkedRealmPopupLayer]），否则键背后的 WebView element 会被销毁，
+  /// 复用就退化成冷建。
+  List<GlobalKey<DictionaryPopupWebViewState>> get parkedRealms =>
+      _parkedRealmsView;
+
+  /// 把一批离栈的层收尾：取消挂起 Timer；非热槽层的 WebView 键停驻（超上限的、
+  /// 低内存下的直接丢弃）。所有把 entry 移出 [_entries] 的路径都必须经这里。
+  void _retireEntries(Iterable<DictionaryPopupEntry> removed) {
+    _cancelRevealTimers(removed);
+    for (final DictionaryPopupEntry e in removed) {
+      if (e.isWarmSlot || lowMemory) continue;
+      _parkedRealms.remove(e.webViewKey);
+      _parkedRealms.add(e.webViewKey);
+      if (_parkedRealms.length > kMaxParkedRealms) {
+        _parkedRealms.removeRange(0, _parkedRealms.length - kMaxParkedRealms);
+      }
+    }
+  }
+
+  /// 新建非热槽层用的 WebView 键：有停驻 realm 就接管最近用过的那把，没有就新建。
+  GlobalKey<DictionaryPopupWebViewState> _takeRealmKey() {
+    if (_parkedRealms.isEmpty) {
+      return GlobalKey<DictionaryPopupWebViewState>();
+    }
+    return _parkedRealms.removeLast();
+  }
 
   /// [_entries] 的常驻不可变 live 视图。此前每次访问 `List.unmodifiable(_entries)`
   /// 都整表拷贝一份——entries 在宿主 build 循环、`contains` 身份核对里高频调用，
@@ -266,6 +315,7 @@ class DictionaryPopupController extends ChangeNotifier {
     final DictionaryPopupEntry e;
     if (reuseWarmSlot && _entries.isNotEmpty && _entries.first.isWarmSlot) {
       if (_entries.length > 1) {
+        _retireEntries(_entries.sublist(1));
         _entries.removeRange(1, _entries.length);
       }
       _cancelRevealTimer(_entries.first);
@@ -279,12 +329,16 @@ class DictionaryPopupController extends ChangeNotifier {
         ..revealOnRender = false
         ..visible = visible;
     } else {
-      if (replaceStack) _entries.clear();
+      if (replaceStack) {
+        _retireEntries(_entries);
+        _entries.clear();
+      }
       e = DictionaryPopupEntry(
         searchTerm: term,
         selectionRect: rect,
         result: initialResult,
         visible: visible,
+        webViewKey: _takeRealmKey(),
       )..isSearching = true;
       _entries.add(e);
     }
@@ -306,6 +360,7 @@ class DictionaryPopupController extends ChangeNotifier {
       searchTerm: term,
       selectionRect: rect,
       visible: visible,
+      webViewKey: _takeRealmKey(),
     )..isSearching = true;
     _entries.add(e);
     notifyListeners();
@@ -317,7 +372,7 @@ class DictionaryPopupController extends ChangeNotifier {
   void truncateTo(int length) {
     if (length < 0) length = 0;
     if (_entries.length > length) {
-      _cancelRevealTimers(_entries.sublist(length));
+      _retireEntries(_entries.sublist(length));
       _entries.removeRange(length, _entries.length);
       notifyListeners();
       _notifyLookupStackDepth();
@@ -330,24 +385,26 @@ class DictionaryPopupController extends ChangeNotifier {
     if (_entries.isEmpty) return;
     final DictionaryPopupEntry first = _entries.first;
     if (first.isWarmSlot && !lowMemory) {
-      _cancelRevealTimers(_entries);
+      _cancelRevealTimer(first);
+      _retireEntries(_entries.sublist(1));
       _restoreWarmSeed(first);
       _entries
         ..clear()
         ..add(first);
     } else {
-      _cancelRevealTimers(_entries);
+      _retireEntries(_entries);
       _entries.clear();
     }
     notifyListeners();
     _notifyLookupStackDepth();
   }
 
-  /// 清空整个栈（宿主重置/销毁用；不保留热槽）。
+  /// 清空整个栈（宿主重置/销毁用；不保留热槽，也不保留停驻 realm）。
   void clear() {
-    if (_entries.isEmpty) return;
+    if (_entries.isEmpty && _parkedRealms.isEmpty) return;
     _cancelRevealTimers(_entries);
     _entries.clear();
+    _parkedRealms.clear();
     notifyListeners();
     _notifyLookupStackDepth();
   }
@@ -453,17 +510,18 @@ class DictionaryPopupController extends ChangeNotifier {
     if (index == 0) {
       final DictionaryPopupEntry first = _entries.first;
       if (first.isWarmSlot && !lowMemory) {
-        _cancelRevealTimers(_entries);
+        _cancelRevealTimer(first);
+        _retireEntries(_entries.sublist(1));
         _restoreWarmSeed(first);
         _entries
           ..clear()
           ..add(first);
       } else {
-        _cancelRevealTimers(_entries);
+        _retireEntries(_entries);
         _entries.clear();
       }
     } else {
-      _cancelRevealTimers(_entries.sublist(index));
+      _retireEntries(_entries.sublist(index));
       _entries.removeRange(index, _entries.length);
     }
     notifyListeners();
