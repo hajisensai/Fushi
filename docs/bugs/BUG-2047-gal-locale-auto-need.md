@@ -1,0 +1,13 @@
+## BUG-2047 · 转区 auto 档把工程限制当判据：中文系统上 32 位游戏全转区，需要按证据判定是否需要
+- **报告**：2026-09-02（用户：wrds）
+  - 原话：「2、转区需要自动判断是否需要转区，而非全转区（除非无法实现）」。
+- **真实性**：✅ 真 bug（设计缺陷）。根因 `fushi/lib/src/mining/galgame_japanese_locale.dart:104-107`：`auto` = 「系统 ACP≠932 且目标 32 位 ⇒ 转区」——两道门都是**工程限制**（LE 只有 x86 版 / 本就日文区不必再转），没有一道回答「这个游戏的文本是不是 CP932 字节」。[[BUG-1477]] 已指出「32 位 ⇒ 日文原版」是搭便车，但当时只补了每游戏 `off` 兜底，判据没改；[[BUG-1691]] 再次确认「auto 在中文系统 + 32 位目标上必然转区」。
+  - 本机（ACP=936）库里三个游戏全部 `auto`/空串 ⇒ 全部转区，其中两个是 KiriKiri Z 官方多语言版（`.sig` 签名 + `getLangName.dll`），转区后标题「々」被解成「器」（BUG-1691 现场）。
+  - 「除非无法实现」：**部分可实现**。用 Python 原型在真实样本上验证过一组离线证据源（2026-09-02，见 `docs/plans/2026-09-02-gal-japanese-locale-auto-need.md` §2）：
+    - exe 非代码段 NUL 串段里的 **Shift-JIS 假名串**是可靠正向信号（日文原版 31 条 / Unicode 引擎与 charmap.exe 0 条）；
+    - exe 里「GB2312 区字节对」是噪声（纯英文 charmap.exe 也有 86 条 GB 样串段），**不可**作负向；
+    - RT_VERSION 语言目录（0x0411 / 0x0804…）、manifest `activeCodePage=UTF-8`、顶层文件名（假名 / 汉化标记）、顶层文本文件编码统计（readme 假名对 1993 : GB 对 0）都干净可用；
+    - 用户手填的 `galgames.language`（BCP-47）是唯一人工真值，优先级最高。
+- **[ ] ① 未修复** — 方案见 `docs/plans/2026-09-02-gal-japanese-locale-auto-need.md`：三态 `GalJapaneseLocaleNeed{needed,notNeeded,unknown}` + 证据清单；负向证据压过正向（转错 = 闪退，不转 = 乱码，代价不对称）；`auto` 只在 `needed` 时转区，`unknown` 不转（待用户确认这条默认）；判定结果与证据进会话状态卡。等计划确认后实施。
+- **[ ] ② 未加自动化测试** — 计划：`galgame_japanese_locale_test.dart` 真值表加 `need` 三态；新 `galgame_japanese_locale_probe_test.dart`（合成 Shift-JIS/GBK/UTF-8 简体文本、文件名分类、手工拼装含 RT_VERSION/RT_MANIFEST 的最小 PE）；`gal_japanese_locale_visibility_test.dart` 覆盖 verdict 进会话与事件。
+- **备注**：同一轮报告的「转区后 DLL 注入失败」见 [[BUG-2046]]——实测与转区无关，是 9/2 构建 hook DLL 与 LunaHook 的死锁。
