@@ -130,6 +130,12 @@ add_fushi_test(mdx_linked_css_name_test mdx_linked_css_name_test.cpp
 add_fushi_test(mdd_media_import_test mdd_media_import_test.cpp
     "${FUSHI_SRC}/mdx"
     "${FUSHI_ROOT}/fushidicts_external/libdeflate")
+# Real .mdd writers emit `<Library_Data … Encoding="">` with UTF-16LE keys;
+# defaulting that empty attribute to UTF-8 lost the entire media companion
+# (fonts/images/audio/scripts) while the import still reported success.
+add_fushi_test(mdd_empty_encoding_test mdd_empty_encoding_test.cpp
+    "${FUSHI_SRC}/mdx"
+    "${FUSHI_ROOT}/fushidicts_external/libdeflate")
 # import_breadcrumb_test includes "util/import_breadcrumb.hpp" rooted at
 # fushidicts_src/.
 add_fushi_test(import_breadcrumb_test import_breadcrumb_test.cpp
