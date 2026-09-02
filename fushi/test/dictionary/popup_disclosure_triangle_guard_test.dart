@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 查词弹窗「词典分组展开/收起三角」的两条几何不变式守卫。
 ///
 /// TODO-1337（原始不变式）：三角必须是**纯 CSS 边框几何**，禁止回退到字体字形
@@ -29,12 +31,6 @@ import 'package:flutter_test/flutter_test.dart';
 /// 此处只锁三角与间距的几何不变式）。
 void main() {
   String read(String p) => File(p).readAsStringSync();
-
-  /// 剥掉 `/* ... */` 注释再做规则匹配。注释里天然会出现被禁的字面量（本文件锁的
-  /// `padding-top` / `border-top` 在修复说明里都被提到），不剥就会把解释文字当成
-  /// 真声明命中，守卫恒红或恒绿都可能。
-  String stripComments(String css) =>
-      css.replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '');
 
   /// 抽取 `<selector> { ... }` 规则块内容（popup 这些规则无嵌套花括号）。
   String ruleBody(String css, String selector) {
@@ -67,7 +63,11 @@ void main() {
   mirrors.forEach((String name, String relPath) {
     group('[$name] 折叠三角：字体无关 + 展开收起零布局变化', () {
       late final String css;
-      setUpAll(() => css = stripComments(read(relPath)));
+      // 注释里天然会出现被禁的字面量（本文件锁的 `padding-top` /
+      // `border-top` 在修复说明里都被提到），不剥就会把解释文字当成真声明
+      // 命中。用共享的 maskCssComments（等长掩码，不是删除）：下面 ruleBody 靠
+      // indexOf/substring 定位，删除式剥离会让下标与原文错位。
+      setUpAll(() => css = maskCssComments(read(relPath)));
 
       test('TODO-1337 不再用字体字形 ▶ / ▼（旧的脆弱做法）', () {
         expect(css.contains("content: '▶"), isFalse,
