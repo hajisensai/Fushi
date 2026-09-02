@@ -2246,7 +2246,6 @@
   "video_screenshot_failed_reason": "จับภาพหน้าจอไม่สำเร็จ: ${reason}",
   "video_screenshot_ready": "ภาพหน้าจอพร้อมแล้ว: ${file}",
   "video_screenshot_saved_to": "บันทึกภาพหน้าจอแล้ว: ${path}",
-  "video_secondary_subtitle_hint": "เรนเดอร์โดยตัวเล่น (ค้นหาคำไม่ได้)",
   "video_secondary_subtitle_sources": "คำบรรยายรอง",
   "video_setting_auto_play_next": "เล่นตอนถัดไปอัตโนมัติ",
   "video_setting_auto_scrape": "ดึงข้อมูลซีรีส์อัตโนมัติ",

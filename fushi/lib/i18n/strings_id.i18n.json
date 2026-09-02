@@ -2246,7 +2246,6 @@
   "video_screenshot_failed_reason": "Tangkapan layar gagal: ${reason}",
   "video_screenshot_ready": "Tangkapan layar siap: ${file}",
   "video_screenshot_saved_to": "Tangkapan layar tersimpan: ${path}",
-  "video_secondary_subtitle_hint": "Dirender oleh pemutar (tidak bisa dicari)",
   "video_secondary_subtitle_sources": "Subtitle sekunder",
   "video_setting_auto_play_next": "Putar otomatis episode berikutnya",
   "video_setting_auto_scrape": "Ambil info seri otomatis",

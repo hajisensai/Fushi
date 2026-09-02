@@ -2246,7 +2246,6 @@
   "video_screenshot_failed_reason": "스크린샷 실패: ${reason}",
   "video_screenshot_ready": "스크린샷 준비됨: ${file}",
   "video_screenshot_saved_to": "스크린샷이 저장됨: ${path}",
-  "video_secondary_subtitle_hint": "플레이어가 렌더링 (사전 검색 불가)",
   "video_secondary_subtitle_sources": "보조 자막",
   "video_setting_auto_play_next": "다음 에피소드 자동 재생",
   "video_setting_auto_scrape": "시리즈 정보 자동 가져오기",

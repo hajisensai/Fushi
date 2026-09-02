@@ -2246,7 +2246,6 @@
   "video_screenshot_failed_reason": "Chụp màn hình thất bại: ${reason}",
   "video_screenshot_ready": "Ảnh chụp đã sẵn sàng: ${file}",
   "video_screenshot_saved_to": "Đã lưu ảnh chụp: ${path}",
-  "video_secondary_subtitle_hint": "Hiển thị bởi trình phát (không tra cứu được)",
   "video_secondary_subtitle_sources": "Phụ đề phụ",
   "video_setting_auto_play_next": "Tự phát tập tiếp theo",
   "video_setting_auto_scrape": "Tự động lấy thông tin series",

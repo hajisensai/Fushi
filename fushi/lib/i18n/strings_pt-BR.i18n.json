@@ -2246,7 +2246,6 @@
   "video_screenshot_failed_reason": "Falha na captura de tela: ${reason}",
   "video_screenshot_ready": "Captura de tela pronta: ${file}",
   "video_screenshot_saved_to": "Captura de tela salva: ${path}",
-  "video_secondary_subtitle_hint": "Renderizado pelo player (não consultável)",
   "video_secondary_subtitle_sources": "Legenda secundária",
   "video_setting_auto_play_next": "Reproduzir o próximo episódio automaticamente",
   "video_setting_auto_scrape": "Buscar info da série automaticamente",
