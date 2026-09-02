@@ -487,13 +487,23 @@ void main() {
       expect(wroteDataRoot, equals(newDataRoot));
     });
 
-    test('rename 被沙箱/权限层拒绝时退回 copy/delete（macOS 用户选择目录）', () {
+    test('rename 被沙箱/权限/File Provider 拒绝时退回 copy/delete', () {
       // POSIX EPERM / EACCES：macOS sandbox 下把容器目录 rename 到用户选择目录时
       // 可能被拒绝，但逐文件 copy/delete 仍可用，不能直接宣告迁移失败。
       expect(
           DataRootMigrator.shouldCopyAfterRenameFailureForTesting(1), isTrue);
       expect(
           DataRootMigrator.shouldCopyAfterRenameFailureForTesting(13), isTrue);
+      // macOS iCloud File Provider：从 Documents 域 rename 到本地目录可返回
+      // ETIMEDOUT=60；逐文件复制仍是安全回退。其它平台的 errno 60 含义不同。
+      expect(
+          DataRootMigrator.shouldCopyAfterRenameFailureForTesting(
+            60,
+            isMacOS: true,
+          ),
+          isTrue);
+      expect(
+          DataRootMigrator.shouldCopyAfterRenameFailureForTesting(60), isFalse);
       // 既有跨盘 fallback 仍保留。
       expect(
           DataRootMigrator.shouldCopyAfterRenameFailureForTesting(18), isTrue);
