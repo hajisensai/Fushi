@@ -17,8 +17,18 @@
     box-sizing: border-box;
 }
 
-html,
-body {
+/* 自定义属性的兜底层**只能声明在 html 上**，不能连 body 一起声明。
+   主题真值（html[data-theme="light"|"dark"]、html.eink[...]）和 Dart 注入的
+   --md-* 都落在 documentElement 上；自定义属性靠继承往下传，而「元素自身的声明」
+   永远优先于「从父元素继承来的值」。一旦这些兜底值也声明在 body 上，body 及其
+   全部后代拿到的就永远是兜底值，主题块对它们完全失效：
+     · --surface-container-high 恒为 rgba(128,128,128,0.14) → 语法说明浮层
+       （.grammar-tooltip）背景半透明，直接透出下面的词典正文（BUG-2037）；
+     · 暗色主题下 --text-color-light1..4 / --background-color-dark1 恒为亮色值。
+   浏览器扩展侧不受影响也不会退化：generate-content-css.mjs 把 `html` 和 `body`
+   都重写成同一个 `:where(#entries-container)`，主题块重写成
+   `:where(#entries-container)[data-theme=...]`（特异性更高）——本来就是主题块赢。 */
+html {
     --font-size-no-units: 15;
     --line-height: 1.4;
     --list-padding1: 1.4em;
@@ -35,6 +45,10 @@ body {
     --outline-variant: rgba(128, 128, 128, 0.32);
     --primary-color: #386A58;
     --on-surface-variant: #44483F;
+}
+
+html,
+body {
     color: var(--text-color);
     background-color: var(--background-color, transparent);
     /* 内容语言字体链 · 兜底层。此前这里只有 macOS 的 Hiragino 两个家族名，
