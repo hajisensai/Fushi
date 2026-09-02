@@ -50,6 +50,32 @@ window.fushiSelection = {
         return this.isScanWhitespace(char) || this.isScanStop(char);
     },
 
+    // BUG-2056：撇号在**词内**时不是词边界。英语的缩合形与所有格（don’t / it’s /
+    // John’s / we’ve）在真实 EPUB 里几乎都用排版撇号 U+2019，而它和 ASCII ' 一样躺在
+    // scanDelimiters 里，于是前向扫描一撞上就 break：点 "don" 喂给引擎的查询串是
+    // "don"，点 "t" 是 "t"，en.json 词形还原表里 don't 这类词条整类匹配不到。
+    //
+    // 判据只看上下文、不看语言：撇号两侧都是**空格分词类字母**才算词内。字母集与
+    // native/fushidicts/fushidicts_src/scan/word_scan.cpp 的 is_space_delimited_letter
+    // 逐区间对齐（拉丁/希腊/西里尔/亚美尼亚/希伯来/阿拉伯/格鲁吉亚），全仓一个模型。
+    //   don’t / John’s / l’homme → 撇号被跨过，当一个 token 继续扫
+    //   ‘hello’ world            → 右侧是空白，仍是终点（引号语义不受影响）
+    //   日文/中文正文里的 ’      → 两侧非空格分词脚本，仍是终点
+    //
+    // **只作用于前向扫描，不动词首回退**：回退跨撇号会把法语/意大利语省音写法
+    // （l’homme、dell’arte）的锚点从 homme 拖回 l’，反而查不到 homme。前向跨过是纯
+    // 增益——scan_candidates 会生成 don’t / don’ / don 三级前缀，短词不会被挤掉。
+    intraWordApostrophePattern: /['’ʼ]/,
+    spaceDelimitedLetterPattern: /[A-Za-z\u00AA\u00B5\u00BA\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02AF\u0370-\u03FF\u0400-\u052F\u0531-\u0556\u0561-\u0587\u05D0-\u05EA\u05EF-\u05F2\u0620-\u063F\u0641-\u064A\u066E\u066F\u0671-\u06D3\u06D5\u06EE\u06EF\u06FA-\u06FC\u06FF\u0750-\u077F\u08A0-\u08BD\u10A0-\u10C5\u10D0-\u10FA\u1E00-\u1EFF\u1F00-\u1FFF]/,
+    isSpaceDelimitedLetter(char) {
+        return char !== undefined && this.spaceDelimitedLetterPattern.test(char);
+    },
+    isIntraWordApostrophe(text, index) {
+        return this.intraWordApostrophePattern.test(text[index] || '') &&
+            this.isSpaceDelimitedLetter(text[index - 1]) &&
+            this.isSpaceDelimitedLetter(text[index + 1]);
+    },
+
     // BUG-1645：元素是否「同一行内连排」的 inline 盒。块级/列表项/表格单元/flex/grid
     // 在用户眼里就是换行或分栏，两侧文字不可能是同一个词。
     //
@@ -399,6 +425,12 @@ window.fushiSelection = {
 
             while (scanOffset < content.length && text.length < maxLength) {
                 const char = content[scanOffset];
+                // BUG-2056：词内撇号先于终点判定跨过去（don’t 不被截成 don）。
+                if (this.isIntraWordApostrophe(content, scanOffset)) {
+                    text += char;
+                    scanOffset++;
+                    continue;
+                }
                 if (this.isScanStop(char)) break;
                 // BUG-1773：空白只当**同一文本节点内**的词间连接符跨过去，且只跨
                 // 一个：左边必须已有本节点扫入的内容（`scanOffset === start` 即本节点
