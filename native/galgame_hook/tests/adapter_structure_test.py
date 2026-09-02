@@ -1563,6 +1563,55 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("InterlockedIncrement(&g_leaf_identity_measure_attempts)", body)
         self.assertIn("kXAudioDiag2LeafExecutableUnmeasurable", body)
 
+    def test_leaf_structure_gate_reads_the_pristine_file_not_process_memory(
+        self,
+    ) -> None:
+        """身份的结构校验只能读磁盘上的原始映像。
+
+        这五处掩码模式扫的地址都会被 hook 改写，其中 embed_leaf_hook_rva 正是 profile
+        指定给 LunaHook 的 HSX0:0 文本 hook 点：Luna 的 detour 一落下，唯一命中数就变 0,
+        结构门判否 → adapter 不认领 → 几何 provider、输入护盾、LAC 原声 hook 全不装,
+        表现为「点击穿透到下一句」+「语音整场降级」。text_traversal / raster_draw 更是
+        我们自己在 InstallLeafAquaplusD3DTrace 里要 hook 的地址。
+
+        身份是「这个 exe 是不是那份被测量过的构建」——文件的属性，不是当前进程内存的属性。
+        """
+        source = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "leaf_aquaplus_adapter.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        body = self._function_body(source, "bool IsLeafAquaplusProfileMatched(")
+
+        self.assertIn("LOAD_LIBRARY_AS_IMAGE_RESOURCE", body)
+        self.assertIn("image.absolute_base = preferred_base;", body)
+        self.assertIn("FreeLibrary(pristine_raw)", body)
+        self.assertNotIn(
+            "OpenLoadedPeImage(module,",
+            body,
+            "结构校验不得读进程内已加载的模块：那段内存会被 LunaHook 与我们自己的 hook 改写",
+        )
+        self.assertLess(
+            body.index("LOAD_LIBRARY_AS_IMAGE_RESOURCE"),
+            body.index("FindUniqueAbsolute32PatternInExecutableSections("),
+            "原始映像必须在任何模式扫描之前就绪",
+        )
+
+        # absolute_base 只能作用于绝对操作数解码：rel32/寄存器间接算出的是映射内地址。
+        shared = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "exact_lookup_signature.h").read_text(
+                encoding="utf-8"
+            )
+        )
+        decode = self._function_body(shared, "inline bool DecodeAbsolute32ImageAddress(")
+        self.assertIn("image.absolute_base", decode)
+        to_rva = self._function_body(shared, "inline bool AddressToRva(")
+        self.assertNotIn(
+            "absolute_base",
+            to_rva,
+            "AddressToRva 必须继续用 image.base，否则未重定位映像上 rel32 各路整片假失败",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

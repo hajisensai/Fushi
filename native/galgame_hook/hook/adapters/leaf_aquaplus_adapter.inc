@@ -507,17 +507,56 @@ bool IsLeafAquaplusProfileMatched() {
     bool structure_matched = structure_cached > 0;
     if (structure_cached == 0) {
 #if defined(_M_IX86)
+      // 结构校验必须读**磁盘上的原始映像**，不能读进程内存。
+      //
+      // 这五处掩码模式扫的都是会被 hook 改写的地址，而其中 embed_leaf_hook_rva 正是
+      // profile 自己指定给 LunaHook 的 HSX0:0 文本 hook 点（VA 0x004512bf）。Luna 的
+      // detour 一落下，那段字节就不再匹配，唯一命中数变 0 → 结构门判否 → adapter 不
+      // 认领 → 几何 provider 不上线、输入护盾不装、LAC 原声 hook 不装，用户看到的就是
+      // 「点击穿透到下一句」+「语音整场降级 Loopback」。而 Luna 的 hook 何时装上取决于
+      // 它何时观测到第一句输出，于是同一个游戏有的会话正常、有的全废。
+      //
+      // text_traversal_rva / raster_draw_rva 同样是**我们自己**在 InstallLeafAquaplus-
+      // D3DTrace 里要 hook 的地址，今天只因结果被永久缓存才没暴露同一个问题。
+      //
+      // 身份是「这个 exe 是不是那份被测量过的构建」——那是文件的属性，不是当前进程内存
+      // 的属性。所以这里映射磁盘上的那一份来扫。LOAD_LIBRARY_AS_IMAGE_RESOURCE 按节对齐
+      // 映射、不执行任何代码、且**不施加重定位**，因此绝对操作数仍编码首选基址，要用
+      // image.absolute_base 告诉解码器这一点。
       fushi_voice_hook::exact_lookup::LoadedPeImage image;
+      HMODULE pristine_raw =
+          executable_read
+              ? LoadLibraryExW(executable, nullptr,
+                               LOAD_LIBRARY_AS_IMAGE_RESOURCE |
+                                   LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE)
+              : nullptr;
+      const HMODULE pristine = reinterpret_cast<HMODULE>(
+          reinterpret_cast<ULONG_PTR>(pristine_raw) &
+          ~static_cast<ULONG_PTR>(3));
+      uintptr_t preferred_base = 0u;
+      if (pristine != nullptr) {
+        const auto *pdos = reinterpret_cast<const IMAGE_DOS_HEADER *>(pristine);
+        if (pdos->e_magic == IMAGE_DOS_SIGNATURE) {
+          const auto *pnt = reinterpret_cast<const IMAGE_NT_HEADERS32 *>(
+              reinterpret_cast<const uint8_t *>(pristine) + pdos->e_lfanew);
+          if (pnt->Signature == IMAGE_NT_SIGNATURE)
+            preferred_base = static_cast<uintptr_t>(pnt->OptionalHeader.ImageBase);
+        }
+      }
       const bool opened =
-          fushi_voice_hook::exact_lookup::OpenLoadedPeImage(module, &image) &&
+          pristine != nullptr && preferred_base != 0u &&
+          fushi_voice_hook::exact_lookup::OpenLoadedPeImage(pristine, &image) &&
           image.machine == IMAGE_FILE_MACHINE_I386 &&
           image.pointer_bits == 32u;
-      const uintptr_t base = reinterpret_cast<uintptr_t>(module);
-      const uintptr_t expected_cookie = base + profile->stack_cookie_rva;
+      // 读字节用映射地址；解绝对操作数用首选基址。
+      image.absolute_base = preferred_base;
+      const uintptr_t base = reinterpret_cast<uintptr_t>(image.base);
+      const uintptr_t expected_cookie =
+          preferred_base + profile->stack_cookie_rva;
       const uintptr_t expected_input_iat =
-          base + profile->get_async_key_state_iat_rva;
+          preferred_base + profile->get_async_key_state_iat_rva;
       const uintptr_t expected_device =
-          base + profile->d3d9_device_pointer_rva;
+          preferred_base + profile->d3d9_device_pointer_rva;
       const uintptr_t input_anchor_rva =
           profile->input_poller_first_return_rva >= 10u
               ? profile->input_poller_first_return_rva - 10u
@@ -669,6 +708,9 @@ bool IsLeafAquaplusProfileMatched() {
           SetXAudioDiagnostic2(
               fushi_voice_hook::kXAudioDiag2LeafReturnSitesRejected);
       }
+      // 校验只做一次（结果随即被永久缓存），映像用完即还。
+      if (pristine_raw != nullptr)
+        FreeLibrary(pristine_raw);
 #else
       structure_matched = false;
 #endif
