@@ -10,6 +10,11 @@
 
 volatile LONG g_leaf_aquaplus_profile_state =
     0; // 0 unknown, +1 match, -1 reject
+// 身份「测量」失败（读不到 exe / 算不出摘要）时允许重来的次数。见下面
+// IsLeafAquaplusProfileMatched 里的说明：量不到不是不匹配，但也不能无界重试——
+// 每次失败都要对 1.2MB 的 exe 重算一遍 SHA-256，而 Poll 是高频的。
+constexpr LONG kLeafIdentityMeasureBudget = 32;
+volatile LONG g_leaf_identity_measure_attempts = 0;
 volatile LONG g_leaf_exact_binary_structure_state =
     0; // 0 unknown, +1 hydrated structure match, -1 reject
 std::atomic<const fushi_voice_hook::LeafAquaplusProfile *>
@@ -457,6 +462,27 @@ bool IsLeafAquaplusProfileMatched() {
   const bool executable_read =
       chars != 0 && chars < sizeof(executable) / sizeof(executable[0]) &&
       Sha256FileForLeafAquaplus(executable, &digest);
+  if (!executable_read) {
+    // 「量不到」不是「不匹配」。旧实现让这次失败沿用与"哈希不符"同一条 -1 路径写进
+    // g_leaf_aquaplus_profile_state，而那是**永久**缓存：probe() 此后直接返回 false，
+    // 本会话的 Leaf adapter 就此出局 —— 没有 adapter 认领 → 准入汇总收敛成
+    // EngineUnsupported、LAC 原声 hook 一次都不装，用户看到的是整场音频降级到系统
+    // Loopback。而首次 probe 可能落在注入窗口内：摘要要走 BCrypt + 文件映射，在
+    // loader lock 或 hook 安装中途失败是瞬时条件，下一拍 Poll 就能量到。同一台机器
+    // 同一个游戏，有的会话原声正常、有的整场降级，差别就在这一拍。
+    //
+    // 所以只有**测量成功**才允许写缓存。重试有界：预算用尽后照旧钉死，那时"读不到"
+    // 才是个确定结论，而不是一次运气不好。
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2LeafExecutableUnmeasurable);
+    if (InterlockedIncrement(&g_leaf_identity_measure_attempts) <
+        kLeafIdentityMeasureBudget) {
+      return false;
+    }
+    g_leaf_aquaplus_profile.store(nullptr, std::memory_order_release);
+    InterlockedExchange(&g_leaf_aquaplus_profile_state, -1);
+    return false;
+  }
   const auto *profile =
       executable_read && fushi_voice_hook::MatchesLeafAquaplusProfile(
                              fushi_voice_hook::kWhiteAlbum2LeafAquaplusProfile,

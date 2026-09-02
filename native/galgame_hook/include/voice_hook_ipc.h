@@ -461,6 +461,12 @@ constexpr uint32_t kXAudioDiag2LeafEmbedAnchorMissed = 0x00002000u;
 constexpr uint32_t kXAudioDiag2LeafDeviceAnchorMissed = 0x00004000u;
 constexpr uint32_t kXAudioDiag2LeafReturnSitesRejected = 0x00008000u;
 
+// 「exe 摘要量不到」与「摘要量到了但不是这个发行版」必须分开：前者是瞬时条件
+// （首次 probe 可能落在注入窗口内，BCrypt / 文件映射在 loader lock 或 hook 安装
+// 中途失败），后者是确定结论。旧实现两者共用一条永久 -1 缓存路径，于是一次瞬时
+// 失败就让本会话的 Leaf adapter 永久出局，表现为整场音频降级到系统 Loopback。
+constexpr uint32_t kXAudioDiag2LeafExecutableUnmeasurable = 0x00010000u;
+
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM
 // 环已有格式，因此 host 应优先按时间戳配对资源文件，并把系统回环保留为逐句 fallback。

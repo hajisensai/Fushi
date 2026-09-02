@@ -1529,6 +1529,40 @@ class AdapterStructureTest(unittest.TestCase):
             "必须先摘掉指针再 free",
         )
 
+    def test_leaf_identity_does_not_latch_an_unmeasured_executable(self) -> None:
+        """身份缓存只能记录**测量成功**的结论。
+
+        `g_leaf_aquaplus_profile_state` 是永久缓存（0/±1，命中即直接返回）。若把
+        「读不到 exe / 算不出摘要」也写成 -1，一次瞬时失败就让本会话的 Leaf adapter
+        永久出局：没有 adapter 认领 → 准入收敛成 EngineUnsupported、LAC 原声 hook
+        一次都不装，用户看到整场音频降级到系统 Loopback。首次 probe 可能落在注入
+        窗口内（摘要走 BCrypt + 文件映射），所以这是个真实会命中的时序。
+        """
+        source = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "leaf_aquaplus_adapter.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        body = self._function_body(source, "bool IsLeafAquaplusProfileMatched(")
+
+        guard = body.index("if (!executable_read)")
+        latch = body.rindex("InterlockedExchange(&g_leaf_aquaplus_profile_state")
+        self.assertLess(
+            guard,
+            latch,
+            "测量失败必须在写入永久缓存之前就返回，否则一次瞬时失败被钉成永久拒绝",
+        )
+        self.assertLess(
+            guard,
+            body.index("MatchesLeafAquaplusProfile("),
+            "测量失败必须早于 profile 选择返回",
+        )
+
+        # 重试有界：无界重试会把 1.2MB 的 SHA-256 摊进每一拍 Poll。
+        self.assertIn("kLeafIdentityMeasureBudget", body)
+        self.assertIn("InterlockedIncrement(&g_leaf_identity_measure_attempts)", body)
+        self.assertIn("kXAudioDiag2LeafExecutableUnmeasurable", body)
+
 
 if __name__ == "__main__":
     unittest.main()
