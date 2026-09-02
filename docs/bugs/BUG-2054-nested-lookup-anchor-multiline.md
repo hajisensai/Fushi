@@ -4,13 +4,13 @@
   - `fushi/assets/popup/selection.js:444` `getSelectionRect(x,y)` 只取选区**首字符**（`first.start` → `first.start+1`）的矩形当 `textSelected` 的 args[1] 锚点。发这条消息时词典还没查、匹配长度未知，所以锚点天然只覆盖点击那一行。
   - 查词命中后 `selection.js:458` `highlightSelection(count)` 已经把跨行的多段 `getClientRects()` 聚合成**整词 bbox** 并 `return`（跨行时 bottom 落在最后一行），但 `fushi/lib/src/pages/implementations/dictionary_popup_webview.dart:762` 的 `highlightSelection` 是 `void` + 裸 `evaluateJavascript`，**返回值被丢弃**，没有拿它重锚；app 外 overlay 车道 `fushi/assets/popup/global_lookup_host.js:3569` `highlightFrame` 同样丢弃。
   - 同一个不变式在**阅读器正文车道早已实现**（BUG-717②/BUG-767）：`reader_fushi/lookup.part.dart:111-122` 先用选区 rect 显示弹窗，`highlightInvocation`（`reader_selection_scripts.dart:47` 带 `JSON.stringify`）回来后 `highlightRectFromResult` → `reanchorTopPopup` → `DictionaryPopupController.reanchorEntry`，注释写明「保证弹窗不覆盖被查词」。**浏览器扩展车道**也早就按 highlightSelection 返回的词 bbox 锚定（`test/lookup/browser_extension_lookup_highlight_guard_test.dart:70`）。缺的只有「弹窗内嵌套查词」的三条链。
-- **[x] ① 已修复** — 三条嵌套车道接上同一条既有范式（不新造机制、不复制解析器）：
+- **[x] ① 已修复**（`0210206495`）— 三条嵌套车道接上同一条既有范式（不新造机制、不复制解析器）：
   - `dictionary_popup_webview.dart` `highlightSelection` 改成 `Future<Rect?>`，复用 `ReaderSelectionScripts.highlightInvocation` / `highlightRectFromResult`（原样保留 WebView 半销毁的 try/catch 兜底，返回 null 即保持原锚点）。
   - 新增共享 `reanchorNestedPopupToWord()`（`dictionary_popup_layer.dart`，紧邻同源的 BUG-129 `popupWordScreenRect`）：把子层（父层 index+1）重锚到整词 bbox 的屏幕矩形；rect 无效 / 子层已被截断 / 父卡 RenderBox 不可用 / 锚点没变一律 no-op。
   - mixin 家族（视频·首页·texthooker）与 base 家族（阅读器）的 `onTextSelected` + `onLinkClick` 四处各自取回 bbox 并重锚。
   - `DictionaryPopupController.reanchorEntry` 的门从「不可见就不动」收紧成「**隐身热槽**不动」——子层挂上结果后要等自己的 WebView 渲染完才翻可见，而高亮 eval 的往返早于那次 reveal，旧的 `!e.visible` 会把重锚恒吞掉（reveal 前改反而一次到位、零跳变）。
   - app 外 overlay：`global_lookup_host.js` `highlightFrame` 取 `highlightSelection` 返回值，经**与原锚点同一条** `anchorRectToScreen` 转换后 `postToHost('nestedWordAnchor', [parentIndex, rect])`；`global_lookup_controller._applyNestedWordAnchor` 更新 `_frameAnchors[childId]` 并重渲染一次。
-- **[x] ② 已加自动化测试** —
+- **[x] ② 已加自动化测试**（`0210206495`）—
   - `fushi/test/pages/nested_lookup_word_anchor_test.dart`（新增 13 例）：真 RenderBox 下跨行 bbox 重锚、锚点底边必须越过第一行、可见/等待 reveal 两种子层、null/零面积/子层已出栈/父卡 RenderBox 缺失四条 no-op、`calcPopupPosition` 对照（首字符锚点会压住第二行 vs 整词锚点完整落在选区之下）、`reanchorEntry` 的热槽门、四条车道的源码守卫。
   - `fushi/test/lookup/global_lookup_host_test.mjs` §33b（node 真跑 host.js）：整词 bbox 按 shell 原点转换后经 `nestedWordAnchor` 回报；realm 返回 null/undefined/零面积时不回报。
   - `fushi/test/lookup/lookup_word_highlight_surfaces_guard_test.dart` 新增 app 外接线守卫（controller 不能 headless 实例化，沿用该文件既有做法）。
