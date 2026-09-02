@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -67,6 +69,7 @@ double _requiredTextHeight(WidgetTester tester, Finder finder) {
 Widget _panel({
   required VideoPlayerController controller,
   bool Function(AudioCue cue)? isCueFavorited,
+  int fontScaleIndex = 1,
 }) =>
     VideoSubtitleJumpPanel(
       controller: controller,
@@ -80,7 +83,25 @@ Widget _panel({
       emptyHint: 'empty',
       fontSize: _kFontSize,
       width: _kPanelWidth,
+      initialFontScaleIndex: fontScaleIndex,
     );
+
+/// 该行的行盒（[_buildRow] 里承载背景 / 收藏色条 / 上下内缩的那个 [Container]），
+/// 高度 = `ListView.itemExtentBuilder` 给出的行高。
+double _rowHeight(WidgetTester tester, String text) => tester
+    .renderObject<RenderBox>(
+      find
+          .ancestor(
+            of: _cueTextFinder(text),
+            matching: find.byType(Container),
+          )
+          .first,
+    )
+    .size
+    .height;
+
+double _textHeight(WidgetTester tester, String text) =>
+    tester.renderObject<RenderBox>(_cueTextFinder(text)).size.height;
 
 void main() {
   group('BUG-1034 字幕列表行高', () {
@@ -210,5 +231,97 @@ void main() {
         reason: '收藏色条挤窄文本列会让行高偏小并重演裁剪（BUG-1034）',
       );
     });
+  });
+
+  /// BUG-2057：字幕列表行高曾有一条保底下界 `56 * 字号档`。56 是 asbplayer 版列表最初的
+  /// **固定**行高（`static const double _itemExtent = 56`），BUG-1034 改自适应行高时把它
+  /// 留成了下界——于是默认字号下 1 行（16+17.5=33.5）和 2 行（16+35=51）双双被抬到 56，
+  /// 两种行一样高、单行行里六成是空白。英文译文最常只占 1 行，用户看到的就是
+  /// 「英语的上下间距特别高」。
+  ///
+  /// 守卫的是行高的**几何契约本身**：
+  /// `行高 == kSubtitleRowPaddingVertical + max(文本, 时间戳单行, 动作图标)`。
+  /// 三个分量全部取自真实渲染，不复刻实现里的常量；任何形式的保底下界（56、48、
+  /// 按档缩放的都算）都会让最矮的那行对不上而变红。
+  group('BUG-2057 行高只由内容决定（无保底下界）', () {
+    for (final int scaleIndex in <int>[0, 1, 4]) {
+      testWidgets('行高 == 内缩 + 内容高（字号档下标 $scaleIndex）', (
+        WidgetTester tester,
+      ) async {
+        // 第一遍只为量出该档位的真实排版尺度：行内字号 + 文本列宽。测试字体 Ahem
+        // 每个字符宽 = 字号，据此造出恰好 1 / 2 / 3 行的样例，不写死行数。
+        final VideoPlayerController probe = VideoPlayerController();
+        addTearDown(probe.dispose);
+        probe.setCues(<AudioCue>[_cue(0, 0, 'あ')]);
+        await tester.pumpWidget(_wrap(
+          _panel(controller: probe, fontScaleIndex: scaleIndex),
+        ));
+        await tester.pump();
+
+        final RichText probeRich =
+            tester.widget<RichText>(_cueTextFinder('あ'));
+        final double rowFontSize = probeRich.text.style!.fontSize!;
+        final double textColumnWidth =
+            tester.renderObject<RenderBox>(_cueTextFinder('あ')).size.width;
+        final int perLine = (textColumnWidth / rowFontSize).floor();
+        expect(perLine, greaterThan(2), reason: '文本列窄到造不出多行样例');
+
+        const String oneLine = 'あ';
+        final String twoLines = 'い' * (perLine + 1);
+        final String threeLines = 'う' * (2 * perLine + 1);
+
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(<AudioCue>[
+          _cue(0, 0, oneLine),
+          _cue(1, 4000, twoLines),
+          _cue(2, 8000, threeLines),
+        ]);
+        await tester.pumpWidget(_wrap(
+          _panel(controller: controller, fontScaleIndex: scaleIndex),
+        ));
+        await tester.pump();
+
+        // 样例真的分别是 1 / 2 / 3 行，否则这条守卫失去意义。
+        final double line = _textHeight(tester, oneLine);
+        expect(_textHeight(tester, twoLines), closeTo(line * 2, 0.5));
+        expect(_textHeight(tester, threeLines), closeTo(line * 3, 0.5));
+
+        // 行内另两个子项的**真实**渲染高度（Row 高度 = 子项高度最大值）。
+        final double timestampHeight =
+            tester.renderObject<RenderBox>(find.text('0:00')).size.height;
+        final double actionsHeight = tester
+            .renderObject<RenderBox>(find.ancestor(
+              of: find.byIcon(Icons.play_arrow).first,
+              matching: find.byType(InkResponse),
+            ))
+            .size
+            .height;
+
+        for (final String text in <String>[oneLine, twoLines, threeLines]) {
+          final double content = math.max(
+            _textHeight(tester, text),
+            math.max(timestampHeight, actionsHeight),
+          );
+          expect(
+            _rowHeight(tester, text),
+            closeTo(kSubtitleRowPaddingVertical + content, 0.5),
+            reason: '行高必须等于「上下内缩 + 内容」，不许有保底下界把矮行撑高'
+                '（BUG-2057：单行英文译文上下留白特别大）',
+          );
+        }
+
+        // 用户可见的症状：曾经 1 行和 2 行的行一样高。
+        expect(
+          _rowHeight(tester, oneLine),
+          lessThan(_rowHeight(tester, twoLines)),
+          reason: '1 行的行必须比 2 行的行矮',
+        );
+        expect(
+          _rowHeight(tester, twoLines),
+          lessThan(_rowHeight(tester, threeLines)),
+        );
+      });
+    }
   });
 }

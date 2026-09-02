@@ -2182,48 +2182,51 @@ function testRenderPopupNoKanjiNoEntriesShowsNoResults() {
 function testConjugationDescriptionUsesPopupCardAndClosesOnNextLookup() {
   const context = loadPopup();
   const container = new FakeElement('div');
-  const overlay = new FakeElement('div');
-  overlay.classList.add('overlay');
+
+  // 说明面从静态 `.overlay` 改成 popup.js 现建的 `.grammar-tooltip`
+  // （`-title` / `-body` 两个子节点，收起入口统一成 hideGrammarTooltip）。
+  // 这里预置好节点：ensureGrammarTooltip 走 querySelector 命中就直接返回，
+  // 不需要假 DOM 支持 el()/iconSvg()/getBoundingClientRect()。
+  //
+  // 本用例只钉「下一轮查词必须把上一轮的说明面退掉」这一条——它是
+  // grammar-tooltip-single-surface.test.js 那 17 条**没有**覆盖的一半
+  // （那边测 hover/钉住/收起/zoom，不驱动 renderPopup）。
+  const tooltip = new FakeElement('div');
+  tooltip.classList.add('grammar-tooltip');
+  tooltip.classList.add('is-pinned');
+  tooltip.style.display = 'block';
   const title = new FakeElement('div');
-  title.classList.add('overlay-title');
-  const content = new FakeElement('div');
-  content.classList.add('overlay-content');
-  overlay.append(title, content);
-  context.document.body.append(overlay);
-
-  const tag = new FakeElement('span');
-  tag.textContent = '-ている';
-  tag.setAttribute('data-description', 'Indicates an action in progress.');
-  context.showDescription(tag);
-
-  assert.equal(overlay.style.display, 'block',
-    'clicking a conjugation tag opens its detail card');
-  assert.equal(title.textContent, '-ている',
-    'the detail card uses the conjugation as its popup title');
-  assert.equal(content.textContent, 'Indicates an action in progress.',
-    'the grammar description is rendered in the popup body');
+  title.classList.add('grammar-tooltip-title');
+  title.textContent = '-ている';
+  const body = new FakeElement('div');
+  body.classList.add('grammar-tooltip-body');
+  body.textContent = 'Indicates an action in progress.';
+  tooltip.append(title, body);
+  context.document.body.append(tooltip);
 
   stubRenderPopupRuntime(context, container);
   context.window.lookupEntries = [];
   context.window.kanjiResults = [];
   context.window.renderPopup();
 
-  assert.equal(overlay.style.display, 'none',
-    'a new lookup closes the previous conjugation detail card');
+  assert.equal(tooltip.style.display, 'none',
+    'a new lookup closes the previous conjugation detail surface');
+  assert.equal(tooltip.classList.contains('is-pinned'), false,
+    'a new lookup also drops the pinned state, not just visibility');
   assert.equal(title.textContent, '',
-    'a closed detail card cannot retain the previous conjugation title');
-  assert.equal(content.textContent, '',
-    'a closed detail card cannot retain the previous grammar text');
+    'a closed detail surface cannot retain the previous conjugation title');
+  assert.equal(body.textContent, '',
+    'a closed detail surface cannot retain the previous grammar text');
 
   const css = fs.readFileSync(popupCssPath, 'utf8');
-  const rule = css.match(/\.overlay\s*\{([^}]*)\}/);
-  assert.ok(rule, '.overlay popup-card rule must exist');
-  assert.ok(/inset\s*:\s*8px\s*;/.test(rule[1]),
-    'conjugation detail is an inset popup card, not a full-width bottom sheet');
-  assert.ok(/background\s*:\s*var\(--background-color\)\s*;/.test(rule[1]),
-    'conjugation detail uses the normal opaque lookup surface');
-  assert.ok(/border-radius\s*:\s*10px\s*;/.test(rule[1]),
-    'conjugation detail matches the normal lookup popup radius');
+  const rule = css.match(/\.grammar-tooltip\s*\{([^}]*)\}/);
+  assert.ok(rule, '.grammar-tooltip rule must exist');
+  assert.ok(/background\s*:\s*var\(--surface-container-high\)\s*;/.test(rule[1]),
+    'conjugation detail uses an opaque themed surface (BUG-2037)');
+  assert.ok(/border-radius\s*:\s*8px\s*;/.test(rule[1]),
+    'conjugation detail keeps the shared popup radius');
+  assert.ok(!/width\s*:\s*100%\s*;/.test(rule[1]),
+    'conjugation detail is an anchored tooltip, not a full-width bottom sheet');
 }
 
 testEmSizedWideImagesUseHorizontalScrollWrapper();

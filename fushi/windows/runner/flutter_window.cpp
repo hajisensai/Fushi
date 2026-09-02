@@ -1682,8 +1682,10 @@ void FlutterWindow::RegisterGalHookTextChannel() {
   // IsWindowVisible=true 都不能证明一个桌面 HWND 真能盖住 exclusive scan-out。
   fushi::VoiceHookReader::Instance().SetLookupDirectPresenter(
       [this](int32_t anchor_x, int32_t anchor_y, uint32_t card_width,
-             uint32_t card_height, uint32_t view_width,
-             uint32_t view_height) {
+             uint32_t card_height, uint32_t view_width, uint32_t view_height,
+             int32_t glyph_x, int32_t glyph_y, uint32_t glyph_w,
+             uint32_t glyph_h, uint32_t* out_client_width,
+             uint32_t* out_client_height) {
         const uint32_t pid = fushi::VoiceHookReader::Instance().CurrentPid();
         if (attached_text_surface_window_ == nullptr ||
             !attached_text_surface_window_->DesktopOverlayAvailableForTarget(
@@ -1694,7 +1696,8 @@ void FlutterWindow::RegisterGalHookTextChannel() {
         if (card == nullptr) return false;
         return card->RevealOverProcessClient(
             pid, anchor_x, anchor_y, card_width, card_height, view_width,
-            view_height);
+            view_height, glyph_x, glyph_y, glyph_w, glyph_h,
+            out_client_width, out_client_height);
       });
   fushi::VoiceHookReader::Instance().SetLookupCaptureRequest(
       [this](uint32_t max_width, uint32_t max_height,

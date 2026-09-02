@@ -64,6 +64,7 @@ void main() {
           String launchWorkdir = '',
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
         }) {
           seen = lunaPcHooks;
           return engine;
@@ -153,6 +154,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -253,6 +255,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,

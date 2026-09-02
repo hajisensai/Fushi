@@ -593,11 +593,15 @@ void main() {
                 '${dir.path}${Platform.pathSeparator}hibiki.exe',
             currentInstallDir: dir.path,
             targetInstallDir: dir.path,
-            libmpvModuleHolders: <WindowsProcessInfo>[
+            // BUG-2055 —— 占用者的镜像必须在**安装目录之外**，这条用例才名副其实：
+            // `fushi.iss` 的 `PrepareToInstall` 第一步就是
+            // `KillProcessesUnderDir({app})`，按镜像路径清掉安装目录树内的任何进程。
+            // 把「外部程序」摆进安装目录里，断言的其实是一个安装器自己就能解决的情形。
+            libmpvModuleHolders: const <WindowsProcessInfo>[
               WindowsProcessInfo(
                 pid: 9001,
                 name: 'someplayer.exe',
-                path: '${dir.path}${Platform.pathSeparator}someplayer.exe',
+                path: r'D:\Media\Player\someplayer.exe',
               ),
             ],
           ),
@@ -616,8 +620,7 @@ void main() {
       expect(record?.installerLaunchSucceeded, isFalse);
       expect(record?.libmpvModuleHolders.single.pid, 9001);
       expect(record?.launchError, contains('non-Fushi process'));
-      expect(
-          record?.launchError, contains('Close the listed process manually'));
+      expect(record?.launchError, contains('Close them manually'));
     });
 
     test(
@@ -669,10 +672,115 @@ void main() {
       expect(record?.installerLaunchSucceeded, isFalse);
       expect(record?.galHookModuleHolders.single.pid, 7777);
       expect(record?.galHookModuleHolders.single.name, 'SiglusEngine.exe');
-      expect(record?.launchError, contains('non-Fushi process'));
+      // BUG-2055 —— 报错必须说清成因：占用者不是「某个非 Fushi 程序」，而是被 Fushi
+      // 自己的语音捕获组件注入的程序。旧文案把所有占用者统称 non-Fushi process，
+      // 等于把用户指向一个与 Fushi 无关的第三方，照着这句话永远找不到占用者。
+      expect(
+        record?.launchError,
+        contains("Fushi's voice capture component is injected"),
+      );
+      expect(
+        record?.launchError,
+        contains('Save your progress and close them'),
+      );
+      expect(record?.launchError, isNot(contains('non-Fushi process')));
       // 报错不得把占用者说成 libmpv：这次占用的是 helper 组件，指名错组件会把
       // 用户引到完全无关的排查方向。
       expect(record?.launchError, isNot(contains('libmpv')));
+    });
+
+    test(
+        'BUG-2055 镜像在安装目录树内的自有子进程交给安装器，不再硬中止'
+        '（KillProcessesUnderDir 按镜像路径清扫，Dart 侧不该比它更严）', () async {
+      final File marker = await _markerFile();
+      final Directory dir = marker.parent;
+      final File installer = File(
+          '${dir.path}${Platform.pathSeparator}fushi-1.2.3-windows-setup.exe');
+      await installer.writeAsBytes(<int>[0x4D, 0x5A, 0x90, 0x00]);
+
+      var startCalled = false;
+      await WindowsInstaller.runAndExit(
+        installer.path,
+        targetVersion: '1.2.3',
+        handoffMarkerFile: marker,
+        collectDiagnostics: () async => WindowsInstallerDiagnostics(
+          currentExecutablePath:
+              '${dir.path}${Platform.pathSeparator}fushi.exe',
+          currentInstallDir: dir.path,
+          targetInstallDir: dir.path,
+          // 以 `--hold` 常驻的自有 injector：镜像在安装目录树内，安装器
+          // `KillProcessesUnderDir` 一步就清得掉。旧判据只认三个 image 名，把它
+          // 当成「安装器杀不掉的外部锁」硬中止，用户这次更新就永远做不下去，而
+          // 关掉它根本不需要用户插手。
+          galHookModuleHolders: <WindowsProcessInfo>[
+            WindowsProcessInfo(
+              pid: 4321,
+              name: 'fushi_voice_injector.exe',
+              path: '${dir.path}${Platform.pathSeparator}voice_hook'
+                  '${Platform.pathSeparator}x86'
+                  '${Platform.pathSeparator}fushi_voice_injector.exe',
+            ),
+          ],
+        ),
+        startProcess: (String executable, List<String> args) async {
+          startCalled = true;
+          return const WindowsInstallerStartedProcess(pid: 4242);
+        },
+        exitProcess: (_) {},
+      );
+
+      expect(startCalled, isTrue,
+          reason: '镜像在安装目录树内的进程由安装器清掉，Dart 不该抢先中止更新');
+      final WindowsUpdateHandoffRecord? record =
+          await WindowsUpdateHandoff.read(marker);
+      expect(record?.galHookModuleHolders.single.pid, 4321);
+      expect(record?.launchError, isNull);
+    });
+
+    test(
+        'BUG-2055 同前缀的兄弟目录不算「安装目录树内」，仍按外部锁硬中止', () async {
+      final File marker = await _markerFile();
+      final Directory dir = marker.parent;
+      final File installer = File(
+          '${dir.path}${Platform.pathSeparator}fushi-1.2.3-windows-setup.exe');
+      await installer.writeAsBytes(<int>[0x4D, 0x5A, 0x90, 0x00]);
+
+      var startCalled = false;
+      await expectLater(
+        WindowsInstaller.runAndExit(
+          installer.path,
+          targetVersion: '1.2.3',
+          handoffMarkerFile: marker,
+          collectDiagnostics: () async => WindowsInstallerDiagnostics(
+            currentExecutablePath:
+                '${dir.path}${Platform.pathSeparator}fushi.exe',
+            currentInstallDir: dir.path,
+            targetInstallDir: dir.path,
+            // 目录名以安装目录为前缀、但**不是**它的子目录。裸 startsWith 会把它
+            // 误判成安装器清得掉，于是照常交接、随后在复制阶段静默失败
+            // （BUG-1675 的失败形状）。判据必须比到路径分隔符。
+            libmpvModuleHolders: <WindowsProcessInfo>[
+              WindowsProcessInfo(
+                pid: 9100,
+                name: 'someplayer.exe',
+                path: '${dir.path}-sibling'
+                    '${Platform.pathSeparator}someplayer.exe',
+              ),
+            ],
+          ),
+          startProcess: (String executable, List<String> args) async {
+            startCalled = true;
+            return const WindowsInstallerStartedProcess(pid: 4242);
+          },
+          exitProcess: (_) {},
+        ),
+        throwsA(isA<UpdateInstallerException>()),
+      );
+
+      expect(startCalled, isFalse);
+      final WindowsUpdateHandoffRecord? record =
+          await WindowsUpdateHandoff.read(marker);
+      expect(record?.launchError, contains('non-Fushi process'));
     });
 
     test('BUG-1675 galHookModuleHolders 计入锁证据，且 wire 键可往返', () async {

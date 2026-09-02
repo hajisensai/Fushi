@@ -16,6 +16,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.da
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/sentence_context_dialog.dart';
+import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
@@ -179,18 +180,55 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// 弹窗回传 token 的落地点。默认行为：解析出的动作只要属于
   /// [dictionaryPopupForwardedActions] 就关掉整条弹窗栈——「关闭词典」是这条桥的
   /// 唯一通用语义。漫画页覆写它，把左右键接回自己的翻页链。
+  ///
+  /// 返回**本次是否真的执行了**动作。BUG-2031：鼠标那条路要靠这个回答决定要不要向
+  /// `MouseBindingDispatch` 认领这次按下（见 [onDismissBarrierNonPrimaryButton]）。
+  /// 键盘 token 的调用方忽略返回值即可（`bool Function(String)` 可直接当
+  /// `void Function(String)` 用，既有回调点零改动）。
   @protected
-  void onDictionaryPopupInputToken(String token) {
+  bool onDictionaryPopupInputToken(String token) {
     final ShortcutScope? scope = dictionaryPopupInputScope;
-    if (scope == null) return;
+    if (scope == null) return false;
     final ShortcutAction? action = resolveDictionaryPopupInputToken(
       registry: appModel.shortcutRegistry,
       token: token,
       scope: scope,
     );
-    if (action == null) return;
-    if (!dictionaryPopupForwardedActions.contains(action)) return;
+    if (action == null) return false;
+    if (!dictionaryPopupForwardedActions.contains(action)) return false;
     clearDictionaryResult();
+    return true;
+  }
+
+  /// 指针落在**弹窗矩形之外**、按下鼠标非主键。
+  ///
+  /// 为什么这条必须住在 barrier 上：弹窗可见期间根 Overlay 的
+  /// [LookupDismissBarrier] 是 `Positioned.fill`，叶子 `ColoredBox` 的命中行为是
+  /// **opaque**（颜色透明 ≠ 命中透明），于是页面根那层 [Listener] 一个指针事件都
+  /// 收不到（守卫 `test/shortcuts/video_pointer_channel_reachability_test.dart`）。
+  /// 指针落在弹窗**矩形之内**的那半边由弹窗表面自己的桥承担；**矩形之外**这半边此前
+  /// 只有视频页接了，其余表面的症状是「侧键压在浮窗上能关、移开一点就关不掉」。
+  ///
+  /// 默认实现与弹窗表面那条路**逐字同源**：同一个 [dictionaryPopupInputSpec]、同一个
+  /// [dictionaryPopupPointerToken] 折 token、同一个 [onDictionaryPopupInputToken]
+  /// 落地，故两个表面不可能各判各的。
+  /// BUG-2031：本入口必须参与 [MouseBindingDispatch] 的认领协议。barrier 住在根
+  /// Overlay 里，而 `wrapWithGlobalNavigation` 的鼠标兜底 [Listener] 是**它的祖先**，
+  /// 祖先不会被后代的 opaque 命中排除（实测派发序列 `[barrier, root]`）。不认领的
+  /// 后果是同一次按下被两层各派发一次：绑「返回上一级」的侧键 = 关词典 **+** 退出
+  /// 整本书，而键盘 Esc 只关词典——键鼠语义分叉。认领后 app 根让路，两者一致。
+  @protected
+  void onDismissBarrierNonPrimaryButton(PointerDownEvent event) {
+    // 「解析到但没执行」不认领：那等价于键盘侧「明明 ignored 却返回 handled」，会把
+    // 同一按钮上 universal / global 的合法绑定白白挡掉。
+    dispatchClaimedMouseAction(event, () {
+      final String? token = dictionaryPopupPointerToken(
+        buttons: event.buttons,
+        spec: dictionaryPopupInputSpec,
+      );
+      if (token == null) return false;
+      return onDictionaryPopupInputToken(token);
+    });
   }
 
   /// TODO-1027：点全屏 dismiss barrier（弹窗矩形外的真空白处）的钩子。默认行为
@@ -631,6 +669,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                             ReaderFushiSource.instance.dismissSwipeSensitivity,
                         onPointerHover: onDismissBarrierHover,
                         onPointerSignal: onDismissBarrierPointerSignal,
+                        // 弹窗可见时唯一还能接到指针的地方（barrier 命中行为
+                        // opaque，页面根 Listener 收不到）——见该钩子的文档。
+                        onNonPrimaryButtonDown:
+                            onDismissBarrierNonPrimaryButton,
                       ),
                     ),
                   if (showLoadingPlaceholder) _buildLoadingPlaceholder(screen),

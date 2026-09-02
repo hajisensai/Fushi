@@ -2,7 +2,7 @@ import 'package:flutter/widgets.dart';
 
 /// 浮层面板的焦点圈地（手柄重设计 P3）。
 ///
-/// 解决的问题：视频页的剧集轨 / 字幕列表 / 侧栏面板打开后，焦点仍停在页面级
+/// 解决的问题：视频页的剧集轨 / 侧栏面板打开后，焦点仍停在页面级
 /// `_videoFocusNode` 上——手柄 D-pad 的通用移焦兜底从那里出发找不到面板内的行，
 /// 面板对手柄用户等于不存在。本组件把面板包成一个 [FocusScope] +
 /// [FocusTraversalGroup]，在 [visible] 变真（或以可见状态挂载）时把焦点领进面板
@@ -20,8 +20,12 @@ import 'package:flutter/widgets.dart';
 /// 两种宿主形态都覆盖：
 ///   · 常驻挂载 + FadingChromeGate 显隐（剧集轨）：跟 [didUpdateWidget] 的
 ///     visible 边沿走；
-///   · 只在打开时挂载（字幕列表 / 侧栏）：跟 [initState] / [dispose] 走，
+///   · 只在打开时挂载（侧栏）：跟 [initState] / [dispose] 走，
 ///     visible 恒 true 即可。
+///
+/// 视频页的字幕列表**刻意不用**本组件（BUG-2040）：它是 push-aside 侧栏、画面全程
+/// 可点，焦点一被领进列表，裸方向键就让位给焦点遍历、页面又拒绝收回焦点，用户看到
+/// 的是「一开字幕列表视频快捷键全没了」。它只由指针 / 触屏操作，焦点留在画面上。
 ///
 /// 若面板内有子节点自带 `autofocus`（如选中集卡片），后帧检查发现焦点已在面板内
 /// 就不再抢——autofocus 的更精准落点优先。
@@ -67,7 +71,7 @@ class _PanelFocusScopeState extends State<PanelFocusScope> {
 
   @override
   void dispose() {
-    // 面板随关闭卸载（字幕列表 / 侧栏）：焦点若还圈在面板里，归还宿主。
+    // 面板随关闭卸载（侧栏）：焦点若还圈在面板里，归还宿主。
     if (widget.visible && _scope.hasFocus) _restoreHostFocus();
     _scope.dispose();
     super.dispose();
