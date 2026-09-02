@@ -33,6 +33,26 @@
 
 namespace flutter_onnxruntime {
 
+namespace {
+
+// The single exit for every error reply on this channel.
+//
+// Error messages here come from ONNX Runtime and the CRT, and on Windows those
+// carry the system error text in the machine's ANSI code page. Handing those
+// bytes to the channel verbatim does not merely garble the text: the reply
+// stops being decodable at all, and the Dart caller sees a FormatException
+// pointing at a byte offset instead of the failure we were trying to report.
+//
+// Route every error through here rather than sanitising the ones that "look
+// dynamic" -- a literal today is a concatenation tomorrow, and the difference
+// is invisible at the call site.
+void FailWith(const std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> &result, const std::string &code,
+              const std::string &message) {
+  result->Error(code, WindowsUtils::toUtf8Message(message), nullptr);
+}
+
+} // namespace
+
 // Private implementation class to hold managers
 class FlutterOnnxruntimePluginImpl {
 public:
@@ -130,7 +150,7 @@ void FlutterOnnxruntimePlugin::HandleCreateOrtValue(
   const auto *args = std::get_if<flutter::EncodableMap>(method_call.arguments());
 
   if (!args) {
-    result->Error("INVALID_ARG", "Arguments must be provided as a map", nullptr);
+    FailWith(result, "INVALID_ARG", "Arguments must be provided as a map");
     return;
   }
 
@@ -138,7 +158,7 @@ void FlutterOnnxruntimePlugin::HandleCreateOrtValue(
     // Extract source type
     auto source_type_it = args->find(flutter::EncodableValue("sourceType"));
     if (source_type_it == args->end() || !std::holds_alternative<std::string>(source_type_it->second)) {
-      result->Error("INVALID_ARG", "Source type must be a non-null string", nullptr);
+      FailWith(result, "INVALID_ARG", "Source type must be a non-null string");
       return;
     }
     std::string source_type = std::get<std::string>(source_type_it->second);
@@ -146,7 +166,7 @@ void FlutterOnnxruntimePlugin::HandleCreateOrtValue(
     // Extract data
     auto data_it = args->find(flutter::EncodableValue("data"));
     if (data_it == args->end()) {
-      result->Error("INVALID_ARG", "Data must be provided", nullptr);
+      FailWith(result, "INVALID_ARG", "Data must be provided");
       return;
     }
     const flutter::EncodableValue &data_value = data_it->second;
@@ -154,7 +174,7 @@ void FlutterOnnxruntimePlugin::HandleCreateOrtValue(
     // Extract shape
     auto shape_it = args->find(flutter::EncodableValue("shape"));
     if (shape_it == args->end() || !std::holds_alternative<flutter::EncodableList>(shape_it->second)) {
-      result->Error("INVALID_ARG", "Shape must be a non-null list", nullptr);
+      FailWith(result, "INVALID_ARG", "Shape must be a non-null list");
       return;
     }
 
@@ -168,7 +188,7 @@ void FlutterOnnxruntimePlugin::HandleCreateOrtValue(
       } else if (std::holds_alternative<int64_t>(dim)) {
         shape.push_back(std::get<int64_t>(dim));
       } else {
-        result->Error("INVALID_ARG", "Shape dimensions must be integers", nullptr);
+        FailWith(result, "INVALID_ARG", "Shape dimensions must be integers");
         return;
       }
     }
@@ -181,28 +201,28 @@ void FlutterOnnxruntimePlugin::HandleCreateOrtValue(
     std::string tensor_id;
     if (source_type == "float32") {
       if (!std::holds_alternative<std::vector<float>>(data_value)) {
-        result->Error("INVALID_ARG", "Float32 data must be a list", nullptr);
+        FailWith(result, "INVALID_ARG", "Float32 data must be a list");
         return;
       }
       std::vector<float> float_data = std::get<std::vector<float>>(data_value);
       tensor_id = impl_->tensorManager_->createFloat32Tensor(float_data, shape);
     } else if (source_type == "int32") {
       if (!std::holds_alternative<std::vector<int32_t>>(data_value)) {
-        result->Error("INVALID_ARG", "Int32 data must be a list", nullptr);
+        FailWith(result, "INVALID_ARG", "Int32 data must be a list");
         return;
       }
       std::vector<int32_t> int32_data = std::get<std::vector<int32_t>>(data_value);
       tensor_id = impl_->tensorManager_->createInt32Tensor(int32_data, shape);
     } else if (source_type == "int64") {
       if (!std::holds_alternative<std::vector<int64_t>>(data_value)) {
-        result->Error("INVALID_ARG", "Int64 data must be a list", nullptr);
+        FailWith(result, "INVALID_ARG", "Int64 data must be a list");
         return;
       }
       std::vector<int64_t> int64_data = std::get<std::vector<int64_t>>(data_value);
       tensor_id = impl_->tensorManager_->createInt64Tensor(int64_data, shape);
     } else if (source_type == "uint8") {
       if (!std::holds_alternative<std::vector<uint8_t>>(data_value)) {
-        result->Error("INVALID_ARG", "Uint8 data must be a list", nullptr);
+        FailWith(result, "INVALID_ARG", "Uint8 data must be a list");
         return;
       }
       std::vector<uint8_t> uint8_data = std::get<std::vector<uint8_t>>(data_value);
@@ -210,7 +230,7 @@ void FlutterOnnxruntimePlugin::HandleCreateOrtValue(
     } else if (source_type == "bool") {
       // Note: for bool values, Dart always pass a List<bool>, not a typed list
       if (!std::holds_alternative<flutter::EncodableList>(data_value)) {
-        result->Error("INVALID_ARG", "Bool data must be a list", nullptr);
+        FailWith(result, "INVALID_ARG", "Bool data must be a list");
         return;
       }
       auto bool_data_list = std::get<flutter::EncodableList>(data_value);
@@ -227,7 +247,7 @@ void FlutterOnnxruntimePlugin::HandleCreateOrtValue(
       tensor_id = impl_->tensorManager_->createBoolTensor(bool_data, shape);
     } else if (source_type == "string") {
       if (!std::holds_alternative<flutter::EncodableList>(data_value)) {
-        result->Error("INVALID_ARG", "String data must be a list of strings", nullptr);
+        FailWith(result, "INVALID_ARG", "String data must be a list of strings");
         return;
       }
       auto string_data_list = std::get<flutter::EncodableList>(data_value);
@@ -241,7 +261,7 @@ void FlutterOnnxruntimePlugin::HandleCreateOrtValue(
       }
       tensor_id = impl_->tensorManager_->createStringTensor(string_data, shape);
     } else {
-      result->Error("INVALID_ARG", "Unsupported data type: " + source_type, nullptr);
+      FailWith(result, "INVALID_ARG", "Unsupported data type: " + source_type);
       return;
     }
 
@@ -259,11 +279,11 @@ void FlutterOnnxruntimePlugin::HandleCreateOrtValue(
 
     result->Success(flutter::EncodableValue(response));
   } catch (const Ort::Exception &e) {
-    result->Error("ORT_ERROR", e.what(), nullptr);
+    FailWith(result, "ORT_ERROR", e.what());
   } catch (const std::exception &e) {
-    result->Error("PLUGIN_ERROR", e.what(), nullptr);
+    FailWith(result, "PLUGIN_ERROR", e.what());
   } catch (...) {
-    result->Error("INTERNAL_ERROR", "Unknown error occurred", nullptr);
+    FailWith(result, "INTERNAL_ERROR", "Unknown error occurred");
   }
 }
 
@@ -275,7 +295,7 @@ void FlutterOnnxruntimePlugin::HandleConvertOrtValue(
   const auto *args = std::get_if<flutter::EncodableMap>(method_call.arguments());
 
   if (!args) {
-    result->Error("INVALID_ARG", "Arguments must be provided as a map", nullptr);
+    FailWith(result, "INVALID_ARG", "Arguments must be provided as a map");
     return;
   }
 
@@ -283,7 +303,7 @@ void FlutterOnnxruntimePlugin::HandleConvertOrtValue(
     // Extract value ID
     auto value_id_it = args->find(flutter::EncodableValue("valueId"));
     if (value_id_it == args->end() || !std::holds_alternative<std::string>(value_id_it->second)) {
-      result->Error("INVALID_ARG", "Value ID must be a non-null string", nullptr);
+      FailWith(result, "INVALID_ARG", "Value ID must be a non-null string");
       return;
     }
     std::string value_id = std::get<std::string>(value_id_it->second);
@@ -291,7 +311,7 @@ void FlutterOnnxruntimePlugin::HandleConvertOrtValue(
     // Extract target type
     auto target_type_it = args->find(flutter::EncodableValue("targetType"));
     if (target_type_it == args->end() || !std::holds_alternative<std::string>(target_type_it->second)) {
-      result->Error("INVALID_ARG", "Target type must be a non-null string", nullptr);
+      FailWith(result, "INVALID_ARG", "Target type must be a non-null string");
       return;
     }
     std::string target_type = std::get<std::string>(target_type_it->second);
@@ -301,7 +321,7 @@ void FlutterOnnxruntimePlugin::HandleConvertOrtValue(
       // Convert the tensor
       new_tensor_id = impl_->tensorManager_->convertTensor(value_id, target_type);
     } catch (const std::exception &e) {
-      result->Error("CONVERSION_ERROR", e.what(), nullptr);
+      FailWith(result, "CONVERSION_ERROR", e.what());
       return;
     }
 
@@ -322,11 +342,11 @@ void FlutterOnnxruntimePlugin::HandleConvertOrtValue(
 
     result->Success(flutter::EncodableValue(response));
   } catch (const Ort::Exception &e) {
-    result->Error("ORT_ERROR", e.what(), nullptr);
+    FailWith(result, "ORT_ERROR", e.what());
   } catch (const std::exception &e) {
-    result->Error("PLUGIN_ERROR", e.what(), nullptr);
+    FailWith(result, "PLUGIN_ERROR", e.what());
   } catch (...) {
-    result->Error("INTERNAL_ERROR", "Unknown error occurred", nullptr);
+    FailWith(result, "INTERNAL_ERROR", "Unknown error occurred");
   }
 }
 
@@ -338,7 +358,7 @@ void FlutterOnnxruntimePlugin::HandleGetOrtValueData(
   const auto *args = std::get_if<flutter::EncodableMap>(method_call.arguments());
 
   if (!args) {
-    result->Error("INVALID_ARG", "Arguments must be provided as a map", nullptr);
+    FailWith(result, "INVALID_ARG", "Arguments must be provided as a map");
     return;
   }
 
@@ -346,7 +366,7 @@ void FlutterOnnxruntimePlugin::HandleGetOrtValueData(
     // Extract value ID
     auto value_id_it = args->find(flutter::EncodableValue("valueId"));
     if (value_id_it == args->end() || !std::holds_alternative<std::string>(value_id_it->second)) {
-      result->Error("INVALID_ARG", "Value ID must be a non-null string", nullptr);
+      FailWith(result, "INVALID_ARG", "Value ID must be a non-null string");
       return;
     }
     std::string value_id = std::get<std::string>(value_id_it->second);
@@ -354,7 +374,7 @@ void FlutterOnnxruntimePlugin::HandleGetOrtValueData(
     // check if the tensor exists
     Ort::Value *tensor = impl_->tensorManager_->getTensor(value_id);
     if (!tensor) {
-      result->Error("INVALID_VALUE", "Tensor not found or already being disposed", nullptr);
+      FailWith(result, "INVALID_VALUE", "Tensor not found or already being disposed");
       return;
     }
 
@@ -364,11 +384,11 @@ void FlutterOnnxruntimePlugin::HandleGetOrtValueData(
     // Return success with the tensor data
     result->Success(tensor_data);
   } catch (const Ort::Exception &e) {
-    result->Error("ORT_ERROR", e.what(), nullptr);
+    FailWith(result, "ORT_ERROR", e.what());
   } catch (const std::exception &e) {
-    result->Error("PLUGIN_ERROR", e.what(), nullptr);
+    FailWith(result, "PLUGIN_ERROR", e.what());
   } catch (...) {
-    result->Error("INTERNAL_ERROR", "Unknown error occurred", nullptr);
+    FailWith(result, "INTERNAL_ERROR", "Unknown error occurred");
   }
 }
 
@@ -380,7 +400,7 @@ void FlutterOnnxruntimePlugin::HandleReleaseOrtValue(
   const auto *args = std::get_if<flutter::EncodableMap>(method_call.arguments());
 
   if (!args) {
-    result->Error("INVALID_ARG", "Arguments must be provided as a map", nullptr);
+    FailWith(result, "INVALID_ARG", "Arguments must be provided as a map");
     return;
   }
 
@@ -388,7 +408,7 @@ void FlutterOnnxruntimePlugin::HandleReleaseOrtValue(
     // Extract value ID
     auto value_id_it = args->find(flutter::EncodableValue("valueId"));
     if (value_id_it == args->end() || !std::holds_alternative<std::string>(value_id_it->second)) {
-      result->Error("INVALID_ARG", "Value ID must be a non-null string", nullptr);
+      FailWith(result, "INVALID_ARG", "Value ID must be a non-null string");
       return;
     }
     std::string value_id = std::get<std::string>(value_id_it->second);
@@ -400,14 +420,14 @@ void FlutterOnnxruntimePlugin::HandleReleaseOrtValue(
     if (success) {
       result->Success(nullptr);
     } else {
-      result->Error("INVALID_VALUE", "Tensor not found", nullptr);
+      FailWith(result, "INVALID_VALUE", "Tensor not found");
     }
   } catch (const Ort::Exception &e) {
-    result->Error("ORT_ERROR", e.what(), nullptr);
+    FailWith(result, "ORT_ERROR", e.what());
   } catch (const std::exception &e) {
-    result->Error("PLUGIN_ERROR", e.what(), nullptr);
+    FailWith(result, "PLUGIN_ERROR", e.what());
   } catch (...) {
-    result->Error("INTERNAL_ERROR", "Unknown error occurred", nullptr);
+    FailWith(result, "INTERNAL_ERROR", "Unknown error occurred");
   }
 }
 
@@ -419,7 +439,7 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
   const auto *args = std::get_if<flutter::EncodableMap>(method_call.arguments());
 
   if (!args) {
-    result->Error("INVALID_ARG", "Arguments must be provided as a map", nullptr);
+    FailWith(result, "INVALID_ARG", "Arguments must be provided as a map");
     return;
   }
 
@@ -427,7 +447,7 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
     // Extract model path
     auto model_path_it = args->find(flutter::EncodableValue("modelPath"));
     if (model_path_it == args->end() || !std::holds_alternative<std::string>(model_path_it->second)) {
-      result->Error("INVALID_ARG", "Model path must be a non-null string", nullptr);
+      FailWith(result, "INVALID_ARG", "Model path must be a non-null string");
       return;
     }
     std::string model_path = std::get<std::string>(model_path_it->second);
@@ -498,7 +518,7 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
               std::string error_message = "Failed to create CUDA provider options: ";
               error_message += Ort::GetApi().GetErrorMessage(status);
               Ort::GetApi().ReleaseStatus(status);
-              result->Error("PROVIDER_ERROR", error_message.c_str(), nullptr);
+              FailWith(result, "PROVIDER_ERROR", error_message.c_str());
               return;
             }
 
@@ -518,7 +538,7 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
               std::string error_message = "Failed to update CUDA provider options: ";
               error_message += Ort::GetApi().GetErrorMessage(status);
               Ort::GetApi().ReleaseStatus(status);
-              result->Error("PROVIDER_ERROR", error_message.c_str(), nullptr);
+              FailWith(result, "PROVIDER_ERROR", error_message.c_str());
               return;
             }
 
@@ -532,16 +552,16 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
           } else if (provider == "TENSOR_RT") {
             // Use TensorRT if available
             // This is just a placeholder - actual implementation would depend on TensorRT availability
-            result->Error("PROVIDER_ERROR", "TensorRT provider not implemented yet", nullptr);
+            FailWith(result, "PROVIDER_ERROR", "TensorRT provider not implemented yet");
             return;
           } else {
             std::string error_message = "Provider is not supported: " + provider;
-            result->Error("INVALID_PROVIDER", error_message.c_str(), nullptr);
+            FailWith(result, "INVALID_PROVIDER", error_message.c_str());
             return;
           }
         }
       } catch (const Ort::Exception &e) {
-        result->Error("PROVIDER_ERROR", e.what(), nullptr);
+        FailWith(result, "PROVIDER_ERROR", e.what());
         return;
       }
     }
@@ -550,7 +570,7 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
     std::string session_id = impl_->sessionManager_->createSession(model_path.c_str(), session_options);
 
     if (session_id.empty()) {
-      result->Error("SESSION_CREATION_ERROR", "Failed to create ONNX Runtime session", nullptr);
+      FailWith(result, "SESSION_CREATION_ERROR", "Failed to create ONNX Runtime session");
       return;
     }
 
@@ -581,11 +601,11 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
 
     result->Success(flutter::EncodableValue(response));
   } catch (const Ort::Exception &e) {
-    result->Error("ORT_ERROR", e.what(), nullptr);
+    FailWith(result, "ORT_ERROR", e.what());
   } catch (const std::exception &e) {
-    result->Error("PLUGIN_ERROR", e.what(), nullptr);
+    FailWith(result, "PLUGIN_ERROR", e.what());
   } catch (...) {
-    result->Error("INTERNAL_ERROR", "Unknown error occurred", nullptr);
+    FailWith(result, "INTERNAL_ERROR", "Unknown error occurred");
   }
 }
 
@@ -630,11 +650,11 @@ void FlutterOnnxruntimePlugin::HandleGetAvailableProviders(
 
     result->Success(flutter::EncodableValue(providers_list));
   } catch (const Ort::Exception &e) {
-    result->Error("ORT_ERROR", e.what(), nullptr);
+    FailWith(result, "ORT_ERROR", e.what());
   } catch (const std::exception &e) {
-    result->Error("PLUGIN_ERROR", e.what(), nullptr);
+    FailWith(result, "PLUGIN_ERROR", e.what());
   } catch (...) {
-    result->Error("INTERNAL_ERROR", "Unknown error occurred", nullptr);
+    FailWith(result, "INTERNAL_ERROR", "Unknown error occurred");
   }
 }
 
@@ -646,7 +666,7 @@ void FlutterOnnxruntimePlugin::HandleRunInference(
   const auto *args = std::get_if<flutter::EncodableMap>(method_call.arguments());
 
   if (!args) {
-    result->Error("INVALID_ARG", "Arguments must be provided as a map", nullptr);
+    FailWith(result, "INVALID_ARG", "Arguments must be provided as a map");
     return;
   }
 
@@ -654,21 +674,21 @@ void FlutterOnnxruntimePlugin::HandleRunInference(
     // Extract session ID
     auto session_id_it = args->find(flutter::EncodableValue("sessionId"));
     if (session_id_it == args->end() || !std::holds_alternative<std::string>(session_id_it->second)) {
-      result->Error("INVALID_ARG", "Session ID must be a non-null string", nullptr);
+      FailWith(result, "INVALID_ARG", "Session ID must be a non-null string");
       return;
     }
     std::string session_id = std::get<std::string>(session_id_it->second);
 
     // Check if session exists
     if (!impl_->sessionManager_->hasSession(session_id)) {
-      result->Error("INVALID_SESSION", "Session not found", nullptr);
+      FailWith(result, "INVALID_SESSION", "Session not found");
       return;
     }
 
     // Extract inputs map
     auto inputs_it = args->find(flutter::EncodableValue("inputs"));
     if (inputs_it == args->end() || !std::holds_alternative<flutter::EncodableMap>(inputs_it->second)) {
-      result->Error("INVALID_ARG", "Inputs must be a non-null map", nullptr);
+      FailWith(result, "INVALID_ARG", "Inputs must be a non-null map");
       return;
     }
     const auto &inputs_map = std::get<flutter::EncodableMap>(inputs_it->second);
@@ -794,11 +814,11 @@ void FlutterOnnxruntimePlugin::HandleRunInference(
 
     result->Success(flutter::EncodableValue(outputs_map));
   } catch (const Ort::Exception &e) {
-    result->Error("INFERENCE_ERROR", e.what(), nullptr);
+    FailWith(result, "INFERENCE_ERROR", e.what());
   } catch (const std::exception &e) {
-    result->Error("PLUGIN_ERROR", e.what(), nullptr);
+    FailWith(result, "PLUGIN_ERROR", e.what());
   } catch (...) {
-    result->Error("INTERNAL_ERROR", "Unknown error occurred", nullptr);
+    FailWith(result, "INTERNAL_ERROR", "Unknown error occurred");
   }
 }
 
@@ -810,7 +830,7 @@ void FlutterOnnxruntimePlugin::HandleCloseSession(
   const auto *args = std::get_if<flutter::EncodableMap>(method_call.arguments());
 
   if (!args) {
-    result->Error("INVALID_ARG", "Arguments must be provided as a map", nullptr);
+    FailWith(result, "INVALID_ARG", "Arguments must be provided as a map");
     return;
   }
 
@@ -818,7 +838,7 @@ void FlutterOnnxruntimePlugin::HandleCloseSession(
     // Extract session ID
     auto session_id_it = args->find(flutter::EncodableValue("sessionId"));
     if (session_id_it == args->end() || !std::holds_alternative<std::string>(session_id_it->second)) {
-      result->Error("INVALID_ARG", "Session ID must be a non-null string", nullptr);
+      FailWith(result, "INVALID_ARG", "Session ID must be a non-null string");
       return;
     }
     std::string session_id = std::get<std::string>(session_id_it->second);
@@ -829,11 +849,11 @@ void FlutterOnnxruntimePlugin::HandleCloseSession(
     // Return null for success
     result->Success(nullptr);
   } catch (const Ort::Exception &e) {
-    result->Error("ORT_ERROR", e.what(), nullptr);
+    FailWith(result, "ORT_ERROR", e.what());
   } catch (const std::exception &e) {
-    result->Error("PLUGIN_ERROR", e.what(), nullptr);
+    FailWith(result, "PLUGIN_ERROR", e.what());
   } catch (...) {
-    result->Error("INTERNAL_ERROR", "Unknown error occurred", nullptr);
+    FailWith(result, "INTERNAL_ERROR", "Unknown error occurred");
   }
 }
 
@@ -845,7 +865,7 @@ void FlutterOnnxruntimePlugin::HandleGetMetadata(
   const auto *args = std::get_if<flutter::EncodableMap>(method_call.arguments());
 
   if (!args) {
-    result->Error("INVALID_ARG", "Arguments must be provided as a map", nullptr);
+    FailWith(result, "INVALID_ARG", "Arguments must be provided as a map");
     return;
   }
 
@@ -853,14 +873,14 @@ void FlutterOnnxruntimePlugin::HandleGetMetadata(
     // Extract session ID
     auto session_id_it = args->find(flutter::EncodableValue("sessionId"));
     if (session_id_it == args->end() || !std::holds_alternative<std::string>(session_id_it->second)) {
-      result->Error("INVALID_SESSION", "Invalid session ID", nullptr);
+      FailWith(result, "INVALID_SESSION", "Invalid session ID");
       return;
     }
     std::string session_id = std::get<std::string>(session_id_it->second);
 
     // Check if session exists
     if (!impl_->sessionManager_->hasSession(session_id)) {
-      result->Error("INVALID_SESSION", "Session not found", nullptr);
+      FailWith(result, "INVALID_SESSION", "Session not found");
       return;
     }
 
@@ -884,11 +904,11 @@ void FlutterOnnxruntimePlugin::HandleGetMetadata(
 
     result->Success(flutter::EncodableValue(response));
   } catch (const Ort::Exception &e) {
-    result->Error("ORT_ERROR", e.what(), nullptr);
+    FailWith(result, "ORT_ERROR", e.what());
   } catch (const std::exception &e) {
-    result->Error("PLUGIN_ERROR", e.what(), nullptr);
+    FailWith(result, "PLUGIN_ERROR", e.what());
   } catch (...) {
-    result->Error("INTERNAL_ERROR", "Unknown error occurred", nullptr);
+    FailWith(result, "INTERNAL_ERROR", "Unknown error occurred");
   }
 }
 
@@ -900,7 +920,7 @@ void FlutterOnnxruntimePlugin::HandleGetInputInfo(
   const auto *args = std::get_if<flutter::EncodableMap>(method_call.arguments());
 
   if (!args) {
-    result->Error("INVALID_ARG", "Arguments must be provided as a map", nullptr);
+    FailWith(result, "INVALID_ARG", "Arguments must be provided as a map");
     return;
   }
 
@@ -908,14 +928,14 @@ void FlutterOnnxruntimePlugin::HandleGetInputInfo(
     // Extract session ID
     auto session_id_it = args->find(flutter::EncodableValue("sessionId"));
     if (session_id_it == args->end() || !std::holds_alternative<std::string>(session_id_it->second)) {
-      result->Error("INVALID_SESSION", "Invalid session ID", nullptr);
+      FailWith(result, "INVALID_SESSION", "Invalid session ID");
       return;
     }
     std::string session_id = std::get<std::string>(session_id_it->second);
 
     // Check if session exists
     if (!impl_->sessionManager_->hasSession(session_id)) {
-      result->Error("INVALID_SESSION", "Session not found", nullptr);
+      FailWith(result, "INVALID_SESSION", "Session not found");
       return;
     }
 
@@ -942,11 +962,11 @@ void FlutterOnnxruntimePlugin::HandleGetInputInfo(
 
     result->Success(flutter::EncodableValue(response));
   } catch (const Ort::Exception &e) {
-    result->Error("ORT_ERROR", e.what(), nullptr);
+    FailWith(result, "ORT_ERROR", e.what());
   } catch (const std::exception &e) {
-    result->Error("PLUGIN_ERROR", e.what(), nullptr);
+    FailWith(result, "PLUGIN_ERROR", e.what());
   } catch (...) {
-    result->Error("INTERNAL_ERROR", "Unknown error occurred", nullptr);
+    FailWith(result, "INTERNAL_ERROR", "Unknown error occurred");
   }
 }
 
@@ -958,7 +978,7 @@ void FlutterOnnxruntimePlugin::HandleGetOutputInfo(
   const auto *args = std::get_if<flutter::EncodableMap>(method_call.arguments());
 
   if (!args) {
-    result->Error("INVALID_ARG", "Arguments must be provided as a map", nullptr);
+    FailWith(result, "INVALID_ARG", "Arguments must be provided as a map");
     return;
   }
 
@@ -966,14 +986,14 @@ void FlutterOnnxruntimePlugin::HandleGetOutputInfo(
     // Extract session ID
     auto session_id_it = args->find(flutter::EncodableValue("sessionId"));
     if (session_id_it == args->end() || !std::holds_alternative<std::string>(session_id_it->second)) {
-      result->Error("INVALID_SESSION", "Invalid session ID", nullptr);
+      FailWith(result, "INVALID_SESSION", "Invalid session ID");
       return;
     }
     std::string session_id = std::get<std::string>(session_id_it->second);
 
     // Check if session exists
     if (!impl_->sessionManager_->hasSession(session_id)) {
-      result->Error("INVALID_SESSION", "Session not found", nullptr);
+      FailWith(result, "INVALID_SESSION", "Session not found");
       return;
     }
 
@@ -1000,11 +1020,11 @@ void FlutterOnnxruntimePlugin::HandleGetOutputInfo(
 
     result->Success(flutter::EncodableValue(response));
   } catch (const Ort::Exception &e) {
-    result->Error("ORT_ERROR", e.what(), nullptr);
+    FailWith(result, "ORT_ERROR", e.what());
   } catch (const std::exception &e) {
-    result->Error("PLUGIN_ERROR", e.what(), nullptr);
+    FailWith(result, "PLUGIN_ERROR", e.what());
   } catch (...) {
-    result->Error("INTERNAL_ERROR", "Unknown error occurred", nullptr);
+    FailWith(result, "INTERNAL_ERROR", "Unknown error occurred");
   }
 }
 

@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 
 import 'package:fushi/src/media/torrent/anime_release_descriptor.dart';
 import 'package:fushi/src/media/torrent/nyaa_client.dart';
+import 'package:fushi/src/media/torrent/public_trackers.dart';
 
 /// 构造只关心 [title] / [infoHash] 的最小 [NyaaTorrent]，供派生 getter 测试用。
 NyaaTorrent makeTorrent(String title, {String infoHash = ''}) {
@@ -155,7 +156,7 @@ void main() {
   });
 
   group('magnet', () {
-    test('拼 infoHash + dn + 5 个 tracker', () {
+    test('拼 infoHash + dn + 全部内置 tracker', () {
       final NyaaTorrent t = makeTorrent(
         'My Show [x]',
         infoHash: '0123456789abcdef0123456789abcdef01234567',
@@ -167,7 +168,11 @@ void main() {
           '&dn=My%20Show%20%5Bx%5D',
         ),
       );
-      expect('&tr='.allMatches(t.magnet), hasLength(5));
+      // 数量跟着常量走，但不是同源恒真：它抓的是拼接漏写了其中某几条。
+      expect('&tr='.allMatches(t.magnet), hasLength(kNyaaTrackers.length));
+      for (final String tracker in kNyaaTrackers) {
+        expect(t.magnet, contains('&tr=${Uri.encodeComponent(tracker)}'));
+      }
       expect(
         t.magnet,
         contains('&tr=http%3A%2F%2Fnyaa.tracker.wf%3A7777%2Fannounce'),
@@ -176,6 +181,13 @@ void main() {
         t.magnet,
         contains('&tr=udp%3A%2F%2Fexodus.desync.com%3A6969%2Fannounce'),
       );
+    });
+
+    test('内置 tracker 列表无重复、站点专属排最前', () {
+      // 上面按 `&tr=` 出现次数计数，列表里混进重复项它抓不到。
+      expect(kNyaaTrackers.toSet(), hasLength(kNyaaTrackers.length));
+      expect(kNyaaTrackers.first, 'http://nyaa.tracker.wf:7777/announce');
+      expect(kNyaaTrackers, containsAll(kPublicTrackers));
     });
   });
 

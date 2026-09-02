@@ -30,6 +30,17 @@ struct ZipEntry {
 constexpr uint64_t kMaxUncompressedEntryBytes = 1024ull * 1024ull * 1024ull;
 bool zip_uncompressed_size_in_range(const ZipEntry& e);
 
+// BUG-2053: entries macOS adds to an archive that are not part of the payload
+// and must not decide its layout. Compressing a folder in Finder emits an
+// AppleDouble resource-fork tree next to it ("__MACOSX/MyDict/._index.json"),
+// which turns a wrapped dictionary into a two-top-level-directory archive that
+// compute_root_prefix() then refuses to strip; Finder also drops a ".DS_Store"
+// beside the folder, a root-level *file* that ends the peel outright. Both are
+// fixed, Apple-owned names, so they are skipped by name -- this is deliberately
+// NOT a general "ignore junk" heuristic. They are also excluded from the media
+// files, since a resource fork is not dictionary media.
+bool is_packaging_noise(std::string_view name);
+
 struct Zip {
   memory::mapped_file file;
   std::vector<ZipEntry> entries;
