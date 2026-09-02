@@ -95,11 +95,14 @@ void main() {
     });
 
     test('重新导入同名词典不吞掉本机的改名与内容语言', () async {
-      // `upsertDictionaryMeta` 是整行覆盖，而 manifest 只带随包走的那几列。
-      // 用户设置列（display_name 改名、language_override 手动指定的内容语言）
-      // 是**本机的**，不属于词典包——导入端必须先捞出来带上，否则从同步重新
-      // 下载一本已有的同名词典，用户的改名和语言指定会被静默清空（表现是
-      // 「同步了一下，词典名字变回那个又长又带日期的原名」）。
+      // 钉的是 `upsertDictionaryMeta` 的 **absent 语义**：它走 drift 的
+      // `insertOnConflictUpdate`，companion 里没列到的列在冲突更新时保持原值。
+      // 导入端因此**只列 manifest 带的列**，用户设置列（display_name 改名、
+      // language_override 内容语言）留 absent 就自动保住了。
+      //
+      // 这条守卫防的是有人把它改成 `InsertMode.replace`、或"顺手"把两列补成
+      // 显式 `Value(null)`——两者都会让「同步一下，词典名字变回那个又长又带
+      // 日期的原名」。
       final Directory temp = await Directory.systemTemp.createTemp(
         'hibiki-dict-package-preserve-',
       );

@@ -118,18 +118,14 @@ class SyncAssetPackageService {
     final Map<String, Object?> dictionary = _mapValue(manifest, 'dictionary');
     final String name = _stringValue(dictionary, 'name');
 
-    // `upsertDictionaryMeta` 是**整行覆盖**：companion 里没列的列会被写成默认值
-    // （这里是 NULL）。而 manifest 只带随包走的那几列——用户设置列（改名、手动
-    // 指定的内容语言）本来就不属于词典包，它们是本机的。不先捞出来带上，从同步
-    // 重新导入一本已有的同名词典就会把用户的改名和语言指定静默清空。
-    DictionaryMetaRow? existing;
-    for (final DictionaryMetaRow row in await _db.getAllDictionaryMetadata()) {
-      if (row.name == name) {
-        existing = row;
-        break;
-      }
-    }
-
+    // 这里**只列 manifest 带的列**，用户设置列（改名 display_name、手动指定的
+    // 内容语言 language_override）刻意留 absent：`upsertDictionaryMeta` 走的是
+    // drift 的 `insertOnConflictUpdate`，companion 里 absent 的列在冲突更新时
+    // **保持原值不变**，于是重新导入一本已有的同名词典不会动本机的这两项。
+    //
+    // 危险的从来不是 absent，而是显式 `Value(null)`——那才是真的写 NULL。本仓
+    // 踩过的丢数据路径长这样：new 一个模型对象漏填字段 → 每列都 Value(...) 的
+    // companion → 静默抹掉用户设置（见 `Dictionary.copyWith` 的注释）。
     await _db.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
       name: name,
       formatKey: _stringValue(dictionary, 'formatKey'),
@@ -140,10 +136,6 @@ class SyncAssetPackageService {
           Value(_stringValue(dictionary, 'hiddenLanguagesJson')),
       collapsedLanguagesJson:
           Value(_stringValue(dictionary, 'collapsedLanguagesJson')),
-      // 与本地重导 / 在线更新的 `preservedSettings` 同一条继承通道：新装（existing
-      // 为 null）时两者都是 null，与改动前逐字节一致。
-      languageOverride: Value<String?>(existing?.languageOverride),
-      displayName: Value<String?>(existing?.displayName),
     ));
 
     final Directory targetDir = Directory(

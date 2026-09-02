@@ -1500,14 +1500,12 @@ class AppModel with ChangeNotifier {
           } else {
             meta.remove('hasKanji');
           }
-          final updated = Dictionary(
-            name: d.name,
-            formatKey: d.formatKey,
-            order: d.order,
+          // copyWith 而不是 new：构造器漏填的用户设置列会被
+          // _dictionaryToCompanion 显式写成 NULL（不是 absent），这里只想换
+          // type/metadata，却曾把用户手动指定的内容语言和改名一起抹掉。
+          final updated = d.copyWith(
             type: DictionaryType.term,
             metadata: meta,
-            hiddenLanguages: d.hiddenLanguages,
-            collapsedLanguages: d.collapsedLanguages,
           );
           dictRepo.persistDictionary(updated);
           debugPrint('[Fushi] reclassified kanji→term (mixed dict): ${d.name}');
@@ -1540,15 +1538,8 @@ class AppModel with ChangeNotifier {
         final DictionaryType? detected = decodeDictTypeFromBlobHeader(head);
         if (detected == null) continue;
 
-        final updated = Dictionary(
-          name: d.name,
-          formatKey: d.formatKey,
-          order: d.order,
-          type: detected,
-          metadata: d.metadata,
-          hiddenLanguages: d.hiddenLanguages,
-          collapsedLanguages: d.collapsedLanguages,
-        );
+        // 同上：只换 type，用户设置列必须原样带过（见 Dictionary.copyWith）。
+        final updated = d.copyWith(type: detected);
         dictRepo.persistDictionary(updated);
         debugPrint('[Fushi] migrated dict type: ${d.name} → ${detected.name}');
       } catch (e, stack) {
