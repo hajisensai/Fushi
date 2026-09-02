@@ -4,6 +4,29 @@ import '../language/language.dart';
 
 enum DictionaryType { term, frequency, pitch, kanji }
 
+/// 改名投影：**真名 -> 显示名**，只含真正改过名的词典。
+///
+/// 全库唯一的推导处。消费方有五个（弹窗注入、悬浮窗、扩展下发、存储占用、
+/// 以及浏览器扩展 CSS 载体的缓存判定），它们要的是同一张表——散开各写一遍就是
+/// 五份逐字相同的推导，其中任何一份漏掉 trim 或漏掉空串判断，都会让某一个宿主
+/// 的改名行为跟别处不一样。
+///
+/// 只装改过名的：消费方都要把它序列化进 JS 或存进 memo key，等值条目既占带宽
+/// 又让指纹无谓地变。
+///
+/// 写成作用于 [Iterable] 的纯函数而不是挂在某个仓库上，是因为调用方拿到的词典
+/// 列表来路不同（AppModel 的 getter 可被测试替身覆盖），绑死数据源会绕过那些
+/// 覆盖点。
+Map<String, String> dictionaryDisplayNameOverridesOf(
+  Iterable<Dictionary> dictionaries,
+) {
+  return <String, String>{
+    for (final Dictionary d in dictionaries)
+      if (d.displayName != null && d.displayName!.trim().isNotEmpty)
+        d.name: d.displayName!.trim(),
+  };
+}
+
 class Dictionary {
   factory Dictionary.fromJson(String json) {
     final map = Map<String, dynamic>.from(jsonDecode(json));
