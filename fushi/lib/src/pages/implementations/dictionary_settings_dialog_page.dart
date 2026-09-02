@@ -584,6 +584,10 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
   late int _selectedIndex;
   late TextEditingController _cssController;
   late List<String> _dictNames;
+
+  /// 与 [_dictNames] 同序的**显示名**，只喂给下拉的 label。作用域主键、CSS
+  /// 选择器、草稿里存的 selectedDictionaryName 一律仍用 [_dictNames] 的真名。
+  late List<String> _dictDisplayNames;
   late AppModel _appModel;
   late ProfileDraftCoordinator _profileDraftCoordinator;
   late _DictCssDraftSession _draft;
@@ -605,6 +609,8 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
     ).read(profileDraftCoordinatorProvider);
     final Object profileDraftScope = _profileDraftCoordinator.draftScope;
     _dictNames = _appModel.dictionaries.map((d) => d.name).toList();
+    _dictDisplayNames =
+        _appModel.dictionaries.map((d) => d.effectiveDisplayName).toList();
     final _DictCssDraftSession? existingDraft = _dictCssDraftSession;
     if (existingDraft != null &&
         identical(existingDraft.appModel, _appModel) &&
@@ -938,7 +944,7 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
       entries: <GamepadDropdownEntry<int>>[
         (value: 0, label: t.custom_dict_css_global),
         for (int i = 0; i < _dictNames.length; i++)
-          (value: i + 1, label: _dictNames[i]),
+          (value: i + 1, label: _dictDisplayNames[i]),
       ],
     );
   }

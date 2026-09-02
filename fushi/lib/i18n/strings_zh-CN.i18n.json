@@ -4117,5 +4117,7 @@
   "media_source_rename": "重命名",
   "media_source_rename_label": "来源名称",
   "book_rename": "重命名",
-  "book_rename_label": "标题"
+  "book_rename_label": "标题",
+  "dict_rename": "重命名",
+  "dict_rename_label": "词典名称"
 }

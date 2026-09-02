@@ -30,6 +30,7 @@ class StorageUsageView extends ConsumerStatefulWidget {
     required this.service,
     required this.booksProvider,
     required this.dictionaryNamesProvider,
+    this.dictionaryDisplayNamesProvider,
     required this.deleteBook,
     required this.deleteSrtBook,
     required this.deleteDictionary,
@@ -47,6 +48,10 @@ class StorageUsageView extends ConsumerStatefulWidget {
 
   /// 词典名清单取数（真实现读 `AppModel.dictionaries`）。
   final Future<List<String>> Function() dictionaryNamesProvider;
+
+  /// 词典改名（v95）：真名 -> 显示名。可选——不传（测试 seam / 旧调用点）就按
+  /// 真名显示，与改名前逐字节一致。条目 id 与磁盘路径始终是真名，只有 label 翻译。
+  final Future<Map<String, String>> Function()? dictionaryDisplayNamesProvider;
 
   /// 删除一本书（真实现 `ReaderFushiSource.instance.deleteBook`）。
   /// 返回 null = 成功，非 null = 失败原因。
@@ -131,9 +136,13 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     unawaited(_loadExtras());
     List<StorageBookRef> books = const <StorageBookRef>[];
     List<String> dictNames = const <String>[];
+    Map<String, String> dictDisplayNames = const <String, String>{};
     try {
       books = await widget.booksProvider();
       dictNames = await widget.dictionaryNamesProvider();
+      dictDisplayNames =
+          await widget.dictionaryDisplayNamesProvider?.call() ??
+              const <String, String>{};
     } catch (e) {
       debugPrint('[storage] listing failed: $e');
     }
@@ -141,7 +150,11 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     await _scanSub?.cancel();
     if (!mounted || epoch != _scanEpoch) return;
     _scanSub = widget.service
-        .scanCategories(books: books, dictionaryNames: dictNames)
+        .scanCategories(
+          books: books,
+          dictionaryNames: dictNames,
+          dictionaryDisplayNames: dictDisplayNames,
+        )
         .listen(
       (StorageCategoryUsage usage) {
         if (!mounted || epoch != _scanEpoch) return;

@@ -530,6 +530,9 @@ class StorageUsageService {
   Stream<StorageCategoryUsage> scanCategories({
     required final List<StorageBookRef> books,
     required final List<String> dictionaryNames,
+    /// 词典改名（v95）：真名 -> 显示名，只含改过名的。**只翻译给人看的 label**；
+    /// 条目 `id` 与磁盘路径一律仍用真名（真名就是磁盘目录名，也是删除路由主键）。
+    final Map<String, String> dictionaryDisplayNames = const <String, String>{},
   }) async* {
     final Directory docs = await _documentsRoot();
     final Directory support = await _supportRoot();
@@ -541,7 +544,8 @@ class StorageUsageService {
         case StorageCategoryId.books:
           yield await _scanBooks(docs, books);
         case StorageCategoryId.dictionaries:
-          yield await _scanDictionaries(docs, dictionaryNames);
+          yield await _scanDictionaries(
+              docs, dictionaryNames, dictionaryDisplayNames);
         case StorageCategoryId.database:
           yield await _scanDatabase(support);
         case StorageCategoryId.ocrModels:
@@ -621,6 +625,7 @@ class StorageUsageService {
   Future<StorageCategoryUsage> _scanDictionaries(
     final Directory docs,
     final List<String> dictionaryNames,
+    final Map<String, String> dictionaryDisplayNames,
   ) async {
     final List<String> categoryRoots = <String>[
       for (final String child
@@ -640,8 +645,9 @@ class StorageUsageService {
     final List<StorageEntryUsage> entries = <StorageEntryUsage>[
       for (int i = 0; i < dictionaryNames.length; i++)
         StorageEntryUsage(
+          // id 必须是真名：删除路由（settings_schema_storage）按它找目录。
           id: dictionaryNames[i],
-          label: dictionaryNames[i],
+          label: dictionaryDisplayNames[dictionaryNames[i]] ?? dictionaryNames[i],
           bytes: sizes[i + 1],
           paths: <String>[perDictPaths[i]],
           kind: StorageEntryKind.dictionary,

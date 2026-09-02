@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/models.dart';
 import 'package:fushi/utils.dart';
 
 class _GroupedEntry {
@@ -50,6 +51,22 @@ class DictionaryPopupNative extends ConsumerStatefulWidget {
 
 class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
   List<_GroupedEntry> _grouped = [];
+
+  /// 词典改名（v95）：把查词结果里的**真名**翻成用户起的显示名，只用于渲染。
+  /// 分组 key（[_GroupedEntry] / `byDict`）一律仍是真名——它对齐 CSS 作用域、
+  /// 隐藏/折叠集合与 Anki token，翻译了就全错位。
+  ///
+  /// `dictRepo` 是 late 字段，悬浮词典窗这条精简初始化路径上存在「DB 就绪但词典
+  /// 仓库还没建」的窗口，直接读会抛 LateInitializationError——未就绪时原样返回
+  /// 真名（与改名前逐字节一致），不崩。
+  String _dictDisplayName(String rawName) {
+    final AppModel appModel = ref.read(appProvider);
+    if (!appModel.isDictionaryRepoReady) return rawName;
+    for (final Dictionary d in appModel.dictionaries) {
+      if (d.name == rawName) return d.effectiveDisplayName;
+    }
+    return rawName;
+  }
 
   @override
   void initState() {
@@ -332,7 +349,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              dictName,
+              _dictDisplayName(dictName),
               style: tokens.type.metadata.copyWith(color: subColor),
             ),
             SizedBox(height: tokens.spacing.gap / 4),

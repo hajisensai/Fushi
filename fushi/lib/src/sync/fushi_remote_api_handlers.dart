@@ -34,11 +34,20 @@ class RemotePopupDictionaryCss {
     required this.dictionaryStyles,
     required this.globalDictCss,
     required this.customDictCss,
+    this.dictionaryDisplayNames = const <String, String>{},
   });
 
   final Map<String, String> dictionaryStyles;
   final String globalDictCss;
   final Map<String, String> customDictCss;
+
+  /// 词典改名（v95）：真名 -> 显示名，只含真正改过名的条目。搭 popup.js 的
+  /// `__fushiDictDisplayName` 用，**只翻译渲染出来的词典名文本**；`dictionary`
+  /// 字段、`data-dictionary` 属性、媒体 URL 参数一律仍是真名。
+  ///
+  /// 挂在本类而不是另开一条通道：它与 CSS 三件套同属「弹窗渲染用的旁路数据」，
+  /// 共用下面的 revision 门控——改名改 revision，扩展下次查词即拉到新表。
+  final Map<String, String> dictionaryDisplayNames;
 
   late final String revision = _computeRevision();
 
@@ -51,7 +60,12 @@ class RemotePopupDictionaryCss {
     for (final MapEntry<String, String> e in customDictCss.entries) {
       h = Object.hash(h, e.key, e.value.length, e.value.hashCode);
     }
+    // 改名必须进 revision，否则扩展会一直命中旧缓存、改了不生效。
+    for (final MapEntry<String, String> e in dictionaryDisplayNames.entries) {
+      h = Object.hash(h, e.key, e.value.hashCode);
+    }
     return '${dictionaryStyles.length}.${customDictCss.length}.'
+        '${dictionaryDisplayNames.length}.'
         '${h.toUnsigned(32).toRadixString(16)}';
   }
 }
@@ -113,6 +127,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
       'dictionaryStyles': popupCss.dictionaryStyles,
       'globalDictCSS': popupCss.globalDictCss,
       'customDictCSS': popupCss.customDictCss,
+      'dictionaryDisplayNames': popupCss.dictionaryDisplayNames,
     },
   };
   final String term = body['term']?.toString() ?? '';

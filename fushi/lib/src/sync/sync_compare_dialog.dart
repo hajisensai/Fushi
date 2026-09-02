@@ -110,10 +110,20 @@ class SyncDictEntry {
     required this.name,
     required this.hasLocal,
     this.remoteAssetId,
+    this.displayName,
   });
 
   final String name;
   final bool hasLocal;
+
+  /// 词典改名（v95）：本地那本改过名时的显示名，只用于渲染这一行的标题。
+  /// [name] 是身份（远端资产名 `<name>.fushidict`、本地删除的键），永不翻译。
+  /// 远端独有的条目本地没有元数据行 → null → 显示 [name]。
+  final String? displayName;
+
+  String get shownName => (displayName?.trim().isNotEmpty ?? false)
+      ? displayName!.trim()
+      : name;
 
   /// 远端词典资产（`<name>.fushidict`）定位符；远端没有则 null。
   final String? remoteAssetId;
@@ -327,9 +337,15 @@ Future<List<SyncDictEntry>> _fetchDictEntries(
           e.id;
     }
   }
+  final List<DictionaryMetaRow> localRows = await db.getAllDictionaryMetadata();
   final Set<String> localNames = <String>{
-    for (final DictionaryMetaRow d in await db.getAllDictionaryMetadata())
-      d.name,
+    for (final DictionaryMetaRow d in localRows) d.name,
+  };
+  // 只用于这张列表的显示；同步身份仍是真名。
+  final Map<String, String> localDisplayNames = <String, String>{
+    for (final DictionaryMetaRow d in localRows)
+      if (d.displayName != null && d.displayName!.trim().isNotEmpty)
+        d.name: d.displayName!.trim(),
   };
 
   final Set<String> allNames = <String>{...localNames, ...remoteByName.keys};
@@ -339,6 +355,7 @@ Future<List<SyncDictEntry>> _fetchDictEntries(
         name: n,
         hasLocal: localNames.contains(n),
         remoteAssetId: remoteByName[n],
+        displayName: localDisplayNames[n],
       ),
   ];
   // 纯本地项（远端没有、这里没得删）曾被「词典同步开关关着」过滤掉，理由是别用
@@ -1335,7 +1352,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
           const SizedBox(width: 6),
           Expanded(
             child: Text(
-              d.name,
+              d.shownName,
               style: theme.textTheme.titleSmall,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,

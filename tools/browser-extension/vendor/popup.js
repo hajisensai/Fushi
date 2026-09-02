@@ -18,6 +18,22 @@ function __fushiRootNode(){ return window.__fushiRoot || document; }
 function __fushiContainer(){ var r = window.__fushiRoot; return r ? r.querySelector('#entries-container') : document.getElementById('entries-container'); }
 function __fushiViewportWidth(){ var w = Number(window.__fushiPopupViewportWidth); return (isFinite(w) && w > 0) ? w : (window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth || 0); }
 function __fushiOverlayParent(){ return window.__fushiRoot || document.body; }
+/* 词典改名（v95）：把**真名**翻成用户起的显示名，只用于渲染给人看的文本。
+   宿主在 popup_settings_injection 注入 window.dictionaryDisplayNames = {真名: 显示名}，
+   只含真正改过名的条目；没改过 / 表不存在 → 原样返回真名。
+
+   ⚠️ 绝不能拿它去替换 dictName 变量本身。同一个真名在本文件里还承担 6 种非显示
+   职责：`data-dictionary` CSS 作用域属性、window.dictionaryStyles 查表、隐藏/折叠
+   过滤、释义语言查表、词典媒体 URL 的 dictionary= 参数（要对上磁盘目录名）、
+   glossaries 分组 key（Anki `{single-glossary-<名>}` token 靠它对齐）。翻译了那些
+   就是：用户样式静默失效、词典图/音 404、已配置的制卡字段对不上。
+   只在 textContent 处调用本函数。 */
+function __fushiDictDisplayName(name){
+    var map = window.dictionaryDisplayNames;
+    if (!map || typeof name !== 'string') return name;
+    var shown = map[name];
+    return (typeof shown === 'string' && shown.length > 0) ? shown : name;
+}
 // 注意：scrollHeight 是**未乘 CSS zoom 的 layout px**。要和宿主几何（host CSS px）同单位，
 // 用下面的 __fushiReportedContentHeight()（BUG-1651 ②）。
 function __fushiScrollHeight(){ var c = __fushiContainer(); return c ? c.scrollHeight : document.body.scrollHeight; }
@@ -2327,7 +2343,7 @@ function createDeinflectionTag(tag) {
 function createFrequencyGroup(freqGroup) {
     const values = freqGroup.frequencies.map(f => f.displayValue || f.value).join(', ');
     return el('span', { className: 'frequency-group', 'data-details': freqGroup.dictionary }, [
-        el('span', { className: 'frequency-dict-label', textContent: freqGroup.dictionary }),
+        el('span', { className: 'frequency-dict-label', textContent: __fushiDictDisplayName(freqGroup.dictionary) }),
         el('span', { className: 'frequency-values', textContent: values })
     ]);
 }
@@ -2429,7 +2445,7 @@ function createTranscriptionsHtml(transcriptions) {
 
 function createPitchGroup(pitchData, reading) {
     const container = el('div', { className: 'pitch-group', 'data-details': pitchData.dictionary });
-    container.appendChild(el('span', { className: 'pitch-dict-label', textContent: pitchData.dictionary }));
+    container.appendChild(el('span', { className: 'pitch-dict-label', textContent: __fushiDictDisplayName(pitchData.dictionary) }));
 
     const list = el('ul', { className: 'pitch-entries' });
     (pitchData.pitchPositions || []).forEach((pitch) => {
@@ -3649,7 +3665,7 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
     }
 
     const summary = el('summary', { className: 'dict-label' });
-    summary.appendChild(el('span', { className: 'dict-name', textContent: dictName }));
+    summary.appendChild(el('span', { className: 'dict-name', textContent: __fushiDictDisplayName(dictName) }));
     details.appendChild(summary);
 
     let longPressTimer = null;
@@ -4191,7 +4207,7 @@ function createKanjiCard(kanji) {
     }
 
     if (kanji.dictName) {
-        card.appendChild(el('div', { className: 'kanji-card-dict', textContent: kanji.dictName }));
+        card.appendChild(el('div', { className: 'kanji-card-dict', textContent: __fushiDictDisplayName(kanji.dictName) }));
     }
 
     return card;
