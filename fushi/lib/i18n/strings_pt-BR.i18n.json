@@ -4130,5 +4130,9 @@
   "game_japanese_locale_evidence_dir_text_gbk": "Os arquivos de texto são GBK",
   "game_japanese_locale_evidence_dir_text_simplified_hanzi": "Os arquivos de texto contêm chinês simplificado",
   "game_session_japanese_locale_skipped_hint_system_japanese": "O jogo foi iniciado sem a localidade japonesa: este sistema já usa a página de código japonesa (CP932), nada precisa mudar.",
-  "game_session_japanese_locale_skipped_hint_not_32bit": "O jogo foi iniciado sem a localidade japonesa: o veredito automático diz que ela é necessária, mas o Locale Emulator só suporta jogos de 32 bits."
+  "game_session_japanese_locale_skipped_hint_not_32bit": "O jogo foi iniciado sem a localidade japonesa: o veredito automático diz que ela é necessária, mas o Locale Emulator só suporta jogos de 32 bits.",
+  "gal_card_lookup_independent_size": "Independent in-game card size",
+  "gal_card_lookup_independent_size_hint": "Size the in-game lookup card separately from the desktop overlay card",
+  "gal_card_lookup_max_width": "In-game card max width",
+  "gal_card_lookup_max_height": "In-game card max height"
 }

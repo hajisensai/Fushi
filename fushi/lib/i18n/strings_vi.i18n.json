@@ -4130,5 +4130,9 @@
   "game_japanese_locale_evidence_dir_text_gbk": "Tệp văn bản là GBK",
   "game_japanese_locale_evidence_dir_text_simplified_hanzi": "Tệp văn bản chứa tiếng Trung giản thể",
   "game_session_japanese_locale_skipped_hint_system_japanese": "Game được khởi động không dùng ngôn ngữ hệ thống tiếng Nhật: hệ thống này đã dùng code page tiếng Nhật (CP932), không cần thay đổi.",
-  "game_session_japanese_locale_skipped_hint_not_32bit": "Game được khởi động không dùng ngôn ngữ hệ thống tiếng Nhật: phán đoán tự động cho là cần, nhưng Locale Emulator chỉ hỗ trợ game 32-bit."
+  "game_session_japanese_locale_skipped_hint_not_32bit": "Game được khởi động không dùng ngôn ngữ hệ thống tiếng Nhật: phán đoán tự động cho là cần, nhưng Locale Emulator chỉ hỗ trợ game 32-bit.",
+  "gal_card_lookup_independent_size": "Independent in-game card size",
+  "gal_card_lookup_independent_size_hint": "Size the in-game lookup card separately from the desktop overlay card",
+  "gal_card_lookup_max_width": "In-game card max width",
+  "gal_card_lookup_max_height": "In-game card max height"
 }

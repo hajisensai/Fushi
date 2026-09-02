@@ -4130,5 +4130,9 @@
   "game_japanese_locale_evidence_dir_text_gbk": "Berkas teks berformat GBK",
   "game_japanese_locale_evidence_dir_text_simplified_hanzi": "Berkas teks berisi Tionghoa Sederhana",
   "game_session_japanese_locale_skipped_hint_system_japanese": "Game dimulai tanpa lokal Jepang: sistem ini sudah memakai code page Jepang (CP932), tidak ada yang perlu diubah.",
-  "game_session_japanese_locale_skipped_hint_not_32bit": "Game dimulai tanpa lokal Jepang: putusan otomatis menyatakan perlu, tetapi Locale Emulator hanya mendukung game 32-bit."
+  "game_session_japanese_locale_skipped_hint_not_32bit": "Game dimulai tanpa lokal Jepang: putusan otomatis menyatakan perlu, tetapi Locale Emulator hanya mendukung game 32-bit.",
+  "gal_card_lookup_independent_size": "Independent in-game card size",
+  "gal_card_lookup_independent_size_hint": "Size the in-game lookup card separately from the desktop overlay card",
+  "gal_card_lookup_max_width": "In-game card max width",
+  "gal_card_lookup_max_height": "In-game card max height"
 }

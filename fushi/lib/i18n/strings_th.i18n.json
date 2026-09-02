@@ -4130,5 +4130,9 @@
   "game_japanese_locale_evidence_dir_text_gbk": "ไฟล์ข้อความเป็น GBK",
   "game_japanese_locale_evidence_dir_text_simplified_hanzi": "ไฟล์ข้อความมีภาษาจีนตัวย่อ",
   "game_session_japanese_locale_skipped_hint_system_japanese": "เกมเริ่มโดยไม่ใช้โลแคลภาษาญี่ปุ่น: ระบบนี้ใช้ code page ภาษาญี่ปุ่น (CP932) อยู่แล้ว ไม่ต้องเปลี่ยนอะไร",
-  "game_session_japanese_locale_skipped_hint_not_32bit": "เกมเริ่มโดยไม่ใช้โลแคลภาษาญี่ปุ่น: การตัดสินอัตโนมัติบอกว่าจำเป็น แต่ Locale Emulator รองรับเฉพาะเกม 32 บิต"
+  "game_session_japanese_locale_skipped_hint_not_32bit": "เกมเริ่มโดยไม่ใช้โลแคลภาษาญี่ปุ่น: การตัดสินอัตโนมัติบอกว่าจำเป็น แต่ Locale Emulator รองรับเฉพาะเกม 32 บิต",
+  "gal_card_lookup_independent_size": "Independent in-game card size",
+  "gal_card_lookup_independent_size_hint": "Size the in-game lookup card separately from the desktop overlay card",
+  "gal_card_lookup_max_width": "In-game card max width",
+  "gal_card_lookup_max_height": "In-game card max height"
 }

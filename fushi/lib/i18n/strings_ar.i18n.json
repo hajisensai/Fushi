@@ -4130,5 +4130,9 @@
   "game_japanese_locale_evidence_dir_text_gbk": "الملفات النصية بترميز GBK",
   "game_japanese_locale_evidence_dir_text_simplified_hanzi": "الملفات النصية تحتوي على صينية مبسطة",
   "game_session_japanese_locale_skipped_hint_system_japanese": "بدأت اللعبة بدون الإعدادات المحلية اليابانية: يستخدم هذا النظام بالفعل صفحة الرموز اليابانية (CP932)، فلا حاجة لأي تغيير.",
-  "game_session_japanese_locale_skipped_hint_not_32bit": "بدأت اللعبة بدون الإعدادات المحلية اليابانية: يرى الحكم التلقائي أنها ضرورية، لكن Locale Emulator يدعم ألعاب 32 بت فقط."
+  "game_session_japanese_locale_skipped_hint_not_32bit": "بدأت اللعبة بدون الإعدادات المحلية اليابانية: يرى الحكم التلقائي أنها ضرورية، لكن Locale Emulator يدعم ألعاب 32 بت فقط.",
+  "gal_card_lookup_independent_size": "Independent in-game card size",
+  "gal_card_lookup_independent_size_hint": "Size the in-game lookup card separately from the desktop overlay card",
+  "gal_card_lookup_max_width": "In-game card max width",
+  "gal_card_lookup_max_height": "In-game card max height"
 }

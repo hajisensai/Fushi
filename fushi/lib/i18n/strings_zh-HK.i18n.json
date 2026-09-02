@@ -4130,5 +4130,9 @@
   "game_japanese_locale_evidence_dir_text_gbk": "文字檔為 GBK",
   "game_japanese_locale_evidence_dir_text_simplified_hanzi": "文字檔含簡體中文",
   "game_session_japanese_locale_skipped_hint_system_japanese": "本局未轉區：系統本就是日文區域 (CP932)，無需轉區。",
-  "game_session_japanese_locale_skipped_hint_not_32bit": "本局未轉區：自動判定需要日文區域，但 Locale Emulator 只支援 32 位元遊戲。"
+  "game_session_japanese_locale_skipped_hint_not_32bit": "本局未轉區：自動判定需要日文區域，但 Locale Emulator 只支援 32 位元遊戲。",
+  "gal_card_lookup_independent_size": "Independent in-game card size",
+  "gal_card_lookup_independent_size_hint": "Size the in-game lookup card separately from the desktop overlay card",
+  "gal_card_lookup_max_width": "In-game card max width",
+  "gal_card_lookup_max_height": "In-game card max height"
 }
