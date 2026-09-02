@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1912 条。点号进各自文件。
+> 共 1913 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2067](bugs/BUG-2067-galgame-locale-launch-early-injection-kills-kirikiri.md) | 🚧 | 🚧 | 转区（Locale Emulator）拉起 + 早注入让 x86 KiriKiri 游戏进程随即死亡，退回附着才可用 |
 | [BUG-2054](bugs/BUG-2054-gal-mining-audio-before-utterance-settles.md) | ✅ | ✅ | 台词一出就制卡只拿到句子音频的开头（引擎 PCM 收敛 / loopback 冻结未收口） |
 | [BUG-2053](bugs/BUG-2053-gal-attached-popup-outside-click-passthrough.md) | ✅ | ✅ | attached 校准表面弹出的桌面查词卡点外关闭时点击透传给游戏推进台词 |
 | [BUG-2052](bugs/BUG-2052-leaf-structure-gate-reads-hooked-memory.md) | ✅ | ✅ | 白2 身份结构门扫的是被 LunaHook 改写过的进程内存，导致点击穿透+语音降级 |
