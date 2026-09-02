@@ -445,6 +445,45 @@ Rect popupWordScreenRect({
   return fallback;
 }
 
+/// BUG-2054：把嵌套查词刚打开的**子层**（父层 [parentIndex] + 1）从「点击的首字符」
+/// 重锚到**整词 bbox**。
+///
+/// 子层打开时用的锚点来自 selection.js `getSelectionRect()` —— 那是选区**首字符**的
+/// 矩形（发 textSelected 时词典还没查，匹配长度未知），跨行选区时它只覆盖点击那一行，
+/// 于是弹窗贴在第一行下方、正好盖住选区的第二行。查词命中后
+/// [DictionaryPopupWebView.highlightSelection] 返回的 [wordLocalRect] 才是整词
+/// bbox（跨行时 bottom 落在最后一行），用它重锚即可让弹窗落到整个选区之下 —— 与
+/// [popupWordScreenRect] 的 BUG-129、阅读器正文车道的 BUG-767 是同一条不变式：
+/// **弹窗不覆盖被查词**。
+///
+/// 返回 true = 真的改了锚点（调用方若不监听 controller 需自行重建）。以下情况 no-op
+/// 并返回 false，一律退回既有锚点，绝不让重锚失败影响查词：
+/// - [wordLocalRect] 为 null（无匹配 / eval 失败）或退化为零面积；
+/// - 子层已不在栈内（期间被更新的查词截断 / 关栈）；
+/// - 父卡 RenderBox 不可用（[popupWordScreenRect] 回落到 [fallback]）；
+/// - 算出的 rect 与现锚点相同（[DictionaryPopupController.reanchorEntry] 内部也再判
+///   一次可见性与 rect 变化，不重建、不抖动）。
+bool reanchorNestedPopupToWord({
+  required DictionaryPopupController controller,
+  required GlobalKey parentWebViewKey,
+  required int parentIndex,
+  required Rect? wordLocalRect,
+  required Rect fallback,
+}) {
+  if (wordLocalRect == null || wordLocalRect.isEmpty) return false;
+  final int childIndex = parentIndex + 1;
+  if (childIndex <= 0 || childIndex >= controller.entries.length) return false;
+  final DictionaryPopupEntry child = controller.entries[childIndex];
+  final Rect screenRect = popupWordScreenRect(
+    webViewKey: parentWebViewKey,
+    localRect: wordLocalRect,
+    fallback: fallback,
+  );
+  if (screenRect == fallback || screenRect == child.selectionRect) return false;
+  controller.reanchorEntry(child, screenRect);
+  return true;
+}
+
 // [kPopupSearchingPlaceholderResult]（BUG-080 搜索期预挂载共享空结果）现声明于
 // dictionary_popup_controller.dart，经文件头 export 在此可用（_buildBody 的
 // `result ?? kPopupSearchingPlaceholderResult` 兜底与热槽 seed 是同一单例）。

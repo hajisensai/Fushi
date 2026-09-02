@@ -768,7 +768,21 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             selectionRect: childRect,
           );
           if (count > 0) {
-            item.webViewKey.currentState?.highlightSelection(count);
+            final Rect? wordRect =
+                await item.webViewKey.currentState?.highlightSelection(count);
+            // BUG-2054：同一次高亮顺带取回整词 bbox，把刚 push 的子层从「点击的首
+            // 字符」重锚到整词矩形（跨行选区时首字符矩形只覆盖第一行，子弹窗会盖住
+            // 选区的第二行）。阅读器车道监听 controller，reanchorEntry 的
+            // notifyListeners 已触发重定位，无需 setState。
+            if (mounted) {
+              reanchorNestedPopupToWord(
+                controller: _popup,
+                parentWebViewKey: item.webViewKey,
+                parentIndex: index,
+                wordLocalRect: wordRect,
+                fallback: childRect,
+              );
+            }
           }
         },
         onLinkClick: (query, localRect) async {
@@ -789,7 +803,18 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             selectionRect: childRect,
           );
           if (count > 0) {
-            item.webViewKey.currentState?.highlightSelection(count);
+            // BUG-2054：与 onTextSelected 对称——点词头/链接同样按整词 bbox 重锚子层。
+            final Rect? wordRect =
+                await item.webViewKey.currentState?.highlightSelection(count);
+            if (mounted) {
+              reanchorNestedPopupToWord(
+                controller: _popup,
+                parentWebViewKey: item.webViewKey,
+                parentIndex: index,
+                wordLocalRect: wordRect,
+                fallback: childRect,
+              );
+            }
           }
         },
         // TODO-962：弹窗滚到底时若该层结果可能被截断（!allLoaded）就续查下一批词头

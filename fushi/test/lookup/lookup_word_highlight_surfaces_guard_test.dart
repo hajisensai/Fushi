@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// TODO-1190 守卫：查词弹窗「高亮被查词」补齐所有缺失面（源码扫描，不依赖真机）。
 ///
 /// 在词头/链接/纯文本被点开子查词后，父卡片必须像 base_source_page 阅读器车道一样
@@ -121,6 +123,49 @@ void main() {
         rsrc.contains('window.__globalLookupHost.highlightFrame('),
         isTrue,
         reason: 'buildHighlightFrameScript 未调用 host.highlightFrame 通道',
+      );
+    });
+
+    // BUG-2054：同一次高亮回报的**整词 bbox** 必须回来重锚子卡。子卡打开时的锚点
+    // 是 selection.js getSelectionRect() 给的「点击首字符」矩形（textSelected 早于
+    // 词典查询，那时匹配长度还未知），跨行选区时它只覆盖点击那一行，子卡就贴在第一
+    // 行下方、盖住选区第二行。host 侧回报本身由 global_lookup_host_test.mjs 真跑
+    // 验证（§33b）；controller 不能 headless 实例化，故此处守它的接线。
+    test('app 外嵌套子卡按回报的整词 bbox 重锚', () {
+      final String src = controller.readAsStringSync();
+      // 判据全部落在 _applyNestedWordAnchor 的**方法体**内：`_renderStack()` 在本
+      // 文件出现四次，裸 contains 会恒真（改坏了也照样绿）。
+      expect(
+        containsCodeLine(src, "handler == 'nestedWordAnchor'"),
+        isTrue,
+        reason: 'controller 未接收 host 回报的整词 bbox',
+      );
+      final String body = methodBody(
+        src,
+        'void _applyNestedWordAnchor(Map<String, Object?> message) {',
+      );
+      expect(
+        containsCodeLine(body, '_frameAnchors[childId] = anchor'),
+        isTrue,
+        reason: '收到整词 bbox 却没改子卡锚点 ⇒ 子卡仍停在首字符锚点',
+      );
+      expect(
+        containsCodeLine(body, 'unawaited(_renderStack())'),
+        isTrue,
+        reason: '改了锚点不重渲染 ⇒ 重锚永远看不见',
+      );
+
+      final File host = File('assets/popup/global_lookup_host.js');
+      final String hsrc = maskJsComments(host.readAsStringSync());
+      expect(
+        hsrc.contains("postToHost('nestedWordAnchor'"),
+        isTrue,
+        reason: 'host.highlightFrame 又把 highlightSelection 的 bbox 丢了',
+      );
+      expect(
+        hsrc.contains('anchorRectToScreen(target, bounds)'),
+        isTrue,
+        reason: '整词 bbox 必须走与原锚点同一条 iframe-local -> window-local 转换',
       );
     });
   });

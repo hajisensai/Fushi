@@ -3563,15 +3563,33 @@
     if (!win || typeof win.eval !== 'function') {
       return false;
     }
+    var bounds = null;
     try {
-      win.eval(
+      bounds = win.eval(
           'window.fushiSelection && ' +
-          'window.fushiSelection.highlightSelection && ' +
-          'window.fushiSelection.highlightSelection(' + count + ');');
-      return true;
+          'window.fushiSelection.highlightSelection ? ' +
+          'window.fushiSelection.highlightSelection(' + count + ') : null;');
     } catch (e) {
       return false;
     }
+    // BUG-2054 — highlightSelection also RETURNS the matched word's bbox in the
+    // parent iframe's own viewport (it unions every getClientRects() fragment,
+    // so on a WRAPPED selection its bottom is the LAST line). The child card was
+    // anchored on selection.js's getSelectionRect() instead — the FIRST
+    // CHARACTER's rect (textSelected fires before the dictionary runs, so the
+    // matched length is unknown then), which on a wrapped selection covers only
+    // the line that was tapped: the child card then sits under the first line
+    // and hides the second one. Report the real word bbox through the SAME
+    // iframe-local -> window-local transform the anchor took, so Dart can
+    // re-anchor that child (in-app cards do it via reanchorNestedPopupToWord).
+    // Silent no-op when the realm returned nothing usable — the child keeps its
+    // first-character anchor, exactly as before.
+    var anchor = anchorRectToScreen(target, bounds);
+    if (anchor && anchor.width > 0 && anchor.height > 0) {
+      postToHost('nestedWordAnchor', [frameIndex, anchor],
+          cloneRoute((target && target.route) || activeRoute));
+    }
+    return true;
   }
 
   // BUG-1127 — drive the overlay AUTO-READ through popup.js's own HTML5

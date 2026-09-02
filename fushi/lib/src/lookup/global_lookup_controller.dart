@@ -1381,7 +1381,59 @@ class GlobalLookupController {
     //     case.
     if (handler == 'onLinkClick' || handler == 'textSelected') {
       _dispatchNestedLookup(message);
+      return;
     }
+    // BUG-2054 — the parent realm reports the highlighted word's REAL bbox after
+    // the nested search matched; re-anchor that child card onto it.
+    if (handler == 'nestedWordAnchor') {
+      _applyNestedWordAnchor(message);
+    }
+  }
+
+  /// BUG-2054 — apply the whole-word bbox the host reported for a child card.
+  ///
+  /// The child was anchored on `selection.js getSelectionRect()`, i.e. the
+  /// **first character** of the selection: `textSelected` fires before the
+  /// dictionary runs, so the matched length is unknown at that point. On a
+  /// selection that WRAPS, that rect covers only the tapped line, so the child
+  /// card lands under the FIRST line and hides the second one. `highlightFrame`
+  /// re-runs the parent realm's `highlightSelection`, which unions every
+  /// `getClientRects()` fragment into the real word bbox (bottom = last line),
+  /// and reports it through the same iframe-local -> window-local transform the
+  /// original anchor took. Re-rendering with it drops the child below the WHOLE
+  /// selection — the app-in cards enforce the same invariant through
+  /// `reanchorNestedPopupToWord`.
+  ///
+  /// args = [parentFrameIndex, {x, y, width, height}]. A stale parent index, a
+  /// missing child layer, a malformed/degenerate rect or an unchanged anchor is
+  /// a silent no-op: the child keeps its first-character anchor and nothing
+  /// re-renders (a failed re-anchor must never disturb a lookup already shown).
+  void _applyNestedWordAnchor(Map<String, Object?> message) {
+    final Object? args = message['args'];
+    if (args is! List || args.length < 2) {
+      return;
+    }
+    final Object? rawIndex = args[0];
+    final int? parentIndex =
+        rawIndex is num ? rawIndex.toInt() : int.tryParse('$rawIndex');
+    if (parentIndex == null || parentIndex < 0) {
+      return;
+    }
+    final int childIndex = parentIndex + 1;
+    if (childIndex >= _stack.frames.length) {
+      return;
+    }
+    final Rect? anchor = _anchorRectFromArg(args[1]);
+    if (anchor == null || anchor.isEmpty) {
+      return;
+    }
+    final String childId = _stack.frames[childIndex].id;
+    if (_frameAnchors[childId] == anchor) {
+      return;
+    }
+    _frameAnchors[childId] = anchor;
+    glog('nested: re-anchor child[$childIndex] to word bbox $anchor');
+    unawaited(_renderStack());
   }
 
   /// TODO-893 v2 (symptom 1) — shared nested-lookup dispatch for the two popup.js
