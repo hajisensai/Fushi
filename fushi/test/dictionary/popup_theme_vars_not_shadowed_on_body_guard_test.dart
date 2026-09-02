@@ -14,26 +14,10 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 一条 CSS 规则：选择器 + 声明块正文。
 typedef _CssRule = ({String selector, String body});
-
-/// 去掉 `/* ... */` 注释，避免注释里的示例选择器/属性名被当成真规则。
-String _stripComments(String css) {
-  final StringBuffer out = StringBuffer();
-  int i = 0;
-  while (i < css.length) {
-    final int start = css.indexOf('/*', i);
-    if (start < 0) {
-      out.write(css.substring(i));
-      break;
-    }
-    out.write(css.substring(i, start));
-    final int end = css.indexOf('*/', start + 2);
-    if (end < 0) break;
-    i = end + 2;
-  }
-  return out.toString();
-}
 
 /// 顶层规则切分。`@media` 一类的嵌套块会被整块当成一条「规则」，其正文里的
 /// 声明不会被误当作顶层声明——这对本守卫足够：主题块与兜底块都在顶层。
@@ -91,7 +75,7 @@ void main() {
       reason: '找不到 ${cssFile.path}（工作目录应为 fushi/）',
     );
     final List<_CssRule> rules = _topLevelRules(
-      _stripComments(cssFile.readAsStringSync()),
+      maskCssComments(cssFile.readAsStringSync()),
     );
 
     // 1) 收集「被主题块重新定义过」的自定义属性 —— 这些属性的真值住在 html 上。
@@ -143,7 +127,7 @@ void main() {
 
   test('popup.css: 语法说明浮层仍是不透明卡片（BUG-2037）', () {
     final List<_CssRule> rules = _topLevelRules(
-      _stripComments(cssFile.readAsStringSync()),
+      maskCssComments(cssFile.readAsStringSync()),
     );
     final _CssRule tooltip = rules.firstWhere(
       (_CssRule r) => r.selector
