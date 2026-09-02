@@ -1055,6 +1055,231 @@ function rewriteExportedGlossaryAnchors(root) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// 选中制卡高亮（选中的释义段落在导出的卡片释义里被 <mark> 标出）
+//
+// 数据结构是这件事的全部难点。制卡导出的释义 HTML **不是**屏幕上那棵 DOM 的克隆：
+// constructGlossaryHtml / constructSingleGlossaryHtml 从 entry.glossaries 的原始
+// content 重新渲染到临时 div（exporting=true）。所以「用户选中了屏幕上这一段」这个
+// 事实，必须表达成一个能在两棵树之间通用的坐标，才可能落到卡片上。
+//
+// 选的坐标是 `(glossaryIndex, start, end)`——原始 entry.glossaries 下标 + 该义项
+// **文本流**内的字符区间：
+//   * glossaryIndex 是原始下标而非分组序号，因为分组 / 隐藏词典过滤 / 重定向过滤
+//     都会打乱顺序并留下空洞（createGlossarySectionWrapper）。
+//   * 字符区间而非节点路径，因为两棵树的**结构**并不保证同构（exporting 分支换
+//     元素、HTML 型词典内容屏幕走 rewriteDictLinks 而导出走 sanitizeHtml），但
+//     两边跑的是同一个 renderStructuredContent，**文本流是一致的**：exporting 只
+//     影响图片，language 只影响 lang 属性。
+//
+// 唯一的文本流缺口是图片：导出端在不嵌媒体时会把 alt 写成可见文本
+// （createDefinitionImage 的 `image.textContent = alt`），屏幕端只有 <img>/<canvas>
+// 不产文本。故两侧一律跳过 .gloss-image-link 子树，让文本流严格对齐——这是谓词
+// 层面的统一，不是给导出端打的补丁。
+//
+// 即便如此仍留一道校验：落 mark 之前比对导出树上该区间的文本是否与选中文本逐字
+// 相等，不等就整段放弃高亮。宁可不标，绝不标错位置。
+const GLOSSARY_SELECTION_MARK_CLASS = 'fushi-selection';
+// 出厂默认色写成 inline style 是**有意的**：卡片可能是任意笔记类型，不能依赖 Lapis
+// 的 CSS 存在。半透明琥珀在明/暗两种卡背景上都保持文字对比度；color: inherit 必须
+// 显式写，否则 <mark> 的浏览器默认前景色在暗色卡上是黑字。用户想改颜色走 Lapis 可视化
+// 样式编辑器，那套声明全部带 !important（lapis_styling.dart），天然压过 inline style。
+const GLOSSARY_SELECTION_MARK_STYLE =
+    'background-color: rgba(255, 213, 79, 0.35); color: inherit; border-radius: 2px;';
+
+let lastSelectionSpans = [];
+
+// 选区快照：文本与位置必须在**同一时刻**取，否则两者可能描述不同的选区。
+// 时机与原来一致（pointerdown / touchstart，document 的 click 处理器清掉选区之前）。
+function snapshotSelection() {
+    lastSelection = __fushiSel()?.toString() || '';
+    lastSelectionSpans = lastSelection ? collectGlossarySelectionSpans() : [];
+}
+
+// 屏幕侧释义容器的坐标锚点。两侧共享 entry.glossaries 原始下标。
+function tagGlossaryContent(element, entryIdx, glossaryIndex) {
+    if (!element || typeof glossaryIndex !== 'number') return;
+    element.dataset.fushiEntry = String(entryIdx);
+    element.dataset.fushiGloss = String(glossaryIndex);
+}
+
+function createGlossaryTextWalker(root) {
+    return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+            return node.parentElement?.closest('.gloss-image-link')
+                ? NodeFilter.FILTER_REJECT
+                : NodeFilter.FILTER_ACCEPT;
+        }
+    });
+}
+
+function glossaryTextFlow(root) {
+    const walker = createGlossaryTextWalker(root);
+    let text = '';
+    let node;
+    while ((node = walker.nextNode())) {
+        text += node.nodeValue;
+    }
+    return text;
+}
+
+// (node, nodeOffset) 这个 DOM 点在 root 文本流中的字符偏移。落在被跳过的子树里
+// （只可能是图片 alt）时返回该子树之前的偏移，不会错位到别处。
+function glossaryTextOffsetAt(root, node, nodeOffset) {
+    const probe = document.createRange();
+    try {
+        probe.setStart(node, nodeOffset);
+        probe.setEnd(node, nodeOffset);
+    } catch {
+        return 0;
+    }
+    const walker = createGlossaryTextWalker(root);
+    let count = 0;
+    let cur;
+    while ((cur = walker.nextNode())) {
+        const len = cur.nodeValue.length;
+        let cmp;
+        try {
+            cmp = probe.comparePoint(cur, len);
+        } catch {
+            return count;
+        }
+        if (cmp === -1) {
+            // 该文本节点整体排在探针之前。
+            count += len;
+            continue;
+        }
+        if (cur === node) return count + nodeOffset;
+        // 探针停在这个文本节点之前的某个元素边界上。
+        return count;
+    }
+    return count;
+}
+
+// 把当前选区切成「每个释义容器一段」的字符区间。跨义项拖选自然产出多段，
+// 落在释义外（词头 / 标签 / 例句以外的装饰）的部分不产出任何段。
+function collectGlossarySelectionSpans() {
+    const sel = __fushiSel();
+    if (!sel || !sel.rangeCount || sel.isCollapsed) return [];
+    const scope = window.__fushiRoot || document;
+    const hosts = [...scope.querySelectorAll('[data-fushi-gloss]')];
+    if (!hosts.length) return [];
+
+    const spans = [];
+    for (let i = 0; i < sel.rangeCount; i++) {
+        const range = sel.getRangeAt(i);
+        if (range.collapsed) continue;
+        for (const host of hosts) {
+            let intersects;
+            try {
+                intersects = range.intersectsNode(host);
+            } catch {
+                intersects = false;
+            }
+            if (!intersects) continue;
+
+            const hostRange = document.createRange();
+            hostRange.selectNodeContents(host);
+            const flow = glossaryTextFlow(host);
+            let start;
+            let end;
+            try {
+                start = range.compareBoundaryPoints(Range.START_TO_START, hostRange) <= 0
+                    ? 0
+                    : glossaryTextOffsetAt(host, range.startContainer, range.startOffset);
+                end = range.compareBoundaryPoints(Range.END_TO_END, hostRange) >= 0
+                    ? flow.length
+                    : glossaryTextOffsetAt(host, range.endContainer, range.endOffset);
+            } catch {
+                continue;
+            }
+            start = Math.max(0, Math.min(start, flow.length));
+            end = Math.max(0, Math.min(end, flow.length));
+            if (end <= start) continue;
+            if (!flow.slice(start, end).trim()) continue;
+
+            spans.push({
+                entry: Number.parseInt(host.dataset.fushiEntry, 10) || 0,
+                gloss: Number.parseInt(host.dataset.fushiGloss, 10),
+                start,
+                end,
+                text: flow.slice(start, end)
+            });
+        }
+    }
+    return spans;
+}
+
+// 在导出树上按字符区间落 <mark>。校验不过就整棵树放弃高亮（返回 false），
+// 绝不落在错误的位置上。
+function applyGlossarySelectionHighlight(root, spans) {
+    if (!spans.length) return false;
+    const nodes = [];
+    const walker = createGlossaryTextWalker(root);
+    let offset = 0;
+    let cur;
+    while ((cur = walker.nextNode())) {
+        const len = cur.nodeValue.length;
+        nodes.push({ node: cur, start: offset, end: offset + len });
+        offset += len;
+    }
+    if (!nodes.length) return false;
+
+    const flow = nodes.map(n => n.node.nodeValue).join('');
+    const usable = spans.filter(span => flow.slice(span.start, span.end) === span.text);
+    if (!usable.length) return false;
+
+    let marked = false;
+    // 节点表是**先收集后修改**的：splitText 只在父节点里插入新的兄弟节点，不动
+    // 表里已有节点的身份与内容，所以节点之间的处理顺序无关紧要。真正有顺序要求的
+    // 是**同一个文本节点内的多个片段**（下面那层循环）——每次 splitText 都会截短
+    // 当前节点，先切前面的片段会让后面片段的偏移失效，故从后往前切。
+    for (let i = nodes.length - 1; i >= 0; i--) {
+        const entry = nodes[i];
+        const pieces = [];
+        for (const span of usable) {
+            const from = Math.max(span.start, entry.start);
+            const to = Math.min(span.end, entry.end);
+            if (to > from) pieces.push([from - entry.start, to - entry.start]);
+        }
+        if (!pieces.length) continue;
+        pieces.sort((a, b) => a[0] - b[0]);
+        for (let p = pieces.length - 1; p >= 0; p--) {
+            const [from, to] = pieces[p];
+            let target = entry.node;
+            if (to < target.nodeValue.length) target.splitText(to);
+            if (from > 0) target = target.splitText(from);
+            const parent = target.parentNode;
+            if (!parent) continue;
+            const mark = document.createElement('mark');
+            mark.className = GLOSSARY_SELECTION_MARK_CLASS;
+            mark.setAttribute('style', GLOSSARY_SELECTION_MARK_STYLE);
+            parent.insertBefore(mark, target);
+            mark.appendChild(target);
+            marked = true;
+        }
+    }
+    return marked;
+}
+
+// 制卡时取用：只认属于当前词条、且落在这一条义项里的选区段。
+function selectionSpansFor(entryIndex, glossaryIndex) {
+    return lastSelectionSpans.filter(
+        span => span.entry === entryIndex && span.gloss === glossaryIndex);
+}
+
+// 本轮 buildMinePayload 期间实际落下的高亮数（与 currentDictionaryMedia 同款：
+// 由 buildMinePayload 开启和关闭，不跨制卡存活）。
+let currentSelectionHighlights = 0;
+
+function highlightExportedGlossary(root, entryIndex, glossaryIndex) {
+    const spans = selectionSpansFor(entryIndex, glossaryIndex);
+    if (!spans.length) return;
+    if (applyGlossarySelectionHighlight(root, spans)) {
+        currentSelectionHighlights++;
+    }
+}
+
 // the following two should roughly match the glossary format of yomitan and keep compatibility with notetypes like lapis
 // 23.01.2026: this still has some differences
 // 24.01.2026: should be a bit closer now
@@ -1105,7 +1330,7 @@ function constructSingleGlossaryHtml(entryIndex) {
     // same way createGlossarySectionWrapper does for the lookup popup, so a disabled
     // dictionary's glossary never ends up in an Anki card field.
     const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
-    entry.glossaries.forEach(g => {
+    entry.glossaries.forEach((g, glossaryIndex) => {
         if (hiddenDictionaryNames.includes(g.dictionary)) return;
         if (isRedirectGlossary(g)) return;
         const dictName = g.dictionary;
@@ -1137,6 +1362,7 @@ function constructSingleGlossaryHtml(entryIndex) {
         const filteredTags = parsedTags.filter(tag => !isPartOfSpeech(tag) || !(prevTags !== null && prevTags === currentTags));
         const tags = filteredTags.length > 0 ? filteredTags.join(', ') : '';
         rewriteExportedGlossaryAnchors(tempDiv);
+        highlightExportedGlossary(tempDiv, entryIndex, glossaryIndex);
         const content = applyTableStyles(tempDiv.innerHTML);
         let listIdentifier = '';
         if (dictChanged) {
@@ -1164,7 +1390,7 @@ function constructGlossaryHtml(entryIndex) {
     let prevTags = null;
     
     const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
-    entry.glossaries.forEach(g => {
+    entry.glossaries.forEach((g, glossaryIndex) => {
         if (hiddenDictionaryNames.includes(g.dictionary)) return;
         if (isRedirectGlossary(g)) return;
         const dictName = g.dictionary;
@@ -1202,6 +1428,7 @@ function constructGlossaryHtml(entryIndex) {
         }
         
         rewriteExportedGlossaryAnchors(tempDiv);
+        highlightExportedGlossary(tempDiv, entryIndex, glossaryIndex);
         glossaryItems += `<li data-dictionary="${dictName}"><i>${label}</i> <span>${applyTableStyles(tempDiv.innerHTML)}</span></li>`;
         prevTags = currentTags;
         
@@ -1637,12 +1864,26 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     const idx = entryIndex || 0;
     const furiganaPlain = constructFuriganaPlain(expression, reading);
     currentDictionaryMedia = new Map();
+    currentSelectionHighlights = 0;
     const glossary = constructGlossaryHtml(idx);
     const freqHarmonicRank = getFrequencyHarmonicRank(frequencies);
     const frequenciesHtml = constructFrequencyHtml(frequencies);
     const singleGlossaries = constructSingleGlossaryHtml(idx);
     const dictionaryMedia = currentDictionaryMedia;
     currentDictionaryMedia = null;
+    // 选中段已经在释义里被 <mark> 标出来了，就不要再产出一份重复的 SelectionText。
+    // Lapis 把 SelectionText / MainDefinition / Glossary 渲染成一个左右翻页的轮播
+    // （lapis_note_type.dart 的 updateDefDisplay），非空 SelectionText 会把卡背的
+    // 默认页占成一段脱离上下文的裸文本，用户反而要翻页才看得到带高亮的释义。留空
+    // 后上游自带的 cleanUpDefinitions 会因 `textContent === ""` 自行删掉那一页，
+    // 卡背直接落在释义上——**不需要改动 vendored 的 Lapis 模板**。
+    //
+    // 只在高亮**确实落地**时才留空：选中落在例句 / 词头 / 标签这些释义之外的地方，
+    // 或导出树文本流校验没过（applyGlossarySelectionHighlight 返回 false）时，
+    // 一个 mark 都没有，此时必须保持旧行为把原文交给 SelectionText，否则用户的
+    // 选中就凭空消失了。
+    const selectionText = currentSelectionHighlights > 0 ? '' : popupSelectionText;
+    currentSelectionHighlights = 0;
     const glossaryFirst = Object.values(singleGlossaries)[0] || '';
     const pitchPositions = constructPitchPositionHtml(pitches);
     const pitchCategories = constructPitchCategories(pitches, reading, rules);
@@ -1689,7 +1930,7 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         pitchPositions,
         pitchCategories,
         phoneticTranscriptions,
-        popupSelectionText,
+        popupSelectionText: selectionText,
         audio,
         selectedDictionary: selectedDictionaries[idx]?.name || '',
         dictionaryMedia: JSON.stringify([...dictionaryMedia.values()])
@@ -2602,14 +2843,18 @@ function createGlossarySectionWrapper(entry) {
     // collapsedDictionaryNames is consumed in createGlossarySection.
     const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
     const grouped = {};
-    entry.glossaries.forEach(g => {
+    // glossaryIndex 是**原始** entry.glossaries 下标，不是分组后的序号：它是屏幕 DOM 与
+    // 制卡导出树之间唯一的共享坐标（选中高亮靠它对齐，见 collectGlossarySelectionSpans）。
+    // 分组、隐藏词典过滤、重定向过滤都会打乱顺序或留空洞，只有原始下标不受影响。
+    entry.glossaries.forEach((g, glossaryIndex) => {
         if (hiddenDictionaryNames.includes(g.dictionary)) return;
         if (isRedirectGlossary(g)) return;
         if (!grouped[g.dictionary]) grouped[g.dictionary] = [];
         grouped[g.dictionary].push({
             content: g.content,
             definitionTags: g.definitionTags,
-            termTags: g.termTags
+            termTags: g.termTags,
+            glossaryIndex
         });
     });
     const dictNames = Object.keys(grouped);
@@ -3042,13 +3287,13 @@ function createEntryHeader(entry, idx) {
         // pen, and touch path so selecting definition text can populate the
         // card's popupSelectionText on desktop as well as mobile.
         onpointerdown: () => {
-            lastSelection = __fushiSel()?.toString() || '';
+            snapshotSelection();
         },
         // Older embedded WebViews without Pointer Events keep the existing
         // touch fallback. Duplicate snapshots are harmless and preserve the
         // exact selected text until onclick builds the mining payload.
         ontouchstart: () => {
-            lastSelection = __fushiSel()?.toString() || '';
+            snapshotSelection();
         },
         onclick: async () => {
             // Single-flight guard against double-firing one click. Always cleared
@@ -3766,6 +4011,7 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
                 li.appendChild(tags);
             }
             const content = el('div', { className: 'glossary-content' });
+            tagGlossaryContent(content, entryIdx, item.glossaryIndex);
             renderContent(content, item.content);
             li.appendChild(content);
             ol.appendChild(li);
@@ -3780,6 +4026,7 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
                 wrapper.appendChild(tags);
             }
             const content = el('div', { className: 'glossary-content' });
+            tagGlossaryContent(content, entryIdx, item.glossaryIndex);
             renderContent(content, item.content);
             wrapper.appendChild(content);
             dictWrapper.appendChild(wrapper);
