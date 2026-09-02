@@ -75,13 +75,15 @@ void main() {
         );
       });
 
-      test('32 位 + 非日文系统 ⇒ 转区（保住 BUG-1038 的既有行为）', () {
+      test('判为需要 + 32 位 + 非日文系统 ⇒ 转区（BUG-1038 的日文原版样本走这格）',
+          () {
         expect(
           resolveJapaneseLocale(
             mode: GalJapaneseLocaleMode.auto,
             launchMode: true,
             is32Bit: true,
             systemAnsiCodePage: 936,
+            need: GalJapaneseLocaleNeed.needed,
           ),
           isTrue,
         );
@@ -93,10 +95,127 @@ void main() {
             mode: GalJapaneseLocaleMode.auto,
             launchMode: true,
             is32Bit: true,
+            need: GalJapaneseLocaleNeed.needed,
           ),
           isTrue,
         );
       });
+
+      // BUG-2047：语义门在工程门之前。以前「32 位 + 非日文系统」就转，把工程限制当成
+      // 了「日文原版」的代理，中文系统上每一个 32 位游戏都被转区。
+      test('证据不足（unknown，也是缺省）⇒ 不转区：自动判断不等于全转', () {
+        expect(
+          resolveJapaneseLocale(
+            mode: GalJapaneseLocaleMode.auto,
+            launchMode: true,
+            is32Bit: true,
+            systemAnsiCodePage: 936,
+          ),
+          isFalse,
+          reason: '缺省形参必须是 unknown ⇒ 不转，老调用点不会静默变成「全转区」',
+        );
+        expect(
+          resolveJapaneseLocale(
+            mode: GalJapaneseLocaleMode.auto,
+            launchMode: true,
+            is32Bit: true,
+            systemAnsiCodePage: 936,
+            need: GalJapaneseLocaleNeed.unknown,
+          ),
+          isFalse,
+        );
+      });
+
+      test('判为不需要（汉化 / 多语言 / Unicode 引擎）⇒ 不转区', () {
+        expect(
+          resolveJapaneseLocale(
+            mode: GalJapaneseLocaleMode.auto,
+            launchMode: true,
+            is32Bit: true,
+            systemAnsiCodePage: 936,
+            need: GalJapaneseLocaleNeed.notNeeded,
+          ),
+          isFalse,
+        );
+      });
+
+      test('判为需要也过不了工程门：64 位 / ACP=932 仍不转', () {
+        expect(
+          resolveJapaneseLocale(
+            mode: GalJapaneseLocaleMode.auto,
+            launchMode: true,
+            is32Bit: false,
+            systemAnsiCodePage: 936,
+            need: GalJapaneseLocaleNeed.needed,
+          ),
+          isFalse,
+        );
+        expect(
+          resolveJapaneseLocale(
+            mode: GalJapaneseLocaleMode.auto,
+            launchMode: true,
+            is32Bit: true,
+            systemAnsiCodePage: 932,
+            need: GalJapaneseLocaleNeed.needed,
+          ),
+          isFalse,
+        );
+      });
+    });
+
+    test('on / off 不看 need：用户档位是绝对的', () {
+      for (final GalJapaneseLocaleNeed need in GalJapaneseLocaleNeed.values) {
+        expect(
+          resolveJapaneseLocale(
+            mode: GalJapaneseLocaleMode.on,
+            launchMode: true,
+            is32Bit: true,
+            systemAnsiCodePage: 936,
+            need: need,
+          ),
+          isTrue,
+          reason: 'on + $need',
+        );
+        expect(
+          resolveJapaneseLocale(
+            mode: GalJapaneseLocaleMode.off,
+            launchMode: true,
+            is32Bit: true,
+            systemAnsiCodePage: 936,
+            need: need,
+          ),
+          isFalse,
+          reason: 'off + $need',
+        );
+      }
+    });
+  });
+
+  group('need / evidence key 编码', () {
+    test('是稳定字面量，不是 enum.name/index', () {
+      expect(galJapaneseLocaleNeedToKey(GalJapaneseLocaleNeed.needed), 'needed');
+      expect(
+        galJapaneseLocaleNeedToKey(GalJapaneseLocaleNeed.notNeeded),
+        'not_needed',
+      );
+      expect(
+        galJapaneseLocaleNeedToKey(GalJapaneseLocaleNeed.unknown),
+        'unknown',
+      );
+      expect(
+        galJapaneseLocaleEvidenceToKey(
+          GalJapaneseLocaleEvidence.dirFileNameChinesePatch,
+        ),
+        'dir_file_name_chinese_patch',
+      );
+      // 11 条证据 key 互不相同，且都是 snake_case（i18n 键尾巴直接用它）。
+      final Set<String> keys = GalJapaneseLocaleEvidence.values
+          .map(galJapaneseLocaleEvidenceToKey)
+          .toSet();
+      expect(keys, hasLength(GalJapaneseLocaleEvidence.values.length));
+      for (final String key in keys) {
+        expect(key, matches(RegExp(r'^[a-z0-9]+(_[a-z0-9]+)*$')));
+      }
     });
   });
 

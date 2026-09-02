@@ -8,6 +8,15 @@
     - exe 里「GB2312 区字节对」是噪声（纯英文 charmap.exe 也有 86 条 GB 样串段），**不可**作负向；
     - RT_VERSION 语言目录（0x0411 / 0x0804…）、manifest `activeCodePage=UTF-8`、顶层文件名（假名 / 汉化标记）、顶层文本文件编码统计（readme 假名对 1993 : GB 对 0）都干净可用；
     - 用户手填的 `galgames.language`（BCP-47）是唯一人工真值，优先级最高。
-- **[ ] ① 未修复** — 方案见 `docs/plans/2026-09-02-gal-japanese-locale-auto-need.md`：三态 `GalJapaneseLocaleNeed{needed,notNeeded,unknown}` + 证据清单；负向证据压过正向（转错 = 闪退，不转 = 乱码，代价不对称）；`auto` 只在 `needed` 时转区，`unknown` 不转（待用户确认这条默认）；判定结果与证据进会话状态卡。等计划确认后实施。
-- **[ ] ② 未加自动化测试** — 计划：`galgame_japanese_locale_test.dart` 真值表加 `need` 三态；新 `galgame_japanese_locale_probe_test.dart`（合成 Shift-JIS/GBK/UTF-8 简体文本、文件名分类、手工拼装含 RT_VERSION/RT_MANIFEST 的最小 PE）；`gal_japanese_locale_visibility_test.dart` 覆盖 verdict 进会话与事件。
+- **[x] ① 已修复**（提交：待填） — 方案见 `docs/plans/2026-09-02-gal-japanese-locale-auto-need.md`。用户已确认 `unknown` **不转区**。
+  - `fushi/lib/src/mining/galgame_japanese_locale.dart`：加三态 `GalJapaneseLocaleNeed{needed,notNeeded,unknown}`、11 项 `GalJapaneseLocaleEvidence`、`GalJapaneseLocaleVerdict`、纯函数 `judgeJapaneseLocaleNeed()`（用户语言 → 任一负向 ⇒ notNeeded → 任一正向 ⇒ needed → unknown；verdict.evidence 只列裁决那一组）；`resolveJapaneseLocale` 加 `need` 形参（缺省 unknown），`auto` = `need == needed && ACP≠932 && 32 位`。
+  - 新 `fushi/lib/src/mining/galgame_japanese_locale_probe.dart`：纯函数 `classifyTextBytesForLocale` / `classifyFileNamesForLocale` / `classifyPeForLocale` / `classifyUserLanguageForLocale` + 有界 IO `probeGalJapaneseLocaleNeed()`（exe 前 16 MB、顶层 ≤ 2000 项、文本 ≤ 20 × 256 KB；任何异常吞成无证据；用户声明语言零 IO）。exe 层只做正向（假名串段 ≥ 3 条），GB 对不做负向。
+  - 新 `fushi/lib/src/mining/pe_resources.dart`：`.rsrc` 三层树遍历 `readPeResourceLeaves()` + 段表 `readPeSections()` 从 `galgame_exe_icon.dart` 抽出共用，icon 解析改调它。
+  - `galgame_audio_source.dart`：`EngineHookGalAudioSource` 加 `contentLanguage` / 可注入 `japaneseLocaleNeedProbe`；`start()` 里 launch + auto 才探测；`japaneseLocaleVerdict` 与 `japaneseLocaleApplied` 同处赋值（命令行 `--japanese-locale` 与会话事实同源）。
+  - `gal_hook_session_controller.dart`：factory / `launchGame` 透传 `contentLanguage`；`GalHookSessionState.japaneseLocaleVerdict`（随 `clearLaunchExe` 复位）；事件 `launch.japanese_locale_applied` 带 `need`/`evidence` 稳定 key，新增 `launch.japanese_locale_skipped`。
+  - 三个启动点（`games_library_page.dart` / `galgame_home_page.dart` / `texthooker_page.dart`）把 `GalgameEntry.language` 传下去；工作台状态卡：已转区列「判据」，auto 未转区显示「未转区」+「自动判定：<证据/证据不足>，乱码请改『始终开启』」（新 i18n 键 `game_session_japanese_locale_evidence` / `_skipped` / `_skipped_hint` / `_evidence_insufficient` + 11 条 `game_japanese_locale_evidence_*`，`galgame_japanese_locale_text.dart` 翻译）。
+- **[x] ② 已加自动化测试**（提交：待填）
+  - `fushi/test/mining/galgame_japanese_locale_test.dart`：真值表补 need 三态（unknown 缺省 ⇒ 不转、notNeeded ⇒ 不转、needed 仍过 ACP/位数工程门、on/off 不看 need）+ need/evidence key 稳定字面量。
+  - 新 `fushi/test/mining/galgame_japanese_locale_probe_test.dart`：合成 Shift-JIS/GBK/UTF-8(BOM/无 BOM)/UTF-16 文本分类、文件名分类、手工拼装最小 PE（`.rsrc` RT_VERSION 0x0411 / Translation 0x0804 / RT_MANIFEST UTF-8，`.rdata` 假名串段 vs `.text` 代码段）、judge 优先级、`Directory.systemTemp` 落盘的 probe 集成（日文原版 ⇒ needed / 汉化版 ⇒ notNeeded / 无证据 ⇒ unknown）、`EngineHookGalAudioSource.start()` 命令行与 verdict 同源（auto+unknown 无 `--japanese-locale`、auto+needed 有、on/off 不探测、探测器抛出 ⇒ unknown 不阻塞）。
+  - `fushi/test/mining/gal_japanese_locale_visibility_test.dart`：verdict 进会话状态、applied/skipped 事件带 need+evidence key、无判定不记 skipped、停止后复位、copyWith 清理。`galgame_exe_icon_test.dart` 断言一条未改仍绿（抽公共遍历不改行为）。
 - **备注**：同一轮报告的「转区后 DLL 注入失败」见 [[BUG-2046]]——实测与转区无关，是 9/2 构建 hook DLL 与 LunaHook 的死锁。
