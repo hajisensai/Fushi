@@ -465,8 +465,8 @@ class ImmersionMiningEngine {
       collectionTag: req.collectionTag,
       // 片段时间窗（渲染 `{clip-timestamp}`）：原样透传，有效性不在这里判——
       // 唯一判据在 [AnkiHandlebarRenderer.formatClipTimestamp]（`end > start`，
-      // 与 [hasRange] 同语义）。无时间轴的来源（书 / galgame）两端都是 0，
-      // 到那里自然渲染成空串。
+      // 与 [hasRange] 同语义）。走本引擎但没有时间轴的来源（galgame）两端恒是 0，
+      // 到那里自然渲染成空串；书籍根本不进本引擎，见 AnkiMiningContext 的字段注释。
       clipStartMs: req.clipStartMs,
       clipEndMs: req.clipEndMs,
     );

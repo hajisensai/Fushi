@@ -652,10 +652,42 @@ class AnkiMiningContext {
   ///
   /// 只有带时间轴的来源才有值：视频页 / 网页视频 / YouTube 由
   /// `ImmersionMiningRequest.clipStartMs|clipEndMs`（已过
-  /// `miningClipTimeMs` 的字幕轴→播放器轴校正）经引擎原样透传；书籍、galgame
-  /// 没有时间窗，恒为 `null` → 占位符渲染成空串，不硬造时间。
+  /// `miningClipTimeMs` 的字幕轴→播放器轴校正）经引擎原样透传。
+  ///
+  /// 两种「没有时间窗」殊途同归地渲染成空串：galgame 走沉浸引擎但恒填 0/0
+  /// （`external_window_mining.dart`），书籍根本不进引擎、直接组 context 而不写
+  /// 这两个参数（取默认 `null`）。判据见
+  /// [AnkiHandlebarRenderer.formatClipTimestamp]。
   final int? clipStartMs;
   final int? clipEndMs;
+
+  /// 渲染前把两个**本地媒体路径**换成 backend 落盘后的媒体引用
+  /// （`<img src=...>` / `[sound:...]`），其余字段原样带过。
+  ///
+  /// **落卡路径必须用它，不许再手抄字段。** 此前两个 backend 各自 `AnkiMiningContext(...)`
+  /// 逐字段重建这份 context，于是每给本类加一个字段就漏抄一次：`{clip-timestamp}`
+  /// 刚加上就整条落卡路径恒空串（渲染器读的是重建出来的那份），而直调渲染器的单测
+  /// 结构上照不到。收敛到这里之后，新增字段自动跟着走。
+  ///
+  /// 两个媒体参数**必传**且允许显式 `null`：媒体没落地时就该把路径清空，
+  /// 绝不能退回本地临时文件路径——那会把一个 Anki 读不到的路径写进卡片。
+  AnkiMiningContext withMediaRefs({
+    required String? coverRef,
+    required String? sentenceAudioRef,
+  }) =>
+      AnkiMiningContext(
+        sentence: sentence,
+        cueSentence: cueSentence,
+        documentTitle: documentTitle,
+        coverPath: coverRef,
+        sentenceAudioPath: sentenceAudioRef,
+        sentenceOffset: sentenceOffset,
+        source: source,
+        bookTitleTag: bookTitleTag,
+        collectionTag: collectionTag,
+        clipStartMs: clipStartMs,
+        clipEndMs: clipEndMs,
+      );
 }
 
 class AnkiHandlebarRenderer {
@@ -770,9 +802,11 @@ class AnkiHandlebarRenderer {
   /// 复制出第二套规则），所以所有上游——引擎、远端转发——一律**原样传原值**，
   /// 不在各自那头先判一遍再决定传不传 `null`。
   ///
-  /// 于是两种「本来就没有时间窗」的情形自然落进同一个出口：无时间轴来源
-  /// （书 / galgame）两端为 `null`；视频侧取不到 cue 时兜底成 0/0（`end == start`）。
-  /// 都渲染成空串，卡片上不会留下 `00:00:00 - 00:00:00` 这种伪信息。
+  /// 于是两种「本来就没有时间窗」的情形自然落进同一个出口而渲染成空串：无时间轴
+  /// 来源两端为 `null`（书籍）或恒 0/0（galgame）；视频侧取不到 cue 时同样兜底成
+  /// 0/0。挡掉的是**「压根没有窗」**，不是「窗很短」——判据在毫秒空间而显示截断到秒，
+  /// 所以一个真实存在的 0~0.4 秒片段会渲染成 `00:00:00 - 00:00:00`。那是秒级截断的
+  /// 真实结果（片段确实在第 0 秒），不是无中生有的伪信息，故不额外拦。
   static String formatClipTimestamp(int? startMs, int? endMs) {
     if (startMs == null || endMs == null) return '';
     if (endMs <= startMs) return '';
