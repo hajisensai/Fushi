@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1908 条。点号进各自文件。
+> 共 1911 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2062](bugs/BUG-2062-subtitle-workbench-scope-extra-row.md) | ✅ | ✅ | 字幕工作台作用域开关独占一行：挂在 AppBar.bottom 上，标题行右半边全空 |
+| [BUG-2061](bugs/BUG-2061-subtitle-collection-download-all-not-pinned.md) | ✅ | ✅ | 合集字幕面板「下载全部」不贴底：两个 Flexible 分份额，用不满的部分落成死白 |
+| [BUG-2060](bugs/BUG-2060-subtitle-collection-no-source-picker.md) | ✅ | ✅ | 「整个合集」字幕面板无法选取字幕：未绑 AniList 的合集不发首搜，来源选择区整块隐藏 |
 | [BUG-2048](bugs/BUG-2048-galgame-hunex-native-structural-complexity.md) | 🚧 | 🚧 | HUNEX 原生适配层 9 处结构性复杂度待清（认知复杂度 55/44/43/40/35、24 字段类、13/12/8 参函数） |
 | [BUG-2036](bugs/BUG-2036-epub-guard-follows-plugin-symlink-loop.md) | ✅ | ✅ | 目录枚举守卫跟随 .plugin_symlinks 自指链，worktree 全量测试必崩两条 |
 | [BUG-2035](bugs/BUG-2035-video-download-lease-tests-wallclock-flaky.md) | 🚧 | 🚧 | 下载租约续期测试对宿主调度抖动零容差，本机并发下必红 |

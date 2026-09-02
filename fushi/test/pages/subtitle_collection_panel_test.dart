@@ -105,9 +105,12 @@ void main() {
     required VideoBookRow member,
     required _Search onSearch,
     Future<http.Client> Function()? httpClientFactory,
+    bool withProvider = true,
   }) {
     final VideoSubtitleRegistry registry = VideoSubtitleRegistry(
-      <VideoSubtitleProvider>[_FakeProvider(onSearch)],
+      withProvider
+          ? <VideoSubtitleProvider>[_FakeProvider(onSearch)]
+          : const <VideoSubtitleProvider>[],
     );
     return TranslationProvider(
       child: MaterialApp(
@@ -263,16 +266,18 @@ void main() {
     await tester.tap(find.text(t.video_jimaku_find_sources));
     await tester.pumpAndSettle();
 
-    expect(requests, hasLength(1));
-    final VideoMediaReference media = requests.single.media!;
-    // 没有 anidb/anilist 身份 = 不是动画：Jimaku 的 anime 硬过滤必须走 false 档，
-    // 写死 anime 会让真人剧合集一条字幕都搜不到（BUG-1694）。
-    expect(media.discoveryCategory, VideoDiscoveryCategory.tv);
-    // OpenSubtitles 的强键：imdb 直查，命中率与文本搜不在一个量级。
-    expect(media.imdbId, 'tt0903747');
-    expect(media.tmdbId, 1396);
-    expect(media.year, 2011);
-    expect(media.anilistId, isNull);
+    expect(requests, isNotEmpty);
+    for (final VideoSubtitleSearchRequest request in requests) {
+      final VideoMediaReference media = request.media!;
+      // 没有 anidb/anilist 身份 = 不是动画：Jimaku 的 anime 硬过滤必须走 false 档，
+      // 写死 anime 会让真人剧合集一条字幕都搜不到（BUG-1694）。
+      expect(media.discoveryCategory, VideoDiscoveryCategory.tv);
+      // OpenSubtitles 的强键：imdb 直查，命中率与文本搜不在一个量级。
+      expect(media.imdbId, 'tt0903747');
+      expect(media.tmdbId, 1396);
+      expect(media.year, 2011);
+      expect(media.anilistId, isNull);
+    }
   });
 
   testWidgets('来源搜索失败 → 面板内提示，下载保持禁用', (WidgetTester tester) async {
@@ -384,7 +389,7 @@ void main() {
         },
       ),
     );
-    await tester.tap(find.text(t.video_jimaku_find_sources));
+    // 第一轮由自动首搜发起（合集没绑系列 → 解析出 Series A 并搜它）。
     await tester.pumpAndSettle();
     expect(find.textContaining('A initial'), findsOneWidget);
 
@@ -495,5 +500,126 @@ void main() {
         isFalse,
       );
     });
+  });
+
+  testWidgets('没绑 AniList 的合集也自动首搜：来源直接可选', (WidgetTester tester) async {
+    final VideoBookRow member = await seedMember();
+    // 不绑 anilistId、不 seed 规范作品 = initState 的 seedId 为 null。这条路径原来
+    // **根本不发首搜**：用户打开面板只看到一排 `Icons.remove` 占位 + 灰掉的
+    // 「下载全部」，得自己猜出要先点「查找字幕」。
+    final MediaCollectionRow collection = await seedCollection();
+    int searches = 0;
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        httpClientFactory: () async =>
+            MockClient((_) async => http.Response('', 404)),
+        onSearch: (_) async {
+          searches++;
+          return ProviderBatchResult<VideoSubtitleCandidate>.success(
+            <VideoSubtitleCandidate>[
+              _Cand('Show - 01.ja.srt', source: 'e1', episode: 1),
+            ],
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(searches, greaterThan(0), reason: '未绑系列的合集也必须发首搜');
+    expect(
+      find.byKey(const ValueKey<String>('subtitle-source-fake:e1')),
+      findsOneWidget,
+    );
+    expect(tester.widget<FilledButton>(downloadButton()).onPressed, isNotNull);
+  });
+
+  testWidgets('首搜没结果：来源区说「没找到」而不是整块消失', (WidgetTester tester) async {
+    final VideoBookRow member = await seedMember();
+    final MediaCollectionRow collection = await seedCollection();
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        httpClientFactory: () async =>
+            MockClient((_) async => http.Response('', 404)),
+        onSearch: (_) async =>
+            ProviderBatchResult<VideoSubtitleCandidate>.success(
+              const <VideoSubtitleCandidate>[],
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder empty = find.byKey(
+      const ValueKey<String>('subtitle-source-empty'),
+    );
+    expect(empty, findsOneWidget);
+    expect(tester.widget<Text>(empty).data, t.video_jimaku_no_results);
+    expect(tester.widget<FilledButton>(downloadButton()).onPressed, isNull);
+  });
+
+  testWidgets('一个字幕来源都没配：不自动发搜，来源区给引导', (WidgetTester tester) async {
+    final VideoBookRow member = await seedMember();
+    final MediaCollectionRow collection = await seedCollection();
+    int searches = 0;
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        withProvider: false,
+        httpClientFactory: () async =>
+            MockClient((_) async => http.Response('', 404)),
+        onSearch: (_) async {
+          searches++;
+          return ProviderBatchResult<VideoSubtitleCandidate>.success(
+            const <VideoSubtitleCandidate>[],
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 自动首搜在这条路径上只会立刻弹红色的「缺 API key」，所以不发；来源区改为
+    // 明说要先点「查找字幕」，而不是像原来那样整块消失。
+    expect(searches, 0);
+    final Finder empty = find.byKey(
+      const ValueKey<String>('subtitle-source-empty'),
+    );
+    expect(empty, findsOneWidget);
+    expect(
+      tester.widget<Text>(empty).data,
+      t.video_subtitle_source_search_hint,
+    );
+  });
+
+  testWidgets('底部操作条贴宿主底边：内容撑不满时不浮在列表尾巴上', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1000, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final VideoBookRow member = await seedMember();
+    final MediaCollectionRow collection = await seedCollection();
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        httpClientFactory: () async =>
+            MockClient((_) async => http.Response('', 404)),
+        onSearch: (_) async =>
+            ProviderBatchResult<VideoSubtitleCandidate>.success(
+              const <VideoSubtitleCandidate>[],
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 判据必须取**宿主**底边：`MainAxisSize.min` 时面板高度就等于内容高度，拿面板
+    // 自己的底边去比按钮底边是两侧同源，恒真。
+    final Rect host = tester.getRect(find.byType(Scaffold));
+    final Rect button = tester.getRect(downloadButton());
+    expect(host.height, greaterThan(1000), reason: '宿主必须比内容高，否则判据恒真');
+    expect(host.bottom - button.bottom, lessThan(24));
   });
 }

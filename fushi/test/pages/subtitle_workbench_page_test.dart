@@ -162,4 +162,39 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('作用域开关与标题同一行：不再挂 AppBar.bottom 多占一行', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final SubtitleCollectionSpec collection = await seedCollection();
+    await tester.pumpWidget(
+      wrap(
+        SubtitleWorkbenchPage(
+          host: _Host(db),
+          saveDirectory: tempDir.path,
+          episode: episode,
+          collection: collection,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<AppBar>(find.byType(AppBar)).bottom, isNull);
+    // 同行判据是**垂直中心重合**：挂在 bottom 上时两者也都在 AppBar 里，但差着
+    // 整整一行（56px），标题行右半边全空。
+    final Rect title = tester.getRect(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.text(t.video_subtitle_workbench_title),
+      ),
+    );
+    final Rect scope = tester.getRect(
+      find.byKey(const ValueKey<String>('subtitle-workbench-scope')),
+    );
+    expect((title.center.dy - scope.center.dy).abs(), lessThan(8));
+  });
 }

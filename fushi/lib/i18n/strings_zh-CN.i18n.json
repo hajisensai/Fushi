@@ -4113,5 +4113,6 @@
   "video_discovery_anidb_identity_not_found": "未能在 AniDB 识别该作品：仍会正常下载，导入后在待确认列表等待手动指定身份。",
   "network_proxy_p2p_mode_direct": "直连",
   "network_proxy_p2p_mode_proxy": "走代理",
-  "network_proxy_p2p_mode_mixed": "混合"
+  "network_proxy_p2p_mode_mixed": "混合",
+  "video_subtitle_source_search_hint": "先点上方的「查找字幕」，再在这里挑一个来源。"
 }

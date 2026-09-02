@@ -230,33 +230,35 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(t.video_subtitle_workbench_title),
-        bottom: _canSwitchScope
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(56),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: SegmentedButton<SubtitleWorkbenchScope>(
-                    key: const ValueKey<String>('subtitle-workbench-scope'),
-                    showSelectedIcon: false,
-                    segments: <ButtonSegment<SubtitleWorkbenchScope>>[
-                      ButtonSegment<SubtitleWorkbenchScope>(
-                        value: SubtitleWorkbenchScope.episode,
-                        icon: const Icon(Icons.subtitles_outlined),
-                        label: Text(t.video_subtitle_scope_episode),
-                      ),
-                      ButtonSegment<SubtitleWorkbenchScope>(
-                        value: SubtitleWorkbenchScope.collection,
-                        icon: const Icon(Icons.video_library_outlined),
-                        label: Text(t.video_subtitle_scope_collection),
-                      ),
-                    ],
-                    selected: <SubtitleWorkbenchScope>{_scope},
-                    onSelectionChanged: (Set<SubtitleWorkbenchScope> value) =>
-                        setState(() => _scope = value.first),
-                  ),
+        // 作用域开关与标题**同一行**。原来它挂在 `AppBar.bottom` 上独占 56px：
+        // 标题行右侧整条空着，开关与面板之间又多一截死白。
+        actions: <Widget>[
+          if (_canSwitchScope)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Center(
+                child: SegmentedButton<SubtitleWorkbenchScope>(
+                  key: const ValueKey<String>('subtitle-workbench-scope'),
+                  showSelectedIcon: false,
+                  segments: <ButtonSegment<SubtitleWorkbenchScope>>[
+                    ButtonSegment<SubtitleWorkbenchScope>(
+                      value: SubtitleWorkbenchScope.episode,
+                      icon: const Icon(Icons.subtitles_outlined),
+                      label: Text(t.video_subtitle_scope_episode),
+                    ),
+                    ButtonSegment<SubtitleWorkbenchScope>(
+                      value: SubtitleWorkbenchScope.collection,
+                      icon: const Icon(Icons.video_library_outlined),
+                      label: Text(t.video_subtitle_scope_collection),
+                    ),
+                  ],
+                  selected: <SubtitleWorkbenchScope>{_scope},
+                  onSelectionChanged: (Set<SubtitleWorkbenchScope> value) =>
+                      setState(() => _scope = value.first),
                 ),
-              )
-            : null,
+              ),
+            ),
+        ],
       ),
       body: SafeArea(
         child: Padding(

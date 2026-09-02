@@ -195,6 +195,10 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   List<SubtitleCollectionSource> _sources = const <SubtitleCollectionSource>[];
   String? _selectedSourceKey;
 
+  /// 是否已经真正跑过一次来源检索。空来源列表有两种含义——「还没搜过」和「搜过
+  /// 但一条都没有」——只看 `_sources.isEmpty` 分不开，空态提示会给错话。
+  bool _searched = false;
+
   /// 面板内的提示（搜索失败 / 批量结果）；全屏页里 SnackBar 会被盖住（BUG-1844）。
   String? _notice;
   bool _noticeIsError = false;
@@ -274,6 +278,15 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     final int? seedId = widget.collection.anilistId ?? _canonicalAnilistId;
     if (seedId != null && !_searching) {
       unawaited(_searchSources(anilistId: seedId));
+      return;
+    }
+    // 没绑系列的合集过去**根本不发首搜**——「绑了的自动搜、没绑的不搜」是这里唯一
+    // 的特殊情况，代价是用户打开面板只看到一排 `Icons.remove` 占位和灰掉的「下载
+    // 全部」，得自己猜出要先点「查找字幕」。补上等价首搜（先解析系列再搜来源，与
+    // 点那个按钮同一条路径）。一个字幕来源都没配时不自动发：那条路径只会立刻弹
+    // 红色的「缺 API key」，留给用户显式点。
+    if (!_searching && !_resolving && _hasConfiguredSubtitleSource) {
+      unawaited(_resolveSeries());
     }
   }
 
@@ -469,6 +482,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       setState(() {
         _sources = const <SubtitleCollectionSource>[];
         _selectedSourceKey = null;
+        _searched = true;
       });
       _setNotice(t.video_jimaku_no_key, error: true);
       return;
@@ -499,6 +513,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
           ? primarySubtitleFailure(result.failures)
           : null;
       setState(() {
+        _searched = true;
         _sources = sources;
         _selectedSourceKey =
             sources.any(
@@ -516,6 +531,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       }
     } on Object catch (error) {
       if (!mounted || requestGeneration != _generation) return;
+      setState(() => _searched = true);
       _setNotice(
         describeSubtitleFailure(t.video_jimaku_search_failed, error),
         error: true,
@@ -735,8 +751,27 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   }
 
   /// 来源选择：每个来源一行（provider + 条目名 + 文件数/集数/语言），单选。
+  ///
+  /// 空列表**不再整块隐藏**：合集没绑 AniList id 时首搜根本不发（见 [initState]），
+  /// 用户面对的就是一排 `Icons.remove` 占位 + 灰掉的「下载全部」+ 零解释，无从知道
+  /// 还要先点「查找字幕」。三种空态各说一句话。
   Widget _buildSourcePicker(ThemeData theme) {
-    if (_sources.isEmpty) return const SizedBox.shrink();
+    if (_sources.isEmpty) {
+      final String message = _searching || _resolving
+          ? t.video_jimaku_source_loading
+          : (_searched
+                ? t.video_jimaku_no_results
+                : t.video_subtitle_source_search_hint);
+      return _chipSection(t.video_subtitle_source_label, <Widget>[
+        Text(
+          message,
+          key: const ValueKey<String>('subtitle-source-empty'),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ]);
+    }
     return _chipSection(t.video_subtitle_source_label, <Widget>[
       for (final SubtitleCollectionSource source in _sources)
         ConstrainedBox(
@@ -878,8 +913,11 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         ) &&
         _batchCandidates.isNotEmpty;
     final Widget? notice = _buildNotice(theme);
+    // 表单区与成员列表同属**一个**滚动区，外层 Column 撑满宿主高度：原来是两个
+    // `Flexible`(loose) 各分一份 flex，谁没用完谁的份额就落成死白，底部操作条永远
+    // 浮在内容尾巴上而不贴底。
     return Column(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisSize: MainAxisSize.max,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (widget.showTitle) ...<Widget>[
@@ -887,80 +925,84 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
           const SizedBox(height: 12),
         ],
         if (notice != null) notice,
-        Flexible(
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                JimakuApiKeyField(controller: _apiKeyCtrl, dense: true),
-                const SizedBox(height: 8),
-                Row(
+        Expanded(
+          child: CustomScrollView(
+            slivers: <Widget>[
+              SliverToBoxAdapter(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    Expanded(
-                      child: TextField(
-                        controller: _queryCtrl,
-                        decoration: InputDecoration(
-                          labelText: t.video_jimaku_query,
-                          isDense: true,
+                    JimakuApiKeyField(controller: _apiKeyCtrl, dense: true),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: TextField(
+                            controller: _queryCtrl,
+                            decoration: InputDecoration(
+                              labelText: t.video_jimaku_query,
+                              isDense: true,
+                            ),
+                            onSubmitted: (_) => _resolveSeries(),
+                          ),
                         ),
-                        onSubmitted: (_) => _resolveSeries(),
-                      ),
+                        const SizedBox(width: 8),
+                        FilledButton.tonalIcon(
+                          key: const ValueKey<String>(
+                            'subtitle-collection-find',
+                          ),
+                          onPressed: _resolving || _searching || _running
+                              ? null
+                              : _resolveSeries,
+                          icon: const Icon(Icons.search, size: 18),
+                          label: Text(t.video_jimaku_find_sources),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    FilledButton.tonalIcon(
-                      key: const ValueKey<String>('subtitle-collection-find'),
-                      onPressed: _resolving || _searching || _running
-                          ? null
-                          : _resolveSeries,
-                      icon: const Icon(Icons.search, size: 18),
-                      label: Text(t.video_jimaku_find_sources),
-                    ),
+                    if (_seriesMatches.length >= 2)
+                      _chipSection(t.video_jimaku_anime_match, <Widget>[
+                        for (final AniListMedia media in _seriesMatches)
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 260),
+                            child: ChoiceChip(
+                              label: Text(
+                                media.displayTitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              tooltip: media.displayTitle,
+                              selected: _selectedSeriesId == media.id,
+                              onSelected: _resolving || _running
+                                  ? null
+                                  : (_) => unawaited(_selectSeries(media)),
+                            ),
+                          ),
+                      ]),
+                    _buildSourcePicker(theme),
+                    _buildCollectionSettings(theme),
+                    const Divider(height: 20),
                   ],
                 ),
-                if (_seriesMatches.length >= 2)
-                  _chipSection(t.video_jimaku_anime_match, <Widget>[
-                    for (final AniListMedia media in _seriesMatches)
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 260),
-                        child: ChoiceChip(
-                          label: Text(
-                            media.displayTitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          tooltip: media.displayTitle,
-                          selected: _selectedSeriesId == media.id,
-                          onSelected: _resolving || _running
-                              ? null
-                              : (_) => unawaited(_selectSeries(media)),
-                        ),
-                      ),
-                  ]),
-                _buildSourcePicker(theme),
-                _buildCollectionSettings(theme),
-              ],
-            ),
-          ),
-        ),
-        const Divider(height: 20),
-        Flexible(
-          child: ListView.builder(
-            itemCount: widget.members.length,
-            itemBuilder: (BuildContext context, int i) {
-              final VideoBookRow m = widget.members[i];
-              return ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: _statusIcon(m.bookUid, i),
-                title: Text(
-                  m.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: _episodeSubtitle(m, i),
-              );
-            },
+              ),
+              SliverList.builder(
+                itemCount: widget.members.length,
+                itemBuilder: (BuildContext context, int i) {
+                  final VideoBookRow m = widget.members[i];
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: _statusIcon(m.bookUid, i),
+                    title: Text(
+                      m.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: _episodeSubtitle(m, i),
+                  );
+                },
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 8),
