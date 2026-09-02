@@ -55,9 +55,33 @@ void main() {
         <OnboardingStepId>[
           OnboardingStepId.welcome,
           OnboardingStepId.features,
+          OnboardingStepId.finish,
+        ],
+      );
+    });
+
+    test('fonts step follows its own selection like any capability', () {
+      expect(
+        _steps(<OnboardingFeature>{OnboardingFeature.fonts}),
+        <OnboardingStepId>[
+          OnboardingStepId.welcome,
+          OnboardingStepId.features,
           OnboardingStepId.fonts,
           OnboardingStepId.finish,
         ],
+      );
+      // 字体排在所有配置步骤之后、操作教程之前。
+      expect(
+        _steps(<OnboardingFeature>{
+          OnboardingFeature.fonts,
+          OnboardingFeature.backup,
+          OnboardingFeature.manualResources,
+        }),
+        containsAllInOrder(<OnboardingStepId>[
+          OnboardingStepId.backup,
+          OnboardingStepId.fonts,
+          OnboardingStepId.clickLookup,
+        ]),
       );
     });
 
@@ -84,7 +108,6 @@ void main() {
         result,
         containsAllInOrder(<OnboardingStepId>[
           OnboardingStepId.recommendedPack,
-          OnboardingStepId.fonts,
           OnboardingStepId.clickLookup,
           OnboardingStepId.globalLookup,
         ]),
@@ -206,6 +229,7 @@ void main() {
       const Map<OnboardingFeature, OnboardingStepId> capabilitySteps =
           <OnboardingFeature, OnboardingStepId>{
         OnboardingFeature.anki: OnboardingStepId.anki,
+        OnboardingFeature.fonts: OnboardingStepId.fonts,
         OnboardingFeature.backup: OnboardingStepId.backup,
         OnboardingFeature.interconnect: OnboardingStepId.interconnect,
       };
@@ -214,7 +238,7 @@ void main() {
         final List<OnboardingStepId> result =
             _steps(<OnboardingFeature>{feature});
         expect(result, contains(step), reason: '$feature 应产生 $step');
-        expect(result, hasLength(5), reason: '$feature 应只追加一个配置步骤');
+        expect(result, hasLength(4), reason: '$feature 应只追加一个配置步骤');
       });
     });
   });
