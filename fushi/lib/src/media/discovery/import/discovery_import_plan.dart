@@ -161,9 +161,10 @@ DiscoveryImportPlan classifyDiscoveryFile(
       if (_isText(filePath)) return ConvertTextPlan(filePath);
       return const UnsupportedPlan(DiscoveryImportBlocker.unknownFileType);
     case DiscoveryMediaKind.audiobook:
-      // 单文件永远凑不齐「正文 + 字幕 + 音频」。
-      return const UnsupportedPlan(
-          DiscoveryImportBlocker.audiobookMissingAudio);
+      // 单文件同样凑不齐「正文 + 字幕 + 音频」，但缺的是哪一样取决于它本身是
+      // 什么：孤立的 m4b 缺的是字幕而不是音频。交给同一套判据分流，避免这里
+      // 用一个固定 blocker 谎报原因（用户看到的补救提示据此分支）。
+      return classifyDiscoveryDirectory(kind, <String>[filePath]);
     case DiscoveryMediaKind.game:
       if (_ext(filePath) == '.exe') {
         return RegisterGameExesPlan(<String>[filePath]);

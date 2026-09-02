@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1924 条。点号进各自文件。
+> 共 1925 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -55,6 +55,7 @@
 | [BUG-2033](bugs/BUG-2033-header-leading-align.md) | ✅ | ✅ | 页头返回箭头与标题垂直未对齐 |
 | [BUG-2031](bugs/BUG-2031-mouse-binding-all-scopes.md) | ✅ | ✅ | 鼠标绑定只有部分动作/页面支持 |
 | [BUG-2030](bugs/BUG-2030-video-keyboard-cue-skip-wakes-osc.md) | ✅ | ✅ | 键盘上/下一句字幕会把隐藏的控制条(OSC)整个弹出来 |
+| [BUG-2029](bugs/BUG-2029-audiobook-download-only-audio.md) | ✅ | ✅ | 下载有声书只落孤立音频:成不了书且原因谎报 |
 | [BUG-2028](bugs/BUG-2028-krkr-risk-acceptance-entry-focus-loss.md) | ✅ | ✅ | KRKR 风险确认入口在切回 Fushi 后消失 |
 | [BUG-2027](bugs/BUG-2027-gal-native-input-admission-transaction.md) | 🚧 | 🚧 | Gal 原生查词风险未授权时仍吞输入，事务瞬态会拆半 |
 | [BUG-2026](bugs/BUG-2026-hunex-capture-bridge-test-dead-and-racy.md) | ✅ | ✅ | hunex_gge_capture_bridge_test 的 79 条 assert 在 Release 下空跑，唤醒后 TestWorkerNeverReadsATornSnapshot 50% 概率红 |
