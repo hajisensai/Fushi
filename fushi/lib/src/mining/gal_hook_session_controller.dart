@@ -2328,8 +2328,38 @@ class GalHookSessionController extends ChangeNotifier {
   /// 两级分开报：`recycle` 是降级但没丢行（顶掉了最久没写的非选定道），`overflow` 是**真丢了行**。
   int _reportedLaneRecycles = 0;
   int _reportedLaneOverflows = 0;
+  int _reportedXaudioDiagnostics = 0;
+  int _reportedXaudioDiagnostics2 = 0;
+
+  /// 把引擎侧两个 XAudio2 诊断字的**每一次变化**记进会话事件。
+  ///
+  /// 位是粘性的（只置不清），所以变化即「又走到了一条新的失败/成功路径」，事件数天然
+  /// 有界。第二个字是身份分型位的唯一去处：hook 侧对「exe 摘要量不到」「哈希不是这个
+  /// 发行版」「结构门断在 section roles / 某个锚点 / return sites」各置了一位，而在此
+  /// 之前 Fushi 一侧一个读者都没有——写点有了、读点没有，整批分型位在真机上等于不存在。
+  void _reportEngineDiagnostics(EngineHookGalAudioSource engine) {
+    final int first = engine.xaudioDiagnostics;
+    final int second = engine.xaudioDiagnostics2;
+    if (first == _reportedXaudioDiagnostics &&
+        second == _reportedXaudioDiagnostics2) {
+      return;
+    }
+    _reportedXaudioDiagnostics = first;
+    _reportedXaudioDiagnostics2 = second;
+    _record(
+      GalHookEventSeverity.info,
+      'audio',
+      'audio.engine_diagnostics',
+      'Engine XAudio2 diagnostic words changed',
+      details: <String, Object?>{
+        'xaudioDiagnostics': '0x${first.toRadixString(16).padLeft(8, '0')}',
+        'xaudioDiagnostics2': '0x${second.toRadixString(16).padLeft(8, '0')}',
+      },
+    );
+  }
 
   void _reportTextLanePressure(EngineHookGalAudioSource engine) {
+    _reportEngineDiagnostics(engine);
     final int recycles = engine.textLaneRecycles;
     final int overflows = engine.textLaneOverflows;
     if (recycles > _reportedLaneRecycles) {

@@ -54,6 +54,12 @@ struct VoiceHookStatus {
   uint32_t native_loopback_request_seq = 0;
   uint32_t native_loopback_state = 0;
   uint32_t native_loopback_applied_seq = 0;
+  // 两个 XAudio2 诊断字的原样快照。**必须原样带出来**：它们是引擎侧唯一的可分型
+  // 事实（第二个字里是 SGRE 家族/锚点、Leaf 身份哈希、结构门断在哪一组）。
+  // 只在 host 内部用第一个字算 raw_voice_ready，等于写点有了、读点一个没有——
+  // 真机上「为什么这台机器整场降级 Loopback」就只剩猜。
+  uint32_t xaudio_diagnostics = 0;
+  uint32_t xaudio_diagnostics2 = 0;
 };
 
 // [VoiceHookReader::Open] 失败的**结构化原因**。
