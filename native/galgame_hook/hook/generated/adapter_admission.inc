@@ -8,3 +8,4 @@
     consider(elf_ai6_);
     consider(sgre_);
     consider(leaf_aquaplus_);
+    consider(hunex_gge_);

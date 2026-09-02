@@ -233,6 +233,42 @@ class EngineSupportManifestTest(unittest.TestCase):
             )
         )
 
+    def test_hunex_geometry_graduation_is_recorded_with_unverified_gates(self) -> None:
+        # The exact geometry provider was deliberately graduated out of
+        # observation-only, which deleted generate_engine_support.py's
+        # "must not OfferReady/PublishHit" assertion. Pin the graduation record
+        # and the still-unverified gates together, in one known_limitations
+        # entry, so a later edit cannot keep the promotion while dropping the
+        # caveat -- and so this guard cannot be satisfied by narrative that
+        # only states one of the two.
+        hunex = self.engines["hunex_gge"]
+        lookup = next(
+            record
+            for record in self.manifest["lookup_support"]["engines"]
+            if record["engine_id"] == "hunex_gge"
+        )
+        self.assertIn("engine_exact_layout", lookup["geometry"]["providers"])
+        self.assertEqual("implemented_unverified", lookup["geometry"]["status"])
+        self.assertEqual("implemented_unverified", hunex["current_status"])
+        self.assertEqual(
+            "not_verified", hunex["audio"]["priority"][0]["clean_voice"]
+        )
+        self.assertEqual([], hunex["verified_games"])
+        required = (
+            "observation-only",
+            "OfferReady/PublishHit",
+            "implemented_unverified",
+            "not_verified",
+        )
+        self.assertTrue(
+            any(
+                all(token in limitation for token in required)
+                for limitation in hunex["known_limitations"]
+            ),
+            "one known_limitations entry must record the graduation out of "
+            "observation-only together with the gates that stay unverified",
+        )
+
     def test_support_status_and_capability_promotions_require_evidence(self) -> None:
         reallive = self.engines["reallive"]
         reallive["current_status"] = "verified"
@@ -599,10 +635,14 @@ class EngineSupportManifestTest(unittest.TestCase):
 
     def test_lookup_native_publishers_and_manifest_have_bidirectional_parity(self) -> None:
         source_pairs = GENERATOR.discover_production_lookup_provider_pairs(ROOT)
-        self.assertNotIn(
-            GENERATOR.LOOKUP_HUNEX_OBSERVATION_ONLY_PAIR,
+        hunex_pair = (
+            "kLookupGeometryProviderEngineExactLayout",
+            "kLookupGeometryProviderIdHunexGge",
+        )
+        self.assertIn(
+            hunex_pair,
             source_pairs,
-            "HUNEX renderer telemetry must remain observation-only",
+            "HUNEX exact provider must remain visible to manifest parity",
         )
         GENERATOR.validate_manifest(self.manifest, ROOT)
 
@@ -611,7 +651,7 @@ class EngineSupportManifestTest(unittest.TestCase):
             for record in self.manifest["lookup_support"]["engines"]
             if record["engine_id"] == "hunex_gge"
         )
-        hunex["geometry"]["providers"].append("engine_exact_layout")
+        hunex["geometry"]["providers"].remove("engine_exact_layout")
         with self.assertRaisesRegex(
             GENERATOR.ManifestError, "lookup provider manifest parity drift"
         ):

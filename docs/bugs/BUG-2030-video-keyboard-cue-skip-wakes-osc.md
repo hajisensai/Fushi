@@ -1,0 +1,29 @@
+## BUG-2030 · 键盘上/下一句字幕会把隐藏的控制条(OSC)整个弹出来
+- **报告**：2026-09-02（用户：）
+- **真实性**：✅ 真 bug（行为符合旧实现，但语义耦合错了）。链路：`videoPreviousSubtitle` / `videoNextSubtitle` → `_buildVideoShortcutActions` 的 `previousSubtitle` / `nextSubtitle` 回调（`fushi/lib/src/pages/implementations/video_fushi_page.dart:4726`）→ 无条件 `_pokeControlsVisible()`（`fushi/lib/src/pages/implementations/video_fushi/controls_visibility.part.dart:29`）→ 往控制条命中区中心派合成 `PointerHoverEvent` → media_kit fork 的 `onHover()`（`third_party/media_kit_video/lib/media_kit_video_controls/src/controls/material_desktop.dart:595`）**无条件** `visible = true` + `shiftSubtitle()`。
+  - 根因不是「哪个入口多调了一句」，而是 `_pokeControlsVisible` 一个动作绑了两种语义：**已可见时续命**（重置自动隐藏计时）和**隐藏时唤起**。BUG-176 ②/BUG-215 的原始诉求（「一直快进它也只保持两三秒然后消失」）只需要前者——控制条那时本来就在显示；键盘用户手没碰控制条，按一次跳句却被塞了后者：底栏凭空弹出、字幕跟着上顶一次，学习场景下每句一次，纯打扰。
+  - 同族先例 BUG-931（收藏那句 poke「碍眼」）当时是逐个入口删 poke，没有把语义拆开，所以同一个形状在跳句上又长回来了。
+  - 桌面/移动本就不对称：移动端那条续命路径（fork `material.dart:779` `_restartHideTimer`）**早已**是正确语义——`if (!mounted || !visible) return;`，注释原文 *"we must not silently un-hide"*；只有桌面借 media_kit 的 `onHover` 做续命，才被迫连唤起一起带上。
+- **[x] ① 已修复** — 把两种语义拆成两个原语，键盘/手柄通道改走「只续命」那个：
+  - 新增 `_keepControlsAliveIfVisible()`（`controls_visibility.part.dart`）：`if (!_mediaKitControlsVisible.value) return;` 后再复用 `_pokeControlsVisible()` 的派发路径。门控只能做在**派发之前**——合成 hover 一旦发出去，fork 的 `onHover` 分不出续命与唤起。真相源取 fork 推来的 `_mediaKitControlsVisible`，不取又叠了沉浸锁/侧栏门控的派生值 `_videoControlsVisible`（那些门控 `_pokeControlsVisible` 开头已各自早退）。
+  - 六个键盘/手柄入口改接 keepAlive：`previousSubtitle` / `nextSubtitle` / `seekBackward` / `seekForward` / `previousChapter` / `nextChapter`；`_replayCurrentCueAndPokeControls` / `_replayPreviousCueAndPokeControls` 同改并顺手改名为 `*AndKeepControls`（只被快捷键调用，旧名已名不副实）。
+  - **指针通道原样保留唤起**：底栏「上/下一句」按钮与双击走的 `_skipCueAndPokeControls`、底栏 ±10 走的 `_seekRelative`、hover 字幕盒、关面板/关字幕列表/解锁沉浸的反馈性 poke 全不动——那时用户的手就在控制条那一侧，唤起是预期反馈。
+  - 手柄通道经 `videoActionCallbacks(_buildVideoShortcutActions(...))` 共用同一份回调，自动跟随，无第二套语义。
+  - 提交见本轮 commit。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/video_controls_poke_guard_test.dart`（原「四个入口都调用 `_pokeControlsVisible`」那条与新行为直接矛盾，已按通道拆写，不是新增矛盾断言）：
+  - 六个键盘/手柄入口**正向**断言走 `_keepControlsAliveIfVisible()`、**负向**断言不含裸 `_pokeControlsVisible()`（只留正向的话，把 poke 加回去、两句都在，守卫照样绿）；
+  - 两个重播 helper 同样两条；
+  - `_keepControlsAliveIfVisible` 方法体必须含「不可见就早退」，且早退后必须真的续命（防掏成空壳）；
+  - fork 侧前提守卫：`material_desktop.dart` 的 `onHover` 仍是无条件唤起，一旦上游/fork 改成条件式就红，提示重新评估门控位置。
+  - 判据全部走 `containsCodeLine`（剥注释），防「删实现、留同文注释」骗绿。
+  - **变异实测**（四条断言逐条验证会红，改回后 sha256 校验回基线）：① 跳句退回 poke → 红；② 删掉可见性早退 → 红；③ 掏空成只早退不续命 → 红；④ fork `onHover` 加 `if (!visible) return;` → 红。
+  - media_kit headless 无 native player / 无 hover 管线，视频 widget 跑不起来，故仍在源码层钉契约（与同域既有守卫同范式）。
+  - **真机端到端**：`fushi/integration_test/video_keyboard_controls_keepalive_itest.dart`（Windows，`tool\run_windows_itest.ps1 ... -Visible`）。双真相源交叉验证——页面 hook `debugControlsVisible`（fork 推来的 `_mediaKitControlsVisible`）+ 控制条自身那层 `AnimatedOpacity.opacity`，防「notifier 没接上 → 恒 false 假绿」。
+- **真机证据**（`.codex-test/windows-itest/win-itest-20260902-140719-452e27e6`，`All tests passed!`）：
+  - 隐藏态：`visible=false opacity=0.0`；按 Ctrl+→ 后 `pos 4099 → 6033`（真跳句，视频带 4 条 cue）而 `controlsVisible=false` ← **本 bug 的直接证据**：控制条没被键盘唤起。
+  - 真实鼠标 hover：`visible=true opacity=1.0` ← 唤起权仍在指针通道，同时反证上一条不是初值假绿。
+  - 可见态按 Ctrl+→：`pos 6400 → 7033`，`visible=true` ← 键盘也不会反手把它收起。
+  - 对照组（真实 hover 每 <2s 挪一次，跨两个 2s 窗口）：`visible=true` ← 本环境里「hover → onHover → 重置隐藏 Timer」链路是通的。
+- **备注**：
+  - 「键盘连按**跨 2s 续命**」这一半**在集成测试里跑不出真值**，故未纳入断言、也不宣称已验证：诊断跑（`win-itest-20260902-140154-57390207`）实测可见态每 1.32s 按一次 Ctrl+→，播放位置逐轮在变（按键生效）但控制条仍在 hover 的 2s 到期时消失——`_pokeControlsVisible` 派的**合成** `PointerHoverEvent` 在 integration_test binding 下不触发 media_kit 的 `MouseRegion.onHover`（同一原因让 itest 第一版裸 `handlePointerEvent` 注入 hover 也唤不起控制条，换 `tester.createGesture(kind: mouse)` + `addPointer` 才通）。这是测试环境限制，**不是回归**：本次没动 poke 的派发逻辑，可见态下 keepAlive 命中后调用的就是改动前那个 poke，字节级相同；该行为由 BUG-176 ②/BUG-215 的用户实测 + 源码守卫背书。
+  - BUG-176 ②/BUG-215 的诉求落在「已可见」那一支，未被削弱。

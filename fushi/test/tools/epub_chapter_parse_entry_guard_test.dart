@@ -43,7 +43,16 @@ List<File> _scannedDartFiles() {
   for (final String root in _kRoots) {
     final Directory dir = Directory(root);
     if (!dir.existsSync()) continue;
-    for (final FileSystemEntity e in dir.listSync(recursive: true)) {
+    // BUG-2036：`followLinks: false` 是硬要求，不是优化。本守卫的根之一是
+    // `../packages`，而 `packages/flutter_inappwebview_windows/example/windows/
+    // flutter/ephemeral/.plugin_symlinks/flutter_inappwebview_windows` 是
+    // `flutter pub get`（bootstrap 会在该 example 下跑）生成的、**指回包自身**的
+    // 符号链接。跟随它就是无限自指递归，一路把路径拼到 Windows 长度上限后抛
+    // PathNotFoundException——枚举当场崩，下面那些「只留 ../packages/<pkg>/lib/」
+    // 的过滤根本轮不到执行。不跟随不会漏任何真实源文件（各包 lib/ 下没有靠符号
+    // 链接才能到达的 .dart）。
+    for (final FileSystemEntity e
+        in dir.listSync(recursive: true, followLinks: false)) {
       if (e is! File || !e.path.endsWith('.dart')) continue;
       final String rel = e.path.replaceAll(r'\', '/');
       if (rel.endsWith('.g.dart') || rel.endsWith('.freezed.dart')) continue;

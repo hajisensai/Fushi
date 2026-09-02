@@ -702,21 +702,9 @@ void TryInstallGenericKeyAndRawInputShield() {
   // exact install receive no trampoline and silently destroy its build-pinned
   // shield/gesture logic.
   static const bool reserve_get_key_state = IsSiglusLookupProfileMatched();
-  static const bool hunex_observation_only = IsHunexGgeProfileMatched();
+  static const bool hunex_exact_owner = IsHunexGgeProfileMatched();
   static const bool reserve_get_async_key_state =
-      IsLeafAquaplusProfileMatched() || hunex_observation_only;
-  if (hunex_observation_only) {
-    // HUNEX/GGE's build-pinned GetAsyncKeyState detour is telemetry only and
-    // returns the original state byte-for-byte. Reserve the shared export for
-    // that trace, but advertise the KeyState surface as known-uncovered—not
-    // ready/partial—until a real filter contract exists.
-    g_generic_shield_ready_mask.fetch_and(
-        ~fushi_voice_hook::kLookupShieldSurfaceKeyState,
-        std::memory_order_relaxed);
-    g_generic_shield_uncovered_mask.fetch_or(
-        fushi_voice_hook::kLookupShieldSurfaceKeyState,
-        std::memory_order_relaxed);
-  }
+      IsLeafAquaplusProfileMatched() || hunex_exact_owner;
   uint32_t coverage = g_generic_key_coverage.load(std::memory_order_relaxed);
 
   void *get_key_state =
@@ -741,8 +729,9 @@ void TryInstallGenericKeyAndRawInputShield() {
       reinterpret_cast<void *>(GetProcAddress(user32, "GetAsyncKeyState"));
   if ((coverage & kGenericKeyCoverageGetAsyncKeyState) == 0) {
     if (IsHookTargetTrackedByThisDll(get_async_key_state)) {
-      if (!hunex_observation_only)
-        coverage |= kGenericKeyCoverageGetAsyncKeyState;
+      // Leaf and HUNEX exact adapters own this target. Their distinct sampled
+      // Window-property contracts are folded into EnginePrivate below.
+      coverage |= kGenericKeyCoverageGetAsyncKeyState;
     } else if (!reserve_get_async_key_state &&
                HookGenericExport(
                    get_async_key_state,
@@ -766,7 +755,7 @@ void TryInstallGenericKeyAndRawInputShield() {
   }
   g_generic_key_coverage.store(coverage, std::memory_order_relaxed);
   if (fushi_voice_hook::IsCompleteGenericKeyStateCoverage(
-          coverage, kGenericKeyCoverageAll, hunex_observation_only)) {
+          coverage, kGenericKeyCoverageAll, false)) {
     g_generic_shield_ready_mask.fetch_or(
         fushi_voice_hook::kLookupShieldSurfaceKeyState,
         std::memory_order_relaxed);
@@ -974,6 +963,11 @@ ExactSampledShieldState ReadExactSampledShieldState(HWND game) {
        fushi_voice_hook::kLeafAquaplusSampledInputShieldReadyProperty,
        fushi_voice_hook::kLeafAquaplusSampledInputShieldReadyValue,
        fushi_voice_hook::kLeafAquaplusSampledInputShieldWindowProperty},
+      {fushi_voice_hook::kHunexGgeSampledInputShieldRequiredProperty,
+       fushi_voice_hook::kHunexGgeSampledInputShieldRequiredValue,
+       fushi_voice_hook::kHunexGgeSampledInputShieldReadyProperty,
+       fushi_voice_hook::kHunexGgeSampledInputShieldReadyValue,
+       fushi_voice_hook::kHunexGgeSampledInputShieldWindowProperty},
   };
   for (const auto &contract : contracts) {
     if (reinterpret_cast<uintptr_t>(GetPropW(game, contract.required)) !=

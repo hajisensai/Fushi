@@ -34,6 +34,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -64,6 +65,9 @@
 #include "siglus_launch.h"
 #include "adapters/siglus_lookup.h"
 #include "adapters/hunex_gge_lookup.h"
+#include "adapters/hunex_gge_capture_bridge.h"
+#include "adapters/hunex_gge_lookup_core.h"
+#include "adapters/hunex_gge_selected_text.h"
 #include "adapters/leaf_aquaplus_voice_archive.h"
 #include "siglus_text.h"
 #include "text_thread_identity.h"
@@ -113,7 +117,7 @@ extern "C" __declspec(dllexport) alignas(8)
 // trace this is resolved by the diagnostic probe from the live DLL export and
 // is intentionally outside SharedHeader ABI.
 extern "C" __declspec(dllexport) alignas(8)
-    fushi_voice_hook::HunexGgeTraceBuffer FushiHunexGgeTraceV1 = {};
+    fushi_voice_hook::HunexGgeTraceBuffer FushiHunexGgeTraceV3 = {};
 
 namespace {
 
@@ -150,6 +154,7 @@ using fushi_voice_hook::UnityVoiceEvent;
 
 HANDLE g_mapping = nullptr;
 SharedHeader* g_header = nullptr;
+uint64_t g_mapped_view_bytes = 0u;
 volatile bool g_stop = false;
 
 // 本 DLL 自己的模块句柄，DllMain 一进来就记下。通用位图呈现器建窗口类/窗口时要用它做
@@ -595,6 +600,14 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
   if (g_mapping != nullptr) {
     g_header = static_cast<SharedHeader*>(
         MapViewOfFile(g_mapping, FILE_MAP_ALL_ACCESS, 0, 0, 0));
+    if (g_header != nullptr) {
+      MEMORY_BASIC_INFORMATION memory = {};
+      if (VirtualQuery(g_header, &memory, sizeof(memory)) == sizeof(memory) &&
+          memory.AllocationBase == g_header && memory.BaseAddress == g_header &&
+          memory.RegionSize >= sizeof(SharedHeader)) {
+        g_mapped_view_bytes = static_cast<uint64_t>(memory.RegionSize);
+      }
+    }
   }
   // Fail closed before any adapter can observe the mapping. Polling an unknown
   // contract is unsafe even when today's baseline adapters happen not to read
@@ -606,6 +619,7 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
       UnmapViewOfFile(g_header);
       g_header = nullptr;
     }
+    g_mapped_view_bytes = 0u;
     if (g_mapping != nullptr) {
       CloseHandle(g_mapping);
       g_mapping = nullptr;
@@ -710,6 +724,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
         UnmapViewOfFile(g_header);
         g_header = nullptr;
       }
+      g_mapped_view_bytes = 0u;
       if (g_mapping != nullptr) {
         CloseHandle(g_mapping);
         g_mapping = nullptr;

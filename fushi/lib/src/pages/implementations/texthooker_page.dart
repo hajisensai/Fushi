@@ -2227,6 +2227,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             onSwipeDismiss: _dismissTopNestedPopup,
             swipeEnabled: ReaderFushiSource.instance.enableSwipeToClose,
             sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
+            // 弹窗可见时 barrier 吃掉全部指针，页面根收不到——「浮窗矩形之外」
+            // 按鼠标非主键这半边只能在这里接（见钩子文档）。
+            onNonPrimaryButtonDown: onDismissBarrierNonPrimaryButton,
           ),
         ),
       // 搜索期加载占位卡（搜索→就绪才显示，与首页查词同观感）。

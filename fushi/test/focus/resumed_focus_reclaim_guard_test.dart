@@ -43,6 +43,26 @@ void main() {
       DesktopForegroundGuard.debugMainWindowForeground = true;
       expect(DesktopForegroundGuard.isMainWindowForeground(), isTrue);
     });
+
+    test('隐藏集成测试运行器（FUSHI_TEST_HIDDEN）在真实探测之前放行', () {
+      // 运行器窗口按设计 WS_EX_NOACTIVATE、永不成为前台：不放行则闸门永久关闭，
+      // 整棵树不可聚焦，所有靠 Tab 遍历的 Windows 集成测试在焦点起步处就死
+      // （primaryFocus 卡在 View Scope）。flutter_tester 里 FLUTTER_TEST 先行放行，
+      // 运行时测不到这条分支，故按源码顺序守卫。
+      final String source =
+          File('lib/src/sync/desktop_foreground_guard.dart').readAsStringSync();
+      final int start = source.indexOf('static bool isMainWindowForeground()');
+      expect(start, greaterThan(-1));
+      final int end = source.indexOf('\n  }\n', start);
+      final String body = source.substring(start, end);
+      final int hidden = body.indexOf('if (isHiddenWindowsRunner) return true;');
+      final int probe = body.indexOf('_WindowsForegroundProbe');
+      expect(hidden, greaterThan(-1),
+          reason: 'isMainWindowForeground 必须给隐藏运行器放行');
+      expect(probe, greaterThan(-1));
+      expect(hidden, lessThan(probe),
+          reason: '放行必须排在真实探测之前，否则探测恒 false 先返回');
+    });
   });
 
   group('PageFocusOwnership.reclaim(appResumed)', () {

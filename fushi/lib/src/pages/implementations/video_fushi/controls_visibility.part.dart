@@ -93,6 +93,32 @@ extension _VideoControlsVisibility on _VideoFushiPageState {
     scheduleMicrotask(_dispatchPokeHover);
   }
 
+  /// 控制条【续命】原语（BUG-2030）：只在控制条**已可见**时重置它的自动隐藏计时，
+  /// 隐藏时什么都不做。
+  ///
+  /// 与 [_pokeControlsVisible] 的唯一区别是「隐藏态怎么办」，而这正是两种不同的用户语义：
+  /// - 指针交互（底栏按钮 tap / 双击 / hover 字幕盒 / 关面板回到播放）走
+  ///   [_pokeControlsVisible]：用户的手就在控制条那一侧，把它唤起来是预期反馈；
+  /// - 键盘 / 手柄快捷键（跳句 / ±秒 seek / 跳章 / 重播句）走本方法：用户没碰控制条，
+  ///   只是想换一句台词，凭空弹出底栏 + 字幕上顶是打扰（用户报「快捷键上下句字幕会弹出
+  ///   OSC」，BUG-2030；同族先例 BUG-931 已把收藏那句 poke 删掉）。但只要控制条本就在显示，
+  ///   连按就必须续命——那正是 BUG-176 ② / BUG-215 修的东西，两个诉求不冲突：
+  ///   旧实现把「续命」和「唤起」绑在同一个动作里，才让修一个带出另一个。
+  ///
+  /// 门控只能在派发**之前**做：桌面端续命靠给 media_kit 派合成 hover，而它的 `onHover` 是
+  /// 无条件 `visible = true`（third_party/media_kit_video/.../material_desktop.dart）
+  /// ——合成 hover 本身分不出「续命」和「唤起」。移动端那侧 fork 早已是本语义
+  /// （`_restartHideTimer`：`if (!mounted || !visible) return;`，注释原文
+  /// "we must not silently un-hide"），本方法把桌面对齐过去，消除两端不对称。
+  ///
+  /// 真相源取 [_mediaKitControlsVisible]（fork 推来的真实 `visible`）而非派生的
+  /// [_videoControlsVisible]：后者又叠了沉浸锁 / 侧栏 / 编辑态门控，而那些门控
+  /// [_pokeControlsVisible] 开头已各自早退一次，此处再判一遍只会把两处真相拆成两份。
+  void _keepControlsAliveIfVisible() {
+    if (!_mediaKitControlsVisible.value) return;
+    _pokeControlsVisible();
+  }
+
   /// 在微任务里真正派发 [_pokeControlsVisible] 排好的合成 hover（BUG-425）。此时已脱离任何
   /// MouseRegion 回调 / `MouseTracker` 迭代栈，经 [GestureBinding.handlePointerEvent] 写
   /// `_mouseStates` 不再与遍历冲突。派发前重校验 `mounted`（微任务窗口内页面可能已销毁），

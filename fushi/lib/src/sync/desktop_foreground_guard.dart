@@ -69,6 +69,12 @@ abstract final class DesktopForegroundGuard {
     // 这套判据只对「有主窗的桌面 runner」有意义，测试环境一律放行；需要驱动判据的
     // 用例显式设 [debugMainWindowForeground]（上面的 override 先于此生效）。
     if (Platform.environment.containsKey('FLUTTER_TEST')) return true;
+    // 隐藏集成测试运行器（tool/run_windows_itest.ps1）跑的是真 fushi.exe，但其窗口
+    // 按设计 WS_EX_NOACTIVATE、永不成为前台：真实探测恒 false → 焦点闸门永久关闭
+    // → 整棵树不可聚焦，所有靠 Tab 遍历的集成测试在焦点起步处就死（primaryFocus
+    // 卡在 View Scope）。闸门要防的是「抢走用户正在用的前台」，而该运行器的窗口
+    // 根本抢不了前台，判据对它没有意义——与上面 flutter_tester 同一条豁免。
+    if (isHiddenWindowsRunner) return true;
     try {
       return _WindowsForegroundProbe.instance.isMainWindowForeground();
     } on Object {

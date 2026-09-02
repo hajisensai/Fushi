@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 70244 (4132 per locale)
+/// Strings: 70414 (4142 per locale)
 ///
-/// Built on 2026-09-02 at 09:46 UTC
+/// Built on 2026-09-02 at 17:56 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4559,71 +4559,63 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_setting_jimaku_default_language_hint =>
       'Defaults to the video\'s own language (audio track / scraped metadata). Pick one to always prefer that language instead.';
   String get onboarding_title => 'Getting started';
-  String get onboarding_welcome_headline => 'Welcome!';
-  String get onboarding_feature_anki => 'Anki flashcards';
+  String get onboarding_welcome_headline => 'Welcome to Fushi';
+  String get onboarding_feature_anki => 'Anki cards';
   String get onboarding_feature_anki_hint =>
-      'Connect AnkiConnect or AnkiDroid to create flashcards';
+      'Turn lookups into flashcards with one tap';
   String get onboarding_feature_backup => 'Backup & sync';
   String get onboarding_feature_backup_hint =>
-      'Back up your data to Google Drive, WebDAV and other backends';
+      'Google Drive, WebDAV or a local file';
   String get onboarding_feature_interconnect => 'Device interconnect';
   String get onboarding_feature_interconnect_hint =>
-      'Pair devices on your LAN to share libraries and progress';
+      'Share libraries and progress across devices on your LAN';
   String get onboarding_step_dictionary_action => 'Open dictionary manager';
   String get onboarding_step_anki_title => 'Set up Anki';
-  String get onboarding_step_anki_action => 'Open card creation settings';
-  String get onboarding_step_backup_title => 'Set up backup';
+  String get onboarding_step_anki_action => 'Card creation settings';
+  String get onboarding_step_backup_title => 'Backup';
   String get onboarding_step_backup_body =>
-      'Choose a backup backend and sign in, or export a local backup file.';
+      'Keep your library safe when you switch or lose a device.';
   String get onboarding_step_backup_action => 'Open backup settings';
-  String get onboarding_step_interconnect_title => 'Set up interconnect';
+  String get onboarding_step_interconnect_title => 'Interconnect';
   String get onboarding_step_interconnect_body =>
-      'Enable interconnect and pair with other devices on your LAN to share libraries, progress and lookups.';
+      'Pair devices on your LAN to share one library and keep progress in sync.';
   String get onboarding_step_interconnect_action =>
       'Open interconnect settings';
   String get onboarding_finish_title => 'All set';
   String get onboarding_finish_body =>
-      'You can revisit this guide anytime from Settings → System.';
+      'You can reopen this guide anytime from Settings → System.';
   String get onboarding_action_next => 'Next';
-  String get onboarding_action_finish => 'Finish';
   String get onboarding_action_skip => 'Skip for now';
   String get onboarding_reopen => 'Getting started guide';
   String get onboarding_welcome_body =>
-      'Set your interface language and theme first — the next steps will walk you through the rest.';
-  String get onboarding_features_title => 'Choose what you use';
-  String get onboarding_features_modules_label =>
-      'Library tabs (unchecked ones are hidden from the navigation bar; change anytime in Settings)';
-  String get onboarding_features_setup_label => 'What to set up next';
-  String get onboarding_feature_manga => 'Manga library';
+      'Pick your interface language and theme. The next few steps set up the rest.';
+  String get onboarding_features_title => 'What will you use?';
+  String get onboarding_feature_manga => 'Manga';
   String get onboarding_feature_manga_hint => 'Read manga with OCR lookup';
-  String get onboarding_feature_video => 'Video library';
-  String get onboarding_feature_video_hint =>
-      'Watch videos with subtitle lookup and mining';
-  String get onboarding_feature_games => 'Galgame library';
+  String get onboarding_feature_video => 'Video';
+  String get onboarding_feature_video_hint => 'Subtitle lookup and card mining';
+  String get onboarding_feature_games => 'Galgames';
   String get onboarding_feature_games_hint =>
-      'Launch galgames with text-hook lookup (Windows only)';
-  String get onboarding_feature_pack =>
-      'Recommended pack (dictionaries + audio)';
+      'Text-hook lookup while playing (Windows only)';
+  String get onboarding_feature_pack => 'Recommended pack';
   String get onboarding_feature_pack_hint =>
-      'One download sets up Japanese dictionaries plus JA/EN pronunciation audio';
-  String get onboarding_step_pack_title => 'Install the recommended pack';
-  String get onboarding_step_pack_body =>
-      'The recommended pack bundles Japanese word, pitch-accent and frequency dictionaries plus Japanese/English pronunciation audio databases. Download and import it here; importing replaces local data, so run it on a fresh install. Learning another language? Use the dictionary manager to import your own dictionaries instead.';
+      'Japanese dictionaries plus JA/EN pronunciation audio in one download';
+  String get onboarding_step_pack_title => 'Recommended pack';
   String get onboarding_step_pack_download_action => 'Download and import';
   String get onboarding_step_pack_import_existing_action =>
-      'Import downloaded pack';
-  String get onboarding_step_pack_pick_action => 'Choose a local pack file';
+      'Import the downloaded pack';
+  String get onboarding_step_pack_pick_action => 'Choose a pack file';
   String get onboarding_pack_downloading =>
-      'Downloading… cancel anytime, resumes next time';
+      'Downloading… cancel anytime and resume later';
   String onboarding_pack_download_failed({required Object message}) =>
       'Download failed: ${message}';
   String get onboarding_step_extension_title => 'Browser extension';
   String get onboarding_step_extension_body =>
-      'Install the companion browser extension to look up words on any web page.';
-  String get onboarding_step_extension_action => 'Open extension guide';
-  String get onboarding_step_fonts_title => 'Reading fonts';
+      'Look up words on any web page with the companion extension.';
+  String get onboarding_step_extension_action => 'Open the install guide';
+  String get onboarding_step_fonts_title => 'Fonts';
   String get onboarding_step_fonts_body =>
-      'Import custom fonts and choose which of UI, book text and dictionary use them.';
+      'Use your own fonts for the interface, book text and dictionary.';
   String get settings_section_modules => 'Feature modules';
   String get module_toggle_hint =>
       'Show this library tab in the navigation bar; turn off to hide it';
@@ -4759,9 +4751,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get storage_dictionary_delete_incomplete =>
       'Dictionary still present after deletion, see error log';
   String get module_extension_label => 'Browser extension';
-  String get onboarding_feature_books => 'Novel library';
+  String get onboarding_feature_books => 'Novels';
   String get onboarding_feature_books_hint =>
-      'Read EPUB novels with dictionary lookup and audiobook sync';
+      'EPUB reading with lookup and audiobook sync';
   String get onboarding_feature_extension_hint =>
       'Look up words on any web page (desktop only)';
   String get video_setting_tap_toggles_playback => 'Tap video to play/pause';
@@ -4999,11 +4991,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get game_session_japanese_locale_hint =>
       'The game was started under a Japanese (CP932) locale. If its text looks garbled or a script error appears, set this game\'s Japanese locale to Never.';
   String get onboarding_anki_intro_body =>
-      'Anki is a free spaced repetition flashcard app: new words become cards, and reviews are scheduled along the forgetting curve. After a lookup, Fushi can turn the word into an Anki card in one tap, with meaning, sentence, audio and screenshot.';
+      'Anki is a free spaced-repetition flashcard app. After a lookup, Fushi turns the word into a card with meaning, sentence, audio and screenshot in one tap.';
   String get onboarding_anki_setup_desktop_hint =>
-      'Install the Anki desktop app, then add the AnkiConnect add-on: in Anki, open Tools - Add-ons - Get Add-ons and enter code 2055492159. Keep Anki running while creating cards.';
+      'Install Anki, add the AnkiConnect add-on (one tap below, or add-on code 2055492159), and keep Anki running while you make cards.';
   String get onboarding_anki_setup_ios_hint =>
-      'With AnkiMobile installed, adding cards works out of the box. For the full feature set, connect to Anki running on a computer in the same network via AnkiConnect.';
+      'With AnkiMobile installed, cards are added directly. For the full feature set, connect to Anki on a computer in the same network via AnkiConnect.';
   String get onboarding_anki_backend_label => 'Connection';
   String get onboarding_anki_test_action => 'Test connection';
   String onboarding_anki_test_success({required Object count}) =>
@@ -5011,17 +5003,17 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get onboarding_anki_get_anki_action => 'Get Anki (desktop)';
   String get onboarding_anki_get_ankidroid_action => 'Get AnkiDroid';
   String get onboarding_anki_mobile_ankiconnect_title =>
-      'Advanced: use AnkiConnect on this device';
+      'Advanced: use AnkiConnect from this device';
   String get onboarding_anki_mobile_ankiconnect_hint =>
-      'This device can also create cards into Anki running on a computer in the same network: enable AnkiConnect in card creation settings and enter the computer address.';
+      'Create cards into Anki on a computer in the same network: enable AnkiConnect in card creation settings and enter the computer\'s address.';
   String get onboarding_anki_setup_android_hint =>
-      'Install AnkiDroid and open it once to finish its first-run setup. Back in Fushi, tap Allow on the permission dialog that pops up with your first card - no AnkiDroid settings to change.';
+      'Install AnkiDroid and open it once. On your first card, tap Allow in the permission dialog — nothing else to configure.';
   String get onboarding_anki_install_addon_action =>
       'Install AnkiConnect add-on';
   String get onboarding_anki_addon_installed =>
-      'AnkiConnect is installed. Start (or restart) Anki, then tap Test connection.';
+      'AnkiConnect installed. Start or restart Anki, then test the connection.';
   String get onboarding_anki_addon_no_anki =>
-      'Anki data folder not found. Install Anki and open it once, then try again.';
+      'Anki data folder not found. Install Anki, open it once, then try again.';
   String onboarding_anki_addon_failed({required Object message}) =>
       'Install failed: ${message}';
   String get game_hook_reason_capability_probe_failed =>
@@ -5325,41 +5317,38 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get onboarding_action_badge_recommended => 'Recommended';
   String get onboarding_action_badge_optional => 'Optional';
   String get onboarding_pack_action_download_desc =>
-      'Downloads the whole pack in the background, then imports it. Cancel anytime; it resumes from where it stopped.';
+      'Downloads from several sources at once in the background, then imports. Cancel anytime; it resumes where it stopped.';
   String get onboarding_pack_action_import_existing_desc =>
-      'The pack is already downloaded; this imports it. Choose Merge in the confirmation dialog and your existing data is left alone.';
+      'The pack is already on disk. Choose Merge in the confirmation dialog to keep your existing data.';
   String get onboarding_pack_action_pick_desc =>
-      'Already got the pack zip from somewhere else? Import it from disk and skip the download entirely.';
-  String get onboarding_pack_action_website =>
-      'Open the download page on the website';
+      'Already have the pack zip? Import it from disk and skip the download.';
+  String get onboarding_pack_action_website => 'Open the download page';
   String get onboarding_pack_action_website_desc =>
-      'Opens the official site in your browser. Its pack section lists chunk links you can feed to a download manager; come back afterwards and use Choose a local pack file to import what you got.';
+      'Chunk links for download managers. Come back and use Choose a pack file afterwards.';
   String get onboarding_pack_action_dictionary_desc =>
-      'Learning a language other than Japanese? Skip the pack and import dictionaries for your own language here instead.';
+      'Learning another language? Import dictionaries for it here instead.';
   String get onboarding_pack_action_audio_desc =>
-      'Where pronunciation audio comes from. The pack already covers Japanese and English; add online sources here for other languages.';
+      'Add online pronunciation sources for languages the pack does not cover.';
   String get onboarding_anki_action_test_desc =>
-      'Checks that Fushi can reach Anki and loads your decks and note types. Nothing is created yet.';
+      'Checks that Fushi can reach Anki and loads your decks and note types. Creates nothing.';
   String get onboarding_anki_action_refresh_desc =>
-      'Reloads decks and note types from Anki. Use it after creating a new deck inside Anki.';
+      'Reloads decks and note types. Use it after creating a deck in Anki.';
   String get onboarding_anki_action_get_ankidroid_desc =>
-      'Opens the store page for AnkiDroid. Fushi writes its cards into it, so it has to be installed first.';
+      'Opens the store page. Fushi writes cards into AnkiDroid, so it must be installed first.';
   String get onboarding_anki_action_get_anki_desc =>
-      'Opens the Anki download page. Install Anki and keep it running while you make cards.';
+      'Opens the Anki download page. Keep Anki running while you make cards.';
   String get onboarding_anki_action_install_addon_desc =>
-      'Unpacks the bundled AnkiConnect add-on into Anki for you, which is what lets Fushi talk to it. Restart Anki afterwards.';
+      'Unpacks the bundled AnkiConnect add-on into Anki. Restart Anki afterwards.';
   String get onboarding_step_anki_action_desc =>
-      'Card template, field mapping, screenshots and audio: the details of what a created card looks like. The deck and note type above are enough to start, so open this only if you want to change how cards are built.';
+      'Template, field mapping, screenshots and audio. Deck and note type above are enough to start.';
   String get onboarding_step_backup_action_desc =>
-      'Choose a backup backend and sign in, so your library survives a lost or replaced device.';
+      'Choose a backend and sign in, or export a local backup file.';
   String get onboarding_step_interconnect_action_desc =>
-      'Pair this device with your other devices to share one library and keep progress in sync.';
+      'Enable interconnect and pair this device with your others.';
   String get onboarding_step_extension_action_desc =>
-      'Shows how to install the browser extension and connect it to Fushi, so you can look words up on web pages too.';
+      'Shows how to install the extension and connect it to Fushi.';
   String get onboarding_step_fonts_action_desc =>
-      'Add your own font files and pick which one each language uses.';
-  String get onboarding_pack_sources_hint =>
-      'Downloaded in parallel chunks from GitHub, the official site and a backup mirror at the same time, each chunk checksummed. Fushi measures the sources as it goes and gives more chunks to whichever is fastest right now, so there is nothing to choose here.';
+      'Import font files and pick one per language.';
   String get video_setting_hdr_output => 'HDR / 10-bit output';
   String get video_setting_hdr_output_hint =>
       'Windows only. Auto hands HDR sources straight to an HDR display through a native video window; Always uses that window for every video (10-bit output); Off keeps the standard renderer.';
@@ -5429,94 +5418,64 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Native window (4K, hardware DRM; cards are queued for later)';
   String web_video_mine_switch_builtin({required Object count}) =>
       'Switch to built-in mode to create ${count} queued cards';
-  String get onboarding_step_click_lookup_title => 'Tap to look up words';
-  String get onboarding_click_lookup_tap_title => 'Tap the text';
-  String get onboarding_click_lookup_nested_title =>
-      'Keep exploring in the popup';
+  String get onboarding_step_click_lookup_title => 'Tap to look up';
+  String get onboarding_click_lookup_tap_title => 'Tap a word';
+  String get onboarding_click_lookup_nested_title => 'Keep exploring';
   String get onboarding_click_lookup_nested_body =>
-      'Tap another word inside a definition to open a deeper lookup. Go back or tap outside to close one level.';
-  String get onboarding_click_lookup_mine_title =>
-      'Turn the result into a card';
+      'Tap a word inside a definition to go one level deeper. Go back or tap outside to close a level.';
+  String get onboarding_click_lookup_mine_title => 'Make a card';
   String get onboarding_click_lookup_mine_body =>
-      'When the definition looks right, tap + to send the word, sentence, audio and image to the card creator.';
-  String get onboarding_step_global_lookup_title =>
-      'Look up text outside Fushi';
+      'Tap + on the entry to send the word, sentence, audio and image to the card creator.';
+  String get onboarding_step_global_lookup_title => 'Look up outside Fushi';
   String get onboarding_global_lookup_windows_body =>
-      'On Windows, select text in another app and summon the dictionary without switching back to Fushi.';
-  String get onboarding_global_lookup_windows_select_title =>
-      'Select text in any app';
-  String get onboarding_global_lookup_windows_shortcut_title =>
-      'Press Ctrl+Alt+D';
+      'Select text in any app and summon the dictionary without switching windows.';
+  String get onboarding_global_lookup_windows_select_title => 'Select text';
   String get onboarding_global_lookup_windows_shortcut_body =>
-      'This is the default global shortcut. Fushi captures the current selection and opens a lookup card near the pointer.';
+      'Fushi grabs the selection and opens a lookup card next to the pointer.';
   String get onboarding_global_lookup_windows_customize_title =>
-      'Change the shortcut if needed';
+      'Change the shortcut';
   String get onboarding_global_lookup_windows_customize_body =>
-      'Open Settings > Shortcuts > Global (app-external) to assign a different key combination.';
+      'Settings → Shortcuts → Global (app-external).';
   String get onboarding_global_lookup_windows_action =>
       'Open shortcut settings';
   String get onboarding_global_lookup_windows_action_desc =>
-      'Lets you change the app-external lookup shortcut. The default Ctrl+Alt+D already works, so this is optional.';
+      'Only if you want a different key combination.';
   String get onboarding_global_lookup_android_body =>
-      'On Android, the system passes selected text to Fushi through the text menu or Share sheet. There is no remappable global hotkey.';
-  String get onboarding_global_lookup_android_select_title =>
-      'Select text in another app';
+      'Android hands selected text to Fushi through the text menu or Share sheet.';
+  String get onboarding_global_lookup_android_select_title => 'Select text';
   String get onboarding_global_lookup_android_open_title => 'Choose Fushi';
   String get onboarding_global_lookup_android_open_body =>
-      'Tap Fushi in the text-selection menu. If it is hidden, tap Share and choose Fushi from the share sheet.';
+      'Tap Fushi in the selection menu, or tap Share and pick Fushi.';
   String get onboarding_global_lookup_android_continue_title =>
-      'Use the standalone popup';
+      'Read the popup';
   String get onboarding_global_lookup_android_continue_body =>
-      'The lookup opens separately from the source app. You can tap more words inside it, then close it to return where you were.';
-  String get onboarding_feature_manual_resources =>
-      'Import dictionaries and audio manually';
+      'The lookup opens on top of the other app. Close it to return.';
+  String get onboarding_feature_manual_resources => 'Import my own resources';
   String get onboarding_step_manual_resources_title =>
-      'Prepare dictionaries and audio manually';
+      'Your own dictionaries and audio';
   String get onboarding_manual_dictionary_action => 'Import a dictionary';
   String get onboarding_manual_dictionary_action_desc =>
-      'Open dictionary management and import at least one supported dictionary file or archive. Lookup tutorials are useful only after a query returns a definition.';
-  String get onboarding_manual_audiobook_action =>
-      'Import a book with audiobook audio';
+      'Opens dictionary management. Lookups only return results once a dictionary is installed.';
+  String get onboarding_manual_audiobook_action => 'Import a book with audio';
   String get onboarding_manual_audiobook_action_desc =>
-      'Open book import and choose the book or text, aligned subtitles, and one or more audio files. Audio needs subtitles so Fushi can align it to sentences.';
+      'Book or text, aligned subtitles and audio files. Subtitles are what lets Fushi sync audio to sentences.';
   String get onboarding_manual_pronunciation_action =>
-      'Configure word pronunciation audio';
+      'Set up pronunciation audio';
   String get onboarding_manual_pronunciation_action_desc =>
-      'Add local or online pronunciation sources used by dictionary entries. This is separate from audiobook audio attached to a book.';
-  String get onboarding_lookup_verify_action =>
-      'Verify a word in your dictionary';
-  String get onboarding_lookup_verify_action_desc =>
-      'Open lookup, enter any word you are learning, and continue only after the installed dictionary returns a definition. The tutorial does not hard-code a sample word.';
-  String get onboarding_step_first_anki_card_title =>
-      'Create your first Anki card';
-  String get onboarding_step_first_anki_card_body =>
-      'This step appears only after this onboarding session has connected to Anki and selected a usable deck and note type.';
-  String get onboarding_first_anki_lookup_title =>
-      'Start from a real dictionary result';
-  String get onboarding_first_anki_lookup_body =>
-      'Look up a word that your installed dictionary actually defines. There is no fixed tutorial word that might be absent from your dictionary.';
-  String get onboarding_first_anki_plus_title =>
-      'Tap the plus button on the entry';
+      'Local or online sources for word pronunciation in dictionary entries. Separate from audiobook audio.';
+  String get onboarding_step_first_anki_card_title => 'Your first card';
+  String get onboarding_first_anki_lookup_title => 'Look up a word';
+  String get onboarding_first_anki_plus_title => 'Tap +';
   String get onboarding_first_anki_plus_body =>
-      'The plus button opens the card creator with the current word, reading, meaning, sentence, audio, and available image context.';
-  String get onboarding_first_anki_save_title => 'Review and save';
+      'The card creator opens with the word, reading, meaning, sentence, audio and image filled in.';
+  String get onboarding_first_anki_save_title => 'Check and save';
   String get onboarding_first_anki_save_body =>
-      'Confirm the target deck, note type, and field preview, then save. Open Anki to verify that the first card arrived.';
-  String get onboarding_first_anki_action => 'Open lookup and create a card';
-  String get onboarding_first_anki_action_desc =>
-      'Use a word with a visible definition, tap its plus button, review the fields, and save it to the connected Anki deck.';
-  String get onboarding_step_click_lookup_body =>
-      'First verify a word that your installed dictionary actually defines. Then use that same word to practise direct lookup in books, manga OCR text, and video subtitles.';
-  String get onboarding_click_lookup_tap_body =>
-      'On a phone, tap a character in the verified word. On a computer, left-click it. Fushi starts there and matches the longest word.';
-  String get onboarding_global_lookup_windows_select_body =>
-      'Highlight the same word you already verified has a dictionary definition, and leave the selection active.';
-  String get onboarding_global_lookup_android_select_body =>
-      'Long-press the same word you already verified has a dictionary definition, then adjust the selection handles to cover it.';
+      'Confirm the deck and note type, then save. Open Anki to see the card.';
+  String get onboarding_first_anki_action => 'Open lookup and make a card';
   String get onboarding_feature_manual_resources_hint =>
-      'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+      'Dictionaries, audiobooks and pronunciation sources from your own files';
   String get onboarding_step_manual_resources_body =>
-      'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+      'Import at least one dictionary before the lookup tutorial. Audiobooks and pronunciation audio are optional.';
   String get game_lookup_attached_title => 'In-game lookup';
   String get game_lookup_attached_no_ocr =>
       'No OCR · horizontal body text only';
@@ -5680,6 +5639,45 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'The game was started without a Japanese locale: this system already uses the Japanese (CP932) code page, so nothing needs to change.';
   String get game_session_japanese_locale_skipped_hint_not_32bit =>
       'The game was started without a Japanese locale: the auto verdict says it needs one, but Locale Emulator only supports 32-bit games.';
+  String get onboarding_feature_fonts => 'Custom fonts';
+  String get onboarding_feature_fonts_hint =>
+      'Use your own fonts for the interface, book text and dictionary';
+  String get onboarding_features_modules_title => 'Library pages';
+  String get onboarding_features_modules_hint =>
+      'Unchecked pages are hidden from the navigation bar. Change anytime in Settings → Appearance.';
+  String get onboarding_features_setup_title => 'Set up next';
+  String get onboarding_features_setup_hint =>
+      'Only checked items get a step in this guide.';
+  String get onboarding_pack_intro =>
+      'Japanese dictionaries, pitch accent, word frequency and JA/EN pronunciation audio in one download. Learning another language? Skip this and import your own dictionaries.';
+  String get onboarding_global_lookup_windows_select_desc =>
+      'Highlight a word in any app and keep it selected.';
+  String get onboarding_global_lookup_android_select_desc =>
+      'Long-press a word in another app and adjust the handles to cover it.';
+  String get onboarding_global_lookup_windows_shortcut_press =>
+      'Press the shortcut';
+  String get onboarding_first_anki_card_intro =>
+      'Anki is connected. Make one real card now so you know the whole path works.';
+  String get onboarding_action_start => 'Start using Fushi';
+  String get onboarding_actions_more => 'Other ways';
+  String get onboarding_finish_summary_modules => 'Library pages shown';
+  String get onboarding_finish_summary_setup => 'Guided setup';
+  String get onboarding_finish_summary_none => 'None';
+  String get onboarding_anki_status_pending => 'Not tested yet';
+  String get onboarding_click_lookup_intro =>
+      'Tap any word in a book, manga or subtitle to see its definition. Try it on the practice sentence below.';
+  String get onboarding_click_lookup_tap_desc =>
+      'Tap (or left-click) a character; Fushi matches the longest word starting there. The sentence opens in the lookup page.';
+  String get onboarding_sample_sentence_label => 'Practice sentence';
+  String get onboarding_sample_sentence_hint =>
+      'Tap to open it in the lookup page, then tap any word.';
+  String get onboarding_lookup_practice_action => 'Practise with this sentence';
+  String get onboarding_lookup_practice_desc =>
+      'Opens the lookup page with the sentence loaded. Tap a word there to see its definition; if nothing comes back, your dictionaries are not installed yet.';
+  String get onboarding_first_anki_lookup_desc =>
+      'Open the practice sentence and tap a word.';
+  String get onboarding_first_anki_action_desc =>
+      'Opens the practice sentence in the lookup page. Tap a word, tap +, check the fields and save.';
 }
 
 // Path: <root>
@@ -13434,100 +13432,89 @@ class _StringsAr extends _StringsEn {
   @override
   String get onboarding_title => 'دليل البدء';
   @override
-  String get onboarding_welcome_headline => 'مرحباً!';
+  String get onboarding_welcome_headline => 'مرحباً بك في Fushi';
   @override
-  String get onboarding_feature_anki => 'بطاقات Anki التعليمية';
+  String get onboarding_feature_anki => 'بطاقات Anki';
   @override
   String get onboarding_feature_anki_hint =>
-      'اربط AnkiConnect أو AnkiDroid لإنشاء البطاقات التعليمية';
+      'حوّل عمليات البحث إلى بطاقات بنقرة واحدة';
   @override
   String get onboarding_feature_backup => 'نسخ احتياطي ومزامنة';
   @override
   String get onboarding_feature_backup_hint =>
-      'انسخ بياناتك احتياطياً إلى Google Drive وWebDAV وغيرها';
+      'Google Drive أو WebDAV أو ملف محلي';
   @override
   String get onboarding_feature_interconnect => 'ربط بيني للأجهزة';
   @override
   String get onboarding_feature_interconnect_hint =>
-      'اقترن بالأجهزة على شبكتك المحلية لمشاركة المكتبات والتقدم';
+      'شارك المكتبات والتقدّم بين أجهزتك على الشبكة المحلية';
   @override
   String get onboarding_step_dictionary_action => 'فتح مدير القواميس';
   @override
   String get onboarding_step_anki_title => 'إعداد Anki';
   @override
-  String get onboarding_step_anki_action => 'فتح إعدادات إنشاء البطاقات';
+  String get onboarding_step_anki_action => 'إعدادات إنشاء البطاقات';
   @override
-  String get onboarding_step_backup_title => 'إعداد النسخ الاحتياطي';
+  String get onboarding_step_backup_title => 'النسخ الاحتياطي';
   @override
   String get onboarding_step_backup_body =>
-      'اختر واجهة نسخ احتياطي وسجّل الدخول، أو صدّر ملف نسخة احتياطية محلية.';
+      'حافظ على مكتبتك عند تغيير الجهاز أو فقدانه.';
   @override
   String get onboarding_step_backup_action => 'فتح إعدادات النسخ الاحتياطي';
   @override
-  String get onboarding_step_interconnect_title => 'إعداد الربط البيني';
+  String get onboarding_step_interconnect_title => 'الربط البيني';
   @override
   String get onboarding_step_interconnect_body =>
-      'فعّل الربط البيني واقترن بأجهزة أخرى على شبكتك المحلية لمشاركة المكتبات والتقدم وعمليات البحث.';
+      'اقرن الأجهزة على شبكتك المحلية لمشاركة مكتبة واحدة وإبقاء التقدّم متزامنًا.';
   @override
   String get onboarding_step_interconnect_action => 'فتح إعدادات الربط البيني';
   @override
   String get onboarding_finish_title => 'كل شيء جاهز';
   @override
   String get onboarding_finish_body =>
-      'يمكنك العودة إلى هذا الدليل في أي وقت من الإعدادات → النظام.';
+      'يمكنك فتح هذا الدليل مجدداً في أي وقت من الإعدادات → النظام.';
   @override
   String get onboarding_action_next => 'التالي';
-  @override
-  String get onboarding_action_finish => 'إنهاء';
   @override
   String get onboarding_action_skip => 'تخطّي الآن';
   @override
   String get onboarding_reopen => 'دليل البدء';
   @override
   String get onboarding_welcome_body =>
-      'اضبط لغة الواجهة والسمة أولاً — الخطوات التالية ستوجّهك لبقية الإعدادات.';
+      'اختر لغة الواجهة والسمة. وستتكفّل الخطوات التالية بالباقي.';
   @override
-  String get onboarding_features_title => 'اختر ما تستخدمه';
+  String get onboarding_features_title => 'ما الذي ستستخدمه؟';
   @override
-  String get onboarding_features_modules_label =>
-      'تبويبات المكتبة (غير المحددة تُخفى من شريط التنقل؛ يمكن التغيير في أي وقت من الإعدادات)';
-  @override
-  String get onboarding_features_setup_label => 'ما يجب إعداده لاحقاً';
-  @override
-  String get onboarding_feature_manga => 'مكتبة المانغا';
+  String get onboarding_feature_manga => 'المانغا';
   @override
   String get onboarding_feature_manga_hint =>
       'اقرأ المانغا مع البحث بالتعرف البصري';
   @override
-  String get onboarding_feature_video => 'مكتبة الفيديو';
+  String get onboarding_feature_video => 'الفيديو';
   @override
-  String get onboarding_feature_video_hint =>
-      'شاهد الفيديو مع البحث في الترجمات والتعدين';
+  String get onboarding_feature_video_hint => 'بحث في الترجمات وإنشاء بطاقات';
   @override
-  String get onboarding_feature_games => 'مكتبة Galgame';
+  String get onboarding_feature_games => 'ألعاب Galgame';
   @override
   String get onboarding_feature_games_hint =>
-      'شغّل ألعاب Galgame مع البحث بربط النصوص (Windows فقط)';
+      'بحث بربط النصوص أثناء اللعب (Windows فقط)';
   @override
-  String get onboarding_feature_pack => 'الحزمة الموصى بها (قواميس + صوت)';
+  String get onboarding_feature_pack => 'الحزمة الموصى بها';
   @override
   String get onboarding_feature_pack_hint =>
-      'تحميل واحد يُعدّ القواميس اليابانية بالإضافة إلى صوت النطق يا/إن';
+      'قواميس يابانية وصوت نطق ياباني/إنجليزي في تنزيل واحد';
   @override
-  String get onboarding_step_pack_title => 'تثبيت الحزمة الموصى بها';
-  @override
-  String get onboarding_step_pack_body =>
-      'تجمع الحزمة الموصى بها قواميس الكلمات اليابانية ونبرة الصوت والتردد بالإضافة إلى قواعد بيانات صوت النطق الياباني/الإنجليزي. حمّلها واستوردها هنا؛ الاستيراد يستبدل البيانات المحلية، لذا شغّلها على تثبيت جديد. تتعلم لغة أخرى؟ استخدم مدير القواميس لاستيراد قواميسك الخاصة بدلاً من ذلك.';
+  String get onboarding_step_pack_title => 'الحزمة الموصى بها';
   @override
   String get onboarding_step_pack_download_action => 'تحميل واستيراد';
   @override
   String get onboarding_step_pack_import_existing_action =>
-      'استيراد حزمة محمّلة';
+      'استيراد الحزمة المنزَّلة';
   @override
-  String get onboarding_step_pack_pick_action => 'اختيار ملف حزمة محلي';
+  String get onboarding_step_pack_pick_action => 'اختيار ملف حزمة';
   @override
   String get onboarding_pack_downloading =>
-      'جارٍ التحميل… يمكن الإلغاء في أي وقت، يُستأنف في المرة القادمة';
+      'جارٍ التنزيل… يمكن الإلغاء في أي وقت والاستئناف لاحقًا';
   @override
   String onboarding_pack_download_failed({required Object message}) =>
       'فشل التحميل: ${message}';
@@ -13535,14 +13522,14 @@ class _StringsAr extends _StringsEn {
   String get onboarding_step_extension_title => 'إضافة المتصفح';
   @override
   String get onboarding_step_extension_body =>
-      'ثبّت إضافة المتصفح المرافقة للبحث عن الكلمات في أي صفحة ويب.';
+      'ابحث عن الكلمات في أي صفحة ويب عبر الإضافة المرافقة.';
   @override
-  String get onboarding_step_extension_action => 'فتح دليل الإضافة';
+  String get onboarding_step_extension_action => 'فتح دليل التثبيت';
   @override
-  String get onboarding_step_fonts_title => 'خطوط القراءة';
+  String get onboarding_step_fonts_title => 'الخطوط';
   @override
   String get onboarding_step_fonts_body =>
-      'استورد خطوطاً مخصصة واختر أيها يُستخدم للواجهة ونص الكتاب والقاموس.';
+      'استخدم خطوطك الخاصة للواجهة ونص الكتاب والقاموس.';
   @override
   String get settings_section_modules => 'وحدات الميزات';
   @override
@@ -13777,10 +13764,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get module_extension_label => 'إضافة المتصفح';
   @override
-  String get onboarding_feature_books => 'مكتبة الروايات';
+  String get onboarding_feature_books => 'الروايات';
   @override
   String get onboarding_feature_books_hint =>
-      'اقرأ روايات EPUB مع البحث في القاموس ومزامنة الكتب الصوتية';
+      'قراءة EPUB مع البحث ومزامنة الكتب الصوتية';
   @override
   String get onboarding_feature_extension_hint =>
       'ابحث عن الكلمات في أي صفحة ويب (سطح المكتب فقط)';
@@ -14195,13 +14182,13 @@ class _StringsAr extends _StringsEn {
       'تم تشغيل اللعبة تحت الإعدادات المحلية اليابانية (CP932). إذا ظهر النص مشوّهاً أو ظهر خطأ في السكربت، اضبط الإعدادات المحلية اليابانية لهذه اللعبة على "أبداً".';
   @override
   String get onboarding_anki_intro_body =>
-      'Anki هو تطبيق بطاقات تعليمية مجاني يعتمد على التكرار المتباعد: الكلمات الجديدة تصبح بطاقات، ويُجدوَل المراجعة وفق منحنى النسيان. بعد البحث، يمكن لـ Fushi تحويل الكلمة إلى بطاقة Anki بنقرة واحدة، مع المعنى والجملة والصوت ولقطة الشاشة.';
+      'Anki تطبيق مجاني لبطاقات المراجعة بالتكرار المتباعد. بعد البحث، يحوّل Fushi الكلمة إلى بطاقة تضم المعنى والجملة والصوت ولقطة الشاشة بنقرة واحدة.';
   @override
   String get onboarding_anki_setup_desktop_hint =>
-      'ثبّت تطبيق Anki لسطح المكتب، ثم أضف إضافة AnkiConnect: في Anki، افتح أدوات - الإضافات - الحصول على إضافات وأدخل الرمز 2055492159. أبقِ Anki قيد التشغيل أثناء إنشاء البطاقات.';
+      'ثبّت Anki، وأضف إضافة AnkiConnect (بنقرة واحدة بالأسفل، أو برمز الإضافة 2055492159)، وأبقِ Anki قيد التشغيل أثناء إنشاء البطاقات.';
   @override
   String get onboarding_anki_setup_ios_hint =>
-      'مع تثبيت AnkiMobile، تعمل إضافة البطاقات مباشرة. للحصول على جميع الميزات، اتصل بـ Anki على جهاز كمبيوتر في نفس الشبكة عبر AnkiConnect.';
+      'مع تثبيت AnkiMobile، تُضاف البطاقات مباشرة. وللحصول على جميع الميزات، اتصل بـ Anki على حاسوب ضمن الشبكة نفسها عبر AnkiConnect.';
   @override
   String get onboarding_anki_backend_label => 'الاتصال';
   @override
@@ -14215,18 +14202,18 @@ class _StringsAr extends _StringsEn {
   String get onboarding_anki_get_ankidroid_action => 'الحصول على AnkiDroid';
   @override
   String get onboarding_anki_mobile_ankiconnect_title =>
-      'متقدم: استخدام AnkiConnect على هذا الجهاز';
+      'متقدم: استخدام AnkiConnect من هذا الجهاز';
   @override
   String get onboarding_anki_mobile_ankiconnect_hint =>
-      'يمكن لهذا الجهاز أيضاً إنشاء بطاقات في Anki على جهاز كمبيوتر في نفس الشبكة: فعّل AnkiConnect في إعدادات إنشاء البطاقات وأدخل عنوان الكمبيوتر.';
+      'أنشئ بطاقات في Anki على حاسوب ضمن الشبكة نفسها: فعّل AnkiConnect في إعدادات إنشاء البطاقات وأدخل عنوان الحاسوب.';
   @override
   String get onboarding_anki_setup_android_hint =>
-      'ثبّت AnkiDroid وافتحه مرة واحدة لإكمال الإعداد الأولي. عُد إلى Fushi واضغط على السماح في نافذة الإذن التي تظهر مع أول بطاقة - لا حاجة لتغيير إعدادات AnkiDroid.';
+      'ثبّت AnkiDroid وافتحه مرة واحدة. عند أول بطاقة، اضغط «السماح» في نافذة الإذن — ولا شيء آخر لضبطه.';
   @override
   String get onboarding_anki_install_addon_action => 'تثبيت إضافة AnkiConnect';
   @override
   String get onboarding_anki_addon_installed =>
-      'تم تثبيت AnkiConnect. شغّل (أو أعد تشغيل) Anki، ثم اضغط اختبار الاتصال.';
+      'تم تثبيت AnkiConnect. شغّل Anki أو أعد تشغيله، ثم اختبر الاتصال.';
   @override
   String get onboarding_anki_addon_no_anki =>
       'لم يُعثر على مجلد بيانات Anki. ثبّت Anki وافتحه مرة واحدة، ثم حاول مجدداً.';
@@ -14737,57 +14724,54 @@ class _StringsAr extends _StringsEn {
   String get onboarding_action_badge_optional => 'اختياري';
   @override
   String get onboarding_pack_action_download_desc =>
-      'ينزّل الحزمة كاملة في الخلفية ثم يستوردها. يمكنك الإلغاء في أي وقت، وسيُستأنف التنزيل من حيث توقّف.';
+      'ينزّل من عدة مصادر في آن واحد في الخلفية ثم يستورد. يمكنك الإلغاء في أي وقت، وسيُستأنف من حيث توقّف.';
   @override
   String get onboarding_pack_action_import_existing_desc =>
-      'الحزمة منزَّلة بالفعل، وهذا يستوردها. اختر «دمج» في نافذة التأكيد لتبقى بياناتك الحالية كما هي.';
+      'الحزمة موجودة على القرص بالفعل. اختر «دمج» في نافذة التأكيد للحفاظ على بياناتك الحالية.';
   @override
   String get onboarding_pack_action_pick_desc =>
-      'حصلت على ملف zip للحزمة من مكان آخر؟ استوردها من القرص وتخطَّ التنزيل بالكامل.';
+      'لديك ملف zip للحزمة بالفعل؟ استورده من القرص وتخطَّ التنزيل.';
   @override
-  String get onboarding_pack_action_website => 'فتح صفحة التنزيل في الموقع';
+  String get onboarding_pack_action_website => 'فتح صفحة التنزيل';
   @override
   String get onboarding_pack_action_website_desc =>
-      'يفتح الموقع الرسمي في متصفحك. يوفّر قسم الحزمة روابط أجزاء يمكن تمريرها إلى مدير تنزيل، ثم عد إلى هنا واستخدم «اختيار ملف حزمة محلي» لاستيراد ما حصلت عليه.';
+      'روابط أجزاء لمديري التنزيل. عد بعدها واستخدم «اختيار ملف حزمة».';
   @override
   String get onboarding_pack_action_dictionary_desc =>
-      'تتعلّم لغة غير اليابانية؟ تخطَّ الحزمة واستورد هنا قواميس لغتك.';
+      'تتعلّم لغة أخرى؟ استورد قواميسها من هنا بدلاً من ذلك.';
   @override
   String get onboarding_pack_action_audio_desc =>
-      'مصدر مقاطع النطق الصوتية. الحزمة تغطّي اليابانية والإنجليزية بالفعل؛ أضف هنا مصادر عبر الإنترنت للغات الأخرى.';
+      'أضف مصادر نطق عبر الإنترنت للغات التي لا تغطّيها الحزمة.';
   @override
   String get onboarding_anki_action_test_desc =>
-      'يتحقّق من قدرة Fushi على الاتصال بـ Anki ويحمّل مجموعاتك وأنواع الملاحظات. لا يُنشأ أي شيء بعد.';
+      'يتحقّق من قدرة Fushi على الاتصال بـ Anki ويحمّل مجموعاتك وأنواع الملاحظات. ولا يُنشئ شيئًا.';
   @override
   String get onboarding_anki_action_refresh_desc =>
-      'يعيد تحميل المجموعات وأنواع الملاحظات من Anki. استخدمه بعد إنشاء مجموعة جديدة داخل Anki.';
+      'يعيد تحميل المجموعات وأنواع الملاحظات. استخدمه بعد إنشاء مجموعة في Anki.';
   @override
   String get onboarding_anki_action_get_ankidroid_desc =>
-      'يفتح صفحة AnkiDroid في المتجر. يكتب Fushi بطاقاته داخله، لذا يجب تثبيته أولاً.';
+      'يفتح صفحة المتجر. يكتب Fushi البطاقات في AnkiDroid، لذا يجب تثبيته أولاً.';
   @override
   String get onboarding_anki_action_get_anki_desc =>
-      'يفتح صفحة تنزيل Anki. ثبّت Anki وأبقِه مفتوحًا أثناء إنشاء البطاقات.';
+      'يفتح صفحة تنزيل Anki. أبقِ Anki مفتوحًا أثناء إنشاء البطاقات.';
   @override
   String get onboarding_anki_action_install_addon_desc =>
-      'يفكّ ضغط إضافة AnkiConnect المرفقة داخل Anki، وهي ما يتيح لـ Fushi التخاطب معه. أعد تشغيل Anki بعد ذلك.';
+      'يفكّ ضغط إضافة AnkiConnect المرفقة داخل Anki. أعد تشغيل Anki بعد ذلك.';
   @override
   String get onboarding_step_anki_action_desc =>
-      'قالب البطاقة وربط الحقول ولقطات الشاشة والصوت: أي تفاصيل شكل البطاقة الناتجة. تكفي المجموعة ونوع الملاحظة أعلاه للبدء، فلا تفتح هذا إلا إذا أردت تغيير طريقة بناء البطاقات.';
+      'القالب وربط الحقول ولقطات الشاشة والصوت. تكفي المجموعة ونوع الملاحظة أعلاه للبدء.';
   @override
   String get onboarding_step_backup_action_desc =>
-      'اختر خدمة نسخ احتياطي وسجّل الدخول، لتبقى مكتبتك سليمة عند فقدان الجهاز أو استبداله.';
+      'اختر واجهة خلفية وسجّل الدخول، أو صدّر ملف نسخة احتياطية محلية.';
   @override
   String get onboarding_step_interconnect_action_desc =>
-      'يقرن هذا الجهاز بأجهزتك الأخرى لمشاركة مكتبة واحدة وإبقاء التقدّم متزامنًا.';
+      'فعّل الربط البيني واقرن هذا الجهاز بأجهزتك الأخرى.';
   @override
   String get onboarding_step_extension_action_desc =>
-      'يوضّح كيفية تثبيت إضافة المتصفح وربطها بـ Fushi، لتتمكّن من البحث عن الكلمات في صفحات الويب أيضًا.';
+      'يوضّح كيفية تثبيت الإضافة وربطها بـ Fushi.';
   @override
   String get onboarding_step_fonts_action_desc =>
-      'أضف ملفات خطوطك الخاصة واختر الخط الذي تستخدمه كل لغة.';
-  @override
-  String get onboarding_pack_sources_hint =>
-      'يُنزَّل على أجزاء متوازية من GitHub والموقع الرسمي ومرآة احتياطية في آنٍ واحد، مع التحقّق من كل جزء. يقيس Fushi سرعة المصادر أثناء العمل ويمنح الأسرع في تلك اللحظة عددًا أكبر من الأجزاء، فلا شيء تختاره هنا.';
+      'استورد ملفات الخطوط واختر خطًا لكل لغة.';
   @override
   String get video_setting_hdr_output => 'إخراج HDR / ‏10 بت';
   @override
@@ -14905,133 +14889,99 @@ class _StringsAr extends _StringsEn {
   String web_video_mine_switch_builtin({required Object count}) =>
       'التبديل إلى الوضع المدمج لإنشاء ${count} بطاقة منتظرة';
   @override
-  String get onboarding_step_click_lookup_title => 'انقر لتبحث عن الكلمات';
+  String get onboarding_step_click_lookup_title => 'انقر لتبحث';
   @override
-  String get onboarding_click_lookup_tap_title => 'انقر على النص';
+  String get onboarding_click_lookup_tap_title => 'انقر على كلمة';
   @override
-  String get onboarding_click_lookup_nested_title =>
-      'تابع البحث داخل النافذة المنبثقة';
+  String get onboarding_click_lookup_nested_title => 'تابع الاستكشاف';
   @override
   String get onboarding_click_lookup_nested_body =>
-      'انقر على كلمة أخرى داخل التعريف لفتح مستوى بحث أعمق. ارجع إلى الخلف أو انقر خارج النافذة لإغلاق مستوى واحد.';
+      'انقر على كلمة داخل التعريف لتنزل مستوى أعمق. ارجع إلى الخلف أو انقر خارج النافذة لإغلاق مستوى.';
   @override
-  String get onboarding_click_lookup_mine_title => 'حوّل النتيجة إلى بطاقة';
+  String get onboarding_click_lookup_mine_title => 'أنشئ بطاقة';
   @override
   String get onboarding_click_lookup_mine_body =>
-      'عندما يكون المعنى صحيحًا، انقر على + لإرسال الكلمة والجملة والصوت والصورة إلى منشئ البطاقات.';
+      'انقر على + في المدخل لإرسال الكلمة والجملة والصوت والصورة إلى منشئ البطاقات.';
   @override
-  String get onboarding_step_global_lookup_title => 'البحث عن نص خارج Fushi';
+  String get onboarding_step_global_lookup_title => 'البحث خارج Fushi';
   @override
   String get onboarding_global_lookup_windows_body =>
-      'على Windows، حدّد نصًا في تطبيق آخر واستدعِ القاموس دون العودة إلى Fushi.';
+      'حدّد نصًا في أي تطبيق واستدعِ القاموس دون تبديل النوافذ.';
   @override
-  String get onboarding_global_lookup_windows_select_title =>
-      'حدّد نصًا في أي تطبيق';
-  @override
-  String get onboarding_global_lookup_windows_shortcut_title =>
-      'اضغط Ctrl+Alt+D';
+  String get onboarding_global_lookup_windows_select_title => 'حدّد نصًا';
   @override
   String get onboarding_global_lookup_windows_shortcut_body =>
-      'هذا هو الاختصار العام الافتراضي. يلتقط Fushi التحديد الحالي ويفتح بطاقة بحث بجوار مؤشر الفأرة.';
+      'يلتقط Fushi التحديد ويفتح بطاقة بحث بجوار مؤشر الفأرة.';
   @override
   String get onboarding_global_lookup_windows_customize_title =>
-      'غيّر الاختصار إذا لزم الأمر';
+      'غيّر الاختصار';
   @override
   String get onboarding_global_lookup_windows_customize_body =>
-      'افتح الإعدادات → الاختصارات → عام (خارج التطبيق) لتعيين تركيبة مفاتيح أخرى.';
+      'الإعدادات → الاختصارات → عام (خارج التطبيق).';
   @override
   String get onboarding_global_lookup_windows_action =>
       'فتح إعدادات الاختصارات';
   @override
   String get onboarding_global_lookup_windows_action_desc =>
-      'يتيح لك تغيير اختصار البحث خارج التطبيق. الاختصار الافتراضي Ctrl+Alt+D يعمل بالفعل، لذا هذه الخطوة اختيارية.';
+      'فقط إن أردت تركيبة مفاتيح مختلفة.';
   @override
   String get onboarding_global_lookup_android_body =>
-      'على Android، يمرّر النظام النص المحدد إلى Fushi عبر قائمة النص أو لوحة المشاركة. ولا يوجد اختصار عام قابل لإعادة التعيين.';
+      'يسلّم Android النص المحدد إلى Fushi عبر قائمة النص أو لوحة المشاركة.';
   @override
-  String get onboarding_global_lookup_android_select_title =>
-      'حدّد نصًا في تطبيق آخر';
+  String get onboarding_global_lookup_android_select_title => 'حدّد نصًا';
   @override
   String get onboarding_global_lookup_android_open_title => 'اختر Fushi';
   @override
   String get onboarding_global_lookup_android_open_body =>
-      'انقر على Fushi في قائمة تحديد النص. وإذا لم يظهر، فانقر على مشاركة ثم اختر Fushi من لوحة المشاركة.';
+      'انقر على Fushi في قائمة التحديد، أو انقر على «مشاركة» واختر Fushi.';
   @override
   String get onboarding_global_lookup_android_continue_title =>
-      'استخدم النافذة المنبثقة المستقلة';
+      'اقرأ النافذة المنبثقة';
   @override
   String get onboarding_global_lookup_android_continue_body =>
-      'يفتح البحث بمعزل عن التطبيق الأصلي. يمكنك النقر على كلمات أخرى داخله، وعند إغلاقه تعود إلى حيث كنت.';
+      'يفتح البحث فوق التطبيق الآخر. أغلقه لتعود.';
   @override
-  String get onboarding_feature_manual_resources =>
-      'استيراد القواميس والصوت يدويًا';
+  String get onboarding_feature_manual_resources => 'استيراد مواردي الخاصة';
   @override
   String get onboarding_feature_manual_resources_hint =>
-      'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+      'قواميس وكتب صوتية ومصادر نطق من ملفاتك الخاصة';
   @override
   String get onboarding_step_manual_resources_title =>
-      'جهّز القواميس والصوت يدويًا';
+      'قواميسك وملفاتك الصوتية';
   @override
   String get onboarding_step_manual_resources_body =>
-      'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+      'استورد قاموسًا واحدًا على الأقل قبل درس البحث. أما الكتب الصوتية وصوت النطق فاختياريان.';
   @override
   String get onboarding_manual_dictionary_action => 'استيراد قاموس';
   @override
   String get onboarding_manual_dictionary_action_desc =>
-      'افتح مدير القواميس واستورد ملف قاموس أو أرشيفًا مدعومًا واحدًا على الأقل. فدروس البحث لا تفيد إلا بعد أن يعيد البحث تعريفًا فعليًا.';
+      'يفتح إدارة القواميس. لن يعيد البحث نتائج إلا بعد تثبيت قاموس.';
   @override
-  String get onboarding_manual_audiobook_action =>
-      'استيراد كتاب مع صوت الكتاب الصوتي';
+  String get onboarding_manual_audiobook_action => 'استيراد كتاب مع صوت';
   @override
   String get onboarding_manual_audiobook_action_desc =>
-      'افتح استيراد الكتب واختر الكتاب أو النص، والترجمة المتوافقة، وملفًا صوتيًا واحدًا أو أكثر. يحتاج الصوت إلى ترجمة كي يستطيع Fushi مطابقته مع الجمل.';
+      'كتاب أو نص، وترجمة متوافقة، وملفات صوتية. الترجمة هي ما يتيح لـ Fushi مزامنة الصوت مع الجمل.';
   @override
-  String get onboarding_manual_pronunciation_action => 'إعداد صوت نطق الكلمات';
+  String get onboarding_manual_pronunciation_action => 'إعداد صوت النطق';
   @override
   String get onboarding_manual_pronunciation_action_desc =>
-      'أضف مصادر النطق المحلية أو عبر الإنترنت التي تستخدمها مداخل القاموس. وهذا منفصل عن صوت الكتاب الصوتي المرفق بكتاب.';
+      'مصادر محلية أو عبر الإنترنت لنطق الكلمات في مداخل القاموس. وهي منفصلة عن صوت الكتب الصوتية.';
   @override
-  String get onboarding_lookup_verify_action => 'تأكد من وجود الكلمة في قاموسك';
+  String get onboarding_step_first_anki_card_title => 'بطاقتك الأولى';
   @override
-  String get onboarding_lookup_verify_action_desc =>
-      'افتح البحث، واكتب أي كلمة تتعلمها، ولا تتابع إلا بعد أن يعيد القاموس المثبَّت تعريفًا لها. ولا يفرض الدرس كلمة مثال ثابتة.';
+  String get onboarding_first_anki_lookup_title => 'ابحث عن كلمة';
   @override
-  String get onboarding_step_first_anki_card_title => 'أنشئ أول بطاقة Anki';
-  @override
-  String get onboarding_step_first_anki_card_body =>
-      'لا تظهر هذه الخطوة إلا بعد أن يتصل هذا الإعداد بـ Anki ويُختار مجموعة ونوع ملاحظة صالحان للاستخدام.';
-  @override
-  String get onboarding_first_anki_lookup_title => 'ابدأ من نتيجة قاموس حقيقية';
-  @override
-  String get onboarding_first_anki_lookup_body =>
-      'ابحث عن كلمة يعرّفها قاموسك المثبَّت فعلًا. فلا توجد كلمة تدريب ثابتة قد لا تكون موجودة في قاموسك.';
-  @override
-  String get onboarding_first_anki_plus_title => 'انقر على زر الجمع في المدخل';
+  String get onboarding_first_anki_plus_title => 'انقر على +';
   @override
   String get onboarding_first_anki_plus_body =>
-      'يفتح زر الجمع منشئ البطاقات ومعه الكلمة الحالية ونطقها ومعناها والجملة والصوت والصورة المتاحة.';
+      'يفتح منشئ البطاقات وقد امتلأت حقول الكلمة والنطق والمعنى والجملة والصوت والصورة.';
   @override
   String get onboarding_first_anki_save_title => 'راجِع ثم احفظ';
   @override
   String get onboarding_first_anki_save_body =>
-      'أكّد المجموعة الهدف ونوع الملاحظة ومعاينة الحقول ثم احفظ. وافتح Anki للتأكد من وصول البطاقة الأولى.';
+      'أكّد المجموعة ونوع الملاحظة ثم احفظ. افتح Anki لترى البطاقة.';
   @override
-  String get onboarding_first_anki_action => 'فتح البحث وإنشاء بطاقة';
-  @override
-  String get onboarding_first_anki_action_desc =>
-      'اختر كلمة يظهر تعريفها، وانقر على زر الجمع الخاص بها، وراجع الحقول، ثم احفظها في مجموعة Anki المتصلة.';
-  @override
-  String get onboarding_step_click_lookup_body =>
-      'تأكد أولًا من كلمة يعرّفها قاموسك المثبَّت فعلًا. ثم استخدم الكلمة نفسها للتدرب على البحث المباشر في الكتب، وفي نص OCR للمانغا، وفي ترجمات الفيديو.';
-  @override
-  String get onboarding_click_lookup_tap_body =>
-      'على الهاتف، انقر على حرف من الكلمة التي تحققت منها؛ وعلى الحاسوب، انقر عليها بالزر الأيسر. يبدأ Fushi من هناك ويطابق أطول كلمة ممكنة.';
-  @override
-  String get onboarding_global_lookup_windows_select_body =>
-      'ظلّل الكلمة نفسها التي تأكدت من وجود تعريف لها في القاموس، واترك التحديد قائمًا.';
-  @override
-  String get onboarding_global_lookup_android_select_body =>
-      'اضغط مطولًا على الكلمة نفسها التي تحققت منها، ثم اسحب مقابض التحديد لتغطيها بالكامل.';
+  String get onboarding_first_anki_action => 'افتح البحث وأنشئ بطاقة';
   @override
   String get game_lookup_attached_title => 'In-game lookup';
   @override
@@ -15313,6 +15263,69 @@ class _StringsAr extends _StringsEn {
   @override
   String get game_session_japanese_locale_skipped_hint_not_32bit =>
       'بدأت اللعبة بدون الإعدادات المحلية اليابانية: يرى الحكم التلقائي أنها ضرورية، لكن Locale Emulator يدعم ألعاب 32 بت فقط.';
+  @override
+  String get onboarding_feature_fonts => 'خطوط مخصّصة';
+  @override
+  String get onboarding_feature_fonts_hint =>
+      'استخدم خطوطك الخاصة للواجهة ونص الكتاب والقاموس';
+  @override
+  String get onboarding_features_modules_title => 'صفحات المكتبة';
+  @override
+  String get onboarding_features_modules_hint =>
+      'الصفحات غير المحدّدة تُخفى من شريط التنقل. يمكنك تغيير ذلك في أي وقت من الإعدادات → المظهر.';
+  @override
+  String get onboarding_features_setup_title => 'الإعداد التالي';
+  @override
+  String get onboarding_features_setup_hint =>
+      'العناصر المحدّدة فقط تحصل على خطوة في هذا الدليل.';
+  @override
+  String get onboarding_pack_intro =>
+      'قواميس يابانية ونبرة النطق وتكرار الكلمات وصوت النطق الياباني/الإنجليزي في تنزيل واحد. تتعلم لغة أخرى؟ تخطَّ هذه الخطوة واستورد قواميسك الخاصة.';
+  @override
+  String get onboarding_global_lookup_windows_select_desc =>
+      'حدّد كلمة في أي تطبيق واترك التحديد فعّالاً.';
+  @override
+  String get onboarding_global_lookup_android_select_desc =>
+      'اضغط مطولاً على كلمة في تطبيق آخر ثم اضبط المقابض لتغطيتها.';
+  @override
+  String get onboarding_global_lookup_windows_shortcut_press => 'اضغط الاختصار';
+  @override
+  String get onboarding_first_anki_card_intro =>
+      'تم الاتصال بـ Anki. أنشئ الآن بطاقة حقيقية لتتأكد من أن المسار كاملاً يعمل.';
+  @override
+  String get onboarding_action_start => 'ابدأ استخدام Fushi';
+  @override
+  String get onboarding_actions_more => 'طرق أخرى';
+  @override
+  String get onboarding_finish_summary_modules => 'صفحات المكتبة المعروضة';
+  @override
+  String get onboarding_finish_summary_setup => 'إعداد موجَّه';
+  @override
+  String get onboarding_finish_summary_none => 'لا شيء';
+  @override
+  String get onboarding_anki_status_pending => 'لم يُختبر بعد';
+  @override
+  String get onboarding_click_lookup_intro =>
+      'انقر على أي كلمة في كتاب أو مانغا أو ترجمة لترى معناها. جرّب ذلك على جملة التدريب بالأسفل.';
+  @override
+  String get onboarding_click_lookup_tap_desc =>
+      'انقر على حرف (أو انقر بالزر الأيسر على الحاسوب)؛ يختار Fushi أطول كلمة تبدأ من هناك. وتُفتح الجملة في صفحة البحث.';
+  @override
+  String get onboarding_sample_sentence_label => 'جملة التدريب';
+  @override
+  String get onboarding_sample_sentence_hint =>
+      'انقر لفتحها في صفحة البحث، ثم انقر على أي كلمة.';
+  @override
+  String get onboarding_lookup_practice_action => 'تدرّب على هذه الجملة';
+  @override
+  String get onboarding_lookup_practice_desc =>
+      'يفتح صفحة البحث والجملة محمّلة فيها. انقر هناك على كلمة لترى معناها؛ وإن لم يظهر شيء فالقواميس لم تُثبَّت بعد.';
+  @override
+  String get onboarding_first_anki_lookup_desc =>
+      'افتح جملة التدريب وانقر على كلمة.';
+  @override
+  String get onboarding_first_anki_action_desc =>
+      'يفتح جملة التدريب في صفحة البحث. انقر على كلمة، ثم على +، وراجع الحقول ثم احفظ.';
 }
 
 // Path: <root>
@@ -23244,41 +23257,40 @@ class _StringsDe extends _StringsEn {
   @override
   String get onboarding_title => 'Erste Schritte';
   @override
-  String get onboarding_welcome_headline => 'Willkommen!';
+  String get onboarding_welcome_headline => 'Willkommen bei Fushi';
   @override
-  String get onboarding_feature_anki => 'Anki-Karteikarten';
+  String get onboarding_feature_anki => 'Anki-Karten';
   @override
   String get onboarding_feature_anki_hint =>
-      'AnkiConnect oder AnkiDroid verbinden, um Karteikarten zu erstellen';
+      'Nachschlagen mit einem Tipp in Lernkarten verwandeln';
   @override
   String get onboarding_feature_backup => 'Sicherung & Synchronisierung';
   @override
   String get onboarding_feature_backup_hint =>
-      'Sichern Sie Ihre Daten auf Google Drive, WebDAV und anderen Backends';
+      'Google Drive, WebDAV oder eine lokale Datei';
   @override
   String get onboarding_feature_interconnect => 'Geräte-Interconnect';
   @override
   String get onboarding_feature_interconnect_hint =>
-      'Geräte in Ihrem LAN koppeln, um Bibliotheken und Fortschritt zu teilen';
+      'Bibliotheken und Fortschritt über Geräte im LAN teilen';
   @override
   String get onboarding_step_dictionary_action => 'Wörterbuchverwaltung öffnen';
   @override
   String get onboarding_step_anki_title => 'Anki einrichten';
   @override
-  String get onboarding_step_anki_action =>
-      'Kartenerstell-Einstellungen öffnen';
+  String get onboarding_step_anki_action => 'Kartenerstell-Einstellungen';
   @override
-  String get onboarding_step_backup_title => 'Sicherung einrichten';
+  String get onboarding_step_backup_title => 'Sicherung';
   @override
   String get onboarding_step_backup_body =>
-      'Wählen Sie ein Sicherungs-Backend und melden Sie sich an, oder exportieren Sie eine lokale Sicherungsdatei.';
+      'Halten Sie Ihre Bibliothek sicher, wenn Sie das Gerät wechseln oder verlieren.';
   @override
   String get onboarding_step_backup_action => 'Sicherungseinstellungen öffnen';
   @override
-  String get onboarding_step_interconnect_title => 'Interconnect einrichten';
+  String get onboarding_step_interconnect_title => 'Interconnect';
   @override
   String get onboarding_step_interconnect_body =>
-      'Aktivieren Sie Interconnect und koppeln Sie andere Geräte in Ihrem LAN, um Bibliotheken, Fortschritt und Nachschlagewerke zu teilen.';
+      'Geräte im LAN koppeln, um eine Bibliothek zu teilen und den Fortschritt synchron zu halten.';
   @override
   String get onboarding_step_interconnect_action =>
       'Interconnect-Einstellungen öffnen';
@@ -23286,52 +23298,40 @@ class _StringsDe extends _StringsEn {
   String get onboarding_finish_title => 'Alles bereit';
   @override
   String get onboarding_finish_body =>
-      'Sie können diese Anleitung jederzeit unter Einstellungen → System erneut aufrufen.';
+      'Sie können diese Anleitung jederzeit unter Einstellungen → System wieder öffnen.';
   @override
   String get onboarding_action_next => 'Weiter';
-  @override
-  String get onboarding_action_finish => 'Fertig';
   @override
   String get onboarding_action_skip => 'Vorerst überspringen';
   @override
   String get onboarding_reopen => 'Erste-Schritte-Anleitung';
   @override
   String get onboarding_welcome_body =>
-      'Stellen Sie zuerst Ihre Oberflächensprache und das Design ein – die nächsten Schritte führen Sie durch den Rest.';
+      'Wählen Sie Oberflächensprache und Design. Die nächsten Schritte richten den Rest ein.';
   @override
-  String get onboarding_features_title => 'Wählen Sie, was Sie nutzen';
+  String get onboarding_features_title => 'Was werden Sie nutzen?';
   @override
-  String get onboarding_features_modules_label =>
-      'Bibliotheks-Tabs (nicht markierte werden in der Navigationsleiste ausgeblendet; jederzeit in den Einstellungen änderbar)';
-  @override
-  String get onboarding_features_setup_label =>
-      'Was als Nächstes eingerichtet wird';
-  @override
-  String get onboarding_feature_manga => 'Manga-Bibliothek';
+  String get onboarding_feature_manga => 'Manga';
   @override
   String get onboarding_feature_manga_hint =>
       'Manga lesen mit OCR-Nachschlagen';
   @override
-  String get onboarding_feature_video => 'Videothek';
+  String get onboarding_feature_video => 'Video';
   @override
   String get onboarding_feature_video_hint =>
-      'Videos mit Untertitel-Nachschlagen und Kartenerstellen ansehen';
+      'Untertitel nachschlagen und Karten erstellen';
   @override
-  String get onboarding_feature_games => 'Galgame-Bibliothek';
+  String get onboarding_feature_games => 'Galgames';
   @override
   String get onboarding_feature_games_hint =>
-      'Galgames mit Text-Hook-Nachschlagen starten (nur Windows)';
+      'Text-Hook-Nachschlagen beim Spielen (nur Windows)';
   @override
-  String get onboarding_feature_pack =>
-      'Empfohlenes Paket (Wörterbücher + Audio)';
+  String get onboarding_feature_pack => 'Empfohlenes Paket';
   @override
   String get onboarding_feature_pack_hint =>
-      'Ein Download richtet japanische Wörterbücher plus JA/EN-Aussprache-Audio ein';
+      'Japanische Wörterbücher plus JA/EN-Aussprache-Audio in einem Download';
   @override
-  String get onboarding_step_pack_title => 'Empfohlenes Paket installieren';
-  @override
-  String get onboarding_step_pack_body =>
-      'Das empfohlene Paket enthält japanische Wort-, Akzent- und Häufigkeitswörterbücher sowie japanische/englische Aussprachedatenbanken. Laden Sie es hier herunter und importieren Sie es; der Import ersetzt lokale Daten, führen Sie ihn daher bei einer Neuinstallation aus. Sie lernen eine andere Sprache? Verwenden Sie die Wörterbuchverwaltung, um eigene Wörterbücher zu importieren.';
+  String get onboarding_step_pack_title => 'Empfohlenes Paket';
   @override
   String get onboarding_step_pack_download_action =>
       'Herunterladen und importieren';
@@ -23339,10 +23339,10 @@ class _StringsDe extends _StringsEn {
   String get onboarding_step_pack_import_existing_action =>
       'Heruntergeladenes Paket importieren';
   @override
-  String get onboarding_step_pack_pick_action => 'Lokale Paketdatei auswählen';
+  String get onboarding_step_pack_pick_action => 'Paketdatei wählen';
   @override
   String get onboarding_pack_downloading =>
-      'Wird heruntergeladen… jederzeit abbrechbar, wird beim nächsten Mal fortgesetzt';
+      'Wird heruntergeladen… jederzeit abbrechbar und später fortsetzbar';
   @override
   String onboarding_pack_download_failed({required Object message}) =>
       'Download fehlgeschlagen: ${message}';
@@ -23350,15 +23350,15 @@ class _StringsDe extends _StringsEn {
   String get onboarding_step_extension_title => 'Browser-Erweiterung';
   @override
   String get onboarding_step_extension_body =>
-      'Installieren Sie die Browser-Erweiterung, um Wörter auf beliebigen Webseiten nachzuschlagen.';
+      'Wörter auf beliebigen Webseiten mit der passenden Erweiterung nachschlagen.';
   @override
   String get onboarding_step_extension_action =>
-      'Erweiterungs-Anleitung öffnen';
+      'Installationsanleitung öffnen';
   @override
-  String get onboarding_step_fonts_title => 'Leseschriften';
+  String get onboarding_step_fonts_title => 'Schriften';
   @override
   String get onboarding_step_fonts_body =>
-      'Importieren Sie benutzerdefinierte Schriften und wählen Sie, welche für Oberfläche, Buchtext und Wörterbuch verwendet werden.';
+      'Eigene Schriften für Oberfläche, Buchtext und Wörterbuch verwenden.';
   @override
   String get settings_section_modules => 'Funktionsmodule';
   @override
@@ -23601,10 +23601,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get module_extension_label => 'Browser-Erweiterung';
   @override
-  String get onboarding_feature_books => 'Roman-Bibliothek';
+  String get onboarding_feature_books => 'Romane';
   @override
   String get onboarding_feature_books_hint =>
-      'EPUB-Romane mit Wörterbuch-Nachschlagen und Hörbuch-Synchronisation lesen';
+      'EPUB lesen mit Nachschlagen und Hörbuch-Synchronisation';
   @override
   String get onboarding_feature_extension_hint =>
       'Wörter auf beliebigen Webseiten nachschlagen (nur Desktop)';
@@ -24025,13 +24025,13 @@ class _StringsDe extends _StringsEn {
       'Das Spiel wurde unter einer japanischen (CP932) Gebietseinstellung gestartet. Wenn der Text verstümmelt aussieht oder ein Skriptfehler auftritt, setzen Sie die japanische Gebietseinstellung dieses Spiels auf „Nie".';
   @override
   String get onboarding_anki_intro_body =>
-      'Anki ist eine kostenlose Lernkarten-App mit verteilter Wiederholung: Neue Wörter werden zu Karten, und Wiederholungen werden entlang der Vergessenskurve geplant. Nach dem Nachschlagen kann Fushi das Wort mit einem Tipp in eine Anki-Karte verwandeln – mit Bedeutung, Satz, Audio und Screenshot.';
+      'Anki ist eine kostenlose Lernkarten-App mit verteilter Wiederholung. Nach dem Nachschlagen macht Fushi das Wort mit einem Tipp zu einer Karte – mit Bedeutung, Satz, Audio und Screenshot.';
   @override
   String get onboarding_anki_setup_desktop_hint =>
-      'Installieren Sie die Anki-Desktop-App und fügen Sie dann das AnkiConnect-Add-on hinzu: Öffnen Sie in Anki Werkzeuge – Add-ons – Add-ons herunterladen und geben Sie den Code 2055492159 ein. Lassen Sie Anki beim Erstellen von Karten geöffnet.';
+      'Installieren Sie Anki, fügen Sie das AnkiConnect-Add-on hinzu (ein Tipp unten, oder Add-on-Code 2055492159) und lassen Sie Anki beim Kartenerstellen laufen.';
   @override
   String get onboarding_anki_setup_ios_hint =>
-      'Mit installiertem AnkiMobile funktioniert das Hinzufügen von Karten sofort. Für den vollen Funktionsumfang verbinden Sie sich über AnkiConnect mit Anki auf einem Computer im selben Netzwerk.';
+      'Mit installiertem AnkiMobile werden Karten direkt hinzugefügt. Für den vollen Funktionsumfang verbinden Sie sich über AnkiConnect mit Anki auf einem Computer im selben Netzwerk.';
   @override
   String get onboarding_anki_backend_label => 'Verbindung';
   @override
@@ -24045,22 +24045,22 @@ class _StringsDe extends _StringsEn {
   String get onboarding_anki_get_ankidroid_action => 'AnkiDroid herunterladen';
   @override
   String get onboarding_anki_mobile_ankiconnect_title =>
-      'Erweitert: AnkiConnect auf diesem Gerät verwenden';
+      'Erweitert: AnkiConnect von diesem Gerät aus nutzen';
   @override
   String get onboarding_anki_mobile_ankiconnect_hint =>
-      'Dieses Gerät kann auch Karten in Anki erstellen, das auf einem Computer im selben Netzwerk läuft: Aktivieren Sie AnkiConnect in den Kartenerstellungs-Einstellungen und geben Sie die Computeradresse ein.';
+      'Karten in Anki auf einem Computer im selben Netzwerk erstellen: Aktivieren Sie AnkiConnect in den Kartenerstellungs-Einstellungen und geben Sie die Adresse des Computers ein.';
   @override
   String get onboarding_anki_setup_android_hint =>
-      'Installieren Sie AnkiDroid und öffnen Sie es einmal, um die Ersteinrichtung abzuschließen. Tippen Sie zurück in Fushi bei Ihrer ersten Karte im Berechtigungsdialog auf „Zulassen" – keine AnkiDroid-Einstellungen müssen geändert werden.';
+      'Installieren Sie AnkiDroid und öffnen Sie es einmal. Tippen Sie bei Ihrer ersten Karte im Berechtigungsdialog auf „Zulassen“ – mehr ist nicht einzustellen.';
   @override
   String get onboarding_anki_install_addon_action =>
       'AnkiConnect-Add-on installieren';
   @override
   String get onboarding_anki_addon_installed =>
-      'AnkiConnect ist installiert. Starten Sie Anki (neu) und tippen Sie dann auf „Verbindung testen".';
+      'AnkiConnect installiert. Starten Sie Anki (neu) und testen Sie dann die Verbindung.';
   @override
   String get onboarding_anki_addon_no_anki =>
-      'Anki-Datenordner nicht gefunden. Installieren Sie Anki und öffnen Sie es einmal, dann versuchen Sie es erneut.';
+      'Anki-Datenordner nicht gefunden. Installieren Sie Anki, öffnen Sie es einmal und versuchen Sie es erneut.';
   @override
   String onboarding_anki_addon_failed({required Object message}) =>
       'Installation fehlgeschlagen: ${message}';
@@ -24582,58 +24582,54 @@ class _StringsDe extends _StringsEn {
   String get onboarding_action_badge_optional => 'Optional';
   @override
   String get onboarding_pack_action_download_desc =>
-      'Lädt das gesamte Paket im Hintergrund herunter und importiert es anschließend. Jederzeit abbrechbar; der Download wird an der Abbruchstelle fortgesetzt.';
+      'Lädt im Hintergrund von mehreren Quellen gleichzeitig und importiert danach. Jederzeit abbrechbar; es wird an der Abbruchstelle fortgesetzt.';
   @override
   String get onboarding_pack_action_import_existing_desc =>
-      'Das Paket ist bereits heruntergeladen; hier wird es importiert. Wähle im Bestätigungsdialog „Zusammenführen“, dann bleiben deine vorhandenen Daten unangetastet.';
+      'Das Paket liegt bereits auf der Festplatte. Wählen Sie im Bestätigungsdialog „Zusammenführen“, um Ihre vorhandenen Daten zu behalten.';
   @override
   String get onboarding_pack_action_pick_desc =>
-      'Du hast das Paket-ZIP bereits anderweitig bekommen? Importiere es von der Festplatte und überspringe den Download komplett.';
+      'Sie haben das Paket-ZIP schon? Importieren Sie es von der Festplatte und überspringen Sie den Download.';
   @override
-  String get onboarding_pack_action_website =>
-      'Download-Seite der Website öffnen';
+  String get onboarding_pack_action_website => 'Download-Seite öffnen';
   @override
   String get onboarding_pack_action_website_desc =>
-      'Öffnet die offizielle Website im Browser. Im Paket-Abschnitt findest du Teil-Links, die du einem Downloadmanager übergeben kannst; komm danach hierher zurück und importiere das Ergebnis über „Lokale Paketdatei wählen“.';
+      'Teil-Links für Downloadmanager. Kommen Sie danach zurück und nutzen Sie „Paketdatei wählen“.';
   @override
   String get onboarding_pack_action_dictionary_desc =>
-      'Du lernst eine andere Sprache als Japanisch? Überspring das Paket und importiere hier stattdessen Wörterbücher für deine Sprache.';
+      'Lernen Sie eine andere Sprache? Importieren Sie hier stattdessen passende Wörterbücher.';
   @override
   String get onboarding_pack_action_audio_desc =>
-      'Woher die Aussprache-Audios kommen. Japanisch und Englisch deckt das Paket bereits ab; für andere Sprachen fügst du hier Online-Quellen hinzu.';
+      'Online-Aussprachequellen für Sprachen hinzufügen, die das Paket nicht abdeckt.';
   @override
   String get onboarding_anki_action_test_desc =>
-      'Prüft, ob Fushi Anki erreicht, und lädt deine Stapel und Notiztypen. Es wird noch nichts angelegt.';
+      'Prüft, ob Fushi Anki erreicht, und lädt Ihre Stapel und Notiztypen. Legt nichts an.';
   @override
   String get onboarding_anki_action_refresh_desc =>
-      'Lädt Stapel und Notiztypen erneut aus Anki. Nutze das, nachdem du in Anki einen neuen Stapel angelegt hast.';
+      'Lädt Stapel und Notiztypen neu. Nutzen Sie das, nachdem Sie in Anki einen Stapel angelegt haben.';
   @override
   String get onboarding_anki_action_get_ankidroid_desc =>
-      'Öffnet die Store-Seite von AnkiDroid. Fushi schreibt seine Karten dorthin, es muss also zuerst installiert sein.';
+      'Öffnet die Store-Seite. Fushi schreibt Karten nach AnkiDroid, es muss also zuerst installiert sein.';
   @override
   String get onboarding_anki_action_get_anki_desc =>
-      'Öffnet die Download-Seite von Anki. Installiere Anki und lass es beim Kartenerstellen laufen.';
+      'Öffnet die Download-Seite von Anki. Lassen Sie Anki beim Kartenerstellen laufen.';
   @override
   String get onboarding_anki_action_install_addon_desc =>
-      'Entpackt das mitgelieferte AnkiConnect-Add-on für dich nach Anki – darüber spricht Fushi mit Anki. Starte Anki danach neu.';
+      'Entpackt das mitgelieferte AnkiConnect-Add-on nach Anki. Starten Sie Anki danach neu.';
   @override
   String get onboarding_step_anki_action_desc =>
-      'Kartenvorlage, Feldzuordnung, Screenshots und Audio: die Details dazu, wie eine erzeugte Karte aussieht. Stapel und Notiztyp oben genügen zum Loslegen – öffne das hier nur, wenn du ändern willst, wie Karten gebaut werden.';
+      'Vorlage, Feldzuordnung, Screenshots und Audio. Stapel und Notiztyp oben genügen zum Loslegen.';
   @override
   String get onboarding_step_backup_action_desc =>
-      'Wähle ein Backup-Backend und melde dich an, damit deine Bibliothek einen Geräteverlust oder -wechsel übersteht.';
+      'Wählen Sie ein Backend und melden Sie sich an, oder exportieren Sie eine lokale Sicherungsdatei.';
   @override
   String get onboarding_step_interconnect_action_desc =>
-      'Koppelt dieses Gerät mit deinen anderen Geräten, um eine Bibliothek zu teilen und den Fortschritt synchron zu halten.';
+      'Interconnect aktivieren und dieses Gerät mit Ihren anderen koppeln.';
   @override
   String get onboarding_step_extension_action_desc =>
-      'Zeigt, wie du die Browser-Erweiterung installierst und mit Fushi verbindest, damit du auch auf Webseiten nachschlagen kannst.';
+      'Zeigt, wie Sie die Erweiterung installieren und mit Fushi verbinden.';
   @override
   String get onboarding_step_fonts_action_desc =>
-      'Eigene Schriftdateien hinzufügen und festlegen, welche Schrift jede Sprache verwendet.';
-  @override
-  String get onboarding_pack_sources_hint =>
-      'Wird parallel in Teilstücken gleichzeitig von GitHub, der offiziellen Website und einem Ersatz-Spiegel geladen, jedes Teilstück mit Prüfsumme. Fushi misst die Quellen währenddessen und gibt der aktuell schnellsten mehr Teilstücke – hier gibt es also nichts auszuwählen.';
+      'Schriftdateien importieren und pro Sprache eine auswählen.';
   @override
   String get video_setting_hdr_output => 'HDR-/10-Bit-Ausgabe';
   @override
@@ -24754,138 +24750,102 @@ class _StringsDe extends _StringsEn {
   @override
   String get onboarding_step_click_lookup_title => 'Zum Nachschlagen tippen';
   @override
-  String get onboarding_click_lookup_tap_title => 'Auf den Text tippen';
+  String get onboarding_click_lookup_tap_title => 'Auf ein Wort tippen';
   @override
-  String get onboarding_click_lookup_nested_title => 'Im Popup weitersuchen';
+  String get onboarding_click_lookup_nested_title => 'Weitersuchen';
   @override
   String get onboarding_click_lookup_nested_body =>
-      'Tippen Sie in einer Bedeutung auf ein weiteres Wort, um eine tiefere Ebene zu öffnen. Mit Zurück oder einem Tipp außerhalb schließen Sie eine Ebene.';
+      'Tippen Sie in einer Bedeutung auf ein Wort, um eine Ebene tiefer zu gehen. Mit Zurück oder einem Tipp außerhalb schließen Sie eine Ebene.';
   @override
-  String get onboarding_click_lookup_mine_title =>
-      'Das Ergebnis in eine Karte verwandeln';
+  String get onboarding_click_lookup_mine_title => 'Karte erstellen';
   @override
   String get onboarding_click_lookup_mine_body =>
-      'Wenn die Bedeutung passt, tippen Sie auf +, um Wort, Satz, Audio und Bild an den Kartenersteller zu senden.';
+      'Tippen Sie am Eintrag auf +, um Wort, Satz, Audio und Bild an den Kartenersteller zu senden.';
   @override
   String get onboarding_step_global_lookup_title =>
-      'Text außerhalb von Fushi nachschlagen';
+      'Außerhalb von Fushi nachschlagen';
   @override
   String get onboarding_global_lookup_windows_body =>
-      'Unter Windows markieren Sie Text in einer anderen App und rufen das Wörterbuch auf, ohne zu Fushi zurückzuwechseln.';
+      'Markieren Sie Text in einer beliebigen App und rufen Sie das Wörterbuch auf, ohne das Fenster zu wechseln.';
   @override
-  String get onboarding_global_lookup_windows_select_title =>
-      'Text in einer beliebigen App markieren';
-  @override
-  String get onboarding_global_lookup_windows_shortcut_title =>
-      'Ctrl+Alt+D drücken';
+  String get onboarding_global_lookup_windows_select_title => 'Text markieren';
   @override
   String get onboarding_global_lookup_windows_shortcut_body =>
-      'Das ist das voreingestellte globale Tastenkürzel. Fushi übernimmt die aktuelle Auswahl und öffnet eine Nachschlagekarte neben dem Mauszeiger.';
+      'Fushi übernimmt die Auswahl und öffnet eine Nachschlagekarte neben dem Mauszeiger.';
   @override
   String get onboarding_global_lookup_windows_customize_title =>
-      'Tastenkürzel bei Bedarf ändern';
+      'Tastenkürzel ändern';
   @override
   String get onboarding_global_lookup_windows_customize_body =>
-      'Öffnen Sie Einstellungen → Tastenkürzel → Global (außerhalb der App), um eine andere Tastenkombination zuzuweisen.';
+      'Einstellungen → Tastenkürzel → Global (außerhalb der App).';
   @override
   String get onboarding_global_lookup_windows_action =>
       'Tastenkürzel-Einstellungen öffnen';
   @override
   String get onboarding_global_lookup_windows_action_desc =>
-      'Hier ändern Sie das Tastenkürzel zum Nachschlagen außerhalb der App. Die Voreinstellung Ctrl+Alt+D funktioniert bereits, daher ist das optional.';
+      'Nur, wenn Sie eine andere Tastenkombination möchten.';
   @override
   String get onboarding_global_lookup_android_body =>
-      'Unter Android übergibt das System markierten Text über das Textmenü oder das Teilen-Menü an Fushi. Ein frei belegbares globales Tastenkürzel gibt es dort nicht.';
+      'Android übergibt markierten Text über das Textmenü oder das Teilen-Menü an Fushi.';
   @override
-  String get onboarding_global_lookup_android_select_title =>
-      'Text in einer anderen App markieren';
+  String get onboarding_global_lookup_android_select_title => 'Text markieren';
   @override
   String get onboarding_global_lookup_android_open_title => 'Fushi auswählen';
   @override
   String get onboarding_global_lookup_android_open_body =>
-      'Tippen Sie im Textauswahlmenü auf Fushi. Wird es nicht angezeigt, tippen Sie auf Teilen und wählen Fushi im Teilen-Menü.';
+      'Tippen Sie im Auswahlmenü auf Fushi, oder tippen Sie auf Teilen und wählen Fushi.';
   @override
-  String get onboarding_global_lookup_android_continue_title =>
-      'Das eigenständige Popup nutzen';
+  String get onboarding_global_lookup_android_continue_title => 'Popup lesen';
   @override
   String get onboarding_global_lookup_android_continue_body =>
-      'Das Nachschlagen öffnet sich getrennt von der Ursprungs-App. Sie können darin weitere Wörter antippen und kehren nach dem Schließen dorthin zurück, wo Sie waren.';
+      'Das Nachschlagen öffnet sich über der anderen App. Schließen Sie es, um zurückzukehren.';
   @override
   String get onboarding_feature_manual_resources =>
-      'Wörterbücher und Audio manuell importieren';
+      'Eigene Ressourcen importieren';
   @override
   String get onboarding_feature_manual_resources_hint =>
-      'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+      'Wörterbücher, Hörbücher und Aussprachequellen aus eigenen Dateien';
   @override
   String get onboarding_step_manual_resources_title =>
-      'Wörterbücher und Audio manuell vorbereiten';
+      'Eigene Wörterbücher und Audios';
   @override
   String get onboarding_step_manual_resources_body =>
-      'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+      'Importieren Sie mindestens ein Wörterbuch vor der Nachschlage-Anleitung. Hörbücher und Aussprache-Audio sind optional.';
   @override
   String get onboarding_manual_dictionary_action =>
       'Ein Wörterbuch importieren';
   @override
   String get onboarding_manual_dictionary_action_desc =>
-      'Öffnen Sie die Wörterbuchverwaltung und importieren Sie mindestens eine unterstützte Wörterbuchdatei oder ein Archiv. Die Nachschlage-Anleitungen bringen erst etwas, wenn eine Abfrage eine Bedeutung liefert.';
+      'Öffnet die Wörterbuchverwaltung. Abfragen liefern erst dann Treffer, wenn ein Wörterbuch installiert ist.';
   @override
   String get onboarding_manual_audiobook_action =>
-      'Ein Buch mit Hörbuch-Audio importieren';
+      'Ein Buch mit Audio importieren';
   @override
   String get onboarding_manual_audiobook_action_desc =>
-      'Öffnen Sie den Buchimport und wählen Sie das Buch oder den Text, passende Untertitel und eine oder mehrere Audiodateien. Ohne Untertitel kann Fushi das Audio nicht satzweise zuordnen.';
+      'Buch oder Text, passende Untertitel und Audiodateien. Erst die Untertitel lassen Fushi das Audio satzweise zuordnen.';
   @override
   String get onboarding_manual_pronunciation_action =>
-      'Aussprache-Audio für Wörter einrichten';
+      'Aussprache-Audio einrichten';
   @override
   String get onboarding_manual_pronunciation_action_desc =>
-      'Fügen Sie lokale oder Online-Aussprachequellen hinzu, die Wörterbucheinträge verwenden. Das ist unabhängig vom Hörbuch-Audio eines Buchs.';
+      'Lokale oder Online-Quellen für die Wortaussprache in Wörterbucheinträgen. Unabhängig vom Hörbuch-Audio.';
   @override
-  String get onboarding_lookup_verify_action => 'Ein Wort im Wörterbuch prüfen';
+  String get onboarding_step_first_anki_card_title => 'Ihre erste Karte';
   @override
-  String get onboarding_lookup_verify_action_desc =>
-      'Öffnen Sie das Nachschlagen, geben Sie ein beliebiges Wort ein, das Sie lernen, und fahren Sie erst fort, wenn das installierte Wörterbuch eine Bedeutung liefert. Die Anleitung gibt kein Beispielwort fest vor.';
+  String get onboarding_first_anki_lookup_title => 'Ein Wort nachschlagen';
   @override
-  String get onboarding_step_first_anki_card_title =>
-      'Ihre erste Anki-Karte erstellen';
-  @override
-  String get onboarding_step_first_anki_card_body =>
-      'Dieser Schritt erscheint nur, wenn diese Einrichtung bereits mit Anki verbunden ist und ein nutzbarer Stapel samt Notiztyp ausgewählt wurde.';
-  @override
-  String get onboarding_first_anki_lookup_title =>
-      'Mit einem echten Wörterbuchtreffer beginnen';
-  @override
-  String get onboarding_first_anki_lookup_body =>
-      'Schlagen Sie ein Wort nach, das Ihr installiertes Wörterbuch tatsächlich kennt. Es gibt kein festes Übungswort, das in Ihrem Wörterbuch fehlen könnte.';
-  @override
-  String get onboarding_first_anki_plus_title =>
-      'Auf das Plus-Symbol am Eintrag tippen';
+  String get onboarding_first_anki_plus_title => 'Auf + tippen';
   @override
   String get onboarding_first_anki_plus_body =>
-      'Das Plus öffnet den Kartenersteller mit dem aktuellen Wort, der Lesung, der Bedeutung, dem Satz, dem Audio und dem verfügbaren Bildkontext.';
+      'Der Kartenersteller öffnet sich mit Wort, Lesung, Bedeutung, Satz, Audio und Bild bereits ausgefüllt.';
   @override
   String get onboarding_first_anki_save_title => 'Prüfen und speichern';
   @override
   String get onboarding_first_anki_save_body =>
-      'Bestätigen Sie Zielstapel, Notiztyp und die Feldvorschau und speichern Sie dann. Öffnen Sie Anki, um zu prüfen, ob die erste Karte angekommen ist.';
+      'Bestätigen Sie Stapel und Notiztyp und speichern Sie. Öffnen Sie Anki, um die Karte zu sehen.';
   @override
   String get onboarding_first_anki_action =>
-      'Nachschlagen öffnen und eine Karte erstellen';
-  @override
-  String get onboarding_first_anki_action_desc =>
-      'Nehmen Sie ein Wort mit sichtbarer Bedeutung, tippen Sie auf sein Plus-Symbol, prüfen Sie die Felder und speichern Sie es im verbundenen Anki-Stapel.';
-  @override
-  String get onboarding_step_click_lookup_body =>
-      'Prüfen Sie zuerst ein Wort, das Ihr installiertes Wörterbuch tatsächlich kennt. Üben Sie dann mit demselben Wort das direkte Nachschlagen in Büchern, im OCR-Text von Manga und in Videountertiteln.';
-  @override
-  String get onboarding_click_lookup_tap_body =>
-      'Tippen Sie auf dem Handy auf ein Zeichen des geprüften Wortes, am Computer klicken Sie es mit links an. Fushi setzt dort an und findet die längste passende Wortform.';
-  @override
-  String get onboarding_global_lookup_windows_select_body =>
-      'Markieren Sie dasselbe Wort, für das Sie bereits eine Wörterbuchbedeutung geprüft haben, und lassen Sie die Auswahl bestehen.';
-  @override
-  String get onboarding_global_lookup_android_select_body =>
-      'Halten Sie dasselbe geprüfte Wort gedrückt und ziehen Sie dann die Auswahlpunkte so, dass es vollständig markiert ist.';
+      'Nachschlagen öffnen und Karte erstellen';
   @override
   String get game_lookup_attached_title => 'In-game lookup';
   @override
@@ -25167,6 +25127,71 @@ class _StringsDe extends _StringsEn {
   @override
   String get game_session_japanese_locale_skipped_hint_not_32bit =>
       'Das Spiel wurde ohne japanische Locale gestartet: Die automatische Einschätzung hält sie für nötig, aber Locale Emulator unterstützt nur 32-Bit-Spiele.';
+  @override
+  String get onboarding_feature_fonts => 'Eigene Schriften';
+  @override
+  String get onboarding_feature_fonts_hint =>
+      'Eigene Schriften für Oberfläche, Buchtext und Wörterbuch verwenden';
+  @override
+  String get onboarding_features_modules_title => 'Bibliotheksseiten';
+  @override
+  String get onboarding_features_modules_hint =>
+      'Nicht angehakte Seiten werden in der Navigationsleiste ausgeblendet. Jederzeit änderbar unter Einstellungen → Erscheinungsbild.';
+  @override
+  String get onboarding_features_setup_title => 'Als Nächstes einrichten';
+  @override
+  String get onboarding_features_setup_hint =>
+      'Nur angehakte Punkte bekommen einen Schritt in dieser Anleitung.';
+  @override
+  String get onboarding_pack_intro =>
+      'Japanische Wörterbücher, Tonhöhenakzent, Worthäufigkeit und JA/EN-Aussprache-Audio in einem Download. Lernen Sie eine andere Sprache? Überspringen Sie das und importieren Sie Ihre eigenen Wörterbücher.';
+  @override
+  String get onboarding_global_lookup_windows_select_desc =>
+      'Markieren Sie ein Wort in einer beliebigen App und lassen Sie es ausgewählt.';
+  @override
+  String get onboarding_global_lookup_android_select_desc =>
+      'Halten Sie in einer anderen App ein Wort gedrückt und ziehen Sie die Greifpunkte darüber.';
+  @override
+  String get onboarding_global_lookup_windows_shortcut_press =>
+      'Tastenkürzel drücken';
+  @override
+  String get onboarding_first_anki_card_intro =>
+      'Anki ist verbunden. Erstellen Sie jetzt eine echte Karte, damit Sie sehen, dass der ganze Weg funktioniert.';
+  @override
+  String get onboarding_action_start => 'Fushi starten';
+  @override
+  String get onboarding_actions_more => 'Weitere Möglichkeiten';
+  @override
+  String get onboarding_finish_summary_modules =>
+      'Angezeigte Bibliotheksseiten';
+  @override
+  String get onboarding_finish_summary_setup => 'Geführte Einrichtung';
+  @override
+  String get onboarding_finish_summary_none => 'Keine';
+  @override
+  String get onboarding_anki_status_pending => 'Noch nicht getestet';
+  @override
+  String get onboarding_click_lookup_intro =>
+      'Tippen Sie in einem Buch, Manga oder Untertitel auf ein beliebiges Wort, um seine Bedeutung zu sehen. Probieren Sie es am Übungssatz unten aus.';
+  @override
+  String get onboarding_click_lookup_tap_desc =>
+      'Tippen Sie auf ein Zeichen (am Computer: Linksklick); Fushi nimmt das längste Wort, das dort beginnt. Der Satz wird auf der Nachschlageseite geöffnet.';
+  @override
+  String get onboarding_sample_sentence_label => 'Übungssatz';
+  @override
+  String get onboarding_sample_sentence_hint =>
+      'Tippen, um ihn auf der Nachschlageseite zu öffnen, dann auf ein beliebiges Wort tippen.';
+  @override
+  String get onboarding_lookup_practice_action => 'Mit diesem Satz üben';
+  @override
+  String get onboarding_lookup_practice_desc =>
+      'Öffnet die Nachschlageseite mit geladenem Satz. Tippen Sie dort auf ein Wort, um seine Bedeutung zu sehen; kommt nichts zurück, sind noch keine Wörterbücher installiert.';
+  @override
+  String get onboarding_first_anki_lookup_desc =>
+      'Öffnen Sie den Übungssatz und tippen Sie auf ein Wort.';
+  @override
+  String get onboarding_first_anki_action_desc =>
+      'Öffnet den Übungssatz auf der Nachschlageseite. Tippen Sie auf ein Wort, dann auf +, prüfen Sie die Felder und speichern Sie.';
 }
 
 // Path: <root>
@@ -33134,42 +33159,41 @@ class _StringsEs extends _StringsEn {
   @override
   String get onboarding_title => 'Primeros pasos';
   @override
-  String get onboarding_welcome_headline => '¡Bienvenido!';
+  String get onboarding_welcome_headline => 'Le damos la bienvenida a Fushi';
   @override
   String get onboarding_feature_anki => 'Tarjetas de Anki';
   @override
   String get onboarding_feature_anki_hint =>
-      'Conecte AnkiConnect o AnkiDroid para crear tarjetas de estudio';
+      'Convierta sus consultas en tarjetas con un toque';
   @override
   String get onboarding_feature_backup => 'Respaldo y sincronización';
   @override
   String get onboarding_feature_backup_hint =>
-      'Respalde sus datos en Google Drive, WebDAV y otros backends';
+      'Google Drive, WebDAV o un archivo local';
   @override
   String get onboarding_feature_interconnect => 'Interconexión de dispositivos';
   @override
   String get onboarding_feature_interconnect_hint =>
-      'Empareje dispositivos en su LAN para compartir bibliotecas y progreso';
+      'Comparta bibliotecas y progreso entre dispositivos de su LAN';
   @override
   String get onboarding_step_dictionary_action =>
       'Abrir administrador de diccionarios';
   @override
   String get onboarding_step_anki_title => 'Configurar Anki';
   @override
-  String get onboarding_step_anki_action =>
-      'Abrir ajustes de creación de tarjetas';
+  String get onboarding_step_anki_action => 'Ajustes de creación de tarjetas';
   @override
-  String get onboarding_step_backup_title => 'Configurar respaldo';
+  String get onboarding_step_backup_title => 'Respaldo';
   @override
   String get onboarding_step_backup_body =>
-      'Elija un backend de respaldo e inicie sesión, o exporte un archivo de respaldo local.';
+      'Mantenga su biblioteca a salvo cuando cambie o pierda un dispositivo.';
   @override
   String get onboarding_step_backup_action => 'Abrir ajustes de respaldo';
   @override
-  String get onboarding_step_interconnect_title => 'Configurar Interconnect';
+  String get onboarding_step_interconnect_title => 'Interconnect';
   @override
   String get onboarding_step_interconnect_body =>
-      'Active Interconnect y empareje con otros dispositivos en su LAN para compartir bibliotecas, progreso y búsquedas.';
+      'Empareje dispositivos de su LAN para compartir una misma biblioteca y mantener el progreso sincronizado.';
   @override
   String get onboarding_step_interconnect_action =>
       'Abrir ajustes de Interconnect';
@@ -33177,60 +33201,49 @@ class _StringsEs extends _StringsEn {
   String get onboarding_finish_title => 'Todo listo';
   @override
   String get onboarding_finish_body =>
-      'Puede volver a visitar esta guía en cualquier momento desde Ajustes → Sistema.';
+      'Puede volver a abrir esta guía en cualquier momento desde Ajustes → Sistema.';
   @override
   String get onboarding_action_next => 'Siguiente';
-  @override
-  String get onboarding_action_finish => 'Finalizar';
   @override
   String get onboarding_action_skip => 'Omitir por ahora';
   @override
   String get onboarding_reopen => 'Guía de primeros pasos';
   @override
   String get onboarding_welcome_body =>
-      'Establezca su idioma de interfaz y tema primero — los siguientes pasos le guiarán con el resto.';
+      'Elija su idioma de interfaz y el tema. Los siguientes pasos configuran el resto.';
   @override
-  String get onboarding_features_title => 'Elija qué usa';
+  String get onboarding_features_title => '¿Qué va a usar?';
   @override
-  String get onboarding_features_modules_label =>
-      'Pestañas de biblioteca (las desmarcadas se ocultan de la barra de navegación; cámbielo en cualquier momento en Ajustes)';
-  @override
-  String get onboarding_features_setup_label => 'Qué configurar a continuación';
-  @override
-  String get onboarding_feature_manga => 'Biblioteca de manga';
+  String get onboarding_feature_manga => 'Manga';
   @override
   String get onboarding_feature_manga_hint => 'Lea manga con búsqueda por OCR';
   @override
-  String get onboarding_feature_video => 'Biblioteca de vídeo';
+  String get onboarding_feature_video => 'Vídeo';
   @override
   String get onboarding_feature_video_hint =>
-      'Vea vídeos con búsqueda de subtítulos y creación de tarjetas';
+      'Consulta en subtítulos y creación de tarjetas';
   @override
-  String get onboarding_feature_games => 'Biblioteca de galgame';
+  String get onboarding_feature_games => 'Galgames';
   @override
   String get onboarding_feature_games_hint =>
-      'Inicie galgames con búsqueda por hook de texto (solo Windows)';
+      'Consulta por hook de texto mientras juega (solo Windows)';
   @override
-  String get onboarding_feature_pack =>
-      'Pack recomendado (diccionarios + audio)';
+  String get onboarding_feature_pack => 'Pack recomendado';
   @override
   String get onboarding_feature_pack_hint =>
-      'Una descarga configura diccionarios japoneses más audio de pronunciación JA/EN';
+      'Diccionarios japoneses más audio de pronunciación JA/EN en una descarga';
   @override
-  String get onboarding_step_pack_title => 'Instalar el pack recomendado';
-  @override
-  String get onboarding_step_pack_body =>
-      'El pack recomendado incluye diccionarios japoneses de palabras, acento tonal y frecuencia, más bases de datos de pronunciación japonés/inglés. Descárguelo e impórtelo aquí; la importación reemplaza datos locales, así que ejecútelo en una instalación nueva. ¿Aprendiendo otro idioma? Use el administrador de diccionarios para importar sus propios diccionarios.';
+  String get onboarding_step_pack_title => 'Pack recomendado';
   @override
   String get onboarding_step_pack_download_action => 'Descargar e importar';
   @override
   String get onboarding_step_pack_import_existing_action =>
-      'Importar pack descargado';
+      'Importar el pack descargado';
   @override
-  String get onboarding_step_pack_pick_action => 'Elegir archivo de pack local';
+  String get onboarding_step_pack_pick_action => 'Elegir un archivo de pack';
   @override
   String get onboarding_pack_downloading =>
-      'Descargando… cancele en cualquier momento, se reanuda la próxima vez';
+      'Descargando… cancele cuando quiera y reanude más tarde';
   @override
   String onboarding_pack_download_failed({required Object message}) =>
       'La descarga falló: ${message}';
@@ -33238,14 +33251,14 @@ class _StringsEs extends _StringsEn {
   String get onboarding_step_extension_title => 'Extensión del navegador';
   @override
   String get onboarding_step_extension_body =>
-      'Instale la extensión complementaria del navegador para buscar palabras en cualquier página web.';
+      'Consulte palabras en cualquier página web con la extensión complementaria.';
   @override
-  String get onboarding_step_extension_action => 'Abrir guía de extensión';
+  String get onboarding_step_extension_action => 'Abrir la guía de instalación';
   @override
-  String get onboarding_step_fonts_title => 'Fuentes de lectura';
+  String get onboarding_step_fonts_title => 'Fuentes';
   @override
   String get onboarding_step_fonts_body =>
-      'Importe fuentes personalizadas y elija cuáles usan la interfaz, el texto del libro y el diccionario.';
+      'Use sus propias fuentes para la interfaz, el texto del libro y el diccionario.';
   @override
   String get settings_section_modules => 'Módulos de funciones';
   @override
@@ -33490,10 +33503,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get module_extension_label => 'Extensión del navegador';
   @override
-  String get onboarding_feature_books => 'Biblioteca de novelas';
+  String get onboarding_feature_books => 'Novelas';
   @override
   String get onboarding_feature_books_hint =>
-      'Lea novelas EPUB con búsqueda de diccionario y sincronización de audiolibro';
+      'Lectura de EPUB con consulta y sincronización de audiolibro';
   @override
   String get onboarding_feature_extension_hint =>
       'Busque palabras en cualquier página web (solo escritorio)';
@@ -33923,13 +33936,13 @@ class _StringsEs extends _StringsEn {
       'El juego se inició con configuración regional japonesa (CP932). Si el texto se ve ilegible o aparece un error de script, establezca la configuración regional japonesa de este juego en Nunca.';
   @override
   String get onboarding_anki_intro_body =>
-      'Anki es una app gratuita de tarjetas de repetición espaciada: las palabras nuevas se convierten en tarjetas, y las revisiones se programan según la curva de olvido. Después de una búsqueda, Fushi puede convertir la palabra en una tarjeta de Anki con un toque, con significado, oración, audio y captura de pantalla.';
+      'Anki es una app gratuita de tarjetas con repetición espaciada. Tras una consulta, Fushi convierte la palabra en una tarjeta con significado, frase, audio y captura de pantalla con un solo toque.';
   @override
   String get onboarding_anki_setup_desktop_hint =>
-      'Instale la app de escritorio de Anki, luego agregue el complemento AnkiConnect: en Anki, abra Herramientas - Complementos - Obtener complementos e introduzca el código 2055492159. Mantenga Anki ejecutándose mientras crea tarjetas.';
+      'Instale Anki, añada el complemento AnkiConnect (con un toque abajo, o con el código 2055492159) y mantenga Anki abierto mientras crea tarjetas.';
   @override
   String get onboarding_anki_setup_ios_hint =>
-      'Con AnkiMobile instalado, añadir tarjetas funciona de inmediato. Para el conjunto completo de funciones, conéctese a Anki ejecutándose en una computadora en la misma red vía AnkiConnect.';
+      'Con AnkiMobile instalado, las tarjetas se añaden directamente. Para el conjunto completo de funciones, conéctese vía AnkiConnect al Anki de una computadora de la misma red.';
   @override
   String get onboarding_anki_backend_label => 'Conexión';
   @override
@@ -33943,22 +33956,22 @@ class _StringsEs extends _StringsEn {
   String get onboarding_anki_get_ankidroid_action => 'Obtener AnkiDroid';
   @override
   String get onboarding_anki_mobile_ankiconnect_title =>
-      'Avanzado: usar AnkiConnect en este dispositivo';
+      'Avanzado: usar AnkiConnect desde este dispositivo';
   @override
   String get onboarding_anki_mobile_ankiconnect_hint =>
-      'Este dispositivo también puede crear tarjetas en Anki ejecutándose en una computadora en la misma red: active AnkiConnect en ajustes de creación de tarjetas e introduzca la dirección de la computadora.';
+      'Cree tarjetas en el Anki de una computadora de la misma red: active AnkiConnect en los ajustes de creación de tarjetas e introduzca la dirección de la computadora.';
   @override
   String get onboarding_anki_setup_android_hint =>
-      'Instale AnkiDroid y ábralo una vez para completar su configuración inicial. De vuelta en Fushi, toque Permitir en el diálogo de permisos que aparece con su primera tarjeta — no hay ajustes de AnkiDroid que cambiar.';
+      'Instale AnkiDroid y ábralo una vez. En su primera tarjeta, toque Permitir en el diálogo de permisos: no hay nada más que configurar.';
   @override
   String get onboarding_anki_install_addon_action =>
       'Instalar complemento AnkiConnect';
   @override
   String get onboarding_anki_addon_installed =>
-      'AnkiConnect está instalado. Inicie (o reinicie) Anki, luego toque Probar conexión.';
+      'AnkiConnect instalado. Inicie o reinicie Anki y luego pruebe la conexión.';
   @override
   String get onboarding_anki_addon_no_anki =>
-      'No se encontró la carpeta de datos de Anki. Instale Anki y ábralo una vez, luego inténtelo de nuevo.';
+      'No se encontró la carpeta de datos de Anki. Instale Anki, ábralo una vez e inténtelo de nuevo.';
   @override
   String onboarding_anki_addon_failed({required Object message}) =>
       'La instalación falló: ${message}';
@@ -34480,58 +34493,54 @@ class _StringsEs extends _StringsEn {
   String get onboarding_action_badge_optional => 'Opcional';
   @override
   String get onboarding_pack_action_download_desc =>
-      'Descarga todo el paquete en segundo plano y luego lo importa. Puedes cancelar cuando quieras; la próxima vez continúa desde donde se detuvo.';
+      'Descarga en segundo plano desde varias fuentes a la vez y luego importa. Cancele cuando quiera; se reanuda donde se detuvo.';
   @override
   String get onboarding_pack_action_import_existing_desc =>
-      'El paquete ya está descargado; esto lo importa. Elige «Combinar» en el diálogo de confirmación y tus datos actuales quedarán intactos.';
+      'El pack ya está en el disco. Elija «Combinar» en el diálogo de confirmación para conservar sus datos actuales.';
   @override
   String get onboarding_pack_action_pick_desc =>
-      '¿Ya conseguiste el zip del paquete por otro lado? Impórtalo desde el disco y sáltate la descarga por completo.';
+      '¿Ya tiene el zip del pack? Impórtelo desde el disco y sáltese la descarga.';
   @override
-  String get onboarding_pack_action_website =>
-      'Abrir la página de descarga del sitio';
+  String get onboarding_pack_action_website => 'Abrir la página de descarga';
   @override
   String get onboarding_pack_action_website_desc =>
-      'Abre el sitio oficial en tu navegador. Su sección de paquete lista enlaces por fragmentos que puedes pasar a un gestor de descargas; vuelve después aquí y usa «Elegir un archivo de paquete local» para importar lo que obtuviste.';
+      'Enlaces por fragmentos para gestores de descargas. Vuelva después y use «Elegir un archivo de pack».';
   @override
   String get onboarding_pack_action_dictionary_desc =>
-      '¿Aprendes un idioma distinto del japonés? Sáltate el paquete e importa aquí diccionarios de tu propio idioma.';
+      '¿Aprende otro idioma? Importe aquí los diccionarios correspondientes.';
   @override
   String get onboarding_pack_action_audio_desc =>
-      'De dónde sale el audio de pronunciación. El paquete ya cubre japonés e inglés; añade aquí fuentes en línea para otros idiomas.';
+      'Añada fuentes de pronunciación en línea para los idiomas que el pack no cubre.';
   @override
   String get onboarding_anki_action_test_desc =>
-      'Comprueba que Fushi puede conectarse con Anki y carga tus mazos y tipos de nota. Todavía no se crea nada.';
+      'Comprueba que Fushi puede conectarse con Anki y carga sus mazos y tipos de nota. No crea nada.';
   @override
   String get onboarding_anki_action_refresh_desc =>
-      'Vuelve a cargar mazos y tipos de nota desde Anki. Úsalo después de crear un mazo nuevo dentro de Anki.';
+      'Vuelve a cargar los mazos y tipos de nota. Úselo tras crear un mazo en Anki.';
   @override
   String get onboarding_anki_action_get_ankidroid_desc =>
-      'Abre la página de la tienda de AnkiDroid. Fushi escribe ahí sus tarjetas, así que hay que instalarlo primero.';
+      'Abre la página de la tienda. Fushi escribe las tarjetas en AnkiDroid, así que hay que instalarlo primero.';
   @override
   String get onboarding_anki_action_get_anki_desc =>
-      'Abre la página de descarga de Anki. Instala Anki y déjalo abierto mientras creas tarjetas.';
+      'Abre la página de descarga de Anki. Deje Anki abierto mientras crea tarjetas.';
   @override
   String get onboarding_anki_action_install_addon_desc =>
-      'Descomprime por ti el complemento AnkiConnect incluido dentro de Anki, que es lo que permite a Fushi comunicarse con él. Reinicia Anki después.';
+      'Descomprime el complemento AnkiConnect incluido dentro de Anki. Reinicie Anki después.';
   @override
   String get onboarding_step_anki_action_desc =>
-      'Plantilla de tarjeta, asignación de campos, capturas y audio: los detalles de qué aspecto tiene una tarjeta creada. Con el mazo y el tipo de nota de arriba ya puedes empezar, así que abre esto solo si quieres cambiar cómo se construyen las tarjetas.';
+      'Plantilla, asignación de campos, capturas y audio. Con el mazo y el tipo de nota de arriba ya puede empezar.';
   @override
   String get onboarding_step_backup_action_desc =>
-      'Elige un servicio de copia de seguridad e inicia sesión, para que tu biblioteca sobreviva a la pérdida o el cambio de dispositivo.';
+      'Elija un backend e inicie sesión, o exporte un archivo de respaldo local.';
   @override
   String get onboarding_step_interconnect_action_desc =>
-      'Empareja este dispositivo con tus otros dispositivos para compartir una misma biblioteca y mantener el progreso sincronizado.';
+      'Active Interconnect y empareje este dispositivo con los demás.';
   @override
   String get onboarding_step_extension_action_desc =>
-      'Muestra cómo instalar la extensión de navegador y conectarla con Fushi, para poder buscar palabras también en páginas web.';
+      'Muestra cómo instalar la extensión y conectarla con Fushi.';
   @override
   String get onboarding_step_fonts_action_desc =>
-      'Añade tus propios archivos de fuente y elige cuál usa cada idioma.';
-  @override
-  String get onboarding_pack_sources_hint =>
-      'Se descarga en fragmentos paralelos desde GitHub, el sitio oficial y un espejo de respaldo a la vez, con suma de verificación en cada fragmento. Fushi mide las fuentes sobre la marcha y da más fragmentos a la que sea más rápida en ese momento, así que aquí no hay nada que elegir.';
+      'Importe archivos de fuente y elija uno por idioma.';
   @override
   String get video_setting_hdr_output => 'Salida HDR / 10 bits';
   @override
@@ -34652,141 +34661,105 @@ class _StringsEs extends _StringsEn {
   String web_video_mine_switch_builtin({required Object count}) =>
       'Cambiar al modo integrado para crear ${count} tarjetas en cola';
   @override
-  String get onboarding_step_click_lookup_title => 'Toque para buscar palabras';
+  String get onboarding_step_click_lookup_title => 'Toque para consultar';
   @override
-  String get onboarding_click_lookup_tap_title => 'Toque el texto';
+  String get onboarding_click_lookup_tap_title => 'Toque una palabra';
   @override
-  String get onboarding_click_lookup_nested_title =>
-      'Siga explorando en la ventana emergente';
+  String get onboarding_click_lookup_nested_title => 'Siga explorando';
   @override
   String get onboarding_click_lookup_nested_body =>
-      'Toque otra palabra dentro de una definición para abrir una búsqueda más profunda. Vuelva atrás o toque fuera para cerrar un nivel.';
+      'Toque una palabra dentro de una definición para bajar un nivel más. Vuelva atrás o toque fuera para cerrar un nivel.';
   @override
-  String get onboarding_click_lookup_mine_title =>
-      'Convierta el resultado en una tarjeta';
+  String get onboarding_click_lookup_mine_title => 'Cree una tarjeta';
   @override
   String get onboarding_click_lookup_mine_body =>
-      'Cuando la definición sea la correcta, toque + para enviar la palabra, la frase, el audio y la imagen al creador de tarjetas.';
+      'Toque + en la entrada para enviar la palabra, la frase, el audio y la imagen al creador de tarjetas.';
   @override
-  String get onboarding_step_global_lookup_title =>
-      'Buscar texto fuera de Fushi';
+  String get onboarding_step_global_lookup_title => 'Consultar fuera de Fushi';
   @override
   String get onboarding_global_lookup_windows_body =>
-      'En Windows, seleccione texto en otra aplicación y abra el diccionario sin volver a Fushi.';
+      'Seleccione texto en cualquier aplicación y abra el diccionario sin cambiar de ventana.';
   @override
   String get onboarding_global_lookup_windows_select_title =>
-      'Seleccione texto en cualquier aplicación';
-  @override
-  String get onboarding_global_lookup_windows_shortcut_title =>
-      'Pulse Ctrl+Alt+D';
+      'Seleccione texto';
   @override
   String get onboarding_global_lookup_windows_shortcut_body =>
-      'Es el atajo global predeterminado. Fushi captura la selección actual y abre una tarjeta de búsqueda junto al puntero.';
+      'Fushi toma la selección y abre una tarjeta de consulta junto al puntero.';
   @override
   String get onboarding_global_lookup_windows_customize_title =>
-      'Cambie el atajo si lo necesita';
+      'Cambie el atajo';
   @override
   String get onboarding_global_lookup_windows_customize_body =>
-      'Abra Ajustes → Atajos → Global (fuera de la aplicación) para asignar otra combinación de teclas.';
+      'Ajustes → Atajos → Global (fuera de la aplicación).';
   @override
   String get onboarding_global_lookup_windows_action =>
       'Abrir ajustes de atajos';
   @override
   String get onboarding_global_lookup_windows_action_desc =>
-      'Permite cambiar el atajo de búsqueda fuera de la aplicación. El predeterminado Ctrl+Alt+D ya funciona, así que es opcional.';
+      'Solo si quiere otra combinación de teclas.';
   @override
   String get onboarding_global_lookup_android_body =>
-      'En Android, el sistema pasa el texto seleccionado a Fushi mediante el menú de texto o el panel Compartir. No hay una tecla rápida global reasignable.';
+      'Android pasa el texto seleccionado a Fushi mediante el menú de texto o el panel Compartir.';
   @override
   String get onboarding_global_lookup_android_select_title =>
-      'Seleccione texto en otra aplicación';
+      'Seleccione texto';
   @override
   String get onboarding_global_lookup_android_open_title => 'Elija Fushi';
   @override
   String get onboarding_global_lookup_android_open_body =>
-      'Toque Fushi en el menú de selección de texto. Si no aparece, toque Compartir y elija Fushi en el panel de compartir.';
+      'Toque Fushi en el menú de selección, o toque Compartir y elija Fushi.';
   @override
   String get onboarding_global_lookup_android_continue_title =>
-      'Use la ventana independiente';
+      'Lea la ventana emergente';
   @override
   String get onboarding_global_lookup_android_continue_body =>
-      'La búsqueda se abre aparte de la aplicación de origen. Dentro puede tocar más palabras y, al cerrarla, vuelve donde estaba.';
+      'La consulta se abre encima de la otra aplicación. Ciérrela para volver.';
   @override
   String get onboarding_feature_manual_resources =>
-      'Importar diccionarios y audio manualmente';
+      'Importar mis propios recursos';
   @override
   String get onboarding_feature_manual_resources_hint =>
-      'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+      'Diccionarios, audiolibros y fuentes de pronunciación desde sus propios archivos';
   @override
   String get onboarding_step_manual_resources_title =>
-      'Prepare diccionarios y audio manualmente';
+      'Sus propios diccionarios y audio';
   @override
   String get onboarding_step_manual_resources_body =>
-      'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+      'Importe al menos un diccionario antes del tutorial de consulta. Los audiolibros y el audio de pronunciación son opcionales.';
   @override
   String get onboarding_manual_dictionary_action => 'Importar un diccionario';
   @override
   String get onboarding_manual_dictionary_action_desc =>
-      'Abra la gestión de diccionarios e importe al menos un archivo o paquete de diccionario compatible. Los tutoriales de búsqueda solo sirven cuando una consulta devuelve una definición.';
+      'Abre la gestión de diccionarios. Las consultas solo dan resultados cuando hay un diccionario instalado.';
   @override
   String get onboarding_manual_audiobook_action =>
-      'Importar un libro con audio de audiolibro';
+      'Importar un libro con audio';
   @override
   String get onboarding_manual_audiobook_action_desc =>
-      'Abra la importación de libros y elija el libro o el texto, los subtítulos alineados y uno o varios archivos de audio. El audio necesita subtítulos para que Fushi lo alinee con las frases.';
+      'Libro o texto, subtítulos alineados y archivos de audio. Los subtítulos son lo que permite a Fushi sincronizar el audio con las frases.';
   @override
   String get onboarding_manual_pronunciation_action =>
-      'Configurar el audio de pronunciación de palabras';
+      'Configurar el audio de pronunciación';
   @override
   String get onboarding_manual_pronunciation_action_desc =>
-      'Añada fuentes de pronunciación locales o en línea para las entradas del diccionario. Es independiente del audio de audiolibro asociado a un libro.';
+      'Fuentes locales o en línea para la pronunciación de palabras en las entradas del diccionario. Es independiente del audio de audiolibro.';
   @override
-  String get onboarding_lookup_verify_action =>
-      'Compruebe una palabra en su diccionario';
+  String get onboarding_step_first_anki_card_title => 'Su primera tarjeta';
   @override
-  String get onboarding_lookup_verify_action_desc =>
-      'Abra la búsqueda, escriba cualquier palabra que esté aprendiendo y continúe solo cuando el diccionario instalado devuelva una definición. El tutorial no fija ninguna palabra de ejemplo.';
+  String get onboarding_first_anki_lookup_title => 'Consulte una palabra';
   @override
-  String get onboarding_step_first_anki_card_title =>
-      'Cree su primera tarjeta de Anki';
-  @override
-  String get onboarding_step_first_anki_card_body =>
-      'Este paso solo aparece cuando esta guía ya se ha conectado a Anki y se ha elegido un mazo y un tipo de nota utilizables.';
-  @override
-  String get onboarding_first_anki_lookup_title =>
-      'Empiece por un resultado real del diccionario';
-  @override
-  String get onboarding_first_anki_lookup_body =>
-      'Busque una palabra que su diccionario instalado defina de verdad. No hay una palabra de ejemplo fija que pudiera faltar en su diccionario.';
-  @override
-  String get onboarding_first_anki_plus_title =>
-      'Toque el botón más de la entrada';
+  String get onboarding_first_anki_plus_title => 'Toque +';
   @override
   String get onboarding_first_anki_plus_body =>
-      'El botón más abre el creador de tarjetas con la palabra actual, su lectura, su significado, la frase, el audio y la imagen disponible.';
+      'El creador de tarjetas se abre con la palabra, la lectura, el significado, la frase, el audio y la imagen ya rellenados.';
   @override
   String get onboarding_first_anki_save_title => 'Revise y guarde';
   @override
   String get onboarding_first_anki_save_body =>
-      'Confirme el mazo de destino, el tipo de nota y la vista previa de los campos, y guarde. Abra Anki para comprobar que la primera tarjeta ha llegado.';
+      'Confirme el mazo y el tipo de nota, y guarde. Abra Anki para ver la tarjeta.';
   @override
   String get onboarding_first_anki_action =>
-      'Abrir la búsqueda y crear una tarjeta';
-  @override
-  String get onboarding_first_anki_action_desc =>
-      'Use una palabra con definición visible, toque su botón más, revise los campos y guárdela en el mazo de Anki conectado.';
-  @override
-  String get onboarding_step_click_lookup_body =>
-      'Primero compruebe una palabra que su diccionario instalado defina de verdad. Luego use esa misma palabra para practicar la búsqueda directa en libros, en el texto OCR del manga y en los subtítulos de vídeo.';
-  @override
-  String get onboarding_click_lookup_tap_body =>
-      'En el móvil, toque un carácter de la palabra comprobada; en el ordenador, haga clic izquierdo sobre él. Fushi empieza ahí y busca la palabra más larga que encaje.';
-  @override
-  String get onboarding_global_lookup_windows_select_body =>
-      'Seleccione la misma palabra de la que ya comprobó que hay definición en el diccionario y mantenga la selección activa.';
-  @override
-  String get onboarding_global_lookup_android_select_body =>
-      'Mantenga pulsada esa misma palabra comprobada y ajuste los controles de selección para cubrirla entera.';
+      'Abrir la consulta y crear una tarjeta';
   @override
   String get game_lookup_attached_title => 'In-game lookup';
   @override
@@ -35071,6 +35044,71 @@ class _StringsEs extends _StringsEn {
   @override
   String get game_session_japanese_locale_skipped_hint_not_32bit =>
       'El juego se inició sin configuración regional japonesa: el veredicto automático dice que la necesita, pero Locale Emulator solo admite juegos de 32 bits.';
+  @override
+  String get onboarding_feature_fonts => 'Fuentes personalizadas';
+  @override
+  String get onboarding_feature_fonts_hint =>
+      'Use sus propias fuentes para la interfaz, el texto del libro y el diccionario';
+  @override
+  String get onboarding_features_modules_title => 'Páginas de biblioteca';
+  @override
+  String get onboarding_features_modules_hint =>
+      'Las páginas sin marcar se ocultan de la barra de navegación. Puede cambiarlo cuando quiera en Ajustes → Apariencia.';
+  @override
+  String get onboarding_features_setup_title => 'Configurar a continuación';
+  @override
+  String get onboarding_features_setup_hint =>
+      'Solo los elementos marcados tienen un paso en esta guía.';
+  @override
+  String get onboarding_pack_intro =>
+      'Diccionarios de japonés, acento tonal, frecuencia de palabras y audio de pronunciación JA/EN en una sola descarga. ¿Estudia otro idioma? Omita esto e importe sus propios diccionarios.';
+  @override
+  String get onboarding_global_lookup_windows_select_desc =>
+      'Seleccione una palabra en cualquier aplicación y déjela marcada.';
+  @override
+  String get onboarding_global_lookup_android_select_desc =>
+      'Mantenga pulsada una palabra en otra aplicación y ajuste los controles para cubrirla.';
+  @override
+  String get onboarding_global_lookup_windows_shortcut_press =>
+      'Pulse el atajo';
+  @override
+  String get onboarding_first_anki_card_intro =>
+      'Anki está conectado. Cree ahora una tarjeta real para comprobar que todo el recorrido funciona.';
+  @override
+  String get onboarding_action_start => 'Empezar a usar Fushi';
+  @override
+  String get onboarding_actions_more => 'Otras formas';
+  @override
+  String get onboarding_finish_summary_modules =>
+      'Páginas de biblioteca visibles';
+  @override
+  String get onboarding_finish_summary_setup => 'Configuración guiada';
+  @override
+  String get onboarding_finish_summary_none => 'Ninguna';
+  @override
+  String get onboarding_anki_status_pending => 'Sin probar todavía';
+  @override
+  String get onboarding_click_lookup_intro =>
+      'Toque cualquier palabra de un libro, un manga o un subtítulo para ver su definición. Pruébelo con la frase de práctica de abajo.';
+  @override
+  String get onboarding_click_lookup_tap_desc =>
+      'Toque un carácter (o haga clic con el botón izquierdo); Fushi toma la palabra más larga que empieza ahí. La frase se abre en la página de consulta.';
+  @override
+  String get onboarding_sample_sentence_label => 'Frase de práctica';
+  @override
+  String get onboarding_sample_sentence_hint =>
+      'Toque para abrirla en la página de consulta y luego toque cualquier palabra.';
+  @override
+  String get onboarding_lookup_practice_action => 'Practicar con esta frase';
+  @override
+  String get onboarding_lookup_practice_desc =>
+      'Abre la página de consulta con la frase cargada. Toque allí una palabra para ver su definición; si no aparece nada, aún no tiene diccionarios instalados.';
+  @override
+  String get onboarding_first_anki_lookup_desc =>
+      'Abra la frase de práctica y toque una palabra.';
+  @override
+  String get onboarding_first_anki_action_desc =>
+      'Abre la frase de práctica en la página de consulta. Toque una palabra, toque +, revise los campos y guarde.';
 }
 
 // Path: <root>
@@ -43065,44 +43103,42 @@ class _StringsFr extends _StringsEn {
   @override
   String get onboarding_title => 'Premiers pas';
   @override
-  String get onboarding_welcome_headline => 'Bienvenue !';
+  String get onboarding_welcome_headline => 'Bienvenue dans Fushi';
   @override
-  String get onboarding_feature_anki => 'Flashcards Anki';
+  String get onboarding_feature_anki => 'Cartes Anki';
   @override
   String get onboarding_feature_anki_hint =>
-      'Connectez AnkiConnect ou AnkiDroid pour créer des flashcards';
+      'Transformez vos recherches en flashcards en un geste';
   @override
   String get onboarding_feature_backup => 'Sauvegarde et synchronisation';
   @override
   String get onboarding_feature_backup_hint =>
-      'Sauvegardez vos données sur Google Drive, WebDAV et d\'autres supports';
+      'Google Drive, WebDAV ou un fichier local';
   @override
   String get onboarding_feature_interconnect => 'Interconnexion d\'appareils';
   @override
   String get onboarding_feature_interconnect_hint =>
-      'Appariez des appareils sur votre réseau local pour partager bibliothèques et progression';
+      'Partagez bibliothèques et progression entre vos appareils du réseau local';
   @override
   String get onboarding_step_dictionary_action =>
       'Ouvrir le gestionnaire de dictionnaires';
   @override
   String get onboarding_step_anki_title => 'Configurer Anki';
   @override
-  String get onboarding_step_anki_action =>
-      'Ouvrir les paramètres de création de cartes';
+  String get onboarding_step_anki_action => 'Paramètres de création de cartes';
   @override
-  String get onboarding_step_backup_title => 'Configurer la sauvegarde';
+  String get onboarding_step_backup_title => 'Sauvegarde';
   @override
   String get onboarding_step_backup_body =>
-      'Choisissez un support de sauvegarde et connectez-vous, ou exportez un fichier de sauvegarde local.';
+      'Gardez votre bibliothèque en sécurité quand vous changez ou perdez un appareil.';
   @override
   String get onboarding_step_backup_action =>
       'Ouvrir les paramètres de sauvegarde';
   @override
-  String get onboarding_step_interconnect_title =>
-      'Configurer l\'interconnexion';
+  String get onboarding_step_interconnect_title => 'Interconnexion';
   @override
   String get onboarding_step_interconnect_body =>
-      'Activez l\'interconnexion et appariez d\'autres appareils sur votre réseau local pour partager bibliothèques, progression et recherches.';
+      'Appariez des appareils de votre réseau local pour partager une même bibliothèque et garder la progression synchronisée.';
   @override
   String get onboarding_step_interconnect_action =>
       'Ouvrir les paramètres d\'interconnexion';
@@ -43110,62 +43146,50 @@ class _StringsFr extends _StringsEn {
   String get onboarding_finish_title => 'Tout est prêt';
   @override
   String get onboarding_finish_body =>
-      'Vous pouvez revenir à ce guide à tout moment depuis Paramètres → Système.';
+      'Vous pouvez rouvrir ce guide à tout moment depuis Paramètres → Système.';
   @override
   String get onboarding_action_next => 'Suivant';
-  @override
-  String get onboarding_action_finish => 'Terminer';
   @override
   String get onboarding_action_skip => 'Passer pour le moment';
   @override
   String get onboarding_reopen => 'Guide de démarrage';
   @override
   String get onboarding_welcome_body =>
-      'Définissez d\'abord votre langue d\'interface et votre thème — les étapes suivantes vous guideront pour le reste.';
+      'Choisissez votre langue d\'interface et votre thème. Les étapes suivantes installent le reste.';
   @override
-  String get onboarding_features_title => 'Choisissez ce que vous utilisez';
+  String get onboarding_features_title => 'Qu\'allez-vous utiliser ?';
   @override
-  String get onboarding_features_modules_label =>
-      'Onglets de bibliothèque (les non cochés sont masqués dans la barre de navigation ; modifiable à tout moment dans les Paramètres)';
-  @override
-  String get onboarding_features_setup_label => 'Quoi configurer ensuite';
-  @override
-  String get onboarding_feature_manga => 'Bibliothèque manga';
+  String get onboarding_feature_manga => 'Manga';
   @override
   String get onboarding_feature_manga_hint =>
       'Lire des manga avec recherche par OCR';
   @override
-  String get onboarding_feature_video => 'Vidéothèque';
+  String get onboarding_feature_video => 'Vidéo';
   @override
   String get onboarding_feature_video_hint =>
-      'Regarder des vidéos avec recherche et création de cartes sur les sous-titres';
+      'Recherche dans les sous-titres et création de cartes';
   @override
-  String get onboarding_feature_games => 'Ludothèque galgame';
+  String get onboarding_feature_games => 'Galgames';
   @override
   String get onboarding_feature_games_hint =>
-      'Lancer des galgames avec recherche par text-hook (Windows uniquement)';
+      'Recherche par text-hook pendant la partie (Windows uniquement)';
   @override
-  String get onboarding_feature_pack =>
-      'Pack recommandé (dictionnaires + audio)';
+  String get onboarding_feature_pack => 'Pack recommandé';
   @override
   String get onboarding_feature_pack_hint =>
-      'Un seul téléchargement installe les dictionnaires japonais et l\'audio de prononciation JA/EN';
+      'Dictionnaires japonais et audio de prononciation JA/EN en un seul téléchargement';
   @override
-  String get onboarding_step_pack_title => 'Installer le pack recommandé';
-  @override
-  String get onboarding_step_pack_body =>
-      'Le pack recommandé comprend des dictionnaires de mots, d\'accents tonaux et de fréquence japonais, plus des bases de données audio de prononciation japonais/anglais. Téléchargez et importez-le ici ; l\'importation remplace les données locales, faites-le sur une installation neuve. Vous apprenez une autre langue ? Utilisez le gestionnaire de dictionnaires pour importer les vôtres.';
+  String get onboarding_step_pack_title => 'Pack recommandé';
   @override
   String get onboarding_step_pack_download_action => 'Télécharger et importer';
   @override
   String get onboarding_step_pack_import_existing_action =>
-      'Importer un pack déjà téléchargé';
+      'Importer le pack téléchargé';
   @override
-  String get onboarding_step_pack_pick_action =>
-      'Choisir un fichier de pack local';
+  String get onboarding_step_pack_pick_action => 'Choisir un fichier de pack';
   @override
   String get onboarding_pack_downloading =>
-      'Téléchargement… annulez à tout moment, reprendra la prochaine fois';
+      'Téléchargement… annulez à tout moment et reprenez plus tard';
   @override
   String onboarding_pack_download_failed({required Object message}) =>
       'Échec du téléchargement : ${message}';
@@ -43173,14 +43197,15 @@ class _StringsFr extends _StringsEn {
   String get onboarding_step_extension_title => 'Extension navigateur';
   @override
   String get onboarding_step_extension_body =>
-      'Installez l\'extension navigateur compagnon pour rechercher des mots sur n\'importe quelle page web.';
+      'Cherchez des mots sur n\'importe quelle page web avec l\'extension compagnon.';
   @override
-  String get onboarding_step_extension_action => 'Ouvrir le guide d\'extension';
+  String get onboarding_step_extension_action =>
+      'Ouvrir le guide d\'installation';
   @override
-  String get onboarding_step_fonts_title => 'Polices de lecture';
+  String get onboarding_step_fonts_title => 'Polices';
   @override
   String get onboarding_step_fonts_body =>
-      'Importez des polices personnalisées et choisissez lesquelles utiliser pour l\'interface, le texte des livres et le dictionnaire.';
+      'Utilisez vos propres polices pour l\'interface, le texte des livres et le dictionnaire.';
   @override
   String get settings_section_modules => 'Modules de fonctionnalités';
   @override
@@ -43424,10 +43449,10 @@ class _StringsFr extends _StringsEn {
   @override
   String get module_extension_label => 'Extension navigateur';
   @override
-  String get onboarding_feature_books => 'Bibliothèque de romans';
+  String get onboarding_feature_books => 'Romans';
   @override
   String get onboarding_feature_books_hint =>
-      'Lire des romans EPUB avec recherche dans le dictionnaire et synchronisation de livres audio';
+      'Lecture EPUB avec recherche et synchronisation des livres audio';
   @override
   String get onboarding_feature_extension_hint =>
       'Rechercher des mots sur n\'importe quelle page web (ordinateur uniquement)';
@@ -43855,13 +43880,13 @@ class _StringsFr extends _StringsEn {
       'Le jeu a été lancé sous une locale japonaise (CP932). Si son texte est illisible ou si une erreur de script apparaît, réglez la locale japonaise de ce jeu sur Jamais.';
   @override
   String get onboarding_anki_intro_body =>
-      'Anki est une application gratuite de flashcards à répétition espacée : les nouveaux mots deviennent des cartes, et les révisions sont planifiées selon la courbe d\'oubli. Après une recherche, Fushi peut transformer le mot en carte Anki en un seul geste, avec signification, phrase, audio et capture d\'écran.';
+      'Anki est une application gratuite de flashcards à répétition espacée. Après une recherche, Fushi transforme le mot en carte avec définition, phrase, audio et capture d\'écran, en un seul geste.';
   @override
   String get onboarding_anki_setup_desktop_hint =>
-      'Installez l\'application Anki bureau, puis ajoutez l\'extension AnkiConnect : dans Anki, ouvrez Outils - Extensions - Obtenir des extensions et entrez le code 2055492159. Gardez Anki ouvert pendant la création de cartes.';
+      'Installez Anki, ajoutez l\'extension AnkiConnect (en un geste ci-dessous, ou avec le code 2055492159), et gardez Anki ouvert pendant la création de cartes.';
   @override
   String get onboarding_anki_setup_ios_hint =>
-      'Avec AnkiMobile installé, l\'ajout de cartes fonctionne directement. Pour toutes les fonctionnalités, connectez-vous à Anki sur un ordinateur du même réseau via AnkiConnect.';
+      'Avec AnkiMobile installé, les cartes sont ajoutées directement. Pour toutes les fonctionnalités, connectez-vous via AnkiConnect à Anki sur un ordinateur du même réseau.';
   @override
   String get onboarding_anki_backend_label => 'Connexion';
   @override
@@ -43875,22 +43900,22 @@ class _StringsFr extends _StringsEn {
   String get onboarding_anki_get_ankidroid_action => 'Obtenir AnkiDroid';
   @override
   String get onboarding_anki_mobile_ankiconnect_title =>
-      'Avancé : utiliser AnkiConnect sur cet appareil';
+      'Avancé : utiliser AnkiConnect depuis cet appareil';
   @override
   String get onboarding_anki_mobile_ankiconnect_hint =>
-      'Cet appareil peut aussi créer des cartes dans Anki sur un ordinateur du même réseau : activez AnkiConnect dans les paramètres de création de cartes et entrez l\'adresse de l\'ordinateur.';
+      'Créez des cartes dans Anki sur un ordinateur du même réseau : activez AnkiConnect dans les paramètres de création de cartes et entrez l\'adresse de l\'ordinateur.';
   @override
   String get onboarding_anki_setup_android_hint =>
-      'Installez AnkiDroid et ouvrez-le une fois pour terminer sa configuration initiale. De retour dans Fushi, appuyez sur Autoriser dans la boîte de dialogue de permission qui apparaît avec votre première carte — aucun paramètre AnkiDroid à changer.';
+      'Installez AnkiDroid et ouvrez-le une fois. À votre première carte, touchez Autoriser dans la boîte de dialogue de permission — rien d\'autre à configurer.';
   @override
   String get onboarding_anki_install_addon_action =>
       'Installer l\'extension AnkiConnect';
   @override
   String get onboarding_anki_addon_installed =>
-      'AnkiConnect est installé. Démarrez (ou redémarrez) Anki, puis appuyez sur Tester la connexion.';
+      'AnkiConnect installé. Démarrez ou redémarrez Anki, puis testez la connexion.';
   @override
   String get onboarding_anki_addon_no_anki =>
-      'Dossier de données Anki introuvable. Installez Anki et ouvrez-le une fois, puis réessayez.';
+      'Dossier de données Anki introuvable. Installez Anki, ouvrez-le une fois, puis réessayez.';
   @override
   String onboarding_anki_addon_failed({required Object message}) =>
       'Installation échouée : ${message}';
@@ -44416,58 +44441,55 @@ class _StringsFr extends _StringsEn {
   String get onboarding_action_badge_optional => 'Facultatif';
   @override
   String get onboarding_pack_action_download_desc =>
-      'Télécharge tout le pack en arrière-plan, puis l’importe. Annulable à tout moment ; la reprise repart du point d’arrêt.';
+      'Télécharge depuis plusieurs sources à la fois en arrière-plan, puis importe. Annulable à tout moment ; la reprise repart du point d\'arrêt.';
   @override
   String get onboarding_pack_action_import_existing_desc =>
-      'Le pack est déjà téléchargé ; ceci l’importe. Choisissez « Fusionner » dans la boîte de confirmation et vos données existantes ne seront pas touchées.';
+      'Le pack est déjà sur le disque. Choisissez « Fusionner » dans la boîte de confirmation pour conserver vos données existantes.';
   @override
   String get onboarding_pack_action_pick_desc =>
-      'Vous avez déjà récupéré le zip du pack ailleurs ? Importez-le depuis le disque et sautez complètement le téléchargement.';
+      'Vous avez déjà le zip du pack ? Importez-le depuis le disque et sautez le téléchargement.';
   @override
   String get onboarding_pack_action_website =>
-      'Ouvrir la page de téléchargement du site';
+      'Ouvrir la page de téléchargement';
   @override
   String get onboarding_pack_action_website_desc =>
-      'Ouvre le site officiel dans votre navigateur. Sa section pack liste des liens par morceaux que vous pouvez donner à un gestionnaire de téléchargement ; revenez ensuite ici et utilisez « Choisir un fichier de pack local » pour importer ce que vous avez obtenu.';
+      'Liens par morceaux pour gestionnaires de téléchargement. Revenez ensuite et utilisez « Choisir un fichier de pack ».';
   @override
   String get onboarding_pack_action_dictionary_desc =>
-      'Vous apprenez une autre langue que le japonais ? Passez le pack et importez ici les dictionnaires de votre langue.';
+      'Vous apprenez une autre langue ? Importez plutôt ici les dictionnaires correspondants.';
   @override
   String get onboarding_pack_action_audio_desc =>
-      'D’où viennent les audios de prononciation. Le pack couvre déjà le japonais et l’anglais ; ajoutez ici des sources en ligne pour les autres langues.';
+      'Ajoutez des sources de prononciation en ligne pour les langues que le pack ne couvre pas.';
   @override
   String get onboarding_anki_action_test_desc =>
-      'Vérifie que Fushi joint bien Anki et charge vos paquets et types de notes. Rien n’est encore créé.';
+      'Vérifie que Fushi joint bien Anki et charge vos paquets et types de notes. Ne crée rien.';
   @override
   String get onboarding_anki_action_refresh_desc =>
-      'Recharge les paquets et types de notes depuis Anki. À utiliser après avoir créé un paquet dans Anki.';
+      'Recharge les paquets et les types de notes. À utiliser après avoir créé un paquet dans Anki.';
   @override
   String get onboarding_anki_action_get_ankidroid_desc =>
-      'Ouvre la page du store d’AnkiDroid. Fushi y écrit ses cartes, il doit donc être installé d’abord.';
+      'Ouvre la page du store. Fushi écrit les cartes dans AnkiDroid, il doit donc être installé d\'abord.';
   @override
   String get onboarding_anki_action_get_anki_desc =>
-      'Ouvre la page de téléchargement d’Anki. Installez Anki et laissez-le ouvert pendant la création de cartes.';
+      'Ouvre la page de téléchargement d\'Anki. Laissez Anki ouvert pendant la création de cartes.';
   @override
   String get onboarding_anki_action_install_addon_desc =>
-      'Décompresse pour vous le module AnkiConnect fourni dans Anki ; c’est lui qui permet à Fushi de lui parler. Redémarrez Anki ensuite.';
+      'Décompresse le module AnkiConnect fourni dans Anki. Redémarrez Anki ensuite.';
   @override
   String get onboarding_step_anki_action_desc =>
-      'Modèle de carte, correspondance des champs, captures et audio : les détails de l’apparence d’une carte créée. Le paquet et le type de note ci-dessus suffisent pour commencer, n’ouvrez ceci que si vous voulez changer la façon dont les cartes sont fabriquées.';
+      'Modèle, correspondance des champs, captures et audio. Le paquet et le type de note ci-dessus suffisent pour commencer.';
   @override
   String get onboarding_step_backup_action_desc =>
-      'Choisissez un service de sauvegarde et connectez-vous, pour que votre bibliothèque survive à la perte ou au remplacement d’un appareil.';
+      'Choisissez un support et connectez-vous, ou exportez un fichier de sauvegarde local.';
   @override
   String get onboarding_step_interconnect_action_desc =>
-      'Associe cet appareil à vos autres appareils pour partager une même bibliothèque et garder la progression synchronisée.';
+      'Activez l\'interconnexion et appariez cet appareil avec vos autres appareils.';
   @override
   String get onboarding_step_extension_action_desc =>
-      'Montre comment installer l’extension de navigateur et la connecter à Fushi, pour pouvoir aussi chercher des mots sur les pages web.';
+      'Montre comment installer l\'extension et la connecter à Fushi.';
   @override
   String get onboarding_step_fonts_action_desc =>
-      'Ajoutez vos propres fichiers de police et choisissez celle utilisée par chaque langue.';
-  @override
-  String get onboarding_pack_sources_hint =>
-      'Téléchargé en morceaux parallèles depuis GitHub, le site officiel et un miroir de secours à la fois, chaque morceau vérifié par somme de contrôle. Fushi mesure les sources au fil de l’eau et donne plus de morceaux à la plus rapide du moment ; il n’y a donc rien à choisir ici.';
+      'Importez des fichiers de police et choisissez-en une par langue.';
   @override
   String get video_setting_hdr_output => 'Sortie HDR / 10 bits';
   @override
@@ -44590,142 +44612,105 @@ class _StringsFr extends _StringsEn {
   String web_video_mine_switch_builtin({required Object count}) =>
       'Passer en mode intégré pour créer ${count} cartes en attente';
   @override
-  String get onboarding_step_click_lookup_title =>
-      'Toucher pour chercher un mot';
+  String get onboarding_step_click_lookup_title => 'Toucher pour chercher';
   @override
-  String get onboarding_click_lookup_tap_title => 'Touchez le texte';
+  String get onboarding_click_lookup_tap_title => 'Touchez un mot';
   @override
-  String get onboarding_click_lookup_nested_title =>
-      'Continuez dans la fenêtre contextuelle';
+  String get onboarding_click_lookup_nested_title => 'Continuez à explorer';
   @override
   String get onboarding_click_lookup_nested_body =>
-      'Touchez un autre mot dans une définition pour ouvrir un niveau de recherche supplémentaire. Revenez en arrière ou touchez à l\'extérieur pour refermer un niveau.';
+      'Touchez un mot dans une définition pour descendre d\'un niveau. Revenez en arrière ou touchez à l\'extérieur pour refermer un niveau.';
   @override
-  String get onboarding_click_lookup_mine_title =>
-      'Transformez le résultat en carte';
+  String get onboarding_click_lookup_mine_title => 'Créez une carte';
   @override
   String get onboarding_click_lookup_mine_body =>
-      'Si la définition vous convient, touchez + pour envoyer le mot, la phrase, l\'audio et l\'image au créateur de cartes.';
+      'Touchez + sur l\'entrée pour envoyer le mot, la phrase, l\'audio et l\'image au créateur de cartes.';
   @override
-  String get onboarding_step_global_lookup_title =>
-      'Rechercher du texte hors de Fushi';
+  String get onboarding_step_global_lookup_title => 'Chercher hors de Fushi';
   @override
   String get onboarding_global_lookup_windows_body =>
-      'Sous Windows, sélectionnez du texte dans une autre application et appelez le dictionnaire sans revenir à Fushi.';
+      'Sélectionnez du texte dans n\'importe quelle application et appelez le dictionnaire sans changer de fenêtre.';
   @override
   String get onboarding_global_lookup_windows_select_title =>
-      'Sélectionnez du texte dans n\'importe quelle application';
-  @override
-  String get onboarding_global_lookup_windows_shortcut_title =>
-      'Appuyez sur Ctrl+Alt+D';
+      'Sélectionnez du texte';
   @override
   String get onboarding_global_lookup_windows_shortcut_body =>
-      'C\'est le raccourci global par défaut. Fushi récupère la sélection en cours et ouvre une carte de recherche près du pointeur.';
+      'Fushi récupère la sélection et ouvre une carte de recherche près du pointeur.';
   @override
   String get onboarding_global_lookup_windows_customize_title =>
-      'Changez le raccourci si besoin';
+      'Changez le raccourci';
   @override
   String get onboarding_global_lookup_windows_customize_body =>
-      'Ouvrez Paramètres → Raccourcis → Global (hors application) pour attribuer une autre combinaison de touches.';
+      'Paramètres → Raccourcis → Global (hors application).';
   @override
   String get onboarding_global_lookup_windows_action =>
       'Ouvrir les paramètres de raccourcis';
   @override
   String get onboarding_global_lookup_windows_action_desc =>
-      'Permet de changer le raccourci de recherche hors application. Le raccourci par défaut Ctrl+Alt+D fonctionne déjà, c\'est donc facultatif.';
+      'Uniquement si vous voulez une autre combinaison de touches.';
   @override
   String get onboarding_global_lookup_android_body =>
-      'Sous Android, le système transmet le texte sélectionné à Fushi via le menu de texte ou le menu Partager. Il n\'y a pas de raccourci global personnalisable.';
+      'Android transmet le texte sélectionné à Fushi via le menu de texte ou le menu Partager.';
   @override
   String get onboarding_global_lookup_android_select_title =>
-      'Sélectionnez du texte dans une autre application';
+      'Sélectionnez du texte';
   @override
   String get onboarding_global_lookup_android_open_title => 'Choisissez Fushi';
   @override
   String get onboarding_global_lookup_android_open_body =>
-      'Touchez Fushi dans le menu de sélection de texte. S\'il n\'apparaît pas, touchez Partager puis choisissez Fushi dans le menu de partage.';
+      'Touchez Fushi dans le menu de sélection, ou touchez Partager et choisissez Fushi.';
   @override
   String get onboarding_global_lookup_android_continue_title =>
-      'Utilisez la fenêtre indépendante';
+      'Lisez la fenêtre';
   @override
   String get onboarding_global_lookup_android_continue_body =>
-      'La recherche s\'ouvre séparément de l\'application d\'origine. Vous pouvez y toucher d\'autres mots, puis la fermer pour revenir où vous en étiez.';
+      'La recherche s\'ouvre par-dessus l\'autre application. Fermez-la pour revenir.';
   @override
   String get onboarding_feature_manual_resources =>
-      'Importer les dictionnaires et l\'audio manuellement';
+      'Importer mes propres ressources';
   @override
   String get onboarding_feature_manual_resources_hint =>
-      'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+      'Dictionnaires, livres audio et sources de prononciation depuis vos propres fichiers';
   @override
   String get onboarding_step_manual_resources_title =>
-      'Préparer les dictionnaires et l\'audio manuellement';
+      'Vos propres dictionnaires et audios';
   @override
   String get onboarding_step_manual_resources_body =>
-      'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+      'Importez au moins un dictionnaire avant le tutoriel de recherche. Les livres audio et l\'audio de prononciation sont facultatifs.';
   @override
   String get onboarding_manual_dictionary_action => 'Importer un dictionnaire';
   @override
   String get onboarding_manual_dictionary_action_desc =>
-      'Ouvrez le gestionnaire de dictionnaires et importez au moins un fichier ou une archive de dictionnaire pris en charge. Les tutoriels de recherche ne servent que si une requête renvoie une définition.';
+      'Ouvre le gestionnaire de dictionnaires. Les recherches ne renvoient de résultats qu\'une fois un dictionnaire installé.';
   @override
   String get onboarding_manual_audiobook_action =>
-      'Importer un livre avec son livre audio';
+      'Importer un livre avec audio';
   @override
   String get onboarding_manual_audiobook_action_desc =>
-      'Ouvrez l\'import de livres et choisissez le livre ou le texte, les sous-titres alignés et un ou plusieurs fichiers audio. Sans sous-titres, Fushi ne peut pas aligner l\'audio sur les phrases.';
+      'Livre ou texte, sous-titres alignés et fichiers audio. Ce sont les sous-titres qui permettent à Fushi de synchroniser l\'audio sur les phrases.';
   @override
   String get onboarding_manual_pronunciation_action =>
-      'Configurer l\'audio de prononciation des mots';
+      'Configurer l\'audio de prononciation';
   @override
   String get onboarding_manual_pronunciation_action_desc =>
-      'Ajoutez les sources de prononciation locales ou en ligne utilisées par les entrées du dictionnaire. C\'est distinct de l\'audio d\'un livre audio rattaché à un livre.';
+      'Sources locales ou en ligne pour la prononciation des mots dans les entrées de dictionnaire. Distinct de l\'audio des livres audio.';
   @override
-  String get onboarding_lookup_verify_action =>
-      'Vérifier un mot dans votre dictionnaire';
+  String get onboarding_step_first_anki_card_title => 'Votre première carte';
   @override
-  String get onboarding_lookup_verify_action_desc =>
-      'Ouvrez la recherche, saisissez n\'importe quel mot que vous apprenez et ne continuez qu\'une fois que le dictionnaire installé renvoie une définition. Le tutoriel n\'impose aucun mot d\'exemple.';
+  String get onboarding_first_anki_lookup_title => 'Cherchez un mot';
   @override
-  String get onboarding_step_first_anki_card_title =>
-      'Créez votre première carte Anki';
-  @override
-  String get onboarding_step_first_anki_card_body =>
-      'Cette étape n\'apparaît que si cette configuration s\'est connectée à Anki et qu\'un paquet et un type de note utilisables ont été choisis.';
-  @override
-  String get onboarding_first_anki_lookup_title =>
-      'Partez d\'un vrai résultat de dictionnaire';
-  @override
-  String get onboarding_first_anki_lookup_body =>
-      'Recherchez un mot que votre dictionnaire installé définit vraiment. Aucun mot d\'exemple figé, susceptible d\'être absent de votre dictionnaire, n\'est imposé.';
-  @override
-  String get onboarding_first_anki_plus_title =>
-      'Touchez le bouton plus de l\'entrée';
+  String get onboarding_first_anki_plus_title => 'Touchez +';
   @override
   String get onboarding_first_anki_plus_body =>
-      'Le bouton plus ouvre le créateur de cartes avec le mot en cours, sa lecture, sa définition, la phrase, l\'audio et l\'image disponible.';
+      'Le créateur de cartes s\'ouvre avec le mot, la lecture, la définition, la phrase, l\'audio et l\'image déjà remplis.';
   @override
-  String get onboarding_first_anki_save_title => 'Vérifiez puis enregistrez';
+  String get onboarding_first_anki_save_title => 'Vérifiez et enregistrez';
   @override
   String get onboarding_first_anki_save_body =>
-      'Confirmez le paquet de destination, le type de note et l\'aperçu des champs, puis enregistrez. Ouvrez Anki pour vérifier que la première carte est bien arrivée.';
+      'Confirmez le paquet et le type de note, puis enregistrez. Ouvrez Anki pour voir la carte.';
   @override
   String get onboarding_first_anki_action =>
       'Ouvrir la recherche et créer une carte';
-  @override
-  String get onboarding_first_anki_action_desc =>
-      'Prenez un mot dont la définition s\'affiche, touchez son bouton plus, vérifiez les champs et enregistrez-le dans le paquet Anki connecté.';
-  @override
-  String get onboarding_step_click_lookup_body =>
-      'Vérifiez d\'abord un mot que votre dictionnaire installé définit vraiment. Utilisez ensuite ce même mot pour vous entraîner à la recherche directe dans les livres, le texte OCR des mangas et les sous-titres des vidéos.';
-  @override
-  String get onboarding_click_lookup_tap_body =>
-      'Sur téléphone, touchez un caractère du mot vérifié ; sur ordinateur, faites un clic gauche dessus. Fushi part de là et retient le mot le plus long.';
-  @override
-  String get onboarding_global_lookup_windows_select_body =>
-      'Sélectionnez le même mot dont vous avez déjà vérifié la définition, et laissez la sélection active.';
-  @override
-  String get onboarding_global_lookup_android_select_body =>
-      'Appuyez longuement sur ce même mot vérifié, puis ajustez les poignées de sélection pour le couvrir entièrement.';
   @override
   String get game_lookup_attached_title => 'In-game lookup';
   @override
@@ -45010,6 +44995,72 @@ class _StringsFr extends _StringsEn {
   @override
   String get game_session_japanese_locale_skipped_hint_not_32bit =>
       'Le jeu a été lancé sans paramètres régionaux japonais : le verdict automatique les juge nécessaires, mais Locale Emulator ne prend en charge que les jeux 32 bits.';
+  @override
+  String get onboarding_feature_fonts => 'Polices personnalisées';
+  @override
+  String get onboarding_feature_fonts_hint =>
+      'Utilisez vos propres polices pour l\'interface, le texte des livres et le dictionnaire';
+  @override
+  String get onboarding_features_modules_title => 'Pages de bibliothèque';
+  @override
+  String get onboarding_features_modules_hint =>
+      'Les pages non cochées sont masquées de la barre de navigation. Modifiable à tout moment dans Paramètres → Apparence.';
+  @override
+  String get onboarding_features_setup_title => 'À configurer ensuite';
+  @override
+  String get onboarding_features_setup_hint =>
+      'Seuls les éléments cochés auront une étape dans ce guide.';
+  @override
+  String get onboarding_pack_intro =>
+      'Dictionnaires japonais, accent de hauteur, fréquence des mots et audio de prononciation JA/EN en un seul téléchargement. Vous apprenez une autre langue ? Passez cette étape et importez vos propres dictionnaires.';
+  @override
+  String get onboarding_global_lookup_windows_select_desc =>
+      'Sélectionnez un mot dans n\'importe quelle application et laissez la sélection active.';
+  @override
+  String get onboarding_global_lookup_android_select_desc =>
+      'Appuyez longuement sur un mot dans une autre application et ajustez les poignées pour le couvrir.';
+  @override
+  String get onboarding_global_lookup_windows_shortcut_press =>
+      'Appuyez sur le raccourci';
+  @override
+  String get onboarding_first_anki_card_intro =>
+      'Anki est connecté. Créez maintenant une vraie carte pour vérifier que tout le parcours fonctionne.';
+  @override
+  String get onboarding_action_start => 'Commencer à utiliser Fushi';
+  @override
+  String get onboarding_actions_more => 'Autres méthodes';
+  @override
+  String get onboarding_finish_summary_modules =>
+      'Pages de bibliothèque affichées';
+  @override
+  String get onboarding_finish_summary_setup => 'Configuration guidée';
+  @override
+  String get onboarding_finish_summary_none => 'Aucune';
+  @override
+  String get onboarding_anki_status_pending => 'Pas encore testée';
+  @override
+  String get onboarding_click_lookup_intro =>
+      'Touchez n\'importe quel mot dans un livre, un manga ou un sous-titre pour voir sa définition. Essayez avec la phrase d\'entraînement ci-dessous.';
+  @override
+  String get onboarding_click_lookup_tap_desc =>
+      'Touchez un caractère (ou faites un clic gauche) ; Fushi retient le mot le plus long qui commence là. La phrase s\'ouvre dans la page de recherche.';
+  @override
+  String get onboarding_sample_sentence_label => 'Phrase d\'entraînement';
+  @override
+  String get onboarding_sample_sentence_hint =>
+      'Touchez pour l\'ouvrir dans la page de recherche, puis touchez n\'importe quel mot.';
+  @override
+  String get onboarding_lookup_practice_action =>
+      'S\'entraîner avec cette phrase';
+  @override
+  String get onboarding_lookup_practice_desc =>
+      'Ouvre la page de recherche avec la phrase chargée. Touchez-y un mot pour voir sa définition ; si rien ne s\'affiche, vos dictionnaires ne sont pas encore installés.';
+  @override
+  String get onboarding_first_anki_lookup_desc =>
+      'Ouvrez la phrase d\'entraînement et touchez un mot.';
+  @override
+  String get onboarding_first_anki_action_desc =>
+      'Ouvre la phrase d\'entraînement dans la page de recherche. Touchez un mot, touchez +, vérifiez les champs et enregistrez.';
 }
 
 // Path: <root>
@@ -52862,40 +52913,40 @@ class _StringsId extends _StringsEn {
   @override
   String get onboarding_title => 'Memulai';
   @override
-  String get onboarding_welcome_headline => 'Selamat datang!';
+  String get onboarding_welcome_headline => 'Selamat datang di Fushi';
   @override
-  String get onboarding_feature_anki => 'Kartu flash Anki';
+  String get onboarding_feature_anki => 'Kartu Anki';
   @override
   String get onboarding_feature_anki_hint =>
-      'Hubungkan AnkiConnect atau AnkiDroid untuk membuat kartu flash';
+      'Ubah hasil pencarian jadi kartu hafalan dengan satu ketukan';
   @override
   String get onboarding_feature_backup => 'Cadangan & sinkronisasi';
   @override
   String get onboarding_feature_backup_hint =>
-      'Cadangkan data Anda ke Google Drive, WebDAV, dan backend lainnya';
+      'Google Drive, WebDAV, atau berkas lokal';
   @override
   String get onboarding_feature_interconnect => 'Interkoneksi perangkat';
   @override
   String get onboarding_feature_interconnect_hint =>
-      'Pasangkan perangkat di LAN Anda untuk berbagi perpustakaan dan progres';
+      'Bagikan perpustakaan dan progres antarperangkat di LAN Anda';
   @override
   String get onboarding_step_dictionary_action => 'Buka manajer kamus';
   @override
   String get onboarding_step_anki_title => 'Siapkan Anki';
   @override
-  String get onboarding_step_anki_action => 'Buka pengaturan pembuatan kartu';
+  String get onboarding_step_anki_action => 'Pengaturan pembuatan kartu';
   @override
-  String get onboarding_step_backup_title => 'Siapkan cadangan';
+  String get onboarding_step_backup_title => 'Cadangan';
   @override
   String get onboarding_step_backup_body =>
-      'Pilih backend cadangan dan masuk, atau ekspor file cadangan lokal.';
+      'Jaga pustaka Anda tetap aman saat ganti atau kehilangan perangkat.';
   @override
   String get onboarding_step_backup_action => 'Buka pengaturan cadangan';
   @override
-  String get onboarding_step_interconnect_title => 'Siapkan interkoneksi';
+  String get onboarding_step_interconnect_title => 'Interkoneksi';
   @override
   String get onboarding_step_interconnect_body =>
-      'Aktifkan interkoneksi dan pasangkan dengan perangkat lain di LAN Anda untuk berbagi perpustakaan, progres, dan pencarian.';
+      'Pasangkan perangkat di LAN Anda untuk berbagi satu pustaka dan menyelaraskan progres.';
   @override
   String get onboarding_step_interconnect_action =>
       'Buka pengaturan interkoneksi';
@@ -52903,60 +52954,49 @@ class _StringsId extends _StringsEn {
   String get onboarding_finish_title => 'Semuanya siap';
   @override
   String get onboarding_finish_body =>
-      'Anda bisa membuka panduan ini kapan saja dari Pengaturan > Sistem.';
+      'Anda bisa membuka lagi panduan ini kapan saja dari Pengaturan → Sistem.';
   @override
   String get onboarding_action_next => 'Berikutnya';
-  @override
-  String get onboarding_action_finish => 'Selesai';
   @override
   String get onboarding_action_skip => 'Lewati untuk sekarang';
   @override
   String get onboarding_reopen => 'Panduan memulai';
   @override
   String get onboarding_welcome_body =>
-      'Atur bahasa antarmuka dan tema Anda terlebih dahulu — langkah-langkah berikutnya akan memandu Anda melalui sisanya.';
+      'Pilih bahasa antarmuka dan temanya. Beberapa langkah berikutnya menyiapkan sisanya.';
   @override
-  String get onboarding_features_title => 'Pilih yang Anda gunakan';
+  String get onboarding_features_title => 'Apa yang akan Anda gunakan?';
   @override
-  String get onboarding_features_modules_label =>
-      'Tab perpustakaan (yang tidak dicentang disembunyikan dari bilah navigasi; bisa diubah kapan saja di Pengaturan)';
-  @override
-  String get onboarding_features_setup_label =>
-      'Apa yang akan diatur selanjutnya';
-  @override
-  String get onboarding_feature_manga => 'Perpustakaan manga';
+  String get onboarding_feature_manga => 'Manga';
   @override
   String get onboarding_feature_manga_hint => 'Baca manga dengan pencarian OCR';
   @override
-  String get onboarding_feature_video => 'Perpustakaan video';
+  String get onboarding_feature_video => 'Video';
   @override
   String get onboarding_feature_video_hint =>
-      'Tonton video dengan pencarian subtitle dan pembuatan kartu';
+      'Pencarian pada takarir dan pembuatan kartu';
   @override
-  String get onboarding_feature_games => 'Perpustakaan galgame';
+  String get onboarding_feature_games => 'Galgame';
   @override
   String get onboarding_feature_games_hint =>
-      'Luncurkan galgame dengan pencarian text-hook (hanya Windows)';
+      'Pencarian text-hook sambil bermain (hanya Windows)';
   @override
-  String get onboarding_feature_pack => 'Paket rekomendasi (kamus + audio)';
+  String get onboarding_feature_pack => 'Paket rekomendasi';
   @override
   String get onboarding_feature_pack_hint =>
-      'Satu unduhan menyiapkan kamus Jepang plus audio pengucapan JA/EN';
+      'Kamus Jepang plus audio pengucapan JA/EN dalam satu unduhan';
   @override
-  String get onboarding_step_pack_title => 'Instal paket rekomendasi';
-  @override
-  String get onboarding_step_pack_body =>
-      'Paket rekomendasi membundel kamus kata, aksen nada, dan frekuensi Jepang plus database audio pengucapan Jepang/Inggris. Unduh dan impor di sini; mengimpor mengganti data lokal, jadi jalankan pada instalasi baru. Belajar bahasa lain? Gunakan manajer kamus untuk mengimpor kamus Anda sendiri.';
+  String get onboarding_step_pack_title => 'Paket rekomendasi';
   @override
   String get onboarding_step_pack_download_action => 'Unduh dan impor';
   @override
   String get onboarding_step_pack_import_existing_action =>
       'Impor paket yang sudah diunduh';
   @override
-  String get onboarding_step_pack_pick_action => 'Pilih file paket lokal';
+  String get onboarding_step_pack_pick_action => 'Pilih berkas paket';
   @override
   String get onboarding_pack_downloading =>
-      'Mengunduh... batalkan kapan saja, dilanjutkan lain kali';
+      'Mengunduh… batalkan kapan saja dan lanjutkan nanti';
   @override
   String onboarding_pack_download_failed({required Object message}) =>
       'Unduhan gagal: ${message}';
@@ -52964,14 +53004,14 @@ class _StringsId extends _StringsEn {
   String get onboarding_step_extension_title => 'Ekstensi browser';
   @override
   String get onboarding_step_extension_body =>
-      'Instal ekstensi browser pendamping untuk mencari kata di halaman web mana pun.';
+      'Cari kata di halaman web mana pun dengan ekstensi pendamping.';
   @override
-  String get onboarding_step_extension_action => 'Buka panduan ekstensi';
+  String get onboarding_step_extension_action => 'Buka panduan pemasangan';
   @override
-  String get onboarding_step_fonts_title => 'Font bacaan';
+  String get onboarding_step_fonts_title => 'Font';
   @override
   String get onboarding_step_fonts_body =>
-      'Impor font kustom dan pilih mana yang digunakan oleh UI, teks buku, dan kamus.';
+      'Pakai font Anda sendiri untuk antarmuka, teks buku, dan kamus.';
   @override
   String get settings_section_modules => 'Modul fitur';
   @override
@@ -53211,10 +53251,10 @@ class _StringsId extends _StringsEn {
   @override
   String get module_extension_label => 'Ekstensi browser';
   @override
-  String get onboarding_feature_books => 'Perpustakaan novel';
+  String get onboarding_feature_books => 'Novel';
   @override
   String get onboarding_feature_books_hint =>
-      'Baca novel EPUB dengan pencarian kamus dan sinkronisasi buku audio';
+      'Baca EPUB dengan pencarian kata dan sinkronisasi buku audio';
   @override
   String get onboarding_feature_extension_hint =>
       'Cari kata di halaman web mana pun (hanya desktop)';
@@ -53631,13 +53671,13 @@ class _StringsId extends _StringsEn {
       'Game dimulai dengan locale Jepang (CP932). Jika teksnya terlihat kacau atau muncul error skrip, atur locale Jepang game ini ke Tidak Pernah.';
   @override
   String get onboarding_anki_intro_body =>
-      'Anki adalah aplikasi kartu flash pengulangan berjarak gratis: kata-kata baru menjadi kartu, dan ulasan dijadwalkan mengikuti kurva kelupaan. Setelah pencarian, Fushi bisa mengubah kata menjadi kartu Anki dalam satu ketukan, dengan makna, kalimat, audio, dan tangkapan layar.';
+      'Anki adalah aplikasi kartu hafalan gratis dengan pengulangan berjarak. Setelah pencarian, Fushi mengubah kata itu menjadi kartu berisi arti, kalimat, audio, dan tangkapan layar dalam satu ketukan.';
   @override
   String get onboarding_anki_setup_desktop_hint =>
-      'Instal aplikasi Anki desktop, lalu tambahkan add-on AnkiConnect: di Anki, buka Tools - Add-ons - Get Add-ons dan masukkan kode 2055492159. Biarkan Anki berjalan saat membuat kartu.';
+      'Pasang Anki, tambahkan add-on AnkiConnect (satu ketukan di bawah, atau kode add-on 2055492159), dan biarkan Anki berjalan selagi Anda membuat kartu.';
   @override
   String get onboarding_anki_setup_ios_hint =>
-      'Dengan AnkiMobile terinstal, menambahkan kartu langsung berfungsi. Untuk fitur lengkap, hubungkan ke Anki yang berjalan di komputer dalam jaringan yang sama melalui AnkiConnect.';
+      'Dengan AnkiMobile terpasang, kartu langsung ditambahkan. Untuk fitur lengkap, hubungkan ke Anki di komputer dalam jaringan yang sama lewat AnkiConnect.';
   @override
   String get onboarding_anki_backend_label => 'Koneksi';
   @override
@@ -53651,22 +53691,22 @@ class _StringsId extends _StringsEn {
   String get onboarding_anki_get_ankidroid_action => 'Dapatkan AnkiDroid';
   @override
   String get onboarding_anki_mobile_ankiconnect_title =>
-      'Lanjutan: gunakan AnkiConnect di perangkat ini';
+      'Lanjutan: gunakan AnkiConnect dari perangkat ini';
   @override
   String get onboarding_anki_mobile_ankiconnect_hint =>
-      'Perangkat ini juga bisa membuat kartu ke Anki yang berjalan di komputer dalam jaringan yang sama: aktifkan AnkiConnect di pengaturan pembuatan kartu dan masukkan alamat komputer.';
+      'Buat kartu ke Anki di komputer dalam jaringan yang sama: aktifkan AnkiConnect di pengaturan pembuatan kartu dan masukkan alamat komputernya.';
   @override
   String get onboarding_anki_setup_android_hint =>
-      'Instal AnkiDroid dan buka sekali untuk menyelesaikan pengaturan awalnya. Kembali di Fushi, ketuk Izinkan pada dialog izin yang muncul saat kartu pertama Anda - tidak perlu mengubah pengaturan AnkiDroid.';
+      'Pasang AnkiDroid dan buka sekali. Pada kartu pertama, ketuk Izinkan di dialog izin — tidak ada lagi yang perlu diatur.';
   @override
   String get onboarding_anki_install_addon_action =>
       'Instal add-on AnkiConnect';
   @override
   String get onboarding_anki_addon_installed =>
-      'AnkiConnect terinstal. Jalankan (atau restart) Anki, lalu ketuk Tes koneksi.';
+      'AnkiConnect terpasang. Jalankan atau mulai ulang Anki, lalu tes koneksinya.';
   @override
   String get onboarding_anki_addon_no_anki =>
-      'Folder data Anki tidak ditemukan. Instal Anki dan buka sekali, lalu coba lagi.';
+      'Folder data Anki tidak ditemukan. Pasang Anki, buka sekali, lalu coba lagi.';
   @override
   String onboarding_anki_addon_failed({required Object message}) =>
       'Instalasi gagal: ${message}';
@@ -54181,58 +54221,54 @@ class _StringsId extends _StringsEn {
   String get onboarding_action_badge_optional => 'Opsional';
   @override
   String get onboarding_pack_action_download_desc =>
-      'Mengunduh seluruh paket di latar belakang, lalu mengimpornya. Bisa dibatalkan kapan saja; berikutnya dilanjutkan dari titik terakhir.';
+      'Mengunduh dari beberapa sumber sekaligus di latar belakang, lalu mengimpornya. Bisa dibatalkan kapan saja; dilanjutkan dari titik terakhir.';
   @override
   String get onboarding_pack_action_import_existing_desc =>
-      'Paket sudah terunduh; tombol ini mengimpornya. Pilih «Gabungkan» pada dialog konfirmasi agar data yang sudah ada tidak tersentuh.';
+      'Paketnya sudah ada di disk. Pilih «Gabungkan» pada dialog konfirmasi agar data Anda yang lama tetap utuh.';
   @override
   String get onboarding_pack_action_pick_desc =>
-      'Sudah punya zip paketnya dari tempat lain? Impor dari disk dan lewati proses unduh sepenuhnya.';
+      'Sudah punya zip paketnya? Impor dari disk dan lewati unduhannya.';
   @override
-  String get onboarding_pack_action_website =>
-      'Buka halaman unduh di situs web';
+  String get onboarding_pack_action_website => 'Buka halaman unduh';
   @override
   String get onboarding_pack_action_website_desc =>
-      'Membuka situs resmi di peramban. Bagian paket di sana memuat tautan per potongan yang bisa diberikan ke pengelola unduhan; setelah itu kembali ke sini dan gunakan «Pilih berkas paket lokal» untuk mengimpor hasilnya.';
+      'Tautan per potongan untuk pengelola unduhan. Setelah itu kembali dan gunakan «Pilih berkas paket».';
   @override
   String get onboarding_pack_action_dictionary_desc =>
-      'Sedang belajar bahasa selain Jepang? Lewati paketnya dan impor kamus untuk bahasamu sendiri di sini.';
+      'Belajar bahasa lain? Impor kamusnya di sini saja.';
   @override
   String get onboarding_pack_action_audio_desc =>
-      'Dari mana audio pelafalan berasal. Paket sudah mencakup bahasa Jepang dan Inggris; untuk bahasa lain tambahkan sumber daring di sini.';
+      'Tambahkan sumber pelafalan daring untuk bahasa yang tidak dicakup paket ini.';
   @override
   String get onboarding_anki_action_test_desc =>
-      'Memeriksa apakah Fushi bisa menghubungi Anki dan memuat dek serta jenis catatanmu. Belum ada yang dibuat.';
+      'Memeriksa apakah Fushi bisa menghubungi Anki dan memuat dek serta jenis catatan Anda. Tidak membuat apa pun.';
   @override
   String get onboarding_anki_action_refresh_desc =>
-      'Memuat ulang dek dan jenis catatan dari Anki. Gunakan setelah membuat dek baru di dalam Anki.';
+      'Memuat ulang dek dan jenis catatan. Gunakan setelah membuat dek di Anki.';
   @override
   String get onboarding_anki_action_get_ankidroid_desc =>
-      'Membuka halaman toko AnkiDroid. Fushi menulis kartunya ke sana, jadi harus dipasang lebih dulu.';
+      'Membuka halaman toko. Fushi menulis kartu ke AnkiDroid, jadi harus dipasang lebih dulu.';
   @override
   String get onboarding_anki_action_get_anki_desc =>
-      'Membuka halaman unduh Anki. Pasang Anki dan biarkan tetap berjalan selagi kamu membuat kartu.';
+      'Membuka halaman unduh Anki. Biarkan Anki tetap berjalan selagi Anda membuat kartu.';
   @override
   String get onboarding_anki_action_install_addon_desc =>
-      'Mengekstrak add-on AnkiConnect bawaan ke dalam Anki untukmu; itulah yang membuat Fushi bisa berbicara dengannya. Mulai ulang Anki setelahnya.';
+      'Mengekstrak add-on AnkiConnect bawaan ke dalam Anki. Mulai ulang Anki setelahnya.';
   @override
   String get onboarding_step_anki_action_desc =>
-      'Templat kartu, pemetaan bidang, tangkapan layar, dan audio: yaitu rincian seperti apa kartu yang dihasilkan. Dek dan jenis catatan di atas sudah cukup untuk mulai, jadi buka ini hanya jika kamu ingin mengubah cara kartu disusun.';
+      'Templat, pemetaan kolom, tangkapan layar, dan audio. Dek dan jenis catatan di atas sudah cukup untuk mulai.';
   @override
   String get onboarding_step_backup_action_desc =>
-      'Pilih backend cadangan dan masuk, supaya pustakamu selamat saat perangkat hilang atau diganti.';
+      'Pilih backend dan masuk, atau ekspor berkas cadangan lokal.';
   @override
   String get onboarding_step_interconnect_action_desc =>
-      'Memasangkan perangkat ini dengan perangkatmu yang lain untuk berbagi satu pustaka dan menyelaraskan progres.';
+      'Aktifkan interkoneksi dan pasangkan perangkat ini dengan perangkat Anda yang lain.';
   @override
   String get onboarding_step_extension_action_desc =>
-      'Menunjukkan cara memasang ekstensi peramban dan menghubungkannya ke Fushi, supaya kamu juga bisa mencari kata di halaman web.';
+      'Menunjukkan cara memasang ekstensi dan menghubungkannya ke Fushi.';
   @override
   String get onboarding_step_fonts_action_desc =>
-      'Tambahkan berkas fonmu sendiri dan pilih fon yang dipakai tiap bahasa.';
-  @override
-  String get onboarding_pack_sources_hint =>
-      'Diunduh dalam potongan paralel dari GitHub, situs resmi, dan satu cermin cadangan sekaligus, tiap potongan diperiksa checksum-nya. Fushi mengukur kecepatan sumber sambil berjalan dan memberi lebih banyak potongan ke yang tercepat saat itu, jadi tidak ada yang perlu dipilih di sini.';
+      'Impor berkas font dan pilih satu untuk tiap bahasa.';
   @override
   String get video_setting_hdr_output => 'Keluaran HDR / 10 bit';
   @override
@@ -54351,139 +54387,98 @@ class _StringsId extends _StringsEn {
   String web_video_mine_switch_builtin({required Object count}) =>
       'Beralih ke mode bawaan untuk membuat ${count} kartu yang antre';
   @override
-  String get onboarding_step_click_lookup_title => 'Ketuk untuk mencari kata';
+  String get onboarding_step_click_lookup_title => 'Ketuk untuk mencari';
   @override
-  String get onboarding_click_lookup_tap_title => 'Ketuk teksnya';
+  String get onboarding_click_lookup_tap_title => 'Ketuk sebuah kata';
   @override
-  String get onboarding_click_lookup_nested_title =>
-      'Lanjutkan menelusuri di popup';
+  String get onboarding_click_lookup_nested_title => 'Terus telusuri';
   @override
   String get onboarding_click_lookup_nested_body =>
-      'Ketuk kata lain di dalam definisi untuk membuka pencarian satu tingkat lebih dalam. Tekan kembali atau ketuk di luar untuk menutup satu tingkat.';
+      'Ketuk kata di dalam definisi untuk turun satu tingkat. Tekan kembali atau ketuk di luar untuk menutup satu tingkat.';
   @override
-  String get onboarding_click_lookup_mine_title =>
-      'Ubah hasilnya menjadi kartu';
+  String get onboarding_click_lookup_mine_title => 'Buat kartu';
   @override
   String get onboarding_click_lookup_mine_body =>
-      'Kalau definisinya sudah pas, ketuk + untuk mengirim kata, kalimat, audio, dan gambar ke pembuat kartu.';
+      'Ketuk + pada entrinya untuk mengirim kata, kalimat, audio, dan gambar ke pembuat kartu.';
   @override
-  String get onboarding_step_global_lookup_title =>
-      'Mencari teks di luar Fushi';
+  String get onboarding_step_global_lookup_title => 'Mencari di luar Fushi';
   @override
   String get onboarding_global_lookup_windows_body =>
-      'Di Windows, pilih teks di aplikasi lain lalu panggil kamus tanpa harus kembali ke Fushi.';
+      'Pilih teks di aplikasi mana pun lalu panggil kamus tanpa berpindah jendela.';
   @override
-  String get onboarding_global_lookup_windows_select_title =>
-      'Pilih teks di aplikasi mana pun';
-  @override
-  String get onboarding_global_lookup_windows_shortcut_title =>
-      'Tekan Ctrl+Alt+D';
+  String get onboarding_global_lookup_windows_select_title => 'Pilih teks';
   @override
   String get onboarding_global_lookup_windows_shortcut_body =>
-      'Ini pintasan global bawaan. Fushi mengambil teks yang sedang dipilih dan membuka kartu pencarian di dekat kursor.';
+      'Fushi mengambil teks yang dipilih dan membuka kartu pencarian di dekat kursor.';
   @override
   String get onboarding_global_lookup_windows_customize_title =>
-      'Ubah pintasannya bila perlu';
+      'Ubah pintasannya';
   @override
   String get onboarding_global_lookup_windows_customize_body =>
-      'Buka Pengaturan → Pintasan → Global (di luar aplikasi) untuk menetapkan kombinasi tombol lain.';
+      'Pengaturan → Pintasan → Global (di luar aplikasi).';
   @override
   String get onboarding_global_lookup_windows_action =>
       'Buka pengaturan pintasan';
   @override
   String get onboarding_global_lookup_windows_action_desc =>
-      'Untuk mengubah pintasan pencarian di luar aplikasi. Pintasan bawaan Ctrl+Alt+D sudah berfungsi, jadi ini opsional.';
+      'Hanya kalau Anda ingin kombinasi tombol lain.';
   @override
   String get onboarding_global_lookup_android_body =>
-      'Di Android, sistem meneruskan teks yang dipilih ke Fushi lewat menu teks atau panel Bagikan. Tidak ada tombol pintas global yang bisa diatur ulang.';
+      'Android menyerahkan teks yang dipilih ke Fushi lewat menu teks atau panel Bagikan.';
   @override
-  String get onboarding_global_lookup_android_select_title =>
-      'Pilih teks di aplikasi lain';
+  String get onboarding_global_lookup_android_select_title => 'Pilih teks';
   @override
   String get onboarding_global_lookup_android_open_title => 'Pilih Fushi';
   @override
   String get onboarding_global_lookup_android_open_body =>
-      'Ketuk Fushi di menu pemilihan teks. Kalau tidak terlihat, ketuk Bagikan lalu pilih Fushi dari panel berbagi.';
+      'Ketuk Fushi di menu pemilihan, atau ketuk Bagikan lalu pilih Fushi.';
   @override
-  String get onboarding_global_lookup_android_continue_title =>
-      'Gunakan popup terpisah';
+  String get onboarding_global_lookup_android_continue_title => 'Baca popupnya';
   @override
   String get onboarding_global_lookup_android_continue_body =>
-      'Hasil pencarian terbuka terpisah dari aplikasi asal. Anda bisa mengetuk kata lain di dalamnya, lalu menutupnya untuk kembali ke tempat semula.';
+      'Pencarian terbuka di atas aplikasi lain. Tutup untuk kembali.';
   @override
-  String get onboarding_feature_manual_resources =>
-      'Impor kamus dan audio secara manual';
+  String get onboarding_feature_manual_resources => 'Impor materi saya sendiri';
   @override
   String get onboarding_feature_manual_resources_hint =>
-      'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+      'Kamus, buku audio, dan sumber pelafalan dari berkas Anda sendiri';
   @override
   String get onboarding_step_manual_resources_title =>
-      'Siapkan kamus dan audio secara manual';
+      'Kamus dan audio milik Anda';
   @override
   String get onboarding_step_manual_resources_body =>
-      'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+      'Impor minimal satu kamus sebelum tutorial pencarian. Buku audio dan audio pelafalan sifatnya opsional.';
   @override
   String get onboarding_manual_dictionary_action => 'Impor kamus';
   @override
   String get onboarding_manual_dictionary_action_desc =>
-      'Buka manajer kamus dan impor minimal satu berkas atau arsip kamus yang didukung. Tutorial pencarian baru berguna setelah pencarian benar-benar menghasilkan definisi.';
+      'Membuka manajemen kamus. Pencarian baru memberi hasil setelah ada kamus yang terpasang.';
   @override
-  String get onboarding_manual_audiobook_action =>
-      'Impor buku beserta audio buku audio';
+  String get onboarding_manual_audiobook_action => 'Impor buku beserta audio';
   @override
   String get onboarding_manual_audiobook_action_desc =>
-      'Buka impor buku dan pilih buku atau teksnya, subtitle yang selaras, serta satu atau beberapa berkas audio. Audio butuh subtitle agar Fushi bisa menyelaraskannya per kalimat.';
+      'Buku atau teks, takarir yang selaras, dan berkas audio. Takarirlah yang membuat Fushi bisa menyelaraskan audio per kalimat.';
   @override
-  String get onboarding_manual_pronunciation_action =>
-      'Atur audio pelafalan kata';
+  String get onboarding_manual_pronunciation_action => 'Atur audio pelafalan';
   @override
   String get onboarding_manual_pronunciation_action_desc =>
-      'Tambahkan sumber pelafalan lokal atau daring yang dipakai entri kamus. Ini berbeda dari audio buku audio yang menempel pada sebuah buku.';
+      'Sumber lokal atau daring untuk pelafalan kata di entri kamus. Berbeda dari audio buku audio.';
   @override
-  String get onboarding_lookup_verify_action =>
-      'Pastikan kata itu ada di kamus Anda';
+  String get onboarding_step_first_anki_card_title => 'Kartu pertama Anda';
   @override
-  String get onboarding_lookup_verify_action_desc =>
-      'Buka pencarian, ketik kata apa pun yang sedang Anda pelajari, dan lanjutkan hanya setelah kamus yang terpasang menampilkan definisinya. Tutorial ini tidak mematok kata contoh.';
+  String get onboarding_first_anki_lookup_title => 'Cari sebuah kata';
   @override
-  String get onboarding_step_first_anki_card_title =>
-      'Buat kartu Anki pertama Anda';
-  @override
-  String get onboarding_step_first_anki_card_body =>
-      'Langkah ini hanya muncul setelah panduan ini terhubung ke Anki dan Anda memilih dek serta tipe catatan yang bisa dipakai.';
-  @override
-  String get onboarding_first_anki_lookup_title =>
-      'Mulai dari hasil kamus yang nyata';
-  @override
-  String get onboarding_first_anki_lookup_body =>
-      'Cari kata yang memang ada di kamus yang Anda pasang. Tidak ada kata contoh tetap yang mungkin justru tidak ada di kamus Anda.';
-  @override
-  String get onboarding_first_anki_plus_title => 'Ketuk tombol plus pada entri';
+  String get onboarding_first_anki_plus_title => 'Ketuk +';
   @override
   String get onboarding_first_anki_plus_body =>
-      'Tombol plus membuka pembuat kartu berisi kata, cara baca, arti, kalimat, audio, dan gambar yang tersedia saat itu.';
+      'Pembuat kartu terbuka dengan kata, cara baca, arti, kalimat, audio, dan gambar sudah terisi.';
   @override
   String get onboarding_first_anki_save_title => 'Periksa lalu simpan';
   @override
   String get onboarding_first_anki_save_body =>
-      'Pastikan dek tujuan, tipe catatan, dan pratinjau bidangnya sudah benar, lalu simpan. Buka Anki untuk memeriksa kartu pertama sudah masuk.';
+      'Pastikan dek dan jenis catatannya, lalu simpan. Buka Anki untuk melihat kartunya.';
   @override
   String get onboarding_first_anki_action => 'Buka pencarian dan buat kartu';
-  @override
-  String get onboarding_first_anki_action_desc =>
-      'Pakai kata yang definisinya sudah terlihat, ketuk tombol plusnya, periksa bidang-bidangnya, lalu simpan ke dek Anki yang terhubung.';
-  @override
-  String get onboarding_step_click_lookup_body =>
-      'Pastikan dulu ada kata yang memang didefinisikan kamus yang Anda pasang. Lalu pakai kata yang sama untuk berlatih pencarian langsung di buku, teks OCR manga, dan subtitle video.';
-  @override
-  String get onboarding_click_lookup_tap_body =>
-      'Di ponsel, ketuk salah satu karakter kata yang sudah dipastikan tadi; di komputer, klik kiri. Fushi mulai dari titik itu dan mengambil kata terpanjang yang cocok.';
-  @override
-  String get onboarding_global_lookup_windows_select_body =>
-      'Sorot kata yang sama, yang sudah Anda pastikan ada definisinya di kamus, dan biarkan tetap terpilih.';
-  @override
-  String get onboarding_global_lookup_android_select_body =>
-      'Tekan lama kata yang sudah dipastikan itu, lalu geser pegangan seleksi agar menutupi seluruh kata.';
   @override
   String get game_lookup_attached_title => 'In-game lookup';
   @override
@@ -54765,6 +54760,71 @@ class _StringsId extends _StringsEn {
   @override
   String get game_session_japanese_locale_skipped_hint_not_32bit =>
       'Game dimulai tanpa lokal Jepang: putusan otomatis menyatakan perlu, tetapi Locale Emulator hanya mendukung game 32-bit.';
+  @override
+  String get onboarding_feature_fonts => 'Font kustom';
+  @override
+  String get onboarding_feature_fonts_hint =>
+      'Pakai font Anda sendiri untuk antarmuka, teks buku, dan kamus';
+  @override
+  String get onboarding_features_modules_title => 'Halaman perpustakaan';
+  @override
+  String get onboarding_features_modules_hint =>
+      'Halaman yang tidak dicentang disembunyikan dari bilah navigasi. Bisa diubah kapan saja di Pengaturan → Tampilan.';
+  @override
+  String get onboarding_features_setup_title => 'Disiapkan berikutnya';
+  @override
+  String get onboarding_features_setup_hint =>
+      'Hanya item yang dicentang yang mendapat langkah di panduan ini.';
+  @override
+  String get onboarding_pack_intro =>
+      'Kamus Jepang, aksen nada, frekuensi kata, dan audio pengucapan JA/EN dalam satu unduhan. Belajar bahasa lain? Lewati ini dan impor kamus Anda sendiri.';
+  @override
+  String get onboarding_global_lookup_windows_select_desc =>
+      'Sorot sebuah kata di aplikasi mana pun dan biarkan tetap terpilih.';
+  @override
+  String get onboarding_global_lookup_android_select_desc =>
+      'Tekan lama sebuah kata di aplikasi lain, lalu geser pegangannya sampai menutupi kata itu.';
+  @override
+  String get onboarding_global_lookup_windows_shortcut_press =>
+      'Tekan pintasannya';
+  @override
+  String get onboarding_first_anki_card_intro =>
+      'Anki sudah tersambung. Buat satu kartu sungguhan sekarang supaya Anda tahu seluruh alurnya jalan.';
+  @override
+  String get onboarding_action_start => 'Mulai pakai Fushi';
+  @override
+  String get onboarding_actions_more => 'Cara lain';
+  @override
+  String get onboarding_finish_summary_modules =>
+      'Halaman perpustakaan yang ditampilkan';
+  @override
+  String get onboarding_finish_summary_setup => 'Penyiapan terpandu';
+  @override
+  String get onboarding_finish_summary_none => 'Tidak ada';
+  @override
+  String get onboarding_anki_status_pending => 'Belum diuji';
+  @override
+  String get onboarding_click_lookup_intro =>
+      'Ketuk kata mana pun di buku, manga, atau takarir untuk melihat artinya. Coba dulu pada kalimat latihan di bawah.';
+  @override
+  String get onboarding_click_lookup_tap_desc =>
+      'Ketuk satu karakter (atau klik kiri di komputer); Fushi mengambil kata terpanjang yang dimulai di situ. Kalimatnya terbuka di halaman pencarian.';
+  @override
+  String get onboarding_sample_sentence_label => 'Kalimat latihan';
+  @override
+  String get onboarding_sample_sentence_hint =>
+      'Ketuk untuk membukanya di halaman pencarian, lalu ketuk kata mana pun.';
+  @override
+  String get onboarding_lookup_practice_action => 'Berlatih dengan kalimat ini';
+  @override
+  String get onboarding_lookup_practice_desc =>
+      'Membuka halaman pencarian dengan kalimat sudah dimuat. Ketuk sebuah kata di sana untuk melihat artinya; kalau tidak ada hasil, kamus Anda belum terpasang.';
+  @override
+  String get onboarding_first_anki_lookup_desc =>
+      'Buka kalimat latihan lalu ketuk sebuah kata.';
+  @override
+  String get onboarding_first_anki_action_desc =>
+      'Membuka kalimat latihan di halaman pencarian. Ketuk sebuah kata, ketuk +, periksa kolomnya, lalu simpan.';
 }
 
 // Path: <root>
@@ -62683,40 +62743,40 @@ class _StringsIt extends _StringsEn {
   @override
   String get onboarding_title => 'Per iniziare';
   @override
-  String get onboarding_welcome_headline => 'Benvenuto!';
+  String get onboarding_welcome_headline => 'Benvenuto in Fushi';
   @override
-  String get onboarding_feature_anki => 'Flashcard Anki';
+  String get onboarding_feature_anki => 'Carte Anki';
   @override
   String get onboarding_feature_anki_hint =>
-      'Connetti AnkiConnect o AnkiDroid per creare flashcard';
+      'Trasforma le ricerche in flashcard con un tocco';
   @override
   String get onboarding_feature_backup => 'Backup e sincronizzazione';
   @override
   String get onboarding_feature_backup_hint =>
-      'Fai backup dei dati su Google Drive, WebDAV e altri backend';
+      'Google Drive, WebDAV o un file locale';
   @override
   String get onboarding_feature_interconnect => 'Interconnessione dispositivi';
   @override
   String get onboarding_feature_interconnect_hint =>
-      'Accoppia dispositivi sulla tua LAN per condividere librerie e progressi';
+      'Condividi librerie e progressi tra i dispositivi della tua LAN';
   @override
   String get onboarding_step_dictionary_action => 'Apri gestore dizionari';
   @override
   String get onboarding_step_anki_title => 'Configura Anki';
   @override
-  String get onboarding_step_anki_action => 'Apri impostazioni creazione carte';
+  String get onboarding_step_anki_action => 'Impostazioni creazione carte';
   @override
-  String get onboarding_step_backup_title => 'Configura backup';
+  String get onboarding_step_backup_title => 'Backup';
   @override
   String get onboarding_step_backup_body =>
-      'Scegli un backend di backup e accedi, o esporta un file di backup locale.';
+      'Metti al sicuro la tua libreria quando cambi o perdi un dispositivo.';
   @override
   String get onboarding_step_backup_action => 'Apri impostazioni backup';
   @override
-  String get onboarding_step_interconnect_title => 'Configura interconnect';
+  String get onboarding_step_interconnect_title => 'Interconnect';
   @override
   String get onboarding_step_interconnect_body =>
-      'Abilita interconnect e accoppia con altri dispositivi sulla tua LAN per condividere librerie, progressi e ricerche.';
+      'Accoppia i dispositivi sulla tua LAN per condividere un\'unica libreria e mantenere sincronizzati i progressi.';
   @override
   String get onboarding_step_interconnect_action =>
       'Apri impostazioni interconnect';
@@ -62724,61 +62784,49 @@ class _StringsIt extends _StringsEn {
   String get onboarding_finish_title => 'Tutto pronto';
   @override
   String get onboarding_finish_body =>
-      'Puoi rivisitare questa guida in qualsiasi momento da Impostazioni → Sistema.';
+      'Puoi riaprire questa guida in qualsiasi momento da Impostazioni → Sistema.';
   @override
   String get onboarding_action_next => 'Avanti';
-  @override
-  String get onboarding_action_finish => 'Fine';
   @override
   String get onboarding_action_skip => 'Salta per ora';
   @override
   String get onboarding_reopen => 'Guida per iniziare';
   @override
   String get onboarding_welcome_body =>
-      'Imposta prima la lingua dell\'interfaccia e il tema — i prossimi passi ti guideranno nel resto.';
+      'Scegli la lingua dell\'interfaccia e il tema. I prossimi passaggi configurano il resto.';
   @override
-  String get onboarding_features_title => 'Scegli cosa usi';
+  String get onboarding_features_title => 'Cosa userai?';
   @override
-  String get onboarding_features_modules_label =>
-      'Schede libreria (quelle deselezionate vengono nascoste dalla barra di navigazione; cambiabile in qualsiasi momento nelle Impostazioni)';
-  @override
-  String get onboarding_features_setup_label => 'Cosa configurare dopo';
-  @override
-  String get onboarding_feature_manga => 'Libreria manga';
+  String get onboarding_feature_manga => 'Manga';
   @override
   String get onboarding_feature_manga_hint => 'Leggi manga con ricerca OCR';
   @override
-  String get onboarding_feature_video => 'Libreria video';
+  String get onboarding_feature_video => 'Video';
   @override
   String get onboarding_feature_video_hint =>
-      'Guarda video con ricerca sottotitoli e mining';
+      'Ricerca sui sottotitoli e creazione di carte';
   @override
-  String get onboarding_feature_games => 'Libreria galgame';
+  String get onboarding_feature_games => 'Galgame';
   @override
   String get onboarding_feature_games_hint =>
-      'Avvia galgame con ricerca text-hook (solo Windows)';
+      'Ricerca via text-hook mentre giochi (solo Windows)';
   @override
-  String get onboarding_feature_pack =>
-      'Pacchetto consigliato (dizionari + audio)';
+  String get onboarding_feature_pack => 'Pacchetto consigliato';
   @override
   String get onboarding_feature_pack_hint =>
-      'Un download configura dizionari giapponesi più audio di pronuncia JA/EN';
+      'Dizionari giapponesi più audio di pronuncia JA/EN in un solo download';
   @override
-  String get onboarding_step_pack_title => 'Installa il pacchetto consigliato';
-  @override
-  String get onboarding_step_pack_body =>
-      'Il pacchetto consigliato include dizionari di parole, accento e frequenza giapponesi più database audio di pronuncia giapponese/inglese. Scaricalo e importalo qui; l\'importazione sostituisce i dati locali, quindi eseguilo su un\'installazione pulita. Studi un\'altra lingua? Usa il gestore dizionari per importare i tuoi dizionari.';
+  String get onboarding_step_pack_title => 'Pacchetto consigliato';
   @override
   String get onboarding_step_pack_download_action => 'Scarica e importa';
   @override
   String get onboarding_step_pack_import_existing_action =>
-      'Importa pacchetto scaricato';
+      'Importa il pacchetto scaricato';
   @override
-  String get onboarding_step_pack_pick_action =>
-      'Scegli un file pacchetto locale';
+  String get onboarding_step_pack_pick_action => 'Scegli un file pacchetto';
   @override
   String get onboarding_pack_downloading =>
-      'Download in corso… annullabile, riprende la prossima volta';
+      'Download in corso… annullabile in qualsiasi momento e riprendibile dopo';
   @override
   String onboarding_pack_download_failed({required Object message}) =>
       'Download fallito: ${message}';
@@ -62786,14 +62834,15 @@ class _StringsIt extends _StringsEn {
   String get onboarding_step_extension_title => 'Estensione browser';
   @override
   String get onboarding_step_extension_body =>
-      'Installa l\'estensione browser companion per cercare parole su qualsiasi pagina web.';
+      'Cerca parole su qualsiasi pagina web con l\'estensione companion.';
   @override
-  String get onboarding_step_extension_action => 'Apri guida estensione';
+  String get onboarding_step_extension_action =>
+      'Apri la guida all\'installazione';
   @override
-  String get onboarding_step_fonts_title => 'Font di lettura';
+  String get onboarding_step_fonts_title => 'Font';
   @override
   String get onboarding_step_fonts_body =>
-      'Importa font personalizzati e scegli quale usano UI, testo dei libri e dizionario.';
+      'Usa i tuoi font per l\'interfaccia, il testo dei libri e il dizionario.';
   @override
   String get settings_section_modules => 'Moduli funzionalità';
   @override
@@ -63036,10 +63085,10 @@ class _StringsIt extends _StringsEn {
   @override
   String get module_extension_label => 'Estensione browser';
   @override
-  String get onboarding_feature_books => 'Libreria romanzi';
+  String get onboarding_feature_books => 'Romanzi';
   @override
   String get onboarding_feature_books_hint =>
-      'Leggi romanzi EPUB con ricerca nel dizionario e sincronizzazione audiolibri';
+      'Lettura EPUB con ricerca e sincronizzazione audiolibri';
   @override
   String get onboarding_feature_extension_hint =>
       'Cerca parole su qualsiasi pagina web (solo desktop)';
@@ -63460,13 +63509,13 @@ class _StringsIt extends _StringsEn {
       'Il gioco è stato avviato con un locale giapponese (CP932). Se il testo appare confuso o appare un errore di script, imposta il locale giapponese di questo gioco su Mai.';
   @override
   String get onboarding_anki_intro_body =>
-      'Anki è un\'app gratuita di flashcard a ripetizione spaziata: le parole nuove diventano carte, e le revisioni sono programmate lungo la curva dell\'oblio. Dopo una ricerca, Fushi può trasformare la parola in una carta Anki con un tocco, con significato, frase, audio e screenshot.';
+      'Anki è un\'app gratuita di flashcard a ripetizione spaziata. Dopo una ricerca, Fushi trasforma la parola in una carta con significato, frase, audio e screenshot, con un solo tocco.';
   @override
   String get onboarding_anki_setup_desktop_hint =>
-      'Installa l\'app desktop Anki, poi aggiungi l\'add-on AnkiConnect: in Anki, apri Strumenti - Componenti aggiuntivi - Scarica componenti aggiuntivi e inserisci il codice 2055492159. Tieni Anki in esecuzione durante la creazione delle carte.';
+      'Installa Anki, aggiungi il componente aggiuntivo AnkiConnect (con un tocco qui sotto, oppure con il codice 2055492159) e tieni Anki aperto mentre crei le carte.';
   @override
   String get onboarding_anki_setup_ios_hint =>
-      'Con AnkiMobile installato, l\'aggiunta di carte funziona subito. Per il set completo di funzionalità, connettiti ad Anki in esecuzione su un computer nella stessa rete tramite AnkiConnect.';
+      'Con AnkiMobile installato, le carte vengono aggiunte direttamente. Per il set completo di funzionalità, collegati via AnkiConnect ad Anki su un computer nella stessa rete.';
   @override
   String get onboarding_anki_backend_label => 'Connessione';
   @override
@@ -63480,22 +63529,22 @@ class _StringsIt extends _StringsEn {
   String get onboarding_anki_get_ankidroid_action => 'Ottieni AnkiDroid';
   @override
   String get onboarding_anki_mobile_ankiconnect_title =>
-      'Avanzato: usa AnkiConnect su questo dispositivo';
+      'Avanzato: usa AnkiConnect da questo dispositivo';
   @override
   String get onboarding_anki_mobile_ankiconnect_hint =>
-      'Questo dispositivo può anche creare carte in Anki su un computer nella stessa rete: abilita AnkiConnect nelle impostazioni di creazione carte e inserisci l\'indirizzo del computer.';
+      'Crea carte in Anki su un computer nella stessa rete: abilita AnkiConnect nelle impostazioni di creazione carte e inserisci l\'indirizzo del computer.';
   @override
   String get onboarding_anki_setup_android_hint =>
-      'Installa AnkiDroid e aprilo una volta per completare la configurazione iniziale. Tornando in Fushi, tocca Consenti nella finestra di permesso che appare con la prima carta — nessuna impostazione di AnkiDroid da cambiare.';
+      'Installa AnkiDroid e aprilo una volta. Alla prima carta, tocca Consenti nella finestra dei permessi: non c\'è altro da configurare.';
   @override
   String get onboarding_anki_install_addon_action =>
       'Installa add-on AnkiConnect';
   @override
   String get onboarding_anki_addon_installed =>
-      'AnkiConnect è installato. Avvia (o riavvia) Anki, poi tocca Testa connessione.';
+      'AnkiConnect installato. Avvia o riavvia Anki, poi testa la connessione.';
   @override
   String get onboarding_anki_addon_no_anki =>
-      'Cartella dati Anki non trovata. Installa Anki e aprilo una volta, poi riprova.';
+      'Cartella dati Anki non trovata. Installa Anki, aprilo una volta e riprova.';
   @override
   String onboarding_anki_addon_failed({required Object message}) =>
       'Installazione fallita: ${message}';
@@ -64014,58 +64063,54 @@ class _StringsIt extends _StringsEn {
   String get onboarding_action_badge_optional => 'Facoltativo';
   @override
   String get onboarding_pack_action_download_desc =>
-      'Scarica l’intero pacchetto in background e poi lo importa. Puoi annullare in qualsiasi momento; la volta dopo riprende dal punto in cui si era fermato.';
+      'Scarica in background da più fonti contemporaneamente, poi importa. Puoi annullare in qualsiasi momento; riprende dal punto in cui si era fermato.';
   @override
   String get onboarding_pack_action_import_existing_desc =>
-      'Il pacchetto è già scaricato; qui viene importato. Scegli «Unisci» nella finestra di conferma e i dati esistenti resteranno intatti.';
+      'Il pacchetto è già sul disco. Scegli «Unisci» nella finestra di conferma per mantenere i dati esistenti.';
   @override
   String get onboarding_pack_action_pick_desc =>
-      'Hai già preso lo zip del pacchetto da un’altra parte? Importalo dal disco e salta del tutto il download.';
+      'Hai già lo zip del pacchetto? Importalo dal disco e salta il download.';
   @override
-  String get onboarding_pack_action_website =>
-      'Apri la pagina di download del sito';
+  String get onboarding_pack_action_website => 'Apri la pagina di download';
   @override
   String get onboarding_pack_action_website_desc =>
-      'Apre il sito ufficiale nel browser. La sezione dedicata al pacchetto elenca link a spezzoni che puoi passare a un download manager; poi torna qui e usa «Scegli un file pacchetto locale» per importare quello che hai ottenuto.';
+      'Link a spezzoni per i download manager. Poi torna qui e usa «Scegli un file pacchetto».';
   @override
   String get onboarding_pack_action_dictionary_desc =>
-      'Stai studiando una lingua diversa dal giapponese? Salta il pacchetto e importa qui i dizionari della tua lingua.';
+      'Stai studiando un\'altra lingua? Importa qui i dizionari corrispondenti.';
   @override
   String get onboarding_pack_action_audio_desc =>
-      'Da dove arriva l’audio della pronuncia. Il pacchetto copre già giapponese e inglese; per le altre lingue aggiungi qui le sorgenti online.';
+      'Aggiungi fonti di pronuncia online per le lingue che il pacchetto non copre.';
   @override
   String get onboarding_anki_action_test_desc =>
-      'Verifica che Fushi riesca a raggiungere Anki e carica i tuoi mazzi e tipi di nota. Per ora non viene creato nulla.';
+      'Verifica che Fushi riesca a raggiungere Anki e carica i tuoi mazzi e tipi di nota. Non crea nulla.';
   @override
   String get onboarding_anki_action_refresh_desc =>
-      'Ricarica mazzi e tipi di nota da Anki. Usalo dopo aver creato un nuovo mazzo dentro Anki.';
+      'Ricarica mazzi e tipi di nota. Usalo dopo aver creato un mazzo in Anki.';
   @override
   String get onboarding_anki_action_get_ankidroid_desc =>
-      'Apre la pagina dello store di AnkiDroid. Fushi ci scrive dentro le sue carte, quindi va installato prima.';
+      'Apre la pagina dello store. Fushi scrive le carte in AnkiDroid, quindi va installato prima.';
   @override
   String get onboarding_anki_action_get_anki_desc =>
-      'Apre la pagina di download di Anki. Installa Anki e tienilo aperto mentre crei le carte.';
+      'Apre la pagina di download di Anki. Tieni Anki aperto mentre crei le carte.';
   @override
   String get onboarding_anki_action_install_addon_desc =>
-      'Estrae per te il componente aggiuntivo AnkiConnect incluso dentro Anki: è ciò che permette a Fushi di parlarci. Al termine riavvia Anki.';
+      'Estrae dentro Anki il componente aggiuntivo AnkiConnect incluso. Al termine riavvia Anki.';
   @override
   String get onboarding_step_anki_action_desc =>
-      'Modello di carta, mappatura dei campi, screenshot e audio: i dettagli di come appare una carta creata. Il mazzo e il tipo di nota qui sopra bastano per iniziare, quindi apri questa sezione solo se vuoi cambiare come vengono costruite le carte.';
+      'Modello, mappatura dei campi, screenshot e audio. Il mazzo e il tipo di nota qui sopra bastano per iniziare.';
   @override
   String get onboarding_step_backup_action_desc =>
-      'Scegli un servizio di backup e accedi, così la tua libreria sopravvive alla perdita o alla sostituzione del dispositivo.';
+      'Scegli un backend e accedi, oppure esporta un file di backup locale.';
   @override
   String get onboarding_step_interconnect_action_desc =>
-      'Associa questo dispositivo agli altri tuoi dispositivi per condividere un’unica libreria e mantenere sincronizzati i progressi.';
+      'Abilita interconnect e accoppia questo dispositivo con gli altri tuoi.';
   @override
   String get onboarding_step_extension_action_desc =>
-      'Mostra come installare l’estensione del browser e collegarla a Fushi, così puoi cercare le parole anche nelle pagine web.';
+      'Mostra come installare l\'estensione e collegarla a Fushi.';
   @override
   String get onboarding_step_fonts_action_desc =>
-      'Aggiungi i tuoi file di font e scegli quale usare per ciascuna lingua.';
-  @override
-  String get onboarding_pack_sources_hint =>
-      'Scaricato in spezzoni paralleli contemporaneamente da GitHub, dal sito ufficiale e da un mirror di riserva, con checksum su ogni spezzone. Fushi misura le sorgenti strada facendo e assegna più spezzoni a quella più veloce in quel momento, quindi qui non c’è nulla da scegliere.';
+      'Importa i file dei font e scegline uno per lingua.';
   @override
   String get video_setting_hdr_output => 'Uscita HDR / 10 bit';
   @override
@@ -64188,141 +64233,102 @@ class _StringsIt extends _StringsEn {
   String web_video_mine_switch_builtin({required Object count}) =>
       'Passa alla modalità integrata per creare ${count} carte in coda';
   @override
-  String get onboarding_step_click_lookup_title =>
-      'Tocca per cercare le parole';
+  String get onboarding_step_click_lookup_title => 'Tocca per cercare';
   @override
-  String get onboarding_click_lookup_tap_title => 'Tocca il testo';
+  String get onboarding_click_lookup_tap_title => 'Tocca una parola';
   @override
-  String get onboarding_click_lookup_nested_title =>
-      'Continua a cercare nel popup';
+  String get onboarding_click_lookup_nested_title => 'Continua a esplorare';
   @override
   String get onboarding_click_lookup_nested_body =>
-      'Tocca un\'altra parola dentro una definizione per aprire un livello di ricerca più profondo. Torna indietro o tocca fuori per chiudere un livello.';
+      'Tocca una parola dentro una definizione per scendere di un livello. Torna indietro o tocca fuori per chiudere un livello.';
   @override
-  String get onboarding_click_lookup_mine_title =>
-      'Trasforma il risultato in una carta';
+  String get onboarding_click_lookup_mine_title => 'Crea una carta';
   @override
   String get onboarding_click_lookup_mine_body =>
-      'Se la definizione è quella giusta, tocca + per inviare parola, frase, audio e immagine al creatore di carte.';
+      'Tocca + sulla voce per inviare parola, frase, audio e immagine al creatore di carte.';
   @override
-  String get onboarding_step_global_lookup_title =>
-      'Cercare testo fuori da Fushi';
+  String get onboarding_step_global_lookup_title => 'Cercare fuori da Fushi';
   @override
   String get onboarding_global_lookup_windows_body =>
-      'Su Windows puoi selezionare del testo in un\'altra app e richiamare il dizionario senza tornare a Fushi.';
+      'Seleziona del testo in qualsiasi app e richiama il dizionario senza cambiare finestra.';
   @override
   String get onboarding_global_lookup_windows_select_title =>
-      'Seleziona il testo in qualsiasi app';
-  @override
-  String get onboarding_global_lookup_windows_shortcut_title =>
-      'Premi Ctrl+Alt+D';
+      'Seleziona il testo';
   @override
   String get onboarding_global_lookup_windows_shortcut_body =>
-      'È la scorciatoia globale predefinita. Fushi prende la selezione attuale e apre una scheda di ricerca vicino al puntatore.';
+      'Fushi prende la selezione e apre una scheda di ricerca vicino al puntatore.';
   @override
   String get onboarding_global_lookup_windows_customize_title =>
-      'Cambia la scorciatoia se serve';
+      'Cambia la scorciatoia';
   @override
   String get onboarding_global_lookup_windows_customize_body =>
-      'Apri Impostazioni → Scorciatoie → Globali (fuori dall\'app) per assegnare un\'altra combinazione di tasti.';
+      'Impostazioni → Scorciatoie → Globali (fuori dall\'app).';
   @override
   String get onboarding_global_lookup_windows_action =>
       'Apri le impostazioni delle scorciatoie';
   @override
   String get onboarding_global_lookup_windows_action_desc =>
-      'Permette di cambiare la scorciatoia per la ricerca fuori dall\'app. Quella predefinita Ctrl+Alt+D funziona già, quindi è facoltativo.';
+      'Solo se vuoi una combinazione di tasti diversa.';
   @override
   String get onboarding_global_lookup_android_body =>
-      'Su Android è il sistema a passare il testo selezionato a Fushi tramite il menu del testo o il pannello Condividi. Non esiste una scorciatoia globale personalizzabile.';
+      'Android passa il testo selezionato a Fushi tramite il menu del testo o il pannello Condividi.';
   @override
   String get onboarding_global_lookup_android_select_title =>
-      'Seleziona il testo in un\'altra app';
+      'Seleziona il testo';
   @override
   String get onboarding_global_lookup_android_open_title => 'Scegli Fushi';
   @override
   String get onboarding_global_lookup_android_open_body =>
-      'Tocca Fushi nel menu di selezione del testo. Se non compare, tocca Condividi e scegli Fushi dal pannello di condivisione.';
+      'Tocca Fushi nel menu di selezione, oppure tocca Condividi e scegli Fushi.';
   @override
   String get onboarding_global_lookup_android_continue_title =>
-      'Usa il popup indipendente';
+      'Leggi il popup';
   @override
   String get onboarding_global_lookup_android_continue_body =>
-      'La ricerca si apre separata dall\'app di origine. Al suo interno puoi toccare altre parole e, chiudendola, torni dov\'eri.';
+      'La ricerca si apre sopra l\'altra app. Chiudila per tornare indietro.';
   @override
-  String get onboarding_feature_manual_resources =>
-      'Importa dizionari e audio manualmente';
+  String get onboarding_feature_manual_resources => 'Importa risorse mie';
   @override
   String get onboarding_feature_manual_resources_hint =>
-      'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+      'Dizionari, audiolibri e fonti di pronuncia dai tuoi file';
   @override
   String get onboarding_step_manual_resources_title =>
-      'Prepara dizionari e audio manualmente';
+      'I tuoi dizionari e audio';
   @override
   String get onboarding_step_manual_resources_body =>
-      'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+      'Importa almeno un dizionario prima del tutorial di ricerca. Audiolibri e audio di pronuncia sono facoltativi.';
   @override
   String get onboarding_manual_dictionary_action => 'Importa un dizionario';
   @override
   String get onboarding_manual_dictionary_action_desc =>
-      'Apri la gestione dizionari e importa almeno un file o un archivio di dizionario supportato. I tutorial di ricerca hanno senso solo quando una ricerca restituisce una definizione.';
+      'Apre la gestione dizionari. Le ricerche danno risultati solo dopo aver installato un dizionario.';
   @override
-  String get onboarding_manual_audiobook_action =>
-      'Importa un libro con l\'audio dell\'audiolibro';
+  String get onboarding_manual_audiobook_action => 'Importa un libro con audio';
   @override
   String get onboarding_manual_audiobook_action_desc =>
-      'Apri l\'importazione libri e scegli il libro o il testo, i sottotitoli allineati e uno o più file audio. Senza sottotitoli Fushi non può allineare l\'audio alle frasi.';
+      'Libro o testo, sottotitoli allineati e file audio. Sono i sottotitoli a permettere a Fushi di sincronizzare l\'audio con le frasi.';
   @override
   String get onboarding_manual_pronunciation_action =>
-      'Configura l\'audio di pronuncia delle parole';
+      'Configura l\'audio di pronuncia';
   @override
   String get onboarding_manual_pronunciation_action_desc =>
-      'Aggiungi le fonti di pronuncia locali o online usate dalle voci del dizionario. È una cosa distinta dall\'audio dell\'audiolibro collegato a un libro.';
+      'Fonti locali o online per la pronuncia delle parole nelle voci del dizionario. È distinto dall\'audio degli audiolibri.';
   @override
-  String get onboarding_lookup_verify_action =>
-      'Verifica una parola nel tuo dizionario';
+  String get onboarding_step_first_anki_card_title => 'La tua prima carta';
   @override
-  String get onboarding_lookup_verify_action_desc =>
-      'Apri la ricerca, scrivi una qualsiasi parola che stai studiando e prosegui solo quando il dizionario installato restituisce una definizione. Il tutorial non impone una parola di esempio.';
+  String get onboarding_first_anki_lookup_title => 'Cerca una parola';
   @override
-  String get onboarding_step_first_anki_card_title =>
-      'Crea la tua prima carta Anki';
-  @override
-  String get onboarding_step_first_anki_card_body =>
-      'Questo passaggio compare solo se in questa configurazione ti sei collegato ad Anki e hai scelto un mazzo e un tipo di nota utilizzabili.';
-  @override
-  String get onboarding_first_anki_lookup_title =>
-      'Parti da un risultato reale del dizionario';
-  @override
-  String get onboarding_first_anki_lookup_body =>
-      'Cerca una parola che il tuo dizionario installato definisce davvero. Non c\'è una parola di esempio fissa che potrebbe mancare nel tuo dizionario.';
-  @override
-  String get onboarding_first_anki_plus_title =>
-      'Tocca il pulsante più sulla voce';
+  String get onboarding_first_anki_plus_title => 'Tocca +';
   @override
   String get onboarding_first_anki_plus_body =>
-      'Il pulsante più apre il creatore di carte con parola, lettura, significato, frase, audio e immagine disponibili al momento.';
+      'Il creatore di carte si apre con parola, lettura, significato, frase, audio e immagine già compilati.';
   @override
   String get onboarding_first_anki_save_title => 'Controlla e salva';
   @override
   String get onboarding_first_anki_save_body =>
-      'Conferma il mazzo di destinazione, il tipo di nota e l\'anteprima dei campi, poi salva. Apri Anki per verificare che la prima carta sia arrivata.';
+      'Conferma mazzo e tipo di nota, poi salva. Apri Anki per vedere la carta.';
   @override
   String get onboarding_first_anki_action => 'Apri la ricerca e crea una carta';
-  @override
-  String get onboarding_first_anki_action_desc =>
-      'Usa una parola con una definizione visibile, tocca il suo pulsante più, controlla i campi e salvala nel mazzo Anki collegato.';
-  @override
-  String get onboarding_step_click_lookup_body =>
-      'Prima verifica una parola che il tuo dizionario installato definisce davvero. Poi usa la stessa parola per esercitarti con la ricerca diretta nei libri, nel testo OCR dei manga e nei sottotitoli dei video.';
-  @override
-  String get onboarding_click_lookup_tap_body =>
-      'Sul telefono tocca un carattere della parola verificata, sul computer fai clic con il tasto sinistro. Fushi parte da lì e trova la parola più lunga che combacia.';
-  @override
-  String get onboarding_global_lookup_windows_select_body =>
-      'Seleziona la stessa parola di cui hai già verificato la definizione e lascia la selezione attiva.';
-  @override
-  String get onboarding_global_lookup_android_select_body =>
-      'Tieni premuta la stessa parola verificata, poi sposta le maniglie di selezione per coprirla tutta.';
   @override
   String get game_lookup_attached_title => 'In-game lookup';
   @override
@@ -64605,6 +64611,71 @@ class _StringsIt extends _StringsEn {
   @override
   String get game_session_japanese_locale_skipped_hint_not_32bit =>
       'Il gioco è stato avviato senza impostazioni locali giapponesi: il verdetto automatico le ritiene necessarie, ma Locale Emulator supporta solo giochi a 32 bit.';
+  @override
+  String get onboarding_feature_fonts => 'Font personalizzati';
+  @override
+  String get onboarding_feature_fonts_hint =>
+      'Usa i tuoi font per l\'interfaccia, il testo dei libri e il dizionario';
+  @override
+  String get onboarding_features_modules_title => 'Pagine della libreria';
+  @override
+  String get onboarding_features_modules_hint =>
+      'Le pagine non selezionate vengono nascoste dalla barra di navigazione. Puoi cambiarle quando vuoi in Impostazioni → Aspetto.';
+  @override
+  String get onboarding_features_setup_title => 'Da configurare dopo';
+  @override
+  String get onboarding_features_setup_hint =>
+      'Solo le voci selezionate avranno un passaggio in questa guida.';
+  @override
+  String get onboarding_pack_intro =>
+      'Dizionari di giapponese, accento tonale, frequenza delle parole e audio di pronuncia JA/EN in un unico download. Stai studiando un\'altra lingua? Salta questo passaggio e importa i tuoi dizionari.';
+  @override
+  String get onboarding_global_lookup_windows_select_desc =>
+      'Seleziona una parola in qualsiasi app e lasciala evidenziata.';
+  @override
+  String get onboarding_global_lookup_android_select_desc =>
+      'Tieni premuta una parola in un\'altra app e sposta le maniglie per coprirla.';
+  @override
+  String get onboarding_global_lookup_windows_shortcut_press =>
+      'Premi la scorciatoia';
+  @override
+  String get onboarding_first_anki_card_intro =>
+      'Anki è collegato. Crea subito una carta vera per verificare che tutto il percorso funzioni.';
+  @override
+  String get onboarding_action_start => 'Inizia a usare Fushi';
+  @override
+  String get onboarding_actions_more => 'Altri modi';
+  @override
+  String get onboarding_finish_summary_modules =>
+      'Pagine della libreria mostrate';
+  @override
+  String get onboarding_finish_summary_setup => 'Configurazione guidata';
+  @override
+  String get onboarding_finish_summary_none => 'Nessuna';
+  @override
+  String get onboarding_anki_status_pending => 'Non ancora testata';
+  @override
+  String get onboarding_click_lookup_intro =>
+      'Tocca una parola qualsiasi in un libro, un manga o un sottotitolo per vederne il significato. Provalo con la frase di esercizio qui sotto.';
+  @override
+  String get onboarding_click_lookup_tap_desc =>
+      'Tocca un carattere (o fai clic con il tasto sinistro); Fushi prende la parola più lunga che inizia lì. La frase si apre nella pagina di ricerca.';
+  @override
+  String get onboarding_sample_sentence_label => 'Frase di esercizio';
+  @override
+  String get onboarding_sample_sentence_hint =>
+      'Tocca per aprirla nella pagina di ricerca, poi tocca una parola qualsiasi.';
+  @override
+  String get onboarding_lookup_practice_action => 'Esercitati con questa frase';
+  @override
+  String get onboarding_lookup_practice_desc =>
+      'Apre la pagina di ricerca con la frase già caricata. Tocca lì una parola per vederne il significato; se non compare nulla, i dizionari non sono ancora installati.';
+  @override
+  String get onboarding_first_anki_lookup_desc =>
+      'Apri la frase di esercizio e tocca una parola.';
+  @override
+  String get onboarding_first_anki_action_desc =>
+      'Apre la frase di esercizio nella pagina di ricerca. Tocca una parola, tocca +, controlla i campi e salva.';
 }
 
 // Path: <root>
@@ -72046,93 +72117,80 @@ class _StringsJa extends _StringsEn {
   @override
   String get onboarding_title => 'はじめに';
   @override
-  String get onboarding_welcome_headline => 'ようこそ！';
+  String get onboarding_welcome_headline => 'Fushi へようこそ';
   @override
-  String get onboarding_feature_anki => 'Ankiフラッシュカード';
+  String get onboarding_feature_anki => 'Anki カード';
   @override
-  String get onboarding_feature_anki_hint =>
-      'AnkiConnectまたはAnkiDroidに接続してフラッシュカードを作成';
+  String get onboarding_feature_anki_hint => '調べた単語をワンタップでフラッシュカードに';
   @override
   String get onboarding_feature_backup => 'バックアップと同期';
   @override
-  String get onboarding_feature_backup_hint =>
-      'Google Drive、WebDAVなどのバックエンドにデータをバックアップ';
+  String get onboarding_feature_backup_hint => 'Google Drive、WebDAV、ローカルファイル';
   @override
   String get onboarding_feature_interconnect => 'デバイスインターコネクト';
   @override
-  String get onboarding_feature_interconnect_hint =>
-      'LAN上のデバイスをペアリングしてライブラリと進捗を共有';
+  String get onboarding_feature_interconnect_hint => 'LAN 上の端末間でライブラリと進捗を共有';
   @override
   String get onboarding_step_dictionary_action => '辞書マネージャーを開く';
   @override
   String get onboarding_step_anki_title => 'Ankiのセットアップ';
   @override
-  String get onboarding_step_anki_action => 'カード作成設定を開く';
+  String get onboarding_step_anki_action => 'カード作成設定';
   @override
-  String get onboarding_step_backup_title => 'バックアップのセットアップ';
+  String get onboarding_step_backup_title => 'バックアップ';
   @override
-  String get onboarding_step_backup_body =>
-      'バックアップバックエンドを選んでサインインするか、ローカルバックアップファイルをエクスポートします。';
+  String get onboarding_step_backup_body => '端末を買い替えても紛失しても、ライブラリを失いません。';
   @override
   String get onboarding_step_backup_action => 'バックアップ設定を開く';
   @override
-  String get onboarding_step_interconnect_title => 'インターコネクトのセットアップ';
+  String get onboarding_step_interconnect_title => 'インターコネクト';
   @override
   String get onboarding_step_interconnect_body =>
-      'インターコネクトを有効にし、LAN上の他のデバイスとペアリングしてライブラリ、進捗、検索を共有します。';
+      'LAN 上の端末をペアリングして、1つのライブラリを共有し進捗を同期します。';
   @override
   String get onboarding_step_interconnect_action => 'インターコネクト設定を開く';
   @override
   String get onboarding_finish_title => '準備完了';
   @override
-  String get onboarding_finish_body => 'このガイドは設定 → システムからいつでも再表示できます。';
+  String get onboarding_finish_body => 'このガイドは設定 → システムからいつでも開き直せます。';
   @override
   String get onboarding_action_next => '次へ';
-  @override
-  String get onboarding_action_finish => '完了';
   @override
   String get onboarding_action_skip => '今はスキップ';
   @override
   String get onboarding_reopen => 'はじめにガイド';
   @override
   String get onboarding_welcome_body =>
-      'まずインターフェース言語とテーマを設定してください。次のステップで残りの設定を案内します。';
+      'インターフェース言語とテーマを選んでください。残りは次のステップで設定します。';
   @override
-  String get onboarding_features_title => '使う機能を選択';
+  String get onboarding_features_title => '何に使いますか？';
   @override
-  String get onboarding_features_modules_label =>
-      'ライブラリタブ（チェックを外すとナビゲーションバーから非表示になります。設定でいつでも変更可能）';
-  @override
-  String get onboarding_features_setup_label => '次にセットアップする項目';
-  @override
-  String get onboarding_feature_manga => 'マンガライブラリ';
+  String get onboarding_feature_manga => 'マンガ';
   @override
   String get onboarding_feature_manga_hint => 'OCR検索付きでマンガを読む';
   @override
-  String get onboarding_feature_video => '動画ライブラリ';
+  String get onboarding_feature_video => '動画';
   @override
-  String get onboarding_feature_video_hint => '字幕検索と制カード付きで動画を視聴';
+  String get onboarding_feature_video_hint => '字幕から調べてカードを作る';
   @override
-  String get onboarding_feature_games => 'ゲームライブラリ';
+  String get onboarding_feature_games => 'ギャルゲー';
   @override
-  String get onboarding_feature_games_hint => 'テキストフック検索付きでギャルゲーを起動（Windowsのみ）';
+  String get onboarding_feature_games_hint => 'プレイしながらテキストフック検索（Windows のみ）';
   @override
-  String get onboarding_feature_pack => 'おすすめパック（辞書＋音声）';
+  String get onboarding_feature_pack => 'おすすめパック';
   @override
-  String get onboarding_feature_pack_hint => '1回のダウンロードで日本語辞書と日英発音音声をセットアップ';
+  String get onboarding_feature_pack_hint => '日本語辞書と日英発音音声を1回のダウンロードで';
   @override
-  String get onboarding_step_pack_title => 'おすすめパックをインストール';
-  @override
-  String get onboarding_step_pack_body =>
-      'おすすめパックには日本語単語辞書、アクセント辞書、頻度辞書、日英発音音声データベースが含まれています。ここでダウンロードしてインポートしてください。インポートはローカルデータを置き換えるため、新規インストール時に実行してください。他の言語を学習中ですか？辞書マネージャーから独自の辞書をインポートしてください。';
+  String get onboarding_step_pack_title => 'おすすめパック';
   @override
   String get onboarding_step_pack_download_action => 'ダウンロードしてインポート';
   @override
-  String get onboarding_step_pack_import_existing_action => 'ダウンロード済みパックをインポート';
+  String get onboarding_step_pack_import_existing_action =>
+      'ダウンロード済みのパックをインポート';
   @override
-  String get onboarding_step_pack_pick_action => 'ローカルパックファイルを選択';
+  String get onboarding_step_pack_pick_action => 'パックファイルを選ぶ';
   @override
-  String get onboarding_pack_downloading => 'ダウンロード中… いつでもキャンセル可能、次回再開します';
+  String get onboarding_pack_downloading => 'ダウンロード中… いつでも中止でき、後で再開できます';
   @override
   String onboarding_pack_download_failed({required Object message}) =>
       'ダウンロードに失敗しました: ${message}';
@@ -72140,14 +72198,13 @@ class _StringsJa extends _StringsEn {
   String get onboarding_step_extension_title => 'ブラウザ拡張機能';
   @override
   String get onboarding_step_extension_body =>
-      'コンパニオンブラウザ拡張機能をインストールして、あらゆるWebページで単語を検索できます。';
+      '専用の拡張機能で、あらゆる Web ページの単語を調べられます。';
   @override
-  String get onboarding_step_extension_action => '拡張機能ガイドを開く';
+  String get onboarding_step_extension_action => 'インストール手順を開く';
   @override
-  String get onboarding_step_fonts_title => '読書フォント';
+  String get onboarding_step_fonts_title => 'フォント';
   @override
-  String get onboarding_step_fonts_body =>
-      'カスタムフォントをインポートし、UI、本文、辞書のどこで使用するかを選択します。';
+  String get onboarding_step_fonts_body => 'UI・本文・辞書に好きなフォントを使えます。';
   @override
   String get settings_section_modules => '機能モジュール';
   @override
@@ -72367,9 +72424,9 @@ class _StringsJa extends _StringsEn {
   @override
   String get module_extension_label => 'ブラウザ拡張機能';
   @override
-  String get onboarding_feature_books => '小説ライブラリ';
+  String get onboarding_feature_books => '小説';
   @override
-  String get onboarding_feature_books_hint => '辞書検索とオーディオブック同期でEPUB小説を読む';
+  String get onboarding_feature_books_hint => 'EPUB を読みながら辞書検索とオーディオブック同期';
   @override
   String get onboarding_feature_extension_hint => '任意のWebページで単語を検索（デスクトップのみ）';
   @override
@@ -72762,13 +72819,13 @@ class _StringsJa extends _StringsEn {
       'ゲームは日本語（CP932）ロケールで起動されました。テキストが文字化けしたりスクリプトエラーが表示される場合は、このゲームの日本語ロケールを「使用しない」に設定してください。';
   @override
   String get onboarding_anki_intro_body =>
-      'Ankiは無料の間隔反復フラッシュカードアプリです。新しい単語がカードになり、忘却曲線に沿って復習がスケジュールされます。検索後、Fushiでワンタップで意味、文、音声、スクリーンショット付きのAnkiカードを作成できます。';
+      'Anki は無料の間隔反復フラッシュカードアプリです。調べた後、Fushi がワンタップで意味・例文・音声・スクリーンショット付きのカードに変換します。';
   @override
   String get onboarding_anki_setup_desktop_hint =>
-      'Ankiデスクトップアプリをインストールし、AnkiConnectアドオンを追加してください。Ankiで「ツール」→「アドオン」→「アドオンを取得」を開き、コード 2055492159 を入力します。カード作成中はAnkiを起動したままにしてください。';
+      'Anki をインストールし、AnkiConnect アドオンを追加して（下のボタン1回、またはアドオンコード 2055492159）、カード作成中は Anki を起動したままにしてください。';
   @override
   String get onboarding_anki_setup_ios_hint =>
-      'AnkiMobileをインストールすれば、カードの追加はすぐに使えます。フル機能を使うには、同じネットワーク上のパソコンで動作しているAnkiにAnkiConnect経由で接続してください。';
+      'AnkiMobile をインストールしていれば、カードは直接追加されます。フル機能を使うには、AnkiConnect 経由で同じネットワーク上のパソコンの Anki に接続してください。';
   @override
   String get onboarding_anki_backend_label => '接続';
   @override
@@ -72782,21 +72839,21 @@ class _StringsJa extends _StringsEn {
   String get onboarding_anki_get_ankidroid_action => 'AnkiDroidを入手';
   @override
   String get onboarding_anki_mobile_ankiconnect_title =>
-      '上級: このデバイスでAnkiConnectを使用';
+      '上級：この端末から AnkiConnect を使う';
   @override
   String get onboarding_anki_mobile_ankiconnect_hint =>
-      'このデバイスから同じネットワーク上のパソコンで動作しているAnkiにカードを作成することもできます。カード作成設定でAnkiConnectを有効にし、パソコンのアドレスを入力してください。';
+      '同じネットワーク上のパソコンで動いている Anki にカードを作成します。カード作成設定で AnkiConnect を有効にし、パソコンのアドレスを入力してください。';
   @override
   String get onboarding_anki_setup_android_hint =>
-      'AnkiDroidをインストールし、一度開いて初回セットアップを完了させてください。Fushiに戻り、最初のカード作成時に表示される権限ダイアログで「許可」をタップするだけです。AnkiDroidの設定変更は不要です。';
+      'AnkiDroid をインストールし、一度開いてください。最初のカード作成時に権限ダイアログで「許可」をタップするだけで、他に設定は不要です。';
   @override
   String get onboarding_anki_install_addon_action => 'AnkiConnectアドオンをインストール';
   @override
   String get onboarding_anki_addon_installed =>
-      'AnkiConnectがインストールされました。Ankiを起動（または再起動）してから、接続テストをタップしてください。';
+      'AnkiConnect をインストールしました。Anki を起動（または再起動）してから、接続テストを実行してください。';
   @override
   String get onboarding_anki_addon_no_anki =>
-      'Ankiのデータフォルダが見つかりません。Ankiをインストールして一度開いてから再試行してください。';
+      'Anki のデータフォルダが見つかりません。Anki をインストールし、一度開いてから再試行してください。';
   @override
   String onboarding_anki_addon_failed({required Object message}) =>
       'インストールに失敗: ${message}';
@@ -73289,57 +73346,54 @@ class _StringsJa extends _StringsEn {
   String get onboarding_action_badge_optional => '任意';
   @override
   String get onboarding_pack_action_download_desc =>
-      'おすすめパック全体をバックグラウンドでダウンロードし、完了後そのままインポートに進みます。いつでも中止でき、次回は中断した位置から再開します。';
+      'バックグラウンドで複数のソースから同時にダウンロードし、そのままインポートします。いつでも中止でき、中断した位置から再開します。';
   @override
   String get onboarding_pack_action_import_existing_desc =>
-      'パックはダウンロード済みです。ここからインポートします。確認ダイアログで「統合」を選べば、既存のデータはそのまま残ります。';
+      'パックはすでにディスク上にあります。確認ダイアログで「統合」を選べば、既存のデータはそのまま残ります。';
   @override
   String get onboarding_pack_action_pick_desc =>
-      'すでに別の場所からパックの zip を入手済みですか？ディスクからインポートすれば、ダウンロードはまるごと省けます。';
+      'パックの zip をすでにお持ちですか？ディスクからインポートすればダウンロードは不要です。';
   @override
-  String get onboarding_pack_action_website => '公式サイトのダウンロードページを開く';
+  String get onboarding_pack_action_website => 'ダウンロードページを開く';
   @override
   String get onboarding_pack_action_website_desc =>
-      'ブラウザで公式サイトを開きます。パックの項に、ダウンロードマネージャーへ渡せる分割リンクが載っています。入手後はここに戻り、「ローカルのパックファイルを選ぶ」からインポートしてください。';
+      'ダウンロードマネージャー用の分割リンクです。入手後はここに戻り、「パックファイルを選ぶ」を使ってください。';
   @override
   String get onboarding_pack_action_dictionary_desc =>
-      '日本語以外の言語を学んでいますか？パックは飛ばして、ここで自分の言語の辞書をインポートしてください。';
+      '他の言語を学びますか？その場合はここで辞書をインポートしてください。';
   @override
   String get onboarding_pack_action_audio_desc =>
-      '発音音声の取得元です。パックには日本語と英語が含まれています。その他の言語はここでオンラインソースを追加してください。';
+      'パックが対応していない言語向けに、オンラインの発音ソースを追加します。';
   @override
   String get onboarding_anki_action_test_desc =>
-      'Fushi が Anki に接続できるか確認し、デッキとノートタイプを読み込みます。この時点では何も作成されません。';
+      'Fushi が Anki に接続できるか確認し、デッキとノートタイプを読み込みます。何も作成しません。';
   @override
   String get onboarding_anki_action_refresh_desc =>
-      'デッキとノートタイプを Anki から読み込み直します。Anki 側で新しいデッキを作った後に使ってください。';
+      'デッキとノートタイプを読み込み直します。Anki でデッキを作った後に使ってください。';
   @override
   String get onboarding_anki_action_get_ankidroid_desc =>
-      'AnkiDroid のストアページを開きます。Fushi はここにカードを書き込むので、先にインストールが必要です。';
+      'ストアページを開きます。Fushi はカードを AnkiDroid に書き込むので、先にインストールが必要です。';
   @override
   String get onboarding_anki_action_get_anki_desc =>
-      'Anki のダウンロードページを開きます。Anki をインストールし、カード作成中は起動したままにしてください。';
+      'Anki のダウンロードページを開きます。カード作成中は Anki を起動したままにしてください。';
   @override
   String get onboarding_anki_action_install_addon_desc =>
-      '同梱の AnkiConnect アドオンを Anki に展開します。Fushi はこれを通じて Anki と通信します。完了後に Anki を再起動してください。';
+      '同梱の AnkiConnect アドオンを Anki に展開します。完了後に Anki を再起動してください。';
   @override
   String get onboarding_step_anki_action_desc =>
-      'カードテンプレート、フィールド対応、スクリーンショットと音声——つまり「出来上がるカードの見た目」です。上でデッキとノートタイプを選べばカード作成は始められるので、カードの作られ方を変えたいときだけ開いてください。';
+      'テンプレート、フィールド対応、スクリーンショットと音声。上のデッキとノートタイプだけで始められます。';
   @override
   String get onboarding_step_backup_action_desc =>
-      'バックアップ先を選んでサインインしておけば、端末を紛失・買い替えてもライブラリは残ります。';
+      'バックアップ先を選んでサインインするか、ローカルのバックアップファイルを書き出します。';
   @override
   String get onboarding_step_interconnect_action_desc =>
-      'この端末を他の端末とペアリングして、同じライブラリを共有し進捗を同期します。';
+      'インターコネクトを有効にし、この端末を他の端末とペアリングします。';
   @override
   String get onboarding_step_extension_action_desc =>
-      'ブラウザ拡張機能のインストール方法と Fushi への接続手順を案内します。ウェブページ上でも辞書を引けるようになります。';
+      '拡張機能のインストール方法と Fushi への接続手順を案内します。';
   @override
   String get onboarding_step_fonts_action_desc =>
-      '自分のフォントファイルを追加し、言語ごとにどれを使うか指定します。';
-  @override
-  String get onboarding_pack_sources_hint =>
-      'GitHub・公式サイト・予備ミラーから同時に分割ダウンロードし、各断片をチェックサムで検証します。ダウンロード中も各ソースの速度を実測し、その時点で最も速いソースに多くの断片を割り当てるため、ここで選ぶ必要はありません。';
+      'フォントファイルをインポートし、言語ごとに1つ選びます。';
   @override
   String get video_setting_hdr_output => 'HDR / 10 ビット出力';
   @override
@@ -73454,125 +73508,95 @@ class _StringsJa extends _StringsEn {
   String web_video_mine_switch_builtin({required Object count}) =>
       '内蔵モードに切り替えて ${count} 件のカードを作成';
   @override
-  String get onboarding_step_click_lookup_title => 'タップして単語を調べる';
+  String get onboarding_step_click_lookup_title => 'タップして調べる';
   @override
-  String get onboarding_click_lookup_tap_title => '本文をタップ';
+  String get onboarding_click_lookup_tap_title => '単語をタップ';
   @override
-  String get onboarding_click_lookup_nested_title => 'ポップアップの中でさらに調べる';
+  String get onboarding_click_lookup_nested_title => 'さらに調べる';
   @override
   String get onboarding_click_lookup_nested_body =>
-      '語義の中の別の単語をタップすると、さらに深い階層で調べられます。戻るかポップアップの外をタップすると1階層閉じます。';
+      '語義の中の単語をタップすると1階層深く調べられます。戻るか外側をタップすると1階層閉じます。';
   @override
-  String get onboarding_click_lookup_mine_title => '結果をカードにする';
+  String get onboarding_click_lookup_mine_title => 'カードを作る';
   @override
   String get onboarding_click_lookup_mine_body =>
-      '語義が合っていたら「＋」をタップして、単語・文・音声・画像をカード作成画面に送ります。';
+      '見出し語の「＋」をタップすると、単語・文・音声・画像がカード作成画面に送られます。';
   @override
-  String get onboarding_step_global_lookup_title => 'Fushi以外のテキストを調べる';
+  String get onboarding_step_global_lookup_title => 'Fushi の外で調べる';
   @override
   String get onboarding_global_lookup_windows_body =>
-      'Windowsでは、他のアプリでテキストを選択するだけで、Fushiに戻らずに辞書を呼び出せます。';
+      'どのアプリでもテキストを選択すれば、ウィンドウを切り替えずに辞書を呼び出せます。';
   @override
-  String get onboarding_global_lookup_windows_select_title => '好きなアプリでテキストを選択';
-  @override
-  String get onboarding_global_lookup_windows_shortcut_title => 'Ctrl+Alt+Dを押す';
+  String get onboarding_global_lookup_windows_select_title => 'テキストを選択';
   @override
   String get onboarding_global_lookup_windows_shortcut_body =>
-      'これが既定のグローバルショートカットです。Fushiが現在の選択範囲を取り込み、マウスポインターの近くに検索カードを開きます。';
+      'Fushi が選択範囲を取り込み、ポインターの横に検索カードを開きます。';
   @override
-  String get onboarding_global_lookup_windows_customize_title =>
-      '必要ならショートカットを変更';
+  String get onboarding_global_lookup_windows_customize_title => 'ショートカットを変更';
   @override
   String get onboarding_global_lookup_windows_customize_body =>
-      '設定 → ショートカット → グローバル（アプリ外）で、別のキーの組み合わせに変更できます。';
+      '設定 → ショートカット → グローバル（アプリ外）。';
   @override
   String get onboarding_global_lookup_windows_action => 'ショートカット設定を開く';
   @override
   String get onboarding_global_lookup_windows_action_desc =>
-      'アプリ外検索のショートカットを変更できます。既定のCtrl+Alt+Dのままでも使えるので、変更は任意です。';
+      '別のキーの組み合わせにしたい場合だけどうぞ。';
   @override
   String get onboarding_global_lookup_android_body =>
-      'Androidでは、テキストメニューや共有シートから選択したテキストがFushiに渡されます。変更できるグローバルホットキーはありません。';
+      'Android はテキストメニューまたは共有シート経由で、選択したテキストを Fushi に渡します。';
   @override
-  String get onboarding_global_lookup_android_select_title => '他のアプリでテキストを選択';
+  String get onboarding_global_lookup_android_select_title => 'テキストを選択';
   @override
   String get onboarding_global_lookup_android_open_title => 'Fushiを選ぶ';
   @override
   String get onboarding_global_lookup_android_open_body =>
-      'テキスト選択メニューでFushiをタップします。表示されていない場合は「共有」をタップし、共有シートからFushiを選んでください。';
+      '選択メニューで Fushi をタップするか、「共有」をタップして Fushi を選びます。';
   @override
-  String get onboarding_global_lookup_android_continue_title =>
-      '独立したポップアップで続ける';
+  String get onboarding_global_lookup_android_continue_title => 'ポップアップを読む';
   @override
   String get onboarding_global_lookup_android_continue_body =>
-      '検索結果は元のアプリとは別に開きます。その中で別の単語をタップして調べ続け、閉じれば元の場所に戻れます。';
+      '検索画面は他のアプリの上に開きます。閉じれば元に戻ります。';
   @override
-  String get onboarding_feature_manual_resources => '辞書と音声を手動でインポート';
+  String get onboarding_feature_manual_resources => '自分の素材をインポート';
   @override
   String get onboarding_feature_manual_resources_hint =>
-      'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+      '手持ちのファイルから辞書・オーディオブック・発音ソースを取り込む';
   @override
-  String get onboarding_step_manual_resources_title => '辞書と音声を手動で準備';
+  String get onboarding_step_manual_resources_title => '自分の辞書と音声';
   @override
   String get onboarding_step_manual_resources_body =>
-      'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+      '検索チュートリアルの前に、辞書を最低1つインポートしてください。オーディオブックと発音音声は任意です。';
   @override
   String get onboarding_manual_dictionary_action => '辞書をインポート';
   @override
   String get onboarding_manual_dictionary_action_desc =>
-      '辞書マネージャーを開き、対応する辞書ファイルまたはアーカイブを最低1つインポートします。検索して語義が返るようになって初めて、以降のチュートリアルが意味を持ちます。';
+      '辞書マネージャーを開きます。辞書を入れて初めて、検索結果が返るようになります。';
   @override
-  String get onboarding_manual_audiobook_action => 'オーディオブック音声付きで書籍をインポート';
+  String get onboarding_manual_audiobook_action => '音声付きで書籍をインポート';
   @override
   String get onboarding_manual_audiobook_action_desc =>
-      '書籍インポートを開き、書籍またはテキスト、対応する字幕、1つ以上の音声ファイルを選びます。音声を文単位で同期させるには字幕が必要です。';
+      '書籍またはテキスト、対応する字幕、音声ファイル。音声を文単位で同期できるのは字幕があるからです。';
   @override
-  String get onboarding_manual_pronunciation_action => '単語の発音音声を設定';
+  String get onboarding_manual_pronunciation_action => '発音音声を設定';
   @override
   String get onboarding_manual_pronunciation_action_desc =>
-      '辞書の見出し語で使うローカルまたはオンラインの発音ソースを追加します。書籍に紐づくオーディオブック音声とは別のものです。';
+      '辞書の見出し語で使う単語発音の、ローカルまたはオンラインのソース。オーディオブック音声とは別物です。';
   @override
-  String get onboarding_lookup_verify_action => '辞書にその単語があるか確認';
+  String get onboarding_step_first_anki_card_title => '最初のカード';
   @override
-  String get onboarding_lookup_verify_action_desc =>
-      '検索を開いて学習中の単語を入力し、インストール済みの辞書が語義を返すのを確認してから進んでください。チュートリアルでは例の単語を固定していません。';
+  String get onboarding_first_anki_lookup_title => '単語を調べる';
   @override
-  String get onboarding_step_first_anki_card_title => '最初のAnkiカードを作る';
-  @override
-  String get onboarding_step_first_anki_card_body =>
-      'このステップは、今回のセットアップでAnkiに接続し、使えるデッキとノートタイプを選んだ場合にだけ表示されます。';
-  @override
-  String get onboarding_first_anki_lookup_title => '実際の辞書結果から始める';
-  @override
-  String get onboarding_first_anki_lookup_body =>
-      'インストール済みの辞書に実際に載っている単語を調べてください。あなたの辞書にない可能性のある固定の例語は使いません。';
-  @override
-  String get onboarding_first_anki_plus_title => '見出し語の「＋」をタップ';
+  String get onboarding_first_anki_plus_title => '「＋」をタップ';
   @override
   String get onboarding_first_anki_plus_body =>
-      '「＋」を押すと、現在の単語・読み・意味・文・音声・使える画像がそのままカード作成画面に入ります。';
+      '単語・読み・意味・文・音声・画像が入力済みの状態でカード作成画面が開きます。';
   @override
   String get onboarding_first_anki_save_title => '確認して保存';
   @override
   String get onboarding_first_anki_save_body =>
-      '保存先のデッキ、ノートタイプ、フィールドのプレビューを確認してから保存します。Ankiを開いて1枚目のカードが届いたか確かめてください。';
+      'デッキとノートタイプを確認して保存します。Anki を開けばカードが見えます。';
   @override
-  String get onboarding_first_anki_action => '検索を開いてカードを作る';
-  @override
-  String get onboarding_first_anki_action_desc =>
-      '語義が表示されている単語を選び、「＋」をタップしてフィールドを確認し、接続済みのAnkiデッキに保存します。';
-  @override
-  String get onboarding_step_click_lookup_body =>
-      'まず、インストール済みの辞書に実際に載っている単語を確認します。次に同じ単語で、書籍の本文・マンガのOCRテキスト・動画の字幕でのタップ検索を練習しましょう。';
-  @override
-  String get onboarding_click_lookup_tap_body =>
-      'スマートフォンでは確認した単語の1文字をタップ、パソコンでは左クリックします。Fushiはそこを起点にいちばん長い単語を照合します。';
-  @override
-  String get onboarding_global_lookup_windows_select_body =>
-      '辞書に語義があると確認済みの同じ単語をドラッグで選択し、選択状態のままにします。';
-  @override
-  String get onboarding_global_lookup_android_select_body =>
-      '辞書に語義があると確認済みの同じ単語を長押しし、選択ハンドルを動かして単語全体を覆います。';
+  String get onboarding_first_anki_action => '辞書ページを開いてカードを作る';
   @override
   String get game_lookup_attached_title => 'In-game lookup';
   @override
@@ -73848,6 +73872,66 @@ class _StringsJa extends _StringsEn {
   @override
   String get game_session_japanese_locale_skipped_hint_not_32bit =>
       '日本語ロケールなしで起動しました：自動判定では必要ですが、Locale Emulator は 32 ビットのゲームのみ対応です。';
+  @override
+  String get onboarding_feature_fonts => 'カスタムフォント';
+  @override
+  String get onboarding_feature_fonts_hint => 'UI・本文・辞書に好きなフォントを使う';
+  @override
+  String get onboarding_features_modules_title => 'ライブラリのページ';
+  @override
+  String get onboarding_features_modules_hint =>
+      'チェックを外したページはナビゲーションバーに表示されません。設定 → 外観でいつでも変更できます。';
+  @override
+  String get onboarding_features_setup_title => '次に設定するもの';
+  @override
+  String get onboarding_features_setup_hint => 'チェックした項目だけがこのガイドの手順に現れます。';
+  @override
+  String get onboarding_pack_intro =>
+      '日本語辞書・アクセント・単語頻度・日英の発音音声を1回のダウンロードで導入します。他の言語を学ぶ場合はここを飛ばして、自分の辞書をインポートしてください。';
+  @override
+  String get onboarding_global_lookup_windows_select_desc =>
+      '任意のアプリで単語を選択し、選択したままにします。';
+  @override
+  String get onboarding_global_lookup_android_select_desc =>
+      '他のアプリで単語を長押しし、選択ハンドルを動かして単語全体を覆います。';
+  @override
+  String get onboarding_global_lookup_windows_shortcut_press => 'ショートカットを押す';
+  @override
+  String get onboarding_first_anki_card_intro =>
+      'Ankiに接続できました。実際にカードを1枚作って、最後まで通ることを確認しましょう。';
+  @override
+  String get onboarding_action_start => 'Fushi を使い始める';
+  @override
+  String get onboarding_actions_more => 'その他の方法';
+  @override
+  String get onboarding_finish_summary_modules => '表示するライブラリのページ';
+  @override
+  String get onboarding_finish_summary_setup => 'ガイド付き設定';
+  @override
+  String get onboarding_finish_summary_none => 'なし';
+  @override
+  String get onboarding_anki_status_pending => '未テスト';
+  @override
+  String get onboarding_click_lookup_intro =>
+      '本・マンガ・字幕の中の単語をタップすると語義が表示されます。下の練習用の文で試してみてください。';
+  @override
+  String get onboarding_click_lookup_tap_desc =>
+      '文字をタップ（パソコンでは左クリック）すると、Fushiがそこから始まる最長の単語を選びます。文は辞書ページで開きます。';
+  @override
+  String get onboarding_sample_sentence_label => '練習用の文';
+  @override
+  String get onboarding_sample_sentence_hint =>
+      'タップすると辞書ページで開きます。その後、好きな単語をタップしてください。';
+  @override
+  String get onboarding_lookup_practice_action => 'この文で練習する';
+  @override
+  String get onboarding_lookup_practice_desc =>
+      '文を読み込んだ状態で辞書ページを開きます。そこで単語をタップすると語義が表示されます。何も出ない場合は、辞書がまだ入っていません。';
+  @override
+  String get onboarding_first_anki_lookup_desc => '練習用の文を開いて、単語をタップします。';
+  @override
+  String get onboarding_first_anki_action_desc =>
+      '練習用の文を辞書ページで開きます。単語をタップし、「＋」をタップして、項目を確認してから保存します。';
 }
 
 // Path: <root>
@@ -81300,108 +81384,94 @@ class _StringsKo extends _StringsEn {
   @override
   String get onboarding_title => '시작하기';
   @override
-  String get onboarding_welcome_headline => '환영합니다!';
+  String get onboarding_welcome_headline => 'Fushi에 오신 것을 환영합니다';
   @override
-  String get onboarding_feature_anki => 'Anki 플래시카드';
+  String get onboarding_feature_anki => 'Anki 카드';
   @override
-  String get onboarding_feature_anki_hint =>
-      'AnkiConnect 또는 AnkiDroid를 연결하여 플래시카드 생성';
+  String get onboarding_feature_anki_hint => '찾은 단어를 한 번의 탭으로 플래시카드로';
   @override
   String get onboarding_feature_backup => '백업 및 동기화';
   @override
-  String get onboarding_feature_backup_hint =>
-      'Google Drive, WebDAV 및 기타 백엔드에 데이터 백업';
+  String get onboarding_feature_backup_hint => 'Google Drive, WebDAV 또는 로컬 파일';
   @override
   String get onboarding_feature_interconnect => '기기 인터커넥트';
   @override
   String get onboarding_feature_interconnect_hint =>
-      'LAN에서 기기를 페어링하여 라이브러리와 진행 상황 공유';
+      'LAN의 여러 기기에서 라이브러리와 진행 상황 공유';
   @override
   String get onboarding_step_dictionary_action => '사전 관리자 열기';
   @override
   String get onboarding_step_anki_title => 'Anki 설정';
   @override
-  String get onboarding_step_anki_action => '카드 생성 설정 열기';
+  String get onboarding_step_anki_action => '카드 생성 설정';
   @override
-  String get onboarding_step_backup_title => '백업 설정';
+  String get onboarding_step_backup_title => '백업';
   @override
-  String get onboarding_step_backup_body =>
-      '백업 백엔드를 선택하고 로그인하거나, 로컬 백업 파일을 내보내세요.';
+  String get onboarding_step_backup_body => '기기를 바꾸거나 잃어버려도 라이브러리는 안전하게.';
   @override
   String get onboarding_step_backup_action => '백업 설정 열기';
   @override
-  String get onboarding_step_interconnect_title => '인터커넥트 설정';
+  String get onboarding_step_interconnect_title => '인터커넥트';
   @override
   String get onboarding_step_interconnect_body =>
-      '인터커넥트를 활성화하고 LAN에서 다른 기기와 페어링하여 라이브러리, 진행 상황, 조회를 공유하세요.';
+      'LAN의 기기를 페어링해 하나의 라이브러리를 공유하고 진도를 동기화하세요.';
   @override
   String get onboarding_step_interconnect_action => '인터커넥트 설정 열기';
   @override
   String get onboarding_finish_title => '모두 완료';
   @override
-  String get onboarding_finish_body => '설정 → 시스템에서 이 가이드를 언제든 다시 볼 수 있습니다.';
+  String get onboarding_finish_body => '설정 → 시스템에서 이 가이드를 언제든 다시 열 수 있습니다.';
   @override
   String get onboarding_action_next => '다음';
-  @override
-  String get onboarding_action_finish => '완료';
   @override
   String get onboarding_action_skip => '나중에 하기';
   @override
   String get onboarding_reopen => '시작 가이드';
   @override
   String get onboarding_welcome_body =>
-      '먼저 인터페이스 언어와 테마를 설정하세요 — 다음 단계에서 나머지를 안내합니다.';
+      '인터페이스 언어와 테마를 고르세요. 나머지는 다음 몇 단계에서 설정합니다.';
   @override
-  String get onboarding_features_title => '사용할 기능 선택';
+  String get onboarding_features_title => '무엇을 사용하시겠어요?';
   @override
-  String get onboarding_features_modules_label =>
-      '라이브러리 탭 (체크 해제 시 내비게이션 바에서 숨김; 설정에서 언제든 변경 가능)';
-  @override
-  String get onboarding_features_setup_label => '다음에 설정할 항목';
-  @override
-  String get onboarding_feature_manga => '만화 라이브러리';
+  String get onboarding_feature_manga => '만화';
   @override
   String get onboarding_feature_manga_hint => 'OCR 조회로 만화 읽기';
   @override
-  String get onboarding_feature_video => '동영상 라이브러리';
+  String get onboarding_feature_video => '동영상';
   @override
-  String get onboarding_feature_video_hint => '자막 조회 및 채굴로 동영상 시청';
+  String get onboarding_feature_video_hint => '자막에서 단어 찾고 카드 만들기';
   @override
-  String get onboarding_feature_games => '게임 라이브러리';
+  String get onboarding_feature_games => '갤겜';
   @override
-  String get onboarding_feature_games_hint => '텍스트 후킹 조회로 게임 실행 (Windows 전용)';
+  String get onboarding_feature_games_hint =>
+      '게임을 하면서 텍스트 후킹으로 단어 찾기 (Windows 전용)';
   @override
-  String get onboarding_feature_pack => '추천 팩 (사전 + 오디오)';
+  String get onboarding_feature_pack => '추천 팩';
   @override
-  String get onboarding_feature_pack_hint => '한 번의 다운로드로 일본어 사전과 일/영 발음 오디오 설정';
+  String get onboarding_feature_pack_hint => '일본어 사전과 일/영 발음 오디오를 한 번에 다운로드';
   @override
-  String get onboarding_step_pack_title => '추천 팩 설치';
-  @override
-  String get onboarding_step_pack_body =>
-      '추천 팩에는 일본어 단어, 악센트, 빈도 사전과 일본어/영어 발음 오디오 데이터베이스가 포함되어 있습니다. 여기서 다운로드하여 가져오세요. 가져오기는 로컬 데이터를 교체하므로 새로 설치한 상태에서 실행하세요. 다른 언어를 학습 중이라면 사전 관리자에서 직접 사전을 가져오세요.';
+  String get onboarding_step_pack_title => '추천 팩';
   @override
   String get onboarding_step_pack_download_action => '다운로드 및 가져오기';
   @override
-  String get onboarding_step_pack_import_existing_action => '다운로드된 팩 가져오기';
+  String get onboarding_step_pack_import_existing_action => '내려받은 팩 가져오기';
   @override
-  String get onboarding_step_pack_pick_action => '로컬 팩 파일 선택';
+  String get onboarding_step_pack_pick_action => '팩 파일 선택';
   @override
-  String get onboarding_pack_downloading => '다운로드 중… 언제든 취소 가능, 다음에 재개됨';
+  String get onboarding_pack_downloading => '다운로드 중… 언제든 취소하고 나중에 이어받을 수 있습니다';
   @override
   String onboarding_pack_download_failed({required Object message}) =>
       '다운로드 실패: ${message}';
   @override
   String get onboarding_step_extension_title => '브라우저 확장';
   @override
-  String get onboarding_step_extension_body =>
-      '동반 브라우저 확장을 설치하여 모든 웹 페이지에서 단어를 조회하세요.';
+  String get onboarding_step_extension_body => '전용 확장으로 어떤 웹 페이지에서든 단어를 찾아보세요.';
   @override
-  String get onboarding_step_extension_action => '확장 가이드 열기';
+  String get onboarding_step_extension_action => '설치 안내 열기';
   @override
-  String get onboarding_step_fonts_title => '읽기 글꼴';
+  String get onboarding_step_fonts_title => '글꼴';
   @override
-  String get onboarding_step_fonts_body =>
-      '사용자 지정 글꼴을 가져와서 UI, 책 텍스트, 사전 중 어디에서 사용할지 선택하세요.';
+  String get onboarding_step_fonts_body => '인터페이스, 책 본문, 사전에 원하는 글꼴을 사용하세요.';
   @override
   String get settings_section_modules => '기능 모듈';
   @override
@@ -81622,9 +81692,9 @@ class _StringsKo extends _StringsEn {
   @override
   String get module_extension_label => '브라우저 확장';
   @override
-  String get onboarding_feature_books => '소설 라이브러리';
+  String get onboarding_feature_books => '소설';
   @override
-  String get onboarding_feature_books_hint => '사전 검색 및 오디오북 동기화로 EPUB 소설 읽기';
+  String get onboarding_feature_books_hint => 'EPUB 읽기, 단어 찾기, 오디오북 동기화';
   @override
   String get onboarding_feature_extension_hint => '모든 웹 페이지에서 단어 검색 (데스크톱 전용)';
   @override
@@ -82020,13 +82090,13 @@ class _StringsKo extends _StringsEn {
       '이 게임은 일본어(CP932) 로케일에서 시작되었습니다. 텍스트가 깨지거나 스크립트 오류가 나타나면 이 게임의 일본어 로케일을 \'사용 안 함\'으로 설정하세요.';
   @override
   String get onboarding_anki_intro_body =>
-      'Anki는 무료 간격 반복 플래시카드 앱입니다. 새 단어가 카드가 되고 망각 곡선에 따라 복습이 예약됩니다. 검색 후 Fushi에서 한 번의 탭으로 뜻, 예문, 오디오, 스크린샷과 함께 Anki 카드를 만들 수 있습니다.';
+      'Anki는 무료 간격 반복 플래시카드 앱입니다. 단어를 찾은 뒤 Fushi가 한 번의 탭으로 뜻, 예문, 오디오, 스크린샷이 담긴 카드를 만들어 줍니다.';
   @override
   String get onboarding_anki_setup_desktop_hint =>
-      'Anki 데스크톱 앱을 설치한 다음 AnkiConnect 애드온을 추가하세요: Anki에서 도구 > 부가기능 > 부가기능 받기를 열고 코드 2055492159를 입력하세요. 카드를 만드는 동안 Anki를 실행 상태로 유지하세요.';
+      'Anki를 설치하고 AnkiConnect 애드온을 추가한 뒤(아래에서 한 번 탭하거나 애드온 코드 2055492159), 카드를 만드는 동안 Anki를 켜 두세요.';
   @override
   String get onboarding_anki_setup_ios_hint =>
-      'AnkiMobile이 설치되어 있으면 카드 추가가 바로 작동합니다. 전체 기능을 사용하려면 같은 네트워크의 컴퓨터에서 실행 중인 Anki에 AnkiConnect로 연결하세요.';
+      'AnkiMobile이 설치되어 있으면 카드가 바로 추가됩니다. 전체 기능을 쓰려면 AnkiConnect로 같은 네트워크의 컴퓨터에 있는 Anki에 연결하세요.';
   @override
   String get onboarding_anki_backend_label => '연결';
   @override
@@ -82040,21 +82110,21 @@ class _StringsKo extends _StringsEn {
   String get onboarding_anki_get_ankidroid_action => 'AnkiDroid 받기';
   @override
   String get onboarding_anki_mobile_ankiconnect_title =>
-      '고급: 이 기기에서 AnkiConnect 사용';
+      '고급: 이 기기에서 AnkiConnect 사용하기';
   @override
   String get onboarding_anki_mobile_ankiconnect_hint =>
-      '이 기기에서도 같은 네트워크의 컴퓨터에서 실행 중인 Anki에 카드를 만들 수 있습니다: 카드 생성 설정에서 AnkiConnect를 활성화하고 컴퓨터 주소를 입력하세요.';
+      '같은 네트워크의 컴퓨터에서 실행 중인 Anki에 카드를 만듭니다. 카드 생성 설정에서 AnkiConnect를 켜고 컴퓨터 주소를 입력하세요.';
   @override
   String get onboarding_anki_setup_android_hint =>
-      'AnkiDroid를 설치하고 한 번 열어 초기 설정을 완료하세요. Fushi로 돌아와 첫 카드를 만들 때 나타나는 권한 대화상자에서 허용을 탭하세요 - AnkiDroid 설정을 변경할 필요가 없습니다.';
+      'AnkiDroid를 설치하고 한 번 여세요. 첫 카드를 만들 때 권한 대화상자에서 허용을 탭하면 되고, 그 외에는 설정할 것이 없습니다.';
   @override
   String get onboarding_anki_install_addon_action => 'AnkiConnect 애드온 설치';
   @override
   String get onboarding_anki_addon_installed =>
-      'AnkiConnect가 설치되었습니다. Anki를 시작(또는 재시작)한 다음 연결 테스트를 탭하세요.';
+      'AnkiConnect를 설치했습니다. Anki를 시작하거나 다시 시작한 다음 연결을 테스트하세요.';
   @override
   String get onboarding_anki_addon_no_anki =>
-      'Anki 데이터 폴더를 찾을 수 없습니다. Anki를 설치하고 한 번 열은 다음 다시 시도하세요.';
+      'Anki 데이터 폴더를 찾을 수 없습니다. Anki를 설치하고 한 번 연 다음 다시 시도하세요.';
   @override
   String onboarding_anki_addon_failed({required Object message}) =>
       '설치 실패: ${message}';
@@ -82545,57 +82615,53 @@ class _StringsKo extends _StringsEn {
   String get onboarding_action_badge_optional => '선택';
   @override
   String get onboarding_pack_action_download_desc =>
-      '추천 팩 전체를 백그라운드로 내려받은 뒤 이어서 가져오기를 진행합니다. 언제든 취소할 수 있고, 다음에 중단된 지점부터 이어받습니다.';
+      '백그라운드에서 여러 소스에서 동시에 내려받은 뒤 가져옵니다. 언제든 취소할 수 있고 중단된 지점부터 이어받습니다.';
   @override
   String get onboarding_pack_action_import_existing_desc =>
-      '팩이 이미 내려받아져 있습니다. 여기서 바로 가져옵니다. 확인 창에서 «병합»을 고르면 기존 데이터는 그대로 유지됩니다.';
+      '팩이 이미 디스크에 있습니다. 확인 창에서 «병합»을 고르면 기존 데이터가 유지됩니다.';
   @override
   String get onboarding_pack_action_pick_desc =>
-      '다른 곳에서 이미 팩 zip을 받으셨나요? 디스크에서 가져오면 내려받기를 통째로 건너뛸 수 있습니다.';
+      '이미 팩 zip이 있으신가요? 디스크에서 가져오고 내려받기를 건너뛰세요.';
   @override
-  String get onboarding_pack_action_website => '공식 사이트 다운로드 페이지 열기';
+  String get onboarding_pack_action_website => '다운로드 페이지 열기';
   @override
   String get onboarding_pack_action_website_desc =>
-      '브라우저에서 공식 사이트를 엽니다. 팩 항목에 다운로드 관리자에 넣을 수 있는 분할 링크가 있습니다. 받은 뒤 여기로 돌아와 «로컬 팩 파일 선택»으로 가져오세요.';
+      '다운로드 관리자용 분할 링크입니다. 받은 뒤 돌아와서 «팩 파일 선택»을 사용하세요.';
   @override
   String get onboarding_pack_action_dictionary_desc =>
-      '일본어 말고 다른 언어를 배우시나요? 팩은 건너뛰고 여기서 해당 언어의 사전을 가져오세요.';
+      '다른 언어를 배우시나요? 여기서 해당 언어의 사전을 가져오세요.';
   @override
   String get onboarding_pack_action_audio_desc =>
-      '발음 오디오의 출처입니다. 팩에는 일본어와 영어가 이미 들어 있습니다. 다른 언어는 여기서 온라인 소스를 추가하세요.';
+      '팩이 다루지 않는 언어를 위해 온라인 발음 소스를 추가하세요.';
   @override
   String get onboarding_anki_action_test_desc =>
-      'Fushi가 Anki에 연결되는지 확인하고 덱과 노트 유형을 불러옵니다. 이 단계에서는 아무것도 만들지 않습니다.';
+      'Fushi가 Anki에 연결되는지 확인하고 덱과 노트 유형을 불러옵니다. 아무것도 만들지 않습니다.';
   @override
   String get onboarding_anki_action_refresh_desc =>
-      'Anki에서 덱과 노트 유형을 다시 불러옵니다. Anki에서 새 덱을 만든 뒤에 사용하세요.';
+      '덱과 노트 유형을 다시 불러옵니다. Anki에서 덱을 만든 뒤에 사용하세요.';
   @override
   String get onboarding_anki_action_get_ankidroid_desc =>
-      'AnkiDroid 스토어 페이지를 엽니다. Fushi가 여기에 카드를 쓰므로 먼저 설치해야 합니다.';
+      '스토어 페이지를 엽니다. Fushi가 카드를 AnkiDroid에 쓰므로 먼저 설치해야 합니다.';
   @override
   String get onboarding_anki_action_get_anki_desc =>
-      'Anki 다운로드 페이지를 엽니다. Anki를 설치하고 카드를 만드는 동안 켜 두세요.';
+      'Anki 다운로드 페이지를 엽니다. 카드를 만드는 동안 Anki를 켜 두세요.';
   @override
   String get onboarding_anki_action_install_addon_desc =>
-      '내장된 AnkiConnect 애드온을 Anki에 풀어 넣습니다. Fushi는 이것을 통해 Anki와 통신합니다. 설치 후 Anki를 다시 시작하세요.';
+      '내장된 AnkiConnect 애드온을 Anki에 풀어 넣습니다. 그다음 Anki를 다시 시작하세요.';
   @override
   String get onboarding_step_anki_action_desc =>
-      '카드 템플릿, 필드 매핑, 스크린샷과 오디오 — 즉 «만들어진 카드가 어떻게 생겼는지»입니다. 위에서 덱과 노트 유형만 고르면 카드 만들기를 시작할 수 있으니, 카드가 만들어지는 방식을 바꾸고 싶을 때만 들어오세요.';
+      '템플릿, 필드 매핑, 스크린샷과 오디오. 위의 덱과 노트 유형만으로도 시작할 수 있습니다.';
   @override
   String get onboarding_step_backup_action_desc =>
-      '백업 백엔드를 고르고 로그인해 두면 기기를 잃어버리거나 바꿔도 라이브러리가 남습니다.';
+      '백엔드를 고르고 로그인하거나, 로컬 백업 파일을 내보내세요.';
   @override
   String get onboarding_step_interconnect_action_desc =>
-      '이 기기를 다른 기기와 페어링해 같은 라이브러리를 공유하고 진도를 동기화합니다.';
+      '인터커넥트를 켜고 이 기기를 다른 기기와 페어링하세요.';
   @override
   String get onboarding_step_extension_action_desc =>
-      '브라우저 확장을 설치하고 Fushi에 연결하는 방법을 안내합니다. 웹페이지에서도 단어를 찾을 수 있게 됩니다.';
+      '확장을 설치하고 Fushi에 연결하는 방법을 보여 줍니다.';
   @override
-  String get onboarding_step_fonts_action_desc =>
-      '자신의 글꼴 파일을 추가하고 언어마다 어떤 글꼴을 쓸지 지정합니다.';
-  @override
-  String get onboarding_pack_sources_hint =>
-      'GitHub, 공식 사이트, 예비 미러에서 동시에 조각을 나눠 내려받고 조각마다 체크섬을 확인합니다. 내려받는 동안 각 소스의 속도를 실측해 그 순간 가장 빠른 쪽에 더 많은 조각을 맡기므로, 여기서 고를 것은 없습니다.';
+  String get onboarding_step_fonts_action_desc => '글꼴 파일을 가져오고 언어마다 하나씩 고르세요.';
   @override
   String get video_setting_hdr_output => 'HDR / 10비트 출력';
   @override
@@ -82709,124 +82775,95 @@ class _StringsKo extends _StringsEn {
   String web_video_mine_switch_builtin({required Object count}) =>
       '내장 모드로 전환하여 대기 중인 카드 ${count}개 만들기';
   @override
-  String get onboarding_step_click_lookup_title => '탭해서 단어 찾기';
+  String get onboarding_step_click_lookup_title => '탭해서 찾기';
   @override
-  String get onboarding_click_lookup_tap_title => '글자를 탭하세요';
+  String get onboarding_click_lookup_tap_title => '단어를 탭하세요';
   @override
-  String get onboarding_click_lookup_nested_title => '팝업에서 계속 찾아보기';
+  String get onboarding_click_lookup_nested_title => '계속 찾아보기';
   @override
   String get onboarding_click_lookup_nested_body =>
-      '뜻풀이 안의 다른 단어를 탭하면 한 단계 더 깊이 찾을 수 있습니다. 뒤로 가거나 팝업 밖을 탭하면 한 단계 닫힙니다.';
+      '뜻풀이 안의 단어를 탭하면 한 단계 더 들어갑니다. 뒤로 가거나 밖을 탭하면 한 단계 닫힙니다.';
   @override
-  String get onboarding_click_lookup_mine_title => '결과를 카드로 만들기';
+  String get onboarding_click_lookup_mine_title => '카드 만들기';
   @override
   String get onboarding_click_lookup_mine_body =>
-      '뜻이 맞으면 +를 탭해 단어, 문장, 오디오, 이미지를 카드 생성기로 보내세요.';
+      '항목의 +를 탭하면 단어, 문장, 오디오, 이미지가 카드 생성기로 전달됩니다.';
   @override
-  String get onboarding_step_global_lookup_title => 'Fushi 밖의 텍스트 찾기';
+  String get onboarding_step_global_lookup_title => 'Fushi 밖에서 찾기';
   @override
   String get onboarding_global_lookup_windows_body =>
-      'Windows에서는 다른 앱에서 텍스트를 선택하면 Fushi로 돌아가지 않고도 사전을 띄울 수 있습니다.';
+      '아무 앱에서나 텍스트를 선택하면 창을 바꾸지 않고 사전을 띄울 수 있습니다.';
   @override
-  String get onboarding_global_lookup_windows_select_title => '아무 앱에서나 텍스트 선택';
-  @override
-  String get onboarding_global_lookup_windows_shortcut_title =>
-      'Ctrl+Alt+D 누르기';
+  String get onboarding_global_lookup_windows_select_title => '텍스트 선택';
   @override
   String get onboarding_global_lookup_windows_shortcut_body =>
-      '기본 전역 단축키입니다. Fushi가 현재 선택 영역을 가져와 마우스 포인터 근처에 검색 카드를 엽니다.';
+      'Fushi가 선택 영역을 가져와 포인터 옆에 찾기 카드를 엽니다.';
   @override
-  String get onboarding_global_lookup_windows_customize_title => '필요하면 단축키 변경';
+  String get onboarding_global_lookup_windows_customize_title => '단축키 변경';
   @override
   String get onboarding_global_lookup_windows_customize_body =>
-      '설정 → 단축키 → 전역(앱 외부)에서 다른 키 조합을 지정하세요.';
+      '설정 → 단축키 → 전역(앱 외부).';
   @override
   String get onboarding_global_lookup_windows_action => '단축키 설정 열기';
   @override
   String get onboarding_global_lookup_windows_action_desc =>
-      '앱 외부 검색 단축키를 바꿀 수 있습니다. 기본값 Ctrl+Alt+D도 이미 작동하므로 변경은 선택 사항입니다.';
+      '다른 키 조합을 쓰고 싶을 때만 들어오세요.';
   @override
   String get onboarding_global_lookup_android_body =>
-      'Android에서는 시스템이 텍스트 메뉴나 공유 시트를 통해 선택한 텍스트를 Fushi에 전달합니다. 따로 지정할 수 있는 전역 단축키는 없습니다.';
+      'Android는 텍스트 메뉴나 공유 시트를 통해 선택한 텍스트를 Fushi에 넘겨줍니다.';
   @override
-  String get onboarding_global_lookup_android_select_title => '다른 앱에서 텍스트 선택';
+  String get onboarding_global_lookup_android_select_title => '텍스트 선택';
   @override
   String get onboarding_global_lookup_android_open_title => 'Fushi 선택';
   @override
   String get onboarding_global_lookup_android_open_body =>
-      '텍스트 선택 메뉴에서 Fushi를 탭하세요. 보이지 않으면 공유를 탭한 뒤 공유 시트에서 Fushi를 고르면 됩니다.';
+      '선택 메뉴에서 Fushi를 탭하거나, 공유를 탭한 뒤 Fushi를 고르세요.';
   @override
-  String get onboarding_global_lookup_android_continue_title => '독립 팝업에서 이어보기';
+  String get onboarding_global_lookup_android_continue_title => '팝업 읽기';
   @override
   String get onboarding_global_lookup_android_continue_body =>
-      '검색 결과는 원래 앱과 별도로 열립니다. 그 안에서 다른 단어를 계속 탭할 수 있고, 닫으면 보던 곳으로 돌아갑니다.';
+      '찾기 창이 다른 앱 위에 열립니다. 닫으면 돌아갑니다.';
   @override
-  String get onboarding_feature_manual_resources => '사전과 오디오 직접 가져오기';
+  String get onboarding_feature_manual_resources => '내 자료 가져오기';
   @override
   String get onboarding_feature_manual_resources_hint =>
-      'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+      '내 파일에서 사전, 오디오북, 발음 소스 가져오기';
   @override
-  String get onboarding_step_manual_resources_title => '사전과 오디오 직접 준비하기';
+  String get onboarding_step_manual_resources_title => '내 사전과 오디오';
   @override
   String get onboarding_step_manual_resources_body =>
-      'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+      '단어 찾기 튜토리얼 전에 사전을 최소 하나 가져오세요. 오디오북과 발음 오디오는 선택 사항입니다.';
   @override
   String get onboarding_manual_dictionary_action => '사전 가져오기';
   @override
   String get onboarding_manual_dictionary_action_desc =>
-      '사전 관리자를 열고 지원되는 사전 파일이나 압축 파일을 최소 하나 가져오세요. 검색이 뜻을 돌려줘야 이후 튜토리얼이 의미가 있습니다.';
+      '사전 관리자를 엽니다. 사전을 설치해야 검색 결과가 나옵니다.';
   @override
-  String get onboarding_manual_audiobook_action => '오디오북 음성이 있는 책 가져오기';
+  String get onboarding_manual_audiobook_action => '오디오가 있는 책 가져오기';
   @override
   String get onboarding_manual_audiobook_action_desc =>
-      '책 가져오기를 열고 책 또는 텍스트, 맞춰진 자막, 오디오 파일 하나 이상을 고르세요. Fushi가 문장 단위로 맞추려면 자막이 필요합니다.';
+      '책 또는 텍스트, 맞춰진 자막, 오디오 파일. Fushi가 오디오를 문장에 맞출 수 있는 건 자막 덕분입니다.';
   @override
-  String get onboarding_manual_pronunciation_action => '단어 발음 오디오 설정하기';
+  String get onboarding_manual_pronunciation_action => '발음 오디오 설정';
   @override
   String get onboarding_manual_pronunciation_action_desc =>
-      '사전 항목에서 쓰는 로컬 또는 온라인 발음 소스를 추가하세요. 책에 연결된 오디오북 음성과는 별개입니다.';
+      '사전 항목의 단어 발음을 위한 로컬 또는 온라인 소스. 오디오북 음성과는 별개입니다.';
   @override
-  String get onboarding_lookup_verify_action => '사전에 그 단어가 있는지 확인하기';
+  String get onboarding_step_first_anki_card_title => '첫 카드';
   @override
-  String get onboarding_lookup_verify_action_desc =>
-      '검색을 열고 지금 배우는 단어를 아무거나 입력한 뒤, 설치된 사전이 뜻을 보여줄 때만 다음으로 넘어가세요. 튜토리얼에 정해진 예시 단어는 없습니다.';
+  String get onboarding_first_anki_lookup_title => '단어 찾기';
   @override
-  String get onboarding_step_first_anki_card_title => '첫 Anki 카드 만들기';
-  @override
-  String get onboarding_step_first_anki_card_body =>
-      '이 단계는 이번 설정에서 Anki에 연결하고 사용할 수 있는 덱과 노트 유형을 고른 경우에만 나타납니다.';
-  @override
-  String get onboarding_first_anki_lookup_title => '실제 사전 결과에서 시작하기';
-  @override
-  String get onboarding_first_anki_lookup_body =>
-      '설치된 사전에 실제로 실려 있는 단어를 찾아보세요. 사전에 없을 수도 있는 고정된 예시 단어는 쓰지 않습니다.';
-  @override
-  String get onboarding_first_anki_plus_title => '항목의 + 버튼 탭하기';
+  String get onboarding_first_anki_plus_title => '+ 탭하기';
   @override
   String get onboarding_first_anki_plus_body =>
-      '+ 버튼을 누르면 현재 단어, 읽기, 뜻, 문장, 오디오, 사용할 수 있는 이미지가 그대로 카드 생성기에 들어갑니다.';
+      '단어, 읽기, 뜻, 문장, 오디오, 이미지가 채워진 채로 카드 생성기가 열립니다.';
   @override
-  String get onboarding_first_anki_save_title => '확인하고 저장하기';
+  String get onboarding_first_anki_save_title => '확인하고 저장';
   @override
   String get onboarding_first_anki_save_body =>
-      '대상 덱, 노트 유형, 필드 미리보기를 확인한 뒤 저장하세요. Anki를 열어 첫 카드가 들어왔는지 확인하면 됩니다.';
+      '덱과 노트 유형을 확인하고 저장하세요. Anki를 열면 카드가 보입니다.';
   @override
-  String get onboarding_first_anki_action => '검색 열고 카드 만들기';
-  @override
-  String get onboarding_first_anki_action_desc =>
-      '뜻이 보이는 단어를 골라 + 버튼을 탭하고, 필드를 확인한 뒤 연결된 Anki 덱에 저장하세요.';
-  @override
-  String get onboarding_step_click_lookup_body =>
-      '먼저 설치된 사전에 실제로 실려 있는 단어를 확인하세요. 그런 다음 같은 단어로 책 본문, 만화 OCR 텍스트, 동영상 자막에서 탭 검색을 연습해 보세요.';
-  @override
-  String get onboarding_click_lookup_tap_body =>
-      '휴대폰에서는 확인한 단어의 글자 하나를 탭하고, 컴퓨터에서는 왼쪽 버튼으로 클릭하세요. Fushi는 그 자리에서 시작해 가장 긴 단어를 찾아냅니다.';
-  @override
-  String get onboarding_global_lookup_windows_select_body =>
-      '사전에 뜻이 있다고 확인한 그 단어를 드래그해 선택하고, 선택 상태를 유지하세요.';
-  @override
-  String get onboarding_global_lookup_android_select_body =>
-      '확인한 그 단어를 길게 누른 뒤 선택 핸들을 움직여 단어 전체를 덮으세요.';
+  String get onboarding_first_anki_action => '단어 찾기 열고 카드 만들기';
   @override
   String get game_lookup_attached_title => 'In-game lookup';
   @override
@@ -83102,6 +83139,66 @@ class _StringsKo extends _StringsEn {
   @override
   String get game_session_japanese_locale_skipped_hint_not_32bit =>
       '일본어 로케일 없이 시작됨: 자동 판정은 필요하다고 하지만 Locale Emulator는 32비트 게임만 지원합니다.';
+  @override
+  String get onboarding_feature_fonts => '사용자 지정 글꼴';
+  @override
+  String get onboarding_feature_fonts_hint => '인터페이스, 책 본문, 사전에 원하는 글꼴 사용';
+  @override
+  String get onboarding_features_modules_title => '라이브러리 페이지';
+  @override
+  String get onboarding_features_modules_hint =>
+      '선택하지 않은 페이지는 내비게이션 바에서 숨겨집니다. 설정 → 외관에서 언제든 바꿀 수 있습니다.';
+  @override
+  String get onboarding_features_setup_title => '다음에 설정할 것';
+  @override
+  String get onboarding_features_setup_hint => '선택한 항목만 이 가이드의 단계로 나타납니다.';
+  @override
+  String get onboarding_pack_intro =>
+      '일본어 사전, 고저 악센트, 단어 빈도, 일/영 발음 오디오를 한 번에 내려받습니다. 다른 언어를 배우신다면 건너뛰고 직접 사전을 가져오세요.';
+  @override
+  String get onboarding_global_lookup_windows_select_desc =>
+      '아무 앱에서나 단어를 드래그해 선택하고 그대로 두세요.';
+  @override
+  String get onboarding_global_lookup_android_select_desc =>
+      '다른 앱에서 단어를 길게 누른 뒤 선택 핸들을 조절해 단어를 덮으세요.';
+  @override
+  String get onboarding_global_lookup_windows_shortcut_press => '단축키 누르기';
+  @override
+  String get onboarding_first_anki_card_intro =>
+      'Anki가 연결되었습니다. 이제 진짜 카드를 한 장 만들어 전체 과정이 되는지 확인하세요.';
+  @override
+  String get onboarding_action_start => 'Fushi 시작하기';
+  @override
+  String get onboarding_actions_more => '다른 방법';
+  @override
+  String get onboarding_finish_summary_modules => '표시할 라이브러리 페이지';
+  @override
+  String get onboarding_finish_summary_setup => '가이드 설정';
+  @override
+  String get onboarding_finish_summary_none => '없음';
+  @override
+  String get onboarding_anki_status_pending => '아직 테스트 안 함';
+  @override
+  String get onboarding_click_lookup_intro =>
+      '책, 만화, 자막에서 아무 단어나 탭하면 뜻이 나옵니다. 아래 연습 문장으로 해 보세요.';
+  @override
+  String get onboarding_click_lookup_tap_desc =>
+      '글자를 탭하면(컴퓨터에서는 왼쪽 클릭) Fushi가 그 자리에서 시작하는 가장 긴 단어를 잡습니다. 문장은 단어 찾기 페이지에서 열립니다.';
+  @override
+  String get onboarding_sample_sentence_label => '연습 문장';
+  @override
+  String get onboarding_sample_sentence_hint =>
+      '탭하면 단어 찾기 페이지에서 열립니다. 그다음 아무 단어나 탭하세요.';
+  @override
+  String get onboarding_lookup_practice_action => '이 문장으로 연습하기';
+  @override
+  String get onboarding_lookup_practice_desc =>
+      '문장을 불러온 상태로 단어 찾기 페이지를 엽니다. 거기서 단어를 탭하면 뜻이 나옵니다. 아무것도 안 나오면 사전이 아직 설치되지 않은 것입니다.';
+  @override
+  String get onboarding_first_anki_lookup_desc => '연습 문장을 열고 단어를 탭하세요.';
+  @override
+  String get onboarding_first_anki_action_desc =>
+      '단어 찾기 페이지에서 연습 문장을 엽니다. 단어를 탭하고 +를 탭한 뒤, 필드를 확인하고 저장하세요.';
 }
 
 // Path: <root>
@@ -90982,40 +91079,40 @@ class _StringsNl extends _StringsEn {
   @override
   String get onboarding_title => 'Aan de slag';
   @override
-  String get onboarding_welcome_headline => 'Welkom!';
+  String get onboarding_welcome_headline => 'Welkom bij Fushi';
   @override
-  String get onboarding_feature_anki => 'Anki-flashcards';
+  String get onboarding_feature_anki => 'Anki-kaarten';
   @override
   String get onboarding_feature_anki_hint =>
-      'Verbind AnkiConnect of AnkiDroid om flashcards te maken';
+      'Maak van je opzoekacties in één tik flashcards';
   @override
   String get onboarding_feature_backup => 'Back-up & sync';
   @override
   String get onboarding_feature_backup_hint =>
-      'Maak een back-up van je gegevens naar Google Drive, WebDAV en andere backends';
+      'Google Drive, WebDAV of een lokaal bestand';
   @override
   String get onboarding_feature_interconnect => 'Apparaatverbinding';
   @override
   String get onboarding_feature_interconnect_hint =>
-      'Koppel apparaten op je LAN om bibliotheken en voortgang te delen';
+      'Deel bibliotheken en voortgang tussen apparaten op je LAN';
   @override
   String get onboarding_step_dictionary_action => 'Woordenboekbeheer openen';
   @override
   String get onboarding_step_anki_title => 'Anki instellen';
   @override
-  String get onboarding_step_anki_action => 'Kaartaanmaak-instellingen openen';
+  String get onboarding_step_anki_action => 'Kaartaanmaak-instellingen';
   @override
-  String get onboarding_step_backup_title => 'Back-up instellen';
+  String get onboarding_step_backup_title => 'Back-up';
   @override
   String get onboarding_step_backup_body =>
-      'Kies een back-upbackend en meld je aan, of exporteer een lokaal back-upbestand.';
+      'Houd je bibliotheek veilig als je van apparaat wisselt of er een kwijtraakt.';
   @override
   String get onboarding_step_backup_action => 'Back-upinstellingen openen';
   @override
-  String get onboarding_step_interconnect_title => 'Interconnect instellen';
+  String get onboarding_step_interconnect_title => 'Interconnect';
   @override
   String get onboarding_step_interconnect_body =>
-      'Schakel interconnect in en koppel met andere apparaten op je LAN om bibliotheken, voortgang en opzoekacties te delen.';
+      'Koppel apparaten op je LAN om één bibliotheek te delen en de voortgang gelijk te houden.';
   @override
   String get onboarding_step_interconnect_action =>
       'Interconnect-instellingen openen';
@@ -91023,61 +91120,49 @@ class _StringsNl extends _StringsEn {
   String get onboarding_finish_title => 'Helemaal klaar';
   @override
   String get onboarding_finish_body =>
-      'Je kunt deze gids altijd opnieuw bekijken via Instellingen → Systeem.';
+      'Je kunt deze gids altijd opnieuw openen via Instellingen → Systeem.';
   @override
   String get onboarding_action_next => 'Volgende';
-  @override
-  String get onboarding_action_finish => 'Voltooien';
   @override
   String get onboarding_action_skip => 'Later';
   @override
   String get onboarding_reopen => 'Aan-de-slaggids';
   @override
   String get onboarding_welcome_body =>
-      'Stel eerst je interfacetaal en thema in — de volgende stappen leiden je door de rest.';
+      'Kies je interfacetaal en thema. De volgende stappen regelen de rest.';
   @override
-  String get onboarding_features_title => 'Kies wat je gebruikt';
+  String get onboarding_features_title => 'Wat ga je gebruiken?';
   @override
-  String get onboarding_features_modules_label =>
-      'Bibliotheektabbladen (uitgevinkte worden verborgen in de navigatiebalk; altijd te wijzigen bij Instellingen)';
-  @override
-  String get onboarding_features_setup_label => 'Wat vervolgens in te stellen';
-  @override
-  String get onboarding_feature_manga => 'Mangabibliotheek';
+  String get onboarding_feature_manga => 'Manga';
   @override
   String get onboarding_feature_manga_hint => 'Lees manga met OCR-opzoeken';
   @override
-  String get onboarding_feature_video => 'Videobibliotheek';
+  String get onboarding_feature_video => 'Video';
   @override
   String get onboarding_feature_video_hint =>
-      'Bekijk video\'s met ondertitelopzoeken en kaartdelven';
+      'Opzoeken in ondertitels en kaarten maken';
   @override
-  String get onboarding_feature_games => 'Galgamebibliotheek';
+  String get onboarding_feature_games => 'Galgames';
   @override
   String get onboarding_feature_games_hint =>
-      'Start galgames met texthook-opzoeken (alleen Windows)';
+      'Texthook-opzoeken tijdens het spelen (alleen Windows)';
   @override
-  String get onboarding_feature_pack =>
-      'Aanbevolen pakket (woordenboeken + audio)';
+  String get onboarding_feature_pack => 'Aanbevolen pakket';
   @override
   String get onboarding_feature_pack_hint =>
-      'Eén download stelt Japanse woordenboeken plus JA/EN uitspraakaudio in';
+      'Japanse woordenboeken plus JA/EN-uitspraakaudio in één download';
   @override
-  String get onboarding_step_pack_title => 'Het aanbevolen pakket installeren';
-  @override
-  String get onboarding_step_pack_body =>
-      'Het aanbevolen pakket bundelt Japanse woord-, accenttoon- en frequentiewoordenboeken plus Japanse/Engelse uitspraakaudiodatabases. Download en importeer het hier; importeren vervangt lokale gegevens, dus doe het op een schone installatie. Leer je een andere taal? Gebruik het woordenboekbeheer om je eigen woordenboeken te importeren.';
+  String get onboarding_step_pack_title => 'Aanbevolen pakket';
   @override
   String get onboarding_step_pack_download_action => 'Downloaden en importeren';
   @override
   String get onboarding_step_pack_import_existing_action =>
-      'Gedownload pakket importeren';
+      'Het gedownloade pakket importeren';
   @override
-  String get onboarding_step_pack_pick_action =>
-      'Kies een lokaal pakketbestand';
+  String get onboarding_step_pack_pick_action => 'Kies een pakketbestand';
   @override
   String get onboarding_pack_downloading =>
-      'Downloaden… annuleer op elk moment, wordt volgende keer hervat';
+      'Downloaden… annuleer wanneer je wilt en hervat later';
   @override
   String onboarding_pack_download_failed({required Object message}) =>
       'Download mislukt: ${message}';
@@ -91085,14 +91170,14 @@ class _StringsNl extends _StringsEn {
   String get onboarding_step_extension_title => 'Browserextensie';
   @override
   String get onboarding_step_extension_body =>
-      'Installeer de begeleidende browserextensie om woorden op te zoeken op elke webpagina.';
+      'Zoek woorden op elke webpagina op met de bijbehorende browserextensie.';
   @override
-  String get onboarding_step_extension_action => 'Extensiegids openen';
+  String get onboarding_step_extension_action => 'Installatiegids openen';
   @override
-  String get onboarding_step_fonts_title => 'Leeslettertypen';
+  String get onboarding_step_fonts_title => 'Lettertypen';
   @override
   String get onboarding_step_fonts_body =>
-      'Importeer aangepaste lettertypen en kies welke voor UI, boektekst en woordenboek worden gebruikt.';
+      'Gebruik je eigen lettertypen voor de interface, boektekst en het woordenboek.';
   @override
   String get settings_section_modules => 'Functiemodules';
   @override
@@ -91332,10 +91417,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get module_extension_label => 'Browserextensie';
   @override
-  String get onboarding_feature_books => 'Romanbibliotheek';
+  String get onboarding_feature_books => 'Romans';
   @override
   String get onboarding_feature_books_hint =>
-      'Lees EPUB-romans met woordenboek-opzoeken en luisterboekafstemming';
+      'EPUB lezen met opzoeken en luisterboekafstemming';
   @override
   String get onboarding_feature_extension_hint =>
       'Zoek woorden op op elke webpagina (alleen desktop)';
@@ -91755,13 +91840,13 @@ class _StringsNl extends _StringsEn {
       'Het spel is gestart onder Japanse (CP932) landinstellingen. Als de tekst er verward uitziet of er een scriptfout verschijnt, stel dan de Japanse landinstellingen van dit spel in op Nooit.';
   @override
   String get onboarding_anki_intro_body =>
-      'Anki is een gratis flashcard-app met gespreide herhaling: nieuwe woorden worden kaarten, en herhalingen worden gepland langs de vergeetcurve. Na een opzoekactie kan Fushi het woord in één tik in een Anki-kaart veranderen, met betekenis, zin, audio en schermafbeelding.';
+      'Anki is een gratis flashcard-app met gespreide herhaling. Na een opzoekactie maakt Fushi er in één tik een kaart van, met betekenis, zin, audio en schermafbeelding.';
   @override
   String get onboarding_anki_setup_desktop_hint =>
-      'Installeer de Anki-desktopapp en voeg dan de AnkiConnect add-on toe: open in Anki Extra - Add-ons - Haal Add-ons en voer code 2055492159 in. Houd Anki draaiend tijdens het maken van kaarten.';
+      'Installeer Anki, voeg de AnkiConnect-add-on toe (één tik hieronder, of add-oncode 2055492159) en houd Anki draaiend terwijl je kaarten maakt.';
   @override
   String get onboarding_anki_setup_ios_hint =>
-      'Met AnkiMobile geïnstalleerd werkt het toevoegen van kaarten direct. Voor de volledige functieset, verbind met Anki op een computer in hetzelfde netwerk via AnkiConnect.';
+      'Met AnkiMobile geïnstalleerd worden kaarten direct toegevoegd. Voor de volledige functieset verbind je via AnkiConnect met Anki op een computer in hetzelfde netwerk.';
   @override
   String get onboarding_anki_backend_label => 'Verbinding';
   @override
@@ -91775,22 +91860,22 @@ class _StringsNl extends _StringsEn {
   String get onboarding_anki_get_ankidroid_action => 'AnkiDroid ophalen';
   @override
   String get onboarding_anki_mobile_ankiconnect_title =>
-      'Geavanceerd: AnkiConnect op dit apparaat gebruiken';
+      'Geavanceerd: AnkiConnect vanaf dit apparaat gebruiken';
   @override
   String get onboarding_anki_mobile_ankiconnect_hint =>
-      'Dit apparaat kan ook kaarten maken in Anki op een computer in hetzelfde netwerk: schakel AnkiConnect in bij kaartaanmaak-instellingen en voer het computeradres in.';
+      'Maak kaarten in Anki op een computer in hetzelfde netwerk: schakel AnkiConnect in bij de kaartaanmaak-instellingen en vul het adres van de computer in.';
   @override
   String get onboarding_anki_setup_android_hint =>
-      'Installeer AnkiDroid en open het eenmaal om de eerste installatie te voltooien. Terug in Fushi, tik op Toestaan bij het toestemmingsvenster dat verschijnt bij je eerste kaart — geen AnkiDroid-instellingen te wijzigen.';
+      'Installeer AnkiDroid en open het eenmaal. Tik bij je eerste kaart op Toestaan in het toestemmingsvenster — verder is er niets in te stellen.';
   @override
   String get onboarding_anki_install_addon_action =>
       'AnkiConnect add-on installeren';
   @override
   String get onboarding_anki_addon_installed =>
-      'AnkiConnect is geïnstalleerd. Start Anki (opnieuw) en tik dan op Verbinding testen.';
+      'AnkiConnect geïnstalleerd. Start Anki (opnieuw) op en test daarna de verbinding.';
   @override
   String get onboarding_anki_addon_no_anki =>
-      'Anki-gegevensmap niet gevonden. Installeer Anki en open het eenmaal, en probeer dan opnieuw.';
+      'Anki-gegevensmap niet gevonden. Installeer Anki, open het eenmaal en probeer opnieuw.';
   @override
   String onboarding_anki_addon_failed({required Object message}) =>
       'Installatie mislukt: ${message}';
@@ -92307,58 +92392,54 @@ class _StringsNl extends _StringsEn {
   String get onboarding_action_badge_optional => 'Optioneel';
   @override
   String get onboarding_pack_action_download_desc =>
-      'Downloadt het hele pakket op de achtergrond en importeert het daarna. Je kunt altijd annuleren; de volgende keer gaat het verder waar het gebleven was.';
+      'Downloadt op de achtergrond van meerdere bronnen tegelijk en importeert daarna. Je kunt altijd annuleren; het gaat verder waar het gebleven was.';
   @override
   String get onboarding_pack_action_import_existing_desc =>
-      'Het pakket is al gedownload; hiermee importeer je het. Kies «Samenvoegen» in het bevestigingsvenster, dan blijft je bestaande data ongemoeid.';
+      'Het pakket staat al op schijf. Kies «Samenvoegen» in het bevestigingsvenster om je bestaande gegevens te behouden.';
   @override
   String get onboarding_pack_action_pick_desc =>
-      'Heb je de zip van het pakket al ergens anders vandaan? Importeer hem van schijf en sla de download helemaal over.';
+      'Heb je de zip van het pakket al? Importeer hem van schijf en sla de download over.';
   @override
-  String get onboarding_pack_action_website =>
-      'Downloadpagina van de website openen';
+  String get onboarding_pack_action_website => 'Downloadpagina openen';
   @override
   String get onboarding_pack_action_website_desc =>
-      'Opent de officiële site in je browser. In het pakketgedeelte staan losse deel-links die je aan een downloadmanager kunt geven; kom daarna hier terug en gebruik «Kies een lokaal pakketbestand» om te importeren wat je hebt.';
+      'Deel-links voor downloadmanagers. Kom daarna terug en gebruik «Kies een pakketbestand».';
   @override
   String get onboarding_pack_action_dictionary_desc =>
-      'Leer je een andere taal dan Japans? Sla het pakket over en importeer hier woordenboeken voor je eigen taal.';
+      'Leer je een andere taal? Importeer hier de bijbehorende woordenboeken.';
   @override
   String get onboarding_pack_action_audio_desc =>
-      'Waar de uitspraakaudio vandaan komt. Het pakket dekt Japans en Engels al; voeg hier online bronnen toe voor andere talen.';
+      'Voeg online uitspraakbronnen toe voor talen die het pakket niet dekt.';
   @override
   String get onboarding_anki_action_test_desc =>
-      'Controleert of Fushi Anki kan bereiken en laadt je decks en notitietypes. Er wordt nog niets aangemaakt.';
+      'Controleert of Fushi Anki kan bereiken en laadt je decks en notitietypes. Maakt niets aan.';
   @override
   String get onboarding_anki_action_refresh_desc =>
-      'Laadt decks en notitietypes opnieuw uit Anki. Gebruik dit nadat je in Anki een nieuw deck hebt gemaakt.';
+      'Laadt decks en notitietypes opnieuw. Gebruik dit nadat je in Anki een deck hebt gemaakt.';
   @override
   String get onboarding_anki_action_get_ankidroid_desc =>
-      'Opent de storepagina van AnkiDroid. Fushi schrijft zijn kaarten daarin, dus het moet eerst geïnstalleerd zijn.';
+      'Opent de storepagina. Fushi schrijft kaarten in AnkiDroid, dus dat moet eerst geïnstalleerd zijn.';
   @override
   String get onboarding_anki_action_get_anki_desc =>
-      'Opent de downloadpagina van Anki. Installeer Anki en laat het draaien terwijl je kaarten maakt.';
+      'Opent de downloadpagina van Anki. Laat Anki draaien terwijl je kaarten maakt.';
   @override
   String get onboarding_anki_action_install_addon_desc =>
-      'Pakt de meegeleverde AnkiConnect-add-on voor je uit in Anki; daarmee kan Fushi ermee praten. Start Anki daarna opnieuw op.';
+      'Pakt de meegeleverde AnkiConnect-add-on uit in Anki. Start Anki daarna opnieuw op.';
   @override
   String get onboarding_step_anki_action_desc =>
-      'Kaartsjabloon, veldtoewijzing, schermafbeeldingen en audio: de details van hoe een gemaakte kaart eruitziet. Het deck en notitietype hierboven zijn genoeg om te beginnen, dus open dit alleen als je wilt veranderen hoe kaarten worden opgebouwd.';
+      'Sjabloon, veldtoewijzing, schermafbeeldingen en audio. Het deck en notitietype hierboven zijn genoeg om te beginnen.';
   @override
   String get onboarding_step_backup_action_desc =>
-      'Kies een back-upbackend en meld je aan, zodat je bibliotheek een verloren of vervangen apparaat overleeft.';
+      'Kies een backend en meld je aan, of exporteer een lokaal back-upbestand.';
   @override
   String get onboarding_step_interconnect_action_desc =>
-      'Koppelt dit apparaat aan je andere apparaten om één bibliotheek te delen en de voortgang gelijk te houden.';
+      'Schakel interconnect in en koppel dit apparaat aan je andere apparaten.';
   @override
   String get onboarding_step_extension_action_desc =>
-      'Laat zien hoe je de browserextensie installeert en met Fushi verbindt, zodat je ook op webpagina’s woorden kunt opzoeken.';
+      'Laat zien hoe je de extensie installeert en met Fushi verbindt.';
   @override
   String get onboarding_step_fonts_action_desc =>
-      'Voeg je eigen lettertypebestanden toe en kies welk lettertype elke taal gebruikt.';
-  @override
-  String get onboarding_pack_sources_hint =>
-      'Wordt in parallelle stukken tegelijk van GitHub, de officiële site en een reservespiegel gehaald, met een checksum per stuk. Fushi meet de bronnen onderweg en geeft meer stukken aan degene die op dat moment het snelst is, dus hier valt niets te kiezen.';
+      'Importeer lettertypebestanden en kies er één per taal.';
   @override
   String get video_setting_hdr_output => 'HDR-/10-bits-uitvoer';
   @override
@@ -92478,141 +92559,104 @@ class _StringsNl extends _StringsEn {
   String web_video_mine_switch_builtin({required Object count}) =>
       'Schakel naar ingebouwde modus om ${count} wachtende kaarten aan te maken';
   @override
-  String get onboarding_step_click_lookup_title =>
-      'Tik om woorden op te zoeken';
+  String get onboarding_step_click_lookup_title => 'Tik om op te zoeken';
   @override
-  String get onboarding_click_lookup_tap_title => 'Tik op de tekst';
+  String get onboarding_click_lookup_tap_title => 'Tik op een woord';
   @override
-  String get onboarding_click_lookup_nested_title => 'Zoek verder in de pop-up';
+  String get onboarding_click_lookup_nested_title => 'Blijf zoeken';
   @override
   String get onboarding_click_lookup_nested_body =>
-      'Tik op een ander woord in een betekenis om een niveau dieper te zoeken. Ga terug of tik ernaast om één niveau te sluiten.';
+      'Tik op een woord in een betekenis om een niveau dieper te gaan. Ga terug of tik ernaast om een niveau te sluiten.';
   @override
-  String get onboarding_click_lookup_mine_title => 'Maak er een kaart van';
+  String get onboarding_click_lookup_mine_title => 'Maak een kaart';
   @override
   String get onboarding_click_lookup_mine_body =>
-      'Klopt de betekenis? Tik dan op + om het woord, de zin, de audio en de afbeelding naar de kaartmaker te sturen.';
+      'Tik op + bij het item om het woord, de zin, de audio en de afbeelding naar de kaartmaker te sturen.';
   @override
-  String get onboarding_step_global_lookup_title =>
-      'Tekst buiten Fushi opzoeken';
+  String get onboarding_step_global_lookup_title => 'Buiten Fushi opzoeken';
   @override
   String get onboarding_global_lookup_windows_body =>
-      'Op Windows selecteer je tekst in een andere app en roep je het woordenboek op zonder terug te schakelen naar Fushi.';
+      'Selecteer tekst in een willekeurige app en roep het woordenboek op zonder van venster te wisselen.';
   @override
-  String get onboarding_global_lookup_windows_select_title =>
-      'Selecteer tekst in een willekeurige app';
-  @override
-  String get onboarding_global_lookup_windows_shortcut_title =>
-      'Druk op Ctrl+Alt+D';
+  String get onboarding_global_lookup_windows_select_title => 'Selecteer tekst';
   @override
   String get onboarding_global_lookup_windows_shortcut_body =>
-      'Dit is de standaard globale sneltoets. Fushi pakt de huidige selectie en opent een zoekkaart bij de muisaanwijzer.';
+      'Fushi pakt de selectie en opent een zoekkaart naast de muisaanwijzer.';
   @override
   String get onboarding_global_lookup_windows_customize_title =>
-      'Pas de sneltoets aan als je wilt';
+      'Wijzig de sneltoets';
   @override
   String get onboarding_global_lookup_windows_customize_body =>
-      'Open Instellingen → Sneltoetsen → Globaal (buiten de app) om een andere toetsencombinatie toe te wijzen.';
+      'Instellingen → Sneltoetsen → Globaal (buiten de app).';
   @override
   String get onboarding_global_lookup_windows_action =>
       'Sneltoetsinstellingen openen';
   @override
   String get onboarding_global_lookup_windows_action_desc =>
-      'Hiermee wijzig je de sneltoets voor opzoeken buiten de app. De standaard Ctrl+Alt+D werkt al, dus dit is optioneel.';
+      'Alleen als je een andere toetsencombinatie wilt.';
   @override
   String get onboarding_global_lookup_android_body =>
-      'Op Android geeft het systeem de geselecteerde tekst aan Fushi door via het tekstmenu of het deelmenu. Een instelbare globale sneltoets is er niet.';
+      'Android geeft geselecteerde tekst via het tekstmenu of het deelmenu door aan Fushi.';
   @override
-  String get onboarding_global_lookup_android_select_title =>
-      'Selecteer tekst in een andere app';
+  String get onboarding_global_lookup_android_select_title => 'Selecteer tekst';
   @override
   String get onboarding_global_lookup_android_open_title => 'Kies Fushi';
   @override
   String get onboarding_global_lookup_android_open_body =>
-      'Tik op Fushi in het tekstselectiemenu. Staat het er niet bij, tik dan op Delen en kies Fushi in het deelmenu.';
+      'Tik op Fushi in het selectiemenu, of tik op Delen en kies Fushi.';
   @override
   String get onboarding_global_lookup_android_continue_title =>
-      'Gebruik de losse pop-up';
+      'Lees de pop-up';
   @override
   String get onboarding_global_lookup_android_continue_body =>
-      'Het zoekresultaat opent los van de oorspronkelijke app. Je kunt er meer woorden in aantikken en komt na het sluiten terug waar je was.';
+      'Het opzoekvenster opent boven op de andere app. Sluit het om terug te gaan.';
   @override
   String get onboarding_feature_manual_resources =>
-      'Woordenboeken en audio handmatig importeren';
+      'Eigen materiaal importeren';
   @override
   String get onboarding_feature_manual_resources_hint =>
-      'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+      'Woordenboeken, luisterboeken en uitspraakbronnen uit je eigen bestanden';
   @override
   String get onboarding_step_manual_resources_title =>
-      'Woordenboeken en audio handmatig voorbereiden';
+      'Je eigen woordenboeken en audio';
   @override
   String get onboarding_step_manual_resources_body =>
-      'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+      'Importeer minstens één woordenboek vóór de opzoekhandleiding. Luisterboeken en uitspraakaudio zijn optioneel.';
   @override
   String get onboarding_manual_dictionary_action =>
       'Een woordenboek importeren';
   @override
   String get onboarding_manual_dictionary_action_desc =>
-      'Open het woordenboekbeheer en importeer minstens één ondersteund woordenboekbestand of -archief. De zoekhandleidingen hebben pas zin als een zoekopdracht een betekenis oplevert.';
+      'Opent het woordenboekbeheer. Zoekopdrachten leveren pas resultaten op als er een woordenboek is geïnstalleerd.';
   @override
   String get onboarding_manual_audiobook_action =>
-      'Een boek met luisterboekaudio importeren';
+      'Een boek met audio importeren';
   @override
   String get onboarding_manual_audiobook_action_desc =>
-      'Open de boekimport en kies het boek of de tekst, bijpassende ondertitels en een of meer audiobestanden. Zonder ondertitels kan Fushi de audio niet per zin uitlijnen.';
+      'Boek of tekst, bijpassende ondertitels en audiobestanden. De ondertitels zijn wat Fushi de audio per zin laat uitlijnen.';
   @override
   String get onboarding_manual_pronunciation_action =>
-      'Uitspraakaudio voor woorden instellen';
+      'Uitspraakaudio instellen';
   @override
   String get onboarding_manual_pronunciation_action_desc =>
-      'Voeg lokale of online uitspraakbronnen toe die woordenboekitems gebruiken. Dit staat los van de luisterboekaudio bij een boek.';
+      'Lokale of online bronnen voor de uitspraak van woorden in woordenboekitems. Staat los van luisterboekaudio.';
   @override
-  String get onboarding_lookup_verify_action =>
-      'Een woord in je woordenboek controleren';
+  String get onboarding_step_first_anki_card_title => 'Je eerste kaart';
   @override
-  String get onboarding_lookup_verify_action_desc =>
-      'Open het opzoeken, typ een willekeurig woord dat je leert en ga pas verder als het geïnstalleerde woordenboek een betekenis teruggeeft. De handleiding legt geen voorbeeldwoord vast.';
+  String get onboarding_first_anki_lookup_title => 'Zoek een woord op';
   @override
-  String get onboarding_step_first_anki_card_title =>
-      'Maak je eerste Anki-kaart';
-  @override
-  String get onboarding_step_first_anki_card_body =>
-      'Deze stap verschijnt alleen als deze rondleiding al met Anki verbonden is en een bruikbare stapel en notitietype zijn gekozen.';
-  @override
-  String get onboarding_first_anki_lookup_title =>
-      'Begin met een echt woordenboekresultaat';
-  @override
-  String get onboarding_first_anki_lookup_body =>
-      'Zoek een woord op dat je geïnstalleerde woordenboek echt kent. Er is geen vast oefenwoord dat in jouw woordenboek zou kunnen ontbreken.';
-  @override
-  String get onboarding_first_anki_plus_title =>
-      'Tik op de plusknop bij het item';
+  String get onboarding_first_anki_plus_title => 'Tik op +';
   @override
   String get onboarding_first_anki_plus_body =>
-      'De plusknop opent de kaartmaker met het huidige woord, de lezing, de betekenis, de zin, de audio en de beschikbare afbeelding.';
+      'De kaartmaker opent met het woord, de lezing, de betekenis, de zin, de audio en de afbeelding al ingevuld.';
   @override
-  String get onboarding_first_anki_save_title => 'Controleer en bewaar';
+  String get onboarding_first_anki_save_title => 'Controleer en sla op';
   @override
   String get onboarding_first_anki_save_body =>
-      'Bevestig de doelstapel, het notitietype en het veldvoorbeeld en sla dan op. Open Anki om te controleren of de eerste kaart is aangekomen.';
+      'Bevestig het deck en het notitietype en sla op. Open Anki om de kaart te zien.';
   @override
   String get onboarding_first_anki_action =>
       'Opzoeken openen en een kaart maken';
-  @override
-  String get onboarding_first_anki_action_desc =>
-      'Neem een woord met een zichtbare betekenis, tik op de plusknop, controleer de velden en sla het op in de gekoppelde Anki-stapel.';
-  @override
-  String get onboarding_step_click_lookup_body =>
-      'Controleer eerst een woord dat je geïnstalleerde woordenboek echt kent. Oefen daarna met datzelfde woord het direct opzoeken in boeken, in OCR-tekst van manga en in video-ondertitels.';
-  @override
-  String get onboarding_click_lookup_tap_body =>
-      'Tik op de telefoon op een teken van het gecontroleerde woord; op de computer klik je er met links op. Fushi begint daar en pakt het langste passende woord.';
-  @override
-  String get onboarding_global_lookup_windows_select_body =>
-      'Selecteer hetzelfde woord waarvan je al hebt gecontroleerd dat er een betekenis in het woordenboek staat, en laat de selectie staan.';
-  @override
-  String get onboarding_global_lookup_android_select_body =>
-      'Houd datzelfde gecontroleerde woord ingedrukt en versleep daarna de selectiegrepen zodat het hele woord geselecteerd is.';
   @override
   String get game_lookup_attached_title => 'In-game lookup';
   @override
@@ -92896,6 +92940,71 @@ class _StringsNl extends _StringsEn {
   @override
   String get game_session_japanese_locale_skipped_hint_not_32bit =>
       'Het spel is gestart zonder Japanse landinstelling: het automatische oordeel acht die nodig, maar Locale Emulator ondersteunt alleen 32-bits spellen.';
+  @override
+  String get onboarding_feature_fonts => 'Eigen lettertypen';
+  @override
+  String get onboarding_feature_fonts_hint =>
+      'Gebruik je eigen lettertypen voor de interface, boektekst en het woordenboek';
+  @override
+  String get onboarding_features_modules_title => 'Bibliotheekpagina\'s';
+  @override
+  String get onboarding_features_modules_hint =>
+      'Niet-aangevinkte pagina\'s worden verborgen in de navigatiebalk. Later aan te passen via Instellingen → Uiterlijk.';
+  @override
+  String get onboarding_features_setup_title => 'Hierna instellen';
+  @override
+  String get onboarding_features_setup_hint =>
+      'Alleen aangevinkte onderdelen krijgen een stap in deze gids.';
+  @override
+  String get onboarding_pack_intro =>
+      'Japanse woordenboeken, toonhoogteaccent, woordfrequentie en JA/EN-uitspraakaudio in één download. Leer je een andere taal? Sla dit over en importeer je eigen woordenboeken.';
+  @override
+  String get onboarding_global_lookup_windows_select_desc =>
+      'Selecteer een woord in een willekeurige app en laat de selectie staan.';
+  @override
+  String get onboarding_global_lookup_android_select_desc =>
+      'Houd een woord in een andere app ingedrukt en sleep de grepen eroverheen.';
+  @override
+  String get onboarding_global_lookup_windows_shortcut_press =>
+      'Druk op de sneltoets';
+  @override
+  String get onboarding_first_anki_card_intro =>
+      'Anki is verbonden. Maak nu één echte kaart, zodat je weet dat de hele route werkt.';
+  @override
+  String get onboarding_action_start => 'Fushi gaan gebruiken';
+  @override
+  String get onboarding_actions_more => 'Andere manieren';
+  @override
+  String get onboarding_finish_summary_modules =>
+      'Getoonde bibliotheekpagina\'s';
+  @override
+  String get onboarding_finish_summary_setup => 'Begeleide installatie';
+  @override
+  String get onboarding_finish_summary_none => 'Geen';
+  @override
+  String get onboarding_anki_status_pending => 'Nog niet getest';
+  @override
+  String get onboarding_click_lookup_intro =>
+      'Tik op een willekeurig woord in een boek, manga of ondertitel om de betekenis te zien. Probeer het met de oefenzin hieronder.';
+  @override
+  String get onboarding_click_lookup_tap_desc =>
+      'Tik op een teken (of klik met links); Fushi pakt het langste woord dat daar begint. De zin opent in de opzoekpagina.';
+  @override
+  String get onboarding_sample_sentence_label => 'Oefenzin';
+  @override
+  String get onboarding_sample_sentence_hint =>
+      'Tik om hem in de opzoekpagina te openen en tik daarna op een willekeurig woord.';
+  @override
+  String get onboarding_lookup_practice_action => 'Oefen met deze zin';
+  @override
+  String get onboarding_lookup_practice_desc =>
+      'Opent de opzoekpagina met de zin erin. Tik daar op een woord om de betekenis te zien; komt er niets, dan zijn je woordenboeken nog niet geïnstalleerd.';
+  @override
+  String get onboarding_first_anki_lookup_desc =>
+      'Open de oefenzin en tik op een woord.';
+  @override
+  String get onboarding_first_anki_action_desc =>
+      'Opent de oefenzin in de opzoekpagina. Tik op een woord, tik op +, controleer de velden en sla op.';
 }
 
 // Path: <root>
@@ -100817,22 +100926,22 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get onboarding_title => 'Primeiros passos';
   @override
-  String get onboarding_welcome_headline => 'Bem-vindo!';
+  String get onboarding_welcome_headline => 'Boas-vindas ao Fushi';
   @override
-  String get onboarding_feature_anki => 'Flashcards Anki';
+  String get onboarding_feature_anki => 'Cartões do Anki';
   @override
   String get onboarding_feature_anki_hint =>
-      'Conecte AnkiConnect ou AnkiDroid para criar flashcards';
+      'Transforme suas consultas em flashcards com um toque';
   @override
   String get onboarding_feature_backup => 'Backup e sincronização';
   @override
   String get onboarding_feature_backup_hint =>
-      'Faça backup dos seus dados no Google Drive, WebDAV e outros backends';
+      'Google Drive, WebDAV ou um arquivo local';
   @override
   String get onboarding_feature_interconnect => 'Interconexão de dispositivos';
   @override
   String get onboarding_feature_interconnect_hint =>
-      'Pareie dispositivos na sua LAN para compartilhar bibliotecas e progresso';
+      'Compartilhe bibliotecas e progresso entre dispositivos na sua LAN';
   @override
   String get onboarding_step_dictionary_action =>
       'Abrir gerenciador de dicionários';
@@ -100840,19 +100949,19 @@ class _StringsPtBr extends _StringsEn {
   String get onboarding_step_anki_title => 'Configurar Anki';
   @override
   String get onboarding_step_anki_action =>
-      'Abrir configurações de criação de cartões';
+      'Configurações de criação de cartões';
   @override
-  String get onboarding_step_backup_title => 'Configurar backup';
+  String get onboarding_step_backup_title => 'Backup';
   @override
   String get onboarding_step_backup_body =>
-      'Escolha um backend de backup e faça login, ou exporte um arquivo de backup local.';
+      'Mantenha sua biblioteca segura quando trocar ou perder um aparelho.';
   @override
   String get onboarding_step_backup_action => 'Abrir configurações de backup';
   @override
-  String get onboarding_step_interconnect_title => 'Configurar interconexão';
+  String get onboarding_step_interconnect_title => 'Interconexão';
   @override
   String get onboarding_step_interconnect_body =>
-      'Ative a interconexão e pareie com outros dispositivos na sua LAN para compartilhar bibliotecas, progresso e consultas.';
+      'Pareie dispositivos na sua LAN para compartilhar uma mesma biblioteca e manter o progresso em sincronia.';
   @override
   String get onboarding_step_interconnect_action =>
       'Abrir configurações de interconexão';
@@ -100860,61 +100969,50 @@ class _StringsPtBr extends _StringsEn {
   String get onboarding_finish_title => 'Tudo pronto';
   @override
   String get onboarding_finish_body =>
-      'Você pode revisitar este guia a qualquer momento em Configurações → Sistema.';
+      'Você pode reabrir este guia a qualquer momento em Configurações → Sistema.';
   @override
   String get onboarding_action_next => 'Próximo';
-  @override
-  String get onboarding_action_finish => 'Concluir';
   @override
   String get onboarding_action_skip => 'Pular por enquanto';
   @override
   String get onboarding_reopen => 'Guia de primeiros passos';
   @override
   String get onboarding_welcome_body =>
-      'Defina seu idioma de interface e tema primeiro — os próximos passos guiarão você pelo resto.';
+      'Escolha seu idioma de interface e o tema. Os próximos passos configuram o resto.';
   @override
-  String get onboarding_features_title => 'Escolha o que você usa';
+  String get onboarding_features_title => 'O que você vai usar?';
   @override
-  String get onboarding_features_modules_label =>
-      'Abas da biblioteca (as desmarcadas ficam ocultas da barra de navegação; altere a qualquer momento nas Configurações)';
-  @override
-  String get onboarding_features_setup_label => 'O que configurar em seguida';
-  @override
-  String get onboarding_feature_manga => 'Biblioteca de mangá';
+  String get onboarding_feature_manga => 'Mangá';
   @override
   String get onboarding_feature_manga_hint => 'Leia mangá com consulta por OCR';
   @override
-  String get onboarding_feature_video => 'Biblioteca de vídeo';
+  String get onboarding_feature_video => 'Vídeo';
   @override
   String get onboarding_feature_video_hint =>
-      'Assista vídeos com consulta e mineração de legendas';
+      'Consulta em legendas e criação de cartões';
   @override
-  String get onboarding_feature_games => 'Biblioteca de galgame';
+  String get onboarding_feature_games => 'Galgames';
   @override
   String get onboarding_feature_games_hint =>
-      'Inicie galgames com consulta por text-hook (apenas Windows)';
+      'Consulta por text-hook enquanto joga (apenas Windows)';
   @override
-  String get onboarding_feature_pack =>
-      'Pacote recomendado (dicionários + áudio)';
+  String get onboarding_feature_pack => 'Pacote recomendado';
   @override
   String get onboarding_feature_pack_hint =>
-      'Um download configura dicionários de japonês mais áudio de pronúncia JA/EN';
+      'Dicionários de japonês mais áudio de pronúncia JA/EN em um download';
   @override
-  String get onboarding_step_pack_title => 'Instalar o pacote recomendado';
-  @override
-  String get onboarding_step_pack_body =>
-      'O pacote recomendado inclui dicionários de palavras, acento tonal e frequência do japonês, além de bancos de áudio de pronúncia japonês/inglês. Baixe e importe aqui; a importação substitui dados locais, então execute em uma instalação limpa. Estudando outro idioma? Use o gerenciador de dicionários para importar seus próprios.';
+  String get onboarding_step_pack_title => 'Pacote recomendado';
   @override
   String get onboarding_step_pack_download_action => 'Baixar e importar';
   @override
   String get onboarding_step_pack_import_existing_action =>
-      'Importar pacote já baixado';
+      'Importar o pacote baixado';
   @override
   String get onboarding_step_pack_pick_action =>
-      'Escolher arquivo de pacote local';
+      'Escolher um arquivo de pacote';
   @override
   String get onboarding_pack_downloading =>
-      'Baixando… cancele a qualquer momento, retoma da próxima vez';
+      'Baixando… cancele quando quiser e retome mais tarde';
   @override
   String onboarding_pack_download_failed({required Object message}) =>
       'Download falhou: ${message}';
@@ -100922,14 +101020,14 @@ class _StringsPtBr extends _StringsEn {
   String get onboarding_step_extension_title => 'Extensão do navegador';
   @override
   String get onboarding_step_extension_body =>
-      'Instale a extensão companion do navegador para consultar palavras em qualquer página web.';
+      'Consulte palavras em qualquer página da web com a extensão companion.';
   @override
-  String get onboarding_step_extension_action => 'Abrir guia da extensão';
+  String get onboarding_step_extension_action => 'Abrir o guia de instalação';
   @override
-  String get onboarding_step_fonts_title => 'Fontes de leitura';
+  String get onboarding_step_fonts_title => 'Fontes';
   @override
   String get onboarding_step_fonts_body =>
-      'Importe fontes personalizadas e escolha quais da interface, texto do livro e dicionário as usam.';
+      'Use suas próprias fontes na interface, no texto do livro e no dicionário.';
   @override
   String get settings_section_modules => 'Módulos de funcionalidades';
   @override
@@ -101173,10 +101271,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get module_extension_label => 'Extensão do navegador';
   @override
-  String get onboarding_feature_books => 'Biblioteca de romances';
+  String get onboarding_feature_books => 'Romances';
   @override
   String get onboarding_feature_books_hint =>
-      'Leia romances EPUB com consulta de dicionário e sincronização de audiobook';
+      'Leitura de EPUB com consulta e sincronização de audiolivro';
   @override
   String get onboarding_feature_extension_hint =>
       'Consulte palavras em qualquer página web (apenas desktop)';
@@ -101603,13 +101701,13 @@ class _StringsPtBr extends _StringsEn {
       'O jogo foi iniciado sob uma localidade japonesa (CP932). Se o texto parecer distorcido ou aparecer um erro de script, defina a localidade japonesa deste jogo como Nunca.';
   @override
   String get onboarding_anki_intro_body =>
-      'O Anki é um app gratuito de flashcards com repetição espaçada: novas palavras viram cartões, e as revisões são programadas pela curva do esquecimento. Após uma consulta, o Fushi pode transformar a palavra em um cartão Anki com um toque, com significado, frase, áudio e captura de tela.';
+      'O Anki é um app gratuito de flashcards com repetição espaçada. Após uma consulta, o Fushi transforma a palavra em um cartão com significado, frase, áudio e captura de tela, com um toque.';
   @override
   String get onboarding_anki_setup_desktop_hint =>
-      'Instale o app Anki desktop e adicione o add-on AnkiConnect: no Anki, abra Ferramentas - Complementos - Obter Complementos e insira o código 2055492159. Mantenha o Anki aberto enquanto cria cartões.';
+      'Instale o Anki, adicione o complemento AnkiConnect (um toque abaixo, ou o código 2055492159) e mantenha o Anki aberto enquanto cria cartões.';
   @override
   String get onboarding_anki_setup_ios_hint =>
-      'Com o AnkiMobile instalado, adicionar cartões funciona direto. Para o conjunto completo de funcionalidades, conecte ao Anki rodando em um computador na mesma rede via AnkiConnect.';
+      'Com o AnkiMobile instalado, os cartões são adicionados direto. Para o conjunto completo de funcionalidades, conecte-se via AnkiConnect ao Anki de um computador na mesma rede.';
   @override
   String get onboarding_anki_backend_label => 'Conexão';
   @override
@@ -101623,22 +101721,22 @@ class _StringsPtBr extends _StringsEn {
   String get onboarding_anki_get_ankidroid_action => 'Obter AnkiDroid';
   @override
   String get onboarding_anki_mobile_ankiconnect_title =>
-      'Avançado: usar AnkiConnect neste dispositivo';
+      'Avançado: usar AnkiConnect a partir deste dispositivo';
   @override
   String get onboarding_anki_mobile_ankiconnect_hint =>
-      'Este dispositivo também pode criar cartões no Anki rodando em um computador na mesma rede: ative o AnkiConnect nas configurações de criação de cartões e insira o endereço do computador.';
+      'Crie cartões no Anki de um computador na mesma rede: ative o AnkiConnect nas configurações de criação de cartões e informe o endereço do computador.';
   @override
   String get onboarding_anki_setup_android_hint =>
-      'Instale o AnkiDroid e abra-o uma vez para concluir a configuração inicial. De volta ao Fushi, toque em Permitir na caixa de diálogo de permissão que aparece com seu primeiro cartão - nenhuma configuração do AnkiDroid para alterar.';
+      'Instale o AnkiDroid e abra-o uma vez. No seu primeiro cartão, toque em Permitir na caixa de permissão — não há mais nada para configurar.';
   @override
   String get onboarding_anki_install_addon_action =>
       'Instalar add-on AnkiConnect';
   @override
   String get onboarding_anki_addon_installed =>
-      'AnkiConnect instalado. Inicie (ou reinicie) o Anki e toque em Testar conexão.';
+      'AnkiConnect instalado. Inicie ou reinicie o Anki e teste a conexão.';
   @override
   String get onboarding_anki_addon_no_anki =>
-      'Pasta de dados do Anki não encontrada. Instale o Anki e abra-o uma vez, depois tente novamente.';
+      'Pasta de dados do Anki não encontrada. Instale o Anki, abra-o uma vez e tente novamente.';
   @override
   String onboarding_anki_addon_failed({required Object message}) =>
       'Instalação falhou: ${message}';
@@ -102158,58 +102256,54 @@ class _StringsPtBr extends _StringsEn {
   String get onboarding_action_badge_optional => 'Opcional';
   @override
   String get onboarding_pack_action_download_desc =>
-      'Baixa o pacote inteiro em segundo plano e depois o importa. Dá para cancelar a qualquer momento; da próxima vez ele retoma de onde parou.';
+      'Baixa em segundo plano de várias fontes ao mesmo tempo e depois importa. Cancele quando quiser; ele retoma de onde parou.';
   @override
   String get onboarding_pack_action_import_existing_desc =>
-      'O pacote já foi baixado; isto o importa. Escolha «Mesclar» na caixa de confirmação e seus dados atuais ficam intactos.';
+      'O pacote já está no disco. Escolha «Mesclar» na caixa de confirmação para manter seus dados atuais.';
   @override
   String get onboarding_pack_action_pick_desc =>
-      'Já pegou o zip do pacote em outro lugar? Importe do disco e pule o download por completo.';
+      'Já tem o zip do pacote? Importe do disco e pule o download.';
   @override
-  String get onboarding_pack_action_website =>
-      'Abrir a página de download do site';
+  String get onboarding_pack_action_website => 'Abrir a página de download';
   @override
   String get onboarding_pack_action_website_desc =>
-      'Abre o site oficial no navegador. A seção do pacote lista links por partes que você pode passar a um gerenciador de downloads; depois volte aqui e use «Escolher um arquivo de pacote local» para importar o que baixou.';
+      'Links por partes para gerenciadores de download. Volte depois e use «Escolher um arquivo de pacote».';
   @override
   String get onboarding_pack_action_dictionary_desc =>
-      'Está aprendendo um idioma que não é japonês? Pule o pacote e importe aqui dicionários do seu próprio idioma.';
+      'Está aprendendo outro idioma? Importe aqui os dicionários correspondentes.';
   @override
   String get onboarding_pack_action_audio_desc =>
-      'De onde vem o áudio de pronúncia. O pacote já cobre japonês e inglês; adicione aqui fontes on-line para outros idiomas.';
+      'Adicione fontes de pronúncia on-line para os idiomas que o pacote não cobre.';
   @override
   String get onboarding_anki_action_test_desc =>
-      'Verifica se o Fushi consegue falar com o Anki e carrega seus baralhos e tipos de nota. Nada é criado ainda.';
+      'Verifica se o Fushi consegue falar com o Anki e carrega seus baralhos e tipos de nota. Não cria nada.';
   @override
   String get onboarding_anki_action_refresh_desc =>
-      'Recarrega baralhos e tipos de nota a partir do Anki. Use depois de criar um baralho novo dentro do Anki.';
+      'Recarrega baralhos e tipos de nota. Use depois de criar um baralho no Anki.';
   @override
   String get onboarding_anki_action_get_ankidroid_desc =>
-      'Abre a página do AnkiDroid na loja. O Fushi grava os cartões nele, então precisa estar instalado antes.';
+      'Abre a página da loja. O Fushi grava os cartões no AnkiDroid, então ele precisa estar instalado antes.';
   @override
   String get onboarding_anki_action_get_anki_desc =>
-      'Abre a página de download do Anki. Instale o Anki e deixe-o aberto enquanto cria cartões.';
+      'Abre a página de download do Anki. Deixe o Anki aberto enquanto cria cartões.';
   @override
   String get onboarding_anki_action_install_addon_desc =>
-      'Descompacta para você o complemento AnkiConnect embutido dentro do Anki, que é o que permite ao Fushi conversar com ele. Reinicie o Anki depois.';
+      'Descompacta o complemento AnkiConnect embutido dentro do Anki. Reinicie o Anki depois.';
   @override
   String get onboarding_step_anki_action_desc =>
-      'Modelo de cartão, mapeamento de campos, capturas e áudio: os detalhes de como fica um cartão criado. O baralho e o tipo de nota acima já bastam para começar, então abra isto só se quiser mudar como os cartões são montados.';
+      'Modelo, mapeamento de campos, capturas e áudio. O baralho e o tipo de nota acima já bastam para começar.';
   @override
   String get onboarding_step_backup_action_desc =>
-      'Escolha um serviço de backup e entre na conta, para que sua biblioteca sobreviva à perda ou troca de aparelho.';
+      'Escolha um backend e faça login, ou exporte um arquivo de backup local.';
   @override
   String get onboarding_step_interconnect_action_desc =>
-      'Pareia este aparelho com seus outros aparelhos para compartilhar uma mesma biblioteca e manter o progresso em sincronia.';
+      'Ative a interconexão e pareie este aparelho com os seus outros.';
   @override
   String get onboarding_step_extension_action_desc =>
-      'Mostra como instalar a extensão de navegador e conectá-la ao Fushi, para você também consultar palavras em páginas da web.';
+      'Mostra como instalar a extensão e conectá-la ao Fushi.';
   @override
   String get onboarding_step_fonts_action_desc =>
-      'Adicione seus próprios arquivos de fonte e escolha qual cada idioma usa.';
-  @override
-  String get onboarding_pack_sources_hint =>
-      'Baixado em partes paralelas do GitHub, do site oficial e de um espelho reserva ao mesmo tempo, com checksum em cada parte. O Fushi mede as fontes durante o processo e dá mais partes para a que estiver mais rápida no momento, então não há nada a escolher aqui.';
+      'Importe arquivos de fonte e escolha uma para cada idioma.';
   @override
   String get video_setting_hdr_output => 'Saída HDR / 10 bits';
   @override
@@ -102328,142 +102422,102 @@ class _StringsPtBr extends _StringsEn {
   String web_video_mine_switch_builtin({required Object count}) =>
       'Mudar para o modo integrado para criar ${count} cartões na fila';
   @override
-  String get onboarding_step_click_lookup_title =>
-      'Toque para consultar palavras';
+  String get onboarding_step_click_lookup_title => 'Toque para consultar';
   @override
-  String get onboarding_click_lookup_tap_title => 'Toque no texto';
+  String get onboarding_click_lookup_tap_title => 'Toque em uma palavra';
   @override
-  String get onboarding_click_lookup_nested_title =>
-      'Continue explorando no pop-up';
+  String get onboarding_click_lookup_nested_title => 'Continue explorando';
   @override
   String get onboarding_click_lookup_nested_body =>
-      'Toque em outra palavra dentro de uma definição para abrir uma consulta mais profunda. Volte ou toque fora para fechar um nível.';
+      'Toque em uma palavra dentro de uma definição para descer um nível. Volte ou toque fora para fechar um nível.';
   @override
-  String get onboarding_click_lookup_mine_title =>
-      'Transforme o resultado em um cartão';
+  String get onboarding_click_lookup_mine_title => 'Crie um cartão';
   @override
   String get onboarding_click_lookup_mine_body =>
-      'Se a definição estiver certa, toque em + para enviar a palavra, a frase, o áudio e a imagem ao criador de cartões.';
+      'Toque em + no verbete para enviar a palavra, a frase, o áudio e a imagem ao criador de cartões.';
   @override
-  String get onboarding_step_global_lookup_title =>
-      'Consultar texto fora do Fushi';
+  String get onboarding_step_global_lookup_title => 'Consultar fora do Fushi';
   @override
   String get onboarding_global_lookup_windows_body =>
-      'No Windows, selecione um texto em outro aplicativo e chame o dicionário sem voltar para o Fushi.';
+      'Selecione um texto em qualquer aplicativo e chame o dicionário sem trocar de janela.';
   @override
-  String get onboarding_global_lookup_windows_select_title =>
-      'Selecione texto em qualquer aplicativo';
-  @override
-  String get onboarding_global_lookup_windows_shortcut_title =>
-      'Pressione Ctrl+Alt+D';
+  String get onboarding_global_lookup_windows_select_title => 'Selecione texto';
   @override
   String get onboarding_global_lookup_windows_shortcut_body =>
-      'Esse é o atalho global padrão. O Fushi captura a seleção atual e abre um cartão de consulta perto do ponteiro.';
+      'O Fushi captura a seleção e abre um cartão de consulta ao lado do ponteiro.';
   @override
   String get onboarding_global_lookup_windows_customize_title =>
-      'Mude o atalho se precisar';
+      'Mude o atalho';
   @override
   String get onboarding_global_lookup_windows_customize_body =>
-      'Abra Configurações → Atalhos → Global (fora do aplicativo) para definir outra combinação de teclas.';
+      'Configurações → Atalhos → Global (fora do aplicativo).';
   @override
   String get onboarding_global_lookup_windows_action =>
       'Abrir configurações de atalhos';
   @override
   String get onboarding_global_lookup_windows_action_desc =>
-      'Permite mudar o atalho de consulta fora do aplicativo. O padrão Ctrl+Alt+D já funciona, então isso é opcional.';
+      'Só se você quiser outra combinação de teclas.';
   @override
   String get onboarding_global_lookup_android_body =>
-      'No Android, o sistema entrega o texto selecionado ao Fushi pelo menu de texto ou pelo painel Compartilhar. Não existe atalho global personalizável.';
+      'O Android entrega o texto selecionado ao Fushi pelo menu de texto ou pelo painel Compartilhar.';
   @override
-  String get onboarding_global_lookup_android_select_title =>
-      'Selecione texto em outro aplicativo';
+  String get onboarding_global_lookup_android_select_title => 'Selecione texto';
   @override
   String get onboarding_global_lookup_android_open_title => 'Escolha o Fushi';
   @override
   String get onboarding_global_lookup_android_open_body =>
-      'Toque em Fushi no menu de seleção de texto. Se ele não aparecer, toque em Compartilhar e escolha o Fushi no painel de compartilhamento.';
+      'Toque em Fushi no menu de seleção, ou toque em Compartilhar e escolha o Fushi.';
   @override
-  String get onboarding_global_lookup_android_continue_title =>
-      'Use o pop-up independente';
+  String get onboarding_global_lookup_android_continue_title => 'Leia o pop-up';
   @override
   String get onboarding_global_lookup_android_continue_body =>
-      'A consulta abre separada do aplicativo de origem. Você pode tocar em mais palavras dentro dela e, ao fechar, volta de onde estava.';
+      'A consulta abre por cima do outro aplicativo. Feche para voltar.';
   @override
   String get onboarding_feature_manual_resources =>
-      'Importar dicionários e áudio manualmente';
+      'Importar meus próprios recursos';
   @override
   String get onboarding_feature_manual_resources_hint =>
-      'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+      'Dicionários, audiolivros e fontes de pronúncia a partir dos seus arquivos';
   @override
   String get onboarding_step_manual_resources_title =>
-      'Prepare dicionários e áudio manualmente';
+      'Seus próprios dicionários e áudio';
   @override
   String get onboarding_step_manual_resources_body =>
-      'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+      'Importe pelo menos um dicionário antes do tutorial de consulta. Audiolivros e áudio de pronúncia são opcionais.';
   @override
   String get onboarding_manual_dictionary_action => 'Importar um dicionário';
   @override
   String get onboarding_manual_dictionary_action_desc =>
-      'Abra o gerenciador de dicionários e importe pelo menos um arquivo ou pacote de dicionário compatível. Os tutoriais de consulta só fazem sentido quando uma busca retorna uma definição.';
+      'Abre o gerenciador de dicionários. As consultas só retornam resultados depois que um dicionário está instalado.';
   @override
   String get onboarding_manual_audiobook_action =>
-      'Importar um livro com áudio de audiolivro';
+      'Importar um livro com áudio';
   @override
   String get onboarding_manual_audiobook_action_desc =>
-      'Abra a importação de livros e escolha o livro ou o texto, as legendas alinhadas e um ou mais arquivos de áudio. O áudio precisa de legendas para o Fushi alinhá-lo às frases.';
+      'Livro ou texto, legendas alinhadas e arquivos de áudio. São as legendas que permitem ao Fushi sincronizar o áudio com as frases.';
   @override
   String get onboarding_manual_pronunciation_action =>
-      'Configurar áudio de pronúncia das palavras';
+      'Configurar áudio de pronúncia';
   @override
   String get onboarding_manual_pronunciation_action_desc =>
-      'Adicione fontes de pronúncia locais ou on-line usadas pelos verbetes do dicionário. Isso é diferente do áudio de audiolivro anexado a um livro.';
+      'Fontes locais ou on-line para a pronúncia das palavras nos verbetes do dicionário. É diferente do áudio de audiolivro.';
   @override
-  String get onboarding_lookup_verify_action =>
-      'Confirme uma palavra no seu dicionário';
+  String get onboarding_step_first_anki_card_title => 'Seu primeiro cartão';
   @override
-  String get onboarding_lookup_verify_action_desc =>
-      'Abra a consulta, digite qualquer palavra que você esteja aprendendo e siga em frente só depois que o dicionário instalado retornar uma definição. O tutorial não fixa nenhuma palavra de exemplo.';
+  String get onboarding_first_anki_lookup_title => 'Consulte uma palavra';
   @override
-  String get onboarding_step_first_anki_card_title =>
-      'Crie seu primeiro cartão do Anki';
-  @override
-  String get onboarding_step_first_anki_card_body =>
-      'Esta etapa só aparece depois que esta configuração se conectou ao Anki e um baralho e um tipo de nota utilizáveis foram escolhidos.';
-  @override
-  String get onboarding_first_anki_lookup_title =>
-      'Comece por um resultado real do dicionário';
-  @override
-  String get onboarding_first_anki_lookup_body =>
-      'Consulte uma palavra que o seu dicionário instalado realmente define. Não há palavra de exemplo fixa que possa faltar no seu dicionário.';
-  @override
-  String get onboarding_first_anki_plus_title =>
-      'Toque no botão de mais do verbete';
+  String get onboarding_first_anki_plus_title => 'Toque em +';
   @override
   String get onboarding_first_anki_plus_body =>
-      'O botão de mais abre o criador de cartões com a palavra atual, a leitura, o significado, a frase, o áudio e a imagem disponível.';
+      'O criador de cartões abre com a palavra, a leitura, o significado, a frase, o áudio e a imagem já preenchidos.';
   @override
-  String get onboarding_first_anki_save_title => 'Revise e salve';
+  String get onboarding_first_anki_save_title => 'Confira e salve';
   @override
   String get onboarding_first_anki_save_body =>
-      'Confirme o baralho de destino, o tipo de nota e a prévia dos campos e salve. Abra o Anki para conferir se o primeiro cartão chegou.';
+      'Confirme o baralho e o tipo de nota e salve. Abra o Anki para ver o cartão.';
   @override
   String get onboarding_first_anki_action =>
       'Abrir a consulta e criar um cartão';
-  @override
-  String get onboarding_first_anki_action_desc =>
-      'Use uma palavra com definição visível, toque no botão de mais, revise os campos e salve no baralho do Anki conectado.';
-  @override
-  String get onboarding_step_click_lookup_body =>
-      'Primeiro confirme uma palavra que o seu dicionário instalado realmente define. Depois use essa mesma palavra para praticar a consulta direta em livros, no texto de OCR de mangás e nas legendas de vídeo.';
-  @override
-  String get onboarding_click_lookup_tap_body =>
-      'No celular, toque em um caractere da palavra confirmada; no computador, clique com o botão esquerdo. O Fushi começa por ali e busca a palavra mais longa que encaixa.';
-  @override
-  String get onboarding_global_lookup_windows_select_body =>
-      'Selecione a mesma palavra que você já confirmou ter definição no dicionário e deixe a seleção ativa.';
-  @override
-  String get onboarding_global_lookup_android_select_body =>
-      'Mantenha pressionada essa mesma palavra confirmada e ajuste as alças de seleção para cobri-la inteira.';
   @override
   String get game_lookup_attached_title => 'In-game lookup';
   @override
@@ -102745,6 +102799,71 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get game_session_japanese_locale_skipped_hint_not_32bit =>
       'O jogo foi iniciado sem a localidade japonesa: o veredito automático diz que ela é necessária, mas o Locale Emulator só suporta jogos de 32 bits.';
+  @override
+  String get onboarding_feature_fonts => 'Fontes personalizadas';
+  @override
+  String get onboarding_feature_fonts_hint =>
+      'Use suas próprias fontes na interface, no texto do livro e no dicionário';
+  @override
+  String get onboarding_features_modules_title => 'Páginas de biblioteca';
+  @override
+  String get onboarding_features_modules_hint =>
+      'Páginas não marcadas ficam ocultas na barra de navegação. Dá para mudar quando quiser em Configurações → Aparência.';
+  @override
+  String get onboarding_features_setup_title => 'Configurar a seguir';
+  @override
+  String get onboarding_features_setup_hint =>
+      'Só os itens marcados ganham uma etapa neste guia.';
+  @override
+  String get onboarding_pack_intro =>
+      'Dicionários de japonês, acento tonal, frequência de palavras e áudio de pronúncia JA/EN em um único download. Estuda outro idioma? Pule esta etapa e importe seus próprios dicionários.';
+  @override
+  String get onboarding_global_lookup_windows_select_desc =>
+      'Selecione uma palavra em qualquer aplicativo e mantenha a seleção.';
+  @override
+  String get onboarding_global_lookup_android_select_desc =>
+      'Toque e segure uma palavra em outro aplicativo e ajuste as alças para cobri-la.';
+  @override
+  String get onboarding_global_lookup_windows_shortcut_press =>
+      'Pressione o atalho';
+  @override
+  String get onboarding_first_anki_card_intro =>
+      'O Anki está conectado. Crie agora um cartão de verdade para confirmar que todo o caminho funciona.';
+  @override
+  String get onboarding_action_start => 'Começar a usar o Fushi';
+  @override
+  String get onboarding_actions_more => 'Outras formas';
+  @override
+  String get onboarding_finish_summary_modules =>
+      'Páginas de biblioteca exibidas';
+  @override
+  String get onboarding_finish_summary_setup => 'Configuração guiada';
+  @override
+  String get onboarding_finish_summary_none => 'Nenhuma';
+  @override
+  String get onboarding_anki_status_pending => 'Ainda não testada';
+  @override
+  String get onboarding_click_lookup_intro =>
+      'Toque em qualquer palavra de um livro, mangá ou legenda para ver a definição. Faça o teste na frase de prática abaixo.';
+  @override
+  String get onboarding_click_lookup_tap_desc =>
+      'Toque em um caractere (ou clique com o botão esquerdo); o Fushi pega a palavra mais longa que começa ali. A frase abre na página de consulta.';
+  @override
+  String get onboarding_sample_sentence_label => 'Frase de prática';
+  @override
+  String get onboarding_sample_sentence_hint =>
+      'Toque para abri-la na página de consulta e depois toque em qualquer palavra.';
+  @override
+  String get onboarding_lookup_practice_action => 'Praticar com esta frase';
+  @override
+  String get onboarding_lookup_practice_desc =>
+      'Abre a página de consulta com a frase carregada. Toque em uma palavra ali para ver a definição; se não vier nada, seus dicionários ainda não estão instalados.';
+  @override
+  String get onboarding_first_anki_lookup_desc =>
+      'Abra a frase de prática e toque em uma palavra.';
+  @override
+  String get onboarding_first_anki_action_desc =>
+      'Abre a frase de prática na página de consulta. Toque em uma palavra, toque em +, confira os campos e salve.';
 }
 
 // Path: <root>
@@ -110643,44 +110762,42 @@ class _StringsRu extends _StringsEn {
   @override
   String get onboarding_title => 'Начало работы';
   @override
-  String get onboarding_welcome_headline => 'Добро пожаловать!';
+  String get onboarding_welcome_headline => 'Добро пожаловать в Fushi';
   @override
   String get onboarding_feature_anki => 'Карточки Anki';
   @override
   String get onboarding_feature_anki_hint =>
-      'Подключите AnkiConnect или AnkiDroid для создания карточек';
+      'Превращайте результаты поиска в карточки одним нажатием';
   @override
   String get onboarding_feature_backup =>
       'Резервное копирование и синхронизация';
   @override
   String get onboarding_feature_backup_hint =>
-      'Создавайте резервные копии данных в Google Drive, WebDAV и другие хранилища';
+      'Google Drive, WebDAV или локальный файл';
   @override
   String get onboarding_feature_interconnect => 'Соединение устройств';
   @override
   String get onboarding_feature_interconnect_hint =>
-      'Свяжите устройства в локальной сети для обмена библиотеками и прогрессом';
+      'Общие библиотеки и прогресс на устройствах в локальной сети';
   @override
   String get onboarding_step_dictionary_action => 'Открыть менеджер словарей';
   @override
   String get onboarding_step_anki_title => 'Настройка Anki';
   @override
-  String get onboarding_step_anki_action =>
-      'Открыть настройки создания карточек';
+  String get onboarding_step_anki_action => 'Настройки создания карточек';
   @override
-  String get onboarding_step_backup_title => 'Настройка резервного копирования';
+  String get onboarding_step_backup_title => 'Резервное копирование';
   @override
   String get onboarding_step_backup_body =>
-      'Выберите хранилище для резервных копий и войдите в систему, или экспортируйте локальный файл резервной копии.';
+      'Сохраните библиотеку при смене или потере устройства.';
   @override
   String get onboarding_step_backup_action =>
       'Открыть настройки резервного копирования';
   @override
-  String get onboarding_step_interconnect_title =>
-      'Настройка соединения устройств';
+  String get onboarding_step_interconnect_title => 'Соединение устройств';
   @override
   String get onboarding_step_interconnect_body =>
-      'Включите соединение и свяжите устройства в локальной сети для обмена библиотеками, прогрессом и результатами поиска.';
+      'Свяжите устройства в локальной сети, чтобы пользоваться одной библиотекой и синхронным прогрессом.';
   @override
   String get onboarding_step_interconnect_action =>
       'Открыть настройки соединения';
@@ -110688,50 +110805,40 @@ class _StringsRu extends _StringsEn {
   String get onboarding_finish_title => 'Всё готово';
   @override
   String get onboarding_finish_body =>
-      'Вы можете вернуться к этому руководству в любое время: Настройки → Система.';
+      'Вы можете снова открыть это руководство в любое время: Настройки → Система.';
   @override
   String get onboarding_action_next => 'Далее';
-  @override
-  String get onboarding_action_finish => 'Готово';
   @override
   String get onboarding_action_skip => 'Пропустить';
   @override
   String get onboarding_reopen => 'Руководство по началу работы';
   @override
   String get onboarding_welcome_body =>
-      'Сначала выберите язык интерфейса и тему — далее мы проведём вас через остальные шаги.';
+      'Выберите язык интерфейса и тему. Следующие шаги настроят всё остальное.';
   @override
-  String get onboarding_features_title => 'Выберите, что вы используете';
+  String get onboarding_features_title => 'Чем вы будете пользоваться?';
   @override
-  String get onboarding_features_modules_label =>
-      'Вкладки библиотеки (снятые скрыты из панели навигации; можно изменить в Настройках)';
-  @override
-  String get onboarding_features_setup_label => 'Что настроить далее';
-  @override
-  String get onboarding_feature_manga => 'Библиотека манги';
+  String get onboarding_feature_manga => 'Манга';
   @override
   String get onboarding_feature_manga_hint =>
       'Читайте мангу с OCR-поиском по словарю';
   @override
-  String get onboarding_feature_video => 'Видеобиблиотека';
+  String get onboarding_feature_video => 'Видео';
   @override
   String get onboarding_feature_video_hint =>
-      'Смотрите видео с поиском по субтитрам и созданием карточек';
+      'Поиск по субтитрам и создание карточек';
   @override
-  String get onboarding_feature_games => 'Библиотека Galgame';
+  String get onboarding_feature_games => 'Гальге';
   @override
   String get onboarding_feature_games_hint =>
-      'Запускайте гальге с перехватом текста и поиском по словарю (только Windows)';
+      'Поиск по перехваченному тексту прямо в игре (только Windows)';
   @override
-  String get onboarding_feature_pack => 'Рекомендуемый набор (словари + аудио)';
+  String get onboarding_feature_pack => 'Рекомендуемый набор';
   @override
   String get onboarding_feature_pack_hint =>
-      'Одна загрузка настраивает японские словари и аудио произношения JA/EN';
+      'Японские словари и аудио произношения JA/EN одной загрузкой';
   @override
-  String get onboarding_step_pack_title => 'Установка рекомендуемого набора';
-  @override
-  String get onboarding_step_pack_body =>
-      'Рекомендуемый набор включает японские словари слов, акцентов и частотности, а также базы аудио произношения японского/английского. Загрузите и импортируйте его здесь; импорт заменяет локальные данные, поэтому выполняйте на чистой установке. Изучаете другой язык? Используйте менеджер словарей для импорта собственных словарей.';
+  String get onboarding_step_pack_title => 'Рекомендуемый набор';
   @override
   String get onboarding_step_pack_download_action =>
       'Загрузить и импортировать';
@@ -110739,11 +110846,10 @@ class _StringsRu extends _StringsEn {
   String get onboarding_step_pack_import_existing_action =>
       'Импортировать загруженный набор';
   @override
-  String get onboarding_step_pack_pick_action =>
-      'Выбрать локальный файл набора';
+  String get onboarding_step_pack_pick_action => 'Выбрать файл набора';
   @override
   String get onboarding_pack_downloading =>
-      'Загрузка… можно отменить, продолжится при следующем запуске';
+      'Загрузка… можно отменить и продолжить позже';
   @override
   String onboarding_pack_download_failed({required Object message}) =>
       'Ошибка загрузки: ${message}';
@@ -110751,15 +110857,15 @@ class _StringsRu extends _StringsEn {
   String get onboarding_step_extension_title => 'Расширение для браузера';
   @override
   String get onboarding_step_extension_body =>
-      'Установите расширение-компаньон для поиска слов на любой веб-странице.';
+      'Ищите слова на любой веб-странице с помощью расширения-компаньона.';
   @override
   String get onboarding_step_extension_action =>
-      'Открыть руководство по расширению';
+      'Открыть руководство по установке';
   @override
-  String get onboarding_step_fonts_title => 'Шрифты для чтения';
+  String get onboarding_step_fonts_title => 'Шрифты';
   @override
   String get onboarding_step_fonts_body =>
-      'Импортируйте пользовательские шрифты и выберите, где их использовать: в интерфейсе, тексте книг или словарях.';
+      'Используйте собственные шрифты для интерфейса, текста книг и словаря.';
   @override
   String get settings_section_modules => 'Функциональные модули';
   @override
@@ -111001,10 +111107,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get module_extension_label => 'Расширение для браузера';
   @override
-  String get onboarding_feature_books => 'Библиотека романов';
+  String get onboarding_feature_books => 'Романы';
   @override
   String get onboarding_feature_books_hint =>
-      'Читайте EPUB-романы с поиском по словарю и синхронизацией аудиокниг';
+      'Чтение EPUB с поиском по словарю и синхронизацией аудиокниг';
   @override
   String get onboarding_feature_extension_hint =>
       'Ищите слова на любой веб-странице (только десктоп)';
@@ -111427,13 +111533,13 @@ class _StringsRu extends _StringsEn {
       'Игра была запущена с японской локалью (CP932). Если текст отображается неправильно или появляется ошибка скрипта, установите для этой игры японскую локаль в «Никогда».';
   @override
   String get onboarding_anki_intro_body =>
-      'Anki — это бесплатное приложение для интервального повторения: новые слова становятся карточками, а повторения планируются по кривой забывания. После поиска слова Fushi может превратить его в карточку Anki одним нажатием — со значением, предложением, аудио и скриншотом.';
+      'Anki — бесплатное приложение с карточками и интервальным повторением. После поиска Fushi одним нажатием превращает слово в карточку со значением, предложением, аудио и скриншотом.';
   @override
   String get onboarding_anki_setup_desktop_hint =>
-      'Установите десктопное приложение Anki, затем добавьте аддон AnkiConnect: в Anki откройте Инструменты - Аддоны - Скачать аддон и введите код 2055492159. Держите Anki запущенным при создании карточек.';
+      'Установите Anki, добавьте дополнение AnkiConnect (одно нажатие ниже или код дополнения 2055492159) и держите Anki запущенным, пока создаёте карточки.';
   @override
   String get onboarding_anki_setup_ios_hint =>
-      'При установленном AnkiMobile создание карточек работает сразу. Для полного набора функций подключитесь к Anki на компьютере в той же сети через AnkiConnect.';
+      'При установленном AnkiMobile карточки добавляются напрямую. Для полного набора функций подключитесь через AnkiConnect к Anki на компьютере в той же сети.';
   @override
   String get onboarding_anki_backend_label => 'Подключение';
   @override
@@ -111447,22 +111553,22 @@ class _StringsRu extends _StringsEn {
   String get onboarding_anki_get_ankidroid_action => 'Скачать AnkiDroid';
   @override
   String get onboarding_anki_mobile_ankiconnect_title =>
-      'Дополнительно: использовать AnkiConnect на этом устройстве';
+      'Дополнительно: использовать AnkiConnect с этого устройства';
   @override
   String get onboarding_anki_mobile_ankiconnect_hint =>
-      'Это устройство также может создавать карточки в Anki на компьютере в той же сети: включите AnkiConnect в настройках создания карточек и введите адрес компьютера.';
+      'Создавайте карточки в Anki на компьютере в той же сети: включите AnkiConnect в настройках создания карточек и введите адрес компьютера.';
   @override
   String get onboarding_anki_setup_android_hint =>
-      'Установите AnkiDroid и откройте его один раз для первоначальной настройки. Вернувшись в Fushi, нажмите «Разрешить» в диалоге разрешений, который появится при создании первой карточки — настройки AnkiDroid менять не нужно.';
+      'Установите AnkiDroid и откройте его один раз. При создании первой карточки нажмите «Разрешить» в диалоге разрешений — больше настраивать нечего.';
   @override
   String get onboarding_anki_install_addon_action =>
       'Установить аддон AnkiConnect';
   @override
   String get onboarding_anki_addon_installed =>
-      'AnkiConnect установлен. Запустите (или перезапустите) Anki, затем нажмите «Проверить подключение».';
+      'AnkiConnect установлен. Запустите или перезапустите Anki, затем проверьте подключение.';
   @override
   String get onboarding_anki_addon_no_anki =>
-      'Папка данных Anki не найдена. Установите Anki и откройте его один раз, затем повторите попытку.';
+      'Папка данных Anki не найдена. Установите Anki, откройте его один раз и повторите попытку.';
   @override
   String onboarding_anki_addon_failed({required Object message}) =>
       'Ошибка установки: ${message}';
@@ -111980,58 +112086,54 @@ class _StringsRu extends _StringsEn {
   String get onboarding_action_badge_optional => 'По желанию';
   @override
   String get onboarding_pack_action_download_desc =>
-      'Скачивает весь пакет в фоне, а затем импортирует его. Отменить можно в любой момент; в следующий раз загрузка продолжится с места остановки.';
+      'Скачивает в фоне сразу из нескольких источников, затем импортирует. Отменить можно в любой момент; загрузка продолжится с места остановки.';
   @override
   String get onboarding_pack_action_import_existing_desc =>
-      'Пакет уже скачан; здесь он импортируется. Выберите «Объединить» в окне подтверждения — существующие данные останутся нетронутыми.';
+      'Набор уже на диске. Выберите «Объединить» в окне подтверждения, чтобы сохранить существующие данные.';
   @override
   String get onboarding_pack_action_pick_desc =>
-      'Уже получили zip пакета из другого места? Импортируйте его с диска и полностью пропустите загрузку.';
+      'Уже есть zip набора? Импортируйте его с диска и пропустите загрузку.';
   @override
-  String get onboarding_pack_action_website =>
-      'Открыть страницу загрузки на сайте';
+  String get onboarding_pack_action_website => 'Открыть страницу загрузки';
   @override
   String get onboarding_pack_action_website_desc =>
-      'Открывает официальный сайт в браузере. В разделе про пакет есть ссылки на отдельные части, которые можно отдать менеджеру загрузок; затем вернитесь сюда и импортируйте полученное через «Выбрать локальный файл пакета».';
+      'Ссылки на части для менеджеров загрузок. Затем вернитесь и выберите «Выбрать файл набора».';
   @override
   String get onboarding_pack_action_dictionary_desc =>
-      'Учите не японский, а другой язык? Пропустите пакет и импортируйте здесь словари для своего языка.';
+      'Учите другой язык? Импортируйте здесь словари для него.';
   @override
   String get onboarding_pack_action_audio_desc =>
-      'Откуда берётся аудио произношения. Японский и английский пакет уже покрывает; для других языков добавьте здесь онлайн-источники.';
+      'Добавьте онлайн-источники произношения для языков, которых нет в наборе.';
   @override
   String get onboarding_anki_action_test_desc =>
-      'Проверяет, что Fushi может связаться с Anki, и загружает ваши колоды и типы заметок. Пока ничего не создаётся.';
+      'Проверяет, что Fushi может связаться с Anki, и загружает ваши колоды и типы заметок. Ничего не создаёт.';
   @override
   String get onboarding_anki_action_refresh_desc =>
-      'Заново загружает колоды и типы заметок из Anki. Используйте после создания новой колоды в Anki.';
+      'Заново загружает колоды и типы заметок. Используйте после создания колоды в Anki.';
   @override
   String get onboarding_anki_action_get_ankidroid_desc =>
-      'Открывает страницу AnkiDroid в магазине. Fushi записывает карточки именно туда, поэтому его нужно установить первым.';
+      'Открывает страницу в магазине. Fushi записывает карточки в AnkiDroid, поэтому его нужно установить первым.';
   @override
   String get onboarding_anki_action_get_anki_desc =>
-      'Открывает страницу загрузки Anki. Установите Anki и держите его запущенным, пока создаёте карточки.';
+      'Открывает страницу загрузки Anki. Держите Anki запущенным, пока создаёте карточки.';
   @override
   String get onboarding_anki_action_install_addon_desc =>
-      'Распаковывает встроенное дополнение AnkiConnect в Anki — именно через него Fushi общается с Anki. После этого перезапустите Anki.';
+      'Распаковывает встроенное дополнение AnkiConnect в Anki. После этого перезапустите Anki.';
   @override
   String get onboarding_step_anki_action_desc =>
-      'Шаблон карточки, сопоставление полей, скриншоты и аудио — то, как выглядит созданная карточка. Колоды и типа заметки выше уже достаточно, чтобы начать, так что заходите сюда только если хотите изменить, как собираются карточки.';
+      'Шаблон, сопоставление полей, скриншоты и аудио. Колоды и типа заметки выше уже достаточно, чтобы начать.';
   @override
   String get onboarding_step_backup_action_desc =>
-      'Выберите хранилище для резервных копий и войдите в него, чтобы библиотека пережила потерю или замену устройства.';
+      'Выберите хранилище и войдите в него или экспортируйте локальный файл резервной копии.';
   @override
   String get onboarding_step_interconnect_action_desc =>
-      'Связывает это устройство с вашими другими устройствами: одна общая библиотека и синхронный прогресс.';
+      'Включите соединение и свяжите это устройство с остальными вашими.';
   @override
   String get onboarding_step_extension_action_desc =>
-      'Показывает, как установить расширение для браузера и подключить его к Fushi, чтобы искать слова и на веб-страницах.';
+      'Показывает, как установить расширение и подключить его к Fushi.';
   @override
   String get onboarding_step_fonts_action_desc =>
-      'Добавьте свои файлы шрифтов и выберите, какой из них использует каждый язык.';
-  @override
-  String get onboarding_pack_sources_hint =>
-      'Скачивается параллельными частями одновременно с GitHub, официального сайта и резервного зеркала, каждая часть проверяется контрольной суммой. Fushi по ходу измеряет источники и отдаёт больше частей тому, кто быстрее прямо сейчас, поэтому выбирать здесь нечего.';
+      'Импортируйте файлы шрифтов и выберите по одному на язык.';
   @override
   String get video_setting_hdr_output => 'Вывод HDR / 10 бит';
   @override
@@ -112153,140 +112255,101 @@ class _StringsRu extends _StringsEn {
   String web_video_mine_switch_builtin({required Object count}) =>
       'Переключиться на встроенный режим и создать карточек из очереди: ${count}';
   @override
-  String get onboarding_step_click_lookup_title => 'Поиск слова по нажатию';
+  String get onboarding_step_click_lookup_title => 'Поиск по нажатию';
   @override
-  String get onboarding_click_lookup_tap_title => 'Нажмите на текст';
+  String get onboarding_click_lookup_tap_title => 'Нажмите на слово';
   @override
-  String get onboarding_click_lookup_nested_title =>
-      'Продолжайте искать во всплывающем окне';
+  String get onboarding_click_lookup_nested_title => 'Продолжайте искать';
   @override
   String get onboarding_click_lookup_nested_body =>
-      'Нажмите на другое слово внутри толкования, чтобы открыть следующий уровень поиска. Кнопка «Назад» или нажатие вне окна закрывают один уровень.';
+      'Нажмите на слово внутри толкования, чтобы уйти на уровень глубже. Кнопка «Назад» или нажатие вне окна закрывают уровень.';
   @override
-  String get onboarding_click_lookup_mine_title =>
-      'Превратите результат в карточку';
+  String get onboarding_click_lookup_mine_title => 'Создайте карточку';
   @override
   String get onboarding_click_lookup_mine_body =>
-      'Если значение подходит, нажмите +, чтобы отправить слово, предложение, аудио и изображение в конструктор карточек.';
+      'Нажмите + у словарной статьи, чтобы отправить слово, предложение, аудио и изображение в конструктор карточек.';
   @override
-  String get onboarding_step_global_lookup_title =>
-      'Поиск слов за пределами Fushi';
+  String get onboarding_step_global_lookup_title => 'Поиск за пределами Fushi';
   @override
   String get onboarding_global_lookup_windows_body =>
-      'В Windows выделите текст в другом приложении и вызовите словарь, не переключаясь обратно в Fushi.';
+      'Выделите текст в любом приложении и вызовите словарь, не переключая окно.';
   @override
-  String get onboarding_global_lookup_windows_select_title =>
-      'Выделите текст в любом приложении';
-  @override
-  String get onboarding_global_lookup_windows_shortcut_title =>
-      'Нажмите Ctrl+Alt+D';
+  String get onboarding_global_lookup_windows_select_title => 'Выделите текст';
   @override
   String get onboarding_global_lookup_windows_shortcut_body =>
-      'Это глобальное сочетание клавиш по умолчанию. Fushi возьмёт текущее выделение и откроет карточку словаря рядом с курсором.';
+      'Fushi возьмёт выделение и откроет карточку словаря рядом с курсором.';
   @override
   String get onboarding_global_lookup_windows_customize_title =>
-      'При необходимости измените сочетание клавиш';
+      'Измените сочетание клавиш';
   @override
   String get onboarding_global_lookup_windows_customize_body =>
-      'Откройте «Настройки → Сочетания клавиш → Глобальные (вне приложения)» и назначьте другую комбинацию.';
+      'Настройки → Сочетания клавиш → Глобальные (вне приложения).';
   @override
   String get onboarding_global_lookup_windows_action =>
       'Открыть настройки сочетаний клавиш';
   @override
   String get onboarding_global_lookup_windows_action_desc =>
-      'Позволяет изменить сочетание клавиш для поиска вне приложения. По умолчанию уже работает Ctrl+Alt+D, так что это необязательно.';
+      'Только если хотите другую комбинацию клавиш.';
   @override
   String get onboarding_global_lookup_android_body =>
-      'В Android система передаёт выделенный текст в Fushi через меню выделения или меню «Поделиться». Настраиваемого глобального сочетания клавиш здесь нет.';
+      'Android передаёт выделенный текст в Fushi через меню выделения или меню «Поделиться».';
   @override
-  String get onboarding_global_lookup_android_select_title =>
-      'Выделите текст в другом приложении';
+  String get onboarding_global_lookup_android_select_title => 'Выделите текст';
   @override
   String get onboarding_global_lookup_android_open_title => 'Выберите Fushi';
   @override
   String get onboarding_global_lookup_android_open_body =>
-      'Нажмите Fushi в меню выделения текста. Если его там нет, нажмите «Поделиться» и выберите Fushi в открывшемся меню.';
+      'Нажмите Fushi в меню выделения или нажмите «Поделиться» и выберите Fushi.';
   @override
   String get onboarding_global_lookup_android_continue_title =>
-      'Работайте в отдельном окне';
+      'Читайте всплывающее окно';
   @override
   String get onboarding_global_lookup_android_continue_body =>
-      'Результат поиска откроется отдельно от исходного приложения. В нём можно нажимать на другие слова, а после закрытия вы вернётесь туда, где были.';
+      'Окно поиска откроется поверх другого приложения. Закройте его, чтобы вернуться.';
   @override
-  String get onboarding_feature_manual_resources =>
-      'Импортировать словари и аудио вручную';
+  String get onboarding_feature_manual_resources => 'Импорт своих материалов';
   @override
   String get onboarding_feature_manual_resources_hint =>
-      'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+      'Словари, аудиокниги и источники произношения из ваших собственных файлов';
   @override
   String get onboarding_step_manual_resources_title =>
-      'Подготовьте словари и аудио вручную';
+      'Ваши собственные словари и аудио';
   @override
   String get onboarding_step_manual_resources_body =>
-      'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+      'Импортируйте хотя бы один словарь перед уроком по поиску. Аудиокниги и аудио произношения — по желанию.';
   @override
   String get onboarding_manual_dictionary_action => 'Импортировать словарь';
   @override
   String get onboarding_manual_dictionary_action_desc =>
-      'Откройте менеджер словарей и импортируйте хотя бы один поддерживаемый файл или архив словаря. Уроки по поиску имеют смысл только тогда, когда запрос возвращает толкование.';
+      'Открывает менеджер словарей. Поиск начнёт выдавать результаты только после установки словаря.';
   @override
   String get onboarding_manual_audiobook_action =>
-      'Импортировать книгу с аудиокнигой';
+      'Импортировать книгу с аудио';
   @override
   String get onboarding_manual_audiobook_action_desc =>
-      'Откройте импорт книг и выберите книгу или текст, синхронизированные субтитры и один или несколько аудиофайлов. Без субтитров Fushi не сможет сопоставить аудио с предложениями.';
+      'Книга или текст, синхронизированные субтитры и аудиофайлы. Именно субтитры позволяют Fushi сопоставлять аудио с предложениями.';
   @override
   String get onboarding_manual_pronunciation_action =>
-      'Настроить аудио произношения слов';
+      'Настроить аудио произношения';
   @override
   String get onboarding_manual_pronunciation_action_desc =>
-      'Добавьте локальные или онлайн-источники произношения для словарных статей. Это не то же самое, что аудиокнига, прикреплённая к книге.';
+      'Локальные или онлайн-источники произношения слов в словарных статьях. Это не аудиокниги.';
   @override
-  String get onboarding_lookup_verify_action =>
-      'Проверьте слово в своём словаре';
+  String get onboarding_step_first_anki_card_title => 'Ваша первая карточка';
   @override
-  String get onboarding_lookup_verify_action_desc =>
-      'Откройте поиск, введите любое слово, которое вы учите, и продолжайте только после того, как установленный словарь вернёт толкование. В уроке нет жёстко заданного слова-примера.';
+  String get onboarding_first_anki_lookup_title => 'Найдите слово';
   @override
-  String get onboarding_step_first_anki_card_title =>
-      'Создайте первую карточку Anki';
-  @override
-  String get onboarding_step_first_anki_card_body =>
-      'Этот шаг появляется только после того, как в этом руководстве вы подключились к Anki и выбрали доступную колоду и тип заметки.';
-  @override
-  String get onboarding_first_anki_lookup_title =>
-      'Начните с реального результата из словаря';
-  @override
-  String get onboarding_first_anki_lookup_body =>
-      'Найдите слово, которое действительно есть в вашем установленном словаре. Никакого фиксированного учебного слова, которого может не оказаться в словаре, здесь нет.';
-  @override
-  String get onboarding_first_anki_plus_title =>
-      'Нажмите плюс у словарной статьи';
+  String get onboarding_first_anki_plus_title => 'Нажмите +';
   @override
   String get onboarding_first_anki_plus_body =>
-      'Плюс открывает конструктор карточек с текущим словом, чтением, значением, предложением, аудио и доступным изображением.';
+      'Конструктор карточек откроется с уже заполненными словом, чтением, значением, предложением, аудио и изображением.';
   @override
   String get onboarding_first_anki_save_title => 'Проверьте и сохраните';
   @override
   String get onboarding_first_anki_save_body =>
-      'Подтвердите колоду, тип заметки и предпросмотр полей, затем сохраните. Откройте Anki и убедитесь, что первая карточка дошла.';
+      'Подтвердите колоду и тип заметки, затем сохраните. Откройте Anki, чтобы увидеть карточку.';
   @override
   String get onboarding_first_anki_action => 'Открыть поиск и создать карточку';
-  @override
-  String get onboarding_first_anki_action_desc =>
-      'Возьмите слово с видимым толкованием, нажмите плюс рядом с ним, проверьте поля и сохраните карточку в подключённую колоду Anki.';
-  @override
-  String get onboarding_step_click_lookup_body =>
-      'Сначала проверьте слово, которое действительно есть в установленном словаре. Затем на этом же слове потренируйте поиск нажатием в книгах, в OCR-тексте манги и в субтитрах видео.';
-  @override
-  String get onboarding_click_lookup_tap_body =>
-      'На телефоне нажмите на один символ проверенного слова, на компьютере щёлкните по нему левой кнопкой. Fushi начнёт отсюда и подберёт самое длинное слово.';
-  @override
-  String get onboarding_global_lookup_windows_select_body =>
-      'Выделите то же слово, для которого вы уже убедились, что в словаре есть толкование, и оставьте выделение активным.';
-  @override
-  String get onboarding_global_lookup_android_select_body =>
-      'Нажмите и удерживайте то же проверенное слово, затем растяните маркеры выделения так, чтобы оно попало целиком.';
   @override
   String get game_lookup_attached_title => 'In-game lookup';
   @override
@@ -112570,6 +112633,72 @@ class _StringsRu extends _StringsEn {
   @override
   String get game_session_japanese_locale_skipped_hint_not_32bit =>
       'Игра запущена без японской локали: автоматический вердикт считает её нужной, но Locale Emulator поддерживает только 32-битные игры.';
+  @override
+  String get onboarding_feature_fonts => 'Свои шрифты';
+  @override
+  String get onboarding_feature_fonts_hint =>
+      'Используйте собственные шрифты для интерфейса, текста книг и словаря';
+  @override
+  String get onboarding_features_modules_title => 'Страницы библиотеки';
+  @override
+  String get onboarding_features_modules_hint =>
+      'Неотмеченные страницы скрываются из панели навигации. Изменить можно в любой момент: Настройки → Внешний вид.';
+  @override
+  String get onboarding_features_setup_title => 'Настроить далее';
+  @override
+  String get onboarding_features_setup_hint =>
+      'Шаг в этом руководстве появится только у отмеченных пунктов.';
+  @override
+  String get onboarding_pack_intro =>
+      'Японские словари, тональное ударение, частотность слов и аудио произношения JA/EN одной загрузкой. Учите другой язык? Пропустите этот шаг и импортируйте свои словари.';
+  @override
+  String get onboarding_global_lookup_windows_select_desc =>
+      'Выделите слово в любом приложении и оставьте выделение активным.';
+  @override
+  String get onboarding_global_lookup_android_select_desc =>
+      'Нажмите и удерживайте слово в другом приложении, затем растяните маркеры выделения по нему.';
+  @override
+  String get onboarding_global_lookup_windows_shortcut_press =>
+      'Нажмите сочетание клавиш';
+  @override
+  String get onboarding_first_anki_card_intro =>
+      'Anki подключён. Создайте настоящую карточку прямо сейчас, чтобы убедиться, что вся цепочка работает.';
+  @override
+  String get onboarding_action_start => 'Начать работу с Fushi';
+  @override
+  String get onboarding_actions_more => 'Другие способы';
+  @override
+  String get onboarding_finish_summary_modules =>
+      'Показанные страницы библиотеки';
+  @override
+  String get onboarding_finish_summary_setup => 'Пошаговая настройка';
+  @override
+  String get onboarding_finish_summary_none => 'Нет';
+  @override
+  String get onboarding_anki_status_pending => 'Ещё не проверено';
+  @override
+  String get onboarding_click_lookup_intro =>
+      'Нажмите на любое слово в книге, манге или субтитрах, чтобы увидеть его значение. Попробуйте на тренировочном предложении ниже.';
+  @override
+  String get onboarding_click_lookup_tap_desc =>
+      'Нажмите на символ (на компьютере — щелчок левой кнопкой); Fushi возьмёт самое длинное слово, которое начинается с этого места. Предложение откроется на странице поиска.';
+  @override
+  String get onboarding_sample_sentence_label => 'Тренировочное предложение';
+  @override
+  String get onboarding_sample_sentence_hint =>
+      'Нажмите, чтобы открыть его на странице поиска, затем нажмите на любое слово.';
+  @override
+  String get onboarding_lookup_practice_action =>
+      'Потренироваться на этом предложении';
+  @override
+  String get onboarding_lookup_practice_desc =>
+      'Открывает страницу поиска с загруженным предложением. Нажмите там на слово, чтобы увидеть его значение; если ничего не находится, словари ещё не установлены.';
+  @override
+  String get onboarding_first_anki_lookup_desc =>
+      'Откройте тренировочное предложение и нажмите на слово.';
+  @override
+  String get onboarding_first_anki_action_desc =>
+      'Открывает тренировочное предложение на странице поиска. Нажмите на слово, затем на +, проверьте поля и сохраните.';
 }
 
 // Path: <root>
@@ -120312,40 +120441,40 @@ class _StringsTh extends _StringsEn {
   @override
   String get onboarding_title => 'เริ่มต้นใช้งาน';
   @override
-  String get onboarding_welcome_headline => 'ยินดีต้อนรับ!';
+  String get onboarding_welcome_headline => 'ยินดีต้อนรับสู่ Fushi';
   @override
-  String get onboarding_feature_anki => 'แฟลชการ์ด Anki';
+  String get onboarding_feature_anki => 'การ์ด Anki';
   @override
   String get onboarding_feature_anki_hint =>
-      'เชื่อมต่อ AnkiConnect หรือ AnkiDroid เพื่อสร้างแฟลชการ์ด';
+      'เปลี่ยนคำที่ค้นให้เป็นแฟลชการ์ดในแตะเดียว';
   @override
   String get onboarding_feature_backup => 'สำรองข้อมูลและซิงค์';
   @override
   String get onboarding_feature_backup_hint =>
-      'สำรองข้อมูลของคุณไปยัง Google Drive, WebDAV และแบ็กเอนด์อื่น ๆ';
+      'Google Drive, WebDAV หรือไฟล์ในเครื่อง';
   @override
   String get onboarding_feature_interconnect => 'การเชื่อมต่ออุปกรณ์';
   @override
   String get onboarding_feature_interconnect_hint =>
-      'จับคู่อุปกรณ์บน LAN เพื่อแชร์ไลบรารีและความคืบหน้า';
+      'แชร์ไลบรารีและความคืบหน้าระหว่างอุปกรณ์บน LAN';
   @override
   String get onboarding_step_dictionary_action => 'เปิดตัวจัดการพจนานุกรม';
   @override
   String get onboarding_step_anki_title => 'ตั้งค่า Anki';
   @override
-  String get onboarding_step_anki_action => 'เปิดการตั้งค่าการสร้างการ์ด';
+  String get onboarding_step_anki_action => 'การตั้งค่าการสร้างการ์ด';
   @override
-  String get onboarding_step_backup_title => 'ตั้งค่าการสำรองข้อมูล';
+  String get onboarding_step_backup_title => 'สำรองข้อมูล';
   @override
   String get onboarding_step_backup_body =>
-      'เลือกแบ็กเอนด์สำรองข้อมูลและลงชื่อเข้าใช้ หรือส่งออกไฟล์สำรองข้อมูลในเครื่อง';
+      'เปลี่ยนเครื่องหรือทำอุปกรณ์หาย คลังของคุณก็ยังอยู่';
   @override
   String get onboarding_step_backup_action => 'เปิดการตั้งค่าสำรองข้อมูล';
   @override
-  String get onboarding_step_interconnect_title => 'ตั้งค่าการเชื่อมต่ออุปกรณ์';
+  String get onboarding_step_interconnect_title => 'การเชื่อมต่ออุปกรณ์';
   @override
   String get onboarding_step_interconnect_body =>
-      'เปิดใช้งานการเชื่อมต่อและจับคู่กับอุปกรณ์อื่นบน LAN เพื่อแชร์ไลบรารี ความคืบหน้า และการค้นคำ';
+      'จับคู่อุปกรณ์บน LAN เพื่อใช้คลังเดียวกันและซิงก์ความคืบหน้า';
   @override
   String get onboarding_step_interconnect_action =>
       'เปิดการตั้งค่าการเชื่อมต่อ';
@@ -120353,59 +120482,48 @@ class _StringsTh extends _StringsEn {
   String get onboarding_finish_title => 'พร้อมแล้ว';
   @override
   String get onboarding_finish_body =>
-      'คุณสามารถกลับมาดูคู่มือนี้ได้ทุกเมื่อจาก การตั้งค่า → ระบบ';
+      'คุณเปิดคู่มือนี้อีกครั้งได้ทุกเมื่อจาก การตั้งค่า → ระบบ';
   @override
   String get onboarding_action_next => 'ถัดไป';
-  @override
-  String get onboarding_action_finish => 'เสร็จสิ้น';
   @override
   String get onboarding_action_skip => 'ข้ามไปก่อน';
   @override
   String get onboarding_reopen => 'คู่มือเริ่มต้นใช้งาน';
   @override
   String get onboarding_welcome_body =>
-      'ตั้งค่าภาษาอินเทอร์เฟซและธีมก่อน ขั้นตอนถัดไปจะแนะนำคุณผ่านส่วนที่เหลือ';
+      'เลือกภาษาอินเทอร์เฟซและธีม ขั้นตอนถัดไปจะตั้งค่าส่วนที่เหลือให้';
   @override
-  String get onboarding_features_title => 'เลือกสิ่งที่คุณใช้';
+  String get onboarding_features_title => 'คุณจะใช้อะไรบ้าง';
   @override
-  String get onboarding_features_modules_label =>
-      'แท็บไลบรารี (รายการที่ไม่เลือกจะถูกซ่อนจากแถบนำทาง เปลี่ยนได้ทุกเมื่อในการตั้งค่า)';
-  @override
-  String get onboarding_features_setup_label => 'สิ่งที่จะตั้งค่าถัดไป';
-  @override
-  String get onboarding_feature_manga => 'ไลบรารีมังงะ';
+  String get onboarding_feature_manga => 'มังงะ';
   @override
   String get onboarding_feature_manga_hint => 'อ่านมังงะพร้อมการค้นคำด้วย OCR';
   @override
-  String get onboarding_feature_video => 'ไลบรารีวิดีโอ';
+  String get onboarding_feature_video => 'วิดีโอ';
   @override
-  String get onboarding_feature_video_hint =>
-      'ดูวิดีโอพร้อมการค้นคำจากคำบรรยายและการขุดคำ';
+  String get onboarding_feature_video_hint => 'ค้นคำจากคำบรรยายและสร้างการ์ด';
   @override
-  String get onboarding_feature_games => 'ไลบรารีเกม';
+  String get onboarding_feature_games => 'Galgame';
   @override
   String get onboarding_feature_games_hint =>
-      'เปิดเกมพร้อมการค้นคำจากการ hook ข้อความ (Windows เท่านั้น)';
+      'ค้นคำจากการ hook ข้อความขณะเล่น (Windows เท่านั้น)';
   @override
-  String get onboarding_feature_pack => 'แพ็กแนะนำ (พจนานุกรม + เสียง)';
+  String get onboarding_feature_pack => 'แพ็กแนะนำ';
   @override
   String get onboarding_feature_pack_hint =>
-      'ดาวน์โหลดครั้งเดียวได้พจนานุกรมภาษาญี่ปุ่นพร้อมเสียงออกเสียง JA/EN';
+      'พจนานุกรมภาษาญี่ปุ่นพร้อมเสียงออกเสียง JA/EN ในการดาวน์โหลดครั้งเดียว';
   @override
-  String get onboarding_step_pack_title => 'ติดตั้งแพ็กแนะนำ';
-  @override
-  String get onboarding_step_pack_body =>
-      'แพ็กแนะนำรวมพจนานุกรมคำศัพท์ สำเนียง และความถี่ภาษาญี่ปุ่น รวมถึงฐานข้อมูลเสียงออกเสียงภาษาญี่ปุ่น/อังกฤษ ดาวน์โหลดและนำเข้าที่นี่ การนำเข้าจะแทนที่ข้อมูลในเครื่อง ดังนั้นควรรันบนการติดตั้งใหม่ เรียนภาษาอื่น? ใช้ตัวจัดการพจนานุกรมเพื่อนำเข้าพจนานุกรมของคุณเองแทน';
+  String get onboarding_step_pack_title => 'แพ็กแนะนำ';
   @override
   String get onboarding_step_pack_download_action => 'ดาวน์โหลดและนำเข้า';
   @override
   String get onboarding_step_pack_import_existing_action =>
       'นำเข้าแพ็กที่ดาวน์โหลดแล้ว';
   @override
-  String get onboarding_step_pack_pick_action => 'เลือกไฟล์แพ็กในเครื่อง';
+  String get onboarding_step_pack_pick_action => 'เลือกไฟล์แพ็ก';
   @override
   String get onboarding_pack_downloading =>
-      'กำลังดาวน์โหลด… ยกเลิกได้ทุกเมื่อ จะดำเนินการต่อครั้งหน้า';
+      'กำลังดาวน์โหลด… ยกเลิกได้ทุกเมื่อและกลับมาโหลดต่อภายหลัง';
   @override
   String onboarding_pack_download_failed({required Object message}) =>
       'ดาวน์โหลดล้มเหลว: ${message}';
@@ -120413,14 +120531,14 @@ class _StringsTh extends _StringsEn {
   String get onboarding_step_extension_title => 'ส่วนขยายเบราว์เซอร์';
   @override
   String get onboarding_step_extension_body =>
-      'ติดตั้งส่วนขยายเบราว์เซอร์ที่ใช้ร่วมกันเพื่อค้นคำบนหน้าเว็บใด ๆ';
+      'ค้นคำบนหน้าเว็บใด ๆ ด้วยส่วนขยายที่ใช้คู่กัน';
   @override
-  String get onboarding_step_extension_action => 'เปิดคู่มือส่วนขยาย';
+  String get onboarding_step_extension_action => 'เปิดคู่มือการติดตั้ง';
   @override
-  String get onboarding_step_fonts_title => 'ฟอนต์สำหรับอ่าน';
+  String get onboarding_step_fonts_title => 'ฟอนต์';
   @override
   String get onboarding_step_fonts_body =>
-      'นำเข้าฟอนต์กำหนดเองและเลือกว่า UI ข้อความหนังสือ และพจนานุกรมใช้ฟอนต์ใด';
+      'ใช้ฟอนต์ของคุณเองกับหน้าจอ ข้อความหนังสือ และพจนานุกรม';
   @override
   String get settings_section_modules => 'โมดูลฟีเจอร์';
   @override
@@ -120657,10 +120775,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get module_extension_label => 'ส่วนขยายเบราว์เซอร์';
   @override
-  String get onboarding_feature_books => 'ห้องสมุดนิยาย';
+  String get onboarding_feature_books => 'นิยาย';
   @override
   String get onboarding_feature_books_hint =>
-      'อ่านนิยาย EPUB พร้อมค้นหาพจนานุกรมและซิงค์หนังสือเสียง';
+      'อ่าน EPUB พร้อมค้นคำและซิงค์หนังสือเสียง';
   @override
   String get onboarding_feature_extension_hint =>
       'ค้นหาคำศัพท์บนเว็บเพจใดก็ได้ (เดสก์ท็อปเท่านั้น)';
@@ -121078,13 +121196,13 @@ class _StringsTh extends _StringsEn {
       'เกมถูกเริ่มต้นภายใต้โลแคลภาษาญี่ปุ่น (CP932) หากข้อความดูเพี้ยนหรือเกิดข้อผิดพลาดสคริปต์ ให้ตั้งโลแคลภาษาญี่ปุ่นของเกมนี้เป็น "ไม่ใช้"';
   @override
   String get onboarding_anki_intro_body =>
-      'Anki เป็นแอปบัตรคำทบทวนแบบเว้นช่วงฟรี: คำศัพท์ใหม่จะกลายเป็นการ์ด และการทบทวนจะถูกกำหนดตามเส้นโค้งการลืม หลังจากค้นหาคำ Fushi สามารถสร้างการ์ด Anki ได้ในแตะเดียว พร้อมความหมาย ประโยค เสียง และภาพหน้าจอ';
+      'Anki เป็นแอปบัตรคำทบทวนแบบเว้นช่วงที่ใช้ฟรี หลังค้นคำ Fushi จะเปลี่ยนคำนั้นเป็นการ์ดพร้อมความหมาย ประโยค เสียง และภาพหน้าจอ ในการแตะครั้งเดียว';
   @override
   String get onboarding_anki_setup_desktop_hint =>
-      'ติดตั้งแอป Anki เดสก์ท็อป จากนั้นเพิ่มส่วนเสริม AnkiConnect: ใน Anki เปิด Tools - Add-ons - Get Add-ons แล้วป้อนรหัส 2055492159 เปิด Anki ไว้ขณะสร้างการ์ด';
+      'ติดตั้ง Anki เพิ่มส่วนเสริม AnkiConnect (แตะปุ่มด้านล่างหนึ่งครั้ง หรือใช้รหัสส่วนเสริม 2055492159) แล้วเปิด Anki ค้างไว้ระหว่างสร้างการ์ด';
   @override
   String get onboarding_anki_setup_ios_hint =>
-      'เมื่อติดตั้ง AnkiMobile แล้ว การเพิ่มการ์ดจะใช้ได้ทันที สำหรับฟีเจอร์ครบถ้วน ให้เชื่อมต่อกับ Anki ที่ทำงานบนคอมพิวเตอร์ในเครือข่ายเดียวกันผ่าน AnkiConnect';
+      'ถ้าติดตั้ง AnkiMobile ไว้ การ์ดจะถูกเพิ่มโดยตรง หากต้องการฟีเจอร์ครบถ้วน ให้เชื่อมต่อกับ Anki บนคอมพิวเตอร์ในเครือข่ายเดียวกันผ่าน AnkiConnect';
   @override
   String get onboarding_anki_backend_label => 'การเชื่อมต่อ';
   @override
@@ -121098,22 +121216,22 @@ class _StringsTh extends _StringsEn {
   String get onboarding_anki_get_ankidroid_action => 'ดาวน์โหลด AnkiDroid';
   @override
   String get onboarding_anki_mobile_ankiconnect_title =>
-      'ขั้นสูง: ใช้ AnkiConnect บนอุปกรณ์นี้';
+      'ขั้นสูง: ใช้ AnkiConnect จากอุปกรณ์นี้';
   @override
   String get onboarding_anki_mobile_ankiconnect_hint =>
-      'อุปกรณ์นี้ยังสามารถสร้างการ์ดเข้า Anki ที่ทำงานบนคอมพิวเตอร์ในเครือข่ายเดียวกัน: เปิด AnkiConnect ในการตั้งค่าการสร้างการ์ดแล้วป้อนที่อยู่คอมพิวเตอร์';
+      'สร้างการ์ดเข้า Anki ที่ทำงานบนคอมพิวเตอร์ในเครือข่ายเดียวกัน: เปิด AnkiConnect ในการตั้งค่าการสร้างการ์ด แล้วป้อนที่อยู่ของคอมพิวเตอร์';
   @override
   String get onboarding_anki_setup_android_hint =>
-      'ติดตั้ง AnkiDroid แล้วเปิดครั้งหนึ่งเพื่อเสร็จสิ้นการตั้งค่าครั้งแรก กลับมาที่ Fushi แตะอนุญาตในกล่องโต้ตอบสิทธิ์ที่ปรากฏขึ้นเมื่อสร้างการ์ดแรก ไม่ต้องเปลี่ยนการตั้งค่า AnkiDroid';
+      'ติดตั้ง AnkiDroid แล้วเปิดหนึ่งครั้ง ตอนสร้างการ์ดใบแรกให้แตะ อนุญาต ในกล่องขอสิทธิ์ — ไม่มีอะไรต้องตั้งค่าเพิ่ม';
   @override
   String get onboarding_anki_install_addon_action =>
       'ติดตั้งส่วนเสริม AnkiConnect';
   @override
   String get onboarding_anki_addon_installed =>
-      'ติดตั้ง AnkiConnect แล้ว เริ่ม (หรือรีสตาร์ท) Anki จากนั้นแตะทดสอบการเชื่อมต่อ';
+      'ติดตั้ง AnkiConnect แล้ว เริ่มหรือรีสตาร์ท Anki จากนั้นทดสอบการเชื่อมต่อ';
   @override
   String get onboarding_anki_addon_no_anki =>
-      'ไม่พบโฟลเดอร์ข้อมูล Anki ติดตั้ง Anki แล้วเปิดครั้งหนึ่ง จากนั้นลองอีกครั้ง';
+      'ไม่พบโฟลเดอร์ข้อมูล Anki ติดตั้ง Anki เปิดหนึ่งครั้ง แล้วลองอีกครั้ง';
   @override
   String onboarding_anki_addon_failed({required Object message}) =>
       'ติดตั้งไม่สำเร็จ: ${message}';
@@ -121620,57 +121738,54 @@ class _StringsTh extends _StringsEn {
   String get onboarding_action_badge_optional => 'ไม่บังคับ';
   @override
   String get onboarding_pack_action_download_desc =>
-      'ดาวน์โหลดแพ็กทั้งชุดในเบื้องหลัง แล้วนำเข้าให้ต่อ ยกเลิกได้ทุกเมื่อ ครั้งถัดไปจะดาวน์โหลดต่อจากจุดที่หยุดไว้';
+      'ดาวน์โหลดจากหลายแหล่งพร้อมกันในเบื้องหลัง แล้วนำเข้าให้ต่อ ยกเลิกได้ทุกเมื่อ และจะดาวน์โหลดต่อจากจุดที่หยุดไว้';
   @override
   String get onboarding_pack_action_import_existing_desc =>
-      'แพ็กดาวน์โหลดไว้แล้ว ปุ่มนี้คือการนำเข้า เลือก «รวมเข้ากับคลังเดิม» ในกล่องยืนยัน แล้วข้อมูลเดิมของคุณจะไม่ถูกแตะต้อง';
+      'แพ็กอยู่ในดิสก์แล้ว เลือก «รวมเข้ากับคลังเดิม» ในกล่องยืนยัน เพื่อเก็บข้อมูลเดิมของคุณไว้';
   @override
   String get onboarding_pack_action_pick_desc =>
-      'ได้ไฟล์ zip ของแพ็กมาจากที่อื่นแล้วหรือ? นำเข้าจากดิสก์ได้เลย ข้ามการดาวน์โหลดทั้งหมด';
+      'มีไฟล์ zip ของแพ็กอยู่แล้วหรือ นำเข้าจากดิสก์ได้เลย ข้ามการดาวน์โหลด';
   @override
-  String get onboarding_pack_action_website => 'เปิดหน้าดาวน์โหลดบนเว็บไซต์';
+  String get onboarding_pack_action_website => 'เปิดหน้าดาวน์โหลด';
   @override
   String get onboarding_pack_action_website_desc =>
-      'เปิดเว็บไซต์ทางการในเบราว์เซอร์ ในหัวข้อแพ็กจะมีลิงก์แบบแบ่งส่วนที่ป้อนให้โปรแกรมช่วยดาวน์โหลดได้ เมื่อโหลดเสร็จให้กลับมาที่นี่แล้วใช้ «เลือกไฟล์แพ็กในเครื่อง» เพื่อนำเข้า';
+      'ลิงก์แบบแบ่งส่วนสำหรับโปรแกรมช่วยดาวน์โหลด โหลดเสร็จแล้วกลับมาใช้ «เลือกไฟล์แพ็ก»';
   @override
   String get onboarding_pack_action_dictionary_desc =>
-      'กำลังเรียนภาษาอื่นที่ไม่ใช่ญี่ปุ่นใช่ไหม? ข้ามแพ็กไป แล้วนำเข้าพจนานุกรมของภาษาคุณที่นี่แทน';
+      'กำลังเรียนภาษาอื่นอยู่ใช่ไหม นำเข้าพจนานุกรมของภาษานั้นที่นี่แทน';
   @override
   String get onboarding_pack_action_audio_desc =>
-      'เสียงอ่านออกเสียงมาจากไหน แพ็กครอบคลุมภาษาญี่ปุ่นและอังกฤษอยู่แล้ว ภาษาอื่นให้เพิ่มแหล่งออนไลน์ที่นี่';
+      'เพิ่มแหล่งเสียงอ่านออนไลน์สำหรับภาษาที่แพ็กไม่ครอบคลุม';
   @override
   String get onboarding_anki_action_test_desc =>
-      'ตรวจสอบว่า Fushi ติดต่อ Anki ได้ และโหลดสำรับกับชนิดโน้ตของคุณเข้ามา ขั้นนี้ยังไม่สร้างอะไรทั้งสิ้น';
+      'ตรวจสอบว่า Fushi ติดต่อ Anki ได้ และโหลดสำรับกับชนิดโน้ตของคุณ ไม่มีการสร้างอะไรทั้งสิ้น';
   @override
   String get onboarding_anki_action_refresh_desc =>
-      'โหลดสำรับและชนิดโน้ตจาก Anki ใหม่ ใช้หลังจากสร้างสำรับใหม่ใน Anki';
+      'โหลดสำรับและชนิดโน้ตใหม่ ใช้หลังจากสร้างสำรับใน Anki';
   @override
   String get onboarding_anki_action_get_ankidroid_desc =>
-      'เปิดหน้าร้านค้าของ AnkiDroid เนื่องจาก Fushi เขียนการ์ดลงในนั้น จึงต้องติดตั้งก่อน';
+      'เปิดหน้าร้านค้า Fushi เขียนการ์ดลงใน AnkiDroid จึงต้องติดตั้งก่อน';
   @override
   String get onboarding_anki_action_get_anki_desc =>
-      'เปิดหน้าดาวน์โหลด Anki ติดตั้ง Anki แล้วเปิดค้างไว้ระหว่างสร้างการ์ด';
+      'เปิดหน้าดาวน์โหลด Anki เปิด Anki ค้างไว้ระหว่างสร้างการ์ด';
   @override
   String get onboarding_anki_action_install_addon_desc =>
-      'แตกส่วนเสริม AnkiConnect ที่มาพร้อมโปรแกรมเข้าไปใน Anki ให้คุณ ซึ่งเป็นสิ่งที่ทำให้ Fushi คุยกับ Anki ได้ เสร็จแล้วให้รีสตาร์ท Anki';
+      'แตกส่วนเสริม AnkiConnect ที่มาพร้อมโปรแกรมเข้าไปใน Anki เสร็จแล้วให้รีสตาร์ท Anki';
   @override
   String get onboarding_step_anki_action_desc =>
-      'เทมเพลตการ์ด การจับคู่ฟิลด์ ภาพหน้าจอ และเสียง — ก็คือรายละเอียดว่าการ์ดที่สร้างออกมาหน้าตาเป็นอย่างไร แค่เลือกสำรับกับชนิดโน้ตด้านบนก็เริ่มสร้างการ์ดได้แล้ว จึงเปิดตรงนี้เฉพาะเมื่อต้องการเปลี่ยนวิธีประกอบการ์ด';
+      'เทมเพลต การจับคู่ฟิลด์ ภาพหน้าจอ และเสียง แค่สำรับกับชนิดโน้ตด้านบนก็เริ่มได้แล้ว';
   @override
   String get onboarding_step_backup_action_desc =>
-      'เลือกปลายทางสำรองข้อมูลแล้วลงชื่อเข้าใช้ เพื่อให้คลังของคุณอยู่รอดเมื่อทำอุปกรณ์หายหรือเปลี่ยนเครื่อง';
+      'เลือกแบ็กเอนด์แล้วลงชื่อเข้าใช้ หรือส่งออกไฟล์สำรองข้อมูลในเครื่อง';
   @override
   String get onboarding_step_interconnect_action_desc =>
-      'จับคู่อุปกรณ์นี้กับอุปกรณ์อื่นของคุณ เพื่อใช้คลังเดียวกันและซิงก์ความคืบหน้า';
+      'เปิดใช้งานการเชื่อมต่ออุปกรณ์ และจับคู่เครื่องนี้กับเครื่องอื่นของคุณ';
   @override
   String get onboarding_step_extension_action_desc =>
-      'แสดงวิธีติดตั้งส่วนขยายเบราว์เซอร์และเชื่อมกับ Fushi เพื่อให้เปิดหาคำศัพท์บนหน้าเว็บได้ด้วย';
+      'แสดงวิธีติดตั้งส่วนขยายและเชื่อมกับ Fushi';
   @override
   String get onboarding_step_fonts_action_desc =>
-      'เพิ่มไฟล์ฟอนต์ของคุณเอง แล้วเลือกว่าภาษาไหนใช้ฟอนต์ใด';
-  @override
-  String get onboarding_pack_sources_hint =>
-      'ดาวน์โหลดแบบแบ่งส่วนขนานกันจาก GitHub เว็บไซต์ทางการ และมิเรอร์สำรองพร้อมกัน โดยตรวจสอบค่าแฮชทุกส่วน ระหว่างดาวน์โหลด Fushi จะวัดความเร็วของแต่ละแหล่งจริง แล้วแบ่งส่วนให้แหล่งที่เร็วที่สุดในขณะนั้นมากขึ้น จึงไม่มีอะไรให้เลือกตรงนี้';
+      'นำเข้าไฟล์ฟอนต์ แล้วเลือกฟอนต์ให้แต่ละภาษา';
   @override
   String get video_setting_hdr_output => 'เอาต์พุต HDR / 10 บิต';
   @override
@@ -121789,133 +121904,98 @@ class _StringsTh extends _StringsEn {
   String web_video_mine_switch_builtin({required Object count}) =>
       'สลับไปโหมดในตัวเพื่อสร้างการ์ดในคิว ${count} รายการ';
   @override
-  String get onboarding_step_click_lookup_title => 'แตะเพื่อเปิดพจนานุกรม';
+  String get onboarding_step_click_lookup_title => 'แตะเพื่อค้นคำ';
   @override
-  String get onboarding_click_lookup_tap_title => 'แตะที่ข้อความ';
+  String get onboarding_click_lookup_tap_title => 'แตะที่คำหนึ่งคำ';
   @override
-  String get onboarding_click_lookup_nested_title => 'ค้นต่อในหน้าต่างป๊อปอัป';
+  String get onboarding_click_lookup_nested_title => 'ค้นต่อได้เรื่อย ๆ';
   @override
   String get onboarding_click_lookup_nested_body =>
-      'แตะคำอื่นในคำแปลเพื่อเปิดการค้นหาอีกชั้นหนึ่ง กดย้อนกลับหรือแตะนอกหน้าต่างเพื่อปิดทีละชั้น';
+      'แตะคำในคำแปลเพื่อลงลึกอีกหนึ่งชั้น กดย้อนกลับหรือแตะนอกหน้าต่างเพื่อปิดทีละชั้น';
   @override
-  String get onboarding_click_lookup_mine_title => 'เปลี่ยนผลลัพธ์ให้เป็นการ์ด';
+  String get onboarding_click_lookup_mine_title => 'สร้างการ์ด';
   @override
   String get onboarding_click_lookup_mine_body =>
-      'เมื่อความหมายถูกต้องแล้ว แตะ + เพื่อส่งคำ ประโยค เสียง และภาพไปยังตัวสร้างการ์ด';
+      'แตะ + ที่รายการคำ เพื่อส่งคำ ประโยค เสียง และภาพไปยังตัวสร้างการ์ด';
   @override
-  String get onboarding_step_global_lookup_title => 'ค้นคำนอกแอป Fushi';
+  String get onboarding_step_global_lookup_title => 'ค้นคำนอก Fushi';
   @override
   String get onboarding_global_lookup_windows_body =>
-      'บน Windows ให้เลือกข้อความในแอปอื่นแล้วเรียกพจนานุกรมขึ้นมาได้เลย โดยไม่ต้องสลับกลับมาที่ Fushi';
+      'เลือกข้อความในแอปใดก็ได้ แล้วเรียกพจนานุกรมขึ้นมาโดยไม่ต้องสลับหน้าต่าง';
   @override
-  String get onboarding_global_lookup_windows_select_title =>
-      'เลือกข้อความในแอปใดก็ได้';
-  @override
-  String get onboarding_global_lookup_windows_shortcut_title => 'กด Ctrl+Alt+D';
+  String get onboarding_global_lookup_windows_select_title => 'เลือกข้อความ';
   @override
   String get onboarding_global_lookup_windows_shortcut_body =>
-      'นี่คือปุ่มลัดส่วนกลางค่าเริ่มต้น Fushi จะดึงข้อความที่เลือกอยู่และเปิดการ์ดค้นหาใกล้ ๆ ตัวชี้เมาส์';
+      'Fushi จะดึงข้อความที่เลือกและเปิดการ์ดค้นคำข้าง ๆ ตัวชี้เมาส์';
   @override
   String get onboarding_global_lookup_windows_customize_title =>
-      'เปลี่ยนปุ่มลัดได้ถ้าต้องการ';
+      'เปลี่ยนปุ่มลัด';
   @override
   String get onboarding_global_lookup_windows_customize_body =>
-      'เปิด การตั้งค่า → ปุ่มลัด → ส่วนกลาง (นอกแอป) เพื่อกำหนดคีย์ผสมชุดอื่น';
+      'การตั้งค่า → ปุ่มลัด → ส่วนกลาง (นอกแอป)';
   @override
   String get onboarding_global_lookup_windows_action => 'เปิดการตั้งค่าปุ่มลัด';
   @override
   String get onboarding_global_lookup_windows_action_desc =>
-      'ใช้เปลี่ยนปุ่มลัดสำหรับค้นคำนอกแอป ค่าเริ่มต้น Ctrl+Alt+D ใช้งานได้อยู่แล้ว ขั้นตอนนี้จึงไม่บังคับ';
+      'เข้ามาเฉพาะเมื่อต้องการเปลี่ยนคีย์ผสม';
   @override
   String get onboarding_global_lookup_android_body =>
-      'บน Android ระบบจะส่งข้อความที่เลือกไปให้ Fushi ผ่านเมนูข้อความหรือแผงแชร์ ไม่มีปุ่มลัดส่วนกลางให้ตั้งค่าเอง';
+      'Android ส่งข้อความที่เลือกไปให้ Fushi ผ่านเมนูข้อความหรือแผงแชร์';
   @override
-  String get onboarding_global_lookup_android_select_title =>
-      'เลือกข้อความในแอปอื่น';
+  String get onboarding_global_lookup_android_select_title => 'เลือกข้อความ';
   @override
   String get onboarding_global_lookup_android_open_title => 'เลือก Fushi';
   @override
   String get onboarding_global_lookup_android_open_body =>
-      'แตะ Fushi ในเมนูเลือกข้อความ ถ้าไม่เห็น ให้แตะแชร์แล้วเลือก Fushi จากแผงแชร์';
+      'แตะ Fushi ในเมนูเลือกข้อความ หรือแตะแชร์แล้วเลือก Fushi';
   @override
   String get onboarding_global_lookup_android_continue_title =>
-      'ใช้ป๊อปอัปแยกต่างหาก';
+      'อ่านหน้าต่างป๊อปอัป';
   @override
   String get onboarding_global_lookup_android_continue_body =>
-      'ผลการค้นหาจะเปิดแยกจากแอปต้นทาง คุณแตะคำอื่นในนั้นต่อได้ และเมื่อปิดก็กลับไปยังจุดเดิม';
+      'หน้าค้นคำจะเปิดซ้อนอยู่บนแอปอื่น ปิดแล้วก็กลับไปที่เดิม';
   @override
-  String get onboarding_feature_manual_resources =>
-      'นำเข้าพจนานุกรมและไฟล์เสียงเอง';
+  String get onboarding_feature_manual_resources => 'นำเข้าไฟล์ของฉันเอง';
   @override
   String get onboarding_feature_manual_resources_hint =>
-      'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+      'พจนานุกรม หนังสือเสียง และแหล่งเสียงอ่าน จากไฟล์ของคุณเอง';
   @override
   String get onboarding_step_manual_resources_title =>
-      'เตรียมพจนานุกรมและไฟล์เสียงเอง';
+      'พจนานุกรมและไฟล์เสียงของคุณเอง';
   @override
   String get onboarding_step_manual_resources_body =>
-      'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+      'นำเข้าพจนานุกรมอย่างน้อยหนึ่งเล่มก่อนเริ่มบทเรียนการค้นคำ ส่วนหนังสือเสียงและเสียงอ่านเป็นตัวเลือกเสริม';
   @override
   String get onboarding_manual_dictionary_action => 'นำเข้าพจนานุกรม';
   @override
   String get onboarding_manual_dictionary_action_desc =>
-      'เปิดตัวจัดการพจนานุกรมแล้วนำเข้าไฟล์หรือไฟล์บีบอัดพจนานุกรมที่รองรับอย่างน้อยหนึ่งรายการ บทเรียนการค้นคำจะมีประโยชน์ก็ต่อเมื่อค้นแล้วได้ความหมายจริง';
+      'เปิดตัวจัดการพจนานุกรม การค้นคำจะให้ผลลัพธ์ก็ต่อเมื่อติดตั้งพจนานุกรมแล้ว';
   @override
-  String get onboarding_manual_audiobook_action =>
-      'นำเข้าหนังสือพร้อมเสียงหนังสือเสียง';
+  String get onboarding_manual_audiobook_action => 'นำเข้าหนังสือพร้อมเสียง';
   @override
   String get onboarding_manual_audiobook_action_desc =>
-      'เปิดการนำเข้าหนังสือ แล้วเลือกหนังสือหรือข้อความ คำบรรยายที่ตรงกัน และไฟล์เสียงหนึ่งไฟล์ขึ้นไป ต้องมีคำบรรยาย Fushi จึงจะจับคู่เสียงกับประโยคได้';
+      'หนังสือหรือข้อความ คำบรรยายที่ตรงกัน และไฟล์เสียง คำบรรยายนี่แหละที่ทำให้ Fushi ซิงค์เสียงกับประโยคได้';
   @override
-  String get onboarding_manual_pronunciation_action =>
-      'ตั้งค่าเสียงอ่านคำศัพท์';
+  String get onboarding_manual_pronunciation_action => 'ตั้งค่าเสียงอ่าน';
   @override
   String get onboarding_manual_pronunciation_action_desc =>
-      'เพิ่มแหล่งเสียงอ่านคำในเครื่องหรือออนไลน์ที่รายการในพจนานุกรมใช้ ซึ่งแยกจากเสียงหนังสือเสียงที่แนบกับหนังสือ';
+      'แหล่งเสียงอ่านคำในเครื่องหรือออนไลน์ ที่ใช้กับรายการในพจนานุกรม แยกจากเสียงหนังสือเสียง';
   @override
-  String get onboarding_lookup_verify_action => 'ตรวจว่าพจนานุกรมมีคำนั้นจริง';
+  String get onboarding_step_first_anki_card_title => 'การ์ดใบแรกของคุณ';
   @override
-  String get onboarding_lookup_verify_action_desc =>
-      'เปิดหน้าค้นคำ พิมพ์คำที่คุณกำลังเรียนคำไหนก็ได้ แล้วไปต่อเมื่อพจนานุกรมที่ติดตั้งไว้แสดงความหมายออกมา บทเรียนนี้ไม่ได้กำหนดคำตัวอย่างตายตัว';
+  String get onboarding_first_anki_lookup_title => 'ค้นหาคำหนึ่งคำ';
   @override
-  String get onboarding_step_first_anki_card_title => 'สร้างการ์ด Anki ใบแรก';
-  @override
-  String get onboarding_step_first_anki_card_body =>
-      'ขั้นตอนนี้จะปรากฏก็ต่อเมื่อการตั้งค่าครั้งนี้เชื่อมต่อ Anki แล้ว และเลือกเด็คกับชนิดโน้ตที่ใช้งานได้';
-  @override
-  String get onboarding_first_anki_lookup_title =>
-      'เริ่มจากผลลัพธ์จริงในพจนานุกรม';
-  @override
-  String get onboarding_first_anki_lookup_body =>
-      'ค้นคำที่พจนานุกรมซึ่งคุณติดตั้งไว้มีอยู่จริง บทเรียนไม่ได้ใช้คำตัวอย่างตายตัวที่อาจไม่มีในพจนานุกรมของคุณ';
-  @override
-  String get onboarding_first_anki_plus_title =>
-      'แตะปุ่มเครื่องหมายบวกบนรายการคำ';
+  String get onboarding_first_anki_plus_title => 'แตะ +';
   @override
   String get onboarding_first_anki_plus_body =>
-      'ปุ่มบวกจะเปิดตัวสร้างการ์ดพร้อมคำปัจจุบัน คำอ่าน ความหมาย ประโยค เสียง และภาพที่มีอยู่';
+      'ตัวสร้างการ์ดจะเปิดขึ้นโดยมีคำ คำอ่าน ความหมาย ประโยค เสียง และภาพกรอกไว้ให้แล้ว';
   @override
-  String get onboarding_first_anki_save_title => 'ตรวจทานแล้วบันทึก';
+  String get onboarding_first_anki_save_title => 'ตรวจแล้วบันทึก';
   @override
   String get onboarding_first_anki_save_body =>
-      'ยืนยันเด็คปลายทาง ชนิดโน้ต และตัวอย่างฟิลด์ แล้วกดบันทึก จากนั้นเปิด Anki เพื่อดูว่าการ์ดใบแรกเข้าไปแล้วจริง';
+      'ยืนยันสำรับและชนิดโน้ต แล้วบันทึก เปิด Anki เพื่อดูการ์ดใบนั้น';
   @override
   String get onboarding_first_anki_action => 'เปิดหน้าค้นคำแล้วสร้างการ์ด';
-  @override
-  String get onboarding_first_anki_action_desc =>
-      'เลือกคำที่แสดงความหมายอยู่ แตะปุ่มบวกของคำนั้น ตรวจฟิลด์ต่าง ๆ แล้วบันทึกลงเด็ค Anki ที่เชื่อมต่อไว้';
-  @override
-  String get onboarding_step_click_lookup_body =>
-      'เริ่มจากตรวจว่าพจนานุกรมที่ติดตั้งไว้มีคำนั้นจริง จากนั้นใช้คำเดียวกันฝึกแตะค้นคำในหนังสือ ในข้อความ OCR ของมังงะ และในคำบรรยายวิดีโอ';
-  @override
-  String get onboarding_click_lookup_tap_body =>
-      'บนมือถือให้แตะที่อักษรตัวหนึ่งของคำที่ตรวจแล้ว บนคอมพิวเตอร์ให้คลิกซ้าย Fushi จะเริ่มจากจุดนั้นและจับคู่คำที่ยาวที่สุด';
-  @override
-  String get onboarding_global_lookup_windows_select_body =>
-      'ลากเลือกคำเดิมที่คุณตรวจแล้วว่ามีความหมายในพจนานุกรม และปล่อยให้ยังเลือกค้างไว้';
-  @override
-  String get onboarding_global_lookup_android_select_body =>
-      'แตะค้างที่คำเดิมที่ตรวจแล้ว จากนั้นลากจุดจับเลือกให้ครอบคลุมทั้งคำ';
   @override
   String get game_lookup_attached_title => 'In-game lookup';
   @override
@@ -122196,6 +122276,69 @@ class _StringsTh extends _StringsEn {
   @override
   String get game_session_japanese_locale_skipped_hint_not_32bit =>
       'เกมเริ่มโดยไม่ใช้โลแคลภาษาญี่ปุ่น: การตัดสินอัตโนมัติบอกว่าจำเป็น แต่ Locale Emulator รองรับเฉพาะเกม 32 บิต';
+  @override
+  String get onboarding_feature_fonts => 'ฟอนต์กำหนดเอง';
+  @override
+  String get onboarding_feature_fonts_hint =>
+      'ใช้ฟอนต์ของคุณเองกับหน้าจอ ข้อความหนังสือ และพจนานุกรม';
+  @override
+  String get onboarding_features_modules_title => 'หน้าคลัง';
+  @override
+  String get onboarding_features_modules_hint =>
+      'หน้าที่ไม่ได้เลือกจะถูกซ่อนจากแถบนำทาง เปลี่ยนได้ทุกเมื่อที่ การตั้งค่า → รูปลักษณ์';
+  @override
+  String get onboarding_features_setup_title => 'ตั้งค่าต่อไป';
+  @override
+  String get onboarding_features_setup_hint =>
+      'เฉพาะรายการที่เลือกไว้เท่านั้นที่จะมีขั้นตอนในคู่มือนี้';
+  @override
+  String get onboarding_pack_intro =>
+      'พจนานุกรมภาษาญี่ปุ่น เสียงสูงต่ำ ความถี่คำ และเสียงออกเสียง JA/EN ในการดาวน์โหลดครั้งเดียว ถ้าเรียนภาษาอื่น ข้ามขั้นตอนนี้แล้วนำเข้าพจนานุกรมของคุณเองได้เลย';
+  @override
+  String get onboarding_global_lookup_windows_select_desc =>
+      'เลือกคำในแอปใดก็ได้ แล้วปล่อยให้ยังเลือกอยู่';
+  @override
+  String get onboarding_global_lookup_android_select_desc =>
+      'แตะค้างที่คำในแอปอื่น แล้วลากจุดจับให้คลุมทั้งคำ';
+  @override
+  String get onboarding_global_lookup_windows_shortcut_press => 'กดปุ่มลัด';
+  @override
+  String get onboarding_first_anki_card_intro =>
+      'เชื่อมต่อ Anki แล้ว ลองสร้างการ์ดจริงสักใบตอนนี้ เพื่อให้แน่ใจว่าทั้งเส้นทางใช้งานได้';
+  @override
+  String get onboarding_action_start => 'เริ่มใช้ Fushi';
+  @override
+  String get onboarding_actions_more => 'วิธีอื่น';
+  @override
+  String get onboarding_finish_summary_modules => 'หน้าคลังที่แสดง';
+  @override
+  String get onboarding_finish_summary_setup => 'การตั้งค่าแบบมีคำแนะนำ';
+  @override
+  String get onboarding_finish_summary_none => 'ไม่มี';
+  @override
+  String get onboarding_anki_status_pending => 'ยังไม่ได้ทดสอบ';
+  @override
+  String get onboarding_click_lookup_intro =>
+      'แตะคำใดก็ได้ในหนังสือ มังงะ หรือซับไตเติล เพื่อดูความหมาย ลองกับประโยคฝึกด้านล่างได้เลย';
+  @override
+  String get onboarding_click_lookup_tap_desc =>
+      'แตะตัวอักษรหนึ่งตัว (บนคอมพิวเตอร์ให้คลิกซ้าย) แล้ว Fushi จะจับคำที่ยาวที่สุดซึ่งเริ่มจากตรงนั้น ประโยคจะเปิดในหน้าค้นคำ';
+  @override
+  String get onboarding_sample_sentence_label => 'ประโยคฝึก';
+  @override
+  String get onboarding_sample_sentence_hint =>
+      'แตะเพื่อเปิดในหน้าค้นคำ แล้วแตะคำใดก็ได้';
+  @override
+  String get onboarding_lookup_practice_action => 'ฝึกด้วยประโยคนี้';
+  @override
+  String get onboarding_lookup_practice_desc =>
+      'เปิดหน้าค้นคำพร้อมประโยคนี้ แตะคำในนั้นเพื่อดูความหมาย ถ้าไม่ขึ้นอะไรเลย แปลว่ายังไม่ได้ติดตั้งพจนานุกรม';
+  @override
+  String get onboarding_first_anki_lookup_desc =>
+      'เปิดประโยคฝึกแล้วแตะที่คำหนึ่งคำ';
+  @override
+  String get onboarding_first_anki_action_desc =>
+      'เปิดประโยคฝึกในหน้าค้นคำ แตะที่คำหนึ่งคำ แตะ + ตรวจดูข้อมูลในช่องต่าง ๆ แล้วบันทึก';
 }
 
 // Path: <root>
@@ -130033,40 +130176,40 @@ class _StringsTr extends _StringsEn {
   @override
   String get onboarding_title => 'Başlangıç';
   @override
-  String get onboarding_welcome_headline => 'Hoş geldiniz!';
+  String get onboarding_welcome_headline => 'Fushi\'ye hoş geldiniz';
   @override
-  String get onboarding_feature_anki => 'Anki bilgi kartları';
+  String get onboarding_feature_anki => 'Anki kartları';
   @override
   String get onboarding_feature_anki_hint =>
-      'Bilgi kartları oluşturmak için AnkiConnect veya AnkiDroid bağlayın';
+      'Aramalarınızı tek dokunuşla bilgi kartına dönüştürün';
   @override
   String get onboarding_feature_backup => 'Yedekleme ve senkronizasyon';
   @override
   String get onboarding_feature_backup_hint =>
-      'Verilerinizi Google Drive, WebDAV ve diğer arka uçlara yedekleyin';
+      'Google Drive, WebDAV veya yerel bir dosya';
   @override
   String get onboarding_feature_interconnect => 'Cihaz karşılıklı bağlantısı';
   @override
   String get onboarding_feature_interconnect_hint =>
-      'Kütüphaneleri ve ilerlemeyi paylaşmak için LAN\'daki cihazları eşleştirin';
+      'Kütüphaneleri ve ilerlemeyi LAN\'daki cihazlar arasında paylaşın';
   @override
   String get onboarding_step_dictionary_action => 'Sözlük yöneticisini aç';
   @override
   String get onboarding_step_anki_title => 'Anki\'yi kur';
   @override
-  String get onboarding_step_anki_action => 'Kart oluşturma ayarlarını aç';
+  String get onboarding_step_anki_action => 'Kart oluşturma ayarları';
   @override
-  String get onboarding_step_backup_title => 'Yedeklemeyi kur';
+  String get onboarding_step_backup_title => 'Yedekleme';
   @override
   String get onboarding_step_backup_body =>
-      'Bir yedekleme arka ucu seçin ve giriş yapın veya yerel bir yedek dosyası dışa aktarın.';
+      'Cihaz değiştirdiğinizde veya kaybettiğinizde kitaplığınız güvende kalsın.';
   @override
   String get onboarding_step_backup_action => 'Yedekleme ayarlarını aç';
   @override
-  String get onboarding_step_interconnect_title => 'Karşılıklı bağlantıyı kur';
+  String get onboarding_step_interconnect_title => 'Karşılıklı bağlantı';
   @override
   String get onboarding_step_interconnect_body =>
-      'Karşılıklı bağlantıyı etkinleştirin ve kütüphaneleri, ilerlemeyi ve aramaları paylaşmak için LAN\'daki diğer cihazlarla eşleştirin.';
+      'LAN\'daki cihazları eşleştirerek tek bir kitaplığı paylaşın ve ilerlemeyi eşitleyin.';
   @override
   String get onboarding_step_interconnect_action =>
       'Karşılıklı bağlantı ayarlarını aç';
@@ -130078,55 +130221,45 @@ class _StringsTr extends _StringsEn {
   @override
   String get onboarding_action_next => 'İleri';
   @override
-  String get onboarding_action_finish => 'Bitir';
-  @override
   String get onboarding_action_skip => 'Şimdilik atla';
   @override
   String get onboarding_reopen => 'Başlangıç rehberi';
   @override
   String get onboarding_welcome_body =>
-      'Önce arayüz dilinizi ve temanızı ayarlayın — sonraki adımlar geri kalanında size yol gösterecek.';
+      'Arayüz dilinizi ve temanızı seçin. Sonraki birkaç adım gerisini ayarlar.';
   @override
-  String get onboarding_features_title => 'Kullandıklarınızı seçin';
+  String get onboarding_features_title => 'Neleri kullanacaksınız?';
   @override
-  String get onboarding_features_modules_label =>
-      'Kütüphane sekmeleri (işaretlenmemiş olanlar gezinme çubuğundan gizlenir; Ayarlar\'dan istediğiniz zaman değiştirin)';
-  @override
-  String get onboarding_features_setup_label => 'Sonra ne kurulacak';
-  @override
-  String get onboarding_feature_manga => 'Manga kütüphanesi';
+  String get onboarding_feature_manga => 'Manga';
   @override
   String get onboarding_feature_manga_hint => 'OCR aramasıyla manga okuyun';
   @override
-  String get onboarding_feature_video => 'Video kütüphanesi';
+  String get onboarding_feature_video => 'Video';
   @override
   String get onboarding_feature_video_hint =>
-      'Altyazı araması ve kart oluşturma ile video izleyin';
+      'Altyazıda arama ve kart oluşturma';
   @override
-  String get onboarding_feature_games => 'Galgame kütüphanesi';
+  String get onboarding_feature_games => 'Galgame';
   @override
   String get onboarding_feature_games_hint =>
-      'Metin yakalama aramasıyla galgame başlatın (yalnızca Windows)';
+      'Oynarken metin yakalamayla arama (yalnızca Windows)';
   @override
-  String get onboarding_feature_pack => 'Önerilen paket (sözlükler + ses)';
+  String get onboarding_feature_pack => 'Önerilen paket';
   @override
   String get onboarding_feature_pack_hint =>
-      'Tek bir indirmeyle Japonca sözlükler ve JA/EN telaffuz seslerini kurun';
+      'Japonca sözlükler ve JA/EN telaffuz sesleri tek indirmede';
   @override
-  String get onboarding_step_pack_title => 'Önerilen paketi yükle';
-  @override
-  String get onboarding_step_pack_body =>
-      'Önerilen paket Japonca kelime, aksan ve sıklık sözlüklerini ve Japonca/İngilizce telaffuz ses veritabanlarını içerir. Buradan indirip içe aktarın; içe aktarma yerel verileri değiştirir, bu yüzden temiz kurulumda çalıştırın. Başka bir dil mi öğreniyorsunuz? Kendi sözlüklerinizi içe aktarmak için sözlük yöneticisini kullanın.';
+  String get onboarding_step_pack_title => 'Önerilen paket';
   @override
   String get onboarding_step_pack_download_action => 'İndir ve içe aktar';
   @override
   String get onboarding_step_pack_import_existing_action =>
       'İndirilen paketi içe aktar';
   @override
-  String get onboarding_step_pack_pick_action => 'Yerel paket dosyası seçin';
+  String get onboarding_step_pack_pick_action => 'Paket dosyası seç';
   @override
   String get onboarding_pack_downloading =>
-      'İndiriliyor… istediğiniz zaman iptal edin, sonraki sefere devam eder';
+      'İndiriliyor… istediğiniz zaman iptal edin, sonra devam ettirin';
   @override
   String onboarding_pack_download_failed({required Object message}) =>
       'İndirme başarısız: ${message}';
@@ -130134,14 +130267,14 @@ class _StringsTr extends _StringsEn {
   String get onboarding_step_extension_title => 'Tarayıcı eklentisi';
   @override
   String get onboarding_step_extension_body =>
-      'Herhangi bir web sayfasında kelime aramak için yardımcı tarayıcı eklentisini yükleyin.';
+      'Yardımcı uzantıyla herhangi bir web sayfasında kelime arayın.';
   @override
-  String get onboarding_step_extension_action => 'Eklenti rehberini aç';
+  String get onboarding_step_extension_action => 'Kurulum rehberini aç';
   @override
-  String get onboarding_step_fonts_title => 'Okuma yazı tipleri';
+  String get onboarding_step_fonts_title => 'Yazı tipleri';
   @override
   String get onboarding_step_fonts_body =>
-      'Özel yazı tipleri içe aktarın ve arayüz, kitap metni ve sözlük hangilerini kullanacağını seçin.';
+      'Arayüz, kitap metni ve sözlük için kendi yazı tiplerinizi kullanın.';
   @override
   String get settings_section_modules => 'Özellik modülleri';
   @override
@@ -130380,10 +130513,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get module_extension_label => 'Tarayıcı eklentisi';
   @override
-  String get onboarding_feature_books => 'Roman kütüphanesi';
+  String get onboarding_feature_books => 'Romanlar';
   @override
   String get onboarding_feature_books_hint =>
-      'Sözlük araması ve sesli kitap senkronizasyonu ile EPUB romanları okuyun';
+      'Kelime araması ve sesli kitap eşitlemesiyle EPUB okuma';
   @override
   String get onboarding_feature_extension_hint =>
       'Herhangi bir web sayfasında kelime arayın (yalnızca masaüstü)';
@@ -130804,13 +130937,13 @@ class _StringsTr extends _StringsEn {
       'Oyun, Japonca (CP932) yerel ayarı altında başlatıldı. Metni bozuk görünüyorsa veya bir betik hatası çıkıyorsa, bu oyunun Japonca yerel ayarını Asla olarak değiştirin.';
   @override
   String get onboarding_anki_intro_body =>
-      'Anki, ücretsiz bir aralıklı tekrar bilgi kartı uygulamasıdır: yeni kelimeler kart olur ve tekrarlar unutma eğrisine göre planlanır. Bir arama yaptıktan sonra Fushi, kelimeyi anlam, cümle, ses ve ekran görüntüsüyle tek dokunuşla bir Anki kartına dönüştürebilir.';
+      'Anki, ücretsiz bir aralıklı tekrar bilgi kartı uygulamasıdır. Bir aramanın ardından Fushi, kelimeyi anlam, cümle, ses ve ekran görüntüsüyle birlikte tek dokunuşta karta dönüştürür.';
   @override
   String get onboarding_anki_setup_desktop_hint =>
-      'Anki masaüstü uygulamasını yükleyin, ardından AnkiConnect eklentisini ekleyin: Anki\'de Araçlar - Eklentiler - Eklenti Al\'ı açın ve 2055492159 kodunu girin. Kart oluştururken Anki\'yi çalışır durumda tutun.';
+      'Anki\'yi yükleyin, AnkiConnect eklentisini ekleyin (aşağıdan tek dokunuşla ya da 2055492159 eklenti koduyla) ve kart oluştururken Anki\'yi açık tutun.';
   @override
   String get onboarding_anki_setup_ios_hint =>
-      'AnkiMobile yüklüyken kart ekleme kutudan çıktığı gibi çalışır. Tam özellik seti için, aynı ağdaki bir bilgisayarda çalışan Anki\'ye AnkiConnect aracılığıyla bağlanın.';
+      'AnkiMobile yüklüyken kartlar doğrudan eklenir. Tam özellik seti için aynı ağdaki bir bilgisayarda çalışan Anki\'ye AnkiConnect üzerinden bağlanın.';
   @override
   String get onboarding_anki_backend_label => 'Bağlantı';
   @override
@@ -130824,22 +130957,22 @@ class _StringsTr extends _StringsEn {
   String get onboarding_anki_get_ankidroid_action => 'AnkiDroid\'i edinin';
   @override
   String get onboarding_anki_mobile_ankiconnect_title =>
-      'Gelişmiş: bu cihazda AnkiConnect kullan';
+      'Gelişmiş: AnkiConnect\'i bu cihazdan kullanın';
   @override
   String get onboarding_anki_mobile_ankiconnect_hint =>
-      'Bu cihaz ayrıca aynı ağdaki bir bilgisayarda çalışan Anki\'ye kart oluşturabilir: kart oluşturma ayarlarında AnkiConnect\'i etkinleştirin ve bilgisayar adresini girin.';
+      'Aynı ağdaki bir bilgisayarda çalışan Anki\'ye kart oluşturun: kart oluşturma ayarlarında AnkiConnect\'i etkinleştirin ve bilgisayarın adresini girin.';
   @override
   String get onboarding_anki_setup_android_hint =>
-      'AnkiDroid\'i yükleyin ve ilk çalıştırma kurulumunu tamamlamak için bir kez açın. Fushi\'ye dönün, ilk kartınızla birlikte açılan izin iletişim kutusunda İzin Ver\'e dokunun - AnkiDroid ayarlarında değişiklik gerekmez.';
+      'AnkiDroid\'i yükleyin ve bir kez açın. İlk kartınızda izin penceresinde İzin Ver\'e dokunun — ayarlanacak başka bir şey yok.';
   @override
   String get onboarding_anki_install_addon_action =>
       'AnkiConnect eklentisini yükle';
   @override
   String get onboarding_anki_addon_installed =>
-      'AnkiConnect yüklendi. Anki\'yi başlatın (veya yeniden başlatın), ardından Bağlantıyı test et\'e dokunun.';
+      'AnkiConnect yüklendi. Anki\'yi başlatın veya yeniden başlatın, ardından bağlantıyı test edin.';
   @override
   String get onboarding_anki_addon_no_anki =>
-      'Anki veri klasörü bulunamadı. Anki\'yi yükleyin ve bir kez açın, ardından tekrar deneyin.';
+      'Anki veri klasörü bulunamadı. Anki\'yi yükleyin, bir kez açın ve tekrar deneyin.';
   @override
   String onboarding_anki_addon_failed({required Object message}) =>
       'Yükleme başarısız: ${message}';
@@ -131353,57 +131486,54 @@ class _StringsTr extends _StringsEn {
   String get onboarding_action_badge_optional => 'İsteğe bağlı';
   @override
   String get onboarding_pack_action_download_desc =>
-      'Paketin tamamını arka planda indirir, ardından içe aktarır. İstediğin an iptal edebilirsin; bir dahaki sefere kaldığı yerden devam eder.';
+      'Arka planda birden çok kaynaktan aynı anda indirir, sonra içe aktarır. İstediğiniz an iptal edin; kaldığı yerden devam eder.';
   @override
   String get onboarding_pack_action_import_existing_desc =>
-      'Paket zaten indirilmiş durumda; bu onu içe aktarır. Onay penceresinde «Birleştir» seçersen mevcut verilerine dokunulmaz.';
+      'Paket zaten diskte. Mevcut verilerinizi korumak için onay penceresinde «Birleştir» seçin.';
   @override
   String get onboarding_pack_action_pick_desc =>
-      'Paketin zip dosyasını başka bir yerden aldın mı? Diskten içe aktar, indirmeyi tamamen atla.';
+      'Paketin zip dosyası zaten sizde mi? Diskten içe aktarın ve indirmeyi atlayın.';
   @override
-  String get onboarding_pack_action_website => 'Sitedeki indirme sayfasını aç';
+  String get onboarding_pack_action_website => 'İndirme sayfasını aç';
   @override
   String get onboarding_pack_action_website_desc =>
-      'Resmî siteyi tarayıcında açar. Paket bölümünde bir indirme yöneticisine verebileceğin parça bağlantıları var; sonra buraya dönüp «Yerel paket dosyası seç» ile indirdiğini içe aktar.';
+      'İndirme yöneticileri için parça bağlantıları. Sonra dönüp «Paket dosyası seç» seçeneğini kullanın.';
   @override
   String get onboarding_pack_action_dictionary_desc =>
-      'Japonca dışında bir dil mi öğreniyorsun? Paketi atla ve burada kendi dilinin sözlüklerini içe aktar.';
+      'Başka bir dil mi öğreniyorsunuz? O dilin sözlüklerini bunun yerine buradan içe aktarın.';
   @override
   String get onboarding_pack_action_audio_desc =>
-      'Telaffuz seslerinin nereden geldiği. Paket Japonca ve İngilizceyi zaten kapsıyor; diğer diller için buradan çevrimiçi kaynak ekle.';
+      'Paketin kapsamadığı diller için çevrimiçi telaffuz kaynakları ekleyin.';
   @override
   String get onboarding_anki_action_test_desc =>
-      'Fushi’nin Anki’ye ulaşıp ulaşamadığını denetler ve destelerinle not türlerini yükler. Henüz hiçbir şey oluşturulmaz.';
+      'Fushi\'nin Anki\'ye ulaşıp ulaşamadığını denetler ve destelerinizle not türlerinizi yükler. Hiçbir şey oluşturmaz.';
   @override
   String get onboarding_anki_action_refresh_desc =>
-      'Desteleri ve not türlerini Anki’den yeniden yükler. Anki içinde yeni bir deste oluşturduktan sonra kullan.';
+      'Desteleri ve not türlerini yeniden yükler. Anki\'de bir deste oluşturduktan sonra kullanın.';
   @override
   String get onboarding_anki_action_get_ankidroid_desc =>
-      'AnkiDroid’in mağaza sayfasını açar. Fushi kartlarını onun içine yazdığı için önce kurulu olması gerekir.';
+      'Mağaza sayfasını açar. Fushi kartları AnkiDroid\'e yazar, bu yüzden önce kurulu olmalıdır.';
   @override
   String get onboarding_anki_action_get_anki_desc =>
-      'Anki’nin indirme sayfasını açar. Anki’yi kur ve kart üretirken açık bırak.';
+      'Anki\'nin indirme sayfasını açar. Kart oluştururken Anki\'yi açık bırakın.';
   @override
   String get onboarding_anki_action_install_addon_desc =>
-      'Birlikte gelen AnkiConnect eklentisini senin için Anki’ye açar; Fushi onunla konuşmasını buna borçlu. Sonrasında Anki’yi yeniden başlat.';
+      'Birlikte gelen AnkiConnect eklentisini Anki\'nin içine açar. Sonrasında Anki\'yi yeniden başlatın.';
   @override
   String get onboarding_step_anki_action_desc =>
-      'Kart şablonu, alan eşlemesi, ekran görüntüleri ve ses: yani üretilen kartın nasıl göründüğünün ayrıntıları. Yukarıdaki deste ve not türü başlamak için yeterli, bu yüzden buraya yalnızca kartların nasıl kurulduğunu değiştirmek istiyorsan gir.';
+      'Şablon, alan eşlemesi, ekran görüntüleri ve ses. Yukarıdaki deste ve not türü başlamak için yeterli.';
   @override
   String get onboarding_step_backup_action_desc =>
-      'Bir yedekleme arka ucu seç ve oturum aç ki kitaplığın cihaz kaybını veya değişimini atlatsın.';
+      'Bir arka uç seçip oturum açın ya da yerel bir yedek dosyası dışa aktarın.';
   @override
   String get onboarding_step_interconnect_action_desc =>
-      'Bu cihazı diğer cihazlarınla eşler; tek bir kitaplığı paylaşır ve ilerlemeyi eşitler.';
+      'Karşılıklı bağlantıyı etkinleştirin ve bu cihazı diğerleriyle eşleştirin.';
   @override
   String get onboarding_step_extension_action_desc =>
-      'Tarayıcı uzantısını nasıl kurup Fushi’ye bağlayacağını gösterir; böylece web sayfalarında da kelime arayabilirsin.';
+      'Uzantıyı nasıl kurup Fushi\'ye bağlayacağınızı gösterir.';
   @override
   String get onboarding_step_fonts_action_desc =>
-      'Kendi yazı tipi dosyalarını ekle ve her dilin hangisini kullanacağını seç.';
-  @override
-  String get onboarding_pack_sources_hint =>
-      'Aynı anda GitHub’dan, resmî siteden ve bir yedek aynadan paralel parçalar hâlinde indirilir; her parça sağlama toplamıyla doğrulanır. Fushi kaynakları yol boyunca ölçer ve o an en hızlı olana daha çok parça verir, bu yüzden burada seçilecek bir şey yok.';
+      'Yazı tipi dosyalarını içe aktarın ve her dil için birer tane seçin.';
   @override
   String get video_setting_hdr_output => 'HDR / 10 bit çıkış';
   @override
@@ -131523,138 +131653,99 @@ class _StringsTr extends _StringsEn {
   String web_video_mine_switch_builtin({required Object count}) =>
       '${count} bekleyen kartı oluşturmak için yerleşik moda geç';
   @override
-  String get onboarding_step_click_lookup_title => 'Dokunarak kelime arayın';
+  String get onboarding_step_click_lookup_title => 'Dokunarak arayın';
   @override
-  String get onboarding_click_lookup_tap_title => 'Metne dokunun';
+  String get onboarding_click_lookup_tap_title => 'Bir kelimeye dokunun';
   @override
-  String get onboarding_click_lookup_nested_title =>
-      'Açılır pencerede aramaya devam edin';
+  String get onboarding_click_lookup_nested_title => 'Keşfetmeye devam edin';
   @override
   String get onboarding_click_lookup_nested_body =>
-      'Bir anlamın içindeki başka bir kelimeye dokunarak bir alt arama açın. Geri dönerek veya dışarı dokunarak bir seviye kapatın.';
+      'Bir anlamın içindeki kelimeye dokunarak bir seviye derine inin. Geri dönerek veya dışarı dokunarak bir seviye kapatın.';
   @override
-  String get onboarding_click_lookup_mine_title => 'Sonucu karta dönüştürün';
+  String get onboarding_click_lookup_mine_title => 'Kart oluşturun';
   @override
   String get onboarding_click_lookup_mine_body =>
-      'Anlam doğruysa + düğmesine dokunun; kelime, cümle, ses ve görüntü kart oluşturucuya aktarılır.';
+      'Maddedeki + düğmesine dokunun; kelime, cümle, ses ve görüntü kart oluşturucuya gider.';
   @override
-  String get onboarding_step_global_lookup_title =>
-      'Fushi dışındaki metinleri arayın';
+  String get onboarding_step_global_lookup_title => 'Fushi dışında arayın';
   @override
   String get onboarding_global_lookup_windows_body =>
-      'Windows\'ta başka bir uygulamada metni seçin ve Fushi\'ye dönmeden sözlüğü çağırın.';
+      'Herhangi bir uygulamada metni seçin ve pencere değiştirmeden sözlüğü çağırın.';
   @override
-  String get onboarding_global_lookup_windows_select_title =>
-      'Herhangi bir uygulamada metin seçin';
-  @override
-  String get onboarding_global_lookup_windows_shortcut_title =>
-      'Ctrl+Alt+D tuşlarına basın';
+  String get onboarding_global_lookup_windows_select_title => 'Metin seçin';
   @override
   String get onboarding_global_lookup_windows_shortcut_body =>
-      'Bu, varsayılan genel kısayoldur. Fushi geçerli seçimi alır ve imlecin yanında bir arama kartı açar.';
+      'Fushi seçimi alır ve imlecin yanında bir arama kartı açar.';
   @override
   String get onboarding_global_lookup_windows_customize_title =>
-      'Gerekirse kısayolu değiştirin';
+      'Kısayolu değiştirin';
   @override
   String get onboarding_global_lookup_windows_customize_body =>
-      'Ayarlar → Kısayollar → Genel (uygulama dışı) bölümünü açıp farklı bir tuş birleşimi atayın.';
+      'Ayarlar → Kısayollar → Genel (uygulama dışı).';
   @override
   String get onboarding_global_lookup_windows_action => 'Kısayol ayarlarını aç';
   @override
   String get onboarding_global_lookup_windows_action_desc =>
-      'Uygulama dışı arama kısayolunu değiştirmenizi sağlar. Varsayılan Ctrl+Alt+D zaten çalıştığı için bu isteğe bağlıdır.';
+      'Yalnızca farklı bir tuş birleşimi istiyorsanız.';
   @override
   String get onboarding_global_lookup_android_body =>
-      'Android\'de seçilen metni Fushi\'ye sistem iletir: metin menüsü veya Paylaş paneli üzerinden. Yeniden atanabilen genel bir kısayol tuşu yoktur.';
+      'Android, seçilen metni metin menüsü veya Paylaş paneli üzerinden Fushi\'ye iletir.';
   @override
-  String get onboarding_global_lookup_android_select_title =>
-      'Başka bir uygulamada metin seçin';
+  String get onboarding_global_lookup_android_select_title => 'Metin seçin';
   @override
   String get onboarding_global_lookup_android_open_title => 'Fushi\'yi seçin';
   @override
   String get onboarding_global_lookup_android_open_body =>
-      'Metin seçim menüsünde Fushi\'ye dokunun. Görünmüyorsa Paylaş\'a dokunup paylaşım panelinden Fushi\'yi seçin.';
+      'Seçim menüsünde Fushi\'ye dokunun ya da Paylaş\'a dokunup Fushi\'yi seçin.';
   @override
   String get onboarding_global_lookup_android_continue_title =>
-      'Bağımsız açılır pencereyi kullanın';
+      'Açılır pencereyi okuyun';
   @override
   String get onboarding_global_lookup_android_continue_body =>
-      'Arama, kaynak uygulamadan ayrı açılır. İçinde başka kelimelere dokunabilir, kapattığınızda kaldığınız yere dönersiniz.';
+      'Arama, diğer uygulamanın üzerinde açılır. Geri dönmek için kapatın.';
   @override
   String get onboarding_feature_manual_resources =>
-      'Sözlükleri ve sesleri elle içe aktar';
+      'Kendi kaynaklarımı içe aktar';
   @override
   String get onboarding_feature_manual_resources_hint =>
-      'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+      'Kendi dosyalarınızdan sözlükler, sesli kitaplar ve telaffuz kaynakları';
   @override
   String get onboarding_step_manual_resources_title =>
-      'Sözlükleri ve sesleri elle hazırlayın';
+      'Kendi sözlükleriniz ve sesleriniz';
   @override
   String get onboarding_step_manual_resources_body =>
-      'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+      'Arama eğitiminden önce en az bir sözlük içe aktarın. Sesli kitaplar ve telaffuz sesleri isteğe bağlıdır.';
   @override
   String get onboarding_manual_dictionary_action => 'Sözlük içe aktar';
   @override
   String get onboarding_manual_dictionary_action_desc =>
-      'Sözlük yöneticisini açıp desteklenen en az bir sözlük dosyası veya arşivi içe aktarın. Arama eğitimleri, ancak bir sorgu anlam döndürdüğünde işe yarar.';
+      'Sözlük yönetimini açar. Aramalar ancak bir sözlük kurulduktan sonra sonuç döndürür.';
   @override
-  String get onboarding_manual_audiobook_action =>
-      'Sesli kitap sesiyle birlikte kitap içe aktar';
+  String get onboarding_manual_audiobook_action => 'Sesli bir kitap içe aktar';
   @override
   String get onboarding_manual_audiobook_action_desc =>
-      'Kitap içe aktarmayı açın; kitabı veya metni, eşleşen altyazıları ve bir ya da daha fazla ses dosyasını seçin. Fushi\'nin sesi cümlelerle hizalayabilmesi için altyazı gerekir.';
+      'Kitap ya da metin, eşleşen altyazılar ve ses dosyaları. Fushi\'nin sesi cümlelerle eşitleyebilmesini sağlayan şey altyazılardır.';
   @override
-  String get onboarding_manual_pronunciation_action =>
-      'Kelime telaffuz sesini yapılandır';
+  String get onboarding_manual_pronunciation_action => 'Telaffuz sesini ayarla';
   @override
   String get onboarding_manual_pronunciation_action_desc =>
-      'Sözlük maddelerinin kullandığı yerel veya çevrimiçi telaffuz kaynaklarını ekleyin. Bu, bir kitaba eklenen sesli kitap sesinden ayrıdır.';
+      'Sözlük maddelerindeki kelime telaffuzu için yerel veya çevrimiçi kaynaklar. Sesli kitap sesinden ayrıdır.';
   @override
-  String get onboarding_lookup_verify_action =>
-      'Sözlüğünüzde bir kelimeyi doğrulayın';
+  String get onboarding_step_first_anki_card_title => 'İlk kartınız';
   @override
-  String get onboarding_lookup_verify_action_desc =>
-      'Aramayı açın, öğrendiğiniz herhangi bir kelimeyi yazın ve yalnızca kurulu sözlük bir anlam döndürdükten sonra devam edin. Eğitimde sabit bir örnek kelime yoktur.';
+  String get onboarding_first_anki_lookup_title => 'Bir kelime arayın';
   @override
-  String get onboarding_step_first_anki_card_title =>
-      'İlk Anki kartınızı oluşturun';
-  @override
-  String get onboarding_step_first_anki_card_body =>
-      'Bu adım yalnızca bu kurulumda Anki\'ye bağlanıldıysa ve kullanılabilir bir deste ile not türü seçildiyse görünür.';
-  @override
-  String get onboarding_first_anki_lookup_title =>
-      'Gerçek bir sözlük sonucuyla başlayın';
-  @override
-  String get onboarding_first_anki_lookup_body =>
-      'Kurulu sözlüğünüzün gerçekten tanımladığı bir kelimeyi arayın. Sözlüğünüzde bulunmayabilecek sabit bir örnek kelime kullanılmaz.';
-  @override
-  String get onboarding_first_anki_plus_title =>
-      'Maddedeki artı düğmesine dokunun';
+  String get onboarding_first_anki_plus_title => '+ düğmesine dokunun';
   @override
   String get onboarding_first_anki_plus_body =>
-      'Artı düğmesi; geçerli kelime, okunuş, anlam, cümle, ses ve varsa görüntüyle birlikte kart oluşturucuyu açar.';
+      'Kart oluşturucu; kelime, okunuş, anlam, cümle, ses ve görüntü doldurulmuş halde açılır.';
   @override
-  String get onboarding_first_anki_save_title => 'Gözden geçirip kaydedin';
+  String get onboarding_first_anki_save_title => 'Kontrol edip kaydedin';
   @override
   String get onboarding_first_anki_save_body =>
-      'Hedef desteyi, not türünü ve alan önizlemesini onaylayıp kaydedin. İlk kartın ulaştığını görmek için Anki\'yi açın.';
+      'Desteyi ve not türünü onaylayıp kaydedin. Kartı görmek için Anki\'yi açın.';
   @override
   String get onboarding_first_anki_action => 'Aramayı aç ve kart oluştur';
-  @override
-  String get onboarding_first_anki_action_desc =>
-      'Anlamı görünen bir kelimeyi seçin, artı düğmesine dokunun, alanları gözden geçirin ve bağlı Anki destesine kaydedin.';
-  @override
-  String get onboarding_step_click_lookup_body =>
-      'Önce kurulu sözlüğünüzün gerçekten tanımladığı bir kelimeyi doğrulayın. Sonra aynı kelimeyle kitaplarda, manga OCR metninde ve video altyazılarında doğrudan aramayı deneyin.';
-  @override
-  String get onboarding_click_lookup_tap_body =>
-      'Telefonda doğruladığınız kelimenin bir karakterine dokunun, bilgisayarda sol tıklayın. Fushi oradan başlar ve en uzun kelimeyi eşleştirir.';
-  @override
-  String get onboarding_global_lookup_windows_select_body =>
-      'Sözlükte anlamı olduğunu doğruladığınız aynı kelimeyi seçin ve seçimi bırakmayın.';
-  @override
-  String get onboarding_global_lookup_android_select_body =>
-      'Doğruladığınız aynı kelimeye uzun basın, sonra seçim tutamaçlarını kelimeyi tamamen kaplayacak şekilde ayarlayın.';
   @override
   String get game_lookup_attached_title => 'In-game lookup';
   @override
@@ -131937,6 +132028,71 @@ class _StringsTr extends _StringsEn {
   @override
   String get game_session_japanese_locale_skipped_hint_not_32bit =>
       'Oyun Japonca yerel ayar olmadan başlatıldı: otomatik karar gerekli diyor ama Locale Emulator yalnızca 32 bit oyunları destekliyor.';
+  @override
+  String get onboarding_feature_fonts => 'Özel yazı tipleri';
+  @override
+  String get onboarding_feature_fonts_hint =>
+      'Arayüz, kitap metni ve sözlük için kendi yazı tiplerinizi kullanın';
+  @override
+  String get onboarding_features_modules_title => 'Kitaplık sayfaları';
+  @override
+  String get onboarding_features_modules_hint =>
+      'İşaretlenmeyen sayfalar gezinme çubuğunda gizlenir. İstediğiniz zaman Ayarlar → Görünüm\'den değiştirebilirsiniz.';
+  @override
+  String get onboarding_features_setup_title => 'Sırada kurulacaklar';
+  @override
+  String get onboarding_features_setup_hint =>
+      'Bu rehberde yalnızca işaretlenen öğeler için bir adım açılır.';
+  @override
+  String get onboarding_pack_intro =>
+      'Japonca sözlükler, vurgu, kelime sıklığı ve JA/EN telaffuz sesleri tek indirmede. Başka bir dil mi öğreniyorsunuz? Bunu atlayıp kendi sözlüklerinizi içe aktarın.';
+  @override
+  String get onboarding_global_lookup_windows_select_desc =>
+      'Herhangi bir uygulamada bir kelimeyi seçin ve seçili bırakın.';
+  @override
+  String get onboarding_global_lookup_android_select_desc =>
+      'Başka bir uygulamada bir kelimeye uzun basın ve tutamaçları kelimeyi kaplayacak şekilde ayarlayın.';
+  @override
+  String get onboarding_global_lookup_windows_shortcut_press =>
+      'Kısayola basın';
+  @override
+  String get onboarding_first_anki_card_intro =>
+      'Anki bağlandı. Tüm yolun çalıştığını görmek için şimdi gerçek bir kart oluşturun.';
+  @override
+  String get onboarding_action_start => 'Fushi\'yi kullanmaya başla';
+  @override
+  String get onboarding_actions_more => 'Diğer yollar';
+  @override
+  String get onboarding_finish_summary_modules =>
+      'Gösterilen kitaplık sayfaları';
+  @override
+  String get onboarding_finish_summary_setup => 'Rehberli kurulum';
+  @override
+  String get onboarding_finish_summary_none => 'Yok';
+  @override
+  String get onboarding_anki_status_pending => 'Henüz test edilmedi';
+  @override
+  String get onboarding_click_lookup_intro =>
+      'Bir kitapta, mangada veya altyazıda herhangi bir kelimeye dokunun, anlamı görünsün. Aşağıdaki alıştırma cümlesinde deneyin.';
+  @override
+  String get onboarding_click_lookup_tap_desc =>
+      'Bir karaktere dokunun (bilgisayarda sol tıklayın); Fushi oradan başlayan en uzun kelimeyi alır. Cümle arama sayfasında açılır.';
+  @override
+  String get onboarding_sample_sentence_label => 'Alıştırma cümlesi';
+  @override
+  String get onboarding_sample_sentence_hint =>
+      'Arama sayfasında açmak için dokunun, sonra herhangi bir kelimeye dokunun.';
+  @override
+  String get onboarding_lookup_practice_action => 'Bu cümleyle alıştırma yap';
+  @override
+  String get onboarding_lookup_practice_desc =>
+      'Cümle yüklenmiş halde arama sayfasını açar. Orada bir kelimeye dokunarak anlamını görün; hiçbir şey gelmiyorsa sözlükleriniz henüz kurulmamıştır.';
+  @override
+  String get onboarding_first_anki_lookup_desc =>
+      'Alıştırma cümlesini açın ve bir kelimeye dokunun.';
+  @override
+  String get onboarding_first_anki_action_desc =>
+      'Alıştırma cümlesini arama sayfasında açar. Bir kelimeye dokunun, + düğmesine dokunun, alanları kontrol edip kaydedin.';
 }
 
 // Path: <root>
@@ -139751,41 +139907,40 @@ class _StringsVi extends _StringsEn {
   @override
   String get onboarding_title => 'Bắt đầu';
   @override
-  String get onboarding_welcome_headline => 'Chào mừng!';
+  String get onboarding_welcome_headline => 'Chào mừng đến với Fushi';
   @override
-  String get onboarding_feature_anki => 'Thẻ ghi nhớ Anki';
+  String get onboarding_feature_anki => 'Thẻ Anki';
   @override
   String get onboarding_feature_anki_hint =>
-      'Kết nối AnkiConnect hoặc AnkiDroid để tạo thẻ ghi nhớ';
+      'Biến kết quả tra từ thành thẻ ghi nhớ chỉ với một chạm';
   @override
   String get onboarding_feature_backup => 'Sao lưu & đồng bộ';
   @override
   String get onboarding_feature_backup_hint =>
-      'Sao lưu dữ liệu lên Google Drive, WebDAV và các backend khác';
+      'Google Drive, WebDAV hoặc một tệp cục bộ';
   @override
   String get onboarding_feature_interconnect => 'Kết nối liên thiết bị';
   @override
   String get onboarding_feature_interconnect_hint =>
-      'Ghép nối thiết bị trong mạng LAN để chia sẻ thư viện và tiến trình';
+      'Chia sẻ thư viện và tiến trình giữa các thiết bị trong mạng LAN';
   @override
   String get onboarding_step_dictionary_action => 'Mở trình quản lý từ điển';
   @override
   String get onboarding_step_anki_title => 'Thiết lập Anki';
   @override
-  String get onboarding_step_anki_action => 'Mở cài đặt tạo thẻ';
+  String get onboarding_step_anki_action => 'Cài đặt tạo thẻ';
   @override
-  String get onboarding_step_backup_title => 'Thiết lập sao lưu';
+  String get onboarding_step_backup_title => 'Sao lưu';
   @override
   String get onboarding_step_backup_body =>
-      'Chọn backend sao lưu và đăng nhập, hoặc xuất tệp sao lưu cục bộ.';
+      'Giữ an toàn cho thư viện khi bạn đổi máy hoặc mất máy.';
   @override
   String get onboarding_step_backup_action => 'Mở cài đặt sao lưu';
   @override
-  String get onboarding_step_interconnect_title =>
-      'Thiết lập kết nối liên thiết bị';
+  String get onboarding_step_interconnect_title => 'Kết nối liên thiết bị';
   @override
   String get onboarding_step_interconnect_body =>
-      'Bật kết nối liên thiết bị và ghép nối với các thiết bị khác trong mạng LAN để chia sẻ thư viện, tiến trình và tra cứu.';
+      'Ghép nối các thiết bị trong mạng LAN để dùng chung một thư viện và đồng bộ tiến trình.';
   @override
   String get onboarding_step_interconnect_action =>
       'Mở cài đặt kết nối liên thiết bị';
@@ -139793,59 +139948,48 @@ class _StringsVi extends _StringsEn {
   String get onboarding_finish_title => 'Hoàn tất';
   @override
   String get onboarding_finish_body =>
-      'Bạn có thể xem lại hướng dẫn này bất cứ lúc nào từ Cài đặt → Hệ thống.';
+      'Bạn có thể mở lại hướng dẫn này bất cứ lúc nào từ Cài đặt → Hệ thống.';
   @override
   String get onboarding_action_next => 'Tiếp theo';
-  @override
-  String get onboarding_action_finish => 'Hoàn thành';
   @override
   String get onboarding_action_skip => 'Bỏ qua';
   @override
   String get onboarding_reopen => 'Hướng dẫn bắt đầu';
   @override
   String get onboarding_welcome_body =>
-      'Đặt ngôn ngữ giao diện và giao diện trước — các bước tiếp theo sẽ hướng dẫn bạn phần còn lại.';
+      'Chọn ngôn ngữ giao diện và chủ đề sáng/tối. Vài bước tiếp theo sẽ lo phần còn lại.';
   @override
-  String get onboarding_features_title => 'Chọn những gì bạn sử dụng';
+  String get onboarding_features_title => 'Bạn sẽ dùng những gì?';
   @override
-  String get onboarding_features_modules_label =>
-      'Tab thư viện (các tab không chọn sẽ bị ẩn khỏi thanh điều hướng; thay đổi bất cứ lúc nào trong Cài đặt)';
-  @override
-  String get onboarding_features_setup_label => 'Thiết lập tiếp theo';
-  @override
-  String get onboarding_feature_manga => 'Thư viện truyện tranh';
+  String get onboarding_feature_manga => 'Truyện tranh';
   @override
   String get onboarding_feature_manga_hint =>
       'Đọc truyện tranh với tra cứu OCR';
   @override
-  String get onboarding_feature_video => 'Thư viện video';
+  String get onboarding_feature_video => 'Video';
   @override
-  String get onboarding_feature_video_hint =>
-      'Xem video với tra cứu và tạo thẻ từ phụ đề';
+  String get onboarding_feature_video_hint => 'Tra từ trên phụ đề và tạo thẻ';
   @override
-  String get onboarding_feature_games => 'Thư viện Galgame';
+  String get onboarding_feature_games => 'Galgame';
   @override
   String get onboarding_feature_games_hint =>
-      'Chạy galgame với tra cứu text-hook (chỉ Windows)';
+      'Tra từ bằng text-hook ngay khi chơi (chỉ Windows)';
   @override
-  String get onboarding_feature_pack => 'Gói khuyến nghị (từ điển + âm thanh)';
+  String get onboarding_feature_pack => 'Gói khuyến nghị';
   @override
   String get onboarding_feature_pack_hint =>
-      'Một lần tải thiết lập từ điển tiếng Nhật cùng âm thanh phát âm JA/EN';
+      'Từ điển tiếng Nhật cùng âm thanh phát âm JA/EN trong một lần tải';
   @override
-  String get onboarding_step_pack_title => 'Cài đặt gói khuyến nghị';
-  @override
-  String get onboarding_step_pack_body =>
-      'Gói khuyến nghị bao gồm từ điển từ, trọng âm và tần suất tiếng Nhật cùng cơ sở dữ liệu phát âm Nhật/Anh. Tải xuống và nhập tại đây; việc nhập thay thế dữ liệu cục bộ, nên hãy chạy trên bản cài mới. Đang học ngôn ngữ khác? Dùng trình quản lý từ điển để nhập từ điển riêng.';
+  String get onboarding_step_pack_title => 'Gói khuyến nghị';
   @override
   String get onboarding_step_pack_download_action => 'Tải xuống và nhập';
   @override
   String get onboarding_step_pack_import_existing_action => 'Nhập gói đã tải';
   @override
-  String get onboarding_step_pack_pick_action => 'Chọn tệp gói cục bộ';
+  String get onboarding_step_pack_pick_action => 'Chọn tệp gói';
   @override
   String get onboarding_pack_downloading =>
-      'Đang tải xuống… hủy bất cứ lúc nào, tiếp tục lần sau';
+      'Đang tải xuống… huỷ bất cứ lúc nào và tải tiếp sau';
   @override
   String onboarding_pack_download_failed({required Object message}) =>
       'Tải xuống thất bại: ${message}';
@@ -139853,15 +139997,14 @@ class _StringsVi extends _StringsEn {
   String get onboarding_step_extension_title => 'Tiện ích mở rộng trình duyệt';
   @override
   String get onboarding_step_extension_body =>
-      'Cài đặt tiện ích mở rộng đồng hành để tra từ trên bất kỳ trang web nào.';
+      'Tra từ trên bất kỳ trang web nào bằng tiện ích đồng hành.';
   @override
-  String get onboarding_step_extension_action =>
-      'Mở hướng dẫn tiện ích mở rộng';
+  String get onboarding_step_extension_action => 'Mở hướng dẫn cài đặt';
   @override
-  String get onboarding_step_fonts_title => 'Phông chữ đọc sách';
+  String get onboarding_step_fonts_title => 'Phông chữ';
   @override
   String get onboarding_step_fonts_body =>
-      'Nhập phông chữ tùy chỉnh và chọn giao diện, văn bản sách và từ điển sử dụng chúng.';
+      'Dùng phông chữ của riêng bạn cho giao diện, văn bản sách và từ điển.';
   @override
   String get settings_section_modules => 'Mô-đun tính năng';
   @override
@@ -140101,10 +140244,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get module_extension_label => 'Tiện ích mở rộng trình duyệt';
   @override
-  String get onboarding_feature_books => 'Thư viện tiểu thuyết';
+  String get onboarding_feature_books => 'Tiểu thuyết';
   @override
   String get onboarding_feature_books_hint =>
-      'Đọc tiểu thuyết EPUB với tra từ điển và đồng bộ sách nói';
+      'Đọc EPUB kèm tra từ và đồng bộ sách nói';
   @override
   String get onboarding_feature_extension_hint =>
       'Tra từ trên bất kỳ trang web nào (chỉ trên máy tính)';
@@ -140525,13 +140668,13 @@ class _StringsVi extends _StringsEn {
       'Trò chơi được khởi động dưới ngôn ngữ tiếng Nhật (CP932). Nếu văn bản bị lỗi hoặc xuất hiện lỗi kịch bản, hãy đặt ngôn ngữ tiếng Nhật của trò chơi này thành Không bao giờ.';
   @override
   String get onboarding_anki_intro_body =>
-      'Anki là ứng dụng thẻ ghi nhớ lặp lại cách quãng miễn phí: từ mới trở thành thẻ, và việc ôn tập được lên lịch theo đường cong quên. Sau khi tra cứu, Fushi có thể biến từ đó thành thẻ Anki chỉ với một chạm, kèm nghĩa, câu ví dụ, âm thanh và ảnh chụp màn hình.';
+      'Anki là ứng dụng thẻ ghi nhớ lặp lại cách quãng miễn phí. Sau khi tra từ, Fushi biến từ đó thành thẻ kèm nghĩa, câu ví dụ, âm thanh và ảnh chụp màn hình chỉ với một chạm.';
   @override
   String get onboarding_anki_setup_desktop_hint =>
-      'Cài đặt ứng dụng Anki trên máy tính, sau đó thêm tiện ích AnkiConnect: trong Anki, mở Tools - Add-ons - Get Add-ons và nhập mã 2055492159. Giữ Anki chạy khi tạo thẻ.';
+      'Cài Anki, thêm tiện ích AnkiConnect (một chạm ở bên dưới, hoặc mã tiện ích 2055492159), và giữ Anki chạy trong lúc bạn tạo thẻ.';
   @override
   String get onboarding_anki_setup_ios_hint =>
-      'Với AnkiMobile đã cài đặt, việc thêm thẻ hoạt động ngay. Để có đầy đủ tính năng, kết nối với Anki đang chạy trên máy tính cùng mạng qua AnkiConnect.';
+      'Khi đã cài AnkiMobile, thẻ được thêm trực tiếp. Để có đầy đủ tính năng, hãy kết nối qua AnkiConnect tới Anki trên máy tính cùng mạng.';
   @override
   String get onboarding_anki_backend_label => 'Kết nối';
   @override
@@ -140545,22 +140688,22 @@ class _StringsVi extends _StringsEn {
   String get onboarding_anki_get_ankidroid_action => 'Tải AnkiDroid';
   @override
   String get onboarding_anki_mobile_ankiconnect_title =>
-      'Nâng cao: sử dụng AnkiConnect trên thiết bị này';
+      'Nâng cao: dùng AnkiConnect từ thiết bị này';
   @override
   String get onboarding_anki_mobile_ankiconnect_hint =>
-      'Thiết bị này cũng có thể tạo thẻ vào Anki đang chạy trên máy tính cùng mạng: bật AnkiConnect trong cài đặt tạo thẻ và nhập địa chỉ máy tính.';
+      'Tạo thẻ vào Anki đang chạy trên máy tính cùng mạng: bật AnkiConnect trong cài đặt tạo thẻ và nhập địa chỉ của máy tính.';
   @override
   String get onboarding_anki_setup_android_hint =>
-      'Cài đặt AnkiDroid và mở một lần để hoàn tất thiết lập ban đầu. Quay lại Fushi, chạm Cho phép trên hộp thoại quyền xuất hiện khi tạo thẻ đầu tiên - không cần thay đổi cài đặt AnkiDroid.';
+      'Cài AnkiDroid và mở một lần. Ở thẻ đầu tiên, chạm Cho phép trong hộp thoại quyền — không phải chỉnh gì thêm.';
   @override
   String get onboarding_anki_install_addon_action =>
       'Cài đặt tiện ích AnkiConnect';
   @override
   String get onboarding_anki_addon_installed =>
-      'AnkiConnect đã được cài đặt. Khởi động (hoặc khởi động lại) Anki, sau đó chạm Kiểm tra kết nối.';
+      'Đã cài AnkiConnect. Khởi động hoặc khởi động lại Anki, rồi kiểm tra kết nối.';
   @override
   String get onboarding_anki_addon_no_anki =>
-      'Không tìm thấy thư mục dữ liệu Anki. Cài đặt Anki và mở một lần, sau đó thử lại.';
+      'Không tìm thấy thư mục dữ liệu Anki. Cài Anki, mở một lần rồi thử lại.';
   @override
   String onboarding_anki_addon_failed({required Object message}) =>
       'Cài đặt thất bại: ${message}';
@@ -141074,57 +141217,54 @@ class _StringsVi extends _StringsEn {
   String get onboarding_action_badge_optional => 'Tuỳ chọn';
   @override
   String get onboarding_pack_action_download_desc =>
-      'Tải toàn bộ gói ở chế độ nền rồi nhập vào. Có thể huỷ bất cứ lúc nào; lần sau sẽ tải tiếp từ chỗ đã dừng.';
+      'Tải nền từ nhiều nguồn cùng lúc, rồi nhập vào. Có thể huỷ bất cứ lúc nào; sẽ tải tiếp từ chỗ đã dừng.';
   @override
   String get onboarding_pack_action_import_existing_desc =>
-      'Gói đã tải xong; thao tác này nhập nó vào. Chọn «Gộp» trong hộp xác nhận thì dữ liệu hiện có của bạn sẽ được giữ nguyên.';
+      'Gói đã có sẵn trên ổ đĩa. Chọn «Gộp» trong hộp xác nhận để giữ nguyên dữ liệu hiện có.';
   @override
   String get onboarding_pack_action_pick_desc =>
-      'Đã lấy được tệp zip của gói từ nơi khác? Nhập từ ổ đĩa và bỏ qua hoàn toàn phần tải về.';
+      'Đã có tệp zip của gói? Nhập từ ổ đĩa và bỏ qua phần tải về.';
   @override
-  String get onboarding_pack_action_website => 'Mở trang tải về trên website';
+  String get onboarding_pack_action_website => 'Mở trang tải về';
   @override
   String get onboarding_pack_action_website_desc =>
-      'Mở trang chính thức trong trình duyệt. Mục về gói ở đó liệt kê các liên kết theo từng phần để bạn đưa cho trình quản lý tải; xong rồi quay lại đây và dùng «Chọn tệp gói trên máy» để nhập.';
+      'Liên kết theo từng phần dành cho trình quản lý tải. Xong rồi quay lại và dùng «Chọn tệp gói».';
   @override
   String get onboarding_pack_action_dictionary_desc =>
-      'Bạn học ngôn ngữ khác ngoài tiếng Nhật? Bỏ qua gói và nhập từ điển cho ngôn ngữ của bạn ở đây.';
+      'Bạn học ngôn ngữ khác? Hãy nhập từ điển cho ngôn ngữ đó ở đây.';
   @override
   String get onboarding_pack_action_audio_desc =>
-      'Âm thanh phát âm lấy từ đâu. Gói đã bao gồm tiếng Nhật và tiếng Anh; các ngôn ngữ khác thì thêm nguồn trực tuyến ở đây.';
+      'Thêm nguồn phát âm trực tuyến cho những ngôn ngữ mà gói không bao gồm.';
   @override
   String get onboarding_anki_action_test_desc =>
-      'Kiểm tra xem Fushi có kết nối được với Anki không và nạp các bộ thẻ cùng loại ghi chú của bạn. Chưa tạo ra thứ gì cả.';
+      'Kiểm tra xem Fushi có kết nối được với Anki không và nạp các bộ thẻ cùng loại ghi chú của bạn. Không tạo ra gì cả.';
   @override
   String get onboarding_anki_action_refresh_desc =>
-      'Nạp lại bộ thẻ và loại ghi chú từ Anki. Dùng sau khi bạn tạo bộ thẻ mới trong Anki.';
+      'Nạp lại bộ thẻ và loại ghi chú. Dùng sau khi bạn tạo bộ thẻ trong Anki.';
   @override
   String get onboarding_anki_action_get_ankidroid_desc =>
-      'Mở trang cửa hàng của AnkiDroid. Fushi ghi thẻ vào đó nên phải cài nó trước.';
+      'Mở trang cửa hàng. Fushi ghi thẻ vào AnkiDroid nên phải cài nó trước.';
   @override
   String get onboarding_anki_action_get_anki_desc =>
-      'Mở trang tải Anki. Cài Anki và để nó chạy trong lúc bạn tạo thẻ.';
+      'Mở trang tải Anki. Hãy để Anki chạy trong lúc bạn tạo thẻ.';
   @override
   String get onboarding_anki_action_install_addon_desc =>
-      'Giải nén tiện ích AnkiConnect đi kèm vào Anki giúp bạn — đó chính là thứ cho phép Fushi nói chuyện với Anki. Xong rồi khởi động lại Anki.';
+      'Giải nén tiện ích AnkiConnect đi kèm vào Anki. Xong rồi khởi động lại Anki.';
   @override
   String get onboarding_step_anki_action_desc =>
-      'Mẫu thẻ, ánh xạ trường, ảnh chụp màn hình và âm thanh: tức là chi tiết về hình hài của tấm thẻ được tạo ra. Bộ thẻ và loại ghi chú ở trên là đủ để bắt đầu, nên chỉ mở phần này khi bạn muốn đổi cách dựng thẻ.';
+      'Mẫu thẻ, ánh xạ trường, ảnh chụp màn hình và âm thanh. Bộ thẻ và loại ghi chú ở trên là đủ để bắt đầu.';
   @override
   String get onboarding_step_backup_action_desc =>
-      'Chọn nơi sao lưu và đăng nhập, để thư viện của bạn sống sót khi mất máy hoặc đổi máy.';
+      'Chọn backend và đăng nhập, hoặc xuất một tệp sao lưu cục bộ.';
   @override
   String get onboarding_step_interconnect_action_desc =>
-      'Ghép nối thiết bị này với các thiết bị khác của bạn để dùng chung một thư viện và đồng bộ tiến độ.';
+      'Bật kết nối liên thiết bị và ghép nối máy này với các máy khác của bạn.';
   @override
   String get onboarding_step_extension_action_desc =>
-      'Hướng dẫn cách cài tiện ích trình duyệt và kết nối nó với Fushi, để bạn tra từ ngay trên trang web.';
+      'Hướng dẫn cách cài tiện ích và kết nối nó với Fushi.';
   @override
   String get onboarding_step_fonts_action_desc =>
-      'Thêm tệp phông chữ của riêng bạn và chọn phông cho từng ngôn ngữ.';
-  @override
-  String get onboarding_pack_sources_hint =>
-      'Được tải song song theo từng phần, đồng thời từ GitHub, trang chính thức và một máy chủ gương dự phòng, mỗi phần đều được kiểm tra checksum. Fushi đo tốc độ các nguồn ngay trong lúc tải và giao nhiều phần hơn cho nguồn đang nhanh nhất, nên ở đây không có gì để chọn.';
+      'Nhập tệp phông chữ và chọn một phông cho mỗi ngôn ngữ.';
   @override
   String get video_setting_hdr_output => 'Đầu ra HDR / 10 bit';
   @override
@@ -141243,136 +141383,98 @@ class _StringsVi extends _StringsEn {
   String web_video_mine_switch_builtin({required Object count}) =>
       'Chuyển sang chế độ tích hợp để tạo ${count} thẻ đang chờ';
   @override
-  String get onboarding_step_click_lookup_title => 'Chạm để tra từ';
+  String get onboarding_step_click_lookup_title => 'Chạm để tra';
   @override
-  String get onboarding_click_lookup_tap_title => 'Chạm vào văn bản';
+  String get onboarding_click_lookup_tap_title => 'Chạm vào một từ';
   @override
-  String get onboarding_click_lookup_nested_title =>
-      'Tra tiếp ngay trong cửa sổ';
+  String get onboarding_click_lookup_nested_title => 'Tra tiếp';
   @override
   String get onboarding_click_lookup_nested_body =>
-      'Chạm vào một từ khác trong phần nghĩa để mở thêm một lớp tra từ. Nhấn quay lại hoặc chạm ra ngoài để đóng bớt một lớp.';
+      'Chạm vào một từ trong phần nghĩa để đi sâu thêm một lớp. Nhấn quay lại hoặc chạm ra ngoài để đóng bớt một lớp.';
   @override
-  String get onboarding_click_lookup_mine_title => 'Biến kết quả thành thẻ';
+  String get onboarding_click_lookup_mine_title => 'Tạo một thẻ';
   @override
   String get onboarding_click_lookup_mine_body =>
-      'Khi nghĩa đã đúng, chạm + để gửi từ, câu, âm thanh và hình ảnh sang trình tạo thẻ.';
+      'Chạm + trên mục từ để gửi từ, câu, âm thanh và hình ảnh sang trình tạo thẻ.';
   @override
-  String get onboarding_step_global_lookup_title => 'Tra từ bên ngoài Fushi';
+  String get onboarding_step_global_lookup_title => 'Tra bên ngoài Fushi';
   @override
   String get onboarding_global_lookup_windows_body =>
-      'Trên Windows, hãy bôi đen văn bản trong ứng dụng khác rồi gọi từ điển mà không cần quay lại Fushi.';
+      'Bôi đen văn bản trong ứng dụng bất kỳ và gọi từ điển mà không cần chuyển cửa sổ.';
   @override
-  String get onboarding_global_lookup_windows_select_title =>
-      'Chọn văn bản trong bất kỳ ứng dụng nào';
-  @override
-  String get onboarding_global_lookup_windows_shortcut_title =>
-      'Nhấn Ctrl+Alt+D';
+  String get onboarding_global_lookup_windows_select_title => 'Chọn văn bản';
   @override
   String get onboarding_global_lookup_windows_shortcut_body =>
-      'Đây là phím tắt toàn cục mặc định. Fushi lấy phần văn bản đang chọn và mở thẻ tra từ ngay cạnh con trỏ.';
+      'Fushi lấy phần đang chọn và mở thẻ tra từ ngay cạnh con trỏ.';
   @override
-  String get onboarding_global_lookup_windows_customize_title =>
-      'Đổi phím tắt nếu cần';
+  String get onboarding_global_lookup_windows_customize_title => 'Đổi phím tắt';
   @override
   String get onboarding_global_lookup_windows_customize_body =>
-      'Mở Cài đặt → Phím tắt → Toàn cục (ngoài ứng dụng) để gán tổ hợp phím khác.';
+      'Cài đặt → Phím tắt → Toàn cục (ngoài ứng dụng).';
   @override
   String get onboarding_global_lookup_windows_action => 'Mở cài đặt phím tắt';
   @override
   String get onboarding_global_lookup_windows_action_desc =>
-      'Cho phép đổi phím tắt tra từ ngoài ứng dụng. Mặc định Ctrl+Alt+D vốn đã dùng được nên bước này không bắt buộc.';
+      'Chỉ khi bạn muốn một tổ hợp phím khác.';
   @override
   String get onboarding_global_lookup_android_body =>
-      'Trên Android, hệ thống chuyển văn bản đang chọn sang Fushi qua menu văn bản hoặc bảng Chia sẻ. Ở đây không có phím tắt toàn cục để tuỳ chỉnh.';
+      'Android chuyển văn bản đang chọn sang Fushi qua menu văn bản hoặc bảng Chia sẻ.';
   @override
-  String get onboarding_global_lookup_android_select_title =>
-      'Chọn văn bản trong ứng dụng khác';
+  String get onboarding_global_lookup_android_select_title => 'Chọn văn bản';
   @override
   String get onboarding_global_lookup_android_open_title => 'Chọn Fushi';
   @override
   String get onboarding_global_lookup_android_open_body =>
-      'Chạm Fushi trong menu chọn văn bản. Nếu không thấy, hãy chạm Chia sẻ rồi chọn Fushi trong bảng chia sẻ.';
+      'Chạm Fushi trong menu chọn, hoặc chạm Chia sẻ rồi chọn Fushi.';
   @override
   String get onboarding_global_lookup_android_continue_title =>
-      'Dùng cửa sổ tra từ riêng';
+      'Đọc cửa sổ tra từ';
   @override
   String get onboarding_global_lookup_android_continue_body =>
-      'Kết quả tra từ mở tách khỏi ứng dụng gốc. Bạn có thể chạm tiếp các từ khác trong đó, đóng lại là quay về chỗ cũ.';
+      'Cửa sổ tra từ mở đè lên ứng dụng kia. Đóng lại là quay về.';
   @override
-  String get onboarding_feature_manual_resources =>
-      'Nhập từ điển và âm thanh thủ công';
+  String get onboarding_feature_manual_resources => 'Nhập tài nguyên của tôi';
   @override
   String get onboarding_feature_manual_resources_hint =>
-      'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+      'Từ điển, sách nói và nguồn phát âm từ tệp của chính bạn';
   @override
   String get onboarding_step_manual_resources_title =>
-      'Chuẩn bị từ điển và âm thanh thủ công';
+      'Từ điển và âm thanh của riêng bạn';
   @override
   String get onboarding_step_manual_resources_body =>
-      'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+      'Hãy nhập ít nhất một từ điển trước phần hướng dẫn tra từ. Sách nói và âm thanh phát âm là tuỳ chọn.';
   @override
   String get onboarding_manual_dictionary_action => 'Nhập một từ điển';
   @override
   String get onboarding_manual_dictionary_action_desc =>
-      'Mở trình quản lý từ điển và nhập ít nhất một tệp hoặc kho từ điển được hỗ trợ. Các hướng dẫn tra từ chỉ có ích khi tra ra được nghĩa.';
+      'Mở trình quản lý từ điển. Tra từ chỉ ra kết quả sau khi đã cài từ điển.';
   @override
-  String get onboarding_manual_audiobook_action =>
-      'Nhập sách kèm âm thanh sách nói';
+  String get onboarding_manual_audiobook_action => 'Nhập sách kèm âm thanh';
   @override
   String get onboarding_manual_audiobook_action_desc =>
-      'Mở phần nhập sách và chọn sách hoặc văn bản, phụ đề đã khớp, cùng một hay nhiều tệp âm thanh. Phải có phụ đề thì Fushi mới khớp được âm thanh theo từng câu.';
+      'Sách hoặc văn bản, phụ đề đã khớp và các tệp âm thanh. Chính phụ đề mới giúp Fushi đồng bộ âm thanh theo từng câu.';
   @override
   String get onboarding_manual_pronunciation_action =>
-      'Thiết lập âm thanh phát âm của từ';
+      'Thiết lập âm thanh phát âm';
   @override
   String get onboarding_manual_pronunciation_action_desc =>
-      'Thêm nguồn phát âm cục bộ hoặc trực tuyến dùng cho các mục từ điển. Việc này tách biệt với âm thanh sách nói gắn kèm một cuốn sách.';
+      'Nguồn phát âm cục bộ hoặc trực tuyến cho các mục từ điển. Tách biệt với âm thanh sách nói.';
   @override
-  String get onboarding_lookup_verify_action =>
-      'Kiểm tra một từ trong từ điển của bạn';
+  String get onboarding_step_first_anki_card_title => 'Thẻ đầu tiên của bạn';
   @override
-  String get onboarding_lookup_verify_action_desc =>
-      'Mở tra từ, nhập bất kỳ từ nào bạn đang học, và chỉ đi tiếp khi từ điển đã cài trả về nghĩa. Hướng dẫn không cố định sẵn từ mẫu nào.';
+  String get onboarding_first_anki_lookup_title => 'Tra một từ';
   @override
-  String get onboarding_step_first_anki_card_title => 'Tạo thẻ Anki đầu tiên';
-  @override
-  String get onboarding_step_first_anki_card_body =>
-      'Bước này chỉ hiện ra khi lần thiết lập này đã kết nối Anki và đã chọn được bộ thẻ cùng loại ghi chú dùng được.';
-  @override
-  String get onboarding_first_anki_lookup_title =>
-      'Bắt đầu từ một kết quả từ điển thật';
-  @override
-  String get onboarding_first_anki_lookup_body =>
-      'Hãy tra một từ mà từ điển bạn đã cài thực sự có. Không có từ mẫu cố định nào có thể bị thiếu trong từ điển của bạn.';
-  @override
-  String get onboarding_first_anki_plus_title =>
-      'Chạm nút dấu cộng trên mục từ';
+  String get onboarding_first_anki_plus_title => 'Chạm +';
   @override
   String get onboarding_first_anki_plus_body =>
-      'Nút dấu cộng mở trình tạo thẻ kèm sẵn từ hiện tại, cách đọc, nghĩa, câu, âm thanh và hình ảnh đang có.';
+      'Trình tạo thẻ mở ra với từ, cách đọc, nghĩa, câu, âm thanh và hình ảnh đã điền sẵn.';
   @override
   String get onboarding_first_anki_save_title => 'Kiểm tra rồi lưu';
   @override
   String get onboarding_first_anki_save_body =>
-      'Xác nhận bộ thẻ đích, loại ghi chú và bản xem trước các trường, rồi lưu. Mở Anki để kiểm tra thẻ đầu tiên đã vào chưa.';
+      'Xác nhận bộ thẻ và loại ghi chú rồi lưu. Mở Anki để xem thẻ.';
   @override
   String get onboarding_first_anki_action => 'Mở tra từ và tạo thẻ';
-  @override
-  String get onboarding_first_anki_action_desc =>
-      'Chọn một từ đang hiện nghĩa, chạm nút dấu cộng, kiểm tra các trường rồi lưu vào bộ thẻ Anki đã kết nối.';
-  @override
-  String get onboarding_step_click_lookup_body =>
-      'Trước hết hãy kiểm tra một từ mà từ điển đã cài thực sự có nghĩa. Sau đó dùng chính từ đó để tập tra trực tiếp trong sách, trong chữ OCR của manga và trong phụ đề video.';
-  @override
-  String get onboarding_click_lookup_tap_body =>
-      'Trên điện thoại, chạm vào một ký tự của từ vừa kiểm tra; trên máy tính thì nhấp chuột trái. Fushi bắt đầu từ đó và khớp với từ dài nhất.';
-  @override
-  String get onboarding_global_lookup_windows_select_body =>
-      'Bôi đen đúng từ mà bạn đã kiểm tra là có nghĩa trong từ điển, và giữ nguyên vùng chọn.';
-  @override
-  String get onboarding_global_lookup_android_select_body =>
-      'Nhấn giữ đúng từ đã kiểm tra đó, rồi kéo các tay nắm vùng chọn để phủ hết từ.';
   @override
   String get game_lookup_attached_title => 'In-game lookup';
   @override
@@ -141654,6 +141756,69 @@ class _StringsVi extends _StringsEn {
   @override
   String get game_session_japanese_locale_skipped_hint_not_32bit =>
       'Game được khởi động không dùng ngôn ngữ hệ thống tiếng Nhật: phán đoán tự động cho là cần, nhưng Locale Emulator chỉ hỗ trợ game 32-bit.';
+  @override
+  String get onboarding_feature_fonts => 'Phông chữ tùy chỉnh';
+  @override
+  String get onboarding_feature_fonts_hint =>
+      'Dùng phông chữ của riêng bạn cho giao diện, văn bản sách và từ điển';
+  @override
+  String get onboarding_features_modules_title => 'Trang thư viện';
+  @override
+  String get onboarding_features_modules_hint =>
+      'Những trang không đánh dấu sẽ bị ẩn khỏi thanh điều hướng. Đổi lại bất cứ lúc nào ở Cài đặt → Giao diện.';
+  @override
+  String get onboarding_features_setup_title => 'Thiết lập tiếp theo';
+  @override
+  String get onboarding_features_setup_hint =>
+      'Chỉ những mục được đánh dấu mới có bước riêng trong hướng dẫn này.';
+  @override
+  String get onboarding_pack_intro =>
+      'Từ điển tiếng Nhật, thanh điệu, tần suất từ và âm thanh phát âm JA/EN trong một lần tải. Bạn học ngôn ngữ khác? Hãy bỏ qua bước này và tự nhập từ điển của mình.';
+  @override
+  String get onboarding_global_lookup_windows_select_desc =>
+      'Bôi đen một từ trong ứng dụng bất kỳ và giữ nguyên vùng chọn.';
+  @override
+  String get onboarding_global_lookup_android_select_desc =>
+      'Nhấn giữ một từ trong ứng dụng khác rồi kéo các tay cầm để phủ hết từ đó.';
+  @override
+  String get onboarding_global_lookup_windows_shortcut_press => 'Nhấn phím tắt';
+  @override
+  String get onboarding_first_anki_card_intro =>
+      'Anki đã kết nối. Hãy tạo một thẻ thật ngay bây giờ để chắc chắn cả quy trình chạy được.';
+  @override
+  String get onboarding_action_start => 'Bắt đầu dùng Fushi';
+  @override
+  String get onboarding_actions_more => 'Cách khác';
+  @override
+  String get onboarding_finish_summary_modules => 'Trang thư viện hiển thị';
+  @override
+  String get onboarding_finish_summary_setup => 'Thiết lập có hướng dẫn';
+  @override
+  String get onboarding_finish_summary_none => 'Không có';
+  @override
+  String get onboarding_anki_status_pending => 'Chưa kiểm tra';
+  @override
+  String get onboarding_click_lookup_intro =>
+      'Chạm vào bất kỳ từ nào trong sách, truyện tranh hay phụ đề để xem nghĩa. Thử ngay với câu luyện tập bên dưới.';
+  @override
+  String get onboarding_click_lookup_tap_desc =>
+      'Chạm vào một ký tự (trên máy tính thì nhấp chuột trái); Fushi lấy từ dài nhất bắt đầu từ đó. Câu sẽ mở trong trang tra từ.';
+  @override
+  String get onboarding_sample_sentence_label => 'Câu luyện tập';
+  @override
+  String get onboarding_sample_sentence_hint =>
+      'Chạm để mở trong trang tra từ, rồi chạm vào một từ bất kỳ.';
+  @override
+  String get onboarding_lookup_practice_action => 'Luyện tập với câu này';
+  @override
+  String get onboarding_lookup_practice_desc =>
+      'Mở trang tra từ với câu đã được nạp sẵn. Chạm vào một từ ở đó để xem nghĩa; nếu không ra gì thì từ điển của bạn chưa được cài.';
+  @override
+  String get onboarding_first_anki_lookup_desc =>
+      'Mở câu luyện tập rồi chạm vào một từ.';
+  @override
+  String get onboarding_first_anki_action_desc =>
+      'Mở câu luyện tập trong trang tra từ. Chạm vào một từ, chạm +, kiểm tra các trường rồi lưu.';
 }
 
 // Path: <root>
@@ -148871,81 +149036,69 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get onboarding_title => '新手引导';
   @override
-  String get onboarding_welcome_headline => '欢迎使用！';
+  String get onboarding_welcome_headline => '欢迎使用 Fushi';
   @override
   String get onboarding_feature_anki => 'Anki 制卡';
   @override
-  String get onboarding_feature_anki_hint =>
-      '连接 AnkiConnect / AnkiDroid，查词一键制卡';
+  String get onboarding_feature_anki_hint => '查词后一键做成卡片';
   @override
   String get onboarding_feature_backup => '备份与同步';
   @override
-  String get onboarding_feature_backup_hint => '把数据备份到 Google Drive、WebDAV 等后端';
+  String get onboarding_feature_backup_hint => 'Google Drive、WebDAV 或本地文件';
   @override
   String get onboarding_feature_interconnect => '设备互联';
   @override
-  String get onboarding_feature_interconnect_hint => '局域网配对多台设备，共享书库与进度';
+  String get onboarding_feature_interconnect_hint => '局域网多设备共享书库和进度';
   @override
   String get onboarding_step_dictionary_action => '打开词典管理';
   @override
   String get onboarding_step_anki_title => '配置 Anki';
   @override
-  String get onboarding_step_anki_action => '打开制卡设置';
+  String get onboarding_step_anki_action => '制卡设置';
   @override
-  String get onboarding_step_backup_title => '配置备份';
+  String get onboarding_step_backup_title => '备份';
   @override
-  String get onboarding_step_backup_body => '选择备份后端并登录，也可以导出本地备份文件。';
+  String get onboarding_step_backup_body => '换机器或丢设备时，库还在。';
   @override
   String get onboarding_step_backup_action => '打开备份设置';
   @override
-  String get onboarding_step_interconnect_title => '配置互联';
+  String get onboarding_step_interconnect_title => '设备互联';
   @override
-  String get onboarding_step_interconnect_body =>
-      '开启互联，与局域网内其他设备配对，共享书库、进度与查词。';
+  String get onboarding_step_interconnect_body => '局域网配对多台设备，共享一个库，进度同步。';
   @override
   String get onboarding_step_interconnect_action => '打开互联设置';
   @override
   String get onboarding_finish_title => '一切就绪';
   @override
-  String get onboarding_finish_body => '之后随时可以在「设置 → 系统」里重新打开本引导。';
+  String get onboarding_finish_body => '之后随时可以在「设置 → 系统」重新打开本引导。';
   @override
   String get onboarding_action_next => '下一步';
-  @override
-  String get onboarding_action_finish => '完成';
   @override
   String get onboarding_action_skip => '暂时跳过';
   @override
   String get onboarding_reopen => '新手引导';
   @override
-  String get onboarding_welcome_body => '先选好界面语言与明暗主题，接下来会带你逐项完成配置。';
+  String get onboarding_welcome_body => '先选界面语言和明暗主题，剩下的交给后面几步。';
   @override
-  String get onboarding_features_title => '选择要用的功能';
+  String get onboarding_features_title => '你想用 Fushi 做什么';
   @override
-  String get onboarding_features_modules_label => '库页显示（未勾选的将从底栏隐藏，可随时在设置里改回）';
+  String get onboarding_feature_manga => '漫画';
   @override
-  String get onboarding_features_setup_label => '接下来要配置';
+  String get onboarding_feature_manga_hint => '看漫画，OCR 查词';
   @override
-  String get onboarding_feature_manga => '漫画库';
+  String get onboarding_feature_video => '视频';
   @override
-  String get onboarding_feature_manga_hint => '看漫画，支持 OCR 查词';
+  String get onboarding_feature_video_hint => '字幕查词与制卡';
   @override
-  String get onboarding_feature_video => '视频库';
+  String get onboarding_feature_games => 'Galgame';
   @override
-  String get onboarding_feature_video_hint => '看视频，字幕查词与制卡';
+  String get onboarding_feature_games_hint => '游戏文本 Hook 查词（仅 Windows）';
   @override
-  String get onboarding_feature_games => 'Galgame 库';
+  String get onboarding_feature_pack => '推荐包';
   @override
-  String get onboarding_feature_games_hint =>
-      '启动 galgame，文本 Hook 查词（仅 Windows）';
+  String get onboarding_feature_pack_hint => '一次下载：日语词典 + 日/英发音音频';
   @override
-  String get onboarding_feature_pack => '推荐包（词典 + 发音音频）';
-  @override
-  String get onboarding_feature_pack_hint => '一次下载配好日语推荐词典与日/英发音音频库';
-  @override
-  String get onboarding_step_pack_title => '安装推荐包';
-  @override
-  String get onboarding_step_pack_body =>
-      '推荐包内含日语单词/音调/词频词典与日/英发音音频数据库。可在此直接下载并导入；导入会覆盖本地数据，建议在全新安装时进行。学其他语言可用「打开词典管理」自行导入词典。';
+  String get onboarding_step_pack_title => '推荐包';
   @override
   String get onboarding_step_pack_download_action => '下载并导入';
   @override
@@ -148960,13 +149113,13 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get onboarding_step_extension_title => '浏览器扩展';
   @override
-  String get onboarding_step_extension_body => '安装配套浏览器扩展，在任意网页上查词。';
+  String get onboarding_step_extension_body => '装上配套扩展，在任意网页上查词。';
   @override
-  String get onboarding_step_extension_action => '打开扩展安装引导';
+  String get onboarding_step_extension_action => '打开安装引导';
   @override
-  String get onboarding_step_fonts_title => '配置字体';
+  String get onboarding_step_fonts_title => '字体';
   @override
-  String get onboarding_step_fonts_body => '导入自定义字体，并选择界面/正文/词典分别使用哪套字体。';
+  String get onboarding_step_fonts_body => '界面、正文、词典各用自己喜欢的字体。';
   @override
   String get settings_section_modules => '功能模块';
   @override
@@ -149180,11 +149333,11 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get module_extension_label => '浏览器扩展';
   @override
-  String get onboarding_feature_books => '小说库';
+  String get onboarding_feature_books => '小说';
   @override
-  String get onboarding_feature_books_hint => '看小说（EPUB），查词与有声书同步';
+  String get onboarding_feature_books_hint => '读 EPUB，点词查词，有声书同步';
   @override
-  String get onboarding_feature_extension_hint => '网页查词（仅桌面）';
+  String get onboarding_feature_extension_hint => '在任意网页查词（仅桌面）';
   @override
   String get video_setting_tap_toggles_playback => '点击画面播放/暂停';
   @override
@@ -149556,13 +149709,13 @@ class _StringsZhCn extends _StringsEn {
       '本局以日文区域 (CP932) 启动。若游戏文字乱码或脚本报错，可把该游戏的日语区域改为「永不转区」。';
   @override
   String get onboarding_anki_intro_body =>
-      'Anki 是免费的间隔重复记忆软件：把生词做成卡片，按遗忘曲线安排每天复习。Fushi 查词后可一键制卡，把单词、释义、例句、发音和截图写进 Anki。';
+      'Anki 是免费的间隔重复记忆软件。查词后，Fushi 一键把单词、释义、例句、发音和截图做成卡片。';
   @override
   String get onboarding_anki_setup_desktop_hint =>
-      '先安装桌面版 Anki，再装 AnkiConnect 插件：在 Anki 里打开 工具 → 插件 → 获取插件，填入代码 2055492159。制卡时保持 Anki 在后台运行。';
+      '先装 Anki，再装 AnkiConnect 插件（下方一键安装，或在 Anki 里填插件代码 2055492159）。制卡时保持 Anki 运行。';
   @override
   String get onboarding_anki_setup_ios_hint =>
-      '装有 AnkiMobile 即可直接加卡；要用完整功能，可经 AnkiConnect 连接同一局域网里电脑上的 Anki。';
+      '装有 AnkiMobile 即可直接加卡。要用完整功能，可经 AnkiConnect 连同一局域网里电脑上的 Anki。';
   @override
   String get onboarding_anki_backend_label => '连接方式';
   @override
@@ -149579,18 +149732,18 @@ class _StringsZhCn extends _StringsEn {
       '高级：本机改用 AnkiConnect 连电脑';
   @override
   String get onboarding_anki_mobile_ankiconnect_hint =>
-      '本机也能把卡制进同一局域网里电脑上的 Anki：在制卡设置里开启「改用 AnkiConnect」并填电脑地址。';
+      '把卡制进同一局域网里电脑上的 Anki：在制卡设置里开启 AnkiConnect 并填电脑地址。';
   @override
   String get onboarding_anki_setup_android_hint =>
-      '安装 AnkiDroid 并打开一次完成初始化。回到 Fushi 首次制卡时，在弹出的授权框里点「允许」即可——不需要去 AnkiDroid 设置里改任何开关。';
+      '装好 AnkiDroid 并打开一次。首次制卡时在授权框里点「允许」，别的不用设。';
   @override
   String get onboarding_anki_install_addon_action => '一键安装 AnkiConnect 插件';
   @override
   String get onboarding_anki_addon_installed =>
-      '已装好 AnkiConnect：启动或重启 Anki，然后点「测试连接」。';
+      '已装好 AnkiConnect。启动或重启 Anki，然后测试连接。';
   @override
   String get onboarding_anki_addon_no_anki =>
-      '没找到 Anki 数据目录：请先安装 Anki 并打开一次，再回来重试。';
+      '没找到 Anki 数据目录。先安装 Anki 并打开一次，再重试。';
   @override
   String onboarding_anki_addon_failed({required Object message}) =>
       '安装失败：${message}';
@@ -150060,55 +150213,46 @@ class _StringsZhCn extends _StringsEn {
   String get onboarding_action_badge_optional => '可选';
   @override
   String get onboarding_pack_action_download_desc =>
-      '在后台下载整个推荐包，下完自动进入导入。随时可以取消，下次从断点续传。';
+      '后台从多个来源同时下载，下完自动导入。随时可取消，下次从断点续传。';
   @override
   String get onboarding_pack_action_import_existing_desc =>
-      '包已经下好了，这里直接导入。确认框里选「合并到现有库」不会动你已有的数据。';
+      '包已经在硬盘上了。确认框里选「合并」就不会动你已有的数据。';
   @override
-  String get onboarding_pack_action_pick_desc =>
-      '已经从别处拿到包的 zip？从硬盘导入，整段下载都可以跳过。';
+  String get onboarding_pack_action_pick_desc => '已经拿到包的 zip？直接从硬盘导入，跳过下载。';
   @override
-  String get onboarding_pack_action_website => '在官网下载页打开';
+  String get onboarding_pack_action_website => '打开官网下载页';
   @override
   String get onboarding_pack_action_website_desc =>
-      '在浏览器打开官网。那里的推荐包一节给出可以喂给下载工具的分片直链；下完回到这里，用「选择本地包文件」导入。';
+      '给下载工具用的分片直链。下完回来用「选择本地包文件」导入。';
   @override
-  String get onboarding_pack_action_dictionary_desc =>
-      '学日语以外的语言？跳过推荐包，在这里按语言导入词典。';
+  String get onboarding_pack_action_dictionary_desc => '学其他语言？在这里导入对应词典。';
   @override
-  String get onboarding_pack_action_audio_desc =>
-      '发音音频从哪里来。推荐包已经含日语和英语；其它语言在这里加在线来源。';
+  String get onboarding_pack_action_audio_desc => '给推荐包没覆盖的语言添加在线发音来源。';
   @override
   String get onboarding_anki_action_test_desc =>
-      '检查 Fushi 能不能连上 Anki，并把你的牌组和笔记类型拉过来。这一步不会创建任何东西。';
+      '检查能否连上 Anki，并拉取牌组和笔记类型。不会创建任何东西。';
   @override
   String get onboarding_anki_action_refresh_desc =>
-      '重新从 Anki 拉牌组和笔记类型。在 Anki 里新建了牌组之后点它。';
+      '重新拉取牌组和笔记类型。在 Anki 里新建牌组后点它。';
   @override
   String get onboarding_anki_action_get_ankidroid_desc =>
-      '打开 AnkiDroid 的商店页。Fushi 的卡片写进它里面，得先装上。';
+      '打开商店页。卡片写进 AnkiDroid，得先装上。';
   @override
-  String get onboarding_anki_action_get_anki_desc =>
-      '打开 Anki 的下载页。装好 Anki，制卡时让它开着。';
+  String get onboarding_anki_action_get_anki_desc => '打开 Anki 下载页。制卡时让它开着。';
   @override
   String get onboarding_anki_action_install_addon_desc =>
-      '把内置的 AnkiConnect 插件解压进 Anki——Fushi 靠它和 Anki 通话。装完重启 Anki。';
+      '把内置的 AnkiConnect 插件解压进 Anki。装完重启 Anki。';
   @override
   String get onboarding_step_anki_action_desc =>
-      '卡片模板、字段映射、截图和音频——也就是「做出来的卡长什么样」。上面选好牌组和笔记类型就能开始制卡了，想改卡片怎么做才需要进来。';
+      '卡片模板、字段映射、截图和音频。上面选好牌组和笔记类型就能开始了。';
   @override
-  String get onboarding_step_backup_action_desc => '选备份后端并登录，换机器或丢设备时库还在。';
+  String get onboarding_step_backup_action_desc => '选择备份后端并登录，或导出本地备份文件。';
   @override
-  String get onboarding_step_interconnect_action_desc =>
-      '把这台设备和你的其它设备配对，共享同一个库并同步进度。';
+  String get onboarding_step_interconnect_action_desc => '开启互联，把这台设备和其他设备配对。';
   @override
-  String get onboarding_step_extension_action_desc =>
-      '告诉你怎么装浏览器扩展并连上 Fushi，之后在网页上也能查词。';
+  String get onboarding_step_extension_action_desc => '教你安装扩展并连上 Fushi。';
   @override
-  String get onboarding_step_fonts_action_desc => '导入自己的字体文件，并给每种语言指定用哪个。';
-  @override
-  String get onboarding_pack_sources_hint =>
-      '同时从 GitHub、官网和备用镜像分片并发下载，每片都校验。下载过程中会实测各来源速度，哪家快就多分给哪家，所以这里不用你选。';
+  String get onboarding_step_fonts_action_desc => '导入字体文件，按语言指定。';
   @override
   String get video_setting_hdr_output => 'HDR / 10-bit 输出';
   @override
@@ -150226,117 +150370,81 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get onboarding_click_lookup_nested_title => '在弹窗里继续查';
   @override
-  String get onboarding_click_lookup_nested_body =>
-      '点释义里的另一个词会展开下一层查词；返回或点弹窗外可关闭一层。';
+  String get onboarding_click_lookup_nested_body => '点释义里的词会展开下一层；返回或点弹窗外关闭一层。';
   @override
-  String get onboarding_click_lookup_mine_title => '把结果做成卡片';
+  String get onboarding_click_lookup_mine_title => '做成卡片';
   @override
-  String get onboarding_click_lookup_mine_body =>
-      '确认词义后点加号（＋），把当前词、句子、音频和画面送到制卡器。';
+  String get onboarding_click_lookup_mine_body => '点词条上的 ＋，把单词、句子、音频和画面送进制卡器。';
   @override
   String get onboarding_step_global_lookup_title => '全局查词';
   @override
-  String get onboarding_global_lookup_windows_body =>
-      '在 Windows 上，先在其他应用里选中文字，就能直接唤出词典，不必切回 Fushi。';
+  String get onboarding_global_lookup_windows_body => '在其他应用里选中文字，不用切窗口就能查词。';
   @override
-  String get onboarding_global_lookup_windows_select_title => '在任意应用里选中文字';
-  @override
-  String get onboarding_global_lookup_windows_shortcut_title => '按 Ctrl+Alt+D';
+  String get onboarding_global_lookup_windows_select_title => '选中文字';
   @override
   String get onboarding_global_lookup_windows_shortcut_body =>
-      '这是默认全局快捷键。Fushi 会抓取当前选区，并在鼠标附近打开查词卡片。';
+      'Fushi 抓取选区，在鼠标旁打开查词卡片。';
   @override
-  String get onboarding_global_lookup_windows_customize_title => '需要时修改快捷键';
+  String get onboarding_global_lookup_windows_customize_title => '改快捷键';
   @override
   String get onboarding_global_lookup_windows_customize_body =>
-      '前往设置 → 快捷键 → 全局（应用外），可以换成你习惯的组合键。';
+      '设置 → 快捷键 → 全局（应用外）。';
   @override
   String get onboarding_global_lookup_windows_action => '打开快捷键设置';
   @override
-  String get onboarding_global_lookup_windows_action_desc =>
-      '可修改应用外查词快捷键；默认 Ctrl+Alt+D 已可直接使用，因此不改也没关系。';
+  String get onboarding_global_lookup_windows_action_desc => '想换组合键再进来。';
   @override
   String get onboarding_global_lookup_android_body =>
-      '在 Android 上，由系统通过文字菜单或分享面板把选中文本交给 Fushi；手机没有可自定义的全局快捷键。';
+      'Android 通过文字菜单或分享面板把选中文本交给 Fushi。';
   @override
-  String get onboarding_global_lookup_android_select_title => '在其他应用里选中文字';
+  String get onboarding_global_lookup_android_select_title => '选中文字';
   @override
   String get onboarding_global_lookup_android_open_title => '选择 Fushi';
   @override
   String get onboarding_global_lookup_android_open_body =>
-      '在文字选择菜单中点 Fushi；如果菜单没显示，就点分享，再从分享面板选择 Fushi。';
+      '在文字菜单点 Fushi；没有就点分享，再选 Fushi。';
   @override
-  String get onboarding_global_lookup_android_continue_title => '在独立弹窗中继续';
+  String get onboarding_global_lookup_android_continue_title => '在弹窗里继续';
   @override
   String get onboarding_global_lookup_android_continue_body =>
-      '查词结果会独立打开；你可以继续点释义里的词，关闭后回到刚才的应用。';
+      '查词弹窗盖在原应用上，关掉就回去。';
   @override
-  String get onboarding_feature_manual_resources => '手动导入词典和音频';
+  String get onboarding_feature_manual_resources => '自备词典和音频';
   @override
-  String get onboarding_step_manual_resources_title => '手动准备词典和音频';
+  String get onboarding_step_manual_resources_title => '自备词典和音频';
   @override
   String get onboarding_manual_dictionary_action => '导入词典';
   @override
-  String get onboarding_manual_dictionary_action_desc =>
-      '打开词典管理，导入至少一个受支持的词典文件或压缩包。只有查词能返回释义后，后面的操作教程才有实际结果。';
+  String get onboarding_manual_dictionary_action_desc => '打开词典管理。装好词典，查词才有结果。';
   @override
-  String get onboarding_manual_audiobook_action => '导入书籍和有声书音频';
+  String get onboarding_manual_audiobook_action => '导入书籍和有声书';
   @override
   String get onboarding_manual_audiobook_action_desc =>
-      '打开书籍导入，选择书籍或文本、对齐字幕和一个或多个音频文件。音频需要配套字幕，Fushi 才能按句同步。';
+      '书籍或文本、对齐字幕和音频文件。有字幕，Fushi 才能按句同步音频。';
   @override
-  String get onboarding_manual_pronunciation_action => '配置单词发音音频';
+  String get onboarding_manual_pronunciation_action => '配置单词发音';
   @override
   String get onboarding_manual_pronunciation_action_desc =>
-      '添加词典词条使用的本地或在线发音来源。它与附加到书籍的有声书音频是两套独立资源。';
+      '词条发音的本地或在线来源。与有声书音频是两回事。';
   @override
-  String get onboarding_lookup_verify_action => '先验证词典里有这个词';
+  String get onboarding_step_first_anki_card_title => '第一张卡片';
   @override
-  String get onboarding_lookup_verify_action_desc =>
-      '打开查词页，输入你正在学的任意词；确认当前已安装词典返回释义后，再用同一个词练习后续操作。教程不会写死示例词。';
+  String get onboarding_first_anki_lookup_title => '查一个词';
   @override
-  String get onboarding_step_first_anki_card_title => '完成第一张 Anki 卡片';
+  String get onboarding_first_anki_plus_title => '点加号';
   @override
-  String get onboarding_step_first_anki_card_body =>
-      '只有本次新手引导已连接 Anki，并选好了仍然可用的牌组和笔记类型，才会出现这一步。';
-  @override
-  String get onboarding_first_anki_lookup_title => '从真实词典结果开始';
-  @override
-  String get onboarding_first_anki_lookup_body =>
-      '查一个当前已安装词典确实能返回释义的词，不使用可能不存在于你词典里的固定示例词。';
-  @override
-  String get onboarding_first_anki_plus_title => '点词条上的加号';
-  @override
-  String get onboarding_first_anki_plus_body =>
-      '加号会打开制卡器，并带入当前单词、读音、释义、句子、音频和可用的画面上下文。';
+  String get onboarding_first_anki_plus_body => '制卡器打开，单词、读音、释义、句子、音频和画面已经填好。';
   @override
   String get onboarding_first_anki_save_title => '检查后保存';
   @override
-  String get onboarding_first_anki_save_body =>
-      '确认目标牌组、笔记类型和字段预览后保存，再打开 Anki 检查第一张卡是否已经写入。';
+  String get onboarding_first_anki_save_body => '确认牌组和笔记类型后保存，打开 Anki 就能看到这张卡。';
   @override
-  String get onboarding_first_anki_action => '打开查词页并制卡';
+  String get onboarding_first_anki_action => '打开查词页制卡';
   @override
-  String get onboarding_first_anki_action_desc =>
-      '选择一个已经显示释义的词，点词条加号，检查字段后保存到刚才连接的 Anki 牌组。';
-  @override
-  String get onboarding_step_click_lookup_body =>
-      '先验证一个当前已安装词典确实能返回释义的词，再用同一个词练习书籍正文、漫画 OCR 文字和视频字幕里的点击查词。';
-  @override
-  String get onboarding_click_lookup_tap_body =>
-      '手机轻点刚才验证过的词中的一个字，电脑用鼠标左键单击。Fushi 会从这里开始匹配最长的词。';
-  @override
-  String get onboarding_global_lookup_windows_select_body =>
-      '拖选刚才已经验证能返回词典释义的同一个词，并保持文字处于选中状态。';
-  @override
-  String get onboarding_global_lookup_android_select_body =>
-      '长按刚才已经验证能返回词典释义的同一个词，再拖动选区手柄让它完整覆盖。';
-  @override
-  String get onboarding_feature_manual_resources_hint =>
-      '可补充推荐包，也可单独导入自己的词典、有声书和单词发音来源';
+  String get onboarding_feature_manual_resources_hint => '从自己的文件导入词典、有声书和发音来源';
   @override
   String get onboarding_step_manual_resources_body =>
-      '这一项可以与推荐包同时使用，也可以单独使用。进入查词教程前至少导入一本词典；有声书音频和单词发音音频属于按需补充。';
+      '查词教程之前至少导入一本词典。有声书和发音音频按需添加。';
   @override
   String get game_lookup_attached_title => '游戏内查词';
   @override
@@ -150595,6 +150703,62 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get game_session_japanese_locale_skipped_hint_not_32bit =>
       '本局未转区：自动判定需要日文区域，但 Locale Emulator 只支持 32 位游戏。';
+  @override
+  String get onboarding_feature_fonts => '自定义字体';
+  @override
+  String get onboarding_feature_fonts_hint => '界面、正文、词典各用自己喜欢的字体';
+  @override
+  String get onboarding_features_modules_title => '库页';
+  @override
+  String get onboarding_features_modules_hint =>
+      '未勾选的页面不显示在导航栏，之后可在「设置 → 外观」改回。';
+  @override
+  String get onboarding_features_setup_title => '接下来配置';
+  @override
+  String get onboarding_features_setup_hint => '只有勾选的项目会出现在后面的步骤里。';
+  @override
+  String get onboarding_pack_intro =>
+      '一次下载装好日语词典、音调、词频和日/英发音音频。学其他语言可跳过，自行导入词典。';
+  @override
+  String get onboarding_global_lookup_windows_select_desc =>
+      '在任意应用里拖选一个词，保持选中。';
+  @override
+  String get onboarding_global_lookup_android_select_desc =>
+      '在其他应用里长按一个词，拖动手柄覆盖它。';
+  @override
+  String get onboarding_global_lookup_windows_shortcut_press => '按下快捷键';
+  @override
+  String get onboarding_first_anki_card_intro => 'Anki 已连上。现在做一张真卡，确认整条链路能走通。';
+  @override
+  String get onboarding_action_start => '开始使用';
+  @override
+  String get onboarding_actions_more => '其他方式';
+  @override
+  String get onboarding_finish_summary_modules => '显示的库页';
+  @override
+  String get onboarding_finish_summary_setup => '本次配置';
+  @override
+  String get onboarding_finish_summary_none => '无';
+  @override
+  String get onboarding_anki_status_pending => '尚未测试连接';
+  @override
+  String get onboarding_click_lookup_intro => '在书、漫画或字幕里点任意一个词就能看释义。先用下面这句话练手。';
+  @override
+  String get onboarding_click_lookup_tap_desc =>
+      '轻点（电脑上单击）一个字，Fushi 从这里向后匹配最长的词。句子会在查词页里打开。';
+  @override
+  String get onboarding_sample_sentence_label => '练习句子';
+  @override
+  String get onboarding_sample_sentence_hint => '点一下在查词页打开，再点其中任意一个词。';
+  @override
+  String get onboarding_lookup_practice_action => '用这句话练习查词';
+  @override
+  String get onboarding_lookup_practice_desc =>
+      '在查词页里打开这句话，点其中的词看释义。查不到就是词典还没装好。';
+  @override
+  String get onboarding_first_anki_lookup_desc => '打开练习句子，点一个词。';
+  @override
+  String get onboarding_first_anki_action_desc => '在查词页打开练习句子。点词、点加号、检查字段、保存。';
 }
 
 // Path: <root>
@@ -157818,102 +157982,90 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get onboarding_title => '新手引導';
   @override
-  String get onboarding_welcome_headline => '歡迎使用！';
+  String get onboarding_welcome_headline => '歡迎使用 Fushi';
   @override
   String get onboarding_feature_anki => 'Anki 製卡';
   @override
-  String get onboarding_feature_anki_hint =>
-      '連接 AnkiConnect / AnkiDroid，查詞一鍵製卡';
+  String get onboarding_feature_anki_hint => '查詞後一鍵做成卡片';
   @override
   String get onboarding_feature_backup => '備份與同步';
   @override
-  String get onboarding_feature_backup_hint => '把數據備份到 Google Drive、WebDAV 等後端';
+  String get onboarding_feature_backup_hint => 'Google Drive、WebDAV 或本機檔案';
   @override
   String get onboarding_feature_interconnect => '設備互聯';
   @override
-  String get onboarding_feature_interconnect_hint => '局域網配對多台設備，共享書庫與進度';
+  String get onboarding_feature_interconnect_hint => '區域網路多裝置共享書庫和進度';
   @override
   String get onboarding_step_dictionary_action => '打開詞典管理';
   @override
   String get onboarding_step_anki_title => '配置 Anki';
   @override
-  String get onboarding_step_anki_action => '打開製卡設定';
+  String get onboarding_step_anki_action => '製卡設定';
   @override
-  String get onboarding_step_backup_title => '配置備份';
+  String get onboarding_step_backup_title => '備份';
   @override
-  String get onboarding_step_backup_body => '選擇備份後端並登錄，也可以導出本地備份檔案。';
+  String get onboarding_step_backup_body => '換機器或丟裝置時，庫還在。';
   @override
   String get onboarding_step_backup_action => '打開備份設定';
   @override
-  String get onboarding_step_interconnect_title => '配置互聯';
+  String get onboarding_step_interconnect_title => '裝置互聯';
   @override
-  String get onboarding_step_interconnect_body =>
-      '開啟互聯，與局域網內其他設備配對，共享書庫、進度與查詞。';
+  String get onboarding_step_interconnect_body => '區域網路配對多台裝置，共享一個庫，進度同步。';
   @override
   String get onboarding_step_interconnect_action => '打開互聯設定';
   @override
   String get onboarding_finish_title => '一切就緒';
   @override
-  String get onboarding_finish_body => '之後隨時可以在「設定 → 系統」裡重新打開本引導。';
+  String get onboarding_finish_body => '之後隨時可以在「設定 → 系統」重新打開本引導。';
   @override
   String get onboarding_action_next => '下一步';
-  @override
-  String get onboarding_action_finish => '完成';
   @override
   String get onboarding_action_skip => '暫時跳過';
   @override
   String get onboarding_reopen => '新手引導';
   @override
-  String get onboarding_welcome_body => '先選好界面語言與明暗主題，接下來會帶你逐項完成配置。';
+  String get onboarding_welcome_body => '先選介面語言和明暗主題，剩下的交給後面幾步。';
   @override
-  String get onboarding_features_title => '選擇要用的功能';
+  String get onboarding_features_title => '你想用 Fushi 做甚麼';
   @override
-  String get onboarding_features_modules_label => '庫頁顯示（未勾選的將從底欄隱藏，可隨時在設定裡改回）';
-  @override
-  String get onboarding_features_setup_label => '接下來要配置';
-  @override
-  String get onboarding_feature_manga => '漫畫庫';
+  String get onboarding_feature_manga => '漫畫';
   @override
   String get onboarding_feature_manga_hint => '看漫畫，支持 OCR 查詞';
   @override
-  String get onboarding_feature_video => '影片庫';
+  String get onboarding_feature_video => '影片';
   @override
-  String get onboarding_feature_video_hint => '看影片，字幕查詞與製卡';
+  String get onboarding_feature_video_hint => '字幕查詞與製卡';
   @override
-  String get onboarding_feature_games => 'Galgame 庫';
+  String get onboarding_feature_games => 'Galgame';
   @override
-  String get onboarding_feature_games_hint =>
-      '啟動 galgame，文本 Hook 查詞（僅 Windows）';
+  String get onboarding_feature_games_hint => '遊戲文本 Hook 查詞（僅 Windows）';
   @override
-  String get onboarding_feature_pack => '推薦包（詞典 + 發音音頻）';
+  String get onboarding_feature_pack => '推薦包';
   @override
-  String get onboarding_feature_pack_hint => '一次下載配好日語推薦詞典與日/英發音音頻庫';
+  String get onboarding_feature_pack_hint => '一次下載：日語詞典 + 日／英發音音頻';
   @override
-  String get onboarding_step_pack_title => '安裝推薦包';
-  @override
-  String get onboarding_step_pack_body =>
-      '推薦包內含日語單詞/音調/詞頻詞典與日/英發音音頻資料庫。可在此直接下載並導入；導入會覆蓋本地數據，建議在全新安裝時進行。學其他語言可用「打開詞典管理」自行導入詞典。';
+  String get onboarding_step_pack_title => '推薦包';
   @override
   String get onboarding_step_pack_download_action => '下載並導入';
   @override
   String get onboarding_step_pack_import_existing_action => '導入已下載的包';
   @override
-  String get onboarding_step_pack_pick_action => '選擇本地包檔案';
+  String get onboarding_step_pack_pick_action => '選擇包檔案';
   @override
-  String get onboarding_pack_downloading => '下載中……可隨時取消，下次續傳';
+  String get onboarding_pack_downloading => '下載中……可隨時取消，之後再續傳';
   @override
   String onboarding_pack_download_failed({required Object message}) =>
       '下載失敗：${message}';
   @override
   String get onboarding_step_extension_title => '瀏覽器擴展';
   @override
-  String get onboarding_step_extension_body => '安裝配套瀏覽器擴展，在任意網頁上查詞。';
+  String get onboarding_step_extension_body => '裝上配套擴充功能，在任何網頁上查詞。';
   @override
-  String get onboarding_step_extension_action => '打開擴展安裝引導';
+  String get onboarding_step_extension_action => '打開安裝引導';
   @override
-  String get onboarding_step_fonts_title => '配置字體';
+  String get onboarding_step_fonts_title => '字體';
   @override
-  String get onboarding_step_fonts_body => '導入自定義字體，並選擇界面/正文/詞典分別使用哪套字體。';
+  String get onboarding_step_fonts_body => '介面、正文、詞典各用自己喜歡的字體。';
   @override
   String get settings_section_modules => '功能模塊';
   @override
@@ -158127,9 +158279,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get module_extension_label => '瀏覽器擴展';
   @override
-  String get onboarding_feature_books => '小說庫';
+  String get onboarding_feature_books => '小說';
   @override
-  String get onboarding_feature_books_hint => '看小說（EPUB），查詞與有聲書同步';
+  String get onboarding_feature_books_hint => '讀 EPUB，點詞查詞，有聲書同步';
   @override
   String get onboarding_feature_extension_hint => '網頁查詞（僅桌面）';
   @override
@@ -158503,13 +158655,13 @@ class _StringsZhHk extends _StringsEn {
       '本局以日文區域 (CP932) 啟動。若遊戲文字亂碼或腳本報錯，可把該遊戲的日語區域改為「永不轉區」。';
   @override
   String get onboarding_anki_intro_body =>
-      'Anki 是免費的間隔重復記憶軟體：把生詞做成卡片，按遺忘曲線安排每天復習。Fushi 查詞後可一鍵製卡，把單詞、釋義、例句、發音和截圖寫進 Anki。';
+      'Anki 是免費的間隔重複記憶軟件。查詞後，Fushi 一鍵把單詞、釋義、例句、發音和截圖做成卡片。';
   @override
   String get onboarding_anki_setup_desktop_hint =>
-      '先安裝桌面版 Anki，再裝 AnkiConnect 插件：在 Anki 裡打開 工具 → 插件 → 獲取插件，填入代碼 2055492159。製卡時保持 Anki 在後台運行。';
+      '先裝 Anki，再裝 AnkiConnect 外掛（下方一鍵安裝，或用外掛代碼 2055492159）。製卡時保持 Anki 運行。';
   @override
   String get onboarding_anki_setup_ios_hint =>
-      '裝有 AnkiMobile 即可直接加卡；要用完整功能，可經 AnkiConnect 連接同一局域網裡電腦上的 Anki。';
+      '裝有 AnkiMobile 即可直接加卡。要用完整功能，可經 AnkiConnect 連同一區域網路裡電腦上的 Anki。';
   @override
   String get onboarding_anki_backend_label => '連接方式';
   @override
@@ -158523,21 +158675,21 @@ class _StringsZhHk extends _StringsEn {
   String get onboarding_anki_get_ankidroid_action => '下載 AnkiDroid';
   @override
   String get onboarding_anki_mobile_ankiconnect_title =>
-      '高級：本機改用 AnkiConnect 連電腦';
+      '進階：本機改用 AnkiConnect 連電腦';
   @override
   String get onboarding_anki_mobile_ankiconnect_hint =>
-      '本機也能把卡製進同一局域網裡電腦上的 Anki：在製卡設定裡開啟「改用 AnkiConnect」並填電腦地址。';
+      '把卡製進同一區域網路裡電腦上的 Anki：在製卡設定裡開啟 AnkiConnect 並填電腦位址。';
   @override
   String get onboarding_anki_setup_android_hint =>
-      '安裝 AnkiDroid 並打開一次完成初始化。回到 Fushi 首次製卡時，在彈出的授權框裡點「允許」即可——不需要去 AnkiDroid 設定裡改任何開關。';
+      '裝好 AnkiDroid 並打開一次。首次製卡時在授權框裡點「允許」，其他都不用設。';
   @override
   String get onboarding_anki_install_addon_action => '一鍵安裝 AnkiConnect 插件';
   @override
   String get onboarding_anki_addon_installed =>
-      '已裝好 AnkiConnect：啟動或重啟 Anki，然後點「測試連接」。';
+      '已裝好 AnkiConnect。啟動或重啟 Anki，然後測試連接。';
   @override
   String get onboarding_anki_addon_no_anki =>
-      '沒找到 Anki 數據目錄：請先安裝 Anki 並打開一次，再回來重試。';
+      '找不到 Anki 資料夾。先安裝 Anki 並打開一次，再重試。';
   @override
   String onboarding_anki_addon_failed({required Object message}) =>
       '安裝失敗：${message}';
@@ -159006,55 +159158,46 @@ class _StringsZhHk extends _StringsEn {
   String get onboarding_action_badge_optional => '可選';
   @override
   String get onboarding_pack_action_download_desc =>
-      '在後台下載整個推薦包，下完自動進入匯入。隨時可以取消，下次從斷點續傳。';
+      '在背景從多個來源同時下載，下完自動導入。隨時可取消，下次從斷點續傳。';
   @override
   String get onboarding_pack_action_import_existing_desc =>
-      '包已經下好了，這裏直接匯入。確認框裏選「合併到現有庫」不會動你已有的資料。';
+      '包已經在硬碟上了。確認框裡選「合併」就不會動你已有的資料。';
   @override
-  String get onboarding_pack_action_pick_desc =>
-      '已經從別處拿到包的 zip？從硬碟匯入，整段下載都可以跳過。';
+  String get onboarding_pack_action_pick_desc => '已經拿到包的 zip？直接從硬碟導入，跳過下載。';
   @override
-  String get onboarding_pack_action_website => '在官網下載頁打開';
+  String get onboarding_pack_action_website => '打開官網下載頁';
   @override
   String get onboarding_pack_action_website_desc =>
-      '在瀏覽器打開官網。那裏的推薦包一節給出可以餵給下載工具的分片直連；下完回到這裏，用「選擇本機包檔案」匯入。';
+      '給下載工具用的分片直連。下完回來用「選擇包檔案」導入。';
   @override
-  String get onboarding_pack_action_dictionary_desc =>
-      '學日語以外的語言？跳過推薦包，在這裏按語言匯入詞典。';
+  String get onboarding_pack_action_dictionary_desc => '學其他語言？在這裡導入對應詞典。';
   @override
-  String get onboarding_pack_action_audio_desc =>
-      '發音音訊從哪裏來。推薦包已經含日語和英語；其它語言在這裏加線上來源。';
+  String get onboarding_pack_action_audio_desc => '給推薦包沒覆蓋的語言加線上發音來源。';
   @override
   String get onboarding_anki_action_test_desc =>
-      '檢查 Fushi 能不能連上 Anki，並把你的牌組和筆記類型拉過來。這一步不會建立任何東西。';
+      '檢查能否連上 Anki，並拉取牌組和筆記類型。不會建立任何東西。';
   @override
   String get onboarding_anki_action_refresh_desc =>
-      '重新從 Anki 拉牌組和筆記類型。在 Anki 裏新建了牌組之後點它。';
+      '重新拉取牌組和筆記類型。在 Anki 裡新建牌組後點它。';
   @override
   String get onboarding_anki_action_get_ankidroid_desc =>
-      '打開 AnkiDroid 的商店頁。Fushi 的卡片寫進它裏面，得先裝上。';
+      '打開商店頁。卡片會寫進 AnkiDroid，所以要先裝上。';
   @override
-  String get onboarding_anki_action_get_anki_desc =>
-      '打開 Anki 的下載頁。裝好 Anki，製卡時讓它開着。';
+  String get onboarding_anki_action_get_anki_desc => '打開 Anki 下載頁。製卡時讓它開著。';
   @override
   String get onboarding_anki_action_install_addon_desc =>
-      '把內建的 AnkiConnect 外掛解壓進 Anki——Fushi 靠它和 Anki 通話。裝完重啟 Anki。';
+      '把內置的 AnkiConnect 外掛解壓進 Anki。裝完重啟 Anki。';
   @override
   String get onboarding_step_anki_action_desc =>
-      '卡片範本、欄位對應、截圖和音訊——也就是「做出來的卡長甚麼樣」。上面選好牌組和筆記類型就能開始製卡了，想改卡片怎麼做才需要進來。';
+      '卡片範本、欄位對應、截圖和音頻。上面選好牌組和筆記類型就能開始了。';
   @override
-  String get onboarding_step_backup_action_desc => '選備份後端並登入，換機器或丟裝置時庫還在。';
+  String get onboarding_step_backup_action_desc => '選擇備份後端並登入，或導出本機備份檔案。';
   @override
-  String get onboarding_step_interconnect_action_desc =>
-      '把這台裝置和你的其它裝置配對，共用同一個庫並同步進度。';
+  String get onboarding_step_interconnect_action_desc => '開啟互聯，把這台裝置和其他裝置配對。';
   @override
-  String get onboarding_step_extension_action_desc =>
-      '告訴你怎麼裝瀏覽器擴充功能並連上 Fushi，之後在網頁上也能查詞。';
+  String get onboarding_step_extension_action_desc => '教你安裝擴充功能並連上 Fushi。';
   @override
-  String get onboarding_step_fonts_action_desc => '匯入自己的字型檔案，並給每種語言指定用哪個。';
-  @override
-  String get onboarding_pack_sources_hint =>
-      '同時從 GitHub、官網和備用鏡像分片並發下載，每片都校驗。下載過程中會實測各來源速度，哪家快就多分給哪家，所以這裏不用你選。';
+  String get onboarding_step_fonts_action_desc => '導入字體檔案，按語言指定。';
   @override
   String get video_setting_hdr_output => 'HDR / 10-bit 輸出';
   @override
@@ -159166,123 +159309,88 @@ class _StringsZhHk extends _StringsEn {
   String web_video_mine_switch_builtin({required Object count}) =>
       '切換到內建模式製作 ${count} 張排隊卡片';
   @override
-  String get onboarding_step_click_lookup_title => '點一下就能查詞';
+  String get onboarding_step_click_lookup_title => '點擊查詞';
   @override
   String get onboarding_click_lookup_tap_title => '點一下文字';
   @override
   String get onboarding_click_lookup_nested_title => '在彈窗裡繼續查';
   @override
-  String get onboarding_click_lookup_nested_body =>
-      '點釋義裡的另一個詞，就會展開下一層查詞；返回或點彈窗外可關掉一層。';
+  String get onboarding_click_lookup_nested_body => '點釋義裡的詞會展開下一層；返回或點彈窗外關掉一層。';
   @override
-  String get onboarding_click_lookup_mine_title => '把結果做成卡片';
+  String get onboarding_click_lookup_mine_title => '做成卡片';
   @override
   String get onboarding_click_lookup_mine_body =>
-      '確認詞義後點加號（＋），把當前的詞、句子、音頻和畫面送到製卡器。';
+      '點詞條上的加號（＋），把單詞、句子、音頻和畫面送進製卡器。';
   @override
-  String get onboarding_step_global_lookup_title => '查 Fushi 以外的文字';
+  String get onboarding_step_global_lookup_title => '全域查詞';
   @override
-  String get onboarding_global_lookup_windows_body =>
-      '在 Windows 上，先在其他應用程式裡選中文字，就能直接叫出詞典，不用切回 Fushi。';
+  String get onboarding_global_lookup_windows_body => '在任何應用程式裡選中文字，不用切窗口就能查詞。';
   @override
-  String get onboarding_global_lookup_windows_select_title => '在任何應用程式裡選中文字';
-  @override
-  String get onboarding_global_lookup_windows_shortcut_title => '按 Ctrl+Alt+D';
+  String get onboarding_global_lookup_windows_select_title => '選中文字';
   @override
   String get onboarding_global_lookup_windows_shortcut_body =>
-      '這是預設的全域快捷鍵。Fushi 會抓取目前的選取範圍，並在滑鼠附近打開查詞卡片。';
+      'Fushi 抓取選取範圍，在滑鼠旁打開查詞卡片。';
   @override
-  String get onboarding_global_lookup_windows_customize_title => '需要時可以改快捷鍵';
+  String get onboarding_global_lookup_windows_customize_title => '改快捷鍵';
   @override
   String get onboarding_global_lookup_windows_customize_body =>
-      '前往「設定 → 快捷鍵 → 全域（應用程式外）」，就能換成你習慣的組合鍵。';
+      '設定 → 快捷鍵 → 全域（應用程式外）。';
   @override
   String get onboarding_global_lookup_windows_action => '打開快捷鍵設定';
   @override
-  String get onboarding_global_lookup_windows_action_desc =>
-      '可修改應用程式外查詞的快捷鍵；預設 Ctrl+Alt+D 已經可以直接用，所以不改也沒關係。';
+  String get onboarding_global_lookup_windows_action_desc => '想換組合鍵再進來。';
   @override
   String get onboarding_global_lookup_android_body =>
-      '在 Android 上，是由系統透過文字選單或分享面板把選中的文字交給 Fushi；手機沒有可自訂的全域熱鍵。';
+      'Android 透過文字選單或分享面板把選中的文字交給 Fushi。';
   @override
-  String get onboarding_global_lookup_android_select_title => '在其他應用程式裡選中文字';
+  String get onboarding_global_lookup_android_select_title => '選中文字';
   @override
   String get onboarding_global_lookup_android_open_title => '選擇 Fushi';
   @override
   String get onboarding_global_lookup_android_open_body =>
-      '在文字選取選單中點 Fushi；如果選單沒顯示，就點分享，再從分享面板選 Fushi。';
+      '在文字選單點 Fushi；沒有就點分享，再選 Fushi。';
   @override
-  String get onboarding_global_lookup_android_continue_title => '在獨立彈窗中繼續';
+  String get onboarding_global_lookup_android_continue_title => '在彈窗裡繼續';
   @override
   String get onboarding_global_lookup_android_continue_body =>
-      '查詞結果會獨立打開；你可以繼續點裡面的詞，關掉後就回到剛才的地方。';
+      '查詞彈窗蓋在原應用程式上，關掉就回去。';
   @override
-  String get onboarding_feature_manual_resources => '手動導入詞典和音頻';
+  String get onboarding_feature_manual_resources => '自備詞典和音頻';
   @override
-  String get onboarding_feature_manual_resources_hint =>
-      '可補充推薦包，也可單獨匯入自己的字典、有聲書和單字發音來源';
+  String get onboarding_feature_manual_resources_hint => '從自己的檔案導入詞典、有聲書和發音來源';
   @override
-  String get onboarding_step_manual_resources_title => '手動準備詞典和音頻';
+  String get onboarding_step_manual_resources_title => '自備詞典和音頻';
   @override
   String get onboarding_step_manual_resources_body =>
-      '這一項可以與推薦包同時使用，也可以單獨使用。進入查詞教學前至少匯入一本字典；有聲書音訊和單字發音音訊屬於按需補充。';
+      '查詞教學之前至少導入一本詞典。有聲書和發音音頻按需添加。';
   @override
   String get onboarding_manual_dictionary_action => '導入詞典';
   @override
-  String get onboarding_manual_dictionary_action_desc =>
-      '打開詞典管理，導入至少一個支援的詞典檔案或壓縮包。只有查詞能返回釋義後，後面的操作教學才有實際結果。';
+  String get onboarding_manual_dictionary_action_desc => '打開詞典管理。裝好詞典，查詞才有結果。';
   @override
-  String get onboarding_manual_audiobook_action => '導入書籍和有聲書音頻';
+  String get onboarding_manual_audiobook_action => '導入書籍和音頻';
   @override
   String get onboarding_manual_audiobook_action_desc =>
-      '打開書籍導入，選擇書籍或文字、對齊字幕和一個或多個音頻檔案。音頻需要配套字幕，Fushi 才能按句同步。';
+      '書籍或文字、對齊字幕和音頻檔案。有字幕，Fushi 才能按句同步音頻。';
   @override
-  String get onboarding_manual_pronunciation_action => '設定單詞發音音頻';
+  String get onboarding_manual_pronunciation_action => '設定單詞發音';
   @override
   String get onboarding_manual_pronunciation_action_desc =>
-      '加入詞典詞條使用的本機或線上發音來源。它與附加到書籍的有聲書音頻是兩套獨立資源。';
+      '詞條發音的本機或線上來源。與有聲書音頻是兩回事。';
   @override
-  String get onboarding_lookup_verify_action => '先確認詞典裡有這個詞';
+  String get onboarding_step_first_anki_card_title => '第一張卡片';
   @override
-  String get onboarding_lookup_verify_action_desc =>
-      '打開查詞頁，輸入你正在學的任何詞；確認目前已安裝的詞典能返回釋義後，再用同一個詞練習後面的操作。教學不會寫死示例詞。';
+  String get onboarding_first_anki_lookup_title => '查一個詞';
   @override
-  String get onboarding_step_first_anki_card_title => '完成第一張 Anki 卡片';
+  String get onboarding_first_anki_plus_title => '點加號';
   @override
-  String get onboarding_step_first_anki_card_body =>
-      '只有這次引導已連上 Anki，而且選好了仍然可用的牌組和筆記類型，才會出現這一步。';
-  @override
-  String get onboarding_first_anki_lookup_title => '從真實的詞典結果開始';
-  @override
-  String get onboarding_first_anki_lookup_body =>
-      '查一個目前已安裝詞典確實能返回釋義的詞，不用可能不在你詞典裡的固定示例詞。';
-  @override
-  String get onboarding_first_anki_plus_title => '點詞條上的加號';
-  @override
-  String get onboarding_first_anki_plus_body =>
-      '加號會打開製卡器，並帶入當前的單詞、讀音、釋義、句子、音頻和可用的畫面。';
+  String get onboarding_first_anki_plus_body => '製卡器打開，單詞、讀音、釋義、句子、音頻和畫面已經填好。';
   @override
   String get onboarding_first_anki_save_title => '檢查後儲存';
   @override
-  String get onboarding_first_anki_save_body =>
-      '確認目標牌組、筆記類型和欄位預覽後儲存，再打開 Anki 看看第一張卡是不是已經寫進去。';
+  String get onboarding_first_anki_save_body => '確認牌組和筆記類型後儲存，打開 Anki 就能看到這張卡。';
   @override
-  String get onboarding_first_anki_action => '打開查詞頁並製卡';
-  @override
-  String get onboarding_first_anki_action_desc =>
-      '挑一個已經顯示釋義的詞，點詞條上的加號，檢查欄位後儲存到剛才連上的 Anki 牌組。';
-  @override
-  String get onboarding_step_click_lookup_body =>
-      '先確認一個目前已安裝詞典確實能返回釋義的詞，再用同一個詞練習書籍正文、漫畫 OCR 文字和影片字幕裡的點擊查詞。';
-  @override
-  String get onboarding_click_lookup_tap_body =>
-      '手機輕點剛才確認過的詞中的一個字，電腦用滑鼠左鍵單擊。Fushi 會從這裡開始比對最長的詞。';
-  @override
-  String get onboarding_global_lookup_windows_select_body =>
-      '拖選剛才已確認能返回詞典釋義的同一個詞，並保持文字處於選取狀態。';
-  @override
-  String get onboarding_global_lookup_android_select_body =>
-      '長按剛才已確認能返回詞典釋義的同一個詞，再拖動選取控點讓它完整覆蓋。';
+  String get onboarding_first_anki_action => '打開查詞頁製卡';
   @override
   String get game_lookup_attached_title => 'In-game lookup';
   @override
@@ -159551,6 +159659,62 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get game_session_japanese_locale_skipped_hint_not_32bit =>
       '本局未轉區：自動判定需要日文區域，但 Locale Emulator 只支援 32 位元遊戲。';
+  @override
+  String get onboarding_feature_fonts => '自定義字體';
+  @override
+  String get onboarding_feature_fonts_hint => '界面、正文、詞典各用自己喜歡的字體';
+  @override
+  String get onboarding_features_modules_title => '庫頁';
+  @override
+  String get onboarding_features_modules_hint =>
+      '未勾選的頁面不顯示在導航欄，之後可在「設定 → 外觀」改回。';
+  @override
+  String get onboarding_features_setup_title => '接下來設定';
+  @override
+  String get onboarding_features_setup_hint => '只有勾選的項目才會出現在後面的步驟裡。';
+  @override
+  String get onboarding_pack_intro =>
+      '一次下載裝好日語詞典、聲調、詞頻和日／英發音音頻。學其他語言可以跳過，自行導入詞典。';
+  @override
+  String get onboarding_global_lookup_windows_select_desc =>
+      '在任何應用程式裡拖選一個詞，並保持選中。';
+  @override
+  String get onboarding_global_lookup_android_select_desc =>
+      '在其他應用程式裡長按一個詞，拖動控點蓋住它。';
+  @override
+  String get onboarding_global_lookup_windows_shortcut_press => '按下快捷鍵';
+  @override
+  String get onboarding_first_anki_card_intro => 'Anki 已連上。現在做一張真卡，確認整條流程走得通。';
+  @override
+  String get onboarding_action_start => '開始使用';
+  @override
+  String get onboarding_actions_more => '其他方式';
+  @override
+  String get onboarding_finish_summary_modules => '顯示的庫頁';
+  @override
+  String get onboarding_finish_summary_setup => '本次設定';
+  @override
+  String get onboarding_finish_summary_none => '無';
+  @override
+  String get onboarding_anki_status_pending => '尚未測試連接';
+  @override
+  String get onboarding_click_lookup_intro => '在書、漫畫或字幕裡點任何一個詞就能看釋義。先用下面這句話練手。';
+  @override
+  String get onboarding_click_lookup_tap_desc =>
+      '點一下（電腦上按滑鼠左鍵）一個字，Fushi 會從這裡往後配對最長的詞。句子會在查詞頁打開。';
+  @override
+  String get onboarding_sample_sentence_label => '練習句子';
+  @override
+  String get onboarding_sample_sentence_hint => '點一下就會在查詞頁打開，再點其中任何一個詞。';
+  @override
+  String get onboarding_lookup_practice_action => '用這句話練習查詞';
+  @override
+  String get onboarding_lookup_practice_desc =>
+      '在查詞頁打開這句話，點其中的詞看釋義。查不到就是詞典還沒裝好。';
+  @override
+  String get onboarding_first_anki_lookup_desc => '打開練習句子，點一個詞。';
+  @override
+  String get onboarding_first_anki_action_desc => '在查詞頁打開練習句子。點詞、點加號、檢查欄位、儲存。';
 }
 
 /// Flat map(s) containing all translations.
@@ -166456,97 +166620,89 @@ extension on _StringsEn {
       case 'onboarding_title':
         return 'Getting started';
       case 'onboarding_welcome_headline':
-        return 'Welcome!';
+        return 'Welcome to Fushi';
       case 'onboarding_feature_anki':
-        return 'Anki flashcards';
+        return 'Anki cards';
       case 'onboarding_feature_anki_hint':
-        return 'Connect AnkiConnect or AnkiDroid to create flashcards';
+        return 'Turn lookups into flashcards with one tap';
       case 'onboarding_feature_backup':
         return 'Backup & sync';
       case 'onboarding_feature_backup_hint':
-        return 'Back up your data to Google Drive, WebDAV and other backends';
+        return 'Google Drive, WebDAV or a local file';
       case 'onboarding_feature_interconnect':
         return 'Device interconnect';
       case 'onboarding_feature_interconnect_hint':
-        return 'Pair devices on your LAN to share libraries and progress';
+        return 'Share libraries and progress across devices on your LAN';
       case 'onboarding_step_dictionary_action':
         return 'Open dictionary manager';
       case 'onboarding_step_anki_title':
         return 'Set up Anki';
       case 'onboarding_step_anki_action':
-        return 'Open card creation settings';
+        return 'Card creation settings';
       case 'onboarding_step_backup_title':
-        return 'Set up backup';
+        return 'Backup';
       case 'onboarding_step_backup_body':
-        return 'Choose a backup backend and sign in, or export a local backup file.';
+        return 'Keep your library safe when you switch or lose a device.';
       case 'onboarding_step_backup_action':
         return 'Open backup settings';
       case 'onboarding_step_interconnect_title':
-        return 'Set up interconnect';
+        return 'Interconnect';
       case 'onboarding_step_interconnect_body':
-        return 'Enable interconnect and pair with other devices on your LAN to share libraries, progress and lookups.';
+        return 'Pair devices on your LAN to share one library and keep progress in sync.';
       case 'onboarding_step_interconnect_action':
         return 'Open interconnect settings';
       case 'onboarding_finish_title':
         return 'All set';
       case 'onboarding_finish_body':
-        return 'You can revisit this guide anytime from Settings → System.';
+        return 'You can reopen this guide anytime from Settings → System.';
       case 'onboarding_action_next':
         return 'Next';
-      case 'onboarding_action_finish':
-        return 'Finish';
       case 'onboarding_action_skip':
         return 'Skip for now';
       case 'onboarding_reopen':
         return 'Getting started guide';
       case 'onboarding_welcome_body':
-        return 'Set your interface language and theme first — the next steps will walk you through the rest.';
+        return 'Pick your interface language and theme. The next few steps set up the rest.';
       case 'onboarding_features_title':
-        return 'Choose what you use';
-      case 'onboarding_features_modules_label':
-        return 'Library tabs (unchecked ones are hidden from the navigation bar; change anytime in Settings)';
-      case 'onboarding_features_setup_label':
-        return 'What to set up next';
+        return 'What will you use?';
       case 'onboarding_feature_manga':
-        return 'Manga library';
+        return 'Manga';
       case 'onboarding_feature_manga_hint':
         return 'Read manga with OCR lookup';
       case 'onboarding_feature_video':
-        return 'Video library';
+        return 'Video';
       case 'onboarding_feature_video_hint':
-        return 'Watch videos with subtitle lookup and mining';
+        return 'Subtitle lookup and card mining';
       case 'onboarding_feature_games':
-        return 'Galgame library';
+        return 'Galgames';
       case 'onboarding_feature_games_hint':
-        return 'Launch galgames with text-hook lookup (Windows only)';
+        return 'Text-hook lookup while playing (Windows only)';
       case 'onboarding_feature_pack':
-        return 'Recommended pack (dictionaries + audio)';
+        return 'Recommended pack';
       case 'onboarding_feature_pack_hint':
-        return 'One download sets up Japanese dictionaries plus JA/EN pronunciation audio';
+        return 'Japanese dictionaries plus JA/EN pronunciation audio in one download';
       case 'onboarding_step_pack_title':
-        return 'Install the recommended pack';
-      case 'onboarding_step_pack_body':
-        return 'The recommended pack bundles Japanese word, pitch-accent and frequency dictionaries plus Japanese/English pronunciation audio databases. Download and import it here; importing replaces local data, so run it on a fresh install. Learning another language? Use the dictionary manager to import your own dictionaries instead.';
+        return 'Recommended pack';
       case 'onboarding_step_pack_download_action':
         return 'Download and import';
       case 'onboarding_step_pack_import_existing_action':
-        return 'Import downloaded pack';
+        return 'Import the downloaded pack';
       case 'onboarding_step_pack_pick_action':
-        return 'Choose a local pack file';
+        return 'Choose a pack file';
       case 'onboarding_pack_downloading':
-        return 'Downloading… cancel anytime, resumes next time';
+        return 'Downloading… cancel anytime and resume later';
       case 'onboarding_pack_download_failed':
         return ({required Object message}) => 'Download failed: ${message}';
       case 'onboarding_step_extension_title':
         return 'Browser extension';
       case 'onboarding_step_extension_body':
-        return 'Install the companion browser extension to look up words on any web page.';
+        return 'Look up words on any web page with the companion extension.';
       case 'onboarding_step_extension_action':
-        return 'Open extension guide';
+        return 'Open the install guide';
       case 'onboarding_step_fonts_title':
-        return 'Reading fonts';
+        return 'Fonts';
       case 'onboarding_step_fonts_body':
-        return 'Import custom fonts and choose which of UI, book text and dictionary use them.';
+        return 'Use your own fonts for the interface, book text and dictionary.';
       case 'settings_section_modules':
         return 'Feature modules';
       case 'module_toggle_hint':
@@ -166749,9 +166905,9 @@ extension on _StringsEn {
       case 'module_extension_label':
         return 'Browser extension';
       case 'onboarding_feature_books':
-        return 'Novel library';
+        return 'Novels';
       case 'onboarding_feature_books_hint':
-        return 'Read EPUB novels with dictionary lookup and audiobook sync';
+        return 'EPUB reading with lookup and audiobook sync';
       case 'onboarding_feature_extension_hint':
         return 'Look up words on any web page (desktop only)';
       case 'video_setting_tap_toggles_playback':
@@ -167106,11 +167262,11 @@ extension on _StringsEn {
       case 'game_session_japanese_locale_hint':
         return 'The game was started under a Japanese (CP932) locale. If its text looks garbled or a script error appears, set this game\'s Japanese locale to Never.';
       case 'onboarding_anki_intro_body':
-        return 'Anki is a free spaced repetition flashcard app: new words become cards, and reviews are scheduled along the forgetting curve. After a lookup, Fushi can turn the word into an Anki card in one tap, with meaning, sentence, audio and screenshot.';
+        return 'Anki is a free spaced-repetition flashcard app. After a lookup, Fushi turns the word into a card with meaning, sentence, audio and screenshot in one tap.';
       case 'onboarding_anki_setup_desktop_hint':
-        return 'Install the Anki desktop app, then add the AnkiConnect add-on: in Anki, open Tools - Add-ons - Get Add-ons and enter code 2055492159. Keep Anki running while creating cards.';
+        return 'Install Anki, add the AnkiConnect add-on (one tap below, or add-on code 2055492159), and keep Anki running while you make cards.';
       case 'onboarding_anki_setup_ios_hint':
-        return 'With AnkiMobile installed, adding cards works out of the box. For the full feature set, connect to Anki running on a computer in the same network via AnkiConnect.';
+        return 'With AnkiMobile installed, cards are added directly. For the full feature set, connect to Anki on a computer in the same network via AnkiConnect.';
       case 'onboarding_anki_backend_label':
         return 'Connection';
       case 'onboarding_anki_test_action':
@@ -167122,17 +167278,17 @@ extension on _StringsEn {
       case 'onboarding_anki_get_ankidroid_action':
         return 'Get AnkiDroid';
       case 'onboarding_anki_mobile_ankiconnect_title':
-        return 'Advanced: use AnkiConnect on this device';
+        return 'Advanced: use AnkiConnect from this device';
       case 'onboarding_anki_mobile_ankiconnect_hint':
-        return 'This device can also create cards into Anki running on a computer in the same network: enable AnkiConnect in card creation settings and enter the computer address.';
+        return 'Create cards into Anki on a computer in the same network: enable AnkiConnect in card creation settings and enter the computer\'s address.';
       case 'onboarding_anki_setup_android_hint':
-        return 'Install AnkiDroid and open it once to finish its first-run setup. Back in Fushi, tap Allow on the permission dialog that pops up with your first card - no AnkiDroid settings to change.';
+        return 'Install AnkiDroid and open it once. On your first card, tap Allow in the permission dialog — nothing else to configure.';
       case 'onboarding_anki_install_addon_action':
         return 'Install AnkiConnect add-on';
       case 'onboarding_anki_addon_installed':
-        return 'AnkiConnect is installed. Start (or restart) Anki, then tap Test connection.';
+        return 'AnkiConnect installed. Start or restart Anki, then test the connection.';
       case 'onboarding_anki_addon_no_anki':
-        return 'Anki data folder not found. Install Anki and open it once, then try again.';
+        return 'Anki data folder not found. Install Anki, open it once, then try again.';
       case 'onboarding_anki_addon_failed':
         return ({required Object message}) => 'Install failed: ${message}';
       case 'game_hook_reason_capability_probe_failed':
@@ -167565,41 +167721,39 @@ extension on _StringsEn {
       case 'onboarding_action_badge_optional':
         return 'Optional';
       case 'onboarding_pack_action_download_desc':
-        return 'Downloads the whole pack in the background, then imports it. Cancel anytime; it resumes from where it stopped.';
+        return 'Downloads from several sources at once in the background, then imports. Cancel anytime; it resumes where it stopped.';
       case 'onboarding_pack_action_import_existing_desc':
-        return 'The pack is already downloaded; this imports it. Choose Merge in the confirmation dialog and your existing data is left alone.';
+        return 'The pack is already on disk. Choose Merge in the confirmation dialog to keep your existing data.';
       case 'onboarding_pack_action_pick_desc':
-        return 'Already got the pack zip from somewhere else? Import it from disk and skip the download entirely.';
+        return 'Already have the pack zip? Import it from disk and skip the download.';
       case 'onboarding_pack_action_website':
-        return 'Open the download page on the website';
+        return 'Open the download page';
       case 'onboarding_pack_action_website_desc':
-        return 'Opens the official site in your browser. Its pack section lists chunk links you can feed to a download manager; come back afterwards and use Choose a local pack file to import what you got.';
+        return 'Chunk links for download managers. Come back and use Choose a pack file afterwards.';
       case 'onboarding_pack_action_dictionary_desc':
-        return 'Learning a language other than Japanese? Skip the pack and import dictionaries for your own language here instead.';
+        return 'Learning another language? Import dictionaries for it here instead.';
       case 'onboarding_pack_action_audio_desc':
-        return 'Where pronunciation audio comes from. The pack already covers Japanese and English; add online sources here for other languages.';
+        return 'Add online pronunciation sources for languages the pack does not cover.';
       case 'onboarding_anki_action_test_desc':
-        return 'Checks that Fushi can reach Anki and loads your decks and note types. Nothing is created yet.';
+        return 'Checks that Fushi can reach Anki and loads your decks and note types. Creates nothing.';
       case 'onboarding_anki_action_refresh_desc':
-        return 'Reloads decks and note types from Anki. Use it after creating a new deck inside Anki.';
+        return 'Reloads decks and note types. Use it after creating a deck in Anki.';
       case 'onboarding_anki_action_get_ankidroid_desc':
-        return 'Opens the store page for AnkiDroid. Fushi writes its cards into it, so it has to be installed first.';
+        return 'Opens the store page. Fushi writes cards into AnkiDroid, so it must be installed first.';
       case 'onboarding_anki_action_get_anki_desc':
-        return 'Opens the Anki download page. Install Anki and keep it running while you make cards.';
+        return 'Opens the Anki download page. Keep Anki running while you make cards.';
       case 'onboarding_anki_action_install_addon_desc':
-        return 'Unpacks the bundled AnkiConnect add-on into Anki for you, which is what lets Fushi talk to it. Restart Anki afterwards.';
+        return 'Unpacks the bundled AnkiConnect add-on into Anki. Restart Anki afterwards.';
       case 'onboarding_step_anki_action_desc':
-        return 'Card template, field mapping, screenshots and audio: the details of what a created card looks like. The deck and note type above are enough to start, so open this only if you want to change how cards are built.';
+        return 'Template, field mapping, screenshots and audio. Deck and note type above are enough to start.';
       case 'onboarding_step_backup_action_desc':
-        return 'Choose a backup backend and sign in, so your library survives a lost or replaced device.';
+        return 'Choose a backend and sign in, or export a local backup file.';
       case 'onboarding_step_interconnect_action_desc':
-        return 'Pair this device with your other devices to share one library and keep progress in sync.';
+        return 'Enable interconnect and pair this device with your others.';
       case 'onboarding_step_extension_action_desc':
-        return 'Shows how to install the browser extension and connect it to Fushi, so you can look words up on web pages too.';
+        return 'Shows how to install the extension and connect it to Fushi.';
       case 'onboarding_step_fonts_action_desc':
-        return 'Add your own font files and pick which one each language uses.';
-      case 'onboarding_pack_sources_hint':
-        return 'Downloaded in parallel chunks from GitHub, the official site and a backup mirror at the same time, each chunk checksummed. Fushi measures the sources as it goes and gives more chunks to whichever is fastest right now, so there is nothing to choose here.';
+        return 'Import font files and pick one per language.';
       case 'video_setting_hdr_output':
         return 'HDR / 10-bit output';
       case 'video_setting_hdr_output_hint':
@@ -167701,99 +167855,79 @@ extension on _StringsEn {
         return ({required Object count}) =>
             'Switch to built-in mode to create ${count} queued cards';
       case 'onboarding_step_click_lookup_title':
-        return 'Tap to look up words';
+        return 'Tap to look up';
       case 'onboarding_click_lookup_tap_title':
-        return 'Tap the text';
+        return 'Tap a word';
       case 'onboarding_click_lookup_nested_title':
-        return 'Keep exploring in the popup';
+        return 'Keep exploring';
       case 'onboarding_click_lookup_nested_body':
-        return 'Tap another word inside a definition to open a deeper lookup. Go back or tap outside to close one level.';
+        return 'Tap a word inside a definition to go one level deeper. Go back or tap outside to close a level.';
       case 'onboarding_click_lookup_mine_title':
-        return 'Turn the result into a card';
+        return 'Make a card';
       case 'onboarding_click_lookup_mine_body':
-        return 'When the definition looks right, tap + to send the word, sentence, audio and image to the card creator.';
+        return 'Tap + on the entry to send the word, sentence, audio and image to the card creator.';
       case 'onboarding_step_global_lookup_title':
-        return 'Look up text outside Fushi';
+        return 'Look up outside Fushi';
       case 'onboarding_global_lookup_windows_body':
-        return 'On Windows, select text in another app and summon the dictionary without switching back to Fushi.';
+        return 'Select text in any app and summon the dictionary without switching windows.';
       case 'onboarding_global_lookup_windows_select_title':
-        return 'Select text in any app';
-      case 'onboarding_global_lookup_windows_shortcut_title':
-        return 'Press Ctrl+Alt+D';
+        return 'Select text';
       case 'onboarding_global_lookup_windows_shortcut_body':
-        return 'This is the default global shortcut. Fushi captures the current selection and opens a lookup card near the pointer.';
+        return 'Fushi grabs the selection and opens a lookup card next to the pointer.';
       case 'onboarding_global_lookup_windows_customize_title':
-        return 'Change the shortcut if needed';
+        return 'Change the shortcut';
       case 'onboarding_global_lookup_windows_customize_body':
-        return 'Open Settings > Shortcuts > Global (app-external) to assign a different key combination.';
+        return 'Settings → Shortcuts → Global (app-external).';
       case 'onboarding_global_lookup_windows_action':
         return 'Open shortcut settings';
       case 'onboarding_global_lookup_windows_action_desc':
-        return 'Lets you change the app-external lookup shortcut. The default Ctrl+Alt+D already works, so this is optional.';
+        return 'Only if you want a different key combination.';
       case 'onboarding_global_lookup_android_body':
-        return 'On Android, the system passes selected text to Fushi through the text menu or Share sheet. There is no remappable global hotkey.';
+        return 'Android hands selected text to Fushi through the text menu or Share sheet.';
       case 'onboarding_global_lookup_android_select_title':
-        return 'Select text in another app';
+        return 'Select text';
       case 'onboarding_global_lookup_android_open_title':
         return 'Choose Fushi';
       case 'onboarding_global_lookup_android_open_body':
-        return 'Tap Fushi in the text-selection menu. If it is hidden, tap Share and choose Fushi from the share sheet.';
+        return 'Tap Fushi in the selection menu, or tap Share and pick Fushi.';
       case 'onboarding_global_lookup_android_continue_title':
-        return 'Use the standalone popup';
+        return 'Read the popup';
       case 'onboarding_global_lookup_android_continue_body':
-        return 'The lookup opens separately from the source app. You can tap more words inside it, then close it to return where you were.';
+        return 'The lookup opens on top of the other app. Close it to return.';
       case 'onboarding_feature_manual_resources':
-        return 'Import dictionaries and audio manually';
+        return 'Import my own resources';
       case 'onboarding_step_manual_resources_title':
-        return 'Prepare dictionaries and audio manually';
+        return 'Your own dictionaries and audio';
       case 'onboarding_manual_dictionary_action':
         return 'Import a dictionary';
       case 'onboarding_manual_dictionary_action_desc':
-        return 'Open dictionary management and import at least one supported dictionary file or archive. Lookup tutorials are useful only after a query returns a definition.';
+        return 'Opens dictionary management. Lookups only return results once a dictionary is installed.';
       case 'onboarding_manual_audiobook_action':
-        return 'Import a book with audiobook audio';
+        return 'Import a book with audio';
       case 'onboarding_manual_audiobook_action_desc':
-        return 'Open book import and choose the book or text, aligned subtitles, and one or more audio files. Audio needs subtitles so Fushi can align it to sentences.';
+        return 'Book or text, aligned subtitles and audio files. Subtitles are what lets Fushi sync audio to sentences.';
       case 'onboarding_manual_pronunciation_action':
-        return 'Configure word pronunciation audio';
+        return 'Set up pronunciation audio';
       case 'onboarding_manual_pronunciation_action_desc':
-        return 'Add local or online pronunciation sources used by dictionary entries. This is separate from audiobook audio attached to a book.';
-      case 'onboarding_lookup_verify_action':
-        return 'Verify a word in your dictionary';
-      case 'onboarding_lookup_verify_action_desc':
-        return 'Open lookup, enter any word you are learning, and continue only after the installed dictionary returns a definition. The tutorial does not hard-code a sample word.';
+        return 'Local or online sources for word pronunciation in dictionary entries. Separate from audiobook audio.';
       case 'onboarding_step_first_anki_card_title':
-        return 'Create your first Anki card';
-      case 'onboarding_step_first_anki_card_body':
-        return 'This step appears only after this onboarding session has connected to Anki and selected a usable deck and note type.';
+        return 'Your first card';
       case 'onboarding_first_anki_lookup_title':
-        return 'Start from a real dictionary result';
-      case 'onboarding_first_anki_lookup_body':
-        return 'Look up a word that your installed dictionary actually defines. There is no fixed tutorial word that might be absent from your dictionary.';
+        return 'Look up a word';
       case 'onboarding_first_anki_plus_title':
-        return 'Tap the plus button on the entry';
+        return 'Tap +';
       case 'onboarding_first_anki_plus_body':
-        return 'The plus button opens the card creator with the current word, reading, meaning, sentence, audio, and available image context.';
+        return 'The card creator opens with the word, reading, meaning, sentence, audio and image filled in.';
       case 'onboarding_first_anki_save_title':
-        return 'Review and save';
+        return 'Check and save';
       case 'onboarding_first_anki_save_body':
-        return 'Confirm the target deck, note type, and field preview, then save. Open Anki to verify that the first card arrived.';
+        return 'Confirm the deck and note type, then save. Open Anki to see the card.';
       case 'onboarding_first_anki_action':
-        return 'Open lookup and create a card';
-      case 'onboarding_first_anki_action_desc':
-        return 'Use a word with a visible definition, tap its plus button, review the fields, and save it to the connected Anki deck.';
-      case 'onboarding_step_click_lookup_body':
-        return 'First verify a word that your installed dictionary actually defines. Then use that same word to practise direct lookup in books, manga OCR text, and video subtitles.';
-      case 'onboarding_click_lookup_tap_body':
-        return 'On a phone, tap a character in the verified word. On a computer, left-click it. Fushi starts there and matches the longest word.';
-      case 'onboarding_global_lookup_windows_select_body':
-        return 'Highlight the same word you already verified has a dictionary definition, and leave the selection active.';
-      case 'onboarding_global_lookup_android_select_body':
-        return 'Long-press the same word you already verified has a dictionary definition, then adjust the selection handles to cover it.';
+        return 'Open lookup and make a card';
       case 'onboarding_feature_manual_resources_hint':
-        return 'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+        return 'Dictionaries, audiobooks and pronunciation sources from your own files';
       case 'onboarding_step_manual_resources_body':
-        return 'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+        return 'Import at least one dictionary before the lookup tutorial. Audiobooks and pronunciation audio are optional.';
       case 'game_lookup_attached_title':
         return 'In-game lookup';
       case 'game_lookup_attached_no_ocr':
@@ -168029,6 +168163,56 @@ extension on _StringsEn {
         return 'The game was started without a Japanese locale: this system already uses the Japanese (CP932) code page, so nothing needs to change.';
       case 'game_session_japanese_locale_skipped_hint_not_32bit':
         return 'The game was started without a Japanese locale: the auto verdict says it needs one, but Locale Emulator only supports 32-bit games.';
+      case 'onboarding_feature_fonts':
+        return 'Custom fonts';
+      case 'onboarding_feature_fonts_hint':
+        return 'Use your own fonts for the interface, book text and dictionary';
+      case 'onboarding_features_modules_title':
+        return 'Library pages';
+      case 'onboarding_features_modules_hint':
+        return 'Unchecked pages are hidden from the navigation bar. Change anytime in Settings → Appearance.';
+      case 'onboarding_features_setup_title':
+        return 'Set up next';
+      case 'onboarding_features_setup_hint':
+        return 'Only checked items get a step in this guide.';
+      case 'onboarding_pack_intro':
+        return 'Japanese dictionaries, pitch accent, word frequency and JA/EN pronunciation audio in one download. Learning another language? Skip this and import your own dictionaries.';
+      case 'onboarding_global_lookup_windows_select_desc':
+        return 'Highlight a word in any app and keep it selected.';
+      case 'onboarding_global_lookup_android_select_desc':
+        return 'Long-press a word in another app and adjust the handles to cover it.';
+      case 'onboarding_global_lookup_windows_shortcut_press':
+        return 'Press the shortcut';
+      case 'onboarding_first_anki_card_intro':
+        return 'Anki is connected. Make one real card now so you know the whole path works.';
+      case 'onboarding_action_start':
+        return 'Start using Fushi';
+      case 'onboarding_actions_more':
+        return 'Other ways';
+      case 'onboarding_finish_summary_modules':
+        return 'Library pages shown';
+      case 'onboarding_finish_summary_setup':
+        return 'Guided setup';
+      case 'onboarding_finish_summary_none':
+        return 'None';
+      case 'onboarding_anki_status_pending':
+        return 'Not tested yet';
+      case 'onboarding_click_lookup_intro':
+        return 'Tap any word in a book, manga or subtitle to see its definition. Try it on the practice sentence below.';
+      case 'onboarding_click_lookup_tap_desc':
+        return 'Tap (or left-click) a character; Fushi matches the longest word starting there. The sentence opens in the lookup page.';
+      case 'onboarding_sample_sentence_label':
+        return 'Practice sentence';
+      case 'onboarding_sample_sentence_hint':
+        return 'Tap to open it in the lookup page, then tap any word.';
+      case 'onboarding_lookup_practice_action':
+        return 'Practise with this sentence';
+      case 'onboarding_lookup_practice_desc':
+        return 'Opens the lookup page with the sentence loaded. Tap a word there to see its definition; if nothing comes back, your dictionaries are not installed yet.';
+      case 'onboarding_first_anki_lookup_desc':
+        return 'Open the practice sentence and tap a word.';
+      case 'onboarding_first_anki_action_desc':
+        return 'Opens the practice sentence in the lookup page. Tap a word, tap +, check the fields and save.';
       default:
         return null;
     }
@@ -174930,97 +175114,89 @@ extension on _StringsAr {
       case 'onboarding_title':
         return 'دليل البدء';
       case 'onboarding_welcome_headline':
-        return 'مرحباً!';
+        return 'مرحباً بك في Fushi';
       case 'onboarding_feature_anki':
-        return 'بطاقات Anki التعليمية';
+        return 'بطاقات Anki';
       case 'onboarding_feature_anki_hint':
-        return 'اربط AnkiConnect أو AnkiDroid لإنشاء البطاقات التعليمية';
+        return 'حوّل عمليات البحث إلى بطاقات بنقرة واحدة';
       case 'onboarding_feature_backup':
         return 'نسخ احتياطي ومزامنة';
       case 'onboarding_feature_backup_hint':
-        return 'انسخ بياناتك احتياطياً إلى Google Drive وWebDAV وغيرها';
+        return 'Google Drive أو WebDAV أو ملف محلي';
       case 'onboarding_feature_interconnect':
         return 'ربط بيني للأجهزة';
       case 'onboarding_feature_interconnect_hint':
-        return 'اقترن بالأجهزة على شبكتك المحلية لمشاركة المكتبات والتقدم';
+        return 'شارك المكتبات والتقدّم بين أجهزتك على الشبكة المحلية';
       case 'onboarding_step_dictionary_action':
         return 'فتح مدير القواميس';
       case 'onboarding_step_anki_title':
         return 'إعداد Anki';
       case 'onboarding_step_anki_action':
-        return 'فتح إعدادات إنشاء البطاقات';
+        return 'إعدادات إنشاء البطاقات';
       case 'onboarding_step_backup_title':
-        return 'إعداد النسخ الاحتياطي';
+        return 'النسخ الاحتياطي';
       case 'onboarding_step_backup_body':
-        return 'اختر واجهة نسخ احتياطي وسجّل الدخول، أو صدّر ملف نسخة احتياطية محلية.';
+        return 'حافظ على مكتبتك عند تغيير الجهاز أو فقدانه.';
       case 'onboarding_step_backup_action':
         return 'فتح إعدادات النسخ الاحتياطي';
       case 'onboarding_step_interconnect_title':
-        return 'إعداد الربط البيني';
+        return 'الربط البيني';
       case 'onboarding_step_interconnect_body':
-        return 'فعّل الربط البيني واقترن بأجهزة أخرى على شبكتك المحلية لمشاركة المكتبات والتقدم وعمليات البحث.';
+        return 'اقرن الأجهزة على شبكتك المحلية لمشاركة مكتبة واحدة وإبقاء التقدّم متزامنًا.';
       case 'onboarding_step_interconnect_action':
         return 'فتح إعدادات الربط البيني';
       case 'onboarding_finish_title':
         return 'كل شيء جاهز';
       case 'onboarding_finish_body':
-        return 'يمكنك العودة إلى هذا الدليل في أي وقت من الإعدادات → النظام.';
+        return 'يمكنك فتح هذا الدليل مجدداً في أي وقت من الإعدادات → النظام.';
       case 'onboarding_action_next':
         return 'التالي';
-      case 'onboarding_action_finish':
-        return 'إنهاء';
       case 'onboarding_action_skip':
         return 'تخطّي الآن';
       case 'onboarding_reopen':
         return 'دليل البدء';
       case 'onboarding_welcome_body':
-        return 'اضبط لغة الواجهة والسمة أولاً — الخطوات التالية ستوجّهك لبقية الإعدادات.';
+        return 'اختر لغة الواجهة والسمة. وستتكفّل الخطوات التالية بالباقي.';
       case 'onboarding_features_title':
-        return 'اختر ما تستخدمه';
-      case 'onboarding_features_modules_label':
-        return 'تبويبات المكتبة (غير المحددة تُخفى من شريط التنقل؛ يمكن التغيير في أي وقت من الإعدادات)';
-      case 'onboarding_features_setup_label':
-        return 'ما يجب إعداده لاحقاً';
+        return 'ما الذي ستستخدمه؟';
       case 'onboarding_feature_manga':
-        return 'مكتبة المانغا';
+        return 'المانغا';
       case 'onboarding_feature_manga_hint':
         return 'اقرأ المانغا مع البحث بالتعرف البصري';
       case 'onboarding_feature_video':
-        return 'مكتبة الفيديو';
+        return 'الفيديو';
       case 'onboarding_feature_video_hint':
-        return 'شاهد الفيديو مع البحث في الترجمات والتعدين';
+        return 'بحث في الترجمات وإنشاء بطاقات';
       case 'onboarding_feature_games':
-        return 'مكتبة Galgame';
+        return 'ألعاب Galgame';
       case 'onboarding_feature_games_hint':
-        return 'شغّل ألعاب Galgame مع البحث بربط النصوص (Windows فقط)';
+        return 'بحث بربط النصوص أثناء اللعب (Windows فقط)';
       case 'onboarding_feature_pack':
-        return 'الحزمة الموصى بها (قواميس + صوت)';
+        return 'الحزمة الموصى بها';
       case 'onboarding_feature_pack_hint':
-        return 'تحميل واحد يُعدّ القواميس اليابانية بالإضافة إلى صوت النطق يا/إن';
+        return 'قواميس يابانية وصوت نطق ياباني/إنجليزي في تنزيل واحد';
       case 'onboarding_step_pack_title':
-        return 'تثبيت الحزمة الموصى بها';
-      case 'onboarding_step_pack_body':
-        return 'تجمع الحزمة الموصى بها قواميس الكلمات اليابانية ونبرة الصوت والتردد بالإضافة إلى قواعد بيانات صوت النطق الياباني/الإنجليزي. حمّلها واستوردها هنا؛ الاستيراد يستبدل البيانات المحلية، لذا شغّلها على تثبيت جديد. تتعلم لغة أخرى؟ استخدم مدير القواميس لاستيراد قواميسك الخاصة بدلاً من ذلك.';
+        return 'الحزمة الموصى بها';
       case 'onboarding_step_pack_download_action':
         return 'تحميل واستيراد';
       case 'onboarding_step_pack_import_existing_action':
-        return 'استيراد حزمة محمّلة';
+        return 'استيراد الحزمة المنزَّلة';
       case 'onboarding_step_pack_pick_action':
-        return 'اختيار ملف حزمة محلي';
+        return 'اختيار ملف حزمة';
       case 'onboarding_pack_downloading':
-        return 'جارٍ التحميل… يمكن الإلغاء في أي وقت، يُستأنف في المرة القادمة';
+        return 'جارٍ التنزيل… يمكن الإلغاء في أي وقت والاستئناف لاحقًا';
       case 'onboarding_pack_download_failed':
         return ({required Object message}) => 'فشل التحميل: ${message}';
       case 'onboarding_step_extension_title':
         return 'إضافة المتصفح';
       case 'onboarding_step_extension_body':
-        return 'ثبّت إضافة المتصفح المرافقة للبحث عن الكلمات في أي صفحة ويب.';
+        return 'ابحث عن الكلمات في أي صفحة ويب عبر الإضافة المرافقة.';
       case 'onboarding_step_extension_action':
-        return 'فتح دليل الإضافة';
+        return 'فتح دليل التثبيت';
       case 'onboarding_step_fonts_title':
-        return 'خطوط القراءة';
+        return 'الخطوط';
       case 'onboarding_step_fonts_body':
-        return 'استورد خطوطاً مخصصة واختر أيها يُستخدم للواجهة ونص الكتاب والقاموس.';
+        return 'استخدم خطوطك الخاصة للواجهة ونص الكتاب والقاموس.';
       case 'settings_section_modules':
         return 'وحدات الميزات';
       case 'module_toggle_hint':
@@ -175223,9 +175399,9 @@ extension on _StringsAr {
       case 'module_extension_label':
         return 'إضافة المتصفح';
       case 'onboarding_feature_books':
-        return 'مكتبة الروايات';
+        return 'الروايات';
       case 'onboarding_feature_books_hint':
-        return 'اقرأ روايات EPUB مع البحث في القاموس ومزامنة الكتب الصوتية';
+        return 'قراءة EPUB مع البحث ومزامنة الكتب الصوتية';
       case 'onboarding_feature_extension_hint':
         return 'ابحث عن الكلمات في أي صفحة ويب (سطح المكتب فقط)';
       case 'video_setting_tap_toggles_playback':
@@ -175580,11 +175756,11 @@ extension on _StringsAr {
       case 'game_session_japanese_locale_hint':
         return 'تم تشغيل اللعبة تحت الإعدادات المحلية اليابانية (CP932). إذا ظهر النص مشوّهاً أو ظهر خطأ في السكربت، اضبط الإعدادات المحلية اليابانية لهذه اللعبة على "أبداً".';
       case 'onboarding_anki_intro_body':
-        return 'Anki هو تطبيق بطاقات تعليمية مجاني يعتمد على التكرار المتباعد: الكلمات الجديدة تصبح بطاقات، ويُجدوَل المراجعة وفق منحنى النسيان. بعد البحث، يمكن لـ Fushi تحويل الكلمة إلى بطاقة Anki بنقرة واحدة، مع المعنى والجملة والصوت ولقطة الشاشة.';
+        return 'Anki تطبيق مجاني لبطاقات المراجعة بالتكرار المتباعد. بعد البحث، يحوّل Fushi الكلمة إلى بطاقة تضم المعنى والجملة والصوت ولقطة الشاشة بنقرة واحدة.';
       case 'onboarding_anki_setup_desktop_hint':
-        return 'ثبّت تطبيق Anki لسطح المكتب، ثم أضف إضافة AnkiConnect: في Anki، افتح أدوات - الإضافات - الحصول على إضافات وأدخل الرمز 2055492159. أبقِ Anki قيد التشغيل أثناء إنشاء البطاقات.';
+        return 'ثبّت Anki، وأضف إضافة AnkiConnect (بنقرة واحدة بالأسفل، أو برمز الإضافة 2055492159)، وأبقِ Anki قيد التشغيل أثناء إنشاء البطاقات.';
       case 'onboarding_anki_setup_ios_hint':
-        return 'مع تثبيت AnkiMobile، تعمل إضافة البطاقات مباشرة. للحصول على جميع الميزات، اتصل بـ Anki على جهاز كمبيوتر في نفس الشبكة عبر AnkiConnect.';
+        return 'مع تثبيت AnkiMobile، تُضاف البطاقات مباشرة. وللحصول على جميع الميزات، اتصل بـ Anki على حاسوب ضمن الشبكة نفسها عبر AnkiConnect.';
       case 'onboarding_anki_backend_label':
         return 'الاتصال';
       case 'onboarding_anki_test_action':
@@ -175597,15 +175773,15 @@ extension on _StringsAr {
       case 'onboarding_anki_get_ankidroid_action':
         return 'الحصول على AnkiDroid';
       case 'onboarding_anki_mobile_ankiconnect_title':
-        return 'متقدم: استخدام AnkiConnect على هذا الجهاز';
+        return 'متقدم: استخدام AnkiConnect من هذا الجهاز';
       case 'onboarding_anki_mobile_ankiconnect_hint':
-        return 'يمكن لهذا الجهاز أيضاً إنشاء بطاقات في Anki على جهاز كمبيوتر في نفس الشبكة: فعّل AnkiConnect في إعدادات إنشاء البطاقات وأدخل عنوان الكمبيوتر.';
+        return 'أنشئ بطاقات في Anki على حاسوب ضمن الشبكة نفسها: فعّل AnkiConnect في إعدادات إنشاء البطاقات وأدخل عنوان الحاسوب.';
       case 'onboarding_anki_setup_android_hint':
-        return 'ثبّت AnkiDroid وافتحه مرة واحدة لإكمال الإعداد الأولي. عُد إلى Fushi واضغط على السماح في نافذة الإذن التي تظهر مع أول بطاقة - لا حاجة لتغيير إعدادات AnkiDroid.';
+        return 'ثبّت AnkiDroid وافتحه مرة واحدة. عند أول بطاقة، اضغط «السماح» في نافذة الإذن — ولا شيء آخر لضبطه.';
       case 'onboarding_anki_install_addon_action':
         return 'تثبيت إضافة AnkiConnect';
       case 'onboarding_anki_addon_installed':
-        return 'تم تثبيت AnkiConnect. شغّل (أو أعد تشغيل) Anki، ثم اضغط اختبار الاتصال.';
+        return 'تم تثبيت AnkiConnect. شغّل Anki أو أعد تشغيله، ثم اختبر الاتصال.';
       case 'onboarding_anki_addon_no_anki':
         return 'لم يُعثر على مجلد بيانات Anki. ثبّت Anki وافتحه مرة واحدة، ثم حاول مجدداً.';
       case 'onboarding_anki_addon_failed':
@@ -176039,41 +176215,39 @@ extension on _StringsAr {
       case 'onboarding_action_badge_optional':
         return 'اختياري';
       case 'onboarding_pack_action_download_desc':
-        return 'ينزّل الحزمة كاملة في الخلفية ثم يستوردها. يمكنك الإلغاء في أي وقت، وسيُستأنف التنزيل من حيث توقّف.';
+        return 'ينزّل من عدة مصادر في آن واحد في الخلفية ثم يستورد. يمكنك الإلغاء في أي وقت، وسيُستأنف من حيث توقّف.';
       case 'onboarding_pack_action_import_existing_desc':
-        return 'الحزمة منزَّلة بالفعل، وهذا يستوردها. اختر «دمج» في نافذة التأكيد لتبقى بياناتك الحالية كما هي.';
+        return 'الحزمة موجودة على القرص بالفعل. اختر «دمج» في نافذة التأكيد للحفاظ على بياناتك الحالية.';
       case 'onboarding_pack_action_pick_desc':
-        return 'حصلت على ملف zip للحزمة من مكان آخر؟ استوردها من القرص وتخطَّ التنزيل بالكامل.';
+        return 'لديك ملف zip للحزمة بالفعل؟ استورده من القرص وتخطَّ التنزيل.';
       case 'onboarding_pack_action_website':
-        return 'فتح صفحة التنزيل في الموقع';
+        return 'فتح صفحة التنزيل';
       case 'onboarding_pack_action_website_desc':
-        return 'يفتح الموقع الرسمي في متصفحك. يوفّر قسم الحزمة روابط أجزاء يمكن تمريرها إلى مدير تنزيل، ثم عد إلى هنا واستخدم «اختيار ملف حزمة محلي» لاستيراد ما حصلت عليه.';
+        return 'روابط أجزاء لمديري التنزيل. عد بعدها واستخدم «اختيار ملف حزمة».';
       case 'onboarding_pack_action_dictionary_desc':
-        return 'تتعلّم لغة غير اليابانية؟ تخطَّ الحزمة واستورد هنا قواميس لغتك.';
+        return 'تتعلّم لغة أخرى؟ استورد قواميسها من هنا بدلاً من ذلك.';
       case 'onboarding_pack_action_audio_desc':
-        return 'مصدر مقاطع النطق الصوتية. الحزمة تغطّي اليابانية والإنجليزية بالفعل؛ أضف هنا مصادر عبر الإنترنت للغات الأخرى.';
+        return 'أضف مصادر نطق عبر الإنترنت للغات التي لا تغطّيها الحزمة.';
       case 'onboarding_anki_action_test_desc':
-        return 'يتحقّق من قدرة Fushi على الاتصال بـ Anki ويحمّل مجموعاتك وأنواع الملاحظات. لا يُنشأ أي شيء بعد.';
+        return 'يتحقّق من قدرة Fushi على الاتصال بـ Anki ويحمّل مجموعاتك وأنواع الملاحظات. ولا يُنشئ شيئًا.';
       case 'onboarding_anki_action_refresh_desc':
-        return 'يعيد تحميل المجموعات وأنواع الملاحظات من Anki. استخدمه بعد إنشاء مجموعة جديدة داخل Anki.';
+        return 'يعيد تحميل المجموعات وأنواع الملاحظات. استخدمه بعد إنشاء مجموعة في Anki.';
       case 'onboarding_anki_action_get_ankidroid_desc':
-        return 'يفتح صفحة AnkiDroid في المتجر. يكتب Fushi بطاقاته داخله، لذا يجب تثبيته أولاً.';
+        return 'يفتح صفحة المتجر. يكتب Fushi البطاقات في AnkiDroid، لذا يجب تثبيته أولاً.';
       case 'onboarding_anki_action_get_anki_desc':
-        return 'يفتح صفحة تنزيل Anki. ثبّت Anki وأبقِه مفتوحًا أثناء إنشاء البطاقات.';
+        return 'يفتح صفحة تنزيل Anki. أبقِ Anki مفتوحًا أثناء إنشاء البطاقات.';
       case 'onboarding_anki_action_install_addon_desc':
-        return 'يفكّ ضغط إضافة AnkiConnect المرفقة داخل Anki، وهي ما يتيح لـ Fushi التخاطب معه. أعد تشغيل Anki بعد ذلك.';
+        return 'يفكّ ضغط إضافة AnkiConnect المرفقة داخل Anki. أعد تشغيل Anki بعد ذلك.';
       case 'onboarding_step_anki_action_desc':
-        return 'قالب البطاقة وربط الحقول ولقطات الشاشة والصوت: أي تفاصيل شكل البطاقة الناتجة. تكفي المجموعة ونوع الملاحظة أعلاه للبدء، فلا تفتح هذا إلا إذا أردت تغيير طريقة بناء البطاقات.';
+        return 'القالب وربط الحقول ولقطات الشاشة والصوت. تكفي المجموعة ونوع الملاحظة أعلاه للبدء.';
       case 'onboarding_step_backup_action_desc':
-        return 'اختر خدمة نسخ احتياطي وسجّل الدخول، لتبقى مكتبتك سليمة عند فقدان الجهاز أو استبداله.';
+        return 'اختر واجهة خلفية وسجّل الدخول، أو صدّر ملف نسخة احتياطية محلية.';
       case 'onboarding_step_interconnect_action_desc':
-        return 'يقرن هذا الجهاز بأجهزتك الأخرى لمشاركة مكتبة واحدة وإبقاء التقدّم متزامنًا.';
+        return 'فعّل الربط البيني واقرن هذا الجهاز بأجهزتك الأخرى.';
       case 'onboarding_step_extension_action_desc':
-        return 'يوضّح كيفية تثبيت إضافة المتصفح وربطها بـ Fushi، لتتمكّن من البحث عن الكلمات في صفحات الويب أيضًا.';
+        return 'يوضّح كيفية تثبيت الإضافة وربطها بـ Fushi.';
       case 'onboarding_step_fonts_action_desc':
-        return 'أضف ملفات خطوطك الخاصة واختر الخط الذي تستخدمه كل لغة.';
-      case 'onboarding_pack_sources_hint':
-        return 'يُنزَّل على أجزاء متوازية من GitHub والموقع الرسمي ومرآة احتياطية في آنٍ واحد، مع التحقّق من كل جزء. يقيس Fushi سرعة المصادر أثناء العمل ويمنح الأسرع في تلك اللحظة عددًا أكبر من الأجزاء، فلا شيء تختاره هنا.';
+        return 'استورد ملفات الخطوط واختر خطًا لكل لغة.';
       case 'video_setting_hdr_output':
         return 'إخراج HDR / ‏10 بت';
       case 'video_setting_hdr_output_hint':
@@ -176175,99 +176349,79 @@ extension on _StringsAr {
         return ({required Object count}) =>
             'التبديل إلى الوضع المدمج لإنشاء ${count} بطاقة منتظرة';
       case 'onboarding_step_click_lookup_title':
-        return 'انقر لتبحث عن الكلمات';
+        return 'انقر لتبحث';
       case 'onboarding_click_lookup_tap_title':
-        return 'انقر على النص';
+        return 'انقر على كلمة';
       case 'onboarding_click_lookup_nested_title':
-        return 'تابع البحث داخل النافذة المنبثقة';
+        return 'تابع الاستكشاف';
       case 'onboarding_click_lookup_nested_body':
-        return 'انقر على كلمة أخرى داخل التعريف لفتح مستوى بحث أعمق. ارجع إلى الخلف أو انقر خارج النافذة لإغلاق مستوى واحد.';
+        return 'انقر على كلمة داخل التعريف لتنزل مستوى أعمق. ارجع إلى الخلف أو انقر خارج النافذة لإغلاق مستوى.';
       case 'onboarding_click_lookup_mine_title':
-        return 'حوّل النتيجة إلى بطاقة';
+        return 'أنشئ بطاقة';
       case 'onboarding_click_lookup_mine_body':
-        return 'عندما يكون المعنى صحيحًا، انقر على + لإرسال الكلمة والجملة والصوت والصورة إلى منشئ البطاقات.';
+        return 'انقر على + في المدخل لإرسال الكلمة والجملة والصوت والصورة إلى منشئ البطاقات.';
       case 'onboarding_step_global_lookup_title':
-        return 'البحث عن نص خارج Fushi';
+        return 'البحث خارج Fushi';
       case 'onboarding_global_lookup_windows_body':
-        return 'على Windows، حدّد نصًا في تطبيق آخر واستدعِ القاموس دون العودة إلى Fushi.';
+        return 'حدّد نصًا في أي تطبيق واستدعِ القاموس دون تبديل النوافذ.';
       case 'onboarding_global_lookup_windows_select_title':
-        return 'حدّد نصًا في أي تطبيق';
-      case 'onboarding_global_lookup_windows_shortcut_title':
-        return 'اضغط Ctrl+Alt+D';
+        return 'حدّد نصًا';
       case 'onboarding_global_lookup_windows_shortcut_body':
-        return 'هذا هو الاختصار العام الافتراضي. يلتقط Fushi التحديد الحالي ويفتح بطاقة بحث بجوار مؤشر الفأرة.';
+        return 'يلتقط Fushi التحديد ويفتح بطاقة بحث بجوار مؤشر الفأرة.';
       case 'onboarding_global_lookup_windows_customize_title':
-        return 'غيّر الاختصار إذا لزم الأمر';
+        return 'غيّر الاختصار';
       case 'onboarding_global_lookup_windows_customize_body':
-        return 'افتح الإعدادات → الاختصارات → عام (خارج التطبيق) لتعيين تركيبة مفاتيح أخرى.';
+        return 'الإعدادات → الاختصارات → عام (خارج التطبيق).';
       case 'onboarding_global_lookup_windows_action':
         return 'فتح إعدادات الاختصارات';
       case 'onboarding_global_lookup_windows_action_desc':
-        return 'يتيح لك تغيير اختصار البحث خارج التطبيق. الاختصار الافتراضي Ctrl+Alt+D يعمل بالفعل، لذا هذه الخطوة اختيارية.';
+        return 'فقط إن أردت تركيبة مفاتيح مختلفة.';
       case 'onboarding_global_lookup_android_body':
-        return 'على Android، يمرّر النظام النص المحدد إلى Fushi عبر قائمة النص أو لوحة المشاركة. ولا يوجد اختصار عام قابل لإعادة التعيين.';
+        return 'يسلّم Android النص المحدد إلى Fushi عبر قائمة النص أو لوحة المشاركة.';
       case 'onboarding_global_lookup_android_select_title':
-        return 'حدّد نصًا في تطبيق آخر';
+        return 'حدّد نصًا';
       case 'onboarding_global_lookup_android_open_title':
         return 'اختر Fushi';
       case 'onboarding_global_lookup_android_open_body':
-        return 'انقر على Fushi في قائمة تحديد النص. وإذا لم يظهر، فانقر على مشاركة ثم اختر Fushi من لوحة المشاركة.';
+        return 'انقر على Fushi في قائمة التحديد، أو انقر على «مشاركة» واختر Fushi.';
       case 'onboarding_global_lookup_android_continue_title':
-        return 'استخدم النافذة المنبثقة المستقلة';
+        return 'اقرأ النافذة المنبثقة';
       case 'onboarding_global_lookup_android_continue_body':
-        return 'يفتح البحث بمعزل عن التطبيق الأصلي. يمكنك النقر على كلمات أخرى داخله، وعند إغلاقه تعود إلى حيث كنت.';
+        return 'يفتح البحث فوق التطبيق الآخر. أغلقه لتعود.';
       case 'onboarding_feature_manual_resources':
-        return 'استيراد القواميس والصوت يدويًا';
+        return 'استيراد مواردي الخاصة';
       case 'onboarding_feature_manual_resources_hint':
-        return 'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+        return 'قواميس وكتب صوتية ومصادر نطق من ملفاتك الخاصة';
       case 'onboarding_step_manual_resources_title':
-        return 'جهّز القواميس والصوت يدويًا';
+        return 'قواميسك وملفاتك الصوتية';
       case 'onboarding_step_manual_resources_body':
-        return 'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+        return 'استورد قاموسًا واحدًا على الأقل قبل درس البحث. أما الكتب الصوتية وصوت النطق فاختياريان.';
       case 'onboarding_manual_dictionary_action':
         return 'استيراد قاموس';
       case 'onboarding_manual_dictionary_action_desc':
-        return 'افتح مدير القواميس واستورد ملف قاموس أو أرشيفًا مدعومًا واحدًا على الأقل. فدروس البحث لا تفيد إلا بعد أن يعيد البحث تعريفًا فعليًا.';
+        return 'يفتح إدارة القواميس. لن يعيد البحث نتائج إلا بعد تثبيت قاموس.';
       case 'onboarding_manual_audiobook_action':
-        return 'استيراد كتاب مع صوت الكتاب الصوتي';
+        return 'استيراد كتاب مع صوت';
       case 'onboarding_manual_audiobook_action_desc':
-        return 'افتح استيراد الكتب واختر الكتاب أو النص، والترجمة المتوافقة، وملفًا صوتيًا واحدًا أو أكثر. يحتاج الصوت إلى ترجمة كي يستطيع Fushi مطابقته مع الجمل.';
+        return 'كتاب أو نص، وترجمة متوافقة، وملفات صوتية. الترجمة هي ما يتيح لـ Fushi مزامنة الصوت مع الجمل.';
       case 'onboarding_manual_pronunciation_action':
-        return 'إعداد صوت نطق الكلمات';
+        return 'إعداد صوت النطق';
       case 'onboarding_manual_pronunciation_action_desc':
-        return 'أضف مصادر النطق المحلية أو عبر الإنترنت التي تستخدمها مداخل القاموس. وهذا منفصل عن صوت الكتاب الصوتي المرفق بكتاب.';
-      case 'onboarding_lookup_verify_action':
-        return 'تأكد من وجود الكلمة في قاموسك';
-      case 'onboarding_lookup_verify_action_desc':
-        return 'افتح البحث، واكتب أي كلمة تتعلمها، ولا تتابع إلا بعد أن يعيد القاموس المثبَّت تعريفًا لها. ولا يفرض الدرس كلمة مثال ثابتة.';
+        return 'مصادر محلية أو عبر الإنترنت لنطق الكلمات في مداخل القاموس. وهي منفصلة عن صوت الكتب الصوتية.';
       case 'onboarding_step_first_anki_card_title':
-        return 'أنشئ أول بطاقة Anki';
-      case 'onboarding_step_first_anki_card_body':
-        return 'لا تظهر هذه الخطوة إلا بعد أن يتصل هذا الإعداد بـ Anki ويُختار مجموعة ونوع ملاحظة صالحان للاستخدام.';
+        return 'بطاقتك الأولى';
       case 'onboarding_first_anki_lookup_title':
-        return 'ابدأ من نتيجة قاموس حقيقية';
-      case 'onboarding_first_anki_lookup_body':
-        return 'ابحث عن كلمة يعرّفها قاموسك المثبَّت فعلًا. فلا توجد كلمة تدريب ثابتة قد لا تكون موجودة في قاموسك.';
+        return 'ابحث عن كلمة';
       case 'onboarding_first_anki_plus_title':
-        return 'انقر على زر الجمع في المدخل';
+        return 'انقر على +';
       case 'onboarding_first_anki_plus_body':
-        return 'يفتح زر الجمع منشئ البطاقات ومعه الكلمة الحالية ونطقها ومعناها والجملة والصوت والصورة المتاحة.';
+        return 'يفتح منشئ البطاقات وقد امتلأت حقول الكلمة والنطق والمعنى والجملة والصوت والصورة.';
       case 'onboarding_first_anki_save_title':
         return 'راجِع ثم احفظ';
       case 'onboarding_first_anki_save_body':
-        return 'أكّد المجموعة الهدف ونوع الملاحظة ومعاينة الحقول ثم احفظ. وافتح Anki للتأكد من وصول البطاقة الأولى.';
+        return 'أكّد المجموعة ونوع الملاحظة ثم احفظ. افتح Anki لترى البطاقة.';
       case 'onboarding_first_anki_action':
-        return 'فتح البحث وإنشاء بطاقة';
-      case 'onboarding_first_anki_action_desc':
-        return 'اختر كلمة يظهر تعريفها، وانقر على زر الجمع الخاص بها، وراجع الحقول، ثم احفظها في مجموعة Anki المتصلة.';
-      case 'onboarding_step_click_lookup_body':
-        return 'تأكد أولًا من كلمة يعرّفها قاموسك المثبَّت فعلًا. ثم استخدم الكلمة نفسها للتدرب على البحث المباشر في الكتب، وفي نص OCR للمانغا، وفي ترجمات الفيديو.';
-      case 'onboarding_click_lookup_tap_body':
-        return 'على الهاتف، انقر على حرف من الكلمة التي تحققت منها؛ وعلى الحاسوب، انقر عليها بالزر الأيسر. يبدأ Fushi من هناك ويطابق أطول كلمة ممكنة.';
-      case 'onboarding_global_lookup_windows_select_body':
-        return 'ظلّل الكلمة نفسها التي تأكدت من وجود تعريف لها في القاموس، واترك التحديد قائمًا.';
-      case 'onboarding_global_lookup_android_select_body':
-        return 'اضغط مطولًا على الكلمة نفسها التي تحققت منها، ثم اسحب مقابض التحديد لتغطيها بالكامل.';
+        return 'افتح البحث وأنشئ بطاقة';
       case 'game_lookup_attached_title':
         return 'In-game lookup';
       case 'game_lookup_attached_no_ocr':
@@ -176502,6 +176656,56 @@ extension on _StringsAr {
         return 'بدأت اللعبة بدون الإعدادات المحلية اليابانية: يستخدم هذا النظام بالفعل صفحة الرموز اليابانية (CP932)، فلا حاجة لأي تغيير.';
       case 'game_session_japanese_locale_skipped_hint_not_32bit':
         return 'بدأت اللعبة بدون الإعدادات المحلية اليابانية: يرى الحكم التلقائي أنها ضرورية، لكن Locale Emulator يدعم ألعاب 32 بت فقط.';
+      case 'onboarding_feature_fonts':
+        return 'خطوط مخصّصة';
+      case 'onboarding_feature_fonts_hint':
+        return 'استخدم خطوطك الخاصة للواجهة ونص الكتاب والقاموس';
+      case 'onboarding_features_modules_title':
+        return 'صفحات المكتبة';
+      case 'onboarding_features_modules_hint':
+        return 'الصفحات غير المحدّدة تُخفى من شريط التنقل. يمكنك تغيير ذلك في أي وقت من الإعدادات → المظهر.';
+      case 'onboarding_features_setup_title':
+        return 'الإعداد التالي';
+      case 'onboarding_features_setup_hint':
+        return 'العناصر المحدّدة فقط تحصل على خطوة في هذا الدليل.';
+      case 'onboarding_pack_intro':
+        return 'قواميس يابانية ونبرة النطق وتكرار الكلمات وصوت النطق الياباني/الإنجليزي في تنزيل واحد. تتعلم لغة أخرى؟ تخطَّ هذه الخطوة واستورد قواميسك الخاصة.';
+      case 'onboarding_global_lookup_windows_select_desc':
+        return 'حدّد كلمة في أي تطبيق واترك التحديد فعّالاً.';
+      case 'onboarding_global_lookup_android_select_desc':
+        return 'اضغط مطولاً على كلمة في تطبيق آخر ثم اضبط المقابض لتغطيتها.';
+      case 'onboarding_global_lookup_windows_shortcut_press':
+        return 'اضغط الاختصار';
+      case 'onboarding_first_anki_card_intro':
+        return 'تم الاتصال بـ Anki. أنشئ الآن بطاقة حقيقية لتتأكد من أن المسار كاملاً يعمل.';
+      case 'onboarding_action_start':
+        return 'ابدأ استخدام Fushi';
+      case 'onboarding_actions_more':
+        return 'طرق أخرى';
+      case 'onboarding_finish_summary_modules':
+        return 'صفحات المكتبة المعروضة';
+      case 'onboarding_finish_summary_setup':
+        return 'إعداد موجَّه';
+      case 'onboarding_finish_summary_none':
+        return 'لا شيء';
+      case 'onboarding_anki_status_pending':
+        return 'لم يُختبر بعد';
+      case 'onboarding_click_lookup_intro':
+        return 'انقر على أي كلمة في كتاب أو مانغا أو ترجمة لترى معناها. جرّب ذلك على جملة التدريب بالأسفل.';
+      case 'onboarding_click_lookup_tap_desc':
+        return 'انقر على حرف (أو انقر بالزر الأيسر على الحاسوب)؛ يختار Fushi أطول كلمة تبدأ من هناك. وتُفتح الجملة في صفحة البحث.';
+      case 'onboarding_sample_sentence_label':
+        return 'جملة التدريب';
+      case 'onboarding_sample_sentence_hint':
+        return 'انقر لفتحها في صفحة البحث، ثم انقر على أي كلمة.';
+      case 'onboarding_lookup_practice_action':
+        return 'تدرّب على هذه الجملة';
+      case 'onboarding_lookup_practice_desc':
+        return 'يفتح صفحة البحث والجملة محمّلة فيها. انقر هناك على كلمة لترى معناها؛ وإن لم يظهر شيء فالقواميس لم تُثبَّت بعد.';
+      case 'onboarding_first_anki_lookup_desc':
+        return 'افتح جملة التدريب وانقر على كلمة.';
+      case 'onboarding_first_anki_action_desc':
+        return 'يفتح جملة التدريب في صفحة البحث. انقر على كلمة، ثم على +، وراجع الحقول ثم احفظ.';
       default:
         return null;
     }
@@ -183439,98 +183643,90 @@ extension on _StringsDe {
       case 'onboarding_title':
         return 'Erste Schritte';
       case 'onboarding_welcome_headline':
-        return 'Willkommen!';
+        return 'Willkommen bei Fushi';
       case 'onboarding_feature_anki':
-        return 'Anki-Karteikarten';
+        return 'Anki-Karten';
       case 'onboarding_feature_anki_hint':
-        return 'AnkiConnect oder AnkiDroid verbinden, um Karteikarten zu erstellen';
+        return 'Nachschlagen mit einem Tipp in Lernkarten verwandeln';
       case 'onboarding_feature_backup':
         return 'Sicherung & Synchronisierung';
       case 'onboarding_feature_backup_hint':
-        return 'Sichern Sie Ihre Daten auf Google Drive, WebDAV und anderen Backends';
+        return 'Google Drive, WebDAV oder eine lokale Datei';
       case 'onboarding_feature_interconnect':
         return 'Geräte-Interconnect';
       case 'onboarding_feature_interconnect_hint':
-        return 'Geräte in Ihrem LAN koppeln, um Bibliotheken und Fortschritt zu teilen';
+        return 'Bibliotheken und Fortschritt über Geräte im LAN teilen';
       case 'onboarding_step_dictionary_action':
         return 'Wörterbuchverwaltung öffnen';
       case 'onboarding_step_anki_title':
         return 'Anki einrichten';
       case 'onboarding_step_anki_action':
-        return 'Kartenerstell-Einstellungen öffnen';
+        return 'Kartenerstell-Einstellungen';
       case 'onboarding_step_backup_title':
-        return 'Sicherung einrichten';
+        return 'Sicherung';
       case 'onboarding_step_backup_body':
-        return 'Wählen Sie ein Sicherungs-Backend und melden Sie sich an, oder exportieren Sie eine lokale Sicherungsdatei.';
+        return 'Halten Sie Ihre Bibliothek sicher, wenn Sie das Gerät wechseln oder verlieren.';
       case 'onboarding_step_backup_action':
         return 'Sicherungseinstellungen öffnen';
       case 'onboarding_step_interconnect_title':
-        return 'Interconnect einrichten';
+        return 'Interconnect';
       case 'onboarding_step_interconnect_body':
-        return 'Aktivieren Sie Interconnect und koppeln Sie andere Geräte in Ihrem LAN, um Bibliotheken, Fortschritt und Nachschlagewerke zu teilen.';
+        return 'Geräte im LAN koppeln, um eine Bibliothek zu teilen und den Fortschritt synchron zu halten.';
       case 'onboarding_step_interconnect_action':
         return 'Interconnect-Einstellungen öffnen';
       case 'onboarding_finish_title':
         return 'Alles bereit';
       case 'onboarding_finish_body':
-        return 'Sie können diese Anleitung jederzeit unter Einstellungen → System erneut aufrufen.';
+        return 'Sie können diese Anleitung jederzeit unter Einstellungen → System wieder öffnen.';
       case 'onboarding_action_next':
         return 'Weiter';
-      case 'onboarding_action_finish':
-        return 'Fertig';
       case 'onboarding_action_skip':
         return 'Vorerst überspringen';
       case 'onboarding_reopen':
         return 'Erste-Schritte-Anleitung';
       case 'onboarding_welcome_body':
-        return 'Stellen Sie zuerst Ihre Oberflächensprache und das Design ein – die nächsten Schritte führen Sie durch den Rest.';
+        return 'Wählen Sie Oberflächensprache und Design. Die nächsten Schritte richten den Rest ein.';
       case 'onboarding_features_title':
-        return 'Wählen Sie, was Sie nutzen';
-      case 'onboarding_features_modules_label':
-        return 'Bibliotheks-Tabs (nicht markierte werden in der Navigationsleiste ausgeblendet; jederzeit in den Einstellungen änderbar)';
-      case 'onboarding_features_setup_label':
-        return 'Was als Nächstes eingerichtet wird';
+        return 'Was werden Sie nutzen?';
       case 'onboarding_feature_manga':
-        return 'Manga-Bibliothek';
+        return 'Manga';
       case 'onboarding_feature_manga_hint':
         return 'Manga lesen mit OCR-Nachschlagen';
       case 'onboarding_feature_video':
-        return 'Videothek';
+        return 'Video';
       case 'onboarding_feature_video_hint':
-        return 'Videos mit Untertitel-Nachschlagen und Kartenerstellen ansehen';
+        return 'Untertitel nachschlagen und Karten erstellen';
       case 'onboarding_feature_games':
-        return 'Galgame-Bibliothek';
+        return 'Galgames';
       case 'onboarding_feature_games_hint':
-        return 'Galgames mit Text-Hook-Nachschlagen starten (nur Windows)';
+        return 'Text-Hook-Nachschlagen beim Spielen (nur Windows)';
       case 'onboarding_feature_pack':
-        return 'Empfohlenes Paket (Wörterbücher + Audio)';
+        return 'Empfohlenes Paket';
       case 'onboarding_feature_pack_hint':
-        return 'Ein Download richtet japanische Wörterbücher plus JA/EN-Aussprache-Audio ein';
+        return 'Japanische Wörterbücher plus JA/EN-Aussprache-Audio in einem Download';
       case 'onboarding_step_pack_title':
-        return 'Empfohlenes Paket installieren';
-      case 'onboarding_step_pack_body':
-        return 'Das empfohlene Paket enthält japanische Wort-, Akzent- und Häufigkeitswörterbücher sowie japanische/englische Aussprachedatenbanken. Laden Sie es hier herunter und importieren Sie es; der Import ersetzt lokale Daten, führen Sie ihn daher bei einer Neuinstallation aus. Sie lernen eine andere Sprache? Verwenden Sie die Wörterbuchverwaltung, um eigene Wörterbücher zu importieren.';
+        return 'Empfohlenes Paket';
       case 'onboarding_step_pack_download_action':
         return 'Herunterladen und importieren';
       case 'onboarding_step_pack_import_existing_action':
         return 'Heruntergeladenes Paket importieren';
       case 'onboarding_step_pack_pick_action':
-        return 'Lokale Paketdatei auswählen';
+        return 'Paketdatei wählen';
       case 'onboarding_pack_downloading':
-        return 'Wird heruntergeladen… jederzeit abbrechbar, wird beim nächsten Mal fortgesetzt';
+        return 'Wird heruntergeladen… jederzeit abbrechbar und später fortsetzbar';
       case 'onboarding_pack_download_failed':
         return ({required Object message}) =>
             'Download fehlgeschlagen: ${message}';
       case 'onboarding_step_extension_title':
         return 'Browser-Erweiterung';
       case 'onboarding_step_extension_body':
-        return 'Installieren Sie die Browser-Erweiterung, um Wörter auf beliebigen Webseiten nachzuschlagen.';
+        return 'Wörter auf beliebigen Webseiten mit der passenden Erweiterung nachschlagen.';
       case 'onboarding_step_extension_action':
-        return 'Erweiterungs-Anleitung öffnen';
+        return 'Installationsanleitung öffnen';
       case 'onboarding_step_fonts_title':
-        return 'Leseschriften';
+        return 'Schriften';
       case 'onboarding_step_fonts_body':
-        return 'Importieren Sie benutzerdefinierte Schriften und wählen Sie, welche für Oberfläche, Buchtext und Wörterbuch verwendet werden.';
+        return 'Eigene Schriften für Oberfläche, Buchtext und Wörterbuch verwenden.';
       case 'settings_section_modules':
         return 'Funktionsmodule';
       case 'module_toggle_hint':
@@ -183734,9 +183930,9 @@ extension on _StringsDe {
       case 'module_extension_label':
         return 'Browser-Erweiterung';
       case 'onboarding_feature_books':
-        return 'Roman-Bibliothek';
+        return 'Romane';
       case 'onboarding_feature_books_hint':
-        return 'EPUB-Romane mit Wörterbuch-Nachschlagen und Hörbuch-Synchronisation lesen';
+        return 'EPUB lesen mit Nachschlagen und Hörbuch-Synchronisation';
       case 'onboarding_feature_extension_hint':
         return 'Wörter auf beliebigen Webseiten nachschlagen (nur Desktop)';
       case 'video_setting_tap_toggles_playback':
@@ -184092,11 +184288,11 @@ extension on _StringsDe {
       case 'game_session_japanese_locale_hint':
         return 'Das Spiel wurde unter einer japanischen (CP932) Gebietseinstellung gestartet. Wenn der Text verstümmelt aussieht oder ein Skriptfehler auftritt, setzen Sie die japanische Gebietseinstellung dieses Spiels auf „Nie".';
       case 'onboarding_anki_intro_body':
-        return 'Anki ist eine kostenlose Lernkarten-App mit verteilter Wiederholung: Neue Wörter werden zu Karten, und Wiederholungen werden entlang der Vergessenskurve geplant. Nach dem Nachschlagen kann Fushi das Wort mit einem Tipp in eine Anki-Karte verwandeln – mit Bedeutung, Satz, Audio und Screenshot.';
+        return 'Anki ist eine kostenlose Lernkarten-App mit verteilter Wiederholung. Nach dem Nachschlagen macht Fushi das Wort mit einem Tipp zu einer Karte – mit Bedeutung, Satz, Audio und Screenshot.';
       case 'onboarding_anki_setup_desktop_hint':
-        return 'Installieren Sie die Anki-Desktop-App und fügen Sie dann das AnkiConnect-Add-on hinzu: Öffnen Sie in Anki Werkzeuge – Add-ons – Add-ons herunterladen und geben Sie den Code 2055492159 ein. Lassen Sie Anki beim Erstellen von Karten geöffnet.';
+        return 'Installieren Sie Anki, fügen Sie das AnkiConnect-Add-on hinzu (ein Tipp unten, oder Add-on-Code 2055492159) und lassen Sie Anki beim Kartenerstellen laufen.';
       case 'onboarding_anki_setup_ios_hint':
-        return 'Mit installiertem AnkiMobile funktioniert das Hinzufügen von Karten sofort. Für den vollen Funktionsumfang verbinden Sie sich über AnkiConnect mit Anki auf einem Computer im selben Netzwerk.';
+        return 'Mit installiertem AnkiMobile werden Karten direkt hinzugefügt. Für den vollen Funktionsumfang verbinden Sie sich über AnkiConnect mit Anki auf einem Computer im selben Netzwerk.';
       case 'onboarding_anki_backend_label':
         return 'Verbindung';
       case 'onboarding_anki_test_action':
@@ -184109,17 +184305,17 @@ extension on _StringsDe {
       case 'onboarding_anki_get_ankidroid_action':
         return 'AnkiDroid herunterladen';
       case 'onboarding_anki_mobile_ankiconnect_title':
-        return 'Erweitert: AnkiConnect auf diesem Gerät verwenden';
+        return 'Erweitert: AnkiConnect von diesem Gerät aus nutzen';
       case 'onboarding_anki_mobile_ankiconnect_hint':
-        return 'Dieses Gerät kann auch Karten in Anki erstellen, das auf einem Computer im selben Netzwerk läuft: Aktivieren Sie AnkiConnect in den Kartenerstellungs-Einstellungen und geben Sie die Computeradresse ein.';
+        return 'Karten in Anki auf einem Computer im selben Netzwerk erstellen: Aktivieren Sie AnkiConnect in den Kartenerstellungs-Einstellungen und geben Sie die Adresse des Computers ein.';
       case 'onboarding_anki_setup_android_hint':
-        return 'Installieren Sie AnkiDroid und öffnen Sie es einmal, um die Ersteinrichtung abzuschließen. Tippen Sie zurück in Fushi bei Ihrer ersten Karte im Berechtigungsdialog auf „Zulassen" – keine AnkiDroid-Einstellungen müssen geändert werden.';
+        return 'Installieren Sie AnkiDroid und öffnen Sie es einmal. Tippen Sie bei Ihrer ersten Karte im Berechtigungsdialog auf „Zulassen“ – mehr ist nicht einzustellen.';
       case 'onboarding_anki_install_addon_action':
         return 'AnkiConnect-Add-on installieren';
       case 'onboarding_anki_addon_installed':
-        return 'AnkiConnect ist installiert. Starten Sie Anki (neu) und tippen Sie dann auf „Verbindung testen".';
+        return 'AnkiConnect installiert. Starten Sie Anki (neu) und testen Sie dann die Verbindung.';
       case 'onboarding_anki_addon_no_anki':
-        return 'Anki-Datenordner nicht gefunden. Installieren Sie Anki und öffnen Sie es einmal, dann versuchen Sie es erneut.';
+        return 'Anki-Datenordner nicht gefunden. Installieren Sie Anki, öffnen Sie es einmal und versuchen Sie es erneut.';
       case 'onboarding_anki_addon_failed':
         return ({required Object message}) =>
             'Installation fehlgeschlagen: ${message}';
@@ -184555,41 +184751,39 @@ extension on _StringsDe {
       case 'onboarding_action_badge_optional':
         return 'Optional';
       case 'onboarding_pack_action_download_desc':
-        return 'Lädt das gesamte Paket im Hintergrund herunter und importiert es anschließend. Jederzeit abbrechbar; der Download wird an der Abbruchstelle fortgesetzt.';
+        return 'Lädt im Hintergrund von mehreren Quellen gleichzeitig und importiert danach. Jederzeit abbrechbar; es wird an der Abbruchstelle fortgesetzt.';
       case 'onboarding_pack_action_import_existing_desc':
-        return 'Das Paket ist bereits heruntergeladen; hier wird es importiert. Wähle im Bestätigungsdialog „Zusammenführen“, dann bleiben deine vorhandenen Daten unangetastet.';
+        return 'Das Paket liegt bereits auf der Festplatte. Wählen Sie im Bestätigungsdialog „Zusammenführen“, um Ihre vorhandenen Daten zu behalten.';
       case 'onboarding_pack_action_pick_desc':
-        return 'Du hast das Paket-ZIP bereits anderweitig bekommen? Importiere es von der Festplatte und überspringe den Download komplett.';
+        return 'Sie haben das Paket-ZIP schon? Importieren Sie es von der Festplatte und überspringen Sie den Download.';
       case 'onboarding_pack_action_website':
-        return 'Download-Seite der Website öffnen';
+        return 'Download-Seite öffnen';
       case 'onboarding_pack_action_website_desc':
-        return 'Öffnet die offizielle Website im Browser. Im Paket-Abschnitt findest du Teil-Links, die du einem Downloadmanager übergeben kannst; komm danach hierher zurück und importiere das Ergebnis über „Lokale Paketdatei wählen“.';
+        return 'Teil-Links für Downloadmanager. Kommen Sie danach zurück und nutzen Sie „Paketdatei wählen“.';
       case 'onboarding_pack_action_dictionary_desc':
-        return 'Du lernst eine andere Sprache als Japanisch? Überspring das Paket und importiere hier stattdessen Wörterbücher für deine Sprache.';
+        return 'Lernen Sie eine andere Sprache? Importieren Sie hier stattdessen passende Wörterbücher.';
       case 'onboarding_pack_action_audio_desc':
-        return 'Woher die Aussprache-Audios kommen. Japanisch und Englisch deckt das Paket bereits ab; für andere Sprachen fügst du hier Online-Quellen hinzu.';
+        return 'Online-Aussprachequellen für Sprachen hinzufügen, die das Paket nicht abdeckt.';
       case 'onboarding_anki_action_test_desc':
-        return 'Prüft, ob Fushi Anki erreicht, und lädt deine Stapel und Notiztypen. Es wird noch nichts angelegt.';
+        return 'Prüft, ob Fushi Anki erreicht, und lädt Ihre Stapel und Notiztypen. Legt nichts an.';
       case 'onboarding_anki_action_refresh_desc':
-        return 'Lädt Stapel und Notiztypen erneut aus Anki. Nutze das, nachdem du in Anki einen neuen Stapel angelegt hast.';
+        return 'Lädt Stapel und Notiztypen neu. Nutzen Sie das, nachdem Sie in Anki einen Stapel angelegt haben.';
       case 'onboarding_anki_action_get_ankidroid_desc':
-        return 'Öffnet die Store-Seite von AnkiDroid. Fushi schreibt seine Karten dorthin, es muss also zuerst installiert sein.';
+        return 'Öffnet die Store-Seite. Fushi schreibt Karten nach AnkiDroid, es muss also zuerst installiert sein.';
       case 'onboarding_anki_action_get_anki_desc':
-        return 'Öffnet die Download-Seite von Anki. Installiere Anki und lass es beim Kartenerstellen laufen.';
+        return 'Öffnet die Download-Seite von Anki. Lassen Sie Anki beim Kartenerstellen laufen.';
       case 'onboarding_anki_action_install_addon_desc':
-        return 'Entpackt das mitgelieferte AnkiConnect-Add-on für dich nach Anki – darüber spricht Fushi mit Anki. Starte Anki danach neu.';
+        return 'Entpackt das mitgelieferte AnkiConnect-Add-on nach Anki. Starten Sie Anki danach neu.';
       case 'onboarding_step_anki_action_desc':
-        return 'Kartenvorlage, Feldzuordnung, Screenshots und Audio: die Details dazu, wie eine erzeugte Karte aussieht. Stapel und Notiztyp oben genügen zum Loslegen – öffne das hier nur, wenn du ändern willst, wie Karten gebaut werden.';
+        return 'Vorlage, Feldzuordnung, Screenshots und Audio. Stapel und Notiztyp oben genügen zum Loslegen.';
       case 'onboarding_step_backup_action_desc':
-        return 'Wähle ein Backup-Backend und melde dich an, damit deine Bibliothek einen Geräteverlust oder -wechsel übersteht.';
+        return 'Wählen Sie ein Backend und melden Sie sich an, oder exportieren Sie eine lokale Sicherungsdatei.';
       case 'onboarding_step_interconnect_action_desc':
-        return 'Koppelt dieses Gerät mit deinen anderen Geräten, um eine Bibliothek zu teilen und den Fortschritt synchron zu halten.';
+        return 'Interconnect aktivieren und dieses Gerät mit Ihren anderen koppeln.';
       case 'onboarding_step_extension_action_desc':
-        return 'Zeigt, wie du die Browser-Erweiterung installierst und mit Fushi verbindest, damit du auch auf Webseiten nachschlagen kannst.';
+        return 'Zeigt, wie Sie die Erweiterung installieren und mit Fushi verbinden.';
       case 'onboarding_step_fonts_action_desc':
-        return 'Eigene Schriftdateien hinzufügen und festlegen, welche Schrift jede Sprache verwendet.';
-      case 'onboarding_pack_sources_hint':
-        return 'Wird parallel in Teilstücken gleichzeitig von GitHub, der offiziellen Website und einem Ersatz-Spiegel geladen, jedes Teilstück mit Prüfsumme. Fushi misst die Quellen währenddessen und gibt der aktuell schnellsten mehr Teilstücke – hier gibt es also nichts auszuwählen.';
+        return 'Schriftdateien importieren und pro Sprache eine auswählen.';
       case 'video_setting_hdr_output':
         return 'HDR-/10-Bit-Ausgabe';
       case 'video_setting_hdr_output_hint':
@@ -184693,97 +184887,77 @@ extension on _StringsDe {
       case 'onboarding_step_click_lookup_title':
         return 'Zum Nachschlagen tippen';
       case 'onboarding_click_lookup_tap_title':
-        return 'Auf den Text tippen';
+        return 'Auf ein Wort tippen';
       case 'onboarding_click_lookup_nested_title':
-        return 'Im Popup weitersuchen';
+        return 'Weitersuchen';
       case 'onboarding_click_lookup_nested_body':
-        return 'Tippen Sie in einer Bedeutung auf ein weiteres Wort, um eine tiefere Ebene zu öffnen. Mit Zurück oder einem Tipp außerhalb schließen Sie eine Ebene.';
+        return 'Tippen Sie in einer Bedeutung auf ein Wort, um eine Ebene tiefer zu gehen. Mit Zurück oder einem Tipp außerhalb schließen Sie eine Ebene.';
       case 'onboarding_click_lookup_mine_title':
-        return 'Das Ergebnis in eine Karte verwandeln';
+        return 'Karte erstellen';
       case 'onboarding_click_lookup_mine_body':
-        return 'Wenn die Bedeutung passt, tippen Sie auf +, um Wort, Satz, Audio und Bild an den Kartenersteller zu senden.';
+        return 'Tippen Sie am Eintrag auf +, um Wort, Satz, Audio und Bild an den Kartenersteller zu senden.';
       case 'onboarding_step_global_lookup_title':
-        return 'Text außerhalb von Fushi nachschlagen';
+        return 'Außerhalb von Fushi nachschlagen';
       case 'onboarding_global_lookup_windows_body':
-        return 'Unter Windows markieren Sie Text in einer anderen App und rufen das Wörterbuch auf, ohne zu Fushi zurückzuwechseln.';
+        return 'Markieren Sie Text in einer beliebigen App und rufen Sie das Wörterbuch auf, ohne das Fenster zu wechseln.';
       case 'onboarding_global_lookup_windows_select_title':
-        return 'Text in einer beliebigen App markieren';
-      case 'onboarding_global_lookup_windows_shortcut_title':
-        return 'Ctrl+Alt+D drücken';
+        return 'Text markieren';
       case 'onboarding_global_lookup_windows_shortcut_body':
-        return 'Das ist das voreingestellte globale Tastenkürzel. Fushi übernimmt die aktuelle Auswahl und öffnet eine Nachschlagekarte neben dem Mauszeiger.';
+        return 'Fushi übernimmt die Auswahl und öffnet eine Nachschlagekarte neben dem Mauszeiger.';
       case 'onboarding_global_lookup_windows_customize_title':
-        return 'Tastenkürzel bei Bedarf ändern';
+        return 'Tastenkürzel ändern';
       case 'onboarding_global_lookup_windows_customize_body':
-        return 'Öffnen Sie Einstellungen → Tastenkürzel → Global (außerhalb der App), um eine andere Tastenkombination zuzuweisen.';
+        return 'Einstellungen → Tastenkürzel → Global (außerhalb der App).';
       case 'onboarding_global_lookup_windows_action':
         return 'Tastenkürzel-Einstellungen öffnen';
       case 'onboarding_global_lookup_windows_action_desc':
-        return 'Hier ändern Sie das Tastenkürzel zum Nachschlagen außerhalb der App. Die Voreinstellung Ctrl+Alt+D funktioniert bereits, daher ist das optional.';
+        return 'Nur, wenn Sie eine andere Tastenkombination möchten.';
       case 'onboarding_global_lookup_android_body':
-        return 'Unter Android übergibt das System markierten Text über das Textmenü oder das Teilen-Menü an Fushi. Ein frei belegbares globales Tastenkürzel gibt es dort nicht.';
+        return 'Android übergibt markierten Text über das Textmenü oder das Teilen-Menü an Fushi.';
       case 'onboarding_global_lookup_android_select_title':
-        return 'Text in einer anderen App markieren';
+        return 'Text markieren';
       case 'onboarding_global_lookup_android_open_title':
         return 'Fushi auswählen';
       case 'onboarding_global_lookup_android_open_body':
-        return 'Tippen Sie im Textauswahlmenü auf Fushi. Wird es nicht angezeigt, tippen Sie auf Teilen und wählen Fushi im Teilen-Menü.';
+        return 'Tippen Sie im Auswahlmenü auf Fushi, oder tippen Sie auf Teilen und wählen Fushi.';
       case 'onboarding_global_lookup_android_continue_title':
-        return 'Das eigenständige Popup nutzen';
+        return 'Popup lesen';
       case 'onboarding_global_lookup_android_continue_body':
-        return 'Das Nachschlagen öffnet sich getrennt von der Ursprungs-App. Sie können darin weitere Wörter antippen und kehren nach dem Schließen dorthin zurück, wo Sie waren.';
+        return 'Das Nachschlagen öffnet sich über der anderen App. Schließen Sie es, um zurückzukehren.';
       case 'onboarding_feature_manual_resources':
-        return 'Wörterbücher und Audio manuell importieren';
+        return 'Eigene Ressourcen importieren';
       case 'onboarding_feature_manual_resources_hint':
-        return 'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+        return 'Wörterbücher, Hörbücher und Aussprachequellen aus eigenen Dateien';
       case 'onboarding_step_manual_resources_title':
-        return 'Wörterbücher und Audio manuell vorbereiten';
+        return 'Eigene Wörterbücher und Audios';
       case 'onboarding_step_manual_resources_body':
-        return 'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+        return 'Importieren Sie mindestens ein Wörterbuch vor der Nachschlage-Anleitung. Hörbücher und Aussprache-Audio sind optional.';
       case 'onboarding_manual_dictionary_action':
         return 'Ein Wörterbuch importieren';
       case 'onboarding_manual_dictionary_action_desc':
-        return 'Öffnen Sie die Wörterbuchverwaltung und importieren Sie mindestens eine unterstützte Wörterbuchdatei oder ein Archiv. Die Nachschlage-Anleitungen bringen erst etwas, wenn eine Abfrage eine Bedeutung liefert.';
+        return 'Öffnet die Wörterbuchverwaltung. Abfragen liefern erst dann Treffer, wenn ein Wörterbuch installiert ist.';
       case 'onboarding_manual_audiobook_action':
-        return 'Ein Buch mit Hörbuch-Audio importieren';
+        return 'Ein Buch mit Audio importieren';
       case 'onboarding_manual_audiobook_action_desc':
-        return 'Öffnen Sie den Buchimport und wählen Sie das Buch oder den Text, passende Untertitel und eine oder mehrere Audiodateien. Ohne Untertitel kann Fushi das Audio nicht satzweise zuordnen.';
+        return 'Buch oder Text, passende Untertitel und Audiodateien. Erst die Untertitel lassen Fushi das Audio satzweise zuordnen.';
       case 'onboarding_manual_pronunciation_action':
-        return 'Aussprache-Audio für Wörter einrichten';
+        return 'Aussprache-Audio einrichten';
       case 'onboarding_manual_pronunciation_action_desc':
-        return 'Fügen Sie lokale oder Online-Aussprachequellen hinzu, die Wörterbucheinträge verwenden. Das ist unabhängig vom Hörbuch-Audio eines Buchs.';
-      case 'onboarding_lookup_verify_action':
-        return 'Ein Wort im Wörterbuch prüfen';
-      case 'onboarding_lookup_verify_action_desc':
-        return 'Öffnen Sie das Nachschlagen, geben Sie ein beliebiges Wort ein, das Sie lernen, und fahren Sie erst fort, wenn das installierte Wörterbuch eine Bedeutung liefert. Die Anleitung gibt kein Beispielwort fest vor.';
+        return 'Lokale oder Online-Quellen für die Wortaussprache in Wörterbucheinträgen. Unabhängig vom Hörbuch-Audio.';
       case 'onboarding_step_first_anki_card_title':
-        return 'Ihre erste Anki-Karte erstellen';
-      case 'onboarding_step_first_anki_card_body':
-        return 'Dieser Schritt erscheint nur, wenn diese Einrichtung bereits mit Anki verbunden ist und ein nutzbarer Stapel samt Notiztyp ausgewählt wurde.';
+        return 'Ihre erste Karte';
       case 'onboarding_first_anki_lookup_title':
-        return 'Mit einem echten Wörterbuchtreffer beginnen';
-      case 'onboarding_first_anki_lookup_body':
-        return 'Schlagen Sie ein Wort nach, das Ihr installiertes Wörterbuch tatsächlich kennt. Es gibt kein festes Übungswort, das in Ihrem Wörterbuch fehlen könnte.';
+        return 'Ein Wort nachschlagen';
       case 'onboarding_first_anki_plus_title':
-        return 'Auf das Plus-Symbol am Eintrag tippen';
+        return 'Auf + tippen';
       case 'onboarding_first_anki_plus_body':
-        return 'Das Plus öffnet den Kartenersteller mit dem aktuellen Wort, der Lesung, der Bedeutung, dem Satz, dem Audio und dem verfügbaren Bildkontext.';
+        return 'Der Kartenersteller öffnet sich mit Wort, Lesung, Bedeutung, Satz, Audio und Bild bereits ausgefüllt.';
       case 'onboarding_first_anki_save_title':
         return 'Prüfen und speichern';
       case 'onboarding_first_anki_save_body':
-        return 'Bestätigen Sie Zielstapel, Notiztyp und die Feldvorschau und speichern Sie dann. Öffnen Sie Anki, um zu prüfen, ob die erste Karte angekommen ist.';
+        return 'Bestätigen Sie Stapel und Notiztyp und speichern Sie. Öffnen Sie Anki, um die Karte zu sehen.';
       case 'onboarding_first_anki_action':
-        return 'Nachschlagen öffnen und eine Karte erstellen';
-      case 'onboarding_first_anki_action_desc':
-        return 'Nehmen Sie ein Wort mit sichtbarer Bedeutung, tippen Sie auf sein Plus-Symbol, prüfen Sie die Felder und speichern Sie es im verbundenen Anki-Stapel.';
-      case 'onboarding_step_click_lookup_body':
-        return 'Prüfen Sie zuerst ein Wort, das Ihr installiertes Wörterbuch tatsächlich kennt. Üben Sie dann mit demselben Wort das direkte Nachschlagen in Büchern, im OCR-Text von Manga und in Videountertiteln.';
-      case 'onboarding_click_lookup_tap_body':
-        return 'Tippen Sie auf dem Handy auf ein Zeichen des geprüften Wortes, am Computer klicken Sie es mit links an. Fushi setzt dort an und findet die längste passende Wortform.';
-      case 'onboarding_global_lookup_windows_select_body':
-        return 'Markieren Sie dasselbe Wort, für das Sie bereits eine Wörterbuchbedeutung geprüft haben, und lassen Sie die Auswahl bestehen.';
-      case 'onboarding_global_lookup_android_select_body':
-        return 'Halten Sie dasselbe geprüfte Wort gedrückt und ziehen Sie dann die Auswahlpunkte so, dass es vollständig markiert ist.';
+        return 'Nachschlagen öffnen und Karte erstellen';
       case 'game_lookup_attached_title':
         return 'In-game lookup';
       case 'game_lookup_attached_no_ocr':
@@ -185019,6 +185193,56 @@ extension on _StringsDe {
         return 'Das Spiel wurde ohne japanische Locale gestartet: Dieses System nutzt bereits die japanische Codepage (CP932), es ist nichts zu ändern.';
       case 'game_session_japanese_locale_skipped_hint_not_32bit':
         return 'Das Spiel wurde ohne japanische Locale gestartet: Die automatische Einschätzung hält sie für nötig, aber Locale Emulator unterstützt nur 32-Bit-Spiele.';
+      case 'onboarding_feature_fonts':
+        return 'Eigene Schriften';
+      case 'onboarding_feature_fonts_hint':
+        return 'Eigene Schriften für Oberfläche, Buchtext und Wörterbuch verwenden';
+      case 'onboarding_features_modules_title':
+        return 'Bibliotheksseiten';
+      case 'onboarding_features_modules_hint':
+        return 'Nicht angehakte Seiten werden in der Navigationsleiste ausgeblendet. Jederzeit änderbar unter Einstellungen → Erscheinungsbild.';
+      case 'onboarding_features_setup_title':
+        return 'Als Nächstes einrichten';
+      case 'onboarding_features_setup_hint':
+        return 'Nur angehakte Punkte bekommen einen Schritt in dieser Anleitung.';
+      case 'onboarding_pack_intro':
+        return 'Japanische Wörterbücher, Tonhöhenakzent, Worthäufigkeit und JA/EN-Aussprache-Audio in einem Download. Lernen Sie eine andere Sprache? Überspringen Sie das und importieren Sie Ihre eigenen Wörterbücher.';
+      case 'onboarding_global_lookup_windows_select_desc':
+        return 'Markieren Sie ein Wort in einer beliebigen App und lassen Sie es ausgewählt.';
+      case 'onboarding_global_lookup_android_select_desc':
+        return 'Halten Sie in einer anderen App ein Wort gedrückt und ziehen Sie die Greifpunkte darüber.';
+      case 'onboarding_global_lookup_windows_shortcut_press':
+        return 'Tastenkürzel drücken';
+      case 'onboarding_first_anki_card_intro':
+        return 'Anki ist verbunden. Erstellen Sie jetzt eine echte Karte, damit Sie sehen, dass der ganze Weg funktioniert.';
+      case 'onboarding_action_start':
+        return 'Fushi starten';
+      case 'onboarding_actions_more':
+        return 'Weitere Möglichkeiten';
+      case 'onboarding_finish_summary_modules':
+        return 'Angezeigte Bibliotheksseiten';
+      case 'onboarding_finish_summary_setup':
+        return 'Geführte Einrichtung';
+      case 'onboarding_finish_summary_none':
+        return 'Keine';
+      case 'onboarding_anki_status_pending':
+        return 'Noch nicht getestet';
+      case 'onboarding_click_lookup_intro':
+        return 'Tippen Sie in einem Buch, Manga oder Untertitel auf ein beliebiges Wort, um seine Bedeutung zu sehen. Probieren Sie es am Übungssatz unten aus.';
+      case 'onboarding_click_lookup_tap_desc':
+        return 'Tippen Sie auf ein Zeichen (am Computer: Linksklick); Fushi nimmt das längste Wort, das dort beginnt. Der Satz wird auf der Nachschlageseite geöffnet.';
+      case 'onboarding_sample_sentence_label':
+        return 'Übungssatz';
+      case 'onboarding_sample_sentence_hint':
+        return 'Tippen, um ihn auf der Nachschlageseite zu öffnen, dann auf ein beliebiges Wort tippen.';
+      case 'onboarding_lookup_practice_action':
+        return 'Mit diesem Satz üben';
+      case 'onboarding_lookup_practice_desc':
+        return 'Öffnet die Nachschlageseite mit geladenem Satz. Tippen Sie dort auf ein Wort, um seine Bedeutung zu sehen; kommt nichts zurück, sind noch keine Wörterbücher installiert.';
+      case 'onboarding_first_anki_lookup_desc':
+        return 'Öffnen Sie den Übungssatz und tippen Sie auf ein Wort.';
+      case 'onboarding_first_anki_action_desc':
+        return 'Öffnet den Übungssatz auf der Nachschlageseite. Tippen Sie auf ein Wort, dann auf +, prüfen Sie die Felder und speichern Sie.';
       default:
         return null;
     }
@@ -191950,97 +192174,89 @@ extension on _StringsEs {
       case 'onboarding_title':
         return 'Primeros pasos';
       case 'onboarding_welcome_headline':
-        return '¡Bienvenido!';
+        return 'Le damos la bienvenida a Fushi';
       case 'onboarding_feature_anki':
         return 'Tarjetas de Anki';
       case 'onboarding_feature_anki_hint':
-        return 'Conecte AnkiConnect o AnkiDroid para crear tarjetas de estudio';
+        return 'Convierta sus consultas en tarjetas con un toque';
       case 'onboarding_feature_backup':
         return 'Respaldo y sincronización';
       case 'onboarding_feature_backup_hint':
-        return 'Respalde sus datos en Google Drive, WebDAV y otros backends';
+        return 'Google Drive, WebDAV o un archivo local';
       case 'onboarding_feature_interconnect':
         return 'Interconexión de dispositivos';
       case 'onboarding_feature_interconnect_hint':
-        return 'Empareje dispositivos en su LAN para compartir bibliotecas y progreso';
+        return 'Comparta bibliotecas y progreso entre dispositivos de su LAN';
       case 'onboarding_step_dictionary_action':
         return 'Abrir administrador de diccionarios';
       case 'onboarding_step_anki_title':
         return 'Configurar Anki';
       case 'onboarding_step_anki_action':
-        return 'Abrir ajustes de creación de tarjetas';
+        return 'Ajustes de creación de tarjetas';
       case 'onboarding_step_backup_title':
-        return 'Configurar respaldo';
+        return 'Respaldo';
       case 'onboarding_step_backup_body':
-        return 'Elija un backend de respaldo e inicie sesión, o exporte un archivo de respaldo local.';
+        return 'Mantenga su biblioteca a salvo cuando cambie o pierda un dispositivo.';
       case 'onboarding_step_backup_action':
         return 'Abrir ajustes de respaldo';
       case 'onboarding_step_interconnect_title':
-        return 'Configurar Interconnect';
+        return 'Interconnect';
       case 'onboarding_step_interconnect_body':
-        return 'Active Interconnect y empareje con otros dispositivos en su LAN para compartir bibliotecas, progreso y búsquedas.';
+        return 'Empareje dispositivos de su LAN para compartir una misma biblioteca y mantener el progreso sincronizado.';
       case 'onboarding_step_interconnect_action':
         return 'Abrir ajustes de Interconnect';
       case 'onboarding_finish_title':
         return 'Todo listo';
       case 'onboarding_finish_body':
-        return 'Puede volver a visitar esta guía en cualquier momento desde Ajustes → Sistema.';
+        return 'Puede volver a abrir esta guía en cualquier momento desde Ajustes → Sistema.';
       case 'onboarding_action_next':
         return 'Siguiente';
-      case 'onboarding_action_finish':
-        return 'Finalizar';
       case 'onboarding_action_skip':
         return 'Omitir por ahora';
       case 'onboarding_reopen':
         return 'Guía de primeros pasos';
       case 'onboarding_welcome_body':
-        return 'Establezca su idioma de interfaz y tema primero — los siguientes pasos le guiarán con el resto.';
+        return 'Elija su idioma de interfaz y el tema. Los siguientes pasos configuran el resto.';
       case 'onboarding_features_title':
-        return 'Elija qué usa';
-      case 'onboarding_features_modules_label':
-        return 'Pestañas de biblioteca (las desmarcadas se ocultan de la barra de navegación; cámbielo en cualquier momento en Ajustes)';
-      case 'onboarding_features_setup_label':
-        return 'Qué configurar a continuación';
+        return '¿Qué va a usar?';
       case 'onboarding_feature_manga':
-        return 'Biblioteca de manga';
+        return 'Manga';
       case 'onboarding_feature_manga_hint':
         return 'Lea manga con búsqueda por OCR';
       case 'onboarding_feature_video':
-        return 'Biblioteca de vídeo';
+        return 'Vídeo';
       case 'onboarding_feature_video_hint':
-        return 'Vea vídeos con búsqueda de subtítulos y creación de tarjetas';
+        return 'Consulta en subtítulos y creación de tarjetas';
       case 'onboarding_feature_games':
-        return 'Biblioteca de galgame';
+        return 'Galgames';
       case 'onboarding_feature_games_hint':
-        return 'Inicie galgames con búsqueda por hook de texto (solo Windows)';
+        return 'Consulta por hook de texto mientras juega (solo Windows)';
       case 'onboarding_feature_pack':
-        return 'Pack recomendado (diccionarios + audio)';
+        return 'Pack recomendado';
       case 'onboarding_feature_pack_hint':
-        return 'Una descarga configura diccionarios japoneses más audio de pronunciación JA/EN';
+        return 'Diccionarios japoneses más audio de pronunciación JA/EN en una descarga';
       case 'onboarding_step_pack_title':
-        return 'Instalar el pack recomendado';
-      case 'onboarding_step_pack_body':
-        return 'El pack recomendado incluye diccionarios japoneses de palabras, acento tonal y frecuencia, más bases de datos de pronunciación japonés/inglés. Descárguelo e impórtelo aquí; la importación reemplaza datos locales, así que ejecútelo en una instalación nueva. ¿Aprendiendo otro idioma? Use el administrador de diccionarios para importar sus propios diccionarios.';
+        return 'Pack recomendado';
       case 'onboarding_step_pack_download_action':
         return 'Descargar e importar';
       case 'onboarding_step_pack_import_existing_action':
-        return 'Importar pack descargado';
+        return 'Importar el pack descargado';
       case 'onboarding_step_pack_pick_action':
-        return 'Elegir archivo de pack local';
+        return 'Elegir un archivo de pack';
       case 'onboarding_pack_downloading':
-        return 'Descargando… cancele en cualquier momento, se reanuda la próxima vez';
+        return 'Descargando… cancele cuando quiera y reanude más tarde';
       case 'onboarding_pack_download_failed':
         return ({required Object message}) => 'La descarga falló: ${message}';
       case 'onboarding_step_extension_title':
         return 'Extensión del navegador';
       case 'onboarding_step_extension_body':
-        return 'Instale la extensión complementaria del navegador para buscar palabras en cualquier página web.';
+        return 'Consulte palabras en cualquier página web con la extensión complementaria.';
       case 'onboarding_step_extension_action':
-        return 'Abrir guía de extensión';
+        return 'Abrir la guía de instalación';
       case 'onboarding_step_fonts_title':
-        return 'Fuentes de lectura';
+        return 'Fuentes';
       case 'onboarding_step_fonts_body':
-        return 'Importe fuentes personalizadas y elija cuáles usan la interfaz, el texto del libro y el diccionario.';
+        return 'Use sus propias fuentes para la interfaz, el texto del libro y el diccionario.';
       case 'settings_section_modules':
         return 'Módulos de funciones';
       case 'module_toggle_hint':
@@ -192243,9 +192459,9 @@ extension on _StringsEs {
       case 'module_extension_label':
         return 'Extensión del navegador';
       case 'onboarding_feature_books':
-        return 'Biblioteca de novelas';
+        return 'Novelas';
       case 'onboarding_feature_books_hint':
-        return 'Lea novelas EPUB con búsqueda de diccionario y sincronización de audiolibro';
+        return 'Lectura de EPUB con consulta y sincronización de audiolibro';
       case 'onboarding_feature_extension_hint':
         return 'Busque palabras en cualquier página web (solo escritorio)';
       case 'video_setting_tap_toggles_playback':
@@ -192601,11 +192817,11 @@ extension on _StringsEs {
       case 'game_session_japanese_locale_hint':
         return 'El juego se inició con configuración regional japonesa (CP932). Si el texto se ve ilegible o aparece un error de script, establezca la configuración regional japonesa de este juego en Nunca.';
       case 'onboarding_anki_intro_body':
-        return 'Anki es una app gratuita de tarjetas de repetición espaciada: las palabras nuevas se convierten en tarjetas, y las revisiones se programan según la curva de olvido. Después de una búsqueda, Fushi puede convertir la palabra en una tarjeta de Anki con un toque, con significado, oración, audio y captura de pantalla.';
+        return 'Anki es una app gratuita de tarjetas con repetición espaciada. Tras una consulta, Fushi convierte la palabra en una tarjeta con significado, frase, audio y captura de pantalla con un solo toque.';
       case 'onboarding_anki_setup_desktop_hint':
-        return 'Instale la app de escritorio de Anki, luego agregue el complemento AnkiConnect: en Anki, abra Herramientas - Complementos - Obtener complementos e introduzca el código 2055492159. Mantenga Anki ejecutándose mientras crea tarjetas.';
+        return 'Instale Anki, añada el complemento AnkiConnect (con un toque abajo, o con el código 2055492159) y mantenga Anki abierto mientras crea tarjetas.';
       case 'onboarding_anki_setup_ios_hint':
-        return 'Con AnkiMobile instalado, añadir tarjetas funciona de inmediato. Para el conjunto completo de funciones, conéctese a Anki ejecutándose en una computadora en la misma red vía AnkiConnect.';
+        return 'Con AnkiMobile instalado, las tarjetas se añaden directamente. Para el conjunto completo de funciones, conéctese vía AnkiConnect al Anki de una computadora de la misma red.';
       case 'onboarding_anki_backend_label':
         return 'Conexión';
       case 'onboarding_anki_test_action':
@@ -192618,17 +192834,17 @@ extension on _StringsEs {
       case 'onboarding_anki_get_ankidroid_action':
         return 'Obtener AnkiDroid';
       case 'onboarding_anki_mobile_ankiconnect_title':
-        return 'Avanzado: usar AnkiConnect en este dispositivo';
+        return 'Avanzado: usar AnkiConnect desde este dispositivo';
       case 'onboarding_anki_mobile_ankiconnect_hint':
-        return 'Este dispositivo también puede crear tarjetas en Anki ejecutándose en una computadora en la misma red: active AnkiConnect en ajustes de creación de tarjetas e introduzca la dirección de la computadora.';
+        return 'Cree tarjetas en el Anki de una computadora de la misma red: active AnkiConnect en los ajustes de creación de tarjetas e introduzca la dirección de la computadora.';
       case 'onboarding_anki_setup_android_hint':
-        return 'Instale AnkiDroid y ábralo una vez para completar su configuración inicial. De vuelta en Fushi, toque Permitir en el diálogo de permisos que aparece con su primera tarjeta — no hay ajustes de AnkiDroid que cambiar.';
+        return 'Instale AnkiDroid y ábralo una vez. En su primera tarjeta, toque Permitir en el diálogo de permisos: no hay nada más que configurar.';
       case 'onboarding_anki_install_addon_action':
         return 'Instalar complemento AnkiConnect';
       case 'onboarding_anki_addon_installed':
-        return 'AnkiConnect está instalado. Inicie (o reinicie) Anki, luego toque Probar conexión.';
+        return 'AnkiConnect instalado. Inicie o reinicie Anki y luego pruebe la conexión.';
       case 'onboarding_anki_addon_no_anki':
-        return 'No se encontró la carpeta de datos de Anki. Instale Anki y ábralo una vez, luego inténtelo de nuevo.';
+        return 'No se encontró la carpeta de datos de Anki. Instale Anki, ábralo una vez e inténtelo de nuevo.';
       case 'onboarding_anki_addon_failed':
         return ({required Object message}) =>
             'La instalación falló: ${message}';
@@ -193064,41 +193280,39 @@ extension on _StringsEs {
       case 'onboarding_action_badge_optional':
         return 'Opcional';
       case 'onboarding_pack_action_download_desc':
-        return 'Descarga todo el paquete en segundo plano y luego lo importa. Puedes cancelar cuando quieras; la próxima vez continúa desde donde se detuvo.';
+        return 'Descarga en segundo plano desde varias fuentes a la vez y luego importa. Cancele cuando quiera; se reanuda donde se detuvo.';
       case 'onboarding_pack_action_import_existing_desc':
-        return 'El paquete ya está descargado; esto lo importa. Elige «Combinar» en el diálogo de confirmación y tus datos actuales quedarán intactos.';
+        return 'El pack ya está en el disco. Elija «Combinar» en el diálogo de confirmación para conservar sus datos actuales.';
       case 'onboarding_pack_action_pick_desc':
-        return '¿Ya conseguiste el zip del paquete por otro lado? Impórtalo desde el disco y sáltate la descarga por completo.';
+        return '¿Ya tiene el zip del pack? Impórtelo desde el disco y sáltese la descarga.';
       case 'onboarding_pack_action_website':
-        return 'Abrir la página de descarga del sitio';
+        return 'Abrir la página de descarga';
       case 'onboarding_pack_action_website_desc':
-        return 'Abre el sitio oficial en tu navegador. Su sección de paquete lista enlaces por fragmentos que puedes pasar a un gestor de descargas; vuelve después aquí y usa «Elegir un archivo de paquete local» para importar lo que obtuviste.';
+        return 'Enlaces por fragmentos para gestores de descargas. Vuelva después y use «Elegir un archivo de pack».';
       case 'onboarding_pack_action_dictionary_desc':
-        return '¿Aprendes un idioma distinto del japonés? Sáltate el paquete e importa aquí diccionarios de tu propio idioma.';
+        return '¿Aprende otro idioma? Importe aquí los diccionarios correspondientes.';
       case 'onboarding_pack_action_audio_desc':
-        return 'De dónde sale el audio de pronunciación. El paquete ya cubre japonés e inglés; añade aquí fuentes en línea para otros idiomas.';
+        return 'Añada fuentes de pronunciación en línea para los idiomas que el pack no cubre.';
       case 'onboarding_anki_action_test_desc':
-        return 'Comprueba que Fushi puede conectarse con Anki y carga tus mazos y tipos de nota. Todavía no se crea nada.';
+        return 'Comprueba que Fushi puede conectarse con Anki y carga sus mazos y tipos de nota. No crea nada.';
       case 'onboarding_anki_action_refresh_desc':
-        return 'Vuelve a cargar mazos y tipos de nota desde Anki. Úsalo después de crear un mazo nuevo dentro de Anki.';
+        return 'Vuelve a cargar los mazos y tipos de nota. Úselo tras crear un mazo en Anki.';
       case 'onboarding_anki_action_get_ankidroid_desc':
-        return 'Abre la página de la tienda de AnkiDroid. Fushi escribe ahí sus tarjetas, así que hay que instalarlo primero.';
+        return 'Abre la página de la tienda. Fushi escribe las tarjetas en AnkiDroid, así que hay que instalarlo primero.';
       case 'onboarding_anki_action_get_anki_desc':
-        return 'Abre la página de descarga de Anki. Instala Anki y déjalo abierto mientras creas tarjetas.';
+        return 'Abre la página de descarga de Anki. Deje Anki abierto mientras crea tarjetas.';
       case 'onboarding_anki_action_install_addon_desc':
-        return 'Descomprime por ti el complemento AnkiConnect incluido dentro de Anki, que es lo que permite a Fushi comunicarse con él. Reinicia Anki después.';
+        return 'Descomprime el complemento AnkiConnect incluido dentro de Anki. Reinicie Anki después.';
       case 'onboarding_step_anki_action_desc':
-        return 'Plantilla de tarjeta, asignación de campos, capturas y audio: los detalles de qué aspecto tiene una tarjeta creada. Con el mazo y el tipo de nota de arriba ya puedes empezar, así que abre esto solo si quieres cambiar cómo se construyen las tarjetas.';
+        return 'Plantilla, asignación de campos, capturas y audio. Con el mazo y el tipo de nota de arriba ya puede empezar.';
       case 'onboarding_step_backup_action_desc':
-        return 'Elige un servicio de copia de seguridad e inicia sesión, para que tu biblioteca sobreviva a la pérdida o el cambio de dispositivo.';
+        return 'Elija un backend e inicie sesión, o exporte un archivo de respaldo local.';
       case 'onboarding_step_interconnect_action_desc':
-        return 'Empareja este dispositivo con tus otros dispositivos para compartir una misma biblioteca y mantener el progreso sincronizado.';
+        return 'Active Interconnect y empareje este dispositivo con los demás.';
       case 'onboarding_step_extension_action_desc':
-        return 'Muestra cómo instalar la extensión de navegador y conectarla con Fushi, para poder buscar palabras también en páginas web.';
+        return 'Muestra cómo instalar la extensión y conectarla con Fushi.';
       case 'onboarding_step_fonts_action_desc':
-        return 'Añade tus propios archivos de fuente y elige cuál usa cada idioma.';
-      case 'onboarding_pack_sources_hint':
-        return 'Se descarga en fragmentos paralelos desde GitHub, el sitio oficial y un espejo de respaldo a la vez, con suma de verificación en cada fragmento. Fushi mide las fuentes sobre la marcha y da más fragmentos a la que sea más rápida en ese momento, así que aquí no hay nada que elegir.';
+        return 'Importe archivos de fuente y elija uno por idioma.';
       case 'video_setting_hdr_output':
         return 'Salida HDR / 10 bits';
       case 'video_setting_hdr_output_hint':
@@ -193200,99 +193414,79 @@ extension on _StringsEs {
         return ({required Object count}) =>
             'Cambiar al modo integrado para crear ${count} tarjetas en cola';
       case 'onboarding_step_click_lookup_title':
-        return 'Toque para buscar palabras';
+        return 'Toque para consultar';
       case 'onboarding_click_lookup_tap_title':
-        return 'Toque el texto';
+        return 'Toque una palabra';
       case 'onboarding_click_lookup_nested_title':
-        return 'Siga explorando en la ventana emergente';
+        return 'Siga explorando';
       case 'onboarding_click_lookup_nested_body':
-        return 'Toque otra palabra dentro de una definición para abrir una búsqueda más profunda. Vuelva atrás o toque fuera para cerrar un nivel.';
+        return 'Toque una palabra dentro de una definición para bajar un nivel más. Vuelva atrás o toque fuera para cerrar un nivel.';
       case 'onboarding_click_lookup_mine_title':
-        return 'Convierta el resultado en una tarjeta';
+        return 'Cree una tarjeta';
       case 'onboarding_click_lookup_mine_body':
-        return 'Cuando la definición sea la correcta, toque + para enviar la palabra, la frase, el audio y la imagen al creador de tarjetas.';
+        return 'Toque + en la entrada para enviar la palabra, la frase, el audio y la imagen al creador de tarjetas.';
       case 'onboarding_step_global_lookup_title':
-        return 'Buscar texto fuera de Fushi';
+        return 'Consultar fuera de Fushi';
       case 'onboarding_global_lookup_windows_body':
-        return 'En Windows, seleccione texto en otra aplicación y abra el diccionario sin volver a Fushi.';
+        return 'Seleccione texto en cualquier aplicación y abra el diccionario sin cambiar de ventana.';
       case 'onboarding_global_lookup_windows_select_title':
-        return 'Seleccione texto en cualquier aplicación';
-      case 'onboarding_global_lookup_windows_shortcut_title':
-        return 'Pulse Ctrl+Alt+D';
+        return 'Seleccione texto';
       case 'onboarding_global_lookup_windows_shortcut_body':
-        return 'Es el atajo global predeterminado. Fushi captura la selección actual y abre una tarjeta de búsqueda junto al puntero.';
+        return 'Fushi toma la selección y abre una tarjeta de consulta junto al puntero.';
       case 'onboarding_global_lookup_windows_customize_title':
-        return 'Cambie el atajo si lo necesita';
+        return 'Cambie el atajo';
       case 'onboarding_global_lookup_windows_customize_body':
-        return 'Abra Ajustes → Atajos → Global (fuera de la aplicación) para asignar otra combinación de teclas.';
+        return 'Ajustes → Atajos → Global (fuera de la aplicación).';
       case 'onboarding_global_lookup_windows_action':
         return 'Abrir ajustes de atajos';
       case 'onboarding_global_lookup_windows_action_desc':
-        return 'Permite cambiar el atajo de búsqueda fuera de la aplicación. El predeterminado Ctrl+Alt+D ya funciona, así que es opcional.';
+        return 'Solo si quiere otra combinación de teclas.';
       case 'onboarding_global_lookup_android_body':
-        return 'En Android, el sistema pasa el texto seleccionado a Fushi mediante el menú de texto o el panel Compartir. No hay una tecla rápida global reasignable.';
+        return 'Android pasa el texto seleccionado a Fushi mediante el menú de texto o el panel Compartir.';
       case 'onboarding_global_lookup_android_select_title':
-        return 'Seleccione texto en otra aplicación';
+        return 'Seleccione texto';
       case 'onboarding_global_lookup_android_open_title':
         return 'Elija Fushi';
       case 'onboarding_global_lookup_android_open_body':
-        return 'Toque Fushi en el menú de selección de texto. Si no aparece, toque Compartir y elija Fushi en el panel de compartir.';
+        return 'Toque Fushi en el menú de selección, o toque Compartir y elija Fushi.';
       case 'onboarding_global_lookup_android_continue_title':
-        return 'Use la ventana independiente';
+        return 'Lea la ventana emergente';
       case 'onboarding_global_lookup_android_continue_body':
-        return 'La búsqueda se abre aparte de la aplicación de origen. Dentro puede tocar más palabras y, al cerrarla, vuelve donde estaba.';
+        return 'La consulta se abre encima de la otra aplicación. Ciérrela para volver.';
       case 'onboarding_feature_manual_resources':
-        return 'Importar diccionarios y audio manualmente';
+        return 'Importar mis propios recursos';
       case 'onboarding_feature_manual_resources_hint':
-        return 'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+        return 'Diccionarios, audiolibros y fuentes de pronunciación desde sus propios archivos';
       case 'onboarding_step_manual_resources_title':
-        return 'Prepare diccionarios y audio manualmente';
+        return 'Sus propios diccionarios y audio';
       case 'onboarding_step_manual_resources_body':
-        return 'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+        return 'Importe al menos un diccionario antes del tutorial de consulta. Los audiolibros y el audio de pronunciación son opcionales.';
       case 'onboarding_manual_dictionary_action':
         return 'Importar un diccionario';
       case 'onboarding_manual_dictionary_action_desc':
-        return 'Abra la gestión de diccionarios e importe al menos un archivo o paquete de diccionario compatible. Los tutoriales de búsqueda solo sirven cuando una consulta devuelve una definición.';
+        return 'Abre la gestión de diccionarios. Las consultas solo dan resultados cuando hay un diccionario instalado.';
       case 'onboarding_manual_audiobook_action':
-        return 'Importar un libro con audio de audiolibro';
+        return 'Importar un libro con audio';
       case 'onboarding_manual_audiobook_action_desc':
-        return 'Abra la importación de libros y elija el libro o el texto, los subtítulos alineados y uno o varios archivos de audio. El audio necesita subtítulos para que Fushi lo alinee con las frases.';
+        return 'Libro o texto, subtítulos alineados y archivos de audio. Los subtítulos son lo que permite a Fushi sincronizar el audio con las frases.';
       case 'onboarding_manual_pronunciation_action':
-        return 'Configurar el audio de pronunciación de palabras';
+        return 'Configurar el audio de pronunciación';
       case 'onboarding_manual_pronunciation_action_desc':
-        return 'Añada fuentes de pronunciación locales o en línea para las entradas del diccionario. Es independiente del audio de audiolibro asociado a un libro.';
-      case 'onboarding_lookup_verify_action':
-        return 'Compruebe una palabra en su diccionario';
-      case 'onboarding_lookup_verify_action_desc':
-        return 'Abra la búsqueda, escriba cualquier palabra que esté aprendiendo y continúe solo cuando el diccionario instalado devuelva una definición. El tutorial no fija ninguna palabra de ejemplo.';
+        return 'Fuentes locales o en línea para la pronunciación de palabras en las entradas del diccionario. Es independiente del audio de audiolibro.';
       case 'onboarding_step_first_anki_card_title':
-        return 'Cree su primera tarjeta de Anki';
-      case 'onboarding_step_first_anki_card_body':
-        return 'Este paso solo aparece cuando esta guía ya se ha conectado a Anki y se ha elegido un mazo y un tipo de nota utilizables.';
+        return 'Su primera tarjeta';
       case 'onboarding_first_anki_lookup_title':
-        return 'Empiece por un resultado real del diccionario';
-      case 'onboarding_first_anki_lookup_body':
-        return 'Busque una palabra que su diccionario instalado defina de verdad. No hay una palabra de ejemplo fija que pudiera faltar en su diccionario.';
+        return 'Consulte una palabra';
       case 'onboarding_first_anki_plus_title':
-        return 'Toque el botón más de la entrada';
+        return 'Toque +';
       case 'onboarding_first_anki_plus_body':
-        return 'El botón más abre el creador de tarjetas con la palabra actual, su lectura, su significado, la frase, el audio y la imagen disponible.';
+        return 'El creador de tarjetas se abre con la palabra, la lectura, el significado, la frase, el audio y la imagen ya rellenados.';
       case 'onboarding_first_anki_save_title':
         return 'Revise y guarde';
       case 'onboarding_first_anki_save_body':
-        return 'Confirme el mazo de destino, el tipo de nota y la vista previa de los campos, y guarde. Abra Anki para comprobar que la primera tarjeta ha llegado.';
+        return 'Confirme el mazo y el tipo de nota, y guarde. Abra Anki para ver la tarjeta.';
       case 'onboarding_first_anki_action':
-        return 'Abrir la búsqueda y crear una tarjeta';
-      case 'onboarding_first_anki_action_desc':
-        return 'Use una palabra con definición visible, toque su botón más, revise los campos y guárdela en el mazo de Anki conectado.';
-      case 'onboarding_step_click_lookup_body':
-        return 'Primero compruebe una palabra que su diccionario instalado defina de verdad. Luego use esa misma palabra para practicar la búsqueda directa en libros, en el texto OCR del manga y en los subtítulos de vídeo.';
-      case 'onboarding_click_lookup_tap_body':
-        return 'En el móvil, toque un carácter de la palabra comprobada; en el ordenador, haga clic izquierdo sobre él. Fushi empieza ahí y busca la palabra más larga que encaje.';
-      case 'onboarding_global_lookup_windows_select_body':
-        return 'Seleccione la misma palabra de la que ya comprobó que hay definición en el diccionario y mantenga la selección activa.';
-      case 'onboarding_global_lookup_android_select_body':
-        return 'Mantenga pulsada esa misma palabra comprobada y ajuste los controles de selección para cubrirla entera.';
+        return 'Abrir la consulta y crear una tarjeta';
       case 'game_lookup_attached_title':
         return 'In-game lookup';
       case 'game_lookup_attached_no_ocr':
@@ -193528,6 +193722,56 @@ extension on _StringsEs {
         return 'El juego se inició sin configuración regional japonesa: este sistema ya usa la página de códigos japonesa (CP932), no hay nada que cambiar.';
       case 'game_session_japanese_locale_skipped_hint_not_32bit':
         return 'El juego se inició sin configuración regional japonesa: el veredicto automático dice que la necesita, pero Locale Emulator solo admite juegos de 32 bits.';
+      case 'onboarding_feature_fonts':
+        return 'Fuentes personalizadas';
+      case 'onboarding_feature_fonts_hint':
+        return 'Use sus propias fuentes para la interfaz, el texto del libro y el diccionario';
+      case 'onboarding_features_modules_title':
+        return 'Páginas de biblioteca';
+      case 'onboarding_features_modules_hint':
+        return 'Las páginas sin marcar se ocultan de la barra de navegación. Puede cambiarlo cuando quiera en Ajustes → Apariencia.';
+      case 'onboarding_features_setup_title':
+        return 'Configurar a continuación';
+      case 'onboarding_features_setup_hint':
+        return 'Solo los elementos marcados tienen un paso en esta guía.';
+      case 'onboarding_pack_intro':
+        return 'Diccionarios de japonés, acento tonal, frecuencia de palabras y audio de pronunciación JA/EN en una sola descarga. ¿Estudia otro idioma? Omita esto e importe sus propios diccionarios.';
+      case 'onboarding_global_lookup_windows_select_desc':
+        return 'Seleccione una palabra en cualquier aplicación y déjela marcada.';
+      case 'onboarding_global_lookup_android_select_desc':
+        return 'Mantenga pulsada una palabra en otra aplicación y ajuste los controles para cubrirla.';
+      case 'onboarding_global_lookup_windows_shortcut_press':
+        return 'Pulse el atajo';
+      case 'onboarding_first_anki_card_intro':
+        return 'Anki está conectado. Cree ahora una tarjeta real para comprobar que todo el recorrido funciona.';
+      case 'onboarding_action_start':
+        return 'Empezar a usar Fushi';
+      case 'onboarding_actions_more':
+        return 'Otras formas';
+      case 'onboarding_finish_summary_modules':
+        return 'Páginas de biblioteca visibles';
+      case 'onboarding_finish_summary_setup':
+        return 'Configuración guiada';
+      case 'onboarding_finish_summary_none':
+        return 'Ninguna';
+      case 'onboarding_anki_status_pending':
+        return 'Sin probar todavía';
+      case 'onboarding_click_lookup_intro':
+        return 'Toque cualquier palabra de un libro, un manga o un subtítulo para ver su definición. Pruébelo con la frase de práctica de abajo.';
+      case 'onboarding_click_lookup_tap_desc':
+        return 'Toque un carácter (o haga clic con el botón izquierdo); Fushi toma la palabra más larga que empieza ahí. La frase se abre en la página de consulta.';
+      case 'onboarding_sample_sentence_label':
+        return 'Frase de práctica';
+      case 'onboarding_sample_sentence_hint':
+        return 'Toque para abrirla en la página de consulta y luego toque cualquier palabra.';
+      case 'onboarding_lookup_practice_action':
+        return 'Practicar con esta frase';
+      case 'onboarding_lookup_practice_desc':
+        return 'Abre la página de consulta con la frase cargada. Toque allí una palabra para ver su definición; si no aparece nada, aún no tiene diccionarios instalados.';
+      case 'onboarding_first_anki_lookup_desc':
+        return 'Abra la frase de práctica y toque una palabra.';
+      case 'onboarding_first_anki_action_desc':
+        return 'Abre la frase de práctica en la página de consulta. Toque una palabra, toque +, revise los campos y guarde.';
       default:
         return null;
     }
@@ -200467,98 +200711,90 @@ extension on _StringsFr {
       case 'onboarding_title':
         return 'Premiers pas';
       case 'onboarding_welcome_headline':
-        return 'Bienvenue !';
+        return 'Bienvenue dans Fushi';
       case 'onboarding_feature_anki':
-        return 'Flashcards Anki';
+        return 'Cartes Anki';
       case 'onboarding_feature_anki_hint':
-        return 'Connectez AnkiConnect ou AnkiDroid pour créer des flashcards';
+        return 'Transformez vos recherches en flashcards en un geste';
       case 'onboarding_feature_backup':
         return 'Sauvegarde et synchronisation';
       case 'onboarding_feature_backup_hint':
-        return 'Sauvegardez vos données sur Google Drive, WebDAV et d\'autres supports';
+        return 'Google Drive, WebDAV ou un fichier local';
       case 'onboarding_feature_interconnect':
         return 'Interconnexion d\'appareils';
       case 'onboarding_feature_interconnect_hint':
-        return 'Appariez des appareils sur votre réseau local pour partager bibliothèques et progression';
+        return 'Partagez bibliothèques et progression entre vos appareils du réseau local';
       case 'onboarding_step_dictionary_action':
         return 'Ouvrir le gestionnaire de dictionnaires';
       case 'onboarding_step_anki_title':
         return 'Configurer Anki';
       case 'onboarding_step_anki_action':
-        return 'Ouvrir les paramètres de création de cartes';
+        return 'Paramètres de création de cartes';
       case 'onboarding_step_backup_title':
-        return 'Configurer la sauvegarde';
+        return 'Sauvegarde';
       case 'onboarding_step_backup_body':
-        return 'Choisissez un support de sauvegarde et connectez-vous, ou exportez un fichier de sauvegarde local.';
+        return 'Gardez votre bibliothèque en sécurité quand vous changez ou perdez un appareil.';
       case 'onboarding_step_backup_action':
         return 'Ouvrir les paramètres de sauvegarde';
       case 'onboarding_step_interconnect_title':
-        return 'Configurer l\'interconnexion';
+        return 'Interconnexion';
       case 'onboarding_step_interconnect_body':
-        return 'Activez l\'interconnexion et appariez d\'autres appareils sur votre réseau local pour partager bibliothèques, progression et recherches.';
+        return 'Appariez des appareils de votre réseau local pour partager une même bibliothèque et garder la progression synchronisée.';
       case 'onboarding_step_interconnect_action':
         return 'Ouvrir les paramètres d\'interconnexion';
       case 'onboarding_finish_title':
         return 'Tout est prêt';
       case 'onboarding_finish_body':
-        return 'Vous pouvez revenir à ce guide à tout moment depuis Paramètres → Système.';
+        return 'Vous pouvez rouvrir ce guide à tout moment depuis Paramètres → Système.';
       case 'onboarding_action_next':
         return 'Suivant';
-      case 'onboarding_action_finish':
-        return 'Terminer';
       case 'onboarding_action_skip':
         return 'Passer pour le moment';
       case 'onboarding_reopen':
         return 'Guide de démarrage';
       case 'onboarding_welcome_body':
-        return 'Définissez d\'abord votre langue d\'interface et votre thème — les étapes suivantes vous guideront pour le reste.';
+        return 'Choisissez votre langue d\'interface et votre thème. Les étapes suivantes installent le reste.';
       case 'onboarding_features_title':
-        return 'Choisissez ce que vous utilisez';
-      case 'onboarding_features_modules_label':
-        return 'Onglets de bibliothèque (les non cochés sont masqués dans la barre de navigation ; modifiable à tout moment dans les Paramètres)';
-      case 'onboarding_features_setup_label':
-        return 'Quoi configurer ensuite';
+        return 'Qu\'allez-vous utiliser ?';
       case 'onboarding_feature_manga':
-        return 'Bibliothèque manga';
+        return 'Manga';
       case 'onboarding_feature_manga_hint':
         return 'Lire des manga avec recherche par OCR';
       case 'onboarding_feature_video':
-        return 'Vidéothèque';
+        return 'Vidéo';
       case 'onboarding_feature_video_hint':
-        return 'Regarder des vidéos avec recherche et création de cartes sur les sous-titres';
+        return 'Recherche dans les sous-titres et création de cartes';
       case 'onboarding_feature_games':
-        return 'Ludothèque galgame';
+        return 'Galgames';
       case 'onboarding_feature_games_hint':
-        return 'Lancer des galgames avec recherche par text-hook (Windows uniquement)';
+        return 'Recherche par text-hook pendant la partie (Windows uniquement)';
       case 'onboarding_feature_pack':
-        return 'Pack recommandé (dictionnaires + audio)';
+        return 'Pack recommandé';
       case 'onboarding_feature_pack_hint':
-        return 'Un seul téléchargement installe les dictionnaires japonais et l\'audio de prononciation JA/EN';
+        return 'Dictionnaires japonais et audio de prononciation JA/EN en un seul téléchargement';
       case 'onboarding_step_pack_title':
-        return 'Installer le pack recommandé';
-      case 'onboarding_step_pack_body':
-        return 'Le pack recommandé comprend des dictionnaires de mots, d\'accents tonaux et de fréquence japonais, plus des bases de données audio de prononciation japonais/anglais. Téléchargez et importez-le ici ; l\'importation remplace les données locales, faites-le sur une installation neuve. Vous apprenez une autre langue ? Utilisez le gestionnaire de dictionnaires pour importer les vôtres.';
+        return 'Pack recommandé';
       case 'onboarding_step_pack_download_action':
         return 'Télécharger et importer';
       case 'onboarding_step_pack_import_existing_action':
-        return 'Importer un pack déjà téléchargé';
+        return 'Importer le pack téléchargé';
       case 'onboarding_step_pack_pick_action':
-        return 'Choisir un fichier de pack local';
+        return 'Choisir un fichier de pack';
       case 'onboarding_pack_downloading':
-        return 'Téléchargement… annulez à tout moment, reprendra la prochaine fois';
+        return 'Téléchargement… annulez à tout moment et reprenez plus tard';
       case 'onboarding_pack_download_failed':
         return ({required Object message}) =>
             'Échec du téléchargement : ${message}';
       case 'onboarding_step_extension_title':
         return 'Extension navigateur';
       case 'onboarding_step_extension_body':
-        return 'Installez l\'extension navigateur compagnon pour rechercher des mots sur n\'importe quelle page web.';
+        return 'Cherchez des mots sur n\'importe quelle page web avec l\'extension compagnon.';
       case 'onboarding_step_extension_action':
-        return 'Ouvrir le guide d\'extension';
+        return 'Ouvrir le guide d\'installation';
       case 'onboarding_step_fonts_title':
-        return 'Polices de lecture';
+        return 'Polices';
       case 'onboarding_step_fonts_body':
-        return 'Importez des polices personnalisées et choisissez lesquelles utiliser pour l\'interface, le texte des livres et le dictionnaire.';
+        return 'Utilisez vos propres polices pour l\'interface, le texte des livres et le dictionnaire.';
       case 'settings_section_modules':
         return 'Modules de fonctionnalités';
       case 'module_toggle_hint':
@@ -200761,9 +200997,9 @@ extension on _StringsFr {
       case 'module_extension_label':
         return 'Extension navigateur';
       case 'onboarding_feature_books':
-        return 'Bibliothèque de romans';
+        return 'Romans';
       case 'onboarding_feature_books_hint':
-        return 'Lire des romans EPUB avec recherche dans le dictionnaire et synchronisation de livres audio';
+        return 'Lecture EPUB avec recherche et synchronisation des livres audio';
       case 'onboarding_feature_extension_hint':
         return 'Rechercher des mots sur n\'importe quelle page web (ordinateur uniquement)';
       case 'video_setting_tap_toggles_playback':
@@ -201118,11 +201354,11 @@ extension on _StringsFr {
       case 'game_session_japanese_locale_hint':
         return 'Le jeu a été lancé sous une locale japonaise (CP932). Si son texte est illisible ou si une erreur de script apparaît, réglez la locale japonaise de ce jeu sur Jamais.';
       case 'onboarding_anki_intro_body':
-        return 'Anki est une application gratuite de flashcards à répétition espacée : les nouveaux mots deviennent des cartes, et les révisions sont planifiées selon la courbe d\'oubli. Après une recherche, Fushi peut transformer le mot en carte Anki en un seul geste, avec signification, phrase, audio et capture d\'écran.';
+        return 'Anki est une application gratuite de flashcards à répétition espacée. Après une recherche, Fushi transforme le mot en carte avec définition, phrase, audio et capture d\'écran, en un seul geste.';
       case 'onboarding_anki_setup_desktop_hint':
-        return 'Installez l\'application Anki bureau, puis ajoutez l\'extension AnkiConnect : dans Anki, ouvrez Outils - Extensions - Obtenir des extensions et entrez le code 2055492159. Gardez Anki ouvert pendant la création de cartes.';
+        return 'Installez Anki, ajoutez l\'extension AnkiConnect (en un geste ci-dessous, ou avec le code 2055492159), et gardez Anki ouvert pendant la création de cartes.';
       case 'onboarding_anki_setup_ios_hint':
-        return 'Avec AnkiMobile installé, l\'ajout de cartes fonctionne directement. Pour toutes les fonctionnalités, connectez-vous à Anki sur un ordinateur du même réseau via AnkiConnect.';
+        return 'Avec AnkiMobile installé, les cartes sont ajoutées directement. Pour toutes les fonctionnalités, connectez-vous via AnkiConnect à Anki sur un ordinateur du même réseau.';
       case 'onboarding_anki_backend_label':
         return 'Connexion';
       case 'onboarding_anki_test_action':
@@ -201135,17 +201371,17 @@ extension on _StringsFr {
       case 'onboarding_anki_get_ankidroid_action':
         return 'Obtenir AnkiDroid';
       case 'onboarding_anki_mobile_ankiconnect_title':
-        return 'Avancé : utiliser AnkiConnect sur cet appareil';
+        return 'Avancé : utiliser AnkiConnect depuis cet appareil';
       case 'onboarding_anki_mobile_ankiconnect_hint':
-        return 'Cet appareil peut aussi créer des cartes dans Anki sur un ordinateur du même réseau : activez AnkiConnect dans les paramètres de création de cartes et entrez l\'adresse de l\'ordinateur.';
+        return 'Créez des cartes dans Anki sur un ordinateur du même réseau : activez AnkiConnect dans les paramètres de création de cartes et entrez l\'adresse de l\'ordinateur.';
       case 'onboarding_anki_setup_android_hint':
-        return 'Installez AnkiDroid et ouvrez-le une fois pour terminer sa configuration initiale. De retour dans Fushi, appuyez sur Autoriser dans la boîte de dialogue de permission qui apparaît avec votre première carte — aucun paramètre AnkiDroid à changer.';
+        return 'Installez AnkiDroid et ouvrez-le une fois. À votre première carte, touchez Autoriser dans la boîte de dialogue de permission — rien d\'autre à configurer.';
       case 'onboarding_anki_install_addon_action':
         return 'Installer l\'extension AnkiConnect';
       case 'onboarding_anki_addon_installed':
-        return 'AnkiConnect est installé. Démarrez (ou redémarrez) Anki, puis appuyez sur Tester la connexion.';
+        return 'AnkiConnect installé. Démarrez ou redémarrez Anki, puis testez la connexion.';
       case 'onboarding_anki_addon_no_anki':
-        return 'Dossier de données Anki introuvable. Installez Anki et ouvrez-le une fois, puis réessayez.';
+        return 'Dossier de données Anki introuvable. Installez Anki, ouvrez-le une fois, puis réessayez.';
       case 'onboarding_anki_addon_failed':
         return ({required Object message}) =>
             'Installation échouée : ${message}';
@@ -201581,41 +201817,39 @@ extension on _StringsFr {
       case 'onboarding_action_badge_optional':
         return 'Facultatif';
       case 'onboarding_pack_action_download_desc':
-        return 'Télécharge tout le pack en arrière-plan, puis l’importe. Annulable à tout moment ; la reprise repart du point d’arrêt.';
+        return 'Télécharge depuis plusieurs sources à la fois en arrière-plan, puis importe. Annulable à tout moment ; la reprise repart du point d\'arrêt.';
       case 'onboarding_pack_action_import_existing_desc':
-        return 'Le pack est déjà téléchargé ; ceci l’importe. Choisissez « Fusionner » dans la boîte de confirmation et vos données existantes ne seront pas touchées.';
+        return 'Le pack est déjà sur le disque. Choisissez « Fusionner » dans la boîte de confirmation pour conserver vos données existantes.';
       case 'onboarding_pack_action_pick_desc':
-        return 'Vous avez déjà récupéré le zip du pack ailleurs ? Importez-le depuis le disque et sautez complètement le téléchargement.';
+        return 'Vous avez déjà le zip du pack ? Importez-le depuis le disque et sautez le téléchargement.';
       case 'onboarding_pack_action_website':
-        return 'Ouvrir la page de téléchargement du site';
+        return 'Ouvrir la page de téléchargement';
       case 'onboarding_pack_action_website_desc':
-        return 'Ouvre le site officiel dans votre navigateur. Sa section pack liste des liens par morceaux que vous pouvez donner à un gestionnaire de téléchargement ; revenez ensuite ici et utilisez « Choisir un fichier de pack local » pour importer ce que vous avez obtenu.';
+        return 'Liens par morceaux pour gestionnaires de téléchargement. Revenez ensuite et utilisez « Choisir un fichier de pack ».';
       case 'onboarding_pack_action_dictionary_desc':
-        return 'Vous apprenez une autre langue que le japonais ? Passez le pack et importez ici les dictionnaires de votre langue.';
+        return 'Vous apprenez une autre langue ? Importez plutôt ici les dictionnaires correspondants.';
       case 'onboarding_pack_action_audio_desc':
-        return 'D’où viennent les audios de prononciation. Le pack couvre déjà le japonais et l’anglais ; ajoutez ici des sources en ligne pour les autres langues.';
+        return 'Ajoutez des sources de prononciation en ligne pour les langues que le pack ne couvre pas.';
       case 'onboarding_anki_action_test_desc':
-        return 'Vérifie que Fushi joint bien Anki et charge vos paquets et types de notes. Rien n’est encore créé.';
+        return 'Vérifie que Fushi joint bien Anki et charge vos paquets et types de notes. Ne crée rien.';
       case 'onboarding_anki_action_refresh_desc':
-        return 'Recharge les paquets et types de notes depuis Anki. À utiliser après avoir créé un paquet dans Anki.';
+        return 'Recharge les paquets et les types de notes. À utiliser après avoir créé un paquet dans Anki.';
       case 'onboarding_anki_action_get_ankidroid_desc':
-        return 'Ouvre la page du store d’AnkiDroid. Fushi y écrit ses cartes, il doit donc être installé d’abord.';
+        return 'Ouvre la page du store. Fushi écrit les cartes dans AnkiDroid, il doit donc être installé d\'abord.';
       case 'onboarding_anki_action_get_anki_desc':
-        return 'Ouvre la page de téléchargement d’Anki. Installez Anki et laissez-le ouvert pendant la création de cartes.';
+        return 'Ouvre la page de téléchargement d\'Anki. Laissez Anki ouvert pendant la création de cartes.';
       case 'onboarding_anki_action_install_addon_desc':
-        return 'Décompresse pour vous le module AnkiConnect fourni dans Anki ; c’est lui qui permet à Fushi de lui parler. Redémarrez Anki ensuite.';
+        return 'Décompresse le module AnkiConnect fourni dans Anki. Redémarrez Anki ensuite.';
       case 'onboarding_step_anki_action_desc':
-        return 'Modèle de carte, correspondance des champs, captures et audio : les détails de l’apparence d’une carte créée. Le paquet et le type de note ci-dessus suffisent pour commencer, n’ouvrez ceci que si vous voulez changer la façon dont les cartes sont fabriquées.';
+        return 'Modèle, correspondance des champs, captures et audio. Le paquet et le type de note ci-dessus suffisent pour commencer.';
       case 'onboarding_step_backup_action_desc':
-        return 'Choisissez un service de sauvegarde et connectez-vous, pour que votre bibliothèque survive à la perte ou au remplacement d’un appareil.';
+        return 'Choisissez un support et connectez-vous, ou exportez un fichier de sauvegarde local.';
       case 'onboarding_step_interconnect_action_desc':
-        return 'Associe cet appareil à vos autres appareils pour partager une même bibliothèque et garder la progression synchronisée.';
+        return 'Activez l\'interconnexion et appariez cet appareil avec vos autres appareils.';
       case 'onboarding_step_extension_action_desc':
-        return 'Montre comment installer l’extension de navigateur et la connecter à Fushi, pour pouvoir aussi chercher des mots sur les pages web.';
+        return 'Montre comment installer l\'extension et la connecter à Fushi.';
       case 'onboarding_step_fonts_action_desc':
-        return 'Ajoutez vos propres fichiers de police et choisissez celle utilisée par chaque langue.';
-      case 'onboarding_pack_sources_hint':
-        return 'Téléchargé en morceaux parallèles depuis GitHub, le site officiel et un miroir de secours à la fois, chaque morceau vérifié par somme de contrôle. Fushi mesure les sources au fil de l’eau et donne plus de morceaux à la plus rapide du moment ; il n’y a donc rien à choisir ici.';
+        return 'Importez des fichiers de police et choisissez-en une par langue.';
       case 'video_setting_hdr_output':
         return 'Sortie HDR / 10 bits';
       case 'video_setting_hdr_output_hint':
@@ -201717,99 +201951,79 @@ extension on _StringsFr {
         return ({required Object count}) =>
             'Passer en mode intégré pour créer ${count} cartes en attente';
       case 'onboarding_step_click_lookup_title':
-        return 'Toucher pour chercher un mot';
+        return 'Toucher pour chercher';
       case 'onboarding_click_lookup_tap_title':
-        return 'Touchez le texte';
+        return 'Touchez un mot';
       case 'onboarding_click_lookup_nested_title':
-        return 'Continuez dans la fenêtre contextuelle';
+        return 'Continuez à explorer';
       case 'onboarding_click_lookup_nested_body':
-        return 'Touchez un autre mot dans une définition pour ouvrir un niveau de recherche supplémentaire. Revenez en arrière ou touchez à l\'extérieur pour refermer un niveau.';
+        return 'Touchez un mot dans une définition pour descendre d\'un niveau. Revenez en arrière ou touchez à l\'extérieur pour refermer un niveau.';
       case 'onboarding_click_lookup_mine_title':
-        return 'Transformez le résultat en carte';
+        return 'Créez une carte';
       case 'onboarding_click_lookup_mine_body':
-        return 'Si la définition vous convient, touchez + pour envoyer le mot, la phrase, l\'audio et l\'image au créateur de cartes.';
+        return 'Touchez + sur l\'entrée pour envoyer le mot, la phrase, l\'audio et l\'image au créateur de cartes.';
       case 'onboarding_step_global_lookup_title':
-        return 'Rechercher du texte hors de Fushi';
+        return 'Chercher hors de Fushi';
       case 'onboarding_global_lookup_windows_body':
-        return 'Sous Windows, sélectionnez du texte dans une autre application et appelez le dictionnaire sans revenir à Fushi.';
+        return 'Sélectionnez du texte dans n\'importe quelle application et appelez le dictionnaire sans changer de fenêtre.';
       case 'onboarding_global_lookup_windows_select_title':
-        return 'Sélectionnez du texte dans n\'importe quelle application';
-      case 'onboarding_global_lookup_windows_shortcut_title':
-        return 'Appuyez sur Ctrl+Alt+D';
+        return 'Sélectionnez du texte';
       case 'onboarding_global_lookup_windows_shortcut_body':
-        return 'C\'est le raccourci global par défaut. Fushi récupère la sélection en cours et ouvre une carte de recherche près du pointeur.';
+        return 'Fushi récupère la sélection et ouvre une carte de recherche près du pointeur.';
       case 'onboarding_global_lookup_windows_customize_title':
-        return 'Changez le raccourci si besoin';
+        return 'Changez le raccourci';
       case 'onboarding_global_lookup_windows_customize_body':
-        return 'Ouvrez Paramètres → Raccourcis → Global (hors application) pour attribuer une autre combinaison de touches.';
+        return 'Paramètres → Raccourcis → Global (hors application).';
       case 'onboarding_global_lookup_windows_action':
         return 'Ouvrir les paramètres de raccourcis';
       case 'onboarding_global_lookup_windows_action_desc':
-        return 'Permet de changer le raccourci de recherche hors application. Le raccourci par défaut Ctrl+Alt+D fonctionne déjà, c\'est donc facultatif.';
+        return 'Uniquement si vous voulez une autre combinaison de touches.';
       case 'onboarding_global_lookup_android_body':
-        return 'Sous Android, le système transmet le texte sélectionné à Fushi via le menu de texte ou le menu Partager. Il n\'y a pas de raccourci global personnalisable.';
+        return 'Android transmet le texte sélectionné à Fushi via le menu de texte ou le menu Partager.';
       case 'onboarding_global_lookup_android_select_title':
-        return 'Sélectionnez du texte dans une autre application';
+        return 'Sélectionnez du texte';
       case 'onboarding_global_lookup_android_open_title':
         return 'Choisissez Fushi';
       case 'onboarding_global_lookup_android_open_body':
-        return 'Touchez Fushi dans le menu de sélection de texte. S\'il n\'apparaît pas, touchez Partager puis choisissez Fushi dans le menu de partage.';
+        return 'Touchez Fushi dans le menu de sélection, ou touchez Partager et choisissez Fushi.';
       case 'onboarding_global_lookup_android_continue_title':
-        return 'Utilisez la fenêtre indépendante';
+        return 'Lisez la fenêtre';
       case 'onboarding_global_lookup_android_continue_body':
-        return 'La recherche s\'ouvre séparément de l\'application d\'origine. Vous pouvez y toucher d\'autres mots, puis la fermer pour revenir où vous en étiez.';
+        return 'La recherche s\'ouvre par-dessus l\'autre application. Fermez-la pour revenir.';
       case 'onboarding_feature_manual_resources':
-        return 'Importer les dictionnaires et l\'audio manuellement';
+        return 'Importer mes propres ressources';
       case 'onboarding_feature_manual_resources_hint':
-        return 'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+        return 'Dictionnaires, livres audio et sources de prononciation depuis vos propres fichiers';
       case 'onboarding_step_manual_resources_title':
-        return 'Préparer les dictionnaires et l\'audio manuellement';
+        return 'Vos propres dictionnaires et audios';
       case 'onboarding_step_manual_resources_body':
-        return 'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+        return 'Importez au moins un dictionnaire avant le tutoriel de recherche. Les livres audio et l\'audio de prononciation sont facultatifs.';
       case 'onboarding_manual_dictionary_action':
         return 'Importer un dictionnaire';
       case 'onboarding_manual_dictionary_action_desc':
-        return 'Ouvrez le gestionnaire de dictionnaires et importez au moins un fichier ou une archive de dictionnaire pris en charge. Les tutoriels de recherche ne servent que si une requête renvoie une définition.';
+        return 'Ouvre le gestionnaire de dictionnaires. Les recherches ne renvoient de résultats qu\'une fois un dictionnaire installé.';
       case 'onboarding_manual_audiobook_action':
-        return 'Importer un livre avec son livre audio';
+        return 'Importer un livre avec audio';
       case 'onboarding_manual_audiobook_action_desc':
-        return 'Ouvrez l\'import de livres et choisissez le livre ou le texte, les sous-titres alignés et un ou plusieurs fichiers audio. Sans sous-titres, Fushi ne peut pas aligner l\'audio sur les phrases.';
+        return 'Livre ou texte, sous-titres alignés et fichiers audio. Ce sont les sous-titres qui permettent à Fushi de synchroniser l\'audio sur les phrases.';
       case 'onboarding_manual_pronunciation_action':
-        return 'Configurer l\'audio de prononciation des mots';
+        return 'Configurer l\'audio de prononciation';
       case 'onboarding_manual_pronunciation_action_desc':
-        return 'Ajoutez les sources de prononciation locales ou en ligne utilisées par les entrées du dictionnaire. C\'est distinct de l\'audio d\'un livre audio rattaché à un livre.';
-      case 'onboarding_lookup_verify_action':
-        return 'Vérifier un mot dans votre dictionnaire';
-      case 'onboarding_lookup_verify_action_desc':
-        return 'Ouvrez la recherche, saisissez n\'importe quel mot que vous apprenez et ne continuez qu\'une fois que le dictionnaire installé renvoie une définition. Le tutoriel n\'impose aucun mot d\'exemple.';
+        return 'Sources locales ou en ligne pour la prononciation des mots dans les entrées de dictionnaire. Distinct de l\'audio des livres audio.';
       case 'onboarding_step_first_anki_card_title':
-        return 'Créez votre première carte Anki';
-      case 'onboarding_step_first_anki_card_body':
-        return 'Cette étape n\'apparaît que si cette configuration s\'est connectée à Anki et qu\'un paquet et un type de note utilisables ont été choisis.';
+        return 'Votre première carte';
       case 'onboarding_first_anki_lookup_title':
-        return 'Partez d\'un vrai résultat de dictionnaire';
-      case 'onboarding_first_anki_lookup_body':
-        return 'Recherchez un mot que votre dictionnaire installé définit vraiment. Aucun mot d\'exemple figé, susceptible d\'être absent de votre dictionnaire, n\'est imposé.';
+        return 'Cherchez un mot';
       case 'onboarding_first_anki_plus_title':
-        return 'Touchez le bouton plus de l\'entrée';
+        return 'Touchez +';
       case 'onboarding_first_anki_plus_body':
-        return 'Le bouton plus ouvre le créateur de cartes avec le mot en cours, sa lecture, sa définition, la phrase, l\'audio et l\'image disponible.';
+        return 'Le créateur de cartes s\'ouvre avec le mot, la lecture, la définition, la phrase, l\'audio et l\'image déjà remplis.';
       case 'onboarding_first_anki_save_title':
-        return 'Vérifiez puis enregistrez';
+        return 'Vérifiez et enregistrez';
       case 'onboarding_first_anki_save_body':
-        return 'Confirmez le paquet de destination, le type de note et l\'aperçu des champs, puis enregistrez. Ouvrez Anki pour vérifier que la première carte est bien arrivée.';
+        return 'Confirmez le paquet et le type de note, puis enregistrez. Ouvrez Anki pour voir la carte.';
       case 'onboarding_first_anki_action':
         return 'Ouvrir la recherche et créer une carte';
-      case 'onboarding_first_anki_action_desc':
-        return 'Prenez un mot dont la définition s\'affiche, touchez son bouton plus, vérifiez les champs et enregistrez-le dans le paquet Anki connecté.';
-      case 'onboarding_step_click_lookup_body':
-        return 'Vérifiez d\'abord un mot que votre dictionnaire installé définit vraiment. Utilisez ensuite ce même mot pour vous entraîner à la recherche directe dans les livres, le texte OCR des mangas et les sous-titres des vidéos.';
-      case 'onboarding_click_lookup_tap_body':
-        return 'Sur téléphone, touchez un caractère du mot vérifié ; sur ordinateur, faites un clic gauche dessus. Fushi part de là et retient le mot le plus long.';
-      case 'onboarding_global_lookup_windows_select_body':
-        return 'Sélectionnez le même mot dont vous avez déjà vérifié la définition, et laissez la sélection active.';
-      case 'onboarding_global_lookup_android_select_body':
-        return 'Appuyez longuement sur ce même mot vérifié, puis ajustez les poignées de sélection pour le couvrir entièrement.';
       case 'game_lookup_attached_title':
         return 'In-game lookup';
       case 'game_lookup_attached_no_ocr':
@@ -202045,6 +202259,56 @@ extension on _StringsFr {
         return 'Le jeu a été lancé sans paramètres régionaux japonais : ce système utilise déjà la page de codes japonaise (CP932), rien à changer.';
       case 'game_session_japanese_locale_skipped_hint_not_32bit':
         return 'Le jeu a été lancé sans paramètres régionaux japonais : le verdict automatique les juge nécessaires, mais Locale Emulator ne prend en charge que les jeux 32 bits.';
+      case 'onboarding_feature_fonts':
+        return 'Polices personnalisées';
+      case 'onboarding_feature_fonts_hint':
+        return 'Utilisez vos propres polices pour l\'interface, le texte des livres et le dictionnaire';
+      case 'onboarding_features_modules_title':
+        return 'Pages de bibliothèque';
+      case 'onboarding_features_modules_hint':
+        return 'Les pages non cochées sont masquées de la barre de navigation. Modifiable à tout moment dans Paramètres → Apparence.';
+      case 'onboarding_features_setup_title':
+        return 'À configurer ensuite';
+      case 'onboarding_features_setup_hint':
+        return 'Seuls les éléments cochés auront une étape dans ce guide.';
+      case 'onboarding_pack_intro':
+        return 'Dictionnaires japonais, accent de hauteur, fréquence des mots et audio de prononciation JA/EN en un seul téléchargement. Vous apprenez une autre langue ? Passez cette étape et importez vos propres dictionnaires.';
+      case 'onboarding_global_lookup_windows_select_desc':
+        return 'Sélectionnez un mot dans n\'importe quelle application et laissez la sélection active.';
+      case 'onboarding_global_lookup_android_select_desc':
+        return 'Appuyez longuement sur un mot dans une autre application et ajustez les poignées pour le couvrir.';
+      case 'onboarding_global_lookup_windows_shortcut_press':
+        return 'Appuyez sur le raccourci';
+      case 'onboarding_first_anki_card_intro':
+        return 'Anki est connecté. Créez maintenant une vraie carte pour vérifier que tout le parcours fonctionne.';
+      case 'onboarding_action_start':
+        return 'Commencer à utiliser Fushi';
+      case 'onboarding_actions_more':
+        return 'Autres méthodes';
+      case 'onboarding_finish_summary_modules':
+        return 'Pages de bibliothèque affichées';
+      case 'onboarding_finish_summary_setup':
+        return 'Configuration guidée';
+      case 'onboarding_finish_summary_none':
+        return 'Aucune';
+      case 'onboarding_anki_status_pending':
+        return 'Pas encore testée';
+      case 'onboarding_click_lookup_intro':
+        return 'Touchez n\'importe quel mot dans un livre, un manga ou un sous-titre pour voir sa définition. Essayez avec la phrase d\'entraînement ci-dessous.';
+      case 'onboarding_click_lookup_tap_desc':
+        return 'Touchez un caractère (ou faites un clic gauche) ; Fushi retient le mot le plus long qui commence là. La phrase s\'ouvre dans la page de recherche.';
+      case 'onboarding_sample_sentence_label':
+        return 'Phrase d\'entraînement';
+      case 'onboarding_sample_sentence_hint':
+        return 'Touchez pour l\'ouvrir dans la page de recherche, puis touchez n\'importe quel mot.';
+      case 'onboarding_lookup_practice_action':
+        return 'S\'entraîner avec cette phrase';
+      case 'onboarding_lookup_practice_desc':
+        return 'Ouvre la page de recherche avec la phrase chargée. Touchez-y un mot pour voir sa définition ; si rien ne s\'affiche, vos dictionnaires ne sont pas encore installés.';
+      case 'onboarding_first_anki_lookup_desc':
+        return 'Ouvrez la phrase d\'entraînement et touchez un mot.';
+      case 'onboarding_first_anki_action_desc':
+        return 'Ouvre la phrase d\'entraînement dans la page de recherche. Touchez un mot, touchez +, vérifiez les champs et enregistrez.';
       default:
         return null;
     }
@@ -208961,97 +209225,89 @@ extension on _StringsId {
       case 'onboarding_title':
         return 'Memulai';
       case 'onboarding_welcome_headline':
-        return 'Selamat datang!';
+        return 'Selamat datang di Fushi';
       case 'onboarding_feature_anki':
-        return 'Kartu flash Anki';
+        return 'Kartu Anki';
       case 'onboarding_feature_anki_hint':
-        return 'Hubungkan AnkiConnect atau AnkiDroid untuk membuat kartu flash';
+        return 'Ubah hasil pencarian jadi kartu hafalan dengan satu ketukan';
       case 'onboarding_feature_backup':
         return 'Cadangan & sinkronisasi';
       case 'onboarding_feature_backup_hint':
-        return 'Cadangkan data Anda ke Google Drive, WebDAV, dan backend lainnya';
+        return 'Google Drive, WebDAV, atau berkas lokal';
       case 'onboarding_feature_interconnect':
         return 'Interkoneksi perangkat';
       case 'onboarding_feature_interconnect_hint':
-        return 'Pasangkan perangkat di LAN Anda untuk berbagi perpustakaan dan progres';
+        return 'Bagikan perpustakaan dan progres antarperangkat di LAN Anda';
       case 'onboarding_step_dictionary_action':
         return 'Buka manajer kamus';
       case 'onboarding_step_anki_title':
         return 'Siapkan Anki';
       case 'onboarding_step_anki_action':
-        return 'Buka pengaturan pembuatan kartu';
+        return 'Pengaturan pembuatan kartu';
       case 'onboarding_step_backup_title':
-        return 'Siapkan cadangan';
+        return 'Cadangan';
       case 'onboarding_step_backup_body':
-        return 'Pilih backend cadangan dan masuk, atau ekspor file cadangan lokal.';
+        return 'Jaga pustaka Anda tetap aman saat ganti atau kehilangan perangkat.';
       case 'onboarding_step_backup_action':
         return 'Buka pengaturan cadangan';
       case 'onboarding_step_interconnect_title':
-        return 'Siapkan interkoneksi';
+        return 'Interkoneksi';
       case 'onboarding_step_interconnect_body':
-        return 'Aktifkan interkoneksi dan pasangkan dengan perangkat lain di LAN Anda untuk berbagi perpustakaan, progres, dan pencarian.';
+        return 'Pasangkan perangkat di LAN Anda untuk berbagi satu pustaka dan menyelaraskan progres.';
       case 'onboarding_step_interconnect_action':
         return 'Buka pengaturan interkoneksi';
       case 'onboarding_finish_title':
         return 'Semuanya siap';
       case 'onboarding_finish_body':
-        return 'Anda bisa membuka panduan ini kapan saja dari Pengaturan > Sistem.';
+        return 'Anda bisa membuka lagi panduan ini kapan saja dari Pengaturan → Sistem.';
       case 'onboarding_action_next':
         return 'Berikutnya';
-      case 'onboarding_action_finish':
-        return 'Selesai';
       case 'onboarding_action_skip':
         return 'Lewati untuk sekarang';
       case 'onboarding_reopen':
         return 'Panduan memulai';
       case 'onboarding_welcome_body':
-        return 'Atur bahasa antarmuka dan tema Anda terlebih dahulu — langkah-langkah berikutnya akan memandu Anda melalui sisanya.';
+        return 'Pilih bahasa antarmuka dan temanya. Beberapa langkah berikutnya menyiapkan sisanya.';
       case 'onboarding_features_title':
-        return 'Pilih yang Anda gunakan';
-      case 'onboarding_features_modules_label':
-        return 'Tab perpustakaan (yang tidak dicentang disembunyikan dari bilah navigasi; bisa diubah kapan saja di Pengaturan)';
-      case 'onboarding_features_setup_label':
-        return 'Apa yang akan diatur selanjutnya';
+        return 'Apa yang akan Anda gunakan?';
       case 'onboarding_feature_manga':
-        return 'Perpustakaan manga';
+        return 'Manga';
       case 'onboarding_feature_manga_hint':
         return 'Baca manga dengan pencarian OCR';
       case 'onboarding_feature_video':
-        return 'Perpustakaan video';
+        return 'Video';
       case 'onboarding_feature_video_hint':
-        return 'Tonton video dengan pencarian subtitle dan pembuatan kartu';
+        return 'Pencarian pada takarir dan pembuatan kartu';
       case 'onboarding_feature_games':
-        return 'Perpustakaan galgame';
+        return 'Galgame';
       case 'onboarding_feature_games_hint':
-        return 'Luncurkan galgame dengan pencarian text-hook (hanya Windows)';
+        return 'Pencarian text-hook sambil bermain (hanya Windows)';
       case 'onboarding_feature_pack':
-        return 'Paket rekomendasi (kamus + audio)';
+        return 'Paket rekomendasi';
       case 'onboarding_feature_pack_hint':
-        return 'Satu unduhan menyiapkan kamus Jepang plus audio pengucapan JA/EN';
+        return 'Kamus Jepang plus audio pengucapan JA/EN dalam satu unduhan';
       case 'onboarding_step_pack_title':
-        return 'Instal paket rekomendasi';
-      case 'onboarding_step_pack_body':
-        return 'Paket rekomendasi membundel kamus kata, aksen nada, dan frekuensi Jepang plus database audio pengucapan Jepang/Inggris. Unduh dan impor di sini; mengimpor mengganti data lokal, jadi jalankan pada instalasi baru. Belajar bahasa lain? Gunakan manajer kamus untuk mengimpor kamus Anda sendiri.';
+        return 'Paket rekomendasi';
       case 'onboarding_step_pack_download_action':
         return 'Unduh dan impor';
       case 'onboarding_step_pack_import_existing_action':
         return 'Impor paket yang sudah diunduh';
       case 'onboarding_step_pack_pick_action':
-        return 'Pilih file paket lokal';
+        return 'Pilih berkas paket';
       case 'onboarding_pack_downloading':
-        return 'Mengunduh... batalkan kapan saja, dilanjutkan lain kali';
+        return 'Mengunduh… batalkan kapan saja dan lanjutkan nanti';
       case 'onboarding_pack_download_failed':
         return ({required Object message}) => 'Unduhan gagal: ${message}';
       case 'onboarding_step_extension_title':
         return 'Ekstensi browser';
       case 'onboarding_step_extension_body':
-        return 'Instal ekstensi browser pendamping untuk mencari kata di halaman web mana pun.';
+        return 'Cari kata di halaman web mana pun dengan ekstensi pendamping.';
       case 'onboarding_step_extension_action':
-        return 'Buka panduan ekstensi';
+        return 'Buka panduan pemasangan';
       case 'onboarding_step_fonts_title':
-        return 'Font bacaan';
+        return 'Font';
       case 'onboarding_step_fonts_body':
-        return 'Impor font kustom dan pilih mana yang digunakan oleh UI, teks buku, dan kamus.';
+        return 'Pakai font Anda sendiri untuk antarmuka, teks buku, dan kamus.';
       case 'settings_section_modules':
         return 'Modul fitur';
       case 'module_toggle_hint':
@@ -209254,9 +209510,9 @@ extension on _StringsId {
       case 'module_extension_label':
         return 'Ekstensi browser';
       case 'onboarding_feature_books':
-        return 'Perpustakaan novel';
+        return 'Novel';
       case 'onboarding_feature_books_hint':
-        return 'Baca novel EPUB dengan pencarian kamus dan sinkronisasi buku audio';
+        return 'Baca EPUB dengan pencarian kata dan sinkronisasi buku audio';
       case 'onboarding_feature_extension_hint':
         return 'Cari kata di halaman web mana pun (hanya desktop)';
       case 'video_setting_tap_toggles_playback':
@@ -209611,11 +209867,11 @@ extension on _StringsId {
       case 'game_session_japanese_locale_hint':
         return 'Game dimulai dengan locale Jepang (CP932). Jika teksnya terlihat kacau atau muncul error skrip, atur locale Jepang game ini ke Tidak Pernah.';
       case 'onboarding_anki_intro_body':
-        return 'Anki adalah aplikasi kartu flash pengulangan berjarak gratis: kata-kata baru menjadi kartu, dan ulasan dijadwalkan mengikuti kurva kelupaan. Setelah pencarian, Fushi bisa mengubah kata menjadi kartu Anki dalam satu ketukan, dengan makna, kalimat, audio, dan tangkapan layar.';
+        return 'Anki adalah aplikasi kartu hafalan gratis dengan pengulangan berjarak. Setelah pencarian, Fushi mengubah kata itu menjadi kartu berisi arti, kalimat, audio, dan tangkapan layar dalam satu ketukan.';
       case 'onboarding_anki_setup_desktop_hint':
-        return 'Instal aplikasi Anki desktop, lalu tambahkan add-on AnkiConnect: di Anki, buka Tools - Add-ons - Get Add-ons dan masukkan kode 2055492159. Biarkan Anki berjalan saat membuat kartu.';
+        return 'Pasang Anki, tambahkan add-on AnkiConnect (satu ketukan di bawah, atau kode add-on 2055492159), dan biarkan Anki berjalan selagi Anda membuat kartu.';
       case 'onboarding_anki_setup_ios_hint':
-        return 'Dengan AnkiMobile terinstal, menambahkan kartu langsung berfungsi. Untuk fitur lengkap, hubungkan ke Anki yang berjalan di komputer dalam jaringan yang sama melalui AnkiConnect.';
+        return 'Dengan AnkiMobile terpasang, kartu langsung ditambahkan. Untuk fitur lengkap, hubungkan ke Anki di komputer dalam jaringan yang sama lewat AnkiConnect.';
       case 'onboarding_anki_backend_label':
         return 'Koneksi';
       case 'onboarding_anki_test_action':
@@ -209627,17 +209883,17 @@ extension on _StringsId {
       case 'onboarding_anki_get_ankidroid_action':
         return 'Dapatkan AnkiDroid';
       case 'onboarding_anki_mobile_ankiconnect_title':
-        return 'Lanjutan: gunakan AnkiConnect di perangkat ini';
+        return 'Lanjutan: gunakan AnkiConnect dari perangkat ini';
       case 'onboarding_anki_mobile_ankiconnect_hint':
-        return 'Perangkat ini juga bisa membuat kartu ke Anki yang berjalan di komputer dalam jaringan yang sama: aktifkan AnkiConnect di pengaturan pembuatan kartu dan masukkan alamat komputer.';
+        return 'Buat kartu ke Anki di komputer dalam jaringan yang sama: aktifkan AnkiConnect di pengaturan pembuatan kartu dan masukkan alamat komputernya.';
       case 'onboarding_anki_setup_android_hint':
-        return 'Instal AnkiDroid dan buka sekali untuk menyelesaikan pengaturan awalnya. Kembali di Fushi, ketuk Izinkan pada dialog izin yang muncul saat kartu pertama Anda - tidak perlu mengubah pengaturan AnkiDroid.';
+        return 'Pasang AnkiDroid dan buka sekali. Pada kartu pertama, ketuk Izinkan di dialog izin — tidak ada lagi yang perlu diatur.';
       case 'onboarding_anki_install_addon_action':
         return 'Instal add-on AnkiConnect';
       case 'onboarding_anki_addon_installed':
-        return 'AnkiConnect terinstal. Jalankan (atau restart) Anki, lalu ketuk Tes koneksi.';
+        return 'AnkiConnect terpasang. Jalankan atau mulai ulang Anki, lalu tes koneksinya.';
       case 'onboarding_anki_addon_no_anki':
-        return 'Folder data Anki tidak ditemukan. Instal Anki dan buka sekali, lalu coba lagi.';
+        return 'Folder data Anki tidak ditemukan. Pasang Anki, buka sekali, lalu coba lagi.';
       case 'onboarding_anki_addon_failed':
         return ({required Object message}) => 'Instalasi gagal: ${message}';
       case 'game_hook_reason_capability_probe_failed':
@@ -210070,41 +210326,39 @@ extension on _StringsId {
       case 'onboarding_action_badge_optional':
         return 'Opsional';
       case 'onboarding_pack_action_download_desc':
-        return 'Mengunduh seluruh paket di latar belakang, lalu mengimpornya. Bisa dibatalkan kapan saja; berikutnya dilanjutkan dari titik terakhir.';
+        return 'Mengunduh dari beberapa sumber sekaligus di latar belakang, lalu mengimpornya. Bisa dibatalkan kapan saja; dilanjutkan dari titik terakhir.';
       case 'onboarding_pack_action_import_existing_desc':
-        return 'Paket sudah terunduh; tombol ini mengimpornya. Pilih «Gabungkan» pada dialog konfirmasi agar data yang sudah ada tidak tersentuh.';
+        return 'Paketnya sudah ada di disk. Pilih «Gabungkan» pada dialog konfirmasi agar data Anda yang lama tetap utuh.';
       case 'onboarding_pack_action_pick_desc':
-        return 'Sudah punya zip paketnya dari tempat lain? Impor dari disk dan lewati proses unduh sepenuhnya.';
+        return 'Sudah punya zip paketnya? Impor dari disk dan lewati unduhannya.';
       case 'onboarding_pack_action_website':
-        return 'Buka halaman unduh di situs web';
+        return 'Buka halaman unduh';
       case 'onboarding_pack_action_website_desc':
-        return 'Membuka situs resmi di peramban. Bagian paket di sana memuat tautan per potongan yang bisa diberikan ke pengelola unduhan; setelah itu kembali ke sini dan gunakan «Pilih berkas paket lokal» untuk mengimpor hasilnya.';
+        return 'Tautan per potongan untuk pengelola unduhan. Setelah itu kembali dan gunakan «Pilih berkas paket».';
       case 'onboarding_pack_action_dictionary_desc':
-        return 'Sedang belajar bahasa selain Jepang? Lewati paketnya dan impor kamus untuk bahasamu sendiri di sini.';
+        return 'Belajar bahasa lain? Impor kamusnya di sini saja.';
       case 'onboarding_pack_action_audio_desc':
-        return 'Dari mana audio pelafalan berasal. Paket sudah mencakup bahasa Jepang dan Inggris; untuk bahasa lain tambahkan sumber daring di sini.';
+        return 'Tambahkan sumber pelafalan daring untuk bahasa yang tidak dicakup paket ini.';
       case 'onboarding_anki_action_test_desc':
-        return 'Memeriksa apakah Fushi bisa menghubungi Anki dan memuat dek serta jenis catatanmu. Belum ada yang dibuat.';
+        return 'Memeriksa apakah Fushi bisa menghubungi Anki dan memuat dek serta jenis catatan Anda. Tidak membuat apa pun.';
       case 'onboarding_anki_action_refresh_desc':
-        return 'Memuat ulang dek dan jenis catatan dari Anki. Gunakan setelah membuat dek baru di dalam Anki.';
+        return 'Memuat ulang dek dan jenis catatan. Gunakan setelah membuat dek di Anki.';
       case 'onboarding_anki_action_get_ankidroid_desc':
-        return 'Membuka halaman toko AnkiDroid. Fushi menulis kartunya ke sana, jadi harus dipasang lebih dulu.';
+        return 'Membuka halaman toko. Fushi menulis kartu ke AnkiDroid, jadi harus dipasang lebih dulu.';
       case 'onboarding_anki_action_get_anki_desc':
-        return 'Membuka halaman unduh Anki. Pasang Anki dan biarkan tetap berjalan selagi kamu membuat kartu.';
+        return 'Membuka halaman unduh Anki. Biarkan Anki tetap berjalan selagi Anda membuat kartu.';
       case 'onboarding_anki_action_install_addon_desc':
-        return 'Mengekstrak add-on AnkiConnect bawaan ke dalam Anki untukmu; itulah yang membuat Fushi bisa berbicara dengannya. Mulai ulang Anki setelahnya.';
+        return 'Mengekstrak add-on AnkiConnect bawaan ke dalam Anki. Mulai ulang Anki setelahnya.';
       case 'onboarding_step_anki_action_desc':
-        return 'Templat kartu, pemetaan bidang, tangkapan layar, dan audio: yaitu rincian seperti apa kartu yang dihasilkan. Dek dan jenis catatan di atas sudah cukup untuk mulai, jadi buka ini hanya jika kamu ingin mengubah cara kartu disusun.';
+        return 'Templat, pemetaan kolom, tangkapan layar, dan audio. Dek dan jenis catatan di atas sudah cukup untuk mulai.';
       case 'onboarding_step_backup_action_desc':
-        return 'Pilih backend cadangan dan masuk, supaya pustakamu selamat saat perangkat hilang atau diganti.';
+        return 'Pilih backend dan masuk, atau ekspor berkas cadangan lokal.';
       case 'onboarding_step_interconnect_action_desc':
-        return 'Memasangkan perangkat ini dengan perangkatmu yang lain untuk berbagi satu pustaka dan menyelaraskan progres.';
+        return 'Aktifkan interkoneksi dan pasangkan perangkat ini dengan perangkat Anda yang lain.';
       case 'onboarding_step_extension_action_desc':
-        return 'Menunjukkan cara memasang ekstensi peramban dan menghubungkannya ke Fushi, supaya kamu juga bisa mencari kata di halaman web.';
+        return 'Menunjukkan cara memasang ekstensi dan menghubungkannya ke Fushi.';
       case 'onboarding_step_fonts_action_desc':
-        return 'Tambahkan berkas fonmu sendiri dan pilih fon yang dipakai tiap bahasa.';
-      case 'onboarding_pack_sources_hint':
-        return 'Diunduh dalam potongan paralel dari GitHub, situs resmi, dan satu cermin cadangan sekaligus, tiap potongan diperiksa checksum-nya. Fushi mengukur kecepatan sumber sambil berjalan dan memberi lebih banyak potongan ke yang tercepat saat itu, jadi tidak ada yang perlu dipilih di sini.';
+        return 'Impor berkas font dan pilih satu untuk tiap bahasa.';
       case 'video_setting_hdr_output':
         return 'Keluaran HDR / 10 bit';
       case 'video_setting_hdr_output_hint':
@@ -210206,99 +210460,79 @@ extension on _StringsId {
         return ({required Object count}) =>
             'Beralih ke mode bawaan untuk membuat ${count} kartu yang antre';
       case 'onboarding_step_click_lookup_title':
-        return 'Ketuk untuk mencari kata';
+        return 'Ketuk untuk mencari';
       case 'onboarding_click_lookup_tap_title':
-        return 'Ketuk teksnya';
+        return 'Ketuk sebuah kata';
       case 'onboarding_click_lookup_nested_title':
-        return 'Lanjutkan menelusuri di popup';
+        return 'Terus telusuri';
       case 'onboarding_click_lookup_nested_body':
-        return 'Ketuk kata lain di dalam definisi untuk membuka pencarian satu tingkat lebih dalam. Tekan kembali atau ketuk di luar untuk menutup satu tingkat.';
+        return 'Ketuk kata di dalam definisi untuk turun satu tingkat. Tekan kembali atau ketuk di luar untuk menutup satu tingkat.';
       case 'onboarding_click_lookup_mine_title':
-        return 'Ubah hasilnya menjadi kartu';
+        return 'Buat kartu';
       case 'onboarding_click_lookup_mine_body':
-        return 'Kalau definisinya sudah pas, ketuk + untuk mengirim kata, kalimat, audio, dan gambar ke pembuat kartu.';
+        return 'Ketuk + pada entrinya untuk mengirim kata, kalimat, audio, dan gambar ke pembuat kartu.';
       case 'onboarding_step_global_lookup_title':
-        return 'Mencari teks di luar Fushi';
+        return 'Mencari di luar Fushi';
       case 'onboarding_global_lookup_windows_body':
-        return 'Di Windows, pilih teks di aplikasi lain lalu panggil kamus tanpa harus kembali ke Fushi.';
+        return 'Pilih teks di aplikasi mana pun lalu panggil kamus tanpa berpindah jendela.';
       case 'onboarding_global_lookup_windows_select_title':
-        return 'Pilih teks di aplikasi mana pun';
-      case 'onboarding_global_lookup_windows_shortcut_title':
-        return 'Tekan Ctrl+Alt+D';
+        return 'Pilih teks';
       case 'onboarding_global_lookup_windows_shortcut_body':
-        return 'Ini pintasan global bawaan. Fushi mengambil teks yang sedang dipilih dan membuka kartu pencarian di dekat kursor.';
+        return 'Fushi mengambil teks yang dipilih dan membuka kartu pencarian di dekat kursor.';
       case 'onboarding_global_lookup_windows_customize_title':
-        return 'Ubah pintasannya bila perlu';
+        return 'Ubah pintasannya';
       case 'onboarding_global_lookup_windows_customize_body':
-        return 'Buka Pengaturan → Pintasan → Global (di luar aplikasi) untuk menetapkan kombinasi tombol lain.';
+        return 'Pengaturan → Pintasan → Global (di luar aplikasi).';
       case 'onboarding_global_lookup_windows_action':
         return 'Buka pengaturan pintasan';
       case 'onboarding_global_lookup_windows_action_desc':
-        return 'Untuk mengubah pintasan pencarian di luar aplikasi. Pintasan bawaan Ctrl+Alt+D sudah berfungsi, jadi ini opsional.';
+        return 'Hanya kalau Anda ingin kombinasi tombol lain.';
       case 'onboarding_global_lookup_android_body':
-        return 'Di Android, sistem meneruskan teks yang dipilih ke Fushi lewat menu teks atau panel Bagikan. Tidak ada tombol pintas global yang bisa diatur ulang.';
+        return 'Android menyerahkan teks yang dipilih ke Fushi lewat menu teks atau panel Bagikan.';
       case 'onboarding_global_lookup_android_select_title':
-        return 'Pilih teks di aplikasi lain';
+        return 'Pilih teks';
       case 'onboarding_global_lookup_android_open_title':
         return 'Pilih Fushi';
       case 'onboarding_global_lookup_android_open_body':
-        return 'Ketuk Fushi di menu pemilihan teks. Kalau tidak terlihat, ketuk Bagikan lalu pilih Fushi dari panel berbagi.';
+        return 'Ketuk Fushi di menu pemilihan, atau ketuk Bagikan lalu pilih Fushi.';
       case 'onboarding_global_lookup_android_continue_title':
-        return 'Gunakan popup terpisah';
+        return 'Baca popupnya';
       case 'onboarding_global_lookup_android_continue_body':
-        return 'Hasil pencarian terbuka terpisah dari aplikasi asal. Anda bisa mengetuk kata lain di dalamnya, lalu menutupnya untuk kembali ke tempat semula.';
+        return 'Pencarian terbuka di atas aplikasi lain. Tutup untuk kembali.';
       case 'onboarding_feature_manual_resources':
-        return 'Impor kamus dan audio secara manual';
+        return 'Impor materi saya sendiri';
       case 'onboarding_feature_manual_resources_hint':
-        return 'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+        return 'Kamus, buku audio, dan sumber pelafalan dari berkas Anda sendiri';
       case 'onboarding_step_manual_resources_title':
-        return 'Siapkan kamus dan audio secara manual';
+        return 'Kamus dan audio milik Anda';
       case 'onboarding_step_manual_resources_body':
-        return 'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+        return 'Impor minimal satu kamus sebelum tutorial pencarian. Buku audio dan audio pelafalan sifatnya opsional.';
       case 'onboarding_manual_dictionary_action':
         return 'Impor kamus';
       case 'onboarding_manual_dictionary_action_desc':
-        return 'Buka manajer kamus dan impor minimal satu berkas atau arsip kamus yang didukung. Tutorial pencarian baru berguna setelah pencarian benar-benar menghasilkan definisi.';
+        return 'Membuka manajemen kamus. Pencarian baru memberi hasil setelah ada kamus yang terpasang.';
       case 'onboarding_manual_audiobook_action':
-        return 'Impor buku beserta audio buku audio';
+        return 'Impor buku beserta audio';
       case 'onboarding_manual_audiobook_action_desc':
-        return 'Buka impor buku dan pilih buku atau teksnya, subtitle yang selaras, serta satu atau beberapa berkas audio. Audio butuh subtitle agar Fushi bisa menyelaraskannya per kalimat.';
+        return 'Buku atau teks, takarir yang selaras, dan berkas audio. Takarirlah yang membuat Fushi bisa menyelaraskan audio per kalimat.';
       case 'onboarding_manual_pronunciation_action':
-        return 'Atur audio pelafalan kata';
+        return 'Atur audio pelafalan';
       case 'onboarding_manual_pronunciation_action_desc':
-        return 'Tambahkan sumber pelafalan lokal atau daring yang dipakai entri kamus. Ini berbeda dari audio buku audio yang menempel pada sebuah buku.';
-      case 'onboarding_lookup_verify_action':
-        return 'Pastikan kata itu ada di kamus Anda';
-      case 'onboarding_lookup_verify_action_desc':
-        return 'Buka pencarian, ketik kata apa pun yang sedang Anda pelajari, dan lanjutkan hanya setelah kamus yang terpasang menampilkan definisinya. Tutorial ini tidak mematok kata contoh.';
+        return 'Sumber lokal atau daring untuk pelafalan kata di entri kamus. Berbeda dari audio buku audio.';
       case 'onboarding_step_first_anki_card_title':
-        return 'Buat kartu Anki pertama Anda';
-      case 'onboarding_step_first_anki_card_body':
-        return 'Langkah ini hanya muncul setelah panduan ini terhubung ke Anki dan Anda memilih dek serta tipe catatan yang bisa dipakai.';
+        return 'Kartu pertama Anda';
       case 'onboarding_first_anki_lookup_title':
-        return 'Mulai dari hasil kamus yang nyata';
-      case 'onboarding_first_anki_lookup_body':
-        return 'Cari kata yang memang ada di kamus yang Anda pasang. Tidak ada kata contoh tetap yang mungkin justru tidak ada di kamus Anda.';
+        return 'Cari sebuah kata';
       case 'onboarding_first_anki_plus_title':
-        return 'Ketuk tombol plus pada entri';
+        return 'Ketuk +';
       case 'onboarding_first_anki_plus_body':
-        return 'Tombol plus membuka pembuat kartu berisi kata, cara baca, arti, kalimat, audio, dan gambar yang tersedia saat itu.';
+        return 'Pembuat kartu terbuka dengan kata, cara baca, arti, kalimat, audio, dan gambar sudah terisi.';
       case 'onboarding_first_anki_save_title':
         return 'Periksa lalu simpan';
       case 'onboarding_first_anki_save_body':
-        return 'Pastikan dek tujuan, tipe catatan, dan pratinjau bidangnya sudah benar, lalu simpan. Buka Anki untuk memeriksa kartu pertama sudah masuk.';
+        return 'Pastikan dek dan jenis catatannya, lalu simpan. Buka Anki untuk melihat kartunya.';
       case 'onboarding_first_anki_action':
         return 'Buka pencarian dan buat kartu';
-      case 'onboarding_first_anki_action_desc':
-        return 'Pakai kata yang definisinya sudah terlihat, ketuk tombol plusnya, periksa bidang-bidangnya, lalu simpan ke dek Anki yang terhubung.';
-      case 'onboarding_step_click_lookup_body':
-        return 'Pastikan dulu ada kata yang memang didefinisikan kamus yang Anda pasang. Lalu pakai kata yang sama untuk berlatih pencarian langsung di buku, teks OCR manga, dan subtitle video.';
-      case 'onboarding_click_lookup_tap_body':
-        return 'Di ponsel, ketuk salah satu karakter kata yang sudah dipastikan tadi; di komputer, klik kiri. Fushi mulai dari titik itu dan mengambil kata terpanjang yang cocok.';
-      case 'onboarding_global_lookup_windows_select_body':
-        return 'Sorot kata yang sama, yang sudah Anda pastikan ada definisinya di kamus, dan biarkan tetap terpilih.';
-      case 'onboarding_global_lookup_android_select_body':
-        return 'Tekan lama kata yang sudah dipastikan itu, lalu geser pegangan seleksi agar menutupi seluruh kata.';
       case 'game_lookup_attached_title':
         return 'In-game lookup';
       case 'game_lookup_attached_no_ocr':
@@ -210534,6 +210768,56 @@ extension on _StringsId {
         return 'Game dimulai tanpa lokal Jepang: sistem ini sudah memakai code page Jepang (CP932), tidak ada yang perlu diubah.';
       case 'game_session_japanese_locale_skipped_hint_not_32bit':
         return 'Game dimulai tanpa lokal Jepang: putusan otomatis menyatakan perlu, tetapi Locale Emulator hanya mendukung game 32-bit.';
+      case 'onboarding_feature_fonts':
+        return 'Font kustom';
+      case 'onboarding_feature_fonts_hint':
+        return 'Pakai font Anda sendiri untuk antarmuka, teks buku, dan kamus';
+      case 'onboarding_features_modules_title':
+        return 'Halaman perpustakaan';
+      case 'onboarding_features_modules_hint':
+        return 'Halaman yang tidak dicentang disembunyikan dari bilah navigasi. Bisa diubah kapan saja di Pengaturan → Tampilan.';
+      case 'onboarding_features_setup_title':
+        return 'Disiapkan berikutnya';
+      case 'onboarding_features_setup_hint':
+        return 'Hanya item yang dicentang yang mendapat langkah di panduan ini.';
+      case 'onboarding_pack_intro':
+        return 'Kamus Jepang, aksen nada, frekuensi kata, dan audio pengucapan JA/EN dalam satu unduhan. Belajar bahasa lain? Lewati ini dan impor kamus Anda sendiri.';
+      case 'onboarding_global_lookup_windows_select_desc':
+        return 'Sorot sebuah kata di aplikasi mana pun dan biarkan tetap terpilih.';
+      case 'onboarding_global_lookup_android_select_desc':
+        return 'Tekan lama sebuah kata di aplikasi lain, lalu geser pegangannya sampai menutupi kata itu.';
+      case 'onboarding_global_lookup_windows_shortcut_press':
+        return 'Tekan pintasannya';
+      case 'onboarding_first_anki_card_intro':
+        return 'Anki sudah tersambung. Buat satu kartu sungguhan sekarang supaya Anda tahu seluruh alurnya jalan.';
+      case 'onboarding_action_start':
+        return 'Mulai pakai Fushi';
+      case 'onboarding_actions_more':
+        return 'Cara lain';
+      case 'onboarding_finish_summary_modules':
+        return 'Halaman perpustakaan yang ditampilkan';
+      case 'onboarding_finish_summary_setup':
+        return 'Penyiapan terpandu';
+      case 'onboarding_finish_summary_none':
+        return 'Tidak ada';
+      case 'onboarding_anki_status_pending':
+        return 'Belum diuji';
+      case 'onboarding_click_lookup_intro':
+        return 'Ketuk kata mana pun di buku, manga, atau takarir untuk melihat artinya. Coba dulu pada kalimat latihan di bawah.';
+      case 'onboarding_click_lookup_tap_desc':
+        return 'Ketuk satu karakter (atau klik kiri di komputer); Fushi mengambil kata terpanjang yang dimulai di situ. Kalimatnya terbuka di halaman pencarian.';
+      case 'onboarding_sample_sentence_label':
+        return 'Kalimat latihan';
+      case 'onboarding_sample_sentence_hint':
+        return 'Ketuk untuk membukanya di halaman pencarian, lalu ketuk kata mana pun.';
+      case 'onboarding_lookup_practice_action':
+        return 'Berlatih dengan kalimat ini';
+      case 'onboarding_lookup_practice_desc':
+        return 'Membuka halaman pencarian dengan kalimat sudah dimuat. Ketuk sebuah kata di sana untuk melihat artinya; kalau tidak ada hasil, kamus Anda belum terpasang.';
+      case 'onboarding_first_anki_lookup_desc':
+        return 'Buka kalimat latihan lalu ketuk sebuah kata.';
+      case 'onboarding_first_anki_action_desc':
+        return 'Membuka kalimat latihan di halaman pencarian. Ketuk sebuah kata, ketuk +, periksa kolomnya, lalu simpan.';
       default:
         return null;
     }
@@ -217468,97 +217752,89 @@ extension on _StringsIt {
       case 'onboarding_title':
         return 'Per iniziare';
       case 'onboarding_welcome_headline':
-        return 'Benvenuto!';
+        return 'Benvenuto in Fushi';
       case 'onboarding_feature_anki':
-        return 'Flashcard Anki';
+        return 'Carte Anki';
       case 'onboarding_feature_anki_hint':
-        return 'Connetti AnkiConnect o AnkiDroid per creare flashcard';
+        return 'Trasforma le ricerche in flashcard con un tocco';
       case 'onboarding_feature_backup':
         return 'Backup e sincronizzazione';
       case 'onboarding_feature_backup_hint':
-        return 'Fai backup dei dati su Google Drive, WebDAV e altri backend';
+        return 'Google Drive, WebDAV o un file locale';
       case 'onboarding_feature_interconnect':
         return 'Interconnessione dispositivi';
       case 'onboarding_feature_interconnect_hint':
-        return 'Accoppia dispositivi sulla tua LAN per condividere librerie e progressi';
+        return 'Condividi librerie e progressi tra i dispositivi della tua LAN';
       case 'onboarding_step_dictionary_action':
         return 'Apri gestore dizionari';
       case 'onboarding_step_anki_title':
         return 'Configura Anki';
       case 'onboarding_step_anki_action':
-        return 'Apri impostazioni creazione carte';
+        return 'Impostazioni creazione carte';
       case 'onboarding_step_backup_title':
-        return 'Configura backup';
+        return 'Backup';
       case 'onboarding_step_backup_body':
-        return 'Scegli un backend di backup e accedi, o esporta un file di backup locale.';
+        return 'Metti al sicuro la tua libreria quando cambi o perdi un dispositivo.';
       case 'onboarding_step_backup_action':
         return 'Apri impostazioni backup';
       case 'onboarding_step_interconnect_title':
-        return 'Configura interconnect';
+        return 'Interconnect';
       case 'onboarding_step_interconnect_body':
-        return 'Abilita interconnect e accoppia con altri dispositivi sulla tua LAN per condividere librerie, progressi e ricerche.';
+        return 'Accoppia i dispositivi sulla tua LAN per condividere un\'unica libreria e mantenere sincronizzati i progressi.';
       case 'onboarding_step_interconnect_action':
         return 'Apri impostazioni interconnect';
       case 'onboarding_finish_title':
         return 'Tutto pronto';
       case 'onboarding_finish_body':
-        return 'Puoi rivisitare questa guida in qualsiasi momento da Impostazioni → Sistema.';
+        return 'Puoi riaprire questa guida in qualsiasi momento da Impostazioni → Sistema.';
       case 'onboarding_action_next':
         return 'Avanti';
-      case 'onboarding_action_finish':
-        return 'Fine';
       case 'onboarding_action_skip':
         return 'Salta per ora';
       case 'onboarding_reopen':
         return 'Guida per iniziare';
       case 'onboarding_welcome_body':
-        return 'Imposta prima la lingua dell\'interfaccia e il tema — i prossimi passi ti guideranno nel resto.';
+        return 'Scegli la lingua dell\'interfaccia e il tema. I prossimi passaggi configurano il resto.';
       case 'onboarding_features_title':
-        return 'Scegli cosa usi';
-      case 'onboarding_features_modules_label':
-        return 'Schede libreria (quelle deselezionate vengono nascoste dalla barra di navigazione; cambiabile in qualsiasi momento nelle Impostazioni)';
-      case 'onboarding_features_setup_label':
-        return 'Cosa configurare dopo';
+        return 'Cosa userai?';
       case 'onboarding_feature_manga':
-        return 'Libreria manga';
+        return 'Manga';
       case 'onboarding_feature_manga_hint':
         return 'Leggi manga con ricerca OCR';
       case 'onboarding_feature_video':
-        return 'Libreria video';
+        return 'Video';
       case 'onboarding_feature_video_hint':
-        return 'Guarda video con ricerca sottotitoli e mining';
+        return 'Ricerca sui sottotitoli e creazione di carte';
       case 'onboarding_feature_games':
-        return 'Libreria galgame';
+        return 'Galgame';
       case 'onboarding_feature_games_hint':
-        return 'Avvia galgame con ricerca text-hook (solo Windows)';
+        return 'Ricerca via text-hook mentre giochi (solo Windows)';
       case 'onboarding_feature_pack':
-        return 'Pacchetto consigliato (dizionari + audio)';
+        return 'Pacchetto consigliato';
       case 'onboarding_feature_pack_hint':
-        return 'Un download configura dizionari giapponesi più audio di pronuncia JA/EN';
+        return 'Dizionari giapponesi più audio di pronuncia JA/EN in un solo download';
       case 'onboarding_step_pack_title':
-        return 'Installa il pacchetto consigliato';
-      case 'onboarding_step_pack_body':
-        return 'Il pacchetto consigliato include dizionari di parole, accento e frequenza giapponesi più database audio di pronuncia giapponese/inglese. Scaricalo e importalo qui; l\'importazione sostituisce i dati locali, quindi eseguilo su un\'installazione pulita. Studi un\'altra lingua? Usa il gestore dizionari per importare i tuoi dizionari.';
+        return 'Pacchetto consigliato';
       case 'onboarding_step_pack_download_action':
         return 'Scarica e importa';
       case 'onboarding_step_pack_import_existing_action':
-        return 'Importa pacchetto scaricato';
+        return 'Importa il pacchetto scaricato';
       case 'onboarding_step_pack_pick_action':
-        return 'Scegli un file pacchetto locale';
+        return 'Scegli un file pacchetto';
       case 'onboarding_pack_downloading':
-        return 'Download in corso… annullabile, riprende la prossima volta';
+        return 'Download in corso… annullabile in qualsiasi momento e riprendibile dopo';
       case 'onboarding_pack_download_failed':
         return ({required Object message}) => 'Download fallito: ${message}';
       case 'onboarding_step_extension_title':
         return 'Estensione browser';
       case 'onboarding_step_extension_body':
-        return 'Installa l\'estensione browser companion per cercare parole su qualsiasi pagina web.';
+        return 'Cerca parole su qualsiasi pagina web con l\'estensione companion.';
       case 'onboarding_step_extension_action':
-        return 'Apri guida estensione';
+        return 'Apri la guida all\'installazione';
       case 'onboarding_step_fonts_title':
-        return 'Font di lettura';
+        return 'Font';
       case 'onboarding_step_fonts_body':
-        return 'Importa font personalizzati e scegli quale usano UI, testo dei libri e dizionario.';
+        return 'Usa i tuoi font per l\'interfaccia, il testo dei libri e il dizionario.';
       case 'settings_section_modules':
         return 'Moduli funzionalità';
       case 'module_toggle_hint':
@@ -217761,9 +218037,9 @@ extension on _StringsIt {
       case 'module_extension_label':
         return 'Estensione browser';
       case 'onboarding_feature_books':
-        return 'Libreria romanzi';
+        return 'Romanzi';
       case 'onboarding_feature_books_hint':
-        return 'Leggi romanzi EPUB con ricerca nel dizionario e sincronizzazione audiolibri';
+        return 'Lettura EPUB con ricerca e sincronizzazione audiolibri';
       case 'onboarding_feature_extension_hint':
         return 'Cerca parole su qualsiasi pagina web (solo desktop)';
       case 'video_setting_tap_toggles_playback':
@@ -218119,11 +218395,11 @@ extension on _StringsIt {
       case 'game_session_japanese_locale_hint':
         return 'Il gioco è stato avviato con un locale giapponese (CP932). Se il testo appare confuso o appare un errore di script, imposta il locale giapponese di questo gioco su Mai.';
       case 'onboarding_anki_intro_body':
-        return 'Anki è un\'app gratuita di flashcard a ripetizione spaziata: le parole nuove diventano carte, e le revisioni sono programmate lungo la curva dell\'oblio. Dopo una ricerca, Fushi può trasformare la parola in una carta Anki con un tocco, con significato, frase, audio e screenshot.';
+        return 'Anki è un\'app gratuita di flashcard a ripetizione spaziata. Dopo una ricerca, Fushi trasforma la parola in una carta con significato, frase, audio e screenshot, con un solo tocco.';
       case 'onboarding_anki_setup_desktop_hint':
-        return 'Installa l\'app desktop Anki, poi aggiungi l\'add-on AnkiConnect: in Anki, apri Strumenti - Componenti aggiuntivi - Scarica componenti aggiuntivi e inserisci il codice 2055492159. Tieni Anki in esecuzione durante la creazione delle carte.';
+        return 'Installa Anki, aggiungi il componente aggiuntivo AnkiConnect (con un tocco qui sotto, oppure con il codice 2055492159) e tieni Anki aperto mentre crei le carte.';
       case 'onboarding_anki_setup_ios_hint':
-        return 'Con AnkiMobile installato, l\'aggiunta di carte funziona subito. Per il set completo di funzionalità, connettiti ad Anki in esecuzione su un computer nella stessa rete tramite AnkiConnect.';
+        return 'Con AnkiMobile installato, le carte vengono aggiunte direttamente. Per il set completo di funzionalità, collegati via AnkiConnect ad Anki su un computer nella stessa rete.';
       case 'onboarding_anki_backend_label':
         return 'Connessione';
       case 'onboarding_anki_test_action':
@@ -218135,17 +218411,17 @@ extension on _StringsIt {
       case 'onboarding_anki_get_ankidroid_action':
         return 'Ottieni AnkiDroid';
       case 'onboarding_anki_mobile_ankiconnect_title':
-        return 'Avanzato: usa AnkiConnect su questo dispositivo';
+        return 'Avanzato: usa AnkiConnect da questo dispositivo';
       case 'onboarding_anki_mobile_ankiconnect_hint':
-        return 'Questo dispositivo può anche creare carte in Anki su un computer nella stessa rete: abilita AnkiConnect nelle impostazioni di creazione carte e inserisci l\'indirizzo del computer.';
+        return 'Crea carte in Anki su un computer nella stessa rete: abilita AnkiConnect nelle impostazioni di creazione carte e inserisci l\'indirizzo del computer.';
       case 'onboarding_anki_setup_android_hint':
-        return 'Installa AnkiDroid e aprilo una volta per completare la configurazione iniziale. Tornando in Fushi, tocca Consenti nella finestra di permesso che appare con la prima carta — nessuna impostazione di AnkiDroid da cambiare.';
+        return 'Installa AnkiDroid e aprilo una volta. Alla prima carta, tocca Consenti nella finestra dei permessi: non c\'è altro da configurare.';
       case 'onboarding_anki_install_addon_action':
         return 'Installa add-on AnkiConnect';
       case 'onboarding_anki_addon_installed':
-        return 'AnkiConnect è installato. Avvia (o riavvia) Anki, poi tocca Testa connessione.';
+        return 'AnkiConnect installato. Avvia o riavvia Anki, poi testa la connessione.';
       case 'onboarding_anki_addon_no_anki':
-        return 'Cartella dati Anki non trovata. Installa Anki e aprilo una volta, poi riprova.';
+        return 'Cartella dati Anki non trovata. Installa Anki, aprilo una volta e riprova.';
       case 'onboarding_anki_addon_failed':
         return ({required Object message}) =>
             'Installazione fallita: ${message}';
@@ -218580,41 +218856,39 @@ extension on _StringsIt {
       case 'onboarding_action_badge_optional':
         return 'Facoltativo';
       case 'onboarding_pack_action_download_desc':
-        return 'Scarica l’intero pacchetto in background e poi lo importa. Puoi annullare in qualsiasi momento; la volta dopo riprende dal punto in cui si era fermato.';
+        return 'Scarica in background da più fonti contemporaneamente, poi importa. Puoi annullare in qualsiasi momento; riprende dal punto in cui si era fermato.';
       case 'onboarding_pack_action_import_existing_desc':
-        return 'Il pacchetto è già scaricato; qui viene importato. Scegli «Unisci» nella finestra di conferma e i dati esistenti resteranno intatti.';
+        return 'Il pacchetto è già sul disco. Scegli «Unisci» nella finestra di conferma per mantenere i dati esistenti.';
       case 'onboarding_pack_action_pick_desc':
-        return 'Hai già preso lo zip del pacchetto da un’altra parte? Importalo dal disco e salta del tutto il download.';
+        return 'Hai già lo zip del pacchetto? Importalo dal disco e salta il download.';
       case 'onboarding_pack_action_website':
-        return 'Apri la pagina di download del sito';
+        return 'Apri la pagina di download';
       case 'onboarding_pack_action_website_desc':
-        return 'Apre il sito ufficiale nel browser. La sezione dedicata al pacchetto elenca link a spezzoni che puoi passare a un download manager; poi torna qui e usa «Scegli un file pacchetto locale» per importare quello che hai ottenuto.';
+        return 'Link a spezzoni per i download manager. Poi torna qui e usa «Scegli un file pacchetto».';
       case 'onboarding_pack_action_dictionary_desc':
-        return 'Stai studiando una lingua diversa dal giapponese? Salta il pacchetto e importa qui i dizionari della tua lingua.';
+        return 'Stai studiando un\'altra lingua? Importa qui i dizionari corrispondenti.';
       case 'onboarding_pack_action_audio_desc':
-        return 'Da dove arriva l’audio della pronuncia. Il pacchetto copre già giapponese e inglese; per le altre lingue aggiungi qui le sorgenti online.';
+        return 'Aggiungi fonti di pronuncia online per le lingue che il pacchetto non copre.';
       case 'onboarding_anki_action_test_desc':
-        return 'Verifica che Fushi riesca a raggiungere Anki e carica i tuoi mazzi e tipi di nota. Per ora non viene creato nulla.';
+        return 'Verifica che Fushi riesca a raggiungere Anki e carica i tuoi mazzi e tipi di nota. Non crea nulla.';
       case 'onboarding_anki_action_refresh_desc':
-        return 'Ricarica mazzi e tipi di nota da Anki. Usalo dopo aver creato un nuovo mazzo dentro Anki.';
+        return 'Ricarica mazzi e tipi di nota. Usalo dopo aver creato un mazzo in Anki.';
       case 'onboarding_anki_action_get_ankidroid_desc':
-        return 'Apre la pagina dello store di AnkiDroid. Fushi ci scrive dentro le sue carte, quindi va installato prima.';
+        return 'Apre la pagina dello store. Fushi scrive le carte in AnkiDroid, quindi va installato prima.';
       case 'onboarding_anki_action_get_anki_desc':
-        return 'Apre la pagina di download di Anki. Installa Anki e tienilo aperto mentre crei le carte.';
+        return 'Apre la pagina di download di Anki. Tieni Anki aperto mentre crei le carte.';
       case 'onboarding_anki_action_install_addon_desc':
-        return 'Estrae per te il componente aggiuntivo AnkiConnect incluso dentro Anki: è ciò che permette a Fushi di parlarci. Al termine riavvia Anki.';
+        return 'Estrae dentro Anki il componente aggiuntivo AnkiConnect incluso. Al termine riavvia Anki.';
       case 'onboarding_step_anki_action_desc':
-        return 'Modello di carta, mappatura dei campi, screenshot e audio: i dettagli di come appare una carta creata. Il mazzo e il tipo di nota qui sopra bastano per iniziare, quindi apri questa sezione solo se vuoi cambiare come vengono costruite le carte.';
+        return 'Modello, mappatura dei campi, screenshot e audio. Il mazzo e il tipo di nota qui sopra bastano per iniziare.';
       case 'onboarding_step_backup_action_desc':
-        return 'Scegli un servizio di backup e accedi, così la tua libreria sopravvive alla perdita o alla sostituzione del dispositivo.';
+        return 'Scegli un backend e accedi, oppure esporta un file di backup locale.';
       case 'onboarding_step_interconnect_action_desc':
-        return 'Associa questo dispositivo agli altri tuoi dispositivi per condividere un’unica libreria e mantenere sincronizzati i progressi.';
+        return 'Abilita interconnect e accoppia questo dispositivo con gli altri tuoi.';
       case 'onboarding_step_extension_action_desc':
-        return 'Mostra come installare l’estensione del browser e collegarla a Fushi, così puoi cercare le parole anche nelle pagine web.';
+        return 'Mostra come installare l\'estensione e collegarla a Fushi.';
       case 'onboarding_step_fonts_action_desc':
-        return 'Aggiungi i tuoi file di font e scegli quale usare per ciascuna lingua.';
-      case 'onboarding_pack_sources_hint':
-        return 'Scaricato in spezzoni paralleli contemporaneamente da GitHub, dal sito ufficiale e da un mirror di riserva, con checksum su ogni spezzone. Fushi misura le sorgenti strada facendo e assegna più spezzoni a quella più veloce in quel momento, quindi qui non c’è nulla da scegliere.';
+        return 'Importa i file dei font e scegline uno per lingua.';
       case 'video_setting_hdr_output':
         return 'Uscita HDR / 10 bit';
       case 'video_setting_hdr_output_hint':
@@ -218716,99 +218990,79 @@ extension on _StringsIt {
         return ({required Object count}) =>
             'Passa alla modalità integrata per creare ${count} carte in coda';
       case 'onboarding_step_click_lookup_title':
-        return 'Tocca per cercare le parole';
+        return 'Tocca per cercare';
       case 'onboarding_click_lookup_tap_title':
-        return 'Tocca il testo';
+        return 'Tocca una parola';
       case 'onboarding_click_lookup_nested_title':
-        return 'Continua a cercare nel popup';
+        return 'Continua a esplorare';
       case 'onboarding_click_lookup_nested_body':
-        return 'Tocca un\'altra parola dentro una definizione per aprire un livello di ricerca più profondo. Torna indietro o tocca fuori per chiudere un livello.';
+        return 'Tocca una parola dentro una definizione per scendere di un livello. Torna indietro o tocca fuori per chiudere un livello.';
       case 'onboarding_click_lookup_mine_title':
-        return 'Trasforma il risultato in una carta';
+        return 'Crea una carta';
       case 'onboarding_click_lookup_mine_body':
-        return 'Se la definizione è quella giusta, tocca + per inviare parola, frase, audio e immagine al creatore di carte.';
+        return 'Tocca + sulla voce per inviare parola, frase, audio e immagine al creatore di carte.';
       case 'onboarding_step_global_lookup_title':
-        return 'Cercare testo fuori da Fushi';
+        return 'Cercare fuori da Fushi';
       case 'onboarding_global_lookup_windows_body':
-        return 'Su Windows puoi selezionare del testo in un\'altra app e richiamare il dizionario senza tornare a Fushi.';
+        return 'Seleziona del testo in qualsiasi app e richiama il dizionario senza cambiare finestra.';
       case 'onboarding_global_lookup_windows_select_title':
-        return 'Seleziona il testo in qualsiasi app';
-      case 'onboarding_global_lookup_windows_shortcut_title':
-        return 'Premi Ctrl+Alt+D';
+        return 'Seleziona il testo';
       case 'onboarding_global_lookup_windows_shortcut_body':
-        return 'È la scorciatoia globale predefinita. Fushi prende la selezione attuale e apre una scheda di ricerca vicino al puntatore.';
+        return 'Fushi prende la selezione e apre una scheda di ricerca vicino al puntatore.';
       case 'onboarding_global_lookup_windows_customize_title':
-        return 'Cambia la scorciatoia se serve';
+        return 'Cambia la scorciatoia';
       case 'onboarding_global_lookup_windows_customize_body':
-        return 'Apri Impostazioni → Scorciatoie → Globali (fuori dall\'app) per assegnare un\'altra combinazione di tasti.';
+        return 'Impostazioni → Scorciatoie → Globali (fuori dall\'app).';
       case 'onboarding_global_lookup_windows_action':
         return 'Apri le impostazioni delle scorciatoie';
       case 'onboarding_global_lookup_windows_action_desc':
-        return 'Permette di cambiare la scorciatoia per la ricerca fuori dall\'app. Quella predefinita Ctrl+Alt+D funziona già, quindi è facoltativo.';
+        return 'Solo se vuoi una combinazione di tasti diversa.';
       case 'onboarding_global_lookup_android_body':
-        return 'Su Android è il sistema a passare il testo selezionato a Fushi tramite il menu del testo o il pannello Condividi. Non esiste una scorciatoia globale personalizzabile.';
+        return 'Android passa il testo selezionato a Fushi tramite il menu del testo o il pannello Condividi.';
       case 'onboarding_global_lookup_android_select_title':
-        return 'Seleziona il testo in un\'altra app';
+        return 'Seleziona il testo';
       case 'onboarding_global_lookup_android_open_title':
         return 'Scegli Fushi';
       case 'onboarding_global_lookup_android_open_body':
-        return 'Tocca Fushi nel menu di selezione del testo. Se non compare, tocca Condividi e scegli Fushi dal pannello di condivisione.';
+        return 'Tocca Fushi nel menu di selezione, oppure tocca Condividi e scegli Fushi.';
       case 'onboarding_global_lookup_android_continue_title':
-        return 'Usa il popup indipendente';
+        return 'Leggi il popup';
       case 'onboarding_global_lookup_android_continue_body':
-        return 'La ricerca si apre separata dall\'app di origine. Al suo interno puoi toccare altre parole e, chiudendola, torni dov\'eri.';
+        return 'La ricerca si apre sopra l\'altra app. Chiudila per tornare indietro.';
       case 'onboarding_feature_manual_resources':
-        return 'Importa dizionari e audio manualmente';
+        return 'Importa risorse mie';
       case 'onboarding_feature_manual_resources_hint':
-        return 'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+        return 'Dizionari, audiolibri e fonti di pronuncia dai tuoi file';
       case 'onboarding_step_manual_resources_title':
-        return 'Prepara dizionari e audio manualmente';
+        return 'I tuoi dizionari e audio';
       case 'onboarding_step_manual_resources_body':
-        return 'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+        return 'Importa almeno un dizionario prima del tutorial di ricerca. Audiolibri e audio di pronuncia sono facoltativi.';
       case 'onboarding_manual_dictionary_action':
         return 'Importa un dizionario';
       case 'onboarding_manual_dictionary_action_desc':
-        return 'Apri la gestione dizionari e importa almeno un file o un archivio di dizionario supportato. I tutorial di ricerca hanno senso solo quando una ricerca restituisce una definizione.';
+        return 'Apre la gestione dizionari. Le ricerche danno risultati solo dopo aver installato un dizionario.';
       case 'onboarding_manual_audiobook_action':
-        return 'Importa un libro con l\'audio dell\'audiolibro';
+        return 'Importa un libro con audio';
       case 'onboarding_manual_audiobook_action_desc':
-        return 'Apri l\'importazione libri e scegli il libro o il testo, i sottotitoli allineati e uno o più file audio. Senza sottotitoli Fushi non può allineare l\'audio alle frasi.';
+        return 'Libro o testo, sottotitoli allineati e file audio. Sono i sottotitoli a permettere a Fushi di sincronizzare l\'audio con le frasi.';
       case 'onboarding_manual_pronunciation_action':
-        return 'Configura l\'audio di pronuncia delle parole';
+        return 'Configura l\'audio di pronuncia';
       case 'onboarding_manual_pronunciation_action_desc':
-        return 'Aggiungi le fonti di pronuncia locali o online usate dalle voci del dizionario. È una cosa distinta dall\'audio dell\'audiolibro collegato a un libro.';
-      case 'onboarding_lookup_verify_action':
-        return 'Verifica una parola nel tuo dizionario';
-      case 'onboarding_lookup_verify_action_desc':
-        return 'Apri la ricerca, scrivi una qualsiasi parola che stai studiando e prosegui solo quando il dizionario installato restituisce una definizione. Il tutorial non impone una parola di esempio.';
+        return 'Fonti locali o online per la pronuncia delle parole nelle voci del dizionario. È distinto dall\'audio degli audiolibri.';
       case 'onboarding_step_first_anki_card_title':
-        return 'Crea la tua prima carta Anki';
-      case 'onboarding_step_first_anki_card_body':
-        return 'Questo passaggio compare solo se in questa configurazione ti sei collegato ad Anki e hai scelto un mazzo e un tipo di nota utilizzabili.';
+        return 'La tua prima carta';
       case 'onboarding_first_anki_lookup_title':
-        return 'Parti da un risultato reale del dizionario';
-      case 'onboarding_first_anki_lookup_body':
-        return 'Cerca una parola che il tuo dizionario installato definisce davvero. Non c\'è una parola di esempio fissa che potrebbe mancare nel tuo dizionario.';
+        return 'Cerca una parola';
       case 'onboarding_first_anki_plus_title':
-        return 'Tocca il pulsante più sulla voce';
+        return 'Tocca +';
       case 'onboarding_first_anki_plus_body':
-        return 'Il pulsante più apre il creatore di carte con parola, lettura, significato, frase, audio e immagine disponibili al momento.';
+        return 'Il creatore di carte si apre con parola, lettura, significato, frase, audio e immagine già compilati.';
       case 'onboarding_first_anki_save_title':
         return 'Controlla e salva';
       case 'onboarding_first_anki_save_body':
-        return 'Conferma il mazzo di destinazione, il tipo di nota e l\'anteprima dei campi, poi salva. Apri Anki per verificare che la prima carta sia arrivata.';
+        return 'Conferma mazzo e tipo di nota, poi salva. Apri Anki per vedere la carta.';
       case 'onboarding_first_anki_action':
         return 'Apri la ricerca e crea una carta';
-      case 'onboarding_first_anki_action_desc':
-        return 'Usa una parola con una definizione visibile, tocca il suo pulsante più, controlla i campi e salvala nel mazzo Anki collegato.';
-      case 'onboarding_step_click_lookup_body':
-        return 'Prima verifica una parola che il tuo dizionario installato definisce davvero. Poi usa la stessa parola per esercitarti con la ricerca diretta nei libri, nel testo OCR dei manga e nei sottotitoli dei video.';
-      case 'onboarding_click_lookup_tap_body':
-        return 'Sul telefono tocca un carattere della parola verificata, sul computer fai clic con il tasto sinistro. Fushi parte da lì e trova la parola più lunga che combacia.';
-      case 'onboarding_global_lookup_windows_select_body':
-        return 'Seleziona la stessa parola di cui hai già verificato la definizione e lascia la selezione attiva.';
-      case 'onboarding_global_lookup_android_select_body':
-        return 'Tieni premuta la stessa parola verificata, poi sposta le maniglie di selezione per coprirla tutta.';
       case 'game_lookup_attached_title':
         return 'In-game lookup';
       case 'game_lookup_attached_no_ocr':
@@ -219044,6 +219298,56 @@ extension on _StringsIt {
         return 'Il gioco è stato avviato senza impostazioni locali giapponesi: questo sistema usa già la code page giapponese (CP932), non c\'è nulla da cambiare.';
       case 'game_session_japanese_locale_skipped_hint_not_32bit':
         return 'Il gioco è stato avviato senza impostazioni locali giapponesi: il verdetto automatico le ritiene necessarie, ma Locale Emulator supporta solo giochi a 32 bit.';
+      case 'onboarding_feature_fonts':
+        return 'Font personalizzati';
+      case 'onboarding_feature_fonts_hint':
+        return 'Usa i tuoi font per l\'interfaccia, il testo dei libri e il dizionario';
+      case 'onboarding_features_modules_title':
+        return 'Pagine della libreria';
+      case 'onboarding_features_modules_hint':
+        return 'Le pagine non selezionate vengono nascoste dalla barra di navigazione. Puoi cambiarle quando vuoi in Impostazioni → Aspetto.';
+      case 'onboarding_features_setup_title':
+        return 'Da configurare dopo';
+      case 'onboarding_features_setup_hint':
+        return 'Solo le voci selezionate avranno un passaggio in questa guida.';
+      case 'onboarding_pack_intro':
+        return 'Dizionari di giapponese, accento tonale, frequenza delle parole e audio di pronuncia JA/EN in un unico download. Stai studiando un\'altra lingua? Salta questo passaggio e importa i tuoi dizionari.';
+      case 'onboarding_global_lookup_windows_select_desc':
+        return 'Seleziona una parola in qualsiasi app e lasciala evidenziata.';
+      case 'onboarding_global_lookup_android_select_desc':
+        return 'Tieni premuta una parola in un\'altra app e sposta le maniglie per coprirla.';
+      case 'onboarding_global_lookup_windows_shortcut_press':
+        return 'Premi la scorciatoia';
+      case 'onboarding_first_anki_card_intro':
+        return 'Anki è collegato. Crea subito una carta vera per verificare che tutto il percorso funzioni.';
+      case 'onboarding_action_start':
+        return 'Inizia a usare Fushi';
+      case 'onboarding_actions_more':
+        return 'Altri modi';
+      case 'onboarding_finish_summary_modules':
+        return 'Pagine della libreria mostrate';
+      case 'onboarding_finish_summary_setup':
+        return 'Configurazione guidata';
+      case 'onboarding_finish_summary_none':
+        return 'Nessuna';
+      case 'onboarding_anki_status_pending':
+        return 'Non ancora testata';
+      case 'onboarding_click_lookup_intro':
+        return 'Tocca una parola qualsiasi in un libro, un manga o un sottotitolo per vederne il significato. Provalo con la frase di esercizio qui sotto.';
+      case 'onboarding_click_lookup_tap_desc':
+        return 'Tocca un carattere (o fai clic con il tasto sinistro); Fushi prende la parola più lunga che inizia lì. La frase si apre nella pagina di ricerca.';
+      case 'onboarding_sample_sentence_label':
+        return 'Frase di esercizio';
+      case 'onboarding_sample_sentence_hint':
+        return 'Tocca per aprirla nella pagina di ricerca, poi tocca una parola qualsiasi.';
+      case 'onboarding_lookup_practice_action':
+        return 'Esercitati con questa frase';
+      case 'onboarding_lookup_practice_desc':
+        return 'Apre la pagina di ricerca con la frase già caricata. Tocca lì una parola per vederne il significato; se non compare nulla, i dizionari non sono ancora installati.';
+      case 'onboarding_first_anki_lookup_desc':
+        return 'Apri la frase di esercizio e tocca una parola.';
+      case 'onboarding_first_anki_action_desc':
+        return 'Apre la frase di esercizio nella pagina di ricerca. Tocca una parola, tocca +, controlla i campi e salva.';
       default:
         return null;
     }
@@ -225916,97 +226220,89 @@ extension on _StringsJa {
       case 'onboarding_title':
         return 'はじめに';
       case 'onboarding_welcome_headline':
-        return 'ようこそ！';
+        return 'Fushi へようこそ';
       case 'onboarding_feature_anki':
-        return 'Ankiフラッシュカード';
+        return 'Anki カード';
       case 'onboarding_feature_anki_hint':
-        return 'AnkiConnectまたはAnkiDroidに接続してフラッシュカードを作成';
+        return '調べた単語をワンタップでフラッシュカードに';
       case 'onboarding_feature_backup':
         return 'バックアップと同期';
       case 'onboarding_feature_backup_hint':
-        return 'Google Drive、WebDAVなどのバックエンドにデータをバックアップ';
+        return 'Google Drive、WebDAV、ローカルファイル';
       case 'onboarding_feature_interconnect':
         return 'デバイスインターコネクト';
       case 'onboarding_feature_interconnect_hint':
-        return 'LAN上のデバイスをペアリングしてライブラリと進捗を共有';
+        return 'LAN 上の端末間でライブラリと進捗を共有';
       case 'onboarding_step_dictionary_action':
         return '辞書マネージャーを開く';
       case 'onboarding_step_anki_title':
         return 'Ankiのセットアップ';
       case 'onboarding_step_anki_action':
-        return 'カード作成設定を開く';
+        return 'カード作成設定';
       case 'onboarding_step_backup_title':
-        return 'バックアップのセットアップ';
+        return 'バックアップ';
       case 'onboarding_step_backup_body':
-        return 'バックアップバックエンドを選んでサインインするか、ローカルバックアップファイルをエクスポートします。';
+        return '端末を買い替えても紛失しても、ライブラリを失いません。';
       case 'onboarding_step_backup_action':
         return 'バックアップ設定を開く';
       case 'onboarding_step_interconnect_title':
-        return 'インターコネクトのセットアップ';
+        return 'インターコネクト';
       case 'onboarding_step_interconnect_body':
-        return 'インターコネクトを有効にし、LAN上の他のデバイスとペアリングしてライブラリ、進捗、検索を共有します。';
+        return 'LAN 上の端末をペアリングして、1つのライブラリを共有し進捗を同期します。';
       case 'onboarding_step_interconnect_action':
         return 'インターコネクト設定を開く';
       case 'onboarding_finish_title':
         return '準備完了';
       case 'onboarding_finish_body':
-        return 'このガイドは設定 → システムからいつでも再表示できます。';
+        return 'このガイドは設定 → システムからいつでも開き直せます。';
       case 'onboarding_action_next':
         return '次へ';
-      case 'onboarding_action_finish':
-        return '完了';
       case 'onboarding_action_skip':
         return '今はスキップ';
       case 'onboarding_reopen':
         return 'はじめにガイド';
       case 'onboarding_welcome_body':
-        return 'まずインターフェース言語とテーマを設定してください。次のステップで残りの設定を案内します。';
+        return 'インターフェース言語とテーマを選んでください。残りは次のステップで設定します。';
       case 'onboarding_features_title':
-        return '使う機能を選択';
-      case 'onboarding_features_modules_label':
-        return 'ライブラリタブ（チェックを外すとナビゲーションバーから非表示になります。設定でいつでも変更可能）';
-      case 'onboarding_features_setup_label':
-        return '次にセットアップする項目';
+        return '何に使いますか？';
       case 'onboarding_feature_manga':
-        return 'マンガライブラリ';
+        return 'マンガ';
       case 'onboarding_feature_manga_hint':
         return 'OCR検索付きでマンガを読む';
       case 'onboarding_feature_video':
-        return '動画ライブラリ';
+        return '動画';
       case 'onboarding_feature_video_hint':
-        return '字幕検索と制カード付きで動画を視聴';
+        return '字幕から調べてカードを作る';
       case 'onboarding_feature_games':
-        return 'ゲームライブラリ';
+        return 'ギャルゲー';
       case 'onboarding_feature_games_hint':
-        return 'テキストフック検索付きでギャルゲーを起動（Windowsのみ）';
+        return 'プレイしながらテキストフック検索（Windows のみ）';
       case 'onboarding_feature_pack':
-        return 'おすすめパック（辞書＋音声）';
+        return 'おすすめパック';
       case 'onboarding_feature_pack_hint':
-        return '1回のダウンロードで日本語辞書と日英発音音声をセットアップ';
+        return '日本語辞書と日英発音音声を1回のダウンロードで';
       case 'onboarding_step_pack_title':
-        return 'おすすめパックをインストール';
-      case 'onboarding_step_pack_body':
-        return 'おすすめパックには日本語単語辞書、アクセント辞書、頻度辞書、日英発音音声データベースが含まれています。ここでダウンロードしてインポートしてください。インポートはローカルデータを置き換えるため、新規インストール時に実行してください。他の言語を学習中ですか？辞書マネージャーから独自の辞書をインポートしてください。';
+        return 'おすすめパック';
       case 'onboarding_step_pack_download_action':
         return 'ダウンロードしてインポート';
       case 'onboarding_step_pack_import_existing_action':
-        return 'ダウンロード済みパックをインポート';
+        return 'ダウンロード済みのパックをインポート';
       case 'onboarding_step_pack_pick_action':
-        return 'ローカルパックファイルを選択';
+        return 'パックファイルを選ぶ';
       case 'onboarding_pack_downloading':
-        return 'ダウンロード中… いつでもキャンセル可能、次回再開します';
+        return 'ダウンロード中… いつでも中止でき、後で再開できます';
       case 'onboarding_pack_download_failed':
         return ({required Object message}) => 'ダウンロードに失敗しました: ${message}';
       case 'onboarding_step_extension_title':
         return 'ブラウザ拡張機能';
       case 'onboarding_step_extension_body':
-        return 'コンパニオンブラウザ拡張機能をインストールして、あらゆるWebページで単語を検索できます。';
+        return '専用の拡張機能で、あらゆる Web ページの単語を調べられます。';
       case 'onboarding_step_extension_action':
-        return '拡張機能ガイドを開く';
+        return 'インストール手順を開く';
       case 'onboarding_step_fonts_title':
-        return '読書フォント';
+        return 'フォント';
       case 'onboarding_step_fonts_body':
-        return 'カスタムフォントをインポートし、UI、本文、辞書のどこで使用するかを選択します。';
+        return 'UI・本文・辞書に好きなフォントを使えます。';
       case 'settings_section_modules':
         return '機能モジュール';
       case 'module_toggle_hint':
@@ -226209,9 +226505,9 @@ extension on _StringsJa {
       case 'module_extension_label':
         return 'ブラウザ拡張機能';
       case 'onboarding_feature_books':
-        return '小説ライブラリ';
+        return '小説';
       case 'onboarding_feature_books_hint':
-        return '辞書検索とオーディオブック同期でEPUB小説を読む';
+        return 'EPUB を読みながら辞書検索とオーディオブック同期';
       case 'onboarding_feature_extension_hint':
         return '任意のWebページで単語を検索（デスクトップのみ）';
       case 'video_setting_tap_toggles_playback':
@@ -226566,11 +226862,11 @@ extension on _StringsJa {
       case 'game_session_japanese_locale_hint':
         return 'ゲームは日本語（CP932）ロケールで起動されました。テキストが文字化けしたりスクリプトエラーが表示される場合は、このゲームの日本語ロケールを「使用しない」に設定してください。';
       case 'onboarding_anki_intro_body':
-        return 'Ankiは無料の間隔反復フラッシュカードアプリです。新しい単語がカードになり、忘却曲線に沿って復習がスケジュールされます。検索後、Fushiでワンタップで意味、文、音声、スクリーンショット付きのAnkiカードを作成できます。';
+        return 'Anki は無料の間隔反復フラッシュカードアプリです。調べた後、Fushi がワンタップで意味・例文・音声・スクリーンショット付きのカードに変換します。';
       case 'onboarding_anki_setup_desktop_hint':
-        return 'Ankiデスクトップアプリをインストールし、AnkiConnectアドオンを追加してください。Ankiで「ツール」→「アドオン」→「アドオンを取得」を開き、コード 2055492159 を入力します。カード作成中はAnkiを起動したままにしてください。';
+        return 'Anki をインストールし、AnkiConnect アドオンを追加して（下のボタン1回、またはアドオンコード 2055492159）、カード作成中は Anki を起動したままにしてください。';
       case 'onboarding_anki_setup_ios_hint':
-        return 'AnkiMobileをインストールすれば、カードの追加はすぐに使えます。フル機能を使うには、同じネットワーク上のパソコンで動作しているAnkiにAnkiConnect経由で接続してください。';
+        return 'AnkiMobile をインストールしていれば、カードは直接追加されます。フル機能を使うには、AnkiConnect 経由で同じネットワーク上のパソコンの Anki に接続してください。';
       case 'onboarding_anki_backend_label':
         return '接続';
       case 'onboarding_anki_test_action':
@@ -226582,17 +226878,17 @@ extension on _StringsJa {
       case 'onboarding_anki_get_ankidroid_action':
         return 'AnkiDroidを入手';
       case 'onboarding_anki_mobile_ankiconnect_title':
-        return '上級: このデバイスでAnkiConnectを使用';
+        return '上級：この端末から AnkiConnect を使う';
       case 'onboarding_anki_mobile_ankiconnect_hint':
-        return 'このデバイスから同じネットワーク上のパソコンで動作しているAnkiにカードを作成することもできます。カード作成設定でAnkiConnectを有効にし、パソコンのアドレスを入力してください。';
+        return '同じネットワーク上のパソコンで動いている Anki にカードを作成します。カード作成設定で AnkiConnect を有効にし、パソコンのアドレスを入力してください。';
       case 'onboarding_anki_setup_android_hint':
-        return 'AnkiDroidをインストールし、一度開いて初回セットアップを完了させてください。Fushiに戻り、最初のカード作成時に表示される権限ダイアログで「許可」をタップするだけです。AnkiDroidの設定変更は不要です。';
+        return 'AnkiDroid をインストールし、一度開いてください。最初のカード作成時に権限ダイアログで「許可」をタップするだけで、他に設定は不要です。';
       case 'onboarding_anki_install_addon_action':
         return 'AnkiConnectアドオンをインストール';
       case 'onboarding_anki_addon_installed':
-        return 'AnkiConnectがインストールされました。Ankiを起動（または再起動）してから、接続テストをタップしてください。';
+        return 'AnkiConnect をインストールしました。Anki を起動（または再起動）してから、接続テストを実行してください。';
       case 'onboarding_anki_addon_no_anki':
-        return 'Ankiのデータフォルダが見つかりません。Ankiをインストールして一度開いてから再試行してください。';
+        return 'Anki のデータフォルダが見つかりません。Anki をインストールし、一度開いてから再試行してください。';
       case 'onboarding_anki_addon_failed':
         return ({required Object message}) => 'インストールに失敗: ${message}';
       case 'game_hook_reason_capability_probe_failed':
@@ -227022,41 +227318,39 @@ extension on _StringsJa {
       case 'onboarding_action_badge_optional':
         return '任意';
       case 'onboarding_pack_action_download_desc':
-        return 'おすすめパック全体をバックグラウンドでダウンロードし、完了後そのままインポートに進みます。いつでも中止でき、次回は中断した位置から再開します。';
+        return 'バックグラウンドで複数のソースから同時にダウンロードし、そのままインポートします。いつでも中止でき、中断した位置から再開します。';
       case 'onboarding_pack_action_import_existing_desc':
-        return 'パックはダウンロード済みです。ここからインポートします。確認ダイアログで「統合」を選べば、既存のデータはそのまま残ります。';
+        return 'パックはすでにディスク上にあります。確認ダイアログで「統合」を選べば、既存のデータはそのまま残ります。';
       case 'onboarding_pack_action_pick_desc':
-        return 'すでに別の場所からパックの zip を入手済みですか？ディスクからインポートすれば、ダウンロードはまるごと省けます。';
+        return 'パックの zip をすでにお持ちですか？ディスクからインポートすればダウンロードは不要です。';
       case 'onboarding_pack_action_website':
-        return '公式サイトのダウンロードページを開く';
+        return 'ダウンロードページを開く';
       case 'onboarding_pack_action_website_desc':
-        return 'ブラウザで公式サイトを開きます。パックの項に、ダウンロードマネージャーへ渡せる分割リンクが載っています。入手後はここに戻り、「ローカルのパックファイルを選ぶ」からインポートしてください。';
+        return 'ダウンロードマネージャー用の分割リンクです。入手後はここに戻り、「パックファイルを選ぶ」を使ってください。';
       case 'onboarding_pack_action_dictionary_desc':
-        return '日本語以外の言語を学んでいますか？パックは飛ばして、ここで自分の言語の辞書をインポートしてください。';
+        return '他の言語を学びますか？その場合はここで辞書をインポートしてください。';
       case 'onboarding_pack_action_audio_desc':
-        return '発音音声の取得元です。パックには日本語と英語が含まれています。その他の言語はここでオンラインソースを追加してください。';
+        return 'パックが対応していない言語向けに、オンラインの発音ソースを追加します。';
       case 'onboarding_anki_action_test_desc':
-        return 'Fushi が Anki に接続できるか確認し、デッキとノートタイプを読み込みます。この時点では何も作成されません。';
+        return 'Fushi が Anki に接続できるか確認し、デッキとノートタイプを読み込みます。何も作成しません。';
       case 'onboarding_anki_action_refresh_desc':
-        return 'デッキとノートタイプを Anki から読み込み直します。Anki 側で新しいデッキを作った後に使ってください。';
+        return 'デッキとノートタイプを読み込み直します。Anki でデッキを作った後に使ってください。';
       case 'onboarding_anki_action_get_ankidroid_desc':
-        return 'AnkiDroid のストアページを開きます。Fushi はここにカードを書き込むので、先にインストールが必要です。';
+        return 'ストアページを開きます。Fushi はカードを AnkiDroid に書き込むので、先にインストールが必要です。';
       case 'onboarding_anki_action_get_anki_desc':
-        return 'Anki のダウンロードページを開きます。Anki をインストールし、カード作成中は起動したままにしてください。';
+        return 'Anki のダウンロードページを開きます。カード作成中は Anki を起動したままにしてください。';
       case 'onboarding_anki_action_install_addon_desc':
-        return '同梱の AnkiConnect アドオンを Anki に展開します。Fushi はこれを通じて Anki と通信します。完了後に Anki を再起動してください。';
+        return '同梱の AnkiConnect アドオンを Anki に展開します。完了後に Anki を再起動してください。';
       case 'onboarding_step_anki_action_desc':
-        return 'カードテンプレート、フィールド対応、スクリーンショットと音声——つまり「出来上がるカードの見た目」です。上でデッキとノートタイプを選べばカード作成は始められるので、カードの作られ方を変えたいときだけ開いてください。';
+        return 'テンプレート、フィールド対応、スクリーンショットと音声。上のデッキとノートタイプだけで始められます。';
       case 'onboarding_step_backup_action_desc':
-        return 'バックアップ先を選んでサインインしておけば、端末を紛失・買い替えてもライブラリは残ります。';
+        return 'バックアップ先を選んでサインインするか、ローカルのバックアップファイルを書き出します。';
       case 'onboarding_step_interconnect_action_desc':
-        return 'この端末を他の端末とペアリングして、同じライブラリを共有し進捗を同期します。';
+        return 'インターコネクトを有効にし、この端末を他の端末とペアリングします。';
       case 'onboarding_step_extension_action_desc':
-        return 'ブラウザ拡張機能のインストール方法と Fushi への接続手順を案内します。ウェブページ上でも辞書を引けるようになります。';
+        return '拡張機能のインストール方法と Fushi への接続手順を案内します。';
       case 'onboarding_step_fonts_action_desc':
-        return '自分のフォントファイルを追加し、言語ごとにどれを使うか指定します。';
-      case 'onboarding_pack_sources_hint':
-        return 'GitHub・公式サイト・予備ミラーから同時に分割ダウンロードし、各断片をチェックサムで検証します。ダウンロード中も各ソースの速度を実測し、その時点で最も速いソースに多くの断片を割り当てるため、ここで選ぶ必要はありません。';
+        return 'フォントファイルをインポートし、言語ごとに1つ選びます。';
       case 'video_setting_hdr_output':
         return 'HDR / 10 ビット出力';
       case 'video_setting_hdr_output_hint':
@@ -227156,99 +227450,79 @@ extension on _StringsJa {
       case 'web_video_mine_switch_builtin':
         return ({required Object count}) => '内蔵モードに切り替えて ${count} 件のカードを作成';
       case 'onboarding_step_click_lookup_title':
-        return 'タップして単語を調べる';
+        return 'タップして調べる';
       case 'onboarding_click_lookup_tap_title':
-        return '本文をタップ';
+        return '単語をタップ';
       case 'onboarding_click_lookup_nested_title':
-        return 'ポップアップの中でさらに調べる';
+        return 'さらに調べる';
       case 'onboarding_click_lookup_nested_body':
-        return '語義の中の別の単語をタップすると、さらに深い階層で調べられます。戻るかポップアップの外をタップすると1階層閉じます。';
+        return '語義の中の単語をタップすると1階層深く調べられます。戻るか外側をタップすると1階層閉じます。';
       case 'onboarding_click_lookup_mine_title':
-        return '結果をカードにする';
+        return 'カードを作る';
       case 'onboarding_click_lookup_mine_body':
-        return '語義が合っていたら「＋」をタップして、単語・文・音声・画像をカード作成画面に送ります。';
+        return '見出し語の「＋」をタップすると、単語・文・音声・画像がカード作成画面に送られます。';
       case 'onboarding_step_global_lookup_title':
-        return 'Fushi以外のテキストを調べる';
+        return 'Fushi の外で調べる';
       case 'onboarding_global_lookup_windows_body':
-        return 'Windowsでは、他のアプリでテキストを選択するだけで、Fushiに戻らずに辞書を呼び出せます。';
+        return 'どのアプリでもテキストを選択すれば、ウィンドウを切り替えずに辞書を呼び出せます。';
       case 'onboarding_global_lookup_windows_select_title':
-        return '好きなアプリでテキストを選択';
-      case 'onboarding_global_lookup_windows_shortcut_title':
-        return 'Ctrl+Alt+Dを押す';
+        return 'テキストを選択';
       case 'onboarding_global_lookup_windows_shortcut_body':
-        return 'これが既定のグローバルショートカットです。Fushiが現在の選択範囲を取り込み、マウスポインターの近くに検索カードを開きます。';
+        return 'Fushi が選択範囲を取り込み、ポインターの横に検索カードを開きます。';
       case 'onboarding_global_lookup_windows_customize_title':
-        return '必要ならショートカットを変更';
+        return 'ショートカットを変更';
       case 'onboarding_global_lookup_windows_customize_body':
-        return '設定 → ショートカット → グローバル（アプリ外）で、別のキーの組み合わせに変更できます。';
+        return '設定 → ショートカット → グローバル（アプリ外）。';
       case 'onboarding_global_lookup_windows_action':
         return 'ショートカット設定を開く';
       case 'onboarding_global_lookup_windows_action_desc':
-        return 'アプリ外検索のショートカットを変更できます。既定のCtrl+Alt+Dのままでも使えるので、変更は任意です。';
+        return '別のキーの組み合わせにしたい場合だけどうぞ。';
       case 'onboarding_global_lookup_android_body':
-        return 'Androidでは、テキストメニューや共有シートから選択したテキストがFushiに渡されます。変更できるグローバルホットキーはありません。';
+        return 'Android はテキストメニューまたは共有シート経由で、選択したテキストを Fushi に渡します。';
       case 'onboarding_global_lookup_android_select_title':
-        return '他のアプリでテキストを選択';
+        return 'テキストを選択';
       case 'onboarding_global_lookup_android_open_title':
         return 'Fushiを選ぶ';
       case 'onboarding_global_lookup_android_open_body':
-        return 'テキスト選択メニューでFushiをタップします。表示されていない場合は「共有」をタップし、共有シートからFushiを選んでください。';
+        return '選択メニューで Fushi をタップするか、「共有」をタップして Fushi を選びます。';
       case 'onboarding_global_lookup_android_continue_title':
-        return '独立したポップアップで続ける';
+        return 'ポップアップを読む';
       case 'onboarding_global_lookup_android_continue_body':
-        return '検索結果は元のアプリとは別に開きます。その中で別の単語をタップして調べ続け、閉じれば元の場所に戻れます。';
+        return '検索画面は他のアプリの上に開きます。閉じれば元に戻ります。';
       case 'onboarding_feature_manual_resources':
-        return '辞書と音声を手動でインポート';
+        return '自分の素材をインポート';
       case 'onboarding_feature_manual_resources_hint':
-        return 'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+        return '手持ちのファイルから辞書・オーディオブック・発音ソースを取り込む';
       case 'onboarding_step_manual_resources_title':
-        return '辞書と音声を手動で準備';
+        return '自分の辞書と音声';
       case 'onboarding_step_manual_resources_body':
-        return 'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+        return '検索チュートリアルの前に、辞書を最低1つインポートしてください。オーディオブックと発音音声は任意です。';
       case 'onboarding_manual_dictionary_action':
         return '辞書をインポート';
       case 'onboarding_manual_dictionary_action_desc':
-        return '辞書マネージャーを開き、対応する辞書ファイルまたはアーカイブを最低1つインポートします。検索して語義が返るようになって初めて、以降のチュートリアルが意味を持ちます。';
+        return '辞書マネージャーを開きます。辞書を入れて初めて、検索結果が返るようになります。';
       case 'onboarding_manual_audiobook_action':
-        return 'オーディオブック音声付きで書籍をインポート';
+        return '音声付きで書籍をインポート';
       case 'onboarding_manual_audiobook_action_desc':
-        return '書籍インポートを開き、書籍またはテキスト、対応する字幕、1つ以上の音声ファイルを選びます。音声を文単位で同期させるには字幕が必要です。';
+        return '書籍またはテキスト、対応する字幕、音声ファイル。音声を文単位で同期できるのは字幕があるからです。';
       case 'onboarding_manual_pronunciation_action':
-        return '単語の発音音声を設定';
+        return '発音音声を設定';
       case 'onboarding_manual_pronunciation_action_desc':
-        return '辞書の見出し語で使うローカルまたはオンラインの発音ソースを追加します。書籍に紐づくオーディオブック音声とは別のものです。';
-      case 'onboarding_lookup_verify_action':
-        return '辞書にその単語があるか確認';
-      case 'onboarding_lookup_verify_action_desc':
-        return '検索を開いて学習中の単語を入力し、インストール済みの辞書が語義を返すのを確認してから進んでください。チュートリアルでは例の単語を固定していません。';
+        return '辞書の見出し語で使う単語発音の、ローカルまたはオンラインのソース。オーディオブック音声とは別物です。';
       case 'onboarding_step_first_anki_card_title':
-        return '最初のAnkiカードを作る';
-      case 'onboarding_step_first_anki_card_body':
-        return 'このステップは、今回のセットアップでAnkiに接続し、使えるデッキとノートタイプを選んだ場合にだけ表示されます。';
+        return '最初のカード';
       case 'onboarding_first_anki_lookup_title':
-        return '実際の辞書結果から始める';
-      case 'onboarding_first_anki_lookup_body':
-        return 'インストール済みの辞書に実際に載っている単語を調べてください。あなたの辞書にない可能性のある固定の例語は使いません。';
+        return '単語を調べる';
       case 'onboarding_first_anki_plus_title':
-        return '見出し語の「＋」をタップ';
+        return '「＋」をタップ';
       case 'onboarding_first_anki_plus_body':
-        return '「＋」を押すと、現在の単語・読み・意味・文・音声・使える画像がそのままカード作成画面に入ります。';
+        return '単語・読み・意味・文・音声・画像が入力済みの状態でカード作成画面が開きます。';
       case 'onboarding_first_anki_save_title':
         return '確認して保存';
       case 'onboarding_first_anki_save_body':
-        return '保存先のデッキ、ノートタイプ、フィールドのプレビューを確認してから保存します。Ankiを開いて1枚目のカードが届いたか確かめてください。';
+        return 'デッキとノートタイプを確認して保存します。Anki を開けばカードが見えます。';
       case 'onboarding_first_anki_action':
-        return '検索を開いてカードを作る';
-      case 'onboarding_first_anki_action_desc':
-        return '語義が表示されている単語を選び、「＋」をタップしてフィールドを確認し、接続済みのAnkiデッキに保存します。';
-      case 'onboarding_step_click_lookup_body':
-        return 'まず、インストール済みの辞書に実際に載っている単語を確認します。次に同じ単語で、書籍の本文・マンガのOCRテキスト・動画の字幕でのタップ検索を練習しましょう。';
-      case 'onboarding_click_lookup_tap_body':
-        return 'スマートフォンでは確認した単語の1文字をタップ、パソコンでは左クリックします。Fushiはそこを起点にいちばん長い単語を照合します。';
-      case 'onboarding_global_lookup_windows_select_body':
-        return '辞書に語義があると確認済みの同じ単語をドラッグで選択し、選択状態のままにします。';
-      case 'onboarding_global_lookup_android_select_body':
-        return '辞書に語義があると確認済みの同じ単語を長押しし、選択ハンドルを動かして単語全体を覆います。';
+        return '辞書ページを開いてカードを作る';
       case 'game_lookup_attached_title':
         return 'In-game lookup';
       case 'game_lookup_attached_no_ocr':
@@ -227483,6 +227757,56 @@ extension on _StringsJa {
         return '日本語ロケールなしで起動しました：このシステムは既に日本語（CP932）コードページなので変更は不要です。';
       case 'game_session_japanese_locale_skipped_hint_not_32bit':
         return '日本語ロケールなしで起動しました：自動判定では必要ですが、Locale Emulator は 32 ビットのゲームのみ対応です。';
+      case 'onboarding_feature_fonts':
+        return 'カスタムフォント';
+      case 'onboarding_feature_fonts_hint':
+        return 'UI・本文・辞書に好きなフォントを使う';
+      case 'onboarding_features_modules_title':
+        return 'ライブラリのページ';
+      case 'onboarding_features_modules_hint':
+        return 'チェックを外したページはナビゲーションバーに表示されません。設定 → 外観でいつでも変更できます。';
+      case 'onboarding_features_setup_title':
+        return '次に設定するもの';
+      case 'onboarding_features_setup_hint':
+        return 'チェックした項目だけがこのガイドの手順に現れます。';
+      case 'onboarding_pack_intro':
+        return '日本語辞書・アクセント・単語頻度・日英の発音音声を1回のダウンロードで導入します。他の言語を学ぶ場合はここを飛ばして、自分の辞書をインポートしてください。';
+      case 'onboarding_global_lookup_windows_select_desc':
+        return '任意のアプリで単語を選択し、選択したままにします。';
+      case 'onboarding_global_lookup_android_select_desc':
+        return '他のアプリで単語を長押しし、選択ハンドルを動かして単語全体を覆います。';
+      case 'onboarding_global_lookup_windows_shortcut_press':
+        return 'ショートカットを押す';
+      case 'onboarding_first_anki_card_intro':
+        return 'Ankiに接続できました。実際にカードを1枚作って、最後まで通ることを確認しましょう。';
+      case 'onboarding_action_start':
+        return 'Fushi を使い始める';
+      case 'onboarding_actions_more':
+        return 'その他の方法';
+      case 'onboarding_finish_summary_modules':
+        return '表示するライブラリのページ';
+      case 'onboarding_finish_summary_setup':
+        return 'ガイド付き設定';
+      case 'onboarding_finish_summary_none':
+        return 'なし';
+      case 'onboarding_anki_status_pending':
+        return '未テスト';
+      case 'onboarding_click_lookup_intro':
+        return '本・マンガ・字幕の中の単語をタップすると語義が表示されます。下の練習用の文で試してみてください。';
+      case 'onboarding_click_lookup_tap_desc':
+        return '文字をタップ（パソコンでは左クリック）すると、Fushiがそこから始まる最長の単語を選びます。文は辞書ページで開きます。';
+      case 'onboarding_sample_sentence_label':
+        return '練習用の文';
+      case 'onboarding_sample_sentence_hint':
+        return 'タップすると辞書ページで開きます。その後、好きな単語をタップしてください。';
+      case 'onboarding_lookup_practice_action':
+        return 'この文で練習する';
+      case 'onboarding_lookup_practice_desc':
+        return '文を読み込んだ状態で辞書ページを開きます。そこで単語をタップすると語義が表示されます。何も出ない場合は、辞書がまだ入っていません。';
+      case 'onboarding_first_anki_lookup_desc':
+        return '練習用の文を開いて、単語をタップします。';
+      case 'onboarding_first_anki_action_desc':
+        return '練習用の文を辞書ページで開きます。単語をタップし、「＋」をタップして、項目を確認してから保存します。';
       default:
         return null;
     }
@@ -234357,97 +234681,89 @@ extension on _StringsKo {
       case 'onboarding_title':
         return '시작하기';
       case 'onboarding_welcome_headline':
-        return '환영합니다!';
+        return 'Fushi에 오신 것을 환영합니다';
       case 'onboarding_feature_anki':
-        return 'Anki 플래시카드';
+        return 'Anki 카드';
       case 'onboarding_feature_anki_hint':
-        return 'AnkiConnect 또는 AnkiDroid를 연결하여 플래시카드 생성';
+        return '찾은 단어를 한 번의 탭으로 플래시카드로';
       case 'onboarding_feature_backup':
         return '백업 및 동기화';
       case 'onboarding_feature_backup_hint':
-        return 'Google Drive, WebDAV 및 기타 백엔드에 데이터 백업';
+        return 'Google Drive, WebDAV 또는 로컬 파일';
       case 'onboarding_feature_interconnect':
         return '기기 인터커넥트';
       case 'onboarding_feature_interconnect_hint':
-        return 'LAN에서 기기를 페어링하여 라이브러리와 진행 상황 공유';
+        return 'LAN의 여러 기기에서 라이브러리와 진행 상황 공유';
       case 'onboarding_step_dictionary_action':
         return '사전 관리자 열기';
       case 'onboarding_step_anki_title':
         return 'Anki 설정';
       case 'onboarding_step_anki_action':
-        return '카드 생성 설정 열기';
+        return '카드 생성 설정';
       case 'onboarding_step_backup_title':
-        return '백업 설정';
+        return '백업';
       case 'onboarding_step_backup_body':
-        return '백업 백엔드를 선택하고 로그인하거나, 로컬 백업 파일을 내보내세요.';
+        return '기기를 바꾸거나 잃어버려도 라이브러리는 안전하게.';
       case 'onboarding_step_backup_action':
         return '백업 설정 열기';
       case 'onboarding_step_interconnect_title':
-        return '인터커넥트 설정';
+        return '인터커넥트';
       case 'onboarding_step_interconnect_body':
-        return '인터커넥트를 활성화하고 LAN에서 다른 기기와 페어링하여 라이브러리, 진행 상황, 조회를 공유하세요.';
+        return 'LAN의 기기를 페어링해 하나의 라이브러리를 공유하고 진도를 동기화하세요.';
       case 'onboarding_step_interconnect_action':
         return '인터커넥트 설정 열기';
       case 'onboarding_finish_title':
         return '모두 완료';
       case 'onboarding_finish_body':
-        return '설정 → 시스템에서 이 가이드를 언제든 다시 볼 수 있습니다.';
+        return '설정 → 시스템에서 이 가이드를 언제든 다시 열 수 있습니다.';
       case 'onboarding_action_next':
         return '다음';
-      case 'onboarding_action_finish':
-        return '완료';
       case 'onboarding_action_skip':
         return '나중에 하기';
       case 'onboarding_reopen':
         return '시작 가이드';
       case 'onboarding_welcome_body':
-        return '먼저 인터페이스 언어와 테마를 설정하세요 — 다음 단계에서 나머지를 안내합니다.';
+        return '인터페이스 언어와 테마를 고르세요. 나머지는 다음 몇 단계에서 설정합니다.';
       case 'onboarding_features_title':
-        return '사용할 기능 선택';
-      case 'onboarding_features_modules_label':
-        return '라이브러리 탭 (체크 해제 시 내비게이션 바에서 숨김; 설정에서 언제든 변경 가능)';
-      case 'onboarding_features_setup_label':
-        return '다음에 설정할 항목';
+        return '무엇을 사용하시겠어요?';
       case 'onboarding_feature_manga':
-        return '만화 라이브러리';
+        return '만화';
       case 'onboarding_feature_manga_hint':
         return 'OCR 조회로 만화 읽기';
       case 'onboarding_feature_video':
-        return '동영상 라이브러리';
+        return '동영상';
       case 'onboarding_feature_video_hint':
-        return '자막 조회 및 채굴로 동영상 시청';
+        return '자막에서 단어 찾고 카드 만들기';
       case 'onboarding_feature_games':
-        return '게임 라이브러리';
+        return '갤겜';
       case 'onboarding_feature_games_hint':
-        return '텍스트 후킹 조회로 게임 실행 (Windows 전용)';
+        return '게임을 하면서 텍스트 후킹으로 단어 찾기 (Windows 전용)';
       case 'onboarding_feature_pack':
-        return '추천 팩 (사전 + 오디오)';
+        return '추천 팩';
       case 'onboarding_feature_pack_hint':
-        return '한 번의 다운로드로 일본어 사전과 일/영 발음 오디오 설정';
+        return '일본어 사전과 일/영 발음 오디오를 한 번에 다운로드';
       case 'onboarding_step_pack_title':
-        return '추천 팩 설치';
-      case 'onboarding_step_pack_body':
-        return '추천 팩에는 일본어 단어, 악센트, 빈도 사전과 일본어/영어 발음 오디오 데이터베이스가 포함되어 있습니다. 여기서 다운로드하여 가져오세요. 가져오기는 로컬 데이터를 교체하므로 새로 설치한 상태에서 실행하세요. 다른 언어를 학습 중이라면 사전 관리자에서 직접 사전을 가져오세요.';
+        return '추천 팩';
       case 'onboarding_step_pack_download_action':
         return '다운로드 및 가져오기';
       case 'onboarding_step_pack_import_existing_action':
-        return '다운로드된 팩 가져오기';
+        return '내려받은 팩 가져오기';
       case 'onboarding_step_pack_pick_action':
-        return '로컬 팩 파일 선택';
+        return '팩 파일 선택';
       case 'onboarding_pack_downloading':
-        return '다운로드 중… 언제든 취소 가능, 다음에 재개됨';
+        return '다운로드 중… 언제든 취소하고 나중에 이어받을 수 있습니다';
       case 'onboarding_pack_download_failed':
         return ({required Object message}) => '다운로드 실패: ${message}';
       case 'onboarding_step_extension_title':
         return '브라우저 확장';
       case 'onboarding_step_extension_body':
-        return '동반 브라우저 확장을 설치하여 모든 웹 페이지에서 단어를 조회하세요.';
+        return '전용 확장으로 어떤 웹 페이지에서든 단어를 찾아보세요.';
       case 'onboarding_step_extension_action':
-        return '확장 가이드 열기';
+        return '설치 안내 열기';
       case 'onboarding_step_fonts_title':
-        return '읽기 글꼴';
+        return '글꼴';
       case 'onboarding_step_fonts_body':
-        return '사용자 지정 글꼴을 가져와서 UI, 책 텍스트, 사전 중 어디에서 사용할지 선택하세요.';
+        return '인터페이스, 책 본문, 사전에 원하는 글꼴을 사용하세요.';
       case 'settings_section_modules':
         return '기능 모듈';
       case 'module_toggle_hint':
@@ -234650,9 +234966,9 @@ extension on _StringsKo {
       case 'module_extension_label':
         return '브라우저 확장';
       case 'onboarding_feature_books':
-        return '소설 라이브러리';
+        return '소설';
       case 'onboarding_feature_books_hint':
-        return '사전 검색 및 오디오북 동기화로 EPUB 소설 읽기';
+        return 'EPUB 읽기, 단어 찾기, 오디오북 동기화';
       case 'onboarding_feature_extension_hint':
         return '모든 웹 페이지에서 단어 검색 (데스크톱 전용)';
       case 'video_setting_tap_toggles_playback':
@@ -235007,11 +235323,11 @@ extension on _StringsKo {
       case 'game_session_japanese_locale_hint':
         return '이 게임은 일본어(CP932) 로케일에서 시작되었습니다. 텍스트가 깨지거나 스크립트 오류가 나타나면 이 게임의 일본어 로케일을 \'사용 안 함\'으로 설정하세요.';
       case 'onboarding_anki_intro_body':
-        return 'Anki는 무료 간격 반복 플래시카드 앱입니다. 새 단어가 카드가 되고 망각 곡선에 따라 복습이 예약됩니다. 검색 후 Fushi에서 한 번의 탭으로 뜻, 예문, 오디오, 스크린샷과 함께 Anki 카드를 만들 수 있습니다.';
+        return 'Anki는 무료 간격 반복 플래시카드 앱입니다. 단어를 찾은 뒤 Fushi가 한 번의 탭으로 뜻, 예문, 오디오, 스크린샷이 담긴 카드를 만들어 줍니다.';
       case 'onboarding_anki_setup_desktop_hint':
-        return 'Anki 데스크톱 앱을 설치한 다음 AnkiConnect 애드온을 추가하세요: Anki에서 도구 > 부가기능 > 부가기능 받기를 열고 코드 2055492159를 입력하세요. 카드를 만드는 동안 Anki를 실행 상태로 유지하세요.';
+        return 'Anki를 설치하고 AnkiConnect 애드온을 추가한 뒤(아래에서 한 번 탭하거나 애드온 코드 2055492159), 카드를 만드는 동안 Anki를 켜 두세요.';
       case 'onboarding_anki_setup_ios_hint':
-        return 'AnkiMobile이 설치되어 있으면 카드 추가가 바로 작동합니다. 전체 기능을 사용하려면 같은 네트워크의 컴퓨터에서 실행 중인 Anki에 AnkiConnect로 연결하세요.';
+        return 'AnkiMobile이 설치되어 있으면 카드가 바로 추가됩니다. 전체 기능을 쓰려면 AnkiConnect로 같은 네트워크의 컴퓨터에 있는 Anki에 연결하세요.';
       case 'onboarding_anki_backend_label':
         return '연결';
       case 'onboarding_anki_test_action':
@@ -235023,17 +235339,17 @@ extension on _StringsKo {
       case 'onboarding_anki_get_ankidroid_action':
         return 'AnkiDroid 받기';
       case 'onboarding_anki_mobile_ankiconnect_title':
-        return '고급: 이 기기에서 AnkiConnect 사용';
+        return '고급: 이 기기에서 AnkiConnect 사용하기';
       case 'onboarding_anki_mobile_ankiconnect_hint':
-        return '이 기기에서도 같은 네트워크의 컴퓨터에서 실행 중인 Anki에 카드를 만들 수 있습니다: 카드 생성 설정에서 AnkiConnect를 활성화하고 컴퓨터 주소를 입력하세요.';
+        return '같은 네트워크의 컴퓨터에서 실행 중인 Anki에 카드를 만듭니다. 카드 생성 설정에서 AnkiConnect를 켜고 컴퓨터 주소를 입력하세요.';
       case 'onboarding_anki_setup_android_hint':
-        return 'AnkiDroid를 설치하고 한 번 열어 초기 설정을 완료하세요. Fushi로 돌아와 첫 카드를 만들 때 나타나는 권한 대화상자에서 허용을 탭하세요 - AnkiDroid 설정을 변경할 필요가 없습니다.';
+        return 'AnkiDroid를 설치하고 한 번 여세요. 첫 카드를 만들 때 권한 대화상자에서 허용을 탭하면 되고, 그 외에는 설정할 것이 없습니다.';
       case 'onboarding_anki_install_addon_action':
         return 'AnkiConnect 애드온 설치';
       case 'onboarding_anki_addon_installed':
-        return 'AnkiConnect가 설치되었습니다. Anki를 시작(또는 재시작)한 다음 연결 테스트를 탭하세요.';
+        return 'AnkiConnect를 설치했습니다. Anki를 시작하거나 다시 시작한 다음 연결을 테스트하세요.';
       case 'onboarding_anki_addon_no_anki':
-        return 'Anki 데이터 폴더를 찾을 수 없습니다. Anki를 설치하고 한 번 열은 다음 다시 시도하세요.';
+        return 'Anki 데이터 폴더를 찾을 수 없습니다. Anki를 설치하고 한 번 연 다음 다시 시도하세요.';
       case 'onboarding_anki_addon_failed':
         return ({required Object message}) => '설치 실패: ${message}';
       case 'game_hook_reason_capability_probe_failed':
@@ -235463,41 +235779,39 @@ extension on _StringsKo {
       case 'onboarding_action_badge_optional':
         return '선택';
       case 'onboarding_pack_action_download_desc':
-        return '추천 팩 전체를 백그라운드로 내려받은 뒤 이어서 가져오기를 진행합니다. 언제든 취소할 수 있고, 다음에 중단된 지점부터 이어받습니다.';
+        return '백그라운드에서 여러 소스에서 동시에 내려받은 뒤 가져옵니다. 언제든 취소할 수 있고 중단된 지점부터 이어받습니다.';
       case 'onboarding_pack_action_import_existing_desc':
-        return '팩이 이미 내려받아져 있습니다. 여기서 바로 가져옵니다. 확인 창에서 «병합»을 고르면 기존 데이터는 그대로 유지됩니다.';
+        return '팩이 이미 디스크에 있습니다. 확인 창에서 «병합»을 고르면 기존 데이터가 유지됩니다.';
       case 'onboarding_pack_action_pick_desc':
-        return '다른 곳에서 이미 팩 zip을 받으셨나요? 디스크에서 가져오면 내려받기를 통째로 건너뛸 수 있습니다.';
+        return '이미 팩 zip이 있으신가요? 디스크에서 가져오고 내려받기를 건너뛰세요.';
       case 'onboarding_pack_action_website':
-        return '공식 사이트 다운로드 페이지 열기';
+        return '다운로드 페이지 열기';
       case 'onboarding_pack_action_website_desc':
-        return '브라우저에서 공식 사이트를 엽니다. 팩 항목에 다운로드 관리자에 넣을 수 있는 분할 링크가 있습니다. 받은 뒤 여기로 돌아와 «로컬 팩 파일 선택»으로 가져오세요.';
+        return '다운로드 관리자용 분할 링크입니다. 받은 뒤 돌아와서 «팩 파일 선택»을 사용하세요.';
       case 'onboarding_pack_action_dictionary_desc':
-        return '일본어 말고 다른 언어를 배우시나요? 팩은 건너뛰고 여기서 해당 언어의 사전을 가져오세요.';
+        return '다른 언어를 배우시나요? 여기서 해당 언어의 사전을 가져오세요.';
       case 'onboarding_pack_action_audio_desc':
-        return '발음 오디오의 출처입니다. 팩에는 일본어와 영어가 이미 들어 있습니다. 다른 언어는 여기서 온라인 소스를 추가하세요.';
+        return '팩이 다루지 않는 언어를 위해 온라인 발음 소스를 추가하세요.';
       case 'onboarding_anki_action_test_desc':
-        return 'Fushi가 Anki에 연결되는지 확인하고 덱과 노트 유형을 불러옵니다. 이 단계에서는 아무것도 만들지 않습니다.';
+        return 'Fushi가 Anki에 연결되는지 확인하고 덱과 노트 유형을 불러옵니다. 아무것도 만들지 않습니다.';
       case 'onboarding_anki_action_refresh_desc':
-        return 'Anki에서 덱과 노트 유형을 다시 불러옵니다. Anki에서 새 덱을 만든 뒤에 사용하세요.';
+        return '덱과 노트 유형을 다시 불러옵니다. Anki에서 덱을 만든 뒤에 사용하세요.';
       case 'onboarding_anki_action_get_ankidroid_desc':
-        return 'AnkiDroid 스토어 페이지를 엽니다. Fushi가 여기에 카드를 쓰므로 먼저 설치해야 합니다.';
+        return '스토어 페이지를 엽니다. Fushi가 카드를 AnkiDroid에 쓰므로 먼저 설치해야 합니다.';
       case 'onboarding_anki_action_get_anki_desc':
-        return 'Anki 다운로드 페이지를 엽니다. Anki를 설치하고 카드를 만드는 동안 켜 두세요.';
+        return 'Anki 다운로드 페이지를 엽니다. 카드를 만드는 동안 Anki를 켜 두세요.';
       case 'onboarding_anki_action_install_addon_desc':
-        return '내장된 AnkiConnect 애드온을 Anki에 풀어 넣습니다. Fushi는 이것을 통해 Anki와 통신합니다. 설치 후 Anki를 다시 시작하세요.';
+        return '내장된 AnkiConnect 애드온을 Anki에 풀어 넣습니다. 그다음 Anki를 다시 시작하세요.';
       case 'onboarding_step_anki_action_desc':
-        return '카드 템플릿, 필드 매핑, 스크린샷과 오디오 — 즉 «만들어진 카드가 어떻게 생겼는지»입니다. 위에서 덱과 노트 유형만 고르면 카드 만들기를 시작할 수 있으니, 카드가 만들어지는 방식을 바꾸고 싶을 때만 들어오세요.';
+        return '템플릿, 필드 매핑, 스크린샷과 오디오. 위의 덱과 노트 유형만으로도 시작할 수 있습니다.';
       case 'onboarding_step_backup_action_desc':
-        return '백업 백엔드를 고르고 로그인해 두면 기기를 잃어버리거나 바꿔도 라이브러리가 남습니다.';
+        return '백엔드를 고르고 로그인하거나, 로컬 백업 파일을 내보내세요.';
       case 'onboarding_step_interconnect_action_desc':
-        return '이 기기를 다른 기기와 페어링해 같은 라이브러리를 공유하고 진도를 동기화합니다.';
+        return '인터커넥트를 켜고 이 기기를 다른 기기와 페어링하세요.';
       case 'onboarding_step_extension_action_desc':
-        return '브라우저 확장을 설치하고 Fushi에 연결하는 방법을 안내합니다. 웹페이지에서도 단어를 찾을 수 있게 됩니다.';
+        return '확장을 설치하고 Fushi에 연결하는 방법을 보여 줍니다.';
       case 'onboarding_step_fonts_action_desc':
-        return '자신의 글꼴 파일을 추가하고 언어마다 어떤 글꼴을 쓸지 지정합니다.';
-      case 'onboarding_pack_sources_hint':
-        return 'GitHub, 공식 사이트, 예비 미러에서 동시에 조각을 나눠 내려받고 조각마다 체크섬을 확인합니다. 내려받는 동안 각 소스의 속도를 실측해 그 순간 가장 빠른 쪽에 더 많은 조각을 맡기므로, 여기서 고를 것은 없습니다.';
+        return '글꼴 파일을 가져오고 언어마다 하나씩 고르세요.';
       case 'video_setting_hdr_output':
         return 'HDR / 10비트 출력';
       case 'video_setting_hdr_output_hint':
@@ -235598,99 +235912,79 @@ extension on _StringsKo {
         return ({required Object count}) =>
             '내장 모드로 전환하여 대기 중인 카드 ${count}개 만들기';
       case 'onboarding_step_click_lookup_title':
-        return '탭해서 단어 찾기';
+        return '탭해서 찾기';
       case 'onboarding_click_lookup_tap_title':
-        return '글자를 탭하세요';
+        return '단어를 탭하세요';
       case 'onboarding_click_lookup_nested_title':
-        return '팝업에서 계속 찾아보기';
+        return '계속 찾아보기';
       case 'onboarding_click_lookup_nested_body':
-        return '뜻풀이 안의 다른 단어를 탭하면 한 단계 더 깊이 찾을 수 있습니다. 뒤로 가거나 팝업 밖을 탭하면 한 단계 닫힙니다.';
+        return '뜻풀이 안의 단어를 탭하면 한 단계 더 들어갑니다. 뒤로 가거나 밖을 탭하면 한 단계 닫힙니다.';
       case 'onboarding_click_lookup_mine_title':
-        return '결과를 카드로 만들기';
+        return '카드 만들기';
       case 'onboarding_click_lookup_mine_body':
-        return '뜻이 맞으면 +를 탭해 단어, 문장, 오디오, 이미지를 카드 생성기로 보내세요.';
+        return '항목의 +를 탭하면 단어, 문장, 오디오, 이미지가 카드 생성기로 전달됩니다.';
       case 'onboarding_step_global_lookup_title':
-        return 'Fushi 밖의 텍스트 찾기';
+        return 'Fushi 밖에서 찾기';
       case 'onboarding_global_lookup_windows_body':
-        return 'Windows에서는 다른 앱에서 텍스트를 선택하면 Fushi로 돌아가지 않고도 사전을 띄울 수 있습니다.';
+        return '아무 앱에서나 텍스트를 선택하면 창을 바꾸지 않고 사전을 띄울 수 있습니다.';
       case 'onboarding_global_lookup_windows_select_title':
-        return '아무 앱에서나 텍스트 선택';
-      case 'onboarding_global_lookup_windows_shortcut_title':
-        return 'Ctrl+Alt+D 누르기';
+        return '텍스트 선택';
       case 'onboarding_global_lookup_windows_shortcut_body':
-        return '기본 전역 단축키입니다. Fushi가 현재 선택 영역을 가져와 마우스 포인터 근처에 검색 카드를 엽니다.';
+        return 'Fushi가 선택 영역을 가져와 포인터 옆에 찾기 카드를 엽니다.';
       case 'onboarding_global_lookup_windows_customize_title':
-        return '필요하면 단축키 변경';
+        return '단축키 변경';
       case 'onboarding_global_lookup_windows_customize_body':
-        return '설정 → 단축키 → 전역(앱 외부)에서 다른 키 조합을 지정하세요.';
+        return '설정 → 단축키 → 전역(앱 외부).';
       case 'onboarding_global_lookup_windows_action':
         return '단축키 설정 열기';
       case 'onboarding_global_lookup_windows_action_desc':
-        return '앱 외부 검색 단축키를 바꿀 수 있습니다. 기본값 Ctrl+Alt+D도 이미 작동하므로 변경은 선택 사항입니다.';
+        return '다른 키 조합을 쓰고 싶을 때만 들어오세요.';
       case 'onboarding_global_lookup_android_body':
-        return 'Android에서는 시스템이 텍스트 메뉴나 공유 시트를 통해 선택한 텍스트를 Fushi에 전달합니다. 따로 지정할 수 있는 전역 단축키는 없습니다.';
+        return 'Android는 텍스트 메뉴나 공유 시트를 통해 선택한 텍스트를 Fushi에 넘겨줍니다.';
       case 'onboarding_global_lookup_android_select_title':
-        return '다른 앱에서 텍스트 선택';
+        return '텍스트 선택';
       case 'onboarding_global_lookup_android_open_title':
         return 'Fushi 선택';
       case 'onboarding_global_lookup_android_open_body':
-        return '텍스트 선택 메뉴에서 Fushi를 탭하세요. 보이지 않으면 공유를 탭한 뒤 공유 시트에서 Fushi를 고르면 됩니다.';
+        return '선택 메뉴에서 Fushi를 탭하거나, 공유를 탭한 뒤 Fushi를 고르세요.';
       case 'onboarding_global_lookup_android_continue_title':
-        return '독립 팝업에서 이어보기';
+        return '팝업 읽기';
       case 'onboarding_global_lookup_android_continue_body':
-        return '검색 결과는 원래 앱과 별도로 열립니다. 그 안에서 다른 단어를 계속 탭할 수 있고, 닫으면 보던 곳으로 돌아갑니다.';
+        return '찾기 창이 다른 앱 위에 열립니다. 닫으면 돌아갑니다.';
       case 'onboarding_feature_manual_resources':
-        return '사전과 오디오 직접 가져오기';
+        return '내 자료 가져오기';
       case 'onboarding_feature_manual_resources_hint':
-        return 'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+        return '내 파일에서 사전, 오디오북, 발음 소스 가져오기';
       case 'onboarding_step_manual_resources_title':
-        return '사전과 오디오 직접 준비하기';
+        return '내 사전과 오디오';
       case 'onboarding_step_manual_resources_body':
-        return 'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+        return '단어 찾기 튜토리얼 전에 사전을 최소 하나 가져오세요. 오디오북과 발음 오디오는 선택 사항입니다.';
       case 'onboarding_manual_dictionary_action':
         return '사전 가져오기';
       case 'onboarding_manual_dictionary_action_desc':
-        return '사전 관리자를 열고 지원되는 사전 파일이나 압축 파일을 최소 하나 가져오세요. 검색이 뜻을 돌려줘야 이후 튜토리얼이 의미가 있습니다.';
+        return '사전 관리자를 엽니다. 사전을 설치해야 검색 결과가 나옵니다.';
       case 'onboarding_manual_audiobook_action':
-        return '오디오북 음성이 있는 책 가져오기';
+        return '오디오가 있는 책 가져오기';
       case 'onboarding_manual_audiobook_action_desc':
-        return '책 가져오기를 열고 책 또는 텍스트, 맞춰진 자막, 오디오 파일 하나 이상을 고르세요. Fushi가 문장 단위로 맞추려면 자막이 필요합니다.';
+        return '책 또는 텍스트, 맞춰진 자막, 오디오 파일. Fushi가 오디오를 문장에 맞출 수 있는 건 자막 덕분입니다.';
       case 'onboarding_manual_pronunciation_action':
-        return '단어 발음 오디오 설정하기';
+        return '발음 오디오 설정';
       case 'onboarding_manual_pronunciation_action_desc':
-        return '사전 항목에서 쓰는 로컬 또는 온라인 발음 소스를 추가하세요. 책에 연결된 오디오북 음성과는 별개입니다.';
-      case 'onboarding_lookup_verify_action':
-        return '사전에 그 단어가 있는지 확인하기';
-      case 'onboarding_lookup_verify_action_desc':
-        return '검색을 열고 지금 배우는 단어를 아무거나 입력한 뒤, 설치된 사전이 뜻을 보여줄 때만 다음으로 넘어가세요. 튜토리얼에 정해진 예시 단어는 없습니다.';
+        return '사전 항목의 단어 발음을 위한 로컬 또는 온라인 소스. 오디오북 음성과는 별개입니다.';
       case 'onboarding_step_first_anki_card_title':
-        return '첫 Anki 카드 만들기';
-      case 'onboarding_step_first_anki_card_body':
-        return '이 단계는 이번 설정에서 Anki에 연결하고 사용할 수 있는 덱과 노트 유형을 고른 경우에만 나타납니다.';
+        return '첫 카드';
       case 'onboarding_first_anki_lookup_title':
-        return '실제 사전 결과에서 시작하기';
-      case 'onboarding_first_anki_lookup_body':
-        return '설치된 사전에 실제로 실려 있는 단어를 찾아보세요. 사전에 없을 수도 있는 고정된 예시 단어는 쓰지 않습니다.';
+        return '단어 찾기';
       case 'onboarding_first_anki_plus_title':
-        return '항목의 + 버튼 탭하기';
+        return '+ 탭하기';
       case 'onboarding_first_anki_plus_body':
-        return '+ 버튼을 누르면 현재 단어, 읽기, 뜻, 문장, 오디오, 사용할 수 있는 이미지가 그대로 카드 생성기에 들어갑니다.';
+        return '단어, 읽기, 뜻, 문장, 오디오, 이미지가 채워진 채로 카드 생성기가 열립니다.';
       case 'onboarding_first_anki_save_title':
-        return '확인하고 저장하기';
+        return '확인하고 저장';
       case 'onboarding_first_anki_save_body':
-        return '대상 덱, 노트 유형, 필드 미리보기를 확인한 뒤 저장하세요. Anki를 열어 첫 카드가 들어왔는지 확인하면 됩니다.';
+        return '덱과 노트 유형을 확인하고 저장하세요. Anki를 열면 카드가 보입니다.';
       case 'onboarding_first_anki_action':
-        return '검색 열고 카드 만들기';
-      case 'onboarding_first_anki_action_desc':
-        return '뜻이 보이는 단어를 골라 + 버튼을 탭하고, 필드를 확인한 뒤 연결된 Anki 덱에 저장하세요.';
-      case 'onboarding_step_click_lookup_body':
-        return '먼저 설치된 사전에 실제로 실려 있는 단어를 확인하세요. 그런 다음 같은 단어로 책 본문, 만화 OCR 텍스트, 동영상 자막에서 탭 검색을 연습해 보세요.';
-      case 'onboarding_click_lookup_tap_body':
-        return '휴대폰에서는 확인한 단어의 글자 하나를 탭하고, 컴퓨터에서는 왼쪽 버튼으로 클릭하세요. Fushi는 그 자리에서 시작해 가장 긴 단어를 찾아냅니다.';
-      case 'onboarding_global_lookup_windows_select_body':
-        return '사전에 뜻이 있다고 확인한 그 단어를 드래그해 선택하고, 선택 상태를 유지하세요.';
-      case 'onboarding_global_lookup_android_select_body':
-        return '확인한 그 단어를 길게 누른 뒤 선택 핸들을 움직여 단어 전체를 덮으세요.';
+        return '단어 찾기 열고 카드 만들기';
       case 'game_lookup_attached_title':
         return 'In-game lookup';
       case 'game_lookup_attached_no_ocr':
@@ -235925,6 +236219,56 @@ extension on _StringsKo {
         return '일본어 로케일 없이 시작됨: 이 시스템은 이미 일본어(CP932) 코드 페이지를 사용하므로 변경할 것이 없습니다.';
       case 'game_session_japanese_locale_skipped_hint_not_32bit':
         return '일본어 로케일 없이 시작됨: 자동 판정은 필요하다고 하지만 Locale Emulator는 32비트 게임만 지원합니다.';
+      case 'onboarding_feature_fonts':
+        return '사용자 지정 글꼴';
+      case 'onboarding_feature_fonts_hint':
+        return '인터페이스, 책 본문, 사전에 원하는 글꼴 사용';
+      case 'onboarding_features_modules_title':
+        return '라이브러리 페이지';
+      case 'onboarding_features_modules_hint':
+        return '선택하지 않은 페이지는 내비게이션 바에서 숨겨집니다. 설정 → 외관에서 언제든 바꿀 수 있습니다.';
+      case 'onboarding_features_setup_title':
+        return '다음에 설정할 것';
+      case 'onboarding_features_setup_hint':
+        return '선택한 항목만 이 가이드의 단계로 나타납니다.';
+      case 'onboarding_pack_intro':
+        return '일본어 사전, 고저 악센트, 단어 빈도, 일/영 발음 오디오를 한 번에 내려받습니다. 다른 언어를 배우신다면 건너뛰고 직접 사전을 가져오세요.';
+      case 'onboarding_global_lookup_windows_select_desc':
+        return '아무 앱에서나 단어를 드래그해 선택하고 그대로 두세요.';
+      case 'onboarding_global_lookup_android_select_desc':
+        return '다른 앱에서 단어를 길게 누른 뒤 선택 핸들을 조절해 단어를 덮으세요.';
+      case 'onboarding_global_lookup_windows_shortcut_press':
+        return '단축키 누르기';
+      case 'onboarding_first_anki_card_intro':
+        return 'Anki가 연결되었습니다. 이제 진짜 카드를 한 장 만들어 전체 과정이 되는지 확인하세요.';
+      case 'onboarding_action_start':
+        return 'Fushi 시작하기';
+      case 'onboarding_actions_more':
+        return '다른 방법';
+      case 'onboarding_finish_summary_modules':
+        return '표시할 라이브러리 페이지';
+      case 'onboarding_finish_summary_setup':
+        return '가이드 설정';
+      case 'onboarding_finish_summary_none':
+        return '없음';
+      case 'onboarding_anki_status_pending':
+        return '아직 테스트 안 함';
+      case 'onboarding_click_lookup_intro':
+        return '책, 만화, 자막에서 아무 단어나 탭하면 뜻이 나옵니다. 아래 연습 문장으로 해 보세요.';
+      case 'onboarding_click_lookup_tap_desc':
+        return '글자를 탭하면(컴퓨터에서는 왼쪽 클릭) Fushi가 그 자리에서 시작하는 가장 긴 단어를 잡습니다. 문장은 단어 찾기 페이지에서 열립니다.';
+      case 'onboarding_sample_sentence_label':
+        return '연습 문장';
+      case 'onboarding_sample_sentence_hint':
+        return '탭하면 단어 찾기 페이지에서 열립니다. 그다음 아무 단어나 탭하세요.';
+      case 'onboarding_lookup_practice_action':
+        return '이 문장으로 연습하기';
+      case 'onboarding_lookup_practice_desc':
+        return '문장을 불러온 상태로 단어 찾기 페이지를 엽니다. 거기서 단어를 탭하면 뜻이 나옵니다. 아무것도 안 나오면 사전이 아직 설치되지 않은 것입니다.';
+      case 'onboarding_first_anki_lookup_desc':
+        return '연습 문장을 열고 단어를 탭하세요.';
+      case 'onboarding_first_anki_action_desc':
+        return '단어 찾기 페이지에서 연습 문장을 엽니다. 단어를 탭하고 +를 탭한 뒤, 필드를 확인하고 저장하세요.';
       default:
         return null;
     }
@@ -242852,97 +243196,89 @@ extension on _StringsNl {
       case 'onboarding_title':
         return 'Aan de slag';
       case 'onboarding_welcome_headline':
-        return 'Welkom!';
+        return 'Welkom bij Fushi';
       case 'onboarding_feature_anki':
-        return 'Anki-flashcards';
+        return 'Anki-kaarten';
       case 'onboarding_feature_anki_hint':
-        return 'Verbind AnkiConnect of AnkiDroid om flashcards te maken';
+        return 'Maak van je opzoekacties in één tik flashcards';
       case 'onboarding_feature_backup':
         return 'Back-up & sync';
       case 'onboarding_feature_backup_hint':
-        return 'Maak een back-up van je gegevens naar Google Drive, WebDAV en andere backends';
+        return 'Google Drive, WebDAV of een lokaal bestand';
       case 'onboarding_feature_interconnect':
         return 'Apparaatverbinding';
       case 'onboarding_feature_interconnect_hint':
-        return 'Koppel apparaten op je LAN om bibliotheken en voortgang te delen';
+        return 'Deel bibliotheken en voortgang tussen apparaten op je LAN';
       case 'onboarding_step_dictionary_action':
         return 'Woordenboekbeheer openen';
       case 'onboarding_step_anki_title':
         return 'Anki instellen';
       case 'onboarding_step_anki_action':
-        return 'Kaartaanmaak-instellingen openen';
+        return 'Kaartaanmaak-instellingen';
       case 'onboarding_step_backup_title':
-        return 'Back-up instellen';
+        return 'Back-up';
       case 'onboarding_step_backup_body':
-        return 'Kies een back-upbackend en meld je aan, of exporteer een lokaal back-upbestand.';
+        return 'Houd je bibliotheek veilig als je van apparaat wisselt of er een kwijtraakt.';
       case 'onboarding_step_backup_action':
         return 'Back-upinstellingen openen';
       case 'onboarding_step_interconnect_title':
-        return 'Interconnect instellen';
+        return 'Interconnect';
       case 'onboarding_step_interconnect_body':
-        return 'Schakel interconnect in en koppel met andere apparaten op je LAN om bibliotheken, voortgang en opzoekacties te delen.';
+        return 'Koppel apparaten op je LAN om één bibliotheek te delen en de voortgang gelijk te houden.';
       case 'onboarding_step_interconnect_action':
         return 'Interconnect-instellingen openen';
       case 'onboarding_finish_title':
         return 'Helemaal klaar';
       case 'onboarding_finish_body':
-        return 'Je kunt deze gids altijd opnieuw bekijken via Instellingen → Systeem.';
+        return 'Je kunt deze gids altijd opnieuw openen via Instellingen → Systeem.';
       case 'onboarding_action_next':
         return 'Volgende';
-      case 'onboarding_action_finish':
-        return 'Voltooien';
       case 'onboarding_action_skip':
         return 'Later';
       case 'onboarding_reopen':
         return 'Aan-de-slaggids';
       case 'onboarding_welcome_body':
-        return 'Stel eerst je interfacetaal en thema in — de volgende stappen leiden je door de rest.';
+        return 'Kies je interfacetaal en thema. De volgende stappen regelen de rest.';
       case 'onboarding_features_title':
-        return 'Kies wat je gebruikt';
-      case 'onboarding_features_modules_label':
-        return 'Bibliotheektabbladen (uitgevinkte worden verborgen in de navigatiebalk; altijd te wijzigen bij Instellingen)';
-      case 'onboarding_features_setup_label':
-        return 'Wat vervolgens in te stellen';
+        return 'Wat ga je gebruiken?';
       case 'onboarding_feature_manga':
-        return 'Mangabibliotheek';
+        return 'Manga';
       case 'onboarding_feature_manga_hint':
         return 'Lees manga met OCR-opzoeken';
       case 'onboarding_feature_video':
-        return 'Videobibliotheek';
+        return 'Video';
       case 'onboarding_feature_video_hint':
-        return 'Bekijk video\'s met ondertitelopzoeken en kaartdelven';
+        return 'Opzoeken in ondertitels en kaarten maken';
       case 'onboarding_feature_games':
-        return 'Galgamebibliotheek';
+        return 'Galgames';
       case 'onboarding_feature_games_hint':
-        return 'Start galgames met texthook-opzoeken (alleen Windows)';
+        return 'Texthook-opzoeken tijdens het spelen (alleen Windows)';
       case 'onboarding_feature_pack':
-        return 'Aanbevolen pakket (woordenboeken + audio)';
+        return 'Aanbevolen pakket';
       case 'onboarding_feature_pack_hint':
-        return 'Eén download stelt Japanse woordenboeken plus JA/EN uitspraakaudio in';
+        return 'Japanse woordenboeken plus JA/EN-uitspraakaudio in één download';
       case 'onboarding_step_pack_title':
-        return 'Het aanbevolen pakket installeren';
-      case 'onboarding_step_pack_body':
-        return 'Het aanbevolen pakket bundelt Japanse woord-, accenttoon- en frequentiewoordenboeken plus Japanse/Engelse uitspraakaudiodatabases. Download en importeer het hier; importeren vervangt lokale gegevens, dus doe het op een schone installatie. Leer je een andere taal? Gebruik het woordenboekbeheer om je eigen woordenboeken te importeren.';
+        return 'Aanbevolen pakket';
       case 'onboarding_step_pack_download_action':
         return 'Downloaden en importeren';
       case 'onboarding_step_pack_import_existing_action':
-        return 'Gedownload pakket importeren';
+        return 'Het gedownloade pakket importeren';
       case 'onboarding_step_pack_pick_action':
-        return 'Kies een lokaal pakketbestand';
+        return 'Kies een pakketbestand';
       case 'onboarding_pack_downloading':
-        return 'Downloaden… annuleer op elk moment, wordt volgende keer hervat';
+        return 'Downloaden… annuleer wanneer je wilt en hervat later';
       case 'onboarding_pack_download_failed':
         return ({required Object message}) => 'Download mislukt: ${message}';
       case 'onboarding_step_extension_title':
         return 'Browserextensie';
       case 'onboarding_step_extension_body':
-        return 'Installeer de begeleidende browserextensie om woorden op te zoeken op elke webpagina.';
+        return 'Zoek woorden op elke webpagina op met de bijbehorende browserextensie.';
       case 'onboarding_step_extension_action':
-        return 'Extensiegids openen';
+        return 'Installatiegids openen';
       case 'onboarding_step_fonts_title':
-        return 'Leeslettertypen';
+        return 'Lettertypen';
       case 'onboarding_step_fonts_body':
-        return 'Importeer aangepaste lettertypen en kies welke voor UI, boektekst en woordenboek worden gebruikt.';
+        return 'Gebruik je eigen lettertypen voor de interface, boektekst en het woordenboek.';
       case 'settings_section_modules':
         return 'Functiemodules';
       case 'module_toggle_hint':
@@ -243145,9 +243481,9 @@ extension on _StringsNl {
       case 'module_extension_label':
         return 'Browserextensie';
       case 'onboarding_feature_books':
-        return 'Romanbibliotheek';
+        return 'Romans';
       case 'onboarding_feature_books_hint':
-        return 'Lees EPUB-romans met woordenboek-opzoeken en luisterboekafstemming';
+        return 'EPUB lezen met opzoeken en luisterboekafstemming';
       case 'onboarding_feature_extension_hint':
         return 'Zoek woorden op op elke webpagina (alleen desktop)';
       case 'video_setting_tap_toggles_playback':
@@ -243503,11 +243839,11 @@ extension on _StringsNl {
       case 'game_session_japanese_locale_hint':
         return 'Het spel is gestart onder Japanse (CP932) landinstellingen. Als de tekst er verward uitziet of er een scriptfout verschijnt, stel dan de Japanse landinstellingen van dit spel in op Nooit.';
       case 'onboarding_anki_intro_body':
-        return 'Anki is een gratis flashcard-app met gespreide herhaling: nieuwe woorden worden kaarten, en herhalingen worden gepland langs de vergeetcurve. Na een opzoekactie kan Fushi het woord in één tik in een Anki-kaart veranderen, met betekenis, zin, audio en schermafbeelding.';
+        return 'Anki is een gratis flashcard-app met gespreide herhaling. Na een opzoekactie maakt Fushi er in één tik een kaart van, met betekenis, zin, audio en schermafbeelding.';
       case 'onboarding_anki_setup_desktop_hint':
-        return 'Installeer de Anki-desktopapp en voeg dan de AnkiConnect add-on toe: open in Anki Extra - Add-ons - Haal Add-ons en voer code 2055492159 in. Houd Anki draaiend tijdens het maken van kaarten.';
+        return 'Installeer Anki, voeg de AnkiConnect-add-on toe (één tik hieronder, of add-oncode 2055492159) en houd Anki draaiend terwijl je kaarten maakt.';
       case 'onboarding_anki_setup_ios_hint':
-        return 'Met AnkiMobile geïnstalleerd werkt het toevoegen van kaarten direct. Voor de volledige functieset, verbind met Anki op een computer in hetzelfde netwerk via AnkiConnect.';
+        return 'Met AnkiMobile geïnstalleerd worden kaarten direct toegevoegd. Voor de volledige functieset verbind je via AnkiConnect met Anki op een computer in hetzelfde netwerk.';
       case 'onboarding_anki_backend_label':
         return 'Verbinding';
       case 'onboarding_anki_test_action':
@@ -243520,17 +243856,17 @@ extension on _StringsNl {
       case 'onboarding_anki_get_ankidroid_action':
         return 'AnkiDroid ophalen';
       case 'onboarding_anki_mobile_ankiconnect_title':
-        return 'Geavanceerd: AnkiConnect op dit apparaat gebruiken';
+        return 'Geavanceerd: AnkiConnect vanaf dit apparaat gebruiken';
       case 'onboarding_anki_mobile_ankiconnect_hint':
-        return 'Dit apparaat kan ook kaarten maken in Anki op een computer in hetzelfde netwerk: schakel AnkiConnect in bij kaartaanmaak-instellingen en voer het computeradres in.';
+        return 'Maak kaarten in Anki op een computer in hetzelfde netwerk: schakel AnkiConnect in bij de kaartaanmaak-instellingen en vul het adres van de computer in.';
       case 'onboarding_anki_setup_android_hint':
-        return 'Installeer AnkiDroid en open het eenmaal om de eerste installatie te voltooien. Terug in Fushi, tik op Toestaan bij het toestemmingsvenster dat verschijnt bij je eerste kaart — geen AnkiDroid-instellingen te wijzigen.';
+        return 'Installeer AnkiDroid en open het eenmaal. Tik bij je eerste kaart op Toestaan in het toestemmingsvenster — verder is er niets in te stellen.';
       case 'onboarding_anki_install_addon_action':
         return 'AnkiConnect add-on installeren';
       case 'onboarding_anki_addon_installed':
-        return 'AnkiConnect is geïnstalleerd. Start Anki (opnieuw) en tik dan op Verbinding testen.';
+        return 'AnkiConnect geïnstalleerd. Start Anki (opnieuw) op en test daarna de verbinding.';
       case 'onboarding_anki_addon_no_anki':
-        return 'Anki-gegevensmap niet gevonden. Installeer Anki en open het eenmaal, en probeer dan opnieuw.';
+        return 'Anki-gegevensmap niet gevonden. Installeer Anki, open het eenmaal en probeer opnieuw.';
       case 'onboarding_anki_addon_failed':
         return ({required Object message}) => 'Installatie mislukt: ${message}';
       case 'game_hook_reason_capability_probe_failed':
@@ -243965,41 +244301,39 @@ extension on _StringsNl {
       case 'onboarding_action_badge_optional':
         return 'Optioneel';
       case 'onboarding_pack_action_download_desc':
-        return 'Downloadt het hele pakket op de achtergrond en importeert het daarna. Je kunt altijd annuleren; de volgende keer gaat het verder waar het gebleven was.';
+        return 'Downloadt op de achtergrond van meerdere bronnen tegelijk en importeert daarna. Je kunt altijd annuleren; het gaat verder waar het gebleven was.';
       case 'onboarding_pack_action_import_existing_desc':
-        return 'Het pakket is al gedownload; hiermee importeer je het. Kies «Samenvoegen» in het bevestigingsvenster, dan blijft je bestaande data ongemoeid.';
+        return 'Het pakket staat al op schijf. Kies «Samenvoegen» in het bevestigingsvenster om je bestaande gegevens te behouden.';
       case 'onboarding_pack_action_pick_desc':
-        return 'Heb je de zip van het pakket al ergens anders vandaan? Importeer hem van schijf en sla de download helemaal over.';
+        return 'Heb je de zip van het pakket al? Importeer hem van schijf en sla de download over.';
       case 'onboarding_pack_action_website':
-        return 'Downloadpagina van de website openen';
+        return 'Downloadpagina openen';
       case 'onboarding_pack_action_website_desc':
-        return 'Opent de officiële site in je browser. In het pakketgedeelte staan losse deel-links die je aan een downloadmanager kunt geven; kom daarna hier terug en gebruik «Kies een lokaal pakketbestand» om te importeren wat je hebt.';
+        return 'Deel-links voor downloadmanagers. Kom daarna terug en gebruik «Kies een pakketbestand».';
       case 'onboarding_pack_action_dictionary_desc':
-        return 'Leer je een andere taal dan Japans? Sla het pakket over en importeer hier woordenboeken voor je eigen taal.';
+        return 'Leer je een andere taal? Importeer hier de bijbehorende woordenboeken.';
       case 'onboarding_pack_action_audio_desc':
-        return 'Waar de uitspraakaudio vandaan komt. Het pakket dekt Japans en Engels al; voeg hier online bronnen toe voor andere talen.';
+        return 'Voeg online uitspraakbronnen toe voor talen die het pakket niet dekt.';
       case 'onboarding_anki_action_test_desc':
-        return 'Controleert of Fushi Anki kan bereiken en laadt je decks en notitietypes. Er wordt nog niets aangemaakt.';
+        return 'Controleert of Fushi Anki kan bereiken en laadt je decks en notitietypes. Maakt niets aan.';
       case 'onboarding_anki_action_refresh_desc':
-        return 'Laadt decks en notitietypes opnieuw uit Anki. Gebruik dit nadat je in Anki een nieuw deck hebt gemaakt.';
+        return 'Laadt decks en notitietypes opnieuw. Gebruik dit nadat je in Anki een deck hebt gemaakt.';
       case 'onboarding_anki_action_get_ankidroid_desc':
-        return 'Opent de storepagina van AnkiDroid. Fushi schrijft zijn kaarten daarin, dus het moet eerst geïnstalleerd zijn.';
+        return 'Opent de storepagina. Fushi schrijft kaarten in AnkiDroid, dus dat moet eerst geïnstalleerd zijn.';
       case 'onboarding_anki_action_get_anki_desc':
-        return 'Opent de downloadpagina van Anki. Installeer Anki en laat het draaien terwijl je kaarten maakt.';
+        return 'Opent de downloadpagina van Anki. Laat Anki draaien terwijl je kaarten maakt.';
       case 'onboarding_anki_action_install_addon_desc':
-        return 'Pakt de meegeleverde AnkiConnect-add-on voor je uit in Anki; daarmee kan Fushi ermee praten. Start Anki daarna opnieuw op.';
+        return 'Pakt de meegeleverde AnkiConnect-add-on uit in Anki. Start Anki daarna opnieuw op.';
       case 'onboarding_step_anki_action_desc':
-        return 'Kaartsjabloon, veldtoewijzing, schermafbeeldingen en audio: de details van hoe een gemaakte kaart eruitziet. Het deck en notitietype hierboven zijn genoeg om te beginnen, dus open dit alleen als je wilt veranderen hoe kaarten worden opgebouwd.';
+        return 'Sjabloon, veldtoewijzing, schermafbeeldingen en audio. Het deck en notitietype hierboven zijn genoeg om te beginnen.';
       case 'onboarding_step_backup_action_desc':
-        return 'Kies een back-upbackend en meld je aan, zodat je bibliotheek een verloren of vervangen apparaat overleeft.';
+        return 'Kies een backend en meld je aan, of exporteer een lokaal back-upbestand.';
       case 'onboarding_step_interconnect_action_desc':
-        return 'Koppelt dit apparaat aan je andere apparaten om één bibliotheek te delen en de voortgang gelijk te houden.';
+        return 'Schakel interconnect in en koppel dit apparaat aan je andere apparaten.';
       case 'onboarding_step_extension_action_desc':
-        return 'Laat zien hoe je de browserextensie installeert en met Fushi verbindt, zodat je ook op webpagina’s woorden kunt opzoeken.';
+        return 'Laat zien hoe je de extensie installeert en met Fushi verbindt.';
       case 'onboarding_step_fonts_action_desc':
-        return 'Voeg je eigen lettertypebestanden toe en kies welk lettertype elke taal gebruikt.';
-      case 'onboarding_pack_sources_hint':
-        return 'Wordt in parallelle stukken tegelijk van GitHub, de officiële site en een reservespiegel gehaald, met een checksum per stuk. Fushi meet de bronnen onderweg en geeft meer stukken aan degene die op dat moment het snelst is, dus hier valt niets te kiezen.';
+        return 'Importeer lettertypebestanden en kies er één per taal.';
       case 'video_setting_hdr_output':
         return 'HDR-/10-bits-uitvoer';
       case 'video_setting_hdr_output_hint':
@@ -244101,99 +244435,79 @@ extension on _StringsNl {
         return ({required Object count}) =>
             'Schakel naar ingebouwde modus om ${count} wachtende kaarten aan te maken';
       case 'onboarding_step_click_lookup_title':
-        return 'Tik om woorden op te zoeken';
+        return 'Tik om op te zoeken';
       case 'onboarding_click_lookup_tap_title':
-        return 'Tik op de tekst';
+        return 'Tik op een woord';
       case 'onboarding_click_lookup_nested_title':
-        return 'Zoek verder in de pop-up';
+        return 'Blijf zoeken';
       case 'onboarding_click_lookup_nested_body':
-        return 'Tik op een ander woord in een betekenis om een niveau dieper te zoeken. Ga terug of tik ernaast om één niveau te sluiten.';
+        return 'Tik op een woord in een betekenis om een niveau dieper te gaan. Ga terug of tik ernaast om een niveau te sluiten.';
       case 'onboarding_click_lookup_mine_title':
-        return 'Maak er een kaart van';
+        return 'Maak een kaart';
       case 'onboarding_click_lookup_mine_body':
-        return 'Klopt de betekenis? Tik dan op + om het woord, de zin, de audio en de afbeelding naar de kaartmaker te sturen.';
+        return 'Tik op + bij het item om het woord, de zin, de audio en de afbeelding naar de kaartmaker te sturen.';
       case 'onboarding_step_global_lookup_title':
-        return 'Tekst buiten Fushi opzoeken';
+        return 'Buiten Fushi opzoeken';
       case 'onboarding_global_lookup_windows_body':
-        return 'Op Windows selecteer je tekst in een andere app en roep je het woordenboek op zonder terug te schakelen naar Fushi.';
+        return 'Selecteer tekst in een willekeurige app en roep het woordenboek op zonder van venster te wisselen.';
       case 'onboarding_global_lookup_windows_select_title':
-        return 'Selecteer tekst in een willekeurige app';
-      case 'onboarding_global_lookup_windows_shortcut_title':
-        return 'Druk op Ctrl+Alt+D';
+        return 'Selecteer tekst';
       case 'onboarding_global_lookup_windows_shortcut_body':
-        return 'Dit is de standaard globale sneltoets. Fushi pakt de huidige selectie en opent een zoekkaart bij de muisaanwijzer.';
+        return 'Fushi pakt de selectie en opent een zoekkaart naast de muisaanwijzer.';
       case 'onboarding_global_lookup_windows_customize_title':
-        return 'Pas de sneltoets aan als je wilt';
+        return 'Wijzig de sneltoets';
       case 'onboarding_global_lookup_windows_customize_body':
-        return 'Open Instellingen → Sneltoetsen → Globaal (buiten de app) om een andere toetsencombinatie toe te wijzen.';
+        return 'Instellingen → Sneltoetsen → Globaal (buiten de app).';
       case 'onboarding_global_lookup_windows_action':
         return 'Sneltoetsinstellingen openen';
       case 'onboarding_global_lookup_windows_action_desc':
-        return 'Hiermee wijzig je de sneltoets voor opzoeken buiten de app. De standaard Ctrl+Alt+D werkt al, dus dit is optioneel.';
+        return 'Alleen als je een andere toetsencombinatie wilt.';
       case 'onboarding_global_lookup_android_body':
-        return 'Op Android geeft het systeem de geselecteerde tekst aan Fushi door via het tekstmenu of het deelmenu. Een instelbare globale sneltoets is er niet.';
+        return 'Android geeft geselecteerde tekst via het tekstmenu of het deelmenu door aan Fushi.';
       case 'onboarding_global_lookup_android_select_title':
-        return 'Selecteer tekst in een andere app';
+        return 'Selecteer tekst';
       case 'onboarding_global_lookup_android_open_title':
         return 'Kies Fushi';
       case 'onboarding_global_lookup_android_open_body':
-        return 'Tik op Fushi in het tekstselectiemenu. Staat het er niet bij, tik dan op Delen en kies Fushi in het deelmenu.';
+        return 'Tik op Fushi in het selectiemenu, of tik op Delen en kies Fushi.';
       case 'onboarding_global_lookup_android_continue_title':
-        return 'Gebruik de losse pop-up';
+        return 'Lees de pop-up';
       case 'onboarding_global_lookup_android_continue_body':
-        return 'Het zoekresultaat opent los van de oorspronkelijke app. Je kunt er meer woorden in aantikken en komt na het sluiten terug waar je was.';
+        return 'Het opzoekvenster opent boven op de andere app. Sluit het om terug te gaan.';
       case 'onboarding_feature_manual_resources':
-        return 'Woordenboeken en audio handmatig importeren';
+        return 'Eigen materiaal importeren';
       case 'onboarding_feature_manual_resources_hint':
-        return 'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+        return 'Woordenboeken, luisterboeken en uitspraakbronnen uit je eigen bestanden';
       case 'onboarding_step_manual_resources_title':
-        return 'Woordenboeken en audio handmatig voorbereiden';
+        return 'Je eigen woordenboeken en audio';
       case 'onboarding_step_manual_resources_body':
-        return 'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+        return 'Importeer minstens één woordenboek vóór de opzoekhandleiding. Luisterboeken en uitspraakaudio zijn optioneel.';
       case 'onboarding_manual_dictionary_action':
         return 'Een woordenboek importeren';
       case 'onboarding_manual_dictionary_action_desc':
-        return 'Open het woordenboekbeheer en importeer minstens één ondersteund woordenboekbestand of -archief. De zoekhandleidingen hebben pas zin als een zoekopdracht een betekenis oplevert.';
+        return 'Opent het woordenboekbeheer. Zoekopdrachten leveren pas resultaten op als er een woordenboek is geïnstalleerd.';
       case 'onboarding_manual_audiobook_action':
-        return 'Een boek met luisterboekaudio importeren';
+        return 'Een boek met audio importeren';
       case 'onboarding_manual_audiobook_action_desc':
-        return 'Open de boekimport en kies het boek of de tekst, bijpassende ondertitels en een of meer audiobestanden. Zonder ondertitels kan Fushi de audio niet per zin uitlijnen.';
+        return 'Boek of tekst, bijpassende ondertitels en audiobestanden. De ondertitels zijn wat Fushi de audio per zin laat uitlijnen.';
       case 'onboarding_manual_pronunciation_action':
-        return 'Uitspraakaudio voor woorden instellen';
+        return 'Uitspraakaudio instellen';
       case 'onboarding_manual_pronunciation_action_desc':
-        return 'Voeg lokale of online uitspraakbronnen toe die woordenboekitems gebruiken. Dit staat los van de luisterboekaudio bij een boek.';
-      case 'onboarding_lookup_verify_action':
-        return 'Een woord in je woordenboek controleren';
-      case 'onboarding_lookup_verify_action_desc':
-        return 'Open het opzoeken, typ een willekeurig woord dat je leert en ga pas verder als het geïnstalleerde woordenboek een betekenis teruggeeft. De handleiding legt geen voorbeeldwoord vast.';
+        return 'Lokale of online bronnen voor de uitspraak van woorden in woordenboekitems. Staat los van luisterboekaudio.';
       case 'onboarding_step_first_anki_card_title':
-        return 'Maak je eerste Anki-kaart';
-      case 'onboarding_step_first_anki_card_body':
-        return 'Deze stap verschijnt alleen als deze rondleiding al met Anki verbonden is en een bruikbare stapel en notitietype zijn gekozen.';
+        return 'Je eerste kaart';
       case 'onboarding_first_anki_lookup_title':
-        return 'Begin met een echt woordenboekresultaat';
-      case 'onboarding_first_anki_lookup_body':
-        return 'Zoek een woord op dat je geïnstalleerde woordenboek echt kent. Er is geen vast oefenwoord dat in jouw woordenboek zou kunnen ontbreken.';
+        return 'Zoek een woord op';
       case 'onboarding_first_anki_plus_title':
-        return 'Tik op de plusknop bij het item';
+        return 'Tik op +';
       case 'onboarding_first_anki_plus_body':
-        return 'De plusknop opent de kaartmaker met het huidige woord, de lezing, de betekenis, de zin, de audio en de beschikbare afbeelding.';
+        return 'De kaartmaker opent met het woord, de lezing, de betekenis, de zin, de audio en de afbeelding al ingevuld.';
       case 'onboarding_first_anki_save_title':
-        return 'Controleer en bewaar';
+        return 'Controleer en sla op';
       case 'onboarding_first_anki_save_body':
-        return 'Bevestig de doelstapel, het notitietype en het veldvoorbeeld en sla dan op. Open Anki om te controleren of de eerste kaart is aangekomen.';
+        return 'Bevestig het deck en het notitietype en sla op. Open Anki om de kaart te zien.';
       case 'onboarding_first_anki_action':
         return 'Opzoeken openen en een kaart maken';
-      case 'onboarding_first_anki_action_desc':
-        return 'Neem een woord met een zichtbare betekenis, tik op de plusknop, controleer de velden en sla het op in de gekoppelde Anki-stapel.';
-      case 'onboarding_step_click_lookup_body':
-        return 'Controleer eerst een woord dat je geïnstalleerde woordenboek echt kent. Oefen daarna met datzelfde woord het direct opzoeken in boeken, in OCR-tekst van manga en in video-ondertitels.';
-      case 'onboarding_click_lookup_tap_body':
-        return 'Tik op de telefoon op een teken van het gecontroleerde woord; op de computer klik je er met links op. Fushi begint daar en pakt het langste passende woord.';
-      case 'onboarding_global_lookup_windows_select_body':
-        return 'Selecteer hetzelfde woord waarvan je al hebt gecontroleerd dat er een betekenis in het woordenboek staat, en laat de selectie staan.';
-      case 'onboarding_global_lookup_android_select_body':
-        return 'Houd datzelfde gecontroleerde woord ingedrukt en versleep daarna de selectiegrepen zodat het hele woord geselecteerd is.';
       case 'game_lookup_attached_title':
         return 'In-game lookup';
       case 'game_lookup_attached_no_ocr':
@@ -244429,6 +244743,56 @@ extension on _StringsNl {
         return 'Het spel is gestart zonder Japanse landinstelling: dit systeem gebruikt al de Japanse codepagina (CP932), er hoeft niets te veranderen.';
       case 'game_session_japanese_locale_skipped_hint_not_32bit':
         return 'Het spel is gestart zonder Japanse landinstelling: het automatische oordeel acht die nodig, maar Locale Emulator ondersteunt alleen 32-bits spellen.';
+      case 'onboarding_feature_fonts':
+        return 'Eigen lettertypen';
+      case 'onboarding_feature_fonts_hint':
+        return 'Gebruik je eigen lettertypen voor de interface, boektekst en het woordenboek';
+      case 'onboarding_features_modules_title':
+        return 'Bibliotheekpagina\'s';
+      case 'onboarding_features_modules_hint':
+        return 'Niet-aangevinkte pagina\'s worden verborgen in de navigatiebalk. Later aan te passen via Instellingen → Uiterlijk.';
+      case 'onboarding_features_setup_title':
+        return 'Hierna instellen';
+      case 'onboarding_features_setup_hint':
+        return 'Alleen aangevinkte onderdelen krijgen een stap in deze gids.';
+      case 'onboarding_pack_intro':
+        return 'Japanse woordenboeken, toonhoogteaccent, woordfrequentie en JA/EN-uitspraakaudio in één download. Leer je een andere taal? Sla dit over en importeer je eigen woordenboeken.';
+      case 'onboarding_global_lookup_windows_select_desc':
+        return 'Selecteer een woord in een willekeurige app en laat de selectie staan.';
+      case 'onboarding_global_lookup_android_select_desc':
+        return 'Houd een woord in een andere app ingedrukt en sleep de grepen eroverheen.';
+      case 'onboarding_global_lookup_windows_shortcut_press':
+        return 'Druk op de sneltoets';
+      case 'onboarding_first_anki_card_intro':
+        return 'Anki is verbonden. Maak nu één echte kaart, zodat je weet dat de hele route werkt.';
+      case 'onboarding_action_start':
+        return 'Fushi gaan gebruiken';
+      case 'onboarding_actions_more':
+        return 'Andere manieren';
+      case 'onboarding_finish_summary_modules':
+        return 'Getoonde bibliotheekpagina\'s';
+      case 'onboarding_finish_summary_setup':
+        return 'Begeleide installatie';
+      case 'onboarding_finish_summary_none':
+        return 'Geen';
+      case 'onboarding_anki_status_pending':
+        return 'Nog niet getest';
+      case 'onboarding_click_lookup_intro':
+        return 'Tik op een willekeurig woord in een boek, manga of ondertitel om de betekenis te zien. Probeer het met de oefenzin hieronder.';
+      case 'onboarding_click_lookup_tap_desc':
+        return 'Tik op een teken (of klik met links); Fushi pakt het langste woord dat daar begint. De zin opent in de opzoekpagina.';
+      case 'onboarding_sample_sentence_label':
+        return 'Oefenzin';
+      case 'onboarding_sample_sentence_hint':
+        return 'Tik om hem in de opzoekpagina te openen en tik daarna op een willekeurig woord.';
+      case 'onboarding_lookup_practice_action':
+        return 'Oefen met deze zin';
+      case 'onboarding_lookup_practice_desc':
+        return 'Opent de opzoekpagina met de zin erin. Tik daar op een woord om de betekenis te zien; komt er niets, dan zijn je woordenboeken nog niet geïnstalleerd.';
+      case 'onboarding_first_anki_lookup_desc':
+        return 'Open de oefenzin en tik op een woord.';
+      case 'onboarding_first_anki_action_desc':
+        return 'Opent de oefenzin in de opzoekpagina. Tik op een woord, tik op +, controleer de velden en sla op.';
       default:
         return null;
     }
@@ -251352,97 +251716,89 @@ extension on _StringsPtBr {
       case 'onboarding_title':
         return 'Primeiros passos';
       case 'onboarding_welcome_headline':
-        return 'Bem-vindo!';
+        return 'Boas-vindas ao Fushi';
       case 'onboarding_feature_anki':
-        return 'Flashcards Anki';
+        return 'Cartões do Anki';
       case 'onboarding_feature_anki_hint':
-        return 'Conecte AnkiConnect ou AnkiDroid para criar flashcards';
+        return 'Transforme suas consultas em flashcards com um toque';
       case 'onboarding_feature_backup':
         return 'Backup e sincronização';
       case 'onboarding_feature_backup_hint':
-        return 'Faça backup dos seus dados no Google Drive, WebDAV e outros backends';
+        return 'Google Drive, WebDAV ou um arquivo local';
       case 'onboarding_feature_interconnect':
         return 'Interconexão de dispositivos';
       case 'onboarding_feature_interconnect_hint':
-        return 'Pareie dispositivos na sua LAN para compartilhar bibliotecas e progresso';
+        return 'Compartilhe bibliotecas e progresso entre dispositivos na sua LAN';
       case 'onboarding_step_dictionary_action':
         return 'Abrir gerenciador de dicionários';
       case 'onboarding_step_anki_title':
         return 'Configurar Anki';
       case 'onboarding_step_anki_action':
-        return 'Abrir configurações de criação de cartões';
+        return 'Configurações de criação de cartões';
       case 'onboarding_step_backup_title':
-        return 'Configurar backup';
+        return 'Backup';
       case 'onboarding_step_backup_body':
-        return 'Escolha um backend de backup e faça login, ou exporte um arquivo de backup local.';
+        return 'Mantenha sua biblioteca segura quando trocar ou perder um aparelho.';
       case 'onboarding_step_backup_action':
         return 'Abrir configurações de backup';
       case 'onboarding_step_interconnect_title':
-        return 'Configurar interconexão';
+        return 'Interconexão';
       case 'onboarding_step_interconnect_body':
-        return 'Ative a interconexão e pareie com outros dispositivos na sua LAN para compartilhar bibliotecas, progresso e consultas.';
+        return 'Pareie dispositivos na sua LAN para compartilhar uma mesma biblioteca e manter o progresso em sincronia.';
       case 'onboarding_step_interconnect_action':
         return 'Abrir configurações de interconexão';
       case 'onboarding_finish_title':
         return 'Tudo pronto';
       case 'onboarding_finish_body':
-        return 'Você pode revisitar este guia a qualquer momento em Configurações → Sistema.';
+        return 'Você pode reabrir este guia a qualquer momento em Configurações → Sistema.';
       case 'onboarding_action_next':
         return 'Próximo';
-      case 'onboarding_action_finish':
-        return 'Concluir';
       case 'onboarding_action_skip':
         return 'Pular por enquanto';
       case 'onboarding_reopen':
         return 'Guia de primeiros passos';
       case 'onboarding_welcome_body':
-        return 'Defina seu idioma de interface e tema primeiro — os próximos passos guiarão você pelo resto.';
+        return 'Escolha seu idioma de interface e o tema. Os próximos passos configuram o resto.';
       case 'onboarding_features_title':
-        return 'Escolha o que você usa';
-      case 'onboarding_features_modules_label':
-        return 'Abas da biblioteca (as desmarcadas ficam ocultas da barra de navegação; altere a qualquer momento nas Configurações)';
-      case 'onboarding_features_setup_label':
-        return 'O que configurar em seguida';
+        return 'O que você vai usar?';
       case 'onboarding_feature_manga':
-        return 'Biblioteca de mangá';
+        return 'Mangá';
       case 'onboarding_feature_manga_hint':
         return 'Leia mangá com consulta por OCR';
       case 'onboarding_feature_video':
-        return 'Biblioteca de vídeo';
+        return 'Vídeo';
       case 'onboarding_feature_video_hint':
-        return 'Assista vídeos com consulta e mineração de legendas';
+        return 'Consulta em legendas e criação de cartões';
       case 'onboarding_feature_games':
-        return 'Biblioteca de galgame';
+        return 'Galgames';
       case 'onboarding_feature_games_hint':
-        return 'Inicie galgames com consulta por text-hook (apenas Windows)';
+        return 'Consulta por text-hook enquanto joga (apenas Windows)';
       case 'onboarding_feature_pack':
-        return 'Pacote recomendado (dicionários + áudio)';
+        return 'Pacote recomendado';
       case 'onboarding_feature_pack_hint':
-        return 'Um download configura dicionários de japonês mais áudio de pronúncia JA/EN';
+        return 'Dicionários de japonês mais áudio de pronúncia JA/EN em um download';
       case 'onboarding_step_pack_title':
-        return 'Instalar o pacote recomendado';
-      case 'onboarding_step_pack_body':
-        return 'O pacote recomendado inclui dicionários de palavras, acento tonal e frequência do japonês, além de bancos de áudio de pronúncia japonês/inglês. Baixe e importe aqui; a importação substitui dados locais, então execute em uma instalação limpa. Estudando outro idioma? Use o gerenciador de dicionários para importar seus próprios.';
+        return 'Pacote recomendado';
       case 'onboarding_step_pack_download_action':
         return 'Baixar e importar';
       case 'onboarding_step_pack_import_existing_action':
-        return 'Importar pacote já baixado';
+        return 'Importar o pacote baixado';
       case 'onboarding_step_pack_pick_action':
-        return 'Escolher arquivo de pacote local';
+        return 'Escolher um arquivo de pacote';
       case 'onboarding_pack_downloading':
-        return 'Baixando… cancele a qualquer momento, retoma da próxima vez';
+        return 'Baixando… cancele quando quiser e retome mais tarde';
       case 'onboarding_pack_download_failed':
         return ({required Object message}) => 'Download falhou: ${message}';
       case 'onboarding_step_extension_title':
         return 'Extensão do navegador';
       case 'onboarding_step_extension_body':
-        return 'Instale a extensão companion do navegador para consultar palavras em qualquer página web.';
+        return 'Consulte palavras em qualquer página da web com a extensão companion.';
       case 'onboarding_step_extension_action':
-        return 'Abrir guia da extensão';
+        return 'Abrir o guia de instalação';
       case 'onboarding_step_fonts_title':
-        return 'Fontes de leitura';
+        return 'Fontes';
       case 'onboarding_step_fonts_body':
-        return 'Importe fontes personalizadas e escolha quais da interface, texto do livro e dicionário as usam.';
+        return 'Use suas próprias fontes na interface, no texto do livro e no dicionário.';
       case 'settings_section_modules':
         return 'Módulos de funcionalidades';
       case 'module_toggle_hint':
@@ -251645,9 +252001,9 @@ extension on _StringsPtBr {
       case 'module_extension_label':
         return 'Extensão do navegador';
       case 'onboarding_feature_books':
-        return 'Biblioteca de romances';
+        return 'Romances';
       case 'onboarding_feature_books_hint':
-        return 'Leia romances EPUB com consulta de dicionário e sincronização de audiobook';
+        return 'Leitura de EPUB com consulta e sincronização de audiolivro';
       case 'onboarding_feature_extension_hint':
         return 'Consulte palavras em qualquer página web (apenas desktop)';
       case 'video_setting_tap_toggles_playback':
@@ -252003,11 +252359,11 @@ extension on _StringsPtBr {
       case 'game_session_japanese_locale_hint':
         return 'O jogo foi iniciado sob uma localidade japonesa (CP932). Se o texto parecer distorcido ou aparecer um erro de script, defina a localidade japonesa deste jogo como Nunca.';
       case 'onboarding_anki_intro_body':
-        return 'O Anki é um app gratuito de flashcards com repetição espaçada: novas palavras viram cartões, e as revisões são programadas pela curva do esquecimento. Após uma consulta, o Fushi pode transformar a palavra em um cartão Anki com um toque, com significado, frase, áudio e captura de tela.';
+        return 'O Anki é um app gratuito de flashcards com repetição espaçada. Após uma consulta, o Fushi transforma a palavra em um cartão com significado, frase, áudio e captura de tela, com um toque.';
       case 'onboarding_anki_setup_desktop_hint':
-        return 'Instale o app Anki desktop e adicione o add-on AnkiConnect: no Anki, abra Ferramentas - Complementos - Obter Complementos e insira o código 2055492159. Mantenha o Anki aberto enquanto cria cartões.';
+        return 'Instale o Anki, adicione o complemento AnkiConnect (um toque abaixo, ou o código 2055492159) e mantenha o Anki aberto enquanto cria cartões.';
       case 'onboarding_anki_setup_ios_hint':
-        return 'Com o AnkiMobile instalado, adicionar cartões funciona direto. Para o conjunto completo de funcionalidades, conecte ao Anki rodando em um computador na mesma rede via AnkiConnect.';
+        return 'Com o AnkiMobile instalado, os cartões são adicionados direto. Para o conjunto completo de funcionalidades, conecte-se via AnkiConnect ao Anki de um computador na mesma rede.';
       case 'onboarding_anki_backend_label':
         return 'Conexão';
       case 'onboarding_anki_test_action':
@@ -252020,17 +252376,17 @@ extension on _StringsPtBr {
       case 'onboarding_anki_get_ankidroid_action':
         return 'Obter AnkiDroid';
       case 'onboarding_anki_mobile_ankiconnect_title':
-        return 'Avançado: usar AnkiConnect neste dispositivo';
+        return 'Avançado: usar AnkiConnect a partir deste dispositivo';
       case 'onboarding_anki_mobile_ankiconnect_hint':
-        return 'Este dispositivo também pode criar cartões no Anki rodando em um computador na mesma rede: ative o AnkiConnect nas configurações de criação de cartões e insira o endereço do computador.';
+        return 'Crie cartões no Anki de um computador na mesma rede: ative o AnkiConnect nas configurações de criação de cartões e informe o endereço do computador.';
       case 'onboarding_anki_setup_android_hint':
-        return 'Instale o AnkiDroid e abra-o uma vez para concluir a configuração inicial. De volta ao Fushi, toque em Permitir na caixa de diálogo de permissão que aparece com seu primeiro cartão - nenhuma configuração do AnkiDroid para alterar.';
+        return 'Instale o AnkiDroid e abra-o uma vez. No seu primeiro cartão, toque em Permitir na caixa de permissão — não há mais nada para configurar.';
       case 'onboarding_anki_install_addon_action':
         return 'Instalar add-on AnkiConnect';
       case 'onboarding_anki_addon_installed':
-        return 'AnkiConnect instalado. Inicie (ou reinicie) o Anki e toque em Testar conexão.';
+        return 'AnkiConnect instalado. Inicie ou reinicie o Anki e teste a conexão.';
       case 'onboarding_anki_addon_no_anki':
-        return 'Pasta de dados do Anki não encontrada. Instale o Anki e abra-o uma vez, depois tente novamente.';
+        return 'Pasta de dados do Anki não encontrada. Instale o Anki, abra-o uma vez e tente novamente.';
       case 'onboarding_anki_addon_failed':
         return ({required Object message}) => 'Instalação falhou: ${message}';
       case 'game_hook_reason_capability_probe_failed':
@@ -252464,41 +252820,39 @@ extension on _StringsPtBr {
       case 'onboarding_action_badge_optional':
         return 'Opcional';
       case 'onboarding_pack_action_download_desc':
-        return 'Baixa o pacote inteiro em segundo plano e depois o importa. Dá para cancelar a qualquer momento; da próxima vez ele retoma de onde parou.';
+        return 'Baixa em segundo plano de várias fontes ao mesmo tempo e depois importa. Cancele quando quiser; ele retoma de onde parou.';
       case 'onboarding_pack_action_import_existing_desc':
-        return 'O pacote já foi baixado; isto o importa. Escolha «Mesclar» na caixa de confirmação e seus dados atuais ficam intactos.';
+        return 'O pacote já está no disco. Escolha «Mesclar» na caixa de confirmação para manter seus dados atuais.';
       case 'onboarding_pack_action_pick_desc':
-        return 'Já pegou o zip do pacote em outro lugar? Importe do disco e pule o download por completo.';
+        return 'Já tem o zip do pacote? Importe do disco e pule o download.';
       case 'onboarding_pack_action_website':
-        return 'Abrir a página de download do site';
+        return 'Abrir a página de download';
       case 'onboarding_pack_action_website_desc':
-        return 'Abre o site oficial no navegador. A seção do pacote lista links por partes que você pode passar a um gerenciador de downloads; depois volte aqui e use «Escolher um arquivo de pacote local» para importar o que baixou.';
+        return 'Links por partes para gerenciadores de download. Volte depois e use «Escolher um arquivo de pacote».';
       case 'onboarding_pack_action_dictionary_desc':
-        return 'Está aprendendo um idioma que não é japonês? Pule o pacote e importe aqui dicionários do seu próprio idioma.';
+        return 'Está aprendendo outro idioma? Importe aqui os dicionários correspondentes.';
       case 'onboarding_pack_action_audio_desc':
-        return 'De onde vem o áudio de pronúncia. O pacote já cobre japonês e inglês; adicione aqui fontes on-line para outros idiomas.';
+        return 'Adicione fontes de pronúncia on-line para os idiomas que o pacote não cobre.';
       case 'onboarding_anki_action_test_desc':
-        return 'Verifica se o Fushi consegue falar com o Anki e carrega seus baralhos e tipos de nota. Nada é criado ainda.';
+        return 'Verifica se o Fushi consegue falar com o Anki e carrega seus baralhos e tipos de nota. Não cria nada.';
       case 'onboarding_anki_action_refresh_desc':
-        return 'Recarrega baralhos e tipos de nota a partir do Anki. Use depois de criar um baralho novo dentro do Anki.';
+        return 'Recarrega baralhos e tipos de nota. Use depois de criar um baralho no Anki.';
       case 'onboarding_anki_action_get_ankidroid_desc':
-        return 'Abre a página do AnkiDroid na loja. O Fushi grava os cartões nele, então precisa estar instalado antes.';
+        return 'Abre a página da loja. O Fushi grava os cartões no AnkiDroid, então ele precisa estar instalado antes.';
       case 'onboarding_anki_action_get_anki_desc':
-        return 'Abre a página de download do Anki. Instale o Anki e deixe-o aberto enquanto cria cartões.';
+        return 'Abre a página de download do Anki. Deixe o Anki aberto enquanto cria cartões.';
       case 'onboarding_anki_action_install_addon_desc':
-        return 'Descompacta para você o complemento AnkiConnect embutido dentro do Anki, que é o que permite ao Fushi conversar com ele. Reinicie o Anki depois.';
+        return 'Descompacta o complemento AnkiConnect embutido dentro do Anki. Reinicie o Anki depois.';
       case 'onboarding_step_anki_action_desc':
-        return 'Modelo de cartão, mapeamento de campos, capturas e áudio: os detalhes de como fica um cartão criado. O baralho e o tipo de nota acima já bastam para começar, então abra isto só se quiser mudar como os cartões são montados.';
+        return 'Modelo, mapeamento de campos, capturas e áudio. O baralho e o tipo de nota acima já bastam para começar.';
       case 'onboarding_step_backup_action_desc':
-        return 'Escolha um serviço de backup e entre na conta, para que sua biblioteca sobreviva à perda ou troca de aparelho.';
+        return 'Escolha um backend e faça login, ou exporte um arquivo de backup local.';
       case 'onboarding_step_interconnect_action_desc':
-        return 'Pareia este aparelho com seus outros aparelhos para compartilhar uma mesma biblioteca e manter o progresso em sincronia.';
+        return 'Ative a interconexão e pareie este aparelho com os seus outros.';
       case 'onboarding_step_extension_action_desc':
-        return 'Mostra como instalar a extensão de navegador e conectá-la ao Fushi, para você também consultar palavras em páginas da web.';
+        return 'Mostra como instalar a extensão e conectá-la ao Fushi.';
       case 'onboarding_step_fonts_action_desc':
-        return 'Adicione seus próprios arquivos de fonte e escolha qual cada idioma usa.';
-      case 'onboarding_pack_sources_hint':
-        return 'Baixado em partes paralelas do GitHub, do site oficial e de um espelho reserva ao mesmo tempo, com checksum em cada parte. O Fushi mede as fontes durante o processo e dá mais partes para a que estiver mais rápida no momento, então não há nada a escolher aqui.';
+        return 'Importe arquivos de fonte e escolha uma para cada idioma.';
       case 'video_setting_hdr_output':
         return 'Saída HDR / 10 bits';
       case 'video_setting_hdr_output_hint':
@@ -252600,99 +252954,79 @@ extension on _StringsPtBr {
         return ({required Object count}) =>
             'Mudar para o modo integrado para criar ${count} cartões na fila';
       case 'onboarding_step_click_lookup_title':
-        return 'Toque para consultar palavras';
+        return 'Toque para consultar';
       case 'onboarding_click_lookup_tap_title':
-        return 'Toque no texto';
+        return 'Toque em uma palavra';
       case 'onboarding_click_lookup_nested_title':
-        return 'Continue explorando no pop-up';
+        return 'Continue explorando';
       case 'onboarding_click_lookup_nested_body':
-        return 'Toque em outra palavra dentro de uma definição para abrir uma consulta mais profunda. Volte ou toque fora para fechar um nível.';
+        return 'Toque em uma palavra dentro de uma definição para descer um nível. Volte ou toque fora para fechar um nível.';
       case 'onboarding_click_lookup_mine_title':
-        return 'Transforme o resultado em um cartão';
+        return 'Crie um cartão';
       case 'onboarding_click_lookup_mine_body':
-        return 'Se a definição estiver certa, toque em + para enviar a palavra, a frase, o áudio e a imagem ao criador de cartões.';
+        return 'Toque em + no verbete para enviar a palavra, a frase, o áudio e a imagem ao criador de cartões.';
       case 'onboarding_step_global_lookup_title':
-        return 'Consultar texto fora do Fushi';
+        return 'Consultar fora do Fushi';
       case 'onboarding_global_lookup_windows_body':
-        return 'No Windows, selecione um texto em outro aplicativo e chame o dicionário sem voltar para o Fushi.';
+        return 'Selecione um texto em qualquer aplicativo e chame o dicionário sem trocar de janela.';
       case 'onboarding_global_lookup_windows_select_title':
-        return 'Selecione texto em qualquer aplicativo';
-      case 'onboarding_global_lookup_windows_shortcut_title':
-        return 'Pressione Ctrl+Alt+D';
+        return 'Selecione texto';
       case 'onboarding_global_lookup_windows_shortcut_body':
-        return 'Esse é o atalho global padrão. O Fushi captura a seleção atual e abre um cartão de consulta perto do ponteiro.';
+        return 'O Fushi captura a seleção e abre um cartão de consulta ao lado do ponteiro.';
       case 'onboarding_global_lookup_windows_customize_title':
-        return 'Mude o atalho se precisar';
+        return 'Mude o atalho';
       case 'onboarding_global_lookup_windows_customize_body':
-        return 'Abra Configurações → Atalhos → Global (fora do aplicativo) para definir outra combinação de teclas.';
+        return 'Configurações → Atalhos → Global (fora do aplicativo).';
       case 'onboarding_global_lookup_windows_action':
         return 'Abrir configurações de atalhos';
       case 'onboarding_global_lookup_windows_action_desc':
-        return 'Permite mudar o atalho de consulta fora do aplicativo. O padrão Ctrl+Alt+D já funciona, então isso é opcional.';
+        return 'Só se você quiser outra combinação de teclas.';
       case 'onboarding_global_lookup_android_body':
-        return 'No Android, o sistema entrega o texto selecionado ao Fushi pelo menu de texto ou pelo painel Compartilhar. Não existe atalho global personalizável.';
+        return 'O Android entrega o texto selecionado ao Fushi pelo menu de texto ou pelo painel Compartilhar.';
       case 'onboarding_global_lookup_android_select_title':
-        return 'Selecione texto em outro aplicativo';
+        return 'Selecione texto';
       case 'onboarding_global_lookup_android_open_title':
         return 'Escolha o Fushi';
       case 'onboarding_global_lookup_android_open_body':
-        return 'Toque em Fushi no menu de seleção de texto. Se ele não aparecer, toque em Compartilhar e escolha o Fushi no painel de compartilhamento.';
+        return 'Toque em Fushi no menu de seleção, ou toque em Compartilhar e escolha o Fushi.';
       case 'onboarding_global_lookup_android_continue_title':
-        return 'Use o pop-up independente';
+        return 'Leia o pop-up';
       case 'onboarding_global_lookup_android_continue_body':
-        return 'A consulta abre separada do aplicativo de origem. Você pode tocar em mais palavras dentro dela e, ao fechar, volta de onde estava.';
+        return 'A consulta abre por cima do outro aplicativo. Feche para voltar.';
       case 'onboarding_feature_manual_resources':
-        return 'Importar dicionários e áudio manualmente';
+        return 'Importar meus próprios recursos';
       case 'onboarding_feature_manual_resources_hint':
-        return 'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+        return 'Dicionários, audiolivros e fontes de pronúncia a partir dos seus arquivos';
       case 'onboarding_step_manual_resources_title':
-        return 'Prepare dicionários e áudio manualmente';
+        return 'Seus próprios dicionários e áudio';
       case 'onboarding_step_manual_resources_body':
-        return 'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+        return 'Importe pelo menos um dicionário antes do tutorial de consulta. Audiolivros e áudio de pronúncia são opcionais.';
       case 'onboarding_manual_dictionary_action':
         return 'Importar um dicionário';
       case 'onboarding_manual_dictionary_action_desc':
-        return 'Abra o gerenciador de dicionários e importe pelo menos um arquivo ou pacote de dicionário compatível. Os tutoriais de consulta só fazem sentido quando uma busca retorna uma definição.';
+        return 'Abre o gerenciador de dicionários. As consultas só retornam resultados depois que um dicionário está instalado.';
       case 'onboarding_manual_audiobook_action':
-        return 'Importar um livro com áudio de audiolivro';
+        return 'Importar um livro com áudio';
       case 'onboarding_manual_audiobook_action_desc':
-        return 'Abra a importação de livros e escolha o livro ou o texto, as legendas alinhadas e um ou mais arquivos de áudio. O áudio precisa de legendas para o Fushi alinhá-lo às frases.';
+        return 'Livro ou texto, legendas alinhadas e arquivos de áudio. São as legendas que permitem ao Fushi sincronizar o áudio com as frases.';
       case 'onboarding_manual_pronunciation_action':
-        return 'Configurar áudio de pronúncia das palavras';
+        return 'Configurar áudio de pronúncia';
       case 'onboarding_manual_pronunciation_action_desc':
-        return 'Adicione fontes de pronúncia locais ou on-line usadas pelos verbetes do dicionário. Isso é diferente do áudio de audiolivro anexado a um livro.';
-      case 'onboarding_lookup_verify_action':
-        return 'Confirme uma palavra no seu dicionário';
-      case 'onboarding_lookup_verify_action_desc':
-        return 'Abra a consulta, digite qualquer palavra que você esteja aprendendo e siga em frente só depois que o dicionário instalado retornar uma definição. O tutorial não fixa nenhuma palavra de exemplo.';
+        return 'Fontes locais ou on-line para a pronúncia das palavras nos verbetes do dicionário. É diferente do áudio de audiolivro.';
       case 'onboarding_step_first_anki_card_title':
-        return 'Crie seu primeiro cartão do Anki';
-      case 'onboarding_step_first_anki_card_body':
-        return 'Esta etapa só aparece depois que esta configuração se conectou ao Anki e um baralho e um tipo de nota utilizáveis foram escolhidos.';
+        return 'Seu primeiro cartão';
       case 'onboarding_first_anki_lookup_title':
-        return 'Comece por um resultado real do dicionário';
-      case 'onboarding_first_anki_lookup_body':
-        return 'Consulte uma palavra que o seu dicionário instalado realmente define. Não há palavra de exemplo fixa que possa faltar no seu dicionário.';
+        return 'Consulte uma palavra';
       case 'onboarding_first_anki_plus_title':
-        return 'Toque no botão de mais do verbete';
+        return 'Toque em +';
       case 'onboarding_first_anki_plus_body':
-        return 'O botão de mais abre o criador de cartões com a palavra atual, a leitura, o significado, a frase, o áudio e a imagem disponível.';
+        return 'O criador de cartões abre com a palavra, a leitura, o significado, a frase, o áudio e a imagem já preenchidos.';
       case 'onboarding_first_anki_save_title':
-        return 'Revise e salve';
+        return 'Confira e salve';
       case 'onboarding_first_anki_save_body':
-        return 'Confirme o baralho de destino, o tipo de nota e a prévia dos campos e salve. Abra o Anki para conferir se o primeiro cartão chegou.';
+        return 'Confirme o baralho e o tipo de nota e salve. Abra o Anki para ver o cartão.';
       case 'onboarding_first_anki_action':
         return 'Abrir a consulta e criar um cartão';
-      case 'onboarding_first_anki_action_desc':
-        return 'Use uma palavra com definição visível, toque no botão de mais, revise os campos e salve no baralho do Anki conectado.';
-      case 'onboarding_step_click_lookup_body':
-        return 'Primeiro confirme uma palavra que o seu dicionário instalado realmente define. Depois use essa mesma palavra para praticar a consulta direta em livros, no texto de OCR de mangás e nas legendas de vídeo.';
-      case 'onboarding_click_lookup_tap_body':
-        return 'No celular, toque em um caractere da palavra confirmada; no computador, clique com o botão esquerdo. O Fushi começa por ali e busca a palavra mais longa que encaixa.';
-      case 'onboarding_global_lookup_windows_select_body':
-        return 'Selecione a mesma palavra que você já confirmou ter definição no dicionário e deixe a seleção ativa.';
-      case 'onboarding_global_lookup_android_select_body':
-        return 'Mantenha pressionada essa mesma palavra confirmada e ajuste as alças de seleção para cobri-la inteira.';
       case 'game_lookup_attached_title':
         return 'In-game lookup';
       case 'game_lookup_attached_no_ocr':
@@ -252928,6 +253262,56 @@ extension on _StringsPtBr {
         return 'O jogo foi iniciado sem a localidade japonesa: este sistema já usa a página de código japonesa (CP932), nada precisa mudar.';
       case 'game_session_japanese_locale_skipped_hint_not_32bit':
         return 'O jogo foi iniciado sem a localidade japonesa: o veredito automático diz que ela é necessária, mas o Locale Emulator só suporta jogos de 32 bits.';
+      case 'onboarding_feature_fonts':
+        return 'Fontes personalizadas';
+      case 'onboarding_feature_fonts_hint':
+        return 'Use suas próprias fontes na interface, no texto do livro e no dicionário';
+      case 'onboarding_features_modules_title':
+        return 'Páginas de biblioteca';
+      case 'onboarding_features_modules_hint':
+        return 'Páginas não marcadas ficam ocultas na barra de navegação. Dá para mudar quando quiser em Configurações → Aparência.';
+      case 'onboarding_features_setup_title':
+        return 'Configurar a seguir';
+      case 'onboarding_features_setup_hint':
+        return 'Só os itens marcados ganham uma etapa neste guia.';
+      case 'onboarding_pack_intro':
+        return 'Dicionários de japonês, acento tonal, frequência de palavras e áudio de pronúncia JA/EN em um único download. Estuda outro idioma? Pule esta etapa e importe seus próprios dicionários.';
+      case 'onboarding_global_lookup_windows_select_desc':
+        return 'Selecione uma palavra em qualquer aplicativo e mantenha a seleção.';
+      case 'onboarding_global_lookup_android_select_desc':
+        return 'Toque e segure uma palavra em outro aplicativo e ajuste as alças para cobri-la.';
+      case 'onboarding_global_lookup_windows_shortcut_press':
+        return 'Pressione o atalho';
+      case 'onboarding_first_anki_card_intro':
+        return 'O Anki está conectado. Crie agora um cartão de verdade para confirmar que todo o caminho funciona.';
+      case 'onboarding_action_start':
+        return 'Começar a usar o Fushi';
+      case 'onboarding_actions_more':
+        return 'Outras formas';
+      case 'onboarding_finish_summary_modules':
+        return 'Páginas de biblioteca exibidas';
+      case 'onboarding_finish_summary_setup':
+        return 'Configuração guiada';
+      case 'onboarding_finish_summary_none':
+        return 'Nenhuma';
+      case 'onboarding_anki_status_pending':
+        return 'Ainda não testada';
+      case 'onboarding_click_lookup_intro':
+        return 'Toque em qualquer palavra de um livro, mangá ou legenda para ver a definição. Faça o teste na frase de prática abaixo.';
+      case 'onboarding_click_lookup_tap_desc':
+        return 'Toque em um caractere (ou clique com o botão esquerdo); o Fushi pega a palavra mais longa que começa ali. A frase abre na página de consulta.';
+      case 'onboarding_sample_sentence_label':
+        return 'Frase de prática';
+      case 'onboarding_sample_sentence_hint':
+        return 'Toque para abri-la na página de consulta e depois toque em qualquer palavra.';
+      case 'onboarding_lookup_practice_action':
+        return 'Praticar com esta frase';
+      case 'onboarding_lookup_practice_desc':
+        return 'Abre a página de consulta com a frase carregada. Toque em uma palavra ali para ver a definição; se não vier nada, seus dicionários ainda não estão instalados.';
+      case 'onboarding_first_anki_lookup_desc':
+        return 'Abra a frase de prática e toque em uma palavra.';
+      case 'onboarding_first_anki_action_desc':
+        return 'Abre a frase de prática na página de consulta. Toque em uma palavra, toque em +, confira os campos e salve.';
       default:
         return null;
     }
@@ -259858,97 +260242,89 @@ extension on _StringsRu {
       case 'onboarding_title':
         return 'Начало работы';
       case 'onboarding_welcome_headline':
-        return 'Добро пожаловать!';
+        return 'Добро пожаловать в Fushi';
       case 'onboarding_feature_anki':
         return 'Карточки Anki';
       case 'onboarding_feature_anki_hint':
-        return 'Подключите AnkiConnect или AnkiDroid для создания карточек';
+        return 'Превращайте результаты поиска в карточки одним нажатием';
       case 'onboarding_feature_backup':
         return 'Резервное копирование и синхронизация';
       case 'onboarding_feature_backup_hint':
-        return 'Создавайте резервные копии данных в Google Drive, WebDAV и другие хранилища';
+        return 'Google Drive, WebDAV или локальный файл';
       case 'onboarding_feature_interconnect':
         return 'Соединение устройств';
       case 'onboarding_feature_interconnect_hint':
-        return 'Свяжите устройства в локальной сети для обмена библиотеками и прогрессом';
+        return 'Общие библиотеки и прогресс на устройствах в локальной сети';
       case 'onboarding_step_dictionary_action':
         return 'Открыть менеджер словарей';
       case 'onboarding_step_anki_title':
         return 'Настройка Anki';
       case 'onboarding_step_anki_action':
-        return 'Открыть настройки создания карточек';
+        return 'Настройки создания карточек';
       case 'onboarding_step_backup_title':
-        return 'Настройка резервного копирования';
+        return 'Резервное копирование';
       case 'onboarding_step_backup_body':
-        return 'Выберите хранилище для резервных копий и войдите в систему, или экспортируйте локальный файл резервной копии.';
+        return 'Сохраните библиотеку при смене или потере устройства.';
       case 'onboarding_step_backup_action':
         return 'Открыть настройки резервного копирования';
       case 'onboarding_step_interconnect_title':
-        return 'Настройка соединения устройств';
+        return 'Соединение устройств';
       case 'onboarding_step_interconnect_body':
-        return 'Включите соединение и свяжите устройства в локальной сети для обмена библиотеками, прогрессом и результатами поиска.';
+        return 'Свяжите устройства в локальной сети, чтобы пользоваться одной библиотекой и синхронным прогрессом.';
       case 'onboarding_step_interconnect_action':
         return 'Открыть настройки соединения';
       case 'onboarding_finish_title':
         return 'Всё готово';
       case 'onboarding_finish_body':
-        return 'Вы можете вернуться к этому руководству в любое время: Настройки → Система.';
+        return 'Вы можете снова открыть это руководство в любое время: Настройки → Система.';
       case 'onboarding_action_next':
         return 'Далее';
-      case 'onboarding_action_finish':
-        return 'Готово';
       case 'onboarding_action_skip':
         return 'Пропустить';
       case 'onboarding_reopen':
         return 'Руководство по началу работы';
       case 'onboarding_welcome_body':
-        return 'Сначала выберите язык интерфейса и тему — далее мы проведём вас через остальные шаги.';
+        return 'Выберите язык интерфейса и тему. Следующие шаги настроят всё остальное.';
       case 'onboarding_features_title':
-        return 'Выберите, что вы используете';
-      case 'onboarding_features_modules_label':
-        return 'Вкладки библиотеки (снятые скрыты из панели навигации; можно изменить в Настройках)';
-      case 'onboarding_features_setup_label':
-        return 'Что настроить далее';
+        return 'Чем вы будете пользоваться?';
       case 'onboarding_feature_manga':
-        return 'Библиотека манги';
+        return 'Манга';
       case 'onboarding_feature_manga_hint':
         return 'Читайте мангу с OCR-поиском по словарю';
       case 'onboarding_feature_video':
-        return 'Видеобиблиотека';
+        return 'Видео';
       case 'onboarding_feature_video_hint':
-        return 'Смотрите видео с поиском по субтитрам и созданием карточек';
+        return 'Поиск по субтитрам и создание карточек';
       case 'onboarding_feature_games':
-        return 'Библиотека Galgame';
+        return 'Гальге';
       case 'onboarding_feature_games_hint':
-        return 'Запускайте гальге с перехватом текста и поиском по словарю (только Windows)';
+        return 'Поиск по перехваченному тексту прямо в игре (только Windows)';
       case 'onboarding_feature_pack':
-        return 'Рекомендуемый набор (словари + аудио)';
+        return 'Рекомендуемый набор';
       case 'onboarding_feature_pack_hint':
-        return 'Одна загрузка настраивает японские словари и аудио произношения JA/EN';
+        return 'Японские словари и аудио произношения JA/EN одной загрузкой';
       case 'onboarding_step_pack_title':
-        return 'Установка рекомендуемого набора';
-      case 'onboarding_step_pack_body':
-        return 'Рекомендуемый набор включает японские словари слов, акцентов и частотности, а также базы аудио произношения японского/английского. Загрузите и импортируйте его здесь; импорт заменяет локальные данные, поэтому выполняйте на чистой установке. Изучаете другой язык? Используйте менеджер словарей для импорта собственных словарей.';
+        return 'Рекомендуемый набор';
       case 'onboarding_step_pack_download_action':
         return 'Загрузить и импортировать';
       case 'onboarding_step_pack_import_existing_action':
         return 'Импортировать загруженный набор';
       case 'onboarding_step_pack_pick_action':
-        return 'Выбрать локальный файл набора';
+        return 'Выбрать файл набора';
       case 'onboarding_pack_downloading':
-        return 'Загрузка… можно отменить, продолжится при следующем запуске';
+        return 'Загрузка… можно отменить и продолжить позже';
       case 'onboarding_pack_download_failed':
         return ({required Object message}) => 'Ошибка загрузки: ${message}';
       case 'onboarding_step_extension_title':
         return 'Расширение для браузера';
       case 'onboarding_step_extension_body':
-        return 'Установите расширение-компаньон для поиска слов на любой веб-странице.';
+        return 'Ищите слова на любой веб-странице с помощью расширения-компаньона.';
       case 'onboarding_step_extension_action':
-        return 'Открыть руководство по расширению';
+        return 'Открыть руководство по установке';
       case 'onboarding_step_fonts_title':
-        return 'Шрифты для чтения';
+        return 'Шрифты';
       case 'onboarding_step_fonts_body':
-        return 'Импортируйте пользовательские шрифты и выберите, где их использовать: в интерфейсе, тексте книг или словарях.';
+        return 'Используйте собственные шрифты для интерфейса, текста книг и словаря.';
       case 'settings_section_modules':
         return 'Функциональные модули';
       case 'module_toggle_hint':
@@ -260151,9 +260527,9 @@ extension on _StringsRu {
       case 'module_extension_label':
         return 'Расширение для браузера';
       case 'onboarding_feature_books':
-        return 'Библиотека романов';
+        return 'Романы';
       case 'onboarding_feature_books_hint':
-        return 'Читайте EPUB-романы с поиском по словарю и синхронизацией аудиокниг';
+        return 'Чтение EPUB с поиском по словарю и синхронизацией аудиокниг';
       case 'onboarding_feature_extension_hint':
         return 'Ищите слова на любой веб-странице (только десктоп)';
       case 'video_setting_tap_toggles_playback':
@@ -260509,11 +260885,11 @@ extension on _StringsRu {
       case 'game_session_japanese_locale_hint':
         return 'Игра была запущена с японской локалью (CP932). Если текст отображается неправильно или появляется ошибка скрипта, установите для этой игры японскую локаль в «Никогда».';
       case 'onboarding_anki_intro_body':
-        return 'Anki — это бесплатное приложение для интервального повторения: новые слова становятся карточками, а повторения планируются по кривой забывания. После поиска слова Fushi может превратить его в карточку Anki одним нажатием — со значением, предложением, аудио и скриншотом.';
+        return 'Anki — бесплатное приложение с карточками и интервальным повторением. После поиска Fushi одним нажатием превращает слово в карточку со значением, предложением, аудио и скриншотом.';
       case 'onboarding_anki_setup_desktop_hint':
-        return 'Установите десктопное приложение Anki, затем добавьте аддон AnkiConnect: в Anki откройте Инструменты - Аддоны - Скачать аддон и введите код 2055492159. Держите Anki запущенным при создании карточек.';
+        return 'Установите Anki, добавьте дополнение AnkiConnect (одно нажатие ниже или код дополнения 2055492159) и держите Anki запущенным, пока создаёте карточки.';
       case 'onboarding_anki_setup_ios_hint':
-        return 'При установленном AnkiMobile создание карточек работает сразу. Для полного набора функций подключитесь к Anki на компьютере в той же сети через AnkiConnect.';
+        return 'При установленном AnkiMobile карточки добавляются напрямую. Для полного набора функций подключитесь через AnkiConnect к Anki на компьютере в той же сети.';
       case 'onboarding_anki_backend_label':
         return 'Подключение';
       case 'onboarding_anki_test_action':
@@ -260526,17 +260902,17 @@ extension on _StringsRu {
       case 'onboarding_anki_get_ankidroid_action':
         return 'Скачать AnkiDroid';
       case 'onboarding_anki_mobile_ankiconnect_title':
-        return 'Дополнительно: использовать AnkiConnect на этом устройстве';
+        return 'Дополнительно: использовать AnkiConnect с этого устройства';
       case 'onboarding_anki_mobile_ankiconnect_hint':
-        return 'Это устройство также может создавать карточки в Anki на компьютере в той же сети: включите AnkiConnect в настройках создания карточек и введите адрес компьютера.';
+        return 'Создавайте карточки в Anki на компьютере в той же сети: включите AnkiConnect в настройках создания карточек и введите адрес компьютера.';
       case 'onboarding_anki_setup_android_hint':
-        return 'Установите AnkiDroid и откройте его один раз для первоначальной настройки. Вернувшись в Fushi, нажмите «Разрешить» в диалоге разрешений, который появится при создании первой карточки — настройки AnkiDroid менять не нужно.';
+        return 'Установите AnkiDroid и откройте его один раз. При создании первой карточки нажмите «Разрешить» в диалоге разрешений — больше настраивать нечего.';
       case 'onboarding_anki_install_addon_action':
         return 'Установить аддон AnkiConnect';
       case 'onboarding_anki_addon_installed':
-        return 'AnkiConnect установлен. Запустите (или перезапустите) Anki, затем нажмите «Проверить подключение».';
+        return 'AnkiConnect установлен. Запустите или перезапустите Anki, затем проверьте подключение.';
       case 'onboarding_anki_addon_no_anki':
-        return 'Папка данных Anki не найдена. Установите Anki и откройте его один раз, затем повторите попытку.';
+        return 'Папка данных Anki не найдена. Установите Anki, откройте его один раз и повторите попытку.';
       case 'onboarding_anki_addon_failed':
         return ({required Object message}) => 'Ошибка установки: ${message}';
       case 'game_hook_reason_capability_probe_failed':
@@ -260969,41 +261345,39 @@ extension on _StringsRu {
       case 'onboarding_action_badge_optional':
         return 'По желанию';
       case 'onboarding_pack_action_download_desc':
-        return 'Скачивает весь пакет в фоне, а затем импортирует его. Отменить можно в любой момент; в следующий раз загрузка продолжится с места остановки.';
+        return 'Скачивает в фоне сразу из нескольких источников, затем импортирует. Отменить можно в любой момент; загрузка продолжится с места остановки.';
       case 'onboarding_pack_action_import_existing_desc':
-        return 'Пакет уже скачан; здесь он импортируется. Выберите «Объединить» в окне подтверждения — существующие данные останутся нетронутыми.';
+        return 'Набор уже на диске. Выберите «Объединить» в окне подтверждения, чтобы сохранить существующие данные.';
       case 'onboarding_pack_action_pick_desc':
-        return 'Уже получили zip пакета из другого места? Импортируйте его с диска и полностью пропустите загрузку.';
+        return 'Уже есть zip набора? Импортируйте его с диска и пропустите загрузку.';
       case 'onboarding_pack_action_website':
-        return 'Открыть страницу загрузки на сайте';
+        return 'Открыть страницу загрузки';
       case 'onboarding_pack_action_website_desc':
-        return 'Открывает официальный сайт в браузере. В разделе про пакет есть ссылки на отдельные части, которые можно отдать менеджеру загрузок; затем вернитесь сюда и импортируйте полученное через «Выбрать локальный файл пакета».';
+        return 'Ссылки на части для менеджеров загрузок. Затем вернитесь и выберите «Выбрать файл набора».';
       case 'onboarding_pack_action_dictionary_desc':
-        return 'Учите не японский, а другой язык? Пропустите пакет и импортируйте здесь словари для своего языка.';
+        return 'Учите другой язык? Импортируйте здесь словари для него.';
       case 'onboarding_pack_action_audio_desc':
-        return 'Откуда берётся аудио произношения. Японский и английский пакет уже покрывает; для других языков добавьте здесь онлайн-источники.';
+        return 'Добавьте онлайн-источники произношения для языков, которых нет в наборе.';
       case 'onboarding_anki_action_test_desc':
-        return 'Проверяет, что Fushi может связаться с Anki, и загружает ваши колоды и типы заметок. Пока ничего не создаётся.';
+        return 'Проверяет, что Fushi может связаться с Anki, и загружает ваши колоды и типы заметок. Ничего не создаёт.';
       case 'onboarding_anki_action_refresh_desc':
-        return 'Заново загружает колоды и типы заметок из Anki. Используйте после создания новой колоды в Anki.';
+        return 'Заново загружает колоды и типы заметок. Используйте после создания колоды в Anki.';
       case 'onboarding_anki_action_get_ankidroid_desc':
-        return 'Открывает страницу AnkiDroid в магазине. Fushi записывает карточки именно туда, поэтому его нужно установить первым.';
+        return 'Открывает страницу в магазине. Fushi записывает карточки в AnkiDroid, поэтому его нужно установить первым.';
       case 'onboarding_anki_action_get_anki_desc':
-        return 'Открывает страницу загрузки Anki. Установите Anki и держите его запущенным, пока создаёте карточки.';
+        return 'Открывает страницу загрузки Anki. Держите Anki запущенным, пока создаёте карточки.';
       case 'onboarding_anki_action_install_addon_desc':
-        return 'Распаковывает встроенное дополнение AnkiConnect в Anki — именно через него Fushi общается с Anki. После этого перезапустите Anki.';
+        return 'Распаковывает встроенное дополнение AnkiConnect в Anki. После этого перезапустите Anki.';
       case 'onboarding_step_anki_action_desc':
-        return 'Шаблон карточки, сопоставление полей, скриншоты и аудио — то, как выглядит созданная карточка. Колоды и типа заметки выше уже достаточно, чтобы начать, так что заходите сюда только если хотите изменить, как собираются карточки.';
+        return 'Шаблон, сопоставление полей, скриншоты и аудио. Колоды и типа заметки выше уже достаточно, чтобы начать.';
       case 'onboarding_step_backup_action_desc':
-        return 'Выберите хранилище для резервных копий и войдите в него, чтобы библиотека пережила потерю или замену устройства.';
+        return 'Выберите хранилище и войдите в него или экспортируйте локальный файл резервной копии.';
       case 'onboarding_step_interconnect_action_desc':
-        return 'Связывает это устройство с вашими другими устройствами: одна общая библиотека и синхронный прогресс.';
+        return 'Включите соединение и свяжите это устройство с остальными вашими.';
       case 'onboarding_step_extension_action_desc':
-        return 'Показывает, как установить расширение для браузера и подключить его к Fushi, чтобы искать слова и на веб-страницах.';
+        return 'Показывает, как установить расширение и подключить его к Fushi.';
       case 'onboarding_step_fonts_action_desc':
-        return 'Добавьте свои файлы шрифтов и выберите, какой из них использует каждый язык.';
-      case 'onboarding_pack_sources_hint':
-        return 'Скачивается параллельными частями одновременно с GitHub, официального сайта и резервного зеркала, каждая часть проверяется контрольной суммой. Fushi по ходу измеряет источники и отдаёт больше частей тому, кто быстрее прямо сейчас, поэтому выбирать здесь нечего.';
+        return 'Импортируйте файлы шрифтов и выберите по одному на язык.';
       case 'video_setting_hdr_output':
         return 'Вывод HDR / 10 бит';
       case 'video_setting_hdr_output_hint':
@@ -261105,99 +261479,79 @@ extension on _StringsRu {
         return ({required Object count}) =>
             'Переключиться на встроенный режим и создать карточек из очереди: ${count}';
       case 'onboarding_step_click_lookup_title':
-        return 'Поиск слова по нажатию';
+        return 'Поиск по нажатию';
       case 'onboarding_click_lookup_tap_title':
-        return 'Нажмите на текст';
+        return 'Нажмите на слово';
       case 'onboarding_click_lookup_nested_title':
-        return 'Продолжайте искать во всплывающем окне';
+        return 'Продолжайте искать';
       case 'onboarding_click_lookup_nested_body':
-        return 'Нажмите на другое слово внутри толкования, чтобы открыть следующий уровень поиска. Кнопка «Назад» или нажатие вне окна закрывают один уровень.';
+        return 'Нажмите на слово внутри толкования, чтобы уйти на уровень глубже. Кнопка «Назад» или нажатие вне окна закрывают уровень.';
       case 'onboarding_click_lookup_mine_title':
-        return 'Превратите результат в карточку';
+        return 'Создайте карточку';
       case 'onboarding_click_lookup_mine_body':
-        return 'Если значение подходит, нажмите +, чтобы отправить слово, предложение, аудио и изображение в конструктор карточек.';
+        return 'Нажмите + у словарной статьи, чтобы отправить слово, предложение, аудио и изображение в конструктор карточек.';
       case 'onboarding_step_global_lookup_title':
-        return 'Поиск слов за пределами Fushi';
+        return 'Поиск за пределами Fushi';
       case 'onboarding_global_lookup_windows_body':
-        return 'В Windows выделите текст в другом приложении и вызовите словарь, не переключаясь обратно в Fushi.';
+        return 'Выделите текст в любом приложении и вызовите словарь, не переключая окно.';
       case 'onboarding_global_lookup_windows_select_title':
-        return 'Выделите текст в любом приложении';
-      case 'onboarding_global_lookup_windows_shortcut_title':
-        return 'Нажмите Ctrl+Alt+D';
+        return 'Выделите текст';
       case 'onboarding_global_lookup_windows_shortcut_body':
-        return 'Это глобальное сочетание клавиш по умолчанию. Fushi возьмёт текущее выделение и откроет карточку словаря рядом с курсором.';
+        return 'Fushi возьмёт выделение и откроет карточку словаря рядом с курсором.';
       case 'onboarding_global_lookup_windows_customize_title':
-        return 'При необходимости измените сочетание клавиш';
+        return 'Измените сочетание клавиш';
       case 'onboarding_global_lookup_windows_customize_body':
-        return 'Откройте «Настройки → Сочетания клавиш → Глобальные (вне приложения)» и назначьте другую комбинацию.';
+        return 'Настройки → Сочетания клавиш → Глобальные (вне приложения).';
       case 'onboarding_global_lookup_windows_action':
         return 'Открыть настройки сочетаний клавиш';
       case 'onboarding_global_lookup_windows_action_desc':
-        return 'Позволяет изменить сочетание клавиш для поиска вне приложения. По умолчанию уже работает Ctrl+Alt+D, так что это необязательно.';
+        return 'Только если хотите другую комбинацию клавиш.';
       case 'onboarding_global_lookup_android_body':
-        return 'В Android система передаёт выделенный текст в Fushi через меню выделения или меню «Поделиться». Настраиваемого глобального сочетания клавиш здесь нет.';
+        return 'Android передаёт выделенный текст в Fushi через меню выделения или меню «Поделиться».';
       case 'onboarding_global_lookup_android_select_title':
-        return 'Выделите текст в другом приложении';
+        return 'Выделите текст';
       case 'onboarding_global_lookup_android_open_title':
         return 'Выберите Fushi';
       case 'onboarding_global_lookup_android_open_body':
-        return 'Нажмите Fushi в меню выделения текста. Если его там нет, нажмите «Поделиться» и выберите Fushi в открывшемся меню.';
+        return 'Нажмите Fushi в меню выделения или нажмите «Поделиться» и выберите Fushi.';
       case 'onboarding_global_lookup_android_continue_title':
-        return 'Работайте в отдельном окне';
+        return 'Читайте всплывающее окно';
       case 'onboarding_global_lookup_android_continue_body':
-        return 'Результат поиска откроется отдельно от исходного приложения. В нём можно нажимать на другие слова, а после закрытия вы вернётесь туда, где были.';
+        return 'Окно поиска откроется поверх другого приложения. Закройте его, чтобы вернуться.';
       case 'onboarding_feature_manual_resources':
-        return 'Импортировать словари и аудио вручную';
+        return 'Импорт своих материалов';
       case 'onboarding_feature_manual_resources_hint':
-        return 'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+        return 'Словари, аудиокниги и источники произношения из ваших собственных файлов';
       case 'onboarding_step_manual_resources_title':
-        return 'Подготовьте словари и аудио вручную';
+        return 'Ваши собственные словари и аудио';
       case 'onboarding_step_manual_resources_body':
-        return 'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+        return 'Импортируйте хотя бы один словарь перед уроком по поиску. Аудиокниги и аудио произношения — по желанию.';
       case 'onboarding_manual_dictionary_action':
         return 'Импортировать словарь';
       case 'onboarding_manual_dictionary_action_desc':
-        return 'Откройте менеджер словарей и импортируйте хотя бы один поддерживаемый файл или архив словаря. Уроки по поиску имеют смысл только тогда, когда запрос возвращает толкование.';
+        return 'Открывает менеджер словарей. Поиск начнёт выдавать результаты только после установки словаря.';
       case 'onboarding_manual_audiobook_action':
-        return 'Импортировать книгу с аудиокнигой';
+        return 'Импортировать книгу с аудио';
       case 'onboarding_manual_audiobook_action_desc':
-        return 'Откройте импорт книг и выберите книгу или текст, синхронизированные субтитры и один или несколько аудиофайлов. Без субтитров Fushi не сможет сопоставить аудио с предложениями.';
+        return 'Книга или текст, синхронизированные субтитры и аудиофайлы. Именно субтитры позволяют Fushi сопоставлять аудио с предложениями.';
       case 'onboarding_manual_pronunciation_action':
-        return 'Настроить аудио произношения слов';
+        return 'Настроить аудио произношения';
       case 'onboarding_manual_pronunciation_action_desc':
-        return 'Добавьте локальные или онлайн-источники произношения для словарных статей. Это не то же самое, что аудиокнига, прикреплённая к книге.';
-      case 'onboarding_lookup_verify_action':
-        return 'Проверьте слово в своём словаре';
-      case 'onboarding_lookup_verify_action_desc':
-        return 'Откройте поиск, введите любое слово, которое вы учите, и продолжайте только после того, как установленный словарь вернёт толкование. В уроке нет жёстко заданного слова-примера.';
+        return 'Локальные или онлайн-источники произношения слов в словарных статьях. Это не аудиокниги.';
       case 'onboarding_step_first_anki_card_title':
-        return 'Создайте первую карточку Anki';
-      case 'onboarding_step_first_anki_card_body':
-        return 'Этот шаг появляется только после того, как в этом руководстве вы подключились к Anki и выбрали доступную колоду и тип заметки.';
+        return 'Ваша первая карточка';
       case 'onboarding_first_anki_lookup_title':
-        return 'Начните с реального результата из словаря';
-      case 'onboarding_first_anki_lookup_body':
-        return 'Найдите слово, которое действительно есть в вашем установленном словаре. Никакого фиксированного учебного слова, которого может не оказаться в словаре, здесь нет.';
+        return 'Найдите слово';
       case 'onboarding_first_anki_plus_title':
-        return 'Нажмите плюс у словарной статьи';
+        return 'Нажмите +';
       case 'onboarding_first_anki_plus_body':
-        return 'Плюс открывает конструктор карточек с текущим словом, чтением, значением, предложением, аудио и доступным изображением.';
+        return 'Конструктор карточек откроется с уже заполненными словом, чтением, значением, предложением, аудио и изображением.';
       case 'onboarding_first_anki_save_title':
         return 'Проверьте и сохраните';
       case 'onboarding_first_anki_save_body':
-        return 'Подтвердите колоду, тип заметки и предпросмотр полей, затем сохраните. Откройте Anki и убедитесь, что первая карточка дошла.';
+        return 'Подтвердите колоду и тип заметки, затем сохраните. Откройте Anki, чтобы увидеть карточку.';
       case 'onboarding_first_anki_action':
         return 'Открыть поиск и создать карточку';
-      case 'onboarding_first_anki_action_desc':
-        return 'Возьмите слово с видимым толкованием, нажмите плюс рядом с ним, проверьте поля и сохраните карточку в подключённую колоду Anki.';
-      case 'onboarding_step_click_lookup_body':
-        return 'Сначала проверьте слово, которое действительно есть в установленном словаре. Затем на этом же слове потренируйте поиск нажатием в книгах, в OCR-тексте манги и в субтитрах видео.';
-      case 'onboarding_click_lookup_tap_body':
-        return 'На телефоне нажмите на один символ проверенного слова, на компьютере щёлкните по нему левой кнопкой. Fushi начнёт отсюда и подберёт самое длинное слово.';
-      case 'onboarding_global_lookup_windows_select_body':
-        return 'Выделите то же слово, для которого вы уже убедились, что в словаре есть толкование, и оставьте выделение активным.';
-      case 'onboarding_global_lookup_android_select_body':
-        return 'Нажмите и удерживайте то же проверенное слово, затем растяните маркеры выделения так, чтобы оно попало целиком.';
       case 'game_lookup_attached_title':
         return 'In-game lookup';
       case 'game_lookup_attached_no_ocr':
@@ -261433,6 +261787,56 @@ extension on _StringsRu {
         return 'Игра запущена без японской локали: система уже использует японскую кодовую страницу (CP932), менять ничего не нужно.';
       case 'game_session_japanese_locale_skipped_hint_not_32bit':
         return 'Игра запущена без японской локали: автоматический вердикт считает её нужной, но Locale Emulator поддерживает только 32-битные игры.';
+      case 'onboarding_feature_fonts':
+        return 'Свои шрифты';
+      case 'onboarding_feature_fonts_hint':
+        return 'Используйте собственные шрифты для интерфейса, текста книг и словаря';
+      case 'onboarding_features_modules_title':
+        return 'Страницы библиотеки';
+      case 'onboarding_features_modules_hint':
+        return 'Неотмеченные страницы скрываются из панели навигации. Изменить можно в любой момент: Настройки → Внешний вид.';
+      case 'onboarding_features_setup_title':
+        return 'Настроить далее';
+      case 'onboarding_features_setup_hint':
+        return 'Шаг в этом руководстве появится только у отмеченных пунктов.';
+      case 'onboarding_pack_intro':
+        return 'Японские словари, тональное ударение, частотность слов и аудио произношения JA/EN одной загрузкой. Учите другой язык? Пропустите этот шаг и импортируйте свои словари.';
+      case 'onboarding_global_lookup_windows_select_desc':
+        return 'Выделите слово в любом приложении и оставьте выделение активным.';
+      case 'onboarding_global_lookup_android_select_desc':
+        return 'Нажмите и удерживайте слово в другом приложении, затем растяните маркеры выделения по нему.';
+      case 'onboarding_global_lookup_windows_shortcut_press':
+        return 'Нажмите сочетание клавиш';
+      case 'onboarding_first_anki_card_intro':
+        return 'Anki подключён. Создайте настоящую карточку прямо сейчас, чтобы убедиться, что вся цепочка работает.';
+      case 'onboarding_action_start':
+        return 'Начать работу с Fushi';
+      case 'onboarding_actions_more':
+        return 'Другие способы';
+      case 'onboarding_finish_summary_modules':
+        return 'Показанные страницы библиотеки';
+      case 'onboarding_finish_summary_setup':
+        return 'Пошаговая настройка';
+      case 'onboarding_finish_summary_none':
+        return 'Нет';
+      case 'onboarding_anki_status_pending':
+        return 'Ещё не проверено';
+      case 'onboarding_click_lookup_intro':
+        return 'Нажмите на любое слово в книге, манге или субтитрах, чтобы увидеть его значение. Попробуйте на тренировочном предложении ниже.';
+      case 'onboarding_click_lookup_tap_desc':
+        return 'Нажмите на символ (на компьютере — щелчок левой кнопкой); Fushi возьмёт самое длинное слово, которое начинается с этого места. Предложение откроется на странице поиска.';
+      case 'onboarding_sample_sentence_label':
+        return 'Тренировочное предложение';
+      case 'onboarding_sample_sentence_hint':
+        return 'Нажмите, чтобы открыть его на странице поиска, затем нажмите на любое слово.';
+      case 'onboarding_lookup_practice_action':
+        return 'Потренироваться на этом предложении';
+      case 'onboarding_lookup_practice_desc':
+        return 'Открывает страницу поиска с загруженным предложением. Нажмите там на слово, чтобы увидеть его значение; если ничего не находится, словари ещё не установлены.';
+      case 'onboarding_first_anki_lookup_desc':
+        return 'Откройте тренировочное предложение и нажмите на слово.';
+      case 'onboarding_first_anki_action_desc':
+        return 'Открывает тренировочное предложение на странице поиска. Нажмите на слово, затем на +, проверьте поля и сохраните.';
       default:
         return null;
     }
@@ -268339,97 +268743,89 @@ extension on _StringsTh {
       case 'onboarding_title':
         return 'เริ่มต้นใช้งาน';
       case 'onboarding_welcome_headline':
-        return 'ยินดีต้อนรับ!';
+        return 'ยินดีต้อนรับสู่ Fushi';
       case 'onboarding_feature_anki':
-        return 'แฟลชการ์ด Anki';
+        return 'การ์ด Anki';
       case 'onboarding_feature_anki_hint':
-        return 'เชื่อมต่อ AnkiConnect หรือ AnkiDroid เพื่อสร้างแฟลชการ์ด';
+        return 'เปลี่ยนคำที่ค้นให้เป็นแฟลชการ์ดในแตะเดียว';
       case 'onboarding_feature_backup':
         return 'สำรองข้อมูลและซิงค์';
       case 'onboarding_feature_backup_hint':
-        return 'สำรองข้อมูลของคุณไปยัง Google Drive, WebDAV และแบ็กเอนด์อื่น ๆ';
+        return 'Google Drive, WebDAV หรือไฟล์ในเครื่อง';
       case 'onboarding_feature_interconnect':
         return 'การเชื่อมต่ออุปกรณ์';
       case 'onboarding_feature_interconnect_hint':
-        return 'จับคู่อุปกรณ์บน LAN เพื่อแชร์ไลบรารีและความคืบหน้า';
+        return 'แชร์ไลบรารีและความคืบหน้าระหว่างอุปกรณ์บน LAN';
       case 'onboarding_step_dictionary_action':
         return 'เปิดตัวจัดการพจนานุกรม';
       case 'onboarding_step_anki_title':
         return 'ตั้งค่า Anki';
       case 'onboarding_step_anki_action':
-        return 'เปิดการตั้งค่าการสร้างการ์ด';
+        return 'การตั้งค่าการสร้างการ์ด';
       case 'onboarding_step_backup_title':
-        return 'ตั้งค่าการสำรองข้อมูล';
+        return 'สำรองข้อมูล';
       case 'onboarding_step_backup_body':
-        return 'เลือกแบ็กเอนด์สำรองข้อมูลและลงชื่อเข้าใช้ หรือส่งออกไฟล์สำรองข้อมูลในเครื่อง';
+        return 'เปลี่ยนเครื่องหรือทำอุปกรณ์หาย คลังของคุณก็ยังอยู่';
       case 'onboarding_step_backup_action':
         return 'เปิดการตั้งค่าสำรองข้อมูล';
       case 'onboarding_step_interconnect_title':
-        return 'ตั้งค่าการเชื่อมต่ออุปกรณ์';
+        return 'การเชื่อมต่ออุปกรณ์';
       case 'onboarding_step_interconnect_body':
-        return 'เปิดใช้งานการเชื่อมต่อและจับคู่กับอุปกรณ์อื่นบน LAN เพื่อแชร์ไลบรารี ความคืบหน้า และการค้นคำ';
+        return 'จับคู่อุปกรณ์บน LAN เพื่อใช้คลังเดียวกันและซิงก์ความคืบหน้า';
       case 'onboarding_step_interconnect_action':
         return 'เปิดการตั้งค่าการเชื่อมต่อ';
       case 'onboarding_finish_title':
         return 'พร้อมแล้ว';
       case 'onboarding_finish_body':
-        return 'คุณสามารถกลับมาดูคู่มือนี้ได้ทุกเมื่อจาก การตั้งค่า → ระบบ';
+        return 'คุณเปิดคู่มือนี้อีกครั้งได้ทุกเมื่อจาก การตั้งค่า → ระบบ';
       case 'onboarding_action_next':
         return 'ถัดไป';
-      case 'onboarding_action_finish':
-        return 'เสร็จสิ้น';
       case 'onboarding_action_skip':
         return 'ข้ามไปก่อน';
       case 'onboarding_reopen':
         return 'คู่มือเริ่มต้นใช้งาน';
       case 'onboarding_welcome_body':
-        return 'ตั้งค่าภาษาอินเทอร์เฟซและธีมก่อน ขั้นตอนถัดไปจะแนะนำคุณผ่านส่วนที่เหลือ';
+        return 'เลือกภาษาอินเทอร์เฟซและธีม ขั้นตอนถัดไปจะตั้งค่าส่วนที่เหลือให้';
       case 'onboarding_features_title':
-        return 'เลือกสิ่งที่คุณใช้';
-      case 'onboarding_features_modules_label':
-        return 'แท็บไลบรารี (รายการที่ไม่เลือกจะถูกซ่อนจากแถบนำทาง เปลี่ยนได้ทุกเมื่อในการตั้งค่า)';
-      case 'onboarding_features_setup_label':
-        return 'สิ่งที่จะตั้งค่าถัดไป';
+        return 'คุณจะใช้อะไรบ้าง';
       case 'onboarding_feature_manga':
-        return 'ไลบรารีมังงะ';
+        return 'มังงะ';
       case 'onboarding_feature_manga_hint':
         return 'อ่านมังงะพร้อมการค้นคำด้วย OCR';
       case 'onboarding_feature_video':
-        return 'ไลบรารีวิดีโอ';
+        return 'วิดีโอ';
       case 'onboarding_feature_video_hint':
-        return 'ดูวิดีโอพร้อมการค้นคำจากคำบรรยายและการขุดคำ';
+        return 'ค้นคำจากคำบรรยายและสร้างการ์ด';
       case 'onboarding_feature_games':
-        return 'ไลบรารีเกม';
+        return 'Galgame';
       case 'onboarding_feature_games_hint':
-        return 'เปิดเกมพร้อมการค้นคำจากการ hook ข้อความ (Windows เท่านั้น)';
+        return 'ค้นคำจากการ hook ข้อความขณะเล่น (Windows เท่านั้น)';
       case 'onboarding_feature_pack':
-        return 'แพ็กแนะนำ (พจนานุกรม + เสียง)';
+        return 'แพ็กแนะนำ';
       case 'onboarding_feature_pack_hint':
-        return 'ดาวน์โหลดครั้งเดียวได้พจนานุกรมภาษาญี่ปุ่นพร้อมเสียงออกเสียง JA/EN';
+        return 'พจนานุกรมภาษาญี่ปุ่นพร้อมเสียงออกเสียง JA/EN ในการดาวน์โหลดครั้งเดียว';
       case 'onboarding_step_pack_title':
-        return 'ติดตั้งแพ็กแนะนำ';
-      case 'onboarding_step_pack_body':
-        return 'แพ็กแนะนำรวมพจนานุกรมคำศัพท์ สำเนียง และความถี่ภาษาญี่ปุ่น รวมถึงฐานข้อมูลเสียงออกเสียงภาษาญี่ปุ่น/อังกฤษ ดาวน์โหลดและนำเข้าที่นี่ การนำเข้าจะแทนที่ข้อมูลในเครื่อง ดังนั้นควรรันบนการติดตั้งใหม่ เรียนภาษาอื่น? ใช้ตัวจัดการพจนานุกรมเพื่อนำเข้าพจนานุกรมของคุณเองแทน';
+        return 'แพ็กแนะนำ';
       case 'onboarding_step_pack_download_action':
         return 'ดาวน์โหลดและนำเข้า';
       case 'onboarding_step_pack_import_existing_action':
         return 'นำเข้าแพ็กที่ดาวน์โหลดแล้ว';
       case 'onboarding_step_pack_pick_action':
-        return 'เลือกไฟล์แพ็กในเครื่อง';
+        return 'เลือกไฟล์แพ็ก';
       case 'onboarding_pack_downloading':
-        return 'กำลังดาวน์โหลด… ยกเลิกได้ทุกเมื่อ จะดำเนินการต่อครั้งหน้า';
+        return 'กำลังดาวน์โหลด… ยกเลิกได้ทุกเมื่อและกลับมาโหลดต่อภายหลัง';
       case 'onboarding_pack_download_failed':
         return ({required Object message}) => 'ดาวน์โหลดล้มเหลว: ${message}';
       case 'onboarding_step_extension_title':
         return 'ส่วนขยายเบราว์เซอร์';
       case 'onboarding_step_extension_body':
-        return 'ติดตั้งส่วนขยายเบราว์เซอร์ที่ใช้ร่วมกันเพื่อค้นคำบนหน้าเว็บใด ๆ';
+        return 'ค้นคำบนหน้าเว็บใด ๆ ด้วยส่วนขยายที่ใช้คู่กัน';
       case 'onboarding_step_extension_action':
-        return 'เปิดคู่มือส่วนขยาย';
+        return 'เปิดคู่มือการติดตั้ง';
       case 'onboarding_step_fonts_title':
-        return 'ฟอนต์สำหรับอ่าน';
+        return 'ฟอนต์';
       case 'onboarding_step_fonts_body':
-        return 'นำเข้าฟอนต์กำหนดเองและเลือกว่า UI ข้อความหนังสือ และพจนานุกรมใช้ฟอนต์ใด';
+        return 'ใช้ฟอนต์ของคุณเองกับหน้าจอ ข้อความหนังสือ และพจนานุกรม';
       case 'settings_section_modules':
         return 'โมดูลฟีเจอร์';
       case 'module_toggle_hint':
@@ -268632,9 +269028,9 @@ extension on _StringsTh {
       case 'module_extension_label':
         return 'ส่วนขยายเบราว์เซอร์';
       case 'onboarding_feature_books':
-        return 'ห้องสมุดนิยาย';
+        return 'นิยาย';
       case 'onboarding_feature_books_hint':
-        return 'อ่านนิยาย EPUB พร้อมค้นหาพจนานุกรมและซิงค์หนังสือเสียง';
+        return 'อ่าน EPUB พร้อมค้นคำและซิงค์หนังสือเสียง';
       case 'onboarding_feature_extension_hint':
         return 'ค้นหาคำศัพท์บนเว็บเพจใดก็ได้ (เดสก์ท็อปเท่านั้น)';
       case 'video_setting_tap_toggles_playback':
@@ -268989,11 +269385,11 @@ extension on _StringsTh {
       case 'game_session_japanese_locale_hint':
         return 'เกมถูกเริ่มต้นภายใต้โลแคลภาษาญี่ปุ่น (CP932) หากข้อความดูเพี้ยนหรือเกิดข้อผิดพลาดสคริปต์ ให้ตั้งโลแคลภาษาญี่ปุ่นของเกมนี้เป็น "ไม่ใช้"';
       case 'onboarding_anki_intro_body':
-        return 'Anki เป็นแอปบัตรคำทบทวนแบบเว้นช่วงฟรี: คำศัพท์ใหม่จะกลายเป็นการ์ด และการทบทวนจะถูกกำหนดตามเส้นโค้งการลืม หลังจากค้นหาคำ Fushi สามารถสร้างการ์ด Anki ได้ในแตะเดียว พร้อมความหมาย ประโยค เสียง และภาพหน้าจอ';
+        return 'Anki เป็นแอปบัตรคำทบทวนแบบเว้นช่วงที่ใช้ฟรี หลังค้นคำ Fushi จะเปลี่ยนคำนั้นเป็นการ์ดพร้อมความหมาย ประโยค เสียง และภาพหน้าจอ ในการแตะครั้งเดียว';
       case 'onboarding_anki_setup_desktop_hint':
-        return 'ติดตั้งแอป Anki เดสก์ท็อป จากนั้นเพิ่มส่วนเสริม AnkiConnect: ใน Anki เปิด Tools - Add-ons - Get Add-ons แล้วป้อนรหัส 2055492159 เปิด Anki ไว้ขณะสร้างการ์ด';
+        return 'ติดตั้ง Anki เพิ่มส่วนเสริม AnkiConnect (แตะปุ่มด้านล่างหนึ่งครั้ง หรือใช้รหัสส่วนเสริม 2055492159) แล้วเปิด Anki ค้างไว้ระหว่างสร้างการ์ด';
       case 'onboarding_anki_setup_ios_hint':
-        return 'เมื่อติดตั้ง AnkiMobile แล้ว การเพิ่มการ์ดจะใช้ได้ทันที สำหรับฟีเจอร์ครบถ้วน ให้เชื่อมต่อกับ Anki ที่ทำงานบนคอมพิวเตอร์ในเครือข่ายเดียวกันผ่าน AnkiConnect';
+        return 'ถ้าติดตั้ง AnkiMobile ไว้ การ์ดจะถูกเพิ่มโดยตรง หากต้องการฟีเจอร์ครบถ้วน ให้เชื่อมต่อกับ Anki บนคอมพิวเตอร์ในเครือข่ายเดียวกันผ่าน AnkiConnect';
       case 'onboarding_anki_backend_label':
         return 'การเชื่อมต่อ';
       case 'onboarding_anki_test_action':
@@ -269005,17 +269401,17 @@ extension on _StringsTh {
       case 'onboarding_anki_get_ankidroid_action':
         return 'ดาวน์โหลด AnkiDroid';
       case 'onboarding_anki_mobile_ankiconnect_title':
-        return 'ขั้นสูง: ใช้ AnkiConnect บนอุปกรณ์นี้';
+        return 'ขั้นสูง: ใช้ AnkiConnect จากอุปกรณ์นี้';
       case 'onboarding_anki_mobile_ankiconnect_hint':
-        return 'อุปกรณ์นี้ยังสามารถสร้างการ์ดเข้า Anki ที่ทำงานบนคอมพิวเตอร์ในเครือข่ายเดียวกัน: เปิด AnkiConnect ในการตั้งค่าการสร้างการ์ดแล้วป้อนที่อยู่คอมพิวเตอร์';
+        return 'สร้างการ์ดเข้า Anki ที่ทำงานบนคอมพิวเตอร์ในเครือข่ายเดียวกัน: เปิด AnkiConnect ในการตั้งค่าการสร้างการ์ด แล้วป้อนที่อยู่ของคอมพิวเตอร์';
       case 'onboarding_anki_setup_android_hint':
-        return 'ติดตั้ง AnkiDroid แล้วเปิดครั้งหนึ่งเพื่อเสร็จสิ้นการตั้งค่าครั้งแรก กลับมาที่ Fushi แตะอนุญาตในกล่องโต้ตอบสิทธิ์ที่ปรากฏขึ้นเมื่อสร้างการ์ดแรก ไม่ต้องเปลี่ยนการตั้งค่า AnkiDroid';
+        return 'ติดตั้ง AnkiDroid แล้วเปิดหนึ่งครั้ง ตอนสร้างการ์ดใบแรกให้แตะ อนุญาต ในกล่องขอสิทธิ์ — ไม่มีอะไรต้องตั้งค่าเพิ่ม';
       case 'onboarding_anki_install_addon_action':
         return 'ติดตั้งส่วนเสริม AnkiConnect';
       case 'onboarding_anki_addon_installed':
-        return 'ติดตั้ง AnkiConnect แล้ว เริ่ม (หรือรีสตาร์ท) Anki จากนั้นแตะทดสอบการเชื่อมต่อ';
+        return 'ติดตั้ง AnkiConnect แล้ว เริ่มหรือรีสตาร์ท Anki จากนั้นทดสอบการเชื่อมต่อ';
       case 'onboarding_anki_addon_no_anki':
-        return 'ไม่พบโฟลเดอร์ข้อมูล Anki ติดตั้ง Anki แล้วเปิดครั้งหนึ่ง จากนั้นลองอีกครั้ง';
+        return 'ไม่พบโฟลเดอร์ข้อมูล Anki ติดตั้ง Anki เปิดหนึ่งครั้ง แล้วลองอีกครั้ง';
       case 'onboarding_anki_addon_failed':
         return ({required Object message}) => 'ติดตั้งไม่สำเร็จ: ${message}';
       case 'game_hook_reason_capability_probe_failed':
@@ -269447,41 +269843,39 @@ extension on _StringsTh {
       case 'onboarding_action_badge_optional':
         return 'ไม่บังคับ';
       case 'onboarding_pack_action_download_desc':
-        return 'ดาวน์โหลดแพ็กทั้งชุดในเบื้องหลัง แล้วนำเข้าให้ต่อ ยกเลิกได้ทุกเมื่อ ครั้งถัดไปจะดาวน์โหลดต่อจากจุดที่หยุดไว้';
+        return 'ดาวน์โหลดจากหลายแหล่งพร้อมกันในเบื้องหลัง แล้วนำเข้าให้ต่อ ยกเลิกได้ทุกเมื่อ และจะดาวน์โหลดต่อจากจุดที่หยุดไว้';
       case 'onboarding_pack_action_import_existing_desc':
-        return 'แพ็กดาวน์โหลดไว้แล้ว ปุ่มนี้คือการนำเข้า เลือก «รวมเข้ากับคลังเดิม» ในกล่องยืนยัน แล้วข้อมูลเดิมของคุณจะไม่ถูกแตะต้อง';
+        return 'แพ็กอยู่ในดิสก์แล้ว เลือก «รวมเข้ากับคลังเดิม» ในกล่องยืนยัน เพื่อเก็บข้อมูลเดิมของคุณไว้';
       case 'onboarding_pack_action_pick_desc':
-        return 'ได้ไฟล์ zip ของแพ็กมาจากที่อื่นแล้วหรือ? นำเข้าจากดิสก์ได้เลย ข้ามการดาวน์โหลดทั้งหมด';
+        return 'มีไฟล์ zip ของแพ็กอยู่แล้วหรือ นำเข้าจากดิสก์ได้เลย ข้ามการดาวน์โหลด';
       case 'onboarding_pack_action_website':
-        return 'เปิดหน้าดาวน์โหลดบนเว็บไซต์';
+        return 'เปิดหน้าดาวน์โหลด';
       case 'onboarding_pack_action_website_desc':
-        return 'เปิดเว็บไซต์ทางการในเบราว์เซอร์ ในหัวข้อแพ็กจะมีลิงก์แบบแบ่งส่วนที่ป้อนให้โปรแกรมช่วยดาวน์โหลดได้ เมื่อโหลดเสร็จให้กลับมาที่นี่แล้วใช้ «เลือกไฟล์แพ็กในเครื่อง» เพื่อนำเข้า';
+        return 'ลิงก์แบบแบ่งส่วนสำหรับโปรแกรมช่วยดาวน์โหลด โหลดเสร็จแล้วกลับมาใช้ «เลือกไฟล์แพ็ก»';
       case 'onboarding_pack_action_dictionary_desc':
-        return 'กำลังเรียนภาษาอื่นที่ไม่ใช่ญี่ปุ่นใช่ไหม? ข้ามแพ็กไป แล้วนำเข้าพจนานุกรมของภาษาคุณที่นี่แทน';
+        return 'กำลังเรียนภาษาอื่นอยู่ใช่ไหม นำเข้าพจนานุกรมของภาษานั้นที่นี่แทน';
       case 'onboarding_pack_action_audio_desc':
-        return 'เสียงอ่านออกเสียงมาจากไหน แพ็กครอบคลุมภาษาญี่ปุ่นและอังกฤษอยู่แล้ว ภาษาอื่นให้เพิ่มแหล่งออนไลน์ที่นี่';
+        return 'เพิ่มแหล่งเสียงอ่านออนไลน์สำหรับภาษาที่แพ็กไม่ครอบคลุม';
       case 'onboarding_anki_action_test_desc':
-        return 'ตรวจสอบว่า Fushi ติดต่อ Anki ได้ และโหลดสำรับกับชนิดโน้ตของคุณเข้ามา ขั้นนี้ยังไม่สร้างอะไรทั้งสิ้น';
+        return 'ตรวจสอบว่า Fushi ติดต่อ Anki ได้ และโหลดสำรับกับชนิดโน้ตของคุณ ไม่มีการสร้างอะไรทั้งสิ้น';
       case 'onboarding_anki_action_refresh_desc':
-        return 'โหลดสำรับและชนิดโน้ตจาก Anki ใหม่ ใช้หลังจากสร้างสำรับใหม่ใน Anki';
+        return 'โหลดสำรับและชนิดโน้ตใหม่ ใช้หลังจากสร้างสำรับใน Anki';
       case 'onboarding_anki_action_get_ankidroid_desc':
-        return 'เปิดหน้าร้านค้าของ AnkiDroid เนื่องจาก Fushi เขียนการ์ดลงในนั้น จึงต้องติดตั้งก่อน';
+        return 'เปิดหน้าร้านค้า Fushi เขียนการ์ดลงใน AnkiDroid จึงต้องติดตั้งก่อน';
       case 'onboarding_anki_action_get_anki_desc':
-        return 'เปิดหน้าดาวน์โหลด Anki ติดตั้ง Anki แล้วเปิดค้างไว้ระหว่างสร้างการ์ด';
+        return 'เปิดหน้าดาวน์โหลด Anki เปิด Anki ค้างไว้ระหว่างสร้างการ์ด';
       case 'onboarding_anki_action_install_addon_desc':
-        return 'แตกส่วนเสริม AnkiConnect ที่มาพร้อมโปรแกรมเข้าไปใน Anki ให้คุณ ซึ่งเป็นสิ่งที่ทำให้ Fushi คุยกับ Anki ได้ เสร็จแล้วให้รีสตาร์ท Anki';
+        return 'แตกส่วนเสริม AnkiConnect ที่มาพร้อมโปรแกรมเข้าไปใน Anki เสร็จแล้วให้รีสตาร์ท Anki';
       case 'onboarding_step_anki_action_desc':
-        return 'เทมเพลตการ์ด การจับคู่ฟิลด์ ภาพหน้าจอ และเสียง — ก็คือรายละเอียดว่าการ์ดที่สร้างออกมาหน้าตาเป็นอย่างไร แค่เลือกสำรับกับชนิดโน้ตด้านบนก็เริ่มสร้างการ์ดได้แล้ว จึงเปิดตรงนี้เฉพาะเมื่อต้องการเปลี่ยนวิธีประกอบการ์ด';
+        return 'เทมเพลต การจับคู่ฟิลด์ ภาพหน้าจอ และเสียง แค่สำรับกับชนิดโน้ตด้านบนก็เริ่มได้แล้ว';
       case 'onboarding_step_backup_action_desc':
-        return 'เลือกปลายทางสำรองข้อมูลแล้วลงชื่อเข้าใช้ เพื่อให้คลังของคุณอยู่รอดเมื่อทำอุปกรณ์หายหรือเปลี่ยนเครื่อง';
+        return 'เลือกแบ็กเอนด์แล้วลงชื่อเข้าใช้ หรือส่งออกไฟล์สำรองข้อมูลในเครื่อง';
       case 'onboarding_step_interconnect_action_desc':
-        return 'จับคู่อุปกรณ์นี้กับอุปกรณ์อื่นของคุณ เพื่อใช้คลังเดียวกันและซิงก์ความคืบหน้า';
+        return 'เปิดใช้งานการเชื่อมต่ออุปกรณ์ และจับคู่เครื่องนี้กับเครื่องอื่นของคุณ';
       case 'onboarding_step_extension_action_desc':
-        return 'แสดงวิธีติดตั้งส่วนขยายเบราว์เซอร์และเชื่อมกับ Fushi เพื่อให้เปิดหาคำศัพท์บนหน้าเว็บได้ด้วย';
+        return 'แสดงวิธีติดตั้งส่วนขยายและเชื่อมกับ Fushi';
       case 'onboarding_step_fonts_action_desc':
-        return 'เพิ่มไฟล์ฟอนต์ของคุณเอง แล้วเลือกว่าภาษาไหนใช้ฟอนต์ใด';
-      case 'onboarding_pack_sources_hint':
-        return 'ดาวน์โหลดแบบแบ่งส่วนขนานกันจาก GitHub เว็บไซต์ทางการ และมิเรอร์สำรองพร้อมกัน โดยตรวจสอบค่าแฮชทุกส่วน ระหว่างดาวน์โหลด Fushi จะวัดความเร็วของแต่ละแหล่งจริง แล้วแบ่งส่วนให้แหล่งที่เร็วที่สุดในขณะนั้นมากขึ้น จึงไม่มีอะไรให้เลือกตรงนี้';
+        return 'นำเข้าไฟล์ฟอนต์ แล้วเลือกฟอนต์ให้แต่ละภาษา';
       case 'video_setting_hdr_output':
         return 'เอาต์พุต HDR / 10 บิต';
       case 'video_setting_hdr_output_hint':
@@ -269583,99 +269977,79 @@ extension on _StringsTh {
         return ({required Object count}) =>
             'สลับไปโหมดในตัวเพื่อสร้างการ์ดในคิว ${count} รายการ';
       case 'onboarding_step_click_lookup_title':
-        return 'แตะเพื่อเปิดพจนานุกรม';
+        return 'แตะเพื่อค้นคำ';
       case 'onboarding_click_lookup_tap_title':
-        return 'แตะที่ข้อความ';
+        return 'แตะที่คำหนึ่งคำ';
       case 'onboarding_click_lookup_nested_title':
-        return 'ค้นต่อในหน้าต่างป๊อปอัป';
+        return 'ค้นต่อได้เรื่อย ๆ';
       case 'onboarding_click_lookup_nested_body':
-        return 'แตะคำอื่นในคำแปลเพื่อเปิดการค้นหาอีกชั้นหนึ่ง กดย้อนกลับหรือแตะนอกหน้าต่างเพื่อปิดทีละชั้น';
+        return 'แตะคำในคำแปลเพื่อลงลึกอีกหนึ่งชั้น กดย้อนกลับหรือแตะนอกหน้าต่างเพื่อปิดทีละชั้น';
       case 'onboarding_click_lookup_mine_title':
-        return 'เปลี่ยนผลลัพธ์ให้เป็นการ์ด';
+        return 'สร้างการ์ด';
       case 'onboarding_click_lookup_mine_body':
-        return 'เมื่อความหมายถูกต้องแล้ว แตะ + เพื่อส่งคำ ประโยค เสียง และภาพไปยังตัวสร้างการ์ด';
+        return 'แตะ + ที่รายการคำ เพื่อส่งคำ ประโยค เสียง และภาพไปยังตัวสร้างการ์ด';
       case 'onboarding_step_global_lookup_title':
-        return 'ค้นคำนอกแอป Fushi';
+        return 'ค้นคำนอก Fushi';
       case 'onboarding_global_lookup_windows_body':
-        return 'บน Windows ให้เลือกข้อความในแอปอื่นแล้วเรียกพจนานุกรมขึ้นมาได้เลย โดยไม่ต้องสลับกลับมาที่ Fushi';
+        return 'เลือกข้อความในแอปใดก็ได้ แล้วเรียกพจนานุกรมขึ้นมาโดยไม่ต้องสลับหน้าต่าง';
       case 'onboarding_global_lookup_windows_select_title':
-        return 'เลือกข้อความในแอปใดก็ได้';
-      case 'onboarding_global_lookup_windows_shortcut_title':
-        return 'กด Ctrl+Alt+D';
+        return 'เลือกข้อความ';
       case 'onboarding_global_lookup_windows_shortcut_body':
-        return 'นี่คือปุ่มลัดส่วนกลางค่าเริ่มต้น Fushi จะดึงข้อความที่เลือกอยู่และเปิดการ์ดค้นหาใกล้ ๆ ตัวชี้เมาส์';
+        return 'Fushi จะดึงข้อความที่เลือกและเปิดการ์ดค้นคำข้าง ๆ ตัวชี้เมาส์';
       case 'onboarding_global_lookup_windows_customize_title':
-        return 'เปลี่ยนปุ่มลัดได้ถ้าต้องการ';
+        return 'เปลี่ยนปุ่มลัด';
       case 'onboarding_global_lookup_windows_customize_body':
-        return 'เปิด การตั้งค่า → ปุ่มลัด → ส่วนกลาง (นอกแอป) เพื่อกำหนดคีย์ผสมชุดอื่น';
+        return 'การตั้งค่า → ปุ่มลัด → ส่วนกลาง (นอกแอป)';
       case 'onboarding_global_lookup_windows_action':
         return 'เปิดการตั้งค่าปุ่มลัด';
       case 'onboarding_global_lookup_windows_action_desc':
-        return 'ใช้เปลี่ยนปุ่มลัดสำหรับค้นคำนอกแอป ค่าเริ่มต้น Ctrl+Alt+D ใช้งานได้อยู่แล้ว ขั้นตอนนี้จึงไม่บังคับ';
+        return 'เข้ามาเฉพาะเมื่อต้องการเปลี่ยนคีย์ผสม';
       case 'onboarding_global_lookup_android_body':
-        return 'บน Android ระบบจะส่งข้อความที่เลือกไปให้ Fushi ผ่านเมนูข้อความหรือแผงแชร์ ไม่มีปุ่มลัดส่วนกลางให้ตั้งค่าเอง';
+        return 'Android ส่งข้อความที่เลือกไปให้ Fushi ผ่านเมนูข้อความหรือแผงแชร์';
       case 'onboarding_global_lookup_android_select_title':
-        return 'เลือกข้อความในแอปอื่น';
+        return 'เลือกข้อความ';
       case 'onboarding_global_lookup_android_open_title':
         return 'เลือก Fushi';
       case 'onboarding_global_lookup_android_open_body':
-        return 'แตะ Fushi ในเมนูเลือกข้อความ ถ้าไม่เห็น ให้แตะแชร์แล้วเลือก Fushi จากแผงแชร์';
+        return 'แตะ Fushi ในเมนูเลือกข้อความ หรือแตะแชร์แล้วเลือก Fushi';
       case 'onboarding_global_lookup_android_continue_title':
-        return 'ใช้ป๊อปอัปแยกต่างหาก';
+        return 'อ่านหน้าต่างป๊อปอัป';
       case 'onboarding_global_lookup_android_continue_body':
-        return 'ผลการค้นหาจะเปิดแยกจากแอปต้นทาง คุณแตะคำอื่นในนั้นต่อได้ และเมื่อปิดก็กลับไปยังจุดเดิม';
+        return 'หน้าค้นคำจะเปิดซ้อนอยู่บนแอปอื่น ปิดแล้วก็กลับไปที่เดิม';
       case 'onboarding_feature_manual_resources':
-        return 'นำเข้าพจนานุกรมและไฟล์เสียงเอง';
+        return 'นำเข้าไฟล์ของฉันเอง';
       case 'onboarding_feature_manual_resources_hint':
-        return 'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+        return 'พจนานุกรม หนังสือเสียง และแหล่งเสียงอ่าน จากไฟล์ของคุณเอง';
       case 'onboarding_step_manual_resources_title':
-        return 'เตรียมพจนานุกรมและไฟล์เสียงเอง';
+        return 'พจนานุกรมและไฟล์เสียงของคุณเอง';
       case 'onboarding_step_manual_resources_body':
-        return 'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+        return 'นำเข้าพจนานุกรมอย่างน้อยหนึ่งเล่มก่อนเริ่มบทเรียนการค้นคำ ส่วนหนังสือเสียงและเสียงอ่านเป็นตัวเลือกเสริม';
       case 'onboarding_manual_dictionary_action':
         return 'นำเข้าพจนานุกรม';
       case 'onboarding_manual_dictionary_action_desc':
-        return 'เปิดตัวจัดการพจนานุกรมแล้วนำเข้าไฟล์หรือไฟล์บีบอัดพจนานุกรมที่รองรับอย่างน้อยหนึ่งรายการ บทเรียนการค้นคำจะมีประโยชน์ก็ต่อเมื่อค้นแล้วได้ความหมายจริง';
+        return 'เปิดตัวจัดการพจนานุกรม การค้นคำจะให้ผลลัพธ์ก็ต่อเมื่อติดตั้งพจนานุกรมแล้ว';
       case 'onboarding_manual_audiobook_action':
-        return 'นำเข้าหนังสือพร้อมเสียงหนังสือเสียง';
+        return 'นำเข้าหนังสือพร้อมเสียง';
       case 'onboarding_manual_audiobook_action_desc':
-        return 'เปิดการนำเข้าหนังสือ แล้วเลือกหนังสือหรือข้อความ คำบรรยายที่ตรงกัน และไฟล์เสียงหนึ่งไฟล์ขึ้นไป ต้องมีคำบรรยาย Fushi จึงจะจับคู่เสียงกับประโยคได้';
+        return 'หนังสือหรือข้อความ คำบรรยายที่ตรงกัน และไฟล์เสียง คำบรรยายนี่แหละที่ทำให้ Fushi ซิงค์เสียงกับประโยคได้';
       case 'onboarding_manual_pronunciation_action':
-        return 'ตั้งค่าเสียงอ่านคำศัพท์';
+        return 'ตั้งค่าเสียงอ่าน';
       case 'onboarding_manual_pronunciation_action_desc':
-        return 'เพิ่มแหล่งเสียงอ่านคำในเครื่องหรือออนไลน์ที่รายการในพจนานุกรมใช้ ซึ่งแยกจากเสียงหนังสือเสียงที่แนบกับหนังสือ';
-      case 'onboarding_lookup_verify_action':
-        return 'ตรวจว่าพจนานุกรมมีคำนั้นจริง';
-      case 'onboarding_lookup_verify_action_desc':
-        return 'เปิดหน้าค้นคำ พิมพ์คำที่คุณกำลังเรียนคำไหนก็ได้ แล้วไปต่อเมื่อพจนานุกรมที่ติดตั้งไว้แสดงความหมายออกมา บทเรียนนี้ไม่ได้กำหนดคำตัวอย่างตายตัว';
+        return 'แหล่งเสียงอ่านคำในเครื่องหรือออนไลน์ ที่ใช้กับรายการในพจนานุกรม แยกจากเสียงหนังสือเสียง';
       case 'onboarding_step_first_anki_card_title':
-        return 'สร้างการ์ด Anki ใบแรก';
-      case 'onboarding_step_first_anki_card_body':
-        return 'ขั้นตอนนี้จะปรากฏก็ต่อเมื่อการตั้งค่าครั้งนี้เชื่อมต่อ Anki แล้ว และเลือกเด็คกับชนิดโน้ตที่ใช้งานได้';
+        return 'การ์ดใบแรกของคุณ';
       case 'onboarding_first_anki_lookup_title':
-        return 'เริ่มจากผลลัพธ์จริงในพจนานุกรม';
-      case 'onboarding_first_anki_lookup_body':
-        return 'ค้นคำที่พจนานุกรมซึ่งคุณติดตั้งไว้มีอยู่จริง บทเรียนไม่ได้ใช้คำตัวอย่างตายตัวที่อาจไม่มีในพจนานุกรมของคุณ';
+        return 'ค้นหาคำหนึ่งคำ';
       case 'onboarding_first_anki_plus_title':
-        return 'แตะปุ่มเครื่องหมายบวกบนรายการคำ';
+        return 'แตะ +';
       case 'onboarding_first_anki_plus_body':
-        return 'ปุ่มบวกจะเปิดตัวสร้างการ์ดพร้อมคำปัจจุบัน คำอ่าน ความหมาย ประโยค เสียง และภาพที่มีอยู่';
+        return 'ตัวสร้างการ์ดจะเปิดขึ้นโดยมีคำ คำอ่าน ความหมาย ประโยค เสียง และภาพกรอกไว้ให้แล้ว';
       case 'onboarding_first_anki_save_title':
-        return 'ตรวจทานแล้วบันทึก';
+        return 'ตรวจแล้วบันทึก';
       case 'onboarding_first_anki_save_body':
-        return 'ยืนยันเด็คปลายทาง ชนิดโน้ต และตัวอย่างฟิลด์ แล้วกดบันทึก จากนั้นเปิด Anki เพื่อดูว่าการ์ดใบแรกเข้าไปแล้วจริง';
+        return 'ยืนยันสำรับและชนิดโน้ต แล้วบันทึก เปิด Anki เพื่อดูการ์ดใบนั้น';
       case 'onboarding_first_anki_action':
         return 'เปิดหน้าค้นคำแล้วสร้างการ์ด';
-      case 'onboarding_first_anki_action_desc':
-        return 'เลือกคำที่แสดงความหมายอยู่ แตะปุ่มบวกของคำนั้น ตรวจฟิลด์ต่าง ๆ แล้วบันทึกลงเด็ค Anki ที่เชื่อมต่อไว้';
-      case 'onboarding_step_click_lookup_body':
-        return 'เริ่มจากตรวจว่าพจนานุกรมที่ติดตั้งไว้มีคำนั้นจริง จากนั้นใช้คำเดียวกันฝึกแตะค้นคำในหนังสือ ในข้อความ OCR ของมังงะ และในคำบรรยายวิดีโอ';
-      case 'onboarding_click_lookup_tap_body':
-        return 'บนมือถือให้แตะที่อักษรตัวหนึ่งของคำที่ตรวจแล้ว บนคอมพิวเตอร์ให้คลิกซ้าย Fushi จะเริ่มจากจุดนั้นและจับคู่คำที่ยาวที่สุด';
-      case 'onboarding_global_lookup_windows_select_body':
-        return 'ลากเลือกคำเดิมที่คุณตรวจแล้วว่ามีความหมายในพจนานุกรม และปล่อยให้ยังเลือกค้างไว้';
-      case 'onboarding_global_lookup_android_select_body':
-        return 'แตะค้างที่คำเดิมที่ตรวจแล้ว จากนั้นลากจุดจับเลือกให้ครอบคลุมทั้งคำ';
       case 'game_lookup_attached_title':
         return 'In-game lookup';
       case 'game_lookup_attached_no_ocr':
@@ -269911,6 +270285,56 @@ extension on _StringsTh {
         return 'เกมเริ่มโดยไม่ใช้โลแคลภาษาญี่ปุ่น: ระบบนี้ใช้ code page ภาษาญี่ปุ่น (CP932) อยู่แล้ว ไม่ต้องเปลี่ยนอะไร';
       case 'game_session_japanese_locale_skipped_hint_not_32bit':
         return 'เกมเริ่มโดยไม่ใช้โลแคลภาษาญี่ปุ่น: การตัดสินอัตโนมัติบอกว่าจำเป็น แต่ Locale Emulator รองรับเฉพาะเกม 32 บิต';
+      case 'onboarding_feature_fonts':
+        return 'ฟอนต์กำหนดเอง';
+      case 'onboarding_feature_fonts_hint':
+        return 'ใช้ฟอนต์ของคุณเองกับหน้าจอ ข้อความหนังสือ และพจนานุกรม';
+      case 'onboarding_features_modules_title':
+        return 'หน้าคลัง';
+      case 'onboarding_features_modules_hint':
+        return 'หน้าที่ไม่ได้เลือกจะถูกซ่อนจากแถบนำทาง เปลี่ยนได้ทุกเมื่อที่ การตั้งค่า → รูปลักษณ์';
+      case 'onboarding_features_setup_title':
+        return 'ตั้งค่าต่อไป';
+      case 'onboarding_features_setup_hint':
+        return 'เฉพาะรายการที่เลือกไว้เท่านั้นที่จะมีขั้นตอนในคู่มือนี้';
+      case 'onboarding_pack_intro':
+        return 'พจนานุกรมภาษาญี่ปุ่น เสียงสูงต่ำ ความถี่คำ และเสียงออกเสียง JA/EN ในการดาวน์โหลดครั้งเดียว ถ้าเรียนภาษาอื่น ข้ามขั้นตอนนี้แล้วนำเข้าพจนานุกรมของคุณเองได้เลย';
+      case 'onboarding_global_lookup_windows_select_desc':
+        return 'เลือกคำในแอปใดก็ได้ แล้วปล่อยให้ยังเลือกอยู่';
+      case 'onboarding_global_lookup_android_select_desc':
+        return 'แตะค้างที่คำในแอปอื่น แล้วลากจุดจับให้คลุมทั้งคำ';
+      case 'onboarding_global_lookup_windows_shortcut_press':
+        return 'กดปุ่มลัด';
+      case 'onboarding_first_anki_card_intro':
+        return 'เชื่อมต่อ Anki แล้ว ลองสร้างการ์ดจริงสักใบตอนนี้ เพื่อให้แน่ใจว่าทั้งเส้นทางใช้งานได้';
+      case 'onboarding_action_start':
+        return 'เริ่มใช้ Fushi';
+      case 'onboarding_actions_more':
+        return 'วิธีอื่น';
+      case 'onboarding_finish_summary_modules':
+        return 'หน้าคลังที่แสดง';
+      case 'onboarding_finish_summary_setup':
+        return 'การตั้งค่าแบบมีคำแนะนำ';
+      case 'onboarding_finish_summary_none':
+        return 'ไม่มี';
+      case 'onboarding_anki_status_pending':
+        return 'ยังไม่ได้ทดสอบ';
+      case 'onboarding_click_lookup_intro':
+        return 'แตะคำใดก็ได้ในหนังสือ มังงะ หรือซับไตเติล เพื่อดูความหมาย ลองกับประโยคฝึกด้านล่างได้เลย';
+      case 'onboarding_click_lookup_tap_desc':
+        return 'แตะตัวอักษรหนึ่งตัว (บนคอมพิวเตอร์ให้คลิกซ้าย) แล้ว Fushi จะจับคำที่ยาวที่สุดซึ่งเริ่มจากตรงนั้น ประโยคจะเปิดในหน้าค้นคำ';
+      case 'onboarding_sample_sentence_label':
+        return 'ประโยคฝึก';
+      case 'onboarding_sample_sentence_hint':
+        return 'แตะเพื่อเปิดในหน้าค้นคำ แล้วแตะคำใดก็ได้';
+      case 'onboarding_lookup_practice_action':
+        return 'ฝึกด้วยประโยคนี้';
+      case 'onboarding_lookup_practice_desc':
+        return 'เปิดหน้าค้นคำพร้อมประโยคนี้ แตะคำในนั้นเพื่อดูความหมาย ถ้าไม่ขึ้นอะไรเลย แปลว่ายังไม่ได้ติดตั้งพจนานุกรม';
+      case 'onboarding_first_anki_lookup_desc':
+        return 'เปิดประโยคฝึกแล้วแตะที่คำหนึ่งคำ';
+      case 'onboarding_first_anki_action_desc':
+        return 'เปิดประโยคฝึกในหน้าค้นคำ แตะที่คำหนึ่งคำ แตะ + ตรวจดูข้อมูลในช่องต่าง ๆ แล้วบันทึก';
       default:
         return null;
     }
@@ -276831,35 +277255,35 @@ extension on _StringsTr {
       case 'onboarding_title':
         return 'Başlangıç';
       case 'onboarding_welcome_headline':
-        return 'Hoş geldiniz!';
+        return 'Fushi\'ye hoş geldiniz';
       case 'onboarding_feature_anki':
-        return 'Anki bilgi kartları';
+        return 'Anki kartları';
       case 'onboarding_feature_anki_hint':
-        return 'Bilgi kartları oluşturmak için AnkiConnect veya AnkiDroid bağlayın';
+        return 'Aramalarınızı tek dokunuşla bilgi kartına dönüştürün';
       case 'onboarding_feature_backup':
         return 'Yedekleme ve senkronizasyon';
       case 'onboarding_feature_backup_hint':
-        return 'Verilerinizi Google Drive, WebDAV ve diğer arka uçlara yedekleyin';
+        return 'Google Drive, WebDAV veya yerel bir dosya';
       case 'onboarding_feature_interconnect':
         return 'Cihaz karşılıklı bağlantısı';
       case 'onboarding_feature_interconnect_hint':
-        return 'Kütüphaneleri ve ilerlemeyi paylaşmak için LAN\'daki cihazları eşleştirin';
+        return 'Kütüphaneleri ve ilerlemeyi LAN\'daki cihazlar arasında paylaşın';
       case 'onboarding_step_dictionary_action':
         return 'Sözlük yöneticisini aç';
       case 'onboarding_step_anki_title':
         return 'Anki\'yi kur';
       case 'onboarding_step_anki_action':
-        return 'Kart oluşturma ayarlarını aç';
+        return 'Kart oluşturma ayarları';
       case 'onboarding_step_backup_title':
-        return 'Yedeklemeyi kur';
+        return 'Yedekleme';
       case 'onboarding_step_backup_body':
-        return 'Bir yedekleme arka ucu seçin ve giriş yapın veya yerel bir yedek dosyası dışa aktarın.';
+        return 'Cihaz değiştirdiğinizde veya kaybettiğinizde kitaplığınız güvende kalsın.';
       case 'onboarding_step_backup_action':
         return 'Yedekleme ayarlarını aç';
       case 'onboarding_step_interconnect_title':
-        return 'Karşılıklı bağlantıyı kur';
+        return 'Karşılıklı bağlantı';
       case 'onboarding_step_interconnect_body':
-        return 'Karşılıklı bağlantıyı etkinleştirin ve kütüphaneleri, ilerlemeyi ve aramaları paylaşmak için LAN\'daki diğer cihazlarla eşleştirin.';
+        return 'LAN\'daki cihazları eşleştirerek tek bir kitaplığı paylaşın ve ilerlemeyi eşitleyin.';
       case 'onboarding_step_interconnect_action':
         return 'Karşılıklı bağlantı ayarlarını aç';
       case 'onboarding_finish_title':
@@ -276868,60 +277292,52 @@ extension on _StringsTr {
         return 'Bu rehberi istediğiniz zaman Ayarlar → Sistem\'den yeniden açabilirsiniz.';
       case 'onboarding_action_next':
         return 'İleri';
-      case 'onboarding_action_finish':
-        return 'Bitir';
       case 'onboarding_action_skip':
         return 'Şimdilik atla';
       case 'onboarding_reopen':
         return 'Başlangıç rehberi';
       case 'onboarding_welcome_body':
-        return 'Önce arayüz dilinizi ve temanızı ayarlayın — sonraki adımlar geri kalanında size yol gösterecek.';
+        return 'Arayüz dilinizi ve temanızı seçin. Sonraki birkaç adım gerisini ayarlar.';
       case 'onboarding_features_title':
-        return 'Kullandıklarınızı seçin';
-      case 'onboarding_features_modules_label':
-        return 'Kütüphane sekmeleri (işaretlenmemiş olanlar gezinme çubuğundan gizlenir; Ayarlar\'dan istediğiniz zaman değiştirin)';
-      case 'onboarding_features_setup_label':
-        return 'Sonra ne kurulacak';
+        return 'Neleri kullanacaksınız?';
       case 'onboarding_feature_manga':
-        return 'Manga kütüphanesi';
+        return 'Manga';
       case 'onboarding_feature_manga_hint':
         return 'OCR aramasıyla manga okuyun';
       case 'onboarding_feature_video':
-        return 'Video kütüphanesi';
+        return 'Video';
       case 'onboarding_feature_video_hint':
-        return 'Altyazı araması ve kart oluşturma ile video izleyin';
+        return 'Altyazıda arama ve kart oluşturma';
       case 'onboarding_feature_games':
-        return 'Galgame kütüphanesi';
+        return 'Galgame';
       case 'onboarding_feature_games_hint':
-        return 'Metin yakalama aramasıyla galgame başlatın (yalnızca Windows)';
+        return 'Oynarken metin yakalamayla arama (yalnızca Windows)';
       case 'onboarding_feature_pack':
-        return 'Önerilen paket (sözlükler + ses)';
+        return 'Önerilen paket';
       case 'onboarding_feature_pack_hint':
-        return 'Tek bir indirmeyle Japonca sözlükler ve JA/EN telaffuz seslerini kurun';
+        return 'Japonca sözlükler ve JA/EN telaffuz sesleri tek indirmede';
       case 'onboarding_step_pack_title':
-        return 'Önerilen paketi yükle';
-      case 'onboarding_step_pack_body':
-        return 'Önerilen paket Japonca kelime, aksan ve sıklık sözlüklerini ve Japonca/İngilizce telaffuz ses veritabanlarını içerir. Buradan indirip içe aktarın; içe aktarma yerel verileri değiştirir, bu yüzden temiz kurulumda çalıştırın. Başka bir dil mi öğreniyorsunuz? Kendi sözlüklerinizi içe aktarmak için sözlük yöneticisini kullanın.';
+        return 'Önerilen paket';
       case 'onboarding_step_pack_download_action':
         return 'İndir ve içe aktar';
       case 'onboarding_step_pack_import_existing_action':
         return 'İndirilen paketi içe aktar';
       case 'onboarding_step_pack_pick_action':
-        return 'Yerel paket dosyası seçin';
+        return 'Paket dosyası seç';
       case 'onboarding_pack_downloading':
-        return 'İndiriliyor… istediğiniz zaman iptal edin, sonraki sefere devam eder';
+        return 'İndiriliyor… istediğiniz zaman iptal edin, sonra devam ettirin';
       case 'onboarding_pack_download_failed':
         return ({required Object message}) => 'İndirme başarısız: ${message}';
       case 'onboarding_step_extension_title':
         return 'Tarayıcı eklentisi';
       case 'onboarding_step_extension_body':
-        return 'Herhangi bir web sayfasında kelime aramak için yardımcı tarayıcı eklentisini yükleyin.';
+        return 'Yardımcı uzantıyla herhangi bir web sayfasında kelime arayın.';
       case 'onboarding_step_extension_action':
-        return 'Eklenti rehberini aç';
+        return 'Kurulum rehberini aç';
       case 'onboarding_step_fonts_title':
-        return 'Okuma yazı tipleri';
+        return 'Yazı tipleri';
       case 'onboarding_step_fonts_body':
-        return 'Özel yazı tipleri içe aktarın ve arayüz, kitap metni ve sözlük hangilerini kullanacağını seçin.';
+        return 'Arayüz, kitap metni ve sözlük için kendi yazı tiplerinizi kullanın.';
       case 'settings_section_modules':
         return 'Özellik modülleri';
       case 'module_toggle_hint':
@@ -277124,9 +277540,9 @@ extension on _StringsTr {
       case 'module_extension_label':
         return 'Tarayıcı eklentisi';
       case 'onboarding_feature_books':
-        return 'Roman kütüphanesi';
+        return 'Romanlar';
       case 'onboarding_feature_books_hint':
-        return 'Sözlük araması ve sesli kitap senkronizasyonu ile EPUB romanları okuyun';
+        return 'Kelime araması ve sesli kitap eşitlemesiyle EPUB okuma';
       case 'onboarding_feature_extension_hint':
         return 'Herhangi bir web sayfasında kelime arayın (yalnızca masaüstü)';
       case 'video_setting_tap_toggles_playback':
@@ -277482,11 +277898,11 @@ extension on _StringsTr {
       case 'game_session_japanese_locale_hint':
         return 'Oyun, Japonca (CP932) yerel ayarı altında başlatıldı. Metni bozuk görünüyorsa veya bir betik hatası çıkıyorsa, bu oyunun Japonca yerel ayarını Asla olarak değiştirin.';
       case 'onboarding_anki_intro_body':
-        return 'Anki, ücretsiz bir aralıklı tekrar bilgi kartı uygulamasıdır: yeni kelimeler kart olur ve tekrarlar unutma eğrisine göre planlanır. Bir arama yaptıktan sonra Fushi, kelimeyi anlam, cümle, ses ve ekran görüntüsüyle tek dokunuşla bir Anki kartına dönüştürebilir.';
+        return 'Anki, ücretsiz bir aralıklı tekrar bilgi kartı uygulamasıdır. Bir aramanın ardından Fushi, kelimeyi anlam, cümle, ses ve ekran görüntüsüyle birlikte tek dokunuşta karta dönüştürür.';
       case 'onboarding_anki_setup_desktop_hint':
-        return 'Anki masaüstü uygulamasını yükleyin, ardından AnkiConnect eklentisini ekleyin: Anki\'de Araçlar - Eklentiler - Eklenti Al\'ı açın ve 2055492159 kodunu girin. Kart oluştururken Anki\'yi çalışır durumda tutun.';
+        return 'Anki\'yi yükleyin, AnkiConnect eklentisini ekleyin (aşağıdan tek dokunuşla ya da 2055492159 eklenti koduyla) ve kart oluştururken Anki\'yi açık tutun.';
       case 'onboarding_anki_setup_ios_hint':
-        return 'AnkiMobile yüklüyken kart ekleme kutudan çıktığı gibi çalışır. Tam özellik seti için, aynı ağdaki bir bilgisayarda çalışan Anki\'ye AnkiConnect aracılığıyla bağlanın.';
+        return 'AnkiMobile yüklüyken kartlar doğrudan eklenir. Tam özellik seti için aynı ağdaki bir bilgisayarda çalışan Anki\'ye AnkiConnect üzerinden bağlanın.';
       case 'onboarding_anki_backend_label':
         return 'Bağlantı';
       case 'onboarding_anki_test_action':
@@ -277498,17 +277914,17 @@ extension on _StringsTr {
       case 'onboarding_anki_get_ankidroid_action':
         return 'AnkiDroid\'i edinin';
       case 'onboarding_anki_mobile_ankiconnect_title':
-        return 'Gelişmiş: bu cihazda AnkiConnect kullan';
+        return 'Gelişmiş: AnkiConnect\'i bu cihazdan kullanın';
       case 'onboarding_anki_mobile_ankiconnect_hint':
-        return 'Bu cihaz ayrıca aynı ağdaki bir bilgisayarda çalışan Anki\'ye kart oluşturabilir: kart oluşturma ayarlarında AnkiConnect\'i etkinleştirin ve bilgisayar adresini girin.';
+        return 'Aynı ağdaki bir bilgisayarda çalışan Anki\'ye kart oluşturun: kart oluşturma ayarlarında AnkiConnect\'i etkinleştirin ve bilgisayarın adresini girin.';
       case 'onboarding_anki_setup_android_hint':
-        return 'AnkiDroid\'i yükleyin ve ilk çalıştırma kurulumunu tamamlamak için bir kez açın. Fushi\'ye dönün, ilk kartınızla birlikte açılan izin iletişim kutusunda İzin Ver\'e dokunun - AnkiDroid ayarlarında değişiklik gerekmez.';
+        return 'AnkiDroid\'i yükleyin ve bir kez açın. İlk kartınızda izin penceresinde İzin Ver\'e dokunun — ayarlanacak başka bir şey yok.';
       case 'onboarding_anki_install_addon_action':
         return 'AnkiConnect eklentisini yükle';
       case 'onboarding_anki_addon_installed':
-        return 'AnkiConnect yüklendi. Anki\'yi başlatın (veya yeniden başlatın), ardından Bağlantıyı test et\'e dokunun.';
+        return 'AnkiConnect yüklendi. Anki\'yi başlatın veya yeniden başlatın, ardından bağlantıyı test edin.';
       case 'onboarding_anki_addon_no_anki':
-        return 'Anki veri klasörü bulunamadı. Anki\'yi yükleyin ve bir kez açın, ardından tekrar deneyin.';
+        return 'Anki veri klasörü bulunamadı. Anki\'yi yükleyin, bir kez açın ve tekrar deneyin.';
       case 'onboarding_anki_addon_failed':
         return ({required Object message}) => 'Yükleme başarısız: ${message}';
       case 'game_hook_reason_capability_probe_failed':
@@ -277941,41 +278357,39 @@ extension on _StringsTr {
       case 'onboarding_action_badge_optional':
         return 'İsteğe bağlı';
       case 'onboarding_pack_action_download_desc':
-        return 'Paketin tamamını arka planda indirir, ardından içe aktarır. İstediğin an iptal edebilirsin; bir dahaki sefere kaldığı yerden devam eder.';
+        return 'Arka planda birden çok kaynaktan aynı anda indirir, sonra içe aktarır. İstediğiniz an iptal edin; kaldığı yerden devam eder.';
       case 'onboarding_pack_action_import_existing_desc':
-        return 'Paket zaten indirilmiş durumda; bu onu içe aktarır. Onay penceresinde «Birleştir» seçersen mevcut verilerine dokunulmaz.';
+        return 'Paket zaten diskte. Mevcut verilerinizi korumak için onay penceresinde «Birleştir» seçin.';
       case 'onboarding_pack_action_pick_desc':
-        return 'Paketin zip dosyasını başka bir yerden aldın mı? Diskten içe aktar, indirmeyi tamamen atla.';
+        return 'Paketin zip dosyası zaten sizde mi? Diskten içe aktarın ve indirmeyi atlayın.';
       case 'onboarding_pack_action_website':
-        return 'Sitedeki indirme sayfasını aç';
+        return 'İndirme sayfasını aç';
       case 'onboarding_pack_action_website_desc':
-        return 'Resmî siteyi tarayıcında açar. Paket bölümünde bir indirme yöneticisine verebileceğin parça bağlantıları var; sonra buraya dönüp «Yerel paket dosyası seç» ile indirdiğini içe aktar.';
+        return 'İndirme yöneticileri için parça bağlantıları. Sonra dönüp «Paket dosyası seç» seçeneğini kullanın.';
       case 'onboarding_pack_action_dictionary_desc':
-        return 'Japonca dışında bir dil mi öğreniyorsun? Paketi atla ve burada kendi dilinin sözlüklerini içe aktar.';
+        return 'Başka bir dil mi öğreniyorsunuz? O dilin sözlüklerini bunun yerine buradan içe aktarın.';
       case 'onboarding_pack_action_audio_desc':
-        return 'Telaffuz seslerinin nereden geldiği. Paket Japonca ve İngilizceyi zaten kapsıyor; diğer diller için buradan çevrimiçi kaynak ekle.';
+        return 'Paketin kapsamadığı diller için çevrimiçi telaffuz kaynakları ekleyin.';
       case 'onboarding_anki_action_test_desc':
-        return 'Fushi’nin Anki’ye ulaşıp ulaşamadığını denetler ve destelerinle not türlerini yükler. Henüz hiçbir şey oluşturulmaz.';
+        return 'Fushi\'nin Anki\'ye ulaşıp ulaşamadığını denetler ve destelerinizle not türlerinizi yükler. Hiçbir şey oluşturmaz.';
       case 'onboarding_anki_action_refresh_desc':
-        return 'Desteleri ve not türlerini Anki’den yeniden yükler. Anki içinde yeni bir deste oluşturduktan sonra kullan.';
+        return 'Desteleri ve not türlerini yeniden yükler. Anki\'de bir deste oluşturduktan sonra kullanın.';
       case 'onboarding_anki_action_get_ankidroid_desc':
-        return 'AnkiDroid’in mağaza sayfasını açar. Fushi kartlarını onun içine yazdığı için önce kurulu olması gerekir.';
+        return 'Mağaza sayfasını açar. Fushi kartları AnkiDroid\'e yazar, bu yüzden önce kurulu olmalıdır.';
       case 'onboarding_anki_action_get_anki_desc':
-        return 'Anki’nin indirme sayfasını açar. Anki’yi kur ve kart üretirken açık bırak.';
+        return 'Anki\'nin indirme sayfasını açar. Kart oluştururken Anki\'yi açık bırakın.';
       case 'onboarding_anki_action_install_addon_desc':
-        return 'Birlikte gelen AnkiConnect eklentisini senin için Anki’ye açar; Fushi onunla konuşmasını buna borçlu. Sonrasında Anki’yi yeniden başlat.';
+        return 'Birlikte gelen AnkiConnect eklentisini Anki\'nin içine açar. Sonrasında Anki\'yi yeniden başlatın.';
       case 'onboarding_step_anki_action_desc':
-        return 'Kart şablonu, alan eşlemesi, ekran görüntüleri ve ses: yani üretilen kartın nasıl göründüğünün ayrıntıları. Yukarıdaki deste ve not türü başlamak için yeterli, bu yüzden buraya yalnızca kartların nasıl kurulduğunu değiştirmek istiyorsan gir.';
+        return 'Şablon, alan eşlemesi, ekran görüntüleri ve ses. Yukarıdaki deste ve not türü başlamak için yeterli.';
       case 'onboarding_step_backup_action_desc':
-        return 'Bir yedekleme arka ucu seç ve oturum aç ki kitaplığın cihaz kaybını veya değişimini atlatsın.';
+        return 'Bir arka uç seçip oturum açın ya da yerel bir yedek dosyası dışa aktarın.';
       case 'onboarding_step_interconnect_action_desc':
-        return 'Bu cihazı diğer cihazlarınla eşler; tek bir kitaplığı paylaşır ve ilerlemeyi eşitler.';
+        return 'Karşılıklı bağlantıyı etkinleştirin ve bu cihazı diğerleriyle eşleştirin.';
       case 'onboarding_step_extension_action_desc':
-        return 'Tarayıcı uzantısını nasıl kurup Fushi’ye bağlayacağını gösterir; böylece web sayfalarında da kelime arayabilirsin.';
+        return 'Uzantıyı nasıl kurup Fushi\'ye bağlayacağınızı gösterir.';
       case 'onboarding_step_fonts_action_desc':
-        return 'Kendi yazı tipi dosyalarını ekle ve her dilin hangisini kullanacağını seç.';
-      case 'onboarding_pack_sources_hint':
-        return 'Aynı anda GitHub’dan, resmî siteden ve bir yedek aynadan paralel parçalar hâlinde indirilir; her parça sağlama toplamıyla doğrulanır. Fushi kaynakları yol boyunca ölçer ve o an en hızlı olana daha çok parça verir, bu yüzden burada seçilecek bir şey yok.';
+        return 'Yazı tipi dosyalarını içe aktarın ve her dil için birer tane seçin.';
       case 'video_setting_hdr_output':
         return 'HDR / 10 bit çıkış';
       case 'video_setting_hdr_output_hint':
@@ -278077,99 +278491,79 @@ extension on _StringsTr {
         return ({required Object count}) =>
             '${count} bekleyen kartı oluşturmak için yerleşik moda geç';
       case 'onboarding_step_click_lookup_title':
-        return 'Dokunarak kelime arayın';
+        return 'Dokunarak arayın';
       case 'onboarding_click_lookup_tap_title':
-        return 'Metne dokunun';
+        return 'Bir kelimeye dokunun';
       case 'onboarding_click_lookup_nested_title':
-        return 'Açılır pencerede aramaya devam edin';
+        return 'Keşfetmeye devam edin';
       case 'onboarding_click_lookup_nested_body':
-        return 'Bir anlamın içindeki başka bir kelimeye dokunarak bir alt arama açın. Geri dönerek veya dışarı dokunarak bir seviye kapatın.';
+        return 'Bir anlamın içindeki kelimeye dokunarak bir seviye derine inin. Geri dönerek veya dışarı dokunarak bir seviye kapatın.';
       case 'onboarding_click_lookup_mine_title':
-        return 'Sonucu karta dönüştürün';
+        return 'Kart oluşturun';
       case 'onboarding_click_lookup_mine_body':
-        return 'Anlam doğruysa + düğmesine dokunun; kelime, cümle, ses ve görüntü kart oluşturucuya aktarılır.';
+        return 'Maddedeki + düğmesine dokunun; kelime, cümle, ses ve görüntü kart oluşturucuya gider.';
       case 'onboarding_step_global_lookup_title':
-        return 'Fushi dışındaki metinleri arayın';
+        return 'Fushi dışında arayın';
       case 'onboarding_global_lookup_windows_body':
-        return 'Windows\'ta başka bir uygulamada metni seçin ve Fushi\'ye dönmeden sözlüğü çağırın.';
+        return 'Herhangi bir uygulamada metni seçin ve pencere değiştirmeden sözlüğü çağırın.';
       case 'onboarding_global_lookup_windows_select_title':
-        return 'Herhangi bir uygulamada metin seçin';
-      case 'onboarding_global_lookup_windows_shortcut_title':
-        return 'Ctrl+Alt+D tuşlarına basın';
+        return 'Metin seçin';
       case 'onboarding_global_lookup_windows_shortcut_body':
-        return 'Bu, varsayılan genel kısayoldur. Fushi geçerli seçimi alır ve imlecin yanında bir arama kartı açar.';
+        return 'Fushi seçimi alır ve imlecin yanında bir arama kartı açar.';
       case 'onboarding_global_lookup_windows_customize_title':
-        return 'Gerekirse kısayolu değiştirin';
+        return 'Kısayolu değiştirin';
       case 'onboarding_global_lookup_windows_customize_body':
-        return 'Ayarlar → Kısayollar → Genel (uygulama dışı) bölümünü açıp farklı bir tuş birleşimi atayın.';
+        return 'Ayarlar → Kısayollar → Genel (uygulama dışı).';
       case 'onboarding_global_lookup_windows_action':
         return 'Kısayol ayarlarını aç';
       case 'onboarding_global_lookup_windows_action_desc':
-        return 'Uygulama dışı arama kısayolunu değiştirmenizi sağlar. Varsayılan Ctrl+Alt+D zaten çalıştığı için bu isteğe bağlıdır.';
+        return 'Yalnızca farklı bir tuş birleşimi istiyorsanız.';
       case 'onboarding_global_lookup_android_body':
-        return 'Android\'de seçilen metni Fushi\'ye sistem iletir: metin menüsü veya Paylaş paneli üzerinden. Yeniden atanabilen genel bir kısayol tuşu yoktur.';
+        return 'Android, seçilen metni metin menüsü veya Paylaş paneli üzerinden Fushi\'ye iletir.';
       case 'onboarding_global_lookup_android_select_title':
-        return 'Başka bir uygulamada metin seçin';
+        return 'Metin seçin';
       case 'onboarding_global_lookup_android_open_title':
         return 'Fushi\'yi seçin';
       case 'onboarding_global_lookup_android_open_body':
-        return 'Metin seçim menüsünde Fushi\'ye dokunun. Görünmüyorsa Paylaş\'a dokunup paylaşım panelinden Fushi\'yi seçin.';
+        return 'Seçim menüsünde Fushi\'ye dokunun ya da Paylaş\'a dokunup Fushi\'yi seçin.';
       case 'onboarding_global_lookup_android_continue_title':
-        return 'Bağımsız açılır pencereyi kullanın';
+        return 'Açılır pencereyi okuyun';
       case 'onboarding_global_lookup_android_continue_body':
-        return 'Arama, kaynak uygulamadan ayrı açılır. İçinde başka kelimelere dokunabilir, kapattığınızda kaldığınız yere dönersiniz.';
+        return 'Arama, diğer uygulamanın üzerinde açılır. Geri dönmek için kapatın.';
       case 'onboarding_feature_manual_resources':
-        return 'Sözlükleri ve sesleri elle içe aktar';
+        return 'Kendi kaynaklarımı içe aktar';
       case 'onboarding_feature_manual_resources_hint':
-        return 'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+        return 'Kendi dosyalarınızdan sözlükler, sesli kitaplar ve telaffuz kaynakları';
       case 'onboarding_step_manual_resources_title':
-        return 'Sözlükleri ve sesleri elle hazırlayın';
+        return 'Kendi sözlükleriniz ve sesleriniz';
       case 'onboarding_step_manual_resources_body':
-        return 'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+        return 'Arama eğitiminden önce en az bir sözlük içe aktarın. Sesli kitaplar ve telaffuz sesleri isteğe bağlıdır.';
       case 'onboarding_manual_dictionary_action':
         return 'Sözlük içe aktar';
       case 'onboarding_manual_dictionary_action_desc':
-        return 'Sözlük yöneticisini açıp desteklenen en az bir sözlük dosyası veya arşivi içe aktarın. Arama eğitimleri, ancak bir sorgu anlam döndürdüğünde işe yarar.';
+        return 'Sözlük yönetimini açar. Aramalar ancak bir sözlük kurulduktan sonra sonuç döndürür.';
       case 'onboarding_manual_audiobook_action':
-        return 'Sesli kitap sesiyle birlikte kitap içe aktar';
+        return 'Sesli bir kitap içe aktar';
       case 'onboarding_manual_audiobook_action_desc':
-        return 'Kitap içe aktarmayı açın; kitabı veya metni, eşleşen altyazıları ve bir ya da daha fazla ses dosyasını seçin. Fushi\'nin sesi cümlelerle hizalayabilmesi için altyazı gerekir.';
+        return 'Kitap ya da metin, eşleşen altyazılar ve ses dosyaları. Fushi\'nin sesi cümlelerle eşitleyebilmesini sağlayan şey altyazılardır.';
       case 'onboarding_manual_pronunciation_action':
-        return 'Kelime telaffuz sesini yapılandır';
+        return 'Telaffuz sesini ayarla';
       case 'onboarding_manual_pronunciation_action_desc':
-        return 'Sözlük maddelerinin kullandığı yerel veya çevrimiçi telaffuz kaynaklarını ekleyin. Bu, bir kitaba eklenen sesli kitap sesinden ayrıdır.';
-      case 'onboarding_lookup_verify_action':
-        return 'Sözlüğünüzde bir kelimeyi doğrulayın';
-      case 'onboarding_lookup_verify_action_desc':
-        return 'Aramayı açın, öğrendiğiniz herhangi bir kelimeyi yazın ve yalnızca kurulu sözlük bir anlam döndürdükten sonra devam edin. Eğitimde sabit bir örnek kelime yoktur.';
+        return 'Sözlük maddelerindeki kelime telaffuzu için yerel veya çevrimiçi kaynaklar. Sesli kitap sesinden ayrıdır.';
       case 'onboarding_step_first_anki_card_title':
-        return 'İlk Anki kartınızı oluşturun';
-      case 'onboarding_step_first_anki_card_body':
-        return 'Bu adım yalnızca bu kurulumda Anki\'ye bağlanıldıysa ve kullanılabilir bir deste ile not türü seçildiyse görünür.';
+        return 'İlk kartınız';
       case 'onboarding_first_anki_lookup_title':
-        return 'Gerçek bir sözlük sonucuyla başlayın';
-      case 'onboarding_first_anki_lookup_body':
-        return 'Kurulu sözlüğünüzün gerçekten tanımladığı bir kelimeyi arayın. Sözlüğünüzde bulunmayabilecek sabit bir örnek kelime kullanılmaz.';
+        return 'Bir kelime arayın';
       case 'onboarding_first_anki_plus_title':
-        return 'Maddedeki artı düğmesine dokunun';
+        return '+ düğmesine dokunun';
       case 'onboarding_first_anki_plus_body':
-        return 'Artı düğmesi; geçerli kelime, okunuş, anlam, cümle, ses ve varsa görüntüyle birlikte kart oluşturucuyu açar.';
+        return 'Kart oluşturucu; kelime, okunuş, anlam, cümle, ses ve görüntü doldurulmuş halde açılır.';
       case 'onboarding_first_anki_save_title':
-        return 'Gözden geçirip kaydedin';
+        return 'Kontrol edip kaydedin';
       case 'onboarding_first_anki_save_body':
-        return 'Hedef desteyi, not türünü ve alan önizlemesini onaylayıp kaydedin. İlk kartın ulaştığını görmek için Anki\'yi açın.';
+        return 'Desteyi ve not türünü onaylayıp kaydedin. Kartı görmek için Anki\'yi açın.';
       case 'onboarding_first_anki_action':
         return 'Aramayı aç ve kart oluştur';
-      case 'onboarding_first_anki_action_desc':
-        return 'Anlamı görünen bir kelimeyi seçin, artı düğmesine dokunun, alanları gözden geçirin ve bağlı Anki destesine kaydedin.';
-      case 'onboarding_step_click_lookup_body':
-        return 'Önce kurulu sözlüğünüzün gerçekten tanımladığı bir kelimeyi doğrulayın. Sonra aynı kelimeyle kitaplarda, manga OCR metninde ve video altyazılarında doğrudan aramayı deneyin.';
-      case 'onboarding_click_lookup_tap_body':
-        return 'Telefonda doğruladığınız kelimenin bir karakterine dokunun, bilgisayarda sol tıklayın. Fushi oradan başlar ve en uzun kelimeyi eşleştirir.';
-      case 'onboarding_global_lookup_windows_select_body':
-        return 'Sözlükte anlamı olduğunu doğruladığınız aynı kelimeyi seçin ve seçimi bırakmayın.';
-      case 'onboarding_global_lookup_android_select_body':
-        return 'Doğruladığınız aynı kelimeye uzun basın, sonra seçim tutamaçlarını kelimeyi tamamen kaplayacak şekilde ayarlayın.';
       case 'game_lookup_attached_title':
         return 'In-game lookup';
       case 'game_lookup_attached_no_ocr':
@@ -278404,6 +278798,56 @@ extension on _StringsTr {
         return 'Oyun Japonca yerel ayar olmadan başlatıldı: bu sistem zaten Japonca (CP932) kod sayfasını kullanıyor, değiştirilecek bir şey yok.';
       case 'game_session_japanese_locale_skipped_hint_not_32bit':
         return 'Oyun Japonca yerel ayar olmadan başlatıldı: otomatik karar gerekli diyor ama Locale Emulator yalnızca 32 bit oyunları destekliyor.';
+      case 'onboarding_feature_fonts':
+        return 'Özel yazı tipleri';
+      case 'onboarding_feature_fonts_hint':
+        return 'Arayüz, kitap metni ve sözlük için kendi yazı tiplerinizi kullanın';
+      case 'onboarding_features_modules_title':
+        return 'Kitaplık sayfaları';
+      case 'onboarding_features_modules_hint':
+        return 'İşaretlenmeyen sayfalar gezinme çubuğunda gizlenir. İstediğiniz zaman Ayarlar → Görünüm\'den değiştirebilirsiniz.';
+      case 'onboarding_features_setup_title':
+        return 'Sırada kurulacaklar';
+      case 'onboarding_features_setup_hint':
+        return 'Bu rehberde yalnızca işaretlenen öğeler için bir adım açılır.';
+      case 'onboarding_pack_intro':
+        return 'Japonca sözlükler, vurgu, kelime sıklığı ve JA/EN telaffuz sesleri tek indirmede. Başka bir dil mi öğreniyorsunuz? Bunu atlayıp kendi sözlüklerinizi içe aktarın.';
+      case 'onboarding_global_lookup_windows_select_desc':
+        return 'Herhangi bir uygulamada bir kelimeyi seçin ve seçili bırakın.';
+      case 'onboarding_global_lookup_android_select_desc':
+        return 'Başka bir uygulamada bir kelimeye uzun basın ve tutamaçları kelimeyi kaplayacak şekilde ayarlayın.';
+      case 'onboarding_global_lookup_windows_shortcut_press':
+        return 'Kısayola basın';
+      case 'onboarding_first_anki_card_intro':
+        return 'Anki bağlandı. Tüm yolun çalıştığını görmek için şimdi gerçek bir kart oluşturun.';
+      case 'onboarding_action_start':
+        return 'Fushi\'yi kullanmaya başla';
+      case 'onboarding_actions_more':
+        return 'Diğer yollar';
+      case 'onboarding_finish_summary_modules':
+        return 'Gösterilen kitaplık sayfaları';
+      case 'onboarding_finish_summary_setup':
+        return 'Rehberli kurulum';
+      case 'onboarding_finish_summary_none':
+        return 'Yok';
+      case 'onboarding_anki_status_pending':
+        return 'Henüz test edilmedi';
+      case 'onboarding_click_lookup_intro':
+        return 'Bir kitapta, mangada veya altyazıda herhangi bir kelimeye dokunun, anlamı görünsün. Aşağıdaki alıştırma cümlesinde deneyin.';
+      case 'onboarding_click_lookup_tap_desc':
+        return 'Bir karaktere dokunun (bilgisayarda sol tıklayın); Fushi oradan başlayan en uzun kelimeyi alır. Cümle arama sayfasında açılır.';
+      case 'onboarding_sample_sentence_label':
+        return 'Alıştırma cümlesi';
+      case 'onboarding_sample_sentence_hint':
+        return 'Arama sayfasında açmak için dokunun, sonra herhangi bir kelimeye dokunun.';
+      case 'onboarding_lookup_practice_action':
+        return 'Bu cümleyle alıştırma yap';
+      case 'onboarding_lookup_practice_desc':
+        return 'Cümle yüklenmiş halde arama sayfasını açar. Orada bir kelimeye dokunarak anlamını görün; hiçbir şey gelmiyorsa sözlükleriniz henüz kurulmamıştır.';
+      case 'onboarding_first_anki_lookup_desc':
+        return 'Alıştırma cümlesini açın ve bir kelimeye dokunun.';
+      case 'onboarding_first_anki_action_desc':
+        return 'Alıştırma cümlesini arama sayfasında açar. Bir kelimeye dokunun, + düğmesine dokunun, alanları kontrol edip kaydedin.';
       default:
         return null;
     }
@@ -285318,97 +285762,89 @@ extension on _StringsVi {
       case 'onboarding_title':
         return 'Bắt đầu';
       case 'onboarding_welcome_headline':
-        return 'Chào mừng!';
+        return 'Chào mừng đến với Fushi';
       case 'onboarding_feature_anki':
-        return 'Thẻ ghi nhớ Anki';
+        return 'Thẻ Anki';
       case 'onboarding_feature_anki_hint':
-        return 'Kết nối AnkiConnect hoặc AnkiDroid để tạo thẻ ghi nhớ';
+        return 'Biến kết quả tra từ thành thẻ ghi nhớ chỉ với một chạm';
       case 'onboarding_feature_backup':
         return 'Sao lưu & đồng bộ';
       case 'onboarding_feature_backup_hint':
-        return 'Sao lưu dữ liệu lên Google Drive, WebDAV và các backend khác';
+        return 'Google Drive, WebDAV hoặc một tệp cục bộ';
       case 'onboarding_feature_interconnect':
         return 'Kết nối liên thiết bị';
       case 'onboarding_feature_interconnect_hint':
-        return 'Ghép nối thiết bị trong mạng LAN để chia sẻ thư viện và tiến trình';
+        return 'Chia sẻ thư viện và tiến trình giữa các thiết bị trong mạng LAN';
       case 'onboarding_step_dictionary_action':
         return 'Mở trình quản lý từ điển';
       case 'onboarding_step_anki_title':
         return 'Thiết lập Anki';
       case 'onboarding_step_anki_action':
-        return 'Mở cài đặt tạo thẻ';
+        return 'Cài đặt tạo thẻ';
       case 'onboarding_step_backup_title':
-        return 'Thiết lập sao lưu';
+        return 'Sao lưu';
       case 'onboarding_step_backup_body':
-        return 'Chọn backend sao lưu và đăng nhập, hoặc xuất tệp sao lưu cục bộ.';
+        return 'Giữ an toàn cho thư viện khi bạn đổi máy hoặc mất máy.';
       case 'onboarding_step_backup_action':
         return 'Mở cài đặt sao lưu';
       case 'onboarding_step_interconnect_title':
-        return 'Thiết lập kết nối liên thiết bị';
+        return 'Kết nối liên thiết bị';
       case 'onboarding_step_interconnect_body':
-        return 'Bật kết nối liên thiết bị và ghép nối với các thiết bị khác trong mạng LAN để chia sẻ thư viện, tiến trình và tra cứu.';
+        return 'Ghép nối các thiết bị trong mạng LAN để dùng chung một thư viện và đồng bộ tiến trình.';
       case 'onboarding_step_interconnect_action':
         return 'Mở cài đặt kết nối liên thiết bị';
       case 'onboarding_finish_title':
         return 'Hoàn tất';
       case 'onboarding_finish_body':
-        return 'Bạn có thể xem lại hướng dẫn này bất cứ lúc nào từ Cài đặt → Hệ thống.';
+        return 'Bạn có thể mở lại hướng dẫn này bất cứ lúc nào từ Cài đặt → Hệ thống.';
       case 'onboarding_action_next':
         return 'Tiếp theo';
-      case 'onboarding_action_finish':
-        return 'Hoàn thành';
       case 'onboarding_action_skip':
         return 'Bỏ qua';
       case 'onboarding_reopen':
         return 'Hướng dẫn bắt đầu';
       case 'onboarding_welcome_body':
-        return 'Đặt ngôn ngữ giao diện và giao diện trước — các bước tiếp theo sẽ hướng dẫn bạn phần còn lại.';
+        return 'Chọn ngôn ngữ giao diện và chủ đề sáng/tối. Vài bước tiếp theo sẽ lo phần còn lại.';
       case 'onboarding_features_title':
-        return 'Chọn những gì bạn sử dụng';
-      case 'onboarding_features_modules_label':
-        return 'Tab thư viện (các tab không chọn sẽ bị ẩn khỏi thanh điều hướng; thay đổi bất cứ lúc nào trong Cài đặt)';
-      case 'onboarding_features_setup_label':
-        return 'Thiết lập tiếp theo';
+        return 'Bạn sẽ dùng những gì?';
       case 'onboarding_feature_manga':
-        return 'Thư viện truyện tranh';
+        return 'Truyện tranh';
       case 'onboarding_feature_manga_hint':
         return 'Đọc truyện tranh với tra cứu OCR';
       case 'onboarding_feature_video':
-        return 'Thư viện video';
+        return 'Video';
       case 'onboarding_feature_video_hint':
-        return 'Xem video với tra cứu và tạo thẻ từ phụ đề';
+        return 'Tra từ trên phụ đề và tạo thẻ';
       case 'onboarding_feature_games':
-        return 'Thư viện Galgame';
+        return 'Galgame';
       case 'onboarding_feature_games_hint':
-        return 'Chạy galgame với tra cứu text-hook (chỉ Windows)';
+        return 'Tra từ bằng text-hook ngay khi chơi (chỉ Windows)';
       case 'onboarding_feature_pack':
-        return 'Gói khuyến nghị (từ điển + âm thanh)';
+        return 'Gói khuyến nghị';
       case 'onboarding_feature_pack_hint':
-        return 'Một lần tải thiết lập từ điển tiếng Nhật cùng âm thanh phát âm JA/EN';
+        return 'Từ điển tiếng Nhật cùng âm thanh phát âm JA/EN trong một lần tải';
       case 'onboarding_step_pack_title':
-        return 'Cài đặt gói khuyến nghị';
-      case 'onboarding_step_pack_body':
-        return 'Gói khuyến nghị bao gồm từ điển từ, trọng âm và tần suất tiếng Nhật cùng cơ sở dữ liệu phát âm Nhật/Anh. Tải xuống và nhập tại đây; việc nhập thay thế dữ liệu cục bộ, nên hãy chạy trên bản cài mới. Đang học ngôn ngữ khác? Dùng trình quản lý từ điển để nhập từ điển riêng.';
+        return 'Gói khuyến nghị';
       case 'onboarding_step_pack_download_action':
         return 'Tải xuống và nhập';
       case 'onboarding_step_pack_import_existing_action':
         return 'Nhập gói đã tải';
       case 'onboarding_step_pack_pick_action':
-        return 'Chọn tệp gói cục bộ';
+        return 'Chọn tệp gói';
       case 'onboarding_pack_downloading':
-        return 'Đang tải xuống… hủy bất cứ lúc nào, tiếp tục lần sau';
+        return 'Đang tải xuống… huỷ bất cứ lúc nào và tải tiếp sau';
       case 'onboarding_pack_download_failed':
         return ({required Object message}) => 'Tải xuống thất bại: ${message}';
       case 'onboarding_step_extension_title':
         return 'Tiện ích mở rộng trình duyệt';
       case 'onboarding_step_extension_body':
-        return 'Cài đặt tiện ích mở rộng đồng hành để tra từ trên bất kỳ trang web nào.';
+        return 'Tra từ trên bất kỳ trang web nào bằng tiện ích đồng hành.';
       case 'onboarding_step_extension_action':
-        return 'Mở hướng dẫn tiện ích mở rộng';
+        return 'Mở hướng dẫn cài đặt';
       case 'onboarding_step_fonts_title':
-        return 'Phông chữ đọc sách';
+        return 'Phông chữ';
       case 'onboarding_step_fonts_body':
-        return 'Nhập phông chữ tùy chỉnh và chọn giao diện, văn bản sách và từ điển sử dụng chúng.';
+        return 'Dùng phông chữ của riêng bạn cho giao diện, văn bản sách và từ điển.';
       case 'settings_section_modules':
         return 'Mô-đun tính năng';
       case 'module_toggle_hint':
@@ -285611,9 +286047,9 @@ extension on _StringsVi {
       case 'module_extension_label':
         return 'Tiện ích mở rộng trình duyệt';
       case 'onboarding_feature_books':
-        return 'Thư viện tiểu thuyết';
+        return 'Tiểu thuyết';
       case 'onboarding_feature_books_hint':
-        return 'Đọc tiểu thuyết EPUB với tra từ điển và đồng bộ sách nói';
+        return 'Đọc EPUB kèm tra từ và đồng bộ sách nói';
       case 'onboarding_feature_extension_hint':
         return 'Tra từ trên bất kỳ trang web nào (chỉ trên máy tính)';
       case 'video_setting_tap_toggles_playback':
@@ -285968,11 +286404,11 @@ extension on _StringsVi {
       case 'game_session_japanese_locale_hint':
         return 'Trò chơi được khởi động dưới ngôn ngữ tiếng Nhật (CP932). Nếu văn bản bị lỗi hoặc xuất hiện lỗi kịch bản, hãy đặt ngôn ngữ tiếng Nhật của trò chơi này thành Không bao giờ.';
       case 'onboarding_anki_intro_body':
-        return 'Anki là ứng dụng thẻ ghi nhớ lặp lại cách quãng miễn phí: từ mới trở thành thẻ, và việc ôn tập được lên lịch theo đường cong quên. Sau khi tra cứu, Fushi có thể biến từ đó thành thẻ Anki chỉ với một chạm, kèm nghĩa, câu ví dụ, âm thanh và ảnh chụp màn hình.';
+        return 'Anki là ứng dụng thẻ ghi nhớ lặp lại cách quãng miễn phí. Sau khi tra từ, Fushi biến từ đó thành thẻ kèm nghĩa, câu ví dụ, âm thanh và ảnh chụp màn hình chỉ với một chạm.';
       case 'onboarding_anki_setup_desktop_hint':
-        return 'Cài đặt ứng dụng Anki trên máy tính, sau đó thêm tiện ích AnkiConnect: trong Anki, mở Tools - Add-ons - Get Add-ons và nhập mã 2055492159. Giữ Anki chạy khi tạo thẻ.';
+        return 'Cài Anki, thêm tiện ích AnkiConnect (một chạm ở bên dưới, hoặc mã tiện ích 2055492159), và giữ Anki chạy trong lúc bạn tạo thẻ.';
       case 'onboarding_anki_setup_ios_hint':
-        return 'Với AnkiMobile đã cài đặt, việc thêm thẻ hoạt động ngay. Để có đầy đủ tính năng, kết nối với Anki đang chạy trên máy tính cùng mạng qua AnkiConnect.';
+        return 'Khi đã cài AnkiMobile, thẻ được thêm trực tiếp. Để có đầy đủ tính năng, hãy kết nối qua AnkiConnect tới Anki trên máy tính cùng mạng.';
       case 'onboarding_anki_backend_label':
         return 'Kết nối';
       case 'onboarding_anki_test_action':
@@ -285985,17 +286421,17 @@ extension on _StringsVi {
       case 'onboarding_anki_get_ankidroid_action':
         return 'Tải AnkiDroid';
       case 'onboarding_anki_mobile_ankiconnect_title':
-        return 'Nâng cao: sử dụng AnkiConnect trên thiết bị này';
+        return 'Nâng cao: dùng AnkiConnect từ thiết bị này';
       case 'onboarding_anki_mobile_ankiconnect_hint':
-        return 'Thiết bị này cũng có thể tạo thẻ vào Anki đang chạy trên máy tính cùng mạng: bật AnkiConnect trong cài đặt tạo thẻ và nhập địa chỉ máy tính.';
+        return 'Tạo thẻ vào Anki đang chạy trên máy tính cùng mạng: bật AnkiConnect trong cài đặt tạo thẻ và nhập địa chỉ của máy tính.';
       case 'onboarding_anki_setup_android_hint':
-        return 'Cài đặt AnkiDroid và mở một lần để hoàn tất thiết lập ban đầu. Quay lại Fushi, chạm Cho phép trên hộp thoại quyền xuất hiện khi tạo thẻ đầu tiên - không cần thay đổi cài đặt AnkiDroid.';
+        return 'Cài AnkiDroid và mở một lần. Ở thẻ đầu tiên, chạm Cho phép trong hộp thoại quyền — không phải chỉnh gì thêm.';
       case 'onboarding_anki_install_addon_action':
         return 'Cài đặt tiện ích AnkiConnect';
       case 'onboarding_anki_addon_installed':
-        return 'AnkiConnect đã được cài đặt. Khởi động (hoặc khởi động lại) Anki, sau đó chạm Kiểm tra kết nối.';
+        return 'Đã cài AnkiConnect. Khởi động hoặc khởi động lại Anki, rồi kiểm tra kết nối.';
       case 'onboarding_anki_addon_no_anki':
-        return 'Không tìm thấy thư mục dữ liệu Anki. Cài đặt Anki và mở một lần, sau đó thử lại.';
+        return 'Không tìm thấy thư mục dữ liệu Anki. Cài Anki, mở một lần rồi thử lại.';
       case 'onboarding_anki_addon_failed':
         return ({required Object message}) => 'Cài đặt thất bại: ${message}';
       case 'game_hook_reason_capability_probe_failed':
@@ -286427,41 +286863,39 @@ extension on _StringsVi {
       case 'onboarding_action_badge_optional':
         return 'Tuỳ chọn';
       case 'onboarding_pack_action_download_desc':
-        return 'Tải toàn bộ gói ở chế độ nền rồi nhập vào. Có thể huỷ bất cứ lúc nào; lần sau sẽ tải tiếp từ chỗ đã dừng.';
+        return 'Tải nền từ nhiều nguồn cùng lúc, rồi nhập vào. Có thể huỷ bất cứ lúc nào; sẽ tải tiếp từ chỗ đã dừng.';
       case 'onboarding_pack_action_import_existing_desc':
-        return 'Gói đã tải xong; thao tác này nhập nó vào. Chọn «Gộp» trong hộp xác nhận thì dữ liệu hiện có của bạn sẽ được giữ nguyên.';
+        return 'Gói đã có sẵn trên ổ đĩa. Chọn «Gộp» trong hộp xác nhận để giữ nguyên dữ liệu hiện có.';
       case 'onboarding_pack_action_pick_desc':
-        return 'Đã lấy được tệp zip của gói từ nơi khác? Nhập từ ổ đĩa và bỏ qua hoàn toàn phần tải về.';
+        return 'Đã có tệp zip của gói? Nhập từ ổ đĩa và bỏ qua phần tải về.';
       case 'onboarding_pack_action_website':
-        return 'Mở trang tải về trên website';
+        return 'Mở trang tải về';
       case 'onboarding_pack_action_website_desc':
-        return 'Mở trang chính thức trong trình duyệt. Mục về gói ở đó liệt kê các liên kết theo từng phần để bạn đưa cho trình quản lý tải; xong rồi quay lại đây và dùng «Chọn tệp gói trên máy» để nhập.';
+        return 'Liên kết theo từng phần dành cho trình quản lý tải. Xong rồi quay lại và dùng «Chọn tệp gói».';
       case 'onboarding_pack_action_dictionary_desc':
-        return 'Bạn học ngôn ngữ khác ngoài tiếng Nhật? Bỏ qua gói và nhập từ điển cho ngôn ngữ của bạn ở đây.';
+        return 'Bạn học ngôn ngữ khác? Hãy nhập từ điển cho ngôn ngữ đó ở đây.';
       case 'onboarding_pack_action_audio_desc':
-        return 'Âm thanh phát âm lấy từ đâu. Gói đã bao gồm tiếng Nhật và tiếng Anh; các ngôn ngữ khác thì thêm nguồn trực tuyến ở đây.';
+        return 'Thêm nguồn phát âm trực tuyến cho những ngôn ngữ mà gói không bao gồm.';
       case 'onboarding_anki_action_test_desc':
-        return 'Kiểm tra xem Fushi có kết nối được với Anki không và nạp các bộ thẻ cùng loại ghi chú của bạn. Chưa tạo ra thứ gì cả.';
+        return 'Kiểm tra xem Fushi có kết nối được với Anki không và nạp các bộ thẻ cùng loại ghi chú của bạn. Không tạo ra gì cả.';
       case 'onboarding_anki_action_refresh_desc':
-        return 'Nạp lại bộ thẻ và loại ghi chú từ Anki. Dùng sau khi bạn tạo bộ thẻ mới trong Anki.';
+        return 'Nạp lại bộ thẻ và loại ghi chú. Dùng sau khi bạn tạo bộ thẻ trong Anki.';
       case 'onboarding_anki_action_get_ankidroid_desc':
-        return 'Mở trang cửa hàng của AnkiDroid. Fushi ghi thẻ vào đó nên phải cài nó trước.';
+        return 'Mở trang cửa hàng. Fushi ghi thẻ vào AnkiDroid nên phải cài nó trước.';
       case 'onboarding_anki_action_get_anki_desc':
-        return 'Mở trang tải Anki. Cài Anki và để nó chạy trong lúc bạn tạo thẻ.';
+        return 'Mở trang tải Anki. Hãy để Anki chạy trong lúc bạn tạo thẻ.';
       case 'onboarding_anki_action_install_addon_desc':
-        return 'Giải nén tiện ích AnkiConnect đi kèm vào Anki giúp bạn — đó chính là thứ cho phép Fushi nói chuyện với Anki. Xong rồi khởi động lại Anki.';
+        return 'Giải nén tiện ích AnkiConnect đi kèm vào Anki. Xong rồi khởi động lại Anki.';
       case 'onboarding_step_anki_action_desc':
-        return 'Mẫu thẻ, ánh xạ trường, ảnh chụp màn hình và âm thanh: tức là chi tiết về hình hài của tấm thẻ được tạo ra. Bộ thẻ và loại ghi chú ở trên là đủ để bắt đầu, nên chỉ mở phần này khi bạn muốn đổi cách dựng thẻ.';
+        return 'Mẫu thẻ, ánh xạ trường, ảnh chụp màn hình và âm thanh. Bộ thẻ và loại ghi chú ở trên là đủ để bắt đầu.';
       case 'onboarding_step_backup_action_desc':
-        return 'Chọn nơi sao lưu và đăng nhập, để thư viện của bạn sống sót khi mất máy hoặc đổi máy.';
+        return 'Chọn backend và đăng nhập, hoặc xuất một tệp sao lưu cục bộ.';
       case 'onboarding_step_interconnect_action_desc':
-        return 'Ghép nối thiết bị này với các thiết bị khác của bạn để dùng chung một thư viện và đồng bộ tiến độ.';
+        return 'Bật kết nối liên thiết bị và ghép nối máy này với các máy khác của bạn.';
       case 'onboarding_step_extension_action_desc':
-        return 'Hướng dẫn cách cài tiện ích trình duyệt và kết nối nó với Fushi, để bạn tra từ ngay trên trang web.';
+        return 'Hướng dẫn cách cài tiện ích và kết nối nó với Fushi.';
       case 'onboarding_step_fonts_action_desc':
-        return 'Thêm tệp phông chữ của riêng bạn và chọn phông cho từng ngôn ngữ.';
-      case 'onboarding_pack_sources_hint':
-        return 'Được tải song song theo từng phần, đồng thời từ GitHub, trang chính thức và một máy chủ gương dự phòng, mỗi phần đều được kiểm tra checksum. Fushi đo tốc độ các nguồn ngay trong lúc tải và giao nhiều phần hơn cho nguồn đang nhanh nhất, nên ở đây không có gì để chọn.';
+        return 'Nhập tệp phông chữ và chọn một phông cho mỗi ngôn ngữ.';
       case 'video_setting_hdr_output':
         return 'Đầu ra HDR / 10 bit';
       case 'video_setting_hdr_output_hint':
@@ -286563,99 +286997,79 @@ extension on _StringsVi {
         return ({required Object count}) =>
             'Chuyển sang chế độ tích hợp để tạo ${count} thẻ đang chờ';
       case 'onboarding_step_click_lookup_title':
-        return 'Chạm để tra từ';
+        return 'Chạm để tra';
       case 'onboarding_click_lookup_tap_title':
-        return 'Chạm vào văn bản';
+        return 'Chạm vào một từ';
       case 'onboarding_click_lookup_nested_title':
-        return 'Tra tiếp ngay trong cửa sổ';
+        return 'Tra tiếp';
       case 'onboarding_click_lookup_nested_body':
-        return 'Chạm vào một từ khác trong phần nghĩa để mở thêm một lớp tra từ. Nhấn quay lại hoặc chạm ra ngoài để đóng bớt một lớp.';
+        return 'Chạm vào một từ trong phần nghĩa để đi sâu thêm một lớp. Nhấn quay lại hoặc chạm ra ngoài để đóng bớt một lớp.';
       case 'onboarding_click_lookup_mine_title':
-        return 'Biến kết quả thành thẻ';
+        return 'Tạo một thẻ';
       case 'onboarding_click_lookup_mine_body':
-        return 'Khi nghĩa đã đúng, chạm + để gửi từ, câu, âm thanh và hình ảnh sang trình tạo thẻ.';
+        return 'Chạm + trên mục từ để gửi từ, câu, âm thanh và hình ảnh sang trình tạo thẻ.';
       case 'onboarding_step_global_lookup_title':
-        return 'Tra từ bên ngoài Fushi';
+        return 'Tra bên ngoài Fushi';
       case 'onboarding_global_lookup_windows_body':
-        return 'Trên Windows, hãy bôi đen văn bản trong ứng dụng khác rồi gọi từ điển mà không cần quay lại Fushi.';
+        return 'Bôi đen văn bản trong ứng dụng bất kỳ và gọi từ điển mà không cần chuyển cửa sổ.';
       case 'onboarding_global_lookup_windows_select_title':
-        return 'Chọn văn bản trong bất kỳ ứng dụng nào';
-      case 'onboarding_global_lookup_windows_shortcut_title':
-        return 'Nhấn Ctrl+Alt+D';
+        return 'Chọn văn bản';
       case 'onboarding_global_lookup_windows_shortcut_body':
-        return 'Đây là phím tắt toàn cục mặc định. Fushi lấy phần văn bản đang chọn và mở thẻ tra từ ngay cạnh con trỏ.';
+        return 'Fushi lấy phần đang chọn và mở thẻ tra từ ngay cạnh con trỏ.';
       case 'onboarding_global_lookup_windows_customize_title':
-        return 'Đổi phím tắt nếu cần';
+        return 'Đổi phím tắt';
       case 'onboarding_global_lookup_windows_customize_body':
-        return 'Mở Cài đặt → Phím tắt → Toàn cục (ngoài ứng dụng) để gán tổ hợp phím khác.';
+        return 'Cài đặt → Phím tắt → Toàn cục (ngoài ứng dụng).';
       case 'onboarding_global_lookup_windows_action':
         return 'Mở cài đặt phím tắt';
       case 'onboarding_global_lookup_windows_action_desc':
-        return 'Cho phép đổi phím tắt tra từ ngoài ứng dụng. Mặc định Ctrl+Alt+D vốn đã dùng được nên bước này không bắt buộc.';
+        return 'Chỉ khi bạn muốn một tổ hợp phím khác.';
       case 'onboarding_global_lookup_android_body':
-        return 'Trên Android, hệ thống chuyển văn bản đang chọn sang Fushi qua menu văn bản hoặc bảng Chia sẻ. Ở đây không có phím tắt toàn cục để tuỳ chỉnh.';
+        return 'Android chuyển văn bản đang chọn sang Fushi qua menu văn bản hoặc bảng Chia sẻ.';
       case 'onboarding_global_lookup_android_select_title':
-        return 'Chọn văn bản trong ứng dụng khác';
+        return 'Chọn văn bản';
       case 'onboarding_global_lookup_android_open_title':
         return 'Chọn Fushi';
       case 'onboarding_global_lookup_android_open_body':
-        return 'Chạm Fushi trong menu chọn văn bản. Nếu không thấy, hãy chạm Chia sẻ rồi chọn Fushi trong bảng chia sẻ.';
+        return 'Chạm Fushi trong menu chọn, hoặc chạm Chia sẻ rồi chọn Fushi.';
       case 'onboarding_global_lookup_android_continue_title':
-        return 'Dùng cửa sổ tra từ riêng';
+        return 'Đọc cửa sổ tra từ';
       case 'onboarding_global_lookup_android_continue_body':
-        return 'Kết quả tra từ mở tách khỏi ứng dụng gốc. Bạn có thể chạm tiếp các từ khác trong đó, đóng lại là quay về chỗ cũ.';
+        return 'Cửa sổ tra từ mở đè lên ứng dụng kia. Đóng lại là quay về.';
       case 'onboarding_feature_manual_resources':
-        return 'Nhập từ điển và âm thanh thủ công';
+        return 'Nhập tài nguyên của tôi';
       case 'onboarding_feature_manual_resources_hint':
-        return 'Supplement the recommended pack, or import your own dictionaries, audiobooks, and pronunciation sources';
+        return 'Từ điển, sách nói và nguồn phát âm từ tệp của chính bạn';
       case 'onboarding_step_manual_resources_title':
-        return 'Chuẩn bị từ điển và âm thanh thủ công';
+        return 'Từ điển và âm thanh của riêng bạn';
       case 'onboarding_step_manual_resources_body':
-        return 'Use this alongside the recommended pack or on its own. Import at least one dictionary before the lookup tutorial; audiobook and pronunciation audio are optional supplements.';
+        return 'Hãy nhập ít nhất một từ điển trước phần hướng dẫn tra từ. Sách nói và âm thanh phát âm là tuỳ chọn.';
       case 'onboarding_manual_dictionary_action':
         return 'Nhập một từ điển';
       case 'onboarding_manual_dictionary_action_desc':
-        return 'Mở trình quản lý từ điển và nhập ít nhất một tệp hoặc kho từ điển được hỗ trợ. Các hướng dẫn tra từ chỉ có ích khi tra ra được nghĩa.';
+        return 'Mở trình quản lý từ điển. Tra từ chỉ ra kết quả sau khi đã cài từ điển.';
       case 'onboarding_manual_audiobook_action':
-        return 'Nhập sách kèm âm thanh sách nói';
+        return 'Nhập sách kèm âm thanh';
       case 'onboarding_manual_audiobook_action_desc':
-        return 'Mở phần nhập sách và chọn sách hoặc văn bản, phụ đề đã khớp, cùng một hay nhiều tệp âm thanh. Phải có phụ đề thì Fushi mới khớp được âm thanh theo từng câu.';
+        return 'Sách hoặc văn bản, phụ đề đã khớp và các tệp âm thanh. Chính phụ đề mới giúp Fushi đồng bộ âm thanh theo từng câu.';
       case 'onboarding_manual_pronunciation_action':
-        return 'Thiết lập âm thanh phát âm của từ';
+        return 'Thiết lập âm thanh phát âm';
       case 'onboarding_manual_pronunciation_action_desc':
-        return 'Thêm nguồn phát âm cục bộ hoặc trực tuyến dùng cho các mục từ điển. Việc này tách biệt với âm thanh sách nói gắn kèm một cuốn sách.';
-      case 'onboarding_lookup_verify_action':
-        return 'Kiểm tra một từ trong từ điển của bạn';
-      case 'onboarding_lookup_verify_action_desc':
-        return 'Mở tra từ, nhập bất kỳ từ nào bạn đang học, và chỉ đi tiếp khi từ điển đã cài trả về nghĩa. Hướng dẫn không cố định sẵn từ mẫu nào.';
+        return 'Nguồn phát âm cục bộ hoặc trực tuyến cho các mục từ điển. Tách biệt với âm thanh sách nói.';
       case 'onboarding_step_first_anki_card_title':
-        return 'Tạo thẻ Anki đầu tiên';
-      case 'onboarding_step_first_anki_card_body':
-        return 'Bước này chỉ hiện ra khi lần thiết lập này đã kết nối Anki và đã chọn được bộ thẻ cùng loại ghi chú dùng được.';
+        return 'Thẻ đầu tiên của bạn';
       case 'onboarding_first_anki_lookup_title':
-        return 'Bắt đầu từ một kết quả từ điển thật';
-      case 'onboarding_first_anki_lookup_body':
-        return 'Hãy tra một từ mà từ điển bạn đã cài thực sự có. Không có từ mẫu cố định nào có thể bị thiếu trong từ điển của bạn.';
+        return 'Tra một từ';
       case 'onboarding_first_anki_plus_title':
-        return 'Chạm nút dấu cộng trên mục từ';
+        return 'Chạm +';
       case 'onboarding_first_anki_plus_body':
-        return 'Nút dấu cộng mở trình tạo thẻ kèm sẵn từ hiện tại, cách đọc, nghĩa, câu, âm thanh và hình ảnh đang có.';
+        return 'Trình tạo thẻ mở ra với từ, cách đọc, nghĩa, câu, âm thanh và hình ảnh đã điền sẵn.';
       case 'onboarding_first_anki_save_title':
         return 'Kiểm tra rồi lưu';
       case 'onboarding_first_anki_save_body':
-        return 'Xác nhận bộ thẻ đích, loại ghi chú và bản xem trước các trường, rồi lưu. Mở Anki để kiểm tra thẻ đầu tiên đã vào chưa.';
+        return 'Xác nhận bộ thẻ và loại ghi chú rồi lưu. Mở Anki để xem thẻ.';
       case 'onboarding_first_anki_action':
         return 'Mở tra từ và tạo thẻ';
-      case 'onboarding_first_anki_action_desc':
-        return 'Chọn một từ đang hiện nghĩa, chạm nút dấu cộng, kiểm tra các trường rồi lưu vào bộ thẻ Anki đã kết nối.';
-      case 'onboarding_step_click_lookup_body':
-        return 'Trước hết hãy kiểm tra một từ mà từ điển đã cài thực sự có nghĩa. Sau đó dùng chính từ đó để tập tra trực tiếp trong sách, trong chữ OCR của manga và trong phụ đề video.';
-      case 'onboarding_click_lookup_tap_body':
-        return 'Trên điện thoại, chạm vào một ký tự của từ vừa kiểm tra; trên máy tính thì nhấp chuột trái. Fushi bắt đầu từ đó và khớp với từ dài nhất.';
-      case 'onboarding_global_lookup_windows_select_body':
-        return 'Bôi đen đúng từ mà bạn đã kiểm tra là có nghĩa trong từ điển, và giữ nguyên vùng chọn.';
-      case 'onboarding_global_lookup_android_select_body':
-        return 'Nhấn giữ đúng từ đã kiểm tra đó, rồi kéo các tay nắm vùng chọn để phủ hết từ.';
       case 'game_lookup_attached_title':
         return 'In-game lookup';
       case 'game_lookup_attached_no_ocr':
@@ -286891,6 +287305,56 @@ extension on _StringsVi {
         return 'Game được khởi động không dùng ngôn ngữ hệ thống tiếng Nhật: hệ thống này đã dùng code page tiếng Nhật (CP932), không cần thay đổi.';
       case 'game_session_japanese_locale_skipped_hint_not_32bit':
         return 'Game được khởi động không dùng ngôn ngữ hệ thống tiếng Nhật: phán đoán tự động cho là cần, nhưng Locale Emulator chỉ hỗ trợ game 32-bit.';
+      case 'onboarding_feature_fonts':
+        return 'Phông chữ tùy chỉnh';
+      case 'onboarding_feature_fonts_hint':
+        return 'Dùng phông chữ của riêng bạn cho giao diện, văn bản sách và từ điển';
+      case 'onboarding_features_modules_title':
+        return 'Trang thư viện';
+      case 'onboarding_features_modules_hint':
+        return 'Những trang không đánh dấu sẽ bị ẩn khỏi thanh điều hướng. Đổi lại bất cứ lúc nào ở Cài đặt → Giao diện.';
+      case 'onboarding_features_setup_title':
+        return 'Thiết lập tiếp theo';
+      case 'onboarding_features_setup_hint':
+        return 'Chỉ những mục được đánh dấu mới có bước riêng trong hướng dẫn này.';
+      case 'onboarding_pack_intro':
+        return 'Từ điển tiếng Nhật, thanh điệu, tần suất từ và âm thanh phát âm JA/EN trong một lần tải. Bạn học ngôn ngữ khác? Hãy bỏ qua bước này và tự nhập từ điển của mình.';
+      case 'onboarding_global_lookup_windows_select_desc':
+        return 'Bôi đen một từ trong ứng dụng bất kỳ và giữ nguyên vùng chọn.';
+      case 'onboarding_global_lookup_android_select_desc':
+        return 'Nhấn giữ một từ trong ứng dụng khác rồi kéo các tay cầm để phủ hết từ đó.';
+      case 'onboarding_global_lookup_windows_shortcut_press':
+        return 'Nhấn phím tắt';
+      case 'onboarding_first_anki_card_intro':
+        return 'Anki đã kết nối. Hãy tạo một thẻ thật ngay bây giờ để chắc chắn cả quy trình chạy được.';
+      case 'onboarding_action_start':
+        return 'Bắt đầu dùng Fushi';
+      case 'onboarding_actions_more':
+        return 'Cách khác';
+      case 'onboarding_finish_summary_modules':
+        return 'Trang thư viện hiển thị';
+      case 'onboarding_finish_summary_setup':
+        return 'Thiết lập có hướng dẫn';
+      case 'onboarding_finish_summary_none':
+        return 'Không có';
+      case 'onboarding_anki_status_pending':
+        return 'Chưa kiểm tra';
+      case 'onboarding_click_lookup_intro':
+        return 'Chạm vào bất kỳ từ nào trong sách, truyện tranh hay phụ đề để xem nghĩa. Thử ngay với câu luyện tập bên dưới.';
+      case 'onboarding_click_lookup_tap_desc':
+        return 'Chạm vào một ký tự (trên máy tính thì nhấp chuột trái); Fushi lấy từ dài nhất bắt đầu từ đó. Câu sẽ mở trong trang tra từ.';
+      case 'onboarding_sample_sentence_label':
+        return 'Câu luyện tập';
+      case 'onboarding_sample_sentence_hint':
+        return 'Chạm để mở trong trang tra từ, rồi chạm vào một từ bất kỳ.';
+      case 'onboarding_lookup_practice_action':
+        return 'Luyện tập với câu này';
+      case 'onboarding_lookup_practice_desc':
+        return 'Mở trang tra từ với câu đã được nạp sẵn. Chạm vào một từ ở đó để xem nghĩa; nếu không ra gì thì từ điển của bạn chưa được cài.';
+      case 'onboarding_first_anki_lookup_desc':
+        return 'Mở câu luyện tập rồi chạm vào một từ.';
+      case 'onboarding_first_anki_action_desc':
+        return 'Mở câu luyện tập trong trang tra từ. Chạm vào một từ, chạm +, kiểm tra các trường rồi lưu.';
       default:
         return null;
     }
@@ -293744,77 +294208,69 @@ extension on _StringsZhCn {
       case 'onboarding_title':
         return '新手引导';
       case 'onboarding_welcome_headline':
-        return '欢迎使用！';
+        return '欢迎使用 Fushi';
       case 'onboarding_feature_anki':
         return 'Anki 制卡';
       case 'onboarding_feature_anki_hint':
-        return '连接 AnkiConnect / AnkiDroid，查词一键制卡';
+        return '查词后一键做成卡片';
       case 'onboarding_feature_backup':
         return '备份与同步';
       case 'onboarding_feature_backup_hint':
-        return '把数据备份到 Google Drive、WebDAV 等后端';
+        return 'Google Drive、WebDAV 或本地文件';
       case 'onboarding_feature_interconnect':
         return '设备互联';
       case 'onboarding_feature_interconnect_hint':
-        return '局域网配对多台设备，共享书库与进度';
+        return '局域网多设备共享书库和进度';
       case 'onboarding_step_dictionary_action':
         return '打开词典管理';
       case 'onboarding_step_anki_title':
         return '配置 Anki';
       case 'onboarding_step_anki_action':
-        return '打开制卡设置';
+        return '制卡设置';
       case 'onboarding_step_backup_title':
-        return '配置备份';
+        return '备份';
       case 'onboarding_step_backup_body':
-        return '选择备份后端并登录，也可以导出本地备份文件。';
+        return '换机器或丢设备时，库还在。';
       case 'onboarding_step_backup_action':
         return '打开备份设置';
       case 'onboarding_step_interconnect_title':
-        return '配置互联';
+        return '设备互联';
       case 'onboarding_step_interconnect_body':
-        return '开启互联，与局域网内其他设备配对，共享书库、进度与查词。';
+        return '局域网配对多台设备，共享一个库，进度同步。';
       case 'onboarding_step_interconnect_action':
         return '打开互联设置';
       case 'onboarding_finish_title':
         return '一切就绪';
       case 'onboarding_finish_body':
-        return '之后随时可以在「设置 → 系统」里重新打开本引导。';
+        return '之后随时可以在「设置 → 系统」重新打开本引导。';
       case 'onboarding_action_next':
         return '下一步';
-      case 'onboarding_action_finish':
-        return '完成';
       case 'onboarding_action_skip':
         return '暂时跳过';
       case 'onboarding_reopen':
         return '新手引导';
       case 'onboarding_welcome_body':
-        return '先选好界面语言与明暗主题，接下来会带你逐项完成配置。';
+        return '先选界面语言和明暗主题，剩下的交给后面几步。';
       case 'onboarding_features_title':
-        return '选择要用的功能';
-      case 'onboarding_features_modules_label':
-        return '库页显示（未勾选的将从底栏隐藏，可随时在设置里改回）';
-      case 'onboarding_features_setup_label':
-        return '接下来要配置';
+        return '你想用 Fushi 做什么';
       case 'onboarding_feature_manga':
-        return '漫画库';
+        return '漫画';
       case 'onboarding_feature_manga_hint':
-        return '看漫画，支持 OCR 查词';
+        return '看漫画，OCR 查词';
       case 'onboarding_feature_video':
-        return '视频库';
+        return '视频';
       case 'onboarding_feature_video_hint':
-        return '看视频，字幕查词与制卡';
+        return '字幕查词与制卡';
       case 'onboarding_feature_games':
-        return 'Galgame 库';
+        return 'Galgame';
       case 'onboarding_feature_games_hint':
-        return '启动 galgame，文本 Hook 查词（仅 Windows）';
+        return '游戏文本 Hook 查词（仅 Windows）';
       case 'onboarding_feature_pack':
-        return '推荐包（词典 + 发音音频）';
+        return '推荐包';
       case 'onboarding_feature_pack_hint':
-        return '一次下载配好日语推荐词典与日/英发音音频库';
+        return '一次下载：日语词典 + 日/英发音音频';
       case 'onboarding_step_pack_title':
-        return '安装推荐包';
-      case 'onboarding_step_pack_body':
-        return '推荐包内含日语单词/音调/词频词典与日/英发音音频数据库。可在此直接下载并导入；导入会覆盖本地数据，建议在全新安装时进行。学其他语言可用「打开词典管理」自行导入词典。';
+        return '推荐包';
       case 'onboarding_step_pack_download_action':
         return '下载并导入';
       case 'onboarding_step_pack_import_existing_action':
@@ -293828,13 +294284,13 @@ extension on _StringsZhCn {
       case 'onboarding_step_extension_title':
         return '浏览器扩展';
       case 'onboarding_step_extension_body':
-        return '安装配套浏览器扩展，在任意网页上查词。';
+        return '装上配套扩展，在任意网页上查词。';
       case 'onboarding_step_extension_action':
-        return '打开扩展安装引导';
+        return '打开安装引导';
       case 'onboarding_step_fonts_title':
-        return '配置字体';
+        return '字体';
       case 'onboarding_step_fonts_body':
-        return '导入自定义字体，并选择界面/正文/词典分别使用哪套字体。';
+        return '界面、正文、词典各用自己喜欢的字体。';
       case 'settings_section_modules':
         return '功能模块';
       case 'module_toggle_hint':
@@ -294037,11 +294493,11 @@ extension on _StringsZhCn {
       case 'module_extension_label':
         return '浏览器扩展';
       case 'onboarding_feature_books':
-        return '小说库';
+        return '小说';
       case 'onboarding_feature_books_hint':
-        return '看小说（EPUB），查词与有声书同步';
+        return '读 EPUB，点词查词，有声书同步';
       case 'onboarding_feature_extension_hint':
-        return '网页查词（仅桌面）';
+        return '在任意网页查词（仅桌面）';
       case 'video_setting_tap_toggles_playback':
         return '点击画面播放/暂停';
       case 'video_setting_tap_toggles_playback_hint':
@@ -294394,11 +294850,11 @@ extension on _StringsZhCn {
       case 'game_session_japanese_locale_hint':
         return '本局以日文区域 (CP932) 启动。若游戏文字乱码或脚本报错，可把该游戏的日语区域改为「永不转区」。';
       case 'onboarding_anki_intro_body':
-        return 'Anki 是免费的间隔重复记忆软件：把生词做成卡片，按遗忘曲线安排每天复习。Fushi 查词后可一键制卡，把单词、释义、例句、发音和截图写进 Anki。';
+        return 'Anki 是免费的间隔重复记忆软件。查词后，Fushi 一键把单词、释义、例句、发音和截图做成卡片。';
       case 'onboarding_anki_setup_desktop_hint':
-        return '先安装桌面版 Anki，再装 AnkiConnect 插件：在 Anki 里打开 工具 → 插件 → 获取插件，填入代码 2055492159。制卡时保持 Anki 在后台运行。';
+        return '先装 Anki，再装 AnkiConnect 插件（下方一键安装，或在 Anki 里填插件代码 2055492159）。制卡时保持 Anki 运行。';
       case 'onboarding_anki_setup_ios_hint':
-        return '装有 AnkiMobile 即可直接加卡；要用完整功能，可经 AnkiConnect 连接同一局域网里电脑上的 Anki。';
+        return '装有 AnkiMobile 即可直接加卡。要用完整功能，可经 AnkiConnect 连同一局域网里电脑上的 Anki。';
       case 'onboarding_anki_backend_label':
         return '连接方式';
       case 'onboarding_anki_test_action':
@@ -294412,15 +294868,15 @@ extension on _StringsZhCn {
       case 'onboarding_anki_mobile_ankiconnect_title':
         return '高级：本机改用 AnkiConnect 连电脑';
       case 'onboarding_anki_mobile_ankiconnect_hint':
-        return '本机也能把卡制进同一局域网里电脑上的 Anki：在制卡设置里开启「改用 AnkiConnect」并填电脑地址。';
+        return '把卡制进同一局域网里电脑上的 Anki：在制卡设置里开启 AnkiConnect 并填电脑地址。';
       case 'onboarding_anki_setup_android_hint':
-        return '安装 AnkiDroid 并打开一次完成初始化。回到 Fushi 首次制卡时，在弹出的授权框里点「允许」即可——不需要去 AnkiDroid 设置里改任何开关。';
+        return '装好 AnkiDroid 并打开一次。首次制卡时在授权框里点「允许」，别的不用设。';
       case 'onboarding_anki_install_addon_action':
         return '一键安装 AnkiConnect 插件';
       case 'onboarding_anki_addon_installed':
-        return '已装好 AnkiConnect：启动或重启 Anki，然后点「测试连接」。';
+        return '已装好 AnkiConnect。启动或重启 Anki，然后测试连接。';
       case 'onboarding_anki_addon_no_anki':
-        return '没找到 Anki 数据目录：请先安装 Anki 并打开一次，再回来重试。';
+        return '没找到 Anki 数据目录。先安装 Anki 并打开一次，再重试。';
       case 'onboarding_anki_addon_failed':
         return ({required Object message}) => '安装失败：${message}';
       case 'game_hook_reason_capability_probe_failed':
@@ -294847,41 +295303,39 @@ extension on _StringsZhCn {
       case 'onboarding_action_badge_optional':
         return '可选';
       case 'onboarding_pack_action_download_desc':
-        return '在后台下载整个推荐包，下完自动进入导入。随时可以取消，下次从断点续传。';
+        return '后台从多个来源同时下载，下完自动导入。随时可取消，下次从断点续传。';
       case 'onboarding_pack_action_import_existing_desc':
-        return '包已经下好了，这里直接导入。确认框里选「合并到现有库」不会动你已有的数据。';
+        return '包已经在硬盘上了。确认框里选「合并」就不会动你已有的数据。';
       case 'onboarding_pack_action_pick_desc':
-        return '已经从别处拿到包的 zip？从硬盘导入，整段下载都可以跳过。';
+        return '已经拿到包的 zip？直接从硬盘导入，跳过下载。';
       case 'onboarding_pack_action_website':
-        return '在官网下载页打开';
+        return '打开官网下载页';
       case 'onboarding_pack_action_website_desc':
-        return '在浏览器打开官网。那里的推荐包一节给出可以喂给下载工具的分片直链；下完回到这里，用「选择本地包文件」导入。';
+        return '给下载工具用的分片直链。下完回来用「选择本地包文件」导入。';
       case 'onboarding_pack_action_dictionary_desc':
-        return '学日语以外的语言？跳过推荐包，在这里按语言导入词典。';
+        return '学其他语言？在这里导入对应词典。';
       case 'onboarding_pack_action_audio_desc':
-        return '发音音频从哪里来。推荐包已经含日语和英语；其它语言在这里加在线来源。';
+        return '给推荐包没覆盖的语言添加在线发音来源。';
       case 'onboarding_anki_action_test_desc':
-        return '检查 Fushi 能不能连上 Anki，并把你的牌组和笔记类型拉过来。这一步不会创建任何东西。';
+        return '检查能否连上 Anki，并拉取牌组和笔记类型。不会创建任何东西。';
       case 'onboarding_anki_action_refresh_desc':
-        return '重新从 Anki 拉牌组和笔记类型。在 Anki 里新建了牌组之后点它。';
+        return '重新拉取牌组和笔记类型。在 Anki 里新建牌组后点它。';
       case 'onboarding_anki_action_get_ankidroid_desc':
-        return '打开 AnkiDroid 的商店页。Fushi 的卡片写进它里面，得先装上。';
+        return '打开商店页。卡片写进 AnkiDroid，得先装上。';
       case 'onboarding_anki_action_get_anki_desc':
-        return '打开 Anki 的下载页。装好 Anki，制卡时让它开着。';
+        return '打开 Anki 下载页。制卡时让它开着。';
       case 'onboarding_anki_action_install_addon_desc':
-        return '把内置的 AnkiConnect 插件解压进 Anki——Fushi 靠它和 Anki 通话。装完重启 Anki。';
+        return '把内置的 AnkiConnect 插件解压进 Anki。装完重启 Anki。';
       case 'onboarding_step_anki_action_desc':
-        return '卡片模板、字段映射、截图和音频——也就是「做出来的卡长什么样」。上面选好牌组和笔记类型就能开始制卡了，想改卡片怎么做才需要进来。';
+        return '卡片模板、字段映射、截图和音频。上面选好牌组和笔记类型就能开始了。';
       case 'onboarding_step_backup_action_desc':
-        return '选备份后端并登录，换机器或丢设备时库还在。';
+        return '选择备份后端并登录，或导出本地备份文件。';
       case 'onboarding_step_interconnect_action_desc':
-        return '把这台设备和你的其它设备配对，共享同一个库并同步进度。';
+        return '开启互联，把这台设备和其他设备配对。';
       case 'onboarding_step_extension_action_desc':
-        return '告诉你怎么装浏览器扩展并连上 Fushi，之后在网页上也能查词。';
+        return '教你安装扩展并连上 Fushi。';
       case 'onboarding_step_fonts_action_desc':
-        return '导入自己的字体文件，并给每种语言指定用哪个。';
-      case 'onboarding_pack_sources_hint':
-        return '同时从 GitHub、官网和备用镜像分片并发下载，每片都校验。下载过程中会实测各来源速度，哪家快就多分给哪家，所以这里不用你选。';
+        return '导入字体文件，按语言指定。';
       case 'video_setting_hdr_output':
         return 'HDR / 10-bit 输出';
       case 'video_setting_hdr_output_hint':
@@ -294987,93 +295441,73 @@ extension on _StringsZhCn {
       case 'onboarding_click_lookup_nested_title':
         return '在弹窗里继续查';
       case 'onboarding_click_lookup_nested_body':
-        return '点释义里的另一个词会展开下一层查词；返回或点弹窗外可关闭一层。';
+        return '点释义里的词会展开下一层；返回或点弹窗外关闭一层。';
       case 'onboarding_click_lookup_mine_title':
-        return '把结果做成卡片';
+        return '做成卡片';
       case 'onboarding_click_lookup_mine_body':
-        return '确认词义后点加号（＋），把当前词、句子、音频和画面送到制卡器。';
+        return '点词条上的 ＋，把单词、句子、音频和画面送进制卡器。';
       case 'onboarding_step_global_lookup_title':
         return '全局查词';
       case 'onboarding_global_lookup_windows_body':
-        return '在 Windows 上，先在其他应用里选中文字，就能直接唤出词典，不必切回 Fushi。';
+        return '在其他应用里选中文字，不用切窗口就能查词。';
       case 'onboarding_global_lookup_windows_select_title':
-        return '在任意应用里选中文字';
-      case 'onboarding_global_lookup_windows_shortcut_title':
-        return '按 Ctrl+Alt+D';
+        return '选中文字';
       case 'onboarding_global_lookup_windows_shortcut_body':
-        return '这是默认全局快捷键。Fushi 会抓取当前选区，并在鼠标附近打开查词卡片。';
+        return 'Fushi 抓取选区，在鼠标旁打开查词卡片。';
       case 'onboarding_global_lookup_windows_customize_title':
-        return '需要时修改快捷键';
+        return '改快捷键';
       case 'onboarding_global_lookup_windows_customize_body':
-        return '前往设置 → 快捷键 → 全局（应用外），可以换成你习惯的组合键。';
+        return '设置 → 快捷键 → 全局（应用外）。';
       case 'onboarding_global_lookup_windows_action':
         return '打开快捷键设置';
       case 'onboarding_global_lookup_windows_action_desc':
-        return '可修改应用外查词快捷键；默认 Ctrl+Alt+D 已可直接使用，因此不改也没关系。';
+        return '想换组合键再进来。';
       case 'onboarding_global_lookup_android_body':
-        return '在 Android 上，由系统通过文字菜单或分享面板把选中文本交给 Fushi；手机没有可自定义的全局快捷键。';
+        return 'Android 通过文字菜单或分享面板把选中文本交给 Fushi。';
       case 'onboarding_global_lookup_android_select_title':
-        return '在其他应用里选中文字';
+        return '选中文字';
       case 'onboarding_global_lookup_android_open_title':
         return '选择 Fushi';
       case 'onboarding_global_lookup_android_open_body':
-        return '在文字选择菜单中点 Fushi；如果菜单没显示，就点分享，再从分享面板选择 Fushi。';
+        return '在文字菜单点 Fushi；没有就点分享，再选 Fushi。';
       case 'onboarding_global_lookup_android_continue_title':
-        return '在独立弹窗中继续';
+        return '在弹窗里继续';
       case 'onboarding_global_lookup_android_continue_body':
-        return '查词结果会独立打开；你可以继续点释义里的词，关闭后回到刚才的应用。';
+        return '查词弹窗盖在原应用上，关掉就回去。';
       case 'onboarding_feature_manual_resources':
-        return '手动导入词典和音频';
+        return '自备词典和音频';
       case 'onboarding_step_manual_resources_title':
-        return '手动准备词典和音频';
+        return '自备词典和音频';
       case 'onboarding_manual_dictionary_action':
         return '导入词典';
       case 'onboarding_manual_dictionary_action_desc':
-        return '打开词典管理，导入至少一个受支持的词典文件或压缩包。只有查词能返回释义后，后面的操作教程才有实际结果。';
+        return '打开词典管理。装好词典，查词才有结果。';
       case 'onboarding_manual_audiobook_action':
-        return '导入书籍和有声书音频';
+        return '导入书籍和有声书';
       case 'onboarding_manual_audiobook_action_desc':
-        return '打开书籍导入，选择书籍或文本、对齐字幕和一个或多个音频文件。音频需要配套字幕，Fushi 才能按句同步。';
+        return '书籍或文本、对齐字幕和音频文件。有字幕，Fushi 才能按句同步音频。';
       case 'onboarding_manual_pronunciation_action':
-        return '配置单词发音音频';
+        return '配置单词发音';
       case 'onboarding_manual_pronunciation_action_desc':
-        return '添加词典词条使用的本地或在线发音来源。它与附加到书籍的有声书音频是两套独立资源。';
-      case 'onboarding_lookup_verify_action':
-        return '先验证词典里有这个词';
-      case 'onboarding_lookup_verify_action_desc':
-        return '打开查词页，输入你正在学的任意词；确认当前已安装词典返回释义后，再用同一个词练习后续操作。教程不会写死示例词。';
+        return '词条发音的本地或在线来源。与有声书音频是两回事。';
       case 'onboarding_step_first_anki_card_title':
-        return '完成第一张 Anki 卡片';
-      case 'onboarding_step_first_anki_card_body':
-        return '只有本次新手引导已连接 Anki，并选好了仍然可用的牌组和笔记类型，才会出现这一步。';
+        return '第一张卡片';
       case 'onboarding_first_anki_lookup_title':
-        return '从真实词典结果开始';
-      case 'onboarding_first_anki_lookup_body':
-        return '查一个当前已安装词典确实能返回释义的词，不使用可能不存在于你词典里的固定示例词。';
+        return '查一个词';
       case 'onboarding_first_anki_plus_title':
-        return '点词条上的加号';
+        return '点加号';
       case 'onboarding_first_anki_plus_body':
-        return '加号会打开制卡器，并带入当前单词、读音、释义、句子、音频和可用的画面上下文。';
+        return '制卡器打开，单词、读音、释义、句子、音频和画面已经填好。';
       case 'onboarding_first_anki_save_title':
         return '检查后保存';
       case 'onboarding_first_anki_save_body':
-        return '确认目标牌组、笔记类型和字段预览后保存，再打开 Anki 检查第一张卡是否已经写入。';
+        return '确认牌组和笔记类型后保存，打开 Anki 就能看到这张卡。';
       case 'onboarding_first_anki_action':
-        return '打开查词页并制卡';
-      case 'onboarding_first_anki_action_desc':
-        return '选择一个已经显示释义的词，点词条加号，检查字段后保存到刚才连接的 Anki 牌组。';
-      case 'onboarding_step_click_lookup_body':
-        return '先验证一个当前已安装词典确实能返回释义的词，再用同一个词练习书籍正文、漫画 OCR 文字和视频字幕里的点击查词。';
-      case 'onboarding_click_lookup_tap_body':
-        return '手机轻点刚才验证过的词中的一个字，电脑用鼠标左键单击。Fushi 会从这里开始匹配最长的词。';
-      case 'onboarding_global_lookup_windows_select_body':
-        return '拖选刚才已经验证能返回词典释义的同一个词，并保持文字处于选中状态。';
-      case 'onboarding_global_lookup_android_select_body':
-        return '长按刚才已经验证能返回词典释义的同一个词，再拖动选区手柄让它完整覆盖。';
+        return '打开查词页制卡';
       case 'onboarding_feature_manual_resources_hint':
-        return '可补充推荐包，也可单独导入自己的词典、有声书和单词发音来源';
+        return '从自己的文件导入词典、有声书和发音来源';
       case 'onboarding_step_manual_resources_body':
-        return '这一项可以与推荐包同时使用，也可以单独使用。进入查词教程前至少导入一本词典；有声书音频和单词发音音频属于按需补充。';
+        return '查词教程之前至少导入一本词典。有声书和发音音频按需添加。';
       case 'game_lookup_attached_title':
         return '游戏内查词';
       case 'game_lookup_attached_no_ocr':
@@ -295307,6 +295741,56 @@ extension on _StringsZhCn {
         return '本局未转区：系统本就是日文区域 (CP932)，无需转区。';
       case 'game_session_japanese_locale_skipped_hint_not_32bit':
         return '本局未转区：自动判定需要日文区域，但 Locale Emulator 只支持 32 位游戏。';
+      case 'onboarding_feature_fonts':
+        return '自定义字体';
+      case 'onboarding_feature_fonts_hint':
+        return '界面、正文、词典各用自己喜欢的字体';
+      case 'onboarding_features_modules_title':
+        return '库页';
+      case 'onboarding_features_modules_hint':
+        return '未勾选的页面不显示在导航栏，之后可在「设置 → 外观」改回。';
+      case 'onboarding_features_setup_title':
+        return '接下来配置';
+      case 'onboarding_features_setup_hint':
+        return '只有勾选的项目会出现在后面的步骤里。';
+      case 'onboarding_pack_intro':
+        return '一次下载装好日语词典、音调、词频和日/英发音音频。学其他语言可跳过，自行导入词典。';
+      case 'onboarding_global_lookup_windows_select_desc':
+        return '在任意应用里拖选一个词，保持选中。';
+      case 'onboarding_global_lookup_android_select_desc':
+        return '在其他应用里长按一个词，拖动手柄覆盖它。';
+      case 'onboarding_global_lookup_windows_shortcut_press':
+        return '按下快捷键';
+      case 'onboarding_first_anki_card_intro':
+        return 'Anki 已连上。现在做一张真卡，确认整条链路能走通。';
+      case 'onboarding_action_start':
+        return '开始使用';
+      case 'onboarding_actions_more':
+        return '其他方式';
+      case 'onboarding_finish_summary_modules':
+        return '显示的库页';
+      case 'onboarding_finish_summary_setup':
+        return '本次配置';
+      case 'onboarding_finish_summary_none':
+        return '无';
+      case 'onboarding_anki_status_pending':
+        return '尚未测试连接';
+      case 'onboarding_click_lookup_intro':
+        return '在书、漫画或字幕里点任意一个词就能看释义。先用下面这句话练手。';
+      case 'onboarding_click_lookup_tap_desc':
+        return '轻点（电脑上单击）一个字，Fushi 从这里向后匹配最长的词。句子会在查词页里打开。';
+      case 'onboarding_sample_sentence_label':
+        return '练习句子';
+      case 'onboarding_sample_sentence_hint':
+        return '点一下在查词页打开，再点其中任意一个词。';
+      case 'onboarding_lookup_practice_action':
+        return '用这句话练习查词';
+      case 'onboarding_lookup_practice_desc':
+        return '在查词页里打开这句话，点其中的词看释义。查不到就是词典还没装好。';
+      case 'onboarding_first_anki_lookup_desc':
+        return '打开练习句子，点一个词。';
+      case 'onboarding_first_anki_action_desc':
+        return '在查词页打开练习句子。点词、点加号、检查字段、保存。';
       default:
         return null;
     }
@@ -302161,97 +302645,89 @@ extension on _StringsZhHk {
       case 'onboarding_title':
         return '新手引導';
       case 'onboarding_welcome_headline':
-        return '歡迎使用！';
+        return '歡迎使用 Fushi';
       case 'onboarding_feature_anki':
         return 'Anki 製卡';
       case 'onboarding_feature_anki_hint':
-        return '連接 AnkiConnect / AnkiDroid，查詞一鍵製卡';
+        return '查詞後一鍵做成卡片';
       case 'onboarding_feature_backup':
         return '備份與同步';
       case 'onboarding_feature_backup_hint':
-        return '把數據備份到 Google Drive、WebDAV 等後端';
+        return 'Google Drive、WebDAV 或本機檔案';
       case 'onboarding_feature_interconnect':
         return '設備互聯';
       case 'onboarding_feature_interconnect_hint':
-        return '局域網配對多台設備，共享書庫與進度';
+        return '區域網路多裝置共享書庫和進度';
       case 'onboarding_step_dictionary_action':
         return '打開詞典管理';
       case 'onboarding_step_anki_title':
         return '配置 Anki';
       case 'onboarding_step_anki_action':
-        return '打開製卡設定';
+        return '製卡設定';
       case 'onboarding_step_backup_title':
-        return '配置備份';
+        return '備份';
       case 'onboarding_step_backup_body':
-        return '選擇備份後端並登錄，也可以導出本地備份檔案。';
+        return '換機器或丟裝置時，庫還在。';
       case 'onboarding_step_backup_action':
         return '打開備份設定';
       case 'onboarding_step_interconnect_title':
-        return '配置互聯';
+        return '裝置互聯';
       case 'onboarding_step_interconnect_body':
-        return '開啟互聯，與局域網內其他設備配對，共享書庫、進度與查詞。';
+        return '區域網路配對多台裝置，共享一個庫，進度同步。';
       case 'onboarding_step_interconnect_action':
         return '打開互聯設定';
       case 'onboarding_finish_title':
         return '一切就緒';
       case 'onboarding_finish_body':
-        return '之後隨時可以在「設定 → 系統」裡重新打開本引導。';
+        return '之後隨時可以在「設定 → 系統」重新打開本引導。';
       case 'onboarding_action_next':
         return '下一步';
-      case 'onboarding_action_finish':
-        return '完成';
       case 'onboarding_action_skip':
         return '暫時跳過';
       case 'onboarding_reopen':
         return '新手引導';
       case 'onboarding_welcome_body':
-        return '先選好界面語言與明暗主題，接下來會帶你逐項完成配置。';
+        return '先選介面語言和明暗主題，剩下的交給後面幾步。';
       case 'onboarding_features_title':
-        return '選擇要用的功能';
-      case 'onboarding_features_modules_label':
-        return '庫頁顯示（未勾選的將從底欄隱藏，可隨時在設定裡改回）';
-      case 'onboarding_features_setup_label':
-        return '接下來要配置';
+        return '你想用 Fushi 做甚麼';
       case 'onboarding_feature_manga':
-        return '漫畫庫';
+        return '漫畫';
       case 'onboarding_feature_manga_hint':
         return '看漫畫，支持 OCR 查詞';
       case 'onboarding_feature_video':
-        return '影片庫';
+        return '影片';
       case 'onboarding_feature_video_hint':
-        return '看影片，字幕查詞與製卡';
+        return '字幕查詞與製卡';
       case 'onboarding_feature_games':
-        return 'Galgame 庫';
+        return 'Galgame';
       case 'onboarding_feature_games_hint':
-        return '啟動 galgame，文本 Hook 查詞（僅 Windows）';
+        return '遊戲文本 Hook 查詞（僅 Windows）';
       case 'onboarding_feature_pack':
-        return '推薦包（詞典 + 發音音頻）';
+        return '推薦包';
       case 'onboarding_feature_pack_hint':
-        return '一次下載配好日語推薦詞典與日/英發音音頻庫';
+        return '一次下載：日語詞典 + 日／英發音音頻';
       case 'onboarding_step_pack_title':
-        return '安裝推薦包';
-      case 'onboarding_step_pack_body':
-        return '推薦包內含日語單詞/音調/詞頻詞典與日/英發音音頻資料庫。可在此直接下載並導入；導入會覆蓋本地數據，建議在全新安裝時進行。學其他語言可用「打開詞典管理」自行導入詞典。';
+        return '推薦包';
       case 'onboarding_step_pack_download_action':
         return '下載並導入';
       case 'onboarding_step_pack_import_existing_action':
         return '導入已下載的包';
       case 'onboarding_step_pack_pick_action':
-        return '選擇本地包檔案';
+        return '選擇包檔案';
       case 'onboarding_pack_downloading':
-        return '下載中……可隨時取消，下次續傳';
+        return '下載中……可隨時取消，之後再續傳';
       case 'onboarding_pack_download_failed':
         return ({required Object message}) => '下載失敗：${message}';
       case 'onboarding_step_extension_title':
         return '瀏覽器擴展';
       case 'onboarding_step_extension_body':
-        return '安裝配套瀏覽器擴展，在任意網頁上查詞。';
+        return '裝上配套擴充功能，在任何網頁上查詞。';
       case 'onboarding_step_extension_action':
-        return '打開擴展安裝引導';
+        return '打開安裝引導';
       case 'onboarding_step_fonts_title':
-        return '配置字體';
+        return '字體';
       case 'onboarding_step_fonts_body':
-        return '導入自定義字體，並選擇界面/正文/詞典分別使用哪套字體。';
+        return '介面、正文、詞典各用自己喜歡的字體。';
       case 'settings_section_modules':
         return '功能模塊';
       case 'module_toggle_hint':
@@ -302454,9 +302930,9 @@ extension on _StringsZhHk {
       case 'module_extension_label':
         return '瀏覽器擴展';
       case 'onboarding_feature_books':
-        return '小說庫';
+        return '小說';
       case 'onboarding_feature_books_hint':
-        return '看小說（EPUB），查詞與有聲書同步';
+        return '讀 EPUB，點詞查詞，有聲書同步';
       case 'onboarding_feature_extension_hint':
         return '網頁查詞（僅桌面）';
       case 'video_setting_tap_toggles_playback':
@@ -302811,11 +303287,11 @@ extension on _StringsZhHk {
       case 'game_session_japanese_locale_hint':
         return '本局以日文區域 (CP932) 啟動。若遊戲文字亂碼或腳本報錯，可把該遊戲的日語區域改為「永不轉區」。';
       case 'onboarding_anki_intro_body':
-        return 'Anki 是免費的間隔重復記憶軟體：把生詞做成卡片，按遺忘曲線安排每天復習。Fushi 查詞後可一鍵製卡，把單詞、釋義、例句、發音和截圖寫進 Anki。';
+        return 'Anki 是免費的間隔重複記憶軟件。查詞後，Fushi 一鍵把單詞、釋義、例句、發音和截圖做成卡片。';
       case 'onboarding_anki_setup_desktop_hint':
-        return '先安裝桌面版 Anki，再裝 AnkiConnect 插件：在 Anki 裡打開 工具 → 插件 → 獲取插件，填入代碼 2055492159。製卡時保持 Anki 在後台運行。';
+        return '先裝 Anki，再裝 AnkiConnect 外掛（下方一鍵安裝，或用外掛代碼 2055492159）。製卡時保持 Anki 運行。';
       case 'onboarding_anki_setup_ios_hint':
-        return '裝有 AnkiMobile 即可直接加卡；要用完整功能，可經 AnkiConnect 連接同一局域網裡電腦上的 Anki。';
+        return '裝有 AnkiMobile 即可直接加卡。要用完整功能，可經 AnkiConnect 連同一區域網路裡電腦上的 Anki。';
       case 'onboarding_anki_backend_label':
         return '連接方式';
       case 'onboarding_anki_test_action':
@@ -302827,17 +303303,17 @@ extension on _StringsZhHk {
       case 'onboarding_anki_get_ankidroid_action':
         return '下載 AnkiDroid';
       case 'onboarding_anki_mobile_ankiconnect_title':
-        return '高級：本機改用 AnkiConnect 連電腦';
+        return '進階：本機改用 AnkiConnect 連電腦';
       case 'onboarding_anki_mobile_ankiconnect_hint':
-        return '本機也能把卡製進同一局域網裡電腦上的 Anki：在製卡設定裡開啟「改用 AnkiConnect」並填電腦地址。';
+        return '把卡製進同一區域網路裡電腦上的 Anki：在製卡設定裡開啟 AnkiConnect 並填電腦位址。';
       case 'onboarding_anki_setup_android_hint':
-        return '安裝 AnkiDroid 並打開一次完成初始化。回到 Fushi 首次製卡時，在彈出的授權框裡點「允許」即可——不需要去 AnkiDroid 設定裡改任何開關。';
+        return '裝好 AnkiDroid 並打開一次。首次製卡時在授權框裡點「允許」，其他都不用設。';
       case 'onboarding_anki_install_addon_action':
         return '一鍵安裝 AnkiConnect 插件';
       case 'onboarding_anki_addon_installed':
-        return '已裝好 AnkiConnect：啟動或重啟 Anki，然後點「測試連接」。';
+        return '已裝好 AnkiConnect。啟動或重啟 Anki，然後測試連接。';
       case 'onboarding_anki_addon_no_anki':
-        return '沒找到 Anki 數據目錄：請先安裝 Anki 並打開一次，再回來重試。';
+        return '找不到 Anki 資料夾。先安裝 Anki 並打開一次，再重試。';
       case 'onboarding_anki_addon_failed':
         return ({required Object message}) => '安裝失敗：${message}';
       case 'game_hook_reason_capability_probe_failed':
@@ -303264,41 +303740,39 @@ extension on _StringsZhHk {
       case 'onboarding_action_badge_optional':
         return '可選';
       case 'onboarding_pack_action_download_desc':
-        return '在後台下載整個推薦包，下完自動進入匯入。隨時可以取消，下次從斷點續傳。';
+        return '在背景從多個來源同時下載，下完自動導入。隨時可取消，下次從斷點續傳。';
       case 'onboarding_pack_action_import_existing_desc':
-        return '包已經下好了，這裏直接匯入。確認框裏選「合併到現有庫」不會動你已有的資料。';
+        return '包已經在硬碟上了。確認框裡選「合併」就不會動你已有的資料。';
       case 'onboarding_pack_action_pick_desc':
-        return '已經從別處拿到包的 zip？從硬碟匯入，整段下載都可以跳過。';
+        return '已經拿到包的 zip？直接從硬碟導入，跳過下載。';
       case 'onboarding_pack_action_website':
-        return '在官網下載頁打開';
+        return '打開官網下載頁';
       case 'onboarding_pack_action_website_desc':
-        return '在瀏覽器打開官網。那裏的推薦包一節給出可以餵給下載工具的分片直連；下完回到這裏，用「選擇本機包檔案」匯入。';
+        return '給下載工具用的分片直連。下完回來用「選擇包檔案」導入。';
       case 'onboarding_pack_action_dictionary_desc':
-        return '學日語以外的語言？跳過推薦包，在這裏按語言匯入詞典。';
+        return '學其他語言？在這裡導入對應詞典。';
       case 'onboarding_pack_action_audio_desc':
-        return '發音音訊從哪裏來。推薦包已經含日語和英語；其它語言在這裏加線上來源。';
+        return '給推薦包沒覆蓋的語言加線上發音來源。';
       case 'onboarding_anki_action_test_desc':
-        return '檢查 Fushi 能不能連上 Anki，並把你的牌組和筆記類型拉過來。這一步不會建立任何東西。';
+        return '檢查能否連上 Anki，並拉取牌組和筆記類型。不會建立任何東西。';
       case 'onboarding_anki_action_refresh_desc':
-        return '重新從 Anki 拉牌組和筆記類型。在 Anki 裏新建了牌組之後點它。';
+        return '重新拉取牌組和筆記類型。在 Anki 裡新建牌組後點它。';
       case 'onboarding_anki_action_get_ankidroid_desc':
-        return '打開 AnkiDroid 的商店頁。Fushi 的卡片寫進它裏面，得先裝上。';
+        return '打開商店頁。卡片會寫進 AnkiDroid，所以要先裝上。';
       case 'onboarding_anki_action_get_anki_desc':
-        return '打開 Anki 的下載頁。裝好 Anki，製卡時讓它開着。';
+        return '打開 Anki 下載頁。製卡時讓它開著。';
       case 'onboarding_anki_action_install_addon_desc':
-        return '把內建的 AnkiConnect 外掛解壓進 Anki——Fushi 靠它和 Anki 通話。裝完重啟 Anki。';
+        return '把內置的 AnkiConnect 外掛解壓進 Anki。裝完重啟 Anki。';
       case 'onboarding_step_anki_action_desc':
-        return '卡片範本、欄位對應、截圖和音訊——也就是「做出來的卡長甚麼樣」。上面選好牌組和筆記類型就能開始製卡了，想改卡片怎麼做才需要進來。';
+        return '卡片範本、欄位對應、截圖和音頻。上面選好牌組和筆記類型就能開始了。';
       case 'onboarding_step_backup_action_desc':
-        return '選備份後端並登入，換機器或丟裝置時庫還在。';
+        return '選擇備份後端並登入，或導出本機備份檔案。';
       case 'onboarding_step_interconnect_action_desc':
-        return '把這台裝置和你的其它裝置配對，共用同一個庫並同步進度。';
+        return '開啟互聯，把這台裝置和其他裝置配對。';
       case 'onboarding_step_extension_action_desc':
-        return '告訴你怎麼裝瀏覽器擴充功能並連上 Fushi，之後在網頁上也能查詞。';
+        return '教你安裝擴充功能並連上 Fushi。';
       case 'onboarding_step_fonts_action_desc':
-        return '匯入自己的字型檔案，並給每種語言指定用哪個。';
-      case 'onboarding_pack_sources_hint':
-        return '同時從 GitHub、官網和備用鏡像分片並發下載，每片都校驗。下載過程中會實測各來源速度，哪家快就多分給哪家，所以這裏不用你選。';
+        return '導入字體檔案，按語言指定。';
       case 'video_setting_hdr_output':
         return 'HDR / 10-bit 輸出';
       case 'video_setting_hdr_output_hint':
@@ -303398,99 +303872,79 @@ extension on _StringsZhHk {
       case 'web_video_mine_switch_builtin':
         return ({required Object count}) => '切換到內建模式製作 ${count} 張排隊卡片';
       case 'onboarding_step_click_lookup_title':
-        return '點一下就能查詞';
+        return '點擊查詞';
       case 'onboarding_click_lookup_tap_title':
         return '點一下文字';
       case 'onboarding_click_lookup_nested_title':
         return '在彈窗裡繼續查';
       case 'onboarding_click_lookup_nested_body':
-        return '點釋義裡的另一個詞，就會展開下一層查詞；返回或點彈窗外可關掉一層。';
+        return '點釋義裡的詞會展開下一層；返回或點彈窗外關掉一層。';
       case 'onboarding_click_lookup_mine_title':
-        return '把結果做成卡片';
+        return '做成卡片';
       case 'onboarding_click_lookup_mine_body':
-        return '確認詞義後點加號（＋），把當前的詞、句子、音頻和畫面送到製卡器。';
+        return '點詞條上的加號（＋），把單詞、句子、音頻和畫面送進製卡器。';
       case 'onboarding_step_global_lookup_title':
-        return '查 Fushi 以外的文字';
+        return '全域查詞';
       case 'onboarding_global_lookup_windows_body':
-        return '在 Windows 上，先在其他應用程式裡選中文字，就能直接叫出詞典，不用切回 Fushi。';
+        return '在任何應用程式裡選中文字，不用切窗口就能查詞。';
       case 'onboarding_global_lookup_windows_select_title':
-        return '在任何應用程式裡選中文字';
-      case 'onboarding_global_lookup_windows_shortcut_title':
-        return '按 Ctrl+Alt+D';
+        return '選中文字';
       case 'onboarding_global_lookup_windows_shortcut_body':
-        return '這是預設的全域快捷鍵。Fushi 會抓取目前的選取範圍，並在滑鼠附近打開查詞卡片。';
+        return 'Fushi 抓取選取範圍，在滑鼠旁打開查詞卡片。';
       case 'onboarding_global_lookup_windows_customize_title':
-        return '需要時可以改快捷鍵';
+        return '改快捷鍵';
       case 'onboarding_global_lookup_windows_customize_body':
-        return '前往「設定 → 快捷鍵 → 全域（應用程式外）」，就能換成你習慣的組合鍵。';
+        return '設定 → 快捷鍵 → 全域（應用程式外）。';
       case 'onboarding_global_lookup_windows_action':
         return '打開快捷鍵設定';
       case 'onboarding_global_lookup_windows_action_desc':
-        return '可修改應用程式外查詞的快捷鍵；預設 Ctrl+Alt+D 已經可以直接用，所以不改也沒關係。';
+        return '想換組合鍵再進來。';
       case 'onboarding_global_lookup_android_body':
-        return '在 Android 上，是由系統透過文字選單或分享面板把選中的文字交給 Fushi；手機沒有可自訂的全域熱鍵。';
+        return 'Android 透過文字選單或分享面板把選中的文字交給 Fushi。';
       case 'onboarding_global_lookup_android_select_title':
-        return '在其他應用程式裡選中文字';
+        return '選中文字';
       case 'onboarding_global_lookup_android_open_title':
         return '選擇 Fushi';
       case 'onboarding_global_lookup_android_open_body':
-        return '在文字選取選單中點 Fushi；如果選單沒顯示，就點分享，再從分享面板選 Fushi。';
+        return '在文字選單點 Fushi；沒有就點分享，再選 Fushi。';
       case 'onboarding_global_lookup_android_continue_title':
-        return '在獨立彈窗中繼續';
+        return '在彈窗裡繼續';
       case 'onboarding_global_lookup_android_continue_body':
-        return '查詞結果會獨立打開；你可以繼續點裡面的詞，關掉後就回到剛才的地方。';
+        return '查詞彈窗蓋在原應用程式上，關掉就回去。';
       case 'onboarding_feature_manual_resources':
-        return '手動導入詞典和音頻';
+        return '自備詞典和音頻';
       case 'onboarding_feature_manual_resources_hint':
-        return '可補充推薦包，也可單獨匯入自己的字典、有聲書和單字發音來源';
+        return '從自己的檔案導入詞典、有聲書和發音來源';
       case 'onboarding_step_manual_resources_title':
-        return '手動準備詞典和音頻';
+        return '自備詞典和音頻';
       case 'onboarding_step_manual_resources_body':
-        return '這一項可以與推薦包同時使用，也可以單獨使用。進入查詞教學前至少匯入一本字典；有聲書音訊和單字發音音訊屬於按需補充。';
+        return '查詞教學之前至少導入一本詞典。有聲書和發音音頻按需添加。';
       case 'onboarding_manual_dictionary_action':
         return '導入詞典';
       case 'onboarding_manual_dictionary_action_desc':
-        return '打開詞典管理，導入至少一個支援的詞典檔案或壓縮包。只有查詞能返回釋義後，後面的操作教學才有實際結果。';
+        return '打開詞典管理。裝好詞典，查詞才有結果。';
       case 'onboarding_manual_audiobook_action':
-        return '導入書籍和有聲書音頻';
+        return '導入書籍和音頻';
       case 'onboarding_manual_audiobook_action_desc':
-        return '打開書籍導入，選擇書籍或文字、對齊字幕和一個或多個音頻檔案。音頻需要配套字幕，Fushi 才能按句同步。';
+        return '書籍或文字、對齊字幕和音頻檔案。有字幕，Fushi 才能按句同步音頻。';
       case 'onboarding_manual_pronunciation_action':
-        return '設定單詞發音音頻';
+        return '設定單詞發音';
       case 'onboarding_manual_pronunciation_action_desc':
-        return '加入詞典詞條使用的本機或線上發音來源。它與附加到書籍的有聲書音頻是兩套獨立資源。';
-      case 'onboarding_lookup_verify_action':
-        return '先確認詞典裡有這個詞';
-      case 'onboarding_lookup_verify_action_desc':
-        return '打開查詞頁，輸入你正在學的任何詞；確認目前已安裝的詞典能返回釋義後，再用同一個詞練習後面的操作。教學不會寫死示例詞。';
+        return '詞條發音的本機或線上來源。與有聲書音頻是兩回事。';
       case 'onboarding_step_first_anki_card_title':
-        return '完成第一張 Anki 卡片';
-      case 'onboarding_step_first_anki_card_body':
-        return '只有這次引導已連上 Anki，而且選好了仍然可用的牌組和筆記類型，才會出現這一步。';
+        return '第一張卡片';
       case 'onboarding_first_anki_lookup_title':
-        return '從真實的詞典結果開始';
-      case 'onboarding_first_anki_lookup_body':
-        return '查一個目前已安裝詞典確實能返回釋義的詞，不用可能不在你詞典裡的固定示例詞。';
+        return '查一個詞';
       case 'onboarding_first_anki_plus_title':
-        return '點詞條上的加號';
+        return '點加號';
       case 'onboarding_first_anki_plus_body':
-        return '加號會打開製卡器，並帶入當前的單詞、讀音、釋義、句子、音頻和可用的畫面。';
+        return '製卡器打開，單詞、讀音、釋義、句子、音頻和畫面已經填好。';
       case 'onboarding_first_anki_save_title':
         return '檢查後儲存';
       case 'onboarding_first_anki_save_body':
-        return '確認目標牌組、筆記類型和欄位預覽後儲存，再打開 Anki 看看第一張卡是不是已經寫進去。';
+        return '確認牌組和筆記類型後儲存，打開 Anki 就能看到這張卡。';
       case 'onboarding_first_anki_action':
-        return '打開查詞頁並製卡';
-      case 'onboarding_first_anki_action_desc':
-        return '挑一個已經顯示釋義的詞，點詞條上的加號，檢查欄位後儲存到剛才連上的 Anki 牌組。';
-      case 'onboarding_step_click_lookup_body':
-        return '先確認一個目前已安裝詞典確實能返回釋義的詞，再用同一個詞練習書籍正文、漫畫 OCR 文字和影片字幕裡的點擊查詞。';
-      case 'onboarding_click_lookup_tap_body':
-        return '手機輕點剛才確認過的詞中的一個字，電腦用滑鼠左鍵單擊。Fushi 會從這裡開始比對最長的詞。';
-      case 'onboarding_global_lookup_windows_select_body':
-        return '拖選剛才已確認能返回詞典釋義的同一個詞，並保持文字處於選取狀態。';
-      case 'onboarding_global_lookup_android_select_body':
-        return '長按剛才已確認能返回詞典釋義的同一個詞，再拖動選取控點讓它完整覆蓋。';
+        return '打開查詞頁製卡';
       case 'game_lookup_attached_title':
         return 'In-game lookup';
       case 'game_lookup_attached_no_ocr':
@@ -303724,6 +304178,56 @@ extension on _StringsZhHk {
         return '本局未轉區：系統本就是日文區域 (CP932)，無需轉區。';
       case 'game_session_japanese_locale_skipped_hint_not_32bit':
         return '本局未轉區：自動判定需要日文區域，但 Locale Emulator 只支援 32 位元遊戲。';
+      case 'onboarding_feature_fonts':
+        return '自定義字體';
+      case 'onboarding_feature_fonts_hint':
+        return '界面、正文、詞典各用自己喜歡的字體';
+      case 'onboarding_features_modules_title':
+        return '庫頁';
+      case 'onboarding_features_modules_hint':
+        return '未勾選的頁面不顯示在導航欄，之後可在「設定 → 外觀」改回。';
+      case 'onboarding_features_setup_title':
+        return '接下來設定';
+      case 'onboarding_features_setup_hint':
+        return '只有勾選的項目才會出現在後面的步驟裡。';
+      case 'onboarding_pack_intro':
+        return '一次下載裝好日語詞典、聲調、詞頻和日／英發音音頻。學其他語言可以跳過，自行導入詞典。';
+      case 'onboarding_global_lookup_windows_select_desc':
+        return '在任何應用程式裡拖選一個詞，並保持選中。';
+      case 'onboarding_global_lookup_android_select_desc':
+        return '在其他應用程式裡長按一個詞，拖動控點蓋住它。';
+      case 'onboarding_global_lookup_windows_shortcut_press':
+        return '按下快捷鍵';
+      case 'onboarding_first_anki_card_intro':
+        return 'Anki 已連上。現在做一張真卡，確認整條流程走得通。';
+      case 'onboarding_action_start':
+        return '開始使用';
+      case 'onboarding_actions_more':
+        return '其他方式';
+      case 'onboarding_finish_summary_modules':
+        return '顯示的庫頁';
+      case 'onboarding_finish_summary_setup':
+        return '本次設定';
+      case 'onboarding_finish_summary_none':
+        return '無';
+      case 'onboarding_anki_status_pending':
+        return '尚未測試連接';
+      case 'onboarding_click_lookup_intro':
+        return '在書、漫畫或字幕裡點任何一個詞就能看釋義。先用下面這句話練手。';
+      case 'onboarding_click_lookup_tap_desc':
+        return '點一下（電腦上按滑鼠左鍵）一個字，Fushi 會從這裡往後配對最長的詞。句子會在查詞頁打開。';
+      case 'onboarding_sample_sentence_label':
+        return '練習句子';
+      case 'onboarding_sample_sentence_hint':
+        return '點一下就會在查詞頁打開，再點其中任何一個詞。';
+      case 'onboarding_lookup_practice_action':
+        return '用這句話練習查詞';
+      case 'onboarding_lookup_practice_desc':
+        return '在查詞頁打開這句話，點其中的詞看釋義。查不到就是詞典還沒裝好。';
+      case 'onboarding_first_anki_lookup_desc':
+        return '打開練習句子，點一個詞。';
+      case 'onboarding_first_anki_action_desc':
+        return '在查詞頁打開練習句子。點詞、點加號、檢查欄位、儲存。';
       default:
         return null;
     }

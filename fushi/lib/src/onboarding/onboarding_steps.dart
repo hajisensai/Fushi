@@ -38,6 +38,9 @@ enum OnboardingFeature {
   /// Anki 制卡（AnkiConnect / AnkiDroid）。
   anki,
 
+  /// 自定义字体（界面/正文/词典）。默认勾选；不勾则向导不出现字体步骤。
+  fonts,
+
   /// 备份与同步（云端/自建后端 + 本地备份文件）。
   backup,
 
@@ -96,7 +99,7 @@ enum OnboardingStepId {
   /// 浏览器扩展安装引导（仅桌面）。
   browserExtension,
 
-  /// 阅读字体配置。
+  /// 自定义字体配置（仅 [OnboardingFeature.fonts] 被勾选时）。
   fonts,
 
   /// 应用内点击文字查词的操作教程（全平台）。
@@ -113,9 +116,8 @@ enum OnboardingStepId {
 /// 给定勾选集合与平台能力，返回向导要走的步骤序列。
 ///
 /// 恒以 [OnboardingStepId.welcome]、[OnboardingStepId.features] 开头，
-/// [OnboardingStepId.fonts] 和 [OnboardingStepId.finish] 固定收尾；中间配置步骤按
-/// 固定顺序（资源准备 → Anki → 备份 → 互联 → 扩展）出现：能力步骤只保留被
-/// 勾选的，
+/// [OnboardingStepId.finish] 固定收尾；中间配置步骤按固定顺序（资源准备 → Anki →
+/// 备份 → 互联 → 扩展 → 字体）出现：能力步骤（含字体）只保留被勾选的，
 /// 浏览器扩展安装引导步骤 = [browserExtensionAvailable]（桌面平台）**且**扩展
 /// 模块被勾选。其余库页模块勾选不产生步骤。
 ///
@@ -145,7 +147,7 @@ List<OnboardingStepId> onboardingStepSequence({
     if (browserExtensionAvailable &&
         selected.contains(OnboardingFeature.browserExtension))
       OnboardingStepId.browserExtension,
-    OnboardingStepId.fonts,
+    if (selected.contains(OnboardingFeature.fonts)) OnboardingStepId.fonts,
     if (resourcesSelected) OnboardingStepId.clickLookup,
     if (resourcesSelected && globalLookupAvailable)
       OnboardingStepId.globalLookup,

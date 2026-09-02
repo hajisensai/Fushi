@@ -295,8 +295,11 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
       // 都保有真实高度、按需滚动，不再塌陷也不溢出。
       scrollable: true,
       // 标题区对齐 Niratan header：小 eyebrow 在上、大标题在下，右侧一个关闭 X（=取消）。
+      // BUG-2033：与 [FushiPageHeader] 同一判据——控件（48 高的 IconButton）与
+      // 标题块按各自实际高度垂直居中，不顶对齐。顶对齐时关闭键的图标中心（距顶
+      // 24）与 eyebrow 行中心（距顶约 9）差一大截，X 会挂在标题行而不是标题块正中。
       title: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
           Expanded(
             child: Column(

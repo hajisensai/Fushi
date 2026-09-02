@@ -352,12 +352,12 @@ void main() {
     expect(defaults, contains('videoReplayPreviousSubtitle'));
     expect(shortcuts, contains('replayPreviousSubtitle'));
     expect(settings, contains('videoReplayPreviousSubtitle'));
-    expect(page, contains('_replayPreviousCueAndPokeControls'));
+    expect(page, contains('_replayPreviousCueAndKeepControls'));
     // 「重播上一句」必须是纯句子跳转（skipToPrevCue），不得退化成时间回退。
     expect(page, contains('skipToPrevCue();'));
 
     expect(page, contains('_toggleFavoriteCurrentCue'));
-    expect(page, contains('_replayCurrentCueAndPokeControls'));
+    expect(page, contains('_replayCurrentCueAndKeepControls'));
   });
 
   test('TODO-258 subtitle sidebar filters are wired', () {

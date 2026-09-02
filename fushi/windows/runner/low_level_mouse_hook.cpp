@@ -133,8 +133,8 @@ std::atomic<HWND> g_direct_input_shield_popup{nullptr};
 std::atomic<uint32_t> g_direct_input_shield_buttons{0};
 
 // A direct galCard may sit above an engine that samples physical mouse state
-// outside the Win32 message queue.  SGRE, exact-profile Siglus, and admitted
-// Leaf/AQUAPLUS use different injected ABIs, but the host publication
+// outside the Win32 message queue.  SGRE, exact-profile Siglus, admitted
+// Leaf/AQUAPLUS, and admitted HUNEX/GGE use different injected ABIs, but the host publication
 // transaction is identical. Keep the property names as data so the low-level
 // hook can retain one down/up lifetime implementation without pretending the
 // engine-side detours are interchangeable.
@@ -176,6 +176,16 @@ constexpr SampledInputShieldContract kLeafAquaplusSampledInputShieldContract = {
     fushi_voice_hook::kLeafAquaplusSampledInputShieldWindowProperty,
     fushi_voice_hook::kLeafAquaplusSampledInputShieldTailRequestProperty,
     fushi_voice_hook::kLeafAquaplusSampledInputShieldTailAckProperty,
+};
+
+constexpr SampledInputShieldContract kHunexGgeSampledInputShieldContract = {
+    fushi_voice_hook::kHunexGgeSampledInputShieldRequiredProperty,
+    fushi_voice_hook::kHunexGgeSampledInputShieldRequiredValue,
+    fushi_voice_hook::kHunexGgeSampledInputShieldReadyProperty,
+    fushi_voice_hook::kHunexGgeSampledInputShieldReadyValue,
+    fushi_voice_hook::kHunexGgeSampledInputShieldWindowProperty,
+    fushi_voice_hook::kHunexGgeSampledInputShieldTailRequestProperty,
+    fushi_voice_hook::kHunexGgeSampledInputShieldTailAckProperty,
 };
 
 std::atomic<const SampledInputShieldContract*>
@@ -371,17 +381,21 @@ const SampledInputShieldContract* SelectSampledInputShieldContract(
       game, kSiglusSampledInputShieldContract);
   const bool leaf_aquaplus = IsSampledInputShieldContractDeclared(
       game, kLeafAquaplusSampledInputShieldContract);
+  const bool hunex_gge = IsSampledInputShieldContractDeclared(
+      game, kHunexGgeSampledInputShieldContract);
   const uint32_t declared_count = static_cast<uint32_t>(sgre) +
                                   static_cast<uint32_t>(siglus) +
-                                  static_cast<uint32_t>(leaf_aquaplus);
+                                  static_cast<uint32_t>(leaf_aquaplus) +
+                                  static_cast<uint32_t>(hunex_gge);
   if (any_declared != nullptr) *any_declared = declared_count != 0;
   // Multiple simultaneous declarations mean the target identity is
   // internally inconsistent. Never choose one arbitrarily: every injected ABI
   // suppresses physical input and a false choice can leave the game locked.
   if (declared_count != 1) return nullptr;
   if (sgre) return &kSgreSampledInputShieldContract;
-  return siglus ? &kSiglusSampledInputShieldContract
-                : &kLeafAquaplusSampledInputShieldContract;
+  if (siglus) return &kSiglusSampledInputShieldContract;
+  return leaf_aquaplus ? &kLeafAquaplusSampledInputShieldContract
+                       : &kHunexGgeSampledInputShieldContract;
 }
 
 bool HasSampledInputTailHandshake(

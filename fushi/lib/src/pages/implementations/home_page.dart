@@ -82,6 +82,8 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
         dispatchNativeGamepadButtonIntent,
         focusedEditableText,
         gamepadMoveFocusInDirection;
+import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
+    show dispatchClaimedMouseAction, resolveMouseBindingAction;
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
@@ -938,6 +940,43 @@ class _HomePageState extends BasePageState<HomePage>
     _selectTab(tabs[(next + tabs.length) % tabs.length]);
   }
 
+  /// 首页鼠标通道的解析阶梯：**只有 home 自己的 scope**。
+  ///
+  /// 键盘在页内解析 home → global → universal，但 global / universal 那两段的执行体
+  /// 其实并不在本页——`_executeShortcutAction` 对它们（除 globalBack 外）返回 ignored，
+  /// 让事件冒泡到 [wrapWithGlobalNavigation] 去执行。鼠标没有冒泡，那一层改由 app 根的
+  /// `onPointerDown` 兜底（互斥见 [MouseBindingDispatch]），**执行体仍只有那一份**。
+  /// BUG-2031：阶梯必须与本页**键盘阶梯逐字相同**。第一版只放了本页 scope，于是
+  /// `globalBack`（universal）在页内解析不到，只能落到 app 根那份平铺的
+  /// `Navigator.maybePop()`——而键盘 / 手柄的 `globalBack` 走的是本页的**逐级退出**
+  /// （先关面板 / 退全屏，最后才退页）。同一个动作两条通道两种行为，正是要禁的形态。
+  static const List<ShortcutScope> _kHomeMouseLadder = <ShortcutScope>[
+    ShortcutScope.home,
+    ShortcutScope.global,
+    ShortcutScope.universal,
+  ];
+
+  /// 首页的**鼠标绑定通道**：与 [_handleKeyEvent] 挂在同一层、同一份注册表、同一个
+  /// 执行体 [_executeShortcutAction]，只是触发器换成了鼠标非主键。
+  ///
+  /// ⚠️ 与视频页同一条几何限制：查词浮层可见时，根 Overlay 的 `LookupDismissBarrier`
+  /// （`Positioned.fill` + 叶子 `ColoredBox`，命中行为 opaque）会吃光指针，本入口收不到
+  /// 任何按下。那半边由 barrier 自己的 `onNonPrimaryButtonDown` 承接。
+  void _handleHomePointerDown(PointerDownEvent event) {
+    final ShortcutAction? action = resolveMouseBindingAction(
+      registry: appModel.shortcutRegistry,
+      buttons: event.buttons,
+      ladder: _kHomeMouseLadder,
+    );
+    if (action == null) return;
+    // 执行体返回 ignored 说明本页没接（等价于键盘的 ignored 冒泡），此时**不认领**，
+    // 让 app 根兜底照常有机会解析同一个按钮上的 universal / global 绑定。
+    dispatchClaimedMouseAction(
+      event,
+      () => _executeShortcutAction(action) == KeyEventResult.handled,
+    );
+  }
+
   KeyEventResult _executeShortcutAction(ShortcutAction action) {
     switch (action) {
       case ShortcutAction.homeTabBooks:
@@ -1029,58 +1068,69 @@ class _HomePageState extends BasePageState<HomePage>
               ),
             },
             child: Focus(
-              // Autofocus on every platform: on mobile no field on the home tabs
-              // grabs focus at mount, so without this the FocusManager has no
-              // primary focus and hardware-keyboard / gamepad shortcuts never
-              // reach _handleKeyEvent until the user taps something. The home
-              // search field focuses on demand, so this never fights an editable.
-              autofocus: true,
-              // But this wrapper spans the whole page, so it must NOT be a
-              // traversal target: otherwise directional (keyboard arrow /
-              // gamepad) navigation lands on it and the focus ring covers the
-              // entire window. skipTraversal keeps it as a key-event sink only;
-              // Tab/arrow/D-pad traversal moves between the real controls and
-              // the ring follows them. Shortcut keys still bubble up here.
-              skipTraversal: true,
-              focusNode: _keyboardFocusNode,
-              onKeyEvent: _handleKeyEvent,
-              child: GestureDetector(
-                onTap: () {
-                  final FocusNode? current = FocusManager.instance.primaryFocus;
-                  if (current != null && current != _keyboardFocusNode) {
-                    current.unfocus();
-                  }
-                },
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    // BUG-401: classify on the real physical width
-                    // (logical × appUiScale). This LayoutBuilder sits INSIDE
-                    // FushiAppUiScale, so `constraints.maxWidth` is the
-                    // inflated logical canvas width; reading it directly kept
-                    // desktop locked to the nav-rail layout and the phone
-                    // (bottom-bar) layout was unreachable however narrow the
-                    // real window got dragged.
-                    // macOS-native shell: a real root MacosWindow + Sidebar
-                    // (built in main.dart, Approach B) replaces the self-drawn
-                    // rail/bottom-bar. MacosWindow manages its own breakpoints, so
-                    // HomePage only renders the tab body here — checked before the
-                    // size-class switch.
-                    if (isMacosPlatform(context)) {
-                      return _buildMacosLayout();
-                    }
-                    final sizeClass = windowSizeClassReal(
-                      constraints.maxWidth,
-                      FushiAppUiScale.of(context),
-                    );
-                    // compact(<600) → 底栏；medium/expanded(≥600，含竖屏平板) → 侧边布局。
-                    if (sizeClass == WindowSizeClass.compact) {
-                      return _buildMobileLayout();
-                    }
-                    return _buildDesktopLayout(sizeClass);
-                  },
-                ),
-              ),
-            )));
+                // Autofocus on every platform: on mobile no field on the home tabs
+                // grabs focus at mount, so without this the FocusManager has no
+                // primary focus and hardware-keyboard / gamepad shortcuts never
+                // reach _handleKeyEvent until the user taps something. The home
+                // search field focuses on demand, so this never fights an editable.
+                autofocus: true,
+                // But this wrapper spans the whole page, so it must NOT be a
+                // traversal target: otherwise directional (keyboard arrow /
+                // gamepad) navigation lands on it and the focus ring covers the
+                // entire window. skipTraversal keeps it as a key-event sink only;
+                // Tab/arrow/D-pad traversal moves between the real controls and
+                // the ring follows them. Shortcut keys still bubble up here.
+                skipTraversal: true,
+                focusNode: _keyboardFocusNode,
+                onKeyEvent: _handleKeyEvent,
+                // 鼠标通道与键盘挂在同一层：作用域（整页）与解析阶梯都必须与
+                // [_handleKeyEvent] 对齐，挂低了就会重演 BUG-1864 那种「注册表声明整页、
+                // 挂载点只在子树，焦点一进面板整张表就够不着」。
+                //
+                // `translucent`：本层不画东西，默认 deferToChild 会让空白区收不到按下。
+                // [Listener] 不进手势竞技场、不消费事件，下面那个 GestureDetector 的
+                // onTap（只认主键）与所有子控件照常工作。
+                child: Listener(
+                  behavior: HitTestBehavior.translucent,
+                  onPointerDown: _handleHomePointerDown,
+                  child: GestureDetector(
+                    onTap: () {
+                      final FocusNode? current =
+                          FocusManager.instance.primaryFocus;
+                      if (current != null && current != _keyboardFocusNode) {
+                        current.unfocus();
+                      }
+                    },
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        // BUG-401: classify on the real physical width
+                        // (logical × appUiScale). This LayoutBuilder sits INSIDE
+                        // FushiAppUiScale, so `constraints.maxWidth` is the
+                        // inflated logical canvas width; reading it directly kept
+                        // desktop locked to the nav-rail layout and the phone
+                        // (bottom-bar) layout was unreachable however narrow the
+                        // real window got dragged.
+                        // macOS-native shell: a real root MacosWindow + Sidebar
+                        // (built in main.dart, Approach B) replaces the self-drawn
+                        // rail/bottom-bar. MacosWindow manages its own breakpoints, so
+                        // HomePage only renders the tab body here — checked before the
+                        // size-class switch.
+                        if (isMacosPlatform(context)) {
+                          return _buildMacosLayout();
+                        }
+                        final sizeClass = windowSizeClassReal(
+                          constraints.maxWidth,
+                          FushiAppUiScale.of(context),
+                        );
+                        // compact(<600) → 底栏；medium/expanded(≥600，含竖屏平板) → 侧边布局。
+                        if (sizeClass == WindowSizeClass.compact) {
+                          return _buildMobileLayout();
+                        }
+                        return _buildDesktopLayout(sizeClass);
+                      },
+                    ),
+                  ),
+                ))));
     // 桌面剪贴板/热键查词不再叠加独立 overlay 页；监听生命周期收窄到查词 tab。
     return home;
   }

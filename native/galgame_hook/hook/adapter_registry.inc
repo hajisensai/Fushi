@@ -679,6 +679,11 @@ class AdapterRegistry {
         g_header->lookup_enabled != 0) {
       return 16;
     }
+    if (hunex_gge_.lookup_sensor_available() && g_header != nullptr &&
+        fushi_voice_hook::HasLookupRegion(g_header) &&
+        g_header->lookup_enabled != 0) {
+      return 16;
+    }
     return siglus_.probe() && !siglus_.audio_ready() ? 1 : 200;
   }
 

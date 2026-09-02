@@ -108,10 +108,15 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     两边的新引擎位同时要走（HUNEX HFA 5 位 + SGRE 家族/锚点 3 位，而低 27 位早已
 //     占满）。按本结构体既有先例（reserved_luna 满了之后另立 reserved_hook_diagnostics）
 //     另立一个字，而不是拓宽——拓宽要改 InterlockedOr 的原子写路径与每个读侧。
-// v21：lookup geometry admission 新增 native-input-ready 位。lookup_enabled 只负责让
-//     文本/几何传感器继续工作；native provider 即使已经被 registry 选成 Ready owner，
-//     也只有在 host 通过风险准入并显式发布这一位后才可吞掉游戏点击。这个变化不改布局，
-//     但改变同一 flags 字的解释方式，按 v18 的纪律必须升版本，拒绝新旧 host/helper 混用。
+// v21：`lookup_geometry_admission_flags` 的 0x2 位从 v20 的保留位变成
+//     NativeInputAllowed。lookup_enabled 只负责让文本/几何传感器继续工作；
+//     native provider 即使已经被 registry 选成 Ready owner，也只有在 host
+//     通过风险准入并显式发布这一位后才可吞掉游戏点击。
+//     布局和偏移完全不变，但解释方式已经改变：v20 hook 只认识
+//     AttachedReady，v21 host 则依赖 0x2 对语义输入消费与 native hit 发布做
+//     fail-closed 门控。同布局、异语义仍必须升版（与 v18 的
+//     LookupInputSlot::keys 完全同理），否则旧 helper 会被版本门误判兼容，
+//     host 以为已撤销输入而驻留 DLL 仍继续消费。
 constexpr uint32_t kSharedVersion = 21;
 constexpr uint32_t kStableIpcVersion = 1;
 
@@ -171,6 +176,25 @@ inline constexpr wchar_t kLeafAquaplusSampledInputShieldTailAckProperty[] =
     L"Fushi.LeafAquaplus.SampledInputShield.TailAck";
 inline constexpr uintptr_t kLeafAquaplusSampledInputShieldReadyValue = 1u;
 inline constexpr uintptr_t kLeafAquaplusSampledInputShieldRequiredValue = 1u;
+
+// Exact HUNEX/GGE profiles also sample GetAsyncKeyState directly. Keep a
+// distinct namespace from Leaf/AQUAPLUS: both adapters own the same USER32
+// export, but their executable admission and detour callsites are unrelated.
+// The tail request/ack pair keeps the sampled low bit hidden until the engine
+// has observed a later neutral poll, so a lookup click cannot advance the
+// game after the popup has already been dismissed.
+inline constexpr wchar_t kHunexGgeSampledInputShieldReadyProperty[] =
+    L"Fushi.HunexGge.SampledInputShield.Ready";
+inline constexpr wchar_t kHunexGgeSampledInputShieldRequiredProperty[] =
+    L"Fushi.HunexGge.SampledInputShield.Required";
+inline constexpr wchar_t kHunexGgeSampledInputShieldWindowProperty[] =
+    L"Fushi.HunexGge.SampledInputShield.Window";
+inline constexpr wchar_t kHunexGgeSampledInputShieldTailRequestProperty[] =
+    L"Fushi.HunexGge.SampledInputShield.TailRequest";
+inline constexpr wchar_t kHunexGgeSampledInputShieldTailAckProperty[] =
+    L"Fushi.HunexGge.SampledInputShield.TailAck";
+inline constexpr uintptr_t kHunexGgeSampledInputShieldReadyValue = 1u;
+inline constexpr uintptr_t kHunexGgeSampledInputShieldRequiredValue = 1u;
 inline constexpr uint32_t kLeafAquaplusSampledInputLeftButton = 0x1u;
 inline constexpr uint32_t kLeafAquaplusSampledInputRightButton = 0x2u;
 inline constexpr uint32_t kLeafAquaplusSampledInputMiddleButton = 0x4u;
@@ -681,20 +705,26 @@ constexpr uint32_t kLookupGeometryStatusActive = 2u;
 constexpr uint32_t kLookupGeometryStatusSuspended = 3u;
 constexpr uint32_t kLookupGeometryStatusFaulted = 4u;
 
-// v19 host -> injected registry geometry admission.  This is deliberately
+// v20 host -> injected registry geometry admission.  This is deliberately
 // independent from lookup_enabled: attached calibrated lookup still needs the
 // injected generic input shield while native geometry publishers are retired.
 // Auto keeps observing native offers and uses the host-owned attached offer
-// only as the lowest-priority production fallback.
+// only as the lowest-priority production fallback.  v21 assigns flags bit 0x2
+// the NativeInputAllowed semantic gate; that semantic change is versioned even
+// though SharedHeader layout remains byte-for-byte identical to v20.
 constexpr uint32_t kLookupGeometryAdmissionDisabled = 0u;
 constexpr uint32_t kLookupGeometryAdmissionAuto = 1u;
 constexpr uint32_t kLookupGeometryAdmissionNativeOnly = 2u;
 constexpr uint32_t kLookupGeometryAdmissionAttachedOnly = 3u;
 constexpr uint32_t kLookupGeometryAdmissionFlagAttachedReady = 0x00000001u;
-constexpr uint32_t kLookupGeometryAdmissionFlagNativeInputReady = 0x00000002u;
+// Host-owned semantic input gate.  Provider discovery/readiness intentionally
+// ignores this bit: it only authorizes an already-applied exact native owner to
+// consume input and publish the resulting lookup hit.
+constexpr uint32_t kLookupGeometryAdmissionFlagNativeInputAllowed =
+    0x00000002u;
 constexpr uint32_t kLookupGeometryAdmissionFlagMask =
     kLookupGeometryAdmissionFlagAttachedReady |
-    kLookupGeometryAdmissionFlagNativeInputReady;
+    kLookupGeometryAdmissionFlagNativeInputAllowed;
 constexpr uint32_t kLookupGeometryAdmissionWriteInProgress = 0x80000000u;
 constexpr uint32_t kLookupGeometryAdmissionSequenceMask = 0x7fffffffu;
 
@@ -1119,8 +1149,8 @@ struct LookupGeometryAdmissionSnapshot {
     return (flags & kLookupGeometryAdmissionFlagAttachedReady) != 0;
   }
 
-  bool native_input_ready() const {
-    return (flags & kLookupGeometryAdmissionFlagNativeInputReady) != 0;
+  bool native_input_allowed() const {
+    return (flags & kLookupGeometryAdmissionFlagNativeInputAllowed) != 0;
   }
 };
 
@@ -1247,15 +1277,13 @@ inline LookupGeometryAdmissionSnapshot ReadLookupGeometryAdmission(
 // generic shield.  The helper is idempotent across repeated Flutter syncs.
 inline uint32_t PublishLookupGeometryAdmission(
     SharedHeader* header, uint32_t mode, bool attached_ready,
-    bool native_input_ready) {
+    bool native_input_allowed = false) {
   if (header == nullptr || !IsLookupGeometryAdmissionMode(mode)) return 0;
-  uint32_t flags = 0;
-  if (attached_ready) {
-    flags |= kLookupGeometryAdmissionFlagAttachedReady;
-  }
-  if (native_input_ready) {
-    flags |= kLookupGeometryAdmissionFlagNativeInputReady;
-  }
+  const uint32_t flags =
+      (attached_ready ? kLookupGeometryAdmissionFlagAttachedReady : 0u) |
+      (native_input_allowed
+           ? kLookupGeometryAdmissionFlagNativeInputAllowed
+           : 0u);
   const LookupGeometryAdmissionSnapshot stable =
       ReadLookupGeometryAdmission(header);
   if (stable.valid && stable.mode == mode && stable.flags == flags) {
@@ -1295,6 +1323,12 @@ inline uint32_t PublishLookupGeometryAdmission(
                       published);
   return published;
 }
+
+// Update only the semantic-input bit while preserving the current geometry
+// owner policy and attached-ready offer.  ReaderState serialises host writers;
+// this helper still uses the same request seqlock so injected readers never
+// accept a half-updated flag set.  A mapping without a stable geometry request
+// is fail-closed and must be initialised by PublishLookupGeometryAdmission.
 
 inline LookupShieldRequestSnapshot ReadLookupShieldRequest(
     const SharedHeader* header) {

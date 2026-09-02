@@ -97,22 +97,25 @@ void main() {
   // 这条钉住「channels 只是设置页的录入门，不是派发门」这个契约本身——只要有人再想
   // 拿「通道没开」推出「绑定是死的」，这里就会红。
   test('BUG-1995: channels 不含 mouse 的 scope，已有鼠标绑定仍可解析', () {
+    // 取样从 home 换成 globalExternal：home 本轮接上了真实的鼠标派发入口、通道已开。
+    // globalExternal 是**按构造**开不了的那一类（OS 级 RegisterHotKey 的 `HotKey.key`
+    // 类型就是 `KeyboardKey`），所以它会长期留在关着的一侧，适合当这条契约的锚点。
     expect(
-      ShortcutScope.home.channels.contains(ShortcutChannel.mouse),
+      ShortcutScope.globalExternal.channels.contains(ShortcutChannel.mouse),
       isFalse,
-      reason: '前提：home 至今没有开鼠标通道（开了就换一个仍关着的 scope）',
+      reason: '前提：globalExternal 没有开鼠标通道（开了就换一个仍关着的 scope）',
     );
 
     final FushiShortcutRegistry reg = FushiShortcutRegistry()
       ..loadDefaults(TargetPlatform.windows);
     reg.updateBinding(
-      ShortcutAction.homeTabNext,
+      ShortcutAction.globalExternalLookup,
       const ShortcutBindingSet(mouseBindings: <MouseBinding>[MouseBinding(4)]),
     );
 
     expect(
-      reg.resolveMouse(4, scope: ShortcutScope.home),
-      ShortcutAction.homeTabNext,
+      reg.resolveMouse(4, scope: ShortcutScope.globalExternal),
+      ShortcutAction.globalExternalLookup,
       reason: 'resolveMouse 不查 channels —— 通道开关管不着已存在的绑定能否派发',
     );
   });

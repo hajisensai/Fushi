@@ -55,9 +55,35 @@ and macOS 13.4–14.0 for free, with no change to the ORT binary or the Dart API
    `OrtDmlApi::SessionOptionsAppendExecutionProvider_DML` with the required
    sequential execution mode. The upstream generic Windows ORT archive is
    CPU-only, so its Dart enum previously led only to `INVALID_PROVIDER`.
+7. Windows error replies are normalised to UTF-8 before they cross the method
+   channel (`WindowsUtils::toUtf8Message`, and every `result->Error` in
+   `flutter_onnxruntime_plugin.cpp` routed through the single `FailWith` exit).
 
-**The Dart API under `lib/` is byte-for-byte upstream**, and so are all five
-native source trees — no ORT wrapper logic changed anywhere.
+   Upstream hands `e.what()` to the channel verbatim. ONNX Runtime builds its
+   Windows messages by appending the system error text, which `FormatMessage`
+   renders in the machine's **ANSI code page** — GBK on a Chinese Windows. The
+   channel's string contract is UTF-8 and Dart's decoder is strict, so the reply
+   does not merely arrive garbled, it stops being decodable at all: the caller
+   gets `FormatException: Unexpected extension byte (at offset N)` and the real
+   failure is gone. Measured here: a failing DirectML session produced a
+   240-byte message whose 228th byte began `参数错误。` in GBK, which is exactly
+   the offset the user saw (BUG-2034).
+
+   Valid UTF-8 is passed through untouched — model paths containing non-ASCII
+   are genuine UTF-8 written by ORT's own `ToUTF8String`, and re-decoding those
+   as ANSI would corrupt them. The local well-formedness check is deliberately
+   at least as strict as Dart's `utf8.decode` (rejects overlong forms, UTF-16
+   surrogates and anything past U+10FFFF); anything looser would let a string
+   pass here and still blow up on the far side.
+
+**The Dart API under `lib/` is byte-for-byte upstream.** The Apple, Android and
+Linux native trees are untouched as well; the Windows tree carries deltas 6 and
+7 above, both confined to provider wiring and error-string encoding — no ORT
+wrapper or inference logic changed anywhere.
+
+Guard: `fushi/test/ocr/onnxruntime_windows_error_encoding_guard_test.dart` keeps
+delta 7 in place — a re-vendor that drops it, or a new error branch that calls
+`result->Error` directly, fails the guard.
 
 ## Deployment targets this fork requires
 

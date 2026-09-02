@@ -2437,28 +2437,35 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             final int button = (args[0] as num?)?.toInt() ?? -1;
             if (button < 0) return;
             final registry = appModel.shortcutRegistry;
-            // BUG-1071 ①：绑到「关闭词典」(readerDismissDict) 的鼠标键此前只有
-            // resolveMouse 解析、运行时无消费者（onPointerSeek 硬编码只判 seek-to-
-            // sentence），故鼠标键关不掉词典。鼠标键是位置型动作，不走位置无关的
-            // _executeShortcutAction，在此收口：正文 WebView（弹窗矩形之外/behind
-            // barrier 的正文区）按下该键且弹窗可见时 → 关整栈。与键盘 Esc 的
-            // readerDismissDict 语义一致（clearDictionaryResult），且**独立于**
-            // _audiobookController（纯 EPUB 无有声书 controller，此前整个 handler 因
-            // controller==null 早退、连 seek 都只在有声书下生效——关词典不能被它拦）。
-            if (isDictionaryShown &&
-                registry.resolveMouse(button, scope: ShortcutScope.reader) ==
-                    ShortcutAction.readerDismissDict) {
-              clearDictionaryResult();
+            // ① **位置型动作**先行：「seek 到点击句」需要知道点在哪一句上，只有页内
+            // JS 拿得到坐标，故它恒由本条路承担（Flutter 侧那个入口会跳过它，判据
+            // [isSeekToClickedSentenceButton] 两侧共用）。仅有声书表面有意义，故仍需
+            // controller。
+            if (isSeekToClickedSentenceButton(registry, button)) {
+              if (_audiobookController == null) return;
+              final double x = _ReaderFushiPageState._toDouble(args[1]) ?? 0;
+              final double y = _ReaderFushiPageState._toDouble(args[2]) ?? 0;
+              await _seekToClickedSentence(x, y);
               return;
             }
-            // seek-to-clicked-sentence 仅有声书表面有意义，故仍需 controller。
-            if (_audiobookController == null) return;
-            if (!isSeekToClickedSentenceButton(registry, button)) {
-              return;
-            }
-            final double x = _ReaderFushiPageState._toDouble(args[1]) ?? 0;
-            final double y = _ReaderFushiPageState._toDouble(args[2]) ?? 0;
-            await _seekToClickedSentence(x, y);
+            // ② 指针归宿主的平台（Windows 的 composition WebView）上，其余绑定由页面
+            // 根 [Listener]（[_handleReaderPointerDown]）派发；这里再派一次就是同一次
+            // 按下触发两回。判据与漫画、查词弹窗三处共用同一个
+            // [hostOwnsWebViewPointerInput]。
+            if (hostOwnsWebViewPointerInput) return;
+            // ③ 其余一律走与键盘/手柄**完全相同**的执行体。
+            //
+            // 此前这里硬编码只判两件事（关词典 + seek 到点击句），于是 reader /
+            // audiobook scope 明明开着 mouse 通道、设置页也给「添加鼠标按键」入口，
+            // 但除这两个动作外**绑什么都没反应**——翻页、振假名、加入暂存……全是死项。
+            // 那正是用户复诉的「有的支持鼠标有的没有」在页面内部的那一半。
+            final ShortcutAction? action = resolveMouseBindingActionForButton(
+              registry: registry,
+              button: button,
+              ladder: kReaderMouseLadder,
+            );
+            if (action == null) return;
+            _executeShortcutAction(action);
           },
         );
 
