@@ -1155,6 +1155,13 @@ function constructSingleGlossaryHtml(entryIndex) {
         rewriteExportedGlossaryAnchors(tempDiv);
         const content = applyTableStyles(tempDiv.innerHTML);
         let listIdentifier = '';
+        /* 词典改名（v95）刻意**不**翻这里：本行进的是导出到 Anki 的卡片正文。
+           卡片是历史存档，改名不回溯——翻了之后同一个牌组里旧卡显示真名、新卡
+           显示新名，比统一显示真名更难认。同一段 HTML 里的 data-dictionary
+           属性也必须是真名（Lapis 模板 CSS 靠它命中），文本与属性不一致会让
+           排查变难。
+           上游 Yomitan 同位置放的是 dictionaryAlias，所以「跟着改名走」是个
+           合理的反向选择；要改就只翻这一行的 label 文本，别碰下面的属性。 */
         if (dictChanged) {
             label = tags ? `(${tags}, ${dictName})` : `(${dictName})`;
         } else {
