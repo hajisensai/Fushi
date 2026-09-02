@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
+import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/discovery_source_settings_section.dart';
@@ -103,6 +104,42 @@ void main() {
         reason: '${source.id} default',
       );
     }
+  });
+
+  testWidgets('用户自配的 OPDS 服务器不进这一区（它自己带 enabled，两套开关会两头对不上）',
+      (WidgetTester tester) async {
+    // 在这里关掉只影响聚合扇出：OPDS 配置区仍显示「启用」、单选仍能用；
+    // 反过来在配置区关掉，源直接离开注册表，停用清单里那条 id 就成了
+    // 再没有 UI 能清的垃圾。分界同视频域的自配 Torznab。
+    await prefs.setDiscoveryOpdsServers(<OpdsServerConfig>[
+      OpdsServerConfig(
+        id: 'srv',
+        name: 'My Shelf',
+        catalogUrl: Uri.parse('https://books.example.com/opds'),
+      ),
+    ]);
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    // 前提：这台服务器确实已经在运行期注册表里（否则这条断言是空转）。
+    expect(
+      appModel.mediaDiscoveryService.sources
+          .where((MediaDiscoverySource s) => s.isUserConfigured),
+      hasLength(1),
+    );
+    expect(
+      find.byKey(const ValueKey<String>('discovery-source-opds-srv')),
+      findsNothing,
+    );
+    // 内置源仍在。
+    expect(
+      find.byKey(const ValueKey<String>('discovery-source-nyaa')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('toggling a source writes through to the shared preference',

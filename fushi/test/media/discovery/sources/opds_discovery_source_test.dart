@@ -17,10 +17,11 @@ OpdsServerConfig _config({
   String username = 'reader',
   String password = 'pw',
   String url = 'https://books.example.com/api/v1/opds',
+  String name = 'My Books',
 }) =>
     OpdsServerConfig(
       id: 'srv1',
-      name: 'My Books',
+      name: name,
       catalogUrl: Uri.parse(url),
       username: username,
       password: password,
@@ -329,6 +330,59 @@ void main() {
           (ExternalProviderFailure f) => f.kind,
           'kind',
           ExternalProviderFailureKind.invalidResponse,
+        ),
+      ),
+    );
+    source.close();
+  });
+
+  test('显示名留空时回退主机名，而不是渲染成一行空标题', () {
+    // 显示名是选填的（i18n 明写「留空则使用主机名」）。这个 getter 的消费方
+    // 是设置里的源开关列表与发现页来源下拉——裸取 config.name 会让只填了 URL
+    // 的服务器在那两处变成空行，而漫画卡片那边用的是 displayName，同一台
+    // 服务器在不同页面还显示不一致。
+    final OpdsDiscoverySource source = _source(
+      MockClient((http.Request request) async => _xml('<feed/>')),
+      config: _config(name: ''),
+    );
+    expect(source.displayName, 'books.example.com');
+    source.close();
+  });
+
+  test('用户自配标记为真——它不该进「发现来源」的内置源开关区', () {
+    final OpdsDiscoverySource source = _source(
+      MockClient((http.Request request) async => _xml('<feed/>')),
+    );
+    expect(source.isUserConfigured, isTrue);
+    source.close();
+  });
+
+  test('回走超过上限时抛 notFound，不把手上那页冒充成目标页', () async {
+    // break 后返回当前 URL 会让用户拿到第 51 页的内容、标签却写着目标页码。
+    int requests = 0;
+    final OpdsDiscoverySource source = _source(
+      MockClient((http.Request request) async {
+        requests++;
+        return _xml('''
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <link rel="next" href="/api/v1/opds/books?cursor=$requests"/>
+</feed>
+''');
+      }),
+    );
+    await expectLater(
+      source.browse(
+        const DiscoveryRequest(
+          kind: DiscoveryMediaKind.novel,
+          path: 'https://books.example.com/api/v1/opds/books',
+          page: 500,
+        ),
+      ),
+      throwsA(
+        isA<ExternalProviderFailure>().having(
+          (ExternalProviderFailure f) => f.kind,
+          'kind',
+          ExternalProviderFailureKind.notFound,
         ),
       ),
     );

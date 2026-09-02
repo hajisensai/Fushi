@@ -143,6 +143,33 @@ void main() {
       );
     });
 
+    test('partial entry：根是 <entry> 的单条目文档也要能解析', () {
+      // COPS / Calibre-Web 的出版物条目可以只带一条指向单 entry 文档的
+      // alternate 链接。不兜这一形态，那种条目就是个点进去报
+      //「不是可读的 OPDS 目录」的死目录。
+      final OpdsFeed feed = parseOpdsAtomFeed('''
+<?xml version="1.0" encoding="utf-8"?>
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <title>Partial Book</title>
+  <id>urn:uuid:partial</id>
+  <link rel="http://opds-spec.org/acquisition" href="/dl/p"
+        type="application/epub+zip"/>
+</entry>
+''', baseUri: _base);
+      final OpdsPublicationEntry pub =
+          feed.entries.single as OpdsPublicationEntry;
+      expect(pub.title, 'Partial Book');
+      expect(pub.links.single.fileType, OpdsFileType.epub);
+    });
+
+    test('既没有 <feed> 也没有 <entry> 才算畸形', () {
+      expect(
+        () =>
+            parseOpdsAtomFeed('<html><body>nope</body></html>', baseUri: _base),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
     test('无标题条目与无链接条目被丢弃，不产生点不开的空行', () {
       final OpdsFeed feed = parseOpdsAtomFeed('''
 <feed xmlns="http://www.w3.org/2005/Atom">

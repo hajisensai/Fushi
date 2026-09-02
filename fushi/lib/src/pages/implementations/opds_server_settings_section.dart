@@ -17,7 +17,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
 
 import 'package:fushi/src/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
@@ -25,6 +24,7 @@ import 'package:fushi/src/media/discovery/sources/opds_discovery_source.dart';
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
+// createAppHttpIoClient 经 fushi/utils.dart 转出，无需再单独 import app_http.dart。
 import 'package:fushi/utils.dart';
 
 /// 输入停止多久后落盘（与 Torznab 段同值）。
@@ -267,9 +267,14 @@ class _OpdsServerSettingsSectionState
     final OpdsServerConfig? config = draft.toConfig();
     if (config == null) return;
     setState(() => _probes[draft.id] = const _ProbeState.running());
-    final http.Client client = http.Client();
-    final OpdsDiscoverySource source =
-        OpdsDiscoverySource(config: config, client: client);
+    // 必须走统一出站装配点：裸 `http.Client()` 既绕过应用代理与连接超时
+    // （用户在代理环境下会遇到「浏览正常、点测试连接却失败」这种自相矛盾的
+    // 结果），也会被 `test/tools/outbound_http_discipline_guard_test.dart`
+    // 的登记制守卫判红——那条守卫扫 lib/ 全树，定向测试挑不到它。
+    final OpdsDiscoverySource source = OpdsDiscoverySource(
+      config: config,
+      client: createAppHttpIoClient(),
+    );
     _ProbeState result;
     try {
       final ProviderBatchResult<DiscoveryResultPage> page = await source.browse(

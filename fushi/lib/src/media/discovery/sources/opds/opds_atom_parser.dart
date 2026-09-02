@@ -39,7 +39,19 @@ OpdsFeed parseOpdsAtomFeed(String xml, {required Uri baseUri}) {
   final XmlDocument document = XmlDocument.parse(xml);
   final XmlElement? feed = _firstElement(document, 'feed');
   if (feed == null) {
-    throw const FormatException('OPDS Atom feed has no <feed> root');
+    // OPDS「partial entry」：COPS / Calibre-Web 的出版物条目可以只带一条
+    // `rel="alternate"` 的 catalog 链接，指向一份**根是 `<entry>` 而不是
+    // `<feed>`** 的单条目文档，真正的 acquisition 链接在那份文档里。
+    // 不兜这一形态的话，那种条目会渲染成一个点进去就报
+    //「不是可读的 OPDS 目录」的死目录。
+    final XmlElement? entry = _firstElement(document, 'entry');
+    if (entry != null) {
+      final OpdsEntry? parsed = _parseEntry(entry, baseUri);
+      return OpdsFeed(
+        entries: <OpdsEntry>[if (parsed != null) parsed],
+      );
+    }
+    throw const FormatException('OPDS Atom document has no <feed> or <entry>');
   }
 
   String? nextHref;

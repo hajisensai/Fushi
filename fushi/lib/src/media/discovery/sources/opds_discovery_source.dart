@@ -56,11 +56,20 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
   @override
   String get id => opdsSourceIdFor(config.id);
 
+  /// 走 [OpdsServerConfig.displayName]（空名回退主机名），**不是**裸 `config.name`：
+  /// 显示名是选填的（`discovery_opds_name_hint` 明写「留空则使用主机名」），
+  /// 而本 getter 的消费方是设置里的源开关列表与发现页来源下拉——裸取 name 会让
+  /// 只填了 URL 的服务器在那两处渲染成一行**空标题**，而漫画卡片那边用的是
+  /// `displayName`，同一台服务器在不同页面显示还不一致。
   @override
-  String get displayName => config.name;
+  String get displayName => config.displayName;
 
   @override
   final int priority;
+
+  /// 地址/账号全部来自用户配置，开关是 `OpdsServerConfig.enabled`。
+  @override
+  bool get isUserConfigured => true;
 
   final http.Client _client;
 
@@ -204,7 +213,18 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
     // 缓存不命中（跨会话恢复、用户直接跳页）：从首页起顺着 next 有界回走。
     String current = feedPath;
     for (int walked = 1; walked < page; walked++) {
-      if (walked > _kMaxPageWalk) break;
+      if (walked > _kMaxPageWalk) {
+        // 走到上限**必须抛**，不能 break 后把手上这一页当成 [page] 返回——
+        // 那样用户拿到的是第 51 页的内容、标签却写着第 [page] 页，而且
+        // `_toPage` 会把这个错页码原样填进 `DiscoveryResultPage.page`。
+        // 语义与下面「next 为 null」那条一致：走不到就说走不到。
+        throw ExternalProviderFailure(
+          providerId: id,
+          operation: 'browse',
+          kind: ExternalProviderFailureKind.notFound,
+          message: 'page is too deep to reach by walking next links',
+        );
+      }
       final OpdsFeed feed = await _loadFeed(Uri.parse(current));
       final String? next = feed.nextHref;
       _rememberNext(feedPath, walked, next);

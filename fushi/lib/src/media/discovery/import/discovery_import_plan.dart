@@ -38,6 +38,21 @@ const Set<String> kDiscoveryArchiveExtensions = <String>{
 /// 与 `kMangaCarrierFileExtensions`（手动导入对话框的选择器白名单）的差别：
 /// 这里**不含** `.epub`/`.pdf`。发现页的 pdf 恒归小说域（`OpdsFileType` 亦然），
 /// 在漫画域再认一次只会让同一个文件按用户当前所在页签进不同的库。
+///
+/// ## 已知限制：一个 `.zip`/`.rar` 里套着多卷 `.cbz`
+///
+/// 这种包会被整包交给 `MangaArchiveImporter`，而它按「一个包 = 一卷图」处理，
+/// 包内全是 cbz 就抽不出页图，最终抛 `Manga image folder has no pages`——
+/// 用户看到的是一句不知所云的失败，而不是导入 N 卷。
+///
+/// **刻意不在这里修**：手动导入对话框的 `mangaArchive` 分支对 `.zip` 走的是
+/// 同一条路（`manga_import_dialog.dart`），也就是说这是
+/// `MangaArchiveImporter` 既有的边界，不是本层引入的；在发现页单独绕开它，
+/// 只会让同一个文件「手动导入失败、发现页导入成功」这样两条路径给出不同结果。
+/// 真要修应当修在 `MangaArchiveImporter`（识别包内 cbz → 逐卷导入），
+/// 那会同时惠及手动导入。OPDS 本身不产生这种包：它的 acquisition 链接
+/// 一条就是一卷。多卷形态经 `classifyDiscoveryDirectory` 的 manga 分支
+/// （torrent 下载一个装着若干 cbz 的文件夹）走得通。
 const Set<String> kDiscoveryMangaArchiveExtensions = <String>{
   '.cbz',
   '.cbr',
