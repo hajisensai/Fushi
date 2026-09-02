@@ -2411,14 +2411,14 @@ function findPanelButton(context, label) {
   return button;
 }
 
-function stubAppExternalHost(context, {matches, calls}) {
+function stubAppExternalHost(context, {matches, calls, openOutcome = 'opened'}) {
   context.window.flutter_inappwebview.callHandler = (name, payload) => {
     if (name === 'duplicateCheck') return Promise.resolve(true);
-    // The app-external native layer resolves this one with an immediate null
-    // too — the ↗ half of the same root cause (BUG-1064).
+    // BUG-2051：↗ 现在在 app 内外走同一根桥（原生侧已把它列入 DEFERRED），宿主回
+    // 三态结局名；null 专指「这个宿主根本没接这根桥」（浏览器扩展的 shim）。
     if (name === 'openInAnki') {
       calls.openInAnki.push(payload);
-      return Promise.resolve(null);
+      return Promise.resolve(openOutcome);
     }
     if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
     // The app-external native layer resolves this one with an immediate null —
@@ -2573,10 +2573,12 @@ testAppExternalMinedClickReminesWhenCardIsGone().catch((error) => {
   process.exitCode = 1;
 });
 
-// BUG-1064 ↗「在 Anki 中打开卡片」——同一根因的第二个入口。宿主 handler `openInAnki`
-// 同样没有被 app 外裸窗 DEFER（它同样要弹 Flutter 的多卡选择框 / toast），同样被立刻
-// 解析成 null，于是按钮点了什么都不发生。以下三条钉死页内车道的三分支语义
-// （与 app 内 openMinedCardInAnki 一致：无命中提示 / 单卡直开 / 多卡弹选择）。
+// BUG-2051 ↗「在 Anki 中打开卡片」——app 内外**同一根桥、同一条判据**。
+//
+// 旧实现按宿主能力分两条：app 内交给 openInAnki，app 外自己先 findMinedMatches 反查
+// note id 再 openMinedNote 打开。那条反查按第一字段**名**查，而画 ✓ 的查重是 Anki 内建
+// 的第一字段 checksum（跨全部笔记类型）——同一个卡组混装两种笔记类型时两者答案相反：
+// ✓ 说已制卡、↗ 说「没有找到已制的卡片」。页内那条整条删掉，判据只留一条。
 
 function buildOpenAnkiButton(context) {
   const entry = {
@@ -2604,119 +2606,101 @@ function buildOpenAnkiButton(context) {
   return button;
 }
 
-async function testAppExternalOpenInAnkiSingleMatchOpensDirectly() {
-  const context = loadPopup();
-  const calls = newCalls();
-  stubAppExternalHost(context, {
-    matches: [{ noteId: 7001, preview: '刀' }],
-    calls,
-  });
-
+async function clickOpenAnki(context, calls, openOutcome) {
+  stubAppExternalHost(context, { matches: [{ noteId: 7001, preview: '刀' }], calls, openOutcome });
   const button = buildOpenAnkiButton(context);
   await flush();
   await button.onclick();
   await flush();
+  return button;
+}
 
-  assert.equal(calls.openInAnki.length, 0,
-    'an app-external host must NOT be handed openInAnki (it only ever replies null)');
-  assert.equal(calls.openMinedNote.length, 1, 'a single match opens straight away');
-  assert.equal(calls.openMinedNote[0].noteId, 7001, 'the matched note is the one opened');
+// app 外表面（裸 WebView2 / galgame 浮窗）：不得再自己反查，必须交给宿主。
+async function testAppExternalOpenInAnkiGoesToTheHostBridge() {
+  const context = loadPopup();
+  const calls = newCalls();
+  const button = await clickOpenAnki(context, calls, 'opened');
+
+  assert.equal(calls.openInAnki.length, 1,
+    'the app-external ↗ must go through the host bridge, not an in-page lookup');
+  assert.equal(calls.openInAnki[0].expression, '刀', 'the bridge is handed the word');
+  assert.equal(calls.findMinedMatches.length, 0,
+    'the by-field-name lookup is gone — it could not see a cross-note-type duplicate');
+  assert.equal(calls.openMinedNote.length, 0, 'no note id is resolved any more');
   assert.equal(context.document.querySelector('.mined-action-panel'), null,
-    'no panel for a single match');
+    'multiple cards are listed by Anki browser itself, not by an in-page panel');
+  assert.equal(context.document.querySelector('.inline-hint'), null,
+    'a successful open says nothing');
   assert.equal(button.disabled, false, 'the button is never left disabled');
 }
 
-async function testAppExternalOpenInAnkiMultipleMatchesShowsOpenOnlyPanel() {
+// 「Anki 可达、但这个词现在一张卡都没有」必须与「打不开 Anki」说不同的话。
+async function testOpenInAnkiNoMatchHintsInsteadOfSilence() {
   const context = loadPopup();
   const calls = newCalls();
-  stubAppExternalHost(context, {
-    matches: [
-      { noteId: 7002, preview: '刀 — A' },
-      { noteId: 7003, preview: '刀 — B' },
-    ],
-    calls,
-  });
+  await clickOpenAnki(context, calls, 'noMatch');
 
-  const button = buildOpenAnkiButton(context);
-  await flush();
-  const click = button.onclick();
-  await flush();
-
-  const panel = context.document.querySelector('.mined-action-panel');
-  assert.ok(panel, 'multiple matches must offer a choice, not silently pick one');
-  // openOnly 形态：只列卡片 + 打开，不得混入覆写 / 新增重复卡（那是 ✓ 的职责）。
-  const labels = [];
-  const collect = (node) => {
-    if (node.tagName === 'BUTTON') labels.push(node.textContent);
-    for (const child of node.children ?? []) collect(child);
-  };
-  collect(panel);
-  assert.ok(!labels.includes('新增为重复卡'),
-    'the open-only panel must not offer add-duplicate');
-  assert.ok(!labels.includes('覆写这张卡'),
-    'the open-only panel must not offer overwrite');
-  assert.equal(labels.filter((l) => l === '查看 / 在 Anki 中打开').length, 2,
-    'every matching card is openable');
-
-  findPanelButton(context, '取消').onclick();
-  await click;
-  await flush();
-  assert.equal(calls.openMinedNote.length, 0, 'cancelling opens nothing');
-}
-
-async function testAppExternalOpenInAnkiNoMatchHintsInsteadOfSilence() {
-  const context = loadPopup();
-  const calls = newCalls();
-  stubAppExternalHost(context, { matches: [], calls });
-
-  const button = buildOpenAnkiButton(context);
-  await flush();
-  await button.onclick();
-  await flush();
-
-  assert.equal(calls.openMinedNote.length, 0, 'nothing to open');
   const hint = context.document.querySelector('.inline-hint');
   assert.ok(hint, 'a vanished card must say so, never fail silently');
-  assert.ok((hint.textContent || '').length > 0, 'the hint carries a message');
+  assert.equal(hint.textContent, '没有找到已制的卡片。');
 }
 
-// app 内宿主（自带原生对话框 / toast）必须仍然把 ↗ 原样交给 openInAnki。
-async function testInAppOpenInAnkiStillGoesToHost() {
+async function testOpenInAnkiFailureSaysSo() {
+  const context = loadPopup();
+  const calls = newCalls();
+  await clickOpenAnki(context, calls, 'failed');
+
+  const hint = context.document.querySelector('.inline-hint');
+  assert.ok(hint, 'an unreachable Anki must say so');
+  assert.equal(hint.textContent, '无法在 Anki 中打开这张卡片。');
+}
+
+// null = 这个宿主没接这根桥（浏览器扩展的 bridge-shim 默认分支）。仍要提示，
+// 绝不能退回「点了没反应」——那正是 BUG-1064 的原始症状。
+async function testOpenInAnkiUnwiredHostStillHints() {
+  const context = loadPopup();
+  const calls = newCalls();
+  await clickOpenAnki(context, calls, null);
+
+  const hint = context.document.querySelector('.inline-hint');
+  assert.ok(hint, 'an unwired host must not degrade to a dead button');
+  assert.equal(hint.textContent, '无法在 Anki 中打开这张卡片。');
+}
+
+// app 内宿主走的是同一条路——没有第二条车道可以漂移。
+async function testInAppOpenInAnkiUsesTheSameLane() {
   const context = loadPopup();
   context.window.__fushiMinedCardActionNative = true;
   const calls = newCalls();
-  stubAppExternalHost(context, {
-    matches: [{ noteId: 7004, preview: '刀' }],
-    calls,
-  });
-
-  const button = buildOpenAnkiButton(context);
-  await flush();
-  await button.onclick();
-  await flush();
+  await clickOpenAnki(context, calls, 'opened');
 
   assert.equal(calls.openInAnki.length, 1,
-    'the in-app host keeps handling ↗ itself (Flutter picker / toast)');
+    'the in-app host is handed the same bridge call');
   assert.equal(calls.findMinedMatches.length, 0,
-    'the in-app lane must not run the in-page orchestration');
+    'neither lane runs an in-page orchestration any more');
 }
 
-testAppExternalOpenInAnkiSingleMatchOpensDirectly().catch((error) => {
+testAppExternalOpenInAnkiGoesToTheHostBridge().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
 
-testAppExternalOpenInAnkiMultipleMatchesShowsOpenOnlyPanel().catch((error) => {
+testOpenInAnkiNoMatchHintsInsteadOfSilence().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
 
-testAppExternalOpenInAnkiNoMatchHintsInsteadOfSilence().catch((error) => {
+testOpenInAnkiFailureSaysSo().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
 
-testInAppOpenInAnkiStillGoesToHost().catch((error) => {
+testOpenInAnkiUnwiredHostStillHints().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testInAppOpenInAnkiUsesTheSameLane().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });

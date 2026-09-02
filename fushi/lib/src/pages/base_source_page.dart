@@ -7,6 +7,7 @@ import 'package:fushi_core/fushi_core.dart' show kStatSourceBook;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
@@ -1180,19 +1181,15 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     return MinePopupResult(ankiConnect: r.ankiConnect, noteId: r.noteId);
   }
 
-  /// TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮的 reader/有声书车道入口（与
-  /// [DictionaryPageMixin.onOpenInAnki] 对称）。据当前词条 expression/reading 反查命中
-  /// 卡并直接跳转打开（单卡直开 / 多卡弹选择 / 无卡 toast），不制卡、不覆写。
-  Future<void> onOpenInAnkiFromPopup(String expression, String reading) async {
+  /// TODO-1360 / BUG-2051：已制卡的词旁 ↗「在 Anki 中打开卡片」按钮的 reader/有声书
+  /// 车道入口（与 [DictionaryPageMixin.onOpenInAnki] 对称）。判据与画 ✓ 的查重同源，
+  /// 见 [BaseAnkiRepository.openWordInAnki]；不制卡、不覆写，也不再弹选择框。
+  Future<AnkiOpenWordOutcome> onOpenInAnkiFromPopup(
+    String expression,
+    String reading,
+  ) async {
     final repo = ref.read(ankiRepositoryProvider);
-    await openMinedCardInAnki(
-      context: context,
-      repo: repo,
-      expression: expression,
-      reading: reading,
-      // BUG-1040：多卡选择框同样是 Flutter 层，期间停靠弹窗。
-      runHidden: runWithLookupPopupHidden,
-    );
+    return repo.openWordInAnki(expression, reading);
   }
 
   /// 收藏/制卡计入统计时的来源标识。阅读器（EPUB）/有声书都归书籍统计

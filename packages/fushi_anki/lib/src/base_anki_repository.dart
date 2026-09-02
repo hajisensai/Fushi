@@ -200,6 +200,35 @@ abstract class BaseAnkiRepository {
   /// **默认实现 = 优雅降级**：基类返回 `false`。
   Future<bool> openNoteInAnki(int noteId) async => false;
 
+  /// BUG-2051：点 ↗「在 Anki 中打开**这个词**已有的卡」。
+  ///
+  /// 语义是「按词去 Anki 里看」，不是「按我们记下的某个 note id 去看」——后者要求
+  /// 先反查一遍 id，而那条反查（按第一字段**名**查）与画 ✓ 的判据（Anki 内建第一
+  /// 字段 checksum，跨笔记类型）根本不是一件事，于是出现「✓ 说已制卡、↗ 说没有卡」。
+  /// 两条判据只能留一条。
+  ///
+  /// **默认实现**：没有原生「按词打开」能力的后端（AnkiDroid 只有按 note id 的
+  /// deep link）走 [findMatchingNotes] + [openNoteInAnki]。这些后端的查重与反查
+  /// 本来就限定同一笔记类型（AnkiDroid 的 `checkForDuplicates` / `findNotesByContent`
+  /// 都传 `models:[当前笔记类型]`），两者同源，不存在本 bug；多张命中时打开**最近
+  /// 一张**（note id 最大 = 创建时间最新），不再弹选择面板——↗ 的职责是「带我去看」，
+  /// 挑哪张是 Anki 浏览器自己的事。
+  Future<AnkiOpenWordOutcome> openWordInAnki(
+    String expression,
+    String reading,
+  ) async {
+    if (expression.isEmpty) return AnkiOpenWordOutcome.failed;
+    final List<MinedNoteRef> matches =
+        await findMatchingNotes(expression, reading);
+    if (matches.isEmpty) return AnkiOpenWordOutcome.noMatch;
+    final int newest = matches
+        .map((MinedNoteRef m) => m.noteId)
+        .reduce((int a, int b) => a > b ? a : b);
+    return await openNoteInAnki(newest)
+        ? AnkiOpenWordOutcome.opened
+        : AnkiOpenWordOutcome.failed;
+  }
+
   /// BUG-1799：复核 [noteIds] 里哪些 note **已经不在 Anki 中了**（用户在 Anki 里删了卡）。
   ///
   /// 返回值口径是本方法的全部要害：**只返回「后端明确应答、且应答里没有这张 note」的 id**。

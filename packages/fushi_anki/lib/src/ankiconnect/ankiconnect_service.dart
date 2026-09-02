@@ -418,6 +418,27 @@ class AnkiConnectService {
     return _asStringList(await _request('modelNames'), 'modelNames');
   }
 
+  /// BUG-2051：笔记类型名 → id。Anki 的第一字段判重（`dupe:` 搜索）以**笔记类型 id**
+  /// 为参数，所以要跨全部笔记类型复现 `canAddNotesWithErrorDetail` 的判据就必须先拿
+  /// 到全部 id。识别不出 id 的表项直接跳过（宁可少查一个笔记类型，也不要让整次打开
+  /// 因为一条脏数据失败）。
+  Future<Map<String, int>> getModelNamesAndIds() async {
+    final dynamic result = await _request('modelNamesAndIds');
+    if (result is! Map) {
+      throw AnkiConnectException(
+        'Unexpected AnkiConnect response for modelNamesAndIds '
+        '(expected an object)',
+      );
+    }
+    final out = <String, int>{};
+    result.forEach((dynamic key, dynamic value) {
+      final int? id =
+          value is int ? value : int.tryParse(value?.toString() ?? '');
+      if (id != null) out[key.toString()] = id;
+    });
+    return out;
+  }
+
   Future<List<String>> getModelFields(String modelName) async {
     return _asStringList(
       await _request('modelFieldNames', {'modelName': modelName}),
@@ -829,7 +850,26 @@ class AnkiConnectService {
   // `{query: 'nid:<id>'}`，把 Anki 主窗口的 Browse 视图过滤到该 note）。需要 Anki GUI
   // 在前台才有视觉效果；纯远程/无 GUI 时 AnkiConnect 仍返回成功（不抛）。
   Future<void> guiBrowse(int noteId) async {
-    await _request('guiBrowse', {'query': 'nid:$noteId'});
+    await guiBrowseQuery('nid:$noteId');
+  }
+
+  /// BUG-2051：把 Anki 浏览器过滤到任意[query]，并回传**被选中的 card id**。
+  ///
+  /// `guiBrowse` 的应答本来就是命中的 card id 列表，所以「打开」和「到底有没有卡」
+  /// 是同一次往返的两个产物——调用方据此区分「打开了」与「一张都没有」，不必再另发
+  /// 一条 `findNotes` 去问同一个问题（那正是两条判据漂移的老路）。
+  ///
+  /// 应答不是列表时返回空列表：拿不到计数不该让「已经打开了浏览器」这件事失败。
+  Future<List<int>> guiBrowseQuery(String query) async {
+    final dynamic result = await _request('guiBrowse', {'query': query});
+    if (result is! List) return const <int>[];
+    return <int>[
+      for (final dynamic id in result)
+        if (id is int)
+          id
+        else if (int.tryParse(id.toString()) case final int parsed)
+          parsed,
+    ];
   }
 }
 
@@ -965,6 +1005,51 @@ Map<String, Object> _addNoteDuplicateOptions({
       'checkAllModels': true,
     },
   };
+}
+
+/// BUG-2051：与 [AnkiConnectService.isDuplicateForAdd]（= `addNote` 内建判重）
+/// **同源**的搜索串——「Anki 认为这个词已经有卡」的那批卡，用搜索语法表达一遍。
+///
+/// 根因回顾：画 ✓ 的判据是 Anki 内建的**第一字段 checksum**（跨全部笔记类型，不看
+/// 字段叫什么名字），而 ↗「在 Anki 中打开」此前是另发一条 `"<第一字段名>:<词>"`
+/// 按**字段名**查。本机实测（卡组 `正在背::Kaishi 1.5k  zh-CH` 里混装两种笔记类型）：
+/// `canAddNotesWithErrorDetail` 判 `たっぷり` 重复 → 画 ✓，而
+/// `"Expression:たっぷり"` 恒 0 命中（那张卡是 Kaishi，第一字段叫 `Word`）→ ↗ 弹
+/// 「没有找到已制的卡片」。同一个词，两句互相打架的说法。
+///
+/// `canAddNotes` 只回布尔、给不出 note id，所以「同源」不能靠复用它。Anki 搜索语法
+/// 里的 `dupe:<笔记类型id>,<文本>` **就是**那条 checksum 判据的搜索版本（Anki 浏览器
+/// 侧栏的「重复」用的也是它），于是跨全部笔记类型 = 每个 id 一个 `dupe:` 子句 OR 起来，
+/// 再按 [scope] 前置同一个卡组过滤器（[ankiDuplicateDeckFilter]，与查重共用）。
+///
+/// 实测（本机真 Anki，AnkiConnect 25.x）：
+/// - `deck:"…" ("dupe:1758278161949,たっぷり" OR …)` → `[1758347126448]`，正是 ✓ 认的那张；
+/// - `dupe:` 按**第一个逗号**切（`"dupe:mid,x,たっぷり"` 不命中，排除了按最后一个逗号切），
+///   所以词里含逗号不会截断文本；
+/// - 未知的笔记类型 id 只是不命中、不报错，故全量 OR 安全；
+/// - 值里的引号/反斜杠/空格/冒号/括号/星号在整体加引号后都能解析，且 `*` 不当通配符
+///   （`dupe:` 是精确文本比较，不是模糊匹配）。
+///
+/// [value] 为空或 [modelIds] 为空时返回空串——调用方据此不发这次请求（空搜索串会把
+/// 整个收藏集摊开，绝不能当成「这个词的卡」）。
+String ankiDuplicateSearchQuery({
+  required String deckName,
+  required String value,
+  required AnkiDuplicateScope scope,
+  required Iterable<int> modelIds,
+}) {
+  if (value.isEmpty) return '';
+  final List<int> ids = modelIds.toList(growable: false);
+  if (ids.isEmpty) return '';
+  final String escaped = _escapeAnkiQuery(value);
+  // 每个子句整体加引号：值里的空格/冒号/括号否则会被 Anki 的查询解析器切开。
+  final String dupeTerms =
+      ids.map((int mid) => '"dupe:$mid,$escaped"').join(' OR ');
+  // 单个笔记类型也照样套括号：与 deck 过滤器并置时 `A B OR C` 的结合律会把
+  // 卡组条件只绑到第一个子句上，那是一句悄悄查错范围的查询。
+  final String dupeGroup = '($dupeTerms)';
+  final String deckFilter = ankiDuplicateDeckFilter(deckName, scope);
+  return deckFilter.isEmpty ? dupeGroup : '$deckFilter $dupeGroup';
 }
 
 String _fieldValueQuery({

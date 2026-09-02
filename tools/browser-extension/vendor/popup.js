@@ -1783,9 +1783,6 @@ async function openMinedNoteInAnki(noteId) {
 // 与 app 内对话框一致：点遮罩不关闭（制卡/覆写有副作用，误触不该丢掉整次操作），
 // 只有「取消」与 Esc 能取消。
 function showMinedCardActionPanel(matches, options) {
-    // openOnly（BUG-1064）：↗ 的多卡选择形态——只列卡片 + 打开，不带覆写 /
-    // 新增重复卡（那是点 ✓ 的职责），与 app 内 showAnkiOpenNotePicker 单一语义一致。
-    const openOnly = !!(options && options.openOnly);
     return new Promise((resolve) => {
         // 弹窗是否拥有整个文档：app 内/app 外都是独立的 popup.html 文档（true）；
         // 浏览器扩展把同一份 popup.js 注入到宿主页面的 shadow root 里（__fushiRoot），
@@ -1845,7 +1842,7 @@ function showMinedCardActionPanel(matches, options) {
             className: 'mined-action-title',
             textContent: window.i18nMinedCardTitle || '卡片已在 Anki 中',
         }));
-        const subtitle = (matches.length > 1 || openOnly)
+        const subtitle = (matches.length > 1)
             ? (window.i18nMinedMultipleMatches || '{count} 张匹配的卡片')
                 .replace('{count}', String(matches.length))
             : (window.i18nMinedCardSubtitle || '选择对这张已存在的卡片做什么。');
@@ -1859,7 +1856,7 @@ function showMinedCardActionPanel(matches, options) {
                 textContent: note.preview || ('#' + note.noteId),
             }));
             const rowButtons = el('div', { className: 'mined-action-row-buttons' });
-            const overwriteBtn = openOnly ? null : el('button', {
+            const overwriteBtn = el('button', {
                 className: 'mined-action-btn ghost',
                 textContent: window.i18nMinedActionOverwrite || '覆写这张卡',
                 onclick: () => {
@@ -1884,10 +1881,8 @@ function showMinedCardActionPanel(matches, options) {
                 },
             });
             buttons.push(viewBtn);
-            if (overwriteBtn) {
-                buttons.push(overwriteBtn);
-                rowButtons.appendChild(overwriteBtn);
-            }
+            buttons.push(overwriteBtn);
+            rowButtons.appendChild(overwriteBtn);
             rowButtons.appendChild(viewBtn);
             row.appendChild(rowButtons);
             list.appendChild(row);
@@ -1912,10 +1907,8 @@ function showMinedCardActionPanel(matches, options) {
         });
         buttons.push(cancelBtn);
         actions.appendChild(cancelBtn);
-        if (!openOnly) {
-            buttons.push(duplicateBtn);
-            actions.appendChild(duplicateBtn);
-        }
+        buttons.push(duplicateBtn);
+        actions.appendChild(duplicateBtn);
         panel.appendChild(actions);
 
         // 瞬态查词窗的窗口高度会被收缩到卡片内容高度（host measureAndReport），矮卡片
@@ -1924,7 +1917,7 @@ function showMinedCardActionPanel(matches, options) {
         if (ownsDocument) rootEl.classList.add(MINED_ACTION_OPEN_CLASS);
         __fushiOverlayParent().appendChild(backdrop);
         document.addEventListener('keydown', onKey, true);
-        (openOnly ? cancelBtn : duplicateBtn).focus();
+        duplicateBtn.focus();
     });
 }
 
@@ -1952,31 +1945,31 @@ function showInlineHint(button, message) {
     }, 1800);
 }
 
-// BUG-1064：↗「在 Anki 中打开卡片」在 app 外的页内车道。
+// BUG-2051：↗「在 Anki 中打开这个词的卡」——**唯一**一条车道，app 内外同一根桥。
 //
-// 与点 ✓ 是**同一个根因的第二个入口**：宿主 handler `openInAnki` 同样没有被 app 外的
-// 裸 WebView2 窗口 DEFER（它同样要弹 Flutter 的多卡选择框 / toast），于是同样被立刻
-// 解析成 null——按钮转一圈什么都不发生。这里按宿主能力分流后，用与 app 内
-// `openMinedCardInAnki` 完全相同的三分支语义就地处理：
-//   - 无命中（探测时显示已制卡、现在查不到）→ 提示，不静默。
-//   - 命中 1 张 → 直接打开；打不开也提示，绝不假装成功。
-//   - 命中多张 → 弹页内面板的 openOnly 形态（只列卡片 + 打开，不带覆写/新增——
-//     那是 ✓ 的职责，与 app 内 showAnkiOpenNotePicker 的单一语义一致）。
-async function runInPageOpenInAnki(button, expression, reading) {
-    const matches = await findMinedMatches(expression, reading);
-    if (!matches.length) {
-        showInlineHint(button, window.i18nMinedOpenNoCard || '没有找到已制的卡片。');
-        return;
+// 旧实现按宿主能力分成两条：app 内交给宿主，app 外自己先 findMinedMatches 反查 note id
+// 再 openMinedNote。那条反查按第一字段**名**查（`"Expression:词"`），而画 ✓ 的查重是
+// Anki 内建的第一字段 checksum（跨全部笔记类型，不看字段叫什么）。同一个卡组里混装两
+// 种笔记类型时两者给出相反答案：✓ 说已制卡，↗ 说「没有找到已制的卡片」。判据只能留一条，
+// 于是页内那条整个删掉，宿主统一把 Anki 浏览器过滤到「Anki 认为这个词已有的卡」。
+//
+// 回传是三态名（'opened' / 'noMatch' / 'failed'）；**null 专指「这个宿主没接这根桥」**
+// （浏览器扩展的 bridge-shim 默认分支），与 'failed' 同样提示打不开，但语义分开保留，
+// 免得以后有人把「没人管」读成「Anki 打不开」。
+async function openWordInAnki(button, expression, reading) {
+    let outcome = null;
+    try {
+        outcome = await window.flutter_inappwebview.callHandler(
+            'openInAnki', { expression, reading });
+    } catch (e) {
+        // 桥本身抛（宿主已重载/未注册）→ 与 failed 同待遇，绝不静默。
+        console.error('open-anki button: openInAnki failed', e);
+        outcome = 'failed';
     }
-    if (matches.length === 1) {
-        const ok = await openMinedNoteInAnki(matches[0].noteId);
-        if (!ok) {
-            showInlineHint(button,
-                window.i18nMinedOpenFailed || '无法在 Anki 中打开这张卡片。');
-        }
-        return;
-    }
-    await showMinedCardActionPanel(matches, { openOnly: true });
+    if (outcome === 'opened') return;
+    showInlineHint(button, outcome === 'noMatch'
+        ? (window.i18nMinedOpenNoCard || '没有找到已制的卡片。')
+        : (window.i18nMinedOpenFailed || '无法在 Anki 中打开这张卡片。'));
 }
 
 // 页内面板的完整编排。返回：
@@ -3245,18 +3238,9 @@ function createEntryHeader(entry, idx) {
             openAnkiButton.dataset.busy = '1';
             openAnkiButton.disabled = true;
             try {
-                // BUG-1064：与点 ✓ 同一分流——宿主有原生对话框（app 内）就交给
-                // openInAnki；没有（app 外裸窗 / 扩展）则就地处理，否则那根桥同样
-                // 只会回 null，按钮转一圈什么都不发生。
-                if (hasNativeMinedCardAction()) {
-                    await window.flutter_inappwebview.callHandler(
-                        'openInAnki', { expression, reading });
-                } else {
-                    await runInPageOpenInAnki(openAnkiButton, expression, reading);
-                }
-            } catch (e) {
-                // 跳转失败不能卡死按钮；记日志并恢复可点（宿主侧另有 toast 反馈）。
-                console.error('open-anki button: openInAnki failed', e);
+                // BUG-2051：不再按宿主能力分流——↗ 在 app 内外走同一根桥、同一条判据。
+                // 结果提示画在按钮旁边（app 外没有 Flutter toast），见 openWordInAnki。
+                await openWordInAnki(openAnkiButton, expression, reading);
             } finally {
                 openAnkiButton.dataset.busy = '';
                 openAnkiButton.disabled = false;
