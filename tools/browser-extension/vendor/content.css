@@ -893,6 +893,13 @@
 
 .glossary-group > summary {
     list-style: none;
+    /* BUG-2049: 词典名与释义之间的 2px 呼吸原本挂在 `div[data-dictionary]` 的
+       padding-top 上，而那个 div 只在展开态参与布局——于是「展开一本此词条下没有可见
+       释义的词典」也会凭空长高 2px（headless Edge 实测：卡片高 29px → 31px），
+       masonry 逐列重排再把这 2px 放大成整列上下跳动。
+       间距的拥有者改成恒存在的卡头：卡片基线高度与展开状态无关，展开只增加真实内容的
+       高度；有内容时卡头与释义之间仍是同样的 2px，观感不变。 */
+    padding-bottom: 2px;
 }
 
 .glossary-group > summary::-webkit-details-marker {
@@ -904,7 +911,16 @@
    (html,body{font-family:<custom>,...})；若该字体缺 U+25B6/U+25BC 或按 emoji 呈现，
    某些平台/WebView（Android WebView、自定义词典字体、emoji 回退）下三角会渲染成空白/彩色
    emoji/豆腐块，即「展开收起图标渲染不出来」。边框三角是纯几何，零字体依赖，全平台/全字体
-   一致渲染（与 Niratan 的 .entry-current::before 边框三角同法）。收起=指右▶，展开=指下▼。 */
+   一致渲染（与 Niratan 的 .entry-current::before 边框三角同法）。收起=指右▶，展开=指下▼。
+
+   BUG-2049: 展开态**只旋转，不重画边框**。边框三角的布局盒尺寸就是它两组对边之和，
+   所以「换朝向」必然「换盒子」：旧写法收起态是 5px 宽 × 8px 高（左边框 5 + 上下各 4），
+   展开态被重设成 8px 宽 × 5px 高（上边框 5 + 左右各 4）。盒宽 5→8 把后面的词典名
+   整体右推 3px，用户看到「展开/收起时词典头位置会动」。headless Edge 实测（真 popup.css，
+   Noto CJK / Yu Gothic / Meiryo / 默认 四种字体一致）：.dict-name 相对 summary 的
+   左偏移 收起 10px → 展开 13px。
+   transform 不参与布局：同一份右向三角旋转 90° 后，布局盒恒为 5×8，两态词典名左偏移
+   恒等；而旋转所得形状（底边 8、高 5、绕盒心）与旧展开态逐像素相同。 */
 .glossary-group > summary::before {
     content: '';
     display: inline-block;
@@ -921,18 +937,18 @@
 }
 
 .glossary-group[open] > summary::before {
-    /* 展开态：下向三角（顶点朝下）——显式重设四边，避免残留收起态边框 */
-    border-top: 5px solid currentColor;
-    border-right: 4px solid transparent;
-    border-bottom: 0;
-    border-left: 4px solid transparent;
+    /* 展开态：下向三角（顶点朝下）。只旋转，不碰任何 border——布局盒必须与收起态恒等，
+       否则词典名会随展开状态横向跳动（BUG-2049）。 */
+    transform: rotate(90deg);
 }
 
 .glossary-group > div[data-dictionary] {
     display: block;
     font-size: 14px;
     line-height: 1.4;
-    padding-top: 2px;
+    /* BUG-2049: 这里不再放 padding-top——间距挂在 `.glossary-group > summary` 的
+       padding-bottom 上，见那条规则的注释。本 div 只在展开态存在，任何挂在它上面的
+       固定间距都会变成「展开就长高」的状态相关几何。 */
 }
 
 .glossary-group > div[data-dictionary] > ol {
