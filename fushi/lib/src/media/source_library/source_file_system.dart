@@ -132,6 +132,11 @@ class LocalSourceFileSystem implements SourceFileSystem {
         ));
       }
     }
+    // 文件系统枚举顺序不是稳定输入（NTFS 按名字、ext4 是目录哈希序），
+    // 而这份清单一路流到 planScanFromFileList 的 books/videos/mangas 分类列表，
+    // 再决定扫描导入的落库次序（用户可见）。在 IO 边界就定下来。
+    entries.sort((SourceFileEntry a, SourceFileEntry b) =>
+        a.path.compareTo(b.path));
     return entries;
   }
 

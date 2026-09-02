@@ -4,6 +4,8 @@
 - **真实性**：❌ **未复现 —— 不是本 PR 引入的回归**，是 GitHub Windows runner 上「回环临时端口 bind 不上」的环境性偶发（同一 commit 重跑即绿）。
 - **[ ] ① 未修复** —— 无代码可修（下有排除依据）。
 - **[ ] ② 未加自动化测试** —— 同上。
+- **复现次数**：2 次（2026-09-02 早 PR#1129；2026-09-02 PR#1147）。二次出现把它从
+  「偶发、可忽略」升级成「**会持续拦住不相干的 PR**」——见「第二次出现」。
 - **备注**：见下。
 
 ### 现场
@@ -71,6 +73,24 @@ libtorrent 2.0.11 里 `session_impl::listen_port()`（`src/session_impl.cpp:5517
    （ABI `db19734b…`），从不从源码编。真正的对照组只有本分支那两次源码编译
    （②③）。
 
+### 第二次出现（2026-09-02，PR#1147）
+
+同一天又中一次，**形状逐字相同**：PR **#1147**
+（`worktree-fix-ocr-dml-fallback-utf8`，OCR DirectML 回退 + UTF-8 归一）的 `windows`
+job 也是 `22 tests passed, 13 failed`，伴随重复的
+`Bad state: timeout waiting for seeder listen port`。
+
+这次的排除证据比第一次更硬：
+
+- **#1147 改的 9 个文件里零 torrent 代码**（OCR / DirectML / 编码归一）。
+  第一次还需要靠「同 commit 重跑即绿 + vcpkg ABI hash 相等」排除；这次是
+  **一条跟 torrent 没任何关系的 PR 直接中招**，「本 PR 引入」已不可能。
+- `gh run rerun --failed` 后通过，与第一次一致。
+
+两次叠起来看，它不是「某条 PR 的偶发噪声」，而是 **runner 机器级的系统性风险**：
+任何一条 PR 都可能因为它红一次，而红的内容与该 PR 无关。**看到这个形状先
+`gh run rerun --failed`，不要去查本 PR 的 diff。**
+
 ### 结论与后续
 
 红是 runner VM 侧的 `bind(127.0.0.1, 0)` 失败（Windows 上 Hyper-V/WinNAT 预留掉
@@ -78,8 +98,32 @@ libtorrent 2.0.11 里 `session_impl::listen_port()`（`src/session_impl.cpp:5517
 必红」，实际换台机器就好。**不改代码**：把 IPv6 双栈关掉是撤功能，给 rig 的判据
 加特例是掩盖症状，两者都不是根因修。
 
-可选的后续（**不在本条范围内，未做**）：`ht_session_create` 之后 bridge 丢掉了
-`listen_failed_alert`（`drain_alerts` 不认这个类型），所以 rig 超时只能报
-「timeout waiting for seeder listen port」而拿不到 errno。把这条 alert 收进
-`ht_session_ctx` 并在 `ht_session_status` 里透出来，能让下次同款环境红一眼定性，
-但那是诊断增强不是本 bug 的修复。
+### 诊断：为什么每次只能报超时（2026-09-02 复核）
+
+已逐行核实：`drain_alerts`（`native/fushi_torrent/fushi_torrent_ffi.cpp:399`，注释里
+自称是「**唯一**的 alert 收割点」）只 `alert_cast` 了 `piece_finished` /
+`save_resume_data`(+failed) / `file_renamed`(+failed) / `storage_moved`(+failed) /
+`dht_stats` / `session_stats` / `file_prio` / `portmap`(+error) 十几个类型，
+**没有 `listen_failed_alert`，也没有 `listen_succeeded_alert`**，其余一律丢弃。
+而 `ht_session_create` 的 `alert_mask` 已经包含 `status | error`
+（`fushi_torrent_ffi.cpp:645`）——**alert 确实发出来了，就是在 bridge 里被默默扔掉**。
+这就是为什么两次红都只能看到「端口永远是 0」、拿不到 bind 的 errno。
+
+**本次做了什么**：在 `LocalSeedRig._waitFor` 上加一个只在超时那一刻跑的
+`diagnose` 钩子，等端口这一处传 `_describeLoopbackBindHealth`：超时后 Dart 自己
+`ServerSocket.bind(127.0.0.1, 0)` 一次，把结果拼进错误文案。探针也失败 = 机器的临时
+端口段不可用（本条的形状），探针成功 = 真得去查 bridge。**下次同款红一眼定性，
+不需要重编 native。** 它只改错误文案，不改等待判据，不影响红/绿。
+
+**为什么没顺手把 `listen_failed_alert` 收进 `drain_alerts`**：代码量确实不大
+（ctx 加一个字段 + 一个 `alert_cast` 分支 + `ht_session_status` 里多一个 JSON 字段），
+但它落在 C++ FFI 桥里，而 `native/fushi_torrent/prebuilt/` 是 **gitignore 的**
+（`native/fushi_torrent/.gitignore:7`）——想真实测到它必须先拿 vcpkg 从源码编
+libtorrent 2.0.11 + 重建 DLL（实测 ~10 分钟），否则就是往桥里提一段**没跑过的**
+C++。本条是一条环境性偶发，不值得为一个诊断字段搭一次 native 构建链；上面的 Dart
+探针已经拿到了 90% 的定性能力。
+
+**什么时候再做**：下一次有人因别的原因动 `native/fushi_torrent/fushi_torrent_ffi.cpp`
+并已经把本地 libtorrent 构建链搭好了，顺手带上（`listen_failed_alert` 的
+`error` + `endpoint` 存进 ctx，`ht_session_status` 透出 `"listen_error"`）；
+或者探针未来报出「Dart 能 bind、libtorrent 不能」（那就真是 bridge 问题，必须拿 errno）。

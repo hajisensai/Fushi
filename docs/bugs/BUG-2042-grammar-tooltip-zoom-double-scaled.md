@@ -1,0 +1,14 @@
+## BUG-2042 · 语法说明浮层定位未按内容 zoom 折算，zoom!=1 时双重缩放偏移
+- **报告**：2026-09-02（我在查 BUG-2037 时从用户截图看出浮层位置可疑，当时如实标注「未经实测」；修 BUG-2041 时必须先解决它——钉住态要取代原来「铺满弹窗」的 `.overlay` 卡片，定位不准就是拿一个有 bug 的定位换掉一个没 bug 的铺满卡片。）
+- **真实性**：✅ 真 bug，有代码级实证（非猜测）。单位模型：
+  - 弹窗内容整体走 CSS zoom：in-app 写在 `document.documentElement.style.zoom`（`dictionary_popup_webview.dart:631`），扩展浮窗写在 shadow host 上（`content.js`）；`popup.js` 已有统一读法 `__fushiPopupContentZoom()`。
+  - `getBoundingClientRect()` / `__fushiViewportWidth()`（宿主下发的 `__fushiPopupViewportWidth`）/ `window.innerHeight` 都是**视觉 px**（已乘 zoom）；写进元素 style 的 `left/top/max-*` 是 **layout px**，渲染时还会再乘一次 zoom。
+  - 同仓已有的换算先例坐实了这套模型：`dictionary_popup_webview.dart:405` `layoutWidth = width / z`，注释写着「不能直接写 html/body width，否则 zoom != 1 时实占宽度会再次越过真实视口」。
+  - 而 `showGrammarTooltip` 的 clamp 内部单位自洽（全是视觉 px），**最后写回 style 时没有 `/ z`** → 位置被放大 z 倍。默认设置 z=1 是恒等变换，所以默认下看不出来。
+- **[x] ① 已修复** — `fushi/assets/popup/popup.js` `showGrammarTooltip`：取 `const z = __fushiPopupContentZoom()`，全程按视觉 px 计算，最后 `left/top` 与按视口现算的 `maxWidth/maxHeight` 统一 `/ z` 折回 layout px 再写入。三镜像已同步。
+- **[x] ② 已加自动化测试** — `tools/browser-extension/grammar-tooltip-single-surface.test.js` 三条：
+  - `zoom=2` 时 `left/top` 必须等于 视觉坐标 / 2；
+  - `zoom=2` + 窄视口时 `max-width` 按 `视口-2*margin` 收窄后同样 / 2；
+  - `zoom=1` 时坐标与折算前逐字节等价（钉住「不引入回归」）。
+  - **变异实测**：去掉 `/ z` 后这三条中的相关断言变红，还原后 `popup.js` sha256 回到基线。
+- **备注**：与 BUG-2041 同一轮修复。**未做真机复测**（这一步按既定规则不做）——本条的证据是代码级单位模型 + 同仓既有换算先例 + zoom=2/1 的行为测试，不是真机像素。

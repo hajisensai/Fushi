@@ -1035,46 +1035,60 @@ class SyncOrchestrator {
   ) =>
       _syncCollectionsLive(report, backend);
 
-  /// 收集本设备当前在库的资产键（按 mediaType 分组），供删除墓碑消费端算 deleteLocal
-  /// 候选（远端有删除标记 ∧ 本地仍在库）。itemKey 与写墓碑点严格一致：book/audiobook =
-  /// bookKey（[writeSyncDeletionTombstone] 调用点 reader_fushi_source / audiobook），
-  /// video = bookUid（video_book_repository），localaudio = displayName，
-  /// srtbook = srt_books.uid（仅 standalone，见下）。
+  /// 收集本设备当前在库的资产（按 mediaType 分组 → `itemKey → 存在起始时刻`），供删除
+  /// 墓碑消费端算 deleteLocal 候选（远端有删除标记 ∧ 本地仍在库 ∧ 标记管得着这条）。
+  /// itemKey 与写墓碑点严格一致：book/audiobook = bookKey（[writeSyncDeletionTombstone]
+  /// 调用点 reader_fushi_source / audiobook），video = bookUid（video_book_repository），
+  /// localaudio = displayName，srtbook = srt_books.uid（仅 standalone，见下）。
   ///
   /// 键一律用 [SyncTombstoneKind.dbValue] 而非裸字符串字面量：这张 map 与写墓碑点必须
   /// 逐字一致，拼错一个字符的后果是「对端删了、本地永远不弹确认」这种静默失效。
-  Future<Map<String, Set<String>>> _collectPresentDeletionKeys() async {
-    return <String, Set<String>>{
-      SyncTombstoneKind.book.dbValue: <String>{
-        for (final EpubBookRow r in await _db.getAllEpubBooks()) r.bookKey,
+  ///
+  /// BUG-2044：值是**存在起始时刻**而不再是单纯的「在不在库」。删除后又重新加回来的条目
+  /// 时刻晚于墓碑 deletedAt，[tombstoneAppliesTo] 据此把它排除在候选之外——否则本机自己
+  /// 取消收藏产生、发布到远端后再也不会被 GC 的那条墓碑，会在用户重新收藏同一句之后被读
+  /// 回来，弹「其他设备已删除」问用户要不要删掉自己刚收藏的东西。
+  Future<DeletionPresentEntries> _collectPresentDeletionKeys() async {
+    return <String, Map<String, int?>>{
+      SyncTombstoneKind.book.dbValue: <String, int?>{
+        for (final EpubBookRow r in await _db.getAllEpubBooks())
+          r.bookKey: r.importedAt,
       },
-      SyncTombstoneKind.audiobook.dbValue: <String>{
-        for (final AudiobookRow r in await _db.getAllAudiobooks()) r.bookKey,
+      // 有声书表没有自己的导入时刻列，且与 epub 共享 bookKey——借 epub 的 importedAt
+      // 会把「书早就在、有声书是后加的」记成前者。宁可 null（多问一次），不编造时刻。
+      SyncTombstoneKind.audiobook.dbValue: <String, int?>{
+        for (final AudiobookRow r in await _db.getAllAudiobooks())
+          r.bookKey: null,
       },
       // 纯字幕书（standalone SRT）身份 = uid。**只收 bookKey 为空的行**：与
       // [SrtBookRepository.delete] 的写墓碑判据同源——srt-backed 行的身份是 bookKey，
       // 已由上面的 book 键覆盖，重复收进来会让同一资产在对端弹两条确认（TODO-2470）。
-      SyncTombstoneKind.srtbook.dbValue: <String>{
+      SyncTombstoneKind.srtbook.dbValue: <String, int?>{
         for (final SrtBookRow r in await _db.getAllSrtBooks())
-          if (r.bookKey.isEmpty) r.uid,
+          if (r.bookKey.isEmpty) r.uid: r.importedAt,
       },
-      SyncTombstoneKind.video.dbValue: <String>{
-        for (final VideoBookRow r in await _db.allVideoBooks()) r.bookUid,
+      SyncTombstoneKind.video.dbValue: <String, int?>{
+        for (final VideoBookRow r in await _db.allVideoBooks())
+          r.bookUid: r.importedAt,
       },
-      SyncTombstoneKind.localaudio.dbValue: <String>{
-        for (final LocalAudioDbEntry e in localAudioEntries) e.displayName,
+      // localaudio 条目不记录加入时刻 → null = 无从仲裁，保持「只看在不在库」的旧语义。
+      SyncTombstoneKind.localaudio.dbValue: <String, int?>{
+        for (final LocalAudioDbEntry e in localAudioEntries)
+          e.displayName: null,
       },
-      SyncTombstoneKind.favoriteword.dbValue: <String>{
+      SyncTombstoneKind.favoriteword.dbValue: <String, int?>{
         for (final FavoriteWordRow r in await _db.getAllFavoriteWords())
           FushiDatabase.favoriteWordItemKey(
-              r.expression, r.reading, r.sourceType),
+              r.expression, r.reading, r.sourceType): r.createdAt,
       },
       // 收藏句无稳定 id，用内容键（[FavoriteSentenceRepository.itemKeyOf]）；与写墓碑点、
-      // aggregate 去重键同源。
-      SyncTombstoneKind.favoritesentence.dbValue: <String>{
+      // aggregate 去重键同源。时刻取 createdAt——重新收藏会生成新的 createdAt，正是
+      // BUG-2044 仲裁所依据的那个时刻。
+      SyncTombstoneKind.favoritesentence.dbValue: <String, int?>{
         for (final FavoriteSentence s
             in await FavoriteSentenceRepository(_db).getAll())
-          FavoriteSentenceRepository.itemKeyOf(s),
+          FavoriteSentenceRepository.itemKeyOf(s):
+              s.createdAt.millisecondsSinceEpoch,
       },
     };
   }
@@ -1121,8 +1135,9 @@ class SyncOrchestrator {
       }
 
       // ── 消费：读远端标记 → deleteLocal 候选（过基线守卫）──
-      final Map<String, Set<String>> remoteTombstones = <String, Set<String>>{};
-      final Map<String, int> remoteDeletedAt = <String, int>{};
+      // itemKey → deletedAt（同资产多标记取较新；理论上主键唯一，防御性取 max）。
+      final DeletionTombstoneEntries remoteTombstones =
+          <String, Map<String, int>>{};
       // 本轮是否**完整**观测了远端标记集合：列出来了却没读成 marker 的每一条都置假。
       // 基线的语义是「已复核到此时刻的删除」，只有完整观测撑得起这句话（BUG-1934，
       // 见下方推进点的长注释）。
@@ -1157,34 +1172,33 @@ class SyncOrchestrator {
               'deletion tombstone "${e.name}" malformed', 'skipped');
           continue;
         }
-        remoteTombstones
-            .putIfAbsent(parsed.mediaType, () => <String>{})
-            .add(parsed.itemKey);
-        final String k = '${parsed.mediaType}\u0000${parsed.itemKey}';
-        // 同资产多标记取较新 deletedAt（理论上主键唯一，防御性取 max）。
-        final int? prev = remoteDeletedAt[k];
+        final Map<String, int> byKey = remoteTombstones.putIfAbsent(
+            parsed.mediaType, () => <String, int>{});
+        final int? prev = byKey[parsed.itemKey];
         if (prev == null || parsed.deletedAt > prev) {
-          remoteDeletedAt[k] = parsed.deletedAt;
+          byKey[parsed.itemKey] = parsed.deletedAt;
         }
       }
 
-      final Map<String, Set<String>> present =
+      final DeletionPresentEntries present =
           await _collectPresentDeletionKeys();
       int baseline = await repo.getDeletionTombstonesBaselineMs(_scope);
       if (baseline > nextBaseline) baseline = nextBaseline; // 时钟回拨钳制。
       bool heldBaseline = false;
 
-      // deleteLocal 方向：远端有标记 ∧ 本地在库。localTombstones/remotePresent 传空
-      // ⇒ 只产 deleteLocal，不产 deleteRemote（本设备的删除靠发布标记让对端各自消费）。
+      // deleteLocal 方向：远端有标记 ∧ 本地在库 ∧ 该标记管得着本地这条
+      // （BUG-2044 的存在起始时刻仲裁在 [computeDeletionPropagation] 内统一做）。
+      // localTombstones/remotePresent 传空 ⇒ 只产 deleteLocal，不产 deleteRemote
+      // （本设备的删除靠发布标记让对端各自消费）。
       final List<DeletionPropagationCandidate> raw = computeDeletionPropagation(
-        localTombstones: const <String, Set<String>>{},
+        localTombstones: const <String, Map<String, int>>{},
         remoteTombstones: remoteTombstones,
         localPresent: present,
-        remotePresent: const <String, Set<String>>{},
+        remotePresent: const <String, Map<String, int?>>{},
       );
       for (final DeletionPropagationCandidate c in raw) {
         if (c.direction != DeletionPropagationDirection.deleteLocal) continue;
-        final int? at = remoteDeletedAt['${c.mediaType}\u0000${c.itemKey}'];
+        final int? at = remoteTombstones[c.mediaType]?[c.itemKey];
         if (at == null || at <= baseline) continue; // 旧闻 / 已处理，不再弹。
         report.deletionCandidates.add(c);
         // BUG-1934：读失败的标记必须挡住基线推进。基线是**标量**，UI 复核完这批就把它
@@ -1236,34 +1250,32 @@ class SyncOrchestrator {
           await backend.getRemoteDeletionTombstones();
       if (remote == null) return; // 老 host 无 /api/tombstones 端点，优雅跳过。
 
-      final Map<String, Set<String>> remoteTombstones = <String, Set<String>>{};
-      final Map<String, int> remoteDeletedAt = <String, int>{};
+      final DeletionTombstoneEntries remoteTombstones =
+          <String, Map<String, int>>{};
       for (final r in remote) {
-        remoteTombstones
-            .putIfAbsent(r.mediaType, () => <String>{})
-            .add(r.itemKey);
-        final String k = '${r.mediaType}\u0000${r.itemKey}';
-        final int? prev = remoteDeletedAt[k];
+        final Map<String, int> byKey =
+            remoteTombstones.putIfAbsent(r.mediaType, () => <String, int>{});
+        final int? prev = byKey[r.itemKey];
         if (prev == null || r.deletedAt > prev) {
-          remoteDeletedAt[k] = r.deletedAt;
+          byKey[r.itemKey] = r.deletedAt;
         }
       }
 
       final SyncRepository repo = SyncRepository(_db);
-      final Map<String, Set<String>> present =
+      final DeletionPresentEntries present =
           await _collectPresentDeletionKeys();
       int baseline = await repo.getDeletionTombstonesBaselineMs(_scope);
       if (baseline > nextBaseline) baseline = nextBaseline;
 
       final List<DeletionPropagationCandidate> raw = computeDeletionPropagation(
-        localTombstones: const <String, Set<String>>{},
+        localTombstones: const <String, Map<String, int>>{},
         remoteTombstones: remoteTombstones,
         localPresent: present,
-        remotePresent: const <String, Set<String>>{},
+        remotePresent: const <String, Map<String, int?>>{},
       );
       for (final DeletionPropagationCandidate c in raw) {
         if (c.direction != DeletionPropagationDirection.deleteLocal) continue;
-        final int? at = remoteDeletedAt['${c.mediaType}\u0000${c.itemKey}'];
+        final int? at = remoteTombstones[c.mediaType]?[c.itemKey];
         if (at == null || at <= baseline) continue;
         report.deletionCandidates.add(c);
         report.noteDeletionHighWater(_scope, at);

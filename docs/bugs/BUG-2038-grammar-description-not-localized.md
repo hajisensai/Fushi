@@ -1,0 +1,16 @@
+## BUG-2038 · 词形变化语法说明只有英文，未随界面语言本地化
+- **报告**：2026-09-02（用户：截图，点开词形变化标签后的语法说明整段是英文 "Describes the intention to make someone do something. Usage: Attach させる to the irrealis form (未然形) of ichidan verbs…"）
+- **真实性**：✅ 真 bug（缺失本地化，非渲染故障）。原文来自 `fushi/assets/transforms/<lang>.json` 的 `description`（上游 Yomitan 文案，18 个语言文件共 204 条不重复说明、16.5k 字符），经引擎随变形链一路走到弹窗标签，全链路没有任何本地化环节：
+  - 资产 → C++ `loadTransforms`（`packages/fushi_dictionary/lib/src/engine/fushidicts.dart:356`）
+  - → `FushiTransformGroup.description` → `buildDeinflectionTags`（`packages/fushi_dictionary/lib/src/language/language.dart:429`）
+  - → 弹窗 JSON `deinflectionTrace` → `popup.js:2300 createDeinflectionTag` 的 `data-description`。
+- **[x] ① 已修复** — 新增「英文原文 → 译文」查表，只在**显示边界**替换：
+  - `packages/fushi_dictionary/lib/src/language/transform_description_i18n.dart`：`TransformDescriptionCatalog`（整表替换、查不到原样回落、幂等）+ `localizeDeinflectionTags`。
+  - 接入点只有两处，都是显示路径：`buildPopupJsonFromLookup`（弹窗 JSON）与 `deinflectionTagsFromExtra`（原生弹窗 / `buildLookupEntriesJson` 的读出路径）。**持久化路径 `buildLookupEntryExtra` 不翻**——那份 extra 会被缓存复用，写进译文等于把「写入时的界面语言」腌进数据。
+  - `fushi/lib/src/dictionary/transform_description_locale.dart`：按界面语言标签装载 `assets/transforms/i18n/<tag>.json`，解析顺序「完整标签 → 仅语言」（`zh-CN` → `zh`），都没有就清表回落英文。接在 `AppModel` 两条初始化路径的 `LocaleSettings.setLocaleRaw` 之后 + `setAppLocale`（桌面端不重启也即时生效）。
+  - 只改一张内存表，**不重新初始化词典引擎**（引擎里那份 JSON 始终是英文原文）。
+  - 译文资产 `fushi/assets/transforms/i18n/zh-CN.json`：覆盖全部 18 个语言文件的 204 条说明（不只日语）。
+  - **已知缺口**：目前只有简体中文一份译文，其余 15 种界面语言（含 zh-HK）按设计回落英文原文，机制已就位，补译只需再加一个 `<tag>.json`。
+- **[x] ② 已加自动化测试** — `fushi/test/dictionary/transform_description_i18n_test.dart`（查表/回落/幂等/换语言不留残渣；显示路径翻译且 extra 仍为英文；译文资产与 transforms 资产不漂移：键都还存在、英文原文全覆盖、译文非空且非照抄）；`fushi/test/dictionary/transform_description_locale_test.dart`（locale 候选解析）。
+- **提交**：`6f11f8c625`
+- **备注**：与 BUG-2037（同一浮层背景半透明）同一轮修复。变形名（`-ちゃう` / `causative`）是语言学标签，**不翻译**。

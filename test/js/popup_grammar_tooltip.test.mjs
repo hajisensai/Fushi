@@ -1,9 +1,10 @@
 // 词形变化标签的语法说明浮层（jsdom 真 DOM）。
 //
 // 弹窗把每一层词形变化渲染成一枚 .deinflection-tag，说明文本来自
-// assets/transforms/<lang>.json（经 deinflectionTrace 送达）。桌面上悬停出浮层，
-// 触屏上点开 .overlay —— Dart 侧的源码守卫只能看文本，管不到这里的运行时语义：
-// 视口收敛算不算对、触屏会不会把浮层粘死在屏幕上，只有真 DOM 能问出来。
+// assets/transforms/<lang>.json（经 deinflectionTrace 送达）。桌面上悬停出预览浮层，
+// 点击钉住同一个浮层（BUG-2041 之前点击是另开 .overlay 全屏卡，两套皮已收成一套）——
+// Dart 侧的源码守卫只能看文本，管不到这里的运行时语义：视口收敛算不算对、
+// 触屏会不会把浮层粘死在屏幕上、hover 门会不会连点击一起拦掉，只有真 DOM 能问出来。
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
@@ -24,7 +25,6 @@ const TOOLTIP_H = 120;
 function createPopup(anchorRect) {
   const dom = new JSDOM(
     `<!DOCTYPE html><body>
-      <div class="overlay" style="display:none"><div class="overlay-content"></div></div>
       <div id="entries-container"></div>
     </body>`,
     { runScripts: "outside-only", pretendToBeVisual: true },
@@ -227,7 +227,7 @@ test("触屏（不能悬停）不显示浮层——否则没有 mouseleave 来�
   );
 });
 
-test("点击走全屏 overlay（触屏上唯一的查看路径）", () => {
+test("点击钉住浮层——同一套呈现，不再另开 .overlay 全屏卡（BUG-2041）", () => {
   const win = createPopup(rect(10, 10));
   const tag = win.createDeinflectionTag({
     name: "-て",
@@ -237,10 +237,71 @@ test("点击走全屏 overlay（触屏上唯一的查看路径）", () => {
 
   tag.onclick.call(tag);
 
-  const overlay = win.document.querySelector(".overlay");
-  assert.equal(overlay.style.display, "block");
+  const tooltip = win.document.querySelector(".grammar-tooltip");
+  assert.ok(tooltip, "点击必须出浮层");
+  assert.equal(tooltip.style.display, "block");
+  assert.ok(
+    tooltip.classList.contains("is-pinned"),
+    "点击是钉住态（可交互、带标题与关闭按钮），不是 hover 预览",
+  );
   assert.equal(
-    win.document.querySelector(".overlay-content").textContent,
+    win.document.querySelector(".grammar-tooltip-body").textContent,
     "て-form.",
+  );
+  assert.equal(
+    win.document.querySelector(".grammar-tooltip-title").textContent,
+    "-て",
+    "钉住态才显示标题——原 .overlay-title 的职责",
+  );
+});
+
+test("触屏上点击仍是唯一且可用的查看路径（hover 门不得拦住钉住态）", () => {
+  const win = createPopup(rect(10, 10));
+  // (hover: hover) 不成立 = 触屏。hover 预览在这台设备上被刻意关掉，
+  // 所以点击这条路径一旦也被拦，触屏用户就再也看不到语法说明了 ——
+  // 这正是被取代的 .overlay 全屏卡原本承担的职责。
+  win.matchMedia = (query) => ({
+    media: query,
+    matches: false,
+    addListener() {},
+    removeListener() {},
+  });
+
+  const tag = win.createDeinflectionTag({
+    name: "-て",
+    description: "て-form.",
+  });
+  win.document.body.appendChild(tag);
+
+  tag.onclick.call(tag);
+
+  const tooltip = win.document.querySelector(".grammar-tooltip");
+  assert.ok(tooltip, "触屏点击必须出浮层，否则说明文本无路可达");
+  assert.equal(tooltip.style.display, "block");
+  assert.equal(
+    win.document.querySelector(".grammar-tooltip-body").textContent,
+    "て-form.",
+  );
+});
+
+test("再点同一枚标签收起（toggle）", () => {
+  const win = createPopup(rect(10, 10));
+  const tag = win.createDeinflectionTag({
+    name: "-て",
+    description: "て-form.",
+  });
+  win.document.body.appendChild(tag);
+
+  tag.onclick.call(tag);
+  assert.equal(
+    win.document.querySelector(".grammar-tooltip").style.display,
+    "block",
+  );
+
+  tag.onclick.call(tag);
+  const tooltip = win.document.querySelector(".grammar-tooltip");
+  assert.ok(
+    tooltip === null || tooltip.style.display === "none",
+    "第二次点击必须收起，否则钉住的浮层没有出口",
   );
 });

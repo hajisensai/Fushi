@@ -46,6 +46,7 @@ import 'package:fushi/src/models/builtin_tags.dart';
 import 'package:fushi/src/epub/book_title_conflict.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
+import 'package:fushi/src/dictionary/transform_description_locale.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
@@ -2462,6 +2463,9 @@ class AppModel with ChangeNotifier {
       populateLanguages();
       populateLocales();
       LocaleSettings.setLocaleRaw(appLocale.toLanguageTag());
+      // 词形变化语法说明的译文表跟界面语言走（BUG-2038）。装的是一张内存查表，
+      // 与词典引擎里那份英文 transforms JSON 无关，所以放在引擎初始化之后也没问题。
+      unawaited(applyTransformDescriptionLocale(appLocale.toLanguageTag()));
       populateMediaTypes();
       populateMediaSources();
       populateDictionaryFormats();
@@ -2786,6 +2790,9 @@ class AppModel with ChangeNotifier {
       populateLanguages();
       populateLocales();
       LocaleSettings.setLocaleRaw(appLocale.toLanguageTag());
+      // 词形变化语法说明的译文表跟界面语言走（BUG-2038）。装的是一张内存查表，
+      // 与词典引擎里那份英文 transforms JSON 无关，所以放在引擎初始化之后也没问题。
+      unawaited(applyTransformDescriptionLocale(appLocale.toLanguageTag()));
       populateMediaTypes();
       MediaSource.setDatabase(_database);
       populateMediaSources();
@@ -3211,6 +3218,8 @@ class AppModel with ChangeNotifier {
   Future<void> setAppLocale(String localeTag) async {
     await _setPref('app_locale', localeTag);
     LocaleSettings.setLocaleRaw(localeTag);
+    // 语法说明译文表即时换掉：不重启的桌面端也要跟着变（BUG-2038）。
+    await applyTransformDescriptionLocale(localeTag);
     if (isDesktopPlatform) {
       notifyListeners();
       return;

@@ -11,6 +11,7 @@ import '../formats/dictionary_format.dart';
 import '../models/dictionary_entry.dart';
 import '../models/dictionary_search_result.dart';
 import 'language_utils.dart';
+import 'transform_description_i18n.dart';
 
 /// Defines common characteristics required for tuning locale and text
 /// segmentation behaviour for different languages. Override the variables
@@ -453,6 +454,21 @@ List<Map<String, String>> deinflectionTagsToJson(List<DeinflectionTag> tags) {
   ];
 }
 
+/// 变形标签的语法说明 → 当前界面语言（[TransformDescriptionCatalog]，BUG-2038）。
+///
+/// **只在显示边界调用**，不要下沉进 [buildDeinflectionTags]：后者同时喂着
+/// [buildLookupEntryExtra] 这条**持久化**路径，那份 extra 会被缓存复用，写进译文就
+/// 等于把「写入时的界面语言」腌进数据里。存英文、显示时再翻，换语言才能整体生效。
+List<DeinflectionTag> localizeDeinflectionTags(List<DeinflectionTag> tags) {
+  return <DeinflectionTag>[
+    for (final DeinflectionTag t in tags)
+      (
+        name: t.name,
+        description: TransformDescriptionCatalog.localize(t.description),
+      ),
+  ];
+}
+
 /// 从 [buildLookupEntryExtra] 写出的 extra 里读回变形标签。
 ///
 /// extra 里存的已经是 [buildDeinflectionTags] 的成品（含回落），所以这里**只解析、
@@ -461,20 +477,22 @@ List<Map<String, String>> deinflectionTagsToJson(List<DeinflectionTag> tags) {
 List<DeinflectionTag> deinflectionTagsFromExtra(Map<String, dynamic> extra) {
   final Object? raw = extra['deinflectionTrace'];
   if (raw is List) {
-    return <DeinflectionTag>[
+    // extra 里存的是英文原文（见 [localizeDeinflectionTags] 的说明），读出来给弹窗
+    // 显示时才翻译。原生弹窗和 buildLookupEntriesJson 都走这里。
+    return localizeDeinflectionTags(<DeinflectionTag>[
       for (final Object? item in raw)
         if (item is Map)
           (
             name: (item['name'] ?? '').toString(),
             description: (item['description'] ?? '').toString(),
           ),
-    ];
+    ]);
   }
-  return buildDeinflectionTags(
+  return localizeDeinflectionTags(buildDeinflectionTags(
     matched: (extra['matched'] ?? '').toString(),
     deinflected: (extra['deinflected'] ?? '').toString(),
     trace: const <FushiTransformGroup>[],
-  );
+  ));
 }
 
 String buildLookupEntryExtra(FushiLookupResult r, FushiGlossaryEntry g) {
@@ -683,11 +701,13 @@ String buildPopupJsonFromLookup({
     sb.write(',"matched":');
     sb.write(jsonEncode(groupMatched[key]));
     sb.write(',"rules":[],"deinflectionTrace":');
-    sb.write(jsonEncode(deinflectionTagsToJson(buildDeinflectionTags(
+    // 弹窗 JSON 是显示路径 → 翻译；持久化的 extra 不翻（BUG-2038）。
+    sb.write(jsonEncode(
+        deinflectionTagsToJson(localizeDeinflectionTags(buildDeinflectionTags(
       matched: groupMatched[key]!,
       deinflected: groupDeinflected[key]!,
       trace: groupTrace[key] ?? const <FushiTransformGroup>[],
-    ))));
+    )))));
     sb.write(',"glossaries":[');
     final gl = groupGlossaries[key]!;
     for (var j = 0; j < gl.length; j++) {
