@@ -456,17 +456,25 @@ Rect popupWordScreenRect({
 /// [popupWordScreenRect] 的 BUG-129、阅读器正文车道的 BUG-767 是同一条不变式：
 /// **弹窗不覆盖被查词**。
 ///
+/// [expectedTerm] 是本次查的词，**身份门**：`pushNestedPopup` 的 `beginTop` 是在
+/// `await searchDictionary` **之前**同步压栈的，所以用户在高亮 eval 的往返（WebView2
+/// 一次 eval，桌面上可达数十 ms）期间再点一个词时，`truncateTo(index+1)` + `beginTop`
+/// 会立刻在**同一个下标**建好另一个词的子层。只按位置取条目就会把上一个词的 bbox 锚到
+/// 新子层上，弹窗停在完全无关的位置。比对词形即可挡住这种迟到回调（同词同锚，无害）。
+///
 /// 返回 true = 真的改了锚点（调用方若不监听 controller 需自行重建）。以下情况 no-op
 /// 并返回 false，一律退回既有锚点，绝不让重锚失败影响查词：
 /// - [wordLocalRect] 为 null（无匹配 / eval 失败）或退化为零面积；
 /// - 子层已不在栈内（期间被更新的查词截断 / 关栈）；
+/// - 子层已被换成**另一个词**（见 [expectedTerm]）；
 /// - 父卡 RenderBox 不可用（[popupWordScreenRect] 回落到 [fallback]）；
 /// - 算出的 rect 与现锚点相同（[DictionaryPopupController.reanchorEntry] 内部也再判
-///   一次可见性与 rect 变化，不重建、不抖动）。
+///   一次热槽与 rect 变化，不重建、不抖动）。
 bool reanchorNestedPopupToWord({
   required DictionaryPopupController controller,
   required GlobalKey parentWebViewKey,
   required int parentIndex,
+  required String expectedTerm,
   required Rect? wordLocalRect,
   required Rect fallback,
 }) {
@@ -474,6 +482,7 @@ bool reanchorNestedPopupToWord({
   final int childIndex = parentIndex + 1;
   if (childIndex <= 0 || childIndex >= controller.entries.length) return false;
   final DictionaryPopupEntry child = controller.entries[childIndex];
+  if (child.searchTerm != expectedTerm.trim()) return false;
   final Rect screenRect = popupWordScreenRect(
     webViewKey: parentWebViewKey,
     localRect: wordLocalRect,

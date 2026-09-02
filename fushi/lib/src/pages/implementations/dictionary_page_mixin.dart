@@ -779,12 +779,15 @@ mixin DictionaryPageMixin {
                 await entry.webViewKey.currentState?.highlightSelection(count);
             // BUG-2054：同一次高亮顺带取回整词 bbox，把刚打开的子层从「点击的首
             // 字符」重锚到整词矩形——跨行选区时首字符矩形只覆盖第一行，子弹窗会
-            // 正好盖住选区的第二行。mixin 家族不监听 controller，改了要自己重建。
+            // 正好盖住选区的第二行。expectedTerm 是身份门：eval 往返期间用户再点
+            // 一个词时，同一下标上会是另一个词的子层（beginTop 同步压栈）。mixin
+            // 家族不监听 controller，改了要自己重建。
             if (mounted &&
                 reanchorNestedPopupToWord(
                   controller: controller,
                   parentWebViewKey: entry.webViewKey,
                   parentIndex: index,
+                  expectedTerm: text,
                   wordLocalRect: wordRect,
                   fallback: childRect,
                 )) {
@@ -813,6 +816,7 @@ mixin DictionaryPageMixin {
                   controller: controller,
                   parentWebViewKey: entry.webViewKey,
                   parentIndex: index,
+                  expectedTerm: query,
                   wordLocalRect: wordRect,
                   fallback: childRect,
                 )) {

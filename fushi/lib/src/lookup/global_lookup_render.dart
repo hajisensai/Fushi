@@ -272,9 +272,20 @@ String buildRetainStackScript(Iterable<String> frameIds) {
 /// is the parent's insertion-order stack depth (0 = root); [count] is the matched
 /// char count ([lookupHighlightCharCount]). Inert when the host is not installed
 /// (guarded) and a no-op host-side on a bad index / non-positive count.
-String buildHighlightFrameScript(int frameIndex, int count) {
+///
+/// BUG-2054 — with a [token], the host also answers with the highlighted word's
+/// **whole-word bbox** as a `nestedWordAnchor` [frameIndex, rect|null, token]
+/// message (same shape as the BUG-1127 `wordAudioPlayed` token report). The
+/// caller awaits it BEFORE placing the child card, so the child is positioned
+/// against the real word instead of the first-character rect `textSelected`
+/// carried — placing first and re-anchoring after would move an already visible
+/// card and re-drive the whole overlay window geometry. A tokened request is
+/// ALWAYS answered (null on any failure), so the wait never rides its timeout
+/// out on an ordinary miss.
+String buildHighlightFrameScript(int frameIndex, int count, {int? token}) {
+  final String tokenArg = token == null ? '' : ', $token';
   return 'window.__globalLookupHost && '
-      'window.__globalLookupHost.highlightFrame($frameIndex, $count);';
+      'window.__globalLookupHost.highlightFrame($frameIndex, $count$tokenArg);';
 }
 
 /// BUG-1127 — builds the host `playWordAudioInFrame(frameId, url, token)` script

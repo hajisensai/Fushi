@@ -71,9 +71,15 @@ void main() {
         reason: 'base_source_page 缺 onLinkClick',
       );
       // onLinkClick 之后必须有 highlightSelection（与 onTextSelected 对称）。
+      //
+      // 定界用**下一个回调的起点**，不用固定字符数：BUG-2054 往这个回调里加了两道
+      // 身份门后，原来的 1000 字符窗口就把 highlightSelection 挤了出去（判据的语义
+      // 没变，只是被推远）。把数字调大是削弱——真正的边界是「还在 onLinkClick 这一
+      // 段里」，语义定界既不会随段落长度漂移，也不会漏进隔壁回调。
+      final int nextCallback = src.indexOf('onScrolledToBottom', idx);
       final String after = src.substring(
         idx,
-        (idx + 1000).clamp(0, src.length),
+        nextCallback > idx ? nextCallback : src.length,
       );
       expect(
         after.contains('item.webViewKey.currentState?.highlightSelection('),
@@ -131,28 +137,45 @@ void main() {
     // 词典查询，那时匹配长度还未知），跨行选区时它只覆盖点击那一行，子卡就贴在第一
     // 行下方、盖住选区第二行。host 侧回报本身由 global_lookup_host_test.mjs 真跑
     // 验证（§33b）；controller 不能 headless 实例化，故此处守它的接线。
-    test('app 外嵌套子卡按回报的整词 bbox 重锚', () {
-      final String src = controller.readAsStringSync();
-      // 判据全部落在 _applyNestedWordAnchor 的**方法体**内：`_renderStack()` 在本
-      // 文件出现四次，裸 contains 会恒真（改坏了也照样绿）。
+    test('app 外嵌套子卡在第一次渲染前就拿到整词 bbox', () {
+      final String src = maskComments(controller.readAsStringSync());
       expect(
-        containsCodeLine(src, "handler == 'nestedWordAnchor'"),
+        containsCodeLine(src, "handler != 'nestedWordAnchor'"),
         isTrue,
         reason: 'controller 未接收 host 回报的整词 bbox',
       );
+
+      // 关键顺序：bbox 的往返必须发生在 push/render **之前**。app 外子卡不像
+      // app 内那样有 markPendingReveal 挡着——_renderStack() 一走就交给 host 的
+      // reveal 门，事后重锚会移动已可见的卡片，还会把整个覆盖窗的几何（union
+      // bbox → overlaySize → 原生挪窗）在**每次**嵌套查词时重跑一遍（单行选区的
+      // 整词 bbox 同样不等于首字符矩形）。
       final String body = methodBody(
         src,
-        'void _applyNestedWordAnchor(Map<String, Object?> message) {',
+        'Future<void> _lookupNested(',
+      );
+      final int awaitAnchor = body.indexOf('_highlightAndAwaitWordAnchor(');
+      final int push = body.indexOf('_pushChildFrame(');
+      expect(awaitAnchor, greaterThanOrEqualTo(0),
+          reason: '_lookupNested 未等待整词 bbox');
+      expect(push, greaterThanOrEqualTo(0), reason: '_lookupNested 未推子卡');
+      expect(awaitAnchor, lessThan(push),
+          reason: 'bbox 往返落在 push 之后 ⇒ 卡片弹出后跳位 + 覆盖窗二次挪动');
+      expect(
+        containsCodeLine(body, 'effectiveAnchor'),
+        isTrue,
+        reason: '拿到的整词 bbox 没被用作子卡锚点',
+      );
+
+      // 迟到 / 跨路由的回报按 token 认领，不按栈位置（否则会覆盖无关卡片的锚点）。
+      final String handler = methodBody(
+        src,
+        'bool _maybeHandleNestedWordAnchor(',
       );
       expect(
-        containsCodeLine(body, '_frameAnchors[childId] = anchor'),
+        containsCodeLine(handler, '_pendingWordAnchors.remove(token)'),
         isTrue,
-        reason: '收到整词 bbox 却没改子卡锚点 ⇒ 子卡仍停在首字符锚点',
-      );
-      expect(
-        containsCodeLine(body, 'unawaited(_renderStack())'),
-        isTrue,
-        reason: '改了锚点不重渲染 ⇒ 重锚永远看不见',
+        reason: '整词 bbox 回报未按 token 路由 ⇒ 迟到回报会认领错卡片',
       );
 
       final File host = File('assets/popup/global_lookup_host.js');
@@ -167,6 +190,30 @@ void main() {
         isTrue,
         reason: '整词 bbox 必须走与原锚点同一条 iframe-local -> window-local 转换',
       );
+      // highlightFrame 的契约是「绝不抛」：Dart 在等它的回报，一次抛出既毁掉
+      // 已完成的查词，也让那个等待白白吃满超时。
+      final String highlightBody = methodBody(
+        hsrc,
+        'function highlightFrame(frameIndex, count, token) {',
+        lexicon: SourceLexicon.js,
+      );
+      // 用**最后一个** try/catch 定界：函数开头还有一个 `try { win = ... }`，拿
+      // 第一个 try 当下界会让断言恒真（把这两行挪出 try 也照样绿）。
+      final int tryAt = highlightBody.lastIndexOf('try {');
+      final int catchAt = highlightBody.lastIndexOf('} catch');
+      final int anchorAt = highlightBody.indexOf('anchorRectToScreen(');
+      final int postAt = highlightBody.indexOf("postToHost('nestedWordAnchor'");
+      expect(tryAt, greaterThanOrEqualTo(0));
+      expect(catchAt, greaterThan(tryAt));
+      for (final MapEntry<String, int> e in <String, int>{
+        'anchorRectToScreen': anchorAt,
+        'postToHost': postAt,
+      }.entries) {
+        expect(e.value, greaterThan(tryAt),
+            reason: '${e.key} 落在 try 之外（highlightFrame 的契约是绝不抛）');
+        expect(e.value, lessThan(catchAt),
+            reason: '${e.key} 落在 catch 之后（highlightFrame 的契约是绝不抛）');
+      }
     });
   });
 }

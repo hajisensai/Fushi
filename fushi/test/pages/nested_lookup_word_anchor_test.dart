@@ -20,6 +20,9 @@ void main() {
   const double headerHeight = 48;
   const Rect parentCard = Rect.fromLTWH(100, 50, 200, 300);
 
+  // 本次嵌套查的词（= 子层的 searchTerm）。
+  const String kTerm = 'とりとめもなく';
+
   // 被查词在父卡 WebView 视口内的坐标（CSS px）：
   // 第一行 y 20..36 的「とりとめ」+ 第二行 y 36..56 的「もなく」。
   const Rect firstCharLocal = Rect.fromLTWH(10, 20, 16, 16); // 点击的「と」
@@ -59,7 +62,10 @@ void main() {
   /// 父层（index 0，可见）+ 刚 push 的子层（index 1）。[childVisible] false 模拟
   /// 「已挂结果、正等自己的 WebView 渲染完才翻可见」（markPendingReveal）——高亮
   /// eval 的往返通常早于那次 reveal，这正是重锚到达时的真实状态。
-  DictionaryPopupController stackWithChild({bool childVisible = false}) {
+  DictionaryPopupController stackWithChild({
+    bool childVisible = false,
+    String childTerm = kTerm,
+  }) {
     final DictionaryPopupController c =
         DictionaryPopupController(lowMemory: false);
     c.beginTop(
@@ -70,7 +76,7 @@ void main() {
       visible: true,
     );
     c.pushChild(
-      term: 'とりとめもなく',
+      term: childTerm,
       rect: firstCharScreen,
       parentIndex: 0,
       visible: childVisible,
@@ -98,6 +104,7 @@ void main() {
         controller: c,
         parentWebViewKey: webViewKey,
         parentIndex: 0,
+        expectedTerm: kTerm,
         wordLocalRect: wholeWordLocal,
         fallback: firstCharScreen,
       );
@@ -121,6 +128,7 @@ void main() {
           controller: c,
           parentWebViewKey: webViewKey,
           parentIndex: 0,
+          expectedTerm: kTerm,
           wordLocalRect: wholeWordLocal,
           fallback: firstCharScreen,
         ),
@@ -138,6 +146,7 @@ void main() {
           controller: c,
           parentWebViewKey: webViewKey,
           parentIndex: 0,
+          expectedTerm: kTerm,
           wordLocalRect: null,
           fallback: firstCharScreen,
         ),
@@ -155,6 +164,7 @@ void main() {
           controller: c,
           parentWebViewKey: webViewKey,
           parentIndex: 0,
+          expectedTerm: kTerm,
           wordLocalRect: const Rect.fromLTWH(10, 20, 0, 0),
           fallback: firstCharScreen,
         ),
@@ -175,12 +185,36 @@ void main() {
           controller: c,
           parentWebViewKey: webViewKey,
           parentIndex: 0,
+          expectedTerm: kTerm,
           wordLocalRect: wholeWordLocal,
           fallback: firstCharScreen,
         ),
         isFalse,
       );
       expect(c.entries[0].selectionRect, parentRect, reason: '不得改到父层身上');
+    });
+
+    testWidgets('同一下标已换成另一个词的子层：迟到的重锚 no-op（连点竞态）',
+        (tester) async {
+      // pushNestedPopup 的 beginTop 在 await searchDictionary **之前**同步压栈：
+      // 高亮 eval 往返期间用户再点一个词，truncateTo+beginTop 立刻在同一下标建好
+      // 另一个词的子层。只按位置取条目就会把上一个词的 bbox 锚到它身上。
+      final GlobalKey webViewKey = await pumpParentCard(tester);
+      final DictionaryPopupController c = stackWithChild(childTerm: '別の語');
+
+      expect(
+        reanchorNestedPopupToWord(
+          controller: c,
+          parentWebViewKey: webViewKey,
+          parentIndex: 0,
+          expectedTerm: kTerm,
+          wordLocalRect: wholeWordLocal,
+          fallback: firstCharScreen,
+        ),
+        isFalse,
+        reason: '迟到回调不得把上一个词的 bbox 锚到新词的子层上',
+      );
+      expect(c.entries[1].selectionRect, firstCharScreen);
     });
 
     testWidgets('父卡 RenderBox 不可用：退回既有锚点，不写入 fallback', (tester) async {
@@ -193,6 +227,7 @@ void main() {
           controller: c,
           parentWebViewKey: orphan,
           parentIndex: 0,
+          expectedTerm: kTerm,
           wordLocalRect: wholeWordLocal,
           fallback: firstCharScreen,
         ),
@@ -300,6 +335,12 @@ void main() {
         greaterThanOrEqualTo(2),
         reason: 'mixin 两个回调未各自重锚子层',
       );
+      // 身份门：eval 往返期间同一下标可能已被另一个词的子层占住。
+      expect(
+        'expectedTerm:'.allMatches(src).length,
+        greaterThanOrEqualTo(2),
+        reason: 'mixin 重锚未带身份门 ⇒ 连点时会把上一个词的 bbox 锚到新子层',
+      );
     });
 
     test('阅读器车道两个回调都取回 bbox 并重锚子层', () {
@@ -315,6 +356,17 @@ void main() {
         'reanchorNestedPopupToWord('.allMatches(src).length,
         greaterThanOrEqualTo(2),
         reason: 'base_source_page 两个回调未各自重锚子层',
+      );
+      // 身份门：词形 + BUG-717② 的查词代次快照两道。
+      expect(
+        'expectedTerm:'.allMatches(src).length,
+        greaterThanOrEqualTo(2),
+        reason: 'base 重锚未带词形门 ⇒ 连点时会把上一个词的 bbox 锚到新子层',
+      );
+      expect(
+        'generation == activeLookupGeneration'.allMatches(src).length,
+        greaterThanOrEqualTo(2),
+        reason: 'base 重锚未带代次门（BUG-717② 已有的现成守卫）',
       );
     });
   });

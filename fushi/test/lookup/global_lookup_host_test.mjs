@@ -1795,10 +1795,12 @@ function flushTimers() {
     return { x: 10, y: 20, width: 120, height: 36 };
   };
   hostPostLog.length = 0;
-  assert.strictEqual(host.highlightFrame(0, 7), true);
+  assert.strictEqual(host.highlightFrame(0, 7, 42), true);
   const anchorMsg = hostPostLog.find((m) => m.handler === 'nestedWordAnchor');
   assert.ok(anchorMsg, 'host reports the highlighted word bbox for re-anchoring');
   assert.strictEqual(anchorMsg.args[0], 0, 'reports the PARENT frame index');
+  assert.strictEqual(anchorMsg.args[2], 42,
+    'the report echoes the request token (Dart routes the waiter by it)');
   const reported = anchorMsg.args[1];
   assert.deepStrictEqual(
     { x: reported.x, y: reported.y, width: reported.width, height: reported.height },
@@ -1814,18 +1816,37 @@ function flushTimers() {
     'reported bbox reaches past the FIRST line — otherwise the child card '
       + 'would still cover the second line of the selection',
   );
-  // A realm that returns nothing usable reports NOTHING: the child silently
-  // keeps its first-character anchor (never a degenerate/zero re-anchor).
+  // A realm with nothing usable still ANSWERS (rect null): Dart is awaiting this
+  // report before it places the child card, so a silent drop would cost it the
+  // full timeout. Null means "keep the first-character anchor".
   for (const bad of [null, undefined, { x: 1, y: 2, width: 0, height: 0 }]) {
     parentIframe.contentWindow.eval = () => bad;
     hostPostLog.length = 0;
-    assert.strictEqual(host.highlightFrame(0, 7), true,
+    assert.strictEqual(host.highlightFrame(0, 7, 43), true,
       'highlight itself still succeeds without a usable bbox');
-    assert.ok(
-      !hostPostLog.some((m) => m.handler === 'nestedWordAnchor'),
-      'no re-anchor is reported for an unusable bbox',
-    );
+    const nullMsg = hostPostLog.find((m) => m.handler === 'nestedWordAnchor');
+    assert.ok(nullMsg, 'a tokened request is always answered');
+    assert.strictEqual(nullMsg.args[1], null, 'unusable bbox reports null');
+    assert.strictEqual(nullMsg.args[2], 43, 'answer carries the token');
   }
+  // A THROWING realm must not escape highlightFrame (its stated contract) and
+  // must still answer, otherwise the Dart wait rides out its timeout.
+  parentIframe.contentWindow.eval = () => { throw new Error('realm gone'); };
+  hostPostLog.length = 0;
+  assert.strictEqual(host.highlightFrame(0, 7, 44), false,
+    'a throwing realm reports failure instead of propagating');
+  const thrownMsg = hostPostLog.find((m) => m.handler === 'nestedWordAnchor');
+  assert.ok(thrownMsg, 'a throwing realm still answers the tokened request');
+  assert.strictEqual(thrownMsg.args[1], null);
+  assert.strictEqual(thrownMsg.args[2], 44);
+  // Un-tokened calls (the plain highlight-only path) post nothing.
+  parentIframe.contentWindow.eval = () => ({ x: 10, y: 20, width: 120, height: 36 });
+  hostPostLog.length = 0;
+  assert.strictEqual(host.highlightFrame(0, 7), true);
+  assert.ok(
+    !hostPostLog.some((m) => m.handler === 'nestedWordAnchor'),
+    'no token -> nobody is waiting -> no report',
+  );
 }
 
 // 34. TODO-1189 (layer-shift hit-test): when a nested sub-popup is pushed
