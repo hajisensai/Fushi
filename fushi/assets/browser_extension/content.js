@@ -443,10 +443,19 @@ function fushiQueueKey(q) {
   const vid = (q && (q.youtubeId || q.netflixId)) || '';
   return String(word) + '\0' + String(sent) + '\0' + String(site) + '\0' + String(vid);
 }
-window.fushiEnqueue = function (fields, sentence) {
+// 制卡上下文的**唯一**解析口：当前字幕行 + 制卡那一刻 + 可裁原始流的身份。
+//
+// 两个消费者共用这一份：「入队」（`fushiEnqueue`，回放/批量路）与「立即制卡」
+// （`bridge-shim.js` 的非队列路）。此前后者自己抄了一份简版——只读 Netflix 的字幕 DOM，
+// 读不到就退回**弹窗内选区**。于是任何非 Netflix 的字幕轨（用户外挂字幕、`textTracks`
+// 收割、整集拦截）在立即制卡这条路上一律取不到例句：轨明明在 `fushiActiveFullTrack()` 里、
+// 面板和覆盖层都在用它，制卡的时候却没人去问。用户在 B 站挂了外挂字幕、制出来的卡没有句子，
+// 根因就是这处「同一件事两处各解析一遍，其中一处解析得不对」。
+//
+// 返回 `window` 为 null 表示此页此刻没有当前字幕行（普通网页、字幕尚未采到、播放到间隙）。
+window.fushiMineContext = function () {
   // TODO-1219 P3：若本次查词来自字幕面板行（fushiPendingCueWindow 非空），用该行整集拦截的精确
-  // [startMs,endMs] 窗（稳过 DOM 采样）；否则回落 fushiCurrentCueWindowV 的 DOM 采样窗。下方
-  // startV-200/endV+200 录制边距 + fushiQueueKey 去重两路不变。
+  // [startMs,endMs] 窗（稳过 DOM 采样）；否则回落 fushiCurrentCueWindowV 的 DOM 采样窗。
   const cw = fushiPendingCueWindow;
   // 面板行查词带来的精确窗最强（用户显式点了那一行）；否则按当前播放时间到整轨里查
   // ——此前这里直接回落 DOM 采样窗，整轨明明已在内存里却没人查，画面上直接查词制卡
@@ -454,22 +463,40 @@ window.fushiEnqueue = function (fields, sentence) {
   const w = cw
       ? { text: cw.text || '', startV: cw.startMs, endV: cw.endMs }
       : (fushiFullTrackWindowAt() || fushiCurrentCueWindowV());
-  if (!w) return { ok: false, reason: 'no-cue' };
   // BUG-1416：**制卡那一刻**的视频时间就地采样并随队列项持久化。用户拍板「按制卡时候的时间来」，
   // 而这是唯一还知道那一刻的地方——之后的回放录制只知道句首，再也拿不回这个时刻。
   // 只在它确实落在本句 cue 窗内才记：面板行查词（fushiPendingCueWindow）可能停在别的句上，
   // 那种时刻不在将要录的片段里，记下来只会让下游取到夹取后的边界帧。null → 下游退句首。
   const nowV = fushiVideoTimeMs();
-  const mineAtV = (nowV !== null && nowV >= w.startV && nowV <= w.endV) ? nowV : null;
+  const mineAtV =
+      (w && nowV !== null && nowV >= w.startV && nowV <= w.endV) ? nowV : null;
   const site = fushiSite();
-  const youtubeId = site === 'youtube' ? fushiYoutubeId() : null;
-  const netflixId = site === 'netflix' ? fushiNetflixId() : null;
+  const clip = typeof fushiClipSource === 'function' ? fushiClipSource() : null;
   // BUG-676（TODO-1361 ③）：入队即抓当前网飞剧名（此刻在正确剧集页），随卡持久化 → 生成时发给
   // 服务端当 documentTitle（Anki 视频名字段）。YouTube 走服务端解析标题，无需在此抓。
   const documentTitle =
       site === 'netflix' && typeof netflixDocumentTitle === 'function'
           ? netflixDocumentTitle()
           : '';
+  return {
+    window: w,
+    site: site,
+    clip: clip,
+    youtubeId: clip && clip.kind === 'youtube' ? clip.id : null,
+    netflixId: clip && clip.kind === 'netflix' ? clip.id : null,
+    mineAtV: mineAtV,
+    documentTitle: documentTitle,
+  };
+};
+window.fushiEnqueue = function (fields, sentence) {
+  const ctx = window.fushiMineContext();
+  const w = ctx.window;
+  if (!w) return { ok: false, reason: 'no-cue' };
+  const mineAtV = ctx.mineAtV;
+  const site = ctx.site;
+  const youtubeId = ctx.youtubeId;
+  const netflixId = ctx.netflixId;
+  const documentTitle = ctx.documentTitle;
   const item = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2),
     fields: fields, sentence: sentence || w.text || '',

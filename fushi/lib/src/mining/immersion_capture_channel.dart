@@ -176,14 +176,22 @@ ImmersionMiningRequest buildImmersionRequest(
       useCapture ? (cap.gifBytes ?? p.screenshotBytes) : p.screenshotBytes;
   final bool coverFromCapture = useCapture && cap.gifBytes != null;
   final bool coverIsAnimated = coverFromCapture && !cap.coverIsStill;
+  // 媒体临时文件名的前缀 = **这份字节哪来的**（[ImmersionMiningEngine] 文件头把
+  // `netflix_frame` / `external_window` / `netflix_shot` 明确定义成来源标记）。
+  // 本函数过去只服务 Netflix 一条路，于是前缀被写死成 `netflix_`；扩展现在会在任意网页
+  // （bilibili.com 等）取当前解码帧走同一条 provided 字节路，再叫 netflix_* 就是让媒体库里
+  // 一张 B 站的卡标着 netflix——与该命名的用途正相反。判据取 Netflix 那条路**独有**的两个
+  // 字段：录制片段字节、或后台软解用的 netflixVideoId；两者皆无即非 Netflix 来源。
+  final bool fromNetflix = p.clipBytes != null || p.netflixVideoId != null;
+  final String origin = fromNetflix ? 'netflix' : 'web';
   // BUG-1416：三种封面各自的名字（Anki 按扩展名判 MIME），分开命名——媒体库里一眼看得出
   // 这张卡的封面是哪条路产出的。片段里抽的静态帧跟随 [ImmersionCaptureResult.stillFormat]
   // （用户偏好，降级后为实际格式）；2A 截图是扩展直接给的字节、不经我们编码，恒 JPEG。
   final String coverName = coverIsAnimated
-      ? 'netflix_clip.${cap.animatedFormat.fileExtension}'
+      ? '${origin}_clip.${cap.animatedFormat.fileExtension}'
       : coverFromCapture
-          ? 'netflix_frame.${cap.stillFormat.fileExtension}'
-          : 'netflix_shot.jpg';
+          ? '${origin}_frame.${cap.stillFormat.fileExtension}'
+          : '${origin}_shot.jpg';
   final Uint8List? audio = useCapture ? cap.audioBytes : null;
   return ImmersionMiningRequest(
     fields: p.fields,
@@ -192,7 +200,10 @@ ImmersionMiningRequest buildImmersionRequest(
     clipEndMs: 0,
     sentence: p.sentence,
     cueSentence: p.cueSentence,
-    documentTitle: p.documentTitle ?? 'Netflix',
+    // BUG-676：扩展不发 documentTitle 时的回落。同样不能恒为 'Netflix'——非 Netflix 来源
+    // 的卡上写着 Netflix 是错的事实，不是缺省值。扩展现在会带页面标题上来，这条回落只在
+    // 老版扩展/标题为空时触发。
+    documentTitle: p.documentTitle ?? (fromNetflix ? 'Netflix' : 'Web'),
     source: AnkiMiningSource.video,
     providedCoverBytes: cover,
     // 扩展名跟随**实际产出格式**，不是用户所选：编码器缺失时捕获内部已降级 GIF，按所选
@@ -201,7 +212,7 @@ ImmersionMiningRequest buildImmersionRequest(
     providedAudioBytes: audio,
     providedAudioName: audio == null
         ? null
-        : 'netflix_audio.${immersionMiningAudioExtension()}',
+        : '${origin}_audio.${immersionMiningAudioExtension()}',
     requireAudio: audioExpected,
   );
 }

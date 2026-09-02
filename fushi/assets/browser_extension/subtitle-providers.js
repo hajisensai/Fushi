@@ -24,6 +24,33 @@ function fushiNetflixId() {
   const m = location.pathname.match(/\/watch\/(\d+)/);
   return m ? m[1] : null;
 }
+// 「本页的原始媒体能不能被服务端按时间窗裁出句子音频/动图」——制卡该走批量剪辑队列、还是
+// 立即出卡，判据是**它**，不是站点名枚举。
+//
+// 起因：`bridge-shim.js` 过去写的是 `site !== 'youtube' && site !== 'netflix'`，把三件互相
+// 正交的能力绑死在一个枚举上：① 有没有可裁的原始流 ② 有没有当前字幕行 ③ 能不能取当前解码帧。
+// 于是 bilibili.com（②③ 俱全、只缺①）整个落进「普通网页」分支，制卡既没有例句也没有封面。
+// 每加一个站点就得改一处 if，正是那种应该被数据结构消掉的特殊情况。
+//
+// `mode` 区分两种可裁法，**不是**画质差别而是交互差别：
+//   'queue'     — 必须先回放/逐条解析才能拿到媒体，只适合「看完一集统一生成」。Netflix 是
+//                 DRM 只能录制回放；YouTube 是既有批量行为，保持原样不动。
+//   'immediate' — 服务端拿 {id, 时间窗} 就能直接从原始流裁，点一下即出卡，不必攒队列。
+// 返回 null = 本页没有可裁的原始流；此时仍然出卡，只是媒体只有「当前解码帧」那一张图。
+//
+// 加新站点 = 这里加一行 + 服务端加一个对应的 clip miner，别处不用改。
+function fushiClipSource() {
+  const site = fushiSite();
+  if (site === 'youtube') {
+    const id = fushiYoutubeId();
+    return id ? { kind: 'youtube', id: id, mode: 'queue' } : null;
+  }
+  if (site === 'netflix') {
+    const id = fushiNetflixId();
+    return id ? { kind: 'netflix', id: id, mode: 'queue' } : null;
+  }
+  return null;
+}
 function fushiVideoTimeMs(video) {
   const v = video || document.querySelector('video');
   return v && typeof v.currentTime === 'number' && Number.isFinite(v.currentTime)
