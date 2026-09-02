@@ -26,6 +26,7 @@ import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
+import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/pages/implementations/gal_capture_setup_dialog.dart';
 import 'package:fushi/src/pages/implementations/gal_attached_lookup_workbench.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
@@ -1267,6 +1268,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         _captureSetupDialogScheduled) {
       return;
     }
+    final GalAttachedTextController attachedText =
+        GalHookTextOverlayController.instance.attachedText;
     final GalHookSessionState state = _session.state;
     final DateTime? sessionStartedAt = state.sessionStartedAt;
     if (!shouldPromptGalCaptureSetup(
@@ -1275,6 +1278,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       selectedTextThreadKey: _session.selectedTextThreadKey,
       textThreadCount: _session.textThreads.length,
       sessionAlreadyPrompted: _captureSetupShownForSession == sessionStartedAt,
+      lookupRiskAcceptancePending: attachedText.needsUnsafeRiskAcceptance,
     )) {
       return;
     }
@@ -1292,15 +1296,18 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             selectedTextThreadKey: _session.selectedTextThreadKey,
             textThreadCount: _session.textThreads.length,
             sessionAlreadyPrompted: false,
+            lookupRiskAcceptancePending: attachedText.needsUnsafeRiskAcceptance,
           )) {
         return;
       }
       _captureSetupShownForSession = sessionStartedAt;
       _captureSetupDialogOpen = true;
-      await showAppDialog<void>(
+      final GalCaptureSetupOutcome? outcome =
+          await showAppDialog<GalCaptureSetupOutcome>(
         context: context,
         builder: (BuildContext dialogContext) => GalCaptureSetupDialog(
           session: _session,
+          attachedText: attachedText,
           onSelectThread: (TexthookerTextThread thread) =>
               _session.selectTextThread(
                 thread.nativeThreadId,
@@ -1310,6 +1317,15 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         ),
       );
       _captureSetupDialogOpen = false;
+      // 「本会话已提示过」这个标记的唯一用途，是让**用户主动关掉**弹窗后不再被每来
+      // 一行台词就弹一次（选中线程有自己的判据 selectedTextThreadKey == null，不靠
+      // 它）。给点击风险确认让位不是用户的意思：标记落在 showAppDialog 之前，让位
+      // 又把弹窗关掉，于是确认完风险之后本会话再也拿不到捕获设置——右栏独有的采集源
+      // 判读 / 语音轨试听 / BGM 排除全都没了，而且全仓只有这一个构造点，没有手动重开
+      // 入口。所以只回滚这一条出口，用户自己关掉的照旧不再提示。
+      if (outcome == GalCaptureSetupOutcome.yieldedToRiskConsent) {
+        _captureSetupShownForSession = null;
+      }
     });
   }
 
