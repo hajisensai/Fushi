@@ -191,3 +191,4 @@ flutter:
     - assets/meta/
     - assets/popup/
     - assets/transforms/
+    - assets/transforms/i18n/
