@@ -3528,7 +3528,7 @@
   "video_setting_mpv_lua_scripts": "Загрузить Lua-скрипты",
   "video_setting_mpv_lua_scripts_hint": "Загружать все файлы .lua из папки mpv_scripts в плеер. Отключение вступит в силу при следующем открытии видео.",
   "video_setting_mpv_lua_scripts_import": "Импортировать Lua-скрипты",
-  "video_setting_mpv_lua_scripts_imported": "Скрипты импортированы",
+  "video_setting_mpv_lua_scripts_imported": "Скрипты импортированы и включены",
   "video_setting_mpv_lua_scripts_dir_copy": "Скопировать путь к папке скриптов",
   "video_setting_mpv_lua_scripts_dir_copied": "Путь к папке скопирован",
   "interconnect_share_statistics": "Делиться статистикой",
@@ -4113,5 +4113,11 @@
   "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
   "network_proxy_p2p_mode_direct": "Direct",
   "network_proxy_p2p_mode_proxy": "Via proxy",
-  "network_proxy_p2p_mode_mixed": "Mixed"
+  "network_proxy_p2p_mode_mixed": "Mixed",
+  "video_setting_mpv_lua_scripts_unavailable": "Встроенный libmpv на этой платформе собран без Lua (-Dlua=disabled), поэтому скрипты здесь работать не могут.",
+  "video_setting_mpv_lua_scripts_input_note": "Ввод с клавиатуры и мыши остаётся в приложении и не доходит до mpv: скрипты, зависящие от привязок клавиш или OSC, запустить нельзя. Скрипты на свойствах/событиях и сообщения OSD работают.",
+  "video_setting_mpv_lua_scripts_empty": "В папке mpv_scripts пока нет скриптов",
+  "video_setting_mpv_lua_scripts_status_loaded": "Загружен, ошибок нет",
+  "video_setting_mpv_lua_scripts_status_not_loaded": "Ещё не загружен в этом плеере (включите переключатель или откройте видео заново)",
+  "video_setting_mpv_lua_scripts_status_error": "Ошибка"
 }

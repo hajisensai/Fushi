@@ -3528,7 +3528,7 @@
   "video_setting_mpv_lua_scripts": "تحميل سكربتات Lua",
   "video_setting_mpv_lua_scripts_hint": "تحميل جميع ملفات .lua في مجلد mpv_scripts إلى المشغّل. الإيقاف يسري عند فتح فيديو جديد.",
   "video_setting_mpv_lua_scripts_import": "استيراد سكربتات Lua",
-  "video_setting_mpv_lua_scripts_imported": "تم استيراد السكربتات",
+  "video_setting_mpv_lua_scripts_imported": "تم استيراد السكربتات وتفعيلها",
   "video_setting_mpv_lua_scripts_dir_copy": "نسخ مسار مجلد السكربتات",
   "video_setting_mpv_lua_scripts_dir_copied": "تم نسخ مسار المجلد",
   "interconnect_share_statistics": "مشاركة الإحصائيات",
@@ -4113,5 +4113,11 @@
   "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
   "network_proxy_p2p_mode_direct": "Direct",
   "network_proxy_p2p_mode_proxy": "Via proxy",
-  "network_proxy_p2p_mode_mixed": "Mixed"
+  "network_proxy_p2p_mode_mixed": "Mixed",
+  "video_setting_mpv_lua_scripts_unavailable": "نسخة libmpv المضمّنة على هذه المنصة بُنيت بدون Lua (-Dlua=disabled)، لذا لا يمكن تشغيل السكربتات هنا.",
+  "video_setting_mpv_lua_scripts_input_note": "إدخال لوحة المفاتيح والفأرة يبقى داخل التطبيق ولا يصل إلى mpv: السكربتات التي تعتمد على اختصارات المفاتيح أو OSC لا يمكن تشغيلها. السكربتات المعتمدة على الخصائص/الأحداث ورسائل OSD تعمل.",
+  "video_setting_mpv_lua_scripts_empty": "لا توجد سكربتات في مجلد mpv_scripts بعد",
+  "video_setting_mpv_lua_scripts_status_loaded": "تم التحميل، لا أخطاء",
+  "video_setting_mpv_lua_scripts_status_not_loaded": "لم يُحمَّل في هذا المشغّل بعد (فعّل المفتاح أو أعد فتح الفيديو)",
+  "video_setting_mpv_lua_scripts_status_error": "خطأ"
 }

@@ -3528,7 +3528,7 @@
   "video_setting_mpv_lua_scripts": "Tải tập lệnh Lua",
   "video_setting_mpv_lua_scripts_hint": "Tải tất cả tệp .lua trong thư mục mpv_scripts vào trình phát. Tắt sẽ có hiệu lực lần tiếp theo mở video.",
   "video_setting_mpv_lua_scripts_import": "Nhập tập lệnh Lua",
-  "video_setting_mpv_lua_scripts_imported": "Đã nhập tập lệnh",
+  "video_setting_mpv_lua_scripts_imported": "Đã nhập và bật tập lệnh",
   "video_setting_mpv_lua_scripts_dir_copy": "Sao chép đường dẫn thư mục tập lệnh",
   "video_setting_mpv_lua_scripts_dir_copied": "Đã sao chép đường dẫn thư mục",
   "interconnect_share_statistics": "Chia sẻ thống kê",
@@ -4113,5 +4113,11 @@
   "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
   "network_proxy_p2p_mode_direct": "Direct",
   "network_proxy_p2p_mode_proxy": "Via proxy",
-  "network_proxy_p2p_mode_mixed": "Mixed"
+  "network_proxy_p2p_mode_mixed": "Mixed",
+  "video_setting_mpv_lua_scripts_unavailable": "libmpv đi kèm trên nền tảng này được biên dịch không có Lua (-Dlua=disabled), nên tập lệnh không thể chạy ở đây.",
+  "video_setting_mpv_lua_scripts_input_note": "Đầu vào bàn phím và chuột nằm trong ứng dụng và không bao giờ tới mpv: các tập lệnh dựa vào phím tắt hoặc OSC không thể kích hoạt. Tập lệnh theo thuộc tính/sự kiện và thông báo OSD vẫn hoạt động.",
+  "video_setting_mpv_lua_scripts_empty": "Chưa có tập lệnh trong thư mục mpv_scripts",
+  "video_setting_mpv_lua_scripts_status_loaded": "Đã tải, không có lỗi",
+  "video_setting_mpv_lua_scripts_status_not_loaded": "Chưa tải trong trình phát này (bật công tắc hoặc mở lại video)",
+  "video_setting_mpv_lua_scripts_status_error": "Lỗi"
 }

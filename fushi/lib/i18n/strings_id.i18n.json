@@ -3528,7 +3528,7 @@
   "video_setting_mpv_lua_scripts": "Muat skrip Lua",
   "video_setting_mpv_lua_scripts_hint": "Muat semua file .lua di folder mpv_scripts ke pemutar. Mematikan berlaku saat video berikutnya dibuka.",
   "video_setting_mpv_lua_scripts_import": "Impor skrip Lua",
-  "video_setting_mpv_lua_scripts_imported": "Skrip diimpor",
+  "video_setting_mpv_lua_scripts_imported": "Skrip diimpor dan diaktifkan",
   "video_setting_mpv_lua_scripts_dir_copy": "Salin path folder skrip",
   "video_setting_mpv_lua_scripts_dir_copied": "Path folder disalin",
   "interconnect_share_statistics": "Bagikan statistik",
@@ -4113,5 +4113,11 @@
   "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
   "network_proxy_p2p_mode_direct": "Direct",
   "network_proxy_p2p_mode_proxy": "Via proxy",
-  "network_proxy_p2p_mode_mixed": "Mixed"
+  "network_proxy_p2p_mode_mixed": "Mixed",
+  "video_setting_mpv_lua_scripts_unavailable": "libmpv bawaan di platform ini dibangun tanpa Lua (-Dlua=disabled), sehingga skrip tidak dapat berjalan di sini.",
+  "video_setting_mpv_lua_scripts_input_note": "Input keyboard dan mouse tetap di aplikasi dan tidak pernah sampai ke mpv: skrip yang bergantung pada pintasan tombol atau OSC tidak dapat dipicu. Skrip berbasis properti/peristiwa dan pesan OSD tetap berfungsi.",
+  "video_setting_mpv_lua_scripts_empty": "Belum ada skrip di folder mpv_scripts",
+  "video_setting_mpv_lua_scripts_status_loaded": "Dimuat, tidak ada kesalahan",
+  "video_setting_mpv_lua_scripts_status_not_loaded": "Belum dimuat di pemutar ini (nyalakan sakelar atau buka ulang video)",
+  "video_setting_mpv_lua_scripts_status_error": "Kesalahan"
 }

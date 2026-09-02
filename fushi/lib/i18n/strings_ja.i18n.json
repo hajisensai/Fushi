@@ -3528,7 +3528,7 @@
   "video_setting_mpv_lua_scripts": "Luaスクリプトを読み込む",
   "video_setting_mpv_lua_scripts_hint": "mpv_scriptsフォルダ内のすべての.luaファイルをプレーヤーに読み込みます。オフにすると次回動画を開いたときに反映されます。",
   "video_setting_mpv_lua_scripts_import": "Luaスクリプトをインポート",
-  "video_setting_mpv_lua_scripts_imported": "スクリプトをインポートしました",
+  "video_setting_mpv_lua_scripts_imported": "スクリプトをインポートして有効にしました",
   "video_setting_mpv_lua_scripts_dir_copy": "スクリプトフォルダのパスをコピー",
   "video_setting_mpv_lua_scripts_dir_copied": "フォルダパスをコピーしました",
   "interconnect_share_statistics": "統計を共有",
@@ -4113,5 +4113,11 @@
   "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
   "network_proxy_p2p_mode_direct": "Direct",
   "network_proxy_p2p_mode_proxy": "Via proxy",
-  "network_proxy_p2p_mode_mixed": "Mixed"
+  "network_proxy_p2p_mode_mixed": "Mixed",
+  "video_setting_mpv_lua_scripts_unavailable": "このプラットフォームに同梱の libmpv は Lua なしでビルドされています（-Dlua=disabled）。ここではスクリプトを実行できません。",
+  "video_setting_mpv_lua_scripts_input_note": "キーボードとマウスの入力はアプリ側で処理され mpv には届きません。キーバインドや OSC に依存するスクリプトは動作させられません。プロパティ/イベント駆動のスクリプトと OSD メッセージは動作します。",
+  "video_setting_mpv_lua_scripts_empty": "mpv_scripts フォルダーにスクリプトはまだありません",
+  "video_setting_mpv_lua_scripts_status_loaded": "読み込み済み、エラーなし",
+  "video_setting_mpv_lua_scripts_status_not_loaded": "このプレーヤーではまだ読み込まれていません（スイッチをオンにするか動画を開き直してください）",
+  "video_setting_mpv_lua_scripts_status_error": "エラー"
 }

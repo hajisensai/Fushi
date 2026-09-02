@@ -1,0 +1,20 @@
+## BUG-2032 · mpv Lua 脚本导入后不生效：Android libmpv 未编 Lua、导入不启用、脚本报错零诊断、osd-level=0 吞掉 osd_message
+- **报告**：2026-09-02（用户：「lua脚本导入了貌似也用不了」，未说明平台与脚本）
+- **真实性**：✅ 真 bug（四条根因叠加，任一条都足以让用户看到"导入了但没反应"）。先用 FFI 探针在随包 `libmpv-2.dll` 上排除了装载链路本身（`load-script` 前置 → 脚本真跑 → `start-file`/`file-loaded`/属性观察全落到脚本），再沿真实代码路径定位：
+  - ① **Android 随包 libmpv 没编 Lua**：`third_party/media_kit_libs_android_video/android/build.gradle:86-89` 钉的 `libmpv-android-full-*-ffmpeg6.1.6.jar`，其 `libmpv.so` 的 `mpv-configuration` 原文是 `-Dlua=disabled`（`LuaJIT`/`mp.options`/`lua_pcall` 字串全为 0；Windows DLL 对照 `-Dlua=enabled`）。`load-script` 命令表项仍在、命令"成功"返回，然后什么都不发生。而设置页在 Android 上照常露出开关与导入，`video_lua_script_manager.dart:16` 头注释还写着"五平台 libmpv 后端均可达"。
+  - ② **导入 ≠ 启用**：`settings_schema_video.dart:1494-1514` 导入只复制文件到 `<documents>/mpv_scripts`，开关默认关（`preferences_repository.dart:829`），提示只说"脚本已导入"；开关开着、视频播放中导入也不会即时装进活播放器。
+  - ③ **脚本报错零诊断**：`video_lua_script_manager.dart:92` `catch (_) {}`，media_kit 层 `mpv_command_async` 错误只进 debug 日志，仓库无任何 `stream.log` 订阅——语法错/`require` 失败/路径失效对用户完全不可见。
+  - ④ **`mp.osd_message` 被丢弃**：media_kit 建 handle 写死 `osd-level=0`（`media_kit-1.2.6 real.dart:2421`），mpv `player/osd.c` `set_osd_msg_va` 里 `level > osd_level` 直接 return——脚本最常用的"我活着"信号一个字都画不出来。
+  - 另一条**设计边界**（不是 bug、但用户不知道）：键盘/鼠标事件由 Flutter 层消费、到不了 libmpv，`mp.add_key_binding` / OSC 类脚本无处触发。
+- **[x] ① 已修复** — 见提交（本 PR）：
+  - 能力门控（①）：新增 `video_lua_capability.dart`（`MpvLuaCapability` + `parseMpvLuaCapability`），controller 建 Player 后读 `mpv-configuration` 探测、页面落 pref `video_mpv_lua_capability`，开关副标题在 `unavailable` 时如实说明（按 `settings_schema_widgets.dart:168` 约定：能力只走副标题、不禁用开关）。不按 `Platform.isAndroid` 硬编码——jar 重编带 Lua 后自动翻绿。
+  - 导入即启用（②）：`_setVideoLuaScriptsEnabled` 成为开关行与导入按钮的唯一写穿点，导入后置 true（host 在场即时把目录含新脚本装进活播放器，幂等）；提示改为"脚本已导入并启用"。
+  - 诊断面（③）：controller 订阅 `player.stream.log`，`matchLuaLogToScripts` 把 `cplayer` 装载失败（按完整路径）与脚本前缀 `Lua error`/`mp.msg.error`（按 mpv 客户端名 `luaScriptNameForPath`）归到脚本，`luaScriptStates` 经 `VideoQuickSettingsHost.luaScriptStates` 喂给新增设置项 `video.player.mpv_lua_scripts_list`（每脚本一行：未装载 / 已装载无报错 / 报错原文），列表底部原样说明输入边界。
+  - OSD（④）：`applyLuaScripts` 首次真有脚本时先下发 `buildLuaOsdProperties()`（`osd-level=1` + `osd-on-seek=no`，后者防 Hibiki 自己的 seek 叠出原生进度条）再 `load-script`；没脚本的 Player 保持 media_kit 默认。
+  - 状态收口：`_resetLuaScriptState()` 统一清去重集/状态表/日志订阅，dispose 与 `_releaseMediaHandles` 两处都走它。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_lua_script_diagnostics_test.dart`（能力解析含 Windows/Android 真实构建串、mpv 名字改写、日志归因五种形状、OSD 属性）+ `fushi/test/media/video/video_lua_script_wiring_guard_test.dart`（日志订阅 / 两处收口 / OSD 先于 load-script / 探测→装载→open 顺序 / 导入走同一写穿 / 状态表交 host / 能力落 pref，注释剥离后匹配，逐条变异实测红）。
+- **备注**：
+  - **Android 真根治 = 重编 jar 带 Lua**，这是 fork 构建仓 `hajisensai/libmpv-android-video-build` 的活，本 PR 做不到、只做诚实门控。子代理调研的最小改动清单（约 60 行）：`buildscripts/scripts/lua.sh` 新建（抄上游 mpv-android，Lua 5.2.4，三条 bionic 兼容 CFLAGS + 手工 `lua.pc`）；`include/depinfo.sh` 加 `v_lua=5.2.4`、`dep_mpv=(ffmpeg libass lua)`；`include/download-deps.sh` 加 lua 下载；`scripts/mpv.sh` `-Dlua=disabled`→`-Dlua=lua`。产 jar 的 CI 跑在该仓 `main`（`workflow_dispatch`），产物人工 `gh release upload vendor-libmpv`（建议新文件名 `-ffmpeg6.1.6-lua`，不覆盖旧资产），再改 `build.gradle` URL/MD5。体积估算 +0.4–0.5 MB/ABI；选 Lua 5.2 不选 LuaJIT（纯 C，四架构零特例）。Lua 一开 `ytdl=yes` 默认生效，Hibiki 侧应同时显式 `ytdl=no`。
+  - iOS / macOS 随包 libmpv 未验证，门控同样靠运行时探测，不需要预判。
+  - 本机正式版数据根 `Documents\Fushi\data` 下没有 `mpv_scripts`，拿不到用户实际导入的脚本；四条修复不依赖脚本内容。
+  - 真机复测缺口：Windows 侧只做了 FFI 探针（同选项集）与源码/纯函数测试，未在完整 app 里复测"导入→自动启用→状态列表显示已装载→osd_message 可见"；Android 侧未验证门控副标题真显示（无 Android 产物在本机）。

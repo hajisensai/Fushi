@@ -3528,7 +3528,7 @@
   "video_setting_mpv_lua_scripts": "Charger les scripts Lua",
   "video_setting_mpv_lua_scripts_hint": "Charger tous les fichiers .lua du dossier mpv_scripts dans le lecteur. La désactivation prend effet à la prochaine ouverture d'une vidéo.",
   "video_setting_mpv_lua_scripts_import": "Importer des scripts Lua",
-  "video_setting_mpv_lua_scripts_imported": "Scripts importés",
+  "video_setting_mpv_lua_scripts_imported": "Scripts importés et activés",
   "video_setting_mpv_lua_scripts_dir_copy": "Copier le chemin du dossier de scripts",
   "video_setting_mpv_lua_scripts_dir_copied": "Chemin du dossier copié",
   "interconnect_share_statistics": "Partager les statistiques",
@@ -4113,5 +4113,11 @@
   "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
   "network_proxy_p2p_mode_direct": "Direct",
   "network_proxy_p2p_mode_proxy": "Via proxy",
-  "network_proxy_p2p_mode_mixed": "Mixed"
+  "network_proxy_p2p_mode_mixed": "Mixed",
+  "video_setting_mpv_lua_scripts_unavailable": "Le libmpv fourni sur cette plateforme a été compilé sans Lua (-Dlua=disabled) : les scripts ne peuvent pas s'exécuter ici.",
+  "video_setting_mpv_lua_scripts_input_note": "Les entrées clavier et souris restent dans l'application et n'atteignent jamais mpv : les scripts qui reposent sur des raccourcis ou sur l'OSC ne peuvent pas être déclenchés. Les scripts pilotés par propriétés/événements et les messages OSD fonctionnent.",
+  "video_setting_mpv_lua_scripts_empty": "Aucun script dans le dossier mpv_scripts pour l'instant",
+  "video_setting_mpv_lua_scripts_status_loaded": "Chargé, aucune erreur signalée",
+  "video_setting_mpv_lua_scripts_status_not_loaded": "Pas encore chargé dans ce lecteur (activez l'interrupteur ou rouvrez la vidéo)",
+  "video_setting_mpv_lua_scripts_status_error": "Erreur"
 }

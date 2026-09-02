@@ -3528,7 +3528,7 @@
   "video_setting_mpv_lua_scripts": "Lua 스크립트 로드",
   "video_setting_mpv_lua_scripts_hint": "mpv_scripts 폴더의 모든 .lua 파일을 플레이어에 로드합니다. 끄면 다음에 동영상을 열 때 적용됩니다.",
   "video_setting_mpv_lua_scripts_import": "Lua 스크립트 가져오기",
-  "video_setting_mpv_lua_scripts_imported": "스크립트 가져옴",
+  "video_setting_mpv_lua_scripts_imported": "스크립트를 가져와 사용하도록 설정했습니다",
   "video_setting_mpv_lua_scripts_dir_copy": "스크립트 폴더 경로 복사",
   "video_setting_mpv_lua_scripts_dir_copied": "폴더 경로 복사됨",
   "interconnect_share_statistics": "통계 공유",
@@ -4113,5 +4113,11 @@
   "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
   "network_proxy_p2p_mode_direct": "Direct",
   "network_proxy_p2p_mode_proxy": "Via proxy",
-  "network_proxy_p2p_mode_mixed": "Mixed"
+  "network_proxy_p2p_mode_mixed": "Mixed",
+  "video_setting_mpv_lua_scripts_unavailable": "이 플랫폼에 포함된 libmpv는 Lua 없이 빌드되어(-Dlua=disabled) 여기서는 스크립트를 실행할 수 없습니다.",
+  "video_setting_mpv_lua_scripts_input_note": "키보드와 마우스 입력은 앱에서 처리되며 mpv에 전달되지 않습니다. 키 바인딩이나 OSC에 의존하는 스크립트는 실행할 수 없습니다. 속성/이벤트 기반 스크립트와 OSD 메시지는 동작합니다.",
+  "video_setting_mpv_lua_scripts_empty": "mpv_scripts 폴더에 아직 스크립트가 없습니다",
+  "video_setting_mpv_lua_scripts_status_loaded": "로드됨, 오류 없음",
+  "video_setting_mpv_lua_scripts_status_not_loaded": "이 플레이어에 아직 로드되지 않았습니다(스위치를 켜거나 동영상을 다시 여세요)",
+  "video_setting_mpv_lua_scripts_status_error": "오류"
 }

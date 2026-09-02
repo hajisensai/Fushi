@@ -3528,7 +3528,7 @@
   "video_setting_mpv_lua_scripts": "加载 Lua 脚本",
   "video_setting_mpv_lua_scripts_hint": "装载 mpv_scripts 目录里的全部 .lua 脚本。关闭在下次打开视频时生效。",
   "video_setting_mpv_lua_scripts_import": "导入 Lua 脚本",
-  "video_setting_mpv_lua_scripts_imported": "脚本已导入",
+  "video_setting_mpv_lua_scripts_imported": "脚本已导入并启用",
   "video_setting_mpv_lua_scripts_dir_copy": "复制脚本目录路径",
   "video_setting_mpv_lua_scripts_dir_copied": "已复制目录路径",
   "interconnect_share_statistics": "共享统计",
@@ -4113,5 +4113,11 @@
   "video_discovery_anidb_identity_not_found": "未能在 AniDB 识别该作品：仍会正常下载，导入后在待确认列表等待手动指定身份。",
   "network_proxy_p2p_mode_direct": "直连",
   "network_proxy_p2p_mode_proxy": "走代理",
-  "network_proxy_p2p_mode_mixed": "混合"
+  "network_proxy_p2p_mode_mixed": "混合",
+  "video_setting_mpv_lua_scripts_unavailable": "本平台随包 libmpv 未编入 Lua（-Dlua=disabled），脚本在此无法运行。",
+  "video_setting_mpv_lua_scripts_input_note": "键盘/鼠标输入由应用层处理、不会到达 mpv：依赖按键绑定或 OSC 的脚本无法触发；监听属性/事件的脚本与 OSD 提示可用。",
+  "video_setting_mpv_lua_scripts_empty": "mpv_scripts 目录里还没有脚本",
+  "video_setting_mpv_lua_scripts_status_loaded": "已装载，无报错",
+  "video_setting_mpv_lua_scripts_status_not_loaded": "本次播放未装载（开启开关或重新打开视频）",
+  "video_setting_mpv_lua_scripts_status_error": "报错"
 }

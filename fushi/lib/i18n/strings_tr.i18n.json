@@ -3528,7 +3528,7 @@
   "video_setting_mpv_lua_scripts": "Lua betiklerini yükle",
   "video_setting_mpv_lua_scripts_hint": "mpv_scripts klasöründeki tüm .lua dosyalarını oynatıcıya yükle. Kapatma, bir sonraki video açıldığında geçerli olur.",
   "video_setting_mpv_lua_scripts_import": "Lua betiklerini içe aktar",
-  "video_setting_mpv_lua_scripts_imported": "Betikler içe aktarıldı",
+  "video_setting_mpv_lua_scripts_imported": "Betikler içe aktarıldı ve etkinleştirildi",
   "video_setting_mpv_lua_scripts_dir_copy": "Betik klasör yolunu kopyala",
   "video_setting_mpv_lua_scripts_dir_copied": "Klasör yolu kopyalandı",
   "interconnect_share_statistics": "İstatistikleri paylaş",
@@ -4113,5 +4113,11 @@
   "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
   "network_proxy_p2p_mode_direct": "Direct",
   "network_proxy_p2p_mode_proxy": "Via proxy",
-  "network_proxy_p2p_mode_mixed": "Mixed"
+  "network_proxy_p2p_mode_mixed": "Mixed",
+  "video_setting_mpv_lua_scripts_unavailable": "Bu platformdaki paketlenmiş libmpv, Lua olmadan derlenmiştir (-Dlua=disabled); betikler burada çalışamaz.",
+  "video_setting_mpv_lua_scripts_input_note": "Klavye ve fare girdisi uygulamada kalır, mpv'ye hiç ulaşmaz: tuş atamalarına veya OSC'ye dayanan betikler tetiklenemez. Özellik/olay tabanlı betikler ve OSD mesajları çalışır.",
+  "video_setting_mpv_lua_scripts_empty": "mpv_scripts klasöründe henüz betik yok",
+  "video_setting_mpv_lua_scripts_status_loaded": "Yüklendi, hata bildirilmedi",
+  "video_setting_mpv_lua_scripts_status_not_loaded": "Bu oynatıcıda henüz yüklenmedi (anahtarı açın veya videoyu yeniden açın)",
+  "video_setting_mpv_lua_scripts_status_error": "Hata"
 }

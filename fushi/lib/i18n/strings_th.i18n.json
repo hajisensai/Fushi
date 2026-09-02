@@ -3528,7 +3528,7 @@
   "video_setting_mpv_lua_scripts": "โหลดสคริปต์ Lua",
   "video_setting_mpv_lua_scripts_hint": "โหลดไฟล์ .lua ทั้งหมดในโฟลเดอร์ mpv_scripts เข้าสู่เครื่องเล่น การปิดจะมีผลเมื่อเปิดวิดีโอครั้งถัดไป",
   "video_setting_mpv_lua_scripts_import": "นำเข้าสคริปต์ Lua",
-  "video_setting_mpv_lua_scripts_imported": "นำเข้าสคริปต์แล้ว",
+  "video_setting_mpv_lua_scripts_imported": "นำเข้าและเปิดใช้สคริปต์แล้ว",
   "video_setting_mpv_lua_scripts_dir_copy": "คัดลอกเส้นทางโฟลเดอร์สคริปต์",
   "video_setting_mpv_lua_scripts_dir_copied": "คัดลอกเส้นทางโฟลเดอร์แล้ว",
   "interconnect_share_statistics": "แชร์สถิติ",
@@ -4113,5 +4113,11 @@
   "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
   "network_proxy_p2p_mode_direct": "Direct",
   "network_proxy_p2p_mode_proxy": "Via proxy",
-  "network_proxy_p2p_mode_mixed": "Mixed"
+  "network_proxy_p2p_mode_mixed": "Mixed",
+  "video_setting_mpv_lua_scripts_unavailable": "libmpv ที่มาพร้อมแอปบนแพลตฟอร์มนี้ถูกสร้างโดยไม่มี Lua (-Dlua=disabled) จึงรันสคริปต์ที่นี่ไม่ได้",
+  "video_setting_mpv_lua_scripts_input_note": "อินพุตจากคีย์บอร์ดและเมาส์จะอยู่ในแอปและไม่ส่งถึง mpv: สคริปต์ที่พึ่งพาปุ่มลัดหรือ OSC จะเรียกใช้ไม่ได้ ส่วนสคริปต์ที่ทำงานตามพร็อพเพอร์ตี้/เหตุการณ์และข้อความ OSD ใช้งานได้",
+  "video_setting_mpv_lua_scripts_empty": "ยังไม่มีสคริปต์ในโฟลเดอร์ mpv_scripts",
+  "video_setting_mpv_lua_scripts_status_loaded": "โหลดแล้ว ไม่มีข้อผิดพลาด",
+  "video_setting_mpv_lua_scripts_status_not_loaded": "ยังไม่ได้โหลดในตัวเล่นนี้ (เปิดสวิตช์หรือเปิดวิดีโอใหม่)",
+  "video_setting_mpv_lua_scripts_status_error": "ข้อผิดพลาด"
 }

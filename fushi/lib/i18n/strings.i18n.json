@@ -3528,7 +3528,7 @@
   "video_setting_mpv_lua_scripts": "Load Lua scripts",
   "video_setting_mpv_lua_scripts_hint": "Load all .lua files in the mpv_scripts folder into the player. Turning off takes effect the next time a video is opened.",
   "video_setting_mpv_lua_scripts_import": "Import Lua scripts",
-  "video_setting_mpv_lua_scripts_imported": "Scripts imported",
+  "video_setting_mpv_lua_scripts_imported": "Scripts imported and enabled",
   "video_setting_mpv_lua_scripts_dir_copy": "Copy scripts folder path",
   "video_setting_mpv_lua_scripts_dir_copied": "Folder path copied",
   "interconnect_share_statistics": "Share statistics",
@@ -4113,5 +4113,11 @@
   "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
   "network_proxy_p2p_mode_direct": "Direct",
   "network_proxy_p2p_mode_proxy": "Via proxy",
-  "network_proxy_p2p_mode_mixed": "Mixed"
+  "network_proxy_p2p_mode_mixed": "Mixed",
+  "video_setting_mpv_lua_scripts_unavailable": "The bundled libmpv on this platform was built without Lua (-Dlua=disabled), so scripts cannot run here.",
+  "video_setting_mpv_lua_scripts_input_note": "Keyboard and mouse input stays in the app and never reaches mpv: scripts that rely on key bindings or the OSC cannot be triggered. Scripts driven by properties/events and OSD messages work.",
+  "video_setting_mpv_lua_scripts_empty": "No scripts in the mpv_scripts folder yet",
+  "video_setting_mpv_lua_scripts_status_loaded": "Loaded, no errors reported",
+  "video_setting_mpv_lua_scripts_status_not_loaded": "Not loaded in this player yet (turn on the switch or reopen the video)",
+  "video_setting_mpv_lua_scripts_status_error": "Error"
 }

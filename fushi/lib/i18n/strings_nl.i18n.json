@@ -3528,7 +3528,7 @@
   "video_setting_mpv_lua_scripts": "Lua-scripts laden",
   "video_setting_mpv_lua_scripts_hint": "Laad alle .lua-bestanden in de mpv_scripts-map in de speler. Uitschakelen wordt pas van kracht bij het volgende geopende video.",
   "video_setting_mpv_lua_scripts_import": "Lua-scripts importeren",
-  "video_setting_mpv_lua_scripts_imported": "Scripts geïmporteerd",
+  "video_setting_mpv_lua_scripts_imported": "Scripts geïmporteerd en ingeschakeld",
   "video_setting_mpv_lua_scripts_dir_copy": "Scriptmappad kopiëren",
   "video_setting_mpv_lua_scripts_dir_copied": "Mappad gekopieerd",
   "interconnect_share_statistics": "Statistieken delen",
@@ -4113,5 +4113,11 @@
   "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
   "network_proxy_p2p_mode_direct": "Direct",
   "network_proxy_p2p_mode_proxy": "Via proxy",
-  "network_proxy_p2p_mode_mixed": "Mixed"
+  "network_proxy_p2p_mode_mixed": "Mixed",
+  "video_setting_mpv_lua_scripts_unavailable": "De meegeleverde libmpv op dit platform is zonder Lua gebouwd (-Dlua=disabled), dus scripts kunnen hier niet draaien.",
+  "video_setting_mpv_lua_scripts_input_note": "Toetsenbord- en muisinvoer blijft in de app en bereikt mpv nooit: scripts die op sneltoetsen of de OSC vertrouwen kunnen niet worden geactiveerd. Scripts op basis van eigenschappen/gebeurtenissen en OSD-berichten werken wel.",
+  "video_setting_mpv_lua_scripts_empty": "Nog geen scripts in de map mpv_scripts",
+  "video_setting_mpv_lua_scripts_status_loaded": "Geladen, geen fouten gemeld",
+  "video_setting_mpv_lua_scripts_status_not_loaded": "Nog niet geladen in deze speler (zet de schakelaar aan of open de video opnieuw)",
+  "video_setting_mpv_lua_scripts_status_error": "Fout"
 }

@@ -3528,7 +3528,7 @@
   "video_setting_mpv_lua_scripts": "Carregar scripts Lua",
   "video_setting_mpv_lua_scripts_hint": "Carregar todos os arquivos .lua na pasta mpv_scripts no player. Desativar entra em vigor na próxima vez que um vídeo for aberto.",
   "video_setting_mpv_lua_scripts_import": "Importar scripts Lua",
-  "video_setting_mpv_lua_scripts_imported": "Scripts importados",
+  "video_setting_mpv_lua_scripts_imported": "Scripts importados e ativados",
   "video_setting_mpv_lua_scripts_dir_copy": "Copiar caminho da pasta de scripts",
   "video_setting_mpv_lua_scripts_dir_copied": "Caminho da pasta copiado",
   "interconnect_share_statistics": "Compartilhar estatísticas",
@@ -4113,5 +4113,11 @@
   "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
   "network_proxy_p2p_mode_direct": "Direct",
   "network_proxy_p2p_mode_proxy": "Via proxy",
-  "network_proxy_p2p_mode_mixed": "Mixed"
+  "network_proxy_p2p_mode_mixed": "Mixed",
+  "video_setting_mpv_lua_scripts_unavailable": "O libmpv incluído nesta plataforma foi compilado sem Lua (-Dlua=disabled), então os scripts não podem ser executados aqui.",
+  "video_setting_mpv_lua_scripts_input_note": "A entrada de teclado e mouse fica no aplicativo e nunca chega ao mpv: scripts que dependem de atalhos ou do OSC não podem ser acionados. Scripts baseados em propriedades/eventos e mensagens OSD funcionam.",
+  "video_setting_mpv_lua_scripts_empty": "Ainda não há scripts na pasta mpv_scripts",
+  "video_setting_mpv_lua_scripts_status_loaded": "Carregado, nenhum erro relatado",
+  "video_setting_mpv_lua_scripts_status_not_loaded": "Ainda não carregado neste player (ative a chave ou reabra o vídeo)",
+  "video_setting_mpv_lua_scripts_status_error": "Erro"
 }

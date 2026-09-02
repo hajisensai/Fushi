@@ -3528,7 +3528,7 @@
   "video_setting_mpv_lua_scripts": "加載 Lua 腳本",
   "video_setting_mpv_lua_scripts_hint": "裝載 mpv_scripts 目錄裡的全部 .lua 腳本。關閉在下次打開影片時生效。",
   "video_setting_mpv_lua_scripts_import": "導入 Lua 腳本",
-  "video_setting_mpv_lua_scripts_imported": "腳本已導入",
+  "video_setting_mpv_lua_scripts_imported": "腳本已導入並啟用",
   "video_setting_mpv_lua_scripts_dir_copy": "復製腳本目錄路徑",
   "video_setting_mpv_lua_scripts_dir_copied": "已復製目錄路徑",
   "interconnect_share_statistics": "共享統計",
@@ -4113,5 +4113,11 @@
   "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
   "network_proxy_p2p_mode_direct": "Direct",
   "network_proxy_p2p_mode_proxy": "Via proxy",
-  "network_proxy_p2p_mode_mixed": "Mixed"
+  "network_proxy_p2p_mode_mixed": "Mixed",
+  "video_setting_mpv_lua_scripts_unavailable": "本平台隨附的 libmpv 未編入 Lua（-Dlua=disabled），腳本在此無法運行。",
+  "video_setting_mpv_lua_scripts_input_note": "鍵盤/滑鼠輸入由應用程式處理、不會到達 mpv：依賴按鍵綁定或 OSC 的腳本無法觸發；監聽屬性/事件的腳本與 OSD 提示可用。",
+  "video_setting_mpv_lua_scripts_empty": "mpv_scripts 目錄裡還沒有腳本",
+  "video_setting_mpv_lua_scripts_status_loaded": "已載入，無報錯",
+  "video_setting_mpv_lua_scripts_status_not_loaded": "本次播放未載入（開啟開關或重新開啟影片）",
+  "video_setting_mpv_lua_scripts_status_error": "報錯"
 }
