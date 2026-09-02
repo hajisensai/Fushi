@@ -213,6 +213,14 @@ security import "$p12_path" -k "$keychain_path" \
   -T /usr/bin/codesign -T /usr/bin/security -f pkcs12 -A
 security set-key-partition-list -S apple-tool:,apple:,codesign: \
   -s -k "$keychain_password" "$keychain_path" >/dev/null
+existing_keychains=""
+while IFS= read -r line; do
+  trimmed="$(printf '%s' "$line" | tr -d '"' | sed 's/^ *//;s/ *$//')"
+  if [[ -n "$trimmed" ]]; then
+    existing_keychains="$existing_keychains $trimmed"
+  fi
+done < <(security list-keychains -d user)
+security list-keychains -d user -s "$keychain_path" $existing_keychains
 identity="$(security find-identity -v -p codesigning "$keychain_path" \
   | awk '/Apple Distribution/ {print $2; exit}')"
 if [[ -z "$identity" ]]; then
