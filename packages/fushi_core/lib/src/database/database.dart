@@ -723,7 +723,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 94;
+  int get schemaVersion => 95;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2883,6 +2883,22 @@ class FushiDatabase extends _$FushiDatabase
                     'video_download_subscriptions', 'identity_json')) {
               await m.addColumn(videoDownloadSubscriptions,
                   videoDownloadSubscriptions.identityJson);
+            }
+          }
+          if (from < 95) {
+            // v95（词典改名）：dictionary_metadata 加 display_name——用户给词典
+            // 起的显示名。真名 `name` 是主键 + 磁盘目录名 + 引擎装载路径 + 一串
+            // 外键（CSS map key / 样式规则 / data-dictionary 选择器 / 媒体 URL /
+            // Anki token / 同步资产名），冻结不动，只加显示层覆盖（见 tables.dart
+            // 该列的注释）。
+            //
+            // 无损：nullable 无 default → 旧库既有行全 NULL = 没改过名 = 显示真名
+            // = 逐字节保留 v95 前的渲染。守卫幂等（fresh DB 由 onCreate 建好，
+            // 重复升级 _columnExists 短路 no-op）。
+            if (await _tableExists('dictionary_metadata') &&
+                !await _columnExists('dictionary_metadata', 'display_name')) {
+              await m.addColumn(
+                  dictionaryMetadata, dictionaryMetadata.displayName);
             }
           }
         },

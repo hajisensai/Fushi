@@ -308,6 +308,9 @@ class DictionaryImportManager {
           // 用户手动指定的内容语言属于用户设置，重导必须继承——metadata 会被包内
           // index.json 整体重建，塞那里等于每次更新都被抹掉。
           languageOverride: preservedSettings?.languageOverride,
+          // 同理：用户给词典起的显示名重导后必须还在，否则「在线更新一次就变回
+          // 包里那个丑名字」。
+          displayName: preservedSettings?.displayName,
         ));
 
         progressNotifier.value = t.import_complete;
@@ -568,6 +571,8 @@ class DictionaryImportManager {
         collapsedLanguages: preservedSettings?.collapsedLanguages ?? const [],
         // 同上：用户手动指定的内容语言随 preservedSettings 继承，不被重导冲掉。
         languageOverride: preservedSettings?.languageOverride,
+        // 同上：用户起的显示名也继承，在线更新不把名字打回原形。
+        displayName: preservedSettings?.displayName,
       ));
 
       progressNotifier.value = t.import_complete;

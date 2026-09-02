@@ -2947,17 +2947,26 @@ class AppModel with ChangeNotifier {
     // popup.js 在两个宿主里呈现不一致。
     final String globalCss = effectiveGlobalDictCSS;
     final Map<String, String> customCss = effectiveCustomDictCSS;
+    // 词典改名（v95）：真名 -> 显示名，只含真正改过名的。必须一并进下面的缓存
+    // 判定——否则改完名命中旧实例、revision 不变，扩展永远拉不到新名。
+    final Map<String, String> displayNames = <String, String>{
+      for (final Dictionary d in dictionaries)
+        if (d.displayName != null && d.displayName!.trim().isNotEmpty)
+          d.name: d.displayName!.trim(),
+    };
     final RemotePopupDictionaryCss? cached = _browserExtensionPopupCss;
     if (cached != null &&
         identical(cached.dictionaryStyles, styles) &&
         cached.globalDictCss == globalCss &&
-        _sameStringMap(cached.customDictCss, customCss)) {
+        _sameStringMap(cached.customDictCss, customCss) &&
+        _sameStringMap(cached.dictionaryDisplayNames, displayNames)) {
       return cached;
     }
     return _browserExtensionPopupCss = RemotePopupDictionaryCss(
       dictionaryStyles: styles,
       globalDictCss: globalCss,
       customDictCss: customCss,
+      dictionaryDisplayNames: displayNames,
     );
   }
 
@@ -4915,6 +4924,9 @@ class AppModel with ChangeNotifier {
   /// 用户手动指定词典内容语言（BCP-47），null = 恢复自动（读 index.json 声明）。
   void setDictionaryLanguageOverride(Dictionary dictionary, String? language) =>
       dictRepo.setDictionaryLanguageOverride(dictionary, language);
+
+  void setDictionaryDisplayName(Dictionary dictionary, String? displayName) =>
+      dictRepo.setDictionaryDisplayName(dictionary, displayName);
 
   void toggleDictionaryCollapsed(Dictionary dictionary) =>
       dictRepo.toggleDictionaryCollapsed(

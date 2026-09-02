@@ -152,6 +152,7 @@ class DictionaryRepository {
       hiddenLanguages: hiddenLanguages,
       collapsedLanguages: collapsedLanguages,
       languageOverride: r.languageOverride,
+      displayName: r.displayName,
     );
   }
 
@@ -165,6 +166,7 @@ class DictionaryRepository {
       hiddenLanguagesJson: Value(jsonEncode(d.hiddenLanguages)),
       collapsedLanguagesJson: Value(jsonEncode(d.collapsedLanguages)),
       languageOverride: Value(d.languageOverride),
+      displayName: Value(d.displayName),
     );
   }
 
@@ -217,6 +219,23 @@ class DictionaryRepository {
   void setDictionaryLanguageOverride(Dictionary dictionary, String? language) {
     final String trimmed = language?.trim() ?? '';
     dictionary.languageOverride = trimmed.isEmpty ? null : trimmed;
+    persistDictionary(dictionary);
+    clearDictionaryResultsCache();
+  }
+
+  /// 改词典显示名。空 / 与真名相同 → 存 null（回到「没改过」，避免留一行等值
+  /// 冗余，也让 `window.dictionaryDisplayNames` 的映射表只装真正改过的）。
+  ///
+  /// 只动 [Dictionary.displayName]。真名 [Dictionary.name] 是主键 + 磁盘目录名 +
+  /// 引擎装载路径 + CSS/媒体/Anki token 的键，一律不动（见 `tables.dart` 的
+  /// `displayName` 注释）。
+  ///
+  /// 仍清查词缓存：弹窗 HTML 是缓存产物，里面的词典名标题已经渲染进去了，不清
+  /// 的话改完名要等缓存自然失效才看得到新名。
+  void setDictionaryDisplayName(Dictionary dictionary, String? displayName) {
+    final String trimmed = displayName?.trim() ?? '';
+    dictionary.displayName =
+        (trimmed.isEmpty || trimmed == dictionary.name) ? null : trimmed;
     persistDictionary(dictionary);
     clearDictionaryResultsCache();
   }

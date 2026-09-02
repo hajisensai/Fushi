@@ -21,6 +21,7 @@ class Dictionary {
       hiddenLanguages: List<String>.from(map['hiddenLanguages'] ?? []),
       collapsedLanguages: List<String>.from(map['collapsedLanguages'] ?? []),
       languageOverride: map['languageOverride'] as String?,
+      displayName: map['displayName'] as String?,
     );
   }
   Dictionary({
@@ -32,6 +33,7 @@ class Dictionary {
     this.hiddenLanguages = const [],
     this.collapsedLanguages = const [],
     this.languageOverride,
+    this.displayName,
   });
 
   final String name;
@@ -48,6 +50,17 @@ class Dictionary {
   /// 词典时由 `preservedSettings` 继承，不会被包内 index.json 冲掉。这与
   /// [sourceLanguage]（自动、随包刷新）是两个字段，不要合并。
   String? languageOverride;
+
+  /// 用户给这本词典起的**显示名**（改名）。null / 空 = 没改过。
+  ///
+  /// 只影响给人看的地方。[name] 是真名，同时是主键、磁盘目录名、引擎装载
+  /// 路径，以及 CSS map key / 样式规则 / `data-dictionary` 选择器 / 媒体 URL /
+  /// Anki `{single-glossary-<名>}` token / 同步资产名的键——那些一律继续用
+  /// [name]，改名不得波及（详见 `tables.dart` 该列注释）。
+  ///
+  /// 与 [languageOverride] 同属「用户设置」，重导/在线更新时走 `preservedSettings`
+  /// 继承，不会被包内 index.json 冲掉。
+  String? displayName;
 
   /// yomitan `index.json` 声明的**词头语言**（词典在解释哪种语言）。
   /// 导入时由 `readSourceMetadataFromIndex` 落进 [metadata]；旧词典/本地包缺则空串。
@@ -70,6 +83,11 @@ class Dictionary {
   String? get effectiveTargetLanguage => _firstNonEmpty(
         <String?>[languageOverride, targetLanguage],
       );
+
+  /// 该显示给用户看的名字：改过名用改的，否则用真名。**所有面向用户的词典名
+  /// 渲染点都必须走这里**，而不是直接读 [name]。
+  String get effectiveDisplayName =>
+      _firstNonEmpty(<String?>[displayName]) ?? name;
 
   static String? _firstNonEmpty(List<String?> candidates) {
     for (final String? candidate in candidates) {
@@ -115,6 +133,7 @@ class Dictionary {
       'hiddenLanguages': hiddenLanguages,
       'collapsedLanguages': collapsedLanguages,
       'languageOverride': languageOverride,
+      'displayName': displayName,
     });
   }
 

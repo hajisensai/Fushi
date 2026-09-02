@@ -14,6 +14,7 @@ import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
+import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/utils.dart';
 
@@ -395,6 +396,28 @@ class _DictionaryDialogPageState extends BasePageState {
         setState(() {});
       },
     );
+  }
+
+  /// 给词典改个显示名。落的是 `dictionary_metadata.display_name` 覆盖列，**真名
+  /// 不动**——真名是主键、磁盘目录名、C++ 引擎装载路径，还被每词典 CSS、样式规则、
+  /// 弹窗 `data-dictionary` 选择器、词典媒体 URL、Anki `{single-glossary-<名>}`
+  /// token、存储占用条目 id、同步资产名当键用。改真名会让这些全部静默失配（用户
+  /// 样式丢失、图/音 404、已配置的制卡字段失效）。
+  ///
+  /// 因此改名只贯通「给人看的地方」：本列表、查词弹窗里的词典名标题/频率/音高/
+  /// 汉字标签、存储占用明细、CSS 作用域下拉、同步对比对话框。
+  Future<void> _renameDictionary(Dictionary dictionary) async {
+    final String current = dictionary.effectiveDisplayName;
+    final String? name = await showNameInputDialog(
+      context: context,
+      title: t.dict_rename,
+      labelText: t.dict_rename_label,
+      initialName: current,
+      leadingIcon: Icons.drive_file_rename_outline,
+    );
+    if (!mounted || name == null || name == current) return;
+    appModel.setDictionaryDisplayName(dictionary, name);
+    setState(() {});
   }
 
   Future<void> showDictionaryDeleteDialog(Dictionary dictionary) {
@@ -1450,7 +1473,8 @@ class _DictionaryDialogPageState extends BasePageState {
     // 情况，四个 tab（term/kanji/frequency/pitch）共用本 tile 一处修复全覆盖。
     final bool compact = MediaQuery.sizeOf(context).width < 480;
     final Text nameText = Text(
-      dictionary.name,
+      // 用户可见的词典名一律走 effectiveDisplayName（改过名用改的，否则真名）。
+      dictionary.effectiveDisplayName,
       style: textTheme.bodyLarge?.copyWith(
         color: titleColor,
         fontWeight: FontWeight.w600,
@@ -1574,6 +1598,16 @@ class _DictionaryDialogPageState extends BasePageState {
           onTap: onMoveDown,
         ),
         _buildDictionaryVisibilityButton(dictionary, enabled),
+        SizedBox(width: tokens.spacing.gap / 2),
+        // 改名：导入包里的 index.json title 常常又长又带日期（`JMdict [2026-05-17]`），
+        // 而它同时是主键/目录名/引擎键，改不得——所以这里改的是显示名覆盖层。
+        FushiIconButton(
+          key: ValueKey<String>('dict_rename_${dictionary.name}'),
+          icon: Icons.drive_file_rename_outline,
+          size: 20,
+          tooltip: t.dict_rename,
+          onTap: () => _renameDictionary(dictionary),
+        ),
         // TODO-839：每本词典行尾恒显示一个「更新」按钮（消除「这本能更新那本不能」
         // 的视觉断层）。按 isUpdatable 分流：
         //   - 在线来源（isUpdatable 三条件满足）→ 走 _updateSingleDictionary（拉远端

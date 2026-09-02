@@ -4117,5 +4117,7 @@
   "media_source_rename": "Rename",
   "media_source_rename_label": "Source name",
   "book_rename": "Rename",
-  "book_rename_label": "Title"
+  "book_rename_label": "Title",
+  "dict_rename": "Rename",
+  "dict_rename_label": "Dictionary name"
 }

@@ -325,6 +325,21 @@ class DictionaryMetadata extends Table {
   /// 走同一条继承通道（`preservedSettings`）。
   TextColumn get languageOverride => text().nullable()();
 
+  /// v95：用户给词典起的**显示名**（改名）。null / 空 = 没改过，显示 [name]。
+  ///
+  /// 为什么是覆盖列而不是改 [name]：[name] 是本表主键，同时还是**磁盘目录名**
+  /// （`dictionaryResourceDirectory/<name>`）、C++ 引擎的装载路径、查词结果里
+  /// 的 `dictName`，并被一串东西当外键使用——每词典自定义 CSS 的 map key、
+  /// 样式规则的 `dictionaryName`、弹窗的 `data-dictionary` 选择器、词典媒体
+  /// URL 的 `dictionary=` 参数、Anki 的 `{single-glossary-<名>}` token、
+  /// 存储占用条目 id、同步资产名。改 [name] 会让上述全部静默失配（用户样式
+  /// 丢失、图/音 404、已配置的制卡字段失效），所以真名冻结，只加显示层覆盖。
+  ///
+  /// 为什么不塞进 [metadataJson]：同 [languageOverride] 的理由——重导/在线更新
+  /// 时 metadata 被包内 index.json 整体重建，用户设置会蒸发。它属于「用户设置」，
+  /// 走 `preservedSettings` 继承通道。
+  TextColumn get displayName => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {name};
 }

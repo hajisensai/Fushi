@@ -272,4 +272,9 @@ function applyFushiPopupCss(data) {
     window.customDictCSS =
         (data.customDictCSS && typeof data.customDictCSS === 'object')
             ? data.customDictCSS : {};
+    // 词典改名（v95）：popup.js 的 __fushiDictDisplayName 读这张表。缺了不会崩
+    // （回落真名），但改名在扩展里就不生效。
+    window.dictionaryDisplayNames =
+        (data.dictionaryDisplayNames && typeof data.dictionaryDisplayNames === 'object')
+            ? data.dictionaryDisplayNames : {};
 }
