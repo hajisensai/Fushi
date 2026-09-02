@@ -3,7 +3,7 @@
 - **真实性**：✅ 真 bug，两个独立缺陷叠加，已在本机用独立 ORT 探针逐字节复现
   - 功能缺陷根因 `fushi/lib/src/ocr/ocr_inference_ort.dart:85`（旧实现只在 `PlatformException.code == 'INVALID_PROVIDER'` 时回退 CPU）
   - 编码缺陷根因 `third_party/flutter_onnxruntime/windows/flutter_onnxruntime_plugin.cpp`（78 处 `result->Error(code, e.what(), nullptr)` 把 native 字节原样送过 method channel）
-- **[x] ① 已修复** — 提交 `<pending>`
+- **[x] ① 已修复** — 提交 `4217d27465`
 - **[x] ② 已加自动化测试** — `fushi/test/ocr/ocr_inference_ort_test.dart`、`fushi/test/ocr/onnxruntime_windows_error_encoding_guard_test.dart`
 - **备注**：
 
