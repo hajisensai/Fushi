@@ -46,4 +46,20 @@ void main() {
     expect(adtsDurationMs(_adtsFrame(frequencyIndex: 15)), isNull);
     expect(adtsDurationMs(Uint8List(3)), isNull);
   });
+
+  test('frame_length 小于头长时判损坏返回 null（否则 offset 不前进 = 死循环）', () {
+    // frame_length 字段写 0：偏移不会前进，缺了守卫这条断言不是失败而是**挂死**。
+    final Uint8List frame = _adtsFrame(frequencyIndex: 4);
+    frame[3] &= ~0x03; // frame_length 高 2 位
+    frame[4] = 0;
+    frame[5] &= 0x1F; // frame_length 低 3 位
+    expect(adtsDurationMs(frame), isNull);
+
+    // 边界：正好 6（< 7 字节头）同样判损坏。
+    final Uint8List six = _adtsFrame(frequencyIndex: 4);
+    six[3] &= ~0x03;
+    six[4] = 6 >> 3;
+    six[5] = (six[5] & 0x1F) | ((6 & 0x07) << 5);
+    expect(adtsDurationMs(six), isNull);
+  });
 }

@@ -24,9 +24,11 @@
 
 | 阶段 | 证据 |
 |---|---|
-| process_found / helper_ready / ipc_ready | 探针 `shm=Local\FushiVoiceHook_<pid> version=21`，diag 位见上 |
+| process_found | 启动器即本体：`sgre_steam.exe` x64（三次会话 PID 41172 / 93332 / 94688），窗口类 `AdvEngine` 由同一 PID 承载；injector 是它的父进程且不承载窗口/文本/音频 |
+| helper_ready | helper x64 `installed.sha256 = 049d3cbd…` 已在目标会话就绪；diag 位 `sensor_installed,luna_known_hook_ready,sampled_input_shield_ready`（启动后 12 s 内） |
+| ipc_ready | 探针 `fushi_voice_lookup_probe` 读到 `shm=Local\FushiVoiceHook_<pid> version=21`，生产者（helper）与消费者（Fushi）同时存活 |
 | text_ready | 线程「SGRE exact · 0x35aa0」（hook code `ENGINE:SGRE:wind3d11`）逐句到达，与画面一致 |
-| resource_ready | 「エル・プサイ・コングルゥ」配对 `voice_body.bin` xWMA（backend `game_resource`），AAC 3.19 s |
+| resource_ready | 「エル・プサイ・コングルゥ」配对 `voice_body.bin` xWMA（backend `game_resource`），AAC 3.19 s。证据等级只到 **captured**：**未记**与源 entry 的字节哈希一致性，**也未记**纯人声分类（`backend: game_resource` 只说明字节来自资源流，不构成「这 3.19 s 不含 BGM/SE」的证据），因此不得宣称 hash_verified / voice_classified |
 | paired | 同一行条目文本 + 音频，工作台「音频就绪」 |
 | e2e_verified | Anki note 1788374633826（Lapis）：Sentence `エル・プ<b>サイ</b>・コングルゥ`、SentenceAudio 52 KB AAC 3.19 s、Picture 480×270 AVIF 10 帧 1.25 s |
 
@@ -42,7 +44,8 @@
 
 - BUG-2067 列表显示折叠中间态：`texthooker_word_cache.dart`（id+文本判据）。
 - BUG-2068 引擎精确线程自动选择：session `_maybeAutoSelectEngineExactThread`（`ENGINE:` 前缀，≥3 行）。
-- BUG-2069 动图覆盖整句：`captureWindowGifBytes(targetDuration:)` + `galAnimatedFrameBudget`（8 s 上限）；资源音频路径写 `durationMs`（`adts_duration.dart`）。
+- BUG-2069 动图覆盖整句：`captureWindowGifBytes(targetDuration:)` + `galAnimatedFrameBudget`（8 s 上限）；资源音频路径写 `durationMs`（`adts_duration.dart`）；审查补 `trimSurplusAnimationFrames`（预算收缩后把多抓的帧在编码前裁掉，否则文档说的「null 退回旧行为」不成立）。
+- BUG-2078 Ctrl 快进折叠：仅建档，本轮未修（根因未定）。
 - `engine-support.yaml`：SGRE 状态保持 implemented_unverified（真相源有哈希钉住的结构化证据契约，本轮未产出该记录），E2E 证据写入 notes / evidence 文本。
 
 ## ATRI -My Dear Moments-（KiriKiri Z，第二款）
@@ -54,11 +57,11 @@
 | 线程 | 需手选「TextRender · 0x6e0bc571」（EmbedKrkrZ / KiriKiriZ 线程混入系统串或逐字重绘），干净 |
 | 查词 | 单击字形 → 命中 → 直接路由弹卡（の / はい）；点卡外（真实 mouse_event）→ LL 钩子吞掉、卡关闭、台词不推进（2/2） |
 | 制卡 | note 1788380145993：Sentence 「……<b>はい</b>」、Picture AVIF、SentenceAudio = **5 s 系统混音降级**（`engine_utterance_unavailable`，75 条全部降级）→ BUG-2070（wuopus 语音未进资源/PCM 路径，需 native 侧另开） |
-| 观察 | Ctrl 快进时 TextRender 连续重绘被折叠成一条超长台词（记在 BUG-2070 备注） |
+| 观察 | Ctrl 快进时 TextRender 连续重绘被折叠成一条超长台词（已拆出 **BUG-2078**，现象已观察、根因未定） |
 
 ## 未做 / 堵塞
 
-- SGRE：DirectInput 盾 1,000 次交易门未跑；那 1 次泄漏未定根因（怀疑 needsRiskAcceptance→activeNative 正边沿与首张卡 Reveal 的 LL 钩子装配竞态，需要在改代码前先做可复现实验）；新构建真机复验三条 host 改动待做。
+- SGRE：逐句资源音频的**字节哈希一致性**与**纯人声分类**两项证据未采（yaml evidence 已显式写明缺失）；DirectInput 盾 1,000 次交易门未跑；那 1 次泄漏未定根因（怀疑 needsRiskAcceptance→activeNative 正边沿与首张卡 Reveal 的 LL 钩子装配竞态，需要在改代码前先做可复现实验）；新构建真机复验三条 host 改动待做。
 - PXC2 vol.2：`pxc2_bc_vol2.exe` 是 KiriKiri2 光盘 autorun 菜单，`main_data/` 只有 patch1~5 + `birthday_vol2.xp3`，要复制进 `PxC2.exe` 目录；本机三个副本都没有本体 → 堵塞（需要 PRETTY×CATION2 本体，KiriKiri Z + E-mote，走 `kirikiri_z`）。
 - 其余游戏（盘点见任务 #3）：未开始。
 

@@ -2990,7 +2990,8 @@ class GalHookSessionController extends ChangeNotifier {
           backend: 'game_resource',
           // PCM 路径在 [_encodeLineSlice] 里按采样数写时长；资源路径拿到的已是
           // 转码后的 ADTS 字节，从帧头读回来。制卡动图要按整句时长抓帧，缺这个
-          // 数它只能退回默认 1.25 s。iOS 的 m4a 容器读不出 → null，按未知处理。
+          // 数它只能退回默认 1.25 s。非 ADTS 字节（帧头对不上）读出 null，
+          // 按未知处理——本分支被 `_isWindows` 门死，不存在移动端容器。
           durationMs: adtsDurationMs(paired),
         );
         _record(

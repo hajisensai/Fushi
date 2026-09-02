@@ -170,9 +170,15 @@ const String kGalCleanSourceSuppressedReason = 'clean_source_suppressed';
 /// 先按线程取行，再按本枚举过滤。
 enum TexthookerLineFilter { all, withAudio, mined, favorited }
 
-/// 引擎适配器自产的**精确文本线程**（SGRE `ENGINE:SGRE:wind3d11`、Siglus
-/// TextRender 等）：hook code 以 `ENGINE:` 为前缀，与 Luna 启发式 hook 的
-/// `HQFN-24@...` 一类码区分。native 侧命名契约见各 adapter 的 `k*TextHookCode`。
+/// 引擎适配器自产的**精确文本线程**：hook code 以 `ENGINE:` 为前缀，与 Luna 启发式
+/// hook 的 `HQFN-24@...` 一类码区分。
+///
+/// **目前只有 SGRE 一家**用这个前缀（`ENGINE:SGRE:wind3d11`，见
+/// `native/galgame_hook/hook/adapters/sgre_lookup.inc` 的 `kSgreTextHookCode`）。
+/// Siglus 的 TextRender 发的是 `EXBWX0@%llX:SiglusEngine.exe`、Unity 发的是
+/// `UnityEngine.TextMesh.set_text(glyphs)`，两者都**不**带该前缀，因此不走这条
+/// 自动选中路径——别把它们写成同样受益，那会让人以为覆盖面比实际大。
+/// native 侧命名契约见各 adapter 的 `k*TextHookCode`。
 bool isEngineExactTextThread(TexthookerTextThread thread) =>
     (thread.hookCode ?? '').startsWith('ENGINE:');
 
