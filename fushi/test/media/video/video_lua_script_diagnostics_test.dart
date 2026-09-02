@@ -1,5 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
+import 'package:path/path.dart' as p;
+
+/// 脚本路径一律用 [p.joinAll] 按**本平台**分隔符拼，不写 `C:\...` 字面量。
+///
+/// [luaScriptNameForPath] 复刻 mpv 的 `script_name_from_filename`，两边都按
+/// **本平台**的 basename 语义切路径（mpv 的 `mp_basename` 只在 HAVE_DOS_PATHS
+/// 上认 `\`，Dart 的 `p.basename` 同样走 `p.context`），而脚本路径的真实来源是
+/// [mpvLuaScriptDirectory]——本来就是本平台分隔符。硬写 Windows 字面量会让 POSIX
+/// 上的 `\` 不被当分隔符，整串被改写成 `C__a_b_auto_profile_v2`，于是同一份测试
+/// Windows 绿、Linux CI 红。
+String _script(List<String> parts) =>
+    p.joinAll(<String>[p.separator, ...parts]);
 
 /// BUG-2032：Lua 脚本能力判定 / 日志归因 / OSD 属性三组纯函数。
 void main() {
@@ -45,19 +57,25 @@ void main() {
   group('luaScriptNameForPath（复刻 mpv script_name_from_filename）', () {
     test('去扩展名、非字母数字改下划线、去前导 @', () {
       expect(
-        luaScriptNameForPath(r'C:\a b\auto-profile.v2.lua'),
+        luaScriptNameForPath(_script(<String>['a b', 'auto-profile.v2.lua'])),
         'auto_profile_v2',
       );
-      expect(luaScriptNameForPath('/home/u/mpv_scripts/osc.lua'), 'osc');
-      expect(luaScriptNameForPath('/x/@thumbfast.lua'), 'thumbfast');
-      expect(luaScriptNameForPath('/x/日本語.lua'), '___');
+      expect(
+        luaScriptNameForPath(_script(<String>['mpv_scripts', 'osc.lua'])),
+        'osc',
+      );
+      expect(
+        luaScriptNameForPath(_script(<String>['x', '@thumbfast.lua'])),
+        'thumbfast',
+      );
+      expect(luaScriptNameForPath(_script(<String>['x', '日本語.lua'])), '___');
     });
   });
 
   group('matchLuaLogToScripts', () {
-    const String a = r'C:\u\Documents\Fushi\data\mpv_scripts\a-one.lua';
-    const String b = r'C:\u\Documents\Fushi\data\mpv_scripts\b_two.lua';
-    const List<String> scripts = <String>[a, b];
+    final String a = _script(<String>['mpv_scripts', 'a-one.lua']);
+    final String b = _script(<String>['mpv_scripts', 'b_two.lua']);
+    final List<String> scripts = <String>[a, b];
 
     test('cplayer 装载失败：按完整路径归到那一条脚本', () {
       final LuaScriptLogHit? hit = matchLuaLogToScripts(
@@ -131,7 +149,10 @@ void main() {
     });
 
     test('同名多脚本一起命中（宁多标不漏标）', () {
-      const List<String> dup = <String>['/x/osc.lua', '/y/osc.lua'];
+      final List<String> dup = <String>[
+        _script(<String>['x', 'osc.lua']),
+        _script(<String>['y', 'osc.lua']),
+      ];
       final LuaScriptLogHit? hit = matchLuaLogToScripts(
         prefix: 'osc',
         level: 'fatal',
