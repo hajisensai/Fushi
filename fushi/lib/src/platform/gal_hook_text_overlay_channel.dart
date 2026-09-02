@@ -989,7 +989,7 @@ class GalLookupCallResult {
   }
 }
 
-/// v19 host→hook geometry ownership policy. This is intentionally separate
+/// v20+ host→hook geometry ownership policy. This is intentionally separate
 /// from the lookup runtime switch because attached lookup still depends on
 /// the injected generic input shield.
 enum GalLookupGeometryAdmissionMode {
@@ -1603,13 +1603,18 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
 
   /// Updates the injected GeometryProviderRegistry admission without stopping
   /// the lookup runtime or generic shield. [attachedReady] is the host-owned
-  /// calibrated fallback offer. [nativeInputReady] is a separate, risk-gated
+  /// calibrated fallback offer. [nativeInputAllowed] is a separate, risk-gated
   /// permission for the active native owner to consume a game click; it does
   /// not control provider discovery.
+  ///
+  /// 这是发布 admission 字的**唯一**通道。曾经并存的
+  /// `galLookupSetNativeInputAllowed` 已删除：同一个 flags 字有两个发布入口就有
+  /// 两份台账，谁后写谁赢。允许位现在由 GalIngameLookupController 单独拥有，
+  /// 随 mode/attachedReady 一起在这里发布。
   static Future<GalLookupCallResult> galLookupSetGeometryAdmission({
     required GalLookupGeometryAdmissionMode mode,
     required bool attachedReady,
-    required bool nativeInputReady,
+    required bool nativeInputAllowed,
   }) async {
     if (!_instance.isSupported) return GalLookupCallResult.unsupported;
     return GalLookupCallResult.fromReply(
@@ -1618,7 +1623,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
         <String, Object?>{
           'mode': mode.wireValue,
           'attachedReady': attachedReady,
-          'nativeInputReady': nativeInputReady,
+          'nativeInputAllowed': nativeInputAllowed,
         },
       ),
     );
