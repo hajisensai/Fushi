@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 Directory _findRepositoryRoot() {
   Directory current = Directory.current.absolute;
   while (true) {
@@ -18,58 +20,21 @@ Directory _findRepositoryRoot() {
   }
 }
 
-/// 去掉 `//` 行注释与 `/* */` 块注释。
-///
-/// 本文件的判据是「源码里出现了什么调用」，而注释里照抄一份被禁的写法是完全正当
-/// 的——这个文件自己的说明就照抄了。不剥注释的话，守卫会被自己的说明文字命中，
-/// 从此恒红或恒绿，取决于谁先被 indexOf 撞上。
-String _stripComments(String source) {
-  final StringBuffer out = StringBuffer();
-  bool inLine = false;
-  bool inBlock = false;
-  for (int i = 0; i < source.length; i++) {
-    final String ch = source[i];
-    final String next = i + 1 < source.length ? source[i + 1] : '';
-    if (inLine) {
-      if (ch == '\n') {
-        inLine = false;
-        out.write(ch);
-      }
-      continue;
-    }
-    if (inBlock) {
-      if (ch == '*' && next == '/') {
-        inBlock = false;
-        i++;
-      }
-      continue;
-    }
-    if (ch == '/' && next == '/') {
-      inLine = true;
-      i++;
-      continue;
-    }
-    if (ch == '/' && next == '*') {
-      inBlock = true;
-      i++;
-      continue;
-    }
-    out.write(ch);
-  }
-  return out.toString();
-}
-
 void main() {
   final Directory root = _findRepositoryRoot();
   final String pluginRoot =
       '${root.path}/third_party/flutter_onnxruntime/windows';
-  final String plugin = _stripComments(
+  // 判据问的是「源码里出现了什么调用」，而注释里照抄一份被禁的写法完全正当——本
+  // 文件自己的说明就照抄了。不掩注释的话，守卫会被自己的说明文字命中。
+  // `maskComments` 换等长空白且保留字符串字面量，所以下面的计数与 indexOf 都仍然
+  // 对得上原串（手写剥离由 test/tools/source_guard_adoption_test.dart 禁止）。
+  final String plugin = maskComments(
     File('$pluginRoot/flutter_onnxruntime_plugin.cpp').readAsStringSync(),
   );
   final String utilsHeader = File(
     '$pluginRoot/src/windows_utils.h',
   ).readAsStringSync();
-  final String utilsSource = _stripComments(
+  final String utilsSource = maskComments(
     File('$pluginRoot/src/windows_utils.cc').readAsStringSync(),
   );
 
