@@ -74,29 +74,45 @@ ShortcutAction? resolveMouseBindingActionForButton({
 /// 为什么单槽够用：[PointerDownEvent.pointer] 由引擎在每次新按下时分配，进程内单调
 /// 递增、永不复用；同一次按下沿命中路径传递时携带的是**同一个** id，这正是判据。
 ///
-/// 用法固定两步，顺序不可颠倒：
-/// ```dart
-/// if (MouseBindingDispatch.isClaimed(event)) return;   // ① 更内层已派发 → 让路
-/// if (execute(action) != KeyEventResult.handled) return; // ② 本层真的执行了吗
-/// MouseBindingDispatch.claim(event);                    // ③ 执行了才认领
-/// ```
-/// 拆成「探测」与「认领」两步，正是为了避免「解析到了但没执行」的一层白白把外层挡掉
-/// ——那等价于键盘侧「明明 ignored 却返回 handled」，症状是绑在 universal / global 上的
-/// 键在某些页面莫名失灵。
+/// **认领状态只能经 [dispatchClaimedMouseAction] 读写**：探测、执行、认领三步被封在
+/// 那一个函数里，[_isClaimed] / [_claim] 是库私有的，调用点**没有**手搓这套协议的
+/// 途径。
+///
+/// BUG-2031 之前它们是公开的、由每个入口各写一遍三步。七个入口里有一个（查词浮层的
+/// dismiss barrier）写成了「调完回调就往下走」——一个 claim 都没有。后果是浮层可见时
+/// 一次侧键被 barrier 与 app 根各派发一次：关词典 **+** 退书，而键盘 Esc 只关词典。
+/// 那次教训的结论不是「再加一条守卫检查有没有写对」，而是**把写错的可能性删掉**。
 class MouseBindingDispatch {
   MouseBindingDispatch._();
 
   static int? _claimedPointer;
 
-  /// 这次按下是否已被更内层派发掉。true = 调用方必须直接返回。
-  static bool isClaimed(PointerDownEvent event) =>
+  static bool _isClaimed(PointerDownEvent event) =>
       _claimedPointer == event.pointer;
 
-  /// 认领 [event] 这次按下。只在本层**确实执行了**动作之后调用。
-  static void claim(PointerDownEvent event) => _claimedPointer = event.pointer;
+  static void _claim(PointerDownEvent event) => _claimedPointer = event.pointer;
 
   /// 仅测试：清掉认领槽。静态态跨用例残留会让「第二个用例复用同一个 pointer id」
   /// 静默变成 no-op（测试假绿）。
   @visibleForTesting
   static void resetForTest() => _claimedPointer = null;
+}
+
+/// 鼠标绑定派发的**唯一**入口：更内层已派发就让路，否则跑 [execute]，只有它确实
+/// 执行了（返回 true）才认领这次按下。
+///
+/// 「探测」与「认领」之所以不能合成一步：解析到了但执行体没接的一层若也认领，就会把
+/// 同一按钮上外层的合法绑定白白挡掉——等价于键盘侧「明明 ignored 却返回 handled」，
+/// 症状是绑在 universal / global 上的键在某些页面莫名失灵。所以 [execute] 的返回值
+/// 必须是「**真的执行了吗**」，不是「解析到了吗」。
+///
+/// 返回值与 [execute] 一致，供调用方需要时继续分流（多数入口忽略）。
+bool dispatchClaimedMouseAction(
+  PointerDownEvent event,
+  bool Function() execute,
+) {
+  if (MouseBindingDispatch._isClaimed(event)) return false;
+  if (!execute()) return false;
+  MouseBindingDispatch._claim(event);
+  return true;
 }

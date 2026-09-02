@@ -23,24 +23,25 @@ part of '../reader_fushi_page.dart';
 /// `caretSetState` / `caretExitPrimaryRing`) cannot live on an extension and
 /// stay in the shell, reachable via the shared private class scope, as does
 /// the audiobook middle-click helper `_seekToClickedSentence`.
-/// 阅读器 **Flutter 侧**鼠标通道的解析阶梯：reader → audiobook。
+/// 阅读器鼠标通道的解析阶梯：reader → audiobook → universal → global。
 ///
-/// 与 `_handleKeyEvent` 的键盘阶梯同序（页面专属优先），但**刻意不含 universal /
-/// global**：那两段由 app 根的 `_handleGlobalPointerDown` 统一兜底并执行，与键盘
-/// 「页面没接就冒泡到最外层」同构。页面再解析一遍就会与根兜底对同一次按下各派发
-/// 一次（绑「返回上一级」的键会一次退两级）。
+/// **Flutter 腿与 WebView(JS) 腿共用同一条**，且与 `_handleKeyEvent` 的键盘阶梯
+/// 同序（页面专属优先）。
+///
+/// BUG-2031 修正：第一版给两条腿各写了一条阶梯——Flutter 侧刻意砍掉 universal /
+/// global，理由是「那两段留给 app 根兜底，页面再解析一遍就会双派发」。两处都错：
+///
+/// 1. 防双派发的机制是 [MouseBindingDispatch] 的认领，不是「把阶梯修窄」。修窄
+///    换来的是**动作降级**：`globalBack` 在页内解析不到，只能落到 app 根那份平铺的
+///    `Navigator.maybePop()`，而键盘 / 手柄的 `globalBack` 走的是本页**逐级退出**
+///    （先关光标 / 关弹窗，最后才退书）。同一动作两条通道两种行为。
+/// 2. 两条腿阶梯不等，等于同一个绑定在「指针归宿主」与「指针归 WebView」的平台上
+///    行为不同（见 [hostOwnsWebViewPointerInput]）。合成一条后，两条腿只剩「谁拿到
+///    事件」的区别，覆盖面逐字相同。
+///
+/// 页面解析到但执行体没接（返回 ignored）时**不认领**，app 根照常兜底——这正是
+/// 键盘「返回 ignored 就冒泡」的等价物。
 const List<ShortcutScope> kReaderMouseLadder = <ShortcutScope>[
-  ShortcutScope.reader,
-  ShortcutScope.audiobook,
-];
-
-/// 阅读器 **WebView 侧**（页内 JS `onPointerSeek` 回传）的解析阶梯：
-/// reader → audiobook → universal → global。
-///
-/// 比 Flutter 侧多出的后两段不是重复：原生 WebView 把指针整个吃掉时，app 根的
-/// [Listener] 在正文区一个事件都收不到，兜底根本不会跑，谁拿到事件谁就得解析完整
-/// 阶梯。两条路按 [hostOwnsWebViewPointerInput] 互斥（见 `onPointerSeek`）。
-const List<ShortcutScope> kReaderWebViewMouseLadder = <ShortcutScope>[
   ShortcutScope.reader,
   ShortcutScope.audiobook,
   ShortcutScope.universal,
@@ -561,11 +562,12 @@ extension _ReaderCaret on _ReaderFushiPageState {
       ladder: kReaderMouseLadder,
     );
     if (action == null) return;
-    if (MouseBindingDispatch.isClaimed(event)) return;
     // 执行体返回 ignored（例如无弹窗时的 readerDismissDict）说明本页没消费，等价于
     // 键盘的 ignored 冒泡：**不认领**，让 app 根兜底照常解析 universal / global。
-    if (_executeShortcutAction(action) != KeyEventResult.handled) return;
-    MouseBindingDispatch.claim(event);
+    dispatchClaimedMouseAction(
+      event,
+      () => _executeShortcutAction(action) == KeyEventResult.handled,
+    );
   }
 
   KeyEventResult _executeShortcutAction(

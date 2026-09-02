@@ -363,9 +363,10 @@ void _handleGlobalPointerDown(
     ],
   );
   if (action == null) return;
-  if (MouseBindingDispatch.isClaimed(event)) return;
-  if (!_executeGlobalMouseAction(context, navigatorKey, action)) return;
-  MouseBindingDispatch.claim(event);
+  dispatchClaimedMouseAction(
+    event,
+    () => _executeGlobalMouseAction(context, navigatorKey, action),
+  );
 }
 
 /// [ShortcutScope.global] / [ShortcutScope.universal] 三个 + 一个动作的鼠标执行体。

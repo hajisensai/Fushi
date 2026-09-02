@@ -64,7 +64,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart'
         activeModifierKeys,
         domMouseButtonFromPointerButtons;
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
-    show MouseBindingDispatch, resolveMouseBindingActionForButton;
+    show dispatchClaimedMouseAction, resolveMouseBindingActionForButton;
 import 'package:fushi/src/shortcuts/manga_arrow_override.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -153,18 +153,13 @@ enum _MangaReaderInputSource {
 /// `universal`（返回上一级）/ `global`（全屏、整页滚动）由 app 根的
 /// `_handleGlobalPointerDown` 统一兜底并执行——与键盘「页面没接就冒泡到最外层」同构。
 /// 页面再解析一遍就会与根兜底对同一次按下各派发一次（一键退两级）。
+/// BUG-2031 修正：Flutter 腿与 JS 腿**共用这一条**，且与键盘那条
+/// `_resolveMangaKeyAction` 逐段一致。第一版 Flutter 侧只放 `manga`，于是
+/// `globalBack` 在页内解析不到 —— 而 [MangaFushiPage.inputActionForShortcut] 早就
+/// 把它映成逐级的 [MangaReaderInputAction.backOrExit]（弹窗可见先关弹窗，没弹窗才
+/// 退出漫画）。够不着它的结果是侧键退出直接落到 app 根的平 `maybePop()`，比键盘
+/// Esc 少了一级。防双派发靠 [MouseBindingDispatch] 认领，不靠把阶梯修窄。
 const List<ShortcutScope> _kMangaMouseLadder = <ShortcutScope>[
-  ShortcutScope.manga,
-];
-
-/// 漫画页 **WebView 侧**（JS 鼠标桥回传）的解析阶梯：manga → universal → global，
-/// 与键盘那条 `_resolveMangaKeyAction` 逐段一致。
-///
-/// 为什么这条要带上后两段而 Flutter 侧不带：原生 WebView 把指针整个吃掉，app 根的
-/// [Listener] 在正文区**一个事件都收不到**，兜底根本不会跑。谁拿到事件谁负责解析完整
-/// 阶梯——这不是特例分支，而是指针所有权的事实（同一条判据也决定了这座桥只在指针不
-/// 归宿主的平台安装，见 [hostOwnsWebViewPointerInput]）。
-const List<ShortcutScope> _kMangaWebViewMouseLadder = <ShortcutScope>[
   ShortcutScope.manga,
   ShortcutScope.universal,
   ShortcutScope.global,
@@ -535,7 +530,7 @@ class MangaFushiPage extends BaseSourcePage {
       );
 
   /// 本页鼠标桥要拦截的按钮号：manga / universal / global 三段阶梯上**所有**已绑
-  /// 按钮的并集（与 [_kMangaWebViewMouseLadder] 同源）。
+  /// 按钮的并集（与 [_kMangaMouseLadder] 同源）。
   ///
   /// 取并集而不是只取 manga：桥不做解析，它只决定「哪些按钮值得回传」，解析仍由
   /// Dart 侧的 [_handleNativeNavigationKey] 按完整阶梯做。漏一个按钮号，那个绑定在
@@ -543,7 +538,7 @@ class MangaFushiPage extends BaseSourcePage {
   @visibleForTesting
   static List<int> mouseBridgeButtons(FushiShortcutRegistry registry) {
     final List<int> buttons = <int>[];
-    for (final ShortcutScope scope in _kMangaWebViewMouseLadder) {
+    for (final ShortcutScope scope in _kMangaMouseLadder) {
       for (final ShortcutAction action
           in ShortcutAction.actionsForScope(scope)) {
         for (final MouseBinding binding
@@ -2545,14 +2540,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       };
 
   @override
-  void onDictionaryPopupInputToken(String token) {
+  bool onDictionaryPopupInputToken(String token) {
     // 鼠标 token 不参与「跨页方向校正」（那是方向键专属语义），交回基类按注册表
     // 动作直接执行（关词典）。
     if (MouseBinding.deserialize(token) != null) {
-      super.onDictionaryPopupInputToken(token);
-      return;
+      return super.onDictionaryPopupInputToken(token);
     }
-    _handleNativeNavigationKey(token);
+    return _handleNativeNavigationKey(token);
   }
 
   /// 词典弹窗渲染完成（指针唤出路径）：把 Flutter 焦点收回正文。
@@ -2693,12 +2687,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final MangaReaderInputAction? action =
         _resolveMangaMouseAction(button, _kMangaMouseLadder);
     if (action == null) return;
-    if (MouseBindingDispatch.isClaimed(event)) return;
-    _executeReaderInputAction(action, source: _MangaReaderInputSource.mouse);
-    MouseBindingDispatch.claim(event);
+    dispatchClaimedMouseAction(event, () {
+      _executeReaderInputAction(action, source: _MangaReaderInputSource.mouse);
+      return true;
+    });
   }
 
-  void _handleNativeNavigationKey(String key) {
+  /// 返回**本次是否真的执行了**动作。BUG-2031：查词弹窗 barrier 那条路要靠这个
+  /// 回答决定要不要向 `MouseBindingDispatch` 认领这次鼠标按下。
+  bool _handleNativeNavigationKey(String key) {
     // 鼠标桥回传的是 `Mouse<n>`（与键盘 token 取值域天然不相交：
     // `InputBinding.deserialize('Mouse3')` 与 `MouseBinding.deserialize('Escape')`
     // 都是 null），故先试鼠标、再试键盘，不需要额外的类型标记位。与查词弹窗桥
@@ -2706,14 +2703,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final MouseBinding? mouse = MouseBinding.deserialize(key);
     if (mouse != null) {
       final MangaReaderInputAction? mouseAction =
-          _resolveMangaMouseAction(mouse.button, _kMangaWebViewMouseLadder);
-      if (mouseAction != null) {
-        _executeReaderInputAction(
-          mouseAction,
-          source: _MangaReaderInputSource.nativeWebView,
-        );
-      }
-      return;
+          _resolveMangaMouseAction(mouse.button, _kMangaMouseLadder);
+      if (mouseAction == null) return false;
+      _executeReaderInputAction(
+        mouseAction,
+        source: _MangaReaderInputSource.nativeWebView,
+      );
+      return true;
     }
     // token 按 [InputBinding.serialize] 解析：正文 WebView 的桥发裸 `event.key`
     // （`ArrowLeft`），弹窗桥发注册表 token（可能是任意键名、可能带修饰键前缀），
@@ -2723,17 +2719,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final InputBinding? binding = key == 'Esc'
         ? const InputBinding(key: LogicalKeyboardKey.escape)
         : InputBinding.deserialize(key);
-    if (binding == null) return;
+    if (binding == null) return false;
     final MangaReaderInputAction? action = _resolveMangaKeyAction(
       binding.key,
       binding.modifiers,
     );
-    if (action != null) {
-      _executeReaderInputAction(
-        action,
-        source: _MangaReaderInputSource.nativeWebView,
-      );
-    }
+    if (action == null) return false;
+    _executeReaderInputAction(
+      action,
+      source: _MangaReaderInputSource.nativeWebView,
+    );
+    return true;
   }
 
   @override

@@ -266,4 +266,50 @@ void main() {
       }
     }
   });
+
+  /// BUG-2031：**每个表面的鼠标解析阶梯都必须含 `universal`**。
+  ///
+  /// 「返回上一级」（[ShortcutAction.globalBack]）住在 universal scope，而每个页面都
+  /// 有自己的**逐级退出**执行体（视频先关面板 / 退全屏，漫画先关弹窗，阅读器先退光标
+  /// ……最后才退页）。页面的键盘阶梯本来就带 universal，所以键盘 Esc 走的是那条逐级。
+  ///
+  /// 本轮第一版把鼠标阶梯**修窄**成「只有本页 scope」，理由写的是「universal / global
+  /// 留给 app 根兜底，页面再解析一遍会双派发」。两处都错：
+  ///
+  /// 1. 防双派发的机制是 [dispatchClaimedMouseAction] 的认领，跟阶梯宽窄无关；
+  /// 2. 修窄的实际后果是**动作降级**——`globalBack` 在页内解析不到，只能落到 app 根
+  ///    那份平铺的 `Navigator.maybePop()`，于是同一个「返回上一级」用键盘按是逐级退出、
+  ///    用鼠标侧键按是一步退整页。同一动作两条通道两种行为。
+  ///
+  /// 用**枚举**而不是固定四条清单：新表面加自己的阶梯时会自动落进扫描面。钉住单页的
+  /// 守卫对「第五个表面又修窄了一次」结构上挑不到。
+  test('GUARD: 所有鼠标解析阶梯都含 universal（否则「返回上一级」降级成平 pop）', () {
+    final RegExp decl = RegExp(
+      r'MouseLadder\s*=\s*<ShortcutScope>\[(.*?)\]',
+      dotAll: true,
+    );
+    final List<String> found = <String>[];
+    for (final FileSystemEntity e
+        in Directory('lib').listSync(recursive: true)) {
+      if (e is! File || !e.path.endsWith('.dart')) continue;
+      final String src = e.readAsStringSync();
+      for (final RegExpMatch m in decl.allMatches(src)) {
+        final String body = m.group(1)!;
+        found.add(e.path);
+        expect(
+          body.contains('ShortcutScope.universal'),
+          isTrue,
+          reason: '${e.path} 的鼠标阶梯不含 universal：'
+              '该表面的「返回上一级」会绕过页面自己的逐级退出，'
+              '直接落到 app 根的平 Navigator.maybePop()，与键盘 Esc 行为分叉',
+        );
+      }
+    }
+    expectScanScale(
+      found.length,
+      what: 'lib/ 下的鼠标解析阶梯声明',
+      atLeast: 3,
+      measured: 4,
+    );
+  });
 }

@@ -7,7 +7,7 @@
   - 用户截图里的**视频页**那一半已由 BUG-1995 在 develop 上修好（`video` 通道已开），用户机器上是旧构建；本条覆盖其余全部表面。
 - **[x] ① 已修复** — 建起 Flutter 侧鼠标派发管线并推广到全表面。
   - 共享落地件 `fushi/lib/src/shortcuts/mouse_binding_dispatch.dart`：解析阶梯 `resolveMouseBindingAction` / `resolveMouseBindingActionForButton` + 「一次按下只派发一次」的 `MouseBindingDispatch`（探测 `isClaimed` → 执行 → `claim` 两步）。**为什么需要仲裁**：键盘靠 `KeyEventResult.handled` 天然阻断冒泡，指针没有——`Listener` 不进手势竞技场也不消费事件，同一个 `PointerDownEvent` 会沿命中路径由内向外交给每一层，页面层与 app 根层会各派发一次（绑「返回上一级」的侧键一键退两级）。
-  - 分层与键盘逐段对齐：**页面只解析自己的 scope**，`universal` / `global` 由 app 根 `wrapWithGlobalNavigation` 的 `_handleGlobalPointerDown` 统一兜底并执行（`globalBack` / `globalToggleFullscreen` / `globalScrollPageUp|Down` 四个动作全覆盖，无死项），执行体仍只有最外层那一份。
+  - 分层与键盘逐段对齐：**每个表面的鼠标阶梯与它自己的键盘阶梯逐字相同**（video=`[video, universal]`、reader=`[reader, audiobook, universal, global]`、manga=`[manga, universal, global]`、home=`[home, global, universal]`），页面解析到就走页面自己的执行体；页面没接（执行体返回 ignored / false）才由 app 根 `wrapWithGlobalNavigation` 的 `_handleGlobalPointerDown` 兜底。app 根覆盖 `globalBack` / `globalToggleFullscreen` / `globalScrollPageUp|Down` 四个动作，服务的是**没有页面级入口**的表面（设置页 / 书架 / 统计页 / 对话框）。
   - 接线：首页 `_handleHomePointerDown`、漫画 `_handleMangaPointerDown` + 页内 JS 鼠标桥 `onMangaMouseButton`、阅读器 `_handleReaderPointerDown` + `onPointerSeek` 推广到全动作、视频页改用共享阶梯。
   - WebView 宿主按**指针所有权**分两条腿（`hostOwnsWebViewPointerInput`，由 `dictionary_popup_input_bridge` 的同名判据提升为共享）：指针归宿主时走 Flutter `Listener`，归 WebView 时走页内 JS 桥。互斥安装，不双触发；位置型动作（seek 到点击句需要点击坐标）恒留在 JS 那条路。
   - `LookupDismissBarrier.onNonPrimaryButtonDown` 的落地实现上提到 `BaseSourcePageState` / `DictionaryPageMixin` 的 `onDismissBarrierNonPrimaryButton`，5 个宿主全部接上（视频页删掉重复的私有实现）。
@@ -18,4 +18,18 @@
   - `shortcut_channel_wiring_guard_test` 的取用 token 表补上共享解析函数（`resolveMouse(` 匹配不到 `resolveMouseBindingAction(`，不补就是全表面假红）。
   - **改写** `fushi/test/reader/dismiss_dict_pointer_and_focus_guard_test.dart` 的 症① 组。它是 BUG-1071 的源码守卫，钉的是「`onPointerSeek` 里出现 `ShortcutAction.readerDismissDict`」——而那**恰恰是本 bug 层二的根因形状**（handler 硬编码判某一个动作）。CI 的真单测门抓到了它（本地 `test/shortcuts` / `test/pages` / `test/focus` 三个定向目录结构上都挑不到住在 `test/reader` 的它）。改写后钉的是行为不变式：必须走通用解析 + 通用执行体、**禁止**再出现硬编码动作名；关词典语义（仅弹窗可见时 `clearDictionaryResult`）改在 `_executeShortcutAction` 的分支里核；「独立于 `_audiobookController`」从「下标先后」改成**结构性**断言（controller 门控必须关在位置型动作分支里面，通用派发在其外）；并新增一条「`dictionaryPopupForwardedActions` 必须含 `readerDismissDict`」——指针归宿主的平台上，弹窗可见那半边正是靠它经 barrier 落地。
   - 四条变异实测均确认能红：`claim` 改 no-op → 仲裁用例红；拆掉 texthooker 的接线 → 宿主枚举守卫点名该文件；移除新增 token → `reader/home/video.mouse` 立刻被判为「开了通道无人消费」；把 `onPointerSeek` 退回硬编码单动作 → 改写后的 症① 守卫立刻红。
+- **[x] ③ 审查返工（2026-09-02，同日）** — PR #1145 第一版被审查打回，三条问题，方向与本 bug 的目标相反：
+  - **③-A（最重，用户可见）一次按下派发两次。** 修法当初假设「barrier 叶子 `ColoredBox` 的 opaque 命中会挡住外面」——那**只对兄弟成立**。app 根那层鼠标兜底 `Listener` 是 Overlay 的**祖先**，opaque 从不排除祖先。实测派发序列 `[barrier, root]`，两层都收到。而 `LookupDismissBarrier._onPointerDown` 调完 `onNonPrimaryButtonDown` 就往下走（注释还写着「纯附加——不 return」），**一个 claim 都没有**。后果：浮层可见时把侧键绑「返回上一级」，按一下 = 关词典 **+** 退出整本书；而键盘 Esc 在同样状态下只关词典。键鼠语义分叉。
+  - **③-B 页面鼠标阶梯被我修窄，导致动作降级。** 四条阶梯当初都只放本页 scope，理由写的是「universal / global 留给根兜底，页面再解析一遍会双派发」。两处都错：防双派发靠认领协议，与阶梯宽窄无关；修窄的真实后果是 `globalBack` 在页内解析不到，只能落到 app 根那份平铺的 `Navigator.maybePop()`——而键盘 / 手柄的 `globalBack` 走的是页面**逐级退出**（视频先关面板 / 退全屏，漫画先关弹窗）。同一动作两条通道两种行为。
+  - **③-C 两条 WebView 腿阶梯不等。** JS 腿带 `universal`+`global`、Flutter 腿不带，等于同一个绑定在「指针归宿主」与「指针归 WebView」的平台上行为不同。
+  - **根因判定**：不是「漏写了一处 claim」，而是**三步协议被七个入口各抄一遍**——只要还能手写，就一定有人写漏。
+  - **修法（消除写错的可能，而不是加守卫检查写对没有）**：
+    - `MouseBindingDispatch.isClaimed` / `claim` 降为**库私有**，新增唯一入口 `dispatchClaimedMouseAction(event, execute)` 把探测→执行→认领封在一处。`lib/` 下现在**没有任何**直接读写认领态的代码，手搓一个漏认领的版本在语言层面不可能。七个入口（app 根 / 视频 / 首页 / 阅读器 / 漫画 / `BaseSourcePageState` / `DictionaryPageMixin`）全部改经它派发。
+    - `LookupDismissBarrier.onNonPrimaryButtonDown` 签名 `int buttons` → `PointerDownEvent event`（认领的判据是 `pointer` id，光有位掩码表达不了）。
+    - `onDictionaryPopupInputToken` 返回类型 `void` → `bool`（「是否真消费」这个信号此前根本不存在；5 个实现同步改）。「解析到但没执行」不认领，等价于键盘的 ignored 继续冒泡。
+    - 四条鼠标阶梯加宽到与各自键盘阶梯逐字相同；视频页新增 `globalBack` → `_handleVideoEscapeAction()` 分流，且排在 `controller` 门**之前**（与键盘 / 手柄同款，否则加载态下侧键退不出转圈中的视频页）。
+    - reader / manga 的「Flutter 腿」「JS 腿」两条阶梯**合并成一条**，两腿覆盖面逐字相同，③-C 结构性消失。
+  - **测试**：新增 `fushi/test/shortcuts/global_pointer_single_dispatch_test.dart`（4 条**行为**测试，用真的 `LookupDismissBarrier` + 真的命中几何）。第一条把载荷假设本身钉死（派发序列必须是 `[barrier, root]`），其余三条覆盖「barrier 消费→根让路」「barrier 未消费→根接手」「页面消费→根让路」。`video_pointer_channel_reachability_test` 的 barrier 守卫**加强**：同时钉住新签名与「必须经 `dispatchClaimedMouseAction` 派发」。`shortcut_channel_wiring_guard_test` 新增**枚举型**守卫「lib/ 下所有鼠标阶梯声明都必须含 `universal`」（带扫描规模哨兵，新表面自动落进扫描面）。
+  - **为什么原来的整批守卫一条都没红**：它们查的是「某文件里有没有出现某个 token」，而 ③-A 是**两处各自正确的代码叠在同一条命中路径上**产生的，不存在任何一个「写错了的字符串」。审查者实测「把 app 根那条兜底整个打死，695 条测试照样全绿」。这条教训是本 bug 最有价值的产出：**源码守卫证明不了跨层行为**。
+  - 三条变异实测均确认能红：`_claim` 改 no-op → 行为测试红且 `Actual: ['dismissDict', 'pop']`（正是原症状）；barrier 宿主退回不认领 → 加强后的守卫点名 `base_source_page.dart`；视频阶梯改回 `[video]` → 阶梯守卫点名该文件。还原均经 sha256 校验。
 - **备注**：`dictionaryPopup` scope（切词条 / 制卡 / 发音）仍只有 wheel + keyboard + gamepad。给它加鼠标按钮需要打破 `dictionaryPopupInputSpecFor` 里「弹窗自己占用的按钮从下发表中减去」这条**刻意的**不变式（那条减法假设弹窗内动作由 `popup.js` 自己消费，而 mouse 通道在 JS 侧没有消费者），并同时改 Windows / 非 Windows 两条腿。本轮不做，单独立项。

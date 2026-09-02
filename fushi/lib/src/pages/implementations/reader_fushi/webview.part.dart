@@ -2462,7 +2462,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             final ShortcutAction? action = resolveMouseBindingActionForButton(
               registry: registry,
               button: button,
-              ladder: kReaderWebViewMouseLadder,
+              ladder: kReaderMouseLadder,
             );
             if (action == null) return;
             _executeShortcutAction(action);

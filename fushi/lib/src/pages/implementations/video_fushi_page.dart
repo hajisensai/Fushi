@@ -108,7 +108,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 import 'package:fushi/src/shortcuts/input_binding.dart'
     show GamepadButton, InputBinding, activeModifierKeys;
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
-    show MouseBindingDispatch, resolveMouseBindingAction;
+    show dispatchClaimedMouseAction, resolveMouseBindingAction;
 import 'package:fushi/src/shortcuts/reader_caret_router.dart'
     show CaretAction, ReaderCaretRouter;
 import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
@@ -4676,18 +4676,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 视频的语义是「关**顶层**浮层」（逐层关，保留隐藏热槽 BUG-092），不是清整栈，
   /// 故不走基类默认的 `clearDictionaryResult()`，改用与守卫完全同一个执行体。
   @override
-  void onDictionaryPopupInputToken(String token) {
+  bool onDictionaryPopupInputToken(String token) {
     // scope 未命中时函数内部回落 universal（「返回上一级」），与页面派发同口径。
     final ShortcutAction? action = resolveDictionaryPopupInputToken(
       registry: appModel.shortcutRegistry,
       token: token,
       scope: ShortcutScope.video,
     );
-    if (action == null) return;
+    if (action == null) return false;
     // videoEnterCaret：选词光标激活期不再「任一键先关浮层」（那会把正在手柄导航
     // 的弹窗关掉）；Enter=对光标查词/激活、Esc=光标语义退层，其余吞掉。
-    if (_handleCaretPopupInputToken(action)) return;
+    if (_handleCaretPopupInputToken(action)) return true;
     _dismissTopVisiblePopup();
+    return true;
   }
 
   /// TODO-1342：视频播放器动作回调集合的单一构造点。键盘
@@ -5093,8 +5094,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 执行。鼠标没有冒泡，所以那一层改由 app 根的 `onPointerDown` 兜底
   /// （[MouseBindingDispatch] 负责两层互斥），**执行体仍然只有最外层那一份**——
   /// 每页各自复刻一遍 global 的执行体才是真正的重复。
+  /// BUG-2031：阶梯必须与本页**键盘阶梯逐字相同**。第一版只放了本页 scope，于是
+  /// `globalBack`（universal）在页内解析不到，只能落到 app 根那份平铺的
+  /// `Navigator.maybePop()`——而键盘 / 手柄的 `globalBack` 走的是本页的**逐级退出**
+  /// （先关面板 / 退全屏，最后才退页）。同一个动作两条通道两种行为，正是要禁的形态。
   static const List<ShortcutScope> kVideoMouseLadder = <ShortcutScope>[
     ShortcutScope.video,
+    ShortcutScope.universal,
   ];
 
   /// 视频页的**鼠标绑定通道**（BUG-1995）：页面根 [Listener] 的 `onPointerDown` 入口。
@@ -5124,20 +5130,29 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       ladder: kVideoMouseLadder,
     );
     if (action == null) return;
-    // 「只关词典」在浮层不可见时按下 = 无事发生，这正是它存在的意义（给侧键一个
-    // 没有副作用的落点）。**不认领**：本页确实没派发出去，让 app 根兜底照常有机会
-    // 解析同一个按钮上的 universal / global 绑定（等价于键盘返回 ignored 让它冒泡）。
-    if (action == ShortcutAction.videoDismissDict) return;
-    final VideoPlayerController? controller = _controller;
-    if (controller == null) return;
-    if (MouseBindingDispatch.isClaimed(event)) return;
-    // 动作不在回调表里（例如 popupMineEntry / globalBack 这类页面另行分流的）就不算
-    // 本层派发过，**不认领**——让 app 根兜底照常有机会解析 universal / global 绑定。
-    final VoidCallback? run =
-        videoActionCallbacks(_buildVideoShortcutActions(controller))[action];
-    if (run == null) return;
-    run();
-    MouseBindingDispatch.claim(event);
+    dispatchClaimedMouseAction(event, () {
+      // 「只关词典」在浮层不可见时按下 = 无事发生，这正是它存在的意义（给侧键一个
+      // 没有副作用的落点）。返回 false = **不认领**，让 app 根兜底照常有机会解析同一
+      // 个按钮上的 global 绑定（等价于键盘返回 ignored 让它冒泡）。
+      if (action == ShortcutAction.videoDismissDict) return false;
+      // BUG-2031：与键盘 / 手柄同款分流——「返回上一级」的执行体不碰播放器，必须排在
+      // controller 门**之前**，否则加载态下侧键退不出转圈中的视频页。走的是本页的逐级
+      // 退出 [_handleVideoEscapeAction]（先关面板 / 退全屏，最后才退页），与键盘 Esc、
+      // 手柄 B 完全同一个执行体；此前阶梯里没有 universal，它只能落到 app 根那份平铺
+      // 的 `maybePop()`，一按直接退整页，比键盘少了一级。
+      if (action == ShortcutAction.globalBack) {
+        _handleVideoEscapeAction();
+        return true;
+      }
+      final VideoPlayerController? controller = _controller;
+      if (controller == null) return false;
+      // 动作不在回调表里（例如 popupMineEntry 这类页面另行分流的）就不算本层派发过。
+      final VoidCallback? run =
+          videoActionCallbacks(_buildVideoShortcutActions(controller))[action];
+      if (run == null) return false;
+      run();
+      return true;
+    });
   }
 
   /// 视频页键盘通道的**唯一**派发点（方案 D）：每次按键当场问注册表，与手柄

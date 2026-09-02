@@ -19,6 +19,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult, DictionaryPopupWebViewState;
 import 'package:fushi/src/pages/implementations/sentence_context_dialog.dart';
+import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
@@ -97,20 +98,29 @@ mixin DictionaryPageMixin {
   /// 与 `guardVideoShortcutsWithPopupDismiss` 同一执行体）。用
   /// [resolveDictionaryPopupInputToken] 把 token 解析成动作——那与键盘路径是同一个
   /// `resolve*`，改键对两条路径同时生效。
-  void onDictionaryPopupInputToken(String token) {}
+  ///
+  /// 返回**本次是否真的执行了**动作（BUG-2031：鼠标那条路靠它决定要不要认领这次
+  /// 按下）。默认 no-op 故恒 false。
+  bool onDictionaryPopupInputToken(String token) => false;
 
   /// 指针落在**弹窗矩形之外**、按下鼠标非主键（挂在 [LookupDismissBarrier] 上）。
   ///
   /// 与 `BaseSourcePageState` 的同名钩子同一套契约：弹窗可见期间 barrier 的命中行为是
   /// opaque，宿主页面根那层 [Listener] 一个指针事件都收不到，故「矩形之外」这半边只能
   /// 在这里接。折 token / 落地全部复用弹窗表面那条路的同一份判据，两个表面不会各判各的。
-  void onDismissBarrierNonPrimaryButton(int buttons) {
-    final String? token = dictionaryPopupPointerToken(
-      buttons: buttons,
-      spec: dictionaryPopupInputSpec,
-    );
-    if (token == null) return;
-    onDictionaryPopupInputToken(token);
+  ///
+  /// BUG-2031：barrier 的祖先是 `wrapWithGlobalNavigation` 的鼠标兜底 [Listener]，
+  /// 祖先不被后代 opaque 排除（实测派发序列 `[barrier, root]`），故本入口必须认领
+  /// 这次按下，否则一次侧键 = 关词典 + 退出整页，与键盘 Esc 分叉。
+  void onDismissBarrierNonPrimaryButton(PointerDownEvent event) {
+    dispatchClaimedMouseAction(event, () {
+      final String? token = dictionaryPopupPointerToken(
+        buttons: event.buttons,
+        spec: dictionaryPopupInputSpec,
+      );
+      if (token == null) return false;
+      return onDictionaryPopupInputToken(token);
+    });
   }
 
   /// 查词浮层顶部可选的 header 行（如视频「收藏当前字幕句」星标）。默认 null（书内查词

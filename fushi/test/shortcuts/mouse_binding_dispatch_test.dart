@@ -121,18 +121,20 @@ void main() {
             behavior: HitTestBehavior.translucent,
             onPointerDown: (PointerDownEvent event) {
               // 外层（app 根兜底）
-              if (MouseBindingDispatch.isClaimed(event)) return;
-              fired.add('outer');
-              MouseBindingDispatch.claim(event);
+              dispatchClaimedMouseAction(event, () {
+                fired.add('outer');
+                return true;
+              });
             },
             child: Listener(
               behavior: HitTestBehavior.translucent,
               onPointerDown: (PointerDownEvent event) {
                 // 内层（页面）
-                if (MouseBindingDispatch.isClaimed(event)) return;
-                if (!innerExecutes) return; // 解析到了但本页没消费
-                fired.add('inner');
-                MouseBindingDispatch.claim(event);
+                dispatchClaimedMouseAction(event, () {
+                  if (!innerExecutes) return false; // 解析到了但本页没消费
+                  fired.add('inner');
+                  return true;
+                });
               },
               child: const SizedBox.expand(),
             ),
@@ -174,9 +176,10 @@ void main() {
           home: Listener(
             behavior: HitTestBehavior.translucent,
             onPointerDown: (PointerDownEvent event) {
-              if (MouseBindingDispatch.isClaimed(event)) return;
-              fired.add('down');
-              MouseBindingDispatch.claim(event);
+              dispatchClaimedMouseAction(event, () {
+                fired.add('down');
+                return true;
+              });
             },
             child: const SizedBox.expand(),
           ),

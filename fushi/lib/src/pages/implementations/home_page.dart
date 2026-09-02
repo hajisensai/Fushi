@@ -83,7 +83,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
         focusedEditableText,
         gamepadMoveFocusInDirection;
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
-    show MouseBindingDispatch, resolveMouseBindingAction;
+    show dispatchClaimedMouseAction, resolveMouseBindingAction;
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
@@ -946,8 +946,14 @@ class _HomePageState extends BasePageState<HomePage>
   /// 其实并不在本页——`_executeShortcutAction` 对它们（除 globalBack 外）返回 ignored，
   /// 让事件冒泡到 [wrapWithGlobalNavigation] 去执行。鼠标没有冒泡，那一层改由 app 根的
   /// `onPointerDown` 兜底（互斥见 [MouseBindingDispatch]），**执行体仍只有那一份**。
+  /// BUG-2031：阶梯必须与本页**键盘阶梯逐字相同**。第一版只放了本页 scope，于是
+  /// `globalBack`（universal）在页内解析不到，只能落到 app 根那份平铺的
+  /// `Navigator.maybePop()`——而键盘 / 手柄的 `globalBack` 走的是本页的**逐级退出**
+  /// （先关面板 / 退全屏，最后才退页）。同一个动作两条通道两种行为，正是要禁的形态。
   static const List<ShortcutScope> _kHomeMouseLadder = <ShortcutScope>[
     ShortcutScope.home,
+    ShortcutScope.global,
+    ShortcutScope.universal,
   ];
 
   /// 首页的**鼠标绑定通道**：与 [_handleKeyEvent] 挂在同一层、同一份注册表、同一个
@@ -963,11 +969,12 @@ class _HomePageState extends BasePageState<HomePage>
       ladder: _kHomeMouseLadder,
     );
     if (action == null) return;
-    if (MouseBindingDispatch.isClaimed(event)) return;
     // 执行体返回 ignored 说明本页没接（等价于键盘的 ignored 冒泡），此时**不认领**，
     // 让 app 根兜底照常有机会解析同一个按钮上的 universal / global 绑定。
-    if (_executeShortcutAction(action) != KeyEventResult.handled) return;
-    MouseBindingDispatch.claim(event);
+    dispatchClaimedMouseAction(
+      event,
+      () => _executeShortcutAction(action) == KeyEventResult.handled,
+    );
   }
 
   KeyEventResult _executeShortcutAction(ShortcutAction action) {

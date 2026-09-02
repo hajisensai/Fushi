@@ -143,7 +143,7 @@ void main() {
             onSwipeDismiss: () {},
             swipeEnabled: true,
             sensitivity: 0.5,
-            onNonPrimaryButtonDown: seen.add,
+            onNonPrimaryButtonDown: (PointerDownEvent e) => seen.add(e.buttons),
           ),
         ),
       );
@@ -176,7 +176,7 @@ void main() {
             onSwipeDismiss: () {},
             swipeEnabled: true,
             sensitivity: 0.5,
-            onNonPrimaryButtonDown: seen.add,
+            onNonPrimaryButtonDown: (PointerDownEvent e) => seen.add(e.buttons),
           ),
         ),
       );
@@ -213,7 +213,7 @@ void main() {
             onSwipeDismiss: () {},
             swipeEnabled: false,
             sensitivity: 0.5,
-            onNonPrimaryButtonDown: seen.add,
+            onNonPrimaryButtonDown: (PointerDownEvent e) => seen.add(e.buttons),
           ),
         ),
       );
@@ -249,18 +249,35 @@ void main() {
 
       // 落地实现只有一份（[DictionaryPageMixin] / [BaseSourcePageState] 各一个同名
       // 钩子），必须复用弹窗表面那个折 token 函数，不许另写一套判据。
+      //
+      // BUG-2031 加强：同时钉住**认领协议**。这个钩子第一版是「调完回调就往下走」，
+      // 一个 claim 都没有——而 barrier 的祖先正是 app 根那层鼠标兜底 [Listener]
+      // （opaque 不排除祖先），于是浮层可见时一次侧键被两层各派发一次：关词典 **+**
+      // 退书。签名带 [PointerDownEvent] 就是为了能认领；只留 `int buttons` 表达不了。
       for (final String path in <String>[
         'lib/src/pages/base_source_page.dart',
         'lib/src/pages/implementations/dictionary_page_mixin.dart',
       ]) {
+        final String src = File(path).readAsStringSync();
         expect(
           RegExp(
-            r'void onDismissBarrierNonPrimaryButton\(int buttons\) \{[^}]*'
-            r'dictionaryPopupPointerToken\(',
+            r'void onDismissBarrierNonPrimaryButton\(PointerDownEvent event\) \{'
+            r'.*?dictionaryPopupPointerToken\(',
             dotAll: true,
-          ).hasMatch(File(path).readAsStringSync()),
+          ).hasMatch(src),
           isTrue,
-          reason: '$path 的 barrier 鼠标钩子必须复用 dictionaryPopupPointerToken',
+          reason: '$path 的 barrier 鼠标钩子必须复用 dictionaryPopupPointerToken，'
+              '且签名必须带 PointerDownEvent（认领要 pointer id）',
+        );
+        expect(
+          RegExp(
+            r'void onDismissBarrierNonPrimaryButton\(PointerDownEvent event\) \{'
+            r'.*?dispatchClaimedMouseAction\(',
+            dotAll: true,
+          ).hasMatch(src),
+          isTrue,
+          reason: '$path 的 barrier 鼠标钩子必须经 dispatchClaimedMouseAction 派发，'
+              '否则 app 根会对同一次按下再派发一次（关词典 + 退书）',
         );
       }
     },

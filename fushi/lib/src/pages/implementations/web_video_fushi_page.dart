@@ -388,14 +388,15 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   };
 
   @override
-  void onDictionaryPopupInputToken(String token) {
+  bool onDictionaryPopupInputToken(String token) {
     final ShortcutAction? action = resolveDictionaryPopupInputToken(
       registry: _appModel.shortcutRegistry,
       token: token,
       scope: ShortcutScope.video,
     );
-    if (action == null) return;
+    if (action == null) return false;
     _popNestedPopupAt(_popup.lastVisibleIndex);
+    return true;
   }
 
   @override
