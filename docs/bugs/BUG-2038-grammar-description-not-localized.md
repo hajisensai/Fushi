@@ -12,4 +12,5 @@
   - 译文资产 `fushi/assets/transforms/i18n/zh-CN.json`：覆盖全部 18 个语言文件的 204 条说明（不只日语）。
   - **已知缺口**：目前只有简体中文一份译文，其余 15 种界面语言（含 zh-HK）按设计回落英文原文，机制已就位，补译只需再加一个 `<tag>.json`。
 - **[x] ② 已加自动化测试** — `fushi/test/dictionary/transform_description_i18n_test.dart`（查表/回落/幂等/换语言不留残渣；显示路径翻译且 extra 仍为英文；译文资产与 transforms 资产不漂移：键都还存在、英文原文全覆盖、译文非空且非照抄）；`fushi/test/dictionary/transform_description_locale_test.dart`（locale 候选解析）。
+- **提交**：`6f11f8c625`
 - **备注**：与 BUG-2037（同一浮层背景半透明）同一轮修复。变形名（`-ちゃう` / `causative`）是语言学标签，**不翻译**。
