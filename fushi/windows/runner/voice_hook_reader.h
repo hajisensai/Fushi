@@ -176,6 +176,17 @@ struct VoiceHookLookupHit {
   int32_t glyph_h = 0;
   int32_t view_w = 0;   // primaryLayer 尺寸；host 据此定位与钳制卡片
   int32_t view_h = 0;
+  // 本次命中这一刻游戏窗口的客户区物理尺寸（0 = 量不到）。
+  //
+  // 与 view_* 的区别是**域**：coordinate_space==ClientPhysicalPixels 时两者
+  // 相等；KiriKiri（PrimaryLayer）放大运行时 view 是引擎画布、远小于客户区。
+  // 卡片是屏幕空间的真实窗口、尺寸是屏幕物理像素，所以它的尺寸上界只能按客户区
+  // 算。这一对随每条 hit 现量现报，host 侧因此不需要任何会话级缓存，也就没有
+  // 「本局第一次查词还不知道」和「玩家中途全屏↔窗口化后读到旧值」这两个坑
+  // （BUG-2058）。**不是**跨进程 IPC 字段：注入侧不知道也不该知道窗口尺寸，
+  // 这是 runner 在本进程用 GetClientRect 量出来的。
+  int32_t client_w = 0;
+  int32_t client_h = 0;
   bool submit = false;  // true=点击提交，false=悬停预览
 };
 

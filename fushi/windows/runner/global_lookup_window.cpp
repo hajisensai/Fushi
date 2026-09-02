@@ -6,6 +6,7 @@
 #include <windowsx.h>  // GET_X_LPARAM / GET_KEYSTATE_WPARAM（composition 鼠标转发）
 
 #include "gal_direct_card_geometry.h"
+#include "game_client_extent.h"
 #include "low_level_mouse_hook.h"
 #include "resource.h"
 
@@ -43,55 +44,9 @@ namespace {
 
 constexpr wchar_t kClassName[] = L"FushiGlobalLookupWindow";
 
-struct ProcessWindowCandidate {
-  uint32_t pid = 0;
-  HWND hwnd = nullptr;
-  uint64_t client_area = 0;
-};
-
-bool UsableProcessClientWindow(HWND hwnd, uint32_t pid, uint64_t* area) {
-  if (hwnd == nullptr || pid == 0 || !IsWindowVisible(hwnd) ||
-      GetAncestor(hwnd, GA_ROOT) != hwnd) {
-    return false;
-  }
-  DWORD window_pid = 0;
-  GetWindowThreadProcessId(hwnd, &window_pid);
-  if (window_pid != pid) return false;
-  RECT client = {};
-  if (!GetClientRect(hwnd, &client)) return false;
-  const int width = client.right - client.left;
-  const int height = client.bottom - client.top;
-  if (width <= 0 || height <= 0) return false;
-  if (area != nullptr) {
-    *area = static_cast<uint64_t>(width) * static_cast<uint64_t>(height);
-  }
-  return true;
-}
-
-BOOL CALLBACK FindLargestProcessWindow(HWND hwnd, LPARAM data) {
-  auto* candidate = reinterpret_cast<ProcessWindowCandidate*>(data);
-  if (candidate == nullptr) return FALSE;
-  uint64_t area = 0;
-  if (UsableProcessClientWindow(hwnd, candidate->pid, &area) &&
-      area > candidate->client_area) {
-    candidate->hwnd = hwnd;
-    candidate->client_area = area;
-  }
-  return TRUE;
-}
-
-HWND FindProcessClientWindow(uint32_t pid) {
-  if (pid == 0) return nullptr;
-  // 热路优先前台 HWND：查词命中只能来自当前正在玩的窗口，也避免多窗口引擎里
-  // “面积最大的隐藏工具窗”碰巧赢过真正渲染窗。失焦恢复时再退到可见客户区最大者。
-  HWND foreground = GetForegroundWindow();
-  if (UsableProcessClientWindow(foreground, pid, nullptr)) return foreground;
-  ProcessWindowCandidate candidate;
-  candidate.pid = pid;
-  EnumWindows(&FindLargestProcessWindow,
-              reinterpret_cast<LPARAM>(&candidate));
-  return candidate.hwnd;
-}
+// 进程客户区查询已收成唯一原语（game_client_extent.h）：reader 在发 hit 时也要
+// 量同一个东西，两份实现必然漂。
+using fushi::game_client_extent::FindProcessClientWindow;
 
 std::wstring Utf8ToWide(const std::string& value) {
   if (value.empty()) {
@@ -1482,8 +1437,8 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
       }
       // 与 PresentDirect 同一套映射：画布等比缩放进客户区并居中，只换算位置，卡片
       // 保持自身物理像素。缩放 HWND 才会 WM_SIZE -> put_Bounds 让 Chromium 重排，
-      // 这里不缩放，所以非 1:1 也是安全的（1:1 时 scale==1、信箱边为 0，与旧行为
-      // 逐像素相同）。
+      // 这里不缩放，所以非 1:1 也是安全的（1:1 时 scale==1、信箱边为 0——那是映射的
+      // 恒等性质，不代表落点不变，见 gal_direct_card_geometry.h 头部的对照表）。
       const double scale = fushi::gal_direct_card_geometry::CanvasToClientScale(
           client_width, client_height, direct_view_width_, direct_view_height_);
       if (!transient_direct_failure && scale <= 0.0) {
@@ -2198,8 +2153,9 @@ bool GlobalLookupWindow::RevealOverProcessClient(
   }
 
   // 画布(primaryLayer) → 客户区的映射。引擎把画布等比缩放进客户区并居中，所以
-  // scale 取两轴较小者，content_* 就是信箱边；1:1 时 scale==1、content_*==0，与
-  // 旧行为逐像素相同。
+  // scale 取两轴较小者，content_* 就是信箱边；1:1 时 scale==1、content_*==0。
+  // （这只是映射本身的恒等性质。1:1 下卡片的**落点**仍然变了，因为下面的字形贴附
+  // 接管了定位——对照表见 gal_direct_card_geometry.h 头部。）
   //
   // 关键：**只映射位置，不缩放卡片**。卡片是屏幕空间的真实窗口，保持它自身的物理
   // 像素既是它清晰的原因，也让它与台词浮窗同一尺度。缩放 HWND 会改 Chromium 视口
@@ -2223,8 +2179,10 @@ bool GlobalLookupWindow::RevealOverProcessClient(
   const int screen_height = std::max(1, static_cast<int>(card_height));
 
   // 贴附基准。字形有效时以它在屏幕上的矩形重排（卡片不是画布单位，anchor 不能直接乘
-  // scale——那正是卡片飘到字形上方一大截的原因）。字形缺失时退回旧的 anchor 映射，
-  // 1:1 下两者等价。
+  // scale——那正是卡片飘到字形上方一大截的原因）。**字形有效就无条件接管**，1:1 也不
+  // 例外：此时落点与旧路径不同（水平中心对齐 vs 左对齐、垂直优先上方 vs 下方），这是
+  // 有意的策略变更。只有字形缺失（glyph_w/h == 0）才退回旧的 anchor 映射，那条路径在
+  // 1:1 下与旧行为逐像素相同。
   double local_x = 0.0;
   double local_y = 0.0;
   direct_glyph_valid_ = glyph_w > 0 && glyph_h > 0;

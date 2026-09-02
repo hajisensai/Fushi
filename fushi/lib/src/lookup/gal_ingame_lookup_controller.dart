@@ -271,10 +271,6 @@ class GalIngameLookupController {
     if (_sessionEpochKey == sessionEpochKey) return;
     _sessionEpochKey = sessionEpochKey;
     _admission.value = GalLookupAdmission.unknown;
-    // 换局：上一局游戏的客户区尺寸对新局无效（分辨率/窗口模式都可能不同），
-    // 必须丢弃，让新局第一次 direct present 重新回报。
-    _gameClientWidth = 0;
-    _gameClientHeight = 0;
     // Observe the lifecycle edge before attempting to retire the old route.
     // The Reader may already have swapped mappings when the host receives the
     // active -> active snapshot; advancing now makes every old dismiss
@@ -1115,31 +1111,36 @@ class GalIngameLookupController {
   static const int _kCardBitmapBytes = 8 * 1024 * 1024;
   static const double _kCardViewportFraction = 0.6;
 
-  /// runner 在上一次 direct present 回报的游戏客户区物理尺寸（0 = 还不知道）。
-  ///
-  /// 卡片上界要按**客户区**算，不能按 hook 报的画布(view)算：游戏放大运行时画布远小于
-  /// 客户区，而卡片是屏幕空间的真实窗口、其尺寸是屏幕物理像素。拿画布像素去夹屏幕像素
-  /// 会把卡片系统性压小（真机 1280x720 画布 → 纵向被钉死在 432），用户把「最大高度」
-  /// 调多大都不生效。本局第一次查词还没有回报，此时退回画布口径（保守但不越界）。
-  int _gameClientWidth = 0;
-  int _gameClientHeight = 0;
-
   void _applyCardSizeCap(GalLookupHit hit) {
     if (hit.viewW <= 0 || hit.viewH <= 0) {
       _rootCardAnchor = null;
       GlobalLookupController.instance.setPhysicalCap();
       return;
     }
-    // 卡片**尺寸**的上界按游戏客户区算，不是按画布(view)算。两者在放大运行的游戏上
-    // 相差一个缩放系数：卡片是屏幕空间的真实窗口、尺寸是屏幕物理像素，而画布可以远小于
-    // 客户区。混用的后果是纵向被钉死在 0.6×画布高（真机 1280x720 → 432 物理像素），
-    // 用户把「最大高度」调多大都不生效。客户区要等本局第一次 direct present 才知道，
-    // 在那之前退回画布口径——保守，但绝不越界。
-    final bool haveClient = _gameClientWidth > 0 && _gameClientHeight > 0;
-    final int boundW = haveClient ? _gameClientWidth : hit.viewW;
-    final int boundH = haveClient ? _gameClientHeight : hit.viewH;
-    double w = boundW * _kCardViewportFraction;
-    double h = boundH * _kCardViewportFraction;
+    // 卡片**尺寸**的上界同时受两个容器约束，取两者的下界：
+    //   * 直连覆盖窗：卡片是屏幕空间的真实窗口，容器是游戏**客户区**物理像素；
+    //   * 位图回退：卡片被画进**画布**(primaryLayer)，1 卡片像素 = 1 画布像素，
+    //     所以容器是画布本身。
+    // 本次查词会走哪条路要等 present 回执才知道，而 cap 必须在 present 之前定死。
+    // 取下界就不需要这份知识——不必按上一次的模式猜，也就没有那个特例分支。
+    //
+    // 只按画布算的后果是：放大运行的游戏里客户区远大于画布，卡片被系统性压小
+    // （真机 1280x720 画布 / 1902x1069 客户区 → 纵向钉死 0.6×720 = 432 物理像素），
+    // 用户把「最大高度」调多大都不生效（BUG-2058）。
+    //
+    // 客户区是 runner 随**每一条 hit** 现量现报的（[GalLookupHit.clientW]），不是会话
+    // 级缓存：所以本局第一次查词就已按客户区口径出卡，玩家中途全屏↔窗口化也在下一次
+    // 查词立刻跟上，不存在读到上一次 present 旧值的窗口。量不到（0）时退回画布口径。
+    final int clientW = hit.clientW > 0 ? hit.clientW : hit.viewW;
+    final int clientH = hit.clientH > 0 ? hit.clientH : hit.viewH;
+    double w = math.min(
+      clientW * _kCardViewportFraction,
+      hit.viewW.toDouble(),
+    );
+    double h = math.min(
+      clientH * _kCardViewportFraction,
+      hit.viewH.toDouble(),
+    );
     const int budgetPixels = _kCardBitmapBytes ~/ 4;
     final double area = w * h;
     if (area > budgetPixels) {
@@ -1149,26 +1150,29 @@ class GalIngameLookupController {
     }
     final int capW = w.floor();
     final int capH = h.floor();
-    // anchor 是**画布**坐标（位图回退路径按它把卡片贴进 primaryLayer），所以解 anchor
-    // 必须用画布口径的尺寸，不能把客户区口径的 cap 混进来。直连路径已改为以字形矩形
-    // 在屏幕空间重排，不再读这个 anchor；它只服务于回退路径。
-    final int anchorCapW = (hit.viewW * _kCardViewportFraction).floor();
-    final int anchorCapH = (hit.viewH * _kCardViewportFraction).floor();
+    // anchor 是**画布**坐标（位图回退路径按它把卡片贴进 primaryLayer），解它必须用
+    // 卡片在画布域的实际占位。位图是 1:1 贴的，所以那个占位就是 capW/capH 本身——
+    // 上面的 min 已经保证 capW <= viewW、capH <= viewH，夹取区间恒非空。
+    // 用另一份「画布口径」的尺寸去解 anchor 会让两者错开：卡片按 cap 大小画，位置却按
+    // 一个更小的矩形夹，右/下边就会溢出画布。
+    //
     // Use the cap-sized root for both the layout origin and presentation. The
     // rendered body may be shorter, but keeping this one conservative anchor
     // removes a pre-render/post-render zero-point change and guarantees that the
     // complete nested union stays inside the reported game viewport.
-    final ({int x, int y}) rootAnchor = _resolveAnchor(
-      hit,
-      anchorCapW,
-      anchorCapH,
-    );
+    final ({int x, int y}) rootAnchor = _resolveAnchor(hit, capW, capH);
     _rootCardAnchor = rootAnchor;
     GlobalLookupController.instance.setPhysicalCap(
       width: capW,
       height: capH,
-      workWidth: boundW,
-      workHeight: boundH,
+      // 布局工作区与 workOrigin **必须同域**。origin 是 _resolveAnchor 在**画布**坐标
+      // 系里解出来的根卡原点（也正是投给 native 的 anchor 的域），所以工作区也只能是
+      // 画布尺寸。把它换成客户区尺寸会让级联子卡的 spaceRight/spaceBelow 判定系统性
+      // 偏乐观：放大运行时工作区变成 1902x1069，而原点的上界仍 <= 1280x720。
+      // 这一对是**布局视口**，与上面的 width/height（卡片尺寸上界，屏幕物理像素）
+      // 是两件事，不要因为改动前它们碰巧同源就再合到一起。
+      workWidth: hit.viewW,
+      workHeight: hit.viewH,
       workOriginX: rootAnchor.x,
       workOriginY: rootAnchor.y,
     );
@@ -1325,10 +1329,8 @@ class GalIngameLookupController {
     _cardPhysicalDx = 0;
     _cardPhysicalDy = 0;
     _rootCardAnchor = null;
-    // 注意：**不清** _gameClientWidth/_gameClientHeight。本函数每次查词结束都会跑，
-    // 在这里清等于每次查词都退回画布口径的上界，卡片被永久夹在 0.6×画布高，
-    // 「游戏内查词卡最大高度」这个设置就完全不起作用。游戏客户区是**会话级**事实，
-    // 只在换局（setSessionActive）时才失效。
+    // 客户区不需要在这里（或任何地方）失效：它不再是被缓存的会话级事实，而是随每条
+    // hit 现量现报的瞬时事实（[GalLookupHit.clientW]）。
   }
 
   Future<void> _present(
@@ -1364,10 +1366,6 @@ class GalIngameLookupController {
     // A successful present is the authoritative mode transition. In
     // particular, direct composition may become unavailable after a mining
     // hide; a successful bitmap fallback must re-enable dirty recaptures.
-    if (result.clientWidth > 0 && result.clientHeight > 0) {
-      _gameClientWidth = result.clientWidth;
-      _gameClientHeight = result.clientHeight;
-    }
     _directSurfaceActive = result.directSurface;
     if (_directSurfaceActive) {
       _recaptureDirty = false;
@@ -1532,6 +1530,13 @@ class GalIngameLookupController {
   /// 这条不是洁癖。本次改造里 replay 的判据就是「参照实现」，生产代码的收卡判据改完
   /// 之后它照样绿——那种绿只证明参照实现自洽。定位算法同理：转写一份就等于把 bug
   /// 复制两遍，然后互相验证说没问题。
+  /// 直接跑一次卡片尺寸上界解析（[_applyCardSizeCap]）。
+  ///
+  /// 这一步发生在 `lookupText` **之前**，其输入只有这条 hit——没有任何会话级缓存。
+  /// 测试据此验「本局第一次查词就按客户区口径出卡」，不必先造一次成功的 present。
+  @visibleForTesting
+  void debugApplyCardSizeCap(GalLookupHit hit) => _applyCardSizeCap(hit);
+
   @visibleForTesting
   ({int x, int y}) debugResolveAnchor(GalLookupHit hit, int cardW, int cardH) =>
       _resolveAnchor(hit, cardW, cardH);

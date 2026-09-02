@@ -217,8 +217,11 @@ add_custom_target(fushi_windows_attached_layout_validation_gate
 add_dependencies(${BINARY_NAME} fushi_windows_attached_layout_validation_gate)
 
 # 直连覆盖窗的画布→客户区映射决定卡片贴在哪、以及它是否还留在游戏画面内。这段几何
-# 一旦回归就表现为「卡片偏位/跑到画面外」，而 1:1 的等价性（scale==1、信箱边为 0）更
-# 是放开非 1:1 时不得破坏的既有行为，故保持纯函数且可执行。
+# 一旦回归就表现为「卡片偏位/跑到画面外」，故保持纯函数且可执行。
+#
+# 注意：1:1 下 scale==1、信箱边为 0 只是**这三个映射函数**的恒等性质；整条直连路径在
+# 1:1 下的落点已经随 GlyphAnchoredCardOrigin 一起变了（水平由左对齐改中心对齐、垂直由
+# 优先下方改优先上方），是有意的策略变更。对照表在 gal_direct_card_geometry.h 头部。
 add_executable(fushi_windows_gal_direct_card_geometry_test
   "tests/gal_direct_card_geometry_test.cpp"
 )

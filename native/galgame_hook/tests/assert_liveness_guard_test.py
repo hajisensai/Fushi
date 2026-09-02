@@ -17,17 +17,36 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# 扫描面不是「本目录」而是「所有会被 MSVC 以 Release 编译的原生测试目录」。
+# fushi/windows/runner/tests 里的测试由 fushi/windows/runner/CMakeLists.txt 挂进
+# `add_dependencies(${BINARY_NAME} ...)`，`flutter build windows --release` 会
+# 直接编译并运行它们——那是与本目录完全同一族的失效面，此前却没有任何守卫覆盖
+# （BUG-2057 的 gal_direct_card_geometry_test.cpp 就是从这个缺口漏进去的）。
+NATIVE_TEST_DIRS = (
+    ROOT / "tests",
+    REPO_ROOT / "fushi" / "windows" / "runner" / "tests",
+)
 
 
 class AssertLivenessGuardTest(unittest.TestCase):
     def test_every_native_test_undefines_ndebug_before_including_anything(
         self,
     ) -> None:
-        tests = sorted((ROOT / "tests").glob("*_test.cpp"))
+        tests = []
+        for directory in NATIVE_TEST_DIRS:
+            found = sorted(directory.glob("*_test.cpp"))
+            # 每个扫描面单独判空：合成一个总数会让某一目录整个消失（改名/搬走）
+            # 被另一目录的数量掩盖，守卫就退化成永远绿。
+            self.assertGreater(
+                len(found), 5, f"test discovery looks broken: {directory}"
+            )
+            tests.extend(found)
         self.assertGreater(len(tests), 20, "test discovery looks broken")
         for path in tests:
             text = path.read_text(encoding="utf-8")
-            self.assertIn("#undef NDEBUG", text, path.name)
+            self.assertIn("#undef NDEBUG", text, str(path))
             # Order matters, but only against the includes that can bind
             # assert(): <cassert>/<assert.h>, and any project header that might
             # pull one of them in. Platform headers such as <windows.h> ahead of
@@ -38,7 +57,7 @@ class AssertLivenessGuardTest(unittest.TestCase):
                            '#include "'):
                 at = text.find(marker)
                 if at >= 0:
-                    self.assertLess(undef_at, at, f"{path.name}: {marker}")
+                    self.assertLess(undef_at, at, f"{path}: {marker}")
 
     def test_new_adapter_scaffolding_emits_the_undef(self) -> None:
         # galhook.py `new` writes a native test file; if its template forgets the

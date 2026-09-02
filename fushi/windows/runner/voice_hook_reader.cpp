@@ -1,5 +1,7 @@
 #include "voice_hook_reader.h"
 
+#include "game_client_extent.h"
+
 #include <windows.h>
 
 // v19 准入兜底：注入侧算不出游戏 exe 摘要时由 host 自己算（见 [ExeDigestCache]）。
@@ -741,6 +743,10 @@ flutter::EncodableValue LookupHitMap(const VoiceHookLookupHit& hit) {
       {flutter::EncodableValue("glyphH"), flutter::EncodableValue(hit.glyph_h)},
       {flutter::EncodableValue("viewW"), flutter::EncodableValue(hit.view_w)},
       {flutter::EncodableValue("viewH"), flutter::EncodableValue(hit.view_h)},
+      {flutter::EncodableValue("clientW"),
+       flutter::EncodableValue(hit.client_w)},
+      {flutter::EncodableValue("clientH"),
+       flutter::EncodableValue(hit.client_h)},
       {flutter::EncodableValue("submit"), flutter::EncodableValue(hit.submit)},
   });
 }
@@ -840,6 +846,10 @@ void PumpLookupOnce() {
   }
   VoiceHookLookupHit hit;
   if (reader.PollLookupHit(&hit) && pump.channel != nullptr) {
+    // 客户区**现量现报**：host 的卡片尺寸上界要按屏幕物理像素算，而它必须在
+    // 查词开始之前就知道。量不到就留 0，host 退回画布口径（保守但不越界）。
+    fushi::game_client_extent::QueryGameClientExtent(
+        reader.CurrentPid(), &hit.client_w, &hit.client_h);
     pump.channel->InvokeMethod(
         "onGalLookupHit",
         std::make_unique<flutter::EncodableValue>(LookupHitMap(hit)));

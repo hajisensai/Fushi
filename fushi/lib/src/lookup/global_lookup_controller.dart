@@ -562,6 +562,21 @@ class GlobalLookupController {
       ? model.galCardLookupEffectiveSize
       : model.overlayLookupEffectiveSize;
 
+  /// 卡片尺寸上界（物理像素）。真机上它决定「最大宽/高」这个设置到底生不生效。
+  @visibleForTesting
+  ({int w, int h})? get debugPhysicalCap => _physicalCap;
+
+  /// 级联布局工作区 + 根卡原点。四个分量**必须同域**，测试据此咬住。
+  @visibleForTesting
+  ({int w, int h, int x, int y})? get debugLayoutWorkArea =>
+      _physicalLayoutWorkArea;
+
+  /// 按当前 route 分流出来的「有效最大宽高」。galCard 与桌面覆盖窗读的是两组不同的
+  /// 偏好键，这条分流是「游戏内查词卡独立尺寸」整个功能的唯一开关点。
+  @visibleForTesting
+  LookupSize debugEffectiveLookupSizeForCurrentRoute(AppModel model) =>
+      _effectiveLookupSizeForCurrentRoute(model);
+
   LookupSize _clampToPhysicalCap(LookupSize size, AppModel model, double dpr) {
     final ({int w, int h})? cap = _physicalCap;
     if (cap == null) return size;

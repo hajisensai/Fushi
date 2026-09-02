@@ -1,3 +1,9 @@
+// release 也要真断言：NDEBUG 会把 assert 编成空语句，本文件的断言就会整批
+// 消失、测试空跑照样"通过"（CI 的 C4189「变量没人引用」正是它漏出来的痕迹）。
+// 与 attached_overlayability_test.cpp 同一写法；无 assert 的文件也照写，免得
+// 日后新增断言时又要重走一遍这个坑。
+#undef NDEBUG
+
 #include "../gal_direct_card_geometry.h"
 
 #include <cassert>
@@ -14,8 +20,9 @@ int main() {
   using fushi::gal_direct_card_geometry::ClampDirectCardOrigin;
   using fushi::gal_direct_card_geometry::LetterboxOffset;
 
-  // 1:1 —— 直连路径原本唯一支持的情形。scale 必须恰为 1、信箱边恰为 0，否则本次改动
-  // 就改变了既有行为。
+  // 1:1 —— 直连路径原本唯一支持的情形。scale 必须恰为 1、信箱边恰为 0。
+  // 注意这是**映射函数**的恒等性质，不等于「1:1 下落点不变」：文件末尾的组合用例
+  // 明确记录了 1:1 下贴附策略确实变了（水平中心对齐、垂直优先上方）。
   assert(NearlyEqual(CanvasToClientScale(1280, 720, 1280, 720), 1.0));
   assert(NearlyEqual(LetterboxOffset(1280, 1280, 1.0), 0.0));
   assert(NearlyEqual(LetterboxOffset(720, 720, 1.0), 0.0));
@@ -105,6 +112,49 @@ int main() {
                                 24.0 * scale, 563, 432);
     assert(NearlyEqual(o.top, 1800.0 - 432.0));
     assert(o.top > 1300.0);  // 绝不再落回画面上三分之一
+  }
+
+
+  // ── 组合结果：1:1 下的落点**不是**旧行为的逐像素复现 ──────────────────────
+  //
+  // 两个 helper 各自的恒等性证明不了整条路径的行为：真正决定卡片贴在哪的是
+  // 「GlyphAnchoredCardOrigin 之后再 ClampDirectCardOrigin」这个组合，而字形有效时
+  // 它无条件接管定位。这里把 1:1 的组合结果钉死，作为策略变更的书面记录。
+  {
+    // 1:1：客户区 == 画布 == 1280x720，所以 scale==1、信箱边为 0。
+    const double scale = CanvasToClientScale(1280, 720, 1280, 720);
+    assert(NearlyEqual(scale, 1.0));
+    const double content_left = LetterboxOffset(1280, 1280, scale);
+    const double content_top = LetterboxOffset(720, 720, scale);
+    assert(NearlyEqual(content_left, 0.0));
+    assert(NearlyEqual(content_top, 0.0));
+
+    // 真机形态的一行台词：24px 字形，563x432 的卡片。
+    const double glyph_left = 600.0;
+    const double glyph_top = 500.0;
+    const double glyph_w = 24.0;
+    const double glyph_h = 24.0;
+    const int card_w = 563;
+    const int card_h = 432;
+
+    const auto placed = GlyphAnchoredCardOrigin(
+        content_left + glyph_left, content_top + glyph_top, glyph_w, glyph_h,
+        card_w, card_h);
+    const int x = ClampDirectCardOrigin(placed.left, card_w, 1280);
+    const int y = ClampDirectCardOrigin(placed.top, card_h, 720);
+
+    // 水平：**中心**对齐字形中心 —— 600 + 12 - 281.5 = 330.5 -> 331（四舍五入）。
+    // 旧行为是左边缘对齐字形左边（= 600）。差 269px，与 563 宽卡片的半宽同量级。
+    assert(x == 331);
+    assert(x != 600);
+
+    // 垂直：优先**上方**且**零间隙** —— 500 - 432 = 68。
+    // 旧行为优先下方（500 + 24 + popupPadding 4 = 528）并按 screenBorderPadding 6
+    // 夹取；这里既不在下方，也没有那 4px 间隙。
+    assert(y == 68);
+    assert(y != 528);
+    // 零间隙的判据：卡片底边正好压在字形顶边上。
+    assert(y + card_h == static_cast<int>(glyph_top));
   }
 
   return 0;

@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-749 — 瞬态查词覆盖窗命中/绘制区域必须裁到卡片矩形并集（源码扫描守卫）。
 ///
 /// 真机根因链：TODO-1345（BUG-583 round5, d2c57193a）给 reveal bbox 预留级联
@@ -32,7 +34,15 @@ import 'package:flutter_test/flutter_test.dart';
 /// 覆盖窗真渲染依赖 native WebView2，headless 测不了，故源码扫描钉住契约；
 /// 行为面由 node harness（global_lookup_host_test.mjs R1-R3）覆盖。
 void main() {
-  String read(String p) => File(p).readAsStringSync().replaceAll('\r\n', '\n');
+  String readRaw(String p) => File(p).readAsStringSync().replaceAll('\r\n', '\n');
+
+  // 语料一律**剥注释**再断言。这个文件的 needle 全是标识符与代码片段，而它扫的
+  // C++/JS 里注释密度极高：不掩码时，任何一句 `// 见 GlyphAnchoredCardOrigin`
+  // 就能让 contains 型断言永久变绿，而 isNot(contains(...)) 型断言会被一句解释性
+  // 注释直接判红。掩码是**等长空白**替换，所以本文件里那些拿 indexOf 比先后顺序
+  // 的断言，下标语义与原串完全一致。
+  String read(String p) => maskComments(readRaw(p));
+  String readJs(String p) => maskJsComments(readRaw(p));
 
   late String cpp;
   late String hdr;
@@ -42,7 +52,7 @@ void main() {
   setUpAll(() {
     cpp = read('windows/runner/global_lookup_window.cpp');
     hdr = read('windows/runner/global_lookup_window.h');
-    hostJs = read('assets/popup/global_lookup_host.js');
+    hostJs = readJs('assets/popup/global_lookup_host.js');
     flutterWindow = read('windows/runner/flutter_window.cpp');
     voiceReader = read('windows/runner/voice_hook_reader.cpp');
   });
@@ -260,16 +270,31 @@ void main() {
       isNot(contains('card_height * scale')),
       reason: '缩放卡片会触发 WM_SIZE -> put_Bounds 重排',
     );
+    // 下面三条**不能**写成 `contains('GlyphAnchoredCardOrigin')` 这种名字出现性
+    // 断言：把整条字形路径退役（`direct_glyph_valid_ = false;`）或者只夹一根轴，
+    // 名字都还在函数体里，断言照样绿。所以钉的是启用条件本身和两根轴各自的实参。
+    final String compactReveal = compactCode(reveal);
     expect(
-      reveal,
-      contains('GlyphAnchoredCardOrigin'),
-      reason: '卡片不再是画布单位，贴附必须以字形矩形在屏幕空间重排，'
+      compactReveal,
+      contains('direct_glyph_valid_=glyph_w>0&&glyph_h>0;'),
+      reason: '字形路径的启用条件只能来自字形尺寸本身；写死成常量会让 '
+          'GlyphAnchoredCardOrigin 整条分支变成死代码',
+    );
+    expect(
+      compactReveal,
+      contains('GlyphAnchoredCardOrigin(direct_glyph_left_,direct_glyph_top_,'),
+      reason: '卡片不再是画布单位，贴附必须以字形在**屏幕**上的矩形重排，'
           '直接把 anchor 乘 scale 会让卡片离命中的字 (scale-1)×卡片高',
     );
     expect(
-      reveal,
-      contains('ClampDirectCardOrigin'),
-      reason: '映射后的原点必须夹回客户区，保证整张卡片留在游戏画面内',
+      compactReveal,
+      contains('ClampDirectCardOrigin(local_x,screen_width,client_width)'),
+      reason: '横轴必须按客户区**宽**夹回，保证整张卡片留在游戏画面内',
+    );
+    expect(
+      compactReveal,
+      contains('ClampDirectCardOrigin(local_y,screen_height,client_height)'),
+      reason: '纵轴必须按客户区**高**夹回；只夹一轴时"名字出现"的断言仍然全绿',
     );
     expect(
       reveal,
@@ -311,22 +336,48 @@ void main() {
     // 非 1:1 现在由画布→客户区等比映射直接支持，不再是「保留旧 HWND 等回退」的死路，
     // 所以 one_to_one 门与 deterministic_non_one_to_one 分支都已退役。剩下的失败类只有
     // 可在有界重试里自愈的瞬时 Win32 失败。
+    final String compactResize = compactCode(resize);
     expect(resize, contains('CanvasToClientScale'));
-    expect(resize, contains('bool transient_direct_failure = false;'));
-    expect(
-      resize,
-      isNot(contains('one_to_one')),
-      reason: '直连不再被 1:1 客户区锁死，放大运行的游戏也必须走直连',
-    );
+    expect(compactResize, contains('booltransient_direct_failure=false;'));
+    // 「1:1 门已退役」的判据**不能**是 `isNot(contains('one_to_one'))`：那个标识符
+    // 在整个仓库里已经一处都没有（全文件 grep 计数 0），断言恒真，改名重新引入同一道
+    // 门时它一声不吭。真正的判据是**门的形状**：任何 1:1 判定都必须把客户区尺寸
+    // 与画布(view)尺寸放到同一个比较里——退役前那道门写的正是
+    // `std::abs(client_width - static_cast<int>(direct_view_width_)) <= 1`。
+    // 这里禁掉这个形状，`==`、`!=`、`-...<=1` 三种写法一并覆盖；而合法用法
+    // （`CanvasToClientScale(client_width, ..., direct_view_width_, ...)`、
+    // `LetterboxOffset(client_width, direct_view_width_, scale)`）里两者之间只隔逗号，
+    // 不会命中。
+    for (final RegExp shape in <RegExp>[
+      RegExp(r'client_(width|height)[-=!<>]+[^;]*direct_view_(width|height)_'),
+      RegExp(r'direct_view_(width|height)_[-=!<>]+[^;]*client_(width|height)'),
+    ]) {
+      expect(
+        compactResize,
+        isNot(matches(shape)),
+        reason: '直连不再被 1:1 客户区锁死：放大运行的游戏也必须走直连，'
+            '所以客户区尺寸不得再与画布尺寸做等值/容差比较（$shape）',
+      );
+    }
     expect(
       resize,
       contains('std::max(1, width)'),
       reason: '嵌套 resize 同样不得缩放卡片，否则 Chromium 视口重排',
     );
     expect(
-      resize,
-      contains('direct_glyph_valid_'),
+      compactResize,
+      contains('if(direct_glyph_valid_){'),
       reason: '嵌套 resize 必须复用 present 时的同一贴附基准，否则同一次查词里卡片会跳位',
+    );
+    expect(
+      compactResize,
+      contains('ClampDirectCardOrigin(local_x,screen_width,client_width)'),
+      reason: '嵌套 resize 的横轴同样必须夹回客户区宽',
+    );
+    expect(
+      compactResize,
+      contains('ClampDirectCardOrigin(local_y,screen_height,client_height)'),
+      reason: '嵌套 resize 的纵轴同样必须夹回客户区高',
     );
     expect(
       resize,

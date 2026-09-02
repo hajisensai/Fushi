@@ -574,60 +574,6 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
-          // 弹窗尺寸精细化：游戏内查词卡独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
-          // 关闭时跟随 app 内最大宽高（galCardLookupEffectiveSize 解析）。
-          // 与上面的覆盖窗分开：卡片贴在游戏客户区里、要避开正文，浮窗浮在整块桌面上，
-          // 两者合适尺寸本就不同；共用一组键时只能二选一（游戏内过小 / 浮窗过大）。
-          SettingsSwitchItem(
-            id: 'lookup.gal_card_lookup_independent_size',
-            title: t.gal_card_lookup_independent_size,
-            subtitle: t.gal_card_lookup_independent_size_hint,
-            icon: Icons.videogame_asset_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galCardLookupIndependentSize,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setGalCardLookupIndependentSize(
-                value,
-              );
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSliderItem(
-            id: 'lookup.gal_card_lookup_max_width',
-            titleReadout: true,
-            title: t.gal_card_lookup_max_width,
-            icon: Icons.open_in_full_outlined,
-            min: 250,
-            max: 2000,
-            divisions: 175,
-            visible: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galCardLookupIndependentSize,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galCardLookupMaxWidth,
-            label: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel.setGalCardLookupMaxWidth(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSliderItem(
-            id: 'lookup.gal_card_lookup_max_height',
-            titleReadout: true,
-            title: t.gal_card_lookup_max_height,
-            icon: Icons.height_outlined,
-            min: 200,
-            max: 1600,
-            divisions: 140,
-            visible: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galCardLookupIndependentSize,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galCardLookupMaxHeight,
-            label: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel.setGalCardLookupMaxHeight(value);
-              settingsContext.refresh();
-            },
-          ),
           // 弹窗尺寸精细化：浏览器扩展弹窗独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
           // 关闭时跟随 app 内最大宽高（extensionPopupEffectiveSize 解析，经 theme 下发）。
           SettingsSwitchItem(
