@@ -9,12 +9,13 @@ import 'package:fushi/src/media/metadata/credential_redaction.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
+import 'package:fushi/src/media/video/download/subscription_check_schedule.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/media/video/download/video_media_reference_codec.dart';
-import 'package:fushi/src/media/video/download/subscription_check_schedule.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 typedef VideoDownloadSubscriptionEnqueue = Future<String> Function(
   VideoDownloadEnqueueRequest request,
@@ -106,7 +107,7 @@ class VideoDownloadSubscriptionService {
     required this.resourceRegistry,
     required VideoDownloadSubscriptionEnqueue enqueue,
     String? workerId,
-    this.checkInterval = const Duration(minutes: 15),
+    Duration checkInterval = const Duration(minutes: 15),
     this.leaseDuration = const Duration(minutes: 2),
     this.autoRetryBudget = kVideoDownloadSubscriptionAutoRetryBudget,
     SubscriptionCheckCadence? cadence,
@@ -119,14 +120,39 @@ class VideoDownloadSubscriptionService {
         workerId =
             workerId ?? 'video-sub-${generateVideoDownloadInstallationId()}',
         _now = now ?? DateTime.now {
-    if (checkInterval <= Duration.zero) {
-      throw ArgumentError.value(checkInterval, 'checkInterval');
-    }
     if (leaseDuration <= Duration.zero) {
       throw ArgumentError.value(leaseDuration, 'leaseDuration');
     }
     if (autoRetryBudget <= 0) {
       throw ArgumentError.value(autoRetryBudget, 'autoRetryBudget');
+    }
+    // cadence 与上面三个参数同等对待。漏掉它的代价不是崩溃而是**静默失效**：
+    // 例如 maxSamples = 0 会让每次取样都抛 ArgumentError，被 _successDelay 的
+    // 降级吞掉，整个节奏特性退回均匀间隔且外部完全不可观测。
+    _validateCadence(this.cadence);
+  }
+
+  static void _validateCadence(SubscriptionCheckCadence cadence) {
+    void positive(Duration value, String name) {
+      if (value <= Duration.zero) throw ArgumentError.value(value, name);
+    }
+
+    positive(cadence.baseInterval, 'cadence.baseInterval');
+    positive(cadence.hotInterval, 'cadence.hotInterval');
+    positive(cadence.coldInterval, 'cadence.coldInterval');
+    positive(cadence.minInterval, 'cadence.minInterval');
+    if (cadence.minSamples <= 0) {
+      throw ArgumentError.value(cadence.minSamples, 'cadence.minSamples');
+    }
+    if (cadence.maxSamples < cadence.minSamples) {
+      throw ArgumentError.value(cadence.maxSamples, 'cadence.maxSamples');
+    }
+    if (cadence.coldInterval < cadence.hotInterval) {
+      throw ArgumentError.value(
+        cadence.coldInterval,
+        'cadence.coldInterval',
+        'cold window must not be denser than the hot window',
+      );
     }
   }
 
@@ -134,17 +160,37 @@ class VideoDownloadSubscriptionService {
   final VideoResourceRegistry resourceRegistry;
   final VideoDownloadSubscriptionEnqueue _enqueue;
   final String workerId;
-  final Duration checkInterval;
   final Duration leaseDuration;
 
-  /// 每周更新点的检查节奏参数。默认把 [checkInterval] 当作退化时的均匀间隔。
+  /// 检查节奏参数，**均匀间隔与各窗口取值的唯一真相源**。
   final SubscriptionCheckCadence cadence;
+
+  /// 均匀间隔。同名构造参数只是建默认 [cadence] 的快捷方式；这里刻意是 getter
+  /// 而不是独立字段——两份可以各自分叉的「均匀间隔」就是同一个数字两层两语义，
+  /// 而且默认路径下两者恰好相等，测试也照不出分叉。
+  Duration get checkInterval => cadence.baseInterval;
   final int autoRetryBudget;
   final DateTime Function() _now;
 
   Timer? _timer;
   Future<void>? _activeCheck;
   bool _disposed = false;
+  bool _stopped = false;
+
+  /// 重排代次。每次 [_scheduleNextWake] 进入时自增，写 `_timer` 前比对。
+  ///
+  /// 两次重排可以并发在途（`checkNow` 在 whenComplete 里先清 `_activeCheck`
+  /// 再发起重排，于是下一轮检查能在上一轮的重排还挂在 await 上时起跑）。没有
+  /// 这个令牌，胜负就是「谁最后完成谁赢」而不是「谁读到的 DB 状态最新谁赢」，
+  /// 一次陈旧的读会把新排好的定时器覆盖掉。
+  ///
+  /// 它防的是**唤醒变晚**，不是停摆：即使陈旧的一次赢了，`dueAt == null` 分支的
+  /// 兜底重排也保证最多迟一个 [SubscriptionCheckCadence.coldInterval] 就会重新
+  /// 探到。正因如此，去掉这个令牌不会让任何测试变红——要确定性地构造「陈旧的读
+  /// 晚于新的读完成」，得能控制两次 DB 查询各自的完成时机，而 [FushiDatabase]
+  /// 是具体类，注入不进去。这里如实记下：令牌是零成本的正确性防御，覆盖它的
+  /// 不是单测而是上面这段推理。
+  int _wakeGeneration = 0;
   VideoDownloadLeaseGuard? _activeLease;
 
   /// 启动时立刻领取所有当前到期订阅，之后睡到「下一条订阅真正到期」再醒。
@@ -154,6 +200,7 @@ class VideoDownloadSubscriptionService {
   /// 每 15 分钟醒一次）。改成按到期时刻重排的单次定时器后两头一起解决。
   void start() {
     if (_disposed || _timer != null) return;
+    _stopped = false;
     unawaited(checkNow());
   }
 
@@ -174,30 +221,44 @@ class VideoDownloadSubscriptionService {
 
   /// 按 DB 里最早的到期时刻重排唤醒。
   Future<void> _scheduleNextWake() async {
-    if (_disposed) return;
+    if (_disposed || _stopped) return;
+    final int generation = ++_wakeGeneration;
     Duration delay;
     try {
       final int? dueAt = await database.nextVideoDownloadSubscriptionDueAt();
-      if (dueAt == null) {
-        // 没有启用中的订阅：不必醒，等 UI 侧新建/启用时显式 checkNow 唤醒。
-        _timer?.cancel();
-        _timer = null;
-        return;
-      }
       final int nowAt = _now().millisecondsSinceEpoch;
-      delay = Duration(milliseconds: dueAt - nowAt);
-    } on Object {
-      // 查不出下一次到期不能让调度器停摆，退回均匀间隔。
-      delay = checkInterval;
+      // 没有启用中的订阅时**照样排一次兜底唤醒**。不排的话，「调度器还活着」
+      // 就押在「每个新建 / 启用 / 导入 / 恢复订阅的入口都记得调 checkNow」这个
+      // 分散在多个调用点的口头约定上——漏一个就是永久停摆，而且静默。旧的
+      // Timer.periodic 对此免疫，兜底重排把这条保证换个形式留住。
+      delay = dueAt == null
+          ? cadence.coldInterval
+          : Duration(milliseconds: dueAt - nowAt);
+    } on Object catch (error, stack) {
+      // 降级不等于静默：查不出下一次到期就退回均匀间隔，但必须留痕，否则 DB
+      // 持续故障时整个节奏特性会无声无息地变成 no-op。
+      ErrorLogService.instance.log(
+        'VideoDownloadSubscriptionService.scheduleNextWake',
+        error,
+        stack,
+      );
+      delay = cadence.baseInterval;
     }
-    if (_disposed) return;
-    if (delay < cadence.minInterval) delay = cadence.minInterval;
+    // await 期间服务可能已经停掉，或已有更晚的一次重排读到了更新的 DB 状态。
+    if (_disposed || _stopped || generation != _wakeGeneration) return;
+    // 唤醒下限刻意用 hotInterval 而不是 minInterval：后者的语义是「同一条订阅
+    // 两次检查的最小间隔」，小到 1 分钟是为了让冷窗尾巴精确停在热窗起点上。
+    // 把它当成调度器的唤醒下限会让「已到期但领不走」的行触发每分钟空转。
+    if (delay < cadence.hotInterval) delay = cadence.hotInterval;
     if (delay > cadence.coldInterval) delay = cadence.coldInterval;
     _timer?.cancel();
     _timer = Timer(delay, () => unawaited(checkNow()));
   }
 
   Future<void> stop() async {
+    // 必须先立标志：whenComplete 里的重排是 unawaited 的，它会在 _activeCheck
+    // 完成之后才从 await 恢复——晚于本函数返回。只取消定时器停不住服务。
+    _stopped = true;
     _timer?.cancel();
     _timer = null;
     await _activeCheck;
@@ -771,22 +832,32 @@ class VideoDownloadSubscriptionService {
     VideoDownloadSubscriptionRow subscription,
     int checkedAt,
   ) async {
-    // oneShot 没有周期语义，学不出也不该学。
-    if (subscription.mode == 'oneShot') return checkInterval;
+    // oneShot 没有周期语义，学不出也不该学。这个判断只编码在这里一处：它作为
+    // weekly 传进纯函数，由后者统一决定退化取值，避免同一策略两处各写一遍、
+    // 各自返回不同变量。
+    final bool weekly = subscription.mode != 'oneShot';
     try {
-      final List<int> publishedAt =
-          await database.getVideoDownloadSubscriptionPublishedAt(
-        subscription.subscriptionId,
-        limit: cadence.maxSamples,
-      );
+      final List<int> publishedAt = weekly
+          ? await database.getVideoDownloadSubscriptionPublishedAt(
+              subscription.subscriptionId,
+              limit: cadence.maxSamples,
+            )
+          : const <int>[];
       return nextSubscriptionCheckDelay(
         recentPublishedAtMs: publishedAt,
         nowMs: checkedAt,
+        weekly: weekly,
         cadence: cadence,
       );
-    } on Object {
-      // 读不出历史不影响这一轮的检查结果，退回均匀间隔即可。
-      return checkInterval;
+    } on Object catch (error, stack) {
+      // 读不出历史不影响这一轮的检查结果，退回均匀间隔即可——但要留痕，否则
+      // 取样恒失败时节奏特性会静默退化成改动前的行为，没有任何人知道。
+      ErrorLogService.instance.log(
+        'VideoDownloadSubscriptionService.successDelay',
+        error,
+        stack,
+      );
+      return cadence.baseInterval;
     }
   }
 

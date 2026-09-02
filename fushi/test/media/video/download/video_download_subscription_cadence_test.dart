@@ -100,25 +100,73 @@ Future<void> _insertWeeklyHistory(
   }
 }
 
+/// [now] 为 null 时用真实时钟。断言 nextCheckAt 具体取值的用例要注入固定时刻；
+/// 断言**定时器真的会再醒**的用例必须走真实时钟——固定时钟下 nextCheckAt 恒
+/// 落在「未来」，claim 永远领不走，drain 只会空转，测不出活性。
 VideoDownloadSubscriptionService _service(
   FushiDatabase database, {
-  required DateTime now,
+  DateTime? now,
+  SubscriptionCheckCadence? cadence,
+  _EmptyResourceProvider? provider,
 }) {
   final VideoDownloadSubscriptionService service =
       VideoDownloadSubscriptionService(
     database: database,
     resourceRegistry: VideoResourceRegistry(<VideoResourceProvider>[
-      _EmptyResourceProvider(),
+      provider ?? _EmptyResourceProvider(),
     ]),
     // 本套件断言的是「下一次什么时候查」，不是入队；provider 恒返空候选，
     // 检查必定成功且不命中，nextCheckAt 就只由历史样本决定。
     enqueue: (VideoDownloadEnqueueRequest request) async =>
         fail('no candidate should be enqueued'),
     workerId: 'cadence-test-worker',
-    now: () => now,
+    cadence: cadence,
+    now: now == null ? null : () => now,
   );
   addTearDown(service.dispose);
   return service;
+}
+
+/// 定时器行为用的压缩节奏：真等毫秒级，不改变任何分支逻辑。
+///
+/// 取值刻意不再更小。同目录下有几条时间敏感的既有用例（例如 90ms lease 的
+/// 心跳续期），本组测试若用几毫秒的定时器 + 忙等轮询去抢 CPU，会把它们挤红——
+/// 那是本组测试制造的干扰，不是那些用例的问题。
+const SubscriptionCheckCadence kFastCadence = SubscriptionCheckCadence(
+  baseInterval: Duration(milliseconds: 200),
+  hotInterval: Duration(milliseconds: 100),
+  coldInterval: Duration(milliseconds: 300),
+  minInterval: Duration(milliseconds: 20),
+);
+
+/// 轮询等待 [predicate] 成立，最多等 [timeout]；返回是否等到。
+Future<bool> _waitFor(
+  bool Function() predicate, {
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  final DateTime deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    if (predicate()) return true;
+    // 轮询间隔要够大：忙等会和同机并行的时间敏感用例抢 CPU。
+    await Future<void>.delayed(const Duration(milliseconds: 25));
+  }
+  return predicate();
+}
+
+/// 断言取样这条路本身是通的，返回样本条数。
+///
+/// 三条「退回均匀间隔」的用例若只看 nextCheckAt，与「取样恒抛异常被降级吞掉」
+/// 完全同形——必须先确认样本确实取到了预期条数，退回才是因为样本不足而不是
+/// 因为这条路断了。
+Future<int> _expectSampleCount(
+  FushiDatabase database,
+  String subscriptionId,
+  int expected,
+) async {
+  final List<int> samples =
+      await database.getVideoDownloadSubscriptionPublishedAt(subscriptionId);
+  expect(samples.length, expected, reason: '取样路径本身应当是通的');
+  return samples.length;
 }
 
 Future<int?> _checkAndReadNextCheckAt(
@@ -184,6 +232,7 @@ void main() {
       final int sourceId = await _insertVideoSource(database);
       await _insertSubscription(database, id: 'fresh', sourceId: sourceId);
       await _insertWeeklyHistory(database, 'fresh', weeks: 2);
+      await _expectSampleCount(database, 'fresh', 2);
 
       final DateTime now = kRelease.add(const Duration(days: 3));
       final int? nextCheckAt = await _checkAndReadNextCheckAt(
@@ -209,6 +258,7 @@ void main() {
       );
       // 即便历史看着很像每周更新，一次性订阅也不该据此改节奏。
       await _insertWeeklyHistory(database, 'once');
+      await _expectSampleCount(database, 'once', 3);
 
       final DateTime now = kRelease.add(const Duration(days: 3));
       final int? nextCheckAt = await _checkAndReadNextCheckAt(
@@ -242,6 +292,7 @@ void main() {
           updatedAt: kRelease.millisecondsSinceEpoch,
         ),
       );
+      await _expectSampleCount(database, 'partial', 2);
 
       final DateTime now = kRelease.add(const Duration(days: 3));
       final int? nextCheckAt = await _checkAndReadNextCheckAt(
@@ -253,6 +304,124 @@ void main() {
       expect(
         nextCheckAt,
         now.millisecondsSinceEpoch + kCadence.baseInterval.inMilliseconds,
+      );
+    });
+  });
+
+  group('调度器活性（单次 Timer 重排）', () {
+    test('一轮检查之后会自己再醒，不需要外部推动', () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      await _insertSubscription(database, id: 'weekly', sourceId: sourceId);
+      final _EmptyResourceProvider provider = _EmptyResourceProvider();
+      final VideoDownloadSubscriptionService service = _service(
+        database,
+        cadence: kFastCadence,
+        provider: provider,
+      );
+
+      service.start();
+      // 旧实现是 Timer.periodic，无条件保证还会再醒；新实现靠自己重排。
+      expect(
+        await _waitFor(() => provider.searchCount >= 3),
+        isTrue,
+        reason: '调度器只跑了 ${provider.searchCount} 轮就不动了',
+      );
+    });
+
+    test('零启用订阅时仍留兜底唤醒，之后新建订阅能被自动捡起', () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      final _EmptyResourceProvider provider = _EmptyResourceProvider();
+      final VideoDownloadSubscriptionService service = _service(
+        database,
+        cadence: kFastCadence,
+        provider: provider,
+      );
+
+      // 启动时库里一条订阅都没有。
+      service.start();
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      expect(provider.searchCount, 0);
+
+      // 此后新建订阅，**不调用 checkNow**：若零订阅时没排兜底唤醒，调度器已经
+      // 永久睡死，这一条永远不会被检查。
+      await _insertSubscription(database, id: 'later', sourceId: sourceId);
+      expect(
+        await _waitFor(() => provider.searchCount >= 1),
+        isTrue,
+        reason: '零订阅时没有留下兜底唤醒，新建的订阅再也没人检查',
+      );
+    });
+
+    test('stop() 之后不再自己醒来', () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      await _insertSubscription(database, id: 'weekly', sourceId: sourceId);
+      final _EmptyResourceProvider provider = _EmptyResourceProvider();
+      final VideoDownloadSubscriptionService service = _service(
+        database,
+        cadence: kFastCadence,
+        provider: provider,
+      );
+
+      // 关键是让 stop() 落在**一轮重排正在途中**的时刻：start() 发起的检查还没
+      // 结束就调 stop()，stop() 内部 await 这一轮时，whenComplete 会发起重排并
+      // 挂在 DB 读上——它从 await 恢复已经是 stop() 返回之后。只取消定时器停不住
+      // 它，必须有个标志让恢复后的重排自己放弃。
+      service.start();
+      await service.stop();
+      final int afterStop = provider.searchCount;
+
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(
+        provider.searchCount,
+        afterStop,
+        reason: 'stop() 之后调度器又自己醒了',
+      );
+    });
+
+  });
+
+  group('构造参数校验', () {
+    test('非法 cadence 立刻抛，而不是让节奏静默失效', () async {
+      final FushiDatabase database = await _openDatabase();
+      VideoDownloadSubscriptionService build(
+        SubscriptionCheckCadence cadence,
+      ) =>
+          VideoDownloadSubscriptionService(
+            database: database,
+            resourceRegistry: VideoResourceRegistry(<VideoResourceProvider>[
+              _EmptyResourceProvider(),
+            ]),
+            enqueue: (VideoDownloadEnqueueRequest request) async => 'unused',
+            cadence: cadence,
+          );
+
+      // maxSamples: 0 会让每次取样抛 ArgumentError 并被降级吞掉——整个特性静默
+      // 变成 no-op。必须在构造时就拒绝。
+      expect(
+        () => build(const SubscriptionCheckCadence(maxSamples: 0)),
+        throwsArgumentError,
+      );
+      expect(
+        () => build(const SubscriptionCheckCadence(minSamples: 0)),
+        throwsArgumentError,
+      );
+      expect(
+        () => build(
+          const SubscriptionCheckCadence(baseInterval: Duration.zero),
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => build(
+          const SubscriptionCheckCadence(
+            hotInterval: Duration(hours: 3),
+            coldInterval: Duration(hours: 1),
+          ),
+        ),
+        throwsArgumentError,
       );
     });
   });
@@ -370,6 +539,8 @@ void main() {
 }
 
 class _EmptyResourceProvider implements VideoResourceProvider {
+  int searchCount = 0;
+
   @override
   String get id => 'torznab';
 
@@ -383,10 +554,12 @@ class _EmptyResourceProvider implements VideoResourceProvider {
   @override
   Future<ProviderBatchResult<VideoResourceCandidate>> search(
     VideoResourceSearchRequest request,
-  ) async =>
-      ProviderBatchResult<VideoResourceCandidate>.success(
-        const <VideoResourceCandidate>[],
-      );
+  ) async {
+    searchCount++;
+    return ProviderBatchResult<VideoResourceCandidate>.success(
+      const <VideoResourceCandidate>[],
+    );
+  }
 
   @override
   Future<TorrentAddPayload> resolve(VideoResourceCandidate candidate) async =>

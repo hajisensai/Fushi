@@ -48,8 +48,17 @@ class SubscriptionCheckCadence {
   /// 热窗在预测点之后持续多久。覆盖字幕组相对上游放送的滞后抖动。
   final Duration hotTrail;
 
-  /// 样本相位的最大离散度。超过即认为这条订阅没有稳定周期（批量补番、
-  /// 一周多集、乱序补档），退回均匀间隔。
+  /// 样本相位的最大离散度。超过即认为这条订阅没有稳定周期，退回均匀间隔。
+  ///
+  /// 它拦得住的是**样本散开**的情况：一周多集（间隔 3.5 天必然超限）、乱序补档、
+  /// 换档期新旧相位混在一起。
+  ///
+  /// 它**拦不住样本挤成一团**：整季批量掉落（一个 batch 的种子同时上传）或索引器
+  /// 把 pubDate 截断到整天，都会给出 spread≈0 的高置信度相位，而那个相位其实毫无
+  /// 预测力。这是已知的退化形状，没有在这里加判据去堵——真正兜住它的是
+  /// [coldInterval] 封顶（预测再错也最多迟这么久）加上滑动窗口自愈（真正的周更
+  /// 样本进来后相位自己会回正）。加一道「样本挤太紧就拒绝」的闸门反而会误伤
+  /// 正常周更里两集间隔恰好很近的合法情形。
   final Duration maxSpread;
 
   /// 任何睡眠的下限，防止「就快到热窗了」退化成忙循环。刻意小于 [hotInterval]：
@@ -75,16 +84,15 @@ class WeeklyReleasePhase {
 }
 
 /// 把绝对时刻归一到周内相位。
-int subscriptionWeekPhase(int epochMs) {
-  final int phase = epochMs % kSubscriptionWeekMs;
-  return phase < 0 ? phase + kSubscriptionWeekMs : phase;
-}
+///
+/// Dart 的 `%` 对正除数恒返回非负（`(-1) % 7 == 6`，与 C 不同），所以 1970 年
+/// 之前的负 epoch 也不需要额外折回。
+int subscriptionWeekPhase(int epochMs) => epochMs % kSubscriptionWeekMs;
 
 /// 把相位差折算到 `[-半周, +半周)`，用于围绕参考点做圆形统计。
 int _wrapToHalfWeek(int deltaMs) {
   const int half = kSubscriptionWeekMs ~/ 2;
-  final int wrapped = (deltaMs + half) % kSubscriptionWeekMs;
-  return (wrapped < 0 ? wrapped + kSubscriptionWeekMs : wrapped) - half;
+  return (deltaMs + half) % kSubscriptionWeekMs - half;
 }
 
 /// 从历史发布时刻推断每周相位；样本不足或过于离散时返回 null。
@@ -122,11 +130,9 @@ WeeklyReleasePhase? inferWeeklyReleasePhase(
 }
 
 /// 距离 [nowMs] 之后（含当下）最近一个落在 [phase] 上的绝对时刻。
-int nextSubscriptionPhasePoint(WeeklyReleasePhase phase, int nowMs) {
-  final int delta =
-      (phase.phaseMs - subscriptionWeekPhase(nowMs)) % kSubscriptionWeekMs;
-  return nowMs + (delta < 0 ? delta + kSubscriptionWeekMs : delta);
-}
+int nextSubscriptionPhasePoint(WeeklyReleasePhase phase, int nowMs) =>
+    nowMs +
+    (phase.phaseMs - subscriptionWeekPhase(nowMs)) % kSubscriptionWeekMs;
 
 /// [nowMs] 是否落在 [phase] 的热窗内。
 ///
