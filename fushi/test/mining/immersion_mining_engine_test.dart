@@ -735,5 +735,10 @@ void main() {
     expect(VideoMiningImageMode.gif.isStill, false);
     expect(VideoMiningImageMode.currentFrame.isStill, true);
     expect(VideoMiningImageMode.subtitleStart.isStill, true);
+    // 视频片段既不是静图也不是动图；wireName 稳定为 video_clip（偏好持久化契约）。
+    expect(VideoMiningImageMode.videoClip.isStill, false);
+    expect(VideoMiningImageMode.videoClip.isVideoClip, true);
+    expect(VideoMiningImageMode.videoClip.wireName, 'video_clip');
+    expect(VideoMiningImageMode.gif.isVideoClip, false);
   });
 }

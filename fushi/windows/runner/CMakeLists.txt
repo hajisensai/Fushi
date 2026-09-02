@@ -40,6 +40,7 @@ add_executable(${BINARY_NAME} WIN32
   "utils.cpp"
   "win32_window.cpp"
   "window_capture.cpp"
+  "window_recorder.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
   "Runner.rc"
   "runner.exe.manifest"
@@ -81,7 +82,8 @@ target_link_libraries(${BINARY_NAME} PRIVATE uiautomationcore.lib)
 # TODO-1162: window_capture.cpp (external-window mining) — Windows.Graphics.Capture
 # single-frame screenshot needs D3D11 + DXGI + the WinRT activation runtime
 # (RoInitialize / RoGetActivationFactory / WindowsCreateStringReference) and WIC
-# for PNG encode.
+# for PNG encode. window_recorder.cpp (galgame rolling window recording) shares
+# the same stack and adds WIC JPEG encode.
 target_link_libraries(${BINARY_NAME} PRIVATE d3d11 dxgi runtimeobject windowscodecs)
 # galgame 一键制卡 A 阶段：audio_loopback_capture.cpp（WASAPI loopback 抓系统混音）。
 # IMMDeviceEnumerator / IAudioClient / IAudioCaptureClient 的 CLSID/IID 由 uuid.lib（MSVC
@@ -291,6 +293,41 @@ add_custom_target(fushi_windows_attached_shield_status_policy_gate
 )
 add_dependencies(${BINARY_NAME}
   fushi_windows_attached_shield_status_policy_gate)
+
+# Shift+hover lookup on the attached calibrated glyph surface: the polling
+# timer must fire once per distinct cluster while Shift is held and never
+# without Shift. Keep the de-dup/anchor-release seam executable so a hover
+# storm (one lookup per 60ms tick) or a dead anchor cannot regress silently.
+add_executable(fushi_windows_attached_hover_tracker_test
+  "tests/attached_hover_tracker_test.cpp"
+)
+apply_standard_settings(fushi_windows_attached_hover_tracker_test)
+target_compile_definitions(fushi_windows_attached_hover_tracker_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_attached_hover_tracker_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_attached_hover_tracker_test>"
+  DEPENDS fushi_windows_attached_hover_tracker_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_attached_hover_tracker_gate)
+
+# Rolling window recording for galgame video cards: the fps keep decision, the
+# max_seconds / byte-cap eviction, the export range (to<=0 = now) and the box
+# downscale are pure STL and run on every Windows runner build, so a regression
+# cannot silently turn the ring into an unbounded buffer or export the wrong
+# frames.
+add_executable(fushi_windows_window_recorder_ring_test
+  "tests/window_recorder_ring_test.cpp"
+)
+apply_standard_settings(fushi_windows_window_recorder_ring_test)
+target_compile_definitions(fushi_windows_window_recorder_ring_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_window_recorder_ring_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_window_recorder_ring_test>"
+  DEPENDS fushi_windows_window_recorder_ring_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_window_recorder_ring_gate)
 
 add_executable(fushi_update_launcher WIN32
   "update_launcher.cpp"

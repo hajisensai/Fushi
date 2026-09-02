@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "attached_capture_token.h"
+#include "attached_hover_tracker.h"
 #include "attached_overlayability.h"
 
 // Transparent, no-activate Win32 surface attached to a foreign game client.
@@ -120,6 +121,9 @@ public:
     uint32_t source_length = 0;
     RECT screen_rect_px{};
     int dpi = 96;
+    // True when emitted by the Shift+hover timer instead of a completed
+    // shielded click transaction. Hover never consumes any input.
+    bool hover = false;
   };
 
   struct ShieldTransaction {
@@ -321,6 +325,16 @@ private:
   void EndPointerGesture(POINT client_point,
                          uint64_t external_transaction_id = 0);
   void CancelPointerGesture();
+  // Builds the LookupEvent for |cluster_index| (index into clusters_) and
+  // invokes on_lookup_. Shared by the click transaction and the Shift+hover
+  // timer.
+  void EmitLookupEvent(int cluster_index, bool hover);
+  // Shift+hover lookup (kHoverTimerId tick). Reads physical Shift state via
+  // GetAsyncKeyState (the surface is WS_EX_NOACTIVATE and never owns keyboard
+  // focus), maps the cursor into the calibrated body and fires once per
+  // distinct cluster through AttachedHoverTracker. Never touches the shield.
+  void TickHoverLookup();
+  bool HoverLookupGeometryAvailable() const;
   bool AdoptShieldTransaction(uint64_t external_transaction_id);
   void ReleaseShieldTransaction();
   void RefreshShieldStatus();
@@ -396,6 +410,7 @@ private:
   int64_t pointer_text_generation_ = 0;
   ShieldTransaction shield_transaction_;
   bool shield_transaction_active_ = false;
+  fushi::AttachedHoverTracker hover_tracker_;
   ShieldStatus shield_status_;
   Epoch shield_handshake_epoch_;
   HWND shield_handshake_target_ = nullptr;

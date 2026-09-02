@@ -28,6 +28,11 @@ constexpr wchar_t kAttachedSurfaceClassName[] =
     L"FushiAttachedTextSurfaceWindow";
 constexpr UINT_PTR kFollowTimerId = 1;
 constexpr UINT kFollowTimerMs = 500;
+// Shift+hover lookup poll. The runtime surface is click-through and never
+// receives WM_MOUSEMOVE, so hover must sample the global cursor like the
+// floating lyric window does (floating_lyric_window.cpp MaybeHoverLookup).
+constexpr UINT_PTR kHoverTimerId = 2;
+constexpr UINT kHoverTimerMs = 60;
 constexpr UINT kSyncTargetMessage = WM_APP + 0x235;
 constexpr int kMinimumBodyPixels = 8;
 constexpr double kMinimumNormalizedExtent = 0.002;
@@ -1403,6 +1408,14 @@ bool AttachedTextSurfaceWindow::EnsureWindow(std::string *error) {
     DestroySurfaceWindow();
     return false;
   }
+  // Same lifetime as the follow timer; the tick itself gates on kConfigured +
+  // clusters, so an idle surface only pays one GetAsyncKeyState per tick.
+  if (SetTimer(hwnd_, kHoverTimerId, kHoverTimerMs, nullptr) == 0) {
+    if (error != nullptr)
+      *error = "surface_hover_timer_failed";
+    DestroySurfaceWindow();
+    return false;
+  }
   active_instance_ = this;
   InstallWinEventHooks();
   return true;
@@ -1414,8 +1427,10 @@ void AttachedTextSurfaceWindow::DestroySurfaceWindow() {
   RemoveWinEventHooks();
   if (active_instance_ == this)
     active_instance_ = nullptr;
+  hover_tracker_.Reset();
   if (hwnd_ != nullptr && IsWindow(hwnd_)) {
     KillTimer(hwnd_, kFollowTimerId);
+    KillTimer(hwnd_, kHoverTimerId);
     HWND old = hwnd_;
     hwnd_ = nullptr;
     SetWindowLongPtrW(old, GWLP_USERDATA, 0);
@@ -2613,8 +2628,16 @@ void AttachedTextSurfaceWindow::EndPointerGesture(
   ReleaseShieldTransaction();
   if (!valid || !on_lookup_)
     return;
+  EmitLookupEvent(pressed_cluster, false);
+}
 
-  const ClusterBox &cluster = clusters_[static_cast<size_t>(pressed_cluster)];
+void AttachedTextSurfaceWindow::EmitLookupEvent(int cluster_index,
+                                                bool hover) {
+  if (!on_lookup_ || cluster_index < 0 ||
+      static_cast<size_t>(cluster_index) >= clusters_.size()) {
+    return;
+  }
+  const ClusterBox &cluster = clusters_[static_cast<size_t>(cluster_index)];
   LookupEvent event;
   event.epoch = epoch_;
   event.target_pid = target_.pid;
@@ -2627,7 +2650,62 @@ void AttachedTextSurfaceWindow::EndPointerGesture(
   OffsetRect(&event.screen_rect_px, surface_screen_rect_.left,
              surface_screen_rect_.top);
   event.dpi = std::max(96, live_reference_client_.dpi);
+  event.hover = hover;
   on_lookup_(event);
+}
+
+bool AttachedTextSurfaceWindow::HoverLookupGeometryAvailable() const {
+  // clusters_/surface_screen_rect_ are only trustworthy after SyncToTarget
+  // reached the publication step: either the surface is on-screen, or it was
+  // hidden solely because the desktop popup currently owns the WH_MOUSE_LL
+  // singleton (mouseHookBusy) - geometry is still current in that case and
+  // hovering another word while a card is open must keep working. Any other
+  // hidden state (target cloaked/unavailable, no clusters, shield fault) has
+  // stale or absent geometry and must not fire.
+  if (mode_ != Mode::kConfigured || clusters_.empty() || pointer_down_ ||
+      hwnd_ == nullptr || target_.hwnd == nullptr) {
+    return false;
+  }
+  return surface_visible_ ||
+         (state_ == "suspended" && status_ == "mouseHookBusy");
+}
+
+void AttachedTextSurfaceWindow::TickHoverLookup() {
+  const bool eligible = HoverLookupGeometryAvailable();
+  // Physical key state only: this window is WS_EX_NOACTIVATE and never owns
+  // keyboard focus, so GetKeyState's per-thread table would never update.
+  const bool shift_down =
+      eligible && (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+  int cluster = -1;
+  if (shift_down) {
+    POINT screen{};
+    if (GetCursorPos(&screen)) {
+      // The runtime surface is click-through, so the cursor must be over the
+      // game itself (or this surface). A cursor resting on the lookup card or
+      // any other window is not a hover over game text.
+      const HWND under = WindowFromPoint(screen);
+      const bool over_text =
+          under != nullptr &&
+          (under == hwnd_ || under == target_.hwnd ||
+           under == presentation_hwnd_ ||
+           IsChild(target_.hwnd, under) != FALSE);
+      if (over_text) {
+        // Invert the same offset EmitLookupEvent applies; do not rely on
+        // ScreenToClient while the HWND may be hidden (mouseHookBusy).
+        const POINT client{screen.x - surface_screen_rect_.left,
+                           screen.y - surface_screen_rect_.top};
+        cluster = ClusterAt(client);
+      }
+    }
+  }
+  if (!hover_tracker_.Observe(shift_down, cluster, epoch_.session,
+                              epoch_.surface, text_generation_)) {
+    return;
+  }
+  // Hover never enters the v19 shield transaction: nothing is consumed, the
+  // game keeps every input. The Dart side opens the same desktop popup as a
+  // click hit (with the game HWND as consume-outside owner).
+  EmitLookupEvent(cluster, true);
 }
 
 void AttachedTextSurfaceWindow::CancelPointerGesture() {
@@ -2751,6 +2829,10 @@ LRESULT AttachedTextSurfaceWindow::HandleMessage(UINT message, WPARAM wparam,
   case WM_TIMER:
     if (wparam == kFollowTimerId) {
       SyncToTarget();
+      return 0;
+    }
+    if (wparam == kHoverTimerId) {
+      TickHoverLookup();
       return 0;
     }
     return DefWindowProcW(hwnd_, message, wparam, lparam);

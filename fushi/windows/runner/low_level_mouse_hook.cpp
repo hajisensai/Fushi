@@ -1631,9 +1631,11 @@ void ArmLowLevelMouseHook(HWND target) {
   const DWORD thread_id = EnsureHookThread();
   if (thread_id == 0) return;
   std::lock_guard<std::mutex> guard(g_binding_mutex);
-  // Desktop/global lookup owns a different GlobalLookupWindow instance from the
-  // dedicated gal card, so this HWND never receives the consume-owner property.
-  // Do not mutate properties here: async Arm has no callback barrier.
+  // The desktop/global popup HWND may have carried a consume-owner property
+  // for one attached-surface lookup (GlobalLookupWindow::
+  // SetOutsideClickConsumeOwner); DisarmLowLevelMouseHook removed it behind
+  // the target clear, so this async Arm never inherits it. Do not mutate
+  // properties here: async Arm has no callback barrier.
   g_attached_risky_target.store(nullptr, std::memory_order_release);
   g_target.store(target, std::memory_order_release);
   PostThreadMessage(thread_id, kThreadArm, 0, 0);
@@ -1871,6 +1873,16 @@ void DisarmLowLevelMouseHook(HWND expected_target) {
   if (owns_binding) {
     g_target.store(nullptr, std::memory_order_release);
   }
+  // The consume-owner property lives on |expected_target| itself and is read
+  // by HookProc only while that HWND is the published target. Removing it
+  // after the target clear is safe: a callback that already snapshotted the
+  // target either sees the owner (the popup was still on-screen for that
+  // click) or nullptr (pass-through); the paired-up swallow is carried by
+  // g_swallowed_buttons, never by this property. Removing it here is what
+  // keeps the same desktop popup HWND from consuming game clicks on a later
+  // lookup that never set an owner (attached-surface lookups set it per reveal,
+  // the plain async Arm never touches properties).
+  RemovePropW(expected_target, kConsumeOutsideOwnerProperty);
   HWND risky_target = expected_target;
   g_attached_risky_target.compare_exchange_strong(
       risky_target, nullptr, std::memory_order_acq_rel,

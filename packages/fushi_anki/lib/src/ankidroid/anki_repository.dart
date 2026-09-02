@@ -681,9 +681,8 @@ class AnkiRepository extends BaseAnkiRepository {
     );
     if (preferredName == null) return null;
     final raw = await _addMediaFile(path, preferredName, mimeTypeForPath(path));
-    return raw != null
-        ? '<img src="${const HtmlEscape().convert(raw)}">'
-        : null;
+    // 图片 `<img>` / 视频片段 `[sound:]` 的分流与 AnkiConnect 共用一处（coverMediaRef）。
+    return raw != null ? coverMediaRef(raw) : null;
   }
 
   Future<String?> _addSentenceAudio(String path) async {

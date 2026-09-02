@@ -1177,8 +1177,10 @@ void main() {
       // shouldPromptGalCaptureSetup 的 lookupRiskAcceptancePending 常驻 →
       // 捕获设置弹窗每局都被压制。
       preferences[key()] = jsonEncode(
-        _profile(mode: GalLookupSurfaceMode.nativeOnly, accepted: false)
-            .toJson(),
+        _profile(
+          mode: GalLookupSurfaceMode.nativeOnly,
+          accepted: false,
+        ).toJson(),
       );
       port.configureResult = const GalAttachedCallResult(
         status: 'nativeProviderPendingNeutral',
@@ -1314,6 +1316,33 @@ void main() {
       expect(lookups, hasLength(1));
     },
   );
+
+  test('Shift+hover hits pass the same gate and keep the hover flag', () async {
+    preferences[key()] = jsonEncode(_profile().toJson());
+    await sync();
+    final GalAttachedSurfaceTarget target = controller.target!;
+    GalAttachedLookupHitV19 hit({required bool hover, int? generation}) =>
+        GalAttachedLookupHitV19(
+          target: target,
+          sourceText: 'これは本文テストです',
+          textGeneration: generation ?? controller.textGeneration,
+          charIndex: 4,
+          sourceLength: 1,
+          hover: hover,
+        );
+
+    await controller.handleLookupText(hit(hover: true));
+    expect(lookups, hasLength(1));
+    expect(lookups.single.hover, isTrue);
+    expect(lookups.single.target.targetHwnd, target.targetHwnd);
+
+    await controller.handleLookupText(hit(hover: true, generation: 0));
+    expect(lookups, hasLength(1), reason: '悬浮命中同样受 generation 门控，旧句子的悬浮不得触发查词');
+
+    await controller.handleLookupText(hit(hover: false));
+    expect(lookups, hasLength(2));
+    expect(lookups.last.hover, isFalse);
+  });
 
   test(
     'lifecycle state adopts late HWND rebind and retires old hits',

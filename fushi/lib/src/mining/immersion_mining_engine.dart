@@ -398,6 +398,10 @@ class ImmersionMiningEngine {
     if (coverPath == null) {
       switch (req.imageMode) {
         case VideoMiningImageMode.gif:
+        // videoClip 只对 galgame 场景卡有意义（协调器在进引擎前已把 mp4 放进
+        // providedCoverBytes，不会落到这里）；视频源若带着它进来，cue 动图就是
+        // 「一段画面」的既有答案，按 GIF 阶梯走。
+        case VideoMiningImageMode.videoClip:
           // 现状阶梯：GIF 主 → 起点单帧降级 → 当前帧兜底（逐字等价于旧三段 if）。
           coverPath = await tryGif();
           if (coverPath == null) {

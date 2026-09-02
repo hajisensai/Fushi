@@ -176,10 +176,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
   bool _lookupRetirementPending = false;
 
   Future<GalLookupCallResult>? _geometrySyncInFlight;
-  ({
-    GalLookupGeometryAdmissionMode mode,
-    bool attachedReady,
-  })?
+  ({GalLookupGeometryAdmissionMode mode, bool attachedReady})?
   _geometrySyncDesiredRequest;
   bool _geometrySyncNeedsReconcile = false;
 
@@ -758,11 +755,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
 
   void _completeGeometrySync(
     Future<GalLookupCallResult> operation,
-    ({
-      GalLookupGeometryAdmissionMode mode,
-      bool attachedReady,
-    })
-    request,
+    ({GalLookupGeometryAdmissionMode mode, bool attachedReady}) request,
   ) {
     if (!identical(_geometrySyncInFlight, operation)) return;
     final bool reconcile =
@@ -974,7 +967,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
         disabledGeometry = await _setGeometryAdmissionBounded(
           GalLookupGeometryAdmissionMode.disabled,
           attachedReady: false,
-            stage: 'session-rollover',
+          stage: 'session-rollover',
           stillCurrent: () =>
               _isSyncSnapshotCurrent(syncRevision, nextSessionKey),
         );
@@ -1692,12 +1685,16 @@ class GalHookTextOverlayController extends ChangeNotifier {
     await DesktopLookupService.instance.bringMainWindowToFront();
   }
 
+  /// [consumeOutsideClicksOwnerHwnd]：attached 校准字形表面命中时传游戏
+  /// HWND，桌面弹窗「点卡外关闭」的点击成对吞掉、不推进游戏；台词浮窗（C 表面）
+  /// 不传，行为不变。
   Future<void> _onLookupText(
     String lineId,
     String text,
     int index,
     Rect? wordRect, {
     GalHookCaptureLeaseFactory? captureLeaseFactory,
+    int? consumeOutsideClicksOwnerHwnd,
   }) async {
     final AppModel? model = _appModel;
     final TexthookerLineEntry? entry = _session.entryById(lineId);
@@ -1732,6 +1729,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
                 updateNoteId: updateNoteId,
                 captureLeaseFactory: captureLeaseFactory,
               ),
+      consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
     );
   }
 
@@ -1750,12 +1748,16 @@ class GalHookTextOverlayController extends ChangeNotifier {
     // generation 或长度漂移已在子控制器丢弃；这里再以 session line identity 收口，
     // 从而完整复用既有查词/制卡链而不发明第二份上下文模型。
     if (latest.rubySpans.isNotEmpty || latest.text != hit.sourceText) return;
+    // 点击与 Shift+悬浮（hit.hover）走同一条查词链：同一字簇的重复悬浮已在
+    // runner 去重。attached 表面打开的桌面弹窗必须带游戏 HWND——点卡外关闭
+    // 的 down/up 成对吞掉，不得穿透推进台词。
     await _onLookupText(
       latest.id,
       hit.sourceText,
       hit.charIndex,
       hit.wordRect,
       captureLeaseFactory: _acquireAttachedMiningCaptureLease,
+      consumeOutsideClicksOwnerHwnd: hit.target.targetHwnd,
     );
   }
 

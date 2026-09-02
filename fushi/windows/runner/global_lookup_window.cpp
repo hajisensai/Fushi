@@ -1202,6 +1202,12 @@ void GlobalLookupWindow::Reveal(int width, int height,
   if (hwnd_ == nullptr || capture_suppressed_) {
     return;
   }
+  // attached 表面打开的桌面 route：Dart 事先经 SetOutsideClickConsumeOwner 记下
+  // 游戏 HWND，这里当作 direct galCard 同款 consume owner 走同步吞点击 Arm。
+  // direct galCard 自己显式传参，不会落到这个分支。
+  if (consume_outside_owner == nullptr) {
+    consume_outside_owner = pending_outside_click_owner_;
+  }
   if (width <= 0 || height <= 0) {
     RECT rc;
     GetWindowRect(hwnd_, &rc);
@@ -1233,16 +1239,27 @@ void GlobalLookupWindow::Reveal(int width, int height,
   // asynchronous: it never consumes the underlying app click. At this point all
   // geometry work is done, so the successful direct binding is published only
   // a few instructions before SetWindowPos makes the off-screen renderer visible.
-  const bool prearm_direct_click_swallow = consume_outside_owner != nullptr;
+  bool prearm_direct_click_swallow = consume_outside_owner != nullptr;
   if (prearm_direct_click_swallow) {
     if (!fushi::ArmLowLevelMouseHookAndWait(hwnd_, consume_outside_owner)) {
       fushi::DisarmLowLevelMouseHook(hwnd_);
       mouse_hook_armed_ = false;
+      if (consume_outside_owner != pending_outside_click_owner_) {
+        NativeGlog(
+            "gal direct reveal declined: mouse hook install was not "
+            "acknowledged");
+        return;
+      }
+      // attached 表面的桌面弹窗：吞点击 Arm 失败（HHOOK 未确认 / 引擎 sampled
+      // shield 未就绪）只降级成原桌面异步 Arm——卡片照常显示，点外关闭那一记
+      // 点击会穿透，与改动前行为一致；记日志让降级可见。
       NativeGlog(
-          "gal direct reveal declined: mouse hook install was not acknowledged");
-      return;
+          "attached desktop reveal: consume-owner arm was not acknowledged; "
+          "falling back to pass-through arm");
+      prearm_direct_click_swallow = false;
+    } else {
+      mouse_hook_armed_ = true;
     }
-    mouse_hook_armed_ = true;
   }
   if (!SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height,
                     SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW)) {
@@ -1388,11 +1405,31 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
   }
   // BUG-1048 — 钩子跑在专用线程上（见 low_level_mouse_hook.h）：装在 platform 线程
   // 时，全系统每个鼠标事件都要排在 Flutter 的帧后面，游戏里鼠标一动就卡。
-  fushi::ArmLowLevelMouseHook(hwnd_);
+  //
+  // attached 表面打开的桌面 route（pending_outside_click_owner_ 非空）：点卡外
+  // 关闭的 down/up 必须成对吞掉、不得推进游戏，改走与 direct galCard 同款的
+  // 同步吞点击 Arm。失败只记日志并退回原异步穿透 Arm（卡片照常显示）。
+  bool consume_armed = false;
+  if (pending_outside_click_owner_ != nullptr) {
+    consume_armed = fushi::ArmLowLevelMouseHookAndWait(
+        hwnd_, pending_outside_click_owner_);
+    if (!consume_armed) {
+      NativeGlog(
+          "attached desktop revealStack: consume-owner arm was not "
+          "acknowledged; falling back to pass-through arm");
+    }
+  }
+  if (!consume_armed) {
+    fushi::ArmLowLevelMouseHook(hwnd_);
+  }
   mouse_hook_armed_ = true;
   // 投影：与 Reveal 同因——上面 SetWindowPos 触发漏斗时 revealed_ 还是 false，
   // 标志置位后显式补一次，首帧才有影。
   SyncShadow();
+}
+
+void GlobalLookupWindow::SetOutsideClickConsumeOwner(HWND owner) {
+  pending_outside_click_owner_ = owner;
 }
 
 void GlobalLookupWindow::ResizeTo(int width, int height) {
@@ -1704,6 +1741,10 @@ void GlobalLookupWindow::Hide(bool notify) {
   // beginLookup), so a stale region can never clip the next card.
   shell_rects_css_.clear();
   ClearPendingShellGeometry();
+  // attached 表面设置的 consume owner 只活一次查词：Hide 即清，下一次普通桌面
+  // 查词（不设 owner）绝不能继承上一次的游戏 HWND 去吞点击。窗口属性
+  // （kConsumeOutsideOwnerProperty）由 DisarmLowLevelMouseHook 一并撤销。
+  pending_outside_click_owner_ = nullptr;
   ReleaseDismissHooks();
   StopTopmostGuard();
   // 投影窗随卡片同步隐藏（WM_WINDOWPOSCHANGED 也会兜到，这里显式先藏，

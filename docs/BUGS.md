@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1910 条。点号进各自文件。
+> 共 1912 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2054](bugs/BUG-2054-gal-mining-audio-before-utterance-settles.md) | ✅ | ✅ | 台词一出就制卡只拿到句子音频的开头（引擎 PCM 收敛 / loopback 冻结未收口） |
+| [BUG-2053](bugs/BUG-2053-gal-attached-popup-outside-click-passthrough.md) | ✅ | ✅ | attached 校准表面弹出的桌面查词卡点外关闭时点击透传给游戏推进台词 |
 | [BUG-2052](bugs/BUG-2052-leaf-structure-gate-reads-hooked-memory.md) | ✅ | ✅ | 白2 身份结构门扫的是被 LunaHook 改写过的进程内存，导致点击穿透+语音降级 |
 | [BUG-2051](bugs/BUG-2051-leaf-identity-latched-unmeasured-exe.md) | ✅ | ✅ | 白2 一次瞬时的 exe 摘要测量失败被钉成永久身份拒绝，整场语音降级 Loopback |
 | [BUG-2048](bugs/BUG-2048-galgame-hunex-native-structural-complexity.md) | 🚧 | 🚧 | HUNEX 原生适配层 9 处结构性复杂度待清（认知复杂度 55/44/43/40/35、24 字段类、13/12/8 参函数） |

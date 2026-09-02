@@ -141,6 +141,13 @@ class GlobalLookupWindow {
   void RevealStack(int dx, int dy, int width, int height,
                    double bbox_left, double bbox_top,
                    int64_t geometry_epoch);
+  // attached 校准字形表面（通用回退）打开的**普通桌面 route** 弹窗：点卡外关闭
+  // 那一记 down/up 必须成对吞掉，不得穿透到 |owner| 游戏窗口推进台词（与
+  // direct galCard 的 consume_outside_owner 同一条 WH_MOUSE_LL 消费策略）。
+  // Dart 在 hide(notify:false) 之后、showAt 之前设置；随后 Reveal(参数为空时)
+  // 与 RevealStack 都改走 ArmLowLevelMouseHookAndWait(hwnd_, owner)。nullptr =
+  // 清空。Hide() 自清，普通桌面查词从不设置，行为零变化。
+  void SetOutsideClickConsumeOwner(HWND owner);
   // TODO-1233 -- [notify]=true (default) fires the HiddenCallback on a genuine
   // dismissal; the programmatic reset before a fresh lookup passes false so the
   // between-lookups reset does not look like a user dismissal.
@@ -381,6 +388,9 @@ class GlobalLookupWindow {
 
   HWND hwnd_ = nullptr;
   HWINEVENTHOOK foreground_hook_ = nullptr;
+  // SetOutsideClickConsumeOwner 记下的游戏 HWND；Reveal/RevealStack 据此选择
+  // 同步吞点击 Arm，Hide() 清空。只对本实例（普通桌面 route）生效。
+  HWND pending_outside_click_owner_ = nullptr;
   // BUG-1048 — 本实例是否已让钩子线程装上 WH_MOUSE_LL（钩子本身不再由本线程持有）。
   // 仍是**每实例**标志：常驻剪贴板面板从不 arm，它的 Hide() 也就不会卸掉瞬态查词
   // 覆盖窗的点击外关闭。

@@ -839,7 +839,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     ];
     try {
       final List<dynamic> mediaResults = await Future.wait(mediaFutures);
-      final String? coverMediaRef = mediaResults[0] as String?;
+      final String? coverMediaName = mediaResults[0] as String?;
       final String? sentenceAudioMediaRef = mediaResults[1] as String?;
       final AudioFetchOutcome remoteAudio =
           mediaResults[2] as AudioFetchOutcome;
@@ -851,7 +851,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         settings: settings,
         payload: payload,
         context: context,
-        coverRef: coverMediaRef != null ? '<img src="$coverMediaRef">' : null,
+        // 图片 `<img>` / 视频片段 `[sound:]` 的分流与 AnkiDroid 共用一处（coverMediaRef）。
+        coverRef: coverMediaName != null ? coverMediaRef(coverMediaName) : null,
         sentenceAudioRef: sentenceAudioMediaRef != null
             ? '[sound:$sentenceAudioMediaRef]'
             : null,

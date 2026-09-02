@@ -4113,5 +4113,7 @@
   "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
   "network_proxy_p2p_mode_direct": "Direct",
   "network_proxy_p2p_mode_proxy": "Via proxy",
-  "network_proxy_p2p_mode_mixed": "Mixed"
+  "network_proxy_p2p_mode_mixed": "Mixed",
+  "gal_mining_image_mode_video_clip": "Video clip",
+  "gal_mining_image_mode_video_clip_hint": "Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured."
 }

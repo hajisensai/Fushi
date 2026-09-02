@@ -620,6 +620,16 @@ typedef GalWindowListLoader = Future<List<ExternalWindowInfo>> Function();
 /// （[GalgameHookRuntimeStage]，BUG-1708），这一步是文件复制。
 typedef GalInjectorResolver = Future<String?> Function({required bool is32Bit});
 
+/// 制卡等待「这句语音收口」的耐心上限（BUG-2054）：与引擎 PCM 的收敛上限
+/// `utteranceSettleMax`（6s）对齐；loopback 冻结窗口剩余超过它就不等、按旧路径提前收束。
+const Duration kGalMiningAudioSettleMaxWait = Duration(seconds: 6);
+
+/// 滚动窗口录制启动口（制卡「视频片段」画面）。返回 false = 录制不可用。
+typedef GalWindowRecordingStart = Future<bool> Function({required int hwnd});
+
+/// 滚动窗口录制停止口。
+typedef GalWindowRecordingStop = Future<void> Function();
+
 /// App 级 galgame 捕获会话真相源。
 ///
 /// 页面只发送 bind/launch/stop/select-track intent。音频源、文本轮询、稳定台词 id、
@@ -636,6 +646,10 @@ class GalHookSessionController extends ChangeNotifier {
     GalInjectorResolver? injectorResolver,
     DateTime Function()? now,
     bool? isWindows,
+    // 滚动窗口录制（制卡「视频片段」画面）的启停口。默认走 runner 的
+    // window_capture channel；测试注入 fake，避免碰 MethodChannel。
+    GalWindowRecordingStart? startWindowRecording,
+    GalWindowRecordingStop? stopWindowRecording,
     // 台词显示延迟直接由本间隔决定（浮窗只在 append 触发的 notify 后刷新）。native
     // `pollText` 只读共享内存环并拷贝新行，无 IO、无锁等待，400ms 纯粹是人为的
     // 感知延迟（平均 +200ms、最坏 +400ms）。降到 80ms 后仍是每秒 12.5 次廉价调用。
@@ -679,6 +693,10 @@ class GalHookSessionController extends ChangeNotifier {
         _injectorResolver = injectorResolver ?? defaultInjectorResolver,
         _now = now ?? DateTime.now,
         _isWindows = isWindows ?? Platform.isWindows,
+        _startWindowRecording =
+            startWindowRecording ?? _defaultStartWindowRecording,
+        _stopWindowRecording =
+            stopWindowRecording ?? _defaultStopWindowRecording,
         _textPollInterval = textPollInterval,
         _windowPollInterval = windowPollInterval,
         _resourceAudioWait = resourceAudioWait,
@@ -1038,6 +1056,19 @@ class GalHookSessionController extends ChangeNotifier {
   /// 已经告诉超分编排器「挂上去」的窗口 hwnd；null = 当前没挂。
   /// 开与关都只看它和 [magpieUpscalingTargetHwnd] 判据之间的差。
   int? _magpieArmedHwnd;
+
+  /// 滚动窗口录制此刻挂在哪个游戏窗口上（null = 没在录）。开/关与超分共用同一条
+  /// 纯函数判据 [windowRecordingTargetHwnd]，理由同 [magpieUpscalingTargetHwnd]：
+  /// 判据同源就不存在「某条早退分支忘了停录」。
+  int? _windowRecordingArmedHwnd;
+  Future<void> _windowRecordingWork = Future<void>.value();
+  final GalWindowRecordingStart _startWindowRecording;
+  final GalWindowRecordingStop _stopWindowRecording;
+
+  /// 制卡「完整句子音频」门：逐行在途的引擎 PCM 收敛 Future（[_settleLineUtterance]）。
+  /// [captureAudioBytes] 在入队之前先等它结束，否则台词一出就制卡只会拿到语音的开头。
+  final Map<String, Future<void>> _utteranceSettleInFlight =
+      <String, Future<void>>{};
 
   /// 超分开 / 关边沿的串行队列。状态更新永不 await 它（超分不许拖慢 UI），但退出与
   /// [close] 路径 await 它排空，保证「先关干净再让进程死」。
@@ -2808,18 +2839,30 @@ class GalHookSessionController extends ChangeNotifier {
     _captureMemory = const GalCaptureMemory();
   }
 
+  /// 该台词行到达时刻（hook 侧 `GetTickCount64()` 毫秒域，与语音 clip、窗口录制帧
+  /// 同一时钟）。历史行被淘汰或纯 loopback 会话无 hook 时间戳时返回 null。
+  int? lineTimestampMs(String lineId) {
+    final int? timestamp = _lineTimestampCache[lineId];
+    return (timestamp == null || timestamp <= 0) ? null : timestamp;
+  }
+
   Future<Uint8List?> captureAudioBytes({
     required String lineId,
     required String sentence,
     required String outputExtension,
-  }) {
+  }) async {
     final TexthookerLineEntry? entry = _textService.entryById(lineId);
     if (entry == null ||
         entry.text != sentence ||
         !isLineInCurrentSession(entry)) {
       _markLineAudioMissing(lineId, 'line_context_unavailable');
-      return Future<Uint8List?>.value(null);
+      return null;
     }
+    // 完整句子音频：台词一出就点制卡时，这句语音多半还在播。引擎 PCM 的收敛循环 /
+    // loopback 的延迟冻结都还在路上，此刻入队只会把开头那一小截写进卡。这里在队列
+    // **之外**等它们收口（在队列里等会自锁：收敛的每次 grab 也排在同一条队列上）。
+    final Future<void>? settling = _lineAudioSettleWait(lineId);
+    if (settling != null) await settling;
     // 串行化 + 永不毒化（BUG-956）：单次语音采集异常（含事件记录自身抛）不得让后续采集永久挂起。
     return _audioQueue.enqueue<Uint8List?>(
       () => _captureAudioBytesNow(
@@ -2836,6 +2879,60 @@ class GalHookSessionController extends ChangeNotifier {
         details: <String, Object?>{'error': '$error', 'stack': '$stack'},
       ),
     );
+  }
+
+  /// 等 [lineId] 这句的语音采集收口（有界）：
+  ///  * 引擎 PCM：等在途的 [_settleLineUtterance]（下一句到达 / 6s 收敛上限时结束）；
+  ///  * loopback：等延迟冻结定时器到点并把冻结作业排进队列（随后本次采集排在其后，
+  ///    串行队列保证顺序）；
+  ///  * 资源原件 / 用户裁决 / 历史行：无需等待，立即返回。
+  /// 上限之外一律放行——宁可拿到一段偏短的音频，也不能把制卡挂死。
+  @visibleForTesting
+  Future<void> awaitLineAudioSettledForTest(String lineId) =>
+      _lineAudioSettleWait(lineId) ?? Future<void>.value();
+
+  /// 没有任何在途收敛 / 待到点冻结时返回 null：调用方据此保持**同步入队**，不引入
+  /// 多余的事件循环间隙（旧契约下采集作业总是先于后续 attach 作业入队）。
+  Future<void>? _lineAudioSettleWait(String lineId) {
+    if (_isUserAdjudicated(lineId)) return null;
+    final bool settling = _utteranceSettleInFlight.containsKey(lineId);
+    bool freezing = false;
+    if (_loopbackFreezeTimers.containsKey(lineId)) {
+      final DateTime? startedAt = _loopbackFreezeStartedAt[lineId];
+      final int elapsedMs =
+          startedAt == null ? 0 : _now().difference(startedAt).inMilliseconds;
+      final int remainingMs = _loopbackFreezeDelay.inMilliseconds - elapsedMs;
+      // 只在窗口「快到点」时才等：默认冻结窗 4s 落在耐心上限之内；被测试或配置拉到
+      // 几十秒的窗口不能让制卡跟着干等，仍走原来的提前收束（BUG-1101）。
+      freezing = remainingMs <= kGalMiningAudioSettleMaxWait.inMilliseconds;
+    }
+    if (!settling && !freezing) return null;
+    return _awaitLineAudioSettled(lineId);
+  }
+
+  Future<void> _awaitLineAudioSettled(String lineId) async {
+    final Future<void>? settle = _utteranceSettleInFlight[lineId];
+    if (settle != null) {
+      await settle
+          .timeout(
+            kGalMiningAudioSettleMaxWait + _utteranceSettleInterval * 6,
+            onTimeout: () {},
+          )
+          .catchError((Object _) {});
+    }
+    if (!_loopbackFreezeTimers.containsKey(lineId)) return;
+    final DateTime? startedAt = _loopbackFreezeStartedAt[lineId];
+    final int elapsedMs =
+        startedAt == null ? 0 : _now().difference(startedAt).inMilliseconds;
+    final int remainingMs =
+        (_loopbackFreezeDelay.inMilliseconds - elapsedMs).clamp(0, 1 << 30);
+    if (remainingMs > kGalMiningAudioSettleMaxWait.inMilliseconds) return;
+    final Stopwatch waited = Stopwatch()..start();
+    final int budgetMs = remainingMs + 1500;
+    while (_loopbackFreezeTimers.containsKey(lineId) &&
+        waited.elapsedMilliseconds < budgetMs) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
   }
 
   Future<Uint8List?> _captureAudioBytesNow({
@@ -3315,6 +3412,7 @@ class GalHookSessionController extends ChangeNotifier {
     }
     await _stopPlayTracker();
     await shutdownMagpieUpscaling();
+    await shutdownWindowRecording();
     await _stopSources();
     dispose();
   }
@@ -4609,13 +4707,15 @@ class GalHookSessionController extends ChangeNotifier {
       );
       // BUG-1109：首取只拿到这句语音的开头，剩下的段还没进环。收敛必须在队列**之外**
       // 等待（队列里 sleep 会堵住后续台词抓取和制卡），只有单次 grab 入队。
+      final Future<void> settle = _settleLineUtterance(
+        engine: engine,
+        entry: entry,
+        line: line,
+        resourceReady: resourceReady,
+      );
+      _utteranceSettleInFlight[entry.id] = settle;
       try {
-        await _settleLineUtterance(
-          engine: engine,
-          entry: entry,
-          line: line,
-          resourceReady: resourceReady,
-        );
+        await settle;
       } catch (error) {
         _record(
           GalHookEventSeverity.error,
@@ -4627,6 +4727,10 @@ class GalHookSessionController extends ChangeNotifier {
             'error': '$error',
           },
         );
+      } finally {
+        if (identical(_utteranceSettleInFlight[entry.id], settle)) {
+          _utteranceSettleInFlight.remove(entry.id);
+        }
       }
     }());
   }
@@ -5365,8 +5469,86 @@ class GalHookSessionController extends ChangeNotifier {
   void _setState(GalHookSessionState next) {
     _state = next;
     _syncMagpieUpscaling();
+    _syncWindowRecording();
     notifyListeners();
   }
+
+  /// 滚动录制**此刻应该挂在哪个游戏窗口上**——与超分同一判据（会话真的在跑且绑定了
+  /// 游戏窗口）。录制持续在后台保留最近几十秒的低频 JPEG 帧，制卡「视频片段」模式
+  /// 据此导出**台词出现到制卡时刻**的画面；不录就只能拍制卡之后的画面。
+  @visibleForTesting
+  static int? windowRecordingTargetHwnd(GalHookSessionState state) =>
+      magpieUpscalingTargetHwnd(state);
+
+  void _syncWindowRecording() {
+    final int? target = windowRecordingTargetHwnd(_state);
+    final int? armed = _windowRecordingArmedHwnd;
+    if (target == armed) return;
+    _windowRecordingArmedHwnd = target;
+    if (armed != null) _enqueueWindowRecordingWork(_stopWindowRecordingSafely);
+    if (target != null) {
+      _enqueueWindowRecordingWork(() => _startWindowRecordingSafely(target));
+    }
+  }
+
+  void _enqueueWindowRecordingWork(Future<void> Function() job) {
+    final Future<void> next = _windowRecordingWork.then((_) => job());
+    _windowRecordingWork = next.catchError((Object _) {});
+    unawaited(next);
+  }
+
+  /// 仅测试：等录制开/关边沿队列排空。
+  @visibleForTesting
+  Future<void> get windowRecordingSettled => _windowRecordingWork;
+
+  /// 仅测试：当前挂着录制的窗口 hwnd（null = 没录）。
+  @visibleForTesting
+  int? get windowRecordingArmedHwnd => _windowRecordingArmedHwnd;
+
+  /// 销毁前停录并**等它真的停完**。录制器随进程死亡，不需要像超分那样登记退出清理。
+  Future<void> shutdownWindowRecording() async {
+    if (_windowRecordingArmedHwnd != null) {
+      _windowRecordingArmedHwnd = null;
+      _enqueueWindowRecordingWork(_stopWindowRecordingSafely);
+    }
+    await _windowRecordingWork;
+  }
+
+  /// 录制是锦上添花：起不来（非 Windows / 窗口不可捕获）只记事件，不影响会话。
+  Future<void> _startWindowRecordingSafely(int hwnd) async {
+    bool started = false;
+    Object? failure;
+    try {
+      started = await _startWindowRecording(hwnd: hwnd);
+    } catch (error) {
+      failure = error;
+    }
+    if (started) return;
+    _record(
+      GalHookEventSeverity.info,
+      'window',
+      'window.recording_unavailable',
+      'Rolling window recording did not start; video-clip cards fall back '
+          'to animation/still capture',
+      details: <String, Object?>{
+        'hwnd': hwnd,
+        if (failure != null) 'error': '$failure',
+      },
+      notify: false,
+    );
+  }
+
+  Future<void> _stopWindowRecordingSafely() async {
+    try {
+      await _stopWindowRecording();
+    } catch (_) {}
+  }
+
+  static Future<bool> _defaultStartWindowRecording({required int hwnd}) =>
+      WindowCaptureChannel.startWindowRecording(hwnd: hwnd);
+
+  static Future<void> _defaultStopWindowRecording() =>
+      WindowCaptureChannel.stopWindowRecording();
 
   /// 把超分的实际状态对齐到 [magpieUpscalingTargetHwnd]。开与关走**同一条**路，所以
   /// 不存在「某条早退分支忘了关」。fire-and-forget（超分绝不阻塞状态更新），但每条

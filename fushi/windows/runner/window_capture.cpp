@@ -6,8 +6,6 @@
 #include <d3d11.h>
 #include <dxgi.h>
 #include <wincodec.h>
-#include <roapi.h>
-#include <winstring.h>
 #include <shlwapi.h>
 
 #include <wrl/client.h>
@@ -21,9 +19,10 @@
 #include <windows.graphics.directx.direct3d11.h>
 #include <windows.graphics.directx.direct3d11.interop.h>
 
+#include "wgc_interop.h"
+
 #include <atomic>
 #include <cstdio>
-#include <cwchar>
 
 namespace fushi {
 
@@ -35,13 +34,9 @@ namespace WGC = ABI::Windows::Graphics::Capture;
 namespace WGDX = ABI::Windows::Graphics::DirectX;
 namespace WGDXD3D = ABI::Windows::Graphics::DirectX::Direct3D11;
 
-// 与 Windows::Graphics::DirectX::Direct3D11::IDirect3DDxgiInterfaceAccess 同 IID，
-// 本地声明避免依赖系统 interop 头在非 cppwinrt 构建下暴露它。用于从 WinRT surface
-// 取回底层 ID3D11Texture2D。
-struct __declspec(uuid("A9B3D012-3DF2-4EE3-B8D1-8695F457D3C1"))
-    IDxgiInterfaceAccessLocal : public ::IUnknown {
-  virtual HRESULT __stdcall GetInterface(REFIID id, void** object) = 0;
-};
+using wgc::GetActivationFactory;
+using wgc::IDxgiInterfaceAccessLocal;
+using wgc::CloseIfClosable;
 
 std::string WideToUtf8(const std::wstring& w) {
   if (w.empty()) {
@@ -57,20 +52,6 @@ std::string WideToUtf8(const std::wstring& w) {
   WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
                       out.data(), size, nullptr, nullptr);
   return out;
-}
-
-// RoGetActivationFactory 薄封装：用类名的 WCHAR 字面量取激活工厂接口 [I]。
-template <typename I>
-HRESULT GetActivationFactory(const wchar_t* class_name, I** out) {
-  HSTRING str = nullptr;
-  HSTRING_HEADER header;
-  HRESULT hr = WindowsCreateStringReference(
-      class_name, static_cast<UINT32>(wcslen(class_name)), &header, &str);
-  if (FAILED(hr)) {
-    return hr;
-  }
-  return RoGetActivationFactory(str, __uuidof(I),
-                                reinterpret_cast<void**>(out));
 }
 
 // BUG-1096：把一次「成功但值得记录」的事实追加进 diagnostics（多条以 "; " 相连）。
@@ -92,6 +73,8 @@ void AppendDiagnostic(WindowCaptureResult* out, const char* note, HRESULT hr) {
   }
   out->diagnostics += line;
 }
+
+}  // namespace
 
 // BUG-1854：把 WGC 整窗纹理裁到窗口**客户区**。
 //
@@ -149,6 +132,8 @@ bool ComputeClientCropBox(HWND hwnd, UINT width, UINT height, RECT* box) {
   box->bottom = bottom;
   return true;
 }
+
+namespace {
 
 // 读窗口标题（无标题返回空串）。
 std::wstring ReadWindowTitle(HWND hwnd) {
@@ -287,6 +272,8 @@ std::vector<uint8_t> EncodeBgraToPng(const uint8_t* pixels, UINT width,
   return result;
 }
 
+}  // namespace
+
 // D3D11 设备（BGRA 支持），硬件失败回退 WARP。
 ComPtr<ID3D11Device> CreateD3DDevice() {
   ComPtr<ID3D11Device> device;
@@ -302,8 +289,6 @@ ComPtr<ID3D11Device> CreateD3DDevice() {
   }
   return device;
 }
-
-}  // namespace
 
 // BUG-1096：Magpie 缩放窗 -> 源窗口。判定契约是**窗口属性** `Magpie.SrcHWND`
 // （Magpie 在缩放窗上 SetProp 的公开标记），不是类名——类名里的 GUID 属于实现细节，
@@ -332,19 +317,6 @@ std::vector<ExternalWindow> EnumerateTopLevelWindows(HWND self) {
 }
 
 namespace {
-
-// 关闭实现 IClosable 的 WinRT 对象（frame / session / framePool），确定性拆除
-// （不赌析构时序；与本仓 WGC 生命周期纪律一致）。
-template <typename T>
-void CloseIfClosable(const ComPtr<T>& obj) {
-  if (!obj) {
-    return;
-  }
-  ComPtr<ABI::Windows::Foundation::IClosable> closable;
-  if (SUCCEEDED(obj.As(&closable))) {
-    closable->Close();
-  }
-}
 
 // 单帧捕获核心（假定调用线程已 RoInitialize）。任何失败写 out->error 并返回。
 void CaptureCore(HWND hwnd, WindowCaptureResult* out) {

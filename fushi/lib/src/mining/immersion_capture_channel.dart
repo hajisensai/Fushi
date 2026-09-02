@@ -90,7 +90,7 @@ ClipStillTarget? resolveClipStillTarget({
     // 用户拍板：「按制卡时候的时间来」——制卡那一刻的视频时间，不是句首、更不是片段首帧。
     VideoMiningImageMode.currentFrame => mineAtMs,
     VideoMiningImageMode.subtitleStart => cueStartMs,
-    VideoMiningImageMode.gif => null,
+    VideoMiningImageMode.gif || VideoMiningImageMode.videoClip => null,
   };
   if (clipAnchorMs == null || targetVideoMs == null) {
     return (offsetMs: 0, exact: false);
