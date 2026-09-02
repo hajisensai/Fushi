@@ -94,6 +94,7 @@ import 'package:fushi/src/media/torrent/anime_download_subtitle_resolver.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi/src/media/torrent/torrent_memory.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
+import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
@@ -3269,6 +3270,12 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoMpvLuaScriptsEnabled(bool value) =>
       prefsRepo.setVideoMpvLuaScriptsEnabled(value);
+
+  /// BUG-2032：随包 libmpv 是否编入 Lua（视频页探测后缓存；设置页据此说明）。
+  MpvLuaCapability get videoMpvLuaCapability => prefsRepo.videoMpvLuaCapability;
+
+  Future<void> setVideoMpvLuaCapability(MpvLuaCapability value) =>
+      prefsRepo.setVideoMpvLuaCapability(value);
 
   /// 用户手动指定的本机 mpv 配置/着色器目录（空=自动）。
   String get videoMpvShaderDir => prefsRepo.videoMpvShaderDir;

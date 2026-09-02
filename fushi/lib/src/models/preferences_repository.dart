@@ -17,6 +17,7 @@ import 'package:fushi/src/media/video/video_hdr_output.dart'
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 // 迁移判据要用「这个存量代理地址归一得出来吗」，与 applyAppProxy 同一份实现，
@@ -861,6 +862,19 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setVideoMpvLuaScriptsEnabled(bool value) async {
     await setPref('video_mpv_lua_scripts_enabled', value);
+    notifyListeners();
+  }
+
+  /// BUG-2032：随包 libmpv 是否编入 Lua（视频页建 Player 后读 `mpv-configuration`
+  /// 探到的结果缓存，存 [MpvLuaCapability.name]）。全局设置页没有播放器，靠这份
+  /// 缓存如实说明脚本开关在本平台是否可用。默认 unknown = 从未播过视频。
+  MpvLuaCapability get videoMpvLuaCapability => MpvLuaCapability.fromName(
+        getPref('video_mpv_lua_capability', defaultValue: 'unknown') as String,
+      );
+
+  Future<void> setVideoMpvLuaCapability(MpvLuaCapability value) async {
+    if (videoMpvLuaCapability == value) return;
+    await setPref('video_mpv_lua_capability', value.name);
     notifyListeners();
   }
 
