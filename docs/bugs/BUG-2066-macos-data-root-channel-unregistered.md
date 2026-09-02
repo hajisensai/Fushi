@@ -1,4 +1,4 @@
-## BUG-2058 · macOS 更改数据位置失败：data_root_access 通道未注册
+## BUG-2066 · macOS 更改数据位置失败：data_root_access 通道未注册
 - **报告**：2026-09-02（GitHub #1159；macOS `Version 2.2.1.12447 (12447)` 更改数据位置时报 `MissingPluginException`）
 - **真实性**：✅ 真 bug。`fushi/macos/Runner/MainFlutterWindow.swift:26-27` 已把窗口顶层 controller 换成 `MacOSWindowUtilsViewController`，真正的 Flutter controller 位于其 `flutterViewController`；但 `fushi/macos/Runner/AppDelegate.swift:10` 仍把顶层 `contentViewController` 直接转成 `FlutterViewController`。该转换恒失败，包住 `app.fushi/data_root_access` 与 `app.fushi.reader/foreground_selection` 的注册块被静默跳过；Dart 在 `macos_data_root_access.dart:22` 调 `createBookmark` 时因此收到 `MissingPluginException`。
 - **[x] ① 已修复** —（本提交）`AppDelegate.applicationDidFinishLaunching` 改从 `MacOSWindowUtilsViewController.flutterViewController` 取得真实 engine messenger，再注册数据根与前台选中文本两个手写 MethodChannel；包装器缺失时写原生日志，不再静默跳过。

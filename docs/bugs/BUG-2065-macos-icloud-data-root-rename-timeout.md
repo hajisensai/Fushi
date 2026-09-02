@@ -1,4 +1,4 @@
-## BUG-2057 · macOS iCloud Documents 迁移到本地目录时 rename 超时并回滚
+## BUG-2065 · macOS iCloud Documents 迁移到本地目录时 rename 超时并回滚
 - **报告**：2026-09-02（用户从 `~/Documents/Fushi/data` 迁到 `~/.fushi`，详细诊断显示 `Directory.rename` 返回 `Operation timed out, errno = 60`）
 - **真实性**：✅ 真 bug。`fushi/lib/src/storage/data_root_migrator.dart:488-490` 的 rename 失败回退只接受跨卷 `EXDEV` 与权限层 `EPERM/EACCES`；macOS iCloud File Provider 接管的 Documents 跨域 rename 会返回 `ETIMEDOUT=60`，未命中 `_shouldCopyAfterRenameFailure`，因此在逐文件 copy+verify 仍可用时直接回滚。
 - **[x] ① 已修复** —（本提交）macOS 上 `Directory.rename` 返回 `ETIMEDOUT=60` 时改走既有 copy+verify 延迟删源路径；其它平台的 errno 60 不改变语义。
