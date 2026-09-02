@@ -8,6 +8,8 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
+    show dispatchClaimedMouseAction;
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:fushi/utils.dart';
 
@@ -844,6 +846,27 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// WebView 的正常点击 / 划词 / 滑动关闭 / 尺寸把手全部照旧（Never break userspace）。
   /// 命中后走的 token 与 JS 桥**完全同形**（`Mouse<n>`），汇进同一个
   /// [onHostInputToken] → 同一个 resolve → 同一个宿主落地入口，没有第二套语义。
+  ///
+  /// ## 它同样必须认领这次按下（BUG-2031 第二条腿）
+  ///
+  /// 本层与 `LookupDismissBarrier` 是同一个几何问题的两半：barrier 覆盖弹窗矩形
+  /// **之外**，本层覆盖矩形**之内**。两者都是 app 根鼠标兜底 [Listener]
+  /// （`wrapWithGlobalNavigation`）的**后代**——Flutter 的命中收集沿命中路径把每一层
+  /// 都加进 result，`opaque` / `deferToChild` 只影响**同层兄弟**方向要不要继续测试，
+  /// 从不阻止祖先进入 result。所以只调 [onHostInputToken] 就往下走，根兜底照样收到
+  /// 同一次按下：侧键绑「返回上一级」时，指针压在浮窗**上**按一下 = 关词典 **+**
+  /// 退书，而键盘 Esc 在同样状态下只关词典。barrier 那一半已由 BUG-2031 修掉，本层
+  /// 当时漏了，症状只是从「浮窗外」挪到了「浮窗上」。
+  ///
+  /// **认领判据是「指针落在谁的表面上」，不是「动作最终做没做成」**：token 折得出来
+  /// 就说明这个按钮在弹窗那套输入表里（[dictionaryPopupPointerToken] 只对
+  /// `inputSpec.mouseButtons` 里的按钮出 token），而指针此刻确实压在弹窗表面上——
+  /// 所有权在这一刻是确定的，与 [onHostInputToken] 内部走到哪一级、关了几层无关。
+  ///
+  /// 这与**页面根**那条腿按「执行体是否真的 handled」认领的差异是**有意的**：那里
+  /// 指针落在页面自己的表面上，页面 scope 与 universal / global 谁都没有几何上的
+  /// 优先权，只能按「本层是否真消费」定夺，否则「解析到了但没执行」会把外层的合法
+  /// 绑定白白挡掉。本层没有这个歧义——弹窗表面就是弹窗的。
   Widget _maybeWrapHostPointerInput(Widget child) {
     final ValueChanged<String>? sink = onHostInputToken;
     // 判据默认取运行平台；测试显式注入，否则同一份守卫在 Windows 上过、Linux CI 上
@@ -854,12 +877,17 @@ class DictionaryPopupLayer extends StatelessWidget {
     return Listener(
       onPointerDown: (PointerDownEvent event) {
         if (event.kind != PointerDeviceKind.mouse) return;
-        final String? token = dictionaryPopupPointerToken(
-          buttons: event.buttons,
-          spec: inputSpec,
-        );
-        if (token == null) return;
-        sink(token);
+        dispatchClaimedMouseAction(event, () {
+          final String? token = dictionaryPopupPointerToken(
+            buttons: event.buttons,
+            spec: inputSpec,
+          );
+          // 折不出 token = 这个按钮不属于弹窗输入表 ⇒ 本层不是所有者，**不认领**，
+          // 让 app 根兜底照常解析同一按钮上的 universal / global 绑定。
+          if (token == null) return false;
+          sink(token);
+          return true;
+        });
       },
       child: child,
     );

@@ -161,6 +161,111 @@ void main() {
     });
   });
 
+  // 顺序依赖守卫：文件系统枚举顺序不是稳定输入（NTFS 按名字、ext4 按目录哈希），
+  // 分类层不得把这份偶然顺序带进用户可见的导入次序 —— CI 上曾据此偶发红。
+  group('分类结果不依赖输入清单顺序', () {
+    List<String> plannedPaths(List<String> input) {
+      final MultiPlan plan = classifyDiscoveryDirectory(
+        DiscoveryMediaKind.novel,
+        input,
+      ) as MultiPlan;
+      return <String>[
+        for (final DiscoveryImportPlan child in plan.children)
+          switch (child) {
+            ImportEpubPlan(:final String filePath) => filePath,
+            ConvertTextPlan(:final String filePath) => filePath,
+            ImportPdfPlan(:final String filePath) => filePath,
+            _ => throw StateError('unexpected child: $child'),
+          },
+      ];
+    }
+
+    test('小说包:任意输入排列都导出同一顺序(路径字典序)', () {
+      const List<String> expected = <String>[
+        '/d/vol1/a.epub',
+        '/d/vol1/b.txt',
+        '/d/vol2/c.pdf',
+      ];
+      const List<String> files = <String>[
+        '/d/vol1/a.epub',
+        '/d/vol1/b.txt',
+        '/d/vol2/c.pdf',
+        '/d/cover.jpg',
+      ];
+      final List<List<String>> permutations = <List<String>>[
+        files,
+        files.reversed.toList(),
+        <String>[
+          '/d/vol1/b.txt',
+          '/d/cover.jpg',
+          '/d/vol2/c.pdf',
+          '/d/vol1/a.epub',
+        ],
+        <String>[
+          '/d/vol2/c.pdf',
+          '/d/vol1/b.txt',
+          '/d/cover.jpg',
+          '/d/vol1/a.epub',
+        ],
+      ];
+      for (final List<String> input in permutations) {
+        expect(plannedPaths(input), expected, reason: input.join(','));
+      }
+    });
+
+    test('有声书:多份正文/字幕时恒取字典序最小,与输入顺序无关', () {
+      const List<String> files = <String>[
+        '/d/z-later.epub',
+        '/d/a-first.epub',
+        '/d/z-later.srt',
+        '/d/a-first.srt',
+        '/d/02.mp3',
+        '/d/01.mp3',
+      ];
+      for (final List<String> input in <List<String>>[
+        files,
+        files.reversed.toList(),
+      ]) {
+        final AlignAudiobookPlan plan = classifyDiscoveryDirectory(
+          DiscoveryMediaKind.audiobook,
+          input,
+        ) as AlignAudiobookPlan;
+        expect(plan.contentPath, '/d/a-first.epub', reason: input.join(','));
+        expect(plan.subtitlePath, '/d/a-first.srt', reason: input.join(','));
+        expect(plan.audioPaths, <String>['/d/01.mp3', '/d/02.mp3']);
+      }
+    });
+
+    test('游戏:同层同体积平局按路径定二,与输入顺序无关', () {
+      const Map<String, int> sizes = <String, int>{
+        '/g/alpha.exe': 4096,
+        '/g/beta.exe': 4096,
+      };
+      for (final List<String> input in <List<String>>[
+        <String>['/g/beta.exe', '/g/alpha.exe'],
+        <String>['/g/alpha.exe', '/g/beta.exe'],
+      ]) {
+        expect(
+          pickGalgameMainExe(input, fileSizes: sizes),
+          '/g/alpha.exe',
+          reason: input.join(','),
+        );
+        expect(
+          classifyDiscoveryDirectory(
+            DiscoveryMediaKind.game,
+            input,
+            fileSizes: sizes,
+          ),
+          isA<RegisterGameExesPlan>().having(
+            (RegisterGameExesPlan p) => p.exePaths,
+            'exePaths',
+            <String>['/g/alpha.exe'],
+          ),
+        );
+      }
+    });
+  });
+
   group('sanitizeArchiveEntryPath', () {
     test('拒绝 zip-slip 与绝对路径', () {
       expect(sanitizeArchiveEntryPath('../evil.txt'), isNull);
