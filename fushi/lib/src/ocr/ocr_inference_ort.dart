@@ -54,14 +54,31 @@ OrtProvider _toOrtProvider(OcrExecutionProvider provider) {
   }
 }
 
-/// 用配置的加速 EP 创建会话；vendored `flutter_onnxruntime` 拒绝尚未实现的
-/// provider 时，按 [providers] 中已有的 CPU 后备重试一次。
+/// `getAvailableProviders()` 回报名 -> 本子系统的加速 EP。
 ///
-/// Windows 的 ONNX Runtime 会报告 `DmlExecutionProvider`，但当前插件的 Windows
-/// MethodChannel 只实现 CPU/CUDA 映射，传 `DIRECT_ML` 会在真正创建 ORT session
-/// 之前抛 `PlatformException(INVALID_PROVIDER, ...)`。调用层已经把 CPU 放在 EP
-/// 列表尾部，因此这里把插件边界的“拒绝整个列表”还原成 ORT 预期的逐级后备语义。
-/// 只捕获明确的 `INVALID_PROVIDER`；模型损坏、shape 错误和推理异常仍原样上抛。
+/// 只列**加速** EP：CPU 永远可用、永远是最后一档，不需要也不应该参与探测。
+/// 运行时回报的其他 EP（TensorRT、XNNPACK…）本子系统不选，落 null 被滤掉。
+const Map<OrtProvider, OcrExecutionProvider> _acceleratedProviders =
+    <OrtProvider, OcrExecutionProvider>{
+  OrtProvider.CUDA: OcrExecutionProvider.cuda,
+  OrtProvider.DIRECT_ML: OcrExecutionProvider.directml,
+  OrtProvider.CORE_ML: OcrExecutionProvider.coreml,
+};
+
+/// 用配置的加速 EP 创建会话；建不起来时按 [providers] 里的 CPU 后备重试一次。
+///
+/// **判据是「首选的是不是加速 provider」，不是错误码**（BUG-2050）。错误码曾经
+/// 能当代理：那时插件的 Windows MethodChannel 只实现 CPU/CUDA 映射，传
+/// `DIRECT_ML` 会在碰到 ORT 之前就整张列表拒掉，必然是 `INVALID_PROVIDER`。
+/// BUG-1968 把真 DML EP 接进来之后这个前提没了——失败改从 ORT 内部出来，码变成
+/// `PROVIDER_ERROR`（append EP 阶段，含建不出 D3D12 设备）/ `ORT_ERROR`
+/// （`Ort::Session` 构造阶段）/ `SESSION_CREATION_ERROR`，白名单一条都不命中，
+/// 于是整卷 OCR 直接报错而不是退 CPU。维护「哪些码算 provider 问题」这张清单
+/// 本身就是错的：native 侧每改一次错误映射它就会悄悄过期一次。
+///
+/// 「那模型损坏会被掩盖吗？」不会，也不需要特判：模型真坏，CPU 那次同样建不
+/// 起来，异常照抛，而且抛的是 CPU 那条（「连 CPU 都读不了这个模型」比
+/// 「DML 读不了」更有诊断价值）。代价只是对一个已经注定失败的模型多试一次。
 ///
 /// [onResolved] 在会话建成后**必定**被调用一次，回报本次真正生效的 provider
 /// 与降级原因（BUG-1163）：降级不允许静默发生，调用层据此写日志并把状态送到
@@ -81,10 +98,12 @@ Future<T> createOcrSessionWithProviderFallback<T>({
     );
     return session;
   } on PlatformException catch (error) {
-    final bool canFallbackToCpu = error.code == 'INVALID_PROVIDER' &&
-        providers.length > 1 &&
-        providers.contains(OcrExecutionProvider.cpu);
-    if (!canFallbackToCpu) rethrow;
+    // 判据只有两条，都不看错误码：这次请求的首选是不是加速 provider，以及
+    // 列表里有没有 CPU 兜底。`preferred != cpu` 已经蕴含 `providers.length > 1`
+    // （CPU 在列表里且不是首项），不需要再单独判长度。
+    final bool triedAcceleratedProvider = preferred != OcrExecutionProvider.cpu;
+    final bool hasCpuFallback = providers.contains(OcrExecutionProvider.cpu);
+    if (!triedAcceleratedProvider || !hasCpuFallback) rethrow;
     final T session =
         await create(const <OcrExecutionProvider>[OcrExecutionProvider.cpu]);
     _notifyResolved(
@@ -172,15 +191,27 @@ class OrtOcrSessionFactory implements OcrSessionFactory {
 
   final OnnxRuntime _runtime;
 
-  /// 探测本机可用 EP（用于决定 `cudaAvailable` 再喂给
-  /// [selectOcrExecutionProviders]）。
+  /// 探测本机 ORT 运行时**编译进来**的加速 EP 集合，喂给
+  /// [selectOcrExecutionProviders]。
   ///
-  /// 探测本身失败是一条真实的降级路径（有 N 卡也会退到 DirectML/CPU），
-  /// 不允许调用方 `catch (_)` 静默吞掉——所以这里不吞异常，由调用方捕获后
-  /// 记进可观测的降级说明（BUG-1163）。
-  Future<bool> isCudaAvailable() async {
+  /// BUG-2050 的根因修复点：原先这里只问 CUDA，DirectML 的可用性靠平台分支硬
+  /// 假设。但 `getAvailableProviders()` 本来就一次性回报全部 EP（native 侧
+  /// `flutter_onnxruntime_plugin.cpp` 明确把 `DmlExecutionProvider` 映射成
+  /// `DIRECT_ML`），问一个和问全部同价——不问才是 bug。
+  ///
+  /// **语义边界**：这里回报的是「该 EP 编译进了当前 onnxruntime 运行时」，
+  /// **不是**「它此刻真能建出会话」（DirectML 还要能建出 D3D12 设备，CUDA 还要
+  /// 有驱动和可用显卡）。必要不充分，别拿它当运行期可用性的结论。
+  ///
+  /// 探测本身失败是一条真实的降级路径（有 N 卡也会退到 CPU），不允许调用方
+  /// `catch (_)` 静默吞掉——所以这里不吞异常，由调用方捕获后记进可观测的降级
+  /// 说明（BUG-1163）。
+  Future<Set<OcrExecutionProvider>> availableAcceleratedProviders() async {
     final List<OrtProvider> providers = await _runtime.getAvailableProviders();
-    return providers.contains(OrtProvider.CUDA);
+    return providers
+        .map((OrtProvider provider) => _acceleratedProviders[provider])
+        .whereType<OcrExecutionProvider>()
+        .toSet();
   }
 
   @override

@@ -188,16 +188,17 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
     }
     final OrtOcrSessionFactory factory = OrtOcrSessionFactory();
     final List<String> degradeReasons = <String>[];
-    bool cudaAvailable = false;
+    Set<OcrExecutionProvider> availableProviders =
+        const <OcrExecutionProvider>{};
     try {
-      cudaAvailable = await factory.isCudaAvailable();
+      availableProviders = await factory.availableAcceleratedProviders();
     } catch (error) {
-      // BUG-1163：探测失败也是降级（有 N 卡也会退到 DirectML/CPU），
+      // BUG-1163：探测失败也是降级（有 N 卡也会退到 CPU），
       // 必须留痕，不能 catch (_) 吞掉。
-      cudaAvailable = false;
-      degradeReasons.add('CUDA provider probe failed: $error');
+      availableProviders = const <OcrExecutionProvider>{};
+      degradeReasons.add('accelerated provider probe failed: $error');
       developer.log(
-        'manga OCR CUDA provider probe failed; assuming unavailable',
+        'manga OCR accelerated provider probe failed; assuming CPU only',
         name: kOcrLogName,
         error: error,
       );
@@ -207,14 +208,40 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
         selectOcrExecutionProviders(
       kind: OcrModelKind.detection,
       platform: platform,
-      cudaAvailable: cudaAvailable,
+      availableProviders: availableProviders,
     );
     final List<OcrExecutionProvider> recognitionProviders =
         selectOcrExecutionProviders(
       kind: OcrModelKind.recognition,
       platform: platform,
-      cudaAvailable: cudaAvailable,
+      availableProviders: availableProviders,
     );
+
+    // BUG-2050 + BUG-1163：平台想要加速 EP，但运行时里一个都没编译进来——
+    // 这**也是降级**，只是它现在提前到了请求前的决策点。修好之后这条路径不再
+    // 产生 session 创建失败，可观测性不能跟着一起消失：原先用户至少还能从
+    // `detector: directml -> cpu (INVALID_PROVIDER)` 看出来，现在由这里补记。
+    void recordUnavailable(
+      String role,
+      OcrModelKind kind,
+      List<OcrExecutionProvider> chosen,
+    ) {
+      if (chosen.first != OcrExecutionProvider.cpu) return;
+      final List<OcrExecutionProvider> wanted = acceleratedProviderPreference(
+        kind: kind,
+        platform: platform,
+      );
+      // 平台本来就该走纯 CPU（BUG-1613 的 Apple / linux / android），不是降级。
+      if (wanted.isEmpty) return;
+      final String names =
+          wanted.map((OcrExecutionProvider p) => p.name).join('/');
+      degradeReasons
+          .add('$role: $names not built into this ONNX Runtime -> cpu');
+    }
+
+    recordUnavailable('detector', OcrModelKind.detection, detectionProviders);
+    recordUnavailable(
+        'recognition', OcrModelKind.recognition, recognitionProviders);
 
     OcrExecutionProvider detectionEffective = detectionProviders.first;
     OcrExecutionProvider recognitionEffective = recognitionProviders.first;

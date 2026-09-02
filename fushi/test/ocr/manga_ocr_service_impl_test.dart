@@ -442,28 +442,34 @@ void main() {
           reason: '未知平台落纯 CPU 档');
     });
 
-    test('Windows 有 CUDA：检测与识别都走 CUDA→CPU', () {
+    test('Windows 有 CUDA：检测与识别都走 CUDA→CPU（CUDA 优先于 DirectML）', () {
       for (final OcrModelKind kind in OcrModelKind.values) {
         expect(
           selectOcrExecutionProviders(
             kind: kind,
             platform: resolveOcrPlatform('windows'),
-            cudaAvailable: true,
+            availableProviders: const <OcrExecutionProvider>{
+              OcrExecutionProvider.cuda,
+              OcrExecutionProvider.directml,
+            },
           ),
           <OcrExecutionProvider>[
             OcrExecutionProvider.cuda,
             OcrExecutionProvider.cpu,
           ],
+          reason: '两个加速 EP 都在时按优先级取 CUDA，不能把 DirectML 也塞进列表',
         );
       }
     });
 
-    test('Windows 无 CUDA：检测 DirectML→CPU，识别纯 CPU', () {
+    test('Windows 无 CUDA 但有 DirectML：检测 DirectML→CPU，识别纯 CPU', () {
       expect(
         selectOcrExecutionProviders(
           kind: OcrModelKind.detection,
           platform: resolveOcrPlatform('windows'),
-          cudaAvailable: false,
+          availableProviders: const <OcrExecutionProvider>{
+            OcrExecutionProvider.directml,
+          },
         ),
         <OcrExecutionProvider>[
           OcrExecutionProvider.directml,
@@ -474,7 +480,41 @@ void main() {
         selectOcrExecutionProviders(
           kind: OcrModelKind.recognition,
           platform: resolveOcrPlatform('windows'),
-          cudaAvailable: false,
+          availableProviders: const <OcrExecutionProvider>{
+            OcrExecutionProvider.directml,
+          },
+        ),
+        <OcrExecutionProvider>[OcrExecutionProvider.cpu],
+        reason: 'DirectML 对自回归逐步解码是负优化，识别永远不选它',
+      );
+    });
+
+    test('BUG-2050 Windows 运行时没有 DirectML：检测直接纯 CPU，不请求 DML', () {
+      // 这条是本 bug 的核心：ORT 打成 CPU-only archive（BUG-1968 前的状态）或
+      // DML DLL 没随包时，运行时不会回报 DirectML。原实现在这里硬假设 DML 可用，
+      // 于是每个任务都白付一次注定失败的建会话再退 CPU；现在提前避开。
+      for (final OcrModelKind kind in OcrModelKind.values) {
+        final List<OcrExecutionProvider> got = selectOcrExecutionProviders(
+          kind: kind,
+          platform: resolveOcrPlatform('windows'),
+          availableProviders: const <OcrExecutionProvider>{},
+        );
+        expect(got, <OcrExecutionProvider>[OcrExecutionProvider.cpu],
+            reason: '$kind：运行时没有的 EP 绝不能出现在请求列表里');
+        expect(got, isNot(contains(OcrExecutionProvider.directml)));
+        expect(got, isNot(contains(OcrExecutionProvider.cuda)));
+      }
+    });
+
+    test('BUG-2050 探测到的 EP 不在平台偏好里时不会被误选', () {
+      // 运行时回报 CoreML（Apple 上真实会发生），但 Windows 偏好表里没有它。
+      expect(
+        selectOcrExecutionProviders(
+          kind: OcrModelKind.detection,
+          platform: resolveOcrPlatform('windows'),
+          availableProviders: const <OcrExecutionProvider>{
+            OcrExecutionProvider.coreml,
+          },
         ),
         <OcrExecutionProvider>[OcrExecutionProvider.cpu],
       );
@@ -490,7 +530,12 @@ void main() {
           final List<OcrExecutionProvider> got = selectOcrExecutionProviders(
             kind: kind,
             platform: resolveOcrPlatform(os),
-            cudaAvailable: false,
+            // 关键：**故意**把 CoreML 报成可用。BUG-1613 的结论是「就算能用也不
+            // 许选」，探测层拆出来之后这条才真正测得到——旧签名下 CoreML 可用性
+            // 根本无法表达，测的只是「代码里没写 coreml 这个词」。
+            availableProviders: const <OcrExecutionProvider>{
+              OcrExecutionProvider.coreml,
+            },
           );
           expect(got, <OcrExecutionProvider>[OcrExecutionProvider.cpu],
               reason: '$os/$kind 不应再出现 CoreML（BUG-1613）');
@@ -499,16 +544,66 @@ void main() {
       }
     });
 
-    test('Linux / Android：纯 CPU', () {
+    test('Linux / Android：纯 CPU（即使运行时报告全部加速 EP）', () {
       for (final String os in <String>['linux', 'android']) {
         for (final OcrModelKind kind in OcrModelKind.values) {
           expect(
             selectOcrExecutionProviders(
               kind: kind,
               platform: resolveOcrPlatform(os),
-              cudaAvailable: false,
+              availableProviders: const <OcrExecutionProvider>{
+                OcrExecutionProvider.cuda,
+                OcrExecutionProvider.directml,
+                OcrExecutionProvider.coreml,
+              },
             ),
             <OcrExecutionProvider>[OcrExecutionProvider.cpu],
+            reason: '$os/$kind：偏好表为空时，可用性再全也不该选出加速 EP',
+          );
+        }
+      }
+    });
+
+    test('BUG-2050 偏好表与可用性是两个独立概念', () {
+      // 偏好表只说「想要什么」，与本机装了什么无关——它必须是纯的。
+      expect(
+        acceleratedProviderPreference(
+          kind: OcrModelKind.detection,
+          platform: OcrPlatform.windows,
+        ),
+        <OcrExecutionProvider>[
+          OcrExecutionProvider.cuda,
+          OcrExecutionProvider.directml,
+        ],
+      );
+      expect(
+        acceleratedProviderPreference(
+          kind: OcrModelKind.recognition,
+          platform: OcrPlatform.windows,
+        ),
+        <OcrExecutionProvider>[OcrExecutionProvider.cuda],
+      );
+      for (final OcrPlatform platform in <OcrPlatform>[
+        OcrPlatform.macos,
+        OcrPlatform.ios,
+        OcrPlatform.linux,
+        OcrPlatform.android,
+      ]) {
+        for (final OcrModelKind kind in OcrModelKind.values) {
+          expect(
+            acceleratedProviderPreference(kind: kind, platform: platform),
+            isEmpty,
+            reason: '$platform/$kind 应当没有任何加速 EP 偏好',
+          );
+        }
+      }
+      // 偏好表里永远不含 CPU：CPU 是 selectOcrExecutionProviders 缀上的兜底档，
+      // 不是「偏好」，也不参与探测。
+      for (final OcrPlatform platform in OcrPlatform.values) {
+        for (final OcrModelKind kind in OcrModelKind.values) {
+          expect(
+            acceleratedProviderPreference(kind: kind, platform: platform),
+            isNot(contains(OcrExecutionProvider.cpu)),
           );
         }
       }
