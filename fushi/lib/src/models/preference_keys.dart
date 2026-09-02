@@ -25,6 +25,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'audio_source_configs',
   'audio_sources',
   'audiobook_background_play',
+  // String（JSON 数组）：有声书素材库目录（绝对路径）。库里放按作品身份命名的
+  // 字幕/正文文件，下载完成后据此自动配齐「正文 + 字幕 + 音频」。见
+  // media/audiobook/audiobook_material_library.dart。
+  'audiobook_material_dirs',
   'auto_add_book_name_to_tags',
   'auto_search',
   'auto_search_debounce_delay',
