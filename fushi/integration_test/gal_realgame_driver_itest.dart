@@ -6,7 +6,8 @@
 // 代理在真游戏上逐引擎走「拉起 → 点字弹卡 → 点外关闭不推进 → Shift 悬浮 → 制卡」。
 //
 // 指令（一行一条，`#` 开头忽略）：
-//   launch <exe路径>            拉起游戏并开始捕获（走与游戏页同一条 launchGame 路径）
+//   launch <exe路径>            拉起游戏并开始捕获（走与游戏页同一条 launchGame 路径，转区 auto）
+//   launchoff <exe路径>         同上但转区档位 off（库里多数游戏的设置）
 //   attach <hwnd> <pid> [title]  对已运行的游戏附着捕获
 //   thread <id>                 选择文本线程
 //   state                       会话状态 + 最近台词 + attached 状态
@@ -35,6 +36,7 @@ import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
+import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:integration_test/integration_test.dart';
@@ -226,7 +228,11 @@ void main() {
         try {
           switch (op) {
             case 'launch':
-              final String exe = cmd.substring('launch'.length).trim();
+            case 'launchoff':
+              // launch <exe> 走 auto 转区档；launchoff <exe> 走 off（用户库里除 9-nine
+              // 外都是 off，复现原始路径必须按库里的档位来）。
+              final bool localeOff = op == 'launchoff';
+              final String exe = cmd.substring(op.length).trim();
               final bool is32 =
                   await EngineHookGalAudioSource.exeIs32Bit(exe) ?? false;
               final bool ensured = await _ensureInjectorFor(tester, is32);
@@ -235,6 +241,9 @@ void main() {
                 exe,
                 workdir: p.dirname(exe),
                 gameTitle: p.basenameWithoutExtension(exe),
+                japaneseLocaleMode: localeOff
+                    ? GalJapaneseLocaleMode.off
+                    : kGalDefaultJapaneseLocaleMode,
               );
               out('#$seq launch launched=${result.launched} result=$result');
               out('#$seq ${describeState()}');
