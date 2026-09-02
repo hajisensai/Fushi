@@ -471,6 +471,11 @@ bool IsLeafAquaplusProfileMatched() {
     fushi_voice_hook::PublishHostExecutableSha256(digest.data(), digest.size());
   }
   if (profile != nullptr) {
+    // 哈希 + machine 已匹配。这一位必须在结构门**之前**置位：否则「exe 根本读不到 /
+    // 哈希不是这个发行版」和「哈希对但二进制结构校验没过」在诊断上同形，而它们的处置
+    // 完全不同（前者要用户报摘要，后者要重测锚点）。
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2LeafIdentityHashMatched);
     const LONG structure_cached = InterlockedCompareExchange(
         &g_leaf_exact_binary_structure_state, 0, 0);
     bool structure_matched = structure_cached > 0;
@@ -539,7 +544,7 @@ bool IsLeafAquaplusProfileMatched() {
                                                                bytes),
             required, IMAGE_SCN_MEM_EXECUTE);
       };
-      structure_matched =
+      const bool section_roles_ok =
           opened && input_anchor_rva != 0u &&
           executable_rva(profile->embed_leaf_hook_rva) &&
           executable_rva(profile->text_traversal_rva,
@@ -565,7 +570,9 @@ bool IsLeafAquaplusProfileMatched() {
           data_rva(profile->get_async_key_state_iat_rva, sizeof(uint32_t),
                    IMAGE_SCN_MEM_READ) &&
           data_rva(profile->read_file_iat_rva, sizeof(uint32_t),
-                   IMAGE_SCN_MEM_READ) &&
+                   IMAGE_SCN_MEM_READ);
+      const bool anchors_ok =
+          opened &&
           traversal.count == 1u &&
           reinterpret_cast<uintptr_t>(traversal.address) ==
               base + profile->text_traversal_rva &&
@@ -579,7 +586,9 @@ bool IsLeafAquaplusProfileMatched() {
           reinterpret_cast<uintptr_t>(embed.address) +
                   fushi_voice_hook::leaf_exact::kEmbedHookOffsetFromAnchor ==
               base + profile->embed_leaf_hook_rva &&
-          device.count == 1u &&
+          device.count == 1u;
+      const bool return_sites_ok =
+          opened &&
           fushi_voice_hook::exact_lookup::MatchesRel32CallEndingAt(
               image, profile->raster_glyph_return_rva,
               profile->raster_draw_rva) &&
@@ -603,6 +612,37 @@ bool IsLeafAquaplusProfileMatched() {
           fushi_voice_hook::exact_lookup::MatchesAbsoluteIndirectCallEndingAt(
               image, profile->voice_archive_read_return_rva,
               profile->read_file_iat_rva);
+      structure_matched = section_roles_ok && anchors_ok && return_sites_ok;
+      // 结构门失败时按组记录事实（只记录，不参与上面的判定）：exe 哈希逐字节匹配却仍
+      // 不被认领时，唯一能推进事情的信息就是这条 ~25 项 && 链断在哪一组。
+      if (!structure_matched) {
+        SetXAudioDiagnostic2(
+            fushi_voice_hook::kXAudioDiag2LeafStructureRejected);
+        if (!opened)
+          SetXAudioDiagnostic2(
+              fushi_voice_hook::kXAudioDiag2LeafImageUnopened);
+        if (!section_roles_ok)
+          SetXAudioDiagnostic2(
+              fushi_voice_hook::kXAudioDiag2LeafSectionRolesRejected);
+        if (traversal.count != 1u)
+          SetXAudioDiagnostic2(
+              fushi_voice_hook::kXAudioDiag2LeafTraversalAnchorMissed);
+        if (raster.count != 1u)
+          SetXAudioDiagnostic2(
+              fushi_voice_hook::kXAudioDiag2LeafRasterAnchorMissed);
+        if (input.count != 1u)
+          SetXAudioDiagnostic2(
+              fushi_voice_hook::kXAudioDiag2LeafInputAnchorMissed);
+        if (embed.count != 1u)
+          SetXAudioDiagnostic2(
+              fushi_voice_hook::kXAudioDiag2LeafEmbedAnchorMissed);
+        if (device.count != 1u)
+          SetXAudioDiagnostic2(
+              fushi_voice_hook::kXAudioDiag2LeafDeviceAnchorMissed);
+        if (section_roles_ok && anchors_ok && !return_sites_ok)
+          SetXAudioDiagnostic2(
+              fushi_voice_hook::kXAudioDiag2LeafReturnSitesRejected);
+      }
 #else
       structure_matched = false;
 #endif
@@ -1140,12 +1180,25 @@ void ProcessLeafVoiceTasks() {
 }
 
 bool TryHookLeafAquaplusResourceAudio() {
-  if (!IsLeafAquaplusProfileMatched())
+  // 三个前置各自留痕。旧实现任一失败都只是静默 return false，真机上只看得到
+  // 「音频降级成系统 Loopback」，分不出是身份、hook 还是归档——三者处置完全不同。
+  // 这里只记录事实，判定与顺序一字未改。
+  if (!IsLeafAquaplusProfileMatched()) {
+    SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2LeafProfileUnmatched);
     return false;
+  }
   if (InterlockedCompareExchange(&g_leaf_voice_enabled, 0, 0) != 0)
     return true;
-  if (!TryHookSiglusOvk() || !LoadLeafVoiceArchives())
+  if (!TryHookSiglusOvk()) {
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2LeafFileHooksUnavailable);
     return false;
+  }
+  if (!LoadLeafVoiceArchives()) {
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2LeafVoiceArchivesMissing);
+    return false;
+  }
   InterlockedExchange(&g_leaf_voice_enabled, 1);
   SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagLeafLacHooksReady);
   return true;

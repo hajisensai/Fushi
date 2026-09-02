@@ -423,6 +423,44 @@ constexpr uint32_t kXAudioDiag2SgreFamilyMatched = 0x00000001u;
 constexpr uint32_t kXAudioDiag2SgreAnchorsResolved = 0x00000002u;   // all three
 constexpr uint32_t kXAudioDiag2SgreAnchorsUnresolved = 0x00000004u; // any missing
 
+// Leaf/AQUAPLUS（WHITE ALBUM2）资源音频三段门的**分型**位。
+//
+// TryHookLeafAquaplusResourceAudio 的三个前置（exact profile 匹配 / 共享文件 hook /
+// VOICE.PAK 归档加载）此前任一失败都只是静默 `return false`，诊断上完全同形：真机上
+// 只看得到「音频降级成系统 Loopback」，分不出是身份没匹配、hook 没装上，还是归档没读到，
+// 而这三者的处置完全不同。这三位只记录事实，不参与任何判定。
+//
+// kDiagSiglusOvkHooksReady 不能拿来替代：它只在 siglus 家族为真时才置位，Leaf 复用同一套
+// 共享文件 hook 却永远不会点亮它，据此推断会得到相反的结论。
+constexpr uint32_t kXAudioDiag2LeafProfileUnmatched = 0x00000008u;
+constexpr uint32_t kXAudioDiag2LeafFileHooksUnavailable = 0x00000010u;
+constexpr uint32_t kXAudioDiag2LeafVoiceArchivesMissing = 0x00000020u;
+
+// Leaf/AQUAPLUS 身份门（IsLeafAquaplusProfileMatched）的**分型**位。
+//
+// 上面三位挂在 TryHookLeafAquaplusResourceAudio 里，而那个函数只有在 adapter 已经
+// claim 本进程之后才会被调用；adapter 的 probe() 就是身份门本身。真机上观察到
+// lookup_admission=EngineUnsupported（Leaf 的 lookupAdmission 只可能返回
+// SensorInstalled / IdentityAccepted，绝不会返回 EngineUnsupported）意味着根本没有
+// adapter claim，也就是身份门没过——此时上面三位必然全灭，无法分型。
+//
+// 身份门是两层：先按 exe SHA-256 + machine 选中 profile，再做二进制结构校验（唯一
+// 掩码模式扫描 + 重定位操作数复核 + section 角色复核）。哈希逐字节相同却仍不匹配时，
+// 失败一定在第二层，而那是一条约 25 项的 && 链，不分型就只能逐项猜。
+//
+// kXAudioDiag2LeafIdentityHashMatched 在哈希 + machine 匹配后立刻置位（结构门之前），
+// 其余各位只在结构校验失败时按组记录事实。全部只记录，不参与任何判定；判定链一字未改。
+constexpr uint32_t kXAudioDiag2LeafIdentityHashMatched = 0x00000040u;
+constexpr uint32_t kXAudioDiag2LeafStructureRejected = 0x00000080u;
+constexpr uint32_t kXAudioDiag2LeafImageUnopened = 0x00000100u;
+constexpr uint32_t kXAudioDiag2LeafSectionRolesRejected = 0x00000200u;
+constexpr uint32_t kXAudioDiag2LeafTraversalAnchorMissed = 0x00000400u;
+constexpr uint32_t kXAudioDiag2LeafRasterAnchorMissed = 0x00000800u;
+constexpr uint32_t kXAudioDiag2LeafInputAnchorMissed = 0x00001000u;
+constexpr uint32_t kXAudioDiag2LeafEmbedAnchorMissed = 0x00002000u;
+constexpr uint32_t kXAudioDiag2LeafDeviceAnchorMissed = 0x00004000u;
+constexpr uint32_t kXAudioDiag2LeafReturnSitesRejected = 0x00008000u;
+
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM
 // 环已有格式，因此 host 应优先按时间戳配对资源文件，并把系统回环保留为逐句 fallback。
