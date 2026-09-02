@@ -1215,9 +1215,28 @@ class VideoPlayerController extends ChangeNotifier
   /// 着色器与 mpv 配置是无条件重发的，只有 Lua 走去重，漏清就是静默失效）。
   final Set<String> _loadedLuaScripts = <String>{};
 
-  /// 装载 mpv Lua 脚本（设置面板开启开关 / [load] 均走此入口）。幂等：已装载
+  /// BUG-2032：每脚本运行态，供设置页列表显示。键 = 已下发 `load-script` 的脚本
+  /// 绝对路径（与 [_loadedLuaScripts] 同集合）；值 null = 已下发且 mpv 没报错，
+  /// 非 null = 归因到该脚本的最近一条 error/fatal 日志原文。不在 map 里 = 本
+  /// Player 未装载。随 [_resetLuaScriptState] 一起清空。
+  final ValueNotifier<Map<String, String?>> luaScriptStates =
+      ValueNotifier<Map<String, String?>>(const <String, String?>{});
+
+  /// BUG-2032：mpv 日志订阅，只为把 `load-script` 失败 / Lua 运行时错误归因到脚本
+  /// （[matchLuaLogToScripts]）。随 Player 生命周期挂一次、Player 释放时取消。
+  StreamSubscription<PlayerLog>? _luaLogSub;
+
+  /// BUG-2032：随包 libmpv 是否编入 Lua（建 Player 后读 `mpv-configuration`，
+  /// 见 [_probeLuaCapability]）。页面在 [load] 完成后落 pref，让全局设置页也能说明。
+  MpvLuaCapability luaCapability = MpvLuaCapability.unknown;
+
+  /// 装载 mpv Lua 脚本（设置面板开启开关 / 导入 / [load] 均走此入口）。幂等：已装载
   /// 的路径跳过；未 [load]（无 player）时 no-op——脚本随下次 [load] 由页面
   /// 重新解析传入。关闭开关无法从运行中的实例卸载，只对之后新建的 Player 生效。
+  ///
+  /// 首次真有脚本要装时先把文字 OSD 层打开（[buildLuaOsdProperties]，见管理器
+  /// 文件头"OSD"段）——放在 `load-script` 之前，脚本初始化时的 `mp.osd_message`
+  /// 才画得出来。没脚本的 Player 保持 media_kit 的 `osd-level=0`。
   Future<void> applyLuaScripts(List<String> absolutePaths) async {
     final Player? player = _player;
     if (player == null) return;
@@ -1226,7 +1245,47 @@ class VideoPlayerController extends ChangeNotifier
         if (_loadedLuaScripts.add(path)) path,
     ];
     if (fresh.isEmpty) return;
+    luaScriptStates.value = <String, String?>{
+      ...luaScriptStates.value,
+      for (final String path in fresh) path: null,
+    };
+    await _setMpvProperties(buildLuaOsdProperties());
+    if (!identical(_player, player)) return; // OSD 下发期间 Player 被换/销毁。
     await applyLuaScriptsToPlayer(player, fresh);
+  }
+
+  /// BUG-2032：mpv 日志 → 脚本状态。与脚本无关的行（绝大多数）直接丢。
+  void _onMpvLogForLuaScripts(PlayerLog log) {
+    final LuaScriptLogHit? hit = matchLuaLogToScripts(
+      prefix: log.prefix,
+      level: log.level,
+      text: log.text,
+      scriptPaths: _loadedLuaScripts,
+    );
+    if (hit == null) return;
+    luaScriptStates.value = <String, String?>{
+      ...luaScriptStates.value,
+      for (final String path in hit.paths) path: hit.message,
+    };
+  }
+
+  /// BUG-2032：读一次 `mpv-configuration` 判断随包 libmpv 有没有编 Lua。每个
+  /// controller 只探一次（同一进程内二进制不会变）；非 libmpv 后端读到空串 → 保持
+  /// unknown，门控按"可能可用"处理。
+  Future<void> _probeLuaCapability() async {
+    if (luaCapability != MpvLuaCapability.unknown) return;
+    luaCapability =
+        parseMpvLuaCapability(await _getMpvProperty('mpv-configuration'));
+  }
+
+  /// BUG-2032：Player 置 null 的每一处都必须走这里——去重集、状态表、日志订阅三者
+  /// 的作用域都是**单个 Player 实例**，漏清任何一个就是「新 Player 一条
+  /// `load-script` 都不发」或「旧 Player 的报错挂在新 Player 上」。
+  void _resetLuaScriptState() {
+    _loadedLuaScripts.clear();
+    luaScriptStates.value = const <String, String?>{};
+    unawaited(_luaLogSub?.cancel());
+    _luaLogSub = null;
   }
 
   /// 着色器「对比原画」旁路态：true 时临时清空 libmpv 着色器（看原画），但**保留**
@@ -1408,6 +1467,8 @@ class VideoPlayerController extends ChangeNotifier
         if (current == null) return;
         unawaited(current.setVolume(_muted ? 0.0 : _lastVolume));
       });
+      // BUG-2032：脚本报错归因。同样随 Player 生命周期挂一次，换集复用不重挂。
+      _luaLogSub = player.stream.log.listen(_onMpvLogForLuaScripts);
     }
     // 下面 8 处连续原生 FFI 下发（`open` / 网络缓存 / `setSubtitleTrack(no)` / 字幕抑制
     // / 着色器 / mpv 配置 / 音量 / 速率）全用方法开头捕获的局部 [player]。这些 await 缺口
@@ -1462,6 +1523,12 @@ class VideoPlayerController extends ChangeNotifier
     // （autoload、按文件切 profile、自动字幕）全部空转，要换到下一集才开始生效，
     // 用户观感是「脚本时灵时不灵」。放在 open 前则脚本必然赶上首个 loadfile。
     // `NativePlayer.command` 自带 waitForInitialization，不需要额外等 Player 就绪。
+    //
+    // BUG-2032：先探一次随包 libmpv 有没有编 Lua（每 controller 一次，`getProperty`
+    // 同样自带 waitForInitialization）。探测不门控下发——Android 没 Lua 时
+    // `load-script` 本就是无害 no-op，门控的意义在设置页如实说明，不在这里省一条命令。
+    await _probeLuaCapability();
+    if (!_isCurrentLoad(player, loadToken)) return; // 能力探测后换片/销毁。
     await applyLuaScripts(luaScriptPaths);
     if (!_isCurrentLoad(player, loadToken)) return; // 脚本装载后换片/销毁。
 
@@ -3316,7 +3383,8 @@ class VideoPlayerController extends ChangeNotifier
     unawaited(_player?.dispose());
     _player = null;
     _videoController = null;
-    _loadedLuaScripts.clear(); // 与 [_releaseMediaHandles] 一致，防复用残留。
+    _resetLuaScriptState(); // 与 [_releaseMediaHandles] 一致，防复用残留。
+    luaScriptStates.dispose();
     _videoPath = null;
     _chapters = const <VideoChapter>[];
     super.dispose();
@@ -3331,7 +3399,7 @@ class VideoPlayerController extends ChangeNotifier
     if (player == null) return;
     _player = null;
     _videoController = null;
-    _loadedLuaScripts.clear(); // 新 Player 必须重新 load-script（见字段注释）。
+    _resetLuaScriptState(); // 新 Player 必须重新 load-script（见字段注释）。
     await player.dispose();
   }
 
