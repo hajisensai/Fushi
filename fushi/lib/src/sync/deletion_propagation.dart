@@ -86,18 +86,53 @@ class DeletionPropagationCandidate {
       'DeletionPropagationCandidate($mediaType/$itemKey → ${direction.name})';
 }
 
-/// 纯函数：给定本地删除墓碑、远端删除墓碑、两端当前在库键，算出双向删除传播候选。
+/// 一端「当前在库」的条目：`itemKey → 该条目在这一端的**存在起始时刻**`（毫秒纪元）。
+///
+/// 值可空：`null` = 这类资产不记录存在起始时刻（当前是 `localaudio` 与 `audiobook`），
+/// 该条目退化为旧的纯集合语义（只看在不在库）。其余资产都有真实时刻可用——书 / 字幕书 /
+/// 视频用 `importedAt`，收藏词 / 收藏句用 `createdAt`。
+typedef DeletionPresentEntries = Map<String, Map<String, int?>>;
+
+/// 一端的删除墓碑：`itemKey → deletedAt`（毫秒纪元）。
+typedef DeletionTombstoneEntries = Map<String, Map<String, int>>;
+
+/// 这条墓碑管不管得着那一端现存的这条同名条目。
+///
+/// 「在库」不是一个布尔量，而是一段**从某个时刻开始**的存在。墓碑说的是「这个身份在
+/// [deletedAt] 被删过」；若该端现存的这条是在那之后才建立的（[presentSinceAt] >=
+/// [deletedAt]），它就不是墓碑指的那一条，而是**删除之后重新加回来的新条目**——墓碑对
+/// 它无效。
+///
+/// BUG-2044：这正是删除确认弹窗曾把「本机自己取消收藏、之后又重新收藏」的句子当成
+/// 「其他设备已删除」来问用户要不要删的原因。聚合快照那条通道早就有等价仲裁
+/// （`AggregateSyncService._arbitrateFavorites`，`aggregate_sync_service.dart:454`，
+/// BUG-1642：墓碑 deletedAt **严格大于**收藏 createdAt 才让收藏出局），本通道却只做
+/// 集合交、从不比时刻，同一份数据两条通道给出相反结论。
+///
+/// 时刻未知（[presentSinceAt] == null）时保守返回 true：宁可多问一次，也不因为缺时刻
+/// 而静默压制一次真实的跨端删除。
+bool tombstoneAppliesTo({
+  required int deletedAt,
+  required int? presentSinceAt,
+}) =>
+    presentSinceAt == null || deletedAt > presentSinceAt;
+
+/// 纯函数：给定两端删除墓碑与两端当前在库条目，算出双向删除传播候选。
 ///
 /// - **deleteRemote**：本地有删除墓碑 ∧ 远端仍在库 → 用户可选「远端也删」。
 /// - **deleteLocal**：远端有删除墓碑 ∧ 本地仍在库 → 用户可选「本地也删」。
 ///
-/// 输入均为 `mediaType → itemKeys` 集合。两端都删（墓碑齐）不产生候选（已收敛）；两端都在库
-/// 且无墓碑同样不产生候选。确定性排序（mediaType 再 itemKey 再方向），便于稳定展示 + 单测。
+/// 两个方向共用同一条判据 [tombstoneAppliesTo]：墓碑只对「删除时刻之前就存在」的那条
+/// 生效，删后重加的新条目不产生候选。**没有按资产种类分叉的特例**——时刻缺失由
+/// [DeletionPresentEntries] 的可空值统一表达。
+///
+/// 两端都删（墓碑齐）不产生候选（已收敛）；两端都在库且无墓碑同样不产生候选。确定性排序
+/// （mediaType 再 itemKey 再方向），便于稳定展示 + 单测。
 List<DeletionPropagationCandidate> computeDeletionPropagation({
-  required Map<String, Set<String>> localTombstones,
-  required Map<String, Set<String>> remoteTombstones,
-  required Map<String, Set<String>> localPresent,
-  required Map<String, Set<String>> remotePresent,
+  required DeletionTombstoneEntries localTombstones,
+  required DeletionTombstoneEntries remoteTombstones,
+  required DeletionPresentEntries localPresent,
+  required DeletionPresentEntries remotePresent,
 }) {
   final List<DeletionPropagationCandidate> out =
       <DeletionPropagationCandidate>[];
@@ -106,25 +141,35 @@ List<DeletionPropagationCandidate> computeDeletionPropagation({
     ...remoteTombstones.keys,
   };
   for (final String mt in types) {
-    final Set<String> remoteHere = remotePresent[mt] ?? const <String>{};
-    for (final String key in localTombstones[mt] ?? const <String>{}) {
-      if (remoteHere.contains(key)) {
-        out.add(DeletionPropagationCandidate(
-          mediaType: mt,
-          itemKey: key,
-          direction: DeletionPropagationDirection.deleteRemote,
-        ));
+    final Map<String, int?> remoteHere =
+        remotePresent[mt] ?? const <String, int?>{};
+    for (final MapEntry<String, int> e
+        in (localTombstones[mt] ?? const <String, int>{}).entries) {
+      if (!remoteHere.containsKey(e.key)) continue;
+      if (!tombstoneAppliesTo(
+          deletedAt: e.value, presentSinceAt: remoteHere[e.key])) {
+        continue;
       }
+      out.add(DeletionPropagationCandidate(
+        mediaType: mt,
+        itemKey: e.key,
+        direction: DeletionPropagationDirection.deleteRemote,
+      ));
     }
-    final Set<String> localHere = localPresent[mt] ?? const <String>{};
-    for (final String key in remoteTombstones[mt] ?? const <String>{}) {
-      if (localHere.contains(key)) {
-        out.add(DeletionPropagationCandidate(
-          mediaType: mt,
-          itemKey: key,
-          direction: DeletionPropagationDirection.deleteLocal,
-        ));
+    final Map<String, int?> localHere =
+        localPresent[mt] ?? const <String, int?>{};
+    for (final MapEntry<String, int> e
+        in (remoteTombstones[mt] ?? const <String, int>{}).entries) {
+      if (!localHere.containsKey(e.key)) continue;
+      if (!tombstoneAppliesTo(
+          deletedAt: e.value, presentSinceAt: localHere[e.key])) {
+        continue;
       }
+      out.add(DeletionPropagationCandidate(
+        mediaType: mt,
+        itemKey: e.key,
+        direction: DeletionPropagationDirection.deleteLocal,
+      ));
     }
   }
   out.sort((DeletionPropagationCandidate a, DeletionPropagationCandidate b) {

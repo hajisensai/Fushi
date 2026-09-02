@@ -92,7 +92,16 @@ class LookupDismissBarrier extends StatefulWidget {
   /// 不接（null）＝非主键在 barrier 上无任何效果，与本参数出现之前逐字一致。
   /// 主键与触摸永远不进这里（[domMouseButtonFromPointerButtons] 对它们返回 null），
   /// 故点击关窗 / 横拖关一层的既有语义零变化。
-  final void Function(int buttons)? onNonPrimaryButtonDown;
+  ///
+  /// BUG-2031 修正：参数是**整个** [PointerDownEvent] 而不是光秃秃的 `buttons`
+  /// 位掩码。barrier 住在根 Overlay 里，而 `wrapWithGlobalNavigation` 的鼠标兜底
+  /// [Listener] 是**它的祖先**——祖先并不会被后代的 opaque 命中排除掉（实测
+  /// `test/shortcuts/global_pointer_single_dispatch_test.dart`：同一次按下的派发序列
+  /// 是 `[barrier, root]`，两层都收到）。于是本回调必须能参与
+  /// `MouseBindingDispatch` 的认领协议，把这次按下从 app 根手里拿走，否则绑「返回
+  /// 上一级」的侧键按一下 = 关词典 **+** 退出整本书，而键盘 Esc 只关词典。
+  /// 认领的判据是 [PointerDownEvent.pointer]，光有 `buttons` 表达不了。
+  final void Function(PointerDownEvent event)? onNonPrimaryButtonDown;
 
   @override
   State<LookupDismissBarrier> createState() => _LookupDismissBarrierState();
@@ -114,7 +123,7 @@ class _LookupDismissBarrierState extends State<LookupDismissBarrier> {
     // 行为逐字不变。主键/触摸在此恒为 null，进不来。
     if (widget.onNonPrimaryButtonDown != null &&
         domMouseButtonFromPointerButtons(event.buttons) != null) {
-      widget.onNonPrimaryButtonDown!(event.buttons);
+      widget.onNonPrimaryButtonDown!(event);
     }
     if (!_swipeActive) return;
     // 不按设备类型过滤：TODO-716 的整个目的就是「桌面对齐手机」——桌面开了滑关
