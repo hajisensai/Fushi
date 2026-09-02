@@ -15,4 +15,9 @@
   - `fushi/test/lookup/global_lookup_host_test.mjs` §33b（node 真跑 host.js）：整词 bbox 按 shell 原点转换后经 `nestedWordAnchor` 回报；realm 返回 null/undefined/零面积时不回报。
   - `fushi/test/lookup/lookup_word_highlight_surfaces_guard_test.dart` 新增 app 外接线守卫（controller 不能 headless 实例化，沿用该文件既有做法）。
   - 变异实测：还原 `reanchorEntry` 的 `!e.visible` 门 → 2 条红；mixin 一处退回丢弃返回值 → 守卫红；host 侧去掉回报 → mjs 红。
+- **代码审查后的第二轮**（`086cf2156a`）：
+  - **连点竞态**：`pushNestedPopup` 的 `beginTop` 在 `await searchDictionary` **之前**同步压栈，高亮 eval 往返期间的第二次点词会在**同一下标**建好另一个词的子层；只按位置取条目会把上一个词的 bbox 锚到它身上。`reanchorNestedPopupToWord` 加 `expectedTerm` 词形门，base 车道再叠 BUG-717② 的 `activeLookupGeneration` 代次门。
+  - **app 外 overlay 每次查词都闪跳**：`_lookupNested` 是先 `_renderStack()` 交给 host 的 reveal 门、之后才发 highlight，所以「重锚早于 reveal」在这条路上不成立；且整词 bbox 在**单行**选区上同样不等于首字符矩形 ⇒ 每次嵌套查词都多一次整栈重渲 + union bbox → `overlaySize` → 原生挪窗。改成**渲染前**完成 highlight+bbox 往返（token + Completer + 400ms 超时，照搬 BUG-1127 `wordAudioPlayed`），一次渲染到位；顺带让回报按 **token** 路由而非栈位置，迟到/跨路由的回报不再认领错卡片。
+  - **`highlightFrame` 的「绝不抛」契约**：`anchorRectToScreen` / `postToHost` 收进 try，且每个带 token 的请求必有应答（失败回报 null），否则 Dart 那边会白吃满超时。
+  - 既有 TODO-1190 的 onLinkClick 守卫从固定 1000 字符窗口改为「下一个回调起点」语义定界（身份门把字面量推出了旧窗口；调大数字是削弱）。
 - **备注**：真机未验（本轮按现行约定不做真机验证）——三条车道的行为分别由 widget 测试（app 内）与 node 真跑 host.js（app 外）覆盖，未覆盖的只有「WebView2 里真实文字排版下的换行位置」这一层。`selection.js` 未改动：它早就返回并集 bbox，问题只在消费端。
