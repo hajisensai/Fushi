@@ -1267,6 +1267,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         _captureSetupDialogScheduled) {
       return;
     }
+    final attachedText = GalHookTextOverlayController.instance.attachedText;
     final GalHookSessionState state = _session.state;
     final DateTime? sessionStartedAt = state.sessionStartedAt;
     if (!shouldPromptGalCaptureSetup(
@@ -1275,6 +1276,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       selectedTextThreadKey: _session.selectedTextThreadKey,
       textThreadCount: _session.textThreads.length,
       sessionAlreadyPrompted: _captureSetupShownForSession == sessionStartedAt,
+      lookupRiskAcceptancePending: attachedText.needsUnsafeRiskAcceptance,
     )) {
       return;
     }
@@ -1292,6 +1294,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             selectedTextThreadKey: _session.selectedTextThreadKey,
             textThreadCount: _session.textThreads.length,
             sessionAlreadyPrompted: false,
+            lookupRiskAcceptancePending: attachedText.needsUnsafeRiskAcceptance,
           )) {
         return;
       }
@@ -1301,6 +1304,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         context: context,
         builder: (BuildContext dialogContext) => GalCaptureSetupDialog(
           session: _session,
+          attachedText: attachedText,
           onSelectThread: (TexthookerTextThread thread) =>
               _session.selectTextThread(
                 thread.nativeThreadId,

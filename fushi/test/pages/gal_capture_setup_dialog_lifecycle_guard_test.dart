@@ -44,6 +44,20 @@ void main() {
     expect(code.contains('onPressed: _dismissOnce'), isTrue);
   });
 
+  test('查词风险待确认时捕获设置模态框必须主动让位', () {
+    final String build = topLevelFunctionBody(source, 'build')!;
+    expect(
+      containsIdentifier(build, 'needsUnsafeRiskAcceptance'),
+      isTrue,
+      reason: '捕获设置弹窗必须监听逐 exe 查词风险门，不能继续挡住工作台确认入口',
+    );
+    expect(
+      containsIdentifierCall(build, '_scheduleAutoClose'),
+      isTrue,
+      reason: '风险门出现后必须沿既有一次性关闭出口让位，不能直接重复 pop',
+    );
+  });
+
   test('音轨试听串行化并以最后一次请求代次裁决', () {
     final String request = topLevelFunctionBody(source, '_requestPreview')!;
     final String toggle = topLevelFunctionBody(source, '_togglePreview')!;

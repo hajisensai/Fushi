@@ -150,6 +150,71 @@ void main() {
       find.byKey(const ValueKey<String>('game-attached-lookup-accept-risk')),
       findsOneWidget,
     );
+
+    controller.handleSurfaceStateChanged(
+      GalAttachedSurfaceStateEvent(
+        target: controller.target!,
+        state: 'suspended',
+        status: 'targetBackground',
+        shield: const GalAttachedShieldStatus(
+          available: true,
+          statusFlags: 0x02,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(controller.status, GalAttachedTextStatus.suspended);
+    expect(controller.needsUnsafeRiskAcceptance, isTrue);
+    final Finder acceptRisk = find.byKey(
+      const ValueKey<String>('game-attached-lookup-accept-risk'),
+    );
+    final int requestToken = controller.unsafeRiskAcceptanceRequest!.token;
+    expect(acceptRisk, findsOneWidget);
+    expect(
+      tester.getTopLeft(acceptRisk).dx,
+      lessThan(
+        tester
+            .getTopLeft(
+              find.byKey(
+                const ValueKey<String>('game-attached-lookup-calibrate'),
+              ),
+            )
+            .dx,
+      ),
+      reason: '风险入口必须固定在左侧，不能再被游戏窗口遮住',
+    );
+
+    await tester.tap(acceptRisk);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('game-attached-lookup-risk-confirm')),
+      findsOneWidget,
+      reason: 'targetBackground 期间风险确认仍须可达',
+    );
+
+    await controller.syncSession(
+      active: true,
+      sessionEpoch: 2,
+      targetPid: 4,
+      targetHwnd: 5,
+      sourceText: '別の本文です',
+    );
+    await tester.pumpAndSettle();
+    expect(controller.unsafeRiskAcceptanceRequest?.token, isNot(requestToken));
+    expect(
+      find.byKey(const ValueKey<String>('game-attached-lookup-risk-confirm')),
+      findsOneWidget,
+      reason: 'target 变化不应让旧对话框偷偷变成新请求',
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('game-attached-lookup-risk-confirm')),
+    );
+    await tester.pumpAndSettle();
+    expect(controller.profile, isNull);
+    expect(controller.needsUnsafeRiskAcceptance, isTrue);
+    expect(acceptRisk, findsOneWidget);
   });
 
   test('Texthooker page constructs attached workbench only on Windows', () {

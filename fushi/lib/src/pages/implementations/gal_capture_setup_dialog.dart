@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/mining/gal_audio_tracks_panel.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
@@ -22,11 +23,13 @@ class GalCaptureSetupDialog extends StatefulWidget {
   const GalCaptureSetupDialog({
     required this.session,
     required this.onSelectThread,
+    required this.attachedText,
     super.key,
   });
 
   final GalHookSessionController session;
   final GalTextThreadSelector onSelectThread;
+  final GalAttachedTextController attachedText;
 
   @override
   State<GalCaptureSetupDialog> createState() => _GalCaptureSetupDialogState();
@@ -121,6 +124,11 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
 
   void _dismissOnce() {
     if (_dismissRequested) return;
+    final ModalRoute<dynamic>? route = ModalRoute.of(context);
+    // Barrier/Escape may already have started popping this DialogRoute while
+    // the State is still mounted. Never let the queued auto-close pop the
+    // workbench route that has become current underneath it.
+    if (route == null || !route.isCurrent) return;
     _dismissRequested = true;
     Navigator.of(context).maybePop();
   }
@@ -139,9 +147,15 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
         width: dialogWidth,
         height: dialogHeight,
         child: ListenableBuilder(
-          listenable: widget.session,
+          listenable: Listenable.merge(<Listenable>[
+            widget.session,
+            widget.attachedText,
+          ]),
           builder: (BuildContext context, Widget? child) {
-            if (widget.session.selectedTextThreadKey != null) {
+            // The game HWND can cover this dialog while its modal barrier still
+            // blocks the workbench. Yield as soon as per-exe consent is needed.
+            if (widget.session.selectedTextThreadKey != null ||
+                widget.attachedText.needsUnsafeRiskAcceptance) {
               _scheduleAutoClose();
             }
             return Column(
