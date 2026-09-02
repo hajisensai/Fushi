@@ -288,9 +288,14 @@ class _FushiListItemState extends State<FushiListItem> {
     final bool pill = widget.selectedShape == FushiListItemSelectedShape.pill;
     final BorderRadius? highlightRadius =
         pill ? tokens.radii.groupRadius : null;
-    final BoxBorder? pillBorder = widget.selected
+    // pill 形态**两态都画边框**，未选中时透明：BoxDecoration 的 border 会把子节点向
+    // 内挤 1px，只在选中时给边框会让同一行选中后比未选中高 2px（功能选择卡片在
+    // 列表里逐行错位）。几何恒定，颜色才是唯一的选中信号。
+    final BoxBorder? pillBorder = pill
         ? Border.all(
-            color: tokens.surfaces.primary.withValues(alpha: 0.20),
+            color: widget.selected
+                ? tokens.surfaces.primary.withValues(alpha: 0.20)
+                : Colors.transparent,
           )
         : null;
     final Widget material = AnimatedContainer(
