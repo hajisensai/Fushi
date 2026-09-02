@@ -30,6 +30,60 @@ var FUSHI_FRAME_MAX_LONG_EDGE = 1920;
 // 转一次编码（`transcodeCardScreenshotAsync`），这里不必压得太狠。
 var FUSHI_FRAME_JPEG_QUALITY = 0.92;
 
+// 黑帧判据：采样点 BT.601 亮度全部 <= 此值才可能是「画不出来的黑」。4/255 是肉眼纯黑余量。
+var FUSHI_FRAME_BLACK_LUMA_MAX = 4;
+
+// 黑帧采样网格边长：在画面上均匀取 GRID×GRID 个点（8×8=64 点）。抽稀采样，不整幅读回——
+// 1920×1080 一次 getImageData 是 8MB，为了判一个布尔值不值得。
+var FUSHI_FRAME_BLACK_SAMPLE_GRID = 8;
+
+// 纯函数：一组采样点是否构成「DRM 合成失败的黑帧」。`samples` 是 `[[r,g,b], …]`。
+//
+// 判据**故意保守**（见文件头：黑帧判失败绝不能误伤正常的暗场景）——必须同时满足：
+//   ① 每个采样点的亮度都 <= `maxLuma`（整幅都黑）；
+//   ② 所有采样点**逐通道完全相同**（方差为 0）。真实暗场景哪怕再暗也带编码噪声和渐变，
+//      64 个散布点全字节相同的概率可以忽略；而 EME 合成失败给出的是一整块常量像素。
+// 代价：真正淡出到纯黑的那一帧会被判失败 → 用户拿到纯文本卡。一张纯黑封面本来就没信息，
+// 这个方向的误判无害；反过来「静默塞一张纯黑图」才是文件头要禁的。
+//
+// 采样点少于 2 个无法判方差 → 一律 false（判不出来就不判失败）。
+function fushiSamplesAreUniformBlack(samples, maxLuma) {
+  if (!Array.isArray(samples) || samples.length < 2) return false;
+  var limit = typeof maxLuma === 'number' ? maxLuma : FUSHI_FRAME_BLACK_LUMA_MAX;
+  var first = samples[0];
+  if (!first || first.length < 3) return false;
+  for (var i = 0; i < samples.length; i++) {
+    var s = samples[i];
+    if (!s || s.length < 3) return false;
+    if (0.299 * s[0] + 0.587 * s[1] + 0.114 * s[2] > limit) return false;
+    if (s[0] !== first[0] || s[1] !== first[1] || s[2] !== first[2]) return false;
+  }
+  return true;
+}
+
+// 在已画好的 canvas 上抽稀采样，返回 `[[r,g,b], …]`。
+// `getImageData` 在被污染的 canvas 上抛 SecurityError——不在这里吞，交给
+// `fushiCaptureVideoFrame` 的外层 catch，与既有那条降级路同一个出口。
+// 没有 `getImageData`（老浏览器 / 替身对象）或尺寸非法 → null = 「判不了」，不阻断出卡。
+function fushiSampleCanvasPixels(ctx, width, height, grid) {
+  if (!ctx || typeof ctx.getImageData !== 'function') return null;
+  var w = Number(width);
+  var h = Number(height);
+  if (!isFinite(w) || !isFinite(h) || w <= 0 || h <= 0) return null;
+  var n = Number(grid) > 0 ? Number(grid) : FUSHI_FRAME_BLACK_SAMPLE_GRID;
+  var out = [];
+  for (var iy = 0; iy < n; iy++) {
+    for (var ix = 0; ix < n; ix++) {
+      var x = Math.min(w - 1, Math.floor(((ix + 0.5) * w) / n));
+      var y = Math.min(h - 1, Math.floor(((iy + 0.5) * h) / n));
+      var d = ctx.getImageData(x, y, 1, 1).data;
+      if (!d || d.length < 3) return null;
+      out.push([d[0], d[1], d[2]]);
+    }
+  }
+  return out;
+}
+
 // 纯函数：把源尺寸等比夹进长边上限。
 // 源尺寸非正数（video 尚未拿到元数据）返回 null —— 调用方据此判「此刻取不到帧」。
 // 长边已经在上限内则原样返回（`scaled:false`），绝不放大。
@@ -95,6 +149,13 @@ function fushiCaptureVideoFrame(video, options) {
       ctx.imageSmoothingQuality = 'high';
     } catch (_) { /* 老浏览器没有这两个属性，画质差一点不影响正确性 */ }
     ctx.drawImage(video, 0, 0, size.width, size.height);
+    // EME/DRM 的**第二种**失败形态（文件头承诺过的那一半）：canvas 没被污染、drawImage 和
+    // toDataURL 都不抛，但硬解合成路径下画出来的是一整块常量黑。不判它，用户会静默拿到一张
+    // 纯黑封面的卡、零提示。判失败后与下面 SecurityError 那条降级路合流（同样返回 null）。
+    var samples = fushiSampleCanvasPixels(ctx, size.width, size.height);
+    if (samples && fushiSamplesAreUniformBlack(samples, FUSHI_FRAME_BLACK_LUMA_MAX)) {
+      return null;
+    }
     // DRM 视频在这里抛 SecurityError（canvas 已被污染）——由外层 catch 收，返回 null。
     var url = canvas.toDataURL('image/jpeg',
       opts.quality || FUSHI_FRAME_JPEG_QUALITY);
@@ -128,6 +189,10 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     FUSHI_FRAME_MAX_LONG_EDGE,
     FUSHI_FRAME_JPEG_QUALITY,
+    FUSHI_FRAME_BLACK_LUMA_MAX,
+    FUSHI_FRAME_BLACK_SAMPLE_GRID,
+    fushiSamplesAreUniformBlack,
+    fushiSampleCanvasPixels,
     fushiFrameTargetSize,
     fushiDataUrlToBase64,
     fushiVideoFrameCapturable,

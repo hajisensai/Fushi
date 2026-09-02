@@ -7886,8 +7886,15 @@ class _AppModelRemoteLookupService
       repo: repo,
     );
     if (res.aborted) {
-      return remoteMineError('Anki.mineImmersion.netflix',
-          'Netflix 制卡失败：${res.abortReason ?? '媒体抽取失败'}',
+      // 来源标签取与封面命名同一个判据（[immersionPayloadFromNetflix]），不再硬编码
+      // Netflix：这条兜底路同时服务 primevideo / hulu.jp / tver.jp / bilibili.tv 等
+      // （manifest 已纳入、无 clipSource → 立即出卡），它们失败时看到「Netflix 制卡失败」
+      // 是错的事实。
+      final bool fromNetflix = immersionPayloadFromNetflix(payload);
+      return remoteMineError(
+          fromNetflix ? 'Anki.mineImmersion.netflix' : 'Anki.mineImmersion.web',
+          '${fromNetflix ? 'Netflix' : '网页视频'} 制卡失败：'
+          '${res.abortReason ?? '媒体抽取失败'}',
           detail: res.abortReason);
     }
     return remoteMineResultFromOutcome(res.outcome! as MineOutcome);

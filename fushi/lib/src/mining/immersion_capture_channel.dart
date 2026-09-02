@@ -166,6 +166,17 @@ class ImmersionCaptureResult {
 /// 卡还报成功（「只本应有音频却失败才算失败」）。为 false（2A 截图卡 / 后台软解不可用）时
 /// [requireAudio]=false → 截图卡本就无音频，不算失败。旧实现按 `audio != null` 推 requireAudio
 /// 是自毁的——音频恰好丢时反而关掉了守卫。
+/// 这份 payload 是不是 **Netflix 那条捕获路**来的。
+///
+/// 判据取 Netflix 独有的两个字段：扩展录制的片段字节、或后台软解用的 `netflixVideoId`；
+/// 两者皆无即非 Netflix 来源。**故意收成一个原语**：这个判断此前在
+/// [buildImmersionRequest] 里就地写了一份，而 `app_model` 的兜底失败分支又硬编码了字面
+/// 「Netflix 制卡失败」——于是 primevideo / hulu.jp / tver.jp / bilibili.tv（manifest 已
+/// 纳入范围、`fushiClipSource()` 返回 null → 走同一条兜底路）失败时，用户看到的是
+/// 「**Netflix** 制卡失败」。多一个入口就会多一次漂移，所以只留这一个判据。
+bool immersionPayloadFromNetflix(ImmersionMinePayload p) =>
+    p.clipBytes != null || p.netflixVideoId != null;
+
 ImmersionMiningRequest buildImmersionRequest(
   ImmersionMinePayload p,
   ImmersionCaptureResult cap, {
@@ -182,7 +193,7 @@ ImmersionMiningRequest buildImmersionRequest(
   // （bilibili.com 等）取当前解码帧走同一条 provided 字节路，再叫 netflix_* 就是让媒体库里
   // 一张 B 站的卡标着 netflix——与该命名的用途正相反。判据取 Netflix 那条路**独有**的两个
   // 字段：录制片段字节、或后台软解用的 netflixVideoId；两者皆无即非 Netflix 来源。
-  final bool fromNetflix = p.clipBytes != null || p.netflixVideoId != null;
+  final bool fromNetflix = immersionPayloadFromNetflix(p);
   final String origin = fromNetflix ? 'netflix' : 'web';
   // BUG-1416：三种封面各自的名字（Anki 按扩展名判 MIME），分开命名——媒体库里一眼看得出
   // 这张卡的封面是哪条路产出的。片段里抽的静态帧跟随 [ImmersionCaptureResult.stillFormat]

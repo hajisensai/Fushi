@@ -122,3 +122,52 @@ test('videoKey 对 B 站仍是 host+path —— 站点判定改动不得动既�
     'www.bilibili.com/video/BV1Este6wExx',
     '轨 key 一旦变化，用户已挂上的外挂字幕就会找不到');
 });
+
+// ── 裁切窗边距（两条制卡路同源的那个原语）──
+// 起因：入队批量剪辑写死 `startV-200 / endV+200`，立即出卡发的却是**裸 cue 窗**。
+// 同一句话在两条路上被裁成不同长度，B 站点一下出的卡开头容易被切掉一点。
+
+test('裁切窗：句首/句尾各外扩 200ms', () => {
+  const ctx = load('https://www.bilibili.com/video/BV1Este6wExx');
+  const w = ctx.fushiClipWindowWithMargin(61000, 64500);
+  assert.strictEqual(w.startMs, 60800);
+  assert.strictEqual(w.endMs, 64700);
+});
+
+test('裁切窗：句首在 0 附近夹到 0，不出负时间', () => {
+  const ctx = load('https://www.bilibili.com/video/BV1Este6wExx');
+  const w = ctx.fushiClipWindowWithMargin(120, 900);
+  assert.strictEqual(w.startMs, 0, '负的起始时间会让 ffmpeg -ss 直接失败');
+  assert.strictEqual(w.endMs, 1100);
+});
+
+test('裁切窗：非有限数 → null（调用方据此判「这句没有可用时间窗」）', () => {
+  const ctx = load('https://www.bilibili.com/video/BV1Este6wExx');
+  assert.strictEqual(ctx.fushiClipWindowWithMargin(undefined, 1000), null);
+  assert.strictEqual(ctx.fushiClipWindowWithMargin(0, NaN), null);
+  assert.strictEqual(ctx.fushiClipWindowWithMargin(null, undefined), null);
+});
+
+test('裁切窗：边距可覆写，非法覆写回落默认值', () => {
+  const ctx = load('https://www.bilibili.com/video/BV1Este6wExx');
+  assert.strictEqual(ctx.fushiClipWindowWithMargin(5000, 6000, 0).startMs, 5000);
+  assert.strictEqual(ctx.fushiClipWindowWithMargin(5000, 6000, 500).startMs, 4500);
+  // 负边距 / 非数字 → 回落 FUSHI_CLIP_WINDOW_MARGIN_MS，绝不缩窗。
+  assert.strictEqual(ctx.fushiClipWindowWithMargin(5000, 6000, -1).startMs, 4800);
+  assert.strictEqual(ctx.fushiClipWindowWithMargin(5000, 6000, 'x').startMs, 4800);
+});
+
+test('两条制卡路必须用同一个边距常量（不许各写各的字面量）', () => {
+  const fs2 = require('node:fs');
+  const content = fs2.readFileSync(path.join(__dirname, 'content.js'), 'utf8');
+  const shim = fs2.readFileSync(path.join(__dirname, 'bridge-shim.js'), 'utf8');
+  assert.ok(content.includes('fushiClipWindowWithMargin('),
+    '入队路必须走共享原语，不许写死 startV - 200');
+  assert.ok(shim.includes('fushiClipWindowWithMargin('),
+    '立即出卡路必须走共享原语，不许发裸 cue 窗');
+  // 入队路旧的字面量算式不许复活（回归形状：一处改了另一处没改）。
+  assert.ok(!/startV\s*-\s*200/.test(content),
+    'content.js 里不许再出现 startV - 200 这种就地字面量边距');
+  assert.ok(!/endV\s*\+\s*200/.test(content),
+    'content.js 里不许再出现 endV + 200 这种就地字面量边距');
+});

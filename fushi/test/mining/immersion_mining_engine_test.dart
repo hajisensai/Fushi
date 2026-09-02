@@ -355,6 +355,9 @@ void main() {
     expect(repo.minedContext!.coverPath, endsWith('.jpg'));
   });
 
+  // TODO-1314(B5) / PR#1172: 物化判据是「谁在限速」而不是「有没有分离音轨」——`range=` 查询参数
+  // 分片是 googlevideo 专属绕行，所以 fixture 必须用真的 googlevideo 主机名（旧 fixture
+  // `audio-only.example` 只满足旧的形状判据，与用例名里的 youtube split 不一致）。
   test(
       'audioSource (youtube split) is materialized locally then cut (TODO-1314 B5)',
       () async {
@@ -411,7 +414,8 @@ void main() {
                 source: AnkiMiningSource.video,
                 fields: {'expression': 'x'},
                 mediaSource: 'https://video-only.example/v',
-                audioSource: 'https://audio-only.example/a',
+                audioSource:
+                    'https://rr1---sn-4g5e6nez.googlevideo.com/videoplayback?id=x',
                 clipStartMs: 0,
                 clipEndMs: 2000,
                 sentence: 's'),
@@ -420,8 +424,64 @@ void main() {
             repo: repo);
     expect(gifInput, 'https://video-only.example/v'); // GIF 仍从视频流
     // 分离 audio-only 流先经 range 分片下载物化到本地，再对本地文件裁（不再对 URL 直接 HTTP seek）。
-    expect(materializedUrl, 'https://audio-only.example/a');
+    expect(materializedUrl,
+        'https://rr1---sn-4g5e6nez.googlevideo.com/videoplayback?id=x');
     expect(audioInput, localAudio);
+  });
+
+  // PR#1172 反向守卫：非 googlevideo 的分离音轨（bilibili DASH audio-only m4s 等）
+  // **不得**走 range 分片物化——`range=` 是它们不认识的查询参数，被忽略后每一片
+  // 都返回整个文件，会把同一个流反复下满 maxBytes（比直接 seek 慢几十倍）。
+  // 它们直接对 URL `-ss` 裁即可。这一条钉住判据是「谁在限速」而非「有没有分离音轨」。
+  test('non-googlevideo split audio is cut from the URL, not materialized',
+      () async {
+    final repo = _FakeRepo();
+    String? audioInput;
+    String? materializedUrl;
+    const String biliAudio =
+        'https://upos-hz-mirrorakam.akamaized.net/upgcxcode/x-1-30280.m4s';
+    Future<String?> capAudio(
+        {required String inputPath,
+        required int startMs,
+        required int endMs,
+        required String outputPath,
+        int? audioStreamIndex,
+        int? audioStreamCount,
+        FfmpegFailureReporter? onFailure,
+        int audioChannels = 1,
+        String audioBitrate = '64k',
+        String? tlsPinSha256}) async {
+      audioInput = inputPath;
+      return outputPath;
+    }
+
+    Future<String?> capMaterialize(
+        {required String audioUrl,
+        required String outputPath,
+        FfmpegFailureReporter? onFailure}) async {
+      materializedUrl = audioUrl;
+      return '${tmp.path}/should_not_be_used';
+    }
+
+    await build(
+            gif: okGif,
+            audio: capAudio,
+            frame: okFrame,
+            materializer: capMaterialize)
+        .mine(
+            const ImmersionMiningRequest(
+                source: AnkiMiningSource.video,
+                fields: {'expression': 'x'},
+                mediaSource: 'https://video-only.example/v',
+                audioSource: biliAudio,
+                clipStartMs: 0,
+                clipEndMs: 2000,
+                sentence: 's'),
+            compression: MiningMediaCompression.compressed,
+            tempDir: tmp.path,
+            repo: repo);
+    expect(materializedUrl, isNull);
+    expect(audioInput, biliAudio);
   });
 
   test('updateNoteId routes to updateMinedNote', () async {

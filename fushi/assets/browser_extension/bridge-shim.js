@@ -45,9 +45,15 @@ window.flutter_inappwebview = {
             // 有当前字幕行 → 把时间窗一并带上：服务端据此从原始流裁句子音频/动图
             // （`immediate` 档的站点），没有流解析器时这些字段被忽略，不影响出卡。
             if (ctx && ctx.window) {
+              // cueStartMs 是**真句首**（静态帧「字幕开头」档定位那一帧用），不带边距。
               msg.cueStartMs = ctx.window.startV;
-              msg.clipStartMs = ctx.window.startV;
-              msg.clipEndMs = ctx.window.endV;
+              // 裁切窗带边距，且与入队批量剪辑那条路同源——见
+              // `subtitle-providers.js` 的 fushiClipWindowWithMargin：此前这条路发的是裸
+              // cue 窗，叠上字幕轮询粒度会把句子开头切掉一点。
+              var clipWin = (typeof fushiClipWindowWithMargin === 'function')
+                ? fushiClipWindowWithMargin(ctx.window.startV, ctx.window.endV) : null;
+              msg.clipStartMs = clipWin ? clipWin.startMs : ctx.window.startV;
+              msg.clipEndMs = clipWin ? clipWin.endMs : ctx.window.endV;
               if (ctx.mineAtV !== null && ctx.mineAtV !== undefined) {
                 msg.mineAtMs = ctx.mineAtV;
               }

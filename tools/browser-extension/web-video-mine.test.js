@@ -26,6 +26,11 @@ function load({
   enqueueResult = { ok: true, count: 1 },
   title = 'テスト動画_哔哩哔哩_bilibili',
   mineResult = { ok: true, data: { result: 'success' } },
+  // subtitle-providers.js 导出的裁切窗边距原语（manifest 同隔离世界，恒在场）。
+  // 传 null 模拟「老宿主没有这个函数」，验证降级不抛。
+  clipWindowWithMargin = (startV, endV) => ({
+    startMs: Math.max(0, startV - 200), endMs: endV + 200,
+  }),
 } = {}) {
   const sent = [];
   const enqueued = [];
@@ -53,6 +58,7 @@ function load({
   if (mineContext !== null) windowObj.fushiMineContext = () => mineContext;
   const ctx = { window: windowObj, chrome, document: { title } };
   if (frame !== undefined) ctx.fushiCaptureCurrentFrame = () => frame;
+  if (clipWindowWithMargin) ctx.fushiClipWindowWithMargin = clipWindowWithMargin;
   if (netflixCueText !== undefined) {
     ctx.extractNetflixCueText = () => netflixCueText;
     ctx.netflixSubtitleContainer = () => ({});
@@ -101,9 +107,11 @@ test('B 站现场：带上当前解码帧当封面，附时间窗与页面标题
   await call('mineEntry', FIELDS);
   const msg = sent[0];
   assert.strictEqual(msg.screenshotBase64, 'SU1H', '画面就在 <video> 里，必须带图');
-  assert.strictEqual(msg.cueStartMs, 61000);
-  assert.strictEqual(msg.clipStartMs, 61000);
-  assert.strictEqual(msg.clipEndMs, 64500);
+  assert.strictEqual(msg.cueStartMs, 61000, 'cueStartMs 是真句首，不带边距');
+  // 裁切窗带 ±200ms 边距，与入队批量剪辑那条路同源（`fushiClipWindowWithMargin`）——
+  // 此前这条路发裸 cue 窗，叠上字幕轮询粒度会把句子开头切掉一点。
+  assert.strictEqual(msg.clipStartMs, 60800);
+  assert.strictEqual(msg.clipEndMs, 64700);
   assert.strictEqual(msg.mineAtMs, 62200, '制卡那一刻的视频时间');
   assert.strictEqual(msg.documentTitle, 'テスト動画_哔哩哔哩_bilibili',
     '不发标题的话服务端会回落成字面 Netflix');
@@ -161,8 +169,21 @@ test('immediate 档：立即出卡并带上可裁流身份，供服务端裁原�
   assert.strictEqual(sent[0].clipSourceId, 'BV1xx411c7mD');
   assert.strictEqual(sent[0].clipSourcePart, 13,
     '少了分 P 号，服务端会裁第 1 P 的音轨 → 图和句子是这一集、声音是上一集');
+  assert.strictEqual(sent[0].clipStartMs, 60800, '边距与入队路同源');
+  assert.strictEqual(sent[0].clipEndMs, 64700);
+});
+
+test('裁切窗边距缺席（老宿主无该原语）→ 退回裸 cue 窗，不抛也不出错卡', async () => {
+  const ctx = bilibiliContext();
+  ctx.clip = { kind: 'bilibili', id: 'BV1xx411c7mD', part: 1, mode: 'immediate' };
+  const { call, sent } = load({
+    mineContext: ctx, frame: { base64: 'SU1H' }, clipWindowWithMargin: null,
+  });
+  const ok = await call('mineEntry', FIELDS);
+  assert.strictEqual(ok, true);
   assert.strictEqual(sent[0].clipStartMs, 61000);
   assert.strictEqual(sent[0].clipEndMs, 64500);
+  assert.strictEqual(sent[0].cueStartMs, 61000);
 });
 
 test('无可裁源时不得发出半个 clipSource（服务端据它决定要不要解析流）', async () => {

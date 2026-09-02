@@ -199,12 +199,20 @@ void main() {
             isTrue,
             reason:
                 '$root content.js fushiEnqueue must prefer the full-episode track over DOM sampling');
-        // 录制边距 + 去重不得丢（复核修订 5 红线）。
+        // 录制边距 + 去重不得丢（复核修订 5 红线）。PR#1172 把边距收成共享原语
+        // `fushiClipWindowWithMargin`（入队批量剪辑与「立即出卡」两条路同源，此前后者
+        // 发的是裸 cue 窗），所以判据从字面算式改成「走那个原语」+「原语默认边距仍是
+        // 200ms」——同一条不变式，锚点换了位置。
         expect(
-            src.contains(
-                'startV: Math.max(0, w.startV - 200), endV: w.endV + 200'),
+            src.contains('fushiClipWindowWithMargin(w.startV, w.endV)'), isTrue,
+            reason: '$root content.js must take its clip window from the '
+                'shared margin primitive');
+        expect(
+            File('$root/subtitle-providers.js')
+                .readAsStringSync()
+                .contains('var FUSHI_CLIP_WINDOW_MARGIN_MS = 200;'),
             isTrue,
-            reason: '$root content.js must keep the -200/+200 record margins');
+            reason: '$root must keep the 200ms clip-window margin');
         expect(src.contains('fushiQueueKey'), isTrue,
             reason: '$root content.js must keep TODO-1222 dedup');
       });

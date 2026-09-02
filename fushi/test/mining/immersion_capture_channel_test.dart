@@ -156,4 +156,40 @@ void main() {
       expect(req.documentTitle, 'Netflix');
     });
   });
+  // PR#1172：来源判据收成唯一原语——封面命名与失败提示语必须问同一个函数，
+  // 否则会出现「卡的封面叫 web_shot.jpg，失败提示却说 Netflix 制卡失败」。
+  group('immersionPayloadFromNetflix', () {
+    test('录制片段字节 = Netflix 捕获路', () {
+      expect(
+          immersionPayloadFromNetflix(ImmersionMinePayload(
+              fields: const {'expression': 'x'},
+              sentence: 's',
+              clipBytes: Uint8List.fromList(<int>[1]))),
+          isTrue);
+    });
+    test('netflixVideoId = Netflix 后台软解路', () {
+      expect(
+          immersionPayloadFromNetflix(const ImmersionMinePayload(
+              fields: {'expression': 'x'},
+              sentence: 's',
+              netflixVideoId: '81',
+              clipStartMs: 0,
+              clipEndMs: 1)),
+          isTrue);
+    });
+    test('两者皆无 = 非 Netflix（primevideo / hulu.jp / tver.jp / bilibili.tv 等）',
+        () {
+      expect(
+          immersionPayloadFromNetflix(ImmersionMinePayload(
+              fields: const {'expression': 'x'},
+              sentence: 's',
+              documentTitle: 'Prime Video',
+              screenshotBytes: Uint8List.fromList(<int>[1]))),
+          isFalse);
+      expect(
+          immersionPayloadFromNetflix(const ImmersionMinePayload(
+              fields: {'expression': 'x'}, sentence: 's')),
+          isFalse);
+    });
+  });
 }

@@ -497,11 +497,14 @@ window.fushiEnqueue = function (fields, sentence) {
   const youtubeId = ctx.youtubeId;
   const netflixId = ctx.netflixId;
   const documentTitle = ctx.documentTitle;
+  // 边距与「立即出卡」那条路同源（`fushiClipWindowWithMargin`）——两条路裁的是同一句话，
+  // 边距不同步就会出现「B 站点一下的卡开头被切、YouTube 批量的卡不切」。
+  const clipWin = fushiClipWindowWithMargin(w.startV, w.endV);
   const item = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2),
     fields: fields, sentence: sentence || w.text || '',
-    startV: Math.max(0, w.startV - 200), endV: w.endV + 200,
-    // BUG-1416：startV 带了 200ms 录制头部提前量，不是真句首；静态帧「字幕开头」要的是真句首。
+    startV: clipWin.startMs, endV: clipWin.endMs,
+    // BUG-1416：startV 带了录制头部提前量，不是真句首；静态帧「字幕开头」要的是真句首。
     cueStartV: w.startV,
     mineAtV: mineAtV,
     site: site,

@@ -27,6 +27,31 @@ function fushiNetflixId() {
   const m = location.pathname.match(/\/watch\/(\d+)/);
   return m ? m[1] : null;
 }
+// 制卡裁切窗的边距（毫秒）：句首/句尾各外扩这么多。
+//
+// 两条制卡路裁的是**同一句话**，边距必须同源：
+//   · 入队批量剪辑（`content.js` 的 `fushiEnqueue`）——过去写死 `startV - 200 / endV + 200`；
+//   · 立即出卡（`bridge-shim.js` 的 mine 消息）——过去发的是**裸 cue 窗**，一点边距都没有。
+// 于是同一个用户在 B 站点一下出的卡，句子音频开头容易被切掉一点，而 YouTube 批量那条不会。
+//
+// 200ms 的来源是**字幕采样粒度**：当前字幕行是轮询 DOM 发现的，`startV` 最坏比真句首晚一个
+// 采样周期；再叠上音频编码器的起始帧对齐，不外扩就会吃掉句子开头的辅音。
+//
+// 注意 `cueStartMs`（静态帧「字幕开头」档要的时刻）必须仍是**真句首**，不带这个边距——
+// 边距是给「裁音频/动图」用的，不是给「定位那一帧」用的。
+var FUSHI_CLIP_WINDOW_MARGIN_MS = 200;
+
+// 纯函数：把 cue 的 [startV, endV] 外扩成制卡裁切窗。start 夹到 >= 0（句首在 0 附近时不越界）。
+// 入参非有限数 → null，调用方据此判「这一句没有可用的时间窗」。
+function fushiClipWindowWithMargin(startV, endV, marginMs) {
+  var s = Number(startV);
+  var e = Number(endV);
+  if (!isFinite(s) || !isFinite(e)) return null;
+  var m = Number(marginMs);
+  if (!isFinite(m) || m < 0) m = FUSHI_CLIP_WINDOW_MARGIN_MS;
+  return { startMs: Math.max(0, s - m), endMs: e + m };
+}
+
 // 「本页的原始媒体能不能被服务端按时间窗裁出句子音频/动图」——制卡该走批量剪辑队列、还是
 // 立即出卡，判据是**它**，不是站点名枚举。
 //
