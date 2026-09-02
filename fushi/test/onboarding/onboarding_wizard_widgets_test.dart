@@ -515,4 +515,56 @@ void main() {
     expect(find.text('本次配置'), findsOneWidget);
     expect(find.byType(Text), findsNWidgets(5));
   });
+
+  testWidgets('sample sentence card shows the sentence and is tappable', (
+    WidgetTester tester,
+  ) async {
+    bool opened = false;
+    await tester.pumpWidget(
+      _host(
+        OnboardingSampleSentenceCard(
+          sentence: '今日はいい天気ですね。',
+          onTap: () => opened = true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('今日はいい天気ですね。'), findsOneWidget);
+    await tester.tap(find.text('今日はいい天気ですね。'));
+    expect(opened, isTrue);
+  });
+
+  testWidgets('operation tutorial renders the preface between hero and steps', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        OnboardingOperationTutorialView(
+          icon: Icons.touch_app_outlined,
+          title: '点击查词',
+          body: '先用下面这句话练手。',
+          preface: OnboardingSampleSentenceCard(
+            sentence: '练习句子在这里',
+            onTap: () {},
+          ),
+          items: const <OnboardingTutorialItem>[
+            OnboardingTutorialItem(
+              icon: Icons.ads_click_outlined,
+              title: '点一下文字',
+              description: '说明',
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final double hero = tester.getTopLeft(find.text('点击查词')).dy;
+    final double preface = tester.getTopLeft(find.text('练习句子在这里')).dy;
+    final double step = tester.getTopLeft(find.text('点一下文字')).dy;
+    // 引子在 hero 之下、步骤之上：用户先看到句子，再看怎么点。
+    expect(preface, greaterThan(hero));
+    expect(step, greaterThan(preface));
+  });
 }

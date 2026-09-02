@@ -10,6 +10,7 @@ import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankiconnect_addon_installer.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
+import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
 import 'package:fushi/src/settings/settings_actions.dart'
@@ -34,6 +35,7 @@ import 'package:fushi_anki/fushi_anki.dart'
     show AnkiDeck, AnkiNoteType, AnkiSettings;
 import 'package:fushi_audio/fushi_audio.dart'
     show AudiobookRepository, SrtBookRepository;
+import 'package:fushi_dictionary/fushi_dictionary.dart' show Dictionary;
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -253,13 +255,40 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     );
   }
 
-  void _openStandaloneLookup() {
+  /// 打开独立查词页；[query] 非空时把它当作用户输入立即查一次（练习句子整句进
+  /// 源文本条，用户在真实查词面板里点词）。
+  void _openStandaloneLookup({String? query}) {
     unawaited(
       _pushPage(
         (_) => Scaffold(
-          body: SafeArea(child: HomeDictionaryPage(showBackButton: true)),
+          body: SafeArea(
+            child: HomeDictionaryPage(
+              showBackButton: true,
+              initialQuery: query,
+            ),
+          ),
         ),
       ),
+    );
+  }
+
+  /// 查词教程用的练习句子：按已安装词典的词头语言挑，没有就按推荐包（日语）/
+  /// 英语兜底。见 [onboardingSampleSentence]。
+  String get _sampleSentence => onboardingSampleSentence(
+    dictionarySourceLanguages: appModel.dictionaries.map(
+      (Dictionary dictionary) => dictionary.effectiveSourceLanguage,
+    ),
+    recommendedPackSelected: _selected.contains(
+      OnboardingFeature.recommendedPack,
+    ),
+  );
+
+  /// 练习句子卡 + 点它就进查词页，两处查词教程共用。
+  Widget _sampleSentencePreface() {
+    final String sentence = _sampleSentence;
+    return OnboardingSampleSentenceCard(
+      sentence: sentence,
+      onTap: () => _openStandaloneLookup(query: sentence),
     );
   }
 
@@ -829,6 +858,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           icon: Icons.touch_app_outlined,
           title: t.onboarding_step_click_lookup_title,
           body: t.onboarding_click_lookup_intro,
+          preface: _sampleSentencePreface(),
           items: <OnboardingTutorialItem>[
             OnboardingTutorialItem(
               icon: Icons.ads_click_outlined,
@@ -849,10 +879,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           actions: <OnboardingAction>[
             OnboardingAction(
               icon: Icons.manage_search_outlined,
-              label: t.onboarding_lookup_verify_action,
-              description: t.onboarding_lookup_verify_desc,
+              label: t.onboarding_lookup_practice_action,
+              description: t.onboarding_lookup_practice_desc,
               necessity: OnboardingActionNecessity.mustDo,
-              onPressed: _openStandaloneLookup,
+              onPressed: () => _openStandaloneLookup(query: _sampleSentence),
             ),
           ],
         );
@@ -904,6 +934,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       icon: Icons.add_card_outlined,
       title: t.onboarding_step_first_anki_card_title,
       body: t.onboarding_first_anki_card_intro,
+      preface: _sampleSentencePreface(),
       items: <OnboardingTutorialItem>[
         OnboardingTutorialItem(
           icon: Icons.fact_check_outlined,
@@ -927,7 +958,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           label: t.onboarding_first_anki_action,
           description: t.onboarding_first_anki_action_desc,
           necessity: OnboardingActionNecessity.mustDo,
-          onPressed: _openStandaloneLookup,
+          onPressed: () => _openStandaloneLookup(query: _sampleSentence),
         ),
       ],
     );
@@ -1882,6 +1913,7 @@ class OnboardingOperationTutorialView extends StatelessWidget {
     required this.title,
     required this.body,
     required this.items,
+    this.preface,
     this.actions = const <OnboardingAction>[],
     super.key,
   });
@@ -1889,6 +1921,9 @@ class OnboardingOperationTutorialView extends StatelessWidget {
   final IconData icon;
   final String title;
   final String body;
+
+  /// hero 与步骤之间的引子（例：练习句子卡）。
+  final Widget? preface;
   final List<OnboardingTutorialItem> items;
   final List<OnboardingAction> actions;
 
@@ -1900,6 +1935,10 @@ class OnboardingOperationTutorialView extends StatelessWidget {
       children: <Widget>[
         OnboardingStepHero(icon: icon, title: title, body: body),
         SizedBox(height: tokens.spacing.card),
+        if (preface != null) ...<Widget>[
+          preface!,
+          SizedBox(height: tokens.spacing.card),
+        ],
         for (int index = 0; index < items.length; index++)
           OnboardingTutorialStep(
             number: index + 1,
@@ -2045,6 +2084,68 @@ class OnboardingSummaryRow extends StatelessWidget {
             ],
           ),
       ],
+    );
+  }
+}
+
+/// 查词教程的练习句子卡：标签 + 大字号句子 + 一句「点开去查」提示，整卡可点。
+///
+/// 句子本身不在向导里做逐字点词——那要把查词弹窗栈整套搬进向导；点卡片把整句喂进
+/// 真实查词页（源文本条 + 嵌套弹窗 + 加号制卡），用户在那里练的就是产品里的真路径。
+class OnboardingSampleSentenceCard extends StatelessWidget {
+  const OnboardingSampleSentenceCard({
+    required this.sentence,
+    required this.onTap,
+    super.key,
+  });
+
+  final String sentence;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colors = theme.colorScheme;
+    return FushiCard(
+      color: colors.primaryContainer,
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(
+                Icons.touch_app_outlined,
+                size: 18,
+                color: colors.onPrimaryContainer,
+              ),
+              SizedBox(width: tokens.spacing.gap / 2),
+              Text(
+                t.onboarding_sample_sentence_label,
+                style: tokens.type.sectionLabel.copyWith(
+                  color: colors.onPrimaryContainer,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          Text(
+            sentence,
+            style: theme.textTheme.titleLarge!.copyWith(
+              color: colors.onPrimaryContainer,
+            ),
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          Text(
+            t.onboarding_sample_sentence_hint,
+            style: theme.textTheme.bodySmall!.copyWith(
+              color: colors.onPrimaryContainer,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

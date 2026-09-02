@@ -4,8 +4,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
+import 'package:fushi/src/pages/implementations/home_dictionary_page.dart'
+    show HomeDictionaryPage;
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart'
-    show OnboardingProgressBar, OnboardingWizardPage;
+    show
+        OnboardingProgressBar,
+        OnboardingSampleSentenceCard,
+        OnboardingWizardPage;
 import 'package:fushi/utils.dart' show t;
 
 import 'helpers/focus_driver.dart';
@@ -46,6 +51,7 @@ void main() {
 
       int lastIndex = 0;
       int? total;
+      bool practiced = false;
       for (int guard = 0; guard < 20; guard++) {
         // 计数器是页脚那行「n / N」；它是步骤身份的可见真值。
         final Iterable<Text> texts = tester
@@ -74,6 +80,67 @@ void main() {
 
         // 停留给运行器拍照。
         await tester.pump(const Duration(milliseconds: 1500));
+
+        // 查词教程页：练习句子必须真的能把查词页带着整句打开（第一次遇到时练一次）。
+        if (!practiced &&
+            find.byType(OnboardingSampleSentenceCard).evaluate().isNotEmpty) {
+          practiced = true;
+          final String sentence = tester
+              .widget<OnboardingSampleSentenceCard>(
+                find.byType(OnboardingSampleSentenceCard).first,
+              )
+              .sentence;
+          expect(sentence.trim(), isNotEmpty);
+          final Finder practice = find.text(
+            t.onboarding_lookup_practice_action,
+          );
+          expect(practice, findsOneWidget);
+          expect(
+            await driver.focusWidget(practice, maxSteps: 120),
+            isTrue,
+            reason: 'practice action must be focus reachable',
+          );
+          await driver.activate();
+          for (
+            int i = 0;
+            i < 40 && find.byType(HomeDictionaryPage).evaluate().isEmpty;
+            i++
+          ) {
+            await tester.pump(const Duration(milliseconds: 250));
+          }
+          expect(find.byType(HomeDictionaryPage), findsOneWidget);
+          for (
+            int i = 0;
+            i < 40 && find.text(sentence).evaluate().isEmpty;
+            i++
+          ) {
+            await tester.pump(const Duration(milliseconds: 250));
+          }
+          // 整句进了搜索框（= 用户在搜索框里粘贴这句话的同一路径）。
+          expect(find.text(sentence), findsWidgets);
+          expect(tester.takeException(), isNull);
+          // 查词页的 PopScope：带着活动查询时第一次 back 只清空搜索，第二次才退页
+          // （产品既有语义）。按 back 直到页面关闭，但不得超过两次。
+          int backs = 0;
+          while (find.byType(HomeDictionaryPage).evaluate().isNotEmpty &&
+              backs < 2) {
+            await driver.back();
+            backs++;
+            for (
+              int i = 0;
+              i < 20 && find.byType(HomeDictionaryPage).evaluate().isNotEmpty;
+              i++
+            ) {
+              await tester.pump(const Duration(milliseconds: 250));
+            }
+          }
+          expect(
+            find.byType(HomeDictionaryPage),
+            findsNothing,
+            reason: 'back must leave the lookup page within two presses',
+          );
+          expect(find.byType(OnboardingWizardPage), findsOneWidget);
+        }
 
         final bool isLast = index == count;
         final Finder next = find.text(
