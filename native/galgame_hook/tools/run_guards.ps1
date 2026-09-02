@@ -72,6 +72,9 @@ try {
   Invoke-Checked $python 'tests/renpy_lookup_source_guard_test.py'
   Invoke-Checked $python 'tests/evidence_contract_test.py'
   Invoke-Checked $python 'tests/galhook_workflow_test.py'
+  # CloseHandle detour 及其可达的 Forget* 不得阻塞：MinHook Freeze（含 LunaHook32 那份）
+  # 挂起全部线程后仍会调 CloseHandle，锁在这里等于等一个被自己挂起的线程（BUG-2046）。
+  Invoke-Checked $python 'tests/close_handle_detour_lockfree_guard_test.py'
   # 每个原生测试都必须在任何 include 之前 `#undef NDEBUG`，否则 CI 的
   # `--config Release` 会把裸 assert 整条编译掉，测试恒绿。这条守卫本身
   # 必须登记在此：它曾经写好却没接进来，于是 generic_input_shield_test.cpp

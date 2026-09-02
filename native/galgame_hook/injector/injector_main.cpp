@@ -144,6 +144,29 @@ std::wstring DefaultDllPath() {
          (legacy_hibiki ? L"hibiki_voice_hook.dll" : L"fushi_voice_hook.dll");
 }
 
+// 目标进程里某个模块的加载基址；找不到（含模块尚未映射）返回 nullptr。
+// InjectDll 依赖「同 arch/同会话下 kernel32 跨进程同基址」这条假设，它一旦不成立，
+// 远程线程会以目标进程里的野地址为入口执行 —— 必须能把它证伪而不是假定成立。
+HMODULE FindRemoteModuleBase(DWORD pid, const wchar_t* module_name) {
+  if (pid == 0) return nullptr;
+  HANDLE snap =
+      CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
+  if (snap == INVALID_HANDLE_VALUE) return nullptr;
+  MODULEENTRY32W entry = {};
+  entry.dwSize = sizeof(entry);
+  HMODULE base = nullptr;
+  if (Module32FirstW(snap, &entry)) {
+    do {
+      if (_wcsicmp(entry.szModule, module_name) == 0) {
+        base = entry.hModule;
+        break;
+      }
+    } while (Module32NextW(snap, &entry));
+  }
+  CloseHandle(snap);
+  return base;
+}
+
 // 经 CreateRemoteThread(LoadLibraryW) 把 [dll_path] 注入 [target]。成功返回 true。
 // CREATE_SUSPENDED 的进程主线程虽挂起，但此处 CreateRemoteThread 建的新线程照跑（kernel32/
 // ntdll 已映射，LoadLibraryW 可用）——标准早注入手法。
@@ -158,19 +181,35 @@ bool InjectDll(HANDLE target, const std::wstring& dll_path) {
   bool ok = false;
   if (WriteProcessMemory(target, remote, dll_path.c_str(), bytes, nullptr)) {
     // LoadLibraryW 在 kernel32 里，同 arch/同会话跨进程地址一致（ASLR 每次开机固定）。
+    HMODULE local_k32 = GetModuleHandleW(L"kernel32.dll");
+    const DWORD target_pid = GetProcessId(target);
+    HMODULE remote_k32 = FindRemoteModuleBase(target_pid, L"kernel32.dll");
+    fprintf(stderr, "[inject] kernel32 pid=%lu local=%p target=%p\n", target_pid,
+            static_cast<void*>(local_k32), static_cast<void*>(remote_k32));
     const auto load =
         reinterpret_cast<LPTHREAD_START_ROUTINE>(reinterpret_cast<void*>(
-            GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "LoadLibraryW")));
+            GetProcAddress(local_k32, "LoadLibraryW")));
     if (load != nullptr) {
       HANDLE thread = CreateRemoteThread(target, nullptr, 0, load, remote, 0,
                                          nullptr);
       if (thread != nullptr) {
-        WaitForSingleObject(thread, 10000);
+        const DWORD wait_result = WaitForSingleObject(thread, 10000);
         DWORD exit_code = 0;
         GetExitCodeThread(thread, &exit_code);
         CloseHandle(thread);
         // 64 位下 exit_code 截断 HMODULE，不足以判成败——真正的成功信号是 hook DLL
         // SetEvent 的就绪事件（见 RunInjection）。这里只要远程线程跑起来即算注入动作完成。
+        //
+        // 但「远程线程跑起来」与「DLL 真的装进去了」是两件事，旧实现把 wait 结果和
+        // exit code 一起丢弃，于是超时、LoadLibraryW 返回 NULL、真成功三种结局在
+        // stderr 上完全同形。Locale Emulator 路径下正是卡在这里：注入器报「注入完成」，
+        // 目标进程却从未执行 DllMain。这一行只记录事实，不改判定，供分型用。
+        const size_t slash = dll_path.find_last_of(L"\\/");
+        const wchar_t* dll_name = slash == std::wstring::npos
+                                      ? dll_path.c_str()
+                                      : dll_path.c_str() + slash + 1;
+        fprintf(stderr, "[inject] remote LoadLibraryW %ls wait=%lu exit=0x%08lX\n",
+                dll_name, wait_result, exit_code);
         ok = true;
       } else {
         fprintf(stderr, "CreateRemoteThread failed: %lu\n", GetLastError());

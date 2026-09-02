@@ -29,6 +29,7 @@ VideoDownloadJobRow _job({
   double progress = 0.4,
   String? error,
   int? completedAt,
+  String organizationPolicy = 'library',
 }) =>
     VideoDownloadJobRow(
       jobId: id,
@@ -52,7 +53,7 @@ VideoDownloadJobRow _job({
       category: 'fushi-video',
       targetSourceId: null,
       collectionId: null,
-      organizationPolicy: 'library',
+      organizationPolicy: organizationPolicy,
       subtitlePolicy: 'bestEffort',
       observedSavePath: null,
       targetRelativeRoot: null,
@@ -132,6 +133,118 @@ void main() {
       classifyVideoDownloadError('ENOSPC: no space left on device, write'),
       VideoDownloadErrorCategory.unknown,
     );
+  });
+
+  test('只有「下完但只有孤立音频」的有声书任务才需要补对齐文件', () {
+    expect(
+      videoDownloadJobNeedsAudiobookPairing(
+        _job(
+          id: 'a',
+          title: 'TMW vol.1',
+          lifecycle: VideoDownloadJobLifecycle.completed,
+          organizationPolicy: 'download-only-audiobook',
+        ),
+      ),
+      isTrue,
+    );
+    // 还没下完：文件都不在，补什么都早。
+    expect(
+      videoDownloadJobNeedsAudiobookPairing(
+        _job(
+          id: 'b',
+          title: 'TMW vol.1',
+          organizationPolicy: 'download-only-audiobook',
+        ),
+      ),
+      isFalse,
+    );
+    // discovery-audiobook 是「包里三件套齐、已自动入库」，无需人工补。
+    expect(
+      videoDownloadJobNeedsAudiobookPairing(
+        _job(
+          id: 'c',
+          title: 'boxed set',
+          lifecycle: VideoDownloadJobLifecycle.completed,
+          organizationPolicy: 'discovery-audiobook',
+        ),
+      ),
+      isFalse,
+    );
+    // 别的域的 download-only 不关有声书的事。
+    expect(
+      videoDownloadJobNeedsAudiobookPairing(
+        _job(
+          id: 'd',
+          title: 'some game',
+          lifecycle: VideoDownloadJobLifecycle.completed,
+          organizationPolicy: 'download-only-game',
+        ),
+      ),
+      isFalse,
+    );
+    // 普通视频任务（本来就是这条管线的主业）不受影响。
+    expect(
+      videoDownloadJobNeedsAudiobookPairing(
+        _job(
+          id: 'e',
+          title: 'some anime',
+          lifecycle: VideoDownloadJobLifecycle.completed,
+        ),
+      ),
+      isFalse,
+    );
+  });
+
+  testWidgets('孤立音频的有声书任务露出补对齐入口,普通任务不露',
+      (WidgetTester tester) async {
+    final _MemoryJobsStore store = _MemoryJobsStore();
+    addTearDown(store.close);
+    final List<String> paired = <String>[];
+    await _pumpPanel(
+      tester,
+      panel: VideoDownloadJobsPanel(
+        store: store,
+        onPairAudiobook: (VideoDownloadJobRow job) async {
+          paired.add(job.jobId);
+        },
+      ),
+    );
+    store.emit(<VideoDownloadJobRow>[
+      _job(
+        id: 'lonely-audio',
+        title: 'TMW vol.1',
+        lifecycle: VideoDownloadJobLifecycle.completed,
+        organizationPolicy: 'download-only-audiobook',
+      ),
+      _job(
+        id: 'plain-video',
+        title: 'some anime',
+        lifecycle: VideoDownloadJobLifecycle.completed,
+      ),
+    ]);
+    await tester.pumpAndSettle();
+
+    final Finder pairButton = find.byKey(
+      const ValueKey<String>('video-download-job-pair-audiobook-lonely-audio'),
+    );
+    expect(pairButton, findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey<String>(
+          'video-download-job-pair-audiobook-plain-video',
+        ),
+      ),
+      findsNothing,
+    );
+    // 说明为什么还差一步的提示只跟着那条任务走。
+    expect(
+      find.text(t.download_task_audiobook_needs_alignment),
+      findsOneWidget,
+    );
+
+    await tester.tap(pairButton);
+    await tester.pumpAndSettle();
+    expect(paired, <String>['lonely-audio']);
   });
 
   testWidgets('watches lifecycle, stage, progress and safe error text',
