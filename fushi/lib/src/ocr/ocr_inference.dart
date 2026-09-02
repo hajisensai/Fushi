@@ -137,12 +137,33 @@ enum OcrPlatform { windows, macos, ios, linux, android }
 ///   下来——于是每个任务白付一次 1.5 秒的失败建会话。**别再凭那句话把
 ///   DirectML 加回来**：换模型才是重新评估的前提，要加先用 BUG-2050 里的探针
 ///   在真机上重新拿数。
-/// - Windows 识别：只考虑 CUDA —— 实测 DirectML 对自回归逐步解码是负优化
+/// - Windows 识别：也不要 DirectML —— 实测 DirectML 对自回归逐步解码是负优化
 ///   （每步 GPU 往返开销远大于小 batch 计算本身）。
 ///
-///   注意：检测与识别当前**恰好**都只剩 CUDA，但理由完全不同（检测是模型建不
-///   起来，识别是架构上的负优化）。所以 [kind] 这个轴保留——任一条前提变了它们
-///   就会重新分叉。
+/// - **Windows 结论：一个加速 EP 都不要**。DirectML 由上面两条排除；CUDA 则是
+///   **我们出的包里根本没有**——`third_party/flutter_onnxruntime/windows/CMakeLists.txt`
+///   按 SHA-256 钉死下载 NuGet `microsoft.ml.onnxruntime.directml 1.22.0`
+///   （`29F9872D…E732E60`），随包只有 `onnxruntime.dll` /
+///   `onnxruntime_providers_shared.dll` / `DirectML.dll` 三个（`:88-89`），
+///   `runtimes/win-x64/native/` 里也没有 `onnxruntime_providers_cuda.dll`。
+///   逐字节扫那份 `onnxruntime.dll` 复核：`OrtSessionOptionsAppendExecutionProvider_CUDA`
+///   / `cudart64` / `cudnn64` / `CUDA_PATH` 全部 0 命中，`DmlExecutionProvider`
+///   109 命中；仅有的两处 `onnxruntime_providers_cuda.dll` 是
+///   `provider_bridge_ort.cc` 里那张「共享 provider 懒加载文件名」表（任何 ORT
+///   构建都有，与是否编进 CUDA EP 无关）。
+///   `Ort::GetAvailableProviders()` 回报的是**编译进来**的 EP，所以
+///   `availableAcceleratedProviders()` 在 Windows 上永远拿不到 CUDA。
+///
+///   偏好表里留一个恒不可满足的 CUDA 不是「留个位置」，是**制造一条用户消不掉
+///   的假告警**：`MangaOcrServiceImpl` 的 `recordUnavailable` 会对每个整卷任务
+///   产出两条 `cuda not built into this ONNX Runtime -> cpu` 并弹黄条，而实际
+///   能力与写空表时逐字相同（都是纯 CPU）。所以这里写空表——`wanted.isEmpty`
+///   正是「这个平台本来就该走 CPU」的静默判据。
+///
+///   要把 CUDA 加回来，前提是**换掉出包的 ORT NuGet**（换成带 CUDA EP 的包并随
+///   包发 `onnxruntime_providers_cuda.dll` + CUDA/cuDNN 运行库），而不是改这里的
+///   常量。[kind] 这个轴保留：检测与识别排除加速 EP 的理由完全不同（检测是 int8
+///   模型建不出会话，识别是架构性负优化），任一条前提变了它们就会重新分叉。
 /// - **macOS / iOS：不要任何加速 EP**（BUG-1613）。这里曾经按 Windows 的
 ///   类比给检测选 CoreML，但那段分支写下时 Apple 的 ORT native 整个被 gate 掉，
 ///   从未被执行过。2026-08-14 打开 Apple 本地 OCR 后真机对拍（同一页、1 次预热
@@ -168,12 +189,10 @@ List<OcrExecutionProvider> acceleratedProviderPreference({
   required OcrPlatform platform,
 }) {
   switch (platform) {
+    // Windows：DirectML 实测排除（检测建不出会话 / 识别负优化），CUDA 压根没随
+    // 包（DirectML NuGet 里没有 CUDA EP，见上），所以偏好表为空。写 [cuda] 只会
+    // 让 recordUnavailable 每卷产出一条永远消不掉的假告警，能力上一模一样。
     case OcrPlatform.windows:
-      // 检测与识别当前**恰好**都只剩 CUDA，所以这里不按 [kind] 分支——两条
-      // 返回同一个值的分支只是噪音。它们排除 DirectML 的理由不同（检测是 int8
-      // 模型建不出会话，识别是自回归解码的架构性负优化，见上），任一条前提变了
-      // 就在这里重新分叉，[kind] 为此保留在签名里。
-      return const <OcrExecutionProvider>[OcrExecutionProvider.cuda];
     // BUG-1613：Apple 两端与 linux/android 同档，一个加速 EP 都不要（实测见上表）。
     case OcrPlatform.macos:
     case OcrPlatform.ios:

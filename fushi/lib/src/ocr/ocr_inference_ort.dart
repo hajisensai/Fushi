@@ -65,20 +65,24 @@ const Map<OrtProvider, OcrExecutionProvider> _acceleratedProviders =
   OrtProvider.CORE_ML: OcrExecutionProvider.coreml,
 };
 
-/// 用配置的加速 EP 创建会话；建不起来时按 [providers] 里的 CPU 后备重试一次。
+/// 用配置的加速 EP 创建会话；首选 EP 建不起来时，按 [providers] 中已有的 CPU
+/// 后备重试一次。
 ///
-/// **判据是「首选的是不是加速 provider」，不是错误码**（BUG-2050）。错误码曾经
-/// 能当代理：那时插件的 Windows MethodChannel 只实现 CPU/CUDA 映射，传
-/// `DIRECT_ML` 会在碰到 ORT 之前就整张列表拒掉，必然是 `INVALID_PROVIDER`。
-/// BUG-1968 把真 DML EP 接进来之后这个前提没了——失败改从 ORT 内部出来，码变成
-/// `PROVIDER_ERROR`（append EP 阶段，含建不出 D3D12 设备）/ `ORT_ERROR`
-/// （`Ort::Session` 构造阶段）/ `SESSION_CREATION_ERROR`，白名单一条都不命中，
-/// 于是整卷 OCR 直接报错而不是退 CPU。维护「哪些码算 provider 问题」这张清单
-/// 本身就是错的：native 侧每改一次错误映射它就会悄悄过期一次。
+/// 判据是**「首选 EP 没建成会话」**，不是某一个错误码。加速 EP 失败的形态本来
+/// 就不止一种：插件不认识这个 provider 会在建 session 之前抛
+/// `PlatformException(INVALID_PROVIDER, ...)`；而 ORT 自己初始化 EP 失败是在
+/// 建 session 之中抛 `ORT_ERROR`——本机实测 DirectML 初始化 int8 检测器时抛
+/// `E_INVALIDARG (80070057)`，走的正是后一条路。按错误码枚举「哪种失败才算 EP
+/// 问题」注定漏，而漏掉的代价是整条 OCR 直接不可用：列表尾部那个 CPU 后备明明
+/// 在，却一次都轮不到（BUG-2034）。
 ///
-/// 「那模型损坏会被掩盖吗？」不会，也不需要特判：模型真坏，CPU 那次同样建不
-/// 起来，异常照抛，而且抛的是 CPU 那条（「连 CPU 都读不了这个模型」比
-/// 「DML 读不了」更有诊断价值）。代价只是对一个已经注定失败的模型多试一次。
+/// 「模型损坏也会被多试一次 CPU」是这么换来的，而且这笔交易划算：那种输入下
+/// CPU 同样建不成，最终照样抛错，只是多花一次失败的时间；反过来，为了省这一次
+/// 而维护一张错误码白名单，换来的是真·EP 故障时功能整个躺平。
+///
+/// CPU 重试也失败时抛出的是**CPU 那次**的异常（类型与内容都不变，调用方原有的
+/// `on PlatformException` 之类照旧成立），首选 EP 的失败则落进日志——两次失败
+/// 都得留痕，回退不能变成「把第一个错误吃掉」。
 ///
 /// [onResolved] 在会话建成后**必定**被调用一次，回报本次真正生效的 provider
 /// 与降级原因（BUG-1163）：降级不允许静默发生，调用层据此写日志并把状态送到
@@ -97,26 +101,51 @@ Future<T> createOcrSessionWithProviderFallback<T>({
       OcrProviderResolution(requested: providers, effective: preferred),
     );
     return session;
-  } on PlatformException catch (error) {
-    // 判据只有两条，都不看错误码：这次请求的首选是不是加速 provider，以及
-    // 列表里有没有 CPU 兜底。`preferred != cpu` 已经蕴含 `providers.length > 1`
-    // （CPU 在列表里且不是首项），不需要再单独判长度。
-    final bool triedAcceleratedProvider = preferred != OcrExecutionProvider.cpu;
-    final bool hasCpuFallback = providers.contains(OcrExecutionProvider.cpu);
-    if (!triedAcceleratedProvider || !hasCpuFallback) rethrow;
-    final T session =
-        await create(const <OcrExecutionProvider>[OcrExecutionProvider.cpu]);
+  } on Exception catch (error) {
+    final bool canRetryOnCpu = preferred != OcrExecutionProvider.cpu &&
+        providers.contains(OcrExecutionProvider.cpu);
+    if (!canRetryOnCpu) rethrow;
+    developer.log(
+      'OCR session on ${preferred.name} failed; retrying on CPU',
+      name: kOcrLogName,
+      error: error,
+    );
+    final T session;
+    try {
+      session = await create(const <OcrExecutionProvider>[
+        OcrExecutionProvider.cpu,
+      ]);
+    } on Exception catch (cpuError) {
+      developer.log(
+        'OCR session fell back to CPU and failed there too; '
+        '${preferred.name} had failed with: $error',
+        name: kOcrLogName,
+        error: cpuError,
+      );
+      rethrow;
+    }
     _notifyResolved(
       onResolved,
       OcrProviderResolution(
         requested: providers,
         effective: OcrExecutionProvider.cpu,
-        fallbackReason:
-            '${error.code}: ${error.message ?? 'provider rejected by plugin'}',
+        fallbackReason: _describeProviderFailure(error),
       ),
     );
     return session;
   }
+}
+
+/// 降级原因的可读形态。
+///
+/// `PlatformException` 保留 `code: message` 的老格式（UI 与日志都按它读）；其余
+/// 异常直接用 `toString`——比如 native 把非 UTF-8 字节送过 channel 时 Dart 侧抛的
+/// `FormatException`，那串偏移量本身就是排查线索，不该被抹成一句“未知错误”。
+String _describeProviderFailure(Object error) {
+  if (error is PlatformException) {
+    return '${error.code}: ${error.message ?? 'provider rejected by plugin'}';
+  }
+  return '$error';
 }
 
 void _notifyResolved(
@@ -201,7 +230,8 @@ class OrtOcrSessionFactory implements OcrSessionFactory {
   ///
   /// **语义边界**：这里回报的是「该 EP 编译进了当前 onnxruntime 运行时」，
   /// **不是**「它此刻真能建出会话」（DirectML 还要能建出 D3D12 设备，CUDA 还要
-  /// 有驱动和可用显卡）。必要不充分，别拿它当运行期可用性的结论。
+  /// 有驱动和可用显卡）。必要不充分，别拿它当运行期可用性的结论——
+  /// `createOcrSessionWithProviderFallback` 那层 CPU 回退因此不是死代码。
   ///
   /// 探测本身失败是一条真实的降级路径（有 N 卡也会退到 CPU），不允许调用方
   /// `catch (_)` 静默吞掉——所以这里不吞异常，由调用方捕获后记进可观测的降级
