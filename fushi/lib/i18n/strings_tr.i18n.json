@@ -2246,7 +2246,6 @@
   "video_screenshot_failed_reason": "Ekran görüntüsü başarısız: ${reason}",
   "video_screenshot_ready": "Ekran görüntüsü hazır: ${file}",
   "video_screenshot_saved_to": "Ekran görüntüsü kaydedildi: ${path}",
-  "video_secondary_subtitle_hint": "Oynatıcı tarafından oluşturulur (sözcük aranamaz)",
   "video_secondary_subtitle_sources": "İkincil altyazı",
   "video_setting_auto_play_next": "Sonraki bölümü otomatik oynat",
   "video_setting_auto_scrape": "Dizi bilgisini otomatik getir",

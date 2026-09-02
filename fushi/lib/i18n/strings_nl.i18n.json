@@ -2246,7 +2246,6 @@
   "video_screenshot_failed_reason": "Schermafbeelding mislukt: ${reason}",
   "video_screenshot_ready": "Schermafbeelding gereed: ${file}",
   "video_screenshot_saved_to": "Schermafbeelding opgeslagen: ${path}",
-  "video_secondary_subtitle_hint": "Gerenderd door de speler (niet opzoekbaar)",
   "video_secondary_subtitle_sources": "Secundaire ondertitel",
   "video_setting_auto_play_next": "Volgende aflevering automatisch afspelen",
   "video_setting_auto_scrape": "Serie-info automatisch ophalen",

@@ -2246,7 +2246,6 @@
   "video_screenshot_failed_reason": "Error al capturar la pantalla: ${reason}",
   "video_screenshot_ready": "Captura lista: ${file}",
   "video_screenshot_saved_to": "Captura guardada: ${path}",
-  "video_secondary_subtitle_hint": "Renderizado por el reproductor (no se puede buscar)",
   "video_secondary_subtitle_sources": "Subtítulo secundario",
   "video_setting_auto_play_next": "Reproducir automáticamente el siguiente episodio",
   "video_setting_auto_scrape": "Obtener info de la serie automáticamente",

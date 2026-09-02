@@ -357,7 +357,6 @@ extension _VideoSubtitle on _VideoFushiPageState {
         // 保持零：展开项本身是带默认 contentPadding 的 ListTile，各自缩进已对齐。
         leading: const Icon(Icons.subtitles_outlined),
         title: Text(t.video_secondary_subtitle_sources),
-        subtitle: Text(t.video_secondary_subtitle_hint),
         childrenPadding: EdgeInsets.zero,
         shape: const Border(),
         collapsedShape: const Border(),

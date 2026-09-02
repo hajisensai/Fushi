@@ -2246,7 +2246,6 @@
   "video_screenshot_failed_reason": "Не удалось сделать скриншот: ${reason}",
   "video_screenshot_ready": "Скриншот готов: ${file}",
   "video_screenshot_saved_to": "Скриншот сохранён: ${path}",
-  "video_secondary_subtitle_hint": "Отображается плеером (недоступны для поиска слов)",
   "video_secondary_subtitle_sources": "Вторичные субтитры",
   "video_setting_auto_play_next": "Автовоспроизведение следующей серии",
   "video_setting_auto_scrape": "Автоматически загружать информацию о сериале",

@@ -2246,7 +2246,6 @@
   "video_screenshot_failed_reason": "スクリーンショットに失敗しました：${reason}",
   "video_screenshot_ready": "スクリーンショットの準備ができました：${file}",
   "video_screenshot_saved_to": "スクリーンショットを保存しました：${path}",
-  "video_secondary_subtitle_hint": "プレーヤーで描画（辞書検索不可）",
   "video_secondary_subtitle_sources": "副字幕",
   "video_setting_auto_play_next": "次のエピソードを自動再生",
   "video_setting_auto_scrape": "シリーズ情報を自動取得",

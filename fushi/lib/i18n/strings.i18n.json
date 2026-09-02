@@ -2246,7 +2246,6 @@
   "video_screenshot_failed_reason": "Screenshot failed: ${reason}",
   "video_screenshot_ready": "Screenshot ready: ${file}",
   "video_screenshot_saved_to": "Screenshot saved: ${path}",
-  "video_secondary_subtitle_hint": "Rendered by player (not lookupable)",
   "video_secondary_subtitle_sources": "Secondary subtitle",
   "video_setting_auto_play_next": "Auto-play next episode",
   "video_setting_auto_scrape": "Auto-fetch series info",
