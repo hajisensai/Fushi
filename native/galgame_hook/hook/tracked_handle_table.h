@@ -103,6 +103,18 @@ inline bool IsTrackedHandle(Slot (&slots)[N], HANDLE handle) {
   return ReadTrackedHandle(slots, handle, [](const Slot&) {});
 }
 
+// 关停时清空整张表（Stop* 路径）。只把 handle 换回空、不碰 seq / 附带字段：seq 归零会让
+// 正处在奇数写窗口的槽位在读者眼里「变稳定」，附带字段本来只在 handle 命中后才被读。
+// 与 Remember/Read 并发时至多留下一条「Stop 之后才发布」的僵尸条目——各引擎的 Observe
+// 路径都先看 enabled 标志，僵尸条目不会被消费；下一次 Remember 认领会整槽重写。
+template <typename Slot, size_t N>
+inline void ClearTrackedHandles(Slot (&slots)[N]) {
+  for (Slot& slot : slots) {
+    InterlockedExchangePointer(reinterpret_cast<PVOID volatile*>(&slot.handle),
+                               INVALID_HANDLE_VALUE);
+  }
+}
+
 // 把 [handle] 从表里摘掉（全部匹配槽位）。返回是否摘到了至少一个。
 template <typename Slot, size_t N>
 inline bool ForgetTrackedHandle(Slot (&slots)[N], HANDLE handle) {

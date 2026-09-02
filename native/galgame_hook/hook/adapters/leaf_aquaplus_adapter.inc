@@ -1128,14 +1128,7 @@ bool TryHookLeafAquaplusResourceAudio() {
 
 void StopLeafAquaplusResourceAudio() {
   InterlockedExchange(&g_leaf_voice_enabled, 0);
-  if (g_cs_ready) {
-    EnterCriticalSection(&g_cs);
-    for (int index = 0; index < kLeafVoiceHandleSlots; ++index) {
-      g_leaf_voice_handles[index].handle = INVALID_HANDLE_VALUE;
-      g_leaf_voice_handles[index].archive_index = 0;
-    }
-    LeaveCriticalSection(&g_cs);
-  }
+  fushi_voice_hook::ClearTrackedHandles(g_leaf_voice_handles);
   // 🔴 顺序不可颠倒：先把 count 撤成 0（这是任何消费者判定「档案表可用」的唯一
   // 闸门），再摘指针，最后才 free。反过来写会让 free 与「还没被撤发布的表」重叠。
   // 与 catsystem2_adapter.inc 的 StopCatSystem2PcmVoice 同一模式。

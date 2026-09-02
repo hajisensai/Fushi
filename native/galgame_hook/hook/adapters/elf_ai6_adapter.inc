@@ -53,8 +53,10 @@ void RememberElfAi6VoiceArc(HANDLE handle, const wchar_t* path) {
   if (fushi_voice_hook::RememberTrackedHandle(g_elf_ai6_handles, handle,
                                               [](ElfAi6ArcHandle&) {}) &&
       g_header != nullptr) {
-    g_header->reserved_hook_diagnostics |=
-        fushi_voice_hook::kDiagElfAi6ArcHandleTracked;
+    // 出了 g_cs 之后这个 |= 与其它线程的置位并发，改成原子或，不丢位。
+    InterlockedOr(
+        reinterpret_cast<volatile LONG*>(&g_header->reserved_hook_diagnostics),
+        static_cast<LONG>(fushi_voice_hook::kDiagElfAi6ArcHandleTracked));
   }
 }
 
@@ -318,12 +320,7 @@ bool TryHookElfAi6ArcVoice() {
 
 void StopElfAi6ArcVoice() {
   InterlockedExchange(&g_elf_ai6_enabled, 0);
-  if (!g_cs_ready) return;
-  EnterCriticalSection(&g_cs);
-  for (int i = 0; i < kElfAi6HandleSlots; ++i) {
-    g_elf_ai6_handles[i].handle = INVALID_HANDLE_VALUE;
-  }
-  LeaveCriticalSection(&g_cs);
+  fushi_voice_hook::ClearTrackedHandles(g_elf_ai6_handles);
   for (int i = 0; i < kElfAi6TaskSlots; ++i) {
     if (InterlockedCompareExchange(&g_elf_ai6_tasks[i].state, 0, 2) == 2) {
       const HANDLE source_handle = g_elf_ai6_tasks[i].source_handle;

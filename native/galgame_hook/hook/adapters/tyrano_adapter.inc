@@ -265,9 +265,7 @@ void StopTyranoAsarAudio() {
   InterlockedExchange(&g_tyrano_asar_ready, 0);
   g_tyrano_voice_entries.clear();
   g_tyrano_asar_path[0] = 0;
-  for (int i = 0; i < kTyranoAsarHandleSlots; ++i) {
-    g_tyrano_asar_handles[i].handle = INVALID_HANDLE_VALUE;
-  }
+  fushi_voice_hook::ClearTrackedHandles(g_tyrano_asar_handles);
   g_tyrano_last_processed_entry = UINT32_MAX;
   g_tyrano_last_processed_tick = 0;
 }

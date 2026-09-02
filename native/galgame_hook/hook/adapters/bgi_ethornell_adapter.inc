@@ -233,13 +233,7 @@ bool TryHookBgiArcVoice() {
 
 void StopBgiArcVoice() {
   InterlockedExchange(&g_bgi_arc_enabled, 0);
-  if (!g_cs_ready) return;
-  EnterCriticalSection(&g_cs);
-  for (int i = 0; i < kBgiHandleSlots; ++i) {
-    g_bgi_handles[i].handle = INVALID_HANDLE_VALUE;
-    g_bgi_handles[i].path[0] = 0;
-  }
-  LeaveCriticalSection(&g_cs);
+  fushi_voice_hook::ClearTrackedHandles(g_bgi_handles);
 }
 
 class BgiEthornellAdapter final : public fushi_voice_hook::EngineAdapter {

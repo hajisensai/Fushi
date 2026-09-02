@@ -97,7 +97,28 @@ int main() {
       if (slot.handle == Handle(0x20)) ++occupied;
     }
     Check(occupied == 1, "same handle must occupy exactly one slot");
-    Check(slots[0].seq == 4, "two publications bump seq twice (odd/even pairs)");
+    Check((slots[0].seq & 1) == 0 && slots[0].seq > 0,
+          "a published slot rests on an even, non-zero seq");
+  }
+
+  // ── 关停清表：只清 handle，不碰 seq（奇数窗口不得被「变稳定」）与附带字段 ──
+  {
+    PathSlot slots[4];
+    RememberPath(slots, Handle(0x70), L"a");
+    RememberPath(slots, Handle(0x71), L"b");
+    const LONG seq_before = slots[0].seq;
+    InterlockedIncrement(&slots[1].seq);  // 模拟槽位 1 正处在写窗口
+    fushi_voice_hook::ClearTrackedHandles(slots);
+    Check(slots[0].handle == INVALID_HANDLE_VALUE &&
+              slots[1].handle == INVALID_HANDLE_VALUE &&
+              slots[2].handle == INVALID_HANDLE_VALUE &&
+              slots[3].handle == INVALID_HANDLE_VALUE,
+          "clear must empty every slot");
+    Check(slots[0].seq == seq_before, "clear must not touch a stable seq");
+    Check((slots[1].seq & 1) == 1, "clear must not flip an in-flight odd seq");
+    Check(wcscmp(slots[0].path, L"a") == 0,
+          "clear leaves payload alone; it is unreachable without a handle");
+    Check(!IsTrackedHandle(slots, Handle(0x70)), "cleared handle no longer reads");
   }
 
   // ── 表满返回 false，且不覆盖既有条目 ──

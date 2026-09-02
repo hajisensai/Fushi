@@ -1120,14 +1120,7 @@ bool TryHookHunexGgeResourceAudio() {
 void StopHunexGgeResourceAudio() {
   InterlockedExchange(&g_hunex_voice_enabled, 0);
   InterlockedIncrement(&g_hunex_voice_generation);
-  if (g_cs_ready) {
-    EnterCriticalSection(&g_cs);
-    for (int index = 0; index < kHunexVoiceHandleSlots; ++index) {
-      g_hunex_voice_handles[index] = {};
-      g_hunex_voice_handles[index].handle = INVALID_HANDLE_VALUE;
-    }
-    LeaveCriticalSection(&g_cs);
-  }
+  fushi_voice_hook::ClearTrackedHandles(g_hunex_voice_handles);
   InterlockedExchange(&g_hunex_voice_archive_count, 0);
   HunexVoiceRange* ranges = g_hunex_voice_archive.ranges;
   g_hunex_voice_archive = {};
