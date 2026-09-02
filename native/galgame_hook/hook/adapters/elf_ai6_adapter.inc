@@ -11,8 +11,10 @@ constexpr size_t kElfAi6PathChars = 520;
 constexpr int kElfAi6HandleSlots = 8;
 constexpr int kElfAi6TaskSlots = 32;
 
+// 无锁句柄表（tracked_handle_table.h）：Forget 走 CloseHandle detour，不得进 g_cs（BUG-2046）。
 struct ElfAi6ArcHandle {
   HANDLE handle = INVALID_HANDLE_VALUE;
+  volatile LONG seq = 0;
 };
 
 struct ElfAi6VoiceTask {
@@ -39,8 +41,7 @@ bool IsElfAi6VoiceArchivePath(const wchar_t* path) {
 
 void RememberElfAi6VoiceArc(HANDLE handle, const wchar_t* path) {
   if (InterlockedCompareExchange(&g_elf_ai6_enabled, 0, 0) == 0 ||
-      handle == INVALID_HANDLE_VALUE || !IsElfAi6VoiceArchivePath(path) ||
-      !g_cs_ready) {
+      handle == INVALID_HANDLE_VALUE || !IsElfAi6VoiceArchivePath(path)) {
     return;
   }
   fushi_voice_hook::ElfAi6FileIdentity identity;
@@ -49,47 +50,20 @@ void RememberElfAi6VoiceArc(HANDLE handle, const wchar_t* path) {
           identity, g_elf_ai6_archive_identity)) {
     return;
   }
-  EnterCriticalSection(&g_cs);
-  for (int i = 0; i < kElfAi6HandleSlots; ++i) {
-    if (g_elf_ai6_handles[i].handle == INVALID_HANDLE_VALUE ||
-        g_elf_ai6_handles[i].handle == handle) {
-      g_elf_ai6_handles[i].handle = handle;
-      if (g_header != nullptr) {
-        g_header->reserved_hook_diagnostics |=
-            fushi_voice_hook::kDiagElfAi6ArcHandleTracked;
-      }
-      break;
-    }
+  if (fushi_voice_hook::RememberTrackedHandle(g_elf_ai6_handles, handle,
+                                              [](ElfAi6ArcHandle&) {}) &&
+      g_header != nullptr) {
+    g_header->reserved_hook_diagnostics |=
+        fushi_voice_hook::kDiagElfAi6ArcHandleTracked;
   }
-  LeaveCriticalSection(&g_cs);
 }
 
 bool IsTrackedElfAi6VoiceArc(HANDLE handle) {
-  if (handle == INVALID_HANDLE_VALUE || !g_cs_ready) {
-    return false;
-  }
-  bool found = false;
-  EnterCriticalSection(&g_cs);
-  for (int i = 0; i < kElfAi6HandleSlots; ++i) {
-    if (g_elf_ai6_handles[i].handle == handle) {
-      found = true;
-      break;
-    }
-  }
-  LeaveCriticalSection(&g_cs);
-  return found;
+  return fushi_voice_hook::IsTrackedHandle(g_elf_ai6_handles, handle);
 }
 
 void ForgetElfAi6VoiceArc(HANDLE handle) {
-  if (handle == INVALID_HANDLE_VALUE || !g_cs_ready) return;
-  EnterCriticalSection(&g_cs);
-  for (int i = 0; i < kElfAi6HandleSlots; ++i) {
-    if (g_elf_ai6_handles[i].handle == handle) {
-      g_elf_ai6_handles[i].handle = INVALID_HANDLE_VALUE;
-      break;
-    }
-  }
-  LeaveCriticalSection(&g_cs);
+  fushi_voice_hook::ForgetTrackedHandle(g_elf_ai6_handles, handle);
 }
 
 bool QueueElfAi6Voice(HANDLE source_handle, uint64_t read_offset) {

@@ -58,6 +58,7 @@
 #include "ffmpeg_runtime.h"
 #include "lookup_v19_runtime.h"
 #include "hook_original_registry.h"
+#include "tracked_handle_table.h"
 #include "hunex_hfa.h"
 #include "siglus_ovk.h"
 #include "siglus_launch.h"
