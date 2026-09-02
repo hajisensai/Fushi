@@ -13,6 +13,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot "_verify_common.ps1")
 
 $runtimeRoot = [IO.Path]::GetFullPath($RuntimeDirectory)
 $extensionApk = [IO.Path]::GetFullPath($ApkPath)
@@ -24,17 +25,8 @@ foreach ($required in @($java, $server, $extensionApk)) {
     }
 }
 
-$listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
-$listener.Start()
-$port = ([Net.IPEndPoint] $listener.LocalEndpoint).Port
-$listener.Stop()
-
-$tokenBytes = [byte[]]::new(32)
-# RandomNumberGenerator::Fill 是 .NET Core/5+ 静态方法；Windows PowerShell 5.1
-# 会 MethodNotFound。Create().GetBytes() 在 5.1 与 pwsh 7 上都可用。
-$rng = [Security.Cryptography.RandomNumberGenerator]::Create()
-try { $rng.GetBytes($tokenBytes) } finally { $rng.Dispose() }
-$token = [Convert]::ToBase64String($tokenBytes).TrimEnd("=")
+$port = Get-MihonFreeLoopbackPort
+$token = New-MihonAuthToken
 $dataRoot = Join-Path (
     [IO.Path]::GetTempPath()
 ) ("hibiki-mihon-extension-e2e-" + [Guid]::NewGuid().ToString("N"))
