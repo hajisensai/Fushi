@@ -216,6 +216,13 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           await _confirmDeleteSrtBook(book);
         },
       ),
+      // 三库页对称：与 EPUB / 视频 / 游戏卡一样，「重命名」排在列表项首位。落的是
+      // 显示名覆盖层，SrtBooks.title 不动（同 bookKey 换身份的理由）。
+      DialogListAction(
+        label: t.book_rename,
+        icon: Icons.drive_file_rename_outline,
+        onPressed: () => _renameBook(dialogContext, item),
+      ),
       // 合集详情页成员卡：给可聚焦长按对话框补「移出合集」（键盘/手柄移出入口）。
       if (removeFromCollection != null)
         DialogListAction(
