@@ -203,6 +203,98 @@ assert.ok(
   'found ' + anchorSites.length + ' site(s)',
 );
 
+// ---- 分组坐标：glossaryIndex 必须是 entry.glossaries 的**原始**下标 ---------
+// 这是整套坐标设计的核心论点（popup.js 的注释专门写了为什么），却是最容易被
+// 「顺手改成分组内序号」的一行：分组、隐藏词典过滤、重定向过滤都会打乱顺序并留
+// 空洞，只有原始下标能同时对齐屏幕 DOM（data-fushi-gloss）和导出树。
+//
+// 集成测试的 fixture 是「三条义项同属一本词典、无隐藏、无重定向」，那种形状下
+// 分组内序号**恒等于**原始下标——它再怎么跑也证明不了这条不变式。这里专门造出
+// 两者必然不等的形状。
+const wrapperFn = extract(
+  /function createGlossarySectionWrapper\(entry\) \{[\s\S]*?\n\}/,
+  'createGlossarySectionWrapper(entry)',
+);
+const elFn = extract(
+  /function el\(tag, props = \{\}, children = \[\]\) \{[\s\S]*?\n\}/,
+  'el(tag, props, children)',
+);
+const redirectKindFn = extract(
+  /function redirectMarkerKind\(content\) \{[\s\S]*?\n\}/,
+  'redirectMarkerKind(content)',
+);
+const isRedirectFn = extract(
+  /function isRedirectGlossary\(glossary\) \{[\s\S]*?\n\}/,
+  'isRedirectGlossary(glossary)',
+);
+
+const groupingContext = {
+  console,
+  document: documentStub,
+  window: { hiddenDictionaryNames: ['隠し辞書'] },
+};
+vm.createContext(groupingContext);
+vm.runInContext(
+  elFn + '\n' + redirectKindFn + '\n' + isRedirectFn + '\n' + wrapperFn +
+  '\nthis.__wrap = createGlossarySectionWrapper;',
+  groupingContext,
+);
+const createGlossarySectionWrapper = groupingContext.__wrap;
+
+(function groupingKeepsRawIndices() {
+  const g = (dictionary, content, tags) => ({
+    dictionary,
+    content,
+    definitionTags: tags || '',
+    termTags: '',
+  });
+  // 交错两本词典 + 一本被隐藏 + 一条重定向：分组内序号与原始下标必然错开。
+  const entry = {
+    glossaries: [
+      g('大辞泉', 'A0'),        // 0
+      g('隠し辞書', 'H1'),      // 1  ← 隐藏词典，整条丢弃
+      g('新明解', 'B2'),        // 2
+      g('大辞泉', 'A3'),        // 3
+      g('新明解', 'R4', 'redirect'), // 4  ← 重定向，整条丢弃
+      g('新明解', 'B5'),        // 5
+    ],
+  };
+  const wrapper = createGlossarySectionWrapper(entry);
+  assert.ok(wrapper, 'wrapper must be built when at least one dictionary survives');
+
+  assert.deepStrictEqual(
+    [...wrapper.dictNames], ['大辞泉', '新明解'],
+    'hidden dictionaries must not surface as a section at all',
+  );
+  assert.deepStrictEqual(
+    [...wrapper.grouped['大辞泉']].map((i) => i.glossaryIndex), [0, 3],
+    'glossaryIndex must stay the raw entry.glossaries index',
+  );
+  assert.deepStrictEqual(
+    [...wrapper.grouped['新明解']].map((i) => i.glossaryIndex), [2, 5],
+    'glossaryIndex must stay the raw entry.glossaries index',
+  );
+  // 反向钉死 fixture 自身的判别力：必须**真的**有位置让两种口径给出不同的数字，
+  // 否则这条用例又变成「恰好相等所以恒绿」，跟集成测试那份 fixture 一个毛病。
+  // 这里 大辞泉 有 1 处、新明解 有 2 处组内序号 !== 原始下标。
+  let differing = 0;
+  for (const dict of [...wrapper.dictNames]) {
+    [...wrapper.grouped[dict]].forEach((item, ordinal) => {
+      if (item.glossaryIndex !== ordinal) differing += 1;
+    });
+  }
+  assert.strictEqual(
+    differing, 3,
+    'the fixture must keep 组内序号 !== 原始下标 in exactly 3 slots; ' +
+    'got ' + differing + ' (改成组内序号会得到 0)',
+  );
+  // 内容也要跟着对齐：下标对了、取错了条目一样是错的。
+  assert.deepStrictEqual(
+    [...wrapper.grouped['新明解']].map((i) => i.content), ['B2', 'B5'],
+  );
+  console.log('ok - grouping keeps raw entry.glossaries indices');
+})();
+
 // ---- 测试脚手架 -------------------------------------------------------------
 function build(spec) {
   // spec: 数组，字符串 = 文本节点；{tag, className, children} = 元素
@@ -274,8 +366,23 @@ check('a range inside one text node is split into exactly one mark', () => {
     '配分の<mark class="' + MARK_CLASS + '">基準</mark>となる単位を表す。',
     'text outside the range must survive byte-identically',
   );
-  assert.strictEqual(marksOf(root)[0].getAttribute('style'), MARK_STYLE,
-    'the factory default colour must ride along as an inline style');
+  // 判据必须**独立于被测源码**：拿从 popup.js 里 extract 出来的 MARK_CLASS /
+  // MARK_STYLE 去比对 mark 的属性，两边同源——改常量恒绿，这种断言在结构上检不出
+  // 任何样式变化（变异实测：把 style 换成一句无关声明，旧写法照样通过）。所以这里
+  // 写死类名，并把出厂默认样式拆成两个**语义**要求分别断言。
+  assert.strictEqual(MARK_CLASS, 'fushi-selection',
+    'the mark class is consumed by popup.css / Lapis 样式编辑器，不能随手改名');
+  const style = marksOf(root)[0].getAttribute('style');
+  assert.ok(
+    /background-color:\s*\S/.test(style || ''),
+    'the factory default highlight must carry an inline background colour ' +
+    '(卡片可能是任意笔记类型，不能依赖 Lapis 的 CSS 存在); got: ' + style,
+  );
+  assert.ok(
+    /(^|;)\s*color:\s*inherit\s*(;|$)/.test(style || ''),
+    'color: inherit must be explicit, or <mark> 的浏览器默认前景色在暗色卡上是黑字' +
+    '; got: ' + style,
+  );
 });
 
 // 场景 B：跨元素的区间 → 每个文本节点各自成 mark，拼接等于选中文本。

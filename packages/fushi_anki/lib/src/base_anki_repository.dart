@@ -519,17 +519,52 @@ abstract class BaseAnkiRepository {
   ///   会被这里过滤掉、字段名不进 map，两后端 native 都「未给出的字段保留旧值」，
   ///   表现为「只覆盖图片和语音、原文句子不更新」。用户选定语义：覆盖=整体替换，
   ///   句子为空则随之清空（`updateMinedNote` 另有「全部字段皆空 → 拒绝清整卡」总守卫）。
+  /// 选中的释义段已经作为 `<mark>` 进了释义字段时，`{popup-selection-text}` 要不要
+  /// 让位（渲染成空）。
+  ///
+  /// 让位的**唯一理由**是 Lapis 的卡背轮播（`updateDefDisplay`）：非空 SelectionText
+  /// 会把默认页占成一段脱离上下文的裸文本，用户反而要翻页才看得到带高亮的释义。
+  /// 这个理由只对 Lapis 成立，而且只在高亮**确实进了卡**时成立，所以三条缺一不可：
+  ///
+  /// 1. 高亮真的落进了导出的释义树（[AnkiMiningPayload.glossarySelectionHighlighted]）；
+  /// 2. 笔记类型是 Lapis——别的笔记类型没有那个轮播，凭什么替用户丢内容；
+  /// 3. 用户确实把某个 glossary 类占位符映射到了某个字段——没映的话高亮根本没进卡，
+  ///    这时候清空 SelectionText 就是让用户选中的内容**凭空消失**。
+  ///
+  /// 判据必须在这一层：popup.js 看得见 DOM 却看不见 `fieldMappings`，它只能上报
+  /// 「高亮落地了没有」这件客观事实。
+  @protected
+  static bool shouldYieldSelectionText({
+    required AnkiMiningPayload payload,
+    required String? noteTypeName,
+    required Map<String, String> fieldMappings,
+  }) =>
+      payload.glossarySelectionHighlighted &&
+      noteTypeName == LapisNoteType.modelName &&
+      fieldMappings.values.any((String t) => t.contains('glossary'));
+
   @protected
   Map<String, String> buildMinedFields({
     required Map<String, String> fieldMappings,
     required AnkiMiningPayload payload,
     required AnkiMiningContext context,
     required Map<String, String> dictionaryMediaTags,
+    String? noteTypeName,
     bool keepEmpty = false,
   }) {
+    final bool yieldSelectionText = shouldYieldSelectionText(
+      payload: payload,
+      noteTypeName: noteTypeName,
+      fieldMappings: fieldMappings,
+    );
     final fields = <String, String>{};
     for (final entry in fieldMappings.entries) {
-      var value = AnkiHandlebarRenderer.render(entry.value, payload, context);
+      var value = AnkiHandlebarRenderer.render(
+        entry.value,
+        payload,
+        context,
+        yieldSelectionText: yieldSelectionText,
+      );
       for (final mediaEntry in dictionaryMediaTags.entries) {
         value = value.replaceAll(mediaEntry.key, mediaEntry.value);
       }
@@ -646,6 +681,7 @@ abstract class BaseAnkiRepository {
       pitchCategories: payload.pitchCategories,
       phoneticTranscriptions: payload.phoneticTranscriptions,
       popupSelectionText: payload.popupSelectionText,
+      glossarySelectionHighlighted: payload.glossarySelectionHighlighted,
       audio: processedAudio,
       selectedDictionary: payload.selectedDictionary,
       dictionaryMedia: payload.dictionaryMedia,
@@ -657,6 +693,7 @@ abstract class BaseAnkiRepository {
         payload: mediaPayload,
         context: mediaContext,
         dictionaryMediaTags: dictionaryMediaTags,
+        noteTypeName: settings.selectedNoteTypeName,
         keepEmpty: keepEmpty,
       ),
       audioWarning: audioWarning,

@@ -1940,17 +1940,15 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     const dictionaryMedia = currentDictionaryMedia;
     currentDictionaryMedia = null;
     // 选中段已经在释义里被 <mark> 标出来了，就不要再产出一份重复的 SelectionText。
-    // Lapis 把 SelectionText / MainDefinition / Glossary 渲染成一个左右翻页的轮播
-    // （lapis_note_type.dart 的 updateDefDisplay），非空 SelectionText 会把卡背的
-    // 默认页占成一段脱离上下文的裸文本，用户反而要翻页才看得到带高亮的释义。留空
-    // 后上游自带的 cleanUpDefinitions 会因 `textContent === ""` 自行删掉那一页，
-    // 卡背直接落在释义上——**不需要改动 vendored 的 Lapis 模板**。
+    // 选中的释义段已经作为 <mark> 进了导出的释义树。此时把同一段文本再原样塞进
+    // SelectionText 字段是否合适，**取决于用户的笔记类型和字段映射**——而这一层
+    // 两个都不知道：popup.js 只看得见 DOM，看不见 fieldMappings。所以这里只如实
+    // 上报「高亮是否真的落进了导出树」，让位与否交给知道映射的 Dart 层
+    // （BaseAnkiRepository.shouldYieldSelectionText）。
     //
-    // 只在高亮**确实落地**时才留空：选中落在例句 / 词头 / 标签这些释义之外的地方，
-    // 或导出树文本流校验没过（applyGlossarySelectionHighlight 返回 false）时，
-    // 一个 mark 都没有，此时必须保持旧行为把原文交给 SelectionText，否则用户的
-    // 选中就凭空消失了。
-    const selectionText = currentSelectionHighlights > 0 ? '' : popupSelectionText;
+    // 高亮**没**落地时（选中落在例句 / 词头 / 标签这些释义之外，或导出树文本流
+    // 校验没过）这个标志是 false，Dart 侧照旧把原文交给 SelectionText。
+    const glossarySelectionHighlighted = currentSelectionHighlights > 0;
     currentSelectionHighlights = 0;
     const glossaryFirst = Object.values(singleGlossaries)[0] || '';
     const pitchPositions = constructPitchPositionHtml(pitches);
@@ -1998,7 +1996,8 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         pitchPositions,
         pitchCategories,
         phoneticTranscriptions,
-        popupSelectionText: selectionText,
+        popupSelectionText,
+        glossarySelectionHighlighted,
         audio,
         selectedDictionary: selectedDictionaries[idx]?.name || '',
         dictionaryMedia: JSON.stringify([...dictionaryMedia.values()])

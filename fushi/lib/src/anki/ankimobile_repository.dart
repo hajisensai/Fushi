@@ -387,6 +387,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       pitchCategories: payload.pitchCategories,
       phoneticTranscriptions: payload.phoneticTranscriptions,
       popupSelectionText: payload.popupSelectionText,
+      glossarySelectionHighlighted: payload.glossarySelectionHighlighted,
       audio: audio.fieldValue,
       selectedDictionary: payload.selectedDictionary,
       dictionaryMedia: payload.dictionaryMedia,
@@ -398,6 +399,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         payload: mediaPayload,
         context: mediaContext,
         dictionaryMediaTags: dictionaryMediaTags,
+        noteTypeName: settings.selectedNoteTypeName,
       ),
     );
   }

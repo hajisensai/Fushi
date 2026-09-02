@@ -25,6 +25,11 @@ import 'package:integration_test/integration_test.dart';
 ///      mark 必然整体后移 alt 的长度。
 ///   3. 选中落在释义之外（词头）→ 一个 mark 都不该有，且 popupSelectionText
 ///      必须原样保留，用户的选中不能凭空消失。
+///   4. 高亮落地 → payload 如实上报 `glossarySelectionHighlighted: true`，而
+///      `popupSelectionText` **照样原样带着**。SelectionText 要不要让位是 Dart
+///      层的决定（只有那一层知道笔记类型和字段映射，见
+///      `BaseAnkiRepository.shouldYieldSelectionText` 与
+///      `packages/fushi_anki/test/selection_text_yield_test.dart`）。
 ///
 /// 跑法（仓库 fushi/ 下，离屏、不抢焦点、隔离 WebView2 profile）：
 ///   .\tool\run_windows_itest.ps1 integration_test\popup_selection_highlight_itest.dart
@@ -283,8 +288,13 @@ void main() {
         source: 'window.__payload ? window.__payload.popupSelectionText : null');
     expect('$keptRaw'.isNotEmpty && '$keptRaw' != 'null', isTrue,
         reason: '没落下高亮时必须原样保留 popupSelectionText，否则用户的选中凭空消失');
+    final Object? notFlagged = await controller.evaluateJavascript(
+        source: 'window.__payload ? '
+            'String(window.__payload.glossarySelectionHighlighted) : "MISSING"');
+    expect('$notFlagged', 'false',
+        reason: '一个 mark 都没落下就报 true，Dart 层会白白让位、选中真的消失');
 
-    // ---- 4. 高亮落地时 popupSelectionText 让位 --------------------------
+    // ---- 4. 高亮落地时如实上报标志，正文照旧原样带着 --------------------
     final Object? clearedRaw = await controller.evaluateJavascript(source: '''
       (function() {
         var h = window.__t.helpers;
@@ -307,12 +317,17 @@ void main() {
       if ('$done' == '1') break;
       await tester.pump(const Duration(milliseconds: 100));
     }
-    final Object? clearedText = await controller.evaluateJavascript(
+    final Object? keptWhenHighlighted = await controller.evaluateJavascript(
         source:
             'window.__payload2 ? window.__payload2.popupSelectionText : "MISSING"');
-    expect('$clearedText', '',
-        reason: '选中已经标进释义里了，就不该再产出一份重复的 SelectionText——'
-            '否则 Lapis 的卡背默认页仍是那段脱离上下文的裸文本');
+    expect('$keptWhenHighlighted'.contains('一日に三回食べる'), isTrue,
+        reason: 'popup.js 不许自作主张清空——它不知道用户的笔记类型和字段映射，'
+            '清了就可能让选中的内容凭空消失');
+    final Object? flagged = await controller.evaluateJavascript(
+        source: 'window.__payload2 ? '
+            'String(window.__payload2.glossarySelectionHighlighted) : "MISSING"');
+    expect('$flagged', 'true',
+        reason: '高亮落地这件客观事实必须上报，Dart 层据此决定 SelectionText 让不让位');
     final Object? clearedGlossary = await controller.evaluateJavascript(
         source: 'window.__payload2 ? '
             'window.__payload2.glossary.indexOf("fushi-selection") >= 0 : false');
