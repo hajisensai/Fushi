@@ -45,6 +45,17 @@
 - BUG-2069 动图覆盖整句：`captureWindowGifBytes(targetDuration:)` + `galAnimatedFrameBudget`（8 s 上限）；资源音频路径写 `durationMs`（`adts_duration.dart`）。
 - `engine-support.yaml`：SGRE 状态保持 implemented_unverified（真相源有哈希钉住的结构化证据契约，本轮未产出该记录），E2E 证据写入 notes / evidence 文本。
 
+## ATRI -My Dear Moments-（KiriKiri Z，第二款）
+
+| 项 | 结果 |
+|---|---|
+| 身份 | `ATRI-MyDearMoments-.exe` x86，SHA-256 `4705821E…A58A48E3`，KiriKiri Z 1.2.0.3，`wuopus.dll` 语音，DARKSiDERS Steam 模拟（`ds.ini` Language 由 schinese 改 japanese；首启游戏内把 Main Text 切到日本語） |
+| 启动 | 库内启动（先经「导入 → 添加游戏」文件对话框让库刷新）→ 早注入、已转区 CP932、`sensor_installed`、几何 provider KiriKiri TJS（runtime_layout） |
+| 线程 | 需手选「TextRender · 0x6e0bc571」（EmbedKrkrZ / KiriKiriZ 线程混入系统串或逐字重绘），干净 |
+| 查词 | 单击字形 → 命中 → 直接路由弹卡（の / はい）；点卡外（真实 mouse_event）→ LL 钩子吞掉、卡关闭、台词不推进（2/2） |
+| 制卡 | note 1788380145993：Sentence 「……<b>はい</b>」、Picture AVIF、SentenceAudio = **5 s 系统混音降级**（`engine_utterance_unavailable`，75 条全部降级）→ BUG-2070（wuopus 语音未进资源/PCM 路径，需 native 侧另开） |
+| 观察 | Ctrl 快进时 TextRender 连续重绘被折叠成一条超长台词（记在 BUG-2070 备注） |
+
 ## 未做 / 堵塞
 
 - SGRE：DirectInput 盾 1,000 次交易门未跑；那 1 次泄漏未定根因（怀疑 needsRiskAcceptance→activeNative 正边沿与首张卡 Reveal 的 LL 钩子装配竞态，需要在改代码前先做可复现实验）；新构建真机复验三条 host 改动待做。
