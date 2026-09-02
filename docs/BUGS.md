@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1908 条。点号进各自文件。
+> 共 1909 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -38,6 +38,7 @@
 | [BUG-2035](bugs/BUG-2035-video-download-lease-tests-wallclock-flaky.md) | 🚧 | 🚧 | 下载租约续期测试对宿主调度抖动零容差，本机并发下必红 |
 | [BUG-2034](bugs/BUG-2034-ocr-directml-fallback-utf8.md) | ✅ | ✅ | 本地漫画 OCR 因 DirectML 初始化失败 + native 错误串非 UTF-8 而整卷失败 |
 | [BUG-2033](bugs/BUG-2033-header-leading-align.md) | ✅ | ✅ | 页头返回箭头与标题垂直未对齐 |
+| [BUG-2031](bugs/BUG-2031-mouse-binding-all-scopes.md) | ✅ | ✅ | 鼠标绑定只有部分动作/页面支持 |
 | [BUG-2030](bugs/BUG-2030-video-keyboard-cue-skip-wakes-osc.md) | ✅ | ✅ | 键盘上/下一句字幕会把隐藏的控制条(OSC)整个弹出来 |
 | [BUG-2028](bugs/BUG-2028-krkr-risk-acceptance-entry-focus-loss.md) | ✅ | ✅ | KRKR 风险确认入口在切回 Fushi 后消失 |
 | [BUG-2027](bugs/BUG-2027-gal-native-input-admission-transaction.md) | 🚧 | 🚧 | Gal 原生查词风险未授权时仍吞输入，事务瞬态会拆半 |
