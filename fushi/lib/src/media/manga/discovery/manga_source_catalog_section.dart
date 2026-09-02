@@ -17,6 +17,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/pages/implementations/discovery_header.dart';
@@ -32,6 +33,7 @@ class MangaSourceCatalog {
     this.mokuroEnabled = false,
     this.aidokuPackages = const <AidokuInstalledPackage>[],
     this.mihonSources = const <MangaOnlineSourceRow>[],
+    this.opdsServers = const <OpdsServerConfig>[],
     this.aidokuError,
   });
 
@@ -55,11 +57,22 @@ class MangaSourceCatalog {
   /// 已启用、且提供它的扩展也启用的 Mihon 在线源。
   final List<MangaOnlineSourceRow> mihonSources;
 
+  /// 已启用的、用户自配的 OPDS 书目服务器（供漫画的那一面）。
+  ///
+  /// 与前三类的差别：OPDS **没有「热门 feed」的概念**——它的根就是一棵可浏览的
+  /// 目录树。所以它只出现在「浏览来源」卡片里，**不进** [sourceOptions]：
+  /// 进了下拉就意味着选中它以后正文该显示一行热门，而那一行恒空
+  /// （mokuro 已有先例：它同样不在聚合搜索的源模型里，选中即直接开目录页）。
+  final List<OpdsServerConfig> opdsServers;
+
   /// Aidoku 包清单读取失败时的错误（渲染成一行提示，不吞）。
   final Object? aidokuError;
 
   bool get isEmpty =>
-      !mokuroEnabled && aidokuPackages.isEmpty && mihonSources.isEmpty;
+      !mokuroEnabled &&
+      aidokuPackages.isEmpty &&
+      mihonSources.isEmpty &&
+      opdsServers.isEmpty;
 
   /// 下拉选项（按 mokuro -> Aidoku -> Mihon 的展示顺序，与卡片顺序一致）。
   List<DiscoverySourceOption> get sourceOptions => <DiscoverySourceOption>[
@@ -96,6 +109,10 @@ class MangaSourceCatalog {
           .where((MangaOnlineSourceRow source) =>
               mihonSourceId(source) == sourceId)
           .toList(growable: false),
+      // OPDS 不在 [sourceOptions] 里，所以 [sourceId] 永远不会是某台 OPDS 服务器；
+      // 用户选中了具体来源就意味着「只看这一个」，OPDS 卡片必须一并让位，
+      // 否则收窄后的列表里会留着一堆与选择无关的卡片。
+      opdsServers: const <OpdsServerConfig>[],
       aidokuError: aidokuError,
     );
   }
@@ -108,6 +125,7 @@ class MangaSourceCatalogSection extends StatelessWidget {
     required this.onOpenMokuro,
     required this.onOpenAidoku,
     required this.onOpenMihon,
+    required this.onOpenOpds,
     super.key,
   });
 
@@ -115,6 +133,7 @@ class MangaSourceCatalogSection extends StatelessWidget {
   final VoidCallback onOpenMokuro;
   final ValueChanged<AidokuInstalledPackage> onOpenAidoku;
   final ValueChanged<MangaOnlineSourceRow> onOpenMihon;
+  final ValueChanged<OpdsServerConfig> onOpenOpds;
 
   @override
   Widget build(BuildContext context) {
@@ -187,6 +206,18 @@ class MangaSourceCatalogSection extends StatelessWidget {
                           ? const Icon(Icons.push_pin_outlined)
                           : const Icon(Icons.chevron_right),
                       onTap: () => onOpenMihon(source),
+                    ),
+                  ),
+                for (final OpdsServerConfig server in catalog.opdsServers)
+                  FushiCard(
+                    key: ValueKey<String>('manga-opds-${server.id}'),
+                    padding: EdgeInsets.zero,
+                    child: FushiListItem(
+                      leading: const Icon(Icons.menu_book_outlined),
+                      title: Text(server.displayName),
+                      subtitle: Text(server.catalogUrl.host),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => onOpenOpds(server),
                     ),
                   ),
                 if (error != null)
