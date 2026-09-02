@@ -103,7 +103,14 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart'
-    show GamepadButton, InputBinding, ModifierKey, activeModifierKeys;
+    show
+        GamepadButton,
+        InputBinding,
+        ModifierKey,
+        activeModifierKeys,
+        domMouseButtonFromPointerButtons;
+import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
+    show MouseBindingDispatch, resolveMouseBindingActionForButton;
 import 'package:fushi/src/shortcuts/shortcut_registry.dart'
     show FushiShortcutRegistry;
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
@@ -2910,7 +2917,18 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
             autofocus: true,
             focusNode: _focusNode,
             onKeyEvent: _handleKeyEvent,
-            child: PopScope(
+            // 鼠标通道与键盘/手柄挂在同一层（正文 WebView + chrome + 词典弹层的共同
+            // 祖先）。`translucent` 让本层自己占住命中；[Listener] 不进手势竞技场也不
+            // 消费事件，下层照常收到同一次按下。
+            //
+            // ⚠️ 本层只覆盖**指针归 Flutter** 的区域。原生 WebView 在非 Windows 上把
+            // 指针整个吃掉，正文区那半边由页内 JS 的 `onPointerSeek` 回传（那条路还
+            // 承担**位置型**动作「seek 到点击句」，它需要点击坐标，Flutter 侧拿不到）。
+            // 两条路的分工判据是 [hostOwnsWebViewPointerInput]，不重复派发。
+            child: Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: _handleReaderPointerDown,
+              child: PopScope(
               canPop: false,
               onPopInvokedWithResult: (didPop, dynamic result) async {
                 if (didPop) return;
@@ -3046,6 +3064,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                   ],
                 ),
               ),
+            ),
             ),
           ),
         );

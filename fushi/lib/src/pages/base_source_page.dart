@@ -192,6 +192,28 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     clearDictionaryResult();
   }
 
+  /// 指针落在**弹窗矩形之外**、按下鼠标非主键。
+  ///
+  /// 为什么这条必须住在 barrier 上：弹窗可见期间根 Overlay 的
+  /// [LookupDismissBarrier] 是 `Positioned.fill`，叶子 `ColoredBox` 的命中行为是
+  /// **opaque**（颜色透明 ≠ 命中透明），于是页面根那层 [Listener] 一个指针事件都
+  /// 收不到（守卫 `test/shortcuts/video_pointer_channel_reachability_test.dart`）。
+  /// 指针落在弹窗**矩形之内**的那半边由弹窗表面自己的桥承担；**矩形之外**这半边此前
+  /// 只有视频页接了，其余表面的症状是「侧键压在浮窗上能关、移开一点就关不掉」。
+  ///
+  /// 默认实现与弹窗表面那条路**逐字同源**：同一个 [dictionaryPopupInputSpec]、同一个
+  /// [dictionaryPopupPointerToken] 折 token、同一个 [onDictionaryPopupInputToken]
+  /// 落地，故两个表面不可能各判各的。
+  @protected
+  void onDismissBarrierNonPrimaryButton(int buttons) {
+    final String? token = dictionaryPopupPointerToken(
+      buttons: buttons,
+      spec: dictionaryPopupInputSpec,
+    );
+    if (token == null) return;
+    onDictionaryPopupInputToken(token);
+  }
+
   /// TODO-1027：点全屏 dismiss barrier（弹窗矩形外的真空白处）的钩子。默认行为
   /// 是一次性清整栈（[clearDictionaryResult] → 会话收尾，保留隐藏热槽 BUG-092）—
   /// 视频/有声书/首页等横排表面维持「点空白关栈」旧语义不变。
@@ -630,6 +652,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                             ReaderFushiSource.instance.dismissSwipeSensitivity,
                         onPointerHover: onDismissBarrierHover,
                         onPointerSignal: onDismissBarrierPointerSignal,
+                        // 弹窗可见时唯一还能接到指针的地方（barrier 命中行为
+                        // opaque，页面根 Listener 收不到）——见该钩子的文档。
+                        onNonPrimaryButtonDown:
+                            onDismissBarrierNonPrimaryButton,
                       ),
                     ),
                   if (showLoadingPlaceholder) _buildLoadingPlaceholder(screen),

@@ -99,6 +99,20 @@ mixin DictionaryPageMixin {
   /// `resolve*`，改键对两条路径同时生效。
   void onDictionaryPopupInputToken(String token) {}
 
+  /// 指针落在**弹窗矩形之外**、按下鼠标非主键（挂在 [LookupDismissBarrier] 上）。
+  ///
+  /// 与 `BaseSourcePageState` 的同名钩子同一套契约：弹窗可见期间 barrier 的命中行为是
+  /// opaque，宿主页面根那层 [Listener] 一个指针事件都收不到，故「矩形之外」这半边只能
+  /// 在这里接。折 token / 落地全部复用弹窗表面那条路的同一份判据，两个表面不会各判各的。
+  void onDismissBarrierNonPrimaryButton(int buttons) {
+    final String? token = dictionaryPopupPointerToken(
+      buttons: buttons,
+      spec: dictionaryPopupInputSpec,
+    );
+    if (token == null) return;
+    onDictionaryPopupInputToken(token);
+  }
+
   /// 查词浮层顶部可选的 header 行（如视频「收藏当前字幕句」星标）。默认 null（书内查词
   /// 已有自己的 [BaseSourcePageState.buildPopupAudioControls]，不走 mixin；独立查词页 /
   /// 词典页无句子概念，返回 null）。视频页覆写返回顶层（[index] == 0）的句子收藏星标，

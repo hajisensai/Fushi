@@ -1400,6 +1400,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                           ReaderFushiSource.instance.enableSwipeToClose,
                       sensitivity:
                           ReaderFushiSource.instance.dismissSwipeSensitivity,
+                      // 弹窗可见时 barrier 吃掉全部指针，页面根收不到——「浮窗矩形
+                      // 之外」按鼠标非主键这半边只能在这里接（见钩子文档）。
+                      onNonPrimaryButtonDown: onDismissBarrierNonPrimaryButton,
                     ),
                   ),
                 if (_popup.isSearchingUi && _popup.pendingRect != null)

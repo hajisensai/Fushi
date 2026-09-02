@@ -23,6 +23,30 @@ part of '../reader_fushi_page.dart';
 /// `caretSetState` / `caretExitPrimaryRing`) cannot live on an extension and
 /// stay in the shell, reachable via the shared private class scope, as does
 /// the audiobook middle-click helper `_seekToClickedSentence`.
+/// 阅读器 **Flutter 侧**鼠标通道的解析阶梯：reader → audiobook。
+///
+/// 与 `_handleKeyEvent` 的键盘阶梯同序（页面专属优先），但**刻意不含 universal /
+/// global**：那两段由 app 根的 `_handleGlobalPointerDown` 统一兜底并执行，与键盘
+/// 「页面没接就冒泡到最外层」同构。页面再解析一遍就会与根兜底对同一次按下各派发
+/// 一次（绑「返回上一级」的键会一次退两级）。
+const List<ShortcutScope> kReaderMouseLadder = <ShortcutScope>[
+  ShortcutScope.reader,
+  ShortcutScope.audiobook,
+];
+
+/// 阅读器 **WebView 侧**（页内 JS `onPointerSeek` 回传）的解析阶梯：
+/// reader → audiobook → universal → global。
+///
+/// 比 Flutter 侧多出的后两段不是重复：原生 WebView 把指针整个吃掉时，app 根的
+/// [Listener] 在正文区一个事件都收不到，兜底根本不会跑，谁拿到事件谁就得解析完整
+/// 阶梯。两条路按 [hostOwnsWebViewPointerInput] 互斥（见 `onPointerSeek`）。
+const List<ShortcutScope> kReaderWebViewMouseLadder = <ShortcutScope>[
+  ShortcutScope.reader,
+  ShortcutScope.audiobook,
+  ShortcutScope.universal,
+  ShortcutScope.global,
+];
+
 extension _ReaderCaret on _ReaderFushiPageState {
   /// 当前按下的修饰键集合（Ctrl/Shift/Alt/Meta）。键盘快捷解析与底栏焦点的
   /// Space 覆写共用，避免两处各自重建一份。
@@ -519,6 +543,29 @@ extension _ReaderCaret on _ReaderFushiPageState {
         .gamepadBindings
         .map((b) => b.button)
         .toSet();
+  }
+
+  /// 阅读器 Flutter 侧的鼠标绑定入口（挂在 build 的页面根 [Listener] 上）。
+  ///
+  /// **位置型动作在这里被有意跳过**：「seek 到点击句」要知道点在哪一句上，只有页内
+  /// JS 拿得到坐标，故它恒由 `onPointerSeek` 承担（判据 [isSeekToClickedSentenceButton]
+  /// 两侧共用，不会各判各的）。
+  void _handleReaderPointerDown(PointerDownEvent event) {
+    final int? button = domMouseButtonFromPointerButtons(event.buttons);
+    if (button == null) return;
+    final FushiShortcutRegistry registry = appModel.shortcutRegistry;
+    if (isSeekToClickedSentenceButton(registry, button)) return;
+    final ShortcutAction? action = resolveMouseBindingActionForButton(
+      registry: registry,
+      button: button,
+      ladder: kReaderMouseLadder,
+    );
+    if (action == null) return;
+    if (MouseBindingDispatch.isClaimed(event)) return;
+    // 执行体返回 ignored（例如无弹窗时的 readerDismissDict）说明本页没消费，等价于
+    // 键盘的 ignored 冒泡：**不认领**，让 app 根兜底照常解析 universal / global。
+    if (_executeShortcutAction(action) != KeyEventResult.handled) return;
+    MouseBindingDispatch.claim(event);
   }
 
   KeyEventResult _executeShortcutAction(

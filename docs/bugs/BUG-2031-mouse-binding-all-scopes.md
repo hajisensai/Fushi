@@ -1,0 +1,20 @@
+## BUG-2031 · 鼠标绑定只有部分动作/页面支持
+- **报告**：2026-09-02（用户：截图「上一句字幕」的快捷键编辑弹窗只有「键盘」「手柄」两段，没有「鼠标」段；诉求「有的支持鼠标有的没有，都加上鼠标支持」）
+- **真实性**：✅ 真 bug。根因是**两层**，不是一处漏配：
+  - **层一：整个 scope 不给鼠标入口。** 编辑弹窗按 `ShortcutScope.channels` 决定渲染哪几段（`fushi/lib/src/pages/implementations/shortcut_settings/binding_edit_dialog.part.dart:597`）。`home` / `global` / `universal` / `manga` 四个 scope 不含 `ShortcutChannel.mouse`（`fushi/lib/src/shortcuts/shortcut_action.dart:120` 的 `channels` getter），故这些动作压根没有「+ 鼠标」入口。通道关着**不是配置疏忽**：注释与守卫 `fushi/test/shortcuts/shortcut_channel_wiring_guard_test.dart` 明确要求「开通道 = 必须真有该通道的解析入口」，而当时 Flutter 侧确实**不存在** `PointerDownEvent → MouseBinding → 派发`的管线（唯一的鼠标运行时来源是 WebView 的 DOM `mousedown`）。所以真根因是**管线缺失**，不是开关写错。
+  - **层二：通道开着，但页面内部只有极少数动作真的响应。** `reader` / `audiobook` 开着鼠标通道，运行时却只有 3 个动作有消费者——关词典、seek 到点击句、歌词 seek（`fushi/lib/src/pages/implementations/reader_fushi/webview.part.dart` 的 `onPointerSeek` 硬编码判两件事）。绑翻页 / 振假名 / 加暂存等一律无反应。
+  - **附带的第三处**：查词浮层可见时，根 Overlay 的 `LookupDismissBarrier` 命中行为是 opaque（叶子 `ColoredBox`），页面根 `Listener` 收不到任何指针；它的 `onNonPrimaryButtonDown` 钩子当时只有视频页接了，另外 4 个宿主（`base_source_page` / `home_dictionary_page` / `texthooker_page` / `web_video_fushi_page`）全漏，症状为「侧键压在浮窗上能关、移开一点就关不掉」。
+  - 用户截图里的**视频页**那一半已由 BUG-1995 在 develop 上修好（`video` 通道已开），用户机器上是旧构建；本条覆盖其余全部表面。
+- **[x] ① 已修复** — 建起 Flutter 侧鼠标派发管线并推广到全表面。
+  - 共享落地件 `fushi/lib/src/shortcuts/mouse_binding_dispatch.dart`：解析阶梯 `resolveMouseBindingAction` / `resolveMouseBindingActionForButton` + 「一次按下只派发一次」的 `MouseBindingDispatch`（探测 `isClaimed` → 执行 → `claim` 两步）。**为什么需要仲裁**：键盘靠 `KeyEventResult.handled` 天然阻断冒泡，指针没有——`Listener` 不进手势竞技场也不消费事件，同一个 `PointerDownEvent` 会沿命中路径由内向外交给每一层，页面层与 app 根层会各派发一次（绑「返回上一级」的侧键一键退两级）。
+  - 分层与键盘逐段对齐：**页面只解析自己的 scope**，`universal` / `global` 由 app 根 `wrapWithGlobalNavigation` 的 `_handleGlobalPointerDown` 统一兜底并执行（`globalBack` / `globalToggleFullscreen` / `globalScrollPageUp|Down` 四个动作全覆盖，无死项），执行体仍只有最外层那一份。
+  - 接线：首页 `_handleHomePointerDown`、漫画 `_handleMangaPointerDown` + 页内 JS 鼠标桥 `onMangaMouseButton`、阅读器 `_handleReaderPointerDown` + `onPointerSeek` 推广到全动作、视频页改用共享阶梯。
+  - WebView 宿主按**指针所有权**分两条腿（`hostOwnsWebViewPointerInput`，由 `dictionary_popup_input_bridge` 的同名判据提升为共享）：指针归宿主时走 Flutter `Listener`，归 WebView 时走页内 JS 桥。互斥安装，不双触发；位置型动作（seek 到点击句需要点击坐标）恒留在 JS 那条路。
+  - `LookupDismissBarrier.onNonPrimaryButtonDown` 的落地实现上提到 `BaseSourcePageState` / `DictionaryPageMixin` 的 `onDismissBarrierNonPrimaryButton`，5 个宿主全部接上（视频页删掉重复的私有实现）。
+  - `channels` 开放 `home` / `global` / `universal` / `manga` 的 mouse；`gamepad`（dpad 只按 `GamepadButton` 解析）与 `globalExternal`（OS 级 `RegisterHotKey` 的 `HotKey.key` 类型就是 `KeyboardKey`）按构造开不了，保持关闭并在注释里说明。
+- **[x] ② 已加自动化测试** —
+  - 新增 `fushi/test/shortcuts/mouse_binding_dispatch_test.dart`（6 条）：阶梯按序解析（换顺序换结果）、左键/触摸不可绑、WebView 入口不重复折位掩码、内层执行后外层让路、内层「解析到但没执行」时外层照常接手、认领按 pointer id 不跨按下粘连。
+  - `fushi/test/shortcuts/video_pointer_channel_reachability_test.dart` 新增**宿主枚举型**守卫「每个 `LookupDismissBarrier` 宿主都接了 `onNonPrimaryButtonDown`」（带扫描规模哨兵）——钉住单页的旧守卫对「新增宿主漏接」结构上挑不到。
+  - `shortcut_channel_wiring_guard_test` 的取用 token 表补上共享解析函数（`resolveMouse(` 匹配不到 `resolveMouseBindingAction(`，不补就是全表面假红）。
+  - 三条变异实测均确认能红：`claim` 改 no-op → 仲裁用例红；拆掉 texthooker 的接线 → 宿主枚举守卫点名该文件；移除新增 token → `reader/home/video.mouse` 立刻被判为「开了通道无人消费」。
+- **备注**：`dictionaryPopup` scope（切词条 / 制卡 / 发音）仍只有 wheel + keyboard + gamepad。给它加鼠标按钮需要打破 `dictionaryPopupInputSpecFor` 里「弹窗自己占用的按钮从下发表中减去」这条**刻意的**不变式（那条减法假设弹窗内动作由 `popup.js` 自己消费，而 mouse 通道在 JS 侧没有消费者），并同时改 Windows / 非 Windows 两条腿。本轮不做，单独立项。

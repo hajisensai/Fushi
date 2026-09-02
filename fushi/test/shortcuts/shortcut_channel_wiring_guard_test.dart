@@ -32,7 +32,20 @@ void main() {
       <ShortcutChannel, List<String>>{
     ShortcutChannel.keyboard: <String>['resolveKeyboard(', '.keyboardBindings'],
     ShortcutChannel.gamepad: <String>['resolveGamepad(', '.gamepadBindings'],
-    ShortcutChannel.mouse: <String>['resolveMouse(', '.mouseBindings'],
+    // 第三种写法是本轮新增的**共享解析阶梯**：页面不再各自写
+    // `registry.resolveMouse(...)`，而是把「折按钮号 + 按 scope 阶梯解析」收进
+    // `mouse_binding_dispatch.dart` 的两个函数里（判据与设置页的按键录制共用同一个
+    // 折叠函数，杜绝「录到侧键、运行时按另一个号解析」）。
+    //
+    // ⚠️ `'resolveMouse('` 匹配不到它们：`resolveMouseBindingAction(` 里紧跟在
+    // `resolveMouse` 后面的是 `B` 而不是 `(`。不把这两个 token 列进来，所有改用共享
+    // 函数的表面都会被判成「开了通道却没有消费者」——那正是本守卫最该避免的假红。
+    ShortcutChannel.mouse: <String>[
+      'resolveMouse(',
+      '.mouseBindings',
+      'resolveMouseBindingAction(',
+      'resolveMouseBindingActionForButton(',
+    ],
     // wheel 只有 `.wheelBindings` 一种写法：registry 上没有、也从未有过
     // `resolveWheel` —— 滚轮不按「事件 → 查表 → action」解析，而是查词弹窗
     // （唯一开放本通道的 scope）在 popup_settings_injection.dart 里把绑定表
@@ -199,18 +212,25 @@ void main() {
     );
   });
 
-  test('漫画 scope 开放键盘+手柄，翻页动作双通道默认齐全', () {
+  test('漫画 scope 开放键盘+手柄+鼠标，翻页动作双通道默认齐全', () {
     // 历史教训（原「只开放键盘」回归钉的反转）：这批 action 曾带着 RB/LB/dpad/B
     // 默认绑定发出去而页面没有任何手柄解析入口——「设置里能配、按了没反应」。
     // 现在漫画页有真实入口（`_handleGamepadButton` → resolveGamepad manga →
     // universal，见 manga_fushi_page.dart），通道随之打开；本测试钉住新不变式：
-    //   · 通道恰为 keyboard+gamepad（鼠标依旧没有解析入口，不得开）；
+    //   · 通道恰为 keyboard+gamepad+mouse；
     //   · 翻页动作必须键盘+手柄默认双全（RB/dpad右=前进、LB/dpad左=后退）；
     //   · **不得**有任何 manga 动作默认绑手柄 B——退出/关弹窗归 universal
     //     globalBack 的 B，两级阶梯不许被 manga scope 遮蔽（universal_back_test）。
+    //
+    // mouse 于本轮接上：本页正文是原生 WebView，指针归谁按平台不同，故**两条腿**
+    // 互斥安装——指针归宿主时走页面根 Listener 的 `_handleMangaPointerDown`，归
+    // WebView 时走页内 JS 鼠标桥（`onMangaMouseButton`）回传
+    // `_handleNativeNavigationKey`。两者都汇进与键盘/手柄同一个
+    // `_executeReaderInputAction`，故不是第二套语义。
     expect(ShortcutScope.manga.channels, <ShortcutChannel>{
       ShortcutChannel.keyboard,
       ShortcutChannel.gamepad,
+      ShortcutChannel.mouse,
     });
     for (final TargetPlatform platform in <TargetPlatform>[
       TargetPlatform.windows,
