@@ -74,37 +74,63 @@ void main() {
       }
     });
 
-    test('负向：当键用的那几处一律不许翻译', () {
+    test('负向：翻译只许出现在那 4 个渲染点，别处一律真名', () {
+      // 白名单而不是黑名单。黑名单要枚举所有「当键用」的写法——`data-dictionary`
+      // 有单引号属性名和模板串两种形态、还有 `dataset.dictionary`，样式查表是可选
+      // 链 `window.dictionaryStyles?.[`，另有隐藏/折叠过滤、释义语言查表、媒体
+      // URL、glossaries 分组 key——枚举一定漏，而本守卫第一版就漏了：needle 写成
+      // `window.dictionaryStyles[`（无可选链），在文件里命中 0 行，那半组断言一次
+      // 都没执行过。
+      //
+      // 反过来钉「允许出现的位置」就没有这个问题：调用点是有限且明确的 4 个，
+      // 任何新增的翻译——包括顺手加到 data-dictionary 上的——都会落在白名单外
+      // 而被当场抓住。
       final String js = _readPopupJs();
+      const List<String> allowedAnchors = <String>[
+        "className: 'dict-name'",
+        "className: 'frequency-dict-label'",
+        "className: 'pitch-dict-label'",
+        "className: 'kanji-card-dict'",
+      ];
 
-      // `data-dictionary` 是 CSS 作用域属性，必须与样式规则编译出的选择器
-      // （dictionary_style_css.dart）和 Anki 导出 HTML 里的属性同源=真名。
-      // 翻译它 = 用户的每词典样式全部失配，且已导出的卡片对不上。
-      for (final String line in js
-          .split('\n')
-          .where((String l) => l.contains("'data-dictionary'"))) {
+      final List<String> offenders = <String>[];
+      int callSites = 0;
+      for (final String line in js.split('\n')) {
+        if (!line.contains('__fushiDictDisplayName(')) continue;
+        // 函数自身的定义与递归无关的内部引用不算调用点。
+        if (line.contains('function __fushiDictDisplayName(')) continue;
+        callSites++;
+        if (!allowedAnchors.any(line.contains)) offenders.add(line.trim());
+      }
+
+      expect(
+        offenders,
+        isEmpty,
+        reason: '词典显示名只能进 textContent。这些行把它用在了别处——那个字符串'
+            '同时是 CSS 作用域键 / 媒体目录键 / 分组键 / Anki token 键，翻译了'
+            '会让用户样式静默失效、词典图音 404、已配置的制卡字段对不上：$offenders',
+      );
+      expect(
+        callSites,
+        allowedAnchors.length,
+        reason: '调用点数量应恰好等于允许的渲染点数量',
+      );
+    });
+
+    test('负向：CSS 作用域键的每一种写法都仍是真名', () {
+      // data-dictionary 单独再钉一遍：它是最危险的一个（要与样式规则编译出的
+      // 选择器、以及已导出 Anki 卡片里的属性同源），且有属性名和模板串两种形态。
+      final String js = _readPopupJs();
+      for (final String line in js.split('\n')) {
+        final bool mentionsScopeKey = line.contains("'data-dictionary'") ||
+            line.contains('data-dictionary=') ||
+            line.contains('dataset.dictionary');
+        if (!mentionsScopeKey) continue;
         expect(
           line.contains('__fushiDictDisplayName('),
           isFalse,
-          reason: 'data-dictionary 是 CSS 作用域键，翻译了用户样式会静默失效：$line',
+          reason: 'CSS 作用域键必须是真名：$line',
         );
-      }
-
-      // 样式查表、媒体路径改写、分组 key：三者都要对上真名（磁盘目录名 / Anki
-      // token）。这里按调用点扫，任何一处混进翻译都算破坏。
-      for (final String needle in <String>[
-        'window.dictionaryStyles[',
-        'rewriteDictionaryMediaPath(',
-      ]) {
-        for (final String line in js
-            .split('\n')
-            .where((String l) => l.contains(needle))) {
-          expect(
-            line.contains('__fushiDictDisplayName('),
-            isFalse,
-            reason: '$needle 用的是真名（磁盘目录 / 样式表键），不能翻译：$line',
-          );
-        }
       }
     });
 

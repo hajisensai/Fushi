@@ -137,6 +137,50 @@ void main() {
       expect(back.effectiveDisplayName, '日汉');
     });
 
+    test('copyWith 只换指定字段，用户设置列原样带过', () {
+      // 防真数据丢失：构造器把 languageOverride / displayName 设成可选默认 null，
+      // 而 _dictionaryToCompanion 对每列都写 Value(...)（不是 absent）——「new 一个
+      // Dictionary 再 persist」漏填一个参数就是显式往 DB 写 NULL。类型自愈迁移
+      // （AppModel._migrateDictionaryTypes）曾这么把用户的改名和内容语言一起抹掉。
+      final Dictionary original = Dictionary(
+        name: 'JMdict',
+        formatKey: 'yomitan',
+        order: 5,
+        type: DictionaryType.kanji,
+        metadata: const <String, String>{'revision': '1'},
+        hiddenLanguages: <String>['en'],
+        collapsedLanguages: <String>['ja'],
+        languageOverride: 'ja',
+        displayName: '日汉大辞典',
+      );
+
+      final Dictionary migrated = original.copyWith(
+        type: DictionaryType.term,
+        metadata: const <String, String>{'revision': '2'},
+      );
+
+      // 换掉的
+      expect(migrated.type, DictionaryType.term);
+      expect(migrated.metadata, const <String, String>{'revision': '2'});
+      // 必须原样带过的——这两条是丢数据的那两列
+      expect(
+        migrated.displayName,
+        '日汉大辞典',
+        reason: '类型自愈只想换 type，不能顺手抹掉用户的改名',
+      );
+      expect(
+        migrated.languageOverride,
+        'ja',
+        reason: '手动指定的内容语言同理（v87 起的既有丢数据路径）',
+      );
+      // 其余字段也不许掉
+      expect(migrated.name, 'JMdict');
+      expect(migrated.formatKey, 'yomitan');
+      expect(migrated.order, 5);
+      expect(migrated.hiddenLanguages, <String>['en']);
+      expect(migrated.collapsedLanguages, <String>['ja']);
+    });
+
     test('fromJson 读旧 JSON（没有 displayName 字段）不炸，退化成没改过名', () {
       final Dictionary old = Dictionary(
         name: 'JMdict',

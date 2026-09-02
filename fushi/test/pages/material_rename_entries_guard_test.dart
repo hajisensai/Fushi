@@ -74,18 +74,23 @@ void main() {
         isTrue,
         reason: '书改名必须走 override_title 覆盖层',
       );
-      // bookKey = sanitizeTtuFilename(title)，是跨端身份。任何形态的「改标题列」
-      // 都会换掉主键，十来张子表连坐。
-      for (final String forbidden in <String>[
-        'updateEpubBookTitle(',
-        'updateSrtBookTitle(',
-      ]) {
-        expect(
-          shelf.contains(forbidden),
-          isFalse,
-          reason: '$forbidden 会改主键 bookKey，等于换身份——改名只能走覆盖层',
-        );
-      }
+      // bookKey = sanitizeTtuFilename(title)，是跨端身份，改标题列就是换主键、
+      // 十来张子表连坐。
+      //
+      // 判据钉在**改名方法体**上而不是全文件禁某个方法名：本守卫第一版禁的是
+      // `updateEpubBookTitle(` / `updateSrtBookTitle(`，而那两个方法全仓根本不
+      // 存在（只出现在守卫自己里）——恒真断言，测的是空气。真实的回归形态是在
+      // 这个方法里直接拼一条写 title 的 Drift 更新。
+      // 注意判据不能是裸 `title:`——弹窗标题参数就叫 title，会误伤（实测过）。
+      // 要写列必然经 Companion / update / customStatement 之一，钉这个就够。
+      expect(
+        body.contains('EpubBooksCompanion') ||
+            body.contains('SrtBooksCompanion') ||
+            body.contains('update(') ||
+            body.contains('customStatement('),
+        isFalse,
+        reason: '改名只走覆盖层 API，方法体里不该出现任何直接改表的写法',
+      );
     });
 
     test('改名后让书架重读，而不是只 refreshTab', () {

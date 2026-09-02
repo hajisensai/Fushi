@@ -97,6 +97,35 @@ class Dictionary {
     return null;
   }
 
+  /// 在**已有词典对象**上换掉几个字段，其余原样带过。
+  ///
+  /// 存在的理由是防一类静默数据丢失：[Dictionary] 的构造器把用户设置列
+  /// （[languageOverride] / [displayName]）设成可选默认 null，而
+  /// `DictionaryRepository._dictionaryToCompanion` 对**每一列**都写
+  /// `Value(...)`（不是 absent）——于是「new 一个 Dictionary 再 persist」的写法
+  /// 只要漏填一个参数，就是往 DB 里显式写 NULL 把用户设置抹掉，且不报错。
+  ///
+  /// 类型自愈迁移就这么丢过（`AppModel._migrateDictionaryTypes` 两处只想换
+  /// `type`，却把用户手动指定的内容语言和改名一起清了）。补参数治不了本——下一
+  /// 列加进来时照样漏，所以那种写法一律改成 [copyWith]。
+  Dictionary copyWith({
+    DictionaryType? type,
+    Map<String, String>? metadata,
+    int? order,
+  }) {
+    return Dictionary(
+      name: name,
+      formatKey: formatKey,
+      order: order ?? this.order,
+      type: type ?? this.type,
+      metadata: metadata ?? this.metadata,
+      hiddenLanguages: hiddenLanguages,
+      collapsedLanguages: collapsedLanguages,
+      languageOverride: languageOverride,
+      displayName: displayName,
+    );
+  }
+
   bool isHidden(Language language) {
     return hiddenLanguages.contains(language.languageCode);
   }
