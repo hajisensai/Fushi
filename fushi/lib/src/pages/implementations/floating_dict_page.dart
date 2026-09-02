@@ -209,6 +209,16 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
     return DictionaryPopupNative(
       result: _result!,
       onMineEntry: _exportToAnki,
+      // 词典改名（v95）：真名 -> 显示名，只含改过名的。悬浮窗走的是精简初始化
+      // 路径，词典仓库可能还没建好（dictRepo 是 late 字段，直接读会抛），未就绪
+      // 时给空表 = 全部显示真名。
+      dictionaryDisplayNames: appModel.isDictionaryRepoReady
+          ? <String, String>{
+              for (final Dictionary d in appModel.dictionaries)
+                if (d.displayName != null && d.displayName!.trim().isNotEmpty)
+                  d.name: d.displayName!.trim(),
+            }
+          : const <String, String>{},
     );
   }
 
