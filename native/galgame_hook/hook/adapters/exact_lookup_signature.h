@@ -150,8 +150,9 @@ struct LoadedPeImage {
   const uint8_t* base = nullptr;
   // 绝对 VA 操作数所对齐的基址。0 表示与 base 相同——进程内已加载的模块就是这种情况
   // （代码里的绝对操作数已被重定位成实际加载基址）。而把**磁盘上的原始映像**映射进来
-  // 校验时（LOAD_LIBRARY_AS_IMAGE_RESOURCE 明确不施加重定位）两者必然不同：读字节要用
-  // 映射地址 base，解绝对操作数却要用 PE 头里的首选基址。合成一个字段会让其中一路恒错。
+  // 校验时两者必然不同：那份副本由 LoadLeafPristineImage 手工按节展开（平坦数据映射
+  // + memcpy，不经加载器、不施加重定位），读字节要用副本地址 base，解绝对操作数却要用
+  // PE 头里的首选基址。合成一个字段会让其中一路恒错。
   uintptr_t absolute_base = 0u;
   size_t size = 0u;
   uint16_t machine = 0u;

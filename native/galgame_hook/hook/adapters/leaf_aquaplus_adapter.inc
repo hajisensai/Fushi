@@ -10,11 +10,27 @@
 
 volatile LONG g_leaf_aquaplus_profile_state =
     0; // 0 unknown, +1 match, -1 reject
-// 身份「测量」失败（读不到 exe / 算不出摘要）时允许重来的次数。见下面
-// IsLeafAquaplusProfileMatched 里的说明：量不到不是不匹配，但也不能无界重试——
-// 每次失败都要对 1.2MB 的 exe 重算一遍 SHA-256，而 Poll 是高频的。
-constexpr LONG kLeafIdentityMeasureBudget = 32;
-volatile LONG g_leaf_identity_measure_attempts = 0;
+// 身份「测量」失败（读不到 exe / 算不出摘要 / 映不出原始映像）时的重试预算。
+// 见下面 IsLeafAquaplusProfileMatched 里的说明：量不到不是不匹配，但也不能无界重试。
+//
+// **量纲是时间，不是调用次数。** 旧实现按 32 次调用限界，但 IsLeafAquaplusProfile-
+// Matched 每轮 Poll 就被打 5~7 次（adapter_registry.inc 的 PollDelayMs 自己也调
+// leaf_aquaplus_.probe()），DispatchNewModules 每拍还对每个新模块再打 3 次；而
+// PollDelayMs 在身份未定时返回 200ms。于是 32 次 ≈ 0.2~1.2 秒，启动期模块风暴下
+// **单个 200ms 拍就能烧光**——而要覆盖的注入窗口（BCrypt / 文件映射在 loader lock
+// 或 hook 安装中途失败、杀软扫描期占住 exe）以秒计。次数预算量的是「被问了多少次」，
+// 要限的却是「等了多久」。
+//
+// 计次也不是全无用处：它挡的是 CPU——每次失败要对 1.2MB 的 exe 重算 SHA-256，
+// 再展开一份 ~1.2MB 的私有映像。所以两条一起限：两次真实测量之间至少隔
+// kLeafIdentityRetryIntervalMs（把高频 Poll 摊平到每拍最多一次），整个重试窗口
+// kLeafIdentityRetryWindowMs 用尽后才写永久缓存钉死。
+constexpr DWORD kLeafIdentityRetryIntervalMs = 200;
+constexpr DWORD kLeafIdentityRetryWindowMs = 15000;
+// GetTickCount() 的快照，恒非 0（`| 1u`），0 专门表示「还没发生过」。
+// 差值用无符号 32 位算，49.7 天回绕自动正确。
+volatile LONG g_leaf_identity_first_failure_tick = 0;
+volatile LONG g_leaf_identity_last_attempt_tick = 0;
 volatile LONG g_leaf_exact_binary_structure_state =
     0; // 0 unknown, +1 hydrated structure match, -1 reject
 std::atomic<const fushi_voice_hook::LeafAquaplusProfile *>
@@ -425,15 +441,21 @@ bool Sha256FileForLeafAquaplus(const wchar_t *path,
     ok = BCryptFinishHash(hash, digest->data(),
                           static_cast<ULONG>(digest->size()), 0) == 0;
   }
+  // UnmapViewOfFile / GetFileSizeEx 本 DLL 不 detour（没有对应的 g_orig_），裸调用
+  // 拿到的就是原件。CloseHandle 则**是**本 DLL detour 的导出之一，必须走 trampoline：
+  // 让自己的 detour 处理自己的句柄没有意义，还多一条重入路径（BUG-2046 的
+  // CloseHandle detour 曾在 MinHook Freeze 期拿锁死锁过）。
+  const auto close_handle =
+      g_orig_CloseHandle != nullptr ? g_orig_CloseHandle : &CloseHandle;
   if (view != nullptr)
     UnmapViewOfFile(view);
   if (mapping != nullptr)
-    CloseHandle(mapping);
+    close_handle(mapping);
   if (hash != nullptr)
     BCryptDestroyHash(hash);
   if (algorithm != nullptr)
     BCryptCloseAlgorithmProvider(algorithm, 0);
-  CloseHandle(file);
+  close_handle(file);
   return ok;
 }
 
@@ -483,8 +505,13 @@ bool LoadLeafPristineImage(const wchar_t *path, LeafPristineImage *out) {
     ok = mapping != nullptr;
   }
   if (ok) {
+    // 与 Sha256FileForLeafAquaplus 同一纪律：本 DLL 自己 detour 过的导出一律走
+    // trampoline。整套修法的前提就是「不要读被自己 detour 污染的东西」，取原始映像
+    // 这条路上尤其不能自相矛盾。
+    const auto map_view =
+        g_orig_MapViewOfFile != nullptr ? g_orig_MapViewOfFile : &MapViewOfFile;
     raw = reinterpret_cast<const uint8_t *>(
-        MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0));
+        map_view(mapping, FILE_MAP_READ, 0, 0, 0));
     ok = raw != nullptr;
   }
   const size_t raw_bytes = static_cast<size_t>(file_size.QuadPart);
@@ -542,12 +569,49 @@ bool LoadLeafPristineImage(const wchar_t *path, LeafPristineImage *out) {
       ok = false;
     }
   }
+  const auto close_handle =
+      g_orig_CloseHandle != nullptr ? g_orig_CloseHandle : &CloseHandle;
   if (raw != nullptr)
     UnmapViewOfFile(const_cast<uint8_t *>(raw));
   if (mapping != nullptr)
-    CloseHandle(mapping);
-  CloseHandle(file);
+    close_handle(mapping);
+  close_handle(file);
   return ok && out->base != nullptr;
+}
+
+// 距上次真实测量不足 kLeafIdentityRetryIntervalMs 时返回 true：本拍跳过测量。
+// 单纯为了不把 SHA-256 + 映像展开摊进每一次调用；身份未定期间的语义不变
+// （仍然是「暂未匹配」，不写任何缓存）。
+bool LeafIdentityMeasurementThrottled() {
+  const DWORD now = GetTickCount() | 1u;
+  const DWORD last = static_cast<DWORD>(
+      InterlockedCompareExchange(&g_leaf_identity_last_attempt_tick, 0, 0));
+  if (last != 0u && now - last < kLeafIdentityRetryIntervalMs)
+    return true;
+  InterlockedExchange(&g_leaf_identity_last_attempt_tick,
+                      static_cast<LONG>(now));
+  return false;
+}
+
+// 测量失败后的处置：true = 重试窗口已耗尽，调用方该写永久缓存钉死；
+// false = 还在窗口内，调用方直接返回「暂未匹配」，一个缓存都不许写。
+bool LeafIdentityRetryWindowExhausted() {
+  const DWORD now = GetTickCount() | 1u;
+  DWORD first = static_cast<DWORD>(InterlockedCompareExchange(
+      &g_leaf_identity_first_failure_tick, static_cast<LONG>(now), 0));
+  if (first == 0u)
+    first = now;
+  return now - first >= kLeafIdentityRetryWindowMs;
+}
+
+// 身份三态里的「未定」。
+//
+// IsLeafAquaplusProfileMatched() 把三态压成 bool，于是「还在有界重试」与「确定不是
+// 这个引擎」在调用方看来同形。对**可逆**的判断（要不要装自己的 hook）这没问题，下一拍
+// 重问即可；对**不可逆**的判断就是灾难——通用护盾一旦把 GetAsyncKeyState 占走，exact
+// 侧后来再装就拿不到 trampoline，身份重试成功也救不回来。那种地方要问的是这个。
+bool IsLeafAquaplusIdentityUndecided() {
+  return InterlockedCompareExchange(&g_leaf_aquaplus_profile_state, 0, 0) == 0;
 }
 
 bool IsLeafAquaplusProfileMatched() {
@@ -555,6 +619,8 @@ bool IsLeafAquaplusProfileMatched() {
       InterlockedCompareExchange(&g_leaf_aquaplus_profile_state, 0, 0);
   if (cached != 0)
     return cached > 0;
+  if (LeafIdentityMeasurementThrottled())
+    return false;
 
   wchar_t executable[32768] = {};
   const DWORD chars = GetModuleFileNameW(
@@ -584,12 +650,11 @@ bool IsLeafAquaplusProfileMatched() {
     // loader lock 或 hook 安装中途失败是瞬时条件，下一拍 Poll 就能量到。同一台机器
     // 同一个游戏，有的会话原声正常、有的整场降级，差别就在这一拍。
     //
-    // 所以只有**测量成功**才允许写缓存。重试有界：预算用尽后照旧钉死，那时"读不到"
+    // 所以只有**测量成功**才允许写缓存。重试有界：窗口用尽后照旧钉死，那时"读不到"
     // 才是个确定结论，而不是一次运气不好。
     SetXAudioDiagnostic2(
         fushi_voice_hook::kXAudioDiag2LeafExecutableUnmeasurable);
-    if (InterlockedIncrement(&g_leaf_identity_measure_attempts) <
-        kLeafIdentityMeasureBudget) {
+    if (!LeafIdentityRetryWindowExhausted()) {
       return false;
     }
     g_leaf_aquaplus_profile.store(nullptr, std::memory_order_release);
@@ -633,13 +698,36 @@ bool IsLeafAquaplusProfileMatched() {
       // D3DTrace 里要 hook 的地址，今天只因结果被永久缓存才没暴露同一个问题。
       //
       // 身份是「这个 exe 是不是那份被测量过的构建」——那是文件的属性，不是当前进程内存
-      // 的属性。所以这里映射磁盘上的那一份来扫。LOAD_LIBRARY_AS_IMAGE_RESOURCE 按节对齐
-      // 映射、不执行任何代码、且**不施加重定位**，因此绝对操作数仍编码首选基址，要用
-      // image.absolute_base 告诉解码器这一点。
+      // 的属性。所以这里映射磁盘上的那一份来扫。取原始映像走 LoadLeafPristineImage 的
+      // 手工按节展开（平坦数据映射 + memcpy），**不是** LOAD_LIBRARY_AS_IMAGE_RESOURCE：
+      // 后者对本进程自己的主映像会别名回已加载的那一份，修了等于没修（见该函数注释）。
+      // 手工展开不经加载器、不执行代码、不施加重定位，因此绝对操作数仍编码首选基址，
+      // 要用 image.absolute_base 告诉解码器这一点。
       fushi_voice_hook::exact_lookup::LoadedPeImage image;
       LeafPristineImage pristine;
       const bool pristine_ready =
           LoadLeafPristineImage(executable, &pristine);
+      // 「原始映像这一拍没映上」不是「结构不符」，和上面「exe 摘要量不到」是同一
+      // 类事实。LoadLeafPristineImage 走 CreateFileW + CreateFileMappingW +
+      // VirtualAlloc：杀软扫描期占住文件、共享冲突、32 位地址空间碎片都能让它临时
+      // 失败。而往下走一路的结局是 opened=false → 三组全 false →
+      // g_leaf_exact_binary_structure_state 被 InterlockedExchange 成 -1 →
+      // profile 置空 → g_leaf_aquaplus_profile_state 永久 -1，症状与摘要量不到
+      // 那条一模一样：LAC 原声 hook 一次都不装、整场音频降级系统 Loopback，
+      // 外加输入护盾不装的点击穿透。
+      //
+      // 结构门在改成读磁盘原始映像之前只读进程内存、根本没有文件 IO，这条失败面是
+      // 本次修法自己引进来的，必须共用同一个有界重试窗口。窗口内直接返回，
+      // 不写 g_leaf_exact_binary_structure_state，也不写 g_leaf_aquaplus_profile_state。
+      //
+      // 只对 pristine_ready 设闸：OpenLoadedPeImage 之后的判定读的都是这份已在内存
+      // 里的私有副本，是确定性的，再重试多少次结论都一样。
+      if (!pristine_ready) {
+        SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2LeafImageUnopened);
+        if (!LeafIdentityRetryWindowExhausted()) {
+          return false;
+        }
+      }
       const uintptr_t preferred_base = pristine.preferred_base;
       const bool opened =
           pristine_ready && preferred_base != 0u &&

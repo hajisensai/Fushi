@@ -1373,6 +1373,15 @@ class EngineHookGalAudioSource implements GalAudioSource {
   int get textLaneRecycles => _textLaneRecycles;
   int get textLaneOverflows => _textLaneOverflows;
 
+  /// 引擎侧两个 XAudio2 诊断字的原样快照（粘性 or 位，只会置位不会清零）。
+  ///
+  /// [xaudioDiagnostics2] 是第二个字，装的不是队列状态而是**身份分型位**：SGRE 家族/
+  /// 锚点是否解出、Leaf 的 exe 摘要是否匹配、结构门断在哪一组（section roles / 各锚点 /
+  /// return sites）。没有它，「这台机器为什么整场语音降级 Loopback」在真机上只能猜——
+  /// 而 hook 侧每一条失败路径都老老实实置了位。
+  int get xaudioDiagnostics => _xaudioDiagnostics;
+  int get xaudioDiagnostics2 => _xaudioDiagnostics2;
+
   /// 共享内存已通过与 [start] **完全相同**的就绪门（`ready` + 有效 PCM 格式）时的格式。
   ///
   /// null 只说明「游戏还没播过语音」，不说明 hook 没装上（那看 [textHookReady] 与 native
@@ -1388,6 +1397,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
   bool _rawVoiceReady = false;
   int _textLaneRecycles = 0;
   int _textLaneOverflows = 0;
+  int _xaudioDiagnostics = 0;
+  int _xaudioDiagnostics2 = 0;
   PcmFormat? _readyFormat;
 
   /// 查目标进程 [pid] 是否 32 位（WOW64）。hibiki.exe 是 64 位，故 native `IsWow64Process`
@@ -1922,6 +1933,10 @@ class EngineHookGalAudioSource implements GalAudioSource {
       _textLaneRecycles = (r['textLaneRecycles'] as int?) ?? _textLaneRecycles;
       _textLaneOverflows =
           (r['textLaneOverflows'] as int?) ?? _textLaneOverflows;
+      _xaudioDiagnostics =
+          (r['xaudioDiagnostics'] as int?) ?? _xaudioDiagnostics;
+      _xaudioDiagnostics2 =
+          (r['xaudioDiagnostics2'] as int?) ?? _xaudioDiagnostics2;
       // 就绪门只有一处真相源：start() 与运行中的 refreshReadiness() 必须用同一判据，
       // 否则「启动时不算就绪、运行中却算就绪」会让两条路径对同一份共享内存给出
       // 互相矛盾的结论（BUG-1100）。

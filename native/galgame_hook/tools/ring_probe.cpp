@@ -2324,10 +2324,12 @@ int main(int argc, char** argv) {
     const uint64_t twc = header->text_write_count;
     const uint64_t cwc = header->clip_write_count;
     const uint64_t uwc = header->unity_voice_write_count;
-    printf("     [v10] text_hooked=%u luna_active=%u decdiag=0x%08x hookdiag=0x%08x hookio=0x%08x xaudiodiag=0x%08x text_events=%llu voice_clips=%llu unity_events=%llu",
+    // xaudio_diagnostics2 是第二个诊断字（SGRE 家族/锚点 + Leaf 身份与结构门的分型位）。
+    // 不打它，整批「断在哪一组」的事实在真机上就是看不见的：写点有了、读点一个没有。
+    printf("     [v10] text_hooked=%u luna_active=%u decdiag=0x%08x hookdiag=0x%08x hookio=0x%08x xaudiodiag=0x%08x xaudiodiag2=0x%08x text_events=%llu voice_clips=%llu unity_events=%llu",
            text_hooked, header->luna_active, header->reserved_luna,
            header->hook_diagnostics, header->reserved_hook_diagnostics,
-           header->xaudio_diagnostics,
+           header->xaudio_diagnostics, header->xaudio_diagnostics2,
            static_cast<unsigned long long>(twc),
            static_cast<unsigned long long>(cwc),
            static_cast<unsigned long long>(uwc));
