@@ -450,6 +450,7 @@ class GalHookSessionState {
     this.excludedAudioSourcePtrs = const <int>{},
     this.japaneseLocaleApplied = false,
     this.japaneseLocaleVerdict,
+    this.japaneseLocaleSkipReason,
   });
 
   final GalHookSessionPhase phase;
@@ -500,6 +501,10 @@ class GalHookSessionState {
   /// 「未转区」时说清是证据不足还是判为不需要，用户才够得着 `on` / `off` 两头的兜底。
   final GalJapaneseLocaleVerdict? japaneseLocaleVerdict;
 
+  /// `auto` 判定后没转区的原因；语义门（改 `on` 有用）与工程门（改 `on` 也没用）分开，
+  /// 状态卡按它说话。转了、或不是 `auto`，为 null；生命周期与 [japaneseLocaleVerdict] 相同。
+  final GalJapaneseLocaleSkipReason? japaneseLocaleSkipReason;
+
   bool get isActive =>
       phase != GalHookSessionPhase.idle && phase != GalHookSessionPhase.error;
   bool get hasText => textSignalReceived;
@@ -536,6 +541,7 @@ class GalHookSessionState {
     Set<int>? excludedAudioSourcePtrs,
     bool? japaneseLocaleApplied,
     GalJapaneseLocaleVerdict? japaneseLocaleVerdict,
+    GalJapaneseLocaleSkipReason? japaneseLocaleSkipReason,
     bool clearJapaneseLocaleVerdict = false,
   }) {
     return GalHookSessionState(
@@ -579,6 +585,13 @@ class GalHookSessionState {
       japaneseLocaleVerdict: clearLaunchExe || clearJapaneseLocaleVerdict
           ? null
           : japaneseLocaleVerdict ?? this.japaneseLocaleVerdict,
+      // 原因只在「有判定且没转」时有意义：判定一复位它跟着清；新判定进来时它就是
+      // 随判定一起传进来的那个值（转了 = null），不能拿旧值兜底。
+      japaneseLocaleSkipReason: clearLaunchExe || clearJapaneseLocaleVerdict
+          ? null
+          : japaneseLocaleVerdict != null
+              ? japaneseLocaleSkipReason
+              : japaneseLocaleSkipReason ?? this.japaneseLocaleSkipReason,
     );
   }
 }
@@ -1508,10 +1521,13 @@ class GalHookSessionController extends ChangeNotifier {
     // 「文字乱码 / 脚本加载失败」这类症状的常见来源，此时把标记丢掉等于让用户在最需要
     // 线索的那一刻失去线索。
     final GalJapaneseLocaleVerdict? verdict = engine.japaneseLocaleVerdict;
+    final GalJapaneseLocaleSkipReason? skipReason =
+        engine.japaneseLocaleSkipReason;
     _setState(
       _state.copyWith(
         japaneseLocaleApplied: engine.japaneseLocaleApplied,
         japaneseLocaleVerdict: verdict,
+        japaneseLocaleSkipReason: skipReason,
         clearJapaneseLocaleVerdict: verdict == null,
       ),
     );
@@ -1524,6 +1540,9 @@ class GalHookSessionController extends ChangeNotifier {
         'evidence': verdict.evidence
             .map(galJapaneseLocaleEvidenceToKey)
             .toList(growable: false),
+      // 「跳过」配「需要」并不矛盾：reason 会说明是工程门（64 位 / 系统本就日文区）。
+      if (skipReason != null)
+        'reason': galJapaneseLocaleSkipReasonToKey(skipReason),
     };
     if (engine.japaneseLocaleApplied) {
       _record(

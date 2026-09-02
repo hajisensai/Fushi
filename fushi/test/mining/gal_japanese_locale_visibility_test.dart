@@ -127,10 +127,13 @@ void main() {
     );
     expect(event.details['mode'], 'auto');
     expect(event.details['need'], 'needed');
-    expect(event.details['evidence'], <String>[
-      'version_info_japanese',
-      'exe_shift_jis_strings',
-    ], reason: '事件里用稳定字面量 key，不用 enum.name/index');
+    expect(
+        event.details['evidence'],
+        <String>[
+          'version_info_japanese',
+          'exe_shift_jis_strings',
+        ],
+        reason: '事件里用稳定字面量 key，不用 enum.name/index');
     expect(
       controller.events.map((GalHookEvent event) => event.code),
       isNot(contains('launch.japanese_locale_skipped')),
@@ -143,6 +146,7 @@ void main() {
     final _LocaleHarness harness = _LocaleHarness(
       localeApplied: false,
       verdict: notNeeded,
+      skipReason: GalJapaneseLocaleSkipReason.notNeeded,
     );
     final GalHookSessionController controller = harness.build();
 
@@ -154,6 +158,10 @@ void main() {
     expect(controller.state.japaneseLocaleApplied, isFalse);
     expect(controller.state.japaneseLocaleVerdict, same(notNeeded));
     expect(
+      controller.state.japaneseLocaleSkipReason,
+      GalJapaneseLocaleSkipReason.notNeeded,
+    );
+    expect(
       controller.events.map((GalHookEvent event) => event.code),
       isNot(contains('launch.japanese_locale_applied')),
       reason: '没转区还报「已转区」会把用户引到错误的排查方向',
@@ -163,9 +171,13 @@ void main() {
       orElse: () => throw StateError('缺 launch.japanese_locale_skipped 事件'),
     );
     expect(event.details['need'], 'not_needed');
-    expect(event.details['evidence'], <String>[
-      'dir_file_name_chinese_patch',
-    ], reason: '事后排障得看到「当时为什么没转」');
+    expect(event.details['reason'], 'not_needed');
+    expect(
+        event.details['evidence'],
+        <String>[
+          'dir_file_name_chinese_patch',
+        ],
+        reason: '事后排障得看到「当时为什么没转」');
 
     await harness.dispose(controller);
   });
@@ -174,6 +186,7 @@ void main() {
     final _LocaleHarness harness = _LocaleHarness(
       localeApplied: false,
       verdict: GalJapaneseLocaleVerdict.unknown,
+      skipReason: GalJapaneseLocaleSkipReason.unknown,
     );
     final GalHookSessionController controller = harness.build();
 
@@ -184,10 +197,39 @@ void main() {
       orElse: () => throw StateError('缺 launch.japanese_locale_skipped 事件'),
     );
     expect(event.details['need'], 'unknown');
+    expect(event.details['reason'], 'unknown');
     expect(event.details['evidence'], isEmpty);
     expect(
       controller.state.japaneseLocaleVerdict?.need,
       GalJapaneseLocaleNeed.unknown,
+    );
+
+    await harness.dispose(controller);
+  });
+
+  test('auto 判为需要却被工程门拦下（64 位）：skipped 事件 need=needed + reason=not_32bit',
+      () async {
+    // 「跳过」配「需要」并不矛盾——reason 说明是 Locale Emulator 只有 x86 版；状态卡据此
+    // 直说，而不是让用户白改一轮「始终开启」。
+    final _LocaleHarness harness = _LocaleHarness(
+      localeApplied: false,
+      verdict: needed,
+      skipReason: GalJapaneseLocaleSkipReason.targetNot32Bit,
+    );
+    final GalHookSessionController controller = harness.build();
+
+    await controller.launchGame(r'D:\game\tenshi.exe');
+
+    final GalHookEvent event = controller.events.firstWhere(
+      (GalHookEvent event) => event.code == 'launch.japanese_locale_skipped',
+      orElse: () => throw StateError('缺 launch.japanese_locale_skipped 事件'),
+    );
+    expect(event.details['need'], 'needed');
+    expect(event.details['reason'], 'not_32bit');
+    expect(controller.state.japaneseLocaleApplied, isFalse);
+    expect(
+      controller.state.japaneseLocaleSkipReason,
+      GalJapaneseLocaleSkipReason.targetNot32Bit,
     );
 
     await harness.dispose(controller);
@@ -204,7 +246,8 @@ void main() {
       (await controller.launchGame(
         r'D:\game\tenshi.exe',
         japaneseLocaleMode: GalJapaneseLocaleMode.off,
-      )).launched,
+      ))
+          .launched,
       isTrue,
     );
 
@@ -266,15 +309,48 @@ void main() {
       applied.copyWith(clearJapaneseLocaleVerdict: true).japaneseLocaleVerdict,
       isNull,
     );
+
+    // 跳过原因与判定同生命周期：随 clearLaunchExe / clearJapaneseLocaleVerdict 一起清；
+    // 新判定进来时它就是随判定传入的值（转了 = null），不能拿上一局的旧值兜底。
+    const GalHookSessionState skipped = GalHookSessionState(
+      japaneseLocaleVerdict: notNeeded,
+      japaneseLocaleSkipReason: GalJapaneseLocaleSkipReason.notNeeded,
+    );
+    expect(
+      skipped.copyWith(clearLaunchExe: true).japaneseLocaleSkipReason,
+      isNull,
+    );
+    expect(
+      skipped.copyWith(clearJapaneseLocaleVerdict: true).japaneseLocaleSkipReason,
+      isNull,
+    );
+    expect(
+      skipped
+          .copyWith(phase: GalHookSessionPhase.running)
+          .japaneseLocaleSkipReason,
+      GalJapaneseLocaleSkipReason.notNeeded,
+    );
+    expect(
+      skipped
+          .copyWith(japaneseLocaleApplied: true, japaneseLocaleVerdict: needed)
+          .japaneseLocaleSkipReason,
+      isNull,
+      reason: '新判定 + 转了区：原因必须跟着变成 null，不能残留 notNeeded',
+    );
   });
 }
 
 /// 把会话控制器的构造/清理收在一处，避免每个用例重复十几行替身接线。
 class _LocaleHarness {
-  _LocaleHarness({required this.localeApplied, required this.verdict});
+  _LocaleHarness({
+    required this.localeApplied,
+    required this.verdict,
+    this.skipReason,
+  });
 
   final bool localeApplied;
   final GalJapaneseLocaleVerdict? verdict;
+  final GalJapaneseLocaleSkipReason? skipReason;
   final TexthookerService service = TexthookerService.test();
   final ChangeNotifier endpoints = ChangeNotifier();
 
@@ -282,25 +358,26 @@ class _LocaleHarness {
     final _LocaleEngine engine = _LocaleEngine(
       localeApplied: localeApplied,
       verdict: verdict,
+      skipReason: skipReason,
     );
     return GalHookSessionController(
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => true,
       injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
-      engineSourceFactory:
-          ({
-            required int targetPid,
-            required String? launchExe,
-            required String injectorPath,
-            required bool lunaPcHooks,
-            int? lunaCodepage,
-            List<String> launchArguments = const <String>[],
-            String launchWorkdir = '',
-            GalJapaneseLocaleMode japaneseLocaleMode =
-                kGalDefaultJapaneseLocaleMode,
-            String? contentLanguage,
-          }) => engine,
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
+      }) =>
+          engine,
       loopbackSourceFactory: _NoopLoopback.new,
       windowListLoader: () async => const <ExternalWindowInfo>[],
       windowPollAttempts: 1,
@@ -317,17 +394,24 @@ class _LocaleHarness {
 
 /// 只回答两个问题的引擎替身：本局转没转区、判定是什么。其余走基类默认。
 class _LocaleEngine extends EngineHookGalAudioSource {
-  _LocaleEngine({required this.localeApplied, required this.verdict})
-    : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
+  _LocaleEngine({
+    required this.localeApplied,
+    required this.verdict,
+    this.skipReason,
+  }) : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
 
   final bool localeApplied;
   final GalJapaneseLocaleVerdict? verdict;
+  final GalJapaneseLocaleSkipReason? skipReason;
 
   @override
   bool get japaneseLocaleApplied => localeApplied;
 
   @override
   GalJapaneseLocaleVerdict? get japaneseLocaleVerdict => verdict;
+
+  @override
+  GalJapaneseLocaleSkipReason? get japaneseLocaleSkipReason => skipReason;
 
   @override
   int? get gamePid => 4242;
@@ -337,11 +421,11 @@ class _LocaleEngine extends EngineHookGalAudioSource {
 
   @override
   Future<PcmFormat?> start() async => const PcmFormat(
-    sampleRate: 44100,
-    channels: 1,
-    bitsPerSample: 16,
-    isFloat: false,
-  );
+        sampleRate: 44100,
+        channels: 1,
+        bitsPerSample: 16,
+        isFloat: false,
+      );
 
   @override
   Future<void> stop() async {}

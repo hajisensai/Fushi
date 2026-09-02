@@ -41,8 +41,9 @@ class GalJapaneseLocaleVerdict {
 
 1. 用户声明语言优先：`userLanguageJapanese ⇒ needed`；`userLanguageOther ⇒ notNeeded`。这是唯一的人工真值，压过一切自动证据。
 2. **任何一条负向证据 ⇒ notNeeded**（`manifestUtf8CodePage` / `versionInfoChinese` / `dirFileNameChinesePatch` / `dirTextGbk` / `dirTextSimplifiedHanzi`）。理由：转错的代价是**启动即闪退**（BUG-1477），不转的代价是乱码——不对称，负向必须压过正向。汉化补丁常常只改脚本包不改 exe（BUG-1477 备注），所以负向证据主要靠**目录**而不是 exe。
-3. 否则任何一条正向证据 ⇒ `needed`。
+3. 否则任何一条正向证据 ⇒ `needed`——**但 `versionInfoJapanese` 单独出现不算**（审查跟进）：0x0411 只回答「发行商是日本的」，KiriKiri Z / Unity / Ren'Py 的日文游戏一样带它却不需要 CP932；它只与字节级/目录级正向证据一起才算。
 4. 否则 `unknown`。
+5. `auto` 没转区时另记 `GalJapaneseLocaleSkipReason{notNeeded, unknown, systemAlreadyJapanese, targetNot32Bit}`：语义门（改 `on` 有用）与工程门（改 `on` 也没用）分开，事件与状态卡按原因说话。
 
 `resolveJapaneseLocale` 增加 `need` 形参（默认 `unknown`，老调用不变），`auto` 分支改为：
 
@@ -57,8 +58,8 @@ auto: need == needed && systemAnsiCodePage != 932 && is32Bit
 | 样本 | 版本资源语言 | exe 假名串段 | 目录 | 期望 | 新判定 |
 |---|---|---|---|---|---|
 | 屋上の百合霊さん（RScript，日文原版） | 0x0411 | 31 条（假名对 257 / GB 对 3） | 文件名含假名；`ReadMe_*.txt` 无 BOM，假名对 1993 / GB 对 0 | 转 | needed ✔ |
-| 天使☆騒々 R18（KiriKiri Z 官方多语言，`.sig` 签名） | 0x0411 | 0 条（假名对 21，全是噪声） | 无文本文件、无假名文件名 | 不转（Unicode 引擎，BUG-1691） | needed（版本资源 0x0411）— **与现状一致，本轮不改**；用户设 `language`≠ja 或 `off` 即可 |
-| 天使☆騒々 bgimage 版（同上 + 日文 readme） | 0x0411 | 0 条 | `お読みください.html`（UTF-8 BOM，日文）、`patch.txt` 无 BOM 假名 304 / GB 0 | 不转 | needed — 同上 |
+| 天使☆騒々 R18（KiriKiri Z 官方多语言，`.sig` 签名） | 0x0411 | 0 条（假名对 21，全是噪声） | 无文本文件、无假名文件名 | 不转（Unicode 引擎，BUG-1691） | **unknown ⇒ 不转 ✔**（审查跟进后 0x0411 单独只是佐证） |
+| 天使☆騒々 bgimage 版（同上 + 日文 readme） | 0x0411 | 0 条 | `お読みください.html`（UTF-8 BOM，日文）、`patch.txt` 无 BOM 假名 304 / GB 0 | 不转 | needed（Shift-JIS 文本 + 假名文件名）— **证据模型解不了这一格**，用户设 `language`≠ja 或 `off` |
 | charmap.exe（对照，纯英文） | 0x0409 | 0 条（假名对 6 = 噪声；「GB 对」337 = 噪声） | — | 不转 | unknown ⇒ 不转 ✔ |
 
 两条硬结论：

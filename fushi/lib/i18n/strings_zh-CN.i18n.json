@@ -4128,5 +4128,7 @@
   "game_japanese_locale_evidence_dir_file_name_chinese_patch": "目录文件名含汉化标记",
   "game_japanese_locale_evidence_dir_text_shift_jis": "目录文本为 Shift-JIS 编码",
   "game_japanese_locale_evidence_dir_text_gbk": "目录文本为 GBK 编码",
-  "game_japanese_locale_evidence_dir_text_simplified_hanzi": "目录文本含简体中文"
+  "game_japanese_locale_evidence_dir_text_simplified_hanzi": "目录文本含简体中文",
+  "game_session_japanese_locale_skipped_hint_system_japanese": "本局未转区：系统本就是日文区域 (CP932)，无需转区。",
+  "game_session_japanese_locale_skipped_hint_not_32bit": "本局未转区：自动判定需要日文区域，但 Locale Emulator 只支持 32 位游戏。"
 }

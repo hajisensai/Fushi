@@ -134,6 +134,13 @@ void main() {
         '简体中文补丁.exe',
         'hanhua.dll',
         '繁體說明.txt',
+        // KiriKiri 系汉化补丁最常见的 ASCII 词元：cn / zh / chn / gbk 及其变体。
+        'cn.xp3',
+        'patch2_cn.xp3',
+        'readme_zh.txt',
+        'zh-cn.txt',
+        'patch_CHN.xp3',
+        'GBK.txt',
       ]) {
         expect(
           classifyFileNamesForLocale(<String>[name]),
@@ -152,6 +159,9 @@ void main() {
           'fuchsia.dll',
           'watchtower.ogg',
           'chsound.dll',
+          'fuchsin.dll',
+          'scene.ks',
+          'bgm.xp3',
         ]),
         isEmpty,
       );
@@ -356,9 +366,10 @@ void main() {
           16: <_Leaf>[_Leaf(lang: 0x0411, bytes: Uint8List(64))],
         },
       );
+      // 截掉尾部 40 字节后 `.rsrc` 叶子越界：只允许「无证据」，不允许抛出或半截解析。
       expect(
         classifyPeForLocale(Uint8List.sublistView(pe, 0, pe.length - 40)),
-        isNotNull,
+        isEmpty,
       );
     });
   });
@@ -421,6 +432,28 @@ void main() {
       expect(verdict.evidence, <GalJapaneseLocaleEvidence>[
         GalJapaneseLocaleEvidence.exeShiftJisStrings,
         GalJapaneseLocaleEvidence.versionInfoJapanese,
+      ]);
+    });
+
+    test('版本资源 0x0411 单独出现只是佐证 ⇒ unknown（Unicode 引擎的日文游戏）', () {
+      // KiriKiri Z / Unity / Ren'Py 的日文游戏一样带 0x0411 却不需要 CP932；用户手上的
+      // 官方多语言版正是这一格（BUG-1691 的「々 → 器」）。
+      final GalJapaneseLocaleVerdict alone =
+          judgeJapaneseLocaleNeed(const <GalJapaneseLocaleEvidence>[
+            GalJapaneseLocaleEvidence.versionInfoJapanese,
+          ]);
+      expect(alone.need, GalJapaneseLocaleNeed.unknown);
+      expect(alone.evidence, isEmpty);
+
+      final GalJapaneseLocaleVerdict withBytes =
+          judgeJapaneseLocaleNeed(const <GalJapaneseLocaleEvidence>[
+            GalJapaneseLocaleEvidence.versionInfoJapanese,
+            GalJapaneseLocaleEvidence.dirFileNameJapanese,
+          ]);
+      expect(withBytes.need, GalJapaneseLocaleNeed.needed);
+      expect(withBytes.evidence, <GalJapaneseLocaleEvidence>[
+        GalJapaneseLocaleEvidence.versionInfoJapanese,
+        GalJapaneseLocaleEvidence.dirFileNameJapanese,
       ]);
     });
 

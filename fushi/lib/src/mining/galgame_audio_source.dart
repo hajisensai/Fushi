@@ -1357,6 +1357,13 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// 是按这个结论算出来的，会话卡上列的「判据」必须就是它，不能另算一份。
   GalJapaneseLocaleVerdict? get japaneseLocaleVerdict => _japaneseLocaleVerdict;
 
+  GalJapaneseLocaleSkipReason? _japaneseLocaleSkipReason;
+
+  /// `auto` 档判定后没转区的原因（语义门 / 工程门）；转了、或不是 `auto`，为 null。
+  /// 与 [japaneseLocaleVerdict] 同处赋值、同处复位。
+  GalJapaneseLocaleSkipReason? get japaneseLocaleSkipReason =>
+      _japaneseLocaleSkipReason;
+
   /// 探测器抛了也只是「没答上来」：结论 unknown ⇒ 不转区，启动照常。
   Future<GalJapaneseLocaleVerdict> _judgeJapaneseLocaleNeed(String exe) async {
     try {
@@ -1632,6 +1639,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     _launchedPid = 0;
     _japaneseLocaleApplied = false;
     _japaneseLocaleVerdict = null;
+    _japaneseLocaleSkipReason = null;
     _diagnosticsBuffer.clear();
     _lastFailure = const GalHookInjectorDiagnostics();
     final String? path = injectorPath;
@@ -1685,17 +1693,26 @@ class EngineHookGalAudioSource implements GalAudioSource {
         launchMode && japaneseLocaleMode == GalJapaneseLocaleMode.auto
             ? await _judgeJapaneseLocaleNeed(exe)
             : null;
+    final bool is32Bit = launchMode && await exeIs32Bit(exe) == true;
+    final int? systemAnsiCodePage = systemAnsiCodePageProbe();
     final bool japaneseLocale = resolveJapaneseLocale(
       mode: japaneseLocaleMode,
       launchMode: launchMode,
-      is32Bit: launchMode && await exeIs32Bit(exe) == true,
-      systemAnsiCodePage: systemAnsiCodePageProbe(),
+      is32Bit: is32Bit,
+      systemAnsiCodePage: systemAnsiCodePage,
       need: verdict?.need ?? GalJapaneseLocaleNeed.unknown,
     );
-    // 在传给 injector 的同一处记账：命令行里的 `--japanese-locale` 与这两个字段必须同源，
+    // 在传给 injector 的同一处记账：命令行里的 `--japanese-locale` 与这三个字段必须同源，
     // 否则「诊断说没转区、进程其实转了」这种分叉比不诊断更糟。
     _japaneseLocaleApplied = japaneseLocale;
     _japaneseLocaleVerdict = verdict;
+    _japaneseLocaleSkipReason = verdict == null || japaneseLocale
+        ? null
+        : resolveJapaneseLocaleSkipReason(
+            need: verdict.need,
+            is32Bit: is32Bit,
+            systemAnsiCodePage: systemAnsiCodePage,
+          );
     // 1. 拉起 injector 子进程（注入报毒代码只在这个隔离子进程里执行）。
     //    launch 模式：`--launch <exe>` CREATE_SUSPENDED 早注入，从 stdout 解析子进程 PID；
     //    attach 模式：`--pid <PID>` 附着已运行进程。

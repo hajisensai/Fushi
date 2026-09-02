@@ -2317,13 +2317,25 @@ class _SessionOverviewCard extends StatelessWidget {
     // BUG-2047：`auto` 判为「不需要 / 证据不足」而未转区时同样要亮短标记——证据空白的
     // 日文原版会先乱码，用户得知道是「没转」而不是「转坏了」，才会去改「始终开启」。
     final GalJapaneseLocaleVerdict? verdict = state.japaneseLocaleVerdict;
-    final String? localeSkippedHint = !state.japaneseLocaleApplied &&
-            verdict != null &&
-            verdict.need != GalJapaneseLocaleNeed.needed
-        ? t.game_session_japanese_locale_skipped_hint(
-            evidence: galJapaneseLocaleEvidenceListLabel(verdict.evidence),
-          )
-        : null;
+    final GalJapaneseLocaleSkipReason? skipReason =
+        state.japaneseLocaleSkipReason;
+    // 原因分两类说话：语义门（证据不足 / 判为不需要）提示改「始终开启」；工程门
+    // （64 位 / 系统本就日文区）改档位也没用，得直说，否则用户会白改一轮。
+    final String? localeSkippedHint = state.japaneseLocaleApplied ||
+            verdict == null ||
+            skipReason == null
+        ? null
+        : switch (skipReason) {
+            GalJapaneseLocaleSkipReason.notNeeded ||
+            GalJapaneseLocaleSkipReason.unknown =>
+              t.game_session_japanese_locale_skipped_hint(
+                evidence: galJapaneseLocaleEvidenceListLabel(verdict.evidence),
+              ),
+            GalJapaneseLocaleSkipReason.systemAlreadyJapanese =>
+              t.game_session_japanese_locale_skipped_hint_system_japanese,
+            GalJapaneseLocaleSkipReason.targetNot32Bit =>
+              t.game_session_japanese_locale_skipped_hint_not_32bit,
+          };
     final String localeSuffix = state.japaneseLocaleApplied
         ? ' · ${t.game_session_japanese_locale}'
         : localeSkippedHint != null

@@ -104,7 +104,9 @@ enum GalJapaneseLocaleEvidence {
   /// UTF-8，Locale Emulator 的 CP932 对它没有意义。
   manifestUtf8CodePage,
 
-  /// RT_VERSION 语言目录 / `VarFileInfo\Translation` = 0x0411（日语）。
+  /// RT_VERSION 语言目录 / `VarFileInfo\Translation` = 0x0411（日语）。**只是佐证**：
+  /// Unicode 引擎（KiriKiri Z / Unity / Ren'Py）的日文游戏同样带 0x0411 却不需要 CP932，
+  /// 单独出现时 [judgeJapaneseLocaleNeed] 判 unknown，只有与字节级证据同时出现才算正向。
   versionInfoJapanese,
 
   /// RT_VERSION 语言 = 0x0804 / 0x0404 / 0x0C04 / 0x1004（中文各变体）。
@@ -117,8 +119,9 @@ enum GalJapaneseLocaleEvidence {
   /// 游戏目录顶层文件名含假名（U+3040–U+30FF）。
   dirFileNameJapanese,
 
-  /// 游戏目录顶层文件名命中 `汉化|中文|简体|繁体|繁體|CHS|CHT|chinese|hanhua`。
-  /// 汉化补丁常常只改脚本包不改 exe，所以负向证据主要靠目录而不是 exe。
+  /// 游戏目录顶层文件名命中汉化标记（`汉化|中文|简体|繁体|繁體` 裸子串，或
+  /// `chs|cht|chn|cn|zh[-_](cn|tw|hk|hans|hant)|chinese|hanhua|gbk|gb2312|big5` 独立词元）。
+  /// 汉化补丁常常只改脚本包不改 exe，所以负向证据主要靠目录而不是 exe；词表宁可宽。
   dirFileNameChinesePatch,
 
   /// 顶层无 BOM 文本文件：假名对 ≥ 20 且 GB2312 对 ≈ 0（Shift-JIS 编码的 readme）。
@@ -275,13 +278,64 @@ GalJapaneseLocaleVerdict judgeJapaneseLocaleNeed(
   }
   final List<GalJapaneseLocaleEvidence> positive =
       seen.where(galJapaneseLocaleEvidenceIsPositive).toList(growable: false);
-  if (positive.isNotEmpty) {
+  // 版本资源 0x0411 只回答「发行商是日本的」，不回答「字符串是 CP932 字节」：
+  // KiriKiri Z / Unity / Ren'Py 这类 Unicode 引擎的日文游戏一样带 0x0411，转区对它们
+  // 轻则无用、重则把多语言版的字符串解坏（BUG-1691）。所以它只做佐证：单独出现 ⇒ unknown。
+  final bool onlyVersionInfo = positive.length == 1 &&
+      positive.single == GalJapaneseLocaleEvidence.versionInfoJapanese;
+  if (positive.isNotEmpty && !onlyVersionInfo) {
     return GalJapaneseLocaleVerdict(
       need: GalJapaneseLocaleNeed.needed,
       evidence: positive,
     );
   }
   return GalJapaneseLocaleVerdict.unknown;
+}
+
+/// `auto` 档判定完之后**为什么没转区**。四个原因分两类：前两个是语义结论（用户改 `on`
+/// 有用），后两个是工程门（改 `on` 也没用——Locale Emulator 只有 x86 版 / 系统本就日文区）。
+/// 没有这个字段时，64 位游戏判为 needed 却没转，事件里写着「skipped need=needed」自相
+/// 矛盾，状态卡也一句话不说（BUG-2047 审查意见）。
+enum GalJapaneseLocaleSkipReason {
+  notNeeded,
+  unknown,
+  systemAlreadyJapanese,
+  targetNot32Bit,
+}
+
+/// 稳定字面量 key（事件 / 诊断用），不用 `enum.name`。
+String galJapaneseLocaleSkipReasonToKey(GalJapaneseLocaleSkipReason reason) {
+  switch (reason) {
+    case GalJapaneseLocaleSkipReason.notNeeded:
+      return 'not_needed';
+    case GalJapaneseLocaleSkipReason.unknown:
+      return 'unknown';
+    case GalJapaneseLocaleSkipReason.systemAlreadyJapanese:
+      return 'acp_932';
+    case GalJapaneseLocaleSkipReason.targetNot32Bit:
+      return 'not_32bit';
+  }
+}
+
+/// `auto` 档下 [resolveJapaneseLocale] 返回 false 时的原因；返回 null 表示其实转了
+/// （与 [resolveJapaneseLocale] 的 `auto` 分支逐条对应，顺序一致：语义门先于工程门）。
+GalJapaneseLocaleSkipReason? resolveJapaneseLocaleSkipReason({
+  required GalJapaneseLocaleNeed need,
+  required bool is32Bit,
+  int? systemAnsiCodePage,
+}) {
+  switch (need) {
+    case GalJapaneseLocaleNeed.notNeeded:
+      return GalJapaneseLocaleSkipReason.notNeeded;
+    case GalJapaneseLocaleNeed.unknown:
+      return GalJapaneseLocaleSkipReason.unknown;
+    case GalJapaneseLocaleNeed.needed:
+      if (systemAnsiCodePage == 932) {
+        return GalJapaneseLocaleSkipReason.systemAlreadyJapanese;
+      }
+      if (!is32Bit) return GalJapaneseLocaleSkipReason.targetNot32Bit;
+      return null;
+  }
 }
 
 /// 本次启动到底转不转区。纯函数，三端可单测。

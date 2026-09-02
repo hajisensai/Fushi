@@ -14,6 +14,7 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
@@ -76,8 +77,12 @@ final Set<int> _simplifiedOnlySet = _simplifiedOnlyHanzi.codeUnits.toSet();
 /// 文件名负向：汉化 / 中文 / 简体 / 繁体 / 繁體 / CHS / CHT / chinese / hanhua（大小写不敏感）。
 /// 汉字标记裸子串即可；ASCII 标记必须是独立词元（前后不能紧挨字母），否则
 /// `fuchsia.dll` / `watchtower.ogg` 这类普通英文名会被 `chs` / `cht` 假阳性判成汉化。
+/// ASCII 词元宁可宽：汉化补丁通常不改 exe，原 exe 的 0x0411 / Shift-JIS 串段都还在，
+/// 负向漏判 ⇒ 转区 ⇒ 启动闪退，正是本判定要消灭的格（BUG-1477）。
 final RegExp _chinesePatchNamePattern = RegExp(
-  r'汉化|中文|简体|繁体|繁體|(?<![a-z])(?:chs|cht|chinese|hanhua)(?![a-z])',
+  r'汉化|中文|简体|繁体|繁體|'
+  r'(?<![a-z])(?:chs|cht|chn|cn|zh(?:[-_]?(?:cn|tw|hk|hans|hant))?|'
+  r'chinese|hanhua|gbk|gb2312|big5)(?![a-z])',
   caseSensitive: false,
 );
 
@@ -390,7 +395,9 @@ Future<GalJapaneseLocaleVerdict> probeGalJapaneseLocaleNeed({
 Future<Set<GalJapaneseLocaleEvidence>> _probeExe(String exePath) async {
   final Uint8List? head = await _readHead(exePath, kGalLocaleProbeExeReadLimit);
   if (head == null) return const <GalJapaneseLocaleEvidence>{};
-  return classifyPeForLocale(head);
+  // 最多 16 MB 的逐字节扫描不占主 isolate：启动路径上几十毫秒的卡顿对用户可感。
+  // `classifyPeForLocale` 是顶层纯函数，入参/返回值都可跨 isolate 传递。
+  return Isolate.run(() => classifyPeForLocale(head));
 }
 
 Future<Set<GalJapaneseLocaleEvidence>> _probeDirectory(String exePath) async {

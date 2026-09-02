@@ -191,6 +191,78 @@ void main() {
     });
   });
 
+  group('resolveJapaneseLocaleSkipReason：没转区的原因与 auto 分支逐条对应', () {
+    test('语义门：不需要 / 证据不足', () {
+      expect(
+        resolveJapaneseLocaleSkipReason(
+          need: GalJapaneseLocaleNeed.notNeeded,
+          is32Bit: true,
+          systemAnsiCodePage: 936,
+        ),
+        GalJapaneseLocaleSkipReason.notNeeded,
+      );
+      expect(
+        resolveJapaneseLocaleSkipReason(
+          need: GalJapaneseLocaleNeed.unknown,
+          is32Bit: true,
+          systemAnsiCodePage: 936,
+        ),
+        GalJapaneseLocaleSkipReason.unknown,
+      );
+    });
+
+    test('工程门：判为需要但系统已是 932 / 目标 64 位（改档位也没用，得直说）', () {
+      expect(
+        resolveJapaneseLocaleSkipReason(
+          need: GalJapaneseLocaleNeed.needed,
+          is32Bit: true,
+          systemAnsiCodePage: 932,
+        ),
+        GalJapaneseLocaleSkipReason.systemAlreadyJapanese,
+      );
+      expect(
+        resolveJapaneseLocaleSkipReason(
+          need: GalJapaneseLocaleNeed.needed,
+          is32Bit: false,
+          systemAnsiCodePage: 936,
+        ),
+        GalJapaneseLocaleSkipReason.targetNot32Bit,
+      );
+    });
+
+    test('判为需要且过了工程门 ⇒ null（其实转了），与 resolveJapaneseLocale 互为补集', () {
+      for (final GalJapaneseLocaleNeed need in GalJapaneseLocaleNeed.values) {
+        for (final bool is32Bit in <bool>[true, false]) {
+          for (final int? acp in <int?>[932, 936, null]) {
+            final bool applied = resolveJapaneseLocale(
+              mode: GalJapaneseLocaleMode.auto,
+              launchMode: true,
+              is32Bit: is32Bit,
+              systemAnsiCodePage: acp,
+              need: need,
+            );
+            final GalJapaneseLocaleSkipReason? reason =
+                resolveJapaneseLocaleSkipReason(
+              need: need,
+              is32Bit: is32Bit,
+              systemAnsiCodePage: acp,
+            );
+            expect(reason == null, applied, reason: '$need $is32Bit $acp');
+          }
+        }
+      }
+    });
+
+    test('reason key 是稳定字面量', () {
+      expect(
+        GalJapaneseLocaleSkipReason.values
+            .map(galJapaneseLocaleSkipReasonToKey)
+            .toList(),
+        <String>['not_needed', 'unknown', 'acp_932', 'not_32bit'],
+      );
+    });
+  });
+
   group('need / evidence key 编码', () {
     test('是稳定字面量，不是 enum.name/index', () {
       expect(galJapaneseLocaleNeedToKey(GalJapaneseLocaleNeed.needed), 'needed');
