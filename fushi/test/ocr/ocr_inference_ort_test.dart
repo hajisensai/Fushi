@@ -79,7 +79,13 @@ void main() {
     expect(result, 'cpu-session');
   });
 
-  test('non-provider session errors are not hidden by CPU fallback', () async {
+  // 这条测试原本断言「非 INVALID_PROVIDER 的错误只试一次」。它要守的东西是对的
+  // ——回退不许把真实失败吃掉——但把它编码成了「只许试一次」，而那正是 BUG-2034：
+  // DirectML 初始化失败是在建 session **之中**抛出的，错误码不是
+  // INVALID_PROVIDER，于是列表尾部的 CPU 后备一次都轮不到，整条 OCR 直接不可用。
+  // 现在判据换成「首选 EP 没建成就退 CPU」，而原来的意图由这里继续守：CPU 也失败
+  // 时，异常照样抛出、类型与 code 都不变。
+  test('session errors still surface when the CPU retry fails too', () async {
     int attempts = 0;
 
     await expectLater(
@@ -101,7 +107,74 @@ void main() {
             (PlatformException e) => e.code, 'code', 'SESSION_CREATION_ERROR'),
       ),
     );
-    expect(attempts, 1);
+    expect(attempts, 2, reason: '首选 EP 失败后必须真的试过 CPU 才能放弃');
+  });
+
+  // BUG-2034 的真实形态：ORT 在建 session 之中初始化 DirectML EP 失败
+  // （本机实测 E_INVALIDARG / 80070057），错误码是 ORT_ERROR 而不是
+  // INVALID_PROVIDER。按错误码白名单判定的旧实现在这里不回退，用户拿到的是
+  // 「整卷 OCR 失败」而不是一个慢一点但能跑完的 CPU 会话。
+  test('EP initialisation failure inside ORT falls back to CPU', () async {
+    final List<List<OcrExecutionProvider>> attempts =
+        <List<OcrExecutionProvider>>[];
+    final List<OcrProviderResolution> resolutions = <OcrProviderResolution>[];
+
+    final String result = await createOcrSessionWithProviderFallback<String>(
+      providers: const <OcrExecutionProvider>[
+        OcrExecutionProvider.directml,
+        OcrExecutionProvider.cpu,
+      ],
+      onResolved: resolutions.add,
+      create: (List<OcrExecutionProvider> providers) async {
+        attempts.add(List<OcrExecutionProvider>.from(providers));
+        if (providers.contains(OcrExecutionProvider.directml)) {
+          throw PlatformException(
+            code: 'ORT_ERROR',
+            message:
+                'Exception during initialization: '
+                'MLOperatorAuthorImpl.cpp(2851) 80070057',
+          );
+        }
+        return 'cpu-session';
+      },
+    );
+
+    expect(result, 'cpu-session');
+    expect(attempts, hasLength(2));
+    expect(resolutions.single.didFallBack, isTrue);
+    expect(resolutions.single.effective, OcrExecutionProvider.cpu);
+    expect(resolutions.single.fallbackReason, contains('ORT_ERROR'));
+    expect(resolutions.single.fallbackReason, contains('80070057'));
+  });
+
+  // 同一个 bug 的另一半：native 把非 UTF-8 字节送过 method channel 时，Dart 侧
+  // 连回复都解不出来，抛的是 FormatException 而不是 PlatformException。回退判据
+  // 必须按「会话没建成」而不是按异常类型来判，否则 native 那侧一变形，这里就又
+  // 躺平一次。
+  test('a non-PlatformException from the channel still falls back', () async {
+    final List<OcrProviderResolution> resolutions = <OcrProviderResolution>[];
+
+    final String result = await createOcrSessionWithProviderFallback<String>(
+      providers: const <OcrExecutionProvider>[
+        OcrExecutionProvider.directml,
+        OcrExecutionProvider.cpu,
+      ],
+      onResolved: resolutions.add,
+      create: (List<OcrExecutionProvider> providers) async {
+        if (providers.contains(OcrExecutionProvider.directml)) {
+          throw const FormatException('Unexpected extension byte', null, 228);
+        }
+        return 'cpu-session';
+      },
+    );
+
+    expect(result, 'cpu-session');
+    expect(resolutions.single.effective, OcrExecutionProvider.cpu);
+    expect(
+      resolutions.single.fallbackReason,
+      contains('Unexpected extension byte'),
+      reason: '降级原因必须留下原始异常，否则排查时只剩「退到 CPU 了」这一句废话',
+    );
   });
 
   test('CPU-only request is never retried', () async {
