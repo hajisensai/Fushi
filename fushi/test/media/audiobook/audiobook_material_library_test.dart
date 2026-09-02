@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/audiobook_material_library.dart';
 
@@ -14,11 +15,20 @@ const Set<String> _subtitleExts = <String>{
 };
 const Set<String> _contentExts = <String>{'.epub', '.txt'};
 
+/// 素材路径一律用 [p.join] 按**本平台**分隔符拼，不写 `D:\...` 字面量。
+///
+/// 被测函数走 `p.basename` / `p.basenameWithoutExtension`（= 当前平台的 path
+/// context），而素材路径的真实来源是 `Directory.list`——本来就是本平台分隔符。
+/// 硬写 Windows 字面量会让 POSIX 上的 `\` 不被当分隔符、basename 一个字都剥不掉
+/// （`D:\books\[今村昌弘] 屍人荘の殺人` 整串进归一化，得出 `dbooks屍人荘の殺人`），
+/// 于是同一份测试 Windows 绿、Linux CI 红。
+String _mat(String dir, String name) => p.join(p.separator, dir, name);
+
 void main() {
   group('audiobookMaterialKeyOf', () {
     test('三套 id 体系都按同一条判据认出来', () {
       expect(
-        audiobookMaterialKeyOf(r'D:\srt\#真相をお話しします [B0B58GV92J].srt'),
+        audiobookMaterialKeyOf(_mat('srt', '#真相をお話しします [B0B58GV92J].srt')),
         'B0B58GV92J',
       );
       expect(
@@ -34,9 +44,11 @@ void main() {
     });
 
     test('卷号不被误当身份键——哪怕它排在身份键前面', () {
-      // 真实形状：卷号在前、ASIN 在后，取的必须是后者。
+      // 真实形状：卷号在前、ASIN 在后，取的必须是后者。名字里不带 `/`——它在两个
+      // 平台都是路径分隔符，会被 basename 连同前面的 `[01]` 一起切掉，这条断言就
+      // 白跑了（真实文件名也不可能含 `/`）。
       expect(
-        audiobookMaterialKeyOf('[01] Fate/strange Fake(1) [B0D4LQY5K7].srt'),
+        audiobookMaterialKeyOf('[01] Fate strange Fake(1) [B0D4LQY5K7].srt'),
         'B0D4LQY5K7',
       );
       expect(audiobookMaterialKeyOf('[01] MM9.srt'), isNull);
@@ -61,7 +73,7 @@ void main() {
   group('audiobookMaterialTitleKeyOf', () {
     test('剥掉作者/卷号方括号后归一化', () {
       expect(
-        audiobookMaterialTitleKeyOf(r'D:\books\[今村昌弘] 屍人荘の殺人.epub'),
+        audiobookMaterialTitleKeyOf(_mat('books', '[今村昌弘] 屍人荘の殺人.epub')),
         audiobookMaterialTitleKeyOf('屍人荘の殺人.epub'),
       );
     });
@@ -79,13 +91,13 @@ void main() {
     test('按扩展名分流,身份键优先,无键者进标题索引', () {
       final AudiobookMaterialIndex index = indexAudiobookMaterials(
         <String>[
-          r'D:\m\#真相をお話しします [B0B58GV92J].srt',
-          r'D:\m\[01] MM9 [kikubon 139].srt',
-          r'D:\m\64（ロクヨン）上.srt',
-          r'D:\m\[今村昌弘] 屍人荘の殺人.epub',
-          r'D:\m\某作品 [B0D4LQY5K7].epub',
-          r'D:\m\封面.jpg',
-          r'D:\m\说明.pdf',
+          _mat('m', '#真相をお話しします [B0B58GV92J].srt'),
+          _mat('m', '[01] MM9 [kikubon 139].srt'),
+          _mat('m', '64（ロクヨン）上.srt'),
+          _mat('m', '[今村昌弘] 屍人荘の殺人.epub'),
+          _mat('m', '某作品 [B0D4LQY5K7].epub'),
+          _mat('m', '封面.jpg'),
+          _mat('m', '说明.pdf'),
         ],
         subtitleExtensions: _subtitleExts,
         contentExtensions: _contentExts,
@@ -104,8 +116,8 @@ void main() {
     test('同一作品多份素材:先到先得,不被后来的覆盖', () {
       final AudiobookMaterialIndex index = indexAudiobookMaterials(
         <String>[
-          r'D:\a\first [B0B58GV92J].srt',
-          r'D:\b\second [B0B58GV92J].srt',
+          _mat('a', 'first [B0B58GV92J].srt'),
+          _mat('b', 'second [B0B58GV92J].srt'),
         ],
         subtitleExtensions: _subtitleExts,
         contentExtensions: _contentExts,
@@ -128,7 +140,10 @@ void main() {
 
   group('matchAudiobookMaterial', () {
     final AudiobookMaterialIndex index = indexAudiobookMaterials(
-      <String>[r'D:\m\#真相をお話しします [B0B58GV92J].srt', r'D:\m\屍人荘の殺人.epub'],
+      <String>[
+        _mat('m', '#真相をお話しします [B0B58GV92J].srt'),
+        _mat('m', '屍人荘の殺人.epub'),
+      ],
       subtitleExtensions: _subtitleExts,
       contentExtensions: _contentExts,
     );
