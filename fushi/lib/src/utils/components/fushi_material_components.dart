@@ -1843,7 +1843,6 @@ class FushiPageHeader extends StatelessWidget {
             // 「左边摆不下就把动作收进 ⋯ 菜单」；纯文字标题自身可省略号收缩，
             // 维持既有行为。
             collapseWhenCramped: titleWidget != null,
-            centerVertically: titleWidget != null,
           ),
           if (bottom != null)
             Padding(
@@ -1907,7 +1906,6 @@ class _FushiPageHeaderRow extends StatefulWidget {
     required this.leading,
     required this.actionItems,
     required this.collapseWhenCramped,
-    required this.centerVertically,
   });
 
   final FushiDesignTokens tokens;
@@ -1918,7 +1916,6 @@ class _FushiPageHeaderRow extends StatefulWidget {
   /// true（customTitle 模式）时，若标题位上报的自然宽 + 动作自然宽超过行宽，
   /// 把可收纳的动作（[FushiIconButton]）折进一个 ⋯ 菜单，把宽度还给标题位。
   final bool collapseWhenCramped;
-  final bool centerVertically;
 
   @override
   State<_FushiPageHeaderRow> createState() => _FushiPageHeaderRowState();
@@ -1962,7 +1959,9 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
   Widget _buildActionRow(List<Widget> items) {
     return Row(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+      // 动作之间也居中：同一行里可能混着纯图标键（40~48 高）和带标签的药丸
+      // （更高），顶对齐会让图标浮在药丸文字上方。
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
         for (int index = 0; index < items.length; index++) ...<Widget>[
           if (index > 0) SizedBox(width: tokens.spacing.gap / 2),
@@ -2047,10 +2046,9 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
               // 侧），此时「leading 与标题之间的空隙」在它的**左**边。写死物理 right
               // 会让空隙跑到屏幕边缘那侧，返回键直接贴上标题。以前只有两个页面显式
               // 传 leading，现在脚手架默认给每个可返回页插一个，这条必须是 directional。
-              padding: EdgeInsetsDirectional.only(
-                top: tokens.spacing.gap / 2,
-                end: leadingGap,
-              ),
+              // 只留水平间距；垂直位置由整行的 [CrossAxisAlignment.center] 决定
+              // （见下方 Row 处注释），不再用常数凑。
+              padding: EdgeInsetsDirectional.only(end: leadingGap),
               child: leading,
             ),
           );
@@ -2133,10 +2131,20 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
             );
         }
 
+        // BUG-2033: 前导键 / 动作键与标题**垂直居中**对齐，不再按 start 顶对齐。
+        //
+        // 旧实现顶对齐 + 给 leading 写死 `top: gap / 2`，是拿一个常数去凑
+        // 「48 高的 BackButton 图标中心（距顶 24）」和「pageTitle 行盒中心
+        // （22 × 1.27 / 2 ≈ 14）」的差，凑出来仍差 ~14px：箭头恒比标题低一截
+        // （用户报「左上角文字和返回箭头没对齐」）。动作区同理（图标中心 20~24
+        // vs 标题中心 14）。这个差随字号档位、文字缩放、按钮尺寸变化，任何常数
+        // 都只在一种组合下正确。
+        //
+        // 居中是唯一不含常数的判据：Row 把两侧按各自实际高度居中，字号、
+        // textScaler、按钮尺寸怎么变都成立。标题带副标题 / 折行时，前导键落在
+        // 整个标题块的中心（ListTile / AppBar 两行标题的既有做法）。
         return Row(
-          crossAxisAlignment: widget.centerVertically
-              ? CrossAxisAlignment.center
-              : CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: children,
         );
       },

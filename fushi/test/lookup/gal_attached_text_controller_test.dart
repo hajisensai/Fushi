@@ -213,21 +213,35 @@ void main() {
   late GalAttachedTextController controller;
   late List<GalAttachedLookupHitV19> lookups;
   late int providerClaims;
+  Completer<void>? preferenceWriteGate;
+  Object? preferenceWriteError;
+  Completer<void>? providerClaimGate;
 
   setUp(() {
     preferences = <String, Object?>{};
     port = _FakeSurfacePort();
     lookups = <GalAttachedLookupHitV19>[];
     providerClaims = 0;
+    preferenceWriteGate = null;
+    preferenceWriteError = null;
+    providerClaimGate = null;
     controller = GalAttachedTextController(
       preferenceReader: (String key) => preferences[key],
       preferenceWriter: (String key, Object? value) async {
+        final Completer<void>? gate = preferenceWriteGate;
+        if (gate != null) await gate.future;
+        final Object? error = preferenceWriteError;
         preferences[key] = value;
+        if (error != null) {
+          Error.throwWithStackTrace(error, StackTrace.current);
+        }
       },
       surfacePort: port,
       onBeforeAttachedActivation:
           (GalLookupSurfaceMode _, {required bool forceAttached}) async {
             providerClaims++;
+            final Completer<void>? gate = providerClaimGate;
+            if (gate != null) await gate.future;
           },
       onLookup: lookups.add,
     );
@@ -503,7 +517,9 @@ void main() {
       expect(controller.profile?.unsafeLeftClickAccepted, isFalse);
       expect(port.calls, <String>['inspect']);
 
-      await controller.acceptUnsafeRiskAndRetry();
+      await controller.acceptUnsafeRiskAndRetry(
+        controller.unsafeRiskAcceptanceRequest!,
+      );
       expect(controller.status, GalAttachedTextStatus.activeAttached);
       final GalLookupSurfaceProfileV1 persisted =
           GalLookupSurfaceProfileV1.tryFromJson(
@@ -539,6 +555,25 @@ void main() {
 
     await controller.setMode(GalLookupSurfaceMode.off);
     expect(controller.status, GalAttachedTextStatus.disabled);
+  });
+
+  test('off remains fail closed when preference persistence fails', () async {
+    preferences[key()] = jsonEncode(_profile().toJson());
+    await sync(sessionEpoch: 9051);
+    expect(controller.status, GalAttachedTextStatus.activeAttached);
+    expect(controller.isUnsafeInputActive, isTrue);
+    preferenceWriteError = StateError('mode persistence failed');
+
+    await expectLater(
+      controller.setMode(GalLookupSurfaceMode.off),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(controller.profile?.mode, GalLookupSurfaceMode.off);
+    expect(controller.status, GalAttachedTextStatus.disabled);
+    expect(controller.isUnsafeInputActive, isFalse);
+    expect(controller.surfaceVisible, isFalse);
+    expect(port.calls.where((String call) => call == 'detach'), isNotEmpty);
   });
 
   test(
@@ -585,6 +620,468 @@ void main() {
     expect(port.texts, isEmpty);
   });
 
+  test('adapted native providers retain and resume risk acceptance', () async {
+    const List<({int kind, int id})> providers = <({int kind, int id})>[
+      (kind: 1, id: 1),
+      (kind: 1, id: 2),
+      (kind: 2, id: 3),
+      (kind: 2, id: 4),
+    ];
+
+    for (int index = 0; index < providers.length; index++) {
+      final ({int kind, int id}) provider = providers[index];
+      await controller.detach();
+      preferences.clear();
+      port.calls.clear();
+      port.inspection = GalAttachedCallResult(
+        status: 'activeNative',
+        exePath: r'C:\Games\Sample\game.exe',
+        exeSha256: _sha,
+        referenceClient: _client,
+        providerKind: provider.kind,
+        providerId: provider.id,
+        providerStatus: 2,
+        shield: const GalAttachedShieldStatus(
+          available: true,
+          statusFlags: 0x02,
+        ),
+      );
+
+      await sync(sessionEpoch: 9100 + index);
+      expect(
+        controller.status,
+        GalAttachedTextStatus.needsRiskAcceptance,
+        reason: 'provider ${provider.kind}/${provider.id}',
+      );
+      final GalAttachedUnsafeRiskAcceptanceRequest request =
+          controller.unsafeRiskAcceptanceRequest!;
+
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'suspended',
+          status: 'targetBackground',
+          providerKind: provider.kind,
+          providerId: provider.id,
+          providerStatus: 2,
+          shield: const GalAttachedShieldStatus(
+            available: true,
+            statusFlags: 0x02,
+          ),
+        ),
+      );
+      expect(
+        controller.status,
+        GalAttachedTextStatus.needsRiskAcceptance,
+        reason: 'provider ${provider.kind}/${provider.id}',
+      );
+      expect(controller.needsUnsafeRiskAcceptance, isTrue);
+      expect(controller.unsafeRiskAcceptanceRequest?.token, request.token);
+
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'suspended',
+          status: 'targetBackground',
+          shield: const GalAttachedShieldStatus(
+            available: true,
+            statusFlags: 0x02,
+          ),
+        ),
+      );
+
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      expect(
+        controller.needsUnsafeRiskAcceptance,
+        isTrue,
+        reason: 'provider ${provider.kind}/${provider.id}',
+      );
+
+      expect(await controller.acceptUnsafeRiskAndRetry(request), isTrue);
+      expect(controller.profile?.unsafeLeftClickAccepted, isTrue);
+      expect(controller.needsUnsafeRiskAcceptance, isFalse);
+
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'ready',
+          status: 'activeNative',
+          providerKind: provider.kind,
+          providerId: provider.id,
+          providerStatus: 2,
+          shield: const GalAttachedShieldStatus(
+            available: true,
+            statusFlags: 0x02,
+          ),
+        ),
+      );
+      expect(
+        controller.status,
+        GalAttachedTextStatus.activeNative,
+        reason: 'provider ${provider.kind}/${provider.id}',
+      );
+      final GalLookupSurfaceProfileV1 persisted =
+          GalLookupSurfaceProfileV1.tryFromJson(
+            jsonDecode(preferences[key()]! as String),
+          )!;
+      expect(persisted.unsafeLeftClickAccepted, isTrue);
+    }
+  });
+
+  test(
+    'failed risk persistence preserves request and cannot activate',
+    () async {
+      port.inspection = const GalAttachedCallResult(
+        status: 'activeNative',
+        exePath: r'C:\Games\Sample\game.exe',
+        exeSha256: _sha,
+        referenceClient: _client,
+        providerKind: 1,
+        providerId: 1,
+        providerStatus: 2,
+        shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+      );
+      await sync(sessionEpoch: 9151);
+      final GalAttachedUnsafeRiskAcceptanceRequest request =
+          controller.unsafeRiskAcceptanceRequest!;
+      preferenceWriteError = StateError('persist failed');
+
+      expect(await controller.acceptUnsafeRiskAndRetry(request), isFalse);
+
+      expect(controller.profile, isNull);
+      expect(controller.status, GalAttachedTextStatus.needsRiskAcceptance);
+      expect(controller.needsUnsafeRiskAcceptance, isTrue);
+      expect(controller.unsafeRiskAcceptanceRequest?.token, request.token);
+      expect(
+        preferences[key()],
+        '',
+        reason: 'DB 失败后的补偿写仍须撤回 eager preference cache',
+      );
+      expect(port.calls, <String>['inspect']);
+    },
+  );
+
+  test(
+    'delayed risk persistence cannot override calibration started later',
+    () async {
+      port.inspection = const GalAttachedCallResult(
+        status: 'activeNative',
+        exePath: r'C:\Games\Sample\game.exe',
+        exeSha256: _sha,
+        referenceClient: _client,
+        providerKind: 1,
+        providerId: 1,
+        providerStatus: 2,
+        shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+      );
+      await sync(sessionEpoch: 9152);
+      final GalAttachedUnsafeRiskAcceptanceRequest request =
+          controller.unsafeRiskAcceptanceRequest!;
+      preferenceWriteGate = Completer<void>();
+
+      final Future<bool> accepting = controller.acceptUnsafeRiskAndRetry(
+        request,
+      );
+      await pumpEventQueue();
+      expect(controller.profile, isNull);
+      expect(controller.needsUnsafeRiskAcceptance, isTrue);
+      expect(
+        controller.unsafeRiskAcceptanceRequest,
+        isNull,
+        reason: '同一请求持久化在途时不能重复提交',
+      );
+
+      expect(
+        await controller.beginCalibration(acceptUnsafeLeftClick: true),
+        isTrue,
+      );
+      expect(controller.status, GalAttachedTextStatus.calibrating);
+      preferenceWriteGate!.complete();
+
+      expect(await accepting, isTrue);
+      expect(controller.status, GalAttachedTextStatus.calibrating);
+      expect(controller.profile, isNull);
+      expect(controller.needsUnsafeRiskAcceptance, isFalse);
+      expect(
+        port.calls.where((String call) => call.startsWith('configure:')),
+        isEmpty,
+      );
+    },
+  );
+
+  test(
+    'failed consent rolls back its cache after target replacement',
+    () async {
+      port.inspection = const GalAttachedCallResult(
+        status: 'activeNative',
+        exePath: r'C:\Games\Sample\game.exe',
+        exeSha256: _sha,
+        referenceClient: _client,
+        providerKind: 1,
+        providerId: 1,
+        providerStatus: 2,
+        shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+      );
+      await sync(sessionEpoch: 9154);
+      final GalAttachedUnsafeRiskAcceptanceRequest request =
+          controller.unsafeRiskAcceptanceRequest!;
+      preferenceWriteGate = Completer<void>();
+      preferenceWriteError = StateError('persist failed after cache update');
+
+      final Future<bool> accepting = controller.acceptUnsafeRiskAndRetry(
+        request,
+      );
+      await pumpEventQueue();
+
+      port.inspection = const GalAttachedCallResult(
+        status: 'activeNative',
+        exePath: r'C:\Games\Replacement\game.exe',
+        exeSha256: _otherSha,
+        referenceClient: _client,
+        providerKind: 1,
+        providerId: 1,
+        providerStatus: 2,
+        shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+      );
+      await sync(sessionEpoch: 9155);
+      expect(controller.target?.sessionEpoch, 9155);
+      expect(controller.needsUnsafeRiskAcceptance, isTrue);
+
+      preferenceWriteGate!.complete();
+      expect(await accepting, isFalse);
+      expect(preferences[key()], '', reason: '旧目标失效也不能留下 eager accepted cache');
+      expect(controller.target?.sessionEpoch, 9155);
+      expect(controller.profile, isNull);
+      expect(controller.needsUnsafeRiskAcceptance, isTrue);
+    },
+  );
+
+  test(
+    'later profile write prevents delayed consent from publishing stale state',
+    () async {
+      preferences[key()] = jsonEncode(
+        _profile(accepted: false, mode: GalLookupSurfaceMode.auto).toJson(),
+      );
+      port.inspection = const GalAttachedCallResult(
+        status: 'activeNative',
+        exePath: r'C:\Games\Sample\game.exe',
+        exeSha256: _sha,
+        referenceClient: _client,
+        providerKind: 1,
+        providerId: 1,
+        providerStatus: 2,
+        shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+      );
+      await sync(sessionEpoch: 9156);
+      final GalAttachedUnsafeRiskAcceptanceRequest request =
+          controller.unsafeRiskAcceptanceRequest!;
+      preferenceWriteGate = Completer<void>();
+
+      final Future<bool> accepting = controller.acceptUnsafeRiskAndRetry(
+        request,
+      );
+      await pumpEventQueue();
+      final Future<void> styling = controller.updateActiveStyle(
+        const GalLookupTextLayoutV1(fontSizePerClientHeight: 0.05),
+      );
+      await pumpEventQueue();
+      preferenceWriteGate!.complete();
+
+      expect(await accepting, isTrue);
+      await styling;
+      expect(controller.profile?.unsafeLeftClickAccepted, isFalse);
+      expect(controller.needsUnsafeRiskAcceptance, isTrue);
+      expect(controller.unsafeRiskAcceptanceRequest?.token, request.token);
+      final GalLookupSurfaceProfileV1 persisted =
+          GalLookupSurfaceProfileV1.tryFromJson(
+            jsonDecode(preferences[key()]! as String),
+          )!;
+      expect(persisted.unsafeLeftClickAccepted, isFalse);
+      expect(persisted.variants.single.layout.fontSizePerClientHeight, 0.05);
+    },
+  );
+
+  test('clear cancels an older attached activation before configure', () async {
+    preferences[key()] = jsonEncode(_profile().toJson());
+    providerClaimGate = Completer<void>();
+
+    final Future<void> syncing = sync(sessionEpoch: 9157);
+    await pumpEventQueue();
+    expect(providerClaims, 1);
+    expect(
+      port.calls.where((String call) => call.startsWith('configure:')),
+      isEmpty,
+    );
+
+    await controller.clearProfile();
+    providerClaimGate!.complete();
+    await syncing;
+
+    expect(controller.profile, isNull);
+    expect(controller.status, GalAttachedTextStatus.needsCalibration);
+    expect(
+      port.calls.where((String call) => call.startsWith('configure:')),
+      isEmpty,
+      reason: 'clear 必须在旧 provider claim 返回前取消旧 activation op',
+    );
+  });
+
+  test('serialized clear cannot be overwritten by delayed consent', () async {
+    port.inspection = const GalAttachedCallResult(
+      status: 'activeNative',
+      exePath: r'C:\Games\Sample\game.exe',
+      exeSha256: _sha,
+      referenceClient: _client,
+      providerKind: 1,
+      providerId: 1,
+      providerStatus: 2,
+      shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+    );
+    await sync(sessionEpoch: 9153);
+    final GalAttachedUnsafeRiskAcceptanceRequest request =
+        controller.unsafeRiskAcceptanceRequest!;
+    preferenceWriteGate = Completer<void>();
+
+    final Future<bool> accepting = controller.acceptUnsafeRiskAndRetry(request);
+    await pumpEventQueue();
+    final Future<void> clearing = controller.clearProfile();
+    await pumpEventQueue();
+    expect(controller.profile, isNull);
+    expect(controller.status, GalAttachedTextStatus.needsCalibration);
+    expect(controller.needsUnsafeRiskAcceptance, isFalse);
+
+    preferenceWriteGate!.complete();
+    expect(await accepting, isTrue);
+    await clearing;
+
+    expect(preferences[key()], '');
+    expect(controller.profile, isNull);
+    expect(controller.status, GalAttachedTextStatus.needsCalibration);
+  });
+
+  test('stale risk request cannot authorize a replacement target', () async {
+    port.inspection = const GalAttachedCallResult(
+      status: 'activeNative',
+      exePath: r'C:\Games\Sample\game.exe',
+      exeSha256: _sha,
+      referenceClient: _client,
+      providerKind: 1,
+      providerId: 1,
+      providerStatus: 2,
+      shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+    );
+    await sync(sessionEpoch: 9201);
+    final GalAttachedUnsafeRiskAcceptanceRequest stale =
+        controller.unsafeRiskAcceptanceRequest!;
+
+    const String replacementPath = r'c:\games\replacement\game.exe';
+    port.inspection = const GalAttachedCallResult(
+      status: 'activeNative',
+      exePath: r'C:\Games\Replacement\game.exe',
+      exeSha256: _otherSha,
+      referenceClient: _client,
+      providerKind: 1,
+      providerId: 1,
+      providerStatus: 2,
+      shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+    );
+    await sync(sessionEpoch: 9202);
+    final GalAttachedUnsafeRiskAcceptanceRequest replacement =
+        controller.unsafeRiskAcceptanceRequest!;
+    expect(replacement.token, isNot(stale.token));
+
+    expect(await controller.acceptUnsafeRiskAndRetry(stale), isFalse);
+    expect(controller.profile, isNull);
+    expect(
+      preferences[GalLookupSurfaceProfileV1.preferenceKeyForExePath(
+        replacementPath,
+      )],
+      isNull,
+    );
+
+    expect(await controller.acceptUnsafeRiskAndRetry(replacement), isTrue);
+    expect(controller.profile?.exePath, replacementPath);
+    expect(controller.profile?.unsafeLeftClickAccepted, isTrue);
+  });
+
+  test(
+    'stale risk requests fail closed after ineligible state edges',
+    () async {
+      Future<GalAttachedUnsafeRiskAcceptanceRequest> beginRisk(
+        int epoch,
+      ) async {
+        await controller.detach();
+        preferences.clear();
+        port.calls.clear();
+        port.inspection = const GalAttachedCallResult(
+          status: 'activeNative',
+          exePath: r'C:\Games\Sample\game.exe',
+          exeSha256: _sha,
+          referenceClient: _client,
+          providerKind: 1,
+          providerId: 1,
+          providerStatus: 2,
+          shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+        );
+        await sync(sessionEpoch: epoch);
+        return controller.unsafeRiskAcceptanceRequest!;
+      }
+
+      GalAttachedUnsafeRiskAcceptanceRequest stale = await beginRisk(9301);
+      await controller.setMode(GalLookupSurfaceMode.off);
+      expect(controller.status, GalAttachedTextStatus.disabled);
+      expect(await controller.acceptUnsafeRiskAndRetry(stale), isFalse);
+      expect(controller.profile?.unsafeLeftClickAccepted, isFalse);
+
+      stale = await beginRisk(9302);
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'ready',
+          status: 'activeNative',
+          providerKind: 1,
+          providerId: 1,
+          providerStatus: 2,
+          shield: const GalAttachedShieldStatus(
+            available: true,
+            statusFlags: 0x01,
+          ),
+        ),
+      );
+      expect(controller.status, GalAttachedTextStatus.activeNative);
+      expect(await controller.acceptUnsafeRiskAndRetry(stale), isFalse);
+      expect(controller.profile, isNull);
+
+      stale = await beginRisk(9303);
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'error',
+          status: 'activeNative',
+          providerKind: 1,
+          providerId: 1,
+          providerStatus: 2,
+          shield: const GalAttachedShieldStatus(
+            available: true,
+            statusFlags: 0x08,
+          ),
+        ),
+      );
+      expect(controller.status, GalAttachedTextStatus.fallback);
+      expect(await controller.acceptUnsafeRiskAndRetry(stale), isFalse);
+      expect(controller.profile, isNull);
+
+      stale = await beginRisk(9304);
+      expect(
+        await controller.beginCalibration(acceptUnsafeLeftClick: true),
+        isTrue,
+      );
+      expect(controller.status, GalAttachedTextStatus.calibrating);
+      expect(await controller.acceptUnsafeRiskAndRetry(stale), isFalse);
+      expect(controller.profile, isNull);
+    },
+  );
+
   test(
     'detached surface with SGRE provider activates after exe acceptance',
     () async {
@@ -605,7 +1102,9 @@ void main() {
       expect(controller.status, GalAttachedTextStatus.needsRiskAcceptance);
       expect(controller.profile, isNull);
 
-      await controller.acceptUnsafeRiskAndRetry();
+      await controller.acceptUnsafeRiskAndRetry(
+        controller.unsafeRiskAcceptanceRequest!,
+      );
 
       expect(controller.status, GalAttachedTextStatus.activeNative);
       expect(controller.profile?.mode, GalLookupSurfaceMode.auto);
@@ -653,7 +1152,59 @@ void main() {
     expect(controller.status, GalAttachedTextStatus.suspended);
     expect(controller.surfaceVisible, isFalse);
     expect(port.calls, <String>['inspect']);
+    expect(
+      controller.needsUnsafeRiskAcceptance,
+      isFalse,
+      reason:
+          'suspended 是注入 registry 起来前的常态：没铸过风险 token 就不能报「需要'
+          '确认」。这一位恒真会让 shouldPromptGalCaptureSetup 的 '
+          'lookupRiskAcceptancePending 常驻，每局一开局捕获设置弹窗就被压制。',
+    );
+    expect(controller.unsafeRiskAcceptanceRequest, isNull);
   });
+
+  test(
+    'pending neutral without a minted token never claims risk acceptance',
+    () async {
+      // needsUnsafeRiskAcceptance 的收口点是 `_unsafeRiskAcceptanceRequestToken
+      // != null`。这个用例把**其余每一个合取项都摆成真**，只留 token 为空：
+      //   status  = suspended（nativeProviderPendingNeutral，注入 registry 起来
+      //             前的常态，_setStatus 对 suspended 刻意不清 token）
+      //   target / exePath / exeSha256 = 已 attach，全非空
+      //   profile = auto（≠off）且 unsafeLeftClickAccepted = false
+      //   shield  = statusFlags 0x02 → partial（≠verified、≠faulted）
+      // 所以这条断言只会被 token 判据救下来。它退化 = 这一位在每局开局恒真 →
+      // shouldPromptGalCaptureSetup 的 lookupRiskAcceptancePending 常驻 →
+      // 捕获设置弹窗每局都被压制。
+      preferences[key()] = jsonEncode(
+        _profile(mode: GalLookupSurfaceMode.nativeOnly, accepted: false)
+            .toJson(),
+      );
+      port.configureResult = const GalAttachedCallResult(
+        status: 'nativeProviderPendingNeutral',
+        shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+      );
+
+      await sync();
+
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      expect(controller.target, isNotNull);
+      expect(
+        controller.shieldStatus.conclusion,
+        isNot(GalAttachedShieldConclusion.verified),
+      );
+      expect(
+        controller.shieldStatus.conclusion,
+        isNot(GalAttachedShieldConclusion.faulted),
+      );
+      expect(
+        controller.needsUnsafeRiskAcceptance,
+        isFalse,
+        reason: 'pendingNeutral 只是等注入侧就绪，不是「需要用户确认点击风险」',
+      );
+      expect(controller.unsafeRiskAcceptanceRequest, isNull);
+    },
+  );
 
   test(
     'auto configure native win and pending neutral never push text',
@@ -686,6 +1237,18 @@ void main() {
       expect(controller.surfaceVisible, isFalse);
       expect(port.calls, <String>['inspect', 'configure:auto:true']);
       expect(port.texts, isEmpty);
+      // 这是 attach 成功之后落到 suspended：target/exePath/sha256 都在、profile
+      // 未接受、shield 未定论——needsUnsafeRiskAcceptance 的每一个合取项都成立，
+      // 唯独没铸过风险 token。这就是 token 判据唯一的收口点。它一旦退化，
+      // 「注入 registry 起来前的常态」会让这一位恒真，shouldPromptGalCaptureSetup
+      // 的 lookupRiskAcceptancePending 常驻，每局一开局捕获设置弹窗就被压制。
+      expect(controller.target, isNotNull);
+      expect(
+        controller.needsUnsafeRiskAcceptance,
+        isFalse,
+        reason: 'pendingNeutral 只是等注入侧就绪，不是「需要用户确认点击风险」',
+      );
+      expect(controller.unsafeRiskAcceptanceRequest, isNull);
     },
   );
 
@@ -1101,6 +1664,11 @@ void main() {
     expect(controller.status, GalAttachedTextStatus.suspended);
     expect(controller.statusReason, 'capture_fail_closed_detach_unconfirmed');
     expect(controller.surfaceVisible, isFalse);
+    expect(
+      controller.needsUnsafeRiskAcceptance,
+      isFalse,
+      reason: 'fail-closed 的 suspended 同样没有铸过风险 token',
+    );
     expect(
       await controller.acquireMiningCaptureLease(),
       isNull,

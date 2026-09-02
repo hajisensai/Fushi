@@ -668,6 +668,10 @@ abstract class VideoFushiTestHooks {
   /// 当前 controller 读到的内封章节数量。
   int get debugChapterCount;
 
+  /// media_kit 控制条（OSC）当前真实可见性（BUG-2030 的被测真相源）。
+  /// 直取 fork 推来的 `_mediaKitControlsVisible`，不是任何镜像。
+  bool get debugControlsVisible;
+
   /// 当前 controller 读到的媒体时长（毫秒）；未就绪为 null/0。
   int? get debugDurationMs;
 
@@ -969,6 +973,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   int get debugChapterCount => _controller?.chapters.length ?? 0;
+
+  @override
+  bool get debugControlsVisible => _mediaKitControlsVisible.value;
 
   @override
   int? get debugDurationMs => _controller?.durationMs;
@@ -4714,11 +4721,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 时也直接当回退键。下一句保持纯句子跳（无 cue 时前进 seekSeconds 秒）。
       // 底栏 / 手柄 / 双击的「上一句」按钮走 skipToPrevCueOrSeekBack 的默认（不退化，
       // 恒跳句，BUG-942）——按钮心智是「跳句」，不是方向键 seek。
-      // 每次跳句都唤醒控制条并重置自动隐藏计时（BUG-175 ②）：键盘交互不触发
-      // media_kit 的 hover 重置，不主动 poke 的话控制条只活 2 秒就消失。
+      // 键盘 / 手柄跳句只**续命**控制条、不唤起（BUG-2030）：控制条本就在显示时连按跳句
+      // 不该让它 2 秒消失（BUG-176 ②/BUG-215 的诉求），但它隐藏时按快捷键也不该把底栏弹
+      // 出来 + 顶一次字幕（用户报「快捷键上下句字幕会弹出 OSC」）。两者的分界就是
+      // [_keepControlsAliveIfVisible]。底栏按钮 / 双击那条路径仍走 _pokeControlsVisible
+      // （见 [_skipCueAndPokeControls]）——那时用户的手就在控制条上。
       previousSubtitle: () {
         _runWhenImmersiveAllowsShortcuts(() {
-          _pokeControlsVisible();
+          _keepControlsAliveIfVisible();
           unawaited(
             controller.skipToPrevCueOrSeekBack(
               seekSeconds: _asbConfig.seekSeconds,
@@ -4729,7 +4739,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       },
       nextSubtitle: () {
         _runWhenImmersiveAllowsShortcuts(() {
-          _pokeControlsVisible();
+          _keepControlsAliveIfVisible();
           // 无字幕时前进 seekSeconds 秒、有字幕时跳下一句，决策集中在
           // [skipToNextCueOrSeekForward]（与 previousSubtitle 的
           // skipToPrevCueOrSeekBack 对称，TODO-073）。
@@ -4742,11 +4752,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       },
       // 普通 ←/→ = 时间 seek（±seekSeconds 秒，TODO-090），与 J/A·I/D 同语义。
       seekBackward: () => _runWhenImmersiveAllowsShortcuts(() {
-        _pokeControlsVisible();
+        _keepControlsAliveIfVisible();
         unawaited(controller.seekRelative(-_asbSeekMs));
       }),
       seekForward: () => _runWhenImmersiveAllowsShortcuts(() {
-        _pokeControlsVisible();
+        _keepControlsAliveIfVisible();
         unawaited(controller.seekRelative(_asbSeekMs));
       }),
       toggleShaderCompare: () => _runWhenImmersiveAllowsShortcuts(
@@ -4820,22 +4830,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         () => unawaited(_toggleFavoriteCurrentCue()),
       ),
       replayCurrentSubtitle: () => _runWhenImmersiveAllowsShortcuts(
-        () => unawaited(_replayCurrentCueAndPokeControls()),
+        () => unawaited(_replayCurrentCueAndKeepControls()),
       ),
       // 重播上一句（TODO-378，BUG-287，默认 Shift+R）：纯句子后退到上一条 cue 起点
       // 并播放（skipToPrevCue，不退化回退）。与「上一句字幕」(Ctrl+←) 区分——后者
       // gap 太远时按 BUG-185/TODO-085 退化时间 seek，是用户另一项有意设计，不动它。
       replayPreviousSubtitle: () => _runWhenImmersiveAllowsShortcuts(
-        () => unawaited(_replayPreviousCueAndPokeControls()),
+        () => unawaited(_replayPreviousCueAndKeepControls()),
       ),
       // 内封章节上/下一章（TODO-424，默认 PageUp/PageDown）：seek 到相邻章起点，
-      // 无章节时 controller no-op。跳章后唤醒控制条（与跳句同范式，BUG-175）。
+      // 无章节时 controller no-op。与跳句同范式（BUG-2030）：只续命、不唤起；章节**面板**
+      // 里点条目仍 poke（那是指针交互，见 [_buildChapterSidePanel]）。
       previousChapter: () => _runWhenImmersiveAllowsShortcuts(() {
-        _pokeControlsVisible();
+        _keepControlsAliveIfVisible();
         unawaited(controller.previousChapter());
       }),
       nextChapter: () => _runWhenImmersiveAllowsShortcuts(() {
-        _pokeControlsVisible();
+        _keepControlsAliveIfVisible();
         unawaited(controller.nextChapter());
       }),
       // 字幕对轴/匹配（用户请求）：Shift+A 一键弹波形对轴放大视图；z/x 整体平移字幕延迟
@@ -6858,22 +6869,24 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return;
     }
     // BUG-931：收藏不再唤起 media_kit 控制条——原先那句 poke 会派发合成 hover 把底栏
-    // 进度条弹出来（用户报「碍眼」）。收藏结果走左上角 OSD 即可，无需显现控制条；
-    // seek / 重播仍保留 poke，因为那些操作本就需要看进度。
+    // 进度条弹出来（用户报「碍眼」）。收藏结果走左上角 OSD 即可，无需显现控制条。
+    // BUG-2030 之后这已不是收藏一处的特例：所有键盘 / 手柄入口（跳句 / seek / 跳章 /
+    // 重播）都改走 [_keepControlsAliveIfVisible]，隐藏态一律不唤起；收藏这处更进一步，
+    // 连续命都不需要（它压根不动播放位置）。
     await _toggleFavoriteCueForVideo(cue);
   }
 
-  Future<void> _replayCurrentCueAndPokeControls() async {
+  Future<void> _replayCurrentCueAndKeepControls() async {
     final AudioCue? cue = _currentCueForAction();
     if (cue == null) return;
-    _pokeControlsVisible();
+    _keepControlsAliveIfVisible();
     await _controller?.skipToCue(cue);
   }
 
   /// 重播上一句（TODO-378，BUG-287）：跳到上一条 cue 起点并播放，**不**退化成回退几秒
   /// （走纯 [VideoPlayerController.skipToPrevCue]，与底栏「上一句」按钮同语义）。
-  Future<void> _replayPreviousCueAndPokeControls() async {
-    _pokeControlsVisible();
+  Future<void> _replayPreviousCueAndKeepControls() async {
+    _keepControlsAliveIfVisible();
     await _controller?.skipToPrevCue();
   }
 
