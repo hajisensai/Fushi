@@ -12,6 +12,23 @@
 /// `onKeyEvent` 天然互斥、不会双触发。
 library;
 
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+
+/// 一次鼠标按下**先到谁手里**：宿主 Flutter，还是原生 WebView。
+///
+/// 这不是平台特例分支，而是指针所有权的事实，两侧的输入模型真实不同：
+/// * **Windows**：fork 的 `flutter_inappwebview_windows` 用 WebView2 的 composition
+///   controller（无窗口 visual hosting），WebView **没有自己的输入窗口**——指针先到
+///   Flutter 的 [Listener]，再由 fork 逐个转发给 WebView2。而它的 `PointerButton`
+///   枚举只有 `{none, primary, secondary, tertiary}`：鼠标**侧键**（后退/前进）在
+///   转发前就被折成 `none` 整条丢弃，页内 JS 永远收不到 `Mouse3`/`Mouse4`。
+/// * **Android / iOS / macOS / Linux**：WebView 是真正的原生视图，指针被它直接吃掉，
+///   Flutter 的 [Listener] 在那片区域一个事件都收不到——只能靠页内 JS 桥回传。
+///
+/// 所以谁先拿到事件，谁负责分发；两条路**互斥**，宿主拥有指针时就不该再装 JS 鼠标
+/// 监听（否则中键/右键会被两条路各触发一次：关词典幂等看不出来，漫画翻页会翻两页）。
+bool get hostOwnsWebViewPointerInput => isWindowsPlatform;
+
 /// 生成拦截 [keys] / [mouseButtons] 并回传 Dart 的输入监听脚本。
 ///
 /// - [handlerName]：`callHandler` 的 handler 名，Dart 侧须 `addJavaScriptHandler`
