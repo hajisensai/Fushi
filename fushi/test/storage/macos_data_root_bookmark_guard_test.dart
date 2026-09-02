@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 void main() {
   group('macOS data root security-scoped bookmark guard', () {
     String read(String path) {
@@ -29,6 +31,39 @@ void main() {
       expect(src, contains('.withSecurityScope'));
       expect(src, contains('startAccessingSecurityScopedResource()'));
       expect(src, contains('activeSecurityScopedURLs'));
+    });
+
+    test('registers custom channels on the nested Flutter controller', () {
+      final String appDelegate =
+          maskComments(read('macos/Runner/AppDelegate.swift'));
+      final String mainWindow =
+          maskComments(read('macos/Runner/MainFlutterWindow.swift'));
+
+      expect(
+        mainWindow,
+        contains('self.contentViewController = macOSWindowUtilsViewController'),
+        reason: 'the macOS window wraps Flutter in macos_window_utils',
+      );
+      final int wrapperIdx =
+          appDelegate.indexOf('as? MacOSWindowUtilsViewController');
+      final int nestedControllerIdx = appDelegate.indexOf(
+        'windowController.flutterViewController',
+        wrapperIdx,
+      );
+      final int dataRootChannelIdx =
+          appDelegate.indexOf('app.fushi/data_root_access');
+      final int foregroundChannelIdx =
+          appDelegate.indexOf('app.fushi.reader/foreground_selection');
+      expect(wrapperIdx, greaterThan(0));
+      expect(nestedControllerIdx, greaterThan(wrapperIdx));
+      expect(dataRootChannelIdx, greaterThan(nestedControllerIdx));
+      expect(foregroundChannelIdx, greaterThan(nestedControllerIdx));
+      expect(
+        appDelegate,
+        isNot(contains('contentViewController as? FlutterViewController')),
+        reason: 'the top-level controller is MacOSWindowUtilsViewController; '
+            'casting it directly silently skips channel registration',
+      );
     });
 
     test('Dart startup restores bookmark before data root existence check', () {
