@@ -3930,8 +3930,8 @@
   "network_proxy_invalid": "無効なプロキシです。ホスト:ポートの形式で入力してください",
   "network_proxy_label": "ネットワークプロキシ",
   "section_network": "ネットワーク",
-  "network_proxy_p2p_label": "P2P（torrent）通信をプロキシ経由にする",
-  "network_proxy_p2p_warning": "既定ではオフで、P2P は直接接続します。プロキシ経由にすると速度が低下する場合があり、多くのプロキシ事業者は BitTorrent 通信を禁止しているため、プロキシアカウントが帯域制限・警告・停止される恐れがあります。内蔵エンジンにのみ適用され、外部 qBittorrent は自身のプロキシ設定を使用します。",
+  "network_proxy_p2p_label": "P2P (torrent) proxy",
+  "network_proxy_p2p_warning": "Direct by default. Via proxy: all P2P traffic goes through the global proxy — speed may drop, and many proxy providers forbid BitTorrent traffic (throttling, warnings, or account termination). Mixed: tracker requests go through the proxy while DHT and peer connections stay direct — widest peer discovery, but your real IP is visible to trackers, DHT and peers (connectivity only, not privacy). Built-in engine only; external qBittorrent uses its own proxy settings.",
   "video_ajatt_settings_hint": "無料の日本語字幕アーカイブ（kitsunekko ミラー）。アカウント不要。字幕ファイルは GitHub からダウンロードされます。",
   "video_ajatt_enabled_hint": "オフにすると字幕検索時に AJATT アーカイブをスキップします。",
   "video_subtitle_workbench_title": "字幕",
@@ -4110,5 +4110,8 @@
   "shortcut_action_video_dismiss_dict": "Dismiss dictionary",
   "video_discovery_anidb_identity_confirm_title": "Confirm the work identity",
   "video_discovery_anidb_identity_confirm_hint": "AniDB has more than one possible match. Pick the right work and the imported download will scrape with that identity directly; skip and you can assign it later from the pending list.",
-  "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification."
+  "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
+  "network_proxy_p2p_mode_direct": "Direct",
+  "network_proxy_p2p_mode_proxy": "Via proxy",
+  "network_proxy_p2p_mode_mixed": "Mixed"
 }

@@ -41,7 +41,8 @@ struct FakeMapping {
     h->lookup_input_slot_count = fushi_voice_hook::kLookupInputSlotCount;
     h->lookup_enabled = 1;
     Check(fushi_voice_hook::PublishLookupGeometryAdmission(
-              h, fushi_voice_hook::kLookupGeometryAdmissionAuto, false) != 0,
+              h, fushi_voice_hook::kLookupGeometryAdmissionAuto, false,
+              false) != 0,
           "fake mapping must publish a coherent default auto admission");
   }
 
@@ -188,7 +189,9 @@ void TestHunexNativeInputRequiresAppliedHostAdmission() {
         "HUNEX semantic consume/publication must default deny");
 
   const uint32_t allow_seq =
-      fushi_voice_hook::PublishLookupNativeInputAllowed(mapping.header(), true);
+      fushi_voice_hook::PublishLookupGeometryAdmission(
+          mapping.header(), fushi_voice_hook::kLookupGeometryAdmissionAuto,
+          false, true);
   Check(allow_seq != 0 &&
             !registry.NativeInputAllowed(mapping.header(), hunex.provider_kind,
                                          hunex.provider_id),
@@ -202,7 +205,9 @@ void TestHunexNativeInputRequiresAppliedHostAdmission() {
         "applied allow plus exact active HUNEX must admit one native hit");
 
   const uint32_t deny_seq =
-      fushi_voice_hook::PublishLookupNativeInputAllowed(mapping.header(), false);
+      fushi_voice_hook::PublishLookupGeometryAdmission(
+          mapping.header(), fushi_voice_hook::kLookupGeometryAdmissionAuto,
+          false, false);
   Check(deny_seq > allow_seq &&
             !registry.NativeInputAllowed(mapping.header(), hunex.provider_kind,
                                          hunex.provider_id) &&
@@ -411,7 +416,8 @@ void TestHostAdmissionSeparatesGeometryFromShieldRuntime() {
   const uint32_t attached_request =
       fushi_voice_hook::PublishLookupGeometryAdmission(
           mapping.header(),
-          fushi_voice_hook::kLookupGeometryAdmissionAttachedOnly, true);
+          fushi_voice_hook::kLookupGeometryAdmissionAttachedOnly, true,
+          false);
   Check(down_seq != 0 && attached_request != 0 &&
             !registry.Reconcile(mapping.header()),
         "attached claim must wait for the native down/up/tail transaction");
@@ -459,7 +465,7 @@ void TestHostAdmissionSeparatesGeometryFromShieldRuntime() {
   const uint32_t auto_request =
       fushi_voice_hook::PublishLookupGeometryAdmission(
           mapping.header(), fushi_voice_hook::kLookupGeometryAdmissionAuto,
-          true);
+          true, false);
   Check(registry.Reconcile(mapping.header()) &&
             mapping.header()->lookup_geometry_active_id == exact.provider_id &&
             mapping.header()->lookup_geometry_admission_applied_seq ==
@@ -469,7 +475,8 @@ void TestHostAdmissionSeparatesGeometryFromShieldRuntime() {
   const uint32_t withdrawn =
       fushi_voice_hook::PublishLookupGeometryAdmission(
           mapping.header(),
-          fushi_voice_hook::kLookupGeometryAdmissionAttachedOnly, false);
+          fushi_voice_hook::kLookupGeometryAdmissionAttachedOnly, false,
+          false);
   Check(registry.Reconcile(mapping.header()) &&
             mapping.header()->lookup_geometry_active_kind ==
                 fushi_voice_hook::kLookupGeometryProviderUnknown &&
@@ -500,7 +507,8 @@ void TestProviderSwitchWaitsForShieldRequestWriter() {
   const uint32_t attached_request =
       fushi_voice_hook::PublishLookupGeometryAdmission(
           mapping.header(),
-          fushi_voice_hook::kLookupGeometryAdmissionAttachedOnly, true);
+          fushi_voice_hook::kLookupGeometryAdmissionAttachedOnly, true,
+          false);
   Check(attached_request != 0 && !registry.Reconcile(mapping.header()) &&
             mapping.header()->lookup_geometry_active_id == exact.provider_id &&
             mapping.header()->lookup_geometry_admission_applied_seq !=
@@ -524,7 +532,7 @@ void TestNativePreemptionRevokesAttachedOwnership() {
   const uint32_t attached_request =
       fushi_voice_hook::PublishLookupGeometryAdmission(
           mapping.header(), fushi_voice_hook::kLookupGeometryAdmissionAuto,
-          true);
+          true, false);
   Check(attached_request != 0 && registry.Reconcile(mapping.header()) &&
             fushi_voice_hook::LookupGeometryAttachedProviderOwns(
                 mapping.header()),

@@ -328,6 +328,46 @@ class FushiTorrentBindings {
     }
   }
 
+  /// 带档位的 P2P 代理（mode 0=直连 1=全代理 2=混合：tracker 经代理、
+  /// peer/DHT 直连）。1 成功 0 失败。调用前必须先看 [hasApplyProxyMode]。
+  int ht_apply_proxy_mode(
+    ffi.Pointer<ffi.Void> session,
+    int proxy_type,
+    ffi.Pointer<ffi.Char> host,
+    int port,
+    int mode,
+  ) {
+    return _ht_apply_proxy_mode(session, proxy_type, host, port, mode);
+  }
+
+  late final _ht_apply_proxy_modePtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int,
+              ffi.Pointer<ffi.Char>, ffi.Int, ffi.Int)>>('ht_apply_proxy_mode');
+  late final _ht_apply_proxy_mode = _ht_apply_proxy_modePtr.asFunction<
+      int Function(
+          ffi.Pointer<ffi.Void>, int, ffi.Pointer<ffi.Char>, int, int)>();
+
+  /// 已加载的库里是否有 [ht_apply_proxy_mode]（混合档需要新 DLL；老库降级
+  /// 走 [ht_apply_proxy] 全代理）。
+  late final bool hasApplyProxyMode = _probeApplyProxyMode();
+
+  bool _probeApplyProxyMode() {
+    try {
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Int Function(
+                  ffi.Pointer<ffi.Void>,
+                  ffi.Int,
+                  ffi.Pointer<ffi.Char>,
+                  ffi.Int,
+                  ffi.Int)>>('ht_apply_proxy_mode');
+      return true;
+    } on ArgumentError {
+      return false;
+    }
+  }
+
   /// 添加磁力；返回 malloc JSON（ht_free_string 释放）。
   ffi.Pointer<ffi.Char> ht_add_magnet(
     ffi.Pointer<ffi.Void> session,

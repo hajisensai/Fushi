@@ -56,10 +56,13 @@ for abi in "${ABIS[@]}"; do
   # VCPKG_OVERLAY_TRIPLETS 必须给 cmake：manifest 模式下是工具链在装依赖，只传给
   # `vcpkg install` 的话 overlay 不参与，会静默退回 vcpkg 自带 arm64-android（API 28），
   # 即 vcpkg-triplets/ 注释里那个 aligned_alloc undefined symbol。
+  # overlay ports：libtorrent 2.0.11 私有补丁（DHT 混合代理豁免），
+  # 见 vcpkg-ports/README.md；与 .ps1 版/Windows 脚本同一套。
   cmake -G Ninja -B "$build_dir" -S "$SCRIPT_DIR" \
     "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_TOOLCHAIN" \
     "-DVCPKG_TARGET_TRIPLET=$triplet" \
     "-DVCPKG_OVERLAY_TRIPLETS=$SCRIPT_DIR/vcpkg-triplets" \
+    "-DVCPKG_OVERLAY_PORTS=$SCRIPT_DIR/vcpkg-ports" \
     "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_TOOLCHAIN" \
     "-DANDROID_ABI=$abi" \
     "-DANDROID_PLATFORM=android-24" \

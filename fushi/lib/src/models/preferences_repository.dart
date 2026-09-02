@@ -2348,14 +2348,28 @@ class PreferencesRepository extends ChangeNotifier {
 
   // ── update preferences ───────────────────────────────────────────────
 
-  /// P2P（torrent）传输是否也走全局代理。**默认 false = 直连**：走代理可能
-  /// 降速，且不少代理服务商禁止 BT 流量（限速/警告/封号），只有用户明确
-  /// 开了才下发给内置引擎（外接 qBittorrent 自管）。
-  bool get p2pProxyEnabled =>
-      getPref('network_proxy_p2p_enabled', defaultValue: false) as bool;
+  /// P2P（torrent）传输的代理档位：`direct`（**默认**，直连）/ `proxy`
+  /// （peer/tracker/DNS 全代理，可能降速，且不少代理服务商禁止 BT 流量：
+  /// 限速/警告/封号）/ `mixed`（tracker 经代理、DHT 与 peer 直连——节点获取
+  /// 范围最大，但真实 IP 暴露给 DHT/peer/tracker，只是连通性工具）。
+  /// 只对内置引擎生效（外接 qBittorrent 自管）。
+  ///
+  /// 三态键未写过时沿用旧布尔开关 `network_proxy_p2p_enabled`（冻结，
+  /// PR#1051 引入）的语义：true → 全代理。
+  String get p2pProxyMode {
+    final String raw =
+        getPref('network_proxy_p2p_mode', defaultValue: '') as String;
+    if (raw == 'direct' || raw == 'proxy' || raw == 'mixed') return raw;
+    final bool legacyEnabled =
+        getPref('network_proxy_p2p_enabled', defaultValue: false) as bool;
+    return legacyEnabled ? 'proxy' : 'direct';
+  }
 
-  Future<void> setP2pProxyEnabled(bool value) async {
-    await setPref('network_proxy_p2p_enabled', value);
+  Future<void> setP2pProxyMode(String mode) async {
+    assert(mode == 'direct' || mode == 'proxy' || mode == 'mixed');
+    await setPref('network_proxy_p2p_mode', mode);
+    // 写穿旧布尔键：降级回老版本后语义一致（mixed 按「开」处理）。
+    await setPref('network_proxy_p2p_enabled', mode != 'direct');
     notifyListeners();
   }
 

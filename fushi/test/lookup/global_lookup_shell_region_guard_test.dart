@@ -456,6 +456,58 @@ void main() {
     );
   });
 
+  test('gal captureReady 在屏外 rAF 暂停时有 route/epoch 安全的有界回退', () {
+    final int armAt = hostJs.indexOf('function armCaptureReady(');
+    expect(armAt, greaterThanOrEqualTo(0));
+    final int armEnd = hostJs.indexOf(
+      '\n  function commitLayerShiftAndArmCapture(',
+      armAt,
+    );
+    final String arm = hostJs.substring(
+      armAt,
+      armEnd > armAt ? armEnd : hostJs.length,
+    );
+    expect(
+      hostJs,
+      contains('var GAL_CAPTURE_READY_RAF_FALLBACK_MS = 120;'),
+      reason: '永久停在屏外的 WebView2 可能暴露 rAF 但永不调度回调',
+    );
+    expect(
+      arm,
+      contains(
+        'fallbackTimer = setTimerSafe(\n'
+        '        postIfCurrent, GAL_CAPTURE_READY_RAF_FALLBACK_MS);',
+      ),
+    );
+    expect(arm, contains('routeKey(activeRoute) === key'));
+    expect(arm, contains('epoch === committedGeometryEpoch'));
+    expect(arm, contains('epoch === announcedGeometryEpoch'));
+    expect(arm, contains('galCaptureReadySchedules.get(key) === token'));
+    expect(arm, contains('clearTimerSafe(fallbackTimer)'));
+    expect(
+      arm,
+      contains('var token = {};'),
+      reason: '对象 token 防止已删除的 route-local 计数器从 1 重启产生 ABA',
+    );
+
+    final String galResize = functionBody(
+      cpp,
+      'void GlobalLookupWindow::ResizeStackForGal(',
+    );
+    expect(
+      galResize,
+      contains('if(helperAccepted!==false)return;'),
+      reason: 'host helper 明确拒绝 epoch 时必须进入兼容回退，不能无条件 return',
+    );
+    expect(galResize, contains('window.setTimeout(post,120)'));
+    expect(
+      galResize,
+      contains('if(done||window.__fushiGalCaptureReadyToken!==token)'),
+    );
+    expect(galResize, contains('done=true;'));
+    expect(galResize, contains('window.clearTimeout(timer)'));
+  });
+
   test('host：handleGlobalClick 的 gap dismiss 立即 post（不走 200ms slide）', () {
     final int at = hostJs.indexOf('function handleGlobalClick(');
     expect(at, greaterThanOrEqualTo(0));

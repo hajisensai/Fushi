@@ -134,8 +134,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'module_video_enabled',
   // String：全局公网出口模式 auto / direct / manual（BUG-1980）。
   'network_proxy_mode',
-  // bool：P2P（torrent）传输是否也走全局代理，默认 false（直连）。
+  // bool：P2P（torrent）传输是否也走全局代理（旧键，冻结；三态 mode 键未写过
+  // 时作迁移来源，setP2pProxyMode 会写穿它保降级一致）。
   'network_proxy_p2p_enabled',
+  // String：P2P（torrent）传输代理档位 direct / proxy / mixed，默认 direct。
+  'network_proxy_p2p_mode',
   'network_proxy_password',
   'network_proxy_username',
   'onboarding_completed',

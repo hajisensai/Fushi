@@ -1592,29 +1592,36 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
   std::wstring shift_script =
       L"(function(host,route,w,h,epoch){"
       L"if(host&&typeof host.commitLayerShiftAndArmCapture==='function'){"
-      L"host.commitLayerShiftAndArmCapture(" +
+      L"var helperAccepted=host.commitLayerShiftAndArmCapture(" +
       std::to_wstring(bbox_left) + L"," + std::to_wstring(bbox_top) +
-      L",route,w,h,epoch);return;}"
+      L",route,w,h,epoch);if(helperAccepted!==false)return;}"
       L"if(host&&typeof host.commitLayerShift==='function'){var accepted=host.commitLayerShift(" +
       std::to_wstring(bbox_left) + L"," + std::to_wstring(bbox_top) +
       L",epoch);if(accepted===false)return;}"
       L"var token=(window.__fushiGalCaptureReadyToken||0)+1;"
       L"window.__fushiGalCaptureReadyToken=token;"
-      L"var post=function(){if(window.__fushiGalCaptureReadyToken!==token)"
-      L"return;try{window.chrome.webview.postMessage({"
+      L"var done=false;var timer=null;"
+      L"var post=function(){if(done||window.__fushiGalCaptureReadyToken!==token)"
+      L"return;done=true;if(timer!==null&&typeof window.clearTimeout==='function')"
+      L"{try{window.clearTimeout(timer);}catch(e){}timer=null;}"
+      L"try{window.chrome.webview.postMessage({"
       L"handler:'captureReady',args:[w,h,epoch],__source:route.source,"
       L"__routeEpoch:route.routeEpoch,__lookupEpoch:route.lookupEpoch});"
       L"}catch(e){}};"
+      L"if(typeof window.setTimeout==='function'){"
+      L"try{timer=window.setTimeout(post,120);}catch(e){timer=null;}}"
       L"if(typeof window.requestAnimationFrame==='function'){"
-      L"window.requestAnimationFrame(function(){"
-      L"window.requestAnimationFrame(post);});}else{post();}"
+      L"try{window.requestAnimationFrame(function(){"
+      L"try{window.requestAnimationFrame(post);}catch(e){post();}});"
+      L"}catch(e){post();}}else{post();}"
       L"})(window.__globalLookupHost," +
       route_script + L"," + std::to_wstring(width) + L"," +
       std::to_wstring(height) + L"," + std::to_wstring(geometry_epoch) +
       L");";
   // ExecuteScript completion only proves that JavaScript ran, not that WebView2
   // presented the shifted layer. The host posts captureReady after two
-  // animation frames; WebMessageReceived commits the matching HRGN/shadow
+  // animation frames (with a bounded fallback when an off-screen WebView2
+  // suspends rAF); WebMessageReceived commits the matching HRGN/shadow
   // immediately before forwarding that paint-ready ack to Dart.
   const HRESULT shift_hr = webview_->ExecuteScript(shift_script.c_str(), nullptr);
   if (FAILED(shift_hr)) {

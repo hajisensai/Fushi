@@ -60,6 +60,7 @@ class ProfileKeys {
     // network, not a reading profile — never per-profile snapshot.
     'update_custom_proxy',
     'network_proxy_p2p_enabled',
+    'network_proxy_p2p_mode',
     // BUG-1980 同族：出口模式（自动/直连/手动）描述的是这台设备的网络，地址已经是
     // 设备本地的，模式却跟着 Profile 走 = 切一次 Profile 就把全局网络出口翻掉，
     // 事后极难归因。

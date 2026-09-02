@@ -454,20 +454,17 @@ class VoiceHookReader {
   // host→hook 开关（header->lookup_enabled）。开启时同时起/停轮询定时器。
   VoiceHookLookupError SetLookupEnabled(bool enabled);
 
-  // v19 几何所有权控制。它与 lookup_enabled 分离：attachedReady 可让
-  // attached_calibrated 成为 registry 的 host-owned offer，同时 injected
+  // v21 几何所有权控制。它与 lookup_enabled 分离：attached_ready 可让
+  // attached_calibrated 成为 registry 的 host-owned offer；native_input_allowed
+  // 则只在风险准入通过后允许当前 native owner 吞掉游戏点击。injected
   // generic shield 继续运行。payload 先写、request_seq 最后发布。
+  //
+  // 这是发布 admission 字的唯一入口：允许位随 mode/attached_ready 一起写，
+  // 不再有第二个只写允许位的方法（两个入口=两份台账，谁后写谁赢）。
   VoiceHookLookupError SetLookupGeometryAdmission(
-      uint32_t mode, bool attached_ready, uint32_t* request_seq = nullptr,
-      uint32_t* applied_seq = nullptr);
+      uint32_t mode, bool attached_ready, bool native_input_allowed,
+      uint32_t* request_seq, uint32_t* applied_seq);
 
-  // Host risk/provider admission for HUNEX semantic input.  This reuses the
-  // v21 geometry-admission flags/request generation: discovery remains live,
-  // while actual native input consumption and hit publication fail closed
-  // until this request is applied for the exact active provider.
-  VoiceHookLookupError SetLookupNativeInputAllowed(
-      bool allowed, uint32_t* request_seq = nullptr,
-      uint32_t* applied_seq = nullptr);
 
   // 发布 v19 输入盾事务。|target| 必须属于当前已打开的游戏 PID；begin 固定传
   // active_buttons=kLookupShieldButtonLeft，matching up/cancel 以同一 transaction_id

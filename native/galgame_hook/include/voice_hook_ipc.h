@@ -109,10 +109,14 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     占满）。按本结构体既有先例（reserved_luna 满了之后另立 reserved_hook_diagnostics）
 //     另立一个字，而不是拓宽——拓宽要改 InterlockedOr 的原子写路径与每个读侧。
 // v21：`lookup_geometry_admission_flags` 的 0x2 位从 v20 的保留位变成
-//     NativeInputAllowed。布局和偏移完全不变，但解释方式已经改变：v20 hook 只认识
-//     AttachedReady，v21 host 则依赖 0x2 对语义输入消费与 native hit 发布做 fail-closed
-//     门控。同布局、异语义仍必须升版（与 v18 的 LookupInputSlot::keys 完全同理），
-//     否则旧 helper 会被版本门误判兼容，host 以为已撤销输入而驻留 DLL 仍继续消费。
+//     NativeInputAllowed。lookup_enabled 只负责让文本/几何传感器继续工作；
+//     native provider 即使已经被 registry 选成 Ready owner，也只有在 host
+//     通过风险准入并显式发布这一位后才可吞掉游戏点击。
+//     布局和偏移完全不变，但解释方式已经改变：v20 hook 只认识
+//     AttachedReady，v21 host 则依赖 0x2 对语义输入消费与 native hit 发布做
+//     fail-closed 门控。同布局、异语义仍必须升版（与 v18 的
+//     LookupInputSlot::keys 完全同理），否则旧 helper 会被版本门误判兼容，
+//     host 以为已撤销输入而驻留 DLL 仍继续消费。
 constexpr uint32_t kSharedVersion = 21;
 constexpr uint32_t kStableIpcVersion = 1;
 
@@ -260,6 +264,7 @@ constexpr uint32_t kTextSourceGdi = 1;
 constexpr uint32_t kTextSourceLuna = 2;
 constexpr uint32_t kTextSourceUnityTmp = 3;
 constexpr uint32_t kTextSourceSiglus = 4;
+constexpr uint32_t kTextSourceSgre = 5;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the
@@ -1324,14 +1329,6 @@ inline uint32_t PublishLookupGeometryAdmission(
 // this helper still uses the same request seqlock so injected readers never
 // accept a half-updated flag set.  A mapping without a stable geometry request
 // is fail-closed and must be initialised by PublishLookupGeometryAdmission.
-inline uint32_t PublishLookupNativeInputAllowed(SharedHeader* header,
-                                                bool allowed) {
-  const LookupGeometryAdmissionSnapshot stable =
-      ReadLookupGeometryAdmission(header);
-  if (!stable.valid) return 0;
-  return PublishLookupGeometryAdmission(header, stable.mode,
-                                        stable.attached_ready(), allowed);
-}
 
 inline LookupShieldRequestSnapshot ReadLookupShieldRequest(
     const SharedHeader* header) {

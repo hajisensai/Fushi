@@ -2659,6 +2659,7 @@ class GalHookedLine {
       2 => 'luna',
       3 => 'unity_tmp',
       4 => 'siglus',
+      5 => 'sgre',
       _ => 'hook',
     };
     return '$source:${threadId.toUnsigned(64).toRadixString(16)}';
@@ -2673,6 +2674,7 @@ class GalHookedLine {
             2 => 'LunaHook',
             3 => 'Unity TMP_Text',
             4 => 'Siglus exact',
+            5 => 'SGRE exact',
             _ => 'Text hook',
           };
     if (threadAddress == 0) return source;

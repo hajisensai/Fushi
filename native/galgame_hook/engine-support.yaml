@@ -251,7 +251,7 @@
         "geometry": {
           "status": "implemented_unverified",
           "providers": ["engine_exact_layout", "attached_calibrated"],
-          "evidence": "The portable exact SHA-256 identity is followed by hydrated-image unique draw/vtable/DirectInput signatures across all executable sections, decoded module-relative targets, x64 unwind bounds and vtable/COM ABI gates. Zero/multiple candidates and unknown hashes fail closed; lookup/card E2E is not recorded."
+          "evidence": "The measured SHA-256 row is a consistency check only. Known and unknown hashes traverse populated, mutually corroborated draw/vtable/DirectInput signatures across all executable sections, PE exception-directory function bounds, decoded module-relative targets and live vtable/COM ABI gates. Zero/multiple intersections, layout/codegen mismatches and structure faults fail closed; a second executable build and lookup/card E2E are not recorded."
         },
         "verified_shield": {
           "status": "implemented_unverified",
@@ -2318,7 +2318,7 @@
           ],
           "evidence": {
             "kind": "runtime_observation",
-            "reference": "MatchesSgreFamily is the family probe: the wind3d11 runtime keeps character voices in voice_body.bin next to the executable, and archive membership is the same data contract the audio proof checks. No executable name or hash takes part in family identity."
+            "reference": "The wind3d11 runtime keeps character voices in voice_body.bin next to the executable. Archive membership proves only the resource-audio capability; text/lookup may establish the engine family independently through the complete signature and object-ABI proof. No executable name, local path or hash is a family gate."
           }
         },
         "pe_imports": {
@@ -2339,7 +2339,7 @@
           ],
           "evidence": {
             "kind": "runtime_observation",
-            "reference": "Measured build row in hook/adapters/sgre_anchors.h (kSgreKnownBuilds): the hash selects the measured TextRender draw boundary, scenario-text vtable and DirectInput mouse-slot RVAs, and it is the same digest the Luna text profile keys on. A hash miss is no longer a rejection: the family is still claimed and each anchor is resolved by a unique byte signature (signature table currently empty), so an unmeasured build reports which anchors are missing instead of silently doing nothing."
+            "reference": "One measured build row in hook/adapters/sgre_anchors.h records the observed TextRender draw boundary, scenario-text vtable and DirectInput mouse-slot RVAs. The digest is diagnostic and, on that exact build, asserts that signature-derived RVAs still match the measurement; it never supplies hook addresses or rejects a hash miss. The published signatures were derived from this one sample, so cross-version runtime compatibility remains unverified."
           }
         }
       },
@@ -2349,7 +2349,7 @@
         "follow_child_processes": false,
         "notes": [
           "The adapter registers a compressed-resource handler on the shared XAudio worker seam; the generic middleware holds no engine-specific knowledge.",
-          "Identity is layered: family (voice_body.bin next to the executable) claims the process and installs the archive-membership audio proof for every family build; build-specific anchors come from the measured hash table or a unique signature hit with a structural check (code anchor inside an executable section, vtable slot 0 pointing into code, device slot inside writable data). The lookup sensor and the DirectInput shield each stay inert for an unresolved anchor; kXAudioDiag2SgreFamilyMatched / kXAudioDiag2SgreAnchorsResolved / kXAudioDiag2SgreAnchorsUnresolved report where resolution ended."
+          "Identity is capability-scoped: voice_body.bin proves archive audio, while text/lookup requires independent primary and corroborating signatures to intersect on one draw/vtable/DirectInput anchor set. TextDraw is recovered through the PE exception directory and must equal scenario vtable slot 4; the mouse slot must be aligned writable storage and its live DirectInput slot 9 must be executable before interception. Known and unknown hashes take the same path, and every unresolved or structurally inconsistent site stays inert; kXAudioDiag2SgreFamilyMatched / kXAudioDiag2SgreAnchorsResolved / kXAudioDiag2SgreAnchorsUnresolved report where resolution ended."
         ]
       },
       "text": {
@@ -2357,7 +2357,7 @@
           {
             "kind": "ingame_lookup_geometry",
             "status": "implemented_unverified",
-            "verification": "The hash-pinned SGRE draw profile publishes renderer-native UTF-16 glyph geometry only after the all-executable-section unique-signature, decoded RIP-target, unwind and vtable-ABI gate passes. No original-path lookup/card E2E is recorded."
+            "verification": "The SGRE draw adapter publishes renderer-native UTF-16 text and glyph geometry only after all-executable-section primary/corroborating signatures, decoded RIP targets, PE exception-directory bounds, scenario vtable slot 4 and object-layout gates agree. The mechanism is SHA/path/ASLR independent but has only one measured executable sample; no second-build or original-path lookup/card E2E is recorded."
           },
           {
             "kind": "ingame_lookup_directinput_shield",
@@ -2366,7 +2366,7 @@
           }
         ],
         "codepage": "not_applicable",
-        "thread_selection_hint": "Luna text still comes from the hash-keyed Luna profile row (config/luna_hook_profiles.tsv); the in-game lookup sensor takes game-parsed text and per-glyph geometry from the resolved TextRender draw anchor."
+        "thread_selection_hint": "The SGRE exact lane publishes game-parsed text with a stable ENGINE:SGRE:wind3d11 identity that excludes SHA, path, ASLR and resolved RVAs. The same resolved TextRender draw anchor supplies per-glyph lookup geometry; incompatible layouts publish neither lane nor provider."
       },
       "audio": {
         "priority": [
@@ -2384,8 +2384,8 @@
         "No real-game session has been run against this adapter: process_found through card_e2e are all not_run.",
         "Archive membership is the role proof, and it only holds while the runtime keeps character voice in a separate voice_body.bin.",
         "The emitted .xwma file is not byte-identical to an archive entry: the RIFF envelope is synthesised here. Only the fmt/dpds/payload chunks are verbatim.",
-        "Identity is the executable SHA-256, which recognizes the same bytes on any machine and is not tied to a local path. A game patch, unknown hash, non-unique hydrated signature, decoded-target mismatch, unwind mismatch or ABI mismatch disables exact lookup (and the hash change disables the paired text/audio profile) until that build is measured independently.",
-        "The anchor signature table (kSgreTextDrawSignature / kSgreScenarioTextVtableSignature / kSgreDirectInputMouseDeviceSignature) is still empty: an executable outside kSgreKnownBuilds is claimed as family and gets archive-resource audio, but its lookup sensor and DirectInput shield resolve to signature_empty until patterns are measured from a real build. The Luna text hook code is still keyed by the measured hash row only."
+        "Only one SGRE executable has supplied measured anchor evidence. An unknown hash is admitted only when the current signature family, PE function boundary, vtable/object layout and live DirectInput ABI all agree uniquely; this is an implemented fail-closed compatibility mechanism, not evidence that arbitrary releases or compiler rebuilds are supported.",
+        "The populated signatures were derived from that single measured binary. A non-unique signature, decoded-target mismatch, changed codegen/layout, unwind mismatch or ABI mismatch disables exact text, geometry and click interception and leaves the executable digest available for a future independently measured signature family."
       ],
       "adapter_path": "hook/adapters/sgre_adapter.inc",
       "fixture_paths": [],

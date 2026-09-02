@@ -3930,8 +3930,8 @@
   "network_proxy_invalid": "Proxy inválido. Use host:porta",
   "network_proxy_label": "Proxy de rede",
   "section_network": "Rede",
-  "network_proxy_p2p_label": "Rotear o tráfego P2P (torrent) pelo proxy",
-  "network_proxy_p2p_warning": "Desativado por padrão: o P2P se conecta diretamente. Passar pelo proxy pode reduzir a velocidade, e muitos provedores de proxy proíbem tráfego BitTorrent: sua conta de proxy pode ser limitada, advertida ou encerrada. Aplica-se apenas ao mecanismo integrado; um qBittorrent externo usa suas próprias configurações de proxy.",
+  "network_proxy_p2p_label": "P2P (torrent) proxy",
+  "network_proxy_p2p_warning": "Direct by default. Via proxy: all P2P traffic goes through the global proxy — speed may drop, and many proxy providers forbid BitTorrent traffic (throttling, warnings, or account termination). Mixed: tracker requests go through the proxy while DHT and peer connections stay direct — widest peer discovery, but your real IP is visible to trackers, DHT and peers (connectivity only, not privacy). Built-in engine only; external qBittorrent uses its own proxy settings.",
   "video_ajatt_settings_hint": "Arquivo gratuito de legendas em japonês (espelho do kitsunekko). Não precisa de conta; os arquivos são baixados do GitHub.",
   "video_ajatt_enabled_hint": "Desligado significa que o arquivo AJATT é ignorado ao buscar legendas.",
   "video_subtitle_workbench_title": "Legendas",
@@ -4110,5 +4110,8 @@
   "shortcut_action_video_dismiss_dict": "Dismiss dictionary",
   "video_discovery_anidb_identity_confirm_title": "Confirm the work identity",
   "video_discovery_anidb_identity_confirm_hint": "AniDB has more than one possible match. Pick the right work and the imported download will scrape with that identity directly; skip and you can assign it later from the pending list.",
-  "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification."
+  "video_discovery_anidb_identity_not_found": "Could not identify this work on AniDB. It will download normally and wait in the pending list for manual identification.",
+  "network_proxy_p2p_mode_direct": "Direct",
+  "network_proxy_p2p_mode_proxy": "Via proxy",
+  "network_proxy_p2p_mode_mixed": "Mixed"
 }

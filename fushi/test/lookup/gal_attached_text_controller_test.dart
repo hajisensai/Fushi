@@ -586,15 +586,17 @@ void main() {
   });
 
   test(
-    'partial native shield requires exe risk acceptance and persists seed',
+    'detached surface with SGRE provider activates after exe acceptance',
     () async {
       port.inspection = const GalAttachedCallResult(
-        status: 'activeNative',
+        // nativeOnly detaches the optional desktop surface; the independent
+        // SGRE provider remains the registry's authoritative Ready owner.
+        status: 'detached',
         exePath: r'C:\Games\Sample\game.exe',
         exeSha256: _sha,
         referenceClient: _client,
         providerKind: 2,
-        providerId: 3,
+        providerId: 5,
         providerStatus: 2,
         shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
       );

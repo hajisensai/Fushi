@@ -7237,18 +7237,20 @@ class AppModel with ChangeNotifier {
   Future<void> setUpdateDownloadSource(String value) =>
       prefsRepo.setUpdateDownloadSource(value);
 
-  /// P2P（torrent）传输是否也走全局代理；默认 false = 直连。
-  bool get p2pProxyEnabled => prefsRepo.p2pProxyEnabled;
-  Future<void> setP2pProxyEnabled(bool value) async {
-    await prefsRepo.setP2pProxyEnabled(value);
+  /// P2P（torrent）传输的代理档位：direct（默认）/ proxy / mixed。
+  String get p2pProxyMode => prefsRepo.p2pProxyMode;
+  Future<void> setP2pProxyMode(String mode) async {
+    await prefsRepo.setP2pProxyMode(mode);
     _applyEmbeddedTorrentProxy();
   }
 
-  /// 把「P2P 该不该走代理、走哪个」下发给内置引擎（宿主不存在则 no-op；
-  /// 宿主建好时 [_applyEmbeddedTorrentLimits] 会再调一次）。
+  /// 把「P2P 该不该走代理、走哪个、哪一档」下发给内置引擎（宿主不存在则
+  /// no-op；宿主建好时 [_applyEmbeddedTorrentLimits] 会再调一次）。
   void _applyEmbeddedTorrentProxy() {
+    final String mode = prefsRepo.p2pProxyMode;
     _embeddedTorrentHost?.applyProxy(
-      resolveP2pProxyHostPort(enabled: prefsRepo.p2pProxyEnabled),
+      resolveP2pProxyHostPort(enabled: mode != 'direct'),
+      mixed: mode == 'mixed',
     );
   }
 

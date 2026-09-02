@@ -18,6 +18,8 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../helpers/source_guard.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
@@ -592,11 +594,13 @@ void main() {
           await GalHookTextOverlayChannel.galLookupSetGeometryAdmission(
             mode: GalLookupGeometryAdmissionMode.attachedOnly,
             attachedReady: true,
+            nativeInputAllowed: false,
           );
       expect(calls.single.method, 'galLookupSetGeometryAdmission');
       expect(calls.single.arguments, <String, Object?>{
         'mode': 3,
         'attachedReady': true,
+        'nativeInputAllowed': false,
       });
       expect(result.ok, isTrue);
       expect(result.requestSeq, 7);
@@ -606,9 +610,17 @@ void main() {
     test('NativeInputAllowed 复用 admission request/applied ack', () async {
       mockRunner((_) => <String, Object?>{'requestSeq': 9, 'appliedSeq': 8});
       final GalLookupCallResult result =
-          await GalHookTextOverlayChannel.galLookupSetNativeInputAllowed(true);
-      expect(calls.single.method, 'galLookupSetNativeInputAllowed');
-      expect(calls.single.arguments, <String, Object?>{'allowed': true});
+          await GalHookTextOverlayChannel.galLookupSetGeometryAdmission(
+            mode: GalLookupGeometryAdmissionMode.nativeOnly,
+            attachedReady: false,
+            nativeInputAllowed: true,
+          );
+      expect(calls.single.method, 'galLookupSetGeometryAdmission');
+      expect(calls.single.arguments, <String, Object?>{
+        'mode': 2,
+        'attachedReady': false,
+        'nativeInputAllowed': true,
+      });
       expect(result.ok, isTrue);
       expect(result.requestSeq, 9);
       expect(result.appliedSeq, 8);
@@ -782,15 +794,40 @@ void main() {
         source,
         contains('if (generation != _enableSyncGeneration) continue;'),
       );
-      expect(
-        source,
-        contains('if (result.ok && desired == latestDesired) {'),
-        reason: '失败回执不能伪装成已推送，否则同一 active phase 无法重试',
+      // 钉在 `_syncEnabled` 自己的函数体上：同文件另有三处 `result.explicitOk ||`（dismiss /
+      // present 路径），在全文上做 contains 等于拿别人的代码给这条钉买单，把这里
+      // 改回 result.ok 也会假绿。compactCode 同时剥掉注释并折空白，不受 dart format
+      // 换行与 CRLF 影响。
+      final String syncEnabledBody = compactCode(
+        methodBody(source, 'Future<void> _syncEnabled()'),
       );
       expect(
+        syncEnabledBody.contains('if(acknowledged&&desired==latestDesired){'),
+        isTrue,
+        reason: '失败回执不能伪装成已推送，否则同一 active phase 无法重试',
+      );
+      // 只看变量名 `acknowledged` 等于没钉——把它定义成 `result.ok` 就又回到了
+      // 「空/畸形回执（error==null 但没 ok）被当成成功」，所以判据本身也要钉。
+      expect(
+        syncEnabledBody.contains(
+          'finalboolacknowledged=result.explicitOk||'
+          '(!desired&&_nativeLookupConsumerUnavailable(result.error));',
+        ),
+        isTrue,
+        reason:
+            '推送成功只能由 runner 显式 {ok:true} 定调；'
+            '唯一例外是「确认没有原生消费者」的**关闭**边，'
+            '开启边任何情况下都不得 fail-open',
+      );
+      // 同态重发的判据已由「只看开启边」（active && !_pushedEnabled）改成双向对账：
+      // 一次失败的**关闭**同样不能被后续同态通知跳过，否则 native 输入盾
+      // 会一直开着。两个形式在开启边上等价，所以原判据（成功后不重发）仍在。
+      expect(
         source,
-        contains('if (active && !_pushedEnabled) await _syncEnabled();'),
-        reason: '成功后的重复 session 通知不得持续占用 Shift 查词热路径',
+        contains('if (_pushedEnabled != _enabledNow) await _syncEnabled();'),
+        reason:
+            '成功后的重复 session 通知不得持续占用 Shift 查词热路径；'
+            '失败的关闭边必须仍能重试',
       );
       expect(
         reader,
@@ -798,9 +835,17 @@ void main() {
         reason: 'mapping 换代重放意图由持有真实 mapping 身份的 reader 负责',
       );
       expect(reader, contains('st.lookup_geometry_admission_mode_desired'));
-      expect(reader, contains('lookup_native_input_allowed_desired'));
+      expect(
+        reader,
+        contains('lookup_native_input_allowed_desired'),
+        reason: '原生点击授权必须随 mapping 身份单独保存并受成功发布约束',
+      );
       expect(reader, contains('PublishLookupGeometryAdmission('));
-      expect(reader, contains('PublishLookupNativeInputAllowed('));
+      expect(
+        reader,
+        isNot(contains('PublishLookupNativeInputAllowed(')),
+        reason: 'admission 字只许有一个发布入口；两个入口=两份台账，谁后写谁赢',
+      );
       expect(reader, contains('if (st.lookup_enabled_desired)'));
     });
 
@@ -813,6 +858,9 @@ void main() {
       );
       final GalIngameLookupController controller =
           GalIngameLookupController.test();
+      // 允许位的所有者是 setProviderAdmission；setGeometryAdmission 不再收第四参。
+      await controller.setProviderAdmission(true);
+      calls.clear();
       final GalLookupCallResult result = await controller.setGeometryAdmission(
         GalLookupGeometryAdmissionMode.auto,
         attachedReady: true,
@@ -823,6 +871,7 @@ void main() {
         GalLookupGeometryAdmissionMode.auto,
       );
       expect(controller.debugGeometryAttachedReady, isTrue);
+      expect(controller.debugGeometryNativeInputAllowed, isTrue);
       expect(calls, hasLength(1));
       expect(calls.single.method, 'galLookupSetGeometryAdmission');
       expect(
@@ -865,8 +914,10 @@ void main() {
         expect(
           calls.where(
             (MethodCall call) =>
-                call.method == 'galLookupSetNativeInputAllowed' &&
-                (call.arguments as Map<Object?, Object?>)['allowed'] == true,
+                call.method == 'galLookupSetGeometryAdmission' &&
+                (call.arguments
+                        as Map<Object?, Object?>)['nativeInputAllowed'] ==
+                    true,
           ),
           hasLength(1),
           reason: 'local admission 必须先打开，再发布 native allow request',
@@ -883,11 +934,13 @@ void main() {
       int disableAttempts = 0;
       late GalIngameLookupController controller;
       mockRunner((MethodCall call) {
-        if (call.method != 'galLookupSetNativeInputAllowed') {
+        if (call.method != 'galLookupSetGeometryAdmission') {
           return <String, Object?>{};
         }
         final bool allowed =
-            (call.arguments as Map<Object?, Object?>)['allowed']! as bool;
+            (call.arguments
+                    as Map<Object?, Object?>)['nativeInputAllowed']!
+                as bool;
         expect(
           controller.debugProviderAdmission,
           isTrue,

@@ -91,7 +91,7 @@
 - `hunex_gge` geometry：The calibrated fallback and a fail-closed exact provider are implemented. The HUNEX hydrated-image scanner requires unique executable-section renderer/input/projection anchors plus callgraph, unwind and imported-API validation before it can publish geometry. The original WoH session has not yet produced a complete glyph-to-client projection or lookup/card E2E. The engine_exact_layout entry above is a deliberate 2026-08-31 graduation from observation-only; only the geometry provider layer graduated, and the resource-capture and pairing gates stay not_verified.
   - verified shield：Generic shielding plus HUNEX semantic-submit ownership are implemented, but the real-build click, Shift and popup transaction gates have not run.
   - risky left click：Per-executable risk gating and fail-closed native-input admission are implemented; no measured real-build click-leak rate is recorded.
-- `sgre` geometry：The portable exact SHA-256 identity is followed by hydrated-image unique draw/vtable/DirectInput signatures across all executable sections, decoded module-relative targets, x64 unwind bounds and vtable/COM ABI gates. Zero/multiple candidates and unknown hashes fail closed; lookup/card E2E is not recorded.
+- `sgre` geometry：The measured SHA-256 row is a consistency check only. Known and unknown hashes traverse populated, mutually corroborated draw/vtable/DirectInput signatures across all executable sections, PE exception-directory function bounds, decoded module-relative targets and live vtable/COM ABI gates. Zero/multiple intersections, layout/codegen mismatches and structure faults fail closed; a second executable build and lookup/card E2E are not recorded.
   - verified shield：Exact DirectInput and generic shield code exists, but the 1,000-transaction real-build gate has not run.
   - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
 
@@ -749,15 +749,15 @@ Tests：`tests/hunex_gge_adapter_test.cpp`、`tests/hunex_gge_capture_bridge_tes
 识别签名（所有非空项均带真实样本或运行时观察证据）：
 
 - `pe_architectures`：x64；证据：runtime_observation — Luna text profile config/luna_hook_profiles.tsv:5 records an x64 Steam build; the audio path has no independent hashed sample yet.
-- `directory_files_all`：wind3d11data/voice_body.bin；证据：runtime_observation — MatchesSgreFamily is the family probe: the wind3d11 runtime keeps character voices in voice_body.bin next to the executable, and archive membership is the same data contract the audio proof checks. No executable name or hash takes part in family identity.
-- `hashes`：75A83A0E2A7E22055417AE0474B47BE98418C4E42C695C548B558705C404B9D8；证据：runtime_observation — Measured build row in hook/adapters/sgre_anchors.h (kSgreKnownBuilds): the hash selects the measured TextRender draw boundary, scenario-text vtable and DirectInput mouse-slot RVAs, and it is the same digest the Luna text profile keys on. A hash miss is no longer a rejection: the family is still claimed and each anchor is resolved by a unique byte signature (signature table currently empty), so an unmeasured build reports which anchors are missing instead of silently doing nothing.
+- `directory_files_all`：wind3d11data/voice_body.bin；证据：runtime_observation — The wind3d11 runtime keeps character voices in voice_body.bin next to the executable. Archive membership proves only the resource-audio capability; text/lookup may establish the engine family independently through the complete signature and object-ABI proof. No executable name, local path or hash is a family gate.
+- `hashes`：75A83A0E2A7E22055417AE0474B47BE98418C4E42C695C548B558705C404B9D8；证据：runtime_observation — One measured build row in hook/adapters/sgre_anchors.h records the observed TextRender draw boundary, scenario-text vtable and DirectInput mouse-slot RVAs. The digest is diagnostic and, on that exact build, asserts that signature-derived RVAs still match the measurement; it never supplies hook addresses or rejects a hash miss. The published signatures were derived from this one sample, so cross-version runtime compatibility remains unverified.
 
 文本能力：
 
-- `ingame_lookup_geometry`：`implemented_unverified` — The hash-pinned SGRE draw profile publishes renderer-native UTF-16 glyph geometry only after the all-executable-section unique-signature, decoded RIP-target, unwind and vtable-ABI gate passes. No original-path lookup/card E2E is recorded.
+- `ingame_lookup_geometry`：`implemented_unverified` — The SGRE draw adapter publishes renderer-native UTF-16 text and glyph geometry only after all-executable-section primary/corroborating signatures, decoded RIP targets, PE exception-directory bounds, scenario vtable slot 4 and object-layout gates agree. The mechanism is SHA/path/ASLR independent but has only one measured executable sample; no second-build or original-path lookup/card E2E is recorded.
 - `ingame_lookup_directinput_shield`：`implemented_unverified` — The exact mouse-device global must be resolved independently by unique CreateDevice and immediate-poller signatures, and the live DirectInput COM vtable is validated before slot 9 is hooked. The 1,000-transaction real-build shield gate has not run.
 - codepage：not_applicable
-- 线程提示：Luna text still comes from the hash-keyed Luna profile row (config/luna_hook_profiles.tsv); the in-game lookup sensor takes game-parsed text and per-glyph geometry from the resolved TextRender draw anchor.
+- 线程提示：The SGRE exact lane publishes game-parsed text with a stable ENGINE:SGRE:wind3d11 identity that excludes SHA, path, ASLR and resolved RVAs. The same resolved TextRender draw anchor supplies per-glyph lookup geometry; incompatible layouts publish neither lane nor provider.
 
 音频优先级：
 
@@ -771,8 +771,8 @@ Tests：`tests/hunex_gge_adapter_test.cpp`、`tests/hunex_gge_capture_bridge_tes
 - No real-game session has been run against this adapter: process_found through card_e2e are all not_run.
 - Archive membership is the role proof, and it only holds while the runtime keeps character voice in a separate voice_body.bin.
 - The emitted .xwma file is not byte-identical to an archive entry: the RIFF envelope is synthesised here. Only the fmt/dpds/payload chunks are verbatim.
-- Identity is the executable SHA-256, which recognizes the same bytes on any machine and is not tied to a local path. A game patch, unknown hash, non-unique hydrated signature, decoded-target mismatch, unwind mismatch or ABI mismatch disables exact lookup (and the hash change disables the paired text/audio profile) until that build is measured independently.
-- The anchor signature table (kSgreTextDrawSignature / kSgreScenarioTextVtableSignature / kSgreDirectInputMouseDeviceSignature) is still empty: an executable outside kSgreKnownBuilds is claimed as family and gets archive-resource audio, but its lookup sensor and DirectInput shield resolve to signature_empty until patterns are measured from a real build. The Luna text hook code is still keyed by the measured hash row only.
+- Only one SGRE executable has supplied measured anchor evidence. An unknown hash is admitted only when the current signature family, PE function boundary, vtable/object layout and live DirectInput ABI all agree uniquely; this is an implemented fail-closed compatibility mechanism, not evidence that arbitrary releases or compiler rebuilds are supported.
+- The populated signatures were derived from that single measured binary. A non-unique signature, decoded-target mismatch, changed codegen/layout, unwind mismatch or ABI mismatch disables exact text, geometry and click interception and leaves the executable digest available for a future independently measured signature family.
 
 Fixtures：尚无（P5 补齐）
 

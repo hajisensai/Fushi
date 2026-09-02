@@ -917,6 +917,7 @@ class GalAttachedCallResult {
 class GalLookupCallResult {
   const GalLookupCallResult({
     this.error,
+    this.explicitOk = false,
     this.width = 0,
     this.height = 0,
     this.clamped = false,
@@ -932,6 +933,12 @@ class GalLookupCallResult {
 
   /// runner 给的错误 token；null = 成功。
   final String? error;
+
+  /// True only when the runner explicitly returned `{ok: true}`. [ok] stays
+  /// backward-compatible for payload-bearing replies, while lifecycle gates
+  /// use this bit (or an explicit sequence) so an empty/malformed reply cannot
+  /// silently advance a provider handoff.
+  final bool explicitOk;
 
   /// 实际写进共享内存的帧尺寸（仅 present 有值）。
   final int width;
@@ -959,6 +966,7 @@ class GalLookupCallResult {
     final Object? error = map['error'];
     return GalLookupCallResult(
       error: error is String && error.isNotEmpty ? error : null,
+      explicitOk: map['ok'] == true,
       width: _finiteWireInt(map['width']) ?? 0,
       height: _finiteWireInt(map['height']) ?? 0,
       clamped: map['clamped'] == true,
@@ -1583,10 +1591,18 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
 
   /// Updates the injected GeometryProviderRegistry admission without stopping
   /// the lookup runtime or generic shield. [attachedReady] is the host-owned
-  /// calibrated fallback offer; it never authorizes a shared-memory hit writer.
+  /// calibrated fallback offer. [nativeInputAllowed] is a separate, risk-gated
+  /// permission for the active native owner to consume a game click; it does
+  /// not control provider discovery.
+  ///
+  /// 这是发布 admission 字的**唯一**通道。曾经并存的
+  /// `galLookupSetNativeInputAllowed` 已删除：同一个 flags 字有两个发布入口就有
+  /// 两份台账，谁后写谁赢。允许位现在由 GalIngameLookupController 单独拥有，
+  /// 随 mode/attachedReady 一起在这里发布。
   static Future<GalLookupCallResult> galLookupSetGeometryAdmission({
     required GalLookupGeometryAdmissionMode mode,
     required bool attachedReady,
+    required bool nativeInputAllowed,
   }) async {
     if (!_instance.isSupported) return GalLookupCallResult.unsupported;
     return GalLookupCallResult.fromReply(
@@ -1595,22 +1611,8 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
         <String, Object?>{
           'mode': mode.wireValue,
           'attachedReady': attachedReady,
+          'nativeInputAllowed': nativeInputAllowed,
         },
-      ),
-    );
-  }
-
-  /// Enables semantic native input only after central provider/risk admission.
-  /// The runner persists this intent across shared-mapping replacement and the
-  /// injected registry fails closed until the matching request is applied.
-  static Future<GalLookupCallResult> galLookupSetNativeInputAllowed(
-    bool allowed,
-  ) async {
-    if (!_instance.isSupported) return GalLookupCallResult.unsupported;
-    return GalLookupCallResult.fromReply(
-      await _instance.channel.invokeMethod<Object?>(
-        'galLookupSetNativeInputAllowed',
-        <String, Object?>{'allowed': allowed},
       ),
     );
   }

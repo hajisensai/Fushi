@@ -30,7 +30,7 @@ void Check(bool condition, const char* message) {
 void TestV16AndV17TailAbiAndDefaultDeny() {
   SharedHeader header{};
   Check(fushi_voice_hook::kSharedVersion == 21,
-        "shared ABI must be v21（NativeInputAllowed 赋予 v20 flags 新语义）");
+        "shared ABI must be v21（NativeInputAllowed 赋予 v20 flags 新语义，与 geometry discovery 分离）");
   Check(offsetof(SharedHeader, native_loopback_request_seq) ==
             offsetof(SharedHeader, native_loopback_requested) + 4,
         "request_seq must follow requested");

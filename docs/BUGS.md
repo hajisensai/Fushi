@@ -29,16 +29,18 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1898 条。点号进各自文件。
+> 共 1900 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2026](bugs/BUG-2026-hunex-capture-bridge-test-dead-and-racy.md) | ✅ | ✅ | hunex_gge_capture_bridge_test 的 79 条 assert 在 Release 下空跑，唤醒后 TestWorkerNeverReadsATornSnapshot 50% 概率红 |
 | [BUG-2025](bugs/BUG-2025-galgame-assert-liveness-guard-unregistered.md) | ✅ | ✅ | generic_input_shield_test.cpp 的 47 条 assert 在 Release 下整批空跑（守卫写了但没接进 run_guards.ps1） |
 | [BUG-2024](bugs/BUG-2024-hunex-single-click-lookup-passthrough.md) | 🚧 | ✅ | WoH/HUNEX 单击文字无法查词且点击穿透到游戏 |
+| [BUG-2023](bugs/BUG-2023-torrent-ffi-listen-port-zero-ci-flake.md) | 🚧 | 🚧 | PR#1129 windows job FFI 测试 13 条红：全部 listen_port=0（未复现） |
 | [BUG-2022](bugs/BUG-2022-schema-v94-test-assertions-stale.md) | ✅ | ✅ | 刮削 P1 升 schema 到 94 但漏改 43 处测试断言，堆叠 PR 拿不到真单测门导致一路合进 develop |
 | [BUG-2021](bugs/BUG-2021-libtorrent-ci-compile-gate.md) | ✅ | ✅ | libtorrent native 构建在 PR 阶段无编译门（Android 侧从未在 CI 编译过） |
 | [BUG-2020](bugs/BUG-2020-identity-json-path-rebase-unregistered.md) | ✅ | ✅ | 刮削 P1 新增的 identityJson 两列漏登记 kPathRebaseColumns，合入即把 develop 打红 |
+| [BUG-2019](bugs/BUG-2019-sgre-ingame-lookup-provider-admission.md) | ✅ | ✅ | SGRE 游戏内查词命中被原生提供者准入门静默丢弃 |
 | [BUG-2018](bugs/BUG-2018-manga-7z-archive-mokuro-ignored.md) | 🚧 | 🚧 | RAR/CBR/CB7 漫画包内嵌与旁挂 mokuro OCR 不被识别 |
 | [BUG-2017](bugs/BUG-2017-epub-selfclosing-script-empty-plaintext.md) | ✅ | ✅ | EPUB 自闭合 script 标签吞掉正文导致章节纯文本为空、有声书匹配率 0 |
 | [BUG-2016](bugs/BUG-2016-galgame-gate-red-on-develop.md) | ✅ | ✅ | develop 上 galgame 守卫门长期红：engine-support.yaml 缺逗号 + dll_main 行数棘轮被 include 顶破 |

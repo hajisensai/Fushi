@@ -462,7 +462,8 @@ class GlobalLookupController {
       // TODO-1233 — notify:false: this is the between-lookups reset, NOT a user
       // dismissal, so it must not fire overlayHidden (which would resume a paused
       // video mid re-lookup).
-      GlobalLookupChannel.hide(notify: false);
+      await GlobalLookupChannel.hide(notify: false);
+      if (!_isCurrentRoute) return;
       // TODO-1030 M0 — when the user opted into context capture, try UI
       // Automation first: it yields the selected term PLUS the sentence it sits
       // in. On any miss (no UIA text element, non-Windows, channel unavailable)
@@ -613,14 +614,13 @@ class GlobalLookupController {
     // between-lookups reset is not seen as a user dismissal (TODO-1233).
     await GlobalLookupChannel.hide(notify: false);
     if (!_isCurrentRoute) return false;
-    await _lookupExternal(
+    return _lookupExternal(
       term,
       sentence: sentence,
       anchorScreenRect: anchorScreenRect,
       autoRead: autoRead,
       miningHandler: miningHandler,
     );
-    return true;
   }
 
   void _activateRoute(GlobalLookupRoute route) {
@@ -657,14 +657,14 @@ class GlobalLookupController {
   /// global hotkey and the programmatic [lookupText] entry): unconditional
   /// hide → searchDictionary → reset reveal state → seed the stack root →
   /// showAt(atCursor) → renderStack → auto-read → ready-driven reveal safety.
-  /// Never throws (logs and swallows, matching the old _onHotKey contract).
+  /// Never throws (logs and returns false, matching the old _onHotKey contract).
   ///
   /// [anchorScreenRect]（屏幕逻辑 px）：台词浮窗点词给出被点文字的屏幕矩形，
   /// 卡片锚定在文字正下方（同 in-app 嵌套卡观感），而不是光标点右下。
   /// null = 原 atCursor 语义（热键/悬浮字幕路径零变化）。native
   /// showAt 在 atCursor:false 时直接用传入点并以该点算工作区偏移，级联种子
   /// （cursorWorkX/Y）自动对齐锚点，无需 native 改动。
-  Future<void> _lookupExternal(
+  Future<bool> _lookupExternal(
     String text, {
     required String sentence,
     Rect? anchorScreenRect,
@@ -674,7 +674,7 @@ class GlobalLookupController {
     final AppModel? model = _appModel;
     if (model == null) {
       glog('lookup: appModel null — abort');
-      return;
+      return false;
     }
     try {
       // TODO-1079 (D) — reset native + Dart reveal state from zero every
@@ -687,7 +687,8 @@ class GlobalLookupController {
       // and the prewarmed WebView2 survives it.
       // TODO-1233 — notify:false: same between-lookups reset as _onHotKey; must
       // not look like a user dismissal.
-      GlobalLookupChannel.hide(notify: false);
+      await GlobalLookupChannel.hide(notify: false);
+      if (!_isCurrentRoute) return false;
       _currentSentence = sentence;
       _currentMiningHandler = miningHandler;
       // Retire every acknowledgement belonging to the previous lookup before
@@ -699,7 +700,7 @@ class GlobalLookupController {
         searchTerm: text,
         searchWithWildcards: false,
       );
-      if (!_isCurrentRoute) return;
+      if (!_isCurrentRoute) return false;
       glog('lookup: searched "$text" -> entries=${result.entries.length}');
       // New card: forget the previous size + reveal state so the overlay
       // re-measures and reveals from scratch.
@@ -787,7 +788,12 @@ class GlobalLookupController {
               capOriginX: capX,
               capOriginY: capY,
             );
-      if (!_isCurrentRoute) return;
+      if (!_isCurrentRoute) return false;
+      if (!shown.ok) {
+        glog('lookup: showAt rejected the current route');
+        await GlobalLookupChannel.hide(notify: false);
+        return false;
+      }
       // TODO-893 / BUG-859 — convert the native physical-px work area to CSS px
       // (the cascade layout domain) with the ANCHOR MONITOR's dpr reported by
       // showAt. The main-window dpr (used for the initial off-screen size
@@ -833,7 +839,7 @@ class GlobalLookupController {
       _originFloorLeft = floor.left;
       _originFloorTop = floor.top;
       await _renderStack(beginRoute: route);
-      if (!_isCurrentRoute) return;
+      if (!_isCurrentRoute) return false;
       glog(
         'lookup: showAt(atCursor)=${shown.ok} off-screen w0=$w0 h0=$h0 '
         'workCss=${_screenWorkW}x$_screenWorkH rendered',
@@ -854,8 +860,18 @@ class GlobalLookupController {
       final int safeW = (cardW * dpr).round();
       final int safeH = (cardH * dpr).round();
       _scheduleReadyDrivenSafety(safeW, safeH, attempt: 0);
+      return true;
     } catch (e, st) {
       glog('lookup: EXCEPTION $e\n$st');
+      if (_isCurrentRoute) {
+        try {
+          await GlobalLookupChannel.hide(notify: false);
+        } catch (_) {
+          // The original failure remains authoritative. Cleanup is best effort
+          // and must not turn a rejected lookup into an unhandled exception.
+        }
+      }
+      return false;
     }
   }
 
@@ -885,7 +901,18 @@ class GlobalLookupController {
       if (!_isCurrentRoute || _revealed) {
         return; // Host revealed while we awaited the readiness check.
       }
-      if (ready || attempt >= _kReadySafetyMaxAttempts) {
+      // A ready WebView is sufficient for a desktop safety reveal, but not for
+      // galCard.  The game route must first receive the host's versioned
+      // overlaySize so revealStack can commit that exact geometry and arm the
+      // captureReady handshake.  Falling back as soon as WebView2 reports ready
+      // races a slightly-late first overlaySize: epoch 0 resizes the surface,
+      // the host advances to epoch 1, and neither transaction can acknowledge
+      // the other.  Keep waiting for authoritative geometry on galCard and use
+      // the legacy epoch-0 fallback only after the existing bounded retries.
+      final bool awaitingGalGeometry =
+          GlobalLookupChannel.currentRoute.source == 'galCard';
+      if ((!awaitingGalGeometry && ready) ||
+          attempt >= _kReadySafetyMaxAttempts) {
         _revealed = true;
         glog(
           'reveal: READY-SAFETY (ready=$ready attempt=$attempt) '
@@ -910,7 +937,11 @@ class GlobalLookupController {
         return;
       }
       // Surface still loading — defer instead of revealing blank.
-      glog('reveal: READY-SAFETY defer (not ready, attempt=$attempt)');
+      glog(
+        'reveal: READY-SAFETY defer '
+        '(${awaitingGalGeometry && ready ? "galCard awaits geometry" : "not ready"}, '
+        'attempt=$attempt)',
+      );
       _scheduleReadyDrivenSafety(width, height, attempt: attempt + 1);
     });
   }
