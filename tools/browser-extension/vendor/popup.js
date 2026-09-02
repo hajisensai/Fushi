@@ -684,10 +684,24 @@ function ensureGrammarTooltip() {
        mouseleave。于是：悬停着滚动列表，标签跟着滚走而浮层钉在旧坐标不动；新一次
        查词把 #entries-container 整个重渲染掉时，被移除节点的 mouseleave 在各引擎
        行为不一致，浮层可能一直挂着。捕获阶段监听覆盖嵌套滚动容器，只装一次。
-       钉住态同样跟着滚动收起：坐标是按锚点算的，锚点滚走了还钉在原地更怪。 */
-    document.addEventListener('scroll', hideGrammarTooltip, true);
+       钉住态在**锚点**滚走时同样收起：坐标是按锚点算的，锚点走了还钉在原地更怪。
+       但浮层自己的滚动必须豁免（见 onGrammarTooltipScroll）——它带
+       overflow-y:auto，长说明就是要在它内部滚着读的。 */
+    document.addEventListener('scroll', onGrammarTooltipScroll, true);
     document.addEventListener('pointerdown', onGrammarTooltipPointerDown, true);
     return tooltip;
+}
+
+/* 捕获阶段的「锚点滚走就收起」。必须看事件目标：钉住态自己带 overflow-y:auto
+   和现算 maxHeight（见 showGrammarTooltip 里的定位），也就是说它**本身就是一个
+   滚动容器**——长说明（transforms 里最长 471 字符 / 7 个硬换行）在默认弹窗高度下
+   必然溢出。裸把 hideGrammarTooltip 当监听器注册，用户往下读一行浮层就自杀了，
+   等于把「读不到折线以下」换掉了旧 .overlay 的毛病。豁免与上面 pointerdown 同形。 */
+function onGrammarTooltipScroll(e) {
+    const raw = __fushiEventTarget(e);
+    const target = raw?.nodeType === Node.TEXT_NODE ? raw.parentElement : raw;
+    if (target?.closest?.('.grammar-tooltip')) return;
+    hideGrammarTooltip();
 }
 
 /* 捕获阶段的「点别处收起」。两个豁免缺一不可：

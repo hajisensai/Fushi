@@ -331,6 +331,37 @@ test('点别处收起', () => {
   assert.strictEqual(tooltipOf(env).style.display, 'none');
 });
 
+test('在浮层内部滚动读长说明，浮层不收起', () => {
+  // 钉住态自带 overflow-y:auto + JS 现算的 maxHeight，也就是说它**本身就是一个
+  // 滚动容器**：transforms 里最长的说明 471 字符 / 7 个硬换行，在默认弹窗高度
+  // （defaultPopupMaxHeight = 360）下必然溢出，用户必须在它内部往下滚才读得完。
+  // 隐藏监听如果裸把 hideGrammarTooltip 当回调注册（不看事件目标），往下读一行
+  // 浮层就自杀 —— 等于把「读不到折线以下」换掉旧 .overlay 的毛病。
+  const env = loadTooltip();
+  const tag = makeTag(env, 'causative', '说明');
+  env.ctx.showGrammarTooltip(tag, true);
+
+  const body = tooltipOf(env).querySelector('.grammar-tooltip-body');
+  env.ctx.onGrammarTooltipScroll({ target: body });
+  assert.strictEqual(env.ctx.isGrammarTooltipPinned(), true,
+    '滚浮层自己的内容不该收起它');
+  assert.notStrictEqual(tooltipOf(env).style.display, 'none');
+});
+
+test('锚点所在的列表滚走时，浮层照旧收起', () => {
+  // 上面那条豁免只针对浮层自身。锚点滚走仍必须收起：坐标是按锚点算的，
+  // 锚点走了浮层还钉在旧位置更怪（这是 scroll 监听存在的原因，别一起豁免掉）。
+  const env = loadTooltip();
+  const tag = makeTag(env, 'causative', '说明');
+  env.ctx.showGrammarTooltip(tag, true);
+
+  const scroller = makeEl('div');
+  env.root.appendChild(scroller);
+  env.ctx.onGrammarTooltipScroll({ target: scroller });
+  assert.strictEqual(env.ctx.isGrammarTooltipPinned(), false);
+  assert.strictEqual(tooltipOf(env).style.display, 'none');
+});
+
 test('点另一枚标签会收起当前钉住的（随后由它自己的 click 重新钉住）', () => {
   const env = loadTooltip();
   const a = makeTag(env, 'causative', '甲');
