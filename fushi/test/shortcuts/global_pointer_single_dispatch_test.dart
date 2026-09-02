@@ -1,6 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
+    show MinePopupResult;
+import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -263,5 +270,161 @@ void main() {
       <String>['pageStagedExit'],
       reason: '页面的逐级退出赢，app 根的平 maybePop 让路',
     );
+  });
+
+  // ── 第二条腿：弹窗矩形**之内**（BUG-2031 收尾） ──────────────────────────────
+  //
+  // 上面四条用的是**模型**根兜底（测试自己写的 Listener）。它们钉不住两件事：
+  //
+  //   1. 生产的 `_handleGlobalPointerDown` 是否真的挂在那儿——把它整条删掉，上面四条
+  //      照样全绿（这正是本轮审查最初的发现：把根兜底打死，695 条全绿）；
+  //   2. `DictionaryPopupLayer` 那条腿。它与 barrier 是同一个几何问题的两半：barrier
+  //      管弹窗矩形**之外**，它管矩形**之内**。上一轮只修了 barrier，本层仍旧「折完
+  //      token 调 sink 就往下走」，于是症状只是从「浮窗外」挪到了「浮窗上」。
+  //
+  // 所以这两条用**真的** [wrapWithGlobalNavigation]（生产根兜底）+ **真的**
+  // [DictionaryPopupLayer]（生产第二条腿）+ 真 Navigator 路由，判据是路由有没有被
+  // 多 pop 一次。
+  group('弹窗表面那条腿（真 wrapWithGlobalNavigation + 真 DictionaryPopupLayer）', () {
+    /// 侧键（DOM 3）绑「返回上一级」——用户复诉的正是这个配置。
+    FushiShortcutRegistry backOnMouse3() =>
+        registryWith(<ShortcutAction, int>{ShortcutAction.globalBack: 3});
+
+    const DictionaryPopupInputSpec spec =
+        DictionaryPopupInputSpec(mouseButtons: <int>[3]);
+
+    /// [popupSurface] 决定弹窗矩形之内那条腿怎么接：生产实现，还是「不认领」的对照组。
+    Future<GlobalKey<NavigatorState>> pumpRealTree(
+      WidgetTester tester, {
+      required FushiShortcutRegistry registry,
+      required Widget Function(Widget hitBox) popupSurface,
+    }) async {
+      final GlobalKey<NavigatorState> navigatorKey =
+          GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navigatorKey,
+          builder: (BuildContext context, Widget? child) =>
+              wrapWithGlobalNavigation(
+            navigatorKey: navigatorKey,
+            registry: registry,
+            child: child!,
+          ),
+          home: const Scaffold(body: SizedBox.expand()),
+        ),
+      );
+      // 必须先推一条可 pop 的路由：根兜底的 globalBack 只在 canPop 时动作，栈底时
+      // 它什么都不做 —— 那样「根兜底没再派发一次」会因为无路可退而恒真假绿。
+      unawaited(
+        navigatorKey.currentState!.push<void>(
+          MaterialPageRoute<void>(
+            builder: (BuildContext context) => Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 300,
+                  height: 200,
+                  child: popupSurface(const SizedBox.expand()),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(navigatorKey.currentState!.canPop(), isTrue);
+      return navigatorKey;
+    }
+
+    /// 结果无内容 + 非搜索态 ⇒ 走 Flutter 占位分支，不挂载平台视图（widget 测试里
+    /// 没有 WebView）。指针通道包在整层最外面，与是否挂 WebView 无关
+    /// （沿用 `test/pages/dictionary_popup_pointer_input_test.dart` 的既有范式）。
+    Widget realPopupLayer(List<String> tokens) => DictionaryPopupLayer(
+          result: null,
+          webViewKey: GlobalKey(),
+          onDismiss: () {},
+          onTextSelected: (_, __) {},
+          onLinkClick: (_, __) {},
+          onMineEntry: (_) async => const MinePopupResult(),
+          onDuplicateCheck: (_, __) async => false,
+          inputSpec: spec,
+          onHostInputToken: tokens.add,
+          debugHostOwnsPointer: true,
+        );
+
+    Future<void> pressBackOn(WidgetTester tester, Finder target) async {
+      final Offset at = tester.getCenter(target);
+      final TestGesture gesture = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+        buttons: kBackMouseButton,
+      );
+      await gesture.downWithCustomEvent(
+        at,
+        PointerDownEvent(
+          position: at,
+          kind: PointerDeviceKind.mouse,
+          buttons: kBackMouseButton,
+        ),
+      );
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('指针压在浮窗上按侧键：弹窗表面消费并认领，app 根必须让路', (
+      WidgetTester tester,
+    ) async {
+      final List<String> tokens = <String>[];
+      final GlobalKey<NavigatorState> navigatorKey = await pumpRealTree(
+        tester,
+        registry: backOnMouse3(),
+        popupSurface: (Widget _) => realPopupLayer(tokens),
+      );
+
+      await pressBackOn(tester, find.byType(DictionaryPopupLayer));
+
+      expect(
+        tokens,
+        <String>['Mouse3'],
+        reason: '弹窗表面必须真的接到这次按下（否则本条测错了对象）',
+      );
+      expect(
+        navigatorKey.currentState!.canPop(),
+        isTrue,
+        reason: '修复前这里是「关词典 + 退书」：弹窗表面折完 token 就往下走、一个 '
+            'claim 都没有，而 app 根兜底是它的祖先，opaque/deferToChild 都排除不掉祖先',
+      );
+    });
+
+    testWidgets('对照组：同一棵树里换成不认领的腿，app 根确实会再派发一次', (
+      WidgetTester tester,
+    ) async {
+      final List<String> tokens = <String>[];
+      final GlobalKey<NavigatorState> navigatorKey = await pumpRealTree(
+        tester,
+        registry: backOnMouse3(),
+        // 修复前那条腿的形态：折 token → 调 sink → 往下走，不认领。
+        popupSurface: (Widget hitBox) => Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: (PointerDownEvent event) {
+            final String? token = dictionaryPopupPointerToken(
+              buttons: event.buttons,
+              spec: spec,
+            );
+            if (token == null) return;
+            tokens.add(token);
+          },
+          child: hitBox,
+        ),
+      );
+
+      await pressBackOn(tester, find.byType(Listener).first);
+
+      expect(tokens, <String>['Mouse3']);
+      expect(
+        navigatorKey.currentState!.canPop(),
+        isFalse,
+        reason: '这条钉住「生产的 app 根兜底确实活着、且祖先照样收得到」。'
+            '它一旦变绿，说明根兜底被打死了 —— 上一条也就跟着变成恒真的假绿',
+      );
+    });
   });
 }

@@ -283,6 +283,65 @@ void main() {
     },
   );
 
+  /// BUG-2031 收尾：**每一条折弹窗指针 token 的腿都必须经认领入口派发。**
+  ///
+  /// 上一条只钉了 barrier 那两个钩子（弹窗矩形**之外**）。同一个几何问题还有另一半：
+  /// 矩形**之内**由 `DictionaryPopupLayer._maybeWrapHostPointerInput` 接
+  /// （Windows 上宿主拥有指针，弹窗 DOM 里根本收不到侧键）。它当时也是「折完 token
+  /// 调 sink 就往下走」，一个 claim 都没有——症状与 barrier 那半边一模一样，只是从
+  /// 「浮窗外按」挪到了「浮窗上按」：一次侧键 = 关词典 **+** 退书。
+  ///
+  /// 所以判据不能是「barrier 的两个钩子」这种固定清单，而要**枚举所有折 token 的腿**：
+  /// `dictionaryPopupPointerToken(` 的每个消费点都必须在同一文件里经
+  /// [dispatchClaimedMouseAction] 派发。第四条腿加进来时会自动落进扫描面。
+  ///
+  /// 限制（写明以免被误当成更强的保证）：这里比的是**同文件内的出现次数**，不是把每个
+  /// 调用点解析回它的语法父节点。它挡的是真实发生过两次的形态「新加一条腿、忘了认领」；
+  /// 一个文件里两条腿而只有一处认领同样会红。
+  test(
+    'GUARD: 每条折弹窗指针 token 的腿都经 dispatchClaimedMouseAction 派发',
+    () {
+      // 定义处本身不是消费点。
+      const String definition =
+          'pages/implementations/dictionary_popup_input_bridge.dart';
+      final List<File> legs = Directory('lib')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((File f) => f.path.endsWith('.dart'))
+          .where((File f) =>
+              f.readAsStringSync().contains('dictionaryPopupPointerToken('))
+          .where((File f) =>
+              !f.path.replaceAll(r'\', '/').endsWith(definition))
+          .toList();
+
+      expectScanScale(
+        legs.length,
+        what: 'lib/ 下折弹窗指针 token 的腿',
+        atLeast: 2,
+        measured: 3,
+      );
+
+      final List<String> unclaimed = <String>[];
+      for (final File leg in legs) {
+        final String src = leg.readAsStringSync();
+        final int folds = 'dictionaryPopupPointerToken('.allMatches(src).length;
+        final int claims =
+            'dispatchClaimedMouseAction('.allMatches(src).length;
+        if (claims < folds) {
+          unclaimed.add('${leg.path} ($folds 折 / $claims 认领)');
+        }
+      }
+      expect(
+        unclaimed,
+        isEmpty,
+        reason: '这些腿折了弹窗指针 token 却没经认领入口派发：$unclaimed。'
+            '它们全是 app 根鼠标兜底 Listener 的**后代**，而 opaque / deferToChild '
+            '只影响同层兄弟、从不排除祖先——不认领就是一次按下被派发两次'
+            '（关词典 + 退书），而键盘 Esc 在同样状态下只关词典。',
+      );
+    },
+  );
+
   /// **每一个** [LookupDismissBarrier] 宿主都必须接 `onNonPrimaryButtonDown`。
   ///
   /// 为什么是目录枚举而不是钉住某一页：这条通道落地时只有视频页接了，另外四个宿主
