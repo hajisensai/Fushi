@@ -112,6 +112,28 @@ int main() {
   expect("halfwidth-kana-chain", "\xEF\xBE\x92\xEF\xBD\xB6\xEF\xBE\x9E\xEF\xBE\x88",
          "\xE3\x82\x81\xE3\x81\x8C\xE3\x81\xAD");
 
+  // BUG-2056 撇号归一：en.json 的五条撇号规则与绝大多数英文词典条目键都是 ASCII
+  // U+0027，而真实 EPUB 写的是排版撇号 U+2019；U+2019 没有兼容分解，NFKC 折不动它
+  // （下面 nfkc-keeps-rsquo 就是这条事实的负向钉子）。所以扫描层把 don’t 整词送进来
+  // 之后，必须由这里产出 ASCII 变体，还原/查表才可能命中。
+  //   don’t (U+2019) -> don't
+  expect("apos-rsquo-to-ascii", "don\xE2\x80\x99t", "don't");
+  //   canʼt (U+02BC) -> can't
+  expect("apos-modifier-to-ascii", "can\xCA\xBCt", "can't");
+  //   don‘t (U+2018，OCR 常把 ’ 认成它) -> don't
+  expect("apos-lsquo-to-ascii", "don\xE2\x80\x98t", "don't");
+  //   与 lowercase 组合：John’s -> john's（en.json possessive 规则吃的就是这个形）
+  expect("apos-with-lowercase", "John\xE2\x80\x99s", "john's");
+  //   反向：ASCII 查询串必须也能命中以排版撇号建键的词典条目。
+  expect("apos-ascii-to-rsquo", "don't", "don\xE2\x80\x99t");
+  //   恒等一路仍在：原文任何时候都是变体之一。
+  expect("apos-identity", "don\xE2\x80\x99t", "don\xE2\x80\x99t");
+  //   裸撇号也归一（NFKC 单独做不到这件事：U+2019 无兼容分解，
+  //   utf8proc_NFKC("’") 仍是 "’"——所以这条只可能由本处理器产出）。
+  expect("apos-bare-rsquo-to-ascii", "\xE2\x80\x99", "'");
+  //   撇号归一不得改动无撇号文本（负向：don 不得凭空长出撇号变体）。
+  expect_absent("apos-no-phantom", "don", "don'");
+
   if (g_fail) {
     std::fprintf(stderr, "%d FAIL\n", g_fail);
     return 1;
