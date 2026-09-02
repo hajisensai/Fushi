@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -117,6 +118,87 @@ void main() {
         base.contains('Future<AnkiOpenWordOutcome> openWordInAnki('), isTrue);
     expect(base.contains('AnkiOpenWordOutcome.noMatch'), isTrue,
         reason: '「Anki 可达但这个词没有卡」必须是独立的第三态');
+  });
+
+  // ── BUG-2051（守卫覆盖面）：「打开 Anki」只有一个原语 ────────────────────
+  //
+  // 上面那条仓库层守卫只钉了 openWordInAnki **方法体内**不许复活按字段名的反查。
+  // 它拦不住「再加一处入口，自己 findMatchingNotes + openNoteInAnki 拼一条按词
+  // 打开」——那正是本 bug 的成因（同一个问题两条判据各查各的）换个位置重来。
+  // 所以下面三条按**目录枚举**扫全树：新文件自动落进扫描面，白名单之外一出现就红。
+
+  /// 源码判据必须剥注释：文档注释里到处写着 [BaseAnkiRepository.openWordInAnki]，
+  /// 不剥的话每个提到它的文件都会被算成调用点，断言直接失去判别力。
+  String stripComments(String src) => const LineSplitter()
+      .convert(src)
+      .where((String line) => !line.trimLeft().startsWith('//'))
+      .join('\n');
+
+  List<String> dartFilesUnder(String dir) {
+    final Directory root = Directory(dir);
+    expect(root.existsSync(), isTrue, reason: 'missing $dir');
+    return root
+        .listSync(recursive: true)
+        .whereType<File>()
+        // Windows 上 listSync 给的是反斜杠路径；白名单用正斜杠写，两边先归一化，
+        // 否则本机绿、CI（Linux）也绿，但白名单永远匹配不上 = 恒红/恒空。
+        .map((File f) => f.path.replaceAll(Platform.pathSeparator, '/'))
+        .where((String p) => p.endsWith('.dart'))
+        .toList();
+  }
+
+  Set<String> filesWhere(String dir, bool Function(String code) predicate) {
+    return <String>{
+      for (final String path in dartFilesUnder(dir))
+        if (predicate(stripComments(File(path).readAsStringSync()))) path,
+    };
+  }
+
+  test('BUG-2051 ↗ 的调用点只有登记的三条车道（目录枚举，新文件自动入网）', () {
+    // 三条已知车道：应用内词典页 / 媒体页弹窗 / galgame overlay 浮窗。
+    const Set<String> lanes = <String>{
+      'lib/src/pages/implementations/dictionary_page_mixin.dart',
+      'lib/src/pages/base_source_page.dart',
+      'lib/src/lookup/overlay_bridge_handlers.dart',
+    };
+    expect(
+      filesWhere('lib', (String code) => code.contains('.openWordInAnki(')),
+      lanes,
+      reason: '新入口要么走这三条车道之一，要么把自己登记进来并说明为什么另起一处',
+    );
+  });
+
+  test('BUG-2051 没有第二处自制的「按词 → note id → 打开」拼装', () {
+    // 白名单两处都是**按 note id** 的既有车道，不是按词打开：
+    // - action sheet：已经知道是哪张卡，查候选是为了列面板给用户挑；
+    // - overlay bridge：note id 那条 handler 与 openWordInAnki 那条并列，各管各的。
+    const Set<String> idLanes = <String>{
+      'lib/src/anki/anki_mined_card_action_sheet.dart',
+      'lib/src/lookup/overlay_bridge_handlers.dart',
+    };
+    expect(
+      filesWhere(
+        'lib',
+        (String code) =>
+            code.contains('.findMatchingNotes(') &&
+            code.contains('.openNoteInAnki('),
+      ),
+      idLanes,
+      reason: '同一个文件里既反查又打开 = 在重造 openWordInAnki，那条链只该有一份',
+    );
+  });
+
+  test('BUG-2051 guiBrowseQuery 只在 AnkiConnect 仓库/服务内部被调用', () {
+    // 谁都能自己发一条 guiBrowse 查询绕开原语——那就又有了第二条判据。
+    const Set<String> owners = <String>{
+      '../packages/fushi_anki/lib/src/ankiconnect/ankiconnect_service.dart',
+      '../packages/fushi_anki/lib/src/ankiconnect/ankiconnect_repository.dart',
+    };
+    expect(
+      filesWhere('../packages/fushi_anki/lib',
+          (String code) => code.contains('guiBrowseQuery(')),
+      owners,
+    );
   });
 
   test('BUG-2051 popup.js 只有一条车道（页内反查已删）', () {

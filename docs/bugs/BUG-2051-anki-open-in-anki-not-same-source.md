@@ -100,6 +100,49 @@ Yomitan 只有一条判据，两个 UI 天然一致；我们有两条，所以�
 - popup.js 把 `'opened'` 读错 → **精确 1 条 JS 用例红**（`a successful open says nothing`）。
 - 三次 Dart 变异 + 一次 JS 变异后 sha256 逐一核对还原（`4ba94b56…` / `07599a41…` / `b680ce74…`）。
 
+### 审查追加（同一 bug 的第二个成因 + 守卫覆盖面）
+
+**① 旧版 AnkiConnect 的 `guiBrowse` 不回命中列表 —— 同一句错话换个成因又出现。**
+第一版把「应答不是列表」一律当空命中，三态直接回 `noMatch`。可 `guiBrowse` 的语义是
+「**打开浏览器并搜索**」，返回值只是附加信息：旧版 AnkiConnect 只回 `null`，那种机器上
+浏览器**已经打开**并过滤到了这条查询，我们却弹「没有找到已制的卡片」——正是本 bug 要
+修掉的那句话。首轮真机取证是在 AnkiConnect 25.x 上做的，覆盖不到旧版。
+
+修法（不做版本判断：那要多一次 `version` 往返 + 硬编码一张「哪个版本起回列表」的表，
+任何代理 / fork 都能让它失效）：`guiBrowseQuery` 改回 `List<int>?`，
+`null` = 拿不到计数（未知），`[]` = 明确答「一张都没有」。只有后者才是 `noMatch`。
+- `packages/fushi_anki/lib/src/ankiconnect/ankiconnect_service.dart:875`（`return null`）
+- `packages/fushi_anki/lib/src/ankiconnect/ankiconnect_repository.dart:1277`
+  （`cardIds != null && cardIds.isEmpty ? noMatch : opened`）
+
+**② 守卫只钉了方法体内部，拦不住「再加一处入口自己拼一条链」。**
+原守卫只断言 `openWordInAnki` **方法体内**不得复活 `findNotesByField`。新增第四处入口
+自己 `findMatchingNotes` + `openNoteInAnki` 拼一条按词打开，没有任何守卫会红——那正是
+本 bug 的成因（同一个问题两条判据）换个位置重来。
+
+`fushi/test/pages/open_in_anki_wiring_static_test.dart` 新增三条**目录枚举型**守卫
+（`listSync(recursive: true)` 扫全树，新文件自动落进扫描面；判据前先剥注释，否则文档
+注释里的 `[BaseAnkiRepository.openWordInAnki]` 会把每个提到它的文件算成调用点）：
+- `.openWordInAnki(` 的调用点 == 登记的三条车道（`dictionary_page_mixin` /
+  `base_source_page` / `overlay_bridge_handlers`）。
+- 没有第二处同时 `.findMatchingNotes(` + `.openNoteInAnki(` 的文件（白名单两处都是
+  **按 note id** 的既有车道，不是按词打开）。
+- `guiBrowseQuery(` 只在 AnkiConnect service / repository 内部被调用。
+
+**追加的自动化测试**（`packages/fushi_anki/test/open_word_in_anki_test.dart`，16 条）：
+假机加 `guiBrowseReturnsNull` 开关，覆盖「旧版应答 `result:null` → opened 不是 noMatch」
+与「service 层把 null 与 `[]` 分成两个值」。
+
+**变异实测**（每条按唯一锚点还原 + sha256 核对，不用 `git checkout`）：
+
+| 改坏哪一行 | 红没红 | 报错文案 | 还原 sha256 |
+|---|---|---|---|
+| `ankiconnect_service.dart` `return null` → `return const <int>[]`（回退本次修复） | ✅ 2 条红，其余 14 条绿 | `Expected: opened / Actual: noMatch`；`Expected: null / Actual: []` | `a1f0e4a2…5109b`（= 修复后基线） |
+| 新建 `fushi/lib/src/anki/_mutation_probe_open_lane.dart` 冒充第四处入口 | ✅ 2 条守卫红，PR 原有 8 条守卫全绿 | `Which: larger than expected` | 删除探针（不碰既有文件，守卫 sha `d0870bbd…7ac6` 不变） |
+| 新建 `packages/fushi_anki/lib/src/_mutation_probe_browse.dart` 调 `guiBrowseQuery` | ✅ 第三条守卫红 | `Which: larger than expected` | 同上 |
+
+后两行的「PR 原有 8 条守卫全绿」就是 control：旧护栏结构上抓不到新入口，是新守卫在承重。
+
 ### 备注
 
 **真机验证**：本机真 Anki 上直接发新实现构造的那条查询串，`guiBrowse` 返回

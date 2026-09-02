@@ -859,10 +859,20 @@ class AnkiConnectService {
   /// 是同一次往返的两个产物——调用方据此区分「打开了」与「一张都没有」，不必再另发
   /// 一条 `findNotes` 去问同一个问题（那正是两条判据漂移的老路）。
   ///
-  /// 应答不是列表时返回空列表：拿不到计数不该让「已经打开了浏览器」这件事失败。
-  Future<List<int>> guiBrowseQuery(String query) async {
+  /// 应答**不是列表**时返回 `null`，而不是空列表——这两件事不是一回事：
+  ///
+  /// - `[]` = 这台 Anki 明确答「一张都没选中」→ 可以说「没有找到已制的卡片」；
+  /// - `null` = 这台 AnkiConnect 的 `guiBrowse` 压根不回传命中列表（旧版本只回
+  ///   `null`）。`guiBrowse` 的语义是「**打开浏览器并搜索**」，返回值是附加信息
+  ///   而不是成败标志：请求既然没抛，浏览器就已经开着并过滤到了这条查询。把这个
+  ///   「未知」降维成「零命中」，那台机器上就会出现浏览器明明开着、我们却弹
+  ///   「没有找到已制的卡片」——正是 BUG-2051 要修掉的那句错话换个成因再来一次。
+  ///
+  /// 不做版本判断：那要多一次 `version` 往返，还得硬编码一张「哪个版本起回列表」
+  /// 的表，而任何代理 / fork 都能让这张表失效。按语义处理没有版本假设。
+  Future<List<int>?> guiBrowseQuery(String query) async {
     final dynamic result = await _request('guiBrowse', {'query': query});
-    if (result is! List) return const <int>[];
+    if (result is! List) return null;
     return <int>[
       for (final dynamic id in result)
         if (id is int)

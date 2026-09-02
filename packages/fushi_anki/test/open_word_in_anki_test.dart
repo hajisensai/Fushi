@@ -64,6 +64,7 @@ void main() {
   MockClient crossModelHost(
     List<Map<String, dynamic>> sink, {
     bool transportFails = false,
+    bool guiBrowseReturnsNull = false,
   }) {
     return MockClient((http.Request request) async {
       if (transportFails) throw const SocketExceptionStub();
@@ -82,6 +83,7 @@ void main() {
         case 'findNotes':
           result = const <int>[];
         case 'guiBrowse':
+          if (guiBrowseReturnsNull) break;
           final String query = (body['params'] as Map)['query'].toString();
           result = query.contains('"dupe:$kKaishiMid,$kWord"')
               ? const <int>[kExistingCardId]
@@ -189,6 +191,43 @@ void main() {
         await repoWith(crossModelHost(sink)).openWordInAnki('未収録', ''),
         AnkiOpenWordOutcome.noMatch,
       );
+    });
+
+    // 旧版 AnkiConnect 的 `guiBrowse` 不回传命中列表（应答里 result 是 null）。
+    // 那台机器上浏览器**已经打开**并过滤到了这条查询，只是给不出计数——把这个
+    // 「未知」当成「零命中」，就是本 bug 那句「没有找到已制的卡片」换个成因重来。
+    test('旧版 AnkiConnect 不回命中列表（result=null）→ opened，不是 noMatch', () async {
+      await installSettings();
+      final sink = <Map<String, dynamic>>[];
+      expect(
+        await repoWith(crossModelHost(sink, guiBrowseReturnsNull: true))
+            .openWordInAnki(kWord, ''),
+        AnkiOpenWordOutcome.opened,
+      );
+      // 浏览器该开的还是开了：请求确实发出去了。
+      expect(
+        sink.map((Map<String, dynamic> b) => b['action']),
+        contains('guiBrowse'),
+      );
+    });
+
+    test('service 层把「不回列表」与「空列表」分成两个值（null vs []）', () async {
+      final sinkNull = <Map<String, dynamic>>[];
+      final AnkiConnectService nullService = AnkiConnectService(
+        host: '127.0.0.1',
+        port: 8765,
+        client: crossModelHost(sinkNull, guiBrowseReturnsNull: true),
+      );
+      expect(await nullService.guiBrowseQuery('deck:x'), isNull);
+
+      final sinkEmpty = <Map<String, dynamic>>[];
+      final AnkiConnectService emptyService = AnkiConnectService(
+        host: '127.0.0.1',
+        port: 8765,
+        client: crossModelHost(sinkEmpty),
+      );
+      // 假机对「不带 Kaishi dupe 子句」的查询明确答空列表。
+      expect(await emptyService.guiBrowseQuery('deck:x'), isEmpty);
     });
 
     test('后端不可达 → failed（与「这个词没有卡」区分开）', () async {

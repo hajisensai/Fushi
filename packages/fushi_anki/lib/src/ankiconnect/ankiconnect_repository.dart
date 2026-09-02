@@ -1268,9 +1268,13 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           ? AnkiDesktopForeground.grantForegroundToAnki(
               ankiConnectPort: service.port)
           : null;
-      final List<int> cardIds = await service.guiBrowseQuery(query);
+      final List<int>? cardIds = await service.guiBrowseQuery(query);
       await AnkiDesktopForeground.raiseAnkiWindow(ankiPid);
-      return cardIds.isEmpty
+      // null = 这台 AnkiConnect 不回传命中列表（旧版 `guiBrowse` 只回 null）：
+      // 浏览器**已经**打开并过滤到了这条查询，只是拿不到计数。此时报 noMatch 就
+      // 是「浏览器开着却说没有卡」，正是本 bug 的那句错话。只有明确答「空」才是
+      // 真的没有卡。
+      return cardIds != null && cardIds.isEmpty
           ? AnkiOpenWordOutcome.noMatch
           : AnkiOpenWordOutcome.opened;
     } catch (e, stack) {
