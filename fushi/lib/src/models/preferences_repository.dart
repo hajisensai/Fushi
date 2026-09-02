@@ -2679,6 +2679,17 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 有声书素材库目录（JSON 字符串数组）。库里放按作品身份命名的字幕/正文，
+  /// 下载完成后据此自动配齐「正文 + 字幕 + 音频」；解码见
+  /// `decodeAudiobookMaterialDirs`。
+  String get audiobookMaterialDirs =>
+      getPref('audiobook_material_dirs', defaultValue: '') as String;
+
+  Future<void> setAudiobookMaterialDirs(String value) async {
+    await setPref('audiobook_material_dirs', value);
+    notifyListeners();
+  }
+
   /// TODO-1961：用过的历史下载根（JSON 字符串数组，新的在前，见
   /// `encodeSaveRootHistory`）。**只**用于让改目录之前的旧任务在下载页仍被认出，
   /// 永不作为写入目标。旧任务不迁移是刻意的：迁移=移动几十 GB 且掐断做种。

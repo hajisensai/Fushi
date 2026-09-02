@@ -136,6 +136,7 @@ import 'package:fushi/src/models/theme_notifier.dart'
 // consumers (theme swatch row, CustomThemePage) can name it.
 export 'package:fushi/src/models/theme_notifier.dart' show CustomThemeEntry;
 import 'package:fushi/src/models/audio_controller.dart';
+import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
@@ -4383,6 +4384,15 @@ class AppModel with ChangeNotifier {
         ),
       );
   DiscoveryImportExecutor? _discoveryImportExecutor;
+
+  /// 有声书素材库（懒建）。目录由用户在设置里指定，扫描结果缓存在服务内；
+  /// 改目录后调 [AudiobookMaterialService.refresh] 重扫。
+  AudiobookMaterialService get audiobookMaterialService =>
+      _audiobookMaterialService ??= AudiobookMaterialService(
+        readDirs: () =>
+            decodeAudiobookMaterialDirs(prefsRepo.audiobookMaterialDirs),
+      );
+  AudiobookMaterialService? _audiobookMaterialService;
 
   /// 发现页源注册表（懒建，app 生命周期常驻）。内置源在此登记；加源 = 加一个
   /// adapter 实例。Sukebei（18+）默认不进「全部源」聚合，见

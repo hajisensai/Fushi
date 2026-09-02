@@ -4,6 +4,8 @@ import 'package:fushi_audio/fushi_audio.dart'
     show AudiobookRepository, AudiobookStorage, SrtBookRepository;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/audiobook/audiobook_material_library.dart';
+import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart';
 import 'package:fushi/src/media/discovery/discovery_models.dart';
@@ -75,6 +77,9 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
   ///
   /// 取不到音频路径（文件被手动删掉/移走）时照常开框、只是不预填——把死路留成
   /// 用户仍可自选文件的活路，好过弹一句错误后什么也做不了。
+  ///
+  /// 素材库里配得到字幕/正文时一并预填：身份键取任务记的 [externalId]（发现页
+  /// 下载时写的作品主键），没有就退到音频文件名里的键。
   Future<void> _pairDownloadedAudiobook(VideoDownloadJobRow job) async {
     final AppModel appModel = ref.read(appProvider);
     final List<VideoDownloadJobFileRow> rows =
@@ -88,6 +93,11 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
             ))
           row.finalAbsolutePath!,
     ]..sort();
+    final AudiobookMaterialMatch match = await _matchAudiobookMaterials(
+      appModel,
+      job: job,
+      audioPaths: audioPaths,
+    );
     if (!mounted) return;
     await showAppDialog<bool>(
       context: context,
@@ -96,8 +106,28 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
         audiobookRepo: AudiobookRepository(appModel.database),
         db: appModel.database,
         initialAudioPaths: audioPaths.isEmpty ? null : audioPaths,
+        initialSubtitlePath: match.subtitlePath,
+        initialEpubPath: match.contentPath,
       ),
     );
+  }
+
+  /// 从素材库给这条任务配字幕/正文；没配素材库或配不到时返回空匹配。
+  Future<AudiobookMaterialMatch> _matchAudiobookMaterials(
+    AppModel appModel, {
+    required VideoDownloadJobRow job,
+    required List<String> audioPaths,
+  }) async {
+    final AudiobookMaterialScan scan =
+        await appModel.audiobookMaterialService.scan();
+    if (scan.index.isEmpty) return const AudiobookMaterialMatch();
+    final String? externalId = job.externalId?.trim();
+    final String? key = (externalId != null && externalId.isNotEmpty)
+        ? externalId
+        : audioPaths
+            .map(audiobookKeyFromAudioPath)
+            .firstWhere((String? k) => k != null, orElse: () => null);
+    return matchAudiobookMaterial(scan.index, key: key, title: job.title);
   }
 
   Widget _buildVideoResourceTab() => VideoDiscoveryPage(

@@ -4115,5 +4115,11 @@
   "network_proxy_p2p_mode_proxy": "走代理",
   "network_proxy_p2p_mode_mixed": "混合",
   "download_task_audiobook_needs_alignment": "只下到音频 - 还需要一个对齐文件（字幕）才能作为书打开。",
-  "download_task_audiobook_pair": "补对齐文件"
+  "download_task_audiobook_pair": "补对齐文件",
+  "audiobook_material_library": "有声书素材库",
+  "audiobook_material_library_hint": "存放按作品编号命名的字幕与正文文件的目录。下载完成后自动据此配对。",
+  "audiobook_material_status": "$dirs 个目录，认得 $works 部作品",
+  "audiobook_material_add_dir": "添加目录",
+  "audiobook_material_missing_dir": "目录不存在",
+  "audiobook_material_none": "还没有添加目录"
 }
