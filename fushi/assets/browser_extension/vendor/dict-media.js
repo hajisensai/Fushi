@@ -63,17 +63,25 @@ function rewriteDictLinks(html, dictName) {
    也就不存在「换词典集后拿到旧作用域 CSS」的风险），内层用 dictName+scopePrefix。
    递归分支走未缓存的实现，避免把每个 at-block 的子串都塞进缓存。 */
 const __dictCssCache = new Map();
-const __dictCssCacheMaxBuckets = 64;
+// 桶数上限 = 同时活着的「带 styles.css 的词典」数。一次查词按「词条 × 词典」轮询全部词典的
+// css，桶数一旦小于词典数就是逐次全 miss（LRU 对循环访问同样无解），所以上限必须明显
+// 大于任何真实词典集；淘汰用 LRU（Map 保持插入序，命中即挪到队尾）只为换词典集时先
+// 清最久没用的，而不是把还在用的一起清空。
+const __dictCssCacheMaxBuckets = 256;
 
 function constructDictCss(css, dictName, scopePrefix) {
     if (!css) return '';
     let byScope = __dictCssCache.get(css);
     if (byScope === undefined) {
         // 词典集切换/重新导入会带来新的 css 串；给桶数封顶，别让缓存无界增长。
-        if (__dictCssCache.size >= __dictCssCacheMaxBuckets) __dictCssCache.clear();
+        if (__dictCssCache.size >= __dictCssCacheMaxBuckets) {
+            __dictCssCache.delete(__dictCssCache.keys().next().value);
+        }
         byScope = new Map();
-        __dictCssCache.set(css, byScope);
+    } else {
+        __dictCssCache.delete(css); // 命中：挪到队尾（最近使用）
     }
+    __dictCssCache.set(css, byScope);
     const key = JSON.stringify([dictName || '', scopePrefix || '']);
     let out = byScope.get(key);
     if (out === undefined) {

@@ -108,11 +108,23 @@ void main() {
           'the outer cache must be keyed by the css string itself so a '
           'changed dictionary stylesheet cannot return a stale scoping',
     );
-    // 桶数必须封顶，否则换词典集/反复导入会让缓存无界增长。
+    // 桶数必须封顶，否则换词典集/反复导入会让缓存无界增长。淘汰必须是 LRU 逐桶
+    // （删 Map 首项 = 最久未用），不能整表 clear()：一次查词按「词条 × 词典」轮询全部
+    // 词典的 css，全清会让还在用的桶一起归零、下一个词条重新全 miss。
     expect(
       js,
-      contains('__dictCssCache.clear()'),
+      contains('__dictCssCache.size >= __dictCssCacheMaxBuckets'),
       reason: 'the cache must be bounded',
+    );
+    expect(
+      js,
+      contains('__dictCssCache.delete(__dictCssCache.keys().next().value)'),
+      reason: 'eviction must drop the least-recently-used bucket, not clear()',
+    );
+    expect(
+      js,
+      isNot(contains('__dictCssCache.clear()')),
+      reason: 'a full clear() zeroes the hit rate for every dictionary still in use',
     );
   });
 }

@@ -68,11 +68,33 @@ void main() {
         expect(idxTempDom, lessThan(idxEarly),
             reason: '临时首条视图写入必须先于早发（顺序不可颠倒）');
 
-        // 守的回归：早发不替代尾批渲染——早发之后必须仍存在尾批 setTimeout。
-        final int idxTail = js.indexOf('setTimeout', idxEarly);
+        // 守的回归：早发不替代尾批渲染——早发之后必须仍存在尾批宏任务调度
+        // （scheduleRenderTail：MessageChannel 宏任务，无则回落 setTimeout(fn, 0)）。
+        final int idxTail = js.indexOf('scheduleRenderTail(', idxEarly);
         expect(idxTail, greaterThan(idxEarly),
-            reason: '_firePopupRendered(true) 之后必须仍有尾批 setTimeout '
+            reason: '_firePopupRendered(true) 之后必须仍有尾批 scheduleRenderTail '
                 '（早发只提前可见时刻，剩余词条仍要在宏任务里补建）');
+      });
+
+      test('⑤ scheduleRenderTail 是真宏任务原语（MessageChannel / setTimeout 回落）',
+          () {
+        // 守的回归：原语被改成同步直调 / 微任务（Promise.then / queueMicrotask）→
+        // 尾批重新压回首屏关键路径或饿死渲染，早发优化整体失效。
+        final int idxDef = js.indexOf('function scheduleRenderTail(');
+        expect(idxDef, greaterThan(-1), reason: 'scheduleRenderTail 原语缺失');
+        final int idxDefEnd = js.indexOf('\n}', idxDef);
+        final String defBody = js.substring(idxDef, idxDefEnd);
+        expect(defBody.contains('postMessage('), isTrue,
+            reason: '有 MessageChannel 时必须经 port.postMessage 排宏任务'
+                '（setTimeout 嵌套 >5 层被钳到 4ms，是尾批排队慢的根因）');
+        expect(RegExp(r'setTimeout\(\s*task\s*,\s*0\s*\)').hasMatch(defBody),
+            isTrue,
+            reason: '无 MessageChannel 的壳必须回落 setTimeout(task, 0) 宏任务');
+        expect(defBody.contains('queueMicrotask'), isFalse,
+            reason: '尾批不能是微任务（会饿死渲染）');
+        // 时间预算分片：一个宏任务连续建块直到预算用尽，而不是一块一任务。
+        expect(js.contains('TAIL_SLICE_BUDGET_MS'), isTrue,
+            reason: '尾批必须按时间预算分片（每宏任务建多块）');
       });
 
       test(
@@ -84,16 +106,16 @@ void main() {
 
         // 守的回归 A：尾批必须留在宏任务里，不能被搬回首屏同步路径。
         // 渐进渲染（PR #804）把「一个 setTimeout 建完剩余全部词条」拆成「每个宏
-        // 任务建一个词典块」，调度点统一是 setTimeout(renderNextDictionaryBlock, 0)：
-        // 一处在早发之后立即排首个尾批任务，一处在回调末尾自续下一块。任一处被
-        // 改成同步直调，剩余词条就重新压回首屏关键路径，① 的早发优化整体失效。
+        // 任务建一个词典块」；渲染尾巴优化再把它改成「每个宏任务按时间预算连续建
+        // 多块」，调度点统一是 scheduleRenderTail(renderNextDictionaryBlock)：一处在
+        // 早发之后立即排首个尾批任务，一处在分片末尾自续下一片。任一处被改成同步
+        // 直调，剩余词条就重新压回首屏关键路径，① 的早发优化整体失效。
         final RegExp tailSchedule =
-            RegExp(r'setTimeout\(\s*renderNextDictionaryBlock\s*,\s*0\s*\)');
+            RegExp(r'scheduleRenderTail\(\s*renderNextDictionaryBlock\s*\)');
         expect(
             tailSchedule.allMatches(afterEarly).length, greaterThanOrEqualTo(2),
-            reason: '早发之后必须有两处 setTimeout(renderNextDictionaryBlock, 0)'
-                '（首个尾批任务的排队 + 回调末尾的自续）；尾批必须是 '
-                'setTimeout(..., 0) 宏任务');
+            reason: '早发之后必须有两处 scheduleRenderTail(renderNextDictionaryBlock)'
+                '（首个尾批任务的排队 + 分片末尾的自续）；尾批必须是宏任务');
 
         // 守的回归 B：第二发被删 → Windows global-lookup host（依赖第二发把窗口
         // 量到全部词条的真实高度）窗口永远停在首条高度；且 _renderInProgress
@@ -130,7 +152,7 @@ void main() {
         // 调用被删＝尾批永不收尾，_renderInProgress 永远停在 true，
         // updatePopupIncremental 从此永远走全量回退，宿主窗口停在首条高度。
         final int idxSelfContinue = afterEarly.indexOf(RegExp(
-            r'setTimeout\(\s*renderNextDictionaryBlock\s*,\s*0\s*\);\s*\n\s*return;'));
+            r'scheduleRenderTail\(\s*renderNextDictionaryBlock\s*\);\s*\n\s*return;'));
         expect(idxSelfContinue, greaterThan(-1),
             reason: '逐块循环缺「还有待建块 → 自续下一个宏任务并 return」');
         expect(afterEarly.indexOf('finishRemainingEntries(', idxSelfContinue),
