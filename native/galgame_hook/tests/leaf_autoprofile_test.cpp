@@ -286,6 +286,176 @@ void RejectsUnrelatedBinary() {
   assert(!ap::DeriveLeafAnchors(image, &derived));
 }
 
+
+// ── ResolveLeafProfile：位移起点 + 调用形状校验 ────────────────────────────
+//
+// 位移只是搜索起点，采信与否由形状判定决定。合成夹具用自己的小位移（真实位移是按白2 那份
+// 构建量的，放不进这个小映像），测的是机制：起点命中、整体位移后窗口内唯一命中、形状缺失
+// 拒绝、窗口内多解拒绝、三个 glyph 返回点必须调向同一目标。
+
+constexpr uint32_t kDispatchRva = 0x1800u;
+
+ap::LeafAnchorDeltas SyntheticDeltas() {
+  ap::LeafAnchorDeltas d;
+  d.glyph_dispatch_from_traversal = 0;  // 由解码得到，不参与
+  d.raster_glyph_return_from_traversal = 0x100;
+  d.glyph_single_return_from_traversal = 0x200;
+  d.glyph_double_first_return_from_traversal = 0x300;
+  d.glyph_double_second_return_from_traversal = 0x400;
+  d.quad_draw_return_from_raster = 0x100;
+  d.alternate_quad_draw_return_from_raster = 0x200;
+  d.input_poller_last_return_from_anchor = 0x100;
+  d.voice_archive_read_return_from_embed_anchor = 0x100;
+  return d;
+}
+
+struct PlantedSites {
+  uint32_t raster_glyph_return = 0;
+  uint32_t glyph_single_return = 0;
+  uint32_t glyph_double_first = 0;
+  uint32_t glyph_double_second = 0;
+  uint32_t quad_draw_return = 0;
+  uint32_t alternate_quad_draw_return = 0;
+  uint32_t poller_last_return = 0;
+  uint32_t voice_read_return = 0;
+};
+
+void PlaceRel32Call(SyntheticImage& image, uint32_t return_rva,
+                    uint32_t target_rva) {
+  uint8_t* call = image.at(return_rva - 5u);
+  call[0] = 0xe8u;
+  const int32_t displacement =
+      static_cast<int32_t>(target_rva) - static_cast<int32_t>(return_rva);
+  std::memcpy(call + 1, &displacement, sizeof(displacement));
+}
+
+void PlaceRegisterIndirect(SyntheticImage& image, uint32_t return_rva,
+                           uint8_t modrm) {
+  uint8_t* call = image.at(return_rva - 2u);
+  call[0] = 0xffu;
+  call[1] = modrm;
+}
+
+void PlaceAbsoluteIndirect(SyntheticImage& image, uint32_t return_rva,
+                           uint32_t slot_va) {
+  uint8_t* call = image.at(return_rva - 6u);
+  call[0] = 0xffu;
+  call[1] = 0x15u;
+  std::memcpy(call + 2, &slot_va, sizeof(slot_va));
+}
+
+PlantedSites PlantCallShapes(SyntheticImage& image, int32_t shift) {
+  const ap::LeafAnchorDeltas d = SyntheticDeltas();
+  const uint32_t poller_anchor = kPollerRva;
+  const uint32_t embed_anchor = kEmbedRva;
+  PlantedSites s;
+  s.raster_glyph_return = static_cast<uint32_t>(
+      kTraversalRva + d.raster_glyph_return_from_traversal + shift);
+  s.glyph_single_return = static_cast<uint32_t>(
+      kTraversalRva + d.glyph_single_return_from_traversal + shift);
+  s.glyph_double_first = static_cast<uint32_t>(
+      kTraversalRva + d.glyph_double_first_return_from_traversal + shift);
+  s.glyph_double_second = static_cast<uint32_t>(
+      kTraversalRva + d.glyph_double_second_return_from_traversal + shift);
+  s.quad_draw_return =
+      static_cast<uint32_t>(kRasterRva + d.quad_draw_return_from_raster + shift);
+  s.alternate_quad_draw_return = static_cast<uint32_t>(
+      kRasterRva + d.alternate_quad_draw_return_from_raster + shift);
+  s.poller_last_return = static_cast<uint32_t>(
+      poller_anchor + d.input_poller_last_return_from_anchor + shift);
+  s.voice_read_return = static_cast<uint32_t>(
+      embed_anchor + d.voice_archive_read_return_from_embed_anchor + shift);
+
+  PlaceRel32Call(image, s.raster_glyph_return, kRasterRva);
+  PlaceRel32Call(image, s.glyph_single_return, kDispatchRva);
+  PlaceRel32Call(image, s.glyph_double_first, kDispatchRva);
+  PlaceRel32Call(image, s.glyph_double_second, kDispatchRva);
+  PlaceRegisterIndirect(image, s.quad_draw_return, 0xd0u);
+  PlaceRegisterIndirect(image, s.alternate_quad_draw_return, 0xd0u);
+  PlaceRegisterIndirect(image, s.poller_last_return, 0xd6u);
+  PlaceAbsoluteIndirect(image, s.voice_read_return, kImageBase + kReadFileSlotRva);
+  return s;
+}
+
+void ExpectResolved(const fushi_voice_hook::LeafAquaplusProfile& p,
+                    const PlantedSites& s) {
+  assert(p.glyph_dispatch_rva == kDispatchRva);
+  assert(p.raster_glyph_return_rva == s.raster_glyph_return);
+  assert(p.glyph_single_return_rva == s.glyph_single_return);
+  assert(p.glyph_double_first_return_rva == s.glyph_double_first);
+  assert(p.glyph_double_second_return_rva == s.glyph_double_second);
+  assert(p.quad_draw_return_rva == s.quad_draw_return);
+  assert(p.alternate_quad_draw_return_rva == s.alternate_quad_draw_return);
+  assert(p.input_poller_last_return_rva == s.poller_last_return);
+  assert(p.voice_archive_read_return_rva == s.voice_read_return);
+  // 解析出来的 profile 不冒充已测量身份。
+  for (uint8_t byte : p.executable_sha256) assert(byte == 0u);
+}
+
+void ResolvesEveryReturnSiteFromShapes() {
+  SyntheticImage synthetic = MakeLeafLikeImage();
+  const PlantedSites planted = PlantCallShapes(synthetic, 0);
+  el::LoadedPeImage image = synthetic.Open();
+  ap::DerivedAnchors anchors;
+  assert(ap::DeriveLeafAnchors(image, &anchors));
+  fushi_voice_hook::LeafAquaplusProfile resolved{};
+  assert(ap::ResolveLeafProfile(image, anchors, SyntheticDeltas(), &resolved));
+  ExpectResolved(resolved, planted);
+}
+
+// 补丁版最常见的变化是整体位移：起点不再命中，窗口内唯一命中仍能定位。
+void ResolvesAfterASmallShift() {
+  SyntheticImage synthetic = MakeLeafLikeImage();
+  const PlantedSites planted = PlantCallShapes(synthetic, 0x11);
+  el::LoadedPeImage image = synthetic.Open();
+  ap::DerivedAnchors anchors;
+  assert(ap::DeriveLeafAnchors(image, &anchors));
+  fushi_voice_hook::LeafAquaplusProfile resolved{};
+  assert(ap::ResolveLeafProfile(image, anchors, SyntheticDeltas(), &resolved));
+  ExpectResolved(resolved, planted);
+}
+
+// 形状根本不存在（codegen 变了）时必须拒绝，不能退回位移硬猜。
+void RejectsWhenAShapeIsAbsent() {
+  SyntheticImage synthetic = MakeLeafLikeImage();
+  PlantCallShapes(synthetic, 0);
+  const ap::LeafAnchorDeltas d = SyntheticDeltas();
+  const uint32_t poller_last =
+      static_cast<uint32_t>(kPollerRva + d.input_poller_last_return_from_anchor);
+  std::memset(synthetic.at(poller_last - 2u), 0, 2u);
+  el::LoadedPeImage image = synthetic.Open();
+  ap::DerivedAnchors anchors;
+  assert(ap::DeriveLeafAnchors(image, &anchors));
+  fushi_voice_hook::LeafAquaplusProfile resolved{};
+  assert(!ap::ResolveLeafProfile(image, anchors, SyntheticDeltas(), &resolved));
+}
+
+// 窗口内出现第二个同形状候选 = 判据不足以定位，拒绝而不是挑一个。
+void RejectsAmbiguousWindow() {
+  SyntheticImage synthetic = MakeLeafLikeImage();
+  PlantCallShapes(synthetic, 0x11);
+  const ap::LeafAnchorDeltas d = SyntheticDeltas();
+  const uint32_t candidate =
+      static_cast<uint32_t>(kRasterRva + d.quad_draw_return_from_raster);
+  PlaceRegisterIndirect(synthetic, candidate + 0x21u, 0xd0u);
+  el::LoadedPeImage image = synthetic.Open();
+  ap::DerivedAnchors anchors;
+  assert(ap::DeriveLeafAnchors(image, &anchors));
+  fushi_voice_hook::LeafAquaplusProfile resolved{};
+  assert(!ap::ResolveLeafProfile(image, anchors, SyntheticDeltas(), &resolved));
+}
+
+// 三个 glyph 返回点必须调向同一个派发函数；有一个不是就说明识别错了。
+void RejectsGlyphReturnsWithDifferentTargets() {
+  SyntheticImage synthetic = MakeLeafLikeImage();
+  const PlantedSites planted = PlantCallShapes(synthetic, 0);
+  PlaceRel32Call(synthetic, planted.glyph_double_first, kDispatchRva + 0x40u);
+  el::LoadedPeImage image = synthetic.Open();
+  ap::DerivedAnchors anchors;
+  assert(ap::DeriveLeafAnchors(image, &anchors));
+  fushi_voice_hook::LeafAquaplusProfile resolved{};
+  assert(!ap::ResolveLeafProfile(image, anchors, SyntheticDeltas(), &resolved));
+}
 }  // namespace
 
 int main() {
@@ -297,5 +467,10 @@ int main() {
   RejectsMissingImports();
   RejectsNonUniqueSignature();
   RejectsUnrelatedBinary();
+  ResolvesEveryReturnSiteFromShapes();
+  ResolvesAfterASmallShift();
+  RejectsWhenAShapeIsAbsent();
+  RejectsAmbiguousWindow();
+  RejectsGlyphReturnsWithDifferentTargets();
   return 0;
 }

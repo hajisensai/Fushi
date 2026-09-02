@@ -288,5 +288,211 @@ inline bool DerivedAnchorsMatchProfile(const DerivedAnchors& derived,
          derived.d3d9_device_pointer_rva == profile.d3d9_device_pointer_rva;
 }
 
+
+// ── 第二段：return site 的解析 ────────────────────────────────────────────
+//
+// 这些字段（glyph 派发、各处 call 的返回点、VOICE.PAK 的同步 ReadFile 返回点）没有各自
+// 的唯一签名可扫。给每个都编一套 ad-hoc 推导规则很容易猜错，而且是**静默**猜错——几何
+// 会歪、语音会配不上，却没有任何一处报错。
+//
+// 采用的办法是：把它们表达成**相对已推导锚点的位移**，再用结构门里已有的调用形状校验逐个
+// 验真。位移取自已测量构建，只当搜索起点；真正决定采信与否的永远是那几个调用形状判定。
+// VN 的补丁版最常见的变化是整体地址位移而非重新 codegen，位移 + 形状校验正好覆盖这一类；
+// codegen 真变了则形状校验失败，于是拒绝认领——不猜。
+//
+// 起点不成立时在有界窗口内搜索，且要求窗口内**唯一**满足形状判定的位置：多于一个就说明
+// 判据不足以定位，同样拒绝。
+constexpr uintptr_t kLeafResolveWindow = 0x40u;
+
+struct LeafAnchorDeltas {
+  intptr_t glyph_dispatch_from_traversal = -0x220;
+  intptr_t raster_glyph_return_from_traversal = -0x9;
+  intptr_t glyph_single_return_from_traversal = 0xCB2;
+  intptr_t glyph_double_first_return_from_traversal = 0xE02;
+  intptr_t glyph_double_second_return_from_traversal = 0xEC5;
+  intptr_t quad_draw_return_from_raster = 0x2789;
+  intptr_t alternate_quad_draw_return_from_raster = 0x13D8;
+  intptr_t input_poller_last_return_from_anchor = 0x180;
+  intptr_t voice_archive_read_return_from_embed_anchor = 0x7E9A;
+};
+
+inline constexpr LeafAnchorDeltas kMeasuredLeafAnchorDeltas = {};
+
+// rel32 call 的目标 RVA。return_rva 是**调用之后**那条指令的 RVA。
+inline bool DecodeRel32CallTarget(const exact_lookup::LoadedPeImage& image,
+                                  uintptr_t return_rva, uintptr_t* target_rva) {
+  if (target_rva == nullptr || return_rva < 5u) return false;
+  const uint8_t* call = AtRva(image, return_rva - 5u, 5u);
+  if (call == nullptr || call[0] != 0xe8u) return false;
+  int32_t displacement = 0;
+  std::memcpy(&displacement, call + 1, sizeof(displacement));
+  const int64_t target =
+      static_cast<int64_t>(return_rva) + static_cast<int64_t>(displacement);
+  if (target < 0 || static_cast<uint64_t>(target) >= image.size) return false;
+  *target_rva = static_cast<uintptr_t>(target);
+  return true;
+}
+
+// 在 [candidate-window, candidate+window] 内找**唯一**满足 predicate 的 RVA。
+// candidate 自身成立时直接采用（补丁版位移为零的常见情形），不再扫窗口。
+template <typename Predicate>
+inline bool ResolveNearCandidate(uintptr_t candidate, uintptr_t window,
+                                 size_t image_size, Predicate predicate,
+                                 uintptr_t* resolved) {
+  if (resolved == nullptr || candidate == 0u || candidate >= image_size)
+    return false;
+  if (predicate(candidate)) {
+    *resolved = candidate;
+    return true;
+  }
+  uintptr_t hit = 0u;
+  uint32_t hits = 0u;
+  const uintptr_t low = candidate > window ? candidate - window : 1u;
+  const uintptr_t high =
+      candidate + window < image_size ? candidate + window : image_size - 1u;
+  for (uintptr_t rva = low; rva <= high; ++rva) {
+    if (!predicate(rva)) continue;
+    if (++hits > 1u) return false;  // 判据不足以定位，宁可不认
+    hit = rva;
+  }
+  if (hits != 1u) return false;
+  *resolved = hit;
+  return true;
+}
+
+inline uintptr_t OffsetRva(uintptr_t anchor, intptr_t delta) {
+  const intptr_t value = static_cast<intptr_t>(anchor) + delta;
+  return value > 0 ? static_cast<uintptr_t>(value) : 0u;
+}
+
+// 用推导出的锚点 + 形状校验解析出一份完整 profile。
+// 成功返回 true，且 out 里除栈帧偏移/顶点格式外的每个 RVA 都经过形状判定。
+inline bool ResolveLeafProfile(const exact_lookup::LoadedPeImage& image,
+                               const DerivedAnchors& anchors,
+                               const LeafAnchorDeltas& deltas,
+                               LeafAquaplusProfile* out) {
+  if (out == nullptr || image.base == nullptr) return false;
+  const uintptr_t traversal = anchors.text_traversal_rva;
+  const uintptr_t raster = anchors.raster_draw_rva;
+  if (traversal == 0u || raster == 0u) return false;
+  const uintptr_t poller_anchor =
+      anchors.input_poller_first_return_rva >= 10u
+          ? anchors.input_poller_first_return_rva - 10u
+          : 0u;
+  const uintptr_t embed_anchor =
+      anchors.embed_leaf_hook_rva >= leaf_exact::kEmbedHookOffsetFromAnchor
+          ? anchors.embed_leaf_hook_rva - leaf_exact::kEmbedHookOffsetFromAnchor
+          : 0u;
+  if (poller_anchor == 0u || embed_anchor == 0u) return false;
+
+  // 单字节 glyph 返回点先定下来，glyph 派发地址由它的 rel32 目标**解码**得到，
+  // 而不是再猜一个位移；随后要求另外两个返回点调用同一个目标。
+  uintptr_t glyph_single = 0u;
+  if (!ResolveNearCandidate(
+          OffsetRva(traversal, deltas.glyph_single_return_from_traversal),
+          kLeafResolveWindow, image.size,
+          [&image](uintptr_t rva) {
+            uintptr_t target = 0u;
+            return DecodeRel32CallTarget(image, rva, &target);
+          },
+          &glyph_single)) {
+    return false;
+  }
+  uintptr_t glyph_dispatch = 0u;
+  if (!DecodeRel32CallTarget(image, glyph_single, &glyph_dispatch)) return false;
+  if (!exact_lookup::SectionHasRole(
+          exact_lookup::FindSectionForRva(image, glyph_dispatch, 1u),
+          IMAGE_SCN_MEM_EXECUTE)) {
+    return false;
+  }
+
+  const auto calls_dispatch = [&image, glyph_dispatch](uintptr_t rva) {
+    return exact_lookup::MatchesRel32CallEndingAt(image, rva, glyph_dispatch);
+  };
+  uintptr_t glyph_double_first = 0u;
+  uintptr_t glyph_double_second = 0u;
+  if (!ResolveNearCandidate(
+          OffsetRva(traversal, deltas.glyph_double_first_return_from_traversal),
+          kLeafResolveWindow, image.size, calls_dispatch,
+          &glyph_double_first) ||
+      !ResolveNearCandidate(
+          OffsetRva(traversal,
+                    deltas.glyph_double_second_return_from_traversal),
+          kLeafResolveWindow, image.size, calls_dispatch,
+          &glyph_double_second)) {
+    return false;
+  }
+
+  uintptr_t raster_glyph_return = 0u;
+  if (!ResolveNearCandidate(
+          OffsetRva(traversal, deltas.raster_glyph_return_from_traversal),
+          kLeafResolveWindow, image.size,
+          [&image, raster](uintptr_t rva) {
+            return exact_lookup::MatchesRel32CallEndingAt(image, rva, raster);
+          },
+          &raster_glyph_return)) {
+    return false;
+  }
+
+  const auto indirect_d0 = [&image](uintptr_t rva) {
+    return exact_lookup::MatchesRegisterIndirectCallEndingAt(image, rva, 0xd0u);
+  };
+  const auto indirect_d6 = [&image](uintptr_t rva) {
+    return exact_lookup::MatchesRegisterIndirectCallEndingAt(image, rva, 0xd6u);
+  };
+  uintptr_t quad_draw_return = 0u;
+  uintptr_t alternate_quad_draw_return = 0u;
+  uintptr_t poller_last_return = 0u;
+  if (!ResolveNearCandidate(
+          OffsetRva(raster, deltas.quad_draw_return_from_raster),
+          kLeafResolveWindow, image.size, indirect_d0, &quad_draw_return) ||
+      !ResolveNearCandidate(
+          OffsetRva(raster, deltas.alternate_quad_draw_return_from_raster),
+          kLeafResolveWindow, image.size, indirect_d0,
+          &alternate_quad_draw_return) ||
+      !ResolveNearCandidate(
+          OffsetRva(poller_anchor,
+                    deltas.input_poller_last_return_from_anchor),
+          kLeafResolveWindow, image.size, indirect_d6, &poller_last_return)) {
+    return false;
+  }
+  if (quad_draw_return == alternate_quad_draw_return) return false;
+
+  const uintptr_t read_file_iat = anchors.read_file_iat_rva;
+  uintptr_t voice_read_return = 0u;
+  if (!ResolveNearCandidate(
+          OffsetRva(embed_anchor,
+                    deltas.voice_archive_read_return_from_embed_anchor),
+          kLeafResolveWindow, image.size,
+          [&image, read_file_iat](uintptr_t rva) {
+            return exact_lookup::MatchesAbsoluteIndirectCallEndingAt(
+                image, rva, read_file_iat);
+          },
+          &voice_read_return)) {
+    return false;
+  }
+
+  *out = kWhiteAlbum2LeafAquaplusProfile;  // 栈帧偏移/顶点格式沿用已测量值
+  out->executable_sha256 = {};  // 解析出来的 profile 不冒充已测量身份
+  out->d3d9_device_pointer_rva = anchors.d3d9_device_pointer_rva;
+  out->stack_cookie_rva = anchors.stack_cookie_rva;
+  out->get_async_key_state_iat_rva = anchors.get_async_key_state_iat_rva;
+  out->read_file_iat_rva = anchors.read_file_iat_rva;
+  out->embed_leaf_hook_rva = anchors.embed_leaf_hook_rva;
+  out->input_poller_first_return_rva = anchors.input_poller_first_return_rva;
+  out->input_poller_last_return_rva = poller_last_return;
+  out->text_traversal_rva = traversal;
+  out->raster_draw_rva = raster;
+  out->glyph_dispatch_rva = glyph_dispatch;
+  out->raster_glyph_return_rva = raster_glyph_return;
+  out->glyph_single_return_rva = glyph_single;
+  out->glyph_double_first_return_rva = glyph_double_first;
+  out->glyph_double_second_return_rva = glyph_double_second;
+  out->quad_draw_return_rva = quad_draw_return;
+  out->alternate_quad_draw_return_rva = alternate_quad_draw_return;
+  out->voice_archive_read_return_rva = voice_read_return;
+  return true;
+}
+
 }  // namespace leaf_autoprofile
 }  // namespace fushi_voice_hook
