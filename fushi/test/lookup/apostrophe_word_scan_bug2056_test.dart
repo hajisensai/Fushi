@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -33,6 +34,14 @@ void main() {
     '../tools/browser-extension/vendor/selection.js',
   ];
 
+  /// 四份实现的**真值**：三份 selection.js 从盘上读，阅读器那份来自
+  /// `ReaderSelectionScripts.source()`（与真机注入的是同一个字符串）。
+  final Map<String, String> sources = <String, String>{
+    for (final String path in selectionCopies)
+      path: File(path).readAsStringSync(),
+    'reader_selection_scripts.dart (source())': ReaderSelectionScripts.source(),
+  };
+
   test(
     'BUG-2056: forward scan bridges an intra-word apostrophe so English '
     'contractions stay reachable (executes both selection engines via node)',
@@ -66,6 +75,10 @@ void main() {
           environment: <String, String>{
             'FUSHI_READER_SELECTION_JS': readerJs.path,
           },
+          // harness 的断言文案是中文 + 各脚本代表字符。默认 systemEncoding 在中文
+          // Windows 上是 GBK，失败时整段变乱码（实测），诊断价值归零。
+          stdoutEncoding: utf8,
+          stderrEncoding: utf8,
         );
 
         expect(
@@ -89,13 +102,6 @@ void main() {
   test(
       'intra-word apostrophe is bridged before the scan-stop test, and the '
       'word-start back-off stays untouched', () {
-    final Map<String, String> sources = <String, String>{
-      for (final String path in selectionCopies)
-        path: File(path).readAsStringSync(),
-      'reader_selection_scripts.dart (source())':
-          ReaderSelectionScripts.source(),
-    };
-
     sources.forEach((String label, String src) {
       // 顺序判据必须在**剥掉注释**的代码上算：两处修复的说明注释里都写着
       // isIntraWordApostrophe / isScanStop 这些标识符，裸 indexOf 会先命中注释，
@@ -128,6 +134,56 @@ void main() {
               '!this.isScanBoundary(hitContent[startOffset - 1])) {'),
           isTrue,
           reason: '[$label] 词首回退不得被改动（不得跨撇号）');
+    });
+  });
+
+  test('apostropheClassInvariant: 撇号类字符集与 scanDelimiters 的耦合不得漂移', () {
+    // 撇号有四个码点写法，但它们在扫描器里的**角色不同**，别当成一视同仁的白名单：
+    //   ' U+0027 / ‘ U+2018 / ’ U+2019 —— 在 scanDelimiters 里，会 break 前向扫描，
+    //     所以必须出现在 intraWordApostrophePattern 里才救得回来；
+    //   ʼ U+02BC —— 不在 scanDelimiters 里，本来就不截断。它在 pattern 里是**未来
+    //     保险**，不是本 bug 的战果（JS 行为断言 ③ 已经写明这一点）。
+    // 这条守卫钉的是两者的耦合：pattern 必须盖住整个撇号类；三个真终点必须仍在
+    // scanDelimiters 里（不然 ③b/① 的行为断言变成恒真）；U+02BC 必须仍不在里面。
+    // 最后一条只能由**源码守卫**来钉：实测把 ʼ 加进 scanDelimiters 之后，JS 行为
+    // 断言 ③ 照样绿（桥接接住了它），行为层根本区分不出来——所以这里不是可有可无
+    // 的重复，而是唯一的探测点。
+    const Map<String, String> apostropheClass = <String, String>{
+      "'": 'U+0027 ASCII 撇号',
+      '\u2018': 'U+2018 左单引号（OCR 常把 ’ 认成它）',
+      '\u2019': 'U+2019 排版撇号（真实 EPUB 的主流写法）',
+      '\u02BC': 'U+02BC MODIFIER LETTER APOSTROPHE',
+    };
+    const List<String> apostropheStops = <String>["'", '\u2018', '\u2019'];
+
+    sources.forEach((String label, String src) {
+      final RegExpMatch? patternMatch =
+          RegExp(r'intraWordApostrophePattern: /\[(.*?)\]/').firstMatch(src);
+      expect(patternMatch, isNotNull,
+          reason: '[$label] 找不到 intraWordApostrophePattern 字面量');
+      final String klass = patternMatch!.group(1)!;
+
+      final RegExpMatch? delimiterMatch =
+          RegExp("scanDelimiters: '(.*)',").firstMatch(src);
+      expect(delimiterMatch, isNotNull,
+          reason: '[$label] 找不到 scanDelimiters 字面量');
+      final String delimiters = delimiterMatch!.group(1)!;
+
+      apostropheClass.forEach((String ch, String why) {
+        expect(klass.contains(ch), isTrue,
+            reason: '[$label] intraWordApostrophePattern 必须含 $why；'
+                '缺一个就是一整类写法重新被截断（或未来加进 scanDelimiters 时没兜底）');
+      });
+
+      for (final String ch in apostropheStops) {
+        expect(delimiters.contains(ch), isTrue,
+            reason: '[$label] ${apostropheClass[ch]} 必须仍在 scanDelimiters 里——'
+                '它不再是扫描终点的话，桥接的行为断言就退化成恒真，得重写测试');
+      }
+      expect(delimiters.contains('\u02BC'), isFalse,
+          reason: '[$label] U+02BC 不得进 scanDelimiters：它本来就不截断，'
+              '加进去会让 `canʼt` 从「天然完整」变成「靠桥接才完整」，而行为层探测'
+              '不到这个变化（实测 ③ 仍绿），只有这条源码守卫拦得住');
     });
   });
 }

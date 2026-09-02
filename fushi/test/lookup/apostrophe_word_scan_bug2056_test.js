@@ -178,6 +178,117 @@ function scan(src, segments, nodeIndex, offset, maxLength) {
 
 const RSQUO = '\u2019'; // ’ 排版撇号：真实 EPUB 里的主流写法
 const MODAP = '\u02BC'; // ʼ MODIFIER LETTER APOSTROPHE
+const LSQUO = '\u2018'; // ‘ 左单引号：OCR 常把 ’ 认成它
+
+
+// 代表码点常量：用 \uXXXX 转义写死，避免编辑器/终端在搬运时把这些字符改掉。
+const CP_00AA = '\u00AA';
+const CP_00B5 = '\u00B5';
+const CP_00BA = '\u00BA';
+const CP_00C0 = '\u00C0';
+const CP_00D6 = '\u00D6';
+const CP_00D8 = '\u00D8';
+const CP_00E9 = '\u00E9';
+const CP_00F6 = '\u00F6';
+const CP_00F8 = '\u00F8';
+const CP_0101 = '\u0101';
+const CP_0161 = '\u0161';
+const CP_028C = '\u028C';
+const CP_03B1 = '\u03B1';
+const CP_03B2 = '\u03B2';
+const CP_043F = '\u043F';
+const CP_044F = '\u044F';
+const CP_0442 = '\u0442';
+const CP_044C = '\u044C';
+const CP_04A5 = '\u04A5';
+const CP_0531 = '\u0531';
+const CP_0561 = '\u0561';
+const CP_05D0 = '\u05D0';
+const CP_05D1 = '\u05D1';
+const CP_05F2 = '\u05F2';
+const CP_0628 = '\u0628';
+const CP_0641 = '\u0641';
+const CP_066E = '\u066E';
+const CP_0671 = '\u0671';
+const CP_06D5 = '\u06D5';
+const CP_06EE = '\u06EE';
+const CP_06FA = '\u06FA';
+const CP_06FF = '\u06FF';
+const CP_0750 = '\u0750';
+const CP_08A0 = '\u08A0';
+const CP_10A0 = '\u10A0';
+const CP_10D0 = '\u10D0';
+const CP_1E00 = '\u1E00';
+const CP_1EC7 = '\u1EC7';
+const CP_1F00 = '\u1F00';
+const CP_00D7 = '\u00D7';
+const CP_00F7 = '\u00F7';
+const CP_0530 = '\u0530';
+const CP_0640 = '\u0640';
+const CP_0660 = '\u0660';
+const CP_10FB = '\u10FB';
+const CP_0E01 = '\u0E01';
+
+// 空格分词类字母集的**代表码点**：每条对应 spaceDelimitedLetterPattern 里的一个区间
+// （字母集与 native/fushidicts/fushidicts_src/scan/word_scan.cpp 的
+// is_space_delimited_letter 逐区间对齐，改一处必须改两处）。
+const LETTER_RANGE_SAMPLES = [
+  ['a', 'ASCII 小写 A-Za-z'],
+  [CP_00AA, '序数指示符 ª (\\u00AA)'],
+  [CP_00B5, '微符 µ (\\u00B5)'],
+  [CP_00BA, '序数指示符 º (\\u00BA)'],
+  [CP_00C0, '拉丁-1 大写段起点 À (\\u00C0-\\u00D6)'],
+  [CP_00D6, '拉丁-1 大写段终点 Ö (\\u00C0-\\u00D6)'],
+  [CP_00D8, '拉丁-1 段二起点 Ø (\\u00D8-\\u00F6)'],
+  [CP_00E9, '法语 é (\\u00D8-\\u00F6)'],
+  [CP_00F6, '德语 ö，段二终点 (\\u00D8-\\u00F6)'],
+  [CP_00F8, '挪威语 ø，段三起点 (\\u00F8-\\u02AF)'],
+  [CP_0101, '拉丁扩展-A ā (\\u00F8-\\u02AF)'],
+  [CP_0161, '捷克语 š (\\u00F8-\\u02AF)'],
+  [CP_028C, 'IPA 扩展 ʌ，段三终段 (\\u00F8-\\u02AF)'],
+  [CP_03B1, '希腊 α (\\u0370-\\u03FF)'],
+  [CP_043F, '西里尔 п (\\u0400-\\u052F)'],
+  [CP_04A5, '西里尔扩展 ҥ (\\u0400-\\u052F)'],
+  [CP_0531, '亚美尼亚大写 Ա (\\u0531-\\u0556)'],
+  [CP_0561, '亚美尼亚小写 ա (\\u0561-\\u0587)'],
+  [CP_05D0, '希伯来 א (\\u05D0-\\u05EA)'],
+  [CP_05F2, '希伯来 ײ (\\u05EF-\\u05F2)'],
+  [CP_0628, '阿拉伯 ب (\\u0620-\\u063F)'],
+  [CP_0641, '阿拉伯 ف (\\u0641-\\u064A)'],
+  [CP_066E, '阿拉伯无点 ba ٮ (\\u066E\\u066F)'],
+  [CP_0671, '阿拉伯 ٱ (\\u0671-\\u06D3)'],
+  [CP_06D5, '阿拉伯 ە (\\u06D5)'],
+  [CP_06EE, '阿拉伯 ۮ (\\u06EE\\u06EF)'],
+  [CP_06FA, '阿拉伯 ۺ (\\u06FA-\\u06FC)'],
+  [CP_06FF, '阿拉伯 ۿ (\\u06FF)'],
+  [CP_0750, '阿拉伯补充 ݐ (\\u0750-\\u077F)'],
+  [CP_08A0, '阿拉伯扩展-A ࢠ (\\u08A0-\\u08BD)'],
+  [CP_10A0, '格鲁吉亚 Asomtavruli Ⴀ (\\u10A0-\\u10C5)'],
+  [CP_10D0, '格鲁吉亚 Mkhedruli ა (\\u10D0-\\u10FA)'],
+  [CP_1E00, '拉丁扩展附加 Ḁ (\\u1E00-\\u1EFF)'],
+  [CP_1EC7, '越南语 ệ (\\u1E00-\\u1EFF)'],
+  [CP_1F00, '希腊扩展 ἀ (\\u1F00-\\u1FFF)'],
+];
+
+// 字母集的**空隙**：这些码点夹在上面的区间之间，必须仍然不算字母。
+const LETTER_GAP_SAMPLES = [
+  ['5', 'ASCII 数字'],
+  [CP_00D7, '乘号 × —— \\u00D6 与 \\u00D8 之间那个洞'],
+  [CP_00F7, '除号 ÷ —— \\u00F6 与 \\u00F8 之间那个洞'],
+  [CP_0530, '亚美尼亚段前的未分配位 —— \\u052F 与 \\u0531 之间'],
+  [CP_0640, '阿拉伯 tatweel ـ —— \\u063F 与 \\u0641 之间被刻意排除'],
+  [CP_0660, '阿拉伯-印度数字 ٠'],
+  [CP_10FB, '格鲁吉亚段分隔符 ჻'],
+  [CP_0E01, '泰文 ก —— 无空格分词脚本，整段不在字母集里'],
+];
+
+// 真实语料形状：跨多个区间的缩合形/所有格，撇号两侧分属不同区间。
+const REAL_WORLD_SAMPLES = [
+  [`caf${CP_00E9}${RSQUO}s`, '法/英混排所有格 café’s（拉丁-1 段二 + ASCII）'],
+  [`${CP_043F}${RSQUO}${CP_044F}${CP_0442}${CP_044C}`, '乌克兰语 п’ять（西里尔两侧）'],
+  [`${CP_03B1}${RSQUO}${CP_03B2}`, '希腊 α’β（希腊两侧）'],
+  [`${CP_05D0}${RSQUO}${CP_05D1}`, '希伯来 א’ב（希伯来两侧）'],
+];
 
 function runSuite(label, src) {
   // ① 根因回归：排版撇号必须被跨过，don’t 整体进查询串。
@@ -197,11 +308,26 @@ function runSuite(label, src) {
     `[${label}] ASCII 撇号也必须被跨过`,
   );
 
-  // ③ U+02BC 同样处理。
+  // ③ U+02BC 是**另一回事**，别把它算成本修复的战果：它不在 scanDelimiters 里，
+  //    修复前后 `canʼt` 都是整词扫出来的（旧版本这里写「也必须被跨过」，属于把一条
+  //    恒真断言当成了修复证据）。留着它只作**结果**护栏：不管 ʼ 走哪条路（不截断，
+  //    还是将来进了 scanDelimiters 再被桥接救回来），canʼt 都必须整词扫出。
+  //    实测：单独把 ʼ 加进 scanDelimiters 这条仍然绿——因为桥接接住了它。所以
+  //    「ʼ 在 pattern 里、且不在 scanDelimiters 里」这层事实由 Dart 侧的
+  //    apostropheClassInvariant 用耦合不变式钉（去掉 pattern 里的 ʼ 或把它加进
+  //    scanDelimiters，那条守卫红），不靠本断言冒充。
   assert.strictEqual(
     scan(src, [`can${MODAP}t.`], 0, 0),
     `can${MODAP}t`,
-    `[${label}] U+02BC 也必须被跨过`,
+    `[${label}] canʼt（U+02BC）必须整词扫出`,
+  );
+
+  // ③b OCR 常把 ’ 认成 ‘（U+2018）。它**在** scanDelimiters 里，所以修复前
+  //     `don‘t` 和 `don’t` 一样被截成 don——这条是真的 before/after 有别。
+  assert.strictEqual(
+    scan(src, [`don${LSQUO}t.`], 0, 0),
+    `don${LSQUO}t`,
+    `[${label}] U+2018（OCR 误识的 ’）也必须被跨过`,
   );
 
   // ④ 所有格 + 空格桥接叠加：撇号跨过后，BUG-1773 的空格桥接照常接上下一个词。
@@ -260,6 +386,47 @@ function runSuite(label, src) {
     `don${RSQUO}`,
     `[${label}] maxLength 必须仍然截断`,
   );
+
+  // ⑬ **空格分词类字母集逐区间覆盖**（BUG-2056 补测）。
+  //
+  //    isIntraWordApostrophe 只看撇号紧邻的左右各一个字符，所以
+  //    spaceDelimitedLetterPattern 那 30 多个区间里，只要哪一段被删掉/写错，就有一
+  //    整类语言的缩合形与所有格重新被截断。此前这份测试全部用 ASCII 字母做样本：
+  //    把整个字母集塌缩成 /[A-Za-z]/ 也照样全绿（实测三条变异全部存活），
+  //    「与 word_scan.cpp 逐区间对齐」这句宣称没有任何东西钉住。
+  //
+  //    下表每条 = 一个区间的代表码点，直接放在撇号左右两侧；范围**外**的代表码点
+  //    走 ⑭ 的负向表。改动字母集时先改 word_scan.cpp 的 is_space_delimited_letter，
+  //    再同步四份 JS/Dart 副本，再往这两张表里加代表点。
+  for (const [ch, why] of LETTER_RANGE_SAMPLES) {
+    assert.strictEqual(
+      scan(src, [`${ch}${RSQUO}${ch}.`], 0, 0),
+      `${ch}${RSQUO}${ch}`,
+      `[${label}] ${why}（U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}）`
+        + ' 必须算空格分词类字母，撇号在它两侧时要被跨过',
+    );
+  }
+
+  // ⑭ 字母集的**空隙**必须仍然是空隙：区间之间那些非字母码点（乘号/除号/阿拉伯
+  //    tatweel/阿拉伯数字/格鲁吉亚段分隔符…）左侧不是字母，撇号仍是终点。
+  //    没有这一档，把字母集放宽成一整片（\u00C0-\u02AF）也能全绿。
+  for (const [ch, why] of LETTER_GAP_SAMPLES) {
+    assert.strictEqual(
+      scan(src, [`${ch}${RSQUO}${ch}.`], 0, 0),
+      ch,
+      `[${label}] ${why}（U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}）`
+        + ' 不得算字母，撇号必须仍是终点',
+    );
+  }
+
+  // ⑮ 真实语料形状（不是造出来的单字符）：跨区间的所有格/缩合形整词扫出。
+  for (const [word, why] of REAL_WORLD_SAMPLES) {
+    assert.strictEqual(
+      scan(src, [`${word}.`], 0, 0),
+      word,
+      `[${label}] ${why} 必须整词扫出`,
+    );
+  }
 
   // ⑫ 日文逐字扫描完全不受影响（回归护栏）。
   assert.strictEqual(

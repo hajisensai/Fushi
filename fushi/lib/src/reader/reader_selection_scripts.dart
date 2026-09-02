@@ -431,7 +431,19 @@ window.fushiSelection = {
   // **只作用于前向扫描，不动词首回退**：回退跨撇号会把法语/意大利语省音写法
   // （l’homme、dell’arte）的锚点从 homme 拖回 l’，反而查不到 homme。前向跨过是纯
   // 增益——scan_candidates 会生成 don’t / don’ / don 三级前缀，短词不会被挤掉。
-  intraWordApostrophePattern: /['’ʼ]/,
+  //
+  // 撇号集里四个码点的**角色不同**，别当成一视同仁的白名单：
+  //   ' U+0027 / ‘ U+2018 / ’ U+2019 —— 都在 scanDelimiters 里，是真正被本判据
+  //     救回来的三个（U+2018 是 OCR 把 ’ 认错的常见产物：`don‘t` 原本也被截成 don）；
+  //   ʼ U+02BC —— **不在** scanDelimiters 里，本来就不截断，列在这里是为了让
+  //     「撇号类字符」在四份实现里是同一个集合；哪天有人把它加进 scanDelimiters，
+  //     桥接已经就位。测试用不变式钉住这层耦合，而不是假装它改变了行为。
+  //
+  // 扫出整词只是**半条链**：查询串 don’t 还要经 native/fushidicts 的
+  // text_processor 撇号归一（U+2019/U+2018/U+02BC → ASCII '）才对得上 en.json 的
+  // ASCII 还原规则与 ASCII 条目键——U+2019 没有 NFKC 兼容分解，折不掉。
+  //     闭环 e2e：native/fushidicts/tests/en_apostrophe_lookup_test.cpp
+  intraWordApostrophePattern: /['‘’ʼ]/,
   spaceDelimitedLetterPattern: /[A-Za-z\u00AA\u00B5\u00BA\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02AF\u0370-\u03FF\u0400-\u052F\u0531-\u0556\u0561-\u0587\u05D0-\u05EA\u05EF-\u05F2\u0620-\u063F\u0641-\u064A\u066E\u066F\u0671-\u06D3\u06D5\u06EE\u06EF\u06FA-\u06FC\u06FF\u0750-\u077F\u08A0-\u08BD\u10A0-\u10C5\u10D0-\u10FA\u1E00-\u1EFF\u1F00-\u1FFF]/,
   isSpaceDelimitedLetter: function(char) {
     return char !== undefined && this.spaceDelimitedLetterPattern.test(char);
