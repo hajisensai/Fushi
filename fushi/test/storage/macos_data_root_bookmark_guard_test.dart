@@ -52,12 +52,42 @@ void main() {
       );
       final int dataRootChannelIdx =
           appDelegate.indexOf('app.fushi/data_root_access');
+      final int dataRootMessengerIdx = appDelegate.indexOf(
+        'binaryMessenger: controller.engine.binaryMessenger',
+        dataRootChannelIdx,
+      );
+      final int dataRootHandlerIdx = appDelegate.indexOf(
+        'channel.setMethodCallHandler',
+        dataRootMessengerIdx,
+      );
+      final int dataRootDelegateIdx = appDelegate.indexOf(
+        'self?.handleDataRootAccess(call, result: result)',
+        dataRootHandlerIdx,
+      );
       final int foregroundChannelIdx =
           appDelegate.indexOf('app.fushi.reader/foreground_selection');
+      final int foregroundMessengerIdx = appDelegate.indexOf(
+        'binaryMessenger: controller.engine.binaryMessenger',
+        foregroundChannelIdx,
+      );
+      final int foregroundHandlerIdx = appDelegate.indexOf(
+        'foregroundSelectionChannel.setMethodCallHandler',
+        foregroundMessengerIdx,
+      );
+      final int foregroundDelegateIdx = appDelegate.indexOf(
+        'AppDelegate.handleForegroundSelection(call, result: result)',
+        foregroundHandlerIdx,
+      );
       expect(wrapperIdx, greaterThan(0));
       expect(nestedControllerIdx, greaterThan(wrapperIdx));
       expect(dataRootChannelIdx, greaterThan(nestedControllerIdx));
-      expect(foregroundChannelIdx, greaterThan(nestedControllerIdx));
+      expect(dataRootMessengerIdx, greaterThan(dataRootChannelIdx));
+      expect(dataRootHandlerIdx, greaterThan(dataRootMessengerIdx));
+      expect(dataRootDelegateIdx, greaterThan(dataRootHandlerIdx));
+      expect(foregroundChannelIdx, greaterThan(dataRootDelegateIdx));
+      expect(foregroundMessengerIdx, greaterThan(foregroundChannelIdx));
+      expect(foregroundHandlerIdx, greaterThan(foregroundMessengerIdx));
+      expect(foregroundDelegateIdx, greaterThan(foregroundHandlerIdx));
       expect(
         appDelegate,
         isNot(contains('contentViewController as? FlutterViewController')),
