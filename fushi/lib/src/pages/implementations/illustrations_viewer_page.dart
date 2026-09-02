@@ -9,6 +9,8 @@ import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/epub/epub_book.dart' show fallbackMimeType;
+import 'package:fushi/src/media/collections/shelf_sort.dart'
+    show naturalCompare;
 import 'package:fushi/src/media/media_extensions.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
     show ReaderFushiSource;
@@ -138,11 +140,14 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
         return;
       }
 
+      // listSync 不保证顺序（NTFS 按名字、ext4 是目录哈希序），而这份清单就是
+      // 插图网格的展示顺序。自然序才能把 2.jpg 排在 10.jpg 前面。
       final List<File> imageFiles =
           dir.listSync(recursive: true).whereType<File>().where((f) {
         final String ext = p.extension(f.path).toLowerCase();
         return _imageExtensions.contains(ext);
-      }).toList();
+      }).toList()
+            ..sort((File a, File b) => naturalCompare(a.path, b.path));
 
       for (final File file in imageFiles) {
         if (!mounted) {

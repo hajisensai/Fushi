@@ -184,10 +184,16 @@ DiscoveryImportPlan classifyDiscoveryDirectory(
   List<String> filePaths, {
   Map<String, int> fileSizes = const <String, int>{},
 }) {
+  // 文件系统的枚举顺序不是稳定输入：`Directory.list` 明说不保证顺序，
+  // NTFS 实际按名字返回、ext4 是目录哈希序。而本函数的输出顺序是**用户可见**的：
+  // [MultiPlan] 的子计划顺序决定「逐本导入」的进度显示与落库次序，
+  // 有声书的 content/subtitle 又是「清单里第一个匹配」。所以在入口把清单
+  // 归一成路径字典序，让同一个包在任何平台、任何文件系统上导出同一个结果。
+  final List<String> paths = List<String>.of(filePaths)..sort();
   switch (kind) {
     case DiscoveryMediaKind.novel:
       final List<DiscoveryImportPlan> children = <DiscoveryImportPlan>[
-        for (final String path in filePaths)
+        for (final String path in paths)
           if (_ext(path) == '.epub')
             ImportEpubPlan(path)
           else if (_ext(path) == '.pdf')
@@ -204,7 +210,7 @@ DiscoveryImportPlan classifyDiscoveryDirectory(
       String? content;
       String? subtitle;
       final List<String> audio = <String>[];
-      for (final String path in filePaths) {
+      for (final String path in paths) {
         if (content == null && _ext(path) == '.epub') {
           content = path;
         } else if (_isSubtitle(path)) {
@@ -215,7 +221,7 @@ DiscoveryImportPlan classifyDiscoveryDirectory(
       }
       // EPUB 优先当正文；没有 EPUB 再退纯文本。
       if (content == null) {
-        for (final String path in filePaths) {
+        for (final String path in paths) {
           if (_isText(path)) {
             content = path;
             break;
@@ -244,7 +250,7 @@ DiscoveryImportPlan classifyDiscoveryDirectory(
         audioPaths: audio,
       );
     case DiscoveryMediaKind.game:
-      final String? exe = pickGalgameMainExe(filePaths, fileSizes: fileSizes);
+      final String? exe = pickGalgameMainExe(paths, fileSizes: fileSizes);
       if (exe == null) {
         return const UnsupportedPlan(DiscoveryImportBlocker.gameNoExecutable);
       }
@@ -287,9 +293,12 @@ String? pickGalgameMainExe(
     for (final String path in candidates)
       if (depthOf(path) == minDepth) path,
   ];
-  candidates.sort(
-    (String a, String b) => (fileSizes[b] ?? 0).compareTo(fileSizes[a] ?? 0),
-  );
+  // 同层同大小时再按路径定二：只比大小的话平局落回输入清单顺序，
+  // 而输入清单可能直接来自文件系统枚举（本函数也被外部直接调用）。
+  candidates.sort((String a, String b) {
+    final int bySize = (fileSizes[b] ?? 0).compareTo(fileSizes[a] ?? 0);
+    return bySize != 0 ? bySize : a.compareTo(b);
+  });
   return candidates.first;
 }
 
