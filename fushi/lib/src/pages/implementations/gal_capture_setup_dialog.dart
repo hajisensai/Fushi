@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/mining/gal_audio_tracks_panel.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
@@ -14,6 +15,15 @@ typedef GalTextThreadSelector = Future<bool> Function(
   TexthookerTextThread thread,
 );
 
+/// 本弹窗**被系统自动关闭**时的原因，作为路由返回值交给调用方。
+///
+/// 只有一种值：给「点击风险确认」让位。它必须与「用户自己关掉」区分开——
+/// 调用方用 `_captureSetupShownForSession` 记「本会话已提示过」，那个标记的唯一
+/// 用途就是让用户主动关掉后不再被每来一行台词就弹一次（选中线程有自己的判据，
+/// 不靠这个标记）。让位不是用户的意思，标记必须回滚，否则风险确认完之后
+/// 捕获设置本会话再也不会出现。
+enum GalCaptureSetupOutcome { yieldedToRiskConsent }
+
 /// 游戏启动/附着后首次出现候选线程时的捕获设置大弹窗。
 ///
 /// 左侧先选台词线程，右侧明确区分「音频采集源已就绪」与「本句已有音频」；引擎 PCM
@@ -22,11 +32,13 @@ class GalCaptureSetupDialog extends StatefulWidget {
   const GalCaptureSetupDialog({
     required this.session,
     required this.onSelectThread,
+    required this.attachedText,
     super.key,
   });
 
   final GalHookSessionController session;
   final GalTextThreadSelector onSelectThread;
+  final GalAttachedTextController attachedText;
 
   @override
   State<GalCaptureSetupDialog> createState() => _GalCaptureSetupDialogState();
@@ -61,7 +73,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
     final bool selected = await widget.onSelectThread(thread);
     if (!mounted) return;
     if (selected) {
-      _dismissOnce();
+      _dismissOnce(yieldingToRiskConsent: false);
       return;
     }
     setState(() => _selectingThreadKey = null);
@@ -110,19 +122,28 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
     );
   }
 
-  void _scheduleAutoClose() {
+  void _scheduleAutoClose({required bool yieldingToRiskConsent}) {
     if (_autoCloseScheduled || _dismissRequested) return;
     _autoCloseScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _autoCloseScheduled = false;
-      if (mounted) _dismissOnce();
+      if (mounted) _dismissOnce(yieldingToRiskConsent: yieldingToRiskConsent);
     });
   }
 
-  void _dismissOnce() {
+  void _dismissOnce({required bool yieldingToRiskConsent}) {
     if (_dismissRequested) return;
+    final ModalRoute<dynamic>? route = ModalRoute.of(context);
+    // Barrier/Escape may already have started popping this DialogRoute while
+    // the State is still mounted. Never let the queued auto-close pop the
+    // workbench route that has become current underneath it.
+    if (route == null || !route.isCurrent) return;
     _dismissRequested = true;
-    Navigator.of(context).maybePop();
+    Navigator.of(context).maybePop(
+      yieldingToRiskConsent
+          ? GalCaptureSetupOutcome.yieldedToRiskConsent
+          : null,
+    );
   }
 
   @override
@@ -139,10 +160,19 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
         width: dialogWidth,
         height: dialogHeight,
         child: ListenableBuilder(
-          listenable: widget.session,
+          listenable: Listenable.merge(<Listenable>[
+            widget.session,
+            widget.attachedText,
+          ]),
           builder: (BuildContext context, Widget? child) {
+            // The game HWND can cover this dialog while its modal barrier still
+            // blocks the workbench. Yield as soon as per-exe consent is needed.
+            // 选中线程是用户自己的动作，标记该留；风险让位不是，标记必须回滚。
+            // 两者同时成立时以用户动作为准。
             if (widget.session.selectedTextThreadKey != null) {
-              _scheduleAutoClose();
+              _scheduleAutoClose(yieldingToRiskConsent: false);
+            } else if (widget.attachedText.needsUnsafeRiskAcceptance) {
+              _scheduleAutoClose(yieldingToRiskConsent: true);
             }
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -184,7 +214,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
       ),
       actions: <Widget>[
         TextButton(
-          onPressed: _dismissOnce,
+          onPressed: () => _dismissOnce(yieldingToRiskConsent: false),
           child: Text(t.dialog_close),
         ),
       ],
