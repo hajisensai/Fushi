@@ -36,6 +36,7 @@ import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/pages/implementations/book_drag_target.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
+import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi_core/fushi_core.dart';
 // BUG-813：构造 ReaderPositionsCompanion 回填下载书的阅读进度需要 drift 的 Value（
@@ -2216,6 +2217,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         icon: Icons.headphones_outlined,
         onPressed: () => _openAudiobookImport(item, bookKey),
       ),
+      // 三库页对称：视频卡/游戏卡的菜单里「重命名」都排在列表项首位，书卡对齐。
+      DialogListAction(
+        label: t.book_rename,
+        icon: Icons.drive_file_rename_outline,
+        onPressed: () => _renameBook(context, item),
+      ),
       // 桌面才有文件管理器契约（[currentRevealHost] 在移动端返回 null）——整条隐藏，
       // 而不是画一个点了没反应的按钮。漫画卷要手改 mokuro 数据时，这一条直接把书目录
       // 里的 manga.json 选中，省掉「书在哪个 bookKey 目录」这层猜。
@@ -2330,6 +2337,44 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 单卡「在线刮削封面」（统一三库页刮削入口）：先收起长按菜单，弹既有
   /// [BookCoverScrapeDialog]（Bangumi 书籍条目，选中即下载临时文件），选中后
   /// 立即走与「编辑信息」保存完全相同的 override 通道落封面，卡面即时刷新。
+  /// 书卡菜单直达「重命名」（EPUB / 漫画 / PDF / SRT 有声书共用——身份换算全在
+  /// [MediaSource] 里，这一层只认 [MediaItem]）。
+  ///
+  /// 与上面「在线刮削封面」同一形状的入口下沉：改名的**能力**一直都在，但只长在
+  /// 「编辑信息」弹窗的标题字段里，用户得先想到那是个改名入口再点进两层；视频卡和
+  /// 游戏卡的菜单第一项就是「重命名」。书卡此前缺这一档，纯属三库页不对称。
+  ///
+  /// 落点是**显示名覆盖偏好**（`override_title://`），绝不写 `epub_books.title`：
+  /// 那一列派生出主键 `bookKey`，改列等于换身份、十来张子表连坐重键（理由见
+  /// `override_title_key.dart` 的文件头）。清空改名仍然只在「编辑信息」里做——本
+  /// 弹窗按共享原语的约定拒绝空名，避免「确认键点不动」被误读成改名失败。
+  ///
+  /// [dialogContext] 是**要关掉的那个菜单**的 context：EPUB 卡菜单由页面 context
+  /// 承载，SRT 卡菜单自带一个 dialogContext，两者不能混用（拿页面 context 去 pop
+  /// SRT 菜单会连页面一起弹掉）。
+  Future<void> _renameBook(BuildContext dialogContext, MediaItem item) async {
+    Navigator.pop(dialogContext);
+    final MediaSource mediaSource = item.getMediaSource(appModel: appModel);
+    // 初值取**当前显示名**（override ?? 原名）而不是原始 title：否则改过一次名的
+    // 书再次打开改名框会闪回原名，用户以为改名丢了。统一走显示名门面。
+    final String current = displayTitleForBook(item: item, rawTitle: item.title);
+    final String? name = await showNameInputDialog(
+      context: context,
+      title: t.book_rename,
+      labelText: t.book_rename_label,
+      initialName: current,
+      leadingIcon: Icons.drive_file_rename_outline,
+    );
+    if (!mounted || name == null || name == current) return;
+    await mediaSource.setOverrideTitleFromMediaItem(item: item, title: name);
+    if (!mounted) return;
+    // BUG-1018 同款刷新纪律：书架的响应式源按 key 集合去重，纯覆盖层写入不会
+    // 自动重发，只 refreshTab 会拿旧的缓存 MediaItem 重绘、看着像"没保存"。
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(srtBooksProvider);
+    _rebuild(() {});
+  }
+
   Future<void> _scrapeEpubCover(MediaItem item) async {
     Navigator.pop(context);
     final MediaSource mediaSource = item.getMediaSource(appModel: appModel);

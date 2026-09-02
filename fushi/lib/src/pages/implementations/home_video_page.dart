@@ -94,6 +94,7 @@ import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/batch_tag_dialog_frame.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
+import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/utils/misc/shelf_ordering.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
@@ -2482,35 +2483,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 重命名视频/播放列表（C 需求③）：弹输入框预填当前标题 → 落库 → 刷新列表。
   /// 空白标题不提交（保持原名）。
+  ///
+  /// 弹窗走库内共享的 [showNameInputDialog]：此前这里是一个**裸 AlertDialog**
+  /// （全库唯一没走 Fushi 设计系统的改名框），且 controller 在 `await` 返回后
+  /// 立即 dispose——那时弹窗还没拆完，属于过早释放（游戏改名踩过同一个坑并留了
+  /// 注释）。收编后 trim / 空名短路 / controller 生命周期都由原语统一负责。
   Future<void> _renameVideo(VideoBookRow book) async {
-    final TextEditingController controller =
-        TextEditingController(text: book.title);
-    final String? newTitle = await showAppDialog<String>(
+    final String? newTitle = await showNameInputDialog(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(t.video_rename),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: InputDecoration(hintText: t.video_rename_hint),
-          onSubmitted: (String v) => Navigator.pop(ctx, v),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(t.dialog_cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: Text(t.dialog_save),
-          ),
-        ],
-      ),
+      title: t.video_rename,
+      labelText: t.video_rename_hint,
+      initialName: book.title,
+      leadingIcon: Icons.drive_file_rename_outline,
     );
-    controller.dispose();
-    final String? trimmed = newTitle?.trim();
-    if (trimmed == null || trimmed.isEmpty || trimmed == book.title) return;
-    await widget.repo.updateTitle(book.bookUid, trimmed);
+    if (newTitle == null || newTitle == book.title) return;
+    await widget.repo.updateTitle(book.bookUid, newTitle);
     if (mounted) _refresh();
   }
 

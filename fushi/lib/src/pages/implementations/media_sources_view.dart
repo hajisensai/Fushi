@@ -40,6 +40,7 @@ import 'package:fushi/src/sync/sftp_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_sync_backend.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
+import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/utils/net/url_input_normalizer.dart';
 import 'package:fushi/utils.dart';
@@ -450,6 +451,15 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                 enabled: !busy,
                 padding: EdgeInsets.all(tokens.spacing.gap / 2),
                 onTap: () => _rescan(row),
+              ),
+              FushiIconButton(
+                key: ValueKey<String>('media_source_rename_${row.id}'),
+                icon: Icons.drive_file_rename_outline,
+                size: 18,
+                tooltip: t.media_source_rename,
+                enabled: !busy,
+                padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                onTap: () => _rename(row),
               ),
               if (isVideo && widget.onScrapeSource != null)
                 FushiIconButton(
@@ -1168,6 +1178,26 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 移除来源：确认对话框强调移除来源不会删除已导入的媒体（FK setNull 自动
   /// 把归属媒体的 source_id 归 NULL，条目保留）→ 确认则 deleteMediaSource +
   /// 清除该来源的网络凭据 → 刷新。
+  /// 改扫描根的显示名。只动 `media_sources.label` 这一列——身份是自增 `id`，
+  /// 扫描、凭据、刮削设置、条目归属全都按 id 走，改名不牵动任何一处。
+  ///
+  /// 添加本地文件夹时 label 是从 rootPath 末段推导的（`defaultLabelFromRoot`），
+  /// 同名文件夹挂多个根时全叫一样的名字；网络来源的可选显示名也只能在添加时填
+  /// 一次。这里是事后唯一的修改入口。
+  Future<void> _rename(SourceLibraryRow row) async {
+    final String? name = await showNameInputDialog(
+      context: context,
+      title: t.media_source_rename,
+      labelText: t.media_source_rename_label,
+      initialName: row.label,
+      leadingIcon: Icons.drive_file_rename_outline,
+    );
+    // 弹窗已 trim 且拒绝空名，这里只需短路「没改」。
+    if (!mounted || name == null || name == row.label) return;
+    await _db.updateMediaSourceLabel(row.id, name);
+    await _load();
+  }
+
   Future<void> _remove(SourceLibraryRow row) async {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
