@@ -1539,7 +1539,38 @@ class GalHookSessionController extends ChangeNotifier {
       // 用户面前明明有个游戏窗口，Hibiki 却停在终态错误，只能手动去「捕获目标」重绑。
       // 改为保留会话、降级到 Loopback，并按退避表重试附着。
       final int? runningPid = engine.launchedPid;
+      final bool localeLaunchDied = engine.japaneseLocaleApplied &&
+          runningPid != null &&
+          _targetImagePathProbe(runningPid) == null;
       await _stopEngine(engine);
+      // BUG-2067：Locale Emulator 拉起的进程在 LoaderDll 装载阶段就 APPCRASH（与注入
+      // 无关，本机对每一款 x86 游戏都复现）。injector 已回报 `LAUNCH pid=`，但那个进程
+      // 已经不在了——按「游戏在跑、降级 loopback、稍后重试附着」处理只会得到一串
+      // `OpenProcess 87`。转区是 `auto` 档替用户做的决定，决定失效就退回不转区再拉一次；
+      // 用户显式选 `on` 时不替他改主意，照常报失败。
+      if (localeLaunchDied &&
+          japaneseLocaleMode == GalJapaneseLocaleMode.auto) {
+        _record(
+          GalHookEventSeverity.warning,
+          'launch',
+          'launch.japanese_locale_fallback',
+          'The Locale Emulator launch died before the game came up; '
+              'relaunching without a Japanese locale',
+          details: <String, Object?>{
+            'pid': runningPid,
+            'exe': executablePath,
+            ...diagnostics.toDetails(),
+          },
+        );
+        return launchGame(
+          executablePath,
+          launchArguments: launchArguments,
+          workdir: workdir,
+          gameId: gameId,
+          gameTitle: gameTitle,
+          japaneseLocaleMode: GalJapaneseLocaleMode.off,
+        );
+      }
       if (runningPid != null) {
         _record(
           GalHookEventSeverity.warning,
