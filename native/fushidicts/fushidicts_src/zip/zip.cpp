@@ -73,18 +73,84 @@ Zip::~Zip() {
   memory::unmap(file);
 }
 
+// The wrapper directory shared by every entry, or "" when there is none.
+//
+// Only a layer that contains the WHOLE archive is stripped: the first path
+// segment of the first file is taken as the candidate and every other entry
+// must sit under it. A dictionary that legitimately keeps media in
+// subdirectories ("index.json" + "img/a.png") therefore keeps its names, since
+// "index.json" has no first segment to share. Directory entries are ignored —
+// they carry no payload and a bare "Foo/" entry must not by itself decide the
+// prefix for files that live elsewhere.
+// Nesting is peeled repeatedly, so "MyDict/MyDict-v2/index.json" reduces the
+// same way a single layer does; peeling stops as soon as a file appears at the
+// current level or the entries fan out into sibling directories.
+static std::string compute_root_prefix(const std::vector<ZipEntry>& entries) {
+  std::string prefix;
+
+  for (;;) {
+    std::string candidate;
+    bool have_candidate = false;
+    bool fan_out = false;
+
+    for (const auto& e : entries) {
+      if (e.name.empty() || e.name.back() == '/') {
+        continue;  // directory marker
+      }
+      if (e.name.size() <= prefix.size() || e.name.compare(0, prefix.size(), prefix) != 0) {
+        return prefix;  // shouldn't happen; leave the prefix as-is
+      }
+      const std::string_view rest = std::string_view(e.name).substr(prefix.size());
+      const auto slash = rest.find('/');
+      if (slash == std::string_view::npos) {
+        return prefix;  // a file at this level: nothing wraps the whole archive
+      }
+      if (!have_candidate) {
+        candidate = std::string(rest.substr(0, slash + 1));
+        have_candidate = true;
+        continue;
+      }
+      if (rest.compare(0, candidate.size(), candidate) != 0) {
+        fan_out = true;  // entries span more than one directory at this level
+        break;
+      }
+    }
+
+    if (!have_candidate || fan_out) {
+      return prefix;
+    }
+    prefix += candidate;
+  }
+}
+
 bool Zip::open(const std::string& path) {
   file = memory::map_rd(path);
   if (!file) {
     return false;
   }
 
-  return parse_central_directory();
+  if (!parse_central_directory()) {
+    return false;
+  }
+  root_prefix = compute_root_prefix(entries);
+  return true;
+}
+
+std::string_view Zip::logical_name(int index) const {
+  if (index < 0 || static_cast<size_t>(index) >= entries.size()) {
+    return {};
+  }
+  std::string_view name = entries[index].name;
+  if (!root_prefix.empty() && name.size() >= root_prefix.size() &&
+      name.compare(0, root_prefix.size(), root_prefix) == 0) {
+    name.remove_prefix(root_prefix.size());
+  }
+  return name;
 }
 
 int Zip::find(const std::string& name) const {
   for (int i = 0; i < static_cast<int>(entries.size()); ++i) {
-    if (entries[i].name == name) {
+    if (logical_name(i) == name) {
       return i;
     }
   }
@@ -135,7 +201,9 @@ std::optional<Zip::MediaResult> Zip::read_media(int index) const {
 
   const auto& e = entries[index];
   MediaResult out;
-  out.path = e.name;
+  // Dictionary-relative, so <img src="img/a.png"> resolves the same whether or
+  // not the archive was re-zipped with a wrapper directory.
+  out.path = std::string(logical_name(index));
   if (e.uncompressed_size == 0) {
     return out;  // empty blob; no resize needed
   }

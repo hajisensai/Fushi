@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "../memory/memory.hpp"
@@ -33,8 +34,24 @@ struct Zip {
   memory::mapped_file file;
   std::vector<ZipEntry> entries;
 
+  // The single top-level directory every entry sits under, with its trailing
+  // '/' (e.g. "MyDict/"), or "" when entries already live at the archive root.
+  // Re-zipping an extracted dictionary is the common way to gain such a layer,
+  // and every consumer here addresses entries by their *dictionary-relative*
+  // name ("index.json", "term_bank_1.json", "img/a.png"). Stripping the layer
+  // once, here, keeps that the only name shape the rest of the importer sees.
+  // Computed by open(); see compute_root_prefix() in zip.cpp for the rules.
+  std::string root_prefix;
+
   ~Zip();
   bool open(const std::string& path);
+
+  // Entry name with root_prefix removed — the name callers should match on.
+  // Out-of-range index yields "".
+  std::string_view logical_name(int index) const;
+
+  // Matches against logical_name(), so "index.json" finds both a root-level
+  // entry and one nested under a single wrapper directory.
   int find(const std::string& name) const;
   std::string read(int index) const;
 

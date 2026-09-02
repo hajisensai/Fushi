@@ -68,6 +68,11 @@ add_fushi_test(zip64_central_dir_test zip64_central_dir_test.cpp
 add_fushi_test(kanji_import_query_test kanji_import_query_test.cpp)
 add_fushi_test(dict_name_uaf_e2e_test dict_name_uaf_e2e_test.cpp)
 add_fushi_test(media_import_query_test media_import_query_test.cpp)
+# Re-zipping an extracted dictionary wraps every entry in one directory; the
+# importer must address entries by their dictionary-relative name so such an
+# archive imports identically (media keys included), while an archive spanning
+# two top-level directories stays unrecognised.
+add_fushi_test(zip_wrapper_directory_test zip_wrapper_directory_test.cpp)
 add_fushi_test(freq_pitch_import_query_test freq_pitch_import_query_test.cpp)
 add_fushi_test(freq_pitch_merge_query_test freq_pitch_merge_query_test.cpp)
 # BUG-1304: the two tests above drive DictionaryQuery::query(); this one drives
@@ -114,6 +119,11 @@ add_fushi_test(mdx_encrypted_keyinfo_test mdx_encrypted_keyinfo_test.cpp
 # BUG-729 Phase B: import_mdx inlines a sibling <base>.css as the dict styles.css.
 # Builds a real on-disk MDX (mdx_fixture.hpp) + sibling .css and asserts it lands.
 add_fushi_test(simple_dict_css_test simple_dict_css_test.cpp
+    "${FUSHI_ROOT}/fushidicts_external/libdeflate")
+# The stylesheet is named by the entries' own <link>, which need not match the
+# .mdx stem ("NLT（話し言葉）.mdx" + "NLT.css"); the stem-named sibling is only
+# the fallback, and a ../ href must not escape the dictionary directory.
+add_fushi_test(mdx_linked_css_name_test mdx_linked_css_name_test.cpp
     "${FUSHI_ROOT}/fushidicts_external/libdeflate")
 # Phase A: MDD (MDX media companion) parses byte-exact and auto-mounts into the
 # dict as media.bin/idx; get_media_file returns the bytes by normalized path.
