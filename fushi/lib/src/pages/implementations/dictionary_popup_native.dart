@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
-import 'package:fushi/models.dart';
 import 'package:fushi/utils.dart';
 
 class _GroupedEntry {
@@ -38,9 +37,19 @@ class DictionaryPopupNative extends ConsumerStatefulWidget {
     super.key,
     this.onTextSelected,
     this.onMineEntry,
+    this.dictionaryDisplayNames = const <String, String>{},
   });
 
   final DictionarySearchResult result;
+
+  /// 词典改名（v95）：真名 -> 显示名，只含改过名的。**由调用方传入**，而不是
+  /// 在这里 `ref.read(appProvider)` 去捞——本 widget 虽是 ConsumerStatefulWidget，
+  /// 但在此之前从没真正用过 ref，于是它的测试一直不套 ProviderScope。渲染路径
+  /// 里读全局容器会当场 `Bad state: No ProviderScope found`，而且那是把一个
+  /// 隐式的全局依赖塞进纯展示组件。数据从外面单向流进来，测试也不用陪着改。
+  ///
+  /// 空表 = 没人改过名 = 全部显示真名（与 v95 前逐字节一致）。
+  final Map<String, String> dictionaryDisplayNames;
   final void Function(String text)? onTextSelected;
   final void Function(Map<String, String> fields)? onMineEntry;
 
@@ -56,17 +65,9 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
   /// 分组 key（[_GroupedEntry] / `byDict`）一律仍是真名——它对齐 CSS 作用域、
   /// 隐藏/折叠集合与 Anki token，翻译了就全错位。
   ///
-  /// `dictRepo` 是 late 字段，悬浮词典窗这条精简初始化路径上存在「DB 就绪但词典
-  /// 仓库还没建」的窗口，直接读会抛 LateInitializationError——未就绪时原样返回
-  /// 真名（与改名前逐字节一致），不崩。
-  String _dictDisplayName(String rawName) {
-    final AppModel appModel = ref.read(appProvider);
-    if (!appModel.isDictionaryRepoReady) return rawName;
-    for (final Dictionary d in appModel.dictionaries) {
-      if (d.name == rawName) return d.effectiveDisplayName;
-    }
-    return rawName;
-  }
+  /// 查不到就原样返回真名（没改过名 / 调用方没传表），不崩。
+  String _dictDisplayName(String rawName) =>
+      widget.dictionaryDisplayNames[rawName] ?? rawName;
 
   @override
   void initState() {
