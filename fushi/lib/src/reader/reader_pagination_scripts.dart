@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_study_unit_script.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
@@ -811,6 +812,7 @@ class ReaderPaginationScripts {
         ? ReaderVisualNovelScripts.vnShellScript()
         : (continuousMode ? continuousShellSource() : paginatedShellSource());
     return '''<script>
+$kStudyUnitJs
 window.__fushiShells = {};
 ${_stripShellScriptTags(shell)}
 window.__fushiInstallShell = function(C) {
@@ -925,8 +927,12 @@ window.__fushiInstallShell = function(C) {
   normalizeText: function(text) {
     return (text || '').replace(this.readerRegexNegated, '');
   },
+  // 统计 / 进度口径：学习单位数（无空格文字按码点、空格分词文字按连续串）。与 Dart
+  // countStudyChars 逐样本对拍（study_char_count_parity_test.dart）。**不要**改回
+  // normalizeText——那套白名单是有声书 cue 匹配与纯图片章判定的坐标系，见
+  // reader_study_unit_script.dart 的「与匹配 / 归一化的分界」。
   countChars: function(text) {
-    return Array.from(this.normalizeText(text)).length;
+    return window.fushiStudyUnits.count(text);
   },
   isMatchableChar: function(char) {
     return this.readerRegex.test(char || '');
@@ -1179,8 +1185,9 @@ window.__fushiInstallShell = function(C) {
     while (offset < text.length) {
       offsets.push(offset);
       var char = String.fromCodePoint(text.codePointAt(offset));
+      // 学习单位在**串尾**结算，判据吃位置而不是单个字符（见 reader_study_unit_script.dart）。
+      if (window.fushiStudyUnits.isUnitEnd(text, offset)) count += 1;
       offset += char.length;
-      if (this.isMatchableChar(char)) count += 1;
       prefixCounts.push(count);
     }
     var low = 0;
@@ -1288,8 +1295,9 @@ window.__fushiInstallShell = function(C) {
     while (offset < text.length) {
       offsets.push(offset);
       var char = String.fromCodePoint(text.codePointAt(offset));
+      // 学习单位在**串尾**结算，判据吃位置而不是单个字符（见 reader_study_unit_script.dart）。
+      if (window.fushiStudyUnits.isUnitEnd(text, offset)) count += 1;
       offset += char.length;
-      if (this.isMatchableChar(char)) count += 1;
       prefixCounts.push(count);
     }
     var low = 0;
@@ -2533,8 +2541,7 @@ $_sharedJs
     var limit = Math.min(range.startOffset, text.length);
     for (var i = 0; i < limit; i++) {
       var cp = text.codePointAt(i);
-      var char = String.fromCodePoint(cp);
-      if (this.isMatchableChar(char)) localChars++;
+      if (window.fushiStudyUnits.isUnitEnd(text, i)) localChars++;
       if (cp > 0xFFFF) i++;
     }
     return baseOffset + localChars;
@@ -2580,8 +2587,7 @@ $_sharedJs
     var text = targetNode.textContent;
     for (var i = 0; i < text.length && charIdx < remaining; i++) {
       var cp = text.codePointAt(i);
-      var ch = String.fromCodePoint(cp);
-      if (this.isMatchableChar(ch)) charIdx++;
+      if (window.fushiStudyUnits.isUnitEnd(text, i)) charIdx++;
       if (cp > 0xFFFF) i++;
       textOffset = i + 1;
     }
@@ -3101,8 +3107,7 @@ $_sharedJs
     var limit = Math.min(range.startOffset, text.length);
     for (var i = 0; i < limit; i++) {
       var cp = text.codePointAt(i);
-      var char = String.fromCodePoint(cp);
-      if (this.isMatchableChar(char)) localChars++;
+      if (window.fushiStudyUnits.isUnitEnd(text, i)) localChars++;
       if (cp > 0xFFFF) i++;
     }
     return baseOffset + localChars;
@@ -3131,8 +3136,7 @@ $_sharedJs
     var text = targetNode.textContent;
     for (var i = 0; i < text.length && charIdx < remaining; i++) {
       var cp = text.codePointAt(i);
-      var ch = String.fromCodePoint(cp);
-      if (this.isMatchableChar(ch)) charIdx++;
+      if (window.fushiStudyUnits.isUnitEnd(text, i)) charIdx++;
       if (cp > 0xFFFF) i++;
       textOffset = i + 1;
     }

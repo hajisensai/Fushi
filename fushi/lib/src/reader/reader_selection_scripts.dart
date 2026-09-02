@@ -1714,7 +1714,7 @@ window.fushiSelection = {
       var text = targetNode.textContent;
       for (var i = 0; i < offset;) {
         var char = String.fromCodePoint(text.codePointAt(i));
-        if (window.fushiReader.isMatchableChar(char)) count++;
+        if (window.fushiStudyUnits.isUnitEnd(text, i)) count++;
         i += char.length;
       }
       return count;
@@ -1727,14 +1727,14 @@ window.fushiSelection = {
       if (node === targetNode) {
         for (var i = 0; i < offset;) {
           var char = String.fromCodePoint(nodeText.codePointAt(i));
-          if (window.fushiReader.isMatchableChar(char)) count++;
+          if (window.fushiStudyUnits.isUnitEnd(nodeText, i)) count++;
           i += char.length;
         }
         return count;
       }
       for (var i = 0; i < nodeText.length;) {
         var char = String.fromCodePoint(nodeText.codePointAt(i));
-        if (window.fushiReader.isMatchableChar(char)) count++;
+        if (window.fushiStudyUnits.isUnitEnd(nodeText, i)) count++;
         i += char.length;
       }
     }
