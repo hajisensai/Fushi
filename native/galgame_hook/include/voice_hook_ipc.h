@@ -108,7 +108,11 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     两边的新引擎位同时要走（HUNEX HFA 5 位 + SGRE 家族/锚点 3 位，而低 27 位早已
 //     占满）。按本结构体既有先例（reserved_luna 满了之后另立 reserved_hook_diagnostics）
 //     另立一个字，而不是拓宽——拓宽要改 InterlockedOr 的原子写路径与每个读侧。
-constexpr uint32_t kSharedVersion = 20;
+// v21：lookup geometry admission 新增 native-input-ready 位。lookup_enabled 只负责让
+//     文本/几何传感器继续工作；native provider 即使已经被 registry 选成 Ready owner，
+//     也只有在 host 通过风险准入并显式发布这一位后才可吞掉游戏点击。这个变化不改布局，
+//     但改变同一 flags 字的解释方式，按 v18 的纪律必须升版本，拒绝新旧 host/helper 混用。
+constexpr uint32_t kSharedVersion = 21;
 constexpr uint32_t kStableIpcVersion = 1;
 
 // BUG-1882 — SGRE 的鼠标输入走 DirectInput immediate state，不经过普通
@@ -236,6 +240,7 @@ constexpr uint32_t kTextSourceGdi = 1;
 constexpr uint32_t kTextSourceLuna = 2;
 constexpr uint32_t kTextSourceUnityTmp = 3;
 constexpr uint32_t kTextSourceSiglus = 4;
+constexpr uint32_t kTextSourceSgre = 5;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the
@@ -686,8 +691,10 @@ constexpr uint32_t kLookupGeometryAdmissionAuto = 1u;
 constexpr uint32_t kLookupGeometryAdmissionNativeOnly = 2u;
 constexpr uint32_t kLookupGeometryAdmissionAttachedOnly = 3u;
 constexpr uint32_t kLookupGeometryAdmissionFlagAttachedReady = 0x00000001u;
+constexpr uint32_t kLookupGeometryAdmissionFlagNativeInputReady = 0x00000002u;
 constexpr uint32_t kLookupGeometryAdmissionFlagMask =
-    kLookupGeometryAdmissionFlagAttachedReady;
+    kLookupGeometryAdmissionFlagAttachedReady |
+    kLookupGeometryAdmissionFlagNativeInputReady;
 constexpr uint32_t kLookupGeometryAdmissionWriteInProgress = 0x80000000u;
 constexpr uint32_t kLookupGeometryAdmissionSequenceMask = 0x7fffffffu;
 
@@ -1111,6 +1118,10 @@ struct LookupGeometryAdmissionSnapshot {
   bool attached_ready() const {
     return (flags & kLookupGeometryAdmissionFlagAttachedReady) != 0;
   }
+
+  bool native_input_ready() const {
+    return (flags & kLookupGeometryAdmissionFlagNativeInputReady) != 0;
+  }
 };
 
 struct LookupShieldRequestSnapshot {
@@ -1235,11 +1246,16 @@ inline LookupGeometryAdmissionSnapshot ReadLookupGeometryAdmission(
 // from lookup_enabled so switching to attached never tears down the injected
 // generic shield.  The helper is idempotent across repeated Flutter syncs.
 inline uint32_t PublishLookupGeometryAdmission(
-    SharedHeader* header, uint32_t mode, bool attached_ready) {
+    SharedHeader* header, uint32_t mode, bool attached_ready,
+    bool native_input_ready) {
   if (header == nullptr || !IsLookupGeometryAdmissionMode(mode)) return 0;
-  const uint32_t flags = attached_ready
-                             ? kLookupGeometryAdmissionFlagAttachedReady
-                             : 0u;
+  uint32_t flags = 0;
+  if (attached_ready) {
+    flags |= kLookupGeometryAdmissionFlagAttachedReady;
+  }
+  if (native_input_ready) {
+    flags |= kLookupGeometryAdmissionFlagNativeInputReady;
+  }
   const LookupGeometryAdmissionSnapshot stable =
       ReadLookupGeometryAdmission(header);
   if (stable.valid && stable.mode == mode && stable.flags == flags) {

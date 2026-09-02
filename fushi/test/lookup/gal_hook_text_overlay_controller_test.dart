@@ -62,11 +62,30 @@ void main() {
   late GalHookTextOverlayController controller;
   late Map<String, Object?> preferences;
   late bool nativeShowing;
+  late int lookupRequestSeq;
+
+  // 真 runner 对每条查词控制面调用都给显式 ack（`ok` + 单调递增的
+  // `requestSeq`）。会话换代时 GalHookTextOverlayController 要求拿到这份
+  // 显式 ack 才算旧路线已退役；假 runner 不答就等于把台词浮窗连坐掉，
+  // 那是 harness 缺口、不是被测行为。
+  Map<String, Object?> lookupAck() => <String, Object?>{
+    'ok': true,
+    'requestSeq': ++lookupRequestSeq,
+    'appliedSeq': lookupRequestSeq,
+  };
+
+  // 上面的默认 ack 覆盖的是「runner 正常应答」这一种。runner 还有一整类**明确
+  // 错误**回执（控制环满 -> control_rejected、mapping 未开 -> not_open …），
+  // 那不是 harness 缺口而是真实现网状态。单条用例把这个置上就能验证：查词侧
+  // 拿到错误回执时，台词浮窗必须照常显示。
+  Map<String, Object?>? geometryAdmissionOverride;
 
   setUp(() {
     nativeCalls = <MethodCall>[];
     preferences = <String, Object?>{};
     nativeShowing = false;
+    lookupRequestSeq = 0;
+    geometryAdmissionOverride = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
           nativeCalls.add(call);
@@ -76,6 +95,11 @@ void main() {
           }
           if (call.method == 'hide') nativeShowing = false;
           if (call.method == 'isShowing') return nativeShowing;
+          if (call.method == 'galLookupSetGeometryAdmission' &&
+              geometryAdmissionOverride != null) {
+            return geometryAdmissionOverride;
+          }
+          if (call.method.startsWith('galLookup')) return lookupAck();
           return null;
         });
     GalHookTextOverlayChannel.platformOverride = true;
@@ -133,6 +157,39 @@ void main() {
           (_) {},
         );
   }
+
+  test('查词 route 退役失败不得连坐台词浮窗', () async {
+    // 换局时要先退役上一局的查词 route。这里让 runner 明确回 control_rejected
+    // ——控制环满时的真实回执，不是「假 runner 不作答」那种 harness 缺口。
+    //
+    // 这条 native 往返失败**只是查词侧的债**：台词浮窗是另一条独立能力，两者在
+    // 同一个 _syncFromSession 里串行只是实现细节。回归的形状是「整局游戏一个字
+    // 都不显示，只有 0.5→8s 指数退避在空转」——因为退役的失败分支早退在浮窗
+    // updateText/show 之前，`_sessionKey` 永不提交。
+    geometryAdmissionOverride = <String, Object?>{'error': 'control_rejected'};
+    await controller.start(appModel: AppModel(testPlatformServices()));
+    await startSession();
+    final TexthookerLineEntry first = textService.appendLine(
+      '退役失败也要显示的台词',
+      source: TexthookerLineSource.websocket,
+    )!;
+
+    await _waitUntil(() => controller.displayedLineId == first.id);
+    expect(controller.isVisible, isTrue);
+
+    // 只钉实测能杀的两条。「退役未完成不得武装新 route」在本层观察不到（这个
+    // fake 里 attached profile 从未同步成功，nativeProviderDesired 恒假，把生产侧
+    // 的 `!_lookupRetirementPending` 门删掉本用例也不红），故不写那条空转断言。
+    expect(
+      nativeCalls
+          .where(
+            (MethodCall call) => call.method == 'galLookupSetGeometryAdmission',
+          )
+          .isNotEmpty,
+      isTrue,
+      reason: '换局必须向 native 发一次退役请求',
+    );
+  });
 
   test('first line auto-shows, pause freezes, and resume catches up', () async {
     await controller.start(appModel: AppModel(testPlatformServices()));

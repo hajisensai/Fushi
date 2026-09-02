@@ -146,11 +146,6 @@ void main() {
         ),
       ),
     );
-    await tester.tap(
-      find.byKey(const ValueKey<String>('game-attached-lookup-mode')),
-    );
-    await tester.pumpAndSettle();
-
     expect(
       find.byKey(const ValueKey<String>('game-attached-lookup-accept-risk')),
       findsOneWidget,

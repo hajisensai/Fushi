@@ -332,6 +332,11 @@
   // two compositor frames, but race them with a bounded fallback. Route and
   // round identity below make the two completion sources exactly-once.
   var GAL_DIRTY_RAF_FALLBACK_MS = 120;
+  // captureReady has the same off-screen WebView2 scheduling constraint as a
+  // dirty-frame acknowledgement.  The timer is a bounded liveness fallback,
+  // not a second completion source: route/epoch/token checks below make a late
+  // compositor frame a no-op after the timer wins.
+  var GAL_CAPTURE_READY_RAF_FALLBACK_MS = 120;
   function scheduleMeasure(routeSnapshot, allowCachedMeasurements) {
     var route = cloneRoute(routeSnapshot || activeRoute);
     var key = routeKey(route);
@@ -3064,7 +3069,9 @@
   // not mean WebView2 has presented the resized DOM yet.  A capture in that gap
   // can contain both the old and new layout.  Gate the capture on two animation
   // frames in the host realm, and stamp the immutable lookup route so a late
-  // frame from an older lookup cannot publish pixels for the current one.
+  // frame from an older lookup cannot publish pixels for the current one. A
+  // bounded timer preserves liveness when Chromium suspends rAF for the parked
+  // off-screen WebView; the same route/epoch/token gate owns both completions.
   function armCaptureReady(
       routeSnapshot, physicalWidth, physicalHeight, geometryEpoch) {
     var route = cloneRoute(routeSnapshot || activeRoute);
@@ -3081,44 +3088,60 @@
     // Resize/commit can converge more than once inside one lookup route, and
     // physical width/height may remain equal while the layer origin changes.
     // Only the latest commit is allowed to satisfy Dart's pending capture.
-    var token = (galCaptureReadySchedules.get(key) || 0) + 1;
+    // Use an object identity rather than a route-local integer. The completed
+    // token is removed from the map, so a numeric counter derived from the map
+    // could otherwise restart at 1 and let a very late rAF consume a newer arm
+    // for the same route/epoch (ABA).
+    var token = {};
     galCaptureReadySchedules.set(key, token);
     var raf = (typeof window.requestAnimationFrame === 'function')
         ? window.requestAnimationFrame
         : null;
+    var fallbackTimer = null;
+    var finished = false;
     var postIfCurrent = function () {
-      if (galCaptureReadySchedules.get(key) !== token ||
-          epoch !== committedGeometryEpoch ||
-          epoch !== announcedGeometryEpoch) {
-        if (galCaptureReadySchedules.get(key) === token) {
-          galCaptureReadySchedules.delete(key);
-        }
+      if (finished) {
         return;
       }
-      galCaptureReadySchedules.delete(key);
-      if (routeKey(activeRoute) === key) {
-        postToHost(
-            'captureReady', [physicalWidth, physicalHeight, epoch], route);
+      var current = galCaptureReadySchedules.get(key) === token &&
+          routeKey(activeRoute) === key &&
+          epoch === committedGeometryEpoch &&
+          epoch === announcedGeometryEpoch;
+      finished = true;
+      clearTimerSafe(fallbackTimer);
+      fallbackTimer = null;
+      if (galCaptureReadySchedules.get(key) === token) {
+        galCaptureReadySchedules.delete(key);
       }
+      if (!current) {
+        return;
+      }
+      postToHost(
+          'captureReady', [physicalWidth, physicalHeight, epoch], route);
     };
-    // The production WebView2 host always supplies rAF.  Keep the synchronous
-    // fallback only for non-browser harnesses; no fixed-time sleep is involved.
     if (!raf) {
       postIfCurrent();
       return;
     }
+    // A permanently off-screen WebView2 can expose requestAnimationFrame while
+    // suspending its callbacks. Prefer two paint opportunities, but do not let
+    // Dart wait forever for a callback Chromium may never schedule.
+    fallbackTimer = setTimerSafe(
+        postIfCurrent, GAL_CAPTURE_READY_RAF_FALLBACK_MS);
     try {
       raf(function () {
         if (routeKey(activeRoute) !== key ||
             galCaptureReadySchedules.get(key) !== token ||
             epoch !== committedGeometryEpoch ||
             epoch !== announcedGeometryEpoch) {
-          if (galCaptureReadySchedules.get(key) === token) {
-            galCaptureReadySchedules.delete(key);
-          }
+          postIfCurrent();
           return;
         }
-        raf(postIfCurrent);
+        try {
+          raf(postIfCurrent);
+        } catch (e) {
+          postIfCurrent();
+        }
       });
     } catch (e) {
       postIfCurrent();

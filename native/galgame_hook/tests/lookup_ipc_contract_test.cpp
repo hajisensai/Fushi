@@ -636,7 +636,8 @@ void TestV14LookupRegionIsPureAppendOverV13() {
 }
 
 void TestV16V17AndV19OnlyAppendOverV15() {
-  Check(kSharedVersion == 20, "本测试锁的是 v20 契约（两条 v19 合版）");
+  Check(kSharedVersion == 21,
+        "本测试锁的是 v21 契约（native input admission 独立）");
 
   // v14 的最后一个字段是 lookup_diag。v15 只能紧随其后追加一个 64 位 applied seq；
   // 把字段插进 v14 中间，或在 applied seq 后再偷偷长出别的字段，都必须判红。
@@ -719,13 +720,13 @@ void TestV16V17AndV19OnlyAppendOverV15() {
         "准入区必须追加在几何区之后，不得插进几何区中间");
 }
 
-void TestV19GeometryAdmissionPublication() {
+void TestV21GeometryAdmissionPublication() {
   SharedHeader h = {};
   Check(!fushi_voice_hook::ReadLookupGeometryAdmission(&h).valid,
         "seq=0 的 geometry admission 不得当成已发布请求");
   const uint32_t first =
       fushi_voice_hook::PublishLookupGeometryAdmission(
-          &h, fushi_voice_hook::kLookupGeometryAdmissionAuto, true);
+          &h, fushi_voice_hook::kLookupGeometryAdmissionAuto, true, false);
   const auto auto_attached =
       fushi_voice_hook::ReadLookupGeometryAdmission(&h);
   Check(first == 1u && auto_attached.valid && auto_attached.seq == first &&
@@ -734,12 +735,13 @@ void TestV19GeometryAdmissionPublication() {
             auto_attached.attached_ready(),
         "auto+attached-ready payload 必须 coherent round-trip");
   Check(fushi_voice_hook::PublishLookupGeometryAdmission(
-            &h, fushi_voice_hook::kLookupGeometryAdmissionAuto, true) ==
+            &h, fushi_voice_hook::kLookupGeometryAdmissionAuto, true, false) ==
             first,
         "重复 geometry admission 必须幂等，不制造假代际");
   const uint32_t second =
       fushi_voice_hook::PublishLookupGeometryAdmission(
-          &h, fushi_voice_hook::kLookupGeometryAdmissionNativeOnly, false);
+          &h, fushi_voice_hook::kLookupGeometryAdmissionNativeOnly, false,
+          false);
   const auto native_only =
       fushi_voice_hook::ReadLookupGeometryAdmission(&h);
   Check(second == 2u && native_only.valid &&
@@ -754,7 +756,8 @@ void TestV19GeometryAdmissionPublication() {
         "writer-held geometry admission 不得被读成 disable/半份 payload");
   fushi_voice_hook::AtomicStoreShared32(
       &h.lookup_geometry_admission_request_seq, second);
-  Check(fushi_voice_hook::PublishLookupGeometryAdmission(&h, 99u, true) == 0 &&
+  Check(fushi_voice_hook::PublishLookupGeometryAdmission(
+            &h, 99u, true, false) == 0 &&
             fushi_voice_hook::ReadLookupGeometryAdmission(&h).mode ==
                 fushi_voice_hook::kLookupGeometryAdmissionNativeOnly,
         "非法 admission mode 必须拒绝且不改稳定请求");
@@ -1067,7 +1070,7 @@ int main() {
   TestAcceptedFramesAlwaysFitInsideTheirBitmapSlot();
   TestV14LookupRegionIsPureAppendOverV13();
   TestV16V17AndV19OnlyAppendOverV15();
-  TestV19GeometryAdmissionPublication();
+  TestV21GeometryAdmissionPublication();
   TestV19ShieldPublicationAndVerifiedGate();
   TestV19AttachedGeometryOwnershipSnapshot();
   TestV19AdmissionIsPureAppendOverV17();

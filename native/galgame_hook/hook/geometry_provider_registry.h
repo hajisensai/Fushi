@@ -237,6 +237,41 @@ class GeometryProviderRegistry {
     return settled;
   }
 
+  // Input hooks must not treat lookup_enabled as permission to consume a
+  // button. That bit also keeps text sensors alive while risk acceptance or a
+  // provider hand-off is pending. This query proves that the requested native
+  // provider is the registry's current Ready/Active owner under a native
+  // admission mode and the host has separately admitted native input before a
+  // down transaction is allowed to begin. Geometry discovery remains live
+  // while risk acceptance is pending; only click consumption stays closed.
+  bool OwnsReadyProvider(SharedHeader* header, uint32_t provider_kind,
+                         uint32_t provider_id) {
+    const int provider_index =
+        LookupGeometryProductionProviderIndex(provider_kind, provider_id);
+    if (provider_index < 0 ||
+        provider_kind == kLookupGeometryProviderAttachedCalibrated ||
+        !IsHeaderSane(header, true)) {
+      return false;
+    }
+    const LookupGeometryAdmissionSnapshot admission =
+        ReadLookupGeometryAdmission(header);
+    if (!admission.valid || !admission.native_input_ready() ||
+        (admission.mode != kLookupGeometryAdmissionAuto &&
+         admission.mode != kLookupGeometryAdmissionNativeOnly)) {
+      return false;
+    }
+
+    AcquireSRWLockShared(&lock_);
+    const bool owns =
+        AtomicLoadShared32(&header->lookup_enabled) != 0 &&
+        ready_offers_[provider_index] && provider_kind == active_kind_ &&
+        provider_id == active_id_ && !active_retire_pending_ &&
+        (active_status_ == kLookupGeometryStatusReady ||
+         active_status_ == kLookupGeometryStatusActive);
+    ReleaseSRWLockShared(&lock_);
+    return owns;
+  }
+
   // Compatibility wrapper for existing callers.  New lifecycle code should
   // use OfferReady/Retire so readiness and retirement cannot drift apart.
   bool SetActiveProviderStatus(SharedHeader* header, uint32_t provider_kind,
