@@ -266,7 +266,9 @@ void main() {
     await tester.tap(find.text(t.video_jimaku_find_sources));
     await tester.pumpAndSettle();
 
-    expect(requests, isNotEmpty);
+    // 上界不能丢：自动首搜 1 次 + 显式点「查找字幕」1 次，正好 2 次。放宽成
+    // `isNotEmpty` 会让「同一次交互重复发搜」永远不再变红。
+    expect(requests, hasLength(2));
     for (final VideoSubtitleSearchRequest request in requests) {
       final VideoMediaReference media = request.media!;
       // 没有 anidb/anilist 身份 = 不是动画：Jimaku 的 anime 硬过滤必须走 false 档，
@@ -535,6 +537,103 @@ void main() {
     expect(tester.widget<FilledButton>(downloadButton()).onPressed, isNotNull);
   });
 
+  /// AniList 模糊搜索返回 [ids] 里每个 id 一条候选，其余请求 404。
+  ///
+  /// 既有两条自动首搜用例的 mock 全部返回**空** media 列表，恰好绕开了
+  /// 「命中候选之后怎么办」这条分支——那正是它能带着写库副作用溜进来的原因。
+  Future<http.Client> Function() anilistHits(List<int> ids) {
+    return () async => MockClient((http.Request request) async {
+      if (request.url.host == 'graphql.anilist.co') {
+        return http.Response(
+          jsonEncode(<String, Object?>{
+            'data': <String, Object?>{
+              'Page': <String, Object?>{
+                'media': <Object?>[
+                  for (final int id in ids)
+                    <String, Object?>{
+                      'id': id,
+                      'title': <String, Object?>{'romaji': 'Series $id'},
+                    },
+                ],
+              },
+            },
+          }),
+          200,
+        );
+      }
+      return http.Response('not found', 404);
+    });
+  }
+
+  testWidgets('自动首搜只搜不绑：模糊命中首条不写 media_collections.anilistId', (
+    WidgetTester tester,
+  ) async {
+    final VideoBookRow member = await seedMember();
+    // 自动首搜的前提就是合集没绑 AniList，所以「新 id != 旧 id」恒真——一旦这条
+    // 路径会写库，用户**只是打开一次面板**就被粘性绑定，下次走 seedId 分支再也
+    // 不重搜。真人剧合集尤其致命：它在 AniList 上没有条目，模糊搜索照样返回一部
+    // 最像的动画，于是真人剧被永久绑到那部动画上。
+    final MediaCollectionRow collection = await seedCollection();
+    final List<VideoSubtitleSearchRequest> requests =
+        <VideoSubtitleSearchRequest>[];
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        httpClientFactory: anilistHits(<int>[777]),
+        onSearch: (VideoSubtitleSearchRequest request) async {
+          requests.add(request);
+          return ProviderBatchResult<VideoSubtitleCandidate>.success(
+            <VideoSubtitleCandidate>[
+              _Cand('Show - 01.ja.srt', source: 'e1', episode: 1),
+            ],
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 前置：这一版确实走到了「命中候选」那条分支——否则断言写库副作用是空转。
+    expect(requests, hasLength(1));
+    expect(requests.single.media!.anilistId, 777, reason: '命中的首条仍要用来搜');
+    // 正题：搜归搜，一个字节都不许落库。
+    expect(
+      (await db.getMediaCollectionById(collection.id))!.anilistId,
+      isNull,
+      reason: '自动首搜不是用户的选择，不得粘性绑定合集身份',
+    );
+  });
+
+  testWidgets('用户显式点选系列 → anilistId 才写进合集', (WidgetTester tester) async {
+    final VideoBookRow member = await seedMember();
+    final MediaCollectionRow collection = await seedCollection();
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        httpClientFactory: anilistHits(<int>[11, 22]),
+        onSearch: (_) async =>
+            ProviderBatchResult<VideoSubtitleCandidate>.success(
+              <VideoSubtitleCandidate>[
+                _Cand('Show - 01.ja.srt', source: 'e1', episode: 1),
+              ],
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // 自动首搜之后仍然没绑（正向用例也得先钉死起点，否则分不清是谁写的）。
+    expect((await db.getMediaCollectionById(collection.id))!.anilistId, isNull);
+
+    await tester.tap(find.text('Series 22'));
+    await tester.pumpAndSettle();
+
+    expect(
+      (await db.getMediaCollectionById(collection.id))!.anilistId,
+      22,
+      reason: '显式点选是用户的明确意图，绑定这条路径不得被拆没',
+    );
+  });
+
   testWidgets('首搜没结果：来源区说「没找到」而不是整块消失', (WidgetTester tester) async {
     final VideoBookRow member = await seedMember();
     final MediaCollectionRow collection = await seedCollection();
@@ -619,7 +718,17 @@ void main() {
     // 自己的底边去比按钮底边是两侧同源，恒真。
     final Rect host = tester.getRect(find.byType(Scaffold));
     final Rect button = tester.getRect(downloadButton());
-    expect(host.height, greaterThan(1000), reason: '宿主必须比内容高，否则判据恒真');
+    // 「宿主比内容高」得拿**内容自己的高度**来证：列表只有 1 个成员，`CustomScrollView`
+    // 的可滚内容远短于 1400 的宿主，所以 `maxScrollExtent == 0`（撑不满、滚不动）。
+    // 拿 `host.height > 1000` 当这个判据是恒真的——它只复述了 physicalSize。
+    final ScrollableState scrollable = tester.state<ScrollableState>(
+      find.byType(Scrollable).first,
+    );
+    expect(
+      scrollable.position.maxScrollExtent,
+      0,
+      reason: '内容必须撑不满宿主，否则「按钮贴底」无从谈起',
+    );
     expect(host.bottom - button.bottom, lessThan(24));
   });
 }

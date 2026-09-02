@@ -4124,5 +4124,5 @@
   "onboarding_lookup_practice_desc": "เปิดหน้าค้นคำพร้อมประโยคนี้ แตะคำในนั้นเพื่อดูความหมาย ถ้าไม่ขึ้นอะไรเลย แปลว่ายังไม่ได้ติดตั้งพจนานุกรม",
   "onboarding_first_anki_lookup_desc": "เปิดประโยคฝึกแล้วแตะที่คำหนึ่งคำ",
   "onboarding_first_anki_action_desc": "เปิดประโยคฝึกในหน้าค้นคำ แตะที่คำหนึ่งคำ แตะ + ตรวจดูข้อมูลในช่องต่าง ๆ แล้วบันทึก",
-  "video_subtitle_source_search_hint": "Tap “Find subtitles” above, then pick a source here."
+  "video_subtitle_source_search_hint": "แตะ “ค้นหาคำบรรยาย” ด้านบน แล้วเลือกแหล่งข้อมูลที่นี่"
 }

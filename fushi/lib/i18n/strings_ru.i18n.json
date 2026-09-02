@@ -4124,5 +4124,5 @@
   "onboarding_lookup_practice_desc": "Открывает страницу поиска с загруженным предложением. Нажмите там на слово, чтобы увидеть его значение; если ничего не находится, словари ещё не установлены.",
   "onboarding_first_anki_lookup_desc": "Откройте тренировочное предложение и нажмите на слово.",
   "onboarding_first_anki_action_desc": "Открывает тренировочное предложение на странице поиска. Нажмите на слово, затем на +, проверьте поля и сохраните.",
-  "video_subtitle_source_search_hint": "Tap “Find subtitles” above, then pick a source here."
+  "video_subtitle_source_search_hint": "Нажмите «Найти субтитры» выше, затем выберите источник здесь."
 }

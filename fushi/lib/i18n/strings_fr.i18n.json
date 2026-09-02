@@ -4124,5 +4124,5 @@
   "onboarding_lookup_practice_desc": "Ouvre la page de recherche avec la phrase chargée. Touchez-y un mot pour voir sa définition ; si rien ne s'affiche, vos dictionnaires ne sont pas encore installés.",
   "onboarding_first_anki_lookup_desc": "Ouvrez la phrase d'entraînement et touchez un mot.",
   "onboarding_first_anki_action_desc": "Ouvre la phrase d'entraînement dans la page de recherche. Touchez un mot, touchez +, vérifiez les champs et enregistrez.",
-  "video_subtitle_source_search_hint": "Tap “Find subtitles” above, then pick a source here."
+  "video_subtitle_source_search_hint": "Appuyez sur « Trouver des sous-titres » ci-dessus, puis choisissez une source ici."
 }

@@ -232,6 +232,14 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
         title: Text(t.video_subtitle_workbench_title),
         // 作用域开关与标题**同一行**。原来它挂在 `AppBar.bottom` 上独占 56px：
         // 标题行右侧整条空着，开关与面板之间又多一截死白。
+        //
+        // 开关**只放图标、文案落 tooltip**。`AppBar.actions` 不给子级任何宽度上界，
+        // 带文字标签的分段开关按自身固有宽度摊开，宽度随译文长度走：实测
+        // zh 220.8px / ru 474.6px / de 502.8px / en 559.2px / fr 643.8px，360 宽
+        // 的手机上后四种当场 `RenderFlex overflowed by 127~296 pixels`、标题被压成
+        // 0 宽（zh 只是压到 44px，所以只按中文验会整批漏掉）。按屏宽设阈值挡不住：
+        // 「放不放得下」同时取决于宽度、语言和字体，一个常量在任一维度上都必然选错。
+        // 去掉文字标签，这三个变量一起消失——图标宽度是常量，再窄也不会溢出。
         actions: <Widget>[
           if (_canSwitchScope)
             Padding(
@@ -244,12 +252,12 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
                     ButtonSegment<SubtitleWorkbenchScope>(
                       value: SubtitleWorkbenchScope.episode,
                       icon: const Icon(Icons.subtitles_outlined),
-                      label: Text(t.video_subtitle_scope_episode),
+                      tooltip: t.video_subtitle_scope_episode,
                     ),
                     ButtonSegment<SubtitleWorkbenchScope>(
                       value: SubtitleWorkbenchScope.collection,
                       icon: const Icon(Icons.video_library_outlined),
-                      label: Text(t.video_subtitle_scope_collection),
+                      tooltip: t.video_subtitle_scope_collection,
                     ),
                   ],
                   selected: <SubtitleWorkbenchScope>{_scope},

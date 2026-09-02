@@ -285,6 +285,9 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     // 全部」，得自己猜出要先点「查找字幕」。补上等价首搜（先解析系列再搜来源，与
     // 点那个按钮同一条路径）。一个字幕来源都没配时不自动发：那条路径只会立刻弹
     // 红色的「缺 API key」，留给用户显式点。
+    // 这条首搜**只搜不绑**（[_resolveSeries] → [_applySeries]）：这里的前提正是
+    // 合集没绑 AniList，若把模糊命中的首条写回库，用户只是打开一次面板就会被
+    // 粘性绑定——真人剧合集会被永久绑到一部最像的动画上。
     if (!_searching && !_resolving && _hasConfiguredSubtitleSource) {
       unawaited(_resolveSeries());
     }
@@ -395,7 +398,10 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         : factory();
   }
 
-  /// 解析 AniList 系列候选：命中后默认选首条并搜其来源；无命中回退文本搜。
+  /// 解析 AniList 系列候选：命中后默认按首条搜其来源；无命中回退文本搜。
+  ///
+  /// **这条路径从不写库**——它同时服务自动首搜（[_loadCanonicalIdentity]）和
+  /// 「查找字幕」按钮，两者都只是「按这个词找找看」，不是「这个合集就是这部作品」。
   Future<void> _resolveSeries() async {
     final String apiKey = _apiKeyCtrl.text.trim();
     final String query = _queryCtrl.text.trim();
@@ -431,7 +437,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         _seriesLookupFailed = outcome.degraded;
       });
       if (outcome.media.isNotEmpty) {
-        await _selectSeries(outcome.media.first, generation: generation);
+        // **只搜不绑**：模糊搜索的首条命中是猜测，不是用户的选择。
+        await _applySeries(outcome.media.first, generation: generation);
       } else {
         setState(() => _selectedSeriesId = null);
         await _searchSources(anilistId: null, generation: generation);
@@ -444,9 +451,27 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     }
   }
 
-  /// 用户点某系列：绑定该系列、快照 anilist_id 到合集、按它搜来源。
-  Future<void> _selectSeries(AniListMedia media, {int? generation}) async {
+  /// 「搜」这一半：把某个 AniList 候选当作**本次检索的身份**，不碰数据库。
+  ///
+  /// 与 [_selectSeries] 拆开是因为两条调用路径的意图根本不同，而不是同一件事的
+  /// 两个开关：自动首搜（[_loadCanonicalIdentity]）与「查找字幕」按钮拿到的是
+  /// 模糊搜索的第一条命中——真人剧合集在 AniList 上压根没有条目，模糊搜索照样
+  /// 返回一部最像的动画。把这个猜测写进 `media_collections.anilistId` 会**永久**
+  /// 改写合集身份：下次开面板走 `seedId` 分支再也不重搜，合集详情页的下载对话框
+  /// 也跟着按它去找番剧种子（`media_collection_detail_page.dart` TODO-2485）。
+  /// 所以这一半在类型上就够不着写库那一半，不靠调用方记得传对一个 bool。
+  Future<void> _applySeries(AniListMedia media, {int? generation}) async {
     final int requestGeneration = generation ?? ++_generation;
+    setState(() => _selectedSeriesId = media.id);
+    await _searchSources(anilistId: media.id, generation: requestGeneration);
+  }
+
+  /// 「绑」这一半：用户显式点某系列 → 快照 anilist_id 到合集，再按它搜来源。
+  ///
+  /// `setMediaCollectionAnilistId` **只在这里**被调用，唯一调用方是系列
+  /// ChoiceChip 的 `onSelected`——也就是用户的明确意图。
+  Future<void> _selectSeries(AniListMedia media) async {
+    final int requestGeneration = ++_generation;
     setState(() => _selectedSeriesId = media.id);
     if (widget.collection.anilistId != media.id) {
       await widget.database.setMediaCollectionAnilistId(
@@ -466,7 +491,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         return;
       }
     }
-    await _searchSources(anilistId: media.id, generation: requestGeneration);
+    await _applySeries(media, generation: requestGeneration);
   }
 
   /// 经 registry 一次列出全部候选（不带 episode：要看到「字幕侧到底有哪些集号」才能
