@@ -2,12 +2,13 @@
 - **报告**：2026-09-03（用户：点击还是会穿透点到下一句 / 白色相簿好像有问题音频都降级了）
 - **真实性**：✅ 真 bug，根因 `native/galgame_hook/hook/adapters/leaf_aquaplus_adapter.inc`
   的 `IsLeafAquaplusProfileMatched()` 二进制结构校验读 `GetModuleHandleW(nullptr)` 的**进程内存**
-- **[x] ① 已修复** — 结构校验改读磁盘上的原始映像（`LOAD_LIBRARY_AS_IMAGE_RESOURCE`，按节对齐、
-  不执行代码、不施加重定位），并给 `LoadedPeImage` 增加 `absolute_base` 让绝对 VA 操作数按首选
-  基址解码。提交见文末。
+- **[x] ① 已修复** — 结构校验改读磁盘上的原始映像：平坦映射后**手工按节展开**成私有副本
+  （不经加载器、不执行代码、不施加重定位），并给 `LoadedPeImage` 增加 `absolute_base` 让绝对 VA
+  操作数按首选基址解码。**注意第一版用 `LoadLibraryEx` 的修法无效**，原因见下文修复小节。
 - **[x] ② 已加自动化测试** —
   `native/galgame_hook/tests/adapter_structure_test.py::test_leaf_structure_gate_reads_the_pristine_file_not_process_memory`
-  （源码扫描守卫，两处变异各自验证：① 改回读 `module` ② 让 `absolute_base` 渗回 `AddressToRva`，都会报错）
+  （源码扫描守卫；变异验证：① 改回读 `module` ② 让 `absolute_base` 渗回 `AddressToRva`，均报错。
+  守卫另钉住「取原始映像不得用 `LoadLibraryEx`／`SEC_IMAGE`」——正是第一版栽进去的那个坑）
 
 ### 现象
 
@@ -61,18 +62,30 @@ geometry=0/0 status=0  hits=0   ← 几何 provider 从未上线
 ### 修复
 
 身份是「这个 exe 是不是那份被测量过的构建」——那是**文件**的属性，不是当前进程内存的属性。
-结构校验因此改为映射磁盘上的那一份来扫。
+结构校验因此改为读磁盘上的那一份。
 
-`LOAD_LIBRARY_AS_IMAGE_RESOURCE` 明确不施加重定位，所以绝对 VA 操作数仍编码首选基址，而读字节
-要用映射地址：两者必须分开。为此 `LoadedPeImage` 增加 `absolute_base`，且**只**作用于
-`DecodeAbsolute32ImageAddress`。
+映像用 `CreateFileMappingW(PAGE_READONLY)` 平坦映射后**手工按节展开**成一份私有副本
+（`VirtualAlloc` + 逐节 `PointerToRawData → VirtualAddress` 搬运），不经加载器、不执行代码、
+不施加重定位。因此绝对 VA 操作数仍编码 PE 头里的首选基址，而读字节要用副本地址：两者必须分开。
+为此 `LoadedPeImage` 增加 `absolute_base`，且**只**作用于 `DecodeAbsolute32ImageAddress`。
+
+> ⚠️ 第一版修复用的是 `LoadLibraryExW(LOAD_LIBRARY_AS_IMAGE_RESOURCE |
+> LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE)`，**上真机后症状完全没变**（pid 17748 仍是
+> `xaudio2=0x20CC`）。原因是加载器认路径：目标正是本进程自己的主映像，它把**已加载的那一份**
+> 别名返回。最小复现程序确认 `masked handle == GetModuleHandleW(nullptr)`，所谓"原始映像"仍是
+> 被 hook 改写过的内存，等于没修。`SEC_IMAGE` 也不能用：映射到非首选基址时内存管理器会施加
+> 重定位，绝对操作数按哪个基址解就不确定了。守卫已把这两条都钉住。
 
 > ⚠️ 这一点踩过：最初把 `absolute_base` 直接塞进共享的 `AddressToRva`，结果 4 个
 > `MatchesRel32CallEndingAt` 整片假失败——rel32 算出来的是映射内地址，必须按 `image.base` 换算。
 > 离线校验器在改动进真机之前就抓到了这个。
 
-离线用仓库真实 helper 对用户这份 WA2.exe 复跑整条结构门：**failures=0**（18 项 section 角色 +
-5 个唯一模式（RVA 与绝对操作数逐位相同）+ 9 个 call return site）。
+离线证据两条：
+
+1. 用仓库真实 helper 对用户这份 WA2.exe 复跑整条结构门：**failures=0**（18 项 section 角色 +
+   5 个唯一模式（RVA 与绝对操作数逐位相同）+ 9 个 call return site）。
+2. 手工展开的副本与一份**真正的**原始映射逐节字节比对：`.text` / `.rdata` / `.data` / `.rsrc`
+   全部 identical，且两者地址不同（未被别名）。
 
 - **备注**：本条只恢复被这道门挡掉的三个传感器。是否把 `engine-support.yaml` 里白2 的查词能力
   升级，仍须回到原始启动路径完成「显示台词 → 对应语音 → 截图 → 真卡写入」E2E 后再定。

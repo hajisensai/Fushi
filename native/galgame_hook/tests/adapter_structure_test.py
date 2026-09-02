@@ -1583,19 +1583,32 @@ class AdapterStructureTest(unittest.TestCase):
         )
         body = self._function_body(source, "bool IsLeafAquaplusProfileMatched(")
 
-        self.assertIn("LOAD_LIBRARY_AS_IMAGE_RESOURCE", body)
+        self.assertIn("LoadLeafPristineImage(executable, &pristine)", body)
         self.assertIn("image.absolute_base = preferred_base;", body)
-        self.assertIn("FreeLibrary(pristine_raw)", body)
         self.assertNotIn(
             "OpenLoadedPeImage(module,",
             body,
             "结构校验不得读进程内已加载的模块：那段内存会被 LunaHook 与我们自己的 hook 改写",
         )
         self.assertLess(
-            body.index("LOAD_LIBRARY_AS_IMAGE_RESOURCE"),
+            body.index("LoadLeafPristineImage(executable, &pristine)"),
             body.index("FindUniqueAbsolute32PatternInExecutableSections("),
             "原始映像必须在任何模式扫描之前就绪",
         )
+
+        # 加载器认路径：对**本进程自己的主映像**调 LoadLibraryEx(AS_IMAGE_RESOURCE)
+        # 会把已加载的那一份别名返回（实测 masked handle == GetModuleHandleW(nullptr)），
+        # 于是"原始映像"仍是被改写过的内存。这个坑踩过一次，必须钉住。
+        loader = self._function_body(source, "bool LoadLeafPristineImage(")
+        self.assertNotIn(
+            "LoadLibraryEx",
+            loader,
+            "不得用加载器取原始映像：自身主映像会被别名回已加载的那一份",
+        )
+        self.assertNotIn("SEC_IMAGE", loader, "SEC_IMAGE 映射到非首选基址会施加重定位")
+        self.assertIn("PAGE_READONLY", loader)
+        self.assertIn("IMAGE_FIRST_SECTION", loader)
+        self.assertIn("VirtualFree", source)
 
         # absolute_base 只能作用于绝对操作数解码：rel32/寄存器间接算出的是映射内地址。
         shared = self._strip_comments(

@@ -437,6 +437,119 @@ bool Sha256FileForLeafAquaplus(const wchar_t *path,
   return ok;
 }
 
+// 把磁盘上的可执行文件手工展开成一份**按节对齐的私有副本**，供身份的结构校验使用。
+//
+// 为什么不能用 LoadLibraryExW(LOAD_LIBRARY_AS_IMAGE_RESOURCE)：这里要读的正是本进程
+// 自己的主映像，而加载器认路径——它会把**已经加载的那一份**别名返回（实测 masked
+// handle == GetModuleHandleW(nullptr)），于是拿到的"原始映像"仍是被 LunaHook 与我们
+// 自己的 detour 改写过的内存，等于没修。SEC_IMAGE 同样不可取：映射到非首选基址时
+// 内存管理器会施加重定位，绝对操作数按哪个基址解就成了不确定的。
+//
+// 平坦数据映射 + 手工搬节是确定的：不经加载器、不执行任何代码、不施加重定位，因此
+// 绝对 VA 操作数仍编码 PE 头里的首选基址（交给 LoadedPeImage::absolute_base）。
+// 只在结构校验那一次调用，随即释放。
+struct LeafPristineImage {
+  uint8_t *base = nullptr;
+  size_t size = 0u;
+  uintptr_t preferred_base = 0u;
+
+  ~LeafPristineImage() {
+    if (base != nullptr)
+      VirtualFree(base, 0, MEM_RELEASE);
+  }
+};
+
+bool LoadLeafPristineImage(const wchar_t *path, LeafPristineImage *out) {
+  if (path == nullptr || out == nullptr)
+    return false;
+  const auto create_file =
+      g_orig_CreateFileW != nullptr ? g_orig_CreateFileW : &CreateFileW;
+  HANDLE file =
+      create_file(path, GENERIC_READ,
+                  FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                  nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE)
+    return false;
+  LARGE_INTEGER file_size = {};
+  const auto create_mapping = g_orig_CreateFileMappingW != nullptr
+                                  ? g_orig_CreateFileMappingW
+                                  : &CreateFileMappingW;
+  HANDLE mapping = nullptr;
+  const uint8_t *raw = nullptr;
+  bool ok = GetFileSizeEx(file, &file_size) && file_size.QuadPart > 0 &&
+            file_size.QuadPart <= static_cast<LONGLONG>(0x7fffffffll);
+  if (ok) {
+    mapping = create_mapping(file, nullptr, PAGE_READONLY, 0, 0, nullptr);
+    ok = mapping != nullptr;
+  }
+  if (ok) {
+    raw = reinterpret_cast<const uint8_t *>(
+        MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0));
+    ok = raw != nullptr;
+  }
+  const size_t raw_bytes = static_cast<size_t>(file_size.QuadPart);
+  if (ok) {
+    __try {
+      const auto *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(raw);
+      ok = raw_bytes > sizeof(IMAGE_DOS_HEADER) &&
+           dos->e_magic == IMAGE_DOS_SIGNATURE && dos->e_lfanew > 0 &&
+           static_cast<size_t>(dos->e_lfanew) + sizeof(IMAGE_NT_HEADERS32) <=
+               raw_bytes;
+      if (ok) {
+        const auto *nt = reinterpret_cast<const IMAGE_NT_HEADERS32 *>(
+            raw + dos->e_lfanew);
+        const uint32_t image_bytes = nt->OptionalHeader.SizeOfImage;
+        const uint32_t header_bytes = nt->OptionalHeader.SizeOfHeaders;
+        ok = nt->Signature == IMAGE_NT_SIGNATURE &&
+             nt->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC &&
+             nt->FileHeader.NumberOfSections != 0u && image_bytes != 0u &&
+             image_bytes <= 0x10000000u && header_bytes <= raw_bytes &&
+             header_bytes <= image_bytes;
+        if (ok) {
+          auto *copy = reinterpret_cast<uint8_t *>(
+              VirtualAlloc(nullptr, image_bytes, MEM_COMMIT | MEM_RESERVE,
+                           PAGE_READWRITE));
+          ok = copy != nullptr;
+          if (ok) {
+            memcpy(copy, raw, header_bytes);
+            const auto *section = IMAGE_FIRST_SECTION(nt);
+            for (WORD index = 0; ok && index < nt->FileHeader.NumberOfSections;
+                 ++index, ++section) {
+              const uint32_t va = section->VirtualAddress;
+              const uint32_t raw_offset = section->PointerToRawData;
+              const uint32_t raw_size = section->SizeOfRawData;
+              if (raw_size == 0u)
+                continue;
+              if (va >= image_bytes || raw_size > image_bytes - va ||
+                  raw_offset > raw_bytes || raw_size > raw_bytes - raw_offset) {
+                ok = false;
+                break;
+              }
+              memcpy(copy + va, raw + raw_offset, raw_size);
+            }
+            if (ok) {
+              out->base = copy;
+              out->size = image_bytes;
+              out->preferred_base =
+                  static_cast<uintptr_t>(nt->OptionalHeader.ImageBase);
+            } else {
+              VirtualFree(copy, 0, MEM_RELEASE);
+            }
+          }
+        }
+      }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+      ok = false;
+    }
+  }
+  if (raw != nullptr)
+    UnmapViewOfFile(const_cast<uint8_t *>(raw));
+  if (mapping != nullptr)
+    CloseHandle(mapping);
+  CloseHandle(file);
+  return ok && out->base != nullptr;
+}
+
 bool IsLeafAquaplusProfileMatched() {
   const LONG cached =
       InterlockedCompareExchange(&g_leaf_aquaplus_profile_state, 0, 0);
@@ -524,28 +637,14 @@ bool IsLeafAquaplusProfileMatched() {
       // 映射、不执行任何代码、且**不施加重定位**，因此绝对操作数仍编码首选基址，要用
       // image.absolute_base 告诉解码器这一点。
       fushi_voice_hook::exact_lookup::LoadedPeImage image;
-      HMODULE pristine_raw =
-          executable_read
-              ? LoadLibraryExW(executable, nullptr,
-                               LOAD_LIBRARY_AS_IMAGE_RESOURCE |
-                                   LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE)
-              : nullptr;
-      const HMODULE pristine = reinterpret_cast<HMODULE>(
-          reinterpret_cast<ULONG_PTR>(pristine_raw) &
-          ~static_cast<ULONG_PTR>(3));
-      uintptr_t preferred_base = 0u;
-      if (pristine != nullptr) {
-        const auto *pdos = reinterpret_cast<const IMAGE_DOS_HEADER *>(pristine);
-        if (pdos->e_magic == IMAGE_DOS_SIGNATURE) {
-          const auto *pnt = reinterpret_cast<const IMAGE_NT_HEADERS32 *>(
-              reinterpret_cast<const uint8_t *>(pristine) + pdos->e_lfanew);
-          if (pnt->Signature == IMAGE_NT_SIGNATURE)
-            preferred_base = static_cast<uintptr_t>(pnt->OptionalHeader.ImageBase);
-        }
-      }
+      LeafPristineImage pristine;
+      const bool pristine_ready =
+          LoadLeafPristineImage(executable, &pristine);
+      const uintptr_t preferred_base = pristine.preferred_base;
       const bool opened =
-          pristine != nullptr && preferred_base != 0u &&
-          fushi_voice_hook::exact_lookup::OpenLoadedPeImage(pristine, &image) &&
+          pristine_ready && preferred_base != 0u &&
+          fushi_voice_hook::exact_lookup::OpenLoadedPeImage(
+              reinterpret_cast<HMODULE>(pristine.base), &image) &&
           image.machine == IMAGE_FILE_MACHINE_I386 &&
           image.pointer_bits == 32u;
       // 读字节用映射地址；解绝对操作数用首选基址。
@@ -708,9 +807,6 @@ bool IsLeafAquaplusProfileMatched() {
           SetXAudioDiagnostic2(
               fushi_voice_hook::kXAudioDiag2LeafReturnSitesRejected);
       }
-      // 校验只做一次（结果随即被永久缓存），映像用完即还。
-      if (pristine_raw != nullptr)
-        FreeLibrary(pristine_raw);
 #else
       structure_matched = false;
 #endif
