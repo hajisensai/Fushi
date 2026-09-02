@@ -552,6 +552,19 @@ extension _ReaderCaret on _ReaderFushiPageState {
   /// JS 拿得到坐标，故它恒由 `onPointerSeek` 承担（判据 [isSeekToClickedSentenceButton]
   /// 两侧共用，不会各判各的）。
   void _handleReaderPointerDown(PointerDownEvent event) {
+    // BUG-2031 审查②：两条腿的互斥必须是**构造性**的，不能只门控一侧。
+    //
+    // 原先只有 JS 那条腿带 [hostOwnsWebViewPointerInput] 门控，本 Flutter 腿是**无条件
+    // 挂载**的，注释却写着「两条路按平台互斥」。那个判据是从查词弹窗那边提上来的——
+    // 弹窗在 Android 上是独立 Activity，确实在 Flutter 命中树之外；但本页正文的 WebView
+    // 是**树内 platform view**，祖先 [Listener] 照样收得到指针（同一条「opaque 只排除
+    // 兄弟、不排除祖先」的事实）。于是非 Windows 上同一次按下可能被 Flutter 腿与 JS 腿
+    // 各执行一次，而 JS 腿没有 pointer id、无法参与认领协议。
+    //
+    // 补上这道门后，任一平台恒只有一条腿活着。代价是非 Windows 上**页面外壳**（正文
+    // WebView 之外）的鼠标绑定不生效——那恰是本轮之前的行为（本页当时根本没有 Flutter
+    // 侧鼠标腿），故不是回归；正文区照常由 JS 腿覆盖完整阶梯。
+    if (!hostOwnsWebViewPointerInput) return;
     final int? button = domMouseButtonFromPointerButtons(event.buttons);
     if (button == null) return;
     final FushiShortcutRegistry registry = appModel.shortcutRegistry;

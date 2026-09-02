@@ -312,4 +312,52 @@ void main() {
       measured: 4,
     );
   });
+
+  /// BUG-2031 审查②：WebView 背书的表面上，**Flutter 腿与 JS 腿必须构造性互斥**。
+  ///
+  /// 第一版只门控了 JS 那一侧（`if (hostOwnsWebViewPointerInput) return;` /
+  /// 注入处 `if (!hostOwnsWebViewPointerInput)`），Flutter 侧的页面根 [Listener] 是
+  /// **无条件挂载**的，注释却写着「两条路按平台互斥」。
+  ///
+  /// 那个判据是从查词弹窗提上来的：弹窗在 Android 上是独立 Activity，确实在 Flutter
+  /// 命中树之外。但阅读器 / 漫画正文的 WebView 是**树内 platform view**，祖先
+  /// [Listener] 照样收得到指针（与「opaque 只排除兄弟、不排除祖先」同源）。于是非
+  /// Windows 上同一次按下可能被两条腿各执行一次，而 JS 腿没有 `pointer` id、**无法**
+  /// 参与认领协议兜住这件事。
+  ///
+  /// 所以两侧必须各带一道方向相反的门。这条守卫钉住 Flutter 侧那一道。
+  test('GUARD: WebView 表面的 Flutter 鼠标腿必须带 hostOwnsWebViewPointerInput 门', () {
+    const Map<String, String> handlers = <String, String>{
+      'lib/src/pages/implementations/reader_fushi/caret.part.dart':
+          '_handleReaderPointerDown',
+      'lib/src/media/manga/reader/manga_fushi_page.dart':
+          '_handleMangaPointerDown',
+    };
+    handlers.forEach((String path, String handler) {
+      final String src = File(path).readAsStringSync();
+      final int sig = src.indexOf('void $handler(PointerDownEvent event) {');
+      expect(sig, greaterThanOrEqualTo(0), reason: '$path 必须有 $handler');
+      final int open = src.indexOf('{', sig);
+      int depth = 0;
+      int close = open;
+      for (int k = open; k < src.length; k++) {
+        if (src[k] == '{') depth++;
+        if (src[k] == '}') {
+          depth--;
+          if (depth == 0) {
+            close = k;
+            break;
+          }
+        }
+      }
+      final String body = src.substring(open, close + 1);
+      expect(
+        body.contains('if (!hostOwnsWebViewPointerInput) return;'),
+        isTrue,
+        reason: '$path 的 $handler 必须在指针归 WebView 的平台让位给 JS 腿；'
+            '缺这道门 = 同一次按下被 Flutter 腿与 JS 腿各执行一次'
+            '（JS 腿没有 pointer id，认领协议兜不住）',
+      );
+    });
+  });
 }
