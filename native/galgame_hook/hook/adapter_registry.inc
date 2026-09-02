@@ -528,6 +528,12 @@ class AdapterRegistry {
     // Install it before startup-ready resumes the suspended game so the first
     // playback read cannot race ahead of handle tracking.
     hunex_gge_.install();
+    // SGRE RawImageEx labels can be rasterized once on the very first frame
+    // and then live only as cached textures. Install its optional UI trace
+    // while the injector still owns the startup suspension; the generated
+    // adapter block below intentionally runs after the ready bit and is too
+    // late for this one-shot renderer boundary.
+    sgre_.InstallPreResumeUiTrace();
     if (g_header != nullptr) {
       g_header->hook_diagnostics |= kDiagStartupAudioHooksReady;
     }

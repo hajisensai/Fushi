@@ -2259,6 +2259,53 @@ function flushTimers() {
     'beginLookup retires state without reusing the geometry epoch counter');
 }
 
+// BUG-2019: WebView2 can expose requestAnimationFrame while suspending every
+// callback for a permanently off-screen galCard HWND. The bounded timer must
+// publish the matching route/epoch exactly once, and late rAF callbacks must not
+// duplicate or steal a newer schedule.
+{
+  const route = { source: 'galCard', routeEpoch: 12, lookupEpoch: 7 };
+  const { host, window } = freshHost({ withTimers: true });
+  host.beginLookup('global-lookup-root', route);
+  host.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1,
+        frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+    ],
+  });
+  const box = latestGeometryBox();
+  window.requestAnimationFrame = function (fn) {
+    pendingAnimationFrames.push(fn);
+    return pendingAnimationFrames.length;
+  };
+  hostPostLog = [];
+  assert.strictEqual(
+    host.commitLayerShiftAndArmCapture(
+      box.left, box.top, route, 500, 400, box.geometryEpoch,
+    ),
+    true,
+    'matching geometry arms captureReady while rAF is suspended',
+  );
+  assert.ok(!hostPostLog.some((m) => m.handler === 'captureReady'),
+    'captureReady waits for a paint opportunity or bounded fallback');
+  flushTimers();
+  const readyAfterTimer = hostPostLog.filter((m) => m.handler === 'captureReady');
+  assert.strictEqual(readyAfterTimer.length, 1,
+    'bounded fallback publishes captureReady exactly once');
+  assert.deepStrictEqual(
+    Array.from(readyAfterTimer[0].args), [500, 400, box.geometryEpoch],
+    'timer path preserves physical bounds and committed epoch',
+  );
+  while (pendingAnimationFrames.length) {
+    pendingAnimationFrames.shift()();
+  }
+  assert.strictEqual(
+    hostPostLog.filter((m) => m.handler === 'captureReady').length,
+    1,
+    'late compositor callbacks are no-ops after the timer wins',
+  );
+}
+
 // 46. TODO-1345 (BUG-583 deeper root cause): a per-lookup origin FLOOR (reserved
 //     cascade headroom toward the screen interior, pushed by Dart on the renderStack
 //     payload) pulls the union bbox MIN-corner (window origin) OUT to the floor from

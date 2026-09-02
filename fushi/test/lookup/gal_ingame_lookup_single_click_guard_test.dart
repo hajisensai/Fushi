@@ -44,7 +44,9 @@ void main() {
     );
     expect(pressGate.contains('GetClientRect(game,&client)'), isTrue);
     expect(pressGate.contains('ClientToScreen(game,&client_origin)'), isTrue);
-    expect(pressGate.contains('FindSgreLookupGlyph('), isTrue);
+    // 锚点随 #1119 重命名为 FindSgreCapturedLookupGlyph（重命中的是捕获快照里的
+    // 字形）；钉的依旧是「按下瞬间重新命中字形」这个行为，不是符号名。
+    expect(pressGate.contains('FindSgreCapturedLookupGlyph('), isTrue);
 
     final int readTarget = detour.indexOf('ReadSgreLookupClickTarget(');
     final int advance = detour.indexOf('AdvanceSgreLookupClickGesture(');
@@ -133,6 +135,9 @@ void main() {
     final String publish = compactCode(
       methodBody(source, 'bool PublishSgreLookupClickPayload('),
     );
+    final String current = compactCode(
+      methodBody(source, 'bool IsSgreLookupPayloadCurrent('),
+    );
 
     expect(tick.contains('ReadLatestSgreLookupClickSubmit('), isTrue);
     expect(tick.contains('PublishSgreLookupClickTarget('), isTrue);
@@ -151,6 +156,13 @@ void main() {
       isFalse,
       reason: 'capture seq 每帧变化，Shift+click 去重必须使用稳定可见内容',
     );
+    expect(
+      current.contains('g_sgre_lookup_processed_seq'),
+      isFalse,
+      reason: '相同台词每帧重绘会推进 transport seq，不能让有效单击静默过期',
+    );
+    expect(current.contains('payload.logical_generation'), isTrue);
+    expect(current.contains('MatchesSgreLookupGenerationAndClient'), isTrue);
   });
 
   test('位图回退的卡外点击由 UI 单写者请求完整 dismiss', () {

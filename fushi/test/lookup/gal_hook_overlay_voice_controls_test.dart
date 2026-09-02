@@ -22,12 +22,25 @@ void main() {
   late GalHookSessionController session;
   late GalHookTextOverlayController controller;
 
+  int lookupRequestSeq = 0;
+
   setUp(() {
+    lookupRequestSeq = 0;
     nativeCalls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
       nativeCalls.add(call);
       if (call.method == 'show' || call.method == 'isShowing') return true;
+      if (call.method.startsWith('galLookup')) {
+        // 真 runner 对每条查词控制面调用都给显式 ack（ok + 单调递增的
+        // requestSeq）。会话换代时 GalHookTextOverlayController 要拿到这份 ack 才
+        // 算旧路线已退役；假 runner 不答就把台词浮窗一并连坐掉了。
+        return <String, Object?>{
+          'ok': true,
+          'requestSeq': ++lookupRequestSeq,
+          'appliedSeq': lookupRequestSeq,
+        };
+      }
       return null;
     });
     GalHookTextOverlayChannel.platformOverride = true;

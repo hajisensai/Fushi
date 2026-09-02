@@ -1697,7 +1697,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
         fushi_voice_hook::kLookupGeometryStatusUnavailable;
     if (fushi_voice_hook::PublishLookupGeometryAdmission(
             header, fushi_voice_hook::kLookupGeometryAdmissionDisabled,
-            false) == 0) {
+            false, false) == 0) {
       UnmapViewOfFile(header);
       CloseHandle(mapping);
       return FailWith(reason_out,

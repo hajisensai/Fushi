@@ -179,6 +179,14 @@ class AdapterStructureTest(unittest.TestCase):
             sgre_worker.index("ReadLatestSgreLookupCapture"),
             sgre_worker.index("ReadLatestSgreLookupClickSubmit"),
         )
+        self.assertLess(
+            sgre_worker.index("g_geometry_provider_registry.OfferReady"),
+            sgre_worker.index("ReadLatestSgreLookupClickSubmit"),
+        )
+        self.assertLess(
+            sgre_worker.index("ReadLatestSgreLookupClickSubmit"),
+            sgre_worker.index("PublishSgreLookupClickPayload(click_event.payload)"),
+        )
         sgre_publish = self._function_body(
             sgre, "bool PublishSgreLookupClickPayload("
         )
@@ -210,6 +218,12 @@ class AdapterStructureTest(unittest.TestCase):
             encoding="utf-8"
         )
         sgre = (adapter_root / "sgre_lookup.inc").read_text(encoding="utf-8")
+        sgre_anchors = (adapter_root / "sgre_anchors.h").read_text(
+            encoding="utf-8"
+        )
+        sgre_profile = (adapter_root / "sgre_profile.h").read_text(
+            encoding="utf-8"
+        )
         leaf = (adapter_root / "leaf_aquaplus_adapter.inc").read_text(
             encoding="utf-8"
         )
@@ -229,15 +243,29 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("return {nullptr, 2u};", common)
 
         sgre_gate = self._function_body(
-            sgre, "bool IsSgreExactBinaryStructureMatched()"
+            sgre, "bool IsSgreResolvedStructureMatched("
         )
         for required in (
-            "FindUniquePatternInExecutableSections",
-            "FindUniqueRipRelativePatternInExecutableSections",
-            "PointerTableTargetsExecutableSections",
-            "RtlLookupFunctionEntry",
+            "ResolveSgreAnchorsGuarded",
+            "ValidateSgreLookupAnchorStructure",
+            "ValidateSgreDirectInputAnchorStructure",
         ):
             self.assertIn(required, sgre_gate)
+        for required in (
+            "kSgreScenarioTextVtableSignature",
+            "kSgreScenarioTextVtableCorroborationSignature",
+            "kSgreDirectInputMouseDeviceSignature",
+            "kSgreDirectInputMouseDeviceCorroborationSignature",
+            "FindSgreContainingFunctionBegin",
+        ):
+            self.assertIn(required, sgre_anchors)
+        # Uniqueness must cover the complete PE section table. A fixed-capacity
+        # view may reject an oversized image, but it must never silently omit
+        # later executable sections from ambiguity detection.
+        self.assertIn("count > kSgreImageMaxSections", sgre_profile)
+        self.assertNotIn(
+            "view->section_count < kSgreImageMaxSections", sgre_profile
+        )
 
         leaf_gate = self._function_body(
             leaf, "bool IsLeafAquaplusProfileMatched()"
@@ -269,7 +297,15 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("kAnemoiInputMessageEntryPattern", siglus_header)
         self.assertIn("kSprbInputMessageEntryPattern", siglus_header)
 
-        for source in (common, sgre, leaf, leaf_profile, siglus, siglus_header):
+        for source in (
+            common,
+            sgre,
+            sgre_anchors,
+            leaf,
+            leaf_profile,
+            siglus,
+            siglus_header,
+        ):
             self.assertNotIn("D:\\", source)
             self.assertNotIn("C:\\", source)
 

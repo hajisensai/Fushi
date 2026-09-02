@@ -149,6 +149,17 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                       : null,
                   icon: const Icon(Icons.crop_free_outlined, size: 20),
                 ),
+                if (riskPending)
+                  TextButton.icon(
+                    key: const ValueKey<String>(
+                      'game-attached-lookup-accept-risk',
+                    ),
+                    onPressed: controller.target == null
+                        ? null
+                        : () => _acceptRisk(context),
+                    icon: const Icon(Icons.warning_amber_rounded, size: 18),
+                    label: Text(t.game_lookup_attached_risk_accept),
+                  ),
                 PopupMenuButton<String>(
                   key: const ValueKey<String>('game-attached-lookup-mode'),
                   tooltip: t.game_lookup_attached_mode,
@@ -162,8 +173,6 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                                 value.wireName == action.substring(5),
                           );
                       unawaited(controller.setMode(selected));
-                    } else if (action == 'risk') {
-                      unawaited(_acceptRisk(context));
                     } else if (action == 'clear') {
                       unawaited(_clearProfile(context));
                     }
@@ -181,14 +190,6 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                             checked: value == mode,
                             enabled: controller.target != null,
                             child: Text(_modeLabel(value)),
-                          ),
-                        if (riskPending && controller.target != null)
-                          PopupMenuItem<String>(
-                            key: const ValueKey<String>(
-                              'game-attached-lookup-accept-risk',
-                            ),
-                            value: 'risk',
-                            child: Text(t.game_lookup_attached_risk_accept),
                           ),
                         if (profile != null)
                           PopupMenuItem<String>(
@@ -858,9 +859,7 @@ class _GalAttachedCalibrationDialogState
                   'game-attached-calibration-probe-start',
                 ),
                 density: FushiListDensity.compact,
-                padding: EdgeInsets.symmetric(
-                  vertical: tokens.spacing.gap / 2,
-                ),
+                padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
                 leading: Checkbox(
                   value: _startConfirmed,
                   onChanged: _startObserved ? _setStartConfirmed : null,
@@ -879,9 +878,7 @@ class _GalAttachedCalibrationDialogState
                   'game-attached-calibration-probe-middle',
                 ),
                 density: FushiListDensity.compact,
-                padding: EdgeInsets.symmetric(
-                  vertical: tokens.spacing.gap / 2,
-                ),
+                padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
                 leading: Checkbox(
                   value: _middleConfirmed,
                   onChanged: _middleObserved ? _setMiddleConfirmed : null,
@@ -900,9 +897,7 @@ class _GalAttachedCalibrationDialogState
                   'game-attached-calibration-probe-end',
                 ),
                 density: FushiListDensity.compact,
-                padding: EdgeInsets.symmetric(
-                  vertical: tokens.spacing.gap / 2,
-                ),
+                padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
                 leading: Checkbox(
                   value: _endConfirmed,
                   onChanged: _endObserved ? _setEndConfirmed : null,

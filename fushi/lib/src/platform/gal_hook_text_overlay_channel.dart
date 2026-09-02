@@ -82,11 +82,11 @@ class GalHookTextWindowRect {
   bool get isValid => width > 0 && height > 0;
 
   Map<String, Object?> toMap() => <String, Object?>{
-        'left': left,
-        'top': top,
-        'width': width,
-        'height': height,
-      };
+    'left': left,
+    'top': top,
+    'width': width,
+    'height': height,
+  };
 
   static GalHookTextWindowRect? fromMap(Map<Object?, Object?> map) {
     int? value(String key) => _finiteWireInt(map[key]);
@@ -100,12 +100,13 @@ class GalHookTextWindowRect {
   }
 }
 
-typedef GalHookTextLookupHandler = FutureOr<void> Function(
-  String lineId,
-  String text,
-  int index,
-  Rect? wordRect,
-);
+typedef GalHookTextLookupHandler =
+    FutureOr<void> Function(
+      String lineId,
+      String text,
+      int index,
+      Rect? wordRect,
+    );
 typedef GalHookTextEventHandler = FutureOr<void> Function();
 typedef GalHookTextLockHandler = FutureOr<void> Function(bool locked);
 
@@ -177,11 +178,11 @@ class GalLookupHit {
 
   /// 命中字形矩形（与 [coordinateSpace] / view 相同的物理像素域）。
   Rect get glyphRect => Rect.fromLTWH(
-        glyphX.toDouble(),
-        glyphY.toDouble(),
-        glyphW.toDouble(),
-        glyphH.toDouble(),
-      );
+    glyphX.toDouble(),
+    glyphY.toDouble(),
+    glyphW.toDouble(),
+    glyphH.toDouble(),
+  );
 
   /// [charIndex] 是否真的指得到 [line] 里的一个字。**硬门**：指不到就丢弃，不去猜
   /// ——猜出来的下标会让高亮与查词落在完全无关的字上。
@@ -916,6 +917,7 @@ class GalAttachedCallResult {
 class GalLookupCallResult {
   const GalLookupCallResult({
     this.error,
+    this.explicitOk = false,
     this.width = 0,
     this.height = 0,
     this.clamped = false,
@@ -931,6 +933,12 @@ class GalLookupCallResult {
 
   /// runner 给的错误 token；null = 成功。
   final String? error;
+
+  /// True only when the runner explicitly returned `{ok: true}`. [ok] stays
+  /// backward-compatible for payload-bearing replies, while lifecycle gates
+  /// use this bit (or an explicit sequence) so an empty/malformed reply cannot
+  /// silently advance a provider handoff.
+  final bool explicitOk;
 
   /// 实际写进共享内存的帧尺寸（仅 present 有值）。
   final int width;
@@ -958,6 +966,7 @@ class GalLookupCallResult {
     final Object? error = map['error'];
     return GalLookupCallResult(
       error: error is String && error.isNotEmpty ? error : null,
+      explicitOk: map['ok'] == true,
       width: _finiteWireInt(map['width']) ?? 0,
       height: _finiteWireInt(map['height']) ?? 0,
       clamped: map['clamped'] == true,
@@ -983,10 +992,10 @@ enum GalLookupGeometryAdmissionMode {
 /// native 侧穿透态被否决 / 变更时的回传（BUG-951）。native 建不出逃生工具条窗
 /// 时会拒绝进入穿透并把自己摁回 false；Dart 必须跟着退回，否则它的标志卡在
 /// true，用户下一次按 `↗` 会变成一次看不出反应的空点击。
-typedef GalHookTextPassThroughHandler = FutureOr<void> Function(
-    bool passThrough);
-typedef GalHookTextBoundsHandler = FutureOr<void> Function(
-    GalHookTextWindowRect rect);
+typedef GalHookTextPassThroughHandler =
+    FutureOr<void> Function(bool passThrough);
+typedef GalHookTextBoundsHandler =
+    FutureOr<void> Function(GalHookTextWindowRect rect);
 
 /// Hook 台词浮窗的默认字号（逻辑 px）。
 ///
@@ -1103,8 +1112,9 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
 
   static Future<void> _handleNativeCall(MethodCall call) async {
     final Object? arguments = call.arguments;
-    final Map<Object?, Object?> args =
-        arguments is Map ? arguments.cast<Object?, Object?>() : const {};
+    final Map<Object?, Object?> args = arguments is Map
+        ? arguments.cast<Object?, Object?>()
+        : const {};
     switch (call.method) {
       case 'lookupText':
         if (args['surface'] == GalAttachedLookupHitV19.surface) {
@@ -1581,10 +1591,13 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
 
   /// Updates the injected GeometryProviderRegistry admission without stopping
   /// the lookup runtime or generic shield. [attachedReady] is the host-owned
-  /// calibrated fallback offer; it never authorizes a shared-memory hit writer.
+  /// calibrated fallback offer. [nativeInputReady] is a separate, risk-gated
+  /// permission for the active native owner to consume a game click; it does
+  /// not control provider discovery.
   static Future<GalLookupCallResult> galLookupSetGeometryAdmission({
     required GalLookupGeometryAdmissionMode mode,
     required bool attachedReady,
+    required bool nativeInputReady,
   }) async {
     if (!_instance.isSupported) return GalLookupCallResult.unsupported;
     return GalLookupCallResult.fromReply(
@@ -1593,6 +1606,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
         <String, Object?>{
           'mode': mode.wireValue,
           'attachedReady': attachedReady,
+          'nativeInputReady': nativeInputReady,
         },
       ),
     );
@@ -1617,16 +1631,16 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     if (!_instance.isSupported) return GalLookupCallResult.unsupported;
     final Object? reply = await _instance.channel
         .invokeMethod<Object?>('galLookupPresent', <String, Object?>{
-      'seq': seq,
-      'anchorX': anchorX,
-      'anchorY': anchorY,
-      'highlightStart': highlightStart,
-      'highlightLen': highlightLen,
-      'cardWidth': cardWidth,
-      'cardHeight': cardHeight,
-      'viewWidth': viewWidth,
-      'viewHeight': viewHeight,
-    });
+          'seq': seq,
+          'anchorX': anchorX,
+          'anchorY': anchorY,
+          'highlightStart': highlightStart,
+          'highlightLen': highlightLen,
+          'cardWidth': cardWidth,
+          'cardHeight': cardHeight,
+          'viewWidth': viewWidth,
+          'viewHeight': viewHeight,
+        });
     return GalLookupCallResult.fromReply(reply);
   }
 
@@ -1646,12 +1660,12 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     if (!_instance.isSupported) return GalLookupCallResult.unsupported;
     final Object? reply = await _instance.channel
         .invokeMethod<Object?>('galLookupPresentHighlight', <String, Object?>{
-      'seq': seq,
-      'anchorX': anchorX,
-      'anchorY': anchorY,
-      'highlightStart': highlightStart,
-      'highlightLen': highlightLen,
-    });
+          'seq': seq,
+          'anchorX': anchorX,
+          'anchorY': anchorY,
+          'highlightStart': highlightStart,
+          'highlightLen': highlightLen,
+        });
     return GalLookupCallResult.fromReply(reply);
   }
 
@@ -1694,13 +1708,13 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     return GalLookupCallResult.fromReply(
       await _instance.channel
           .invokeMethod<Object?>('galLookupInput', <String, Object?>{
-        'seq': input.seq,
-        'x': input.x,
-        'y': input.y,
-        'kind': input.kind,
-        'wheel': input.wheel,
-        'keys': input.keys,
-      }),
+            'seq': input.seq,
+            'x': input.x,
+            'y': input.y,
+            'kind': input.kind,
+            'wheel': input.wheel,
+            'keys': input.keys,
+          }),
     );
   }
 }
