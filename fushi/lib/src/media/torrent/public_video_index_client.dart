@@ -3,21 +3,14 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi/src/media/torrent/anime_release_descriptor.dart';
+import 'package:fushi/src/media/torrent/public_trackers.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
 
-/// 公共索引器（apibay / Knaben）磁链附带的公开 tracker。
-///
-/// 两家 API 的返回形状不同——apibay 只给 `info_hash`（磁链要自己拼），Knaben 直接
-/// 给 `magnetUrl`——但落到下载引擎的必须是同一种东西。所以拼磁链的那一半在这里
-/// 统一，两家共用同一份 tracker，省得「同一个种子从 A 源加进来能连上、从 B 源加
-/// 进来连不上」。
-const List<String> kPublicVideoIndexTrackers = <String>[
-  'udp://tracker.opentrackr.org:1337/announce',
-  'udp://open.demonii.com:1337/announce',
-  'udp://open.stealth.si:80/announce',
-  'udp://tracker.torrent.eu.org:451/announce',
-  'udp://exodus.desync.com:6969/announce',
-];
+// 公共索引器（apibay / Knaben）磁链附带的 tracker 就是 [kPublicTrackers]：两家
+// API 的返回形状不同——apibay 只给 `info_hash`（磁链要自己拼），Knaben 直接给
+// `magnetUrl`——但落到下载引擎的必须是同一种东西。所以拼磁链的那一半在这里统
+// 一，两家共用同一份 tracker，省得「同一个种子从 A 源加进来能连上、从 B 源加进
+// 来连不上」。这两家没有站点专属 tracker，所以不另起名字，直接用共享常量。
 
 /// 公共索引器返回的一条种子。
 ///
@@ -70,7 +63,7 @@ String buildPublicVideoIndexMagnet({
   if (name.isNotEmpty) {
     buffer.write('&dn=${Uri.encodeQueryComponent(name)}');
   }
-  for (final String tracker in kPublicVideoIndexTrackers) {
+  for (final String tracker in kPublicTrackers) {
     buffer.write('&tr=${Uri.encodeQueryComponent(tracker)}');
   }
   return buffer.toString();
