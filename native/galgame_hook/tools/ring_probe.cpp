@@ -2348,6 +2348,22 @@ int main(int argc, char** argv) {
     CloseHandle(mapping);
     return 0;
   }
+  if (argc >= 3 && strcmp(argv[2], "--dump-layer") == 0) {
+    // BUG-2093：注入侧发布的层空间行包围盒 + 宿主回传的原点，用来和实拍对账。
+    const auto line = fushi_voice_hook::ReadLookupLayerLine(header);
+    printf("layer line seq=%u valid=%d design=%ux%u glyphs=%u\n",
+           line.seq, line.valid ? 1 : 0, line.design_w, line.design_h,
+           line.glyph_count);
+    printf("  bbox=(%d,%d)-(%d,%d)  w=%d h=%d\n", line.left, line.top,
+           line.right, line.bottom, line.right - line.left,
+           line.bottom - line.top);
+    int32_t ox = 0, oy = 0;
+    const bool has = fushi_voice_hook::ReadLookupLayerOrigin(header, &ox, &oy);
+    printf("  origin published=%d x=%d y=%d\n", has ? 1 : 0, ox, oy);
+    UnmapViewOfFile(header);
+    CloseHandle(mapping);
+    return 0;
+  }
   if (argc >= 3 && strcmp(argv[2], "--dump-shield") == 0) {
     // BUG-2098：宿主与注入侧对 shield 的看法可能相反（宿主 request!=applied 卡死，
     // 注入侧却报 shield_ready）。直接读注入侧共享头里的原始字段，两边对账。

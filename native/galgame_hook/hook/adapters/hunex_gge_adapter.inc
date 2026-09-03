@@ -1494,29 +1494,61 @@ bool BuildHunexGgeClientProjection(
   // 五段全灭。没拿到 origin 就照旧走下面的证据链（fail-closed，不假装几何可用）。
   uint32_t design_w = 0u, design_h = 0u;
   if (ReadHunexGgeDesignSize(&design_w, &design_h)) {
-    int32_t line_left = 0, line_top = 0, line_right = 0, line_bottom = 0;
-    bool has_bounds = false;
+    // 发布的必须是**单独一行**的包围盒，不能是整句的并集。
+    // 一句台词经常折成两三行，各行缩进还不一样（行首常有一个全角空格）；整句并集的
+    // left 来自缩进最小的那一行，而宿主在屏幕上匹配到的只是**其中一条**墨迹带——两边
+    // 比的不是同一个东西，缩进差多少原点就偏多少，一个全角空格正好偏一格。真机上
+    // 表现为「要往右一个字符才点得中想要的字」。
+    // 按层空间的 y 把字形分行，取**出墨字形最多**的那一行：它最宽、在屏幕上最好认，
+    // 与宿主「挑宽度最接近的墨迹带」是同一个目标。
+    struct LayerRow {
+      int32_t top = 0, bottom = 0, left = 0, right = 0;
+      uint32_t inked = 0u;
+    };
+    LayerRow rows[16] = {};
+    uint32_t row_count = 0u;
     for (uint16_t index = 0u; index < projection->glyph_count; ++index) {
-      // 只统计**会出墨**的字形。行首的全角空格 U+3000 在层空间照样占一格却不画任何
-      // 像素，把它算进包围盒会让宿主拿墨迹左边缘求出的原点整体右偏整整一格——真机上
-      // 表现为「点第 N 个字查出第 N-1 个字」。半角空格与 TAB 同理。
+      // 只统计**会出墨**的字形：空格占格却不画像素，算进去同样会让原点整体右偏。
       const uint32_t scalar = projection->glyphs[index].scalar;
       if (scalar == 0x20u || scalar == 0x09u || scalar == 0x3000u) continue;
       const auto& bounds = projection->glyphs[index].logical_bounds;
       if (bounds.width <= 0 || bounds.height <= 0) continue;
       const int32_t right = bounds.x + bounds.width;
       const int32_t bottom = bounds.y + bounds.height;
-      if (!has_bounds) {
-        line_left = bounds.x; line_top = bounds.y;
-        line_right = right; line_bottom = bottom;
-        has_bounds = true;
+      // 同一行的判据：纵向区间重叠过半。字号在一行内是一致的，这个判据足够稳。
+      uint32_t slot = row_count;
+      for (uint32_t r = 0u; r < row_count; ++r) {
+        const int32_t overlap = (std::min)(bottom, rows[r].bottom) -
+                                (std::max)(bounds.y, rows[r].top);
+        if (overlap * 2 >= bounds.height) { slot = r; break; }
+      }
+      if (slot == row_count) {
+        if (row_count >= 16u) continue;
+        rows[slot].top = bounds.y; rows[slot].bottom = bottom;
+        rows[slot].left = bounds.x; rows[slot].right = right;
+        rows[slot].inked = 1u;
+        ++row_count;
         continue;
       }
-      if (bounds.x < line_left) line_left = bounds.x;
-      if (bounds.y < line_top) line_top = bounds.y;
-      if (right > line_right) line_right = right;
-      if (bottom > line_bottom) line_bottom = bottom;
+      LayerRow& row = rows[slot];
+      if (bounds.y < row.top) row.top = bounds.y;
+      if (bottom > row.bottom) row.bottom = bottom;
+      if (bounds.x < row.left) row.left = bounds.x;
+      if (right > row.right) row.right = right;
+      ++row.inked;
     }
+    int32_t line_left = 0, line_top = 0, line_right = 0, line_bottom = 0;
+    bool has_bounds = false;
+    uint32_t best_inked = 0u;
+    for (uint32_t r = 0u; r < row_count; ++r) {
+      if (rows[r].inked <= best_inked) continue;
+      best_inked = rows[r].inked;
+      line_left = rows[r].left; line_top = rows[r].top;
+      line_right = rows[r].right; line_bottom = rows[r].bottom;
+      has_bounds = true;
+    }
+    // 单字成行的没有分辨力（任何一小块高光都能凑出同样的宽度），不拿去求解。
+    if (best_inked < 4u) has_bounds = false;
     if (has_bounds) {
       fushi_voice_hook::PublishLookupLayerLine(
           g_header, design_w, design_h, projection->glyph_count, line_left,

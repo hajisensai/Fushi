@@ -192,9 +192,19 @@ LayerOriginSolveResult SolveLookupLayerOrigin(HWND game, int32_t layer_left,
     return out;
   }
 
-  // origin = 实测(逻辑) - 层坐标。两轴各自求解；用 sx/sy 反缩放回设计空间。
-  const double origin_x = static_cast<double>(best->left) / sx - layer_left;
-  const double origin_y = static_cast<double>(best->top) / sy - layer_top;
+  // origin = 实测(逻辑) - 层坐标。**用中点而不是左上角**：注入侧给的是字形**格子**的
+  // 边界，屏幕上量到的是**墨迹**边界，两者差着首尾字形各自的边距。拿左边缘求解会把
+  // 首字的左边距整个算进原点；拿中点则首尾边距一阶抵消。
+  const double measured_center_x =
+      (static_cast<double>(best->left) + best->right + 1.0) * 0.5;
+  const double measured_center_y =
+      (static_cast<double>(best->top) + best->bottom + 1.0) * 0.5;
+  const double layer_center_x =
+      (static_cast<double>(layer_left) + layer_right) * 0.5;
+  const double layer_center_y =
+      (static_cast<double>(layer_top) + layer_bottom) * 0.5;
+  const double origin_x = measured_center_x / sx - layer_center_x;
+  const double origin_y = measured_center_y / sy - layer_center_y;
   if (!std::isfinite(origin_x) || !std::isfinite(origin_y) ||
       origin_x < -static_cast<double>(design_w) ||
       origin_x > static_cast<double>(design_w) ||
