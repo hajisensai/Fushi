@@ -1471,6 +1471,27 @@ class GalIngameLookupController {
     if (_directSurfaceActive) {
       _recaptureDirty = false;
       glog('gal-ingame: direct WebView surface active seq=${hit.seq}');
+      // BUG-2087 — the direct route hands the card to the host-owned surface
+      // and only writes a dismiss frame to the hook, so the looked-up term's
+      // highlight range never reached the engine side. Send the pixel-free
+      // highlight-only frame so adapters that paint their own highlight (SGRE
+      // hover/term highlight window) can mark the term while the card is up.
+      if (highlightLen > 0) {
+        final GalLookupCallResult highlight =
+            await GalHookTextOverlayChannel.galLookupPresentHighlight(
+              seq: hit.seq,
+              anchorX: anchor.x,
+              anchorY: anchor.y,
+              highlightStart: highlightStart,
+              highlightLen: highlightLen,
+            );
+        if (!highlight.ok) {
+          glog(
+            'gal-ingame: term highlight seq=${hit.seq} FAILED '
+            '${highlight.error}',
+          );
+        }
+      }
     }
     if (result.clamped) {
       glog(

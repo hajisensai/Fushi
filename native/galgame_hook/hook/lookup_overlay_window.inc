@@ -124,6 +124,41 @@ void ClearLookupHoverHighlight() {
   }
 }
 
+// ══ 被查词高亮区间（BUG-2087）══
+// host 直连路径 present 成功后追加一张 highlight-only 帧（无像素），只带
+// highlight_start/len（UTF-16 下标，与引擎精确文本同域）。通用呈现器不画它（那要引擎
+// 图层），但把区间记下来，让自带高亮窗的适配器在卡片可见期间把这段字格标出来；
+// dismiss / capture-suppress 帧清除。任意线程读，UI 线程写。
+volatile LONG g_term_highlight_active = 0;
+volatile LONG g_term_highlight_start = 0;
+volatile LONG g_term_highlight_len = 0;
+
+void SetLookupTermHighlight(uint32_t start, uint32_t len) {
+  InterlockedExchange(&g_term_highlight_start, static_cast<LONG>(start));
+  InterlockedExchange(&g_term_highlight_len, static_cast<LONG>(len));
+  InterlockedExchange(&g_term_highlight_active, len != 0 ? 1 : 0);
+}
+
+void ClearLookupTermHighlight() {
+  InterlockedExchange(&g_term_highlight_active, 0);
+}
+
+// 当前是否有被查词区间；有则输出 [start, start+len)。
+bool ReadLookupTermHighlight(uint32_t* start, uint32_t* len) {
+  if (InterlockedCompareExchange(&g_term_highlight_active, 0, 0) == 0) {
+    return false;
+  }
+  if (start != nullptr) {
+    *start = static_cast<uint32_t>(
+        InterlockedCompareExchange(&g_term_highlight_start, 0, 0));
+  }
+  if (len != nullptr) {
+    *len = static_cast<uint32_t>(
+        InterlockedCompareExchange(&g_term_highlight_len, 0, 0));
+  }
+  return true;
+}
+
 uint64_t ReadOverlaySharedU64(volatile uint64_t* value) {
   return static_cast<uint64_t>(InterlockedCompareExchange64(
       reinterpret_cast<volatile LONG64*>(value), 0, 0));
@@ -401,6 +436,7 @@ void PollOverlayFrame() {
 
   if ((frame->flags & fushi_voice_hook::kLookupFrameDismiss) != 0) {
     g_overlay.last_presented_seq = seq_before;
+    ClearLookupTermHighlight();
     HideOverlay();
     return;
   }
@@ -409,6 +445,7 @@ void PollOverlayFrame() {
   // 确认延后一轮（见函数开头）。
   if ((frame->flags & fushi_voice_hook::kLookupFrameCaptureSuppress) != 0) {
     g_overlay.last_presented_seq = seq_before;
+    ClearLookupTermHighlight();
     HideOverlay();
     g_overlay.pending_suppress_ack_seq = seq_before;
     return;
@@ -416,8 +453,10 @@ void PollOverlayFrame() {
   // 只更新高亮的帧按定义不带像素，过不了 IsLookupFrameSane。通用呈现器把高亮画在
   // 引擎自己的图层上这件事做不到（那是 KiriKiri 专属），所以这里**消费掉**它而不是
   // 判成坏帧——不消费会每 16ms 重复命中同一槽，判成坏帧则会点亮误导性的 frame_rejected。
+  // BUG-2087：区间本身记下来，自带高亮窗的适配器（SGRE）在卡片可见期间画它。
   if ((frame->flags & fushi_voice_hook::kLookupFrameHighlightOnly) != 0) {
     g_overlay.last_presented_seq = seq_before;
+    SetLookupTermHighlight(frame->highlight_start, frame->highlight_len);
     return;
   }
   // 跨进程不可信的 width/height/pitch 必须先过这道闸门再谈拷贝。

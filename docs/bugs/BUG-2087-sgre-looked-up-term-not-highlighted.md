@@ -1,0 +1,6 @@
+## BUG-2087 · SGRE 游戏内查词点击后被查的词在台词里没有高亮：直连路径不把高亮区间发给 hook
+- **报告**：2026-09-03（用户：「点击后，对应的词应该高亮」，SGRE 窗口模式；同批「音轨全是空的」二次报告：资源模式行的音轨对话框仍列出与本句无关的 PCM 轨）
+- **真实性**：✅ 真缺口。`fushi/windows/runner/voice_hook_reader.cpp` `HandleLookupPresent`：直连呈现成功时只向 hook 写一张 dismiss 帧（退掉旧位图）并回 `directSurface: true`，`highlightStart/len` 不落到任何帧；`galLookupPresentHighlight`（highlight-only 帧）Dart 侧从未调用；hook 通用呈现器 `lookup_overlay_window.inc` 收到 highlight-only 帧直接消费丢弃。于是 KiriKiri 之外的引擎在卡片期间没有任何「被查的是哪个词」的反馈。
+- **[x] ① 已修复** — Dart `GalIngameLookupController._present`：直连 present 成功且 `highlightLen > 0` 时追加 `galLookupPresentHighlight(seq, anchor, highlightStart, highlightLen)`；hook 通用呈现器把 highlight-only 帧的区间记入 `g_term_highlight_*`（dismiss / capture-suppress 帧清除）；SGRE 轮询在卡片可见期间按区间 `[start, start+len)` 取字格（UTF-16 下标与精确文本同域）在同一行内求并集，交给 BUG-2086 的高亮窗；卡片收起回到悬浮高亮。同批：工作台「这句台词的语音轨」对话框在 game_resource 行上不再列 PCM 轨，改为展示本句资源音频（来源、资源名、时长）与试听按钮（本提交）。
+- **[x] ② 已加自动化测试** — `fushi/test/lookup/gal_ingame_lookup_contract_test.dart`：`galLookupPresentHighlight` 的方法名与参数键（本提交）。hook 侧并集/清除逻辑为 Win32 UI 路径，真机验证记录见下。
+- **真机复验**：待填。

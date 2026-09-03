@@ -737,6 +737,27 @@ void main() {
       expect(result.directSurface, isTrue);
     });
 
+    test('galLookupPresentHighlight 只带序号/锚点/高亮区间（BUG-2087 直连路径追加帧）', () async {
+      mockRunner((_) => <String, Object?>{});
+      final GalLookupCallResult result =
+          await GalHookTextOverlayChannel.galLookupPresentHighlight(
+            seq: 9,
+            anchorX: 640,
+            anchorY: 570,
+            highlightStart: 10,
+            highlightLen: 4,
+          );
+      expect(calls.single.method, 'galLookupPresentHighlight');
+      expect(calls.single.arguments, <String, Object?>{
+        'seq': 9,
+        'anchorX': 640,
+        'anchorY': 570,
+        'highlightStart': 10,
+        'highlightLen': 4,
+      });
+      expect(result.ok, isTrue);
+    });
+
     test('galLookupDismiss 带上要撤掉的那次命中序号', () async {
       mockRunner((_) => <String, Object?>{});
       await GalHookTextOverlayChannel.galLookupDismiss(9);

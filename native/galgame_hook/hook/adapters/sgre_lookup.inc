@@ -2222,6 +2222,47 @@ void ProcessSgreLookupTick() {
   const int glyph_index = FindSgreCapturedLookupGlyph(
       active, client_width, client_height, cursor.x, cursor.y, &hit_rect);
 
+  // BUG-2087 — while a card is up, the looked-up term (host's highlight
+  // range on the exact line, UTF-16 units == capture glyph indices) stays
+  // highlighted: union of its glyph cells on the row the term starts on.
+  uint32_t term_start = 0;
+  uint32_t term_len = 0;
+  if (popup_visible && ReadLookupTermHighlight(&term_start, &term_len) &&
+      term_len != 0 && term_start < active.glyph_count) {
+    const uint32_t term_end = std::min<uint32_t>(
+        active.glyph_count, term_start + term_len);
+    fushi_voice_hook::SgreLookupRect term_rect;
+    bool have_rect = false;
+    const uint16_t term_row = active.glyphs[term_start].line;
+    for (uint32_t index = term_start; index < term_end; ++index) {
+      if (active.glyphs[index].line != term_row) break;
+      fushi_voice_hook::SgreLookupRect cell;
+      if (!SgreLookupRectForCapturedGlyph(active, index, client_width,
+                                          client_height, &cell)) {
+        continue;
+      }
+      if (!have_rect) {
+        term_rect = cell;
+        have_rect = true;
+        continue;
+      }
+      const int32_t right = std::max(term_rect.x + term_rect.width,
+                                     cell.x + cell.width);
+      const int32_t bottom = std::max(term_rect.y + term_rect.height,
+                                      cell.y + cell.height);
+      term_rect.x = std::min(term_rect.x, cell.x);
+      term_rect.y = std::min(term_rect.y, cell.y);
+      term_rect.width = right - term_rect.x;
+      term_rect.height = bottom - term_rect.y;
+    }
+    if (have_rect) {
+      RequestLookupHoverHighlight(client_origin.x + term_rect.x,
+                                  client_origin.y + term_rect.y,
+                                  term_rect.width, term_rect.height);
+      hover_highlight.keep = true;
+    }
+  }
+
   // BUG-2086 — hover highlight: the glyph under the cursor gets the shared
   // translucent highlight window while no card is up. hit_rect is in client
   // px; the highlight window lives in screen space.
