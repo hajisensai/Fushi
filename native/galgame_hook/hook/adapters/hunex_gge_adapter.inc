@@ -465,6 +465,51 @@ void PublishHunexGgeTrace(fushi_voice_hook::HunexGgeTraceEvent event) {
 bool IsFreshHunexGgeProjectionTick(ULONGLONG then, ULONGLONG now);
 
 // BUG-2090：记录待定正文行期间上传纹理的互异尺寸（最多 6 组）。只观测。
+// 前置声明：两者定义在下方投影段，本扫描需要它们。
+bool IsSaneHunexGgeCpuSurface(const HunexGgeCpuSurfaceIdentity& surface);
+bool ReadHunexGgeCpuSurfaceIdentity(const void* descriptor,
+                                    HunexGgeCpuSurfaceIdentity* out);
+
+// BUG-2090：在上传 wrapper 对象前 0x200 字节里找出「指向 sane CPU 表面」的指针槽。
+// 纯观测，SEH 兜底，命中即记录偏移与尺寸；最多记 4 个。
+void ScanHunexGgeUploadDescriptorOffsets(void* wrapper) {
+  auto* trace = &FushiHunexGgeTraceV3;
+  const auto* bytes = static_cast<const uint8_t*>(wrapper);
+  for (uint32_t offset = 0u; offset + sizeof(void*) <= 0x200u;
+       offset += sizeof(void*)) {
+    const void* candidate = nullptr;
+    __try {
+      candidate = *reinterpret_cast<const void* const*>(bytes + offset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+      continue;
+    }
+    if (candidate == nullptr) continue;
+    HunexGgeCpuSurfaceIdentity identity;
+    if (!ReadHunexGgeCpuSurfaceIdentity(candidate, &identity)) continue;
+    if (!IsSaneHunexGgeCpuSurface(identity)) continue;
+    const uint32_t slot = static_cast<uint32_t>(InterlockedCompareExchange(
+        reinterpret_cast<volatile LONG*>(&trace->upload_desc_offset_count),
+        0, 0));
+    if (slot >= 4u) return;
+    bool duplicate = false;
+    for (uint32_t i = 0u; i < slot; ++i) {
+      if (trace->upload_desc_offsets[i] == offset) duplicate = true;
+    }
+    if (duplicate) continue;
+    InterlockedExchange(reinterpret_cast<volatile LONG*>(
+                            &trace->upload_desc_offsets[slot]),
+                        static_cast<LONG>(offset));
+    InterlockedExchange(reinterpret_cast<volatile LONG*>(
+                            &trace->upload_desc_dims[slot * 2u]),
+                        static_cast<LONG>(identity.words[1]));
+    InterlockedExchange(reinterpret_cast<volatile LONG*>(
+                            &trace->upload_desc_dims[slot * 2u + 1u]),
+                        static_cast<LONG>(identity.words[2]));
+    InterlockedIncrement(reinterpret_cast<volatile LONG*>(
+        &trace->upload_desc_offset_count));
+  }
+}
+
 void RecordHunexGgePendingUploadDim(uint32_t width, uint32_t height) {
   if (width == 0u || height == 0u) return;
   auto* trace = &FushiHunexGgeTraceV3;
@@ -2214,6 +2259,29 @@ uint32_t Detour_HunexGgeTextureUpload(void* wrapper, uint32_t flags) {
   InterlockedExchange(reinterpret_cast<volatile LONG*>(
                           &FushiHunexGgeTraceV3.pending_upload_caller_tid),
                       static_cast<LONG>(GetCurrentThreadId()));
+  // 描述符可读性与「待定正文行是否活着」都必须在描述符门**之外**计数，否则读不出
+  // 描述符时会被误读成「没有上传发生在待定期」（BUG-2090）。
+  InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+      descriptor_read ? &FushiHunexGgeTraceV3.upload_descriptor_ok
+                      : &FushiHunexGgeTraceV3.upload_descriptor_fail));
+  {
+    const HunexGgePendingStoryCompose& probe_story =
+        g_hunex_gge_pending_story_compose;
+    if (probe_story.active &&
+        IsFreshHunexGgeProjectionTick(probe_story.sealed_tick,
+                                      GetTickCount64())) {
+      InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+          &FushiHunexGgeTraceV3.upload_with_active_story));
+      // 只在待定正文行活着时扫一次，避免热路径开销；找出真正承载 CPU 表面的槽位。
+      if (!descriptor_read && wrapper != nullptr &&
+          InterlockedCompareExchange(
+              reinterpret_cast<volatile LONG*>(
+                  &FushiHunexGgeTraceV3.upload_desc_offset_count),
+              0, 0) < 4) {
+        ScanHunexGgeUploadDescriptorOffsets(wrapper);
+      }
+    }
+  }
   // BUG-2090：逐字形贴图假设的检验点。只观测、不改变任何行为。
   if (descriptor_read) {
     const HunexGgePendingStoryCompose& story =

@@ -14,7 +14,7 @@ inline constexpr char kHunexGgeTraceExportName[] = "FushiHunexGgeTraceV3";
 inline constexpr uint32_t kHunexGgeTraceMagic = 0x33544748u;  // "HGT3"
 // v4（BUG-2089）：头部增加四个投影 detour 的调用计数。probe 与 helper 同源构建，
 // 版本号不匹配时 probe 直接拒读，不存在跨版本误解释。
-inline constexpr uint32_t kHunexGgeTraceVersion = 12u;
+inline constexpr uint32_t kHunexGgeTraceVersion = 14u;
 inline constexpr uint32_t kHunexGgeTraceCapacity = 512u;
 
 enum class HunexGgeTraceKind : uint32_t {
@@ -323,6 +323,18 @@ struct alignas(8) HunexGgeTraceBuffer {
   int64_t pending_upload_any_thread = 0;
   uint32_t pending_upload_story_tid = 0;
   uint32_t pending_upload_caller_tid = 0;
+  // v13：上传描述符可读性，以及「有待定正文行时」的上传次数（不受描述符门限制）。
+  // 之前的计数全在 `if (descriptor_read)` 内，若描述符读不出来就整体记不到，
+  // 会被误读成「没有上传发生在待定期」。
+  int64_t upload_descriptor_ok = 0;
+  int64_t upload_descriptor_fail = 0;
+  int64_t upload_with_active_story = 0;
+  // v14：在纹理上传 wrapper 对象里**结构化搜索** CPU 表面描述符的偏移。既有的
+  // +0xd8 / +0x84 对 WoH 一次都没读出合法表面（ok:0 / fail:130507），说明偏移不对。
+  // 记下前 4 个能读出 sane CPU surface 的指针槽偏移及其尺寸，供确定新锚点。
+  uint32_t upload_desc_offsets[4] = {};
+  uint32_t upload_desc_dims[8] = {};
+  uint32_t upload_desc_offset_count = 0;
   int64_t texture_upload_calls = 0;
   int64_t quad_vertex_calls = 0;
   int64_t sprite_draw_calls = 0;
@@ -363,7 +375,7 @@ static_assert(offsetof(HunexGgeTraceEvent, lookup_gate_mask) == 440,
               "HUNEX/GGE lookup diagnostic trace ABI drifted");
 static_assert(sizeof(HunexGgeTraceSlot) == 464,
               "HUNEX/GGE trace slot ABI drifted");
-static_assert(offsetof(HunexGgeTraceBuffer, slots) == 384,
+static_assert(offsetof(HunexGgeTraceBuffer, slots) == 464,
               "HUNEX/GGE trace header ABI drifted");
 
 }  // namespace fushi_voice_hook

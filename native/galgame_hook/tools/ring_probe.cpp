@@ -863,6 +863,12 @@ struct alignas(8) HunexGgeTraceHeaderSnapshot {
   int64_t pending_upload_any_thread = 0;
   uint32_t pending_upload_story_tid = 0;
   uint32_t pending_upload_caller_tid = 0;
+  int64_t upload_descriptor_ok = 0;
+  int64_t upload_descriptor_fail = 0;
+  int64_t upload_with_active_story = 0;
+  uint32_t upload_desc_offsets[4] = {};
+  uint32_t upload_desc_dims[8] = {};
+  uint32_t upload_desc_offset_count = 0;
   int64_t texture_upload_calls = 0;
   int64_t quad_vertex_calls = 0;
   int64_t sprite_draw_calls = 0;
@@ -2128,6 +2134,17 @@ bool DumpHunexGgeTrace(DWORD pid) {
   printf(" pending_upload_threads={any:%lld,story_tid:%u,caller_tid:%u}",
          static_cast<long long>(header.pending_upload_any_thread),
          header.pending_upload_story_tid, header.pending_upload_caller_tid);
+  printf(" upload_desc={ok:%lld,fail:%lld,with_active_story:%lld}",
+         static_cast<long long>(header.upload_descriptor_ok),
+         static_cast<long long>(header.upload_descriptor_fail),
+         static_cast<long long>(header.upload_with_active_story));
+  printf(" upload_desc_scan={count:%u,slots:[",
+         header.upload_desc_offset_count);
+  for (uint32_t i = 0; i < 4; ++i) {
+    printf("%s+%x:%ux%u", i ? "," : "", header.upload_desc_offsets[i],
+           header.upload_desc_dims[i * 2], header.upload_desc_dims[i * 2 + 1]);
+  }
+  printf("]}");
   PrintHunexGgeScannerStatus(header.scanner_status);
   PrintHunexGgeLookupGate(header.lookup_gate_mask);
   PrintHunexGgeCaptureQuarantine(
