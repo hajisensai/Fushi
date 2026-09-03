@@ -301,6 +301,172 @@ void main() {
   );
 
   test(
+    'BUG-2094 一字未推时的 noGlyphClusters 回到等正文而不是终态 fallback',
+    () async {
+      preferences[key()] = jsonEncode(
+        _profile(mode: GalLookupSurfaceMode.auto).toJson(),
+      );
+      // 子面还没拿到任何正文就回 noGlyphClusters：这是必然，不是失败。
+      await sync(text: '');
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'ready',
+          status: 'noGlyphClusters',
+        ),
+      );
+      await pumpEventQueue();
+
+      expect(
+        controller.status,
+        GalAttachedTextStatus.waitingForBodyThread,
+        reason: '降级成 fallback 就再也回不来：syncSession 只在 waitingForBodyThread 上'
+            '因新正文重新评估，后面每一行都会停在 fallback/noGlyphClusters',
+      );
+      expect(
+        controller.statusReason,
+        'state_event_no_glyph_clusters_before_text',
+      );
+      expect(controller.surfaceVisible, isFalse);
+
+      // 正文到了就能正常继续，不需要重启会话。
+      await sync();
+      expect(controller.status, GalAttachedTextStatus.activeAttached);
+    },
+  );
+
+  test(
+    'BUG-2095 已在等正文且正文一直都在时，同一句也要能把状态救回来',
+    () async {
+      preferences[key()] = jsonEncode(_profile().toJson());
+      await sync();
+      expect(controller.status, GalAttachedTextStatus.activeAttached);
+
+      // 子面回 emptyText，把状态推回「等正文」——此时 `_latestSourceText` 早已非空。
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'ready',
+          status: 'emptyText',
+        ),
+      );
+      await pumpEventQueue();
+      expect(controller.status, GalAttachedTextStatus.waitingForBodyThread);
+
+      // 同一句再同步一轮：「正文从无到有」的边沿不会再出现，旧判据在这里永远不
+      // 重新评估，状态就永久停在等正文（真机 WoH 上正是如此）。
+      await sync();
+      expect(
+        controller.status,
+        GalAttachedTextStatus.activeAttached,
+        reason: 'BUG-2095：恢复不能只挂在 bodyArrived 这个一次性边沿上',
+      );
+    },
+  );
+
+  test(
+    'BUG-2094 registry 交接期间的 noGlyphClusters 不降级成 fallback',
+    () async {
+      preferences[key()] = jsonEncode(_profile().toJson());
+      port.configureResult = const GalAttachedCallResult(
+        status: 'geometryProviderPending',
+        providerKind: 2,
+        providerId: 3,
+        providerStatus: 2,
+      );
+      await sync();
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      expect(controller.statusReason, 'geometryProviderPending');
+      expect(controller.attachedProviderClaimed, isTrue);
+
+      // 交接未完成时正文只是被 staged，子面还没渲染，这条是预期而非失败。
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'ready',
+          status: 'noGlyphClusters',
+        ),
+      );
+      await pumpEventQueue();
+
+      expect(
+        controller.status,
+        GalAttachedTextStatus.suspended,
+        reason: '降级成 fallback 会把子面藏掉，registry 交接从此完不成',
+      );
+      expect(controller.statusReason, 'geometryProviderPending');
+      expect(controller.attachedProviderClaimed, isTrue);
+
+      // 交接完成后照常收敛。
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'visible',
+          status: 'visible',
+          surfaceVisible: true,
+          providerKind: 4,
+          providerId: 11,
+          providerStatus: 1,
+        ),
+      );
+      await pumpEventQueue();
+      expect(controller.status, GalAttachedTextStatus.activeAttached);
+    },
+  );
+
+  test(
+    'BUG-2094 正文推送前的 noGlyphClusters 不得撤回共享认领',
+    () async {
+      preferences[key()] = jsonEncode(_profile().toJson());
+      port.configureResult = const GalAttachedCallResult(
+        status: 'geometryProviderPending',
+        providerKind: 2,
+        providerId: 3,
+        providerStatus: 2,
+      );
+
+      await sync();
+      expect(controller.attachedProviderClaimed, isTrue);
+      expect(port.texts, isNotEmpty);
+
+      // 子面回一条 noGlyphClusters：本轮渲染不出内容，但 attached 通路没坏。
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'ready',
+          status: 'noGlyphClusters',
+        ),
+      );
+      await pumpEventQueue();
+
+      expect(
+        controller.attachedProviderClaimed,
+        isTrue,
+        reason: 'BUG-2094：撤回共享认领会让注入侧 registry 永远不给 kind=4/id=11，'
+            '与 BUG-2091 是同一个活锁',
+      );
+      // fail-closed 的部分保持不变：面藏起来、状态降级。
+      expect(controller.surfaceVisible, isFalse);
+      expect(controller.status, GalAttachedTextStatus.suspended);
+
+      // 认领还在，注入侧一旦把 attached 判成 ready 就能正常收敛。
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'visible',
+          status: 'visible',
+          surfaceVisible: true,
+          providerKind: 4,
+          providerId: 11,
+          providerStatus: 1,
+        ),
+      );
+      await pumpEventQueue();
+      expect(controller.status, GalAttachedTextStatus.activeAttached);
+    },
+  );
+
+  test(
     'registry handoff pending stores text but cannot activate before kind 4/id 11',
     () async {
       preferences[key()] = jsonEncode(_profile().toJson());

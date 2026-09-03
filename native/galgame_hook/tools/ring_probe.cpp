@@ -877,6 +877,10 @@ struct alignas(8) HunexGgeTraceHeaderSnapshot {
   int64_t texture_upload_calls = 0;
   int64_t quad_vertex_calls = 0;
   int64_t sprite_draw_calls = 0;
+  // v17（BUG-2093）：render_item 另外三个参数各前 32 dword 的一次性快照。
+  uint32_t body_arg_words[3][32] = {};
+  uint32_t body_arg_captured = 0;
+  uint32_t body_arg_reserved = 0;
 };
 
 static_assert(sizeof(XAudioTraceHeaderSnapshot) ==
@@ -2113,6 +2117,16 @@ bool DumpHunexGgeTrace(DWORD pid) {
       static_cast<unsigned long long>(header.texture_upload_calls),
       static_cast<unsigned long long>(header.quad_vertex_calls),
       static_cast<unsigned long long>(header.sprite_draw_calls));
+  if (header.body_arg_captured != 0u) {
+    for (int arg_index = 0; arg_index < 3; ++arg_index) {
+      printf(" body_arg%d={", arg_index + 1);
+      for (int word_index = 0; word_index < 32; ++word_index) {
+        printf("%s%d:%08x", word_index == 0 ? "" : ",", word_index,
+               header.body_arg_words[arg_index][word_index]);
+      }
+      printf("}");
+    }
+  }
   printf(" compositor_callers={count:%u,overflow:%u,rvas:[%08x,%08x,%08x,%08x]}",
          header.compositor_caller_rva_count,
          header.compositor_caller_rva_overflow,

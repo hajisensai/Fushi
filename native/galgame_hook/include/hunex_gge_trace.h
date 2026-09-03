@@ -14,7 +14,7 @@ inline constexpr char kHunexGgeTraceExportName[] = "FushiHunexGgeTraceV3";
 inline constexpr uint32_t kHunexGgeTraceMagic = 0x33544748u;  // "HGT3"
 // v4（BUG-2089）：头部增加四个投影 detour 的调用计数。probe 与 helper 同源构建，
 // 版本号不匹配时 probe 直接拒读，不存在跨版本误解释。
-inline constexpr uint32_t kHunexGgeTraceVersion = 16u;
+inline constexpr uint32_t kHunexGgeTraceVersion = 17u;
 inline constexpr uint32_t kHunexGgeTraceCapacity = 512u;
 
 enum class HunexGgeTraceKind : uint32_t {
@@ -348,6 +348,14 @@ struct alignas(8) HunexGgeTraceBuffer {
   int64_t texture_upload_calls = 0;
   int64_t quad_vertex_calls = 0;
   int64_t sprite_draw_calls = 0;
+  // v17（BUG-2093）：正文字形的 render x/y 已被真机证明是「1920x1080 逻辑空间里的
+  // 文本层局部坐标」——两种窗口尺寸下 client = (render + origin) * client/(1920,1080)
+  // 都成立，唯一未知量是文本层原点 origin。origin 不在字形 item 自身（前 0x70 字节已
+  // 全量 dump，无候选），只能在 render_item 的另外三个参数所指对象里。这里把它们各前
+  // 32 dword 无条件抄一份，供离线定位；只读、只抄一次，不参与任何判据。
+  uint32_t body_arg_words[3][32] = {};
+  uint32_t body_arg_captured = 0;
+  uint32_t body_arg_reserved = 0;
   HunexGgeTraceSlot slots[kHunexGgeTraceCapacity] = {};
 };
 
@@ -385,7 +393,7 @@ static_assert(offsetof(HunexGgeTraceEvent, lookup_gate_mask) == 440,
               "HUNEX/GGE lookup diagnostic trace ABI drifted");
 static_assert(sizeof(HunexGgeTraceSlot) == 464,
               "HUNEX/GGE trace slot ABI drifted");
-static_assert(offsetof(HunexGgeTraceBuffer, slots) == 584,
+static_assert(offsetof(HunexGgeTraceBuffer, slots) == 976,
               "HUNEX/GGE trace header ABI drifted");
 
 }  // namespace fushi_voice_hook

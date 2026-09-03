@@ -1913,6 +1913,31 @@ void* Detour_HunexGgeRenderItem(void* arg1, void* arg2, void* arg3,
     }
   }
 
+  // BUG-2093：正文文本层原点探针。render x/y 是文本层局部坐标（1920x1080 逻辑单位），
+  // 客户区映射 client = (render + origin) * client/(1920,1080) 已在两种窗口尺寸下实测成立，
+  // 唯一缺的就是 origin。字形 item 前 0x70 字节里没有候选，故把 render_item 的另外三个
+  // 参数各抄前 32 dword 一次，纯离线定位用；只读、幂等、不参与任何几何判据。
+  if (body_submit && FushiHunexGgeTraceV3.body_arg_captured == 0u) {
+    uint32_t dump[3][32] = {};
+    bool dumped = false;
+    void* const args[3] = {arg1, arg2, arg3};
+    for (size_t index = 0; index < 3; ++index) {
+      if (args[index] == nullptr) continue;
+      __try {
+        std::memcpy(dump[index], args[index], sizeof(dump[index]));
+        dumped = true;
+      } __except (EXCEPTION_EXECUTE_HANDLER) {
+      }
+    }
+    if (dumped &&
+        InterlockedCompareExchange(
+            reinterpret_cast<volatile LONG*>(
+                &FushiHunexGgeTraceV3.body_arg_captured),
+            1, 0) == 0) {
+      std::memcpy(FushiHunexGgeTraceV3.body_arg_words, dump, sizeof(dump));
+    }
+  }
+
   bool render_item_read = false;
   __try {
     if (render_item != nullptr) {

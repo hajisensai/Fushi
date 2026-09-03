@@ -713,6 +713,15 @@ bool AttachedTextSurfaceWindow::TargetIsForeground() const {
        IsChild(presentation_hwnd_, foreground))) {
     return true;
   }
+  // BUG-2098：查词卡是**本进程**为这个游戏打开的卡，它拿到焦点恰恰是「用户刚点了一个
+  // 词」的结果。旧判据只认游戏 HWND 前台，于是第一次查词必然把表面挂起
+  // （suspended/targetBackground）、命中区域随之清空，用户紧接着点的那一下就不再被吞
+  // ——真机上表现为「第一次能查到词，之后每次点击都穿透并推进剧情」。
+  // 放行范围严格限定为「带着本游戏 owner 标记的本进程查词卡」，不放宽到同 PID 任意
+  // 窗口：alt-tab 到 Fushi 主窗时表面必须照旧挂起。
+  if (fushi::IsLookupCardConsumingForOwner(foreground, target_.hwnd)) {
+    return true;
+  }
   // Same PID is not identity: launchers, settings and video/helper windows can
   // share the game process. Only the inspected source hierarchy or the
   // ResolveScalingSourceWindow-verified presentation HWND may keep the surface
@@ -1686,13 +1695,19 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
     layout_dirty_ = true;
   if (layout_dirty_ && !RebuildClusters()) {
     HideSurface();
-    SetState("ready", "noGlyphClusters");
+    SetState("ready", "noGlyphClusters",
+             last_cluster_failure_.empty() ? "cluster_build_failed"
+                                           : last_cluster_failure_.c_str());
     EmitStateIfChanged();
     return;
   }
   if (clusters_.empty()) {
     HideSurface();
-    SetState("ready", "noGlyphClusters");
+    // `layout_dirty_` 为假时这一轮根本没重建，簇为空是上一轮失败留下的。报那一轮的
+    // 真实原因，否则真因会被这条泛化状态覆盖掉（BUG-2095 真机上正是如此）。
+    SetState("ready", "noGlyphClusters",
+             last_cluster_failure_.empty() ? "clusters_empty_after_build"
+                                           : last_cluster_failure_.c_str());
     EmitStateIfChanged();
     return;
   }
@@ -1715,8 +1730,12 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
   }
   RenderLayerBitmap(false);
   if (!SetVisible(true)) {
+    // BUG-2098：这一路有五个互不相干的闸门，报出到底是哪条。
+    const char *arm_failure = fushi::LastAttachedGlyphArmFailure();
     SetState("suspended", "mouseHookBusy",
-             "low_level_mouse_singleton_busy_or_unavailable");
+             arm_failure == nullptr
+                 ? std::string("low_level_mouse_singleton_busy_or_unavailable")
+                 : std::string("low_level_mouse_arm_failed:") + arm_failure);
     EmitStateIfChanged();
     return;
   }
@@ -1808,17 +1827,25 @@ void AttachedTextSurfaceWindow::PositionSurface(const RECT &screen_rect,
   }
 }
 
+// BUG-2095：17 个失败点原本全是裸 `return false`，对外只发一条笼统的
+// `noGlyphClusters`——真机上等于「二十选一」，完全无法判断是正文没到、矩形没面积、
+// 版式溢出，还是 DirectWrite 把行裁了。逐点记原因，只加量具不改任何判据。
+bool AttachedTextSurfaceWindow::ClusterFailure(const char *reason) {
+  last_cluster_failure_ = reason == nullptr ? "" : reason;
+  return false;
+}
+
 bool AttachedTextSurfaceWindow::RebuildClusters() {
   ClearInteractiveRegion();
   layout_dirty_ = false;
   if (source_text_.empty() || !RectHasArea(surface_screen_rect_))
-    return false;
+    return ClusterFailure("empty_text_or_no_surface_rect");
   if (dwrite_factory_ == nullptr) {
     HRESULT hr = DWriteCreateFactory(
         DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
         reinterpret_cast<IUnknown **>(dwrite_factory_.GetAddressOf()));
     if (FAILED(hr))
-      return false;
+      return ClusterFailure("dwrite_factory_failed");
   }
 
   const float client_height =
@@ -1835,7 +1862,7 @@ bool AttachedTextSurfaceWindow::RebuildClusters() {
                      static_cast<LONG>(surface_height)};
   if (mode_ == Mode::kCalibration) {
     if (!IsNormalizedRectValid(calibration_rect_))
-      return false;
+      return ClusterFailure("calibration_rect_invalid");
     const RECT full_client = layout_bounds;
     layout_bounds = ResolveNormalizedRect(full_client, calibration_rect_);
   }
@@ -1844,7 +1871,7 @@ bool AttachedTextSurfaceWindow::RebuildClusters() {
   const float layout_height =
       static_cast<float>(layout_bounds.bottom - layout_bounds.top);
   if (layout_width < kMinimumBodyPixels || layout_height < kMinimumBodyPixels) {
-    return false;
+    return ClusterFailure("layout_bounds_too_small");
   }
   const float layout_origin_x =
       static_cast<float>(layout_bounds.left) + padding;
@@ -1858,7 +1885,7 @@ bool AttachedTextSurfaceWindow::RebuildClusters() {
       DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size, L"ja-JP",
       &format);
   if (FAILED(hr))
-    return false;
+    return ClusterFailure("create_text_format_failed");
   if (layout_.text_align == "center") {
     format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
   } else if (layout_.text_align == "right" ||
@@ -1878,14 +1905,43 @@ bool AttachedTextSurfaceWindow::RebuildClusters() {
   format->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
   const float line_spacing =
       std::max(font_size, font_size * static_cast<float>(layout_.line_height));
+  // BUG-2095：基线距离原本硬编码成 `font_size * 0.8`。那是拉丁字体的经验值；日文字体
+  // 的 ascent 普遍在 0.88 em 上下，于是**第一行的墨迹必然伸到版面框上方**，紧接着的
+  // `GetOverhangMetrics` 恒判 `overhang.top > 0` 而整轮建簇失败——attached 通路对日文
+  // 正文因此永远建不出一个字形簇（真机 WoH：`fallback/overhang_outside_body_rect`）。
+  // 这里不去猜某个新常数，而是先用一次性版面**量出**真实上溢，再把基线下移同样多；
+  // 本来就不上溢的字体量到 0，行为一字不变。
+  float baseline = font_size * 0.8f;
+  {
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> probe_format;
+    if (SUCCEEDED(dwrite_factory_->CreateTextFormat(
+            layout_.font_family.c_str(), nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size,
+            L"ja-JP", &probe_format))) {
+      probe_format->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+      probe_format->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM,
+                                   line_spacing, baseline);
+      Microsoft::WRL::ComPtr<IDWriteTextLayout> probe_layout;
+      if (SUCCEEDED(dwrite_factory_->CreateTextLayout(
+              source_text_.data(), static_cast<UINT32>(source_text_.size()),
+              probe_format.Get(), content_width, content_height,
+              &probe_layout))) {
+        DWRITE_OVERHANG_METRICS probe{};
+        if (SUCCEEDED(probe_layout->GetOverhangMetrics(&probe)) &&
+            probe.top > 0.0f) {
+          baseline += probe.top;
+        }
+      }
+    }
+  }
   format->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, line_spacing,
-                         font_size * 0.8f);
+                         baseline);
 
   hr = dwrite_factory_->CreateTextLayout(
       source_text_.data(), static_cast<UINT32>(source_text_.size()),
       format.Get(), content_width, content_height, &text_layout_);
   if (FAILED(hr) || text_layout_ == nullptr)
-    return false;
+    return ClusterFailure("create_text_layout_failed");
 
   const float letter_spacing = static_cast<float>(
       layout_.letter_spacing_per_client_height * client_height);
@@ -1913,14 +1969,14 @@ bool AttachedTextSurfaceWindow::RebuildClusters() {
       text_metrics.top + text_metrics.height >
           content_height + kLayoutEpsilon) {
     ClearInteractiveRegion();
-    return false;
+    return ClusterFailure("metrics_overflow_body_rect");
   }
   DWRITE_OVERHANG_METRICS overhang{};
   if (FAILED(text_layout_->GetOverhangMetrics(&overhang)) ||
       overhang.left > kLayoutEpsilon || overhang.top > kLayoutEpsilon ||
       overhang.right > kLayoutEpsilon || overhang.bottom > kLayoutEpsilon) {
     ClearInteractiveRegion();
-    return false;
+    return ClusterFailure("overhang_outside_body_rect");
   }
 
   UINT32 line_count = 0;
@@ -1928,20 +1984,20 @@ bool AttachedTextSurfaceWindow::RebuildClusters() {
   if ((line_hr != E_NOT_SUFFICIENT_BUFFER && FAILED(line_hr)) ||
       line_count == 0) {
     ClearInteractiveRegion();
-    return false;
+    return ClusterFailure("line_metrics_unavailable");
   }
   std::vector<DWRITE_LINE_METRICS> lines(line_count);
   line_hr = text_layout_->GetLineMetrics(lines.data(), line_count, &line_count);
   if (FAILED(line_hr)) {
     ClearInteractiveRegion();
-    return false;
+    return ClusterFailure("line_metrics_read_failed");
   }
   uint64_t line_units = 0;
   double line_height_total = 0.0;
   for (UINT32 index = 0; index < line_count; ++index) {
     if (lines[index].isTrimmed) {
       ClearInteractiveRegion();
-      return false;
+      return ClusterFailure("line_trimmed");
     }
     line_units += lines[index].length;
     line_height_total += lines[index].height;
@@ -1949,20 +2005,20 @@ bool AttachedTextSurfaceWindow::RebuildClusters() {
   if (line_units != source_text_.size() ||
       line_height_total > content_height + kLayoutEpsilon) {
     ClearInteractiveRegion();
-    return false;
+    return ClusterFailure("line_units_or_height_mismatch");
   }
 
   UINT32 cluster_count = 0;
   hr = text_layout_->GetClusterMetrics(nullptr, 0, &cluster_count);
   if (hr != E_NOT_SUFFICIENT_BUFFER && FAILED(hr))
-    return false;
+    return ClusterFailure("cluster_metrics_unavailable");
   if (cluster_count == 0)
-    return false;
+    return ClusterFailure("cluster_count_zero");
   std::vector<DWRITE_CLUSTER_METRICS> metrics(cluster_count);
   hr = text_layout_->GetClusterMetrics(metrics.data(), cluster_count,
                                        &cluster_count);
   if (FAILED(hr))
-    return false;
+    return ClusterFailure("cluster_metrics_read_failed");
 
   uint32_t text_position = 0;
   for (UINT32 index = 0; index < cluster_count; ++index) {
@@ -1971,7 +2027,7 @@ bool AttachedTextSurfaceWindow::RebuildClusters() {
     if (length == 0 || text_position >= source_text_.size() ||
         static_cast<uint64_t>(text_position) + length > source_text_.size()) {
       ClearInteractiveRegion();
-      return false;
+      return ClusterFailure("cluster_range_out_of_text");
     }
     if (!cluster.isWhitespace && !cluster.isNewline && !cluster.isSoftHyphen) {
       UINT32 hit_count = 0;
@@ -1981,7 +2037,7 @@ bool AttachedTextSurfaceWindow::RebuildClusters() {
       if ((hit_hr != E_NOT_SUFFICIENT_BUFFER && FAILED(hit_hr)) ||
           hit_count == 0) {
         ClearInteractiveRegion();
-        return false;
+        return ClusterFailure("hit_test_range_empty");
       }
       std::vector<DWRITE_HIT_TEST_METRICS> hits(hit_count);
       hit_hr = text_layout_->HitTestTextRange(
@@ -1989,7 +2045,7 @@ bool AttachedTextSurfaceWindow::RebuildClusters() {
           hit_count, &hit_count);
       if (FAILED(hit_hr)) {
         ClearInteractiveRegion();
-        return false;
+        return ClusterFailure("hit_test_range_failed");
       }
       for (UINT32 hit_index = 0; hit_index < hit_count; ++hit_index) {
         const DWRITE_HIT_TEST_METRICS &hit = hits[hit_index];
@@ -2003,7 +2059,7 @@ bool AttachedTextSurfaceWindow::RebuildClusters() {
             box.right > static_cast<LONG>(surface_width) ||
             box.bottom > static_cast<LONG>(surface_height)) {
           ClearInteractiveRegion();
-          return false;
+          return ClusterFailure("cluster_box_outside_surface");
         }
         clusters_.push_back(ClusterBox{text_position, length, box});
       }
@@ -2012,9 +2068,11 @@ bool AttachedTextSurfaceWindow::RebuildClusters() {
   }
   if (text_position != source_text_.size()) {
     ClearInteractiveRegion();
-    return false;
+    return ClusterFailure("text_position_mismatch");
   }
-  return !clusters_.empty();
+  if (clusters_.empty()) return ClusterFailure("clusters_empty");
+  last_cluster_failure_.clear();
+  return true;
 }
 
 void AttachedTextSurfaceWindow::ClearInteractiveRegion() {

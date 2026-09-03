@@ -218,6 +218,7 @@ void main() {
           .map((TexthookerLineEntry e) =>
               '${e.id} audio=${e.audioStatus.name}/${e.audioBackend}/'
               '${e.audioDurationMs}ms reason=${e.fallbackReason} '
+              'ruby=${e.rubySpans.length} '
               'text=${e.text.replaceAll('\n', '⏎')}')
           .join('\n    ');
     }
@@ -395,10 +396,59 @@ void main() {
                   'failureReason=${result.failureReason} '
                   'text=${entry.text.replaceAll('\n', '⏎')}');
             case 'thread':
-              await session.selectTextThread(int.parse(parts[1]));
-              out('#$seq thread ok ${describeState()}');
+              // 只传 native threadId 会让 Dart 侧 `_selectedTextThreadKey` 留空，
+              // 而 `selectedSessionLines` 在 key 为空时**恒返回空表**——工作台看得见
+              // 台词、attached/制卡侧却一行都拿不到。真实 UI 是连 key 一起传的，
+              // 驱动必须同构，否则测的就不是用户路径。
+              final int nativeId = int.parse(parts[1]);
+              String? threadKey;
+              for (final TexthookerTextThread thread in session.textThreads) {
+                if (thread.nativeThreadId == nativeId) {
+                  threadKey = thread.key;
+                  break;
+                }
+              }
+              final bool ok = await session.selectTextThread(
+                nativeId,
+                threadKey: threadKey,
+                remember: true,
+              );
+              out('#$seq thread ok=$ok key=$threadKey ${describeState()}');
+            case 'threads':
+              final StringBuffer sb = StringBuffer('#$seq threads:');
+              for (final TexthookerTextThread thread in session.textThreads) {
+                sb.write('\n    key=${thread.key} '
+                    'native=${thread.nativeThreadId} '
+                    'lines=${thread.lineCount} label=${thread.label}');
+              }
+              out(sb.toString());
             case 'state':
               out('#$seq ${describeState()}');
+            case 'shield':
+              final GalAttachedTextController attached =
+                  GalHookTextOverlayController.instance.attachedText;
+              final GalAttachedShieldStatus sh = attached.shieldStatus;
+              out('#$seq shield available=${sh.available} '
+                  'conclusion=${sh.conclusion.name} '
+                  'request=${sh.requestSeq} applied=${sh.appliedSeq} '
+                  'requiredMask=0x${sh.requiredMask.toRadixString(16)} '
+                  'readyMask=0x${sh.readyMask.toRadixString(16)} '
+                  'observedMask=0x${sh.observedMask.toRadixString(16)} '
+                  'faultMask=0x${sh.faultMask.toRadixString(16)} '
+                  'statusFlags=0x${sh.statusFlags.toRadixString(16)} '
+                  'status=${attached.status.name}/${attached.statusReason}');
+            case 'srctext':
+              final GalAttachedTextController attached =
+                  GalHookTextOverlayController.instance.attachedText;
+              final List<TexthookerLineEntry> selected =
+                  session.selectedSessionLines;
+              final TexthookerLineEntry? last =
+                  selected.isEmpty ? null : selected.last;
+              out('#$seq srctext attachedLatest='
+                  '"${attached.latestSourceText}" '
+                  'selectedCount=${selected.length} '
+                  'lastRuby=${last?.rubySpans.length} '
+                  'lastText="${last?.text}"');
             case 'lines':
               final int n = parts.length > 1 ? int.parse(parts[1]) : 5;
               out('#$seq lines:\n    ${describeLines(n)}');

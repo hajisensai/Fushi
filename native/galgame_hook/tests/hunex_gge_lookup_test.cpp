@@ -44,7 +44,7 @@ static_assert(offsetof(fushi_voice_hook::HunexGgeTraceEvent,
                        lookup_gate_mask) == 440u);
 static_assert(sizeof(fushi_voice_hook::HunexGgeTraceSlot) == 464u);
 // BUG-2089：头部增加四个投影 detour 调用计数后 slots 前移 32 字节。
-static_assert(offsetof(fushi_voice_hook::HunexGgeTraceBuffer, slots) == 584u);
+static_assert(offsetof(fushi_voice_hook::HunexGgeTraceBuffer, slots) == 976u);
 
 namespace {
 
