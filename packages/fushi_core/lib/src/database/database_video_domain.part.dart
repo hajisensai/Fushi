@@ -2001,6 +2001,44 @@ mixin _FushiDbVideoDomain
     });
   }
 
+  /// 全部启用订阅中最早的一个可领取时刻；没有可调度的订阅时返回 null。
+  ///
+  /// 调度器据此把「固定周期唤醒」换成「睡到下一条真正到期」。被别的 worker
+  /// 占着的行要等 lease 过期才轮得到，所以它的可领取时刻取 nextCheckAt 与
+  /// claimExpiresAt 的较晚者；nextCheckAt 为 NULL 表示立即到期（新建订阅）。
+  Future<int?> nextVideoDownloadSubscriptionDueAt() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT MIN(CASE WHEN claimed_by IS NULL '
+      'THEN COALESCE(next_check_at, 0) '
+      'ELSE MAX(COALESCE(next_check_at, 0), COALESCE(claim_expires_at, 0)) '
+      'END) AS due FROM video_download_subscriptions WHERE enabled = 1',
+      readsFrom: <TableInfo<Table, Object?>>{videoDownloadSubscriptions},
+    ).get();
+    if (rows.isEmpty) return null;
+    return rows.first.read<int?>('due');
+  }
+
+  /// 一条订阅最近若干条目的发布时刻（降序，已滤掉缺失值）。
+  ///
+  /// 订阅检查节奏据此推断每周更新点，见 `subscription_check_schedule.dart`。
+  Future<List<int>> getVideoDownloadSubscriptionPublishedAt(
+    String subscriptionId, {
+    int limit = 5,
+  }) async {
+    if (limit <= 0) throw ArgumentError.value(limit, 'limit');
+    final List<QueryRow> rows = await customSelect(
+      'SELECT published_at AS at FROM video_download_subscription_items '
+      'WHERE subscription_id = ?1 AND published_at IS NOT NULL '
+      'ORDER BY published_at DESC LIMIT ?2',
+      variables: <Variable<Object>>[
+        Variable<String>(subscriptionId),
+        Variable<int>(limit),
+      ],
+      readsFrom: <TableInfo<Table, Object?>>{videoDownloadSubscriptionItems},
+    ).get();
+    return <int>[for (final QueryRow row in rows) row.read<int>('at')];
+  }
+
   Future<bool> renewVideoDownloadSubscriptionClaim({
     required String subscriptionId,
     required String workerId,
