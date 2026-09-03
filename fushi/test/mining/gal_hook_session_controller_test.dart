@@ -2700,6 +2700,110 @@ void _bug950Guard() {
           '${controller.events.map((GalHookEvent e) => e.code).toList()}');
     }
 
+    test('BUG-2086 文本 hook 缺席时不得宣称 engine.hook_ready', () async {
+      // 真机 WoH 的精确形态：注入编排在装 LunaHook 之前就中止，于是游戏内 DLL 自装的
+      // 音频 hook 全部存活（PCM 格式拿得到），而文本 hook 一次都没装。
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final _FakeEngineSource audioOnly = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        textReady: false,
+      );
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        targetWow64Probe: (_) async => false,
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+        engineSourceFactory: ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
+        }) =>
+            audioOnly,
+        loopbackSourceFactory: _FakeLoopbackSource.new,
+        windowListLoader: () async => const <ExternalWindowInfo>[],
+        windowPollAttempts: 1,
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+
+      await controller.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 3, pid: 20096, title: 'WoH'),
+      );
+
+      // phase 本来就是诚实的：没有台词就停在 waitingSignals。
+      expect(controller.state.phase, GalHookSessionPhase.waitingSignals);
+
+      final List<String> codes =
+          controller.events.map((GalHookEvent e) => e.code).toList();
+      expect(
+        codes,
+        isNot(contains('engine.hook_ready')),
+        reason: '文本 hook 未安装时不得发出宣称「hook and IPC are ready」的事件',
+      );
+      final GalHookEvent audioOnlyEvent = controller.events.firstWhere(
+        (GalHookEvent e) => e.code == 'engine.audio_hook_ready_text_missing',
+      );
+      expect(audioOnlyEvent.severity, GalHookEventSeverity.warning);
+      expect(audioOnlyEvent.details['textHookReady'], isFalse);
+
+      await controller.close();
+      endpoints.dispose();
+    });
+
+    test('BUG-2086 文本 hook 就绪时照常发 engine.hook_ready（不得过度收紧）', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final _FakeEngineSource full = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        textReady: true,
+      );
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        targetWow64Probe: (_) async => false,
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+        engineSourceFactory: ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
+        }) =>
+            full,
+        loopbackSourceFactory: _FakeLoopbackSource.new,
+        windowListLoader: () async => const <ExternalWindowInfo>[],
+        windowPollAttempts: 1,
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+
+      await controller.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 3, pid: 20097, title: 'WoH'),
+      );
+
+      final GalHookEvent ready = controller.events.firstWhere(
+        (GalHookEvent e) => e.code == 'engine.hook_ready',
+      );
+      expect(ready.severity, GalHookEventSeverity.success);
+      expect(ready.details['textHookReady'], isTrue);
+
+      await controller.close();
+      endpoints.dispose();
+    });
+
     test('可自愈的附着失败会在 Loopback 期间重试并升级回引擎源', () async {
       final TexthookerService service = TexthookerService.test();
       final ChangeNotifier endpoints = ChangeNotifier();

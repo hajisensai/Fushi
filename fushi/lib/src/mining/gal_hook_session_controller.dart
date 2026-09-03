@@ -3882,15 +3882,31 @@ class GalHookSessionController extends ChangeNotifier {
         clearLastError: true,
       ),
     );
+    // BUG-2086：这条事件此前**只由音频侧决定**（调用方判据是 `format != null`），
+    // 于是「音频 hook 全好、LunaHook 文本 hook 一次都没装」的会话照样打出 success 级
+    // 「Engine hook and IPC are ready」。真机 WoH 正是如此：26 条音轨、game_resource
+    // 就绪，而 lines=0、phase 永远停在 waitingSignals。同一个函数体一边把 phase 写成
+    // 「还在等信号」、一边宣布 ready，正是 SOP 禁止的「用前一阶段推断后一阶段」。
+    //
+    // 控制流刻意不动（文本或 PCM 晚到是常态，由 _refreshReadinessThrottled 负责升格）；
+    // 改的只是「怎么说」：按文本侧事实拆成两条互斥事件，并且无论哪支都带上
+    // textHookReady，让事件自解释。
+    final bool textReady = engine.textHookReady;
     _record(
-      GalHookEventSeverity.success,
+      textReady
+          ? GalHookEventSeverity.success
+          : GalHookEventSeverity.warning,
       'inject',
-      'engine.hook_ready',
-      'Engine hook and IPC are ready; waiting for text signals',
+      textReady ? 'engine.hook_ready' : 'engine.audio_hook_ready_text_missing',
+      textReady
+          ? 'Engine hook and IPC are ready; waiting for text signals'
+          : 'Engine audio hook and IPC are ready, but the text hook is NOT '
+                'installed; no lines will arrive until it is',
       details: <String, Object?>{
         'pid': gamePid,
         'sampleRate': format.sampleRate,
         'channels': format.channels,
+        'textHookReady': textReady,
       },
     );
     _syncTrackAutoRefresh();
@@ -4444,12 +4460,23 @@ class GalHookSessionController extends ChangeNotifier {
       return;
     }
     _engineRetryAttempt = 0;
+    // 上游门是 `format != null || engine.textHookReady`（**或**），所以「recovered」
+    // 可能只恢复了音频一侧。必须说清恢复的是什么，否则又是一条让人误判整链已通的
+    // success（BUG-2086）。
+    final bool recoveredText = engine.textHookReady;
     _record(
       GalHookEventSeverity.success,
       'inject',
       'engine.attach_recovered',
-      'Engine hook recovered after a bounded retry',
-      details: <String, Object?>{'attempt': attempt, 'pid': gamePid},
+      recoveredText
+          ? 'Engine hook recovered after a bounded retry'
+          : 'Engine AUDIO hook recovered after a bounded retry; the text hook '
+                'is still missing',
+      details: <String, Object?>{
+        'attempt': attempt,
+        'pid': gamePid,
+        'textHookReady': recoveredText,
+      },
     );
     if (format != null) {
       if (engine.rawVoiceReady) {

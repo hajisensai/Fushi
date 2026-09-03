@@ -1956,6 +1956,27 @@ uint32_t Detour_HunexGgeTextureUpload(void* wrapper, uint32_t flags) {
       IsFreshHunexGgeProjectionTick(pending.updated_tick, now) &&
       SameHunexGgeCpuSurface(upload_surface, pending.surface);
   if (!exact_surface) {
+    // BUG-2087：这里原本是哑口——段 2 成功后若纹理上传对不上，trace 里只表现为
+    // 「compositor 之后没有下文」，无法分辨是没走到这一段还是走到了被拒。只在**能归属
+    // 到某条语义行**（chain 仍 active 且同线程新鲜）时补一条诊断，避免与「本次上传根本
+    // 不属于正文链」混为一谈；判据与控制流一字未动。
+    if (pending.active &&
+        pending.render_thread_id == GetCurrentThreadId() &&
+        IsFreshHunexGgeProjectionTick(pending.updated_tick, now)) {
+      fushi_voice_hook::HunexGgeTraceEvent event;
+      event.draw_sequence = pending.generation;
+      event.text_hash = reinterpret_cast<uintptr_t>(wrapper);
+      event.story_line_base = pending.story_thread_address;
+      event.story_line_hash = pending.raw_text_hash;
+      event.render_x = static_cast<int32_t>(pending.surface.words[1]);
+      event.render_y = static_cast<int32_t>(pending.surface.words[2]);
+      event.glyph_ordinal = flags;
+      event.draw_arg13 = result;
+      PublishHunexGgeProjectionDiagnostic(
+          event, fushi_voice_hook::HunexGgeProjectionTraceStage::kTexture,
+          fushi_voice_hook::HunexGgeProjectionTraceFailure::
+              kTextureSurfaceMismatch);
+    }
     return result;
   }
   const auto publish_texture_failure =
@@ -2059,10 +2080,36 @@ uint32_t Detour_HunexGgeQuadVertex(void* manager, const float* xy,
   }
   const uint32_t result = g_orig_hunex_gge_quad_vertex(
       manager, xy, uv_pixels, texture_dimensions);
+  // BUG-2087：段 4 的三条拒绝路径原本全是哑口，真机 trace 上无法与「本次调用根本不属于
+  // 正文链」区分。只在 surface chain 仍 active 且同线程新鲜（= 能归属到某条语义行）时补
+  // 诊断；不改任何判据与控制流。
+  const auto publish_quad_failure =
+      [&](fushi_voice_hook::HunexGgeProjectionTraceFailure failure) {
+        const auto& chain = g_hunex_gge_pending_surface_chain;
+        if (!chain.active ||
+            chain.render_thread_id != GetCurrentThreadId() ||
+            !IsFreshHunexGgeProjectionTick(chain.updated_tick,
+                                           GetTickCount64())) {
+          return;
+        }
+        fushi_voice_hook::HunexGgeTraceEvent event;
+        event.draw_sequence = chain.generation;
+        event.text_hash = reinterpret_cast<uintptr_t>(manager);
+        event.story_line_base = chain.story_thread_address;
+        event.story_line_hash = chain.raw_text_hash;
+        event.render_x = dimensions[0];
+        event.render_y = dimensions[1];
+        event.draw_arg13 = result;
+        PublishHunexGgeProjectionDiagnostic(
+            event, fushi_voice_hook::HunexGgeProjectionTraceStage::kSprite,
+            failure);
+      };
   if (result != 4u || !inputs_read || mode != 1 || dimensions[0] <= 0 ||
       dimensions[0] > 32768 || dimensions[1] <= 0 ||
       dimensions[1] > 32768 || !std::isfinite(offset_x) ||
       !std::isfinite(offset_y)) {
+    publish_quad_failure(
+        fushi_voice_hook::HunexGgeProjectionTraceFailure::kQuadShapeRejected);
     g_hunex_gge_pending_quad = {};
     return result;
   }
@@ -2083,6 +2130,8 @@ uint32_t Detour_HunexGgeQuadVertex(void* manager, const float* xy,
     vertex_buffer = 0u;
   }
   if (vertex_buffer == 0u) {
+    publish_quad_failure(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                             kQuadVertexBufferMissing);
     g_hunex_gge_pending_quad = {};
     return result;
   }
@@ -2101,6 +2150,8 @@ uint32_t Detour_HunexGgeQuadVertex(void* manager, const float* xy,
     const float normalized_v = input_uv[index * 2u + 1u] / dimensions[1];
     if (!std::isfinite(final_x) || !std::isfinite(final_y) ||
         !std::isfinite(normalized_u) || !std::isfinite(normalized_v)) {
+      publish_quad_failure(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                               kQuadProjectionNotFinite);
       g_hunex_gge_pending_quad = {};
       return result;
     }

@@ -1,3 +1,9 @@
+// CI 走 `--config Release`，MSVC 在该配置下定义 NDEBUG，裸 assert 会被整条编译掉。
+// 本文件目前用 Expect() + 返回码而非 assert，但守卫是**无条件**的结构规则：
+// 保留这行，日后有人往本文件加 assert 时不会静默失活。守卫：
+// native/galgame_hook/tests/assert_liveness_guard_test.py
+#undef NDEBUG
+
 #include "../attached_hover_tracker.h"
 
 #include <iostream>

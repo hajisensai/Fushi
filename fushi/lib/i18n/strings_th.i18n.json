@@ -4160,5 +4160,6 @@
   "gal_card_lookup_max_width": "ความกว้างสูงสุดของการ์ดในเกม",
   "gal_card_lookup_max_height": "ความสูงสูงสุดของการ์ดในเกม",
   "gal_mining_image_mode_video_clip": "Video clip",
-  "gal_mining_image_mode_video_clip_hint": "Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured."
+  "gal_mining_image_mode_video_clip_hint": "Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.",
+  "game_hook_reason_native_loopback_ack_timeout": "The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing."
 }

@@ -240,6 +240,10 @@ constexpr uint32_t kLoopbackDiagInitializeAttempted = 0x00000020u;
 constexpr uint32_t kLoopbackDiagUnknownFormat = 0x00000040u;
 constexpr uint32_t kLoopbackDiagFailed = 0x00000080u;
 constexpr uint32_t kLoopbackDiagPolicyStopObserved = 0x00000100u;
+// allow 请求的策略确认没在注入预算内到达：injector 已按「能力未就绪」降级继续
+// （文本 hook 照常安装），worker 仍可能稍后自行 ack 成 running。置位只说明
+// 「这次注入没等到确认」，不代表 loopback 永远起不来（BUG-2086）。
+constexpr uint32_t kLoopbackDiagPolicyAckTimeout = 0x00000200u;
 
 // 环形缓冲保留时长（秒）。C 阶段语音轨常见 48k 立体声 float32；60s 上界 ≈ 23MB。
 // 32 位游戏地址空间有限，共享内存映射进游戏进程也吃它的地址空间——故设硬上界。
@@ -1616,6 +1620,21 @@ inline NativeLoopbackRequestSnapshot ReadNativeLoopbackRequest(
     }
   }
   return result;
+}
+
+// 当前发布的 native loopback 请求是否已被 hook 侧确认（applied_seq 追平 request seq）。
+//
+// 供 hook 侧在重量级引擎探测**之前**有界追平 ack 用（见 dll_main 的追平循环）：
+// allow 的 applied/running 只能在 worker 起流后的下一轮 PollPolicy 发布，若把那一轮
+// 留到引擎探测之后，早注入 5s 的确认预算基本必然超时（BUG-2086）。
+// injector 侧另有带 requested 值校验的版本，那里要区分 deny/allow 的语义边界。
+inline bool NativeLoopbackRequestAcknowledged(const SharedHeader* header) {
+  if (header == nullptr) return false;
+  const NativeLoopbackRequestSnapshot request =
+      ReadNativeLoopbackRequest(header);
+  if (!request.valid) return false;
+  return AtomicLoadShared32(&header->native_loopback_applied_seq) ==
+         request.seq;
 }
 
 inline bool NativeLoopbackRequestMatches(

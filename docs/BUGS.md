@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1947 条。点号进各自文件。
+> 共 1949 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2087](bugs/BUG-2087-hunex-projection-chain-diagnostic-blind-spots.md) | ✅ | ✅ | HUNEX 投影链段 3/段 4 的拒绝路径无诊断，真机读不出断在哪一环 |
+| [BUG-2086](bugs/BUG-2086-hunex-loopback-ack-timeout-kills-text-hook.md) | ✅ | ✅ | native loopback allow 的确认超时中止注入，导致 LunaHook 文本 hook 永不安装 |
 | [BUG-2085](bugs/BUG-2085-gal-resource-late-pending-loopback-freeze-wait.md) | ✅ | ✅ | game_resource 行先 pending 后被资源匹配，制卡仍白等一个被丢弃的 loopback 冻结窗 |
 | [BUG-2084](bugs/BUG-2084-woh-hunex-realmachine-lookup-boundary.md) | 🚧 | 🚧 | 真机 WoH(HUNEX)合并构建:拉起/hook/音频/文本/风险确认均通过,原生几何 fail-closed 退到 attached 需标定 |
 | [BUG-2082](bugs/BUG-2082-kirikiri-ingame-click-advances-no-card.md) | 🚧 | 🚧 | 真机:KiriKiri(Limelight)游戏内单击文字推进对白而非弹查词卡,悬停高亮正常 |

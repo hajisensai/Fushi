@@ -72,6 +72,14 @@ enum class HunexGgeProjectionTraceFailure : int32_t {
   kSpriteQuadExpired = 18,
   kSpriteProjectionSizesRejected = 19,
   kSpriteDrawFailed = 20,
+  // 21..23 补的是段 3/段 4 的**诊断盲区**：这两段原本在拒绝时直接 return，不发任何
+  // 事件，于是真机 trace 里表现为「compositor 成功后就没有下文」，无法分辨是纹理上传
+  // 没对上、还是 quad 形状被拒。投影链共 20 个显式失败点却留了 4 个哑口，等于让下一次
+  // 真机会话大概率读不出结论（BUG-2087）。复用既有 V3 事件布局，不改导出 ABI。
+  kTextureSurfaceMismatch = 21,
+  kQuadShapeRejected = 22,
+  kQuadVertexBufferMissing = 23,
+  kQuadProjectionNotFinite = 24,
 };
 
 enum HunexGgeTraceScannerStatus : uint32_t {

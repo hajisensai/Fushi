@@ -4160,5 +4160,6 @@
   "gal_card_lookup_max_width": "游戏内查词卡最大宽度",
   "gal_card_lookup_max_height": "游戏内查词卡最大高度",
   "gal_mining_image_mode_video_clip": "视频片段",
-  "gal_mining_image_mode_video_clip_hint": "从台词出现到制卡这段时间的游戏画面，并混入句子音频。未开始录制或不足 2 帧时降级为动图/截图。"
+  "gal_mining_image_mode_video_clip_hint": "从台词出现到制卡这段时间的游戏画面，并混入句子音频。未开始录制或不足 2 帧时降级为动图/截图。",
+  "game_hook_reason_native_loopback_ack_timeout": "音频采集策略未在超时内确认。文本采集不受影响；若缺少游戏内语音可重试一次。"
 }

@@ -1259,6 +1259,11 @@ const char* HunexGgeProjectionFailureName(int32_t failure) {
     case Failure::kSpriteProjectionSizesRejected:
       return "sprite_projection_sizes_rejected";
     case Failure::kSpriteDrawFailed: return "sprite_draw_failed";
+    // BUG-2087 段 3/段 4 的补盲诊断。
+    case Failure::kTextureSurfaceMismatch: return "texture_surface_mismatch";
+    case Failure::kQuadShapeRejected: return "quad_shape_rejected";
+    case Failure::kQuadVertexBufferMissing: return "quad_vertex_buffer_missing";
+    case Failure::kQuadProjectionNotFinite: return "quad_projection_not_finite";
   }
   return "unknown";
 }
