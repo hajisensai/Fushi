@@ -156,8 +156,16 @@ void main() {
     );
 
     expect(kept, 3);
+    // `Directory.listSync()` 的枚举顺序由文件系统决定，**不是**排序后的：Windows NTFS
+    // 恰好返回有序，Linux ext4 返回任意序（CI 上实测拿到
+    // `['frame_001.png','frame_000.png','frame_002.png']` 而本地全绿）。被测行为是
+    // 「只删尾部超额帧」——关心的是**哪几个文件还在**，不是枚举顺序。排序后再比：
+    // 既去掉平台依赖，又保住「不多不少正是这三个」的判别力（用 unorderedEquals 会
+    // 丢掉「删的是尾部而不是中间」这层，因为剩下哪三个正是本用例的判据）。
     expect(
-      dir.listSync().whereType<File>().map((File f) => p.basename(f.path)),
+      (dir.listSync().whereType<File>().map((File f) => p.basename(f.path)))
+          .toList()
+        ..sort(),
       <String>['frame_000.png', 'frame_001.png', 'frame_002.png'],
     );
     // 预算没收缩时一帧都不删。
