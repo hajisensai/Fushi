@@ -4178,5 +4178,8 @@
   "discovery_opds_allow_http_hint": "Cần thiết cho máy chủ tự dựng trong mạng nội bộ",
   "discovery_opds_test": "Kiểm tra kết nối",
   "discovery_opds_test_ok": "Đã kết nối. Danh mục gốc có ${count} mục",
-  "discovery_opds_test_failed": "Kết nối thất bại: ${reason}"
+  "discovery_opds_test_failed": "Kết nối thất bại: ${reason}",
+  "anki_error_permission_permanently_denied": "AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.",
+  "anki_error_ankidroid_unavailable": "AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.",
+  "anki_action_open_settings": "Open settings"
 }

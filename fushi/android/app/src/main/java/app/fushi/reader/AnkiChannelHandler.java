@@ -5,10 +5,12 @@ import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -35,6 +37,21 @@ public class AnkiChannelHandler {
     private static final String CHANNEL = ChannelNames.ANKI;
     private static final int AD_PERM_REQUEST = 0;
 
+    // BUG-2098：`requestAnkidroidPermissions` 的返回值。此前恒 success(true)——发起
+    // 系统权限请求后**不等用户答复**就返回，Dart 侧紧接着查 provider，于是权限对话框
+    // 还在屏幕上时错误已经报完了；而当系统压根不弹框（用户永久拒绝 / AnkiDroid 没装
+    // 导致这个自定义 dangerous 权限在系统里根本没被任何包定义）时，用户在设置页里
+    // 没有任何路径能把权限授出来。现在返回真实终态，Dart 据此短路并给可操作提示。
+    static final String PERM_GRANTED = "granted";
+    /** 用户拒绝了本次请求，但还能再问（下次仍会弹框）。 */
+    static final String PERM_DENIED = "denied";
+    /** 系统不再弹框（「不再询问」/永久拒绝）——只能去应用设置页手动授予。 */
+    static final String PERM_PERMANENTLY_DENIED = "permanently_denied";
+    /** 副 engine（无 Activity）未授权：弹不了框，须回主 app 授予（BUG-865）。 */
+    static final String PERM_NO_ACTIVITY = "no_activity";
+    /** AnkiDroid 没装（或其 API 被禁）——该权限在系统里不存在，授权无从谈起。 */
+    static final String PERM_UNAVAILABLE = "unavailable";
+
     // BUG-865：AnkiDroid ContentProvider 访问是「进程 + 权限」作用域，只需 Context
     // （AnkiDroidHelper 内部已 getApplicationContext()、AddContentApi/FileProvider/
     // grantUriPermission/getContentResolver/startActivity(NEW_TASK) 均 Context 即可）。
@@ -45,6 +62,14 @@ public class AnkiChannelHandler {
     @Nullable
     private final Activity activity;
     private final AnkiDroidHelper ankiDroid;
+
+    /**
+     * BUG-2098：在途的权限请求——{@code requestAnkidroidPermissions} 把 Dart 侧的
+     * {@link MethodChannel.Result} 挂在这里，直到 {@link #onRequestPermissionsResult}
+     * 拿到系统回调才 resolve。只在主线程读写（channel 回调与权限回调同为主线程）。
+     */
+    @Nullable
+    private MethodChannel.Result pendingPermissionResult;
 
     /** 主 engine（MainActivity）用：Activity 既作 Context 又能弹权限。 */
     public AnkiChannelHandler(Activity activity) {
@@ -344,12 +369,12 @@ public class AnkiChannelHandler {
                         }
                         break;
                     case "requestAnkidroidPermissions":
-                        // BUG-865：副 engine（activity==null）无法弹系统权限框，静默跳过；
-                        // 权限须在主 app 授予。仍回 success(true) 保持契约不变。
-                        if (activity != null && ankiDroid.shouldRequestPermission()) {
-                            ankiDroid.requestPermission(activity, AD_PERM_REQUEST);
-                        }
-                        result.success(true);
+                        requestAnkidroidPermissions(result);
+                        break;
+                    case "openAnkiPermissionSettings":
+                        // BUG-2098：永久拒绝后系统不再弹框，唯一出路是应用详情页里的
+                        // 权限项；把跳转做成显式能力，Dart 侧才能给「去设置」按钮。
+                        result.success(openAppPermissionSettings());
                         break;
                     case "addFileToMedia":
                         if (filename == null || preferredName == null) {
@@ -416,13 +441,96 @@ public class AnkiChannelHandler {
         return "ANKI_PROVIDER_ERROR";
     }
 
+    /**
+     * BUG-2098：发起 AnkiDroid 运行时权限请求，并**等到用户答复**再 resolve。
+     *
+     * <p>此前这里是「发起请求 + 立刻 success(true)」，Dart 侧 await 完马上就去查
+     * provider，系统权限对话框还没被点，错误就已经弹给用户了；对话框根本没弹的两种
+     * 情况（永久拒绝 / AnkiDroid 未安装）更是让用户在这个页面上无路可走。
+     *
+     * <p>五种终态见 {@code PERM_*} 常量。注意先判「是否已授权」再判 activity：副
+     * engine 无 Activity 但权限早在主 app 授予过时，仍须回 {@code granted}（BUG-865）。
+     */
+    private void requestAnkidroidPermissions(MethodChannel.Result result) {
+        if (!ankiDroid.shouldRequestPermission()) {
+            result.success(PERM_GRANTED);
+            return;
+        }
+        if (!AnkiDroidHelper.isApiAvailable(context)) {
+            // AnkiDroid 没装/API 被禁：READ_WRITE_DATABASE 由 AnkiDroid 定义，没有任
+            // 何包定义它时 requestPermissions 会立即静默判拒且不弹框——报「去设置授权」
+            // 是误导，那个权限项在设置里根本不存在。
+            result.success(PERM_UNAVAILABLE);
+            return;
+        }
+        if (activity == null) {
+            result.success(PERM_NO_ACTIVITY);
+            return;
+        }
+        if (pendingPermissionResult != null) {
+            // 已有一次请求在途（系统对话框正开着）。不排队、不覆盖：覆盖会让前一个
+            // Dart Future 永远挂着。当作本次被拒，调用方重试即可。
+            result.success(PERM_DENIED);
+            return;
+        }
+        pendingPermissionResult = result;
+        ankiDroid.requestPermission(activity, AD_PERM_REQUEST);
+    }
+
+    /**
+     * BUG-2098：系统权限回调入口，由 {@code MainActivity.onRequestPermissionsResult}
+     * 转发。返回 {@code true} 表示本次回调属于 AnkiDroid 权限请求。
+     *
+     * <p>拒绝后区分「还能再问」与「不再询问」：请求刚被拒且
+     * {@code shouldShowRequestPermissionRationale} 仍为 false，说明系统已不再弹框，
+     * 只能去应用设置页授予。
+     */
+    public boolean onRequestPermissionsResult(int requestCode, @NonNull int[] grantResults) {
+        if (requestCode != AD_PERM_REQUEST) {
+            return false;
+        }
+        final MethodChannel.Result pending = pendingPermissionResult;
+        pendingPermissionResult = null;
+        if (pending == null) {
+            return true;
+        }
+        final boolean granted = grantResults.length > 0
+            && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+        if (granted) {
+            pending.success(PERM_GRANTED);
+        } else if (activity != null && ankiDroid.canAskPermissionAgain(activity)) {
+            pending.success(PERM_DENIED);
+        } else {
+            pending.success(PERM_PERMANENTLY_DENIED);
+        }
+        return true;
+    }
+
+    /** BUG-2098：打开本应用的系统详情页（权限项所在处）。成功返回 true。 */
+    private boolean openAppPermissionSettings() {
+        try {
+            final Intent intent = new Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", context.getPackageName(), null));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(intent);
+            return true;
+        } catch (Exception e) {
+            android.util.Log.w("fushi-anki", "cannot open app settings", e);
+            return false;
+        }
+    }
+
+    /**
+     * provider 访问前的权限守卫。BUG-824 起每个碰 provider 的分支都过它。
+     *
+     * <p>BUG-2098：这里不再自己发起权限请求——发起与等待是
+     * {@link #requestAnkidroidPermissions} 的单一职责，Dart 侧每个 provider 调用前
+     * 都会先走那条路并等结果。此处只做「没权限就干净失败」的兜底，避免同一次用户
+     * 操作弹两次框、以及本方法发起的那次请求因无人等待而被静默丢弃。
+     */
     private boolean requirePermission(MethodChannel.Result result) {
         if (ankiDroid.shouldRequestPermission()) {
-            // BUG-865：副 engine（activity==null）不能弹系统权限框，只回错误让 Dart
-            // 层提示「去主 app 授予 AnkiDroid 权限」，避免 ActivityCompat 对 null NPE。
-            if (activity != null) {
-                ankiDroid.requestPermission(activity, AD_PERM_REQUEST);
-            }
             result.error("PERMISSION_DENIED",
                 "AnkiDroid permission not granted. Please grant and retry.",
                 null);

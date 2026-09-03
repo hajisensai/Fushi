@@ -4178,5 +4178,8 @@
   "discovery_opds_allow_http_hint": "مطلوب لخادم ذاتي الاستضافة على شبكتك المحلية",
   "discovery_opds_test": "اختبار الاتصال",
   "discovery_opds_test_ok": "تم الاتصال. يحتوي الفهرس الجذر على ${count} عنصرًا",
-  "discovery_opds_test_failed": "فشل الاتصال: ${reason}"
+  "discovery_opds_test_failed": "فشل الاتصال: ${reason}",
+  "anki_error_permission_permanently_denied": "AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.",
+  "anki_error_ankidroid_unavailable": "AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.",
+  "anki_action_open_settings": "Open settings"
 }
