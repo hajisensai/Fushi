@@ -29,10 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1964 条。点号进各自文件。
+> 共 1968 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2103](bugs/BUG-2103-video-editable-slots-dead-truth-source.md) | ✅ | ✅ | 视频控制条可编辑槽真相源零消费且与真实能力矛盾 |
+| [BUG-2102](bugs/BUG-2102-video-volume-slot-order-ignored.md) | ✅ | ✅ | 视频底栏音量按钮的槽内顺序被渲染端丢弃：拖动无效 |
+| [BUG-2101](bugs/BUG-2101-manga-reader-no-exit-on-load-failure.md) | ✅ | ✅ | 漫画阅读器加载失败时返回键一起消失：iOS 上无系统返回键 = 只能杀进程 |
+| [BUG-2100](bugs/BUG-2100-ios-container-path-drift.md) | ✅ | ✅ | iOS 每次更新后全库绝对路径失效：书架全部「找不到书籍文件」 |
 | [BUG-2090](bugs/BUG-2090-overlay-hover-highlight-brush-leak.md) | ✅ | ✅ | overlay 悬浮高亮窗口类每次重建都漏一个 GDI brush |
 | [BUG-2089](bugs/BUG-2089-inapp-mining-payload-bool-cast-crash.md) | ✅ | ✅ | 应用内制卡全部失败：「导出卡片失败: Invalid card data (payload parse failed): type 'String' is not a subtype of type 'bool?' in type cast」 |
 | [BUG-2088](bugs/BUG-2088-release-notes-never-reach-update-dialog.md) | ✅ | ✅ | 正式版更新公告进不了应用内更新弹窗，用户看到的是一行占位符 |

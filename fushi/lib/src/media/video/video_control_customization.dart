@@ -89,9 +89,20 @@ enum VideoControlSlot {
   ///
   /// TODO-399 decision 2: [bottomCenter] joined the editable set so the central
   /// transport cluster (play / seek / cue-nav) can also be rebalanced by the
-  /// user. [topCenter] still hosts the fixed title chrome and stays out.
+  /// user.
+  ///
+  /// [topCenter] 也在集合里。它此前被排除在外，理由是「只放固定的标题 chrome」——
+  /// 但 [canMoveToSlot] 一直允许把 [VideoControlItem.title] 拖进 topCenter，两个
+  /// 编辑器也一直把它画成一个可投放区域。于是这个自称「真相源」的清单**与真实能力
+  /// 相反**，且零生产消费方（两个编辑器各自硬编码了一份槽位表），谁也拦不住它们
+  /// 继续漂开。
+  ///
+  /// 这里定的是**编辑器暴露哪些槽**，不是**每个槽收哪些按钮**。后者是
+  /// [canMoveToSlot] 的职责：topCenter 依旧只收标题，拖别的按钮进去照常拒收并给
+  /// 提示。两个维度分开之后，「区域存在」与「这个按钮能不能放这儿」不再互相冒充。
   static const List<VideoControlSlot> editableSlots = <VideoControlSlot>[
     VideoControlSlot.topLeft,
+    VideoControlSlot.topCenter,
     VideoControlSlot.topRight,
     VideoControlSlot.bottomLeft,
     VideoControlSlot.bottomCenter,

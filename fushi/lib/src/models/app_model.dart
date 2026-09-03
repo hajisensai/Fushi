@@ -31,6 +31,7 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/export_directory.dart';
 import 'package:fushi/src/storage/installer_data_root_bootstrap.dart';
+import 'package:fushi/src/storage/sandbox_relocation.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 import 'package:fushi/src/media/drag_drop/desktop_drop_reinitializer.dart';
@@ -2316,6 +2317,25 @@ class AppModel with ChangeNotifier {
       //    selection to the independent interconnect toggle (interconnect and a
       //    cloud backup backend can now coexist).
       await BackupService.recoverPendingImport(_databaseDirectory.path);
+
+      // 沙箱重定位自愈：数据根被**平台**挪走后，把库里的绝对路径重基过去。
+      //
+      // iOS 每次安装/更新都会换掉 app 容器 UUID，文件随容器走、库里记的旧路径
+      // 集体悬空 —— 症状是「更新一次，整个书架全部『找不到书籍文件』」，每次更新
+      // 复发。这一步必须在**任何消费路径的东西读库之前**跑（下面的 SyncRepository
+      // 迁移、各 repository 的 load、媒体历史都要读路径列），也必须在
+      // recoverPendingImport **之后**：崩在半途的备份导入恢复出来的库同样带着
+      // 导出设备的旧根，要一起重基。
+      //
+      // 自愈失败只上报、不阻塞启动：用户至多回到修复前的状态，绝不能因为对账
+      // 出错而进不去 app（台账故意不写，下次启动会重试）。
+      await SandboxRelocation.reconcile(
+        db: _database,
+        documentsRoot: _appDirectory.path,
+        supportRoot: _databaseDirectory.path,
+        onError: (Object e, StackTrace stack) =>
+            ErrorLogService.instance.log('AppModel.sandboxRelocation', e, stack),
+      );
       //    cloud backup backend can now coexist);
       // 4) BUG-1576: drop the pre-decoupling GLOBAL folder cache. Two channels
       //    took turns writing that single pair of keys, so its value can no
