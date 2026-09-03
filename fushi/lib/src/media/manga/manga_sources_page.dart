@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -23,6 +22,7 @@ import 'package:fushi/src/media/manga/online/mokuro_moe_source_row.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 
 /// 漫画库「来源」视图：本域**所有**来源的唯一管理处。
 ///
@@ -170,13 +170,10 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
         false;
     if (!acceptedRisk || !mounted) return;
 
-    final FilePickerResult? picked = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['aix'],
-      allowMultiple: false,
-      withData: false,
+    final String? path = await pickSystemFilePath(
+      context: context,
+      allowedExtensions: const <String>{'aix'},
     );
-    final String? path = picked?.files.single.path;
     if (!mounted || path == null) return;
 
     setState(() {

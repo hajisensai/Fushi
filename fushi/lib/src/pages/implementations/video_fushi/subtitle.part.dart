@@ -1184,13 +1184,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 弹系统文件选择器挑一个字幕文件（srt/ass/ssa/vtt）→ 经 [_importExternalSubtitle]
   /// 落盘并应用。FilePicker 会夺走视频键盘焦点，关闭后 [_focusOwnership] 归还。
   Future<void> _pickAndImportSubtitle(VideoPlayerController controller) async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa'],
-      allowMultiple: false,
+    final String? path = await pickSystemFilePath(
+      context: context,
+      allowedExtensions: const <String>{'srt', 'vtt', 'ass', 'ssa'},
     );
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
-    final String? path = result?.files.single.path;
     if (path == null) return;
     await _importExternalSubtitle(controller, path);
   }
@@ -1199,13 +1197,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
   Future<void> _pickAndImportRemoteSubtitle(
     VideoPlayerController controller,
   ) async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa'],
-      allowMultiple: false,
+    final String? path = await pickSystemFilePath(
+      context: context,
+      allowedExtensions: const <String>{'srt', 'vtt', 'ass', 'ssa'},
     );
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
-    final String? path = result?.files.single.path;
     if (path == null) return;
     if (subtitleFormatForPath(path) == null) {
       _showOsd(
@@ -1446,13 +1442,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
   Future<void> _pickAndImportRemoteSecondarySubtitle(
     VideoPlayerController controller,
   ) async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa'],
-      allowMultiple: false,
+    final String? path = await pickSystemFilePath(
+      context: context,
+      allowedExtensions: const <String>{'srt', 'vtt', 'ass', 'ssa'},
     );
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
-    final String? path = result?.files.single.path;
     if (path == null) return;
     if (subtitleFormatForPath(path) == null) {
       _showOsd(

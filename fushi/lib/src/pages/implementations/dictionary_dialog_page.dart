@@ -16,6 +16,7 @@ import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 
 // ── BUG-1493：下载/导入两阶段的可归因进度 ──────────────────────────────
 //
@@ -466,20 +467,13 @@ class _DictionaryDialogPageState extends BasePageState {
     if (Platform.isAndroid || Platform.isIOS) {
       await FilePicker.platform.clearTemporaryFiles();
     }
+    if (!mounted) return;
 
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['zip', 'dsl', 'mdx', 'ifo', 'css'],
-      allowMultiple: true,
+    final List<String> paths = await pickSystemFilePaths(
+      context: context,
+      allowedExtensions: const <String>{'zip', 'dsl', 'mdx', 'ifo', 'css'},
     );
-    if (result == null || result.files.isEmpty) {
-      return;
-    }
-
-    final List<String> paths = result.files
-        .map((PlatformFile f) => f.path)
-        .whereType<String>()
-        .toList();
+    if (paths.isEmpty) return;
     await _importDictionaryPaths(paths);
 
     if (Platform.isAndroid || Platform.isIOS) {
@@ -1874,13 +1868,11 @@ class _DictionaryDialogPageState extends BasePageState {
     if (Platform.isAndroid || Platform.isIOS) {
       await FilePicker.platform.clearTemporaryFiles();
     }
-    final FilePickerResult? picked = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['zip', 'dsl', 'mdx', 'ifo'],
-      allowMultiple: false,
+    if (!mounted) return;
+    final String? pickedPath = await pickSystemFilePath(
+      context: context,
+      allowedExtensions: const <String>{'zip', 'dsl', 'mdx', 'ifo'},
     );
-    final String? pickedPath =
-        picked?.files.isNotEmpty == true ? picked!.files.single.path : null;
     if (pickedPath == null) {
       if (Platform.isAndroid || Platform.isIOS) {
         await FilePicker.platform.clearTemporaryFiles();

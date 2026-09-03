@@ -53,51 +53,57 @@ const Map<String, String> kDirectoryPickerAllowlist = <String, String>{
 
 /// 允许裸调 `pickFiles(` 的文件 → 理由。**只减不增**。
 ///
-/// 绝大多数是上面 (b) 类：选中即读、读完即拷进 app 存储，缓存副本无害。
-/// 标「TODO」的是 (a) 类真实欠账，应在后续 PR 迁到统一入口。
+/// BUG-2099 之后这份清单大幅缩短：凡是**按扩展名**选文件的调用点全部收编到
+/// [kPickerImpl] 的 `pickSystemFilePath(s)` / `pickFilesByExtensions`，因为把扩展名
+/// 过滤交给平台在移动端会让文件**置灰点不动**（安卓 SAF 只认 MIME，file_picker 把
+/// `MimeTypeMap` 查不到的扩展名静默丢掉；iOS 的 `dyn.*` UTI 同理）。
+/// 剩下的都是**不按扩展名过滤**的调用（`FileType.image` / `FileType.any`），或
+/// Windows 专属入口——它们不受那条 MIME 丢弃路径影响。
 const Map<String, String> kFilePickerAllowlist = <String, String>{
-  // (b) 当场消费：解析成 cue / 转 EPUB / 拷进存储后即与原路径脱钩。
+  // 不按扩展名过滤（FileType.image / FileType.any）：没有可被丢弃的扩展名清单。
   'lib/src/media/audiobook/book_import_dialog.dart':
-      '书文件与封面：导入时拷进 app 存储，与原路径脱钩（EPUB 一条 TODO：安卓白拷一份，可迁 pickRealFilePath）',
-  'lib/src/settings/settings_schema_video.dart':
-      'mpv Lua 脚本：选中即 importLuaScriptFile 拷进 app 的 mpv_scripts 目录，与原路径脱钩',
-  'lib/src/pages/implementations/video_fushi/subtitle.part.dart':
-      '字幕：选中即解析成 cue（与 pickSystemFilePath 同语义，board 1360）',
-  'lib/src/pages/implementations/dictionary_dialog_page.dart':
-      '词典包：选中即经 FFI 导入，导完与原路径脱钩',
-  'lib/src/pages/implementations/custom_fonts_page.dart':
-      '字体文件：校验魔数后拷进 app 字体目录',
-  'lib/src/pages/implementations/manual_download_task_dialog.dart':
-      '.torrent 元数据：withData: true 当场读字节、随即写进 app 的 manual_torrents 目录，与原路径脱钩',
+      '书籍封面：FileType.image，选中即拷进 app 存储与原路径脱钩'
+          '（书文件本身已收编到 pickFilesByExtensions）',
   'lib/src/pages/implementations/miscellaneous_settings_page.dart':
-      '应用图标：拷进 app 存储（image_picker 在 Windows 无实现，TODO-1239）',
-  'lib/src/pages/implementations/profile_management_page.dart':
-      'Profile JSON：选中即读入并落库',
-  'lib/src/sync/sync_settings_schema/backup.part.dart': '备份 zip：选中即校验并恢复，不长期引用',
-  'lib/src/pages/implementations/onboarding_wizard_page.dart':
-      '新手引导「选择本地推荐包」：备份 zip 选中即走 runBackupImportFlowForFile 校验并恢复，'
-          '与 backup.part.dart 同语义，不长期引用',
-  'lib/src/utils/misc/gallery_image_picker.dart': '制卡图片：选中即读字节写进卡片，不长期引用',
-  'lib/src/pages/implementations/video_shader_dialog.dart':
-      '着色器文件：选中即拷进 mpv_shaders 目录',
-  'lib/src/pages/implementations/home_video_page.dart': '视频页文件选择：当场消费',
-  'lib/src/media/manga/mihon/mihon_extensions_page.dart':
-      'Mihon 扩展 APK：选中即 readAsBytes 拷进 app 存储的 tmp/extension-<sha>.apk.part 再校验安装，原路径不入库',
-  'lib/src/media/manga/manga_sources_page.dart':
-      'Aidoku 扩展 .aix：选中即 inspect 校验并 AidokuPackageStore.install 拷进 app 存储，原路径不入库（与上面 Mihon APK 同语义）',
+      '应用图标：FileType.image，拷进 app 存储（image_picker 在 Windows 无实现，TODO-1239）',
+  'lib/src/utils/misc/gallery_image_picker.dart':
+      '制卡图片：FileType.image，选中即读字节写进卡片，不长期引用',
   'lib/src/media/manga/manga_ocr_settings_section.dart':
-      '手动导入的 OCR 模型文件 / zip：选中即按清单校验字节数并拷进 app 的模型目录'
-          '（MangaOcrModelImporter，原子 rename），原路径不入库。同一入口的「选择'
-          '文件夹」走 pickRealDirectoryPath——那条要的是真实目录路径，不是当场消费。',
-  // (a) 长期引用，但**仅 Windows** 路径可达，安卓那条腿根本跑不到：
-  // （2026-08-13 选 exe 逻辑从 games_library_page 收敛到共享动作 galgame_add_flow）
+      '手动导入的 OCR 模型文件：FileType.any（模型文件无统一扩展名），选中即按清单'
+          '校验字节数并拷进 app 的模型目录（MangaOcrModelImporter，原子 rename），'
+          '原路径不入库。同一入口的「选择文件夹」走 pickRealDirectoryPath。',
+  // Windows 专属入口（见 galgame SOP）：桌面原生对话框直接吃扩展名字符串，过滤
+  // 可靠，且安卓那条腿根本跑不到。
   'lib/src/mining/galgame_add_flow.dart':
       'galgame exe：Windows 专属（见 galgame SOP），安卓无此入口',
   'lib/src/pages/implementations/texthooker_page.dart':
       'galgame exe / LunaHook tsv：Windows 专属（见 galgame SOP）',
-  // 原有一条 'lib/src/settings/settings_schema_lookup.dart'（本地音频库导入）已于
-  // BUG-1667 修掉并按「清单只减不增」删除：它改走 pickRealFilePathDetailed，安卓不再
-  // 先复制进 app cache（6 GB 的 android.db 曾需要 2 倍内部存储才导得进来）。
+};
+
+/// 允许出现 `FileType.custom` 的文件 → 理由。**只减不增**。
+///
+/// 为什么要单独守这个字面量（BUG-2099）：安卓 SAF 只按 MIME 过滤，file_picker 的
+/// `FileUtils.getMimeTypes()` 逐个扩展名查 `MimeTypeMap.getMimeTypeFromExtension()`，
+/// **查不到就静默跳过**。`.mdx` / `.dsl` / `.ifo` / `.ass` / `.ssa` / `.aix` /
+/// `.lua` / `.glsl` 都不在系统词表里，于是这些文件在选择器里全部灰掉、点不动
+/// ——用户两次报同一个根因（「文件选择器直接对 mdx 是灰的」「导入视频字幕只能选
+/// srt 不能选 ass」）。上面的登记制只拦「裸调 pickFiles」，拦不住「走了统一入口
+/// 但又把 custom 传进去」，所以这条判据直接钉住字面量本身。
+const Map<String, String> kCustomFileTypeAllowlist = <String, String>{
+  // saveFile（保存对话框）：type 只决定「保存成什么类型」，不会让已存在的文件在
+  // 选择器里置灰，不受 MIME 丢弃影响。
+  'lib/src/pages/implementations/media_sources_view.dart': 'saveFile：导出刮削诊断包 zip',
+  'lib/src/pages/implementations/reader_fushi/audiobook.part.dart':
+      'saveFile：导出有声书片段',
+  'lib/src/pages/implementations/video_fushi/clip_export.part.dart':
+      'saveFile：导出视频片段',
+  'lib/src/sync/sync_settings_schema/backup.part.dart': 'saveFile：导出备份 zip',
+  'lib/src/utils/misc/log_exporter.dart': 'saveFile：导出日志',
+  // Windows 专属入口：桌面原生对话框按扩展名过滤可靠。
+  'lib/src/mining/galgame_add_flow.dart':
+      'galgame exe：Windows 专属（见 galgame SOP），安卓无此入口',
+  'lib/src/pages/implementations/texthooker_page.dart':
+      'galgame exe / LunaHook tsv：Windows 专属（见 galgame SOP）',
 };
 
 /// 扫 `lib/` 下所有 .dart，返回调用了 `.<member>(` 的文件相对路径集合。
@@ -128,6 +134,17 @@ List<File> _scannedDartFiles() => Directory('lib')
     .whereType<File>()
     .where((File f) => f.path.endsWith('.dart'))
     .toList();
+
+/// 扫 `lib/` 下所有 .dart，返回**正文里**出现 [literal] 的文件相对路径集合。
+/// 与 [_filesCalling] 共用同一条枚举 + 注释掩码路径（注释里的举例不算数）。
+Set<String> _filesContaining(String literal) {
+  final Set<String> hits = <String>{};
+  for (final File e in _scannedDartFiles()) {
+    final String code = maskCommentsAndScriptLines(e.readAsStringSync());
+    if (code.contains(literal)) hits.add(e.path.replaceAll(r'\', '/'));
+  }
+  return hits;
+}
 
 Set<String> _filesCalling(String member) {
   final RegExp call = RegExp(r'\.\s*' + member + r'\s*\(');
@@ -196,11 +213,40 @@ void main() {
     }
   });
 
+  test('按扩展名选文件：lib/ 下不得再裸用 FileType.custom（BUG-2099）', () {
+    final Set<String> users = _filesContaining('FileType.custom')
+      ..remove(kPickerImpl);
+    final Set<String> unexpected =
+        users.difference(kCustomFileTypeAllowlist.keys.toSet());
+    expect(
+      unexpected,
+      isEmpty,
+      reason: '安卓 SAF 只认 MIME：file_picker 会把 MimeTypeMap 查不到的扩展名'
+          '（mdx / dsl / ifo / ass / ssa / aix / lua / glsl…）静默丢掉，这些文件'
+          '在选择器里是灰的、点不动。按扩展名选文件请走 $kPickerImpl 的 '
+          'pickSystemFilePath(s) / pickFilesByExtensions（移动端自动降级成 '
+          'FileType.any + Dart 端校验，桌面维持原生过滤）。',
+    );
+  });
+
+  test('FileType.custom 豁免清单不得虚挂', () {
+    final Set<String> users = _filesContaining('FileType.custom')
+      ..remove(kPickerImpl);
+    for (final String path in kCustomFileTypeAllowlist.keys) {
+      expect(
+        users,
+        contains(path),
+        reason: '$path 已不再用 FileType.custom，请把它从豁免清单删掉（只减不增）。',
+      );
+    }
+  });
+
   test('统一入口文件本身存在（清单里的路径不是拼错的）', () {
     expect(File(kPickerImpl).existsSync(), isTrue);
     for (final String path in <String>[
       ...kDirectoryPickerAllowlist.keys,
       ...kFilePickerAllowlist.keys,
+      ...kCustomFileTypeAllowlist.keys,
     ]) {
       expect(File(path).existsSync(), isTrue, reason: '$path 不存在');
     }

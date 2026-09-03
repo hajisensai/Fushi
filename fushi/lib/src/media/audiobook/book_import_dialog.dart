@@ -485,8 +485,8 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (_pickerActive) return;
     _pickerActive = true;
     try {
-      final FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: anyFile ? FileType.any : FileType.custom,
+      final FilePickerResult? result = await pickFilesByExtensions(
+        context: context,
         allowedExtensions: anyFile ? null : _bookExtensions,
       );
       final PlatformFile? file = result?.files.single;

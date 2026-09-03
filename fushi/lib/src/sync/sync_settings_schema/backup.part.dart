@@ -810,11 +810,11 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
     // Re-entrant guard: the row's Activate (A/Enter) and the trailing button
     // both call this, so ignore a second trigger while an import is running.
     if (_isImporting) return;
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['zip'],
+    final String? path = await pickSystemFilePath(
+      context: context,
+      allowedExtensions: <String>{'zip'},
     );
-    if (result == null || result.files.single.path == null) return;
+    if (path == null) return;
     if (!mounted) return;
 
     setState(() => _isImporting = true);
@@ -823,7 +823,7 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       // 新手引导「导入推荐包」共用同一份实现（单一真相源）。
       await runBackupImportFlowForFile(
         appModel: widget.settingsContext.appModel,
-        filePath: result.files.single.path!,
+        filePath: path,
       );
     } finally {
       if (mounted) setState(() => _isImporting = false);

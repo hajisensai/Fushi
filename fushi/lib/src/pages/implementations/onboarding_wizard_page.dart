@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show ByteData, rootBundle;
 import 'package:fushi/pages.dart';
@@ -31,6 +30,7 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
         buildInterconnectDestination,
         runBackupImportFlowForFile;
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi_anki/fushi_anki.dart'
     show AnkiDeck, AnkiNoteType, AnkiSettings;
 import 'package:fushi_audio/fushi_audio.dart'
@@ -339,11 +339,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   }
 
   Future<void> _pickPackFileAndImport() async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: <String>['zip'],
+    final String? path = await pickSystemFilePath(
+      context: context,
+      allowedExtensions: <String>{'zip'},
     );
-    final String? path = result?.files.single.path;
     if (path == null || !mounted) return;
     // 用户自备的文件不归下载器管，导入后不删。
     await _importPackFile(path, deleteAfterImport: false);
