@@ -2612,6 +2612,12 @@ void FlutterWindow::RegisterVoiceHookChannel() {
               {flutter::EncodableValue("nativeLoopbackAppliedSeq"),
                flutter::EncodableValue(
                    static_cast<int64_t>(s.native_loopback_applied_seq))},
+              {flutter::EncodableValue("xaudioDiagnostics"),
+               flutter::EncodableValue(
+                   static_cast<int64_t>(s.xaudio_diagnostics))},
+              {flutter::EncodableValue("xaudioDiagnostics2"),
+               flutter::EncodableValue(
+                   static_cast<int64_t>(s.xaudio_diagnostics2))},
               {flutter::EncodableValue("ready"),
                flutter::EncodableValue(s.ok || s.raw_voice_ready)},
           };

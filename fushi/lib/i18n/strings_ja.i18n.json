@@ -4137,6 +4137,7 @@
   "onboarding_lookup_practice_desc": "文を読み込んだ状態で辞書ページを開きます。そこで単語をタップすると語義が表示されます。何も出ない場合は、辞書がまだ入っていません。",
   "onboarding_first_anki_lookup_desc": "練習用の文を開いて、単語をタップします。",
   "onboarding_first_anki_action_desc": "練習用の文を辞書ページで開きます。単語をタップし、「＋」をタップして、項目を確認してから保存します。",
+  "video_subtitle_source_search_hint": "上の「字幕を検索」をタップしてから、ここでソースを選んでください。",
   "game_session_japanese_locale_evidence": "判定根拠：${evidence}",
   "game_session_japanese_locale_skipped": "ロケール未適用",
   "game_session_japanese_locale_skipped_hint": "このセッションは日本語ロケールなしで起動しました（自動判定：${evidence}）。文字化けする場合は、このゲームの日本語ロケールを「常にオン」にしてください。",

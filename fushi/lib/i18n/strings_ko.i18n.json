@@ -4137,6 +4137,7 @@
   "onboarding_lookup_practice_desc": "문장을 불러온 상태로 단어 찾기 페이지를 엽니다. 거기서 단어를 탭하면 뜻이 나옵니다. 아무것도 안 나오면 사전이 아직 설치되지 않은 것입니다.",
   "onboarding_first_anki_lookup_desc": "연습 문장을 열고 단어를 탭하세요.",
   "onboarding_first_anki_action_desc": "단어 찾기 페이지에서 연습 문장을 엽니다. 단어를 탭하고 +를 탭한 뒤, 필드를 확인하고 저장하세요.",
+  "video_subtitle_source_search_hint": "위의 “자막 찾기”를 누른 다음 여기에서 소스를 선택하세요.",
   "game_session_japanese_locale_evidence": "판정 근거: ${evidence}",
   "game_session_japanese_locale_skipped": "로케일 미적용",
   "game_session_japanese_locale_skipped_hint": "이번 세션은 일본어 로케일 없이 시작되었습니다(자동 판정: ${evidence}). 글자가 깨지면 이 게임의 일본어 로케일을 「항상 켜기」로 바꾸세요.",

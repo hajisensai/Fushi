@@ -4137,6 +4137,7 @@
   "onboarding_lookup_practice_desc": "Cümle yüklenmiş halde arama sayfasını açar. Orada bir kelimeye dokunarak anlamını görün; hiçbir şey gelmiyorsa sözlükleriniz henüz kurulmamıştır.",
   "onboarding_first_anki_lookup_desc": "Alıştırma cümlesini açın ve bir kelimeye dokunun.",
   "onboarding_first_anki_action_desc": "Alıştırma cümlesini arama sayfasında açar. Bir kelimeye dokunun, + düğmesine dokunun, alanları kontrol edip kaydedin.",
+  "video_subtitle_source_search_hint": "Yukarıdaki “Altyazı bul” düğmesine dokunun, ardından buradan bir kaynak seçin.",
   "game_session_japanese_locale_evidence": "Kanıtlar: ${evidence}",
   "game_session_japanese_locale_skipped": "Yerel ayar uygulanmadı",
   "game_session_japanese_locale_skipped_hint": "Oyun Japonca yerel ayar olmadan başlatıldı (otomatik karar: ${evidence}). Metin bozuk görünüyorsa bu oyunun Japonca yerel ayarını “Her zaman açık” yapın.",

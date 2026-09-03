@@ -10,6 +10,27 @@
 
 volatile LONG g_leaf_aquaplus_profile_state =
     0; // 0 unknown, +1 match, -1 reject
+// 身份「测量」失败（读不到 exe / 算不出摘要 / 映不出原始映像）时的重试预算。
+// 见下面 IsLeafAquaplusProfileMatched 里的说明：量不到不是不匹配，但也不能无界重试。
+//
+// **量纲是时间，不是调用次数。** 旧实现按 32 次调用限界，但 IsLeafAquaplusProfile-
+// Matched 每轮 Poll 就被打 5~7 次（adapter_registry.inc 的 PollDelayMs 自己也调
+// leaf_aquaplus_.probe()），DispatchNewModules 每拍还对每个新模块再打 3 次；而
+// PollDelayMs 在身份未定时返回 200ms。于是 32 次 ≈ 0.2~1.2 秒，启动期模块风暴下
+// **单个 200ms 拍就能烧光**——而要覆盖的注入窗口（BCrypt / 文件映射在 loader lock
+// 或 hook 安装中途失败、杀软扫描期占住 exe）以秒计。次数预算量的是「被问了多少次」，
+// 要限的却是「等了多久」。
+//
+// 计次也不是全无用处：它挡的是 CPU——每次失败要对 1.2MB 的 exe 重算 SHA-256，
+// 再展开一份 ~1.2MB 的私有映像。所以两条一起限：两次真实测量之间至少隔
+// kLeafIdentityRetryIntervalMs（把高频 Poll 摊平到每拍最多一次），整个重试窗口
+// kLeafIdentityRetryWindowMs 用尽后才写永久缓存钉死。
+constexpr DWORD kLeafIdentityRetryIntervalMs = 200;
+constexpr DWORD kLeafIdentityRetryWindowMs = 15000;
+// GetTickCount() 的快照，恒非 0（`| 1u`），0 专门表示「还没发生过」。
+// 差值用无符号 32 位算，49.7 天回绕自动正确。
+volatile LONG g_leaf_identity_first_failure_tick = 0;
+volatile LONG g_leaf_identity_last_attempt_tick = 0;
 volatile LONG g_leaf_exact_binary_structure_state =
     0; // 0 unknown, +1 hydrated structure match, -1 reject
 std::atomic<const fushi_voice_hook::LeafAquaplusProfile *>
@@ -420,16 +441,177 @@ bool Sha256FileForLeafAquaplus(const wchar_t *path,
     ok = BCryptFinishHash(hash, digest->data(),
                           static_cast<ULONG>(digest->size()), 0) == 0;
   }
+  // UnmapViewOfFile / GetFileSizeEx 本 DLL 不 detour（没有对应的 g_orig_），裸调用
+  // 拿到的就是原件。CloseHandle 则**是**本 DLL detour 的导出之一，必须走 trampoline：
+  // 让自己的 detour 处理自己的句柄没有意义，还多一条重入路径（BUG-2046 的
+  // CloseHandle detour 曾在 MinHook Freeze 期拿锁死锁过）。
+  const auto close_handle =
+      g_orig_CloseHandle != nullptr ? g_orig_CloseHandle : &CloseHandle;
   if (view != nullptr)
     UnmapViewOfFile(view);
   if (mapping != nullptr)
-    CloseHandle(mapping);
+    close_handle(mapping);
   if (hash != nullptr)
     BCryptDestroyHash(hash);
   if (algorithm != nullptr)
     BCryptCloseAlgorithmProvider(algorithm, 0);
-  CloseHandle(file);
+  close_handle(file);
   return ok;
+}
+
+// 把磁盘上的可执行文件手工展开成一份**按节对齐的私有副本**，供身份的结构校验使用。
+//
+// 为什么不能用 LoadLibraryExW(LOAD_LIBRARY_AS_IMAGE_RESOURCE)：这里要读的正是本进程
+// 自己的主映像，而加载器认路径——它会把**已经加载的那一份**别名返回（实测 masked
+// handle == GetModuleHandleW(nullptr)），于是拿到的"原始映像"仍是被 LunaHook 与我们
+// 自己的 detour 改写过的内存，等于没修。SEC_IMAGE 同样不可取：映射到非首选基址时
+// 内存管理器会施加重定位，绝对操作数按哪个基址解就成了不确定的。
+//
+// 平坦数据映射 + 手工搬节是确定的：不经加载器、不执行任何代码、不施加重定位，因此
+// 绝对 VA 操作数仍编码 PE 头里的首选基址（交给 LoadedPeImage::absolute_base）。
+// 只在结构校验那一次调用，随即释放。
+struct LeafPristineImage {
+  uint8_t *base = nullptr;
+  size_t size = 0u;
+  uintptr_t preferred_base = 0u;
+
+  ~LeafPristineImage() {
+    if (base != nullptr)
+      VirtualFree(base, 0, MEM_RELEASE);
+  }
+};
+
+bool LoadLeafPristineImage(const wchar_t *path, LeafPristineImage *out) {
+  if (path == nullptr || out == nullptr)
+    return false;
+  const auto create_file =
+      g_orig_CreateFileW != nullptr ? g_orig_CreateFileW : &CreateFileW;
+  HANDLE file =
+      create_file(path, GENERIC_READ,
+                  FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                  nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE)
+    return false;
+  LARGE_INTEGER file_size = {};
+  const auto create_mapping = g_orig_CreateFileMappingW != nullptr
+                                  ? g_orig_CreateFileMappingW
+                                  : &CreateFileMappingW;
+  HANDLE mapping = nullptr;
+  const uint8_t *raw = nullptr;
+  bool ok = GetFileSizeEx(file, &file_size) && file_size.QuadPart > 0 &&
+            file_size.QuadPart <= static_cast<LONGLONG>(0x7fffffffll);
+  if (ok) {
+    mapping = create_mapping(file, nullptr, PAGE_READONLY, 0, 0, nullptr);
+    ok = mapping != nullptr;
+  }
+  if (ok) {
+    // 与 Sha256FileForLeafAquaplus 同一纪律：本 DLL 自己 detour 过的导出一律走
+    // trampoline。整套修法的前提就是「不要读被自己 detour 污染的东西」，取原始映像
+    // 这条路上尤其不能自相矛盾。
+    const auto map_view =
+        g_orig_MapViewOfFile != nullptr ? g_orig_MapViewOfFile : &MapViewOfFile;
+    raw = reinterpret_cast<const uint8_t *>(
+        map_view(mapping, FILE_MAP_READ, 0, 0, 0));
+    ok = raw != nullptr;
+  }
+  const size_t raw_bytes = static_cast<size_t>(file_size.QuadPart);
+  if (ok) {
+    __try {
+      const auto *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(raw);
+      ok = raw_bytes > sizeof(IMAGE_DOS_HEADER) &&
+           dos->e_magic == IMAGE_DOS_SIGNATURE && dos->e_lfanew > 0 &&
+           static_cast<size_t>(dos->e_lfanew) + sizeof(IMAGE_NT_HEADERS32) <=
+               raw_bytes;
+      if (ok) {
+        const auto *nt = reinterpret_cast<const IMAGE_NT_HEADERS32 *>(
+            raw + dos->e_lfanew);
+        const uint32_t image_bytes = nt->OptionalHeader.SizeOfImage;
+        const uint32_t header_bytes = nt->OptionalHeader.SizeOfHeaders;
+        ok = nt->Signature == IMAGE_NT_SIGNATURE &&
+             nt->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC &&
+             nt->FileHeader.NumberOfSections != 0u && image_bytes != 0u &&
+             image_bytes <= 0x10000000u && header_bytes <= raw_bytes &&
+             header_bytes <= image_bytes;
+        if (ok) {
+          auto *copy = reinterpret_cast<uint8_t *>(
+              VirtualAlloc(nullptr, image_bytes, MEM_COMMIT | MEM_RESERVE,
+                           PAGE_READWRITE));
+          ok = copy != nullptr;
+          if (ok) {
+            memcpy(copy, raw, header_bytes);
+            const auto *section = IMAGE_FIRST_SECTION(nt);
+            for (WORD index = 0; ok && index < nt->FileHeader.NumberOfSections;
+                 ++index, ++section) {
+              const uint32_t va = section->VirtualAddress;
+              const uint32_t raw_offset = section->PointerToRawData;
+              const uint32_t raw_size = section->SizeOfRawData;
+              if (raw_size == 0u)
+                continue;
+              if (va >= image_bytes || raw_size > image_bytes - va ||
+                  raw_offset > raw_bytes || raw_size > raw_bytes - raw_offset) {
+                ok = false;
+                break;
+              }
+              memcpy(copy + va, raw + raw_offset, raw_size);
+            }
+            if (ok) {
+              out->base = copy;
+              out->size = image_bytes;
+              out->preferred_base =
+                  static_cast<uintptr_t>(nt->OptionalHeader.ImageBase);
+            } else {
+              VirtualFree(copy, 0, MEM_RELEASE);
+            }
+          }
+        }
+      }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+      ok = false;
+    }
+  }
+  const auto close_handle =
+      g_orig_CloseHandle != nullptr ? g_orig_CloseHandle : &CloseHandle;
+  if (raw != nullptr)
+    UnmapViewOfFile(const_cast<uint8_t *>(raw));
+  if (mapping != nullptr)
+    close_handle(mapping);
+  close_handle(file);
+  return ok && out->base != nullptr;
+}
+
+// 距上次真实测量不足 kLeafIdentityRetryIntervalMs 时返回 true：本拍跳过测量。
+// 单纯为了不把 SHA-256 + 映像展开摊进每一次调用；身份未定期间的语义不变
+// （仍然是「暂未匹配」，不写任何缓存）。
+bool LeafIdentityMeasurementThrottled() {
+  const DWORD now = GetTickCount() | 1u;
+  const DWORD last = static_cast<DWORD>(
+      InterlockedCompareExchange(&g_leaf_identity_last_attempt_tick, 0, 0));
+  if (last != 0u && now - last < kLeafIdentityRetryIntervalMs)
+    return true;
+  InterlockedExchange(&g_leaf_identity_last_attempt_tick,
+                      static_cast<LONG>(now));
+  return false;
+}
+
+// 测量失败后的处置：true = 重试窗口已耗尽，调用方该写永久缓存钉死；
+// false = 还在窗口内，调用方直接返回「暂未匹配」，一个缓存都不许写。
+bool LeafIdentityRetryWindowExhausted() {
+  const DWORD now = GetTickCount() | 1u;
+  DWORD first = static_cast<DWORD>(InterlockedCompareExchange(
+      &g_leaf_identity_first_failure_tick, static_cast<LONG>(now), 0));
+  if (first == 0u)
+    first = now;
+  return now - first >= kLeafIdentityRetryWindowMs;
+}
+
+// 身份三态里的「未定」。
+//
+// IsLeafAquaplusProfileMatched() 把三态压成 bool，于是「还在有界重试」与「确定不是
+// 这个引擎」在调用方看来同形。对**可逆**的判断（要不要装自己的 hook）这没问题，下一拍
+// 重问即可；对**不可逆**的判断就是灾难——通用护盾一旦把 GetAsyncKeyState 占走，exact
+// 侧后来再装就拿不到 trampoline，身份重试成功也救不回来。那种地方要问的是这个。
+bool IsLeafAquaplusIdentityUndecided() {
+  return InterlockedCompareExchange(&g_leaf_aquaplus_profile_state, 0, 0) == 0;
 }
 
 bool IsLeafAquaplusProfileMatched() {
@@ -437,6 +619,8 @@ bool IsLeafAquaplusProfileMatched() {
       InterlockedCompareExchange(&g_leaf_aquaplus_profile_state, 0, 0);
   if (cached != 0)
     return cached > 0;
+  if (LeafIdentityMeasurementThrottled())
+    return false;
 
   wchar_t executable[32768] = {};
   const DWORD chars = GetModuleFileNameW(
@@ -457,6 +641,26 @@ bool IsLeafAquaplusProfileMatched() {
   const bool executable_read =
       chars != 0 && chars < sizeof(executable) / sizeof(executable[0]) &&
       Sha256FileForLeafAquaplus(executable, &digest);
+  if (!executable_read) {
+    // 「量不到」不是「不匹配」。旧实现让这次失败沿用与"哈希不符"同一条 -1 路径写进
+    // g_leaf_aquaplus_profile_state，而那是**永久**缓存：probe() 此后直接返回 false，
+    // 本会话的 Leaf adapter 就此出局 —— 没有 adapter 认领 → 准入汇总收敛成
+    // EngineUnsupported、LAC 原声 hook 一次都不装，用户看到的是整场音频降级到系统
+    // Loopback。而首次 probe 可能落在注入窗口内：摘要要走 BCrypt + 文件映射，在
+    // loader lock 或 hook 安装中途失败是瞬时条件，下一拍 Poll 就能量到。同一台机器
+    // 同一个游戏，有的会话原声正常、有的整场降级，差别就在这一拍。
+    //
+    // 所以只有**测量成功**才允许写缓存。重试有界：窗口用尽后照旧钉死，那时"读不到"
+    // 才是个确定结论，而不是一次运气不好。
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2LeafExecutableUnmeasurable);
+    if (!LeafIdentityRetryWindowExhausted()) {
+      return false;
+    }
+    g_leaf_aquaplus_profile.store(nullptr, std::memory_order_release);
+    InterlockedExchange(&g_leaf_aquaplus_profile_state, -1);
+    return false;
+  }
   const auto *profile =
       executable_read && fushi_voice_hook::MatchesLeafAquaplusProfile(
                              fushi_voice_hook::kWhiteAlbum2LeafAquaplusProfile,
@@ -471,22 +675,75 @@ bool IsLeafAquaplusProfileMatched() {
     fushi_voice_hook::PublishHostExecutableSha256(digest.data(), digest.size());
   }
   if (profile != nullptr) {
+    // 哈希 + machine 已匹配。这一位必须在结构门**之前**置位：否则「exe 根本读不到 /
+    // 哈希不是这个发行版」和「哈希对但二进制结构校验没过」在诊断上同形，而它们的处置
+    // 完全不同（前者要用户报摘要，后者要重测锚点）。
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2LeafIdentityHashMatched);
     const LONG structure_cached = InterlockedCompareExchange(
         &g_leaf_exact_binary_structure_state, 0, 0);
     bool structure_matched = structure_cached > 0;
     if (structure_cached == 0) {
 #if defined(_M_IX86)
+      // 结构校验必须读**磁盘上的原始映像**，不能读进程内存。
+      //
+      // 这五处掩码模式扫的都是会被 hook 改写的地址，而其中 embed_leaf_hook_rva 正是
+      // profile 自己指定给 LunaHook 的 HSX0:0 文本 hook 点（VA 0x004512bf）。Luna 的
+      // detour 一落下，那段字节就不再匹配，唯一命中数变 0 → 结构门判否 → adapter 不
+      // 认领 → 几何 provider 不上线、输入护盾不装、LAC 原声 hook 不装，用户看到的就是
+      // 「点击穿透到下一句」+「语音整场降级 Loopback」。而 Luna 的 hook 何时装上取决于
+      // 它何时观测到第一句输出，于是同一个游戏有的会话正常、有的全废。
+      //
+      // text_traversal_rva / raster_draw_rva 同样是**我们自己**在 InstallLeafAquaplus-
+      // D3DTrace 里要 hook 的地址，今天只因结果被永久缓存才没暴露同一个问题。
+      //
+      // 身份是「这个 exe 是不是那份被测量过的构建」——那是文件的属性，不是当前进程内存
+      // 的属性。所以这里映射磁盘上的那一份来扫。取原始映像走 LoadLeafPristineImage 的
+      // 手工按节展开（平坦数据映射 + memcpy），**不是** LOAD_LIBRARY_AS_IMAGE_RESOURCE：
+      // 后者对本进程自己的主映像会别名回已加载的那一份，修了等于没修（见该函数注释）。
+      // 手工展开不经加载器、不执行代码、不施加重定位，因此绝对操作数仍编码首选基址，
+      // 要用 image.absolute_base 告诉解码器这一点。
       fushi_voice_hook::exact_lookup::LoadedPeImage image;
+      LeafPristineImage pristine;
+      const bool pristine_ready =
+          LoadLeafPristineImage(executable, &pristine);
+      // 「原始映像这一拍没映上」不是「结构不符」，和上面「exe 摘要量不到」是同一
+      // 类事实。LoadLeafPristineImage 走 CreateFileW + CreateFileMappingW +
+      // VirtualAlloc：杀软扫描期占住文件、共享冲突、32 位地址空间碎片都能让它临时
+      // 失败。而往下走一路的结局是 opened=false → 三组全 false →
+      // g_leaf_exact_binary_structure_state 被 InterlockedExchange 成 -1 →
+      // profile 置空 → g_leaf_aquaplus_profile_state 永久 -1，症状与摘要量不到
+      // 那条一模一样：LAC 原声 hook 一次都不装、整场音频降级系统 Loopback，
+      // 外加输入护盾不装的点击穿透。
+      //
+      // 结构门在改成读磁盘原始映像之前只读进程内存、根本没有文件 IO，这条失败面是
+      // 本次修法自己引进来的，必须共用同一个有界重试窗口。窗口内直接返回，
+      // 不写 g_leaf_exact_binary_structure_state，也不写 g_leaf_aquaplus_profile_state。
+      //
+      // 只对 pristine_ready 设闸：OpenLoadedPeImage 之后的判定读的都是这份已在内存
+      // 里的私有副本，是确定性的，再重试多少次结论都一样。
+      if (!pristine_ready) {
+        SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2LeafImageUnopened);
+        if (!LeafIdentityRetryWindowExhausted()) {
+          return false;
+        }
+      }
+      const uintptr_t preferred_base = pristine.preferred_base;
       const bool opened =
-          fushi_voice_hook::exact_lookup::OpenLoadedPeImage(module, &image) &&
+          pristine_ready && preferred_base != 0u &&
+          fushi_voice_hook::exact_lookup::OpenLoadedPeImage(
+              reinterpret_cast<HMODULE>(pristine.base), &image) &&
           image.machine == IMAGE_FILE_MACHINE_I386 &&
           image.pointer_bits == 32u;
-      const uintptr_t base = reinterpret_cast<uintptr_t>(module);
-      const uintptr_t expected_cookie = base + profile->stack_cookie_rva;
+      // 读字节用映射地址；解绝对操作数用首选基址。
+      image.absolute_base = preferred_base;
+      const uintptr_t base = reinterpret_cast<uintptr_t>(image.base);
+      const uintptr_t expected_cookie =
+          preferred_base + profile->stack_cookie_rva;
       const uintptr_t expected_input_iat =
-          base + profile->get_async_key_state_iat_rva;
+          preferred_base + profile->get_async_key_state_iat_rva;
       const uintptr_t expected_device =
-          base + profile->d3d9_device_pointer_rva;
+          preferred_base + profile->d3d9_device_pointer_rva;
       const uintptr_t input_anchor_rva =
           profile->input_poller_first_return_rva >= 10u
               ? profile->input_poller_first_return_rva - 10u
@@ -539,7 +796,7 @@ bool IsLeafAquaplusProfileMatched() {
                                                                bytes),
             required, IMAGE_SCN_MEM_EXECUTE);
       };
-      structure_matched =
+      const bool section_roles_ok =
           opened && input_anchor_rva != 0u &&
           executable_rva(profile->embed_leaf_hook_rva) &&
           executable_rva(profile->text_traversal_rva,
@@ -565,7 +822,9 @@ bool IsLeafAquaplusProfileMatched() {
           data_rva(profile->get_async_key_state_iat_rva, sizeof(uint32_t),
                    IMAGE_SCN_MEM_READ) &&
           data_rva(profile->read_file_iat_rva, sizeof(uint32_t),
-                   IMAGE_SCN_MEM_READ) &&
+                   IMAGE_SCN_MEM_READ);
+      const bool anchors_ok =
+          opened &&
           traversal.count == 1u &&
           reinterpret_cast<uintptr_t>(traversal.address) ==
               base + profile->text_traversal_rva &&
@@ -579,7 +838,9 @@ bool IsLeafAquaplusProfileMatched() {
           reinterpret_cast<uintptr_t>(embed.address) +
                   fushi_voice_hook::leaf_exact::kEmbedHookOffsetFromAnchor ==
               base + profile->embed_leaf_hook_rva &&
-          device.count == 1u &&
+          device.count == 1u;
+      const bool return_sites_ok =
+          opened &&
           fushi_voice_hook::exact_lookup::MatchesRel32CallEndingAt(
               image, profile->raster_glyph_return_rva,
               profile->raster_draw_rva) &&
@@ -603,6 +864,37 @@ bool IsLeafAquaplusProfileMatched() {
           fushi_voice_hook::exact_lookup::MatchesAbsoluteIndirectCallEndingAt(
               image, profile->voice_archive_read_return_rva,
               profile->read_file_iat_rva);
+      structure_matched = section_roles_ok && anchors_ok && return_sites_ok;
+      // 结构门失败时按组记录事实（只记录，不参与上面的判定）：exe 哈希逐字节匹配却仍
+      // 不被认领时，唯一能推进事情的信息就是这条 ~25 项 && 链断在哪一组。
+      if (!structure_matched) {
+        SetXAudioDiagnostic2(
+            fushi_voice_hook::kXAudioDiag2LeafStructureRejected);
+        if (!opened)
+          SetXAudioDiagnostic2(
+              fushi_voice_hook::kXAudioDiag2LeafImageUnopened);
+        if (!section_roles_ok)
+          SetXAudioDiagnostic2(
+              fushi_voice_hook::kXAudioDiag2LeafSectionRolesRejected);
+        if (traversal.count != 1u)
+          SetXAudioDiagnostic2(
+              fushi_voice_hook::kXAudioDiag2LeafTraversalAnchorMissed);
+        if (raster.count != 1u)
+          SetXAudioDiagnostic2(
+              fushi_voice_hook::kXAudioDiag2LeafRasterAnchorMissed);
+        if (input.count != 1u)
+          SetXAudioDiagnostic2(
+              fushi_voice_hook::kXAudioDiag2LeafInputAnchorMissed);
+        if (embed.count != 1u)
+          SetXAudioDiagnostic2(
+              fushi_voice_hook::kXAudioDiag2LeafEmbedAnchorMissed);
+        if (device.count != 1u)
+          SetXAudioDiagnostic2(
+              fushi_voice_hook::kXAudioDiag2LeafDeviceAnchorMissed);
+        if (section_roles_ok && anchors_ok && !return_sites_ok)
+          SetXAudioDiagnostic2(
+              fushi_voice_hook::kXAudioDiag2LeafReturnSitesRejected);
+      }
 #else
       structure_matched = false;
 #endif
@@ -1115,12 +1407,25 @@ void ProcessLeafVoiceTasks() {
 }
 
 bool TryHookLeafAquaplusResourceAudio() {
-  if (!IsLeafAquaplusProfileMatched())
+  // 三个前置各自留痕。旧实现任一失败都只是静默 return false，真机上只看得到
+  // 「音频降级成系统 Loopback」，分不出是身份、hook 还是归档——三者处置完全不同。
+  // 这里只记录事实，判定与顺序一字未改。
+  if (!IsLeafAquaplusProfileMatched()) {
+    SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2LeafProfileUnmatched);
     return false;
+  }
   if (InterlockedCompareExchange(&g_leaf_voice_enabled, 0, 0) != 0)
     return true;
-  if (!TryHookSiglusOvk() || !LoadLeafVoiceArchives())
+  if (!TryHookSiglusOvk()) {
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2LeafFileHooksUnavailable);
     return false;
+  }
+  if (!LoadLeafVoiceArchives()) {
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2LeafVoiceArchivesMissing);
+    return false;
+  }
   InterlockedExchange(&g_leaf_voice_enabled, 1);
   SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagLeafLacHooksReady);
   return true;

@@ -4137,6 +4137,7 @@
   "onboarding_lookup_practice_desc": "เปิดหน้าค้นคำพร้อมประโยคนี้ แตะคำในนั้นเพื่อดูความหมาย ถ้าไม่ขึ้นอะไรเลย แปลว่ายังไม่ได้ติดตั้งพจนานุกรม",
   "onboarding_first_anki_lookup_desc": "เปิดประโยคฝึกแล้วแตะที่คำหนึ่งคำ",
   "onboarding_first_anki_action_desc": "เปิดประโยคฝึกในหน้าค้นคำ แตะที่คำหนึ่งคำ แตะ + ตรวจดูข้อมูลในช่องต่าง ๆ แล้วบันทึก",
+  "video_subtitle_source_search_hint": "แตะ “ค้นหาคำบรรยาย” ด้านบน แล้วเลือกแหล่งข้อมูลที่นี่",
   "game_session_japanese_locale_evidence": "หลักฐาน: ${evidence}",
   "game_session_japanese_locale_skipped": "ไม่ได้ใช้โลแคล",
   "game_session_japanese_locale_skipped_hint": "เกมเริ่มโดยไม่ใช้โลแคลภาษาญี่ปุ่น (การตัดสินอัตโนมัติ: ${evidence}) หากตัวอักษรเพี้ยน ให้ตั้งโลแคลภาษาญี่ปุ่นของเกมนี้เป็น “เปิดเสมอ”",
