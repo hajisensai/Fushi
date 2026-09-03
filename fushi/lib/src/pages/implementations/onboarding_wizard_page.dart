@@ -9,6 +9,7 @@ import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankiconnect_addon_installer.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
@@ -113,6 +114,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   final ValueNotifier<int> _packBytes = ValueNotifier<int>(0);
   CancelToken? _packCancelToken;
   bool _packDownloading = false;
+  /// BUG-2107：本地包「选择文件」的重入守卫。设置页那条导入本来就有
+  /// （`_BackupImportWidget._isImporting`），引导这条漏了 —— 连点两次会撞
+  /// file_picker 的 `already_active`，而异常在 `unawaited(...)` 里静默漂走。
+  bool _packPicking = false;
+  /// 包步骤内可见的失败原因（**已组好的用户可见文案**，不是裸异常串）。
+  /// 下载失败与选文件失败是两条路径、两种文案，故在写入处就地组好。
   String? _packError;
 
   bool get _browserExtensionAvailable => DesktopLookupService.isDesktop;
@@ -328,24 +335,62 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       // 用户取消：半截文件保留，下次续传；非取消才示错。
       // （仓库钉 dio 5.1，类型名还是 `DioError`，与其余下载路径一致。）
       if (e.type != DioErrorType.cancel) {
-        _packError = e.message ?? e.toString();
+        _packError = t.onboarding_pack_download_failed(
+          message: e.message ?? e.toString(),
+        );
       }
     } catch (e) {
-      _packError = e.toString();
+      _packError = t.onboarding_pack_download_failed(message: e.toString());
     } finally {
       _packCancelToken = null;
       if (mounted) setState(() => _packDownloading = false);
     }
   }
 
+  /// 选一个已经下载好的包文件（备份 zip）并导入。
+  ///
+  /// BUG-2107：原先是全 app 仅剩的几处裸 `FilePicker.platform.pickFiles()` 之一，而它
+  /// 承载的恰是**体积最大**的文件（推荐包 [kRecommendedPackSizeLabel] = 9.5 GB）。安卓上
+  /// file_picker 会先把整份文件同步复制进 app cache 再返回缓存路径 → 需要约 2 倍包体积的
+  /// 内部存储、几分钟没有任何 UI 反馈；失败时 `path == null` 与「用户取消」同形被静默
+  /// 丢弃，`PlatformException` 又被调用点的 `unawaited(...)` 吞掉 —— 用户看到的就是
+  /// 「点了『导入文件』没有任何提醒」。改走 [pickRealFilePathDetailed]（安卓解析真实路径、
+  /// 零复制；BUG-1667 后其余大文件入口都已统一到它），并把三种结果分开：
+  ///   * 返回 null = 用户取消 → 静默（取消不是失败）；
+  ///   * [PickedFileWithoutPathException] = 平台交回条目却没给路径 → **可见失败**（BUG-446）；
+  ///   * 其它异常 → 可见失败 + 诊断日志。
   Future<void> _pickPackFileAndImport() async {
-    final String? path = await pickSystemFilePath(
-      context: context,
-      allowedExtensions: <String>{'zip'},
-    );
-    if (path == null || !mounted) return;
-    // 用户自备的文件不归下载器管，导入后不删。
-    await _importPackFile(path, deleteAfterImport: false);
+    if (_packPicking || _packDownloading) return;
+    setState(() {
+      _packPicking = true;
+      _packError = null;
+    });
+    try {
+      final PickedFilePath? picked = await pickRealFilePathDetailed(
+        context: context,
+        appModel: appModel,
+        allowedExtensions: <String>{'zip'},
+      );
+      // 用户取消：静默返回（不是失败，不写 _packError）。
+      if (picked == null) return;
+      if (!mounted) return;
+      // 用户自备的文件不归下载器管，导入后不删。
+      await _importPackFile(picked.path, deleteAfterImport: false);
+    } on PickedFileWithoutPathException catch (e) {
+      ErrorLogService.instance.log(
+        'OnboardingWizard.pickPackFile',
+        'unexpected file selection: count=${e.count}, pathNull=true',
+      );
+      _packError = t.onboarding_pack_pick_no_path;
+    } catch (e) {
+      ErrorLogService.instance.log(
+        'OnboardingWizard.pickPackFile',
+        'pack file pick failed: $e',
+      );
+      _packError = t.onboarding_pack_pick_failed(message: e.toString());
+    } finally {
+      if (mounted) setState(() => _packPicking = false);
+    }
   }
 
   /// 走备份导入共享编排。导入真正开始（用户已确认）后进程会重启；
@@ -1209,7 +1254,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         SizedBox(height: tokens.spacing.card),
         if (_packError != null) ...<Widget>[
           Text(
-            t.onboarding_pack_download_failed(message: _packError!),
+            _packError!,
             style: textTheme.bodySmall!.copyWith(
               color: theme.colorScheme.error,
             ),

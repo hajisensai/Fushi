@@ -15,6 +15,7 @@ import 'package:fushi/src/media/video/video_subtitle_source.dart'
 import 'package:fushi/src/sync/aggregate_snapshot.dart';
 import 'package:fushi/src/sync/collection_manifest.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi/src/sync/interconnect_profile_transfer.dart';
 import 'package:fushi/src/sync/interconnect_service_config.dart';
 import 'package:fushi/src/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi/src/sync/interconnect_device_name.dart';
@@ -619,6 +620,9 @@ class FushiSyncServer {
     }
     if (reqPath == '/api/interconnect/service-config') {
       return _handleInterconnectServiceConfig(request, method);
+    }
+    if (reqPath == kInterconnectProfilePath) {
+      return _handleInterconnectProfile(request, method);
     }
     if (reqPath == '/api/tombstones') {
       return _handleTombstones(request, method);
@@ -1304,6 +1308,11 @@ class FushiSyncServer {
         'videos': lib,
         'serviceConfig': _securityContext != null &&
             _libraryService is InterconnectServiceConfigHost,
+        // 互联「配置文件」（Profile）双向搬运：与 serviceConfig 同门槛（必须 TLS）。
+        // 能力位只说「这台 host 懂这个端点」，不代表此刻允许——端点还会再查一次
+        // 用户开关，关着时返回 403，client 如实报错而不是当成不支持。
+        'profileTransfer': _securityContext != null &&
+            _libraryService is InterconnectProfileHost,
       },
       // TODO-961 M1 能力协商（设计稿 §1.1 / §2.5）：老 client 读不到也不崩。
       'tls': <String, dynamic>{
@@ -2503,6 +2512,64 @@ class FushiSyncServer {
         'Cache-Control': 'no-store',
       },
     );
+  }
+
+  /// GET / PUT `/api/interconnect/profile`：互联「配置文件」（Profile）双向搬运。
+  ///
+  /// 与 `service-config`（自动跟随的小白名单、单向下行）分工不同：这条是用户**显式点
+  /// 一次**的整份 Profile 搬运，双向。安全门与 service-config 同级并更严一档：
+  ///   * **必须 TLS**（`_securityContext != null`）——载荷是用户的整套设置，明文链路上
+  ///     不给（同 BUG-1311 给 service-config 立的规矩）；
+  ///   * **必须已配对 peer token**（`_validatePeerAuth`，未进鉴权豁免名单）；
+  ///   * **host 侧用户开关**：默认关。没有这道门，入站 PUT 就是一条「无 UI 无开关的
+  ///     隐形写入通道」，正是 BUG-988 点名要避免的形状。开关关着返回 403（而不是 404），
+  ///     好让 client 把「host 不支持」与「host 关着」两种情况分开报。
+  ///
+  /// 载荷就是 Profile 的分享 JSON（`.fushiprofile.json` 的内容），凭据剔除与字体路径
+  /// 剥离由 `ProfileRepository.exportProfileToJson` 负责，见
+  /// [InterconnectProfileHost] 的文档。入站一律 `createNew` 导入，绝不覆盖 host 上任何
+  /// 既有 Profile。
+  Future<shelf.Response> _handleInterconnectProfile(
+    shelf.Request request,
+    String method,
+  ) async {
+    if (method != 'GET' && method != 'PUT') return shelf.Response(405);
+    if (_securityContext == null) {
+      return shelf.Response.forbidden('HTTPS required for profile transfer');
+    }
+    if (!await _validatePeerAuth(request.headers['authorization'])) {
+      return shelf.Response.forbidden('Paired-device token required');
+    }
+    final FushiLibraryHostService? library = _libraryService;
+    if (library is! InterconnectProfileHost) {
+      return shelf.Response.notFound('Profile transfer capability off');
+    }
+    final InterconnectProfileHost host = library as InterconnectProfileHost;
+    if (!await host.isInterconnectProfileTransferEnabled()) {
+      return shelf.Response.forbidden('Profile transfer disabled on host');
+    }
+    if (method == 'GET') {
+      final String json = await host.exportInterconnectProfile();
+      return shelf.Response.ok(
+        json,
+        headers: const <String, String>{
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store',
+        },
+      );
+    }
+    final String body = await request.readAsString();
+    if (body.trim().isEmpty) {
+      return shelf.Response(400, body: 'Empty profile payload');
+    }
+    try {
+      final String name = await host.importInterconnectProfile(body);
+      return _jsonResponse(<String, dynamic>{'name': name});
+    } on FormatException catch (e) {
+      // 载荷不是合法的 Profile 导出（魔数/版本/结构不对）：400，且 host 侧 DB 零改动
+      // （解析在写库之前，见 ProfileRepository.parseProfileExport）。
+      return shelf.Response(400, body: 'Invalid profile payload: ${e.message}');
+    }
   }
 
   /// GET `/api/tombstones`：列 host 全部删除墓碑为 JSON 数组，供 client 拉取后与本地

@@ -1710,7 +1710,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     // 用户误以为崩溃/失败。这里镜像上面的迁移遮罩：running 显「正在导入备份，请勿关闭」
     // + 进度条；done 显结果，导入成功后 ~1s 自动重启（backupImportRestart 走 restartApp 真
     // 拉新进程），「立即重启」按钮保留为手动兜底可提前点；失败态不自动、由用户读完原因手点。
-    if (appModel.backupImportActive) {
+    // BUG-2106：**只有关库后的相位**（running/done/failed）才换根独占。validating 段
+    // DB 仍打开、可取消，换根会把调用方路由连 Navigator 一起销毁（引导向导被整段摧毁），
+    // 改由压在调用方页面之上的模态遮罩路由承载，见 [buildBackupValidatingOverlayRoute]。
+    if (appModel.backupImportOwnsAppRoot) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
       final cs = ColorScheme.fromSeed(
@@ -1728,9 +1731,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             // TODO-1183: 确定进度条监听（只进度条重建，不整树重绘）。
             progress: appModel.backupImportProgress,
             onRestart: () => backupImportRestart(appModel),
-            // TODO-1151: validating 相位的「取消」——作废 in-flight 校验 token 并退出
-            // 遮罩回设置页（其它相位本视图不渲染取消按钮）。
-            onCancel: appModel.cancelBackupValidating,
+            // BUG-2106：这里**不再**接 onCancel。「取消」只属于 validating 相位，而
+            // validating 已不由本根分支承载（它是压在调用方页面之上的模态路由，取消按钮
+            // 由 [buildBackupValidatingOverlayRoute] 的调用方接线）。本分支只剩
+            // running/done/failed，本视图在这三个相位根本不渲染取消按钮。
           ),
         ),
       );

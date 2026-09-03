@@ -571,6 +571,39 @@ class AppModel with ChangeNotifier {
       localAudioStagingDir: temporaryDirectory,
       onLocalAudioImported: importSyncedLocalAudioDb,
       audioDatabaseRoot: Directory('${appDirectory.path}/audiobooks'),
+      // 互联「配置文件」（Profile）双向搬运（用户诉求：把一台设备调好的配置搬到另一台）。
+      // 三条依赖都注入回调而不是把 ProfileRepository 拖进 host service：它的构造还要
+      // anki repo 与「词典装没装」的磁盘判据，那两样只有 AppModel 这里凑得齐。
+      isProfileTransferEnabled: () =>
+          SyncRepository(database).isInterconnectProfileTransferEnabled(),
+      exportActiveProfileJson: () async {
+        final ProfileRepository repo = interconnectProfileRepository();
+        final int activeId = await repo.getActiveProfileId();
+        if (activeId < 0) {
+          // 没有激活 Profile（理论上 ensureDefaultProfile 之后不该出现）：如实报错，
+          // 别回一份空 JSON 让对端导入出一个空配置。
+          throw StateError('no active profile to export');
+        }
+        return repo.exportProfileToJson(
+          activeId,
+          // 与「配置管理」页导出同参：把指向本机 custom_fonts/ 的绝对路径剥成相对，
+          // 免得对端拿到一堆指向不存在目录的字体路径。
+          fontsRootDirectory: path.join(appDirectory.path, 'custom_fonts'),
+        );
+      },
+      importProfileJson: (String json) async {
+        final ProfileRepository repo = interconnectProfileRepository();
+        try {
+          // 永远 createNew：入站配置不得覆盖本机任何既有 Profile，也不动当前激活的。
+          final int id = await repo.importProfileFromJson(json);
+          final ProfileRow? row = await repo.getProfileById(id);
+          return row?.name ?? 'profile';
+        } on ProfileImportException catch (e) {
+          // wire 层只认 FormatException → 400（见 InterconnectProfileHost 的契约），
+          // 不让 profile 层的异常类型漏进 sync 层。
+          throw FormatException(e.toString());
+        }
+      },
       videoSubtitleLangCode: JapaneseLanguage.instance.languageCode,
       // client→host 视频上传（syncVideoFiles 开关驱动）：落 <documents>/remote_videos
       // （与 client 下载远端视频落点一致，AppPaths.remoteVideosDirectory 同目录）。
@@ -1210,6 +1243,21 @@ class AppModel with ChangeNotifier {
   BackupImportPhase? get backupImportPhase => _backupImportPhase;
   bool get backupImportActive => _backupImportPhase != null;
 
+  /// BUG-2106：备份导入遮罩是否要**独占 app 根**（换根、卸载整棵子树含 Navigator）。
+  ///
+  /// 只有 [BackupImportPhase.running] / [BackupImportPhase.done] /
+  /// [BackupImportPhase.failed] 才为真：这三个相位之前已 [closeDatabase]，页面若还挂着
+  /// 就会去查已关闭的库，必须换根独占（且随后重启进程）。
+  ///
+  /// [BackupImportPhase.validating] **恒为假**：那一段只是读 zip + 生成合并预览，DB 仍
+  /// 打开、可取消，换根却会把调用方路由连 Navigator 一起销毁 —— 引导向导因此被整段摧毁
+  /// （进度丢失、`await Navigator.push` 的 future 永不完成、失败提示无处可弹 = 用户报的
+  /// 「选完本地包就强制退出引导且没有任何提醒」）。该相位改由压在调用方页面之上的模态
+  /// 路由承载，见 [buildBackupValidatingOverlayRoute]。
+  bool get backupImportOwnsAppRoot =>
+      _backupImportPhase != null &&
+      _backupImportPhase != BackupImportPhase.validating;
+
   /// 导入完成/失败后展示在确认视图里的文案（成功提示或失败原因）。
   String? _backupImportMessage;
   String? get backupImportMessage => _backupImportMessage;
@@ -1376,6 +1424,17 @@ class AppModel with ChangeNotifier {
   bool isDictionaryInstalledOnDisk(String name) =>
       Directory(path.join(_dictionaryResourceDirectory.path, name))
           .existsSync();
+
+  /// 互联「配置文件」搬运用的 [ProfileRepository]。
+  ///
+  /// 与 `profileRepositoryProvider` 同构造参数（同一个 db + anki repo + 「词典装没装」
+  /// 的磁盘判据）。host 侧回调是无 ref 的后台路径，拿不到 Riverpod 容器，故就地建一个
+  /// —— [ProfileRepository] 本身不持状态、不持缓存，重复构造无副作用。
+  ProfileRepository interconnectProfileRepository() => ProfileRepository(
+        database,
+        platformServices.createAnkiRepository(),
+        isDictionaryInstalled: isDictionaryInstalledOnDisk,
+      );
 
   Directory get dictionaryResourceDirectory => _dictionaryResourceDirectory;
   late Directory _dictionaryResourceDirectory;

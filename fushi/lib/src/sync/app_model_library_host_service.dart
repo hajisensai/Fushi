@@ -35,6 +35,7 @@ import 'package:fushi/src/sync/collection_manifest.dart';
 import 'package:fushi/src/sync/collection_sync_engine.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_service_config.dart';
+import 'package:fushi/src/sync/interconnect_profile_transfer.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -75,7 +76,8 @@ class AppModelLibraryHostService
         VideoDeletionHost,
         VideoPlaybackSyncHost,
         AudiobookDelayHost,
-        InterconnectServiceConfigHost {
+        InterconnectServiceConfigHost,
+        InterconnectProfileHost {
   AppModelLibraryHostService({
     required FushiDatabase db,
     required Directory dictionaryResourceRoot,
@@ -89,6 +91,9 @@ class AppModelLibraryHostService
     Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported,
     Directory? audioDatabaseRoot,
     Future<void> Function(String displayName)? removeLocalAudioEntry,
+    Future<bool> Function()? isProfileTransferEnabled,
+    Future<String> Function()? exportActiveProfileJson,
+    Future<String> Function(String json)? importProfileJson,
     String videoSubtitleLangCode = 'ja',
     Directory? uploadedVideoRoot,
     Directory? videoCoversDirectory,
@@ -109,6 +114,9 @@ class AppModelLibraryHostService
        _onLocalAudioImported = onLocalAudioImported,
        _audioDatabaseRoot = audioDatabaseRoot,
        _removeLocalAudioEntry = removeLocalAudioEntry,
+       _isProfileTransferEnabled = isProfileTransferEnabled,
+       _exportActiveProfileJson = exportActiveProfileJson,
+       _importProfileJson = importProfileJson,
        _videoSubtitleLangCode = videoSubtitleLangCode,
        _uploadedVideoRoot = uploadedVideoRoot,
        _videoCoversDirectory = videoCoversDirectory,
@@ -119,6 +127,42 @@ class AppModelLibraryHostService
   final SyncAssetPackageService _packages;
   final Future<void> Function() _refreshDictionaryCache;
   final Future<void> Function(Future<void> Function() body) _runExclusive;
+
+  /// 互联「配置文件」（Profile）搬运的三个可选依赖（与本类其余可选能力同范式：
+  /// 注入回调而不是把 ProfileRepository 的构造依赖整条拖进来）。生产由 AppModel
+  /// 传入；未注入时开关判据恒为 false，端点对外表现为「host 关着」。
+  final Future<bool> Function()? _isProfileTransferEnabled;
+  final Future<String> Function()? _exportActiveProfileJson;
+  final Future<String> Function(String json)? _importProfileJson;
+
+  @override
+  Future<bool> isInterconnectProfileTransferEnabled() async {
+    // 三者缺一即视为不可用：没有导出/导入回调时开着开关也无从服务。
+    final Future<bool> Function()? enabled = _isProfileTransferEnabled;
+    if (enabled == null) return false;
+    if (_exportActiveProfileJson == null || _importProfileJson == null) {
+      return false;
+    }
+    return enabled();
+  }
+
+  @override
+  Future<String> exportInterconnectProfile() async {
+    final Future<String> Function()? export = _exportActiveProfileJson;
+    if (export == null) {
+      throw UnsupportedError('profile export not wired on this host');
+    }
+    return export();
+  }
+
+  @override
+  Future<String> importInterconnectProfile(String json) async {
+    final Future<String> Function(String json)? import = _importProfileJson;
+    if (import == null) {
+      throw UnsupportedError('profile import not wired on this host');
+    }
+    return import(json);
+  }
 
   @override
   Future<InterconnectServiceConfigSnapshot>
