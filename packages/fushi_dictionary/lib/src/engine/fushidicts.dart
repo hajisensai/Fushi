@@ -316,7 +316,16 @@ class FushiDicts {
 
   FushiDicts() {
     _bindings ??= FushidictsFfiBindings();
-    _handle = _bindings!.create();
+    final Pointer<Void> handle = _bindings!.create();
+    // BUG-2110：FFI 闸门把 native 抛出的异常收敛成「返回零值」，于是 create 失败
+    // 现在返回 nullptr 而不再 terminate。nullptr 是个**非 null 的 Pointer 对象**，
+    // `_handle!` 拦不住它；放行下去每个导出都无条件解引用 handle → SIGSEGV，而
+    // ffi_guard 接不住信号。在入口判掉，把不可诊断的段错误换成可诊断的异常。
+    if (handle == nullptr) {
+      throw StateError(
+          'fushidicts_create returned nullptr (native engine unavailable)');
+    }
+    _handle = handle;
   }
   static FushidictsFfiBindings? _bindings;
   Pointer<Void>? _handle;
@@ -464,6 +473,13 @@ class FushiDicts {
   /// 被更新的意图取代（见 [loadPendingAsync]）。
   static int _generation = 0;
 
+  /// 在飞的影子实例：[loadPendingAsync] 装载期间它持有**全部**词典的文件映射。
+  ///
+  /// 必须登记，否则 [releaseAllMappings] 只释放得掉 `_instance` 那一份，shadow
+  /// 手里那份还在——Windows 上删词典目录照样撞 ERROR_USER_MAPPED_FILE，
+  /// 「释放全部映射」这个不变式直接被证伪（BUG-1756 的形状）。
+  static FushiDicts? _inFlightShadow;
+
   /// **分批让出**地结算待办：每装一本就把控制权交回事件循环一次。
   ///
   /// 为什么启动路径必须走这条而不是 [loadPendingNow]：装载是同步 FFI，一口气装
@@ -486,34 +502,46 @@ class FushiDicts {
     final int generation = _generation;
 
     final FushiDicts shadow = FushiDicts();
-    shadow._loadCachedTransforms();
-    Future<void> loadAll(
-        List<String> paths, void Function(String) add) async {
-      for (final String p in paths) {
-        add(p);
-        await Future<void>.delayed(Duration.zero);
+    _inFlightShadow = shadow;
+    // 只有真的把 shadow 交给 _instance 之后才算「所有权转移」；在那之前的任何
+    // 出口（作废、抛异常、被外部提前销毁）都必须由 finally 把它销毁掉，否则
+    // shadow 成孤儿：native handle 永不 destroy，文件映射在进程存活期内永久泄漏
+    // （Windows 上对应词典目录永久锁死）。
+    bool handedOver = false;
+    try {
+      shadow._loadCachedTransforms();
+      Future<bool> loadAll(
+          List<String> paths, void Function(String) add) async {
+        for (final String p in paths) {
+          // 代次查在 add **之前**：让出期间若有人 releaseAllMappings /
+          // disposeInstance，shadow 已被同步销毁（handle 置空），此时再 add 就会
+          // 撞 null handle。恢复后第一件事就是查代次，撞不上。
+          if (generation != _generation) return false;
+          add(p);
+          await Future<void>.delayed(Duration.zero);
+        }
+        return generation == _generation;
       }
-    }
 
-    await loadAll(pending.termPaths, shadow.addTermDict);
-    await loadAll(pending.freqPaths, shadow.addFreqDict);
-    await loadAll(pending.pitchPaths, shadow.addPitchDict);
-    await loadAll(pending.kanjiPaths, shadow.addKanjiDict);
-
-    if (generation != _generation) {
       // 让出期间意图变了：丢掉这份成果（连同它持有的文件映射），别把已经过时的
       // 集合盖回引擎上。新意图会由它自己的结算路径装载。
-      shadow.dispose();
-      return;
-    }
+      if (!await loadAll(pending.termPaths, shadow.addTermDict)) return;
+      if (!await loadAll(pending.freqPaths, shadow.addFreqDict)) return;
+      if (!await loadAll(pending.pitchPaths, shadow.addPitchDict)) return;
+      if (!await loadAll(pending.kanjiPaths, shadow.addKanjiDict)) return;
 
-    _instance?.dispose();
-    _instance = shadow;
-    _loadedDictCount = pending.termPaths.length +
-        pending.freqPaths.length +
-        pending.pitchPaths.length +
-        pending.kanjiPaths.length;
-    _rebuildStylesCache();
+      _instance?.dispose();
+      _instance = shadow;
+      handedOver = true;
+      _loadedDictCount = pending.termPaths.length +
+          pending.freqPaths.length +
+          pending.pitchPaths.length +
+          pending.kanjiPaths.length;
+      _rebuildStylesCache();
+    } finally {
+      if (!handedOver) shadow.dispose();
+      if (identical(_inFlightShadow, shadow)) _inFlightShadow = null;
+    }
   }
 
   static void _applyPendingIfAny() {
@@ -564,6 +592,11 @@ class FushiDicts {
 
   static void disposeInstance() {
     _pending = null;
+    // 代次必须推：否则在飞的 loadPendingAsync 恢复时代次仍相等，会把 shadow 装回
+    // _instance —— 刚被显式销毁的引擎凭空复活（数据根切换 / closeForPopup 可达）。
+    _generation++;
+    _inFlightShadow?.dispose();
+    _inFlightShadow = null;
     _instance?.dispose();
     _instance = null;
     _loadedDictCount = 0;
@@ -584,6 +617,12 @@ class FushiDicts {
     // 待办也要一起清：留着它，删完目录后任何一次查词都会把「含已删词典」的那份
     // 排期重放回引擎，等于映射又长回来了。
     _pending = null;
+    // 代次和在飞 shadow 都要在**早退之前**处理：早退路径不经过 initializeTyped，
+    // 代次不变意味着在飞的装载会把含已删词典的集合装回引擎（映射长回来），而
+    // shadow 手里那份映射不释放，目录本身就还删不掉。两者都是 BUG-1756 的形状。
+    _generation++;
+    _inFlightShadow?.dispose();
+    _inFlightShadow = null;
     if (_instance == null || _loadedDictCount == 0) return;
     initializeTyped();
   }

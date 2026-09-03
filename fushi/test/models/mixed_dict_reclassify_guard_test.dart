@@ -25,6 +25,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 void main() {
   late String appModel;
 
@@ -35,7 +37,11 @@ void main() {
     appModel = f.readAsStringSync();
   });
 
-  String bodyOf(String src, String name) {
+  // 先剥注释再取函数体：本文件的判据全是「函数体里必须出现某字面量」，而这些
+  // 字面量在同一段代码的中文注释里逐字出现过好几次（本仓一天抓到过 6 起这种
+  // 守卫假绿）。统一走 helpers/source_guard.dart 的 maskComments。
+  String bodyOf(String rawSrc, String name) {
+    final String src = maskComments(rawSrc);
     final int sig = src.indexOf(name);
     expect(sig, greaterThanOrEqualTo(0), reason: '$name not found');
     final int open = src.indexOf('{', sig);
@@ -60,7 +66,10 @@ void main() {
       expect(body.contains('FushiDicts.probeDictContent('), isTrue,
           reason: 'classification must come from the native single source of '
               'truth (probe blobs.bin), not a fragile Dart blob header read');
-      expect(body.contains('DictionaryType.term'), isTrue,
+      // 锚到**降级表达式本身**，不是裸的 `DictionaryType.term`：后者会被同一
+      // 函数体里无关的 `if (d.type != DictionaryType.term) continue;` 满足，于是
+      // 把降级整个删成 `type: d.type` 这条断言仍然绿——恒真，零覆盖。
+      expect(body.contains('mixed ? DictionaryType.term'), isTrue,
           reason: 'a kanji dict that actually contains term records must be '
               'demoted back to term so word lookup hits again');
       // 探测结果必须落库——包括「探过、结论是不用改」。少了这一步，「没探过」和
