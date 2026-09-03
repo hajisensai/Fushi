@@ -5,6 +5,21 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 
 /// TODO-1360 / BUG-2051：「已制卡的词旁 ↗『在 Anki 中打开卡片』按钮」可达性链路的
+/// 顶层函数体的结束位置：从 [from] 起找**列 0 的 `}`**。
+///
+/// 不能直接 `indexOf('\n}')`：命名参数表的 `})` 同样在列 0，先命中它就会把「函数体」
+/// 截成只剩一个参数表，后面所有 `contains` 断言随之恒假——那是个不会报错、只会悄悄
+/// 失去判别力的守卫。所以跳过后面紧跟 `)` 的那些。
+int topLevelBodyEnd(String src, int from) {
+  int i = from;
+  while (true) {
+    i = src.indexOf('\n}', i + 1);
+    if (i < 0) return -1;
+    final int next = i + 2;
+    if (next >= src.length || src[next] != ')') return i;
+  }
+}
+
 /// 源码守卫。锁住 openInAnki 从 popup.js（仅已制卡显示 + 点击调宿主）→ webview handler
 /// → layer 透传 → 两条宿主车道（mixin / base_source_page）→ 仓库
 /// （[BaseAnkiRepository.openWordInAnki]）全程接线，避免任一层漏接导致按钮点了没反应。
@@ -12,6 +27,7 @@ import '../helpers/source_guard.dart';
 /// BUG-2051 之后这条链路只剩**一条判据**：宿主把 Anki 浏览器过滤到「Anki 认为这个词
 /// 已有的卡」（第一字段 checksum，与画 ✓ 的查重同源），不再先按第一字段**名**反查
 /// note id——那条反查看不见笔记类型不同的重复卡，于是 ✓ 说已制卡、↗ 说没有卡。
+
 void main() {
   String read(String relativePath) {
     final file = File(relativePath);
@@ -94,12 +110,9 @@ void main() {
     expect(base.contains('repo.openWordInAnki(expression, reading)'), isTrue);
   });
 
-  test('BUG-2051 仓库层：↗ 与查重同源，且没有第二条反查', () {
+  test('BUG-2051 仓库层：↗ 与查重同源，且查询串里不放名字', () {
     final repo = read(
         '../packages/fushi_anki/lib/src/ankiconnect/ankiconnect_repository.dart');
-    // 查询串来自与查重共用的构造器，直接喂给 guiBrowse——不再先 findNotes 拿 id。
-    expect(repo.contains('ankiDuplicateSearchQuery('), isTrue);
-    expect(repo.contains('service.guiBrowseQuery(query)'), isTrue);
     final int openWordAt =
         repo.indexOf('Future<AnkiOpenWordOutcome> openWordInAnki(');
     expect(openWordAt, greaterThan(-1));
@@ -108,9 +121,33 @@ void main() {
     final int nextOverride = repo.indexOf('\n  @override', openWordAt);
     expect(nextOverride, greaterThan(openWordAt));
     final String body = repo.substring(openWordAt, nextOverride);
+    // 判命中：与查重共用的 dupe 构造器。
+    expect(body.contains('ankiDuplicateSearchQuery('), isTrue);
     expect(body.contains('findNotesByField('), isFalse,
         reason: '按第一字段名查是被删掉的那条判据，不得在 ↗ 路径上复活');
-    expect(body.contains('ankiDuplicateSearchQuery('), isTrue);
+    // 卡组范围按 **id** 解析：Anki 搜索的 `deck:` 是通配匹配（`_`/`*`），而查重侧
+    // 是精确名——把卡组名塞回搜索串就是给判据留第二个漂移入口。
+    expect(body.contains('ankiDuplicateDeckIds('), isTrue,
+        reason: '卡组必须先按名字精确解析成 id，不能交给 Anki 的通配匹配');
+    // 打开：只喂 note id。词与卡组名都不进浏览器的查询串。
+    expect(body.contains('ankiNoteIdBrowseQuery('), isTrue);
+    expect(body.contains('service.guiBrowseQuery(browseQuery)'), isTrue);
+
+    // 构造器自己也不许再拼卡组名：`ankiDuplicateDeckFilter` 产出的是 `deck:"名字"`，
+    // 那条通配路径只留给尚未改造的旧字段名查询（见 BUG-2051 备注），不得回流到这里。
+    final service = read(
+        '../packages/fushi_anki/lib/src/ankiconnect/ankiconnect_service.dart');
+    final int qAt = service.indexOf('String ankiDuplicateSearchQuery(');
+    expect(qAt, greaterThan(-1));
+    final int qEnd = topLevelBodyEnd(service, qAt);
+    expect(qEnd, greaterThan(qAt));
+    final String queryBody = service.substring(qAt, qEnd);
+    // 非空转自检：真取到了函数体（不是被参数表截断成一小段）。
+    expect(queryBody, contains('dupe:'));
+    expect(queryBody.contains('ankiDeckIdFilter('), isTrue);
+    expect(queryBody.contains('ankiDuplicateDeckFilter('), isFalse,
+        reason: '卡组名进搜索串 = 交给 Anki 的通配匹配，与查重侧的精确名不同源');
+    expect(queryBody.contains('deck:'), isFalse);
 
     // 没有原生「按词打开」能力的后端走基类默认（按 note id，两者本就同源）。
     final base =

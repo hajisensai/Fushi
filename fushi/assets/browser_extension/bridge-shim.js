@@ -13,17 +13,67 @@ window.flutter_inappwebview = {
           var toast = function (text, sticky) {
             if (typeof window.fushiToast === 'function') window.fushiToast(text, sticky);
           };
+          var ctx = (typeof window.fushiMineContext === 'function')
+            ? window.fushiMineContext() : null;
+          // 例句三级优先：
+          //   ① Netflix 字幕 DOM 直读——严格等于「此刻画面上那一行」，优先级最高且**保持原样**；
+          //   ② 当前字幕行（`fushiMineContext`：整集拦截轨 / textTracks 收割 / 用户外挂字幕 /
+          //      DOM 采样，站点无关）——此前这一级根本不存在，非 Netflix 的轨全被跳过；
+          //   ③ 弹窗内选区文本（原兜底）。
+          // ② 是这次补上的那一级：用户在 B 站挂了外挂字幕，轨就在 `fushiActiveFullTrack()` 里，
+          // 面板和覆盖层都在用它，制卡却直接从 ① 掉到 ③ → 卡上没有句子。
           var cueText = (typeof extractNetflixCueText === 'function')
             ? extractNetflixCueText(netflixSubtitleContainer()) : '';
-          var sentence = cueText || (args[0] && args[0].popupSelectionText) || '';
-          // TODO-1271：普通网页（非 YouTube/Netflix 流媒体）没有视频时间窗可裁，绝不进视频剪辑
-          // 队列——直接 POST {fields,sentence} 立即制卡（background 'mine' 分支：纯文本挖词回落），
-          // 也不误报「没找到当前字幕」（那条只对流媒体页字幕尚未采到时成立，此页压根没有字幕/视频，
-          // 用户报「这也不是视频，哪来的字幕」）。批量剪辑队列仅对 youtube/netflix 生效。
-          var site = (typeof fushiSite === 'function') ? fushiSite() : 'other';
-          if (site !== 'youtube' && site !== 'netflix') {
+          var trackText = (ctx && ctx.window) ? (ctx.window.text || '') : '';
+          var sentence = cueText || trackText
+            || (args[0] && args[0].popupSelectionText) || '';
+          // TODO-1271：判据是**能不能拿到可裁的原始媒体**，不是站点名（见 `fushiClipSource`）。
+          // `mode:'queue'` = 必须先回放/逐条解析才拿得到媒体（Netflix 录制、YouTube 批量），
+          // 只适合「看完一集统一生成」，保持既有行为不动。其余一切页面——普通网页、以及有字幕轨
+          // 有视频但还没有流解析器的站点（bilibili.com 等）——都走下面的「立即出卡」，并带上
+          // **当前解码帧**当封面。此前这条路只发 {fields,sentence} 纯文本，画面明明就在
+          // `<video>` 里却一张图都不带。
+          // 也不误报「没找到当前字幕」（那条只对入队路成立：批量生成必须有时间窗；立即出卡没有
+          // 字幕也照样是一张合法的词卡，用户报过「这也不是视频，哪来的字幕」）。
+          if (!(ctx && ctx.clip && ctx.clip.mode === 'queue')) {
+            var msg = { type: 'mine', fields: args[0], sentence: sentence };
+            // 当前解码帧（不是截屏，见 frame-capture.js 文件头）。DRM 页面取不到 → 不带图，
+            // 照旧出纯文本卡，绝不改用截屏兜底。
+            var frame = (typeof fushiCaptureCurrentFrame === 'function')
+              ? fushiCaptureCurrentFrame() : null;
+            if (frame && frame.base64) msg.screenshotBase64 = frame.base64;
+            // 有当前字幕行 → 把时间窗一并带上：服务端据此从原始流裁句子音频/动图
+            // （`immediate` 档的站点），没有流解析器时这些字段被忽略，不影响出卡。
+            if (ctx && ctx.window) {
+              // cueStartMs 是**真句首**（静态帧「字幕开头」档定位那一帧用），不带边距。
+              msg.cueStartMs = ctx.window.startV;
+              // 裁切窗带边距，且与入队批量剪辑那条路同源——见
+              // `subtitle-providers.js` 的 fushiClipWindowWithMargin：此前这条路发的是裸
+              // cue 窗，叠上字幕轮询粒度会把句子开头切掉一点。
+              var clipWin = (typeof fushiClipWindowWithMargin === 'function')
+                ? fushiClipWindowWithMargin(ctx.window.startV, ctx.window.endV) : null;
+              msg.clipStartMs = clipWin ? clipWin.startMs : ctx.window.startV;
+              msg.clipEndMs = clipWin ? clipWin.endMs : ctx.window.endV;
+              if (ctx.mineAtV !== null && ctx.mineAtV !== undefined) {
+                msg.mineAtMs = ctx.mineAtV;
+              }
+            }
+            if (ctx && ctx.clip && ctx.clip.mode === 'immediate') {
+              msg.clipSourceKind = ctx.clip.kind;
+              msg.clipSourceId = ctx.clip.id;
+              // 分 P / 分集号：B 站不同分 P 是不同 cid，少了它服务端会去裁第 1 P 的音轨
+              // —— 出一张「图和句子是这一集、声音是上一集」的卡。
+              if (typeof ctx.clip.part === 'number') {
+                msg.clipSourcePart = ctx.clip.part;
+              }
+            }
+            // 页面标题当 Anki 的「视频名」字段：此前这条路一个都不发，服务端只好回落硬编码的
+            // 'Netflix'，B 站的卡上写着 Netflix。
+            if (typeof document !== 'undefined' && document.title) {
+              msg.documentTitle = document.title;
+            }
             chrome.runtime.sendMessage(
-              { type: 'mine', fields: args[0], sentence: sentence },
+              msg,
               (resp) => {
                 try { if (chrome.runtime.lastError) { toast('✗ 制卡失败'); resolve(false); return; } } catch (_) { /* no-op */ }
                 var dup = !!(resp && resp.ok && resp.data && resp.data.result === 'duplicate');

@@ -94,6 +94,29 @@ String buildGoogleVideoRangeUrl(String baseUrl, int start, int end) {
   return uri.replace(queryParameters: q).toString();
 }
 
+/// 这个分离音轨**是否需要**先整段物化才能裁——判据是「谁在限速」，不是「有没有分离音轨」。
+///
+/// 上面那套 `range=` 查询参数分片是 **googlevideo 专属**的绕行：注释里三条都只对它成立
+/// （SABR 限速、认查询参数 range 那一路才不限速、UA 要与 YouTube 铸流一致）。可它的触发
+/// 判据一直写成形状——「[ImmersionMiningRequest.audioSource] 非空且是远端 http」。任何
+/// **别的**站点的分离音轨一旦走进来就会踩空：`range=` 是它不认识的查询参数，被忽略后每
+/// 一片都返回整个文件，于是把同一个流反复下满 `maxBytes` 才罢休，比直接 seek 慢几十倍。
+///
+/// 实测（bilibili DASH audio-only m4s，`mp4a.40.2`）：ffmpeg 直接 `-ss/-t` 对 URL 裁 3 秒
+/// 片段稳定成功、耗时约 1 秒，根本不需要物化——它没有 googlevideo 那种限速。所以这里把
+/// 判据收回到原因上：只有 googlevideo 的流才走物化，其余分离音轨直接对 URL 裁。
+///
+/// 纯函数。非 http(s)、URL 畸形、host 不是 googlevideo 一律 false。
+bool audioSourceNeedsRangeMaterialization(String? audioUrl) {
+  if (audioUrl == null || audioUrl.isEmpty) return false;
+  final Uri? uri = Uri.tryParse(audioUrl);
+  if (uri == null) return false;
+  if (uri.scheme != 'http' && uri.scheme != 'https') return false;
+  final String host = uri.host.toLowerCase();
+  // `*.googlevideo.com`（rrN---sn-xxxx.googlevideo.com 等一大票子域）。
+  return host == 'googlevideo.com' || host.endsWith('.googlevideo.com');
+}
+
 /// TODO-1314（B5）：把远端 **audio-only DASH** 流（googlevideo 分离音频轨）用 yt-dlp 式
 /// `range=` 分片顺序下载**整段物化到本地临时文件** [outputPath]，返回本地路径（成功）或
 /// null（失败 / 空流 / 非 http 输入）。**best-effort**，绝不抛。

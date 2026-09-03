@@ -208,6 +208,7 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
   'favoriteCheck',
   'favoriteEntry',
   'findMinedMatches',
+  'getDictAsset',
   'mineEntry',
   'minedCardAction',
   'onLinkClick',

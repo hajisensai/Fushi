@@ -26,6 +26,12 @@ const vm = require('vm');
 
 const popupPath = path.resolve(__dirname, '../../assets/popup/popup.js');
 const source = fs.readFileSync(popupPath, 'utf8');
+// 生产里 popup.html 先装 dict-media.js 再装 popup.js（`popup.html:15/17`），两者同在一个
+// document 里共享全局。harness 只装 popup.js 的话，popup.js 里对 dict-media.js 顶层函数的
+// 引用（如 createGlossarySection → runDictScripts）会 ReferenceError —— 那不是被测代码的
+// 缺陷，是 harness 没复刻装载。按同一顺序跑，别打桩：打桩会让「谁定义了它」这件事失真。
+const dictMediaPath = path.resolve(__dirname, '../../assets/popup/dict-media.js');
+const dictMediaSource = fs.readFileSync(dictMediaPath, 'utf8');
 
 // ---------- 最小假 DOM（与 popup_empty_entry_card_test.js 同形，够 renderPopup 跑通） ----------
 
@@ -258,6 +264,7 @@ function makeSandbox(opts) {
 function loadPopup(opts) {
   const sandbox = makeSandbox(opts);
   vm.createContext(sandbox);
+  vm.runInContext(dictMediaSource, sandbox, { filename: 'dict-media.js' });
   const exported = source + `
     ;window.__test = {
       layoutMasonry, markMasonryDirty, scheduleMasonry, scheduleMasonryAll,

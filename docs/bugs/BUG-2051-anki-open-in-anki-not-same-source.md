@@ -41,14 +41,19 @@ Yomitan 只有一条判据，两个 UI 天然一致；我们有两条，所以�
 
 不是「让两条查询长得一样」（那还会再漂移一次），而是**让 ↗ 不再有自己的判据**：
 
-1. `AnkiConnectService.guiBrowseQuery(query)`（新）：把 Anki 浏览器过滤到任意查询串，
-   并回传**被选中的 card id**——`guiBrowse` 的应答本来就是命中列表，所以「打开」与
-   「到底有没有卡」是同一次往返的两个产物，不必再另发一条 `findNotes` 去问同一个问题。
+1. `AnkiConnectService.guiBrowseQuery(query)`（新）：把 Anki 浏览器过滤到任意查询串。
+   ↗ 只喂它 `nid:a,b,c`（见下），**不把它的返回值当第二次匹配判定**。
 2. `ankiDuplicateSearchQuery(...)`（新，`ankiconnect_service.dart`）：把 checksum 判据用
-   搜索语法表达一遍 —— `deckFilter ("dupe:<mid1>,<词>" OR "dupe:<mid2>,<词>" …)`，mid 取
-   **全部**笔记类型（`modelNamesAndIds`，也是新增），卡组过滤器复用查重那一个
-   `ankiDuplicateDeckFilter`。`canAddNotes` 只回布尔、给不出 note id，`dupe:` 是唯一
-   既同源又能拿到卡的路子。
+   搜索语法表达一遍 —— `(did:… OR did:…) ("dupe:<mid1>,<词>" OR "dupe:<mid2>,<词>" …)`，
+   mid 取**全部**笔记类型（`modelNamesAndIds`，也是新增）。`canAddNotes` 只回布尔、给不出
+   note id，`dupe:` 是唯一既同源又能拿到卡的路子。
+2b. **不按名字查**（第二轮，用户提出）：卡组范围先用 `deckNamesAndIds` 把名字**精确**
+   解析成 id（`ankiDuplicateDeckIds`：`名 == 目标` 或 `名.startsWith('目标::')`，字符串
+   比较在 Dart 里做），查询串里用 `did:`；命中的 note id 再用 `ankiNoteIdBrowseQuery`
+   变成 `nid:a,b,c` 交给浏览器。于是**查询串里唯一还留着的名字是 `dupe:` 里那个词，
+   而它恰好是 Anki 唯一做精确比较的地方**。理由是实测出来的，见「按名字查的实测」。
+   代价是多一次 `findNotes` 往返——它不是第二条判据：`nid:` 按上一步的**结果 id**
+   定位，不重新匹配任何东西。
 3. `BaseAnkiRepository.openWordInAnki(expression, reading) -> AnkiOpenWordOutcome`（新契约，
    三态 `opened / noMatch / failed`）。AnkiConnect 覆写成上面那条；**基类默认实现**走
    `findMatchingNotes` + `openNoteInAnki` 打开最近一张，给没有「按词打开」能力的后端
@@ -78,7 +83,7 @@ Yomitan 只有一条判据，两个 UI 天然一致；我们有两条，所以�
 
 ### [x] ② 已加自动化测试
 
-- `packages/fushi_anki/test/open_word_in_anki_test.dart`（新增，14 条）——假 AnkiConnect
+- `packages/fushi_anki/test/open_word_in_anki_test.dart`（新增，第一轮 14 条 → 第二轮 23 条 → 补接线层覆盖后 24 条）——假 AnkiConnect
   **照上表实测行为建模**：按字段名查恒 0 命中、`dupe:` 命中那张 Kaishi 卡。覆盖：✓ 判重
   与 ↗ 必须给同一答案 / ↗ 不得再发 findNotes / 查询串形状（卡组过滤 + 全量 mid + 括号分组
   + 不含 `Expression:`）/ collection scope 不带卡组 / 空选中 → noMatch / 传输失败 → failed
@@ -142,13 +147,58 @@ Yomitan 只有一条判据，两个 UI 天然一致；我们有两条，所以�
 | 新建 `packages/fushi_anki/lib/src/_mutation_probe_browse.dart` 调 `guiBrowseQuery` | ✅ 第三条守卫红 | `Which: larger than expected` | 同上 |
 
 后两行的「PR 原有 8 条守卫全绿」就是 control：旧护栏结构上抓不到新入口，是新守卫在承重。
+**第二轮（改按 id 查）新增用例**：浏览器那句只能是 `nid:`（不含词/`deck:`/`dupe:`）、
+判命中那句按 `did:` 过滤、`ankiDeckIdFilter` 与 `ankiNoteIdBrowseQuery` 的形状、以及
+「卡组范围按 id 解析」5 条（子组按 `::` 精确展开 / 带 `_` 的卡组名只解析出它自己、兄弟
+卡组不得被通配进来 / deckRoot 取根 / collection·空名·卡组已删 → 不加过滤 / `Lapis2` 不算
+`Lapis` 的子组）。假 AnkiConnect 改成：`findNotes` 才是判命中的那一步，**`guiBrowse`
+故意没有判别力**（只回传 `nid:` 里点到的），否则又是两条判据。共 24 条。
+
+**第二轮变异实测**（每条按 sha256 核对还原）：
+- 子卡组用裸前缀（丢掉 `::`）→ **精确 1 条红**（`Lapis2` 那条）。
+- `nid:` 只列第一张而不是全部同名 → **精确 1 条红**。
+- 把带词的 `dupe:` 串直接丢给 `guiBrowse`（退回第一轮的形状）→ 单测 1 条红 + 静态守卫 1 条红。
+- `deck` scope 失效（不再限定卡组）→ **4 条红**。
+- 查不到也照样去开浏览器 → **精确 1 条红**。
+
+守卫自查：静态守卫取函数体时 `indexOf('\n}')` 会先命中**命名参数表**的 `})`（同样在列 0），
+把函数体截成一个参数表、后续 `contains` 断言全部恒假。已改成跳过后面紧跟 `)` 的那些
+（`topLevelBodyEnd`），并加了「取到的片段必须含 `dupe:`」的非空转自检。
+
+### 按名字查的实测（第二轮的依据）
+
+用户指出「anki 按名字查会非常灾难」。在本机真 Anki 上量了一遍，属实，而且第一轮的修复
+**只同源了一半**：`dupe:` 那半对了，卡组那半我用的 `deck:"<名字>"` 走的是 Anki 搜索的
+**通配匹配**，而画 ✓ 那侧（`duplicateScopeOptions.deckName`）是**精确名**。
+
+| 卡组条件 | ↗ 侧 `findNotes` | ✓ 侧 `canAddNotesWithErrorDetail` |
+|---|---|---|
+| 真名 `eggrolls-JLPT10k-v3` / `正在背::Kaishi 1.5k  zh-CH` | 10164 条 | 判重复 |
+| 把一个字换成 `_` | **同样 10164 条**（`_` = 单字通配） | **判不重复**（名字不存在） |
+| `e*` / `正在背::*` | **整棵树 10164 条** | **判不重复** |
+| 不存在的名字 | 0 条 | 判不重复（静默，不报错） |
+
+也就是说：只要卡组名里有 `_` 或 `*`（本机就有 `galgame_card_test` / `galgame_track_test`），
+两侧对「哪些卡在范围内」的答案就不一样——判据的下一个漂移入口。id 没有这个问题。
+
+另外两条实测事实：`did:` **只匹配该卡组自己、不含子卡组**（父卡组 `did:` n=1 而
+`deck:` n=10164），所以子卡组要在 Dart 侧按 `::` 前缀精确展开，对齐查重侧的
+`checkChildren: true`；卡组名里的连续空格不会被 Anki 吞（`deck:"…1.5k  zh-CH"` n=1501，
+改成单空格 n=0）。
 
 ### 备注
 
-**真机验证**：本机真 Anki 上直接发新实现构造的那条查询串，`guiBrowse` 返回
-`[1758347126448]`，`cardsInfo` 确认打开的正是笔记类型 `Kaishi 1.5k zh-CH`、第一字段
-`たっぷり` 的那张卡；同一时刻旧查询串返回 `[]`。原始失败路径（app 内点 ↗）**未**在真机
-app 里复测——本轮做到「同一条查询串在真 Anki 上给出正确结果」这一层。
+**真机验证**：本机真 Anki 上跑完整新链路。单卡词 `たっぷり`：
+`(did:1771332842760) ("dupe:…,たっぷり" OR …)` → `[1758347126448]` →
+`guiBrowse('nid:1758347126448')` → `cardsInfo` 确认正是笔记类型 `Kaishi 1.5k zh-CH`、
+第一字段 `たっぷり` 的那张卡；同一时刻旧的按字段名查询返回 `[]`。
+**多卡词** `与える`（本 bug 的原型形状：同一个词同时是一张 Kaishi 笔记、第一字段名
+`Word`，和一张 Lapis 笔记、第一字段名 `Expression`）：同源查询返回
+`[1788020832613, 1758347125581]`，与逐条枚举第一字段的结果完全一致，
+`guiBrowse('nid:1758347125581,1788020832613')` 在浏览器里一次列出两张。该库 `正在背`
+树下 2894 条笔记里，**44 个词跨 ≥2 种笔记类型**——旧实现对这些词只能看见一半。
+原始失败路径（app 内点 ↗）**未**在真机 app 里复测：本轮做到「同一条链路在真 Anki 上给出
+正确结果」这一层。
 
 **`dupe:` 语法的实测边界**（同机取证）：按**第一个逗号**切（`"dupe:mid,x,たっぷり"` 不
 命中，排除了「按最后一个逗号切」，故词里含逗号不会截断文本）；未知 mid 只是不命中、不

@@ -227,8 +227,17 @@ ContainerData parse_container(const uint8_t* data, size_t size) {
   pos += 4;  // adler32
 
   result.title = get_attribute(header_text, "Title");
+
+  // MDD (`<Library_Data …>`) keys are file paths and are ALWAYS UTF-16LE; only
+  // MDX (`<Dictionary …>`) text honours the Encoding attribute. Writers such as
+  // MDTT emit `Encoding=""` in .mdd headers, and defaulting that to UTF-8 made
+  // the key-block scan walk single-byte NULs through UTF-16 data: every key
+  // offset drifted and the parse died later with "record block info overflow",
+  // dropping the whole media companion (fonts, images, scripts) on the floor.
+  // An .mdd that does declare an encoding keeps being taken at its word.
+  const bool is_mdd = header_text.find("<Library_Data") != std::string::npos;
   result.encoding = get_attribute(header_text, "Encoding");
-  if (result.encoding.empty()) result.encoding = "utf-8";
+  if (result.encoding.empty()) result.encoding = is_mdd ? "utf-16" : "utf-8";
 
   // `Encrypted` is a bitfield: bit 1 (value 2) scrambles the key-block-info
   // section (undoable, no key needed); bit 0 (value 1) encrypts record blocks

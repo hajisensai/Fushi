@@ -69,9 +69,12 @@ void setup_stream_exceptions(std::ofstream& stream) { stream.exceptions(std::ios
 Files get_files(const Zip& zip) {
   Files files;
   for (int i = 0; i < static_cast<int>(zip.entries.size()); i++) {
-    const auto& name = zip.entries[i].name;
-    if (name.empty() || name.back() == '/') {
-      continue;
+    // Logical (dictionary-relative) name: a dictionary re-zipped with a wrapper
+    // directory stores "MyDict/term_bank_1.json", and matching the raw name sent
+    // every bank into media_files, leaving offsets empty -> "empty dictionary".
+    const std::string_view name = zip.logical_name(i);
+    if (name.empty() || name.back() == '/' || is_packaging_noise(name)) {
+      continue;  // BUG-2053: "__MACOSX/..." / ".DS_Store" are not dictionary media
     }
 
     if (name.starts_with("term_bank_")) {
@@ -973,7 +976,17 @@ size_t write_media(const std::string& path, const Zip& zip, const std::vector<in
 // time so peak memory stays one part (BUG-1261: OALD's parts total ~3.7GB).
 // Media failure never aborts the host dictionary; an unreadable/broken part is
 // skipped and the rest still mount.
-size_t import_mdd_into(const std::vector<std::string>& mdd_paths, const std::string& dict_dir) {
+// A file that is not inside any .mdd but must still be reachable through the
+// media store — e.g. the "NLT.js" / "oaldpex.js" sitting next to the .mdx that
+// the entries reference with a bare <script src>. Serving those from the same
+// store means the popup has ONE way to fetch a dictionary asset by name.
+struct ExtraMediaFile {
+  std::string path;   // media key, already dictionary-relative
+  std::string bytes;
+};
+
+size_t import_mdd_into(const std::vector<std::string>& mdd_paths, const std::string& dict_dir,
+                       const std::vector<ExtraMediaFile>& extra_files = {}) {
   std::ofstream mbin;
   std::ofstream midx;
   bool opened = false;
@@ -1013,6 +1026,23 @@ size_t import_mdd_into(const std::vector<std::string>& mdd_paths, const std::str
                               m.blob.size())) {
         count++;
       }
+    }
+  }
+
+  // Loose siblings share the store, so a dictionary with no usable .mdd at all
+  // still gets one created for them.
+  for (const auto& e : extra_files) {
+    if (e.path.empty() || e.bytes.empty()) continue;
+    if (!opened) {
+      mbin.open(fushi::fs_path(dict_dir + "/media.bin"), std::ios::binary);
+      midx.open(fushi::fs_path(dict_dir + "/media.idx"), std::ios::binary);
+      setup_stream_exceptions(mbin);
+      setup_stream_exceptions(midx);
+      opened = true;
+    }
+    if (append_media_record(mbin, write_pos, index_entries, std::string(e.path), e.bytes.data(),
+                            e.bytes.size())) {
+      count++;
     }
   }
 
@@ -1129,19 +1159,137 @@ ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
   return processed;
 }
 
-// Read a stylesheet sitting next to a dictionary file, named by swapping the
-// extension to .css (Foo.mdx -> Foo.css). Returns "" if absent/empty/unreadable.
-std::string read_sibling_css(const std::string& primary_path) {
+// Read a whole file into a string. "" if absent/empty/unreadable.
+std::string read_file_text(const std::filesystem::path& p) {
+  std::ifstream in(p, std::ios::binary | std::ios::ate);
+  if (!in) return "";
+  auto n = in.tellg();
+  if (n <= 0) return "";
+  std::string text(static_cast<size_t>(n), '\0');
+  in.seekg(0);
+  in.read(text.data(), static_cast<std::streamsize>(n));
+  return text;
+}
+
+// HTML tag/attribute names are case-insensitive, so the scan below must be too.
+char ascii_lower(char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c; }
+
+size_t ci_find(std::string_view haystack, std::string_view needle, size_t from) {
+  if (needle.empty() || haystack.size() < needle.size()) return std::string_view::npos;
+  for (size_t i = from; i + needle.size() <= haystack.size(); i++) {
+    size_t j = 0;
+    while (j < needle.size() && ascii_lower(haystack[i + j]) == ascii_lower(needle[j])) j++;
+    if (j == needle.size()) return i;
+  }
+  return std::string_view::npos;
+}
+
+bool ends_with_ci(std::string_view text, std::string_view suffix) {
+  if (text.size() < suffix.size()) return false;
+  const size_t off = text.size() - suffix.size();
+  for (size_t i = 0; i < suffix.size(); i++) {
+    if (ascii_lower(text[off + i]) != ascii_lower(suffix[i])) return false;
+  }
+  return true;
+}
+
+// Definitions to scan for <link>/<script> tags. The tags are per-entry
+// boilerplate in MDict dictionaries, so this only has to be large enough to
+// survive a few leading entries that are pure @@@LINK redirects or stubs.
+constexpr size_t kCssScanEntryLimit = 50;
+
+// A bare file name safe to resolve against the dictionary's own directory:
+// no separators, no "..", no drive letter. Everything else is dropped rather
+// than sanitised, so a crafted href can never escape that directory.
+bool is_plain_file_name(std::string_view name) {
+  if (name.empty() || name.size() > 255) return false;
+  if (name == "." || name == "..") return false;
+  return name.find_first_of("/\\:") == std::string_view::npos;
+}
+
+// Collect the sibling files an MDX's own definitions ask for: the href of every
+// <link ...href="....css"...>, or the src of every <script ...src="....js"...>.
+//
+// MDict dictionaries carry these tags in every entry, and the file they name
+// does NOT have to match the .mdx stem — "NLT（話し言葉）.mdx" ships its styles
+// as "NLT.css". Reading the name the HTML actually asks for replaces guessing
+// it from the stem.
+//
+// Only bare file names are returned (is_plain_file_name), so a reference into a
+// subdirectory — "scripts/foo-jquery.js", which lives in the .mdd rather than
+// next to the .mdx — is skipped here and served from the media store instead.
+// Only the first entries are scanned: the tags are boilerplate repeated per
+// entry, so a handful of definitions surfaces every referenced file in practice.
+std::vector<std::string> extract_referenced_names(const std::vector<SimpleEntry>& entries, size_t scan_limit,
+                                                  std::string_view tag_name, std::string_view attr,
+                                                  std::string_view required_ext) {
+  std::vector<std::string> names;
+  const size_t limit = std::min(scan_limit, entries.size());
+
+  for (size_t i = 0; i < limit; i++) {
+    std::string_view html = entries[i].definition;
+    for (size_t pos = 0; (pos = ci_find(html, tag_name, pos)) != std::string_view::npos;) {
+      const size_t tag_end = html.find('>', pos);
+      if (tag_end == std::string_view::npos) break;
+      const std::string_view tag = html.substr(pos, tag_end - pos);
+      pos = tag_end + 1;
+
+      const size_t attr_pos = ci_find(tag, attr, 0);
+      if (attr_pos == std::string_view::npos) continue;
+      const size_t eq = tag.find('=', attr_pos + attr.size());
+      if (eq == std::string_view::npos) continue;
+      size_t vs = tag.find_first_not_of(" \t\r\n", eq + 1);
+      if (vs == std::string_view::npos) continue;
+      const char quote = tag[vs];
+      if (quote != '"' && quote != '\'') continue;
+      const size_t ve = tag.find(quote, vs + 1);
+      if (ve == std::string_view::npos) continue;
+
+      const std::string_view value = tag.substr(vs + 1, ve - vs - 1);
+      if (!is_plain_file_name(value)) continue;
+      if (!ends_with_ci(value, required_ext)) continue;
+
+      std::string name(value);
+      if (std::find(names.begin(), names.end(), name) == names.end()) {
+        names.push_back(std::move(name));
+      }
+    }
+  }
+
+  return names;
+}
+
+std::vector<std::string> extract_linked_css_names(const std::vector<SimpleEntry>& entries, size_t scan_limit) {
+  return extract_referenced_names(entries, scan_limit, "<link", "href", ".css");
+}
+
+std::vector<std::string> extract_linked_script_names(const std::vector<SimpleEntry>& entries, size_t scan_limit) {
+  return extract_referenced_names(entries, scan_limit, "<script", "src", ".js");
+}
+
+// The stylesheet(s) to inline as the dictionary's styles.css.
+//
+// Preferred source is whatever the definitions <link> to, resolved inside the
+// .mdx's own directory (that is where MDict keeps them, and it is the only
+// directory consulted). The stem-named sibling (Foo.mdx -> Foo.css) stays as
+// the fallback for dictionaries whose entries carry no <link> at all.
+// Multiple stylesheets are concatenated in first-seen order, matching the
+// cascade a browser would build from the same tags.
+std::string read_sibling_css(const std::string& primary_path, const std::vector<SimpleEntry>& entries) {
+  const auto dir = fushi::fs_path(primary_path).parent_path();
+
+  std::string combined;
+  for (const auto& name : extract_linked_css_names(entries, kCssScanEntryLimit)) {
+    std::string css = read_file_text(dir / fushi::fs_path(name));
+    if (css.empty()) continue;
+    if (!combined.empty()) combined += "\n";
+    combined += css;
+  }
+  if (!combined.empty()) return combined;
+
   auto css_path = fushi::fs_path(primary_path);
   css_path.replace_extension(".css");
-  std::ifstream css_in(css_path, std::ios::binary | std::ios::ate);
-  if (!css_in) return "";
-  auto n = css_in.tellg();
-  if (n <= 0) return "";
-  std::string css(static_cast<size_t>(n), '\0');
-  css_in.seekg(0);
-  css_in.read(css.data(), static_cast<std::streamsize>(n));
-  return css;
+  return read_file_text(css_path);
 }
 
 ImportResult import_mdx(const std::string& mdx_path, const std::string& output_dir) {
@@ -1176,11 +1324,17 @@ ImportResult import_mdx(const std::string& mdx_path, const std::string& output_d
     entries.push_back({std::move(e.key), std::move(e.definition)});
   }
 
-  // MDX glossaries are HTML that usually <link> a sibling stylesheet named after
-  // the dictionary (T4jiJuk.mdx -> T4jiJuk.css). Inline it as the dict's
-  // styles.css so the popup's constructDictCss scopes and injects it; otherwise
-  // the definitions render unstyled. Absent sibling -> empty -> no styles.css.
-  std::string styles_css = read_sibling_css(mdx_path);
+  // MDX glossaries are HTML that <link> a stylesheet sitting next to the .mdx.
+  // Inline it as the dict's styles.css so the popup's constructDictCss scopes
+  // and injects it; otherwise the definitions render unstyled. The name comes
+  // from the <link> tags themselves (it need not match the .mdx stem), falling
+  // back to the stem-named sibling. Nothing found -> empty -> no styles.css.
+  //
+  // Inlining, rather than letting the rewritten <link> fetch it over
+  // dictmedia://, is what keeps the rules scoped to this dictionary: these
+  // sheets style bare tags (table/th/td), which unscoped would repaint every
+  // other dictionary's tables in the shared popup document.
+  std::string styles_css = read_sibling_css(mdx_path, entries);
 
   ImportResult result = dictionary_importer::write_simple_dict(title, entries, output_dir, styles_css);
 
@@ -1188,10 +1342,21 @@ ImportResult import_mdx(const std::string& mdx_path, const std::string& output_d
   // parts Foo.N.mdd) into the same dict dir, so <img>/<link>/sound:// in the
   // glossaries resolve via the image:// media scheme.
   // Media is best-effort: a missing/broken .mdd never fails the dictionary.
+  // The scripts the entries reference with a bare <script src="foo.js"> live
+  // next to the .mdx, not inside the .mdd. Fold them into the same media store
+  // so the popup fetches every dictionary asset — .mdd or loose sibling — by
+  // one name through one channel.
   if (result.success) {
+    const auto dir = fushi::fs_path(mdx_path).parent_path();
+    std::vector<ExtraMediaFile> extra;
+    for (const auto& name : extract_linked_script_names(entries, kCssScanEntryLimit)) {
+      std::string bytes = read_file_text(dir / fushi::fs_path(name));
+      if (!bytes.empty()) extra.push_back({name, std::move(bytes)});
+    }
+
     std::vector<std::string> mdd_paths = collect_sibling_mdd_paths(mdx_path);
-    if (!mdd_paths.empty()) {
-      import_mdd_into(mdd_paths, output_dir + "/" + result.title);
+    if (!mdd_paths.empty() || !extra.empty()) {
+      import_mdd_into(mdd_paths, output_dir + "/" + result.title, extra);
     }
   }
 
@@ -1245,8 +1410,13 @@ ImportResult import_mdx_from_zip(Zip& zip, const std::string& output_dir) {
     std::string fn = fushi::fs_to_utf8(fushi::fs_path(name).filename());
     std::string ext = fushi::fs_to_utf8(fushi::fs_path(fn).extension());
     std::string fstem = fushi::fs_to_utf8(fushi::fs_path(fn).stem());
-    if ((ext == ".mdd" && (fstem == stem || is_numbered_part_stem(fstem))) ||
-        (ext == ".css" && fstem == stem)) {
+    // .css/.js are taken regardless of stem: a dictionary's stylesheet and
+    // scripts are routinely named differently from its .mdx ("NLT（話し言葉）.mdx"
+    // + "NLT.css" + "NLT.js"), and import_mdx resolves the ones its <link>/
+    // <script> tags actually name. Extracting a file the entries never
+    // reference costs one file in the temp dir and is otherwise inert.
+    if ((ext == ".mdd" && (fstem == stem || is_numbered_part_stem(fstem))) || ext == ".css" ||
+        ext == ".js") {
       extract(static_cast<int>(i), fstem + ext);
     }
   }
