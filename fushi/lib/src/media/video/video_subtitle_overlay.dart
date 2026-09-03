@@ -96,6 +96,89 @@ class VideoSubtitleHitTester {
 /// 选词光标的一次方向移动（手柄 D-pad / 键盘方向键，物理方向）。
 enum SubtitleCaretMove { left, right, up, down }
 
+/// 视频字幕上「正在查的词」的高亮范围（BUG-2091）——与阅读器正文查词后高亮被查词
+/// 同语义。锚在 cue 身份（[sentence] + [cueStartMs]）加该 cue 内的 grapheme 区间
+/// `[graphemeStart, graphemeStart + graphemeCount)`。用文本+起点而非对象同一性匹配：
+/// 主/副字幕流、字幕列表侧栏与 overlay 各自持有的 cue 实例可能不同，但文本+起点唯一。
+/// 纯值对象，页面按「弹窗栈是否可见」派生传入（栈空即 null），不另存布尔镜像。
+@immutable
+class SubtitleLookupHighlight {
+  const SubtitleLookupHighlight({
+    required this.sentence,
+    required this.cueStartMs,
+    required this.graphemeStart,
+    required this.graphemeCount,
+  });
+
+  final String sentence;
+  final int cueStartMs;
+  final int graphemeStart;
+  final int graphemeCount;
+
+  /// 该 cue 的第 [graphemeIndex] 个字位是否落在高亮区间内。
+  bool covers({
+    required String sentence,
+    required int cueStartMs,
+    required int graphemeIndex,
+  }) =>
+      graphemeCount > 0 &&
+      cueStartMs == this.cueStartMs &&
+      sentence == this.sentence &&
+      graphemeIndex >= graphemeStart &&
+      graphemeIndex < graphemeStart + graphemeCount;
+
+  bool isFirst(int graphemeIndex) => graphemeIndex == graphemeStart;
+
+  bool isLast(int graphemeIndex) =>
+      graphemeIndex == graphemeStart + graphemeCount - 1;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SubtitleLookupHighlight &&
+      other.sentence == sentence &&
+      other.cueStartMs == cueStartMs &&
+      other.graphemeStart == graphemeStart &&
+      other.graphemeCount == graphemeCount;
+
+  @override
+  int get hashCode =>
+      Object.hash(sentence, cueStartMs, graphemeStart, graphemeCount);
+}
+
+/// 被查词高亮的单字底色盒（BUG-2091）。画在字形**之下**（background，不是
+/// foreground——盖在字上会把白字染色），只在区间首/尾字位收圆角，中间字位方角相接，
+/// 整词看起来是一条连续的选区带。不改布局几何（DecoratedBox 零尺寸影响），字幕排版
+/// 与逐字命中矩形零位移。公开类型仅为测试可 `find.byType`。
+class SubtitleLookupHighlightBox extends StatelessWidget {
+  const SubtitleLookupHighlightBox({
+    required this.first,
+    required this.last,
+    required this.child,
+    super.key,
+  });
+
+  final bool first;
+  final bool last;
+  final Widget child;
+
+  static const double _radius = 4;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.primary.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.horizontal(
+          left: first ? const Radius.circular(_radius) : Radius.zero,
+          right: last ? const Radius.circular(_radius) : Radius.zero,
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
 /// 在一组字符矩形里按物理方向移动选词光标（纯函数，可测）。
 ///
 /// [rects] 是 overlay 当前帧全部登记字符的全局矩形（模糊字符为 [Rect.zero]，恒跳过）；
@@ -367,6 +450,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.onHoverChanged,
     this.hitTester,
     this.caretEntryIndex,
+    this.lookupHighlight,
     this.isCueFavorited,
     this.blurEnabled = false,
     this.subtitleHidden = false,
@@ -434,6 +518,11 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 页面驱动（进入锚点 / [moveSubtitleCaretEntry] 移动），几何真相源在本 overlay 的
   /// 登记表；越界（cue 已切换等）不画环，页面在下一次输入时重锚。
   final int? caretEntryIndex;
+
+  /// 正在查的词在字幕上的高亮范围（BUG-2091）；null = 不高亮。页面按弹窗栈可见性
+  /// 派生：栈空传 null，换词传新范围。命中区间内的非模糊字符套
+  /// [SubtitleLookupHighlightBox] 底色（不改布局几何）。
+  final SubtitleLookupHighlight? lookupHighlight;
 
   /// 当前字幕句是否已收藏（TODO-301 / BUG-264）。非 null 时，当前句已收藏会在字幕盒
   /// 起始处显示一枚实心星标记（与字幕列表行的收藏标记同语义）。null（测试 / 有声书等
@@ -1823,8 +1912,26 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
               cue: cue,
             ));
           }
-          final Widget ch = _applyVerticalGlyphRotation(
+          Widget ch = _applyVerticalGlyphRotation(
               _buildSubtitleChar(chars[i], i, markup, cue), i, markup);
+          // 被查词高亮（BUG-2091）：本字位落在页面传入的查词区间内则垫底色。只对
+          // 可交互字符（已登记、非模糊）画——与查词命中同一门控，模糊层/离场占位
+          // 不会带着高亮。底色在字形之下、光标环之上再叠，两者互不遮挡。
+          final SubtitleLookupHighlight? highlight = widget.lookupHighlight;
+          if (entryIndex >= 0 &&
+              !blurred &&
+              highlight != null &&
+              highlight.covers(
+                sentence: text,
+                cueStartMs: cue.startMs,
+                graphemeIndex: i,
+              )) {
+            ch = SubtitleLookupHighlightBox(
+              first: highlight.isFirst(i),
+              last: highlight.isLast(i),
+              child: ch,
+            );
+          }
           // 选词光标环（手柄查词）：光标停在本字符时外画一圈主题色圆角框。
           // foregroundDecoration 画在字形之上、不改变布局几何（字幕排版零位移）。
           // 登记与画环同帧同源（entryIndex 即登记序），不存在几何滞后。

@@ -367,9 +367,21 @@ final RegExp _kLatinWordCharRegExp =
 /// （native/fushidicts/fushidicts_src/scan/word_scan.cpp），候选恒是
 /// `listen to music` / `listen to` / `listen`，单词自己仍在候选里，不会被短语挤掉。
 /// 网页播放器页（web_video_fushi_page.dart）与本页共用同一取词规则，故为公开顶层函数。
-String subtitleLookupTerm(String sentence, int graphemeIndex) {
+String subtitleLookupTerm(String sentence, int graphemeIndex) =>
+    subtitleLookupSpan(sentence, graphemeIndex).term;
+
+/// [subtitleLookupTerm] 的结构化形态：查询串 + 它在句中的 grapheme **起点**。
+///
+/// 起点是字幕高亮（BUG-2091）的锚：拉丁词回退到词首后，高亮必须从词首起算而不是
+/// 从被点字母起算，否则点 "hello" 的 'o' 只会亮出 "o"。越界返回 `(start: -1, term: '')`。
+({int start, String term}) subtitleLookupSpan(
+  String sentence,
+  int graphemeIndex,
+) {
   final List<String> graphemes = sentence.characters.toList();
-  if (graphemeIndex < 0 || graphemeIndex >= graphemes.length) return '';
+  if (graphemeIndex < 0 || graphemeIndex >= graphemes.length) {
+    return (start: -1, term: '');
+  }
   int start = graphemeIndex;
   // 拉丁单词字符：只把起点回退到词首。其余脚本起点即命中字位。
   if (_isLatinWordGrapheme(graphemes[graphemeIndex])) {
@@ -377,7 +389,16 @@ String subtitleLookupTerm(String sentence, int graphemeIndex) {
       start--;
     }
   }
-  return graphemes.skip(start).join();
+  return (start: start, term: graphemes.skip(start).join());
+}
+
+/// 引擎回报的匹配长度是**码点**数（`bestLength` / [lookupHighlightCharCount]），
+/// 字幕逐字登记按 **grapheme**；把查询串 [term] 的前 [matchedRunes] 个码点折算成
+/// grapheme 数，供 [SubtitleLookupHighlight.graphemeCount]。拉丁/假名两者相等，
+/// 带组合字符 / emoji 时不会把一个 grapheme 切成半个。非正数返回 0。
+int lookupHighlightGraphemeCount(String term, int matchedRunes) {
+  if (matchedRunes <= 0 || term.isEmpty) return 0;
+  return String.fromCharCodes(term.runes.take(matchedRunes)).characters.length;
 }
 
 @visibleForTesting
@@ -1522,6 +1543,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 最近一次字幕查词所在 cue。制卡可能发生在弹窗打开后数秒，此时视频播放位置可能已
   /// 变化；GIF / sasayaki 音频必须仍然导出点词那句，而不是制卡瞬间的 currentCue。
   AudioCue? _lastLookupCue;
+
+  /// 最近一次字幕查词命中的词在字幕上的范围（BUG-2091），由 [_lookupAt] 按引擎回报的
+  /// 匹配长度写入；查无结果写 null。**不**在关栈路径复位——overlay 拿到的是
+  /// [_activeSubtitleLookupHighlight] 这个派生值：弹窗栈全关即 null，任何关闭路径都
+  /// 自动正确，不存在只在成功路径复位的布尔镜像。
+  SubtitleLookupHighlight? _subtitleLookupHighlight;
+
+  /// 传给 [VideoSubtitleOverlay] 的高亮：仅弹窗栈还有可见层时才亮。
+  SubtitleLookupHighlight? get _activeSubtitleLookupHighlight =>
+      _hasVisiblePopup ? _subtitleLookupHighlight : null;
 
   /// TODO-270 E「查词窗口多句合一制卡」(乙方案·视频车道)：会话级制卡草稿缓冲。弹窗点
   /// 「+句」把当前正查字幕句（[_lastLookupSentence]）+ 其 cue 的画面/音频时间窗推进

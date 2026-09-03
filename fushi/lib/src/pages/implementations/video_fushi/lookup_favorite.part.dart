@@ -37,7 +37,9 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
   }) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    final String term = subtitleLookupTerm(sentence, graphemeIndex);
+    final ({int start, String term}) span =
+        subtitleLookupSpan(sentence, graphemeIndex);
+    final String term = span.term;
     // 先判空再暂停：空词不弹浮层，不能暂停后无浮层可关→恢复路径永不触发（卡暂停）。
     if (term.isEmpty) return;
     // 仅当视频正在播放才暂停并标记，浮层全关后据此恢复（BUG-072）。查词前本就
@@ -72,7 +74,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
       // 生效轴，副轨独立调轴后才不会锚错句）。
       delayMs: controller.miningDelayMs,
     );
-    await pushNestedPopup(
+    final int matchedRunes = await pushNestedPopup(
       query: term,
       selectionRect: charRect,
       controller: _popup,
@@ -80,6 +82,24 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
       reuseWarmSlot: true,
       autoRead: true,
     );
+    if (!mounted) return;
+    // BUG-2091：按引擎回报的匹配长度在字幕上高亮被查词（阅读器正文查词同语义）。
+    // 锚在被点字符所属的 cue（overlay / 字幕列表都经 overrideCue 带出；缺省回落按位置
+    // 解析的锚点 cue）；查无结果（0）即不高亮，与阅读器「无词条不高亮」一致。
+    final AudioCue? highlightCue = overrideCue ?? _lastLookupCue;
+    final int graphemeCount = lookupHighlightGraphemeCount(term, matchedRunes);
+    final SubtitleLookupHighlight? nextHighlight =
+        graphemeCount > 0 && highlightCue != null && span.start >= 0
+            ? SubtitleLookupHighlight(
+                sentence: sentence,
+                cueStartMs: highlightCue.startMs,
+                graphemeStart: span.start,
+                graphemeCount: graphemeCount,
+              )
+            : null;
+    if (nextHighlight != _subtitleLookupHighlight) {
+      _rebuild(() => _subtitleLookupHighlight = nextHighlight);
+    }
     // 刷新查词浮层顶部收藏星标：判定当前字幕句是否已收藏（异步，不阻塞弹窗）。
     unawaited(_refreshVideoSentenceFavorite());
   }

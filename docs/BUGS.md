@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1957 条。点号进各自文件。
+> 共 1959 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2092](bugs/BUG-2092-video-lookup-popup-title-bar-offset.md) | ✅ | ✅ | 视频页查词弹窗在 Windows 窗口模式整栈下移一个标题栏高压住被查词 |
+| [BUG-2091](bugs/BUG-2091-video-subtitle-lookup-highlight.md) | ✅ | ✅ | 视频字幕查词后被查词在字幕上无高亮 |
 | [BUG-2089](bugs/BUG-2089-inapp-mining-payload-bool-cast-crash.md) | ✅ | ✅ | 应用内制卡全部失败：「导出卡片失败: Invalid card data (payload parse failed): type 'String' is not a subtype of type 'bool?' in type cast」 |
 | [BUG-2088](bugs/BUG-2088-release-notes-never-reach-update-dialog.md) | ✅ | ✅ | 正式版更新公告进不了应用内更新弹窗，用户看到的是一行占位符 |
 | [BUG-2081](bugs/BUG-2081-mihon-unit-reply-crash.md) | ✅ | ✅ | Mihon Android 通道 void 方法回 kotlin.Unit 触发 StandardMessageCodec 崩溃，Discover/Import 打开即崩 |

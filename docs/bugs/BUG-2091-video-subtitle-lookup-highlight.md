@@ -1,0 +1,6 @@
+## BUG-2091 · 视频字幕查词后被查词在字幕上无高亮
+- **报告**：2026-09-03（用户：「字幕查词的时候，少了高亮」）
+- **真实性**：✅ 真（阅读器/词典页对齐缺口，视频页从未实现）。阅读器查完词用 `lookupHighlightCharCount` 的匹配长度高亮正文被查词（`base_source_page.dart:317`）；视频页 `_lookupAt`（`video_fushi/lookup_favorite.part.dart:78`）调同一个 `pushNestedPopup`，它也返回匹配长度，但返回值被直接丢弃；`VideoSubtitleOverlay` 只有手柄选词光标环（`caretEntryIndex` 单字），没有「被查词范围」这个概念（git 历史里也从未有过）。
+- **[x] ① 已修复** — `VideoSubtitleOverlay` 新增 `lookupHighlight: SubtitleLookupHighlight?`（cue 身份 = 句文本 + 起点毫秒，+ grapheme 区间），命中区间内的可交互字符套 `SubtitleLookupHighlightBox` 底色（画在字形之下、首尾收圆角、不改布局几何）。`video_fushi_page.dart` 把 `subtitleLookupTerm` 拆成 `subtitleLookupSpan`（返回词首起点）+ `lookupHighlightGraphemeCount`（引擎码点数→grapheme 数）；`_lookupAt` 按 `pushNestedPopup` 返回的匹配长度写 `_subtitleLookupHighlight`，overlay 拿的是派生值 `_activeSubtitleLookupHighlight`（弹窗栈全关即 null，不靠关栈路径复位）。`web_video_fushi_page.dart` 同形接线。提交见本分支 `fix(lookup): ...`。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_subtitle_lookup_highlight_test.dart`（真 .ass cue：区间内字位垫底色 + 首尾圆角、布局几何零位移、cue 身份不匹配/null 不画、词中区间只亮那段）；`fushi/test/media/video/subtitle_lookup_term_test.dart` 新增 `subtitleLookupSpan` 起点与 `lookupHighlightGraphemeCount` 码点→grapheme 用例。
+- **备注**：高亮颜色取 `colorScheme.primary` @ 0.45 alpha；引擎匹配长度按 `JapaneseLanguage`（`bestLength`）取，与 mixin 既有口径一致。

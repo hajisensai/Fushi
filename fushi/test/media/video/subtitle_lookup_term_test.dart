@@ -111,4 +111,51 @@ void main() {
       expect(subtitleLookupTerm('', 0), '');
     });
   });
+
+  // BUG-2091：字幕高亮要知道查询串在句中的**起点**——拉丁词回退到词首后，高亮必须从
+  // 词首起算而不是从被点字母起算。
+  group('subtitleLookupSpan — 起点供字幕高亮定位', () {
+    test('拉丁词点中间字母：起点回退到词首，串与 subtitleLookupTerm 同源', () {
+      final ({int start, String term}) r =
+          subtitleLookupSpan("She's not going", 2);
+      expect(r.start, 0);
+      expect(r.term, subtitleLookupTerm("She's not going", 2));
+      expect(r.term, startsWith('She'));
+    });
+
+    test('点第二个词：起点是该词词首', () {
+      final ({int start, String term}) r = subtitleLookupSpan('hello world', 8);
+      expect(r.start, 6);
+      expect(r.term, 'world');
+    });
+
+    test('CJK / 空格：起点即被点字位', () {
+      expect(subtitleLookupSpan('永遠に', 1).start, 1);
+      expect(subtitleLookupSpan('a b', 1).start, 1);
+    });
+
+    test('越界 start=-1、term 空', () {
+      expect(subtitleLookupSpan('hi', 2), (start: -1, term: ''));
+      expect(subtitleLookupSpan('', 0), (start: -1, term: ''));
+    });
+  });
+
+  // 引擎回报的匹配长度是码点数，字幕逐字登记按 grapheme。
+  group('lookupHighlightGraphemeCount', () {
+    test('拉丁：码点数即 grapheme 数', () {
+      expect(lookupHighlightGraphemeCount("She's not", 5), 5);
+    });
+
+    test('组合字符不被切半：e + U+0301 两码点算一个 grapheme', () {
+      expect(lookupHighlightGraphemeCount('éx', 2), 1);
+      expect(lookupHighlightGraphemeCount('éx', 3), 2);
+    });
+
+    test('非正数 / 空串为 0，超出串长按串长截', () {
+      expect(lookupHighlightGraphemeCount('ab', 0), 0);
+      expect(lookupHighlightGraphemeCount('ab', -1), 0);
+      expect(lookupHighlightGraphemeCount('', 3), 0);
+      expect(lookupHighlightGraphemeCount('ab', 10), 2);
+    });
+  });
 }

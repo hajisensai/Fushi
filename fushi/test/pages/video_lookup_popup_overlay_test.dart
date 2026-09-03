@@ -208,4 +208,116 @@ void main() {
     expect(page.contains('get appModel => ref.read(appProvider)'), isFalse,
         reason: '每次 ref.read 在 widget 失活时崩溃');
   });
+
+  testWidgets(
+      'BUG-2092: 根 Overlay 被自绘标题栏压低时，裸屏幕 rect 让弹窗整栈下移一个标题栏高；'
+      '减去 rootOverlayScreenOrigin 后才重新贴词（各缩放）', (WidgetTester tester) async {
+    tester.view.physicalSize = physical;
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    // main.dart：Windows 上 FushiWindowsTitleBar 把 FushiAppUiScale(导航器) 放在一条
+    // 32px、不随界面缩放的标题栏之下——根 Overlay 原点比屏幕原点低 32px。
+    const double titleBar = 32;
+
+    for (final double scale in <double>[1.0, 1.4]) {
+      final GlobalKey charKey = GlobalKey();
+      final GlobalKey pageKey = GlobalKey();
+      await tester.pumpWidget(Directionality(
+        textDirection: TextDirection.ltr,
+        child: Column(
+          children: <Widget>[
+            const SizedBox(height: titleBar),
+            Expanded(
+              child: harness(
+                scale: scale,
+                home: Stack(
+                  key: pageKey,
+                  children: <Widget>[
+                    Positioned(
+                      left: 300,
+                      top: 200,
+                      width: 40,
+                      height: 50,
+                      child: SizedBox(key: charKey),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ));
+
+      final BuildContext pageContext = pageKey.currentContext!;
+      final Rect charScreen = globalRectOfBox(
+          charKey.currentContext!.findRenderObject()! as RenderBox);
+
+      // 病灶：屏幕 rect 直传（旧 mixin 行为）→ 弹窗低了一个标题栏。
+      final (Rect rawPopup, OverlayEntry rawEntry) = await insertPopup(
+        tester,
+        pageContext,
+        selectionRect: charScreen,
+        neutralize: true,
+      );
+      expect(rawPopup.top, closeTo(charScreen.bottom + 4 + titleBar, 2.0),
+          reason: '未换算的屏幕 rect 在 scale $scale 下应恰偏一个标题栏高');
+      rawEntry.remove();
+      rawEntry.dispose();
+      await tester.pump();
+
+      // 修复：根 Overlay 屏幕原点 = 标题栏偏移；屏幕 rect 减去它即中和层坐标。
+      final Offset origin = rootOverlayScreenOrigin(pageContext);
+      expect(origin.dy, closeTo(titleBar, 0.01));
+      expect(origin.dx, closeTo(0, 0.01));
+      final (Rect fixedPopup, OverlayEntry fixedEntry) = await insertPopup(
+        tester,
+        pageContext,
+        selectionRect: charScreen.shift(-origin),
+        neutralize: true,
+      );
+      expect(fixedPopup.left, closeTo(charScreen.left, 2.0),
+          reason: 'popup x must align with the char on screen at $scale');
+      expect(fixedPopup.top, closeTo(charScreen.bottom + 4, 2.0),
+          reason: 'popup must hug the char on screen at $scale');
+      fixedEntry.remove();
+      fixedEntry.dispose();
+      await tester.pump();
+    }
+  });
+
+  test(
+      'BUG-2092: mixin 的定位收口 _calcMixinPopupPosition 必须先减去根 Overlay 屏幕原点 '
+      '（四个根 Overlay 宿主唯一换算点）', () {
+    final String mixin = File(
+      'lib/src/pages/implementations/dictionary_page_mixin.dart',
+    ).readAsStringSync();
+    final int fn = mixin.indexOf('Rect _calcMixinPopupPosition(');
+    expect(fn, greaterThan(0));
+    final int body = mixin.indexOf(') {', fn);
+    final int end = mixin.indexOf('\n  }\n', body);
+    final String src = mixin.substring(body, end);
+    expect(
+        src.contains('selectionRect.shift(-rootOverlayScreenOrigin(context))'),
+        isTrue,
+        reason: '屏幕 rect 必须减去根 Overlay 原点再交给 resolvePopupRect，'
+            '否则 Windows 自绘标题栏下整栈弹窗下移 32px 压住被查词');
+    expect(
+        RegExp(r'resolvePopupRect\(\s*selectionRect:\s*layerSelection')
+            .hasMatch(src),
+        isTrue,
+        reason: 'resolvePopupRect 吃的必须是换算后的 layerSelection，不是原始 selectionRect');
+  });
+
+  testWidgets('BUG-2092: 无标题栏时 rootOverlayScreenOrigin 为零（历史行为不变）',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = physical;
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final GlobalKey pageKey = GlobalKey();
+    await tester.pumpWidget(harness(
+      scale: 1.4,
+      home: SizedBox.expand(key: pageKey),
+    ));
+    expect(rootOverlayScreenOrigin(pageKey.currentContext!), Offset.zero);
+  });
 }
