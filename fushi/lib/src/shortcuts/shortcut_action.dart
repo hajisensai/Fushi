@@ -319,6 +319,21 @@ enum ShortcutAction {
   // （无桌面窗）。默认键盘 F11。
   globalToggleFullscreen(ShortcutScope.global, 'global_toggle_fullscreen'),
 
+  // 「唤出上下文菜单（右键菜单）」的**按钮归属声明**。它不进任何执行回调表——菜单的
+  // 执行体分散在各卡片 / 各媒体表面自己的 `showMenu`，本动作只回答一件事：这次按下的
+  // 鼠标键，在当前表面该不该弹菜单（判据收在 `context_menu_trigger.dart`）。
+  //
+  // 为什么它必须进注册表：在此之前「右键」是二十余处 `GestureDetector.onSecondaryTap*`
+  // **硬绑死**的，与鼠标绑定通道是两条互不知情的路——用户把任何动作绑到右键，一次按下
+  // 会同时触发该动作**和**右键菜单。进注册表以后，右键这个物理按钮才第一次有唯一的归属
+  // 仲裁者：解析阶梯里页面 scope 先命中，命中别的动作就说明右键被派了别的活，菜单自动
+  // 让位——用户**不必**先去解绑菜单（"快捷键可以共用，不强制取消另一个"）。
+  //
+  // scope 选 global 而不是 universal：universal 有「只装 globalBack 一个配置项」的产品
+  // 守卫（`universal_back_test`）。global 同样落在每条鼠标解析阶梯的末尾兜底，语义等价。
+  // 默认绑鼠标右键（DOM button 2）= 与改造前逐字一致的行为。
+  globalContextMenu(ShortcutScope.global, 'global_context_menu'),
+
   // Audiobook（上一句在前，与视频组「上/下一句字幕」顺序一致）
   audiobookPlayPause(ShortcutScope.audiobook, 'audiobook_play_pause'),
   audiobookPrevSentence(ShortcutScope.audiobook, 'audiobook_prev_sentence'),

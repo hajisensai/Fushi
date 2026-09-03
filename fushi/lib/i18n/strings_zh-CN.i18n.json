@@ -4178,5 +4178,8 @@
   "discovery_opds_allow_http_hint": "局域网自建服务器需要打开",
   "discovery_opds_test": "测试连接",
   "discovery_opds_test_ok": "连接成功，根目录有 ${count} 个条目",
-  "discovery_opds_test_failed": "连接失败：${reason}"
+  "discovery_opds_test_failed": "连接失败：${reason}",
+  "shortcut_action_global_context_menu": "打开右键菜单",
+  "shortcut_conflict_keep_both": "两者都保留",
+  "shortcut_conflict_keep_both_hint": "两个动作都保留这个绑定，按下时由作用域先后仲裁，先命中的那个生效。"
 }

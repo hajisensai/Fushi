@@ -175,6 +175,12 @@ class ShortcutDefaults {
     ShortcutAction.globalToggleFullscreen: _kb([
       _key(LogicalKeyboardKey.f11),
     ]),
+    // 右键菜单的默认绑定 = 鼠标右键（DOM button 2），与改造前各处硬绑
+    // `onSecondaryTap*` 的行为逐字一致。键盘/手柄留空：菜单是**位置型**动作
+    // （要一个 globalPosition 作锚点），键盘触发没有锚点可用。
+    ShortcutAction.globalContextMenu: const ShortcutBindingSet(
+      mouseBindings: [MouseBinding(2)],
+    ),
     // Play/pause moved off controller A → L3: on the reader page A is now
     // "enter the char-level reading cursor" (and, once inside, "look up the word
     // at the cursor"), which the page intercepts before the audiobook scope is
@@ -560,6 +566,11 @@ class ShortcutDefaults {
           case ShortcutScope.gamepad:
             return ShortcutBindingSet(
               gamepadBindings: desktop.gamepadBindings,
+              // Android 可接鼠标（平板 / DeX / 桌面模式），与 audiobook 的中键
+              // seek 同档保留鼠标绑定。丢掉它会让 globalContextMenu 在移动端解析
+              // 不到——接了鼠标的 Android 上右键菜单会**整个消失**（改造前
+              // `onSecondaryTap` 在 Android 一样有效）。没有鼠标的设备上永不触发。
+              mouseBindings: desktop.mouseBindings,
             );
           // universal（「返回上一级」）与 reader/video/manga 同档：键盘绑定在移动端
           // 也保留。移动端主路径是系统返回手势 / 手柄 B，但外接键盘（平板 / DeX /

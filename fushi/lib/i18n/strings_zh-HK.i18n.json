@@ -4178,5 +4178,8 @@
   "discovery_opds_allow_http_hint": "區域網絡自建伺服器需要開啟",
   "discovery_opds_test": "測試連線",
   "discovery_opds_test_ok": "連線成功，根目錄有 ${count} 個項目",
-  "discovery_opds_test_failed": "連線失敗：${reason}"
+  "discovery_opds_test_failed": "連線失敗：${reason}",
+  "shortcut_action_global_context_menu": "Open context menu",
+  "shortcut_conflict_keep_both": "Keep both",
+  "shortcut_conflict_keep_both_hint": "Both actions keep this binding. Whichever scope resolves first wins at press time."
 }

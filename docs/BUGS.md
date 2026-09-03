@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1966 条。点号进各自文件。
+> 共 1967 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2111](bugs/BUG-2111-context-menu-hardwired-secondary-button.md) | ✅ | ✅ | 右键菜单硬绑鼠标次按钮，把动作绑到右键会双触发 |
 | [BUG-2104](bugs/BUG-2104-release-event-ships-debug-apk-on-formal.md) | ✅ | ✅ | 手动发 GitHub Release 会把 debug APK 捎带上正式版 |
 | [BUG-2099](bugs/BUG-2099-android-saf-mdx-greyed.md) | ✅ | ✅ | 安卓文件选择器把 .mdx/.dsl/.ifo/.ass 置灰选不中 |
 | [BUG-2090](bugs/BUG-2090-overlay-hover-highlight-brush-leak.md) | ✅ | ✅ | overlay 悬浮高亮窗口类每次重建都漏一个 GDI brush |

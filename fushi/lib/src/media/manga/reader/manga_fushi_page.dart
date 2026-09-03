@@ -46,6 +46,8 @@ import 'package:fushi/src/media/manga/ocr/manga_region_rescan.dart';
 import 'package:fushi/src/media/manga/reader/manga_volume_key_paging_controller.dart';
 import 'package:fushi/src/media/manga/reader/manga_zoom_preference_debouncer.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
+    show contextMenuButtonNumberMatches;
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/global_navigation.dart'
@@ -4571,6 +4573,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           handlerName: 'onMangaContextMenu',
           callback: (List<dynamic> args) {
             if (args.isEmpty || args[0] is! String) return;
+            // BUG-2111：页内 JS 那一路仍然硬判 `e.button === 2`，因为漫画的右键还兼着
+            // 「缩放态下按住拖拽平移」（rightDrag），换键会牵连那半边。所以归属判据补在
+            // 这里：右键若已经被别的漫画动作占用，菜单让位——否则一次右键既翻页又弹菜单，
+            // 正是本 bug 在漫画页的形态。判据与 Flutter 那二十余处入口是同一个函数。
+            if (!contextMenuButtonNumberMatches(
+              registry: appModel.shortcutRegistry,
+              button: 2,
+              ladder: _kMangaMouseLadder,
+            )) {
+              return;
+            }
             unawaited(_showReaderContextMenu(args[0] as String));
           },
         );

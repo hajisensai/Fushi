@@ -46,11 +46,13 @@ void main() {
     test('标签行同时绑定长按与右键，都指向 _showTagMenu', () {
       expect(src.contains('onLongPressStart:'), isTrue,
           reason: '长按必须弹菜单');
-      expect(src.contains('onSecondaryTapDown:'), isTrue,
-          reason: '右键必须弹菜单');
+      expect(src.contains('ContextMenuTrigger('), isTrue,
+          reason: '右键必须弹菜单（BUG-2111 后由绑定表判定唤出键）');
       // 两个触发器都换算真实坐标喂给同一菜单构建器。
       expect(src.contains('_showTagMenu(tag, d.globalPosition)'), isTrue,
-          reason: '长按 / 右键共用同一菜单入口');
+          reason: '长按走同一菜单入口');
+      expect(src.contains('_showTagMenu(tag, position)'), isTrue,
+          reason: '右键走同一菜单入口');
     });
 
     test('菜单同时提供编辑与删除动作', () {

@@ -1,6 +1,8 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+
 /// 网格单元内容构造器：返回**纯视觉**卡片内容（自身手势由本组件统一接管，
 /// 调用方应把卡片包在 [IgnorePointer] 里避免内部 InkWell 的 long-press 与本组件的
 /// 触摸长按拖拽争用手势竞技场——详见类注释）。
@@ -443,57 +445,62 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
 
   Widget _buildCell(int original) {
     final Widget content = widget.itemBuilder(context, original);
+    final FushiReorderGridContextMenu? menu = widget.onContextMenu;
     // 被拖单元在原位保留占位但透明（充当随实时重排移动的「空位」），可见的是浮层。
     final Widget slot = _dragOriginal == original
         ? Opacity(opacity: 0, child: content)
         : content;
     // 身份 key 已放在外层 [Positioned]（Stack 直接子节点）上，重排时保留本
     // RawGestureDetector 与其活跃识别器；此处不再重复挂 key。
-    return RawGestureDetector(
-      behavior: HitTestBehavior.opaque,
-      gestures: <Type, GestureRecognizerFactory>{
-        // 主轻点 → 激活；右键 secondary tap → 上下文菜单。
-        TapGestureRecognizer:
-            GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
-          () => TapGestureRecognizer(),
-          (TapGestureRecognizer instance) {
-            final FushiReorderGridActivate? activate = widget.onActivateItem;
-            final FushiReorderGridContextMenu? menu = widget.onContextMenu;
-            instance.onTap = activate == null ? null : () => activate(original);
-            instance.onSecondaryTapUp = menu == null
-                ? null
-                : (TapUpDetails d) => menu(original, d.globalPosition);
-          },
-        ),
-        // 鼠标等精确指针：按下即拖。
-        ImmediateMultiDragGestureRecognizer:
-            GestureRecognizerFactoryWithHandlers<
-                ImmediateMultiDragGestureRecognizer>(
-          () => ImmediateMultiDragGestureRecognizer(
-              supportedDevices: _immediateDragDevices),
-          (ImmediateMultiDragGestureRecognizer instance) {
-            instance.onStart =
-                (Offset position) => _onMouseDragStart(original, position);
-          },
-        ),
-        // 触摸屏：长按待命，移动过 slop 起拖，原地松手弹菜单。
-        LongPressGestureRecognizer:
-            GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
-          () => LongPressGestureRecognizer(supportedDevices: _touchDragDevices),
-          (LongPressGestureRecognizer instance) {
-            instance.onLongPressStart =
-                (LongPressStartDetails d) => _touchLongPressStart(original, d);
-            instance.onLongPressMoveUpdate = (LongPressMoveUpdateDetails d) =>
-                _touchLongPressMove(original, d);
-            instance.onLongPressEnd =
-                (LongPressEndDetails d) => _touchLongPressEnd(original, d);
-            // 系统取消指针（通知栏下拉/来电/切后台）→ 清待命 + 复位拖拽（防幽灵浮层
-            // 与下次错序提交）。
-            instance.onLongPressCancel = () => _touchLongPressCancel(original);
-          },
-        ),
-      },
-      child: slot,
+    return ContextMenuTrigger(
+      // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
+      onInvoke: menu == null
+          ? null
+          : (Offset position) => menu(original, position),
+      child: RawGestureDetector(
+        behavior: HitTestBehavior.opaque,
+        gestures: <Type, GestureRecognizerFactory>{
+          // 主轻点 → 激活。上下文菜单不在这里：TapGestureRecognizer 的非主键入口
+          // 只有 onSecondaryTapUp（写死次按钮），而菜单现在由绑定表决定用哪个鼠标键
+          // 唤出，故整体交给外层 [ContextMenuTrigger]。
+          TapGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+            () => TapGestureRecognizer(),
+            (TapGestureRecognizer instance) {
+              final FushiReorderGridActivate? activate = widget.onActivateItem;
+              instance.onTap = activate == null ? null : () => activate(original);
+            },
+          ),
+          // 鼠标等精确指针：按下即拖。
+          ImmediateMultiDragGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<
+                  ImmediateMultiDragGestureRecognizer>(
+            () => ImmediateMultiDragGestureRecognizer(
+                supportedDevices: _immediateDragDevices),
+            (ImmediateMultiDragGestureRecognizer instance) {
+              instance.onStart =
+                  (Offset position) => _onMouseDragStart(original, position);
+            },
+          ),
+          // 触摸屏：长按待命，移动过 slop 起拖，原地松手弹菜单。
+          LongPressGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+            () => LongPressGestureRecognizer(supportedDevices: _touchDragDevices),
+            (LongPressGestureRecognizer instance) {
+              instance.onLongPressStart =
+                  (LongPressStartDetails d) => _touchLongPressStart(original, d);
+              instance.onLongPressMoveUpdate = (LongPressMoveUpdateDetails d) =>
+                  _touchLongPressMove(original, d);
+              instance.onLongPressEnd =
+                  (LongPressEndDetails d) => _touchLongPressEnd(original, d);
+              // 系统取消指针（通知栏下拉/来电/切后台）→ 清待命 + 复位拖拽（防幽灵浮层
+              // 与下次错序提交）。
+              instance.onLongPressCancel = () => _touchLongPressCancel(original);
+            },
+          ),
+        },
+        child: slot,
+      ),
     );
   }
 }

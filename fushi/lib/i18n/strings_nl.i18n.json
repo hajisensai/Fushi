@@ -4178,5 +4178,8 @@
   "discovery_opds_allow_http_hint": "Nodig voor een zelfgehoste server in je lokale netwerk",
   "discovery_opds_test": "Verbinding testen",
   "discovery_opds_test_ok": "Verbonden. De hoofdcatalogus heeft ${count} items",
-  "discovery_opds_test_failed": "Verbinding mislukt: ${reason}"
+  "discovery_opds_test_failed": "Verbinding mislukt: ${reason}",
+  "shortcut_action_global_context_menu": "Open context menu",
+  "shortcut_conflict_keep_both": "Keep both",
+  "shortcut_conflict_keep_both_hint": "Both actions keep this binding. Whichever scope resolves first wins at press time."
 }

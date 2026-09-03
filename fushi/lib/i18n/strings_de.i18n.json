@@ -4178,5 +4178,8 @@
   "discovery_opds_allow_http_hint": "Nötig für einen selbst gehosteten Server im lokalen Netzwerk",
   "discovery_opds_test": "Verbindung testen",
   "discovery_opds_test_ok": "Verbunden. Der Stammkatalog hat ${count} Einträge",
-  "discovery_opds_test_failed": "Verbindung fehlgeschlagen: ${reason}"
+  "discovery_opds_test_failed": "Verbindung fehlgeschlagen: ${reason}",
+  "shortcut_action_global_context_menu": "Open context menu",
+  "shortcut_conflict_keep_both": "Keep both",
+  "shortcut_conflict_keep_both_hint": "Both actions keep this binding. Whichever scope resolves first wins at press time."
 }
