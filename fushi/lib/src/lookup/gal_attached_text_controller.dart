@@ -447,8 +447,22 @@ class GalAttachedTextController extends ChangeNotifier {
     // `_latestSourceText` 早已非空，`bodyArrived` 这个边沿**再也不会出现**，于是状态
     // 永久停在「等正文」，尽管正文每一行都在到。判据改成「还在等正文 && 手上确实有
     // 正文」：`bodyArrived` 是它的真子集，只放宽恢复时机，不放宽任何准入。
+    // BUG-2099：`needsRiskAcceptance` 在「profile 里风险已经接受」时是一个**死局**：
+    //   · 状态由注入侧 SyncToTarget 的 `riskAcceptanceRequired` 钉住（它在 Configure
+    //     把 risk_accepted_ 置真之前就会跑，且不带 reason）；
+    //   · 而 `needsUnsafeRiskAcceptance` 要求 `!unsafeLeftClickAccepted`，profile 里
+    //     已是 true ⇒ 永远不生成 request ⇒ 工作台那颗「接受风险」按钮**永远不渲染**；
+    //   · 从这个状态又没有任何重新评估的触发点。
+    // 三者叠起来：风险明明已授权，用户既回不去也没有按钮可点，游戏内查词永久不可达。
+    // 真机（用户自己的 Fushi + WoH）上就停在这里。这里只补**恢复时机**：已经授权过的
+    // 局，新正文到达时重新走一遍 `_evaluateAndActivate`，由它照常调 configure 把
+    // riskAccepted 传下去；准入判据一字未改，没授权的局仍旧停在 needsRiskAcceptance
+    // 等用户点按钮。
+    final bool riskAlreadyGranted = _profile?.unsafeLeftClickAccepted ?? false;
     if (nextText.isNotEmpty &&
-        _status == GalAttachedTextStatus.waitingForBodyThread) {
+        (_status == GalAttachedTextStatus.waitingForBodyThread ||
+            (riskAlreadyGranted &&
+                _status == GalAttachedTextStatus.needsRiskAcceptance))) {
       if (inspectOnly) {
         _activationDeferred = true;
         return;

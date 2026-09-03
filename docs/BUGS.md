@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1959 条。点号进各自文件。
+> 共 1960 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2099](bugs/BUG-2099-attached-risk-accepted-but-status-traps.md) | ✅ | 🚧 | profile 里风险已接受时 `needsRiskAcceptance` 变成死局：不生成 request、按钮不渲染、也没有恢复触发点 |
 | [BUG-2098](bugs/BUG-2098-attached-first-lookup-disarms-shield-click-passes-through.md) | — | — | 第一次查词后 attached 表面再也武装不起来，之后每次点击都穿透并推进剧情 |
 | [BUG-2096](bugs/BUG-2096-attached-body-thread-recovery-edge-only.md) | ✅ | ✅ | attached 从 `waitingForBodyThread` 的恢复只挂在「正文从无到有」这一次性边沿上 |
 | [BUG-2095](bugs/BUG-2095-attached-dwrite-baseline-breaks-japanese-clusters.md) | ✅ | ✅ | attached 子面 DirectWrite 基线硬编码 0.8em，日文正文必然上溢版面框，字形簇永远建不出来 |
