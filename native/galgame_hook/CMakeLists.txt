@@ -672,3 +672,18 @@ add_executable(fushi_engine_identity_layout_test
 target_include_directories(fushi_engine_identity_layout_test PRIVATE "hook")
 add_test(NAME fushi_engine_identity_layout_test
   COMMAND fushi_engine_identity_layout_test)
+
+add_executable(fushi_smash_fzmedia_adapter_test "tests/smash_fzmedia_adapter_test.cpp")
+target_include_directories(fushi_smash_fzmedia_adapter_test PRIVATE "hook")
+add_test(NAME fushi_smash_fzmedia_adapter_test COMMAND fushi_smash_fzmedia_adapter_test)
+
+# smash/fzmedia lookup runtime decision logic (Win32-free core header): layer
+# line request, host origin epoch gating, client-rect readiness gate, hit
+# mapping, subclass message decision table and shield mask reducer.
+add_executable(fushi_smash_fzmedia_lookup_test
+  "tests/smash_fzmedia_lookup_test.cpp"
+)
+target_include_directories(fushi_smash_fzmedia_lookup_test PRIVATE
+  "hook/adapters")
+add_test(NAME fushi_smash_fzmedia_lookup_test
+  COMMAND fushi_smash_fzmedia_lookup_test)
