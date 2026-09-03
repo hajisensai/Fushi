@@ -2213,9 +2213,13 @@ void ProcessSgreLookupTick() {
   }
 
   const HWND point_window = WindowFromPoint(cursor);
-  const bool game_point =
-      GetForegroundWindow() == game && point_window != nullptr &&
-      (point_window == game || IsChild(game, point_window));
+  // The foreground test is its own fact: BOTH highlight windows are
+  // WS_EX_TOPMOST, so anything that paints without it keeps covering whatever
+  // the user alt-tabbed to. game_point additionally requires the cursor to be
+  // over the game.
+  const bool game_foreground = GetForegroundWindow() == game;
+  const bool game_point = game_foreground && point_window != nullptr &&
+                          (point_window == game || IsChild(game, point_window));
   cursor.x -= client_origin.x;
   cursor.y -= client_origin.y;
   fushi_voice_hook::SgreLookupRect hit_rect;
@@ -2227,8 +2231,9 @@ void ProcessSgreLookupTick() {
   // highlighted: union of its glyph cells on the row the term starts on.
   uint32_t term_start = 0;
   uint32_t term_len = 0;
-  if (popup_visible && ReadLookupTermHighlight(&term_start, &term_len) &&
-      term_len != 0 && term_start < active.glyph_count) {
+  if (game_foreground && popup_visible &&
+      ReadLookupTermHighlight(&term_start, &term_len) && term_len != 0 &&
+      term_start < active.glyph_count) {
     const uint32_t term_end = std::min<uint32_t>(
         active.glyph_count, term_start + term_len);
     fushi_voice_hook::SgreLookupRect term_rect;

@@ -223,6 +223,52 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertNotIn("LunaNormalizeMagesControls", source)
         self.assertNotIn("kLookupDiagLunaKnownHookReady", source)
 
+    def test_sgre_lookup_inc_call_sites_use_the_tested_helpers(self) -> None:
+        """`.inc` 里的调用点没有任何 CTest 编译单元覆盖，只能源码守。
+
+        `tests/sgre_adapter_test.cpp` 只 include `sgre_lookup.h`，所以
+        `SgreLookupHitTextGeneration` / `SgreScenarioLineHeightForClient` 这两个
+        纯函数本身是真跑过的；把它们**接进** `sgre_lookup.inc` 的那两行却在任何
+        翻译单元之外——BUG-2085 / BUG-2083 的整条修复回退掉，ctest 照样全绿。
+        """
+        source = (
+            ROOT / "hook" / "adapters" / "sgre_lookup.inc"
+        ).read_text(encoding="utf-8")
+
+        # BUG-2085 — 点击载荷的 text_generation 必须是「精确文本那一行的行序号」，
+        # 不是查词捕获计数器；退回 capture_generation 就等于制卡永远配不上句子。
+        publish = self._function_body(
+            source, "bool PublishSgreLookupHit(uint64_t capture_generation"
+        )
+        self.assertIn(
+            "publication.text_generation = fushi_voice_hook::"
+            "SgreLookupHitTextGeneration(",
+            publish,
+        )
+        self.assertNotIn(
+            "publication.text_generation = capture_generation", publish
+        )
+
+        # BUG-2083 — 台词面判据的期望行高必须按实时客户区算（设计 40 x 渲染缩放）；
+        # 钉成 0 会让门退回自洽带，1080p 窗口下的误判正是这条 bug 的原样。
+        copy_draw = self._function_body(
+            source, "SgreLookupCaptureResult CopySgreLookupDrawState("
+        )
+        self.assertIn(
+            "expected_line_height = fushi_voice_hook::"
+            "SgreScenarioLineHeightForClient(",
+            copy_draw,
+        )
+        self.assertIn("MatchesSgreScenarioDrawMetrics", copy_draw)
+
+        # BUG-2087 审查缺陷 D — 两个高亮窗都是 WS_EX_TOPMOST。悬浮分支靠 game_point
+        # 自带前台判据，词高亮分支必须显式带上同一个 game_foreground，否则卡片弹出后
+        # Alt+Tab 走开，高亮窗会一直盖在别的应用上。
+        tick = self._function_body(source, "void ProcessSgreLookupTick()")
+        self.assertIn("const bool game_foreground = GetForegroundWindow() == game;", tick)
+        self.assertIn("game_foreground && point_window != nullptr", tick)
+        self.assertIn("if (game_foreground && popup_visible &&", tick)
+
     def test_exact_lookup_clicks_revalidate_logical_generation(self) -> None:
         sgre = (
             ROOT / "hook" / "adapters" / "sgre_lookup.inc"

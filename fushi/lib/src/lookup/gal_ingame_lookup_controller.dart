@@ -244,8 +244,6 @@ class GalIngameLookupController {
   // 前者在 submit 时定死，后者每次 reveal 跟着内容变。
   GalRootPlacement? _rootPlacement;
   int _rootPhysicalHeight = 0;
-  int _capPhysicalWidth = 0;
-  int _capPhysicalHeight = 0;
 
   /// 游戏画面截图期间的原子可见性门。native 的 capture-suppress 在游戏主线程确认
   /// 卡片与高亮都已隐藏后才回执；Dart 同时挡住所有 dirty/reveal 触发的 recapture，
@@ -1144,8 +1142,6 @@ class GalIngameLookupController {
   void _applyCardSizeCap(GalLookupHit hit) {
     if (hit.viewW <= 0 || hit.viewH <= 0) {
       _rootPlacement = null;
-      _capPhysicalWidth = 0;
-      _capPhysicalHeight = 0;
       GlobalLookupController.instance.setPhysicalCap();
       return;
     }
@@ -1182,8 +1178,6 @@ class GalIngameLookupController {
     }
     final int capW = w.floor();
     final int capH = h.floor();
-    _capPhysicalWidth = capW;
-    _capPhysicalHeight = capH;
     // anchor 是**画布**坐标（位图回退路径按它把卡片贴进 primaryLayer），解它必须用
     // 卡片在画布域的实际占位。位图是 1:1 贴的，所以那个占位就是 capW/capH 本身——
     // 上面的 min 已经保证 capW <= viewW、capH <= viewH，夹取区间恒非空。
@@ -1221,18 +1215,31 @@ class GalIngameLookupController {
     );
   }
 
-  /// 根卡贴字形的边：先用 cap 尺寸走 [_resolveAnchor]（上/下方、水平 clamp 都由
-  /// 它定），卡顶落在字形顶之上即翻到了上方 → 不动点取该 cap 卡的**底边**；否则取顶边。
+  /// 根卡贴字形的边：cap 尺寸决定卡片落在字形**哪一侧**（以及水平 clamp），不动点
+  /// 则直接由字形算——翻到上方取「字形顶 − 间距」（卡底边），放下方取「字形底 +
+  /// 间距」（卡顶边）。
+  ///
+  /// 侧别只能取 [computeFrameRect] 自己算的 `showBelow`，**不许**拿它返回的坐标反推。
+  /// 那个坐标经过两道夹子（`screenBorderPadding` 的 centerY clamp，以及这里的
+  /// `[0, viewH - capH]`），而 cap 高度又常常远超锚侧空间：卡片明明放在下方，夹子
+  /// 却把 top 拽到 `viewH - capH` 之上，反推出来就是「above」，edgeY 随之变成视口
+  /// 底边——与字形完全脱钩，正是 BUG-2082 要消灭的那段空隙的镜像形态。
   GalRootPlacement _resolveRootPlacement(
     GalLookupHit hit,
     int capW,
     int capH,
   ) {
-    final ({int x, int y}) capAnchor = _resolveAnchor(hit, capW, capH);
-    final bool above = capAnchor.y < hit.glyphY;
+    final ({({int x, int y}) anchor, bool showBelow}) solution = _solveAnchor(
+      hit,
+      capW,
+      capH,
+    );
+    final bool above = !solution.showBelow;
     return (
-      x: capAnchor.x,
-      edgeY: above ? capAnchor.y + capH : capAnchor.y,
+      x: solution.anchor.x,
+      edgeY: above
+          ? hit.glyphY - _kCardGap
+          : hit.glyphY + hit.glyphH + _kCardGap,
       above: above,
     );
   }
@@ -1311,41 +1318,15 @@ class GalIngameLookupController {
     _cardPhysicalDy = physicalDy;
     // BUG-2082 — root height from the host; a host that predates the field
     // reports 0, and the first reveal's union IS the root (no children yet).
-    final int rootHeight = physicalRootHeight > 0
+    _rootPhysicalHeight = physicalRootHeight > 0
         ? physicalRootHeight
         : (_rootPhysicalHeight > 0 ? _rootPhysicalHeight : physicalHeight);
-    if (rootHeight != _rootPhysicalHeight) {
-      _rootPhysicalHeight = rootHeight;
-      _syncCascadeOriginToRoot(hit);
-    }
+    final int rootHeight = _rootPhysicalHeight;
     glog(
       'gal-ingame: rendered seq=${hit.seq} '
       'card=${physicalWidth}x$physicalHeight root=$rootHeight',
     );
     _scheduleRecapture(_activeLookupGeneration, route);
-  }
-
-  /// 根卡实际高度已知后，把级联布局的工作区原点改成根卡**真实**左上角：子卡的
-  /// 落点 / clamp 都相对根卡算，根卡贴边定位后原点若还停在 cap 尺寸的位置，子卡会
-  /// 相对错位。cap 宽高本身不变（仍是位图预算上限）。
-  void _syncCascadeOriginToRoot(GalLookupHit hit) {
-    final GalRootPlacement? placement = _rootPlacement;
-    if (placement == null || _capPhysicalWidth <= 0 || _capPhysicalHeight <= 0) {
-      return;
-    }
-    final ({int x, int y}) origin = resolveGalRootTopLeft(
-      placement,
-      _rootPhysicalHeight,
-      hit.viewH,
-    );
-    GlobalLookupController.instance.setPhysicalCap(
-      width: _capPhysicalWidth,
-      height: _capPhysicalHeight,
-      workWidth: hit.viewW,
-      workHeight: hit.viewH,
-      workOriginX: origin.x,
-      workOriginY: origin.y,
-    );
   }
 
   void _scheduleRecapture(int generation, GlobalLookupRoute route) {
@@ -1428,8 +1409,6 @@ class GalIngameLookupController {
     _cardPhysicalDy = 0;
     _rootPlacement = null;
     _rootPhysicalHeight = 0;
-    _capPhysicalWidth = 0;
-    _capPhysicalHeight = 0;
     // 客户区不需要在这里（或任何地方）失效：它不再是被缓存的会话级事实，而是随每条
     // hit 现量现报的瞬时事实（[GalLookupHit.clientW]）。
   }
@@ -1671,11 +1650,26 @@ class GalIngameLookupController {
     int capH,
   ) => _resolveRootPlacement(hit, capW, capH);
 
-  ({int x, int y}) _resolveAnchor(GalLookupHit hit, int cardW, int cardH) {
+  ({int x, int y}) _resolveAnchor(GalLookupHit hit, int cardW, int cardH) =>
+      _solveAnchor(hit, cardW, cardH).anchor;
+
+  /// 一次定位的完整结果：夹进视口的左上角 + [computeFrameRect] 自己选的那一侧。
+  ///
+  /// 两个消费者（[_resolveAnchor] 的位图回退落点、[_resolveRootPlacement] 的贴边
+  /// 不动点）必须读同一次计算：分成两次算或者从坐标反推侧别，就是把同一个判据写两
+  /// 遍再指望它们永远一致。
+  ({({int x, int y}) anchor, bool showBelow}) _solveAnchor(
+    GalLookupHit hit,
+    int cardW,
+    int cardH,
+  ) {
     if (hit.viewW <= 0 || hit.viewH <= 0) {
       // hook 没报视口（老 hook / 取不到 primaryLayer 尺寸）：退化成「字形正下方」，
       // 不猜屏幕边界。
-      return (x: hit.glyphX, y: hit.glyphY + hit.glyphH + _kCardGap);
+      return (
+        anchor: (x: hit.glyphX, y: hit.glyphY + hit.glyphH + _kCardGap),
+        showBelow: true,
+      );
     }
     final GlobalLookupFrameRect frame = computeFrameRect(
       selectionRect: hit.glyphRect,
@@ -1688,8 +1682,11 @@ class GalIngameLookupController {
       isVertical: false,
     );
     return (
-      x: _clampInt(frame.left.round(), 0, hit.viewW - cardW),
-      y: _clampInt(frame.top.round(), 0, hit.viewH - cardH),
+      anchor: (
+        x: _clampInt(frame.left.round(), 0, hit.viewW - cardW),
+        y: _clampInt(frame.top.round(), 0, hit.viewH - cardH),
+      ),
+      showBelow: frame.showBelow,
     );
   }
 
