@@ -67,6 +67,13 @@ void main() {
   test('JS fushiStudyUnits 与 Dart countStudyChars 逐条同口径（node 真执行）', () async {
     final String? nodeExe = _resolveNode();
     if (nodeExe == null) {
+      // 「守卫存在却可能零执行」是已知的假绿形状：本例是 Dart↔JS 口径分叉的
+      // **唯一**报警器，在 CI 上静默跳过等于没有它。本机缺 node 只是环境问题，
+      // 允许 skip；CI 上缺 node 是**镜像坏了**，必须红。
+      if (Platform.environment['CI'] == 'true') {
+        fail('CI 上找不到 node —— Dart↔JS 口径对拍是分叉的唯一报警器，'
+            '它静默跳过等于没有它。修构建镜像，别把这条改回 skip。');
+      }
       markTestSkipped('node not found on PATH; skipping Dart/JS parity');
       return;
     }
@@ -108,6 +115,73 @@ void main() {
       }
     } finally {
       tmp.deleteSync(recursive: true);
+    }
+  });
+
+  // ── 可加性（BUG-2058 复审 P2）──
+  //
+  // 旧口径逐码点，`count(a) + count(b) == count(a + b)` **恒成立**；新口径把空格
+  // 分词文字的连续串计 1，于是在**词内**切开时不成立。这不是 bug，是新口径的
+  // 定义得出的结果；但它**必须被写下来**，因为全仓有两个地方在隐含地依赖可加性：
+  //
+  //   · Dart `chapterCharacterCount` = `countStudyChars(chapterPlainText(i))`
+  //     —— 整章**拼接后**的一个字符串（`epub_book.dart`）；
+  //   · JS `buildNodeOffsets` = Σ `countChars(node.textContent)`
+  //     —— **逐文本节点**求和（`reader_pagination_scripts.dart`）。
+  //
+  // 拉丁系文字 + 压缩过的 XHTML（`</p><p>` 无空白、`<i>` 切在词中）会让后者
+  // 比前者**大** ≈每个词内切点 1 个单位；日文/中文免疫（无空格文字逐码点计）。
+  //
+  // **影响面（已沿真实代码路径核过）**：
+  //   · 恢复路的越界判据 `charOffsetInRange`
+  //     （`reader_pagination_scripts.dart` 里 `runningOffset += this.countChars(...)`）
+  //     用的是**同一套逐节点求和**，与写入端口径自洽 → 不会因此判越界、
+  //     不会回退章首，续读位置不丢；
+  //   · 真正拿 Dart `characters` 与 JS `charOffset` 相加的是 `computeBookProgress`
+  //     （`reader_fushi_source.dart`，`charOffset.clamp(0, sectionSize)`）与
+  //     `computeCharWatermark` —— 两者都 **clamp**，所以后果是「本章进度提前封顶 /
+  //     章尾若干单位不计字数」，量级 ≈ 该章词内切点数，不崩、不丢位置、换章自愈。
+  //
+  // 所以不改任一侧（改哪一侧都是动 restore 关键路径，且本轮无法真机验证），
+  // 而是把「它不可加」钉成断言：将来谁再假设可加性，这里会先红。
+  group('学习单位口径在文本节点边界上不可加', () {
+    // (a, b, 逐节点求和, 拼接后整体计数)
+    const List<List<Object>> splitCases = <List<Object>>[
+      // minified XHTML：`</p><p>` 之间没有空白，两个段落的首尾词被拼成一个。
+      <Object>['The end of paragraph one', 'Start of paragraph two', 9, 8],
+      // 行内 <i>/<b>/<a> 切在词中。
+      <Object>['un', 'likely  to happen', 4, 3],
+    ];
+    for (final List<Object> c in splitCases) {
+      final String a = c[0] as String;
+      final String b = c[1] as String;
+      test('逐节点求和 != 拼接整体：${jsonEncode(a)} + ${jsonEncode(b)}', () {
+        expect(countStudyChars(a) + countStudyChars(b), c[2],
+            reason: '逐文本节点求和（JS buildNodeOffsets 的做法）');
+        expect(countStudyChars(a + b), c[3],
+            reason: '拼接后整体计数（Dart chapterCharacterCount 的做法）');
+        expect(countStudyChars(a) + countStudyChars(b),
+            greaterThan(countStudyChars(a + b)),
+            reason: '词内切开时逐节点求和恒不小于整体——方向错了就不是'
+                '「进度提前封顶」而是「永远到不了 100%」，症状完全不同。');
+      });
+    }
+
+    // 反向：这些形状可加性**仍然成立**，別把不可加当成普遍现象。
+    const List<List<String>> additiveCases = <List<String>>[
+      // 无空格文字：逐码点计，切在哪都一样。
+      <String>['日本語の', '文章です'],
+      <String>['你好', '世界'],
+      // 切点落在空白上：词已经写完了。
+      <String>['a normal paragraph ', 'with whitespace'],
+      // 切点落在标点上。
+      <String>['He said,', ' and left.'],
+    ];
+    for (final List<String> c in additiveCases) {
+      test('可加性仍成立：${jsonEncode(c[0])} + ${jsonEncode(c[1])}', () {
+        expect(countStudyChars(c[0]) + countStudyChars(c[1]),
+            countStudyChars(c[0] + c[1]));
+      });
     }
   });
 }
