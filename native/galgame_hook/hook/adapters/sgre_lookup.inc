@@ -1057,6 +1057,19 @@ SgreLookupCaptureResult CopySgreLookupDrawState(void* text_surface,
   if (text_surface == nullptr || capture == nullptr) {
     return SgreLookupCaptureResult::kNullInput;
   }
+  // Expected line height follows the live render size (design 40 x scale).
+  // The game window is the shield's published window; before it is known the
+  // metrics gate falls back to its self-consistency band.
+  float expected_line_height = 0.0f;
+  {
+    const HWND game =
+        g_sgre_direct_input_game_window.load(std::memory_order_acquire);
+    RECT client = {};
+    if (game != nullptr && IsWindow(game) && GetClientRect(game, &client)) {
+      expected_line_height = fushi_voice_hook::SgreScenarioLineHeightForClient(
+          client.right - client.left, client.bottom - client.top);
+    }
+  }
   __try {
     const auto* object = static_cast<const uint8_t*>(text_surface);
     if (*reinterpret_cast<const void* const*>(object) !=
@@ -1147,7 +1160,8 @@ SgreLookupCaptureResult CopySgreLookupDrawState(void* text_surface,
       previous_x = geometry.x;
     }
     if (!fushi_voice_hook::MatchesSgreScenarioDrawMetrics(
-            line_height, first_glyph_height, has_horizontal_advance)) {
+            line_height, first_glyph_height, has_horizontal_advance,
+            expected_line_height)) {
       return SgreLookupCaptureResult::kSurfaceMetrics;
     }
     capture->text_units = static_cast<uint32_t>(visible_glyphs);

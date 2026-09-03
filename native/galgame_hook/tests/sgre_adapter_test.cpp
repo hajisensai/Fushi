@@ -465,12 +465,48 @@ int main() {
   assert(!fushi_voice_hook::StartsNextSgreLookupLine(80.0f, 160.0f));
   assert(fushi_voice_hook::StartsNextSgreLookupLine(2480.0f, 0.0f));
   assert(fushi_voice_hook::StartsNextSgreLookupLine(80.0f, 80.0f));
-  assert(fushi_voice_hook::MatchesSgreScenarioDrawMetrics(80.0f, 80.0f,
-                                                          true));
-  assert(!fushi_voice_hook::MatchesSgreScenarioDrawMetrics(33.0f, 33.0f,
-                                                           true));
-  assert(!fushi_voice_hook::MatchesSgreScenarioDrawMetrics(80.0f, 80.0f,
-                                                           false));
+  // The scenario cell scales with the render target: design 40 at 1920x1080,
+  // 80 at 3840x2160, 53.33 at 2560x1440. The gate must follow the live client
+  // size instead of the historical 4K constant, otherwise a windowed 1080p
+  // session never produces the exact text lane or lookup geometry.
+  assert(fushi_voice_hook::SgreLookupRenderScale(3840, 2160) == 2.0f);
+  assert(fushi_voice_hook::SgreLookupRenderScale(1920, 1080) == 1.0f);
+  assert(fushi_voice_hook::SgreLookupRenderScale(0, 1080) == 0.0f);
+  assert(fushi_voice_hook::SgreScenarioLineHeightForClient(3840, 2160) ==
+         80.0f);
+  assert(fushi_voice_hook::SgreScenarioLineHeightForClient(1920, 1080) ==
+         40.0f);
+  const float expected_4k =
+      fushi_voice_hook::SgreScenarioLineHeightForClient(3840, 2160);
+  const float expected_1080p =
+      fushi_voice_hook::SgreScenarioLineHeightForClient(1920, 1080);
+  const float expected_1440p =
+      fushi_voice_hook::SgreScenarioLineHeightForClient(2560, 1440);
+  assert(fushi_voice_hook::MatchesSgreScenarioDrawMetrics(80.0f, 80.0f, true,
+                                                          expected_4k));
+  assert(fushi_voice_hook::MatchesSgreScenarioDrawMetrics(40.0f, 40.0f, true,
+                                                          expected_1080p));
+  assert(fushi_voice_hook::MatchesSgreScenarioDrawMetrics(53.0f, 53.0f, true,
+                                                          expected_1440p));
+  // A 4K-sized cell drawn into a 1080p client is not the dialogue surface.
+  assert(!fushi_voice_hook::MatchesSgreScenarioDrawMetrics(80.0f, 80.0f, true,
+                                                           expected_1080p));
+  assert(!fushi_voice_hook::MatchesSgreScenarioDrawMetrics(33.0f, 33.0f, true,
+                                                           expected_1080p));
+  // Line height and glyph height must agree (one square cell).
+  assert(!fushi_voice_hook::MatchesSgreScenarioDrawMetrics(40.0f, 80.0f, true,
+                                                           expected_1080p));
+  assert(!fushi_voice_hook::MatchesSgreScenarioDrawMetrics(80.0f, 80.0f, false,
+                                                           expected_4k));
+  // Client size unknown (shield not published yet): self-consistency band only.
+  assert(fushi_voice_hook::MatchesSgreScenarioDrawMetrics(40.0f, 40.0f, true,
+                                                          0.0f));
+  assert(fushi_voice_hook::MatchesSgreScenarioDrawMetrics(80.0f, 80.0f, true,
+                                                          0.0f));
+  assert(!fushi_voice_hook::MatchesSgreScenarioDrawMetrics(10.0f, 10.0f, true,
+                                                           0.0f));
+  assert(!fushi_voice_hook::MatchesSgreScenarioDrawMetrics(400.0f, 400.0f,
+                                                           true, 0.0f));
 
   // The production worker polls every 16 ms. Preserve held-key edge behavior,
   // but also consume a complete press/release reported only by the low bit.
