@@ -4158,5 +4158,6 @@
   "gal_card_lookup_independent_size": "Dimensione separata per la carta nel gioco",
   "gal_card_lookup_independent_size_hint": "Dimensiona la carta di ricerca nel gioco separatamente dalla finestra di ricerca pop-out",
   "gal_card_lookup_max_width": "Larghezza max carta nel gioco",
-  "gal_card_lookup_max_height": "Altezza max carta nel gioco"
+  "gal_card_lookup_max_height": "Altezza max carta nel gioco",
+  "handlebar_clip_timestamp": "Timestamp della clip"
 }

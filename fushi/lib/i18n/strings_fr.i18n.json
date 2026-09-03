@@ -4158,5 +4158,6 @@
   "gal_card_lookup_independent_size": "Taille séparée pour la carte en jeu",
   "gal_card_lookup_independent_size_hint": "Dimensionner la carte de recherche en jeu indépendamment de la fenêtre de recherche pop-out",
   "gal_card_lookup_max_width": "Largeur max de la carte en jeu",
-  "gal_card_lookup_max_height": "Hauteur max de la carte en jeu"
+  "gal_card_lookup_max_height": "Hauteur max de la carte en jeu",
+  "handlebar_clip_timestamp": "Horodatage de l'extrait"
 }

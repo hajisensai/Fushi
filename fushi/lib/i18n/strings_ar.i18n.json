@@ -4158,5 +4158,6 @@
   "gal_card_lookup_independent_size": "حجم منفصل للبطاقة داخل اللعبة",
   "gal_card_lookup_independent_size_hint": "إعطاء بطاقة البحث داخل اللعبة حجماً خاصاً بها منفصلاً عن نافذة البحث المنبثقة",
   "gal_card_lookup_max_width": "العرض الأقصى للبطاقة داخل اللعبة",
-  "gal_card_lookup_max_height": "الارتفاع الأقصى للبطاقة داخل اللعبة"
+  "gal_card_lookup_max_height": "الارتفاع الأقصى للبطاقة داخل اللعبة",
+  "handlebar_clip_timestamp": "الطابع الزمني للمقطع"
 }

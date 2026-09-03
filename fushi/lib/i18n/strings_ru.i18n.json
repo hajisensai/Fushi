@@ -4158,5 +4158,6 @@
   "gal_card_lookup_independent_size": "Отдельный размер для карточки в игре",
   "gal_card_lookup_independent_size_hint": "Задать размер карточки словаря в игре отдельно от всплывающего окна поиска",
   "gal_card_lookup_max_width": "Макс. ширина карточки в игре",
-  "gal_card_lookup_max_height": "Макс. высота карточки в игре"
+  "gal_card_lookup_max_height": "Макс. высота карточки в игре",
+  "handlebar_clip_timestamp": "Метка времени фрагмента"
 }

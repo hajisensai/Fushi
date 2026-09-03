@@ -4158,5 +4158,6 @@
   "gal_card_lookup_independent_size": "Oyun içi kart için ayrı boyut",
   "gal_card_lookup_independent_size_hint": "Oyun içi arama kartını açılır arama penceresinden ayrı boyutlandırın",
   "gal_card_lookup_max_width": "Oyun içi kart maks. genişlik",
-  "gal_card_lookup_max_height": "Oyun içi kart maks. yükseklik"
+  "gal_card_lookup_max_height": "Oyun içi kart maks. yükseklik",
+  "handlebar_clip_timestamp": "Klip zaman damgası"
 }

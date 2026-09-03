@@ -4158,5 +4158,6 @@
   "gal_card_lookup_independent_size": "Aparte grootte voor in-game zoekkaart",
   "gal_card_lookup_independent_size_hint": "Geef de in-game zoekkaart een eigen grootte, los van de uitklapopzoeker",
   "gal_card_lookup_max_width": "In-game zoekkaart max. breedte",
-  "gal_card_lookup_max_height": "In-game zoekkaart max. hoogte"
+  "gal_card_lookup_max_height": "In-game zoekkaart max. hoogte",
+  "handlebar_clip_timestamp": "Tijdstempel van fragment"
 }

@@ -4158,5 +4158,6 @@
   "gal_card_lookup_independent_size": "ゲーム内辞書カードの個別サイズ",
   "gal_card_lookup_independent_size_hint": "ゲーム内辞書カードのサイズをポップアウト辞書ウィンドウとは別に設定します",
   "gal_card_lookup_max_width": "ゲーム内辞書カードの最大幅",
-  "gal_card_lookup_max_height": "ゲーム内辞書カードの最大高さ"
+  "gal_card_lookup_max_height": "ゲーム内辞書カードの最大高さ",
+  "handlebar_clip_timestamp": "クリップの時間"
 }

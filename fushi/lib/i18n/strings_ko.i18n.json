@@ -4158,5 +4158,6 @@
   "gal_card_lookup_independent_size": "인게임 사전 카드 별도 크기",
   "gal_card_lookup_independent_size_hint": "인게임 사전 카드 크기를 팝아웃 검색 창과 별도로 지정합니다",
   "gal_card_lookup_max_width": "인게임 사전 카드 최대 너비",
-  "gal_card_lookup_max_height": "인게임 사전 카드 최대 높이"
+  "gal_card_lookup_max_height": "인게임 사전 카드 최대 높이",
+  "handlebar_clip_timestamp": "클립 타임스탬프"
 }

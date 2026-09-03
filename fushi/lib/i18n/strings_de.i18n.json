@@ -4158,5 +4158,6 @@
   "gal_card_lookup_independent_size": "Eigene Größe für Nachschlagekarte im Spiel",
   "gal_card_lookup_independent_size_hint": "Die Nachschlagekarte im Spiel unabhängig vom externen Nachschlage-Fenster dimensionieren",
   "gal_card_lookup_max_width": "Max. Breite der Nachschlagekarte im Spiel",
-  "gal_card_lookup_max_height": "Max. Höhe der Nachschlagekarte im Spiel"
+  "gal_card_lookup_max_height": "Max. Höhe der Nachschlagekarte im Spiel",
+  "handlebar_clip_timestamp": "Clip-Zeitstempel"
 }

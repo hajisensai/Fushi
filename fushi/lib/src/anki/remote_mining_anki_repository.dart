@@ -183,6 +183,8 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
       sentenceOffset: context.sentenceOffset,
       source: context.source?.name,
       bookTitleTag: context.bookTitleTag,
+      clipStartMs: context.clipStartMs,
+      clipEndMs: context.clipEndMs,
       coverBytes: coverBytes,
       coverExt: _extOf(context.coverPath),
       sentenceAudioBytes: sentenceAudioBytes,

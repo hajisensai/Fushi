@@ -4158,5 +4158,6 @@
   "gal_card_lookup_independent_size": "Tamanho separado para o cartão no jogo",
   "gal_card_lookup_independent_size_hint": "Dimensionar o cartão de consulta no jogo separadamente da janela de consulta pop-out",
   "gal_card_lookup_max_width": "Largura máxima do cartão no jogo",
-  "gal_card_lookup_max_height": "Altura máxima do cartão no jogo"
+  "gal_card_lookup_max_height": "Altura máxima do cartão no jogo",
+  "handlebar_clip_timestamp": "Marca de tempo do trecho"
 }
