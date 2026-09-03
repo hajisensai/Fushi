@@ -8,6 +8,8 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1888 回归：漫画阅读器必须有隐藏界面的方式。
 ///
 /// 修前状态：顶栏（页码 + 框选/整卷 OCR/单双页/阅读模式）与左上返回键的**唯一**
@@ -20,9 +22,12 @@ import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 ///  2. 解析层：[MangaFushiPage.inputActionForShortcut] 把它映射成
 ///     [MangaReaderInputAction.toggleChrome]，且**不吃两道翻页门控**——webtoon
 ///     模式和词典弹窗可见时都必须照常解析出来。
-///  3. 结构层：源码守卫钉住「顶栏与返回键受 `_chromeVisible` 门控」+「隐藏态留有
-///     唤回按钮」。后者是硬要求：漫画正文是原生 WebView，空白点击手势全在注入的
-///     JS 里且已被翻页占用，没有这个按钮触屏设备就再也唤不回界面。
+///  3. 结构层：源码守卫钉住「顶栏受内容门控，返回键与唤回键**只**受
+///     `_chromeVisible` 门控」+「隐藏态留有唤回按钮」。后者是硬要求：漫画正文是
+///     原生 WebView，空白点击手势全在注入的 JS 里且已被翻页占用，没有这个按钮
+///     触屏设备就再也唤不回界面。前者同样是硬要求：返回键是本页唯一出口，
+///     一旦挂上内容门控，加载失败态就没有任何退出通道——iOS 没有系统返回键，
+///     `PopScope(canPop: false)` 还关掉了侧滑返回，结果是只能杀进程。
 void main() {
   group('动作层：mangaToggleChrome 注册与默认绑定', () {
     test('枚举存在，scope=manga，key 稳定', () {
@@ -141,27 +146,41 @@ void main() {
   });
 
   group('结构层：源码守卫', () {
-    final String pageSrc = File(
-      'lib/src/media/manga/reader/manga_fushi_page.dart',
-    ).readAsStringSync();
+    // 必须剥注释再判：本次修复在源码注释里**逐字引用了旧条件**用于解释为什么它
+    // 是错的，不剥的话守卫会把那段说明数成一处真实门控，断言恒红。
+    final String pageSrc = maskComments(
+      File(
+        'lib/src/media/manga/reader/manga_fushi_page.dart',
+      ).readAsStringSync(),
+    );
 
-    test('顶栏与返回键都受 _chromeVisible 门控', () {
+    test('顶栏受内容门控，返回键与唤回键只受 _chromeVisible 门控', () {
       expect(
         pageSrc.contains('bool _chromeVisible = true;'),
         isTrue,
         reason: '可见性必须是页面自己的状态字段',
       );
+      // 顶栏画的是页码 / 框选 OCR / 单双页，没有内容时它们无意义——继续挂内容门控。
+      expect(
+        pageSrc.contains('_bookRow != null && !_loadFailed && _chromeVisible'),
+        isTrue,
+        reason: '顶栏（页码/OCR/单双页）在没有内容时不该画',
+      );
+      // 出口不是内容的一部分。返回键与唤回键**不得**再出现内容门控：
+      // 加载失败或迟迟未就绪时它们一起消失，iOS 上就是「只能杀进程」
+      // （没有系统返回键 + PopScope(canPop:false) 关掉了侧滑返回 +
+      //  正文原生 WebView 的空白点击已被翻页占用）。
+      expect(
+        pageSrc.contains('_bookRow != null && !_loadFailed && !_chromeVisible'),
+        isFalse,
+        reason: '唤回按钮不得挂内容门控——隐藏界面后内容加载失败会连返回键一起叫不回来',
+      );
       expect(
         RegExp(r'_bookRow != null && !_loadFailed && _chromeVisible')
             .allMatches(pageSrc)
             .length,
-        greaterThanOrEqualTo(2),
-        reason: '顶栏与左上返回键两处都要挂门控，只挂一处等于隐藏不干净',
-      );
-      expect(
-        pageSrc.contains('_bookRow != null && !_loadFailed && !_chromeVisible'),
-        isTrue,
-        reason: '隐藏态要有对应的唤回分支',
+        1,
+        reason: '内容门控只该剩顶栏那一处；返回键若还挂着它，失败态就没有出口了',
       );
     });
 

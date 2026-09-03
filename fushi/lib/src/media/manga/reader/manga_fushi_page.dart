@@ -4156,7 +4156,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                   key: const ValueKey<String>('manga_dictionary_host'),
                   child: buildDictionary(),
                 ),
-                if (_bookRow != null && !_loadFailed && _chromeVisible)
+                // 返回键是本页**唯一**的出口，它的可见性只能由用户意图
+                // （[_chromeVisible]）决定，绝不能再挂内容状态门控。
+                //
+                // 旧条件是 `_bookRow != null && !_loadFailed && _chromeVisible`：
+                // 加载失败或一直没就绪时，正文区只剩一行「找不到书籍文件」，而
+                // 这颗按钮**跟着一起消失**。漫画正文是原生 WebView、空白点击已被
+                // 翻页占用，页内没有第二条退出通道；iOS 又没有系统返回键，
+                // `PopScope(canPop: false)` 还顺手关掉了侧滑返回——三者叠加的结果
+                // 是用户只能杀进程。出口不是内容的一部分，不随内容存亡。
+                if (_chromeVisible)
                   Positioned(
                     top: 0,
                     left: 0,
@@ -4179,7 +4188,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                     child: SafeArea(child: _buildTopChrome()),
                   ),
                 // BUG-1888：隐藏态唯一的唤回入口（理由见 [_chromeVisible]）。
-                if (_bookRow != null && !_loadFailed && !_chromeVisible)
+                // 与返回键同理不挂内容门控——否则「隐藏界面后内容加载失败」会把
+                // 唤回按钮一并抹掉，连带返回键再也叫不回来。
+                if (!_chromeVisible)
                   Positioned(
                     top: 0,
                     right: 0,

@@ -5368,18 +5368,31 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required bool desktop,
     required bool roomyBottomBar,
   }) {
-    final List<VideoControlItem> rawItems = _controlLayout.itemsIn(slot);
+    // **一次遍历**，按用户在槽内摆的真实顺序出控件。
+    //
+    // 旧写法是「先画完所有 chip，再把 volume 追加到槽尾」：`itemsIn(slot)` 里
+    // volume 的真实下标被整个丢掉，用户在底栏槽内怎么拖音量都零视觉变化。默认
+    // 布局出厂就已经分叉——bottomRight 是 `[volume, fullscreen, speed, …]`，
+    // 编辑器按真实下标画、音量排**第一**，播放器却把它画在**最后**。
+    //
+    // 音量与其它按钮的差别只在**用哪个 widget 画**（它有浮层、要按槽位做几何避让），
+    // 不在**画在第几位**。位置逻辑因此不该为它分叉：分派在循环体内做，顺序由
+    // 唯一真相源 `itemsIn(slot)` 决定。
+    //
+    // volume 不经 [_shouldRenderControlItem]：与旧行为一致（旧写法问的是未经过滤
+    // 的原始槽列表「在不在」），本次只改顺序、不改「画不画」。
     return <Widget>[
-      for (final VideoControlItem item in _slotChipItems(slot))
-        _buildBottomSlotButton(
-          item,
-          controller,
-          desktop: desktop,
-          slot: slot,
-          roomyBottomBar: roomyBottomBar,
-        ),
-      if (rawItems.contains(VideoControlItem.volume))
-        _buildVolumeButton(controller, desktop: desktop, slot: slot),
+      for (final VideoControlItem item in _controlLayout.itemsIn(slot))
+        if (item == VideoControlItem.volume)
+          _buildVolumeButton(controller, desktop: desktop, slot: slot)
+        else if (item.isChipRenderable && _shouldRenderControlItem(item))
+          _buildBottomSlotButton(
+            item,
+            controller,
+            desktop: desktop,
+            slot: slot,
+            roomyBottomBar: roomyBottomBar,
+          ),
     ];
   }
 
