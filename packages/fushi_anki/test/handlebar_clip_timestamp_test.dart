@@ -266,8 +266,23 @@ void main() {
       final int renderStart =
           src.indexOf('RenderedMinedFields renderMediaPayload(');
       expect(renderStart, greaterThan(-1), reason: '锚点漂移，守卫失效');
-      final int renderEnd = src.indexOf('\n  }', renderStart);
-      final String body = src.substring(renderStart, renderEnd);
+      // 结束锚必须先跳过**命名参数表**的收尾（`\n  }) {` / `\n  }) async {`）：
+      // 直接从 renderStart 找 `\n  }` 命中的是参数表，截出的 body 只有形参、
+      // 函数体一行都不在里面 → contains 恒 false、断言恒真（死断言，本仓反复踩的形态）。
+      final int paramsEnd = src.indexOf('\n  }) ', renderStart);
+      expect(paramsEnd, greaterThan(renderStart),
+          reason: '找不到 renderMediaPayload 命名参数表的收尾');
+      final int renderEnd = src.indexOf('\n  }', paramsEnd + 5);
+      expect(renderEnd, greaterThan(paramsEnd),
+          reason: '找不到 renderMediaPayload 的函数体收尾');
+      final String body = src.substring(paramsEnd, renderEnd);
+      // 自检：截出来的必须真是函数体。守卫自己证明锚点没落回参数表，
+      // 否则下面那条 isFalse 断言又会变成恒真的空转。
+      expect(
+        body.contains('context.withMediaRefs('),
+        isTrue,
+        reason: '守卫截出的不是函数体（锚点漂移到参数表 / 函数被重排）',
+      );
       expect(
         body.contains('AnkiMiningContext('),
         isFalse,

@@ -136,6 +136,11 @@ void main() {
     expect(repo.minedContext!.sentenceAudioPath,
         endsWith('immersion_audio.${immersionMiningAudioExtension()}'));
     expect(repo.minedContext!.source, AnkiMiningSource.video);
+    // 片段时间窗必须原样接进落卡 context（渲染 `{clip-timestamp}` 的唯一来源）。
+    // 引擎是「制卡请求 → 落卡 context」的唯一收口：这里漏传，视频页真实制卡就没有
+    // 时间窗，而直调渲染器 / 直造 context 的测试结构上照不到这根线。
+    expect(repo.minedContext!.clipStartMs, 1000);
+    expect(repo.minedContext!.clipEndMs, 3000);
   });
 
   test('BUG-1004 remoteAudioClipper 命中远端流 → 用 host 端裁产物、不调 ffmpeg 音频抽取',
