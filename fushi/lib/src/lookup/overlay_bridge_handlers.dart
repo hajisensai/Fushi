@@ -93,6 +93,12 @@ bool maybeHandleOverlayDeferredBridge({
     case 'openMinedNote':
       unawaited(_handleOpenMinedNoteBridge(model, message, resolveBridge));
       return true;
+    // BUG-2051 —— ↗「在 Anki 中打开这个词的卡」。app 内外走同一个仓库方法，
+    // 判据与画 ✓ 的查重同源；app 外此前只能走 popup.js 的页内面板（先 findMinedMatches
+    // 反查再 openMinedNote），那条反查按字段名查，跨笔记类型的卡永远查不到。
+    case 'openInAnki':
+      unawaited(_handleOpenInAnkiBridge(model, message, resolveBridge));
+      return true;
     case 'overwriteTargetNoteId':
       unawaited(_handleOverwriteTargetBridge(model, message, resolveBridge));
       return true;
@@ -534,6 +540,39 @@ Future<void> _handleOpenMinedNoteBridge(
   }
   if (id != null) {
     glog('mined-open: openMinedNote -> reply=$reply (id=$id)');
+    unawaited(resolveBridge(id, reply));
+  }
+}
+
+/// BUG-2051 — resolves a DEFERRED `openInAnki` call by filtering Anki's browser
+/// to the cards Anki itself considers duplicates of [expression]
+/// ([BaseAnkiRepository.openWordInAnki] — the same criterion that paints the ✓,
+/// and the same repo call the in-app lane makes). Replies with the outcome NAME
+/// ('opened' / 'noMatch' / 'failed') so the popup button can say which of the
+/// two failures happened; app 外没有 Flutter toast，提示只能画在按钮旁边。
+/// Always resolves — never null, that value means「这个宿主没接这根桥」.
+Future<void> _handleOpenInAnkiBridge(
+  AppModel? model,
+  Map<String, Object?> message,
+  OverlayBridgeResolver resolveBridge,
+) async {
+  final int? id = _bridgeIdOf(message);
+  String reply = AnkiOpenWordOutcome.failed.name;
+  try {
+    final Map<Object?, Object?> data = _firstMapArg(message);
+    final String expression = data['expression']?.toString() ?? '';
+    final String reading = data['reading']?.toString() ?? '';
+    if (model != null && expression.isNotEmpty) {
+      final BaseAnkiRepository repo =
+          model.platformServices.createAnkiRepository();
+      reply = (await repo.openWordInAnki(expression, reading)).name;
+    }
+  } catch (e, st) {
+    glog('anki-open-word: EXCEPTION $e\n$st');
+    reply = AnkiOpenWordOutcome.failed.name;
+  }
+  if (id != null) {
+    glog('anki-open-word: openInAnki -> reply=$reply (id=$id)');
     unawaited(resolveBridge(id, reply));
   }
 }

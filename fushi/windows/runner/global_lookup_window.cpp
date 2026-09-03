@@ -2837,6 +2837,16 @@ void GlobalLookupWindow::ConfigureWebView() {
               // existing cards) and openMinedNote (repo.openNoteInAnki). Its overwrite
               // / add-duplicate actions reuse the already-deferred updateEntry /
               // mineEntry, so this adds NO new write path.
+              // BUG-2051 -- openInAnki (the ↗ button) is DEFERRED for the same
+              // reason and is now the ONLY lane for it, in-app and out: Dart
+              // filters Anki's browser to the cards Anki itself calls duplicates
+              // of this word (repo.openWordInAnki -- the same criterion that
+              // paints the ✓) and replies with the outcome name, which popup.js
+              // turns into an inline hint. It used to resolve to an immediate
+              // null out here, which popup.js read as "the host handled it", so
+              // the app-external ↗ fell back to an in-page panel whose lookup
+              // (findMatchingNotes, by field NAME) could not see a duplicate
+              // living in a different note type -- ✓ said mined, ↗ said no card.
               // playWordAudio removed from this list: the bridge is dead —
               // popup.js plays the resolved URL itself (see bridge-shim.js) and
               // the Dart handler branch was deleted (it could only fail: a
@@ -2851,7 +2861,8 @@ void GlobalLookupWindow::ConfigureWebView() {
                   body.find("\"overwriteTargetNoteId\"") != std::string::npos ||
                   body.find("\"updateEntry\"") != std::string::npos ||
                   body.find("\"findMinedMatches\"") != std::string::npos ||
-                  body.find("\"openMinedNote\"") != std::string::npos;
+                  body.find("\"openMinedNote\"") != std::string::npos ||
+                  body.find("\"openInAnki\"") != std::string::npos;
               const std::string key = "\"__bridgeId\":";
               size_t pos = body.find(key);
               if (!deferred && pos != std::string::npos) {
