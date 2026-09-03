@@ -306,8 +306,13 @@ Future<RecommendedPackManifest?> fetchRecommendedPackManifest() async {
 ///
 /// 导入推荐包会走备份导入流程并**重启进程**，没有机会在导入成功后删包——所以
 /// [markImportStarted] 在启动导入前落一个 flag 文件，重启回来后由
-/// [cleanupIfImported]（新手引导页 initState 调）把整个包目录删掉，不让 9.5 GB
-/// 的 zip 静默常驻磁盘。
+/// [cleanupIfImported]（**AppModel 初始化调**，即启动必经路径）把整个包目录删掉，
+/// 不让 9.5 GB 的 zip 静默常驻磁盘。
+///
+/// BUG-2097：这个收尾一度挂在新手引导页的 initState 上，而导入恰恰会把
+/// `preferences` 表整层换成备份里的那份、`onboarding_completed` 变 true，重启后
+/// 首页不再自动弹引导页——清理入口结构上永远等不到执行。判据（flag）没错，错的
+/// 是把它挂在了一个「导入成功就不会再出现」的页面上。
 class RecommendedPackDownloader {
   RecommendedPackDownloader({
     required Directory packDir,

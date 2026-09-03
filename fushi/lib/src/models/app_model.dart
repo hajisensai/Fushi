@@ -55,6 +55,7 @@ import 'package:fushi/src/models/dictionary_directory.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/onboarding/recommended_pack.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
@@ -2427,6 +2428,17 @@ class AppModel with ChangeNotifier {
           dictionaryImportWorkingDirectory.create(recursive: true),
           dictionaryResourceDirectory.create(recursive: true).then((_) =>
               purgePendingDictionaryDeletes(dictionaryResourceDirectory)),
+          // BUG-2097：推荐包（9.5 GB zip）导入后的收尾删除。判据是包目录里的
+          // `imported.flag`——没导入过、或只下了一半的包都不受影响。
+          //
+          // 收尾必须挂在**启动必经路径**上，不能挂新手引导页：推荐包本身是一份
+          // 含 settings 类目的备份，导入时 `preferences` 表被整层替换，
+          // `onboarding_completed` 随之变成 true（该键缺省值本来也是 true），于是
+          // 导入后的那次重启首页不再自动弹引导页，挂在引导页 initState 上的清理
+          // 永远等不到执行，9.5 GB 就永久留在盘上（用户实测：存储页词典类目
+          // 11.3 GB，展开的词典明细只有 583 MB）。
+          RecommendedPackDownloader.cleanupIfImported(
+              Directory(path.join(appDirectory.path, 'recommended_pack'))),
           refreshSystemPalette(),
           () async {
             _exportDirectory = await prepareExportDirectory();
