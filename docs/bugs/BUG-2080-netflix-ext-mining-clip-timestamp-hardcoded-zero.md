@@ -1,37 +1,42 @@
 ## BUG-2080 · 浏览器扩展 Netflix 制卡的片段时间窗恒为 0，卡上永远显示不出时间
 - **报告**：2026-09-03（PR #1161「卡片 Details 栏带上截取片段的时间窗」的代码审查副产物，不是用户报告）
 - **真实性**：✅ 真 bug（静态追链确认，未做真机落卡）。根因 `fushi/lib/src/mining/immersion_capture_channel.dart:191-192`：纯函数 `buildImmersionRequest` 把 `clipStartMs` / `clipEndMs` **硬编码成 0**，而入参 `ImmersionMinePayload` 明明带着可用的 `clipStartMs` / `clipEndMs`（`fushi/lib/src/models/app_model.dart:7743-7748` 就是用它俩去 `ImmersionCaptureChannel.capture` 抓片段的）。YouTube 分支反而是通的（`app_model.dart:7664-7665` 经 `youtube_clip_miner` 带真值）。于是 `{clip-timestamp}` 对 Netflix 用户**结构性恒空**
-- **[ ] ① 未修复** — 见下「为什么不是一行改」；PR #1161 只记录，不顺手改
-- **[ ] ② 未加自动化测试** — 修的时候和修复一起加（`buildImmersionRequest` 是纯函数，断言成本极低）
+- **[x] ① 已修复** — `hasRange` 从「窗非空」收敛成「窗非空 **且** 有可裁的源」，`clipStartMs`/`clipEndMs` 回归单一语义（卡面时间窗），Netflix 请求原样透传扩展上报的窗。分支 `fix/clip-window-vs-extract-intent`
+- **[x] ② 已加自动化测试** — `fushi/test/mining/immersion_capture_channel_test.dart`（纯函数：窗透传 + 「有窗但抽取意图为假」防回退守卫 + 无窗 payload）、`fushi/test/mining/immersion_mining_engine_test.dart`（引擎：Netflix 形状带非零窗时中止矩阵不变 + 窗端到端落到 `AnkiMiningContext`）
 - **备注**：与 PR #1161 同域但独立。该 PR 新增的 `{clip-timestamp}` 占位符在本地视频 / YouTube / 互联转发三条路上都通，唯独浏览器扩展的 Netflix 路不通。
 
-### 为什么不是一行改（实测的耦合）
+### 为什么不是一行改（原始论断 + 实测修正）
 
-把 `clipStartMs: 0, clipEndMs: 0` 直接换成 `p.clipStartMs ?? 0, p.clipEndMs ?? 0` **会改变 Netflix 的既有制卡行为**——这两个字段在引擎里还兼着第二个语义：
+把 `clipStartMs: 0, clipEndMs: 0` 直接换成 `p.clipStartMs ?? 0, p.clipEndMs ?? 0` 会让
+`hasRange`（当时定义为 `clipEndMs > clipStartMs`）对 Netflix 由恒 false 变成 true。立案时
+据此判断会改变既有制卡行为，涉及两处：
 
-`fushi/lib/src/mining/immersion_mining_request.dart:363`
+- `immersion_mining_engine.dart:437-441` TODO-1303 的无音频中止判据
+  （`viaProvidedBytes = providedCoverBytes != null && !hasRange`）；
+- `immersion_mining_engine.dart:410` `degradedToStill = req.hasRange`。
 
-```dart
-bool get hasRange => clipEndMs > clipStartMs;
-```
+**修复时实测推翻了这个论断的一半**（记录在此，避免下一个人继续照着错的前提设计）：
 
-`hasRange` 是引擎的行为闸门，Netflix 路径当前恒 `false`，两处依赖它：
+把 `hasRange` 临时改成天真形态（`=> hasClipWindow`）后跑 `test/mining/ test/anki/
+test/pages/video_mining_context_guard_test.dart test/sync/forwarded_mine_payload_test.dart`
+共 **1529 条，只红 1 条**，且那一条是本次新加的防回退守卫；TODO-1303 中止矩阵与
+`degradedToStill` 的既有用例**全绿**。逐点复核原因：
 
-- `fushi/lib/src/mining/immersion_mining_engine.dart:437-441`
-  ```dart
-  final bool viaProvidedBytes = req.providedCoverBytes != null && !req.hasRange;
-  if (req.requireAudio && audioPath == null && (req.hasRange || viaProvidedBytes)) { ... abort ... }
-  ```
-  TODO-1303 的「Netflix 录制片段丢音轨 → 中止而非静默出无声卡」正是靠 `viaProvidedBytes` 这条**无 range** 分支生效的。填了真值窗 → `viaProvidedBytes` 变假、`hasRange` 变真，中止判据换了一条腿：原先「有 providedCoverBytes 才中止」变成「无条件按 range 中止」，2A 截图卡（无音频、本就不该算失败）会开始被判失败。
-- `fushi/lib/src/mining/immersion_mining_engine.dart:410`
-  ```dart
-  if (coverPath != null) degradedToStill = req.hasRange;
-  ```
-  Netflix 截图卡会开始被标成「降级为静态」并弹 OSD。
+- `:410` 在 Netflix 下**不可达**——`:289` 在进入帧降级阶梯之前就用 `providedCoverBytes`
+  写好了 `coverPath`，`if (coverPath == null)` 的 switch 整段跳过。
+- `:437/:440` 两种定义下**中止结论相同**：naive 走 `hasRange` 腿，收敛后走
+  `viaProvidedBytes` 腿，`requireAudio && audioPath == null` 时都中止。
 
-现有测试也把这条不变式写死了：`fushi/test/mining/immersion_mining_engine_test.dart:445` 的注释「此前 requireAudio 被 `&& hasRange` 门控架空（Netflix clip 恒 hasRange=false）」，且该用例就是用 `clipStartMs: 0, clipEndMs: 0` + `providedCoverBytes` 构造的。
+唯一真正会分叉的形状是「**无 mediaSource/audioSource + 有 stillFallback + 非零窗**」
+（`tryCurrentFrame` 只判 `req.stillFallback == null`，**不判 `src`**，所以那条路能在无源时
+出封面）。该组合**当前生产不可达**：全仓只有一个调用点设 `stillFallback`
+（`fushi/lib/src/pages/implementations/video_fushi/lookup_mining.part.dart:383`，应用内视频
+页），而那里 `mediaSource = controller.miningSource = _miningSourceOverride ?? videoPath`
+在播放中不可能为 null；Netflix 的 `buildImmersionRequest` 则从不设 `stillFallback`。
 
-这是本仓已知的「同一数字两层两语义」形态：**抽取区间**（引擎要不要去裁 GIF / 音频）和**卡面时间窗**（渲染 `{clip-timestamp}` 给用户看）共用了同一对字段。Netflix 恰好是「有卡面时间窗、但没有本地可裁的源」，两个语义第一次分叉。
+**结论**：一行改在今天是行为中性的，但它把「有窗」永久等同于「要裁」，让上面那条分叉
+路径变成一颗定时炸弹——下一个既无源又给 stillFallback 的调用方会静默走进区间抽取。
+所以仍按下面的方案 2 收敛语义，而不是只填数字。
 
 ### 修复方向（择一，动手前先定）
 
@@ -39,3 +44,23 @@ bool get hasRange => clipEndMs > clipStartMs;
 2. **收敛 `hasRange`**：把「引擎要不要裁」从「时间窗非空」改成一个显式的意图字段（如 `mediaSource != null && 有区间`），再让时间窗只表示卡面语义。更干净，但要重新审 TODO-1303 的中止矩阵和 `degradedToStill`，属于独立改动，不该塞进 #1161。
 
 无论哪条，都必须补 `buildImmersionRequest` 的纯函数断言（Netflix payload 带窗 → request 带窗）+ 引擎那两条 `hasRange` 分支的回归用例。
+
+### 最终采用：方案 2（收敛 `hasRange`）
+
+方案 1（另加一对只喂 `AnkiMiningContext` 的显示字段）被否——它正是本条注释自己警告的
+「又造一个同一数字两层两语义」，只是把冲突从一对字段挪到两对字段。
+
+实际改动（`fix/clip-window-vs-extract-intent`）：
+
+- `immersion_mining_request.dart`：拆成两个判据。`hasClipWindow => clipEndMs > clipStartMs`
+  （纯几何，卡面语义，与 `AnkiHandlebarRenderer.formatClipTimestamp` 同判据）；
+  `hasRange => hasClipWindow && (mediaSource != null || audioSource != null)`（抽取意图）。
+  后半截与两处抽取点各自已有的前置守卫同源——引擎里 `src = mediaSource`、
+  `audioSrc = audioSource ?? src`，`:313` 与 `:506` 本来就先判 `== null`，这条只是把那半个
+  判据从调用点提到定义里。
+- `immersion_capture_channel.dart`：Netflix 请求原样透传 `p.clipStartMs / p.clipEndMs`。
+- `immersion_mining_engine.dart:467` 注释订正：卡面窗判据与 `hasClipWindow` 同语义，
+  **不是** `hasRange`。
+
+零行为变更的依据：收敛前 `mediaSource`/`audioSource` 双 null 的来源（Netflix 前台、
+galgame 外部窗口）两端恒是 0 ⇒ 旧 `hasRange` 本就恒 false。

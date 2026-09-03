@@ -360,7 +360,26 @@ class ImmersionMiningRequest {
     required String outputPath,
   })? remoteAudioClipper;
 
-  bool get hasRange => clipEndMs > clipStartMs;
+  /// 卡面时间窗非空——**纯几何判据**，只回答「这张卡有没有时间窗可显示」，不回答
+  /// 「引擎要不要去裁」。渲染侧 [AnkiHandlebarRenderer.formatClipTimestamp] 用的正是
+  /// 这一条（`end > start`）。
+  ///
+  /// 「有窗」与「有可裁的源」是两件独立的事：Netflix 前台就是「有窗、无源」——窗来自
+  /// 扩展上报的播放器时间轴，本地一个字节也没有。
+  bool get hasClipWindow => clipEndMs > clipStartMs;
+
+  /// **抽取意图**：引擎是否应当按区间去裁 GIF / 句子音频。
+  ///
+  /// BUG-2080：这条判据此前被压缩成 [hasClipWindow] 一半，于是同一对数字兼了两层语义
+  /// （卡面时间窗 + 抽取开关）。Netflix 只能靠把窗硬编码成 0 来关掉抽取，代价是卡面
+  /// `{clip-timestamp}` 对该来源**结构性恒空**。现在补上另一半：**没有可裁的源就不是
+  /// 抽取意图**——与两处抽取点各自已有的前置守卫同源（[ImmersionMiningEngine] 里
+  /// `src = mediaSource`、`audioSrc = audioSource ?? src`，两处都先判 `== null`）。
+  ///
+  /// 零行为变更：本判据收敛之前，`mediaSource`/`audioSource` 双 null 的来源
+  /// （Netflix 前台、galgame 外部窗口）两端恒是 0 ⇒ 旧式 `hasRange` 也恒 false。
+  bool get hasRange =>
+      hasClipWindow && (mediaSource != null || audioSource != null);
 
   /// 入队前冻结所有可变输入。视频页可能在任务真正执行前已经换集或关闭弹窗；队列里的
   /// 卡必须继续使用点击制卡那一刻的字段和外部媒体字节，不能读到调用方后续修改。

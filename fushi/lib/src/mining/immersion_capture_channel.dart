@@ -188,8 +188,13 @@ ImmersionMiningRequest buildImmersionRequest(
   return ImmersionMiningRequest(
     fields: p.fields,
     mediaSource: null,
-    clipStartMs: 0,
-    clipEndMs: 0,
+    // BUG-2080：卡面时间窗原样透传（扩展上报的播放器时间轴）。这里曾硬编码 0，因为
+    // 当时 `hasRange` 就是「窗非空」，填真值会连带打开区间抽取——而 Netflix 前台
+    // `mediaSource == null`，根本没有可裁的源。判据收敛到
+    // [ImmersionMiningRequest.hasRange]（窗非空 **且** 有源）之后两者解耦：窗只喂卡面
+    // `{clip-timestamp}`，抽取路径照旧关着。
+    clipStartMs: p.clipStartMs ?? 0,
+    clipEndMs: p.clipEndMs ?? 0,
     sentence: p.sentence,
     cueSentence: p.cueSentence,
     documentTitle: p.documentTitle ?? 'Netflix',

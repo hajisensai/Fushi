@@ -16,6 +16,57 @@ ImmersionMinePayload _payload({Uint8List? shot}) => ImmersionMinePayload(
 
 void main() {
   group('buildImmersionRequest', () {
+    // ── BUG-2080：卡面时间窗 vs 抽取意图，两层语义拆开 ──────────────────────
+    //
+    // 修复前这里硬编码 `clipStartMs: 0, clipEndMs: 0`，因为当时 `hasRange` 就是
+    // 「窗非空」——填真值会连带打开区间抽取，而 Netflix 前台 `mediaSource == null`
+    // 根本没有可裁的源。代价是 `{clip-timestamp}` 对 Netflix **结构性恒空**。
+    test('Netflix：扩展上报的时间窗原样透传到 request（{clip-timestamp} 的数据源）', () {
+      final req = buildImmersionRequest(
+        _payload(),
+        ImmersionCaptureResult(
+            gifBytes: Uint8List.fromList([1]),
+            audioBytes: Uint8List.fromList([2])),
+        audioExpected: true,
+      );
+      // _payload() 带的是 1000/3000。修复前这两条恒 0。
+      expect(req.clipStartMs, 1000);
+      expect(req.clipEndMs, 3000);
+    });
+
+    // 这一条是**防回退**守卫：谁要是把 `hasRange` 化简回「窗非空」，它立刻红。
+    // 有窗 ≠ 要裁——Netflix 前台有窗（播放器时间轴）但无源（本地零字节）。
+    test('Netflix：有卡面窗，但抽取意图仍为假（无 mediaSource/audioSource 可裁）', () {
+      final req = buildImmersionRequest(
+        _payload(),
+        ImmersionCaptureResult(
+            gifBytes: Uint8List.fromList([1]),
+            audioBytes: Uint8List.fromList([2])),
+        audioExpected: true,
+      );
+      expect(req.mediaSource, isNull);
+      expect(req.audioSource, isNull);
+      expect(req.hasClipWindow, true, reason: '窗非空，卡面要渲染时间戳');
+      expect(req.hasRange, false, reason: '没有可裁的源 ⇒ 引擎不得走区间抽取路径');
+    });
+
+    test('Netflix：payload 没带窗（null）→ 两端 0，两个判据都为假', () {
+      final req = buildImmersionRequest(
+        ImmersionMinePayload(
+          fields: const {'expression': '走る'},
+          sentence: 's',
+          netflixVideoId: '81',
+          screenshotBytes: Uint8List.fromList([9]),
+        ),
+        const ImmersionCaptureResult(error: 'black frame'),
+        audioExpected: false,
+      );
+      expect(req.clipStartMs, 0);
+      expect(req.clipEndMs, 0);
+      expect(req.hasClipWindow, false);
+      expect(req.hasRange, false);
+    });
+
     test(
         'capture ok with gif+audio -> uses gif cover + audio, requireAudio true',
         () {
