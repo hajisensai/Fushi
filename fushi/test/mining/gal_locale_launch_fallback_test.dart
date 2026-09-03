@@ -96,6 +96,7 @@ void main() {
           String launchWorkdir = '',
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
         }) {
           requestedModes.add(japaneseLocaleMode);
           final bool locale = japaneseLocaleMode != GalJapaneseLocaleMode.off;
