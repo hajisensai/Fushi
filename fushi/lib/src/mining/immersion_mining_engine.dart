@@ -310,7 +310,8 @@ class ImmersionMiningEngine {
     //
     // 抽字幕区间动图（GIF）到临时文件；无 src / 无区间 → null。
     Future<String?> tryGif() async {
-      if (src == null || !req.hasRange) return null;
+      // `src != null` 已经把「有可裁的源」判掉了，这里只需再问窗几何。
+      if (src == null || !req.hasClipWindow) return null;
       // 首选用户所选格式、失败降级 GIF 的那条链（含每次尝试重新夹取 fps/宽度/扩展名）
       // 收在 [extractAnimatedClipWithFallback] 里，与 Netflix 录制片段共用同一份实现。
       // GIF 也失败才轮到下面既有的单帧降级阶梯。
@@ -465,7 +466,9 @@ class ImmersionMiningEngine {
       collectionTag: req.collectionTag,
       // 片段时间窗（渲染 `{clip-timestamp}`）：原样透传，有效性不在这里判——
       // 唯一判据在 [AnkiHandlebarRenderer.formatClipTimestamp]（`end > start`，
-      // 与 [hasRange] 同语义）。走本引擎但没有时间轴的来源（galgame）两端恒是 0，
+      // 与 [ImmersionMiningRequest.hasClipWindow] 同语义——**不是** [hasRange]：后者还
+      // 要求有可裁的源，Netflix 前台正是「有窗、无源」）。走本引擎但没有时间轴的来源
+      // （galgame）两端恒是 0，
       // 到那里自然渲染成空串；书籍根本不进本引擎，见 AnkiMiningContext 的字段注释。
       clipStartMs: req.clipStartMs,
       clipEndMs: req.clipEndMs,
@@ -503,7 +506,8 @@ class ImmersionMiningEngine {
               'immersion_audio.${immersionMiningAudioExtension()}',
           req.providedAudioBytes!);
     }
-    if (audioSrc == null || !req.hasRange) return null;
+    // 同 tryGif：`audioSrc != null` 已判源，这里只问窗几何。
+    if (audioSrc == null || !req.hasClipWindow) return null;
 
     // BUG-1004：互联 host（LAN Hibiki 库）远端流优先走 **host 端裁**——host 用本地文件裁好
     // 句子音频再经已鉴权/钉扎的下载通道回传，client 全程不用 ffmpeg 抓远端流，从根上绕开

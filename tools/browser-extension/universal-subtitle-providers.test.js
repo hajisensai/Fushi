@@ -752,6 +752,10 @@ test('整轨优先：画面上直接查词制卡取整轨精确窗，不再退�
   assert.ok(item, '队列必须落盘');
   assert.strictEqual(item.sentence, '整轨第一句', '句子必须取自整轨，而非 DOM 抖动快照');
   assert.strictEqual(item.cueStartV, 1000, '句首必须是整轨的精确 startMs');
+  // BUG-2080：卡面 `{clip-timestamp}` 取的是 cueStartV/cueEndV 这对**字幕窗**。
+  // 源码扫描证明不了 w.endV 还是字幕窗（实测：把上游 endV 悄悄加 200，源码断言全绿）；
+  // 这里是真跑入队路径的宿主，值对不上立刻响。
+  assert.strictEqual(item.cueEndV, 3000, '句尾必须是整轨的精确 endMs，不含录制余量');
   assert.strictEqual(item.startV, 800, '录制窗 = 整轨 startMs - 200 录制边距');
   assert.strictEqual(item.endV, 3200, '录制窗 = 整轨 endMs + 200 录制边距');
 });

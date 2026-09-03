@@ -531,6 +531,35 @@ void main() {
     expect(repo.minedContext, isNull);
   });
 
+  // ── BUG-2080：Netflix 现在带真实卡面时间窗，抽取路径必须一个字节都不变 ──────
+  //
+  // 修复前 `buildImmersionRequest` 把窗硬编码成 0，唯一目的就是让当时「窗非空 = 要裁」
+  // 的 `hasRange` 保持 false。窗改成透传真值后，抽取意图改由 [hasRange]（窗非空 **且**
+  // 有可裁的源）承载 —— 下面两条把「Netflix 形状 + 非零窗」这个此前不存在的组合钉住。
+  test('BUG-2080：Netflix 形状（无源 + provided 字节 + 非零窗）音频丢失仍中止', () async {
+    final repo = _FakeRepo();
+    final res = await build(gif: nullGif, audio: nullAudio, frame: nullFrame)
+        .mine(
+            ImmersionMiningRequest(
+                source: AnkiMiningSource.video,
+                fields: const {'expression': 'x'},
+                // 非零窗：修复前这里只可能是 0/0。
+                clipStartMs: 1000,
+                clipEndMs: 3000,
+                sentence: 's',
+                providedCoverBytes: Uint8List.fromList(<int>[1, 2, 3]),
+                providedCoverName: 'netflix_clip.gif',
+                requireAudio: true),
+            compression: MiningMediaCompression.compressed,
+            tempDir: tmp.path,
+            repo: repo);
+    // 中止判据走的仍是 provided-bytes 那条腿（`providedCoverBytes != null && !hasRange`），
+    // 没有因为窗变非零而改走 range 腿。
+    expect(res.aborted, true);
+    expect(res.abortReason, contains('audio'));
+    expect(repo.minedContext, isNull);
+  });
+
   // TODO-1303：空壳卡兜底——封面 + 音频全无（截图/GIF/音频全失败）→ 中止，绝不产出无媒体卡，
   // 即便 requireAudio=false（这正是「降级空壳卡仍报成功」的根）。
   test('empty shell (no cover, no audio) -> abort', () async {
