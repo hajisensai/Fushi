@@ -8,13 +8,13 @@
   "notes": "Manual Apple beta/test build from develop @ 8082046. Beta/test releases are prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-2.2.1-beta.12447-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.2.1-beta.12447/fushi-2.2.1-beta.12447-macos.zip",
-      "releaseSequence": 12447,
-      "tag": "v2.2.1-beta.12447",
-      "version": "2.2.1-beta.12447",
-      "size": 319185664,
-      "sha256": "f832a92e9f1e3cb2bbccb84355f7fd970c4c5d22666161cb09136840bc70afd2"
+      "name": "fushi-2.2.4-beta.13362-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.2.4-beta.13362/fushi-2.2.4-beta.13362-macos.zip",
+      "releaseSequence": 13362,
+      "tag": "v2.2.4-beta.13362",
+      "version": "2.2.4-beta.13362",
+      "size": 335689562,
+      "sha256": "7a2c98f64acce41f829199aa06330c8ceb47edb12abc8440682191f456c5b7a1"
     },
     {
       "name": "fushi-2.2.4-beta.13362-windows-setup.exe",

@@ -26,6 +26,24 @@
       "sha256": "6e154b5c620245b8739c19d4952235387c1901ca7fd4c8b5f6b0914a6014f000"
     },
     {
+      "name": "fushi-2.2.4-beta.13362-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.2.4-beta.13362/fushi-2.2.4-beta.13362-ios.ipa",
+      "releaseSequence": 13362,
+      "tag": "v2.2.4-beta.13362",
+      "version": "2.2.4-beta.13362",
+      "size": 69985191,
+      "sha256": "28fd9ecb2d1d60395342cd4beb834d5c8b764af50a9e72d6b1e710bde88f2b69"
+    },
+    {
+      "name": "fushi-2.2.4-beta.13362-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.2.4-beta.13362/fushi-2.2.4-beta.13362-macos.zip",
+      "releaseSequence": 13362,
+      "tag": "v2.2.4-beta.13362",
+      "version": "2.2.4-beta.13362",
+      "size": 335689562,
+      "sha256": "7a2c98f64acce41f829199aa06330c8ceb47edb12abc8440682191f456c5b7a1"
+    },
+    {
       "name": "fushi-2.2.4-beta.13362-windows-setup.exe",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.2.4-beta.13362/fushi-2.2.4-beta.13362-windows-setup.exe",
       "releaseSequence": 13362,
