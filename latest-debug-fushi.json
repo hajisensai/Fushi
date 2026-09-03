@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "2.2.4-debug.13318",
-  "tag": "v2.2.4-debug.13318+b4f0240",
+  "version": "2.2.4-debug.13321",
+  "tag": "v2.2.4-debug.13321+c8250f1",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 13318,
-  "notes": "Automated release-signed debug-channel build from develop @ b4f0240. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 13321,
+  "notes": "Automated desktop debug-channel build from develop @ c8250f1. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-2.2.4-debug.13301-ios.ipa",
@@ -26,15 +26,6 @@
       "sha256": "da862de15229817b2b2528b63a19e07f95c7e53cfa3d5cb17ee475b09dbe5962"
     },
     {
-      "name": "fushi-2.2.4-debug.13301-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13301-windows-setup.exe",
-      "releaseSequence": 13301,
-      "tag": "v2.2.4-debug.13301+e48c11a",
-      "version": "2.2.4-debug.13301",
-      "size": 264151903,
-      "sha256": "3f61496ed3342afb50d00ae4b6e2b2f2a5903d64420912a034939c2992c59953"
-    },
-    {
       "name": "fushi-2.2.4-debug.13318-b4f0240-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13318-b4f0240-debug.apk",
       "releaseSequence": 13318,
@@ -42,6 +33,15 @@
       "version": "2.2.4-debug.13318",
       "size": 270562346,
       "sha256": "04b2da06491f8b5736f7dd7ba4b3562df98dec2a325cfbb85f7c198c8b7eb95b"
+    },
+    {
+      "name": "fushi-2.2.4-debug.13321-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13321-windows-setup.exe",
+      "releaseSequence": 13321,
+      "tag": "v2.2.4-debug.13321+c8250f1",
+      "version": "2.2.4-debug.13321",
+      "size": 264168347,
+      "sha256": "2c97c3269cecfbad84b4faeac56a44551fcaeddde2711cc575984f609f7affb9"
     }
   ]
 }
