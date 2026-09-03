@@ -29,6 +29,10 @@ DiscoveryDomainImporters _recordingImporters(List<String> log) {
           '+${plan.audioPaths.length}');
       return 'key-audiobook';
     },
+    importMangaArchive: (String path) async {
+      log.add('manga:$path');
+      return 'key-manga';
+    },
     registerGameExes: (List<String> exePaths) async {
       log.add('game:${exePaths.join(',')}');
       return exePaths.length;

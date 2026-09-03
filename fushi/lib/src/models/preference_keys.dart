@@ -50,6 +50,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 发现页「全部源」聚合默认排除的源 id（逗号分隔；默认 sukebei——18+ 源
   // 只在用户显式单选时使用）。String，读写见 PreferencesRepository。
   'discovery_disabled_sources',
+  // 用户自配的 OPDS 书目服务器清单（JSON 数组：id/name/url/username/
+  // passwordB64/enabled/allowInsecureHttp）。String，读写见
+  // PreferencesRepository。与 discovery_disabled_sources 的分界同 Torznab：
+  // 自配服务器各自带 enabled 字段，不进那份停用清单。
+  // 含凭据 → 同时登记在 kCredentialPreferenceKeys 与 deviceLocalPrefKeys。
+  'discovery_opds_servers',
   'download_save_root',
   'download_save_root_history',
   'experimental_focus_navigation_enabled',
@@ -286,6 +292,8 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
 /// 🔴 凭据键：值为 base64 敏感凭据，不进日志 / 不进明文导出。
 /// （`media_source_secret_<id>` 前缀族见 [kKnownPreferenceKeyPrefixes]。）
 const Set<String> kCredentialPreferenceKeys = <String>{
+  // 每条 OPDS 服务器记录里带 base64 的 passwordB64。
+  'discovery_opds_servers',
   'jimaku_api_key',
   'network_proxy_password',
   'network_proxy_username',

@@ -380,6 +380,17 @@ class DiscoveryDownloadQueue extends ChangeNotifier {
     }
   }
 
+  /// 发起下载请求；重定向交给 `HttpClient` 自动跟随。
+  ///
+  /// **凭据的 origin 边界由平台保证，不需要在这里手写。** 实测（见
+  /// `test/media/discovery/discovery_download_redirect_credentials_test.dart`）
+  /// Dart 的自动跟随在**跨 origin** 时会剥掉 `Authorization`/`Cookie`、在
+  /// **同 origin** 时保留，而 `Referer` 这类防盗链头恒转发——正好是私有媒体
+  /// 服务器需要的语义：自建服务端常把 `/opds/download/1` 302 到同机的真实文件
+  /// 路径（剥了就 401 下不动），而重定向到第三方对象存储时不能把用户密码带过去。
+  ///
+  /// 那份测试是**契约测试**而非实现测试：它锁的是「凭据不跨 origin」这个结果。
+  /// 若将来把这条链路换成 `package:http` / dio（两者都会原样转发 header），它会红。
   static Future<ResumableDownloadResponse> _openViaHttpClient(
     HttpClient client,
     Map<String, String> payloadHeaders,

@@ -20,6 +20,19 @@ abstract class MediaDiscoverySource {
   /// 聚合展示顺序：小者靠前。
   int get priority;
 
+  /// 本源是否由**用户自配**（地址/账号来自偏好，条目自带 `enabled` 开关）。
+  ///
+  /// true 的源不进「发现来源」开关区（`discovery_source_settings_section.dart`）：
+  /// 那一区读写的是内置源的停用清单 `discovery_disabled_sources`，而自配源的
+  /// 开关是它自己那条记录上的 `enabled`。两套开关同时作用在一个源上会两头对不上——
+  /// 在开关区关掉只影响聚合扇出（自配区仍显示「启用」、单选仍能用），在自配区
+  /// 关掉则源直接离开注册表，把停用清单里那条 id 永久留成再没有 UI 能清的垃圾。
+  ///
+  /// 这条分界与视频域一致：`preferences_repository.dart` 的
+  /// `video_resource_disabled_sources` 注释同样写着「自配 Torznab 各自带 enabled，
+  /// 不进这里」。
+  bool get isUserConfigured => false;
+
   DiscoveryCapabilities get capabilities;
 
   /// 关键词搜索。[DiscoveryCapabilities.supportsSearch] 为 false 的源不会被调到。

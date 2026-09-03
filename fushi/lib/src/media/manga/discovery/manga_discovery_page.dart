@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi/src/media/discovery/opds_server_config.dart';
+import 'package:fushi/src/media/discovery/sources/opds_discovery_source.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart';
@@ -22,6 +25,7 @@ import 'package:fushi/src/media/manga/online/mokuro_moe_catalog_view.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_source_row.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/discovery_header.dart';
+import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/utils.dart';
 
@@ -189,6 +193,14 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
       mihonSources: manager == null
           ? const <MangaOnlineSourceRow>[]
           : enabledMangaOnlineSources(manager),
+      // 同上 watch 的理由：设置里增删/停用 OPDS 服务器后本节要立刻跟着变，
+      // 而本页在库页壳里是 Offstage 保活的。
+      opdsServers: ref
+          .watch(appProvider)
+          .prefsRepo
+          .discoveryOpdsServers
+          .where((OpdsServerConfig server) => server.enabled)
+          .toList(growable: false),
       aidokuError: _aidokuError,
     );
   }
@@ -278,6 +290,31 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     );
   }
 
+  /// 打开一台 OPDS 服务器的漫画目录。
+  ///
+  /// 复用统一发现页（`MediaDiscoveryPage`）而不是另写一个浏览页：OPDS 的目录
+  /// 下钻、搜索、下载入队、下载后自动入库整条链路在那边已经是通的，漫画域
+  /// 只是同一条链路的另一个 `DiscoveryMediaKind`。
+  ///
+  /// 单域传入 → 那页不出媒体类型分段条；`initialSourceId` 让它直接落在这台
+  /// 服务器上，跳过「先挑来源」的引导态。外面套 Scaffold 是因为该页设计为
+  /// 嵌在库页壳里（`navigation == null` 时它自己不出 header），pushed route
+  /// 需要一个返回入口。
+  void _openOpdsServer(OpdsServerConfig server) {
+    Navigator.of(context).push(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (BuildContext context) => Scaffold(
+          appBar: AppBar(title: Text(server.displayName)),
+          body: MediaDiscoveryPage(
+            kinds: const <DiscoveryMediaKind>[DiscoveryMediaKind.manga],
+            initialSourceId: opdsSourceIdFor(server.id),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 搜索提交：按当前下拉选择决定搜哪些源。
   ///
   /// mokuro.moe 走**另一条**路：它不在聚合搜索的源模型里
@@ -346,8 +383,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          if (!widget.embedded && !isCupertinoPlatform(context))
-            _buildHeader(),
+          if (!widget.embedded && !isCupertinoPlatform(context)) _buildHeader(),
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: DiscoveryHeaderControls(
@@ -425,6 +461,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
           onOpenMokuro: _openMokuro,
           onOpenAidoku: _openAidokuSource,
           onOpenMihon: _openMihonSource,
+          onOpenOpds: _openOpdsServer,
         ),
       ],
     );

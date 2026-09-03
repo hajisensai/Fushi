@@ -1285,6 +1285,10 @@ class SyncRepository {
     // 都描述本机能力。跨设备恢复会携带明文凭据、无效绝对路径或错误 source id。
     'video_resource_torznab_config',
     'video_subtitle_opensubtitles_config',
+    // 用户自配的 OPDS 书目服务器：条目里带 base64 密码，且服务器地址多是
+    // 局域网 IP（`http://192.168.x.x:8080`），跨设备恢复既泄凭据又指向一台
+    // 新机根本连不到的主机。
+    'discovery_opds_servers',
     'video_download_backend_path_mappings',
     'video_download_target_source_id',
     'video_download_embedded_installation_id',
