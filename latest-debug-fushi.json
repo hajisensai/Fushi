@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "2.2.4-debug.13280",
-  "tag": "v2.2.4-debug.13280+33d6caf",
+  "version": "2.2.4-debug.13289",
+  "tag": "v2.2.4-debug.13289+cd9bec0",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 13280,
-  "notes": "Automated release-signed debug-channel build from develop @ 33d6caf. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 13289,
+  "notes": "Automated desktop debug-channel build from develop @ cd9bec0. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-2.2.4-debug.13264-ios.ipa",
@@ -26,15 +26,6 @@
       "sha256": "c88dd3b56cee9ffc14d0be5ddf60dfd894de5f414eab0340834baa199e69c0c4"
     },
     {
-      "name": "fushi-2.2.4-debug.13264-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13264-windows-setup.exe",
-      "releaseSequence": 13264,
-      "tag": "v2.2.4-debug.13264+ed20448",
-      "version": "2.2.4-debug.13264",
-      "size": 264093778,
-      "sha256": "6ed3b52b20efd1c90a1c637e92bfd518ee903e7653a433147a688463c70e80c4"
-    },
-    {
       "name": "fushi-2.2.4-debug.13280-33d6caf-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13280-33d6caf-debug.apk",
       "releaseSequence": 13280,
@@ -42,6 +33,15 @@
       "version": "2.2.4-debug.13280",
       "size": 270421057,
       "sha256": "4c5e27fdf1ac38be89bd0077eea20f5c6f81476d20ec0bda368e317b7aa6c5fa"
+    },
+    {
+      "name": "fushi-2.2.4-debug.13289-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13289-windows-setup.exe",
+      "releaseSequence": 13289,
+      "tag": "v2.2.4-debug.13289+cd9bec0",
+      "version": "2.2.4-debug.13289",
+      "size": 264115268,
+      "sha256": "b866881a1ef740116641f2c9d799abe9e2d3f8e4b8c6ed72163c05d609ae9de3"
     }
   ]
 }
