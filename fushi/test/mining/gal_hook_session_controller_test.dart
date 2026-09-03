@@ -2276,7 +2276,8 @@ void _playTrackerWiringGuard() {
     expect(attachAt, greaterThan(0), reason: 'startAttachedCapture 不存在，守卫需更新');
     final int attachEnd =
         body.indexOf('Future<GalHookLaunchResult> launchGame(', attachAt);
-    expect(attachEnd, greaterThan(attachAt), reason: '找不到 startAttachedCapture 结尾');
+    expect(attachEnd, greaterThan(attachAt),
+        reason: '找不到 startAttachedCapture 结尾');
     final String attachBody = body.substring(attachAt, attachEnd);
     expect(
       attachBody.contains('_startPlayTracker('),
@@ -2296,7 +2297,8 @@ void _playTrackerWiringGuard() {
 
     final int stopAt = body.indexOf('Future<void> stopCapture({');
     expect(stopAt, greaterThan(0), reason: 'stopCapture 不存在，守卫需更新');
-    final int stopEnd = body.indexOf('static bool sameTrackMembership(', stopAt);
+    final int stopEnd =
+        body.indexOf('static bool sameTrackMembership(', stopAt);
     expect(stopEnd, greaterThan(stopAt), reason: '找不到 stopCapture 结尾');
     expect(
       body.substring(stopAt, stopEnd).contains('_stopPlayTracker('),
@@ -2423,7 +2425,8 @@ void _playTrackerAttachWiring() {
     // 身份不是猜的：PID → exe 全路径 → galgames 行，与库页启动同一套判据。
     expect(harness.factoryCalls, hasLength(1));
     expect(harness.factoryCalls.single.gameId, 'galgame-attached-7');
-    expect(harness.factoryCalls.single.gameDirectory, File(gameExe).parent.path);
+    expect(
+        harness.factoryCalls.single.gameDirectory, File(gameExe).parent.path);
     final GalgamePlayTracker tracker = harness.controller.playTracker!;
     expect(tracker.isRunning, isTrue);
 
@@ -3099,6 +3102,257 @@ void _bug950Guard() {
       endpoints.dispose();
     });
   });
+  test('engine exact text thread is selected automatically without memory',
+      () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    GalHookedLine exact(int seq, String text) => GalHookedLine(
+          seq: seq,
+          timestampMs: 1000 + seq,
+          text: text,
+          threadId: 77,
+          threadAddress: 0x35aa0,
+          sourceKind: 2,
+          eventKind: text.isEmpty
+              ? GalTextEventKind.threadDiscovered
+              : GalTextEventKind.line,
+          hookName: 'SGRE exact',
+          hookCode: 'ENGINE:SGRE:wind3d11',
+        );
+    GalHookedLine luna(int seq, String text) => GalHookedLine(
+          seq: seq,
+          timestampMs: 1000 + seq,
+          text: text,
+          threadId: 5,
+          threadAddress: 0xf94600,
+          sourceKind: 2,
+          eventKind: text.isEmpty
+              ? GalTextEventKind.threadDiscovered
+              : GalTextEventKind.line,
+          hookName: 'TextRender',
+          hookCode: 'HS932@f94600',
+        );
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      polledLines: <GalHookedLine>[
+        luna(1, ''),
+        exact(2, ''),
+        // Luna 启发式线程出行更多也不能被自动选中：只有引擎精确线程可以。
+        luna(3, 'メニュー'),
+        luna(4, 'セーブ'),
+        luna(5, 'ロード'),
+        luna(6, 'コンフィグ'),
+        exact(7, 'エル'),
+        exact(8, 'エル・プ'),
+        exact(9, 'エル・プサイ'),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'SGRE'),
+    );
+    // 不手选线程：session 应在引擎精确线程真出过行之后自己选中它。
+    for (int i = 0;
+        i < 100 && controller.selectedNativeTextThreadId != 77;
+        i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+
+    expect(controller.selectedNativeTextThreadId, 77);
+    final TexthookerTextThread chosen = service.textThreads.firstWhere(
+      (TexthookerTextThread thread) => thread.nativeThreadId == 77,
+    );
+    expect(isEngineExactTextThread(chosen), isTrue);
+    expect(controller.selectedTextThreadKey, chosen.key);
+    expect(
+      controller.events.map((GalHookEvent event) => event.code),
+      contains('text.thread_engine_exact_selected'),
+    );
+    expect(
+      controller.events.map((GalHookEvent event) => event.code),
+      isNot(contains('text.thread_memory_restored')),
+    );
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('引擎精确线程出行不足阈值时不自动选中（只登记未出行的线程不算数）', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    GalHookedLine exact(int seq, String text) => GalHookedLine(
+          seq: seq,
+          timestampMs: 1000 + seq,
+          text: text,
+          threadId: 77,
+          threadAddress: 0x35aa0,
+          sourceKind: 2,
+          eventKind: text.isEmpty
+              ? GalTextEventKind.threadDiscovered
+              : GalTextEventKind.line,
+          hookName: 'SGRE exact',
+          hookCode: 'ENGINE:SGRE:wind3d11',
+        );
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      // 只出 2 行 —— 低于 _textThreadRestoreMinLines(3)。上一条测试里恰好是 3 行，
+      // 所以那条测试**结构上分辨不出**这道门在不在；这条才是它唯一的覆盖。
+      polledLines: <GalHookedLine>[
+        exact(1, ''),
+        exact(2, 'エル'),
+        exact(3, 'エル・プ'),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'SGRE'),
+    );
+    // 等到那 2 行确实被摄入（自动选线程的判定就在同一轮 poll 里跑完），
+    // 再断言「没有选中」——不靠固定睡眠，避免只是没等够就绿。
+    TexthookerTextThread? exactThread;
+    for (int i = 0; i < 200; i++) {
+      final Iterable<TexthookerTextThread> found = service.textThreads.where(
+        (TexthookerTextThread t) => t.nativeThreadId == 77,
+      );
+      exactThread = found.isEmpty ? null : found.first;
+      if ((exactThread?.observedLineCount ?? 0) >= 2) break;
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(exactThread, isNotNull);
+    expect(exactThread!.observedLineCount, 2);
+    expect(isEngineExactTextThread(exactThread), isTrue);
+
+    expect(controller.selectedNativeTextThreadId, isNull);
+    expect(
+      controller.events.map((GalHookEvent event) => event.code),
+      isNot(contains('text.thread_engine_exact_selected')),
+    );
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('BUG-2069：配对到的资源语音必须把整句时长写回行条目（制卡动图靠它决定抓多长）', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    // 43 帧 AAC-LC @44100 Hz = 998 ms（与 adts_duration_test 同一算法，但这里测的是
+    // **生产接线**：`_waitForPairedResourceAudio` 之后那次 updateLineAudio 有没有
+    // 真的带上 durationMs。此前把它改成 null 全套测试照样绿。）
+    final Uint8List paired = _adtsBytes(frames: 43, frequencyIndex: 4);
+    final _FakeEngineSource engine = _FakeEngineSource(pairedBytes: paired);
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
+      }) =>
+          engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    expect(
+      (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
+      isTrue,
+    );
+    final TexthookerLineEntry entry = service.appendLine('siglus line')!;
+    final Uint8List? bytes = await controller.captureAudioBytes(
+      lineId: entry.id,
+      sentence: entry.text,
+      outputExtension: 'aac',
+    );
+
+    expect(bytes, paired);
+    expect(service.entries.single.audioBackend, 'game_resource');
+    expect(service.entries.single.audioDurationMs, 998);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+}
+
+/// 合成 [frames] 个 ADTS 帧（7 字节头 + 20 字节负载），采样率索引 [frequencyIndex]。
+Uint8List _adtsBytes({required int frames, required int frequencyIndex}) {
+  const int payload = 20;
+  const int length = 7 + payload;
+  final Uint8List out = Uint8List(length * frames);
+  for (int i = 0; i < frames; i++) {
+    final int base = i * length;
+    out[base] = 0xFF;
+    out[base + 1] = 0xF1; // syncword 尾 + MPEG-4 + no CRC
+    out[base + 2] = (1 << 6) | (frequencyIndex << 2); // AAC-LC + 采样率索引
+    out[base + 3] = (length >> 11) & 0x03;
+    out[base + 4] = (length >> 3) & 0xFF;
+    out[base + 5] = (length & 0x07) << 5;
+    out[base + 6] = 0xFC;
+  }
+  return out;
 }
 
 class _FakeEngineSource extends EngineHookGalAudioSource {

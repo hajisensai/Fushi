@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -57,6 +58,64 @@ class GalHookCaptureSuppressionException implements Exception {
 /// [hwnd] 目标窗口句柄；[frames] 尝试抓的帧数；[intervalMs] 帧间隔（WGC 捕获本身有延迟，
 /// 帧率尽力而为）；[fps] 输出帧率；[maxWidth] 输出最大宽度（高度按比例）。
 /// 抓到 <2 帧时返回 null（单帧不成动图，交回退）。
+/// 制卡动图最长覆盖的整句时长。galgame 一句语音通常 1～6 s；再长的是长独白，
+/// 动图撑到 8 s 还没播完就截断，卡片体积（AVIF 约 3 KB/帧）和抓帧时间都不该无界。
+const Duration kGalAnimatedMaxDuration = Duration(seconds: 8);
+
+/// 动图该抓多少帧：以 [fps] 回放时至少覆盖整句语音 [target]，不少于 [baseFrames]
+/// （无时长信息时的旧行为 = 10 帧 / 1.25 s），不多于 [kGalAnimatedMaxDuration]。
+///
+/// [pending] = 整句时长还没算出来（引擎 PCM 要等语音播完才知道长度）：此时不能
+/// 停——语音还在播，画面正是这句的画面，继续采样直到时长到达或撞上限。
+/// 时长到达但为 null（字节不是 ADTS、帧头损坏）→ 回退基线帧数；此时已多抓的帧
+/// 由 [trimSurplusAnimationFrames] 在编码前裁掉，落地行为才真的等于基线帧数。
+int galAnimatedFrameBudget({
+  required int baseFrames,
+  required int fps,
+  required Duration? target,
+  required bool pending,
+}) {
+  final int maxFrames = (kGalAnimatedMaxDuration.inMilliseconds * fps) ~/ 1000;
+  if (pending) return maxFrames;
+  if (target == null || target <= Duration.zero) return baseFrames;
+  final int wanted = (target.inMilliseconds * fps + 999) ~/ 1000;
+  if (wanted <= baseFrames) return baseFrames;
+  return wanted > maxFrames ? maxFrames : wanted;
+}
+
+/// 第 [index] 帧的落盘文件名。ffmpeg 的 `image2` 解复用器按 `frame_%03d.png` 连号
+/// 读取，遇到第一个缺号就停 —— 命名规则和 [kGalAnimationFramePattern] 必须是同一处
+/// 真相源，否则裁帧会裁不掉（改名后删的是别的文件）。
+String galAnimationFrameName(int index) =>
+    'frame_${index.toString().padLeft(3, '0')}.png';
+
+/// 与 [galAnimationFrameName] 配套的 ffmpeg 输入模式。
+const String kGalAnimationFramePattern = 'frame_%03d.png';
+
+/// 把 [directory] 里已落盘的 [captured] 帧裁到 [budget] 帧，返回实际保留的帧数。
+///
+/// 采样循环在整句时长未知期间按上限抓帧，时长到达后预算会**收缩**；多出来的帧若
+/// 留在目录里就会一起进 ffmpeg，动图比整句语音还长——这正是 [galAnimatedFrameBudget]
+/// 的语义在生产路径上唯一可能落空的地方（BUG-2069 审查 B4）。
+///
+/// 删除是 best-effort：删失败的那一帧仍在序列里，此时不能上报一个比实际文件少的
+/// 帧数（会让调用方以为已截断），故遇到删除失败就停在该帧。
+Future<int> trimSurplusAnimationFrames({
+  required Directory directory,
+  required int captured,
+  required int budget,
+}) async {
+  if (captured <= budget) return captured;
+  for (int i = budget; i < captured; i++) {
+    try {
+      await File(p.join(directory.path, galAnimationFrameName(i))).delete();
+    } catch (_) {
+      return i; // 删不掉：序列到此为止，如实回报。
+    }
+  }
+  return budget;
+}
+
 Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
   required int hwnd,
   int frames = 10,
@@ -67,6 +126,14 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
   // 与测试不受影响）；真实调用点传用户偏好 `gal_mining_animated_format`。
   MiningAnimatedFormat format = MiningAnimatedFormat.gif,
   GalHookCaptureLeaseFactory? captureLeaseFactory,
+  // 本句语音时长（异步：制卡时音频与画面并行采集，资源音频立刻可知、引擎 PCM 要
+  // 等整句播完）。给了就把动图抓到覆盖整句为止（上限 [kGalAnimatedMaxDuration]）；
+  // null / 解析出 null 都退回 [frames] 帧的旧行为——**包括已经多抓的那些帧**，
+  // 它们在编码前被 [trimSurplusAnimationFrames] 裁掉。见 [galAnimatedFrameBudget]。
+  //
+  // ⚠️ 已知代价：时长未定期间 capture lease 一直被持有，最坏 8 s 墙钟（旧行为固定
+  // ~1.2 s）。lease 期间游戏内查词卡与高亮是隐藏的，用户会看到它消失更久。
+  Future<Duration?>? targetDuration,
 }) async {
   // 只在桌面有 CLI ffmpeg 时可用；移动端无 CLI ffmpeg，直接回退单帧（且外部窗口捕获
   // 本就只有 Windows）。不做平台早退硬编码——ffmpeg 后端跑不起来时下面自然 fail-open。
@@ -77,11 +144,39 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
     int captured = 0;
     final GalHookCaptureLease? captureLease =
         captureLeaseFactory == null ? null : await captureLeaseFactory();
+    // 整句时长的到达状态：未到达期间维持采样（语音还在播，画面正是这句的画面），
+    // 到达后按 [galAnimatedFrameBudget] 收口；永不到达则由上限兜底。
+    bool targetResolved = targetDuration == null;
+    Duration? resolvedTarget;
+    if (targetDuration != null) {
+      unawaited(
+        targetDuration.then((Duration? value) {
+          resolvedTarget = value;
+          targetResolved = true;
+        }, onError: (Object _) {
+          targetResolved = true;
+        }),
+      );
+    }
+    // 最终采纳的帧预算。**采样期间会收缩**：`pending` 期间按 [kGalAnimatedMaxDuration]
+    // 的上限抓（语音还在播，画面正是这句的画面），时长到达后回落到真实值。所以落盘
+    // 帧数可能超过最终预算 —— 必须在编码前裁掉多的，否则 [galAnimatedFrameBudget]
+    // 的语义只写在注释里、动图仍比整句长（BUG-2069 审查 B4）。
+    int frameBudget = frames;
     try {
       // BUG-1096：native 的成功路径诊断（光标抑制是否真的生效 / 捕获目标是否被从
       // Magpie 缩放窗重定向）。每轮只记一次，逐帧刷会把日志淹掉。
       String? loggedDiagnostics;
-      for (int i = 0; i < frames; i++) {
+      for (int i = 0;; i++) {
+        if (i >= frames) {
+          frameBudget = galAnimatedFrameBudget(
+            baseFrames: frames,
+            fps: fps,
+            target: targetResolved ? resolvedTarget : null,
+            pending: !targetResolved,
+          );
+          if (i >= frameBudget) break;
+        }
         if (i > 0 && intervalMs > 0) {
           await Future<void>.delayed(Duration(milliseconds: intervalMs));
         }
@@ -102,8 +197,7 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
           continue; // 该帧失败：跳过，尽力而为。
         }
         final Uint8List png = cap.pngBytes!;
-        final String frameName =
-            'frame_${captured.toString().padLeft(3, '0')}.png';
+        final String frameName = galAnimationFrameName(captured);
         try {
           await File(p.join(tempDir.path, frameName))
               .writeAsBytes(png, flush: true);
@@ -117,12 +211,19 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
       // popup 一直消失；release 也必须覆盖捕获/写帧异常。
       if (captureLease != null) await captureLease.release();
     }
+    // 预算收缩后多抓的帧不能进 ffmpeg（BUG-2069 审查 B4）。image2 解复用器从
+    // `frame_000` 起连读到第一个缺号为止，所以删掉尾部即等于截断序列。
+    captured = await trimSurplusAnimationFrames(
+      directory: tempDir,
+      captured: captured,
+      budget: frameBudget,
+    );
     // 抓到 <2 帧：不成动图，交调用方回退单帧。
     if (captured < 2) {
       return null;
     }
 
-    final String inputPattern = p.join(tempDir.path, 'frame_%03d.png');
+    final String inputPattern = p.join(tempDir.path, kGalAnimationFramePattern);
 
     // 首选用户所选格式；失败则降级 GIF 再试一次。这不是「重试掩盖症状」——两次调用
     // 的**参数不同**，第二次是能力降级：捆绑 ffmpeg 若来自旧版本包，没有 libsvtav1 /

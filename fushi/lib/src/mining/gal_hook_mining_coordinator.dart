@@ -332,10 +332,25 @@ class GalHookMiningCoordinator {
       if (_captureGifUsesDefault) {
         // 生产 GIF 路径把 lease 精确放进连续 WGC 采样循环：最后一帧落盘就恢复，
         // 不把后续可能耗时 60 秒的 ffmpeg 编码算作「正在截图」。
+        //
+        // 动图要覆盖整句：音频与画面本就并行采集，把「本句音频时长」作为异步目标
+        // 喂给采样循环——资源音频立刻可知（按 ADTS 帧头读），引擎 PCM 要等语音
+        // 播完；未知期间循环继续采样，正是语音在播的那段画面。时长写在行条目上
+        // （[TexthookerService.updateLineAudio]），音频字节回来后再读一次条目。
+        final Future<Duration?> targetDuration = audioFuture.then(
+          (Uint8List? bytes) {
+            if (bytes == null || bytes.isEmpty) return null;
+            final int? durationMs = _lineLookup(lineId)?.audioDurationMs;
+            return durationMs == null || durationMs <= 0
+                ? null
+                : Duration(milliseconds: durationMs);
+          },
+        );
         animated = await captureWindowGifBytes(
           hwnd: window.hwnd,
           format: animatedFormat,
           captureLeaseFactory: captureLeaseFactory,
+          targetDuration: targetDuration,
         );
       } else {
         // 测试/替代捕获器保留原有二参数 typedef；它没有可观察的「采样完成、开始
