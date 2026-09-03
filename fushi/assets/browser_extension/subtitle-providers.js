@@ -39,15 +39,16 @@ function fushiNetflixId() {
 //
 // 注意 `cueStartMs`（静态帧「字幕开头」档要的时刻）必须仍是**真句首**，不带这个边距——
 // 边距是给「裁音频/动图」用的，不是给「定位那一帧」用的。
-var FUSHI_CLIP_WINDOW_MARGIN_MS = 200;
+const FUSHI_CLIP_WINDOW_MARGIN_MS = 200;
 
 // 纯函数：把 cue 的 [startV, endV] 外扩成制卡裁切窗。start 夹到 >= 0（句首在 0 附近时不越界）。
 // 入参非有限数 → null，调用方据此判「这一句没有可用的时间窗」。
 function fushiClipWindowWithMargin(startV, endV, marginMs) {
-  var s = Number(startV);
-  var e = Number(endV);
+  const s = Number(startV);
+  const e = Number(endV);
   if (!isFinite(s) || !isFinite(e)) return null;
-  var m = Number(marginMs);
+  // `m` 是唯一会被重新赋值的（非法/负边距回落默认值），所以只有它是 let。
+  let m = Number(marginMs);
   if (!isFinite(m) || m < 0) m = FUSHI_CLIP_WINDOW_MARGIN_MS;
   return { startMs: Math.max(0, s - m), endMs: e + m };
 }

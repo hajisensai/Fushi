@@ -7807,8 +7807,18 @@ class _AppModelRemoteLookupService
               payload.screenshotBytes == null ? null : 'web_shot.jpg',
           // 有真实音频源 → 缺音频即失败（与 YouTube、app 内一致），不出无声卡。
           requireAudio: true,
-          animatedFormat: animatedFormat,
-          imageMode: _appModel.videoMiningImageMode,
+          // 这里**不**下发动图格式与「动图 vs 静态帧」偏好，不是漏了：这条路
+          // mediaSource 恒为 null（封面走扩展的解码帧字节），于是引擎里那三个封面来源
+          // 闭包全部前置守卫失败——抽动图与抽起点帧都要求有 src，抽当前帧要求
+          // stillFallback（服务端路径没有前台播放器）。加上 providedCoverBytes 非空时
+          // 引擎在 `if (coverPath == null)` 之前就已把封面写好，那段阶梯整段不被求值。
+          // 两个参数无论传什么都到不了任何求值点，传了只会稀释按段切片的源码守卫
+          // （守卫用「YouTube 段 → Netflix 锚点」切窗，本段夹在中间，多一份同名字面量
+          // 会让「删掉 YouTube 那份真正生效的」照样绿）。
+          //
+          // stillFormat 相反，**必须**留着：providedCoverBytes 那条短路会按它
+          // 归一化编码（immersion_mining_engine.dart 的 cardScreenshotEncodingFor），
+          // 用户选的静图格式在这条路上是真生效的。
           stillFormat: _appModel.videoMiningStillFormat,
         ),
         compression: compression,

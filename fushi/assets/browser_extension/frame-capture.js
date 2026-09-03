@@ -147,7 +147,16 @@ function fushiCaptureVideoFrame(video, options) {
     try {
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
-    } catch (_) { /* 老浏览器没有这两个属性，画质差一点不影响正确性 */ }
+    } catch (smoothingUnsupported) {
+      // 预期内降级，**不是**取帧失败：老浏览器 / 替身 ctx 上这两个属性可能不存在或只读
+      // （严格模式下赋值抛 TypeError）。此时缩放质量退回实现默认，大比例缩小会有锯齿，
+      // 但这一帧照常取得到——所以这里既不 return null 也不重新抛，控制流原样往下走进
+      // drawImage，绝不能让它落进外层 catch 那条「取不到帧」的降级路。
+      // 也不静默空吞：留一条与 stream-bridge.js / netflix-bridge.js 同风格的诊断，
+      // 否则日后「封面有锯齿」除了猜没有别的线索。
+      console.warn('[Fushi] canvas imageSmoothing 不可用，封面缩放退回实现默认质量:',
+        smoothingUnsupported);
+    }
     ctx.drawImage(video, 0, 0, size.width, size.height);
     // EME/DRM 的**第二种**失败形态（文件头承诺过的那一半）：canvas 没被污染、drawImage 和
     // toDataURL 都不抛，但硬解合成路径下画出来的是一整块常量黑。不判它，用户会静默拿到一张

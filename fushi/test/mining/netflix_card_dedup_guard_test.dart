@@ -59,6 +59,8 @@ void main() {
         expect(src.substring(playIdx, beginIdx).contains('await sleep(200)'),
             isFalse,
             reason: '$root content.js beginClip 前仍残留固定 200ms warmup（Bug C 未修）');
+        // 锚点里**不带声明关键字**：不变式是「默认边距仍是 200ms」，var/let/const 是格式
+        // 而非语义；带上它，一次 lint 清理（S3504 `var`→`const`）就能把守卫扫红。
         // PR#1172：头部提前量收成共享原语 `fushiClipWindowWithMargin`（入队批量剪辑与
         // 「立即出卡」两条路同源，此前后者发的是裸 cue 窗）。守卫跟着改成钉「走那个原语」
         // + 「原语的默认边距仍是 200ms」，而不是钉死字面算式——语义不变，位置换了。
@@ -68,7 +70,7 @@ void main() {
         expect(
             File('$root/subtitle-providers.js')
                 .readAsStringSync()
-                .contains('var FUSHI_CLIP_WINDOW_MARGIN_MS = 200;'),
+                .contains('FUSHI_CLIP_WINDOW_MARGIN_MS = 200;'),
             isTrue,
             reason: '$root 入队/出卡的头部提前量不再是 200ms');
       });

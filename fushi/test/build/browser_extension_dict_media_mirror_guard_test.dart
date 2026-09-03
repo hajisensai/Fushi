@@ -200,6 +200,9 @@ void main() {
             reason:
                 '$root content.js fushiEnqueue must prefer the full-episode track over DOM sampling');
         // 录制边距 + 去重不得丢（复核修订 5 红线）。PR#1172 把边距收成共享原语
+        // 锚点里**不带声明关键字**（不是 `var FUSHI_...`）：不变式是「默认边距仍是 200ms」，
+        // var/let/const 是格式而非语义。带上关键字只会让一次 `var`→`const` 的 lint 清理
+        // 把守卫扫红——典型的「守卫锚点随格式漂移」。
         // `fushiClipWindowWithMargin`（入队批量剪辑与「立即出卡」两条路同源，此前后者
         // 发的是裸 cue 窗），所以判据从字面算式改成「走那个原语」+「原语默认边距仍是
         // 200ms」——同一条不变式，锚点换了位置。
@@ -210,7 +213,7 @@ void main() {
         expect(
             File('$root/subtitle-providers.js')
                 .readAsStringSync()
-                .contains('var FUSHI_CLIP_WINDOW_MARGIN_MS = 200;'),
+                .contains('FUSHI_CLIP_WINDOW_MARGIN_MS = 200;'),
             isTrue,
             reason: '$root must keep the 200ms clip-window margin');
         expect(src.contains('fushiQueueKey'), isTrue,

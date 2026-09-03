@@ -39,10 +39,45 @@
      `immersionPayloadFromNetflix`（`fushi/lib/src/mining/immersion_capture_channel.dart`），
      非 Netflix 来源报「网页视频 制卡失败」，日志 tag 也分成 `Anki.mineImmersion.web`。
 - **已知未覆盖（不在本条修复范围，如实记录）**：
-  - `fushi/lib/src/models/app_model.dart` 的 bilibili 分支给引擎传了 `imageMode` / `stillFormat`，但同分支
-    `mediaSource: null` 且恒带 `providedCoverBytes` → 引擎的封面阶梯不会被求值，封面**恒是扩展在制卡那一刻
-    取的 JPEG**（`web_shot.jpg`）。选「字幕开头截图」的用户拿到的是制卡时刻的帧；选 PNG/WEBP 的拿到的仍是 jpg。
-    与 Netflix 那条路的 BUG-1416 同形状（须在「产字节这一层」按偏好分流），但 B 站这边要在**扩展侧**按
-    `cueStartMs` 重新取帧才能根治，属另一件事。
+  - `fushi/lib/src/models/app_model.dart:7795` 的 bilibili 分支 `mediaSource: null`，封面走
+    `providedCoverBytes`（扩展在制卡那一刻取的解码帧，落名 `web_shot.jpg`）→ 引擎那段
+    `if (coverPath == null)` 的封面阶梯（`fushi/lib/src/mining/immersion_mining_engine.dart:398`）
+    **整段不被求值**。所以选「字幕开头截图」的用户拿到的仍是**制卡时刻**那一帧。与 Netflix 那条路的
+    BUG-1416 同形状（须在「产字节这一层」按偏好分流），但 B 站这边要在**扩展侧**按 `cueStartMs`
+    重新取帧才能根治，属另一件事。
+    - **订正（2026-09-03，PR#1172 复审）**：初稿在这里写「选 PNG/WEBP 的拿到的仍是 jpg」——**不成立**。
+      `stillFormat` 在这条路上是**真生效**的：`providedCoverBytes` 那条短路会按它重新编码
+      （`immersion_mining_engine.dart:297` 的 `cardScreenshotEncodingFor(req.stillFormat)`），
+      扩展给的 JPEG 字节会被转成用户所选格式。恒不生效的只有 `imageMode`（连带 `animatedFormat`）——
+      `mediaSource` 为 null ⇒ 抽动图/抽起点帧的前置守卫都失败，服务端路径无 `stillFallback` ⇒ 抽当前帧
+      也失败，何况阶梯整段根本不被求值。这两个参数已在复审前置 ① 里从该分支删除：留着不只是死代码，
+      还会**稀释按段切片的源码守卫**——`fushi/test/mining/remote_mining_image_mode_test.dart` 用
+      「方法起点 → `ImmersionCaptureResult cap =`」切 YouTube 段，bilibili 段正夹在中间，本段每多一份
+      同名字面量，就让「删掉 YouTube 那份真正生效的透传」照样绿（实测存活变异 D4；`animatedFormat`
+      对 `remote_mining_animated_format_test.dart` 同形）。该分支现由
+      `fushi/test/mining/remote_mining_bilibili_branch_guard_test.dart` 守（requireAudio / 零负窗前置门 /
+      来源前缀 / mediaSource / 两个恒不生效参数不得回流，五条均已变异实测）。
+  - **普通网页只要 DOM 里有任意一个 `<video>`，它的解码帧就会成为卡面图，并把整张卡改道成「视频卡」**
+    （2026-09-03 PR#1172 复审补记，**实测**而非推断，现状已钉住、本条不改行为）：
+    - 实测链路（在受控 vm 里真跑 `bridge-shim.js`）：普通网页 `fushiSite()==='other'` ⇒
+      `fushiClipSource()` 返回 **`null`**——它只看 `location`（`tools/browser-extension/subtitle-providers.js:71`），
+      **根本不去 DOM 找 `<video>`**，页面有没有广告视频对它零影响。所以扩展这一侧走的仍是「立即出卡」
+      分支，发出的 wire type 恒为 `'mine'`（扩展侧不存在 `mineImmersion` 这种消息类型）。
+    - 改道发生在 **Dart 侧**：`fushi/lib/src/sync/immersion_mine_payload.dart` 的 `isImmersion` 只要
+      `screenshotBytes != null` 即为真 ⇒ `fushi/lib/src/sync/fushi_remote_api_handlers.dart:195` 把
+      `/api/mine` 从 `mineEntry`（纯文本）转进 `mineImmersion()` ⇒
+      `fushi/lib/src/mining/immersion_capture_channel.dart` 硬写 `source: AnkiMiningSource.video`、
+      封面命名 `web_shot.jpg`、页面标题进 `{document-title}`。
+    - **真正由本 PR 引入的变化不是路由，是「立即出卡这条路现在会尽力附带媒体」**：普通网页在换判据之前
+      （`site !== 'youtube' && site !== 'netflix'`）也走同一条分支，只是那时一张图都不发、`isImmersion`
+      恒假。现在 `frame-capture.js` 的取帧目标是 `document.querySelector('video')`——**文档序第一个**
+      `<video>`，不问它是不是用户在看的那个。于是广告位 / 背景视频 / 内嵌视频的画面成了本卡封面。
+    - 现状测试：`tools/browser-extension/web-video-mine.test.js` 的
+      「普通网页带一个无关 `<video>`：解码帧与页面标题照发（现状，非期望行为）」。此前该文件只测了
+      「普通网页**没有** video」。两条变异实测（删掉 `msg.screenshotBase64 = ...` / 删掉
+      `msg.documentTitle = ...`）都能把它打红。
+    - 要改行为的话根因在 `tools/browser-extension/frame-capture.js` 的
+      `document.querySelector('video')`：取帧目标应与「用户此刻在看/查词的那个媒体」绑定，而不是文档序
+      第一个 video。**另开 bug，不在本条范围**。
   - B 站多音轨按 `bandwidth` 最大取；Dolby/FLAC 分别在 `dash.dolby.audio` / `dash.flac.audio`，不在
     `dash.audio` 数组里，所以现在选不到。这是**靠 B 站 API schema 兜着**、不是代码不变式。

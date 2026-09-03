@@ -213,6 +213,60 @@ test('普通网页（无轨无视频）：不报「没找到当前字幕」，�
     '普通网页压根没有字幕，不该报这条');
 });
 
+// PR#1172 复审：普通网页带无关 <video> 的现状（未改行为，仅钉现状）。
+//
+// ⚠️ 这是**已知行为变化，不是期望行为**。改行为要另开 bug，别在这条用例上「顺手修正」——
+// 它存在的唯一目的是让下一个人一眼看见现状，而不是让现状看起来是对的。
+//
+// 现场：一篇纯文字报道，DOM 里恰好躺着一个与阅读内容无关的 <video>（广告位 / 背景视频 /
+// 站内推荐位 / 内嵌社交卡片）。用户在正文上查词制卡，主观上这就是一张「网页文本卡」。
+//
+// 实测（探针跑的是真代码，不是推测）：
+//   · fushiClipSource() 返回 **null** —— 它只看 location（site==='other' 直接返回 null），
+//     压根不去 DOM 里找 <video>。所以「有无关视频」并不会让它给出一个「带视频的 mode」；
+//   · 但 mineEntry 的门是 `!(clip && clip.mode === 'queue')`，null 同样过门 → 走立即出卡。
+//     这一步与改判据之前**等价**（旧判据 site!=='youtube'&&site!=='netflix' 也走这条）；
+//   · 真正变了的是这条分支现在**尽力附带媒体**：frame-capture.js 取帧目标是
+//     `document.querySelector('video')`（文档序第一个 <video>，谁都不问），于是那个无关
+//     视频的当前解码帧被当成本卡封面发了出去，页面标题也一并进 documentTitle。
+//
+// 扩展侧发出的**消息 type 仍是 'mine'**（全仓没有 'mineImmersion' 这种消息类型）；改道发生
+// 在 Dart 侧：ImmersionMinePayload.isImmersion 只要 screenshotBytes != null 就为真，于是
+// /api/mine 从 mineEntry(纯文本) 转进 mineImmersion()，卡最终被打上 AnkiMiningSource.video、
+// 封面命名 web_shot.jpg、documentTitle = 页面标题。
+test('普通网页带一个无关 <video>：解码帧与页面标题照发（现状，非期望行为）', async () => {
+  const { call, sent } = load({
+    // fushiClipSource() 对普通网页恒 null（实测），与页面里有没有 <video> 无关。
+    mineContext: {
+      window: null, site: 'other', clip: null,
+      youtubeId: null, netflixId: null, mineAtV: null, documentTitle: '',
+    },
+    // 无关 <video> 就绪 → fushiCaptureCurrentFrame() 取到它的解码帧（实测
+    // fushiVideoFrameCapturable(readyState:4) === true，不问这个 video 是不是用户在看的）。
+    frame: { base64: 'RlJBTUU=', width: 640, height: 360 },
+    title: '某新闻网站 - 一篇纯文字报道',
+  });
+  const ok = await call('mineEntry', { ...FIELDS, popupSelectionText: '選択したテキスト' });
+  assert.strictEqual(ok, true);
+  assert.strictEqual(sent.length, 1);
+  // ① 消息 type：扩展侧没有第二种制卡消息，永远是 'mine'。
+  assert.strictEqual(sent[0].type, 'mine');
+  // ② 解码帧：**带**。这就是那条行为变化——图来自与正文无关的那个 <video>。
+  assert.strictEqual(sent[0].screenshotBase64, 'RlJBTUU=',
+    '现状：无关 <video> 的解码帧被当成本卡封面发出（Dart 侧据此判 isImmersion）');
+  // ③ 页面标题：**带**。落到 Anki 的 {document-title}（视频名字段）。
+  assert.strictEqual(sent[0].documentTitle, '某新闻网站 - 一篇纯文字报道');
+  // ④ 例句仍来自弹窗选区（无关视频没有字幕轨，ctx.window 为 null）。
+  assert.strictEqual(sent[0].sentence, '選択したテキスト');
+  // ⑤ 没有时间窗：ctx.window 为 null，一个窗字段都不发。
+  for (const k of ['cueStartMs', 'clipStartMs', 'clipEndMs', 'mineAtMs']) {
+    assert.strictEqual(k in sent[0], false, `无字幕行时不得发 ${k}`);
+  }
+  // ⑥ 没有可裁源身份：clip 为 null，服务端不会去解析任何流。
+  assert.strictEqual('clipSourceKind' in sent[0], false);
+  assert.strictEqual('clipSourceId' in sent[0], false);
+});
+
 test('依赖缺席（老宿主没有 fushiMineContext / 取帧模块）也不抛，退回纯文本卡', async () => {
   const { call, sent } = load({ mineContext: null, frame: undefined });
   const ok = await call('mineEntry', { ...FIELDS, popupSelectionText: 'せんたく' });
