@@ -229,6 +229,87 @@ mixin _FushiDbContentMisc
   Future<int> clearStudySegments(String mediaKind) =>
       (delete(studySegments)..where((t) => t.mediaKind.equals(mediaKind))).go();
 
+  /// 用户在时段明细里删某媒体某几天的统计：段**写零**而不是删行——零值就是一次新的
+  /// 绝对值写（`updatedAt = now`），经既有 LWW 同步（`upsertStudySegmentsIfNewer` /
+  /// 聚合 merge 同 uid 取 updatedAt 大者）自然传到对端，不需要 per-uid 墓碑或新 wire
+  /// 字段；读取端对零行本就无贡献（活动流过滤、日面求和为 0、最近观看排除）。
+  /// 返回改写的行数。
+  Future<int> zeroStudySegmentsOnDays({
+    required String mediaKind,
+    required String mediaKey,
+    required Set<String> dateKeys,
+  }) {
+    if (dateKeys.isEmpty || mediaKey.isEmpty) return Future<int>.value(0);
+    return (update(studySegments)
+          ..where((t) =>
+              t.mediaKind.equals(mediaKind) &
+              t.mediaKey.equals(mediaKey) &
+              t.dateKey.isIn(dateKeys)))
+        .write(StudySegmentsCompanion(
+      durationMs: const Value(0),
+      chars: const Value(0),
+      pages: const Value(0),
+      updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+    ));
+  }
+
+  /// 时段明细 sheet 的「删这一条」（BUG-2108 用户诉求：看着不对的数据要能删）：
+  /// 删某媒体在 [dateKeys] 这几天的**全部统计事实**——正是 sheet 那一行求和用到的
+  /// 行集，不多不少。
+  ///  * v92 段：按 uid 写零（[zeroStudySegmentsOnDays]，同步安全）；
+  ///  * legacy 日行：按域删行（阅读按 title、视频按 bookUid / 无身份按 title）；
+  ///    legacy wire 是 title 粒度 MAX-union，对端若还持有这几行会复活——旧数据的
+  ///    旧口径已知边界，单机无影响；
+  ///  * 游戏：删该游戏这几天的 galgame_sessions + legacy 活动行的 game 字数行
+  ///    （游玩会话不进互联同步，无副作用）。
+  /// 不动收藏 / 制卡历史 / 查词计数（与按媒体删同一「只清纯统计」边界）；不立墓碑
+  /// （按天删不是「忘掉这部」，覆盖并集也不动——之后重看仍不计）。
+  Future<void> deleteStatFactsOnDays({
+    required String mediaKind,
+    required String mediaKey,
+    required String title,
+    required Set<String> dateKeys,
+  }) =>
+      transaction(() async {
+        if (dateKeys.isEmpty) return;
+        await zeroStudySegmentsOnDays(
+          mediaKind: mediaKind,
+          mediaKey: mediaKey,
+          dateKeys: dateKeys,
+        );
+        switch (mediaKind) {
+          case kActivityMediaBook:
+            await (delete(readingStatistics)
+                  ..where((t) =>
+                      t.title.equals(title) & t.dateKey.isIn(dateKeys)))
+                .go();
+          case kActivityMediaVideo:
+            await (delete(videoWatchStatistics)
+                  ..where((t) =>
+                      (mediaKey.isNotEmpty
+                          ? t.bookUid.equals(mediaKey)
+                          : (t.bookUid.isNull() | t.bookUid.equals('')) &
+                              t.title.equals(title)) &
+                      t.dateKey.isIn(dateKeys)))
+                .go();
+          case kActivityMediaGame:
+            if (mediaKey.isNotEmpty) {
+              await (delete(galgameSessions)
+                    ..where((t) =>
+                        t.gameId.equals(mediaKey) & t.dateKey.isIn(dateKeys)))
+                  .go();
+            }
+            await (delete(activityEvents)
+                  ..where((t) =>
+                      t.eventType.equals(kActivityGame) &
+                      (mediaKey.isNotEmpty
+                          ? t.mediaKey.equals(mediaKey)
+                          : t.title.equals(title)) &
+                      t.dateKey.isIn(dateKeys)))
+                .go();
+        }
+      });
+
   /// 清除 (title, sourceType) 的统计删除墓碑（用户又读该书 / 查词、新写当日统计时
   /// 调用，让该书统计重新生效）。返回删除的行数（无墓碑时 0）。
   Future<int> clearStatisticsTombstone(String title, String sourceType) =>
@@ -305,10 +386,14 @@ mixin _FushiDbContentMisc
     bool includeUnattributed = false,
   }) =>
       transaction(() async {
-        // v92：有身份即连带删 study_segments 事实 + 按身份立碑。
+        // v92：有身份即连带删 study_segments 事实 + 按身份立碑。BUG-2108：连带
+        // 忘掉「已看过的片内区间」——删统计 = 当没看过，之后重看重新计首次覆盖。
         if (bookUid != null && bookUid.isNotEmpty) {
           await deleteStudySegmentsForMedia(
               mediaKind: kActivityMediaVideo, mediaKey: bookUid);
+          await (delete(preferences)
+                ..where((t) => t.key.equals(videoWatchCoveragePrefKey(bookUid))))
+              .go();
         }
         // 本 tile 自身的 title 恒立碑（被删行的防复活；同名幸存者被连带压制是
         // wire title 粒度的已知限制，见方法 doc）。
@@ -439,6 +524,10 @@ mixin _FushiDbContentMisc
   /// 也不写墓碑。
   Future<void> clearAllVideoStatistics() => transaction(() async {
         await clearStudySegments(kActivityMediaVideo);
+        // BUG-2108：清统计 = 全部当没看过，覆盖并集一并清。
+        await (delete(preferences)
+              ..where((t) => t.key.like('$kVideoWatchCoveragePrefPrefix%')))
+            .go();
         await delete(videoWatchStatistics).go();
         await delete(videoHourlyLogs).go();
         await (delete(lookupMiningCounters)

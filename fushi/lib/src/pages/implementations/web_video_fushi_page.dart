@@ -778,9 +778,13 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           mediaKind: kActivityMediaVideo,
           mediaKey: widget.bookUid,
           title: row.title,
+          accrual: StudyAccrual.explicit,
           onWriteError: (Object e, StackTrace st) =>
               ErrorLogService.instance.log('StudyClock.write(web-video)', e, st),
         ),
+        loadCoverage: () => db.getPref(videoWatchCoveragePrefKey(widget.bookUid)),
+        saveCoverage: (String json) =>
+            db.setPref(videoWatchCoveragePrefKey(widget.bookUid), json),
         markCompleted: (String uid) =>
             db.markVideoCompleted(uid, DateTime.now()),
       )..attach(_controller);

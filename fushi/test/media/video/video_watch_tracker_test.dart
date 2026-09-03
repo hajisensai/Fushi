@@ -29,6 +29,8 @@ class _FakeSource extends ChangeNotifier implements VideoPlaybackSource {
   int? positionMs;
   @override
   int? durationMs;
+  @override
+  double speed = 1.0;
   void emit() => notifyListeners();
 }
 
@@ -99,11 +101,87 @@ StudyClock _clock(_Sink sink, {DateTime Function()? now}) {
     mediaKind: kActivityMediaVideo,
     mediaKey: 'u1',
     title: 'A',
+    accrual: StudyAccrual.explicit,
     sink: sink.call,
     deviceId: () async => 'dev',
     now: now,
     uidFactory: () => 'seg${++seq}',
   );
+}
+
+/// 覆盖并集持久层替身：attach 时读 [initial]，stop / tick 时把 JSON 写进 [saved]。
+class _Coverage {
+  _Coverage({this.initial});
+
+  final String? initial;
+  String? saved;
+
+  Future<String?> load() async => initial;
+  Future<void> save(String json) async => saved = json;
+}
+
+/// 一次观看会话：全注入（墙钟 / 落库 / 覆盖持久层），已 attach + 等覆盖加载 + start。
+/// 位置推进用 [play] 按采样节奏一步步喂（每步都经播放源通知触发采样，与生产里
+/// 「定时器每秒 + 通知即采样」同构）。
+class _Session {
+  _Session._(this.sink, this.src, this.tracker);
+
+  final _Sink sink;
+  final _FakeSource src;
+  final VideoWatchTracker tracker;
+
+  static Future<_Session> start(_Coverage cov) async {
+    _fakeNow = DateTime(2026, 1, 1, 12);
+    final _Sink sink = _Sink();
+    final _FakeSource src = _FakeSource()
+      ..isPlaying = true
+      ..positionMs = 0
+      ..durationMs = 100000;
+    final VideoWatchTracker tracker = VideoWatchTracker(
+      bookUid: 'u1',
+      clock: _clock(sink, now: () => _fakeNow),
+      markCompleted: (_) async {},
+      loadCoverage: cov.load,
+      saveCoverage: cov.save,
+    )..debugNowForTesting = () => _fakeNow;
+    tracker.attach(src);
+    await tracker.debugCoverageLoaded;
+    tracker.start();
+    addTearDown(tracker.stop);
+    return _Session._(sink, src, tracker);
+  }
+
+  /// 连续播放：媒体从 [fromMs] 推进到 [toMs]，墙钟共走 [wallMs]，按 [stepMs] 媒体
+  /// 步长逐步采样（墙钟按比例分摊；调用方保证整除）。
+  void play({
+    required int fromMs,
+    required int toMs,
+    required int wallMs,
+    int stepMs = 1000,
+  }) {
+    src.isPlaying = true;
+    src.positionMs = fromMs;
+    src.emit();
+    final int steps = (toMs - fromMs) ~/ stepMs;
+    final int wallStep = wallMs ~/ steps;
+    for (int i = 1; i <= steps; i++) {
+      _advanceWall(wallStep);
+      src.positionMs = fromMs + i * stepMs;
+      src.emit();
+    }
+  }
+
+  /// seek：位置瞬移、墙钟不走。
+  void seek(int toMs) {
+    src.positionMs = toMs;
+    src.emit();
+  }
+
+  /// 墙钟走 [wallMs]、位置不动，然后通知一次（= 一个采样点）。
+  void tick({required int wallMs}) {
+    _advanceWall(wallMs);
+    src.emit();
+  }
 }
 
 void main() {
@@ -292,19 +370,27 @@ void main() {
       // await 了时钟写链，stop() 返回时 writes 才非空。撤掉 stop 的 await（改回
       // fire-and-forget）会让本断言转红——锁住退出时统计不丢。
       final _Sink sink = _Sink(delay: const Duration(milliseconds: 20));
-      final _FakeSource src = _FakeSource()..isPlaying = true;
+      final _FakeSource src = _FakeSource()
+        ..isPlaying = true
+        ..positionMs = 0;
       // 段时长走注入时钟，不靠墙钟：落库门槛是「≥1 秒或有内容账」，等 30ms 真实
       // 时间造出来的段过不了门槛，测的就成了墙钟而不是接线。
-      DateTime now = DateTime(2026, 1, 1, 12);
+      _fakeNow = DateTime(2026, 1, 1, 12);
       final VideoWatchTracker tracker = VideoWatchTracker(
         bookUid: 'u1',
-        clock: _clock(sink, now: () => now),
+        clock: _clock(sink, now: () => _fakeNow),
         markCompleted: (_) async {},
-      )..attach(src);
+      )..debugNowForTesting = () => _fakeNow;
+      tracker.attach(src);
+      await tracker.debugCoverageLoaded;
 
       tracker.start();
-      // 制造一段连续播放窗口（>0 且 <= kMaxReadingGap）。
-      now = now.add(const Duration(seconds: 30));
+      // 制造一段连续播放：位置与墙钟同步推进 30s（首次覆盖 → 记账）。
+      for (int i = 1; i <= 30; i++) {
+        _advanceWall(1000);
+        src.positionMs = i * 1000;
+        src.emit();
+      }
       await tracker.stop();
 
       expect(sink.writes, isNotEmpty,
@@ -341,62 +427,164 @@ void main() {
     });
   });
 
+  group('观看时长 = 首次覆盖（BUG-2108：重听 / 拖回 / 重看不计）', () {
+    test('连续播放推进到没看过的区间：按墙钟记账，且覆盖并集随之增长', () async {
+      final _Coverage cov = _Coverage();
+      final _Session s = await _Session.start(cov);
+      s.play(fromMs: 0, toMs: 30000, wallMs: 30000);
+      await s.tracker.stop();
+      expect(s.sink.writes, hasLength(1));
+      expect(s.sink.writes.single.durationMs.value, 30000);
+      expect(s.tracker.debugCoverage.ranges, <(int, int)>[(0, 30000)]);
+      expect(cov.saved, '[[0,30000]]', reason: 'stop 落盘覆盖并集');
+    });
+
+    test('回放上一句：位置退回已看过的区间再推进，不记账', () async {
+      final _Session s = await _Session.start(_Coverage());
+      s.play(fromMs: 0, toMs: 20000, wallMs: 20000);
+      // 拖回 5s 重听（seek 本身不是连续推进，不计；之后推进的区间已覆盖，也不计）。
+      s.seek(15000);
+      s.play(fromMs: 15000, toMs: 20000, wallMs: 5000);
+      // 再往前看 3s 新内容：只有这 3s 计。
+      s.play(fromMs: 20000, toMs: 23000, wallMs: 3000);
+      await s.tracker.stop();
+      expect(s.sink.writes.single.durationMs.value, 23000,
+          reason: '20s 首看 + 3s 新内容；5s 重听不计');
+    });
+
+    test('向前 seek 跳过的内容不算看过，也不计时', () async {
+      final _Session s = await _Session.start(_Coverage());
+      s.play(fromMs: 0, toMs: 10000, wallMs: 10000);
+      s.seek(60000); // 跳过 50s
+      s.play(fromMs: 60000, toMs: 65000, wallMs: 5000);
+      await s.tracker.stop();
+      expect(s.sink.writes.single.durationMs.value, 15000);
+      expect(s.tracker.debugCoverage.ranges,
+          <(int, int)>[(0, 10000), (60000, 65000)],
+          reason: '跳过的 10000..60000 不在并集里，之后真看到时仍按首看计');
+    });
+
+    test('两次采样之间发生的 seek（墙钟走了 1s、位置跳了 10s）判为跳变：不覆盖、不计时',
+        () async {
+      final _Session s = await _Session.start(_Coverage());
+      s.play(fromMs: 0, toMs: 10000, wallMs: 10000);
+      // 定时器采样节奏下 seek 不一定恰好有通知：上一采样 10000，1s 后采到 20000。
+      _advanceWall(1000);
+      s.src.positionMs = 20000;
+      s.src.emit();
+      s.play(fromMs: 20000, toMs: 25000, wallMs: 5000);
+      await s.tracker.stop();
+      expect(s.sink.writes.single.durationMs.value, 15000);
+      expect(s.tracker.debugCoverage.ranges,
+          <(int, int)>[(0, 10000), (20000, 25000)],
+          reason: '10000..20000 是跳过去的，不在并集里');
+    });
+
+    test('倍速播放：媒体推进 = 墙钟 × 倍速仍算连续，按墙钟记账', () async {
+      final _Session s = await _Session.start(_Coverage());
+      s.src.speed = 2.0;
+      s.play(fromMs: 0, toMs: 20000, wallMs: 10000);
+      await s.tracker.stop();
+      expect(s.sink.writes.single.durationMs.value, 10000);
+    });
+
+    test('暂停期间位置不动：不记账；两端播放态不一致的窗口整窗不计', () async {
+      final _Session s = await _Session.start(_Coverage());
+      s.play(fromMs: 0, toMs: 5000, wallMs: 5000);
+      s.src.isPlaying = false;
+      s.tick(wallMs: 30000); // 暂停 30s
+      s.src.isPlaying = true;
+      s.tick(wallMs: 0);
+      s.play(fromMs: 5000, toMs: 8000, wallMs: 3000);
+      await s.tracker.stop();
+      expect(s.sink.writes.single.durationMs.value, 8000);
+    });
+
+    test('次日重看：attach 时加载持久化的覆盖并集，已看过的整段不计', () async {
+      final _Coverage cov = _Coverage(initial: '[[0,60000]]');
+      final _Session s = await _Session.start(cov);
+      s.play(fromMs: 0, toMs: 60000, wallMs: 60000);
+      s.play(fromMs: 60000, toMs: 61000, wallMs: 1000);
+      await s.tracker.stop();
+      expect(s.sink.writes.single.durationMs.value, 1000,
+          reason: '前 60s 昨天看过 → 0；只有 60..61s 是首看');
+      expect(cov.saved, '[[0,61000]]');
+    });
+
+    test('部分重叠：只按新增比例折算墙钟', () async {
+      final _Session s = await _Session.start(_Coverage(initial: '[[0,5000]]'));
+      // 一个采样窗口 0..10000 中前 5000 已覆盖 → 记 10000 × 5000/10000 = 5000。
+      s.play(fromMs: 0, toMs: 10000, wallMs: 10000, stepMs: 10000);
+      await s.tracker.stop();
+      expect(s.sink.writes.single.durationMs.value, 5000);
+    });
+
+    test('本次会话前已整段看过的 cue 不再计字幕字数（字数与时长同律）', () async {
+      final _Session s = await _Session.start(_Coverage(initial: '[[0,10000]]'));
+      // 已覆盖的句：0..4000
+      s.src
+        ..currentCueIndex = 0
+        ..currentCue = _cue('ああ', startMs: 0, endMs: 4000)
+        ..positionMs = 0;
+      s.src.emit();
+      // 同句期间只走墙钟、不发通知：生产里同句不重复 notifyListeners，采样定时器
+      // 也不经 _onSourceChanged；多发一次通知会把停留观察窗重置。
+      _advanceWall(4000);
+      s.src.positionMs = 4000;
+      // 未覆盖的句：12000..16000
+      s.src
+        ..currentCueIndex = 1
+        ..currentCue = _cue('いい', startMs: 12000, endMs: 16000)
+        ..positionMs = 12000;
+      s.src.emit();
+      // 同句期间只走墙钟、不发通知：生产里同句不重复 notifyListeners，采样定时器
+      // 也不经 _onSourceChanged；多发一次通知会把停留观察窗重置。
+      _advanceWall(4000);
+      s.src.positionMs = 16000;
+      s.src
+        ..currentCueIndex = -1
+        ..currentCue = null;
+      s.src.emit();
+      await s.tracker.stop();
+      expect(s.tracker.debugSubtitleChars, 2, reason: '只有第二句（未看过）计字');
+    });
+
+    test('从未推进位置（只是开着页面）不落段', () async {
+      final _Session s = await _Session.start(_Coverage());
+      s.tick(wallMs: 30000);
+      await s.tracker.stop();
+      expect(s.sink.writes, isEmpty);
+    });
+  });
+
   group('观看时长接线（v92：经 StudyClock 落段，取代 recordActivity 活动行）', () {
     test('一次观看 session 结束落一条段，携带净观看时长', () async {
-      final _Sink sink = _Sink();
-      final _FakeSource src = _FakeSource()..isPlaying = true;
-      DateTime now = DateTime(2026, 1, 1, 12);
-      final VideoWatchTracker tracker = VideoWatchTracker(
-        bookUid: 'u1',
-        clock: _clock(sink, now: () => now),
-        markCompleted: (_) async {},
-      )..attach(src);
+      final _Session s = await _Session.start(_Coverage());
+      s.play(fromMs: 0, toMs: 30000, wallMs: 30000);
+      await s.tracker.stop();
 
-      tracker.start();
-      now = now.add(const Duration(seconds: 30));
-      await tracker.stop();
-
-      expect(sink.writes, hasLength(1));
-      expect(sink.writes.single.mediaKind.value, kActivityMediaVideo);
-      expect(sink.writes.single.mediaKey.value, 'u1');
-      expect(sink.writes.single.title.value, 'A');
-      expect(sink.writes.single.durationMs.value, greaterThan(0)); // 净观看时长
+      expect(s.sink.writes, hasLength(1));
+      expect(s.sink.writes.single.mediaKind.value, kActivityMediaVideo);
+      expect(s.sink.writes.single.mediaKey.value, 'u1');
+      expect(s.sink.writes.single.title.value, 'A');
+      expect(s.sink.writes.single.durationMs.value, 30000); // 净观看时长
     });
 
     test('二次 stop 幂等：不重复写段（时钟已封段、无累计器可再结算）', () async {
-      final _Sink sink = _Sink();
-      final _FakeSource src = _FakeSource()..isPlaying = true;
-      DateTime now = DateTime(2026, 1, 1, 12);
-      final VideoWatchTracker tracker = VideoWatchTracker(
-        bookUid: 'u1',
-        clock: _clock(sink, now: () => now),
-        markCompleted: (_) async {},
-      )..attach(src);
-
-      tracker.start();
-      now = now.add(const Duration(seconds: 30));
-      await tracker.stop();
-      await tracker.stop(); // 第二次不应再写（段已封、时钟已停）
-      expect(sink.writes, hasLength(1));
+      final _Session s = await _Session.start(_Coverage());
+      s.play(fromMs: 0, toMs: 30000, wallMs: 30000);
+      await s.tracker.stop();
+      await s.tracker.stop(); // 第二次不应再写（段已封、时钟已停）
+      expect(s.sink.writes, hasLength(1));
     });
 
-    test('从未播放（isPlaying=false，无净时长）不落段', () async {
-      final _Sink sink = _Sink();
-      final _FakeSource src = _FakeSource()..isPlaying = false;
-      // 同样推过 1 秒门槛：不推的话「没到门槛」也会让断言绿，这条就分不清是
-      // 活跃态守卫在起作用还是段太短，等于没测。
-      DateTime now = DateTime(2026, 1, 1, 12);
-      final VideoWatchTracker tracker = VideoWatchTracker(
-        bookUid: 'u1',
-        clock: _clock(sink, now: () => now),
-        markCompleted: (_) async {},
-      )..attach(src);
-
-      tracker.start();
-      now = now.add(const Duration(seconds: 30));
-      await tracker.stop();
-      expect(sink.writes, isEmpty,
-          reason: '活跃态守卫（isPlaying）拒绝的窗口整窗丢弃，不开段不写');
+    test('从未播放（isPlaying=false）位置也不推进，不落段', () async {
+      final _Session s = await _Session.start(_Coverage());
+      s.src.isPlaying = false;
+      s.tick(wallMs: 30000);
+      await s.tracker.stop();
+      expect(s.sink.writes, isEmpty,
+          reason: '没有位置推进就没有首次覆盖，不开段不写');
     });
   });
 }

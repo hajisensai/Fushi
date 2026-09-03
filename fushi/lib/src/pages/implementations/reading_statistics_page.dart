@@ -782,7 +782,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     return StatPeriodSummary(
       label: label,
       primaryValue: _formatChars(chars),
-      onTap: () => _showPeriodDetail(label, contains),
+      onTap: () => unawaited(_showPeriodDetail(label, contains)),
       lines: <StatSummaryLine>[
         StatSummaryLine(value: formatStatTime(ms)),
         StatSummaryLine(label: t.stat_lookup, value: '$lookup'),
@@ -798,11 +798,12 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   /// 时段卡 → 时段明细 sheet（阶段 1 统一组件；本页是阅读统计，明细只吃阅读域
   /// 切片 [_bookFacts]——域=行集，与 [studyGoalCharsForDay] 同原则）。
-  void _showPeriodDetail(
+  Future<void> _showPeriodDetail(
     String label,
     bool Function(String dateKey) contains,
-  ) {
-    unawaited(showStatPeriodDetailSheet(
+  ) async {
+    final FushiDatabase db = appModelNoUpdate.database;
+    final bool deleted = await showStatPeriodDetailSheet(
       context,
       periodLabel: label,
       contains: contains,
@@ -810,8 +811,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       resolvers: StatPeriodDetailResolvers(
         titleOf: _statFactDisplayTitle,
         collectionOf: _statFactCollectionName,
+        onEntryDelete: (StatPeriodEntryTarget t) => deleteStatPeriodEntry(db, t),
       ),
-    ));
+    );
+    if (deleted && mounted) await _loadFromDatabase();
   }
 
   /// 事实行 → 显示名（[_bookDisplayTitle] 的事实行版：override 书名上屏生效，

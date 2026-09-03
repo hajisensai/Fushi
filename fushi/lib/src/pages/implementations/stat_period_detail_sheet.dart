@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/stats/stat_facts.dart';
+import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -16,7 +17,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 组织结构（用户定案 2026-09-01）：来源分节（阅读/观看/游戏）→ 节内按所属
 /// 合集分组（合集名在左作组头 + 组小计）→ 组内条目按时长倒序；无合集条目在
 /// 组后平铺（有组时挂「未分组」头，无组时不加头直接列）。条目可点击跳转对应
-/// 媒体（跳转前先收起 sheet）。
+/// 媒体（跳转前先收起 sheet）；长按 / 右键条目 → 确认 → 删掉这一条（BUG-2108）。
 ///
 /// 合集归属与显示名因来源而异（书按 bookKey→uid 反查、游戏走 galgame 门面），
 /// 由调用方注入 [StatPeriodDetailResolvers]；不注入合集解析则整节平铺。
@@ -25,6 +26,7 @@ class StatPeriodDetailResolvers {
     required this.titleOf,
     this.collectionOf,
     this.onEntryTap,
+    this.onEntryDelete,
   });
 
   /// 事实行 → 展示标题（**不带**合集前缀——合集名已是组头，不重复拼）。
@@ -36,6 +38,42 @@ class StatPeriodDetailResolvers {
   /// 点条目（mediaKind + mediaKey，legacy 无身份行 mediaKey 为 ''）。sheet 已
   /// 先自行收起，回调里直接跳转即可。
   final Future<void> Function(String mediaKind, String mediaKey)? onEntryTap;
+
+  /// 长按 / 右键条目并确认后：删掉这一条（该媒体在本时段内求和用到的那几天）。
+  /// 返回 true = 已删，sheet 把行移除并让 [showStatPeriodDetailSheet] 返回 true 供
+  /// 调用方重新聚合。null = 本 sheet 不提供删除。
+  final Future<bool> Function(StatPeriodEntryTarget target)? onEntryDelete;
+}
+
+/// sheet 一行的删除目标：身份 + 这一行求和时命中的日期集（= 要删的行集）。
+class StatPeriodEntryTarget {
+  const StatPeriodEntryTarget({
+    required this.mediaKind,
+    required this.mediaKey,
+    required this.title,
+    required this.dateKeys,
+  });
+
+  final String mediaKind;
+  final String mediaKey;
+
+  /// 事实行 title（legacy 无身份行的删除键）。
+  final String title;
+  final Set<String> dateKeys;
+}
+
+/// 统计页 / 首页共用的删除实现：直接落 DB（[FushiDatabase.deleteStatFactsOnDays]）。
+Future<bool> deleteStatPeriodEntry(
+  FushiDatabase db,
+  StatPeriodEntryTarget target,
+) async {
+  await db.deleteStatFactsOnDays(
+    mediaKind: target.mediaKind,
+    mediaKey: target.mediaKey,
+    title: target.title,
+    dateKeys: target.dateKeys,
+  );
+  return true;
 }
 
 /// 聚合后的一条明细条目（同一媒体在时段内的合计）。
@@ -43,21 +81,35 @@ class _PeriodEntry {
   _PeriodEntry({
     required this.mediaKind,
     required this.mediaKey,
+    required this.rawTitle,
     required this.title,
     required this.collection,
   });
 
   final String mediaKind;
   final String mediaKey;
+
+  /// 事实行原始 title（删除 legacy 无身份行用）；[title] 是展示名。
+  final String rawTitle;
   final String title;
   final String? collection;
+  final Set<String> dateKeys = <String>{};
   int chars = 0;
   int ms = 0;
+
+  StatPeriodEntryTarget get deleteTarget => StatPeriodEntryTarget(
+        mediaKind: mediaKind,
+        mediaKey: mediaKey,
+        title: rawTitle,
+        dateKeys: Set<String>.unmodifiable(dateKeys),
+      );
 }
 
 /// 弹出时段明细 sheet。[facts] 传什么域就展示什么域：域统计页传本域切片、
 /// 首页/总览传完整日面（与 [studyGoalCharsForDay] 同一「域=行集」原则）。
-Future<void> showStatPeriodDetailSheet(
+///
+/// 返回 sheet 关闭时是否删过条目（true = 调用方应从 DB 重新聚合）。
+Future<bool> showStatPeriodDetailSheet(
   BuildContext context, {
   required String periodLabel,
   required bool Function(String dateKey) contains,
@@ -73,41 +125,63 @@ Future<void> showStatPeriodDetailSheet(
       () => _PeriodEntry(
         mediaKind: f.mediaKind,
         mediaKey: f.mediaKey,
+        rawTitle: f.title,
         title: resolvers.titleOf(f),
         collection: resolvers.collectionOf?.call(f),
       ),
     );
     entry.chars += f.chars;
     entry.ms += f.ms;
+    entry.dateKeys.add(f.dateKey);
   }
   final List<_PeriodEntry> entries = byIdentity.values.toList();
+  final _DeletedFlag deleted = _DeletedFlag();
   await adaptiveModalSheet<void>(
     context: context,
     builder: (BuildContext sheetContext) => _PeriodDetailSheetBody(
       periodLabel: periodLabel,
       entries: entries,
       resolvers: resolvers,
+      deleted: deleted,
     ),
   );
+  return deleted.value;
 }
 
-class _PeriodDetailSheetBody extends StatelessWidget {
+/// sheet 关闭方式不定（滑走 / 点外面 / 返回键都 pop null），删过与否经共享标记
+/// 带出，不靠 pop 返回值。
+class _DeletedFlag {
+  bool value = false;
+}
+
+class _PeriodDetailSheetBody extends StatefulWidget {
   const _PeriodDetailSheetBody({
     required this.periodLabel,
     required this.entries,
     required this.resolvers,
+    required this.deleted,
   });
 
   final String periodLabel;
   final List<_PeriodEntry> entries;
   final StatPeriodDetailResolvers resolvers;
+  final _DeletedFlag deleted;
+
+  @override
+  State<_PeriodDetailSheetBody> createState() => _PeriodDetailSheetBodyState();
+}
+
+class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
+  late final List<_PeriodEntry> _entries = List<_PeriodEntry>.of(widget.entries);
+
+  StatPeriodDetailResolvers get _resolvers => widget.resolvers;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     int totalChars = 0;
     int totalMs = 0;
-    for (final _PeriodEntry e in entries) {
+    for (final _PeriodEntry e in _entries) {
       totalChars += e.chars;
       totalMs += e.ms;
     }
@@ -121,7 +195,7 @@ class _PeriodDetailSheetBody extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(periodLabel, style: tokens.type.sectionLabel),
+            Text(widget.periodLabel, style: tokens.type.sectionLabel),
             SizedBox(height: tokens.spacing.gap / 2),
             Text(summary, style: tokens.type.metadata),
             ..._section(
@@ -145,7 +219,7 @@ class _PeriodDetailSheetBody extends StatelessWidget {
               Icons.videogame_asset,
               kActivityMediaGame,
             ),
-            if (entries.isEmpty) ...<Widget>[
+            if (_entries.isEmpty) ...<Widget>[
               SizedBox(height: tokens.spacing.card),
               Text(t.stat_detail_empty, style: tokens.type.metadata),
             ],
@@ -165,7 +239,7 @@ class _PeriodDetailSheetBody extends StatelessWidget {
     String mediaKind,
   ) {
     final List<_PeriodEntry> rows =
-        entries.where((_PeriodEntry e) => e.mediaKind == mediaKind).toList();
+        _entries.where((_PeriodEntry e) => e.mediaKind == mediaKind).toList();
     if (rows.isEmpty) return const <Widget>[];
     final Map<String, List<_PeriodEntry>> byCollection =
         <String, List<_PeriodEntry>>{};
@@ -260,21 +334,39 @@ class _PeriodDetailSheetBody extends StatelessWidget {
         ],
       ),
     );
-    final Future<void> Function(String, String)? onTap = resolvers.onEntryTap;
-    if (onTap == null) return row;
+    final Future<void> Function(String, String)? onTap = _resolvers.onEntryTap;
+    final bool canDelete = _resolvers.onEntryDelete != null;
+    if (onTap == null && !canDelete) return row;
     return InkWell(
-      onTap: () {
-        // 先收 sheet 再跳转：sheet 是 modal route，不 pop 会盖住目标页。
-        Navigator.of(context).pop();
-        unawaited(onTap(e.mediaKind, e.mediaKey));
-      },
+      onTap: onTap == null
+          ? null
+          : () {
+              // 先收 sheet 再跳转：sheet 是 modal route，不 pop 会盖住目标页。
+              Navigator.of(context).pop();
+              unawaited(onTap(e.mediaKind, e.mediaKey));
+            },
+      // 移动端长按、桌面端右键都弹删除确认（统计页 tile 同款交互）。
+      onLongPress: canDelete ? () => unawaited(_confirmAndDelete(e)) : null,
+      onSecondaryTap: canDelete ? () => unawaited(_confirmAndDelete(e)) : null,
       borderRadius: FushiBorderRadius.card,
       child: row,
     );
   }
 
+  Future<void> _confirmAndDelete(_PeriodEntry e) async {
+    final Future<bool> Function(StatPeriodEntryTarget)? onDelete =
+        _resolvers.onEntryDelete;
+    if (onDelete == null) return;
+    final bool confirmed = await confirmDeleteStatistics(context, e.title);
+    if (!confirmed || !mounted) return;
+    final bool removed = await onDelete(e.deleteTarget);
+    if (!removed || !mounted) return;
+    widget.deleted.value = true;
+    setState(() => _entries.remove(e));
+  }
+
   /// 该条目所在的来源节里有没有任何合集组（决定条目是否缩进对齐）。
-  bool _sectionHasGroups(_PeriodEntry e) => entries.any(
+  bool _sectionHasGroups(_PeriodEntry e) => _entries.any(
         (_PeriodEntry other) =>
             other.mediaKind == e.mediaKind &&
             other.collection != null &&
