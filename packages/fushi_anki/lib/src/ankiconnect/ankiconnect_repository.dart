@@ -1232,12 +1232,19 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   /// （Anki 内建第一字段 checksum，见 [ankiDuplicateSearchQuery]），所以 ✓ 亮着
   /// 时这里在物理上不可能查不到——包括那张笔记类型不同、字段名叫 `Word` 的旧卡。
   ///
-  /// 不先反查 note id：`guiBrowse` 的应答就是被选中的 card id 列表，「打开」与
-  /// 「有没有卡」是同一次往返的两个产物。这也是为什么这里没有第二条查询可以漂移。
+  /// 两步、两个查询串，但**只有一条判据**：
+  /// 1. 用同源的 `dupe:` 串 `findNotes` → 这个词**全部同名笔记**的 id（跨笔记类型）；
+  /// 2. 把它们变成 `nid:a,b,c` 交给 `guiBrowse` 打开。
   ///
-  /// 卡组解析失败（配置过期）不早退：[AnkiDuplicateScope.collection] 本来就不看
-  /// 卡组，其余 scope 下 [ankiDuplicateDeckFilter] 对空卡组名会退化成不限卡组
-  /// （fail-open，与查重同一口径），宁可多列几张也好过打不开。
+  /// 第 2 步不是第二条判据——它按第 1 步的**结果 id** 定位，不重新匹配任何东西。
+  /// 反过来说也别把 `guiBrowse` 的返回值当命中数：见 [AnkiConnectService.guiBrowseQuery]。
+  ///
+  /// 为什么要多这一次往返：查询串里从此不出现卡组名，浏览器地址栏里也不出现词。
+  /// Anki 搜索的 `deck:` 是通配匹配（`_`/`*`），而查重侧是精确名——把名字留在串里
+  /// 就等于给判据留了第二个漂移入口（见 [ankiDuplicateDeckIds] 的实测）。
+  ///
+  /// 卡组解析失败（配置过期）不早退：[ankiDuplicateDeckIds] 对空的/已不存在的卡组名
+  /// 退化成不限卡组（fail-open），宁可多列几张也好过对着一张确实存在的卡说没有。
   @override
   Future<AnkiOpenWordOutcome> openWordInAnki(
     String expression,
@@ -1256,27 +1263,32 @@ class AnkiConnectRepository extends BaseAnkiRepository {
               : null);
       final service = _serviceForSettings(settings);
       final Map<String, int> models = await service.getModelNamesAndIds();
+      final Map<String, int> decks = await service.getDeckNamesAndIds();
       final String query = ankiDuplicateSearchQuery(
-        deckName: deck?.name ?? '',
         value: expression,
-        scope: settings.duplicateScope,
         modelIds: models.values,
+        deckIds: ankiDuplicateDeckIds(
+          deckName: deck?.name ?? '',
+          scope: settings.duplicateScope,
+          deckNamesAndIds: decks,
+        ),
       );
       // 一个笔记类型都没有 = 这台 Anki 还没建过卡，不该发一条空搜索把整库摊开。
       if (query.isEmpty) return AnkiOpenWordOutcome.noMatch;
+      final List<int> noteIds = await service.findNotesByQuery(query);
+      final String browseQuery = ankiNoteIdBrowseQuery(noteIds);
+      if (browseQuery.isEmpty) return AnkiOpenWordOutcome.noMatch;
       final int? ankiPid = ankiConnectHostIsLoopback(service.host)
           ? AnkiDesktopForeground.grantForegroundToAnki(
               ankiConnectPort: service.port)
           : null;
-      final List<int>? cardIds = await service.guiBrowseQuery(query);
+      // 返回值**一概不读**：命中与否已经由上一步的 `findNotes` 定死，这里只是
+      // 「打开」。旧版 AnkiConnect 的 `guiBrowse` 只回 null、新版回 card id 列表，
+      // 两种机器在这条路径上从此没有行为差异——那条「浏览器明明开着却说没有卡」
+      // 的错话，成因被结构性地拿掉了，而不是靠 null/[] 分流去躲开。
+      await service.guiBrowseQuery(browseQuery);
       await AnkiDesktopForeground.raiseAnkiWindow(ankiPid);
-      // null = 这台 AnkiConnect 不回传命中列表（旧版 `guiBrowse` 只回 null）：
-      // 浏览器**已经**打开并过滤到了这条查询，只是拿不到计数。此时报 noMatch 就
-      // 是「浏览器开着却说没有卡」，正是本 bug 的那句错话。只有明确答「空」才是
-      // 真的没有卡。
-      return cardIds != null && cardIds.isEmpty
-          ? AnkiOpenWordOutcome.noMatch
-          : AnkiOpenWordOutcome.opened;
+      return AnkiOpenWordOutcome.opened;
     } catch (e, stack) {
       debugPrint('AnkiConnectRepository.openWordInAnki: $e');
       debugPrint('$stack');

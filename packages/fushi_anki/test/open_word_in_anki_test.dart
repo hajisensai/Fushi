@@ -17,12 +17,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// |---|---|
 /// | `canAddNotesWithErrorDetail`（画 ✓ 的判据） | 判重复 → 画 ✓ |
 /// | `deck:"…" "Expression:たっぷり"`（↗ 旧的反查） | `[]` → 「没有找到已制的卡片」 |
-/// | `deck:"…" ("dupe:1758278161949,たっぷり" OR …)` | `[1758347126448]` |
+/// | `(did:1771332842760) ("dupe:1758278161949,たっぷり" OR …)` | `[1758347126448]` |
 ///
 /// BUG-1915 把**查重**换成了 Anki 内建的第一字段 checksum，却把 ↗ 的反查留在按字段名
 /// 查的老路上，于是同一个词一边说已制卡、一边说没有卡。`canAddNotes` 只回布尔、给不出
 /// note id，所以「同源」不能靠复用它——`dupe:<笔记类型id>,<文本>` 是那条 checksum 判据
 /// 的搜索语法版本，这里钉死 ↗ 走的就是它。
+///
+/// **不按名字查**：卡组范围先按名字**精确**解析成 id（[ankiDuplicateDeckIds]）再用
+/// `did:`，最后只把 note id 以 `nid:a,b,c` 交给浏览器。原因是实测出来的——Anki 搜索
+/// 的 `deck:` 是通配匹配（`deck:"e_grolls-…"` 与真名同样命中 10164 条、`deck:"e*"`
+/// 圈走整棵树），而查重那侧是精确名（把一个字换成 `_` 或用 `正在背::*` 都判「不重复」）。
+/// 名字留在查询串里 = 给判据留第二个漂移入口。真机 E2E：`与える` 在库里同时是一张
+/// Kaishi（第一字段 `Word`）和一张 Lapis（`Expression`）笔记，同源查询两张都返回，
+/// `nid:1758347125581,1788020832613` 一次列全；该库 `正在背` 树下有 44 个这样的词。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -30,7 +38,8 @@ void main() {
   const String kDeck = '正在背::Kaishi 1.5k  zh-CH';
   const int kKaishiMid = 1758278161949;
   const int kLapisMid = 1667218449922;
-  const int kExistingCardId = 1758347126448;
+  const int kExistingNoteId = 1758347126448;
+  const int kDeckDid = 1771332842760;
 
   const AnkiNoteType lapis = AnkiNoteType(
     id: kLapisMid,
@@ -56,15 +65,21 @@ void main() {
   }
 
   /// 一台**照实测行为建模**的假 AnkiConnect：
-  /// - `findNotes`（按字段名的老判据）恒 0 命中；
-  /// - `guiBrowse` 只有在查询串里带上 **Kaishi 那个 mid 的 `dupe:` 子句**时才命中。
+  /// - `findNotes` 只在查询串同时满足「带 **Kaishi 那个 mid 的 `dupe:` 子句**」
+  ///   与「卡组范围覆盖 [kDeckDid]（或压根没限卡组）」时命中那张已存在的笔记；
+  /// - 按第一字段**名**查（`"Expression:…"`）恒 0 命中——真机上就是如此，那张卡的
+  ///   第一字段叫 `Word`；
+  /// - `guiBrowse` 不做任何匹配，只回传 `nid:` 里点到的那些（真机行为：它就是个打开
+  ///   动作）。**故意不让 guiBrowse 有判别力**：命中与否必须由上一步决定，否则又是
+  ///   两条判据。
   ///
-  /// 两条判据在这台机器上给出相反答案——这正是守卫的判别力所在：退回按字段名查、
-  /// 或漏掉非当前笔记类型的 mid，本组用例立刻变红。
+  /// 判别力：退回按字段名查、漏掉非当前笔记类型的 mid、或把卡组名当搜索词（`deck:`）
+  /// 而不是 id，本组用例立刻变红。
   MockClient crossModelHost(
     List<Map<String, dynamic>> sink, {
     bool transportFails = false,
     bool guiBrowseReturnsNull = false,
+    bool guiBrowseReturnsEmpty = false,
   }) {
     return MockClient((http.Request request) async {
       if (transportFails) throw const SocketExceptionStub();
@@ -80,14 +95,37 @@ void main() {
             'Lapis': kLapisMid,
             'Kaishi 1.5k zh-CH': kKaishiMid,
           };
+        case 'deckNamesAndIds':
+          result = const <String, Object?>{
+            kDeck: kDeckDid,
+            '正在背': 1779901350674,
+            '正在背::Lapis': 1771326371415,
+            // 名字里带 `_` 的真实卡组：只要谁把它塞进 `deck:` 搜索串，`_` 就变成
+            // 单字通配符，把下面那个兄弟卡组一起圈进来（本机实测）。
+            'galgame_card_test': 1784372258515,
+            'galgameXcard_test': 1784372258516,
+          };
         case 'findNotes':
-          result = const <int>[];
+          final String query = (body['params'] as Map)['query'].toString();
+          final bool sameSourceHit =
+              query.contains('"dupe:$kKaishiMid,$kWord"');
+          final bool inScope =
+              !query.contains('did:') || query.contains('did:$kDeckDid');
+          result = sameSourceHit && inScope
+              ? const <int>[kExistingNoteId]
+              : const <int>[];
         case 'guiBrowse':
           if (guiBrowseReturnsNull) break;
+          if (guiBrowseReturnsEmpty) {
+            result = const <int>[];
+            break;
+          }
           final String query = (body['params'] as Map)['query'].toString();
-          result = query.contains('"dupe:$kKaishiMid,$kWord"')
-              ? const <int>[kExistingCardId]
-              : const <int>[];
+          final String ids = query.startsWith('nid:') ? query.substring(4) : '';
+          result = <int>[
+            for (final String s in ids.split(','))
+              if (int.tryParse(s) case final int id) id,
+          ];
         case 'canAddNotesWithErrorDetail':
           result = const <Map<String, Object?>>[
             <String, Object?>{
@@ -114,10 +152,19 @@ void main() {
     );
   }
 
-  String browseQuery(List<Map<String, dynamic>> sink) => (sink.singleWhere(
-              (Map<String, dynamic> b) => b['action'] == 'guiBrowse')['params']
-          as Map)['query']
-      .toString();
+  String queryOf(List<Map<String, dynamic>> sink, String action) =>
+      (sink.singleWhere(
+                  (Map<String, dynamic> b) => b['action'] == action)['params']
+              as Map)['query']
+          .toString();
+
+  /// 判命中的那一句（同源的 `dupe:` 串）。
+  String matchQuery(List<Map<String, dynamic>> sink) =>
+      queryOf(sink, 'findNotes');
+
+  /// 真正交给 Anki 浏览器的那一句。
+  String browseQuery(List<Map<String, dynamic>> sink) =>
+      queryOf(sink, 'guiBrowse');
 
   setUp(() {
     // 前台让位是 Win32 副作用，单测里注入无害替身（非 Windows 上本就是 null）。
@@ -142,35 +189,34 @@ void main() {
       );
     });
 
-    test('↗ 不再另发一条 findNotes——没有第二条判据可以漂移', () async {
-      await installSettings();
-      final sink = <Map<String, dynamic>>[];
-      await repoWith(crossModelHost(sink)).openWordInAnki(kWord, '');
-
-      expect(
-        sink.map((Map<String, dynamic> b) => b['action']),
-        isNot(contains('findNotes')),
-      );
-      expect(
-        sink.map((Map<String, dynamic> b) => b['action']),
-        containsAll(<String>['modelNamesAndIds', 'guiBrowse']),
-      );
-    });
-
-    test('查询串：卡组过滤 + 每个笔记类型一个 dupe 子句，整组带括号', () async {
+    test('交给浏览器的那一句只有 nid:——词和卡组名都不进查询串', () async {
       await installSettings();
       final sink = <Map<String, dynamic>>[];
       await repoWith(crossModelHost(sink)).openWordInAnki(kWord, '');
 
       final String query = browseQuery(sink);
-      expect(query, startsWith('deck:"$kDeck" ('));
+      expect(query, 'nid:$kExistingNoteId');
+      // 名字进了搜索串就等于把判定交给 Anki 的通配匹配（`_`/`*`），那是第二条判据。
+      expect(query, isNot(contains(kWord)));
+      expect(query, isNot(contains('deck:')));
+      expect(query, isNot(contains('dupe:')));
+    });
+
+    test('判命中的那一句：卡组按 id 过滤 + 每个笔记类型一个 dupe 子句', () async {
+      await installSettings();
+      final sink = <Map<String, dynamic>>[];
+      await repoWith(crossModelHost(sink)).openWordInAnki(kWord, '');
+
+      final String query = matchQuery(sink);
+      expect(query, startsWith('(did:$kDeckDid) ('));
       expect(query, endsWith(')'));
       expect(query, contains('"dupe:$kLapisMid,$kWord"'));
       // 当前笔记类型之外的 mid 必须也在——本 bug 的整个要害就是那张 Kaishi 卡。
       expect(query, contains('"dupe:$kKaishiMid,$kWord"'));
       expect(query, contains(' OR '));
-      // 绝不能退回按字段名查。
+      // 绝不能退回按字段名查，也绝不能把卡组名塞回搜索串。
       expect(query, isNot(contains('Expression:')));
+      expect(query, isNot(contains('deck:')));
     });
 
     test('scope=collection 时不带卡组过滤（与查重同一口径）', () async {
@@ -178,18 +224,23 @@ void main() {
       final sink = <Map<String, dynamic>>[];
       await repoWith(crossModelHost(sink)).openWordInAnki(kWord, '');
 
-      final String query = browseQuery(sink);
-      expect(query, isNot(contains('deck:')));
+      final String query = matchQuery(sink);
+      expect(query, isNot(contains('did:')));
       expect(query, startsWith('('));
     });
 
-    test('Anki 应答「一张都没选中」→ noMatch（不是 failed）', () async {
+    test('一张都没查到 → noMatch（不是 failed），且不去开浏览器', () async {
       await installSettings();
       final sink = <Map<String, dynamic>>[];
       // 词换一个：假机只对 たっぷり 命中。
       expect(
         await repoWith(crossModelHost(sink)).openWordInAnki('未収録', ''),
         AnkiOpenWordOutcome.noMatch,
+      );
+      // 空的 `nid:` 会把整库摊开，绝不能发出去。
+      expect(
+        sink.map((Map<String, dynamic> b) => b['action']),
+        isNot(contains('guiBrowse')),
       );
     });
 
@@ -208,6 +259,19 @@ void main() {
       expect(
         sink.map((Map<String, dynamic> b) => b['action']),
         contains('guiBrowse'),
+      );
+    });
+
+    // 上面那条担心（旧版 `guiBrowse` 不回列表 → 不许说「没有卡」）在改按 id 查之后
+    // 是**结构性**成立的：返回值根本不参与判定。这条把它钉死——连「明确答空列表」
+    // 都不该改变结局，否则就是又把第二条判据接回来了。
+    test('guiBrowse 明确回空列表也不改变结局：判据在上一步的 findNotes', () async {
+      await installSettings();
+      final sink = <Map<String, dynamic>>[];
+      expect(
+        await repoWith(crossModelHost(sink, guiBrowseReturnsEmpty: true))
+            .openWordInAnki(kWord, ''),
+        AnkiOpenWordOutcome.opened,
       );
     });
 
@@ -254,20 +318,18 @@ void main() {
   group('BUG-2051 查询串构造', () {
     test('单个笔记类型也套括号：否则卡组条件只绑到第一个子句', () {
       final String query = ankiDuplicateSearchQuery(
-        deckName: kDeck,
         value: kWord,
-        scope: AnkiDuplicateScope.deck,
         modelIds: const <int>[kLapisMid],
+        deckIds: const <int>[kDeckDid],
       );
-      expect(query, 'deck:"$kDeck" ("dupe:$kLapisMid,$kWord")');
+      expect(query, '(did:$kDeckDid) ("dupe:$kLapisMid,$kWord")');
     });
 
     test('值里的引号被转义（否则整条查询被解析器截断）', () {
       final String query = ankiDuplicateSearchQuery(
-        deckName: '',
         value: 'a"b',
-        scope: AnkiDuplicateScope.collection,
         modelIds: const <int>[7],
+        deckIds: const <int>[],
       );
       expect(query, '("dupe:7,a\\"b")');
     });
@@ -275,32 +337,124 @@ void main() {
     test('没有笔记类型 / 空词 → 空串（绝不发一条把整库摊开的搜索）', () {
       expect(
         ankiDuplicateSearchQuery(
-          deckName: kDeck,
           value: kWord,
-          scope: AnkiDuplicateScope.deck,
           modelIds: const <int>[],
+          deckIds: const <int>[kDeckDid],
         ),
         isEmpty,
       );
       expect(
         ankiDuplicateSearchQuery(
-          deckName: kDeck,
           value: '',
-          scope: AnkiDuplicateScope.deck,
           modelIds: const <int>[kLapisMid],
+          deckIds: const <int>[kDeckDid],
         ),
         isEmpty,
       );
     });
 
-    test('deckRoot 取根卡组（与 ankiDuplicateDeckFilter 同一口径）', () {
-      final String query = ankiDuplicateSearchQuery(
-        deckName: '正在背::Lapis',
-        value: kWord,
-        scope: AnkiDuplicateScope.deckRoot,
-        modelIds: const <int>[kLapisMid],
+    test('多个卡组 id 也套括号：否则 `did:a OR did:b (X)` 查错范围', () {
+      expect(ankiDeckIdFilter(const <int>[1, 2]), '(did:1 OR did:2)');
+      expect(ankiDeckIdFilter(const <int>[]), isEmpty);
+    });
+
+    test('nid:a,b,c —— 全部同名笔记一次列出；空列表不产生查询串', () {
+      expect(ankiNoteIdBrowseQuery(const <int>[1, 2, 3]), 'nid:1,2,3');
+      expect(ankiNoteIdBrowseQuery(const <int>[7]), 'nid:7');
+      expect(ankiNoteIdBrowseQuery(const <int>[]), isEmpty);
+    });
+  });
+
+  /// 卡组名 → 卡组 id。这一组是「不按名字查」的判别力所在：名字一旦进 `deck:` 搜索串，
+  /// `_` 就成了单字通配符（本机实测 `deck:"e_grolls-…"` 与真名同样命中 10164 条），
+  /// 而画 ✓ 那侧是精确名（同样把一个字换成 `_` 就判「不重复」）。
+  group('BUG-2051 卡组范围按 id 解析（不进 Anki 的通配匹配）', () {
+    const Map<String, int> decks = <String, int>{
+      '正在背': 100,
+      '正在背::Lapis': 101,
+      '正在背::Lapis::N5': 102,
+      '正在背::Kaishi': 103,
+      '别的': 200,
+      'galgame_card_test': 300,
+      // 只差一个字符的兄弟卡组：`deck:"galgame_card_test"` 会把它一起圈进来。
+      'galgameXcard_test': 301,
+    };
+
+    test('deck：本组 + 子组，按名字前缀精确展开（对齐 checkChildren: true）', () {
+      expect(
+        ankiDuplicateDeckIds(
+          deckName: '正在背::Lapis',
+          scope: AnkiDuplicateScope.deck,
+          deckNamesAndIds: decks,
+        ),
+        const <int>[101, 102],
       );
-      expect(query, startsWith('deck:"正在背" ('));
+    });
+
+    test('带 `_` 的卡组名只解析出它自己——兄弟卡组不得被通配进来', () {
+      expect(
+        ankiDuplicateDeckIds(
+          deckName: 'galgame_card_test',
+          scope: AnkiDuplicateScope.deck,
+          deckNamesAndIds: decks,
+        ),
+        const <int>[300],
+      );
+    });
+
+    test('deckRoot 取根卡组，整棵树都在范围内', () {
+      expect(
+        ankiDuplicateDeckIds(
+          deckName: '正在背::Lapis::N5',
+          scope: AnkiDuplicateScope.deckRoot,
+          deckNamesAndIds: decks,
+        ),
+        const <int>[100, 101, 102, 103],
+      );
+    });
+
+    test('collection / 空名 / 卡组已不存在 → 不加过滤（fail-open）', () {
+      for (final AnkiDuplicateScope scope in AnkiDuplicateScope.values) {
+        expect(
+          ankiDuplicateDeckIds(
+            deckName: '',
+            scope: scope,
+            deckNamesAndIds: decks,
+          ),
+          isEmpty,
+        );
+      }
+      expect(
+        ankiDuplicateDeckIds(
+          deckName: '正在背::Lapis',
+          scope: AnkiDuplicateScope.collection,
+          deckNamesAndIds: decks,
+        ),
+        isEmpty,
+      );
+      expect(
+        ankiDuplicateDeckIds(
+          deckName: '已被删掉的卡组',
+          scope: AnkiDuplicateScope.deck,
+          deckNamesAndIds: decks,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('前缀相同但不是子组的卡组不被卷入（`Lapis2` ≠ `Lapis::*`）', () {
+      expect(
+        ankiDuplicateDeckIds(
+          deckName: '正在背::Lapis',
+          scope: AnkiDuplicateScope.deck,
+          deckNamesAndIds: const <String, int>{
+            '正在背::Lapis': 1,
+            '正在背::Lapis2': 2,
+            '正在背::Lapis::N5': 3,
+          },
+        ),
+        const <int>[1, 3],
+      );
     });
   });
 
