@@ -12,7 +12,9 @@ namespace fushi_voice_hook {
 // exporting the user's game text.
 inline constexpr char kHunexGgeTraceExportName[] = "FushiHunexGgeTraceV3";
 inline constexpr uint32_t kHunexGgeTraceMagic = 0x33544748u;  // "HGT3"
-inline constexpr uint32_t kHunexGgeTraceVersion = 3u;
+// v4（BUG-2089）：头部增加四个投影 detour 的调用计数。probe 与 helper 同源构建，
+// 版本号不匹配时 probe 直接拒读，不存在跨版本误解释。
+inline constexpr uint32_t kHunexGgeTraceVersion = 4u;
 inline constexpr uint32_t kHunexGgeTraceCapacity = 512u;
 
 enum class HunexGgeTraceKind : uint32_t {
@@ -46,6 +48,10 @@ enum class HunexGgeProjectionTraceStage : uint32_t {
   kCompositor = 2u,
   kTexture = 3u,
   kSprite = 4u,
+  // BUG-2089：worker 侧的投影求解。前四段都在 render 线程的 detour 里，唯独这一段在
+  // lookup worker 线程上跑，且此前**整段没有任何诊断**——真机上只表现为
+  // kHunexGgeLookupWorkerProjectionRejected 这一个笼统状态，读不出九选一的真实原因。
+  kWorker = 5u,
 };
 
 // Values are diagnostic only. They identify the first exact story-chain gate
@@ -80,6 +86,19 @@ enum class HunexGgeProjectionTraceFailure : int32_t {
   kQuadShapeRejected = 22,
   kQuadVertexBufferMissing = 23,
   kQuadProjectionNotFinite = 24,
+  // 25..33 = kWorker 段（BUG-2089）。此前 BuildHunexGgeClientProjection 的每个拒绝点
+  // 都是裸 return false，其中「证据身份」更是九个子条件的合取，一旦不成立完全无法分辨
+  // 是没有证据、故事身份不符、渲染线程不符、客户区尺寸不符，还是证据过期。
+  kWorkerInputShapeRejected = 25,
+  kWorkerRubyProjectionRejected = 26,
+  // 根本没有可读的投影证据（sprite draw 从未成功发布过）。
+  kWorkerEvidenceUnavailable = 27,
+  kWorkerEvidenceStoryMismatch = 28,
+  kWorkerEvidenceThreadMismatch = 29,
+  kWorkerEvidenceClientMismatch = 30,
+  kWorkerEvidenceStale = 31,
+  kWorkerAffineRejected = 32,
+  kWorkerClientTransformRejected = 33,
 };
 
 enum HunexGgeTraceScannerStatus : uint32_t {
@@ -256,6 +275,14 @@ struct alignas(8) HunexGgeTraceBuffer {
   uint32_t capture_quarantine_reason = 0;
   uint32_t capture_quarantine_bound_thread_id = 0;
   uint32_t capture_quarantine_conflicting_thread_id = 0;
+  // BUG-2089：投影四段 detour 的**调用计数**。诊断事件只在「能归属到某条语义行」时才
+  // 发，因此「零事件」既可能是从没被调用、也可能是调用了但当时没有待定故事行——两者
+  // 的排障方向完全相反（前者说明 WoH 的正文走的不是扫描锚点假设的那条渲染路径）。
+  // 只有无条件的调用计数能把它们分开。
+  int64_t surface_compose_wrapper_calls = 0;
+  int64_t texture_upload_calls = 0;
+  int64_t quad_vertex_calls = 0;
+  int64_t sprite_draw_calls = 0;
   HunexGgeTraceSlot slots[kHunexGgeTraceCapacity] = {};
 };
 
@@ -293,7 +320,7 @@ static_assert(offsetof(HunexGgeTraceEvent, lookup_gate_mask) == 440,
               "HUNEX/GGE lookup diagnostic trace ABI drifted");
 static_assert(sizeof(HunexGgeTraceSlot) == 464,
               "HUNEX/GGE trace slot ABI drifted");
-static_assert(offsetof(HunexGgeTraceBuffer, slots) == 184,
+static_assert(offsetof(HunexGgeTraceBuffer, slots) == 216,
               "HUNEX/GGE trace header ABI drifted");
 
 }  // namespace fushi_voice_hook

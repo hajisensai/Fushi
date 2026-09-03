@@ -257,7 +257,8 @@ thread_local HunexGgePendingQuad g_hunex_gge_pending_quad;
 struct HunexGgeProjectionDiagnosticDedup {
   uint64_t story_thread_address = 0u;
   uint64_t raw_text_hash = 0u;
-  std::array<uint64_t, 4u> emitted_failures = {};
+  // 5 段：wrapper / compositor / texture / sprite / worker（BUG-2089）。
+  std::array<uint64_t, 5u> emitted_failures = {};
 };
 
 thread_local HunexGgeProjectionDiagnosticDedup
@@ -458,7 +459,7 @@ void PublishHunexGgeProjectionDiagnostic(
   const uint32_t stage_value = static_cast<uint32_t>(stage);
   const int32_t failure_value = static_cast<int32_t>(failure);
   if (event.story_line_base == 0u || event.story_line_hash == 0u ||
-      stage_value == 0u || stage_value > 4u || failure_value < 0 ||
+      stage_value == 0u || stage_value > 5u || failure_value < 0 ||
       failure_value >= 64) {
     return;
   }
@@ -1108,11 +1109,30 @@ bool BuildHunexGgeClientProjection(
     fushi_voice_hook::hunex_lookup_core::RubyTextProjection* projection) {
   namespace bridge = fushi_voice_hook::hunex_capture_bridge;
   namespace core = fushi_voice_hook::hunex_lookup_core;
+  // BUG-2089：本函数每个拒绝点原本都是裸 return false，worker 侧整段无诊断。这里补一个
+  // 只负责报点的闭包：身份取自 snapshot（发布器要求 story_line_base/hash 非 0），
+  // 判据与控制流一字未动。
+  const auto reject =
+      [&](fushi_voice_hook::HunexGgeProjectionTraceFailure failure) {
+        fushi_voice_hook::HunexGgeTraceEvent event;
+        event.story_line_base = snapshot.story_thread_address;
+        event.story_line_hash = snapshot.raw_text_hash;
+        event.draw_sequence = snapshot.epoch;
+        event.render_x = client_width;
+        event.render_y = client_height;
+        event.glyph_ordinal = snapshot.glyph_count;
+        event.draw_arg13 = snapshot.raw_text_units;
+        PublishHunexGgeProjectionDiagnostic(
+            event, fushi_voice_hook::HunexGgeProjectionTraceStage::kWorker,
+            failure);
+        return false;
+      };
   if (projection == nullptr || snapshot.raw_text_units == 0u ||
       snapshot.raw_text_units > core::kTextCapacity ||
       snapshot.glyph_count == 0u ||
       snapshot.glyph_count > core::kGlyphCapacity) {
-    return false;
+    return reject(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                      kWorkerInputShapeRejected);
   }
   std::array<char16_t, core::kTextCapacity> raw_text = {};
   std::array<core::RawGlyph, core::kGlyphCapacity> raw_glyphs = {};
@@ -1133,24 +1153,48 @@ bool BuildHunexGgeClientProjection(
   if (!core::ProjectRubyText(raw_text.data(), snapshot.raw_text_units,
                              raw_glyphs.data(), snapshot.glyph_count,
                              projection)) {
-    return false;
+    return reject(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                      kWorkerRubyProjectionRejected);
   }
+  // 九个子条件拆开报点：它们指向的排障方向完全不同——没有证据说明 sprite draw 那一段
+  // 从未成功发布过；身份不符说明证据属于另一条语义行/另一个渲染线程；尺寸不符说明窗口
+  // 在两次采样之间变了；过期说明 2s 新鲜窗没赶上。
   HunexGgeProjectionEvidence evidence;
   if (!ReadHunexGgeProjectionEvidence(&evidence) ||
       evidence.generation == 0u || evidence.draw_sequence == 0u ||
-      evidence.texture == 0u ||
-      evidence.story_thread_address != snapshot.story_thread_address ||
-      evidence.raw_text_hash != snapshot.raw_text_hash ||
-      evidence.render_thread_id != snapshot.render_thread_id ||
-      evidence.client_width != client_width ||
-      evidence.client_height != client_height ||
-      !IsFreshHunexGgeProjectionTick(evidence.published_tick,
+      evidence.texture == 0u) {
+    return reject(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                      kWorkerEvidenceUnavailable);
+  }
+  if (evidence.story_thread_address != snapshot.story_thread_address ||
+      evidence.raw_text_hash != snapshot.raw_text_hash) {
+    return reject(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                      kWorkerEvidenceStoryMismatch);
+  }
+  if (evidence.render_thread_id != snapshot.render_thread_id) {
+    return reject(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                      kWorkerEvidenceThreadMismatch);
+  }
+  if (evidence.client_width != client_width ||
+      evidence.client_height != client_height) {
+    return reject(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                      kWorkerEvidenceClientMismatch);
+  }
+  if (!IsFreshHunexGgeProjectionTick(evidence.published_tick,
                                      GetTickCount64())) {
-    return false;
+    return reject(
+        fushi_voice_hook::HunexGgeProjectionTraceFailure::kWorkerEvidenceStale);
   }
   HunexGgeAffineProjection transform;
-  return SolveHunexGgeAffineProjection(evidence, &transform) &&
-         TransformHunexGgeProjectionToClient(evidence, transform, projection);
+  if (!SolveHunexGgeAffineProjection(evidence, &transform)) {
+    return reject(
+        fushi_voice_hook::HunexGgeProjectionTraceFailure::kWorkerAffineRejected);
+  }
+  if (!TransformHunexGgeProjectionToClient(evidence, transform, projection)) {
+    return reject(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                      kWorkerClientTransformRejected);
+  }
+  return true;
 }
 
 bool HasFreshHunexGgeProjectionEvidenceForRetain() {
@@ -1768,6 +1812,10 @@ uint32_t Detour_HunexGgeSurfaceComposeWrapper(
     void* line_this, void* destination, int32_t y_base, uint32_t blend,
     const int32_t* x_offsets, uint32_t layout_selector,
     uint32_t node_filter) {
+  // BUG-2089：无条件调用计数。诊断事件只在能归属到语义行时才发，靠「零事件」
+  // 无法分辨「从没被调用」与「调用了但当时没有待定故事行」。
+  InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+      &FushiHunexGgeTraceV3.surface_compose_wrapper_calls));
   const HunexGgeSurfaceComposeContext previous =
       g_hunex_gge_surface_compose_context;
   HunexGgeSurfaceComposeContext current;
@@ -1954,6 +2002,10 @@ uint32_t Detour_HunexGgeSurfaceCompositor(
 }
 
 uint32_t Detour_HunexGgeTextureUpload(void* wrapper, uint32_t flags) {
+  // BUG-2089：无条件调用计数。诊断事件只在能归属到语义行时才发，靠「零事件」
+  // 无法分辨「从没被调用」与「调用了但当时没有待定故事行」。
+  InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+      &FushiHunexGgeTraceV3.texture_upload_calls));
   HunexGgeCpuSurfaceIdentity upload_surface;
   const void* descriptor = nullptr;
   bool descriptor_read = false;
@@ -2077,6 +2129,9 @@ uint32_t Detour_HunexGgeTextureUpload(void* wrapper, uint32_t flags) {
 uint32_t Detour_HunexGgeQuadVertex(void* manager, const float* xy,
                                   const float* uv_pixels,
                                   const int32_t* texture_dimensions) {
+  // BUG-2089：无条件调用计数（同上）。
+  InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+      &FushiHunexGgeTraceV3.quad_vertex_calls));
   float input_xy[8] = {};
   float input_uv[8] = {};
   int32_t dimensions[2] = {};
@@ -2287,6 +2342,9 @@ bool CaptureHunexGgeD3DProjectionSizes(
 
 uint32_t Detour_HunexGgeSpriteDraw(void* renderer, void* texture,
                                    void* vertex_buffer, uint32_t mode) {
+  // BUG-2089：无条件调用计数（同上）。
+  InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+      &FushiHunexGgeTraceV3.sprite_draw_calls));
   const uint64_t draw_sequence =
       g_hunex_gge_sprite_draw_sequence.fetch_add(
           1u, std::memory_order_relaxed) +

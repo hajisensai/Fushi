@@ -841,6 +841,11 @@ struct alignas(8) HunexGgeTraceHeaderSnapshot {
   uint32_t capture_quarantine_reason = 0;
   uint32_t capture_quarantine_bound_thread_id = 0;
   uint32_t capture_quarantine_conflicting_thread_id = 0;
+  // BUG-2089：与 HunexGgeTraceBuffer 逐字段同序（下方 static_assert 钉住整体大小）。
+  int64_t surface_compose_wrapper_calls = 0;
+  int64_t texture_upload_calls = 0;
+  int64_t quad_vertex_calls = 0;
+  int64_t sprite_draw_calls = 0;
 };
 
 static_assert(sizeof(XAudioTraceHeaderSnapshot) ==
@@ -1220,6 +1225,7 @@ const char* HunexGgeProjectionStageName(uint32_t stage) {
     case Stage::kCompositor: return "compositor";
     case Stage::kTexture: return "texture";
     case Stage::kSprite: return "sprite";
+    case Stage::kWorker: return "worker";
   }
   return "unknown";
 }
@@ -1264,6 +1270,16 @@ const char* HunexGgeProjectionFailureName(int32_t failure) {
     case Failure::kQuadShapeRejected: return "quad_shape_rejected";
     case Failure::kQuadVertexBufferMissing: return "quad_vertex_buffer_missing";
     case Failure::kQuadProjectionNotFinite: return "quad_projection_not_finite";
+    // BUG-2089 worker 段。
+    case Failure::kWorkerInputShapeRejected: return "worker_input_shape_rejected";
+    case Failure::kWorkerRubyProjectionRejected: return "worker_ruby_projection_rejected";
+    case Failure::kWorkerEvidenceUnavailable: return "worker_evidence_unavailable";
+    case Failure::kWorkerEvidenceStoryMismatch: return "worker_evidence_story_mismatch";
+    case Failure::kWorkerEvidenceThreadMismatch: return "worker_evidence_thread_mismatch";
+    case Failure::kWorkerEvidenceClientMismatch: return "worker_evidence_client_mismatch";
+    case Failure::kWorkerEvidenceStale: return "worker_evidence_stale";
+    case Failure::kWorkerAffineRejected: return "worker_affine_rejected";
+    case Failure::kWorkerClientTransformRejected: return "worker_client_transform_rejected";
   }
   return "unknown";
 }
@@ -2045,14 +2061,20 @@ bool DumpHunexGgeTrace(DWORD pid) {
   printf(
       "hunex_gge_trace pid=%lu module=%ls base=0x%llx "
       "export_rva=0x%08x next=%llu dropped_busy=%llu capacity=%u "
-      "calls={draw:%llu,glyph:%llu,render_item:%llu,input:%llu}",
+      "calls={draw:%llu,glyph:%llu,render_item:%llu,input:%llu,"
+      "compose_wrapper:%llu,texture_upload:%llu,quad_vertex:%llu,"
+      "sprite_draw:%llu}",
       pid, module.path.c_str(), static_cast<unsigned long long>(module.base),
       export_rva, static_cast<unsigned long long>(header.next_sequence),
       static_cast<unsigned long long>(header.dropped_busy), header.capacity,
       static_cast<unsigned long long>(header.draw_calls),
       static_cast<unsigned long long>(header.glyph_calls),
       static_cast<unsigned long long>(header.render_item_calls),
-      static_cast<unsigned long long>(header.input_calls));
+      static_cast<unsigned long long>(header.input_calls),
+      static_cast<unsigned long long>(header.surface_compose_wrapper_calls),
+      static_cast<unsigned long long>(header.texture_upload_calls),
+      static_cast<unsigned long long>(header.quad_vertex_calls),
+      static_cast<unsigned long long>(header.sprite_draw_calls));
   PrintHunexGgeScannerStatus(header.scanner_status);
   PrintHunexGgeLookupGate(header.lookup_gate_mask);
   PrintHunexGgeCaptureQuarantine(
