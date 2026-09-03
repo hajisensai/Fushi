@@ -23,6 +23,7 @@ import 'package:fushi/src/media/video/cover_ui/episode_rename_confirm_dialog.dar
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_panel.dart';
+import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
@@ -59,6 +60,7 @@ import 'package:fushi_core/fushi_core.dart';
 class MediaCollectionDetailPage extends StatefulWidget {
   const MediaCollectionDetailPage({
     required this.database,
+    this.videoSpecs,
     required this.collection,
     required this.loadEpisodes,
     required this.onOpenEpisode,
@@ -69,6 +71,11 @@ class MediaCollectionDetailPage extends StatefulWidget {
   });
 
   final FushiDatabase database;
+
+  /// 视频规格服务（v95）。**构造注入而不是从 riverpod 取**：本页是普通
+  /// StatefulWidget，它的既有 widget 测试没有也不需要 `ProviderScope`，在页内塞
+  /// ConsumerWidget 会让那些测试全部抛。null = 不显示规格（测试默认如此）。
+  final VideoSpecsService? videoSpecs;
   final MediaCollectionRow collection;
 
   /// 解析本合集**有序**成员槽（调用方持 repo + collectionId；见
@@ -2216,6 +2223,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                               child: Align(
                                 alignment: Alignment.centerRight,
                                 child: VideoSpecsInlineLine(
+                                  service: widget.videoSpecs,
                                   filePath: episode.local?.videoPath,
                                 ),
                               ),
@@ -2291,7 +2299,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         ),
         // v95：完整技术规格（音轨/字幕轨在集卡上放不下，只能进弹窗）。
         // 仅本地文件有——远端占位集探不了。
-        if (episode.local != null)
+        if (episode.local != null && widget.videoSpecs != null)
           PopupMenuItem<_EpisodeMenuAction>(
             value: _EpisodeMenuAction.mediaInfo,
             child: Row(
@@ -2339,7 +2347,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       builder: (BuildContext context) => AlertDialog(
         title: Text(_episodeDisplayTitle(episode)),
         content: SingleChildScrollView(
-          child: VideoSpecsPanel(filePath: path, showTitle: false),
+          child: VideoSpecsPanel(
+            service: widget.videoSpecs,
+            filePath: path,
+            showTitle: false,
+          ),
         ),
         actions: <Widget>[
           TextButton(

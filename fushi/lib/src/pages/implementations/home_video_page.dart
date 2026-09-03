@@ -22,6 +22,7 @@ import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/video_scrape_actions.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_badges.dart';
+import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/video_home_layout.dart';
 import 'package:fushi/src/media/video/scraper/auto_scrape_service.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
@@ -5940,6 +5941,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         context: context,
         builder: (_) => VideoWorkDetailPage(
           database: db,
+          videoSpecs: ref.read(videoSpecsProvider),
           repository: repo,
           workRef: VideoWorkRef.collection(collection.id),
           onChanged: _refresh,
@@ -5967,6 +5969,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         context: context,
         builder: (_) => VideoWorkDetailPage(
           database: ref.read(appProvider).database,
+          videoSpecs: ref.read(videoSpecsProvider),
           repository: widget.repo,
           workRef: VideoWorkRef.book(book.bookUid),
           onChanged: _refresh,
@@ -6119,7 +6122,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   bottom: 6,
                   left: 6,
                   child: IgnorePointer(
-                    child: VideoSpecsBadgeStrip(filePath: book.videoPath),
+                    child: VideoSpecsBadgeStrip(
+                      service: ref.read(videoSpecsProvider),
+                      filePath: book.videoPath,
+                    ),
                   ),
                 ),
               ],

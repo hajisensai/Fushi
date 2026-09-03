@@ -12,7 +12,6 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_badges.dart'
@@ -26,12 +25,16 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 ///
 /// 规格未探到时**整块不渲染**（返回 SizedBox.shrink），不显示「加载中」骨架——探测
 /// 通常几十毫秒就回来，先闪一个骨架再换成内容比直接出现更晃眼。
-class VideoSpecsPanel extends ConsumerStatefulWidget {
+class VideoSpecsPanel extends StatefulWidget {
   const VideoSpecsPanel({
+    required this.service,
     required this.filePath,
     this.showTitle = true,
     super.key,
   });
+
+  /// 规格服务；null = 宿主没提供（测试或未接线），整块不渲染也不探测。
+  final VideoSpecsService? service;
 
   final String? filePath;
 
@@ -39,10 +42,10 @@ class VideoSpecsPanel extends ConsumerStatefulWidget {
   final bool showTitle;
 
   @override
-  ConsumerState<VideoSpecsPanel> createState() => _VideoSpecsPanelState();
+  State<VideoSpecsPanel> createState() => _VideoSpecsPanelState();
 }
 
-class _VideoSpecsPanelState extends ConsumerState<VideoSpecsPanel> {
+class _VideoSpecsPanelState extends State<VideoSpecsPanel> {
   @override
   void initState() {
     super.initState();
@@ -52,22 +55,28 @@ class _VideoSpecsPanelState extends ConsumerState<VideoSpecsPanel> {
   @override
   void didUpdateWidget(VideoSpecsPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.filePath != widget.filePath) _resolve();
+    if (oldWidget.filePath != widget.filePath ||
+        oldWidget.service != widget.service) {
+      _resolve();
+    }
   }
 
   void _resolve() {
+    final VideoSpecsService? service = widget.service;
     final String? path = widget.filePath;
-    if (path == null || path.isEmpty || isProbableStreamUrl(path)) return;
+    if (service == null || path == null || path.isEmpty) return;
+    if (isProbableStreamUrl(path)) return;
     // 详情页只有一个文件，值得直接 resolve（而不是排队）——用户就是为看它才点进来。
-    ref.read(videoSpecsProvider).resolve(path);
+    service.resolve(path);
   }
 
   @override
   Widget build(BuildContext context) {
+    final VideoSpecsService? service = widget.service;
     final String? path = widget.filePath;
-    if (path == null || path.isEmpty) return const SizedBox.shrink();
-    // 见 videoSpecsProvider 注释：它是普通 Provider，变化靠 ListenableBuilder 订阅。
-    final VideoSpecsService service = ref.watch(videoSpecsProvider);
+    if (service == null || path == null || path.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return ListenableBuilder(
       listenable: service,
       builder: (BuildContext context, Widget? _) =>
@@ -82,7 +91,8 @@ class _VideoSpecsPanelState extends ConsumerState<VideoSpecsPanel> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     final List<(String, String)> rows = <(String, String)>[
-      for (final (VideoSpecField field, String value) in videoSpecsFields(facts))
+      for (final (VideoSpecField field, String value)
+          in videoSpecsFields(facts))
         (
           switch (field) {
             VideoSpecField.resolution => t.video_specs_resolution,
@@ -201,8 +211,7 @@ class _TrackRow extends StatelessWidget {
                 for (final TrackDisplay track in tracks)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 2),
-                    child:
-                        SelectableText(line(track), style: text.bodySmall),
+                    child: SelectableText(line(track), style: text.bodySmall),
                   ),
               ],
             ),
@@ -214,18 +223,25 @@ class _TrackRow extends StatelessWidget {
 }
 
 /// 一行紧凑规格，给集卡状态行用：`1080p · HDR10 · HEVC`。
-class VideoSpecsInlineLine extends ConsumerStatefulWidget {
-  const VideoSpecsInlineLine({required this.filePath, this.style, super.key});
+class VideoSpecsInlineLine extends StatefulWidget {
+  const VideoSpecsInlineLine({
+    required this.service,
+    required this.filePath,
+    this.style,
+    super.key,
+  });
+
+  /// 规格服务；null = 宿主没提供，整行不渲染也不探测。
+  final VideoSpecsService? service;
 
   final String? filePath;
   final TextStyle? style;
 
   @override
-  ConsumerState<VideoSpecsInlineLine> createState() =>
-      _VideoSpecsInlineLineState();
+  State<VideoSpecsInlineLine> createState() => _VideoSpecsInlineLineState();
 }
 
-class _VideoSpecsInlineLineState extends ConsumerState<VideoSpecsInlineLine> {
+class _VideoSpecsInlineLineState extends State<VideoSpecsInlineLine> {
   @override
   void initState() {
     super.initState();
@@ -235,25 +251,31 @@ class _VideoSpecsInlineLineState extends ConsumerState<VideoSpecsInlineLine> {
   @override
   void didUpdateWidget(VideoSpecsInlineLine oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.filePath != widget.filePath) _prime();
+    if (oldWidget.filePath != widget.filePath ||
+        oldWidget.service != widget.service) {
+      _prime();
+    }
   }
 
   void _prime() {
+    final VideoSpecsService? service = widget.service;
     final String? path = widget.filePath;
-    if (path == null || path.isEmpty || isProbableStreamUrl(path)) return;
-    ref.read(videoSpecsProvider).prime(<String>[path]);
+    if (service == null || path == null || path.isEmpty) return;
+    if (isProbableStreamUrl(path)) return;
+    service.prime(<String>[path]);
   }
 
   @override
   Widget build(BuildContext context) {
+    final VideoSpecsService? service = widget.service;
     final String? path = widget.filePath;
-    if (path == null || path.isEmpty) return const SizedBox.shrink();
-    final VideoSpecsService service = ref.watch(videoSpecsProvider);
+    if (service == null || path == null || path.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return ListenableBuilder(
       listenable: service,
       builder: (BuildContext context, Widget? _) {
-        final String? summary =
-            videoSpecsInlineSummary(service.specsFor(path));
+        final String? summary = videoSpecsInlineSummary(service.specsFor(path));
         // 未探到时不占位：集卡高度是钳死的，多一行会把简介挤掉。
         if (summary == null) return const SizedBox.shrink();
         return Text(

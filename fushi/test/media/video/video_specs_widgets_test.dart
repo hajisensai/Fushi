@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:drift/native.dart' show NativeDatabase;
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -97,17 +96,12 @@ void main() {
     VideoSpecsService service,
     Widget child,
   ) async {
+    // 规格 widget 是注入式的（宿主详情页不是 Consumer，见 video_specs_badges.dart
+    // 的说明），所以这里不需要 ProviderScope，直接把 service 传进 widget 即可。
+    addTearDown(service.dispose);
     await tester.pumpWidget(
-      ProviderScope(
-        // 不额外 addTearDown(service.dispose)：ChangeNotifierProvider 在 scope
-        // 销毁时会自己 dispose 这个 notifier，再 dispose 一次会触发
-        // 「A ChangeNotifier was used after being disposed」断言。
-        overrides: <Override>[
-          videoSpecsProvider.overrideWith((Ref ref) => service),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(home: Scaffold(body: child)),
-        ),
+      TranslationProvider(
+        child: MaterialApp(home: Scaffold(body: child)),
       ),
     );
     await tester.pump();
@@ -118,7 +112,8 @@ void main() {
       final String path = writeFile('a.mkv');
       final VideoSpecsService service = await serviceWith(tester, path, hdr4k);
 
-      await pumpWith(tester, service, VideoSpecsBadgeStrip(filePath: path));
+      await pumpWith(tester, service,
+          VideoSpecsBadgeStrip(service: service, filePath: path));
 
       expect(find.text('4K'), findsOneWidget);
       expect(find.text('HDR10'), findsOneWidget);
@@ -139,7 +134,8 @@ void main() {
         ),
       );
 
-      await pumpWith(tester, service, VideoSpecsBadgeStrip(filePath: path));
+      await pumpWith(tester, service,
+          VideoSpecsBadgeStrip(service: service, filePath: path));
 
       expect(find.text('1080p'), findsOneWidget);
       expect(find.text('SDR'), findsNothing);
@@ -151,7 +147,8 @@ void main() {
       final VideoSpecsService service =
           await serviceWith(tester, path, VideoProbeFacts.empty);
 
-      await pumpWith(tester, service, VideoSpecsBadgeStrip(filePath: path));
+      await pumpWith(tester, service,
+          VideoSpecsBadgeStrip(service: service, filePath: path));
 
       // 没有任何文字，且自身尺寸为零——卡片布局一格不该被撑开。
       expect(find.byType(Text), findsNothing);
@@ -170,12 +167,11 @@ void main() {
           return hdr4k;
         },
       );
-      // 不 addTearDown(dispose)：ProviderScope 销毁时已经 dispose 过一次。
-
       await pumpWith(
         tester,
         service,
-        const VideoSpecsBadgeStrip(
+        VideoSpecsBadgeStrip(
+          service: service,
           filePath: 'https://example.com/stream.m3u8',
         ),
       );
@@ -190,18 +186,19 @@ void main() {
       final String path = writeFile('d.mkv');
       final VideoSpecsService service = await serviceWith(tester, path, hdr4k);
 
-      await pumpWith(tester, service, VideoSpecsInlineLine(filePath: path));
+      await pumpWith(tester, service,
+          VideoSpecsInlineLine(service: service, filePath: path));
 
       expect(find.text('4K · HDR10 · HEVC'), findsOneWidget);
     });
 
-    testWidgets('未探到时不占位（集卡高度钳死，多一行会顶掉简介）',
-        (WidgetTester tester) async {
+    testWidgets('未探到时不占位（集卡高度钳死，多一行会顶掉简介）', (WidgetTester tester) async {
       final String path = writeFile('e.mkv');
       final VideoSpecsService service =
           await serviceWith(tester, path, VideoProbeFacts.empty);
 
-      await pumpWith(tester, service, VideoSpecsInlineLine(filePath: path));
+      await pumpWith(tester, service,
+          VideoSpecsInlineLine(service: service, filePath: path));
 
       expect(tester.getSize(find.byType(VideoSpecsInlineLine)), Size.zero);
     });
@@ -212,7 +209,8 @@ void main() {
       final String path = writeFile('f.mkv');
       final VideoSpecsService service = await serviceWith(tester, path, hdr4k);
 
-      await pumpWith(tester, service, VideoSpecsPanel(filePath: path));
+      await pumpWith(
+          tester, service, VideoSpecsPanel(service: service, filePath: path));
 
       expect(find.text('4K (3840×2160)'), findsOneWidget);
       expect(find.text('HDR10'), findsOneWidget);
@@ -226,7 +224,8 @@ void main() {
       final String path = writeFile('g.mkv');
       final VideoSpecsService service = await serviceWith(tester, path, hdr4k);
 
-      await pumpWith(tester, service, VideoSpecsPanel(filePath: path));
+      await pumpWith(
+          tester, service, VideoSpecsPanel(service: service, filePath: path));
 
       expect(find.textContaining('日本語 · FLAC · 5.1'), findsOneWidget);
       expect(find.textContaining('ENG · AAC · 2.0'), findsOneWidget);
@@ -248,7 +247,8 @@ void main() {
       final String path = writeFile('h.mkv');
       final VideoSpecsService service = await serviceWith(tester, path, hdr4k);
 
-      await pumpWith(tester, service, VideoSpecsPanel(filePath: path));
+      await pumpWith(
+          tester, service, VideoSpecsPanel(service: service, filePath: path));
 
       expect(find.textContaining('CHI · SRT'), findsOneWidget);
     });
@@ -258,7 +258,8 @@ void main() {
       final VideoSpecsService service =
           await serviceWith(tester, path, VideoProbeFacts.empty);
 
-      await pumpWith(tester, service, VideoSpecsPanel(filePath: path));
+      await pumpWith(
+          tester, service, VideoSpecsPanel(service: service, filePath: path));
 
       expect(tester.getSize(find.byType(VideoSpecsPanel)), Size.zero);
     });
