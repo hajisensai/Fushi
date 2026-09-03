@@ -3945,6 +3945,48 @@ function autoExpandCount(totalDicts) {
 // So the per-dict flag short-circuits both auto-expand and the global switch; a
 // non-collapsed block still follows the old rule (auto-expanded, or global collapse
 // off). Users can still open a collapsed block by hand -- <details> stays clickable.
+// 每本词典一份 <style>（BUG-2039 ②）。词典样式的选择器本来就是 `[data-dictionary="名"]`
+// 全局作用域，与它挂在哪个块里无关；旧实现却给**每个词典块**都塞一份逐字相同的
+// <style>——N 词条 × M 词典就是 N×M 个样式表，每插一个都让整个文档样式失效、下一次
+// 布局读（masonry 量高）就得把全部卡片重算一遍，尾批越长越慢。现在按词典名去重：
+// 首次见到就建一个挂到 head（扩展是 shadow root），文本变了（设置改了 compact / 词典
+// CSS 换了）就地改 textContent。层叠顺序必须与旧位置等价：基础 popup.css（更早）<
+// 词典样式 < 用户自定义 CSS（applyCustomCSS 追加在末尾）——所以同一容器里若已有
+// `style.fushi-custom-css`，新样式插在它前面，否则追加到末尾。
+const __fushiDictStyleNodes = new Map();
+function __fushiDictStyleParent() {
+    return window.__fushiRoot || document.head || document.body;
+}
+function __fushiFirstCustomCssNode(parent) {
+    const children = parent && parent.children;
+    if (!children) return null;
+    for (const child of children) {
+        if (child.classList && child.classList.contains('fushi-custom-css')) return child;
+    }
+    return null;
+}
+function ensureDictionaryStyle(dictName, styleText) {
+    const parent = __fushiDictStyleParent();
+    let node = __fushiDictStyleNodes.get(dictName);
+    if (node && node.parentNode !== parent) {
+        try { node.remove(); } catch (_) { /* 已被换掉的 realm 根 */ }
+        node = null;
+    }
+    if (!node) {
+        node = el('style', { className: 'fushi-dict-style', textContent: styleText });
+        node.setAttribute('data-dictionary', dictName);
+        const anchor = __fushiFirstCustomCssNode(parent);
+        if (anchor && typeof parent.insertBefore === 'function') {
+            parent.insertBefore(node, anchor);
+        } else {
+            parent.appendChild(node);
+        }
+        __fushiDictStyleNodes.set(dictName, node);
+        return;
+    }
+    if (node.textContent !== styleText) node.textContent = styleText;
+}
+
 function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts) {
     const details = el('details', { className: 'glossary-group' });
     const perDictCollapsed = (window.collapsedDictionaryNames || []).includes(dictName);
@@ -4032,8 +4074,8 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
     if (dictStyle) {
         styleText += '\n' + constructDictCss(dictStyle, dictName);
     }
-    dictWrapper.appendChild(el('style', { textContent: styleText }));
-    
+    ensureDictionaryStyle(dictName, styleText);
+
     const termTags = [...new Set(parseTags(contents[0]?.termTags))];
     const renderContent = (parent, content) => {
         if (typeof content === 'string') {
@@ -4206,7 +4248,9 @@ function appendNextDeferredGlossaryBlock(entryDiv) {
         delete entryDiv.__fushiDeferredGlossaryState;
     }
     // BUG-1727：每追加一块就合帧重排（masonryRaf 去重，同帧多次调用只跑一次 layoutMasonry），
-    // 不再等全部建完——新卡片在下一帧就落到自己的列位并可见。
+    // 不再等全部建完——新卡片在下一帧就落到自己的列位并可见。只标脏本词条的 body：
+    // 其余词条的卡片没变，全量重铺是「O((词条×词典)²) 次强制回流」的来源。
+    markMasonryDirty(state.body);
     scheduleMasonry();
     return true;
 }
@@ -4527,6 +4571,32 @@ function buildKanjiCards() {
 
 window._renderGeneration = 0;
 
+// ===== 尾批调度原语 =====
+// 首词条同步渲染后，余下词典块在宏任务里补建。原实现一块一个 setTimeout(fn, 0)：HTML 规范
+// 把嵌套 >5 层的 timer 钳到最短 4ms，50 块尾巴光排队就等 ≥200ms，且每块独占一帧。
+// MessageChannel 宏任务没有嵌套钳制、照样让出主线程给渲染与输入（React scheduler 同款）。
+// 无 MessageChannel 的壳（node 测试沙箱）回落 setTimeout(fn, 0)。队列 FIFO：同一时刻至多
+// 一条渲染链在途，换代由 generation 判掉，故不需要取消接口。
+const __fushiTailQueue = [];
+const __fushiTailChannel =
+    (typeof MessageChannel === 'function') ? new MessageChannel() : null;
+if (__fushiTailChannel) {
+    __fushiTailChannel.port1.onmessage = () => {
+        const task = __fushiTailQueue.shift();
+        if (task) task();
+    };
+}
+function scheduleRenderTail(task) {
+    if (__fushiTailChannel) {
+        __fushiTailQueue.push(task);
+        __fushiTailChannel.port2.postMessage(null);
+        return;
+    }
+    setTimeout(task, 0);
+}
+// 一个尾批宏任务里连续建块的时间预算（ms）：留出同一帧内 masonry 合帧重排与绘制的余量。
+const TAIL_SLICE_BUDGET_MS = 6;
+
 // 浏览器扩展性能诊断钩子。app 内 WebView 没有注入该函数时是零成本 no-op；Side Panel/
 // content script 注入后，把首卡同步 DOM 与尾批完成耗时关联到同一个 lookup id。
 function _emitPopupRenderPerf(phase, startedAt, entryCount, extra) {
@@ -4649,6 +4719,24 @@ function _firePopupRendered(stillRendering) {
 // 由 JS 铺。守卫测试：`fushi/test/pages/popup_masonry_no_dead_branch_guard_test.dart`。
 let masonryRaf = null;
 let masonryObserver = null;
+// 脏 body 集合：增量追加块 / 卡片尺寸变化只重铺涉及的 body；resize、换列数、渲染收尾
+// 走全量（masonryDirtyAll）。两者在同一个合帧 RAF 里消费。scheduleMasonry() 在没有任何
+// body 被标脏时等价于全量（保留历史无参调用语义），标脏后只铺脏 body。
+const masonryDirtyBodies = new Set();
+let masonryDirtyAll = false;
+
+function markMasonryDirty(body) {
+    if (body) masonryDirtyBodies.add(body);
+}
+
+// 节点所属的词典义项容器（.glossary-section > .category-body）；不在任何 masonry body
+// 内返回 null（调用方据此退化成全量）。
+function masonryBodyOf(node) {
+    const body = node && typeof node.closest === 'function'
+        ? node.closest('.category-body') : null;
+    return body && body.parentElement &&
+        body.parentElement.classList.contains('glossary-section') ? body : null;
+}
 
 // masonry 是叠在 CSS grid 之上的渐进增强：需要 ResizeObserver（捕捉卡片高度变化重排）
 // 与 requestAnimationFrame（合帧）。环境不具备（老 WebView / 非浏览器测试壳）时整体不做
@@ -4698,10 +4786,22 @@ function resetMasonryBody(body) {
     });
 }
 
-function layoutMasonry() {
+// 只在值真变时写 inline style：同值重写在部分引擎仍会失效样式，且让后面的几何读再付一次布局。
+function setStyleIfChanged(el, prop, value) {
+    if (el.style[prop] !== value) el.style[prop] = value;
+}
+
+// 三相批处理（读几何 → 写定位 → 读高度 → 写位置）。此前每张卡片「写 6 个样式 → 读
+// offsetHeight」，一次重铺 = 卡片数次强制同步布局；叠加「每追加一块就全量重铺」就是
+// O((词条×词典)²) 次回流：50 块的查词尾巴要 0.8s 才铺完，期间卡片逐帧跳位、弹窗高度反复变。
+// 现在整轮只有两次强制布局（相 1 读 clientWidth、相 3 读 offsetHeight），与卡片数无关。
+// 列分配逻辑（最短列打包 + 粘着列）与单列/空 body 回落逐字不变。
+// [targetBodies] 缺省 = 全部词典义项容器；scheduleMasonry 只传脏 body。
+function layoutMasonry(targetBodies) {
     const configured = dictColumns();
     const gap = masonryGap();
-    masonryBodies().forEach(body => {
+    const plans = [];
+    (targetBodies || masonryBodies()).forEach(body => {
         const items = [...body.children].filter(c => c.classList.contains('glossary-group'));
         // 经典单列（设置=1）或该词条无词典卡：不做 masonry，清 inline 回落 CSS
         //（block 纵向堆叠 + CSS margin-top / 空容器）。
@@ -4715,10 +4815,35 @@ function layoutMasonry() {
         // 最短列打包。cols=1 时 columnWidth=整宽、单卡 translate(0,0) 即满宽（取代旧「单卡回落
         // 半宽 grid」——grid 用全局 --dict-columns 无法感知本词条只有 1 本词典）。
         const cols = Math.min(configured, items.length);
-        body.style.position = 'relative';
-        body.style.display = 'block';
-        const columnWidth = (body.clientWidth - (cols - 1) * gap) / cols;
+        plans.push({ body, items, cols, columnWidth: 0, itemHeights: null });
+    });
+    if (plans.length === 0) return;
 
+    // 相 1（读）：所有 body 的可用宽度一次读完。body 从 grid 切到 block 不改变其宽度
+    //（都是撑满父容器的块级盒），故可先读后写。
+    plans.forEach(plan => {
+        plan.columnWidth = (plan.body.clientWidth - (plan.cols - 1) * gap) / plan.cols;
+    });
+    // 相 2（写）：定位与列宽。宽度决定高度，必须在量高之前落下；位置（transform）不影响
+    // 高度，留到相 4。
+    plans.forEach(({ body, items, columnWidth }) => {
+        setStyleIfChanged(body, 'position', 'relative');
+        setStyleIfChanged(body, 'display', 'block');
+        const width = `${columnWidth}px`;
+        items.forEach(item => {
+            if (item.style.position !== 'absolute') item.style.position = 'absolute';
+            setStyleIfChanged(item, 'left', '0');
+            setStyleIfChanged(item, 'top', '0');
+            setStyleIfChanged(item, 'marginTop', '0');
+            setStyleIfChanged(item, 'width', width);
+        });
+    });
+    // 相 3（读）：按目标列宽回流后一次量完全部卡片高度——整轮唯一一次因写而起的强制布局。
+    plans.forEach(plan => {
+        plan.itemHeights = plan.items.map(item => item.offsetHeight);
+    });
+    // 相 4（写）：分列 + 摆位 + 容器高度。
+    plans.forEach(({ body, items, cols, columnWidth, itemHeights }) => {
         // 粘着列分配（修用户「开关方框时按上下高度左右重排，实际只应上下动」）：只要列数没变、
         // 且每张卡片都已记录合法列号，就复用既有列分配——展开/收起改高度时只在各自列内重算纵向
         // 位置，卡片只上下动、绝不换列左右跳。仅列数变（窗口宽/设置）或有新卡片（增量加载，某卡
@@ -4731,7 +4856,7 @@ function layoutMasonry() {
             });
 
         const heights = new Array(cols).fill(0);
-        items.forEach(item => {
+        items.forEach((item, index) => {
             let c;
             if (canReuse) {
                 c = Number.parseInt(item.dataset.masonryCol, 10); // 复用粘着列，不重新分列
@@ -4742,25 +4867,41 @@ function layoutMasonry() {
                 }
                 item.dataset.masonryCol = String(c); // 记住列号，之后开关都粘着此列
             }
-            item.style.position = 'absolute';
-            item.style.left = '0';
-            item.style.top = '0';
-            item.style.marginTop = '0';
-            item.style.width = `${columnWidth}px`;
-            item.style.transform = `translate(${c * (columnWidth + gap)}px, ${heights[c]}px)`;
+            const transform = `translate(${c * (columnWidth + gap)}px, ${heights[c]}px)`;
+            setStyleIfChanged(item, 'transform', transform);
             item.style.visibility = ''; // BUG-1727：增量预藏的卡片定位完成即恢复可见
-            // 读 offsetHeight 前已设 width，浏览器按目标列宽回流后再量高。
-            heights[c] += item.offsetHeight + gap;
+            item.__fushiMasonryHeight = itemHeights[index]; // 供 ResizeObserver 判「真变了没」
+            heights[c] += itemHeights[index] + gap;
         });
         body.dataset.masonryCols = String(cols);
-        body.style.height = `${Math.max(...heights) - gap}px`;
+        setStyleIfChanged(body, 'height', `${Math.max(...heights) - gap}px`);
     });
 }
 
 function observeMasonryTargets() {
     if (!masonrySupported()) return;
     if (!masonryObserver) {
-        masonryObserver = new ResizeObserver(scheduleMasonry);
+        // 卡片尺寸变化只标脏它所在的 body（其它词条纹丝不动）；找不到所属 body 时退化全量。
+        masonryObserver = new ResizeObserver(observed => {
+            let scoped = true;
+            let changed = false;
+            observed.forEach(entry => {
+                const target = entry.target;
+                // masonry 刚按列宽写完、量完的卡片，ResizeObserver 会在同一轮渲染管线
+                // 末尾再报一次（首次 observe 也必报一次）。高度与上一轮量到的一致就
+                // 不是「内容变了」，不必再铺一帧——只有 <details> 开关、图片/字体到位
+                // 这类真实高度变化才重排。回调跑在布局之后，此处读 offsetHeight 不强制回流。
+                if (target.__fushiMasonryHeight !== undefined &&
+                    target.__fushiMasonryHeight === target.offsetHeight) {
+                    return;
+                }
+                changed = true;
+                const body = masonryBodyOf(target);
+                if (body) markMasonryDirty(body); else scoped = false;
+            });
+            if (!changed) return;
+            if (scoped) scheduleMasonry(); else scheduleMasonryAll();
+        });
     }
     // 只观察卡片本身（内容高度变化），不观察容器（避免 body.style.height 自触发死循环）；
     // 容器宽度变化由 window resize 覆盖。observe 同一元素幂等，增量新增卡片可安全重观察。
@@ -4772,15 +4913,31 @@ function observeMasonryTargets() {
 }
 
 function scheduleMasonry() {
-    if (!masonrySupported() || masonryRaf) return;
+    if (!masonrySupported()) return;
+    // 没标脏任何 body 的调用 = 全量（历史无参语义：resize / 换列数 / 收尾）。
+    if (masonryDirtyBodies.size === 0) masonryDirtyAll = true;
+    if (masonryRaf) return;
     const generation = window._renderGeneration;
     masonryRaf = requestAnimationFrame(() => {
         masonryRaf = null;
+        const all = masonryDirtyAll;
+        // 已被换代渲染摘掉的 body 不再铺（它们的卡片也不在 DOM 里了）。
+        const dirty = [...masonryDirtyBodies].filter(body => body.isConnected !== false);
+        masonryDirtyAll = false;
+        masonryDirtyBodies.clear();
         if (generation !== window._renderGeneration) return;
-        layoutMasonry();
+        layoutMasonry(all ? undefined : dirty);
         // 铺完复报高度（容器高度已由 masonry 改写），让宿主给弹窗重新定尺。
-        _reportPopupHeight();
+        // 尾批在途（首发与末发 popupRendered 之间）的中间高度不报：那些帧的高度
+        // 每帧都变，宿主每收一次就重定尺一次弹窗——这就是「弹窗高度反复变」的抖动
+        // 本体。宿主要的只有两个稳定值：首词条高度（撤盖板）与全部建完的终高。
+        if (!window._renderInProgress) _reportPopupHeight();
     });
+}
+
+function scheduleMasonryAll() {
+    masonryDirtyAll = true;
+    scheduleMasonry();
 }
 
 // BUG-1833 — the global lookup host parks and rebinds a physical iframe realm.
@@ -4799,23 +4956,29 @@ window.__fushiPrepareRealmForReuse = () => {
     }
     try { masonryObserver?.disconnect(); } catch (_) { /* no-op */ }
     masonryObserver = null;
+    masonryDirtyBodies.clear();
+    masonryDirtyAll = false;
     return window._renderGeneration;
 };
 
 // 宿主改列数 / 外部触发时可调；渲染钩子已在 _firePopupRendered / updatePopupIncremental 里调。
 window.fushiRelayoutDictionaries = () => {
     observeMasonryTargets();
-    scheduleMasonry();
+    scheduleMasonryAll();
 };
 
 // 顶层注册用 typeof 守卫：真实浏览器一定有 addEventListener；非浏览器测试壳缺此 API 时
 // 跳过注册即可（masonry 本就会被 masonrySupported 门控掉）。
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-    window.addEventListener('resize', scheduleMasonry);
+    window.addEventListener('resize', scheduleMasonryAll);
 }
 // <details> 展开/收起改高度：capture 阶段兜底（ResizeObserver 已是主路，故 shadow 边界不影响正确性）。
+// 只重铺被开关的那个词条的 body；事件目标不在 masonry body 内时退化全量。
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
-    document.addEventListener('toggle', scheduleMasonry, true);
+    document.addEventListener('toggle', event => {
+        const body = masonryBodyOf(event && event.target);
+        if (body) { markMasonryDirty(body); scheduleMasonry(); } else { scheduleMasonryAll(); }
+    }, true);
 }
 
 // 真机第 5 轮 — 视口感知的词典列数收敛：TODO-1357 只按平台定默认（桌面 2 列
@@ -4865,6 +5028,15 @@ window.renderPopup = function() {
     // returned before advancing this generation, so an old multi-entry timer
     // could append stale cards into the freshly-rendered empty state.
     const gen = ++window._renderGeneration;
+    // 上一轮的 masonry ResizeObserver 还观察着即将被 innerHTML='' 摘掉的全部卡片：
+    // 观察目标被 observer 强引用，热槽 WebView 跨成百上千次查词不重载，这些
+    // 已脱离文档的卡片子树就一直攒在内存里。换代时整体断开，新卡片由收尾的
+    // observeMasonryTargets 重新观察（幂等）。
+    if (masonryObserver) {
+        try { masonryObserver.disconnect(); } catch (_) { /* no-op */ }
+    }
+    masonryDirtyBodies.clear();
+    masonryDirtyAll = false;
     // 变形说明属于上一轮查词结果，不能独立于查询会话存活。它挂在 entries-container
     // 外面，单纯重建词条 DOM 不会移除，因此每轮渲染必须显式关闭并清空（含钉住态）。
     hideGrammarTooltip();
@@ -5033,57 +5205,63 @@ window.renderPopup = function() {
             });
             return;
         }
-        let taskEntryIndex = activeEntryIndex >= 0
-            ? activeEntryIndex
-            : nextEntryIndex;
-        try {
-            if (activeEntryElement) {
-                appendNextDeferredGlossaryBlock(activeEntryElement);
-            } else if (nextEntryIndex < entries.length) {
-                const idx = nextEntryIndex++;
-                taskEntryIndex = idx;
-                const entry = entries[idx];
-                const element = entry ? buildEntryElement(entry, idx, 1) : null;
-                if (element) {
-                    const fragment = document.createDocumentFragment();
-                    let separator = null;
-                    // Only add a separator when a card precedes this one; hidden
-                    // entries never create either a card or a separator.
-                    if (renderedDomCount > 0 || kanjiSection) {
-                        separator = document.createElement('hr');
-                        fragment.appendChild(separator);
+        // 时间预算分片：一个宏任务里连续建块直到预算用尽，而不是一块一任务。逐块的
+        // 抛错回滚 / 收尾语义不变（catch 内 return 直接结束整条链）。
+        const sliceStart = performance.now();
+        do {
+            let taskEntryIndex = activeEntryIndex >= 0
+                ? activeEntryIndex
+                : nextEntryIndex;
+            try {
+                if (activeEntryElement) {
+                    appendNextDeferredGlossaryBlock(activeEntryElement);
+                } else if (nextEntryIndex < entries.length) {
+                    const idx = nextEntryIndex++;
+                    taskEntryIndex = idx;
+                    const entry = entries[idx];
+                    const element = entry ? buildEntryElement(entry, idx, 1) : null;
+                    if (element) {
+                        const fragment = document.createDocumentFragment();
+                        let separator = null;
+                        // Only add a separator when a card precedes this one; hidden
+                        // entries never create either a card or a separator.
+                        if (renderedDomCount > 0 || kanjiSection) {
+                            separator = document.createElement('hr');
+                            fragment.appendChild(separator);
+                        }
+                        fragment.appendChild(element);
+                        entryDomIndex[idx] = renderedDomCount++;
+                        container.appendChild(fragment);
+                        activeEntryElement = element;
+                        activeEntryIndex = idx;
+                        activeEntrySeparator = separator;
+                        postProcessRuby(element);
                     }
-                    fragment.appendChild(element);
-                    entryDomIndex[idx] = renderedDomCount++;
-                    container.appendChild(fragment);
-                    activeEntryElement = element;
-                    activeEntryIndex = idx;
-                    activeEntrySeparator = separator;
-                    postProcessRuby(element);
                 }
+            } catch (e) {
+                console.error('[popup] renderPopup rest-entries render failed', e);
+                window.__fushiReportJsError('renderPopup.restEntries', (e && e.message) || String(e), e && e.stack);
+                // Partial cards cannot satisfy the count/map contract. Remove the
+                // current card and publish only the trustworthy completed prefix.
+                rollbackActiveEntry();
+                finishRemainingEntries(
+                    Math.max(0, taskEntryIndex),
+                    'error',
+                    { where: 'dictionary-block' },
+                );
+                return;
             }
-        } catch (e) {
-            console.error('[popup] renderPopup rest-entries render failed', e);
-            window.__fushiReportJsError('renderPopup.restEntries', (e && e.message) || String(e), e && e.stack);
-            // Partial cards cannot satisfy the count/map contract. Remove the
-            // current card and publish only the trustworthy completed prefix.
-            rollbackActiveEntry();
-            finishRemainingEntries(
-                Math.max(0, taskEntryIndex),
-                'error',
-                { where: 'dictionary-block' },
-            );
-            return;
-        }
-        releaseCompletedActiveEntry();
+            releaseCompletedActiveEntry();
+        } while ((activeEntryElement || nextEntryIndex < entries.length) &&
+            performance.now() - sliceStart < TAIL_SLICE_BUDGET_MS);
         if (activeEntryElement || nextEntryIndex < entries.length) {
-            setTimeout(renderNextDictionaryBlock, 0);
+            scheduleRenderTail(renderNextDictionaryBlock);
             return;
         }
         // Second signal with the same token measures the final all-block height.
         finishRemainingEntries();
     };
-    setTimeout(renderNextDictionaryBlock, 0);
+    scheduleRenderTail(renderNextDictionaryBlock);
 };
 
 window.updatePopupIncremental = function() {

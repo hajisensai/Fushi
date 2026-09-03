@@ -29,24 +29,30 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1942 条。点号进各自文件。
+> 共 1949 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2080](bugs/BUG-2080-netflix-ext-mining-clip-timestamp-hardcoded-zero.md) | ✅ | ✅ | 浏览器扩展 Netflix 制卡的片段时间窗恒为 0，卡上永远显示不出时间 |
-| [BUG-2079](bugs/BUG-2079-nyaa-search-missing-timeout.md) | 🚧 | 🚧 | NyaaClient.search 无超时，订阅检查可被单个慢响应挂住 |
+| [BUG-2079](bugs/BUG-2079-nyaa-search-missing-timeout.md) | ✅ | ✅ | NyaaClient.search 无超时，订阅检查可被单个慢响应挂住 |
+| [BUG-2078](bugs/BUG-2078-texthooker-fastforward-fold-merges-sentences.md) | 🚧 | 🚧 | Ctrl 快进时渐进折叠把多句连同选项文本折成一条超长台词 |
 | [BUG-2076](bugs/BUG-2076-leaf-structure-gate-reads-hooked-memory.md) | ✅ | ✅ | 白2 身份结构门扫的是被 LunaHook 改写过的进程内存，导致点击穿透+语音降级 |
 | [BUG-2075](bugs/BUG-2075-macos-data-root-channel-unregistered.md) | ✅ | ✅ | macOS 更改数据位置失败：data_root_access 通道未注册 |
 | [BUG-2074](bugs/BUG-2074-leaf-identity-latched-unmeasured-exe.md) | ✅ | ✅ | 白2 一次瞬时的 exe 摘要测量失败被钉成永久身份拒绝，整场语音降级 Loopback |
 | [BUG-2073](bugs/BUG-2073-macos-icloud-data-root-rename-timeout.md) | ✅ | ✅ | macOS iCloud Documents 迁移到本地目录时 rename 超时并回滚 |
 | [BUG-2072](bugs/BUG-2072-data-root-rollback-misses-inflight-plan.md) | 🚧 | 🚧 | 数据根迁移回滚：搬移途中抛错的 plan 从未进 done，已 rename 的顶层项随新根被删 |
 | [BUG-2071](bugs/BUG-2071-data-root-rollback-skips-mixed-deferred-plan.md) | 🚧 | 🚧 | 数据根迁移回滚：混合 rename+copy 的选择性 plan 被整条跳过，已 rename 的顶层项随新根被删 |
+| [BUG-2070](bugs/BUG-2070-kirikiri-wuopus-voice-degrades-to-loopback.md) | 🚧 | 🚧 | KiriKiri Z + wuopus 语音（ATRI）整句音频恒降级为系统混音 |
+| [BUG-2069](bugs/BUG-2069-gal-mining-animation-shorter-than-sentence.md) | ✅ | ✅ | galgame 制卡动图固定 1.25 秒不覆盖整句语音 |
+| [BUG-2068](bugs/BUG-2068-gal-engine-exact-thread-manual-select.md) | ✅ | ✅ | 引擎精确文本线程首次启动需手动选择 |
+| [BUG-2067](bugs/BUG-2067-gal-workbench-folded-line-stale-words.md) | ✅ | ✅ | 工作台实时台词折叠后仍显示中间态前缀 |
 | [BUG-2066](bugs/BUG-2066-gal-card-size-not-independent.md) | ✅ | ✅ | 游戏内查词卡尺寸不可独立配置，且上界用画布像素夹屏幕像素被系统性压小 |
 | [BUG-2065](bugs/BUG-2065-gal-ingame-card-canvas-upscale.md) | ✅ | ✅ | 游戏内查词卡在放大运行的游戏里模糊且过大：直连覆盖窗被 1:1 闸门挡掉，回退成画布内位图合成 |
 | [BUG-2064](bugs/BUG-2064-ios-share-position-origin.md) | ✅ | ✅ | iOS 截图分享缺 sharePositionOrigin 锚点导致 PlatformException |
 | [BUG-2062](bugs/BUG-2062-subtitle-workbench-scope-extra-row.md) | ✅ | ✅ | 字幕工作台作用域开关独占一行：挂在 AppBar.bottom 上，标题行右半边全空 |
 | [BUG-2061](bugs/BUG-2061-subtitle-collection-download-all-not-pinned.md) | ✅ | ✅ | 合集字幕面板「下载全部」不贴底：两个 Flexible 分份额，用不满的部分落成死白 |
 | [BUG-2060](bugs/BUG-2060-subtitle-collection-no-source-picker.md) | ✅ | ✅ | 「整个合集」字幕面板无法选取字幕：未绑 AniList 的合集不发首搜，来源选择区整块隐藏 |
+| [BUG-2058](bugs/BUG-2058-non-latin-script-chars-zero.md) | ✅ | ✅ | 非拉丁非CJK文字字数恒0：统计为0且章内进度退化成章号 |
 | [BUG-2057](bugs/BUG-2057-subtitle-list-row-min-extent.md) | ✅ | ✅ | 字幕列表行高被历史固定行高 56×字号档钉死，单行（尤其英文译文）上下留白特别大 |
 | [BUG-2056](bugs/BUG-2056-en-apostrophe-word-scan.md) | ✅ | ✅ | 英文缩合形/所有格查不到词：撇号被当扫描终点 + 撇号写法不归一 |
 | [BUG-2055](bugs/BUG-2055-update-blocked-by-own-voice-hook.md) | ✅ | ✅ | 应用内更新被 Fushi 自己注入游戏的 voice hook 挡住，报错却称占用者为「非 Fushi 程序」 |
@@ -63,6 +69,7 @@
 | [BUG-2042](bugs/BUG-2042-grammar-tooltip-zoom-double-scaled.md) | ✅ | ✅ | 语法说明浮层定位未按内容 zoom 折算，zoom!=1 时双重缩放偏移 |
 | [BUG-2041](bugs/BUG-2041-grammar-description-two-surfaces.md) | ✅ | ✅ | 语法说明有 hover 浮层和点击全屏卡片两套呈现，交互不统一 |
 | [BUG-2040](bugs/BUG-2040-video-subtitle-list-steals-shortcuts.md) | ✅ | ✅ | 字幕列表打开后方向键等视频快捷键失效 |
+| [BUG-2039](bugs/BUG-2039-popup-render-tail-jitter.md) | ✅ | ✅ | 查词弹窗渲染尾巴逐帧掉块、卡片跳位、高度反复变 |
 | [BUG-2038](bugs/BUG-2038-grammar-description-not-localized.md) | ✅ | ✅ | 词形变化语法说明只有英文，未随界面语言本地化 |
 | [BUG-2037](bugs/BUG-2037-grammar-tooltip-transparent.md) | ✅ | ✅ | 查词弹窗语法说明浮层背景半透明，透出下方词典正文 |
 | [BUG-2036](bugs/BUG-2036-epub-guard-follows-plugin-symlink-loop.md) | ✅ | ✅ | 目录枚举守卫跟随 .plugin_symlinks 自指链，worktree 全量测试必崩两条 |

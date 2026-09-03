@@ -84,9 +84,11 @@ import 'package:fushi/src/media/discovery/import/discovery_import_executor.dart'
 import 'package:fushi/src/media/discovery/import/discovery_import_production.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
+import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/discovery/sources/alist_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/core_audio_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
+import 'package:fushi/src/media/discovery/sources/opds_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/shinnku_discovery_source.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
@@ -4413,44 +4415,94 @@ class AppModel with ChangeNotifier {
   /// 发现页源注册表（懒建，app 生命周期常驻）。内置源在此登记；加源 = 加一个
   /// adapter 实例。Sukebei（18+）默认不进「全部源」聚合，见
   /// [discoveryDisabledSourceIds]。
-  MediaDiscoveryService get mediaDiscoveryService =>
-      _mediaDiscoveryService ??= MediaDiscoveryService(
-        sources: <MediaDiscoverySource>[
-          CoreAudioDiscoverySource(
-            httpClientFactory: createDownloadHttpClient,
-          ),
-          NyaaDiscoverySource(
-            id: 'nyaa',
-            displayName: 'Nyaa',
-            priority: 10,
-            categoryByKind: const <DiscoveryMediaKind, String>{
-              // nyaa.si 分类：Literature=3_0 / Audio=2_0。
-              DiscoveryMediaKind.novel: '3_0',
-              DiscoveryMediaKind.audiobook: '2_0',
-            },
-            client: NyaaClient(),
-          ),
-          NyaaDiscoverySource(
-            id: 'sukebei',
-            displayName: 'Sukebei',
-            priority: 15,
-            categoryByKind: const <DiscoveryMediaKind, String>{
-              // sukebei 分类：Art - Games=1_3（galgame 种子主阵地）。
-              DiscoveryMediaKind.game: '1_3',
-            },
-            client: NyaaClient(baseUrl: 'https://sukebei.nyaa.si'),
-          ),
-          AListDiscoverySource(
-            id: 'alist-erogame',
-            displayName: 'erogame.space',
-            priority: 20,
-            baseUrl: 'https://alist.erogame.space',
-            kinds: const <DiscoveryMediaKind>{DiscoveryMediaKind.game},
-          ),
-          ShinnkuDiscoverySource(),
-        ],
-      );
+  ///
+  /// **偏好未就绪时也必须能建**：发现页与「发现来源」设置区在初始化早期就可能
+  /// 被构建（`_prefsRepo` 此时还是 null，[isPreferencesReady] 的存在本身就是
+  /// 这条时序的证据），无条件解引用 [prefsRepo] 会把「早一帧打开发现页」变成
+  /// 崩溃路径。此刻先给一份**不含用户自配 OPDS 源**的注册表，并记下这份是偏好
+  /// 缺席时建的；等偏好就绪后第一次取用时自动重建，免得把「我配的服务器全都
+  /// 不见了」latch 到整个进程生命周期。
+  MediaDiscoveryService get mediaDiscoveryService {
+    final MediaDiscoveryService? cached = _mediaDiscoveryService;
+    if (cached != null &&
+        !(_discoveryRegistryLacksPrefs && isPreferencesReady)) {
+      return cached;
+    }
+    cached?.close();
+    _discoveryRegistryLacksPrefs = !isPreferencesReady;
+    return _mediaDiscoveryService =
+        MediaDiscoveryService(sources: <MediaDiscoverySource>[
+      CoreAudioDiscoverySource(
+        httpClientFactory: createDownloadHttpClient,
+      ),
+      NyaaDiscoverySource(
+        id: 'nyaa',
+        displayName: 'Nyaa',
+        priority: 10,
+        categoryByKind: const <DiscoveryMediaKind, String>{
+          // nyaa.si 分类：Literature=3_0 / Audio=2_0。
+          DiscoveryMediaKind.novel: '3_0',
+          DiscoveryMediaKind.audiobook: '2_0',
+        },
+        client: NyaaClient(),
+      ),
+      NyaaDiscoverySource(
+        id: 'sukebei',
+        displayName: 'Sukebei',
+        priority: 15,
+        categoryByKind: const <DiscoveryMediaKind, String>{
+          // sukebei 分类：Art - Games=1_3（galgame 种子主阵地）。
+          DiscoveryMediaKind.game: '1_3',
+        },
+        client: NyaaClient(baseUrl: 'https://sukebei.nyaa.si'),
+      ),
+      AListDiscoverySource(
+        id: 'alist-erogame',
+        displayName: 'erogame.space',
+        priority: 20,
+        baseUrl: 'https://alist.erogame.space',
+        kinds: const <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+      ),
+      ShinnkuDiscoverySource(),
+      // 用户自配的 OPDS 服务器：**运行期**由偏好展开，一条配置 = 一个源
+      // 实例。停用的条目直接不进注册表（而不是进了再靠停用清单挡）——
+      // 源开关列表遍历的就是本注册表，两套「关掉」的语义并存只会让设置页
+      // 出现一个既在清单里又被排除的幽灵条目。
+      if (isPreferencesReady)
+        for (final OpdsServerConfig server in prefsRepo.discoveryOpdsServers)
+          if (server.enabled) OpdsDiscoverySource(config: server),
+    ]);
+  }
+
   MediaDiscoveryService? _mediaDiscoveryService;
+
+  /// 上一份注册表是否在偏好就绪前建的（因而必然缺用户自配的 OPDS 源）。
+  /// 偏好就绪后第一次取用就据此重建一次，见 [mediaDiscoveryService]。
+  bool _discoveryRegistryLacksPrefs = false;
+
+  /// 重建发现源注册表：用户增删改 OPDS 服务器后必须调。
+  ///
+  /// 注册表是**构造期快照**（懒建后 app 生命周期常驻），不重建的话新加的服务器
+  /// 要等下次冷启动才出现——这正是视频域 [setVideoResourceSourceEnabled] 里
+  /// 「改完必须重建下载流水线运行时」踩过的同一个坑。
+  ///
+  /// 旧实例先 close 再丢弃，否则每改一次配置就漏一个 HTTP client。
+  Future<void> reloadDiscoverySources() async {
+    _mediaDiscoveryService?.close();
+    _mediaDiscoveryService = null;
+    notifyListeners();
+  }
+
+  /// 增删改一台 OPDS 服务器后的统一写回口：落偏好 → 重建注册表。
+  ///
+  /// 只经这一个入口，免得每个调用点各写一遍「写完别忘了重建」——忘了的那次
+  /// 表现为「我明明保存了，发现页里却没有」。
+  Future<void> setDiscoveryOpdsServers(
+    Iterable<OpdsServerConfig> servers,
+  ) async {
+    await prefsRepo.setDiscoveryOpdsServers(servers);
+    await reloadDiscoverySources();
+  }
 
   /// 「全部源」聚合排除的源 id（用户显式单选某源时不受限）。
   Set<String> get discoveryDisabledSourceIds => <String>{

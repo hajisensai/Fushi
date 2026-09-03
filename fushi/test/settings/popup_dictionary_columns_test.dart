@@ -27,7 +27,11 @@ import '../helpers/test_platform_services.dart';
 /// 这里验证三层契约：
 ///  1. 源码守卫：popup.css 的 grid 规则真实存在、只用 column-gap（不含 row-gap/
 ///     裸 gap，避免 N=1 时 gap+margin 叠成双倍纵向间距破坏老用户默认观感）。
-///  2. 源码守卫：dictionary_popup_webview.dart 真把 --dict-columns 注入文档。
+///  2. 源码守卫：--dict-columns 只由**静态注入段**的 `_themeVariablesJs` 随其余主题
+///     变量一起注入，`dictionary_popup_webview.dart` 里**不得**再有第二份
+///     `setProperty('--dict-columns')` 拷贝（第二份会漏 eink / 卡底色）。
+///     注：这条早年确实由 webview 注入，注释一直没跟上搬家——下面 :250 的断言
+///     钉的正是「webview 里不许有」，与旧描述完全相反。
 ///  3. UI 行为：真实 schema 的 Result Display 组里有这条滑块，min1/max4/divisions3，
 ///     副标题带「实验性」后缀。
 void main() {
@@ -231,21 +235,26 @@ void main() {
           reason: '宽图必须 max-width:100% 收进窄列');
     });
 
-    test('dictionary_popup_webview injects --dict-columns from the preference',
-        () {
+    test('in-app popup injects --dict-columns via the shared theme vars', () {
+      // BUG-2039 ③：主题变量段只有 popup_settings_injection 一份真相源；
+      // dictionary_popup_webview 不再自拼删减版拷贝，主题热切换重注的是同一段。
+      final String injection = File(
+        'lib/src/pages/implementations/popup_settings_injection.dart',
+      ).readAsStringSync();
+      expect(injection, contains('popupDictionaryColumns'), reason: '必须读偏好的列数');
+      final int themeFnStart = injection.indexOf('String _themeVariablesJs({');
+      expect(themeFnStart, isNonNegative);
+      final int injectAt = injection.indexOf("setProperty('--dict-columns'");
+      expect(injectAt, greaterThan(themeFnStart),
+          reason: '--dict-columns 应在 _themeVariablesJs 内随主题变量一起注入');
+
       final String dart = File(
         'lib/src/pages/implementations/dictionary_popup_webview.dart',
       ).readAsStringSync();
-
-      expect(dart, contains('popupDictionaryColumns'), reason: '必须读偏好的列数');
-      expect(dart, contains("setProperty('--dict-columns'"),
-          reason: '必须把列数注入 --dict-columns CSS 变量');
-      // 注入点蹭 theme 变量重注（live theme-switch 也重应用），而不是单独属性路径。
-      final int themeFnStart = dart.indexOf('String _themeVariablesJs()');
-      expect(themeFnStart, isNonNegative);
-      final int injectAt = dart.indexOf("setProperty('--dict-columns'");
-      expect(injectAt, greaterThan(themeFnStart),
-          reason: '--dict-columns 应在 _themeVariablesJs 内随主题变量一起注入');
+      expect(dart, isNot(contains("setProperty('--dict-columns'")),
+          reason: '弹窗 WebView 不得再维护第二份主题变量拷贝（会漏 eink / 卡底色）');
+      expect(dart, contains('_buildStaticSettings().themeVarsJs'),
+          reason: '主题热切换必须重注静态段产物里的同一段主题变量');
     });
 
     test('schema slider bridges the int preference (no double in storage)', () {

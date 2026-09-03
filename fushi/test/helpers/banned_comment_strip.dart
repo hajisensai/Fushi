@@ -16,4 +16,11 @@ const Map<String, String> kBannedCommentStripPatterns = <String, String>{
   // （source.replaceAll(...)）会被 dart format 折行，锚在单行稳定的部分。
   r"RegExp(r'//[^\n]*": 'maskComments（共享词法掩码，行+块注释一起掩）',
   r"replaceAll(RegExp(r'<!--": 'maskHtmlComments（等长掩码，别用删除式）',
+  // 第 24 个手写形态：按行 `line.indexOf(...)` 截断到行尾。它错得很具体——把行内
+  // 第一个斜杠对当注释起点，于是**字符串字面量里的 `https:` 双斜杠、`//host/path`
+  // 被当成注释**，整行后半截被吃掉：要求型断言（isTrue）因此假红，禁止型断言
+  // （isFalse）因此假绿。块注释同样一概放行。JS 语料还多一层：正则字面量里的
+  // 转义斜杠也会被砍掉半行，必须走 maskJsComments。
+  r"indexOf('//')": 'maskComments（JS 语料用 maskJsComments；CSS 用 maskCssComments）',
+  r'indexOf("//")': 'maskComments（JS 语料用 maskJsComments）',
 };

@@ -32,6 +32,7 @@ class MediaDiscoveryPage extends StatefulWidget {
   const MediaDiscoveryPage({
     required this.kinds,
     this.navigation,
+    this.initialSourceId,
     super.key,
   });
 
@@ -40,6 +41,13 @@ class MediaDiscoveryPage extends StatefulWidget {
 
   /// 库页壳注入的分段导航（嵌在头部；游戏域自带段条时传 null 由外层包）。
   final Widget? navigation;
+
+  /// 首帧就选中的来源 id（null = 「全部来源」引导态）。
+  ///
+  /// 用于从别处「点某个来源直接进它的目录」的入口（漫画发现页的 OPDS 卡片）：
+  /// 那种场景下用户已经点名了来源，再让他在引导态里挑一次是多余的一步。
+  /// 只作用于**首帧**——之后用户改下拉、下钻目录都以页内状态为准。
+  final String? initialSourceId;
 
   @override
   State<MediaDiscoveryPage> createState() => _MediaDiscoveryPageState();
@@ -182,6 +190,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   @override
   void initState() {
     super.initState();
+    _sourceId = widget.initialSourceId ?? kDiscoveryAllSourcesId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_load());
     });
@@ -355,8 +364,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
               magnet: payload.magnetUri,
               contentKind: switch (item.kind) {
                 DiscoveryMediaKind.novel => AnimeDownloadPlan.kindBook,
-                DiscoveryMediaKind.audiobook =>
-                  AnimeDownloadPlan.kindAudiobook,
+                DiscoveryMediaKind.audiobook => AnimeDownloadPlan.kindAudiobook,
                 DiscoveryMediaKind.game => AnimeDownloadPlan.kindGame,
                 DiscoveryMediaKind.manga => AnimeDownloadPlan.kindAuto,
               },
@@ -691,10 +699,10 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                         )
                       : entry.isDownloadable
                           ? FushiIconButton(
-                          icon: Icons.download_outlined,
-                          tooltip: t.anime_download_generic_download,
-                          label: t.anime_download_generic_download,
-                          onTap: () => unawaited(_download(entry)),
+                              icon: Icons.download_outlined,
+                              tooltip: t.anime_download_generic_download,
+                              label: t.anime_download_generic_download,
+                              onTap: () => unawaited(_download(entry)),
                             )
                           : null,
                   onTap: entry.isDownloadable

@@ -535,7 +535,7 @@ mixin _FushiDbContentMisc
 
   /// TODO-1192: 重写一本书的 `chaptersJson`（每章元数据 + `characters` 计数 +
   /// `charCaliber` 口径版本）。开书时若发现落库计数是旧口径（含标点/括号/空白），
-  /// 按新口径 [japaneseCharCount] 后台重算后回写，使书架总字数与后续统计对齐
+  /// 按新口径 `countStudyChars` 后台重算后回写，使书架总字数与后续统计对齐
   /// hoshi。`chaptersJson` 不是主键（bookKey = sanitized title），plain UPDATE，
   /// 无级联 re-key。
   Future<void> updateEpubBookChaptersJson(

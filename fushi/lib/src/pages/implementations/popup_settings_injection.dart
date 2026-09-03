@@ -418,10 +418,17 @@ class PopupStaticSettingsJs {
     required this.head,
     required this.tail,
     required this.revision,
+    required this.themeVarsJs,
   });
 
   final String head;
   final String tail;
+
+  /// [head] 里的主题变量段（`data-theme` / eink class / 全部 CSS 变量含 `--dict-columns`），
+  /// 单独暴露给 in-app 弹窗做**主题热切换**时只重注这一段（不重发字体/设置）。此前
+  /// dictionary_popup_webview 自己维护了一份删减版拷贝（缺 eink toggle 与
+  /// `--fushi-card-bg-rgb`），主题切换时漏应用；现在只有这一份。
+  final String themeVarsJs;
 
   /// 单调递增的产物版本：同 revision ⇒ 同实例 ⇒ 同内容。只由
   /// [buildPopupStaticSettingsJs] 分配。
@@ -844,6 +851,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     head: head,
     tail: tail,
     revision: ++_staticSettingsRevision,
+    themeVarsJs: themeVarsJs,
   );
   _staticSettingsMemo[slotKey] = _PopupStaticSettingsMemo(
     themeVarsJs: themeVarsJs,

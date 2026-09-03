@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/video/video_playback_source.dart';
+import 'package:fushi/src/stats/study_char_count.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
@@ -222,7 +223,10 @@ class VideoWatchTracker {
       return;
     }
     if (!_countedIndices.add(idx)) return;
-    final int chars = _pendingCueText.runes.length;
+    // 与 EPUB / 漫画 / galgame 同一口径（[countStudyChars]）。此前是裸
+    // `runes.length`：标点空白照计、英文按字母计，同一列 study_segments.chars
+    // 里三种口径混着相加，跨媒体的每日目标与热力图本身就不成立。
+    final int chars = countStudyChars(_pendingCueText);
     if (chars > 0) {
       debugSubtitleChars += chars;
       // 字幕字数与观看时长记到**同一段**（同 uid 同一行），不再各自派生 dateKey。

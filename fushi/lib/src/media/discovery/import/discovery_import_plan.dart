@@ -27,6 +27,40 @@ const Set<String> kDiscoveryArchiveExtensions = <String>{
   '.rar',
 };
 
+/// 漫画**图包**载体：整包交给 `MangaArchiveImporter`，不走通用解压器。
+///
+/// 为什么必须是独立一档、且判定要**排在** [isDiscoveryArchivePath] 之前：
+/// `.rar`/`.zip` 同时落在通用压缩包集合里，先被通用解压器截胡的话，解出来的
+/// 只是一堆散图，重分类只能走 `MangaImporter.importFromImageFolder`——**包内的
+/// `.mokuro` OCR 层会被静默丢掉**，用户得到一部没有查词层的漫画，而且没有任何
+/// 报错。`MangaArchiveImporter` 自己解包、自己找 sidecar，把整包给它才是完整路径。
+///
+/// 与 `kMangaCarrierFileExtensions`（手动导入对话框的选择器白名单）的差别：
+/// 这里**不含** `.epub`/`.pdf`。发现页的 pdf 恒归小说域（`OpdsFileType` 亦然），
+/// 在漫画域再认一次只会让同一个文件按用户当前所在页签进不同的库。
+///
+/// ## 已知限制：一个 `.zip`/`.rar` 里套着多卷 `.cbz`
+///
+/// 这种包会被整包交给 `MangaArchiveImporter`，而它按「一个包 = 一卷图」处理，
+/// 包内全是 cbz 就抽不出页图，最终抛 `Manga image folder has no pages`——
+/// 用户看到的是一句不知所云的失败，而不是导入 N 卷。
+///
+/// **刻意不在这里修**：手动导入对话框的 `mangaArchive` 分支对 `.zip` 走的是
+/// 同一条路（`manga_import_dialog.dart`），也就是说这是
+/// `MangaArchiveImporter` 既有的边界，不是本层引入的；在发现页单独绕开它，
+/// 只会让同一个文件「手动导入失败、发现页导入成功」这样两条路径给出不同结果。
+/// 真要修应当修在 `MangaArchiveImporter`（识别包内 cbz → 逐卷导入），
+/// 那会同时惠及手动导入。OPDS 本身不产生这种包：它的 acquisition 链接
+/// 一条就是一卷。多卷形态经 `classifyDiscoveryDirectory` 的 manga 分支
+/// （torrent 下载一个装着若干 cbz 的文件夹）走得通。
+const Set<String> kDiscoveryMangaArchiveExtensions = <String>{
+  '.cbz',
+  '.cbr',
+  '.cb7',
+  '.rar',
+  '.zip',
+};
+
 /// 自动导入走不下去的稳定原因（UI 层负责翻译成用户文案）。
 enum DiscoveryImportBlocker {
   /// 该媒体域认不出这个文件类型。
@@ -92,6 +126,16 @@ final class ExtractArchivePlan extends DiscoveryImportPlan {
   final String archivePath;
 }
 
+/// 漫画图包整包导入（cbz/cbr/cb7/rar/zip）。
+///
+/// 刻意**不**复用 [ExtractArchivePlan]：漫画包的解压必须由
+/// `MangaArchiveImporter` 做，它会识别包内的 `.mokuro` OCR sidecar 并把页图
+/// 铺成 mokuro 卷目录；通用解压器解出来的散图丢掉了这一层。
+final class ImportMangaArchivePlan extends DiscoveryImportPlan {
+  const ImportMangaArchivePlan(this.archivePath);
+  final String archivePath;
+}
+
 /// 有声书对齐导入：正文（EPUB 或可转文本）+ 字幕 + 音频。
 final class AlignAudiobookPlan extends DiscoveryImportPlan {
   const AlignAudiobookPlan({
@@ -147,11 +191,22 @@ bool _isSubtitle(String path) =>
 bool isDiscoveryArchivePath(String path) =>
     kDiscoveryArchiveExtensions.contains(_ext(path));
 
+/// 是否是漫画图包载体。
+bool isDiscoveryMangaArchivePath(String path) =>
+    kDiscoveryMangaArchiveExtensions.contains(_ext(path));
+
 /// 单个下载文件的分类入口。
 DiscoveryImportPlan classifyDiscoveryFile(
   DiscoveryMediaKind kind,
   String filePath,
 ) {
+  // 漫画载体必须**先于**通用解压判定：`.rar`/`.zip` 两边都命中，被通用
+  // 解压器截胡就会丢掉包内的 `.mokuro` OCR 层（见
+  // [kDiscoveryMangaArchiveExtensions] 的注释）。
+  if (kind == DiscoveryMediaKind.manga &&
+      isDiscoveryMangaArchivePath(filePath)) {
+    return ImportMangaArchivePlan(filePath);
+  }
   if (isDiscoveryArchivePath(filePath)) return ExtractArchivePlan(filePath);
   switch (kind) {
     case DiscoveryMediaKind.novel:
@@ -171,7 +226,8 @@ DiscoveryImportPlan classifyDiscoveryFile(
       }
       return const UnsupportedPlan(DiscoveryImportBlocker.unknownFileType);
     case DiscoveryMediaKind.manga:
-      // 漫画的在线导入走既有 Mihon/mokuro 链路，不经发现页下载队列。
+      // 图包载体已在函数开头拦下；走到这里的是单张图片/未知类型。
+      // 在线漫画**追更**仍走 Mihon/mokuro 链路，与这里的整卷图包导入是两回事。
       return const UnsupportedPlan(DiscoveryImportBlocker.unknownFileType);
   }
 }
@@ -256,7 +312,18 @@ DiscoveryImportPlan classifyDiscoveryDirectory(
       }
       return RegisterGameExesPlan(<String>[exe]);
     case DiscoveryMediaKind.manga:
-      return const UnsupportedPlan(DiscoveryImportBlocker.unknownFileType);
+      // 文件树里的每个图包各自成一卷（种子形态：一个文件夹装若干 cbz）。
+      // 这里**不**处理「一堆散图直接躺在目录里」——那需要目录根路径，而本函数
+      // 只拿得到文件清单；散图目录的导入走手动导入对话框的 folder 入口。
+      final List<DiscoveryImportPlan> volumes = <DiscoveryImportPlan>[
+        for (final String path in paths)
+          if (isDiscoveryMangaArchivePath(path)) ImportMangaArchivePlan(path),
+      ];
+      if (volumes.isEmpty) {
+        return const UnsupportedPlan(DiscoveryImportBlocker.unknownFileType);
+      }
+      if (volumes.length == 1) return volumes.single;
+      return MultiPlan(volumes);
   }
 }
 

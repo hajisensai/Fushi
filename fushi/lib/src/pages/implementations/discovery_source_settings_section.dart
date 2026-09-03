@@ -30,8 +30,13 @@ class _DiscoverySourceSettingsSectionState
   Widget build(BuildContext context) {
     final AppModel appModel = ref.watch(appProvider);
     if (!appModel.isPreferencesReady) return const SizedBox.shrink();
-    final List<MediaDiscoverySource> sources =
-        appModel.mediaDiscoveryService.sources;
+    // 只列**内置**源：自配源（OPDS 服务器）的开关是它自己那条记录上的 `enabled`，
+    // 由各自的配置区管。两套开关同时作用在一个源上会两头对不上，见
+    // [MediaDiscoverySource.isUserConfigured]。
+    final List<MediaDiscoverySource> sources = appModel
+        .mediaDiscoveryService.sources
+        .where((MediaDiscoverySource s) => !s.isUserConfigured)
+        .toList(growable: false);
     final Set<String> disabled = appModel.discoveryDisabledSourceIds;
     // 与 TorrentSettingsSection 同一条 16px 左右基线：
     // 设置详情 pane 里本区与它上下相邻，不对齐会一眼看出是两块拼上去的。

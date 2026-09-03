@@ -1140,7 +1140,7 @@ List<int>? charCountsFromChaptersJson(
 /// TODO-1192: [EpubBooks.chaptersJson] 里每章 `characters` 计数是否已是当前口径
 /// （[kChapterCharCountCaliber]）。仅当**每一章**条目都带 `charCaliber` == 当前
 /// 版本、且条目数与 [expectedChapters] 一致时返回 true；任一缺标记（旧书 / v1 导入）
-/// 或版本不符返回 false，开书据此触发后台按新口径 [japaneseCharCount] 重算并回写。
+/// 或版本不符返回 false，开书据此触发后台按新口径 `countStudyChars` 重算并回写。
 /// 与 [charCountsFromChaptersJson] 拆开：后者只管「计数是否可用」（口径无关，旧书也
 /// 先用旧计数别闪 0），本函数只管「口径是否最新」。纯函数，供单测锁定判定。
 bool chaptersJsonCharCaliberIsCurrent(
@@ -2488,7 +2488,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     );
   }
 
-  /// TODO-1192: 把后台按新口径（[japaneseCharCount]）重算出的每章字数回写进
+  /// TODO-1192: 把后台按新口径（`countStudyChars`）重算出的每章字数回写进
   /// [EpubBooks.chaptersJson]，并打上当前口径版本 [kChapterCharCountCaliber]，使书架
   /// 总字数（[ReaderFushiSource] 直接读 chaptersJson 的 characters）与下次开书都用
   /// 新口径，不必每次开书重算。只覆写 `characters` / `charCaliber` 两个字段、保留原有

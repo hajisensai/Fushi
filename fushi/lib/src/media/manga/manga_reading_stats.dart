@@ -1,5 +1,5 @@
-import 'package:fushi/src/epub/epub_book.dart';
 import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/stats/study_char_count.dart';
 
 /// 漫画阅读的**字数**记账（统计口径接入）。
 ///
@@ -9,7 +9,7 @@ import 'package:fushi/src/media/manga/mokuro_payload.dart';
 /// 漫画就能和 EPUB / 视频字幕 / 游戏文本一样进同一个字数口径（首页每日目标、
 /// 热力图、阅读统计页），而不是永远显示 0 字。
 ///
-/// 口径与 EPUB 完全一致：走 [japaneseCharCount]（只数假名/汉字/字母数字，剔除
+/// 口径与 EPUB 完全一致：走 [countStudyChars]（无空格文字按码点、空格分词文字按词，剔除
 /// 标点、括号、空白），所以两种书的「字数」「阅读速度」可直接相加、直接比较。
 ///
 /// 去重语义：以**页**为记账单位，一页在同一次阅读会话里只计一次（[counted]
@@ -23,7 +23,7 @@ int mangaPageCharCount(MokuroImage page) {
       buffer.write(line);
     }
   }
-  return japaneseCharCount(buffer.toString());
+  return countStudyChars(buffer.toString());
 }
 
 /// 把 [pageIndices] 中**尚未记账**的页计入 [counted]，返回本次新增的字符数与页数。

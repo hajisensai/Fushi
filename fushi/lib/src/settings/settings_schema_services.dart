@@ -4,6 +4,7 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/pages/implementations/discovery_source_settings_section.dart';
+import 'package:fushi/src/pages/implementations/opds_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -68,6 +69,12 @@ SettingsDestination buildServicesDestination() {
             searchTitle: t.discovery_sources_settings_title,
             builder: (SettingsContext settingsContext) =>
                 const DiscoverySourceSettingsSection(),
+          ),
+          SettingsCustomItem(
+            id: 'services.opds_servers',
+            searchTitle: t.discovery_opds_settings_title,
+            builder: (SettingsContext settingsContext) =>
+                const OpdsServerSettingsSection(),
           ),
         ],
       ),
