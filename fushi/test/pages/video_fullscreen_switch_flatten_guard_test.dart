@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-839 / BUG-2043 守卫：全屏下连播/换集不得漏栈旧集页，也不得先退原生全屏再进。
 ///
 /// 根因（BUG-839）：全屏播放时 app 全屏路由被推到 **root navigator**（`fullscreen.part.dart`
@@ -43,11 +45,14 @@ void main() {
   late String fullscreenSrc;
   late String pageSrc;
 
-  /// 剥掉 `//` 行注释，避免注释里提到的符号被 indexOf 先命中。
-  String stripLineComments(String src) => src
-      .split('\n')
-      .where((String line) => !line.trimLeft().startsWith('//'))
-      .join('\n');
+  /// 剥掉注释，避免注释里提到的符号被 indexOf 先命中。
+  ///
+  /// 走共享词法原语而不是手写 `startsWith('//')`（`source_guard_adoption_test`
+  /// 钉的就是这条）：手写形态只跳 `//` 开头的整行——块注释 `/* needle */` 与行尾
+  /// 注释一概放行，于是「实现删光、注释里留着字面量」能把要求型断言骗绿；删行
+  /// 还会让后续 indexOf/substring 的下标与原文错位。`maskComments` 把注释换成
+  /// **等长空白**，下标与原文逐字节对齐。
+  String stripLineComments(String src) => maskComments(src);
 
   setUpAll(() {
     for (final File f in <File>[episodePart, fullscreenPart, pageFile]) {
