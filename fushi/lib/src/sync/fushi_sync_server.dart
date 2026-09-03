@@ -553,6 +553,10 @@ class FushiSyncServer {
       if (method != 'POST') return shelf.Response(405);
       return _handleAnkiNoteType(request, reqPath);
     }
+    if (reqPath.startsWith('/api/anki/media/dedup/')) {
+      if (method != 'POST') return shelf.Response(405);
+      return _handleAnkiMediaDedup(request, reqPath);
+    }
     if (reqPath == '/api/media/dictionary') {
       if (method != 'GET' && method != 'HEAD') return shelf.Response(405);
       return _handleDictionaryMedia(request, method == 'HEAD');
@@ -1227,6 +1231,34 @@ class FushiSyncServer {
     }
   }
 
+  /// 互联媒体存储优化：客户端（手机）经互联对**主机端** collection.media 做字节级
+  /// 去重——卡片落在主机的 Anki 上，重复媒体也堆在主机，客户端本机根本没有那个
+  /// 目录。未注入挖词 service → 404（旧版主机对新客户端同样 404 → 客户端按
+  /// 「不支持」隐藏区块）；dryRun 类型错 → 400。
+  Future<shelf.Response> _handleAnkiMediaDedup(
+    shelf.Request request,
+    String path,
+  ) async {
+    final FushiRemoteMiningService? svc = _miningService;
+    if (svc == null) return shelf.Response.notFound('Mining off');
+    final Map<String, dynamic>? body = await _readJsonObject(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    try {
+      switch (path) {
+        case '/api/anki/media/dedup/probe':
+          return _jsonResponse(
+              await buildAnkiMediaDedupProbeResponse(mining: svc));
+        case '/api/anki/media/dedup/run':
+          return _jsonResponse(
+              await buildAnkiMediaDedupRunResponse(body, mining: svc));
+        default:
+          return shelf.Response.notFound('Unknown endpoint');
+      }
+    } on FormatException catch (e) {
+      return shelf.Response(400, body: e.message);
+    }
+  }
+
   /// TODO-1176：浏览器扩展查词弹窗制卡按钮真查重（`+`→`✓`）。契约与 YomitanApiServer
   /// 共享（单一真相源）。未注入挖词 service 时返回 `{duplicate:false}`（弹窗降级为「+」，
   /// 绝不阻断查词）。
@@ -1245,7 +1277,7 @@ class FushiSyncServer {
   /// 供 TOFU 钉扎。只读、不含任何数据/凭据。绝不回传 token。
   shelf.Response _handlePing() {
     return _jsonResponse(<String, dynamic>{
-      // 互联 wire 服务字段：与 client 侧 fetchFushiPing 的 app == 'fushi'
+      // 互联 wire 服务字段：与 client 侧 probeFushiPing 的 app == 'fushi'
       // 同版本对切（R11 已接受跨版本配对探测互不识别）。
       'app': 'fushi',
       'pairing': <String, dynamic>{'v2': true},
@@ -1402,7 +1434,7 @@ class FushiSyncServer {
       id: name,
       cacheKind: 'dict',
       notFoundMessage: 'Dictionary not found',
-      tempPrefix: 'hibiki_dict_in',
+      tempPrefix: 'fushi_dict_in',
       tempExtension: '.fushidict',
       export: () => svc.exportDictionary(name),
       import: svc.importDictionary,

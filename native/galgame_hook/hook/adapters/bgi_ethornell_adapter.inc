@@ -8,8 +8,10 @@ constexpr size_t kBgiPathChars = 520;
 constexpr int kBgiHandleSlots = 8;
 constexpr int kBgiTaskSlots = 32;
 
+// 无锁句柄表（tracked_handle_table.h）：Forget 走 CloseHandle detour，不得进 g_cs（BUG-2046）。
 struct BgiArcHandle {
   HANDLE handle = INVALID_HANDLE_VALUE;
+  volatile LONG seq = 0;
   wchar_t path[kBgiPathChars] = {0};
 };
 
@@ -38,51 +40,25 @@ bool IsBgiVoiceArchivePath(const wchar_t* path) {
 
 void RememberBgiVoiceArc(HANDLE handle, const wchar_t* path) {
   if (InterlockedCompareExchange(&g_bgi_arc_enabled, 0, 0) == 0 ||
-      handle == INVALID_HANDLE_VALUE || !IsBgiVoiceArchivePath(path) ||
-      !g_cs_ready) {
+      handle == INVALID_HANDLE_VALUE || !IsBgiVoiceArchivePath(path)) {
     return;
   }
-  EnterCriticalSection(&g_cs);
-  for (int i = 0; i < kBgiHandleSlots; ++i) {
-    if (g_bgi_handles[i].handle == INVALID_HANDLE_VALUE ||
-        g_bgi_handles[i].handle == handle) {
-      g_bgi_handles[i].handle = handle;
-      wcsncpy_s(g_bgi_handles[i].path, path, _TRUNCATE);
-      break;
-    }
-  }
-  LeaveCriticalSection(&g_cs);
+  fushi_voice_hook::RememberTrackedHandle(
+      g_bgi_handles, handle, [path](BgiArcHandle& slot) {
+        wcsncpy_s(slot.path, path, _TRUNCATE);
+      });
 }
 
 bool CopyBgiVoiceArcPath(HANDLE handle, wchar_t* out, size_t out_chars) {
-  if (handle == INVALID_HANDLE_VALUE || out == nullptr || out_chars == 0 ||
-      !g_cs_ready) {
-    return false;
-  }
-  bool found = false;
-  EnterCriticalSection(&g_cs);
-  for (int i = 0; i < kBgiHandleSlots; ++i) {
-    if (g_bgi_handles[i].handle == handle) {
-      wcsncpy_s(out, out_chars, g_bgi_handles[i].path, _TRUNCATE);
-      found = true;
-      break;
-    }
-  }
-  LeaveCriticalSection(&g_cs);
-  return found;
+  if (out == nullptr || out_chars == 0) return false;
+  return fushi_voice_hook::ReadTrackedHandle(
+      g_bgi_handles, handle, [out, out_chars](const BgiArcHandle& slot) {
+        wcsncpy_s(out, out_chars, slot.path, _TRUNCATE);
+      });
 }
 
 void ForgetBgiVoiceArc(HANDLE handle) {
-  if (handle == INVALID_HANDLE_VALUE || !g_cs_ready) return;
-  EnterCriticalSection(&g_cs);
-  for (int i = 0; i < kBgiHandleSlots; ++i) {
-    if (g_bgi_handles[i].handle == handle) {
-      g_bgi_handles[i].handle = INVALID_HANDLE_VALUE;
-      g_bgi_handles[i].path[0] = 0;
-      break;
-    }
-  }
-  LeaveCriticalSection(&g_cs);
+  fushi_voice_hook::ForgetTrackedHandle(g_bgi_handles, handle);
 }
 
 void QueueBgiVoice(const wchar_t* path, uint64_t read_offset) {
@@ -257,13 +233,7 @@ bool TryHookBgiArcVoice() {
 
 void StopBgiArcVoice() {
   InterlockedExchange(&g_bgi_arc_enabled, 0);
-  if (!g_cs_ready) return;
-  EnterCriticalSection(&g_cs);
-  for (int i = 0; i < kBgiHandleSlots; ++i) {
-    g_bgi_handles[i].handle = INVALID_HANDLE_VALUE;
-    g_bgi_handles[i].path[0] = 0;
-  }
-  LeaveCriticalSection(&g_cs);
+  fushi_voice_hook::ClearTrackedHandles(g_bgi_handles);
 }
 
 class BgiEthornellAdapter final : public fushi_voice_hook::EngineAdapter {

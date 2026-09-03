@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -52,12 +53,16 @@ class _SettingsDetailPageState extends BasePageState<SettingsDetailPage>
     super.initState();
     ErrorLogService.instance.addListener(_onLogChanged);
     DebugLogService.instance.addListener(_onLogChanged);
+    // 游戏内查词准入是 hook **异步**报上来的：settingsContext.refresh 只由交互驱动，
+    // 事件走不到它。不听这一条，用户开着设置页启动游戏时那一行永远停在旧状态。
+    GalIngameLookupController.instance.admission.addListener(_onLogChanged);
   }
 
   @override
   void dispose() {
     ErrorLogService.instance.removeListener(_onLogChanged);
     DebugLogService.instance.removeListener(_onLogChanged);
+    GalIngameLookupController.instance.admission.removeListener(_onLogChanged);
     super.dispose();
   }
 

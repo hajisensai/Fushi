@@ -60,15 +60,24 @@ void main() {
   });
 
   test('compact 省掉的是次要信息而非诊断线索（BUG-1110）', () {
-    // 采样率/声道/位深这类次要信息仍可以在窄屏省掉——这是 compact 的正当用途。
-    expect(
-      RegExp(
-        r"compact\s*\?\s*'\$phase · \$audio'\s*:\s*'\$phase · \$audio'"
-        r"\s*'\$\{format == null",
-      ).hasMatch(maskComments(cardSource)),
-      isTrue,
-      reason: 'compact 仍应省掉 format（次要信息），这是它的正当用途',
-    );
+    // 采样率/声道/位深（format）这类次要信息仍可以在窄屏省掉——这是 compact 的正当
+    // 用途。判据按**结构**做而不是拿一整串三元表达式做正则：那串里随时会被合入新的
+    // 后缀（转区是否生效的 localeSuffix 就是这么加进来的），整串匹配会被一次正当的
+    // 增补撞成假红，而它要守的「compact 只省 format」并没有变。
+    final String code = maskComments(cardSource);
+    final int at = code.indexOf('compact');
+    expect(at, greaterThanOrEqualTo(0), reason: '找不到 compact 分支');
+    final int ternary = code.indexOf(r"? '$phase · $audio", at);
+    expect(ternary, greaterThanOrEqualTo(0),
+        reason: '找不到「phase · audio」那条 compact 三元；改写了就同步改本守卫');
+    final int elseAt = code.indexOf(r": '$phase · $audio", ternary);
+    expect(elseAt, greaterThan(ternary), reason: '找不到非 compact 分支');
+    final String compactBranch = code.substring(ternary, elseAt);
+    final String fullBranch = code.substring(elseAt, elseAt + 240);
+    expect(compactBranch.contains('format'), isFalse,
+        reason: 'compact 分支不该带 format（采样率/声道/位深是次要信息）');
+    expect(fullBranch.contains('format == null'), isTrue,
+        reason: '非 compact 分支必须仍带 format');
   });
 
   test('降级徽章与降级原因的显示条件必须对称（BUG-1110）', () {

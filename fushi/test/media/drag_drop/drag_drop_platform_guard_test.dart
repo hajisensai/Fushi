@@ -53,8 +53,12 @@ void main() {
             'listener registration must not be lost if route visibility changes without a rebuild');
     expect(src.contains('ModalRoute.of(context)'), isTrue,
         reason: 'targets behind a pushed route must not consume OS drops');
-    expect(src.contains('bool _routeVisible(BuildContext context)'), isTrue,
+    // 门已从四个匿名回调里的手抄副本收敛成一个具名函数（测试够得到、能被 widget
+    // 测试真正驱动）：路由可见性 + 表面可见性都在这里判。
+    expect(src.contains('bool dropSurfaceActive(BuildContext context)'), isTrue,
         reason: 'route visibility is checked when each OS drop event arrives');
+    expect(src.contains('DropSurfaceScope.activeFor(context)'), isTrue,
+        reason: '同一条路由里被 Offstage/IndexedStack 保活的隐藏子树也必须被挡住');
     expect(src.contains('onDragUpdated'), isTrue,
         reason: 'hover/update logs are needed to diagnose Windows drop paths');
     expect(src.contains('[fushi-drop]'), isTrue,

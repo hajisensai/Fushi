@@ -89,6 +89,13 @@ class ANGLESurfaceManager {
   // |ANGLESurfaceManager|.
   static void ReleaseSharedResources();
 
+  // BUG-1657: tears the device-backed display down and rebuilds the surface on
+  // ANGLE's own display, so a failure downstream of the interop display costs
+  // the zero-copy interop instead of costing hardware rendering (and with it,
+  // silently, every `glsl-shaders` / `scale` filter). Returns false when the
+  // retry is not applicable or also failed.
+  bool RetryOnUpstreamEGLDisplay();
+
   int32_t width_ = 1;
   int32_t height_ = 1;
   HANDLE internal_handle_ = nullptr;
@@ -173,6 +180,9 @@ class ANGLESurfaceManager {
   static EGLDisplay shared_display_;
   // Whether ANGLE actually runs on |shared_d3d_11_device_|.
   static bool shared_display_uses_our_device_;
+  // Set once the device-backed display has proven unusable (BUG-1657), so it is
+  // not rebuilt for this or any later instance.
+  static bool shared_interop_display_disabled_;
 };
 
 #endif  // ANGLE_SURFACE_MANAGER_H_

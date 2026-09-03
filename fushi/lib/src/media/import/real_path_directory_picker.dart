@@ -1,6 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, kDebugMode, visibleForTesting;
+    show defaultTargetPlatform, immutable, kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'
     show MissingPluginException, PlatformException;
@@ -91,11 +91,72 @@ Future<String?> pickRealFilePath({
   required AppModel appModel,
   Set<String>? allowedExtensions,
 }) async {
+  try {
+    final PickedFilePath? picked = await pickRealFilePathDetailed(
+      context: context,
+      appModel: appModel,
+      allowedExtensions: allowedExtensions,
+    );
+    return picked?.path;
+  } on PickedFileWithoutPathException {
+    // 本入口的既有契约是「拿不到就返回 null」，既有调用方并不 catch。
+    // 想区分「取消」与「选了但没 path」的调用方改用 [pickRealFilePathDetailed]。
+    return null;
+  }
+}
+
+/// 平台交回了条目、却没有一条带可用路径（部分平台只回 bytes 不回 path）。
+///
+/// 与「用户取消」必须区分（BUG-446）：取消是静默返回，这个是**失败**，调用方要记
+/// 诊断并给用户可见反馈。压成同一个 null 就等于把一类失败伪装成一次取消。
+class PickedFileWithoutPathException implements Exception {
+  const PickedFileWithoutPathException({required this.count});
+
+  /// 平台交回的条目数（用于诊断日志）。
+  final int count;
+
+  @override
+  String toString() => 'PickedFileWithoutPathException(count: $count)';
+}
+
+/// 一次文件选择的结果：路径 **+ 这条路径是不是用户原始位置的真实路径**。
+///
+/// 为什么需要它（BUG-1667）：「选到的文件能不能长期引用」此前是调用点**按平台猜**的
+/// ——本地音频库导入的「引用原文件不复制」开关直接写死 `isDesktopPlatform`，理由是
+/// 「移动端 file_picker 给的是会被系统清掉的缓存临时副本」。可 [pickRealFilePath]
+/// 落地后，安卓拿到全文件访问就走 SAF 解析真实路径、根本不产生副本，那条平台前提
+/// 就不成立了。**平台不是判据，路径的出处才是**：把出处随路径一起返回，调用方按
+/// 事实决策，「安卓一律不能引用」这个特例随之消失。
+@immutable
+class PickedFilePath {
+  const PickedFilePath({required this.path, required this.isRealPath});
+
+  /// 选中文件的绝对路径。
+  final String path;
+
+  /// true = 用户原始位置的真实路径，可被长期引用（桌面 / iOS 的 `pickFiles()`、
+  /// 安卓授予全文件访问后的 SAF 解析）。
+  ///
+  /// false = file_picker 在安卓复制出来的 **app cache 临时副本**
+  /// （`FileUtils.openFileStream` 把整份文件同步拷进 `getCacheDir()/file_picker/`）。
+  /// 清缓存即失效，**只能立刻复制消费，不能作为长期引用落库**。
+  final bool isRealPath;
+}
+
+/// [pickRealFilePath] 的带出处版本：除路径外还告诉调用方这条路径能不能长期引用。
+/// 平台分流、权限处理、降级逃生口与 [pickRealFilePath] 完全一致（后者现在只是丢掉
+/// 出处的薄封装），差别只在返回类型。
+Future<PickedFilePath?> pickRealFilePathDetailed({
+  required BuildContext context,
+  required AppModel appModel,
+  Set<String>? allowedExtensions,
+}) async {
   // 桌面（Windows/macOS/Linux）与 iOS：`pickFiles()` 已返回真实路径、不复制。
   if (defaultTargetPlatform != TargetPlatform.android) {
-    return _fallbackPickFile(
+    return _detailedFallback(
       context: context,
       allowedExtensions: allowedExtensions,
+      isRealPath: true,
     );
   }
 
@@ -105,24 +166,54 @@ Future<String?> pickRealFilePath({
       await appModel.platformServices.permission.hasExternalStoragePermission();
   if (!granted) {
     // 降级逃生口：无全文件访问权限时回退 file_picker（仍复制到 cache 但可用）。
+    // 这条路径是 cache 临时副本，出处必须如实标 false——调用方据此禁掉引用。
     if (!context.mounted) return null;
-    return _fallbackPickFile(
+    return _detailedFallback(
       context: context,
       allowedExtensions: allowedExtensions,
+      isRealPath: false,
     );
   }
 
   // 原生 SAF 文件选择器 → 原生解析真实绝对路径（不复制到 cache）。
   final String? realPath = await _pickRealPathViaSaf('pickRealFile');
   if (realPath == null) return null; // 取消 / 云盘虚拟 provider（同旧浏览器不可达）
-  if (allowedExtensions == null || allowedExtensions.isEmpty) return realPath;
+  if (allowedExtensions == null || allowedExtensions.isEmpty) {
+    return PickedFilePath(path: realPath, isRealPath: true);
+  }
   // 带扩展名过滤：原生 SAF 不做扩展名限制，在 Dart 端按集合校验并提示。
   final List<String> accepted = _filterPickedFilesByExtension(
     context: context.mounted ? context : null,
     paths: <String>[realPath],
     allowedExtensions: _normalizeExtensions(allowedExtensions),
   );
-  return accepted.isEmpty ? null : accepted.first;
+  return accepted.isEmpty
+      ? null
+      : PickedFilePath(path: accepted.first, isRealPath: true);
+}
+
+/// [pickRealFilePathDetailed] 的 file_picker 回退分支（桌面 / iOS，以及安卓未授予
+/// 全文件访问时的逃生口）：把「取消」「选了但平台没给 path」「扩展名全被过滤」三种
+/// 空结果区分开，只有第二种是失败（抛 [PickedFileWithoutPathException]）。
+Future<PickedFilePath?> _detailedFallback({
+  required BuildContext context,
+  required bool isRealPath,
+  Set<String>? allowedExtensions,
+}) async {
+  final _RawPickResult raw = await _fallbackPickRaw(
+    context: context,
+    allowMultiple: false,
+    allowedExtensions: allowedExtensions,
+  );
+  if (raw.rawCount == 0) return null; // 用户取消：静默。
+  if (raw.paths.isEmpty) {
+    // 平台交回了条目却没有可用 path = 失败，必须可见（BUG-446）。
+    if (raw.missingPathCount > 0) {
+      throw PickedFileWithoutPathException(count: raw.rawCount);
+    }
+    return null; // 扩展名全被过滤掉：过滤处已弹提示，这里静默。
+  }
+  return PickedFilePath(path: raw.paths.first, isRealPath: isRealPath);
 }
 
 /// 调原生 SAF 选择器并返回真实绝对路径；null = 用户取消，或云盘/虚拟 provider
@@ -205,6 +296,41 @@ Future<List<String>> _fallbackPickFiles({
   required BuildContext context,
   required bool allowMultiple,
   Set<String>? allowedExtensions,
+}) async =>
+    (await _fallbackPickRaw(
+      context: context,
+      allowMultiple: allowMultiple,
+      allowedExtensions: allowedExtensions,
+    ))
+        .paths;
+
+/// [_fallbackPickRaw] 的返回：过滤后的可用路径 + 平台**原始**交回情况。
+///
+/// 为什么要留原始情况（BUG-446 / BUG-1667）：「用户取消」与「选了文件但平台没给
+/// path」（部分平台只回 bytes）都会让 [paths] 为空，可两者的正确处理完全相反——
+/// 前者静默返回，后者是失败必须让用户看见。把它们压成同一个空列表，就等于把一类
+/// 失败伪装成一次取消。
+class _RawPickResult {
+  const _RawPickResult({
+    required this.paths,
+    required this.rawCount,
+    required this.missingPathCount,
+  });
+
+  /// 扩展名过滤后的可用绝对路径。
+  final List<String> paths;
+
+  /// 平台交回的条目数（含没有 path 的）；0 = 用户取消。
+  final int rawCount;
+
+  /// 交回的条目里没有 path 的条目数（部分平台只回 bytes）。
+  final int missingPathCount;
+}
+
+Future<_RawPickResult> _fallbackPickRaw({
+  required BuildContext context,
+  required bool allowMultiple,
+  Set<String>? allowedExtensions,
 }) async {
   final Set<String> normalizedExtensions =
       _normalizeExtensions(allowedExtensions);
@@ -225,26 +351,32 @@ Future<List<String>> _fallbackPickFiles({
     );
   }
 
+  // 不写 `const <PlatformFile>[]`：本文件按 BUG-1574 的纪律一律不产出不可变集合
+  // （守卫 real_path_picker_growable_test 整文件盲扫）。这里虽是不外传的局部中间量，
+  // 但「省一次空分配」正是那条纪律要挡掉的诱惑，不给下一个人留反例。
+  final List<PlatformFile> files = result?.files ?? <PlatformFile>[];
+  final int rawCount = files.length;
+  final int missingPathCount =
+      files.where((PlatformFile f) => f.path == null).length;
   // 取消（`result == null`）时同样返回可增长空列表：调用方会就地 sort（见
   // [pickRealFilePaths] 的说明）。`.toList()` 本身已是可增长的。
   final List<String> paths =
-      result?.files.map((file) => file.path).whereType<String>().toList() ??
-          <String>[];
-  if (!filterAfterPick) return paths;
+      files.map((PlatformFile file) => file.path).whereType<String>().toList();
 
-  // 页面若在原生文件选择器打开期间被销毁，仍按扩展名做纯过滤返回，只是无法
-  // 弹「不支持格式」提示（context 传 null，过滤逻辑不依赖 context）。
-  if (!context.mounted) {
-    return _filterPickedFilesByExtension(
-      context: null,
+  List<String> accepted = paths;
+  if (filterAfterPick) {
+    // 页面若在原生文件选择器打开期间被销毁，仍按扩展名做纯过滤返回，只是无法
+    // 弹「不支持格式」提示（context 传 null，过滤逻辑不依赖 context）。
+    accepted = _filterPickedFilesByExtension(
+      context: context.mounted ? context : null,
       paths: paths,
       allowedExtensions: normalizedExtensions,
     );
   }
-  return _filterPickedFilesByExtension(
-    context: context,
-    paths: paths,
-    allowedExtensions: normalizedExtensions,
+  return _RawPickResult(
+    paths: accepted,
+    rawCount: rawCount,
+    missingPathCount: missingPathCount,
   );
 }
 

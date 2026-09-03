@@ -127,8 +127,6 @@ class _BackupExportWidget extends StatefulWidget {
 }
 
 class _BackupExportWidgetState extends State<_BackupExportWidget> {
-  bool _isExporting = false;
-
   /// Per-book export selection (TODO-1195 part A). null = every book (the legacy
   /// full export); a non-null set = only those `book_key`s travel. Persists
   /// across dialog opens within this settings session (the picker re-seeds from
@@ -144,9 +142,11 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
   Future<void> _export() async {
     // Re-entrant guard: the row's Activate (A/Enter) and the trailing button
     // both call this, so ignore a second trigger while an export is running.
-    if (_isExporting) return;
-    final appModel = widget.settingsContext.appModel;
-    final service = BackupService(
+    // 真相源在 AppModel —— 本 State 会随「本地备份」分区折叠而销毁，State 字段
+    // 守不住重入（折叠再展开就是一个全新的 State，标志位归零）。
+    final AppModel appModel = widget.settingsContext.appModel;
+    if (appModel.backupExportActive) return;
+    final BackupService service = BackupService(
       db: appModel.database,
       dbDirectory: appModel.databaseDirectory.path,
       dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
@@ -170,60 +170,19 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
     final Set<BackupCategory>? categories =
         await _pickExportCategories(summary);
     if (categories == null || !mounted) return;
-    setState(() => _isExporting = true);
-    try {
-      final tmpDir = await getTemporaryDirectory();
-      final filename = service.defaultFilename();
-      final tmpPath = p.join(tmpDir.path, filename);
-      final tmpFile = File(tmpPath);
+    // 交棒点：此后一律由 AppModel 驱动，不再看本 State 的 mounted / context。
+    await runBackupExportFlow(
+      appModel: appModel,
+      service: service,
+      categories: categories,
       // Per-book selection (TODO-1195 part A) only applies when the Books
       // category is packed; excluding Books strips every book regardless.
-      await service.createBackup(
-        tmpPath,
-        categories: categories,
-        bookKeys: categories.contains(BackupCategory.books)
-            ? _selectedBookKeys
-            : null,
-        videoKeys: categories.contains(BackupCategory.videos)
-            ? _selectedVideoKeys
-            : null,
-      );
-
-      if (!mounted) return;
-
-      if (Platform.isAndroid || Platform.isIOS) {
-        await FushiShare.shareFiles(
-          [XFile(tmpPath, mimeType: 'application/zip')],
-          subject: filename,
-        );
-      } else {
-        final savePath = await FilePicker.platform.saveFile(
-          dialogTitle: t.backup_export,
-          fileName: filename,
-          type: FileType.custom,
-          allowedExtensions: ['zip'],
-        );
-        try {
-          if (savePath == null) return;
-          await tmpFile.copy(savePath);
-        } finally {
-          if (await tmpFile.exists()) {
-            await tmpFile.delete();
-          }
-        }
-      }
-
-      if (mounted) {
-        _showSnackBar(context, t.backup_export_success);
-      }
-    } catch (e) {
-      if (mounted) {
-        _showSnackBar(context,
-            t.backup_export_failed(message: friendlySyncErrorDetail(e)));
-      }
-    } finally {
-      if (mounted) setState(() => _isExporting = false);
-    }
+      bookKeys:
+          categories.contains(BackupCategory.books) ? _selectedBookKeys : null,
+      videoKeys: categories.contains(BackupCategory.videos)
+          ? _selectedVideoKeys
+          : null,
+    );
   }
 
   /// Prompts the user to choose which optional file trees travel in the backup.
@@ -645,40 +604,171 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return AdaptiveSettingsRow(
-      title: t.backup_export,
-      subtitle: t.backup_export_hint,
-      icon: Icons.upload_file_outlined,
-      controlBelow: true,
-      // Row onTap registers the focus target so directional nav reaches the
-      // export action (BUG-016); the trailing button is the visual affordance.
-      onTap: _export,
-      trailing: _isExporting
-          ? Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: adaptiveIndicator(context: context, strokeWidth: 2),
+    final AppModel appModel = widget.settingsContext.appModel;
+    // 导出态的真相源在 AppModel（本 State 随分区折叠销毁），这里只订阅、不持有。
+    return AnimatedBuilder(
+      animation: appModel,
+      builder: (BuildContext context, Widget? _) {
+        final bool exporting = appModel.backupExportActive;
+        return AdaptiveSettingsRow(
+          title: t.backup_export,
+          subtitle: t.backup_export_hint,
+          icon: Icons.upload_file_outlined,
+          controlBelow: true,
+          // Row onTap registers the focus target so directional nav reaches the
+          // export action (BUG-016); the trailing button is the visual
+          // affordance.
+          onTap: _export,
+          trailing: exporting
+              ? ValueListenableBuilder<double?>(
+                  valueListenable: appModel.backupExportProgress,
+                  builder: (
+                    BuildContext context,
+                    double? progress,
+                    Widget? _,
+                  ) =>
+                      Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: adaptiveIndicator(
+                          context: context,
+                          strokeWidth: 2,
+                          // null = 还在准备阶段（VACUUM INTO / 按分类裁剪 /
+                          // 枚举待打包文件），没有可分的量，走不确定动画；
+                          // 进了打包阶段就按已写字节走确定进度。
+                          value: progress,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(progress == null
+                          ? t.backup_exporting
+                          : '${t.backup_exporting} '
+                              '${(progress * 100).floor()}%'),
+                    ],
+                  ),
+                )
+              : FilledButton.tonal(
+                  onPressed: _export,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      const Icon(Icons.upload_file_outlined, size: 18),
+                      const SizedBox(width: 8),
+                      Text(t.backup_export),
+                    ],
+                  ),
                 ),
-                const SizedBox(width: 8),
-                Text(t.backup_exporting),
-              ],
-            )
-          : FilledButton.tonal(
-              onPressed: _export,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  const Icon(Icons.upload_file_outlined, size: 18),
-                  const SizedBox(width: 8),
-                  Text(t.backup_export),
-                ],
-              ),
-            ),
+        );
+      },
     );
   }
+
+}
+
+/// 清掉临时目录里**上一次导出遗留的**备份包（识别口径见
+/// [backupArchiveNamePattern]，它自己带着「为什么是前缀+后缀双重限定」的理由）。
+///
+/// 为什么这个清扫是必要的、且必须发生在**下一次导出之前**：移动端走系统分享面板，而
+/// [FushiShare.shareFiles] 用的是**非结果变体**，Future 在面板呈现后就完成、拿不到
+/// 「用户存完了」的时机 —— 当场删会把文件从接收方手里抽走。桌面分支的
+/// `finally { tmpFile.delete() }` 移动端一次都没执行过，几 GB 的包就这么一份份攒着。
+/// 挪到导出前清扫后，磁盘上最多滞留**一份**。
+///
+/// 因此这里删的是「上一次导出的中间物」，不是用户的备份资产：用户的那一份要么已经
+/// 被分享面板交给了目标 app，要么（桌面）已经 copy 到用户选的路径。存储页把这一类
+/// 展示成「上次导出遗留的备份包」而不是「本地备份」，正是为了让展示口径与这个生命
+/// 周期一致——否则用户会以为那 200MB 是自己的存档，点一次导出却发现它没了。
+Future<void> _sweepStaleBackupArchives(Directory tmpDir) async {
+  try {
+    await for (final FileSystemEntity entity
+        in tmpDir.list(followLinks: false)) {
+      if (entity is! File) continue;
+      if (!isBackupArchiveName(p.basename(entity.path))) continue;
+      try {
+        await entity.delete();
+      } catch (_) {
+        // 仍被分享面板占着 / 无权限：留到下一次再扫，不让清理失败拖垮导出。
+      }
+    }
+  } catch (_) {
+    // 临时目录列不出来（不存在 / 无权限）同样不该让导出失败。
+  }
+}
+
+/// 本地备份「导出/创建」的完整流程：打包 → 分享（移动端）/ 另存（桌面）→ 结果提示。
+///
+/// 与 [runBackupImportFlowForFile] 同纪律：所有权在 [AppModel]，**全程不依赖任何页面
+/// 的 `mounted` / `context`**。设置页那一行只负责挑分类，随后把活交给这里 —— 因为
+/// 「本地备份」是可折叠分区，收起时整棵 rows 子树会从 widget tree 移除、那一行的
+/// State 随之 dispose，旧实现在 createBackup 之后的 `if (!mounted) return` 于是把已经
+/// 打完的 zip 连同分享/另存/成功提示一起丢掉，用户看到的正是「点一下折叠箭头，备份被
+/// 取消了」。
+Future<void> runBackupExportFlow({
+  required AppModel appModel,
+  required BackupService service,
+  required Set<BackupCategory> categories,
+  Set<String>? bookKeys,
+  Set<String>? videoKeys,
+}) async {
+  if (appModel.backupExportActive) return;
+  appModel.beginBackupExport();
+  String? failure;
+  bool cancelled = false;
+  try {
+    final Directory tmpDir = await getTemporaryDirectory();
+    await _sweepStaleBackupArchives(tmpDir);
+    final String filename = service.defaultFilename();
+    final String tmpPath = p.join(tmpDir.path, filename);
+    final File tmpFile = File(tmpPath);
+    await service.createBackup(
+      tmpPath,
+      categories: categories,
+      bookKeys: bookKeys,
+      videoKeys: videoKeys,
+      onProgress: appModel.reportBackupExportProgress,
+    );
+    if (Platform.isAndroid || Platform.isIOS) {
+      await FushiShare.shareFiles(
+        <XFile>[XFile(tmpPath, mimeType: 'application/zip')],
+        subject: filename,
+      );
+    } else {
+      final String? savePath = await FilePicker.platform.saveFile(
+        dialogTitle: t.backup_export,
+        fileName: filename,
+        type: FileType.custom,
+        allowedExtensions: <String>['zip'],
+      );
+      try {
+        if (savePath == null) {
+          cancelled = true;
+        } else {
+          await tmpFile.copy(savePath);
+        }
+      } finally {
+        if (await tmpFile.exists()) {
+          await tmpFile.delete();
+        }
+      }
+    }
+  } catch (e) {
+    failure = friendlySyncErrorDetail(e);
+  } finally {
+    appModel.endBackupExport();
+  }
+  if (cancelled) return;
+  // 结果提示走全局 navigator：发起导出的那一行此刻可能已经被折叠掉了。
+  final BuildContext? rootCtx = await _rootContextAfterOverlay(appModel);
+  if (rootCtx == null || !rootCtx.mounted) return;
+  _showSnackBar(
+    rootCtx,
+    failure == null
+        ? t.backup_export_success
+        : t.backup_export_failed(message: failure),
+  );
 }
 
 // ── Backup import widget ─────────────────────────────────────────────
@@ -728,399 +818,16 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
     if (!mounted) return;
 
     setState(() => _isImporting = true);
-    // appModel 在遮罩流程外声明：validating/running 遮罩都会切走本设置页（tree swap），
-    // 此后不再依赖已卸载的本页 `mounted`/context，全程经 appModel 驱动遮罩；确认对话框也
-    // 改由全局 [AppModel.navigatorKey] 宿主弹出（退出遮罩、切回正常 app 树后再弹）。
-    final AppModel appModel = widget.settingsContext.appModel;
-    final String filePath = result.files.single.path!;
-
-    // TODO-1151: 先上屏「正在读取备份…」全屏遮罩（validating 相位），再跑 validate + 合并
-    // 预览——大 zip 这段要数十秒，旧版只有设置行 24px 小圈无明显反馈。beginBackupValidating
-    // 返回本轮 token；用户点「取消」或新一轮校验会作废它，in-flight 后台 isolate 结果回来
-    // 时用 isBackupValidatingCurrent 判断是否仍是最新，陈旧结果直接丢弃（干净 token 判定）。
-    final int validatingToken = appModel.beginBackupValidating();
-    BackupMeta? meta;
-    BackupMergePreview? mergePreview;
-    BackupContentSummary? summary;
     try {
-      final service = BackupService(
-        db: appModel.database,
-        dbDirectory: appModel.databaseDirectory.path,
-        dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
-        appVersion: appModel.packageInfo.version,
-      );
-
-      final BackupMeta? validated = await service.validateBackup(filePath);
-      // 已取消/被新一轮校验取代 → 丢弃陈旧结果（遮罩已由 cancel 退出，无需再动）。
-      if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
-      if (validated == null) {
-        await _endValidatingThenSnack(appModel, t.backup_import_invalid);
-        if (mounted) setState(() => _isImporting = false);
-        return;
-      }
-      if (validated.schemaVersion > appModel.database.schemaVersion) {
-        await _endValidatingThenSnack(
-          appModel,
-          t.backup_schema_newer(version: validated.schemaVersion.toString()),
-        );
-        if (mounted) setState(() => _isImporting = false);
-        return;
-      }
-
-      // TODO-1195 part B: best-effort merge preview for the confirm dialog.
-      // Runs against the still-open live DB; null on any failure → generic UI.
-      final BackupMergePreview? preview =
-          await BackupService.previewMergeRestore(
-        liveDb: appModel.database,
-        dbDirectory: appModel.databaseDirectory.path,
-        zipPath: filePath,
-      );
-      if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
-      // TODO-1358: read the archive "what is inside" manifest for the confirm
-      // dialog (per-category counts + the restore toggles). Cheap central-dir
-      // read; an empty summary just hides the manifest.
-      final BackupContentSummary contentSummary =
-          await service.summarizeBackupFile(filePath);
-      if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
-      meta = validated;
-      mergePreview = preview;
-      summary = contentSummary;
-    } catch (e) {
-      // validate/preview 阶段异常：DB 仍打开，无需重启进程。作废本轮、退出遮罩回设置页并
-      // 提示（与 running 阶段的 failBackupImport「必须重启」出口区分）。
-      if (appModel.isBackupValidatingCurrent(validatingToken)) {
-        await _endValidatingThenSnack(
-          appModel,
-          t.backup_import_failed(message: friendlySyncErrorDetail(e)),
-        );
-      }
-      if (mounted) setState(() => _isImporting = false);
-      return;
-    }
-
-    // 校验成功、合并预览就绪：退出 validating 遮罩，等根 widget 切回正常 app 树、全局
-    // navigator 重新挂载后，在其 context 上弹确认对话框（本设置页此刻已卸载，不能用本页
-    // context——遮罩是根 build 替换模型，宿主是 appModel.navigatorKey 的正常 MaterialApp）。
-    appModel.endBackupValidating();
-    final BuildContext? rootCtx = await _rootContextAfterOverlay(appModel);
-    if (rootCtx == null || !rootCtx.mounted) {
-      if (mounted) setState(() => _isImporting = false);
-      return;
-    }
-
-    final _BackupImportChoice? choice =
-        await _showConfirmDialog(rootCtx, meta, mergePreview, summary);
-    if (choice == null) {
-      // 用户取消确认 → 彻底退出遮罩态，回到设置页（validating 遮罩已退出）。
-      if (mounted) setState(() => _isImporting = false);
-      return;
-    }
-
-    final String booksRoot = p.join(appModel.appDirectory.path, 'fushi_books');
-    final String audiobooksRoot =
-        p.join(appModel.appDirectory.path, 'audiobooks');
-    final String fontsRoot = p.join(appModel.appDirectory.path, 'custom_fonts');
-    final String videosRoot = p.join(appModel.appDirectory.path, 'videos');
-
-    try {
-      // TODO-1151: 用户已确认 → 上屏全屏「正在导入备份，请勿关闭」遮罩（running 相位），
-      // 再关库解压。beginBackupImport notifyListeners → 根 widget 切到 running 遮罩（本
-      // 设置页随之卸载，故此后不再依赖 `mounted`/本页 context，改由 appModel 驱动遮罩）。
-      appModel.beginBackupImport();
-      // BUG-810: beginBackupImport 只 SCHEDULE 根切换到 running 遮罩（notifyListeners →
-      // markNeedsBuild）。上面注释承诺「遮罩已上屏 → 关库 → 解压」，但不等这帧渲染就直接
-      // closeDatabase + restoreBackup 的部分同步 decode/DB 工作，会在遮罩首帧 raster
-      // 前占住 UI isolate（await 微任务不 pump 帧）——于是整个复制期屏幕停在旧设置页，没有
-      // 「请勿关闭」遮罩、没有进度条，直到进程重启。await endOfFrame 等这帧真正把遮罩画出来
-      // 再继续（复用 validating→app 切换 [_rootContextAfterOverlay] 已依赖的同一原语）。
-      await WidgetsBinding.instance.endOfFrame;
-      await appModel.closeDatabase();
-      if (choice.mode == _BackupImportMode.merge) {
-        // TODO-888 merge: keep this device's library + settings, only ADD what
-        // the backup carries (row-level upsert + copy-if-absent content trees).
-        // Never overwrites/deletes existing data, so importSettings is moot.
-        await BackupService.mergeRestoreBackup(
-          dbDirectory: appModel.databaseDirectory.path,
-          zipPath: filePath,
-          // Per-category merge selection (merge mode now honours the dialog's
-          // toggles): an unticked category adds neither rows nor files.
-          categories: choice.categories,
-          dictionaryResourceDirectory:
-              appModel.dictionaryResourceDirectory.path,
-          booksRootDirectory: booksRoot,
-          audiobooksRootDirectory: audiobooksRoot,
-          fontsRootDirectory: fontsRoot,
-          videosRootDirectory: videosRoot,
-          // TODO-1183: 后台解压 isolate 经 SendPort 回报字节 → 确定进度条。
-          onProgress: appModel.reportBackupImportProgress,
-        );
-      } else {
-        await BackupService.restoreBackup(
-          dbDirectory: appModel.databaseDirectory.path,
-          zipPath: filePath,
-          importSettings: choice.importSettings,
-          categories: choice.categories,
-          dictionaryResourceDirectory:
-              appModel.dictionaryResourceDirectory.path,
-          // Full-data restore: extract the content trees and rebase the DB's
-          // absolute paths onto this device's roots.
-          booksRootDirectory: booksRoot,
-          audiobooksRootDirectory: audiobooksRoot,
-          // BUG-183: restore the custom-font files and rebase the stored font
-          // config paths onto this device's root.
-          fontsRootDirectory: fontsRoot,
-          videosRootDirectory: videosRoot,
-          // TODO-1183: 后台解压 isolate 经 SendPort 回报字节 → 确定进度条。
-          onProgress: appModel.reportBackupImportProgress,
-        );
-      }
-
-      // TODO-1151: 导入成功。不再「延迟 500ms 后突然 exit」——那会让用户以为崩溃/失败。
-      // 切到确认视图（导入完成 → 立即重启），并在其可见 ~1s 后自动重启（用户诉求「导入完
-      // 自动重启，不再手动重开」）。与旧「500ms 后突然 exit」的关键区别：backupImportRestart
-      // 走 restartApp 真拉新进程重启（app 会自己回来），不是纯退出「凭空消失」；延时让「导入
-      // 成功」先可见一瞬，避免误判失败。「立即重启」按钮保留为手动兜底（可提前点，走同一函数）。
-      appModel.completeBackupImport(t.backup_import_success);
-      await Future<void>.delayed(const Duration(seconds: 1));
-      // restartApp 成功会拉新进程并退出本进程；backupImportRestart 内部已吞掉重启失败并退回
-      // 纯退出兜底，故此处不会把「重启失败」冒泡成 catch 里的 failBackupImport（避免把成功的
-      // 导入错报为失败）。
-      await backupImportRestart(appModel);
-    } catch (e) {
-      // TODO-1183: DB 已关闭，无论成败都必须重启；失败走 failBackupImport → 遮罩画红色
-      // 错误图标 + 失败原因（根治 OOM/异常「失败却显绿✓成功」的误导）。
-      appModel.failBackupImport(
-        t.backup_import_failed(message: friendlySyncErrorDetail(e)),
+      // 编排主体提为库级 [runBackupImportFlowForFile]：设置页「导入备份」与
+      // 新手引导「导入推荐包」共用同一份实现（单一真相源）。
+      await runBackupImportFlowForFile(
+        appModel: widget.settingsContext.appModel,
+        filePath: result.files.single.path!,
       );
     } finally {
       if (mounted) setState(() => _isImporting = false);
     }
-  }
-
-  /// 退出 validating 遮罩后，等根 widget 切回正常 app 树、全局 navigator 重新挂载，返回
-  /// 可用于弹对话框 / snackbar 的 root context（挂载失败返回 null）。endBackupValidating 的
-  /// notifyListeners 触发的根重建在下一帧完成，故须等帧后 navigatorKey.currentContext 才有效。
-  Future<BuildContext?> _rootContextAfterOverlay(AppModel appModel) async {
-    for (int i = 0; i < 2; i++) {
-      await WidgetsBinding.instance.endOfFrame;
-      final BuildContext? ctx = appModel.navigatorKey.currentContext;
-      if (ctx != null && ctx.mounted) return ctx;
-    }
-    return null;
-  }
-
-  /// validate/preview 阶段的失败/无效出口：退出 validating 遮罩、切回设置页后用 root
-  /// context 弹 snackbar（本设置页此刻已卸载，用本页 context 无效）。
-  Future<void> _endValidatingThenSnack(
-      AppModel appModel, String message) async {
-    appModel.endBackupValidating();
-    final BuildContext? rootCtx = await _rootContextAfterOverlay(appModel);
-    if (rootCtx != null && rootCtx.mounted) _showSnackBar(rootCtx, message);
-  }
-
-  /// Asks how to apply the backup (TODO-888): OVERWRITE the whole library
-  /// (legacy default) or MERGE into the current one. For overwrite, a secondary
-  /// switch chooses whether to also pull the backup's settings layer. Returns
-  /// the choice, or `null` if the user cancels.
-  Future<_BackupImportChoice?> _showConfirmDialog(
-    BuildContext dialogContext,
-    BackupMeta meta,
-    BackupMergePreview? preview,
-    BackupContentSummary summary,
-  ) async {
-    final String dateStr = FushiTimeFormat.dayKey(meta.createdAt);
-    // Default: OVERWRITE (Never break userspace — the existing behavior), and
-    // within overwrite, keep this device's settings (importSettings=false).
-    _BackupImportMode mode = _BackupImportMode.overwrite;
-    bool importSettings = false;
-    // TODO-1358: the selectable content categories this backup actually carries,
-    // all ticked by default; unticking one skips restoring it. The set differs
-    // by mode — merge can additionally gate books/statistics (row-level), which
-    // the overwrite whole-DB-blob path cannot. Iterated in enum order for a
-    // stable layout. [selectedRestore] seeds from the UNION so a tick survives a
-    // mode switch.
-    List<BackupCategory> presentFor(Set<BackupCategory> selectable) =>
-        BackupCategory.values
-            .where(
-                (BackupCategory c) => selectable.contains(c) && summary.has(c))
-            .toList();
-    final List<BackupCategory> overwriteSelectablePresent =
-        presentFor(importSelectableCategories);
-    final List<BackupCategory> mergeSelectablePresent =
-        presentFor(importMergeSelectableCategories);
-    final Set<BackupCategory> selectedRestore = <BackupCategory>{
-      ...overwriteSelectablePresent,
-      ...mergeSelectablePresent,
-    };
-    final bool? confirmed = await showAppDialog<bool>(
-      context: dialogContext,
-      builder: (BuildContext ctx) => StatefulBuilder(
-        builder: (BuildContext ctx, StateSetter setLocal) {
-          final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
-          return FushiDialogFrame(
-            maxWidth: 420,
-            insetPadding: EdgeInsets.symmetric(
-              horizontal: tokens.spacing.card,
-              vertical: tokens.spacing.card,
-            ),
-            scrollable: false,
-            child: FushiModalSheetFrame(
-              title: t.backup_import_confirm_title,
-              scrollable: true,
-              bodyPadding: EdgeInsets.fromLTRB(
-                tokens.spacing.card,
-                0,
-                tokens.spacing.card,
-                tokens.spacing.gap,
-              ),
-              footerPadding: EdgeInsets.fromLTRB(
-                tokens.spacing.card,
-                tokens.spacing.gap,
-                tokens.spacing.card,
-                tokens.spacing.card,
-              ),
-              body: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    t.backup_import_confirm(
-                      date: dateStr,
-                      bookCount: meta.bookCount.toString(),
-                      statsCount: meta.statsCount.toString(),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    t.backup_import_mode_label,
-                    style: Theme.of(ctx).textTheme.labelLarge,
-                  ),
-                  RadioListTile<_BackupImportMode>(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    title: Text(t.backup_import_mode_overwrite),
-                    value: _BackupImportMode.overwrite,
-                    groupValue: mode,
-                    onChanged: (_BackupImportMode? v) =>
-                        setLocal(() => mode = v ?? _BackupImportMode.overwrite),
-                  ),
-                  RadioListTile<_BackupImportMode>(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    title: Text(t.backup_import_mode_merge),
-                    subtitle: preview == null
-                        ? null
-                        : Text(
-                            t.backup_import_merge_preview(
-                              bookCount: preview.newBooks.toString(),
-                              progressCount:
-                                  preview.updatedReaderPositions.toString(),
-                            ),
-                            style: Theme.of(ctx).textTheme.bodySmall,
-                          ),
-                    value: _BackupImportMode.merge,
-                    groupValue: mode,
-                    onChanged: (_BackupImportMode? v) =>
-                        setLocal(() => mode = v ?? _BackupImportMode.overwrite),
-                  ),
-                  // TODO-1358: "what is inside" manifest + per-category toggles.
-                  // Both modes are now live: untick a category to skip
-                  // restoring/merging it. The selectable set is mode-dependent —
-                  // merge can additionally gate books/statistics (row-level).
-                  ...<Widget>[
-                    if (mode == _BackupImportMode.overwrite
-                        ? overwriteSelectablePresent.isNotEmpty
-                        : mergeSelectablePresent.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: 8),
-                      Text(
-                        t.backup_import_contents_title,
-                        style: Theme.of(ctx).textTheme.labelLarge,
-                      ),
-                      Text(
-                        t.backup_import_contents_hint,
-                        style: Theme.of(ctx).textTheme.bodySmall,
-                      ),
-                      for (final BackupCategory c
-                          in mode == _BackupImportMode.overwrite
-                              ? overwriteSelectablePresent
-                              : mergeSelectablePresent)
-                        AdaptiveSettingsSwitchRow(
-                          title: '${backupCategoryLabel(c)} '
-                              '(${summary.countFor(c)})',
-                          subtitle: backupCategoryDescription(c),
-                          value: selectedRestore.contains(c),
-                          onChanged: (bool v) => setLocal(() {
-                            if (v) {
-                              selectedRestore.add(c);
-                            } else {
-                              selectedRestore.remove(c);
-                            }
-                          }),
-                        ),
-                    ],
-                  ],
-                  // The settings-layer toggle only applies to overwrite; merge
-                  // always keeps this device's settings.
-                  if (mode == _BackupImportMode.overwrite) ...<Widget>[
-                    const SizedBox(height: 4),
-                    AdaptiveSettingsSwitchRow(
-                      title: t.backup_import_settings_toggle,
-                      subtitle: importSettings
-                          ? t.backup_import_settings_on_hint
-                          : t.backup_import_settings_off_hint,
-                      value: importSettings,
-                      onChanged: (bool v) => setLocal(() => importSettings = v),
-                    ),
-                  ],
-                  const SizedBox(height: 4),
-                  Text(
-                    t.backup_import_preserve_sync_note,
-                    style: Theme.of(ctx).textTheme.bodySmall,
-                  ),
-                ],
-              ),
-              footer: Wrap(
-                alignment: WrapAlignment.end,
-                spacing: tokens.spacing.gap,
-                children: <Widget>[
-                  adaptiveDialogAction(
-                    context: ctx,
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: Text(t.dialog_cancel),
-                  ),
-                  adaptiveDialogAction(
-                    context: ctx,
-                    isDefaultAction: true,
-                    isDestructiveAction: mode == _BackupImportMode.overwrite,
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: Text(t.dialog_ok),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-    if (confirmed != true) return null;
-    // Everything not offered as a selectable toggle for THIS mode always
-    // applies; add the selectable ones the user kept ticked (TODO-1358). The
-    // selectable set is mode-dependent (merge can gate books/statistics too), so
-    // an unticked merge-only category (books/statistics) is correctly dropped
-    // from the set, while for overwrite those stay always-on.
-    final Set<BackupCategory> modeSelectable =
-        mode == _BackupImportMode.overwrite
-            ? importSelectableCategories
-            : importMergeSelectableCategories;
-    final Set<BackupCategory> categories = BackupCategory.values
-        .where((BackupCategory c) =>
-            !modeSelectable.contains(c) || selectedRestore.contains(c))
-        .toSet();
-    return _BackupImportChoice(
-      mode: mode,
-      importSettings: importSettings,
-      categories: categories,
-    );
   }
 
   @override
@@ -1152,4 +859,395 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
             ),
     );
   }
+}
+
+/// 对**已确定路径**的备份 zip 跑完整导入编排：validating 遮罩 → 校验/合并预览 →
+/// 确认对话框（覆盖/合并 + 分类勾选）→ running 遮罩 → 导入 → 自动重启。设置页
+/// 「导入备份」与新手引导「导入推荐包」共用（单一真相源）。校验失败/用户取消时
+/// 正常返回（进程不重启）；导入成功或失败都会走 appModel 的遮罩收口并重启进程。
+/// [onImportConfirmed] 在用户于确认对话框点了确定、导入即将真正开始时回调（新手
+/// 引导用它给下载的推荐包落「已导入」flag，重启后收尾删包）；校验失败或用户取消
+/// 不会触发。
+Future<void> runBackupImportFlowForFile({
+  required AppModel appModel,
+  required String filePath,
+  Future<void> Function()? onImportConfirmed,
+}) async {
+  // appModel 驱动全程遮罩：validating/running 遮罩都会切走调用方页面（tree swap），
+  // 此后不依赖任何页面 `mounted`/context；确认对话框由全局 [AppModel.navigatorKey]
+  // 宿主弹出（退出遮罩、切回正常 app 树后再弹）。
+  //
+  // TODO-1151: 先上屏「正在读取备份…」全屏遮罩（validating 相位），再跑 validate + 合并
+  // 预览——大 zip 这段要数十秒，旧版只有设置行 24px 小圈无明显反馈。beginBackupValidating
+  // 返回本轮 token；用户点「取消」或新一轮校验会作废它，in-flight 后台 isolate 结果回来
+  // 时用 isBackupValidatingCurrent 判断是否仍是最新，陈旧结果直接丢弃（干净 token 判定）。
+  final int validatingToken = appModel.beginBackupValidating();
+  BackupMeta? meta;
+  BackupMergePreview? mergePreview;
+  BackupContentSummary? summary;
+  try {
+    final service = BackupService(
+      db: appModel.database,
+      dbDirectory: appModel.databaseDirectory.path,
+      dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
+      appVersion: appModel.packageInfo.version,
+    );
+
+    final BackupMeta? validated = await service.validateBackup(filePath);
+    // 已取消/被新一轮校验取代 → 丢弃陈旧结果（遮罩已由 cancel 退出，无需再动）。
+    if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
+    if (validated == null) {
+      await _endValidatingThenSnack(appModel, t.backup_import_invalid);
+      return;
+    }
+    if (validated.schemaVersion > appModel.database.schemaVersion) {
+      await _endValidatingThenSnack(
+        appModel,
+        t.backup_schema_newer(version: validated.schemaVersion.toString()),
+      );
+      return;
+    }
+
+    // TODO-1195 part B: best-effort merge preview for the confirm dialog.
+    // Runs against the still-open live DB; null on any failure → generic UI.
+    final BackupMergePreview? preview = await BackupService.previewMergeRestore(
+      liveDb: appModel.database,
+      dbDirectory: appModel.databaseDirectory.path,
+      zipPath: filePath,
+    );
+    if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
+    // TODO-1358: read the archive "what is inside" manifest for the confirm
+    // dialog (per-category counts + the restore toggles). Cheap central-dir
+    // read; an empty summary just hides the manifest.
+    final BackupContentSummary contentSummary =
+        await service.summarizeBackupFile(filePath);
+    if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
+    meta = validated;
+    mergePreview = preview;
+    summary = contentSummary;
+  } catch (e) {
+    // validate/preview 阶段异常：DB 仍打开，无需重启进程。作废本轮、退出遮罩回调用方页
+    // 并提示（与 running 阶段的 failBackupImport「必须重启」出口区分）。
+    if (appModel.isBackupValidatingCurrent(validatingToken)) {
+      await _endValidatingThenSnack(
+        appModel,
+        t.backup_import_failed(message: friendlySyncErrorDetail(e)),
+      );
+    }
+    return;
+  }
+
+  // 校验成功、合并预览就绪：退出 validating 遮罩，等根 widget 切回正常 app 树、全局
+  // navigator 重新挂载后，在其 context 上弹确认对话框（调用方页面此刻已卸载，不能用其
+  // context——遮罩是根 build 替换模型，宿主是 appModel.navigatorKey 的正常 MaterialApp）。
+  appModel.endBackupValidating();
+  final BuildContext? rootCtx = await _rootContextAfterOverlay(appModel);
+  if (rootCtx == null || !rootCtx.mounted) return;
+
+  final _BackupImportChoice? choice = await _showBackupImportConfirmDialog(
+      rootCtx, meta, mergePreview, summary);
+  if (choice == null) {
+    // 用户取消确认 → 彻底退出遮罩态，回到调用方页面（validating 遮罩已退出）。
+    return;
+  }
+  await onImportConfirmed?.call();
+
+  final String booksRoot = p.join(appModel.appDirectory.path, 'fushi_books');
+  final String audiobooksRoot =
+      p.join(appModel.appDirectory.path, 'audiobooks');
+  final String fontsRoot = p.join(appModel.appDirectory.path, 'custom_fonts');
+  final String videosRoot = p.join(appModel.appDirectory.path, 'videos');
+
+  try {
+    // TODO-1151: 用户已确认 → 上屏全屏「正在导入备份，请勿关闭」遮罩（running 相位），
+    // 再关库解压。beginBackupImport notifyListeners → 根 widget 切到 running 遮罩（调用
+    // 方页面随之卸载，故此后不再依赖 `mounted`/页面 context，改由 appModel 驱动遮罩）。
+    appModel.beginBackupImport();
+    // BUG-810: beginBackupImport 只 SCHEDULE 根切换到 running 遮罩（notifyListeners →
+    // markNeedsBuild）。上面注释承诺「遮罩已上屏 → 关库 → 解压」，但不等这帧渲染就直接
+    // closeDatabase + restoreBackup 的部分同步 decode/DB 工作，会在遮罩首帧 raster
+    // 前占住 UI isolate（await 微任务不 pump 帧）——于是整个复制期屏幕停在旧设置页，没有
+    // 「请勿关闭」遮罩、没有进度条，直到进程重启。await endOfFrame 等这帧真正把遮罩画出来
+    // 再继续（复用 validating→app 切换 [_rootContextAfterOverlay] 已依赖的同一原语）。
+    await WidgetsBinding.instance.endOfFrame;
+    await appModel.closeDatabase();
+    if (choice.mode == _BackupImportMode.merge) {
+      // TODO-888 merge: keep this device's library + settings, only ADD what
+      // the backup carries (row-level upsert + copy-if-absent content trees).
+      // Never overwrites/deletes existing data, so importSettings is moot.
+      await BackupService.mergeRestoreBackup(
+        dbDirectory: appModel.databaseDirectory.path,
+        zipPath: filePath,
+        // Per-category merge selection (merge mode now honours the dialog's
+        // toggles): an unticked category adds neither rows nor files.
+        categories: choice.categories,
+        dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
+        booksRootDirectory: booksRoot,
+        audiobooksRootDirectory: audiobooksRoot,
+        fontsRootDirectory: fontsRoot,
+        videosRootDirectory: videosRoot,
+        // TODO-1183: 后台解压 isolate 经 SendPort 回报字节 → 确定进度条。
+        onProgress: appModel.reportBackupImportProgress,
+      );
+    } else {
+      await BackupService.restoreBackup(
+        dbDirectory: appModel.databaseDirectory.path,
+        zipPath: filePath,
+        importSettings: choice.importSettings,
+        categories: choice.categories,
+        dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
+        // Full-data restore: extract the content trees and rebase the DB's
+        // absolute paths onto this device's roots.
+        booksRootDirectory: booksRoot,
+        audiobooksRootDirectory: audiobooksRoot,
+        // BUG-183: restore the custom-font files and rebase the stored font
+        // config paths onto this device's root.
+        fontsRootDirectory: fontsRoot,
+        videosRootDirectory: videosRoot,
+        // TODO-1183: 后台解压 isolate 经 SendPort 回报字节 → 确定进度条。
+        onProgress: appModel.reportBackupImportProgress,
+      );
+    }
+
+    // TODO-1151: 导入成功。不再「延迟 500ms 后突然 exit」——那会让用户以为崩溃/失败。
+    // 切到确认视图（导入完成 → 立即重启），并在其可见 ~1s 后自动重启（用户诉求「导入完
+    // 自动重启，不再手动重开」）。与旧「500ms 后突然 exit」的关键区别：backupImportRestart
+    // 走 restartApp 真拉新进程重启（app 会自己回来），不是纯退出「凭空消失」；延时让「导入
+    // 成功」先可见一瞬，避免误判失败。「立即重启」按钮保留为手动兜底（可提前点，走同一函数）。
+    appModel.completeBackupImport(t.backup_import_success);
+    await Future<void>.delayed(const Duration(seconds: 1));
+    // restartApp 成功会拉新进程并退出本进程；backupImportRestart 内部已吞掉重启失败并退回
+    // 纯退出兜底，故此处不会把「重启失败」冒泡成 catch 里的 failBackupImport（避免把成功的
+    // 导入错报为失败）。
+    await backupImportRestart(appModel);
+  } catch (e) {
+    // TODO-1183: DB 已关闭，无论成败都必须重启；失败走 failBackupImport → 遮罩画红色
+    // 错误图标 + 失败原因（根治 OOM/异常「失败却显绿✓成功」的误导）。
+    appModel.failBackupImport(
+      t.backup_import_failed(message: friendlySyncErrorDetail(e)),
+    );
+  }
+}
+
+/// 退出 validating 遮罩后，等根 widget 切回正常 app 树、全局 navigator 重新挂载，返回
+/// 可用于弹对话框 / snackbar 的 root context（挂载失败返回 null）。endBackupValidating 的
+/// notifyListeners 触发的根重建在下一帧完成，故须等帧后 navigatorKey.currentContext 才有效。
+Future<BuildContext?> _rootContextAfterOverlay(AppModel appModel) async {
+  for (int i = 0; i < 2; i++) {
+    await WidgetsBinding.instance.endOfFrame;
+    final BuildContext? ctx = appModel.navigatorKey.currentContext;
+    if (ctx != null && ctx.mounted) return ctx;
+  }
+  return null;
+}
+
+/// validate/preview 阶段的失败/无效出口：退出 validating 遮罩、切回调用方页面后用 root
+/// context 弹 snackbar（调用方页面此刻已卸载，用其 context 无效）。
+Future<void> _endValidatingThenSnack(AppModel appModel, String message) async {
+  appModel.endBackupValidating();
+  final BuildContext? rootCtx = await _rootContextAfterOverlay(appModel);
+  if (rootCtx != null && rootCtx.mounted) _showSnackBar(rootCtx, message);
+}
+
+/// Asks how to apply the backup (TODO-888): OVERWRITE the whole library
+/// (legacy default) or MERGE into the current one. For overwrite, a secondary
+/// switch chooses whether to also pull the backup's settings layer. Returns
+/// the choice, or `null` if the user cancels.
+Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
+  BuildContext dialogContext,
+  BackupMeta meta,
+  BackupMergePreview? preview,
+  BackupContentSummary summary,
+) async {
+  final String dateStr = FushiTimeFormat.dayKey(meta.createdAt);
+  // Default: OVERWRITE (Never break userspace — the existing behavior), and
+  // within overwrite, keep this device's settings (importSettings=false).
+  _BackupImportMode mode = _BackupImportMode.overwrite;
+  bool importSettings = false;
+  // TODO-1358: the selectable content categories this backup actually carries,
+  // all ticked by default; unticking one skips restoring it. The set differs
+  // by mode — merge can additionally gate books/statistics (row-level), which
+  // the overwrite whole-DB-blob path cannot. Iterated in enum order for a
+  // stable layout. [selectedRestore] seeds from the UNION so a tick survives a
+  // mode switch.
+  List<BackupCategory> presentFor(Set<BackupCategory> selectable) =>
+      BackupCategory.values
+          .where((BackupCategory c) => selectable.contains(c) && summary.has(c))
+          .toList();
+  final List<BackupCategory> overwriteSelectablePresent =
+      presentFor(importSelectableCategories);
+  final List<BackupCategory> mergeSelectablePresent =
+      presentFor(importMergeSelectableCategories);
+  final Set<BackupCategory> selectedRestore = <BackupCategory>{
+    ...overwriteSelectablePresent,
+    ...mergeSelectablePresent,
+  };
+  final bool? confirmed = await showAppDialog<bool>(
+    context: dialogContext,
+    builder: (BuildContext ctx) => StatefulBuilder(
+      builder: (BuildContext ctx, StateSetter setLocal) {
+        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+        return FushiDialogFrame(
+          maxWidth: 420,
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.card,
+            vertical: tokens.spacing.card,
+          ),
+          scrollable: false,
+          child: FushiModalSheetFrame(
+            title: t.backup_import_confirm_title,
+            scrollable: true,
+            bodyPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              0,
+              tokens.spacing.card,
+              tokens.spacing.gap,
+            ),
+            footerPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              tokens.spacing.gap,
+              tokens.spacing.card,
+              tokens.spacing.card,
+            ),
+            body: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  t.backup_import_confirm(
+                    date: dateStr,
+                    bookCount: meta.bookCount.toString(),
+                    statsCount: meta.statsCount.toString(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  t.backup_import_mode_label,
+                  style: Theme.of(ctx).textTheme.labelLarge,
+                ),
+                RadioListTile<_BackupImportMode>(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: Text(t.backup_import_mode_overwrite),
+                  value: _BackupImportMode.overwrite,
+                  groupValue: mode,
+                  onChanged: (_BackupImportMode? v) =>
+                      setLocal(() => mode = v ?? _BackupImportMode.overwrite),
+                ),
+                RadioListTile<_BackupImportMode>(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: Text(t.backup_import_mode_merge),
+                  subtitle: preview == null
+                      ? null
+                      : Text(
+                          t.backup_import_merge_preview(
+                            bookCount: preview.newBooks.toString(),
+                            progressCount:
+                                preview.updatedReaderPositions.toString(),
+                          ),
+                          style: Theme.of(ctx).textTheme.bodySmall,
+                        ),
+                  value: _BackupImportMode.merge,
+                  groupValue: mode,
+                  onChanged: (_BackupImportMode? v) =>
+                      setLocal(() => mode = v ?? _BackupImportMode.overwrite),
+                ),
+                // TODO-1358: "what is inside" manifest + per-category toggles.
+                // Both modes are now live: untick a category to skip
+                // restoring/merging it. The selectable set is mode-dependent —
+                // merge can additionally gate books/statistics (row-level).
+                ...<Widget>[
+                  if (mode == _BackupImportMode.overwrite
+                      ? overwriteSelectablePresent.isNotEmpty
+                      : mergeSelectablePresent.isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 8),
+                    Text(
+                      t.backup_import_contents_title,
+                      style: Theme.of(ctx).textTheme.labelLarge,
+                    ),
+                    Text(
+                      t.backup_import_contents_hint,
+                      style: Theme.of(ctx).textTheme.bodySmall,
+                    ),
+                    for (final BackupCategory c
+                        in mode == _BackupImportMode.overwrite
+                            ? overwriteSelectablePresent
+                            : mergeSelectablePresent)
+                      AdaptiveSettingsSwitchRow(
+                        title: '${backupCategoryLabel(c)} '
+                            '(${summary.countFor(c)})',
+                        subtitle: backupCategoryDescription(c),
+                        value: selectedRestore.contains(c),
+                        onChanged: (bool v) => setLocal(() {
+                          if (v) {
+                            selectedRestore.add(c);
+                          } else {
+                            selectedRestore.remove(c);
+                          }
+                        }),
+                      ),
+                  ],
+                ],
+                // The settings-layer toggle only applies to overwrite; merge
+                // always keeps this device's settings.
+                if (mode == _BackupImportMode.overwrite) ...<Widget>[
+                  const SizedBox(height: 4),
+                  AdaptiveSettingsSwitchRow(
+                    title: t.backup_import_settings_toggle,
+                    subtitle: importSettings
+                        ? t.backup_import_settings_on_hint
+                        : t.backup_import_settings_off_hint,
+                    value: importSettings,
+                    onChanged: (bool v) => setLocal(() => importSettings = v),
+                  ),
+                ],
+                const SizedBox(height: 4),
+                Text(
+                  t.backup_import_preserve_sync_note,
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+              ],
+            ),
+            footer: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: tokens.spacing.gap,
+              children: <Widget>[
+                adaptiveDialogAction(
+                  context: ctx,
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text(t.dialog_cancel),
+                ),
+                adaptiveDialogAction(
+                  context: ctx,
+                  isDefaultAction: true,
+                  isDestructiveAction: mode == _BackupImportMode.overwrite,
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: Text(t.dialog_ok),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+  if (confirmed != true) return null;
+  // Everything not offered as a selectable toggle for THIS mode always
+  // applies; add the selectable ones the user kept ticked (TODO-1358). The
+  // selectable set is mode-dependent (merge can gate books/statistics too), so
+  // an unticked merge-only category (books/statistics) is correctly dropped
+  // from the set, while for overwrite those stay always-on.
+  final Set<BackupCategory> modeSelectable = mode == _BackupImportMode.overwrite
+      ? importSelectableCategories
+      : importMergeSelectableCategories;
+  final Set<BackupCategory> categories = BackupCategory.values
+      .where((BackupCategory c) =>
+          !modeSelectable.contains(c) || selectedRestore.contains(c))
+      .toSet();
+  return _BackupImportChoice(
+    mode: mode,
+    importSettings: importSettings,
+    categories: categories,
+  );
 }

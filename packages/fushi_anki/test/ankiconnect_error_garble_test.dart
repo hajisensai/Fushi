@@ -28,10 +28,11 @@ class _FailingService extends AnkiConnectService {
   final Object toThrow;
 
   @override
-  Future<bool> isDuplicate({
+  Future<bool> isDuplicateForAdd({
     required String deckName,
-    required String fieldName,
-    required String fieldValue,
+    required String modelName,
+    required String firstFieldName,
+    required String firstFieldValue,
     AnkiDuplicateScope scope = AnkiDuplicateScope.deck,
   }) async =>
       throw toThrow;
@@ -109,6 +110,28 @@ void main() {
       expect(classifyAnkiConnectError(e), AnkiErrorCode.connectionTimeout);
     });
 
+    // connectionTimeout 的全部价值在于它**只**代表「连上了但不应答」——那几乎只有
+    // 「端口上蹲着的不是 AnkiConnect」一种解释，文案才敢让用户去换端口。建连阶段的
+    // 超时必须归 refused，否则这个码退化成「反正是超时」，提示又只能含糊说查防火墙。
+    test('pre-delivery wrapping a timeout -> connectionRefused', () {
+      final e = AnkiConnectPreDeliveryException(
+        'connect failed',
+        Uri.parse('http://127.0.0.1:8765'),
+        TimeoutException('connect timed out', const Duration(seconds: 5)),
+      );
+      expect(classifyAnkiConnectError(e), AnkiErrorCode.connectionRefused);
+    });
+
+    test('pre-delivery wrapping a socket failure -> connectionRefused', () {
+      final e = AnkiConnectPreDeliveryException(
+        'connect failed',
+        Uri.parse('http://127.0.0.1:8765'),
+        const SocketException('Connection refused',
+            osError: OSError('Connection refused', 111)),
+      );
+      expect(classifyAnkiConnectError(e), AnkiErrorCode.connectionRefused);
+    });
+
     test('http.ClientException -> httpError', () {
       final e = http.ClientException('Connection closed before full header');
       expect(classifyAnkiConnectError(e), AnkiErrorCode.httpError);
@@ -133,6 +156,40 @@ void main() {
         expect(hint, isNot(contains(kLatin1Garble)));
       });
     }
+
+    // 用户实测：默认端口被别的程序占着，占用者接受 TCP 连接却不应答，用户拿到的
+    // 只有一句「超时，检查防火墙」——照着查防火墙永远查不出来。文案必须指向真正的
+    // 下一步：那个端口上的程序不是 AnkiConnect，换个端口。
+    test('connectionTimeout hint points at port squatting, not the firewall',
+        () {
+      final String hint = ankiConnectErrorHint(
+        AnkiErrorCode.connectionTimeout,
+        host: '127.0.0.1',
+        port: 8765,
+      );
+      expect(hint, contains('127.0.0.1:8765'));
+      expect(hint.toLowerCase(), contains('port'));
+      expect(hint.toLowerCase(), contains('another program'));
+      expect(hint.toLowerCase(), isNot(contains('firewall')));
+    });
+  });
+
+  group('isAnkiConnectTransportError only accepts transport failures', () {
+    test('socket / timeout / http all count', () {
+      expect(isAnkiConnectTransportError(const SocketException('boom')), isTrue);
+      expect(
+        isAnkiConnectTransportError(
+            TimeoutException('boom', const Duration(seconds: 1))),
+        isTrue,
+      );
+      expect(isAnkiConnectTransportError(http.ClientException('boom')), isTrue);
+    });
+
+    test('local programming errors do not count', () {
+      expect(isAnkiConnectTransportError(StateError('boom')), isFalse);
+      expect(
+          isAnkiConnectTransportError(const FormatException('boom')), isFalse);
+    });
   });
 
   group('mineEntry classifies network errors and keeps raw text out of toast',

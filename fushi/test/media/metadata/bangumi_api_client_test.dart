@@ -8,8 +8,8 @@ import 'package:http/testing.dart';
 /// 共享传输层 [BangumiApiClient] 的契约测试。
 ///
 /// 只验证「传输层职责」：URL / 请求头 / POST 体 / subjectType 过滤 / utf8 解码 /
-/// 传输异常边界 / 限流 gate 注入 / token。领域映射（ScrapeCandidate / GalgameDraft）
-/// 由各调用方自己的测试覆盖，不在此重复。
+/// 传输异常边界 / 限流 gate 注入 / token。书籍与 galgame 的领域映射由各调用方
+/// 自己的测试覆盖，不在此重复。
 void main() {
   group('BangumiApiClient.searchSubjects', () {
     test(

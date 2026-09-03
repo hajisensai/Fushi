@@ -37,6 +37,53 @@ void main() {
       );
     });
 
+    test('查词模块关掉时「启动默认查词」不得把初始 tab 指到隐藏 tab', () {
+      // 渲染侧有 _visibleTab 兜底成首页，但 _currentTab 会从第一帧起就是脏的
+      // （底栏高亮与 _previousTab 都跟着错），所以门控必须在取值处。
+      expect(
+        homeInitialTab(
+          startupDefaultDictionaryTab: true,
+          dictionariesEnabled: false,
+          fallback: HomeTab.books,
+        ),
+        HomeTab.books,
+      );
+      expect(
+        homeInitialTab(
+          startupDefaultDictionaryTab: true,
+          dictionariesEnabled: false,
+          fallback: HomeTab.home,
+        ),
+        HomeTab.home,
+      );
+      // 落点必须真的在可见 tab 列表里。
+      final List<HomeTab> tabs = homeActiveTabs(
+        videoEnabled: true,
+        dictionariesEnabled: false,
+      );
+      expect(
+        tabs,
+        contains(
+          homeInitialTab(
+            startupDefaultDictionaryTab: true,
+            dictionariesEnabled: false,
+            fallback: HomeTab.home,
+          ),
+        ),
+      );
+    });
+
+    test('查词模块开着时行为不变（dictionariesEnabled 默认 true）', () {
+      expect(
+        homeInitialTab(
+          startupDefaultDictionaryTab: true,
+          dictionariesEnabled: true,
+          fallback: HomeTab.books,
+        ),
+        HomeTab.dictionaries,
+      );
+    });
+
     test('反向导航和视频 tab 插入只影响视觉索引，不改变启动逻辑 tab', () {
       final List<HomeTab> tabs = homeActiveTabs(videoEnabled: true);
       final HomeTab initial = homeInitialTab(
@@ -121,6 +168,113 @@ void main() {
       expect(item.icon, Icons.photo_library_outlined);
       expect(item.selectedIcon, Icons.photo_library);
       expect(item.label, t.manga_library);
+    });
+  });
+
+  group('module tab visibility (功能模块显隐)', () {
+    test('默认参数下漫画/视频可见（升级用户行为不变）', () {
+      final List<HomeTab> tabs = homeActiveTabs(videoEnabled: true);
+      expect(tabs, contains(HomeTab.manga));
+      expect(tabs, contains(HomeTab.video));
+    });
+
+    test('mangaEnabled=false 只隐藏漫画 tab，其余不动', () {
+      final List<HomeTab> tabs =
+          homeActiveTabs(videoEnabled: true, mangaEnabled: false);
+      expect(tabs, isNot(contains(HomeTab.manga)));
+      expect(tabs, contains(HomeTab.books));
+      expect(tabs, contains(HomeTab.video));
+      expect(tabs, contains(HomeTab.downloads));
+      expect(tabs, contains(HomeTab.dictionaries));
+      expect(tabs, contains(HomeTab.settings));
+    });
+
+    test('booksEnabled=false 只隐藏书架 tab，首页/词典/设置不动', () {
+      final List<HomeTab> tabs =
+          homeActiveTabs(videoEnabled: true, booksEnabled: false);
+      expect(tabs, isNot(contains(HomeTab.books)));
+      expect(tabs, contains(HomeTab.home));
+      expect(tabs, contains(HomeTab.dictionaries));
+      expect(tabs, contains(HomeTab.settings));
+    });
+
+    test('browserExtensionEnabled=false 隐藏扩展 tab', () {
+      final List<HomeTab> withExt =
+          homeActiveTabs(videoEnabled: true, browserExtensionEnabled: true);
+      final List<HomeTab> withoutExt =
+          homeActiveTabs(videoEnabled: true, browserExtensionEnabled: false);
+      expect(withExt, contains(HomeTab.browserExtension));
+      expect(withoutExt, isNot(contains(HomeTab.browserExtension)));
+    });
+
+    test('五个模块全关时首页/词典/设置/下载仍恒在（安全回退面）', () {
+      final List<HomeTab> tabs = homeActiveTabs(
+        videoEnabled: false,
+        booksEnabled: false,
+        mangaEnabled: false,
+        gamesEnabled: false,
+        browserExtensionEnabled: false,
+      );
+      expect(
+        tabs,
+        <HomeTab>[
+          HomeTab.home,
+          HomeTab.downloads,
+          HomeTab.dictionaries,
+          HomeTab.settings,
+        ],
+      );
+    });
+
+    test('downloadsEnabled=false 只隐藏下载 tab，词典仍紧随最后一个媒体库页', () {
+      final List<HomeTab> tabs = homeActiveTabs(
+        videoEnabled: true,
+        gamesEnabled: true,
+        downloadsEnabled: false,
+      );
+      expect(tabs, isNot(contains(HomeTab.downloads)));
+      expect(
+          tabs.indexOf(HomeTab.dictionaries), tabs.indexOf(HomeTab.games) + 1);
+      expect(tabs, contains(HomeTab.settings));
+    });
+
+    test('dictionariesEnabled=false 只隐藏查词 tab，下载仍在', () {
+      final List<HomeTab> tabs = homeActiveTabs(
+        videoEnabled: true,
+        browserExtensionEnabled: true,
+        dictionariesEnabled: false,
+      );
+      expect(tabs, isNot(contains(HomeTab.dictionaries)));
+      expect(tabs, contains(HomeTab.downloads));
+      expect(
+        tabs.indexOf(HomeTab.browserExtension),
+        tabs.indexOf(HomeTab.downloads) + 1,
+      );
+    });
+
+    test('七个模块全关时只剩首页/设置（安全回退面）', () {
+      final List<HomeTab> tabs = homeActiveTabs(
+        videoEnabled: false,
+        booksEnabled: false,
+        mangaEnabled: false,
+        gamesEnabled: false,
+        downloadsEnabled: false,
+        dictionariesEnabled: false,
+        browserExtensionEnabled: false,
+      );
+      expect(tabs, <HomeTab>[HomeTab.home, HomeTab.settings]);
+    });
+
+    test('隐藏 tab 后越界视觉索引回退到恒在的 home（不再是可隐藏的书架）', () {
+      final List<HomeTab> tabs = homeActiveTabs(
+        videoEnabled: false,
+        booksEnabled: false,
+        mangaEnabled: false,
+      );
+      expect(
+        homeTabForVisualIndex(tabs: tabs, visualIndex: 99, reversed: false),
+        HomeTab.home,
+      );
     });
   });
 

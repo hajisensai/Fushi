@@ -12,14 +12,12 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:fushi/src/lookup/desktop_lookup_router.dart';
-import 'package:fushi/src/lookup/global_lookup_controller.dart';
-import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
-import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
+import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
+import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 import 'package:fushi/utils.dart';
 
 /// 测试可见的查词状态探针：让 widget 行为测试直接断言「查词后 _isSearching 已复位」
@@ -38,13 +36,50 @@ abstract class HomeDictionarySearchDebug {
   /// 以便测试 await 失败路径，避免依赖 UI 文本输入的异步链。[writeHistory] 默认
   /// false 以隔离历史写入 / autoRead 等副作用，只验证查词状态机。
   Future<void> debugSearch(String term, {bool writeHistory});
+
+  /// 直接走 HomeDictionaryPage 的生产 `_pushNestedPopup` 路径打开 app 内查词浮层。
+  Future<int> debugOpenPopup(String term);
+
+  /// 走同一条生产路径在当前栈顶之上再压一层**嵌套**浮层（不复用常驻热槽，与用户在
+  /// 弹窗里点词的路径一致）。BUG-2039 ③ 的停驻 realm 接管只在这条路径上发生。
+  Future<int> debugOpenNestedPopup(String term);
+
+  /// 当前顶层浮层的 WebView State 身份（用于断言「再嵌套接管的是同一个 WebView」）。
+  Object? get debugTopPopupWebViewState;
+
+  /// 当前可见栈深度与停驻 realm 数。
+  ({int depth, int parkedRealms}) get debugPopupStackShape;
+
+  /// 当前顶层浮层按 DOM 测量得到的自适应总高；尚未测量/无层时为 null。
+  double? get debugTopPopupAutoFitHeight;
+
+  /// 在当前顶层浮层 WebView 内执行验收脚本（测试功能按钮与 DOM 状态）。
+  Future<dynamic> debugEvaluateTopPopup(String source);
+
+  /// 关闭整条浮层栈，等价于用户从顶层关闭。
+  void debugClosePopup();
 }
 
 /// The body content for the Dictionary tab in the main menu.
 class HomeDictionaryPage extends BaseTabPage {
-  const HomeDictionaryPage({super.key, this.focusSignal});
+  const HomeDictionaryPage({
+    super.key,
+    this.focusSignal,
+    this.showBackButton = false,
+    this.initialQuery,
+  });
 
   final ValueNotifier<int>? focusSignal;
+
+  /// 挂载后立即当作用户输入查一次的文本（不写查词历史）。新手引导用它把练习句子
+  /// 直接喂进本页：源文本条显示整句，用户在真实查词面板里点词。与在搜索框里粘贴
+  /// 这句话走**同一条** [_search] 路径，不另开入口。
+  final String? initialQuery;
+
+  /// 本页作为**独立路由**承载时（查词 tab 被「功能模块」隐藏，热键/桌面取词仍要有
+  /// 落地面，见 HomePage 的 `_revealDictionary`）在页头左侧显示返回箭头。作为 tab
+  /// 内容时恒 false —— 切 tab 不产生路由栈，画一个返回箭头没有可返回的目标。
+  final bool showBackButton;
 
   @override
   BaseTabPageState<HomeDictionaryPage> createState() =>
@@ -98,15 +133,6 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   bool _historyWritten = false;
 
-  /// BUG-1020：本页是否真正对 [DesktopLookupService] 做过一次 start（refcount +1）。
-  /// dispose 的 stop 必须与它配对，**不能**改读可变 pref `desktopClipboardEnabled`——
-  /// 该 pref 会在 initState 与 dispose 之间被用户翻转（页内打开/关闭剪贴板监听开关），
-  /// 令 start 门控与 stop 门控读到不同值 → 页级 stop 吞掉 app 级 hold 的 +1 → 计数归 0
-  /// → OS watcher 被真正拆掉、pref 却仍显示「已开启」→ 剪贴板监听永久哑火直到重启。
-  /// 用实例 bool 记录「本页确实 start 过」，把 stop 与外部可变量彻底解耦，页级 owner
-  /// 恒为严格配对的 +1/-1。
-  bool _desktopLookupStarted = false;
-
   /// 仅测试可见：最近一次派发的查词 future（[debugSearch] 返回它以便
   /// await 失败路径）。生产路径仍 fire-and-forget，不改变行为。
   Future<void>? _lastDispatchedSearch;
@@ -122,22 +148,21 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     _searchFocusNode.addListener(_onFocusChanged);
     widget.focusSignal?.addListener(_onFocusSignal);
     DesktopLookupService.instance.addListener(_onDesktopLookupPending);
-    // TODO-1394 方案B：恢复 1385（BUG-700）的页级引用计数生命周期——本页挂载时
-    // start()、卸载时 stop()（受 desktopClipboardEnabled 门控）；跨 600px 断点重建时
-    // 计数 1→2→1 恒 >0 使 watcher 存活（守卫 home_dictionary_clipboard_watcher_
-    // breakpoint_test.dart）。剪贴板独立面板/瞬态去向所需的「tab 未挂载也监听」由
-    // AppModel.applyDesktopClipboardLifecycle 的 app 级 hold 提供——refcount 让页级 +
-    // app 级两个持有者安全并存（见 desktop_lookup_service.dart 的 _startRefCount）。
-    unawaited(_startDesktopLookupIfEnabled());
-    // TODO-376：无条件消费一次挂载前已排入的 pending（不被 desktopClipboardEnabled
-    // 门控）。桌面悬浮字幕点词由 floatingLyricClickLookup 控制、与剪贴板监听无关：它
-    // 在切到本 tab *之前* 就把待查词排进 pendingText 并 notify，那次 notify 发生在
-    // 本页 addListener 之前收不到。若只在剪贴板开启分支里消费，「开了悬浮字幕点词但
-    // 关了剪贴板监听」的默认用户会 pending 卡死、查词静默丢失。故挂载即排一次后帧
-    // 消费已存在的 pending（有 pending 才消费，无 pending 则 no-op，不会乱消费）。
+    // TODO-376：挂载即消费一次挂载前已排入的 pending。桌面悬浮字幕点词 / 深链在切到
+    // 本 tab *之前* 就把待查词排进 pendingText 并 notify，那次 notify 发生在本页
+    // addListener 之前收不到。故挂载即排一次后帧消费已存在的 pending（有 pending 才
+    // 消费，无 pending 则 no-op，不会乱消费）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _onDesktopLookupPending();
     });
+    // 新手引导的练习句子：挂载后当作用户输入查一次（不写历史），源文本条随即显示
+    // 整句供点词。
+    final String? initialQuery = widget.initialQuery;
+    if (initialQuery != null && initialQuery.trim().isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _search(initialQuery, writeHistory: false);
+      });
+    }
     // TODO-931: 首页查词原本每次 lookup 走 replaceStack 销毁+冷建弹窗 WebView，连点会让某次
     // WebView 析构撞上上一个 WebView 仍在途的 WebResourceRequested 拦截 deferral → Windows
     // inappwebview fork 里 use-after-free 崩溃。与 reader（base_source_page）/ video 一致，
@@ -170,50 +195,12 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     });
   }
 
-  /// TODO-1394 方案B / TODO-1385（BUG-700）：进入查词页时按引用计数 start（受
-  /// desktopClipboardEnabled 门控），离开时 stop（见 dispose）。与 AppModel 的 app 级
-  /// hold 经 [DesktopLookupService] 的 _startRefCount 安全并存（0→1 才真正挂 watcher，
-  /// 1→0 才真正拆）。
-  ///
-  /// BUG-1020：置 [_desktopLookupStarted] 记录本页确实 start 过——同步在 start() 之前
-  /// 置位，与 start() 内部同步完成的 `_startRefCount++`（首个 await 之前）天然配对；
-  /// dispose 只据此 bool 决定是否 stop，不再改读可变 pref。
-  Future<void> _startDesktopLookupIfEnabled() async {
-    final AppModel model = appModelNoUpdate;
-    if (!DesktopLookupService.isDesktop || !model.desktopClipboardEnabled) {
-      return;
-    }
-    _desktopLookupStarted = true;
-    await DesktopLookupService.instance.start(
-      windowMode: model.desktopClipboardWindowMode,
-    );
-    // 已存在的 pending 由 initState 的 post-frame 无条件消费一次（不依赖剪贴板
-    // 是否开启），这里不再重复消费——start 之后的剪贴板/热键命中走 addListener。
-  }
-
   void _onDesktopLookupPending() {
     final DesktopLookupRequest? request =
         DesktopLookupService.instance.pendingRequest;
     if (request == null) return;
-    // spec 2026-07-10 §4 — destination 路由：本页只消费 mainTab 分区；
-    // panel/transient 由 DesktopLookupDispatcher 消费（同一纯函数互斥分区，
-    // 无双消费）。AppModel 未初始化（早帧 / widget 测试桩）时 prefsRepo 为
-    // null，读 destination 会抛——此时按默认 main 消费（与 _seedWarmPopup 的
-    // 「成功路径必已初始化」同范式；TODO-376 挂载即消费的契约不受影响）。
-    final DesktopClipboardDestination destination =
-        appModelNoUpdate.isInitialised
-            ? appModelNoUpdate.desktopClipboardDestination
-            : DesktopClipboardDestination.main;
-    if (resolveDesktopLookupConsumer(
-          origin: request.origin,
-          destination: destination,
-          overlayAvailable: GlobalLookupController.instance.isAvailable,
-        ) !=
-        DesktopLookupConsumer.mainTab) {
-      return;
-    }
     DesktopLookupService.instance.clearPending();
-    _sourceLookupText = request.showSourcePanel ? request.text : '';
+    _sourceLookupText = request.text;
     if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle) {
       _runDesktopLookup(request);
     } else {
@@ -225,13 +212,10 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   void _runDesktopLookup(DesktopLookupRequest request) {
     if (!mounted) return;
-    if (request.foregroundPolicy ==
-        DesktopLookupForegroundPolicy.bringToFront) {
-      unawaited(DesktopLookupService.instance.bringPendingLookupToFront());
-    }
-    // BUG-1025：force——服务层时间窗已判定这是真实查词意图（同词超窗口的重复复制、
-    // 或热键/显式查词），页面不再叠加第二次「同词不重查」内容去重。
-    if (mounted) _search(request.text, autoRead: false, force: true);
+    // 显式查词（深链 / 浏览器扩展 / 悬浮字幕点词）：把主窗唤到前台。
+    unawaited(DesktopLookupService.instance.bringPendingLookupToFront());
+    // force——显式查词意图，即便与上次同词也要重查，页面不叠加「同词不重查」去重。
+    _search(request.text, autoRead: false, force: true);
   }
 
   void _onFocusChanged() {
@@ -266,15 +250,6 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   void dispose() {
     widget.focusSignal?.removeListener(_onFocusSignal);
     DesktopLookupService.instance.removeListener(_onDesktopLookupPending);
-    // TODO-1394 方案B：恢复 1385 页级 stop（refcount -1）。app 级 hold 仍保 watcher 在
-    // tab 卸载后为剪贴板独立面板/瞬态去向运行（见 initState）。BUG-1020：stop 与本页自己
-    // 的 start 严格配对——只据 [_desktopLookupStarted] 判定，**不**改读可变 pref
-    // desktopClipboardEnabled（该 pref 会在 start 与 dispose 之间被翻转，导致页级 stop
-    // 吞掉 app 级 hold 的计数、把 OS watcher 拆死而 pref 仍显示开启 → 永久哑火）。
-    if (_desktopLookupStarted) {
-      _desktopLookupStarted = false;
-      unawaited(DesktopLookupService.instance.stop());
-    }
     _searchFocusNode.removeListener(_onFocusChanged);
     appModelNoUpdate.dictionarySearchAgainNotifier.removeListener(_searchAgain);
     appModelNoUpdate.dictionaryEntriesNotifier
@@ -287,8 +262,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // Overlay 重建 [_buildPopupOverlay]，杜绝销毁期用失效 State 重建浮层（照搬 video）。
     final OverlayEntry? entry = _popupOverlayEntry;
     if (entry != null) {
-      if (entry.mounted) entry.remove();
-      entry.dispose();
+      removeAndDisposeOwnedOverlayEntry(entry);
       _popupOverlayEntry = null;
     }
     // TODO-058：弹窗 controller 现持有挂起层兜底 Timer，dispose 取消防泄漏。
@@ -380,17 +354,26 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       child: FushiFileDropTarget(
         debugLabel: 'home-dictionary',
         onDrop: _handleDictionaryHomeDrop,
-        child: DesktopContentLayout(
-          kind: DesktopContentKind.dictionary,
-          child: Column(
-            children: [
-              if (!isCupertinoPlatform(context)) _buildPageHeader(),
-              _buildSearchHeader(),
-              // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
-              const SyncProgressBanner(),
-              Expanded(child: _buildBody()),
-            ],
-          ),
+        // BUG-1658：页头必须在 DesktopContentLayout 外——dictionary 档的 16/24px
+        // 侧向留白只属于查词正文（文字流贴边可读性差），叠到页头上会让本页大标题
+        // 相对书架/视频/游戏等库页整体右移（用户实报「每个页面的页头宽度不一样」）。
+        child: Column(
+          children: [
+            if (!isCupertinoPlatform(context)) _buildPageHeader(),
+            Expanded(
+              child: DesktopContentLayout(
+                kind: DesktopContentKind.dictionary,
+                child: Column(
+                  children: [
+                    _buildSearchHeader(),
+                    // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
+                    const SyncProgressBanner(),
+                    Expanded(child: _buildBody()),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -419,6 +402,14 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   Widget _buildPageHeader() {
     return FushiPageHeader(
       title: t.nav_lookup,
+      leading: widget.showBackButton
+          ? FushiIconButton(
+              key: const ValueKey<String>('home-dictionary-route-back'),
+              tooltip: t.back,
+              icon: Icons.arrow_back,
+              onTap: () => Navigator.of(context).maybePop(),
+            )
+          : null,
       actions: <Widget>[
         FushiIconButton(
           tooltip: t.clear_dictionary_title,
@@ -786,6 +777,51 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     return _lastDispatchedSearch ?? Future<void>.value();
   }
 
+  @override
+  Future<int> debugOpenPopup(String term) => _pushNestedPopup(
+        term,
+        const Rect.fromLTWH(180, 180, 24, 24),
+        reuseWarmSlot: true,
+      );
+
+  @override
+  Future<int> debugOpenNestedPopup(String term) => _pushNestedPopup(
+        term,
+        const Rect.fromLTWH(220, 220, 24, 24),
+        reuseWarmSlot: false,
+      );
+
+  @override
+  Object? get debugTopPopupWebViewState {
+    final int index = _popup.lastVisibleIndex;
+    return index < 0 ? null : _popup.entries[index].webViewKey.currentState;
+  }
+
+  @override
+  ({int depth, int parkedRealms}) get debugPopupStackShape => (
+        depth: _popup.lastVisibleIndex + 1,
+        parkedRealms: _popup.parkedRealms.length,
+      );
+
+  @override
+  double? get debugTopPopupAutoFitHeight {
+    final int index = _popup.lastVisibleIndex;
+    return index < 0 ? null : _popup.entries[index].autoFitHeight;
+  }
+
+  @override
+  Future<dynamic> debugEvaluateTopPopup(String source) async {
+    final int index = _popup.lastVisibleIndex;
+    if (index < 0) return null;
+    return _popup.entries[index].webViewKey.currentState?.debugEval(source);
+  }
+
+  @override
+  void debugClosePopup() {
+    final int index = _popup.lastVisibleIndex;
+    if (index >= 0) _popNestedPopupAt(index);
+  }
+
   // ── search results with nested popups ──────────────────────────────
 
   Widget _buildSearchResultBody() {
@@ -807,7 +843,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
             },
           ),
         // 根因修复（BUG-054）：结果区 WebView 仍整块在中和器下渲染（净缩放=1），否则被全局
-        // 「界面大小」FittedBox 拉糊。剪贴板文本条是普通 app UI，留在中和器外继续吃界面大小。
+        // 「界面大小」FittedBox 拉糊。源文本条是普通 app UI，留在中和器外继续吃界面大小。
         // TODO-617：嵌套弹窗栈不再挂在此页内 Stack（会被结果子区域 / DesktopContentLayout
         // 限宽 + padding + 默认 hardEdge 裁住），改由 [_buildPopupOverlay] 渲染在根 Overlay。
         Expanded(
@@ -878,8 +914,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     if (_popup.entries.isEmpty) {
       final OverlayEntry? entry = _popupOverlayEntry;
       if (entry != null) {
-        if (entry.mounted) entry.remove();
-        entry.dispose();
+        removeAndDisposeOwnedOverlayEntry(entry);
         _popupOverlayEntry = null;
       }
       return;
@@ -928,24 +963,20 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                   hiddenByDialog: lookupPopupHiddenByDialog,
                 ))
                   Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: () => _popNestedPopupAt(0),
-                      // TODO-1052：桌面对齐手机——barrier 上水平拖过阈关一层（逐层关）。
-                      // 仅当滑动关闭开关开启时挂横拖（否则只 onTap）。竞技场分流单击/横拖。
-                      onHorizontalDragStart:
-                          ReaderFushiSource.instance.enableSwipeToClose
-                              ? _onBarrierHorizontalDragStart
-                              : null,
-                      onHorizontalDragUpdate:
-                          ReaderFushiSource.instance.enableSwipeToClose
-                              ? _onBarrierHorizontalDragUpdate
-                              : null,
-                      onHorizontalDragEnd:
-                          ReaderFushiSource.instance.enableSwipeToClose
-                              ? _onBarrierHorizontalDragEnd
-                              : null,
-                      child: const ColoredBox(color: Colors.transparent),
+                    // BUG-1757：barrier 收口成唯一原语 [LookupDismissBarrier]，
+                    // 横拖走它内部不入竞技场的 Listener 旁路 + 可单测的判轴。
+                    child: LookupDismissBarrier(
+                      // 本表面不按落点分流，点真空白一律关栈根层。
+                      onTapDismiss: (_) => _popNestedPopupAt(0),
+                      // TODO-1052：水平拖过阈关一层（逐层关）。
+                      onSwipeDismiss: _dismissTopNestedPopup,
+                      swipeEnabled:
+                          ReaderFushiSource.instance.enableSwipeToClose,
+                      sensitivity:
+                          ReaderFushiSource.instance.dismissSwipeSensitivity,
+                      // 弹窗可见时 barrier 吃掉全部指针，页面根收不到——「浮窗矩形
+                      // 之外」按鼠标非主键这半边只能在这里接（见钩子文档）。
+                      onNonPrimaryButtonDown: onDismissBarrierNonPrimaryButton,
                     ),
                   ),
                 // 搜索期加载占位卡（搜索→就绪才显示，与书内同观感）。
@@ -956,6 +987,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                   ),
                 for (int i = 0; i < _popup.entries.length; i++)
                   _buildNestedPopupLayer(i, screen),
+                ...buildParkedRealmLayers(screen: screen, controller: _popup),
               ],
             );
           },
@@ -981,26 +1013,11 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// TODO-931：是否有任何**可见**弹窗层（常驻隐藏热槽不算）。
   bool get _hasVisiblePopup => _popup.hasVisiblePopup;
 
-  /// TODO-1052：查词浮层 barrier 上「桌面水平拖过阈关一层」的纯状态追踪器（与
-  /// reader/audiobook、video、texthooker 共用 [BarrierSwipeDismissTracker]，阈值/
-  /// 位移单一真相源、不漂移）。仅当 [ReaderFushiSource.enableSwipeToClose] 开启时挂
-  /// 到 barrier（否则只 onTap，与旧行为一致）。过阈关一层（逐层关，非清整栈）。
-  final BarrierSwipeDismissTracker _barrierSwipe = BarrierSwipeDismissTracker();
-
-  void _onBarrierHorizontalDragStart(DragStartDetails details) {
-    _barrierSwipe.begin();
-  }
-
-  void _onBarrierHorizontalDragUpdate(DragUpdateDetails details) {
-    _barrierSwipe.update(details.delta.dx);
-  }
-
-  void _onBarrierHorizontalDragEnd(DragEndDetails details) {
-    if (_barrierSwipe.end(
-      sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
-    )) {
-      _popNestedPopupAt(_popup.lastVisibleIndex);
-    }
+  /// TODO-1052：查词浮层 barrier 上「水平拖过阈关一层」。判轴/累积/阈值全部收在
+  /// [LookupDismissBarrier] 内（BUG-1757：横拖不进手势竞技场）。过阈关一层（逐层
+  /// 关，非清整栈；清整栈仍是点真空白的 tap）。
+  void _dismissTopNestedPopup() {
+    _popNestedPopupAt(_popup.lastVisibleIndex);
   }
 
   void _popNestedPopupAt(int index) {

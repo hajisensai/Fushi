@@ -37,7 +37,6 @@ SyncOrchestrator _orchestrator(
       syncAudioBookFiles: false,
       syncVideoFiles: syncVideoFiles,
       syncDictionary: false,
-      syncLocalAudio: false,
     );
 
 /// Seeds one local-file video book with a real file on disk. Returns its uid.

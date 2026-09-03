@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/models/app_model.dart';
 
 import 'helpers/focus_driver.dart';
@@ -42,7 +42,7 @@ void main() {
     int totalPersistFailed = 0;
 
     try {
-      app.main();
+      await launchFushiTestApp();
 
       final bool homeReady = await waitForHome(tester);
       expect(homeReady, isTrue, reason: 'Home must render within 90s');

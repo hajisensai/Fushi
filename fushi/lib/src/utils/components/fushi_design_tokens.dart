@@ -3,6 +3,22 @@ import 'package:flutter/material.dart';
 /// 预留文字块高度时统一加的余量（行高取整、字体 metrics 与理论值的零头）。
 const double kTextBlockSlack = 4.0;
 
+/// 滚动条 thumb 的粗细（全局主题 + 9 处 [RawScrollbar] 的唯一真相源）。
+///
+/// BUG-1997：主题此前只给亮色钉了这个值、深色留 `null`，于是深色退回 Material 的
+/// 默认 `_kScrollbarThickness = 8`。桌面端 `MaterialScrollBehavior` 给**每个**垂直
+/// Scrollable 无条件包一层 `Scrollbar`，加上全局 `thumbVisibility: true`，结果是
+/// 深色下每个列表右侧常驻一条 8+2(crossAxisMargin) = 10px 的覆盖式滚动条——它不占
+/// 布局，直接盖在内容上，而且默认 `interactive`，**连点击一起吞掉**（字幕面板最右
+/// 那颗星就是这么被压住并点不动的）。
+const double kFushiScrollbarThickness = 3.0;
+
+/// 滚动条实际占据的横向宽度 = thumb 粗细 + Material 的 `crossAxisMargin`(2)。
+///
+/// 需要给滚动条让出独立通道（gutter）的列表按这个值内缩内容，别写死数字——它必须
+/// 跟着 [kFushiScrollbarThickness] 走，否则下次调粗细又会压回内容上。
+const double kFushiScrollbarGutter = kFushiScrollbarThickness + 2.0;
+
 /// 一行 [style] 文字在当前文字缩放下占的实际高度。
 ///
 /// BUG-1184：有一类布局必须**先给出**「能放下 N 行文字」的固定高度——网格的

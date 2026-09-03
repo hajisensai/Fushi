@@ -1,0 +1,93 @@
+# Self-hosted development-activity chart.
+#
+# Renders docs/assets/dev-activity.svg: weekly commit volume on `develop` plus
+# the release cadence of the three update channels (debug / beta / stable).
+#
+# Why the branch handling matters: this workflow runs on `main` (scheduled
+# workflows only ever run from the default branch) but all development happens
+# on `develop`. The checkout therefore uses fetch-depth: 0 and the ref is passed
+# to the generator explicitly, so the SVG committed to `main` charts `develop`'s
+# activity. The generator hard-fails when the ref does not resolve rather than
+# emitting an empty chart that would read as "no development happened".
+#
+# Release-channel safety: this workflow ONLY commits docs/assets/dev-activity.svg.
+# It never creates releases, tags, or touches any release channel. Commits are
+# pushed with GITHUB_TOKEN, which by GitHub design does NOT trigger downstream
+# workflows (no debug/prerelease build is kicked); [skip ci] is added as well.
+name: Update Dev Activity Chart
+
+on:
+  schedule:
+    # Daily at 03:47 UTC, deliberately offset from the star-history workflow
+    # (03:17) so the two bots do not race each other's push to main.
+    - cron: '47 3 * * *'
+  workflow_dispatch:
+
+# Serialize runs so two invocations never race the commit/push.
+concurrency:
+  group: dev-activity
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  # Needed to read release.yml's run history, which is the only record of how
+  # many debug builds shipped: every debug publish overwrites one rolling tag,
+  # so the Releases API reports a single release regardless of build count.
+  actions: read
+
+jobs:
+  update-dev-activity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # Full history for every branch: the generator reads origin/develop.
+          fetch-depth: 0
+
+      - name: Ensure the development branch is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/develop:refs/remotes/origin/develop
+          git rev-parse --verify 'origin/develop^{commit}'
+
+      - name: Unit tests
+        run: python3 tool/gen_dev_activity_svg_test.py
+
+      - name: Generate development activity SVG
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 tool/gen_dev_activity_svg.py \
+            --repo "${{ github.repository }}" \
+            --branch origin/develop \
+            --out docs/assets/dev-activity.svg
+
+      - name: Commit refreshed chart
+        shell: bash
+        run: |
+          # Capture git status into a variable before testing it. Inlining the
+          # command substitution into `[ -z "$(...)" ]` turns a git failure
+          # (non-zero exit, empty stdout) into "nothing changed" and exits
+          # green -- a failure translated into a wrong success.
+          set -euo pipefail
+          status="$(git status --porcelain docs/assets/dev-activity.svg)"
+          if [ -z "$status" ]; then
+            echo "Dev activity SVG unchanged; nothing to commit."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/assets/dev-activity.svg
+          git commit -m 'chore(readme): refresh development activity chart [skip ci]'
+          branch="$(git rev-parse --abbrev-ref HEAD)"
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:$branch"; then
+              exit 0
+            fi
+            echo "push rejected (attempt $attempt); rebasing onto origin/$branch"
+            git pull --rebase --autostash origin "$branch"
+          done
+          echo "could not push the refreshed chart after 3 attempts" >&2
+          exit 1

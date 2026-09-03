@@ -41,12 +41,18 @@ List<String> _libraryHeaderGuardProblems(String header) {
   if (!header.contains('title: GameSectionTabs(')) {
     problems.add('missing segmented title');
   }
-  if (!header.contains('actions: <Widget>[')) {
-    problems.add('missing actions block');
+  // 提取完整性锚。原先由 `actions: <Widget>[` 兼任（证明括号配平提取穿过了 title
+  // 走到 header 结尾、没在 title 前截断）；统计入口收敛到首页后 actions 块整块撤
+  // 掉，锚点改挂 GameSectionTabs 的最后一个具名参数，继续守同一件事。
+  if (!header.contains('onSelectSettings: _showSettings')) {
+    problems.add('truncated header');
   }
-  if (_occurrences(header, 'onTap: _openStatistics') != 1) {
-    problems.add('statistics action must appear exactly once');
+  // 统计入口已收敛到首页 dashboard（2026-09-01），页头不得再挂。
+  if (_occurrences(header, 'onTap: _openStatistics') != 0) {
+    problems.add('statistics action must not appear');
   }
+  // 踩坑换来、原样保留：捕获入口与下方 GameSectionTabs「工作台」分段去向完全
+  // 相同，纯冗余，不得回潮到页头。
   if (_occurrences(header, 'onTap: _showMonitor') != 0) {
     problems.add('duplicate capture action');
   }
@@ -105,11 +111,11 @@ void main() {
       expect(
         _libraryHeaderGuardProblems(header),
         isEmpty,
-        reason: '完整 actions 块只允许一个统计动作，不得重复捕获入口',
+        reason: '页头不得挂统计动作（已收敛到首页），也不得让捕获入口回潮',
       );
     });
 
-    test('动作守卫能杀死丢动作、重复动作与捕获入口回潮变异', () {
+    test('动作守卫能杀死截断、统计入口回潮与捕获入口回潮变异', () {
       final int libraryStart = src.indexOf('Widget _buildLibrary(');
       final String header = _extractInvocation(
         src,
@@ -118,32 +124,44 @@ void main() {
       );
       expect(header, isNotEmpty);
 
-      final String missingAction = header.replaceFirst(
-          'onTap: _openStatistics', 'onTap: _showDiagnostics');
+      // 播种锚从已撤掉的 `onTap: _openStatistics` 改成仍在的 title 参数——旧锚在
+      // 源码里不存在时 replaceFirst 是空操作，三条变异会全变成「拿原文比原文」的
+      // 空转，守卫看着绿其实什么都没杀。
+      const String seed = 'title: GameSectionTabs(';
+      expect(header.contains(seed), isTrue, reason: '变异播种锚必须真实存在');
+
+      final String missingTitle = header.replaceFirst(seed, 'title: Text(');
       expect(
-        _libraryHeaderGuardProblems(missingAction),
-        contains('statistics action must appear exactly once'),
-        reason: '删掉唯一统计动作的 mutation 必须变红',
+        _libraryHeaderGuardProblems(missingTitle),
+        contains('missing segmented title'),
+        reason: '把分段页签标题换掉的 mutation 必须变红',
       );
 
-      final String duplicateAction = header.replaceFirst(
-        'onTap: _openStatistics',
-        'onTap: _openStatistics /* mutation */ onTap: _openStatistics',
+      final String truncated = header.substring(0, header.indexOf(seed));
+      expect(
+        _libraryHeaderGuardProblems(truncated),
+        contains('truncated header'),
+        reason: 'header 提取在 title 前截断的 mutation 必须变红',
+      );
+
+      final String statisticsBack = header.replaceFirst(
+        seed,
+        'actions: <Widget>[FushiIconButton(onTap: _openStatistics)], $seed',
       );
       expect(
-        _libraryHeaderGuardProblems(duplicateAction),
-        contains('statistics action must appear exactly once'),
-        reason: '重复统计动作的 mutation 必须变红',
+        _libraryHeaderGuardProblems(statisticsBack),
+        contains('statistics action must not appear'),
+        reason: '把统计入口塞回页头的 mutation 必须变红',
       );
 
       final String duplicateCapture = header.replaceFirst(
-        'onTap: _openStatistics',
-        'onTap: _openStatistics /* mutation */ onTap: _showMonitor',
+        seed,
+        'actions: <Widget>[FushiIconButton(onTap: _showMonitor)], $seed',
       );
       expect(
         _libraryHeaderGuardProblems(duplicateCapture),
         contains('duplicate capture action'),
-        reason: '把捕获入口重新塞回 actions 的 mutation 必须变红',
+        reason: '把捕获入口重新塞回页头的 mutation 必须变红',
       );
     });
 

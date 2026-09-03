@@ -14,8 +14,24 @@ import 'package:fushi/src/sync/pref_redaction_policy.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
+
+/// 本地备份导出物文件名口径。存储页与导出前清扫共用，避免一边展示、一边认不出。
+///
+/// 形状 = [BackupService.defaultFilename] 产出的 `fushi-backup-<日期>.fushi.zip`
+/// （`hibiki-backup-*.hibiki.zip` 是改名前的老包）。
+///
+/// **刻意用「前缀 + 后缀」双重限定，而不是只认 `.fushi.zip`**：临时目录里还可能躺着
+/// 推荐词典包 `fushi-recommended.fushi.zip` 这类同后缀、但绝不该被当成备份清掉的文件。
+/// 这条理由必须住在真相源这里——它以前留在 `backup.part.dart` 的清扫函数头上，正则搬
+/// 过来时被落下了，于是唯一定义这个口径的地方反而不知道自己为什么长这样。
+final RegExp backupArchiveNamePattern =
+    RegExp(r'^(fushi|hibiki)-backup-.*\.(fushi|hibiki)\.zip$');
+
+bool isBackupArchiveName(String name) =>
+    backupArchiveNamePattern.hasMatch(name);
 
 /// Optional file-tree categories a backup export can include. The database
 /// (`fushi.db`) is NOT a category - it carries every table's metadata
@@ -502,6 +518,7 @@ class BackupService {
     'src:reader_fushi:app_ui_fonts',
     'src:reader_fushi:dict_fonts',
     'src:reader_fushi:video_sub_fonts',
+    'src:reader_fushi:game_lookup_fonts',
   ];
 
   /// Preference key holding the favorite-sentence JSON list (mirrors
@@ -547,9 +564,11 @@ class BackupService {
     'manga_trusted_signers',
     'sync_baselines',
     'fushi_paired_peers',
+    'web_mine_queue',
   ];
 
   static const List<String> _deviceLocalTablesParentFirst = <String>[
+    'web_mine_queue',
     'sync_baselines',
     'fushi_paired_peers',
     'manga_extension_stores',
@@ -1035,11 +1054,16 @@ class BackupService {
   /// from the DB copy so restore never resurrects a "ghost video" with no file)
   /// AND their `videos/` content. Ignored when the [BackupCategory.videos]
   /// category itself is excluded (then no video rows or files travel at all).
+  ///
+  /// [onProgress] 报打包阶段的确定进度（0..1，已写入字节 / 待打包总字节）。它只在
+  /// 真正写 zip 时才开始走 —— 之前的 VACUUM INTO、按分类裁剪行、枚举待打包文件
+  /// 都没有可分的量，调用方在收到第一次回调前应显示不确定动画。
   Future<BackupMeta> createBackup(
     String outputPath, {
     Set<BackupCategory>? categories,
     Set<String>? bookKeys,
     Set<String>? videoKeys,
+    void Function(double progress)? onProgress,
   }) async {
     bool wants(BackupCategory c) =>
         categories == null || categories.contains(c);
@@ -1305,11 +1329,21 @@ class BackupService {
 
       final String metaJson =
           const JsonEncoder.withIndent('  ').convert(meta.toJson());
+      // 分母：files 已经是一张平铺的 archivePath→磁盘路径表，逐项求大小即可。
+      final int totalBytes = _totalSourceBytes(files);
+      int writtenBytes = 0;
       await _writeBackupZipInIsolate(
         outputPath: outputPath,
         metaName: _metaName,
         metaJson: metaJson,
         archivePathToSource: files,
+        onBytes: onProgress == null
+            ? null
+            : (int deltaBytes) {
+                writtenBytes += deltaBytes;
+                final double fraction = writtenBytes / totalBytes;
+                onProgress(fraction > 1.0 ? 1.0 : fraction);
+              },
       );
 
       return meta;
@@ -3472,24 +3506,84 @@ class BackupService {
   /// epub/audio are already compressed and a full library can be GB-scale, so
   /// streaming-store keeps memory flat and the UI isolate free. A mid-way
   /// failure deletes the half-written archive so it is never mistaken for valid.
+  /// 待打包总字节。缺失 / 无权限的源按 0 计，与 worker 里 `existsSync` 跳过同口径；
+  /// 恒 ≥1 以免空备份除零（与导入侧 [_totalContentBytes] 同款）。
+  static int _totalSourceBytes(Map<String, String> archivePathToSource) {
+    int total = 0;
+    for (final String source in archivePathToSource.values) {
+      try {
+        final File file = File(source);
+        if (file.existsSync()) total += file.lengthSync();
+      } catch (_) {
+        // 扫描期被删 / 无权限：worker 同样会跳过它，分母不计它。
+      }
+    }
+    return total > 0 ? total : 1;
+  }
+
   static Future<void> _writeBackupZipInIsolate({
     required String outputPath,
     required String metaName,
     required String metaJson,
     required Map<String, String> archivePathToSource,
+    void Function(int deltaBytes)? onBytes,
   }) async {
-    await Isolate.run(() async {
+    // 进度回传口：闭包捕获 SendPort（SendPort 可跨 isolate 传递），Isolate.run 的
+    // 错误传播与 crash-safety 一字不改。archive 3.6.1 的 addFile 没有 chunk 级
+    // 回调，所以粒度只能到「每个文件写完」——对单个超大视频仍会停一段时间。
+    ReceivePort? port;
+    SendPort? sendPort;
+    if (onBytes != null) {
+      port = ReceivePort();
+      port.listen((dynamic message) {
+        if (message is int) onBytes(message);
+      });
+      sendPort = port.sendPort;
+    }
+    try {
+      await _runBackupZipWorker(
+        outputPath: outputPath,
+        metaName: metaName,
+        metaJson: metaJson,
+        archivePathToSource: archivePathToSource,
+        sendPort: sendPort,
+      );
+    } finally {
+      port?.close();
+    }
+  }
+
+  /// [_writeBackupZipInIsolate] 的 worker，**必须留在这个独立作用域里**。
+  ///
+  /// Dart 按**作用域**分配 Context，闭包序列化时整个 Context 一起发往子 isolate。
+  /// 把 `Isolate.run(...)` 内联回调用方，闭包就会连带捕获那里的 `port`
+  /// （`_ReceivePortImpl`，native 句柄）和 `onBytes`（一路捕获到 `AppModel` →
+  /// `FushiDatabase` → `DynamicLibrary`）—— 两者都不可发送，spawn 当场抛
+  /// `Illegal argument in isolate message`，导出备份 100% 失效（BUG-1929）。
+  ///
+  /// 本函数的 Context 只有下面五个形参，全部可跨 isolate 传递（String / Map /
+  /// SendPort）。**别把它内联回去**，也别在这里引用任何外层变量。
+  static Future<void> _runBackupZipWorker({
+    required String outputPath,
+    required String metaName,
+    required String metaJson,
+    required Map<String, String> archivePathToSource,
+    required SendPort? sendPort,
+  }) {
+    return Isolate.run(() async {
       final ZipFileEncoder encoder = ZipFileEncoder();
       encoder.create(outputPath);
       try {
         final List<int> metaBytes = utf8.encode(metaJson);
-        encoder
-            .addArchiveFile(ArchiveFile(metaName, metaBytes.length, metaBytes));
+        encoder.addArchiveFile(
+            ArchiveFile(metaName, metaBytes.length, metaBytes));
         for (final MapEntry<String, String> entry
             in archivePathToSource.entries) {
           final File file = File(entry.value);
           if (!file.existsSync()) continue;
+          final int size = file.lengthSync();
           await encoder.addFile(file, entry.key, ZipFileEncoder.STORE);
+          sendPort?.send(size);
         }
         encoder.closeSync();
       } catch (_) {
@@ -3577,6 +3671,11 @@ class BackupService {
     void Function(int deltaBytes)? onBytes,
   }) async {
     final Directory targetRoot = Directory(dictionaryResourceDirectory);
+    // 引擎常驻映射着每本词典的 hash.table / blobs.bin（native map_rd）；Windows 上
+    // 只要 view 还活着，删资源根一律 ERROR_USER_MAPPED_FILE，整个恢复流程就断在
+    // 这一行（BUG-1756）。恢复流程收尾必定重启 app（backupImportRestart），故这里
+    // 把引擎清空不需要再装回来。
+    FushiDicts.releaseAllMappings();
     if (await targetRoot.exists()) {
       await targetRoot.delete(recursive: true);
     }

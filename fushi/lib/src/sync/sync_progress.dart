@@ -38,7 +38,7 @@ enum SyncPhase {
 /// [itemIndex] is the number of items already completed in this phase (0-based
 /// at the start of the current item), [itemTotal] the phase's item count.
 /// [fileFraction] is the in-flight large-file transfer fraction (0..1) for the
-/// current item, or null when there is no measurable transfer (small JSON).
+/// current item, or null when the item is atomic (for example, small JSON).
 class SyncProgress {
   const SyncProgress({
     required this.phase,
@@ -54,12 +54,19 @@ class SyncProgress {
   final String? title;
   final double? fileFraction;
 
-  /// 0..1 progress within the current phase, blending the in-flight file
-  /// fraction into the completed-item count. Null when the phase has no items
-  /// (nothing to do) so the UI can fall back to an indeterminate bar.
+  /// 0..1 progress within the current phase.
+  ///
+  /// A measurable file transfer blends its byte fraction into the completed
+  /// item count. An atomic item has no inner fraction, so its visible ordinal
+  /// is the only progress signal and counts as one whole step. This keeps the
+  /// bar consistent with the adjacent `(k/N)` label: `(2/2)` must render 100%,
+  /// not 50% (BUG-1973).
+  ///
+  /// Null when the phase has no items (nothing to do), so the UI can fall back
+  /// to an indeterminate bar.
   double? get fraction {
     if (itemTotal <= 0) return null;
-    final double file = (fileFraction ?? 0).clamp(0.0, 1.0);
+    final double file = (fileFraction ?? 1).clamp(0.0, 1.0);
     return ((itemIndex + file) / itemTotal).clamp(0.0, 1.0);
   }
 }

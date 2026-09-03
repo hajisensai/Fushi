@@ -49,6 +49,7 @@ void main() {
           _f('Show - 03.ja.srt'),
         ],
         episode: 3,
+        soleTarget: false,
       );
       expect(best?.name, 'Show - 03.ja.srt');
     });
@@ -57,22 +58,54 @@ void main() {
       final JimakuFile? best = pickBestSubtitleFile(
         <JimakuFile>[_f('Show - 03.ja.srt'), _f('Show - 03.zh.srt')],
         episode: 3,
+        soleTarget: false,
         preferredLanguage: 'zh',
       );
       expect(best?.name, 'Show - 03.zh.srt');
     });
 
-    test('无一命中集号 → 退回全体（尽力而为）', () {
+    test('BUG-1695 未编号字幕 + 唯一目标 → 采用（剧场版/整季单文件）', () {
       final JimakuFile? best = pickBestSubtitleFile(
         <JimakuFile>[_f('Season pack.ja.srt')],
         episode: 3,
+        soleTarget: true,
       );
       expect(best?.name, 'Season pack.ja.srt');
     });
 
+    test('BUG-1695 未编号字幕 + 多目标 → null（不能让 N 集共用一个文件）', () {
+      expect(
+        pickBestSubtitleFile(
+          <JimakuFile>[_f('Season pack.ja.srt')],
+          episode: 3,
+          soleTarget: false,
+        ),
+        isNull,
+        reason: '认不出集号时给每一集都发同一个文件，是把冲突静默变成错答案',
+      );
+    });
+
+    test('BUG-1695 字幕侧有集号但没有这一集 → null，即便只有一个目标', () {
+      // 绝对集号编号的 S2 条目（13-24）撞上本地 01-12 就是这个形状。
+      // 旧实现在这里退回「列表第一个」，于是第 3 集拿到第 13 集的字幕。
+      expect(
+        pickBestSubtitleFile(
+          <JimakuFile>[_f('Show - 13.ja.srt'), _f('Show - 14.ja.srt')],
+          episode: 3,
+          soleTarget: true,
+        ),
+        isNull,
+        reason: '集号冲突（错季/绝对集号/选错条目）绝不能用别集顶替',
+      );
+    });
+
     test('无文本字幕候选 → null', () {
       expect(
-        pickBestSubtitleFile(<JimakuFile>[_f('cover.png')], episode: 1),
+        pickBestSubtitleFile(
+          <JimakuFile>[_f('cover.png')],
+          episode: 1,
+          soleTarget: true,
+        ),
         isNull,
       );
     });
@@ -153,17 +186,26 @@ void main() {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
     });
 
-    test('逐集列文件→挑最佳→下载落盘→回调持久化', () async {
-      // Mock：/entries/7/files?episode=N 回该集的 srt 文件；下载 url 回文本字节。
+    test('整批只列一次文件→逐集挑最佳→下载落盘→回调持久化', () async {
+      // Mock：/entries/7/files 回**整个条目**的 srt 列表；下载 url 回文本字节。
+      // BUG-1695 起不再带 `episode=`：服务端那道过滤是文件名启发式，会遮住
+      // 「字幕侧到底有哪些集号」，判不出集号冲突。
+      int listCalls = 0;
       final MockClient mock = MockClient((http.Request req) async {
         if (req.url.path.endsWith('/entries/7/files')) {
-          final String ep = req.url.queryParameters['episode'] ?? '0';
+          listCalls++;
+          expect(
+            req.url.queryParameters.containsKey('episode'),
+            isFalse,
+            reason: '列文件不得再按服务端启发式预过滤',
+          );
           return http.Response(
             jsonEncode(<Map<String, dynamic>>[
-              <String, dynamic>{
-                'name': 'Show - 0$ep.ja.srt',
-                'url': 'https://x/Show-$ep.ja.srt',
-              },
+              for (final int ep in <int>[1, 2])
+                <String, dynamic>{
+                  'name': 'Show - 0$ep.ja.srt',
+                  'url': 'https://x/Show-$ep.ja.srt',
+                },
             ]),
             200,
           );
@@ -198,25 +240,22 @@ void main() {
       expect(File(results[0].subtitlePath!).existsSync(), isTrue);
       expect(results[0].subtitlePath, isNot(results[1].subtitlePath));
       expect(persisted, hasLength(2), reason: 'onItemDone 对成功集回调持久化');
+      expect(listCalls, 1, reason: '整批一次列文件，不是 targets×entries 次');
     });
 
     test('无匹配集记 noMatch，不中断其它集', () async {
+      // 条目里只有第 1 集的字幕。
       final MockClient mock = MockClient((http.Request req) async {
         if (req.url.path.endsWith('/entries/7/files')) {
-          final String ep = req.url.queryParameters['episode'] ?? '0';
-          // 只有第 1 集有字幕；第 2 集回空。
-          if (ep == '1') {
-            return http.Response(
-              jsonEncode(<Map<String, dynamic>>[
-                <String, dynamic>{
-                  'name': 'Show - 01.ja.srt',
-                  'url': 'https://x/1'
-                },
-              ]),
-              200,
-            );
-          }
-          return http.Response('[]', 200);
+          return http.Response(
+            jsonEncode(<Map<String, dynamic>>[
+              <String, dynamic>{
+                'name': 'Show - 01.ja.srt',
+                'url': 'https://x/1'
+              },
+            ]),
+            200,
+          );
         }
         return http.Response('1\n00:00:01,000 --> 00:00:02,000\nhi\n', 200);
       });
@@ -234,6 +273,90 @@ void main() {
       );
       expect(results[0].status, JimakuBatchStatus.done);
       expect(results[1].status, JimakuBatchStatus.noMatch);
+    });
+
+    test('BUG-1695 整季未编号字幕不得被全批共用（旧实现每集都拿同一个文件）', () async {
+      // 条目里只有一个认不出集号的文件。旧实现：3 集全部 done，且 3 个 bookUid
+      // 各存一份**同一个** `Sousou no Frieren.ja.srt`，用户要逐集手动纠正。
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path.endsWith('/entries/7/files')) {
+          return http.Response(
+            jsonEncode(<Map<String, dynamic>>[
+              <String, dynamic>{
+                'name': 'Sousou no Frieren.ja.srt',
+                'url': 'https://x/pack',
+              },
+            ]),
+            200,
+          );
+        }
+        return http.Response('1\n00:00:01,000 --> 00:00:02,000\nhi\n', 200);
+      });
+      final JimakuClient client = JimakuClient(apiKey: 'k', client: mock);
+      addTearDown(client.close);
+
+      final List<JimakuBatchItem> results = await runJimakuBatch(
+        client: client,
+        entryIds: <int>[7],
+        targets: <JimakuBatchTarget>[
+          _t('video/a', '/v/Show - 01.mkv', sortIndex: 0),
+          _t('video/b', '/v/Show - 02.mkv', sortIndex: 1),
+          _t('video/c', '/v/Show - 03.mkv', sortIndex: 2),
+        ],
+        saveDirectory: tempDir.path,
+      );
+      expect(
+        results.map((JimakuBatchItem i) => i.status),
+        everyElement(JimakuBatchStatus.noMatch),
+      );
+      expect(
+        results.first.message,
+        'jimaku subtitles carry no episode numbers',
+        reason: '「为什么没配上」要说清，不能只给一个空结果',
+      );
+      expect(
+        tempDir.listSync(),
+        isEmpty,
+        reason: '一个错字幕都不许落盘',
+      );
+    });
+
+    test('BUG-1695 绝对集号条目（13-24）撞本地 01-12 → 全部 noMatch 而非配错集', () async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path.endsWith('/entries/7/files')) {
+          return http.Response(
+            jsonEncode(<Map<String, dynamic>>[
+              for (final int ep in <int>[13, 14])
+                <String, dynamic>{
+                  'name': 'Show - $ep.ja.srt',
+                  'url': 'https://x/$ep',
+                },
+            ]),
+            200,
+          );
+        }
+        return http.Response('1\n00:00:01,000 --> 00:00:02,000\nhi\n', 200);
+      });
+      final JimakuClient client = JimakuClient(apiKey: 'k', client: mock);
+      addTearDown(client.close);
+
+      final List<JimakuBatchItem> results = await runJimakuBatch(
+        client: client,
+        entryIds: <int>[7],
+        targets: <JimakuBatchTarget>[
+          _t('video/a', '/v/Show - 01.mkv', sortIndex: 0),
+          _t('video/b', '/v/Show - 02.mkv', sortIndex: 1),
+        ],
+        saveDirectory: tempDir.path,
+      );
+      expect(
+        results.map((JimakuBatchItem i) => i.status),
+        everyElement(JimakuBatchStatus.noMatch),
+      );
+      expect(
+        results.first.message,
+        'jimaku entry has subtitles but none for this episode',
+      );
     });
 
     test('HTTP 请求失败记 failed，不得 fail-open 冒充 noMatch', () async {

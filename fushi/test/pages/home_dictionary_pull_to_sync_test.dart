@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
-import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -30,13 +29,6 @@ class _PullSyncAppModel extends AppModel {
 
   @override
   bool get autoSearchEnabled => false;
-
-  @override
-  bool get desktopClipboardEnabled => false;
-
-  @override
-  DesktopClipboardWindowMode get desktopClipboardWindowMode =>
-      DesktopClipboardWindowMode.normal;
 
   @override
   List<Dictionary> get dictionaries => <Dictionary>[

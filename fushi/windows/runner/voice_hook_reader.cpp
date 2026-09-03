@@ -1,6 +1,11 @@
 #include "voice_hook_reader.h"
 
+#include "game_client_extent.h"
+
 #include <windows.h>
+
+// v19 准入兜底：注入侧算不出游戏 exe 摘要时由 host 自己算（见 [ExeDigestCache]）。
+#include <bcrypt.h>
 
 #include <algorithm>
 #include <map>
@@ -8,6 +13,7 @@
 #include <mutex>
 #include <string>
 #include <utility>
+#include <vector>
 
 // v15 游戏内查词通道要往 Dart 投 hit / input，并接 Dart 的 present / dismiss / capture suppress。
 #include <flutter/method_channel.h>
@@ -21,8 +27,10 @@
 // Malie 五个引擎的 ready 位，这些引擎资源 hook 装好了本体也判 `raw_voice_ready=false`，
 // 直接退回整机混音。副本已删除，改为直接 include 真相源——两侧编同一组常量与同一份结构布局，
 // 版本漂移在结构上不再可能（守卫见 test/mining/gal_ipc_contract_single_source_test.dart）。
+#include "../../../native/galgame_hook/include/voice_clip_energy.h"
 #include "../../../native/galgame_hook/include/voice_hook_ipc.h"
 #include "../../../native/galgame_hook/include/voice_hook_utterance_window.h"
+#include "lookup_hit_validation.h"
 
 // galgame 一键制卡 C 阶段 —— 引擎-hook 共享内存读侧实现。见 voice_hook_reader.h。
 // 纯 Win32 文件映射，无 COM、无异常（runner 以 _HAS_EXCEPTIONS=0 编译，全程句柄/契约校验）。
@@ -50,6 +58,9 @@ struct ReaderState {
   // 合一时收卡帧会复用刚 present 过的 seq，被注入侧的"这帧我处理过了"过滤当场丢掉，
   // 卡片永远挂在屏幕上。见 voice_hook_ipc.h 的 LookupFrame 注释。
   uint64_t lookup_publish_seq = 0;
+  // Validated outside WH_MOUSE_LL. The callback compares this exact handle and
+  // never calls IsWindow/GetWindowThreadProcessId while the system waits.
+  HWND lookup_shield_prevalidated_target = nullptr;
   // 用户的开关**意图**，与共享内存段的身份无关。
   //
   // 🔴 段会被换掉：退出一局再开一局 = 注入器建一段全新的共享内存，`lookup_enabled`
@@ -58,6 +69,21 @@ struct ReaderState {
   // 表面上开关还是开着的。段的身份只有这一层知道（Open 是唯一的映射点），所以重放
   // 的责任也只能在这里，不能指望上层记得。
   bool lookup_enabled_desired = false;
+  uint32_t lookup_geometry_admission_mode_desired =
+      fushi_voice_hook::kLookupGeometryAdmissionDisabled;
+  bool lookup_geometry_attached_ready_desired = false;
+  // Host risk/provider admission for semantic native input.  It shares the
+  // v21 geometry-admission request generation and is replayed into every new
+  // mapping before lookup runtime is enabled.  正边沿只有在发布到活映射之后
+  // 才写这里（见 SetLookupGeometryAdmission）：not_open 不得武装替换映射。
+  bool lookup_native_input_allowed_desired = false;
+  // ── v19 查词准入游标（与上面同一把锁）───────────────────────────────────────
+  // 上次向 Dart 报过的 lookup_admission_seq。[primed] 单独存在，是因为「新段刚开出来、
+  // hook 还没上报」时共享 seq 就是 0，与游标 0 相等——只比 seq 会让新会话一条准入事件
+  // 都不发，Dart 侧就会继续挂着**上一局**的状态（上一局 SensorInstalled、这一局引擎
+  // 根本不支持，设置页照样说"能用"）。primed=false 保证换段后必发一条如实的 Unknown。
+  uint32_t lookup_admission_seq = 0;
+  bool lookup_admission_primed = false;
 };
 
 ReaderState& State() {
@@ -72,6 +98,10 @@ bool ProtocolMatches(const SharedHeader* h) {
          h->luna_bridge_abi_version ==
              fushi_voice_hook::kLunaBridgeAbiVersion &&
          h->luna_vendored_version == fushi_voice_hook::kLunaVendoredVersion;
+}
+
+bool AttachedGeometryProviderOwns(const SharedHeader* h) {
+  return fushi_voice_hook::LookupGeometryAttachedProviderOwns(h);
 }
 
 // 无符号整数 → 十六进制字面（magic / vendored 版本按 hex 读才认得出来）。
@@ -157,9 +187,22 @@ VoiceHookStatus StatusFromHeaderLocked(const SharedHeader* h) {
   // 由 injector 落逐句 WAV。统一契约确保资源优先，系统回环只作某句配对失败时的 fallback。
   s.raw_voice_ready = fushi_voice_hook::HasReadyGameResourceAudio(
       h->reserved_luna, h->hook_diagnostics,
-      h->reserved_hook_diagnostics);
+      h->reserved_hook_diagnostics, h->xaudio_diagnostics);
+  // 两个诊断字原样带出。第二个字不参与 raw_voice_ready 的判定（它装的是身份/锚点
+  // 分型位，不是"资源音频已就绪"），但必须能被读到：否则 hook 侧 SetXAudioDiagnostic2
+  // 置的每一位在 Fushi 这一侧都不存在。
+  s.xaudio_diagnostics = h->xaudio_diagnostics;
+  s.xaudio_diagnostics2 = h->xaudio_diagnostics2;
   s.text_lane_recycles = static_cast<int64_t>(h->text_lane_recycle_count);
   s.text_lane_overflows = static_cast<int64_t>(h->text_lane_overflow_count);
+  s.native_loopback_requested =
+      fushi_voice_hook::AtomicLoadShared32(&h->native_loopback_requested);
+  s.native_loopback_request_seq =
+      fushi_voice_hook::AtomicLoadShared32(&h->native_loopback_request_seq);
+  s.native_loopback_state =
+      fushi_voice_hook::AtomicLoadShared32(&h->native_loopback_state);
+  s.native_loopback_applied_seq =
+      fushi_voice_hook::AtomicLoadShared32(&h->native_loopback_applied_seq);
   // 格式就绪（hook 已填有效格式）才算 ok；hooked 但格式全 0（还没收到语音）时 ok=false。
   s.ok = s.hooked && s.sample_rate > 0 && s.channels > 0 && s.bits_per_sample > 0;
   return s;
@@ -185,12 +228,85 @@ VoiceHookLookupError LookupGateLocked(const SharedHeader* h,
   return VoiceHookLookupError::kNone;
 }
 
+// Callback-safe counterpart of PublishLookupShieldRequest. The regular helper
+// intentionally retries its writer claim for up to one second; WH_MOUSE_LL may
+// never do that because Windows synchronously stalls global input until the
+// callback returns. This path accepts one CAS attempt and otherwise fails open.
+uint32_t TryPublishLookupShieldRequestOnce(
+    SharedHeader* header, uint32_t owner_kind, uint64_t target_hwnd,
+    uint64_t transaction_id, uint32_t active_buttons, bool allow_risk) {
+  if (header == nullptr) return 0;
+  const uint32_t normalized_buttons =
+      active_buttons & fushi_voice_hook::kLookupShieldButtonMask;
+  const uint32_t normalized_risk = allow_risk ? 1u : 0u;
+  const fushi_voice_hook::LookupShieldRequestSnapshot stable =
+      fushi_voice_hook::ReadLookupShieldRequest(header);
+  if (stable.valid && stable.owner_kind == owner_kind &&
+      stable.target_hwnd == target_hwnd &&
+      stable.transaction_id == transaction_id &&
+      stable.active_buttons == normalized_buttons &&
+      stable.allow_risk == allow_risk) {
+    return stable.seq;
+  }
+
+  auto* seq = reinterpret_cast<volatile LONG*>(
+      &header->lookup_shield_request_seq);
+  const uint32_t current =
+      fushi_voice_hook::AtomicLoadShared32(&header->lookup_shield_request_seq);
+  if ((current & fushi_voice_hook::kLookupShieldRequestWriteInProgress) != 0) {
+    return 0;
+  }
+  const uint32_t token =
+      current | fushi_voice_hook::kLookupShieldRequestWriteInProgress;
+  const LONG observed = InterlockedCompareExchange(
+      seq, static_cast<LONG>(token), static_cast<LONG>(current));
+  if (static_cast<uint32_t>(observed) != current) return 0;
+
+  // The optimistic check in TryPublishLookupShieldTransaction avoids taking
+  // the writer token for a stale surface in the common case, but it cannot be
+  // the authority: the registry may complete an attached -> native switch
+  // between that check and this CAS.  Re-check only after owning the shared
+  // fence.  If native won first, restore the exact stable sequence and fail
+  // open; if this down won first, the registry cannot switch until its release
+  // tail is applied.  This is bounded atomic work and keeps WH_MOUSE_LL free of
+  // waits, mutex acquisition, and window calls.
+  if (owner_kind == fushi_voice_hook::kLookupShieldOwnerAttachedGlyph &&
+      (normalized_buttons & fushi_voice_hook::kLookupShieldButtonLeft) != 0 &&
+      !AttachedGeometryProviderOwns(header)) {
+    fushi_voice_hook::AtomicStoreShared32(
+        &header->lookup_shield_request_seq, current);
+    return 0;
+  }
+
+  fushi_voice_hook::AtomicStoreShared32(&header->lookup_shield_owner_kind,
+                                        owner_kind);
+  fushi_voice_hook::AtomicStorePreview64(&header->lookup_shield_target_hwnd,
+                                         target_hwnd);
+  fushi_voice_hook::AtomicStorePreview64(&header->lookup_shield_transaction_id,
+                                         transaction_id);
+  fushi_voice_hook::AtomicStoreShared32(&header->lookup_shield_active_buttons,
+                                        normalized_buttons);
+  fushi_voice_hook::AtomicStoreShared32(&header->lookup_shield_allow_risk,
+                                        normalized_risk);
+  uint32_t published =
+      (current & fushi_voice_hook::kLookupShieldRequestSequenceMask) + 1u;
+  published &= fushi_voice_hook::kLookupShieldRequestSequenceMask;
+  if (published == 0) published = 1;
+  fushi_voice_hook::AtomicStoreShared32(&header->lookup_shield_request_seq,
+                                        published);
+  return published;
+}
+
 // 把三个游标对齐到当前计数（"从现在开始"）。调用方持锁。
 void ResetLookupCursorsLocked(ReaderState& st, const SharedHeader* h) {
   st.lookup_hit_count = 0;
   st.lookup_hit_seq = 0;
   st.lookup_input_seq = 0;
   st.lookup_publish_seq = 0;
+  // 准入游标**在查词区那道早退之前**复位：准入活在 SharedHeader 里，没有查词区的
+  // 会话照样要报（"本引擎没做查词传感器"正是必须报得出来的那一类）。
+  st.lookup_admission_seq = 0;
+  st.lookup_admission_primed = false;
   if (!fushi_voice_hook::HasLookupRegion(h)) {
     return;
   }
@@ -229,6 +345,9 @@ void CloseLocked(ReaderState& st) {
   st.lookup_hit_count = 0;
   st.lookup_hit_seq = 0;
   st.lookup_input_seq = 0;
+  st.lookup_shield_prevalidated_target = nullptr;
+  st.lookup_admission_seq = 0;
+  st.lookup_admission_primed = false;
 }
 
 // 把一条 clip 的 PCM 从环形读出**追加**到 [out]（多段拼接用）；clip 已被环形覆盖返回 false。
@@ -256,24 +375,39 @@ bool ReadClipPcmLocked(const SharedHeader* h, const uint8_t* ring,
   return true;
 }
 
-// 一条 clip 的 16-bit PCM 平均绝对幅值（能量代理）。非 16-bit 返回 -1（调用方退化）。已被环形
-// 覆盖返回 0。调用方持锁。移植自 ring_probe.cpp 的 ClipEnergy16。
-double ClipEnergy16Locked(const SharedHeader* h, const uint8_t* ring,
-                          const fushi_voice_hook::VoiceClip* c) {
-  if (c->bits_per_sample != 16 || c->is_float) {
+// 一条 clip 的平均绝对幅值（能量代理），**归一到 16-bit 标度、与位深/浮点无关**。
+// 位深真的不认识才返回 -1；已被环形覆盖返回 0。调用方持锁。
+//
+// BUG-1769：旧实现只认 16-bit（`bits_per_sample != 16 || is_float` 一律 -1），而能量是
+// `GrabUtterance` 选语音源的唯一判据，于是 float32 输出的游戏（XAudio2 的默认格式）
+// `any_energy` 恒假、`filter_by_src` 退化成 false，拼接循环把窗口内**所有源**顺序拼进一句
+// ——「同一句念两遍 + 断续杂音」。算法与跨环边界处理搬进 `voice_clip_energy.h`，由
+// native CTest `fushi_voice_clip_energy_test` 固定「换编码后能量一致」这条不变量。
+//
+// 顺带去掉了旧实现里那次全量 memcpy：改成在环上就地单遍扫描（本函数每次 GrabUtterance
+// 要跑上千次，全程持锁在平台线程上）。
+double ClipEnergyLocked(const SharedHeader* h, const uint8_t* ring,
+                        const fushi_voice_hook::VoiceClip* c) {
+  const uint32_t cap = h->ring_capacity;
+  const uint32_t len = c->byte_len;
+  if (cap == 0 || len == 0 || len > cap) {
     return -1.0;
   }
-  std::vector<uint8_t> buf;
-  if (!ReadClipPcmLocked(h, ring, c, buf) || buf.size() < 2) {
-    return 0.0;
+  if (h->total_written > c->total_at_write &&
+      h->total_written - c->total_at_write > cap - len) {
+    return 0.0;  // 已被环形覆盖
   }
-  const int16_t* s = reinterpret_cast<const int16_t*>(buf.data());
-  const size_t n = buf.size() / 2;
-  double acc = 0;
-  for (size_t i = 0; i < n; i++) {
-    acc += (s[i] < 0) ? -static_cast<double>(s[i]) : static_cast<double>(s[i]);
-  }
-  return acc / static_cast<double>(n);
+  return fushi_voice_hook::ClipEnergy16Scale(ring, cap, c->ring_offset % cap,
+                                             len, c->bits_per_sample,
+                                             c->is_float != 0);
+}
+
+// 两条 clip 的 PCM 格式是否一致。格式不同的段按字节拼在一起就是垃圾（采样率/声道/位深
+// 全被首段的 fmt 冒充），必须整段跳过。
+bool ClipFormatMatches(const fushi_voice_hook::VoiceClip* a,
+                       const fushi_voice_hook::VoiceClip* b) {
+  return a->sample_rate == b->sample_rate && a->channels == b->channels &&
+         a->bits_per_sample == b->bits_per_sample && a->is_float == b->is_float;
 }
 
 // 收集环形里有效（seq 匹配、byte_len 合法）的语音 clip 指针（seq 升序）。调用方持锁。
@@ -303,6 +437,178 @@ std::vector<const fushi_voice_hook::VoiceClip*> CollectValidClipsLocked(
 
 // ══ v15 查词通道：轮询泵 + MethodChannel ═══════════════════════════════════════
 //
+// ══ v19 准入兜底：游戏主 exe 的 SHA-256 ══════════════════════════════════════
+//
+// 为什么 host 还要自己算：Leaf/AQUAPLUS（白色相簿2）与 SGRE 两家 adapter 的 probe()
+// **本身就是精确 exe SHA-256 门**。用户的 exe 不在白名单里时这些 adapter 直接 probe
+// 失败、根本不参与汇总——而这类用户最终落到的 kLookupAdmissionEngineUnsupported
+// 恰恰是「把自己的 exe 摘要报上来」唯一能推进事情的状态。
+//
+// 注入侧现在会填（hook/host_executable_digest.h 的共享槽：profile 解析本来就算过这个
+// 摘要，存进一个不属于任何 adapter 的槽，由汇总处在这一档读出来），所以常态下走不到
+// 这里 —— NeedsHostExeDigest 的第一句就是"注入侧已经填了就别算"。
+//
+// 但这条兜底不能删，它覆盖注入侧够不着的两种情形：hook 还没走到 profile 解析就发布了
+// 快照，以及 hook 侧读自己 exe 失败。反过来也成立：**游戏提权而 Fushi 没提权**时
+// OpenProcess 必然失败，host 这条算不出来，而 hook 跑在游戏进程里读自己的 exe 反而没
+// 问题——两条路各能覆盖对方的盲区，优先级由 NeedsHostExeDigest 一处定死。
+//
+// 三条纪律：
+//  1. **只在 EngineUnsupported / IdentityRejected 两个状态下算**。exe 动辄几十 MB，
+//     一次几百毫秒，稳态下每轮都算等于白烧 IO。
+//  2. **不在平台线程上算**。泵跑在平台线程（MethodChannel/WebView2 的线程亲和性要求），
+//     在那里读几十 MB 文件就是几百毫秒的界面卡死。丢进 Win32 线程池。
+//  3. **算不出来就报空串**，绝不用全 0 或占位串冒充摘要——游戏以管理员身份跑而 Fushi
+//     没有时 OpenProcess 必然失败，此时 Dart 侧要说的是"无法获取"，不是一串假摘要。
+struct ExeDigestCache {
+  std::mutex mutex;
+  uint32_t pid = 0;        // 摘要属于哪个进程；pid 一换整份作废
+  bool computing = false;  // 线程池里有一笔在算
+  bool done = false;       // 算完了（[sha256] 为空表示"算不出来"，也是终态）
+  std::string sha256;
+};
+
+ExeDigestCache& DigestCache() {
+  static ExeDigestCache cache;
+  return cache;
+}
+
+std::string HexOfDigest(const uint8_t* bytes, size_t length) {
+  static const char* kDigits = "0123456789abcdef";
+  std::string out;
+  out.reserve(length * 2);
+  for (size_t i = 0; i < length; ++i) {
+    out.push_back(kDigits[(bytes[i] >> 4) & 0x0f]);
+    out.push_back(kDigits[bytes[i] & 0x0f]);
+  }
+  return out;
+}
+
+// 文件全文 SHA-256 → 小写十六进制。任何一步失败都返回空串（不猜、不部分摘要）。
+std::string Sha256HexOfFile(const std::wstring& path) {
+  // 游戏正在跑，它自己的映像是以 FILE_SHARE_READ 打开的；共享位给全，否则必被拒。
+  HANDLE file = CreateFileW(
+      path.c_str(), GENERIC_READ,
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN,
+      nullptr);
+  if (file == INVALID_HANDLE_VALUE) return std::string();
+  BCRYPT_ALG_HANDLE alg = nullptr;
+  if (!BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(
+          &alg, BCRYPT_SHA256_ALGORITHM, nullptr, 0))) {
+    CloseHandle(file);
+    return std::string();
+  }
+  DWORD object_bytes = 0;
+  DWORD copied = 0;
+  std::string result;
+  if (BCRYPT_SUCCESS(BCryptGetProperty(
+          alg, BCRYPT_OBJECT_LENGTH, reinterpret_cast<PUCHAR>(&object_bytes),
+          sizeof(object_bytes), &copied, 0))) {
+    std::vector<uint8_t> object(object_bytes);
+    BCRYPT_HASH_HANDLE hash = nullptr;
+    if (BCRYPT_SUCCESS(BCryptCreateHash(alg, &hash, object.data(),
+                                        object_bytes, nullptr, 0, 0))) {
+      std::vector<uint8_t> chunk(64 * 1024);
+      bool ok = true;
+      for (;;) {
+        DWORD read = 0;
+        if (!ReadFile(file, chunk.data(), static_cast<DWORD>(chunk.size()),
+                      &read, nullptr)) {
+          ok = false;
+          break;
+        }
+        if (read == 0) break;
+        if (!BCRYPT_SUCCESS(BCryptHashData(hash, chunk.data(), read, 0))) {
+          ok = false;
+          break;
+        }
+      }
+      uint8_t digest[32] = {};
+      if (ok && BCRYPT_SUCCESS(BCryptFinishHash(hash, digest, sizeof(digest),
+                                                0))) {
+        result = HexOfDigest(digest, sizeof(digest));
+      }
+      BCryptDestroyHash(hash);
+    }
+  }
+  BCryptCloseAlgorithmProvider(alg, 0);
+  CloseHandle(file);
+  return result;
+}
+
+// pid → 主 exe 全路径。PROCESS_QUERY_LIMITED_INFORMATION 是能拿到路径的最低权限；
+// 目标完整性级别更高（游戏以管理员跑）时这里就会失败，如实返回空。
+std::wstring ProcessImagePath(uint32_t pid) {
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                               static_cast<DWORD>(pid));
+  if (process == nullptr) return std::wstring();
+  constexpr DWORD kPathChars = MAX_PATH * 2;
+  wchar_t buffer[kPathChars] = {};
+  DWORD length = kPathChars;
+  const BOOL ok = QueryFullProcessImageNameW(process, 0, buffer, &length);
+  CloseHandle(process);
+  if (!ok || length == 0) return std::wstring();
+  return std::wstring(buffer, length);
+}
+
+VOID CALLBACK ExeDigestWorker(PTP_CALLBACK_INSTANCE, PVOID context) {
+  const uint32_t pid =
+      static_cast<uint32_t>(reinterpret_cast<UINT_PTR>(context));
+  const std::wstring path = ProcessImagePath(pid);
+  const std::string digest =
+      path.empty() ? std::string() : Sha256HexOfFile(path);
+  ExeDigestCache& cache = DigestCache();
+  std::lock_guard<std::mutex> lock(cache.mutex);
+  // 会话在算的过程中换了：这份摘要属于上一局，丢掉。不丢就会把上一个游戏的身份
+  // 报成这一局的，用户照着它报版本，谁都对不上。
+  if (cache.pid != pid) return;
+  cache.sha256 = digest;
+  cache.done = true;
+  cache.computing = false;
+}
+
+// 取本进程主 exe 的摘要。返回 true = 已有终态（[out] 可能是空串，表示算不出来）；
+// false = 还没有，已在后台开算或正在算，调用方下一拍再问。
+bool TakeExeDigest(uint32_t pid, std::string* out) {
+  if (pid == 0 || out == nullptr) return false;
+  ExeDigestCache& cache = DigestCache();
+  bool submit = false;
+  {
+    std::lock_guard<std::mutex> lock(cache.mutex);
+    if (cache.pid != pid) {
+      cache.pid = pid;
+      cache.computing = false;
+      cache.done = false;
+      cache.sha256.clear();
+    }
+    if (cache.done) {
+      *out = cache.sha256;
+      return true;
+    }
+    if (!cache.computing) {
+      cache.computing = true;
+      submit = true;
+    }
+  }
+  if (submit &&
+      !TrySubmitThreadpoolCallback(
+          ExeDigestWorker,
+          reinterpret_cast<PVOID>(static_cast<UINT_PTR>(pid)), nullptr)) {
+    // 线程池拒了（极罕见）：把 computing 放回去，下一拍重试，绝不永久卡在"算不出"。
+    std::lock_guard<std::mutex> lock(cache.mutex);
+    if (cache.pid == pid) cache.computing = false;
+  }
+  return false;
+}
+
+// 这份准入快照要不要 host 补摘要：注入侧没填、而状态又正是"用户得报版本"的那两种。
+bool NeedsHostExeDigest(const VoiceHookLookupAdmission& admission) {
+  if (!admission.executable_sha256.empty()) return false;
+  return admission.state == fushi_voice_hook::kLookupAdmissionEngineUnsupported ||
+         admission.state == fushi_voice_hook::kLookupAdmissionIdentityRejected;
+}
+
 // 泵是「平台线程上的 WM_TIMER」而不是后台线程，理由是两侧的线程亲和性都硬：
 //   * MethodChannel::InvokeMethod 只能在平台线程调；
 //   * WebView2 的 SendMouseInput / CapturePreview 是 STA，也只能在平台线程调。
@@ -315,6 +621,10 @@ constexpr wchar_t kLookupPumpClassName[] = L"FushiGalLookupPump";
 constexpr char kGalHookTextChannel[] = "app.fushi.reader/gal_hook_text";
 constexpr UINT_PTR kLookupPumpTimerId = 1;
 constexpr UINT kLookupPumpIntervalMs = 16;  // ~60Hz：查词要跟手，卡片重绘也吃这个节拍
+// 查词没开时泵仍要跑，因为准入状态（v19）与开关正交：设置页在开关关着时也得知道
+// 「本引擎没做」/「本 exe 不在白名单」。但那一路一局游戏只变几次，没有跟手需求，
+// 用 60Hz 空转整局游戏纯属浪费。两档节拍由 [SyncLookupPump] 按当前闸门自动选。
+constexpr UINT kLookupAdmissionPumpIntervalMs = 250;
 // 这只是“游戏主线程不再前进”的失败上界，不参与正确性同步。真正的屏障是共享内存里的
 // lookup_frame_applied_seq；绝不靠等若干毫秒猜卡片已经从合成画面消失。
 constexpr ULONGLONG kLookupCaptureSuppressTimeoutMs = 3000;
@@ -331,8 +641,12 @@ using LookupResult = flutter::MethodResult<flutter::EncodableValue>;
 // 故不需要锁。共享内存那部分的并发由 ReaderState::mutex 管，两者不重叠。
 struct LookupPumpState {
   std::unique_ptr<LookupChannel> channel;
+  VoiceHookReader::LookupDirectPresenter direct_presenter;
   VoiceHookReader::LookupCaptureRequest capture;
   VoiceHookReader::LookupInputSink input_sink;
+  VoiceHookReader::LookupGeometryStatusSink geometry_status_sink;
+  VoiceHookLookupGeometryStatus last_geometry_status;
+  bool has_last_geometry_status = false;
   // CapturePreview completes asynchronously.  A dismiss or a newer present
   // must invalidate the older callback before it can publish another bitmap;
   // otherwise a card can reappear after the user closed it.  Platform-thread
@@ -343,8 +657,16 @@ struct LookupPumpState {
   std::shared_ptr<LookupResult> capture_suppress_reply;
   uint64_t capture_suppress_publish_seq = 0;
   ULONGLONG capture_suppress_deadline = 0;
+  // 最近一次准入快照，以及它是否还等着 host 兜底算 exe 摘要（见 [TakeExeDigest]）。
+  // 存住它而不是每次现读，是因为摘要要几百毫秒才算得出来，补上之后得把**同一份**
+  // 快照连同摘要再发一次；重新读共享内存拿到的是"没变过"，什么都发不出去。
+  VoiceHookLookupAdmission admission;
+  bool admission_digest_pending = false;
   HWND hwnd = nullptr;
   bool timer_running = false;
+  // 当前 WM_TIMER 的周期。记着它才能在两档节拍间切换时判断"要不要重设"——
+  // 同 id 的 SetTimer 会替换既有定时器，但每拍都无脑重设等于永远推迟第一次触发。
+  UINT timer_interval_ms = 0;
 };
 
 LookupPumpState& Pump() {
@@ -358,6 +680,7 @@ void StopLookupPump() {
     KillTimer(pump.hwnd, kLookupPumpTimerId);
   }
   pump.timer_running = false;
+  pump.timer_interval_ms = 0;
 }
 
 flutter::EncodableValue LookupErrorMap(VoiceHookLookupError error) {
@@ -401,16 +724,34 @@ flutter::EncodableValue LookupHitMap(const VoiceHookLookupHit& hit) {
       {flutter::EncodableValue("seq"),
        flutter::EncodableValue(static_cast<int64_t>(hit.seq))},
       {flutter::EncodableValue("line"), flutter::EncodableValue(hit.line_utf8)},
+      {flutter::EncodableValue("providerKind"),
+       flutter::EncodableValue(static_cast<int64_t>(hit.provider_kind))},
+      {flutter::EncodableValue("providerId"),
+       flutter::EncodableValue(static_cast<int64_t>(hit.provider_id))},
       {flutter::EncodableValue("charIndex"),
        flutter::EncodableValue(static_cast<int64_t>(hit.char_index))},
+      {flutter::EncodableValue("sourceLength"),
+       flutter::EncodableValue(static_cast<int64_t>(hit.source_length))},
       {flutter::EncodableValue("charCount"),
        flutter::EncodableValue(static_cast<int64_t>(hit.char_count))},
+      {flutter::EncodableValue("textGeneration"),
+       flutter::EncodableValue(static_cast<int64_t>(hit.text_generation))},
+      {flutter::EncodableValue("geometryGeneration"),
+       flutter::EncodableValue(static_cast<int64_t>(hit.geometry_generation))},
+      {flutter::EncodableValue("coordinateSpace"),
+       flutter::EncodableValue(static_cast<int64_t>(hit.coordinate_space))},
+      {flutter::EncodableValue("writingMode"),
+       flutter::EncodableValue(static_cast<int64_t>(hit.writing_mode))},
       {flutter::EncodableValue("glyphX"), flutter::EncodableValue(hit.glyph_x)},
       {flutter::EncodableValue("glyphY"), flutter::EncodableValue(hit.glyph_y)},
       {flutter::EncodableValue("glyphW"), flutter::EncodableValue(hit.glyph_w)},
       {flutter::EncodableValue("glyphH"), flutter::EncodableValue(hit.glyph_h)},
       {flutter::EncodableValue("viewW"), flutter::EncodableValue(hit.view_w)},
       {flutter::EncodableValue("viewH"), flutter::EncodableValue(hit.view_h)},
+      {flutter::EncodableValue("clientW"),
+       flutter::EncodableValue(hit.client_w)},
+      {flutter::EncodableValue("clientH"),
+       flutter::EncodableValue(hit.client_h)},
       {flutter::EncodableValue("submit"), flutter::EncodableValue(hit.submit)},
   });
 }
@@ -429,7 +770,17 @@ flutter::EncodableValue LookupInputMap(const VoiceHookLookupInput& input) {
   });
 }
 
-// 一次泵动：一条 hit（latest-wins，多的没意义）+ 环里全部新输入。
+flutter::EncodableValue LookupAdmissionMap(
+    const VoiceHookLookupAdmission& admission) {
+  return flutter::EncodableValue(flutter::EncodableMap{
+      {flutter::EncodableValue("state"),
+       flutter::EncodableValue(static_cast<int64_t>(admission.state))},
+      {flutter::EncodableValue("executableSha256"),
+       flutter::EncodableValue(admission.executable_sha256)},
+  });
+}
+
+// 一次泵动：准入快照 + 一条 hit（latest-wins，多的没意义）+ 环里全部新输入。
 void PumpLookupOnce() {
   LookupPumpState& pump = Pump();
   VoiceHookReader& reader = VoiceHookReader::Instance();
@@ -446,14 +797,64 @@ void PumpLookupOnce() {
           VoiceHookLookupError::kCaptureSuppressTimeout);
     }
   }
-  // 会话没了（关游戏 / Close）就把定时器停掉，别在没有映射的情况下空转。Dart 侧
-  // 重开会话后本来就要再调一次 galLookupSetEnabled，泵会跟着重新起来。
-  if (!reader.HasLookupChannel()) {
+  // 会话没了（关游戏 / Close）就把定时器停掉，别在没有映射的情况下空转。会话一开
+  // （[Open] 尾部的 [SyncLookupPump]）泵就起来，不再等 galLookupSetEnabled——准入
+  // 要在开关关着时也报得出来。
+  if (!reader.HasSession()) {
     StopLookupPump();
+    return;
+  }
+  const VoiceHookLookupGeometryStatus geometry = reader.LookupGeometryStatus();
+  const bool geometry_changed =
+      !pump.has_last_geometry_status ||
+      geometry.error != pump.last_geometry_status.error ||
+      geometry.provider_kind != pump.last_geometry_status.provider_kind ||
+      geometry.provider_id != pump.last_geometry_status.provider_id ||
+      geometry.provider_status != pump.last_geometry_status.provider_status ||
+      geometry.lookup_diag != pump.last_geometry_status.lookup_diag ||
+      geometry.generation != pump.last_geometry_status.generation ||
+      geometry.text_generation != pump.last_geometry_status.text_generation;
+  if (geometry_changed) {
+    pump.last_geometry_status = geometry;
+    pump.has_last_geometry_status = true;
+    if (pump.geometry_status_sink != nullptr)
+      pump.geometry_status_sink(geometry);
+  }
+  // v19 准入：与 lookup_enabled 正交，会话在就报。放在下面那道闸**之前**，因为
+  // 「本引擎不支持」恰恰是查词开不起来时才需要说出口的话。
+  VoiceHookLookupAdmission fresh;
+  bool publish_admission = reader.PollLookupAdmission(&fresh);
+  if (publish_admission) {
+    pump.admission = fresh;
+    pump.admission_digest_pending = NeedsHostExeDigest(fresh);
+  }
+  if (pump.admission_digest_pending) {
+    std::string digest;
+    if (TakeExeDigest(reader.CurrentPid(), &digest)) {
+      pump.admission.executable_sha256 = digest;
+      pump.admission_digest_pending = false;
+      // 摘要补上（哪怕是空串=确实算不出来）就得把同一份快照再发一次：第一条发出去时
+      // Dart 侧显示的是"摘要不可用"，不再发一条它就永远停在那句话上。
+      publish_admission = true;
+    }
+  }
+  if (publish_admission && pump.channel != nullptr) {
+    pump.channel->InvokeMethod(
+        "onGalLookupAdmission",
+        std::make_unique<flutter::EncodableValue>(
+            LookupAdmissionMap(pump.admission)));
+  }
+  // 查词没开（或本会话没有查词区）：只报准入，绝不消费 hit/input——那两个游标一旦
+  // 在关闭期间被推进，重新打开时用户的第一次点击就会被当成"旧输入"吞掉。
+  if (reader.PeekLookupGate(true) != VoiceHookLookupError::kNone) {
     return;
   }
   VoiceHookLookupHit hit;
   if (reader.PollLookupHit(&hit) && pump.channel != nullptr) {
+    // 客户区**现量现报**：host 的卡片尺寸上界要按屏幕物理像素算，而它必须在
+    // 查词开始之前就知道。量不到就留 0，host 退回画布口径（保守但不越界）。
+    fushi::game_client_extent::QueryGameClientExtent(
+        reader.CurrentPid(), &hit.client_w, &hit.client_h);
     pump.channel->InvokeMethod(
         "onGalLookupHit",
         std::make_unique<flutter::EncodableValue>(LookupHitMap(hit)));
@@ -508,15 +909,34 @@ void EnsureLookupPumpWindow() {
                               GetModuleHandleW(nullptr), nullptr);
 }
 
-void StartLookupPump() {
+void StartLookupPumpAt(UINT interval_ms) {
   LookupPumpState& pump = Pump();
   EnsureLookupPumpWindow();
-  if (pump.hwnd == nullptr || pump.timer_running) {
+  if (pump.hwnd == nullptr) {
     return;
   }
-  pump.timer_running =
-      SetTimer(pump.hwnd, kLookupPumpTimerId, kLookupPumpIntervalMs,
-               nullptr) != 0;
+  if (pump.timer_running && pump.timer_interval_ms == interval_ms) {
+    return;
+  }
+  // 同 id 的 SetTimer 就地替换周期，不必先 KillTimer。
+  if (SetTimer(pump.hwnd, kLookupPumpTimerId, interval_ms, nullptr) != 0) {
+    pump.timer_running = true;
+    pump.timer_interval_ms = interval_ms;
+  }
+}
+
+// 泵的节拍只由**当前闸门**决定，调用方不必各自判断：没会话就停，查词开着走跟手
+// 节拍，只剩准入要报就走慢拍。单一裁决点，省得每个调用点各记一套条件而漂开。
+void SyncLookupPump() {
+  VoiceHookReader& reader = VoiceHookReader::Instance();
+  if (!reader.HasSession()) {
+    StopLookupPump();
+    return;
+  }
+  StartLookupPumpAt(
+      reader.PeekLookupGate(true) == VoiceHookLookupError::kNone
+          ? kLookupPumpIntervalMs
+          : kLookupAdmissionPumpIntervalMs);
 }
 
 int64_t ReadLookupInt(const flutter::MethodCall<flutter::EncodableValue>& call,
@@ -530,6 +950,13 @@ int64_t ReadLookupInt(const flutter::MethodCall<flutter::EncodableValue>& call,
     return 0;
   }
   return it->second.TryGetLongValue().value_or(0);
+}
+
+uint32_t ReadLookupDimension(
+    const flutter::MethodCall<flutter::EncodableValue>& call,
+    const char* key) {
+  const int64_t value = ReadLookupInt(call, key);
+  return value > 0 && value <= 0x10000 ? static_cast<uint32_t>(value) : 0;
 }
 
 bool ReadLookupBool(const flutter::MethodCall<flutter::EncodableValue>& call,
@@ -574,6 +1001,51 @@ void HandleLookupPresent(
   if (gate != VoiceHookLookupError::kNone) {
     result->Success(LookupErrorMap(gate));
     return;
+  }
+  const uint32_t card_width = ReadLookupDimension(call, "cardWidth");
+  const uint32_t card_height = ReadLookupDimension(call, "cardHeight");
+  const uint32_t view_width = ReadLookupDimension(call, "viewWidth");
+  const uint32_t view_height = ReadLookupDimension(call, "viewHeight");
+  const int32_t glyph_x = static_cast<int32_t>(ReadLookupInt(call, "glyphX"));
+  const int32_t glyph_y = static_cast<int32_t>(ReadLookupInt(call, "glyphY"));
+  const uint32_t glyph_w = ReadLookupDimension(call, "glyphW");
+  const uint32_t glyph_h = ReadLookupDimension(call, "glyphH");
+  uint32_t client_width = 0;
+  uint32_t client_height = 0;
+  if (pump.direct_presenter && card_width > 0 && card_height > 0 &&
+      view_width > 0 && view_height > 0) {
+    if (pump.direct_presenter(meta.anchor_x, meta.anchor_y, card_width,
+                              card_height, view_width, view_height, glyph_x,
+                              glyph_y, glyph_w, glyph_h, &client_width,
+                              &client_height)) {
+      // Only retire the old bitmap AFTER the live composition surface is in
+      // place. Dismissing first created a guaranteed blank interval whenever
+      // direct presentation failed and CapturePreview had to recover.
+      const VoiceHookLookupError dismiss = reader.WriteLookupDismiss(meta.seq);
+      if (dismiss != VoiceHookLookupError::kNone) {
+        result->Success(LookupErrorMap(dismiss));
+        return;
+      }
+      result->Success(flutter::EncodableValue(flutter::EncodableMap{
+          {flutter::EncodableValue("ok"), flutter::EncodableValue(true)},
+          {flutter::EncodableValue("directSurface"),
+           flutter::EncodableValue(true)},
+          {flutter::EncodableValue("width"),
+           flutter::EncodableValue(static_cast<int64_t>(card_width))},
+          {flutter::EncodableValue("height"),
+           flutter::EncodableValue(static_cast<int64_t>(card_height))},
+          // 游戏客户区尺寸。Dart 手上只有画布(view)尺寸，用画布像素去夹屏幕像素会把
+          // 卡片系统性压小，所以把真实上界回报过去。
+          // 诊断用。**不是**卡片尺寸上界的来源：那个来源是每条 hit 上的
+          // clientW/clientH（现量现报）。从 present 回执反推 cap 会晚一次查词，
+          // 正是 BUG-2066 的原始症状，别再走回去。
+          {flutter::EncodableValue("clientWidth"),
+           flutter::EncodableValue(static_cast<int64_t>(client_width))},
+          {flutter::EncodableValue("clientHeight"),
+           flutter::EncodableValue(static_cast<int64_t>(client_height))},
+      }));
+      return;
+    }
   }
   if (!pump.capture) {
     result->Success(
@@ -627,7 +1099,9 @@ void HandleLookupPresent(
 bool HandleLookupCall(const flutter::MethodCall<flutter::EncodableValue>& call,
                       std::unique_ptr<LookupResult>& out_result) {
   const std::string& method = call.method_name();
-  if (method != "galLookupSetEnabled" && method != "galLookupPresent" &&
+  if (method != "galLookupSetEnabled" &&
+      method != "galLookupSetGeometryAdmission" &&
+      method != "galLookupPresent" &&
       method != "galLookupPresentHighlight" &&
       method != "galLookupDismiss" &&
       method != "galLookupSuspendForCapture" &&
@@ -673,6 +1147,29 @@ bool HandleLookupCall(const flutter::MethodCall<flutter::EncodableValue>& call,
         {flutter::EncodableValue("ok"), flutter::EncodableValue(true)}}));
     return true;
   }
+  if (method == "galLookupSetGeometryAdmission") {
+    const uint32_t mode =
+        static_cast<uint32_t>(ReadLookupInt(call, "mode"));
+    const bool attached_ready = ReadLookupBool(call, "attachedReady");
+    const bool native_input_allowed =
+        ReadLookupBool(call, "nativeInputAllowed");
+    uint32_t request_seq = 0;
+    uint32_t applied_seq = 0;
+    const VoiceHookLookupError error = reader.SetLookupGeometryAdmission(
+        mode, attached_ready, native_input_allowed, &request_seq, &applied_seq);
+    if (error != VoiceHookLookupError::kNone) {
+      result->Success(LookupErrorMap(error));
+      return true;
+    }
+    result->Success(flutter::EncodableValue(flutter::EncodableMap{
+        {flutter::EncodableValue("ok"), flutter::EncodableValue(true)},
+        {flutter::EncodableValue("requestSeq"),
+         flutter::EncodableValue(static_cast<int64_t>(request_seq))},
+        {flutter::EncodableValue("appliedSeq"),
+         flutter::EncodableValue(static_cast<int64_t>(applied_seq))},
+    }));
+    return true;
+  }
   if (method == "galLookupSuspendForCapture") {
     if (pump.capture_suppress_reply != nullptr) {
       result->Success(
@@ -694,7 +1191,7 @@ bool HandleLookupCall(const flutter::MethodCall<flutter::EncodableValue>& call,
     pump.capture_suppress_publish_seq = wrote.publish_seq;
     pump.capture_suppress_deadline =
         GetTickCount64() + kLookupCaptureSuppressTimeoutMs;
-    StartLookupPump();
+    SyncLookupPump();
     if (!pump.timer_running) {
       CompleteLookupCaptureSuppressError(
           VoiceHookLookupError::kCaptureSuppressTimeout);
@@ -790,9 +1287,6 @@ VoiceHookOpenResult VoiceHookReader::Open(uint32_t pid) {
       CompleteLookupCaptureSuppressError(VoiceHookLookupError::kCaptureCancelled);
     }
   }
-  // 新段上是否要把查词开关重放回去（连带把泵拉起来）。SetTimer 要进内核，按本文件
-  // 既有纪律不在持锁时做，所以在锁外收尾。
-  bool reapply_lookup_enabled = false;
   {
   ReaderState& st = State();
   std::lock_guard<std::mutex> lock(st.mutex);
@@ -858,26 +1352,47 @@ VoiceHookOpenResult VoiceHookReader::Open(uint32_t pid) {
   // v14：查词游标对齐到「现在」。不这么做，会话重开时注入侧遗留的旧 hit 会被当成
   // 新命中重放，用户会看到一张莫名其妙的卡片弹出来。
   ResetLookupCursorsLocked(st, header);
-  // 段换了就把开关意图重放进新段（见 ReaderState::lookup_enabled_desired）。
-  // 走与 SetLookupEnabled 同一道闸：新段没有查词区时什么都不做，绝不盲写。
-  if (st.lookup_enabled_desired &&
-      LookupGateLocked(header, false) == VoiceHookLookupError::kNone) {
-    InterlockedExchange(
-        reinterpret_cast<volatile LONG*>(&header->lookup_enabled), 1);
-    reapply_lookup_enabled = true;
+  // 段换了就先重放 geometry admission，再重放 lookup runtime。attachedOnly
+  // 仍会把 runtime 打开以保留 injected generic shield；两份意图都属于 reader，
+  // 不能依赖 Dart 猜 mapping 何时换代。
+  if (LookupGateLocked(header, false) == VoiceHookLookupError::kNone) {
+    (void)fushi_voice_hook::PublishLookupGeometryAdmission(
+        header, st.lookup_geometry_admission_mode_desired,
+        st.lookup_geometry_attached_ready_desired,
+        st.lookup_native_input_allowed_desired);
+    if (st.lookup_enabled_desired) {
+      InterlockedExchange(
+          reinterpret_cast<volatile LONG*>(&header->lookup_enabled), 1);
+    }
   }
   out.status = StatusFromHeaderLocked(header);
   }
-  if (reapply_lookup_enabled) {
-    StartLookupPump();
-  }
+  // 会话开出来就把泵拉起来，节拍由 [SyncLookupPump] 按当前闸门自己定——**不再**只在
+  // 重放了开关时才起泵：准入状态与开关正交，开关关着的那一局同样要报得出"本引擎
+  // 没做查词"。SetTimer 要进内核，按本文件既有纪律在锁外收尾。
+  SyncLookupPump();
   return out;
+}
+
+uint32_t VoiceHookReader::CurrentPid() {
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  return ProtocolMatches(st.header) ? st.pid : 0;
 }
 
 VoiceHookStatus VoiceHookReader::Status() {
   ReaderState& st = State();
   std::lock_guard<std::mutex> lock(st.mutex);
   return StatusFromHeaderLocked(st.header);
+}
+
+uint32_t VoiceHookReader::RequestNativeLoopbackPolicy(bool allow) {
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  if (!ProtocolMatches(st.header)) return 0;
+  return fushi_voice_hook::PublishNativeLoopbackRequest(
+      st.header, allow ? fushi_voice_hook::kNativeLoopbackAllow
+                       : fushi_voice_hook::kNativeLoopbackDeny);
 }
 
 VoiceHookStatus VoiceHookReader::GrabRecent(int back_ms,
@@ -1159,7 +1674,20 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
   const uint8_t* ring =
       reinterpret_cast<const uint8_t*>(h) + sizeof(SharedHeader);
 
+  // 每条 clip 的能量只算一遍：选源与拼接两处共用。旧实现两处各算一次，每次还先把整段
+  // memcpy 出来——本函数持锁跑在 Flutter 平台线程上，收敛循环每行要调 ~24 次，环上限
+  // 64MB 时那是每行几个 GB 的拷贝与扫描（宿主侧卡顿的来源，BUG-1769）。
+  std::vector<double> energies(valid.size(), -1.0);
+  for (size_t i = 0; i < valid.size(); i++) {
+    energies[i] = ClipEnergyLocked(h, ring, valid[i]);
+  }
+
   // 选语音源：target_source 非 0 直接用（手动选轨）；否则按能量自动选（排除 exclude_sources）。
+  //
+  // 这里**必须**收敛到唯一一个 source_ptr。把多个源拼进同一句永远不是合法答案：
+  // 同一时刻环里通常同时有语音源、BGM 源和混音输出，拼起来就是「同一句念两遍 + 杂音」
+  // （BUG-1769）。所以下面所有分支的出口都是「选出一个源」或「返回空交调用方回退」，
+  // 不再有「选不出就全都要」这条退化路径。
   bool filter_by_src = false;
   uint64_t sel_src = 0;
   if (target_source != 0) {
@@ -1169,8 +1697,10 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
     // 每源：说话前窗口 [ts-900,ts-250] 与文本时刻窗口 [ts-150,ts+450] 的平均能量。
     std::map<uint64_t, double> e_before, e_at;
     std::map<uint64_t, int> n_before, n_at;
+    std::map<uint64_t, uint64_t> bytes_at;  // 位深不认识时的格式无关代理判据
     bool any_energy = false;
-    for (const auto* c : valid) {
+    for (size_t i = 0; i < valid.size(); i++) {
+      const auto* c = valid[i];
       bool excluded = false;
       for (const uint64_t ex : exclude_sources) {
         if (ex == c->source_ptr) {
@@ -1181,9 +1711,16 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
       if (excluded) {
         continue;  // 用户标记的 BGM 源不参与自动选源
       }
-      const double e = ClipEnergy16Locked(h, ring, c);
+      {
+        const int64_t dd = static_cast<int64_t>(c->timestamp_ms) -
+                           static_cast<int64_t>(ts_ms);
+        if (dd >= -150 && dd <= 450) {
+          bytes_at[c->source_ptr] += c->byte_len;
+        }
+      }
+      const double e = energies[i];
       if (e < 0) {
-        continue;  // 非 16-bit
+        continue;  // 位深真的不认识（8/16/24/32 与 float32 之外）
       }
       any_energy = true;
       const int64_t d = static_cast<int64_t>(c->timestamp_ms) -
@@ -1214,13 +1751,23 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
         sel_src = kv.first;
       }
     }
-    if (any_energy) {
-      if (sel_src == 0) {
-        return VoiceHookStatus{};  // 有能量数据却选不出源（全被排除）——交调用方回退
+    if (!any_energy) {
+      // 位深真的不认识（不是 8/16/24/32 也不是 float32）：能量判据用不了，但**仍然只能
+      // 选一个源**。退而用格式无关的代理——文本时刻窗内写入字节最多的那个源（正在出声的
+      // 源必然在写）。这条分支在现实里几乎走不到（BUG-1769 修复后常见格式全部可算能量），
+      // 留着是为了让「选不出源」永远收敛到「返回空让调用方回退」，而不是「拼所有源」。
+      uint64_t best_bytes = 0;
+      for (const auto& kv : bytes_at) {
+        if (kv.second > best_bytes) {
+          best_bytes = kv.second;
+          sel_src = kv.first;
+        }
       }
-      filter_by_src = true;
     }
-    // any_energy=false（非 16-bit）：无法能量选源，退化为拼所有源（filter_by_src 保持 false）。
+    if (sel_src == 0) {
+      return VoiceHookStatus{};  // 选不出源（全被排除／窗口内没段）——交调用方回退
+    }
+    filter_by_src = true;
   }
 
   // 拼接选定源在 [下界, ts+forward_ms] 的段；静音判据用该源峰值能量的 8%。
@@ -1265,7 +1812,8 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
   std::vector<uint8_t> pcm;
   const fushi_voice_hook::VoiceClip* fmt = nullptr;
   double peak = 1.0;
-  for (const auto* c : valid) {
+  for (size_t i = 0; i < valid.size(); i++) {
+    const auto* c = valid[i];
     if (filter_by_src && c->source_ptr != sel_src) {
       continue;
     }
@@ -1274,7 +1822,12 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
     if (static_cast<int64_t>(c->timestamp_ms) < lower_ts || d > forward_ms) {
       continue;
     }
-    const double e = ClipEnergy16Locked(h, ring, c);
+    // 同一源中途换了格式（重建 buffer、切采样率）：拼进去会被首段的 fmt 冒充，
+    // 播出来是字节级垃圾。整段跳过，宁可短一点也不给用户一段噪声（BUG-1769）。
+    if (fmt != nullptr && !ClipFormatMatches(c, fmt)) {
+      continue;
+    }
+    const double e = energies[i];
     if (e > peak) {
       peak = e;
     }
@@ -1357,11 +1910,11 @@ void VoiceHookReader::ListAudioTracks(uint64_t ts_ms,
     const int64_t d =
         static_cast<int64_t>(c->timestamp_ms) - static_cast<int64_t>(ts_ms);
     if (d >= -150 && d <= 450) {
-      // 先无条件计数：这条轨在这句时刻窗内**有没有出声**与能不能算能量无关。
-      // 能量只在 16-bit 上算得出来（ClipEnergy16Locked 其余返回 -1），拿能量兼作
-      // 「有没有段」的判据会把非 16-bit 的可用轨误判成静音（BUG-1165）。
+      // 先无条件计数：这条轨在这句时刻窗内**有没有出声**与能不能算能量无关（BUG-1165）。
+      // BUG-1769 之后能量对 8/16/24/32-bit 与 float32 全部算得出来，`e < 0` 只剩「位深真的
+      // 不认识」这一种；这条无条件计数仍然保留，作为那种情况下的兜底。
       n_clips_at[c->source_ptr]++;
-      const double e = ClipEnergy16Locked(h, ring, c);
+      const double e = ClipEnergyLocked(h, ring, c);
       if (e >= 0) {
         sum_energy_at[c->source_ptr] += e;
         n_energy_at[c->source_ptr]++;
@@ -1424,6 +1977,8 @@ const char* VoiceHookLookupErrorToken(VoiceHookLookupError error) {
       return "capture_suppress_timeout";
     case VoiceHookLookupError::kFrameRejected:
       return "frame_rejected";
+    case VoiceHookLookupError::kControlRejected:
+      return "control_rejected";
   }
   return "unknown";
 }
@@ -1450,6 +2005,7 @@ void VoiceHookReader::DetachLookupChannel() {
   // 同上：从没注册过 handler，所以这里也不能注销（注销会把 flutter_window 那份
   // 一起清掉）。只丢自己的通道对象。
   pump.channel.reset();
+  pump.direct_presenter = nullptr;
   pump.capture = nullptr;
   pump.input_sink = nullptr;
   ++pump.capture_generation;
@@ -1465,6 +2021,11 @@ bool VoiceHookReader::TryHandleLookupMethodCall(
   return HandleLookupCall(call, result);
 }
 
+void VoiceHookReader::SetLookupDirectPresenter(
+    LookupDirectPresenter presenter) {
+  Pump().direct_presenter = std::move(presenter);
+}
+
 void VoiceHookReader::SetLookupCaptureRequest(LookupCaptureRequest request) {
   Pump().capture = std::move(request);
 }
@@ -1473,10 +2034,53 @@ void VoiceHookReader::SetLookupInputSink(LookupInputSink sink) {
   Pump().input_sink = std::move(sink);
 }
 
+void VoiceHookReader::SetLookupGeometryStatusSink(
+    LookupGeometryStatusSink sink) {
+  LookupPumpState& pump = Pump();
+  pump.geometry_status_sink = std::move(sink);
+  pump.has_last_geometry_status = false;
+}
+
 bool VoiceHookReader::HasLookupChannel() {
   ReaderState& st = State();
   std::lock_guard<std::mutex> lock(st.mutex);
   return LookupGateLocked(st.header, false) == VoiceHookLookupError::kNone;
+}
+
+bool VoiceHookReader::HasSession() {
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  return ProtocolMatches(st.header);
+}
+
+bool VoiceHookReader::PollLookupAdmission(VoiceHookLookupAdmission* out) {
+  if (out == nullptr) {
+    return false;
+  }
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  const SharedHeader* h = st.header;
+  // 闸门是**协议匹配**，不是 HasLookupRegion：准入字段活在 SharedHeader 里，而
+  // 「本引擎没做查词传感器」这条恰恰可能来自一个没有查词区的会话。用查词区当闸
+  // 会把最需要说出口的那一类静音掉。
+  if (!ProtocolMatches(h)) {
+    return false;
+  }
+  uint32_t seq = 0;
+  const fushi_voice_hook::LookupAdmissionReport report =
+      fushi_voice_hook::ReadLookupAdmission(h, &seq);
+  // primed 而且 seq 没动 = 这份快照 Dart 已经有了。**不**拿 state 做比较：hook 侧
+  // 只在内容真变时推进 seq，seq 才是"变没变"的唯一真值。
+  if (st.lookup_admission_primed && seq == st.lookup_admission_seq) {
+    return false;
+  }
+  st.lookup_admission_primed = true;
+  st.lookup_admission_seq = seq;
+  // seq==0 时 ReadLookupAdmission 返回的就是 kLookupAdmissionUnknown + 空摘要，
+  // 原样往上报——"还不知道"是一个必须能表达的状态，绝不在这里替它猜一个。
+  out->state = report.state;
+  out->executable_sha256 = report.executable_sha256;
+  return true;
 }
 
 VoiceHookLookupError VoiceHookReader::PeekLookupGate(bool require_enabled) {
@@ -1511,13 +2115,248 @@ VoiceHookLookupError VoiceHookReader::SetLookupEnabled(bool enabled) {
       ResetLookupCursorsLocked(st, h);
     }
   }
-  // SetTimer/KillTimer 在锁外：它们要进内核，没理由在持锁时做。
-  if (enabled) {
-    StartLookupPump();
-  } else {
-    StopLookupPump();
+  // SetTimer/KillTimer 在锁外：它们要进内核，没理由在持锁时做。关掉查词**不停泵**，
+  // 只降到慢拍——准入还得继续报（会话没了泵会在下一拍自己停）。
+  SyncLookupPump();
+  return VoiceHookLookupError::kNone;
+}
+
+VoiceHookLookupError VoiceHookReader::SetLookupGeometryAdmission(
+    uint32_t mode, bool attached_ready, bool native_input_allowed,
+    uint32_t* request_seq, uint32_t* applied_seq) {
+  if (request_seq != nullptr) *request_seq = 0;
+  if (applied_seq != nullptr) *applied_seq = 0;
+  if (!fushi_voice_hook::IsLookupGeometryAdmissionMode(mode)) {
+    return VoiceHookLookupError::kControlRejected;
+  }
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  // Persist before the mapping gate for the same reason as lookup_enabled:
+  // Open() is the only layer that can replay intent into a replacement map.
+  st.lookup_geometry_admission_mode_desired = mode;
+  st.lookup_geometry_attached_ready_desired = attached_ready;
+  // A positive input edge is safe to replay only after it was published to a
+  // live mapping. A not_open request must not arm the replacement mapping
+  // before Dart has reopened its local route. Negative edges always revoke any
+  // prior replayable permission immediately.
+  st.lookup_native_input_allowed_desired = false;
+  SharedHeader* h = st.header;
+  const VoiceHookLookupError gate = LookupGateLocked(h, false);
+  if (gate != VoiceHookLookupError::kNone) return gate;
+  const uint32_t published =
+      fushi_voice_hook::PublishLookupGeometryAdmission(
+          h, mode, attached_ready, native_input_allowed);
+  if (published == 0) return VoiceHookLookupError::kControlRejected;
+  st.lookup_native_input_allowed_desired = native_input_allowed;
+  if (request_seq != nullptr) *request_seq = published;
+  if (applied_seq != nullptr) {
+    *applied_seq = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_geometry_admission_applied_seq);
   }
   return VoiceHookLookupError::kNone;
+}
+
+bool VoiceHookReader::PrepareLookupShieldTarget(HWND target) {
+  if (target == nullptr || !IsWindow(target)) return false;
+  DWORD target_pid = 0;
+  if (GetWindowThreadProcessId(target, &target_pid) == 0 || target_pid == 0) {
+    return false;
+  }
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  if (LookupGateLocked(st.header, false) != VoiceHookLookupError::kNone ||
+      target_pid != st.pid) {
+    if (st.lookup_shield_prevalidated_target == target) {
+      st.lookup_shield_prevalidated_target = nullptr;
+    }
+    return false;
+  }
+  st.lookup_shield_prevalidated_target = target;
+  return true;
+}
+
+uint32_t VoiceHookReader::TryPublishLookupShieldTransaction(
+    uint32_t owner_kind, HWND target, uint64_t transaction_id,
+    uint32_t active_buttons, bool allow_risk) {
+  if (target == nullptr || transaction_id == 0 ||
+      owner_kind != fushi_voice_hook::kLookupShieldOwnerAttachedGlyph ||
+      (active_buttons & ~fushi_voice_hook::kLookupShieldButtonLeft) != 0) {
+    return 0;
+  }
+  ReaderState& st = State();
+  std::unique_lock<std::mutex> lock(st.mutex, std::try_to_lock);
+  if (!lock.owns_lock() || st.lookup_shield_prevalidated_target != target ||
+      LookupGateLocked(st.header, false) != VoiceHookLookupError::kNone ||
+      !AttachedGeometryProviderOwns(st.header)) {
+    return 0;
+  }
+  // GeometryProviderRegistry uses the same request writer bit as its switch
+  // fence. If ownership changes after the check above, exactly one side wins
+  // the CAS below: either this down becomes visible first and pins attached
+  // through its tail, or the callback fails open after the registry switches.
+  return TryPublishLookupShieldRequestOnce(
+      st.header, owner_kind,
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(target)),
+      transaction_id, active_buttons, allow_risk);
+}
+
+uint32_t VoiceHookReader::PublishLookupShieldTransaction(
+    uint32_t owner_kind, HWND target, uint64_t transaction_id,
+    uint32_t active_buttons, bool allow_risk) {
+  if (target == nullptr || transaction_id == 0) return 0;
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  SharedHeader* h = st.header;
+  if (LookupGateLocked(h, false) != VoiceHookLookupError::kNone) return 0;
+  DWORD target_pid = 0;
+  const bool live_target =
+      IsWindow(target) &&
+      GetWindowThreadProcessId(target, &target_pid) != 0 &&
+      target_pid != 0 && target_pid == st.pid;
+  if (!live_target) {
+    // A destroyed target must not prevent the owner from publishing the
+    // matching release.  Accept only the exact in-flight transaction; a new
+    // down against a dead/foreign HWND still fails closed.
+    const fushi_voice_hook::LookupShieldRequestSnapshot current =
+        fushi_voice_hook::ReadLookupShieldRequest(h);
+    const uint64_t raw_target =
+        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(target));
+    if (active_buttons != 0 || !current.valid ||
+        current.owner_kind != owner_kind ||
+        current.target_hwnd != raw_target ||
+        current.transaction_id != transaction_id) {
+      return 0;
+    }
+  }
+  switch (owner_kind) {
+    case fushi_voice_hook::kLookupShieldOwnerNativeGlyph:
+    case fushi_voice_hook::kLookupShieldOwnerAttachedGlyph:
+    case fushi_voice_hook::kLookupShieldOwnerPopup:
+    case fushi_voice_hook::kLookupShieldOwnerDismiss:
+      break;
+    default:
+      return 0;
+  }
+  // 首期只拥有裸左击。拒绝（而不是掩掉）其它位，避免调用方误以为右键/滚轮也受保护。
+  if ((active_buttons & ~fushi_voice_hook::kLookupShieldButtonLeft) != 0) {
+    return 0;
+  }
+  return fushi_voice_hook::PublishLookupShieldRequest(
+      h, owner_kind, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(target)),
+      transaction_id, active_buttons, allow_risk);
+}
+
+VoiceHookLookupShieldStatus VoiceHookReader::LookupShieldStatus() {
+  VoiceHookLookupShieldStatus out;
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  const SharedHeader* h = st.header;
+  out.error = LookupGateLocked(h, false);
+  if (out.error != VoiceHookLookupError::kNone) return out;
+  const fushi_voice_hook::LookupShieldRequestSnapshot request =
+      fushi_voice_hook::ReadLookupShieldRequest(h);
+  if (!request.valid) {
+    // v19 mapping is valid but no transaction has ever been published.  This
+    // is the defined unknown/idle state, not a channel failure.
+    return out;
+  }
+  out.request_seq = request.seq;
+  out.owner_kind = request.owner_kind;
+  out.target_hwnd = request.target_hwnd;
+  out.transaction_id = request.transaction_id;
+  out.active_buttons = request.active_buttons;
+  out.allow_risk = request.allow_risk;
+  // Status publication writes payload first and applied_seq last.  Read the
+  // sequence on both sides so a racing hook update cannot splice masks from a
+  // different request into this snapshot.
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    const uint32_t before = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_shield_applied_seq);
+    const uint32_t required = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_shield_required_mask);
+    const uint32_t ready = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_shield_ready_mask);
+    const uint32_t observed = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_shield_observed_mask);
+    const uint32_t fault = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_shield_fault_mask);
+    const uint32_t flags = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_shield_status_flags);
+    MemoryBarrier();
+    const uint32_t after = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_shield_applied_seq);
+    if (before != after) continue;
+    out.applied_seq = after;
+    out.required_mask = required;
+    out.ready_mask = ready;
+    out.observed_mask = observed;
+    out.fault_mask = fault;
+    out.status_flags = flags;
+    break;
+  }
+  return out;
+}
+
+VoiceHookLookupGeometryStatus VoiceHookReader::LookupGeometryStatus() {
+  VoiceHookLookupGeometryStatus out;
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  const SharedHeader* h = st.header;
+  out.error = LookupGateLocked(h, false);
+  if (out.error != VoiceHookLookupError::kNone) return out;
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    const uint64_t generation_before =
+        fushi_voice_hook::AtomicLoadPreview64(
+            &h->lookup_geometry_generation);
+    const uint32_t provider_kind = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_geometry_active_kind);
+    const uint32_t provider_id = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_geometry_active_id);
+    const uint32_t provider_status = fushi_voice_hook::AtomicLoadShared32(
+        &h->lookup_geometry_status);
+    const uint64_t text_generation =
+        fushi_voice_hook::AtomicLoadPreview64(
+            &h->lookup_geometry_text_generation);
+    const uint32_t lookup_diag =
+        fushi_voice_hook::AtomicLoadShared32(&h->lookup_diag);
+    MemoryBarrier();
+    const uint64_t generation_after =
+        fushi_voice_hook::AtomicLoadPreview64(
+            &h->lookup_geometry_generation);
+    // Ready is intentionally published before the first geometry and keeps
+    // generation at zero.  Generation alone therefore cannot fence that
+    // provider-state publication.  Re-read the complete identity/lifecycle
+    // tuple as well, so the host never promotes a kind/id/status combination
+    // assembled across OfferReady/Retire stores.
+    const uint32_t provider_kind_after =
+        fushi_voice_hook::AtomicLoadShared32(
+            &h->lookup_geometry_active_kind);
+    const uint32_t provider_id_after =
+        fushi_voice_hook::AtomicLoadShared32(&h->lookup_geometry_active_id);
+    const uint32_t provider_status_after =
+        fushi_voice_hook::AtomicLoadShared32(&h->lookup_geometry_status);
+    const uint64_t text_generation_after =
+        fushi_voice_hook::AtomicLoadPreview64(
+            &h->lookup_geometry_text_generation);
+    const uint32_t lookup_diag_after =
+        fushi_voice_hook::AtomicLoadShared32(&h->lookup_diag);
+    if (generation_before != generation_after ||
+        provider_kind != provider_kind_after ||
+        provider_id != provider_id_after ||
+        provider_status != provider_status_after ||
+        text_generation != text_generation_after ||
+        lookup_diag != lookup_diag_after) {
+      continue;
+    }
+    out.provider_kind = provider_kind;
+    out.provider_id = provider_id;
+    out.provider_status = provider_status;
+    out.lookup_diag = lookup_diag;
+    out.generation = generation_after;
+    out.text_generation = text_generation;
+    return out;
+  }
+  return out;
 }
 
 bool VoiceHookReader::PollLookupHit(VoiceHookLookupHit* out) {
@@ -1547,6 +2386,9 @@ bool VoiceHookReader::PollLookupHit(VoiceHookLookupHit* out) {
   // 变了就整条重读——手上那份可能是两次命中的拼接（前半行 A、后半行 B），拿去查词
   // 会得到一个谁都没说过的句子。四次仍不稳定就放弃，下一拍再来（16ms 后）。
   for (int attempt = 0; attempt < 4; attempt++) {
+    const uint64_t active_geometry_before =
+        fushi_voice_hook::AtomicLoadPreview64(
+            &h->lookup_geometry_generation);
     const uint64_t seq = fushi_voice_hook::AtomicLoadPreview64(&slot->seq);
     if (seq == 0 || seq <= st.lookup_hit_seq) {
       // 计数动了但 seq 没前进：注入侧的重复发布，不是新命中。这条路径上推进计数
@@ -1556,8 +2398,15 @@ bool VoiceHookReader::PollLookupHit(VoiceHookLookupHit* out) {
     }
     VoiceHookLookupHit hit;
     hit.seq = seq;
+    hit.provider_kind = slot->provider_kind;
+    hit.provider_id = slot->provider_id;
     hit.char_index = slot->char_index;
+    hit.source_length = slot->source_length;
     hit.char_count = slot->char_count;
+    hit.text_generation = slot->text_generation;
+    hit.geometry_generation = slot->geometry_generation;
+    hit.coordinate_space = slot->coordinate_space;
+    hit.writing_mode = slot->writing_mode;
     hit.glyph_x = slot->glyph_x;
     hit.glyph_y = slot->glyph_y;
     hit.glyph_w = slot->glyph_w;
@@ -1565,13 +2414,42 @@ bool VoiceHookReader::PollLookupHit(VoiceHookLookupHit* out) {
     hit.view_w = slot->view_w;
     hit.view_h = slot->view_h;
     hit.submit = (slot->flags & fushi_voice_hook::kLookupHitFlagSubmit) != 0;
-    uint32_t line_bytes = slot->line_bytes;
-    if (line_bytes > fushi_voice_hook::kLookupLineBytes) {
-      line_bytes = fushi_voice_hook::kLookupLineBytes;
+    const uint32_t line_bytes = slot->line_bytes;
+    if (line_bytes == 0 || line_bytes > fushi_voice_hook::kLookupLineBytes) {
+      continue;
     }
     hit.line_utf8.assign(reinterpret_cast<const char*>(slot->line_utf8),
                          line_bytes);
-    if (fushi_voice_hook::AtomicLoadPreview64(&slot->seq) != seq) {
+    const bool source_span_valid =
+        lookup_hit_validation::ValidateUtf8SourceSpan(
+            slot->line_utf8, line_bytes, hit.char_count, hit.char_index,
+            hit.source_length);
+    const bool provider_pair_valid =
+        lookup_hit_validation::IsProductionProviderPair(hit.provider_kind,
+                                                        hit.provider_id);
+    const bool geometry_valid = lookup_hit_validation::IsGeometryRectSane(
+        hit.glyph_x, hit.glyph_y, hit.glyph_w, hit.glyph_h, hit.view_w,
+        hit.view_h);
+    const uint64_t active_geometry_after =
+        fushi_voice_hook::AtomicLoadPreview64(
+            &h->lookup_geometry_generation);
+    if (fushi_voice_hook::AtomicLoadPreview64(&slot->seq) != seq ||
+        active_geometry_before == 0 ||
+        active_geometry_before != active_geometry_after ||
+        hit.geometry_generation != active_geometry_after ||
+        hit.text_generation != fushi_voice_hook::AtomicLoadPreview64(
+                                   &h->lookup_geometry_text_generation) ||
+        hit.provider_kind != fushi_voice_hook::AtomicLoadShared32(
+                                 &h->lookup_geometry_active_kind) ||
+        hit.provider_id != fushi_voice_hook::AtomicLoadShared32(
+                               &h->lookup_geometry_active_id) ||
+        fushi_voice_hook::AtomicLoadShared32(&h->lookup_geometry_status) !=
+            fushi_voice_hook::kLookupGeometryStatusActive ||
+        !provider_pair_valid || !source_span_valid || !geometry_valid ||
+        !fushi_voice_hook::IsLookupCardCoordinateSpaceResolved(
+            hit.coordinate_space) ||
+        hit.writing_mode != fushi_voice_hook::kLookupWritingModeHorizontal ||
+        hit.text_generation == 0 || hit.geometry_generation == 0) {
       continue;
     }
     st.lookup_hit_count = count;

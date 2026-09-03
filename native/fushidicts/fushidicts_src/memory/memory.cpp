@@ -137,8 +137,12 @@ void unmap(mapped_file mapping) {
   }
 
 #ifdef _WIN32
+  // 上游 d4183d4：unmap 前显式刷脏页——导入刚完成即崩溃时文件可能没落盘
+  //（只读映射无脏页，调用无害）。
+  FlushViewOfFile(mapping.data, 0);
   UnmapViewOfFile(mapping.data);
 #else
+  msync(mapping.data, mapping.size, MS_SYNC);
   munmap(mapping.data, mapping.size);
 #endif
 }

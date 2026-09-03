@@ -1,21 +1,19 @@
-/// 视频刮削**自动化调度层**：把原先靠用户点「批量匹配海报」按钮才跑的刮削，
-/// 变成进视频页自动补刮 + 新视频入库自动刮。
+/// 旧视频封面流水线的**本地自动化调度层**：进视频页或新视频入库后检查
+/// sidecar / 本地封面，不装配在线元数据 client。
 ///
 /// 为什么是一个调度器而不是在每个导入点各挂一次钩子：视频入库的路径有八条
 /// （导入弹窗单文件 / 文件夹 / 播放列表 / 流媒体、库扫描、互联下载、云下载、外部
 /// 打开），逐个挂钩子既漏又重复。本服务只认**一条判据**——「库里有哪些本地视频还
-/// 没有条目资料」——由调用方在两个时机喂进来：
+/// 可检查 sidecar」——由调用方在两个时机喂进来：
 /// * 视频页 initState（只补刮 `sourceId == null` 的兼容导入）
 /// * 视频库 uid 集合变化（`watchVideoBookUids` 的既有消费点）
 ///
-/// 已登记来源的条目由 `VideoSourceScrapeCoordinator` 按来源设置处理，不能在扫描刷新后
-/// 又被这条旧 fallback 偷偷出网；这保证「来源扫描离线、扫描后自动刮削默认关闭」。
+/// 已登记来源的条目由 `VideoSourceScrapeCoordinator` 按来源设置处理；本调度器
+/// 只保留兼容导入的本地封面整理能力。
 ///
-/// 节流与边界（免得把 Bangumi 当自家 CDN 刷）：
+/// 节流与边界（避免批量本地文件任务造成 IO 突刺）：
 /// * 串行，一次只跑一本；本本之间 [_perBookDelay] 间隔。
-/// * 每本每进程只尝试一次（[_attempted]）——网络不通/条目查不到时，不会每次进
-///   视频页都把整库重刷一遍。用户手动「重新刮削」走弹窗，不受此限。
-/// * 同一 subject 的详情请求由 [CoverScraperService] 内部缓存压成一次。
+/// * 每本每进程只尝试一次（[_attempted]），不会每次进视频页都把整库重刷一遍。
 /// * 远端/流媒体书天然不参与（无本地文件名可解析）。
 library;
 
@@ -40,15 +38,13 @@ class VideoScrapeAutoService {
         _isEnabled = isEnabled,
         _delay = perBookDelay;
 
-  /// 每本之间的间隔：Bangumi 是公益 API，串行 + 间隔是基本礼貌。整库首刮会慢，
-  /// 但它是后台静默跑的，用户不等它。
+  /// 每本之间的间隔：串行处理本地文件，避免整库首轮造成 IO 突刺。
   static const Duration _perBookDelay = Duration(milliseconds: 600);
 
   final VideoBookRepository _repo;
   final Future<CoverScraperService> Function() _serviceFactory;
 
-  /// 总闸（`AppModel.videoAutoScrape`）。每轮 [sweep] **进场时**读一次，而不是构造
-  /// 时读死：用户在设置里关掉后，下一轮就该立刻不再出网，不必重建服务。null =
+  /// 兼容总闸（`AppModel.videoAutoScrape`）。每轮 [sweep] 进场时读一次；null =
   /// 不设闸（测试/内部调用）。
   final bool Function()? _isEnabled;
 
@@ -60,14 +56,14 @@ class VideoScrapeAutoService {
   /// 当前是否有一轮在跑（串行保证：第二次 [sweep] 直接返回，不并发开第二条流水线）。
   bool _running = false;
 
-  /// 本进程是否已跑过存量子篇海报清理（[CoverScraperService.reclaimMemberScrapedCovers]）。
+  /// 本进程是否已跑过存量子篇海报清理。
   /// 判据幂等，跑一次就够；失败也记，不在同一进程里反复重扫全库。
   bool _reclaimedMemberCovers = false;
 
   /// dispose 后置位，让跑到一半的循环在下一本之前收手。
   bool _disposed = false;
 
-  /// 复用同一个 service 实例，让它内部的条目详情缓存跨轮次生效。
+  /// 复用同一个本地 service 实例，避免重复组装目录与 artifact 校验器。
   CoverScraperService? _service;
 
   /// 本本之间节流用的可取消定时器 + 它的唤醒信号。
@@ -80,26 +76,25 @@ class VideoScrapeAutoService {
   Timer? _delayTimer;
   Completer<void>? _delayCompleter;
 
-  /// 已刮出的资料条目数（本轮），供测试断言与调试。
+  /// 本进程已检查过的条目数，供测试断言与调试。
   int get attemptedCount => _attempted.length;
 
   /// 是否正在跑。
   bool get isRunning => _running;
 
-  /// 扫一遍 [books]，对「本地 + 还没有条目资料 + 本进程没试过」的书跑刮削。
+  /// 扫一遍 [books]，对「兼容导入 + 本地 + 本进程没检查过」的书检查 sidecar。
   ///
   /// 幂等且可重复调用：已在跑时直接返回（不排队、不并发）。全程不抛——单本失败
-  /// 由 [CoverScraperService.scrapeLibrary] 收成 `ScrapeFailed` 继续下一本，整轮
+  /// 由 [CoverScraperService.scrapeLibrary] 收成 [ScrapeFailed] 继续下一本，整轮
   /// 异常只吞在本方法边界（后台静默任务不该把页面搞崩），下次进页面自然重试。
   Future<void> sweep(List<VideoBookRow> books) async {
     if (_running || _disposed) return;
-    // 总闸关 = 一个请求都不发（连「哪些书没刮」的库查询都省了）。
+    // 总闸关 = 连「哪些书未处理」的本地库查询都省掉。
     if (_isEnabled != null && !_isEnabled()) return;
     _running = true;
     try {
-      // 存量清理先于本轮刮削：被刷上作品海报的子篇**恰恰是已经有资料行的书**，
-      // 永远进不了 [_pending]，挂在刮削后面就等于永远不跑（用户开 app 看不到修复）。
-      // 判据幂等且不需要 CoverScraperService（不加载离线索引），本进程只跑一次。
+      // 存量清理先于本轮 sidecar 检查；判据幂等且不需要
+      // CoverScraperService，本进程只跑一次。
       if (!_reclaimedMemberCovers) {
         _reclaimedMemberCovers = true;
         try {
@@ -120,8 +115,8 @@ class VideoScrapeAutoService {
         _attempted.add(book.bookUid);
       }
 
-      // 逐本流：scrapeLibrary 内部已处理封面来源保护、同目录解析缓存、单本异常
-      // 不中断整批。这里只负责节流和中止。
+      // 逐本流：scrapeLibrary 内部已处理封面来源保护、sidecar 扫描和单本异常；
+      // 这里只负责节流和中止。
       for (final VideoBookRow book in pending) {
         if (_disposed) return;
         await service.scrapeLibrary(<VideoBookRow>[book]).drain<void>();
@@ -147,24 +142,17 @@ class VideoScrapeAutoService {
     return completer.future;
   }
 
-  /// 过滤出真正需要刮的书：兼容导入（无 sourceId）+ 本地路径 + 无资料行 +
-  /// 本进程未尝试过。已登记来源必须走来源级单主源/NFO 流程。
-  Future<List<VideoBookRow>> _pending(List<VideoBookRow> books) async {
-    final List<VideoBookRow> local = <VideoBookRow>[
-      for (final VideoBookRow b in books)
-        if (b.sourceId == null &&
-            _isLocal(b) &&
-            !_attempted.contains(b.bookUid))
-          b,
-    ];
-    if (local.isEmpty) return const <VideoBookRow>[];
-    // 一次性取已刮 uid 集合，避免逐本查询（N+1）。
-    final Set<String> scraped = await _repo.scrapedBookUids();
-    return <VideoBookRow>[
-      for (final VideoBookRow b in local)
-        if (!scraped.contains(b.bookUid)) b,
-    ];
-  }
+  /// 过滤出真正需要检查的书：兼容导入（无 sourceId）+ 本地路径 +
+  /// 本进程未尝试过。历史元数据行不影响用户新放入的 sidecar；已登记来源仍走
+  /// 来源级 AniDB 主源 / TMDB 补源 / NFO 流程。
+  Future<List<VideoBookRow>> _pending(List<VideoBookRow> books) =>
+      Future<List<VideoBookRow>>.value(<VideoBookRow>[
+        for (final VideoBookRow b in books)
+          if (b.sourceId == null &&
+              _isLocal(b) &&
+              !_attempted.contains(b.bookUid))
+            b,
+      ]);
 
   /// 本地文件视频判据：与 [CoverScraperService] 一致（http/https = 远端/流媒体）。
   static bool _isLocal(VideoBookRow book) {
@@ -174,11 +162,7 @@ class VideoScrapeAutoService {
         !path.startsWith('https://');
   }
 
-  /// 忘掉某本的「本进程已尝试」记录，让下一轮 [sweep] 重新刮它（用户点「重新刮削」）。
-  ///
-  /// 同时丢弃缓存的 [CoverScraperService] 实例：它内部记着「这个 subject 的详情
-  /// 拉失败过」的负缓存，不丢就会让手动重刮直接被负缓存短路、什么也不发生。下次
-  /// sweep 由工厂重建（代价是重读一次离线索引，用户手动动作的低频路径，可接受）。
+  /// 忘掉某本的「本进程已尝试」记录，并丢弃缓存的本地封面 service。
   void forget(String bookUid) {
     _attempted.remove(bookUid);
     _service = null;

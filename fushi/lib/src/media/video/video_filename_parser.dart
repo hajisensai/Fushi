@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/media_extensions.dart';
+import 'package:fushi/src/media/video/external_video.dart'
+    show decodedSourceBasename;
 import 'package:fushi/src/media/video/scraper/filename_parser.dart';
 import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 
@@ -165,12 +167,16 @@ List<VideoGroup> groupVideosIntoPlaylists(List<String> paths) {
   final Map<String, String> displaySeries = <String, String>{};
 
   for (final String path in paths) {
-    final VideoNameInfo info = parseVideoFilename(p.basename(path));
+    // 解码后的文件名参与解析/展示（decodedSourceBasename）：网络来源的
+    // http(s) URL 段是百分号编码的，不解码会把 %20 之类渗进系列名与集标题；
+    // 本地路径原样返回，行为不变。
+    final String name = decodedSourceBasename(path);
+    final VideoNameInfo info = parseVideoFilename(name);
     final String key = info.series.toLowerCase();
     displaySeries.putIfAbsent(key, () => info.series);
     byKey.putIfAbsent(key, () => <VideoEpisode>[]).add(VideoEpisode(
           path: path,
-          title: p.basenameWithoutExtension(path),
+          title: p.basenameWithoutExtension(name),
           season: info.season,
           episode: info.episode,
         ));

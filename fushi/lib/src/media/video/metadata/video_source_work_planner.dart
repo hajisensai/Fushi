@@ -29,6 +29,20 @@ class VideoSourceScrapeWork {
   String get stableKey => collection == null
       ? 'book:${members.single.bookUid}'
       : 'collection:${collection!.id}';
+
+  /// 标题本身是否携带可识别的作品信息。
+  ///
+  /// 「特典 S00E01」「S01E02」这类条目标题只是集号标签：单独一个没进合集的
+  /// 集号文件（BUG-2001）拿它去资料源搜索必然失败，而按目录名候选反查又会把
+  /// 特典误绑成正片作品。这类作品仍进计划（用户可在待确认队列里手动指定），
+  /// 但自动补刮不该反复对它做注定失败或注定误绑的尝试。
+  bool get hasIdentifiableTitle => !_bareEpisodeLabel.hasMatch(title.trim());
+
+  /// 纯集号标签：可选的「特典/SP/OVA/Special/Extra」前缀 + SxxEyy，别无其他。
+  static final RegExp _bareEpisodeLabel = RegExp(
+    r'^(?:特典|SP|OVA|Special|Extras?)?[\s._-]*S\d{1,3}E\d{1,4}$',
+    caseSensitive: false,
+  );
 }
 
 /// 从已入库的 `sourceId` 与合集成员关系生成按作品去重的刮削计划。

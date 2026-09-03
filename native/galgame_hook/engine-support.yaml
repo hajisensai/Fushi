@@ -13,47 +13,315 @@
     "implemented_unverified": "代码已存在，但没有足够的真实游戏证据，不能宣称支持。",
     "unavailable": "当前没有对应实现。"
   },
+  "lookup_support": {
+    "schema_version": 1,
+    "platforms": [
+      "windows_x86",
+      "windows_x64"
+    ],
+    "ocr_policy": "forbidden",
+    "experimental_providers_default_enabled": false,
+    "engines": [
+      {
+        "engine_id": "kirikiri_z",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": ["runtime_layout", "attached_calibrated"],
+          "evidence": "IPC v19 registry migration and offline adapter/attached-surface tests only; no same-session real-game card E2E is recorded."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "The v19 transaction protocol and standard public input-surface filters exist, but the 1,000-transaction real-build gate has not run."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+        }
+      },
+      {
+        "engine_id": "renpy_ffmpeg",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": ["runtime_layout", "attached_calibrated"],
+          "evidence": "IPC v19 registry migration and offline adapter/attached-surface tests only; Ren'Py 8 custom-screen coverage still needs real builds."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+        }
+      },
+      {
+        "engine_id": "tyrano_nwjs",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": ["attached_calibrated"],
+          "evidence": "The calibrated fallback is implemented offline; a Tyrano DOM runtime-layout provider is not yet admitted."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+        }
+      },
+      {
+        "engine_id": "unity_il2cpp",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": ["attached_calibrated"],
+          "evidence": "The calibrated fallback is implemented offline; TMP/UGUI source-index and Canvas-transform geometry are not yet admitted."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+        }
+      },
+      {
+        "engine_id": "elf_ai6",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": ["attached_calibrated"],
+          "evidence": "The calibrated fallback is implemented offline; positioned GDI lineage has not been admitted for this engine."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+        }
+      },
+      {
+        "engine_id": "reallive",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": ["attached_calibrated"],
+          "evidence": "The calibrated fallback is implemented offline; positioned GDI lineage has not been admitted for this engine."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+        }
+      },
+      {
+        "engine_id": "bgi_ethornell",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": ["attached_calibrated"],
+          "evidence": "The calibrated fallback is implemented offline; positioned GDI/DWrite lineage has not been admitted for this engine."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+        }
+      },
+      {
+        "engine_id": "catsystem2",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": ["attached_calibrated"],
+          "evidence": "The calibrated fallback is implemented offline; positioned GDI/DWrite lineage has not been admitted for this engine."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+        }
+      },
+      {
+        "engine_id": "malie_libp",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": ["attached_calibrated"],
+          "evidence": "The calibrated fallback is implemented offline; positioned GDI/DWrite lineage has not been admitted for this engine."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+        }
+      },
+      {
+        "engine_id": "qlie_filepack",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": ["attached_calibrated"],
+          "evidence": "The calibrated fallback is implemented offline; positioned GDI/DWrite lineage has not been admitted for this engine."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+        }
+      },
+      {
+        "engine_id": "artemis_pfs",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": ["attached_calibrated"],
+          "evidence": "The calibrated fallback is implemented offline; no uniquely traced hybrid positioned-text provider is admitted."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+        }
+      },
+      {
+        "engine_id": "siglus",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": ["engine_exact_layout", "attached_calibrated"],
+          "evidence": "The portable exact SHA-256 identity is followed by a hydrated-image gate that requires one glyph signature and one build-specific input signature across all executable sections, exact profile RVAs, and internal callgraph boundaries. Zero/multiple candidates and unknown hashes fail closed; lookup/card E2E is not recorded."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "Exact and generic shield code exists, but the 1,000-transaction real-build gate has not run."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+        }
+      },
+      {
+        "engine_id": "leaf_aquaplus",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": ["engine_exact_layout", "attached_calibrated"],
+          "evidence": "The portable exact SHA-256 identity is followed by hydrated-image, all-executable-section unique masked signatures, module-relative relocated-operand checks, callgraph gates and a D3D9 ABI gate. Zero/multiple candidates and unknown hashes fail closed; lookup/card E2E is not recorded."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "Exact and generic shield code exists, but the 1,000-transaction real-build gate has not run."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+        }
+      },
+      {
+        "engine_id": "hunex_gge",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": ["engine_exact_layout", "attached_calibrated"],
+          "evidence": "The calibrated fallback and a fail-closed exact provider are implemented. The HUNEX hydrated-image scanner requires unique executable-section renderer/input/projection anchors plus callgraph, unwind and imported-API validation before it can publish geometry. The original WoH session has not yet produced a complete glyph-to-client projection or lookup/card E2E. The engine_exact_layout entry above is a deliberate 2026-08-31 graduation from observation-only; only the geometry provider layer graduated, and the resource-capture and pairing gates stay not_verified."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "Generic shielding plus HUNEX semantic-submit ownership are implemented, but the real-build click, Shift and popup transaction gates have not run."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Per-executable risk gating and fail-closed native-input admission are implemented; no measured real-build click-leak rate is recorded."
+        }
+      },
+      {
+        "engine_id": "sgre",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": ["engine_exact_layout", "attached_calibrated"],
+          "evidence": "The measured SHA-256 row is a consistency check only. Known and unknown hashes traverse populated, mutually corroborated draw/vtable/DirectInput signatures across all executable sections, PE exception-directory function bounds, decoded module-relative targets and live vtable/COM ABI gates. Zero/multiple intersections, layout/codegen mismatches and structure faults fail closed. 2026-09-03 original-path E2E on the measured Steam x64 build (SHA-256 75A83A0E…C404B9D8, Fushi 2.2.4-debug.13075 launching sgre_steam.exe, injected helper, IPC v21): hover+Shift lookups (いて/サイ) and a bare left click on 話 each published a hit, presented the direct galCard inside the game and the game line did not advance; one word card was written (Sentence エル・プ<b>サイ</b>・コングルゥ, 3.19 s paired xWMA voice re-encoded to AAC, 480×270 AVIF animation). Evidence grade for the audio stops at captured: neither a byte-hash comparison against the source voice_body.bin entry nor a pure-voice classification was recorded, so hash_verified and voice_classified are NOT claimed and the run does not satisfy the per-sentence original-resource claim in full. Only this one build is covered."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "Exact DirectInput and generic shield code exists, but the 1,000-transaction real-build gate has not run."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Per-executable risk gating is implemented. 2026-09-03 measurement on the measured build: 8 popup-outside quick clicks (60 ms down/up) after Shift or click lookups, 7 were swallowed by the WH_MOUSE_LL + DirectInput shield pair with no line advance; the first click right after the mid-session risk acceptance (needsRiskAcceptance → activeNative) leaked and advanced the line once, and the leak did not reproduce on a fresh session whose acceptance was restored from memory. Too few transactions for a rate; the 1,000-transaction gate has not run."
+        }
+      }
+    ]
+  },
   "engines": [
     {
       "id": "siglus",
       "display_name": "SiglusEngine",
-      "aliases": ["Siglus 3", "VisualArt's Siglus"],
+      "aliases": [
+        "Siglus 3",
+        "VisualArt's Siglus"
+      ],
       "family": {
         "id": "visualarts",
         "relation": "VisualArt's / Key 系引擎"
       },
       "detection": {
         "executable_names": {
-          "values": ["SiglusEngine.exe"],
+          "values": [
+            "SiglusEngine.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
-            "reference": "anemoi 正式版，hibiki handoff 2026-07-19"
+            "reference": "anemoi 正式版与 Summer Pockets Reflection Blue 原始安装样本（2026-07-19 / 2026-08-27）"
           }
         },
         "pe_architectures": {
-          "values": ["x86"],
+          "values": [
+            "x86"
+          ],
           "evidence": {
             "kind": "real_sample",
-            "reference": "anemoi SiglusEngine 1.1.141.3"
+            "reference": "anemoi SiglusEngine 1.1.141.3 与 Summer Pockets Reflection Blue SiglusEngine 1.1.134.0 均为 x86"
           }
         },
         "directory_files_all": {
-          "values": ["Gameexe.dat", "Scene.pck"],
+          "values": [
+            "Gameexe.dat",
+            "Scene.pck"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "renamed Siglus executable regression fixed by hibiki-hook d1601b9"
           }
         },
-        "pe_imports": {"values": [], "evidence": null},
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
         "runtime_modules": {
-          "values": ["dsound.dll"],
+          "values": [
+            "dsound.dll"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "anemoi used DirectSound through CoCreateInstance"
           }
         },
         "resource_extensions": {
-          "values": [".ovk"],
+          "values": [
+            ".ovk"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "anemoi koe/*.ovk entries exported byte-identically"
@@ -66,11 +334,17 @@
               "scope": "game_executable",
               "value": "D94C94EB132FB1FCD6C20F35DD16552ED1301708B7A83DE07B275AD26C97D059",
               "version": "1.1.141.3"
+            },
+            {
+              "algorithm": "sha256",
+              "scope": "game_executable",
+              "value": "190DF9A72929BD6B6327E773952B5C507C69052BC6D3FF16A4868BD1FF1791FD",
+              "version": "1.1.134.0"
             }
           ],
           "evidence": {
             "kind": "real_sample",
-            "reference": "hibiki handoff 2026-07-19"
+            "reference": "anemoi 正式版（2026-07-19）与 Summer Pockets Reflection Blue 原始 SiglusEngine.exe 身份固定（2026-08-27）"
           }
         }
       },
@@ -94,6 +368,11 @@
             "kind": "luna_hook",
             "status": "implemented_unverified",
             "verification": "Generic Luna integration exists; version-specific Siglus verification is not recorded in the P0 baseline."
+          },
+          {
+            "kind": "ingame_lookup_geometry",
+            "status": "implemented_unverified",
+            "verification": "The recorded anemoi 1.1.141.3 and Summer Pockets Reflection Blue 1.1.134.0 x86 SHA-256 profiles contain no install path or absolute virtual address. At runtime, the hydrated-image gate aggregates masked glyph/input candidates across every executable PE section, requires exactly one of each at the profile RVAs, admits only the measured 0xDC/0xEC glyph stack ABIs, and validates dialogue, exact-text, GetKeyState and input-message call boundaries before hooking. The protected on-disk anemoi image cannot prove hydrated uniqueness offline, and no original-path lookup/card E2E is recorded, so the capability remains implemented_unverified."
           }
         ],
         "codepage": "utf-16le for the exact engine path",
@@ -135,20 +414,28 @@
       "known_limitations": [
         "Verification is specific to the recorded x86 sample and OVK layout.",
         "Late attach may miss the DirectSound format; raw OVK voice remains the preferred path.",
-        "The exact-text hook is implemented but is not promoted to verified by this baseline."
+        "The exact-text hook is implemented but is not promoted to verified by this baseline.",
+        "In-game lookup geometry and input interception are hash-pinned exact profiles for the recorded anemoi SiglusEngine 1.1.141.3 x86 executable (including its measured virtualized .org self-read hash) and Summer Pockets Reflection Blue SiglusEngine 1.1.134.0 x86 executable SHA-256 190DF9A72929BD6B6327E773952B5C507C69052BC6D3FF16A4868BD1FF1791FD. SHA-256 identifies the same bytes on any machine; it is not tied to a local path. Unknown hashes, non-unique hydrated signatures, wrong RVAs or failed callgraph checks all reject lookup. Native offline coverage does not replace an original-path lookup and same-session card-mining E2E, so this capability remains implemented_unverified.",
+        "The Summer Pockets Reflection Blue profile retains its exact SHA-256/RVA admission and its measured shared glyph plus build-specific input pattern, but no currently available hydrated real process was used to re-prove image-wide uniqueness in this change. It therefore remains implemented_unverified and is not generalized to another Siglus build."
       ],
       "adapter_path": "hook/adapters/siglus_adapter.inc",
       "fixture_paths": [],
       "test_paths": [
         "tests/siglus_ovk_test.cpp",
         "tests/siglus_launch_test.cpp",
-        "tests/siglus_text_test.cpp"
+        "tests/siglus_text_test.cpp",
+        "tests/siglus_lookup_test.cpp",
+        "tests/exact_lookup_signature_test.cpp",
+        "tests/adapter_structure_test.py"
       ]
     },
     {
       "id": "elf_ai6",
       "display_name": "elf AI6",
-      "aliases": ["AI6WIN", "elf AI6"],
+      "aliases": [
+        "AI6WIN",
+        "elf AI6"
+      ],
       "family": {
         "id": "elf",
         "relation": "elf AI6 archive-based engine"
@@ -166,7 +453,10 @@
           "values": [],
           "evidence": null
         },
-        "pe_imports": {"values": [], "evidence": null},
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
         "runtime_modules": {
           "values": [],
           "evidence": null
@@ -242,25 +532,48 @@
     {
       "id": "reallive",
       "display_name": "RealLive / old VisualArt's",
-      "aliases": ["RealLive", "VisualArt's RealLive"],
+      "aliases": [
+        "RealLive",
+        "VisualArt's RealLive"
+      ],
       "family": {
         "id": "visualarts",
         "relation": "older sibling of the verified Siglus OVK path"
       },
       "detection": {
-        "executable_names": {"values": [], "evidence": null},
-        "pe_architectures": {"values": [], "evidence": null},
-        "directory_files_all": {"values": [], "evidence": null},
-        "pe_imports": {"values": [], "evidence": null},
-        "runtime_modules": {"values": [], "evidence": null},
+        "executable_names": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_architectures": {
+          "values": [],
+          "evidence": null
+        },
+        "directory_files_all": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
         "resource_extensions": {
-          "values": [".ovk"],
+          "values": [
+            ".ovk"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "anemoi VisualArt's/Siglus koe/*.ovk proves the shared container path only; it is not RealLive compatibility evidence"
           }
         },
-        "hashes": {"values": [], "evidence": null}
+        "hashes": {
+          "values": [],
+          "evidence": null
+        }
       },
       "process_strategy": {
         "launch": "profile_pending_real_sample",
@@ -312,47 +625,78 @@
         "A real original-path run must add executable/module hashes, text-thread evidence and byte-identity proof before promotion."
       ],
       "adapter_path": "hook/adapters/reallive_adapter.inc",
-      "fixture_paths": ["tests/fixtures/reallive_replay.json"],
-      "test_paths": ["tests/reallive_adapter_test.cpp"]
+      "fixture_paths": [
+        "tests/fixtures/reallive_replay.json"
+      ],
+      "test_paths": [
+        "tests/reallive_adapter_test.cpp"
+      ]
     },
     {
       "id": "kirikiri_z",
       "display_name": "KiriKiri2 / KiriKiriZ",
-      "aliases": ["吉里吉里2", "Kirikiri 2", "吉里吉里Z", "Kirikiri Z"],
-      "family": {"id": "kirikiri", "relation": "KiriKiri family"},
+      "aliases": [
+        "吉里吉里2",
+        "Kirikiri 2",
+        "吉里吉里Z",
+        "Kirikiri Z"
+      ],
+      "family": {
+        "id": "kirikiri",
+        "relation": "KiriKiri family"
+      },
       "detection": {
         "executable_names": {
-          "values": ["otomeki.exe", "isekai-elf-sample.exe"],
+          "values": [
+            "otomeki.exe",
+            "isekai-elf-sample.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "otomeki.exe KiriKiriZ run (2026-07-18) and official BABEL KiriKiri2 experience version run (2026-07-23)"
           }
         },
         "pe_architectures": {
-          "values": ["x86"],
+          "values": [
+            "x86"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Both recorded KiriKiriZ and KiriKiri2 samples are x86"
           }
         },
-        "directory_files_all": {"values": [], "evidence": null},
-        "pe_imports": {"values": [], "evidence": null},
+        "directory_files_all": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
         "runtime_modules": {
-          "values": ["dsound.dll", "wuvorbis.dll"],
+          "values": [
+            "dsound.dll",
+            "wuvorbis.dll"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "DirectSound was observed in otomeki.exe; the official BABEL experience version loaded wuvorbis.dll from the KiriKiri temp plugin directory"
           }
         },
         "resource_extensions": {
-          "values": [".xp3", ".ogg"],
+          "values": [
+            ".xp3",
+            ".ogg"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "The official BABEL experience version ships data.xp3/plugin.xp3 and opens Ogg through wuvorbis"
           }
         },
         "hashes": {
-          "values": ["2280115774277789CA15760CD25E29E82560B928FC7994763F7EBEBF7461D92A"],
+          "values": [
+            "2280115774277789CA15760CD25E29E82560B928FC7994763F7EBEBF7461D92A"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "SHA-256 of isekai-elf-sample.exe from the developer-hosted experience version"
@@ -435,10 +779,14 @@
         "The verified KiriKiriZ sample software-mixes into one DirectSound output stream, so captured PCM is equivalent to loopback and includes BGM/SE.",
         "KiriKiri2 BCB resource and decoder hooks install on the recorded official sample, but a voiced dialogue line has not yet been traversed; clean per-line Ogg is not claimed.",
         "The older KiriKiriZ sample executable hash and engine version were not recorded; executable name alone is not a reusable engine signature.",
-        "In-game dictionary lookup remains implemented_unverified. The production route reuses the Fushi popup in an off-screen galCard WebView2, captures a bounded BGRA frame, and displays it through the v15 KiriKiri Layer route; the game-side sensor still owns glyph hit-testing and selection highlighting. The v15 CaptureSuppress/applied-seq handshake was verified in one 2026-08-13 target-game same-session E2E: applied_seq advanced only after suppression, a later full frame restored the popup, and the real Anki AVIF contained no Fushi popup or selection highlight. Required automated/offline verification was explicitly skipped, and the geometry sensor is gated on a third-party textrender.dll plus a runtime probe for global.TextRender.getCharacters, so it does not generalise to KiriKiri as an engine. No capability or support-state upgrade is claimed."
+        "In-game dictionary lookup remains implemented_unverified. The production route reuses the Fushi popup in an off-screen galCard WebView2, captures a bounded BGRA frame, and displays it through the v15 KiriKiri Layer route; the game-side sensor still owns glyph hit-testing and selection highlighting. The v15 CaptureSuppress/applied-seq handshake was verified in one 2026-08-13 target-game same-session E2E: applied_seq advanced only after suppression, a later full frame restored the popup, and the real Anki AVIF contained no Fushi popup or selection highlight. Required automated/offline verification was explicitly skipped, and the geometry sensor is gated on a third-party textrender.dll plus a runtime probe for global.TextRender.getCharacters, so it does not generalise to KiriKiri as an engine. No capability or support-state upgrade is claimed.",
+        "2026-08-19 measurement, both directions, same hook build. Positive: on a second KiriKiri Z sample (tenshi_sz.exe, Chinese release, KAGEX plus third-party textrender.dll) launched by Fushi 2.1.1-debug.11887, one session completed the whole in-game chain: lookup_diag reached 0x0000106F (sensor_installed | geometry_observed | hit_submitted | buffer_route_ready | frame_presented | expression_ready), clicking a glyph rendered the lookup card inside the game layer, and the card's mining button wrote a real Anki note (total notes 13200 -> 13201) whose media are genuine (10138-byte AVIF starting with ftypavis, 9260-byte MP3 starting with ID3) and whose sentence field holds the clicked line. Negative: on a classic KAG3 sample that ships no textrender.dll (フタマタ恋愛 Ver1.00, KiriKiri2/BCB), with lookup_enabled forced to 1 by the diagnostic probe, lookup_diag stayed 0x00000000 for the entire session while text capture worked (text_writes=8) - the sensor never installs and in-game lookup is entirely absent there. In-game lookup therefore stays scoped to KiriKiri Z builds shipping textrender.dll and is still not a KiriKiri-engine-wide capability. Recorded as measurement only; no status or capability upgrade is claimed.",
+        "Text-thread choice is not free on this engine: the same game exposes one EmbedKrkrZ thread carrying whole-string-doubled dialogue (folded correctly by the block-level normaliser) and several KiriKiriZ threads carrying per-character doubled/tripled strings that the artifact gate correctly drops. Selecting a KiriKiriZ thread leaves the workbench with zero lines forever and makes in-game mining fail silently. Tracked as BUG-1733/1734/1735; the native filtering is correct and must not be relaxed."
       ],
       "adapter_path": "hook/adapters/kirikiri_adapter.inc",
-      "fixture_paths": ["tests/fixtures/kirikiri_lookup_replay.tsv"],
+      "fixture_paths": [
+        "tests/fixtures/kirikiri_lookup_replay.tsv"
+      ],
       "test_paths": [
         "tests/resource_audio_ready_test.cpp",
         "tests/lookup_ipc_contract_test.cpp",
@@ -449,28 +797,57 @@
     {
       "id": "xaudio2_directsound",
       "display_name": "XAudio2 / DirectSound generic capture",
-      "aliases": ["XAudio2", "DirectSound", "Windows source PCM"],
-      "family": {"id": "windows_audio_api", "relation": "generic audio backend"},
+      "aliases": [
+        "XAudio2",
+        "DirectSound",
+        "Windows source PCM"
+      ],
+      "family": {
+        "id": "windows_audio_api",
+        "relation": "generic audio backend"
+      },
       "detection": {
-        "executable_names": {"values": [], "evidence": null},
+        "executable_names": {
+          "values": [],
+          "evidence": null
+        },
         "pe_architectures": {
-          "values": ["x86", "x64"],
+          "values": [
+            "x86",
+            "x64"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "Both helper architectures build; x86 KiriKiriZ/Siglus paths were exercised on real games."
           }
         },
-        "directory_files_all": {"values": [], "evidence": null},
-        "pe_imports": {"values": [], "evidence": null},
+        "directory_files_all": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
         "runtime_modules": {
-          "values": ["xaudio2_9.dll", "xaudio2_8.dll", "dsound.dll"],
+          "values": [
+            "xaudio2_9.dll",
+            "xaudio2_8.dll",
+            "dsound.dll"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "The shipped generic adapters resolve these loaded modules; DirectSound was observed on the recorded x86 samples."
           }
         },
-        "resource_extensions": {"values": [], "evidence": null},
-        "hashes": {"values": [], "evidence": null}
+        "resource_extensions": {
+          "values": [],
+          "evidence": null
+        },
+        "hashes": {
+          "values": [],
+          "evidence": null
+        }
       },
       "process_strategy": {
         "launch": "create_suspended_preferred",
@@ -498,6 +875,12 @@
             "format": "secondary/output buffer PCM",
             "status": "verified",
             "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "xwma_compressed_resource",
+            "format": "RIFF/XWMA rebuilt from the submission's own fmt + dpds",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
           }
         ]
       },
@@ -515,43 +898,73 @@
       "known_limitations": [
         "A backend hit does not prove clean voice: software-mixed buffers can be equivalent to loopback.",
         "Attach cannot retroactively hook already-created engine/source objects.",
-        "The P0 baseline does not contain a named, hashed XAudio2 sample, so compatibility must be re-verified per engine."
+        "The P0 baseline does not contain a named, hashed XAudio2 sample, so compatibility must be re-verified per engine.",
+        "xWMA source voices publish a compressed resource rebuilt from the runtime format and the XAUDIO2_BUFFER_WMA dpds table. The compressed payload is verbatim, but the RIFF envelope is synthesised here, so the emitted file is not byte-identical to any archive entry. No real game has been run against this path yet."
       ],
       "adapter_path": "hook/adapters/windows_audio_adapter.inc",
       "fixture_paths": [],
-      "test_paths": ["tests/session_reuse_test.cpp"]
+      "test_paths": [
+        "tests/session_reuse_test.cpp"
+      ]
     },
     {
       "id": "renpy_ffmpeg",
       "display_name": "Ren'Py / FFmpeg",
-      "aliases": ["Ren'Py", "libavcodec", "libavformat", "FFmpeg 54"],
-      "family": {"id": "renpy", "relation": "versioned FFmpeg runtime"},
+      "aliases": [
+        "Ren'Py",
+        "libavcodec",
+        "libavformat",
+        "FFmpeg 54"
+      ],
+      "family": {
+        "id": "renpy",
+        "relation": "versioned FFmpeg runtime"
+      },
       "detection": {
         "executable_names": {
-          "values": ["Sakura Swim Club.exe"],
+          "values": [
+            "Sakura Swim Club.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Sakura Swim Club full-card run recorded in hibiki handoff 2026-07-18"
           }
         },
         "pe_architectures": {
-          "values": ["x86"],
+          "values": [
+            "x86"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "Recorded Ren'Py sample launches a child python.exe targeted by the legacy hook"
           }
         },
-        "directory_files_all": {"values": [], "evidence": null},
-        "pe_imports": {"values": [], "evidence": null},
+        "directory_files_all": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
         "runtime_modules": {
-          "values": ["avcodec-54.dll", "avformat-54.dll"],
+          "values": [
+            "avcodec-54.dll",
+            "avformat-54.dll"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "The existing adapter targets the recorded legacy Ren'Py/FFmpeg runtime; the sample did not produce an adapter hit"
           }
         },
-        "resource_extensions": {"values": [], "evidence": null},
-        "hashes": {"values": [], "evidence": null}
+        "resource_extensions": {
+          "values": [],
+          "evidence": null
+        },
+        "hashes": {
+          "values": [],
+          "evidence": null
+        }
       },
       "process_strategy": {
         "launch": "launcher_then_scored_game_child",
@@ -613,7 +1026,9 @@
         "The real sample fell back to loopback; no clean decoder-level voice claim is made."
       ],
       "adapter_path": "hook/adapters/renpy_adapter.inc",
-      "fixture_paths": ["tests/fixtures/workflow_replay.json"],
+      "fixture_paths": [
+        "tests/fixtures/workflow_replay.json"
+      ],
       "test_paths": [
         "tests/ffmpeg_runtime_test.cpp",
         "tests/child_process_policy_test.cpp",
@@ -623,40 +1038,62 @@
     {
       "id": "tyrano_nwjs",
       "display_name": "TyranoScript / NW.js",
-      "aliases": ["TyranoScript 5", "TyranoBuilder", "NW.js"],
-      "family": {"id": "tyrano", "relation": "NW.js packaged TyranoScript runtime"},
+      "aliases": [
+        "TyranoScript 5",
+        "TyranoBuilder",
+        "NW.js"
+      ],
+      "family": {
+        "id": "tyrano",
+        "relation": "NW.js packaged TyranoScript runtime"
+      },
       "detection": {
         "executable_names": {
-          "values": ["kaerimichi.exe"],
+          "values": [
+            "kaerimichi.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "かえりみち official free Windows release from novelgame.jp, verified 2026-07-23"
           }
         },
         "pe_architectures": {
-          "values": ["x64"],
+          "values": [
+            "x64"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "kaerimichi.exe PE/COFF x86-64 runtime observation"
           }
         },
         "directory_files_all": {
-          "values": ["resources/app.asar", "ffmpeg.dll"],
+          "values": [
+            "resources/app.asar",
+            "ffmpeg.dll"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official sample package layout and live module inventory"
           }
         },
-        "pe_imports": {"values": [], "evidence": null},
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
         "runtime_modules": {
-          "values": ["ffmpeg.dll"],
+          "values": [
+            "ffmpeg.dll"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "Monolithic Chromium FFmpeg exports avformat_open_input and is loaded in the visible NW.js process"
           }
         },
         "resource_extensions": {
-          "values": [".ogg", ".m4a"],
+          "values": [
+            ".ogg",
+            ".m4a"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "app.asar contains paired OGG/M4A voice members under data/sound/v_*"
@@ -738,40 +1175,63 @@
     {
       "id": "bgi_ethornell",
       "display_name": "BGI / Ethornell",
-      "aliases": ["BURIKO General Interpreter", "Ethornell"],
-      "family": {"id": "bgi", "relation": "BURIKO ARC20 runtime"},
+      "aliases": [
+        "BURIKO General Interpreter",
+        "Ethornell"
+      ],
+      "family": {
+        "id": "bgi",
+        "relation": "BURIKO ARC20 runtime"
+      },
       "detection": {
         "executable_names": {
-          "values": ["BGI.exe"],
+          "values": [
+            "BGI.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "AUGUST official 千の刃濤、桃花染の皇姫 Web trial, inspected 2026-07-23"
           }
         },
         "pe_architectures": {
-          "values": ["x86"],
+          "values": [
+            "x86"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official trial BGI.exe PE/COFF static probe"
           }
         },
         "directory_files_all": {
-          "values": ["BGI.exe", "BGI.hvl", "data03110.arc"],
+          "values": [
+            "BGI.exe",
+            "BGI.hvl",
+            "data03110.arc"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official trial package layout"
           }
         },
         "pe_imports": {
-          "values": ["DSOUND.dll", "KERNEL32.dll"],
+          "values": [
+            "DSOUND.dll",
+            "KERNEL32.dll"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official trial BGI.exe import table"
           }
         },
-        "runtime_modules": {"values": [], "evidence": null},
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
         "resource_extensions": {
-          "values": [".arc", ".ogg"],
+          "values": [
+            ".arc",
+            ".ogg"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "data03110.arc has a BURIKO ARC20 index and 146 bw-wrapped Ogg members"
@@ -846,46 +1306,68 @@
     {
       "id": "artemis_pfs",
       "display_name": "Artemis Engine / PF8",
-      "aliases": ["Artemis Engine", "Artemis", "PF8"],
-      "family": {"id": "artemis", "relation": "iarsys runtime with PF6/PF8 archives"},
+      "aliases": [
+        "Artemis Engine",
+        "Artemis",
+        "PF8"
+      ],
+      "family": {
+        "id": "artemis",
+        "relation": "iarsys runtime with PF6/PF8 archives"
+      },
       "detection": {
         "executable_names": {
-          "values": ["アマナツ体験版.exe"],
+          "values": [
+            "アマナツ体験版.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "あざらしそふと official アマナツ trial, verified 2026-07-23"
           }
         },
         "pe_architectures": {
-          "values": ["x64"],
+          "values": [
+            "x64"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official trial executable PE/COFF x86-64 static and live observation"
           }
         },
         "directory_files_all": {
-          "values": ["iarsys64.dll", "*.pfs"],
+          "values": [
+            "iarsys64.dll",
+            "*.pfs"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official trial portable package contains iarsys64.dll and a same-title PF8 archive"
           }
         },
         "pe_imports": {
-          "values": ["DSOUND.dll", "KERNEL32.dll"],
+          "values": [
+            "DSOUND.dll",
+            "KERNEL32.dll"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official trial executable import table"
           }
         },
         "runtime_modules": {
-          "values": ["iarsys64.dll"],
+          "values": [
+            "iarsys64.dll"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "Official trial launched through the x64 Hibiki injector and exposed the Artemis runtime next to the executable"
           }
         },
         "resource_extensions": {
-          "values": [".pfs", ".ogg"],
+          "values": [
+            ".pfs",
+            ".ogg"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "PF8 index contains 797 Ogg voice members under sound/vo and sound/sysse/vo"
@@ -969,34 +1451,58 @@
     {
       "id": "catsystem2",
       "display_name": "CatSystem2 / KIF INT",
-      "aliases": ["CatSystem2", "CS2", "KIF INT"],
-      "family": {"id": "catsystem2", "relation": "ARES ADV runtime and KIF archives"},
+      "aliases": [
+        "CatSystem2",
+        "CS2",
+        "KIF INT"
+      ],
+      "family": {
+        "id": "catsystem2",
+        "relation": "ARES ADV runtime and KIF archives"
+      },
       "detection": {
         "executable_names": {
-          "values": ["cs2_open.exe", "cs2.exe"],
+          "values": [
+            "cs2_open.exe",
+            "cs2.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "ARES official CatSystem2 starter kit v3.01, verified 2026-07-23"
           }
         },
         "pe_architectures": {
-          "values": ["x86"],
+          "values": [
+            "x86"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official cs2_open.exe PE/COFF i386 static and live observation"
           }
         },
         "directory_files_all": {
-          "values": ["config/startup.xml", "*.int"],
+          "values": [
+            "config/startup.xml",
+            "*.int"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official packaged starter-kit replay layout"
           }
         },
-        "pe_imports": {"values": [], "evidence": null},
-        "runtime_modules": {"values": [], "evidence": null},
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
         "resource_extensions": {
-          "values": [".int", ".ogg"],
+          "values": [
+            ".int",
+            ".ogg"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official MakeInt.exe produced pcm_d.int with a named Ogg member that cs2_open.exe played through the pcm command"
@@ -1080,28 +1586,42 @@
     {
       "id": "malie_libp",
       "display_name": "Malie System / LIBP CFI",
-      "aliases": ["Malie", "Malie System", "LIBP", "CFI"],
+      "aliases": [
+        "Malie",
+        "Malie System",
+        "LIBP",
+        "CFI"
+      ],
       "family": {
         "id": "malie",
         "relation": "Greenwood Malie runtime and title-keyed LIBP archives"
       },
       "detection": {
         "executable_names": {
-          "values": ["malie.exe", "malie_dsp.exe", "malie_fabla.exe"],
+          "values": [
+            "malie.exe",
+            "malie_dsp.exe",
+            "malie_fabla.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Steam app 644540 build 21665074, verified 2026-07-23"
           }
         },
         "pe_architectures": {
-          "values": ["x86"],
+          "values": [
+            "x86"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official malie.exe PE/COFF i386, Malie System 1.0.0.5"
           }
         },
         "directory_files_all": {
-          "values": ["malie.exe", "data2.dat"],
+          "values": [
+            "malie.exe",
+            "data2.dat"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official Steam free common-route installation"
@@ -1120,9 +1640,15 @@
             "reference": "malie.exe import table and live file-I/O diagnostics"
           }
         },
-        "runtime_modules": {"values": [], "evidence": null},
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
         "resource_extensions": {
-          "values": [".dat", ".ogg"],
+          "values": [
+            ".dat",
+            ".ogg"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "data2.dat contains 20,434 CFI-encrypted data\\voice\\*.ogg members"
@@ -1207,28 +1733,39 @@
     {
       "id": "qlie_filepack",
       "display_name": "QLIE / FilePack",
-      "aliases": ["QLIE", "FilePackVer3.1", "wuvorbis QLIE"],
+      "aliases": [
+        "QLIE",
+        "FilePackVer3.1",
+        "wuvorbis QLIE"
+      ],
       "family": {
         "id": "qlie",
         "relation": "Warmth / AMUSE CRAFT QLIE runtime and FilePack archives"
       },
       "detection": {
         "executable_names": {
-          "values": ["美少女万華鏡_体験版.exe"],
+          "values": [
+            "美少女万華鏡_体験版.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "美少女万華鏡 -理と迷宮の少女- 体験版 1.01, verified 2026-07-23"
           }
         },
         "pe_architectures": {
-          "values": ["x86"],
+          "values": [
+            "x86"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Measured trial executable PE/COFF i386"
           }
         },
         "directory_files_all": {
-          "values": ["DLL/wuvorbis.dll", "GameData/data0.pack"],
+          "values": [
+            "DLL/wuvorbis.dll",
+            "GameData/data0.pack"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Measured trial directory; data0.pack tail contains FilePackVer3.1"
@@ -1239,14 +1776,19 @@
           "evidence": null
         },
         "runtime_modules": {
-          "values": ["wuvorbis.dll"],
+          "values": [
+            "wuvorbis.dll"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "Live x86 process invoked wu_ov_open_callbacks and wu_ov_read; the wu_ov_read_float export was present and its detour reached hook-ready state"
           }
         },
         "resource_extensions": {
-          "values": [".pack", ".ogg"],
+          "values": [
+            ".pack",
+            ".ogg"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "GameData/data*.pack with GARbro-extracted character voice Ogg members"
@@ -1341,18 +1883,29 @@
     {
       "id": "unity_il2cpp",
       "display_name": "Unity IL2CPP",
-      "aliases": ["Unity", "UnityPlayer IL2CPP"],
-      "family": {"id": "unity", "relation": "IL2CPP runtime"},
+      "aliases": [
+        "Unity",
+        "UnityPlayer IL2CPP"
+      ],
+      "family": {
+        "id": "unity",
+        "relation": "IL2CPP runtime"
+      },
       "detection": {
         "executable_names": {
-          "values": ["manosaba.exe", "Sasasa.exe"],
+          "values": [
+            "manosaba.exe",
+            "Sasasa.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "manosaba_game and 最悪なる災厄人間に捧ぐ runtime observations"
           }
         },
         "pe_architectures": {
-          "values": ["x64"],
+          "values": [
+            "x64"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "manosaba_game Unity IL2CPP sample"
@@ -1369,16 +1922,28 @@
             "reference": "manosaba_game directory inspection recorded in hibiki-hook README"
           }
         },
-        "pe_imports": {"values": [], "evidence": null},
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
         "runtime_modules": {
-          "values": ["UnityPlayer.dll", "GameAssembly.dll"],
+          "values": [
+            "UnityPlayer.dll",
+            "GameAssembly.dll"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "manosaba_game Unity IL2CPP sample"
           }
         },
-        "resource_extensions": {"values": [], "evidence": null},
-        "hashes": {"values": [], "evidence": null}
+        "resource_extensions": {
+          "values": [],
+          "evidence": null
+        },
+        "hashes": {
+          "values": [],
+          "evidence": null
+        }
       },
       "process_strategy": {
         "launch": "create_suspended_early_injection",
@@ -1453,6 +2018,381 @@
         "tests/unity_event_cursor_test.cpp",
         "tests/il2cpp_thread_scope_test.cpp",
         "tests/resource_audio_ready_test.cpp",
+        "tests/adapter_structure_test.py"
+      ]
+    },
+    {
+      "id": "leaf_aquaplus",
+      "display_name": "Leaf / AQUAPLUS (WHITE ALBUM2 exact profile)",
+      "aliases": [
+        "Leaf",
+        "AQUAPLUS",
+        "WHITE ALBUM2",
+        "WA2"
+      ],
+      "family": {
+        "id": "leaf_aquaplus",
+        "relation": "Leaf / AQUAPLUS custom Windows runtime"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [
+            "WA2.exe"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "WHITE ALBUM2 bundled installation sample inspected on 2026-08-28; the name is descriptive only and never enables exact offsets"
+          }
+        },
+        "pe_architectures": {
+          "values": [
+            "x86"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Measured WA2.exe PE/COFF i386 sample, 1,220,096 bytes"
+          }
+        },
+        "directory_files_all": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_imports": {
+          "values": [
+            "d3d9.dll",
+            "dsound.dll"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Measured import table of the exact hashed x86 sample"
+          }
+        },
+        "runtime_modules": {
+          "values": [
+            "d3d9.dll",
+            "dsound.dll"
+          ],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "The exact hashed WA2 x86 sample completed original-path D3D9 lookup/input interception and source-audio card mining on 2026-08-28"
+          }
+        },
+        "resource_extensions": {
+          "values": [
+            ".pak"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "VOICE.PAK and IC/VOICE.PAK are validated LAC archives whose playback entries are complete Ogg/Vorbis resources; the root archive completed original-path card mining on 2026-08-28"
+          }
+        },
+        "hashes": {
+          "values": [
+            {
+              "algorithm": "sha256",
+              "scope": "game_executable",
+              "value": "005E71107ED70E662C41CB526879CDCF0B9486E067C0E5A306308688C17409ED",
+              "version": "WHITE ALBUM2 bundled edition (version not recorded)"
+            }
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "SHA-256 measured from the user's original WA2.exe on 2026-08-28"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "normal_launch_or_suspended_launch_implemented_unverified",
+        "attach": "implemented_unverified",
+        "follow_child_processes": false,
+        "notes": [
+          "Admission requires the exact executable SHA-256 and i386 machine type. WA2.exe, Leaf/AQUAPLUS family labels and sibling PAK files never enable binary offsets by themselves.",
+          "The measured profile pins the selected Luna CP932 source thread, D3D9 glyph path and GetAsyncKeyState poller to exact RVAs; an unknown or patched executable fails closed."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_exact_cp932_thread",
+            "status": "implemented_unverified",
+            "verification": "The selected HSX0:0 source is identity-bound to module RVA 0x512BF. The original path was user-accepted, but the release evidence/offline gate set was intentionally skipped."
+          },
+          {
+            "kind": "ingame_lookup_geometry",
+            "status": "implemented_unverified",
+            "verification": "The exact D3D9 profile reconstructs bounded per-glyph geometry only after the portable SHA-256 identity and hydrated-image unique-signature/decoded-target/callgraph/COM-ABI gate pass. The relocated A1 /GS cookie operand is deliberately masked and then required to resolve to the profile's module-relative data RVA. Release E2E evidence remains incomplete."
+          },
+          {
+            "kind": "ingame_lookup_sampled_input_shield",
+            "status": "implemented_unverified",
+            "verification": "Single-click and Shift-hover interception is installed only after the same unique hydrated-image gate validates the exact GetAsyncKeyState poller callsites and D3D9 device ABI. Release evidence gates, including the 1,000-transaction shield corpus, remain incomplete."
+          }
+        ],
+        "codepage": "CP932",
+        "thread_selection_hint": "Use only the selected Luna line source whose thread address equals WA2.exe + 0x512BF."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "leaf_lac_voice_resource",
+            "format": "original Ogg/Vorbis entry from VOICE.PAK or IC/VOICE.PAK",
+            "status": "implemented_unverified",
+            "clean_voice": true
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "48000 Hz / mono / signed 16-bit in the observed sample",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "This is one hash-pinned WHITE ALBUM2 x86 executable profile, not a family-wide Leaf or AQUAPLUS support claim. The hash is portable same-build identity, not a dependency on the developer's machine or install directory.",
+        "A game update, different executable hash, missing/ambiguous hydrated signature, decoded target mismatch, callgraph mismatch or D3D9 ABI mismatch disables the selected text, geometry and sampled-input offsets until that build is measured independently.",
+        "DirectSound remains a decoded/mixed fallback; the user-accepted card audio comes from the complete source Ogg member in VOICE.PAK.",
+        "The root VOICE.PAK path completed runtime card mining; IC/VOICE.PAK shares the validated LAC parser but was not separately exercised in the accepted session.",
+        "Late attach remains implemented_unverified; the accepted path used suspended launch so archive handles and playback reads could not be missed.",
+        "The original path was user-accepted, but the requested skip-all-tests submission leaves the full release evidence/offline gate set incomplete, so support is not promoted to verified."
+      ],
+      "adapter_path": "hook/adapters/leaf_aquaplus_adapter.inc",
+      "fixture_paths": [
+        "tests/fixtures/leaf_aquaplus_replay.json"
+      ],
+      "test_paths": [
+        "tests/leaf_aquaplus_adapter_test.cpp",
+        "tests/exact_lookup_signature_test.cpp",
+        "tests/leaf_aquaplus_voice_archive_test.cpp",
+        "tests/leaf_d3d_trace_export_test.cpp",
+        "tests/resource_audio_ready_test.cpp",
+        "tests/adapter_structure_test.py",
+        "tests/galhook_workflow_test.py",
+        "../../fushi/test/lookup/gal_ingame_lookup_click_swallow_guard_test.dart"
+      ]
+    },
+    {
+      "id": "hunex_gge",
+      "display_name": "HUNEX GGE / HFA-HW",
+      "aliases": [
+        "HUNEX GGE",
+        "HFA/HW",
+        "WITCH ON THE HOLY NIGHT",
+        "WoH"
+      ],
+      "family": {
+        "id": "hunex_gge",
+        "relation": "HUNEX GGE HFA archive family; current admission is a WoH-specific title profile, not a family-wide role claim"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [
+            "WoH.exe"
+          ],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "The original WoH v1.0 Windows sample was observed as WoH.exe on 2026-08-30; the basename is title-profile metadata and never enables the adapter by itself."
+          }
+        },
+        "pe_architectures": {
+          "values": [
+            "x64"
+          ],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "The original WoH v1.0 game process was measured as x64 on 2026-08-30."
+          }
+        },
+        "directory_files_all": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
+        "resource_extensions": {
+          "values": [
+            ".hfa",
+            ".hw"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "The local WoH v1.0 sample contains HUNEXGGEFA10 HFA indexes whose members use the 64-byte HW wrapper around complete Ogg streams; no game payload is committed."
+          }
+        },
+        "hashes": {
+          "values": [],
+          "evidence": null
+        }
+      },
+      "process_strategy": {
+        "launch": "normal_launch_observed_adapter_unverified",
+        "attach": "existing_process_attach_observed_resource_hook_unverified",
+        "follow_child_processes": false,
+        "notes": [
+          "The current WoH title profile requires WoH.exe plus a sibling data04000.hfa whose HFA/HW structure validates; neither basename is sufficient alone and no exact executable SHA-256 gate is used.",
+          "data04000.hfa is a clean-voice role mapping measured only for the local WoH v1.0 sample. It is deliberately absent from family-wide detection signatures; every other HUNEX title requires a separately evidenced role mapping.",
+          "The shared file-I/O broker remains engine-neutral; HFA indexing, HW validation and source-Ogg publication belong to the HUNEX adapter worker."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_typemoon_dialogue_thread",
+            "status": "implemented_unverified",
+            "verification": "The WoH v1.0 original-path session observed and selected the dialogue thread, but no same-session source-audio pairing or card E2E has passed."
+          }
+        ],
+        "codepage": "UTF-16",
+        "thread_selection_hint": "Select the observed Type-Moon dialogue lane and reject menu/help rendering lanes; this text evidence does not prove HFA resource capture."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "hunex_hfa_hw_ogg_resource",
+            "format": "complete source Ogg/Vorbis payload from a structurally validated 64-byte HW member inside a HUNEXGGEFA10 HFA archive",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "The first failed boundary in the observed WoH v1.0 session is resource_observed: text and thread selection passed, while the UI still reported line_has_no_voice and zero voiced lines.",
+        "No HFA/HW resource event, source-byte capture, clean-voice classification, text/audio pair, screenshot-card E2E or source-entry hash equality has passed on the original path. A 2026-08-31 user report claims live text and voice now work, but it is backed by no session ledger, resource event id or source-entry hash and does not raise the recorded evidence grade; see BUG-1977.",
+        "The exact lookup provider currently fails closed while correlating the captured glyph/source descriptor with the final client-space sprite quad; single-click and Shift lookup remain implemented_unverified.",
+        "The data04000.hfa voice role is proved only by the local WoH v1.0 archive layout and is not a HUNEX-family invariant; other titles stay disabled until their archive role is independently mapped and evidenced.",
+        "Mono versus stereo is not a voice classifier. HW admission is structural and both channel layouts remain valid candidates until the title-scoped archive role is established.",
+        "The profile intentionally has no executable or module hash allowlist so patched WoH executables can remain eligible for structural probing; WoH.exe and data04000.hfa names alone must never bypass HFA/HW validation.",
+        "Deliberate 2026-08-31 graduation, recorded because it removed a guard: the x64 hydrated-image renderer/input scanner was promoted from observation-only to a production lookup provider, and the generator assertion 'HUNEX exact geometry is observation-only and must not OfferReady/PublishHit' was deleted to permit it. Only the geometry provider layer graduated. geometry.status stays implemented_unverified and the HFA/HW resource-capture and text/audio pairing gates stay not_verified; promoting the provider is not evidence for resource capture, pairing or any card E2E.",
+        "The signature-based x64 exact provider is production-wired but remains implemented_unverified. Every ambiguous or missing renderer/input/projection anchor fails closed to attached_calibrated fallback; it must not be advertised as verified until same-session lookup/card and transaction E2E are recorded."
+      ],
+      "adapter_path": "hook/adapters/hunex_gge_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": [
+        "tests/hunex_gge_adapter_test.cpp",
+        "tests/hunex_gge_capture_bridge_test.cpp",
+        "tests/hunex_gge_lookup_test.cpp",
+        "tests/hunex_gge_selected_text_test.cpp",
+        "tests/resource_audio_ready_test.cpp",
+        "tests/adapter_structure_test.py",
+        "tests/engine_support_manifest_test.py"
+      ]
+    },
+    {
+      "id": "sgre",
+      "display_name": "M2 wind3d11 runtime (STEINS;GATE RE:BOOT)",
+      "aliases": [
+        "SGRE",
+        "STEINS;GATE RE:BOOT",
+        "wind3d11"
+      ],
+      "family": {
+        "id": "m2_wind3d11",
+        "relation": "M2 wind3d11 audio-archive runtime"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_architectures": {
+          "values": [
+            "x64"
+          ],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "Luna text profile config/luna_hook_profiles.tsv:5 records an x64 Steam build; the audio path has no independent hashed sample yet."
+          }
+        },
+        "directory_files_all": {
+          "values": [
+            "wind3d11data/voice_body.bin"
+          ],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "The wind3d11 runtime keeps character voices in voice_body.bin next to the executable. Archive membership proves only the resource-audio capability; text/lookup may establish the engine family independently through the complete signature and object-ABI proof. No executable name, local path or hash is a family gate."
+          }
+        },
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
+        "resource_extensions": {
+          "values": [],
+          "evidence": null
+        },
+        "hashes": {
+          "values": [
+            "75A83A0E2A7E22055417AE0474B47BE98418C4E42C695C548B558705C404B9D8"
+          ],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "One measured build row in hook/adapters/sgre_anchors.h records the observed TextRender draw boundary, scenario-text vtable and DirectInput mouse-slot RVAs. The digest is diagnostic and, on that exact build, asserts that signature-derived RVAs still match the measurement; it never supplies hook addresses or rejects a hash miss. The published signatures were derived from this one sample, so cross-version runtime compatibility remains unverified."
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_preferred",
+        "attach": "supported_for_objects_created_after_attach",
+        "follow_child_processes": false,
+        "notes": [
+          "The adapter registers a compressed-resource handler on the shared XAudio worker seam; the generic middleware holds no engine-specific knowledge.",
+          "Identity is capability-scoped: voice_body.bin proves archive audio, while text/lookup requires independent primary and corroborating signatures to intersect on one draw/vtable/DirectInput anchor set. TextDraw is recovered through the PE exception directory and must equal scenario vtable slot 4; the mouse slot must be aligned writable storage and its live DirectInput slot 9 must be executable before interception. Known and unknown hashes take the same path, and every unresolved or structurally inconsistent site stays inert; kXAudioDiag2SgreFamilyMatched / kXAudioDiag2SgreAnchorsResolved / kXAudioDiag2SgreAnchorsUnresolved report where resolution ended.",
+          "2026-09-03 original-path E2E evidence (measured Steam x64 build, SHA-256 75A83A0E…C404B9D8, Fushi 2.2.4-debug.13075, IPC v21): library launch with early injection reached sensor_installed + luna_known_hook_ready; the ENGINE:SGRE:wind3d11 exact lane delivered the visible line; the voiced line エル・プサイ・コングルゥ paired to a voice_body.bin xWMA entry (backend game_resource, 3.19 s after AAC re-encode); hover+Shift and bare-left-click lookups presented the in-game card and a Lapis note was written with sentence, sentence audio and a 480×270 AVIF animation; 7 of 8 popup-outside clicks were swallowed without advancing the line (the one leak followed a mid-session risk acceptance and did not reproduce). Two evidence items required for an original per-sentence resource claim are MISSING and were not measured in this run: (a) byte-hash consistency between the delivered AAC/xWMA payload and the source voice_body.bin entry, and (b) a pure-voice classification for those 3.19 s (backend game_resource only proves the bytes came from the resource stream, not that they exclude BGM/SE). The audio therefore stands at evidence grade captured, not hash_verified and not voice_classified. Status stays implemented_unverified until those two items, the structured proof record and the 1,000-transaction shield gate are produced. 2026-09-03 follow-up (BUG-2083): that E2E ran fullscreen at 3840×2160; in a 1920×1080 window the same build produced no exact lane and geometry=0/0 because the scenario-surface metrics gate pinned the cell height to the 4K value 80. The gate now expects design 40 × the live render scale (same min(client/1920, client/1080) formula as the glyph→client conversion), so windowed and fullscreen sessions take the same path; windowed-mode E2E is pending."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "ingame_lookup_geometry",
+            "status": "implemented_unverified",
+            "verification": "The SGRE draw adapter publishes renderer-native UTF-16 text and glyph geometry only after all-executable-section primary/corroborating signatures, decoded RIP targets, PE exception-directory bounds, scenario vtable slot 4 and object-layout gates agree. The mechanism is SHA/path/ASLR independent. 2026-09-03: original-path lookup + card E2E recorded on the measured executable (see verified_games); a second build is still not recorded."
+          },
+          {
+            "kind": "ingame_lookup_directinput_shield",
+            "status": "implemented_unverified",
+            "verification": "The exact mouse-device global must be resolved independently by unique CreateDevice and immediate-poller signatures, and the live DirectInput COM vtable is validated before slot 9 is hooked. The 1,000-transaction real-build shield gate has not run."
+          }
+        ],
+        "codepage": "not_applicable",
+        "thread_selection_hint": "The SGRE exact lane publishes game-parsed text with a stable ENGINE:SGRE:wind3d11 identity that excludes SHA, path, ASLR and resolved RVAs. The same resolved TextRender draw anchor supplies per-glyph lookup geometry; incompatible layouts publish neither lane nor provider."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "engine_archive_resource",
+            "format": "xWMA chunks taken verbatim from wind3d11data/voice_body.bin",
+            "status": "implemented_unverified",
+            "clean_voice": "yes"
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "No real-game session has been run against this adapter: process_found through card_e2e are all not_run.",
+        "Archive membership is the role proof, and it only holds while the runtime keeps character voice in a separate voice_body.bin.",
+        "The emitted .xwma file is not byte-identical to an archive entry: the RIFF envelope is synthesised here. Only the fmt/dpds/payload chunks are verbatim.",
+        "Only one SGRE executable has supplied measured anchor evidence. An unknown hash is admitted only when the current signature family, PE function boundary, vtable/object layout and live DirectInput ABI all agree uniquely; this is an implemented fail-closed compatibility mechanism, not evidence that arbitrary releases or compiler rebuilds are supported.",
+        "The populated signatures were derived from that single measured binary. A non-unique signature, decoded-target mismatch, changed codegen/layout, unwind mismatch or ABI mismatch disables exact text, geometry and click interception and leaves the executable digest available for a future independently measured signature family."
+      ],
+      "adapter_path": "hook/adapters/sgre_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": [
+        "tests/sgre_adapter_test.cpp",
+        "tests/exact_lookup_signature_test.cpp",
         "tests/adapter_structure_test.py"
       ]
     }

@@ -26,7 +26,7 @@ void main() {
       // 旧行为：lastInputAt 停在 t0（无续窗、无 ready-restamp）。
       expect(
         chapterTurnCoolingDown(
-          lastInputAt: t0,
+          lastTurnAt: t0,
           now: residualTick,
           cooldown: cooldown,
         ),
@@ -41,7 +41,7 @@ void main() {
       final DateTime residualTick = t0.add(const Duration(milliseconds: 640));
       expect(
         chapterTurnCoolingDown(
-          lastInputAt: chapterReadyAt, // ready 时重新 stamp
+          lastTurnAt: chapterReadyAt, // ready 时重新 stamp
           now: residualTick,
           cooldown: cooldown,
         ),
@@ -50,7 +50,7 @@ void main() {
       );
     });
 
-    test('刻意的第二次跨章（静默满冷却窗后再滚）仍放行', () {
+    test('刻意的第二次跨章（距上次跨章满冷却窗后再滚）仍放行', () {
       // 新章 ready 于 t0+600 重新 stamp；用户停手、超过冷却窗后刻意再滚。
       final DateTime chapterReadyAt = t0.add(const Duration(milliseconds: 600));
       final DateTime deliberate = chapterReadyAt.add(
@@ -58,7 +58,7 @@ void main() {
       );
       expect(
         chapterTurnCoolingDown(
-          lastInputAt: chapterReadyAt,
+          lastTurnAt: chapterReadyAt,
           now: deliberate,
           cooldown: cooldown,
         ),
@@ -85,7 +85,7 @@ void main() {
         'Future<void> _paginate(',
       );
       expect(helper, contains('_inertiaChapterTurnPending = false;'));
-      expect(helper, contains('_noteChapterTurnInput();'));
+      expect(helper, contains('_noteChapterTurn();'));
     });
 
     test('_handlePageTurnLimit 带 inertia 参数，且惯性跨章导航前置 pending 旗', () {

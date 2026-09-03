@@ -107,6 +107,17 @@ void main() {
     test('目标已不在可见顺序里时退化为普通切换', () {
       controller.toggle(const SelectionSlot.loose('b'));
       controller.extendTo(const SelectionSlot.loose('zzz'));
+      // 守的是这条：b 与 zzz 之间没有可推导的区间，绝不能把 c/d/e 刷进来。
+      expect(controller.looseKeys, <String>{'b'});
+      // zzz 本身按普通切换进了内部选中集，只是它不在可见序里，按「可见性约束」
+      // 不对外暴露。真实页面构造不出这一格——三处 setVisibleOrder 登记的都是当帧
+      // 真正渲染的卡（横滚行卡不参与勾选），所以这里只是状态机的边界行为。
+      // 按身份断言而不是只数个数：否则「忽略 zzz、却误把 c 加进内部集」同样是 2。
+      expect(controller.retainedLooseKeys, <String>{'b', 'zzz'});
+      controller.setVisibleOrder(
+        loose: const <String>['a', 'b', 'c', 'd', 'e', 'zzz'],
+        collections: const <int>[],
+      );
       expect(controller.looseKeys, <String>{'b', 'zzz'});
     });
   });
@@ -304,6 +315,243 @@ void main() {
       // 变成剔除后的数字（那样 M/N 会自相矛盾）。
       expect(dropped + c.length, 5);
       expect(dropped, 3);
+    });
+  });
+
+  /// 可见性约束：内部选中集无损，对外只暴露看得见的那部分。
+  ///
+  /// 触发它的真实场景是库页的本地即筛档位（视频库的年份 / 看完状态 / 系列归属）：
+  /// 勾了几张卡再换档位，那些卡从墙上消失，但选中集从不随之剪枝——底栏「已选 N」
+  /// 于是把看不见的也算进去，用户照着一个虚数做删除决定；「组合成系列」还会拿
+  /// 不在可见表里的 uid 去推标题，退化成拿 entryKey 当名字。
+  ///
+  /// 刻意**不**在筛选变化时把不可见项清掉：见 [MediaSelectionController]
+  /// 库文档「可见性约束」与 [MediaSelectionController.retainExisting] 的
+  /// 「先勾后筛是合法用法」。
+  group('可见性约束', () {
+    test('可见集收缩后，看不见的选中项不计入 looseKeys / length / isSelected', () {
+      controller.enterWith(const SelectionSlot.loose('a'));
+      controller.toggle(const SelectionSlot.loose('d'));
+      expect(controller.length, 2);
+
+      // 换了个筛选档位：只剩 a、b 还在墙上。
+      controller.setVisibleOrder(
+        loose: const <String>['a', 'b'],
+        collections: const <int>[],
+      );
+
+      expect(controller.looseKeys, <String>{'a'});
+      expect(controller.length, 1, reason: '底栏计数必须等于屏幕上勾着的卡片数');
+      expect(
+        controller.isSelected(const SelectionSlot.loose('d')),
+        isFalse,
+        reason: '看不见的那张不该被当成选中参与任何操作',
+      );
+    });
+
+    test('筛选切回来，之前的选中原样还在（内部无损）', () {
+      controller.enterWith(const SelectionSlot.loose('a'));
+      controller.toggle(const SelectionSlot.loose('d'));
+
+      controller.setVisibleOrder(
+        loose: const <String>['a', 'b'],
+        collections: const <int>[],
+      );
+      expect(controller.retainedLength, 2, reason: '不可见项只是不暴露，不是被删了');
+
+      seedVisible();
+
+      expect(
+        controller.looseKeys,
+        <String>{'a', 'd'},
+        reason: '用户没取消过 d，系统就不该替他取消',
+      );
+      expect(controller.length, 2);
+    });
+
+    test('合集侧同理：合集行不可见时不计入 collectionIds', () {
+      controller.enterWith(const SelectionSlot.collection(10));
+      expect(controller.collectionIds, <int>{10});
+
+      // 「全部视频」这类不折叠合集的视图：一个合集行都不渲染。
+      controller.setVisibleOrder(
+        loose: const <String>['a', 'b'],
+        collections: const <int>[],
+      );
+
+      expect(controller.collectionIds, isEmpty);
+      expect(controller.length, 0);
+      expect(controller.retainedLength, 1);
+    });
+
+    /// [looseKeys] / [collectionIds] 是缓存过的派生视图（每卡渲染都要读，现算
+    /// 交集在全选后是 O(n²)）。缓存的风险是**漏失效**：任何改动选中集或可见集
+    /// 的路径都必须置空缓存，漏一条就读到陈旧交集——那比慢更糟。
+    ///
+    /// 这条把每种 mutation 走一遍，每步都拿「现算的交集」对账。
+    test('每种 mutation 之后派生视图都不陈旧（缓存失效无遗漏）', () {
+      Set<String> expectedLoose() => <String>{
+            for (final String key in controller.retainedLooseKeys)
+              if (controller.visibleLooseKeys.contains(key)) key,
+          };
+      void check(String step) {
+        expect(controller.looseKeys, expectedLoose(), reason: '$step 后缓存陈旧');
+        expect(
+          controller.length,
+          expectedLoose().length + controller.collectionIds.length,
+          reason: '$step 后 length 与视图不一致',
+        );
+      }
+
+      controller.toggleMode();
+      check('toggleMode');
+      controller.toggle(const SelectionSlot.loose('a'));
+      check('toggle 加入');
+      controller.toggle(const SelectionSlot.loose('a'));
+      check('toggle 移除');
+      controller.enterWith(const SelectionSlot.loose('b'));
+      check('enterWith');
+      controller.extendTo(const SelectionSlot.loose('d'));
+      check('extendTo');
+      controller.selectAll(
+        loose: const <String>['a', 'e'],
+        collections: const <int>[10],
+      );
+      check('selectAll');
+      controller.invert(
+        loose: const <String>['a', 'b'],
+        collections: const <int>[],
+      );
+      check('invert');
+      controller.beginRangeDrag(const SelectionSlot.loose('c'));
+      check('beginRangeDrag');
+      controller.updateRangeDrag(const SelectionSlot.loose('e'));
+      check('updateRangeDrag');
+      controller.endRangeDrag();
+      check('endRangeDrag');
+      controller.retainExisting(
+        loose: <String>{'a', 'b', 'c'},
+        collections: <int>{10},
+      );
+      check('retainExisting');
+      // 可见集变化同样要让视图作废。
+      controller.setVisibleOrder(
+        loose: const <String>['a'],
+        collections: const <int>[10],
+      );
+      check('setVisibleOrder');
+      controller.exit();
+      check('exit');
+    });
+
+    test('可见序没变时 setVisibleOrder 返回 false（补帧不会自我循环）', () {
+      expect(
+        controller.setVisibleOrder(
+          loose: const <String>['a', 'b', 'c', 'd', 'e'],
+          collections: const <int>[10, 20, 30],
+        ),
+        isFalse,
+        reason: '内容等值的新列表必须判为未变——两个库页据此决定要不要补一帧，'
+            '恒 true 就是每帧 setState 的死循环',
+      );
+      expect(
+        controller.setVisibleOrder(
+          loose: const <String>['a', 'b'],
+          collections: const <int>[10, 20, 30],
+        ),
+        isTrue,
+        reason: '真变了要返回 true，否则计数永远慢一拍',
+      );
+    });
+
+    test('retainExisting 剔掉的是不可见幽灵键时，锚点仍然失效', () {
+      controller.enterWith(const SelectionSlot.loose('a'));
+      controller.toggle(const SelectionSlot.loose('d'));
+      controller.setVisibleOrder(
+        loose: const <String>['a', 'b'],
+        collections: const <int>[],
+      );
+      controller.toggle(const SelectionSlot.loose('b'));
+      expect(controller.anchor, const SelectionSlot.loose('b'));
+
+      // d 这一行在库里真的没了（不是被筛走）：它不可见，dropped 因此是 0。
+      final int dropped = controller.retainExisting(
+        loose: <String>{'a', 'b'},
+        collections: const <int>{},
+      );
+
+      expect(dropped, 0, reason: 'M 是给用户看的数字，只数他看得见的那部分');
+      expect(
+        controller.retainedLooseKeys,
+        <String>{'a', 'b'},
+        reason: '不可见的幽灵键同样要被剔干净，否则批量操作撞外键',
+      );
+      expect(
+        controller.anchor,
+        isNull,
+        reason: '内部集真的变了就得清锚点——它可能正指着被剔掉的那一格',
+      );
+    });
+
+    test('反选只翻候选集内的格，候选集外（不可见）的选中项不受影响', () {
+      controller.enterWith(const SelectionSlot.loose('a'));
+      controller.toggle(const SelectionSlot.loose('d'));
+
+      // d 被筛走，可见的只剩 a、b。
+      controller.setVisibleOrder(
+        loose: const <String>['a', 'b'],
+        collections: const <int>[],
+      );
+      controller.invert(
+        loose: const <String>['a', 'b'],
+        collections: const <int>[],
+      );
+
+      expect(controller.looseKeys, <String>{'b'}, reason: '可见集内取补集');
+
+      seedVisible();
+      expect(
+        controller.looseKeys,
+        <String>{'b', 'd'},
+        reason: '反选是「翻当前这一屏」，不该顺手抹掉别的档位下选的东西',
+      );
+    });
+
+    test('hiddenSelectedCount = 勾过但被筛走看不见的条数（确认框据此提示）', () {
+      controller.enterWith(const SelectionSlot.loose('a'));
+      controller.toggle(const SelectionSlot.loose('d'));
+      controller.toggle(const SelectionSlot.collection(10));
+      expect(controller.hiddenSelectedCount, 0);
+
+      controller.setVisibleOrder(
+        loose: const <String>['a'],
+        collections: const <int>[],
+      );
+
+      expect(
+        controller.hiddenSelectedCount,
+        2,
+        reason: 'd 与合集 10 都勾过、这次不会被处理，确认框必须把这个数说出来',
+      );
+    });
+
+    test('全选之后收缩可见集：计数跟着屏幕走，不是跟着历史走', () {
+      controller.toggleMode();
+      controller.selectAll(
+        loose: const <String>['a', 'b', 'c', 'd', 'e'],
+        collections: const <int>[10, 20, 30],
+      );
+      expect(controller.length, 8);
+
+      controller.setVisibleOrder(
+        loose: const <String>['a'],
+        collections: const <int>[10],
+      );
+
+      expect(controller.length, 2);
+      expect(controller.looseKeys, <String>{'a'});
+      expect(controller.collectionIds, <int>{10});
+      expect(controller.retainedLength, 8);
     });
   });
 }

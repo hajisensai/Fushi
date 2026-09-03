@@ -132,4 +132,64 @@ void main() {
       '[Kamigami] Himouto! Umaru-chan - 10 [1920x1080 x264 AAC]',
     );
   });
+
+  // 通用可裁流身份（bilibili 等）：加一个新站点不必再往 payload 上挂一对专用字段。
+  group('clipSource（通用可裁流身份）', () {
+    test('解析 kind/id/part 并进入沉浸路径', () {
+      final p = ImmersionMinePayload.fromJson(<String, dynamic>{
+        'fields': <String, dynamic>{'expression': '正道'},
+        'sentence': '正道ではなく邪道',
+        'clipSourceKind': 'bilibili',
+        'clipSourceId': 'BV1Este6wExx',
+        'clipSourcePart': 13,
+        'clipStartMs': 61000,
+        'clipEndMs': 64500,
+      });
+      expect(p.clipSourceKind, 'bilibili');
+      expect(p.clipSourceId, 'BV1Este6wExx');
+      expect(p.clipSourcePart, 13);
+      expect(p.isImmersion, true,
+          reason: '有可裁源 + 时间窗就该走沉浸引擎，而不是退成纯文本卡');
+    });
+
+    test('缺时间窗 / 缺 id 时不算沉浸（没有窗就没得裁）', () {
+      final noWindow = ImmersionMinePayload.fromJson(<String, dynamic>{
+        'fields': <String, dynamic>{'expression': 'x'},
+        'clipSourceKind': 'bilibili',
+        'clipSourceId': 'BV1x',
+      });
+      expect(noWindow.isImmersion, false);
+
+      final noId = ImmersionMinePayload.fromJson(<String, dynamic>{
+        'fields': <String, dynamic>{'expression': 'x'},
+        'clipSourceKind': 'bilibili',
+        'clipStartMs': 1,
+        'clipEndMs': 2,
+      });
+      expect(noId.isImmersion, false);
+    });
+
+    test('老扩展不发这些字段时一律 null（向后兼容）', () {
+      final p = ImmersionMinePayload.fromJson(<String, dynamic>{
+        'fields': <String, dynamic>{'expression': 'x'},
+        'sentence': 's',
+      });
+      expect(p.clipSourceKind, isNull);
+      expect(p.clipSourceId, isNull);
+      expect(p.clipSourcePart, isNull);
+      expect(p.isImmersion, false);
+    });
+
+    test('只有解码帧、没有可裁流时仍是沉浸路径（出一张有图的卡）', () {
+      final p = ImmersionMinePayload.fromJson(<String, dynamic>{
+        'fields': <String, dynamic>{'expression': 'x'},
+        'sentence': 's',
+        'screenshotBase64': base64Encode(<int>[7, 8]),
+        'documentTitle': 'テスト動画_哔哩哔哩_bilibili',
+      });
+      expect(p.isImmersion, true);
+      expect(p.screenshotBytes, <int>[7, 8]);
+      expect(p.documentTitle, 'テスト動画_哔哩哔哩_bilibili');
+    });
+  });
 }

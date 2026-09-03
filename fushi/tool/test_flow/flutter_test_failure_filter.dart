@@ -84,12 +84,22 @@ class FlutterTestErrorEvent {
     required this.suitePath,
     required this.error,
     required this.stackTrace,
+    this.printedOutput = const <String>[],
   });
 
   final String testName;
   final String suitePath;
   final String error;
   final String stackTrace;
+
+  /// The failing test's own `print` events, in emission order.
+  ///
+  /// Widget tests carry their diagnosis here, not in [error]: `flutter_test`
+  /// dumps the caught exception through `print` and reports the failure itself
+  /// as the content-free `Test failed. See exception logs above.`. Dropping
+  /// these events is what made every widget-test red on CI unreadable -- the
+  /// summary named the test and said nothing about why it broke.
+  final List<String> printedOutput;
 }
 
 class _TestInfo {
@@ -105,7 +115,8 @@ class _TestInfo {
 FlutterTestRunSummary parseFlutterTestJsonEvents(Iterable<String> lines) {
   final Map<int, String> suitePaths = <int, String>{};
   final Map<int, _TestInfo> tests = <int, _TestInfo>{};
-  final List<FlutterTestErrorEvent> errors = <FlutterTestErrorEvent>[];
+  final List<_RawErrorEvent> rawErrors = <_RawErrorEvent>[];
+  final Map<int, List<String>> printsByTest = <int, List<String>>{};
   final Set<int> hiddenTestIds = <int>{};
   int testsCompleted = 0;
   bool? success;
@@ -151,14 +162,18 @@ FlutterTestRunSummary parseFlutterTestJsonEvents(Iterable<String> lines) {
         if (!hidden) {
           testsCompleted++;
         }
-      case 'error':
+      case 'print':
+        // Buffered, not rendered yet: a passing test's chatter must stay out of
+        // the summary, and the events are only known to belong to a *failing*
+        // test once its `error` event has been seen.
         final Object? testId = decoded['testID'];
-        final _TestInfo? test = testId is int ? tests[testId] : null;
-        errors.add(FlutterTestErrorEvent(
-          testName: test?.name ?? '<load error>',
-          suitePath: test?.suiteId == null
-              ? '<unknown suite>'
-              : suitePaths[test!.suiteId!] ?? '<unknown suite>',
+        final Object? message = decoded['message'];
+        if (testId is int && message is String) {
+          (printsByTest[testId] ??= <String>[]).add(message);
+        }
+      case 'error':
+        rawErrors.add(_RawErrorEvent(
+          testId: decoded['testID'] is int ? decoded['testID'] as int : null,
           error: (decoded['error'] as String?) ?? '<no error message>',
           stackTrace: (decoded['stackTrace'] as String?) ?? '',
         ));
@@ -167,11 +182,44 @@ FlutterTestRunSummary parseFlutterTestJsonEvents(Iterable<String> lines) {
     }
   }
 
+  // Resolved after the loop rather than at the `error` event, so the pairing
+  // does not depend on `print` arriving before `error`.
+  final List<FlutterTestErrorEvent> errors = <FlutterTestErrorEvent>[
+    for (final _RawErrorEvent raw in rawErrors)
+      () {
+        final _TestInfo? test = raw.testId == null ? null : tests[raw.testId!];
+        return FlutterTestErrorEvent(
+          testName: test?.name ?? '<load error>',
+          suitePath: test?.suiteId == null
+              ? '<unknown suite>'
+              : suitePaths[test!.suiteId!] ?? '<unknown suite>',
+          error: raw.error,
+          stackTrace: raw.stackTrace,
+          printedOutput: raw.testId == null
+              ? const <String>[]
+              : printsByTest[raw.testId!] ?? const <String>[],
+        );
+      }(),
+  ];
+
   return FlutterTestRunSummary(
     errors: errors,
     success: success,
     testsCompleted: testsCompleted,
   );
+}
+
+/// An `error` event before its test name / suite / print output is resolved.
+class _RawErrorEvent {
+  const _RawErrorEvent({
+    required this.testId,
+    required this.error,
+    required this.stackTrace,
+  });
+
+  final int? testId;
+  final String error;
+  final String stackTrace;
 }
 
 /// `package:test` emits synthetic per-suite bookkeeping tests whose names are
@@ -207,6 +255,15 @@ String renderFlutterTestFailureSummary(
           ..writeln()
           ..write(_indentLimited(error.stackTrace, maxMessageLines));
       }
+      final String printed = error.printedOutput.join('\n').trimRight();
+      if (printed.isNotEmpty) {
+        // Tail, not head: the exception dump is emitted at the moment of
+        // failure, so a chatty test would push it past a head-limited window.
+        buffer
+          ..writeln()
+          ..writeln('  --- test output ---')
+          ..write(_indentLimitedTail(printed, maxMessageLines));
+      }
       buffer.writeln();
     }
   }
@@ -216,6 +273,20 @@ String renderFlutterTestFailureSummary(
   }
   if (stderrLogPath != null && stderrLogPath.isNotEmpty) {
     buffer.writeln('Full stderr log: $stderrLogPath');
+  }
+  return buffer.toString().trimRight();
+}
+
+/// Like [_indentLimited] but keeps the **last** [maxLines] lines.
+String _indentLimitedTail(String value, int maxLines) {
+  final List<String> lines = value.trimRight().split('\n');
+  final int omitted = lines.length > maxLines ? lines.length - maxLines : 0;
+  final StringBuffer buffer = StringBuffer();
+  if (omitted > 0) {
+    buffer.writeln('  ... omitted $omitted earlier lines');
+  }
+  for (final String line in lines.skip(omitted)) {
+    buffer.writeln('  ${line.trimRight()}');
   }
   return buffer.toString().trimRight();
 }

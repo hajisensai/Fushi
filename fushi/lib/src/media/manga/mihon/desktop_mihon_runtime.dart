@@ -61,6 +61,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   Process? _process;
   int? _port;
   String? _token;
+  _SidecarLogSink? _log;
   Future<void>? _starting;
   bool _disposed = false;
   bool _restartUsed = false;
@@ -395,17 +396,27 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     // The child prints its real listening port once NanoHTTPD has bound it.
     // `null` means "it will never arrive" (the process is gone).
     final Completer<int?> announced = Completer<int?>();
+    // 扩展加载失败的**唯一**完整证据（哪个扩展的哪个方法、什么异常）是 sidecar 经
+    // logback 打到 stdout 的 Java 栈。此前这两条流一个在 ready 行之后被丢弃、一个
+    // 被整段扔空，栈随进程退出永久消失，桌面端只剩 UI 上一行没有出处的错误文本。
+    // 落盘到数据目录，跟随用户自定义数据根。
+    final _SidecarLogSink log = await _SidecarLogSink.open(dataDirectory);
+    _log = log;
     // Never cancelled: stdout has to keep being drained or the pipe fills up
     // and blocks the JVM.
     process.stdout
         .transform(const Utf8Decoder(allowMalformed: true))
         .transform(const LineSplitter())
         .listen((String line) {
+      log.write(line);
       if (announced.isCompleted) return;
       final int? port = _parseReadyPort(line);
       if (port != null) announced.complete(port);
     });
-    process.stderr.listen((List<int> _) {});
+    process.stderr
+        .transform(const Utf8Decoder(allowMalformed: true))
+        .transform(const LineSplitter())
+        .listen(log.write);
     unawaited(process.exitCode.then((int _) {
       if (!announced.isCompleted) announced.complete(null);
       if (identical(_process, process)) {
@@ -413,6 +424,8 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         _port = null;
         _token = null;
       }
+      if (identical(_log, log)) _log = null;
+      unawaited(log.close());
     }));
 
     final DateTime deadline = DateTime.now().add(const Duration(seconds: 20));
@@ -484,6 +497,21 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     return port;
   }
 
+  /// 把 sidecar 错误响应里的异常类型与 Java 栈拼成 `details`。
+  ///
+  /// 旧 sidecar 只回 `{error, code}`；两个字段都缺就返回 null，让详情对话框保持
+  /// 原来的降级行为，而不是显示一段空标题。
+  static String? _errorDetails(Map<Object?, Object?>? error) {
+    if (error == null) return null;
+    final String type = error['errorType']?.toString().trim() ?? '';
+    final String stack = error['stackTrace']?.toString().trimRight() ?? '';
+    if (type.isEmpty && stack.isEmpty) return null;
+    if (stack.isEmpty) return type;
+    // 栈首行通常已含异常类型；重复时不再前缀一遍。
+    if (type.isEmpty || stack.startsWith(type)) return stack;
+    return '$type\n$stack';
+  }
+
   Future<MihonCapabilities> _readCapabilities() async {
     final http.Response response = await _http
         .get(_uri('/capabilities'), headers: _headers)
@@ -532,6 +560,10 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         throw MihonRuntimeException(
           'BRIDGE_HTTP_${response.statusCode}',
           error?['error']?.toString() ?? 'Mihon bridge request failed',
+          // 桌面路径此前从不填 details，于是「查看详情」对话框在桌面端恒为空，
+          // 用户只能看到一行没有出处的错误文本。sidecar 现在回传异常类型与 Java
+          // 栈（DalvikHandler.errorResponse），把它们接上，与 Android 路径对齐。
+          details: _errorDetails(error),
         );
       }
       return decoded;
@@ -639,4 +671,88 @@ class _CachedApk {
   final DateTime modifiedAt;
   final int size;
   final String base64;
+}
+
+/// sidecar 的 stdout/stderr 落盘。
+///
+/// 扩展加载类错误（NoSuchMethodError / InstantiationError / ClassCastException）
+/// 的完整 Java 栈只存在于 sidecar 进程的 stdout（logback 的 ConsoleAppender；上游
+/// 那个会写 RollingFile 的 `initLoggerConfig` 从来没有调用点）。这两条流以前一条
+/// 在 ready 行之后被丢弃、一条被整段扔空，栈随进程退出即消失，桌面端因此完全无法
+/// 自证根因。
+///
+/// 有意保持极简：单文件 + 满了轮转一份 `.1`。它是诊断证据而不是可靠日志系统，
+/// 任何写入异常都必须被吞掉——日志坏了绝不能连累漫画源可用。
+class _SidecarLogSink {
+  _SidecarLogSink._(this._file, this._backup, this._sink, this._written);
+
+  /// 单文件上限；超过就轮转。两份合计最多 ~4 MiB。
+  static const int _maxBytes = 2 * 1024 * 1024;
+
+  final File _file;
+  final File _backup;
+  IOSink? _sink;
+  int _written;
+  bool _closed = false;
+
+  static Future<_SidecarLogSink> open(Directory dataDirectory) async {
+    final Directory logs = Directory(p.join(dataDirectory.path, 'logs'));
+    final File file = File(p.join(logs.path, 'sidecar.log'));
+    final File backup = File(p.join(logs.path, 'sidecar.log.1'));
+    try {
+      await logs.create(recursive: true);
+      final int existing = await file.exists() ? await file.length() : 0;
+      return _SidecarLogSink._(
+        file,
+        backup,
+        file.openWrite(mode: FileMode.append),
+        existing,
+      );
+    } on Object {
+      // 只读数据目录、磁盘满、路径被占用——一律降级成「不记日志」。
+      return _SidecarLogSink._(file, backup, null, 0);
+    }
+  }
+
+  void write(String line) {
+    final IOSink? sink = _sink;
+    if (_closed || sink == null) return;
+    try {
+      sink.writeln(line);
+      _written += line.length + 1;
+      if (_written >= _maxBytes) unawaited(_rotate());
+    } on Object {
+      _sink = null;
+    }
+  }
+
+  Future<void> _rotate() async {
+    final IOSink? sink = _sink;
+    if (sink == null) return;
+    _sink = null;
+    try {
+      await sink.flush();
+      await sink.close();
+      if (await _backup.exists()) await _backup.delete();
+      await _file.rename(_backup.path);
+      _sink = _file.openWrite(mode: FileMode.write);
+      _written = 0;
+    } on Object {
+      _sink = null;
+    }
+  }
+
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    final IOSink? sink = _sink;
+    _sink = null;
+    if (sink == null) return;
+    try {
+      await sink.flush();
+      await sink.close();
+    } on Object {
+      // 关闭失败无所谓：进程已经退出，文件由 OS 收尾。
+    }
+  }
 }

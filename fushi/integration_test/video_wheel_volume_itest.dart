@@ -24,7 +24,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart'
     show VideoBookRepository;
 import 'package:fushi/src/media/video/video_volume_overlays.dart'
@@ -50,7 +50,7 @@ void main() {
     };
 
     try {
-      app.main();
+      await launchFushiTestApp();
       expect(await waitForHome(tester), isTrue, reason: '主页应在 90s 内出现');
       await tester.pump(const Duration(seconds: 2));
 

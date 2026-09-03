@@ -47,6 +47,7 @@ import 'package:fushi/src/sync/sync_compare_dialog.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_message_dialog.dart';
+import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi/src/sync/webdav_sync_backend.dart';
@@ -60,6 +61,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
+import 'package:fushi/src/utils/net/url_input_normalizer.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 
 /// [summarizeSyncReport] 的实现搬去了 manual_sync_ui.dart（媒体页下拉同步共用），
@@ -174,29 +176,82 @@ SettingsDestination buildSyncBackupDestination() {
                   .setSyncStatsEnabled(value);
             },
           ),
-          SettingsSwitchItem(
-            id: 'sync.dictionary',
-            title: t.sync_dictionary,
-            subtitle: t.sync_dictionary_warning,
-            icon: Icons.menu_book_outlined,
-            value: (SettingsContext ctx) => _syncSettings(ctx).syncDictionary,
-            onChanged: (SettingsContext ctx, bool value) async {
-              _syncSettings(ctx).syncDictionary = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setSyncDictionaryEnabled(value);
-            },
+          // 词典与本地音频源数据库不再是「开关 + 自动双向同步」，而是两个显式动作行：
+          // 上传把本机独有的推上去，下载把远端独有的拉下来。开关表达不了「现在把这
+          // 台机器的词典推过去」这种一次性意图，而它一旦开着就会在每轮 sweep 里悄悄
+          // 搬几百 MB —— 方向该由用户在点的那一刻给出。
+          //
+          // 可见性与相邻三个「上传X文件」同因：这四行只在**云备份通道**上跑
+          // （见 runManualAssetTransfer），同步方式被选成互联时那条通道没有出站
+          // 语义，留着就是四个死按钮。互联对端的内容上传由互联页自己那组开关管。
+          // 一次性告知，排在四个传输动作之前：升级前开着那两个自动同步开关的存量
+          // 用户，升级后同步会静默停下（见 SyncRepository 里废弃键那段注释）。只对
+          // 读到遗留 true 的库占位，用户确认后彻底消失。可见性与下面四行同因——只有
+          // 云备份通道跑这四个动作，互联通道上说明也无处可指。
+          SettingsCustomItem(
+            id: 'sync.asset_legacy_notice',
+            searchTitle: t.sync_asset_legacy_notice_title,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
+            icon: Icons.info_outline,
+            builder: (SettingsContext ctx) =>
+                _LegacyAssetSyncNotice(settingsContext: ctx),
           ),
-          SettingsSwitchItem(
-            id: 'sync.local_audio',
-            title: t.sync_local_audio,
-            subtitle: t.sync_local_audio_warning,
+          SettingsCustomItem(
+            id: 'sync.dictionary_upload',
+            searchTitle: t.sync_asset_dictionary_upload,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
+            icon: Icons.menu_book_outlined,
+            builder: (SettingsContext ctx) => _AssetTransferWidget(
+              settingsContext: ctx,
+              kind: SyncAssetKind.dictionary,
+              direction: SyncAssetDirection.upload,
+              title: t.sync_asset_dictionary_upload,
+              icon: Icons.menu_book_outlined,
+            ),
+          ),
+          SettingsCustomItem(
+            id: 'sync.dictionary_download',
+            searchTitle: t.sync_asset_dictionary_download,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
+            icon: Icons.menu_book_outlined,
+            builder: (SettingsContext ctx) => _AssetTransferWidget(
+              settingsContext: ctx,
+              kind: SyncAssetKind.dictionary,
+              direction: SyncAssetDirection.download,
+              title: t.sync_asset_dictionary_download,
+              icon: Icons.menu_book_outlined,
+            ),
+          ),
+          SettingsCustomItem(
+            id: 'sync.local_audio_upload',
+            searchTitle: t.sync_asset_local_audio_upload,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
             icon: Icons.graphic_eq_outlined,
-            value: (SettingsContext ctx) => _syncSettings(ctx).syncLocalAudio,
-            onChanged: (SettingsContext ctx, bool value) async {
-              _syncSettings(ctx).syncLocalAudio = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setSyncLocalAudioEnabled(value);
-            },
+            builder: (SettingsContext ctx) => _AssetTransferWidget(
+              settingsContext: ctx,
+              kind: SyncAssetKind.localAudio,
+              direction: SyncAssetDirection.upload,
+              title: t.sync_asset_local_audio_upload,
+              icon: Icons.graphic_eq_outlined,
+            ),
+          ),
+          SettingsCustomItem(
+            id: 'sync.local_audio_download',
+            searchTitle: t.sync_asset_local_audio_download,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
+            icon: Icons.graphic_eq_outlined,
+            builder: (SettingsContext ctx) => _AssetTransferWidget(
+              settingsContext: ctx,
+              kind: SyncAssetKind.localAudio,
+              direction: SyncAssetDirection.download,
+              title: t.sync_asset_local_audio_download,
+              icon: Icons.graphic_eq_outlined,
+            ),
           ),
           // 「上传X文件」三个开关都是 OUTBOUND：把本机资产推给**云备份**后端。BUG-988
           // 起互联通道不再复用这套共享开关——互联的内容上传由「上传到互联对端」分项开关
@@ -354,9 +409,11 @@ SettingsDestination buildSyncBackupDestination() {
 }
 
 /// 桌面端「数据存储位置」小节（TODO-935 E2）。历史上挂在同步备份大类尾部，
-/// 2026-07-26 用户拍板挪到「系统」大类展示——数据根是设备级存储配置，与备份无关。
+/// 2026-07-26 用户拍板挪出同步备份（数据根是设备级存储配置，与备份无关），
+/// 2026-08-22「存储」大类落地后再从「系统」挪到「存储」——与磁盘占用同页：
+/// 数据放哪 + 占了多少是同一个问题的两半。
 /// 构建函数留在本库（[_DataRootWidget] 是本库私有 part），由
-/// `settings_schema_system.dart` 调用；item id 保持 'sync.data_storage_location'
+/// `settings_schema_storage.dart` 调用；item id 保持 'sync.data_storage_location'
 /// 不变（历史命名前缀，搜索/导航锚点，仅换展示分类）。移动端沙箱固定，整个
 /// section 用 isDesktopPlatform 门控隐藏；桌面选新目录后走已实现的
 /// DataRootMigrator 整目录迁移 + 迁移成功后自动重启。
@@ -493,6 +550,45 @@ SettingsDestination buildInterconnectDestination() {
           ),
         ],
       ),
+      // 与已配对设备共享：统计 + 收藏夹的双向合并开关。刻意**不并进上面的「上传到
+      // 互联对端」区块**——那一区是纯 OUTBOUND 的重内容文件、脚注向用户承诺「默认
+      // 全部关闭」；这两项是轻量个人数据、双向合并、且默认开启（拆开关前它们本来就
+      // 在跟着云备份的「同步统计」无条件流动，只是用户看不见也关不掉）。混在一起会
+      // 让那句脚注当场变成假话。
+      SettingsSection(
+        title: t.interconnect_share_section,
+        footer: t.interconnect_share_section_footer,
+        visible: (SettingsContext ctx) =>
+            interconnectActive(ctx) && !_isHostingInterconnect(ctx),
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'interconnect.share_statistics',
+            title: t.interconnect_share_statistics,
+            subtitle: t.interconnect_share_statistics_hint,
+            icon: Icons.bar_chart_outlined,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectSyncStats,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectSyncStats = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setInterconnectSyncStatsEnabled(value);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'interconnect.share_favorites',
+            title: t.interconnect_share_favorites,
+            subtitle: t.interconnect_share_favorites_hint,
+            icon: Icons.star_outline,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectSyncFavorites,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectSyncFavorites = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setInterconnectSyncFavoritesEnabled(value);
+            },
+          ),
+        ],
+      ),
       // 交给已配对设备：本机把某类工作整个甩给对端主机去做。两项都只有 client 角色
       // 讲得通（host 没有「对端」可交），故与上面的上传区同门控——互联启用且本机不在
       // host 模式。
@@ -518,6 +614,24 @@ SettingsDestination buildInterconnectDestination() {
             icon: Icons.backup_outlined,
             builder: (SettingsContext ctx) =>
                 _InterconnectBackupBackendWidget(settingsContext: ctx),
+          ),
+          // apikey 同步设定重设计（2026-08-17）：service-config 接收开关。此前
+          // host 的外部服务 API key（Jimaku/TMDB/Torznab/OpenSubtitles/追番）经
+          // 互联单向下发是一条**无 UI 无开关**的隐形通道——用户既不知道配对后
+          // key 会同步过来，也关不掉。开关落设备本地（信任决策不跨设备跟随），
+          // 默认开 = 既有行为不变；关掉只是不再请求，已导入的值不回滚。
+          SettingsSwitchItem(
+            id: 'interconnect.service_config_sync',
+            title: t.sync_interconnect_service_config_toggle,
+            subtitle: t.sync_interconnect_service_config_toggle_desc,
+            icon: Icons.key_outlined,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectServiceConfigSync,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectServiceConfigSync = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setInterconnectServiceConfigSyncEnabled(value);
+            },
           ),
         ],
       ),
@@ -639,8 +753,6 @@ class _SyncSettingsState {
   bool interconnectEnabled = false;
   bool autoSync = false;
   bool syncStats = true;
-  bool syncDictionary = false;
-  bool syncLocalAudio = false;
   bool syncContent = false;
   bool syncAudioBookFiles = false;
   bool syncVideoFiles = false;
@@ -649,6 +761,13 @@ class _SyncSettingsState {
   bool interconnectSyncDictionary = false;
   bool interconnectSyncAudioBookFiles = false;
   bool interconnectSyncVideoFiles = false;
+  // 互联专属的「共享统计 / 共享收藏夹」（双向合并，非上传）。默认 true = 拆开关前
+  // 由云备份 syncStats 无条件代管时的既有行为。
+  bool interconnectSyncStats = true;
+  bool interconnectSyncFavorites = true;
+  // apikey 同步设定重设计（2026-08-17）：service-config（host 的外部服务 API key）
+  // 接收开关。默认 true = 既有行为；此前这条通道无 UI 无开关，用户不可见也关不掉。
+  bool interconnectServiceConfigSync = true;
   bool _loaded = false;
   bool _loading = false;
 
@@ -723,8 +842,6 @@ class _SyncSettingsState {
       interconnectEnabled = await _repo.isInterconnectEnabled();
       autoSync = await _repo.isAutoSyncEnabled();
       syncStats = await _repo.isSyncStatsEnabled();
-      syncDictionary = await _repo.isSyncDictionaryEnabled();
-      syncLocalAudio = await _repo.isSyncLocalAudioEnabled();
       syncContent = await _repo.isSyncContentEnabled();
       syncAudioBookFiles = await _repo.isSyncAudioBookFilesEnabled();
       syncVideoFiles = await _repo.isSyncVideoFilesEnabled();
@@ -735,6 +852,11 @@ class _SyncSettingsState {
           await _repo.isInterconnectSyncAudioBookFilesEnabled();
       interconnectSyncVideoFiles =
           await _repo.isInterconnectSyncVideoFilesEnabled();
+      interconnectSyncStats = await _repo.isInterconnectSyncStatsEnabled();
+      interconnectSyncFavorites =
+          await _repo.isInterconnectSyncFavoritesEnabled();
+      interconnectServiceConfigSync =
+          await _repo.isInterconnectServiceConfigSyncEnabled();
       serverEnabled = await _repo.isServerEnabled();
       hasClientConnection = (await _repo.getFushiClientUrls()).isNotEmpty;
       _loaded = true;

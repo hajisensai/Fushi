@@ -1,0 +1,7 @@
+## BUG-2086 · SGRE 游戏内查词鼠标悬浮在字上没有高亮反馈：只有 KiriKiri 在引擎图层画高亮
+- **报告**：2026-09-03（用户两次报「鼠标放上去文字上面应该高亮对应块」，SGRE 窗口模式）
+- **真实性**：✅ 真缺口。悬浮高亮此前只有一条落地路径：KiriKiri 适配器在 TJS 里同步绘制（`kirikiri_adapter.inc`）；host 侧 `GalIngameLookupController.handleHit` 对 `submit=false` 直接 return（注释假定「hover 高亮已在游戏线程绘制」），runner 的 `galLookupPresentHighlight` 发出的 highlight-only 帧被通用呈现器 `lookup_overlay_window.inc:378` 消费后丢弃。SGRE 适配器 `sgre_lookup.inc` 的轮询每 16 ms 已算出光标下的字形（`FindSgreCapturedLookupGlyph`），但只用于 Shift/点击提交，从不画。
+- **[x] ① 已修复** — 在通用呈现器里加「悬浮字形高亮」分层窗：`RequestLookupHoverHighlight(screen rect)` / `ClearLookupHoverHighlight()` 任意线程写原子请求，UI 线程在 `kOverlayTimerId` 定时器里 `ApplyLookupHoverHighlight()` 创建/移动/隐藏窗口（`WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_TOPMOST|WS_EX_NOACTIVATE`，淡黄 alpha 90，`WM_NCHITTEST` 返回 HTTRANSPARENT，点击穿透、不抢焦点，`WindowFromPoint` 跳过它所以引擎的「光标在游戏窗口内」判定不受影响）；SGRE 轮询在「几何已持有 + 光标在游戏窗口 + 无卡片可见 + 光标落在字形」时提交 `client_origin + hit_rect`，其余所有提前 return 路径由 `SgreHoverHighlightScope` 析构统一清除（本提交）。
+- **[ ] ② 未加自动化测试** — 分层窗行为是 Win32 UI，现有 CTest 无宿主；结构上由 `adapter_structure_test.py` 覆盖 include 顺序。真机验证记录见下。
+- **真机复验**：2026-09-03 新 helper（dist x64 sha c2fb97…），SGRE 1920×1080 窗口：光标移到「る」上出现 `FushiLookupHoverHighlight` 窗 [1385,1369,1425,1409]（40×40 正对字格，整屏截图可见淡黄块）；移到画面空白处窗口消失，移回另一字上重现 [1225,1369,1265,1409]；带高亮时左键点字照常命中（generation=43/11）出卡，卡片期间高亮窗自动隐藏，点卡外关闭台词不推进。同批：工作台「这句台词的语音轨」对话框在 game_resource 行上显示资源模式提示。
+- **备注**：不动 IPC、runner、Dart。通用呈现器线程只在 host 打开查词且无引擎认领呈现时启动，正是 SGRE 的情形；KiriKiri 认领了呈现器，因此这个窗对它永远不会创建（它仍走 TJS 高亮）。

@@ -89,6 +89,28 @@ void main() {
       'video_sub_fonts',
     );
     expect(ReaderSettings.fontKeyVideoSubtitle, 'video_sub_fonts');
+    expect(
+      ReaderSettings.fontKeyForTarget(FontTarget.gameLookup),
+      'game_lookup_fonts',
+    );
+    expect(ReaderSettings.fontKeyGameLookup, 'game_lookup_fonts');
+  });
+
+  test('game lookup target reads and writes independently', () async {
+    final ReaderSettings settings = ReaderSettings(db);
+    await settings.refreshFromDb();
+    await settings.setFontsForTarget(
+      FontTarget.gameLookup,
+      _fonts(_font('LookupFont', path: '/fonts/lookup.ttf')),
+    );
+
+    final ReaderSettings restored = ReaderSettings(db);
+    await restored.refreshFromDb();
+
+    expect(restored.gameLookupFonts.single['name'], 'LookupFont');
+    expect(restored.gameLookupFonts.single['path'], '/fonts/lookup.ttf');
+    expect(restored.videoSubtitleFonts, isEmpty);
+    expect(restored.customFonts, isEmpty);
   });
 
   test('video subtitle target reads/writes independently of other targets',
@@ -135,6 +157,7 @@ void main() {
     expect(restored.dictionaryFonts.single['name'], 'BodySeed');
     // ...but video subtitle does not.
     expect(restored.videoSubtitleFonts, isEmpty);
+    expect(restored.gameLookupFonts, isEmpty);
   });
 
   test('setting body fonts first still seeds untouched targets from body',
@@ -164,6 +187,8 @@ void main() {
     expect(restored.dictionaryFonts.single['name'], 'BodySeed');
     expect(restored.appUiFonts.single['path'], '/fonts/body-seed.ttf');
     expect(restored.dictionaryFonts.single['path'], '/fonts/body-seed.ttf');
+    expect(restored.videoSubtitleFonts, isEmpty);
+    expect(restored.gameLookupFonts, isEmpty);
   });
 
   test('explicit empty targets do not re-seed after body changes', () async {

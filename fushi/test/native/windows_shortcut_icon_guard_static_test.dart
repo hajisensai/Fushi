@@ -6,8 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 链路：Dart `syncWindowsShortcutIcons` 编码多尺寸 .ico + 落盘 → 经
 /// `app.fushi/window` channel 的 `setShortcutIcon`（入参 key `iconPath`）→ 原生
-/// `ApplyShortcutIcon` 用 IShellLink + IPersistFile 改写桌面 / 开始菜单 .lnk 的
-/// IconLocation。删掉任一环即红。
+/// `ApplyShortcutIcon` 用 IShellLink + IPersistFile 改写桌面 / 开始菜单 / 任务栏固定
+/// `.lnk` 的 IconLocation；冷启动恢复窗口图标成功后也会重放同步。删掉任一环即红。
 void main() {
   String read(String rel) {
     final File f = File(rel);
@@ -35,9 +35,29 @@ void main() {
         reason:
             '必须先 IPersistFile::Load 现有 .lnk 再 Save（保留 target/args/workdir）');
 
-    // 桌面 + 开始菜单两处，且用 KnownFolder 解析（不拼环境变量，兼容 OneDrive 重定向）。
+    // 桌面 + 开始菜单 + 用户任务栏固定项，且用 KnownFolder 解析（不拼环境变量）。
     expect(src.contains('FOLDERID_Desktop'), isTrue, reason: '必须同步桌面快捷方式');
     expect(src.contains('FOLDERID_Programs'), isTrue, reason: '必须同步开始菜单快捷方式');
+    expect(
+        RegExp(r'FushiShortcutInFolder\(\s*FOLDERID_UserPinned\s*,\s*'
+                r'L"TaskBar\\\\Fushi\.lnk"')
+            .hasMatch(src),
+        isTrue,
+        reason: r'任务栏固定项必须使用 FOLDERID_UserPinned + TaskBar\Fushi.lnk');
+    expect(
+        src.contains('SetShortcutIconLocation(taskbar_lnk, icon_path, true)'),
+        isTrue,
+        reason: '任务栏固定项只允许在 target 等于当前 exe 时改写');
+    expect(src.contains('shell_link->GetPath('), isTrue,
+        reason: '必须读取固定项现有 target 进行校验');
+    expect(src.contains('GetModuleFileNameW('), isTrue,
+        reason: '必须以当前进程 exe 作为固定项 target 真值');
+    expect(src.contains('GetFinalPathNameByHandleW('), isTrue,
+        reason: '固定项 target 与当前 exe 必须先解析最终路径再比较');
+    expect(src.contains('FinalPathForComparison(target.data())'), isTrue,
+        reason: '固定项 target 必须参与最终路径归一化');
+    expect(src.contains('FinalPathForComparison(executable.data())'), isTrue,
+        reason: '当前 exe 必须参与最终路径归一化');
     // TODO-901 C1 回归守卫（load-bearing）：开始菜单 .lnk 落在程序组子文件夹
     // 内，相对路径必须是 Fushi 子目录 + Fushi.lnk，而不是 Programs 根下的
     // 裸 Fushi.lnk（{group} = {autoprograms}+程序组名，含 Fushi 子目录）。
@@ -97,5 +117,22 @@ void main() {
     // 两个 Windows 触点都接：preset + custom。
     expect('syncWindowsShortcutIcons('.allMatches(src).length >= 2, isTrue,
         reason: 'preset 与 custom 两条 Windows 换图路径都须同步');
+  });
+
+  test('Windows 冷启动恢复窗口图标成功后同步快捷方式', () {
+    final String src = read('lib/main.dart');
+    expect(
+        src.contains(
+            "import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';"),
+        isTrue,
+        reason: 'main.dart 必须接入快捷方式同步实现');
+    final RegExp restoreAndSync = RegExp(
+      r'final bool applied\s*=\s*await WindowCaptionChannel\.setWindowIcon\(iconPath\);'
+      r'[\s\S]*?if \(applied\) \{'
+      r'[\s\S]*?final Uint8List iconBytes = await File\(iconPath\)\.readAsBytes\(\);'
+      r'[\s\S]*?await syncWindowsShortcutIcons\(iconBytes\);',
+    );
+    expect(restoreAndSync.hasMatch(src), isTrue,
+        reason: '冷启动 setWindowIcon 成功后必须用同一图标文件字节同步 .lnk');
   });
 }

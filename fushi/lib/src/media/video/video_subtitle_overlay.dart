@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart'
     show BoxHitTestEntry, BoxHitTestResult, RenderProxyBox;
 import 'package:flutter/scheduler.dart' show Ticker;
+import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:flutter/services.dart' show HardwareKeyboard;
 
 import 'package:fushi/src/media/video/ass_font_metrics.dart';
@@ -284,6 +285,69 @@ double assBlurValueToSigma(double blurValue, double assFontScale) {
   return sigma < 0 ? 0 : (sigma > 24 ? 24 : sigma);
 }
 
+/// [SubtitleClip] 的值指纹（BUG-1775）：同值裁剪 → 同串。分组键与 [_clipGroup] 的
+/// 「组内同裁剪才真裁」判据共用，使值相等但对象不同的 clip（同一特效拆多条 Dialogue）
+/// 不因 identity 差异而整组放弃裁剪。分数坐标截 4 位小数（与 \pos 分组键同精度）。
+@visibleForTesting
+String clipGroupFingerprint(SubtitleClip clip) {
+  final StringBuffer b = StringBuffer(clip.inverse ? 'i' : 'n');
+  for (final SubtitleClipSegment s in clip.segments) {
+    b
+      ..write(';')
+      ..write(s.op.index)
+      ..write(',')
+      ..write(s.x1.toStringAsFixed(4))
+      ..write(',')
+      ..write(s.y1.toStringAsFixed(4));
+    if (s.op == SubtitleClipOp.cubic) {
+      b
+        ..write(',')
+        ..write(s.x2.toStringAsFixed(4))
+        ..write(',')
+        ..write(s.y2.toStringAsFixed(4))
+        ..write(',')
+        ..write(s.x3.toStringAsFixed(4))
+        ..write(',')
+        ..write(s.y3.toStringAsFixed(4));
+    }
+  }
+  return b.toString();
+}
+
+/// 无 `\pos`/`\move` 但带静态 `\clip` 的 ASS 事件的**帧空间锚点分数**（BUG-1775）。
+///
+/// `\clip` 的矩形/路径映射在 fit:contain 视频内容矩形上（[_AssClipClipper]），而无 \pos
+/// 的普通 cue 此前按「用户底距 + 控制条避让」定位在**容器**坐标——两套几何脱节，字幕盒
+/// 可以滑出作者的裁剪窗：左右分屏卡拉OK（两条同文本事件各 \clip 半边、不同 Layer 同位
+/// 叠画拼成一行）被拆成两处错位片段，clip 竖向边带还会把字形拦腰裁半。libass 里排版与
+/// 裁剪同在帧空间：无 \pos 事件的锚点由 Alignment + Margin 对帧定位——
+/// 水平 左=MarginL / 居中=帧中心+(L-R)/2 / 右=1-MarginR；竖直 顶=MarginV / 中=0.5
+/// （MarginV 不参与）/ 底=1-MarginV。Margin 是 PlayRes 像素，缺 PlayRes 或无边距按 0。
+/// 返回分数与 `\pos` 同构，直接喂 [mapPosFractionToContainer] 走绝对定位。
+@visibleForTesting
+SubtitlePos resolveClipCueAnchorFraction(SubtitleMarkup markup) {
+  final SubtitleAnchor a = markup.anchor ??
+      const SubtitleAnchor(SubtitleVAlign.bottom, SubtitleHAlign.center);
+  double frac(double? margin, double? playRes) =>
+      (margin != null && margin > 0 && playRes != null && playRes > 0)
+          ? margin / playRes
+          : 0;
+  final double ml = frac(markup.cueStyle?.marginL, markup.playResX);
+  final double mr = frac(markup.cueStyle?.marginR, markup.playResX);
+  final double mv = frac(markup.cueStyle?.marginV, markup.playResY);
+  final double xf = switch (a.horizontal) {
+    SubtitleHAlign.left => ml,
+    SubtitleHAlign.center => 0.5 + (ml - mr) / 2,
+    SubtitleHAlign.right => 1 - mr,
+  };
+  final double yf = switch (a.vertical) {
+    SubtitleVAlign.top => mv,
+    SubtitleVAlign.middle => 0.5,
+    SubtitleVAlign.bottom => 1 - mv,
+  };
+  return SubtitlePos(xf, yf);
+}
+
 /// 视频底部当前句字幕 overlay；监听 [VideoPlayerController.currentCue]。
 ///
 /// 字幕逐字符可点击：点击第 [int] 个 grapheme 时回调
@@ -325,6 +389,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.controlsBottomReserve = kVideoControlsBottomReserve,
     this.controlsTopReserve = kVideoControlsTopReserve,
     this.fontFamily,
+    this.contentLanguage,
     this.respectAssStyle = false,
     super.key,
   });
@@ -481,6 +546,13 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 字幕字体。传 null 时走平台默认；视频页传 app-wide reader custom font。
   final String? fontFamily;
 
+  /// 字幕的内容语言（BCP-47）。真值优先级由视频页解析后传入：
+  /// 用户对本视频手动指定（VideoBooks.language）> 当前字幕轨的 language。
+  ///
+  /// 决定 [_subtitleCjkFallback] 用哪条链。null = 语言未知 → 退回历史兜底链
+  /// （[subtitleCjkFontFallbacks]），渲染逐像素不变。
+  final String? contentLanguage;
+
   /// 是否尊重 .ass 字幕自带样式（TODO-1105）。为 true 时，字体名 / 主色 / 字号 / 描边色 /
   /// 描边宽 / 阴影色 / 阴影深度优先取 markup 里 ASS 解析出的值（行内 {...} 覆盖 > [V4+ Styles]
   /// cue 默认），缺失才回退用户统一样式（[fontFamily] / [textColor] / [fontSize] /
@@ -549,9 +621,6 @@ List<String> subtitleCjkFontFallbacks(TargetPlatform platform) =>
         ? _kWindowsSubtitleCjkFallback
         : _kDefaultSubtitleCjkFallback;
 
-List<String> get _subtitleCjkFallback =>
-    subtitleCjkFontFallbacks(defaultTargetPlatform);
-
 /// Windows 上作者字体缺失时，Flutter/Skia 以同一 YaHei UI face 渲染仍比
 /// mpv/libass FreeType REAL_DIM 的实像素偏窄、偏矮。BUG-929 用用户原片黑底帧校准：
 /// 字号补 1.09、仅纵轴再补 1.055，可把 `きれえ` 从 146×50 对齐到 158×56
@@ -581,6 +650,38 @@ const double _kWindowsMissingAssFontRasterYScale = 1.055;
 
 class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     with SingleTickerProviderStateMixin {
+  List<String>? _cjkFallbackChain;
+  String? _cjkFallbackLanguage;
+
+  /// 字幕缺字回退链，**按字幕的内容语言解析**。
+  ///
+  /// 为什么必须按语言：历史链是一条写死的常量，而 Windows 那条的第一项是
+  /// `Microsoft YaHei UI`——一个**中文**字体。它排第一是因为 BUG-929 拿它做过
+  /// 字号度量校准（度量基准），但副作用是 Windows 上日文字幕的汉字一律以中文
+  /// 字形渲染（`練` 的糸旁三点变三横那类），而这正是用户报的问题。
+  ///
+  /// 与 BUG-929 的耦合仍然成立：ASS cell/em 字号换算（[_cellPerEmFor]）与实际
+  /// 渲染（[_styleForGrapheme] 的 fontFamilyFallback）**读的是同一个 getter**，
+  /// 所以两者永远选到同一套字体，不会出现「按 A 度量、用 B 渲染」。
+  ///
+  /// 语言未知时原样返回历史链：这条路径上的渲染与本改动前逐像素一致（外挂 SRT
+  /// 基本不带语言标记，量很大，不能让它们跟着变）。
+  List<String> get _subtitleCjkFallback {
+    final String? language = widget.contentLanguage;
+    if (_cjkFallbackChain != null && _cjkFallbackLanguage == language) {
+      return _cjkFallbackChain!;
+    }
+    final List<String> byLanguage = contentFontFamilies(
+      languageTag: language,
+      platform: defaultTargetPlatform,
+    );
+    _cjkFallbackLanguage = language;
+    _cjkFallbackChain = byLanguage.isEmpty
+        ? subtitleCjkFontFallbacks(defaultTargetPlatform)
+        : byLanguage;
+    return _cjkFallbackChain!;
+  }
+
   bool _revealed = false;
 
   /// 副字幕模糊态的独立显形标志（TODO-1382）：主/副字幕各有自己的 reveal，悬停/点击
@@ -1064,8 +1165,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     if (!widget.respectAssStyle) return child;
     final SubtitleClip? clip = group.first.markup?.clip;
     if (clip == null) return child;
+    // 同值即同裁剪（BUG-1775）：identity 相同免算指纹；值相等但对象不同（同一特效拆
+    // 多条 Dialogue 各自解析出等值 clip）也不放弃裁剪。
+    final String fp = clipGroupFingerprint(clip);
     for (final AudioCue cue in group.skip(1)) {
-      if (!identical(cue.markup?.clip, clip)) return child;
+      final SubtitleClip? other = cue.markup?.clip;
+      if (other == null) return child;
+      if (!identical(other, clip) && clipGroupFingerprint(other) != fp) {
+        return child;
+      }
     }
     return ClipPath(
       clipper: _AssClipClipper(clip: clip, videoW: videoW, videoH: videoH),
@@ -1157,6 +1265,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       if (m == null) return true; // 纯 SRT / 无 markup：底部居中、无 MarginV → 折叠
       if (m.posFraction != null) return false;
       if (widget.respectAssStyle && m.move != null) return false;
+      // 带 \clip 的 cue 走帧空间绝对定位（BUG-1775），不属于基线桶。
+      if (widget.respectAssStyle && m.clip != null) return false;
       final SubtitleVAlign v = m.anchor?.vertical ?? SubtitleVAlign.bottom;
       if (v != SubtitleVAlign.bottom) return false;
       final double? mv = m.cueStyle?.marginV;
@@ -1247,15 +1357,21 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // Layer 0（srt/vtt/无 Layer 列）不加后缀，既有分组键与槽位状态字面不变。
     final int layer = markup?.layer ?? 0;
     final String lk = layer != 0 ? ':L$layer' : '';
+    // 静态 \clip 纳入键（BUG-1775）：不同裁剪窗的事件（左右分屏卡拉OK各 \clip 半边）
+    // 绝不能同组进一个 Column——组内裁剪不一致会整组放弃裁剪、竖排还会把片段错位堆行。
+    // 各自成组后同位叠画，由各组的 [_clipGroup] 分别真裁。无 clip（srt/vtt/普通 ASS）
+    // 后缀为空，既有键字面不变。
+    final SubtitleClip? clip = widget.respectAssStyle ? markup?.clip : null;
+    final String ck = clip != null ? ':c${clipGroupFingerprint(clip)}' : '';
     if (pf != null) {
       return 'p:${pf.xFraction.toStringAsFixed(4)},'
-          '${pf.yFraction.toStringAsFixed(4)}:$av:$ah$lk';
+          '${pf.yFraction.toStringAsFixed(4)}:$av:$ah$lk$ck';
     }
     // \move（TODO-1374）：自带绝对位置（起点）→ 各自成组走绝对定位，不与锚点 cue 同组。
     final SubtitleMove? move = widget.respectAssStyle ? markup?.move : null;
     if (move != null) {
       return 'mv:${move.x1Fraction.toStringAsFixed(4)},'
-          '${move.y1Fraction.toStringAsFixed(4)}:$av:$ah$lk';
+          '${move.y1Fraction.toStringAsFixed(4)}:$av:$ah$lk$ck';
     }
     // MarginV（同锚点内不同竖直边距）纳入键：消除旧「同锚点不同 MarginV 被裹挟进一个
     // Column 挤在一起」的降级（OP/ED 标题与多行歌词那样各在其 authored 高度）。
@@ -1265,6 +1381,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final int mv;
     if (mvRaw == null || mvRaw <= 0) {
       mv = -1;
+    } else if (clip != null) {
+      // 带 \clip 的 cue 走帧空间绝对定位（[resolveClipCueAnchorFraction]），MarginV 是
+      // 帧位置的一部分——不折基线桶（折叠会抹掉位置差、也会被 [_mergeBottomBaselineGroups]
+      // 拽回用户基线，与 clip 几何脱节，正是本 bug 的病根）。
+      mv = mvRaw.round();
     } else if (vertical == SubtitleVAlign.bottom) {
       // 底部锚点折叠判据用**原始 MarginV**（PlayRes 像素、显示无关），不用缩放值：缩放值
       // `_scaledMarginV` 随显示区高变化，大屏（显示区高 >> PlayResY）时第二语言对白的
@@ -1293,7 +1414,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final double mrRaw = markup?.cueStyle?.marginR ?? 0;
     final int ml = mlRaw > 0 ? mlRaw.round() : -1;
     final int mr = mrRaw > 0 ? mrRaw.round() : -1;
-    return 'a:$av:$ah:$mv:$ml:$mr$lk';
+    return 'a:$av:$ah:$mv:$ml:$mr$lk$ck';
   }
 
   /// TODO-1372/BUG-698：把一组的当前活动 cue 对齐进跨帧槽位表（不变量见 [_groupSlots]），
@@ -1356,6 +1477,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final SubtitleAnchor? ownAnchor = ownMarkup?.anchor;
     final bool ownNonBottom = ownPos != null ||
         ownMarkup?.move != null || // \move 自带绝对位置，不被强制锚定（TODO-1374）
+        // \clip 走帧空间绝对定位（BUG-1775）：强制置顶会把文本拽离作者裁剪窗。
+        ownMarkup?.clip != null ||
         (ownAnchor != null && ownAnchor.vertical != SubtitleVAlign.bottom);
     // TODO-2838：锚定解析收敛成统一函数（[resolveLayerForcedAnchor]）——用户锚定（含
     // 拖拽预览）、副字幕自动对侧、ASS 自带位置的优先级都在那一处，此处不再叠 if。
@@ -1416,6 +1539,20 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
           const SubtitleAnchor(SubtitleVAlign.bottom, SubtitleHAlign.center);
       return _absolutePositioned(posScreen, anchor, content);
     }
+    // 无 \pos/\move 但带静态 \clip（BUG-1775）：排版必须与裁剪同一几何——按 libass 语义
+    // 用 Alignment + Margin 在帧空间合成锚点，走与 \pos 相同的绝对定位。不做控制条避让
+    // （dodge 会把文本推出固定在帧上的裁剪窗，重现「字被拦腰裁半」）。视频未解码时锚点
+    // 解不出（null），回退历史锚点路径（与 \pos 同款降级，首帧仍有字幕）。
+    if (posMarkup?.clip != null) {
+      final Offset? clipAnchorScreen =
+          _clipFrameAnchorScreen(posMarkup, container);
+      if (clipAnchorScreen != null) {
+        final SubtitleAnchor anchor = posMarkup!.anchor ??
+            const SubtitleAnchor(SubtitleVAlign.bottom, SubtitleHAlign.center);
+        return _absolutePositioned(clipAnchorScreen, anchor, content,
+            dodge: false);
+      }
+    }
     // 无 \pos：纯 SRT 副字幕强制顶部锚点；否则按 markup 锚点（null → 历史底居中）。
     final SubtitleAnchor? anchor = forceTop
         ? const SubtitleAnchor(SubtitleVAlign.top, SubtitleHAlign.center)
@@ -1424,11 +1561,19 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // MarginV 放在不同高度的同锚点 cue（标题 + 多行歌词）各就其位（TODO-1341 后续）。
     final double? scaledMarginV = forceTop ? null : _scaledMarginV(posMarkup);
     // ASS MarginL/MarginR（水平边距）缩放到显示尺寸：横移对白（说话人一侧）/ an7 左上
-    // 招牌的左缘偏移各就其位。强制置顶的纯 SRT 副字幕（posMarkup null）恒无边距。
+    // 招牌的左缘偏移各就其位。
+    //
+    // 这里读 [ownMarkup] 而**不是** [posMarkup]（BUG-1730 续）：posMarkup 在
+    // `forcedAnchor != null` 时被整个置 null，那是**竖直**强制锚定，却把水平排版盒
+    // 一起丢掉了 —— 于是底锚（默认，forcedAnchor==null）扣掉双侧 MarginL/R（常见
+    // 26~80px），顶锚反而一点不扣、换行宽度更大。用户报的「底部锚定才断行、顶部不断」
+    // 就是这条不对称。竖直方向（scaledMarginV / rawMarginV）必须继续走 posMarkup，
+    // 否则用户选的锚定会被 ASS MarginV 顶回去。
+    // respectAssStyle=false 时 ownMarkup 恒 null，纯字幕路径零行为变化。
     final double? scaledMarginL =
-        _scaledMarginX(posMarkup, posMarkup?.cueStyle?.marginL);
+        _scaledMarginX(ownMarkup, ownMarkup?.cueStyle?.marginL);
     final double? scaledMarginR =
-        _scaledMarginX(posMarkup, posMarkup?.cueStyle?.marginR);
+        _scaledMarginX(ownMarkup, ownMarkup?.cueStyle?.marginR);
     // 原始 MarginV（PlayRes 像素）：底部基线真相源 [resolveBottomBaseline] 要用它判断
     // 本组是否落在基线桶——与 [_positionKey] 的分组判据同一个量（BUG-1335）。
     final double? rawMarginV = forceTop ? null : posMarkup?.cueStyle?.marginV;
@@ -1708,14 +1853,38 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final List<int> breakList = markup?.lineBreakGraphemes ?? const <int>[];
     final Set<int> breakSet =
         breakList.isEmpty ? const <int>{} : breakList.toSet();
-    final List<List<Widget>> rows = <List<Widget>>[<Widget>[]];
+    final List<List<int>> rowIndices = <List<int>>[<int>[]];
     for (int i = 0; i < chars.length; i++) {
       if (breakSet.contains(i)) {
-        rows.add(<Widget>[]);
+        rowIndices.add(<int>[]);
         continue;
       }
-      rows.last.add(charWidget(i));
+      rowIndices.last.add(i);
     }
+    // 软换行单位从「单字符」提升为「断行机会组」（BUG-1730）：此前每个 grapheme 直接作
+    // Wrap child，Wrap 对词边界一无所知，整行超宽 1px 就把英文单词最后一个字符甩下一行
+    // （中词断行）。现按 [groupSubtitleGraphemesForWrap] 把拉丁词整组包进
+    // Row(mainAxisSize: min)——拉丁按词断、CJK 仍逐字断（≈libass WrapStyle 1 语义）。
+    // 逐字形样式与 [_charEntries] 逐字登记零改动：charWidget 仍按 grapheme 下标递增顺序
+    // 构建（Column→Wrap→Row 均按序 build，登记序不变）。crossAxisAlignment 取 start，
+    // 与 Wrap run 内默认 WrapCrossAlignment.start 的顶对齐一致（组内混排缩放字形不位移）。
+    // 已知极限：单词本身宽过容器时 Row 不再拆词（溢出裁切）——病态输入，接受。
+    final List<List<Widget>> rows = <List<Widget>>[
+      for (final List<int> row in rowIndices)
+        <Widget>[
+          for (final List<int> group
+              in groupSubtitleGraphemesForWrap(chars, row))
+            group.length == 1
+                ? charWidget(group.single)
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      for (final int i in group) charWidget(i),
+                    ],
+                  ),
+        ],
+    ];
     final Widget textContent = rows.length == 1
         ? Wrap(alignment: WrapAlignment.center, children: rows.single)
         : Column(
@@ -2534,6 +2703,17 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// ASS `MarginL`/`MarginR`（水平边距，PlayResX 像素）按 显示区宽 / PlayResX 缩放到显示
   /// 尺寸（与 [_scaledMarginV] 之于 PlayResY 同构）。缺 PlayResX 时回退 [_assFontScale]
   /// （等比视频两者相等）。无边距（null / <=0）返回 null。夹到 [0, 显示区宽] 防异常撑爆。
+  /// fit:contain 后视频内容矩形**单侧**黑边宽（pillarbox）。letterbox / 未知分辨率
+  /// 时为 0。字幕排版盒的水平可用区必须是视频内容矩形而不是整个容器，否则换行宽度
+  /// 会跟着窗口宽高比变（见 [_paddingFor] 的说明）。
+  double _pillarboxSideInset() {
+    final double? contentW = _lastVideoContentWidth;
+    final double? layoutW = _lastLayoutWidth;
+    if (contentW == null || layoutW == null) return 0;
+    final double bar = (layoutW - contentW) / 2;
+    return bar > 0 ? bar : 0;
+  }
+
   double? _scaledMarginX(SubtitleMarkup? markup, double? margin) {
     if (margin == null || margin <= 0) return null;
     final double? playResX = markup?.playResX;
@@ -2578,6 +2758,17 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final int? h = widget.controller.videoHeight;
     if (w == null || h == null) return null;
     return mapPosFractionToContainer(pf, w, h, container);
+  }
+
+  /// 带静态 `\clip` 的无 \pos cue 的帧空间锚点 → 容器局部坐标（BUG-1775，语义见
+  /// [resolveClipCueAnchorFraction]）。无 clip / 视频未解码返回 null（回退锚点路径）。
+  Offset? _clipFrameAnchorScreen(SubtitleMarkup? markup, Size container) {
+    if (markup?.clip == null) return null;
+    final int? w = widget.controller.videoWidth;
+    final int? h = widget.controller.videoHeight;
+    if (w == null || h == null) return null;
+    return mapPosFractionToContainer(
+        resolveClipCueAnchorFraction(markup!), w, h, container);
   }
 
   static double _hFrac(SubtitleHAlign h) => switch (h) {
@@ -2686,9 +2877,22 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     );
     // ASS MarginL/MarginR 水平边距：Align 内侧 padding 恰是 ASS 排版盒语义——居中对齐时
     // 盒宽 = 文本 + L + R、Align 居中该盒 → 文本中心右移 (L-R)/2；左/右对齐时文本起点 /
-    // 终点分别落在 L / 宽-R。无边距恒 0（srt/vtt 像素级不变）。
-    final double left = scaledMarginL ?? 0;
-    final double right = scaledMarginR ?? 0;
+    // 终点分别落在 L / 宽-R。无 ASS 边距时该项为 0。
+    //
+    // 再叠一层 pillarbox 侧边条（BUG-1730 续）：字号锚在**视频内容矩形高**
+    // （[_assFontScale]，与 mpv/libass 同口径），换行宽度此前却锚在**容器宽**，两者
+    // 不同源。pillarbox（窗口比视频扁，1080p 视频 + 带标题栏的窗口正是这一档）下
+    // 字号 ∝ 容器高、可用宽 ∝ 容器宽，于是换行容量 ∝ 窗口宽高比：同一句字幕在
+    // 1920×1048 窗口里放得下，最大化到 2560×1440（宽高比 1.832→1.778，容量少约 3%）
+    // 就被推过阈值多断一行——用户报的「窗口一最大化字幕排版就变」。
+    // 把黑边宽度算进左右 padding 后，可用宽 ∝ 视频内容宽，与字号同源，换行位置
+    // 对窗口尺寸恒定不变（与其它播放器一致）。letterbox 时侧边条为 0，零行为变化。
+    // 侧边条对 srt/vtt 同样施加（字幕本来就属于视频画面、不该排进黑边）：居中对齐
+    // 下视觉中心不动，只是换行宽度收窄到画面宽——pillarbox 下这是行为变化，不是
+    // 像素级不变，属于有意的口径修正。
+    final double sideBar = _pillarboxSideInset();
+    final double left = sideBar + (scaledMarginL ?? 0);
+    final double right = sideBar + (scaledMarginR ?? 0);
     return switch (v) {
       SubtitleVAlign.bottom => EdgeInsets.only(
           left: left,
@@ -2772,7 +2976,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 与历史像素级一致。控制条显隐用 [TweenAnimationBuilder] 在「作者位」与「避让位」之间
   /// 插值，时长/曲线与锚点分支的 [AnimatedPadding] 同源，两条分支跟手感一致。
   Widget _absolutePositioned(
-      Offset posScreen, SubtitleAnchor anchor, Widget content) {
+      Offset posScreen, SubtitleAnchor anchor, Widget content,
+      {bool dodge = true}) {
     final double anchorFx = _hFrac(anchor.horizontal);
     final double anchorFy = _vFrac(anchor.vertical);
     Widget layout(double dodgeProgress) => CustomSingleChildLayout(
@@ -2788,7 +2993,9 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         );
 
     final ValueListenable<bool>? visible = widget.controlsVisible;
-    if (visible == null) return layout(0);
+    // dodge=false（带 \clip 的帧锚 cue，BUG-1775）：裁剪窗固定在帧上，避让位移只会把
+    // 文本推出窗外——恒用作者位。
+    if (!dodge || visible == null) return layout(0);
     return ValueListenableBuilder<bool>(
       valueListenable: visible,
       builder: (BuildContext _, bool controlsVisible, Widget? child) {
@@ -3174,4 +3381,65 @@ class _RenderGlyphPriorityHitTest extends RenderProxyBox {
     result.add(BoxHitTestEntry(this, position));
     return true;
   }
+}
+
+/// 一行（\N 硬断行之间）grapheme 的软换行「断行机会」分组（BUG-1730）。
+///
+/// 返回的每个组是 Wrap 的一个 child：组间可断行、组内不可断。规则（≈libass
+/// WrapStyle 0/1 共同子集的简化，不追 UAX#14 全集）：
+/// - CJK（汉字/假名/谚文/全角形式等，见 [_isCjkPerCharBreakable]）逐字成组——逐字可断；
+/// - 空白附着在当前词组尾部并闭合该组——断行发生在空格处、断点空格留在上一行行尾
+///   （Wrap 行尾空格只让上一行多一个空格宽，与 libass 断行处收掉空格的观感一致）；
+///   行首 / CJK 后的孤立空白并进前一组尾部（无前组时自成组，与改前行为一致）；
+/// - 其余（拉丁/西里尔等字母、数字、撇号连字符等词内标点）连续累进一组——单词不可拆。
+///
+/// [indices] 是本行 grapheme 在 [graphemes] 里的下标（升序）；返回组保持原顺序。
+@visibleForTesting
+List<List<int>> groupSubtitleGraphemesForWrap(
+    List<String> graphemes, List<int> indices) {
+  final List<List<int>> groups = <List<int>>[];
+  List<int> word = <int>[];
+  void flushWord() {
+    if (word.isEmpty) return;
+    groups.add(word);
+    word = <int>[];
+  }
+
+  for (final int i in indices) {
+    final String g = graphemes[i];
+    if (_isCjkPerCharBreakable(g)) {
+      flushWord();
+      groups.add(<int>[i]);
+    } else if (g != '\u00A0' && g.trim().isEmpty) {
+      if (word.isEmpty && groups.isNotEmpty) {
+        groups.last.add(i);
+      } else {
+        word.add(i);
+        flushWord();
+      }
+    } else {
+      word.add(i);
+    }
+  }
+  flushWord();
+  return groups;
+}
+
+/// 该 grapheme 是否「逐字可断」（CJK 表意/假名/谚文/全角形式等——libass 对 CJK 同样
+/// 允许任意字间断行）。首码点判定即可：这些区段的 grapheme 簇几乎恒单码点；emoji
+/// 不在区段内，按词组累进也无害。
+bool _isCjkPerCharBreakable(String grapheme) {
+  if (grapheme.isEmpty) return false;
+  final int c = grapheme.runes.first;
+  return (c >= 0x1100 && c <= 0x11FF) || // 谚文字母
+      (c >= 0x2E80 && c <= 0x303F) || // CJK 部首/康熙部首/符号标点（含全角空格）
+      (c >= 0x3040 && c <= 0x30FF) || // 平/片假名
+      (c >= 0x3130 && c <= 0x318F) || // 谚文兼容字母
+      (c >= 0x31C0 && c <= 0x4DBF) || // 笔画/注音扩展/兼容/扩A
+      (c >= 0x4E00 && c <= 0x9FFF) || // CJK 统一表意
+      (c >= 0xAC00 && c <= 0xD7A3) || // 谚文音节
+      (c >= 0xF900 && c <= 0xFAFF) || // CJK 兼容表意
+      (c >= 0xFE30 && c <= 0xFE4F) || // CJK 兼容形式
+      (c >= 0xFF00 && c <= 0xFFEF) || // 全角/半角形式
+      (c >= 0x20000 && c <= 0x3FFFF); // 扩B 及以后
 }

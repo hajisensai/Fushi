@@ -19,7 +19,7 @@ import '../helpers/source_guard.dart';
 /// 判据三条同时成立才算违规：
 ///   1. 用了 [FocusDriver] 里真靠 Tab 键的遍历 API（`reachAll` / `focusUntil` /
 ///      `focusWidget`）；像直接 `requestFocus` 那类不走 Tab 的用法不受开关影响；
-///   2. 起了真 app（`app.main()`）——全局 Tab 中和层只挂在 `main.dart` 的
+///   2. 起了真 app（`app.main()` 或完成态 fixture 的 `launchFushiTestApp()`）——全局 Tab 中和层只挂在 `main.dart` 的
 ///      `wrapWithGlobalNavigation` 里，自己 `pumpWidget` 裸 `MaterialApp` 的用例
 ///      （如 `reader_settings_layout_reachability_test.dart`）根本没那层，Tab 原生可用，
 ///      硬塞开关只会制造噪声；
@@ -38,7 +38,10 @@ void main() {
   const String rawSetter = 'setExperimentalFocusNavigationEnabled';
 
   /// 真 app 启动标志：只有它才会挂上中和 Tab 的全局 shortcuts 层。
-  const String bootsRealApp = 'app.main()';
+  const List<String> bootsRealApp = <String>[
+    'app.main()',
+    'launchFushiTestApp()',
+  ];
 
   test('every Tab-traversing integration test enables focus navigation first',
       () {
@@ -59,7 +62,7 @@ void main() {
       // enableFocusNavigation 也不算真开了开关。
       final String source = _stripComments(entity.readAsStringSync());
       if (!traversalApis.any((String api) => source.contains(api))) continue;
-      if (!source.contains(bootsRealApp)) continue;
+      if (!bootsRealApp.any(source.contains)) continue;
       inScope++;
       if (source.contains(helperCall) || source.contains(rawSetter)) continue;
       offenders.add(rel);
@@ -74,10 +77,10 @@ void main() {
           'focus_driver.dart）。违规文件：\n${offenders.join('\n')}',
     );
 
-    // 防守卫自己被重构掉底：若 app.main() / 遍历 API 改名，扫描集会静默清空。
+    // 防守卫自己被重构掉底：若真 app 启动 / 遍历 API 改名，扫描集会静默清空。
     expect(inScope, greaterThanOrEqualTo(25),
         reason: '扫描集只剩 $inScope 个文件，远低于当前实际规模——很可能是 '
-            'app.main() 或 FocusDriver 遍历 API 改名后守卫认不出来了，先修判据再跑。');
+            '真 app 启动或 FocusDriver 遍历 API 改名后守卫认不出来了，先修判据再跑。');
   });
 
   test('the shared enabler helper really flips the AppModel preference', () {

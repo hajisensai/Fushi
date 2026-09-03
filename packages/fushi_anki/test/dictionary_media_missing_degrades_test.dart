@@ -9,7 +9,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 /// 用户报错：
 /// ```
 /// Anki.mineEntry  FileSystemException: Dictionary media file is missing,
-///   path = '…/Temp/anki-media/hibiki_dict_<sha1>.svg'
+///   path = '…/Temp/anki-media/fushi_dict_<sha1>.svg'
 ///   AnkiConnectRepository._storeDictionaryMedia (…:1635)
 /// ```
 /// 卡片一张都建不出来。
@@ -131,7 +131,7 @@ void main() {
     );
     // 封面这类必需媒体不受影响，照常上传。
     expect(
-      service.storedMedia.where((e) => e.filename.startsWith('hibiki_cover_')),
+      service.storedMedia.where((e) => e.filename.startsWith('fushi_cover_')),
       hasLength(1),
     );
   });

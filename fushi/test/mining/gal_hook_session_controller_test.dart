@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -15,6 +16,8 @@ import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:path/path.dart' as p;
+
+import '../helpers/source_guard.dart';
 
 void main() {
   // BUG-1027 音轨快照自动刷新会在会话激活后触发（未 mock 的）voice_hook channel 的
@@ -96,7 +99,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -107,6 +110,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -149,7 +153,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -160,6 +164,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       windowListLoader: () async => const <ExternalWindowInfo>[],
@@ -206,7 +211,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -217,6 +222,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -272,7 +278,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -283,6 +289,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -339,6 +346,298 @@ void main() {
     endpoints.dispose();
   });
 
+  test(
+      'only full policy owns process-loopback lifecycle in a live text-only session',
+      () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    expect(
+      (await controller.launchGame(r'D:\sgre\sgre_steam.exe')).launched,
+      isTrue,
+    );
+    expect(loopback.startCalls, 1);
+    expect(
+      engine.rememberedNativePolicies,
+      <GalNativeLoopbackPolicy>[GalNativeLoopbackPolicy.allow],
+      reason: '只有 full 会话可在 injector start 前记住 allow',
+    );
+    expect(
+      controller.state.audioBackend,
+      GalHookAudioBackend.systemLoopback,
+    );
+
+    controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
+    await controller.debugWaitForAudioFallbackPolicy();
+    expect(engine.nativePolicyRequests.last, GalNativeLoopbackPolicy.deny);
+    expect(loopback.stopCalls, 1, reason: 'full -> cleanOnly 必须立即停掉活跃回环');
+    expect(controller.state.audioBackend, GalHookAudioBackend.none);
+    final TexthookerLineEntry line = service.appendLine('回环禁止时不得录音')!;
+    expect(await controller.startLineRecapture(line.id), isFalse);
+    expect(loopback.startCalls, 1, reason: '手动补录也不得绕过 cleanOnly 重启 WASAPI');
+
+    controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.full);
+    await controller.debugWaitForAudioFallbackPolicy();
+    expect(engine.nativePolicyRequests.last, GalNativeLoopbackPolicy.allow);
+    expect(loopback.startCalls, 2,
+        reason: 'cleanOnly -> full 在 text-only 活跃会话才按需重启');
+    expect(
+      controller.state.audioBackend,
+      GalHookAudioBackend.systemLoopback,
+    );
+
+    controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.resourceOnly);
+    await controller.debugWaitForAudioFallbackPolicy();
+    expect(engine.nativePolicyRequests.last, GalNativeLoopbackPolicy.deny);
+    expect(loopback.stopCalls, 2, reason: 'full -> resourceOnly 同样必须停掉回环');
+    expect(controller.state.audioBackend, GalHookAudioBackend.none);
+    expect(await controller.startLineRecapture(line.id), isFalse);
+    expect(loopback.startCalls, 2);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('clean switch reaches an engine while injection is still in flight',
+      () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final Completer<PcmFormat?> startGate = Completer<PcmFormat?>();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      startGate: startGate,
+    );
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
+      }) =>
+          engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    final Future<GalHookLaunchResult> launch =
+        controller.launchGame(r'D:\sgre\sgre_steam.exe');
+    for (var i = 0; i < 20 && engine.rememberedNativePolicies.isEmpty; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(
+        engine.rememberedNativePolicies.single, GalNativeLoopbackPolicy.allow);
+    controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
+    await controller.debugWaitForAudioFallbackPolicy();
+    expect(engine.nativePolicyRequests, contains(GalNativeLoopbackPolicy.deny));
+    startGate.complete(null);
+    expect((await launch).launched, isTrue);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('full to clean denies native capture without stopping engine PCM',
+      () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine =
+        _FakeEngineSource(pairedBytes: Uint8List(0));
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
+      }) =>
+          engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    expect(
+      (await controller.launchGame(r'D:\sgre\sgre_steam.exe')).launched,
+      isTrue,
+    );
+    expect(controller.state.audioBackend, GalHookAudioBackend.enginePcm);
+    controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
+    await controller.debugWaitForAudioFallbackPolicy();
+    expect(engine.nativePolicyRequests.last, GalNativeLoopbackPolicy.deny);
+    expect(engine.stopCalls, 0,
+        reason: 'policy controls capture only; engine/playback stays alive');
+    expect(controller.state.audioBackend, GalHookAudioBackend.enginePcm);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('remembered clean policies never start resource-mode loopback',
+      () async {
+    for (final GalAudioFallbackPolicy policy in <GalAudioFallbackPolicy>[
+      GalAudioFallbackPolicy.cleanOnly,
+      GalAudioFallbackPolicy.resourceOnly,
+    ]) {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final _FakeEngineSource engine = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        rawReady: true,
+      );
+      final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        exe32BitProbe: (_) async => true,
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+        engineSourceFactory: ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
+        }) =>
+            engine,
+        loopbackSourceFactory: () => loopback,
+        windowListLoader: () async => const <ExternalWindowInfo>[],
+        windowPollAttempts: 1,
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+      controller.attachCaptureMemory(
+        load: (String gameKey) => GalCaptureMemory(audioFallbackPolicy: policy),
+        save: (String gameKey, GalCaptureMemory memory) {},
+      );
+
+      expect(
+        (await controller.launchGame(r'D:\sgre\sgre_steam.exe')).launched,
+        isTrue,
+      );
+      expect(controller.state.audioFallbackPolicy, policy);
+      expect(
+        engine.rememberedNativePolicies,
+        <GalNativeLoopbackPolicy>[GalNativeLoopbackPolicy.deny],
+        reason: '$policy 必须在 injector start 前把 injected loopback 置 deny',
+      );
+      expect(controller.state.audioBackend, GalHookAudioBackend.gameResource);
+      expect(
+        loopback.startCalls,
+        0,
+        reason: '$policy 必须在 factory/start 之前就截断 process loopback',
+      );
+
+      await controller.close();
+      endpoints.dispose();
+    }
+  });
+
+  test('attach remembers clean policy before engine start', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+    );
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
+      }) =>
+          engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+    controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
+    await controller.debugWaitForAudioFallbackPolicy();
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 1, pid: 2468, title: 'SGRE'),
+    );
+    expect(
+      engine.rememberedNativePolicies,
+      <GalNativeLoopbackPolicy>[GalNativeLoopbackPolicy.deny],
+    );
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
   test('clean-source policy still reports a missed utterance as a miss',
       () async {
     // 「有配音但漏抓」在 cleanOnly 下必须仍然报疑似漏抓：原件通道是活的、这行还挂着
@@ -368,7 +667,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -379,6 +678,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -432,7 +732,7 @@ void main() {
         textService: service,
         isWindows: true,
         exe32BitProbe: (_) async => true,
-        injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
         engineSourceFactory: ({
           required int targetPid,
           required String? launchExe,
@@ -443,6 +743,7 @@ void main() {
           String launchWorkdir = '',
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
         }) =>
             _FakeEngineSource(pairedBytes: Uint8List(0), rawReady: true),
         loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -513,7 +814,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -524,6 +825,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) {
         capturedLunaPcHooks = lunaPcHooks;
         return engine;
@@ -576,7 +878,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -587,6 +889,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -646,7 +949,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -657,6 +960,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -717,7 +1021,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -728,6 +1032,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -807,7 +1112,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -818,6 +1123,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -904,7 +1210,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -915,6 +1221,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -968,7 +1275,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -979,6 +1286,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -1050,7 +1358,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -1061,6 +1369,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       textPollInterval: const Duration(milliseconds: 5),
@@ -1108,7 +1417,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -1119,6 +1428,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -1163,7 +1473,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -1174,6 +1484,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -1228,7 +1539,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -1239,6 +1550,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -1269,9 +1581,11 @@ void main() {
     endpoints.dispose();
   });
 
-  test('游戏活动落库：hook 台词只把字符数写入 activity_events（game 类别，不写时长）', () async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
+  // v92：hook 字数的默认写入方从 activity_events 改为 study_segments 的 chars-only
+  // 段，且**无稳定身份（mediaKey 空）不落**——统计永不按 title 认身份。attach 未识
+  // 别游戏的三条用例因此改成注入假写入方（GalHookActivityWriter 契约不变）断言
+  // 「交给写入方的字数」；默认写入方的落段 / 不落段行为由下面两条 DB 用例守。
+  test('游戏活动：hook 台词只把字符数交给活动写入方（game 类别，契约不带时长）', () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     final _FakeEngineSource engine = _FakeEngineSource(
@@ -1296,11 +1610,13 @@ void main() {
       ],
     );
     final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final List<({String title, String? mediaKey, int charsDelta})> written =
+        <({String title, String? mediaKey, int charsDelta})>[];
     final GalHookSessionController controller = GalHookSessionController(
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -1311,14 +1627,23 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
       textPollInterval: const Duration(milliseconds: 5),
       endpointListenable: endpoints,
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      activityWriter: ({
+        required String title,
+        String? mediaKey,
+        required String dateKey,
+        required int timestampMs,
+        required int charsDelta,
+      }) async {
+        written.add((title: title, mediaKey: mediaKey, charsDelta: charsDelta));
+      },
     );
-    controller.attachActivityDatabase(() => db);
 
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'サノバウィッチ'),
@@ -1333,23 +1658,86 @@ void main() {
 
     // 会话结束落库；flush 内写入是 unawaited，轮询等其完成。
     await controller.stopCapture();
-    List<ActivityEventRow> rows = const <ActivityEventRow>[];
-    for (int i = 0; i < 40 && rows.isEmpty; i++) {
+    for (int i = 0; i < 40 && written.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
-      rows =
-          await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]);
     }
-    expect(rows, hasLength(1));
-    expect(rows.single.eventType, kActivityGame);
-    expect(rows.single.mediaType, kActivityMediaGame);
-    expect(rows.single.title, 'サノバウィッチ');
+    expect(written, hasLength(1));
+    expect(written.single.title, 'サノバウィッチ');
     // attach 模式无稳定可执行文件 id → mediaKey 为空。
-    expect(rows.single.mediaKey, isNull);
+    expect(written.single.mediaKey, isNull);
     // 两行合计 5 + 6 = 11 字。
-    expect(rows.single.charsDelta, 11);
-    // 契约 §3.1：时长真相源改为 GalgamePlayTracker（前台窗口计时），hook 文本这条
-    // 路径**不再写 durationMs**，否则同一次游玩被计两遍。
-    expect(rows.single.durationMs, isNull);
+    expect(written.single.charsDelta, 11);
+    // 契约 §3.1：时长真相源是 GalgamePlayTracker（前台窗口计时），hook 文本这条
+    // 路径的写入契约（GalHookActivityWriter）结构上就没有 durationMs。
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('v92：无稳定身份（attach 未识别游戏）时默认写入方不落段、不写 activity 行', () async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      polledLines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 1000,
+          text: 'あいうえお',
+          threadId: 1,
+          hookName: 'Unity',
+        ),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+    controller.attachActivityDatabase(() => db);
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'サノバウィッチ'),
+    );
+    await controller.selectTextThread(1);
+    for (int i = 0; i < 40 && service.entries.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(service.entries, hasLength(1));
+
+    await controller.stopCapture();
+    // 没有任何写入可等，给 unawaited 的 flush 一个足够的窗口后再断言「确实没写」。
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(await db.getStudySegments(), isEmpty,
+        reason: 'mediaKey 空 = 没有可归属的媒体身份，统计永不按 title 认身份');
+    expect(
+      await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]),
+      isEmpty,
+      reason: 'v92 起 hook 字数不再写 activity_events（第二本账）',
+    );
 
     await controller.close();
     endpoints.dispose();
@@ -1378,7 +1766,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -1389,6 +1777,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -1415,24 +1804,32 @@ void main() {
     expect(service.entries, hasLength(1));
 
     await controller.stopCapture();
-    List<ActivityEventRow> rows = const <ActivityEventRow>[];
+    // v92：默认写入方落 study_segments 一条 chars-only 段（时长恒 0：时长真相源
+    // 是 galgame_sessions）。flush 内写入是 unawaited，轮询等其完成。
+    List<StudySegmentRow> rows = const <StudySegmentRow>[];
     for (int i = 0; i < 40 && rows.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
-      rows =
-          await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]);
+      rows = await db.getStudySegments();
     }
     expect(rows, hasLength(1));
+    expect(rows.single.mediaKind, kActivityMediaGame);
     expect(rows.single.title, '统一后的显示名');
     expect(rows.single.mediaKey, 'galgame-row-42');
     expect(rows.single.mediaKey, isNot(r'D:\Games\LegacyName.exe'));
+    expect(rows.single.chars, '統一された活動'.length);
+    expect(rows.single.durationMs, 0, reason: 'hook 文本路径只记字数，不记时长');
+    expect(
+      await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]),
+      isEmpty,
+      reason: 'v92 起 hook 字数不再写 activity_events（第二本账）',
+    );
 
     await controller.close();
     endpoints.dispose();
   });
 
   test('BUG-1085：重复台词/标点不计入字数，引擎计数后外部通道行不再双计', () async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
+    final List<int> writtenChars = <int>[];
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     final _FakeEngineSource engine = _FakeEngineSource(
@@ -1468,7 +1865,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -1479,14 +1876,22 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
       textPollInterval: const Duration(milliseconds: 5),
       endpointListenable: endpoints,
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      activityWriter: ({
+        required String title,
+        String? mediaKey,
+        required String dateKey,
+        required int timestampMs,
+        required int charsDelta,
+      }) async =>
+          writtenChars.add(charsDelta),
     );
-    controller.attachActivityDatabase(() => db);
 
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'サノバウィッチ'),
@@ -1506,23 +1911,19 @@ void main() {
     );
 
     await controller.stopCapture();
-    List<ActivityEventRow> rows = const <ActivityEventRow>[];
-    for (int i = 0; i < 40 && rows.isEmpty; i++) {
+    for (int i = 0; i < 40 && writtenChars.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
-      rows =
-          await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]);
     }
-    expect(rows, hasLength(1));
+    expect(writtenChars, hasLength(1));
     // 5（首句去标点）+ 0（重发）+ 5（ありがとう）；外部行被单计数源门挡下。
-    expect(rows.single.charsDelta, 10);
+    expect(writtenChars.single, 10);
 
     await controller.close();
     endpoints.dispose();
   });
 
   test('BUG-1085：引擎无文本时外部通道是唯一计数源，照常计数', () async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
+    final List<int> writtenChars = <int>[];
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     final _FakeEngineSource engine = _FakeEngineSource(
@@ -1535,7 +1936,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -1546,14 +1947,22 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
       textPollInterval: const Duration(milliseconds: 5),
       endpointListenable: endpoints,
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      activityWriter: ({
+        required String title,
+        String? mediaKey,
+        required String dateKey,
+        required int timestampMs,
+        required int charsDelta,
+      }) async =>
+          writtenChars.add(charsDelta),
     );
-    controller.attachActivityDatabase(() => db);
 
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'サノバウィッチ'),
@@ -1564,20 +1973,18 @@ void main() {
     );
 
     await controller.stopCapture();
-    List<ActivityEventRow> rows = const <ActivityEventRow>[];
-    for (int i = 0; i < 40 && rows.isEmpty; i++) {
+    for (int i = 0; i < 40 && writtenChars.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
-      rows =
-          await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]);
     }
-    expect(rows, hasLength(1));
-    expect(rows.single.charsDelta, 7);
+    expect(writtenChars, hasLength(1));
+    expect(writtenChars.single, 7);
 
     await controller.close();
     endpoints.dispose();
   });
 
   _playTrackerLaunchWiring();
+  _playTrackerAttachWiring();
   _playTrackerWiringGuard();
   _bug950Guard();
 }
@@ -1609,7 +2016,7 @@ void _playTrackerLaunchWiring() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -1620,6 +2027,7 @@ void _playTrackerLaunchWiring() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           _FakeEngineSource(
         pairedBytes: Uint8List(0),
@@ -1719,22 +2127,23 @@ void _playTrackerLaunchWiring() {
       matches(RegExp(r'^\d{4}-\d{2}-\d{2}$')),
     );
 
-    // 活动行是时长侧的**对偶写入**：durationMs 有值、charsDelta 恒 null（字符侧
-    // 由 hook 文本路径独立写行，两侧 SUM 才不会把同一次游玩计两遍）。
-    final List<ActivityEventRow> activities =
-        await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]);
-    expect(activities, hasLength(1));
-    expect(activities.single.mediaType, kActivityMediaGame);
-    expect(activities.single.title, '统一后的显示名');
-    expect(activities.single.mediaKey, 'galgame-row-42');
-    expect(activities.single.durationMs, session.durationSeconds * 1000);
-    expect(activities.single.charsDelta, isNull);
-    expect(activities.single.dateKey, session.dateKey);
+    // v92：游玩时长只落 galgame_sessions 这一张事实表；首页活动流 / 热力图从它
+    // 派生，不再另写带 durationMs 的 game 活动行（那是第二本账）。
+    expect(session.gameId, 'galgame-row-42');
+    expect(
+      await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]),
+      isEmpty,
+      reason: 'v92 起会话结算不写 activity_events，时长只有 galgame_sessions 一本账',
+    );
 
-    // getActivityDailyTotals(kActivityGame) 的 duration 不再恒 0（B1 缺口本体）。
-    final List<(String, int, int)> totals =
-        await db.getActivityDailyTotals(kActivityGame);
-    expect(totals.single.$3, session.durationSeconds * 1000);
+    // 统计事实面从 galgame_sessions 现算 GROUP BY (game, day)——时长不再恒 0
+    // （B1 缺口本体）。
+    final List<(String, String, int)> totals =
+        await db.getGalgameDailySecondsByGame();
+    expect(totals, hasLength(1));
+    expect(totals.single.$1, 'galgame-row-42');
+    expect(totals.single.$2, session.dateKey);
+    expect(totals.single.$3, session.durationSeconds);
 
     await harness.controller.close();
     harness.endpoints.dispose();
@@ -1825,16 +2234,15 @@ void _playTrackerLaunchWiring() {
 
 /// P4 B1 源码守卫：钉死「时长账本有人写」。缺口形状（data-layer-p4-plan.md §4）：
 /// `GalgamePlayTracker` 在 lib 无构造点、`insertGalgameSession` 无生产调用方——
-/// 账本断供后 UI 不红不报，`getActivityDailyTotals(kActivityGame)` 只是恒 0。
+/// 账本断供后 UI 不红不报，`getGalgameDailySecondsByGame()` 只是空表、游戏时长恒 0。
 void _playTrackerWiringGuard() {
   test('P4 B1 守卫：launch 路径必须接线游玩计时器并落 galgame_sessions', () {
     final File src = File('lib/src/mining/gal_hook_session_controller.dart');
     expect(src.existsSync(), isTrue);
-    // 注释里出现的同名字面量不算接线：先剥掉行注释再匹配。
-    final String body = src.readAsStringSync().split('\n').map((String line) {
-      final int at = line.indexOf('//');
-      return at >= 0 ? line.substring(0, at) : line;
-    }).join('\n');
+    // 注释里出现的同名字面量不算接线：先过共享词法掩码（行注释 + 块注释一起掩，
+    // 字符串字面量原样保留）再匹配。掩码等长，下面 indexOf/substring 的下标仍与
+    // 原文对齐。
+    final String body = maskComments(src.readAsStringSync());
     expect(
       body.contains('GalgamePlayTracker('),
       isTrue,
@@ -1862,6 +2270,284 @@ void _playTrackerWiringGuard() {
       isTrue,
       reason: '重复启动必须先结算上一场，否则旧计时器泄漏',
     );
+
+    // BUG-1892：附着捕获与启动捕获是同一件事的两条入口，计时接线必须对称。
+    final int attachAt =
+        body.indexOf('Future<void> startAttachedCapture(ExternalWindowInfo');
+    expect(attachAt, greaterThan(0), reason: 'startAttachedCapture 不存在，守卫需更新');
+    final int attachEnd =
+        body.indexOf('Future<GalHookLaunchResult> launchGame(', attachAt);
+    expect(attachEnd, greaterThan(attachAt),
+        reason: '找不到 startAttachedCapture 结尾');
+    final String attachBody = body.substring(attachAt, attachEnd);
+    expect(
+      attachBody.contains('_startPlayTracker('),
+      isTrue,
+      reason: 'attach（附着并捕获）同样是一局游玩，必须起计时（BUG-1892）',
+    );
+    expect(
+      attachBody.contains('_stopPlayTracker('),
+      isTrue,
+      reason: 'launch→attach 切换必须先结算上一场，否则旧 gameId 继续累加',
+    );
+    expect(
+      attachBody.contains('_resolveSessionIdentity('),
+      isTrue,
+      reason: 'attach 的身份必须走与 launch 共用的解析，不得另写一份',
+    );
+
+    final int stopAt = body.indexOf('Future<void> stopCapture({');
+    expect(stopAt, greaterThan(0), reason: 'stopCapture 不存在，守卫需更新');
+    final int stopEnd =
+        body.indexOf('static bool sameTrackMembership(', stopAt);
+    expect(stopEnd, greaterThan(stopAt), reason: '找不到 stopCapture 结尾');
+    expect(
+      body.substring(stopAt, stopEnd).contains('_stopPlayTracker('),
+      isTrue,
+      reason: '「停止捕获」就是这局游玩的终点，必须当场结算（BUG-1892）',
+    );
+  });
+}
+
+/// BUG-1892：附着并捕获（游戏已在跑，Hibiki 只是挂上去）同样要产生游玩记录。
+/// 身份链是 `window.pid → exe 全路径 → galgames 行`，与库页启动共用同一套解析。
+void _playTrackerAttachWiring() {
+  final String gameDir = p.join(p.rootPrefix(p.current), 'Games', 'Attached');
+  final String gameExe = p.join(gameDir, 'attached.exe');
+  const int gamePid = 4242;
+
+  ({
+    GalHookSessionController controller,
+    _FakePlayProbe probe,
+    List<({String gameId, String gameDirectory})> factoryCalls,
+    ChangeNotifier endpoints,
+  }) buildHarness(
+    FushiDatabase db, {
+    String? imagePathForPid,
+  }) {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakePlayProbe probe = _FakePlayProbe(
+      processes: <int, String>{gamePid: gameExe},
+      foregroundPid: gamePid,
+    );
+    final List<({String gameId, String gameDirectory})> factoryCalls =
+        <({String gameId, String gameDirectory})>[];
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      // attach 唯一的身份抓手：PID → exe 全路径（生产是
+      // QueryFullProcessImageNameW）。传 null 模拟查不到路径的进程。
+      targetImagePathProbe: (int pid) =>
+          pid == gamePid ? imagePathForPid : null,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
+      }) =>
+          _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        audioFormat: null,
+        textReady: true,
+      ),
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      playTrackerFactory: ({
+        required String gameId,
+        required String gameDirectory,
+        required GalgamePlaySessionSink onSessionEnded,
+      }) {
+        factoryCalls.add((gameId: gameId, gameDirectory: gameDirectory));
+        return GalgamePlayTracker(
+          gameId: gameId,
+          gameDirectory: gameDirectory,
+          onSessionEnded: onSessionEnded,
+          probe: probe,
+          isWindows: true,
+          foregroundInterval: const Duration(milliseconds: 1),
+          accrualInterval: const Duration(milliseconds: 1),
+        );
+      },
+    );
+    controller.attachActivityDatabase(() => db);
+    return (
+      controller: controller,
+      probe: probe,
+      factoryCalls: factoryCalls,
+      endpoints: endpoints,
+    );
+  }
+
+  Future<FushiDatabase> openDb({bool withGame = true}) async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    if (withGame) {
+      await db.upsertGalgame(
+        GalgamesCompanion.insert(
+          id: 'galgame-attached-7',
+          name: '附着的游戏',
+          exePath: gameExe,
+          workdir: gameDir,
+          addedAt: 0,
+        ),
+      );
+    }
+    return db;
+  }
+
+  Future<void> accrueUntil(GalgamePlayTracker tracker, int seconds) async {
+    for (int i = 0;
+        i < 400 && (tracker.machine?.activeSeconds ?? 0) < seconds;
+        i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(tracker.machine?.activeSeconds ?? 0, greaterThanOrEqualTo(seconds));
+  }
+
+  test('BUG-1892：附着并捕获接线游玩计时，游戏进程退出自动结算落库', () async {
+    final FushiDatabase db = await openDb();
+    final harness = buildHarness(db, imagePathForPid: gameExe);
+
+    await harness.controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: gamePid, title: '窗口标题（会变）'),
+    );
+    // 身份不是猜的：PID → exe 全路径 → galgames 行，与库页启动同一套判据。
+    expect(harness.factoryCalls, hasLength(1));
+    expect(harness.factoryCalls.single.gameId, 'galgame-attached-7');
+    expect(
+        harness.factoryCalls.single.gameDirectory, File(gameExe).parent.path);
+    final GalgamePlayTracker tracker = harness.controller.playTracker!;
+    expect(tracker.isRunning, isTrue);
+
+    await accrueUntil(tracker, kMinSessionSeconds);
+    harness.probe.processes.clear();
+    harness.probe.deadPids.add(gamePid);
+    List<GalgameSessionRow> sessions = const <GalgameSessionRow>[];
+    for (int i = 0; i < 400 && sessions.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      sessions = await db.getGalgameSessions('galgame-attached-7');
+    }
+    expect(sessions, hasLength(1));
+    expect(
+      sessions.single.durationSeconds,
+      greaterThanOrEqualTo(kMinSessionSeconds),
+    );
+
+    // 会话身份是 galgames.id（窗口标题会变，不能当身份用）；v92 起时长只落
+    // galgame_sessions，不再另写 game 活动行。
+    expect(sessions.single.gameId, 'galgame-attached-7');
+    expect(
+      await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]),
+      isEmpty,
+      reason: 'v92 起会话结算不写 activity_events（第二本账）',
+    );
+
+    await harness.controller.close();
+    harness.endpoints.dispose();
+  });
+
+  test('BUG-1892：附着的进程不在游戏库里 → 不落游玩账（唯一降级）', () async {
+    final FushiDatabase db = await openDb(withGame: false);
+    final harness = buildHarness(db, imagePathForPid: gameExe);
+
+    await harness.controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: gamePid, title: '库外的游戏'),
+    );
+    expect(harness.factoryCalls, isEmpty);
+    expect(harness.controller.playTracker, isNull);
+
+    await harness.controller.close();
+    harness.endpoints.dispose();
+  });
+
+  test('BUG-1892：PID 查不到 exe 路径 → 没有归属判据，不落游玩账', () async {
+    final FushiDatabase db = await openDb();
+    final harness = buildHarness(db, imagePathForPid: null);
+
+    await harness.controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: gamePid, title: '查不到路径'),
+    );
+    expect(harness.factoryCalls, isEmpty);
+    expect(harness.controller.playTracker, isNull);
+
+    await harness.controller.close();
+    harness.endpoints.dispose();
+  });
+
+  test('BUG-1892：「停止捕获」当场结算，不拖到进程死或 App 退出', () async {
+    final FushiDatabase db = await openDb();
+    final harness = buildHarness(db, imagePathForPid: gameExe);
+
+    await harness.controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: gamePid, title: '附着的游戏'),
+    );
+    final GalgamePlayTracker tracker = harness.controller.playTracker!;
+    await accrueUntil(tracker, kMinSessionSeconds);
+
+    // 游戏还活着（probe 里进程仍在），用户只是点了「停止捕获」。
+    await harness.controller.stopCapture();
+    expect(tracker.isRunning, isFalse);
+    // stopCapture 内部 await 了结算写穿，无需轮询即可读到。
+    expect(await db.getGalgameSessions('galgame-attached-7'), hasLength(1));
+
+    await harness.controller.close();
+    harness.endpoints.dispose();
+  });
+
+  test('BUG-1892：launch→attach 切换先结算上一场，旧计时器不带着旧 gameId 继续跑', () async {
+    final FushiDatabase db = await openDb();
+    await db.upsertGalgame(
+      GalgamesCompanion.insert(
+        id: 'galgame-launched-1',
+        name: '先启动的游戏',
+        exePath: p.join(gameDir, 'launched.exe'),
+        workdir: gameDir,
+        addedAt: 0,
+      ),
+    );
+    final harness = buildHarness(db, imagePathForPid: gameExe);
+    final int flushBaseline = ExitFlushRegistry.instance.callbackCount;
+
+    expect(
+      (await harness.controller.launchGame(
+        p.join(gameDir, 'launched.exe'),
+        gameId: 'galgame-launched-1',
+        gameTitle: '先启动的游戏',
+      ))
+          .launched,
+      isTrue,
+    );
+    final GalgamePlayTracker first = harness.controller.playTracker!;
+    await accrueUntil(first, kMinSessionSeconds);
+
+    await harness.controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: gamePid, title: '附着的游戏'),
+    );
+    expect(first.isRunning, isFalse);
+    expect(await db.getGalgameSessions('galgame-launched-1'), hasLength(1));
+    final GalgamePlayTracker second = harness.controller.playTracker!;
+    expect(identical(first, second), isFalse);
+    expect(second.isRunning, isTrue);
+    expect(second.gameId, 'galgame-attached-7');
+    // 桌面点 X 走 exit(0)：attach 起的计时器同样要有退出结算登记（登记点在
+    // _startPlayTracker 内，两条路径共用）。
+    expect(ExitFlushRegistry.instance.callbackCount, flushBaseline + 1);
+
+    await harness.controller.close();
+    expect(ExitFlushRegistry.instance.callbackCount, flushBaseline);
+    harness.endpoints.dispose();
   });
 }
 
@@ -2042,7 +2728,7 @@ void _bug950Guard() {
         textService: service,
         isWindows: true,
         targetWow64Probe: (_) async => false,
-        injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
         engineSourceFactory: ({
           required int targetPid,
           required String? launchExe,
@@ -2053,12 +2739,13 @@ void _bug950Guard() {
           String launchWorkdir = '',
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
         }) =>
             queue.isEmpty ? recovered : queue.removeAt(0),
         loopbackSourceFactory: _FakeLoopbackSource.new,
         windowListLoader: () async => const <ExternalWindowInfo>[],
         windowPollAttempts: 1,
-        engineRetryBackoff: const <Duration>[Duration(milliseconds: 10)],
+        engineRetryBackoff: const <Duration>[Duration(milliseconds: 100)],
         endpointListenable: endpoints,
         endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
       );
@@ -2085,8 +2772,16 @@ void _bug950Guard() {
         contains('engine.retry_scheduled'),
       );
 
+      controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
+      await controller.debugWaitForAudioFallbackPolicy();
+
       // 退避到期后自动重试，成功即把音源升级回引擎，不再停在整机混音。
       await waitForEvent(controller, 'engine.attach_recovered');
+      expect(
+        recovered.rememberedNativePolicies,
+        <GalNativeLoopbackPolicy>[GalNativeLoopbackPolicy.deny],
+        reason: 'retry 必须读取切换后的策略，不能复用首次 attach 的 allow',
+      );
       expect(controller.state.audioBackend, GalHookAudioBackend.enginePcm);
       expect(controller.state.phase, GalHookSessionPhase.waitingSignals);
       expect(
@@ -2116,7 +2811,7 @@ void _bug950Guard() {
         textService: service,
         isWindows: true,
         targetWow64Probe: (_) async => false,
-        injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
         engineSourceFactory: ({
           required int targetPid,
           required String? launchExe,
@@ -2127,6 +2822,7 @@ void _bug950Guard() {
           String launchWorkdir = '',
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
         }) {
           factoryCalls++;
           return denied;
@@ -2160,6 +2856,129 @@ void _bug950Guard() {
       endpoints.dispose();
     });
 
+    test('residentHookMismatch 要求重启游戏，对同一 PID 不自动重试', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      int factoryCalls = 0;
+      final _FakeEngineSource stale = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        audioFormat: null,
+        failure: const GalHookInjectorDiagnostics(
+          failure: GalHookInjectorFailure.residentHookMismatch,
+          exitCode: 2,
+          stderrTail: '已存在但不可复用的 hook 会话；请重启游戏',
+        ),
+      );
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        targetWow64Probe: (_) async => false,
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+        engineSourceFactory: ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
+        }) {
+          factoryCalls++;
+          return stale;
+        },
+        loopbackSourceFactory: _FakeLoopbackSource.new,
+        windowListLoader: () async => const <ExternalWindowInfo>[],
+        windowPollAttempts: 1,
+        engineRetryBackoff: const <Duration>[Duration(milliseconds: 10)],
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+
+      await controller.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 3, pid: 20096, title: 'game'),
+      );
+      await waitForEvent(controller, 'engine.retry_skipped');
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      expect(
+        controller.state.injectorFailure,
+        GalHookInjectorFailure.residentHookMismatch,
+      );
+      expect(controller.state.injectorDetail, contains('exit=2'));
+      final List<String> codes =
+          controller.events.map((GalHookEvent e) => e.code).toList();
+      expect(codes, contains('engine.retry_skipped'));
+      expect(codes, isNot(contains('engine.retry_scheduled')));
+      expect(factoryCalls, 1);
+
+      await controller.close();
+      endpoints.dispose();
+    });
+
+    test('staleSession 的旧映射消失后会有界重试并恢复', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      int factoryCalls = 0;
+      final _FakeEngineSource stale = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        audioFormat: null,
+        failure: const GalHookInjectorDiagnostics(
+          failure: GalHookInjectorFailure.staleSession,
+          exitCode: 2,
+          stderrTail: '已存在但暂不可复用的 hook 会话；将由宿主有界重试',
+        ),
+      );
+      final _FakeEngineSource recovered =
+          _FakeEngineSource(pairedBytes: Uint8List(0));
+      final List<_FakeEngineSource> queue = <_FakeEngineSource>[
+        stale,
+        recovered,
+      ];
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        targetWow64Probe: (_) async => false,
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+        engineSourceFactory: ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
+        }) {
+          factoryCalls++;
+          return queue.isEmpty ? recovered : queue.removeAt(0);
+        },
+        loopbackSourceFactory: _FakeLoopbackSource.new,
+        windowListLoader: () async => const <ExternalWindowInfo>[],
+        windowPollAttempts: 1,
+        engineRetryBackoff: const <Duration>[Duration(milliseconds: 10)],
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+
+      await controller.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 3, pid: 20096, title: 'game'),
+      );
+      await waitForEvent(controller, 'engine.retry_scheduled');
+      await waitForEvent(controller, 'engine.attach_recovered');
+
+      expect(factoryCalls, 2);
+      expect(controller.state.injectorFailure, GalHookInjectorFailure.none);
+      expect(controller.state.audioBackend, GalHookAudioBackend.enginePcm);
+
+      await controller.close();
+      endpoints.dispose();
+    });
+
     test('启动注入失败但游戏已在跑：保留会话降级重试，不报「启动失败」', () async {
       final TexthookerService service = TexthookerService.test();
       final ChangeNotifier endpoints = ChangeNotifier();
@@ -2184,7 +3003,7 @@ void _bug950Guard() {
         isWindows: true,
         exe32BitProbe: (_) async => false,
         targetWow64Probe: (_) async => false,
-        injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
         engineSourceFactory: ({
           required int targetPid,
           required String? launchExe,
@@ -2195,6 +3014,7 @@ void _bug950Guard() {
           String launchWorkdir = '',
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
         }) =>
             queue.isEmpty ? recovered : queue.removeAt(0),
         loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -2241,7 +3061,7 @@ void _bug950Guard() {
         textService: service,
         isWindows: true,
         exe32BitProbe: (_) async => false,
-        injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
         engineSourceFactory: ({
           required int targetPid,
           required String? launchExe,
@@ -2252,6 +3072,7 @@ void _bug950Guard() {
           String launchWorkdir = '',
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
         }) =>
             failing,
         loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -2282,6 +3103,257 @@ void _bug950Guard() {
       endpoints.dispose();
     });
   });
+  test('engine exact text thread is selected automatically without memory',
+      () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    GalHookedLine exact(int seq, String text) => GalHookedLine(
+          seq: seq,
+          timestampMs: 1000 + seq,
+          text: text,
+          threadId: 77,
+          threadAddress: 0x35aa0,
+          sourceKind: 2,
+          eventKind: text.isEmpty
+              ? GalTextEventKind.threadDiscovered
+              : GalTextEventKind.line,
+          hookName: 'SGRE exact',
+          hookCode: 'ENGINE:SGRE:wind3d11',
+        );
+    GalHookedLine luna(int seq, String text) => GalHookedLine(
+          seq: seq,
+          timestampMs: 1000 + seq,
+          text: text,
+          threadId: 5,
+          threadAddress: 0xf94600,
+          sourceKind: 2,
+          eventKind: text.isEmpty
+              ? GalTextEventKind.threadDiscovered
+              : GalTextEventKind.line,
+          hookName: 'TextRender',
+          hookCode: 'HS932@f94600',
+        );
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      polledLines: <GalHookedLine>[
+        luna(1, ''),
+        exact(2, ''),
+        // Luna 启发式线程出行更多也不能被自动选中：只有引擎精确线程可以。
+        luna(3, 'メニュー'),
+        luna(4, 'セーブ'),
+        luna(5, 'ロード'),
+        luna(6, 'コンフィグ'),
+        exact(7, 'エル'),
+        exact(8, 'エル・プ'),
+        exact(9, 'エル・プサイ'),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'SGRE'),
+    );
+    // 不手选线程：session 应在引擎精确线程真出过行之后自己选中它。
+    for (int i = 0;
+        i < 100 && controller.selectedNativeTextThreadId != 77;
+        i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+
+    expect(controller.selectedNativeTextThreadId, 77);
+    final TexthookerTextThread chosen = service.textThreads.firstWhere(
+      (TexthookerTextThread thread) => thread.nativeThreadId == 77,
+    );
+    expect(isEngineExactTextThread(chosen), isTrue);
+    expect(controller.selectedTextThreadKey, chosen.key);
+    expect(
+      controller.events.map((GalHookEvent event) => event.code),
+      contains('text.thread_engine_exact_selected'),
+    );
+    expect(
+      controller.events.map((GalHookEvent event) => event.code),
+      isNot(contains('text.thread_memory_restored')),
+    );
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('引擎精确线程出行不足阈值时不自动选中（只登记未出行的线程不算数）', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    GalHookedLine exact(int seq, String text) => GalHookedLine(
+          seq: seq,
+          timestampMs: 1000 + seq,
+          text: text,
+          threadId: 77,
+          threadAddress: 0x35aa0,
+          sourceKind: 2,
+          eventKind: text.isEmpty
+              ? GalTextEventKind.threadDiscovered
+              : GalTextEventKind.line,
+          hookName: 'SGRE exact',
+          hookCode: 'ENGINE:SGRE:wind3d11',
+        );
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      // 只出 2 行 —— 低于 _textThreadRestoreMinLines(3)。上一条测试里恰好是 3 行，
+      // 所以那条测试**结构上分辨不出**这道门在不在；这条才是它唯一的覆盖。
+      polledLines: <GalHookedLine>[
+        exact(1, ''),
+        exact(2, 'エル'),
+        exact(3, 'エル・プ'),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'SGRE'),
+    );
+    // 等到那 2 行确实被摄入（自动选线程的判定就在同一轮 poll 里跑完），
+    // 再断言「没有选中」——不靠固定睡眠，避免只是没等够就绿。
+    TexthookerTextThread? exactThread;
+    for (int i = 0; i < 200; i++) {
+      final Iterable<TexthookerTextThread> found = service.textThreads.where(
+        (TexthookerTextThread t) => t.nativeThreadId == 77,
+      );
+      exactThread = found.isEmpty ? null : found.first;
+      if ((exactThread?.observedLineCount ?? 0) >= 2) break;
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(exactThread, isNotNull);
+    expect(exactThread!.observedLineCount, 2);
+    expect(isEngineExactTextThread(exactThread), isTrue);
+
+    expect(controller.selectedNativeTextThreadId, isNull);
+    expect(
+      controller.events.map((GalHookEvent event) => event.code),
+      isNot(contains('text.thread_engine_exact_selected')),
+    );
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('BUG-2069：配对到的资源语音必须把整句时长写回行条目（制卡动图靠它决定抓多长）', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    // 43 帧 AAC-LC @44100 Hz = 998 ms（与 adts_duration_test 同一算法，但这里测的是
+    // **生产接线**：`_waitForPairedResourceAudio` 之后那次 updateLineAudio 有没有
+    // 真的带上 durationMs。此前把它改成 null 全套测试照样绿。）
+    final Uint8List paired = _adtsBytes(frames: 43, frequencyIndex: 4);
+    final _FakeEngineSource engine = _FakeEngineSource(pairedBytes: paired);
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
+      }) =>
+          engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    expect(
+      (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
+      isTrue,
+    );
+    final TexthookerLineEntry entry = service.appendLine('siglus line')!;
+    final Uint8List? bytes = await controller.captureAudioBytes(
+      lineId: entry.id,
+      sentence: entry.text,
+      outputExtension: 'aac',
+    );
+
+    expect(bytes, paired);
+    expect(service.entries.single.audioBackend, 'game_resource');
+    expect(service.entries.single.audioDurationMs, 998);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+}
+
+/// 合成 [frames] 个 ADTS 帧（7 字节头 + 20 字节负载），采样率索引 [frequencyIndex]。
+Uint8List _adtsBytes({required int frames, required int frequencyIndex}) {
+  const int payload = 20;
+  const int length = 7 + payload;
+  final Uint8List out = Uint8List(length * frames);
+  for (int i = 0; i < frames; i++) {
+    final int base = i * length;
+    out[base] = 0xFF;
+    out[base + 1] = 0xF1; // syncword 尾 + MPEG-4 + no CRC
+    out[base + 2] = (1 << 6) | (frequencyIndex << 2); // AAC-LC + 采样率索引
+    out[base + 3] = (length >> 11) & 0x03;
+    out[base + 4] = (length >> 3) & 0xFF;
+    out[base + 5] = (length & 0x07) << 5;
+    out[base + 6] = 0xFC;
+  }
+  return out;
 }
 
 class _FakeEngineSource extends EngineHookGalAudioSource {
@@ -2302,6 +3374,7 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
     this.utteranceSlice,
     this.failure = const GalHookInjectorDiagnostics(),
     this.launched,
+    this.startGate,
   }) : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
 
   final Uint8List pairedBytes;
@@ -2319,6 +3392,7 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
 
   /// injector 已 `CreateProcess` 出来的游戏 PID；null 模拟不回报该行的旧 helper。
   final int? launched;
+  final Completer<PcmFormat?>? startGate;
   final List<int> pairedTimestamps = <int>[];
   final List<int?> pairedEventIds = <int?>[];
   final List<int?> findEventIds = <int?>[];
@@ -2328,6 +3402,10 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   int stopCalls = 0;
   int readinessRefreshCalls = 0;
   int _pollCalls = 0;
+  final List<GalNativeLoopbackPolicy> rememberedNativePolicies =
+      <GalNativeLoopbackPolicy>[];
+  final List<GalNativeLoopbackPolicy> nativePolicyRequests =
+      <GalNativeLoopbackPolicy>[];
 
   @override
   int? get gamePid => 4242;
@@ -2348,7 +3426,22 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   bool get pcmReady => !rawReady && audioFormat != null;
 
   @override
-  Future<PcmFormat?> start() async => audioFormat;
+  Future<PcmFormat?> start() async =>
+      startGate == null ? audioFormat : await startGate!.future;
+
+  @override
+  void rememberNativeLoopbackPolicy(GalNativeLoopbackPolicy policy) {
+    rememberedNativePolicies.add(policy);
+    super.rememberNativeLoopbackPolicy(policy);
+  }
+
+  @override
+  Future<bool> requestNativeLoopbackPolicy(
+    GalNativeLoopbackPolicy policy,
+  ) async {
+    nativePolicyRequests.add(policy);
+    return true;
+  }
 
   @override
   Future<bool> refreshReadiness() async {

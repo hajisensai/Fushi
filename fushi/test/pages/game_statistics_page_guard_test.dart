@@ -3,14 +3,17 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('两套游戏首页都接入独立游戏统计页', () {
+  test('游戏首页不再各挂统计入口（已收敛到首页 dashboard）', () {
+    // 用户定案 2026-09-01：各媒体页头的「xx统计」全部撤掉，统一从首页进
+    // 统计中心；唯一入口由 home_video_statistics_entry_static_test 钉住。
     for (final String path in <String>[
       'lib/src/pages/implementations/galgame_home_page.dart',
       'lib/src/pages/implementations/home_game_page.dart',
     ]) {
       final String source = File(path).readAsStringSync();
-      expect(source, contains('game_statistics_page.dart'), reason: path);
-      expect(source, contains('GameStatisticsPage()'), reason: path);
+      expect(source, isNot(contains('statistics_center_page.dart')),
+          reason: path);
+      expect(source, isNot(contains('StatisticsCenterPage(')), reason: path);
     }
   });
 

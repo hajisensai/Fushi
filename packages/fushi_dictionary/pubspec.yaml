@@ -1,10 +1,11 @@
 name: fushi_dictionary
+resolution: workspace
 description: Dictionary engine, FFI bindings, and language implementations for Hibiki
 publish_to: none
 
 
 environment:
-  sdk: ">=3.5.0 <4.0.0"
+  sdk: ">=3.8.0 <4.0.0"
   flutter: ">=3.41.6"
 
 dependencies:

@@ -36,6 +36,7 @@ export 'src/pages/implementations/crash_dump_page.dart';
 export 'src/pages/implementations/error_log_page.dart';
 export 'src/pages/implementations/debug_log_page.dart';
 export 'src/pages/implementations/reading_statistics_page.dart';
+export 'src/pages/implementations/statistics_center_page.dart';
 export 'src/pages/implementations/video_statistics_page.dart';
 export 'src/pages/implementations/collections_page.dart';
 export 'src/pages/implementations/tag_filter_sheet.dart';
@@ -44,6 +45,7 @@ export 'src/pages/implementations/tag_picker_page.dart';
 export 'src/pages/implementations/anki_settings_page.dart';
 export 'src/pages/implementations/profile_management_page.dart';
 export 'src/pages/implementations/miscellaneous_settings_page.dart';
+export 'src/pages/implementations/onboarding_wizard_page.dart';
 export 'src/pages/implementations/shortcut_settings_page.dart';
 
 export 'src/pages/base_page.dart';

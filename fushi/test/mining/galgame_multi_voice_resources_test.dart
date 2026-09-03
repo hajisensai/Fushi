@@ -1,8 +1,28 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/video/ffmpeg_backend.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
+
+class _RecordingFfmpegBackend implements FfmpegBackend {
+  final List<List<String>> calls = <List<String>>[];
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    calls.add(List<String>.of(args));
+    await File(args.last).writeAsBytes(<int>[0xff, 0xf1, 0x50, 0x80]);
+    return const FfmpegRunResult(returnCode: 0, output: '');
+  }
+
+  @override
+  Future<FfmpegRunResult> runProbe(
+    List<String> args,
+    Duration timeout,
+  ) async =>
+      const FfmpegRunResult(returnCode: 1, output: 'unused');
+}
 
 /// BUG-1605：同一句台词同时有多个角色配音（男女声优同台）时，引擎为同一条文本读入多个
 /// 语音资源、hook 各 dump 一个文件，制卡必须把它们**全部**带进卡里，而不是只留一个。
@@ -334,6 +354,53 @@ void main() {
         ),
         isNull,
       );
+    });
+
+    test('单个 xWMA 也经 ffmpeg 转成 AAC，不把原始字节写进卡片', () async {
+      final Directory root =
+          await Directory.systemTemp.createTemp('gal_xwma_transcode_');
+      final File xwma = File('${root.path}/voice.xwma');
+      final Uint8List original = Uint8List.fromList(<int>[
+        0x52,
+        0x49,
+        0x46,
+        0x46,
+        0,
+        0,
+        0,
+        0,
+        0x58,
+        0x57,
+        0x4d,
+        0x41,
+      ]);
+      await xwma.writeAsBytes(original);
+      final _RecordingFfmpegBackend backend = _RecordingFfmpegBackend();
+      setFfmpegBackendForTesting(backend);
+      try {
+        final Uint8List? encoded = await transcodeVoiceResourcesToMiningAudio(
+          resourcePaths: <String>[xwma.path],
+          tempDir: root.path,
+          outputExtension: 'aac',
+        );
+
+        expect(encoded, <int>[0xff, 0xf1, 0x50, 0x80]);
+        expect(encoded, isNot(equals(original)));
+        expect(backend.calls, hasLength(1));
+        expect(
+          backend.calls.single,
+          containsAllInOrder(<String>[
+            '-i',
+            xwma.path,
+            '-c:a',
+            'aac',
+          ]),
+        );
+        expect(backend.calls.single.last, endsWith('voice.aac'));
+      } finally {
+        setFfmpegBackendForTesting(null);
+        await root.delete(recursive: true);
+      }
     });
   });
 }

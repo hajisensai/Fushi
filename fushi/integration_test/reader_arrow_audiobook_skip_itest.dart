@@ -3,7 +3,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
     show ReaderFushiSource;
 import 'package:fushi/src/models/app_model.dart' show AppModel;
@@ -100,7 +100,7 @@ void main() {
       await runFushiItest(
         label: 'arrow-skip',
         body: () async {
-          app.main();
+          await launchFushiTestApp();
           expect(await waitForHome(tester), isTrue,
               reason: 'home (nav bar) must render');
           await tester.pump(const Duration(seconds: 2));

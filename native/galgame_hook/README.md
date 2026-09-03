@@ -39,7 +39,7 @@ python tests/engine_support_manifest_test.py
 ```powershell
 ./tool/galhook.ps1 evidence init engine_id
 ./tool/galhook.ps1 verify-evidence .galhook-evidence/engine_id-hook-evidence.json
-./tool/galhook.ps1 explain-diag --hookdiag 0x0 --hookio 0x0 --lunadiag 0x0
+./tool/galhook.ps1 explain-diag --hookdiag 0x0 --hookio 0x0 --xaudiodiag 0x0 --xaudiodiag2 0x0 --lunadiag 0x0
 ./tool/galhook.ps1 check --dry-run --native
 ./tool/galhook.ps1 probe C:\game\game.exe --output probe.zip
 ./tool/galhook.ps1 new engine_id --fushi-root C:\src\hibiki
@@ -62,7 +62,8 @@ python tests/engine_support_manifest_test.py
   `engine_claim_refs` 精确匹配台账内带 value hash 的 `release.proved_engine_claims`；
   无关音频证据不能为策略变化洗白。跨引擎、哈希漂移、错音频层或仅 Loopback 的证据均会被拒绝。
 - `explain-diag` 直接解析 `include/voice_hook_ipc.h` 中的常量并输出未知位，避免人工误拆
-  `hookdiag` / `hookio` / `lunadiag`。
+  `hookdiag` / `hookio` / `xaudiodiag` / `xaudiodiag2` / `lunadiag`。五个诊断字各有独立的
+  常量段，漏登记一个字会让它的位被静默折进前一个字。
 - `check --dry-run` 无副作用地列出检查；显式加 `--native` 才把 x86/x64 构建与 CTest
   纳入计划。不加 `--dry-run` 时逐项执行并在首个失败处停止。
 - `probe` 只打包路径脱敏的元数据、PE imports、哈希和可选 trace 摘要；默认不复制 exe、脚本、图片、语音。

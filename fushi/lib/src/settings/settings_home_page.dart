@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -9,6 +10,7 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/settings/settings_search.dart';
+import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
 import 'package:fushi/utils.dart';
 
 class SettingsHomePage extends BasePage {
@@ -45,6 +47,9 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     super.initState();
     ErrorLogService.instance.addListener(_onLogChanged);
     DebugLogService.instance.addListener(_onLogChanged);
+    // 游戏内查词准入是 hook **异步**报上来的：settingsContext.refresh 只由交互驱动，
+    // 事件走不到它。不听这一条，用户开着设置页启动游戏时那一行永远停在旧状态。
+    GalIngameLookupController.instance.admission.addListener(_onLogChanged);
   }
 
   @override
@@ -52,6 +57,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     _searchController.dispose();
     ErrorLogService.instance.removeListener(_onLogChanged);
     DebugLogService.instance.removeListener(_onLogChanged);
+    GalIngameLookupController.instance.admission.removeListener(_onLogChanged);
     super.dispose();
   }
 
@@ -233,6 +239,11 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
 
   Widget _buildEmbeddedShell(Widget content) {
     if (!widget.embedded) {
+      return content;
+    }
+    // Windows 主窗口已经由应用壳层提供当前 tab 标题；设置仍是普通 home tab，
+    // 左侧主导航始终可见，因此无需再画第二条「返回 + 设置」页头。
+    if (FushiWindowsTitleBar.isEnabled) {
       return content;
     }
     // Cupertino 手机（compact 走底栏导航、onBack 为空、无需返回出口）保持原生

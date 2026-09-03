@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 
 import 'helpers/focus_driver.dart';
 import 'test_helpers.dart';
@@ -23,7 +23,7 @@ void main() {
     int screenshotCount = 0;
 
     try {
-      app.main();
+      await launchFushiTestApp();
       await _waitForHomeReady(tester);
 
       screenshotCount += await _takeScreenshotSafe(binding, 'home_books_tab');

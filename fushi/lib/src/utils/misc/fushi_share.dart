@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 
+import 'package:flutter/widgets.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -24,11 +27,88 @@ import 'package:share_plus/share_plus.dart';
 class FushiShare {
   FushiShare._();
 
+  // iOS 分享锚点（BUG-2064）：share_plus 的 iOS 端把 text / uri / files 三条
+  // 路径统一汇进 `+share:`（`FPPSharePlusPlugin.m`）。只要
+  // `popoverPresentationController != NULL`（iPad 必然成立，iPhone 横屏等场景
+  // 也会成立），它就要求锚点 rect **非空**且被 root view 的 frame **完全包含**，
+  // 否则直接抛 `PlatformException(error, sharePositionOrigin: argument must be
+  // set, {{0, 0}, {0, 0}} must be non-zero and within coordinate space of
+  // source view: ...)`——`sharePositionOrigin` 缺省时 rect 就是 `CGRectZero`。
+  //
+  // 因此锚点不是「调用方可选的美化项」，而是分享入口必须自带的**不变式**：
+  // 由本类统一解析当前 view 的逻辑尺寸并给出居中的合法锚点，调用点不需要、
+  // 也不应该各自传坐标（分散传参必然漏，漏一处就是一处崩溃）。
+  //
+  // 平台消费面（BUG-2064 复核实测，别照抄「只有 iOS 读锚点」）：
+  // - iOS：见上，缺锚点在 iPad / iPhone 横屏必崩，这是本参数存在的理由。
+  // - macOS：**同样消费**。`SharePlusMacosPlugin.originRect()` 在缺参时取
+  //   `NSMakeRect(0,0,0,0)`，再交给 `picker.show(relativeTo:of:preferredEdge:)`；
+  //   AppKit 约定空 rect 退化成 view 的 bounds。所以统一改传居中 1×1 锚点之后，
+  //   macOS 分享面板的落点会从窗口边沿移到**窗口正中**；iPad popover 的箭头同理
+  //   指向屏幕正中，而不是触发分享的那个按钮。拿这点观感换掉 iOS 上的必崩，是
+  //   有意的取舍——锚点的合法性是硬约束，落点只是美观。
+  // - Android / Windows / Linux：确实忽略该参数（`MethodCallHandler.kt`、
+  //   `share_plus_plugin.cpp`、`share_plus_linux.dart` 都不读它）。
+  // 因此仍然不需要平台分支：给出一个恒合法的锚点，五个平台都能正确处理。
+
   /// 防重入：全 App 同一时刻只允许一个系统分享面板在途。
   static bool _sharing = false;
 
   /// 测试可见：当前是否有分享在途（仅供守卫断言，勿在业务逻辑读取）。
   static bool get debugIsSharing => _sharing;
+
+  /// 由 [viewSize] 推出一个**必定合法**的 iOS popover 锚点：位于 view 正中、
+  /// 边长 1 逻辑点的矩形。
+  ///
+  /// 不变式（对应 iOS 侧 `CGRectIsEmpty` + `CGRectContainsRect` 两道校验）：
+  /// 返回的 rect 宽高恒 `> 0`，且恒被 `Offset.zero & viewSize` 完全包含。
+  /// [viewSize] 非法（零、负、非有限）时退回 `1x1@(0,0)`——此时 view 本身还没
+  /// 布局，任何锚点都不可能落在其坐标系内，给合法形状即可，不留 `CGRectZero`。
+  @visibleForTesting
+  static Rect sharePositionOriginForViewSize(Size viewSize) {
+    final double vw = viewSize.width;
+    final double vh = viewSize.height;
+    if (!vw.isFinite || !vh.isFinite || vw <= 0 || vh <= 0) {
+      return const Rect.fromLTWH(0, 0, 1, 1);
+    }
+    final double w = math.min(1, vw);
+    final double h = math.min(1, vh);
+    return Rect.fromLTWH((vw - w) / 2, (vh - h) / 2, w, h);
+  }
+
+  /// 当前 view 的逻辑尺寸。直接读 `dart:ui` 的 [ui.PlatformDispatcher]，不经
+  /// `WidgetsBinding`：分享可能从没有 `BuildContext` 的平台 seam 触发。
+  static Size _currentViewSize() {
+    final ui.PlatformDispatcher dispatcher = ui.PlatformDispatcher.instance;
+    final ui.FlutterView? view = dispatcher.implicitView ??
+        (dispatcher.views.isNotEmpty ? dispatcher.views.first : null);
+    if (view == null) return Size.zero;
+    final double ratio = view.devicePixelRatio;
+    if (!ratio.isFinite || ratio <= 0) return Size.zero;
+    return view.physicalSize / ratio;
+  }
+
+  static Rect _sharePositionOrigin() =>
+      sharePositionOriginForViewSize(_currentViewSize());
+
+  /// 通过系统分享面板分享一段文本。
+  ///
+  /// 与 [shareFiles] 共用同一道防重入门（全 App 同一时刻只允许一个面板），并
+  /// 同样自带 iOS 锚点。空文本直接返回：iOS 侧会以 `Non-empty text expected`
+  /// 拒绝，Android 侧则弹出一个空面板，都不是有用行为。
+  static Future<void> shareText(String text, {String? subject}) async {
+    if (_sharing || text.isEmpty) return;
+    _sharing = true;
+    try {
+      await Share.share(
+        text,
+        subject: subject,
+        sharePositionOrigin: _sharePositionOrigin(),
+      );
+    } finally {
+      _sharing = false;
+    }
+  }
 
   /// 通过系统分享面板分享一个或多个文件。
   ///
@@ -73,6 +153,7 @@ class FushiShare {
         mimeTypes: mimeTypes,
         subject: subject,
         text: text,
+        sharePositionOrigin: _sharePositionOrigin(),
       );
     } finally {
       _sharing = false;

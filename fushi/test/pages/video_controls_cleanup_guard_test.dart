@@ -105,6 +105,27 @@ void main() {
               .hasMatch(src),
           isTrue,
           reason: '字幕轨菜单改为把设置面板开在「字幕」分类');
+      final String showPlayerSettings =
+          sourceMember(src, 'void _showPlayerSettings(');
+      expect(showPlayerSettings, contains('_VideoSidePanelKind.settings'),
+          reason: '字幕轨入口应继续使用右侧设置栏容器');
+      expect(
+          showPlayerSettings,
+          isNot(contains("initialCategory == 'subtitle'")),
+          reason: '字幕分类不应被单独分流到其它容器');
+      expect(src, isNot(contains('_VideoSidePanelKind.subtitleAdjust')),
+          reason: '字幕轨入口不得恢复底部调整抽屉分流');
+      // BUG-1991 撤回抽屉时连带删掉了 PR-C 的接线守卫，但「三处字幕入口
+      // （字幕轨按钮 / 右键字幕轨 / 字幕加载遮罩）都经 _showPlayerSettings 传
+      // 'subtitle'，没有哪个入口自己挑容器」这条不变量与抽屉无关，TODO-1351
+      // 就已经成立。上面那条 hasMatch 只要求“至少一处”，两个入口退化成
+      // 一个也照样绿，故补回计数下界。
+      expect(
+          RegExp(r"_showPlayerSettings\([^)]*initialCategory: 'subtitle'")
+              .allMatches(src)
+              .length,
+          greaterThanOrEqualTo(2),
+          reason: '字幕入口不止一处，且均必须经 _showPlayerSettings 打开对应分类');
       expect(src, isNot(contains('_buildSubtitleSourcesSidePanel')),
           reason: '浮动字幕源侧栏（builder）已删');
       expect(src, isNot(contains('_VideoSidePanelKind.subtitleSources')),

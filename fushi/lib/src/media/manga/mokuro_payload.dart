@@ -153,6 +153,61 @@ String normalizeMangaUrl(String raw) {
   return forward.startsWith('/') ? forward.substring(1) : forward;
 }
 
+/// 页图根解析的**唯一口径**：mokuro 的 `img_path` 有两种并存惯例，页图到底躺在
+/// 哪个目录下是必须**解析**出来的事实，不是「`.mokuro` 同级」这种可以硬编码的常量。
+///
+/// - 惯例 A（`img_path` 自带卷名前缀，如 `vol1/p001.jpg`）：根 = `.mokuro` 同级目录，
+///   即返回空前缀。
+/// - 惯例 B（卷子目录布局，`img_path` 是裸文件名如 `DLRAW.TO_00001.jpeg`，图躺在与
+///   `.mokuro` 同名的子目录里）：根 = `<卷名>/`，即返回 `[卷名]`。
+///
+/// 候选**只有**这两个，且卷名取自 `.mokuro` 文件名本身（与卷 1:1），所以绝不会误绑到
+/// 同一批量目录里另一卷的同名页图（`001.jpg` 这类不带卷前缀的页名尤其危险）。BUG-1830
+/// 之前三处消费方（本地导入器 / 准入判定 / 远端扫描镜像）各自硬编码惯例 A，惯例 B 的
+/// 卷必然报 `Missing manga page image`。
+///
+/// [pageExists] 是注入的存在性探针（本地传文件系统 stat，远端传相对路径查找表），
+/// 因此本函数零 IO、零平台依赖，三处消费方共用同一份判据而不是各写一遍。
+///
+/// 返回值：命中的根前缀段（`const <String>[]` = 就地）。两种惯例下**首页**都找不到时
+/// 返回 null——调用方据此报出「两种布局都试过了」的可诊断错误，而不是继续按错误假设
+/// 走到下游报一个误导性的缺图。首页命中但后续页缺图时**仍返回该候选**，让下游逐页
+/// 校验给出精确的缺页文件名（那是真·坏卷，不是布局判错）。
+List<String>? resolveMokuroPageRoot({
+  required MokuroPayload payload,
+  required String volumeName,
+  required bool Function(String relPath) pageExists,
+}) {
+  if (payload.images.isEmpty) return null;
+  final List<List<String>> candidates =
+      mokuroPageRootCandidates(volumeName: volumeName);
+  final String firstUrl = payload.images.first.url;
+  List<String>? firstPageHit;
+  for (final List<String> candidate in candidates) {
+    if (!pageExists(joinMokuroPageRoot(candidate, firstUrl))) continue;
+    firstPageHit ??= candidate;
+    final bool all = payload.images.every(
+      (MokuroImage page) => pageExists(joinMokuroPageRoot(candidate, page.url)),
+    );
+    if (all) return candidate;
+  }
+  return firstPageHit;
+}
+
+/// [resolveMokuroPageRoot] 试的候选根，按优先级排列。**公开**是为了让报错文案能
+/// 逐条列出「都搜过哪里」——判据与文案共用同一份候选，日后加惯例时不会只改一处而
+/// 让错误信息说谎（诊断信息漂移正是这个 bug 当初难查的原因之一）。
+List<List<String>> mokuroPageRootCandidates({required String volumeName}) =>
+    <List<String>>[
+      const <String>[],
+      if (volumeName.trim().isNotEmpty) <String>[volumeName],
+    ];
+
+/// 把 [root]（[resolveMokuroPageRoot] 的返回值）与页 `url` 拼成相对根目录的正斜杠
+/// 路径。空根原样返回 `url`，让惯例 A 的路径与解析前逐字节一致。
+String joinMokuroPageRoot(List<String> root, String url) =>
+    root.isEmpty ? url : '${root.join('/')}/$url';
+
 /// Parse a modern mokuro (v0.2+) `.mokuro` JSON document into a
 /// [MokuroPayload]. Tolerant of missing fields: `font_size` defaults to 0,
 /// `vertical` defaults to false, `lines` defaults to empty, and `zIndex`

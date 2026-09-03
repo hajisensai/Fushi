@@ -7,6 +7,8 @@ import 'package:fushi/src/mining/immersion_mining_request.dart';
 import 'package:fushi/src/sync/immersion_mine_payload.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1416：Netflix（沉浸捕获）选「静态帧」时，取的必须是**制卡那一刻**对应时间点的帧。
 ///
 /// 用户拍板：「肯定是按制卡时候的时间来，不要后续点击再回来制卡」。这否掉了「取录制片段
@@ -367,20 +369,19 @@ void main() {
   });
 
   group('源码扫描守卫：这条路不能再被结构性吞掉', () {
-    /// 剥掉注释再扫：散文里为解释这条断链必然写出同样的符号名，让文档喂绿守卫是假阳性。
-    String codeOnly(String src) => src.split('\n').map((String line) {
-          final int i = line.indexOf('//');
-          return i < 0 ? line : line.substring(0, i);
-        }).join('\n');
+    // 三处语料都在**读进来那一刻**就掩掉注释：散文里为解释这条断链必然写出同样的
+    // 符号名，让文档喂绿守卫是假阳性。Dart 侧用 maskComments、JS 侧用
+    // maskJsComments（后者认模板串与正则字面量，正则里的 `//` 不会被当成
+    // 「除号 + 行注释」砍掉半行）。两者都等长，下面 indexOf/substring 的下标不错位。
 
     test('mineImmersion 的 Netflix 段必须把静态帧目标下发给 transcodeClipToCapture', () {
-      final String src =
-          File('lib/src/models/app_model.dart').readAsStringSync();
+      final String src = maskComments(
+          File('lib/src/models/app_model.dart').readAsStringSync());
       final int start = src.indexOf('Future<RemoteMineResult> mineImmersion(');
       expect(start, greaterThan(0), reason: 'mineImmersion 改名了？守卫锚点失效，请同步更新。');
       final int end = src.indexOf('void recordHistory(', start);
       expect(end, greaterThan(start));
-      final String body = codeOnly(src.substring(start, end));
+      final String body = src.substring(start, end);
       final int netflix = body.indexOf('ImmersionCaptureResult cap =');
       expect(netflix, greaterThan(0),
           reason: 'YouTube/Netflix 分界锚点失效，请同步更新守卫。');
@@ -396,7 +397,7 @@ void main() {
     });
 
     test('浏览器扩展在制卡入口就地采样制卡时刻，并随 mineClip 发出', () {
-      final String content = codeOnly(
+      final String content = maskJsComments(
           File('../tools/browser-extension/content.js').readAsStringSync());
       expect(content, contains('mineAtV'),
           reason: '入队时不采样「制卡那一刻」的视频时间，之后的回放录制就永远拿不回它。');
@@ -404,7 +405,7 @@ void main() {
       expect(content, contains('clipAnchorMs:'),
           reason: '片段时间基锚点必须实测下发 —— 假设它等于 seek 目标就是几百毫秒的系统性偏差。');
 
-      final String background = codeOnly(
+      final String background = maskJsComments(
           File('../tools/browser-extension/background.js').readAsStringSync());
       expect(background, contains('clipAnchorMs'),
           reason: 'background 的 mineClip 转发漏掉字段 = content 采了也白采。');

@@ -284,6 +284,23 @@ mixin _FushiDbInfra on _$FushiDatabase {
             'ON galgame_sessions (date_key)',
         'date_key'
       ],
+      // v92 study_segments：按媒体身份（per-media tile / 删除）、按日（窗口聚合 /
+      // 热力图）、按设备+更新时刻（同步 v2 增量水位）。
+      [
+        'study_segments',
+        'CREATE INDEX IF NOT EXISTS idx_study_segments_media '
+            'ON study_segments (media_kind, media_key)',
+      ],
+      [
+        'study_segments',
+        'CREATE INDEX IF NOT EXISTS idx_study_segments_date '
+            'ON study_segments (date_key)',
+      ],
+      [
+        'study_segments',
+        'CREATE INDEX IF NOT EXISTS idx_study_segments_device_updated '
+            'ON study_segments (device_id, updated_at)',
+      ],
     ];
     for (final List<String> entry in indexes) {
       if (!await _tableExists(entry[0])) continue;

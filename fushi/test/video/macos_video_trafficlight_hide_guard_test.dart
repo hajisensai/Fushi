@@ -92,7 +92,10 @@ void main() {
       'lib/src/pages/implementations/video_fushi/fullscreen.part.dart',
     ).readAsStringSync();
 
-    final int exitFs = source.indexOf('_exitVideoNativeFullscreen()');
+    // 锚定**定义**而非裸符号：BUG-2043 后同文件里更早处有一个调用点
+    // （_releaseHandedOverNativeFullscreen），裸 indexOf 会先命中它、扫错方法体。
+    final int exitFs =
+        source.indexOf('Future<void> _exitVideoNativeFullscreen()');
     expect(exitFs, greaterThanOrEqualTo(0));
     // Scan the method body: from its declaration to the next method.
     final int nextMethod = source.indexOf('\n  Future<', exitFs + 1);

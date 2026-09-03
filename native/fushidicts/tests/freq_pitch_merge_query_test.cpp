@@ -7,7 +7,7 @@
 //
 //   1. Same dict, same expression, MULTIPLE freq records collapse into ONE
 //      FrequencyEntry holding ALL values (append, never overwrite). Same for
-//      multiple pitch records flattening into one PitchEntry.pitch_positions.
+//      multiple pitch records flattening into one PitchEntry.pitches.
 //   2. Two SEPARATE freq dicts (and two separate pitch dicts) that both carry
 //      the same expression surface as TWO entries on the TermResult, each
 //      carrying its own dict_name, values never crossing dictionaries. This is
@@ -87,8 +87,9 @@ bool contains_int(const std::vector<Frequency>& freqs, int want) {
                      [want](const Frequency& f) { return f.value == want; });
 }
 
-bool contains_pos(const std::vector<int>& positions, int want) {
-  return std::find(positions.begin(), positions.end(), want) != positions.end();
+bool contains_pos(const std::vector<Pitch>& pitches, int want) {
+  return std::any_of(pitches.begin(), pitches.end(),
+                     [want](const Pitch& p) { return p.pattern.empty() && p.position == want; });
 }
 
 // Import one fixture dir; returns its on-disk dict dir (out_root/<title>) or "".
@@ -114,7 +115,7 @@ std::string import_dict(const std::string& out_root, const char* title,
 // Case 1: same dict, same expression, multiple freq + multiple pitch records.
 //   freq:  5000 and 8000 -> one FrequencyEntry, two Frequency values.
 //   pitch: two separate pitch records (positions 0 and 2) -> one PitchEntry,
-//          flattened pitch_positions [0, 2].
+//          flattened pitch accents [0, 2].
 // ---------------------------------------------------------------------------
 void case_multi_records_same_dict() {
   const std::string out_dir =
@@ -173,10 +174,10 @@ void case_multi_records_same_dict() {
     const PitchEntry& pe = t.pitches.front();
     expect_eq_str("case1 pitch dict_name", pe.dict_name, kTitle);
     expect_eq_int("case1 pitch position count",
-                  static_cast<int>(pe.pitch_positions.size()), 2);
-    if (!contains_pos(pe.pitch_positions, 0))
+                  static_cast<int>(pe.pitches.size()), 2);
+    if (!contains_pos(pe.pitches, 0))
       fail("case1 pitch missing position 0");
-    if (!contains_pos(pe.pitch_positions, 2))
+    if (!contains_pos(pe.pitches, 2))
       fail("case1 pitch missing position 2");
   }
 }
@@ -262,15 +263,15 @@ void case_merge_across_dicts() {
   for (const PitchEntry& pe : t.pitches) {
     if (pe.dict_name == kTitleA) {
       sawA_pitch = true;
-      if (!contains_pos(pe.pitch_positions, 1))
+      if (!contains_pos(pe.pitches, 1))
         fail("case2 FreqPitchA pitch position not 1");
-      if (contains_pos(pe.pitch_positions, 3))
+      if (contains_pos(pe.pitches, 3))
         fail("case2 FreqPitchA leaked B's pitch position 3");
     } else if (pe.dict_name == kTitleB) {
       sawB_pitch = true;
-      if (!contains_pos(pe.pitch_positions, 3))
+      if (!contains_pos(pe.pitches, 3))
         fail("case2 FreqPitchB pitch position not 3");
-      if (contains_pos(pe.pitch_positions, 1))
+      if (contains_pos(pe.pitches, 1))
         fail("case2 FreqPitchB leaked A's pitch position 1");
     }
   }
@@ -355,9 +356,9 @@ void case_path_isolation_and_reading_filter() {
         fail("case3b no pitches though pitch dict registered");
       } else {
         const PitchEntry& pe = t.pitches.front();
-        if (!contains_pos(pe.pitch_positions, 0))
+        if (!contains_pos(pe.pitches, 0))
           fail("case3b kept pitch position 0 missing");
-        if (contains_pos(pe.pitch_positions, 5))
+        if (contains_pos(pe.pitches, 5))
           fail("case3b mismatched-reading pitch position 5 not dropped");
       }
     }

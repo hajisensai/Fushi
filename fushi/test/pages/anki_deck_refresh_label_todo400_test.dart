@@ -64,15 +64,25 @@ void main() {
     late String deckDropdownBlock;
 
     setUpAll(() {
+      // BUG-1902：牌组/笔记类型选择行搬进共享组件 `anki/anki_config_controls.dart`，
+      // 好让新手引导用**同一份**实现（此前它们是设置页 State 的私有方法，跨文件不可见，
+      // 引导页只能显示三行只读文本）。守卫跟着实现走——本不变量（列出全部 fetch 回来的
+      // 牌组、不过滤）说的是那段渲染代码，它现在住在共享组件里。
       final String source = File(
-        'lib/src/pages/implementations/anki_settings_page.dart',
+        'lib/src/anki/anki_config_controls.dart',
       ).readAsStringSync();
-      final int start = source.indexOf('Widget _buildDeckDropdown(');
+      final int start = source.indexOf('class AnkiDeckPickerRow');
       expect(start, greaterThanOrEqualTo(0),
-          reason: '_buildDeckDropdown not found');
-      final int end = source.indexOf('Widget _buildNoteTypeDropdown(', start);
+          reason: 'AnkiDeckPickerRow not found');
+      final int end = source.indexOf('class AnkiNoteTypePickerRow', start);
       expect(end, greaterThan(start));
       deckDropdownBlock = source.substring(start, end);
+      // 设置页仍必须挂着它（否则「搬走了但没接回来」也会静默通过）。
+      final String page = File(
+        'lib/src/pages/implementations/anki_settings_page.dart',
+      ).readAsStringSync();
+      expect(page.contains('AnkiDeckPickerRow('), isTrue,
+          reason: '制卡设置页必须挂载共享的牌组选择行');
     });
 
     test('options come straight from settings.availableDecks', () {

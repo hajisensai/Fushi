@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
@@ -56,7 +56,7 @@ void main() {
     ShortcutBindingSet? origBooks;
     AppModel? boundModel;
     try {
-      app.main();
+      await launchFushiTestApp();
 
       final bool homeReady = await waitForHome(tester);
       expect(homeReady, isTrue, reason: 'Home must render');

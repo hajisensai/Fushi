@@ -1,5 +1,9 @@
 #include <windows.h>
 
+// 通用位图呈现器的窗口过程要用 GET_X_LPARAM / GET_Y_LPARAM 拆鼠标消息坐标。
+// 必须用它们而不是自己 HIWORD/LOWORD：多显示器下坐标可为负，HIWORD 会把负数截成大正数。
+#include <windowsx.h>
+
 #include <mmreg.h>
 #include <xaudio2.h>
 
@@ -9,6 +13,10 @@
 // include 前定义为 0x0800，才能拿到 IDirectSound8 定义。
 #define DIRECTSOUND_VERSION 0x0800
 #include <dsound.h>
+
+// 精确 WHITE ALBUM2 profile 的 D3D9 几何 trace（只用接口定义，不链 d3d9.lib）。
+// 必须在这里而不是 adapter 里 include —— 理由见 leaf_aquaplus_adapter.inc 顶部。
+#include <d3d9.h>
 
 // C.2e Ren'Py/FFmpeg 捕获：按前缀（avcodec-54*/avformat-54*）枚举已加载模块用 Toolhelp 快照。
 #include <tlhelp32.h>
@@ -25,6 +33,8 @@
 #include <MinHook.h>
 
 #include <algorithm>
+#include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -35,6 +45,11 @@
 
 #include "il2cpp_thread_scope.h"
 #include "adapter.h"
+#include "module_settle.h"
+#include "host_executable_digest.h"
+#include "lookup_overlay_geometry.h"
+#include "hunex_gge_trace.h"
+#include "leaf_d3d_trace.h"
 #include "artemis_pfs.h"
 #include "asar_runtime.h"
 #include "bgi_arc.h"
@@ -42,17 +57,32 @@
 #include "catsystem2_int.h"
 #include "malie_lib.h"
 #include "ffmpeg_runtime.h"
+#include "lookup_v19_runtime.h"
+#include "hook_original_registry.h"
+#include "tracked_handle_table.h"
+#include "hunex_hfa.h"
 #include "siglus_ovk.h"
+#include "siglus_launch.h"
+#include "adapters/siglus_lookup.h"
+#include "adapters/hunex_gge_lookup.h"
+#include "adapters/hunex_gge_capture_bridge.h"
+#include "adapters/hunex_gge_lookup_core.h"
+#include "adapters/hunex_gge_selected_text.h"
+#include "adapters/leaf_aquaplus_voice_archive.h"
 #include "siglus_text.h"
 #include "text_thread_identity.h"
+#include "luna_text_selector.h"
 #include "unity_text_mesh_reassembler.h"
 #include "unity_text_profile.h"
 #include "visual_arts_ovk.h"
 #include "voice_hook_ipc.h"
 #include "voice_resource_filename.h"
 #include "voice_resource_pairing.h"
+#include "xaudio_resource_dispatch.h"
+#include "xaudio_source_format.h"
+#include "xaudio_trace.h"
+#include "xwma_resource.h"
 #include "generated/profile_includes.inc"
-
 // C.2d KiriKiriZ 原始语音 OGG 捕获需读主模块 VersionInfo 确认引擎版本（仅诊断，非门控）。
 // GetFileVersionInfo* 在 version.dll，用 #pragma 就地声明依赖，避免改 CMake（改动集中在本文件）。
 #pragma comment(lib, "version.lib")
@@ -72,6 +102,23 @@
 //
 // loader lock 纪律：DllMain 里**不**做 IPC/同步/加载库/MinHook，只 DisableThreadLibraryCalls +
 // CreateThread 把活儿丢给工作线程（在 loader lock 之外跑），这是 hook DLL 的正确形态。
+//
+// 独立导出的固定 XAudio trace 不属于 SharedHeader ABI。ring_probe 从目标 DLL 的 PE export
+// 解析本符号 RVA，再用 ReadProcessMemory 读取；因此无需升级 IPC 版本，也不要求 probe 与目标
+// 同位数。初始化只含常量/零值，不在 loader lock 下做任何动作。
+extern "C" __declspec(dllexport) alignas(8)
+    fushi_voice_hook::XAudioTraceBuffer FushiXAudioTraceV1 = {};
+
+// Numeric-only exact-profile renderer telemetry, outside SharedHeader ABI.
+extern "C" __declspec(dllexport) alignas(8)
+    fushi_voice_hook::LeafD3DTraceBuffer FushiLeafD3DTraceV1 = {};
+
+// Numeric-only HUNEX/GGE renderer and sampled-input telemetry.  Like the Leaf
+// trace this is resolved by the diagnostic probe from the live DLL export and
+// is intentionally outside SharedHeader ABI.
+extern "C" __declspec(dllexport) alignas(8)
+    fushi_voice_hook::HunexGgeTraceBuffer FushiHunexGgeTraceV3 = {};
+
 namespace {
 
 using fushi_voice_hook::kClipCount;
@@ -107,7 +154,13 @@ using fushi_voice_hook::UnityVoiceEvent;
 
 HANDLE g_mapping = nullptr;
 SharedHeader* g_header = nullptr;
+uint64_t g_mapped_view_bytes = 0u;
 volatile bool g_stop = false;
+
+// 本 DLL 自己的模块句柄，DllMain 一进来就记下。通用位图呈现器建窗口类/窗口时要用它做
+// hInstance——传 nullptr 会把窗口类注册到宿主 exe 名下，DLL 卸载后类残留指向已释放的
+// 窗口过程。这个句柄在进程生命周期内恒定，注入的 hook DLL 也不会被 FreeLibrary。
+HMODULE g_module = nullptr;
 
 // ── C.2 捕获状态 ────────────────────────────────────────────────────────────
 // 环形缓冲基址（= header 之后）与容量，HookWorker 装好后一次性缓存；SubmitSourceBuffer
@@ -126,19 +179,21 @@ uint8_t* g_clip_base = nullptr;
 
 // ── C.2f loopback 区基址（HookWorker 按 header 偏移一次性缓存；loopback 线程独占写）──────────
 // g_lb_ring_base：loopback 混音环（16-bit PCM）。g_lb_marker_base：时间戳↔位置标记表。
-// g_lb_thread：独立 loopback 捕获线程句柄（停机时 join）。
+// 线程句柄与独立 stop word 归 LoopbackAdapter 单一所有，避免策略快速切换产生双 worker。
 uint8_t* g_lb_ring_base = nullptr;
 uint8_t* g_lb_marker_base = nullptr;
-HANDLE g_lb_thread = nullptr;
 
-// MinHook 去重集：同一 SubmitSourceBuffer/CreateSourceVoice 实现常被多个实例共享同一 vtable，
-// 对同一函数地址只 MH_CreateHook 一次（重复 create 会报 MH_ERROR_ALREADY_CREATED）。
+// MinHook 去重集：普通 hook 仍保持历史语义。只有确实会因 codec 出现多个 vtable target
+// 的 XAudio2 方法使用下面两个独立 trampoline 注册表；不能把全 DLL 的不同 detour 混进
+// 一个仅按 target 索引的表，否则共享实现地址会把某个 detour 绑定到别的 trampoline。
 CRITICAL_SECTION g_cs;
 bool g_cs_ready = false;
 CRITICAL_SECTION g_text_cs;
 bool g_text_cs_ready = false;
 void* g_hooked_fns[64] = {nullptr};
 int g_hooked_count = 0;
+fushi_voice_hook::HookOriginalRegistry<16> g_submit_source_buffer_originals;
+fushi_voice_hook::HookOriginalRegistry<16> g_flush_source_buffers_originals;
 
 // 原始语音流落盘的共用出口（KiriKiri 与 Siglus 都写同一目录，供 Dart 按 tick 配对）。
 std::wstring VoiceBaseName(const wchar_t* storagename) {
@@ -192,10 +247,17 @@ volatile LONG g_format_set = 0;
 // ── COM 方法 vtable 槽（按 xaudio2.h 接口声明顺序推定，跨 XAudio2 2.7/2.8/2.9 稳定）──────
 // IXAudio2 : IUnknown -> QueryInterface(0) AddRef(1) Release(2)
 //            RegisterForCallbacks(3) UnregisterForCallbacks(4) CreateSourceVoice(5) ...
+//            StartEngine(8) StopEngine(9) CommitChanges(10)
 constexpr size_t kIdxCreateSourceVoice = 5;
+constexpr size_t kIdxCommitChanges = 10;
 // IXAudio2Voice（**不**继承 IUnknown）: GetVoiceDetails(0)...DestroyVoice(18)
-// IXAudio2SourceVoice : Start(19) Stop(20) SubmitSourceBuffer(21) ...
+// IXAudio2SourceVoice : Start(19) Stop(20) SubmitSourceBuffer(21)
+//                       FlushSourceBuffers(22) ...
+constexpr size_t kIdxDestroyVoice = 18;
+constexpr size_t kIdxSourceVoiceStart = 19;
+constexpr size_t kIdxSourceVoiceStop = 20;
 constexpr size_t kIdxSubmitSourceBuffer = 21;
+constexpr size_t kIdxFlushSourceBuffers = 22;
 
 // 原函数（MinHook trampoline）。detour 经此调回原实现。
 typedef HRESULT(WINAPI* XAudio2Create_t)(IXAudio2** ppXAudio2, UINT32 Flags,
@@ -208,11 +270,21 @@ typedef HRESULT(STDMETHODCALLTYPE* CreateSourceVoice_t)(
 typedef HRESULT(STDMETHODCALLTYPE* SubmitSourceBuffer_t)(
     IXAudio2SourceVoice* self, const XAUDIO2_BUFFER* pBuffer,
     const XAUDIO2_BUFFER_WMA* pBufferWMA);
+typedef HRESULT(STDMETHODCALLTYPE* SourceVoiceStartStop_t)(
+    IXAudio2SourceVoice* self, UINT32 Flags, UINT32 OperationSet);
+typedef HRESULT(STDMETHODCALLTYPE* FlushSourceBuffers_t)(
+    IXAudio2SourceVoice* self);
+typedef void(STDMETHODCALLTYPE* DestroyVoice_t)(IXAudio2Voice* self);
+typedef HRESULT(STDMETHODCALLTYPE* CommitChanges_t)(IXAudio2* self,
+                                                     UINT32 OperationSet);
 
 XAudio2Create_t g_orig_XAudio2Create9 = nullptr;
 XAudio2Create_t g_orig_XAudio2Create8 = nullptr;
 CreateSourceVoice_t g_orig_CreateSourceVoice = nullptr;
-SubmitSourceBuffer_t g_orig_SubmitSourceBuffer = nullptr;
+SourceVoiceStartStop_t g_orig_SourceVoiceStart = nullptr;
+SourceVoiceStartStop_t g_orig_SourceVoiceStop = nullptr;
+DestroyVoice_t g_orig_DestroyVoice = nullptr;
+CommitChanges_t g_orig_CommitChanges = nullptr;
 
 // ── DirectSound COM 方法 vtable 槽（按 dsound.h 接口声明顺序，跨 DS8 稳定）───────────
 // IDirectSound8 : IUnknown(0-2) 后 CreateSoundBuffer(3) GetCaps(4) DuplicateSoundBuffer(5)...
@@ -314,32 +386,72 @@ bool HookFn(void* target, void* detour, void** original) {
   return ok;
 }
 
-// 首次拿到语音 WAVEFORMATEX：填 header 的 sample_rate/channels/bits/is_float，block_align 最后
-// 写（作为「格式就绪」信号——SubmitSourceBuffer 回调据 block_align!=0 判定可安全换算字节）。
-void MaybeRecordFormat(const WAVEFORMATEX* wf) {
-  if (wf == nullptr || g_header == nullptr) {
+// 多 codec XAudio2 方法专用：一个 detour 可以对应多个 target，每个 target 必须保留自己的
+// trampoline。注册表按 detour 分开，避免普通 HookFn 的跨适配器 target 去重语义被改写。
+template <size_t Capacity>
+bool HookFnWithOriginalRegistry(
+    void* target, void* detour,
+    fushi_voice_hook::HookOriginalRegistry<Capacity>* originals) {
+  if (target == nullptr || originals == nullptr || !g_cs_ready) return false;
+  bool ok = false;
+  EnterCriticalSection(&g_cs);
+  void* trampoline = originals->Lookup(target);
+  if (trampoline != nullptr) {
+    ok = true;
+  } else {
+    const MH_STATUS created = MH_CreateHook(target, detour, &trampoline);
+    if (created == MH_OK && originals->Publish(target, trampoline)) {
+      const MH_STATUS enabled = MH_EnableHook(target);
+      if (enabled == MH_OK || enabled == MH_ERROR_ENABLED) {
+        ok = true;
+      } else {
+        originals->Erase(target, trampoline);
+        MH_RemoveHook(target);
+      }
+    } else if (created == MH_OK) {
+      MH_RemoveHook(target);
+    }
+  }
+  LeaveCriticalSection(&g_cs);
+  return ok;
+}
+
+template <typename Function, size_t Capacity>
+Function OriginalHookForVtableSlot(
+    void* com_obj, size_t idx,
+    const fushi_voice_hook::HookOriginalRegistry<Capacity>& originals) {
+  return reinterpret_cast<Function>(originals.Lookup(VtableSlot(com_obj, idx)));
+}
+
+// 首次拿到可发布的 PCM 格式：block_align 最后写，作为跨进程「格式就绪」完成标记。
+// XAudio2 ADPCM 在工作线程解码成 16-bit 后也走这里，绝不把 4-bit 压缩源伪装成 PCM。
+void MaybeRecordPcmFormat(uint32_t sample_rate, uint32_t channels,
+                          uint32_t bits_per_sample, uint32_t is_float) {
+  if (g_header == nullptr || sample_rate == 0 || channels == 0 ||
+      bits_per_sample == 0 || bits_per_sample % 8 != 0) {
     return;
   }
   if (InterlockedCompareExchange(&g_format_set, 1, 0) != 0) {
     return;  // 已有其它 voice 抢先写过格式。
   }
-  g_header->sample_rate = wf->nSamplesPerSec;
-  g_header->channels = wf->nChannels;
-  g_header->bits_per_sample = wf->wBitsPerSample;
-  uint32_t is_float = 0;
-  if (wf->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
-    is_float = 1;
-  } else if (wf->wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
-             wf->cbSize >=
-                 sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) {
-    const auto* ext = reinterpret_cast<const WAVEFORMATEXTENSIBLE*>(wf);
-    if (ext->SubFormat.Data1 == WAVE_FORMAT_IEEE_FLOAT) {
-      is_float = 1;
-    }
-  }
+  g_header->sample_rate = sample_rate;
+  g_header->channels = channels;
+  g_header->bits_per_sample = bits_per_sample;
   g_header->is_float = is_float;
-  g_header->block_align =
-      static_cast<uint32_t>(wf->nChannels) * (wf->wBitsPerSample / 8);
+  g_header->block_align = channels * (bits_per_sample / 8);
+}
+
+void MaybeRecordFormat(const WAVEFORMATEX* format) {
+  fushi_voice_hook::XAudioSourceFormat parsed;
+  if (!fushi_voice_hook::ParseXAudioSourceFormat(format, &parsed) ||
+      parsed.encoding ==
+          fushi_voice_hook::XAudioSourceEncoding::kMicrosoftAdpcm) {
+    return;
+  }
+  MaybeRecordPcmFormat(
+      parsed.sample_rate, parsed.channels, parsed.bits_per_sample,
+      parsed.encoding == fushi_voice_hook::XAudioSourceEncoding::kPcmFloat ? 1u
+                                                                           : 0u);
 }
 
 // ── 多写者安全的环形缓冲写入（无锁原子预留）─────────────────────────────────
@@ -402,7 +514,9 @@ inline uint32_t RingAppendVoice(const uint8_t* data, uint32_t len) {
 inline void RecordVoiceClipFmt(uint32_t ring_offset, uint32_t byte_len,
                                uint64_t source_ptr, uint32_t sample_rate,
                                uint32_t channels, uint32_t bits_per_sample,
-                               uint32_t is_float) {
+                               uint32_t is_float,
+                               uint64_t timestamp_ms = 0,
+                               uint64_t total_at_write = 0) {
   if (g_clip_base == nullptr || g_header == nullptr || byte_len == 0) {
     return;
   }
@@ -414,8 +528,9 @@ inline void RecordVoiceClipFmt(uint32_t ring_offset, uint32_t byte_len,
       1));
   const size_t off = static_cast<size_t>(idx % kClipCount) * sizeof(VoiceClip);
   auto* clip = reinterpret_cast<VoiceClip*>(g_clip_base + off);
-  clip->timestamp_ms = GetTickCount64();
-  clip->total_at_write = g_header->total_written;  // 写后累计（含并发写者，判覆盖偏保守，安全）
+  clip->timestamp_ms = timestamp_ms == 0 ? GetTickCount64() : timestamp_ms;
+  clip->total_at_write = total_at_write == 0 ? g_header->total_written
+                                              : total_at_write;
   clip->ring_offset = ring_offset;
   clip->byte_len = byte_len;
   clip->sample_rate = sample_rate;
@@ -449,6 +564,10 @@ bool SignalReady(DWORD pid, bool legacy_hibiki_ipc) {
   return signaled;
 }
 
+// 通用位图呈现器必须在 adapters 之前引入：KiriKiri 适配器要调 ClaimLookupPresenter()
+// 来认领呈现，把通用呈现器挡在门外（两条路径同时显示卡片会出现双份）。
+#include "lookup_overlay_window.inc"
+
 #include "adapters/unity_adapter.inc"
 #include "adapters/windows_audio_adapter.inc"
 #include "adapters/siglus_adapter.inc"
@@ -456,9 +575,11 @@ bool SignalReady(DWORD pid, bool legacy_hibiki_ipc) {
 #include "adapters/kirikiri_adapter.inc"
 #include "adapters/renpy_adapter.inc"
 #include "adapters/text_render_adapter.inc"
+#include "adapters/siglus_lookup.inc"
 #include "adapters/loopback_adapter.inc"
 #include "generated/adapter_includes.inc"
 
+#include "generic_input_shield.inc"
 #include "adapter_registry.inc"
 
 // 工作线程：打开共享内存 -> 校验契约 -> 标记 hooked -> 由 registry 安装 adapter -> 通知 injector。
@@ -479,55 +600,90 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
   if (g_mapping != nullptr) {
     g_header = static_cast<SharedHeader*>(
         MapViewOfFile(g_mapping, FILE_MAP_ALL_ACCESS, 0, 0, 0));
-  }
-  if (g_header != nullptr) {
-    // 只信任 injector 建好、契约匹配的映射。
-    if (g_header->magic == kSharedMagic &&
-        g_header->version == kSharedVersion) {
-      g_header->hooked = 1;
-
-      // 此时 DLL、共享内存与契约均已就绪，先让 injector 进入 hold 保住映射。
-      // 后面的 MinHook/Siglus/KiriKiri 探测允许异步继续，不能阻塞 proof-of-life。
-      if (!SignalReady(pid, legacy_hibiki_ipc)) return 1;
-
-      // ── C.2/C.3：缓存各区基址后安装捕获 hook ────────────────────────────
-      g_ring_base =
-          reinterpret_cast<uint8_t*>(g_header) + sizeof(SharedHeader);
-      g_ring_capacity = g_header->ring_capacity;
-      // v2：文本环 / clip 索引区基址（injector 已填偏移），供文本 hook 与 clip 记录用。
-      g_text_base =
-          reinterpret_cast<uint8_t*>(g_header) + g_header->text_region_offset;
-      g_clip_base =
-          reinterpret_cast<uint8_t*>(g_header) + g_header->clip_region_offset;
-      // C.2f：loopback 环 + 标记表基址（injector 已填偏移），供 loopback 线程写。
-      g_lb_ring_base =
-          reinterpret_cast<uint8_t*>(g_header) + g_header->loopback_ring_offset;
-      g_lb_marker_base =
-          reinterpret_cast<uint8_t*>(g_header) + g_header->loopback_marker_offset;
-      InitializeCriticalSection(&g_cs);
-      g_cs_ready = true;
-      InitializeCriticalSection(&g_text_cs);
-      g_text_cs_ready = true;
-      InitializeCriticalSection(&g_dec_cs);
-      g_dec_cs_ready = true;  // 解码器表锁须先于装解码 hook 就绪（detour 立即可能触发）。
-      InitializeCriticalSection(&g_renpy_cs);
-      g_renpy_cs_ready = true;  // Ren'Py 表锁须先于装 FFmpeg hook 就绪（detour 立即可能触发）。
-      if (MH_Initialize() == MH_OK) {
-        g_mh_init = true;
-        g_capture_enabled = true;  // detour 上线（未加载时 hook 随后命中）。
-        registry.InstallStartupAdapters();
+    if (g_header != nullptr) {
+      MEMORY_BASIC_INFORMATION memory = {};
+      if (VirtualQuery(g_header, &memory, sizeof(memory)) == sizeof(memory) &&
+          memory.AllocationBase == g_header && memory.BaseAddress == g_header &&
+          memory.RegionSize >= sizeof(SharedHeader)) {
+        g_mapped_view_bytes = static_cast<uint64_t>(memory.RegionSize);
       }
-      // C.2f：起独立 loopback 混音捕获线程（兜底，与上述引擎级 hook 并行；不依赖 MinHook，故
-      // 即便 MH_Initialize 失败也起）。它自带 g_stop 退出门控 + COM 反序释放。
-      registry.InstallFallbackAdapters();
     }
+  }
+  // Fail closed before any adapter can observe the mapping. Polling an unknown
+  // contract is unsafe even when today's baseline adapters happen not to read
+  // the new fields: a later adapter would silently turn that accident into an
+  // out-of-bounds or fail-open policy read.
+  if (g_header == nullptr || g_header->magic != kSharedMagic ||
+      g_header->version != kSharedVersion) {
+    if (g_header != nullptr) {
+      UnmapViewOfFile(g_header);
+      g_header = nullptr;
+    }
+    g_mapped_view_bytes = 0u;
+    if (g_mapping != nullptr) {
+      CloseHandle(g_mapping);
+      g_mapping = nullptr;
+    }
+    return 1;
+  }
+
+  g_header->hooked = 1;
+  fushi_voice_hook::g_geometry_provider_registry.Reset(g_header);
+  // 此时 DLL、共享内存与契约均已就绪，先让 injector 进入 hold 保住映射。
+  // 后面的 MinHook/Siglus/KiriKiri 探测允许异步继续，不能阻塞 proof-of-life。
+  if (!SignalReady(pid, legacy_hibiki_ipc)) return 1;
+
+  // ── C.2/C.3：缓存各区基址后安装捕获 hook ────────────────────────────
+  g_ring_base = reinterpret_cast<uint8_t*>(g_header) + sizeof(SharedHeader);
+  g_ring_capacity = g_header->ring_capacity;
+  // v2：文本环 / clip 索引区基址（injector 已填偏移），供文本 hook 与 clip 记录用。
+  g_text_base =
+      reinterpret_cast<uint8_t*>(g_header) + g_header->text_region_offset;
+  g_clip_base =
+      reinterpret_cast<uint8_t*>(g_header) + g_header->clip_region_offset;
+  // C.2f：loopback 环 + 标记表基址（injector 已填偏移），供 loopback 线程写。
+  g_lb_ring_base =
+      reinterpret_cast<uint8_t*>(g_header) + g_header->loopback_ring_offset;
+  g_lb_marker_base =
+      reinterpret_cast<uint8_t*>(g_header) + g_header->loopback_marker_offset;
+  // Apply/ack native loopback policy before potentially expensive engine
+  // probing. Default deny therefore reaches stopped/applied immediately and
+  // still never creates the loopback worker; explicit allow remains
+  // independent of MinHook just as the historical fallback was.
+  registry.InstallFallbackAdapters();
+  InitializeCriticalSection(&g_cs);
+  g_cs_ready = true;
+  InitializeCriticalSection(&g_text_cs);
+  g_text_cs_ready = true;
+  InitializeCriticalSection(&g_dec_cs);
+  g_dec_cs_ready = true;  // 解码器表锁须先于装解码 hook 就绪（detour 立即可能触发）。
+  InitializeCriticalSection(&g_renpy_cs);
+  g_renpy_cs_ready = true;  // Ren'Py 表锁须先于装 FFmpeg hook 就绪（detour 立即可能触发）。
+  if (MH_Initialize() == MH_OK) {
+    g_mh_init = true;
+    g_capture_enabled = true;  // detour 上线（未加载时 hook 随后命中）。
+    registry.InstallStartupAdapters();
+    TryInstallGenericLookupInputShield();
   }
 
   // registry 保留原有各 adapter 的 150 次重试预算和调用顺序；工作线程只管生命周期。
   while (!g_stop) {
     registry.Poll();
+    TryInstallGenericLookupInputShield();
+    ProcessGenericLookupInputShield();
+    fushi_voice_hook::g_geometry_provider_registry.Reconcile(g_header);
+    // 通用位图呈现器：host 打开查词后才起，且只在没有引擎适配器认领呈现时起。
+    // 放在 Poll 之后是因为认领发生在适配器安装里——先 Poll 再问，才不会在 KiriKiri
+    // 认领之前抢跑起一个多余的分层窗口。它自带 UI 线程，这里只是点火，不阻塞本循环。
+    if (g_header != nullptr && fushi_voice_hook::HasLookupRegion(g_header) &&
+        g_header->lookup_enabled != 0) {
+      StartLookupOverlayIfUnclaimed();
+    }
     Sleep(registry.PollDelayMs());
   }
+  // 呈现器先于 adapter 收尾停：它每 16ms 读一次 g_header，必须在解映射之前停稳。
+  StopLookupOverlay();
+  ShutdownGenericLookupInputShield();
 
   // 收尾在工作线程里做（不在 loader lock 中）：先提交仍在组装的 legacy TextMesh
   // 末句，再在同一把 adapter 锁内关总开关，确保正常结束不会静默丢尾句。
@@ -549,6 +705,7 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
 BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
   switch (reason) {
     case DLL_PROCESS_ATTACH:
+      g_module = module;
       DisableThreadLibraryCalls(module);
       // 活儿丢给工作线程（loader lock 之外）。CreateThread 在 DllMain 中是允许的。
       CreateThread(nullptr, 0, HookWorker, module, 0, nullptr);
@@ -567,6 +724,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
         UnmapViewOfFile(g_header);
         g_header = nullptr;
       }
+      g_mapped_view_bytes = 0u;
       if (g_mapping != nullptr) {
         CloseHandle(g_mapping);
         g_mapping = nullptr;

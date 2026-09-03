@@ -10,6 +10,8 @@ const {
   parseTtml,
   parseBilibiliJson,
   netflixDocumentTitle,
+  findCueIndexAt,
+  pickPrimaryCueTrack,
 } = require('./subtitle-adapters.js');
 
 test('extractNetflixCueText joins span lines', () => {
@@ -202,4 +204,57 @@ test('parseWebVtt 兼容 SRT 块（bilibili srt 轨复用同一解析器）', ()
   const cues = parseWebVtt(srt);
   assert.strictEqual(cues.length, 2);
   assert.deepStrictEqual(cues[0], { startMs: 1000, endMs: 2500, text: '走り出した' });
+});
+
+// ── 整轨优先仲裁的共享纯函数 ──
+
+const CUES = [
+  { startMs: 1000, endMs: 3000, text: 'A' },
+  { startMs: 5000, endMs: 7000, text: 'B' },
+];
+
+test('findCueIndexAt 命中句内时间（含左闭边界）', () => {
+  assert.strictEqual(findCueIndexAt(CUES, 1000), 0);
+  assert.strictEqual(findCueIndexAt(CUES, 2000), 0);
+  assert.strictEqual(findCueIndexAt(CUES, 5000), 1);
+  assert.strictEqual(findCueIndexAt(CUES, 6999), 1);
+});
+
+test('findCueIndexAt 间隙/越界返回 -1（不吸附邻句）', () => {
+  assert.strictEqual(findCueIndexAt(CUES, 999), -1, '首句之前');
+  assert.strictEqual(findCueIndexAt(CUES, 3000), -1, 'endMs 右开');
+  assert.strictEqual(findCueIndexAt(CUES, 4000), -1, '两句之间的静音段');
+  assert.strictEqual(findCueIndexAt(CUES, 99999), -1, '末句之后');
+});
+
+test('findCueIndexAt 坏输入不抛', () => {
+  assert.strictEqual(findCueIndexAt(null, 1000), -1);
+  assert.strictEqual(findCueIndexAt([], 1000), -1);
+  assert.strictEqual(findCueIndexAt(CUES, null), -1);
+});
+
+test('pickPrimaryCueTrack 排除 live 伪轨（它是降级来源，永不当主路径）', () => {
+  const store = { 'v1|live': [{ startMs: 0, endMs: 1, text: 'x' }] };
+  assert.strictEqual(pickPrimaryCueTrack(store, 'v1', 'live'), null);
+});
+
+test('pickPrimaryCueTrack 有整轨时取之，preferredLang 优先', () => {
+  const store = {
+    'v1|en': [{ startMs: 0, endMs: 1, text: 'en' }],
+    'v1|ja': [{ startMs: 0, endMs: 1, text: 'ja' }],
+    'v1|live': [{ startMs: 0, endMs: 1, text: 'live' }],
+  };
+  assert.strictEqual(pickPrimaryCueTrack(store, 'v1', 'live').lang, 'en', '缺省取字典序首条非 live');
+  assert.strictEqual(pickPrimaryCueTrack(store, 'v1', 'live', 'ja').lang, 'ja', 'preferredLang 优先');
+  assert.strictEqual(pickPrimaryCueTrack(store, 'v1', 'live', 'zz').lang, 'en', '偏好轨不存在时回落');
+});
+
+test('pickPrimaryCueTrack 不串视频身份，空轨不算', () => {
+  const store = {
+    'v1|ja': [],
+    'v2|ja': [{ startMs: 0, endMs: 1, text: 'other' }],
+  };
+  assert.strictEqual(pickPrimaryCueTrack(store, 'v1', 'live'), null, '空轨不算整轨；别的视频的轨不得串进来');
+  assert.strictEqual(pickPrimaryCueTrack(null, 'v1', 'live'), null);
+  assert.strictEqual(pickPrimaryCueTrack({}, '', 'live'), null);
 });

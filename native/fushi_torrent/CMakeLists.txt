@@ -48,3 +48,13 @@ if(APPLE)
       BUILD_WITH_INSTALL_NAME_DIR TRUE
   )
 endif()
+
+# Android：产物名走默认 lib 前缀（libfushi_torrent_ffi.so，Dart 侧
+# defaultLibraryNames 按此名 DynamicLibrary.open）。依赖（libtorrent/boost/
+# openssl）由 vcpkg android triplet 提供**静态归档**，全部链进这一个 .so ——
+# jniLibs 里只随包一个文件，没有 Windows 那套同目录依赖预载问题。
+if(ANDROID)
+  # Android 15+ 的 16KB page size 设备要求 ELF segment 按 16KB 对齐；NDK r28
+  # 起是默认，r27 及以下需显式给。恒设无害（4KB 设备兼容 16KB 对齐产物）。
+  target_link_options(fushi_torrent_ffi PRIVATE "-Wl,-z,max-page-size=16384")
+endif()

@@ -16,6 +16,7 @@ import 'package:fushi/src/epub/epub_storage.dart';
 import 'package:fushi/src/media/import/import_carrier.dart';
 import 'package:fushi/src/media/manga/import/manga_folder_batch.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
@@ -192,6 +193,69 @@ void main() {
 
       expect(progress.first, (0, 2));
       expect(progress.last, (2, 2));
+    });
+  });
+
+  group('逐卷失败必须落进错误日志', () {
+    // 批量路径把每卷异常收进报告、只给调用方一句「成功 N / 失败 M」的汇总，于是
+    // ImportFlowMixin.runImport 那道 ErrorLogService 永远拿不到真正的原因，用户
+    // 事后翻错误日志页是空的。落盘因此必须在**吞掉异常的这一层**。
+    test('坏卷的真实原因写进 ErrorLogService，而不是只 debugPrint', () async {
+      final int before = ErrorLogService.instance.entries.length;
+
+      // 一卷好的 + 一卷坏的：坏卷是页图在任何布局下都找不到的 .mokuro——正是用户
+      // 撞上的那种失败，只不过这里让它发生在批量路径里。
+      _writeCbz(root, 'good.cbz');
+      File(p.join(root.path, 'broken.mokuro'))
+          .writeAsStringSync(jsonEncode(<String, Object?>{
+        'version': '0.2.0',
+        'title': 'Broken',
+        'pages': <Object?>[
+          <String, Object?>{
+            'img_width': 800,
+            'img_height': 1200,
+            'img_path': 'nowhere.jpg',
+            'blocks': <Object?>[],
+          },
+        ],
+      }));
+
+      final MangaBatchImportReport report =
+          await importMangaBatchFolder(db: db, path: root.path);
+
+      expect(report.failedCount, 1, reason: '坏卷必须计入失败');
+      final List<ErrorLogEntry> added =
+          ErrorLogService.instance.entries.skip(before).toList();
+      expect(
+        added.where((ErrorLogEntry e) => e.source == 'MangaBatchImport.volume'),
+        isNotEmpty,
+        reason: '坏卷的原因必须以 MangaBatchImport.volume 落进错误日志',
+      );
+      expect(
+        added
+            .where((ErrorLogEntry e) => e.source == 'MangaBatchImport.volume')
+            .map((ErrorLogEntry e) => e.error)
+            .join('\n'),
+        contains('broken.mokuro'),
+        reason: '日志必须指名道姓说是哪一卷，否则 20 卷里的失败无从定位',
+      );
+    });
+
+    test('全成功时不往错误日志塞噪声', () async {
+      final int before = ErrorLogService.instance.entries.length;
+      _writeCbz(root, 'ok1.cbz');
+      _writeCbz(root, 'ok2.cbz');
+
+      final MangaBatchImportReport report =
+          await importMangaBatchFolder(db: db, path: root.path);
+
+      expect(report.failedCount, 0);
+      expect(
+        ErrorLogService.instance.entries
+            .skip(before)
+            .where((ErrorLogEntry e) => e.source == 'MangaBatchImport.volume'),
+        isEmpty,
+      );
     });
   });
 }

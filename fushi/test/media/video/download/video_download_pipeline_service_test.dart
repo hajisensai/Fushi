@@ -1,17 +1,24 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/discovery/discovery_download_queue.dart'
+    show DiscoveryImportOutcome;
+import 'package:fushi/src/media/discovery/discovery_models.dart'
+    show DiscoveryMediaKind;
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/torrent_metainfo.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi/src/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
@@ -24,12 +31,31 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 const String _torrentHash = '0123456789abcdef0123456789abcdef01234567';
+
+/// 带 AniDB 规范身份的入队快照（P1 契约下 scrape 阶段的唯一入场券）。
+VideoMediaReference _anidbReference() => VideoMediaReference(
+      providerId: 'anilist',
+      mediaId: '100',
+      mediaKind: VideoMetadataMediaKind.tv,
+      discoveryCategory: VideoDiscoveryCategory.anime,
+      title: 'Show',
+      originalTitle: 'ショー',
+      aliases: const <String>['Show'],
+      year: 2026,
+      season: 1,
+      anidbId: 42,
+      anilistId: 100,
+    );
 const VideoDownloadBackendIdentity _expectedIdentity =
     VideoDownloadBackendIdentity(
   kind: 'embedded',
   profileId: 'embedded',
   fingerprint: 'installation-fingerprint',
-  category: 'fushi-video',
+);
+const String _expectedCategory = 'fushi-video';
+const VideoDownloadBackendTarget _expectedTarget = VideoDownloadBackendTarget(
+  identity: _expectedIdentity,
+  category: _expectedCategory,
 );
 
 void main() {
@@ -95,7 +121,7 @@ void main() {
     expect(persisted.selectedResourceId, 'release-1');
     expect(persisted.torrentHash, _torrentHash);
     expect(persisted.fingerprint, _expectedIdentity.fingerprint);
-    expect(persisted.category, _expectedIdentity.category);
+    expect(persisted.category, _expectedCategory);
     expect(persisted.targetSourceId, environment.sourceId);
 
     backend.releaseAdd();
@@ -136,6 +162,99 @@ void main() {
     expect(jobAtCheckpoint, isNotNull);
     expect(jobAtCheckpoint!.stage, VideoDownloadJobStage.enqueue);
     expect(jobAtCheckpoint!.torrentHash, _torrentHash);
+  });
+
+  test('enqueue persists the candidate magnet and skips re-search (BUG-1784)',
+      () async {
+    const String candidateMagnet =
+        'magnet:?xt=urn:btih:$_torrentHash&dn=Show+S01E01'
+        '&tr=udp%3A%2F%2Ftracker.example%3A1337%2Fannounce';
+    final _FakeTorrentBackend backend = _FakeTorrentBackend(
+      snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.25)],
+    );
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: backend,
+      candidateMagnetUri: candidateMagnet,
+    );
+    addTearDown(environment.close);
+
+    final String jobId = await environment.service.enqueue(
+      environment.enqueueRequest(),
+    );
+    final VideoDownloadJobRow downloading = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) => row.stage == VideoDownloadJobStage.download,
+    );
+
+    expect(downloading.magnetUri, candidateMagnet);
+    // payload 从任务行磁链物化，物化不回索引器重搜/重解析。
+    expect(environment.provider.searchCalls, 0);
+    expect(environment.provider.resolveCalls, 0);
+    expect(backend.addCalls, 1);
+  });
+
+  test(
+      'legacy job without magnet recovers offline from its info hash '
+      'when re-search misses (BUG-1784)', () async {
+    final _FakeTorrentBackend backend = _FakeTorrentBackend(
+      snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.25)],
+    );
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: backend,
+    );
+    addTearDown(environment.close);
+    // 存量任务行形态：入队时没落磁链。索引器就算会搜空也不影响结果——BUG-1866
+    // 起离线磁链是主路径，这条设置只是让「重搜找不回」这个历史前提留在用例里。
+    environment.provider.returnEmptySearch = true;
+
+    final String jobId = await environment.service.enqueue(
+      environment.enqueueRequest(),
+    );
+    final VideoDownloadJobRow downloading = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) => row.stage == VideoDownloadJobStage.download,
+    );
+
+    // 离线重建的磁链（info hash + 该索引器固定 tracker）落回任务行。
+    expect(downloading.magnetUri, startsWith('magnet:?xt=urn:btih:'));
+    expect(downloading.magnetUri, contains(_torrentHash));
+    expect(environment.provider.resolveCalls, 0);
+    expect(backend.addCalls, 1);
+  });
+
+  test(
+      'public indexer job resolves offline without touching the network '
+      '(BUG-1866)', () async {
+    final _FakeTorrentBackend backend = _FakeTorrentBackend(
+      snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.25)],
+    );
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: backend,
+    );
+    addTearDown(environment.close);
+    // 原始失败路径：存量任务行没磁链，索引器又不可达。旧口径先联网重搜、抛了
+    // 才兜底，那一次失败会把一个**还活着**的资源标成
+    // `ExternalProviderFailure(kind=notFound)` 推到用户面前。
+    environment.provider.failSearch = true;
+
+    final String jobId = await environment.service.enqueue(
+      environment.enqueueRequest(),
+    );
+    final VideoDownloadJobRow downloading = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) => row.stage == VideoDownloadJobStage.download,
+    );
+
+    expect(downloading.magnetUri, contains(_torrentHash));
+    expect(downloading.lastError, isNull);
+    // 关键不变式：公共索引器的 payload 是任务行数据的纯函数，一次网络都不打。
+    // 这条断言塌成 `searchCalls >= 0` 就等于把 BUG-1866 放回来了。
+    expect(environment.provider.searchCalls, 0);
+    expect(environment.provider.resolveCalls, 0);
+    expect(backend.addCalls, 1);
   });
 
   test('long enqueue renews its lease and cannot be claimed by another worker',
@@ -220,16 +339,22 @@ void main() {
         kind: 'embedded',
         profileId: 'embedded',
         fingerprint: 'different-installation',
-        category: 'fushi-video',
       ),
     ),
     (
-      label: 'category',
+      label: 'profile',
       identity: const VideoDownloadBackendIdentity(
         kind: 'embedded',
+        profileId: 'another-profile',
+        fingerprint: 'installation-fingerprint',
+      ),
+    ),
+    (
+      label: 'kind',
+      identity: const VideoDownloadBackendIdentity(
+        kind: 'qbittorrent',
         profileId: 'embedded',
         fingerprint: 'installation-fingerprint',
-        category: 'different-category',
       ),
     ),
   ]) {
@@ -264,6 +389,48 @@ void main() {
     });
   }
 
+  test('改掉配置里的分类不会拦下已有任务，任务用自己那份分类投递', () async {
+    // BUG-1879：分类曾被算进后端身份，用户在设置里把分类从 hibiki 改成 fushi
+    // （或升级后默认分类漂移）会让全部在途任务当场判失配、卡死 needsAttention，
+    // 重试还会再撞同一道门。分类是任务自己的投放位置，不是「这是哪台下载器」。
+    const String jobCategory = 'hibiki';
+    expect(jobCategory, isNot(_expectedCategory));
+
+    final _FakeTorrentBackend backend = _FakeTorrentBackend(
+      snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.1)],
+    );
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: backend,
+      // 同一台下载器（身份没变），只是用户改了设置里的分类。
+      backendResolver: (_) async => VideoDownloadBackendBinding(
+        backend: backend,
+        identity: _expectedIdentity,
+      ),
+    );
+    addTearDown(environment.close);
+
+    const String jobId = 'category-changed-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.enqueue,
+      category: jobCategory,
+    );
+
+    environment.service.wake();
+    final VideoDownloadJobRow job = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) => row.stage == VideoDownloadJobStage.download,
+    );
+
+    expect(job.lifecycle, VideoDownloadJobLifecycle.active);
+    expect(job.lastError, isNull);
+    // 旧任务照旧投到它自己那个分类里——旧种子本来也还在那儿。
+    expect(job.category, jobCategory);
+    expect(backend.preparedCategories, contains(jobCategory));
+    expect(backend.preparedCategories, isNot(contains(_expectedCategory)));
+  });
+
   test('restart resumes persisted download stage without enqueueing again',
       () async {
     final _FakeTorrentBackend backend = _FakeTorrentBackend(
@@ -291,7 +458,6 @@ void main() {
                   kind: 'embedded',
                   profileId: 'embedded',
                   fingerprint: 'changed-after-download',
-                  category: 'fushi-video',
                 ),
         );
       },
@@ -579,12 +745,13 @@ void main() {
     );
 
     environment.service.wake();
+    // P1 契约：anilist 身份不是 AniDB 规范身份 → import 后直接完成（进视频页
+    // 待确认队列），不再被强制刮到 needsAttention。
     await _waitForJob(
       environment.database,
       jobId,
       (VideoDownloadJobRow row) =>
-          row.stage == VideoDownloadJobStage.scrape &&
-          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
     );
 
     expect(backend.moveStoragePaths, <String>['/media']);
@@ -720,12 +887,12 @@ void main() {
     );
 
     environment.service.wake();
+    // P1 契约：无 AniDB 身份 → import 后直接完成，见上一个用例的注释。
     await _waitForJob(
       environment.database,
       jobId,
       (VideoDownloadJobRow row) =>
-          row.stage == VideoDownloadJobStage.scrape &&
-          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
     );
 
     final String absoluteSource =
@@ -908,12 +1075,12 @@ void main() {
     );
 
     environment.service.wake();
+    // P1 契约：无 AniDB 身份 → import 后直接完成，字幕落位断言不受影响。
     await _waitForJob(
       environment.database,
       jobId,
       (VideoDownloadJobRow row) =>
-          row.stage == VideoDownloadJobStage.scrape &&
-          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
     );
 
     final VideoDownloadJobSubtitleRow subtitle =
@@ -939,9 +1106,12 @@ void main() {
     );
     addTearDown(environment.close);
     const String jobId = 'exact-scrape-path-job';
+    // P1 起 scrape 阶段只对带 AniDB 规范身份的任务运行；本用例守的是
+    // 「身份确认后也绝不按标题回退映射」，故显式带上 anidb 身份。
     await environment.insertJob(
       jobId: jobId,
       stage: VideoDownloadJobStage.scrape,
+      identityJson: encodeVideoMediaReference(_anidbReference()),
     );
     await environment.database.upsertVideoBook(
       VideoBooksCompanion(
@@ -977,6 +1147,304 @@ void main() {
     );
 
     expect(job.lastError, contains('mapped exactly'));
+  });
+
+  test(
+      'a scrape-stage job without an AniDB identity completes instead of '
+      'getting pinned on needsAttention (BUG-2004)', () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'anilist-only-scrape-job';
+    // insertJob 默认身份是 anilist:100 —— 修前它会被强制模糊刮到歧义卡死。
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.scrape,
+    );
+
+    environment.service.wake();
+    await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
+    );
+  });
+
+  test(
+      'an AniDB identity from the enqueue snapshot enters scrape as a '
+      'confirmed lookup', () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'anidb-confirmed-scrape-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.scrape,
+      identityJson: encodeVideoMediaReference(_anidbReference()),
+    );
+    final String videoPath = p.join(environment.root.path, 'Show.mkv');
+    await environment.database.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/anidb-show'),
+        title: const Value<String>('Show'),
+        videoPath: Value<String>(videoPath),
+        sourceId: Value<int?>(environment.sourceId),
+      ),
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: 'Show.mkv',
+        currentRelativePath: 'Show.mkv',
+        finalAbsolutePath: Value<String?>(videoPath),
+        kind: const Value<String>('video'),
+        status: const Value<String>(VideoDownloadJobFileStatus.imported),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    final VideoDownloadJobRow job = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+    );
+
+    // 测试环境的 registry 没有可用 AniDB provider，coordinator 对已确认身份
+    // fail closed —— 报「主资料源不可用」而不是完成/模糊匹配，证明 anidb
+    // lookup 真正进入了刮削管线。
+    expect(job.lastError, contains('AniDB'));
+  });
+
+  test(
+      'a multi-movie torrent imports every standalone movie with its own '
+      'title (BUG-2007)', () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'multi-movie-import-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.import,
+      mediaKind: VideoMetadataMediaKind.movie.name,
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    // 故意让主片（最大文件）排在最后：主片判据是体积（与组织器抬正片一致），
+    // 谁排在 files.first 不作数。
+    final List<List<Object>> entries = <List<Object>>[
+      <Object>['[A] Suzume [1080p].mkv', 150, 0],
+      <Object>['[B] Suzume [720p].mkv', 140, 1],
+      <Object>['[C] Aoi Hana [1080p].mkv', 130, 2],
+      <Object>['Show (2026)/Show (2026).mkv', 200, 3],
+    ];
+    for (final List<Object> entry in entries) {
+      final String rel = entry[0] as String;
+      await environment.database.upsertVideoDownloadJobFile(
+        VideoDownloadJobFilesCompanion.insert(
+          jobId: jobId,
+          backendFileIndex: Value<int?>(entry[2] as int),
+          originalRelativePath: rel,
+          currentRelativePath: rel,
+          finalAbsolutePath: Value<String?>(
+            p.joinAll(<String>[environment.root.path, ...rel.split('/')]),
+          ),
+          kind: const Value<String>('video'),
+          sizeBytes: Value<int?>(entry[1] as int),
+          status: const Value<String>(VideoDownloadJobFileStatus.organized),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+    }
+
+    environment.service.wake();
+    // 默认身份是 anilist:100（无 AniDB）→ import 后直接完成（P1 契约）。
+    await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
+    );
+
+    final List<VideoBookRow> books = await environment.database.allVideoBooks();
+    expect(books, hasLength(4));
+    // 主片（最大文件）沿用 job.title；解析标题唯一的并列正片用解析结果；
+    // 前編/後編 式的解析撞名退回整理后文件名——有损解析绝不承担唯一性。
+    expect(
+      books.map((VideoBookRow book) => book.title).toSet(),
+      <String>{
+        'Show',
+        'Aoi Hana',
+        '[A] Suzume [1080p]',
+        '[B] Suzume [720p]',
+      },
+    );
+  });
+
+  test(
+      'movie subtitle search only targets the main movie; sibling standalone '
+      'movies wait for their own identities (BUG-2007)', () async {
+    final Uint8List subtitleBytes = Uint8List.fromList(<int>[49, 10, 50, 10]);
+    final _FakeSubtitleProvider subtitleProvider = _FakeSubtitleProvider(
+      bytes: subtitleBytes,
+    );
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+      subtitleProvider: subtitleProvider,
+    );
+    addTearDown(environment.close);
+    const String jobId = 'multi-movie-subtitle-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.subtitle,
+      mediaKind: VideoMetadataMediaKind.movie.name,
+    );
+    final Directory movieDir = Directory(
+      p.join(environment.root.path, 'Show (2026)'),
+    );
+    await movieDir.create(recursive: true);
+    final File main = File(p.join(movieDir.path, 'Show (2026).mkv'));
+    await main.writeAsBytes(<int>[0, 1, 2, 3], flush: true);
+    final File sibling = File(p.join(movieDir.path, 'Zoku Show.mkv'));
+    await sibling.writeAsBytes(<int>[0, 1], flush: true);
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    // 并列正片故意排在前面；主片 = 最大 sizeBytes。
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: 'Zoku Show.mkv',
+        currentRelativePath: 'Zoku Show.mkv',
+        finalAbsolutePath: Value<String?>(sibling.path),
+        kind: const Value<String>('video'),
+        sizeBytes: const Value<int?>(100),
+        status: const Value<String>(VideoDownloadJobFileStatus.organized),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(1),
+        originalRelativePath: 'Show (2026).mkv',
+        currentRelativePath: 'Show (2026).mkv',
+        finalAbsolutePath: Value<String?>(main.path),
+        kind: const Value<String>('video'),
+        sizeBytes: const Value<int?>(400),
+        status: const Value<String>(VideoDownloadJobFileStatus.organized),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
+    );
+
+    // 只搜了主片一次：并列正片拿 job 身份去搜只会装上主片的字幕，必须留给
+    // 刮削后按各自规范身份的补齐链路。
+    expect(subtitleProvider.searchCalls, 1);
+    final List<VideoDownloadJobFileRow> files =
+        await environment.database.getVideoDownloadJobFiles(jobId);
+    final int mainFileId = files
+        .singleWhere(
+          (VideoDownloadJobFileRow row) =>
+              row.originalRelativePath == 'Show (2026).mkv',
+        )
+        .id;
+    for (final VideoDownloadJobSubtitleRow row
+        in await environment.database.getVideoDownloadJobSubtitles(jobId)) {
+      expect(row.jobFileId, mainFileId);
+    }
+  });
+
+  test(
+      'a multi-movie scrape binds the confirmed identity to the main movie '
+      'instead of dropping it (BUG-2007)', () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'multi-movie-scrape-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.scrape,
+      mediaKind: VideoMetadataMediaKind.movie.name,
+      identityJson: encodeVideoMediaReference(_anidbReference()),
+    );
+    final String mainPath = p.join(environment.root.path, 'Show Main.mkv');
+    final String siblingPath = p.join(environment.root.path, 'Zoku Show.mkv');
+    await environment.database.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/multi-main'),
+        title: const Value<String>('Show Main'),
+        videoPath: Value<String>(mainPath),
+        sourceId: Value<int?>(environment.sourceId),
+      ),
+    );
+    await environment.database.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/multi-sibling'),
+        title: const Value<String>('Zoku Show'),
+        videoPath: Value<String>(siblingPath),
+        sourceId: Value<int?>(environment.sourceId),
+      ),
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: 'Zoku Show.mkv',
+        currentRelativePath: 'Zoku Show.mkv',
+        finalAbsolutePath: Value<String?>(siblingPath),
+        kind: const Value<String>('video'),
+        sizeBytes: const Value<int?>(100),
+        status: const Value<String>(VideoDownloadJobFileStatus.imported),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(1),
+        originalRelativePath: 'Show Main.mkv',
+        currentRelativePath: 'Show Main.mkv',
+        finalAbsolutePath: Value<String?>(mainPath),
+        kind: const Value<String>('video'),
+        sizeBytes: const Value<int?>(400),
+        status: const Value<String>(VideoDownloadJobFileStatus.imported),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    // 首版实现把多作品批次直接 complete——用户在下载确认时选定的 AniDB 身份
+    // 被静默丢弃。现在必须绑给主片所在作品并真正进入刮削：测试环境没有可用
+    // AniDB provider，coordinator 对已确认身份 fail closed，报「主资料源不可
+    // 用」即证明 lookup 进了管线而不是被丢掉。
+    final VideoDownloadJobRow job = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+    );
+    expect(job.lastError, contains('AniDB'));
   });
 
   test('retry resets an actionable job and wakes the persisted stage',
@@ -1294,7 +1762,6 @@ void main() {
           kind: 'embedded',
           profileId: 'embedded',
           fingerprint: 'another-installation',
-          category: 'fushi-video',
         ),
       ),
     );
@@ -1353,7 +1820,232 @@ void main() {
       throwsA(isA<VideoDownloadPipelineActionRequired>()),
     );
   });
+
+  // 手动添加任务（2026-08-21 用户点名「用户没办法手动导入任务」）。
+  group('enqueueManual', () {
+    const String manualMagnet = 'magnet:?xt=urn:btih:$_torrentHash&dn=Manual';
+
+    test('organizationPolicy 与发现域互相换算，未知策略返回 null', () {
+      for (final DiscoveryMediaKind kind in DiscoveryMediaKind.values) {
+        expect(
+          discoveryKindOfOrganizationPolicy(
+            manualDiscoveryOrganizationPolicy(kind),
+          ),
+          kind,
+        );
+      }
+      expect(discoveryKindOfOrganizationPolicy('library'), isNull);
+      expect(discoveryKindOfOrganizationPolicy('legacy'), isNull);
+      expect(discoveryKindOfOrganizationPolicy('discovery-unknown'), isNull);
+    });
+
+    test('磁力视频任务落 manual 行：无发现身份、策略 library', () async {
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: _FakeTorrentBackend());
+      addTearDown(environment.close);
+
+      final String jobId = await environment.service.enqueueManual(
+        VideoDownloadManualEnqueueRequest(
+          title: 'Manual Movie',
+          backendTarget: _expectedTarget,
+          magnetUri: manualMagnet,
+          targetSourceId: environment.sourceId,
+        ),
+      );
+      final VideoDownloadJobRow? job =
+          await environment.database.getVideoDownloadJob(jobId);
+      expect(job, isNotNull);
+      expect(job!.resourceProvider, kManualVideoDownloadResourceProvider);
+      expect(job.magnetUri, manualMagnet);
+      expect(job.torrentHash, _torrentHash);
+      expect(job.metadataProvider, isNull,
+          reason: '手动任务没有发现身份，import 后必须直接完成而不是进 scrape');
+      expect(job.externalId, isNull);
+      expect(job.mediaKind, VideoMetadataMediaKind.movie.name);
+      expect(job.organizationPolicy, 'library');
+      expect(job.subtitlePolicy, VideoDownloadSubtitlePolicy.none.name);
+      expect(job.targetSourceId, environment.sourceId);
+      expect(job.title, 'Manual Movie');
+    });
+
+    test('入参校验：双 payload / 零 payload / 无 hash 磁力 / 视频缺来源', () async {
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: _FakeTorrentBackend());
+      addTearDown(environment.close);
+      final InspectedTorrentMetainfo metainfo =
+          inspectTorrentMetainfo(_manualV1Metainfo());
+
+      await expectLater(
+        environment.service.enqueueManual(
+          VideoDownloadManualEnqueueRequest(
+            title: 'x',
+            backendTarget: _expectedTarget,
+            magnetUri: manualMagnet,
+            metainfo: metainfo,
+            targetSourceId: environment.sourceId,
+          ),
+        ),
+        throwsArgumentError,
+        reason: '磁力与 .torrent 恰好二选一',
+      );
+      await expectLater(
+        environment.service.enqueueManual(
+          VideoDownloadManualEnqueueRequest(
+            title: 'x',
+            backendTarget: _expectedTarget,
+            targetSourceId: environment.sourceId,
+          ),
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        environment.service.enqueueManual(
+          VideoDownloadManualEnqueueRequest(
+            title: 'x',
+            backendTarget: _expectedTarget,
+            magnetUri: 'magnet:?dn=no-hash',
+            targetSourceId: environment.sourceId,
+          ),
+        ),
+        throwsA(isA<VideoDownloadPipelineActionRequired>()),
+      );
+      await expectLater(
+        environment.service.enqueueManual(
+          VideoDownloadManualEnqueueRequest(
+            title: 'x',
+            backendTarget: _expectedTarget,
+            magnetUri: manualMagnet,
+          ),
+        ),
+        throwsA(isA<VideoDownloadPipelineActionRequired>()),
+        reason: '视频任务必须有受管来源',
+      );
+    });
+
+    test('.torrent 任务：元数据先落盘（<jobId>.torrent），hash 取自 metainfo', () async {
+      final Directory manualDir =
+          await Directory.systemTemp.createTemp('fushi-manual-torrents-');
+      addTearDown(() async {
+        if (await manualDir.exists()) await manualDir.delete(recursive: true);
+      });
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: _FakeTorrentBackend());
+      addTearDown(environment.close);
+      final VideoDownloadPipelineService service = VideoDownloadPipelineService(
+        database: environment.database,
+        resourceRegistry: environment.resourceRegistry,
+        backendResolver: (_) async => VideoDownloadBackendBinding(
+          backend: environment.backend,
+          identity: _expectedIdentity,
+        ),
+        scrapeCoordinator: environment.scrapeCoordinator,
+        manualTorrentDirectory: manualDir,
+        workerId: 'manual-metainfo-worker',
+        pollInterval: const Duration(hours: 1),
+      );
+      addTearDown(service.dispose);
+      final InspectedTorrentMetainfo metainfo =
+          inspectTorrentMetainfo(_manualV1Metainfo());
+
+      final String jobId = await service.enqueueManual(
+        VideoDownloadManualEnqueueRequest(
+          title: 'Manual Torrent',
+          backendTarget: _expectedTarget,
+          metainfo: metainfo,
+          targetSourceId: environment.sourceId,
+        ),
+      );
+
+      expect(
+        File(p.join(manualDir.path, '$jobId.torrent')).existsSync(),
+        isTrue,
+        reason: '重启后 payload 从这份落盘元数据重新物化',
+      );
+      final VideoDownloadJobRow? job =
+          await environment.database.getVideoDownloadJob(jobId);
+      expect(job!.torrentHash, metainfo.torrentId);
+      expect(job.magnetUri, isNull);
+    });
+
+    test('.torrent 任务在未配置落盘目录时显式拒绝', () async {
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: _FakeTorrentBackend());
+      addTearDown(environment.close);
+      await expectLater(
+        environment.service.enqueueManual(
+          VideoDownloadManualEnqueueRequest(
+            title: 'x',
+            backendTarget: _expectedTarget,
+            metainfo: inspectTorrentMetainfo(_manualV1Metainfo()),
+            targetSourceId: environment.sourceId,
+          ),
+        ),
+        throwsA(isA<VideoDownloadPipelineActionRequired>()),
+      );
+    });
+
+    test('发现域任务：策略 discovery-<kind>、无字幕、无目标来源；无 importer 拒绝', () async {
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: _FakeTorrentBackend());
+      addTearDown(environment.close);
+
+      await expectLater(
+        environment.service.enqueueManual(
+          VideoDownloadManualEnqueueRequest(
+            title: 'A Novel',
+            backendTarget: _expectedTarget,
+            magnetUri: manualMagnet,
+            discoveryKind: DiscoveryMediaKind.novel,
+          ),
+        ),
+        throwsA(isA<VideoDownloadPipelineActionRequired>()),
+        reason: '本设备没接发现导入执行器时不能默默收下书任务',
+      );
+
+      final VideoDownloadPipelineService service = VideoDownloadPipelineService(
+        database: environment.database,
+        resourceRegistry: environment.resourceRegistry,
+        backendResolver: (_) async => VideoDownloadBackendBinding(
+          backend: environment.backend,
+          identity: _expectedIdentity,
+        ),
+        scrapeCoordinator: environment.scrapeCoordinator,
+        discoveryImporter:
+            (DiscoveryMediaKind kind, List<String> paths) async =>
+                const DiscoveryImportOutcome(importedCount: 1),
+        workerId: 'manual-discovery-worker',
+        pollInterval: const Duration(hours: 1),
+      );
+      addTearDown(service.dispose);
+
+      final String jobId = await service.enqueueManual(
+        VideoDownloadManualEnqueueRequest(
+          title: 'A Novel',
+          backendTarget: _expectedTarget,
+          magnetUri: manualMagnet,
+          discoveryKind: DiscoveryMediaKind.novel,
+          // 故意同时给字幕策略与来源：发现域任务必须把它们归零。
+          subtitlePolicy: VideoDownloadSubtitlePolicy.bestEffort,
+          targetSourceId: environment.sourceId,
+        ),
+      );
+      final VideoDownloadJobRow? job =
+          await environment.database.getVideoDownloadJob(jobId);
+      expect(job!.organizationPolicy, 'discovery-novel');
+      expect(job.subtitlePolicy, VideoDownloadSubtitlePolicy.none.name,
+          reason: '非视频内容没有字幕概念');
+      expect(job.targetSourceId, isNull, reason: '发现域任务不进受管视频来源');
+      expect(job.mediaKind, DiscoveryMediaKind.novel.name);
+    });
+  });
 }
+
+/// 与 torrent_metainfo_test 同款的最小 v1 metainfo（单文件 name=test）。
+Uint8List _manualV1Metainfo() => Uint8List.fromList(
+      utf8.encode(
+        'd4:infod6:lengthi1e4:name4:test6:pieces20:aaaaaaaaaaaaaaaaaaaaee',
+      ),
+    );
 
 TorrentSnapshot _downloadingSnapshot({required double progress}) =>
     TorrentSnapshot(
@@ -1423,6 +2115,7 @@ class _PipelineEnvironment {
     Future<void> Function(VideoDownloadJobRow job)? onBackendTaskAdded,
     Duration leaseDuration = const Duration(minutes: 1),
     Duration pollInterval = const Duration(hours: 1),
+    String? candidateMagnetUri,
   }) async {
     final FushiDatabase database =
         FushiDatabase.forTesting(NativeDatabase.memory());
@@ -1436,7 +2129,8 @@ class _PipelineEnvironment {
         createdAt: 1,
       ),
     );
-    final _FakeResourceProvider provider = _FakeResourceProvider();
+    final _FakeResourceProvider provider =
+        _FakeResourceProvider(candidateMagnetUri: candidateMagnetUri);
     final VideoResourceRegistry resourceRegistry =
         VideoResourceRegistry(<VideoResourceProvider>[provider]);
     final VideoSubtitleRegistry? subtitleRegistry = subtitleProvider == null
@@ -1484,7 +2178,7 @@ class _PipelineEnvironment {
   VideoDownloadEnqueueRequest enqueueRequest() => VideoDownloadEnqueueRequest(
         media: _mediaReference(),
         resource: provider.candidate,
-        backendIdentity: _expectedIdentity,
+        backendTarget: _expectedTarget,
         targetSourceId: sourceId,
       );
 
@@ -1499,6 +2193,9 @@ class _PipelineEnvironment {
     bool withoutTargetSource = false,
     String backendKind = 'embedded',
     String lifecycle = VideoDownloadJobLifecycle.active,
+    String category = _expectedCategory,
+    String? identityJson,
+    String? mediaKind,
   }) {
     final int now = DateTime.now().millisecondsSinceEpoch;
     return database.upsertVideoDownloadJob(
@@ -1513,7 +2210,8 @@ class _PipelineEnvironment {
         torrentHash: const Value<String?>(_torrentHash),
         metadataProvider: const Value<String?>('anilist'),
         externalId: const Value<String?>('100'),
-        mediaKind: VideoMetadataMediaKind.tv.name,
+        identityJson: Value<String?>(identityJson),
+        mediaKind: mediaKind ?? VideoMetadataMediaKind.tv.name,
         discoveryCategory: Value<String?>(VideoDiscoveryCategory.anime.name),
         title: 'Show',
         year: const Value<int?>(2026),
@@ -1522,7 +2220,7 @@ class _PipelineEnvironment {
         backendTaskId: const Value<String?>(_torrentHash),
         backendProfileId: Value<String?>(_expectedIdentity.profileId),
         fingerprint: _expectedIdentity.fingerprint,
-        category: Value<String?>(_expectedIdentity.category),
+        category: Value<String?>(category),
         targetSourceId: Value<int?>(withoutTargetSource ? null : sourceId),
         organizationPolicy: Value<String>(organizationPolicy),
         subtitlePolicy: Value<String>(subtitlePolicy.name),
@@ -1599,7 +2297,7 @@ VideoMediaReference _mediaReference() => VideoMediaReference(
     );
 
 class _FakeResourceCandidate extends VideoResourceCandidate {
-  _FakeResourceCandidate()
+  _FakeResourceCandidate({String? magnetUri})
       : super(
           providerId: 'nyaa',
           providerInstanceId: 'test-instance',
@@ -1607,6 +2305,7 @@ class _FakeResourceCandidate extends VideoResourceCandidate {
           title: 'Show S01E01',
           providerPriority: 0,
           infoHash: _torrentHash,
+          magnetUri: magnetUri,
         );
 }
 
@@ -1624,6 +2323,10 @@ class _FakeSubtitleCandidate extends VideoSubtitleCandidate {
 }
 
 class _FakeSubtitleProvider implements VideoSubtitleProvider {
+  /// 测试假实现：不发真请求，探测门控取值不影响被测行为。
+  @override
+  bool get allowsFreeProbeDownload => false;
+
   _FakeSubtitleProvider({required this.bytes});
 
   final Uint8List bytes;
@@ -1664,14 +2367,27 @@ class _FakeSubtitleProvider implements VideoSubtitleProvider {
 }
 
 class _FakeResourceProvider implements VideoResourceProvider {
-  _FakeResourceProvider() : candidate = _FakeResourceCandidate();
+  _FakeResourceProvider({String? candidateMagnetUri})
+      : candidate = _FakeResourceCandidate(magnetUri: candidateMagnetUri);
 
   final _FakeResourceCandidate candidate;
   int searchCalls = 0;
   int resolveCalls = 0;
 
+  /// true = 重搜找不回已选条目（条目下架/发布名搜不中），search 返回空成功。
+  bool returnEmptySearch = false;
+
+  /// true = 索引器彻底不可达（网络故障/限流/下线），search 直接抛。
+  bool failSearch = false;
+
   @override
   String get id => 'nyaa';
+
+  /// 测试替身不限域：真实域归属是各 provider 自己的内容边界，这里断言的是
+  /// 流水线行为，不该再依赖「id 恰好叫 nyaa」这种间接门控。
+  @override
+  Set<VideoDiscoveryCategory> get categories =>
+      const <VideoDiscoveryCategory>{};
 
   @override
   int get priority => 0;
@@ -1681,8 +2397,18 @@ class _FakeResourceProvider implements VideoResourceProvider {
     VideoResourceSearchRequest request,
   ) async {
     searchCalls += 1;
+    if (failSearch) {
+      throw const ExternalProviderFailure(
+        providerId: 'nyaa',
+        operation: 'search',
+        kind: ExternalProviderFailureKind.unavailable,
+        message: 'indexer is unreachable',
+      );
+    }
     return ProviderBatchResult<VideoResourceCandidate>.success(
-      <VideoResourceCandidate>[candidate],
+      returnEmptySearch
+          ? const <VideoResourceCandidate>[]
+          : <VideoResourceCandidate>[candidate],
     );
   }
 
@@ -1749,6 +2475,7 @@ class _FakeTorrentBackend implements TorrentPauseBackend {
   final Completer<void> addEntered = Completer<void>();
   Future<void> Function()? beforeAdd;
   int prepareCategoryCalls = 0;
+  final List<String> preparedCategories = <String>[];
   int addCalls = 0;
   int listTorrentsCalls = 0;
   int listFilesCalls = 0;
@@ -1823,6 +2550,7 @@ class _FakeTorrentBackend implements TorrentPauseBackend {
   @override
   Future<bool> prepareCategory(String category) async {
     prepareCategoryCalls += 1;
+    preparedCategories.add(category);
     return true;
   }
 

@@ -10,7 +10,11 @@ on:
   # Fushi 改名过渡期曾暂停 push 自动发布（2026-08-07 用户指示），
   # 2026-08-13 用户指示恢复。
   push:
-    branches: ['main', 'develop']
+    # develop push 只保留 release.yml（唯一带 app 全量单测门的那条）。本 workflow 不跑
+    # 任何 app 测试、只产发布物，合进 develop 后再出一份桌面/Apple 产物是纯冗余，且和
+    # 另外两条抢 runner（实测在 develop 上排队 30+ 分钟没跑上）。
+    # `release: [published]` 与 `workflow_dispatch` 不受影响 —— 手动发测试版/正式版照常。
+    branches: ['main']
     paths:
       - 'fushi/**'
       - 'packages/**'
@@ -22,7 +26,6 @@ on:
       - 'third_party/**'
       - 'tools/build_magpie_slim.ps1'
       - '.github/workflows/**'
-      - 'melos.yaml'
       - 'pubspec.yaml'
       - 'pubspec.lock'
   release:
@@ -82,6 +85,7 @@ jobs:
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
           RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_BODY: ${{ github.event.release.body }}
         run: |
           set -euo pipefail
           VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//')
@@ -95,6 +99,14 @@ jobs:
           CHANNEL="${INPUT_CHANNEL:-}"
           TAG="${INPUT_TAG_NAME:-}"
           NAME="${INPUT_RELEASE_NAME:-}"
+          # BUG-2088：正式版/测试版**真实更新公告**的来源。此前 BODY 只有一行模板，
+          # 而 NOTES 就是它——实测 v2.1.1 的 latest-stable.json 里 notes 是
+          # 「Manual formal release from bridge/auto-migrate-download @ 4d1c8f4.」，
+          # 而 GitHub 上那份正文有 3613 字：**应用内更新弹窗给用户看的一直是占位符**。
+          # 约定：公告写在 docs/release-notes/<语义版本>.md，正式/测试通道自动取用；
+          # 手动发 GitHub Release 时优先用 Release 正文（那才是当场写的那份）。
+          # debug 通道不取——滚动开发构建挂完整 changelog 会误导。
+          NOTES_FILE="docs/release-notes/${VERSION}.md"
           BODY=""
           PRERELEASE=true
           MAKE_LATEST=false
@@ -124,11 +136,13 @@ jobs:
                   TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
                   NAME="${NAME:-Fushi ${VERSION} beta ${RELEASE_SEQUENCE}}"
                   BODY="Manual desktop beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
                   ;;
                 formal)
                   TAG="${TAG:-v${VERSION}}"
                   NAME="${NAME:-Fushi ${VERSION}}"
                   BODY="Manual desktop formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
                   PRERELEASE=false
                   MAKE_LATEST=true
                   ;;
@@ -141,6 +155,10 @@ jobs:
               ;;
             release)
               CHANNEL=github-release
+              # 手动发 GitHub Release：正文就是当场写的公告，优先用它；留空（先建空
+              # Release 再补正文）时回落到仓库里的公告文件。
+              BODY="${RELEASE_BODY:-}"
+              if [ -z "$BODY" ] && [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
               TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
               # BUG-869: a manually-published NON-prerelease Release IS the formal
               # stable release → emit latest-stable.json (with releaseSequence) for
@@ -183,10 +201,24 @@ jobs:
               fi
               ;;
           esac
-          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
+          # BUG-1836：版本名对**所有版本 tag** 派生，不再只认 debug tag。
+          # 此前 beta 走的是 pubspec 的裸 `$VERSION`，于是 beta 包在任何来源里都
+          # 自称 `2.2.1`——「运行中代码版本」这条证据在 beta 上退化成常量，
+          # BUG-1786 的「判据恒为真」与 BUG-1836 的「手动救援判失败」在 beta 通道
+          # 全都还活着。这里与 release.yml（Android）对齐，那边一直是 tag 派生。
+          # 仍保留正则守门：`release` 事件的 tag 未经格式校验（可能是
+          # `debug-rolling` 这类），无条件 ${TAG#v} 会让 --build-name 拿到非版本串
+          # 直接构建失败。
+          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*(-[0-9A-Za-z]+\.[0-9]+)?(\+[0-9A-Fa-f]{7,40})?$ ]]; then
             BUILD_VERSION_NAME="${TAG#v}"
             BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
           fi
+          # Apple 只接受「至多三段非负整数」的 CFBundleShortVersionString
+          # （`fushi/ios/Runner/Info.plist` = $(FLUTTER_BUILD_NAME)），
+          # `2.2.1-beta.30` 会在 altool --validate-app 阶段直接被拒。iOS 的
+          # --build-name 因此单独剥掉预发布段；FUSHI_BUILD_VERSION 不受影响，
+          # 仍注入完整版本名。
+          APPLE_BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%-*}"
 
           # TODO-1049: the debug channel publishes to ONE fixed rolling GitHub
           # Release tag (`debug-rolling`) instead of a new
@@ -220,6 +252,7 @@ jobs:
             echo "publish_manifest=$PUBLISH_MANIFEST"
             echo "manifest_channel=$MANIFEST_CHANNEL"
             echo "build_version_name=$BUILD_VERSION_NAME"
+            echo "apple_build_version_name=$APPLE_BUILD_VERSION_NAME"
             echo "release_sequence=$RELEASE_SEQUENCE"
             echo "body<<EOF"
             echo "$BODY"
@@ -248,7 +281,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: fushi/build/windows/x64/*.7z
-          key: ${{ runner.os }}-mediakit7z-${{ hashFiles('fushi/pubspec.lock') }}
+          key: ${{ runner.os }}-mediakit7z-${{ hashFiles('pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-mediakit7z-
       - name: Flutter pub get
@@ -319,15 +352,22 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\vcpkg\archives
-          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v2-${{ steps.vcpkg_cache_id.outputs.image }}
+          # v2 -> v3：manifest 钉版换掉了 libtorrent/boost/openssl 的 ABI hash，旧条目
+          # 一个都用不上；不 bump 的话 actions/cache 命中即不回存，会每次冷编
+          # （TODO-2668 记的同一处病灶）。
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}
       - name: Build embedded libtorrent DLL (vcpkg)
         shell: pwsh
         env:
           VCPKG_DOWNLOADS: ${{ runner.temp }}\vcpkg-downloads
         run: |
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libtorrent:x64-windows
-          if ($LASTEXITCODE -ne 0) { throw "vcpkg install libtorrent failed" }
+          # 不再 classic `vcpkg install`：版本钉在 native/fushi_torrent/vcpkg.json
+          # （manifest + overrides = libtorrent 2.0.11），cmake configure 时工具链
+          # 自动按它装。BUG-1772：classic 模式装的是 runner 镜像内固化的 vcpkg 修订
+          # 当下的版本，镜像升到 20260818.277.1 后漂到 2.1，4 个 DLL 直接编不出来。
+          # baseline 可用性由 build_windows_dll.ps1 的 Assert-VcpkgBaseline 前置检查。
           powershell -ExecutionPolicy Bypass -File native/fushi_torrent/build_windows_dll.ps1 -VcpkgRoot "$env:VCPKG_INSTALLATION_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 failed" }
       # BUG-1589 根因（run 31700342531 的 -v 日志确证）：`aot_elf_release` 阶段
       # gen_snapshot.exe 以 -1073741571 = 0xC00000FD（栈溢出）退出——本仓 AOT 规模
       # 超出其默认栈保留。本机 SDK 早已用 `editbin /STACK:128M` 打过同款补丁
@@ -361,6 +401,7 @@ jobs:
           flutter build windows --release -v
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
+          --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
       # 失败时把 CMake 自己的日志捞出来：-v 打的是 flutter 侧，CMake 配置期的
       # 报错只在这两个文件里。artifact 而不是 echo，避免再被日志截断吃掉。
       - name: Upload Windows build logs on failure
@@ -427,6 +468,15 @@ jobs:
             }
             Copy-Item -LiteralPath $source -Destination (Join-Path $targetDir $file) -Force
           }
+      - name: Bundle full 7-Zip for discovery and manga extraction
+        shell: pwsh
+        run: |
+          # 发现页与漫画导入的 7z/rar 离线解压依赖随包 7z.exe + 7z.dll
+          # （LGPL，官方 GitHub 镜像 + SHA-256 钉死，fail-closed）。
+          pwsh -NoProfile -ExecutionPolicy Bypass -File tools/bundle_7za.ps1 `
+            -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Release" `
+            -DownloadCache "$env:RUNNER_TEMP\hibiki-7za-cache"
+          if ($LASTEXITCODE -ne 0) { throw "bundle_7za.ps1 failed ($LASTEXITCODE)" }
       # ffmpeg.exe and its MinGW runtime DLLs are vendored at
       # third_party/ffmpeg-min/windows/
       # (TODO-416). It used to be fetched from another workflow's build artifact,
@@ -605,15 +655,112 @@ jobs:
           $env:FFMPEG_MIN = ($target -replace '\\', '/')
           $env:FIXTURE_FFMPEG = ($fixtureFfmpeg -replace '\\', '/')
           & $bash -c 'bash tool/ffmpeg-min/smoke-test.sh'
+      # BUG-1883：打包前校验「app 起不来就靠它」的那批文件真在 bundle 里。
+      #
+      # 为什么非有不可：magpie 资源、ffmpeg、ffprobe、VC++ CRT 四样都各自有硬门禁，
+      # 唯独**词典引擎** fushidicts_ffi.dll 一个校验都没有——而它是这几样里唯一
+      # 缺了就让 app 卡在初始化的（main.dart 的 initError 屏）。用户侧症状是
+      # `Failed to load dynamic library 'fushidicts_ffi.dll'`（Win32 错误 126），
+      # 完全不可自解释。
+      #
+      # 这道门守的是「打包输入」，不是「构建有没有报错」：CMake 的
+      # `install(TARGETS fushidicts_ffi ...)` 正常时当然会拷，但改名、改
+      # INSTALL_BUNDLE_LIB_DIR、或哪次 install 步骤中途中断，都会让 ISCC 把一个
+      # 少了核心组件的目录整包发出去（[Files] 是 `{#SourceDir}\*` 整目录递归，
+      # 少什么就少什么，它自己不会知道）。本仓已经改过一次名
+      # （hoshidicts_ffi.dll → fushidicts_ffi.dll），正是最容易漏的那类改动。
+      #
+      # 只列「缺了 app 就不可用」的：DLL 名与 fushidicts_ffi_bindings.dart 的
+      # DynamicLibrary.open 参数逐字一致（守卫
+      # fushi/test/build/windows_installer_payload_guard_test.dart 钉住两侧同名）。
+      - name: Verify Windows installer payload has the core runtime
+        shell: pwsh
+        run: |
+          $targetDir = Join-Path $PWD 'fushi\build\windows\x64\runner\Release'
+          if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) {
+            throw "Missing Windows release bundle directory: $targetDir"
+          }
+          $required = @(
+            'fushi.exe',
+            'fushidicts_ffi.dll',
+            'flutter_windows.dll'
+          )
+          $missing = @()
+          foreach ($file in $required) {
+            if (-not (Test-Path -LiteralPath (Join-Path $targetDir $file) -PathType Leaf)) {
+              $missing += $file
+            }
+          }
+          if ($missing.Count -gt 0) {
+            throw ("Windows installer payload is missing core runtime file(s): " +
+              ($missing -join ', ') +
+              ". Shipping this bundle would brick the app at startup " +
+              "(Failed to load dynamic library / error 126). Bundle dir: $targetDir")
+          }
+          Write-Host "Core runtime present in payload: $($required -join ', ')"
+
+      # 编译器够不够新是硬要求，不是「有就行」：安装器的 MD3 外观整套走 6.7 才有的
+      # 指令（WizardStyle 自定义样式 / WizardBackColor / Wizard*ImageFileDynamicDark，
+      # 见 fushi/windows/installer/fushi.iss）。fushi.iss 留了 ISPP 版本闸门，老编译器
+      # 上会**静默**退回旧外观——CI 一旦悄悄降级出包，谁也不会从产物上看出来。
+      #
+      # 判据是**能力探测**，不是版本号：ISCC.exe 的版本资源是 0.0.0.0，命令行 banner
+      # 也只印「Inno Setup 6 Command-Line Compiler」不带小版本（6.7.3 本机实测），
+      # 没有可靠的版本读法。直接拿一个只用 6.7 指令的最小脚本编一次：编得过就够新。
       - name: Compile installer (Inno Setup)
         shell: pwsh
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) { choco install innosetup -y; $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          function Test-Md3Capable([string]$compiler) {
+            if (-not (Test-Path -LiteralPath $compiler)) { return $false }
+            $probeDir = Join-Path $env:RUNNER_TEMP 'iscc-md3-probe'
+            New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+            $probe = Join-Path $probeDir 'probe.iss'
+            @(
+              '[Setup]',
+              'AppName=Probe',
+              'AppVersion=1.0',
+              'DefaultDirName={localappdata}\Probe',
+              "OutputDir=$probeDir",
+              'OutputBaseFilename=probe',
+              'WizardStyle=modern dynamic windows11 hidebevels',
+              'WizardBackColorDynamicDark=#141218',
+              '[Files]'
+            ) | Set-Content -LiteralPath $probe -Encoding UTF8
+            & $compiler $probe | Out-Null
+            return ($LASTEXITCODE -eq 0)
+          }
+          if (-not (Test-Md3Capable $iscc)) {
+            Write-Host "Installed ISCC cannot compile the MD3 directives; installing pinned Inno Setup 6.7.3"
+            # 官方 release 资产，不走 choco：choco 的 innosetup 包版本经常滞后，
+            # 而这里要的是一个确定的版本，不是「最新可用的那个」。
+            $installer = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
+            $url = 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe'
+            # SHA-256 钉死、fail-closed（与本文件里 7za 的做法同规格）。这里下载的
+            # 东西比 7za 严重一个量级 —— 它是**编译出用户要运行的那个 setup.exe 的
+            # 工具**；源包被掉包而不先验，我们的安装器就成了给污染产物背书的东西。
+            $expected = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732'
+            Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+            $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
+            if ($actual -ne $expected) {
+              throw ("Inno Setup 6.7.3 installer SHA-256 mismatch: expected $expected, got $actual. " +
+                "Refusing to run an unverified compiler installer.")
+            }
+            & $installer /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Inno Setup installer failed with exit code $LASTEXITCODE" }
+            if (-not (Test-Md3Capable $iscc)) {
+              throw ("Inno Setup 6.7+ is required for the Material Design 3 installer chrome " +
+                "and the freshly installed compiler at $iscc still rejects those directives. " +
+                "Shipping with an older compiler would silently fall back to the pre-MD3 look " +
+                "(fushi.iss keeps an ISPP version gate so it still compiles).")
+            }
+          }
+          Write-Host "ISCC accepts the MD3 wizard directives"
           & "$iscc" "/DAppVersion=${{ steps.channel.outputs.build_version_name }}" `
             "/DSourceDir=$PWD\fushi\build\windows\x64\runner\Release" `
             "/DOutputDir=$PWD\fushi\build\installer" `
             "fushi\windows\installer\fushi.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
       - name: Check signing availability
         id: signcheck
         shell: bash
@@ -669,7 +816,8 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: desktop-artifacts-windows
-          path: fushi/build/release-artifacts/fushi-*-windows-setup.exe
+          path: |
+            fushi/build/release-artifacts/fushi-*-windows-setup.exe
           if-no-files-found: ignore
           retention-days: 14
 
@@ -694,6 +842,7 @@ jobs:
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
           RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_BODY: ${{ github.event.release.body }}
         run: |
           set -euo pipefail
           VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//')
@@ -707,6 +856,14 @@ jobs:
           CHANNEL="${INPUT_CHANNEL:-}"
           TAG="${INPUT_TAG_NAME:-}"
           NAME="${INPUT_RELEASE_NAME:-}"
+          # BUG-2088：正式版/测试版**真实更新公告**的来源。此前 BODY 只有一行模板，
+          # 而 NOTES 就是它——实测 v2.1.1 的 latest-stable.json 里 notes 是
+          # 「Manual formal release from bridge/auto-migrate-download @ 4d1c8f4.」，
+          # 而 GitHub 上那份正文有 3613 字：**应用内更新弹窗给用户看的一直是占位符**。
+          # 约定：公告写在 docs/release-notes/<语义版本>.md，正式/测试通道自动取用；
+          # 手动发 GitHub Release 时优先用 Release 正文（那才是当场写的那份）。
+          # debug 通道不取——滚动开发构建挂完整 changelog 会误导。
+          NOTES_FILE="docs/release-notes/${VERSION}.md"
           BODY=""
           PRERELEASE=true
           MAKE_LATEST=false
@@ -736,11 +893,13 @@ jobs:
                   TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
                   NAME="${NAME:-Fushi ${VERSION} beta ${RELEASE_SEQUENCE}}"
                   BODY="Manual desktop beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
                   ;;
                 formal)
                   TAG="${TAG:-v${VERSION}}"
                   NAME="${NAME:-Fushi ${VERSION}}"
                   BODY="Manual desktop formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
                   PRERELEASE=false
                   MAKE_LATEST=true
                   ;;
@@ -753,6 +912,10 @@ jobs:
               ;;
             release)
               CHANNEL=github-release
+              # 手动发 GitHub Release：正文就是当场写的公告，优先用它；留空（先建空
+              # Release 再补正文）时回落到仓库里的公告文件。
+              BODY="${RELEASE_BODY:-}"
+              if [ -z "$BODY" ] && [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
               TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
               # BUG-869: a manually-published NON-prerelease Release IS the formal
               # stable release → emit latest-stable.json (with releaseSequence) for
@@ -795,10 +958,24 @@ jobs:
               fi
               ;;
           esac
-          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
+          # BUG-1836：版本名对**所有版本 tag** 派生，不再只认 debug tag。
+          # 此前 beta 走的是 pubspec 的裸 `$VERSION`，于是 beta 包在任何来源里都
+          # 自称 `2.2.1`——「运行中代码版本」这条证据在 beta 上退化成常量，
+          # BUG-1786 的「判据恒为真」与 BUG-1836 的「手动救援判失败」在 beta 通道
+          # 全都还活着。这里与 release.yml（Android）对齐，那边一直是 tag 派生。
+          # 仍保留正则守门：`release` 事件的 tag 未经格式校验（可能是
+          # `debug-rolling` 这类），无条件 ${TAG#v} 会让 --build-name 拿到非版本串
+          # 直接构建失败。
+          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*(-[0-9A-Za-z]+\.[0-9]+)?(\+[0-9A-Fa-f]{7,40})?$ ]]; then
             BUILD_VERSION_NAME="${TAG#v}"
             BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
           fi
+          # Apple 只接受「至多三段非负整数」的 CFBundleShortVersionString
+          # （`fushi/ios/Runner/Info.plist` = $(FLUTTER_BUILD_NAME)），
+          # `2.2.1-beta.30` 会在 altool --validate-app 阶段直接被拒。iOS 的
+          # --build-name 因此单独剥掉预发布段；FUSHI_BUILD_VERSION 不受影响，
+          # 仍注入完整版本名。
+          APPLE_BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%-*}"
 
           # BUG-1481: per product family; the bridge (`app.hibiki.reader`) keeps
           # the historical `debug-rolling`. Must match release.yml.
@@ -823,6 +1000,7 @@ jobs:
             echo "publish_manifest=$PUBLISH_MANIFEST"
             echo "manifest_channel=$MANIFEST_CHANNEL"
             echo "build_version_name=$BUILD_VERSION_NAME"
+            echo "apple_build_version_name=$APPLE_BUILD_VERSION_NAME"
             echo "release_sequence=$RELEASE_SEQUENCE"
             echo "body<<EOF"
             echo "$BODY"
@@ -853,7 +1031,7 @@ jobs:
             ~/.cocoapods
             fushi/ios/Pods
             fushi/macos/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('fushi/ios/Podfile.lock', 'fushi/macos/Podfile.lock', 'fushi/pubspec.lock') }}
+          key: ${{ runner.os }}-pods-${{ hashFiles('fushi/ios/Podfile.lock', 'fushi/macos/Podfile.lock', 'pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-pods-
       - name: Flutter pub get
@@ -870,6 +1048,7 @@ jobs:
           flutter build macos --release
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
+          --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
       - name: Bundle and sign pinned Mihon desktop runtimes
         shell: bash
         run: |
@@ -885,6 +1064,29 @@ jobs:
           done < <(find "$runtime_dir" -type f)
           chmod +x tool/mihon/verify_desktop_runtime.sh
           tool/mihon/verify_desktop_runtime.sh "$runtime_dir"
+          codesign --force --deep --sign - --timestamp=none "$app_dir"
+          codesign --verify --deep --strict --verbose=2 "$app_dir"
+      # BUG-1922：这一步以前根本不存在。tool/aidoku/build_macos_runtime.sh 只被本地
+      # 的 script/build_and_run.sh 调用，两条 macOS CI job 里一步都没有，于是发出去
+      # 的 fushi.app 里 Contents/Resources/aidoku_runtime/ 压根是空的。
+      # DesktopAidokuRuntime._bundledExecutable()（aidoku_runtime.dart）只认这个固定
+      # 路径、没有任何回退，所以用户一碰 Aidoku 仓库（刷新 / 删掉再添加 / 装扩展）
+      # 就吃 AidokuRuntimeException(RUNTIME_MISSING)，而 CI 一路全绿。
+      #
+      # 必须排在下面的 Developer ID 签名之前：那一步按 Mach-O 判定把 bundle 里每个
+      # 可执行体重签一遍，runtime 只要先躺进 bundle 就会被一并签好、一并公证。
+      - name: Bundle and sign pinned Aidoku runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          chmod +x tool/aidoku/build_macos_runtime.sh
+          app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
+          runtime_dir="$app_dir/Contents/Resources/aidoku_runtime"
+          tool/aidoku/build_macos_runtime.sh "$runtime_dir"
+          codesign --force --sign - --timestamp=none "$runtime_dir/fushi-aidoku-runtime"
+          chmod +x tool/aidoku/verify_macos_runtime.sh
+          tool/aidoku/verify_macos_runtime.sh "$runtime_dir" "$app_dir/Contents/MacOS/fushi"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
       # BUG-1421: the macOS bundle never shipped ffmpeg at all. Only the Windows
@@ -932,6 +1134,30 @@ jobs:
           "$target_dir/ffmpeg" -hide_banner -version | head -n 1
           "$target_dir/ffprobe" -hide_banner -version | head -n 1
           ls -lh "$target_dir/ffmpeg" "$target_dir/ffprobe"
+          # BUG-1668：`-version` 跑得通只证明**这台 runner 的架构**能跑它。runner 是
+          # Apple Silicon，所以一份 arm64-only 的 ffmpeg 能让上面两行全绿，却在每台
+          # Intel Mac 上被内核以 Bad CPU type (EBADARCH) 拒掉——app 本体是 universal
+          # 照常启动，于是表现为「app 好好的，就是制卡/封面/内封字幕全失效」，而且
+          # 因为抽取层各自吞掉异常，用户只看到一句泛化失败。2.1.1 就是这么发出去的。
+          #
+          # 真正的不变式不是「能跑」，而是**helper 的架构必须覆盖 app 本体的架构**：
+          # app 支持哪些架构，就得在哪些架构上有可用的 ffmpeg。这里直接按 app 本体
+          # 的 lipo 结果逐个核对，app 将来改成单架构也无需改这段。
+          app_archs="$(lipo -archs "$target_dir/fushi")"
+          echo "app archs: $app_archs"
+          for tool in ffmpeg ffprobe; do
+            tool_archs="$(lipo -archs "$target_dir/$tool")"
+            echo "$tool archs: $tool_archs"
+            for want in $app_archs; do
+              case " $tool_archs " in
+                *" $want "*) ;;
+                *)
+                  echo "::error title=Bundled helper arch mismatch::$tool 缺 $want（app: $app_archs / $tool: $tool_archs）。Intel Mac 上该 helper 无法执行，制卡音频、封面、内封字幕、片段导出会全部静默失效。重跑 ffmpeg-min 工作流出 universal 产物并重新 vendor 到 third_party/ffmpeg-min/macos/。"
+                  exit 1
+                  ;;
+              esac
+            done
+          done
       # ---- Developer ID 签名 + 公证（Gatekeeper）-------------------------
       # **必须排在上面 Mihon / ffmpeg 两步之后**：那两步往 bundle 里塞可执行文件
       # 并用 `codesign --force --deep --sign -` 重签整个 app，签在前面的
@@ -1157,6 +1383,10 @@ jobs:
         with:
           flutter-version: '3.44.0'
           cache: true
+      - name: Install Rust toolchain for physical iOS devices
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
       - name: Resolve desktop release channel
         id: channel
         shell: bash
@@ -1166,6 +1396,7 @@ jobs:
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
           RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_BODY: ${{ github.event.release.body }}
         run: |
           set -euo pipefail
           VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//')
@@ -1179,6 +1410,14 @@ jobs:
           CHANNEL="${INPUT_CHANNEL:-}"
           TAG="${INPUT_TAG_NAME:-}"
           NAME="${INPUT_RELEASE_NAME:-}"
+          # BUG-2088：正式版/测试版**真实更新公告**的来源。此前 BODY 只有一行模板，
+          # 而 NOTES 就是它——实测 v2.1.1 的 latest-stable.json 里 notes 是
+          # 「Manual formal release from bridge/auto-migrate-download @ 4d1c8f4.」，
+          # 而 GitHub 上那份正文有 3613 字：**应用内更新弹窗给用户看的一直是占位符**。
+          # 约定：公告写在 docs/release-notes/<语义版本>.md，正式/测试通道自动取用；
+          # 手动发 GitHub Release 时优先用 Release 正文（那才是当场写的那份）。
+          # debug 通道不取——滚动开发构建挂完整 changelog 会误导。
+          NOTES_FILE="docs/release-notes/${VERSION}.md"
           BODY=""
           PRERELEASE=true
           MAKE_LATEST=false
@@ -1208,11 +1447,13 @@ jobs:
                   TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
                   NAME="${NAME:-Fushi ${VERSION} beta ${RELEASE_SEQUENCE}}"
                   BODY="Manual desktop beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
                   ;;
                 formal)
                   TAG="${TAG:-v${VERSION}}"
                   NAME="${NAME:-Fushi ${VERSION}}"
                   BODY="Manual desktop formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
                   PRERELEASE=false
                   MAKE_LATEST=true
                   ;;
@@ -1225,6 +1466,10 @@ jobs:
               ;;
             release)
               CHANNEL=github-release
+              # 手动发 GitHub Release：正文就是当场写的公告，优先用它；留空（先建空
+              # Release 再补正文）时回落到仓库里的公告文件。
+              BODY="${RELEASE_BODY:-}"
+              if [ -z "$BODY" ] && [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
               TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
               # BUG-869: a manually-published NON-prerelease Release IS the formal
               # stable release → emit latest-stable.json (with releaseSequence) for
@@ -1267,10 +1512,24 @@ jobs:
               fi
               ;;
           esac
-          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
+          # BUG-1836：版本名对**所有版本 tag** 派生，不再只认 debug tag。
+          # 此前 beta 走的是 pubspec 的裸 `$VERSION`，于是 beta 包在任何来源里都
+          # 自称 `2.2.1`——「运行中代码版本」这条证据在 beta 上退化成常量，
+          # BUG-1786 的「判据恒为真」与 BUG-1836 的「手动救援判失败」在 beta 通道
+          # 全都还活着。这里与 release.yml（Android）对齐，那边一直是 tag 派生。
+          # 仍保留正则守门：`release` 事件的 tag 未经格式校验（可能是
+          # `debug-rolling` 这类），无条件 ${TAG#v} 会让 --build-name 拿到非版本串
+          # 直接构建失败。
+          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*(-[0-9A-Za-z]+\.[0-9]+)?(\+[0-9A-Fa-f]{7,40})?$ ]]; then
             BUILD_VERSION_NAME="${TAG#v}"
             BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
           fi
+          # Apple 只接受「至多三段非负整数」的 CFBundleShortVersionString
+          # （`fushi/ios/Runner/Info.plist` = $(FLUTTER_BUILD_NAME)），
+          # `2.2.1-beta.30` 会在 altool --validate-app 阶段直接被拒。iOS 的
+          # --build-name 因此单独剥掉预发布段；FUSHI_BUILD_VERSION 不受影响，
+          # 仍注入完整版本名。
+          APPLE_BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%-*}"
 
           # BUG-1481: per product family; the bridge (`app.hibiki.reader`) keeps
           # the historical `debug-rolling`. Must match release.yml.
@@ -1295,6 +1554,7 @@ jobs:
             echo "publish_manifest=$PUBLISH_MANIFEST"
             echo "manifest_channel=$MANIFEST_CHANNEL"
             echo "build_version_name=$BUILD_VERSION_NAME"
+            echo "apple_build_version_name=$APPLE_BUILD_VERSION_NAME"
             echo "release_sequence=$RELEASE_SEQUENCE"
             echo "body<<EOF"
             echo "$BODY"
@@ -1325,7 +1585,7 @@ jobs:
             ~/.cocoapods
             fushi/ios/Pods
             fushi/macos/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('fushi/ios/Podfile.lock', 'fushi/macos/Podfile.lock', 'fushi/pubspec.lock') }}
+          key: ${{ runner.os }}-pods-${{ hashFiles('fushi/ios/Podfile.lock', 'fushi/macos/Podfile.lock', 'pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-pods-
       - name: Flutter pub get
@@ -1346,8 +1606,9 @@ jobs:
         working-directory: fushi
         run: >-
           flutter build ios --release --no-codesign
-          --build-name "${{ steps.channel.outputs.build_version_name }}"
+          --build-name "${{ steps.channel.outputs.apple_build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
+          --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
       - name: Prepare unsigned iOS IPA release asset
         working-directory: fushi
         shell: bash
@@ -1543,8 +1804,9 @@ jobs:
         run: >-
           flutter build ipa --release
           --export-options-plist "$RUNNER_TEMP/ExportOptions.plist"
-          --build-name "${{ steps.channel.outputs.build_version_name }}"
+          --build-name "${{ steps.channel.outputs.apple_build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
+          --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
       - name: Upload to TestFlight
         if: steps.signing.outputs.testflight == 'true'
         working-directory: fushi
@@ -1604,6 +1866,7 @@ jobs:
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
           RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_BODY: ${{ github.event.release.body }}
         run: |
           set -euo pipefail
           VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//')
@@ -1617,6 +1880,14 @@ jobs:
           CHANNEL="${INPUT_CHANNEL:-}"
           TAG="${INPUT_TAG_NAME:-}"
           NAME="${INPUT_RELEASE_NAME:-}"
+          # BUG-2088：正式版/测试版**真实更新公告**的来源。此前 BODY 只有一行模板，
+          # 而 NOTES 就是它——实测 v2.1.1 的 latest-stable.json 里 notes 是
+          # 「Manual formal release from bridge/auto-migrate-download @ 4d1c8f4.」，
+          # 而 GitHub 上那份正文有 3613 字：**应用内更新弹窗给用户看的一直是占位符**。
+          # 约定：公告写在 docs/release-notes/<语义版本>.md，正式/测试通道自动取用；
+          # 手动发 GitHub Release 时优先用 Release 正文（那才是当场写的那份）。
+          # debug 通道不取——滚动开发构建挂完整 changelog 会误导。
+          NOTES_FILE="docs/release-notes/${VERSION}.md"
           BODY=""
           PRERELEASE=true
           MAKE_LATEST=false
@@ -1646,11 +1917,13 @@ jobs:
                   TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
                   NAME="${NAME:-Fushi ${VERSION} beta ${RELEASE_SEQUENCE}}"
                   BODY="Manual desktop beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
                   ;;
                 formal)
                   TAG="${TAG:-v${VERSION}}"
                   NAME="${NAME:-Fushi ${VERSION}}"
                   BODY="Manual desktop formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
                   PRERELEASE=false
                   MAKE_LATEST=true
                   ;;
@@ -1663,6 +1936,10 @@ jobs:
               ;;
             release)
               CHANNEL=github-release
+              # 手动发 GitHub Release：正文就是当场写的公告，优先用它；留空（先建空
+              # Release 再补正文）时回落到仓库里的公告文件。
+              BODY="${RELEASE_BODY:-}"
+              if [ -z "$BODY" ] && [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
               TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
               # BUG-869: a manually-published NON-prerelease Release IS the formal
               # stable release → emit latest-stable.json (with releaseSequence) for
@@ -1705,10 +1982,24 @@ jobs:
               fi
               ;;
           esac
-          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
+          # BUG-1836：版本名对**所有版本 tag** 派生，不再只认 debug tag。
+          # 此前 beta 走的是 pubspec 的裸 `$VERSION`，于是 beta 包在任何来源里都
+          # 自称 `2.2.1`——「运行中代码版本」这条证据在 beta 上退化成常量，
+          # BUG-1786 的「判据恒为真」与 BUG-1836 的「手动救援判失败」在 beta 通道
+          # 全都还活着。这里与 release.yml（Android）对齐，那边一直是 tag 派生。
+          # 仍保留正则守门：`release` 事件的 tag 未经格式校验（可能是
+          # `debug-rolling` 这类），无条件 ${TAG#v} 会让 --build-name 拿到非版本串
+          # 直接构建失败。
+          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*(-[0-9A-Za-z]+\.[0-9]+)?(\+[0-9A-Fa-f]{7,40})?$ ]]; then
             BUILD_VERSION_NAME="${TAG#v}"
             BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
           fi
+          # Apple 只接受「至多三段非负整数」的 CFBundleShortVersionString
+          # （`fushi/ios/Runner/Info.plist` = $(FLUTTER_BUILD_NAME)），
+          # `2.2.1-beta.30` 会在 altool --validate-app 阶段直接被拒。iOS 的
+          # --build-name 因此单独剥掉预发布段；FUSHI_BUILD_VERSION 不受影响，
+          # 仍注入完整版本名。
+          APPLE_BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%-*}"
 
           # BUG-1481: per product family; the bridge (`app.hibiki.reader`) keeps
           # the historical `debug-rolling`. Must match release.yml.
@@ -1733,6 +2024,7 @@ jobs:
             echo "publish_manifest=$PUBLISH_MANIFEST"
             echo "manifest_channel=$MANIFEST_CHANNEL"
             echo "build_version_name=$BUILD_VERSION_NAME"
+            echo "apple_build_version_name=$APPLE_BUILD_VERSION_NAME"
             echo "release_sequence=$RELEASE_SEQUENCE"
             echo "body<<EOF"
             echo "$BODY"

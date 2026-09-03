@@ -10,8 +10,11 @@ import 'package:fushi_core/fushi_core.dart';
 ///  1. 表重建：唯一键换 (book_uid,date_key)；旧行数据（含 id/累计值）原样保留。
 ///  2. 回填：title 在 video_books 里唯一 → book_uid 填上；同名多视频 → 保持 NULL
 ///     （绝不乱猜归属）。
-///  3. 键控写穿：同名两个视频同一天各写各行（旧唯一键下第二个会撞约束/互串）；
-///     无 uid 的旧式调用只命中遗留 NULL-uid 行。
+///  3. 键控：同名两个视频同一天各占一行（旧唯一键下第二行会撞约束/互串）；
+///     遗留 NULL-uid 行与新键控行同 (title, date) 共存互不污染。
+///
+/// v92 起累加 DAO（addVideoWatchStatistic）已删，legacy 表冻结；第 3 点改用 drift
+/// 直插验证唯一键形状（同 uid 二次累计的用例随 DAO 删除，新事实进 study_segments）。
 void main() {
   Future<FushiDatabase> openV38Db() async {
     final FushiDatabase db = FushiDatabase.forTesting(
@@ -39,7 +42,7 @@ CREATE TABLE video_books (
   stream_spec_json TEXT
 )
 ''');
-          // addVideoWatchStatistic 顺带清统计墓碑（TODO-1204），最小库补上该表。
+          // 统计删除墓碑表（v34 起就在，TODO-1204），最小库补上该表。
           rawDb.execute('''
 CREATE TABLE statistics_tombstones (
   title TEXT NOT NULL,
@@ -82,6 +85,26 @@ CREATE TABLE video_watch_statistics (
     return db;
   }
 
+  /// 直插一行 legacy 观看统计（v92 后 legacy 表本地不再有累加写入面）。
+  Future<void> insertWatch(
+    FushiDatabase db, {
+    required String title,
+    required String bookUid,
+    required String dateKey,
+    required int subtitleChars,
+    required int watchTimeMs,
+  }) =>
+      db.into(db.videoWatchStatistics).insert(
+            VideoWatchStatisticsCompanion.insert(
+              title: title,
+              bookUid: Value(bookUid),
+              dateKey: dateKey,
+              subtitleChars: subtitleChars,
+              watchTimeMs: watchTimeMs,
+              lastModified: 1,
+            ),
+          );
+
   test('v39：表重建保数据 + title 唯一匹配回填 uid、同名/孤儿保持 NULL', () async {
     final FushiDatabase db = await openV38Db();
     final List<VideoWatchStatisticRow> rows =
@@ -101,66 +124,47 @@ CREATE TABLE video_watch_statistics (
         reason: '无对应视频行 → 保持 NULL');
   });
 
-  test('v39 后：同名两个视频同一天各写各行（不再互串/撞约束）', () async {
+  test('v39 后：同名两个视频同一天各占一行（不再互串/撞约束）', () async {
     final FushiDatabase db = await openV38Db();
-    await db.addVideoWatchStatistic(
-      title: 'Dup',
-      dateKey: '2026-07-11',
-      subtitleChars: 10,
-      watchTimeMs: 1000,
-      bookUid: 'video/d1',
-    );
-    await db.addVideoWatchStatistic(
-      title: 'Dup',
-      dateKey: '2026-07-11',
-      subtitleChars: 20,
-      watchTimeMs: 2000,
-      bookUid: 'video/d2',
-    );
-    // 各自二次累计仍命中各自的行。
-    await db.addVideoWatchStatistic(
-      title: 'Dup',
-      dateKey: '2026-07-11',
-      subtitleChars: 1,
-      watchTimeMs: 100,
-      bookUid: 'video/d1',
-    );
+    await insertWatch(db,
+        title: 'Dup',
+        dateKey: '2026-07-11',
+        subtitleChars: 10,
+        watchTimeMs: 1000,
+        bookUid: 'video/d1');
+    // 旧唯一键 (title, date_key) 下这一行会撞约束；新键 (book_uid, date_key) 各占一行。
+    await insertWatch(db,
+        title: 'Dup',
+        dateKey: '2026-07-11',
+        subtitleChars: 20,
+        watchTimeMs: 2000,
+        bookUid: 'video/d2');
     final List<VideoWatchStatisticRow> rows =
         await db.getAllVideoWatchStatistics();
     final List<VideoWatchStatisticRow> day11 =
         rows.where((r) => r.dateKey == '2026-07-11').toList();
     expect(day11, hasLength(2), reason: '同名不同 uid 各占一行');
-    final VideoWatchStatisticRow d1 =
-        day11.firstWhere((r) => r.bookUid == 'video/d1');
-    expect(d1.watchTimeMs, 1100, reason: '同 uid 同日累计');
-    final VideoWatchStatisticRow d2 =
-        day11.firstWhere((r) => r.bookUid == 'video/d2');
-    expect(d2.watchTimeMs, 2000);
+    expect(day11.firstWhere((r) => r.bookUid == 'video/d1').watchTimeMs, 1000);
+    expect(day11.firstWhere((r) => r.bookUid == 'video/d2').watchTimeMs, 2000);
   });
 
-  test('v39 后：无 uid 的旧式调用只命中遗留 NULL-uid 行，不污染新键控行', () async {
+  test('v39 后：遗留 NULL-uid 行与同 (title, date) 的新键控行共存、互不污染', () async {
     final FushiDatabase db = await openV38Db();
-    // 遗留 Dup 行（NULL uid，2026-07-10 watch=120000）继续被旧式调用累计。
-    await db.addVideoWatchStatistic(
-      title: 'Dup',
-      dateKey: '2026-07-10',
-      subtitleChars: 1,
-      watchTimeMs: 1000,
-    );
-    // 新式调用同 title 同日（d1）另起一行。
-    await db.addVideoWatchStatistic(
-      title: 'Dup',
-      dateKey: '2026-07-10',
-      subtitleChars: 2,
-      watchTimeMs: 2000,
-      bookUid: 'video/d1',
-    );
+    // 遗留 Dup 行（NULL uid，2026-07-10 watch=120000）原地不动；新式键控行同 title
+    // 同日（d1）另起一行——SQLite UNIQUE 视 NULL 互异，不撞约束。
+    await insertWatch(db,
+        title: 'Dup',
+        dateKey: '2026-07-10',
+        subtitleChars: 2,
+        watchTimeMs: 2000,
+        bookUid: 'video/d1');
     final List<VideoWatchStatisticRow> rows =
         (await db.getAllVideoWatchStatistics())
             .where((r) => r.title == 'Dup' && r.dateKey == '2026-07-10')
             .toList();
     expect(rows, hasLength(2));
-    expect(rows.firstWhere((r) => r.bookUid == null).watchTimeMs, 121000);
+    expect(rows.firstWhere((r) => r.bookUid == null).watchTimeMs, 120000,
+        reason: '遗留行不被新键控行污染');
     expect(rows.firstWhere((r) => r.bookUid == 'video/d1').watchTimeMs, 2000);
   });
 

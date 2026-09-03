@@ -69,15 +69,14 @@ void main() {
       expect(f.calls, hasLength(3), reason: '尝试次数受 maxAttempts 硬上限约束');
     });
 
-    // TODO-1237 ②：守卫对话框「导入文件夹」路径保留按物理路径去重（isDuplicateVideoPath
-    // 命中即跳过），防止未来改动悄悄回退成 uniqueVideoBookUid 加后缀重复导入。
-    test('source guard: 文件夹导入 _importGroup 用 isDuplicateVideoPath 去重', () {
+    // 对话框的「导入文件夹（自动分组）」入口已随旧「对话框内建合集」功能删除
+    // （2026-08-19 用户指令）；文件夹路径的物理去重由来源扫描侧守卫
+    // （source_library_scanner_test / video_folder_group_coordinator_test）。
+    // 这里只守卫对话框仍存的拖入 m3u8 路径：封面必须走 extractPlaylistCover。
+    test('source guard: 拖入 m3u8 的封面走 extractPlaylistCover', () {
       final String src = File(
         'lib/src/media/video/video_import_dialog.dart',
       ).readAsStringSync();
-      expect(src.contains('isDuplicateVideoPath(group.episodes.first.path)'),
-          isTrue,
-          reason: '_importGroup 必须先按物理路径判重再决定导入');
       expect(src.contains('extractPlaylistCover('), isTrue,
           reason: '播放列表封面必须走遍历各集的 extractPlaylistCover');
     });

@@ -65,6 +65,22 @@ void main() {
     return source.substring(start, end);
   }
 
+  /// 预取链上所有**存在的**方法体并集。
+  ///
+  /// 本组守卫的主体是「库页排序/分组映射的预取路径」，不是某一个方法名。
+  /// 视频页后来把 `_loadLibraryMaps` 拆成「代次薄壳 + `_loadLibraryMapsInner`
+  /// 真身」，N+1 收敛随之搬进 Inner——只盯外层名字会把一次纯重构报成回归。
+  /// 取并集后，拆分/合并都不会假红；而整条链被改名则 [parts] 为空、响亮地红出来。
+  String chainBody(String source, List<String> signatures) {
+    final List<String> parts = <String>[
+      for (final String signature in signatures)
+        if (source.contains(signature)) methodBody(source, signature),
+    ];
+    expect(parts, isNotEmpty,
+        reason: '预取链上的方法全部消失（改名？）：$signatures');
+    return parts.join('\n');
+  }
+
   group('BUG-959 · 降采样 helper', () {
     test('cover_image.dart 定义解码上限常量与 resizedFileImage', () {
       expect(coverImageSrc.contains('const int kLocalCoverDecodePixelWidth'),
@@ -86,10 +102,12 @@ void main() {
           isTrue);
     });
 
-    test('_loadLibraryMaps 用 getAllCollectionItems，不再逐合集 getCollectionItems',
+    test('_loadLibraryMaps 预取链用 getAllCollectionItems，不再逐合集 getCollectionItems',
         () {
-      final String body =
-          methodBody(videoPageSrc, 'Future<void> _loadLibraryMaps() async {');
+      final String body = chainBody(videoPageSrc, <String>[
+        'Future<void> _loadLibraryMaps() async {',
+        'Future<void> _loadLibraryMapsInner(int requestGeneration) async {',
+      ]);
       expect(body.contains('getAllCollectionItems()'), isTrue,
           reason: '视频页合集分组必须一次查全部成员，否则合集行渲染被 N+1 gate（BUG-959）。');
       expect(body.contains('getCollectionItems('), isFalse,
@@ -97,8 +115,10 @@ void main() {
     });
 
     test('_loadShelfMaps 用 getAllCollectionItems，不再逐合集 getCollectionItems', () {
-      final String body =
-          methodBody(historyPageSrc, 'Future<void> _loadShelfMaps() async {');
+      final String body = chainBody(historyPageSrc, <String>[
+        'Future<void> _loadShelfMaps() async {',
+        'Future<void> _loadShelfMapsInner(int requestGeneration) async {',
+      ]);
       expect(body.contains('getAllCollectionItems()'), isTrue,
           reason: '书架页合集分组必须一次查全部成员（BUG-959）。');
       expect(body.contains('getCollectionItems('), isFalse,

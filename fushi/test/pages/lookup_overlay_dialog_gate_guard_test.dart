@@ -181,6 +181,47 @@ Set<String> _gateReachable(Map<String, String> bodies) {
   return reachable;
 }
 
+/// 第二个不动点：**恒不可见**的层构建方法。
+///
+/// 为什么需要它：BUG-2039 ③ 的停驻 realm 层必须**一直留在树里**——把它从 children
+/// 摘掉（对话框门就是干这个的）等于键背后的 WebView element 当帧销毁，下一次嵌套查词
+/// 退回冷建，正是这层机制存在的理由。给它硬加一个对话框门是**反向**破坏。
+///
+/// 但它也不需要门：`parkedPopupLayer(visible: false, …)` 恒不可见、不参与命中测试、
+/// 停在屏外 `screen.width + 8`，对话框打开时它本来就没在挡任何东西——「让位」这条
+/// 不变式对它天然成立。
+///
+/// 判据仍然是**求出来的**而不是白名单：方法体里出现 `visible: false` 才算种子，
+/// 出现任何 `visible: true` 一律出局；调用链沿 [_kDirectCall] 传播，同样要求沿途
+/// 没有 `visible: true`。把 `parkedRealmPopupLayer` 的 `visible: false` 改成 `true`，
+/// 或者让它多铺一个可见层，这条路径当场断掉、宿主重新变红。
+Set<String> _alwaysHiddenLayers(Map<String, String> bodies) {
+  final Map<String, String> masked = <String, String>{
+    for (final MapEntry<String, String> e in bodies.entries)
+      e.key: maskComments(e.value),
+  };
+  bool clean(String body) => !body.contains('visible: true');
+  final Set<String> hidden = <String>{
+    for (final MapEntry<String, String> e in masked.entries)
+      if (e.value.contains('visible: false') && clean(e.value)) e.key,
+  };
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (final MapEntry<String, String> e in masked.entries) {
+      if (hidden.contains(e.key) || !clean(e.value)) continue;
+      for (final RegExpMatch m in _kDirectCall.allMatches(e.value)) {
+        final String callee = m.group(1)!;
+        if (callee == e.key || !hidden.contains(callee)) continue;
+        hidden.add(e.key);
+        changed = true;
+        break;
+      }
+    }
+  }
+  return hidden;
+}
+
 /// 从 [index] 往回找**未配对的左方括号**（即包住它的那个列表字面量的开头）。
 int _enclosingListOpen(String structural, int index, String label) {
   int depth = 0;
@@ -270,7 +311,11 @@ class _ChildVerdict {
 }
 
 /// 剥掉 `if (...)` / `for (...)` 头部，收集 `if` 条件，返回剩下的 widget 表达式。
-_ChildVerdict _judgeChild(String element, Set<String> reachable) {
+_ChildVerdict _judgeChild(
+  String element,
+  Set<String> reachable,
+  Set<String> alwaysHidden,
+) {
   String rest = maskComments(element).trim();
   final List<String> conditions = <String>[];
   while (true) {
@@ -302,16 +347,30 @@ _ChildVerdict _judgeChild(String element, Set<String> reachable) {
       return const _ChildVerdict(ok: true, why: '显示条件引用了对话框隐藏计数');
     }
   }
+  // 展开运算符是普通子项的写法之一，不是"非标识符表达式"：不剥掉它，任何
+  // `...builderReturningLayers()` 都会被判成不可解析而恒红（实测踩到过）。
+  if (rest.startsWith('...?')) {
+    rest = rest.substring(4).trim();
+  } else if (rest.startsWith('...')) {
+    rest = rest.substring(3).trim();
+  }
   final RegExpMatch? callee =
       RegExp(r'^(_?[A-Za-z][A-Za-z0-9_]*)').firstMatch(rest);
   final String name = callee?.group(1) ?? '<非标识符表达式>';
   if (reachable.contains(name)) {
     return _ChildVerdict(ok: true, why: '`$name` 顺调用链接到对话框隐藏计数');
   }
+  if (alwaysHidden.contains(name)) {
+    return _ChildVerdict(
+      ok: true,
+      why: '`$name` 铺的是恒不可见（`visible: false`）的屏外层：它不挡任何东西，'
+          '而且**不能**被对话框门摘掉——摘掉 = 停驻的 WebView 当帧销毁',
+    );
+  }
   return _ChildVerdict(
     ok: false,
     why: '`$name` 既没在显示条件里引用对话框隐藏计数，'
-        '其调用链也走不到 ${_kGateTokens.join(" / ")}',
+        '其调用链也走不到 ${_kGateTokens.join(" / ")}，也不是恒不可见的屏外层',
   );
 }
 
@@ -319,6 +378,11 @@ void main() {
   final String mixinSrc = _read(_kMixinPath);
   final Map<String, String> mixinBodies =
       _widgetMethodBodies(mixinSrc, maskCommentsAndStrings(mixinSrc));
+  // 共享层原语（`parkedRealmPopupLayer(s)` / `parkedPopupLayer` …）是顶层函数，
+  // 住在 layer 文件里；不把它们并进方法表，恒不可见的判定就只能靠猜名字。
+  final String layerSrc = _read(_kPopupLayerPath);
+  final Map<String, String> layerBodies =
+      _widgetMethodBodies(layerSrc, maskCommentsAndStrings(layerSrc));
 
   group('查词浮层子项 × 对话框隐藏计数（TODO-2584 收口守卫）', () {
     final List<String> hosts = _discoverHosts();
@@ -338,18 +402,21 @@ void main() {
         final String src = _read(host);
         final String structural = maskCommentsAndStrings(src);
         final Map<String, String> bodies = <String, String>{
+          ...layerBodies,
           ...mixinBodies,
           // 宿主自身的方法优先（薄转发器 `_buildNestedPopupLayer` 等同名覆盖）。
           ..._widgetMethodBodies(src, structural),
         };
         final Set<String> reachable = _gateReachable(bodies);
+        final Set<String> alwaysHidden = _alwaysHiddenLayers(bodies);
         for (final int open in _overlayListOpens(structural, host)) {
           final List<String> children =
               _topLevelElements(src, structural, open, host);
           expect(children, isNotEmpty, reason: '$host：浮层 children 列表被切成空');
           totalChildren += children.length;
           for (final String child in children) {
-            final _ChildVerdict verdict = _judgeChild(child, reachable);
+            final _ChildVerdict verdict =
+                _judgeChild(child, reachable, alwaysHidden);
             if (verdict.ok) continue;
             final String head = maskComments(child)
                 .split('\n')
@@ -382,6 +449,23 @@ void main() {
       expect(reachable, contains('buildPopupLoadingPlaceholder'),
           reason: '搜索期占位卡构建方法必须自带 `_popupHidingDialogDepth` 判据'
               '（BUG-1364）');
+    });
+
+    test('恒不可见不动点真的解析出了停驻层（否则那条豁免是假的）', () {
+      final Set<String> hidden = _alwaysHiddenLayers(<String, String>{
+        ...layerBodies,
+        ...mixinBodies,
+      });
+      expect(hidden, contains('parkedRealmPopupLayer'),
+          reason: '停驻层原语必须自带 `visible: false`——它是整条豁免的根据');
+      expect(hidden, contains('parkedRealmPopupLayers'),
+          reason: '共享复数原语必须顺调用链继承「恒不可见」');
+      expect(hidden, contains('buildParkedRealmLayers'),
+          reason: 'mixin 侧薄封装同上');
+      // 自校验：可见的弹窗层不许混进来，否则这条豁免就成了万能通行证。
+      expect(hidden, isNot(contains('buildNestedPopupLayer')),
+          reason: '真正会挡住对话框的可见层绝不能落进恒不可见集');
+      expect(hidden, isNot(contains('buildPopupLoadingPlaceholder')));
     });
 
     test('barrier 判据函数真的用了传进去的 hiddenByDialog', () {

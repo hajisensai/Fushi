@@ -1,3 +1,5 @@
+import 'package:meta/meta.dart';
+
 enum EpisodeStartIntent {
   initialOpen,
   manualPrevious,
@@ -65,4 +67,73 @@ bool shouldAutoPlayNextOnCompletion({
   if (alreadyAdvancing) return false;
   if (!autoPlayNextEnabled) return false;
   return hasNextEpisode;
+}
+
+/// 本地换集时对路由栈的处置方式（BUG-839 / BUG-2043，纯决策）。
+enum EpisodeSwitchMode {
+  /// 窗口模式：`pushReplacement` 顶替本页，栈平、行为与历史一致。
+  replace,
+
+  /// 全屏模式：`push` 新页压在全屏路由之上，再 `removeRoute` 静默摘掉
+  /// 旧全屏路由与本页（不经 pop → 不触发原生退全屏）。
+  takeover,
+}
+
+/// [resolveEpisodeSwitchPlan] 的结果：栈处置方式 + 是否把原生全屏交给新页。
+@immutable
+class EpisodeSwitchPlan {
+  const EpisodeSwitchPlan({
+    required this.mode,
+    required this.handOverNativeFullscreen,
+  });
+
+  /// 路由栈处置方式。
+  final EpisodeSwitchMode mode;
+
+  /// 新页 `initialFullscreen`：换集前处于全屏就必须为真，新页才会认领接管来的
+  /// 原生全屏并在就绪后压自己的全屏路由。
+  final bool handOverNativeFullscreen;
+
+  @override
+  bool operator ==(Object other) =>
+      other is EpisodeSwitchPlan &&
+      other.mode == mode &&
+      other.handOverNativeFullscreen == handOverNativeFullscreen;
+
+  @override
+  int get hashCode => Object.hash(mode, handOverNativeFullscreen);
+
+  @override
+  String toString() =>
+      'EpisodeSwitchPlan(mode: $mode, handOverNativeFullscreen: '
+      '$handOverNativeFullscreen)';
+}
+
+/// 本地换集的路由决策（BUG-2043，纯函数）。
+///
+/// 「换集前是否全屏」有两个来源，缺一不可：
+///   * [fullscreenRouteActive]：本页自己压的全屏路由还在栈上；
+///   * [ownsHandedOverNativeFullscreen]：本页是上一次换集接管来的原生全屏的持有者，
+///     但自己的全屏路由还没压上（就绪窗口内连按下一集就落在这个态）。只看路由会把
+///     它误判成窗口模式 → 走 `pushReplacement` → 原生全屏没人收口，窗口停在无全屏
+///     路由的原生全屏态。
+///
+/// [hasCurrentRoute] 为假（拿不到本页 `ModalRoute`）时无法 `removeRoute` 摘掉本页，
+/// 接管路径会漏栈，只能退回 [EpisodeSwitchMode.replace]；此时仍把全屏态传给新页。
+///
+/// 决策抽成纯函数是为了让真值表可在 headless 环境单测——行为级复现需要 media_kit +
+/// 真 navigator 栈 + 原生全屏，跑不了；纯源码守卫又证明不了语句可达。
+EpisodeSwitchPlan resolveEpisodeSwitchPlan({
+  required bool fullscreenRouteActive,
+  required bool ownsHandedOverNativeFullscreen,
+  required bool hasCurrentRoute,
+}) {
+  final bool wasFullscreen =
+      fullscreenRouteActive || ownsHandedOverNativeFullscreen;
+  return EpisodeSwitchPlan(
+    mode: wasFullscreen && hasCurrentRoute
+        ? EpisodeSwitchMode.takeover
+        : EpisodeSwitchMode.replace,
+    handOverNativeFullscreen: wasFullscreen,
+  );
 }

@@ -190,31 +190,19 @@ class AudiobookSessionLauncher {
     return null;
   }
 
+  /// 播放装载的文件解析在 fushi_audio 的 [resolveAudiobookPlaybackFiles]。
+  ///
+  /// 注意它**不是**删除判据：`audioPaths` 为空时这里会枚举 `audioRoot` 整个目录，
+  /// 多认一个文件顶多多一条轨；删除走 `audiobook_local_files.dart`，只认显式登记
+  /// 的路径。
   Future<List<File>> _resolveAudioFiles({
     required List<String>? audioPaths,
     required String? audioRoot,
-  }) async {
-    if (audioPaths != null && audioPaths.isNotEmpty) {
-      final List<File> files = <File>[];
-      for (final String path in audioPaths) {
-        final File f = File(path);
-        if (await f.exists()) files.add(f);
-      }
-      return files;
-    }
-    if (audioRoot != null) {
-      final Directory dir = Directory(audioRoot);
-      if (!await dir.exists()) return <File>[];
-      final List<FileSystemEntity> entries = await dir.list().toList();
-      final List<File> files = entries
-          .whereType<File>()
-          .where((File f) => AudiobookStorage.isAudioFile(f.path))
-          .toList()
-        ..sort((File a, File b) => compareAudioFilePath(a.path, b.path));
-      return files;
-    }
-    return <File>[];
-  }
+  }) =>
+      resolveAudiobookPlaybackFiles(
+        audioPaths: audioPaths,
+        audioRoot: audioRoot,
+      );
 
   Audiobook _audiobookFromRow(AudiobookRow row) {
     final Audiobook ab = Audiobook()

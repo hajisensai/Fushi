@@ -61,6 +61,10 @@ class FloatingLyricWindow {
   using PassThroughCallback = std::function<void(bool enabled)>;
   using BoundsCallback =
       std::function<void(int left, int top, int width, int height)>;
+  // HWND 生命周期终点（WM_NCDESTROY）。Dart 侧的可见性镜像靠这条事件**被动**
+  // 复位；没有它，消费端只能每行台词往 native 打一次 IsShowing() 轮询问「窗口
+  // 还在吗」——那是拿往返去模拟一个 native 本来就知道的事实。
+  using DestroyedCallback = std::function<void()>;
 
   // 一段振假名（ruby）：|ruby| 画在 text 的 [start, start + length) 上方。
   //
@@ -75,15 +79,33 @@ class FloatingLyricWindow {
 
   struct Style {
     double font_size = 20.0;
+    std::wstring font_family;
+    std::wstring font_path;
+    double letter_spacing = 0.0;
+    double line_height = 1.0;
+    bool bold = true;
+    int text_alignment = 0;  // 0 = center, 1 = leading.
+    // BUG-1890: 0 = vertically centred (legacy behaviour), 1 = top (NEAR).
+    // Orthogonal to text_alignment: horizontal and vertical are two axes,
+    // never folded into one tri-state.
+    int vertical_alignment = 0;
     uint32_t text_color = 0xFFFFFFFF;
     uint32_t bg_color = 0xCC000000;
+    uint32_t outline_color = 0xE0000000;
+    double outline_width = 1.6;
+    double text_padding = 20.0;
     uint32_t button_text_color = 0xFFFFFFFF;
     uint32_t button_bg_color = 0x33000000;
     uint32_t highlight_color = 0x80FFD54F;
     uint32_t active_color = 0xFFFFD54F;
-    // TODO-708 P2: 圆角半径 / 窗宽（逻辑 dp）。0 = 平台原生默认（14dp 圆角 / 720dip 起始
-    // 宽 + 可拖拽），>0 时按该 dp 覆盖，保证默认零观感变化。
-    double corner_radius = 0.0;
+    // TODO-708 P2: 窗宽/窗高仍用 0 = 平台原生默认（720dip 起始宽 + 可拖拽）：0 宽窗
+    // 不是合法用户取值，拿它当哨兵没有歧义。
+    //
+    // 圆角**不能**这么做：0 是合法取值（直角），偏好里 min 就是 0。原实现让绘制点
+    // 读到 0 就回退 14dp，于是用户把圆角拖到 0 什么都不会发生，而且看不出为什么。
+    // 这里直接把历史默认写成默认值，绘制点不再有哨兵分支——0 就是 0。
+    // 数值与 floating_lyric_window.cpp 的 kCornerRadiusDip 由 static_assert 钉死同源。
+    double corner_radius = 14.0;
     double window_width = 0.0;
     double window_height = 0.0;
   };
@@ -121,6 +143,9 @@ class FloatingLyricWindow {
   void SetBoundsCallback(BoundsCallback callback) {
     on_bounds_ = std::move(callback);
   }
+  void SetDestroyedCallback(DestroyedCallback callback) {
+    on_destroyed_ = std::move(callback);
+  }
 
   // Creates (if needed) and shows the strip. Returns false if the OS window
   // could not be created. |owner| is the main window, used only for initial
@@ -149,32 +174,49 @@ class FloatingLyricWindow {
   // window, so this is the only place the user can see either state.
   void SetVoiceState(bool replaying, bool recapturing);
   void SetClickLookupEnabled(bool enabled);
+  // 查词触发方式（Dart 偏好 `gal_hook_lookup_trigger`）：
+  // 0 = 左键单击（默认，历史行为）/ 1 = 鼠标中键 / 2 = 鼠标侧键（XButton1/2）。
+  //
+  // 用户诉求：「至少开启穿透的时候我不是很想单击点到单词，还是习惯用侧键查」。
+  // 单击查词的**开关**是 [SetClickLookupEnabled]（关掉就完全不查）；本项决定的是
+  // 「用哪个键查」，两者正交：可以既关单击、又用侧键查。
+  void SetLookupTrigger(int trigger);
+  // 工具条自动隐藏（LunaHook 式）：平时整条工具条 `SW_HIDE`，鼠标进入台词框或
+  // 工具条所在区域才现身。**真隐藏而不是降透明度**——这个窗口盖在游戏上，每一个
+  // 还在的像素都是玩家点不到的像素（BUG-951 的原话）。
+  void SetToolbarAutoHide(bool enabled);
+  // 穿透态下正文是否仍然拦截落在**文字行盒**上的鼠标（默认 true = 拦截，历史行为，
+  // 点字查词才成立）。关掉后连字也不接，整窗对游戏彻底透明——用户原话「穿透不彻底
+  // 等于彻底不穿透」「我想点击文字底下的东西点不到了」。关掉后自然也没有点字查词，
+  // 查词只能靠 [SetLookupTrigger] 里那些不经本窗口的方式或工具条。
+  void SetPassThroughBlocksMouse(bool enabled);
   // 「悬停即查词」（Dart 偏好 `hover_auto_lookup`，与阅读器 / 视频字幕同一开关）。
   // 关闭时（默认）hook 浮窗只在**按住 Shift** 悬停时查词；打开时纯悬停即查。
   // Shift-悬停本身不受此开关控制，它是查词的通用手势。
   void SetHoverAutoLookup(bool enabled);
-  // Text-only mode (the transparent clipboard text window): the strip draws
-  // ONLY the draggable, tappable text — no playback / lock / close control
-  // buttons and no resize grip. Drag + single-tap word lookup still work exactly
-  // as in the audiobook lyric strip. Set once right after construction (before
-  // Show) by the clipboard_text channel; the audiobook lyric instance leaves it
-  // false so its rendering + hit-testing stay byte-for-byte unchanged.
-  void SetTextOnly(bool text_only) { text_only_ = text_only; }
-  // Rich text-only mode used by the galgame Hook window. It keeps the text-only
-  // rendering surface but enables wrapping, resizing, the shared-slot
-  // toolbar (hook_toolbar::kSlotActions), line-context lookup and body
-  // pass-through.
+  // 这个浮窗画哪张工具条槽表。hook 台词浮窗用 kGalHook（试听 / 重捕 / 工作台），
+  // 有声书悬浮字幕用 kAudiobook（上一句 / 播放暂停 / 下一句）。两者共用同一套富
+  // 文本渲染面（换行、滚动、resize、穿透、点字锚定查词），只有按钮语义不同 ——
+  // 这正是槽表按用途分表、而不是再复制一份窗口类的原因。
+  void SetToolbarProfile(hook_toolbar::Profile profile) {
+    toolbar_profile_ = profile;
+  }
+  hook_toolbar::Profile ToolbarProfile() const { return toolbar_profile_; }
+
+  // Rich text-only mode used by the galgame Hook window: the strip draws the
+  // draggable, tappable text (no playback / close controls) and enables
+  // wrapping, resizing, the shared-slot toolbar (see SetToolbarProfile),
+  // line-context lookup and body pass-through. Set once right after
+  // construction (before Show); the audiobook lyric instance leaves it false so
+  // its rendering + hit-testing stay byte-for-byte unchanged.
   void SetHookTextMode(bool enabled) {
     hook_text_mode_ = enabled;
-    if (enabled) text_only_ = true;
+    text_only_ = enabled;
+    // 兜底字族按模式分派（DefaultFontFamily：hook 用全宽假名的 Yu Gothic，其余
+    // 表面保持界面字体 Yu Gothic UI）。模式一变，上一次解析出来的
+    // resolved_font_family_ 就可能属于另一个模式，必须重解析。
+    font_collection_dirty_ = true;
   }
-  // Window title = the taskbar / Alt+Tab label. The text-only clipboard window
-  // shows in the taskbar (WS_EX_APPWINDOW) so the fully transparent overlay is
-  // always a selectable window the user can find / raise; this sets its label
-  // (localised, pushed from Dart). No-op visual for the lyric strip, which keeps
-  // WS_EX_TOOLWINDOW and never appears in the taskbar. Call before Show to seed
-  // the CreateWindowExW title; later calls retitle the live window.
-  void SetWindowTitle(const std::wstring& title);
   // Position lock: when locked the strip can no longer be dragged, but word
   // lookup taps and the playback-control buttons keep working (mirrors the
   // Android FloatingLyricService position lock — drag-only restriction).
@@ -200,12 +242,21 @@ class FloatingLyricWindow {
  private:
   static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam,
                                   LPARAM lparam) noexcept;
-  LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) noexcept;
+  // |hwnd| 是**这条消息自己的**窗口句柄，由 WndProc 透传。不要在实现里改回
+  // 读成员 hwnd_：旧窗口的 WM_NCDESTROY 完全可能晚于新窗口创建，那时成员已
+  // 经指向新窗口，拿它去 SetWindowLongPtr(GWLP_USERDATA, 0) 就是把活着的新
+  // 窗口的 back-pointer 抹掉、再把 hwnd_ 清成 null（BUG-1981 家族）。
+  LRESULT HandleMessage(HWND hwnd, UINT message, WPARAM wparam,
+                        LPARAM lparam) noexcept;
 
   void EnsureWindowClass();
+  bool OwnsLiveWindow() const;
+  void ResetWindowInteractionState();
+  void ForgetDeadWindow();
   bool EnsureDeviceResources();
   void DiscardDeviceResources();
   bool EnsureTextResources();
+  void RebuildFontCollection();
   void Render();
   void RequestRender();
 
@@ -228,6 +279,22 @@ class FloatingLyricWindow {
   // Returns the control action at the client point, or empty when none.
   std::string ControlActionAt(float x, float y);
 
+  // hook 模式工具条几何的唯一真相（物理 px）。绘制（Render）、命中
+  // （ControlActionAt）、穿透工具条窗定位（ComputePassThroughToolbarLayout）
+  // 与悬停提示四处共用，谁也不可能自己算偏。
+  //  * RowWidth：一行 kHookTextControlSlotCount 颗按钮的总宽；
+  //  * RowLeft ：该行在宽 |width| 的容器里居中后的左起点；
+  //  * SlotAt  ：client 点落在第几槽（-1 = 不在任何按钮上）。SlotAt 只判几何，
+  //    「按钮此刻是否可见/可点」（hovered_）留给调用方，与改造前逐字节同门。
+  float HookToolbarRowWidth() const;
+  float HookToolbarRowLeft(float width) const;
+  int HookToolbarSlotAt(float x, float y) const;
+
+  // 当前表面的兜底字族：hook 台词浮窗用 Yu Gothic（全宽假名），有声书歌词条 /
+  // 剪贴板文字窗仍用界面字体 Yu Gothic UI。用户显式设了 style_.font_family 时
+  // 兜底不参与（见 RebuildFontCollection）。
+  const wchar_t* DefaultFontFamily() const;
+
   // 把 client 点上的那个字送去查词（回调带屏幕逻辑 px 的词矩形）。点击查词与
   // Shift-悬停查词共用这一个出口，两条路径的取词、坐标换算、载荷永远同形。
   // 返回是否真的派发了一次查词。
@@ -244,6 +311,22 @@ class FloatingLyricWindow {
   // 就不出词）。离开窗口即停表，不在后台空转。
   void StartHoverLookupPolling();
   void StopHoverLookupPolling();
+
+  // ── 工具条揭示（自动隐藏）─────────────────────────────────────────────
+  // 悬停轮询只在鼠标**已经在窗口里**时才挂表，对「鼠标正在靠近」无能为力；工具条
+  // 隐藏后更是连 WM_MOUSEMOVE 都收不到。所以揭示判定走一张独立的常驻表，只在 hook
+  // 台词浮窗可见期间挂着。
+  void StartToolbarRevealPolling();
+  void StopToolbarRevealPolling();
+  void UpdateToolbarReveal();
+  bool CursorInToolbarRevealZone() const;
+  // 自动隐藏此刻是否生效。穿透态恒 false——工具条是那时屏幕上唯一还能点的东西
+  // （BUG-951 不变式），不能让轮询表把它藏起来。
+  bool ToolbarAutoHideActive() const;
+  // 把工具条窗调到当前该有的显隐状态。返回 false = 期望显示却没能上屏（穿透态下
+  // 这就是「没有回退入口」，调用方必须据此拒绝开启穿透）。
+  bool ApplyToolbarVisibility();
+  void BindToolbarCallbacks();
 
   // Runs a toolbar action. Single dispatcher shared by the in-body toolbar
   // (WM_LBUTTONDOWN) and the standalone pass-through toolbar window, so a
@@ -315,6 +398,29 @@ class FloatingLyricWindow {
   // 非 hook 模式、穿透模式、没有溢出时恒为 no-op，歌词条与剪贴板文本
   // 窗逐像素不变。
   bool ScrollBy(float delta_px);
+  // 把滚动偏移写成 |offset_px|（夹到 [0, scroll_max_px_]）；变了就重绘并返回
+  // true。ScrollBy（滚轮）与拖 thumb（BUG-1860）共用的唯一写入口。
+  bool SetScrollOffset(float offset_px);
+
+  // BUG-1860 — 滚动条几何（客户区物理 px），绘制 / 命中 / 拖 thumb 的唯一真相。
+  // visible=false 时其余字段无意义。
+  struct ScrollBarGeometry {
+    bool visible = false;
+    float bar_x = 0.0f;  // 画出来的细条左沿
+    float bar_w = 0.0f;
+    float track_top = 0.0f;
+    float track_bottom = 0.0f;
+    float thumb_y = 0.0f;
+    float thumb_h = 0.0f;
+    float hit_left = 0.0f;  // 命中带（比细条宽，见 kScrollBarHitWidthDip）
+    float hit_right = 0.0f;
+  };
+  ScrollBarGeometry ComputeScrollBar() const;
+  // 客户区点是否落在滚动条命中带里（hook 模式且真有溢出时才可能为 true）。
+  bool ScrollBarContains(float x, float y) const;
+  // 从客户区 y 开始拖 thumb：按在 thumb 外先把 thumb 中心搬到指针下。返回 false
+  // = 没有可拖行程（thumb 撑满轨道），调用方按普通按压处理。
+  bool BeginScrollThumbDrag(float y);
 
   // Minimum visible margin (in 96-DPI logical px) that must always stay inside
   // the target monitor's work area, so the strip can never be dragged or
@@ -348,6 +454,16 @@ class FloatingLyricWindow {
   bool replaying_ = false;
   bool recapturing_ = false;
   bool click_lookup_enabled_ = true;
+  // 查词触发方式镜像（见 SetLookupTrigger）。
+  int lookup_trigger_ = 0;
+  // 工具条自动隐藏（见 SetToolbarAutoHide）。
+  bool toolbar_auto_hide_ = true;
+  // 工具条当前是否处于「已揭示」状态（自动隐藏关时恒 true）。
+  bool toolbar_revealed_ = false;
+  // 揭示轮询定时器是否已挂。
+  bool toolbar_reveal_poll_active_ = false;
+  // 穿透态下文字行盒是否仍接鼠标（见 SetPassThroughBlocksMouse）。
+  bool passthrough_blocks_mouse_ = true;
   // 「悬停即查词」偏好镜像（见 SetHoverAutoLookup）。false 时悬停查词需按住 Shift。
   bool hover_auto_lookup_ = false;
   // Shift-悬停查词去重锚：上一次真正派发查词的字下标（-1 = 无）。命中同一个字不
@@ -355,10 +471,15 @@ class FloatingLyricWindow {
   int hover_lookup_index_ = -1;
   // 悬停轮询定时器是否已挂（只在鼠标在窗口内时挂着）。
   bool hover_poll_active_ = false;
-  // Text-only clipboard window: suppress control buttons + resize grip, use the
-  // full window height for text. Never true for the audiobook lyric strip.
+  // Text-only surface (set by SetHookTextMode): suppress the transport control
+  // buttons, use the full window height for text. Never true for the audiobook
+  // lyric strip.
   bool text_only_ = false;
   bool hook_text_mode_ = false;
+  // 工具条槽表用途（见 SetToolbarProfile）。默认 kGalHook：hook 浮窗是这套工具条
+  // 的原始用户，默认值保持它零改动。
+  hook_toolbar::Profile toolbar_profile_ =
+      hook_toolbar::Profile::kGalHook;
   bool pass_through_ = false;
   // Mirrors the WS_EX_TRANSPARENT bit currently on hwnd_ so the ex-style is
   // only rewritten when it actually changes.
@@ -393,7 +514,7 @@ class FloatingLyricWindow {
   // 相关的行距加高与附加绘制。
   std::vector<RubySpan> ruby_spans_;
   std::string context_id_;
-  // Taskbar / Alt+Tab label; seeds CreateWindowExW and retitles the live window.
+  // Window title for the lyric strip (tool window: never shown in the taskbar).
   std::wstring window_title_ = L"Fushi Lyric";
   int highlight_start_ = -1;
   int highlight_length_ = 0;
@@ -411,6 +532,12 @@ class FloatingLyricWindow {
   // 把偏移留在旧行程外。
   float scroll_offset_px_ = 0.0f;
   float scroll_max_px_ = 0.0f;
+  // BUG-1860 — 拖滚动条 thumb 的手势状态。与 pressed_ / dragging_ 互斥，同样由
+  // CancelPointerGesture 统一终结。
+  bool scroll_thumb_dragging_ = false;
+  float scroll_drag_origin_y_ = 0.0f;      // 按下时的客户区 y
+  float scroll_drag_start_offset_ = 0.0f;  // 按下时的 scroll_offset_px_
+  float scroll_drag_px_per_px_ = 0.0f;     // 指针走 1px ↔ 内容滚多少 px
 
   // Press / drag / resize state for moving and sizing the strip.
   //
@@ -423,12 +550,16 @@ class FloatingLyricWindow {
   bool press_was_text_ = false; // press landed on the lyric text (lookup case)
   bool dragging_ = false;       // promoted to a move-the-strip drag
   POINT drag_anchor_ = {0, 0};  // cursor offset inside the window at press
-  POINT press_origin_ = {0, 0}; // screen point where the press began
-  POINT press_client_ = {0, 0}; // client point where the press began (lookup)
+  POINT press_origin_ = {0, 0};  // screen point where the press began
+  POINT press_client_ = {0, 0};  // client point where the press began (lookup)
 
   // Direct2D / DirectWrite.
   Microsoft::WRL::ComPtr<ID2D1Factory> d2d_factory_;
   Microsoft::WRL::ComPtr<IDWriteFactory> dwrite_factory_;
+  Microsoft::WRL::ComPtr<IDWriteFontCollection> icon_font_collection_;
+  Microsoft::WRL::ComPtr<IDWriteFontCollection> custom_font_collection_;
+  std::wstring resolved_font_family_ = L"Yu Gothic UI";
+  bool font_collection_dirty_ = true;
   Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> render_target_;
   Microsoft::WRL::ComPtr<IDWriteTextFormat> text_format_;
   // 振假名用的小号 format（居中、不换行）。与 text_format_ 同生命周期：字号 /
@@ -440,12 +571,17 @@ class FloatingLyricWindow {
   // Only ever created / shown for hook_text_mode_ instances in pass-through.
   HookToolbarWindow pass_through_toolbar_;
 
+  // 正文内工具条的槽位悬停提示（文案共享 hook_toolbar::SlotTooltip 表，与
+  // 穿透工具条窗同一张，两处提示不可能各说各话）。
+  hook_toolbar::SlotTooltipHost slot_tooltip_;
+
   LookupCallback on_lookup_;
   ContextLookupCallback on_context_lookup_;
   ControlCallback on_control_;
   LockCallback on_lock_;
   PassThroughCallback on_pass_through_;
   BoundsCallback on_bounds_;
+  DestroyedCallback on_destroyed_;
 };
 
 #endif  // RUNNER_FLOATING_LYRIC_WINDOW_H_

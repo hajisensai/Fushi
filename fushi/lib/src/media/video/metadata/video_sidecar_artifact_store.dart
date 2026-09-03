@@ -12,8 +12,8 @@ import 'package:path/path.dart' as p;
 
 /// 用 v77 artifact 路径和 SHA-256 区分 Fushi 生成图片与用户 sidecar。
 ///
-/// 这是旧 [CoverScraperService] 的可选桥接：没有 artifact、文件已被改动，或读取
-/// / 查询失败时都返回 false，确保第三方文件和用户修改继续受到保护。
+/// 这是本地 [CoverScraperService] 的可选校验器：没有 artifact、文件已被改动，或
+/// 读取 / 查询失败时都返回 false，确保第三方文件和用户修改继续受到保护。
 class DatabaseSidecarGeneratedArtifactChecker
     implements SidecarGeneratedArtifactChecker {
   const DatabaseSidecarGeneratedArtifactChecker(this.database);

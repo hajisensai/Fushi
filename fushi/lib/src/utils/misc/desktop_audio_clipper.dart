@@ -94,6 +94,29 @@ String buildGoogleVideoRangeUrl(String baseUrl, int start, int end) {
   return uri.replace(queryParameters: q).toString();
 }
 
+/// 这个分离音轨**是否需要**先整段物化才能裁——判据是「谁在限速」，不是「有没有分离音轨」。
+///
+/// 上面那套 `range=` 查询参数分片是 **googlevideo 专属**的绕行：注释里三条都只对它成立
+/// （SABR 限速、认查询参数 range 那一路才不限速、UA 要与 YouTube 铸流一致）。可它的触发
+/// 判据一直写成形状——「[ImmersionMiningRequest.audioSource] 非空且是远端 http」。任何
+/// **别的**站点的分离音轨一旦走进来就会踩空：`range=` 是它不认识的查询参数，被忽略后每
+/// 一片都返回整个文件，于是把同一个流反复下满 `maxBytes` 才罢休，比直接 seek 慢几十倍。
+///
+/// 实测（bilibili DASH audio-only m4s，`mp4a.40.2`）：ffmpeg 直接 `-ss/-t` 对 URL 裁 3 秒
+/// 片段稳定成功、耗时约 1 秒，根本不需要物化——它没有 googlevideo 那种限速。所以这里把
+/// 判据收回到原因上：只有 googlevideo 的流才走物化，其余分离音轨直接对 URL 裁。
+///
+/// 纯函数。非 http(s)、URL 畸形、host 不是 googlevideo 一律 false。
+bool audioSourceNeedsRangeMaterialization(String? audioUrl) {
+  if (audioUrl == null || audioUrl.isEmpty) return false;
+  final Uri? uri = Uri.tryParse(audioUrl);
+  if (uri == null) return false;
+  if (uri.scheme != 'http' && uri.scheme != 'https') return false;
+  final String host = uri.host.toLowerCase();
+  // `*.googlevideo.com`（rrN---sn-xxxx.googlevideo.com 等一大票子域）。
+  return host == 'googlevideo.com' || host.endsWith('.googlevideo.com');
+}
+
 /// TODO-1314（B5）：把远端 **audio-only DASH** 流（googlevideo 分离音频轨）用 yt-dlp 式
 /// `range=` 分片顺序下载**整段物化到本地临时文件** [outputPath]，返回本地路径（成功）或
 /// null（失败 / 空流 / 非 http 输入）。**best-effort**，绝不抛。
@@ -368,9 +391,18 @@ class MiningMediaCompression {
   }
 }
 
-/// 把一条 ffmpeg 失败摘要落进日志。[diagnosticOnly] = 调用方**还会用降级参数再试一次**
-/// （能力探测），此时失败是预期内的正常降级，只进诊断日志（不计错误数、不进用户可见
-/// 错误日志页）；否则进错误日志。默认 false = 既有行为逐字等价。
+/// 把一条 ffmpeg 失败摘要落进日志。
+///
+/// [diagnosticOnly] = 这条失败**是预期内的正常结果，不是 app 出错**。两种调用方都算：
+/// * **能力探测**：调用方还会用降级参数再试一次（GIF 编码器/滤镜链回退），中途失败是
+///   正常降级路径；
+/// * **best-effort 产线**（BUG-1867，书架封面回填）：失败就是**终局**，没有重试，但
+///   「这文件给不出封面」（无视频流的 BDMV 音轨 m2ts、seek 落空、torrent 还没下完）
+///   本来就是预期内结果——书架显示占位图就是给用户的反馈。
+///
+/// 两者共用同一条通道：走 [ErrorLogService.logDiagnostic]，**不计入错误计数、不落盘**，
+/// 转入日志页的「诊断/取证」分节，随复制/分享/上传一并带走（降严重性，不删证据）。
+/// 否则走 [ErrorLogService.log] 进用户可见错误列表。默认 false = 既有行为逐字等价。
 void _logFfmpegSummary(String source, String summary, StackTrace stack,
     {required bool diagnosticOnly}) {
   if (diagnosticOnly) {
@@ -480,6 +512,17 @@ List<String> buildFfmpegClipArgs({
     '-i',
     inputPath,
     '-vn',
+    // BUG-2011：源整集/整本的章节表绝不能跟进句子音频。ffmpeg 默认等价
+    // `-map_chapters 0`，mp4 系容器的 muxer 会为此建一条与最后一个章节等长的
+    // chapter text track，把 `mvhd.duration` 拉满 —— 一段 3 秒的句子音频，容器头
+    // 会写着整集的 21 分钟，播放器据此画进度条。
+    //
+    // 桌面/Android 的输出是 `.aac`（裸 ADTS，无容器，本就不受影响），但 **iOS 走
+    // `.m4a`**（[immersionMiningAudioExtensionFor]），那条链路是真中招的。这里无
+    // 条件给而不按扩展名分支：实测 `.aac` 加与不加产出的字节数完全一致，多一个
+    // 分支只会多一处能写错的地方。
+    '-map_chapters',
+    '-1',
     if (explicitAudio != null) ...<String>[
       '-map',
       // 尾随 '?'：越界音轨映射降级回退默认轨而非硬失败（BUG-345）。
@@ -680,6 +723,10 @@ List<String> buildFfmpegFrameArgs({
   bool decodeFromStart = false,
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
+  // TODO-1082：目标宽度（高按原比例，`-2` 保证偶数以满足 yuv420 约束）。进度条
+  // 缩略图只显示几百像素宽，让 ffmpeg 在编码前就缩好，省掉全尺寸 JPEG 的编码、
+  // 落盘、读回、解码四段开销。null / <=0 表示不缩放（封面等既有调用方的行为不变）。
+  int? scaleWidth,
 }) {
   final double seek = atSeconds < 0 ? 0.0 : atSeconds;
   return <String>[
@@ -690,6 +737,10 @@ List<String> buildFfmpegFrameArgs({
     inputPath,
     if (decodeFromStart) ...<String>['-ss', seek.toStringAsFixed(3)],
     '-an',
+    if (scaleWidth != null && scaleWidth > 0) ...<String>[
+      '-vf',
+      'scale=$scaleWidth:-2',
+    ],
     '-frames:v',
     '1',
     '-update',
@@ -716,6 +767,14 @@ Future<String?> extractVideoFrameViaFfmpeg({
   FfmpegFailureReporter? onFailure,
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
+  // BUG-1867：调用方是 best-effort 后台产线（书架封面回填）——「这文件给不出帧」是
+  // 预期内的正常结果（无视频流的 BDMV 音轨 m2ts、seek 落在空洞区…），与上游
+  // [extractEmbeddedVideoCoverViaFfmpeg] 把「容器没有内嵌封面」判为正常同层。置 true
+  // 时这条失败**不计入错误计数、不落盘**，转入日志页的诊断/取证分节（证据仍随复制
+  // /上传带走）。ffmpeg **根本起不来**（ProcessException）仍是真错误，不受本开关影响。
+  bool diagnosticOnly = false,
+  // TODO-1082：缩略图消费方按目标宽度出图（见 [buildFfmpegFrameArgs]）；null 保持原尺寸。
+  int? scaleWidth,
 }) async {
   if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {
     return null;
@@ -730,6 +789,7 @@ Future<String?> extractVideoFrameViaFfmpeg({
         atSeconds: atSeconds,
         decodeFromStart: decodeFromStart,
         tlsPinSha256: tlsPinSha256,
+        scaleWidth: scaleWidth,
       ),
       const Duration(seconds: 30),
     );
@@ -742,7 +802,8 @@ Future<String?> extractVideoFrameViaFfmpeg({
         output.deleteSync();
       } catch (_) {}
     }
-    _reportFfmpegFailure('extractVideoFrameViaFfmpeg', result, onFailure);
+    _reportFfmpegFailure('extractVideoFrameViaFfmpeg', result, onFailure,
+        diagnosticOnly: diagnosticOnly);
     return null;
   } on ProcessException catch (e, stack) {
     _reportFfmpegProcessException(

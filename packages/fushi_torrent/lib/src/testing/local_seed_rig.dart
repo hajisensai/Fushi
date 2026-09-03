@@ -80,6 +80,13 @@ class LocalSeedRig {
         },
         timeout: const Duration(seconds: 10),
         what: 'seeder listen port',
+        // BUG-2023：libtorrent 的 listen_failed_alert 带着 bind 的 errno，但
+        // bridge 的唯一收割点 drain_alerts
+        // （native/fushi_torrent/fushi_torrent_ffi.cpp:399）不认这个类型，
+        // 所以这里只能看到「端口永远是 0」。退而求其次：超时后在 Dart 侧
+        // 自己 bind 一次 127.0.0.1:0，把「这台机器现在就 bind 不上回环临时端口」
+        // 和「bridge/libtorrent 真出了问题」当场分开。纯诊断，不改判据。
+        diagnose: _describeLoopbackBindHealth,
       );
 
       final FtAddResult added =
@@ -111,11 +118,15 @@ class LocalSeedRig {
   }
 
   /// 轮询直到 [probe] 返回非 null；超时抛 [StateError]。
+  ///
+  /// [diagnose] 只在超时那一刻跑一次，把一句环境定性拼进错误文案；
+  /// 它不影响等待判据，自己抛异常也不得吃掉原本的超时错误。
   static Future<T> _waitFor<T>(
     Future<T?> Function() probe, {
     required Duration timeout,
     required String what,
     Duration interval = const Duration(milliseconds: 100),
+    Future<String> Function()? diagnose,
   }) async {
     final Stopwatch sw = Stopwatch()..start();
     while (sw.elapsed < timeout) {
@@ -123,7 +134,33 @@ class LocalSeedRig {
       if (result != null) return result;
       await Future<void>.delayed(interval);
     }
-    throw StateError('timeout waiting for $what');
+    String detail = '';
+    if (diagnose != null) {
+      try {
+        detail = ' (${await diagnose()})';
+      } catch (e) {
+        detail = ' (diagnose failed: $e)';
+      }
+    }
+    throw StateError('timeout waiting for $what$detail');
+  }
+
+  /// 超时时的环境定性：Dart 自己 bind 一次 `127.0.0.1:0`。
+  ///
+  /// 探针也失败 → runner 的临时端口段不可用（BUG-2023 的形状）；
+  /// 探针成功 → 机器能 bind，那就真得去查 bridge/libtorrent。
+  static Future<String> _describeLoopbackBindHealth() async {
+    try {
+      final ServerSocket probe =
+          await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final int probePort = probe.port;
+      await probe.close();
+      return 'dart loopback bind probe OK (got port $probePort): '
+          'the machine can bind 127.0.0.1:0, suspect the bridge';
+    } catch (e) {
+      return 'dart loopback bind probe ALSO failed: $e: '
+          'the machine cannot bind 127.0.0.1:0 right now (environment)';
+    }
   }
 
   void dispose() {

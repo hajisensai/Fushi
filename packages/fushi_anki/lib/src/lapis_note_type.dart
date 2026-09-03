@@ -74,7 +74,12 @@ class LapisNoteType {
     'PitchCategories': '{pitch-accent-categories}',
     'Frequency': '{frequencies}',
     'FreqSort': '{frequency-harmonic-rank}',
-    'MiscInfo': '{document-title}',
+    // MiscInfo 是卡片底部「Misc. info → === Details ===」栏，语义是「这张卡出自
+    // 哪儿」。只给媒体名的话，卡片攒多了回溯不到原片位置，故出厂就带上片段时间窗
+    // （`{clip-timestamp}` 在无时间轴来源上渲染成空串，书 / galgame 的卡片不会多出
+    // 尾巴）。渲染器是整模板正则替换，一个字段里放多个占位符 + 字面文本是原生支持的。
+    // 存量用户由 `BaseAnkiRepository.readSettingsJson` 的载入期迁移补齐。
+    'MiscInfo': '{document-title} {clip-timestamp}',
     'IsWordAndSentenceCard': 'x',
   };
 

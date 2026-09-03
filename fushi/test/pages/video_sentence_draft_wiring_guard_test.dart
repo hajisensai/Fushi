@@ -101,19 +101,19 @@ void main() {
       );
       // 区间合并：草稿区间 + 当前 cue 区间 → 首句起→末句止。
       expect(resolve, contains('_miningDraft.composeAudioRange('));
-      // 字幕列表多选（TODO-102）仍优先，不掺草稿。
-      expect(resolve, contains('usedSelectedCue: true'));
+      // 字幕列表多选（TODO-102）已整条移除：解析里不得再有第二条分支。
+      expect(resolve, isNot(contains('usedSelectedCue')));
+      expect(resolve, isNot(contains('_selectedMiningCueForCard')));
     });
 
-    test('mining clears the draft only on success of the draft path', () {
+    test('mining clears the draft only on success', () {
       final String mine = region(
         'Future<MinePopupResult> _onMineEntryImpl(Map<String, String> fields) async {',
         'Future<MinePopupResult> _onUpdateEntryImpl(',
       );
-      // 成功且非多选路径 → 清草稿（与 popup.js 同事件归零）。
+      // 成功 → 清草稿（与 popup.js 同事件归零）。
+      expect(mine, contains('if (result.ankiConnect) {'));
       expect(mine, contains('_miningDraft.clear();'));
-      // 多选路径成功 → 清多选（保留旧行为，与草稿正交）。
-      expect(mine, contains('_clearSelectedMiningCues();'));
     });
 
     test(

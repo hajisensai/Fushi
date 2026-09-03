@@ -1,6 +1,7 @@
-import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/stats/stat_facts.dart';
+import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 单个视频在「按视频排行」里的聚合数据。
@@ -40,25 +41,24 @@ class VideoStatsAggregate {
 typedef _IdentityRow = ({
   String identity,
   String title,
-  VideoWatchStatisticRow? watch,
+  StatFact? watch,
   LookupMiningCounterRow? counter,
   FavoriteWordRow? favorite,
 });
 
-/// 纯函数：把视频观看统计行 + 查词/制卡计数行 + 收藏行 + 完成时间戳列表聚合成
-/// [VideoStatsAggregate]。与 reading_statistics_page 的 `_computeAggregates`
-/// 同构，但抽成纯函数可单测。
+/// 纯函数：把视频观看事实（统一事实面里 `isVideo` 的日面行）+ 查词/制卡计数行 +
+/// 收藏行 + 完成时间戳列表聚合成 [VideoStatsAggregate]。窗口阈值只来自 [StatWindow]。
 ///
 /// tile 契约（v76）：
 ///  - tile 由**观看行**驱动（有 watch 行才有 tile；只有计数/收藏的身份不成 tile，
 ///    其数字只进汇总面板——与 v76 前一致）；
-///  - 无身份行（watch 的 NULL uid / counter 的 '' / 收藏的 null bookKey）在
+///  - 无身份行（legacy 的 NULL uid / counter 的 '' / 收藏的 null bookKey）在
 ///    **三宇宙并集**上找 unique-title 归属：唯一身份组 → 并入（主流场景
 ///    「一个视频跨新旧数据」仍是单 tile）；歧义（0 或 ≥2 个身份组同 title）→
 ///    watch 无身份行独立成 null-identity tile，counter/收藏无身份行只挂该
 ///    null-identity tile（没有就不进任何 tile，绝不瞎归属、绝不双计）。
 VideoStatsAggregate computeVideoStats({
-  required List<VideoWatchStatisticRow> stats,
+  required Iterable<StatFact> stats,
   required List<DateTime> completed,
   required DateTime now,
   List<LookupMiningCounterRow> counters = const <LookupMiningCounterRow>[],
@@ -70,48 +70,49 @@ VideoStatsAggregate computeVideoStats({
   /// 匹配判据同源。
   Set<String> ambiguousTitles = const <String>{},
 }) {
-  final agg = VideoStatsAggregate();
-  final todayKey = statDateKey(now);
-  final weekAgoKey = statDateKey(now.subtract(const Duration(days: 7)));
-  final monthAgoKey = statDateKey(now.subtract(const Duration(days: 30)));
+  final VideoStatsAggregate agg = VideoStatsAggregate();
+  final StatWindow w = StatWindow(now);
+  final Map<String, StatDayData> dailyMap = <String, StatDayData>{};
+  final List<StatFact> watchRows = <StatFact>[];
 
-  final dailyMap = <String, StatDayData>{};
-
-  for (final s in stats) {
-    agg.allChars += s.subtitleChars;
-    agg.allMs += s.watchTimeMs;
-    if (s.dateKey == todayKey) {
-      agg.todayChars += s.subtitleChars;
-      agg.todayMs += s.watchTimeMs;
+  for (final StatFact s in stats) {
+    if (!s.isVideo) continue;
+    watchRows.add(s);
+    agg.allChars += s.chars;
+    agg.allMs += s.ms;
+    if (w.isToday(s.dateKey)) {
+      agg.todayChars += s.chars;
+      agg.todayMs += s.ms;
     }
-    if (s.dateKey.compareTo(weekAgoKey) >= 0) {
-      agg.weekChars += s.subtitleChars;
-      agg.weekMs += s.watchTimeMs;
+    if (w.inWeek(s.dateKey)) {
+      agg.weekChars += s.chars;
+      agg.weekMs += s.ms;
     }
-    if (s.dateKey.compareTo(monthAgoKey) >= 0) {
-      agg.monthChars += s.subtitleChars;
-      agg.monthMs += s.watchTimeMs;
+    if (w.inMonth(s.dateKey)) {
+      agg.monthChars += s.chars;
+      agg.monthMs += s.ms;
     }
-    final day =
-        dailyMap.putIfAbsent(s.dateKey, () => StatDayData(dateKey: s.dateKey));
-    day.chars += s.subtitleChars;
-    day.ms += s.watchTimeMs;
+    final StatDayData day = dailyMap.putIfAbsent(
+      s.dateKey,
+      () => StatDayData(dateKey: s.dateKey),
+    );
+    day.chars += s.chars;
+    day.ms += s.ms;
   }
 
   // 最近 30 天补齐空日期，按日期升序。
-  final thirtyDaysAgo = now.subtract(const Duration(days: 29));
-  for (int i = 0; i < 30; i++) {
-    final key = statDateKey(thirtyDaysAgo.add(Duration(days: i)));
-    agg.daily.add(dailyMap[key] ?? StatDayData(dateKey: key));
-  }
+  agg.daily = <StatDayData>[
+    for (final String key in w.lastDayKeys(30))
+      dailyMap[key] ?? StatDayData(dateKey: key),
+  ];
 
   // v76：按视频排行改身份分组（v39 只修了存储层，展示层此前仍按 title 合并同名
   // 视频——互串的另一半）。三个行宇宙并成统一身份行、跑**一次**分组，吸收判据
   // 全局一致（分组契约见 [groupStatRowsByIdentity]）。
   final List<_IdentityRow> unified = <_IdentityRow>[
-    for (final VideoWatchStatisticRow s in stats)
+    for (final StatFact s in watchRows)
       (
-        identity: s.bookUid ?? '',
+        identity: s.mediaKey,
         title: s.title,
         watch: s,
         counter: null,
@@ -143,16 +144,17 @@ VideoStatsAggregate computeVideoStats({
     titleOf: (_IdentityRow r) => r.title,
     ambiguousTitles: ambiguousTitles,
   )) {
-    final VideoStatBookData book =
-        VideoStatBookData(g.title, bookUid: g.identity)
-          ..absorbedUnattributed = g.absorbedUnattributed;
+    final VideoStatBookData book = VideoStatBookData(
+      g.title,
+      bookUid: g.identity,
+    )..absorbedUnattributed = g.absorbedUnattributed;
     bool hasWatch = false;
     for (final _IdentityRow r in g.rows) {
-      final VideoWatchStatisticRow? s = r.watch;
+      final StatFact? s = r.watch;
       if (s != null) {
         hasWatch = true;
-        book.chars += s.subtitleChars;
-        book.ms += s.watchTimeMs;
+        book.chars += s.chars;
+        book.ms += s.ms;
       }
       final LookupMiningCounterRow? c = r.counter;
       if (c != null) {
@@ -165,15 +167,14 @@ VideoStatsAggregate computeVideoStats({
     if (hasWatch) agg.byVideo.add(book);
   }
   agg.byVideo.sort((a, b) => b.ms.compareTo(a.ms));
-  // 删字数后按观看时长排行（字数仍在 DB/聚合里保留，只是不再展示/排序）。
 
   // 完成数按时间戳落入区间（天然去重：completedAt 只记首次）。
-  for (final c in completed) {
-    final key = statDateKey(c);
+  for (final DateTime c in completed) {
+    final String key = FushiDatabase.statDateKeyOf(c);
     agg.allCompleted++;
-    if (key == todayKey) agg.todayCompleted++;
-    if (key.compareTo(weekAgoKey) >= 0) agg.weekCompleted++;
-    if (key.compareTo(monthAgoKey) >= 0) agg.monthCompleted++;
+    if (w.isToday(key)) agg.todayCompleted++;
+    if (w.inWeek(key)) agg.weekCompleted++;
+    if (w.inMonth(key)) agg.monthCompleted++;
   }
   return agg;
 }

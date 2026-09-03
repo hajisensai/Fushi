@@ -142,4 +142,39 @@ void main() {
         isTrue,
         reason: '渲染收尾 _firePopupRendered 必须重排 masonry（覆盖首条 + 其余条）');
   });
+
+  test('BUG-1727 增量追加词典块不产生重叠中间帧：masonry 态预藏 + 逐块合帧重排', () {
+    // 根因：appendNextDeferredGlossaryBlock 逐宏任务 append 的新卡片是静态流元素，而 masonry
+    // 首轮已把既有卡片钉成 absolute、body 高度锁死——新卡片从 body 顶部流布局铺开、压在旧卡
+    // 之上，直到全部词典块建完 _firePopupRendered 才统一重排（--dict-columns>=2 且词典>=2 时
+    // 整个渲染期用户看到多张卡片叠成一团）。修复：masonry 态（dataset.masonryCols 在）下新
+    // 卡片先藏成 absolute+hidden，且每追加一块就 scheduleMasonry() 合帧重排。
+    final int fnAt = js.indexOf('function appendNextDeferredGlossaryBlock(');
+    expect(fnAt, isNonNegative);
+    final int fnEnd = js.indexOf('\n}', fnAt);
+    expect(fnEnd, greaterThan(fnAt));
+    final String fnBody = js.substring(fnAt, fnEnd);
+    expect(fnBody.contains('state.body.dataset.masonryCols'), isTrue,
+        reason: '必须按 body 的 masonry 态（dataset.masonryCols）门控新卡片预藏，'
+            '静态流新卡会压在绝对定位的旧卡上');
+    expect(RegExp(r"visibility\s*=\s*'hidden'").hasMatch(fnBody), isTrue,
+        reason: 'masonry 态下新 append 的卡片必须先 visibility:hidden 预藏，'
+            '由 layoutMasonry 统一定位后恢复，消灭重叠中间帧');
+    expect(fnBody.contains('scheduleMasonry()'), isTrue,
+        reason: '每追加一块必须合帧重排（masonryRaf 去重），不得等全部建完才排版');
+    // layoutMasonry 摆放时必须恢复可见——否则预藏卡片永久不可见。
+    final int lmAt = js.indexOf('function layoutMasonry(');
+    expect(lmAt, isNonNegative);
+    final int lmEnd = js.indexOf('\n}', lmAt);
+    final String lmBody = js.substring(lmAt, lmEnd);
+    expect(RegExp(r"item\.style\.visibility\s*=\s*''").hasMatch(lmBody), isTrue,
+        reason: 'layoutMasonry 定位每张卡片时必须清 visibility 预藏（恢复可见）');
+    // 回落 CSS 流布局（resetMasonryBody）同样要清预藏，不留死藏卡。
+    final int rmAt = js.indexOf('function resetMasonryBody(');
+    expect(rmAt, isNonNegative);
+    final int rmEnd = js.indexOf('\n}', rmAt);
+    final String rmBody = js.substring(rmAt, rmEnd);
+    expect(RegExp(r"visibility\s*=\s*''").hasMatch(rmBody), isTrue,
+        reason: 'resetMasonryBody 回落时必须清 visibility 预藏');
+  });
 }

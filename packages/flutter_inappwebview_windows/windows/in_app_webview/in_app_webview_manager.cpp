@@ -132,10 +132,18 @@ namespace flutter_inappwebview_plugin
     auto keepAliveId = get_optional_fl_map_value<std::string>(*arguments, "keepAliveId");
     auto windowId = get_optional_fl_map_value<int64_t>(*arguments, "windowId");
 
+    auto webViewEnvironment = webViewEnvironmentId.has_value() && map_contains(plugin->webViewEnvironmentManager->webViewEnvironments, webViewEnvironmentId.value())
+      ? plugin->webViewEnvironmentManager->webViewEnvironments.at(webViewEnvironmentId.value()).get() : nullptr;
+    // 窗口宿主模式（见 WebViewEnvironment::windowedHosting）：WebView2 挂成 Flutter 视图 HWND 的
+    // 真子窗口自己绘制，不走 composition + WGC 纹理。子窗口必须带 WS_CHILD | WS_VISIBLE 才会画；
+    // composition 模式沿用 style 0（只作 DComp 宿主，从不显示）。
+    const bool windowedHosting = webViewEnvironment && webViewEnvironment->windowedHosting;
+
     RECT bounds;
     GetClientRect(plugin->registrar->GetView()->GetNativeWindow(), &bounds);
 
-    auto hwnd = CreateWindowEx(0, windowClass_.lpszClassName, L"", 0, 0,
+    auto hwnd = CreateWindowEx(0, windowClass_.lpszClassName, L"",
+      windowedHosting ? (WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS) : 0, 0,
       0, bounds.right - bounds.left, bounds.bottom - bounds.top,
       plugin->registrar->GetView()->GetNativeWindow(),
       nullptr,
@@ -155,17 +163,14 @@ namespace flutter_inappwebview_plugin
       return;
     }
 
-    auto webViewEnvironment = webViewEnvironmentId.has_value() && map_contains(plugin->webViewEnvironmentManager->webViewEnvironments, webViewEnvironmentId.value())
-      ? plugin->webViewEnvironmentManager->webViewEnvironments.at(webViewEnvironmentId.value()).get() : nullptr;
-
     auto initialSettings = std::make_shared<InAppWebViewSettings>(settingsMap);
 
-    InAppWebView::createInAppWebViewEnv(hwnd, true, webViewEnvironment, initialSettings,
+    InAppWebView::createInAppWebViewEnv(hwnd, !windowedHosting, webViewEnvironment, initialSettings,
       [=](wil::com_ptr<ICoreWebView2Environment> webViewEnv,
         wil::com_ptr<ICoreWebView2Controller> webViewController,
         wil::com_ptr<ICoreWebView2CompositionController> webViewCompositionController)
       {
-        if (plugin && webViewEnv && webViewController && webViewCompositionController) {
+        if (plugin && webViewEnv && webViewController && (windowedHosting || webViewCompositionController)) {
           std::optional<std::vector<std::shared_ptr<UserScript>>> initialUserScripts = initialUserScriptList.has_value() ?
             functional_map(initialUserScriptList.value(), [](const flutter::EncodableValue& map) { return std::make_shared<UserScript>(std::get<flutter::EncodableMap>(map)); }) :
             std::optional<std::vector<std::shared_ptr<UserScript>>>{};
@@ -177,6 +182,8 @@ namespace flutter_inappwebview_plugin
           };
 
           auto inAppWebView = std::make_unique<InAppWebView>(plugin, params, hwnd, std::move(webViewEnv), std::move(webViewController), std::move(webViewCompositionController));
+          // 本函数建的 hwnd 归 InAppWebView 生命周期管（两种宿主模式都是），析构时回收。
+          inAppWebView->destroyParentWindowOnClose = true;
 
           std::optional<std::shared_ptr<URLRequest>> urlRequest = urlRequestMap.has_value() ? std::make_shared<URLRequest>(urlRequestMap.value()) : std::optional<std::shared_ptr<URLRequest>>{};
           if (urlRequest.has_value()) {

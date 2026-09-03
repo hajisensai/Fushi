@@ -56,9 +56,6 @@ class _ErrorSearchAppModel extends AppModel {
   @override
   int get maximumTerms => 10;
 
-  @override
-  bool get desktopClipboardEnabled => false;
-
   // 关掉自动查词：避免 onChanged 路径额外发查询，searchCount 计数确定。
   @override
   bool get autoSearchEnabled => false;

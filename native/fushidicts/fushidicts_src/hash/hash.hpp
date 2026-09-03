@@ -23,7 +23,6 @@ class linear {
   // (the one that runs on every lookup) do it too.
   void load(uint8_t* ptr, size_t size);
   void set_bloom(const bloom* b) { bloom_ = b; }
-  std::vector<uint64_t> populated() const;
 
  private:
   struct slot {

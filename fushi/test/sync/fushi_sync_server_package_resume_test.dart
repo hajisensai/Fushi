@@ -203,7 +203,6 @@ void main() {
         syncContent: false,
         syncAudioBookFiles: false,
         syncDictionary: false,
-        syncLocalAudio: false,
       ).syncCollectionsLiveForTest(report, backend);
 
       expect(

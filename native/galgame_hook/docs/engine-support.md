@@ -8,11 +8,11 @@
 
 | ID | 引擎 / 后端 | 状态 | 文本 | 音频优先级 | 已验证样本 |
 |---|---|---|---|---|---|
-| `siglus` | SiglusEngine | `verified` | engine_exact_utf16_hook (implemented_unverified)；luna_hook (implemented_unverified) | resource_audio (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
+| `siglus` | SiglusEngine | `verified` | engine_exact_utf16_hook (implemented_unverified)；luna_hook (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | resource_audio (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `elf_ai6` | elf AI6 | `implemented_unverified` | luna_textouta_hook (implemented_unverified) | ai6_voice_arc_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `reallive` | RealLive / old VisualArt's | `implemented_unverified` | luna_hook (implemented_unverified) | visual_arts_ovk_resource (implemented_unverified)；xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `kirikiri_z` | KiriKiri2 / KiriKiriZ | `partial` | luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | kirikiri_resource_stream (implemented_unverified)；kirikiri_decoder_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 2 |
-| `xaudio2_directsound` | XAudio2 / DirectSound generic capture | `verified` | — | xaudio2_source_voice_pcm (verified)；directsound_buffer_pcm (verified) | 1 |
+| `xaudio2_directsound` | XAudio2 / DirectSound generic capture | `verified` | — | xaudio2_source_voice_pcm (verified)；directsound_buffer_pcm (verified)；xwma_compressed_resource (implemented_unverified) | 1 |
 | `renpy_ffmpeg` | Ren'Py / FFmpeg | `implemented_unverified` | luna_auto_or_pc_hooks (implemented_unverified) | ffmpeg_resource_event (implemented_unverified)；ffmpeg54_decoder_pcm (implemented_unverified)；process_loopback (verified) | 1 |
 | `tyrano_nwjs` | TyranoScript / NW.js | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | tyrano_asar_voice_resource (verified)；ffmpeg_resource_event (implemented_unverified)；process_loopback (verified) | 1 |
 | `bgi_ethornell` | BGI / Ethornell | `implemented_unverified` | luna_auto_or_pc_hooks (implemented_unverified) | bgi_arc20_voice_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
@@ -21,6 +21,79 @@
 | `malie_libp` | Malie System / LIBP CFI | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | malie_libp_cfi_voice_resource (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `qlie_filepack` | QLIE / FilePack | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | qlie_wuvorbis_per_source_pcm (verified)；qlie_wuvorbis_float_per_source_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `unity_il2cpp` | Unity IL2CPP | `verified` | luna_pc_hooks (verified)；unity_tmp_events (verified)；unity_legacy_text_events (implemented_unverified) | unity_audioclip_resource (verified)；xaudio2_source_voice_pcm (verified)；process_loopback (verified) | 1 |
+| `leaf_aquaplus` | Leaf / AQUAPLUS (WHITE ALBUM2 exact profile) | `implemented_unverified` | luna_exact_cp932_thread (implemented_unverified)；ingame_lookup_geometry (implemented_unverified)；ingame_lookup_sampled_input_shield (implemented_unverified) | leaf_lac_voice_resource (implemented_unverified)；directsound_pcm (implemented_unverified) | 0 |
+| `hunex_gge` | HUNEX GGE / HFA-HW | `implemented_unverified` | luna_typemoon_dialogue_thread (implemented_unverified) | hunex_hfa_hw_ogg_resource (implemented_unverified) | 0 |
+| `sgre` | M2 wind3d11 runtime (STEINS;GATE RE:BOOT) | `implemented_unverified` | ingame_lookup_geometry (implemented_unverified)；ingame_lookup_directinput_shield (implemented_unverified) | engine_archive_resource (implemented_unverified) | 0 |
+
+## 无 OCR 内嵌查词矩阵
+
+> 仅限 Windows x86/x64。OCR 被协议与范围守卫禁止；`xaudio2_directsound` 是通用音频后端，不计作引擎。
+
+| 引擎 | 几何 provider | geometry | verified shield | risky left click |
+|---|---|---|---|---|
+| `kirikiri_z` | runtime_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `renpy_ffmpeg` | runtime_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `tyrano_nwjs` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `unity_il2cpp` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `elf_ai6` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `reallive` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `bgi_ethornell` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `catsystem2` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `malie_libp` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `qlie_filepack` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `artemis_pfs` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `siglus` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `leaf_aquaplus` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `hunex_gge` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `sgre` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+
+证据边界：
+
+- `kirikiri_z` geometry：IPC v19 registry migration and offline adapter/attached-surface tests only; no same-session real-game card E2E is recorded.
+  - verified shield：The v19 transaction protocol and standard public input-surface filters exist, but the 1,000-transaction real-build gate has not run.
+  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+- `renpy_ffmpeg` geometry：IPC v19 registry migration and offline adapter/attached-surface tests only; Ren'Py 8 custom-screen coverage still needs real builds.
+  - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
+  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+- `tyrano_nwjs` geometry：The calibrated fallback is implemented offline; a Tyrano DOM runtime-layout provider is not yet admitted.
+  - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
+  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+- `unity_il2cpp` geometry：The calibrated fallback is implemented offline; TMP/UGUI source-index and Canvas-transform geometry are not yet admitted.
+  - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
+  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+- `elf_ai6` geometry：The calibrated fallback is implemented offline; positioned GDI lineage has not been admitted for this engine.
+  - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
+  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+- `reallive` geometry：The calibrated fallback is implemented offline; positioned GDI lineage has not been admitted for this engine.
+  - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
+  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+- `bgi_ethornell` geometry：The calibrated fallback is implemented offline; positioned GDI/DWrite lineage has not been admitted for this engine.
+  - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
+  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+- `catsystem2` geometry：The calibrated fallback is implemented offline; positioned GDI/DWrite lineage has not been admitted for this engine.
+  - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
+  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+- `malie_libp` geometry：The calibrated fallback is implemented offline; positioned GDI/DWrite lineage has not been admitted for this engine.
+  - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
+  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+- `qlie_filepack` geometry：The calibrated fallback is implemented offline; positioned GDI/DWrite lineage has not been admitted for this engine.
+  - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
+  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+- `artemis_pfs` geometry：The calibrated fallback is implemented offline; no uniquely traced hybrid positioned-text provider is admitted.
+  - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
+  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+- `siglus` geometry：The portable exact SHA-256 identity is followed by a hydrated-image gate that requires one glyph signature and one build-specific input signature across all executable sections, exact profile RVAs, and internal callgraph boundaries. Zero/multiple candidates and unknown hashes fail closed; lookup/card E2E is not recorded.
+  - verified shield：Exact and generic shield code exists, but the 1,000-transaction real-build gate has not run.
+  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+- `leaf_aquaplus` geometry：The portable exact SHA-256 identity is followed by hydrated-image, all-executable-section unique masked signatures, module-relative relocated-operand checks, callgraph gates and a D3D9 ABI gate. Zero/multiple candidates and unknown hashes fail closed; lookup/card E2E is not recorded.
+  - verified shield：Exact and generic shield code exists, but the 1,000-transaction real-build gate has not run.
+  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+- `hunex_gge` geometry：The calibrated fallback and a fail-closed exact provider are implemented. The HUNEX hydrated-image scanner requires unique executable-section renderer/input/projection anchors plus callgraph, unwind and imported-API validation before it can publish geometry. The original WoH session has not yet produced a complete glyph-to-client projection or lookup/card E2E. The engine_exact_layout entry above is a deliberate 2026-08-31 graduation from observation-only; only the geometry provider layer graduated, and the resource-capture and pairing gates stay not_verified.
+  - verified shield：Generic shielding plus HUNEX semantic-submit ownership are implemented, but the real-build click, Shift and popup transaction gates have not run.
+  - risky left click：Per-executable risk gating and fail-closed native-input admission are implemented; no measured real-build click-leak rate is recorded.
+- `sgre` geometry：The measured SHA-256 row is a consistency check only. Known and unknown hashes traverse populated, mutually corroborated draw/vtable/DirectInput signatures across all executable sections, PE exception-directory function bounds, decoded module-relative targets and live vtable/COM ABI gates. Zero/multiple intersections, layout/codegen mismatches and structure faults fail closed. 2026-09-03 original-path E2E on the measured Steam x64 build (SHA-256 75A83A0E…C404B9D8, Fushi 2.2.4-debug.13075 launching sgre_steam.exe, injected helper, IPC v21): hover+Shift lookups (いて/サイ) and a bare left click on 話 each published a hit, presented the direct galCard inside the game and the game line did not advance; one word card was written (Sentence エル・プ<b>サイ</b>・コングルゥ, 3.19 s paired xWMA voice re-encoded to AAC, 480×270 AVIF animation). Evidence grade for the audio stops at captured: neither a byte-hash comparison against the source voice_body.bin entry nor a pure-voice classification was recorded, so hash_verified and voice_classified are NOT claimed and the run does not satisfy the per-sentence original-resource claim in full. Only this one build is covered.
+  - verified shield：Exact DirectInput and generic shield code exists, but the 1,000-transaction real-build gate has not run.
+  - risky left click：Per-executable risk gating is implemented. 2026-09-03 measurement on the measured build: 8 popup-outside quick clicks (60 ms down/up) after Shift or click lookups, 7 were swallowed by the WH_MOUSE_LL + DirectInput shield pair with no line advance; the first click right after the mid-session risk acceptance (needsRiskAcceptance → activeNative) leaked and advanced the line once, and the leak did not reproduce on a fresh session whose acceptance was restored from memory. Too few transactions for a rate; the 1,000-transaction gate has not run.
 
 ## 识别与能力明细
 
@@ -34,17 +107,18 @@
 
 识别签名（所有非空项均带真实样本或运行时观察证据）：
 
-- `executable_names`：SiglusEngine.exe；证据：real_sample — anemoi 正式版，hibiki handoff 2026-07-19
-- `pe_architectures`：x86；证据：real_sample — anemoi SiglusEngine 1.1.141.3
+- `executable_names`：SiglusEngine.exe；证据：real_sample — anemoi 正式版与 Summer Pockets Reflection Blue 原始安装样本（2026-07-19 / 2026-08-27）
+- `pe_architectures`：x86；证据：real_sample — anemoi SiglusEngine 1.1.141.3 与 Summer Pockets Reflection Blue SiglusEngine 1.1.134.0 均为 x86
 - `directory_files_all`：Gameexe.dat、Scene.pck；证据：real_sample — renamed Siglus executable regression fixed by hibiki-hook d1601b9
 - `runtime_modules`：dsound.dll；证据：runtime_observation — anemoi used DirectSound through CoCreateInstance
 - `resource_extensions`：.ovk；证据：real_sample — anemoi koe/*.ovk entries exported byte-identically
-- `hashes`：algorithm=sha256, scope=game_executable, value=D94C94EB132FB1FCD6C20F35DD16552ED1301708B7A83DE07B275AD26C97D059, version=1.1.141.3；证据：real_sample — hibiki handoff 2026-07-19
+- `hashes`：algorithm=sha256, scope=game_executable, value=D94C94EB132FB1FCD6C20F35DD16552ED1301708B7A83DE07B275AD26C97D059, version=1.1.141.3、algorithm=sha256, scope=game_executable, value=190DF9A72929BD6B6327E773952B5C507C69052BC6D3FF16A4868BD1FF1791FD, version=1.1.134.0；证据：real_sample — anemoi 正式版（2026-07-19）与 Summer Pockets Reflection Blue 原始 SiglusEngine.exe 身份固定（2026-08-27）
 
 文本能力：
 
 - `engine_exact_utf16_hook`：`implemented_unverified` — The current hook contains the Siglus exact-text path, but P0 has no matching real-game evidence record.
 - `luna_hook`：`implemented_unverified` — Generic Luna integration exists; version-specific Siglus verification is not recorded in the P0 baseline.
+- `ingame_lookup_geometry`：`implemented_unverified` — The recorded anemoi 1.1.141.3 and Summer Pockets Reflection Blue 1.1.134.0 x86 SHA-256 profiles contain no install path or absolute virtual address. At runtime, the hydrated-image gate aggregates masked glyph/input candidates across every executable PE section, requires exactly one of each at the profile RVAs, admits only the measured 0xDC/0xEC glyph stack ABIs, and validates dialogue, exact-text, GetKeyState and input-message call boundaries before hooking. The protected on-disk anemoi image cannot prove hydrated uniqueness offline, and no original-path lookup/card E2E is recorded, so the capability remains implemented_unverified.
 - codepage：utf-16le for the exact engine path
 - 线程提示：Prefer the engine exact-text source when observed; otherwise select the stable Luna dialogue thread.
 
@@ -63,10 +137,12 @@
 - Verification is specific to the recorded x86 sample and OVK layout.
 - Late attach may miss the DirectSound format; raw OVK voice remains the preferred path.
 - The exact-text hook is implemented but is not promoted to verified by this baseline.
+- In-game lookup geometry and input interception are hash-pinned exact profiles for the recorded anemoi SiglusEngine 1.1.141.3 x86 executable (including its measured virtualized .org self-read hash) and Summer Pockets Reflection Blue SiglusEngine 1.1.134.0 x86 executable SHA-256 190DF9A72929BD6B6327E773952B5C507C69052BC6D3FF16A4868BD1FF1791FD. SHA-256 identifies the same bytes on any machine; it is not tied to a local path. Unknown hashes, non-unique hydrated signatures, wrong RVAs or failed callgraph checks all reject lookup. Native offline coverage does not replace an original-path lookup and same-session card-mining E2E, so this capability remains implemented_unverified.
+- The Summer Pockets Reflection Blue profile retains its exact SHA-256/RVA admission and its measured shared glyph plus build-specific input pattern, but no currently available hydrated real process was used to re-prove image-wide uniqueness in this change. It therefore remains implemented_unverified and is not generalized to another Siglus build.
 
 Fixtures：尚无（P5 补齐）
 
-Tests：`tests/siglus_ovk_test.cpp`、`tests/siglus_launch_test.cpp`、`tests/siglus_text_test.cpp`
+Tests：`tests/siglus_ovk_test.cpp`、`tests/siglus_launch_test.cpp`、`tests/siglus_text_test.cpp`、`tests/siglus_lookup_test.cpp`、`tests/exact_lookup_signature_test.cpp`、`tests/adapter_structure_test.py`
 
 ### elf AI6 (`elf_ai6`)
 
@@ -182,6 +258,8 @@ Tests：`tests/reallive_adapter_test.cpp`
 - KiriKiri2 BCB resource and decoder hooks install on the recorded official sample, but a voiced dialogue line has not yet been traversed; clean per-line Ogg is not claimed.
 - The older KiriKiriZ sample executable hash and engine version were not recorded; executable name alone is not a reusable engine signature.
 - In-game dictionary lookup remains implemented_unverified. The production route reuses the Fushi popup in an off-screen galCard WebView2, captures a bounded BGRA frame, and displays it through the v15 KiriKiri Layer route; the game-side sensor still owns glyph hit-testing and selection highlighting. The v15 CaptureSuppress/applied-seq handshake was verified in one 2026-08-13 target-game same-session E2E: applied_seq advanced only after suppression, a later full frame restored the popup, and the real Anki AVIF contained no Fushi popup or selection highlight. Required automated/offline verification was explicitly skipped, and the geometry sensor is gated on a third-party textrender.dll plus a runtime probe for global.TextRender.getCharacters, so it does not generalise to KiriKiri as an engine. No capability or support-state upgrade is claimed.
+- 2026-08-19 measurement, both directions, same hook build. Positive: on a second KiriKiri Z sample (tenshi_sz.exe, Chinese release, KAGEX plus third-party textrender.dll) launched by Fushi 2.1.1-debug.11887, one session completed the whole in-game chain: lookup_diag reached 0x0000106F (sensor_installed | geometry_observed | hit_submitted | buffer_route_ready | frame_presented | expression_ready), clicking a glyph rendered the lookup card inside the game layer, and the card's mining button wrote a real Anki note (total notes 13200 -> 13201) whose media are genuine (10138-byte AVIF starting with ftypavis, 9260-byte MP3 starting with ID3) and whose sentence field holds the clicked line. Negative: on a classic KAG3 sample that ships no textrender.dll (フタマタ恋愛 Ver1.00, KiriKiri2/BCB), with lookup_enabled forced to 1 by the diagnostic probe, lookup_diag stayed 0x00000000 for the entire session while text capture worked (text_writes=8) - the sensor never installs and in-game lookup is entirely absent there. In-game lookup therefore stays scoped to KiriKiri Z builds shipping textrender.dll and is still not a KiriKiri-engine-wide capability. Recorded as measurement only; no status or capability upgrade is claimed.
+- Text-thread choice is not free on this engine: the same game exposes one EmbedKrkrZ thread carrying whole-string-doubled dialogue (folded correctly by the block-level normaliser) and several KiriKiriZ threads carrying per-character doubled/tripled strings that the artifact gate correctly drops. Selecting a KiriKiriZ thread leaves the workbench with zero lines forever and makes in-game mining fail silently. Tracked as BUG-1733/1734/1735; the native filtering is correct and must not be relaxed.
 
 Fixtures：`tests/fixtures/kirikiri_lookup_replay.tsv`
 
@@ -210,6 +288,7 @@ Tests：`tests/resource_audio_ready_test.cpp`、`tests/lookup_ipc_contract_test.
 
 1. `xaudio2_source_voice_pcm` — `verified`；格式：source-voice PCM；clean voice：engine_dependent
 2. `directsound_buffer_pcm` — `verified`；格式：secondary/output buffer PCM；clean voice：engine_dependent
+3. `xwma_compressed_resource` — `implemented_unverified`；格式：RIFF/XWMA rebuilt from the submission's own fmt + dpds；clean voice：engine_dependent
 
 真实样本证据：
 
@@ -220,6 +299,7 @@ Tests：`tests/resource_audio_ready_test.cpp`、`tests/lookup_ipc_contract_test.
 - A backend hit does not prove clean voice: software-mixed buffers can be equivalent to loopback.
 - Attach cannot retroactively hook already-created engine/source objects.
 - The P0 baseline does not contain a named, hashed XAudio2 sample, so compatibility must be re-verified per engine.
+- xWMA source voices publish a compressed resource rebuilt from the runtime format and the XAUDIO2_BUFFER_WMA dpds table. The compressed payload is verbatim, but the RIFF envelope is synthesised here, so the emitted file is not byte-identical to any archive entry. No real game has been run against this path yet.
 
 Fixtures：尚无（P5 补齐）
 
@@ -569,6 +649,134 @@ Tests：`tests/qlie_pack_test.cpp`、`tests/adapter_structure_test.py`
 Fixtures：尚无（P5 补齐）
 
 Tests：`tests/unity_event_cursor_test.cpp`、`tests/il2cpp_thread_scope_test.cpp`、`tests/resource_audio_ready_test.cpp`、`tests/adapter_structure_test.py`
+
+### Leaf / AQUAPLUS (WHITE ALBUM2 exact profile) (`leaf_aquaplus`)
+
+- 状态：`implemented_unverified`
+- 别名：Leaf、AQUAPLUS、WHITE ALBUM2、WA2
+- 家族：`leaf_aquaplus`（Leaf / AQUAPLUS custom Windows runtime）
+- 当前 adapter：`hook/adapters/leaf_aquaplus_adapter.inc`
+- 进程策略：launch=`normal_launch_or_suspended_launch_implemented_unverified`，attach=`implemented_unverified`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：WA2.exe；证据：real_sample — WHITE ALBUM2 bundled installation sample inspected on 2026-08-28; the name is descriptive only and never enables exact offsets
+- `pe_architectures`：x86；证据：real_sample — Measured WA2.exe PE/COFF i386 sample, 1,220,096 bytes
+- `pe_imports`：d3d9.dll、dsound.dll；证据：real_sample — Measured import table of the exact hashed x86 sample
+- `runtime_modules`：d3d9.dll、dsound.dll；证据：runtime_observation — The exact hashed WA2 x86 sample completed original-path D3D9 lookup/input interception and source-audio card mining on 2026-08-28
+- `resource_extensions`：.pak；证据：real_sample — VOICE.PAK and IC/VOICE.PAK are validated LAC archives whose playback entries are complete Ogg/Vorbis resources; the root archive completed original-path card mining on 2026-08-28
+- `hashes`：algorithm=sha256, scope=game_executable, value=005E71107ED70E662C41CB526879CDCF0B9486E067C0E5A306308688C17409ED, version=WHITE ALBUM2 bundled edition (version not recorded)；证据：real_sample — SHA-256 measured from the user's original WA2.exe on 2026-08-28
+
+文本能力：
+
+- `luna_exact_cp932_thread`：`implemented_unverified` — The selected HSX0:0 source is identity-bound to module RVA 0x512BF. The original path was user-accepted, but the release evidence/offline gate set was intentionally skipped.
+- `ingame_lookup_geometry`：`implemented_unverified` — The exact D3D9 profile reconstructs bounded per-glyph geometry only after the portable SHA-256 identity and hydrated-image unique-signature/decoded-target/callgraph/COM-ABI gate pass. The relocated A1 /GS cookie operand is deliberately masked and then required to resolve to the profile's module-relative data RVA. Release E2E evidence remains incomplete.
+- `ingame_lookup_sampled_input_shield`：`implemented_unverified` — Single-click and Shift-hover interception is installed only after the same unique hydrated-image gate validates the exact GetAsyncKeyState poller callsites and D3D9 device ABI. Release evidence gates, including the 1,000-transaction shield corpus, remain incomplete.
+- codepage：CP932
+- 线程提示：Use only the selected Luna line source whose thread address equals WA2.exe + 0x512BF.
+
+音频优先级：
+
+1. `leaf_lac_voice_resource` — `implemented_unverified`；格式：original Ogg/Vorbis entry from VOICE.PAK or IC/VOICE.PAK；clean voice：是
+2. `directsound_pcm` — `implemented_unverified`；格式：48000 Hz / mono / signed 16-bit in the observed sample；clean voice：engine_dependent
+
+真实样本证据：
+
+
+已知限制：
+
+- This is one hash-pinned WHITE ALBUM2 x86 executable profile, not a family-wide Leaf or AQUAPLUS support claim. The hash is portable same-build identity, not a dependency on the developer's machine or install directory.
+- A game update, different executable hash, missing/ambiguous hydrated signature, decoded target mismatch, callgraph mismatch or D3D9 ABI mismatch disables the selected text, geometry and sampled-input offsets until that build is measured independently.
+- DirectSound remains a decoded/mixed fallback; the user-accepted card audio comes from the complete source Ogg member in VOICE.PAK.
+- The root VOICE.PAK path completed runtime card mining; IC/VOICE.PAK shares the validated LAC parser but was not separately exercised in the accepted session.
+- Late attach remains implemented_unverified; the accepted path used suspended launch so archive handles and playback reads could not be missed.
+- The original path was user-accepted, but the requested skip-all-tests submission leaves the full release evidence/offline gate set incomplete, so support is not promoted to verified.
+
+Fixtures：`tests/fixtures/leaf_aquaplus_replay.json`
+
+Tests：`tests/leaf_aquaplus_adapter_test.cpp`、`tests/exact_lookup_signature_test.cpp`、`tests/leaf_aquaplus_voice_archive_test.cpp`、`tests/leaf_d3d_trace_export_test.cpp`、`tests/resource_audio_ready_test.cpp`、`tests/adapter_structure_test.py`、`tests/galhook_workflow_test.py`、`../../fushi/test/lookup/gal_ingame_lookup_click_swallow_guard_test.dart`
+
+### HUNEX GGE / HFA-HW (`hunex_gge`)
+
+- 状态：`implemented_unverified`
+- 别名：HUNEX GGE、HFA/HW、WITCH ON THE HOLY NIGHT、WoH
+- 家族：`hunex_gge`（HUNEX GGE HFA archive family; current admission is a WoH-specific title profile, not a family-wide role claim）
+- 当前 adapter：`hook/adapters/hunex_gge_adapter.inc`
+- 进程策略：launch=`normal_launch_observed_adapter_unverified`，attach=`existing_process_attach_observed_resource_hook_unverified`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：WoH.exe；证据：runtime_observation — The original WoH v1.0 Windows sample was observed as WoH.exe on 2026-08-30; the basename is title-profile metadata and never enables the adapter by itself.
+- `pe_architectures`：x64；证据：runtime_observation — The original WoH v1.0 game process was measured as x64 on 2026-08-30.
+- `resource_extensions`：.hfa、.hw；证据：real_sample — The local WoH v1.0 sample contains HUNEXGGEFA10 HFA indexes whose members use the 64-byte HW wrapper around complete Ogg streams; no game payload is committed.
+
+文本能力：
+
+- `luna_typemoon_dialogue_thread`：`implemented_unverified` — The WoH v1.0 original-path session observed and selected the dialogue thread, but no same-session source-audio pairing or card E2E has passed.
+- codepage：UTF-16
+- 线程提示：Select the observed Type-Moon dialogue lane and reject menu/help rendering lanes; this text evidence does not prove HFA resource capture.
+
+音频优先级：
+
+1. `hunex_hfa_hw_ogg_resource` — `implemented_unverified`；格式：complete source Ogg/Vorbis payload from a structurally validated 64-byte HW member inside a HUNEXGGEFA10 HFA archive；clean voice：not_verified
+
+真实样本证据：
+
+
+已知限制：
+
+- The first failed boundary in the observed WoH v1.0 session is resource_observed: text and thread selection passed, while the UI still reported line_has_no_voice and zero voiced lines.
+- No HFA/HW resource event, source-byte capture, clean-voice classification, text/audio pair, screenshot-card E2E or source-entry hash equality has passed on the original path. A 2026-08-31 user report claims live text and voice now work, but it is backed by no session ledger, resource event id or source-entry hash and does not raise the recorded evidence grade; see BUG-1977.
+- The exact lookup provider currently fails closed while correlating the captured glyph/source descriptor with the final client-space sprite quad; single-click and Shift lookup remain implemented_unverified.
+- The data04000.hfa voice role is proved only by the local WoH v1.0 archive layout and is not a HUNEX-family invariant; other titles stay disabled until their archive role is independently mapped and evidenced.
+- Mono versus stereo is not a voice classifier. HW admission is structural and both channel layouts remain valid candidates until the title-scoped archive role is established.
+- The profile intentionally has no executable or module hash allowlist so patched WoH executables can remain eligible for structural probing; WoH.exe and data04000.hfa names alone must never bypass HFA/HW validation.
+- Deliberate 2026-08-31 graduation, recorded because it removed a guard: the x64 hydrated-image renderer/input scanner was promoted from observation-only to a production lookup provider, and the generator assertion 'HUNEX exact geometry is observation-only and must not OfferReady/PublishHit' was deleted to permit it. Only the geometry provider layer graduated. geometry.status stays implemented_unverified and the HFA/HW resource-capture and text/audio pairing gates stay not_verified; promoting the provider is not evidence for resource capture, pairing or any card E2E.
+- The signature-based x64 exact provider is production-wired but remains implemented_unverified. Every ambiguous or missing renderer/input/projection anchor fails closed to attached_calibrated fallback; it must not be advertised as verified until same-session lookup/card and transaction E2E are recorded.
+
+Fixtures：尚无（P5 补齐）
+
+Tests：`tests/hunex_gge_adapter_test.cpp`、`tests/hunex_gge_capture_bridge_test.cpp`、`tests/hunex_gge_lookup_test.cpp`、`tests/hunex_gge_selected_text_test.cpp`、`tests/resource_audio_ready_test.cpp`、`tests/adapter_structure_test.py`、`tests/engine_support_manifest_test.py`
+
+### M2 wind3d11 runtime (STEINS;GATE RE:BOOT) (`sgre`)
+
+- 状态：`implemented_unverified`
+- 别名：SGRE、STEINS;GATE RE:BOOT、wind3d11
+- 家族：`m2_wind3d11`（M2 wind3d11 audio-archive runtime）
+- 当前 adapter：`hook/adapters/sgre_adapter.inc`
+- 进程策略：launch=`create_suspended_preferred`，attach=`supported_for_objects_created_after_attach`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `pe_architectures`：x64；证据：runtime_observation — Luna text profile config/luna_hook_profiles.tsv:5 records an x64 Steam build; the audio path has no independent hashed sample yet.
+- `directory_files_all`：wind3d11data/voice_body.bin；证据：runtime_observation — The wind3d11 runtime keeps character voices in voice_body.bin next to the executable. Archive membership proves only the resource-audio capability; text/lookup may establish the engine family independently through the complete signature and object-ABI proof. No executable name, local path or hash is a family gate.
+- `hashes`：75A83A0E2A7E22055417AE0474B47BE98418C4E42C695C548B558705C404B9D8；证据：runtime_observation — One measured build row in hook/adapters/sgre_anchors.h records the observed TextRender draw boundary, scenario-text vtable and DirectInput mouse-slot RVAs. The digest is diagnostic and, on that exact build, asserts that signature-derived RVAs still match the measurement; it never supplies hook addresses or rejects a hash miss. The published signatures were derived from this one sample, so cross-version runtime compatibility remains unverified.
+
+文本能力：
+
+- `ingame_lookup_geometry`：`implemented_unverified` — The SGRE draw adapter publishes renderer-native UTF-16 text and glyph geometry only after all-executable-section primary/corroborating signatures, decoded RIP targets, PE exception-directory bounds, scenario vtable slot 4 and object-layout gates agree. The mechanism is SHA/path/ASLR independent. 2026-09-03: original-path lookup + card E2E recorded on the measured executable (see verified_games); a second build is still not recorded.
+- `ingame_lookup_directinput_shield`：`implemented_unverified` — The exact mouse-device global must be resolved independently by unique CreateDevice and immediate-poller signatures, and the live DirectInput COM vtable is validated before slot 9 is hooked. The 1,000-transaction real-build shield gate has not run.
+- codepage：not_applicable
+- 线程提示：The SGRE exact lane publishes game-parsed text with a stable ENGINE:SGRE:wind3d11 identity that excludes SHA, path, ASLR and resolved RVAs. The same resolved TextRender draw anchor supplies per-glyph lookup geometry; incompatible layouts publish neither lane nor provider.
+
+音频优先级：
+
+1. `engine_archive_resource` — `implemented_unverified`；格式：xWMA chunks taken verbatim from wind3d11data/voice_body.bin；clean voice：yes
+
+真实样本证据：
+
+
+已知限制：
+
+- No real-game session has been run against this adapter: process_found through card_e2e are all not_run.
+- Archive membership is the role proof, and it only holds while the runtime keeps character voice in a separate voice_body.bin.
+- The emitted .xwma file is not byte-identical to an archive entry: the RIFF envelope is synthesised here. Only the fmt/dpds/payload chunks are verbatim.
+- Only one SGRE executable has supplied measured anchor evidence. An unknown hash is admitted only when the current signature family, PE function boundary, vtable/object layout and live DirectInput ABI all agree uniquely; this is an implemented fail-closed compatibility mechanism, not evidence that arbitrary releases or compiler rebuilds are supported.
+- The populated signatures were derived from that single measured binary. A non-unique signature, decoded-target mismatch, changed codegen/layout, unwind mismatch or ABI mismatch disables exact text, geometry and click interception and leaves the executable digest available for a future independently measured signature family.
+
+Fixtures：尚无（P5 补齐）
+
+Tests：`tests/sgre_adapter_test.cpp`、`tests/exact_lookup_signature_test.cpp`、`tests/adapter_structure_test.py`
 
 ## 状态定义
 

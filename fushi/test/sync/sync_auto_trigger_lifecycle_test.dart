@@ -155,7 +155,10 @@ void main() {
       }
 
       expect(
-        slice('Future<void> closeDatabase()', 'Future<void> shutdown()'),
+        // 锚点去掉空参数表：退出路径要传 pipelineDrainTimeout（BUG-1505 的
+        // 上界只能给退出链，见 video_download_pipeline_service.stop 的注释），
+        // `closeDatabase()` 这个字面量已不存在。
+        slice('Future<void> closeDatabase(', 'Future<void> shutdown()'),
         contains('uninstallCollectionsSyncWatcher()'),
         reason: 'closeDatabase 必须撤合集观察者（BUG-1569②）',
       );

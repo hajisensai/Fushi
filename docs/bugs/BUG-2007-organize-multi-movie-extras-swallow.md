@@ -1,0 +1,6 @@
+## BUG-2007 · 多部电影一个种子时仅最大文件算正片，其余被扔进 Extras 不入库不刮削
+- **报告**：2026-09-01（刮削重设计调查；实证用户库「哆啦A梦剧场版」多部剧场版混装乱象）
+- **真实性**：✅ 真 bug。三层：`video_download_organizer.dart`（修前 :106-113/:202-212）movie 形态只把体积最大的文件抬成正片，其余视频一律镜像进 `Extras/`；`_persistOrganizationIntent` 按路径含 `/Extras/` 标 `kind:'extra'`；import 只取 `kind=='video'` 且 movie 分支只入库 `files.first`——三处叠加，除最大那部外的剧场版**不入库、无作品身份、永不刮削**。
+- **[x] ① 已修复** — `d44bebbe78`（首版 `147ff99e5f` 因审查 4 条阻断被 `864f6ed3a2` 撤销后重做）：① organizer 并列正片判据 `_isStandaloneMovieCandidate`（非显式附件、体量 ≥ 最大正片 1/4、无集号），命中者沿用 Extras 同款「镜像源目录结构」落位（去 `Extras/` 段）——唯一性由源路径结构保证，**不做有损重命名**（首版拿解析标题当目录名，前編/後編 归约同名 → 撞名整条 job 硬失败）；② import movie 分支逐部入库：主片（最大文件，与组织器抬正片同判据）沿用 job.title，并列正片用解析标题、解析撞名退回整理后文件名；③ 字幕阶段只给主片搜（并列正片拿 job 身份搜只会装上主片字幕，留给刮削后按各自身份的补齐链路）；④ 刮削阶段多作品时把 job 携带的已确认身份绑给主片所在作品（首版整批 complete 会把用户确认过的身份也丢掉），并列正片留待确认队列（P2）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/download/video_download_organizer_test.dart`（并列正片镜像/前編後編不撞名/特典目录/小文件门槛）；`fushi/test/media/video/download/video_download_pipeline_service_test.dart`（多电影逐部入库与标题选择、字幕只搜主片、多作品刮削绑主片三用例）。
+- **备注**：既有「movie organizer chooses the largest video」用例原样通过（trailer 体量低于门槛仍进 Extras）。并列正片的展示标题允许与他部重名（唯一性由 bookUid/磁盘路径保证），撞名时退回文件名只为可辨识。

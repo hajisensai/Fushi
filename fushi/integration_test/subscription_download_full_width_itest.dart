@@ -6,7 +6,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
@@ -134,7 +134,7 @@ void main() {
     };
 
     try {
-      app.main();
+      await launchFushiTestApp();
       expect(await waitForHome(tester), isTrue);
       final AppModel model = await readyAppModel(tester);
       await enableFocusNavigation(tester);

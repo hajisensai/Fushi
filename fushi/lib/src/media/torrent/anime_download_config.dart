@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:fushi/src/media/torrent/tracker_subscription.dart';
+
 /// qBittorrent WebUI 连接配置（偏好里存 JSON 字符串，codec 见
 /// [decodeQbConnectionConfig] / [encodeQbConnectionConfig]）。
 ///
@@ -36,6 +38,8 @@ class QbConnectionConfig {
     this.banRelativeProgressCheat = false,
     this.maxIpPortCount = 0,
     this.banTimeMinutes = 0,
+    this.autoAddTrackerSubscription = true,
+    this.trackerSubscriptionUrl = kDefaultTrackerSubscriptionUrl,
   });
 
   /// 加密策略：首选（尝试加密，允许明文回退）。
@@ -53,11 +57,11 @@ class QbConnectionConfig {
   /// 后端标识：外接 qBittorrent WebUI。
   static const String backendQbittorrent = 'qbittorrent';
 
-  /// 后端标识：内置 libtorrent 引擎（桌面；见 EmbeddedTorrentHost）。
+  /// 后端标识：内置 libtorrent 引擎（见 EmbeddedTorrentHost）。
   static const String backendEmbedded = 'embedded';
 
-  /// 后端标识：自动（默认，开箱即用）——桌面用内置引擎、移动端外接 qb。
-  /// 用户没显式选过后端时的值。
+  /// 后端标识：自动（默认，开箱即用）——有内置引擎的平台用内置引擎、
+  /// 其余平台外接 qb。用户没显式选过后端时的值。
   static const String backendAuto = 'auto';
 
   /// 下载后端（[backendAuto] / [backendQbittorrent] / [backendEmbedded]）。
@@ -67,18 +71,23 @@ class QbConnectionConfig {
 
   /// 把配置值解析成**本平台真实可用**的后端。
   ///
-  /// [isDesktop] = 本平台是否具备内置引擎（调用方传 `_supportsEmbeddedTorrent()`）。
+  /// [embeddedSupported] = 本平台是否具备内置引擎（调用方传
+  /// `_supportsEmbeddedTorrent()`；桌面 + Android 为 true，iOS 为 false——
+  /// iOS 从不构建也从不打包内置引擎产物）。
   ///
   /// BUG-1207：这里过去只规约 [backendAuto]，显式的 [backendEmbedded] 一律原样
-  /// 放行——于是移动端（Android/iOS 从不构建也从不打包 `libfushi_torrent_ffi.so`：
-  /// `native/fushi_torrent/CMakeLists.txt` 只有 WIN32/APPLE 分支，
-  /// `fushi/android/app/build.gradle` 的 externalNativeBuild 只含 fushidicts）
-  /// 会解析出一个根本不存在的后端：`EmbeddedTorrentHost.open` 吞掉 `ArgumentError`
-  /// 返回 null，`_torrentBackendFor` 静默造一个 `QbTorrentBackend`，而设置页仍显示
+  /// 放行——于是无内置引擎的平台会解析出一个根本不存在的后端：
+  /// `EmbeddedTorrentHost.open` 吞掉 `ArgumentError` 返回 null，
+  /// `_torrentBackendFor` 静默造一个 `QbTorrentBackend`，而设置页仍显示
   /// 「内置引擎」选中、并把只有内置引擎才读的下载目录暴露给用户改（改了不被任何人
   /// 采用）。规约收在这一处，下游 UI 分支与运行时后端选择的特殊情况一并消失。
-  String resolveBackend({required bool isDesktop}) {
-    if (!isDesktop) return backendQbittorrent;
+  ///
+  /// 注意 Android 的 `.so` 是 copy-if-present 随包（构建机没跑
+  /// `build_android_so` 时 APK 里没有它）：那种残缺包里 [embeddedSupported]
+  /// 仍是 true、解析结果是 embedded，但宿主 open 失败后运行时仍会按上述 null
+  /// 路径回退 qb——行为与 Windows 缺 DLL 完全一致，不是新特例。
+  String resolveBackend({required bool embeddedSupported}) {
+    if (!embeddedSupported) return backendQbittorrent;
     if (backend == backendAuto) return backendEmbedded;
     return backend;
   }
@@ -176,6 +185,13 @@ class QbConnectionConfig {
   /// 反吸血：封禁时长（分钟，0 = 永久）。
   final int banTimeMinutes;
 
+  /// 自动把 [trackerSubscriptionUrl] 的 Tracker 加到新下载。订阅失败不会
+  /// 阻止种子任务创建。
+  final bool autoAddTrackerSubscription;
+
+  /// 每行一个 Tracker 的 HTTP(S) 订阅地址。
+  final String trackerSubscriptionUrl;
+
   /// 是否已配置：内置引擎/自动无需连接参数恒为真（桌面开箱即用）；外接 qb
   /// 要求 [baseUrl] 非空。未配置时下载入队与完成监听均不动作。
   bool get isConfigured =>
@@ -210,6 +226,8 @@ class QbConnectionConfig {
     bool? banRelativeProgressCheat,
     int? maxIpPortCount,
     int? banTimeMinutes,
+    bool? autoAddTrackerSubscription,
+    String? trackerSubscriptionUrl,
   }) {
     return QbConnectionConfig(
       backend: backend ?? this.backend,
@@ -241,6 +259,10 @@ class QbConnectionConfig {
           banRelativeProgressCheat ?? this.banRelativeProgressCheat,
       maxIpPortCount: maxIpPortCount ?? this.maxIpPortCount,
       banTimeMinutes: banTimeMinutes ?? this.banTimeMinutes,
+      autoAddTrackerSubscription:
+          autoAddTrackerSubscription ?? this.autoAddTrackerSubscription,
+      trackerSubscriptionUrl:
+          trackerSubscriptionUrl ?? this.trackerSubscriptionUrl,
     );
   }
 }
@@ -330,6 +352,13 @@ QbConnectionConfig? decodeQbConnectionConfig(String raw) {
       banRelativeProgressCheat: json['banRelativeProgressCheat'] == true,
       maxIpPortCount: _nonNegInt(json['maxIpPortCount']),
       banTimeMinutes: _nonNegInt(json['banTimeMinutes']),
+      autoAddTrackerSubscription:
+          _boolOr(json['autoAddTrackerSubscription'], true),
+      trackerSubscriptionUrl:
+          json['trackerSubscriptionUrl'] is String &&
+                  (json['trackerSubscriptionUrl'] as String).trim().isNotEmpty
+              ? (json['trackerSubscriptionUrl'] as String).trim()
+              : kDefaultTrackerSubscriptionUrl,
     );
   } catch (_) {
     return null;
@@ -378,5 +407,7 @@ String encodeQbConnectionConfig(QbConnectionConfig config) {
     'banRelativeProgressCheat': config.banRelativeProgressCheat,
     'maxIpPortCount': config.maxIpPortCount,
     'banTimeMinutes': config.banTimeMinutes,
+    'autoAddTrackerSubscription': config.autoAddTrackerSubscription,
+    'trackerSubscriptionUrl': config.trackerSubscriptionUrl,
   });
 }

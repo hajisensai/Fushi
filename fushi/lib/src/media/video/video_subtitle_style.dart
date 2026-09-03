@@ -168,6 +168,34 @@ double videoSubtitleControlsTopReserve({
   return (bottom: trackCenter - tickHeight / 2, height: tickHeight);
 }
 
+/// media_kit 控制条自身的**外层 padding**（BUG-1783）。叠在控制条 Stack 上的兄弟层
+/// （章节刻度、缩略图预览浮层……）必须用**同一个**值做水平基准，否则刻度与轨道分叉。
+///
+/// 真相源是 fork `third_party/media_kit_video/.../controls/material.dart` 的
+/// `_theme(context).padding ?? (isFullscreen(context) ? MediaQuery.padding : EdgeInsets.zero)`。
+/// Hibiki 的移动 / 桌面 theme 都**没有**设 `padding` 字段，故恒走后半段。
+///
+/// **为什么不能图省事写 `SafeArea`**：`SafeArea` 恒吃 `MediaQuery.padding`，与上式只在
+/// 「真的处于 media_kit 全屏路由」时才等价。而移动端视频**永不进 media_kit 全屏路由**
+/// （BUG-221，`_toggleVideoFullscreen` 移动端 no-op），轨道恒走 `EdgeInsets.zero` 分支；
+/// 与此同时 Android 全局 `windowLayoutInDisplayCutoutMode=shortEdges`
+/// （`fushi/android/app/src/main/res/values*/styles.xml`）让横屏刘海落在**左 / 右短边**、
+/// `padding.left/right` 非零。于是刻度层比轨道多缩一段，误差
+/// `Δ(f) = padding.left − f·(padding.left + padding.right)` 随比例线性变化——不是整体平移
+/// 而是**仿射斜切**：首章右偏、末章左偏、中间某点恰好蒙对，最难被一眼看出。用户报
+/// 「手机上的章节标记有问题」即此。
+///
+/// 纯函数（页面与测试同源）。[themePadding] 传 controls theme 的 `padding` 字段（当前两套
+/// 主题均为 null，留参数是为了主题哪天真设了值时两侧仍不分叉）。
+EdgeInsets videoControlsChromeInsets({
+  required bool isFullscreenRoute,
+  required EdgeInsets systemPadding,
+  EdgeInsets? themePadding,
+}) {
+  return themePadding ??
+      (isFullscreenRoute ? systemPadding : EdgeInsets.zero);
+}
+
 /// 字幕字号的**屏幕自适应因子**（TODO-1199）。
 ///
 /// 问题：字幕字号此前把用户设置的固定值（[VideoSubtitleStyle.fontSize]）原样喂给

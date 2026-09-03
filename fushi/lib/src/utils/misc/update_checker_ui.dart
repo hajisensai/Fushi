@@ -10,6 +10,15 @@ String formatUpdateDownloadByteCount(int? bytes) =>
 String formatUpdateDownloadSpeed(double? bytesPerSecond) =>
     FushiByteFormat.speed(bytesPerSecond);
 
+/// **纯函数**：落地入口种类 → 「前往下载」主按钮文案。文案必须说清去哪儿，否则
+/// 用户点了「下载」结果跳出 App Store / TestFlight 会以为是误触。
+@visibleForTesting
+String updateLandingActionLabel(UpdateLandingKind kind) => switch (kind) {
+      UpdateLandingKind.releasePage => t.update_download,
+      UpdateLandingKind.testFlight => t.update_testflight_open,
+      UpdateLandingKind.appStore => t.update_app_store_open,
+    };
+
 @visibleForTesting
 double? updateDownloadBytesPerSecond({
   required int startedBytes,
@@ -29,6 +38,8 @@ class UpdateAvailableDialog extends StatelessWidget {
     required this.releaseNotes,
     required this.primaryLabel,
     required this.onPrimary,
+    this.secondaryLabel,
+    this.onSecondary,
     super.key,
   });
 
@@ -36,6 +47,12 @@ class UpdateAvailableDialog extends StatelessWidget {
   final String releaseNotes;
   final String primaryLabel;
   final VoidCallback onPrimary;
+
+  /// 可选的第二入口。iOS 上主按钮指向 TestFlight / App Store 时，这里给出
+  /// 「发布页」——GitHub Release 里的未签名 ipa 是侧载用户唯一的取包处，主按钮改
+  /// 指商店后必须保留这条路，否则等于把侧载用户的更新链路直接掐断。
+  final String? secondaryLabel;
+  final VoidCallback? onSecondary;
 
   @override
   Widget build(BuildContext context) {
@@ -105,6 +122,12 @@ class UpdateAvailableDialog extends StatelessWidget {
               onPressed: () => Navigator.of(context).pop(),
               child: Text(t.update_skip),
             ),
+            if (secondaryLabel != null && onSecondary != null)
+              adaptiveDialogAction(
+                context: context,
+                onPressed: onSecondary,
+                child: Text(secondaryLabel!),
+              ),
             adaptiveDialogAction(
               context: context,
               isDefaultAction: true,
@@ -313,6 +336,20 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
                   style: tokens.type.metadata,
                 ),
               ],
+              // 被 hook 的游戏 / `--hold` 的 injector host 正占着 helper 组件：这是
+              // 「更新装不上」里唯一需要用户去关**游戏**而不是关 Fushi 的一类，必须与
+              // 上面的 libmpv 占用者分开说（BUG-1675）。
+              for (final WindowsProcessInfo process
+                  in record.galHookModuleHolders) ...[
+                SizedBox(height: tokens.spacing.gap / 2),
+                SelectableText(
+                  t.update_install_gal_hook_holder(
+                    pid: process.pid,
+                    path: _windowsProcessPathLabel(process),
+                  ),
+                  style: tokens.type.metadata,
+                ),
+              ],
               for (final WindowsInnoDeleteFileFailure failure
                   in record.innoLogDeleteFileFailures) ...[
                 SizedBox(height: tokens.spacing.gap / 2),
@@ -326,6 +363,7 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
               ],
               if (record.runningFushiProcesses.isNotEmpty ||
                   record.libmpvModuleHolders.isNotEmpty ||
+                  record.galHookModuleHolders.isNotEmpty ||
                   record.innoLogDeleteFileFailures.isNotEmpty) ...[
                 SizedBox(height: tokens.spacing.gap),
                 Text(
@@ -411,10 +449,12 @@ Widget buildUpdateDownloadOverlayForTest({
   required ValueNotifier<UpdateDownloadDiagnostics?> diagnostics,
   required VoidCallback onHide,
   VoidCallback? onCancel,
+  ValueNotifier<String?>? notice,
 }) {
   return _DownloadOverlay(
     progress: progress,
     status: status,
+    notice: notice ?? ValueNotifier<String?>(null),
     diagnostics: diagnostics,
     onHide: onHide,
     onCancel: onCancel ?? () {},
@@ -425,12 +465,17 @@ class _DownloadOverlay extends StatelessWidget {
   const _DownloadOverlay({
     required this.progress,
     required this.status,
+    required this.notice,
     required this.diagnostics,
     required this.onHide,
     required this.onCancel,
   });
   final ValueNotifier<double> progress;
   final ValueNotifier<String> status;
+
+  /// 整轮下载都成立的一句通告（当前唯一来源：所选下载来源对本资产不适用）。
+  /// null = 无事可报，不占位。
+  final ValueNotifier<String?> notice;
   final ValueNotifier<UpdateDownloadDiagnostics?> diagnostics;
   final VoidCallback onHide;
   final VoidCallback onCancel;
@@ -462,6 +507,20 @@ class _DownloadOverlay extends StatelessWidget {
                         style: Theme.of(context).textTheme.titleMedium,
                         textAlign: TextAlign.center,
                       ),
+                    ),
+                    ValueListenableBuilder<String?>(
+                      valueListenable: notice,
+                      builder: (_, value, __) {
+                        if (value == null) return const SizedBox.shrink();
+                        return Padding(
+                          padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+                          child: Text(
+                            value,
+                            style: Theme.of(context).textTheme.bodySmall,
+                            textAlign: TextAlign.center,
+                          ),
+                        );
+                      },
                     ),
                     SizedBox(height: tokens.spacing.gap),
                     ValueListenableBuilder<double>(
@@ -528,11 +587,14 @@ class _DownloadDiagnosticsPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final TextStyle? style = Theme.of(context).textTheme.bodySmall;
-    final String resumeStatus = value.restartedFromZero
-        ? t.update_download_restarted_from_zero
-        : value.resumed
-            ? t.update_download_resumed
-            : t.update_download_not_resumed;
+    // 续传行只在「确实发生了续传相关的事」时出现：全新下载（none）没有可报的
+    // 续传事实，多显示一行「未续传」是把「没这回事」说成「这事没成」。
+    final String? resumeStatus = switch (value.resumeOutcome) {
+      DownloadResumeOutcome.resumed => t.update_download_resumed,
+      DownloadResumeOutcome.restartedFromZero =>
+        t.update_download_restarted_from_zero,
+      DownloadResumeOutcome.none => null,
+    };
     return DefaultTextStyle.merge(
       style: style,
       child: Column(
@@ -555,10 +617,12 @@ class _DownloadDiagnosticsPanel extends StatelessWidget {
               speed: formatUpdateDownloadSpeed(value.bytesPerSecond),
             ),
           ),
-          SizedBox(height: tokens.spacing.gap / 2),
-          _DiagnosticLine(
-            text: t.update_download_resume_status(status: resumeStatus),
-          ),
+          if (resumeStatus != null) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap / 2),
+            _DiagnosticLine(
+              text: t.update_download_resume_status(status: resumeStatus),
+            ),
+          ],
         ],
       ),
     );

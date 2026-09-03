@@ -65,6 +65,30 @@ void main() {
       expect(launch.client.httpHeaderFields, isEmpty);
       launch.client.close();
     });
+
+    // 来源库 WebDAV 视频：打开时按 sourceId 现解析的认证头与 spec 防盗链头合并
+    // 进同一个 map（同时用于视频流与字幕下载），认证头不落行级 spec（凭据红线）。
+    test('sourceHttpHeaders merge into direct-stream client headers', () async {
+      const StreamVideoSpec spec = StreamVideoSpec(
+        subtitleUrl: 'https://dav.example.com/lib/ep1.srt',
+        subtitleFileName: 'ep1.srt',
+        referer: 'https://example.com/',
+      );
+      final launch = await buildStreamVideoLaunch(
+        _row(
+          videoPath: 'https://dav.example.com/lib/ep1.mkv',
+          streamSpecJson: spec.toStorageJson(),
+        ),
+        sourceHttpHeaders: const <String, String>{
+          'Authorization': 'Basic dTpwdw==',
+        },
+      );
+      expect(launch.client.httpHeaderFields, <String, String>{
+        'Referer': 'https://example.com/',
+        'Authorization': 'Basic dTpwdw==',
+      });
+      launch.client.close();
+    });
   });
 
   group('buildStreamVideoLaunch YouTube resolve cache (TODO-1314)', () {
@@ -181,6 +205,39 @@ void main() {
       );
       expect(resolveCalls, 2);
       launch2.client.close();
+    });
+
+    test('画质目标变更 -> 旧缓存视为 miss 重解析；同目标再开命中', () async {
+      int resolveCalls = 0;
+      final YoutubeStreamCache cache =
+          YoutubeStreamCache(file: File('${tmp.path}/c.json'), now: () => now);
+      Future<void> open(int? targetHeight) async {
+        final launch = await buildStreamVideoLaunch(
+          ytRow(),
+          streamCache: cache,
+          youtubeResolver: (String url) async {
+            resolveCalls++;
+            return fakeResolved('r$resolveCalls');
+          },
+          livenessCheck: (String u, Map<String, String> h) async => true,
+          now: () => now,
+          youtubeTargetHeight: targetHeight,
+        );
+        launch.client.close();
+      }
+
+      // 自动（null）解析并缓存。
+      await open(null);
+      expect(resolveCalls, 1);
+      // 用户把画质目标改成 1440：缓存的 URL 是旧档位 → miss 重解析。
+      await open(1440);
+      expect(resolveCalls, 2);
+      // 同目标再开：命中新缓存，不再解析。
+      await open(1440);
+      expect(resolveCalls, 2);
+      // 改回自动：又是一次 miss（缓存条目记的是 1440）。
+      await open(null);
+      expect(resolveCalls, 3);
     });
 
     test('no parseable expire -> not cached (each open re-resolves)', () async {

@@ -1,0 +1,51 @@
+--- a/src/udp_socket.cpp
++++ b/src/udp_socket.cpp
+@@ -233,10 +233,15 @@
+ 			p.data = {m_buf->data(), len};
+ 
+ 			// support packets coming from the SOCKS5 proxy
+-			if (active_socks5())
++			// Fushi: only the datagrams that really came from the proxy take the
++			// wrapped path. Upstream dropped every packet from any other source as
++			// soon as the SOCKS5 tunnel was up, which also killed the direct DHT and
++			// uTP replies a "mixed" session (proxy_peer_connections=false) asks for
++			// on the send side. Full-proxy sessions are unaffected: their non-proxy
++			// packets now fall into the else branch and are dropped there, because
++			// proxy_only stays true while both exemption flags are on.
++			if (active_socks5() && p.from == m_socks5_connection->target())
+ 			{
+-				// if the source IP doesn't match the proxy's, ignore the packet
+-				if (p.from != m_socks5_connection->target()) continue;
+ 				// if we failed to unwrap, silently ignore the packet
+ 				if (!unwrap(p)) continue;
+ 			}
+@@ -287,7 +292,13 @@
+ 	bool const use_proxy
+ 		= ((flags & peer_connection) && m_proxy_settings.proxy_peer_connections)
+ 		|| ((flags & tracker_connection) && m_proxy_settings.proxy_tracker_connections)
+-		|| !(flags & (tracker_connection | peer_connection))
++		// Fushi: DHT/other un-flagged UDP traffic follows the peer plane, so a
++		// "mixed" session (proxy_peer_connections=false, trackers proxied) keeps
++		// DHT alive on the direct route instead of force-dropping it when the
++		// proxy cannot carry UDP. The read() hunk above aligns the receive side
++		// so the direct replies to these datagrams are not dropped either.
++		|| (!(flags & (tracker_connection | peer_connection))
++			&& m_proxy_settings.proxy_peer_connections)
+ 		;
+ 
+ 	if (use_proxy && m_proxy_settings.type != settings_pack::none)
+@@ -325,7 +336,13 @@
+ 	bool const use_proxy
+ 		= ((flags & peer_connection) && m_proxy_settings.proxy_peer_connections)
+ 		|| ((flags & tracker_connection) && m_proxy_settings.proxy_tracker_connections)
+-		|| !(flags & (tracker_connection | peer_connection))
++		// Fushi: DHT/other un-flagged UDP traffic follows the peer plane, so a
++		// "mixed" session (proxy_peer_connections=false, trackers proxied) keeps
++		// DHT alive on the direct route instead of force-dropping it when the
++		// proxy cannot carry UDP. The read() hunk above aligns the receive side
++		// so the direct replies to these datagrams are not dropped either.
++		|| (!(flags & (tracker_connection | peer_connection))
++			&& m_proxy_settings.proxy_peer_connections)
+ 		;
+ 
+ 	if (use_proxy && m_proxy_settings.type != settings_pack::none)

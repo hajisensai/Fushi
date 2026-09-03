@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "leaf_aquaplus",
+  "status": "implemented_unverified",
+  "detection": {
+    "executable_sha256": [
+      "005e71107ed70e662c41cb526879cdcf0b9486e067c0e5a306308688c17409ed"
+    ],
+    "module_sha256": []
+  },
+  "capabilities": {
+    "text": true,
+    "resource_audio": true,
+    "pcm_audio": true
+  },
+  "evidence": [
+    {
+      "kind": "runtime_observation",
+      "reference": "Exact hashed WA2 x86 sample completed original-path lookup and real-card mining with source Ogg from VOICE.PAK on 2026-08-28"
+    }
+  ]
+}

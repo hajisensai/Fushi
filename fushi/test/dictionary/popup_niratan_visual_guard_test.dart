@@ -20,12 +20,10 @@ void main() {
   // flutter test 的 cwd 是 hibiki 包根。
   late final String css;
   late final String js;
-  late final String html;
 
   setUpAll(() {
     css = File('assets/popup/popup.css').readAsStringSync();
     js = File('assets/popup/popup.js').readAsStringSync();
-    html = File('assets/popup/popup.html').readAsStringSync();
   });
 
   group('#1 音高来源彩色药丸', () {
@@ -51,17 +49,23 @@ void main() {
       expect(body.contains('#94a6eb'), isFalse, reason: '禁止照抄 Niratan 的硬编码颜色');
     });
 
-    test('Dart 侧两个注入点都注入了 --md-on-primary（药丸文字色的真值来源）', () {
-      for (final String path in <String>[
+    test('Dart 侧唯一注入点注入了 --md-on-primary（药丸文字色的真值来源）', () {
+      // BUG-2039 ③：主题变量段只剩 popup_settings_injection 一处；in-app 弹窗
+      // WebView 的主题热切换重注同一段产物（themeVarsJs），不再自拼第二份。
+      final String injection = File(
         'lib/src/pages/implementations/popup_settings_injection.dart',
+      ).readAsStringSync();
+      expect(injection, contains("'--md-on-primary'"),
+          reason: 'popup_settings_injection 应注入 --md-on-primary');
+      final String webview = File(
         'lib/src/pages/implementations/dictionary_popup_webview.dart',
-      ]) {
-        final String src = File(path).readAsStringSync();
-        expect(src, contains("'--md-on-primary'"),
-            reason: '$path 应注入 --md-on-primary');
-      }
+      ).readAsStringSync();
+      expect(webview, isNot(contains("setProperty('--md-on-primary'")),
+          reason: '弹窗 WebView 不得再维护第二份主题变量注入（会与真源漂移）');
+      expect(webview, contains('.themeVarsJs'),
+          reason: '弹窗 WebView 主题热切换必须消费静态段产物里的同一段');
       // 取值已收敛到共享真源 popup_theme_css.dart：on-primary 仍取自
-      // ColorScheme.onPrimary，两个注入点经 buildPopupThemeCssVars 消费。
+      // ColorScheme.onPrimary，注入点经 buildPopupThemeCssVars 消费。
       final String shared =
           File('lib/src/utils/popup_theme_css.dart').readAsStringSync();
       expect(shared, contains('scheme.onPrimary'),
@@ -82,19 +86,21 @@ void main() {
               'SVG 用 currentColor 跟随按钮颜色/主题（而非 SF-symbol 的 -webkit-mask macOS-only 分支）');
     });
 
-    test('四类动作按钮挂 inline-action-button 共享基类（制卡按钮除外，见还原守卫）', () {
+    test('五类动作按钮挂 inline-action-button 共享基类（制卡按钮只借布局不借 SVG）', () {
       // audio / favorite 两顶部按钮 + Hibiki 独有的 clear-draft / 句子上下文步进器。
-      // 制卡按钮已按 TODO-1325 还原为 ✓✓↩ 文本标记，不挂 inline-action-button。
+      // 制卡按钮按 TODO-1325 保留 ✓✓↩ 文本字形（不走 SVG），但 BUG-1895 起也挂共享
+      // 基类：它借的是基类的 inline-flex 居中与 pointer 光标，好让文本 '+' 与同排
+      // 1em SVG 图标目测齐平，跟「走不走 SVG」正交。「不走 SVG」的真判据在下面还原
+      // 守卫的 setButtonIcon / check / restore 断言里，不再拿 class 名当代理判据。
       for (final String cls in <String>[
         'inline-action-button audio-button',
         'inline-action-button favorite-button',
         'inline-action-button clear-draft-button',
         'inline-action-button context-stepper-btn',
+        'inline-action-button mine-button',
       ]) {
         expect(js, contains(cls), reason: '按钮 "$cls" 必须挂共享基类');
       }
-      expect(js.contains('inline-action-button mine-button'), isFalse,
-          reason: '制卡按钮已还原为 ✓✓↩ 文本标记，不再挂 inline-action-button');
     });
 
     test('audio/favorite 状态切换走图标名而非文字字形', () {
@@ -122,11 +128,27 @@ void main() {
       expect(svgBody, contains('height: 1em'));
     });
 
-    test('标签说明遮罩的关闭按钮也换成内联 SVG（关闭图标一并统一）', () {
-      expect(html, contains('class="overlay-close"'),
-          reason: 'overlay-close 结构保留');
-      expect(RegExp(r'overlay-close"[^>]*>\s*<svg').hasMatch(html), isTrue,
-          reason: 'overlay-close 用内联 SVG 而非 × 文字字形');
+    test('标签说明浮层的关闭按钮也换成内联 SVG（关闭图标一并统一）', () {
+      // 浮层已不再是 popup.html 里的静态 `.overlay`，改由 popup.js 现建，
+      // 关闭按钮相应从 `.overlay-close` 变成 `.grammar-tooltip-close`。
+      // 判据不变：必须是内联 SVG，不能退回 × 文字字形（字形冒充图标会因
+      // 视觉重心偏移而无法真正居中，根治只能是几何绘制）。
+      final String js = File('assets/popup/popup.js').readAsStringSync();
+      expect(
+        js,
+        contains("className: 'grammar-tooltip-close'"),
+        reason: 'grammar-tooltip-close 结构保留',
+      );
+      expect(
+        js,
+        contains("close.innerHTML = iconSvg('close');"),
+        reason: '关闭按钮用内联 SVG（复用 ICON_PATHS.close）而非 × 文字字形',
+      );
+      expect(
+        js,
+        isNot(contains("textContent = '×'")),
+        reason: '不得退回 × 文字字形',
+      );
     });
   });
 
@@ -144,8 +166,10 @@ void main() {
           contains(
               "mineButton.textContent = isMined ? (latest ? '\u{2713}\u{21A9}\u{FE0E}' : '\u{2713}') : '+';"),
           reason: '制卡按钮状态切换用 ✓/✓↩ 文本字形，且 ↩ 带 VS15(U+FE0E)');
+      // class 列表允许带 inline-action-button 等布局基类前缀（BUG-1895）；这里守的
+      // 是「初始 textContent 是文本 '+' 而非 SVG」，不是 class 名的确切拼写。
       expect(
-          RegExp(r"className: 'mine-button',\s+textContent: '\+',")
+          RegExp(r"className: '[^']*\bmine-button',\s+textContent: '\+',")
               .hasMatch(js),
           isTrue,
           reason: '制卡按钮初始文本为 +（可制卡）');

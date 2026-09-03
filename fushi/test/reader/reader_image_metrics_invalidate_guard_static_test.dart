@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
 
 /// TODO-627 / BUG-349 源码守卫：PC 阅读遇插画滚轮翻不了下一页的三处根因修复
@@ -58,8 +59,16 @@ void main() {
   group('B: continuous wheel crosses chapter at content-axis boundary', () {
     test('continuous wheel branch calls onBoundarySwipe', () {
       // 连续模式 wheel 监听器到底必须回传 onBoundarySwipe（复用边界跨章通道）。
+      //
+      // BUG-2015：这条回传现在带第三个实参（pointerKind）且被 dart format 折了行，
+      // 原来的裸 `contains("callHandler('onBoundarySwipe', wheelDir)")` 只是被**排版**
+      // 打掉，语义并没有变。判据改成「掩掉 Dart/JS 注释后再折叠空白」的形状匹配：
+      // 既跨得过换行与新增实参，又不会被注释里的同名文字骗绿（compactCode 走的是
+      // maskComments，这里额外先剥三引号内的 JS 注释）。
+      final String compactWheelJs = maskCommentsAndScriptLines(pageSource)
+          .replaceAll(RegExp(r'\s+'), '');
       expect(
-        pageSource.contains("callHandler('onBoundarySwipe', wheelDir)"),
+        compactWheelJs.contains("callHandler('onBoundarySwipe',wheelDir"),
         isTrue,
         reason: '连续模式滚轮到内容轴尽头必须跨章，否则插画/章末滚轮无反应',
       );

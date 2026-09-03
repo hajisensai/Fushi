@@ -1,12 +1,16 @@
 /// 磁力链接解析工具（纯函数，通用下载入口用）。
 
+import 'package:fushi/src/utils/net/url_input_normalizer.dart';
+
 const String _base32Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
 /// 解析磁力链接的 v1 infoHash（`xt=urn:btih:<hash>`），归一化为 40 位小写
 /// 十六进制。支持两种编码：40 位十六进制原样小写；32 位 RFC4648 base32 解码成
 /// 20 字节再转十六进制。无法解析（非磁力 / 缺 btih / 长度不对）返回 null。
 String? parseMagnetInfoHash(String magnet) {
-  final String trimmed = magnet.trim();
+  // 折全角后再判：磁力链密集使用 `:` `?` `&` `=`，中文输入法下全角化后
+  // 连 `magnet:` 前缀都匹配不上，用户只会看到「无效的磁力链接」（BUG-1807）。
+  final String trimmed = normalizeUrlInput(magnet);
   if (!trimmed.toLowerCase().startsWith('magnet:')) return null;
   final Uri? uri = Uri.tryParse(trimmed);
   if (uri == null) return null;

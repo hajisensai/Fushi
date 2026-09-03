@@ -145,6 +145,35 @@ void main() {
       expect(back.miningVideoHasAudio, e.miningVideoHasAudio);
       expect(back.expiresAtMs, e.expiresAtMs);
       expect(back.httpHeaders, e.httpHeaders);
+      // 无显式画质目标（自动）时不写字段、读回 null。
+      expect(e.toJson().containsKey('targetHeight'), isFalse);
+      expect(back.targetHeight, isNull);
+    });
+
+    test('entry json round-trips targetHeight（显式画质目标）', () {
+      const YoutubeStreamCacheEntry e = YoutubeStreamCacheEntry(
+        streamUrl: 'https://g/v?itag=308',
+        audioStreamUrl: 'https://g/a?itag=251',
+        miningVideoUrl: null,
+        miningVideoHasAudio: false,
+        httpHeaders: <String, String>{},
+        expiresAtMs: 123456,
+        targetHeight: 1440,
+      );
+      final YoutubeStreamCacheEntry back =
+          YoutubeStreamCacheEntry.fromJson(e.toJson());
+      expect(back.targetHeight, 1440);
+    });
+
+    test('旧缓存 JSON 无 targetHeight 字段 → 读回 null（自动语义，向后兼容）', () {
+      final YoutubeStreamCacheEntry back =
+          YoutubeStreamCacheEntry.fromJson(<String, dynamic>{
+        'streamUrl': 'https://g/v?itag=137',
+        'miningVideoHasAudio': true,
+        'httpHeaders': <String, dynamic>{},
+        'expiresAtMs': 99,
+      });
+      expect(back.targetHeight, isNull);
     });
   });
 }

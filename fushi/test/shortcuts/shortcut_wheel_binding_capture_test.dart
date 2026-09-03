@@ -204,15 +204,18 @@ void main() {
     resetPlatform();
   });
 
-  testWidgets('弹窗 scope 给滚轮 + 键盘入口，不给手柄/鼠标入口（不造死绑定）',
+  testWidgets('弹窗 scope 给滚轮 + 键盘 + 手柄入口，不给鼠标入口（不造死绑定）',
       (WidgetTester tester) async {
-    // 契约变更（制卡快捷键）：本 scope 早先只开滚轮。加入 popupMineEntry（= 点弹窗里的
-    // 「＋」，默认 Ctrl+Enter）后键盘通道有了真实消费者，故键盘入口出现。
+    // 契约变更史：本 scope 早先只开滚轮；加入 popupMineEntry（= 点弹窗里的「＋」，
+    // 默认 Ctrl+Enter）后键盘通道有了真实消费者，键盘入口出现；手柄重设计 P2 再开
+    // 手柄——GamepadService 的弹窗兜底（tryDictionaryPopupGamepadButton）按本 scope
+    // 解析并经钩子调进弹窗 JS，手柄入口随之出现。
     //
     // 关键点是「不造死绑定」这个约束本身没有松动，只是满足方式变了：通道是按 **scope**
-    // 开的，所以开键盘就等于给本 scope 每个动作都开。为此 popup_settings_injection 的
-    // 键盘绑定表覆盖三个动作（mine/next/prev）、popup.js 统一分派——词条导航同样能绑键盘
-    // 并真的生效，而不是渲染出一个按了没反应的入口。手柄/鼠标仍无解析入口，保持不给。
+    // 开的，所以开一个通道就等于给本 scope 每个动作都开。键盘侧
+    // popup_settings_injection 的绑定表覆盖全部动作（mine/next/prev/audio）、popup.js
+    // 统一分派；手柄侧全部动作都进 tryDictionaryPopupGamepadButton 的分派表。
+    // 鼠标仍无解析入口，保持不给。
     usePlatform(TargetPlatform.windows);
     final FushiShortcutRegistry registry =
         buildRegistry(TargetPlatform.windows);
@@ -224,7 +227,7 @@ void main() {
 
     expect(find.byKey(const Key('shortcut_add_wheel')), findsOneWidget);
     expect(find.text(t.shortcut_keyboard), findsWidgets);
-    expect(find.text(t.shortcut_gamepad), findsNothing);
+    expect(find.text(t.shortcut_gamepad), findsWidgets);
     expect(find.byKey(const Key('shortcut_add_mouse')), findsNothing);
 
     resetPlatform();

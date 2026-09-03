@@ -11,6 +11,8 @@
 // false 或控制器未 start 时本路由返回 false，由调用方回落各自原路由——点词永不
 // 静默丢失。
 
+import 'dart:ui' show Rect;
+
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -31,14 +33,18 @@ String floatingLyricSearchTerm({
 }
 
 /// 悬浮歌词点词（[text] 整行 + [index] 命中字符）优先走 app 外全局查词覆盖窗
-/// （TODO-872）。true = 覆盖窗已接手：卡片弹在光标处（native 条只回传
-/// text+index、无坐标，而触发点击刚发生在光标下），整行文本作为卡片的句子横幅
-/// 与制卡 sentence 字段。false = 覆盖窗不可用（非 Windows / 控制器未 start /
-/// 分不出词），调用方回落自己原有路由。
+/// （TODO-872）。true = 覆盖窗已接手，整行文本作为卡片的句子横幅与制卡 sentence
+/// 字段。false = 覆盖窗不可用（非 Windows / 控制器未 start / 分不出词），调用方
+/// 回落自己原有路由。
+///
+/// [wordRect] 是被点那个字的**屏幕逻辑 px** 矩形（native 随点词事件回传）。给了
+/// 就把卡片锚定到那个词；为 null（Android 系统 overlay、老 payload）时回落光标
+/// 锚定——触发点击刚发生在光标下，所以那仍是个合理落点，只是没那么准。
 Future<bool> tryFloatingLyricGlobalLookup({
   required AppModel appModel,
   required String text,
   required int index,
+  Rect? wordRect,
 }) async {
   if (!GlobalLookupController.isSupported) {
     return false;
@@ -51,6 +57,9 @@ Future<bool> tryFloatingLyricGlobalLookup({
   if (searchTerm.isEmpty) {
     return false;
   }
-  return GlobalLookupController.instance
-      .lookupText(searchTerm, sentence: text.trim());
+  return GlobalLookupController.instance.lookupText(
+    searchTerm,
+    sentence: text.trim(),
+    anchorScreenRect: wordRect,
+  );
 }

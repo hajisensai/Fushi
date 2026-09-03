@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -6,7 +7,9 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'package:fushi/src/media/torrent/anime_release_descriptor.dart';
+import 'package:fushi/src/media/torrent/download_timeouts.dart';
 import 'package:fushi/src/media/torrent/nyaa_client.dart';
+import 'package:fushi/src/media/torrent/public_trackers.dart';
 
 /// 构造只关心 [title] / [infoHash] 的最小 [NyaaTorrent]，供派生 getter 测试用。
 NyaaTorrent makeTorrent(String title, {String infoHash = ''}) {
@@ -155,7 +158,7 @@ void main() {
   });
 
   group('magnet', () {
-    test('拼 infoHash + dn + 5 个 tracker', () {
+    test('拼 infoHash + dn + 全部内置 tracker', () {
       final NyaaTorrent t = makeTorrent(
         'My Show [x]',
         infoHash: '0123456789abcdef0123456789abcdef01234567',
@@ -167,7 +170,11 @@ void main() {
           '&dn=My%20Show%20%5Bx%5D',
         ),
       );
-      expect('&tr='.allMatches(t.magnet), hasLength(5));
+      // 数量跟着常量走，但不是同源恒真：它抓的是拼接漏写了其中某几条。
+      expect('&tr='.allMatches(t.magnet), hasLength(kNyaaTrackers.length));
+      for (final String tracker in kNyaaTrackers) {
+        expect(t.magnet, contains('&tr=${Uri.encodeComponent(tracker)}'));
+      }
       expect(
         t.magnet,
         contains('&tr=http%3A%2F%2Fnyaa.tracker.wf%3A7777%2Fannounce'),
@@ -176,6 +183,13 @@ void main() {
         t.magnet,
         contains('&tr=udp%3A%2F%2Fexodus.desync.com%3A6969%2Fannounce'),
       );
+    });
+
+    test('内置 tracker 列表无重复、站点专属排最前', () {
+      // 上面按 `&tr=` 出现次数计数，列表里混进重复项它抓不到。
+      expect(kNyaaTrackers.toSet(), hasLength(kNyaaTrackers.length));
+      expect(kNyaaTrackers.first, 'http://nyaa.tracker.wf:7777/announce');
+      expect(kNyaaTrackers, containsAll(kPublicTrackers));
     });
   });
 
@@ -458,6 +472,53 @@ void main() {
       },
     );
 
+    // BUG-2079：`_client.get(uri)` 原本不带 `.timeout(...)`，整条 search 无时限。
+    // Dart 的 `HttpClient.connectionTimeout` 默认是 null（不超时），站点被墙 /
+    // 代理半开时 TCP 连接能挂到操作系统重传耗尽；discovery source 与 resource
+    // provider 这两条注册表路径的调用点也没有外层超时，于是一次挂死的 Nyaa
+    // 请求会把整次扇出一起拖住。
+    test('永不完成的响应在 requestTimeout 后抛 TimeoutException，不是无限等待',
+        () async {
+      // 永不完成：这个 Completer 从不 complete、也不 throw。若 search 不设超时，
+      // 下面的 await 就永远不返回，只能被 flutter_test 自己的超时打死。
+      final Completer<http.Response> never = Completer<http.Response>();
+      final NyaaClient client = NyaaClient(
+        client: MockClient((http.Request req) => never.future),
+        requestTimeout: const Duration(milliseconds: 50),
+      );
+      await expectLater(
+        client.search('frieren'),
+        throwsA(isA<TimeoutException>()),
+      );
+      client.close();
+    });
+
+    test('HTML 翻页路径同样受 requestTimeout 约束', () async {
+      // 首屏走 RSS、后续页走 HTML，是 search 里两条不同的解析分支；超时必须落在
+      // 分支之前那一次 get 上，不能只对 RSS 路径成立。
+      final Completer<http.Response> never = Completer<http.Response>();
+      final NyaaClient client = NyaaClient(
+        client: MockClient((http.Request req) => never.future),
+        requestTimeout: const Duration(milliseconds: 50),
+      );
+      await expectLater(
+        client.search('frieren', page: 3),
+        throwsA(isA<TimeoutException>()),
+      );
+      client.close();
+    });
+
+    test('默认超时取发现链路唯一真相源，不是 torznab 的 20s', () {
+      // 20s 正是 BUG-1141 从这条链路上拆掉的直连口径魔法数字；而且
+      // anime_download_subscription / anime_download_dialog 的调用点外层就是
+      // kDownloadDiscoveryTimeout，内层更紧等于替它们偷偷回退 BUG-1141。
+      // 注入 MockClient 只为避免建真 IO client；被测的是默认参数值本身。
+      final NyaaClient client =
+          NyaaClient(client: MockClient((_) async => http.Response('', 200)));
+      expect(client.requestTimeout, kDownloadDiscoveryTimeout);
+      client.close();
+    });
+
     test('底层网络异常（如握手失败）原样穿透，不吞成空列表', () async {
       final MockClient mock = MockClient((http.Request req) async {
         throw http.ClientException('HandshakeException: 模拟被墙', req.url);
@@ -611,6 +672,75 @@ void main() {
         ),
         NyaaFeedErrorCode.invalidNamespace,
       );
+    });
+
+    test('BUG-1946：sukebei / 镜像站 <site>/xmlns/nyaa 命名空间被接受，路径不同才拒', () async {
+      // 上游 nyaa 把命名空间拼成 <站点 origin>/xmlns/nyaa，sukebei 真实 feed 是
+      // https://sukebei.nyaa.si/xmlns/nyaa；硬编码 nyaa.si 会把每条 item 判成
+      // invalidNamespace，发现页 Sukebei 源恒空。
+      Future<Object?> parseWithNamespace(String ns) {
+        return searchResponse(
+          utf8.encode('''
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:nyaa="$ns">
+  <channel><item>
+    <title>[260825][破顔研] イモータルリコール 外伝 [RJ01660478]</title>
+    <link>https://sukebei.nyaa.si/download/4697097.torrent</link>
+    <guid isPermaLink="true">https://sukebei.nyaa.si/view/4697097</guid>
+    <pubDate>Sat, 29 Aug 2026 13:37:06 -0000</pubDate>
+    <nyaa:seeders>29</nyaa:seeders>
+    <nyaa:leechers>18</nyaa:leechers>
+    <nyaa:downloads>44</nyaa:downloads>
+    <nyaa:infoHash>14d40b587d2a237150b6b019e6236e93e16a1f73</nyaa:infoHash>
+    <nyaa:categoryId>1_3</nyaa:categoryId>
+    <nyaa:category>Art - Games</nyaa:category>
+    <nyaa:size>252.8 MiB</nyaa:size>
+    <nyaa:trusted>Yes</nyaa:trusted>
+    <nyaa:remake>No</nyaa:remake>
+  </item></channel>
+</rss>'''),
+        );
+      }
+
+      for (final String ns in <String>[
+        'https://sukebei.nyaa.si/xmlns/nyaa',
+        'https://nyaa.si/xmlns/nyaa',
+        'https://nyaa.land/xmlns/nyaa',
+        'http://127.0.0.1:8080/xmlns/nyaa',
+      ]) {
+        final Object? result = await parseWithNamespace(ns);
+        expect(result, isA<List<NyaaTorrent>>(), reason: ns);
+        final List<NyaaTorrent> items = result! as List<NyaaTorrent>;
+        expect(items, hasLength(1), reason: ns);
+        final NyaaTorrent item = items.single;
+        expect(item.infoHash, '14d40b587d2a237150b6b019e6236e93e16a1f73');
+        expect(item.seeders, 29, reason: '$ns：nyaa:seeders 也要按命名空间读到');
+        expect(item.categoryId, '1_3', reason: ns);
+        expect(item.sizeBytes, (252.8 * 1024 * 1024).round(), reason: ns);
+        expect(item.trusted, isTrue, reason: ns);
+      }
+
+      for (final String ns in <String>[
+        'https://invalid.example/ns',
+        'https://nyaa.si/xmlns/other',
+        'https://nyaa.si/xmlns/nyaa/',
+        'nyaa',
+      ]) {
+        expect(
+          await parseWithNamespace(ns),
+          isA<NyaaFeedFormatException>().having(
+            (NyaaFeedFormatException error) => error.code,
+            'code',
+            NyaaFeedErrorCode.invalidNamespace,
+          ),
+          reason: ns,
+        );
+      }
+
+      expect(isNyaaNamespace(null), isFalse);
+      expect(isNyaaNamespace(''), isFalse);
+      expect(isNyaaNamespace('/xmlns/nyaa'), isFalse, reason: '无 host 不算');
+      expect(isNyaaNamespace('https://sukebei.nyaa.si/xmlns/nyaa'), isTrue);
     });
 
     test('真实本地 HTTP：特殊字符 query/category/trusted 与任意前缀 namespace', () async {

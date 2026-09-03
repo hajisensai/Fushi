@@ -28,6 +28,57 @@ const int _profileMinColumns = 6;
 
 final RegExp _sha256Pattern = RegExp(r'^[0-9a-f]{64}$');
 
+/// BUG-1909：把用户**粘来的一串特殊码**归一成可入库的形式。
+///
+/// 用户原话：「特殊码确实是可以用在 fushi 上的，不过要稍微转换一下，因为 fushi 只接受
+/// tsv 合适的，一般特殊码只是一串字符」。这里做的正是那个「转换」的第一半——把散字符
+/// 洗干净；第二半（补 exe SHA-256 / codepage / label 拼成七列 TSV 行）由调用方完成。
+///
+/// 只做三件**不改变语义**的事：
+/// 1. 去掉首尾空白与包裹的引号 —— 从网页/聊天里复制常常带着；
+/// 2. 去掉**所有**内部空白（含换行）—— 特殊码里没有合法空白，换行只会来自复制时的软折行；
+/// 3. 全角 ASCII → 半角 —— 特殊码按定义是纯 ASCII，中日文 IME 下粘出来的 `／Ｈ...`
+///    native 一个字也认不出，而这是纯粹的输入法噪声，不是用户意图。
+///
+/// **刻意不碰码本身的结构**（不补/不删开头的 `/`、不改大小写、不重排 `@` 后的地址）：
+/// Hibiki 从头到尾把 hook code 当**不透明字符串**搬运，真正的词法解析在 LunaHost DLL
+/// 里（本仓 `third_party/lunahook/` 只有二进制，没有源码可复用）。在这里替 native
+/// 猜格式，就是开第二个真相源。
+String normalizeGalHookCode(String raw) {
+  String value = raw.trim();
+  // 成对的包裹引号（英文/中文/日文引号都见过）。
+  const List<List<String>> quotePairs = <List<String>>[
+    <String>['"', '"'],
+    <String>["'", "'"],
+    <String>['`', '`'],
+    <String>['“', '”'],
+    <String>['「', '」'],
+    <String>['『', '』'],
+  ];
+  bool stripped = true;
+  while (stripped && value.length >= 2) {
+    stripped = false;
+    for (final List<String> pair in quotePairs) {
+      if (value.startsWith(pair[0]) && value.endsWith(pair[1])) {
+        value = value.substring(1, value.length - 1).trim();
+        stripped = true;
+        break;
+      }
+    }
+  }
+  final StringBuffer buf = StringBuffer();
+  for (final int unit in value.runes) {
+    // 全角空格单独处理（它不在 FF01..FF5E 区间里）。
+    if (unit == 0x3000) continue;
+    if (unit <= 0x20 || unit == 0x7f) continue; // 半角空白/控制字符
+    // 全角 ASCII（！..～）→ 半角，偏移恒为 0xFEE0。
+    buf.writeCharCode(
+      (unit >= 0xff01 && unit <= 0xff5e) ? unit - 0xfee0 : unit,
+    );
+  }
+  return buf.toString();
+}
+
 class LunaHookCodeProfile {
   const LunaHookCodeProfile({
     required this.executableSha256,

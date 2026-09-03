@@ -1,3 +1,4 @@
+import 'package:fushi/src/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/yomitan_api_server.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
@@ -14,10 +15,14 @@ class YomitanApiServerManager {
     FushiRemoteHistoryService? historyService,
     Map<String, String> Function()? themeColorsProvider,
     List<String> Function()? audioSourcesProvider,
+    bool Function()? autoReadOnLookupProvider,
     String? Function()? extensionBuildProvider,
+    RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
     void Function()? onExtensionSeen,
+    void Function()? onLookupActivity,
     void Function(String build, String? version)? onExtensionReport,
+    String? Function()? jimakuApiKeyProvider,
   })  : _lookup = lookupService,
         _mining = miningService,
         _history = historyService,
@@ -25,10 +30,14 @@ class YomitanApiServerManager {
         _readingResolver = readingResolver,
         _themeColorsProvider = themeColorsProvider,
         _audioSourcesProvider = audioSourcesProvider,
+        _autoReadOnLookupProvider = autoReadOnLookupProvider,
         _extensionBuildProvider = extensionBuildProvider,
+        _popupDictionaryCssProvider = popupDictionaryCssProvider,
         _onExtensionPopupSize = onExtensionPopupSize,
         _onExtensionSeen = onExtensionSeen,
-        _onExtensionReport = onExtensionReport;
+        _onLookupActivity = onLookupActivity,
+        _onExtensionReport = onExtensionReport,
+        _jimakuApiKeyProvider = jimakuApiKeyProvider;
 
   final FushiRemoteLookupService _lookup;
   final FushiRemoteMiningService? _mining;
@@ -39,15 +48,24 @@ class YomitanApiServerManager {
   final Map<String, String> Function()? _themeColorsProvider;
   // 单词音频：已启用音频源供给器，透传给 [YomitanApiServer]，随查词响应下发给扩展。
   final List<String> Function()? _audioSourcesProvider;
+  final bool Function()? _autoReadOnLookupProvider;
   // BUG-726：扩展内容指纹供给器，透传给 [YomitanApiServer]，驱动扩展自 reload 拉新。
   final String? Function()? _extensionBuildProvider;
+  // BUG-1718：词典自带 CSS + 用户自定义 CSS 供给器，透传给 [YomitanApiServer]，
+  // 按 revision 门控随查词响应下发给扩展弹窗。
+  final RemotePopupDictionaryCss Function()? _popupDictionaryCssProvider;
   // 弹窗尺寸精细化 Phase D：扩展弹窗拖角调整后回写尺寸的 sink，透传给 [YomitanApiServer]。
   final void Function(double maxWidth, double maxHeight)? _onExtensionPopupSize;
   // 浏览器扩展连接探活回调，透传给 [YomitanApiServer]（app 侧记录 last-seen）。
   final void Function()? _onExtensionSeen;
+  // TODO-2936：查词/制卡活动回调，透传给 [YomitanApiServer]（app 侧应用「浏览器」
+  // 媒体类型的 Profile 绑定）。
+  final void Function()? _onLookupActivity;
   // BUG-1079：扩展自报版本回调，透传给 [YomitanApiServer]（app 侧记录浏览器中实际
   // 加载的 build，与内置指纹比对给出更新提示）。
   final void Function(String build, String? version)? _onExtensionReport;
+  // 「Jimaku 查字幕」扩展桥：Jimaku API key 供给器，透传给 [YomitanApiServer]。
+  final String? Function()? _jimakuApiKeyProvider;
 
   YomitanApiServer? _server;
 
@@ -65,10 +83,14 @@ class YomitanApiServerManager {
       readingResolver: _readingResolver,
       themeColorsProvider: _themeColorsProvider,
       audioSourcesProvider: _audioSourcesProvider,
+      autoReadOnLookupProvider: _autoReadOnLookupProvider,
       extensionBuildProvider: _extensionBuildProvider,
+      popupDictionaryCssProvider: _popupDictionaryCssProvider,
       onExtensionPopupSize: _onExtensionPopupSize,
       onExtensionSeen: _onExtensionSeen,
+      onLookupActivity: _onLookupActivity,
       onExtensionReport: _onExtensionReport,
+      jimakuApiKeyProvider: _jimakuApiKeyProvider,
       apiKey: apiKey.isEmpty ? null : apiKey,
       allowLan: true,
     );

@@ -128,6 +128,15 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
   MokuroMoeSeries? _series;
   final Set<String> _selectedVolumes = <String>{};
 
+  /// 系列详情的加载/失败态。站点的 `catalog/api/library` 只回 `volume_count`，
+  /// 卷清单单独住在 `catalog/api/series`，所以详情必须自己去取（见 [_openSeries]）。
+  bool _seriesLoading = false;
+  String? _seriesError;
+
+  /// 详情请求的作废 token。用户返回浏览、或紧接着开另一个系列时自增；in-flight
+  /// 的旧响应回来发现 token 变了就直接丢弃，不会把上一个系列的卷画到这一个上。
+  int _seriesToken = 0;
+
   /// 已在库的书身份 key（`sanitizeTtuFilename(title)`；含队列本次新导入的）。
   final Set<String> _existingBookKeys = <String>{};
 
@@ -278,20 +287,56 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
         all, _query, (MokuroMoeSeries s) => <String>[s.name]);
   }
 
-  void _openSeries(MokuroMoeSeries series) {
+  /// 打开一个系列的卷列表。
+  ///
+  /// 站点早已把卷清单从 `catalog/api/library` 里挪走（列表条目现在只带
+  /// `volume_count`，`volumes` 恒为空数组），只有 `catalog/api/series?name=` 才回带
+  /// 卷。旧实现把浏览列表里的条目原样当详情用、一次网络都不发，于是
+  /// `series.volumes` 永远是空 → 详情页整片空白。这里补上真正的详情请求。
+  Future<void> _openSeries(MokuroMoeSeries series) async {
+    final int token = ++_seriesToken;
     setState(() {
       _series = series;
       _selectedVolumes.clear();
       _stage = _CatalogStage.series;
+      // 条目自带卷（旧响应形状 / 注入的 fake client）就直接用，不空跑一次网络。
+      _seriesLoading = series.volumes.isEmpty;
+      _seriesError = null;
     });
+    if (!_seriesLoading) return;
+    try {
+      final MokuroMoeSeries detail = await _client.fetchSeries(series.name);
+      if (!mounted || token != _seriesToken) return;
+      setState(() {
+        // 详情响应不保证回带 name/path/cover；缺了就用列表条目的值兜底，否则
+        // _volumeKey（入库身份）与封面 URL 会拿到空串。
+        _series = MokuroMoeSeries(
+          name: detail.name.isNotEmpty ? detail.name : series.name,
+          path: detail.path.isNotEmpty ? detail.path : series.path,
+          cover: detail.cover.isNotEmpty ? detail.cover : series.cover,
+          volumes: detail.volumes,
+        );
+        _seriesLoading = false;
+      });
+    } catch (e) {
+      if (!mounted || token != _seriesToken) return;
+      setState(() {
+        _seriesLoading = false;
+        _seriesError = '$e';
+      });
+    }
   }
 
   /// 返回浏览阶段（series 阶段动作，供外层 footer 与内嵌动作行共用）。
   void backToBrowse() {
+    // 作废 in-flight 的详情请求：否则它回来时会把已经离开的系列重新写进 _series。
+    _seriesToken++;
     setState(() {
       _series = null;
       _selectedVolumes.clear();
       _stage = _CatalogStage.browse;
+      _seriesLoading = false;
+      _seriesError = null;
     });
   }
 
@@ -447,7 +492,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     );
     return InkWell(
       borderRadius: tokens.radii.cardRadius,
-      onTap: () => _openSeries(series),
+      onTap: () => unawaited(_openSeries(series)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -487,14 +532,54 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (_queue.hasUnfinished) _buildQueuePanel(tokens),
-        Expanded(
-          child: ListView.builder(
-            itemCount: series.volumes.length,
-            itemBuilder: (BuildContext context, int index) =>
-                _buildVolumeRow(tokens, series.volumes[index]),
-          ),
-        ),
+        Expanded(child: _buildSeriesBody(tokens, series)),
       ],
+    );
+  }
+
+  /// 详情正文的三态。旧实现直接 `ListView(itemCount: series.volumes.length)`，于是
+  /// 「还在加载」「取失败了」「这个系列真的没有卷」三种情况长得一模一样：都是一片
+  /// 什么都不画的空白，用户无从判断发生了什么。
+  Widget _buildSeriesBody(FushiDesignTokens tokens, MokuroMoeSeries series) {
+    if (_seriesLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final String? error = _seriesError;
+    if (error != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              '${t.manga_online_detail_load_failed}: $error',
+              style: tokens.type.listSubtitle
+                  .copyWith(color: Theme.of(context).colorScheme.error),
+              textAlign: TextAlign.center,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            OutlinedButton(
+              onPressed: () => unawaited(_openSeries(series)),
+              child: Text(t.retry),
+            ),
+          ],
+        ),
+      );
+    }
+    if (series.volumes.isEmpty) {
+      return Center(
+        child: Text(
+          t.manga_online_series_empty,
+          style: tokens.type.listSubtitle,
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+    return ListView.builder(
+      itemCount: series.volumes.length,
+      itemBuilder: (BuildContext context, int index) =>
+          _buildVolumeRow(tokens, series.volumes[index]),
     );
   }
 

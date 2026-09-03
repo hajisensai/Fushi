@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:html/parser.dart' as html_parser;
 import 'package:html/dom.dart' as html_dom;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -464,9 +463,18 @@ window.__fushiAnnotate = function(chapterHref) {
       );
       return;
     }
+    // BUG-1742：VN 模式把整章正文搬出了 document（只留当前一屏的克隆），
+    // __fushiHighlight 的 document.querySelector 因此几乎必然落空并静默早退——
+    // 非 sasayaki 书（SRT/VTT/LRC 合成书）的自动跟随就是这样彻底失效的。
+    // VN 实现了 highlightSelectorCue（选择器 → 字符偏移 → 翻屏），优先用它；
+    // 分页/连续模式没有这个方法，回落原路径，行为零变化。
     await controller.evaluateJavascript(
-      source: 'if(typeof __fushiHighlight!=="undefined")'
-          '__fushiHighlight(${jsonEncode(raw)}, $reveal, $pauseEnabled);',
+      source: 'if(window.fushiReader&&'
+          'typeof window.fushiReader.highlightSelectorCue==="function"){'
+          'window.fushiReader.highlightSelectorCue('
+          '${jsonEncode(raw)}, $reveal);'
+          '}else if(typeof __fushiHighlight!=="undefined"){'
+          '__fushiHighlight(${jsonEncode(raw)}, $reveal, $pauseEnabled);}',
     );
   }
 
@@ -760,8 +768,13 @@ List<BookSearchResult> _searchIsolate(_SearchParams params) {
 /// Extract text matching JS TreeWalker output: concatenate text nodes,
 /// skip rt/rp content, NO whitespace folding. This produces the same
 /// coordinate space as JS scrollToSearchMatch().
+///
+/// BUG-2017：全书搜索必须与 [EpubBook.chapterPlainText] 共用同一个 DOM 解析入口
+/// [EpubBook.parseChapterHtml]。裸 HTML5 解析在 kobo 化 XHTML（head 里一行自闭合
+/// `<script src="…"/>`、全文无 `</script>`）上会把整个 `<body>` 吞成 script 文本
+/// → `doc.body` 为空 → 这类书全书搜索恒零结果。
 String _chapterDomText(String html) {
-  final html_dom.Document doc = html_parser.parse(html);
+  final html_dom.Document doc = EpubBook.parseChapterHtml(html);
   final html_dom.Element? body = doc.body;
   if (body == null) return '';
   final StringBuffer buf = StringBuffer();

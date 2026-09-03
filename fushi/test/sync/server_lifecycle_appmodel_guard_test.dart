@@ -33,8 +33,7 @@ void main() {
       expect(controller.isRunning, isFalse);
       expect(controller.boundPort, isNull);
 
-      final FushiServerStartOutcome outcome =
-          await controller.startIfEnabled();
+      final FushiServerStartOutcome outcome = await controller.startIfEnabled();
 
       expect(outcome, isA<FushiServerStarted>());
       expect(controller.isRunning, isFalse,
@@ -124,27 +123,35 @@ void main() {
               'AppModel 必须传 removeLocalAudioEntry 使 host deleteLocalAudio 真正生效');
     });
 
-    test(
-        'orchestrator run() 互联分支调用 _syncLocalAudioLive 而非 syncLocalAudioPackages',
-        () {
+    test('orchestrator 互联分支分流：本地音频经 syncLocalAudioSources，有声书仍在 run()', () {
       final String src =
           File('lib/src/sync/sync_orchestrator.dart').readAsStringSync();
       expect(src.contains('_syncLocalAudioLive('), isTrue,
           reason: 'orchestrator 必须有 _syncLocalAudioLive live 分流方法');
       expect(src.contains('_syncAudiobooksLive('), isTrue,
           reason: 'orchestrator 必须有 _syncAudiobooksLive live 分流方法');
-      // run() 里互联分支必须分流到 live 方法。
-      //
-      // 用正则而非整行字面量匹配：门控条件会随功能演进追加（如增量同步的索引跳过
-      // `&& !skipLocalAudio`），而本守卫要钉的是「互联分支走 live 方法、不是走云的
-      // packages 方法」这个分流意图，不是那一行的逐字写法。仍然要求开关名与 live
-      // 方法名同时出现，故「改调云方法」这类真回归照样会被抓到。
+      // 本地音频源数据库已从 run() 里整段拿掉：它没有同步开关，只由
+      // syncLocalAudioSources 分派（互联 → live 端点；云 → __local_audio__ 暂存），
+      // 由设置页的显式上传 / 下载动作驱动。断言的字面量是
+      // `syncLocalAudioSources(` … `await _syncLocalAudioLive(`。
       expect(
-        RegExp(r'if \(syncLocalAudio[^)]*\)\s*\{?\s*await _syncLocalAudioLive\(')
+        RegExp(r'syncLocalAudioSources\([\s\S]{0,600}?await _syncLocalAudioLive\(')
             .hasMatch(src),
         isTrue,
-        reason: '互联分支必须调用 _syncLocalAudioLive',
+        reason: 'syncLocalAudioSources 的互联分支必须调用 _syncLocalAudioLive',
       );
+      // 负向：`if (syncLocalAudio` 一旦复活就意味着本地音频又被开关门控着塞回了
+      // 自动 sweep —— 正是这次改动要消灭的东西（用户要的是显式上传 / 下载）。
+      expect(
+        src.contains('if (syncLocalAudio'),
+        isFalse,
+        reason: '本地音频不得再由开关门控进自动 sweep',
+      );
+      // 有声书文件仍是 run() 互联分支里的开关驱动维度（本次不动）。
+      //
+      // 用正则而非整行字面量匹配：门控条件会随功能演进追加（如增量同步的索引跳过
+      // `&& !skipAudiobooks`），而本守卫要钉的是「互联分支走 live 方法、不是走云的
+      // packages 方法」这个分流意图，不是那一行的逐字写法。
       expect(
         RegExp(r'if \(syncAudioBookFiles[^)]*\)\s*\{?\s*await _syncAudiobooksLive\(')
             .hasMatch(src),

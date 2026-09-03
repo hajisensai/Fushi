@@ -196,10 +196,14 @@ class LocalAudioManager {
   /// 把外部 [sourcePath] 拷贝进库目录，返回指向内部副本的 entry（默认启用），
   /// 但不写 prefs、不通知 native。持久化交给 setEntries / setAudioSourceConfigs。
   ///
-  /// [reference]=true（仅桌面有意义，移动端 file_picker 给的是会被系统清掉的缓存
-  /// 临时副本，引用即指向消失的文件，故 UI 只在桌面暴露此开关，见 BUG-483）：跳过
-  /// copy，直接返回指向用户原始 [sourcePath] 的 entry，不在 C 盘 AppData 留副本。
-  /// false（默认，向后兼容）：复制进库目录返回内部副本 entry。
+  /// [reference]=true（BUG-483）：跳过 copy，直接返回指向用户原始 [sourcePath] 的
+  /// entry，不在 C 盘 AppData / 手机内部存储留副本。false（默认，向后兼容）：复制进
+  /// 库目录返回内部副本 entry。
+  ///
+  /// 调用方必须确保 [sourcePath] 是**用户原始位置的真实路径**（BUG-1667）：安卓
+  /// file_picker 回退路径给的是会被系统清掉的 app cache 临时副本，引用它等于引用一个
+  /// 随时消失的文件。判据不是平台而是路径出处，见 `pickRealFilePathDetailed` 的
+  /// `PickedFilePath.isRealPath`。
   Future<LocalAudioDbEntry> importFile(
     String sourcePath, {
     required String displayName,

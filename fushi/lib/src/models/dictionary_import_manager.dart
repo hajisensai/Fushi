@@ -8,6 +8,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/models/dictionary_directory.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 
 class DictionaryImportManager {
@@ -22,6 +23,19 @@ class DictionaryImportManager {
   final DictionaryRepository _dictRepo;
   final Directory _resourceDirectory;
   final Map<String, DictionaryFormat> _formats;
+
+  /// BUG-1903：压缩包里**每个各自成典**的条目（`.mdx` / `.dsl`）。
+  ///
+  /// 判据刻意只认这两种扩展名：Yomitan 包里有几十个 `term_bank_N.json`，那仍然是
+  /// **一本**词典，按文件数拆会把一本拆成几十本；而 MDX / DSL 是「一个文件一本
+  /// 词典」，同一个包里出现两个就是两本。
+  ///
+  /// 大小写与路径分隔符已由 [_readZipFileNames] 归一（全小写）。
+  static List<String> archivedDictionaryEntries(List<String> zipEntryNames) =>
+      <String>[
+        for (final String name in zipEntryNames)
+          if (name.endsWith('.mdx') || name.endsWith('.dsl')) name,
+      ];
 
   DictionaryFormat detectFormat(File file) {
     final ext = path.extension(file.path).toLowerCase();
@@ -115,10 +129,13 @@ class DictionaryImportManager {
     VoidCallback? onMemoryError,
   }) async {
     final entities = directory.listSync();
+    // 逐个导入的次序是用户可见的（进度 i/N + failedNames 汇总），listSync
+    // 的平台顺序不能当稳定输入——同文件 _importArchivedDictionaries 已经这么做。
     final zipFiles = entities.whereType<File>().where((f) {
       final ext = path.extension(f.path).toLowerCase();
       return ext == '.zip' || ext == '.dsl' || ext == '.mdx';
-    }).toList();
+    }).toList()
+      ..sort((File a, File b) => a.path.compareTo(b.path));
 
     if (zipFiles.isNotEmpty) {
       final cssFiles = entities
@@ -264,7 +281,10 @@ class DictionaryImportManager {
         final innerDataDir = Directory(path.join(tempOutputDir.path, name));
         final finalDir = Directory(path.join(_resourceDirectory.path, name));
         _validatePath(finalDir);
-        if (finalDir.existsSync()) finalDir.deleteSync(recursive: true);
+        // 走原语：残留同名目录可能仍被引擎映射着，裸 deleteSync 在 Windows 上
+        // 会抛 ERROR_USER_MAPPED_FILE（BUG-1756）。
+        await deleteDictionaryDirectory(finalDir,
+            reloadEngine: _dictRepo.rebuildEngine);
 
         if (innerDataDir.existsSync()) {
           await _publishImportedDir(innerDataDir, finalDir.path);
@@ -288,6 +308,9 @@ class DictionaryImportManager {
           },
           hiddenLanguages: preservedSettings?.hiddenLanguages ?? const [],
           collapsedLanguages: preservedSettings?.collapsedLanguages ?? const [],
+          // 用户手动指定的内容语言属于用户设置，重导必须继承——metadata 会被包内
+          // index.json 整体重建，塞那里等于每次更新都被抹掉。
+          languageOverride: preservedSettings?.languageOverride,
         ));
 
         progressNotifier.value = t.import_complete;
@@ -307,6 +330,87 @@ class DictionaryImportManager {
       final bool mem = _isMemoryError(e) && !lowMemoryMode;
       if (mem) onMemoryError?.call();
       throw DictionaryImportException(e, isMemoryError: mem);
+    }
+  }
+
+  /// BUG-1903：把一个装了多本词典的压缩包拆开、逐本导入。
+  ///
+  /// 解压保持原有目录层级：MDX 的样式表 / 资源（`.css` / `.mdd`）就躺在它自己那本
+  /// 词典的目录里，摊平会让 A 典的样式套到 B 典头上。每本只带**同目录**的 css。
+  ///
+  /// 单本失败不中断其余（与 [importFromDirectory] 同策略）：三本里坏一本，另外两本
+  /// 照样进库，最后用同一套汇总提示告诉用户哪本没进去。
+  Future<void> _importArchivedDictionaries({
+    required File archive,
+    required ValueNotifier<String> progressNotifier,
+    required Function() onImportSuccess,
+    required bool lowMemoryMode,
+    VoidCallback? onMemoryError,
+  }) async {
+    final Directory work =
+        Directory(path.join(_resourceDirectory.path, 'import_multi_temp'));
+    if (work.existsSync()) work.deleteSync(recursive: true);
+    work.createSync(recursive: true);
+    try {
+      progressNotifier.value = t.import_extract;
+      await Future<void>.delayed(Duration.zero);
+      await extractFileToDisk(archive.path, work.path);
+
+      final List<File> dictionaries = work
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((File f) {
+            final String ext = path.extension(f.path).toLowerCase();
+            return ext == '.mdx' || ext == '.dsl';
+          })
+          .toList()
+        ..sort((File a, File b) => a.path.compareTo(b.path));
+
+      final List<String> failedNames = <String>[];
+      for (int i = 0; i < dictionaries.length; i++) {
+        final File dictionary = dictionaries[i];
+        final List<File> cssFiles = Directory(path.dirname(dictionary.path))
+            .listSync()
+            .whereType<File>()
+            .where((File f) => f.path.toLowerCase().endsWith('.css'))
+            .toList();
+        try {
+          await importFromFile(
+            file: dictionary,
+            progressNotifier: progressNotifier,
+            cssFiles: cssFiles,
+            onImportSuccess: onImportSuccess,
+            lowMemoryMode: lowMemoryMode,
+            onMemoryError: onMemoryError,
+          );
+        } catch (e, stack) {
+          ErrorLogService.instance.log('DictImport.multiArchive', e, stack);
+          failedNames.add(path.basenameWithoutExtension(dictionary.path));
+        }
+      }
+
+      if (failedNames.isNotEmpty) {
+        FushiToast.show(
+          msg: formatImportFailureSummary(failedNames),
+          toastLength: Toast.LENGTH_LONG,
+          severity: ToastSeverity.error,
+        );
+      }
+      final int succeeded = dictionaries.length - failedNames.length;
+      if (succeeded > 0) {
+        FushiToast.show(
+          msg: t.dict_import_success_summary(n: succeeded),
+          severity: ToastSeverity.success,
+        );
+      }
+    } finally {
+      if (work.existsSync()) {
+        try {
+          work.deleteSync(recursive: true);
+        } catch (e, stack) {
+          ErrorLogService.instance.log('DictImport.multiArchiveCleanup', e, stack);
+        }
+      }
     }
   }
 
@@ -332,6 +436,31 @@ class DictionaryImportManager {
     // replaceOldVersion 分支同待遇）。普通导入入口不传，行为不变。
     Dictionary? replaceTarget,
   }) async {
+    // BUG-1903：一个压缩包里装了多本词典时，native 侧只认它找到的第一本、其余
+    // **静默丢弃**并照样报 success——用户把打包好的「日语辞典三件套」拖进来，只会
+    // 多出一本，另外两本无声无息（实测：三本 MDX 的包导入后只剩旺文社一本）。
+    // 拆开逐本走同一条 [importFromFile]，与目录导入的循环同形。
+    //
+    // 三个「这是在更新某一本」的入口（强制重导 / 来源回填 / 显式替换目标）不分流：
+    // 它们的语义是「用这个包替换那一本」，拆包会把一次更新变成多次追加。
+    if (replaceTarget == null &&
+        !forceReplaceExisting &&
+        sourceOverride == null &&
+        path.extension(file.path).toLowerCase() == '.zip') {
+      final List<String> archived =
+          archivedDictionaryEntries(_readZipFileNames(file));
+      if (archived.length > 1) {
+        await _importArchivedDictionaries(
+          archive: file,
+          progressNotifier: progressNotifier,
+          onImportSuccess: onImportSuccess,
+          lowMemoryMode: lowMemoryMode,
+          onMemoryError: onMemoryError,
+        );
+        return;
+      }
+    }
+
     _dictRepo.clearDictionaryResultsCache();
 
     try {
@@ -391,7 +520,9 @@ class DictionaryImportManager {
       final innerDataDir = Directory(path.join(tempOutputDir.path, name));
       final finalDir = Directory(path.join(_resourceDirectory.path, name));
       _validatePath(finalDir);
-      if (finalDir.existsSync()) finalDir.deleteSync(recursive: true);
+      // 同上（BUG-1756）：删旧目录必须经原语，先让引擎释放映射。
+      await deleteDictionaryDirectory(finalDir,
+          reloadEngine: _dictRepo.rebuildEngine);
 
       if (innerDataDir.existsSync()) {
         await _publishImportedDir(innerDataDir, finalDir.path);
@@ -438,6 +569,8 @@ class DictionaryImportManager {
         },
         hiddenLanguages: preservedSettings?.hiddenLanguages ?? const [],
         collapsedLanguages: preservedSettings?.collapsedLanguages ?? const [],
+        // 同上：用户手动指定的内容语言随 preservedSettings 继承，不被重导冲掉。
+        languageOverride: preservedSettings?.languageOverride,
       ));
 
       progressNotifier.value = t.import_complete;
@@ -754,10 +887,18 @@ class DictionaryImportManager {
   /// 删除一本词典的磁盘目录与 meta（替换/覆盖导入的旧本清理共用）。目录不存在
   /// 时只删 meta；[DictionaryRepository.deleteDictionaryMeta] 本身幂等。
   Future<void> _removeDictionaryDirAndMeta(String name) async {
-    final Directory oldDir =
-        Directory(path.join(_resourceDirectory.path, name));
-    if (oldDir.existsSync()) oldDir.deleteSync(recursive: true);
+    // 顺序不可交换（BUG-1756）：先撤 meta —— [DictionaryRepository
+    // .deleteDictionaryMeta] 会触发 _onCacheRebuild，把引擎重载到「不含这本」的
+    // 集合，连带释放它常驻的 mmap view；之后目录才删得掉。
+    //
+    // 旧实现反着写：先 deleteSync 旧目录，此时引擎还攥着 hash.table / blobs.bin，
+    // Windows 上必抛 ERROR_USER_MAPPED_FILE → 整个覆盖导入失败。用户侧表现就是
+    // 「词典更新不了，只能每次重新导入」。
     await _dictRepo.deleteDictionaryMeta(name);
+    await deleteDictionaryDirectory(
+      Directory(path.join(_resourceDirectory.path, name)),
+      reloadEngine: _dictRepo.rebuildEngine,
+    );
   }
 
   /// TODO-609 / W-2：合并词典来源元数据。[fromIndex] 是导入包内 index.json 提取的

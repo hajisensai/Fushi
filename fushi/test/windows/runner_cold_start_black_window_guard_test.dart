@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// Source-scan guards for TODO-959 / BUG-476 (迁移重启新进程冷启动黑屏).
 ///
 /// The data-root migration restarts the app: a detached new process is started
@@ -14,7 +16,13 @@ import 'package:flutter_test/flutter_test.dart';
 ///      changing those black pixels.
 ///
 /// The fix is two-pronged and native, so it cannot run on the Dart host:
-///   - Direction 1: give the window class a non-black splash brush.
+///   - Direction 1: paint the empty window a non-black splash colour before
+///     Flutter's first frame. BUG-1916 moved *where* that colour lives — from
+///     `WNDCLASS.hbrBackground` to a per-window `backdrop_brush_` that
+///     `WM_ERASEBKGND` paints with — because the class brush also erased the
+///     surface underneath the Flutter view on every resize. The invariant here
+///     is unchanged (「首帧前不是黑的」); only the mechanism moved, so the
+///     assertions below follow the mechanism instead of pinning the old one.
 ///   - Direction 2: the restarted process creates its window hidden (no
 ///     WS_VISIBLE) and Dart shows it after the first frame, with a fallback
 ///     show in catch so it can never stay permanently invisible.
@@ -26,11 +34,18 @@ void main() {
   late String mainDart;
 
   setUpAll(() {
-    cpp = File('windows/runner/win32_window.cpp').readAsStringSync();
-    mainDart = File('lib/main.dart').readAsStringSync();
+    // Comments masked (blanked in place, offsets preserved): the runner's own
+    // comments quote the code shapes these guards look for — the WM_ERASEBKGND
+    // comment literally spells out the superseded `return TRUE; break;` form,
+    // which an unmasked `contains('break;')` happily matches.
+    cpp = maskComments(
+      File('windows/runner/win32_window.cpp').readAsStringSync(),
+    );
+    mainDart = maskComments(File('lib/main.dart').readAsStringSync());
   });
 
-  group('TODO-959 direction 1: non-black window-class background brush', () {
+  group('TODO-959 direction 1: non-black splash fill before the first frame',
+      () {
     test('the window class no longer uses a bare hbrBackground = 0', () {
       // The classic Flutter runner black-window default. Must be replaced by a
       // solid brush (any whitespace around the 0 still counts as the bug).
@@ -39,17 +54,39 @@ void main() {
           reason: 'hbrBackground = 0 leaves the first-frame window black.');
     });
 
-    test('a splash background color constant is defined and used as the brush',
-        () {
+    test('a splash background color constant is defined and painted before the '
+        'first Flutter frame', () {
       expect(cpp.contains('kSplashBackgroundColor'), isTrue,
           reason: 'splash brush color must be a named constant.');
-      // Direction 1: the window class brush must be a CreateSolidBrush of that
-      // color, not 0.
+      // BUG-1916: the brush moved off the window class onto the window
+      // instance. Deliberately do NOT require `window_class.hbrBackground =
+      // CreateSolidBrush(...)` any more — `win_resize_backdrop_guard_test.dart`
+      // asserts the exact opposite (the class must own no brush, or every
+      // resize erases the surface under the Flutter view teal). Two guards
+      // demanding opposite things about one line is how BUG-1914 happened.
       expect(
           cpp.contains(
-              'window_class.hbrBackground = CreateSolidBrush(kSplashBackgroundColor)'),
+              'backdrop_brush_(CreateSolidBrush(kSplashBackgroundColor))'),
           isTrue,
-          reason: 'window class must paint a non-black splash brush.');
+          reason: 'the per-window backdrop brush must start as the splash '
+              'colour, or the pre-first-frame window is undefined/black.');
+      // ...and something must actually paint with it. Dropping the class brush
+      // is only safe *because* WM_ERASEBKGND paints the instance brush itself:
+      // an earlier draft handled the same case with `if (child_content_ !=
+      // nullptr) return TRUE; break;`, which with a null class brush falls
+      // through to a DefWindowProc that paints nothing — the TODO-959 black
+      // window, straight back.
+      final int eraseAt = cpp.indexOf('case WM_ERASEBKGND:');
+      expect(eraseAt, isNonNegative,
+          reason: 'with no class brush, the window must erase itself.');
+      final int nextCaseAt = cpp.indexOf('case WM_ACTIVATE:', eraseAt);
+      expect(nextCaseAt, greaterThan(eraseAt));
+      final String eraseBody = cpp.substring(eraseAt, nextCaseAt);
+      expect(eraseBody.contains('PaintBackdrop('), isTrue,
+          reason: 'WM_ERASEBKGND must paint the splash/backdrop brush.');
+      expect(eraseBody.contains('break;'), isFalse,
+          reason: 'falling through to DefWindowProc with no class brush '
+              'leaves the cold-start window unpainted (TODO-959).');
     });
   });
 

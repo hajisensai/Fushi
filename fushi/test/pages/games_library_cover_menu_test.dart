@@ -32,8 +32,7 @@ void main() {
   });
 
   Future<AppModel> buildModel(List<GalgameEntry> games) async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
@@ -87,6 +86,10 @@ void main() {
         t.game_scrape,
         t.add_to_collection,
         t.tag_label,
+        // 内容语言（内容字体链）：决定这个游戏的 hook 文本 / 查词卡词头用哪条字体
+        // 链。hook 文本没有任何语言声明可读，用户指定是它唯一的真值来源，所以与
+        // 标签同属「每游戏配置」，紧随其后。
+        t.book_language_action,
         if (Platform.isWindows) '${t.game_upscaling} · ${t.game_upscaling_off}',
         // BUG-1477：每游戏「日语区域（转区）」档，与超分同为「启动期配置」，
         // 故紧邻它排在删除之前。未设过的游戏显示默认档 auto。

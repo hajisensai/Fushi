@@ -29,13 +29,20 @@ void main() {
   test('main.dart：dataRootUnavailable 逃生屏在裸 loading 分支之前，且接双按钮 (BUG-815)', () {
     final String src = read('lib/main.dart');
 
-    final int escapeIdx = src.indexOf('appModel.dataRootUnavailable');
+    // BUG-1666 起 main.dart 在 build 之外也有 `if (!appModel.isInitialised)`
+    // （深链在未初始化时暂存词的分支），裸 indexOf 会锚到那一处，让整个守卫窗口错位。
+    // 判据本就只关心根 widget build 内的分支顺序，所以一律从 build 起点往后找。
+    final int buildIdx = src.indexOf('Widget build(BuildContext context)');
+    expect(buildIdx, greaterThan(0), reason: 'main.dart 必须有根 widget 的 build');
+
+    final int escapeIdx = src.indexOf('appModel.dataRootUnavailable', buildIdx);
     expect(escapeIdx, greaterThanOrEqualTo(0),
         reason: 'main.dart 必须检查 appModel.dataRootUnavailable 显逃生屏');
 
     // 裸 loading 分支（!appModel.isInitialised）。逃生屏必须在它之前，否则慢启动会先落到
     // loading/空态而看不到逃生屏。
-    final int loadingIdx = src.indexOf('if (!appModel.isInitialised)');
+    final int loadingIdx =
+        src.indexOf('if (!appModel.isInitialised)', buildIdx);
     expect(loadingIdx, greaterThan(escapeIdx),
         reason: 'dataRootUnavailable 逃生屏必须在裸 loading 分支之前渲染');
 

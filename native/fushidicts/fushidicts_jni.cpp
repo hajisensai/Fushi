@@ -65,7 +65,14 @@ std::string build_kanji_json(const std::vector<KanjiResult>& kanji) {
       if (j) out.push_back(',');
       append_json_escaped(out, k.meanings[j]);
     }
-    out += "],\"dictName\":";
+    out += "],\"stats\":{";
+    for (size_t j = 0; j < k.stats.size(); j++) {
+      if (j) out.push_back(',');
+      append_json_escaped(out, k.stats[j].first);
+      out.push_back(':');
+      append_json_escaped(out, k.stats[j].second);
+    }
+    out += "},\"dictName\":";
     append_json_escaped(out, k.dict_name);
     out.push_back('}');
   }

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
@@ -140,6 +141,8 @@ void main() {
       AnkiErrorCode.connectionTimeout: t.anki_error_connection_timeout,
       AnkiErrorCode.httpError: t.anki_error_http,
       AnkiErrorCode.connectionUnknown: t.anki_error_connection_unknown,
+      AnkiErrorCode.pairedDeviceUnreachable:
+          t.anki_error_paired_device_unreachable,
     };
     cases.forEach((String code, String localized) {
       test('$code maps to its localized toast string', () {
@@ -175,6 +178,23 @@ void main() {
       expect(msg, isNot(contains('Permission not granted')));
       // Full diagnostics still reach the error log.
       expect(ErrorLogService.instance.entries, hasLength(1));
+    });
+
+    test('BUG-1988 paired-device unreachable uses actionable Chinese copy', () {
+      final AppLocale original = LocaleSettings.currentLocale;
+      addTearDown(() => LocaleSettings.setLocale(original));
+      LocaleSettings.setLocale(AppLocale.zhCn);
+
+      final MineOutcome outcome = MineOutcome.failure(
+        RemoteMiningAnkiRepository.pairedDeviceUnreachableMessage,
+        errorCode: AnkiErrorCode.pairedDeviceUnreachable,
+      );
+      final String msg = logMineFailure(outcome);
+
+      expect(msg, t.anki_error_paired_device_unreachable);
+      expect(msg, contains('配对设备上的 Fushi 正在运行'));
+      expect(msg, contains('关闭「制卡到已配对设备」'));
+      expect(msg, isNot(contains('server-side mining')));
     });
 
     test('unknown/absent errorCode falls back to the detail toast', () {

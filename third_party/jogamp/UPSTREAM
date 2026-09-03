@@ -1,0 +1,80 @@
+# org.jogamp（GlueGen / JOGL）2.5.0 —— vendored 离线 Maven 仓库
+
+本目录是一个**标准 Maven layout 的只读本地仓库**，只装 `org.jogamp` 这一个组的
+4 个构件。它不参与 Flutter/Dart 构建，只被 `tool/mihon/build_desktop_runtime.{ps1,sh}`
+在构建 Mihon 桌面 sidecar 时用作 Gradle 的第一顺位仓库。
+
+## 为什么要 vendor（问题不是「洁癖」，是 CI 反复变红）
+
+依赖链是被动的，不是我们选的：
+
+```
+:server → :AndroidCompat → dev.datlag:kcef:2024.04.20.4
+                         → dev.datlag:jcef:2024.04.20.4
+                         → org.jogamp.gluegen:gluegen-rt:2.5.0
+                         → org.jogamp.jogl:jogl-all:2.5.0
+```
+
+`AndroidCompatInitializer.kt` 把 `KcefWebViewProvider` 注册成 `WebView` 的 provider
+（Mihon 扩展靠它过 JS 挑战），`KcefWebViewProvider` 用 `CefRendering.OFFSCREEN`，
+JCEF 的离屏路径走 JOGL `GLCanvas`。**所以 jogl 在运行时真的会被加载，不能 exclude**
+——排除它只会把「CI 可见的红」换成「某个漫画源真要用 WebView 时才炸的
+`NoClassDefFoundError`」。
+
+而 `org.jogamp:*:2.5.0` **只存在于两个不可靠主机上**：
+
+| 主机 | 状态 |
+|---|---|
+| `jogamp.org/deployment/maven` | 2026-08-09 整站宕机，当时打断 CI |
+| `maven.scijava.org/content/groups/public` | 2026-08-25 `Read timed out`，打断 develop 与 PR #1017/#1018 三条 CI |
+
+Maven Central **没有 2.5.0**（只有 ≤2.3.2 与 2.6.0），所以「换成可靠主机」这条路
+在不动版本的前提下走不通；而在没有真机 GL 验证的情况下把 JCEF 底下的原生 GL 绑定
+从 2.5.0 抬到 2.6.0，是拿一个看得见的 CI 红去换一个看不见的运行期风险。
+
+2026-08-09 那次的处置是「再加一个镜像」（scijava）。2026-08-25 证明了那条路是
+把同一个赌注押到第二个不可靠主机上。本目录改为**彻底移除构建期对这两个主机的依赖**。
+
+## 构件从哪来 / 完整性
+
+字节取自本机 Gradle 依赖缓存（`~/.gradle/caches/modules-2/files-2.1/`），即 Gradle
+当初从上游下载并按上游 `.sha1` 校验通过的原始文件。Gradle 的缓存目录名**就是**该文件的
+SHA-1，搬运前后逐个比对过，四个文件全部一致（未经任何修改）：
+
+| 构件 | 字节 | SHA-1 | SHA-256 |
+|---|---|---|---|
+| `gluegen-rt-2.5.0.jar` | 387,897 | `683e9d628c2ca32c4b56249034e164e593bf37b3` | `3620c18536a8671fcb1c595d7448e9d31226b824117af6a4c6d45c657f4dabe3` |
+| `gluegen-rt-2.5.0.pom` | 2,582 | `283d53111be910e48e54d884599db4aefd1f8a46` | `e92ee0c91986153579d2a7e1e5025068c2c24a53527372fe56baa4d990b018f3` |
+| `jogl-all-2.5.0.jar` | 3,741,453 | `68dc55e290bd5456e87f5d47834de47633dbe754` | `245717cceabca264a210a899f8839d47bd127f50f80892ead2277dd89cbcd301` |
+| `jogl-all-2.5.0.pom` | 2,804 | `a73f69aa65e811538b3775dd0d0b74b68056ef67` | `6b086a2e461d7b7911a1c165ffcbde2ab79b00c54c360cf191ca00f5f784db6a` |
+
+同级的 `.sha1` 伴生文件即上表 SHA-1，Gradle 解析本地仓库时会自校验。
+守卫测试 `fushi/test/build/mihon_vendored_jogamp_guard_test.dart` 钉死上表 SHA-256
+与「补丁必须声明本仓库、两个构建脚本必须把它搬进构建树」。
+
+**没有 native classifier jar**：`jogl-all` / `gluegen-rt` 的 `-natives-<platform>` 变体
+不在这条依赖链里（jcef 的 POM 只声明了上面两个主构件），实测解析结果也只有这 4 个文件。
+
+## 许可证
+
+GlueGen 与 JOGL 由 JogAmp 社区发布，POM 中声明为 BSD-2 / BSD-3 / SGI Free Software
+License B / Apache 1.1 / Apache 2.0 / Ubuntu Font Licence 1.0 多许可。二进制再分发在
+这些许可证下均被允许。上游项目地址：
+
+- JOGL: <http://jogamp.org/jogl/www/>（scm: `http://jogamp.org/git/jogl.git/`）
+- GlueGen: <http://jogamp.org/gluegen/www/>
+
+各构件完整的许可证与版权声明随 jar 内的 `META-INF` 分发，本目录不做裁剪。
+
+## 升级怎么办
+
+只有当 `dev.datlag:kcef` / `dev.datlag:jcef` 升级并改变了它要求的 `org.jogamp` 版本时
+才需要动这里：
+
+1. 让 Gradle 正常解析一次新版本（远端仓库仍然作为 fallback 保留在 `build.gradle.kts` 里）；
+2. 从 `~/.gradle/caches/modules-2/files-2.1/org.jogamp.*/` 把新构件按同样的 Maven layout 搬进来，
+   并确认「目录名 == 文件 SHA-1」；
+3. 重新生成 `.sha1`，更新上表与守卫测试里的 SHA-256；
+4. 删掉旧版本目录。
+
+**不要**手工编辑本目录下的任何 jar / pom。

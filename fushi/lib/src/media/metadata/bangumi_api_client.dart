@@ -1,19 +1,14 @@
 /// Bangumi（番组计划）API v0 的**跨媒体共享传输层**。
 ///
-/// 背景：视频海报刮削（`media/video/scraper/bangumi_client.dart`）与 galgame 元数据
-/// （`mining/metadata/adapters/bangumi_adapter.dart`）此前各写了一份 Bangumi 客户端，
-/// 打的是**同一套** API v0 端点（`POST /search/subjects`、`GET /subjects/{id}`），只是
-/// ① 过滤的 subject 类型不同（动画 2 / 游戏 4 / 书籍 1）② 映射到不同领域对象。真正重复的
-/// 是**传输层**：URL 构造、请求头、POST 搜索体、超时、`utf8(bodyBytes)` 解码、传输异常
-/// 边界——本文件把它收成唯一一份。
+/// 书籍与 galgame 元数据共用同一套 API v0 传输（`POST /search/subjects`、
+/// `GET /subjects/{id}`）；动画元数据不使用本客户端。
 ///
 /// **本层只负责传输**，刻意不做以下事情（它们是各调用方的策略，合理地不同，不该强并）：
 /// - subject 类型选择（由调用方传 [subjectType]）；
-/// - HTTP 非 2xx → 领域异常的映射（视频抛 `ScrapeNetworkException`，galgame 抛
-///   `GalgameMetadataException`，各自保留）；
-/// - 404 策略（视频当异常降级；galgame 当「条目不存在」返回 null）；
+/// - HTTP 非 2xx → 领域异常的映射（书籍与 galgame 各自保留）；
+/// - 404 策略（由各领域自行决定）；
 /// - JSON → 领域对象映射（`parseBangumiSubject*` 等薄映射器各留各的）；
-/// - 限流（galgame 有 `GalgameRateLimiter`，通过 [gate] 钩子注入；视频不需要）。
+/// - 限流（galgame 的 `GalgameRateLimiter` 通过 [gate] 钩子注入）。
 ///
 /// 代理：`package:http` 走 `dart:io` 的 `HttpClient`，自动尊重系统 / 环境代理（`HTTP_PROXY`
 /// / `HTTPS_PROXY`），本层不管。
@@ -28,11 +23,11 @@ import 'package:fushi/src/utils/net/app_http.dart';
 
 /// 纯函数：把用户粘贴的 Bangumi 条目 **URL** 解析为 subject id（数字串）。
 ///
-/// 「添加/修改 Bangumi 映射」共享入口：三媒体域（书/视频/游戏）的刮削弹窗都允许
-/// 直接贴条目 URL 改绑映射。接受 `bgm.tv` / `bangumi.tv` / `chii.in`（含 `www.`
+/// 书籍等仍使用 Bangumi 的媒体域允许直接贴条目 URL。接受 `bgm.tv` /
+/// `bangumi.tv` / `chii.in`（含 `www.`
 /// 前缀、http/https、无 scheme）下的 `/subject/<数字>` 路径，容忍尾随路径段 /
 /// query / fragment。**纯数字输入不在此认定**——数字既可能是 id 也可能是标题
-/// （如动画《86》），由各弹窗按「关键词搜索 + id 直取并列」策略自行处理。
+/// （如书名《86》），由各弹窗按「关键词搜索 + id 直取并列」策略自行处理。
 /// 其它输入返回 null（按关键词搜索处理）。
 String? parseBangumiSubjectUrl(String input) {
   final String trimmed = input.trim();

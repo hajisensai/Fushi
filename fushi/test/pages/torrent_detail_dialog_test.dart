@@ -318,6 +318,16 @@ void main() {
       find.textContaining('Live peers and trackers cannot be recovered'),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const Key('torrent-detail-empty-note')),
+      findsOneWidget,
+      reason: 'BUG-1953：缺少实时数据时必须使用统一空态卡，不能只留一段漂浮文本。',
+    );
+    expect(find.byIcon(Icons.info_outline), findsOneWidget);
+    final Size emptyNoteSize = tester.getSize(
+      find.byKey(const Key('torrent-detail-empty-note')),
+    );
+    expect(emptyNoteSize.width, lessThanOrEqualTo(480));
     await _dismiss(tester);
   });
 

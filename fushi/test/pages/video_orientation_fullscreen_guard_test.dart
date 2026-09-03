@@ -105,10 +105,17 @@ void main() {
       final String exitBody =
           methodBody(src, 'Future<void> _exitVideoNativeFullscreen() async {');
       expect(
-        enterBody.contains(
-            'if (!isMobilePlatform) return defaultEnterNativeFullscreen();'),
+        enterBody.contains('!isMobilePlatform') &&
+            enterBody.contains('defaultEnterNativeFullscreen()'),
         isTrue,
         reason: '进全屏桌面分支必须转调 defaultEnterNativeFullscreen (保留桌面真全屏)',
+      );
+      expect(
+        enterBody.contains('FushiWindowsTitleBar.setContentFullscreen') &&
+            enterBody.contains('owner: this') &&
+            enterBody.contains('enabled: true'),
+        isTrue,
+        reason: 'Windows 进全屏前必须认领应用顶栏隐藏状态',
       );
       // BUG-973: 桌面退全屏分支在 `defaultExitNativeFullscreen()` 之后追加
       // `setMacOSTrafficLightsHidden(true)` re-hide（AppKit 退全屏重建标题栏会复位

@@ -132,6 +132,13 @@ class ProviderBatchResult<T> {
   bool get isPartial => successfulProviderCount > 0 && hasFailures;
   bool get isTotalFailure => successfulProviderCount == 0 && hasFailures;
 
+  /// 一个 provider 都没参与本次查询：没成功、也没失败。
+  ///
+  /// 这**不是**「搜不到」。零可用来源（一个 Torznab 索引器都没配、字幕两家都没
+  /// 填 key）时 registry 是空扇出，结果与「来源都答了、只是没有匹配」完全同形
+  /// （空 items）。把两者混成一个空态，用户只会一遍遍换搜索词（BUG-1713）。
+  bool get hasNoActiveProvider => successfulProviderCount == 0 && !hasFailures;
+
   static ProviderBatchResult<T> merge<T>(
     Iterable<ProviderBatchResult<T>> results,
   ) {

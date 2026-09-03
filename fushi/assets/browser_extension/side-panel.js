@@ -26,6 +26,7 @@
   lookupShadow.appendChild(lookupOverrides);
   lookupShadow.appendChild(lookupContainer);
   window.__fushiRoot = lookupShadow;
+  installDictMediaPlaceholderResolver(lookupShadow); // BUG-1718：兑现词条内图片/样式表占位
   var currentTabId = null;
   var currentState = null;
   var cues = [];
@@ -49,6 +50,39 @@
   var scheduledPointer = null;
   var scanFrame = null;
   var activeScanKey = '';
+  // pointer 扫词在途闸（对齐 content.js 的 fushiPending/fushiPendingSince，BUG-1024 同款防洪）：
+  // 有词典请求在途时暂缓 pointermove 触发的新查词——横扫一行 20 个字不再瞬间打出 20 个请求把
+  // 本地服务与 6 连接上限灌满。0=无在途；带截止时间兜底，任何异常都不会永久闸死。
+  var lookupPendingSince = 0;
+  var LOOKUP_PENDING_TIMEOUT_MS = 1500;
+  // 用户拖过查词面板尺寸（CSS resize 把手）后置 true：本会话内主题下发/落点重算不再覆盖
+  // 用户宽高；拖拽结果经 popupSize 回写 app（与页面弹窗同一把「拖即解锁」尺寸键）。
+  var lookupUserResized = false;
+  var lookupResizeSnapshot = null;
+  // 「查词结果显示在网页上」。Chrome side panel 是浏览器自己的一份 web contents，面板内的
+  // 弹窗永远只能有面板那么宽——DOM 画不出面板边界，这是浏览器边界不是落点逻辑。开启后侧栏
+  // 点词把词交给宿主页，用页面弹窗渲染（详见 content.js 的 fushiShowLookupFromSidePanel）；
+  // 关掉、或宿主页没有内容脚本时，回落到面板内渲染（下面 lookupTerm 的两条路径）。
+  var lookupOnPage = true;
+  // 侧栏交出去的那轮页面弹窗是否还开着。用于扫词去重：弹窗还在就别对同一个字重复发请求，
+  // 弹窗没了（页面点空白/Esc/手动播放，content.js 回 fushiSidePanelLookupGone）就得放行。
+  var pageLookupOpen = false;
+  try {
+    chrome.storage.local.get('subtitleLookupOnPage', function (saved) {
+      try { if (chrome.runtime.lastError) return; } catch (_) { return; }
+      if (saved && typeof saved.subtitleLookupOnPage === 'boolean') {
+        lookupOnPage = saved.subtitleLookupOnPage;
+      }
+    });
+    chrome.storage.onChanged.addListener(function (changes, area) {
+      if (area !== 'local' || !changes || !changes.subtitleLookupOnPage) return;
+      var next = changes.subtitleLookupOnPage.newValue;
+      lookupOnPage = typeof next === 'boolean' ? next : true;
+      // 切换即收拾另一侧的残留：切到页面渲染时关面板内弹窗，切回面板时关页面上那份。
+      if (lookupOnPage) closeLookup();
+      else closePageLookup();
+    });
+  } catch (_) { /* storage 不可用：按默认（页面渲染）走 */ }
   // 复杂词的 popupJson 可超过 2 MB，解析后的对象树通常还会膨胀数倍。只按“48 个词”
   // 淘汰会让 Side Panel 很快常驻数百 MB，并在后续查词时触发秒级 GC。双门槛保留常用
   // 小词，同时让超大结果最多只占少量槽位；最新一条即使单独超预算也保留以支持复查。
@@ -56,14 +90,29 @@
   var LOOKUP_CACHE_CHAR_LIMIT = 8 * 1024 * 1024;
   var FONT_STEPS = [0.85, 1, 1.15, 1.3];
 
+  // BUG-1024 孪生（Side Panel 版）：MV3 service worker 在消息在途时被系统回收，sendMessage
+  // 回调**永不触发**——没有兜底的话这里的 Promise 永久 pending：「正在查词…」永久停留，且
+  // fetchLookup 的同词在途复用（BUG-1525）会把这个死 Promise 缓存起来，同一个词从此永久卡死。
+  // 超时竞速保证 Promise 一定 settle（值取 > app 冷查询 P99；超时按失败处理，UI 显示可重试的
+  // 失败文案而不是无限转圈）。
+  var RUNTIME_MESSAGE_TIMEOUT_MS = 8000;
   function sendRuntime(message) {
     return new Promise(function (resolve) {
+      var settled = false;
+      var timer = null;
+      var finish = function (value) {
+        if (settled) return;
+        settled = true;
+        if (timer !== null) clearTimeout(timer);
+        resolve(value);
+      };
+      timer = setTimeout(function () { finish(null); }, RUNTIME_MESSAGE_TIMEOUT_MS);
       try {
         chrome.runtime.sendMessage(message, function (response) {
-          try { if (chrome.runtime.lastError) return resolve(null); } catch (_) { return resolve(null); }
-          resolve(response || null);
+          try { if (chrome.runtime.lastError) return finish(null); } catch (_) { return finish(null); }
+          finish(response || null);
         });
-      } catch (_) { resolve(null); }
+      } catch (_) { finish(null); }
     });
   }
 
@@ -114,17 +163,38 @@
     });
   }
 
-  function closeLookup() {
+  // 只收起面板内那份弹窗：推进请求代际让在途查词的渲染失效，清空内容。**不动 activeScanKey**
+  // ——那是扫词去重键，只在「这一轮查词真的没了」时才该复位（closeLookup / 页面弹窗关窗回执）。
+  function hideLookupPane() {
+    // 收窗即作废在途的自动朗读（弹窗没了不该再响）。
+    if (typeof window.fushiCancelAutoRead === 'function') window.fushiCancelAutoRead();
     lookupRequestId += 1;
     if (Number.isInteger(window._renderGeneration)) window._renderGeneration += 1;
     window._renderInProgress = false;
     lookupPaneEl.hidden = true;
     lookupPaneEl.style.visibility = 'hidden';
     lookupContainer.textContent = '';
-    currentLookupCue = null;
     currentLookupAnchor = null;
     currentLookupPerfContext = null;
+  }
+
+  // 关掉页面上那份（侧栏交出去的）弹窗。面板内那份由 closeLookup 管，两者互不代管。
+  function closePageLookup() {
+    if (!pageLookupOpen) return;
+    pageLookupOpen = false;
     activeScanKey = '';
+    sendToTab({ type: 'fushiSubtitleSidePanelCloseLookup' });
+  }
+
+  function closeLookup() {
+    var wasOpen = !lookupPaneEl.hidden;
+    hideLookupPane();
+    currentLookupCue = null;
+    activeScanKey = '';
+    // 面板真关掉时通知视频页：由查词暂停的视频该恢复了（content 侧只恢复「确实是查词
+    // 暂停的」，用户自己暂停的不动）。「手动播放→content 反向 dismiss→这里 close」的
+    // 环路安全：那时暂停标记已被 play 监听清掉，恢复是 no-op。
+    if (wasOpen) sendToTab({ type: 'fushiSubtitleSidePanelLookupClosed' });
   }
 
   function positionLookup(anchor) {
@@ -138,7 +208,10 @@
       lookupPaneEl.style.left = '0px';
       lookupPaneEl.style.top = '0px';
     }
-    lookupPaneEl.style.maxHeight = 'min(' + lookupBaseMaxHeight + ', 80vh)';
+    // lookupBaseMaxHeight 已由 applyLookupBox 按「视口 80% ÷ zoom」折算成基准尺度 px，
+    // 这里不能再套一层 `min(..., 80vh)`：vh 不随 zoom 缩放，zoom>1 时那个上限会被放大到
+    // 视口之外，等于没夹（正是弹窗纵向超出侧边栏的原因）。
+    if (!lookupUserResized) lookupPaneEl.style.maxHeight = lookupBaseMaxHeight;
     requestAnimationFrame(function () {
       if (requestId !== lookupRequestId || lookupPaneEl.hidden) return;
       var gap = 4;
@@ -187,11 +260,35 @@
     }
     var wheelSpeed = parseFloat(theme['--fushi-wheel-speed']);
     window.__fushiPopupWheelSpeed = isFinite(wheelSpeed) && wheelSpeed > 0 ? wheelSpeed : 1;
-    lookupPaneEl.style.width = theme['--fushi-popup-max-width'] || '400px';
+    // 用户拖过尺寸（lookupUserResized）后，本会话内不再让主题下发的宽高盖掉用户的选择；
+    // 拖拽结果经 popupSize 回写 app，下次会话由主题带回来。
+    lookupThemeForBox = theme;
+    applyLookupBox();
+  }
+
+  // 侧边栏弹窗的尺寸盒。与页面弹窗（content.js fushiApplyTheme）同一个决策器，额外把
+  // **本文档视口**交给它做夹取——侧边栏可以窄到 300px，而主题宽度是按 app 窗口定的
+  // （400~600px），且这些 px 长度写在 CSS `zoom` 之下：zoom=1.4 时 400px 渲染成 560px，
+  // 连 `max-width: calc(100vw - 16px)` 这个上限本身也一起被 zoom 放大，根本拦不住 →
+  // 弹窗横向溢出，被 `.lookup-pane{overflow-x:hidden}` 硬切掉右半边（用户看到「查词框被切了」）。
+  // fushiResolvePopupBox 把上限折回基准尺度；压到最窄可读宽度仍放不下时改压 zoom，
+  // 让整窗等比缩小而不是切内容。
+  var lookupThemeForBox = null;
+  function applyLookupBox() {
+    var box = fushiResolvePopupBox(
+      lookupThemeForBox, { width: window.innerWidth, height: window.innerHeight });
+    // 「用户手动拖过尺寸」只锁**宽高两项**——那才是拖把手拖出来的东西，本会话内不再
+    // 被主题下发的值盖掉（拖拽结果经 popupSize 回写 app，下次会话由主题带回来）。
+    // zoom 不在此列：它由 app 的「词典字号」下发（--fushi-popup-zoom =
+    // dictionaryFontSize/16），拖把手根本改不到它。整个函数早退会让用户拖过一次之后，
+    // 本会话内再去 app 里改字号，侧边栏弹窗的缩放永远不跟——这是行为回归。
+    if (!lookupUserResized) {
+      lookupPaneEl.style.width = box.width + 'px';
+      lookupBaseMaxHeight = box.maxHeight + 'px';
+      lookupPaneEl.style.maxHeight = lookupBaseMaxHeight;
+    }
     lookupPaneEl.style.maxWidth = 'calc(100vw - 16px)';
-    lookupBaseMaxHeight = theme['--fushi-popup-max-height'] || '360px';
-    lookupPaneEl.style.maxHeight = 'min(' + lookupBaseMaxHeight + ', 80vh)';
-    lookupPaneEl.style.zoom = theme['--fushi-popup-zoom'] || '1';
+    lookupPaneEl.style.zoom = String(box.zoom);
   }
 
   function renderLookupData(value, data, cacheHit) {
@@ -222,8 +319,22 @@
     window.needsAudio = true;
     window._noResultsMessage = '没有查到结果';
     applyLookupTheme(data.theme);
-    if (typeof window.renderPopup === 'function') window.renderPopup();
-    else lookupContainer.innerHTML = '<div class="no-results">词典组件尚未就绪，请重试。</div>';
+    // 花括号是必需的：BUG-1942 的自动朗读块插进来之后，这个 else 曾经绑到了下面那个
+    // `if (typeof window.fushiAutoReadFirstEntry === 'function')` 上 —— 于是词典组件
+    // 真没就绪时不再显示提示（一片空白），而 auto-read.js 没加载时反倒会把已经渲染好
+    // 的弹窗内容覆盖成「词典组件尚未就绪」。
+    if (typeof window.renderPopup === 'function') {
+      window.renderPopup();
+    } else {
+      lookupContainer.innerHTML = '<div class="no-results">词典组件尚未就绪，请重试。</div>';
+    }
+    // 查词后自动朗读：与页面弹窗共用 auto-read.js 那一份（开关同为 app 全局偏好）。
+    if (typeof window.fushiAutoReadFirstEntry === 'function') {
+      window.fushiAutoReadFirstEntry(window.lookupEntries, {
+        enabled: data.autoReadOnLookup === true,
+        audioSources: window.audioSources,
+      });
+    }
     if (lookupPaneEl.style.visibility === 'visible' &&
         currentLookupPerfContext && !currentLookupPerfContext.visibleReported) {
       reportLookupVisibleAfterPaint(currentLookupPerfContext);
@@ -286,8 +397,12 @@
         return null;
       }
       var data = response.data;
+      // BUG-1718：词典自带 CSS + 用户自定义 CSS 是全局（非按词）的，随每次真实响应刷新即可，
+      // 不进 prepared 缓存（缓存 48 个词，没必要每条都挂一份数百 KB 的引用）。
+      applyFushiPopupCss(data);
       var prepared = {
         audioSources: data.audioSources,
+        autoReadOnLookup: data.autoReadOnLookup === true,
         theme: data.theme,
         entries: [],
         estimatedChars: data.popupJson.length,
@@ -346,6 +461,25 @@
     var value = String(term || '').trim();
     if (!value) return;
     var shouldPosition = !!anchor;
+    if (lookupOnPage) {
+      // 「跨出面板」路径：只负责把词递给宿主页，查词请求、暂停/恢复、嵌套查词、发音、查重、
+      // 制卡全部在页面侧走既有链路（与 Shift 划词同源）。
+      if (!lookupPaneEl.hidden) hideLookupPane(); // 刚从「面板内」切过来的残留
+      currentLookupCue = cue || currentLookupCue;
+      var shown = await sendToTab({
+        type: 'fushiSubtitleSidePanelShowLookup', term: value, cue: currentLookupCue,
+        // 侧栏与宿主页是两个视口，绝对坐标没有意义；交纵向比例，页面按自己的视口还原，
+        // 弹窗就落在被点那一行的高度上（贴右缘=紧邻侧栏），不再固定糊在右上角挡内容。
+        anchorRatio: lookupAnchorRatio(anchor),
+      });
+      if (shown && shown.ok === true) {
+        pageLookupOpen = true;
+        return;
+      }
+      // 宿主页不可达（无内容脚本的页面、标签已关或正在跳转）：绝不能变成查不了词——
+      // 落回下面的面板内渲染。
+      pageLookupOpen = false;
+    }
     var requestId = ++lookupRequestId;
     currentLookupCue = cue || currentLookupCue;
     lookupPaneEl.hidden = false;
@@ -360,15 +494,38 @@
     }
     lookupContainer.innerHTML = '<div class="no-results">正在查词…</div>';
     if (shouldPosition) positionLookup(anchor);
-    var data = await fetchLookup(value);
+    // try/finally 锁死两条不变式：①「正在查词…」绝不永久停留——fetchLookup 无论 resolve /
+    // reject（内部处理回调抛错）都必须落到成功或失败文案；② pointer 扫词在途闸一定被复位。
+    var data = null;
+    try {
+      lookupPendingSince = Date.now();
+      data = await fetchLookup(value);
+    } catch (_) {
+      data = null;
+    } finally {
+      lookupPendingSince = 0;
+    }
     if (requestId !== lookupRequestId) return;
     if (!data) {
       lookupContainer.innerHTML = '<div class="no-results">查词失败，请确认 Fushi 查词服务已开启。</div>';
       if (shouldPosition) positionLookup(anchor);
+      // 失败后复位扫描去重键：不复位的话鼠标停在同一个字上永远触发不了重试。
+      activeScanKey = '';
       return;
     }
     renderLookupData(value, data, false);
     if (shouldPosition) positionLookup(anchor);
+  }
+
+  // 被点词在侧栏视口里的纵向比例（0=顶、1=底）。没有锚点（嵌套查词等）时沿用上一次的位置。
+  var lastAnchorRatio = 0.15;
+  function lookupAnchorRatio(anchor) {
+    var height = window.innerHeight || 0;
+    if (anchor && height > 0 && typeof anchor.top === 'number') {
+      var ratio = anchor.top / height;
+      lastAnchorRatio = Math.min(1, Math.max(0, ratio));
+    }
+    return lastAnchorRatio;
   }
 
   function anchorForHit(hit, x, y) {
@@ -393,10 +550,15 @@
     return { left: x, top: y, right: x + 1, bottom: y + 1, width: 1, height: 1 };
   }
 
-  function lookupAtPointer(pointer, announceMissing) {
-    if (!pointer || !pointer.textEl || !pointer.textEl.isConnected) return;
+  // explicit：用户显式手势（点击 / 按下 Shift），永远放行在途闸；announceMissing：取不到词时
+  // 是否提示。两者曾是同一个参数，于是「点击」被迫既放行在途闸又必须弹 toast——而点行内空白
+  // 本就取不到词，那条 toast 挡住的正是用户想要的跳转。返回 true 表示这一击真的发起了查词。
+  function lookupAtPointer(pointer, options) {
+    var explicit = !!(options && options.explicit);
+    var announceMissing = !!(options && options.announceMissing);
+    if (!pointer || !pointer.textEl || !pointer.textEl.isConnected) return false;
     var hovered = document.elementFromPoint(pointer.x, pointer.y);
-    if (!hovered || (hovered !== pointer.textEl && !pointer.textEl.contains(hovered))) return;
+    if (!hovered || (hovered !== pointer.textEl && !pointer.textEl.contains(hovered))) return false;
     var term = '';
     var hit = null;
     try {
@@ -410,12 +572,19 @@
     } catch (_) { term = ''; }
     if (!term) {
       if (announceMissing) toast('未识别到可查词文字');
-      return;
+      return false;
     }
     var scanKey = pointer.index + '\u0000' + term;
-    if (scanKey === activeScanKey && !lookupPaneEl.hidden) return;
+    if (scanKey === activeScanKey && (pageLookupOpen || !lookupPaneEl.hidden)) return true;
+    // 在途闸只拦 pointermove 自动扫词；显式手势（点击 / Shift）永远放行。
+    // 超过截止时间的在途视为已死（SW 被回收等），放行新查词——死锁不可复活。
+    if (!explicit && lookupPendingSince &&
+        Date.now() - lookupPendingSince < LOOKUP_PENDING_TIMEOUT_MS) {
+      return false;
+    }
     activeScanKey = scanKey;
     lookupTerm(term, pointer.cue, anchorForHit(hit, pointer.x, pointer.y));
+    return true;
   }
 
   function schedulePointerLookup(pointer) {
@@ -425,7 +594,7 @@
       scanFrame = null;
       var next = scheduledPointer;
       scheduledPointer = null;
-      lookupAtPointer(next, false);
+      lookupAtPointer(next, {}); // pointermove 自动扫词：受在途闸约束、不提示
     });
   }
 
@@ -585,8 +754,27 @@
       });
       var text = document.createElement('div');
       text.className = 'subtitle-text';
-      text.textContent = cue.text;
-      text.title = '单击跳转；按住 Shift 指向文字查词；双击选择文本';
+      // 有振假名就画真正的 <ruby>（读音在正文上方），没有就一个文本节点——与覆盖层共用
+      // 同一份渲染，见 ruby-render.js。
+      if (typeof window.fushiRenderCueText === 'function') window.fushiRenderCueText(text, cue);
+      else text.textContent = cue.text;
+      text.title = '单击文字查词；点击时间或行空白跳转；双击选择文本；按住 Shift 悬停扫词';
+      text.addEventListener('click', function (event) {
+        // 行内文字单击=查词（asbplayer 同款；8-11 迁原生 Side Panel 时随旧 UI 层一起丢了，
+        // 用户报「点击查词不见了，只能 Shift 查」）。拖选/双击形成的选区在场时不查，
+        // 保住「双击选择文本」。
+        try {
+          var clickSel = window.getSelection && window.getSelection();
+          if (clickSel && !clickSel.isCollapsed) return;
+        } catch (_) {}
+        // 文字块占满整行宽度，点文字右侧的空白也落在这里：取到词才算「点文字=查词」并吞掉
+        // 这一击；取不到词就让它继续冒泡到 row 的 seek（点空白=跳转到这句），而不是只留下
+        // 一条「未识别到可查词文字」——那时用户既查不了词也跳不了。
+        var started = lookupAtPointer({
+          x: event.clientX, y: event.clientY, cue: cue, index: index, textEl: text,
+        }, { explicit: true });
+        if (started) event.stopPropagation();
+      });
       function rememberPointer(event) {
         lastPointer = {
           x: event.clientX, y: event.clientY, cue: cue, index: index, textEl: text,
@@ -746,6 +934,126 @@
     fileEl.value = '';
   });
 
+  // ── Jimaku 查字幕（asb 式云端字幕）：搜索框 → server /api/subtitle/jimaku/search（用户在
+  // app 设置里填的 API key；真人剧 anime=false 补搜在 server 侧）→ 点候选下载解析 →
+  // 复用外挂字幕的 InstallTrack 落地（与本地文件同一条轨/偏移/覆盖层链路）。
+  var jimakuRowEl = document.getElementById('jimaku-row');
+  var jimakuQueryEl = document.getElementById('jimaku-query');
+  var jimakuEpEl = document.getElementById('jimaku-ep');
+  var jimakuResultsEl = document.getElementById('jimaku-results');
+  function jimakuErrorText(data, response) {
+    var error = data && data.error;
+    if (error === 'no-api-key') return '请先在 Fushi 设置 → 视频 → 字幕 填写 Jimaku API key';
+    if (error === 'unauthorized') return 'Jimaku API key 无效或无权限';
+    if (error === 'rate-limited') return 'Jimaku 限流，请稍后再试';
+    if (error === 'missing-query') return '请输入搜索词';
+    if (!response || response.ok !== true) return 'Jimaku 搜索失败：请确认 Fushi 已启动';
+    return 'Jimaku 暂不可用，请稍后再试';
+  }
+  async function jimakuInstall(candidate) {
+    toast('正在下载：' + candidate.fileName);
+    var response = await sendRuntime({ type: 'jimakuFetch', handle: candidate.handle });
+    var data = response && response.data;
+    if (!response || response.ok !== true || !data || data.ok !== true ||
+        !Array.isArray(data.cues) || !data.cues.length) {
+      toast(data && data.error === 'unknown-handle'
+        ? '候选已过期，请重新搜索'
+        : (data && data.error === 'unsupported' ? '不支持的字幕格式' : jimakuErrorText(data, response)));
+      return;
+    }
+    var state = await sendToTab({
+      type: 'fushiSubtitleSidePanelInstallTrack',
+      filename: data.filename || candidate.fileName,
+      cues: data.cues,
+    });
+    if (state && state.ok) {
+      stateSignature = metadataSignature(state);
+      applyState(state, true);
+      jimakuResultsEl.hidden = true;
+      jimakuResultsEl.textContent = '';
+      toast('已加载 Jimaku 字幕：' + data.cues.length + ' 句');
+    }
+  }
+  function renderJimakuResults(candidates, truncated) {
+    jimakuResultsEl.textContent = '';
+    if (!candidates.length) {
+      var empty = document.createElement('div');
+      empty.className = 'jimaku-empty';
+      empty.textContent = '无结果。试试日文原名，或填集数缩小范围。';
+      jimakuResultsEl.appendChild(empty);
+      jimakuResultsEl.hidden = false;
+      return;
+    }
+    candidates.forEach(function (candidate) {
+      var row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'jimaku-item';
+      var name = document.createElement('span');
+      name.className = 'jimaku-item-name';
+      name.textContent = candidate.fileName;
+      var meta = document.createElement('span');
+      meta.className = 'jimaku-item-meta';
+      meta.textContent = candidate.entryName +
+        (candidate.language ? ' · ' + candidate.language : '') +
+        (candidate.episode != null ? ' · 第' + candidate.episode + '集' : '');
+      row.appendChild(name);
+      row.appendChild(meta);
+      row.addEventListener('click', function () { jimakuInstall(candidate); });
+      jimakuResultsEl.appendChild(row);
+    });
+    if (truncated) {
+      var more = document.createElement('div');
+      more.className = 'jimaku-empty';
+      more.textContent = '结果过多已截断，填集数可缩小范围。';
+      jimakuResultsEl.appendChild(more);
+    }
+    jimakuResultsEl.hidden = false;
+  }
+  var jimakuSearching = false;
+  async function jimakuSearch() {
+    if (jimakuSearching) return;
+    var query = String(jimakuQueryEl.value || '').trim();
+    if (!query) { toast('请输入搜索词'); return; }
+    var episode = parseInt(jimakuEpEl.value, 10);
+    jimakuSearching = true;
+    toast('正在搜索 Jimaku…');
+    try {
+      var response = await sendRuntime({
+        type: 'jimakuSearch',
+        query: query,
+        ...(Number.isInteger(episode) && episode > 0 ? { episode: episode } : {}),
+      });
+      var data = response && response.data;
+      if (!response || response.ok !== true || !data || data.ok !== true) {
+        toast(jimakuErrorText(data, response));
+        return;
+      }
+      renderJimakuResults(Array.isArray(data.candidates) ? data.candidates : [],
+        data.truncated === true);
+    } finally {
+      jimakuSearching = false;
+    }
+  }
+  document.getElementById('jimaku').addEventListener('click', function () {
+    var show = jimakuRowEl.hidden;
+    jimakuRowEl.hidden = !show;
+    if (!show) { jimakuResultsEl.hidden = true; return; }
+    // 预填当前标签页标题（长显示名命中率低，用户可改成日文原名——placeholder 已提示）。
+    if (!jimakuQueryEl.value && currentTabId != null) {
+      try {
+        chrome.tabs.get(currentTabId, function (tab) {
+          try { if (chrome.runtime.lastError) return; } catch (_) { return; }
+          if (tab && tab.title && !jimakuQueryEl.value) jimakuQueryEl.value = tab.title;
+        });
+      } catch (_) {}
+    }
+    jimakuQueryEl.focus();
+  });
+  document.getElementById('jimaku-go').addEventListener('click', function () { jimakuSearch(); });
+  jimakuQueryEl.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') jimakuSearch();
+  });
+
   document.getElementById('smaller').addEventListener('click', function () {
     fontStep = Math.max(0, fontStep - 1);
     document.documentElement.style.setProperty('--subtitle-scale', String(FONT_STEPS[fontStep]));
@@ -765,12 +1073,13 @@
   document.addEventListener('keydown', function (event) {
     if (event.key === 'Escape') {
       closeLookup();
+      closePageLookup();
       return;
     }
     // Yomitan 的 modifier-on-keydown 路径：指针已经停在词上时，按下 Shift 就用最后
     // 一次 pointer 坐标立即查，不要求用户再晃动鼠标，也不 preventDefault。
     if (event.key === 'Shift' && !event.repeat && lastPointer) {
-      lookupAtPointer(lastPointer, true);
+      lookupAtPointer(lastPointer, { explicit: true, announceMissing: true });
     }
   }, true);
   document.addEventListener('keyup', function (event) {
@@ -782,6 +1091,55 @@
       closeLookup();
     }
   });
+  // 「popup 不好关」的补齐三路：①content.js 在用户手动播放视频时反向推送 dismiss（页面弹窗
+  // 与本面板一起关）；②焦点离开 Side Panel（点回网页/播放器）即关；③滚动字幕列表（锚点行
+  // 已滚走，浮窗不该原地留着）即关。均幂等，重复触发无副作用。
+  try {
+    chrome.runtime.onMessage.addListener(function (msg) {
+      if (!msg || typeof msg.type !== 'string') return;
+      if (msg.type === 'fushiLookupDismiss') {
+        closeLookup();
+        pageLookupOpen = false;
+      } else if (msg.type === 'fushiSidePanelLookupGone') {
+        // 交出去的那份页面弹窗关了（点页面空白 / Esc / 手动播放）：复位去重键，鼠标停在
+        // 同一个字上也能立刻重查。
+        pageLookupOpen = false;
+        activeScanKey = '';
+      }
+    });
+  } catch (_) {}
+  window.addEventListener('blur', function () { closeLookup(); });
+  listEl.addEventListener('wheel', function () { closeLookup(); }, { passive: true });
+  listEl.addEventListener('touchmove', function () { closeLookup(); }, { passive: true });
+  // 查词面板拖拽调整大小（CSS resize 把手在右下角）：pointerdown 落在右下角 20px 内时快照
+  // 尺寸，松手时尺寸真变了才算「用户拖过」——置 lookupUserResized + 回写 app 尺寸键
+  // （app clamp 后按「拖即解锁」持久化，下次查词/会话经主题带回来）。
+  lookupPaneEl.addEventListener('pointerdown', function (event) {
+    try {
+      var rect = lookupPaneEl.getBoundingClientRect();
+      lookupResizeSnapshot =
+        (rect.right - event.clientX <= 20 && rect.bottom - event.clientY <= 20)
+          ? { w: rect.width, h: rect.height }
+          : null;
+    } catch (_) { lookupResizeSnapshot = null; }
+  }, { passive: true });
+  window.addEventListener('pointerup', function () {
+    if (!lookupResizeSnapshot) return;
+    var snap = lookupResizeSnapshot;
+    lookupResizeSnapshot = null;
+    var rect;
+    try { rect = lookupPaneEl.getBoundingClientRect(); } catch (_) { return; }
+    if (Math.abs(rect.width - snap.w) < 3 && Math.abs(rect.height - snap.h) < 3) return;
+    lookupUserResized = true;
+    var zoom = parseFloat(lookupPaneEl.style.zoom) || 1;
+    lookupBaseMaxHeight = Math.round(rect.height / zoom) + 'px';
+    lookupPaneEl.style.maxHeight = '';
+    sendRuntime({
+      type: 'popupSize',
+      maxWidth: Math.round(rect.width / zoom),
+      maxHeight: Math.round(rect.height / zoom),
+    });
+  }, { passive: true });
   window.addEventListener('load', function () {
     // popup.js 在扩展上下文只暴露监听器；与 content.js 的 Shift host 一样，把它
     // 限定挂在常驻 shadow host，避免污染整个 Side Panel 的滚动快速路径。
@@ -789,6 +1147,14 @@
       lookupPaneEl.addEventListener('wheel', window.__fushiPopupWheelListener, { passive: false });
     }
   }, { once: true });
+
+  // 侧边栏宽度是用户随时可拖的：变窄后原尺寸盒必然溢出被裁。视口一变就按新可用空间
+  // 重算尺寸盒，并对开着的弹窗重跑落点（positionLookup 内部自带 hidden 守卫）。
+  window.addEventListener('resize', function () {
+    applyLookupBox();
+    if (!lookupPaneEl.hidden) positionLookup();
+  });
+
 
   try {
     chrome.tabs.onActivated.addListener(function () { refresh(true); });

@@ -122,13 +122,35 @@ if [ "${#ASSET_FILES[@]}" -eq 0 ]; then
   exit 1
 fi
 
+# size + sha256 come from the artifact on disk (the same bytes that were just
+# uploaded), not from the GitHub API: the website's chunked downloader verifies
+# the reassembled file against sha256, and the R2 mirror can cross-check it.
 PLATFORM_ASSETS_JSON="$(
-  REPO="$REPO" DOWNLOAD_TAG="$DOWNLOAD_TAG" python3 - "${ASSET_FILES[@]}" <<'PY'
-import json, os, sys
+  REPO="$REPO" DOWNLOAD_TAG="$DOWNLOAD_TAG" ARTIFACTS_DIR="$ARTIFACTS_DIR" python3 - "${ASSET_FILES[@]}" <<'PY'
+import hashlib, json, os, sys
 repo = os.environ["REPO"]
 tag = os.environ["DOWNLOAD_TAG"]
+artifacts = os.environ["ARTIFACTS_DIR"]
 base = f"https://github.com/{repo}/releases/download/{tag}"
-out = [{"name": name, "browser_download_url": f"{base}/{name}"} for name in sys.argv[1:]]
+
+
+def digest(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+out = []
+for name in sys.argv[1:]:
+    path = os.path.join(artifacts, name)
+    out.append({
+        "name": name,
+        "browser_download_url": f"{base}/{name}",
+        "size": os.path.getsize(path),
+        "sha256": digest(path),
+    })
 print(json.dumps(out))
 PY
 )"

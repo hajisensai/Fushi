@@ -127,20 +127,22 @@ void main() {
       );
     });
 
-    test('dictionaryPopup 是独立 co-active 组，开滚轮 + 键盘两个通道', () {
+    test('dictionaryPopup 是独立 co-active 组，开滚轮 + 键盘 + 手柄三个通道', () {
       expect(ShortcutScope.dictionaryPopup.coactiveScopes,
           <ShortcutScope>[ShortcutScope.dictionaryPopup]);
-      // 契约变更（制卡快捷键）：本 scope 早先只开滚轮，因为唯一的动作是词条导航。加入
-      // popupMineEntry（= 点弹窗里的「＋」）后键盘通道有了真实消费者——
-      // popup_settings_injection 把 `bindingsFor(popupMineEntry).keyboardBindings`
-      // 序列化注入给 popup.js（app 外裸 WebView2 表面），视频页另按同一绑定在 Dart 侧派发。
-      // 故这里从「只开滚轮」放宽成两通道；但**不是**放开成三通道：手柄/鼠标仍无解析入口。
+      // 契约变更史：最早只开滚轮（唯一动作是词条导航）；加入 popupMineEntry 后键盘
+      // 通道有了真实消费者（popup_settings_injection 注入 popup.js + 视频页 Dart 侧
+      // 派发）；手柄重设计 P2 再开手柄——GamepadService 的弹窗兜底按
+      // `resolveGamepad(scope: dictionaryPopup)` 解析，经 DictionaryPopupGamepadRegistry
+      // 的钩子调进弹窗 JS。鼠标仍无解析入口，**不得**放开成四通道。
       expect(
         ShortcutScope.dictionaryPopup.channels,
-        <ShortcutChannel>{ShortcutChannel.wheel, ShortcutChannel.keyboard},
+        <ShortcutChannel>{
+          ShortcutChannel.wheel,
+          ShortcutChannel.keyboard,
+          ShortcutChannel.gamepad,
+        },
       );
-      expect(ShortcutScope.dictionaryPopup.channels,
-          isNot(contains(ShortcutChannel.gamepad)));
       expect(ShortcutScope.dictionaryPopup.channels,
           isNot(contains(ShortcutChannel.mouse)));
       // 其它 scope 保持键盘/手柄/鼠标三通道（不因新通道枚举而改变既有行为）。

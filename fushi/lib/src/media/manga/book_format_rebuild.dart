@@ -8,7 +8,8 @@
 ///
 /// ## 「源产物」是什么（这是本文件最容易踩错的一条）
 ///
-/// 三种 format 的书侧源产物形态不同，且**都不是 `extractDir/epubPath`**：
+/// 三种 format 的书侧源产物形态不同，且**都不是 `extractDir/epubPath`**（路径由
+/// `book_file_location.dart` 的 `bookMainFilePath` 单点决定，本文件只探测）：
 /// - `format='epub'`：源产物 = **解压书目录本身**。本仓的 EPUB 导入即解压、
 ///   从不在书目录里留一份独立 `.epub`；`epubPath` 只是导入时的原始文件名，
 ///   `p.join(extractDir, epubPath)` **永远指不到真实文件**（BUG-088 已就此坏过一次：
@@ -34,6 +35,7 @@ import 'package:path/path.dart' as p;
 import 'package:pdfrx/pdfrx.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/epub/book_file_location.dart';
 import 'package:fushi/src/epub/epub_book.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/epub/epub_parser.dart';
@@ -90,37 +92,36 @@ abstract final class BookFormatRebuild {
   /// 纯 IO，不做任何判断——「能不能转」全部交给 `book_format_convert.dart` 的纯
   /// 函数，这样判据只有一份、且能不碰磁盘地单测。
   static BookConvertProbe probeSource(EpubBookRow row) {
-    final BookFormat format = BookFormat.parseOrEpub(row.format);
-    final String extractDir = row.extractDir;
-    switch (format) {
+    // 「主产物在哪」只有 [bookMainFilePath] 一份真相源；这里只探测它存不存在。
+    final String source = bookMainFilePath(row);
+    switch (BookFormat.parseOrEpub(row.format)) {
       case BookFormat.pdf:
-        final String pdf = p.join(extractDir, row.epubPath);
         return BookConvertProbe(
           probe: BookSourceProbe(
-            sourceExists: File(pdf).existsSync(),
+            sourceExists: File(source).existsSync(),
             // PDF 恒可栅格化成页图，这一位对 PDF 无意义。
             sourceIsImageArchive: false,
           ),
-          sourcePath: pdf,
+          sourcePath: source,
         );
       case BookFormat.epub:
-        final EpubBook? book = tryParseExtractedBook(extractDir);
+        final EpubBook? book = tryParseExtractedBook(source);
         return BookConvertProbe(
           probe: BookSourceProbe(
             sourceExists: book != null,
             sourceIsImageArchive:
                 book != null && MangaArchiveImporter.isPureImageEpub(book),
           ),
-          sourcePath: extractDir,
+          sourcePath: source,
         );
       case BookFormat.manga:
         return BookConvertProbe(
           probe: BookSourceProbe(
-            sourceExists: File(p.join(extractDir, row.epubPath)).existsSync(),
+            sourceExists: File(source).existsSync(),
             sourceIsImageArchive: false,
-            recoverableOriginalPath: recoverableBookSource(extractDir),
+            recoverableOriginalPath: recoverableBookSource(row.extractDir),
           ),
-          sourcePath: p.join(extractDir, row.epubPath),
+          sourcePath: source,
         );
     }
   }

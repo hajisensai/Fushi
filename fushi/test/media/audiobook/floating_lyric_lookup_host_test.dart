@@ -19,6 +19,27 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 /// [FloatingLyricLookupHost.shouldBlockHitTest]：热槽常驻使
 /// [DictionaryPopupController.entries] 永不为空，旧判据 `entries.isNotEmpty` 会把
 /// 整层 [IgnorePointer] 永久翻成可命中，隐身热槽吃掉底下页面与悬浮歌词的所有点击。
+/// 造一个处于「搜索期盖板」态的 controller。
+///
+/// 盖板不再是一个 bool 镜像，而是「目标 entry 仍在栈内且仍 searching / 待渲染后
+/// 翻出」的派生值（见 [DictionaryPopupController.isSearchingUi]），所以测试必须
+/// 真的压一个搜索中的目标，而不是只翻一个标志位。
+DictionaryPopupController _searchingController({bool seedWarm = false}) {
+  const Rect rect = Rect.fromLTWH(10, 10, 1, 1);
+  final DictionaryPopupController popup =
+      DictionaryPopupController(lowMemory: false);
+  if (seedWarm) popup.seedWarmSlot();
+  final DictionaryPopupEntry target = popup.beginTop(
+    term: 'テスト',
+    rect: rect,
+    reuseWarmSlot: true,
+    replaceStack: true,
+    visible: false,
+  );
+  popup.beginSearchUi(rect, target);
+  return popup;
+}
+
 void main() {
   final FloatingLyricLookupNotifier notifier =
       FloatingLyricLookupNotifier.instance;
@@ -77,8 +98,7 @@ void main() {
 
     test('搜索期占位显示 → 拦截；endSearchUi 后放行', () {
       final DictionaryPopupController popup =
-          DictionaryPopupController(lowMemory: false)..seedWarmSlot();
-      popup.beginSearchUi(const Rect.fromLTWH(10, 10, 1, 1));
+          _searchingController(seedWarm: true);
       expect(FloatingLyricLookupHost.shouldBlockHitTest(popup), isTrue,
           reason: '搜索期加载占位卡在屏上，本层要参与命中');
       popup.endSearchUi();
@@ -201,9 +221,7 @@ void main() {
     }
 
     testWidgets('负向控制：子项在场时确实吃掉点击', (WidgetTester tester) async {
-      final DictionaryPopupController popup =
-          DictionaryPopupController(lowMemory: false)
-            ..beginSearchUi(const Rect.fromLTWH(10, 10, 1, 1));
+      final DictionaryPopupController popup = _searchingController();
       addTearDown(popup.dispose);
       int underTaps = 0;
       await tester.pumpWidget(harness(
@@ -219,9 +237,7 @@ void main() {
 
     testWidgets('对话框期间：ignoring 仍为 false，但点击照常穿到底下',
         (WidgetTester tester) async {
-      final DictionaryPopupController popup =
-          DictionaryPopupController(lowMemory: false)
-            ..beginSearchUi(const Rect.fromLTWH(10, 10, 1, 1));
+      final DictionaryPopupController popup = _searchingController();
       addTearDown(popup.dispose);
       expect(FloatingLyricLookupHost.shouldBlockHitTest(popup), isTrue,
           reason: '前置：对话框不改变搜索状态，本判据仍为真 ⇒ ignoring == false');

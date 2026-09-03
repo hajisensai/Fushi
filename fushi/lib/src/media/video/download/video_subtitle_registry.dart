@@ -17,13 +17,12 @@ class VideoSubtitleRegistry {
   ) async {
     final bool anime =
         request.media?.discoveryCategory == VideoDiscoveryCategory.anime;
-    final List<VideoSubtitleProvider> applicable = providers
-        .where(
-          (VideoSubtitleProvider provider) => anime
-              ? provider.id == 'jimaku' || provider.id == 'opensubtitles'
-              : provider.id == 'opensubtitles',
-        )
-        .toList()
+    // 此前非动画只放 OpenSubtitles，理由大概是「Jimaku 是番剧字幕站」。这不成立：
+    // Jimaku 上有数千条真人日剧/日影条目，而它们恰恰是本 app（日语沉浸）最需要
+    // 日语字幕、OpenSubtitles 又最缺日语轨的一类。真正把真人剧挡死的是
+    // JimakuAnimeFilter（BUG-1694），那个修好之后这道分类门就只剩「少搜一家」的
+    // 净损失。动画仍旧 Jimaku 优先，排序不变。
+    final List<VideoSubtitleProvider> applicable = providers.toList()
       ..sort((VideoSubtitleProvider a, VideoSubtitleProvider b) {
         if (anime && a.id != b.id) {
           if (a.id == 'jimaku') return -1;
@@ -56,6 +55,21 @@ class VideoSubtitleRegistry {
       failures: merged.failures,
       successfulProviderCount: merged.successfulProviderCount,
     );
+  }
+
+  /// 这条候选的来源 provider 是否允许为「正文语言探测」白下载一次。
+  ///
+  /// 判据必须落在 **provider 有没有下载配额** 上（见
+  /// [VideoSubtitleProvider.allowsFreeProbeDownload]），不能用「候选的 language
+  /// 字段是不是空的」代替——后者与配额毫无关系，而 OpenSubtitles 恰恰经常不给
+  /// language，于是最该被保护的源反而最常被探测。未知 provider 一律不许。
+  bool allowsFreeProbeDownload(VideoSubtitleCandidate candidate) {
+    for (final VideoSubtitleProvider value in providers) {
+      if (value.id == candidate.providerId) {
+        return value.allowsFreeProbeDownload;
+      }
+    }
+    return false;
   }
 
   Future<VideoSubtitleDownload> download(

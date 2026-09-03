@@ -4,7 +4,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/focus/focus_geometry.dart';
+import 'package:fushi/src/focus/main_window_focus_gate.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
+import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 
 @immutable
 class FushiFocusId {
@@ -97,10 +99,47 @@ class FushiFocusController extends ChangeNotifier {
   bool _repairScheduled = false;
   bool _repairMicrotaskScheduled = false;
 
+  /// BUG-1619：有一次被动修复因为「主窗不在前台」被挡下了，欠着。
+  ///
+  /// 主窗真正回到前台时必须补上，否则用户切回来会发现整页没有焦点、键盘 /
+  /// 手柄快捷键全不响应（正是 TODO-900 当初要修的症状）。
+  bool _repairDeferredWhileBackgrounded = false;
+
   BuildContext? get activeContext {
     final FushiFocusTargetEntry? active = _currentEntry();
     if (active != null && active.context.mounted) return active.context;
     return fallbackNode.context ?? _rootContext;
+  }
+
+  /// The visual geometry context for [focusNode].
+  ///
+  /// Managed composite controls register a render anchor around their whole
+  /// interactive surface. Flutter's [FocusNode.context], however, belongs to
+  /// the framework's internal [Focus] widget and can describe only an inset
+  /// editable child (for example, [SearchBar]) or another implementation detail.
+  /// Consumers that draw or reveal focus must use this registered anchor so the
+  /// ring, directional geometry, and scroll target share one boundary.
+  /// Unmanaged focus nodes keep their native context as the fallback.
+  /// 几何**刻意不看** `canFocus`：这里回答的是「该画在哪个矩形上」，被 disable
+  /// 的控件矩形依然有效。其余 4 处按节点身份找 entry 的地方（
+  /// [primaryFocusIsManagedTarget] / `_currentEntry` / `_isUsablePrimary` /
+  /// `_handleFocusChange`）问的是「还能不能聚焦」，所以走 `_entryCanFocus`。
+  /// 两个问题不同，判据不同是有意的，别顺手"统一"过来。
+  BuildContext? geometryContextFor(FocusNode? focusNode) {
+    if (focusNode == null) return null;
+    for (final FushiFocusTargetEntry entry in _entries.values) {
+      if (!identical(entry.focusNode, focusNode)) continue;
+      // 一旦按节点身份认出这是受管控件，锚点不可用就**不画**（返回 null），
+      // 而不是 continue 落到下面的 native context 回退——那等于「锚点暂时不可用
+      // 就悄悄退回已知错位的内框」，画一个确定错的框比不画更糟。
+      // `_isCurrentRoute` 第一行已经查过 `context.mounted`，这里不再重复。
+      return _isCurrentRoute(entry.context) ? entry.context : null;
+    }
+    // 未受管：原样交回 Flutter 的 context。mounted 由消费侧各自把关
+    // （`globalRectOfContext` 与 `FushiFocusScroll.ensureVisibleIfHidden` 都查），
+    // 在这里再查一遍是空转：两个调用点都写着 `?? primaryFocus?.context`，
+    // 返回 null 会被 `??` 把同一个 unmounted context 立刻递回去。
+    return focusNode.context;
   }
 
   FushiFocusId? get activeId => _activeId;
@@ -145,14 +184,28 @@ class FushiFocusController extends ChangeNotifier {
     _rootContext = rootContext;
     if (!_attached) {
       FocusManager.instance.addListener(_handleFocusChange);
+      // BUG-1619：主窗回到前台就补一次修复。焦点闸门在关门期间让出了焦点，
+      // 不补的话用户切回来整页没有焦点、键盘 / 手柄快捷键全不响应。
+      // 与 [_handleFocusChange] 里那条 deferred 补票**并存**是有意的：这条走
+      // window_manager 的窗口事件（可能因 channel 延迟晚到），那条走进程内的
+      // FocusManager 通知（不依赖 channel），两条覆盖不同故障模式。
+      mainWindowForegroundNotifier.addListener(_onMainWindowForegroundChanged);
       _attached = true;
     }
+    scheduleRepair();
+  }
+
+  void _onMainWindowForegroundChanged() {
+    if (!_attached || !mainWindowForegroundNotifier.value) return;
+    _repairDeferredWhileBackgrounded = false;
     scheduleRepair();
   }
 
   void detach() {
     if (_attached) {
       FocusManager.instance.removeListener(_handleFocusChange);
+      mainWindowForegroundNotifier
+          .removeListener(_onMainWindowForegroundChanged);
       _attached = false;
     }
     _entries.clear();
@@ -291,6 +344,24 @@ class FushiFocusController extends ChangeNotifier {
   }
 
   void ensureFocus() {
+    // BUG-1619：[ensureFocus] 是**被动焦点修复**的汇合点（attach / register /
+    // unregister / scheduleRepair 全落这里），它下面每一条分支都会 requestFocus。
+    //
+    // 桌面版 Fushi 是多顶层窗口进程。主窗不在前台时（用户正在游戏 / 浏览器里，
+    // 剪贴板查词面板浮在上面），Flutter 引擎会把 requestFocus 翻译成
+    // SetFocus(FlutterView)，而 Win32 语义下 SetFocus(子窗) 会**连带激活它的
+    // 顶层窗口** —— 主界面凭空盖住用户正在用的窗口。真机链路：拖面板顶栏结束
+    // → windowMoved → setClipboardPanelRect → PreferencesRepository
+    // .notifyListeners() → 首页重建 → 焦点目标重新 register → scheduleRepair
+    // → 这里 → 主窗被抬到前台。
+    //
+    // 判据只挡**被动修复**：用户显式输入触发的 [move] / [requestById] 不经这里
+    // 的早退（那时主窗必然已经是前台）。被挡下时记账，等主窗真的回到前台再补
+    // 修一次（见 [_handleFocusChange]），否则切回来就没有焦点、快捷键全失效。
+    if (!DesktopForegroundGuard.isMainWindowForeground()) {
+      _repairDeferredWhileBackgrounded = true;
+      return;
+    }
     final FocusNode? primary = FocusManager.instance.primaryFocus;
     if (_isUsablePrimary(primary)) {
       _handleFocusChange();
@@ -648,6 +719,15 @@ class FushiFocusController extends ChangeNotifier {
   }
 
   void _handleFocusChange() {
+    // BUG-1619：主窗回到前台的补票口。FlutterView 重新拿到 OS 焦点会走到这里，
+    // 此时把「后台期间欠下的那次被动修复」补上——这条路径覆盖同进程内从剪贴板
+    // 面板切回主窗（那种切换不产生 AppLifecycleState.resumed，首页那条 resumed
+    // 回收补不到）。
+    if (_repairDeferredWhileBackgrounded &&
+        DesktopForegroundGuard.isMainWindowForeground()) {
+      _repairDeferredWhileBackgrounded = false;
+      scheduleRepair();
+    }
     final FocusNode? primary = FocusManager.instance.primaryFocus;
     for (final FushiFocusTargetEntry entry in _entries.values) {
       if (identical(entry.focusNode, primary)) {

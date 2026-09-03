@@ -52,8 +52,17 @@ Future<MangaOcrCacheRecovery> recoverCachedMangaOcr({
       await resolveInstalledLocalMangaOcrEngineSignature();
   final Directory localDirectory =
       Directory(p.join(cacheRoot.path, localSignature));
-  final Directory lensDirectory =
-      Directory(p.join(cacheRoot.path, kGoogleLensEngineSignature));
+  // Lens 签名带语言后缀（`google-lens-v2-niratan-<lang>`），同一卷可能有多个
+  // 语言的缓存目录并存；全部纳入候选，逐页按文件时间取最新。
+  final List<Directory> lensDirectories = cacheRoot.existsSync()
+      ? cacheRoot
+          .listSync()
+          .whereType<Directory>()
+          .where((Directory directory) => p
+              .basename(directory.path)
+              .startsWith(kGoogleLensEngineSignaturePrefix))
+          .toList(growable: false)
+      : const <Directory>[];
   final MangaOcrFilePageCache localCache = MangaOcrFilePageCache(
     cacheDir: localDirectory,
     pageNames: <String>[
@@ -63,7 +72,10 @@ Future<MangaOcrCacheRecovery> recoverCachedMangaOcr({
       for (final MangaOcrPageFile page in pages) page.file,
     ],
   );
-  final GoogleLensPageCache lensCache = GoogleLensPageCache(lensDirectory);
+  final List<GoogleLensPageCache> lensCaches = <GoogleLensPageCache>[
+    for (final Directory directory in lensDirectories)
+      GoogleLensPageCache(directory),
+  ];
 
   final List<MokuroImage> images = List<MokuroImage>.of(basePayload.images);
   final Map<String, int> payloadIndexByUrl = <String, int>{
@@ -80,33 +92,39 @@ Future<MangaOcrCacheRecovery> recoverCachedMangaOcr({
     }
 
     final OcrPageResult? local = await localCache.read('manga_ocr', pageIndex);
-    final MokuroImage? lens = await lensCache.read(pageIndex, pages[pageIndex]);
-    if (local == null && lens == null) {
-      continue;
-    }
-
-    MokuroImage selected;
-    if (local != null && lens != null) {
+    // 候选统一成 (mtime, page) 再取最新，本地/各语言 Lens 缓存无特殊分支。
+    final List<(DateTime, MokuroImage)> candidates =
+        <(DateTime, MokuroImage)>[];
+    if (local != null) {
       final File localFile = File(p.join(
         localDirectory.path,
         ocrPageCacheFileName(pages[pageIndex].relativeUrl),
       ));
+      candidates.add((
+        (await localFile.stat()).modified,
+        _localPage(pages[pageIndex], local),
+      ));
+    }
+    for (final GoogleLensPageCache lensCache in lensCaches) {
+      final MokuroImage? lens =
+          await lensCache.read(pageIndex, pages[pageIndex]);
+      if (lens == null) continue;
       final File lensFile = File(p.join(
-        lensDirectory.path,
+        lensCache.directory.path,
         '${pageIndex.toString().padLeft(6, '0')}.json',
       ));
-      final DateTime localModified = (await localFile.stat()).modified;
-      final DateTime lensModified = (await lensFile.stat()).modified;
-      selected = !localModified.isBefore(lensModified)
-          ? _localPage(pages[pageIndex], local)
-          : lens;
-    } else if (local != null) {
-      selected = _localPage(pages[pageIndex], local);
-    } else {
-      selected = lens!;
+      candidates.add(((await lensFile.stat()).modified, lens));
+    }
+    if (candidates.isEmpty) {
+      continue;
+    }
+    // 严格更新才换人：mtime 打平时保留先入队者（本地缓存在前，维持旧行为）。
+    (DateTime, MokuroImage) newest = candidates.first;
+    for (final (DateTime, MokuroImage) candidate in candidates.skip(1)) {
+      if (candidate.$1.isAfter(newest.$1)) newest = candidate;
     }
 
-    images[payloadIndex] = selected;
+    images[payloadIndex] = newest.$2;
     recovered.add(payloadIndex);
   }
 

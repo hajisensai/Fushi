@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// TODO-1046 守卫（static wiring）：统计页的日/周阅读目标卡片。
 ///
 /// 该页需要完整 AppModel（DB + prefsRepo）初始化才能真装配，widget 装配成本高，
@@ -86,13 +88,23 @@ void main() {
     //   1) 顶栏有 flag 图标按钮，onTap 直接调 _editGoals；
     //   2) 该按钮位于 scaffold actions（在 body: 之前）；
     //   3) 顶栏入口不被任何 dailyGoal/weeklyGoal 条件包裹（恒可见）。
-    final int actionsIdx = text.indexOf('actions: <Widget>[');
-    expect(actionsIdx, greaterThanOrEqualTo(0),
-        reason: '页面应有 scaffold actions');
-    final int bodyIdx = text.indexOf('body: buildStatPageBody(', actionsIdx);
+    // 窗口是承重结构，不是装饰：`tooltip: t.stat_goal_set` / `onTap: _editGoals`
+    // 在目标卡内的 edit 按钮处也逐字存在，全文件级 contains 分辨不出顶栏与卡内。
+    // 统计中心大改造把顶栏动作从 `FushiPageScaffold(actions: <Widget>[...])` 内联
+    // 提升成局部变量 `actions`（供独立页与嵌入 tab 两条路径共用），旧的两个字面量
+    // 锚点双双失效：`actions: <Widget>[` 全文件仅剩 _editGoals 弹窗那处（会把窗口
+    // 静默开在弹窗上），`body: buildStatPageBody(` 彻底消失。改为先用 methodBody 把
+    // 窗口框死在 State.build 内，再取语义唯一的局部变量声明作起点。
+    final String build = methodBody(text, 'Widget build(BuildContext context)');
+    final int actionsIdx =
+        build.indexOf('final List<Widget> actions = <Widget>[');
+    expect(actionsIdx, greaterThanOrEqualTo(0), reason: '页面应有顶栏 actions 列表');
+    final int bodyIdx =
+        build.indexOf('final Widget body = buildStatPageBody(', actionsIdx);
     expect(bodyIdx, greaterThan(actionsIdx), reason: '应能定位 actions 与 body 边界');
 
-    final String actionsRegion = text.substring(actionsIdx, bodyIdx);
+    final String actionsRegion =
+        maskComments(build.substring(actionsIdx, bodyIdx));
     expect(actionsRegion.contains('icon: Icons.flag_outlined'), isTrue,
         reason: '顶栏应有 flag 目标设置图标按钮');
     expect(actionsRegion.contains('onTap: _editGoals'), isTrue,
@@ -104,5 +116,18 @@ void main() {
         reason: '顶栏目标入口不得被 dailyGoal 条件门控');
     expect(actionsRegion.contains('weeklyGoal'), isFalse,
         reason: '顶栏目标入口不得被 weeklyGoal 条件门控');
+
+    // 统计中心大改造引入了 embedded 分叉：同一份 actions 必须喂给两条渲染路径，
+    // 否则统计中心 tab 里这个唯一的首次设置入口会静默丢失。
+    expect(
+      containsCodeLine(build, 'buildEmbeddedStatTab(context, actions, body)'),
+      isTrue,
+      reason: '统计中心 tab 嵌入态必须渲染同一份 actions',
+    );
+    expect(
+      containsCodeLine(build, 'actions: actions,'),
+      isTrue,
+      reason: '独立页 scaffold 必须渲染同一份 actions',
+    );
   });
 }

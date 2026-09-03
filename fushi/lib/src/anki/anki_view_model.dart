@@ -7,6 +7,7 @@ import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/utils/net/url_input_normalizer.dart';
 import 'package:fushi/utils.dart';
 
 class AnkiUiState {
@@ -14,10 +15,15 @@ class AnkiUiState {
     this.settings = const AnkiSettings(),
     this.isFetching = false,
     this.errorMessage,
+    this.mediaMaintenanceAvailable,
   });
   final AnkiSettings settings;
   final bool isFetching;
   final String? errorMessage;
+
+  /// 媒体去重此刻真能不能用；null = 还没探测出结论（没探过 / 后端不可达）。
+  /// 设置页用它做区块门控，未知时回落到后端静态能力。
+  final bool? mediaMaintenanceAvailable;
 
   List<AnkiDeck> get availableDecks => settings.availableDecks;
   List<AnkiNoteType> get availableNoteTypes => settings.availableNoteTypes;
@@ -29,11 +35,16 @@ class AnkiUiState {
     bool? isFetching,
     String? errorMessage,
     bool clearError = false,
+    bool? mediaMaintenanceAvailable,
+    bool clearMediaMaintenanceAvailable = false,
   }) =>
       AnkiUiState(
         settings: settings ?? this.settings,
         isFetching: isFetching ?? this.isFetching,
         errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+        mediaMaintenanceAvailable: clearMediaMaintenanceAvailable
+            ? null
+            : (mediaMaintenanceAvailable ?? this.mediaMaintenanceAvailable),
       );
 }
 
@@ -246,9 +257,24 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
           : LapisSetupOutcome.alreadyExisted);
     } catch (e, stack) {
       debugPrint('AnkiViewModel.createLapisSetup: $e\n$stack');
-      state = state.copyWith(isFetching: false, errorMessage: e.toString());
-      return LapisSetupResult(LapisSetupOutcome.failed, e.toString());
+      final String message = _lapisSetupFailureMessage(e);
+      state = state.copyWith(isFetching: false, errorMessage: message);
+      return LapisSetupResult(LapisSetupOutcome.failed, message);
     }
+  }
+
+  /// 一键配置 Lapis 失败时给用户看的那句话。
+  ///
+  /// 这里此前是裸的 `e.toString()`，于是 AnkiConnect 端口被别的程序占着（连得上、
+  /// 不应答）时，用户在新手引导里拿到的是一句
+  /// `TimeoutException after 0:00:10.000000: Future not completed`——看不出是什么坏了，
+  /// 更看不出下一步该干什么。传输层异常改走与 fetchConfiguration 同一套稳定码分类 +
+  /// 本地化（TODO-752a）；其余（payload / 空列表 firstWhere 之类的本地编程错误）不是
+  /// 连接问题，不套连接文案，保留原文供排障——它们不经 socket，不是乱码源。
+  static String _lapisSetupFailureMessage(Object e) {
+    if (!isAnkiConnectTransportError(e)) return e.toString();
+    final String code = classifyAnkiConnectError(e);
+    return localizeAnkiFetchError(ankiConnectErrorHint(code), code);
   }
 
   // ── Lapis 样式客制化（备份/恢复/应用见 LapisTemplateService）──────────
@@ -293,8 +319,27 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
 
   // ── 媒体存储优化（字节级去重）──────────────────────────────────────
 
-  /// 当前后端能否做媒体去重（AnkiConnect 且与 Anki 同机；设置页据此隐藏区块）。
+  /// 当前后端**类型**能否做媒体去重。这是静态能力，说不了「媒体目录这台机器
+  /// 读得到」——那个由 [probeMediaMaintenance] 探测，设置页两者一起判。
   bool get supportsMediaMaintenance => _repository.supportsMediaMaintenance;
+
+  /// 探测媒体去重此刻真能不能用，结论落进 [AnkiUiState.mediaMaintenanceAvailable]。
+  ///
+  /// 后端不可达（Anki 没开 / 局域网断了）时保持「未知」，绝不把它记成
+  /// 「不支持」——那会让桌面用户下次打开设置页发现整区消失。
+  Future<void> probeMediaMaintenance() async {
+    if (!_repository.supportsMediaMaintenance) {
+      state = state.copyWith(mediaMaintenanceAvailable: false);
+      return;
+    }
+    try {
+      final bool available = await _repository.probeMediaMaintenance();
+      state = state.copyWith(mediaMaintenanceAvailable: available);
+    } catch (e, stack) {
+      debugPrint('AnkiViewModel.probeMediaMaintenance: $e\n$stack');
+      state = state.copyWith(clearMediaMaintenanceAvailable: true);
+    }
+  }
 
   /// 与当前仓库绑定的去重编排器（无状态，随用随建）。
   AnkiMediaDedupRunner get mediaDedupRunner =>
@@ -329,7 +374,9 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
 ({String host, int? port, bool? useHttps}) normalizeAnkiConnectHostInput(
   String raw,
 ) {
-  var s = raw.trim();
+  // 先折全角：这个函数按 `:` `/` 逐字符拆 scheme/host/port，全角标点会让每一步
+  // 都判空，最终把 `192．168．1．5` 整串当主机名存下去（BUG-1807）。
+  var s = normalizeUrlInput(raw);
   bool? useHttps;
   // 只接受并保留明确的 HTTP(S) scheme；其它 scheme 不能被静默降级。
   final schemeSep = s.indexOf('://');

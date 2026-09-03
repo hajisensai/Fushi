@@ -2,11 +2,16 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart'
+    show VideoSourceScrapeWork;
+import 'package:fushi_core/fushi_core.dart';
 
 enum VideoSourceScrapePhase {
   idle,
@@ -77,6 +82,97 @@ class SourceScrapeReport {
         cancelled: cancelled || other.cancelled,
       );
 }
+
+/// `video_source_scrape_runs.summaryJson` 的唯一 wire 形状。
+///
+/// 编解码放在一起：这份 JSON 是**跑完之后**唯一还留着的、逐条作品级事实
+/// （哪个作品待确认、哪个失败、失败原因是什么）。协调器写它、历史面板读它，
+/// 两侧共用同一份定义，避免字段名各写一次而悄悄漂开。
+String encodeSourceScrapeReport(SourceScrapeReport report) => jsonEncode(
+      <String, Object?>{
+        'sourceIds': report.sourceIds,
+        'totalWorks': report.totalWorks,
+        'succeededWorks': report.succeededWorks,
+        'failedWorks': report.failedWorks,
+        'pendingConfirmations': report.pendingConfirmations,
+        'nfoWritten': report.nfoWritten,
+        'imagesWritten': report.imagesWritten,
+        'protectedArtifacts': report.protectedArtifacts,
+        'unchangedArtifacts': report.unchangedArtifacts,
+        'cancelled': report.cancelled,
+        'warnings': _encodeIssues(report.warnings),
+        'errors': _encodeIssues(report.errors),
+      },
+    );
+
+List<Map<String, Object?>> _encodeIssues(List<SourceScrapeIssue> issues) =>
+    <Map<String, Object?>>[
+      for (final SourceScrapeIssue issue in issues)
+        <String, Object?>{
+          'work': issue.workTitle,
+          'message': issue.message,
+          if (issue.path != null) 'path': issue.path,
+        },
+    ];
+
+/// 解析历史 run 的 summaryJson。任何损坏或缺字段都退化成 null / 空列表，
+/// 绝不让一条陈旧记录把历史面板整段炸掉。
+SourceScrapeReport? decodeSourceScrapeReport(String? json) {
+  if (json == null || json.trim().isEmpty) return null;
+  Object? decoded;
+  try {
+    decoded = jsonDecode(json);
+  } on FormatException {
+    return null;
+  }
+  if (decoded is! Map<String, Object?>) return null;
+  final Map<String, Object?> map = decoded;
+  int intAt(String key) {
+    final Object? value = map[key];
+    return value is int ? value : 0;
+  }
+
+  return SourceScrapeReport(
+    sourceIds: <int>[
+      for (final Object? id
+          in map['sourceIds'] as List<Object?>? ?? const <Object?>[])
+        if (id is int) id,
+    ],
+    totalWorks: intAt('totalWorks'),
+    succeededWorks: intAt('succeededWorks'),
+    failedWorks: intAt('failedWorks'),
+    pendingConfirmations: intAt('pendingConfirmations'),
+    nfoWritten: intAt('nfoWritten'),
+    imagesWritten: intAt('imagesWritten'),
+    protectedArtifacts: intAt('protectedArtifacts'),
+    unchangedArtifacts: intAt('unchangedArtifacts'),
+    warnings: _decodeIssues(map['warnings']),
+    errors: _decodeIssues(map['errors']),
+    cancelled: map['cancelled'] == true,
+  );
+}
+
+List<SourceScrapeIssue> _decodeIssues(Object? raw) => <SourceScrapeIssue>[
+      if (raw is List<Object?>)
+        for (final Object? entry in raw)
+          if (entry is Map<String, Object?>)
+            SourceScrapeIssue(
+              workTitle: entry['work'] as String? ?? '',
+              message: entry['message'] as String? ?? '',
+              path: entry['path'] as String?,
+            ),
+    ];
+
+/// 这次 run 是否还留着**没定下身份的作品**。
+///
+/// 判据只看事实，不看 run 状态：一次 `completed` 的批次照样可能留下待确认或失败
+/// 的作品（自动刮削没有确认回调，歧义作品只会被计数后跳过）。历史面板早先按
+/// `status ∈ {failed, interrupted, cancelled}` 给重刮入口，正好把用户唯一想处理的
+/// 那种 run —— 「已完成，但待确认 2、失败 4」—— 挡在门外（BUG-1721）。
+bool scrapeRunHasUnresolvedWorks(VideoSourceScrapeRunRow run) =>
+    run.pendingConfirmations > 0 ||
+    run.failedWorks > 0 ||
+    const <String>{'failed', 'interrupted', 'cancelled'}.contains(run.status);
 
 class VideoSourceScrapeProgress {
   const VideoSourceScrapeProgress({
@@ -186,17 +282,58 @@ typedef VideoSourceScrapeProgressCallback = void Function(
 );
 
 abstract interface class VideoSourceScrapeRunner {
+  /// [plannedWorks] 非空时只处理这个子集（库内自动补刮传「未识别作品」），
+  /// 为空时由 runner 自己按来源计划全量展开；[runScope] 落进 run 审计行。
   Future<SourceScrapeReport> scrapeSource(
     SourceLibraryRow source, {
     required VideoSourceScrapeCancellationToken cancellationToken,
     required VideoSourceScrapeProgressCallback onProgress,
     VideoSourceScrapeConfirmationCallback? onConfirmation,
     VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
   });
 }
 
 abstract interface class VideoSourceScrapeInterruptible {
   Future<void> markActiveRunInterrupted();
+}
+
+/// 计划里已经没有这个作品了（文件被删、重命名或从来源移出）。
+class VideoSourceScrapeWorkNotFound implements Exception {
+  const VideoSourceScrapeWorkNotFound(this.workTitle);
+
+  final String workTitle;
+
+  @override
+  String toString() => 'VideoSourceScrapeWorkNotFound($workTitle)';
+}
+
+/// 为「跑完之后身份仍未定」的单个作品手动指定资料源作品。
+///
+/// 批次内确认（[VideoSourceScrapeConfirmationCallback]）只在交互式 run 期间存在，
+/// run 一结束候选就没了；而自动刮削根本没有确认回调，歧义作品只留下一个计数。
+/// 这个能力把「事后为某个作品选一个 lookup」补上，并且**刻意不新开落库路径**：
+/// [rescrapeWorkWithLookup] 把选中的 lookup 当作已确认身份塞回来源刮削管线，
+/// 与批次内确认、与下载导入后的精确刮削共用同一条 `_store.apply` 写入。
+abstract interface class VideoSourceScrapeManualBinding {
+  /// 按用户输入的标题在资料源里搜索候选。作品的剧集/电影形态由来源计划决定，
+  /// 调用方不需要（也不应该）自己猜。
+  Future<List<VideoSourceScrapeConfirmationCandidate>> searchManualCandidates({
+    required SourceLibraryRow source,
+    required String workTitle,
+    required String query,
+  });
+
+  /// 按 [lookup] 重刮 [workTitle] 这一个作品。作品不在当前来源计划里时抛
+  /// [VideoSourceScrapeWorkNotFound]。
+  Future<SourceScrapeReport> rescrapeWorkWithLookup({
+    required SourceLibraryRow source,
+    required String workTitle,
+    required VideoMetadataLookup lookup,
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+  });
 }
 
 /// App/HomePage 生命周期级控制器：所有入口共用一把锁，保证同一时刻只有一个联网
@@ -245,6 +382,106 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
         allowProtectedOverwrite: allowProtectedOverwrite,
       );
 
+  /// 库内自动补刮批次：只刮各来源给定的「未识别作品」子集，run 记
+  /// scope='sweep'。与手动批次共用同一把互斥门、同一个进度面板；已有批次在
+  /// 跑时直接返回那个批次（不排队），由调用方先看 [isBusy] 决定要不要发起。
+  Future<SourceScrapeReport> scrapeWorkSubsets(
+    Map<SourceLibraryRow, List<VideoSourceScrapeWork>> worksBySource,
+  ) =>
+      _start(
+        worksBySource.keys.where((SourceLibraryRow source) =>
+            source.mediaKind == 'video' && source.transport == 'local'),
+        interactive: false,
+        allowProtectedOverwrite: false,
+        plannedWorksBySource: <int, List<VideoSourceScrapeWork>>{
+          for (final MapEntry<SourceLibraryRow,
+              List<VideoSourceScrapeWork>> entry in worksBySource.entries)
+            entry.key.id: entry.value,
+        },
+        runScope: 'sweep',
+      );
+
+  /// 当前 runner 是否支持事后手动指定作品。
+  bool get supportsManualBinding => _runner is VideoSourceScrapeManualBinding;
+
+  /// 只读的候选搜索：不写库、不抢刮削互斥门，用户可以在批次跑着时先查。
+  Future<List<VideoSourceScrapeConfirmationCandidate>> searchManualCandidates({
+    required SourceLibraryRow source,
+    required String workTitle,
+    required String query,
+  }) {
+    if (_disposed || _runner is! VideoSourceScrapeManualBinding) {
+      return Future<List<VideoSourceScrapeConfirmationCandidate>>.value(
+        const <VideoSourceScrapeConfirmationCandidate>[],
+      );
+    }
+    return (_runner as VideoSourceScrapeManualBinding).searchManualCandidates(
+      source: source,
+      workTitle: workTitle,
+      query: query,
+    );
+  }
+
+  /// 按用户手动选中的身份重刮单个作品。与批次共用同一把互斥门——它同样联网、
+  /// 同样写库、同样写 sidecar，不能和批次并行跑。
+  Future<SourceScrapeReport> rescrapeWorkWithLookup({
+    required SourceLibraryRow source,
+    required String workTitle,
+    required VideoMetadataLookup lookup,
+  }) {
+    if (_disposed) {
+      return Future<SourceScrapeReport>.error(
+        StateError('视频来源任务控制器已释放'),
+      );
+    }
+    if (_runner is! VideoSourceScrapeManualBinding) {
+      return Future<SourceScrapeReport>.error(
+        StateError('当前刮削实现不支持手动指定作品'),
+      );
+    }
+    final VideoSourceScrapeManualBinding runner =
+        _runner as VideoSourceScrapeManualBinding;
+    if (_active != null || _scanningSourceId != null) {
+      return Future<SourceScrapeReport>.error(
+        StateError('已有视频来源扫描或刮削任务正在运行'),
+      );
+    }
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) {
+      return Future<SourceScrapeReport>.error(
+        StateError('视频刮削资料正在清理'),
+      );
+    }
+    final VideoSourceScrapeCancellationToken token =
+        VideoSourceScrapeCancellationToken();
+    _token = token;
+    _progress = const VideoSourceScrapeProgress(
+      phase: VideoSourceScrapePhase.planning,
+    );
+    final Future<SourceScrapeReport> future = _runManualRescrape(
+      runner,
+      source: source,
+      workTitle: workTitle,
+      lookup: lookup,
+      token: token,
+    );
+    _active = future;
+    notifyListeners();
+    void clear() {
+      lease.release();
+      if (identical(_active, future)) {
+        _active = null;
+        _token = null;
+        _clearPendingConfirmation();
+        if (!_disposed) notifyListeners();
+      }
+    }
+
+    future.then<void>((_) => clear(), onError: (_, __) => clear());
+    return future;
+  }
+
   /// 与联网刮削共用的应用级互斥门。扫描完成即释放，随后自动刮削可以顺序接棒。
   Future<T> runSourceScan<T>(
     int sourceId,
@@ -254,12 +491,16 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
     if (_active != null || _scanningSourceId != null) {
       throw StateError('已有视频来源扫描或刮削任务正在运行');
     }
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) throw StateError('视频刮削资料正在清理');
     _scanningSourceId = sourceId;
     notifyListeners();
     try {
       return await operation();
     } finally {
       if (_scanningSourceId == sourceId) _scanningSourceId = null;
+      lease.release();
       if (!_disposed) notifyListeners();
     }
   }
@@ -268,6 +509,8 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
     Iterable<SourceLibraryRow> sourceIterable, {
     required bool interactive,
     required bool allowProtectedOverwrite,
+    Map<int, List<VideoSourceScrapeWork>>? plannedWorksBySource,
+    String runScope = 'source',
   }) {
     if (_disposed) {
       return Future<SourceScrapeReport>.error(
@@ -283,6 +526,13 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
     }
     final List<SourceLibraryRow> sources =
         sourceIterable.toList(growable: false);
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) {
+      return Future<SourceScrapeReport>.error(
+        StateError('视频刮削资料正在清理'),
+      );
+    }
     final VideoSourceScrapeCancellationToken token =
         VideoSourceScrapeCancellationToken(
       allowProtectedOverwrite: allowProtectedOverwrite,
@@ -295,12 +545,15 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
       sources,
       token,
       interactive: interactive,
+      plannedWorksBySource: plannedWorksBySource,
+      runScope: runScope,
     );
     _active = future;
     // 后台入口依赖 listener 立即展示全局任务按钮；必须在 _active 就绪后通知，
     // 否则监听者会在 planning 阶段读到 isBusy=false，直到下一条网络进度才出现。
     notifyListeners();
     void clear() {
+      lease.release();
       if (identical(_active, future)) {
         _active = null;
         _token = null;
@@ -317,6 +570,8 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
     List<SourceLibraryRow> sources,
     VideoSourceScrapeCancellationToken token, {
     required bool interactive,
+    Map<int, List<VideoSourceScrapeWork>>? plannedWorksBySource,
+    String runScope = 'source',
   }) async {
     SourceScrapeReport aggregate = SourceScrapeReport(
       sourceIds: <int>[
@@ -334,6 +589,8 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
           onProgress: _publish,
           onConfirmation: interactive ? _requestConfirmation : null,
           batchContext: batchContext,
+          plannedWorks: plannedWorksBySource?[source.id],
+          runScope: runScope,
         );
         aggregate = aggregate.merge(report);
       }
@@ -368,6 +625,43 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
       _publish(VideoSourceScrapeProgress(
         phase: VideoSourceScrapePhase.failed,
         report: aggregate,
+        message: error.toString(),
+      ));
+      rethrow;
+    }
+  }
+
+  /// 单作品重刮的终态发布。与批次 [_run] 的收尾保持一致：面板照样能看到
+  /// 「已完成 / 失败」和这次的报告，而不是停在最后一条中间进度上。
+  Future<SourceScrapeReport> _runManualRescrape(
+    VideoSourceScrapeManualBinding runner, {
+    required SourceLibraryRow source,
+    required String workTitle,
+    required VideoMetadataLookup lookup,
+    required VideoSourceScrapeCancellationToken token,
+  }) async {
+    try {
+      final SourceScrapeReport report = await runner.rescrapeWorkWithLookup(
+        source: source,
+        workTitle: workTitle,
+        lookup: lookup,
+        cancellationToken: token,
+        onProgress: _publish,
+      );
+      _publish(VideoSourceScrapeProgress(
+        phase: VideoSourceScrapePhase.completed,
+        sourceId: source.id,
+        sourceLabel: source.label,
+        current: report.totalWorks,
+        total: report.totalWorks,
+        report: report,
+      ));
+      return report;
+    } catch (error) {
+      _publish(VideoSourceScrapeProgress(
+        phase: VideoSourceScrapePhase.failed,
+        sourceId: source.id,
+        sourceLabel: source.label,
         message: error.toString(),
       ));
       rethrow;

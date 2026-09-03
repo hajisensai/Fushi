@@ -59,14 +59,21 @@ void main() {
   group('parseJimakuFiles + JimakuFile', () {
     test('解析文件，缺 name/url 的跳过', () {
       const String body = '''
-[{"name":"ep01.ja.srt","url":"https://x/ep01.srt","size":1234},
+[{"name":"ep01.ja.srt","url":"https://x/ep01.srt","size":1234,
+  "last_modified":"2026-08-01T12:00:00Z"},
  {"name":"ep02.ass","url":"https://x/ep02.ass"},
  {"url":"https://x/no-name"}]''';
       final List<JimakuFile> files = parseJimakuFiles(body);
       expect(files, hasLength(2));
       expect(files[0].name, 'ep01.ja.srt');
       expect(files[0].size, 1234);
+      expect(
+        files[0].lastModifiedMs,
+        DateTime.utc(2026, 8, 1, 12).millisecondsSinceEpoch,
+        reason: 'B1 版本卡的「N 天前」来自 last_modified，此前该字段被丢弃',
+      );
       expect(files[1].url, 'https://x/ep02.ass');
+      expect(files[1].lastModifiedMs, isNull, reason: '缺失/坏时间不挡文件');
     });
 
     test('extension / isTextSubtitle', () {
@@ -220,15 +227,59 @@ void main() {
         return http.Response('[]', 200);
       });
       final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      // 显式钉动画档：这条用例验的是「id → 文本」的回退顺序，不该被
+      // BUG-1694 的 anime=true/false 两档兜底混进额外请求。
       final List<JimakuEntry> entries = await jc.searchEntries(
         anilistId: 999,
         queryFallbacks: <String>['', 'Tom Jerry romaji', 'とむとじぇりーごっこ'],
+        animeFilter: JimakuAnimeFilter.anime,
       );
       expect(entries, hasLength(1));
       expect(entries.first.name, '字幕在此');
       // 空串被跳过；命中后不再尝试后续（此处第 3 个即命中，无第 4 个）。
       expect(
           calls, <String>['id', 'query:Tom Jerry romaji', 'query:とむとじぇりーごっこ']);
+    });
+
+    group('BUG-1694 anime 硬过滤', () {
+      test('从不拼 anime 参数 = 永远只搜服务端缺省的动画子集（真人剧 0 结果）', () async {
+        final List<String?> animeParams = <String?>[];
+        final MockClient client = MockClient((http.Request req) async {
+          animeParams.add(req.url.queryParameters['anime']);
+          return http.Response('[]', 200);
+        });
+        final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+        await jc.searchByQuery('半沢直樹');
+        // 缺省 either：先 true 再 false。少了 'false' 那一发，Jimaku 上数千条
+        // 真人条目就是搜不到——那正是本 bug。
+        expect(animeParams, <String>['true', 'false']);
+      });
+
+      test('liveAction 只发一次 anime=false', () async {
+        final List<String?> animeParams = <String?>[];
+        final MockClient client = MockClient((http.Request req) async {
+          animeParams.add(req.url.queryParameters['anime']);
+          return http.Response('[{"id":5,"name":"drama"}]', 200);
+        });
+        final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+        final List<JimakuEntry> entries = await jc.searchByQuery(
+          '半沢直樹',
+          animeFilter: JimakuAnimeFilter.liveAction,
+        );
+        expect(entries.single.name, 'drama');
+        expect(animeParams, <String>['false']);
+      });
+
+      test('动画命中就不再为真人多打一次（either 的请求数不比改动前多）', () async {
+        final List<String?> animeParams = <String?>[];
+        final MockClient client = MockClient((http.Request req) async {
+          animeParams.add(req.url.queryParameters['anime']);
+          return http.Response('[{"id":9,"name":"anime hit"}]', 200);
+        });
+        final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+        expect((await jc.searchByAnilistId(21)).single.name, 'anime hit');
+        expect(animeParams, <String>['true']);
+      });
     });
 
     test('anilist_id 与全部文本都空 → 空', () async {
@@ -253,6 +304,131 @@ void main() {
       final List<JimakuEntry> entries =
           await jc.searchEntries(queryFallbacks: <String>['x']);
       expect(entries.single.name, 'q');
+    });
+  });
+
+  group('TMDB 精确匹配（BUG-1849）', () {
+    test('jimakuTmdbId 按服务端 (tv|movie):(\\d+) 编码', () {
+      expect(jimakuTmdbId(movie: false, tmdbId: 12345), 'tv:12345');
+      expect(jimakuTmdbId(movie: true, tmdbId: 669204), 'movie:669204');
+    });
+
+    test('parseJimakuEntryFlags 解析对象，缺字段/非对象 → false', () {
+      final JimakuEntryFlags flags = parseJimakuEntryFlags(<String, Object?>{
+        'anime': false,
+        'movie': true,
+        'adult': false,
+      });
+      expect(flags.anime, isFalse);
+      expect(flags.movie, isTrue);
+      expect(flags.unverified, isFalse); // 缺字段
+      expect(flags.isLiveAction, isTrue);
+
+      const JimakuEntryFlags empty = JimakuEntryFlags();
+      expect(parseJimakuEntryFlags(null).anime, empty.anime);
+      expect(parseJimakuEntryFlags(8).movie, isFalse); // 不解析 bitfield 形态
+    });
+
+    test('parseJimakuEntries 解析 tmdb_id / japanese_name / flags', () {
+      const String body = '''
+[{"id":6270,"name":"\\"Kakure Bitch\\" Yattemashita","japanese_name":"かくれビッチやってました",
+  "tmdb_id":"movie:669204","flags":{"anime":false,"movie":true,"adult":false,
+  "external":false,"unverified":false}}]''';
+      final List<JimakuEntry> entries = parseJimakuEntries(body);
+      final JimakuEntry entry = entries.single;
+      expect(entry.tmdbId, 'movie:669204');
+      expect(entry.japaneseName, 'かくれビッチやってました');
+      expect(entry.flags.isLiveAction, isTrue);
+      expect(entry.flags.movie, isTrue);
+    });
+
+    test('name 空时回退 japanese_name（真人条目常无 romaji 名）', () {
+      final List<JimakuEntry> entries = parseJimakuEntries(
+        '[{"id":9,"name":"","english_name":"","japanese_name":"最愛"}]',
+      );
+      expect(entries.single.name, '最愛');
+    });
+
+    test('searchByTmdbId 走 tmdb_id 检索键，缺省 either 两档都试', () async {
+      final List<String> seen = <String>[];
+      final MockClient client = MockClient((http.Request req) async {
+        final Map<String, String> p = req.url.queryParameters;
+        seen.add('${p['anime']}:${p['tmdb_id']}');
+        return http.Response('[]', 200);
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      // 分类过滤先于 ID 匹配执行：只查一边会漏（TMDB 既可能挂真人条目，也可能挂动画剧场版）。
+      await jc.searchByTmdbId('  tv:12345  ');
+      expect(seen, <String>['true:tv:12345', 'false:tv:12345']);
+    });
+
+    test('已知真人 → 只发一次 anime=false（复用既有三态，不多打请求）', () async {
+      final List<String> seen = <String>[];
+      final MockClient client = MockClient((http.Request req) async {
+        final Map<String, String> p = req.url.queryParameters;
+        seen.add('${p['anime']}:${p['tmdb_id']}');
+        return http.Response.bytes(utf8.encode('[{"id":4,"name":"最愛"}]'), 200);
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      final List<JimakuEntry> entries = await jc.searchByTmdbId(
+        'tv:126991',
+        animeFilter: JimakuAnimeFilter.liveAction,
+      );
+      expect(entries.single.name, '最愛');
+      expect(seen, <String>['false:tv:126991']);
+    });
+
+    test('空 tmdb_id 不发请求', () async {
+      final MockClient client = MockClient((http.Request req) async {
+        fail('空 TMDB id 不该产生网络请求：${req.url}');
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      expect(await jc.searchByTmdbId('   '), isEmpty);
+    });
+
+    test('searchEntries 顺序：anilist → tmdb → 文本；权威键命中即停', () async {
+      final List<String> calls = <String>[];
+      final MockClient client = MockClient((http.Request req) async {
+        final Map<String, String> p = req.url.queryParameters;
+        if (p.containsKey('anilist_id')) {
+          calls.add('anilist');
+          return http.Response('[]', 200); // 真人条目从不挂 AniList id
+        }
+        if (p.containsKey('tmdb_id')) {
+          calls.add('tmdb:${p['tmdb_id']}');
+          return http.Response.bytes(
+              utf8.encode('[{"id":4,"name":"最愛"}]'), 200);
+        }
+        calls.add('query:${p['query']}');
+        return http.Response('[]', 200);
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      final List<JimakuEntry> entries = await jc.searchEntries(
+        anilistId: 21,
+        tmdbId: 'tv:126991',
+        queryFallbacks: <String>['最愛'],
+        animeFilter: JimakuAnimeFilter.liveAction,
+      );
+      expect(entries.single.name, '最愛');
+      // TMDB 命中后不得再拿显示名去模糊碰——那正是本 bug 之前唯一的路。
+      expect(calls, <String>['anilist', 'tmdb:tv:126991']);
+    });
+
+    test('无 tmdbId 时行为与改动前逐字节一致（不多发请求）', () async {
+      final List<String> calls = <String>[];
+      final MockClient client = MockClient((http.Request req) async {
+        final Map<String, String> p = req.url.queryParameters;
+        expect(p.containsKey('tmdb_id'), isFalse);
+        calls.add(p.containsKey('anilist_id') ? 'anilist' : 'query');
+        return http.Response('[{"id":1,"name":"a"}]', 200);
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      await jc.searchEntries(
+        anilistId: 21,
+        queryFallbacks: <String>['x'],
+        animeFilter: JimakuAnimeFilter.anime,
+      );
+      expect(calls, <String>['anilist']);
     });
   });
 

@@ -10,6 +10,7 @@ class VideoAsbplayerConfig {
     required this.doubleTapSeekSeconds,
     required this.longPressSpeed,
     required this.dragSeekSensitivity,
+    required this.tapTogglesPlayback,
   });
 
   /// 双击「字幕跳句」哨兵值（TODO-173/BUG-231）：[doubleTapSeekSeconds] 取此值时，
@@ -35,6 +36,7 @@ class VideoAsbplayerConfig {
     doubleTapSeekSeconds: 0,
     longPressSpeed: 2.0,
     dragSeekSensitivity: VideoSeekSensitivity.medium,
+    tapTogglesPlayback: true,
   );
 
   final int seekSeconds;
@@ -51,6 +53,12 @@ class VideoAsbplayerConfig {
   /// [kDoubleTapSubtitle]。0=关（双击仍走平台默认的暂停/全屏，不分区）。
   final int doubleTapSeekSeconds;
 
+  /// 点击画面是否切换播放/暂停。默认 true（保持既有行为）。关掉后点画面只唤醒/收起
+  /// 控制条，不改播放态——桌面对应 media_kit 的 `playAndPauseOnTap`（单击），移动端
+  /// 对应双击中带落空时的暂停 fallback（BUG-221）。字幕点击查词、进度条、控制条按钮
+  /// 与快捷键都不受影响（各自独立入口）。
+  final bool tapTogglesPlayback;
+
   VideoAsbplayerConfig copyWith({
     int? seekSeconds,
     double? speedStep,
@@ -58,6 +66,7 @@ class VideoAsbplayerConfig {
     int? doubleTapSeekSeconds,
     double? longPressSpeed,
     VideoSeekSensitivity? dragSeekSensitivity,
+    bool? tapTogglesPlayback,
   }) {
     return VideoAsbplayerConfig(
       seekSeconds: seekSeconds ?? this.seekSeconds,
@@ -66,6 +75,7 @@ class VideoAsbplayerConfig {
       doubleTapSeekSeconds: doubleTapSeekSeconds ?? this.doubleTapSeekSeconds,
       longPressSpeed: longPressSpeed ?? this.longPressSpeed,
       dragSeekSensitivity: dragSeekSensitivity ?? this.dragSeekSensitivity,
+      tapTogglesPlayback: tapTogglesPlayback ?? this.tapTogglesPlayback,
     );
   }
 
@@ -76,6 +86,7 @@ class VideoAsbplayerConfig {
         'doubleTapSeekSeconds': doubleTapSeekSeconds,
         'longPressSpeed': longPressSpeed,
         'dragSeekSensitivity': dragSeekSensitivity.name,
+        'tapTogglesPlayback': tapTogglesPlayback,
       };
 
   static String encode(VideoAsbplayerConfig config) =>
@@ -102,6 +113,9 @@ class VideoAsbplayerConfig {
         dragSeekSensitivity: _readDragSeekSensitivity(
           raw['dragSeekSensitivity'],
         ),
+        // 旧档没有本键 → 回落 true，既有「点画面暂停」行为原样保留。
+        tapTogglesPlayback:
+            raw['tapTogglesPlayback'] as bool? ?? defaults.tapTogglesPlayback,
       );
     } catch (_) {
       return defaults;

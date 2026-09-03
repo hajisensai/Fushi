@@ -7,8 +7,20 @@ library;
 
 import 'package:collection/collection.dart';
 
-/// 能作为作品主资料来源，或作为图片补充来源的站点。
-enum VideoMetadataProviderKind { tmdb, douban, bangumi, anilist, fanart }
+/// 作品元数据来源或本地未绑定状态。
+///
+/// `local` 表示扫描/NFO 建立的未绑定本地骨架，不是网络 provider。新的生产刮削链
+/// 只装配 AniDB 与 TMDB；其余枚举值仅用于读取历史数据，不能据此重新创建网络
+/// provider。
+enum VideoMetadataProviderKind {
+  local,
+  anidb,
+  tmdb,
+  douban,
+  bangumi,
+  anilist,
+  fanart
+}
 
 /// 作品的 Kodi/MoviePilot 媒体类型。
 enum VideoMetadataMediaKind { movie, tv }

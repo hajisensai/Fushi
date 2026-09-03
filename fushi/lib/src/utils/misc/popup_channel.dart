@@ -115,12 +115,21 @@ class PopupChannel {
     return Rect.fromLTRB(sides[0], sides[1], sides[2], sides[3]);
   }
 
-  Future<void> finishPopup() async {
+  /// 请求原生侧关闭独立查词窗。
+  ///
+  /// BUG-1757：返回**是否真的有人接下这次关闭**。原生侧的关闭回调注册在
+  /// `PopupEngineHolder` 单例上，历史上会被销毁中的旧 Activity 清掉（见该类注释），
+  /// 此时这里返回 false —— 调用方必须据此解开自己的关闭闭锁，否则窗口留在屏幕上而
+  /// 所有关闭入口永久静默早退。通道异常同样返回 false：宁可让用户能再点一次，
+  /// 也不要把弹窗锁死。
+  Future<bool> finishPopup() async {
     try {
-      await _channel.invokeMethod<void>('finishPopup');
+      final bool? accepted = await _channel.invokeMethod<bool>('finishPopup');
+      return accepted ?? false;
     } catch (e, stack) {
       ErrorLogService.instance.log('PopupChannel.finishPopup', e, stack);
       debugPrint('[Fushi-popup] finishPopup failed: $e');
+      return false;
     }
   }
 }

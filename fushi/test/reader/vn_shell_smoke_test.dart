@@ -356,6 +356,82 @@ void main() {
         reason:
             'engine-assembled VN shell must keep shim-before-boot ordering');
   });
+
+  // BUG-1742 / BUG-1743：shim 块是「VN 必须实现的宿主接口清单」的唯一真相点。
+  // 宿主里有一批共享路径假定 window.fushiReader 上有这些方法，VN 缺哪个就在哪个
+  // 功能上静默失效（跟随不翻屏 / 搜索点了没反应），而且 JS 的 TypeError 在
+  // evaluateJavascript 通道上抓不到，线上只表现为「没反应」。
+  test('BUG-1742/1573: VN 实现全部宿主接口（跟随 + 章内文本定位）', () {
+    final String shell = ReaderVisualNovelScripts.vnShellScript();
+    for (final String method in <String>[
+      'contentRoot',
+      'screenIndexForCharOffset',
+      'highlightSelectorCue',
+      'scrollToSearchMatch',
+      'clearSearchHighlight',
+    ]) {
+      expect(
+        shell.contains('vn.$method = '),
+        isTrue,
+        reason: 'VN 缺宿主接口 $method —— 对应功能会在 VN 模式下静默失效',
+      );
+    }
+    // 引擎三 shell 并存时 VN 那份同样要带齐。
+    final String engine = ReaderPaginationScripts.engineShell(
+        vnMode: true, continuousMode: false);
+    expect(engine.contains('vn.highlightSelectorCue = '), isTrue);
+    expect(engine.contains('vn.scrollToSearchMatch = '), isTrue);
+  });
+
+  test('BUG-1742: VN 的正文根取 sourceRoot，绝不是 document', () {
+    final String shell = ReaderVisualNovelScripts.vnShellScript();
+    final int start = shell.indexOf('vn.contentRoot = ');
+    expect(start, greaterThanOrEqualTo(0));
+    final String body = shell.substring(start, start + 200);
+    // detachChapterSource 把整章正文搬进游离的 sourceRoot；从 document 取根
+    // 就等于回到 BUG-1742 那条静默落空的老路。
+    expect(body.contains('this.sourceRoot'), isTrue,
+        reason: 'contentRoot 必须返回 sourceRoot（正文已被搬出 document）');
+  });
+
+  test('BUG-1742: 选择器跟随走「字符偏移 → 屏」链路，而不是滚动', () {
+    final String shell = ReaderVisualNovelScripts.vnShellScript();
+    final int start = shell.indexOf('vn.highlightSelectorCue = ');
+    expect(start, greaterThanOrEqualTo(0));
+    final int end = shell.indexOf('vn.scrollToSearchMatch = ', start);
+    expect(end, greaterThan(start));
+    final String body = shell.substring(start, end);
+    expect(body.contains('this.contentRoot()'), isTrue,
+        reason: '必须在 contentRoot 上找元素，document 里只有当前屏的克隆');
+    expect(body.contains('sourcePositionForNode'), isTrue,
+        reason: '必须把源节点换算成字符偏移');
+    expect(body.contains('this.screenIndexForCharOffset'), isTrue);
+    expect(body.contains('this.renderScreen('), isTrue,
+        reason: 'VN 的跟随语义是翻屏；scrollIntoView 在定屏 stage 上无效果');
+    expect(body.contains('if (!reveal) return null;'), isTrue,
+        reason: 'reveal=false 是「别打断当前阅读位置」的显式请求，不许翻屏');
+  });
+
+  test('BUG-1743: VN 搜索在整章 contentStream 上匹配并做坐标换算', () {
+    final String shell = ReaderVisualNovelScripts.vnShellScript();
+    final int start = shell.indexOf('vn.scrollToSearchMatch = ');
+    expect(start, greaterThanOrEqualTo(0));
+    final int end = shell.indexOf('vn.clearSearchHighlight = ', start);
+    expect(end, greaterThan(start));
+    final String body = shell.substring(start, end);
+    // 分页版用 createWalker()（只走当前屏）+ scrollToRange（VN 无此方法）——
+    // 照搬过来在 VN 下只会在当前屏内找，跨屏命中永远找不到。
+    expect(body.contains('createWalker('), isFalse,
+        reason: 'VN 必须在整章 contentStream 上匹配，不能只走当前屏');
+    expect(body.contains('stream.textEntries'), isTrue);
+    // 命中下标是拼接后的原始文本坐标，屏索引吃的是可匹配字符坐标。
+    expect(body.contains('countChars(prefix)'), isTrue,
+        reason: '缺少 raw→matchable 换算会在任何含空白的章节上系统性偏移');
+    expect(body.contains('seg.entry.startChar'), isTrue);
+    expect(body.contains('this.screenIndexForCharOffset'), isTrue);
+    expect(body.contains('return this.calculateProgress();'), isTrue,
+        reason: '返回契约与分页版一致（调用方靠它落库）');
+  });
 }
 
 String _extractRestoreHandlerCallback(String source) {

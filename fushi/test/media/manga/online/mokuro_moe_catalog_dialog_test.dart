@@ -29,6 +29,35 @@ class _FakeClient extends MokuroMoeClient {
   }
 }
 
+/// 站点**当前**的真实响应形状：`catalog/api/library` 不再内联 `volumes`（只剩
+/// `volume_count`），卷清单只住在 `catalog/api/series?name=`。
+///
+/// BUG-1927：上面那个 [_FakeClient] + [_library] 钉的是服务端早已不产出的旧形状
+/// （library 条目自带 volumes），所以「点开系列一片空白」这条从来没被测到 —— 生产
+/// 代码里 fetchSeries 一个调用点都没有，详情页直接拿浏览列表那个空 volumes 去画。
+class _ServerShapedClient extends MokuroMoeClient {
+  _ServerShapedClient(this.detail);
+
+  /// 系列名 → `api/series` 会回的详情。
+  final Map<String, MokuroMoeSeries> detail;
+  final List<String> seriesCalls = <String>[];
+  Exception? seriesError;
+
+  @override
+  Future<List<MokuroMoeSeries>> fetchLibrary() async => <MokuroMoeSeries>[
+        // 关键：只有名字，没有 volumes。
+        for (final String name in detail.keys) MokuroMoeSeries(name: name),
+      ];
+
+  @override
+  Future<MokuroMoeSeries> fetchSeries(String name) async {
+    seriesCalls.add(name);
+    final Exception? error = seriesError;
+    if (error != null) throw error;
+    return detail[name]!;
+  }
+}
+
 const List<MokuroMoeSeries> _library = <MokuroMoeSeries>[
   MokuroMoeSeries(
     name: 'よつばと!',
@@ -141,6 +170,84 @@ void main() {
     await tester.tap(find.text(t.retry));
     await tester.pumpAndSettle();
     expect(find.text('よつばと!'), findsOneWidget);
+    q.queue.dispose();
+  });
+
+  testWidgets('BUG-1927：library 不带 volumes 时，点开系列必须去取详情',
+      (WidgetTester tester) async {
+    final q = makeQueue();
+    final _ServerShapedClient client =
+        _ServerShapedClient(<String, MokuroMoeSeries>{
+      'よつばと!': const MokuroMoeSeries(
+        name: 'よつばと!',
+        volumes: <MokuroMoeVolume>[MokuroMoeVolume(name: 'よつばと! 第01巻')],
+      ),
+    });
+    await tester.pumpWidget(wrap(MokuroMoeCatalogDialog(
+      db: db,
+      clientOverride: client,
+      queueOverride: q.queue,
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('よつばと!'));
+    await tester.pumpAndSettle();
+
+    expect(client.seriesCalls, <String>['よつばと!'],
+        reason: '不去取详情就只有浏览列表那个空 volumes 可画 —— 于是一片空白。');
+    expect(find.text('よつばと! 第01巻'), findsOneWidget);
+    q.queue.dispose();
+  });
+
+  testWidgets('BUG-1927：详情取失败要说出来并可重试，而不是留一片空白',
+      (WidgetTester tester) async {
+    final q = makeQueue();
+    final _ServerShapedClient client =
+        _ServerShapedClient(<String, MokuroMoeSeries>{
+      'よつばと!': const MokuroMoeSeries(
+        name: 'よつばと!',
+        volumes: <MokuroMoeVolume>[MokuroMoeVolume(name: 'よつばと! 第01巻')],
+      ),
+    })
+          ..seriesError = Exception('boom');
+    await tester.pumpWidget(wrap(MokuroMoeCatalogDialog(
+      db: db,
+      clientOverride: client,
+      queueOverride: q.queue,
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('よつばと!'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining(t.manga_online_detail_load_failed),
+        findsOneWidget);
+
+    client.seriesError = null;
+    await tester.tap(find.text(t.retry));
+    await tester.pumpAndSettle();
+    expect(find.text('よつばと! 第01巻'), findsOneWidget);
+    q.queue.dispose();
+  });
+
+  testWidgets('BUG-1927：系列真的没有卷时给空态文案，不是空白',
+      (WidgetTester tester) async {
+    final q = makeQueue();
+    final _ServerShapedClient client =
+        _ServerShapedClient(<String, MokuroMoeSeries>{
+      'からっぽ': const MokuroMoeSeries(name: 'からっぽ'),
+    });
+    await tester.pumpWidget(wrap(MokuroMoeCatalogDialog(
+      db: db,
+      clientOverride: client,
+      queueOverride: q.queue,
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('からっぽ'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.manga_online_series_empty), findsOneWidget,
+        reason: '「加载中 / 取失败 / 真的没有卷」三种情况以前长得一模一样。');
     q.queue.dispose();
   });
 

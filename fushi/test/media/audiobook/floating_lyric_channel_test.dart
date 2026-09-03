@@ -35,7 +35,7 @@ void main() {
       String? lookupText;
       int? lookupIndex;
       FloatingLyricChannel.setEventHandlers(
-        onLookupText: (text, index) {
+        onLookupText: (text, index, wordRect) {
           lookupText = text;
           lookupIndex = index;
         },
@@ -217,8 +217,14 @@ void main() {
         // TODO-708 P2: 圆角半径 / 窗宽默认哨兵 0（缺省=平台原生观感）。
         'cornerRadius': 0,
         'windowWidth': 0,
-        'locked': true,
         'clickLookupEnabled': false,
+        // 桌面富文本浮窗的窗口能力参数。穿透 / 置顶按会话复位（不继承上一次的
+        // 状态）：留着上一次的穿透态，用户这一次会发现浮窗完全点不动而看不出
+        // 为什么。Android 系统 overlay 读不到这几个 key，多传是无害的 no-op。
+        'passThrough': false,
+        'topmost': true,
+        'hoverAutoLookup': false,
+        'locked': true,
       });
     });
 

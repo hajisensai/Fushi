@@ -55,4 +55,18 @@ assert.strictEqual(await p2, null);
 // 4. unknown id is ignored (no throw).
 sandbox.window.__fushiBridgeResolve(99999, '"x"');
 
+// 5. parking a reusable iframe settles and drains every retired call. A later
+// native reply is ignored, and the same realm can issue/resolve fresh calls.
+const p3 = sandbox.window.flutter_inappwebview.callHandler('favoriteEntry', {});
+const env3 = posted[2];
+assert.strictEqual(sandbox.window.__fushiBridgeCancelPending(), 1);
+assert.strictEqual(await p3, null);
+sandbox.window.__fushiBridgeResolve(env3.__bridgeId, 'true');
+assert.strictEqual(sandbox.window.__fushiBridgeCancelPending(), 0);
+
+const p4 = sandbox.window.flutter_inappwebview.callHandler('duplicateCheck', {});
+const env4 = posted[3];
+sandbox.window.__fushiBridgeResolve(env4.__bridgeId, 'true');
+assert.strictEqual(await p4, true, 'reused realm still resolves fresh calls');
+
 console.log('popup_bridge_adapter_test: PASS');

@@ -33,8 +33,53 @@ void main() {
       expect(fn, greaterThanOrEqualTo(0));
       final String body = src.substring(fn);
       // 副本目录不存在（用户从没装过）→ 绝不落盘：不能给没装扩展的用户凭空写文件。
-      expect(body, contains('if (!dest.existsSync()) return false;'),
+      expect(body, contains('if (!dir.existsSync()) continue;'),
           reason: '刷新只针对已安装副本；未安装用户不落盘');
+    });
+
+    // Hibiki → Fushi 改名：解压目录从 `hibiki-browser-extension` 改成
+    // `fushi-browser-extension`。浏览器的「加载已解压的扩展程序」按**绝对路径**记住
+    // 扩展，老用户的 Chrome/Edge 仍指着旧目录 —— 只改新名而不再维护旧目录，等于对
+    // 这批用户复发 BUG-726（他们的扩展副本永远停在改名当天的版本）。
+    // 守两条：① 旧名仍被 prepare 与 refresh 双路径覆盖；② 旧目录只在已存在时维护，
+    // 绝不主动新建（否则新用户凭空多出一个没人加载的僵尸目录）。
+    test('legacy extension dir keeps being refreshed after the rename', () {
+      final String src = File('lib/src/lookup/browser_extension_installer.dart')
+          .readAsStringSync();
+      expect(
+          src,
+          contains(
+              "const String _kExtensionDirName = 'fushi-browser-extension';"),
+          reason: '新安装必须落在改名后的 fushi-browser-extension');
+      expect(
+          src,
+          contains(
+              "const String _kLegacyExtensionDirName = 'hibiki-browser-extension';"),
+          reason: '旧目录名是老用户浏览器记着的绝对路径，不能删');
+
+      // ① prepare 路径：解压时一并覆盖旧目录（存在才写）。
+      // 函数体起点锚在 `) async {` 之后：这两个函数都带命名参数表，裸 indexOf('\n}')
+      // 会先命中参数表的收尾 `}) async {`，截出的「函数体」只有参数列表、断言恒假。
+      expect(
+          _functionBody(src, 'Future<String> prepareBundledBrowserExtension'),
+          contains('_legacyExtensionDestDir()'),
+          reason: '安装助手必须同时刷新老用户仍在加载的旧目录');
+      expect(
+          _functionBody(src, 'Future<String> prepareBundledBrowserExtension'),
+          contains('legacy.existsSync()'),
+          reason: '旧目录只维护、不新建');
+
+      // ② refresh 路径：启动刷新的候选目录里必须有旧目录。
+      expect(
+          _functionBody(
+              src, 'Future<bool> refreshBundledBrowserExtensionIfStale'),
+          contains('_legacyExtensionDestDir()'),
+          reason: '启动刷新必须覆盖旧目录，否则老用户复发 BUG-726');
+
+      // 旧目录的取址函数本身不得 create（只解析路径）。
+      expect(_functionBody(src, 'Future<Directory> _legacyExtensionDestDir'),
+          isNot(contains('create(')),
+          reason: '取址函数不得建目录；新建只能由「已存在」分支驱动');
     });
 
     test('background.js self-reload is guarded (loop / recording / legacy)',
@@ -110,4 +155,17 @@ void main() {
       expect(bundled, source, reason: '改 background.js 必须同步两个镜像');
     });
   });
+}
+
+/// 从 [src] 里截出以 [signature] 开头的顶层函数体（`) async {` 之后到行首 `}`）。
+/// 不能用裸 `indexOf('\n}')` 从签名处起算：带命名参数表的函数会先命中参数表收尾的
+/// `}) async {`，截出的字符串只有参数列表，任何 contains 断言都恒假（空转守卫）。
+String _functionBody(String src, String signature) {
+  final int fn = src.indexOf(signature);
+  if (fn < 0) fail('找不到函数签名: $signature');
+  final int bodyStart = src.indexOf(') async {', fn);
+  if (bodyStart < 0) fail('函数体起点定位失败（签名后无 `) async {`）: $signature');
+  final int end = src.indexOf('\n}', bodyStart);
+  if (end < 0) fail('函数体终点定位失败（无行首 `}`）: $signature');
+  return src.substring(bodyStart, end);
 }

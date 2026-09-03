@@ -8,7 +8,13 @@
 # Debug 构建可「有则拷、无则跳」；Profile/Release 会校验 4 个 DLL，禁止产出
 # 无法下载的残缺安装包。Flutter 构建本身不依赖 vcpkg（阶段4 决策：vendored 预编译）。
 #
-# 用法（需先 vcpkg install libtorrent:x64-windows）：
+# libtorrent 版本钉在同目录 vcpkg.json（manifest + overrides，见该文件内注释）：
+# cmake configure 时 vcpkg 工具链会自动按它装依赖，不用也不该再手动
+# `vcpkg install libtorrent:x64-windows`（classic 模式装的是 vcpkg 修订当下的
+# 版本，2026-08 就是这么漂到 2.1 把 Windows 包编断的 —— BUG-1772）。
+# 需要 vcpkg checkout 不老于 vcpkg.json 的 builtin-baseline，Assert-VcpkgBaseline 会先检。
+#
+# 用法：
 #   pwsh -File native/fushi_torrent/build_windows_dll.ps1 -VcpkgRoot D:\APP\vcpkg
 # 产物：native/fushi_torrent/prebuilt/windows-x64/*.dll（git 忽略，不入库）
 
@@ -32,10 +38,17 @@ if (-not (Test-Path $toolchain)) {
     throw "vcpkg toolchain not found: $toolchain (装好 vcpkg 并传 -VcpkgRoot)"
 }
 
+. (Join-Path $scriptDir "vcpkg_baseline.ps1")
+Assert-VcpkgBaseline -VcpkgRoot $VcpkgRoot -ManifestPath (Join-Path $scriptDir "vcpkg.json")
+
 Write-Host "==> CMake configure ($Triplet)"
+# overlay ports：本仓对 libtorrent 2.0.11 的私有补丁（DHT 混合代理豁免），
+# 见 vcpkg-ports/README.md。overlay 无条件优先于 registry 版本解析。
+$overlayPorts = Join-Path $scriptDir "vcpkg-ports"
 cmake -B $buildDir -S $scriptDir -A x64 `
     "-DCMAKE_TOOLCHAIN_FILE=$toolchain" `
-    "-DVCPKG_TARGET_TRIPLET=$Triplet"
+    "-DVCPKG_TARGET_TRIPLET=$Triplet" `
+    "-DVCPKG_OVERLAY_PORTS=$overlayPorts"
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 
 Write-Host "==> CMake build ($Config)"

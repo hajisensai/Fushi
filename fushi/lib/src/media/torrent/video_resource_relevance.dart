@@ -10,8 +10,8 @@
 library;
 
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
+import 'package:fushi/src/media/video/season_marker_parser.dart';
 import 'package:fushi/src/media/video/scraper/filename_parser.dart';
-import 'package:fushi/src/media/video/scraper/match_scorer.dart';
 import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:fushi/src/media/video/scraper/title_normalizer.dart';
 
@@ -63,8 +63,8 @@ VideoResourceTitleIdentity parseVideoResourceIdentity(String raw) {
     trailingSeasons.add(number);
   }
   // [FilenameParser] 按位置剥括号块，`(Season 3)` / `[S3]` 这类整块会被当噪音丢
-  // 掉；[MatchScorer.detectSeasonsInText] 是归一化后全串扫描，正好补上这一半。
-  final Set<int> markedSeasons = MatchScorer.detectSeasonsInText(raw);
+  // 掉；[detectVideoSeasonsInText] 是归一化后全串扫描，正好补上这一半。
+  final Set<int> markedSeasons = detectVideoSeasonsInText(raw);
   return VideoResourceTitleIdentity(
     titles: titles,
     // 优先级：位置化解析 → 全串季号记号 → 并列标题一致的裸数字。后两者都只在

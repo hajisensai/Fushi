@@ -1,23 +1,13 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
-import 'package:fushi/src/media/torrent/download_network_proxy.dart';
 import 'package:fushi/src/media/torrent/download_save_root.dart';
 import 'package:fushi/src/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
-
-/// 下载设置表单在宽屏下的最大内容宽度。
-///
-/// 卡片表面仍由设置详情页铺满 pane；这里只把同属一组的标题、说明、按钮、输入框
-/// 和开关收在一起，避免左侧文案与最右侧操作控件隔着整块 4K 详情面板。
-const double kTorrentSettingsContentMaxWidth = 560;
 
 /// 下载后端配置（后端二选一 + qb 连接 / 内置引擎限速·上传·做种·内存·连接数）。
 /// 从「设置→视频」搬到「下载」页——下载既已独立成页，配置就该在页内，不再埋进
@@ -25,24 +15,14 @@ const double kTorrentSettingsContentMaxWidth = 560;
 class TorrentSettingsSection extends ConsumerStatefulWidget {
   const TorrentSettingsSection({
     super.key,
-    this.desktopOverride,
-    this.constrainWidth = true,
+    this.embeddedSupportedOverride,
   });
-
-  /// 是否把正文收进 [kTorrentSettingsContentMaxWidth]（560）并水平居中。
-  ///
-  /// true（默认）= 下载页语境：整页只有这一组表单，居中限宽是为了让左侧文案与最右
-  /// 侧控件不至于隔着整块 4K 面板。
-  /// false = 嵌进「下载」设置分类的详情 pane：那里同屏还有别的设置卡片，居中限宽会
-  /// 让本组左边缘变成 `(paneWidth - 560) / 2`，与其它分类的行完全对不齐（用户反馈的
-  /// 「下载设置左右间距和其他设置不一样」）。此时改为与普通设置行同一条 16px 基线。
-  final bool constrainWidth;
 
   /// 仅测试注入：覆盖「本平台是否有内置引擎」的判据（BUG-1207 的平台门控）。
   /// null = 用真实 `dart:io` 平台判断。照搬 `book_import_dialog.dart` 的
   /// `ocrEntryDesktopOverride` 范式——`Platform` 不可 override，不给注入口就
   /// 只能退回源码扫描守卫，测不到真实渲染行为。
-  final bool? desktopOverride;
+  final bool? embeddedSupportedOverride;
 
   @override
   ConsumerState<TorrentSettingsSection> createState() =>
@@ -51,9 +31,14 @@ class TorrentSettingsSection extends ConsumerStatefulWidget {
 
 class _TorrentSettingsSectionState
     extends ConsumerState<TorrentSettingsSection> {
-  bool get _isDesktop =>
-      widget.desktopOverride ??
-      (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+  /// 本平台是否具备内置引擎（桌面 + Android）。
+  ///
+  /// 走 [AppModel.supportsEmbeddedTorrent] 这**一个**真相源，不再手抄
+  /// `Platform.isXxx` 串——判据抄成两份，某次加平台时 UI 和运行时后端解析就会
+  /// 悄悄分叉（一边显示得出选择器、另一边解析不出后端）。
+  bool get _supportsEmbedded =>
+      widget.embeddedSupportedOverride ??
+      ref.read(appProvider).supportsEmbeddedTorrent;
 
   QbConnectionConfig get _config =>
       effectiveTorrentConfig(ref.read(appProvider).qbConnectionConfig);
@@ -64,12 +49,19 @@ class _TorrentSettingsSectionState
   /// TODO-1961：目录选择/校验进行中（按钮禁用防重入）。
   bool _pickingFolder = false;
 
+  bool _fetchingTrackers = false;
+  List<String> _trackerPreview = const <String>[];
+  String? _trackerFetchError;
+
   /// 分类输入框：持 controller 是为了失焦回填——清空时存储侧兜底 'fushi'，
   /// 失焦把实际生效值写回输入框，所见即所得（不再「显示空、实际 fushi」）。
   late final TextEditingController _categoryCtrl =
       TextEditingController(text: _config.category);
   late final FocusNode _categoryFocus = FocusNode()
     ..addListener(_onCategoryFocusChanged);
+  late final TextEditingController _trackerUrlCtrl = TextEditingController(
+    text: _config.trackerSubscriptionUrl,
+  );
 
   void _onCategoryFocusChanged() {
     if (_categoryFocus.hasFocus) return;
@@ -83,6 +75,7 @@ class _TorrentSettingsSectionState
   void dispose() {
     _categoryFocus.dispose();
     _categoryCtrl.dispose();
+    _trackerUrlCtrl.dispose();
     super.dispose();
   }
 
@@ -122,6 +115,34 @@ class _TorrentSettingsSectionState
     }
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _refreshTrackers() async {
+    if (_fetchingTrackers) return;
+    final String sourceUrl = _trackerUrlCtrl.text.trim();
+    await _commit(
+      (QbConnectionConfig c) => c.copyWith(trackerSubscriptionUrl: sourceUrl),
+    );
+    if (!mounted) return;
+    setState(() {
+      _fetchingTrackers = true;
+      _trackerFetchError = null;
+    });
+    try {
+      final List<String> trackers = await ref
+          .read(appProvider)
+          .refreshTrackerSubscription(sourceUrl: sourceUrl);
+      if (!mounted) return;
+      setState(() => _trackerPreview = trackers);
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _trackerPreview = const <String>[];
+        _trackerFetchError = error.toString();
+      });
+    } finally {
+      if (mounted) setState(() => _fetchingTrackers = false);
+    }
   }
 
   /// TODO-1961：选新的下载目录。校验不过**不写**配置，直接 snack 报原因（不静默）。
@@ -179,7 +200,7 @@ class _TorrentSettingsSectionState
         controlBelow: true,
         // 嵌入设置详情时外层已经统一缩进 16，这里不能再叠一层（否则本行 32、
         // 同卡片其它内容 16）。
-        horizontalPadding: widget.constrainWidth ? null : 0,
+        horizontalPadding: 0,
         onTap: _pickingFolder ? null : _changeDownloadFolder,
         trailing: Wrap(
           spacing: 8,
@@ -213,12 +234,6 @@ class _TorrentSettingsSectionState
     ];
   }
 
-  /// 输入框最大宽度。详情面板按用户拍板填满整宽（settings_home_page.dart 的
-  /// 960 限宽已回滚），但 TextFormField 会吃满给定宽度——4K 全屏下一条输入框
-  /// 拉到三千多像素（BUG-1084）。限宽只作用于输入框本身并左对齐：开关行、
-  /// 分段按钮、说明文字仍占满整宽，窄屏（< 上限）不受影响。
-  static const double _kFieldMaxWidth = 480;
-
   static int _nonNegInt(String v) {
     final int n = int.tryParse(v.trim()) ?? 0;
     return n < 0 ? 0 : n;
@@ -231,6 +246,8 @@ class _TorrentSettingsSectionState
 
   /// [helper] 是常驻说明（`helperText`），与输入后即消失的占位 [hint]
   /// （`hintText`）不同：用来讲清输入框自身讲不完的生效边界。
+  ///
+  /// 宽度不在这里管：见 [SettingsFormField] 的宽度契约——字段吃满小节内容宽度。
   Widget _text({
     required String label,
     String? initial,
@@ -245,31 +262,17 @@ class _TorrentSettingsSectionState
   }) {
     assert(
         (initial == null) != (controller == null), 'initial 与 controller 二选一');
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: _kFieldMaxWidth),
-          child: TextFormField(
-            initialValue: initial,
-            controller: controller,
-            focusNode: focusNode,
-            obscureText: obscure,
-            keyboardType: keyboard,
-            decoration: InputDecoration(
-              labelText: label,
-              hintText: hint,
-              helperText: helper,
-              helperMaxLines: 3,
-              errorText: errorText,
-              isDense: true,
-              border: const OutlineInputBorder(),
-            ),
-            onChanged: onChanged,
-          ),
-        ),
-      ),
+    return SettingsFormField(
+      label: label,
+      initialValue: initial,
+      controller: controller,
+      focusNode: focusNode,
+      obscureText: obscure,
+      keyboardType: keyboard,
+      hintText: hint,
+      helperText: helper,
+      errorText: errorText,
+      onChanged: onChanged,
     );
   }
 
@@ -304,7 +307,7 @@ class _TorrentSettingsSectionState
       subtitle: subtitle,
       value: value,
       onChanged: onChanged,
-      horizontalPadding: widget.constrainWidth ? null : 0,
+      horizontalPadding: 0,
     );
   }
 
@@ -329,77 +332,34 @@ class _TorrentSettingsSectionState
     final ThemeData theme = Theme.of(context);
     final QbConnectionConfig c = _config;
     final AppModel appModel = ref.watch(appProvider);
-    final DownloadNetworkProxyConfig proxy =
-        appModel.downloadNetworkProxyConfig;
-    final String backend = c.resolveBackend(isDesktop: _isDesktop);
+    final String backend =
+        c.resolveBackend(embeddedSupported: _supportsEmbedded);
     final bool isQb = backend == QbConnectionConfig.backendQbittorrent;
     final bool isEmbedded = backend == QbConnectionConfig.backendEmbedded;
 
     final Widget content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        _sectionLabel(theme, t.download_network_proxy_section),
-        // BUG-1184：窄屏下裸 SegmentedButton 会把每段钳到「可用宽/段数」并静默裁字，
-        // 统一改走 [FushiSegmentedStrip]（装不下就横向滚动，标签永远完整）。
-        FushiSegmentedStrip<DownloadNetworkProxyMode>(
-          segments: <ButtonSegment<DownloadNetworkProxyMode>>[
-            ButtonSegment<DownloadNetworkProxyMode>(
-              value: DownloadNetworkProxyMode.auto,
-              label: Text(t.download_network_proxy_auto),
-            ),
-            ButtonSegment<DownloadNetworkProxyMode>(
-              value: DownloadNetworkProxyMode.direct,
-              label: Text(t.download_network_proxy_direct),
-            ),
-            ButtonSegment<DownloadNetworkProxyMode>(
-              value: DownloadNetworkProxyMode.custom,
-              label: Text(t.download_network_proxy_custom),
-            ),
-          ],
-          selected: proxy.mode,
-          onChanged: (DownloadNetworkProxyMode mode) async {
-            await appModel.setDownloadNetworkProxyMode(mode);
-            if (mounted) setState(() {});
-          },
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(2, 6, 2, 10),
-          child: Text(
-            t.download_network_proxy_auto_hint,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-        if (proxy.mode == DownloadNetworkProxyMode.custom)
-          _text(
-            label: t.download_network_proxy_custom_label,
-            initial: proxy.customProxy,
-            hint: t.update_custom_proxy_hint,
-            errorText: proxy.customProxy.trim().isNotEmpty &&
-                    normalizeUserProxyHostPort(proxy.customProxy) == null
-                ? t.update_custom_proxy_invalid
-                : null,
-            onChanged: appModel.setDownloadCustomProxy,
-          ),
-        const Divider(height: 24),
-
-        // 后端二选一。标签是 `qBittorrent` / `Built-in engine (desktop only)` 这类
+        // 代理不再在这里配：全应用只有系统设置里的一个代理项，下载发现链路
+        // 与其它公网出站共用同一个出口（见 download_timeouts.dart 头注释）。
+        // 后端二选一。标签是 `External qBittorrent` / `Built-in engine` 这类
         // 不可断行的长词，窄屏裸 SegmentedButton 会直接裁字（BUG-1184）。
         //
-        // BUG-1207：移动端根本没有内置引擎的 .so，选择器只放一个够不着的档位——
-        // 选中后 resolveBackend 会把它规约回 qb，段选状态原地弹回，比没有选项更糟。
-        // 故非桌面不渲染选择器，改为一行说明交代本平台只有外接 qb。
-        if (_isDesktop) ...<Widget>[
+        // BUG-1207：无内置引擎的平台（现在只剩 iOS）不渲染选择器——选择器里放一个
+        // 够不着的档位，选中后 resolveBackend 会把它规约回 qb，段选状态原地弹回，
+        // 比没有选项更糟。改为一行说明交代本平台只有外接 qb。
+        if (_supportsEmbedded) ...<Widget>[
           FushiSegmentedStrip<String>(
+            // 内置引擎排在第一段：它才是本平台的默认（`backendAuto` 解析结果），
+            // 也是开箱即用的那一个。qb 需要用户另装并配好 WebUI 才能用，排第二。
             segments: <ButtonSegment<String>>[
-              ButtonSegment<String>(
-                value: QbConnectionConfig.backendQbittorrent,
-                label: Text(t.video_setting_torrent_backend_qb),
-              ),
               ButtonSegment<String>(
                 value: QbConnectionConfig.backendEmbedded,
                 label: Text(t.video_setting_torrent_backend_embedded),
+              ),
+              ButtonSegment<String>(
+                value: QbConnectionConfig.backendQbittorrent,
+                label: Text(t.video_setting_torrent_backend_qb),
               ),
             ],
             selected: backend,
@@ -410,7 +370,7 @@ class _TorrentSettingsSectionState
           Padding(
             padding: const EdgeInsets.fromLTRB(2, 0, 2, 4),
             child: Text(
-              t.download_backend_desktop_only_note,
+              t.download_backend_unsupported_note,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -473,6 +433,70 @@ class _TorrentSettingsSectionState
               c.copyWith(category: v.trim().isEmpty ? 'fushi' : v.trim())),
         ),
 
+        _sectionLabel(theme, t.download_tracker_section),
+        _switch(
+          label: t.download_tracker_auto_add,
+          subtitle: t.download_tracker_auto_add_hint,
+          value: c.autoAddTrackerSubscription,
+          onChanged: (bool value) => _commit(
+            (QbConnectionConfig c) =>
+                c.copyWith(autoAddTrackerSubscription: value),
+          ),
+        ),
+        _text(
+          label: t.download_tracker_url,
+          controller: _trackerUrlCtrl,
+          keyboard: TextInputType.url,
+          onChanged: (String value) => _commit(
+            (QbConnectionConfig c) =>
+                c.copyWith(trackerSubscriptionUrl: value.trim()),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: _fetchingTrackers ? null : _refreshTrackers,
+              icon: _fetchingTrackers
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh, size: 18),
+              label: Text(t.download_tracker_refresh),
+            ),
+          ),
+        ),
+        // 预览框走共享卡片组件，不手搓 Container+BoxDecoration：eink 主题把所有
+        // surface container 塌缩成背景色（theme_notifier 的 eink scheme），手搓的
+        // 这只盒子在那儿会直接隐形，而 FushiCard 自己补描边。圆角/底色也一并交给
+        // 设计 token，不在这里重开一次本地决策。
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 160),
+          child: FushiCard(
+            padding: const EdgeInsets.all(10),
+            margin: const EdgeInsets.only(bottom: 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  _trackerFetchError != null
+                      ? t.download_tracker_fetch_failed(
+                          message: _trackerFetchError!,
+                        )
+                      : _trackerPreview.isEmpty
+                          ? t.download_tracker_preview_empty
+                          : '${t.download_tracker_preview_count(count: _trackerPreview.length)}\n\n'
+                              '${_trackerPreview.join('\n')}',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+            ),
+          ),
+        ),
+
         // 内置引擎资源限制。
         if (isEmbedded) ...<Widget>[
           // TODO-1961：下载目录（只影响新增任务，旧任务留在原目录）。
@@ -497,7 +521,7 @@ class _TorrentSettingsSectionState
             title: t.video_setting_torrent_limit_lan,
             subtitle: t.video_setting_torrent_limit_lan_hint,
             value: c.limitLocalPeers,
-            horizontalPadding: widget.constrainWidth ? null : 0,
+            horizontalPadding: 0,
             onChanged: (bool v) => _commit(
                 (QbConnectionConfig c) => c.copyWith(limitLocalPeers: v)),
           ),
@@ -505,7 +529,7 @@ class _TorrentSettingsSectionState
             title: t.video_setting_torrent_upload_enabled,
             subtitle: t.video_setting_torrent_upload_enabled_hint,
             value: c.uploadEnabled,
-            horizontalPadding: widget.constrainWidth ? null : 0,
+            horizontalPadding: 0,
             onChanged: (bool v) =>
                 _commit((QbConnectionConfig c) => c.copyWith(uploadEnabled: v)),
           ),
@@ -669,32 +693,23 @@ class _TorrentSettingsSectionState
             ),
           ],
         ],
-        const VideoExternalProviderSettingsSection(),
       ],
     );
-    if (!widget.constrainWidth) {
-      // 设置详情 pane 语境：不居中限宽，改用与普通设置行同一条 16px 左右基线。
-      return Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: FushiDesignTokens.of(context).spacing.rowHorizontal,
-        ),
-        child: SizedBox(
-          key: const ValueKey<String>('torrent-settings-content'),
-          width: double.infinity,
-          child: content,
-        ),
-      );
-    }
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints:
-            const BoxConstraints(maxWidth: kTorrentSettingsContentMaxWidth),
-        child: SizedBox(
-          key: const ValueKey<String>('torrent-settings-content'),
-          width: double.infinity,
-          child: content,
-        ),
+    // 唯一的宽度规则（BUG-1858，用户 2026-08-25 拍板）：本段与普通设置行共用同一条
+    // 16px 左右基线，正文吃满剩下的宽度。
+    //
+    // 此前这里有两层额外限宽：整段收进 560（下载页居中 / 详情 pane 左对齐），输入框
+    // 再自己缩到 480。于是同一个设置分区里同时存在三种输入框宽度——本段 480、在线
+    // 服务段 560、其余分类的设置行撑满 pane（用户实报「这里和别的输入框宽度不
+    // 一样」）。限宽整层删掉后，全 app 设置输入框只剩「撑满内容区」这一条规则。
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: FushiDesignTokens.of(context).spacing.rowHorizontal,
+      ),
+      child: SizedBox(
+        key: const ValueKey<String>('torrent-settings-content'),
+        width: double.infinity,
+        child: content,
       ),
     );
   }

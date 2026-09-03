@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/workspace_pubspec.dart';
+
 /// BUG-116 回归守卫（源码扫描；vendored 的 Windows 原生插件 C++ 在 headless Dart
 /// 测试里跑不到 —— 既没有 GameInput.h，也没有真手柄，故守 4 处修复的代码契约）。
 ///
@@ -25,83 +27,147 @@ void main() {
   const String pkg = '../packages/gamepads_windows/windows';
   final String gamepadCpp = File('$pkg/gamepad.cpp').readAsStringSync();
   final String gamepadH = File('$pkg/gamepad.h').readAsStringSync();
-  final String pluginCpp =
-      File('$pkg/gamepads_windows_plugin.cpp').readAsStringSync();
-  final String pluginH =
-      File('$pkg/gamepads_windows_plugin.h').readAsStringSync();
-  final String pubspec = File('pubspec.yaml').readAsStringSync();
+  final String pluginCpp = File(
+    '$pkg/gamepads_windows_plugin.cpp',
+  ).readAsStringSync();
+  final String pluginH = File(
+    '$pkg/gamepads_windows_plugin.h',
+  ).readAsStringSync();
+  final WorkspacePubspec ws = WorkspacePubspec.load();
 
   group('BUG-116 gamepads_windows 崩溃修复（vendored 源码契约）', () {
     test('① 轮询线程 OWNED + join，不再 detach + 线程内自删', () {
-      expect(gamepadH, contains('std::thread thread'),
-          reason: '①：GamepadData 须持有线程句柄以便 join（不再 detach）');
-      expect(gamepadCpp, contains('.join()'),
-          reason: '①：stop/disconnect 须 join 轮询线程后才能释放');
-      expect(gamepadCpp.contains('read_thread.detach()'), isFalse,
-          reason: '①：轮询线程不得 detach（detach 后无法 join → teardown UAF）');
+      expect(
+        gamepadH,
+        contains('std::thread thread'),
+        reason: '①：GamepadData 须持有线程句柄以便 join（不再 detach）',
+      );
+      expect(
+        gamepadCpp,
+        contains('.join()'),
+        reason: '①：stop/disconnect 须 join 轮询线程后才能释放',
+      );
+      expect(
+        gamepadCpp.contains('read_thread.detach()'),
+        isFalse,
+        reason: '①：轮询线程不得 detach（detach 后无法 join → teardown UAF）',
+      );
       // 轮询线程 read_gamepad 体内不得自删 GamepadData；合法的 delete 只在
       // owner 侧的 join_and_destroy（join 之后）。
       final int readStart = gamepadCpp.indexOf('::read_gamepad');
       expect(readStart, greaterThanOrEqualTo(0));
       final String readBody = gamepadCpp.substring(readStart);
-      expect(readBody.contains('delete gamepad'), isFalse,
-          reason: '①：轮询线程 read_gamepad 内不得自删，所有权归 join 的 owner');
-      expect(gamepadCpp, contains('join_and_destroy'),
-          reason: '①：须由 owner 的 join_and_destroy 统一 join 后释放');
+      expect(
+        readBody.contains('delete gamepad'),
+        isFalse,
+        reason: '①：轮询线程 read_gamepad 内不得自删，所有权归 join 的 owner',
+      );
+      expect(
+        gamepadCpp,
+        contains('join_and_destroy'),
+        reason: '①：须由 owner 的 join_and_destroy 统一 join 后释放',
+      );
     });
 
     test('① stop() Release g_gameInput 后置空', () {
-      expect(gamepadCpp, contains('g_gameInput = nullptr'),
-          reason: '①：Release(g_gameInput) 后必须置空，避免线程触到已释放指针');
+      expect(
+        gamepadCpp,
+        contains('g_gameInput = nullptr'),
+        reason: '①：Release(g_gameInput) 后必须置空，避免线程触到已释放指针',
+      );
     });
 
     test('② 事件经平台线程 marshal，不在轮询线程直调 channel', () {
-      expect(pluginH, contains('drain_event_queue'),
-          reason: '②：须有平台线程出队函数 drain_event_queue');
-      expect(pluginCpp, contains('PostMessage'),
-          reason: '②：轮询线程须 PostMessage 唤醒平台线程，不直调 channel');
-      expect(pluginCpp, contains('HWND_MESSAGE'),
-          reason: '②：须用 message-only 窗口在平台线程接收事件');
+      expect(
+        pluginH,
+        contains('drain_event_queue'),
+        reason: '②：须有平台线程出队函数 drain_event_queue',
+      );
+      expect(
+        pluginCpp,
+        contains('PostMessage'),
+        reason: '②：轮询线程须 PostMessage 唤醒平台线程，不直调 channel',
+      );
+      expect(
+        pluginCpp,
+        contains('HWND_MESSAGE'),
+        reason: '②：须用 message-only 窗口在平台线程接收事件',
+      );
       // emit_gamepad_event（轮询线程）函数体内不得出现 InvokeMethod。
       final int emitStart = pluginCpp.indexOf('::emit_gamepad_event');
       final int drainStart = pluginCpp.indexOf('::drain_event_queue');
       expect(emitStart, greaterThanOrEqualTo(0));
-      expect(drainStart, greaterThan(emitStart),
-          reason: 'drain_event_queue 应定义在 emit_gamepad_event 之后');
+      expect(
+        drainStart,
+        greaterThan(emitStart),
+        reason: 'drain_event_queue 应定义在 emit_gamepad_event 之后',
+      );
       final String emitBody = pluginCpp.substring(emitStart, drainStart);
-      expect(emitBody.contains('InvokeMethod'), isFalse,
-          reason: '②：emit_gamepad_event（轮询线程）内不得调 channel->InvokeMethod');
-      expect(pluginCpp, contains('_channel->InvokeMethod'),
-          reason: '②：InvokeMethod 仍须存在，但只在平台线程的 drain 里');
+      expect(
+        emitBody.contains('InvokeMethod'),
+        isFalse,
+        reason: '②：emit_gamepad_event（轮询线程）内不得调 channel->InvokeMethod',
+      );
+      expect(
+        pluginCpp,
+        contains('_channel->InvokeMethod'),
+        reason: '②：InvokeMethod 仍须存在，但只在平台线程的 drain 里',
+      );
     });
 
     test('③ 跨线程标志用 std::atomic', () {
-      expect(gamepadH, contains('std::atomic<bool> stop_thread'),
-          reason: '③：stop_thread 须为 atomic，消除跨线程数据竞争');
-      expect(gamepadH.contains('bool alive'), isFalse,
-          reason: '③：裸 bool alive（自删信号）应随 join 模型移除');
+      expect(
+        gamepadH,
+        contains('std::atomic<bool> stop_thread'),
+        reason: '③：stop_thread 须为 atomic，消除跨线程数据竞争',
+      );
+      expect(
+        gamepadH.contains('bool alive'),
+        isFalse,
+        reason: '③：裸 bool alive（自删信号）应随 join 模型移除',
+      );
     });
 
     test('④ deviceCallbackToken 为值类型，非野指针', () {
-      expect(gamepadH, contains('GameInputCallbackToken deviceCallbackToken'),
-          reason: '④：token 须为值类型并初始化，不能是未初始化裸指针');
-      expect(gamepadH.contains('GameInputCallbackToken* deviceCallbackToken'),
-          isFalse,
-          reason: '④：不得用裸指针 token（RegisterDeviceCallback 会写野地址）');
-      expect(gamepadCpp, contains('&this->deviceCallbackToken'),
-          reason: '④：注册回调须传 token 的地址（out 参数）');
+      expect(
+        gamepadH,
+        contains('GameInputCallbackToken deviceCallbackToken'),
+        reason: '④：token 须为值类型并初始化，不能是未初始化裸指针',
+      );
+      expect(
+        gamepadH.contains('GameInputCallbackToken* deviceCallbackToken'),
+        isFalse,
+        reason: '④：不得用裸指针 token（RegisterDeviceCallback 会写野地址）',
+      );
+      expect(
+        gamepadCpp,
+        contains('&this->deviceCallbackToken'),
+        reason: '④：注册回调须传 token 的地址（out 参数）',
+      );
     });
 
     test('device AddRef 保活轮询线程期间的设备', () {
-      expect(gamepadCpp, contains('device->AddRef()'),
-          reason: '连接时须 AddRef 设备，避免轮询期间被释放（次生 UAF）');
+      expect(
+        gamepadCpp,
+        contains('device->AddRef()'),
+        reason: '连接时须 AddRef 设备，避免轮询期间被释放（次生 UAF）',
+      );
     });
 
-    test('vendor override 已接线到 path:', () {
-      expect(pubspec, contains('gamepads_windows:'),
-          reason: 'hibiki 须 override gamepads_windows 到 vendored 副本');
-      expect(pubspec, contains('path: ../packages/gamepads_windows'),
-          reason: 'override 须指向 packages/gamepads_windows');
+    test('vendored 副本已接线（workspace 成员）', () {
+      // 迁到 pub workspace 前，接线是 fushi/pubspec.yaml 里一条
+      // `gamepads_windows: path: ../packages/gamepads_windows`。现在这个包是
+      // workspace 成员，且它的包名就是要顶替的上游包名，成员身份天然优先于
+      // pub.dev 版本 —— 再写一条 override 反而会让 pub 直接报
+      // "Cannot override workspace packages."。守的东西没变：用的必须是
+      // packages/gamepads_windows 这份带 BUG-116 四条修复的源码。
+      expect(
+        ws.isVendored('gamepads_windows', 'packages/gamepads_windows'),
+        isTrue,
+        reason:
+            'gamepads_windows 必须来自 vendored 副本（workspace 成员或 '
+            'override），否则 pub.dev 的 0.3.0+1 会带着 BUG-116 那四个崩溃回来',
+      );
     });
   });
 }

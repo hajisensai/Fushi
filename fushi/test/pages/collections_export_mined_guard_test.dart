@@ -36,8 +36,12 @@ void main() {
     // 制卡句范围标签（collection_export_all_mined）仍是导出抽屉的勾选项。
     expect(src, contains('ExportScope.mined'));
     expect(src, contains('t.collection_export_all_mined'));
-    // 抽屉外壳走 MD3 范式，不再裸 showModalBottomSheet + 手写 Padding(16)。
-    expect(src, contains('class _ExportSheet'));
+    // 外壳走 MD3 范式，不再手写 Padding(16)。
+    // BUG-1906：面板从 bottom sheet 升级成大弹窗（`_ExportSheet` → `_ExportDialog`，
+    // 外面套一层 FushiDialogFrame）——旧的裸 showModalBottomSheet 没传
+    // isScrollControlled，被默认 9/16 屏高上限卡死，来源一多就只剩一条缝可滚。
+    expect(src, contains('class _ExportDialog'));
+    expect(src, contains('FushiDialogFrame('));
     expect(src, contains('FushiModalSheetFrame('));
     expect(src, contains('FushiDesignTokens.of(context)'));
     // 门控放开为「收藏句或制卡句」任一存在。

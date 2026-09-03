@@ -56,6 +56,7 @@ namespace flutter_inappwebview_plugin
     if (settings) {
       if (settings->additionalBrowserArguments.has_value()) {
         options->put_AdditionalBrowserArguments(utf8_to_wide(settings->additionalBrowserArguments.value()).c_str());
+        windowedHosting = settings->additionalBrowserArguments.value().find(kWindowedHostingSentinel) != std::string::npos;
       }
       if (settings->allowSingleSignOnUsingOSPrimaryAccount.has_value()) {
         options->put_AllowSingleSignOnUsingOSPrimaryAccount(settings->allowSingleSignOnUsingOSPrimaryAccount.value());

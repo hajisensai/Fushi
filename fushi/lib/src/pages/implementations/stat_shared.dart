@@ -46,11 +46,38 @@ class StatPeriodSummary {
     required this.label,
     required this.primaryValue,
     this.lines = const <StatSummaryLine>[],
+    this.onTap,
   });
 
   final String label;
   final String primaryValue;
   final List<StatSummaryLine> lines;
+
+  /// 点卡片 → 时段明细 sheet（阶段 1，统计中心大改造）。null = 纯展示卡。
+  final VoidCallback? onTap;
+}
+
+/// 统计中心 tab 嵌入态外壳（阶段 2）：右对齐动作行 + 内容。三域统计页在
+/// TabBarView 里不再套各自的 FushiPageScaffold——那会叠出双 Scaffold / 双顶栏，
+/// 且每个 scaffold 都往 PageScrollRegistry 注册滚动控制器互踩手柄翻页目标。
+Widget buildEmbeddedStatTab(
+  BuildContext context,
+  List<Widget> actions,
+  Widget body,
+) {
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  return Column(
+    children: <Widget>[
+      Padding(
+        padding: EdgeInsets.only(right: tokens.spacing.card),
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: Row(mainAxisSize: MainAxisSize.min, children: actions),
+        ),
+      ),
+      Expanded(child: body),
+    ],
+  );
 }
 
 /// 统计页共用的四周期汇总卡网格：宽屏 2×2，窄屏单列。
@@ -109,7 +136,7 @@ class _StatPeriodSummaryCard extends StatelessWidget {
     final TextStyle? subStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
           color: colorScheme.onSurfaceVariant,
         );
-    return FushiCard(
+    final Widget card = FushiCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -141,6 +168,12 @@ class _StatPeriodSummaryCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+    if (summary.onTap == null) return card;
+    return InkWell(
+      onTap: summary.onTap,
+      borderRadius: FushiBorderRadius.card,
+      child: card,
     );
   }
 }

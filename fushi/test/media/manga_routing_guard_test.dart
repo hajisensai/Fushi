@@ -112,22 +112,18 @@ void main() {
     // 两个口径同时被污染。下面从「钉一个字面量」改成「钉两个量纲的接线不交叉」。
     expect(src.contains('mangaAccumulateReadingStats'), isTrue,
         reason: '字数必须来自 OCR 文本记账，不能凭页数现编');
-    expect(src.contains('charsRead: charsRead'), isTrue,
-        reason: 'charsRead 落 OCR 字符数');
-    expect(src.contains('pagesRead: pagesRead'), isTrue,
-        reason: '页数落 v60 新增的 pagesRead 独立列，不与字数混流');
+    // v92：字数 / 页数直接记进 StudyClock 的当前段（`study_segments.chars` /
+    // `.pages` 两列），页面不再持有会话累计器。
+    expect(src.contains('_studyClock?.addChars(added.chars)'), isTrue,
+        reason: 'OCR 字符数经 addChars 落段的 chars 列');
+    expect(src.contains('_studyClock?.addPages(added.pages)'), isTrue,
+        reason: '页数经 addPages 落段的 pages 独立列，不与字数混流');
     // 交叉接线守卫：任何把页数喂给字数、或把字数喂给页数的写法都算口径污染。
-    expect(src.contains('charsRead: pagesRead'), isFalse,
-        reason: '页数绝不能塞进 charsRead（会污染字数口径与阅读速度）');
-    expect(src.contains('charsRead: _sessionPagesRead'), isFalse,
-        reason: '页数绝不能塞进 charsRead（会污染字数口径与阅读速度）');
-    expect(src.contains('pagesRead: charsRead'), isFalse,
-        reason: '字数绝不能塞进 pagesRead');
-    expect(src.contains('_sessionCharsRead += added.pages'), isFalse,
-        reason: '会话字数累加口必须取 chars，不能取 pages');
-    expect(src.contains('_sessionPagesRead += added.chars'), isFalse,
-        reason: '会话页数累加口必须取 pages，不能取 chars');
-    expect(src.contains('ReadingTimeTracker'), isTrue, reason: '复用时长统计');
+    expect(src.contains('addChars(added.pages)'), isFalse,
+        reason: '页数绝不能塞进 chars（会污染字数口径与阅读速度）');
+    expect(src.contains('addPages(added.chars)'), isFalse,
+        reason: '字数绝不能塞进 pages');
+    expect(src.contains('StudyClock'), isTrue, reason: '复用时长统计');
   });
 
   // ── 阅读模式覆盖 ────────────────────────────────────────────────────

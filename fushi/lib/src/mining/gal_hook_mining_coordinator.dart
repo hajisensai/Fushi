@@ -58,9 +58,25 @@ class GalHookMiningResult {
   bool get aborted => outcome == null;
   bool get success => outcome?.result == MineResult.success;
 
-  Map<String, Object?> toPopupReply() => <String, Object?>{
+  /// BUG-1908：制卡失败是不是**因为 Anki 里已经有这张卡**。见
+  /// `MinePopupResult.duplicate` —— 浮窗据它区分「卡已存在」与「真的没制成」，
+  /// 不必回查 Anki（TODO-448 禁止失败后回查把按钮翻成 ✓）。
+  bool get duplicate => outcome?.result == MineResult.duplicate;
+
+  /// BUG-1908：[message] 是**失败时给用户看的原因**，由调用方（浮窗控制器）填入
+  /// 已本地化的文案。
+  ///
+  /// 此前这个回程只有两个字段，宿主即便算出了「没选卡组 / 字段映射对不上 / 截图
+  /// 失败」也没地方放；浮窗那边 `ankiConnect:false` 是正常 resolve、不抛，
+  /// 既不进 catch 也不进 if —— 整段没有 else，用户零反馈。而 galgame 浮窗是独立的
+  /// native WebView2 窗口，宿主的 Flutter toast 画在主 app 窗口的 Overlay 上，
+  /// 游戏全屏时主窗在后台，那些 toast 一个也看不见。
+  Map<String, Object?> toPopupReply({String? message}) => <String, Object?>{
         'ankiConnect': success,
         'noteId': success ? outcome?.noteId : null,
+        if (!success && message != null && message.isNotEmpty)
+          'message': message,
+        if (duplicate) 'duplicate': true,
       };
 }
 
@@ -117,7 +133,7 @@ class GalHookMiningCoordinator {
       captureWindowGifBytes(hwnd: hwnd, format: format);
 
   static Future<Directory> _defaultCreateTempDirectory() =>
-      Directory.systemTemp.createTemp('hibiki-gal-card-job-');
+      Directory.systemTemp.createTemp('fushi-gal-card-job-');
 
   /// 单帧截图落卡前统一降采样。
   ///
@@ -133,6 +149,7 @@ class GalHookMiningCoordinator {
   static Future<({Uint8List? bytes, String name})> _downsampleStill(
     Uint8List? pngBytes,
     MiningMediaCompression compression,
+    MiningStillFormat stillFormat,
   ) async {
     if (pngBytes == null || pngBytes.isEmpty) {
       return (bytes: pngBytes, name: 'external_window.png');
@@ -141,10 +158,14 @@ class GalHookMiningCoordinator {
       pngBytes,
       maxLongEdge: compression.screenshotMaxLongEdge,
       quality: compression.screenshotQuality,
+      encoding: cardScreenshotEncodingFor(stillFormat),
     );
-    final bool isJpeg =
-        out.length >= 3 && out[0] == 0xFF && out[1] == 0xD8 && out[2] == 0xFF;
-    return (bytes: out, name: 'external_window.${isJpeg ? 'jpg' : 'png'}');
+    // 文件名仍按**实际字节**定（[stillFormatOfBytes] 就是原来手写的魔数判定，收口到
+    // 一处）：降采样解不开时会原样返回入参，此时硬拼 `.jpg` 就是「.jpg 里装 PNG」。
+    // 兜底 png——这条链的入参恒为窗口抓图的 PNG，与视频侧（media_kit JPEG）方向相反。
+    final MiningStillFormat produced =
+        stillFormatOfBytes(out, fallback: MiningStillFormat.png);
+    return (bytes: out, name: 'external_window.${produced.fileExtension}');
   }
 
   Future<GalHookMiningResult> mineLine({
@@ -160,6 +181,9 @@ class GalHookMiningCoordinator {
     VideoMiningImageMode imageMode = VideoMiningImageMode.gif,
     // 缺省 gif = 旧行为逐字等价；调用方透传 [AppModel.galMiningAnimatedFormat]（默认 avif）。
     MiningAnimatedFormat animatedFormat = MiningAnimatedFormat.gif,
+    // 静图编码格式。缺省 jpg = 旧行为（BUG-1473 起 gal 截图就走降采样重编码 JPEG）；
+    // 调用方透传 [AppModel.galMiningStillFormat]。
+    MiningStillFormat stillFormat = MiningStillFormat.jpg,
     // 仅游戏内嵌 popup 的制卡入口传入。普通 texthooker/浮窗制卡没有画在游戏窗口
     // 里的查词层，不需要也不应触发这条屏障。
     GalHookCaptureLeaseFactory? captureLeaseFactory,
@@ -176,6 +200,7 @@ class GalHookMiningCoordinator {
         addTitleTag: addTitleTag,
         imageMode: imageMode,
         animatedFormat: animatedFormat,
+        stillFormat: stillFormat,
         captureLeaseFactory: captureLeaseFactory,
       ),
       buildFailure: (Object error, StackTrace stack) =>
@@ -198,6 +223,7 @@ class GalHookMiningCoordinator {
     required bool addTitleTag,
     required VideoMiningImageMode imageMode,
     required MiningAnimatedFormat animatedFormat,
+    required MiningStillFormat stillFormat,
     required GalHookCaptureLeaseFactory? captureLeaseFactory,
   }) async {
     final TexthookerLineEntry? entry = _lineLookup(lineId);
@@ -298,7 +324,7 @@ class GalHookMiningCoordinator {
         );
       }
       final ({Uint8List? bytes, String name}) shrunk =
-          await _downsampleStill(still.pngBytes, compression);
+          await _downsampleStill(still.pngBytes, compression, stillFormat);
       coverBytes = shrunk.bytes;
       coverName = shrunk.name;
     } else {
@@ -306,10 +332,25 @@ class GalHookMiningCoordinator {
       if (_captureGifUsesDefault) {
         // 生产 GIF 路径把 lease 精确放进连续 WGC 采样循环：最后一帧落盘就恢复，
         // 不把后续可能耗时 60 秒的 ffmpeg 编码算作「正在截图」。
+        //
+        // 动图要覆盖整句：音频与画面本就并行采集，把「本句音频时长」作为异步目标
+        // 喂给采样循环——资源音频立刻可知（按 ADTS 帧头读），引擎 PCM 要等语音
+        // 播完；未知期间循环继续采样，正是语音在播的那段画面。时长写在行条目上
+        // （[TexthookerService.updateLineAudio]），音频字节回来后再读一次条目。
+        final Future<Duration?> targetDuration = audioFuture.then(
+          (Uint8List? bytes) {
+            if (bytes == null || bytes.isEmpty) return null;
+            final int? durationMs = _lineLookup(lineId)?.audioDurationMs;
+            return durationMs == null || durationMs <= 0
+                ? null
+                : Duration(milliseconds: durationMs);
+          },
+        );
         animated = await captureWindowGifBytes(
           hwnd: window.hwnd,
           format: animatedFormat,
           captureLeaseFactory: captureLeaseFactory,
+          targetDuration: targetDuration,
         );
       } else {
         // 测试/替代捕获器保留原有二参数 typedef；它没有可观察的「采样完成、开始
@@ -333,7 +374,7 @@ class GalHookMiningCoordinator {
           );
         }
         final ({Uint8List? bytes, String name}) shrunk =
-            await _downsampleStill(still.pngBytes, compression);
+            await _downsampleStill(still.pngBytes, compression, stillFormat);
         coverBytes = shrunk.bytes;
         coverName = shrunk.name;
         degradedToStill = true;
@@ -367,8 +408,9 @@ class GalHookMiningCoordinator {
           screenshotBytes: coverBytes,
           coverName: coverName,
           audioBytes: audioBytes,
-          audioName:
-              sentenceAudioMissing ? null : 'galgame_audio.$audioExtension',
+          audioName: sentenceAudioMissing
+              ? null
+              : 'galgame_audio.$audioExtension',
           documentTitle:
               window.title.isEmpty ? 'External window' : window.title,
           // BUG-1137：gal 场景卡归「游戏」分类标签（曾吃默认 video 被误标）。
@@ -378,6 +420,7 @@ class GalHookMiningCoordinator {
           bookTitleTag:
               addTitleTag && window.title.isNotEmpty ? window.title : null,
           updateNoteId: updateNoteId,
+          stillFormat: stillFormat,
         ),
         compression: compression,
         tempDir: jobDirectory.path,
@@ -394,8 +437,15 @@ class GalHookMiningCoordinator {
       final MineOutcome outcome = mined.outcome! as MineOutcome;
       // 制卡成功回写行模型：把该行标记为「已制卡」，供捕获工作台列表显示徽章。
       // 幂等（markLineMined 内部去重），覆写既有卡（updateNoteId）成功同样视作已制卡。
+      //
+      // BUG-1799：连同后端回传的 note id 一起记下，这行日后才能向 Anki 复核那张卡
+      // 是否还活着（用户在 Anki 里删了就把徽章清掉）。覆写既有卡时 outcome 不带新 id，
+      // 退回本次覆写的目标 id —— 那正是这行现在对应的那张卡。
       if (outcome.result == MineResult.success) {
-        _textService.markLineMined(entry.id);
+        _textService.markLineMined(
+          entry.id,
+          noteId: outcome.noteId ?? updateNoteId,
+        );
       }
       return GalHookMiningResult(
         outcome: outcome,

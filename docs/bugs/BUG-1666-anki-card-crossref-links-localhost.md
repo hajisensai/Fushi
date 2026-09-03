@@ -1,0 +1,15 @@
+## BUG-1666 · 制卡后卡片释义交叉引用链接跳向127本地地址
+- **报告**：2026-08-15（用户：制卡后卡片某字段里的链接——词典释义里指向另一个单词的交叉引用——点开跳向 `http://127.0.0.1:<端口>` 等本地 IP；希望改成跳回 fushi 查词）
+- **真实性**：✅ 真 bug。根因链：
+  - 导出制卡 HTML 的两个构建器（`fushi/assets/popup/popup.js` `constructGlossaryHtml` / `constructSingleGlossaryHtml`）原样保留词典 HTML 里的交叉引用锚点（MDX `entry://词`、相对路径 `/belong_1`）。弹窗内这类点击被 `handleGlossaryAnchorClick`（BUG-767）拦截并按可见词头重查，但卡片上没有拦截器。
+  - Anki 桌面与 AnkiDroid 的卡片 WebView 以各自**本地媒体服务器**（`http://127.0.0.1:<随机端口>`）为 base URL，相对/未知链接被解析到 127 的死页。
+  - 顺带发现深链消费端残留：Android `:popup` 词典窗的 `extractProcessText`（`PopupDictFlutterActivity.kt` / 失活回退 `PopupDictActivity.kt`）只认 `hibiki://lookup`，而 manifest 注册的 scheme 是 `fushi`——`fushi://lookup?word=…` 会开出**空弹窗**。
+- **[x] ① 已修复** —
+  - `popup.js` 新增 `rewriteExportedGlossaryAnchors`（两个导出构建器序列化前调用）：内部交叉引用 → `fushi://lookup?word=<可见词头>`（trim + percent-encode）；`http(s)://` 外链保留；`#` 片段保留；`sound:`/`image:`/`dictmedia:`（字节未随卡导出）与无文本锚点去 href。三镜像已同步（assets/popup、assets/browser_extension/vendor、tools/browser-extension/vendor）。
+  - Android：两个 Kotlin activity 的 scheme 判定改为接受 `fushi`（兼容保留 `hibiki`），深链在手机上直接开 `:popup` 词典窗查词。
+  - Windows：`fushi/windows/installer/fushi.iss` 注册 HKCU `Software\Classes\fushi` URL 协议 → `fushi.exe "%1"`；Dart 新增 `lib/src/lookup/lookup_deep_link.dart::lookupWordFromDeepLink`，冷启动 `main(args)` 与单实例 WM_COPYDATA 转交（复用外部视频通道 `_handleExternalVideoChannel`，深链分支先于视频白名单）两条路都汇到 `DesktopLookupService.triggerLookup`（explicit 起源、越过去重；C++ 侧已前置主窗，零 C++ 改动）。
+- **[x] ② 已加自动化测试** — `fushi/test/anki/exported_glossary_anchor_deeplink_test.dart`：
+  - 行为级：node 真执行 `rewriteExportedGlossaryAnchors`（7 场景：entry://、相对路径、非 ASCII 编码、外链保留、# 保留、sound:// 去 href、空文本去 href）+ 源级断言两个导出构建器都调用它；
+  - `lookupWordFromDeepLink` 纯函数单测（fushi/hibiki scheme、percent 解码、拒绝 auth/视频路径/空词）；
+  - Kotlin 源级守卫：两个 activity 必须接受 `fushi` scheme。
+- **备注**：仅安装包用户获得 Windows 协议注册；debug/绿色版需手动导入注册表（同 iss 键值）。macOS/Linux 未注册协议（用户平台为 Windows+Android）。卡片上历史旧卡的链接不会自愈（HTML 已烤进卡片），重制卡后生效。

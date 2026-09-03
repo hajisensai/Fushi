@@ -117,5 +117,40 @@ void main() {
       expect(forKey.single.uid, first.uid, reason: 'uid 必须稳定不变');
       expect(forKey.single.uid, 'srtbook_epub_$bookKey');
     });
+
+    test('BUG-1678：只换字幕（不带音频）不得清空配对行的音频与封面', () async {
+      const String bookKey = 'SubtitleOnlyReimport';
+      await writeEpubBackedSrtBook(
+        repo: repo,
+        bookKey: bookKey,
+        title: 'Book',
+        author: 'A',
+        srtPath: '/abs/persist/$bookKey/old.srt',
+        audioPaths: const <String>['/abs/persist/$bookKey/a.mp3'],
+      );
+      // 封面由别的路径（书架编辑 / backfill）写上；helper 自己新建时不写。
+      final SrtBook seeded = (await repo.findByUid('srtbook_epub_$bookKey'))!;
+      seeded.coverPath = '/abs/persist/$bookKey/cover.jpg';
+      await repo.save(seeded);
+
+      // 换字幕路径：AudiobookImportDialog 此时 persistedPaths 为空，helper 拿不到
+      // 音频。整行覆盖若不以现有行为基线，配对行的音频/封面就一起没了 —— 互联
+      // host 的 hasAudiobook 判据要求两表齐备且带音频，清掉即从同步里消失。
+      await writeEpubBackedSrtBook(
+        repo: repo,
+        bookKey: bookKey,
+        title: 'Book',
+        author: 'A',
+        srtPath: '/abs/persist/$bookKey/new.srt',
+        audioPaths: const <String>[],
+      );
+
+      final SrtBook after = (await repo.findByUid('srtbook_epub_$bookKey'))!;
+      expect(after.srtPath, '/abs/persist/$bookKey/new.srt', reason: '字幕确实换了');
+      expect(after.audioPaths, equals(<String>['/abs/persist/$bookKey/a.mp3']),
+          reason: '换字幕不得清空配对行的音频（BUG-1678）');
+      expect(after.coverPath, '/abs/persist/$bookKey/cover.jpg',
+          reason: '本次没碰的列不该被整行覆盖清掉');
+    });
   });
 }

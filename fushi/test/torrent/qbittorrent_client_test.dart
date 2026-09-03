@@ -659,4 +659,36 @@ void main() {
       expect(files.single.index, -1);
     });
   });
+
+  test('addTrackers posts hash and newline-delimited URLs', () async {
+    final List<int> logins = <int>[];
+    final QBittorrentClient client = QBittorrentClient(
+      baseUrl: 'http://qb.local:8080',
+      username: 'admin',
+      password: 'secret',
+      client: _mockWithLogin(logins, (http.Request request) async {
+        expect(request.url.path, '/api/v2/torrents/addTrackers');
+        expect(request.method, 'POST');
+        expect(request.bodyFields['hash'], 'aaa111');
+        expect(
+          request.bodyFields['urls'],
+          'udp://one.example:80/announce\nhttps://two.example/announce',
+        );
+        return http.Response('', 200);
+      }),
+    );
+
+    expect(
+      await client.addTrackers(
+        'aaa111',
+        const <String>[
+          'udp://one.example:80/announce',
+          'https://two.example/announce',
+        ],
+      ),
+      isTrue,
+    );
+    expect(logins, hasLength(1));
+    client.close();
+  });
 }

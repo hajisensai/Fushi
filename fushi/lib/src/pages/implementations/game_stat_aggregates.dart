@@ -1,11 +1,11 @@
 import 'package:fushi/src/mining/galgame_library.dart';
-import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
+import 'package:fushi/src/stats/stat_window.dart';
 
 /// 游戏统计页的窗口聚合。
 ///
 /// 时长与次数只来自 `galgame_sessions` 的按日 GROUP BY；[games] 只提供按游戏汇总
-/// 与显示信息，不读取 `activity_events`。
+/// 与显示信息。窗口阈值只来自 [StatWindow]。
 class GameStatsAggregate {
   GameStatsAggregate();
 
@@ -29,10 +29,7 @@ GameStatsAggregate computeGameStats({
   required DateTime now,
 }) {
   final GameStatsAggregate result = GameStatsAggregate();
-  final String todayKey = statDateKey(now);
-  final String weekAgoKey = statDateKey(now.subtract(const Duration(days: 7)));
-  final String monthAgoKey =
-      statDateKey(now.subtract(const Duration(days: 30)));
+  final StatWindow w = StatWindow(now);
 
   dailyTotals.forEach((
     String dateKey,
@@ -41,28 +38,25 @@ GameStatsAggregate computeGameStats({
     final int ms = totals.$1 * 1000;
     result.allMs += ms;
     result.allSessions += totals.$2;
-    if (dateKey == todayKey) {
+    if (w.isToday(dateKey)) {
       result.todayMs += ms;
       result.todaySessions += totals.$2;
     }
-    if (dateKey.compareTo(weekAgoKey) >= 0) {
+    if (w.inWeek(dateKey)) {
       result.weekMs += ms;
       result.weekSessions += totals.$2;
     }
-    if (dateKey.compareTo(monthAgoKey) >= 0) {
+    if (w.inMonth(dateKey)) {
       result.monthMs += ms;
       result.monthSessions += totals.$2;
     }
   });
 
-  final DateTime firstDay = now.subtract(const Duration(days: 29));
-  result.daily = <StatDayData>[];
-  for (int i = 0; i < 30; i++) {
-    final String dateKey = statDateKey(firstDay.add(Duration(days: i)));
-    final StatDayData day = StatDayData(dateKey: dateKey);
-    day.ms = (dailyTotals[dateKey]?.$1 ?? 0) * 1000;
-    result.daily.add(day);
-  }
+  result.daily = <StatDayData>[
+    for (final String dateKey in w.lastDayKeys(30))
+      StatDayData(dateKey: dateKey)
+        ..ms = (dailyTotals[dateKey]?.$1 ?? 0) * 1000,
+  ];
 
   result.byGame =
       games.where((GalgameEntry game) => game.sessionCount > 0).toList()

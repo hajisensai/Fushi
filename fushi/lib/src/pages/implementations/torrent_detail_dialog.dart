@@ -415,12 +415,14 @@ class _TorrentTaskDetailDialogState
 
   Widget _buildEmptyNote(ThemeData theme, String text) {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: FushiPlaceholderMessage(
+          key: const Key('torrent-detail-empty-note'),
+          icon: Icons.info_outline,
+          iconSize: 36,
+          message: text,
+          messageStyle: theme.textTheme.bodyMedium
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
       ),

@@ -14,6 +14,9 @@ class ImmersionMinePayload {
     this.clipEndMs,
     this.netflixVideoId,
     this.youtubeVideoId,
+    this.clipSourceKind,
+    this.clipSourceId,
+    this.clipSourcePart,
     this.screenshotBytes,
     this.clipBytes,
     this.clipDurationMs,
@@ -36,6 +39,18 @@ class ImmersionMinePayload {
   /// [clipEndMs]（**视频时间**窗，非段内偏移）时，服务端 resolveYoutubeSource 取真实流 ffmpeg
   /// 精确裁 GIF+音频（非 DRM，无需录屏/回放）。
   final String? youtubeVideoId;
+
+  /// 可裁原始流的**站点身份**，通用形状（`'bilibili'` 等）。扩展的 `fushiClipSource()`
+  /// 给出它。加一个新的可裁站点从此不必再往这个 payload 上加一对专用字段——
+  /// [netflixVideoId] / [youtubeVideoId] 是这条通用形状出现之前的既有 wire，保持不动
+  /// （老扩展仍在发它们）。
+  final String? clipSourceKind;
+
+  /// [clipSourceKind] 对应的视频 id（bilibili 是 `BVxxxxxxxxxx`）。
+  final String? clipSourceId;
+
+  /// 分 P / 分集号，1 基（bilibili URL 的 `?p=`）。缺省视作第 1 P。
+  final int? clipSourcePart;
   final Uint8List? screenshotBytes;
 
   /// TODO-1000：浏览器扩展在播放中录到的字幕片段（webm/mp4 字节，DRM 需关硬件加速才非黑）。
@@ -75,7 +90,11 @@ class ImmersionMinePayload {
       clipBytes != null ||
       timestampMs != null ||
       (netflixVideoId != null && clipStartMs != null && clipEndMs != null) ||
-      (youtubeVideoId != null && clipStartMs != null && clipEndMs != null);
+      (youtubeVideoId != null && clipStartMs != null && clipEndMs != null) ||
+      (clipSourceKind != null &&
+          clipSourceId != null &&
+          clipStartMs != null &&
+          clipEndMs != null);
 
   static ImmersionMinePayload fromJson(Map<String, dynamic> json) {
     final Object? rawFields = json['fields'];
@@ -104,6 +123,9 @@ class ImmersionMinePayload {
       clipEndMs: (json['clipEndMs'] as num?)?.round(),
       netflixVideoId: json['netflixVideoId'] as String?,
       youtubeVideoId: json['youtubeVideoId'] as String?,
+      clipSourceKind: json['clipSourceKind'] as String?,
+      clipSourceId: json['clipSourceId'] as String?,
+      clipSourcePart: (json['clipSourcePart'] as num?)?.round(),
       // 截图 / clip 是**可选媒体**：base64 坏了就当没这个媒体（降级到截图/文本卡），
       // 绝不 throw 把整张卡 400 掉——只有 fields 缺失才是真正的坏请求。
       screenshotBytes: _tryDecodeBase64(json['screenshotBase64']),

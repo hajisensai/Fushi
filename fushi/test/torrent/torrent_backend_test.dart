@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi/src/media/torrent/qbittorrent_client.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/tracker_subscription.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -98,6 +99,54 @@ void main() {
         'urls': 'magnet:?xt=urn:btih:bbb',
         'category': 'hibiki',
       });
+    });
+
+    test('tracker 订阅在任务创建后附加到新磁力下载', () async {
+      server.responses['/api/v2/torrents/add'] = http.Response('Ok.', 200);
+      server.responses['/api/v2/torrents/addTrackers'] =
+          http.Response('', 200);
+      final TrackerSubscriptionService subscription =
+          TrackerSubscriptionService(
+        httpClientFactory: () async => MockClient(
+          (_) async => http.Response(
+            'udp://tracker.example:1337/announce\n'
+            'https://tracker.example/announce\n',
+            200,
+          ),
+        ),
+      );
+      final QbTorrentBackend subscribedBackend = QbTorrentBackend(
+        QBittorrentClient(
+          baseUrl: 'http://qb.local:8080',
+          username: 'admin',
+          password: 'secret',
+          client: server.mock,
+        ),
+        trackerSubscriptionService: subscription,
+        autoAddTrackerSubscription: true,
+        trackerSubscriptionUrl: kDefaultTrackerSubscriptionUrl,
+      );
+      addTearDown(subscribedBackend.close);
+
+      const String hash = '0123456789abcdef0123456789abcdef01234567';
+      expect(
+        await subscribedBackend.addTorrent(
+          'magnet:?xt=urn:btih:$hash',
+          category: 'hibiki',
+        ),
+        isTrue,
+      );
+
+      expect(
+        server.requests.map((http.Request request) => request.url.path),
+        <String>['/api/v2/torrents/add', '/api/v2/torrents/addTrackers'],
+      );
+      expect(server.requests.last.bodyFields['hash'], hash);
+      expect(
+        server.requests.last.bodyFields['urls'],
+        'udp://tracker.example:1337/announce\n'
+        'https://tracker.example/announce',
+      );
     });
 
     test('listTorrents 传 category 并解析成 TorrentSnapshot', () async {

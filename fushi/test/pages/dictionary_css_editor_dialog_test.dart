@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/dictionary/dict_style_rules.dart';
+import 'package:fushi/src/pages/implementations/dict_style_visual_editor.dart';
 import 'package:fushi/src/pages/implementations/dictionary_settings_dialog_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
@@ -64,6 +66,16 @@ class _FakeCssAppModel extends AppModel {
 
   @override
   Map<String, String> get customDictCSS => savedCustomCss;
+
+  List<DictStyleRule> savedStyleRules = <DictStyleRule>[];
+
+  @override
+  List<DictStyleRule> get dictStyleRules => savedStyleRules;
+
+  @override
+  Future<void> saveDictStyleRules(List<DictStyleRule> rules) async {
+    savedStyleRules = rules;
+  }
 
   @override
   String getCustomCSSForDict(String dictName) => savedCustomCss[dictName] ?? '';
@@ -185,7 +197,9 @@ class _CssDialogLauncher extends StatelessWidget {
           onPressed: () {
             showAppDialog<void>(
               context: context,
-              builder: (_) => const DictCssEditorDialog(),
+              builder: (_) => const DictCssEditorDialog(
+                previewBuilder: _stubPreview,
+              ),
             );
           },
           child: const Text('打开 CSS'),
@@ -193,6 +207,23 @@ class _CssDialogLauncher extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 可视化页的预览是真 InAppWebView，widget 测试跑不了平台视图；用桩替掉。
+/// 桩把收到的 CSS 原样贴出来，顺带成为「预览确实吃到了当前草稿」的断言点。
+Widget _stubPreview(
+  BuildContext context,
+  String css,
+  DictStylePart highlightPart,
+  ValueChanged<DictStylePart> onPickPart,
+) {
+  return Center(child: Text('PREVIEW_CSS:$css', maxLines: 100));
+}
+
+/// 对话框默认落在「可视化」页；要摸手写 CSS 文本框得先切过去。
+Future<void> _switchToCodeTab(WidgetTester tester) async {
+  await tester.tap(find.text(t.dict_style_tab_code));
+  await tester.pumpAndSettle();
 }
 
 Finder _cssEditorField() {
@@ -266,8 +297,7 @@ void main() {
   });
 
   test('every active Profile mutation path rotates the draft scope', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     final ProfileRepository repo = ProfileRepository(
       db,
       FakeAnkiRepository(),
@@ -320,8 +350,7 @@ void main() {
   test(
       'switch then delete target serializes before rejecting an intermediate stale Save',
       () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     final _GatedProfileRepository repo = _GatedProfileRepository(db);
     final ({int profileA, int profileB}) profiles =
         await _seedTwoProfiles(db, repo);
@@ -396,8 +425,7 @@ void main() {
   test(
       'Save lock serializes switch then target overwrite import without crossing scope',
       () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     final _GatedProfileRepository repo = _GatedProfileRepository(db);
     final ({int profileA, int profileB}) profiles =
         await _seedTwoProfiles(db, repo);
@@ -512,6 +540,58 @@ void main() {
     expect(settingsSource, contains('DictCssEditorDialog('));
   });
 
+  // 尺寸对齐 `LapisStyleEditorPage`（用户诉求：「和 lapis 的一样大」）。Lapis 是整页 +
+  // 内容区 maxWidth 1180、宽于 820 时左预览右控件（控件定宽 340）。这里断言的是
+  // **几何**而不是「某个 widget 在不在」：宽屏下两块必须真的并排、对话框真的撑到
+  // 1180 宽和 0.88 屏高，否则改回小尺寸也能骗过测试。
+  testWidgets('宽屏下词典样式编辑器取 Lapis 的尺寸与左右分栏', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1600, 1000);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      _buildApp(
+        appModel: _FakeCssAppModel(),
+        home: const DictCssEditorDialog(previewBuilder: _stubPreview),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 量 FushiModalSheetFrame 而不是 Dialog：Dialog 的 RenderBox 是整个 overlay 区，
+    // 恒等于屏幕大小，拿它量宽度会恒真（旧的 compact 用例就只断言了它没出屏）。
+    final Rect dialogRect = tester.getRect(find.byType(FushiModalSheetFrame));
+    expect(dialogRect.width, closeTo(1180, 1));
+    // 高度撑满到 FushiDialogFrame 允许的 0.88 屏高（旧实现写死 0.55 屏高且 clamp 480）。
+    expect(dialogRect.height, closeTo(1000 * 0.88, 1));
+
+    final Rect previewRect = tester.getRect(find.textContaining('PREVIEW_CSS:'));
+    final Rect controlsRect = tester.getRect(find.byType(DictStyleVisualEditor));
+    expect(controlsRect.left, greaterThan(previewRect.right),
+        reason: '宽屏应是左预览右控件，不是上下堆叠');
+    expect(controlsRect.width, closeTo(340, 1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('窄屏下词典样式编辑器仍是上下堆叠', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(700, 900);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      _buildApp(
+        appModel: _FakeCssAppModel(),
+        home: const DictCssEditorDialog(previewBuilder: _stubPreview),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Rect previewRect = tester.getRect(find.textContaining('PREVIEW_CSS:'));
+    final Rect controlsRect = tester.getRect(find.byType(DictStyleVisualEditor));
+    expect(controlsRect.top, greaterThanOrEqualTo(previewRect.bottom),
+        reason: '窄屏应回到上下堆叠');
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('dictionary CSS editor fits a compact mobile dialog', (
     WidgetTester tester,
   ) async {
@@ -522,9 +602,11 @@ void main() {
     await tester.pumpWidget(
       _buildApp(
         appModel: _FakeCssAppModel(),
-        home: const DictCssEditorDialog(),
+        home: const DictCssEditorDialog(previewBuilder: _stubPreview),
       ),
     );
+
+    await _switchToCodeTab(tester);
 
     expect(tester.takeException(), isNull);
 
@@ -552,9 +634,14 @@ void main() {
     await tester.pumpWidget(
       _buildApp(
         appModel: appModel,
-        home: const DictCssEditorDialog(initialDictionaryName: 'JMdict'),
+        home: const DictCssEditorDialog(
+          initialDictionaryName: 'JMdict',
+          previewBuilder: _stubPreview,
+        ),
       ),
     );
+
+    await _switchToCodeTab(tester);
 
     expect(tester.takeException(), isNull);
     expect(find.text('JMdict'), findsOneWidget);
@@ -576,6 +663,7 @@ void main() {
 
     await tester.tap(find.text('打开 CSS'));
     await tester.pumpAndSettle();
+    await _switchToCodeTab(tester);
     await tester.enterText(_cssEditorField(), '.draft { color: orange; }');
     await tester.tapAt(const Offset(4, 4));
     await tester.pumpAndSettle();
@@ -585,6 +673,7 @@ void main() {
 
     await tester.tap(find.text('打开 CSS'));
     await tester.pumpAndSettle();
+    await _switchToCodeTab(tester);
     expect(find.textContaining('.draft { color: orange; }'), findsOneWidget);
 
     await tester.tap(find.text(t.dialog_cancel));
@@ -593,6 +682,7 @@ void main() {
 
     await tester.tap(find.text('打开 CSS'));
     await tester.pumpAndSettle();
+    await _switchToCodeTab(tester);
     expect(find.textContaining(savedCss), findsOneWidget);
     expect(find.textContaining('.draft { color: orange; }'), findsNothing);
   });
@@ -612,6 +702,7 @@ void main() {
 
     await tester.tap(find.text('打开 CSS'));
     await tester.pumpAndSettle();
+    await _switchToCodeTab(tester);
     await tester.enterText(_cssEditorField(), '.global-draft { color: blue; }');
 
     await tester.tap(find.byType(DropdownMenu<int>));
@@ -637,8 +728,7 @@ void main() {
     WidgetTester tester,
   ) async {
     final _FakeCssAppModel appModel = _FakeCssAppModel();
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     appModel.wireDatabaseForTesting(db);
 
@@ -652,6 +742,7 @@ void main() {
 
     await tester.tap(find.text('打开 CSS'));
     await tester.pumpAndSettle();
+    await _switchToCodeTab(tester);
     await tester.enterText(
       _cssEditorField(),
       '.first-open-draft { color: purple; }',
@@ -726,6 +817,7 @@ void main() {
 
     await tester.tap(find.text('打开 CSS'));
     await tester.pumpAndSettle();
+    await _switchToCodeTab(tester);
     await tester.enterText(
       _cssEditorField(),
       '.profile-a-draft { color: orange; }',
@@ -744,6 +836,7 @@ void main() {
 
     await tester.tap(find.text('打开 CSS'));
     await tester.pumpAndSettle();
+    await _switchToCodeTab(tester);
 
     expect(find.textContaining('.profile-b-stored'), findsOneWidget);
     expect(find.textContaining('.profile-a-draft'), findsNothing);
@@ -778,6 +871,7 @@ void main() {
 
     await tester.tap(find.text('打开 CSS'));
     await tester.pumpAndSettle();
+    await _switchToCodeTab(tester);
     await tester.enterText(
       _cssEditorField(),
       '.profile-a-draft { color: orange; }',
@@ -795,5 +889,117 @@ void main() {
     expect(appModel.globalCssForProfile(1), profileAStoredCss);
     expect(appModel.globalCssForProfile(2), profileBStoredCss);
     expect(find.byType(DictCssEditorDialog), findsNothing);
+  });
+
+  testWidgets('可视化页默认打开，改属性即时反映到预览并在保存时落盘', (
+    WidgetTester tester,
+  ) async {
+    final _FakeCssAppModel appModel = _FakeCssAppModel();
+
+    await tester.pumpWidget(
+      _buildApp(
+        appModel: appModel,
+        home: const DictCssEditorDialog(previewBuilder: _stubPreview),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 默认停在可视化页：预览桩在场，手写文本框不在。
+    expect(find.textContaining('PREVIEW_CSS:'), findsOneWidget);
+    expect(_cssEditorField(), findsNothing);
+
+    // 默认选中「释义正文」，把它打开粗体。
+    await tester.ensureVisible(find.text(t.dict_style_prop_on).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.dict_style_prop_on).first);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('.glossary-content'),
+      findsOneWidget,
+      reason: '预览必须立刻吃到新编译的 CSS',
+    );
+    expect(find.textContaining('font-weight: bold !important'), findsOneWidget);
+    expect(
+      appModel.savedStyleRules,
+      isEmpty,
+      reason: '未按保存前不许落盘',
+    );
+
+    await tester.tap(find.text(t.dialog_save));
+    await tester.pumpAndSettle();
+
+    expect(appModel.savedStyleRules, hasLength(1));
+    expect(appModel.savedStyleRules.single.part, DictStylePart.glossaryContent);
+    expect(appModel.savedStyleRules.single.props.bold, isTrue);
+  });
+
+  testWidgets('只改手写 CSS 保存时不会清空已存的可视化规则', (
+    WidgetTester tester,
+  ) async {
+    // 回归：saveDraft 里若用 `_draft.styleRules ?? []` 兜底，这一路就会把用户
+    // 攒下的规则整份抹掉。
+    final _FakeCssAppModel appModel = _FakeCssAppModel();
+    appModel.savedStyleRules = <DictStyleRule>[
+      const DictStyleRule(
+        part: DictStylePart.expression,
+        props: DictStyleProps(bold: true),
+      ),
+    ];
+
+    await tester.pumpWidget(
+      _buildApp(
+        appModel: appModel,
+        home: const DictCssEditorDialog(previewBuilder: _stubPreview),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _switchToCodeTab(tester);
+
+    await tester.enterText(_cssEditorField(), '.entry { color: teal; }');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.dialog_save));
+    await tester.pumpAndSettle();
+
+    expect(appModel.savedGlobalCss, '.entry { color: teal; }');
+    expect(appModel.savedStyleRules, hasLength(1));
+    expect(appModel.savedStyleRules.single.part, DictStylePart.expression);
+  });
+
+  testWidgets('选中非释义部位时提示作用域只能是全局', (WidgetTester tester) async {
+    final _FakeCssAppModel appModel = _FakeCssAppModel();
+
+    await tester.pumpWidget(
+      _buildApp(
+        appModel: appModel,
+        home: const DictCssEditorDialog(
+          initialDictionaryName: 'JMdict',
+          previewBuilder: _stubPreview,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 默认部位是释义正文，可 per-dictionary，不该有提示。
+    expect(find.text(t.dict_style_global_only), findsNothing);
+
+    await tester.tap(find.text(t.dict_style_part_expression));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(t.dict_style_global_only),
+      findsOneWidget,
+      reason: '词头不在 [data-dictionary] 子树里，限定单本词典无从谈起',
+    );
+
+    // 且此时写入的规则作用域必须是全局，不能带着下拉里选的词典名。
+    await tester.ensureVisible(find.text(t.dict_style_prop_on).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.dict_style_prop_on).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.dialog_save));
+    await tester.pumpAndSettle();
+
+    expect(appModel.savedStyleRules.single.dictionaryName, isNull);
   });
 }

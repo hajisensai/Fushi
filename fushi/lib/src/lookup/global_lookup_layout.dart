@@ -38,6 +38,7 @@ class GlobalLookupFrameRect {
     required this.top,
     required this.width,
     required this.height,
+    required this.showBelow,
   });
 
   /// 弹窗左上角 X（CSS px）。
@@ -52,6 +53,16 @@ class GlobalLookupFrameRect {
   /// 弹窗高度（CSS px）。
   final double height;
 
+  /// 横排时卡片落在锚点**下方**（false = 翻到上方）；竖排恒 true（左右放置不存在
+  /// 上下翻转）。
+  ///
+  /// BUG-2082 — 这条判据本函数内部本来就算出来了（`spaceBelow >= height`），却只用
+  /// 在自己身上。调用方想知道「卡片在字形哪一侧」时只能拿**已经被 clamp 过**的
+  /// top 反推 `top < selY`，而 [height] 会按锚侧空间收缩、centerY 又被
+  /// [screenBorderPadding] 与屏边夹过：夹子一触发，反推的结论就和这里的真实选择
+  /// 相反。所以把它原样传出去，不允许在外面再猜一遍。
+  final bool showBelow;
+
   /// 弹窗中心 X（便于与 Hoshi centerX 对照 / 调试）。
   double get centerX => left + width / 2;
 
@@ -64,16 +75,17 @@ class GlobalLookupFrameRect {
         other.left == left &&
         other.top == top &&
         other.width == width &&
-        other.height == height;
+        other.height == height &&
+        other.showBelow == showBelow;
   }
 
   @override
-  int get hashCode => Object.hash(left, top, width, height);
+  int get hashCode => Object.hash(left, top, width, height, showBelow);
 
   @override
   String toString() {
     return 'GlobalLookupFrameRect(left: $left, top: $top, width: $width, '
-        'height: $height)';
+        'height: $height, showBelow: $showBelow)';
   }
 }
 
@@ -145,6 +157,9 @@ GlobalLookupFrameRect computeFrameRect({
   }
 
   // --- centerY()（Hoshi :59-79）---
+  // showBelow（Hoshi :86）：下空间 >= 弹窗高则放下方，否则翻到上方。竖排放左/右，
+  // 不翻转，恒 true。
+  final bool showBelow = isVertical || spaceBelow >= height;
   final double centerY;
   if (isVertical) {
     final double rawY = selY + height / 2;
@@ -154,8 +169,6 @@ GlobalLookupFrameRect computeFrameRect({
       screenH - height / 2 - screenBorderPadding,
     );
   } else {
-    // showBelow（Hoshi :86）：下空间 >= 弹窗高则放下方，否则翻到上方。
-    final bool showBelow = spaceBelow >= height;
     final double rawY = showBelow
         ? selY + selH + popupPadding + height / 2
         : selY - popupPadding - height / 2;
@@ -171,6 +184,7 @@ GlobalLookupFrameRect computeFrameRect({
     top: centerY - height / 2,
     width: width,
     height: height,
+    showBelow: showBelow,
   );
 }
 

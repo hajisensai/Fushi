@@ -1,3 +1,6 @@
 [submodule "references/ReinaManager"]
 	path = references/ReinaManager
 	url = https://github.com/huoshen80/ReinaManager.git
+[submodule "references/ShokoServer"]
+	path = references/ShokoServer
+	url = https://github.com/ShokoAnime/ShokoServer.git

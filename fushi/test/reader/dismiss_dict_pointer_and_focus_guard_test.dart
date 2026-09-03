@@ -20,48 +20,98 @@ void main() {
     pageSrc = f.readAsStringSync().replaceAll('\r\n', '\n');
   });
 
-  group('症① 鼠标键关词典：onPointerSeek 消费 readerDismissDict 鼠标绑定', () {
+  group('症① 鼠标键关词典：onPointerSeek 把非位置型按钮交给通用执行体', () {
     late String seekBody;
+    late String seekBranch;
     setUpAll(() {
       final int h = corpus.indexOf("handlerName: 'onPointerSeek'");
       expect(h, greaterThanOrEqualTo(0), reason: 'onPointerSeek handler 必须存在');
       // 取该 handler 回调体（到下一个 addJavaScriptHandler 前的一段），足够覆盖判定链。
       final int next = corpus.indexOf('addJavaScriptHandler', h + 1);
       seekBody = corpus.substring(h, next > h ? next : corpus.length);
+
+      // 「位置型动作」分支体（花括号配对取整块），用于结构性断言：controller 门控必须
+      // 关在这个分支**里面**，不能挡住后面的通用派发。
+      final int b = seekBody.indexOf('if (isSeekToClickedSentenceButton(');
+      expect(b, greaterThanOrEqualTo(0), reason: '位置型动作分支必须存在');
+      final int open = seekBody.indexOf('{', b);
+      expect(open, greaterThanOrEqualTo(0));
+      int depth = 0;
+      int close = open;
+      for (int k = open; k < seekBody.length; k++) {
+        if (seekBody[k] == '{') depth++;
+        if (seekBody[k] == '}') {
+          depth--;
+          if (depth == 0) {
+            close = k;
+            break;
+          }
+        }
+      }
+      seekBranch = seekBody.substring(open, close + 1);
     });
 
-    test('鼠标键经 resolveMouse(reader scope) 解析成 readerDismissDict', () {
-      expect(seekBody.contains('resolveMouse('), isTrue,
-          reason: '鼠标键必须经 resolveMouse 解析');
-      expect(seekBody.contains('ShortcutScope.reader'), isTrue,
-          reason: '关词典鼠标键属 reader scope');
-      expect(seekBody.contains('ShortcutAction.readerDismissDict'), isTrue,
-          reason: '必须判定 readerDismissDict 动作，否则鼠标键无消费者（原始症①）');
+    // BUG-2031：本条**加强**了原来的不变式。原守卫钉的是「seekBody 里出现
+    // ShortcutAction.readerDismissDict」，那恰恰是 BUG-2031 的根因形状——handler 硬编码
+    // 判某一个动作，于是 reader/audiobook scope 明明开着 mouse 通道、设置页也给录入
+    // 入口，除这一个（加 seek-to-sentence）之外**绑什么都没反应**。现在改为断言它必须
+    // 走通用解析 + 通用执行体，并**禁止**再出现硬编码动作名。
+    test('非位置型按钮走通用解析 + 通用执行体，不得硬编码单个动作', () {
+      expect(seekBody.contains('resolveMouseBindingActionForButton('), isTrue,
+          reason: '必须按 scope 阶梯通用解析，而不是只判某一个动作');
+      expect(seekBody.contains('_executeShortcutAction('), isTrue,
+          reason: '必须汇进与键盘/手柄同一个执行体');
+      expect(seekBody.contains('ShortcutAction.readerDismissDict'), isFalse,
+          reason: '硬编码单个动作 = 回到「只有它能用、其余全是死项」的 BUG-2031 根因');
     });
 
-    test('命中 readerDismissDict 且弹窗可见时关整栈（clearDictionaryResult）', () {
-      expect(seekBody.contains('isDictionaryShown'), isTrue,
+    test('关词典语义仍在（弹窗可见才关整栈），只是搬进了通用执行体', () {
+      // 语义没丢：readerDismissDict 的分支体必须仍然「仅弹窗可见时 clearDictionaryResult」。
+      final int c =
+          corpus.indexOf('case ShortcutAction.readerDismissDict:');
+      expect(c, greaterThanOrEqualTo(0),
+          reason: '通用执行体必须仍有 readerDismissDict 分支，否则鼠标键关不掉词典');
+      final int nextCase = corpus.indexOf('case ShortcutAction.', c + 1);
+      final String branch =
+          corpus.substring(c, nextCase > c ? nextCase : corpus.length);
+      expect(branch.contains('isDictionaryShown'), isTrue,
           reason: '仅在弹窗可见时关，无弹窗不消费');
-      expect(seekBody.contains('clearDictionaryResult()'), isTrue,
+      expect(branch.contains('clearDictionaryResult()'), isTrue,
           reason: '与键盘 Esc/readerDismissDict 同语义关整栈');
     });
 
     test('关词典判定独立于 _audiobookController（纯 EPUB 无有声书也能关）', () {
-      // 关词典分支必须排在 `_audiobookController == null` 早退之前，否则纯 EPUB
-      // （controller 恒 null）永远走不到关词典。断言两个片段的先后顺序。
-      final int dismissIdx =
-          seekBody.indexOf('ShortcutAction.readerDismissDict');
-      final int controllerGuardIdx =
-          seekBody.indexOf('_audiobookController == null');
-      expect(dismissIdx, greaterThanOrEqualTo(0));
-      expect(controllerGuardIdx, greaterThanOrEqualTo(0));
-      expect(dismissIdx, lessThan(controllerGuardIdx),
-          reason: '关词典判定必须在 controller==null 早退之前');
+      // 结构性断言而不是「谁在前」：controller 门控必须**关在位置型动作分支里面**
+      // （seek 才需要 controller），通用派发在分支之外，故纯 EPUB（controller 恒 null）
+      // 也能走到关词典。原守卫用下标先后表达这件事，重构后已不适用。
+      expect(seekBranch.contains('_audiobookController == null'), isTrue,
+          reason: 'controller 门控属于 seek 分支自己的前提');
+      final String outside = seekBody.replaceFirst(seekBranch, '');
+      expect(outside.contains('_audiobookController'), isFalse,
+          reason: '通用派发路径一旦碰 controller，纯 EPUB 就再也关不掉词典');
+      expect(outside.contains('resolveMouseBindingActionForButton('), isTrue,
+          reason: '通用派发必须在 controller 门控之外');
     });
 
     test('seek-to-sentence 旧路径保留（不回归中键点句）', () {
       expect(seekBody.contains('isSeekToClickedSentenceButton'), isTrue);
       expect(seekBody.contains('_seekToClickedSentence('), isTrue);
+    });
+
+    // BUG-2031：指针归宿主的平台上，本 handler 主动让位给页面根 Listener；那时
+    // 「弹窗可见」这半边由 barrier 的 onNonPrimaryButtonDown 承接，其落地判据是
+    // dictionaryPopupForwardedActions。少了这条，Windows 上侧键关词典整条失效。
+    test('弹窗可见那半边由转发动作覆盖（readerDismissDict 必须在转发集合里）', () {
+      final int start =
+          pageSrc.indexOf('get dictionaryPopupForwardedActions');
+      expect(start, greaterThanOrEqualTo(0),
+          reason: 'reader 必须声明转发动作集合');
+      final int end = pageSrc.indexOf('};', start);
+      final String body = pageSrc.substring(start, end);
+      expect(body.contains('ShortcutAction.readerDismissDict'), isTrue,
+          reason: '弹窗可见时按侧键关词典靠它；删掉 = BUG-1071 原症状复现');
+      expect(body.contains('ShortcutAction.globalBack'), isTrue,
+          reason: '「返回上一级」在弹窗持焦时也必须能关词典');
     });
   });
 

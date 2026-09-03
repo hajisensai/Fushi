@@ -378,4 +378,32 @@ void main() {
       );
     });
   });
+
+  group('处置文案按「要不要用户动手」分流', () {
+    // staleSession（旧映射暂不可复用，宿主有界重试就会好）与 residentHookMismatch
+    // （驻留 hook DLL 已证明不同，Windows 不卸载已注入 DLL）一度共用同一句
+    // 「请重启一次游戏」。对前者是谎报要动手，对后者又和「等一下」混成一句，用户
+    // 只能瞎试。分流判据必须与 galHookFailureIsRetryable 同源。
+    test('可重试与必须重启游戏的两条不得共用同一句文案', () {
+      final String? transient =
+          galHookFailureLabel(GalHookInjectorFailure.staleSession);
+      final String? fatal =
+          galHookFailureLabel(GalHookInjectorFailure.residentHookMismatch);
+      expect(transient, isNotNull);
+      expect(fatal, isNotNull);
+      expect(
+        transient,
+        isNot(fatal),
+        reason: '两者的处置相反（等它自愈 / 必须重启游戏），共用一句等于没说',
+      );
+      expect(
+        galHookFailureIsRetryable(GalHookInjectorFailure.staleSession),
+        isTrue,
+      );
+      expect(
+        galHookFailureIsRetryable(GalHookInjectorFailure.residentHookMismatch),
+        isFalse,
+      );
+    });
+  });
 }

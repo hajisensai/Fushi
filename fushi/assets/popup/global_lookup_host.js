@@ -14,10 +14,11 @@
 // non-opaque origin). Frames load https://hibiki.popup/popup.html and the host
 // injects per-frame settings + entries via iframe.contentWindow.
 //
-// renderStack(payload) is the single Dart entry point. payload =
-//   { popups: [ { id, parentIndex, frame:{left,top,width,height}, settingsJs } ] }
-// built by global_lookup_render.buildStackRenderScript. The host diffs the
-// payload against its live frames Map.
+// renderStack(payload) is the single Dart entry point. Modern descriptors carry
+// a small staticRevision + per-lookup entriesJs/renderJs; only an unknown
+// revision also carries staticHeadJs/staticTailJs. Legacy settingsJs remains a
+// recovery compatibility path. The host diffs the payload against its live
+// frames Map.
 //
 // P3c (this file) adds, on top of P3b:
 //   - C1: re-anchor a child iframe onLinkClick LOCAL rect to full-screen CSS px
@@ -55,6 +56,17 @@
   var POPUP_SRC = 'https://hibiki.popup/popup.html';
   var LAYER_ID = 'global-lookup-host-layer';
   var STYLE_ID = 'global-lookup-host-style';
+  var FRAME_CHROME_STYLE_ID = 'global-lookup-frame-chrome-owner-style';
+  var FRAME_CHROME_CLASS = 'global-lookup-frame-chrome-owned';
+  // BUG-1609 follow-up — the popup document is served by WebView2's persistent
+  // virtual-host cache, while this host script is loaded from the current app
+  // bundle and injected by C++ on every process launch.  Keep the canvas guard
+  // here so a rebuilt app cannot keep painting the old square document canvas
+  // merely because a stale popup.css response survived under hibiki.popup.
+  // A present-but-fully-transparent background prevents CSS body-background
+  // propagation without adding a single opaque pixel.
+  var FRAME_CANVAS_GUARD_BACKGROUND =
+      'linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0))';
 
   // D1 — reveal gate. A shell paints only when BOTH flags are 'true'. The
   // attribute selector below is the single source of truth for visibility; JS
@@ -66,12 +78,9 @@
   // content-ready after this budget so the card is not stuck invisible. Mirrors
   // the Dart 450ms reveal safety (controller.dart) one layer down.
   var CONTENT_READY_SAFETY_MS = 450;
-  // TODO-1231 v3 (BUG-583) — reveal-ready safety. A shell held hidden because the
-  // committed window origin does not YET cover it (an up/left-cascading child whose
-  // covering commitLayerShift is still round-tripping through Dart) must never be
-  // stuck: force reveal-ready after this budget so a lost/late commitLayerShift
-  // still shows the card (mildly-clipped fallback, never invisible). Mirrors
-  // CONTENT_READY_SAFETY_MS.
+  // Reveal-ready recovery budget. Expiry requests a fresh geometry measurement;
+  // it deliberately never forces a nested card through an uncommitted HWND/HRGN
+  // boundary, because that recreates the clipped intermediate frame.
   var REVEAL_READY_SAFETY_MS = 450;
   // Sub-pixel slack for the origin-coverage compare (device-pixel-ratio
   // rounding at the C++ window boundary) so an on-edge shell counts as covered.
@@ -86,8 +95,38 @@
   var FRAME_CONTENT_TOP = 0;
 
   var frames = new Map();
+  // BUG-1833 ancestor replacement — a logical stack can replace a whole suffix
+  // in one render (R,A,B -> R,C). Keep that retiring suffix painted until every
+  // frame in the incoming suffix has both rendered and joined the matching
+  // native geometry transaction; otherwise removeMissing exposes a root-only
+  // compositor frame while the replacement is still reveal-gated.
+  var pendingSuffixSwap = null;
+  // BUG-1833 — logical child ids stay monotonic (late messages fail closed), but
+  // the expensive popup.html browsing context is physical and reusable. Keep one
+  // hidden child realm warm: enough for the first nested lookup, then replenish
+  // one look-ahead slot while the user reads the current card. The bound is
+  // deliberate — a dictionary frame owns popup.js, observers and decoded fonts.
+  var STANDBY_POOL_SIZE = 1;
+  var STANDBY_ID_PREFIX = '__global-lookup-standby-';
+  var standbyRecords = [];
+  var standbySeq = 0;
+  var standbyStaticRevision = null;
+  var standbyRefillScheduled = false;
+  var standbyRefillGeneration = 0;
+  var STANDBY_REFILL_WATCHDOG_MS = 50;
+  // BUG-1833 — large immutable popup settings (notably an inlined custom font)
+  // belong to the host lifetime, not to a single lookup. The host converts each
+  // data:font/...;base64 source into ONE same-origin Blob URL per revision, then
+  // drops the base64 descriptor. Every iframe still receives exactly the same
+  // @font-face family/style/weight/format CSS, but evals only a short blob: URL
+  // instead of reparsing ~13 MB of base64. Keeping the rewritten source here also
+  // lets an iframe reload rebuild its realm without asking Dart to resend it.
+  var staticSettingsByRevision = new Map();
+  // Request coalescing is route-scoped. A request posted for route A can be
+  // rejected after beginLookup binds route B; keying only by revision would
+  // then suppress B's retry forever and leave the new shell content-gated.
+  var staticSettingsRequests = new Set();
   var frameSources = new WeakMap();
-  var wrappedWindows = new WeakSet();
   // TODO-1188 — bridge round-trip routing. popup.js runs inside a CHILD iframe,
   // so its window.flutter_inappwebview.callHandler Promise lives in THAT iframe's
   // popup_bridge_adapter realm (each iframe adapter mints its own _seq from 1, so
@@ -109,6 +148,17 @@
   // but MUST still refresh the native hit/paint region, or clicks on the new
   // card would fall through the stale region hole.
   var lastShellRectsKey = '';
+  // BUG-1833 follow-up — bbox and shellRects form one native geometry
+  // transaction. A nested shell must not paint merely because popup.js finished:
+  // the HWND may still have the previous right/bottom extent (or the old HRGN
+  // may still contain a transparent gap). Keep epochs monotonic for the whole
+  // host lifetime so a delayed commit from lookup A can never acknowledge B.
+  var nextGeometryEpoch = 0;
+  var announcedGeometryEpoch = 0;
+  var committedGeometryEpoch = 0;
+  var announcedGeometryKey = '';
+  var announcedGeometryBounds = null;
+  var committedGeometryBounds = null;
   // TODO-1079 (C) / TODO-1095 — the root frame id of the currently-rendered
   // stack. TODO-1095 makes the root frame id STABLE across hotkey lookups (the
   // root iframe is REUSED, not rebuilt per lookup — see beginLookup), so the
@@ -146,27 +196,30 @@
   // behaviour, so the common cascade + first reveal are unchanged.
   var originFloorLeft = 0;
   var originFloorTop = 0;
+  // The gal direct surface deliberately does not reserve a near-viewport-sized
+  // origin floor on its first root card. Once an up/left child really expands
+  // the HWND, however, Dart keeps that outward origin for the rest of the live
+  // lookup so closing the child cannot move the parent. Mirror that ratchet in
+  // the host geometry truth: shellRects and bbox must stay relative to the SAME
+  // held origin, otherwise the native clip/mask is translated away from the
+  // WebView layer after N -> 1.
+  var galOriginRatchetLeft = Infinity;
+  var galOriginRatchetTop = Infinity;
 
-  // spec 2026-07-10 — host layout mode. 'cascade' (default) = the transient
-  // global-lookup geometry (content-sized window, off-screen self-measure ->
-  // overlaySize -> reveal). 'panel' = the persistent clipboard panel: the
-  // window rect is FIXED (user-remembered), the ROOT shell fills the viewport
-  // below the panel bar (content scrolls inside the iframe), measureAndReport
-  // is short-circuited (no reveal-resize loop) and a blank click never
-  // dismisses (persistent semantics). Carried per renderStack payload so a
-  // cascade payload without the key is byte-identical to the pre-panel host.
-  var layoutMode = 'cascade';
-  // Panel top bar height (CSS px): grip + pin + close. Root shell top offset.
-  var PANEL_BAR_HEIGHT = 28;
-  // Panel pin VISUAL state. The truth source is the Dart-side pref (native
-  // SetTopmost applies it); Dart syncs this visual via setPanelPinnedVisual on
-  // panel show so the bar icon matches the remembered pref.
-  var panelPinnedVisual = true;
-  // Panel block-capture VISUAL state（防截屏）. Truth source is the Dart pref
-  // clipboardPanelBlockCapture (native SetWindowDisplayAffinity applies it);
-  // Dart syncs this visual via setPanelBlockCaptureVisual. Default true =
-  // capture blocked (shield bright); toggled off dims the shield (panel-block-off).
-  var panelBlockCaptureVisual = true;
+  // BUG-1857 — 拖 root 卡右下角 grip 期间的「live-fit」状态。
+  //
+  // 拖拽走 native 模态 size 循环：窗口（viewport）每帧随光标长大，但 root 卡的
+  // 宽高是 Dart 钉死的 descriptor.frame 固定 px（applyShellStyle），host 又没有任何
+  // resize 监听 → 拖拽全程卡片一个像素不动、只有透明空白在长，松手后 Dart 收到
+  // WM_EXITSIZEMOVE 的 windowMoved 重排才一步跳到位。这里让 root 卡在拖拽期间跟着
+  // viewport 走：root 尺寸 = grip 按下时的 root 尺寸 + viewport 增量。与 Dart 松手
+  // 后的折算同一口径（resolveOverlayResizeFromDelta：当前尺寸 + 物理增量÷设备像素比，
+  // 且 CSS 增量 == 物理增量÷设备像素比），所以松手时 Dart 的权威重排只是把同一尺寸再写一遍
+  // （高度封顶到内容那一步除外）。不写 Dart、不重渲染词条、不发 overlaySize，
+  // 拖拽期间不会有第二个 SetWindowPos 和模态循环打架。
+  // 嵌套子卡锚在父卡词上，不动。
+  var liveResize = null;
+  var LIVE_RESIZE_MIN_PX = 80;
 
   // Route identity for the lookup currently being rendered. Desktop callers
   // predating the routed galgame card contract omit this value and therefore
@@ -279,21 +332,35 @@
   // two compositor frames, but race them with a bounded fallback. Route and
   // round identity below make the two completion sources exactly-once.
   var GAL_DIRTY_RAF_FALLBACK_MS = 120;
-  function scheduleMeasure(routeSnapshot) {
+  // captureReady has the same off-screen WebView2 scheduling constraint as a
+  // dirty-frame acknowledgement.  The timer is a bounded liveness fallback,
+  // not a second completion source: route/epoch/token checks below make a late
+  // compositor frame a no-op after the timer wins.
+  var GAL_CAPTURE_READY_RAF_FALLBACK_MS = 120;
+  function scheduleMeasure(routeSnapshot, allowCachedMeasurements) {
     var route = cloneRoute(routeSnapshot || activeRoute);
     var key = routeKey(route);
     if (measureSchedules.has(key)) {
+      // Any ordinary/content-driven request upgrades a pending truncate-only
+      // cached pass to a real layout read. Never let the optimisation mask an
+      // actual DOM growth notification.
+      if (allowCachedMeasurements !== true) {
+        measureSchedules.get(key).allowCached = false;
+      }
       return;
     }
     var raf = (typeof window.requestAnimationFrame === 'function')
         ? window.requestAnimationFrame
         : null;
     var runner = function () {
+      var pending = measureSchedules.get(key);
       measureSchedules.delete(key);
-      measureAndReport(route);
+      measureAndReport(route, pending && pending.allowCached === true);
     };
     if (raf) {
-      measureSchedules.set(key, true);
+      measureSchedules.set(key, {
+        allowCached: allowCachedMeasurements === true,
+      });
       try {
         raf(runner);
         return;
@@ -302,7 +369,9 @@
       }
     }
     if (typeof window.queueMicrotask === 'function') {
-      measureSchedules.set(key, true);
+      measureSchedules.set(key, {
+        allowCached: allowCachedMeasurements === true,
+      });
       try {
         window.queueMicrotask(runner);
         return;
@@ -312,7 +381,7 @@
     }
     // No deferral primitive (node harness): measure synchronously. De-dup on the
     // bbox key in measureAndReport keeps this from over-posting.
-    measureAndReport(route);
+    measureAndReport(route, allowCachedMeasurements === true);
   }
 
   // Interactive changes can alter pixels without changing the shell bbox, so
@@ -419,14 +488,14 @@
     var style = document.createElement('style');
     style.id = STYLE_ID;
     // F2 — outer SHELL chrome (ported from hoshi reader-popup-host.js shell).
-    // TODO-893 — RESPONSIBILITY SPLIT to kill the double-border (symptom 1):
-    // the iframe inside the shell already paints the THEME card background AND
-    // the single visible card border (popup.css `html.global-lookup body`
-    // border + radius + padding). The shell therefore owns ONLY the rounded
-    // clip — it must NOT draw a second `border` (that produced two concentric
-    // grey rings with a white gap between them). `border-radius` stays so the
-    // overflow clip follows the same rounded silhouette as the body border;
-    // `background:transparent` keeps the shell from painting a second fill.
+    // The base state stays transparent/borderless until the iframe has loaded
+    // its actual theme. syncFrameShellChrome then transfers the iframe body's
+    // ONE computed fill + border to this fixed viewport shell and disables the
+    // duplicate body chrome. The shell must own the final silhouette: body is a
+    // scrolling document, and its right edge stops before WebView2's reserved
+    // scrollbar gutter, so body-owned radius leaves the visible right corners
+    // square even while the native HRGN correctly rounds a transparent strip
+    // farther out. No hard-coded theme colour lives in the host.
     //
     // BUG-709 — NO `box-shadow`. The overlay HWND is a NON-layered, OPAQUE
     // WebView2 window (global_lookup_window.cpp: "No WS_EX_LAYERED"). On such a
@@ -436,12 +505,16 @@
     // onto the window's own transparent (=hard dark) surface as an ~11px DARK
     // HALO ringing the card's corners/edges, which the native rounded window
     // region (SetWindowRgn) cannot clip away. That halo is exactly the "black
-    // border outside the rounded corners" the user reported. A real drop-shadow
+    // border outside the rounded corners" the user reported. A CSS drop-shadow
     // is physically impossible on a non-layered WebView2 window (the design
-    // already conceded this), so the shell casts none: the rounded silhouette
-    // comes from SetWindowRgn + the body's 1px card border, with nothing painted
-    // outside the card. All rules scoped to .global-lookup-frame-shell -> the
-    // in-app popup (no host.js) is never touched.
+    // already conceded this), so the shell casts none IN CSS: the rounded
+    // silhouette comes from SetWindowRgn + the body's 1px card border, with
+    // nothing painted outside the card. The real per-card soft shadow is drawn
+    // NATIVELY by the companion layered shadow window (global_lookup_shadow.cpp,
+    // 2026-08-23) sitting right below this HWND — do NOT reintroduce a CSS
+    // box-shadow here on top of it. All rules scoped to
+    // .global-lookup-frame-shell -> the in-app popup (no host.js) is never
+    // touched.
     // D1 reveal gate: a shell paints only when BOTH data-* flags are 'true'.
     style.textContent =
         // D1 reveal gate FIRST (kept as its own rule so the gate contract stays
@@ -451,6 +524,7 @@
         '.global-lookup-frame-shell{visibility:hidden;opacity:0;}' +
          '.global-lookup-frame-shell{' +
          'box-sizing:border-box;overflow:hidden;background:transparent;' +
+         'border:0;' +
          'border-radius:10px;' +
         // TODO-890 — slide-out close: the shell tweens transform+opacity so a
         // dismiss slides the card off-screen instead of vanishing instantly
@@ -458,6 +532,16 @@
         // ease-out matches the Flutter side. Scoped to the shell selector so
         // it never leaks into the in-app popup (which never loads host.js).
          'transition:transform 200ms ease-out, opacity 200ms ease-out;}' +
+        // Paint the ONE visible border without giving it layout width.  The
+        // iframe body keeps its existing (transparent) border allocation, so
+        // content width, scrollHeight and zoom measurement stay byte-for-byte
+        // compatible while the viewport-stable shell owns the actual pixels.
+        '.global-lookup-frame-shell::after{' +
+        'content:"";position:absolute;inset:0;box-sizing:border-box;' +
+        'border:var(--global-lookup-shell-border-width,0px) ' +
+        'var(--global-lookup-shell-border-style,solid) ' +
+        'var(--global-lookup-shell-border-color,transparent);' +
+        'border-radius:inherit;pointer-events:none;z-index:4;}' +
         // WebView2 promotes each iframe to its own composition surface.  In the
         // game-card CapturePreview path that surface can escape the parent's
         // overflow:hidden clip, leaving the iframe canvas square beyond the
@@ -493,286 +577,19 @@
         '.global-lookup-frame-shell[data-theme="dark"] ' +
         '.global-lookup-close:hover{' +
         'background:rgba(235,235,245,0.16);color:rgba(235,235,245,0.92);}' +
-        // 剪贴板复制历史按钮（🕘）——瞬态覆盖窗 ROOT 卡左上角（与 close-X 右上角对称）。
-        // 必须挂 SHELL 内（z-index 高于 iframe、pointer-events:auto），否则被 native 按
-        // shell 卡矩形裁掉（同 close-X / resize-grip 的 BUG-749 约束）。面板模式另有面板
-        // 栏🕘，此按钮只在 cascade 的 root 卡出现。
-        '.global-lookup-frame-shell .global-lookup-history{' +
-        'position:absolute;top:2px;left:6px;z-index:5;' +
-        'width:22px;height:22px;line-height:22px;text-align:center;' +
-        'font-size:14px;cursor:pointer;pointer-events:auto;' +
-        'border-radius:11px;' +
-        'transition:background-color 120ms ease-out;}' +
-        '.global-lookup-frame-shell .global-lookup-history:hover{' +
-        'background:rgba(120,120,128,0.16);}' +
-        '.global-lookup-frame-shell[data-theme="dark"] ' +
-        '.global-lookup-history:hover{background:rgba(235,235,245,0.16);}' +
         // Phase C（弹窗尺寸精细化 2026-07-13）— 瞬态覆盖窗（cascade 模式）ROOT 卡的
-        // 右下角 resize grip：拖它进 native 模态 size 循环（beginWindowResize，与面板
-        // grip 同一通路）。必须挂在 SHELL 内（z-index 高于 iframe、pointer-events:auto），
+        // 右下角 resize grip：拖它进 native 模态 size 循环（beginWindowResize）。
+        // 必须挂在 SHELL 内（z-index 高于 iframe、pointer-events:auto），
         // 因为瞬态窗被 native 按 shell 卡矩形做区域裁剪（BUG-749 gap click-through）——
         // 挂在窗口层的角落 grip 会被裁掉不可见/不可点，只有 root 卡区域在裁剪区内。
-        // 透明无背景（cursor 提示可拖），与面板 grip 一致，避免遮挡卡片文字。
+        // 透明无背景（cursor 提示可拖），避免遮挡卡片文字。
         '.global-lookup-frame-shell .global-lookup-resize-grip{' +
         'position:absolute;right:0;bottom:0;width:16px;height:16px;' +
-        'z-index:6;cursor:nwse-resize;pointer-events:auto;}' +
-        // spec 2026-07-10 — panel top bar (grip + pin + close). Fixed to the
-        // window top, above the root shell (which starts at PANEL_BAR_HEIGHT).
-        // pointer-events:auto so the grip mousedown reaches the drag handler
-        // even though the layer beneath is pointer-events:none. Only created in
-        // panel mode (ensurePanelBar), so the transient overlay never carries
-        // this DOM/CSS.
-        // 浅色模式对比修复：bar 底 + grip 文字 + 按钮字形都是浅色主题下的默认样式，
-        // 原来 bar 底仅 10% 灰、字形 0.75 半透深灰，压在亮游戏上的半透明浅窗被冲淡
-        // 「看不清」。加深到接近全实心深灰，并给 bar 一条底边界定轮廓（dark 变体在下面
-        // 覆盖，深色窗不受影响）。
-        '#global-lookup-panel-bar{' +
-        'position:fixed;left:0;top:0;right:0;height:28px;' +
-        'display:flex;align-items:center;z-index:2147483001;' +
-        'pointer-events:auto;user-select:none;-webkit-user-select:none;' +
-        'background:rgba(120,120,128,0.18);' +
-        'border-bottom:1px solid rgba(120,120,128,0.20);' +
-        'border-radius:10px 10px 0 0;}' +
-        '#global-lookup-panel-bar .panel-grip{' +
-        'flex:1;height:100%;cursor:move;display:flex;align-items:center;' +
-        'padding-left:10px;font-family:"Segoe UI",sans-serif;font-size:11px;' +
-        'color:rgba(70,70,78,0.92);letter-spacing:2px;}' +
-        // BUG-768 — persistent chip background so the pin/close read as tappable
-        // affordances on ANY window surface (light or dark); glyph color is made
-        // theme-aware below so it stays legible against that chip.
-        '#global-lookup-panel-bar .panel-btn{' +
-        'width:24px;height:24px;line-height:24px;text-align:center;' +
-        'margin-right:4px;font-family:"Segoe UI Symbol","Segoe UI",sans-serif;' +
-        'font-size:14px;cursor:pointer;border-radius:12px;' +
-        'background:rgba(120,120,128,0.24);color:rgba(30,30,35,0.95);}' +
-        '#global-lookup-panel-bar .panel-btn:hover{' +
-        'background:rgba(120,120,128,0.36);color:rgba(20,20,24,1);}' +
-        // BUG-768 — dark-window variant (stamped via data-theme in renderStack):
-        // light glyph + light chip so the buttons don't vanish on a dark surface.
-        '#global-lookup-panel-bar[data-theme="dark"] .panel-btn{' +
-        'background:rgba(235,235,245,0.14);color:rgba(235,235,245,0.72);}' +
-        '#global-lookup-panel-bar[data-theme="dark"] .panel-btn:hover{' +
-        'background:rgba(235,235,245,0.24);color:rgba(235,235,245,0.95);}' +
-        // 深色窗:grip 提示文字改回浅色(默认的深灰在深色窗上会消失)。
-        '#global-lookup-panel-bar[data-theme="dark"] .panel-grip{' +
-        'color:rgba(235,235,245,0.66);}' +
-        '#global-lookup-panel-bar .panel-btn.panel-pin-off{opacity:0.62;}' +
-        // 防截屏按钮关闭态（允许截图）时同样调暗，与 pin-off 一致。
-        '#global-lookup-panel-bar .panel-btn.panel-block-off{opacity:0.62;}' +
-        // Bottom-right resize grip (posts beginWindowResize).
-        '#global-lookup-panel-resize{' +
-        'position:fixed;right:0;bottom:0;width:16px;height:16px;' +
-        'cursor:nwse-resize;z-index:2147483001;pointer-events:auto;}' +
-        // 真机反馈：面板 root 卡不画 per-shell 关闭 ×（与面板栏 × 重复；
-        // 嵌套子卡的 × 保留）。
-        '.global-lookup-frame-shell[data-panel-root="true"] ' +
-        '.global-lookup-close{display:none;}' +
-        // 剪贴板复制历史覆盖层（面板栏🕘 / 瞬态 root 卡🕘 触发）。渲染进 ROOT 卡
-        // shell 内（绝对铺满、盖住 iframe），避免瞬态窗被 native 按 shell 矩形裁剪
-        // 时历史面板落到透明裁剪区外看不见（与 BUG-749 gap click-through 同源）。
-        '.clipboard-history-overlay{' +
-        'position:absolute;left:0;top:0;width:100%;height:100%;' +
-        'box-sizing:border-box;z-index:5;display:flex;flex-direction:column;' +
-        'background:#ffffff;color:#1c1c1e;' +
-        'font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}' +
-        '.global-lookup-frame-shell[data-theme="dark"] .clipboard-history-overlay{' +
-        'background:#1c1c1e;color:rgba(235,235,245,0.92);}' +
-        '.clipboard-history-overlay .clipboard-history-head{' +
-        'display:flex;align-items:center;gap:8px;padding:8px 10px;' +
-        'border-bottom:1px solid rgba(120,120,128,0.24);flex:0 0 auto;}' +
-        '.clipboard-history-overlay .clipboard-history-title{' +
-        'flex:1 1 auto;font-weight:600;overflow:hidden;text-overflow:ellipsis;' +
-        'white-space:nowrap;}' +
-        '.clipboard-history-overlay .clipboard-history-btn{' +
-        'flex:0 0 auto;cursor:pointer;padding:2px 8px;border-radius:6px;' +
-        'user-select:none;color:inherit;opacity:0.8;}' +
-        '.clipboard-history-overlay .clipboard-history-btn:hover{' +
-        'background:rgba(120,120,128,0.16);opacity:1;}' +
-        '.clipboard-history-overlay .clipboard-history-list{' +
-        'flex:1 1 auto;overflow-y:auto;overflow-x:hidden;}' +
-        '.clipboard-history-overlay .clipboard-history-row{' +
-        'padding:8px 10px;border-bottom:1px solid rgba(120,120,128,0.16);' +
-        'cursor:pointer;user-select:none;}' +
-        '.clipboard-history-overlay .clipboard-history-row:hover{' +
-        'background:rgba(120,120,128,0.12);}' +
-        '.clipboard-history-overlay .clipboard-history-text{' +
-        'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;' +
-        'overflow:hidden;word-break:break-word;}' +
-        '.clipboard-history-overlay .clipboard-history-time{' +
-        'margin-top:2px;font-size:11px;opacity:0.5;}' +
-        '.clipboard-history-overlay .clipboard-history-empty{' +
-        'flex:1 1 auto;display:flex;align-items:center;justify-content:center;' +
-        'opacity:0.5;padding:24px;text-align:center;}';
+        'z-index:6;cursor:nwse-resize;pointer-events:auto;}';
     var head = document.head ||
         (document.getElementsByTagName &&
             document.getElementsByTagName('head')[0]);
     (head || document.documentElement || document.body).appendChild(style);
-  }
-
-  // spec 2026-07-10 — the panel top bar: drag grip + pin toggle + close. Host
-  // chrome (postToHost, no bridge id): beginWindowDrag/beginWindowResize are
-  // intercepted natively (HTCAPTION modal loop); panelPin/panelClose reach the
-  // Dart panel controller. Idempotent; only called from panel-mode renderStack.
-  function ensurePanelBar() {
-    if (!document || typeof document.createElement !== 'function') {
-      return null;
-    }
-    var existing = document.getElementById('global-lookup-panel-bar');
-    if (existing) {
-      return existing;
-    }
-    ensureStyle();
-    var bar = document.createElement('div');
-    bar.id = 'global-lookup-panel-bar';
-
-    var grip = document.createElement('div');
-    grip.className = 'panel-grip';
-    grip.textContent = '⋯';
-    grip.addEventListener('mousedown', function (event) {
-      if (event) {
-        if (typeof event.preventDefault === 'function') event.preventDefault();
-        if (typeof event.stopPropagation === 'function') {
-          event.stopPropagation();
-        }
-      }
-      postToHost('beginWindowDrag', []);
-    }, true);
-    bar.appendChild(grip);
-
-    // 剪贴板复制历史按钮（🕘）：postToHost('clipboardHistory') → Dart 从 DB 重载
-    // 历史并注入 showClipboardHistory 渲染覆盖层。与 pin/close 同一 host-chrome 范式
-    // （pointerdown 捕获 + stopPropagation，避免触发面板点外收子层）。
-    var historyBtn = document.createElement('div');
-    historyBtn.className = 'panel-btn panel-history';
-    historyBtn.setAttribute('role', 'button');
-    historyBtn.setAttribute('aria-label', 'Clipboard history');
-    historyBtn.textContent = '🕘';
-    historyBtn.addEventListener('pointerdown', function (event) {
-      if (event) {
-        if (typeof event.stopPropagation === 'function') {
-          event.stopPropagation();
-        }
-        if (typeof event.preventDefault === 'function') event.preventDefault();
-      }
-      postToHost('clipboardHistory', []);
-    }, true);
-    bar.appendChild(historyBtn);
-
-    var pinBtn = document.createElement('div');
-    pinBtn.className =
-        'panel-btn panel-pin' + (panelPinnedVisual ? '' : ' panel-pin-off');
-    pinBtn.setAttribute('role', 'button');
-    pinBtn.setAttribute('aria-label', 'Pin');
-    pinBtn.textContent = '📌';
-    var onPin = function (event) {
-      if (event) {
-        if (typeof event.stopPropagation === 'function') {
-          event.stopPropagation();
-        }
-        if (typeof event.preventDefault === 'function') event.preventDefault();
-      }
-      setPanelPinnedVisual(!panelPinnedVisual);
-      postToHost('panelPin', [panelPinnedVisual]);
-    };
-    pinBtn.addEventListener('pointerdown', onPin, true);
-    bar.appendChild(pinBtn);
-
-    // 防截屏按钮（🛡）：切换 SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)。
-    // 默认开（盾牌亮）= 面板不进截图/录屏；关（盾牌变暗）= 允许被截。视觉态由
-    // Dart 经 setPanelBlockCaptureVisual 同步（与 pin 同一范式）。
-    var blockBtn = document.createElement('div');
-    blockBtn.className =
-        'panel-btn panel-block' + (panelBlockCaptureVisual ? '' : ' panel-block-off');
-    blockBtn.setAttribute('role', 'button');
-    blockBtn.setAttribute('aria-label', 'Block screen capture');
-    blockBtn.textContent = '🛡';
-    var onBlock = function (event) {
-      if (event) {
-        if (typeof event.stopPropagation === 'function') {
-          event.stopPropagation();
-        }
-        if (typeof event.preventDefault === 'function') event.preventDefault();
-      }
-      setPanelBlockCaptureVisual(!panelBlockCaptureVisual);
-      postToHost('panelBlockCapture', [panelBlockCaptureVisual]);
-    };
-    blockBtn.addEventListener('pointerdown', onBlock, true);
-    bar.appendChild(blockBtn);
-
-    var closeBtn = document.createElement('div');
-    closeBtn.className = 'panel-btn panel-close';
-    closeBtn.setAttribute('role', 'button');
-    closeBtn.setAttribute('aria-label', 'Close');
-    closeBtn.textContent = '×';
-    var onClose = function (event) {
-      if (event) {
-        if (typeof event.stopPropagation === 'function') {
-          event.stopPropagation();
-        }
-        if (typeof event.preventDefault === 'function') event.preventDefault();
-      }
-      postToHost('panelClose', []);
-    };
-    closeBtn.addEventListener('pointerdown', onClose, true);
-    bar.appendChild(closeBtn);
-
-    (document.body || document.documentElement).appendChild(bar);
-
-    var resize = document.createElement('div');
-    resize.id = 'global-lookup-panel-resize';
-    resize.addEventListener('mousedown', function (event) {
-      if (event) {
-        if (typeof event.preventDefault === 'function') event.preventDefault();
-        if (typeof event.stopPropagation === 'function') {
-          event.stopPropagation();
-        }
-      }
-      postToHost('beginWindowResize', []);
-    }, true);
-    (document.body || document.documentElement).appendChild(resize);
-    return bar;
-  }
-
-  // spec 2026-07-10 — syncs the pin button's VISUAL state to the Dart pref
-  // (the truth source; native SetTopmost applies the actual z-order).
-  function setPanelPinnedVisual(pinned) {
-    panelPinnedVisual = !!pinned;
-    var bar = document.getElementById &&
-        document.getElementById('global-lookup-panel-bar');
-    if (!bar) {
-      return;
-    }
-    // children walk (not querySelector) so the node harness's minimal fake DOM
-    // exercises the same code path a real browser does.
-    var kids = bar.children || [];
-    for (var i = 0; i < kids.length; i++) {
-      var kid = kids[i];
-      if (kid && String(kid.className).indexOf('panel-pin') >= 0) {
-        kid.className =
-            'panel-btn panel-pin' + (panelPinnedVisual ? '' : ' panel-pin-off');
-        return;
-      }
-    }
-  }
-
-  // 防截屏 — 把 🛡 按钮视觉态同步到 Dart pref（真相源；native
-  // SetWindowDisplayAffinity 应用真正的捕获排除）。与 setPanelPinnedVisual 同构。
-  function setPanelBlockCaptureVisual(block) {
-    panelBlockCaptureVisual = !!block;
-    var bar = document.getElementById &&
-        document.getElementById('global-lookup-panel-bar');
-    if (!bar) {
-      return;
-    }
-    var kids = bar.children || [];
-    for (var i = 0; i < kids.length; i++) {
-      var kid = kids[i];
-      if (kid && String(kid.className).indexOf('panel-block') >= 0) {
-        kid.className = 'panel-btn panel-block' +
-            (panelBlockCaptureVisual ? '' : ' panel-block-off');
-        return;
-      }
-    }
   }
 
   function ensureLayer() {
@@ -794,7 +611,8 @@
     return layer;
   }
 
-  function applyShellStyle(shell, descriptor) {
+  function applyShellStyle(
+      shell, descriptor, preserveMeasuredHeight, logicalDepth) {
     var f = (descriptor && descriptor.frame) || {};
     // F2 — stamp the resolved brightness so the dark shell border/shadow variant
     // applies (the host document has no data-theme of its own; the render payload
@@ -802,27 +620,6 @@
     var theme = descriptor && descriptor.theme;
     if (theme === 'dark' || theme === 'light') {
       shell.setAttribute('data-theme', theme);
-    }
-    // spec 2026-07-10 panel — the ROOT shell ignores descriptor.frame and fills
-    // the fixed window viewport below the panel bar; the sentence + entries
-    // scroll INSIDE the iframe (fixed window = no reveal-resize loop, so a new
-    // clipboard sentence re-renders in place without any window motion).
-    // Nested children keep their Dart-computed cascade frames (bounded to the
-    // panel rect by the render side).
-    if (layoutMode === 'panel' && descriptor &&
-        typeof descriptor.parentIndex === 'number' &&
-        descriptor.parentIndex < 0) {
-      shell.style.position = 'absolute';
-      shell.style.left = '0px';
-      shell.style.top = PANEL_BAR_HEIGHT + 'px';
-      shell.style.width = '100%';
-      shell.style.height = 'calc(100% - ' + PANEL_BAR_HEIGHT + 'px)';
-      shell.style.zIndex = '0';
-      shell.style.pointerEvents = 'auto';
-      // 真机反馈：面板 root 卡的 per-shell 关闭 × 与面板栏的 × 重复——标记
-      // panel-root，CSS 隐藏 root 卡的 ×（嵌套子卡保留各自的 ×，关子层有用）。
-      shell.setAttribute('data-panel-root', 'true');
-      return;
     }
     shell.style.position = 'absolute';
     // TODO-1189 — establish a per-shell STACKING CONTEXT ordered by insertion
@@ -834,10 +631,13 @@
     // over the child card stacked on top of it (the "X 穿透图层" bug). Giving each
     // shell a z-index equal to its depth makes a deeper child shell fully cover
     // its parent (including the parent's X); only the topmost card's X stays
-    // exposed. The frames Map is insertion-ordered (root first), so layerIndexOf
-    // is the depth. -1 (record not yet tracked) leaves z-index auto.
-    var stackDepth = descriptor && descriptor.id != null
-        ? layerIndexOf(descriptor.id)
+    // exposed. Use the incoming payload index as the logical depth. During an
+    // atomic ancestor replacement the physical frames Map intentionally still
+    // contains the retiring suffix until the replacement has rendered, so its
+    // insertion index is not the new stack depth.
+    var stackDepth = (typeof logicalDepth === 'number' &&
+        isFinite(logicalDepth) && logicalDepth >= 0)
+        ? Math.trunc(logicalDepth)
         : -1;
     if (stackDepth >= 0) {
       shell.style.zIndex = String(stackDepth);
@@ -845,10 +645,24 @@
     shell.style.left = (typeof f.left === 'number' ? f.left : 0) + 'px';
     shell.style.top = (typeof f.top === 'number' ? f.top : 0) + 'px';
     if (typeof f.width === 'number') {
+      if (shell.style.width !== f.width + 'px' && shell.__lookupRecord) {
+        shell.__lookupRecord.contentMeasureDirty = true;
+      }
       shell.style.width = f.width + 'px';
     }
     if (typeof f.height === 'number') {
-      shell.style.height = f.height + 'px';
+      var record = shell.__lookupRecord;
+      var height = f.height;
+      // Opening/replacing a child re-sends every surviving ancestor descriptor.
+      // Its planned height is only a ceiling; restoring that max here made an
+      // unchanged root grow for one frame, then shrink back after measurement,
+      // forcing an otherwise-idle iframe viewport repaint. Preserve the clean
+      // measured height when this frame's content and width are unchanged.
+      if (preserveMeasuredHeight === true && record &&
+          !record.contentMeasureDirty && record.measuredContentHeight > 0) {
+        height = Math.min(height, record.measuredContentHeight);
+      }
+      shell.style.height = height + 'px';
     }
     shell.style.pointerEvents = 'auto';
   }
@@ -869,10 +683,14 @@
     if (!win || !win.chrome || !win.chrome.webview) {
       return;
     }
-    if (wrappedWindows.has(win)) {
+    var currentPost = win.chrome.webview.postMessage;
+    // WindowProxy identity survives an iframe navigation, while the new
+    // document reinstalls popup_bridge_adapter and replaces postMessage. Key
+    // the wrapper by the actual function, not the stable WindowProxy.
+    if (record.wrappedPost && currentPost === record.wrappedPost) {
       return;
     }
-    var native = win.chrome.webview.postMessage;
+    var native = currentPost;
     if (typeof native !== 'function') {
       return;
     }
@@ -884,7 +702,25 @@
     } catch (e) {
       topPost = native.bind(win.chrome.webview);
     }
-    win.chrome.webview.postMessage = function (message) {
+    var wrappedPost = function (message) {
+      // A parked physical realm can still finish an old font/bridge Promise.
+      // It has no logical frame owner, so forwarding would relabel stale work
+      // with whichever monotonic id acquires the realm next.
+      if (!record.active) {
+        // The frame adapter stores its Promise resolver before postMessage.
+        // Settle it locally so standby render/font callbacks do not accumulate
+        // forever, while still publishing no host route or native message.
+        if (message && typeof message === 'object' &&
+            typeof message.__bridgeId !== 'undefined' &&
+            typeof win.__fushiBridgeResolve === 'function') {
+          try {
+            win.__fushiBridgeResolve(message.__bridgeId, null);
+          } catch (e) {
+            // The parked realm is already being torn down.
+          }
+        }
+        return;
+      }
       // A Promise continuation unblocked by an older bridge reply runs as a
       // microtask after __fushiBridgeResolve. installBridgeRouter temporarily
       // exposes that reply's original route in this iframe so a follow-up post
@@ -913,6 +749,7 @@
       try {
         if (message && typeof message === 'object' &&
             message.handler === 'popupRendered') {
+          record.contentMeasureDirty = true;
           markContentReady(record, messageRoute);
         }
       } catch (e) {
@@ -932,7 +769,8 @@
       }
       topPost(out);
     };
-    wrappedWindows.add(win);
+    win.chrome.webview.postMessage = wrappedPost;
+    record.wrappedPost = wrappedPost;
   }
 
   // Re-anchor + frame-stamp a message posted from record iframe. Pure given the
@@ -1031,9 +869,12 @@
       if (event && typeof event.preventDefault === 'function') {
         event.preventDefault();
       }
-      var index = layerIndexOf(frameId);
+      // The physical iframe may have been parked and rebound to a newer logical
+      // child id. Read the live attribute instead of closing over the old id.
+      var liveFrameId = btn.getAttribute('data-close-frame-id') || frameId;
+      var index = layerIndexOf(liveFrameId);
       if (index >= 0) {
-        var record = frames.get(frameId);
+        var record = frames.get(liveFrameId);
         postToHost('dismissPopupAt', [index], record && record.route);
       }
     };
@@ -1052,6 +893,85 @@
   // 进模态 size 循环，松手经 WM_EXITSIZEMOVE 回报窗口 rect 给 Dart 落 overlay 尺寸键。
   // preventDefault + stopPropagation(capture)：不让这次 mousedown 触发 host 的
   // 点外关闭 / 拖出选区。返回 null 时（node harness 无 DOM）createRecord 照常健壮。
+  // BUG-1857 — viewport 尺寸（CSS px）。node harness 的假 window 没有 innerWidth，
+  // 取不到就返回 0：beginLiveResize 据此拒绝武装，拖拽退回「松手才跳」的旧观感，
+  // 绝不把 NaN 写进 style。
+  function viewportWidth() {
+    return (typeof window.innerWidth === 'number' && isFinite(window.innerWidth))
+        ? window.innerWidth : 0;
+  }
+
+  function viewportHeight() {
+    return (typeof window.innerHeight === 'number' &&
+            isFinite(window.innerHeight))
+        ? window.innerHeight : 0;
+  }
+
+  function liveResizeRootRecord() {
+    if (!lastRootId) {
+      return null;
+    }
+    var record = frames.get(lastRootId);
+    return (record && record.shell) ? record : null;
+  }
+
+  // grip mousedown 时武装：记下 root 卡当前 CSS 尺寸与 viewport 尺寸。root 尺寸优先读
+  // shell.style（applyShellStyle 可能已把高度封顶到内容），其次 descriptor.frame。
+  function beginLiveResize() {
+    liveResize = null;
+    var record = liveResizeRootRecord();
+    if (!record) {
+      return false;
+    }
+    var vw = viewportWidth();
+    var vh = viewportHeight();
+    if (vw <= 0 || vh <= 0) {
+      return false;
+    }
+    var f = (record.descriptor && record.descriptor.frame) || {};
+    var w = parseFloat(record.shell.style.width);
+    var h = parseFloat(record.shell.style.height);
+    if (!isFinite(w) || w <= 0) w = (typeof f.width === 'number') ? f.width : 0;
+    if (!isFinite(h) || h <= 0) h = (typeof f.height === 'number') ? f.height : 0;
+    if (w <= 0 || h <= 0) {
+      return false;
+    }
+    liveResize = {
+      id: lastRootId, width: w, height: h, viewportW: vw, viewportH: vh
+    };
+    return true;
+  }
+
+  // native WM_EXITSIZEMOVE 调用；renderStack 也调（Dart 权威重排接管，顺带清掉
+  // 「grip 按下但模态循环没起来」的悬空武装，免得下一次嵌套卡改窗口尺寸时误把
+  // root 卡拉大）。
+  function endLiveResize() {
+    liveResize = null;
+  }
+
+  // window resize（WM_SIZE → put_Bounds → Chromium viewport 变化）时每帧调用。
+  // 标记 contentMeasureDirty：松手后 Dart 重排时 shell.style.width 已等于新宽度，
+  // applyShellStyle 那条「宽度变了才置脏」判不到，若不在这里置脏，preserveMeasuredHeight
+  // 会拿旧宽度下量出的内容高度去封顶新卡、且 scheduleMeasure 复用缓存不重量。
+  function handleWindowResize() {
+    if (!liveResize) {
+      return false;
+    }
+    var record = frames.get(liveResize.id);
+    if (!record || !record.shell) {
+      liveResize = null;
+      return false;
+    }
+    var w = liveResize.width + (viewportWidth() - liveResize.viewportW);
+    var h = liveResize.height + (viewportHeight() - liveResize.viewportH);
+    record.shell.style.width =
+        Math.max(LIVE_RESIZE_MIN_PX, Math.round(w)) + 'px';
+    record.shell.style.height =
+        Math.max(LIVE_RESIZE_MIN_PX, Math.round(h)) + 'px';
+    record.contentMeasureDirty = true;
+    return true;
+  }
+
   function createResizeGrip() {
     if (!document || typeof document.createElement !== 'function') {
       return null;
@@ -1067,6 +987,8 @@
           event.stopPropagation();
         }
       }
+      // BUG-1857 — 先武装 live-fit 再进模态循环，拖拽期间 root 卡随 viewport 长。
+      beginLiveResize();
       postToHost('beginWindowResize', []);
     };
     if (typeof grip.addEventListener === 'function') {
@@ -1075,219 +997,29 @@
     return grip;
   }
 
-  // 剪贴板复制历史按钮（🕘）——瞬态覆盖窗 root 卡左上角。与面板栏🕘同一 host-chrome
-  // 范式：pointerdown 捕获 + stopPropagation（不触发 root 卡的点外收层），postToHost
-  // 让 Dart 从 DB 重载历史并回注 showClipboardHistory。
-  function createHistoryButton() {
-    if (!document || typeof document.createElement !== 'function') {
-      return null;
-    }
-    var btn = document.createElement('div');
-    btn.className = 'global-lookup-history';
-    btn.setAttribute('role', 'button');
-    btn.setAttribute('aria-label', 'Clipboard history');
-    if (typeof btn.textContent !== 'undefined') {
-      btn.textContent = '🕘';
-    }
-    var onOpen = function (event) {
-      if (event && typeof event.stopPropagation === 'function') {
-        event.stopPropagation();
-      }
-      if (event && typeof event.preventDefault === 'function') {
-        event.preventDefault();
-      }
-      postToHost('clipboardHistory', []);
-    };
-    if (typeof btn.addEventListener === 'function') {
-      btn.addEventListener('pointerdown', onOpen, true);
-      btn.addEventListener('click', onOpen, true);
-    }
-    return btn;
-  }
-
-  // 历史覆盖层渲染进 ROOT 卡 shell（parentIndex < 0；面板模式该卡带 data-panel-root，
-  // 瞬态模式即级联根卡）。挂进 shell 内而非窗口层：瞬态窗被 native 按 shell 卡矩形裁剪，
-  // 挂窗口层的覆盖层会落到透明裁剪区外不可见（BUG-749 同源）。返回 root shell 或 null。
-  function rootShellForHistory() {
-    var found = null;
-    if (frames && typeof frames.forEach === 'function') {
-      frames.forEach(function (record) {
-        if (found) return;
-        if (record && record.shell &&
-            typeof record.parentIndex === 'number' &&
-            record.parentIndex < 0) {
-          found = record.shell;
-        }
-      });
-    }
-    return found;
-  }
-
-  // 移除所有历史覆盖层（× 关闭 / 选中一条查词 / 重新打开前清旧层）。优先
-  // querySelectorAll，node harness 的极简 DOM 无此 API 时回退遍历各 shell 子节点。
-  function hideClipboardHistory() {
-    if (!document) return false;
-    var removed = false;
-    var existing = (typeof document.querySelectorAll === 'function')
-        ? document.querySelectorAll('.clipboard-history-overlay')
-        : null;
-    if (existing && existing.length) {
-      for (var i = existing.length - 1; i >= 0; i--) {
-        var node = existing[i];
-        if (node && node.parentNode &&
-            typeof node.parentNode.removeChild === 'function') {
-          node.parentNode.removeChild(node);
-          removed = true;
-        }
-      }
-      return removed;
-    }
-    if (frames && typeof frames.forEach === 'function') {
-      frames.forEach(function (record) {
-        if (!record || !record.shell) return;
-        var kids = record.shell.children || [];
-        for (var j = kids.length - 1; j >= 0; j--) {
-          var kid = kids[j];
-          if (kid &&
-              String(kid.className).indexOf('clipboard-history-overlay') >= 0 &&
-              typeof record.shell.removeChild === 'function') {
-            record.shell.removeChild(kid);
-            removed = true;
-          }
-        }
-      });
-    }
-    return removed;
-  }
-
-  // 由 Dart 注入渲染剪贴板复制历史覆盖层。payload（JSON 串或对象）：
-  //   { entries:[{text, time}], title, clearLabel, emptyLabel }
-  // entries 顺序=最新在前（Dart 已 reverse）。每行点选 → lookupClipboardHistoryEntry
-  // 让 Dart 重查该文本；清空 → clearClipboardHistory；× / 选中一条后自动关层。
-  function showClipboardHistory(payload) {
-    var data = payload;
-    if (typeof payload === 'string') {
-      try {
-        data = JSON.parse(payload);
-      } catch (e) {
-        data = null;
-      }
-    }
-    if (!data || typeof data !== 'object') data = {};
-    var entries = (data.entries && data.entries.length) ? data.entries : [];
-    var title = data.title || 'Clipboard history';
-    var clearLabel = data.clearLabel || 'Clear';
-    var emptyLabel = data.emptyLabel || '';
-    var host = rootShellForHistory();
-    if (!host || typeof document.createElement !== 'function' ||
-        typeof host.appendChild !== 'function') {
-      return false;
-    }
-    hideClipboardHistory();
-
-    var overlay = document.createElement('div');
-    overlay.className = 'clipboard-history-overlay';
-
-    var head = document.createElement('div');
-    head.className = 'clipboard-history-head';
-    var titleEl = document.createElement('div');
-    titleEl.className = 'clipboard-history-title';
-    titleEl.textContent = title;
-    head.appendChild(titleEl);
-
-    var clearBtn = document.createElement('div');
-    clearBtn.className = 'clipboard-history-btn';
-    clearBtn.setAttribute('role', 'button');
-    clearBtn.textContent = clearLabel;
-    if (typeof clearBtn.addEventListener === 'function') {
-      clearBtn.addEventListener('pointerdown', function (event) {
-        if (event && typeof event.stopPropagation === 'function') {
-          event.stopPropagation();
-        }
-        if (event && typeof event.preventDefault === 'function') {
-          event.preventDefault();
-        }
-        postToHost('clearClipboardHistory', []);
-      }, true);
-    }
-    head.appendChild(clearBtn);
-
-    var closeBtn = document.createElement('div');
-    closeBtn.className = 'clipboard-history-btn';
-    closeBtn.setAttribute('role', 'button');
-    closeBtn.textContent = '×';
-    if (typeof closeBtn.addEventListener === 'function') {
-      closeBtn.addEventListener('pointerdown', function (event) {
-        if (event && typeof event.stopPropagation === 'function') {
-          event.stopPropagation();
-        }
-        if (event && typeof event.preventDefault === 'function') {
-          event.preventDefault();
-        }
-        hideClipboardHistory();
-      }, true);
-    }
-    head.appendChild(closeBtn);
-    overlay.appendChild(head);
-
-    if (!entries.length) {
-      var empty = document.createElement('div');
-      empty.className = 'clipboard-history-empty';
-      empty.textContent = emptyLabel;
-      overlay.appendChild(empty);
-    } else {
-      var list = document.createElement('div');
-      list.className = 'clipboard-history-list';
-      for (var k = 0; k < entries.length; k++) {
-        (function (entry) {
-          var row = document.createElement('div');
-          row.className = 'clipboard-history-row';
-          row.setAttribute('role', 'button');
-          var textEl = document.createElement('div');
-          textEl.className = 'clipboard-history-text';
-          textEl.textContent =
-              String(entry && entry.text != null ? entry.text : '');
-          row.appendChild(textEl);
-          if (entry && entry.time) {
-            var timeEl = document.createElement('div');
-            timeEl.className = 'clipboard-history-time';
-            timeEl.textContent = String(entry.time);
-            row.appendChild(timeEl);
-          }
-          var onPick = function (event) {
-            if (event && typeof event.stopPropagation === 'function') {
-              event.stopPropagation();
-            }
-            if (event && typeof event.preventDefault === 'function') {
-              event.preventDefault();
-            }
-            var text = entry && entry.text != null ? String(entry.text) : '';
-            if (!text) return;
-            hideClipboardHistory();
-            postToHost('lookupClipboardHistoryEntry', [text]);
-          };
-          if (typeof row.addEventListener === 'function') {
-            row.addEventListener('pointerdown', onPick, true);
-            row.addEventListener('click', onPick, true);
-          }
-          list.appendChild(row);
-        })(entries[k]);
-      }
-      overlay.appendChild(list);
-    }
-
-    host.appendChild(overlay);
-    return true;
-  }
-
-  function createRecord(layer, descriptor) {
+  function createRecord(layer, descriptor, standby) {
+    standby = standby === true;
     var shell = document.createElement('div');
-    shell.className = 'global-lookup-frame-shell';
+    shell.className = standby
+        ? 'global-lookup-frame-standby'
+        : 'global-lookup-frame-shell';
     shell.setAttribute('data-frame-id', descriptor.id);
     // D1 — start gated-hidden. The two flags flip independently:
     // content-ready (iframe DOM arrived) + reveal-ready (geometry placed).
     shell.setAttribute(ATTR_CONTENT_READY, 'false');
     shell.setAttribute(ATTR_REVEAL_READY, 'false');
+    if (standby) {
+      // Keep the realm laid out so CSS/font discovery really warms WebView2.
+      // display:none would load the document but may defer FontFace decoding.
+      shell.style.position = 'absolute';
+      shell.style.left = '-100000px';
+      shell.style.top = '-100000px';
+      shell.style.width = '360px';
+      shell.style.height = '480px';
+      shell.style.visibility = 'hidden';
+      shell.style.opacity = '0';
+      shell.style.pointerEvents = 'none';
+    }
 
     var iframe = document.createElement('iframe');
     // Deliberately NO sandbox attribute (same-origin contentWindow injection).
@@ -1309,25 +1041,21 @@
     // onHostPointerDown still classifies a stray click as a shell hit; the X's
     // own handler stops propagation + posts the layer-scoped dismiss so it never
     // falls through to the per-layer tapOutside / root dismiss.
-    var closeBtn = createCloseButton(descriptor.id);
-    if (closeBtn) {
-      shell.appendChild(closeBtn);
+    var closeBtn = null;
+    if (!standby) {
+      closeBtn = createCloseButton(descriptor.id);
+      if (closeBtn) {
+        shell.appendChild(closeBtn);
+      }
     }
-    // Phase C — 只给瞬态覆盖窗（cascade）的 ROOT 卡（parentIndex < 0）挂 resize grip：
-    // 调整的是 overlay「最大卡尺寸」真值，子级级联卡由它派生，故不各自加把手；面板
-    // 模式另有窗口级 #global-lookup-panel-resize，不在此重复。
-    if (layoutMode !== 'panel' && descriptor &&
+    // Phase C — 只给 ROOT 卡（parentIndex < 0）挂 resize grip：调整的是 overlay
+    // 「最大卡尺寸」真值，子级级联卡由它派生，故不各自加把手。
+    if (!standby && descriptor &&
         typeof descriptor.parentIndex === 'number' &&
         descriptor.parentIndex < 0) {
       var grip = createResizeGrip();
       if (grip) {
         shell.appendChild(grip);
-      }
-      // 剪贴板复制历史按钮（🕘）——瞬态窗无面板栏，挂 root 卡左上角（躲 native
-      // shell 裁剪）。postToHost('clipboardHistory') → Dart 重载并注入覆盖层。
-      var histBtn = createHistoryButton();
-      if (histBtn) {
-        shell.appendChild(histBtn);
       }
     }
     layer.appendChild(shell);
@@ -1337,30 +1065,466 @@
       parentIndex: descriptor.parentIndex,
       iframe: iframe,
       shell: shell,
+      closeButton: closeBtn,
       descriptor: descriptor,
+      active: !standby,
+      wrappedPost: null,
       loaded: false,
       contentReady: false,
       revealReady: false,
+      // Root shells are protected by the initially-hidden native window. A
+      // nested shell is inside an already-visible HWND, so its first reveal is
+      // gated on the exact bbox + shellRects transaction that includes it.
+      requiredGeometryEpoch: 0,
       observer: null,
       dirtyObserver: null,
       contentSafetyTimer: null,
       revealSafetyTimer: null,
       route: cloneRoute(activeRoute),
+      injectedStaticRevision: null,
+      injectedEntriesJs: null,
+      injectedRenderJs: null,
+      injectedSettingsJs: null,
+      staticSettingsRequestRevision: null,
+      waitingForStatic: false,
+      // Reading scrollHeight/offsetHeight forces layout in every same-origin
+      // iframe. Surviving ancestors do not change on a stack truncate, so keep
+      // their last measured height and invalidate it only when content or width
+      // really changes. This removes the depth-proportional reflow that used to
+      // run before every overlaySize report.
+      measuredContentHeight: 0,
+      contentMeasureDirty: true,
     };
+    shell.__lookupRecord = record;
     frameSources.set(iframe, descriptor.id);
 
     iframe.addEventListener('load', function () {
       record.loaded = true;
+      // A navigation creates a fresh iframe realm even though the host record
+      // survives. Re-apply static settings from the host-level revision cache
+      // before rendering the current dynamic payload.
+      record.injectedStaticRevision = null;
+      record.injectedEntriesJs = null;
+      record.injectedRenderJs = null;
+      record.injectedSettingsJs = null;
+      record.waitingForStatic = false;
+      record.measuredContentHeight = 0;
+      record.contentMeasureDirty = true;
       wrapFrameBridge(record);
-      injectContent(record);
+      if (!record.active) {
+        // The document load itself may land on the active card's presentation
+        // task. Defer static/font priming through the same compositor/watchdog
+        // gate used for pool refill so hidden work never blocks that first frame.
+        scheduleStandbyRefill(layer);
+        return;
+      }
+      var injected = injectContent(record);
       // TODO-1231 P1 — seed the has-child flag on cold load (mirrors the in-app
       // cold-load _setHasChildPopupJs); renderPayload keeps it in sync after.
       applyHasChildPopup(record);
-      observeContent(record, record.route);
+      if (injected) {
+        observeContent(record, record.route);
+      }
       observeGalFrameDirty(record, record.route);
       scheduleMeasure(record.route);
     });
     return record;
+  }
+
+  var STANDBY_EMPTY_ENTRIES_JS =
+      'try { window.lookupEntries = []; } catch(e) { window.lookupEntries = []; }' +
+      'try { window.kanjiResults = []; } catch(e) { window.kanjiResults = []; }';
+
+  function dropBridgeRoutesForFrame(frameId) {
+    bridgeRoutes.forEach(function (route, globalId) {
+      if (route.frameId === frameId) {
+        bridgeRoutes.delete(globalId);
+      }
+    });
+  }
+
+  function stopRecordCallbacks(record) {
+    if (!record) {
+      return;
+    }
+    if (record.observer && typeof record.observer.disconnect === 'function') {
+      try {
+        record.observer.disconnect();
+      } catch (e) {
+        // no-op
+      }
+      record.observer = null;
+    }
+    if (record.dirtyObserver &&
+        typeof record.dirtyObserver.disconnect === 'function') {
+      try {
+        record.dirtyObserver.disconnect();
+      } catch (e) {
+        // no-op
+      }
+      record.dirtyObserver = null;
+    }
+    if (record.contentSafetyTimer != null) {
+      clearTimerSafe(record.contentSafetyTimer);
+      record.contentSafetyTimer = null;
+    }
+    if (record.revealSafetyTimer != null) {
+      clearTimerSafe(record.revealSafetyTimer);
+      record.revealSafetyTimer = null;
+    }
+    clearRecordStaticSettingsRequest(record);
+  }
+
+  function resetParkedRealm(record) {
+    var win = null;
+    try {
+      win = record.iframe.contentWindow;
+    } catch (e) {
+      win = null;
+    }
+    if (!win) {
+      return;
+    }
+    try {
+      if (typeof win.__fushiBridgeCancelPending === 'function') {
+        win.__fushiBridgeCancelPending();
+      }
+    } catch (e) {
+      // Older cached popup documents have no cancellation hook.
+    }
+    try {
+      if (typeof win.__fushiPrepareRealmForReuse === 'function') {
+        win.__fushiPrepareRealmForReuse();
+      }
+    } catch (e) {
+      // The fallback generation bump below still invalidates async render work.
+    }
+    try {
+      // Cancel popup.js's incremental tail/font-ready callbacks and stop any
+      // frame-local word audio before this physical realm loses its logical id.
+      win.eval(
+          '(function(){' +
+          'if(typeof window.__fushiPrepareRealmForReuse!=="function"){' +
+          'window._renderGeneration=(window._renderGeneration||0)+1;}' +
+          'try{if(window.__fushiWordAudio){window.__fushiWordAudio.pause();' +
+          'window.__fushiWordAudio.removeAttribute("src");' +
+          'window.__fushiWordAudio.load();window.__fushiWordAudio=null;}}catch(_e){}' +
+          'try{var s=window.getSelection&&window.getSelection();' +
+          'if(s&&s.removeAllRanges)s.removeAllRanges();}catch(_e){}' +
+          'try{window.scrollTo(0,0);}catch(_e){}' +
+          'try{document.documentElement.scrollTop=0;document.body.scrollTop=0;}' +
+          'catch(_e){}' +
+          '})();');
+    } catch (e) {
+      // A not-yet-loaded standby has no realm state to clear.
+    }
+  }
+
+  function destroyRecord(record) {
+    if (!record) {
+      return;
+    }
+    var oldId = record.id;
+    record.active = false;
+    stopRecordCallbacks(record);
+    dropBridgeRoutesForFrame(oldId);
+    // Permanent iframe teardown destroys its realm and therefore cancels every
+    // Promise/audio/timer by construction. Running the expensive *reuse* reset
+    // first only duplicated that work (and forced an eval in every removed
+    // iframe) on the latency-critical stack-close path.
+    try {
+      frameSources.delete(record.iframe);
+    } catch (e) {
+      // WeakMap deletion is best-effort in reduced test harnesses.
+    }
+    if (record.shell && record.shell.parentNode) {
+      record.shell.parentNode.removeChild(record.shell);
+    }
+  }
+
+  function primeStandbyRecord(record, revision) {
+    if (!record || record.active || !record.loaded || revision == null ||
+        record.injectedStaticRevision === revision) {
+      return false;
+    }
+    var staticSettings = staticSettingsByRevision.get(revision);
+    if (!staticSettings) {
+      record.injectedStaticRevision = null;
+      return false;
+    }
+    var win = null;
+    try {
+      win = record.iframe.contentWindow;
+    } catch (e) {
+      win = null;
+    }
+    if (!win || typeof win.eval !== 'function') {
+      return false;
+    }
+    try {
+      // Preserve the production order around a harmless empty result, then
+      // render once while hidden. That forces popup.js/CSS/font discovery now,
+      // instead of making the user's first nested selection pay it.
+      win.eval(
+          staticSettings.head + STANDBY_EMPTY_ENTRIES_JS +
+          staticSettings.tail +
+          'window.__hasChildPopup=false;' +
+          'window.renderPopup&&window.renderPopup();');
+      record.injectedStaticRevision = revision;
+      record.injectedEntriesJs = null;
+      record.injectedRenderJs = null;
+      record.injectedSettingsJs = null;
+      record.waitingForStatic = false;
+      clearRecordStaticSettingsRequest(record);
+      // renderPopup makes the configured family discoverable. Explicitly start
+      // every FontFace as well; the promise intentionally remains background.
+      var fonts = record.iframe.contentDocument &&
+          record.iframe.contentDocument.fonts;
+      if (fonts && typeof fonts.forEach === 'function') {
+        fonts.forEach(function (face) {
+          try {
+            var pending = face && typeof face.load === 'function'
+                ? face.load()
+                : null;
+            if (pending && typeof pending.catch === 'function') {
+              pending.catch(function () {});
+            }
+          } catch (e) {
+            // Font correctness still comes from popup.js document.fonts.ready.
+          }
+        });
+      }
+      return true;
+    } catch (e) {
+      record.injectedStaticRevision = null;
+      return false;
+    }
+  }
+
+  function primeStandbyRecords(revision) {
+    if (revision == null || !staticSettingsByRevision.has(revision)) {
+      return;
+    }
+    standbyStaticRevision = revision;
+    var layer = document.getElementById(LAYER_ID);
+    if (layer) {
+      scheduleStandbyRefill(layer);
+    }
+  }
+
+  function ensureStandbyPool(layer) {
+    if (!layer) {
+      return;
+    }
+    while (standbyRecords.length < STANDBY_POOL_SIZE) {
+      var descriptor = {
+        id: STANDBY_ID_PREFIX + (++standbySeq),
+        parentIndex: 0,
+      };
+      var record = createRecord(layer, descriptor, true);
+      standbyRecords.push(record);
+      primeStandbyRecord(record, standbyStaticRevision);
+    }
+  }
+
+  function cancelStandbyRefill() {
+    standbyRefillGeneration++;
+    standbyRefillScheduled = false;
+  }
+
+  function scheduleStandbyRefill(layer) {
+    // A pending ancestor swap deliberately keeps the retiring browsing contexts
+    // alive. Starting another popup.html navigation in that interval competes
+    // with the replacement paint and can revoke the old realm's static state.
+    // Finalisation re-arms the one-look-ahead pool after the atomic swap.
+    if (pendingSuffixSwap || !layer || standbyRefillScheduled) {
+      return;
+    }
+    var needsWork = standbyRecords.length < STANDBY_POOL_SIZE;
+    if (!needsWork && standbyStaticRevision != null &&
+        staticSettingsByRevision.has(standbyStaticRevision)) {
+      for (var i = 0; i < standbyRecords.length; i++) {
+        if (standbyRecords[i].loaded &&
+            standbyRecords[i].injectedStaticRevision !==
+                standbyStaticRevision) {
+          needsWork = true;
+          break;
+        }
+      }
+    }
+    if (!needsWork) {
+      return;
+    }
+    standbyRefillScheduled = true;
+    var generation = standbyRefillGeneration;
+    var finished = false;
+    var watchdog = null;
+    var refill = function () {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      if (watchdog != null) {
+        clearTimerSafe(watchdog);
+        watchdog = null;
+      }
+      if (generation !== standbyRefillGeneration) {
+        return;
+      }
+      try {
+        if (frames.size) {
+          ensureStandbyPool(layer);
+          for (var i = 0; i < standbyRecords.length; i++) {
+            primeStandbyRecord(standbyRecords[i], standbyStaticRevision);
+          }
+        }
+      } finally {
+        // A reduced harness can fire iframe load synchronously from
+        // createRecord(). Keep the scheduled latch set until the new record is
+        // actually in standbyRecords, otherwise load -> refill recurses forever.
+        standbyRefillScheduled = false;
+      }
+    };
+    // Do not start another popup.html navigation in the same presentation turn
+    // as the child we just acquired. Two compositor frames let that hot child
+    // paint first; the replacement realm then warms while the user reads it.
+    var rafScheduled = false;
+    if (typeof window.requestAnimationFrame === 'function') {
+      try {
+        window.requestAnimationFrame(function () {
+          try {
+            window.requestAnimationFrame(refill);
+          } catch (e) {
+            refill();
+          }
+        });
+        rafScheduled = true;
+      } catch (e) {
+        // Fall through to the timer path.
+      }
+    }
+    // The permanently off-screen galCard WebView can suspend rAF. Race the
+    // compositor path with a bounded timer so deeper nesting never falls back
+    // to cold createRecord merely because those callbacks stopped running.
+    watchdog = setTimerSafe(refill, STANDBY_REFILL_WATCHDOG_MS);
+    if (!rafScheduled && watchdog == null) {
+      // Deterministic reduced harnesses have neither API; replenish now there.
+      refill();
+    }
+  }
+
+  function acquireStandbyRecord(layer, descriptor) {
+    if (!descriptor || descriptor.parentIndex < 0 || !standbyRecords.length) {
+      return null;
+    }
+    var record = standbyRecords.shift();
+    var oldId = record.id;
+    stopRecordCallbacks(record);
+    dropBridgeRoutesForFrame(oldId);
+    // Parked resize/font callbacks may have been queued after the previous
+    // cleanup. Invalidate them once more while the wrapper is still inactive,
+    // before this realm receives a new logical id.
+    resetParkedRealm(record);
+    record.active = true;
+    record.id = descriptor.id;
+    record.parentIndex = descriptor.parentIndex;
+    record.descriptor = descriptor;
+    record.route = cloneRoute(activeRoute);
+    record.contentReady = false;
+    record.revealReady = false;
+    record.requiredGeometryEpoch = 0;
+    record.waitingForStatic = false;
+    record.injectedEntriesJs = null;
+    record.injectedRenderJs = null;
+    record.injectedSettingsJs = null;
+    record.hasChildPopup = null;
+    record.measuredContentHeight = 0;
+    record.contentMeasureDirty = true;
+    record.shell.className = 'global-lookup-frame-shell';
+    record.shell.setAttribute('data-frame-id', descriptor.id);
+    record.shell.setAttribute(ATTR_CONTENT_READY, 'false');
+    record.shell.setAttribute(ATTR_REVEAL_READY, 'false');
+    record.shell.style.visibility = '';
+    record.shell.style.opacity = '';
+    record.shell.style.pointerEvents = 'auto';
+    // Do NOT re-append/reparent this mounted shell for DOM ordering: Chromium
+    // navigates a descendant iframe when its ancestor is moved, destroying the
+    // very warm realm this pool exists to preserve. Logical depth and painting
+    // order come from frames insertion order + applyShellStyle's z-index.
+    frameSources.set(record.iframe, descriptor.id);
+    if (!record.closeButton) {
+      record.closeButton = createCloseButton(descriptor.id);
+      if (record.closeButton) {
+        record.shell.appendChild(record.closeButton);
+      }
+    } else {
+      record.closeButton.setAttribute('data-close-frame-id', descriptor.id);
+    }
+    // Replenish only after this acquired child has had a chance to paint.
+    scheduleStandbyRefill(layer);
+    return record;
+  }
+
+  function parkRecord(record, layer) {
+    if (!record || record.parentIndex < 0) {
+      destroyRecord(record);
+      return;
+    }
+    // Prefer the just-used realm (its JS/font state is hottest) over the unused
+    // look-ahead slot, while preserving the strict one-record memory bound.
+    while (standbyRecords.length >= STANDBY_POOL_SIZE) {
+      destroyRecord(standbyRecords.shift());
+    }
+    var oldId = record.id;
+    record.active = false;
+    stopRecordCallbacks(record);
+    dropBridgeRoutesForFrame(oldId);
+    resetParkedRealm(record);
+    try {
+      frameSources.delete(record.iframe);
+    } catch (e) {
+      // no-op
+    }
+    record.id = STANDBY_ID_PREFIX + (++standbySeq);
+    record.parentIndex = 0;
+    record.descriptor = null;
+    record.route = cloneRoute(activeRoute);
+    record.contentReady = false;
+    record.revealReady = false;
+    record.requiredGeometryEpoch = 0;
+    record.waitingForStatic = false;
+    record.injectedEntriesJs = null;
+    record.injectedRenderJs = null;
+    record.injectedSettingsJs = null;
+    record.hasChildPopup = null;
+    record.measuredContentHeight = 0;
+    record.contentMeasureDirty = true;
+    record.shell.className = 'global-lookup-frame-standby';
+    record.shell.setAttribute('data-frame-id', record.id);
+    record.shell.setAttribute(ATTR_CONTENT_READY, 'false');
+    record.shell.setAttribute(ATTR_REVEAL_READY, 'false');
+    record.shell.style.position = 'absolute';
+    record.shell.style.left = '-100000px';
+    record.shell.style.top = '-100000px';
+    record.shell.style.width = '360px';
+    record.shell.style.height = '480px';
+    record.shell.style.visibility = 'hidden';
+    record.shell.style.opacity = '0';
+    record.shell.style.pointerEvents = 'none';
+    if (record.closeButton) {
+      record.closeButton.setAttribute('data-close-frame-id', record.id);
+    }
+    frameSources.set(record.iframe, record.id);
+    standbyRecords.push(record);
+    scheduleStandbyRefill(layer || record.shell.parentNode);
+  }
+
+  function destroyStandbyPool() {
+    cancelStandbyRefill();
+    while (standbyRecords.length) {
+      destroyRecord(standbyRecords.shift());
+    }
+    standbyStaticRevision = null;
   }
 
   // D1 — flip a gate flag and, if both are now set, the shell paints (the CSS
@@ -1375,34 +1539,27 @@
     }
   }
 
-  // TODO-1231 v3 (BUG-583) — a shell is "origin-covered" when the committed layer
-  // origin (layerOffsetLeft/Top — the window origin the C++ RevealStack actually
-  // moved to, set by commitLayerShift) is at or outside the shell's own top-left,
-  // i.e. the shell falls INSIDE the current window viewport. An up/left-cascading
-  // child placed at window-local coords LEFT/ABOVE the current origin is NOT covered
-  // until commitLayerShift moves the origin out to include it; revealing it before
-  // then paints it CLIPPED at the window edge for the whole Dart round-trip (the
-  // residual "子弹窗闪" — the child appears cut, then jumps into place). Down-right /
-  // already-ratcheted shells are covered immediately (unchanged). COVER_EPS absorbs
-  // sub-pixel rounding across the device-pixel-ratio boundary.
-  function shellCoveredByOrigin(record) {
-    if (!record || !record.shell) {
+  // The committed transaction must cover the FULL shell. The former left/top
+  // test let a down/right child reveal while its far edge was still outside the
+  // previous HWND — the clipped intermediate frame observed in SGRE.
+  function shellCoveredByCommittedGeometry(record) {
+    if (!record || !record.shell || !committedGeometryBounds) {
       return false;
     }
     var left = parseFloat(record.shell.style.left) || 0;
     var top = parseFloat(record.shell.style.top) || 0;
-    return left >= layerOffsetLeft - COVER_EPS &&
-        top >= layerOffsetTop - COVER_EPS;
+    var width = parseFloat(record.shell.style.width) || 0;
+    var height = parseFloat(record.shell.style.height) || 0;
+    return left >= committedGeometryBounds.left - COVER_EPS &&
+        top >= committedGeometryBounds.top - COVER_EPS &&
+        left + width <= committedGeometryBounds.right + COVER_EPS &&
+        top + height <= committedGeometryBounds.bottom + COVER_EPS;
   }
 
-  // TODO-1231 v3 (BUG-583) — flip reveal-ready ONLY once the shell's geometry is
-  // placed AND the committed window origin covers it, so a shell never paints
-  // outside the window (clipped). A root / down-right child is covered from the
-  // start and flips immediately (byte-identical to the old unconditional flip). An
-  // up/left child is HELD until commitLayerShift extends the origin to reach it
-  // (re-checked there), so it first appears already in-position — no clipped-then-
-  // jump. A one-shot safety flips it regardless after REVEAL_READY_SAFETY_MS so a
-  // never-arriving commitLayerShift can never leave a card stuck hidden.
+  // Root cards may arm immediately because their native window is still hidden.
+  // Nested cards live in an already-visible HWND and require the exact latest
+  // bbox + shellRects ack. The safety timer can request a fresh measurement, but
+  // never bypasses the contract and exposes a clipped card.
   function maybeFlipRevealReady(record, routeSnapshot) {
     if (!record) {
       return;
@@ -1418,7 +1575,13 @@
       }
       return;
     }
-    if (shellCoveredByOrigin(record)) {
+    var isNested = typeof record.parentIndex === 'number' &&
+        record.parentIndex >= 0;
+    var geometryCommitted = !isNested ||
+        (record.requiredGeometryEpoch > 0 &&
+         record.requiredGeometryEpoch === committedGeometryEpoch &&
+         shellCoveredByCommittedGeometry(record));
+    if (geometryCommitted) {
       if (record.revealSafetyTimer != null) {
         clearTimerSafe(record.revealSafetyTimer);
         record.revealSafetyTimer = null;
@@ -1434,7 +1597,7 @@
         if (record.revealSafetyTimer === revealTimer) {
           record.revealSafetyTimer = null;
         }
-        setGateFlag(record, ATTR_REVEAL_READY, 'revealReady');
+        scheduleMeasure(route);
       }, REVEAL_READY_SAFETY_MS);
       record.revealSafetyTimer = revealTimer;
     }
@@ -1461,7 +1624,11 @@
     setGateFlag(record, ATTR_CONTENT_READY, 'contentReady');
     // Content height just changed -> the union bbox may grow. Re-measure
     // (coalesced) so Dart resizes the window to fit the filled card.
-    scheduleMeasure(route);
+    // injectContent/width mutations mark the changed record dirty. Reuse clean
+    // ancestor heights so opening one child never forces every parent iframe to
+    // synchronously lay out again.
+    scheduleMeasure(route, true);
+    tryFinalizePendingSuffixSwap();
   }
 
   // D1 — observe the SAME-ORIGIN iframe contentDocument.body for real content:
@@ -1540,6 +1707,8 @@
     }
     try {
       record.dirtyObserver = new window.MutationObserver(function () {
+        record.contentMeasureDirty = true;
+        scheduleMeasure(record.route);
         requestGalFrameDirty(record.route);
       });
       record.dirtyObserver.observe(body, {
@@ -1574,6 +1743,159 @@
     }
   }
 
+  function descriptorStaticRevision(descriptor) {
+    var value = descriptor && descriptor.staticRevision;
+    return (typeof value === 'number' && isFinite(value) && value > 0)
+        ? Math.trunc(value)
+        : null;
+  }
+
+  // Imported dictionary fonts are the only data URLs in the static settings
+  // large enough to dominate a cold nested lookup. Both the top-level host and
+  // popup.html iframes are served from https://hibiki.popup, so an object URL
+  // created here is same-origin and reusable by every frame realm. Keep the
+  // matcher deliberately narrow to DictionaryFontCss._fontTypes: unrelated data
+  // URLs remain byte-for-byte untouched.
+  var FONT_DATA_URL_RE =
+      /data:(font\/(?:ttf|otf|collection|woff2?));base64,([A-Za-z0-9+/]+={0,2})/g;
+
+  function revokeObjectUrls(urls) {
+    if (!urls || !urls.length || !window.URL ||
+        typeof window.URL.revokeObjectURL !== 'function') {
+      return;
+    }
+    for (var i = 0; i < urls.length; i++) {
+      try {
+        window.URL.revokeObjectURL(urls[i]);
+      } catch (e) {
+        // Revocation is best-effort cleanup. The revision is already dead and
+        // correctness must not depend on a browser accepting a stale URL.
+      }
+    }
+  }
+
+  function staticSettingsWithSharedFontResources(head, tail) {
+    var originalHead = (typeof head === 'string') ? head : '';
+    var originalTail = (typeof tail === 'string') ? tail : '';
+    if ((!originalHead && !originalTail) || typeof window.atob !== 'function' ||
+        typeof window.Blob !== 'function' || !window.URL ||
+        typeof window.URL.createObjectURL !== 'function' ||
+        typeof Uint8Array !== 'function') {
+      // Compatibility fallback for an older/non-browser harness. It preserves
+      // the exact pre-Blob injection body, only without the latency win.
+      return { head: originalHead, tail: originalTail, objectUrls: [] };
+    }
+
+    var objectUrls = [];
+    var urlByDataUrl = new Map();
+    try {
+      var rewriteFontDataUrls = function (source) {
+        return source.replace(FONT_DATA_URL_RE, function (dataUrl, mime, base64) {
+          var reused = urlByDataUrl.get(dataUrl);
+          if (reused) {
+            return reused;
+          }
+          var binary = window.atob(base64);
+          var bytes = new Uint8Array(binary.length);
+          for (var i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          var objectUrl = window.URL.createObjectURL(
+            new window.Blob([bytes], { type: mime }),
+          );
+          urlByDataUrl.set(dataUrl, objectUrl);
+          objectUrls.push(objectUrl);
+          return objectUrl;
+        });
+      };
+      var rewrittenHead = rewriteFontDataUrls(originalHead);
+      var rewrittenTail = rewriteFontDataUrls(originalTail);
+      return {
+        head: rewrittenHead,
+        tail: rewrittenTail,
+        objectUrls: objectUrls,
+      };
+    } catch (e) {
+      // Never trade font correctness for the optimisation. If any decoder/Blob
+      // operation fails, revoke the partial resources and keep the original
+      // self-contained data URL payload for this revision.
+      revokeObjectUrls(objectUrls);
+      return { head: originalHead, tail: originalTail, objectUrls: [] };
+    }
+  }
+
+  function dropDescriptorStaticSource(descriptor) {
+    if (!descriptor || typeof descriptor !== 'object') {
+      return;
+    }
+    // renderPayload stores the descriptor on its frame record. Deleting these
+    // fields is what prevents that record from retaining the ~13 MB source after
+    // staticSettingsByRevision has materialised its shared Blob resource.
+    try {
+      delete descriptor.staticHeadJs;
+      delete descriptor.staticTailJs;
+    } catch (e) {
+      // Plain render descriptors are mutable. Keep a defensive no-op for a
+      // frozen compatibility payload; the resource rewrite still stays valid.
+    }
+  }
+
+  function cacheDescriptorStaticSettings(descriptor) {
+    var revision = descriptorStaticRevision(descriptor);
+    if (revision == null) {
+      return revision;
+    }
+    // A render payload can mention the same revision on every live frame. Only
+    // the first descriptor carries the source, and only it may decode/create the
+    // resource. Never overwrite the cache with a later dynamic-only descriptor.
+    if (staticSettingsByRevision.has(revision)) {
+      dropDescriptorStaticSource(descriptor);
+      return revision;
+    }
+    if (
+        typeof descriptor.staticHeadJs !== 'string' ||
+        typeof descriptor.staticTailJs !== 'string') {
+      return revision;
+    }
+    var staticSettings = staticSettingsWithSharedFontResources(
+      descriptor.staticHeadJs,
+      descriptor.staticTailJs,
+    );
+    staticSettingsByRevision.set(revision, staticSettings);
+    dropDescriptorStaticSource(descriptor);
+    // A static payload satisfies every routed request for this revision.
+    var suffix = '|' + revision;
+    staticSettingsRequests.forEach(function (key) {
+      if (key.endsWith(suffix)) {
+        staticSettingsRequests.delete(key);
+      }
+    });
+    return revision;
+  }
+
+  function requestStaticSettings(record, revision) {
+    var key = routeKey(record && record.route) + '|' + revision;
+    if (revision == null || staticSettingsRequests.has(key)) {
+      return;
+    }
+    staticSettingsRequests.add(key);
+    record.staticSettingsRequestRevision = key;
+    // Include the current host-document geometry counter. Zero identifies a
+    // freshly-recovered realm before its first measurement; Dart can then clear
+    // a coincidentally-equal epoch de-dup without penalising an ordinary child
+    // cache miss in the long-lived document.
+    postToHost(
+        'staticSettingsRequired', [revision, nextGeometryEpoch], record.route);
+  }
+
+  function clearRecordStaticSettingsRequest(record) {
+    if (!record || !record.staticSettingsRequestRevision) {
+      return;
+    }
+    staticSettingsRequests.delete(record.staticSettingsRequestRevision);
+    record.staticSettingsRequestRevision = null;
+  }
+
   function injectContent(record) {
     var win = null;
     try {
@@ -1585,24 +1907,200 @@
       return false;
     }
     var d = record.descriptor || {};
+    var revision = cacheDescriptorStaticSettings(d);
+    var modern = revision != null &&
+        typeof d.entriesJs === 'string' &&
+        typeof d.renderJs === 'string';
     try {
-      if (typeof d.settingsJs === 'string' && d.settingsJs.length) {
-        win.eval(d.settingsJs);
+      // Any accepted content injection can change font metrics or body height.
+      // Invalidate before eval so even a synchronous popupRendered observes the
+      // dirty measurement.
+      record.contentMeasureDirty = true;
+      if (!modern) {
+        // Backward compatibility for a cached/pending payload produced by an
+        // older Dart bundle during an in-place development restart.
+        if (typeof d.settingsJs === 'string' && d.settingsJs.length) {
+          win.eval(d.settingsJs);
+        }
+        record.injectedSettingsJs =
+            (typeof d.settingsJs === 'string') ? d.settingsJs : '';
+        record.waitingForStatic = false;
+        clearRecordStaticSettingsRequest(record);
+        syncFrameShellChrome(record);
+        return true;
       }
-      // TODO-1231 P1 — remember the body last eval'd into this frame so
-      // renderPayload can SKIP re-evaling an UNCHANGED body (a full renderPopup()
-      // card teardown+rebuild = the "父弹窗闪烁") on a nested open/close. Recorded
-      // even for an empty body so the equality check stays stable.
-      record.injectedSettingsJs =
-          (typeof d.settingsJs === 'string') ? d.settingsJs : '';
+
+      var staticSettings = staticSettingsByRevision.get(revision);
+      var needsStatic = record.injectedStaticRevision !== revision;
+      if (needsStatic && !staticSettings) {
+        // A whole-WebView recovery loses the host cache while Dart still knows
+        // the revision. Keep the shell content-gated and demand one routed
+        // resend; the reply replays this pending dynamic descriptor.
+        record.waitingForStatic = true;
+        requestStaticSettings(record, revision);
+        return false;
+      }
+      var script = '';
+      if (needsStatic) {
+        script += staticSettings.head;
+      }
+      script += d.entriesJs;
+      if (needsStatic) {
+        // Preserve the original exact order: static head -> entries -> static
+        // tail -> per-frame reset/sentence/render body.
+        script += staticSettings.tail;
+      }
+      script += d.renderJs;
+      if (script.length) {
+        win.eval(script);
+      }
+      record.injectedStaticRevision = revision;
+      record.injectedEntriesJs = d.entriesJs;
+      record.injectedRenderJs = d.renderJs;
+      record.injectedSettingsJs = null;
+      record.waitingForStatic = false;
+      clearRecordStaticSettingsRequest(record);
+      syncFrameShellChrome(record);
       return true;
     } catch (e) {
       return false;
     }
   }
 
+  function ensureFrameChromeOwnerStyle(doc) {
+    if (!doc || typeof doc.createElement !== 'function') {
+      return false;
+    }
+    if (typeof doc.getElementById === 'function' &&
+        doc.getElementById(FRAME_CHROME_STYLE_ID)) {
+      return true;
+    }
+    var style = doc.createElement('style');
+    style.id = FRAME_CHROME_STYLE_ID;
+    // Keep the body's border allocation, padding, min-height and scroll
+    // semantics exactly as authored. Only its pixels move: transparent border
+    // preserves layout while the shell pseudo-element draws the one visible ring.
+    style.textContent =
+        'html.global-lookup.' + FRAME_CHROME_CLASS + ' body{' +
+        'background:transparent!important;' +
+        'border-color:transparent!important;}';
+    var parent = doc.head || doc.documentElement;
+    if (!parent || typeof parent.appendChild !== 'function') {
+      return false;
+    }
+    parent.appendChild(style);
+    return true;
+  }
+
+  function scaledFrameChromePx(value, zoom, fallback) {
+    var px = parseFloat(value);
+    if (!isFinite(px) || px < 0) {
+      return fallback;
+    }
+    return (px * zoom) + 'px';
+  }
+
+  function clearFrameShellChrome(shell) {
+    if (!shell || !shell.style) {
+      return;
+    }
+    shell.style.background = 'transparent';
+    shell.style.border = '0';
+    if (typeof shell.style.setProperty === 'function') {
+      shell.style.setProperty('--global-lookup-shell-border-width', '0px');
+      shell.style.setProperty('--global-lookup-shell-border-style', 'solid');
+      shell.style.setProperty(
+          '--global-lookup-shell-border-color', 'transparent');
+    }
+  }
+
+  // BUG-1609 final root fix — the viewport-stable host shell owns the visible
+  // card fill/border/radius; the scrolling iframe body owns content layout only.
+  // This closes the reserved-scrollbar-gutter hole where native HRGN rounded a
+  // transparent outer strip while the inset body fill still ended in a square
+  // right edge. The values are copied from getComputedStyle AFTER settingsJs, so
+  // light/dark/e-ink, MD3 dynamic colours and panel opacity keep one truth source.
+  // The host script itself is injected from the current bundle at document-start,
+  // so the ownership rule also does not depend on a fresh popup.css cache entry.
+  function syncFrameShellChrome(record) {
+    var classes = null;
+    var shell = record && record.shell;
+    var ownershipRemoved = false;
+    try {
+      var doc = record && record.iframe && record.iframe.contentDocument;
+      var root = doc && doc.documentElement;
+      if (!root || !root.style) {
+        return;
+      }
+      if (typeof root.style.setProperty === 'function') {
+        root.style.setProperty(
+            'background', FRAME_CANVAS_GUARD_BACKGROUND, 'important');
+      } else {
+        // Minimal DOM harness / ancient engine fallback. Inline style still
+        // outranks the cached author stylesheet in both cases.
+        root.style.background = FRAME_CANVAS_GUARD_BACKGROUND;
+      }
+      var body = doc.body;
+      var frame = record.iframe;
+      classes = root.classList;
+      var view = doc.defaultView || (frame && frame.contentWindow);
+      if (!body || !shell || !shell.style || !frame || !frame.style ||
+          !classes || typeof classes.remove !== 'function' ||
+          typeof classes.add !== 'function' || !view ||
+          typeof view.getComputedStyle !== 'function' ||
+          !ensureFrameChromeOwnerStyle(doc)) {
+        return;
+      }
+
+      // Reused frames already carry the ownership class. Remove it briefly so
+      // computed style exposes the freshly injected author theme, then restore
+      // ownership after copying the values to the shell.
+      classes.remove(FRAME_CHROME_CLASS);
+      ownershipRemoved = true;
+      var computed = view.getComputedStyle(body);
+      var background = computed && computed.backgroundColor;
+      if (!background || background === 'transparent' ||
+          background === 'rgba(0, 0, 0, 0)') {
+        // Stylesheet/navigation failure: clear any reused shell theme and leave
+        // the ownership class off, so body remains the self-contained fallback.
+        clearFrameShellChrome(shell);
+        return;
+      }
+      var borderWidth = computed.borderTopWidth || '0px';
+      var borderStyle = computed.borderTopStyle || 'none';
+      var borderColor = computed.borderTopColor || 'transparent';
+      var zoom = frameContentZoom(record);
+      var radius = scaledFrameChromePx(
+          computed.borderTopLeftRadius || '10px', zoom, '10px');
+      var visibleBorderWidth = (borderStyle === 'none' || borderWidth === '0px')
+          ? '0px'
+          : scaledFrameChromePx(borderWidth, zoom, '0px');
+
+      shell.style.background = background;
+      shell.style.border = '0';
+      shell.style.setProperty(
+          '--global-lookup-shell-border-width', visibleBorderWidth);
+      shell.style.setProperty(
+          '--global-lookup-shell-border-style', borderStyle);
+      shell.style.setProperty(
+          '--global-lookup-shell-border-color', borderColor);
+      shell.style.borderRadius = radius;
+      frame.style.borderRadius = radius;
+      frame.style.clipPath = 'inset(0 round ' + radius + ')';
+      classes.add(FRAME_CHROME_CLASS);
+      ownershipRemoved = false;
+    } catch (e) {
+      // Same-origin access is part of the host contract. If navigation failed,
+      // clear stale shell paint and restore body-owned degraded behaviour.
+      if (ownershipRemoved) {
+        clearFrameShellChrome(shell);
+      }
+    }
+  }
+
   // TODO-1231 P1 — apply THIS frame's has-child-popup boolean on its own cheap
-  // channel: a single `window.__hasChildPopup` assignment inside the frame realm,
+  // channel: a single `window.__hasChildPopup` assignment on the same-origin
+  // frame realm,
   // mirroring the in-app _setHasChildPopupJs. Kept OFF settingsJs so a nested
   // open/close never re-evals the whole card body. popup.js reads
   // window.__hasChildPopup LIVE at click time (parent-card tap -> close the
@@ -1620,14 +2118,36 @@
     } catch (e) {
       win = null;
     }
-    if (!win || typeof win.eval !== 'function') {
+    if (!win) {
       return;
     }
     try {
-      win.eval('window.__hasChildPopup = ' + (desired ? 'true' : 'false') + ';');
+      win.__hasChildPopup = desired;
       record.hasChildPopup = desired;
     } catch (e) {
       // No realm yet (node harness / not loaded) -> the next render/load applies.
+    }
+  }
+
+  function clearFrameSelection(record) {
+    if (!record || !record.iframe) {
+      return;
+    }
+    try {
+      var win = record.iframe.contentWindow;
+      if (win && win.fushiSelection &&
+          typeof win.fushiSelection.clearSelection === 'function') {
+        win.fushiSelection.clearSelection();
+        return;
+      }
+      var selection = win && typeof win.getSelection === 'function'
+          ? win.getSelection()
+          : null;
+      if (selection && typeof selection.removeAllRanges === 'function') {
+        selection.removeAllRanges();
+      }
+    } catch (e) {
+      // A navigating/recovering realm will clear its selection on load anyway.
     }
   }
 
@@ -1642,6 +2162,9 @@
       record.route = route;
       return;
     }
+    // Retire the old route's resend latch before rebinding the stable root. A
+    // cache miss on the new route must be allowed to post its own request.
+    clearRecordStaticSettingsRequest(record);
     if (record.observer && typeof record.observer.disconnect === 'function') {
       try {
         record.observer.disconnect();
@@ -1672,19 +2195,73 @@
     if (record.shell && typeof record.shell.setAttribute === 'function') {
       record.shell.setAttribute(ATTR_CONTENT_READY, 'false');
     }
+    if (record.parentIndex >= 0) {
+      record.requiredGeometryEpoch = 0;
+      record.revealReady = false;
+      if (record.shell && typeof record.shell.setAttribute === 'function') {
+        record.shell.setAttribute(ATTR_REVEAL_READY, 'false');
+      }
+    }
   }
 
-  function renderPayload(layer, descriptor) {
+  function pruneStaticSettings(popups) {
+    var live = new Set();
+    for (var i = 0; i < popups.length; i++) {
+      var revision = descriptorStaticRevision(popups[i]);
+      if (revision != null) {
+        live.add(revision);
+      }
+    }
+    staticSettingsByRevision.forEach(function (settings, revision) {
+      if (!live.has(revision)) {
+        for (var i = 0; i < standbyRecords.length; i++) {
+          if (standbyRecords[i].injectedStaticRevision === revision) {
+            // The @font-face in this parked realm points at the soon-revoked
+            // Blob URL. Force the next acquire/prime to install a live revision.
+            standbyRecords[i].injectedStaticRevision = null;
+          }
+        }
+        revokeObjectUrls(settings && settings.objectUrls);
+        staticSettingsByRevision.delete(revision);
+      }
+    });
+    staticSettingsRequests.forEach(function (key) {
+      var separator = key.lastIndexOf('|');
+      var revision = separator >= 0 ? Number(key.substring(separator + 1)) : NaN;
+      if (!live.has(revision)) {
+        staticSettingsRequests.delete(key);
+      }
+    });
+  }
+
+  function renderPayload(layer, descriptor, logicalDepth) {
+    // Materialise the revision before creating/loading any iframe. Otherwise a
+    // nested iframe can win the load race against the root (the only descriptor
+    // carrying staticHeadJs) and unnecessarily round-trip to Dart for a resend.
+    var revision = cacheDescriptorStaticSettings(descriptor);
+    if (revision != null && staticSettingsByRevision.has(revision)) {
+      primeStandbyRecords(revision);
+    }
     var record = frames.get(descriptor.id);
     if (!record) {
-      record = createRecord(layer, descriptor);
+      record = acquireStandbyRecord(layer, descriptor) ||
+          createRecord(layer, descriptor, false);
       frames.set(descriptor.id, record);
     } else {
       record.parentIndex = descriptor.parentIndex;
       record.descriptor = descriptor;
     }
+    var modern = revision != null &&
+        typeof descriptor.entriesJs === 'string' &&
+        typeof descriptor.renderJs === 'string';
+    var contentChanged = modern
+        ? (record.injectedStaticRevision !== revision ||
+           record.injectedEntriesJs !== descriptor.entriesJs ||
+           record.injectedRenderJs !== descriptor.renderJs)
+        : record.injectedSettingsJs !== descriptor.settingsJs;
     bindRecordRoute(record, activeRoute);
-    applyShellStyle(record.shell, descriptor);
+    applyShellStyle(
+        record.shell, descriptor, !contentChanged, logicalDepth);
     // D1 / TODO-1231 v3 — geometry is placed for this layer, so reveal-ready is
     // eligible. The shell still stays hidden until content-ready also flips (the
     // CSS gate needs BOTH). reveal-ready flips NOW only if the committed window
@@ -1695,15 +2272,14 @@
     if (record.loaded) {
       wrapFrameBridge(record);
       observeGalFrameDirty(record, record.route);
-      // TODO-1231 P1 — only re-run the FULL body (which ends in renderPopup() = a
-      // card DOM teardown+rebuild) when it ACTUALLY changed. A nested open/close
-      // leaves the parent's body byte-identical (has-child now rides its own
-      // channel below), so re-evaling it needlessly rebuilt the card, dropped its
-      // scroll, and re-fired favorite/duplicate/audio probes — the "父弹窗闪烁".
-      // Skip it; the one thing that changed rides applyHasChildPopup.
-      if (record.injectedSettingsJs !== descriptor.settingsJs) {
-        injectContent(record);
-        observeContent(record, record.route);
+      // BUG-1833 / TODO-1231 P1 — immutable settings are keyed by a small
+      // revision; entries + the per-frame render body are the only per-lookup
+      // strings. This keeps a custom data-URL font out of the hot descriptor and
+      // still skips a parent re-render when only hasChildPopup changed.
+      if (contentChanged) {
+        if (injectContent(record)) {
+          observeContent(record, record.route);
+        }
       } else if (hasContent(record)) {
         // TODO-1231 (BUG-583) — the body did not change (same-word re-lookup, or
         // a nested render re-sending the parent's identical body) AND the frame
@@ -1731,52 +2307,218 @@
         toRemove.push(id);
       }
     });
+    // The standby pool has one slot. Parking every removed child in sequence
+    // used to reset child A, destroy it while parking B, reset B, and so on.
+    // Select the deepest/hottest child once; permanently destroy the rest
+    // without a reuse reset, then park only that candidate.
+    var parkCandidate = null;
+    if (keepIds.length) {
+      for (var candidateIndex = toRemove.length - 1;
+           candidateIndex >= 0; candidateIndex--) {
+        var candidate = frames.get(toRemove[candidateIndex]);
+        if (candidate && candidate.parentIndex >= 0) {
+          parkCandidate = candidate;
+          break;
+        }
+      }
+    }
     for (var i = 0; i < toRemove.length; i++) {
       var id = toRemove[i];
       var record = frames.get(id);
-      if (record) {
-        // D1 — tear down the content observer + safety timer so a removed layer
-        // leaves no dangling MutationObserver / timeout.
-        if (record.observer &&
-            typeof record.observer.disconnect === 'function') {
-          try {
-            record.observer.disconnect();
-          } catch (e) {
-            // no-op
-          }
-          record.observer = null;
-        }
-        if (record.dirtyObserver &&
-            typeof record.dirtyObserver.disconnect === 'function') {
-          try {
-            record.dirtyObserver.disconnect();
-          } catch (e) {
-            // no-op
-          }
-          record.dirtyObserver = null;
-        }
-        if (record.contentSafetyTimer != null) {
-          clearTimerSafe(record.contentSafetyTimer);
-          record.contentSafetyTimer = null;
-        }
-        if (record.revealSafetyTimer != null) {
-          clearTimerSafe(record.revealSafetyTimer);
-          record.revealSafetyTimer = null;
-        }
-        if (record.shell && record.shell.parentNode) {
-          record.shell.parentNode.removeChild(record.shell);
-        }
-      }
       frames.delete(id);
-      // TODO-1188 — drop any pending bridge routes for the removed frame so the
-      // route map never leaks entries for a torn-down iframe (whose adapter can
-      // no longer resolve anything anyway).
-      bridgeRoutes.forEach(function (route, globalId) {
-        if (route.frameId === id) {
-          bridgeRoutes.delete(globalId);
+      if (!record) {
+        continue;
+      }
+      if (record !== parkCandidate) {
+        destroyRecord(record);
+      }
+    }
+    if (parkCandidate) {
+      parkRecord(parkCandidate);
+    }
+  }
+
+  function frameDescriptors() {
+    var descriptors = [];
+    frames.forEach(function (record) {
+      if (record && record.descriptor) {
+        descriptors.push(record.descriptor);
+      }
+    });
+    return descriptors;
+  }
+
+  // Detect only a true, same-route ancestor replacement. Pure append
+  // (R -> R,C), pure truncate (R,A -> R), an identical resend and a new root
+  // keep their existing immediate paths. This runs before renderPayload so a
+  // synchronous popupRendered from the new iframe already sees the transaction.
+  function preparePendingSuffixSwap(incomingIds) {
+    pendingSuffixSwap = null;
+    if (!Array.isArray(incomingIds) || incomingIds.length < 2 ||
+        !frames.size) {
+      return false;
+    }
+    var previousIds = [];
+    var sameActiveRoute = true;
+    frames.forEach(function (record, id) {
+      previousIds.push(id);
+      if (!record || !sameRoute(record.route, activeRoute)) {
+        sameActiveRoute = false;
+      }
+    });
+    if (!sameActiveRoute || !previousIds.length ||
+        previousIds[0] !== incomingIds[0]) {
+      return false;
+    }
+    var commonPrefix = 0;
+    var limit = Math.min(previousIds.length, incomingIds.length);
+    while (commonPrefix < limit &&
+           previousIds[commonPrefix] === incomingIds[commonPrefix]) {
+      commonPrefix++;
+    }
+    // Append/identical has no retiring suffix; truncate has no incoming suffix.
+    if (commonPrefix >= previousIds.length ||
+        commonPrefix >= incomingIds.length) {
+      return false;
+    }
+    var incoming = new Set(incomingIds);
+    var retiringIds = [];
+    for (var i = commonPrefix; i < previousIds.length; i++) {
+      if (!incoming.has(previousIds[i])) {
+        retiringIds.push(previousIds[i]);
+      }
+    }
+    if (!retiringIds.length) {
+      return false;
+    }
+    pendingSuffixSwap = {
+      route: cloneRoute(activeRoute),
+      targetIds: incomingIds.slice(),
+      // The full logical suffix is checked, rather than only physically-new ids.
+      // This also handles an identical resend while an earlier swap is pending.
+      incomingSuffixIds: incomingIds.slice(commonPrefix),
+      retiringIds: retiringIds,
+    };
+    cancelStandbyRefill();
+    return true;
+  }
+
+  function schedulePostSwapMeasure(routeSnapshot, afterCapture) {
+    var route = cloneRoute(routeSnapshot || activeRoute);
+    var raf = (typeof window.requestAnimationFrame === 'function')
+        ? window.requestAnimationFrame
+        : null;
+    if (afterCapture !== true || route.source !== 'galCard' || !raf) {
+      scheduleMeasure(route, true);
+      return;
+    }
+    // armCaptureReady also uses two frames. Queue this after it, then add the
+    // actual measure on frame three so captureReady for the committed transition
+    // epoch is published before the shrink announces a successor epoch.
+    try {
+      raf(function () {
+        try {
+          raf(function () {
+            scheduleMeasure(route, true);
+          });
+        } catch (e) {
+          scheduleMeasure(route, true);
         }
       });
+    } catch (e) {
+      scheduleMeasure(route, true);
     }
+  }
+
+  function tryFinalizePendingSuffixSwap(afterCapture) {
+    var swap = pendingSuffixSwap;
+    if (!swap || !sameRoute(swap.route, activeRoute) ||
+        committedGeometryEpoch <= 0 ||
+        committedGeometryEpoch !== announcedGeometryEpoch) {
+      return false;
+    }
+    for (var i = 0; i < swap.incomingSuffixIds.length; i++) {
+      var record = frames.get(swap.incomingSuffixIds[i]);
+      if (!record || !record.active || !sameRoute(record.route, swap.route) ||
+          !record.contentReady || !record.revealReady ||
+          !shellCoveredByCommittedGeometry(record)) {
+        return false;
+      }
+    }
+    // Clear first so parkRecord/scheduleStandbyRefill can restore the warm pool.
+    // Gate reveal and outgoing teardown happen inside this one JS task, so the
+    // compositor can paint either the old suffix or the complete new suffix,
+    // never the common prefix alone.
+    pendingSuffixSwap = null;
+    removeMissing(swap.targetIds);
+    var layer = document.getElementById(LAYER_ID);
+    scheduleStandbyRefill(layer);
+    pruneStaticSettings(frameDescriptors());
+    // The committed transition geometry intentionally covered old + new. Shrink
+    // the native region only after the replacement is visible.
+    schedulePostSwapMeasure(swap.route, afterCapture === true);
+    return true;
+  }
+
+  // Fast close/prune path. Dart has already validated and truncated its pure
+  // stack; the physical host only needs the surviving id prefix. Their frame
+  // geometry, entries and rendered DOM are unchanged, so re-sending hundreds
+  // of dictionary entries merely to have renderPayload reject them was pure
+  // serialization/ExecuteScript/parse overhead.
+  function retainStack(keepIds) {
+    if (!Array.isArray(keepIds) || !keepIds.length) {
+      return false;
+    }
+    var liveIds = [];
+    frames.forEach(function (_, id) {
+      liveIds.push(id);
+    });
+    if (keepIds.length > liveIds.length) {
+      return false;
+    }
+    for (var i = 0; i < keepIds.length; i++) {
+      if (typeof keepIds[i] !== 'string' || keepIds[i] !== liveIds[i]) {
+        return false;
+      }
+    }
+    for (var j = 0; j < keepIds.length; j++) {
+      var record = frames.get(keepIds[j]);
+      if (!record) {
+        return false;
+      }
+      if (record.descriptor) {
+        record.descriptor.hasChildPopup = j < keepIds.length - 1;
+      }
+      applyHasChildPopup(record);
+    }
+    // Match the in-app nested-close contract: the surviving new leaf no longer
+    // owns the selection that opened the removed child. Use the iframe's full
+    // selection helper (CSS highlights + DOM ranges) without re-rendering it.
+    clearFrameSelection(frames.get(keepIds[keepIds.length - 1]));
+    pendingSuffixSwap = null;
+    removeMissing(keepIds);
+    var layer = document.getElementById(LAYER_ID);
+    scheduleStandbyRefill(layer);
+    var liveDescriptors = [];
+    frames.forEach(function (record) {
+      if (record.descriptor) {
+        liveDescriptors.push(record.descriptor);
+      }
+    });
+    pruneStaticSettings(liveDescriptors);
+    scheduleMeasure(activeRoute, true);
+    return true;
+  }
+
+  // Retire the current transaction without rewinding the process-wide epoch.
+  // A delayed native ack from the retired lookup then fails the equality check
+  // instead of mutating the new lookup's layer or reveal gates.
+  function resetGeometryTransaction() {
+    announcedGeometryEpoch = 0;
+    committedGeometryEpoch = 0;
+    announcedGeometryKey = '';
+    announcedGeometryBounds = null;
+    committedGeometryBounds = null;
   }
 
   // TODO-1095 — a NEW hotkey lookup is starting. Dart calls this (via the render
@@ -1794,10 +2536,12 @@
   // renderStack); only the CONTENT half of the two-flag gate is re-armed.
   function beginLookup(rootId, route, routeEpoch, lookupEpoch) {
     activeRoute = normalizeRoute(route, routeEpoch, lookupEpoch);
+    pendingSuffixSwap = null;
     lastBBoxKey = '';
     // BUG-749 — native cleared its shell rects on Hide(); force a re-post even
     // when the fresh card's rects CSV equals the previous lookup's.
     lastShellRectsKey = '';
+    resetGeometryTransaction();
     // TODO-1231 v3 (BUG-583) — a NEW hotkey lookup re-reveals the window from a
     // fresh origin; drop the committed layer origin so a stale NEGATIVE origin left
     // by a PREVIOUS lookup's up/left cascade cannot falsely mark THIS lookup's
@@ -1825,6 +2569,8 @@
     // own floor from the new cursor position and pushes it via the next renderStack).
     originFloorLeft = 0;
     originFloorTop = 0;
+    galOriginRatchetLeft = Infinity;
+    galOriginRatchetTop = Infinity;
     if (typeof rootId !== 'string' || !rootId) {
       return;
     }
@@ -1901,42 +2647,44 @@
 
   function renderStack(payload) {
     var popups = (payload && payload.popups) || [];
+    // BUG-1857 — Dart 的权威重排接管 root 尺寸；live-fit 到此为止。
+    endLiveResize();
     // TODO-1345 — pick up this lookup's reserved origin floor BEFORE the diff +
     // measure so the very first reveal already commits the headroom-covered origin.
     applyOriginFloor(payload && payload.originFloor);
-    // spec 2026-07-10 — panel mode rides the payload (absent = cascade, so the
-    // transient overlay's payload/behaviour is byte-identical to pre-panel).
-    layoutMode = (payload && payload.layoutMode) === 'panel' ? 'panel' : 'cascade';
-    if (layoutMode === 'panel') {
-      var panelBar = ensurePanelBar();
-      // BUG-768 — the panel bar lives in document.body (fixed, OUTSIDE any shell),
-      // so it never inherits the per-shell data-theme. Without it the pin/close
-      // glyphs kept the light-theme dark-gray color (rgba(60,60,67,.6)) and
-      // vanished on a dark window. Stamp the root descriptor's resolved brightness
-      // onto the bar so the dark-theme .panel-btn variant applies (mirrors the
-      // per-shell .global-lookup-close dark variant).
-      var rootTheme = popups.length ? (popups[0] && popups[0].theme) : null;
-      if (panelBar && (rootTheme === 'dark' || rootTheme === 'light')) {
-        panelBar.setAttribute('data-theme', rootTheme);
-      }
-    }
     if (!popups.length) {
+      pendingSuffixSwap = null;
       removeMissing([]);
+      // BUG-1833 — no lookup is visible, so release the one look-ahead realm
+      // along with its decoded font/static document state.  The next host
+      // activation recreates it before a child lookup can be requested.
+      destroyStandbyPool();
+      pruneStaticSettings([]);
       lastBBoxKey = '';
       lastShellRectsKey = '';
+      resetGeometryTransaction();
       lastRootId = null;
       return;
     }
     var layer = ensureLayer();
     var ids = [];
+    for (var idIndex = 0; idIndex < popups.length; idIndex++) {
+      var idDescriptor = popups[idIndex];
+      if (idDescriptor && typeof idDescriptor.id === 'string') {
+        ids.push(idDescriptor.id);
+      }
+    }
+    preparePendingSuffixSwap(ids);
+    var renderedIds = [];
     for (var i = 0; i < popups.length; i++) {
       var descriptor = popups[i];
       if (!descriptor || typeof descriptor.id !== 'string') {
         continue;
       }
-      ids.push(descriptor.id);
-      renderPayload(layer, descriptor);
+      renderedIds.push(descriptor.id);
+      renderPayload(layer, descriptor, i);
     }
+    ids = renderedIds;
     // TODO-1079 (C) — a changed ROOT frame id means a fresh lookup: clear the
     // bbox de-dup so the new card's first overlaySize is never suppressed by a
     // stale identical-bbox key from the previous lookup.
@@ -1945,9 +2693,24 @@
       lastRootId = rootId;
       lastBBoxKey = '';
       lastShellRectsKey = '';
+      resetGeometryTransaction();
     }
-    removeMissing(ids);
-    scheduleMeasure(activeRoute);
+    tryFinalizePendingSuffixSwap();
+    if (!pendingSuffixSwap) {
+      removeMissing(ids);
+    }
+    // Keep exactly one already-loaded popup realm ahead of the visible stack,
+    // but never make its navigation contend with the card being presented now.
+    if (!pendingSuffixSwap) {
+      scheduleStandbyRefill(layer);
+    }
+    // Static heads can contain a ~13 MB data-URL font. Keep only revisions used
+    // by the live descriptors so theme/font changes do not grow host memory for
+    // the lifetime of the process.
+    pruneStaticSettings(pendingSuffixSwap ? frameDescriptors() : popups);
+    // Dirty/new records still perform a real DOM measurement; unchanged
+    // ancestors reuse their cached content height and keep a stable viewport.
+    scheduleMeasure(activeRoute, true);
   }
 
   // D2 — measure every live frame same-origin content height and report the UNION
@@ -1955,24 +2718,22 @@
   // whole stack. Height refined to the iframe content (capped to planned shell
   // height). devicePixelRatio sent so C++ converts CSS-px box to physical-px
   // window geometry. De-duped on the box key.
-  function measureAndReport(routeSnapshot) {
+  function measureAndReport(routeSnapshot, allowCachedMeasurements) {
     var route = cloneRoute(routeSnapshot || activeRoute);
     var routePrefix = routeKey(route) + '|';
     if (!frames.size) {
       return;
     }
-    // spec 2026-07-10 panel — the window rect is FIXED (user-remembered): no
-    // overlaySize report, no reveal-resize loop. The root shell fills the
-    // viewport (applyShellStyle) and content scrolls inside the iframe, so a
-    // new clipboard sentence re-renders with zero window motion. Shells still
-    // need their reveal gate flipped (normally done by the overlaySize path),
-    // so flip it here directly.
-    if (layoutMode === 'panel') {
-      frames.forEach(function (record) {
-        if (sameRoute(record.route, route)) {
-          setGateFlag(record, ATTR_REVEAL_READY, 'revealReady');
-        }
-      });
+    var waitingForStatic = false;
+    frames.forEach(function (record) {
+      if (sameRoute(record.route, route) && record.waitingForStatic) {
+        waitingForStatic = true;
+      }
+    });
+    // Do not report bootstrap geometry for an empty/stale iframe while its
+    // static settings are missing. The routed resend will inject content and
+    // schedule a fresh measurement; until then the shell must remain invisible.
+    if (waitingForStatic) {
       return;
     }
     // TODO-1231 v2 (BUG-583) — the union bbox has two independently-sourced
@@ -2009,6 +2770,13 @@
     var maxBottom = -Infinity;
     var shellRects = [];
     var routedFrameCount = 0;
+    // BUG-2082 — the ROOT card's own measured height (CSS px), reported next to
+    // the union bbox. The gal in-game presenter anchors the root card by the
+    // edge that touches the clicked glyph (bottom edge when the card flips
+    // above the line); the union bbox alone cannot tell the root's height once
+    // nested children extend the union, so the host reports it explicitly.
+    var rootHeight = 0;
+    var firstShellHeight = 0;
     frames.forEach(function (record) {
       if (!sameRoute(record.route, route)) {
         return;
@@ -2027,7 +2795,8 @@
           ? plannedFrame.height
           : (parseFloat(record.shell.style.height) || 0);
       var height = plannedHeight;
-      var measured = measureContentHeight(record);
+      var measured = measureContentHeight(
+          record, allowCachedMeasurements === true);
       if (measured > 0) {
         height = plannedHeight > 0 ? Math.min(plannedHeight, measured) : measured;
       }
@@ -2042,6 +2811,12 @@
       // BUG-749 — collect every placed shell (same left/top/height the bbox
       // uses) for the native hit/paint region below.
       shellRects.push([left, top, width, height]);
+      if (firstShellHeight <= 0 && height > 0) {
+        firstShellHeight = height;
+      }
+      if (record.parentIndex < 0 && rootHeight <= 0 && height > 0) {
+        rootHeight = height;
+      }
       // MAX-corner (window size) + the bootstrap origin fallback see EVERY placed
       // shell, so the window pre-grows to cover a not-yet-ready child (no clip).
       if (left < minLeftAll) minLeftAll = left;
@@ -2079,6 +2854,22 @@
     if (originFloorTop < minTop) {
       minTop = originFloorTop;
     }
+    // galCard grows only where a real child lands (no large transparent first
+    // frame), then holds that outermost origin until the lookup is dismissed.
+    // Dart applies the same outward-only ratchet at the HWND boundary. Keeping
+    // it here too makes rectsCsv, bbox, layer shift and CapturePreview masking
+    // share one coordinate origin when descendants are removed again.
+    if (route.source === 'galCard') {
+      if (isFinite(galOriginRatchetLeft) &&
+          galOriginRatchetLeft < minLeft) {
+        minLeft = galOriginRatchetLeft;
+      }
+      if (isFinite(galOriginRatchetTop) && galOriginRatchetTop < minTop) {
+        minTop = galOriginRatchetTop;
+      }
+      galOriginRatchetLeft = minLeft;
+      galOriginRatchetTop = minTop;
+    }
     if (!isFinite(minLeft) || !isFinite(minTop) ||
         !isFinite(maxRight) || !isFinite(maxBottom)) {
       return;
@@ -2113,27 +2904,75 @@
       }).join(',');
     }).join(';');
     var rectsKey = routePrefix + rectsCsv;
-    if (rectsKey !== lastShellRectsKey) {
-      lastShellRectsKey = rectsKey;
-      postToHost('shellRects', [rectsCsv], route);
-    }
     var dpr = (typeof window.devicePixelRatio === 'number' &&
                window.devicePixelRatio > 0) ? window.devicePixelRatio : 1;
+    if (rootHeight <= 0) {
+      rootHeight = firstShellHeight;
+    }
     var box = {
       left: minLeft,
       top: minTop,
       width: maxRight - minLeft,
       height: maxBottom - minTop,
+      rootHeight: rootHeight,
       dpr: dpr,
     };
+    // rootHeight is part of the de-dup key: a root that shrinks under a child
+    // still spanning the old bottom leaves the union unchanged, yet the in-game
+    // root placement must follow the new root edge.
     var key = routePrefix + box.left + ',' + box.top + ',' + box.width + ',' +
-        box.height + ',' + dpr;
-    if (key === lastBBoxKey) {
+        box.height + ',' + box.rootHeight + ',' + dpr;
+    var geometryKey = key + '|' + rectsCsv;
+    var rectsChanged = rectsKey !== lastShellRectsKey;
+    var bboxChanged = key !== lastBBoxKey;
+    if (!rectsChanged && !bboxChanged &&
+        geometryKey === announcedGeometryKey) {
+      // A replacement logical child can occupy exactly the same already-
+      // committed rectangle as its predecessor. Bind that new hidden record to
+      // the existing transaction without another native round-trip.
+      frames.forEach(function (record) {
+        if (!sameRoute(record.route, route) || record.parentIndex < 0 ||
+            record.revealReady) {
+          return;
+        }
+        record.requiredGeometryEpoch = announcedGeometryEpoch;
+        if (announcedGeometryEpoch === committedGeometryEpoch) {
+          maybeFlipRevealReady(record, route);
+        }
+      });
       return;
     }
+    var geometryEpoch = ++nextGeometryEpoch;
+    announcedGeometryEpoch = geometryEpoch;
+    announcedGeometryKey = geometryKey;
+    announcedGeometryBounds = {
+      left: minLeft,
+      top: minTop,
+      right: maxRight,
+      bottom: maxBottom,
+    };
+    // Every not-yet-visible nested record in this measured union waits for this
+    // exact transaction. Already-visible cards are never re-hidden when an
+    // asynchronous dictionary row later changes height, avoiding whole-stack
+    // flashing while still gating the newly-opened child.
+    frames.forEach(function (record) {
+      if (sameRoute(record.route, route) && record.parentIndex >= 0 &&
+          !record.revealReady) {
+        record.requiredGeometryEpoch = geometryEpoch;
+      }
+    });
+    if (rectsChanged) {
+      lastShellRectsKey = rectsKey;
+      // Keep shellRects before overlaySize. WebView2 messages preserve order,
+      // so native applies the HRGN belonging to this transaction before it
+      // resizes/reveals and acknowledges geometryEpoch.
+      postToHost('shellRects', [rectsCsv, geometryEpoch], route);
+    }
     lastBBoxKey = key;
+    box.geometryEpoch = geometryEpoch;
     // overlaySize args: [dpr, box]. Dart reveal/resize the window to this CSS-px
-    // box (times dpr at the C++ window boundary).
+    // box (times dpr at the C++ window boundary). A shellRects-only change still
+    // posts this message so the native region update receives a causal ack.
     postToHost('overlaySize', [dpr, box], route);
   }
 
@@ -2161,7 +3000,11 @@
   // 裁口外直接露出底下的应用 —— 正是本 bug 的原始症状。
   // Math.ceil 只防子像素短一格；z=1（默认 16px 字号 + 100% 界面大小）时
   // scrollHeight/offsetHeight 本就是整数，换算是恒等变换，行为逐字节不变。
-  function measureContentHeight(record) {
+  function measureContentHeight(record, allowCachedMeasurement) {
+    if (allowCachedMeasurement === true && !record.contentMeasureDirty &&
+        record.measuredContentHeight > 0) {
+      return record.measuredContentHeight;
+    }
     try {
       var doc = record.iframe.contentDocument;
       if (!doc || !doc.body) {
@@ -2176,7 +3019,10 @@
       if (layoutPx <= 0) {
         return 0;
       }
-      return Math.ceil(layoutPx * frameContentZoom(record));
+      var measured = Math.ceil(layoutPx * frameContentZoom(record));
+      record.measuredContentHeight = measured;
+      record.contentMeasureDirty = false;
+      return measured;
     } catch (e) {
       return 0;
     }
@@ -2191,7 +3037,28 @@
   // negation and layerOffset* is kept in lock-step for the hit-test (TODO-1189).
   // CSS px only (no dpr; the dpr boundary is the C++ window). Bad args default to
   // 0 (no shift), matching a single popup / down-right cascade.
-  function commitLayerShift(bboxLeft, bboxTop) {
+  function commitLayerShift(
+      bboxLeft, bboxTop, geometryEpoch, deferSuffixSwapFinalize) {
+    var epoch = (typeof geometryEpoch === 'number' && isFinite(geometryEpoch) &&
+        geometryEpoch > 0) ? Math.trunc(geometryEpoch) : 0;
+    if (epoch > 0) {
+      // Only the latest announced bbox + shellRects transaction owns the layer.
+      // This rejects A's late native callback after B has already been measured.
+      if (epoch !== announcedGeometryEpoch || !announcedGeometryBounds) {
+        return false;
+      }
+      committedGeometryEpoch = epoch;
+      committedGeometryBounds = {
+        left: announcedGeometryBounds.left,
+        top: announcedGeometryBounds.top,
+        right: announcedGeometryBounds.right,
+        bottom: announcedGeometryBounds.bottom,
+      };
+    } else if (announcedGeometryEpoch > 0) {
+      // Once this host uses the epoch contract, a delayed legacy/unstamped
+      // callback must not acknowledge or move its latest geometry.
+      return false;
+    }
     var l = (typeof bboxLeft === 'number' && isFinite(bboxLeft)) ? bboxLeft : 0;
     var t = (typeof bboxTop === 'number' && isFinite(bboxTop)) ? bboxTop : 0;
     var layerEl = document.getElementById(LAYER_ID);
@@ -2210,6 +3077,10 @@
     frames.forEach(function (record) {
       maybeFlipRevealReady(record);
     });
+    if (deferSuffixSwapFinalize !== true) {
+      tryFinalizePendingSuffixSwap();
+    }
+    return true;
   }
 
   // The galgame surface is captured into a bitmap immediately after Dart hears
@@ -2218,46 +3089,79 @@
   // not mean WebView2 has presented the resized DOM yet.  A capture in that gap
   // can contain both the old and new layout.  Gate the capture on two animation
   // frames in the host realm, and stamp the immutable lookup route so a late
-  // frame from an older lookup cannot publish pixels for the current one.
-  function armCaptureReady(routeSnapshot, physicalWidth, physicalHeight) {
+  // frame from an older lookup cannot publish pixels for the current one. A
+  // bounded timer preserves liveness when Chromium suspends rAF for the parked
+  // off-screen WebView; the same route/epoch/token gate owns both completions.
+  function armCaptureReady(
+      routeSnapshot, physicalWidth, physicalHeight, geometryEpoch) {
     var route = cloneRoute(routeSnapshot || activeRoute);
     if (route.source !== 'galCard') {
+      return;
+    }
+    var epoch = (typeof geometryEpoch === 'number' && isFinite(geometryEpoch) &&
+        geometryEpoch > 0) ? Math.trunc(geometryEpoch) : 0;
+    if (epoch <= 0 || epoch !== committedGeometryEpoch ||
+        epoch !== announcedGeometryEpoch) {
       return;
     }
     var key = routeKey(route);
     // Resize/commit can converge more than once inside one lookup route, and
     // physical width/height may remain equal while the layer origin changes.
     // Only the latest commit is allowed to satisfy Dart's pending capture.
-    var token = (galCaptureReadySchedules.get(key) || 0) + 1;
+    // Use an object identity rather than a route-local integer. The completed
+    // token is removed from the map, so a numeric counter derived from the map
+    // could otherwise restart at 1 and let a very late rAF consume a newer arm
+    // for the same route/epoch (ABA).
+    var token = {};
     galCaptureReadySchedules.set(key, token);
     var raf = (typeof window.requestAnimationFrame === 'function')
         ? window.requestAnimationFrame
         : null;
+    var fallbackTimer = null;
+    var finished = false;
     var postIfCurrent = function () {
-      if (galCaptureReadySchedules.get(key) !== token) {
+      if (finished) {
         return;
       }
-      galCaptureReadySchedules.delete(key);
-      if (routeKey(activeRoute) === key) {
-        postToHost('captureReady', [physicalWidth, physicalHeight], route);
+      var current = galCaptureReadySchedules.get(key) === token &&
+          routeKey(activeRoute) === key &&
+          epoch === committedGeometryEpoch &&
+          epoch === announcedGeometryEpoch;
+      finished = true;
+      clearTimerSafe(fallbackTimer);
+      fallbackTimer = null;
+      if (galCaptureReadySchedules.get(key) === token) {
+        galCaptureReadySchedules.delete(key);
       }
+      if (!current) {
+        return;
+      }
+      postToHost(
+          'captureReady', [physicalWidth, physicalHeight, epoch], route);
     };
-    // The production WebView2 host always supplies rAF.  Keep the synchronous
-    // fallback only for non-browser harnesses; no fixed-time sleep is involved.
     if (!raf) {
       postIfCurrent();
       return;
     }
+    // A permanently off-screen WebView2 can expose requestAnimationFrame while
+    // suspending its callbacks. Prefer two paint opportunities, but do not let
+    // Dart wait forever for a callback Chromium may never schedule.
+    fallbackTimer = setTimerSafe(
+        postIfCurrent, GAL_CAPTURE_READY_RAF_FALLBACK_MS);
     try {
       raf(function () {
         if (routeKey(activeRoute) !== key ||
-            galCaptureReadySchedules.get(key) !== token) {
-          if (galCaptureReadySchedules.get(key) === token) {
-            galCaptureReadySchedules.delete(key);
-          }
+            galCaptureReadySchedules.get(key) !== token ||
+            epoch !== committedGeometryEpoch ||
+            epoch !== announcedGeometryEpoch) {
+          postIfCurrent();
           return;
         }
-        raf(postIfCurrent);
+        try {
+          raf(postIfCurrent);
+        } catch (e) {
+          postIfCurrent();
+        }
       });
     } catch (e) {
       postIfCurrent();
@@ -2265,9 +3169,16 @@
   }
 
   function commitLayerShiftAndArmCapture(
-      bboxLeft, bboxTop, routeSnapshot, physicalWidth, physicalHeight) {
-    commitLayerShift(bboxLeft, bboxTop);
-    armCaptureReady(routeSnapshot, physicalWidth, physicalHeight);
+      bboxLeft, bboxTop, routeSnapshot, physicalWidth, physicalHeight,
+      geometryEpoch) {
+    if (!commitLayerShift(
+        bboxLeft, bboxTop, geometryEpoch, true)) {
+      return false;
+    }
+    armCaptureReady(
+        routeSnapshot, physicalWidth, physicalHeight, geometryEpoch);
+    tryFinalizePendingSuffixSwap(true);
+    return true;
   }
 
   // TODO-890 — slide the ROOT card off-screen, THEN post dismiss. Adds the
@@ -2364,12 +3275,6 @@
   // clicks to popup.js's per-layer path fixes it (SUB5) while the close-X (SUB1)
   // gives the mouse an explicit per-layer affordance.
   function onHostPointerDown(event) {
-    // spec 2026-07-10 panel — persistent semantics: a blank click inside the
-    // fixed panel window (panel bar gaps etc.) never dismisses. The panel bar's
-    // own buttons stopPropagation before this handler anyway.
-    if (layoutMode === 'panel') {
-      return;
-    }
     var t = event && event.target;
     if (t && typeof t.closest === 'function' &&
         t.closest('.global-lookup-frame-shell')) {
@@ -2388,14 +3293,6 @@
   // stack race). Only a click OUTSIDE every shell (true gap) dismisses the root.
   // Returns whether the click hit any shell (C++ uses it for logging).
   function handleGlobalClick(x, y) {
-    // BUG-859 — persistent panel semantics: a blank click never dismisses the
-    // clipboard panel (mirrors the onHostPointerDown panel guard). Without this
-    // a forwarded gap-click would post dismissPopupAt(0) against the panel —
-    // and the panel root's percentage/calc() shell size parses to a 100×0 box
-    // in frameIdAtPoint, so EVERY panel click would mis-read as a gap.
-    if (layoutMode === 'panel') {
-      return true;
-    }
     var frameId = frameIdAtPoint(x, y);
     if (frameId != null) {
       return true; // Card hit: popup.js owns the per-layer decision.
@@ -2496,59 +3393,63 @@
     return frameSources.has(iframe) ? frameSources.get(iframe) : null;
   }
 
-  // 剪贴板面板：把 ROOT 帧的滚动位置复位到顶部。面板的 root iframe 是**复用**的
-  // （renderStack 只换 #entries-container innerHTML，iframe / 其滚动容器不重建），
-  // 故上一句被滚动过的 scrollTop 会跨渲染保留——一条更长的新剪贴板内容渲染进来时
-  // 停在旧偏移而非从头看。Dart 面板控制器在「剪贴板内容更新」路径（update /
-  // _showTextOnly，均 seed 新 root）渲染后调本函数，让新句总是从顶部开始。点句中字
-  // 重查（_lookupFromBanner）/ 关子卡（_rerender）不调，保留其滚动位置。
-  // 面板 iframe 直接加载 popup.html（无 content.js shadow，__fushiRoot 为 null），
-  // 滚动落在 document 上；#entries-container 兜底（万一改用容器滚动）。no-op 当无
-  // root 帧 / 跨源守卫 / node harness。
-  function scrollRootToTop() {
-    var rootId = null;
-    frames.forEach(function (record, id) {
-      if (rootId === null) {
-        rootId = id;
-      }
-    });
-    var record = rootId !== null ? frames.get(rootId) : null;
-    if (!record) {
-      return;
+  // 手柄重设计 P5 — Dart 侧手柄独占路由（GamepadService → native gamepadAction
+  // → 本 host）：把动作转发进**顶层**卡片帧的 popup.js 既有入口，与滚轮/键盘
+  // 同一批执行体（fushiFocusDictionaryEntryMove / fushiPopupMineFirstEntry /
+  // fushiPopupPlayFirstAudio / fushiPopupScrollBy），不另起桥。帧不可用 /
+  // 入口缺席一律返回 false（no-op），绝不抛——本函数由 fire-and-forget 的
+  // ExecuteScript 调用，异常只会淹死在 WebView 控制台里。
+  function gamepadAction(action, dy) {
+    var record = null;
+    var id = topPopupId();
+    if (id !== null) {
+      record = frames.get(id);
     }
-    var win = null;
-    var doc = null;
+    var win = frameWindowOf(record);
+    if (!win) {
+      return false;
+    }
+    // 卡片是离屏渲染后 blit 进游戏 Layer 的，requestGalFrameDirty 是唯一的重采触发。
+    // observeGalFrameDirty 的 MutationObserver 只看 childList/subtree/attributes/
+    // characterData —— **滚动不是 DOM mutation**，所以右摇杆滚卡片不补这一句在游戏里
+    // 画面纹丝不动；词条切换的「滚进视口」分量同理，光靠 class 变更那次 dirty 的
+    // double-rAF 恰好晚于滚动落定并不保证。handleGlobalWheel 正因为这个在派发完
+    // wheel 之后也显式调了同一句（见该函数末尾）。
+    var acted = false;
     try {
-      win = record.iframe.contentWindow;
-      doc = record.iframe.contentDocument;
-    } catch (e) {
-      win = null;
-      doc = null;
-    }
-    try {
-      if (doc) {
-        if (doc.scrollingElement) {
-          doc.scrollingElement.scrollTop = 0;
+      if (action === 'next' || action === 'prev') {
+        acted = typeof win.fushiFocusDictionaryEntryMove === 'function' &&
+            win.fushiFocusDictionaryEntryMove(action) === 'moved';
+      } else if (action === 'mine') {
+        if (typeof win.fushiPopupMineFirstEntry === 'function') {
+          win.fushiPopupMineFirstEntry();
+          acted = true;
         }
-        if (doc.documentElement) {
-          doc.documentElement.scrollTop = 0;
+      } else if (action === 'audio') {
+        if (typeof win.fushiPopupPlayFirstAudio === 'function') {
+          win.fushiPopupPlayFirstAudio();
+          acted = true;
         }
-        if (doc.body) {
-          doc.body.scrollTop = 0;
-        }
-        var container = (typeof doc.getElementById === 'function')
-            ? doc.getElementById('entries-container')
-            : null;
-        if (container) {
-          container.scrollTop = 0;
+      } else if (action === 'scroll') {
+        if (typeof win.fushiPopupScrollBy === 'function') {
+          win.fushiPopupScrollBy(dy || 0);
+          acted = true;
+        } else {
+          var el = win.document &&
+              (win.document.scrollingElement || win.document.documentElement);
+          if (el && typeof el.scrollBy === 'function') {
+            el.scrollBy(0, dy || 0);
+            acted = true;
+          }
         }
       }
-      if (win && typeof win.scrollTo === 'function') {
-        win.scrollTo(0, 0);
-      }
     } catch (e) {
-      // no-op（跨源 / 未加载）。
+      return false;
     }
+    if (acted) {
+      requestGalFrameDirty(record.route);
+    }
+    return acted;
   }
 
   // TODO-1188 — the contentWindow of a frame record, or null when unavailable
@@ -2639,6 +3540,9 @@
       contentReady: !!record.contentReady,
       revealReady: !!record.revealReady,
       visible: !!record.contentReady && !!record.revealReady,
+      requiredGeometryEpoch: record.requiredGeometryEpoch || 0,
+      committedGeometryEpoch: committedGeometryEpoch,
+      announcedGeometryEpoch: announcedGeometryEpoch,
     };
   }
 
@@ -2652,7 +3556,7 @@
   // window.fushiSelection.highlightSelection(count) inside its iframe realm (the
   // popup.js selection already spans the just-clicked word). No-op on a bad index
   // / count / missing frame so a failed highlight never breaks the lookup.
-  function highlightFrame(frameIndex, count) {
+  function highlightFrame(frameIndex, count, token) {
     if (typeof frameIndex !== 'number' || frameIndex < 0) {
       return false;
     }
@@ -2679,15 +3583,42 @@
     if (!win || typeof win.eval !== 'function') {
       return false;
     }
+    // BUG-2054 — everything that can throw stays INSIDE this try (the function's
+    // contract, stated above, is that a failed highlight never breaks the
+    // lookup): win.eval, the shell-geometry read inside anchorRectToScreen and
+    // postToHost alike. Dart AWAITS this report before it places the child card,
+    // so a throw here would also strand that wait until its timeout.
     try {
-      win.eval(
+      var bounds = win.eval(
           'window.fushiSelection && ' +
-          'window.fushiSelection.highlightSelection && ' +
-          'window.fushiSelection.highlightSelection(' + count + ');');
-      return true;
+          'window.fushiSelection.highlightSelection ? ' +
+          'window.fushiSelection.highlightSelection(' + count + ') : null;');
+      // highlightSelection also RETURNS the matched word's bbox in the parent
+      // iframe's own viewport: it unions every getClientRects() fragment, so on
+      // a WRAPPED selection its bottom is the LAST line. The child card would
+      // otherwise be anchored on selection.js's getSelectionRect() — the FIRST
+      // CHARACTER's rect (textSelected fires before the dictionary runs, so the
+      // matched length is unknown then) — which on a wrapped selection covers
+      // only the tapped line, leaving the child card on top of the second one.
+      // Reported through the SAME iframe-local -> window-local transform the
+      // original anchor took (in-app cards do it via reanchorNestedPopupToWord).
+      var anchor = anchorRectToScreen(target, bounds);
+      var usable = !!anchor && anchor.width > 0 && anchor.height > 0;
+      // Always answer a TOKENED request — Dart is waiting on it before placing
+      // the child card, and a silent drop would cost it the full timeout. An
+      // unusable bbox reports null: Dart then keeps the first-character anchor.
+      if (typeof token === 'number') {
+        postToHost('nestedWordAnchor', [frameIndex, usable ? anchor : null, token],
+            cloneRoute((target && target.route) || activeRoute));
+      }
     } catch (e) {
+      if (typeof token === 'number') {
+        postToHost('nestedWordAnchor', [frameIndex, null, token],
+            cloneRoute((target && target.route) || activeRoute));
+      }
       return false;
     }
+    return true;
   }
 
   // BUG-1127 — drive the overlay AUTO-READ through popup.js's own HTML5
@@ -2756,6 +3687,7 @@
   window.__globalLookupHost = {
     __installed: true,
     renderStack: renderStack,
+    retainStack: retainStack,
     beginLookup: beginLookup,
     topPopupId: topPopupId,
     frameIdForIframe: frameIdForIframe,
@@ -2767,21 +3699,40 @@
     handleGlobalWheel: handleGlobalWheel,
     armGalFrameDirty: requestGalFrameDirty,
     requestGalFrameDirty: requestGalFrameDirty,
+    gamepadAction: gamepadAction,
     measureAndReport: measureAndReport,
     commitLayerShift: commitLayerShift,
     commitLayerShiftAndArmCapture: commitLayerShiftAndArmCapture,
     frameGateState: frameGateState,
     dismissRootWithSlide: dismissRootWithSlide,
-    // spec 2026-07-10 — panel-mode hooks (no-ops in cascade mode).
-    setPanelPinnedVisual: setPanelPinnedVisual,
-    setPanelBlockCaptureVisual: setPanelBlockCaptureVisual,
-    scrollRootToTop: scrollRootToTop,
-    // 剪贴板复制历史覆盖层（Dart 注入渲染 / 关闭）。
-    showClipboardHistory: showClipboardHistory,
-    hideClipboardHistory: hideClipboardHistory,
+    // BUG-1857 — grip 拖拽期间 root 卡跟随 viewport；endLiveResize 由 native
+    // WM_EXITSIZEMOVE 调，handleWindowResize 同时挂在 window resize 上（导出给
+    // node harness 直接驱动）。
+    beginLiveResize: beginLiveResize,
+    endLiveResize: endLiveResize,
+    handleWindowResize: handleWindowResize,
     _frames: frames,
     // TODO-1188 — exposed for the node bridge-routing harness only (never used to
     // drive behaviour): the live globalId -> {frameId, localId} route map.
     _bridgeRoutes: bridgeRoutes,
   };
+
+  function startStandbyPrewarm() {
+    ensureStandbyPool(ensureLayer());
+  }
+
+  // BUG-1833 — load popup.html, its scripts/styles, and the iframe bridge while
+  // the root host is idle.  A Shift/nested lookup can then rebind this realm
+  // instead of paying WebView2 document creation on the interaction path.
+  if (document.readyState === 'loading' &&
+      typeof window.addEventListener === 'function') {
+    window.addEventListener('DOMContentLoaded', startStandbyPrewarm,
+        {once: true});
+  } else {
+    startStandbyPrewarm();
+  }
+  // BUG-1857 — 模态 size 循环里每次 WM_SIZE → put_Bounds 都会到这里；未武装时 no-op。
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('resize', handleWindowResize);
+  }
 })();

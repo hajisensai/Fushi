@@ -1,3 +1,8 @@
+// CI 走 `--config Release`，MSVC 在该配置下定义 NDEBUG，裸 assert 会被整条编译掉，
+// 于是这个测试无论断言对不对都恒绿——与 BUG-1157「零测试执行伪装成通过」同一族。
+// 必须在任何 include 之前撤销它。守卫：tests/assert_liveness_guard_test.py
+#undef NDEBUG
+
 #include <cassert>
 #include <cstring>
 
@@ -8,6 +13,11 @@ int main() {
   using fushi_voice_hook::LaunchedProcessDisposition;
   using fushi_voice_hook::LaunchFailureReason;
   using fushi_voice_hook::LaunchFailureToken;
+  // 这三个 using 是补上的：`#undef NDEBUG` 之前，用到它们的 assert 整条被预处理器
+  // 删掉，编译器从没见过这些标识符。也就是说这些断言从来没有被编译过，更谈不上执行。
+  using fushi_voice_hook::LaunchedProcessIsSuspended;
+  using fushi_voice_hook::MustResumeAfterInjection;
+  using fushi_voice_hook::SuspendedStartupWaitBudgetMs;
 
   // 根因回归：CREATE_SUSPENDED 拉起的游戏在 ResumeThread 之前失败时，绝不允许把进程
   // 留在挂起态。旧实现对「就绪事件超时」「旧映射不可复用」这两条（都在 Resume 之前
@@ -51,6 +61,9 @@ int main() {
                      "bitnessMismatch") == 0);
   assert(std::strcmp(LaunchFailureToken(LaunchFailureReason::kStaleSession),
                      "staleSession") == 0);
+  assert(std::strcmp(
+             LaunchFailureToken(LaunchFailureReason::kResidentHookMismatch),
+             "residentHookMismatch") == 0);
   assert(std::strcmp(
              LaunchFailureToken(LaunchFailureReason::kSharedMemoryUnavailable),
              "sharedMemoryUnavailable") == 0);

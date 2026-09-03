@@ -45,12 +45,33 @@ void main() {
   });
 
   test('致命级错误（FlutterError / UncaughtZone）走 logFatal 同步 flush', () {
+    // 判据是「处理体里调的是 logFatal」，不是来源字符串长什么样：来源已由
+    // flutterErrorLogSource(details) 按 details 推导（这样日志里能看到
+    // FlutterError/RenderFlex 这类可读上下文），点名旧字面量只会挡住改进。
+    final int flutterErrorAt = src.indexOf('FlutterError.onError = (details) {');
+    expect(flutterErrorAt, isNonNegative, reason: '必须装 FlutterError.onError');
+    final int flutterErrorEnd = src.indexOf(
+      'PlatformDispatcher.instance.onError',
+      flutterErrorAt,
+    );
+    expect(flutterErrorEnd, greaterThan(flutterErrorAt));
+    final String flutterErrorBody =
+        src.substring(flutterErrorAt, flutterErrorEnd);
     expect(
-      src.contains(
-              "ErrorLogService.instance.logFatal(\n        'FlutterError") ||
-          RegExp(r"logFatal\(\s*'FlutterError").hasMatch(src),
+      flutterErrorBody.contains('ErrorLogService.instance.logFatal('),
       isTrue,
       reason: 'FlutterError 是致命级，须 logFatal 同步落盘（崩溃前存活）',
+    );
+    expect(
+      RegExp(r'ErrorLogService\.instance\.log\(').hasMatch(flutterErrorBody),
+      isFalse,
+      reason: '这条守卫真正要挡的退化：换回普通 log（异步 append）——'
+          '错误若紧接着把进程带崩就来不及写盘',
+    );
+    expect(
+      flutterErrorBody.contains('flutterErrorLogSource(details)'),
+      isTrue,
+      reason: '来源须按 details 推导，别退回一律 FlutterError（那正是 BUG-1966）',
     );
     expect(
       RegExp(r"logFatal\('UncaughtZone'").hasMatch(src),

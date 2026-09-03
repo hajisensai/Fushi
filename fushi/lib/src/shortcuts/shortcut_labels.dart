@@ -23,6 +23,16 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_manga_page_backward;
       case ShortcutAction.mangaDismissDict:
         return t.shortcut_action_manga_dismiss_dict;
+      case ShortcutAction.mangaToggleChrome:
+        return t.shortcut_action_manga_toggle_chrome;
+      case ShortcutAction.mangaPanUp:
+        return t.shortcut_action_manga_pan_up;
+      case ShortcutAction.mangaPanDown:
+        return t.shortcut_action_manga_pan_down;
+      case ShortcutAction.mangaPanLeft:
+        return t.shortcut_action_manga_pan_left;
+      case ShortcutAction.mangaPanRight:
+        return t.shortcut_action_manga_pan_right;
       case ShortcutAction.readerPageForward:
         return t.shortcut_action_reader_page_forward;
       case ShortcutAction.readerPageBackward:
@@ -73,6 +83,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_audiobook_prev_sentence;
       case ShortcutAction.audiobookSeekToClickedSentence:
         return t.shortcut_action_audiobook_seek_clicked;
+      case ShortcutAction.videoDismissDict:
+        return t.shortcut_action_video_dismiss_dict;
       case ShortcutAction.videoTogglePlayPause:
         return t.shortcut_action_video_toggle_play_pause;
       case ShortcutAction.videoPlay:
@@ -113,6 +125,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_toggle_fullscreen;
       case ShortcutAction.videoToggleSubtitleList:
         return t.shortcut_action_video_toggle_subtitle_list;
+      case ShortcutAction.videoSearchSubtitleList:
+        return t.shortcut_action_video_search_subtitle_list;
       case ShortcutAction.videoToggleImmersiveLock:
         return t.shortcut_action_video_toggle_immersive_lock;
       case ShortcutAction.videoToggleSubtitleBlur:
@@ -163,6 +177,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_popup_prev_entry;
       case ShortcutAction.popupMineEntry:
         return t.shortcut_action_popup_mine_entry;
+      case ShortcutAction.popupPlayAudio:
+        return t.shortcut_action_popup_play_audio;
     }
   }
 }
@@ -242,6 +258,124 @@ extension MouseBindingLabel on MouseBinding {
         return Icons.mouse_outlined;
       default:
         return Icons.mouse;
+    }
+  }
+}
+
+/// 动作的按钮图标（视频页「快捷键 1..4」自定义按钮用）。
+///
+/// 为什么返回可空、而不是像同文件其它 switch 那样穷举全部动作：能被绑到屏幕按钮上的
+/// 只有视频页真正能执行的那批动作（`videoActionCallbacks` 的 keys），给阅读器 / 漫画 /
+/// 首页那些永远绑不上的动作硬凑图标是纯噪声。null = 没有专属图标，由调用方兜底。
+///
+/// ⚠️ 这里有 default 分支，漏配图标**不会**编译失败，所以由守卫测试
+/// `video_custom_action_bindings_test` 反向兜住：`videoActionCallbacks` 的每一个 key
+/// 都必须在这里拿到非 null 图标，新增视频动作时忘了配图标即测试红。否则用户会看到一个
+/// 没有语义的通用按钮，而「按钮长成它绑的那个动作」正是这个功能的设计承诺。
+extension ShortcutActionIcon on ShortcutAction {
+  IconData? get buttonIcon {
+    switch (this) {
+      // 播放控制
+      case ShortcutAction.videoTogglePlayPause:
+        return Icons.play_arrow_rounded;
+      case ShortcutAction.videoPlay:
+        return Icons.play_circle_outline;
+      case ShortcutAction.videoPause:
+        return Icons.pause_circle_outline;
+      case ShortcutAction.videoSeekBackward:
+        return Icons.fast_rewind_rounded;
+      case ShortcutAction.videoSeekForward:
+        return Icons.fast_forward_rounded;
+      case ShortcutAction.videoPreviousFrame:
+        return Icons.skip_previous_outlined;
+      case ShortcutAction.videoNextFrame:
+        return Icons.skip_next_outlined;
+
+      // 倍速
+      case ShortcutAction.videoSpeedUp:
+        return Icons.speed;
+      case ShortcutAction.videoSpeedDown:
+        return Icons.slow_motion_video;
+      case ShortcutAction.videoResetSpeed:
+        return Icons.restore;
+      case ShortcutAction.videoHoldSpeed:
+        return Icons.fast_forward;
+
+      // 字幕跳转 / 重播
+      case ShortcutAction.videoPreviousSubtitle:
+        return Icons.skip_previous;
+      case ShortcutAction.videoNextSubtitle:
+        return Icons.skip_next;
+      case ShortcutAction.videoReplayCurrentSubtitle:
+        return Icons.replay;
+      case ShortcutAction.videoReplayPreviousSubtitle:
+        return Icons.replay_5;
+
+      // 章节
+      case ShortcutAction.videoPreviousChapter:
+        return Icons.first_page;
+      case ShortcutAction.videoNextChapter:
+        return Icons.last_page;
+
+      // 字幕显示 / 遮蔽
+      case ShortcutAction.videoToggleSubtitleList:
+        return Icons.format_list_bulleted;
+      case ShortcutAction.videoSearchSubtitleList:
+        return Icons.search;
+      case ShortcutAction.videoToggleSubtitleBlur:
+        return Icons.blur_on;
+      case ShortcutAction.videoCycleSubtitleObscure:
+        return Icons.visibility_off_outlined;
+      case ShortcutAction.videoToggleSubtitleHide:
+        return Icons.subtitles_off_outlined;
+      case ShortcutAction.videoCycleSecondarySubtitleObscure:
+        return Icons.blur_linear;
+      case ShortcutAction.videoToggleSecondarySubtitleHide:
+        return Icons.closed_caption_disabled_outlined;
+
+      // 字幕对轴
+      case ShortcutAction.videoOpenSubtitleAlign:
+        return Icons.graphic_eq;
+      case ShortcutAction.videoSubtitleDelayIncrease:
+        return Icons.more_time;
+      case ShortcutAction.videoSubtitleDelayDecrease:
+        return Icons.history_toggle_off;
+      case ShortcutAction.videoAlignSubtitleToPrev:
+        return Icons.align_horizontal_left;
+      case ShortcutAction.videoAlignSubtitleToNext:
+        return Icons.align_horizontal_right;
+
+      // 音量
+      case ShortcutAction.videoVolumeUp:
+        return Icons.volume_up;
+      case ShortcutAction.videoVolumeDown:
+        return Icons.volume_down;
+      case ShortcutAction.videoToggleMute:
+        return Icons.volume_off;
+
+      // 画面 / 杂项
+      case ShortcutAction.videoToggleFullscreen:
+        return Icons.fullscreen;
+      case ShortcutAction.videoScreenshot:
+        return Icons.photo_camera_outlined;
+      case ShortcutAction.videoToggleShaderCompare:
+        return Icons.compare;
+      case ShortcutAction.videoToggleImmersiveLock:
+        return Icons.lock_outline;
+
+      // 学习
+      case ShortcutAction.videoToggleFavoriteSentence:
+        return Icons.star_border_rounded;
+      case ShortcutAction.videoEnterCaret:
+        return Icons.text_fields;
+
+      // 全 app 共用「返回上一级」：视频页把它解释成逐级退出阶梯。
+      case ShortcutAction.globalBack:
+        return Icons.arrow_back;
+
+      // ignore: no_default_cases
+      default:
+        return null;
     }
   }
 }

@@ -68,6 +68,15 @@ class VideoController {
   /// [Rect] of the video output, received from the native implementation.
   final ValueNotifier<Rect?> rect = ValueNotifier<Rect?>(null);
 
+  /// HIBIKI FORK (Windows HDR passthrough): when `true` every [Video] bound to
+  /// this controller paints nothing at all — no [Texture], no `fill` colour —
+  /// so the region is transparent and the native host window sitting behind
+  /// the Flutter window (libmpv `vo=gpu-next --wid`) shows through, while the
+  /// controls / subtitle overlays inside [Video] keep rendering. Flipped by the
+  /// app together with the mpv `vo` switch; both the windowed and the
+  /// fullscreen [Video] follow it because they share the controller.
+  final ValueNotifier<bool> hidden = ValueNotifier<bool>(false);
+
   /// {@macro video_controller}
   VideoController(
     this.player, {

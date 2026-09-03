@@ -12,6 +12,22 @@
 ///   dart tool/i18n_sync.dart --sort                # sort keys alphabetically in all files
 ///                                                  # (stable, idempotent)
 ///   dart tool/i18n_sync.dart --dry-run             # show what would change without writing
+///
+/// `--add` / `--remove` / `--rename` / `--sort` may be repeated and mixed in one
+/// invocation; they run **in the order given**, each language file is read once,
+/// all operations are applied to it, and it is written once:
+///
+///   dart tool/i18n_sync.dart --remove a --remove b --add c en zh
+///
+/// Every argument must be consumed by a flag. An unknown argument, a missing
+/// operand, or an operand that is itself a flag aborts with a usage error —
+/// nothing is written. This is the whole point of the op-list model: the old
+/// implementation took `args.indexOf('--remove')` (first flag only) and then
+/// `args.sublist(idx + 1).where((a) => !a.startsWith('--'))` (every later
+/// operand, flags stripped) and used just `rest[0]`, so `--remove a --remove b`
+/// silently deleted only `a` and dropped `b` on the floor with no diagnostic.
+library;
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -19,188 +35,348 @@ const String _i18nDir = 'lib/i18n';
 const String _baseFile = 'strings.i18n.json';
 const String _zhCnFile = 'strings_zh-CN.i18n.json';
 
-void main(List<String> args) {
-  final bool dryRun = args.contains('--dry-run');
-  final int addIdx = args.indexOf('--add');
-  final int removeIdx = args.indexOf('--remove');
-  final int renameIdx = args.indexOf('--rename');
-  final bool sortMode = args.contains('--sort');
+const String usage = '''
+Usage:
+  dart tool/i18n_sync.dart                      fill missing keys from zh-CN (or base EN)
+  dart tool/i18n_sync.dart --add <key> <en> <zh>
+  dart tool/i18n_sync.dart --remove <key>
+  dart tool/i18n_sync.dart --rename <old_key> <new_key>
+  dart tool/i18n_sync.dart --sort
+  dart tool/i18n_sync.dart --dry-run            preview without writing
 
-  if (addIdx >= 0) {
-    _addKey(args, addIdx, dryRun);
-  } else if (removeIdx >= 0) {
-    _removeKey(args, removeIdx, dryRun);
-  } else if (renameIdx >= 0) {
-    _renameKey(args, renameIdx, dryRun);
-  } else if (sortMode) {
-    _sortKeys(dryRun);
-  } else {
-    _syncMissing(dryRun);
-  }
+--add / --remove / --rename / --sort may be repeated and mixed; they run in the
+order given.''';
+
+/// One key-table edit. A command line is an ordered list of these — repeating a
+/// flag repeats the op instead of silently discarding the extra operands.
+sealed class I18nOp {
+  const I18nOp();
+
+  /// How this op was spelled on the command line (for diagnostics).
+  String describe();
 }
 
-/// Add a new key to all language files.
-void _addKey(List<String> args, int idx, bool dryRun) {
-  final List<String> rest =
-      args.sublist(idx + 1).where((a) => !a.startsWith('--')).toList();
-  if (rest.length < 3) {
-    stderr.writeln(
-      'Usage: dart tool/i18n_sync.dart --add <key> <en_value> <zh_value>',
-    );
-    exit(1);
-  }
-  final String key = rest[0];
-  final String enValue = rest[1];
-  final String zhValue = rest[2];
+final class AddKeyOp extends I18nOp {
+  const AddKeyOp({
+    required this.key,
+    required this.enValue,
+    required this.zhValue,
+  });
 
-  final List<File> files = _allI18nFiles();
-  int changed = 0;
+  final String key;
+  final String enValue;
+  final String zhValue;
 
-  for (final File file in files) {
-    final Map<String, dynamic> json = _readJson(file);
-    if (json.containsKey(key)) {
-      stdout.writeln('  skip ${file.path} (key already exists)');
-      continue;
-    }
-
-    final String value = _isZhCn(file) ? zhValue : enValue;
-    json[key] = value;
-    changed++;
-
-    if (dryRun) {
-      stdout.writeln('  would add "$key": "$value" to ${file.path}');
-    } else {
-      _writeJson(file, json);
-      stdout.writeln('  added "$key" to ${file.path}');
-    }
-  }
-  stdout.writeln('\n${dryRun ? "Would change" : "Changed"} $changed files.');
+  @override
+  String describe() => '--add $key';
 }
 
-/// Remove a key from all language files.
-void _removeKey(List<String> args, int idx, bool dryRun) {
-  final List<String> rest =
-      args.sublist(idx + 1).where((a) => !a.startsWith('--')).toList();
-  if (rest.isEmpty) {
-    stderr.writeln('Usage: dart tool/i18n_sync.dart --remove <key>');
-    exit(1);
-  }
-  final String key = rest[0];
-  final List<File> files = _allI18nFiles();
-  int changed = 0;
+final class RemoveKeyOp extends I18nOp {
+  const RemoveKeyOp(this.key);
 
-  for (final File file in files) {
-    final Map<String, dynamic> json = _readJson(file);
-    if (!json.containsKey(key)) continue;
-    json.remove(key);
-    changed++;
+  final String key;
 
-    if (dryRun) {
-      stdout.writeln('  would remove "$key" from ${file.path}');
-    } else {
-      _writeJson(file, json);
-      stdout.writeln('  removed "$key" from ${file.path}');
-    }
-  }
-  stdout.writeln('\n${dryRun ? "Would change" : "Changed"} $changed files.');
+  @override
+  String describe() => '--remove $key';
 }
 
-/// Rename a key in all language files, preserving each language's translation.
-///
-/// Unlike `--remove` + `--add` (which would reset all non-en/zh translations
-/// to a fallback), this keeps every existing value untouched and only changes
-/// the key. Fails without writing anything if the target key already exists
-/// in any file.
-void _renameKey(List<String> args, int idx, bool dryRun) {
-  final List<String> rest =
-      args.sublist(idx + 1).where((a) => !a.startsWith('--')).toList();
-  if (rest.length < 2) {
-    stderr.writeln(
-        'Usage: dart tool/i18n_sync.dart --rename <old_key> <new_key>');
-    exit(1);
-  }
-  final String oldKey = rest[0];
-  final String newKey = rest[1];
-  if (oldKey == newKey) {
-    stderr.writeln('Error: old and new key are identical ("$oldKey").');
-    exit(1);
+final class RenameKeyOp extends I18nOp {
+  const RenameKeyOp({required this.oldKey, required this.newKey});
+
+  final String oldKey;
+  final String newKey;
+
+  @override
+  String describe() => '--rename $oldKey $newKey';
+}
+
+final class SortKeysOp extends I18nOp {
+  const SortKeysOp();
+
+  @override
+  String describe() => '--sort';
+}
+
+/// A parsed command line: the ops to run, in order, plus the global flags.
+final class I18nCommand {
+  const I18nCommand({required this.ops, required this.dryRun});
+
+  final List<I18nOp> ops;
+  final bool dryRun;
+}
+
+/// Bad command line — nothing has been read or written yet.
+final class I18nUsageError implements Exception {
+  const I18nUsageError(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// An op that cannot be carried out safely (e.g. renaming onto an existing
+/// key). Thrown during the in-memory dry run so no file is ever half-written.
+final class I18nOpError implements Exception {
+  const I18nOpError(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+const Set<String> _flags = <String>{
+  '--add',
+  '--remove',
+  '--rename',
+  '--sort',
+  '--dry-run',
+};
+
+/// Parse argv into an ordered op list. Throws [I18nUsageError] on anything it
+/// cannot account for — no argument is ever ignored.
+I18nCommand parseI18nCommand(List<String> args) {
+  final List<I18nOp> ops = <I18nOp>[];
+  bool dryRun = false;
+  int i = 0;
+
+  while (i < args.length) {
+    final String token = args[i];
+    switch (token) {
+      case '--dry-run':
+        dryRun = true;
+        i += 1;
+      case '--sort':
+        ops.add(const SortKeysOp());
+        i += 1;
+      case '--add':
+        final List<String> operands = _takeOperands(args, i + 1, 3, token);
+        ops.add(AddKeyOp(
+          key: operands[0],
+          enValue: operands[1],
+          zhValue: operands[2],
+        ));
+        i += 1 + operands.length;
+      case '--remove':
+        final List<String> operands = _takeOperands(args, i + 1, 1, token);
+        ops.add(RemoveKeyOp(operands[0]));
+        i += 1 + operands.length;
+      case '--rename':
+        final List<String> operands = _takeOperands(args, i + 1, 2, token);
+        ops.add(RenameKeyOp(oldKey: operands[0], newKey: operands[1]));
+        i += 1 + operands.length;
+      default:
+        throw I18nUsageError('Error: unknown argument "$token".\n\n$usage');
+    }
   }
 
-  final List<File> files = _allI18nFiles();
-
-  // Pre-flight: never write a partial rename.
-  final Map<String, Map<String, dynamic>> parsed =
-      <String, Map<String, dynamic>>{};
-  int found = 0;
-  for (final File file in files) {
-    final Map<String, dynamic> json = _readJson(file);
-    if (json.containsKey(newKey)) {
-      stderr.writeln(
-        'Error: target key "$newKey" already exists in ${file.path}; aborting.',
+  for (final I18nOp op in ops) {
+    if (op is RenameKeyOp && op.oldKey == op.newKey) {
+      throw I18nUsageError(
+        'Error: old and new key are identical ("${op.oldKey}").',
       );
+    }
+  }
+
+  return I18nCommand(ops: ops, dryRun: dryRun);
+}
+
+/// Take exactly [count] operands for [flag]. A missing operand — or one that is
+/// itself a known flag — is a usage error, never a silently shifted argument.
+List<String> _takeOperands(
+  List<String> args,
+  int start,
+  int count,
+  String flag,
+) {
+  final List<String> operands = <String>[];
+  for (int i = start; i < args.length && operands.length < count; i++) {
+    if (_flags.contains(args[i])) break;
+    operands.add(args[i]);
+  }
+  if (operands.length < count) {
+    throw I18nUsageError(
+      'Error: $flag expects $count operand(s), got ${operands.length}.\n\n'
+      '$usage',
+    );
+  }
+  return operands;
+}
+
+/// Result of running the op list against one language file, in memory.
+final class I18nApplyResult {
+  const I18nApplyResult({
+    required this.json,
+    required this.log,
+    required this.hitsPerOp,
+  });
+
+  /// The key table after every op (a new map; the input is not mutated).
+  final Map<String, dynamic> json;
+
+  /// Human-readable lines describing what each op did to this file.
+  final List<String> log;
+
+  /// Per-op count of edits landed on this file, index-aligned with the ops
+  /// list. Lets the caller tell "key absent everywhere" from "key removed".
+  final List<int> hitsPerOp;
+
+  bool get changed => hitsPerOp.any((int hits) => hits > 0);
+}
+
+/// Apply [ops] in order to one language file's key table. Pure: no IO, no
+/// mutation of [json]. Throws [I18nOpError] for conditions that must abort the
+/// whole run before anything is written.
+I18nApplyResult applyI18nOps({
+  required Map<String, dynamic> json,
+  required List<I18nOp> ops,
+  required bool isZhCn,
+  required String label,
+}) {
+  Map<String, dynamic> current = Map<String, dynamic>.of(json);
+  final List<String> log = <String>[];
+  final List<int> hitsPerOp = List<int>.filled(ops.length, 0);
+
+  for (int i = 0; i < ops.length; i++) {
+    final I18nOp op = ops[i];
+    switch (op) {
+      case AddKeyOp(
+          :final String key,
+          :final String enValue,
+          :final String zhValue
+        ):
+        if (current.containsKey(key)) {
+          log.add('  skip $label (key "$key" already exists)');
+          continue;
+        }
+        final String value = isZhCn ? zhValue : enValue;
+        current[key] = value;
+        hitsPerOp[i] = 1;
+        log.add('  add "$key": "$value" -> $label');
+      case RemoveKeyOp(:final String key):
+        if (!current.containsKey(key)) continue;
+        current.remove(key);
+        hitsPerOp[i] = 1;
+        log.add('  remove "$key" from $label');
+      case RenameKeyOp(:final String oldKey, :final String newKey):
+        if (current.containsKey(newKey)) {
+          throw I18nOpError(
+            'Error: target key "$newKey" already exists in $label; aborting.',
+          );
+        }
+        if (!current.containsKey(oldKey)) {
+          log.add('  skip $label (key "$oldKey" not present)');
+          continue;
+        }
+        current = <String, dynamic>{
+          for (final MapEntry<String, dynamic> e in current.entries)
+            (e.key == oldKey ? newKey : e.key): e.value,
+        };
+        hitsPerOp[i] = 1;
+        log.add('  rename "$oldKey" -> "$newKey" in $label');
+      case SortKeysOp():
+        final List<String> keys = current.keys.toList();
+        final List<String> sortedKeys = List<String>.of(keys)..sort();
+        if (_listEquals(keys, sortedKeys)) continue;
+        current = <String, dynamic>{
+          for (final String k in sortedKeys) k: current[k],
+        };
+        hitsPerOp[i] = 1;
+        log.add('  sort $label');
+    }
+  }
+
+  return I18nApplyResult(json: current, log: log, hitsPerOp: hitsPerOp);
+}
+
+void main(List<String> args) {
+  final I18nCommand command;
+  try {
+    command = parseI18nCommand(args);
+  } on I18nUsageError catch (e) {
+    stderr.writeln(e.message);
+    exit(1);
+  }
+
+  if (command.ops.isEmpty) {
+    _syncMissing(command.dryRun);
+    return;
+  }
+  _runOps(command);
+}
+
+/// Run the op list: read every file once, apply all ops in memory, then write
+/// only the files that actually changed. Any [I18nOpError] aborts before the
+/// first write, so a run is all-or-nothing.
+void _runOps(I18nCommand command) {
+  final List<I18nOp> ops = command.ops;
+  final List<File> files = _allI18nFiles();
+  final Map<String, I18nApplyResult> results = <String, I18nApplyResult>{};
+  final List<int> totalHitsPerOp = List<int>.filled(ops.length, 0);
+
+  for (final File file in files) {
+    final I18nApplyResult result;
+    try {
+      result = applyI18nOps(
+        json: _readJson(file),
+        ops: ops,
+        isZhCn: _isZhCn(file),
+        label: file.path,
+      );
+    } on I18nOpError catch (e) {
+      stderr.writeln(e.message);
       exit(1);
     }
-    if (json.containsKey(oldKey)) found++;
-    parsed[file.path] = json;
+    results[file.path] = result;
+    for (int i = 0; i < ops.length; i++) {
+      totalHitsPerOp[i] += result.hitsPerOp[i];
+    }
   }
-  if (found == 0) {
-    stderr.writeln('Error: key "$oldKey" not found in any i18n file.');
-    exit(1);
+
+  // A rename that matched nothing is a typo, not a no-op: abort before writing
+  // (matches the pre-op-list behaviour). Other ops only warn, so existing
+  // scripts that remove an already-absent key keep their exit code.
+  for (int i = 0; i < ops.length; i++) {
+    if (totalHitsPerOp[i] > 0) continue;
+    final I18nOp op = ops[i];
+    switch (op) {
+      case RenameKeyOp(:final String oldKey):
+        stderr.writeln('Error: key "$oldKey" not found in any i18n file.');
+        exit(1);
+      case RemoveKeyOp(:final String key):
+        stderr.writeln(
+          'warning: key "$key" not found in any i18n file (nothing removed).',
+        );
+      case AddKeyOp(:final String key):
+        stderr.writeln(
+          'warning: key "$key" already exists in every i18n file (nothing added).',
+        );
+      case SortKeysOp():
+        break;
+    }
   }
 
   int changed = 0;
   for (final File file in files) {
-    final Map<String, dynamic> json = parsed[file.path]!;
-    if (!json.containsKey(oldKey)) {
-      stdout.writeln('  skip ${file.path} (key not present)');
-      continue;
+    final I18nApplyResult result = results[file.path]!;
+    for (final String line in result.log) {
+      stdout
+          .writeln(command.dryRun ? line.replaceFirst('  ', '  would ') : line);
     }
-
-    final Map<String, dynamic> renamed = <String, dynamic>{};
-    json.forEach((String k, dynamic v) {
-      renamed[k == oldKey ? newKey : k] = v;
-    });
+    if (!result.changed) continue;
     changed++;
-
-    if (dryRun) {
-      stdout.writeln('  would rename "$oldKey" -> "$newKey" in ${file.path}');
-    } else {
-      _writeJson(file, renamed);
-      stdout.writeln('  renamed "$oldKey" -> "$newKey" in ${file.path}');
-    }
-  }
-  stdout.writeln('\n${dryRun ? "Would change" : "Changed"} $changed files.');
-}
-
-/// Sort keys alphabetically in all language files (stable, idempotent).
-void _sortKeys(bool dryRun) {
-  final List<File> files = _allI18nFiles();
-  int changed = 0;
-
-  for (final File file in files) {
-    final Map<String, dynamic> json = _readJson(file);
-    final List<String> keys = json.keys.toList();
-    final List<String> sortedKeys = List<String>.of(keys)..sort();
-    if (_listEquals(keys, sortedKeys)) continue;
-
-    final Map<String, dynamic> sorted = <String, dynamic>{
-      for (final String k in sortedKeys) k: json[k],
-    };
-    changed++;
-
-    if (dryRun) {
-      stdout.writeln('  would sort ${file.path}');
-    } else {
-      _writeJson(file, sorted);
-      stdout.writeln('  sorted ${file.path}');
-    }
+    if (!command.dryRun) _writeJson(file, result.json);
   }
 
-  if (changed == 0) {
+  // Keep the historical sort-only message: `--sort` on already-sorted files is
+  // the one case where "changed nothing" is the expected happy path.
+  if (changed == 0 && ops.length == 1 && ops.single is SortKeysOp) {
     stdout.writeln('All i18n files are already sorted.');
-  } else {
-    stdout.writeln('\n${dryRun ? "Would change" : "Changed"} $changed files.');
+    return;
   }
+  stdout.writeln(
+      '\n${command.dryRun ? "Would change" : "Changed"} $changed files.');
 }
 
 /// Fill missing keys in translation files using zh-CN value, falling back to base EN.

@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -50,7 +50,7 @@ void main() {
           '[t375] FlutterError (non-fatal): ${details.exceptionAsString()}');
     };
     try {
-      app.main();
+      await launchFushiTestApp();
 
       final bool homeReady = await waitForHome(tester);
       expect(homeReady, isTrue, reason: 'Home must render');

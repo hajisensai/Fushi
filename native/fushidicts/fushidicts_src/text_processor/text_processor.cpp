@@ -3,11 +3,13 @@
 #include <utf8.h>
 #include <utf8proc.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
 #include <ranges>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 
@@ -23,12 +25,22 @@ struct TextProcessor {
 constexpr uint32_t KATAKANA_SMALL_KA = 0x30f5;
 constexpr uint32_t KATAKANA_SMALL_KE = 0x30f6;
 constexpr uint32_t KANA_PROLONGED_SOUND_MARK = 0x30fc;
+constexpr uint32_t HIRAGANA_SMALL_TSU = 0x3063;
+constexpr uint32_t KATAKANA_SMALL_TSU = 0x30c3;
 
 constexpr uint32_t HIRAGANA_CONVERSION_RANGE_START = 0x3041;
 constexpr uint32_t HIRAGANA_CONVERSION_RANGE_END = 0x3096;
 
 constexpr uint32_t KATAKANA_CONVERSION_RANGE_START = 0x30a1;
 constexpr uint32_t KATAKANA_CONVERSION_RANGE_END = 0x30f6;
+
+// 上游 9dc93b6：迭代符展开
+constexpr char32_t KANJI_ITERATION_MARK = 0x3005;
+constexpr char32_t HIRAGANA_ITERATION_MARK = 0x309d;
+constexpr char32_t HIRAGANA_VOICED_ITERATION_MARK = 0x309e;
+constexpr char32_t KATAKANA_ITERATION_MARK = 0x30fd;
+constexpr char32_t KATAKANA_VOICED_ITERATION_MARK = 0x30fe;
+constexpr char32_t DAKUTEN = 0x3099;
 
 // https://github.com/yomidevs/yomitan/blob/81d17d877fb18c62ba826210bf6db2b7f4d4deed/ext/js/language/ja/japanese.js#L121
 const std::unordered_map<char32_t, std::u32string> VOWEL_TO_KANA{
@@ -117,6 +129,49 @@ std::u32string katakana_to_hiragana(const std::u32string& text) {
     result += c;
   }
   return result;
+}
+
+bool is_emphatic(char32_t c) {
+  return c == HIRAGANA_SMALL_TSU || c == KATAKANA_SMALL_TSU || c == KANA_PROLONGED_SOUND_MARK;
+}
+
+// 上游 aaf75c9：折叠连续强调符（っっ→っ/ーー→ー）。首尾强调符保留。
+// https://github.com/yomidevs/yomitan/blob/81d17d877fb18c62ba826210bf6db2b7f4d4deed/ext/js/language/ja/japanese.js#L776
+// 上游的 full_collapse 模式（把单个っ/ッ/ー整个删掉）故意不移植：它会把含促音/长音的
+// 正常词吞字（ヒットで→ひとで 命中「海星」、きって→きて），且吞字变体消耗的源文本更长、
+// 在最长匹配优先排序下必然压过原形精确匹配；Yomitan 侧该模式也是默认关闭的用户选项（BUG-1777）。
+std::u32string collapse_emphatic_sequences(const std::u32string& text) {
+  ptrdiff_t left = 0;
+  while (left < static_cast<ptrdiff_t>(text.size()) && is_emphatic(text[left])) {
+    ++left;
+  }
+  ptrdiff_t right = static_cast<ptrdiff_t>(text.size()) - 1;
+  while (right >= 0 && is_emphatic(text[right])) {
+    --right;
+  }
+  if (left > right) {
+    return text;
+  }
+
+  std::u32string leading_emphatics = text.substr(0, left);
+  std::u32string trailing_emphatics = text.substr(right + 1);
+  std::u32string middle;
+  auto current_collapsed_code_point = static_cast<char32_t>(-1);
+
+  for (ptrdiff_t i = left; i <= right; ++i) {
+    char32_t c = text[i];
+    if (is_emphatic(c)) {
+      if (current_collapsed_code_point != c) {
+        current_collapsed_code_point = c;
+        middle += c;
+      }
+    } else {
+      current_collapsed_code_point = static_cast<char32_t>(-1);
+      middle += c;
+    }
+  }
+
+  return leading_emphatics + middle + trailing_emphatics;
 }
 
 // Unicode 范围小写（码点驱动，无语言门控）。覆盖 18 张 Yomitan 变换表里高频、
@@ -213,8 +268,53 @@ std::vector<TextProcessor> get_diacritic_removal_processors() {
   };
 }
 
+// BUG-2056：撇号有多个码点写法，词形还原规则与词典条目却只认一种。
+// 真实 EPUB 的英文缩合形/所有格几乎一律用排版撇号 U+2019（don’t / John’s），而
+// assets/transforms/en.json 的五条撇号规则（'s / s' / 'd / in' / "don't "）与绝大
+// 多数英文词典的条目键都是 ASCII U+0027。NFKC 帮不上忙——U+2019 没有兼容分解
+// （utf8proc_NFKC("’") 仍是 "’"）。所以哪怕扫描层把 don’t 整词送了进来，还原与查
+// 表两级仍会全部落空，最终命中的还是修复前那条 "don"。
+//
+// 折成**一个规范码点**并双向各出一路变体（option 0 保留原文，既有命中一条不丢）：
+//   option 1: 所有撇号 -> ASCII '    查询 don’t 命中 ASCII 条目 / ASCII 还原规则
+//   option 2: 所有撇号 -> U+2019 ’   查询 don't 命中以排版撇号建键的词典
+// 覆盖「文本写法 x 词典写法」四格全部，且无撇号文本 processed == variant，变体集
+// 原地折叠、零额外查询。
+constexpr char32_t APOSTROPHE_ASCII = U'\'';
+constexpr char32_t APOSTROPHE_RIGHT_SINGLE = 0x2019;
+
+bool is_apostrophe_like(char32_t c) {
+  return c == APOSTROPHE_ASCII ||     // '  U+0027
+         c == 0x2018 ||               // ‘  左单引号（OCR 常把 ’ 认成它）
+         c == APOSTROPHE_RIGHT_SINGLE ||  // ’  U+2019
+         c == 0x02BC;                 // ʼ  MODIFIER LETTER APOSTROPHE
+}
+
+std::u32string normalize_apostrophes(const std::u32string& text, char32_t to) {
+  std::u32string result;
+  result.reserve(text.size());
+  for (char32_t c : text) {
+    result += is_apostrophe_like(c) ? to : c;
+  }
+  return result;
+}
+
 std::vector<TextProcessor> get_english_processors() {
   return {
+      // BUG-2056：撇号写法归一（见上）。放在 lowercase 之前或之后都一样——两个处理器
+      // 互不依赖，变体扇出会把两种组合都算出来。
+      {.options = {0, 1, 2},
+       .process =
+           [](const std::u32string& text, int opt) -> std::u32string {
+             switch (opt) {
+               case 1:
+                 return normalize_apostrophes(text, APOSTROPHE_ASCII);
+               case 2:
+                 return normalize_apostrophes(text, APOSTROPHE_RIGHT_SINGLE);
+               default:
+                 return text;
+             }
+           }},
       // lowercase
       {.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
          if (opt == 1) {
@@ -280,9 +380,72 @@ std::u32string standardize_kanji(const std::u32string& text) {
   return result;
 }
 
+// 上游 9dc93b6：浊音迭代符（ゞ/ヾ）把前一假名 + 结合浊点经 NFC 合成浊音假名（こゞ→こご）。
+char32_t add_dakuten(char32_t kana) {
+  std::u32string pair = {kana, DAKUTEN};
+  std::string utf8 = utf8::utf32to8(pair);
+  utf8proc_uint8_t* out = utf8proc_NFC(reinterpret_cast<const utf8proc_uint8_t*>(utf8.c_str()));
+  if (!out) {
+    return kana;
+  }
+  std::u32string composed = utf8::utf8to32(std::string(reinterpret_cast<char*>(out)));
+  utf8proc_free(out);
+  return composed.size() == 1 ? composed.front() : kana;
+}
+
+char32_t expand_mark(char32_t prev, char32_t mark) {
+  switch (mark) {
+    case KANJI_ITERATION_MARK:
+    case HIRAGANA_ITERATION_MARK:
+    case KATAKANA_ITERATION_MARK:
+      return prev;
+    case HIRAGANA_VOICED_ITERATION_MARK:
+    case KATAKANA_VOICED_ITERATION_MARK:
+      return add_dakuten(prev);
+    default:
+      return 0;
+  }
+}
+
+// 上游 9dc93b6：迭代符展开（佐々木→佐佐木、こゝ→ここ）。
+std::u32string expand_iteration_marks(const std::u32string& text) {
+  std::u32string result;
+  for (size_t i = 0; i < text.size(); ++i) {
+    result += text[i];
+    if (i + 1 < text.size()) {
+      char32_t expanded = expand_mark(text[i], text[i + 1]);
+      if (expanded != 0) {
+        result += expanded;
+        ++i;
+      }
+    }
+  }
+  return result;
+}
+
+// 上游 ee0384b：全角数字 → 汉字数字（２→二）。ASCII 数字靠链中更早的
+// alphanumeric_to_fullwidth 先转全角，变体扇出组合后同样命中（2月→２月→二月）。
+constexpr std::u32string_view KANJI_NUMBERS = U"〇一二三四五六七八九";
+std::u32string numbers_to_kanji(const std::u32string& text) {
+  std::u32string result;
+  for (char32_t c : text) {
+    if (is_in_range(c, 0xff10, 0xff19)) {
+      result += KANJI_NUMBERS[c - 0xff10];
+    } else {
+      result += c;
+    }
+  }
+  return result;
+}
+
 // TODO: implement rest of preprocessors
 std::vector<TextProcessor> get_japanese_processors() {
   return {
+      // 上游 1cb9b4b：NFKC 提到链首——半角片假名（ﾒｶﾞﾈ）须先归一成全宽才能被
+      // 假名转换识别。仍满足「NFKC 在 english 的 to_lowercase 之前」（japanese 链先于
+      // english 链）：全角 Ａ 先折成半角 A，再被 to_lowercase 小写成 a。
+      {.options = {0, 1},
+       .process = [](const std::u32string& text, int opt) -> std::u32string { return opt == 1 ? nfkc(text) : text; }},
       // https://github.com/yomidevs/yomitan/blob/81d17d877fb18c62ba826210bf6db2b7f4d4deed/ext/js/language/ja/japanese-text-preprocessors.js#L66
       {.options = {0, 1, 2},
        .process =
@@ -296,18 +459,32 @@ std::vector<TextProcessor> get_japanese_processors() {
                  return text;
              }
            }},
-      // NFKC 在 english 的 to_lowercase 之前跑（japanese 链先于 english 链）：
-      // 全角 Ａ 先经 NFKC 折成半角 A，再被 to_lowercase 小写成 a。顺序关键。
+      // 上游 aaf75c9：强调折叠在假名转换后、宽度处理前（对齐上游链序）。
+      // full_collapse 模式故意不挂链（见 collapse_emphatic_sequences 注释，BUG-1777）。
       {.options = {0, 1},
-       .process = [](const std::u32string& text, int opt) -> std::u32string { return opt == 1 ? nfkc(text) : text; }},
+       .process =
+           [](const std::u32string& text, int opt) -> std::u32string {
+             return opt == 1 ? collapse_emphatic_sequences(text) : text;
+           }},
       {.options = {0, 1},
        .process =
            [](const std::u32string& text, int opt) -> std::u32string {
          return opt == 1 ? alphanumeric_to_fullwidth(text) : text;
        }},
-      // 上游 e7dfdea：异体字标准化处理器，追加到链尾（独立于 NFKC，顺序无关）。
-      {.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
+      // 上游 e7dfdea：异体字标准化处理器（独立于 NFKC，顺序无关）。
+      {.options = {0, 1},
+       .process =
+           [](const std::u32string& text, int opt) -> std::u32string {
          return opt == 1 ? standardize_kanji(text) : text;
+       }},
+      // 上游 9dc93b6 / ee0384b：迭代符展开与全角数字转汉字，按上游链序收尾。
+      {.options = {0, 1},
+       .process =
+           [](const std::u32string& text, int opt) -> std::u32string {
+         return opt == 1 ? expand_iteration_marks(text) : text;
+       }},
+      {.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
+         return opt == 1 ? numbers_to_kanji(text) : text;
        }}};
 }
 }

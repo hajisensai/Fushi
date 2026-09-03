@@ -72,6 +72,142 @@ void main() {
     });
   });
 
+  group('updateDownloadUrls (官网 R2 + GitHub 回退)', () {
+    test('Fushi release 资产优先走官网不可变 R2 路径，再回退原 GitHub 链', () {
+      const String direct =
+          'https://github.com/hajisensai/Fushi/releases/download/v2.1.1/'
+          'fushi-2.1.1-windows-setup.exe';
+      final List<String> urls = updateDownloadUrls(direct);
+
+      expect(
+        urls.first,
+        'https://fushi.moe/releases/v/v2.1.1/'
+        'fushi-2.1.1-windows-setup.exe?src=r2',
+        reason: '官网 R2 应作为 App 内更新下载首选源',
+      );
+      expect(urls[1], direct, reason: 'R2 未命中后立即回退 GitHub 直连');
+      for (final String prefix in updateCheckProxyPrefixes) {
+        expect(urls, contains('$prefix$direct'));
+      }
+      expect(urls.toSet().length, urls.length, reason: '候选不得重复');
+    });
+
+    test('版本和文件名经 Uri 安全解码再编码，保留 debug tag 与空格', () {
+      const String direct =
+          'https://github.com/hajisensai/fushi/releases/download/'
+          'v2.2.0-debug.7%2Babc1234/fushi%20debug.apk';
+      expect(
+        officialR2UrlForUpdateAsset(direct),
+        'https://fushi.moe/releases/v/v2.2.0-debug.7+abc1234/'
+        'fushi%20debug.apk?src=r2',
+      );
+    });
+
+    test('手动首选 GitHub / 代理站只重排首项，完整回退链不丢', () {
+      const String direct =
+          'https://github.com/hajisensai/Fushi/releases/download/v2.1.1/a.apk';
+      final List<String> automatic = updateDownloadUrls(direct);
+      final List<String> github = updateDownloadUrls(
+        direct,
+        preference: updateDownloadSourceGitHub,
+      );
+      expect(github.first, direct);
+      expect(github.toSet(), automatic.toSet());
+
+      final String prefix = updateCheckProxyPrefixes[2];
+      final List<String> proxy = updateDownloadUrls(
+        direct,
+        preference: updateDownloadSourceForProxy(prefix),
+      );
+      expect(proxy.first, '$prefix$direct');
+      expect(proxy.toSet(), automatic.toSet());
+      expect(proxy.length, automatic.length, reason: '选源不能删除灾备候选');
+    });
+
+    test('无效的存量首选值安全回退自动顺序', () {
+      const String direct =
+          'https://github.com/hajisensai/Fushi/releases/download/v2.1.1/a.apk';
+      expect(
+        updateDownloadUrls(direct, preference: 'proxy:https://dead.invalid/'),
+        updateDownloadUrls(direct),
+      );
+    });
+
+    test('旧仓库、第三方 host、API 和非 HTTPS URL 不得映射到官网 R2', () {
+      const List<String> unsupported = <String>[
+        'https://github.com/hajisensai/hibiki/releases/download/v1/a.apk',
+        'https://example.com/hajisensai/fushi/releases/download/v1/a.apk',
+        'https://api.github.com/repos/hajisensai/fushi/releases/latest',
+        'http://github.com/hajisensai/fushi/releases/download/v1/a.apk',
+      ];
+      for (final String url in unsupported) {
+        expect(officialR2UrlForUpdateAsset(url), isNull, reason: url);
+        expect(updateDownloadUrls(url), updateCheckUrls(url), reason: url);
+      }
+    });
+  });
+
+  group('resolveUpdateDownloadPlan (所选来源钉在哪个候选上 + 用没用上)', () {
+    const String official =
+        'https://github.com/hajisensai/Fushi/releases/download/v2.1.1/a.apk';
+    const String legacyRepo =
+        'https://github.com/hajisensai/hibiki/releases/download/v1/a.apk';
+
+    test('自动：不钉候选，也不算「没用上所选来源」', () {
+      final UpdateDownloadPlan plan = resolveUpdateDownloadPlan(
+        official,
+        preference: updateDownloadSourceAutomatic,
+      );
+      expect(plan.pinnedUrl, isNull);
+      expect(plan.hasExplicitSource, isFalse);
+      expect(plan.preferenceUnavailable, isFalse);
+      expect(plan.candidates, updateDownloadUrls(official));
+    });
+
+    test('显式选源：钉住首项候选，完整回退链不变', () {
+      for (final MapEntry<String, String> pair in <String, String>{
+        updateDownloadSourceCloudflare: officialR2UrlForUpdateAsset(official)!,
+        updateDownloadSourceGitHub: official,
+        updateDownloadSourceForProxy(updateCheckProxyPrefixes[1]):
+            '${updateCheckProxyPrefixes[1]}$official',
+      }.entries) {
+        final UpdateDownloadPlan plan =
+            resolveUpdateDownloadPlan(official, preference: pair.key);
+        expect(plan.pinnedUrl, pair.value, reason: pair.key);
+        expect(plan.candidates.first, pair.value, reason: pair.key);
+        expect(plan.preferenceUnavailable, isFalse, reason: pair.key);
+        expect(plan.candidates.toSet(),
+            resolveUpdateDownloadPlan(official).candidates.toSet(),
+            reason: '选源只重排、不删候选');
+      }
+    });
+
+    test('所选来源对本资产不适用 → 回退行为不变，但降级可观测', () {
+      // 旧仓库直链映射不出官网 R2（officialR2UrlForUpdateAsset 返 null）。以前这里
+      // 只是静默退回自动顺序：UI 零提示，用户以为自己锁定了 Cloudflare。
+      final UpdateDownloadPlan plan = resolveUpdateDownloadPlan(
+        legacyRepo,
+        preference: updateDownloadSourceCloudflare,
+      );
+      expect(plan.pinnedUrl, isNull);
+      expect(plan.hasExplicitSource, isTrue);
+      expect(plan.preferenceUnavailable, isTrue);
+      expect(plan.candidates, updateCheckUrls(legacyRepo),
+          reason: '不适用时候选序与自动完全一致（回退行为零变化）');
+      expect(plan.requestedSource, updateDownloadSourceCloudflare,
+          reason: '要告诉用户「没用上的是哪一个」，请求值必须留住');
+    });
+
+    test('已下线的镜像前缀同样算「没用上所选来源」', () {
+      final UpdateDownloadPlan plan = resolveUpdateDownloadPlan(
+        official,
+        preference: 'proxy:https://dead.invalid/',
+      );
+      expect(plan.pinnedUrl, isNull);
+      expect(plan.preferenceUnavailable, isTrue);
+    });
+  });
+
   group('fetchFirstSuccessfulBody (并发竞速选最快活源，注入 fetcher)', () {
     test('直连合法成功 → 直连胜出（候选并发发起，不再串行逐个等）', () async {
       final List<String> attempted = <String>[];

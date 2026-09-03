@@ -69,7 +69,12 @@ const List<_ScanRoot> _buildConfigRoots = <_ScanRoot>[
   _ScanRoot('windows/installer/fushi.iss'),
   _ScanRoot('ios/Runner.xcodeproj/project.pbxproj'),
   _ScanRoot('macos/Runner/Configs/AppInfo.xcconfig'),
-  _ScanRoot('../melos.yaml'),
+  // 原来这里是 ../melos.yaml。Melos 7 起该文件被废弃、配置迁进根 pubspec 的
+  // melos: 段，仓库身份（name/repository）跟着挪了过去 —— 但根 pubspec 同时还
+  // 承载了从 fushi 搬来的 dependency_overrides 及其大段 vendor 说明，里面合法
+  // 存在外部仓库和分支真名（例如自建 libmpv 的 `hibiki/ffmpeg-6.1.6` 分支，那
+  // 是真实分支名，改掉就指向不存在的 ref）。所以它按「脚本」类扫：A/B 两条身份
+  // 照扫，C（旧代号词根）不扫。放进 buildConfig 只会逼出一张豁免表。
 ];
 
 /// 运维 / 测试 / 发布脚本：只扫 A（应用身份）与 B（仓库身份）——这两条是「打空」
@@ -84,6 +89,9 @@ const List<_ScanRoot> _scriptRoots = <_ScanRoot>[
   _ScanRoot('tool', extensions: <String>{'.ps1', '.sh'}),
   _ScanRoot('../run.sh'),
   _ScanRoot('../run.ps1'),
+  // workspace 根 pubspec：melos 段带仓库身份（A/B 要扫），overrides 的 vendor
+  // 说明里带外部真名（C 不能扫）。理由见 _buildConfigRoots 末尾。
+  _ScanRoot('../pubspec.yaml'),
 ];
 
 /// A：非当前 applicationId 的 app.<x>.reader 字面量。
@@ -91,27 +99,31 @@ final List<_Exemption> _appIdExemptions = <_Exemption>[
   _Exemption(
     pathSuffix: 'android/app/src/main/AndroidManifest.xml',
     context: null,
-    reason: 'queries/package 声明的是**旧包**：Android 11+ 包可见性下，迁移导入器要 '
+    reason:
+        'queries/package 声明的是**旧包**：Android 11+ 包可见性下，迁移导入器要 '
         'getPackageInfo 查到老包才能探测/拉起/引导卸载。这里写新包名等于自己查自己。',
   ),
   _Exemption(
     pathSuffix: 'android/app/proguard-rules.pro',
     context: null,
-    reason: 'keep 规则上方记载「旧包名 keep 规则匹配零个类 → R8 混淆全 app → 启动即'
+    reason:
+        'keep 规则上方记载「旧包名 keep 规则匹配零个类 → R8 混淆全 app → 启动即'
         '闪退」的根因叙述，旧包名是叙述本体；规则本身由 '
         'android_app_package_keep_rule_guard_test 从 build.gradle 反推校验。',
   ),
   _Exemption(
     pathSuffix: 'tool/check_release_policy.ps1',
     context: RegExp(r'BUG-1481'),
-    reason: 'BUG-1481 发布通道按产品族分开：旧族 app.hibiki.reader 的冻结名'
+    reason:
+        'BUG-1481 发布通道按产品族分开：旧族 app.hibiki.reader 的冻结名'
         '（debug-rolling 归属）正是该守卫脚本的检查对象本体——根因注释与'
         '报错文案里的旧族真名不是残留。',
   ),
   _Exemption(
     pathSuffix: 'tool/publish_update_manifest.sh',
     context: RegExp(r'migration bridge'),
-    reason: '同 BUG-1481：注释说明 update-manifest 按产品族分文件——旧族 '
+    reason:
+        '同 BUG-1481：注释说明 update-manifest 按产品族分文件——旧族 '
         'app.hibiki.reader 是迁移桥产物（bridge 分支构建），叙述需要旧族真名。',
   ),
 ];
@@ -121,7 +133,8 @@ final List<_Exemption> _repoSlugExemptions = <_Exemption>[
   _Exemption(
     pathSuffix: 'tools/build_magpie_slim.ps1',
     context: null,
-    reason: 'hajisensai/Magpie 是外部 fork 仓库真名（slim 包从它的 release 下载），'
+    reason:
+        'hajisensai/Magpie 是外部 fork 仓库真名（slim 包从它的 release 下载），'
         '与本仓改名无关。',
   ),
 ];
@@ -141,14 +154,16 @@ final List<_Exemption> _legacyWordExemptions = <_Exemption>[
   _Exemption(
     pathSuffix: 'windows/installer/fushi.iss',
     context: null,
-    reason: '安装器的**旧名清理**段：删旧 exe / 旧快捷方式 / 旧 ProgID / 旧互斥量，'
+    reason:
+        '安装器的**旧名清理**段：删旧 exe / 旧快捷方式 / 旧 ProgID / 旧互斥量，'
         '旧字面量正是这件事本身。其正确性由 '
         'windows_installer_legacy_cleanup_guard_test 单独守。',
   ),
   _Exemption(
     pathSuffix: 'windows/CMakeLists.txt',
     context: RegExp('Magpie-hibiki-slim'),
-    reason: 'Magpie-hibiki-slim-x64.zip 是外部 fork 仓库的 release 资产真名（随包'
+    reason:
+        'Magpie-hibiki-slim-x64.zip 是外部 fork 仓库的 release 资产真名（随包'
         '归档），不是本仓产物名。',
   ),
 ];
@@ -161,16 +176,20 @@ Iterable<File> _filesOf(List<_ScanRoot> roots) sync* {
     if (root.extensions == null) {
       final File file = File(root.path);
       if (!file.existsSync()) {
-        throw StateError('扫描面缺失：${root.path}（文件被改名/移动了？请同步更新本守卫——'
-            '静默跳过等于把这个文件永久移出守卫范围）');
+        throw StateError(
+          '扫描面缺失：${root.path}（文件被改名/移动了？请同步更新本守卫——'
+          '静默跳过等于把这个文件永久移出守卫范围）',
+        );
       }
       yield file;
       continue;
     }
     final Directory dir = Directory(root.path);
     if (!dir.existsSync()) {
-      throw StateError('扫描根缺失：${root.path}（目录被改名/移动了？请同步更新本守卫——'
-          '静默跳过等于把整棵目录永久移出守卫范围）');
+      throw StateError(
+        '扫描根缺失：${root.path}（目录被改名/移动了？请同步更新本守卫——'
+        '静默跳过等于把整棵目录永久移出守卫范围）',
+      );
     }
     yield* dir.listSync(recursive: true).whereType<File>().where((File f) {
       final String path = _normalize(f.path);
@@ -193,8 +212,11 @@ class _Hit {
   String toString() => '$path:$line -> $match    | $text';
 }
 
-List<_Hit> _collect(Iterable<File> files, RegExp pattern,
-    {bool Function(String match)? isViolation}) {
+List<_Hit> _collect(
+  Iterable<File> files,
+  RegExp pattern, {
+  bool Function(String match)? isViolation,
+}) {
   final List<_Hit> hits = <_Hit>[];
   for (final File f in files) {
     final String path = _normalize(f.path);
@@ -237,25 +259,36 @@ _Partition _partition(List<_Hit> hits, List<_Exemption> exemptions) {
 }
 
 void _expectNoStaleExemptions(
-    List<_Exemption> exemptions, List<int> counts, String label) {
+  List<_Exemption> exemptions,
+  List<int> counts,
+  String label,
+) {
   final List<String> stale = <String>[];
   for (int i = 0; i < exemptions.length; i++) {
     if (counts[i] != 0) continue;
     final _Exemption e = exemptions[i];
     final String ctx = e.context == null ? '' : ' / ${e.context!.pattern}';
-    stale.add('[$label] ${e.pathSuffix}$ctx（已无真实命中）'
-        '\n        原豁免理由：${e.reason}');
+    stale.add(
+      '[$label] ${e.pathSuffix}$ctx（已无真实命中）'
+      '\n        原豁免理由：${e.reason}',
+    );
   }
-  expect(stale, isEmpty,
-      reason: '白名单条目已无真实命中，请连同豁免一起删掉（防止豁免退化成盲区）：\n'
-          '${stale.join('\n')}');
+  expect(
+    stale,
+    isEmpty,
+    reason:
+        '白名单条目已无真实命中，请连同豁免一起删掉（防止豁免退化成盲区）：\n'
+        '${stale.join('\n')}',
+  );
 }
 
 String _requiredMatch(File file, RegExp pattern, String what) {
   final RegExpMatch? m = pattern.firstMatch(file.readAsStringSync());
   if (m == null) {
-    throw StateError('真相源 ${_normalize(file.path)} 里读不到 $what——它被改格式/挪走了？'
-        '本守卫的全部断言都从它反推，读不到就必须停下来修守卫，而不是放行。');
+    throw StateError(
+      '真相源 ${_normalize(file.path)} 里读不到 $what——它被改格式/挪走了？'
+      '本守卫的全部断言都从它反推，读不到就必须停下来修守卫，而不是放行。',
+    );
   }
   return m.group(1)!;
 }
@@ -286,13 +319,22 @@ void main() {
   test('真相源自洽：applicationId 是 app.<brand>.reader，且与仓库名同 brand', () {
     // 三条禁模式都靠这两个真值反推；它们自己变形了守卫就失去意义。
     expect(
-        RegExp(r'^app\.[A-Za-z0-9_]+\.reader$').hasMatch(applicationId), isTrue,
-        reason: 'applicationId 形态变了（当前 $applicationId），A 条的正则窗口需要同步。');
-    expect(repoSlug.split('/'), hasLength(2),
-        reason: 'kGitHubRepo 必须是 owner/repo（当前 $repoSlug）。');
-    expect(applicationId.split('.')[1].toLowerCase(), repoName.toLowerCase(),
-        reason: 'applicationId 的品牌段（${applicationId.split('.')[1]}）与 GitHub 仓库名'
-            '（$repoName）不一致——改名只做了一半，或本守卫的真相源选错了。');
+      RegExp(r'^app\.[A-Za-z0-9_]+\.reader$').hasMatch(applicationId),
+      isTrue,
+      reason: 'applicationId 形态变了（当前 $applicationId），A 条的正则窗口需要同步。',
+    );
+    expect(
+      repoSlug.split('/'),
+      hasLength(2),
+      reason: 'kGitHubRepo 必须是 owner/repo（当前 $repoSlug）。',
+    );
+    expect(
+      applicationId.split('.')[1].toLowerCase(),
+      repoName.toLowerCase(),
+      reason:
+          'applicationId 的品牌段（${applicationId.split('.')[1]}）与 GitHub 仓库名'
+          '（$repoName）不一致——改名只做了一半，或本守卫的真相源选错了。',
+    );
   });
 
   test('A：脚本与构建配置里不得出现失效的 app.<x>.reader 包名', () {
@@ -302,11 +344,15 @@ void main() {
       isViolation: (String m) => m != applicationId,
     );
     final _Partition result = _partition(hits, _appIdExemptions);
-    expect(result.violations, isEmpty,
-        reason: '这些位置命名的应用包不是当前 applicationId（$applicationId）。adb '
-            'run-as / pm / am、MethodChannel 前缀、R8 keep 规则都按包名精确匹配，'
-            '错一个字就是「不报错但一个都匹配不到」：\n'
-            '${result.violations.join('\n')}');
+    expect(
+      result.violations,
+      isEmpty,
+      reason:
+          '这些位置命名的应用包不是当前 applicationId（$applicationId）。adb '
+          'run-as / pm / am、MethodChannel 前缀、R8 keep 规则都按包名精确匹配，'
+          '错一个字就是「不报错但一个都匹配不到」：\n'
+          '${result.violations.join('\n')}',
+    );
     _expectNoStaleExemptions(_appIdExemptions, result.exemptionHits, 'A');
   });
 
@@ -318,10 +364,14 @@ void main() {
           m.split('/').last.toLowerCase() != repoName.toLowerCase(),
     );
     final _Partition result = _partition(hits, _repoSlugExemptions);
-    expect(result.violations, isEmpty,
-        reason: '这些位置引用的仓库不是当前仓库（$repoSlug）。gh / curl 打到改名前的 '
-            'slug 只会拿到 404 或重定向，发版与巡检脚本会静默空跑：\n'
-            '${result.violations.join('\n')}');
+    expect(
+      result.violations,
+      isEmpty,
+      reason:
+          '这些位置引用的仓库不是当前仓库（$repoSlug）。gh / curl 打到改名前的 '
+          'slug 只会拿到 404 或重定向，发版与巡检脚本会静默空跑：\n'
+          '${result.violations.join('\n')}',
+    );
     _expectNoStaleExemptions(_repoSlugExemptions, result.exemptionHits, 'B');
   });
 
@@ -331,11 +381,15 @@ void main() {
       RegExp('hibiki|hoshi', caseSensitive: false),
     );
     final _Partition result = _partition(hits, _legacyWordExemptions);
-    expect(result.violations, isEmpty,
-        reason: '产物名、二进制名、窗口标题、application id、安装器与 workspace 元数据'
-            '都在这些文件里定；旧代号留在这里不会让编译或测试红，只会让发出去的包'
-            '带着旧身份。如属冻结契约/外部真名，请按「文件 + 行级 context」加豁免'
-            '并写理由：\n${result.violations.join('\n')}');
+    expect(
+      result.violations,
+      isEmpty,
+      reason:
+          '产物名、二进制名、窗口标题、application id、安装器与 workspace 元数据'
+          '都在这些文件里定；旧代号留在这里不会让编译或测试红，只会让发出去的包'
+          '带着旧身份。如属冻结契约/外部真名，请按「文件 + 行级 context」加豁免'
+          '并写理由：\n${result.violations.join('\n')}',
+    );
     _expectNoStaleExemptions(_legacyWordExemptions, result.exemptionHits, 'C');
   });
 }

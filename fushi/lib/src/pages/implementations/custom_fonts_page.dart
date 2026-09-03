@@ -8,13 +8,24 @@ import 'package:flutter/material.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
+import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/net/app_user_agent.dart';
 import 'package:path/path.dart' as p;
 
 const _fontExtensions = {'.ttf', '.otf', '.ttc', '.woff', '.woff2'};
+
+/// A font added from a target-specific entry point must immediately belong to
+/// that target. Previously every add path silently assigned [FontTarget.body],
+/// so fonts downloaded from the dictionary/game lookup settings appeared in
+/// the catalog but had no effect on the surface that opened it.
+@visibleForTesting
+Map<FontTarget, bool> customFontInitialTargets(FontTarget target) =>
+    <FontTarget, bool>{target: true};
 
 // HBK-AUDIT-116: typed model for a managed font entry. Replaces the untyped
 // `Map<String, dynamic>` that was poked with scattered `as` casts. Parsing a
@@ -52,16 +63,13 @@ class CustomFontEntry {
   }
 
   Map<String, dynamic> toMap() => <String, dynamic>{
-        'name': name,
-        'path': path,
-        'enabled': enabled,
-      };
+    'name': name,
+    'path': path,
+    'enabled': enabled,
+  };
 
-  CustomFontEntry copyWith({bool? enabled}) => CustomFontEntry(
-        name: name,
-        path: path,
-        enabled: enabled ?? this.enabled,
-      );
+  CustomFontEntry copyWith({bool? enabled}) =>
+      CustomFontEntry(name: name, path: path, enabled: enabled ?? this.enabled);
 }
 
 @visibleForTesting
@@ -85,10 +93,10 @@ class CustomFontCatalogRow {
   String get identity => '$name\u0000${path ?? ''}';
 
   CustomFontEntry toCustomFontEntry(FontTarget target) => CustomFontEntry(
-        name: name,
-        path: path,
-        enabled: targetEnabled[target] ?? true,
-      );
+    name: name,
+    path: path,
+    enabled: targetEnabled[target] ?? true,
+  );
 }
 
 @visibleForTesting
@@ -97,14 +105,14 @@ List<CustomFontCatalogRow> customFontCatalogRowsFromState(
 ) {
   final Map<String, CustomFontCatalogRow> rowsById =
       <String, CustomFontCatalogRow>{
-    for (final FontCatalogEntry font in state.fonts)
-      font.id: CustomFontCatalogRow(
-        id: font.id,
-        name: font.name,
-        path: font.path,
-        targetEnabled: <FontTarget, bool>{},
-      ),
-  };
+        for (final FontCatalogEntry font in state.fonts)
+          font.id: CustomFontCatalogRow(
+            id: font.id,
+            name: font.name,
+            path: font.path,
+            targetEnabled: <FontTarget, bool>{},
+          ),
+      };
 
   for (final FontTarget target in FontTarget.values) {
     final String targetKey = ReaderSettings.fontKeyForTarget(target);
@@ -147,9 +155,9 @@ FontCatalogState customFontCatalogStateFromRows(
   final List<FontCatalogEntry> fonts = <FontCatalogEntry>[];
   final Map<FontTarget, List<FontTargetFont>> targetRows =
       <FontTarget, List<FontTargetFont>>{
-    for (final FontTarget target in FontTarget.values)
-      target: <FontTargetFont>[],
-  };
+        for (final FontTarget target in FontTarget.values)
+          target: <FontTargetFont>[],
+      };
 
   for (final CustomFontCatalogRow row in rows) {
     if (row.name.isEmpty) continue;
@@ -200,8 +208,9 @@ int _nextCatalogFontId(List<CustomFontCatalogRow> rows) {
     final String? id = row.id;
     if (id == null) continue;
     final RegExpMatch? match = generatedId.firstMatch(id);
-    final int? value =
-        match == null ? null : int.tryParse(match.group(1) ?? '');
+    final int? value = match == null
+        ? null
+        : int.tryParse(match.group(1) ?? '');
     if (value != null && value >= next) {
       next = value + 1;
     }
@@ -234,147 +243,147 @@ class _RecommendedFont {
 // jsDelivr 对整个包 >50MB 的目录会整目录 403（例如 notoserifsc），这类只能
 // 走 GitHub raw；GitHub raw 无此限制，对 CJK 大字体统一补一条兜底直链。
 List<_RecommendedFont> get _recommendedFonts => [
-      // ── 推荐首选 ──
-      _RecommendedFont(
-        name: 'Klee One',
-        nameJa: 'クレー One',
-        urls: [
-          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/kleeone/KleeOne-Regular.ttf',
-          'https://raw.githubusercontent.com/google/fonts/main/ofl/kleeone/KleeOne-Regular.ttf',
-          'https://fonts.google.com/download?family=Klee+One',
-        ],
-        license: 'OFL 1.1',
-        description: t.font_desc_klee_one,
-      ),
-      // ── CJK 覆盖（日中韩通用，不会缺字） ──
-      _RecommendedFont(
-        name: 'Noto Sans JP',
-        nameJa: 'Noto Sans 日本語',
-        urls: [
-          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf',
-          'https://raw.githubusercontent.com/google/fonts/main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf',
-          'https://fonts.google.com/download?family=Noto+Sans+JP',
-        ],
-        license: 'OFL 1.1',
-        description: t.font_desc_noto_sans_jp,
-      ),
-      _RecommendedFont(
-        name: 'Noto Serif JP',
-        nameJa: 'Noto Serif 日本語',
-        urls: [
-          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf',
-          'https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf',
-          'https://fonts.google.com/download?family=Noto+Serif+JP',
-        ],
-        license: 'OFL 1.1',
-        description: t.font_desc_noto_serif_jp,
-      ),
-      _RecommendedFont(
-        name: 'Noto Sans SC',
-        nameJa: 'Noto Sans 简体中文',
-        urls: [
-          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
-          'https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
-          'https://fonts.google.com/download?family=Noto+Sans+SC',
-        ],
-        license: 'OFL 1.1',
-        description: t.font_desc_noto_sans_sc,
-      ),
-      _RecommendedFont(
-        name: 'Noto Serif SC',
-        nameJa: 'Noto Serif 简体中文',
-        // jsDelivr 整目录 >50MB → notoserifsc 直接 403，只能走 GitHub raw。
-        urls: [
-          'https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf',
-          'https://fonts.google.com/download?family=Noto+Serif+SC',
-        ],
-        license: 'OFL 1.1',
-        description: t.font_desc_noto_serif_sc,
-      ),
-      _RecommendedFont(
-        name: 'Noto Sans TC',
-        nameJa: 'Noto Sans 繁體中文',
-        urls: [
-          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf',
-          'https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf',
-          'https://fonts.google.com/download?family=Noto+Sans+TC',
-        ],
-        license: 'OFL 1.1',
-        description: t.font_desc_noto_sans_tc,
-      ),
-      _RecommendedFont(
-        name: 'Noto Serif TC',
-        nameJa: 'Noto Serif 繁體中文',
-        urls: [
-          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notoseriftc/NotoSerifTC%5Bwght%5D.ttf',
-          'https://raw.githubusercontent.com/google/fonts/main/ofl/notoseriftc/NotoSerifTC%5Bwght%5D.ttf',
-          'https://fonts.google.com/download?family=Noto+Serif+TC',
-        ],
-        license: 'OFL 1.1',
-        description: t.font_desc_noto_serif_tc,
-      ),
-      // ── 日语特色字体（风格独特，建议搭配 Noto Sans JP 做回退） ──
-      _RecommendedFont(
-        name: 'Shippori Mincho',
-        nameJa: 'しっぽり明朝',
-        urls: [
-          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/shipporimincho/ShipporiMincho-Regular.ttf',
-          'https://fonts.google.com/download?family=Shippori+Mincho',
-        ],
-        license: 'OFL 1.1',
-        description: t.font_desc_shippori_mincho,
-      ),
-      _RecommendedFont(
-        name: 'Zen Old Mincho',
-        nameJa: '禅オールド明朝',
-        urls: [
-          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenoldmincho/ZenOldMincho-Regular.ttf',
-          'https://fonts.google.com/download?family=Zen+Old+Mincho',
-        ],
-        license: 'OFL 1.1',
-        description: t.font_desc_zen_old_mincho,
-      ),
-      _RecommendedFont(
-        name: 'Zen Maru Gothic',
-        nameJa: '禅丸ゴシック',
-        urls: [
-          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenmarugothic/ZenMaruGothic-Regular.ttf',
-          'https://fonts.google.com/download?family=Zen+Maru+Gothic',
-        ],
-        license: 'OFL 1.1',
-        description: t.font_desc_zen_maru_gothic,
-      ),
-      _RecommendedFont(
-        name: 'M PLUS Rounded 1c',
-        nameJa: 'M PLUS Rounded 1c',
-        urls: [
-          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/mplusrounded1c/MPLUSRounded1c-Regular.ttf',
-          'https://fonts.google.com/download?family=M+PLUS+Rounded+1c',
-        ],
-        license: 'OFL 1.1',
-        description: t.font_desc_mplus_rounded_1c,
-      ),
-      _RecommendedFont(
-        name: 'Hina Mincho',
-        nameJa: 'ひな明朝',
-        urls: [
-          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/hinamincho/HinaMincho-Regular.ttf',
-          'https://fonts.google.com/download?family=Hina+Mincho',
-        ],
-        license: 'OFL 1.1',
-        description: t.font_desc_hina_mincho,
-      ),
-      _RecommendedFont(
-        name: 'Zen Kaku Gothic New',
-        nameJa: '禅角ゴシック New',
-        urls: [
-          'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenkakugothicnew/ZenKakuGothicNew-Regular.ttf',
-          'https://fonts.google.com/download?family=Zen+Kaku+Gothic+New',
-        ],
-        license: 'OFL 1.1',
-        description: t.font_desc_zen_kaku_gothic_new,
-      ),
-    ];
+  // ── 推荐首选 ──
+  _RecommendedFont(
+    name: 'Klee One',
+    nameJa: 'クレー One',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/kleeone/KleeOne-Regular.ttf',
+      'https://raw.githubusercontent.com/google/fonts/main/ofl/kleeone/KleeOne-Regular.ttf',
+      'https://fonts.google.com/download?family=Klee+One',
+    ],
+    license: 'OFL 1.1',
+    description: t.font_desc_klee_one,
+  ),
+  // ── CJK 覆盖（日中韩通用，不会缺字） ──
+  _RecommendedFont(
+    name: 'Noto Sans JP',
+    nameJa: 'Noto Sans 日本語',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf',
+      'https://raw.githubusercontent.com/google/fonts/main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf',
+      'https://fonts.google.com/download?family=Noto+Sans+JP',
+    ],
+    license: 'OFL 1.1',
+    description: t.font_desc_noto_sans_jp,
+  ),
+  _RecommendedFont(
+    name: 'Noto Serif JP',
+    nameJa: 'Noto Serif 日本語',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf',
+      'https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf',
+      'https://fonts.google.com/download?family=Noto+Serif+JP',
+    ],
+    license: 'OFL 1.1',
+    description: t.font_desc_noto_serif_jp,
+  ),
+  _RecommendedFont(
+    name: 'Noto Sans SC',
+    nameJa: 'Noto Sans 简体中文',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
+      'https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
+      'https://fonts.google.com/download?family=Noto+Sans+SC',
+    ],
+    license: 'OFL 1.1',
+    description: t.font_desc_noto_sans_sc,
+  ),
+  _RecommendedFont(
+    name: 'Noto Serif SC',
+    nameJa: 'Noto Serif 简体中文',
+    // jsDelivr 整目录 >50MB → notoserifsc 直接 403，只能走 GitHub raw。
+    urls: [
+      'https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf',
+      'https://fonts.google.com/download?family=Noto+Serif+SC',
+    ],
+    license: 'OFL 1.1',
+    description: t.font_desc_noto_serif_sc,
+  ),
+  _RecommendedFont(
+    name: 'Noto Sans TC',
+    nameJa: 'Noto Sans 繁體中文',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf',
+      'https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf',
+      'https://fonts.google.com/download?family=Noto+Sans+TC',
+    ],
+    license: 'OFL 1.1',
+    description: t.font_desc_noto_sans_tc,
+  ),
+  _RecommendedFont(
+    name: 'Noto Serif TC',
+    nameJa: 'Noto Serif 繁體中文',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notoseriftc/NotoSerifTC%5Bwght%5D.ttf',
+      'https://raw.githubusercontent.com/google/fonts/main/ofl/notoseriftc/NotoSerifTC%5Bwght%5D.ttf',
+      'https://fonts.google.com/download?family=Noto+Serif+TC',
+    ],
+    license: 'OFL 1.1',
+    description: t.font_desc_noto_serif_tc,
+  ),
+  // ── 日语特色字体（风格独特，建议搭配 Noto Sans JP 做回退） ──
+  _RecommendedFont(
+    name: 'Shippori Mincho',
+    nameJa: 'しっぽり明朝',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/shipporimincho/ShipporiMincho-Regular.ttf',
+      'https://fonts.google.com/download?family=Shippori+Mincho',
+    ],
+    license: 'OFL 1.1',
+    description: t.font_desc_shippori_mincho,
+  ),
+  _RecommendedFont(
+    name: 'Zen Old Mincho',
+    nameJa: '禅オールド明朝',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenoldmincho/ZenOldMincho-Regular.ttf',
+      'https://fonts.google.com/download?family=Zen+Old+Mincho',
+    ],
+    license: 'OFL 1.1',
+    description: t.font_desc_zen_old_mincho,
+  ),
+  _RecommendedFont(
+    name: 'Zen Maru Gothic',
+    nameJa: '禅丸ゴシック',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenmarugothic/ZenMaruGothic-Regular.ttf',
+      'https://fonts.google.com/download?family=Zen+Maru+Gothic',
+    ],
+    license: 'OFL 1.1',
+    description: t.font_desc_zen_maru_gothic,
+  ),
+  _RecommendedFont(
+    name: 'M PLUS Rounded 1c',
+    nameJa: 'M PLUS Rounded 1c',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/mplusrounded1c/MPLUSRounded1c-Regular.ttf',
+      'https://fonts.google.com/download?family=M+PLUS+Rounded+1c',
+    ],
+    license: 'OFL 1.1',
+    description: t.font_desc_mplus_rounded_1c,
+  ),
+  _RecommendedFont(
+    name: 'Hina Mincho',
+    nameJa: 'ひな明朝',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/hinamincho/HinaMincho-Regular.ttf',
+      'https://fonts.google.com/download?family=Hina+Mincho',
+    ],
+    license: 'OFL 1.1',
+    description: t.font_desc_hina_mincho,
+  ),
+  _RecommendedFont(
+    name: 'Zen Kaku Gothic New',
+    nameJa: '禅角ゴシック New',
+    urls: [
+      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zenkakugothicnew/ZenKakuGothicNew-Regular.ttf',
+      'https://fonts.google.com/download?family=Zen+Kaku+Gothic+New',
+    ],
+    license: 'OFL 1.1',
+    description: t.font_desc_zen_kaku_gothic_new,
+  ),
+];
 
 bool _isFontFile(String path) {
   return _fontExtensions.contains(p.extension(path).toLowerCase());
@@ -393,8 +402,9 @@ Future<List<String>> _getSystemFonts() async {
     _cachedSystemFonts = await _getDesktopSystemFonts();
   } else {
     try {
-      final result =
-          await _fontsChannel.invokeMethod<List<dynamic>>('listSystemFonts');
+      final result = await _fontsChannel.invokeMethod<List<dynamic>>(
+        'listSystemFonts',
+      );
       debugPrint('[fushi-fonts] channel returned ${result?.length} fonts');
       _cachedSystemFonts = result?.cast<String>() ?? [];
     } catch (e, stack) {
@@ -437,11 +447,13 @@ Future<List<String>> _getDesktopSystemFonts() async {
             .basenameWithoutExtension(entity.path)
             .replaceAll(RegExp(r'[-_]'), ' ')
             .replaceAll(
-                RegExp(
-                    r'\s+(Regular|Bold|Italic|Light|Medium|Thin|'
-                    r'Black|ExtraBold|SemiBold|ExtraLight|Condensed|Expanded)$',
-                    caseSensitive: false),
-                '');
+              RegExp(
+                r'\s+(Regular|Bold|Italic|Light|Medium|Thin|'
+                r'Black|ExtraBold|SemiBold|ExtraLight|Condensed|Expanded)$',
+                caseSensitive: false,
+              ),
+              '',
+            );
         if (name.isNotEmpty) names.add(name);
       }
     } catch (e) {
@@ -488,8 +500,11 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
   void _onSearch(String query) {
     // G6：与库页搜索同一归一化口径（日文字体族名常含全角/片假名差异）。
     setState(() {
-      _filtered =
-          filterByMediaSearch(_allFonts, query, (String f) => <String>[f]);
+      _filtered = filterByMediaSearch(
+        _allFonts,
+        query,
+        (String f) => <String>[f],
+      );
     });
   }
 
@@ -512,26 +527,25 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
             ),
           ]
         : _filtered.isEmpty
-            ? <Widget>[
-                AdaptiveSettingsRow(
-                  title: t.custom_fonts_empty,
-                  icon: Icons.font_download_outlined,
-                ),
-              ]
-            : _filtered.map((String name) {
-                final bool added = widget.alreadyAdded.contains(name);
-                // Single-choice list: added fonts show a trailing check,
-                // pickable fonts are plain tappable rows. No navigation chevron
-                // — tapping pops this page with the font name, it does not drill
-                // into a subpage, so a `chevron_right` would falsely imply one.
-                return AdaptiveSettingsRow(
-                  title: name,
-                  icon: Icons.font_download_outlined,
-                  trailing:
-                      added ? Icon(Icons.check, color: scheme.outline) : null,
-                  onTap: added ? null : () => Navigator.pop(context, name),
-                );
-              }).toList();
+        ? <Widget>[
+            AdaptiveSettingsRow(
+              title: t.custom_fonts_empty,
+              icon: Icons.font_download_outlined,
+            ),
+          ]
+        : _filtered.map((String name) {
+            final bool added = widget.alreadyAdded.contains(name);
+            // Single-choice list: added fonts show a trailing check,
+            // pickable fonts are plain tappable rows. No navigation chevron
+            // — tapping pops this page with the font name, it does not drill
+            // into a subpage, so a `chevron_right` would falsely imply one.
+            return AdaptiveSettingsRow(
+              title: name,
+              icon: Icons.font_download_outlined,
+              trailing: added ? Icon(Icons.check, color: scheme.outline) : null,
+              onTap: added ? null : () => Navigator.pop(context, name),
+            );
+          }).toList();
 
     return AdaptiveSettingsScaffold(
       title: Text(t.custom_fonts_add_system),
@@ -566,8 +580,12 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
 // ── 主页面 ────────────────────────────────────────────────────────────────────
 
 class CustomFontsPage extends BasePage {
-  /// TODO-049: which of the three independent font targets this page manages.
-  /// Defaults to [FontTarget.body] so the legacy reader call site is unchanged.
+  /// 本次进入字体库的**作用域用途**：决定新导入/新添加的字体默认挂到哪个
+  /// [FontTarget]。默认 [FontTarget.body]，所以从外观设置进来的历史路径行为不变。
+  ///
+  /// 这个参数曾经是死参数（声明了但 State 从不读），导致从「设置·游戏·Hook 文本
+  /// 字体」进来导入的字体被挂到小说正文，游戏浮窗永远不变——用户看到的就是
+  /// 「字体库里没有游戏」。
   const CustomFontsPage({super.key, this.target = FontTarget.body});
 
   final FontTarget target;
@@ -576,44 +594,93 @@ class CustomFontsPage extends BasePage {
   BasePageState createState() => _CustomFontsPageState();
 }
 
+/// 字体用途的显示名。穷尽 switch：新增 [FontTarget] 时这里编译报错，逼着补文案，
+/// 而不是让新用途悄悄顶着枚举名出现在 UI 上。页面标题与每行的用途开关共用。
+String fontTargetLabel(FontTarget target) => switch (target) {
+      FontTarget.appUi => t.font_target_app_ui,
+      FontTarget.body => t.font_target_body,
+      FontTarget.dictionary => t.font_target_dictionary,
+      FontTarget.videoSubtitle => t.font_target_video_subtitle,
+      FontTarget.gameLookup => t.font_target_game_lookup,
+    };
+
 /// 阅读器设置的 DB 偏好 key：经单一真相编码器 [dbSourcePrefKey]（`reader_fushi`
 /// 是冻结的历史 sourceId，旧数据兼容，勿改）。
 String _readerPrefKey(String shortKey) =>
     dbSourcePrefKey(kReaderSourcePersistedKey, shortKey);
 
-class _CustomFontsPageState extends BasePageState {
+class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
   ReaderSettings? _settings;
 
   List<CustomFontCatalogRow> _fonts = [];
+  late final Future<void> _fontsReady;
+  Future<void> _saveTail = Future<void>.value();
+  bool _fontsLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _settings = ReaderFushiSource.readerSettings;
-    if (_settings == null) {
-      final rs = ReaderSettings(appModel.database);
-      rs.refreshFromDb().then((_) {
-        ReaderFushiSource.readerSettings = rs;
-        if (!mounted) return;
-        _loadFonts(rs);
+    _fontsReady = _initializeFonts();
+  }
+
+  Future<void> _initializeFonts() async {
+    try {
+      ReaderSettings? settings = ReaderFushiSource.readerSettings;
+      if (settings == null) {
+        // initState must not call BasePageState.appModel: that getter uses
+        // ref.watch and therefore depends on ProviderScope before initState has
+        // completed. The base state populated this read-only cache in
+        // super.initState(), specifically for lifecycle-safe initialization.
+        settings = ReaderSettings(appModelNoUpdate.database);
+        await settings.refreshFromDb();
+        ReaderFushiSource.readerSettings = settings;
+      }
+      _settings = settings;
+      final FontCatalogState state = await _readCatalogState(settings);
+      if (!mounted) return;
+      setState(() {
+        _fonts = customFontCatalogRowsFromState(state);
+        _fontsLoading = false;
       });
-      _settings = rs;
-    } else {
-      _loadFonts(_settings!);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('CustomFontsPage.initializeFonts', e, stack);
+      if (!mounted) return;
+      setState(() => _fontsLoading = false);
     }
   }
 
-  Future<void> _loadFonts(ReaderSettings settings) async {
-    final FontCatalogState state = await _readCatalogState(settings);
-    if (!mounted) return;
-    setState(() => _fonts = customFontCatalogRowsFromState(state));
+  /// 新导入/新添加字体的默认用途集合：跟随本次进入字体库的作用域
+  /// [CustomFontsPage.target]，而不是恒定 [FontTarget.body]。
+  ///
+  /// 四个新增入口（文件导入 / 压缩包解包 / 推荐字体下载 / 系统字体）共用它，
+  /// 保证「从哪个设置入口进来，导入的字体就为哪个用途生效」。派生规则本身放在
+  /// 顶层 [customFontInitialTargets]（可单测、可被别处复用），这里只是调用点的
+  /// 单一名字——四个入口共用同一个名字才守得住「有新入口没接作用域」。
+  Map<FontTarget, bool> _newFontTargets() =>
+      customFontInitialTargets(widget.target);
+
+  /// 这个字体行**格式上**用不了的用途 → 给用户看的原因。
+  ///
+  /// 只有一条来源：native 分层窗（[FontTarget.gameLookup]）的 DirectWrite 只吃裸
+  /// sfnt，WOFF/WOFF2 会被 `resolveForNativeOverlay` 静默跳过。判据与 loader 共用
+  /// 同一个 [AppFontLoader.nativeOverlayCanUse]，两处不会漂开。
+  Map<FontTarget, String> _unsupportedTargetsFor(CustomFontCatalogRow row) {
+    final String? path = row.path;
+    if (AppFontLoader.nativeOverlayCanUse(path)) {
+      return const <FontTarget, String>{};
+    }
+    return <FontTarget, String>{
+      FontTarget.gameLookup: t.import_unsupported_file_format(
+        ext: p.extension(path!).toLowerCase(),
+      ),
+    };
   }
 
   Future<FontCatalogState> _readCatalogState(ReaderSettings settings) async {
-    final String? catalogJson = await appModel.database.getPref(
+    final String? catalogJson = await appModelNoUpdate.database.getPref(
       _readerPrefKey(ReaderSettings.fontCatalogKey),
     );
-    final String? targetsJson = await appModel.database.getPref(
+    final String? targetsJson = await appModelNoUpdate.database.getPref(
       _readerPrefKey(ReaderSettings.fontTargetsKey),
     );
     if (catalogJson != null && targetsJson != null) {
@@ -629,16 +696,33 @@ class _CustomFontsPageState extends BasePageState {
     }
     return FontCatalogState.fromLegacy(<String, List<Map<String, dynamic>>>{
       for (final FontTarget target in FontTarget.values)
-        ReaderSettings.fontKeyForTarget(target):
-            settings.fontsForTarget(target),
+        ReaderSettings.fontKeyForTarget(target): settings.fontsForTarget(
+          target,
+        ),
     });
   }
 
-  Future<void> _save() async {
+  Future<void> _save() {
     final FontCatalogState state = customFontCatalogStateFromRows(_fonts);
     final Map<String, List<Map<String, dynamic>>> legacy =
         customFontLegacyListsFromRows(_fonts);
 
+    // Target chips, reorder buttons, and add actions may fire before the
+    // previous multi-key write finishes. Preserve invocation order so an older
+    // refresh cannot overwrite the newest in-memory target selection.
+    final Future<void> operation = _saveTail.then(
+      (_) => _persistFontState(state, legacy),
+    );
+    _saveTail = operation.catchError((Object error, StackTrace stack) {
+      ErrorLogService.instance.log('CustomFontsPage.save', error, stack);
+    });
+    return operation;
+  }
+
+  Future<void> _persistFontState(
+    FontCatalogState state,
+    Map<String, List<Map<String, dynamic>>> legacy,
+  ) async {
     await appModel.database.setPref(
       _readerPrefKey(ReaderSettings.fontCatalogKey),
       jsonEncode(state.toCatalogJson()),
@@ -656,6 +740,12 @@ class _CustomFontsPageState extends BasePageState {
     }
     await _settings!.refreshFromDb();
     await appModel.refreshAppFont();
+    // 平台门在**取单例之前**：GalHookTextOverlayController.instance 会把整套 galgame
+    // 单例图（含 GalIngameLookupController 与它挂上去、永不释放的监听器）建起来。
+    // 非 Windows 用户只是存了一次字体，不该因此拉起一整个 Windows 专属子系统。
+    if (GalHookTextOverlayController.isSupported) {
+      await GalHookTextOverlayController.instance.applyFontFromSettings();
+    }
     ReaderFushiSource.onSettingsChangedLive?.call();
   }
 
@@ -678,7 +768,7 @@ class _CustomFontsPageState extends BasePageState {
         '7z',
         'rar',
         'tar',
-        'gz'
+        'gz',
       ],
       allowMultiple: true,
     );
@@ -716,13 +806,15 @@ class _CustomFontsPageState extends BasePageState {
       ext = await _detectFontExtension(srcFile) ?? '.ttf';
     }
     final destPath = p.join(
-        _fontsDir.path, '${name}_${DateTime.now().millisecondsSinceEpoch}$ext');
+      _fontsDir.path,
+      '${name}_${DateTime.now().millisecondsSinceEpoch}$ext',
+    );
     await srcFile.copy(destPath);
     final entry = CustomFontCatalogRow(
       id: null,
       name: name,
       path: destPath,
-      targetEnabled: <FontTarget, bool>{FontTarget.body: true},
+      targetEnabled: _newFontTargets(),
     );
     if (mounted) {
       setState(() => _fonts.add(entry));
@@ -815,13 +907,10 @@ class _CustomFontsPageState extends BasePageState {
           .where((entry) => entry.isFile && _isFontFile(entry.name))
           .toList();
       if (overrideName != null && fontEntries.isNotEmpty) {
-        final entry = fontEntries.firstWhere(
-          (entry) {
-            final base = p.basenameWithoutExtension(entry.name).toLowerCase();
-            return base.contains('regular') || base.contains('[wght]');
-          },
-          orElse: () => fontEntries.first,
-        );
+        final entry = fontEntries.firstWhere((entry) {
+          final base = p.basenameWithoutExtension(entry.name).toLowerCase();
+          return base.contains('regular') || base.contains('[wght]');
+        }, orElse: () => fontEntries.first);
         final ext = p.extension(entry.name);
         final destPath = p.join(
           _fontsDir.path,
@@ -832,7 +921,7 @@ class _CustomFontsPageState extends BasePageState {
           id: null,
           name: overrideName,
           path: destPath,
-          targetEnabled: <FontTarget, bool>{FontTarget.body: true},
+          targetEnabled: _newFontTargets(),
         );
         if (mounted) {
           setState(() => _fonts.add(fontEntry));
@@ -853,7 +942,7 @@ class _CustomFontsPageState extends BasePageState {
           id: null,
           name: baseName,
           path: destPath,
-          targetEnabled: <FontTarget, bool>{FontTarget.body: true},
+          targetEnabled: _newFontTargets(),
         );
         if (mounted) {
           setState(() => _fonts.add(fontEntry));
@@ -874,10 +963,12 @@ class _CustomFontsPageState extends BasePageState {
     }
   }
 
-  Future<void> _downloadUrl(String url,
-      {String? displayName,
-      List<String> mirrorUrls = const [],
-      String? overrideName}) async {
+  Future<void> _downloadUrl(
+    String url, {
+    String? displayName,
+    List<String> mirrorUrls = const [],
+    String? overrideName,
+  }) async {
     final allUrls = [url, ...mirrorUrls];
     final ts = DateTime.now().millisecondsSinceEpoch;
     final tempPath = p.join(_fontsDir.path, '_tmp_$ts');
@@ -907,23 +998,25 @@ class _CustomFontsPageState extends BasePageState {
       // fonts.google.com 上，原先是裸 `Dio(...)`（`findProxy` 为 null，连 HTTPS_PROXY
       // 都不读）。改经统一装配点，三级 URL 回退逻辑不变。
       final dio = createAppDio(
-          options: BaseOptions(
-        connectTimeout: const Duration(seconds: 15),
-        receiveTimeout: const Duration(minutes: 10),
-        followRedirects: true,
-        maxRedirects: 10,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Linux; Android) Hibiki/1.0',
-          'Accept': '*/*',
-        },
-      ));
+        options: BaseOptions(
+          connectTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(minutes: 10),
+          followRedirects: true,
+          maxRedirects: 10,
+          headers: {
+            'User-Agent': fushiUserAgent('custom-fonts'),
+            'Accept': '*/*',
+          },
+        ),
+      );
 
       String? downloadedUrl;
       Object? lastError;
       for (int i = 0; i < allUrls.length; i++) {
         final currentUrl = allUrls[i];
         debugPrint(
-            '[fushi-fonts] trying source ${i + 1}/${allUrls.length}: $currentUrl');
+          '[fushi-fonts] trying source ${i + 1}/${allUrls.length}: $currentUrl',
+        );
         progressNotifier.value = null;
         try {
           await dio.download(
@@ -941,9 +1034,11 @@ class _CustomFontsPageState extends BasePageState {
               !await _isZipFile(tempFile) &&
               !await _isValidFontFile(tempFile)) {
             debugPrint(
-                '[fushi-fonts] source ${i + 1} returned non-font data, skipping');
-            lastError =
-                Exception('Downloaded file is not a valid font or archive');
+              '[fushi-fonts] source ${i + 1} returned non-font data, skipping',
+            );
+            lastError = Exception(
+              'Downloaded file is not a valid font or archive',
+            );
             await tempFile.delete();
             continue;
           }
@@ -1007,8 +1102,10 @@ class _CustomFontsPageState extends BasePageState {
     } on DioError catch (e, stack) {
       if (mounted) Navigator.pop(context);
       if (e.type != DioErrorType.cancel) {
-        debugPrint('[fushi-fonts] DioError: type=${e.type} '
-            'status=${e.response?.statusCode} msg=${e.message}');
+        debugPrint(
+          '[fushi-fonts] DioError: type=${e.type} '
+          'status=${e.response?.statusCode} msg=${e.message}',
+        );
         debugPrint('[fushi-fonts] stack: $stack');
         FushiToast.show(
           msg: '${t.custom_fonts_download_failed}: ${e.type.name}',
@@ -1073,13 +1170,13 @@ class _CustomFontsPageState extends BasePageState {
       _fonts.map((CustomFontCatalogRow e) => e.name).toSet();
 
   Future<void> _openRecommended() async {
+    await _fontsReady;
+    if (!mounted) return;
     final font = await Navigator.push<_RecommendedFont>(
       context,
       adaptivePageRoute(
         context: context,
-        builder: (_) => _RecommendedFontsPage(
-          alreadyAdded: _addedFontNames,
-        ),
+        builder: (_) => _RecommendedFontsPage(alreadyAdded: _addedFontNames),
       ),
     );
     if (font == null || !mounted) return;
@@ -1096,12 +1193,14 @@ class _CustomFontsPageState extends BasePageState {
     );
     if (selected == null || !mounted) return;
     setState(() {
-      _fonts.add(CustomFontCatalogRow(
-        id: null,
-        name: selected,
-        path: null,
-        targetEnabled: <FontTarget, bool>{FontTarget.body: true},
-      ));
+      _fonts.add(
+        CustomFontCatalogRow(
+          id: null,
+          name: selected,
+          path: null,
+          targetEnabled: _newFontTargets(),
+        ),
+      );
     });
     _save();
   }
@@ -1153,33 +1252,58 @@ class _CustomFontsPageState extends BasePageState {
   @override
   Widget build(BuildContext context) {
     return AdaptiveSettingsScaffold(
-      title: Text(t.custom_fonts_catalog_title),
+      // 带作用域进来时把用途写进标题：用户从「设置·游戏·Hook 文本字体」点进来，
+      // 看到的是同一个全量字体库，不说明的话没法知道自己新导入的字体会挂到哪。
+      title: Text(
+        widget.target == FontTarget.body
+            ? t.custom_fonts_catalog_title
+            : '${t.custom_fonts_catalog_title} · '
+                '${fontTargetLabel(widget.target)}',
+      ),
       children: [
         AdaptiveSettingsSection(
           children: [
             AdaptiveSettingsNavigationRow(
               title: t.custom_fonts_recommended,
               icon: Icons.star_outline,
-              onTap: _openRecommended,
+              onTap: () {
+                if (!_fontsLoading) _openRecommended();
+              },
             ),
             AdaptiveSettingsNavigationRow(
               title: t.custom_fonts_add_system,
               icon: Icons.text_fields,
-              onTap: _addSystemFont,
+              onTap: () {
+                if (!_fontsLoading) _addSystemFont();
+              },
             ),
             AdaptiveSettingsNavigationRow(
               title: t.custom_fonts_import_file,
               icon: Icons.file_open_outlined,
-              onTap: _importFontFile,
+              onTap: () {
+                if (!_fontsLoading) _importFontFile();
+              },
             ),
             AdaptiveSettingsNavigationRow(
               title: t.custom_fonts_import_url,
               icon: Icons.link,
-              onTap: _importFromUrl,
+              onTap: () {
+                if (!_fontsLoading) _importFromUrl();
+              },
             ),
           ],
         ),
-        if (_fonts.isEmpty)
+        if (_fontsLoading)
+          AdaptiveSettingsSection(
+            title: t.custom_fonts_manage,
+            children: [
+              AdaptiveSettingsRow(
+                title: t.custom_fonts_downloading,
+                icon: Icons.hourglass_top,
+              ),
+            ],
+          )
+        else if (_fonts.isEmpty)
           AdaptiveSettingsSection(
             title: t.custom_fonts_manage,
             children: [
@@ -1224,6 +1348,10 @@ class _CustomFontsPageState extends BasePageState {
                       onDelete: () => _removeFont(index),
                       onMoveUp: () => _onReorder(index, index - 1),
                       onMoveDown: () => _onReorder(index, index + 1),
+                      initiallyExpandRoles: widget.target != FontTarget.body,
+                      // native 分层窗只吃裸 sfnt；WOFF/WOFF2 勾了游戏用途下游会
+                      // 静默跳过，这里直接把那枚开关置灰，别让用户白设。
+                      unsupportedTargets: _unsupportedTargetsFor(entry),
                     );
                   },
                 ),
@@ -1420,12 +1548,26 @@ class CustomFontCatalogTile extends StatefulWidget {
     required this.onDelete,
     required this.onMoveUp,
     required this.onMoveDown,
+    this.initiallyExpandRoles = false,
+    this.unsupportedTargets = const <FontTarget, String>{},
     super.key,
   });
 
   final String name;
   final bool isFile;
   final Set<FontTarget> targets;
+
+  /// 进页时就展开用途开关。从非默认作用域（如「设置·游戏·Hook 文本字体」）进来时
+  /// 为 true：那条路径上的用户要找的正是「这个字体给游戏用不用」，折叠着等于没有。
+  final bool initiallyExpandRoles;
+
+  /// 本字体**格式上**用不了的用途 → 置灰时给用户看的原因，而不是让他勾一个下游会
+  /// 静默忽略的组合。当前唯一来源是 WOFF/WOFF2 遇上 [FontTarget.gameLookup]
+  /// （native DirectWrite 只吃裸 sfnt），判据见 `AppFontLoader.nativeOverlayCanUse`。
+  ///
+  /// 传的是**成文的原因**而不是裸枚举集合：拼文案要知道具体扩展名，而这只有持有
+  /// 字体行的页面侧知道。
+  final Map<FontTarget, String> unsupportedTargets;
   final int index;
   final bool isLast;
   final ValueChanged<FontTarget> onTargetToggled;
@@ -1438,22 +1580,28 @@ class CustomFontCatalogTile extends StatefulWidget {
 }
 
 class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
-  // 4 个字体用途开关（System UI / Novel Text / Dictionary / Video Subtitle）
-  // 默认折叠：每行不再被四枚 FilterChip 撑高，一屏能看到更多字体。展开后才显示。
-  bool _rolesExpanded = false;
+  // 字体用途开关（逐个 FontTarget 一枚 FilterChip，见 _targetLabel 的穷尽 switch）。
+  // 默认折叠：每行不再被整排 FilterChip 撑高，一屏能看到更多字体。展开后才显示。
+  // 但从带作用域的入口进来时（initiallyExpandRoles）出生即展开。
+  late bool _rolesExpanded = widget.initiallyExpandRoles;
 
-  String _targetLabel(FontTarget target) => switch (target) {
-        FontTarget.appUi => t.font_target_app_ui,
-        FontTarget.body => t.font_target_body,
-        FontTarget.dictionary => t.font_target_dictionary,
-        FontTarget.videoSubtitle => t.font_target_video_subtitle,
-      };
+  String _targetLabel(FontTarget target) => fontTargetLabel(target);
+
+  /// 本平台真有消费端的用途。gameLookup 只有 Windows 有 native 分层窗消费，
+  /// 其余平台勾上等于写一个永远没人读的偏好键——显示出来只会让用户以为设好了。
+  ///
+  /// 只影响**显示**：已存的 targetEnabled 由 customFontLegacyListsFromRows 按
+  /// FontTarget.values 全量回写，跨平台同步过来的勾选不会被这里的隐藏抹掉。
+  static List<FontTarget> get _visibleTargets => <FontTarget>[
+        for (final FontTarget target in FontTarget.values)
+          if (isFontTargetAvailableOnPlatform(target)) target,
+      ];
 
   /// 折叠态摘要：把已启用的用途拼成一行，用户不展开也能一眼看到该字体用在哪。
   String get _rolesSummary => <String>[
-        for (final FontTarget target in FontTarget.values)
-          if (widget.targets.contains(target)) _targetLabel(target),
-      ].join(' · ');
+    for (final FontTarget target in _visibleTargets)
+      if (widget.targets.contains(target)) _targetLabel(target),
+  ].join(' · ');
 
   @override
   Widget build(BuildContext context) {
@@ -1463,10 +1611,9 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
     final TextStyle? titleStyle = cupertino
         ? tokens.type.listTitle
         : Theme.of(context).textTheme.bodyMedium;
-    final TextStyle? subtitleStyle =
-        Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            );
+    final TextStyle? subtitleStyle = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant);
     // ☰ 拖拽手柄：整行本就可拖（外层 FushiReorderDragListener——桌面按下即拖、
     // 移动端长按再拖），这枚手柄是把「可拖拽重排」画出来的视觉锚点，替代原先
     // 单列一行的「拖拽以调整优先级」文字提示。
@@ -1586,12 +1733,24 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
                 spacing: tokens.spacing.gap,
                 runSpacing: tokens.spacing.gap,
                 children: [
-                  for (final FontTarget target in FontTarget.values)
-                    FilterChip(
-                      label: Text(_targetLabel(target)),
-                      selected: widget.targets.contains(target),
-                      onSelected: (_) => widget.onTargetToggled(target),
-                    ),
+                  for (final FontTarget target in _visibleTargets)
+                    if (widget.unsupportedTargets.containsKey(target))
+                      // 置灰而非隐藏：用户需要知道「这个用途存在，但这个字体格式
+                      // 用不了」，隐藏只会让人继续找不到、以为是 app 少做了。
+                      Tooltip(
+                        message: widget.unsupportedTargets[target]!,
+                        child: FilterChip(
+                          label: Text(_targetLabel(target)),
+                          selected: false,
+                          onSelected: null,
+                        ),
+                      )
+                    else
+                      FilterChip(
+                        label: Text(_targetLabel(target)),
+                        selected: widget.targets.contains(target),
+                        onSelected: (_) => widget.onTargetToggled(target),
+                      ),
                 ],
               ),
             ],
