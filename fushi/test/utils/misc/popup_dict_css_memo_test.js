@@ -12,7 +12,8 @@ const vm = require('vm');
 //   ① 缓存版与未缓存版对同一输入必须逐字节相同（memo 不得改变语义）；
 //   ② 同一份 css、不同 dictName / scopePrefix 必须各得其所（内层 key 完整）；
 //   ③ 不同 css 内容必须各得其所（外层按 css 串分桶）；
-//   ④ 桶数超上限触发 clear() 之后，结果仍然正确（缓存只是加速，不是真相源）。
+//   ④ 桶数超上限触发 LRU 淘汰之后，结果仍然正确（缓存只是加速，不是真相源），
+//      且最近命中过的桶不会被淘汰（整表 clear() 会）。
 // 无 node 时由 .dart 侧 skip；源码级守卫见 popup_dict_css_atrule_scope_test.dart。
 
 // 三份 dict-media.js：app 弹窗用的那份，以及浏览器扩展的两个镜像（扩展那份是**有意
@@ -128,21 +129,64 @@ for (const css of SAMPLES) {
   assert.ok(!two.includes('.p'), '换 css 后结果里混入了旧 css');
 }
 
-// ④ 撑爆桶上限触发 clear() 之后仍然正确（缓存只是加速，不是真相源）。
+// ④ 撑爆桶上限触发 LRU 淘汰之后仍然正确（缓存只是加速，不是真相源），且淘汰的是最久
+//    未用的桶：刚被命中过的桶必须活下来（整表 clear() 会把它一起清掉）。
 {
   const dict = 'Overflow';
   const probeCss = '.probe { color: red; }';
   const before = ctx.constructDictCss(probeCss, dict);
-  // 上限是 64 个桶；灌 200 份互不相同的 css 必定跨过 clear()。
-  for (let i = 0; i < 200; i++) {
+  // 上限是 256 个桶；灌 300 份互不相同的 css 必定跨过淘汰。每灌 100 份就再摸一次
+  // probe，让它始终是「最近用过」——LRU 下它不该被淘汰。
+  let probeRecomputes = 0;
+  const uncachedOriginal = ctx.constructDictCssUncached;
+  ctx.constructDictCssUncached = function(css, name, scope) {
+    if (css === probeCss) probeRecomputes++;
+    return uncachedOriginal(css, name, scope);
+  };
+  for (let i = 0; i < 300; i++) {
     ctx.constructDictCss(`.gen${i} { color: red; }`, dict);
+    if (i % 100 === 99) ctx.constructDictCss(probeCss, dict);
   }
   const after = ctx.constructDictCss(probeCss, dict);
+  ctx.constructDictCssUncached = uncachedOriginal;
   assert.strictEqual(
-    after, before, 'clear() 之后重算的结果与首次不一致');
+    after, before, '淘汰之后重算的结果与首次不一致');
   assert.strictEqual(
     after, ctx.constructDictCssUncached(probeCss, dict),
-    'clear() 之后的结果与未 memo 实现不一致');
+    '淘汰之后的结果与未 memo 实现不一致');
+  assert.strictEqual(
+    probeRecomputes, 0,
+    'LRU：期间反复命中的 probe 桶不该被淘汰重算（clear() 语义会重算 ' + probeRecomputes + ' 次）');
+}
+
+// ④b 上面那条只证明「一直被摸的桶活下来了」——probe 从头到尾没被淘汰过，于是
+//     `after === before` 只是一次缓存命中，**「被淘汰过的桶重算后仍然正确」这条
+//     覆盖没有任何键在跑**（把桶上限调成 100000，④ 照样绿）。这里补一个真正的
+//     受害者：只在最开始摸一次，之后一直不碰，灌满之后它必须已被淘汰（重算一次）
+//     且重算结果与未 memo 实现逐字节一致。
+{
+  const dict = 'Evicted';
+  const victimCss = '.victim { color: green; }';
+  const first = ctx.constructDictCss(victimCss, dict);
+  let victimRecomputes = 0;
+  const uncachedOriginal = ctx.constructDictCssUncached;
+  ctx.constructDictCssUncached = function(css, name, scope) {
+    if (css === victimCss) victimRecomputes++;
+    return uncachedOriginal(css, name, scope);
+  };
+  for (let i = 0; i < 300; i++) {
+    ctx.constructDictCss(`.evict${i} { color: red; }`, dict);
+  }
+  const again = ctx.constructDictCss(victimCss, dict);
+  ctx.constructDictCssUncached = uncachedOriginal;
+  assert.strictEqual(
+    victimRecomputes, 1,
+    '桶上限没起作用：一直不碰的桶应当被淘汰并在再次取用时重算一次，实际重算 '
+      + victimRecomputes + ' 次');
+  assert.strictEqual(again, first, '淘汰后重算的结果与首次不一致');
+  assert.strictEqual(
+    again, ctx.constructDictCssUncached(victimCss, dict),
+    '淘汰后重算的结果与未 memo 实现不一致');
 }
 
 }

@@ -40,6 +40,16 @@ abstract class HomeDictionarySearchDebug {
   /// 直接走 HomeDictionaryPage 的生产 `_pushNestedPopup` 路径打开 app 内查词浮层。
   Future<int> debugOpenPopup(String term);
 
+  /// 走同一条生产路径在当前栈顶之上再压一层**嵌套**浮层（不复用常驻热槽，与用户在
+  /// 弹窗里点词的路径一致）。BUG-2039 ③ 的停驻 realm 接管只在这条路径上发生。
+  Future<int> debugOpenNestedPopup(String term);
+
+  /// 当前顶层浮层的 WebView State 身份（用于断言「再嵌套接管的是同一个 WebView」）。
+  Object? get debugTopPopupWebViewState;
+
+  /// 当前可见栈深度与停驻 realm 数。
+  ({int depth, int parkedRealms}) get debugPopupStackShape;
+
   /// 当前顶层浮层按 DOM 测量得到的自适应总高；尚未测量/无层时为 null。
   double? get debugTopPopupAutoFitHeight;
 
@@ -775,6 +785,25 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       );
 
   @override
+  Future<int> debugOpenNestedPopup(String term) => _pushNestedPopup(
+        term,
+        const Rect.fromLTWH(220, 220, 24, 24),
+        reuseWarmSlot: false,
+      );
+
+  @override
+  Object? get debugTopPopupWebViewState {
+    final int index = _popup.lastVisibleIndex;
+    return index < 0 ? null : _popup.entries[index].webViewKey.currentState;
+  }
+
+  @override
+  ({int depth, int parkedRealms}) get debugPopupStackShape => (
+        depth: _popup.lastVisibleIndex + 1,
+        parkedRealms: _popup.parkedRealms.length,
+      );
+
+  @override
   double? get debugTopPopupAutoFitHeight {
     final int index = _popup.lastVisibleIndex;
     return index < 0 ? null : _popup.entries[index].autoFitHeight;
@@ -958,6 +987,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                   ),
                 for (int i = 0; i < _popup.entries.length; i++)
                   _buildNestedPopupLayer(i, screen),
+                ...buildParkedRealmLayers(screen: screen, controller: _popup),
               ],
             );
           },

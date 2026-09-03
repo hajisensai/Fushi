@@ -666,6 +666,23 @@ mixin DictionaryPageMixin {
   // Popup stack management
   // ---------------------------------------------------------------------------
 
+  /// BUG-2039 ③：把 [controller] 里停驻的嵌套 realm 逐把渲染成屏外隐藏层，紧跟在
+  /// entries 层之后放进宿主 Stack。不渲染 = 键背后的 WebView 被销毁 = 下一次嵌套
+  /// 查词退化成冷建。
+  List<Widget> buildParkedRealmLayers({
+    required Size screen,
+    required DictionaryPopupController controller,
+  }) {
+    return parkedRealmPopupLayers(
+      parkedRealms: controller.parkedRealms,
+      screen: screen,
+      isDark:
+          (mixinAppModel.overrideDictionaryTheme ?? mixinTheme).brightness ==
+              Brightness.dark,
+      overrideFillColor: mixinAppModel.overrideDictionaryColor,
+    );
+  }
+
   /// Builds the [Positioned] popup layer widget for the entry at [index] in
   /// [controller].entries.
   Widget buildNestedPopupLayer({

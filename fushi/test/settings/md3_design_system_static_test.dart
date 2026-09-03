@@ -699,20 +699,18 @@ void main() {
               'exception class as reading_statistics_page / video_statistics_page.',
       'lib/src/pages/implementations/dictionary_popup_native.dart':
           'Dictionary popup chip/content typography is dense lookup content.',
-      'lib/src/pages/implementations/dictionary_popup_webview.dart':
-          'WebView result theming injects MD3 ColorScheme surface roles into popup CSS.',
       'lib/src/pages/implementations/popup_settings_injection.dart':
           'TODO-895 single-source-of-truth popup settings injection builds the '
               'shared WebView CSS custom properties (--md-surface-container-high '
               'etc.) from the MD3 ColorScheme; surface roles are injected into '
               'popup CSS, not ordinary Flutter page chrome — same reviewed '
-              'exception class as dictionary_popup_webview / global_lookup_render.',
+              'exception class as popup_theme_css / global_lookup_render.',
       'lib/src/utils/popup_theme_css.dart':
           'Popup theme CSS single source of truth maps MD3 ColorScheme surface '
               'roles (surfaceContainerHigh etc.) to WebView CSS custom '
               'properties for the three popup injectors — same reviewed '
               'exception class as popup_settings_injection / '
-              'dictionary_popup_webview.',
+              'global_lookup_render.',
       'lib/src/pages/implementations/history_reader_page.dart':
           'History preview uses content-derived surface and text metrics.',
       'lib/src/pages/implementations/reader_fushi_history_page.dart':
@@ -1253,9 +1251,6 @@ void main() {
       },
       'lib/src/pages/implementations/dictionary_popup_native.dart': <String>{
         'surfaceContainerHighest'
-      },
-      'lib/src/pages/implementations/dictionary_popup_webview.dart': <String>{
-        'surfaceContainerHigh'
       },
       'lib/src/pages/implementations/game_diagnostics_page.dart': <String>{
         'BorderRadius.circular(',

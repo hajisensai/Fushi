@@ -23,17 +23,23 @@ void main() {
         reason: '圆角值应取自 token FushiRadii.cardValue，非硬编码');
   });
 
-  test('两个注入点都经 buildPopupThemeCssVars 注入 --fushi-radius-card', () {
-    for (final String path in <String>[
+  test('唯一注入点经 buildPopupThemeCssVars 注入 --fushi-radius-card', () {
+    // BUG-2039 ③：主题变量段只剩 popup_settings_injection 一处真源；弹窗 WebView
+    // 主题热切换重注的是同一段产物（themeVarsJs），不再自拼第二份。
+    final String src = read(
       'lib/src/pages/implementations/popup_settings_injection.dart',
+    );
+    expect(src, contains("'--fushi-radius-card'"),
+        reason: 'popup_settings_injection 应注入 --fushi-radius-card');
+    expect(src, contains('buildPopupThemeCssVars('),
+        reason: '圆角值应经共享真源 buildPopupThemeCssVars，非硬编码');
+    final String webview = read(
       'lib/src/pages/implementations/dictionary_popup_webview.dart',
-    ]) {
-      final String src = read(path);
-      expect(src, contains("'--fushi-radius-card'"),
-          reason: '$path 应注入 --fushi-radius-card');
-      expect(src, contains('buildPopupThemeCssVars('),
-          reason: '$path 的圆角值应经共享真源 buildPopupThemeCssVars，非硬编码');
-    }
+    );
+    expect(webview, isNot(contains("setProperty('--fushi-radius-card'")),
+        reason: '弹窗 WebView 不得再维护第二份主题变量注入');
+    expect(webview, contains('.themeVarsJs'),
+        reason: '弹窗 WebView 主题热切换必须消费静态段产物里的同一段');
   });
 
   test('popup.css 的卡片表面用 var(--fushi-radius-card)，不硬编码', () {

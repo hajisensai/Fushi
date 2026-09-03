@@ -352,6 +352,72 @@ Widget parkedPopupLayer({
   );
 }
 
+/// 停驻 realm 在停驻期的外壳尺寸（逻辑像素）。接管时 Positioned 换成真实几何，
+/// WebView 随之改尺寸——与常驻热槽停驻期按 `Rect.zero` 算位一样只是个占位盒。
+const Size kParkedRealmSize = Size(360, 480);
+
+/// BUG-2039 ③：把一把停驻的嵌套 realm 键（[DictionaryPopupController.parkedRealms]）
+/// 渲染成一层**屏外隐藏**弹窗，让键背后的 WebView element 在两次嵌套查词之间活着。
+/// 宿主 Stack 里紧跟在 entries 层之后逐把渲染；下一条嵌套层用同一把键建 entry 时，
+/// 这层从 Stack 消失、entry 层带着同一把 GlobalKey 出现，Flutter 按 GlobalKey 把
+/// element（连同原生 WebView 表面）整体搬过去，不拆不建。
+///
+/// 停驻期只挂一个 seed 空结果（与热槽同一单例 [kPopupSearchingPlaceholderResult]，
+/// `keepWebViewWarm` 让 [DictionaryPopupLayer] 在无结果时也挂 WebView）；所有回调
+/// 都是 no-op——屏外隐藏层收不到任何用户输入。
+Widget parkedRealmPopupLayer({
+  required GlobalKey<DictionaryPopupWebViewState> webViewKey,
+  required Size screen,
+  required bool isDark,
+  Color? overrideFillColor,
+}) {
+  return parkedPopupLayer(
+    key: ObjectKey(webViewKey),
+    pos: Rect.fromLTWH(0, 0, kParkedRealmSize.width, kParkedRealmSize.height),
+    visible: false,
+    screen: screen,
+    child: DictionaryPopupLayer(
+      result: kPopupSearchingPlaceholderResult,
+      webViewKey: webViewKey,
+      keepWebViewWarm: true,
+      isDark: isDark,
+      overrideFillColor: overrideFillColor,
+      onDismiss: () {},
+      onTextSelected: (String text, Rect localRect) {},
+      onLinkClick: (String query, Rect localRect) {},
+      onMineEntry: (Map<String, String> fields) async =>
+          const MinePopupResult(),
+      onDuplicateCheck: (String expression, String reading) async => false,
+    ),
+  );
+}
+
+/// 一把停驻 realm 键 → 一批屏外隐藏层。**六（现七）个宿主共用的唯一原语**。
+///
+/// 此前只有 `DictionaryPageMixin.buildParkedRealmLayers` 一个薄封装，而
+/// `base_source_page.dart` 没混入那个 mixin，于是把循环体内联抄了一遍；
+/// `popup_dictionary_page.dart` 干脆一处都没接。漏一处的症状是**嵌套查词静默
+/// 退回冷建 WebView**——控制器照常把离栈层的键停驻（[_retireEntries] 是所有
+/// 出栈路径的必经处），宿主不渲染就等于键背后的 element 被销毁，
+/// `_takeRealmKey()` 接管到的是一把已死的键。测试全绿、analyze 全绿，
+/// 只有用户觉得慢。登记面由 `parked_realm_host_registration_guard_test.dart` 守。
+List<Widget> parkedRealmPopupLayers({
+  required Iterable<GlobalKey<DictionaryPopupWebViewState>> parkedRealms,
+  required Size screen,
+  required bool isDark,
+  Color? overrideFillColor,
+}) {
+  return <Widget>[
+    for (final GlobalKey<DictionaryPopupWebViewState> key in parkedRealms)
+      parkedRealmPopupLayer(
+        webViewKey: key,
+        screen: screen,
+        isDark: isDark,
+        overrideFillColor: overrideFillColor,
+      ),
+  ];
+}
+
 /// TODO-890 姊妹项：查词弹窗**入场淡入**收口。app 外覆盖窗靠注入 CSS
 /// `transition:opacity 200ms ease-out` + 双 gate 翻 `opacity 0→1` 做平滑淡入；app 内
 /// 各表面（阅读器 / 视频 / 首页 / 安卓独立窗）此前经 [parkedPopupLayer] 的 [Visibility]

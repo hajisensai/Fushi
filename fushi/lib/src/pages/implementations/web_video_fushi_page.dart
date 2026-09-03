@@ -1424,6 +1424,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                     ),
                     onPop: _popNestedPopupAt,
                   ),
+                ...buildParkedRealmLayers(screen: screen, controller: _popup),
               ],
             );
           },
