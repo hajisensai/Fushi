@@ -3290,6 +3290,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return;
     }
     _syncVolumeDisplay(controller.volume);
+    // BUG-2032：随包 libmpv 有没有编 Lua 是按平台固定的二进制事实，探到就落 pref，
+    // 让全局设置页（无播放器）也能如实说明脚本开关在本平台是否可用。
+    if (controller.luaCapability != MpvLuaCapability.unknown) {
+      unawaited(appModel.setVideoMpvLuaCapability(controller.luaCapability));
+    }
     // TODO-1000：远端/流视频（videoPath==null）把制卡抽取源设为可 seek 的流 URL，使
     // ImmersionMiningEngine 能从流 URL 按时间戳裁 GIF/音频（本地视频仍用 videoPath）。
     // 覆盖是幂等的：本地/空时清除，避免换片残留上一条流 URL。
@@ -7074,6 +7079,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         if (!enabled) return;
         await _controller?.applyLuaScripts(await listLuaScriptPaths());
       },
+      luaScriptStates: _controller?.luaScriptStates,
       onLockWindowAspectRatioChanged: _setLockWindowAspectRatio,
       onVideoFitModeChanged: _setVideoFitMode,
       onHdrOutputModeChanged: _setVideoHdrOutputMode,

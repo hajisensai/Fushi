@@ -188,6 +188,11 @@ VoiceHookStatus StatusFromHeaderLocked(const SharedHeader* h) {
   s.raw_voice_ready = fushi_voice_hook::HasReadyGameResourceAudio(
       h->reserved_luna, h->hook_diagnostics,
       h->reserved_hook_diagnostics, h->xaudio_diagnostics);
+  // 两个诊断字原样带出。第二个字不参与 raw_voice_ready 的判定（它装的是身份/锚点
+  // 分型位，不是"资源音频已就绪"），但必须能被读到：否则 hook 侧 SetXAudioDiagnostic2
+  // 置的每一位在 Fushi 这一侧都不存在。
+  s.xaudio_diagnostics = h->xaudio_diagnostics;
+  s.xaudio_diagnostics2 = h->xaudio_diagnostics2;
   s.text_lane_recycles = static_cast<int64_t>(h->text_lane_recycle_count);
   s.text_lane_overflows = static_cast<int64_t>(h->text_lane_overflow_count);
   s.native_loopback_requested =
