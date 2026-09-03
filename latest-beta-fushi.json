@@ -26,6 +26,15 @@
       "sha256": "6e154b5c620245b8739c19d4952235387c1901ca7fd4c8b5f6b0914a6014f000"
     },
     {
+      "name": "fushi-2.2.4-beta.13362-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.2.4-beta.13362/fushi-2.2.4-beta.13362-windows-setup.exe",
+      "releaseSequence": 13362,
+      "tag": "v2.2.4-beta.13362",
+      "version": "2.2.4-beta.13362",
+      "size": 264172433,
+      "sha256": "b5f964ef1a4a4ac3317996c782ccd89286eb6c13aeb1620d57b8517edd8cd3eb"
+    },
+    {
       "name": "fushi-2.2.4-beta.13362-x86_64.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.2.4-beta.13362/fushi-2.2.4-beta.13362-x86_64.apk",
       "releaseSequence": 13362,
