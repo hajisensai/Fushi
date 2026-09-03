@@ -514,6 +514,29 @@ class AnkiMiningPayload {
     this.dictionaryMedia = const [],
   });
 
+  /// 本 payload 走**两条**线，编码不同，`fromJson` 必须对两条都成立：
+  ///
+  /// 1. **保类型的 JSON**——浏览器扩展 / 远端 API（`/api/mine`）直接把 JS 对象
+  ///    序列化过来，布尔就是布尔。
+  /// 2. **全字符串**——应用内 WebView 桥。`dictionary_popup_webview.dart` 与
+  ///    `overlay_bridge_handlers.dart` 都把 JS 对象拍平成 `Map<String, String>`
+  ///    （逐值 `.toString()`），因为下游 `ImmersionMiningRequest.fields`、
+  ///    `miningHandler(fields:)`、互联转发全都是 `Map<String, String>`——Anki 的
+  ///    字段渲染本来就是「字段名 → 字符串」。这条线上布尔到达时是 `"true"`/`"false"`。
+  ///
+  /// 本函数里 `singleGlossaries` 与 `dictionaryMedia` 早就各自按「String 或原生类型」
+  /// 两分支处理（见下），**这个约定一直都在**；BUG-2089 是新加的布尔字段没跟上它，
+  /// 写成裸 `as bool?`，于是第 2 条线上每一次制卡都抛
+  /// `type 'String' is not a subtype of type 'bool?'`。
+  ///
+  /// 只认这两条线真实产生的形态，不做「任意字符串即真」的宽松解析：那会把
+  /// 拼写错误静默变成 true。
+  static bool _boolFromPayloadWire(Object? raw) {
+    if (raw is bool) return raw;
+    if (raw is String) return raw == 'true';
+    return false;
+  }
+
   factory AnkiMiningPayload.fromJson(Map<String, dynamic> json) {
     var singleGlossaries = <String, String>{};
     final sgRaw = json['singleGlossaries'];
@@ -558,7 +581,7 @@ class AnkiMiningPayload {
       phoneticTranscriptions: json['phoneticTranscriptions'] as String? ?? '',
       popupSelectionText: json['popupSelectionText'] as String? ?? '',
       glossarySelectionHighlighted:
-          json['glossarySelectionHighlighted'] as bool? ?? false,
+          _boolFromPayloadWire(json['glossarySelectionHighlighted']),
       audio: json['audio'] as String? ?? '',
       selectedDictionary: json['selectedDictionary'] as String? ?? '',
       dictionaryMedia: dictionaryMedia,
