@@ -1046,7 +1046,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         // 活动集（TODO-840 Part B 初版如此，导致隐藏态屏幕上没有任何 widget、鼠标无处可
         // 悬停）：隐藏与模糊同为「遮蔽」的两种视觉，都走「照常布局 + 遮蔽视觉 + 共享显形
         // 状态机」一条路径——隐藏的视觉是 Opacity(0)（不绘制），几何仍在，于是悬停 / 点击
-        // 显形对隐藏态同样成立（见 [_positionCueGroup] / [_wrapInteractive]）。
+        // 显形对隐藏态同样成立（两种遮蔽的视觉都在 [_wrapInteractive] 同一层）。
         final List<AudioCue> mainCues = widget.controller.activeCues;
         // 副字幕活动集（TODO-1312：并入 Flutter overlay 多层渲染、可查词）。遮蔽模式
         // 「隐藏」与主字幕同构（TODO-1382）：不在这里清空，隐藏态经 Opacity(0) 呈现、
