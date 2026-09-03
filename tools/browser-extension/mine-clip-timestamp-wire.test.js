@@ -103,12 +103,12 @@ test('BUG-2080：只有半个窗时两个键都不发——半个窗会让 end >
   assert.ok(!('clipEndMs' in onlyEnd), '只有终点时 clipEndMs 也不该发');
 });
 
-test('BUG-2080：content.js 队列项成对存字幕窗，且发的是字幕窗不是录制余量窗', () => {
+// 入队侧（cueStartV/cueEndV 存的到底是不是字幕窗）由 universal-subtitle-providers.test.js
+// 的**行为宿主**覆盖——那里真跑 fushiEnqueue 并断言 item.cueEndV === 3000。源码扫描证明
+// 不了这件事：把上游 `endV: cw.endMs` 改成 `cw.endMs + 200`，源码断言照样全绿。
+// 这里只留发送侧两条——`fushiRunNetflixBatch` 需要完整回放桩，暂时只能扫源码。
+test('BUG-2080：content.js 的 mineClip 发的是字幕窗，不是录制余量窗', () => {
   const src = fs.readFileSync(path.join(__dirname, 'content.js'), 'utf8');
-  // 入队：cueStartV/cueEndV 成对存下（startV/endV 带 ±200ms 录制余量，不是卡面要的窗）。
-  assert.match(src, /cueStartV:\s*w\.startV,/, '队列项必须存 cueStartV');
-  assert.match(src, /cueEndV:\s*w\.endV,/, '队列项必须成对存 cueEndV');
-  // 发送：取的是 cue 窗，不是 q.startV/q.endV。
   assert.match(src, /clipStartMs:\s*\(typeof q\.cueStartV === 'number' \? q\.cueStartV : null\)/,
       'mineClip 必须把 cueStartV 作为 clipStartMs 发出');
   assert.match(src, /clipEndMs:\s*\(typeof q\.cueEndV === 'number' \? q\.cueEndV : null\)/,

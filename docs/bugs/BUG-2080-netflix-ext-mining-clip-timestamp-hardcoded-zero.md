@@ -1,7 +1,7 @@
 ## BUG-2080 · 浏览器扩展 Netflix 制卡的片段时间窗恒为 0，卡上永远显示不出时间
 - **报告**：2026-09-03（PR #1161「卡片 Details 栏带上截取片段的时间窗」的代码审查副产物，不是用户报告）
 - **真实性**：✅ 真 bug。**缺口有两处，立案时只看到了一处**。① 服务端 `fushi/lib/src/mining/immersion_capture_channel.dart` 的纯函数 `buildImmersionRequest` 把 `clipStartMs`/`clipEndMs` 硬编码成 0；② **浏览器扩展从来不发这两个键**——`tools/browser-extension/content.js` 的 `mineClip` 消息只带 `cueStartMs`/`mineAtMs`，`background.js` 的 `/api/mine` body 同样没有（对比 `mineYoutube` 分支一直发着 `clipStartMs`/`clipEndMs`）。**立案时引作根因证据的 `app_model.dart` `netflixVideoId` 分支是一条死分支**：扩展从不发 `netflixVideoId`（本仓 `BUG-1416` 已记载），且 `app.fushi.reader/immersion_capture` 这个 MethodChannel 全仓无 native 实现。于是 `{clip-timestamp}` 对 Netflix 用户**结构性恒空**
-- **[x] ① 已修复**（两处缺口都补）— **扩展侧**：队列项与 `cueStartV` 成对存下 `cueEndV`，`mineClip` 与 `/api/mine` body 补发 `clipStartMs`/`clipEndMs`（取**字幕窗**，不是带 ±200ms 录制余量的 `startV`/`endV`）；**服务端侧**：`hasRange` 从「窗非空」收敛成「窗非空 **且** 有可裁的源」，`clipStartMs`/`clipEndMs` 回归单一语义（卡面时间窗），`buildImmersionRequest` 原样透传。分支 `fix/clip-window-vs-extract-intent`
+- **[x] ① 已修复**（两处缺口都补；**E2E 未验**——见文末「未验证的部分」）— **扩展侧**：队列项与 `cueStartV` 成对存下 `cueEndV`，`mineClip` 与 `/api/mine` body 补发 `clipStartMs`/`clipEndMs`（取**字幕窗**，不是带 ±200ms 录制余量的 `startV`/`endV`）；**服务端侧**：`hasRange` 从「窗非空」收敛成「窗非空 **且** 有可裁的源」，`clipStartMs`/`clipEndMs` 回归单一语义（卡面时间窗），`buildImmersionRequest` 原样透传。分支 `fix/clip-window-vs-extract-intent`
 - **[x] ② 已加自动化测试** — `tools/browser-extension/mine-clip-timestamp-wire.test.js`（**wire 行为**：在 vm 里真跑 `background.js`，断言两端窗进 `/api/mine`、老队列项两键都不发、半个窗两键都不发；外加 `content.js` 取值侧断言「发的是字幕窗不是录制余量窗」）、`fushi/test/mining/immersion_capture_channel_test.dart`（纯函数：窗透传 + 「有窗但抽取意图为假」防回退守卫 + 无窗 payload）、`fushi/test/mining/immersion_mining_engine_test.dart`（引擎：Netflix 形状带非零窗时中止矩阵不变）
 - **备注**：与 PR #1161 同域但独立。该 PR 新增的 `{clip-timestamp}` 占位符在本地视频 / YouTube / 互联转发三条路上都通，唯独浏览器扩展的 Netflix 路不通。
 
@@ -75,3 +75,18 @@ test/pages/video_mining_context_guard_test.dart test/sync/forwarded_mine_payload
 `youtube_clip_miner.dart` 里 `mediaSource` 是**非空类型**，「有 audioSource 无 mediaSource」
 在生产中造不出来，实测删掉它 3943 条全绿——是个没有调用点、没有测试、没有语义的析取项。
 两个抽取点（`:313`/`:508`）自己已判过源，改用 `hasClipWindow` 只问窗几何。
+
+### 未验证的部分（不要据此宣称「已修好」）
+
+**从未有一次真机 Netflix 制卡观察到卡面出现 `HH:MM:SS - HH:MM:SS`。** 现有证据全部是：
+单元测试（wire 行为 + 纯函数 + 引擎）、静态追链、变异实测。链路的每一段都被钉住了，
+但「装上扩展、开一集 Netflix、制一张卡、卡上真的有时间」这一步没做——需要浏览器扩展
+环境 + Netflix 会话。按仓库纪律，这条在补上真机复测前不得对外宣称已修复。
+
+### 已知残留：`{clip-timestamp}` 在两条扩展来源上语义不一致
+
+Netflix 路现在发的是**字幕窗**（`cueStartV`/`cueEndV`），而 YouTube 路
+（`content.js` 的 `mineYoutube`）发的是 `q.startV`/`q.endV`，即**带 ±200ms 录制余量的窗**。
+两者截断到秒后最多差 1 秒。根子是 YouTube 那两个数在该路径上兼着**抽取参数**
+（服务端拿去 ffmpeg 裁），不是纯显示值——也就是本条 bug 消灭的「同一数字两层两语义」
+在 YouTube 路上原封不动。要统一得给 YouTube 另加一对显示用 wire key，属独立改动。
