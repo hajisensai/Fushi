@@ -99,12 +99,16 @@ class GlobalLookupController {
   // 卡片会跟着内容长大，而不是停在首帧尺寸。READY-SAFETY 兜底 reveal 也会回调——
   // 那是「真渲染失败」的最后一招，此时投的确实可能是空白卡，但比卡在不可见强。
   void Function(int physicalWidth, int physicalHeight)? onRevealed;
+  // BUG-2082 — [physicalRootHeight] is the ROOT card's own rendered height
+  // (physical px, 0 when the host did not report it), distinct from the union
+  // [physicalHeight] once nested children extend the bbox.
   void Function(
     GlobalLookupRoute route,
     int physicalWidth,
     int physicalHeight,
     int physicalDx,
     int physicalDy,
+    int physicalRootHeight,
   )?
   onRoutedRevealed;
 
@@ -149,6 +153,7 @@ class GlobalLookupController {
     int geometryEpoch,
     int dx,
     int dy,
+    int rootHeight,
     double left,
     double top,
     int attempt,
@@ -639,7 +644,13 @@ class GlobalLookupController {
     return route == _activeRoute && GlobalLookupChannel.isRouteValid(route);
   }
 
-  void _notifyRevealed(int width, int height, {int dx = 0, int dy = 0}) {
+  void _notifyRevealed(
+    int width,
+    int height, {
+    int dx = 0,
+    int dy = 0,
+    int rootHeight = 0,
+  }) {
     final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
     if (!_isCurrentRoute) {
       return;
@@ -650,7 +661,7 @@ class GlobalLookupController {
     if (route.source == 'desktop') {
       onRevealed?.call(width, height);
     }
-    onRoutedRevealed?.call(route, width, height, dx, dy);
+    onRoutedRevealed?.call(route, width, height, dx, dy, rootHeight);
   }
 
   /// TODO-872 — the shared app-external lookup chain for BOTH triggers (the
@@ -1192,6 +1203,7 @@ class GlobalLookupController {
             pending.height,
             dx: pending.dx,
             dy: pending.dy,
+            rootHeight: pending.rootHeight,
           );
         }
       }
@@ -1850,6 +1862,9 @@ class GlobalLookupController {
     if (width <= 0 || height <= 0) {
       return;
     }
+    // BUG-2082 — root card height rides the same box; 0 = host did not report.
+    final double rootHeightCss = num2(box['rootHeight']) ?? 0;
+    final int rootHeight = rootHeightCss > 0 ? (rootHeightCss * dpr).round() : 0;
     // TODO-1231 (BUG-583) — ratchet the origin outward-only so a nested close
     // never slides the window top-left back inward (which raced the host's
     // compensating layer shift across the DWM/WebView2 boundary and lurched the
@@ -1881,7 +1896,7 @@ class GlobalLookupController {
       glog(
         'reveal(box): dpr=$dpr box=($left,$top,$width,$height) '
         'ratchet=(${ratcheted.left},${ratcheted.top}) '
-        '-> dx=$dx dy=$dy w=$w h=$h epoch=$geometryEpoch',
+        '-> dx=$dx dy=$dy w=$w h=$h root=$rootHeight epoch=$geometryEpoch',
       );
       unawaited(
         GlobalLookupChannel.revealStack(
@@ -1900,6 +1915,7 @@ class GlobalLookupController {
         geometryEpoch: geometryEpoch,
         dx: dx,
         dy: dy,
+        rootHeight: rootHeight,
         left: ratcheted.left,
         top: ratcheted.top,
       );
@@ -1923,7 +1939,7 @@ class GlobalLookupController {
       glog(
         'resize(box): dpr=$dpr box=($left,$top,$width,$height) '
         'ratchet=(${ratcheted.left},${ratcheted.top}) '
-        '-> dx=$dx dy=$dy w=$w h=$h epoch=$geometryEpoch',
+        '-> dx=$dx dy=$dy w=$w h=$h root=$rootHeight epoch=$geometryEpoch',
       );
       unawaited(
         GlobalLookupChannel.revealStack(
@@ -1942,6 +1958,7 @@ class GlobalLookupController {
         geometryEpoch: geometryEpoch,
         dx: dx,
         dy: dy,
+        rootHeight: rootHeight,
         left: ratcheted.left,
         top: ratcheted.top,
       );
@@ -1954,6 +1971,7 @@ class GlobalLookupController {
     required int geometryEpoch,
     int dx = 0,
     int dy = 0,
+    int rootHeight = 0,
     double left = 0,
     double top = 0,
   }) {
@@ -1968,6 +1986,7 @@ class GlobalLookupController {
         geometryEpoch: geometryEpoch,
         dx: dx,
         dy: dy,
+        rootHeight: rootHeight,
         left: left,
         top: top,
         attempt: 0,
@@ -2038,6 +2057,7 @@ class GlobalLookupController {
             pending.height,
             dx: pending.dx,
             dy: pending.dy,
+            rootHeight: pending.rootHeight,
           ),
         );
         return;
@@ -2050,6 +2070,7 @@ class GlobalLookupController {
         geometryEpoch: pending.geometryEpoch,
         dx: pending.dx,
         dy: pending.dy,
+        rootHeight: pending.rootHeight,
         left: pending.left,
         top: pending.top,
         attempt: pending.attempt + 1,

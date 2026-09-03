@@ -567,6 +567,62 @@ void main() {
     });
   });
 
+  group('BUG-2082 根卡以贴字形的那条边为不动点，不按 cap 上限高度算左上角', () {
+    GalRootPlacement resolvePlacement(GalLookupHit hit, int capW, int capH) =>
+        GalIngameLookupController.instance.debugResolveRootPlacement(
+          hit,
+          capW,
+          capH,
+        );
+
+    // SGRE 4K 全屏实测：字形 (640,1660) 80×80，视口 3840×2160，8 MB 预算把 cap
+    // 收到 1933×1087；实际渲染出来的根卡只有 773 高。
+    final GalLookupHit hit4k = _hit(
+      glyphX: 640,
+      glyphY: 1660,
+      glyphW: 80,
+      glyphH: 80,
+      viewW: 3840,
+      viewH: 2160,
+    );
+
+    test('字幕贴底：cap 卡翻到上方，不动点是 cap 卡底边 = 字形顶 - 间距', () {
+      final GalRootPlacement placement = resolvePlacement(hit4k, 1933, 1087);
+      expect(placement.above, isTrue);
+      expect(placement.edgeY, hit4k.glyphY - _kCardGap);
+      expect(placement.x, 640);
+    });
+
+    test('翻到上方时底边贴台词：实际卡比 cap 矮 314 px 也不留空隙（修前顶边停在 569）', () {
+      final GalRootPlacement placement = resolvePlacement(hit4k, 1933, 1087);
+      final ({int x, int y}) rendered =
+          resolveGalRootTopLeft(placement, 773, hit4k.viewH);
+      expect(rendered.y + 773, placement.edgeY, reason: '底边必须贴在字形顶上方');
+      expect(rendered.y, 1656 - 773);
+      // cap 高度本身回到旧实现的落点：布局原点与修前逐字节一致。
+      expect(resolveGalRootTopLeft(placement, 1087, hit4k.viewH).y, 569);
+    });
+
+    test('字幕在上半部：cap 卡放下方，不动点是顶边，卡片变高不动顶边', () {
+      final GalLookupHit hit = _hit(glyphX: 600, glyphY: 200, viewH: 720);
+      final GalRootPlacement placement = resolvePlacement(hit, 480, 320);
+      expect(placement.above, isFalse);
+      expect(placement.edgeY, hit.glyphY + hit.glyphH + _kCardGap);
+      expect(resolveGalRootTopLeft(placement, 120, 720).y, placement.edgeY);
+      expect(resolveGalRootTopLeft(placement, 320, 720).y, placement.edgeY);
+    });
+
+    test('根卡比上方空间还高时钉在 0，绝不给负坐标', () {
+      const GalRootPlacement placement = (x: 10, edgeY: 300, above: true);
+      expect(resolveGalRootTopLeft(placement, 500, 720), (x: 10, y: 0));
+    });
+
+    test('放下方而根卡长过视口底时贴底边', () {
+      const GalRootPlacement placement = (x: 10, edgeY: 600, above: false);
+      expect(resolveGalRootTopLeft(placement, 300, 720), (x: 10, y: 420));
+    });
+  });
+
   group('Dart → runner：开关 / 投帧 / 消场', () {
     late List<MethodCall> calls;
 

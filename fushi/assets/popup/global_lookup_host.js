@@ -2770,6 +2770,13 @@
     var maxBottom = -Infinity;
     var shellRects = [];
     var routedFrameCount = 0;
+    // BUG-2082 — the ROOT card's own measured height (CSS px), reported next to
+    // the union bbox. The gal in-game presenter anchors the root card by the
+    // edge that touches the clicked glyph (bottom edge when the card flips
+    // above the line); the union bbox alone cannot tell the root's height once
+    // nested children extend the union, so the host reports it explicitly.
+    var rootHeight = 0;
+    var firstShellHeight = 0;
     frames.forEach(function (record) {
       if (!sameRoute(record.route, route)) {
         return;
@@ -2804,6 +2811,12 @@
       // BUG-749 — collect every placed shell (same left/top/height the bbox
       // uses) for the native hit/paint region below.
       shellRects.push([left, top, width, height]);
+      if (firstShellHeight <= 0 && height > 0) {
+        firstShellHeight = height;
+      }
+      if (record.parentIndex < 0 && rootHeight <= 0 && height > 0) {
+        rootHeight = height;
+      }
       // MAX-corner (window size) + the bootstrap origin fallback see EVERY placed
       // shell, so the window pre-grows to cover a not-yet-ready child (no clip).
       if (left < minLeftAll) minLeftAll = left;
@@ -2893,15 +2906,22 @@
     var rectsKey = routePrefix + rectsCsv;
     var dpr = (typeof window.devicePixelRatio === 'number' &&
                window.devicePixelRatio > 0) ? window.devicePixelRatio : 1;
+    if (rootHeight <= 0) {
+      rootHeight = firstShellHeight;
+    }
     var box = {
       left: minLeft,
       top: minTop,
       width: maxRight - minLeft,
       height: maxBottom - minTop,
+      rootHeight: rootHeight,
       dpr: dpr,
     };
+    // rootHeight is part of the de-dup key: a root that shrinks under a child
+    // still spanning the old bottom leaves the union unchanged, yet the in-game
+    // root placement must follow the new root edge.
     var key = routePrefix + box.left + ',' + box.top + ',' + box.width + ',' +
-        box.height + ',' + dpr;
+        box.height + ',' + box.rootHeight + ',' + dpr;
     var geometryKey = key + '|' + rectsCsv;
     var rectsChanged = rectsKey !== lastShellRectsKey;
     var bboxChanged = key !== lastBBoxKey;

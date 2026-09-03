@@ -78,6 +78,31 @@ bool shouldRetireGalLookupForLineChange({
   int bboxDy,
 ) => (x: root.x + bboxDx, y: root.y + bboxDy);
 
+/// BUG-2082 — 根卡的落点不是一个左上角，而是「贴着被点字形的那条边」。
+///
+/// [edgeY] 是根卡贴字形的边在视口里的 Y：翻到字形上方时是**底边**，放在下方时是
+/// **顶边**。根卡的实际高度只有渲染完才知道（还会随词典尾批 / 改字号变），把不动点
+/// 放在贴字形的边上，卡片无论多高都紧挨台词；放在远端（旧实现用 8 MB 上限尺寸算
+/// 左上角）则 4K 下卡片比上限矮 300 多 px 时，卡片和台词之间就空出一大段。
+typedef GalRootPlacement = ({int x, int edgeY, bool above});
+
+/// 根卡左上角（primaryLayer px）：由 [placement] 与根卡**实际**高度 [rootHeight]
+/// 推出，再夹进 `[0, viewH - rootHeight]`（卡比上方空间还高时钉住顶边，绝不给负坐标）。
+@visibleForTesting
+({int x, int y}) resolveGalRootTopLeft(
+  GalRootPlacement placement,
+  int rootHeight,
+  int viewH,
+) {
+  final int top = placement.above
+      ? placement.edgeY - rootHeight
+      : placement.edgeY;
+  return (
+    x: placement.x,
+    y: GalIngameLookupController._clampInt(top, 0, viewH - rootHeight),
+  );
+}
+
 /// 游戏内查词编排器（进程级单例）。
 class GalIngameLookupController {
   GalIngameLookupController._({
@@ -215,7 +240,12 @@ class GalIngameLookupController {
   int _cardPhysicalHeight = 0;
   int _cardPhysicalDx = 0;
   int _cardPhysicalDy = 0;
-  ({int x, int y})? _rootCardAnchor;
+  // BUG-2082 — 根卡贴字形的边（cap 尺寸决定上/下方），与根卡实际渲染高度分开存：
+  // 前者在 submit 时定死，后者每次 reveal 跟着内容变。
+  GalRootPlacement? _rootPlacement;
+  int _rootPhysicalHeight = 0;
+  int _capPhysicalWidth = 0;
+  int _capPhysicalHeight = 0;
 
   /// 游戏画面截图期间的原子可见性门。native 的 capture-suppress 在游戏主线程确认
   /// 卡片与高亮都已隐藏后才回执；Dart 同时挡住所有 dirty/reveal 触发的 recapture，
@@ -328,9 +358,9 @@ class GalIngameLookupController {
     _started = true;
     final GlobalLookupController overlay = GlobalLookupController.instance;
     overlay.onRoutedRevealed =
-        (GlobalLookupRoute route, int w, int h, int dx, int dy) {
+        (GlobalLookupRoute route, int w, int h, int dx, int dy, int rootH) {
           if (!_acceptsRoute(route)) return;
-          _onOverlayRevealed(route, w, h, dx, dy);
+          _onOverlayRevealed(route, w, h, dx, dy, rootH);
         };
     overlay.onRoutedHidden = (GlobalLookupRoute route) {
       if (!_acceptsRoute(route)) return;
@@ -1113,7 +1143,9 @@ class GalIngameLookupController {
 
   void _applyCardSizeCap(GalLookupHit hit) {
     if (hit.viewW <= 0 || hit.viewH <= 0) {
-      _rootCardAnchor = null;
+      _rootPlacement = null;
+      _capPhysicalWidth = 0;
+      _capPhysicalHeight = 0;
       GlobalLookupController.instance.setPhysicalCap();
       return;
     }
@@ -1128,19 +1160,46 @@ class GalIngameLookupController {
     }
     final int capW = w.floor();
     final int capH = h.floor();
-    // Use the cap-sized root for both the layout origin and presentation. The
-    // rendered body may be shorter, but keeping this one conservative anchor
-    // removes a pre-render/post-render zero-point change and guarantees that the
-    // complete nested union stays inside the reported game viewport.
-    final ({int x, int y}) rootAnchor = _resolveAnchor(hit, capW, capH);
-    _rootCardAnchor = rootAnchor;
+    _capPhysicalWidth = capW;
+    _capPhysicalHeight = capH;
+    // BUG-2082 — the cap-sized root decides WHICH side of the glyph the card
+    // lives on (above when the line sits near the bottom) and pins the edge that
+    // touches the glyph. The rendered body is usually far shorter than the cap
+    // (8 MB budget → 1087 px tall at 4K vs ~770 px of content); anchoring the
+    // far edge left a 300 px gap between card and line. The root's top-left is
+    // recomputed from that pinned edge on every reveal (see _drainRecapture),
+    // so the card hugs the line at any content height while the layout origin
+    // handed to the cascade still starts from the conservative cap-sized box.
+    final GalRootPlacement placement = _resolveRootPlacement(hit, capW, capH);
+    _rootPlacement = placement;
+    final ({int x, int y}) capOrigin = resolveGalRootTopLeft(
+      placement,
+      capH,
+      hit.viewH,
+    );
     GlobalLookupController.instance.setPhysicalCap(
       width: capW,
       height: capH,
       workWidth: hit.viewW,
       workHeight: hit.viewH,
-      workOriginX: rootAnchor.x,
-      workOriginY: rootAnchor.y,
+      workOriginX: capOrigin.x,
+      workOriginY: capOrigin.y,
+    );
+  }
+
+  /// 根卡贴字形的边：先用 cap 尺寸走 [_resolveAnchor]（上/下方、水平 clamp 都由
+  /// 它定），卡顶落在字形顶之上即翻到了上方 → 不动点取该 cap 卡的**底边**；否则取顶边。
+  GalRootPlacement _resolveRootPlacement(
+    GalLookupHit hit,
+    int capW,
+    int capH,
+  ) {
+    final ({int x, int y}) capAnchor = _resolveAnchor(hit, capW, capH);
+    final bool above = capAnchor.y < hit.glyphY;
+    return (
+      x: capAnchor.x,
+      edgeY: above ? capAnchor.y + capH : capAnchor.y,
+      above: above,
     );
   }
 
@@ -1206,6 +1265,7 @@ class GalIngameLookupController {
     int physicalHeight,
     int physicalDx,
     int physicalDy,
+    int physicalRootHeight,
   ) {
     final GalLookupHit? hit = _activeHit;
     if (hit == null || !_enabledNow) return;
@@ -1215,11 +1275,43 @@ class GalIngameLookupController {
     _cardPhysicalHeight = physicalHeight;
     _cardPhysicalDx = physicalDx;
     _cardPhysicalDy = physicalDy;
+    // BUG-2082 — root height from the host; a host that predates the field
+    // reports 0, and the first reveal's union IS the root (no children yet).
+    final int rootHeight = physicalRootHeight > 0
+        ? physicalRootHeight
+        : (_rootPhysicalHeight > 0 ? _rootPhysicalHeight : physicalHeight);
+    if (rootHeight != _rootPhysicalHeight) {
+      _rootPhysicalHeight = rootHeight;
+      _syncCascadeOriginToRoot(hit);
+    }
     glog(
       'gal-ingame: rendered seq=${hit.seq} '
-      'card=${physicalWidth}x$physicalHeight',
+      'card=${physicalWidth}x$physicalHeight root=$rootHeight',
     );
     _scheduleRecapture(_activeLookupGeneration, route);
+  }
+
+  /// 根卡实际高度已知后，把级联布局的工作区原点改成根卡**真实**左上角：子卡的
+  /// 落点 / clamp 都相对根卡算，根卡贴边定位后原点若还停在 cap 尺寸的位置，子卡会
+  /// 相对错位。cap 宽高本身不变（仍是位图预算上限）。
+  void _syncCascadeOriginToRoot(GalLookupHit hit) {
+    final GalRootPlacement? placement = _rootPlacement;
+    if (placement == null || _capPhysicalWidth <= 0 || _capPhysicalHeight <= 0) {
+      return;
+    }
+    final ({int x, int y}) origin = resolveGalRootTopLeft(
+      placement,
+      _rootPhysicalHeight,
+      hit.viewH,
+    );
+    GlobalLookupController.instance.setPhysicalCap(
+      width: _capPhysicalWidth,
+      height: _capPhysicalHeight,
+      workWidth: hit.viewW,
+      workHeight: hit.viewH,
+      workOriginX: origin.x,
+      workOriginY: origin.y,
+    );
   }
 
   void _scheduleRecapture(int generation, GlobalLookupRoute route) {
@@ -1253,8 +1345,14 @@ class GalIngameLookupController {
       if (!_isCurrentLookup(generation, route)) return;
       final int start = hit.charIndex;
       final int len = _highlightLength(hit);
-      final ({int x, int y}) rootAnchor =
-          _rootCardAnchor ?? _resolveAnchor(hit, physicalWidth, physicalHeight);
+      final GalRootPlacement? placement = _rootPlacement;
+      final ({int x, int y}) rootAnchor = placement == null
+          ? _resolveAnchor(hit, physicalWidth, physicalHeight)
+          : resolveGalRootTopLeft(
+              placement,
+              _rootPhysicalHeight > 0 ? _rootPhysicalHeight : physicalHeight,
+              hit.viewH,
+            );
       final ({int x, int y}) anchor = offsetGalLookupAnchor(
         rootAnchor,
         _cardPhysicalDx,
@@ -1294,7 +1392,10 @@ class GalIngameLookupController {
     _cardPhysicalHeight = 0;
     _cardPhysicalDx = 0;
     _cardPhysicalDy = 0;
-    _rootCardAnchor = null;
+    _rootPlacement = null;
+    _rootPhysicalHeight = 0;
+    _capPhysicalWidth = 0;
+    _capPhysicalHeight = 0;
   }
 
   Future<void> _present(
@@ -1493,6 +1594,14 @@ class GalIngameLookupController {
   @visibleForTesting
   ({int x, int y}) debugResolveAnchor(GalLookupHit hit, int cardW, int cardH) =>
       _resolveAnchor(hit, cardW, cardH);
+
+  /// BUG-2082 测试入口：cap 尺寸 → 根卡贴字形的边。同样直接调生产实现。
+  @visibleForTesting
+  GalRootPlacement debugResolveRootPlacement(
+    GalLookupHit hit,
+    int capW,
+    int capH,
+  ) => _resolveRootPlacement(hit, capW, capH);
 
   ({int x, int y}) _resolveAnchor(GalLookupHit hit, int cardW, int cardH) {
     if (hit.viewW <= 0 || hit.viewH <= 0) {
