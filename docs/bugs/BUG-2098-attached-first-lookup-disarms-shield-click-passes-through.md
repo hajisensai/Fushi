@@ -15,7 +15,7 @@
      `fushi/windows/runner/attached_text_surface_window.cpp` 的 `TargetIsForeground()` 只认游戏 HWND / 其子窗 / presentation HWND 前台。查词卡是**本进程为这个游戏打开的卡**，它拿到焦点恰恰是「用户刚点了一个词」的**结果**；旧判据于是让第一次查词必然把表面挂起（`suspended/targetBackground`），命中区域随之清空，下一下点击不再被吞。
      修法：放行「带着本游戏 owner 标记的本进程查词卡」——依据是 `SetOutsideClickConsumeOwner` 落在卡片 HWND 上的 `kConsumeOutsideOwnerProperty`（**已有的身份链**，不是「同 PID」这种弱判据）；新增 `fushi::IsLookupCardConsumingForOwner()`。alt-tab 到 Fushi 主窗时表面照旧挂起，判据没有被放宽。
      真机验证：`targetBackground` 不再出现。
-  2. **[ ] 未修：shield 请求序号卡在 `request=4 applied=3`，重握手判据永久非中性。**
+  2. **[x] 已修：shield 请求序号卡在 `request=N applied=N-1`，重握手判据永久非中性。**
      修掉第一道后前进到 `suspended/input_shield_rehandshake_pending` 并**永久停在那里**。本轮新加的 `shield` 台账直接读出：
      ```
      shield available=true conclusion=unknown request=4 applied=3
@@ -24,7 +24,36 @@
      `AttachedArmHasConflictingTransaction()`（`low_level_mouse_hook.cpp`）里
      `(status.request_seq != 0 && status.request_seq != status.applied_seq)` 因此恒真 ⇒
      `IsNeutralForRehandshake()` 恒假 ⇒ `EnsureShieldHandshake()` 永远不发新挑战 ⇒ 表面永远回不到 armed。
-     **注入侧同时报 `lookup_gate=0x0f{requested,profile_admitted,input_hook_ready,shield_ready}`** ——两侧对「shield 是否就绪」的看法相反：注入侧认为就绪，宿主认为还有一笔没应答的请求。**下一步就是查「宿主发出的第 4 号 shield 请求为什么没被注入侧 apply」**（请求发布/消费两端在 `voice_hook_ipc.h` 的 shield 槽位与 hook 侧的应答路径）。
+     **根因（本轮用新加的 `--dump-shield` 从注入侧原始字段读出来的）**：注入侧
+     `ProcessGenericLookupInputShield()` 里
+     ```cpp
+     const bool release_waiting = request.active_buttons == 0 &&
+                                  (pending != 0 || exact.pending_publication);
+     if (release_waiting) { PublishGenericShieldStatusPayloadOnly(...); return; }  // 不推进 applied_seq
+     ```
+     `pending` 来自 `GenericShieldPendingMask()`，而 latch 的 ownership 有**两个来源**：
+     一是真实采样到按下，二是 `PreArmLeftButtonShieldLatch()` 的**推测预武装**（为了不漏掉
+     「物理点击比注入线程看到 v19 请求更早完成」那一拍，必须先占住每个 required+ready+observed 的面）。
+     推测占住的 latch 只能靠 `ObserveLeftButtonNeutralTail()` 解开，而那要求该输入面**再次被游戏采样**
+     并先后看到释放与中性尾。真机 WoH 上 KeyState 面（0x04）被预武装后**再没被采样过**
+     （`required=0xe4 ready=0xe4 observed=0x04 fault=0`，`active_buttons=0`），于是
+     `pending` 恒为 0x04 ⇒ `release_waiting` 恒真 ⇒ `applied_seq` 永远停在 `request_seq-1`。
+     **一次推测预武装就把整条通路永久锁死。**
+- **[x] ② 已修复** — 给 `LeftButtonShieldLatch` 加 `speculative` 位：`PreArmLeftButtonShieldLatch` 置真，
+  五个真实采样点（`FilterSampledLeftButtonState` 等）坐实 ownership 时清零。新增
+  `AbandonSpeculativeLeftButtonLatch()`：**宿主已发布中性请求（`active_buttons==0`）且该 latch 仍是
+  纯推测、从未见过释放**时才放弃它；`ProcessGenericLookupInputShield()` 在算 `pending` 之前调用。
+  被真实按下坐实过的 latch 一律保留 —— **「绝不暴露游戏没看见的 down 的尾巴」这条不变式一字未改**，
+  只是不再让**没有任何证据支撑的**推测把 `applied_seq` 扣为人质。
+- **真机验证（用户自己的 Fushi + 真 WoH，真词典 / 真语音 / AnkiConnect 在线）**：
+  ```
+  修前：click #1 后 → suspended/input_shield_rehandshake_pending，此后每次点击穿透并推进剧情
+  修后：shield request_seq=2 applied_seq=2 → 连点三次全程 activeAttached、序号始终相等
+        点表面内一次：台词 id 点击前 #9 / 点击后 #9  ← 剧情未推进，点击被吞
+        查词卡弹出并命中真实词典（JA Wikipedia + Pixiv Light 两部，词条「よ」）
+        shield request_seq=4 applied_seq=4 owner_kind=2(AttachedGlyph)
+  ```
+  证据截图：`.codex-test/real/full2.png`（卡片 + 工作台 `状态: activeAttached / 原生状态: visible`）。
 - **[x] ③ 同轮补齐的量具（第二道闸门能被一次读出的唯一原因）**：
   - `low_level_mouse_hook.cpp`：attached 抢单例的 5 个闸门逐条报因（`hit_snapshot_missing` / `hit_snapshot_owner_mismatch` / `injected_shield_target_not_prepared` / `hook_thread_unavailable` / `singleton_owned_by_other_hwnd` / `conflicting_transaction_pending`），经 `LastAttachedGlyphArmFailure()` 带进 `SetState` 的 reason；此前 5 条全挤在一句 `low_level_mouse_singleton_busy_or_unavailable` 里。
   - `fushi/integration_test/gal_realgame_driver_itest.dart`：新增 `shield` 指令，打印 available / conclusion / request / applied / required / ready / observed / fault / statusFlags。**`request=4 applied=3` 就是它读出来的。**

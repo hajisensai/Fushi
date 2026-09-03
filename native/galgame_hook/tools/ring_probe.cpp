@@ -2348,6 +2348,35 @@ int main(int argc, char** argv) {
     CloseHandle(mapping);
     return 0;
   }
+  if (argc >= 3 && strcmp(argv[2], "--dump-shield") == 0) {
+    // BUG-2098：宿主与注入侧对 shield 的看法可能相反（宿主 request!=applied 卡死，
+    // 注入侧却报 shield_ready）。直接读注入侧共享头里的原始字段，两边对账。
+    const auto req = fushi_voice_hook::ReadLookupShieldRequest(header);
+    printf("shield request_seq=%u applied_seq=%u valid=%d owner_kind=%u\n",
+           fushi_voice_hook::AtomicLoadShared32(
+               const_cast<volatile uint32_t*>(&header->lookup_shield_request_seq)),
+           fushi_voice_hook::AtomicLoadShared32(
+               const_cast<volatile uint32_t*>(&header->lookup_shield_applied_seq)),
+           req.valid ? 1 : 0, req.owner_kind);
+    printf("  target_hwnd=0x%llx transaction_id=0x%llx active_buttons=0x%x allow_risk=%u\n",
+           static_cast<unsigned long long>(req.target_hwnd),
+           static_cast<unsigned long long>(req.transaction_id),
+           req.active_buttons, req.allow_risk ? 1u : 0u);
+    printf("  required=0x%x ready=0x%x observed=0x%x fault=0x%x status_flags=0x%x\n",
+           fushi_voice_hook::AtomicLoadShared32(
+               const_cast<volatile uint32_t*>(&header->lookup_shield_required_mask)),
+           fushi_voice_hook::AtomicLoadShared32(
+               const_cast<volatile uint32_t*>(&header->lookup_shield_ready_mask)),
+           fushi_voice_hook::AtomicLoadShared32(
+               const_cast<volatile uint32_t*>(&header->lookup_shield_observed_mask)),
+           fushi_voice_hook::AtomicLoadShared32(
+               const_cast<volatile uint32_t*>(&header->lookup_shield_fault_mask)),
+           fushi_voice_hook::AtomicLoadShared32(
+               const_cast<volatile uint32_t*>(&header->lookup_shield_status_flags)));
+    UnmapViewOfFile(header);
+    CloseHandle(mapping);
+    return 0;
+  }
   if (argc >= 3 && strcmp(argv[2], "--dump-text-meta") == 0) {
     DumpTextMeta(header);
     UnmapViewOfFile(header);
