@@ -4180,5 +4180,16 @@
   "discovery_opds_test_ok": "Terhubung. Katalog akar berisi ${count} entri",
   "discovery_opds_test_failed": "Koneksi gagal: ${reason}",
   "onboarding_pack_pick_failed": "Could not use the chosen file: ${message}",
-  "onboarding_pack_pick_no_path": "The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access."
+  "onboarding_pack_pick_no_path": "The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.",
+  "interconnect_profile_section": "Configuration file",
+  "interconnect_profile_upload": "Upload configuration to host",
+  "interconnect_profile_upload_desc": "Send this device's active configuration to the paired host, where it lands as a new configuration.",
+  "interconnect_profile_download": "Download configuration from host",
+  "interconnect_profile_download_desc": "Import the host's active configuration as a new configuration here. Your current one is untouched.",
+  "interconnect_profile_host_toggle": "Allow paired devices to read/write configuration",
+  "interconnect_profile_host_toggle_desc": "Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.",
+  "interconnect_profile_uploaded": "Configuration uploaded: ${name}",
+  "interconnect_profile_downloaded": "Configuration imported: ${name}",
+  "interconnect_profile_unsupported": "The paired host does not offer configuration transfer (needs HTTPS and a newer version).",
+  "interconnect_profile_failed": "Configuration transfer failed: ${message}"
 }

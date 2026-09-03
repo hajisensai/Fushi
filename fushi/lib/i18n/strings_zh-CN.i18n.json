@@ -4180,5 +4180,16 @@
   "discovery_opds_test_ok": "连接成功，根目录有 ${count} 个条目",
   "discovery_opds_test_failed": "连接失败：${reason}",
   "onboarding_pack_pick_failed": "选择包文件失败：${message}",
-  "onboarding_pack_pick_no_path": "系统没有交出这个文件的路径。请把包放到手机存储里再选，或授予「所有文件访问」权限。"
+  "onboarding_pack_pick_no_path": "系统没有交出这个文件的路径。请把包放到手机存储里再选，或授予「所有文件访问」权限。",
+  "interconnect_profile_section": "配置文件",
+  "interconnect_profile_upload": "上传配置到对端",
+  "interconnect_profile_upload_desc": "把本机当前配置发给已配对的对端，在那边落成一份新配置。",
+  "interconnect_profile_download": "从对端下载配置",
+  "interconnect_profile_download_desc": "把对端当前配置作为一份新配置导入本机，不动你正在用的那份。",
+  "interconnect_profile_host_toggle": "允许已配对设备读写本机配置",
+  "interconnect_profile_host_toggle_desc": "默认关闭。需要 HTTPS 与已配对设备令牌；收到的配置一律作为新配置追加，不覆盖现有配置。",
+  "interconnect_profile_uploaded": "配置已上传：${name}",
+  "interconnect_profile_downloaded": "配置已导入：${name}",
+  "interconnect_profile_unsupported": "对端不提供配置传输（需要 HTTPS 且对端版本较新）。",
+  "interconnect_profile_failed": "配置传输失败：${message}"
 }

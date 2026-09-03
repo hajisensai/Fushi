@@ -12,6 +12,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/migration_page.dart';
 import 'package:fushi/src/pages/implementations/migration_import_page.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
+import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart'
@@ -634,6 +635,31 @@ SettingsDestination buildInterconnectDestination() {
                   .setInterconnectServiceConfigSyncEnabled(value);
             },
           ),
+          // 「配置文件」（Profile）双向搬运：用户诉求是把一台设备调好的配置搬到另一
+          // 台，而不是每台重配一遍。做成**一次性动作**而不是自动跟随开关——整份配置
+          // 会在对端落一份新 Profile，什么时候搬该由用户在点的那一刻决定（与云通道
+          // 那四个资产上传/下载行同一取舍，见 sync.dictionary_upload 附近的说明）。
+          // 备份包不走这里：它已有「用互联做备份后端」的既有通道。
+          SettingsCustomItem(
+            id: 'interconnect.profile_upload',
+            searchTitle: t.interconnect_profile_upload,
+            icon: Icons.settings_backup_restore_outlined,
+            builder: (SettingsContext ctx) =>
+                _InterconnectProfileTransferWidget(
+              settingsContext: ctx,
+              direction: _ProfileTransferDirection.upload,
+            ),
+          ),
+          SettingsCustomItem(
+            id: 'interconnect.profile_download',
+            searchTitle: t.interconnect_profile_download,
+            icon: Icons.settings_backup_restore_outlined,
+            builder: (SettingsContext ctx) =>
+                _InterconnectProfileTransferWidget(
+              settingsContext: ctx,
+              direction: _ProfileTransferDirection.download,
+            ),
+          ),
         ],
       ),
       // 本机作为服务器：host 模式开关（与 client 角色互斥，见 _SyncSettingsState
@@ -648,6 +674,22 @@ SettingsDestination buildInterconnectDestination() {
             icon: Icons.router_outlined,
             builder: (SettingsContext ctx) =>
                 _ServerModeWidget(settingsContext: ctx),
+          ),
+          // host 侧「配置文件」读写许可。默认关：入站写没有显式开关就是一条无 UI 的
+          // 隐形通道（BUG-988 立过的规矩），出站同理——整份 Profile 比四个内容上传
+          // 开关更敏感。端点另有 TLS + 已配对 peer token 两道门，本开关是用户意图那道。
+          SettingsSwitchItem(
+            id: 'interconnect.profile_transfer_host',
+            title: t.interconnect_profile_host_toggle,
+            subtitle: t.interconnect_profile_host_toggle_desc,
+            icon: Icons.rule_folder_outlined,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectProfileTransfer,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectProfileTransfer = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setInterconnectProfileTransferEnabled(value);
+            },
           ),
         ],
       ),
@@ -769,6 +811,8 @@ class _SyncSettingsState {
   // apikey 同步设定重设计（2026-08-17）：service-config（host 的外部服务 API key）
   // 接收开关。默认 true = 既有行为；此前这条通道无 UI 无开关，用户不可见也关不掉。
   bool interconnectServiceConfigSync = true;
+  /// host 侧：是否允许已配对设备读写本机「配置文件」（Profile）。默认 false。
+  bool interconnectProfileTransfer = false;
   bool _loaded = false;
   bool _loading = false;
 
@@ -858,6 +902,8 @@ class _SyncSettingsState {
           await _repo.isInterconnectSyncFavoritesEnabled();
       interconnectServiceConfigSync =
           await _repo.isInterconnectServiceConfigSyncEnabled();
+      interconnectProfileTransfer =
+          await _repo.isInterconnectProfileTransferEnabled();
       serverEnabled = await _repo.isServerEnabled();
       hasClientConnection = (await _repo.getFushiClientUrls()).isNotEmpty;
       _loaded = true;
