@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -6,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'package:fushi/src/media/torrent/anime_release_descriptor.dart';
+import 'package:fushi/src/media/torrent/download_timeouts.dart';
 import 'package:fushi/src/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/media/torrent/public_trackers.dart';
 
@@ -469,6 +471,53 @@ void main() {
         client.close();
       },
     );
+
+    // BUG-2079：`_client.get(uri)` 原本不带 `.timeout(...)`，整条 search 无时限。
+    // Dart 的 `HttpClient.connectionTimeout` 默认是 null（不超时），站点被墙 /
+    // 代理半开时 TCP 连接能挂到操作系统重传耗尽；discovery source 与 resource
+    // provider 这两条注册表路径的调用点也没有外层超时，于是一次挂死的 Nyaa
+    // 请求会把整次扇出一起拖住。
+    test('永不完成的响应在 requestTimeout 后抛 TimeoutException，不是无限等待',
+        () async {
+      // 永不完成：这个 Completer 从不 complete、也不 throw。若 search 不设超时，
+      // 下面的 await 就永远不返回，只能被 flutter_test 自己的超时打死。
+      final Completer<http.Response> never = Completer<http.Response>();
+      final NyaaClient client = NyaaClient(
+        client: MockClient((http.Request req) => never.future),
+        requestTimeout: const Duration(milliseconds: 50),
+      );
+      await expectLater(
+        client.search('frieren'),
+        throwsA(isA<TimeoutException>()),
+      );
+      client.close();
+    });
+
+    test('HTML 翻页路径同样受 requestTimeout 约束', () async {
+      // 首屏走 RSS、后续页走 HTML，是 search 里两条不同的解析分支；超时必须落在
+      // 分支之前那一次 get 上，不能只对 RSS 路径成立。
+      final Completer<http.Response> never = Completer<http.Response>();
+      final NyaaClient client = NyaaClient(
+        client: MockClient((http.Request req) => never.future),
+        requestTimeout: const Duration(milliseconds: 50),
+      );
+      await expectLater(
+        client.search('frieren', page: 3),
+        throwsA(isA<TimeoutException>()),
+      );
+      client.close();
+    });
+
+    test('默认超时取发现链路唯一真相源，不是 torznab 的 20s', () {
+      // 20s 正是 BUG-1141 从这条链路上拆掉的直连口径魔法数字；而且
+      // anime_download_subscription / anime_download_dialog 的调用点外层就是
+      // kDownloadDiscoveryTimeout，内层更紧等于替它们偷偷回退 BUG-1141。
+      // 注入 MockClient 只为避免建真 IO client；被测的是默认参数值本身。
+      final NyaaClient client =
+          NyaaClient(client: MockClient((_) async => http.Response('', 200)));
+      expect(client.requestTimeout, kDownloadDiscoveryTimeout);
+      client.close();
+    });
 
     test('底层网络异常（如握手失败）原样穿透，不吞成空列表', () async {
       final MockClient mock = MockClient((http.Request req) async {
