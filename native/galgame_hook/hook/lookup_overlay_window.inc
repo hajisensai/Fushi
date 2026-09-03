@@ -83,6 +83,47 @@ bool RequestLookupOverlayOutsideDismiss() {
   return true;
 }
 
+// ══ 悬浮字形高亮：可穿透、不激活的半透明分层窗 ══════════════════════════════════════
+//
+// KiriKiri 的悬浮高亮由 TJS 在引擎图层里同步绘制；没有脚本宿主的引擎（SGRE 等）过去
+// 什么都不画，用户把鼠标放在字上得不到任何反馈（BUG-2086）。这里用一个独立的分层窗
+// 盖在被悬浮字形的屏幕矩形上：WS_EX_TRANSPARENT 让点击穿透到游戏（LL 钩子照旧看得
+// 见），WS_EX_NOACTIVATE 绝不抢焦点，WindowFromPoint 也会跳过它，所以引擎适配器的
+// 「光标在游戏窗口内」判定不受影响。
+//
+// 线程模型与卡片呈现器一致：任意线程只写请求（下面几个原子量），UI 线程在
+// kOverlayTimerId 定时器里应用；窗口只在 UI 线程上创建/移动/隐藏。
+volatile LONG g_hover_highlight_visible = 0;
+volatile LONG g_hover_highlight_x = 0;
+volatile LONG g_hover_highlight_y = 0;
+volatile LONG g_hover_highlight_w = 0;
+volatile LONG g_hover_highlight_h = 0;
+// 每次请求变化 +1；UI 线程按它去重，静止的光标不会每 16ms 重复 SetWindowPos。
+volatile LONG g_hover_highlight_generation = 0;
+
+void RequestLookupHoverHighlight(int32_t screen_x, int32_t screen_y,
+                                 int32_t width, int32_t height) {
+  const bool same =
+      InterlockedCompareExchange(&g_hover_highlight_visible, 0, 0) != 0 &&
+      InterlockedCompareExchange(&g_hover_highlight_x, 0, 0) == screen_x &&
+      InterlockedCompareExchange(&g_hover_highlight_y, 0, 0) == screen_y &&
+      InterlockedCompareExchange(&g_hover_highlight_w, 0, 0) == width &&
+      InterlockedCompareExchange(&g_hover_highlight_h, 0, 0) == height;
+  if (same) return;
+  InterlockedExchange(&g_hover_highlight_x, screen_x);
+  InterlockedExchange(&g_hover_highlight_y, screen_y);
+  InterlockedExchange(&g_hover_highlight_w, width);
+  InterlockedExchange(&g_hover_highlight_h, height);
+  InterlockedExchange(&g_hover_highlight_visible, 1);
+  InterlockedIncrement(&g_hover_highlight_generation);
+}
+
+void ClearLookupHoverHighlight() {
+  if (InterlockedExchange(&g_hover_highlight_visible, 0) != 0) {
+    InterlockedIncrement(&g_hover_highlight_generation);
+  }
+}
+
 uint64_t ReadOverlaySharedU64(volatile uint64_t* value) {
   return static_cast<uint64_t>(InterlockedCompareExchange64(
       reinterpret_cast<volatile LONG64*>(value), 0, 0));
@@ -434,12 +475,89 @@ void PollOverlayFrame() {
   }
 }
 
+// 悬浮高亮窗（UI 线程私有）。颜色/透明度取「淡黄底、约 35% 不透明」：盖在白字上仍
+// 读得清，与 KiriKiri 图层高亮的观感一致。
+struct LookupHoverHighlightWindow {
+  HWND window = nullptr;
+  bool shown = false;
+  LONG applied_generation = 0;
+};
+LookupHoverHighlightWindow g_hover_highlight;
+constexpr BYTE kHoverHighlightAlpha = 90;
+constexpr COLORREF kHoverHighlightColor = RGB(255, 214, 64);
+
+LRESULT CALLBACK LookupHoverHighlightProc(HWND window, UINT message,
+                                          WPARAM wparam, LPARAM lparam) {
+  switch (message) {
+    case WM_MOUSEACTIVATE:
+      return MA_NOACTIVATE;
+    case WM_NCHITTEST:
+      return HTTRANSPARENT;
+    default:
+      break;
+  }
+  return DefWindowProcW(window, message, wparam, lparam);
+}
+
+// UI 线程：把最新的高亮请求落到窗口上。只在请求代数变化时动窗口。
+void ApplyLookupHoverHighlight() {
+  const LONG generation =
+      InterlockedCompareExchange(&g_hover_highlight_generation, 0, 0);
+  if (generation == g_hover_highlight.applied_generation) return;
+  g_hover_highlight.applied_generation = generation;
+  const bool visible =
+      InterlockedCompareExchange(&g_hover_highlight_visible, 0, 0) != 0;
+  const int32_t x = InterlockedCompareExchange(&g_hover_highlight_x, 0, 0);
+  const int32_t y = InterlockedCompareExchange(&g_hover_highlight_y, 0, 0);
+  const int32_t w = InterlockedCompareExchange(&g_hover_highlight_w, 0, 0);
+  const int32_t h = InterlockedCompareExchange(&g_hover_highlight_h, 0, 0);
+  if (!visible || w <= 0 || h <= 0) {
+    if (g_hover_highlight.shown && g_hover_highlight.window != nullptr) {
+      ShowWindow(g_hover_highlight.window, SW_HIDE);
+    }
+    g_hover_highlight.shown = false;
+    return;
+  }
+  if (g_hover_highlight.window == nullptr) {
+    WNDCLASSEXW wc = {};
+    wc.cbSize = sizeof(wc);
+    wc.lpfnWndProc = &LookupHoverHighlightProc;
+    wc.hInstance = g_module;
+    wc.lpszClassName = L"FushiLookupHoverHighlight";
+    wc.hbrBackground = CreateSolidBrush(kHoverHighlightColor);
+    if (RegisterClassExW(&wc) == 0 &&
+        GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+      return;
+    }
+    g_hover_highlight.window = CreateWindowExW(
+        WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_NOACTIVATE |
+            WS_EX_TOOLWINDOW,
+        wc.lpszClassName, L"", WS_POPUP, x, y, w, h, nullptr, nullptr,
+        g_module, nullptr);
+    if (g_hover_highlight.window == nullptr) return;
+    SetLayeredWindowAttributes(g_hover_highlight.window, 0,
+                               kHoverHighlightAlpha, LWA_ALPHA);
+  }
+  SetWindowPos(g_hover_highlight.window, HWND_TOPMOST, x, y, w, h,
+               SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  g_hover_highlight.shown = true;
+}
+
+void DestroyLookupHoverHighlight() {
+  if (g_hover_highlight.window != nullptr) {
+    DestroyWindow(g_hover_highlight.window);
+    g_hover_highlight.window = nullptr;
+  }
+  g_hover_highlight.shown = false;
+}
+
 LRESULT CALLBACK LookupOverlayProc(HWND window, UINT message, WPARAM wparam,
                                    LPARAM lparam) {
   switch (message) {
     case WM_TIMER:
       if (wparam == kOverlayTimerId) {
         PollOverlayFrame();
+        ApplyLookupHoverHighlight();
         return 0;
       }
       break;
@@ -527,6 +645,7 @@ DWORD WINAPI LookupOverlayThread(LPVOID) {
   }
   KillTimer(g_overlay.window, kOverlayTimerId);
   InterlockedExchange(&g_lookup_overlay_input_shield_visible, 0);
+  DestroyLookupHoverHighlight();
   DestroyWindow(g_overlay.window);
   g_overlay.window = nullptr;
   return 0;

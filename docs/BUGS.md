@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1942 条。点号进各自文件。
+> 共 1943 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2086](bugs/BUG-2086-sgre-hover-glyph-highlight-missing.md) | ✅ | 🚧 | SGRE 游戏内查词鼠标悬浮在字上没有高亮反馈：只有 KiriKiri 在引擎图层画高亮 |
 | [BUG-2085](bugs/BUG-2085-sgre-ingame-card-mining-text-generation-mismatch.md) | ✅ | ✅ | SGRE 游戏内卡片制卡恒失败：点击载荷 text_generation 填的是查词捕获代数而非文本行序号 |
 | [BUG-2084](bugs/BUG-2084-gal-workbench-fold-breaks-on-interleaved-threads.md) | ✅ | ✅ | 工作台渐进折叠只看缓冲区尾巴，同句两次重绘之间被其它线程插队就断链 |
 | [BUG-2083](bugs/BUG-2083-sgre-lookup-metrics-gate-pinned-to-4k.md) | ✅ | ✅ | SGRE 精确文本与查词几何只在 4K 全屏出现：台词面判据把行高钉死为 80，窗口模式 1080p 全断 |

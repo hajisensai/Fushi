@@ -2008,7 +2008,17 @@ bool PublishSgreLookupClickPayload(const SgreLookupClickPayload& payload) {
   return true;
 }
 
+// 本轮 tick 没有把光标下的字形提交给悬浮高亮，就把高亮清掉——覆盖所有提前 return
+// 的分支（几何退休、查词关闭、盾未就绪、卡片可见、光标不在游戏窗口内……）。
+struct SgreHoverHighlightScope {
+  bool keep = false;
+  ~SgreHoverHighlightScope() {
+    if (!keep) ClearLookupHoverHighlight();
+  }
+};
+
 void ProcessSgreLookupTick() {
+  SgreHoverHighlightScope hover_highlight;
   if (g_stop || g_header == nullptr ||
       !fushi_voice_hook::HasLookupRegion(g_header)) {
     if (g_header != nullptr) {
@@ -2211,6 +2221,16 @@ void ProcessSgreLookupTick() {
   fushi_voice_hook::SgreLookupRect hit_rect;
   const int glyph_index = FindSgreCapturedLookupGlyph(
       active, client_width, client_height, cursor.x, cursor.y, &hit_rect);
+
+  // BUG-2086 — hover highlight: the glyph under the cursor gets the shared
+  // translucent highlight window while no card is up. hit_rect is in client
+  // px; the highlight window lives in screen space.
+  if (glyph_index >= 0 && game_point && !popup_visible) {
+    RequestLookupHoverHighlight(client_origin.x + hit_rect.x,
+                                client_origin.y + hit_rect.y, hit_rect.width,
+                                hit_rect.height);
+    hover_highlight.keep = true;
+  }
 
   if (submit && glyph_index >= 0 && !click_submitted && !popup_visible &&
       game_point) {

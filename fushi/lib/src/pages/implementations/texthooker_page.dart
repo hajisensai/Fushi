@@ -201,6 +201,17 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             SimpleDialog(
               title: Text(t.game_line_track_dialog_title),
               children: <Widget>[
+                // 资源模式的行：这句语音是按句从游戏资源直提的，下面的 PCM 轨与它无关
+                // （能量恒 -1.0、"这句时刻没有声音"），不说明的话用户会把空轨读成
+                // 「音频没抓到」。与右侧面板 GalTrackEmptyHint.resourceMode 同一句文案。
+                if (line.audioBackend == 'game_resource')
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+                    child: Text(
+                      t.game_tracks_resource_mode_hint,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
                 for (final GalAudioTrack track in tracks)
                   Builder(
                     builder: (BuildContext context) {
