@@ -86,7 +86,7 @@ class MihonChannelHandler(private val app: Application) {
             val future = executor.submit {
                 try {
                     val value = handle(call)
-                    mainHandler.post { result.success(value) }
+                    mainHandler.post { reply(result, value) }
                 } catch (error: Throwable) {
                     val operation = describeOperation(call)
                     val code = when (error) {
@@ -125,21 +125,27 @@ class MihonChannelHandler(private val app: Application) {
     }
 
     /**
-     * 通道回复的唯一出口：void 方法回 `null`。
+     * 通道回复的唯一出口。
      *
-     * `dispatch` 是 `when` 表达式，分支若调的是 Unit 函数，表达式值就是
+     * [handle] 是 `when` 表达式，分支若调的是 Unit 函数，表达式值就是
      * `kotlin.Unit` 单例；StandardMessageCodec 不认它，`result.success(Unit)`
-     * 会在主线程抛 IllegalArgumentException 直接把进程带崩（BUG-2081：
-     * `uninstallPrivateExtension` / `clearSourceData` 两条分支都中招，预览
-     * 标记清不掉后每次进漫画 Discover/Import 都复崩）。收口放这里，不靠
-     * 每个分支手写 `; null`。
+     * 在主线程 Runnable 里抛 IllegalArgumentException 直接把进程带崩
+     * （BUG-2081：`uninstallPrivateExtension` / `clearSourceData` 都中招，预览
+     * 标记清不掉后每次进漫画 Discover/Import 都复崩）。void 回 null 在这里
+     * 一处收口，不靠每个分支手写 `; null`；其它编不了的值同样只能变成
+     * error 回复——编码在发送之前整体完成，抛出时 reply 还没被消费。
      */
-    private fun handle(call: MethodCall): Any? {
-        val value = dispatch(call)
-        return if (value === Unit) null else value
+    private fun reply(result: MethodChannel.Result, value: Any?) {
+        try {
+            result.success(if (value === Unit) null else value)
+        } catch (error: IllegalArgumentException) {
+            val message = "Mihon reply cannot be encoded: ${describeCauseChain(error)}"
+            Log.e(TAG, message, error)
+            result.error("ENCODE_FAILED", message, diagnosticDetails(error))
+        }
     }
 
-    private fun dispatch(call: MethodCall): Any? = when (call.method) {
+    private fun handle(call: MethodCall): Any? = when (call.method) {
         "capabilities" -> mapOf(
             "fushiMihonBridge" to 1,
             "sourceFactory" to true,
