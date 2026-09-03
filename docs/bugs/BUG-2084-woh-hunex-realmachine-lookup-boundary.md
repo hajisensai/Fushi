@@ -1,0 +1,12 @@
+## BUG-2084 · 真机 WoH(HUNEX)合并构建:拉起/hook/音频/文本/风险确认均通过,原生几何 fail-closed 退到 attached 需标定
+- **报告**：2026-09-03(代理按用户「测试 WoH」逐引擎真机验证;分支 codex/gal-generic-lookup-cards,已合并上游 develop 的 Windows Debug 构建)
+- **真实性**：✅ 真机证据(单会话)。原始路径 `launch D:\smb\魔法使之夜\WITCH ON THE HOLY NIGHT\WoH.exe`(x64,SHA-256 `4475cc2f…5463ada`,库内转区档为空 → auto → x64 不转区)。逐阶段观测:
+  - **process/helper/ipc/hook**:首拍 `launch_injection_failed` 后 `engine.attach_recovered (attempt:1)` + `engine.hook_ready`——**游戏未自退**(明显好于本会话早前 WoH 那次「native loopback ack 超时后游戏自退」,见 BUG-2067 备注前的 04:28 记录)。
+  - **audio**:`audio.tracks_refreshed count:26`、`game_resource_late_ready`,`xaudioDiagnostics 0x78080001 / diag2 0x0000000c`。
+  - **text**:文本 hook 抓到 8 行 typemoon 旁白(「……有珠、まだ帰ってきてないんだ」「重苦しい鉄の門は静かに…」「―――丘の上にはお化け屋敷が建っている。」「たとえば、もう何年も前に朽ち果てた廃屋なのに、夜になると明かりが灯ったりする。」),`audio=pending/game_resource`,WGC 抓窗口真实像素与屏上文字逐字一致。
+  - **window**:`window.auto_bound`,WGC `shot game` 成功(窗口先挪到在线显示器)。
+  - **risk gate**:初始 `attached=needsRiskAcceptance`,profile `unsafeLeftClickAccepted:false`、`request` 非空(BUG-2028 的持久请求 token 在 `suspended` 期仍在)。驱动 `accept` → `accept=true`、profile 变 `unsafeLeftClickAccepted:true`、request 清空——**本会话合并的 BUG-2028 风险确认流程真机生效**。
+  - **geometry/lookup**:确认风险后 `attached=needsCalibration`,`variants:[]`。即 **HUNEX 原生 exact provider 未发布几何(fail-closed,与 BUG-2024 记录一致)**,回退到 attached 校准表面,而它需要标定(拖框 + start/middle/end 三点探针 + commit)才能映射字形。因此**点字弹卡这一步未能在本轮完成**。
+- **[ ] ① 未修复/未验收** — 两条独立路可通向 WoH 点字弹卡,均未在本轮打通:① 让 HUNEX 原生 exact provider 真正发布几何(注入侧 hook 工作,本会话按用户边界未读改 hook,属 BUG-2024 范围);② attached 校准表面完成标定后走本会话改动的吞点击/Shift 悬浮路径。②的自动化难点:WoH 是全屏旁白,文本逐行换位置,`beginCalibration → updateCalibration(三点探针) → commitCalibration` 的探针必须命中 start/middle/end 真实字形,对移动文本很脆,`gal_realgame_driver_itest.dart` 目前无标定命令。
+- **[ ] ② 未加自动化测试** — 待选定路径后补(HUNEX 原生 submit 契约 / attached 标定 → 点击吞噬 E2E)。
+- **备注**：本条是 WoH 合并构建的**运行期边界证据**,不改 `engine-support.yaml` 的 `hunex_gge` 状态(仍 implemented_unverified)。正向结论:合并没有破坏 WoH 的 launch/hook/audio/text/window/risk 链,且风险确认流程可用。下一步「WoH 点字弹卡」需在 ①(hook)或 ②(标定自动化)里择一投入,均需真机 + 用户在场。真机驱动见 `fushi/integration_test/gal_realgame_driver_itest.dart` 的 `accept`/`profile`/`shot game`。
