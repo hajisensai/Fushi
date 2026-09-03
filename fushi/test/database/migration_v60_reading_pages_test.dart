@@ -64,7 +64,7 @@ CREATE TABLE statistics_tombstones (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 94, reason: 'v60 = reading_statistics.pages_read');
+    expect(db.schemaVersion, 95, reason: 'v60 = reading_statistics.pages_read');
 
     final List<ReadingStatisticRow> rows = await db.getAllReadingStatistics();
     expect(rows, hasLength(1));
