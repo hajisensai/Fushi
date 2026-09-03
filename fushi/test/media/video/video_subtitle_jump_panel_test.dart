@@ -199,7 +199,7 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         colorScheme: const ColorScheme.dark(),
@@ -228,7 +228,7 @@ void main() {
         controller: controller,
         onTapCue: (AudioCue cue) => tapped = cue,
         onClose: () {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         colorScheme: const ColorScheme.dark(),
@@ -260,7 +260,7 @@ void main() {
         controller: controller,
         onTapCue: (AudioCue cue) => tapped = cue,
         onClose: () {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (AudioCue cue) => cue.text.contains('favorite'),
         colorScheme: const ColorScheme.dark(),
@@ -301,7 +301,7 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         colorScheme: const ColorScheme.dark(),
@@ -327,7 +327,7 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         colorScheme: const ColorScheme.dark(),
@@ -366,7 +366,7 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         colorScheme: const ColorScheme.dark(),
@@ -396,7 +396,7 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         colorScheme: const ColorScheme.dark(),
@@ -429,7 +429,7 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         colorScheme: const ColorScheme.dark(),
@@ -454,7 +454,7 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         colorScheme: const ColorScheme.dark(),
@@ -483,7 +483,7 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         onClose: () => closes++,
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         colorScheme: const ColorScheme.dark(),
@@ -514,7 +514,7 @@ void main() {
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
         controller: controller,
         onTapCue: (_) {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         onClose: () {},
@@ -542,7 +542,10 @@ void main() {
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
         controller: controller,
         onTapCue: (_) {},
-        onCopyCue: (AudioCue c) => copied = c,
+        onCopyCue: (AudioCue c) {
+          copied = c;
+          return true;
+        },
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         onClose: () {},
@@ -574,7 +577,8 @@ void main() {
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
         controller: controller,
         onTapCue: (_) {},
-        onCopyCue: (_) {},
+        // 与两个真实实现（`_copyCueText` / 网页页 `_copyCue`）同契约：空句返回 false。
+        onCopyCue: (AudioCue c) => c.text.trim().isNotEmpty,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         onClose: () {},
@@ -598,10 +602,120 @@ void main() {
       expect(find.byIcon(Icons.check), findsNothing);
       expect(find.byIcon(Icons.content_copy_outlined), findsNWidgets(2));
 
-      // 空文本行：onCopyCue 照常回调（面板不替调用方决策），但不装成功。
+      // 空文本行：handler 返回 false（没写剪贴板），按钮不装成功。
       await tester.tap(find.byIcon(Icons.content_copy_outlined).last);
       await tester.pump();
       expect(find.byIcon(Icons.check), findsNothing);
+    });
+
+    testWidgets(
+        'inline copy check survives the playhead leaving that row '
+        '(BUG-2093)', (WidgetTester tester) async {
+      // BUG-2093：反馈状态曾归行内的 StatefulWidget 持有，但行的 Element 身份由列表
+      // 控制——`trackKey`（`selected || rawIndex == _scrollTargetRawIndex`）随播放头移动
+      // 在 GlobalKey / ValueKey 之间翻转，key 一翻整行重建、行内 State 清零。于是
+      // 「复制正在播的那句」这条最常用路径上，✓ 在播放头离开该行的那一帧就没了
+      // （短台词几百毫秒即走），1.5s 的反馈窗口根本不成立。
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[
+        _cue(0, 0, 1000, 'now playing'),
+        _cue(1, 2000, 3000, 'next line'),
+      ]);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (AudioCue c) => c.text.trim().isNotEmpty,
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+      controller.debugUpdateCueForPosition(500);
+      await tester.pump();
+
+      // 复制当前正在播的那一行。
+      await tester.tap(find.byIcon(Icons.content_copy_outlined).first);
+      await tester.pump();
+      expect(find.byIcon(Icons.check), findsOneWidget);
+
+      // 播放头推进到下一句：第 0 行不再 selected，行 key 翻转 → Element 重建。
+      controller.debugUpdateCueForPosition(2500);
+      await tester.pump();
+      expect(
+        find.byIcon(Icons.check),
+        findsOneWidget,
+        reason: '反馈窗口还没到，✓ 不该因为播放头走开就消失',
+      );
+      expect(find.byTooltip(t.copied), findsOneWidget);
+
+      // 窗口到点仍正常回落（不是把 ✓ 焊死）。
+      await tester.pump(kCopyFeedbackDuration);
+      await tester.pump();
+      expect(find.byIcon(Icons.check), findsNothing);
+    });
+
+    testWidgets('only one row can be checked at a time',
+        (WidgetTester tester) async {
+      // 状态归面板持有白送的语义：复制 B 时 A 立刻复位（一个 int? 字段，天然互斥）。
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[
+        _cue(0, 0, 1000, 'first'),
+        _cue(1, 2000, 3000, 'second'),
+      ]);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (AudioCue c) => c.text.trim().isNotEmpty,
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.content_copy_outlined).first);
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.content_copy_outlined).last);
+      await tester.pump();
+      expect(find.byIcon(Icons.check), findsOneWidget);
+      expect(find.byIcon(Icons.content_copy_outlined), findsOneWidget);
+    });
+
+    testWidgets('unmounting inside the feedback window does not throw',
+        (WidgetTester tester) async {
+      // 回落定时器归面板持有，必须随 dispose 取消，否则到点 setState 打到已 dispose
+      // 的 State。这条是 dispose 里那句 cancel 的唯一钉子。
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'copy me')]);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (AudioCue c) => c.text.trim().isNotEmpty,
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.content_copy_outlined).first);
+      await tester.pump();
+      expect(find.byIcon(Icons.check), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(kCopyFeedbackDuration + const Duration(seconds: 1));
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets(
@@ -616,7 +730,7 @@ void main() {
       VideoSubtitleJumpPanel panel() => VideoSubtitleJumpPanel(
             controller: controller,
             onTapCue: (_) {},
-            onCopyCue: (_) {},
+            onCopyCue: (_) => true,
             onFavoriteCue: (AudioCue c) async => favorited = c,
             isCueFavorited: (_) => isFav,
             onClose: () {},
@@ -654,7 +768,7 @@ void main() {
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
         controller: controller,
         onTapCue: (_) {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         onClose: () {},
@@ -689,7 +803,7 @@ void main() {
           controller: controller,
           onTapCue: (_) {},
           onClose: () {},
-          onCopyCue: (_) {},
+          onCopyCue: (_) => true,
           onFavoriteCue: (_) async {},
           isCueFavorited: (_) => false,
           colorScheme: const ColorScheme.dark(),
@@ -725,7 +839,7 @@ void main() {
           onTapCue: (_) {},
           onLookupCue: (AudioCue _, int __, Rect ___) {},
           onClose: () {},
-          onCopyCue: (_) {},
+          onCopyCue: (_) => true,
           onFavoriteCue: (_) async {},
           isCueFavorited: (_) => false,
           colorScheme: const ColorScheme.dark(),
@@ -760,7 +874,7 @@ void main() {
           controller: controller,
           onTapCue: (_) {},
           onClose: () {},
-          onCopyCue: (_) {},
+          onCopyCue: (_) => true,
           onFavoriteCue: (_) async {},
           isCueFavorited: (_) => false,
           colorScheme: const ColorScheme.dark(),
@@ -834,7 +948,7 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         onLookupCue: (AudioCue _, int __, Rect ___) {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         onClose: () {},
@@ -868,7 +982,7 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         // onLookupCue omitted → whole sentence is a single Text, still wraps.
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         onClose: () {},
@@ -908,7 +1022,7 @@ void main() {
           lookupIndex = i;
           lookupRect = r;
         },
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         onClose: () {},
@@ -948,7 +1062,7 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         onLookupCue: (AudioCue _, int i, Rect __) => lookupIndex = i,
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         onClose: () {},
@@ -981,7 +1095,7 @@ void main() {
         controller: controller,
         onTapCue: (AudioCue c) => seeked = c,
         onLookupCue: (AudioCue c, int _, Rect __) => lookedUp = c,
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         onClose: () {},
@@ -1019,7 +1133,7 @@ void main() {
           onTapCue: (_) {},
           onLookupCue: (AudioCue _, int __, Rect ___) {},
           onClose: () {},
-          onCopyCue: (_) {},
+          onCopyCue: (_) => true,
           onFavoriteCue: (_) async {},
           isCueFavorited: (_) => false,
           colorScheme: const ColorScheme.dark(),
@@ -1079,7 +1193,7 @@ void main() {
         controller: controller,
         onTapCue: (AudioCue c) => seeked = c,
         // onLookupCue intentionally omitted (null).
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         onClose: () {},
@@ -1108,7 +1222,7 @@ void main() {
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
         controller: controller,
         onTapCue: (_) {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (AudioCue c) => c.text == 'fav row',
         onClose: () {},
@@ -1151,7 +1265,7 @@ void main() {
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
         controller: controller,
         onTapCue: (_) {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         onClose: () {},
@@ -1190,7 +1304,7 @@ void main() {
           controller: controller,
           onTapCue: (_) {},
           onClose: () {},
-          onCopyCue: (_) {},
+          onCopyCue: (_) => true,
           onFavoriteCue: (_) async {},
           isCueFavorited: (_) => false,
           colorScheme: const ColorScheme.dark(),
@@ -1238,7 +1352,7 @@ void main() {
           controller: controller,
           onTapCue: (_) {},
           onClose: () {},
-          onCopyCue: (_) {},
+          onCopyCue: (_) => true,
           onFavoriteCue: (_) async {},
           isCueFavorited: (_) => false,
           colorScheme: const ColorScheme.dark(),
@@ -1289,7 +1403,7 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (AudioCue c) => c.text == 'already favorited',
         colorScheme: const ColorScheme.dark(),
@@ -1316,7 +1430,7 @@ void main() {
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
         controller: controller,
         onTapCue: (_) {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         onClose: () {},
@@ -1344,7 +1458,7 @@ void main() {
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
         controller: controller,
         onTapCue: (_) {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         onClose: () {},
@@ -1384,7 +1498,7 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (AudioCue cue) => cue.text.contains('fav'),
         colorScheme: const ColorScheme.dark(),
@@ -1440,7 +1554,7 @@ void main() {
           controller: controller,
           onTapCue: (_) {},
           onClose: () {},
-          onCopyCue: (_) {},
+          onCopyCue: (_) => true,
           onFavoriteCue: (_) async {},
           isCueFavorited: isFav,
           colorScheme: const ColorScheme.dark(),
@@ -1499,7 +1613,7 @@ void main() {
         key: const ValueKey<String>('seed-max'),
         controller: controller,
         onTapCue: (_) {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         onClose: () {},
@@ -1532,7 +1646,7 @@ void main() {
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
         controller: controller,
         onTapCue: (_) {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         onClose: () {},
@@ -1569,7 +1683,7 @@ void main() {
           lookedUp = c;
           lookupIndex = i;
         },
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         onClose: () {},
@@ -1713,7 +1827,7 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         colorScheme: const ColorScheme.dark(),

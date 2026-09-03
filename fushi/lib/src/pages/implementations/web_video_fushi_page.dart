@@ -1082,10 +1082,13 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 字幕列表行内复制。走 [AppModel.copyToClipboard]：写剪贴板 + 按平台决定要不要
   /// 弹「已复制」toast（Android 13+ 系统自带提示，不重复）。网页视频页没有视频页那套
   /// OSD，此前这里复制完毫无反馈。
-  void _copyCue(AudioCue cue) {
+  /// 返回是否真的写了剪贴板（[VideoSubtitleJumpPanel.onCopyCue] 的契约）：空句不算
+  /// 成功，面板据此决定要不要把行内按钮切成 ✓。
+  bool _copyCue(AudioCue cue) {
     final String text = cue.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty) return false;
     _appModel.copyToClipboard(text);
+    return true;
   }
 
   // ── 查词（与视频页 `_lookupAt` 同步骤）──────────────────────────────────
