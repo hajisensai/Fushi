@@ -27,6 +27,7 @@ import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
+import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/export_directory.dart';
@@ -978,6 +979,16 @@ class AppModel with ChangeNotifier {
   /// 的**唯一互斥点**（两条流程的导入共用同一个 `import_temp` 暂存目录，并发会互删）。
   final DictionaryDownloadController dictionaryDownloadController =
       DictionaryDownloadController();
+
+  /// BUG-2097：新手引导推荐包（9.5 GB 整包）下载任务的所有权持有者。同样挂在
+  /// [AppModel] 上：此前它活在向导页的 State 里，向导 `dispose()` 直接 cancel，
+  /// 于是「点下载 → 走下一步 → 走完向导」就把下载静默掐断，而且没有任何地方还能
+  /// 看到它。包目录惰性求值——本字段在 [appDirectory] 定下来之前就构造。
+  late final RecommendedPackDownloadController
+      recommendedPackDownloadController = RecommendedPackDownloadController(
+    packDirectory: () =>
+        Directory(path.join(appDirectory.path, 'recommended_pack')),
+  );
 
   late FileExportManager _fileExportManager;
   late LocalAudioManager _localAudioManager;
@@ -6406,6 +6417,7 @@ class AppModel with ChangeNotifier {
       _themeListenerAdded = false;
     }
     dictionaryDownloadController.dispose();
+    recommendedPackDownloadController.dispose();
     dictionaryEntriesNotifier.dispose();
     dictionarySearchAgainNotifier.dispose();
     dictionaryMenuNotifier.dispose();

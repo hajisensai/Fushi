@@ -4194,5 +4194,10 @@
   "interconnect_profile_uploaded": "配置已上传：${name}",
   "interconnect_profile_downloaded": "配置已导入：${name}",
   "interconnect_profile_unsupported": "对端不提供配置传输（需要 HTTPS 且对端版本较新）。",
-  "interconnect_profile_failed": "配置传输失败：${message}"
+  "interconnect_profile_failed": "配置传输失败：${message}",
+  "onboarding_pack_status_downloading": "推荐包下载中",
+  "onboarding_pack_status_ready": "推荐包已下载完成",
+  "onboarding_pack_import_now": "现在导入",
+  "onboarding_pack_download_finished": "推荐包下载完成。可在「设置 → 系统」里导入。",
+  "onboarding_pack_download_background_hint": "下载会在后台继续：可以直接走下一步，也可以关掉向导。进度、取消和导入都在「设置 → 系统」里。"
 }

@@ -4194,5 +4194,10 @@
   "interconnect_profile_uploaded": "Configuration uploaded: ${name}",
   "interconnect_profile_downloaded": "Configuration imported: ${name}",
   "interconnect_profile_unsupported": "The paired host does not offer configuration transfer (needs HTTPS and a newer version).",
-  "interconnect_profile_failed": "Configuration transfer failed: ${message}"
+  "interconnect_profile_failed": "Configuration transfer failed: ${message}",
+  "onboarding_pack_status_downloading": "Downloading recommended pack",
+  "onboarding_pack_status_ready": "Recommended pack downloaded",
+  "onboarding_pack_import_now": "Import now",
+  "onboarding_pack_download_finished": "Recommended pack finished downloading. Import it from Settings → System.",
+  "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System."
 }
