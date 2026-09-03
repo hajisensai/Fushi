@@ -39,6 +39,14 @@ void main() {
   const int kKaishiMid = 1758278161949;
   const int kLapisMid = 1667218449922;
   const int kExistingNoteId = 1758347126448;
+  // BUG-2051 的**核心主张**是「同名卡跨笔记类型一次列全」——查询串里每个笔记类型
+  // 一个 `dupe:` 子句，命中几个就该列几个。此前 findNotes 恒只回一个 id，于是这条
+  // 主张在**仓库接线层零覆盖**：把 `ankiNoteIdBrowseQuery(noteIds)` 改成
+  // `ankiNoteIdBrowseQuery(noteIds.take(1))` 全套照绿（实测存活变异）。
+  // 下面这个词在 Kaishi 与 Lapis 各有一张，专门喂那条路径。
+  const String kCrossWord = '与える';
+  const int kCrossKaishiNoteId = 1758347126460;
+  const int kCrossLapisNoteId = 1758347126450;
   const int kDeckDid = 1771332842760;
 
   const AnkiNoteType lapis = AnkiNoteType(
@@ -107,13 +115,18 @@ void main() {
           };
         case 'findNotes':
           final String query = (body['params'] as Map)['query'].toString();
-          final bool sameSourceHit =
-              query.contains('"dupe:$kKaishiMid,$kWord"');
           final bool inScope =
               !query.contains('did:') || query.contains('did:$kDeckDid');
-          result = sameSourceHit && inScope
-              ? const <int>[kExistingNoteId]
-              : const <int>[];
+          // 每个笔记类型一个 `dupe:` 子句：命中几个就回几个 note id，顺序与子句
+          // 顺序一致（`ankiNoteIdBrowseQuery` 不排序，原样拼进 `nid:`）。
+          final List<int> hits = <int>[
+            if (query.contains('"dupe:$kKaishiMid,$kWord"')) kExistingNoteId,
+            if (query.contains('"dupe:$kKaishiMid,$kCrossWord"'))
+              kCrossKaishiNoteId,
+            if (query.contains('"dupe:$kLapisMid,$kCrossWord"'))
+              kCrossLapisNoteId,
+          ];
+          result = inScope ? hits : const <int>[];
         case 'guiBrowse':
           if (guiBrowseReturnsNull) break;
           if (guiBrowseReturnsEmpty) {
@@ -200,6 +213,16 @@ void main() {
       expect(query, isNot(contains(kWord)));
       expect(query, isNot(contains('deck:')));
       expect(query, isNot(contains('dupe:')));
+    });
+
+    test('同一个词在两个笔记类型各有一张 → 两个 nid 一次列全', () async {
+      // 这条钉的是**仓库接线层**：纯函数 ankiNoteIdBrowseQuery 早有测试，但
+      // 「把 findNotes 拿到的**全部** id 喂给它」那一行此前没人测——
+      // `noteIds.take(1)` 这个变异在全套 23 条下曾经全绿存活。
+      await installSettings();
+      final sink = <Map<String, dynamic>>[];
+      await repoWith(crossModelHost(sink)).openWordInAnki(kCrossWord, '');
+      expect(browseQuery(sink), 'nid:$kCrossKaishiNoteId,$kCrossLapisNoteId');
     });
 
     test('判命中的那一句：卡组按 id 过滤 + 每个笔记类型一个 dupe 子句', () async {

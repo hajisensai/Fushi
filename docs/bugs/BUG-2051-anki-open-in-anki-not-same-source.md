@@ -83,7 +83,7 @@ Yomitan 只有一条判据，两个 UI 天然一致；我们有两条，所以�
 
 ### [x] ② 已加自动化测试
 
-- `packages/fushi_anki/test/open_word_in_anki_test.dart`（新增，第一轮 14 条 → 第二轮 20 条）——假 AnkiConnect
+- `packages/fushi_anki/test/open_word_in_anki_test.dart`（新增，第一轮 14 条 → 第二轮 23 条 → 补接线层覆盖后 24 条）——假 AnkiConnect
   **照上表实测行为建模**：按字段名查恒 0 命中、`dupe:` 命中那张 Kaishi 卡。覆盖：✓ 判重
   与 ↗ 必须给同一答案 / ↗ 不得再发 findNotes / 查询串形状（卡组过滤 + 全量 mid + 括号分组
   + 不含 `Expression:`）/ collection scope 不带卡组 / 空选中 → noMatch / 传输失败 → failed
@@ -152,7 +152,7 @@ Yomitan 只有一条判据，两个 UI 天然一致；我们有两条，所以�
 「卡组范围按 id 解析」5 条（子组按 `::` 精确展开 / 带 `_` 的卡组名只解析出它自己、兄弟
 卡组不得被通配进来 / deckRoot 取根 / collection·空名·卡组已删 → 不加过滤 / `Lapis2` 不算
 `Lapis` 的子组）。假 AnkiConnect 改成：`findNotes` 才是判命中的那一步，**`guiBrowse`
-故意没有判别力**（只回传 `nid:` 里点到的），否则又是两条判据。共 20 条。
+故意没有判别力**（只回传 `nid:` 里点到的），否则又是两条判据。共 24 条。
 
 **第二轮变异实测**（每条按 sha256 核对还原）：
 - 子卡组用裸前缀（丢掉 `::`）→ **精确 1 条红**（`Lapis2` 那条）。

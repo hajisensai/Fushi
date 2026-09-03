@@ -1096,6 +1096,12 @@ String ankiDuplicateSearchQuery({
 /// 返回空列表 = 不加卡组过滤（整个收藏集）：[AnkiDuplicateScope.collection] 本来
 /// 就不看卡组；卡组名为空或**已不存在**（配置过期）时同样退化成不限卡组——fail-open，
 /// 宁可多列几张也好过对着一张确实存在的卡说「没有找到」。
+///
+/// ⚠️ **这一格与 ✓ 侧的方向是相反的，而且是有意的**：画 ✓ 的查重走 AnkiConnect
+/// `duplicateScopeOptions.deckName`，卡组名解析不出时它直接判「不重复」（fail-**closed**）。
+/// 本侧 fail-open 只在「↗ 被 ✓ 门控」的前提下安全——↗ 按钮只在已画 ✓ 时可见，所以
+/// 多圈进来的卡用户看不到。**谁要是把本函数复用到不受 ✓ 门控的入口，先想清楚这条**：
+/// 那里 fail-open 会让「卡组配置过期」静默变成「整库范围」，而不是一个可见的失败。
 List<int> ankiDuplicateDeckIds({
   required String deckName,
   required AnkiDuplicateScope scope,

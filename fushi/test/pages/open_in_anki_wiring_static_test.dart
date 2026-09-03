@@ -5,13 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 
 /// TODO-1360 / BUG-2051：「已制卡的词旁 ↗『在 Anki 中打开卡片』按钮」可达性链路的
-/// 源码守卫。锁住 openInAnki 从 popup.js（仅已制卡显示 + 点击调宿主）→ webview handler
-/// → layer 透传 → 两条宿主车道（mixin / base_source_page）→ 仓库
-/// （[BaseAnkiRepository.openWordInAnki]）全程接线，避免任一层漏接导致按钮点了没反应。
-///
-/// BUG-2051 之后这条链路只剩**一条判据**：宿主把 Anki 浏览器过滤到「Anki 认为这个词
-/// 已有的卡」（第一字段 checksum，与画 ✓ 的查重同源），不再先按第一字段**名**反查
-/// note id——那条反查看不见笔记类型不同的重复卡，于是 ✓ 说已制卡、↗ 说没有卡。
 /// 顶层函数体的结束位置：从 [from] 起找**列 0 的 `}`**。
 ///
 /// 不能直接 `indexOf('\n}')`：命名参数表的 `})` 同样在列 0，先命中它就会把「函数体」
@@ -26,6 +19,14 @@ int topLevelBodyEnd(String src, int from) {
     if (next >= src.length || src[next] != ')') return i;
   }
 }
+
+/// 源码守卫。锁住 openInAnki 从 popup.js（仅已制卡显示 + 点击调宿主）→ webview handler
+/// → layer 透传 → 两条宿主车道（mixin / base_source_page）→ 仓库
+/// （[BaseAnkiRepository.openWordInAnki]）全程接线，避免任一层漏接导致按钮点了没反应。
+///
+/// BUG-2051 之后这条链路只剩**一条判据**：宿主把 Anki 浏览器过滤到「Anki 认为这个词
+/// 已有的卡」（第一字段 checksum，与画 ✓ 的查重同源），不再先按第一字段**名**反查
+/// note id——那条反查看不见笔记类型不同的重复卡，于是 ✓ 说已制卡、↗ 说没有卡。
 
 void main() {
   String read(String relativePath) {
