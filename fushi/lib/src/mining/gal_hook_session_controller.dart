@@ -449,6 +449,8 @@ class GalHookSessionState {
     this.selectedAudioSourcePtr = 0,
     this.excludedAudioSourcePtrs = const <int>{},
     this.japaneseLocaleApplied = false,
+    this.japaneseLocaleVerdict,
+    this.japaneseLocaleSkipReason,
   });
 
   final GalHookSessionPhase phase;
@@ -494,6 +496,15 @@ class GalHookSessionState {
   /// 「本局已转区」并给出关掉的入口，这是判错后唯一的自愈路径。
   final bool japaneseLocaleApplied;
 
+  /// `auto` 档本局的判定结论与证据（BUG-2047）；attach / `on` / `off` 不判定，为 null。
+  /// 与 [japaneseLocaleApplied] 同源同生命周期：UI 据此在「已转区」旁列判据，在
+  /// 「未转区」时说清是证据不足还是判为不需要，用户才够得着 `on` / `off` 两头的兜底。
+  final GalJapaneseLocaleVerdict? japaneseLocaleVerdict;
+
+  /// `auto` 判定后没转区的原因；语义门（改 `on` 有用）与工程门（改 `on` 也没用）分开，
+  /// 状态卡按它说话。转了、或不是 `auto`，为 null；生命周期与 [japaneseLocaleVerdict] 相同。
+  final GalJapaneseLocaleSkipReason? japaneseLocaleSkipReason;
+
   bool get isActive =>
       phase != GalHookSessionPhase.idle && phase != GalHookSessionPhase.error;
   bool get hasText => textSignalReceived;
@@ -529,6 +540,9 @@ class GalHookSessionState {
     int? selectedAudioSourcePtr,
     Set<int>? excludedAudioSourcePtrs,
     bool? japaneseLocaleApplied,
+    GalJapaneseLocaleVerdict? japaneseLocaleVerdict,
+    GalJapaneseLocaleSkipReason? japaneseLocaleSkipReason,
+    bool clearJapaneseLocaleVerdict = false,
   }) {
     return GalHookSessionState(
       phase: phase ?? this.phase,
@@ -567,6 +581,17 @@ class GalHookSessionState {
       japaneseLocaleApplied: clearLaunchExe
           ? false
           : japaneseLocaleApplied ?? this.japaneseLocaleApplied,
+      // 判定与「转没转」同生命周期：同样跟着 launchExe 复位。
+      japaneseLocaleVerdict: clearLaunchExe || clearJapaneseLocaleVerdict
+          ? null
+          : japaneseLocaleVerdict ?? this.japaneseLocaleVerdict,
+      // 原因只在「有判定且没转」时有意义：判定一复位它跟着清；新判定进来时它就是
+      // 随判定一起传进来的那个值（转了 = null），不能拿旧值兜底。
+      japaneseLocaleSkipReason: clearLaunchExe || clearJapaneseLocaleVerdict
+          ? null
+          : japaneseLocaleVerdict != null
+              ? japaneseLocaleSkipReason
+              : japaneseLocaleSkipReason ?? this.japaneseLocaleSkipReason,
     );
   }
 }
@@ -599,6 +624,9 @@ typedef GalEngineSourceFactory = EngineHookGalAudioSource Function({
   // 这个形参**，所以不是「忘了传」而是没有这个自由度——汉化版被强制转区后闪退，
   // 用户无法自救。attach 路径不传，转区在 source 侧必然短路（launchMode 为首个合取项）。
   GalJapaneseLocaleMode japaneseLocaleMode,
+  // BUG-2047：该游戏声明的内容语言（`GalgameEntry.language`），转区 `auto` 判定的
+  // 人工真值。三个启动点本来就拿着 entry，零额外查询。
+  String? contentLanguage,
 });
 typedef GalLoopbackSourceFactory = LoopbackGalAudioSource Function();
 typedef GalTargetWow64Probe = Future<bool?> Function(int pid);
@@ -1087,6 +1115,7 @@ class GalHookSessionController extends ChangeNotifier {
     List<String> launchArguments = const <String>[],
     String launchWorkdir = '',
     GalJapaneseLocaleMode japaneseLocaleMode = kGalDefaultJapaneseLocaleMode,
+    String? contentLanguage,
   }) {
     return EngineHookGalAudioSource(
       targetPid: targetPid,
@@ -1097,6 +1126,7 @@ class GalHookSessionController extends ChangeNotifier {
       lunaPcHooks: lunaPcHooks,
       lunaCodepage: lunaCodepage,
       japaneseLocaleMode: japaneseLocaleMode,
+      contentLanguage: contentLanguage,
     );
   }
 
@@ -1379,6 +1409,9 @@ class GalHookSessionController extends ChangeNotifier {
 
     /// 该游戏的日语区域（转区）档位（BUG-1477）。缺省 auto = 与旧行为等价。
     GalJapaneseLocaleMode japaneseLocaleMode = kGalDefaultJapaneseLocaleMode,
+
+    /// 该游戏声明的内容语言（BUG-2047）；null = 未声明，`auto` 只靠自动证据。
+    String? contentLanguage,
   }) async {
     final int generation = ++_operationGeneration;
     await _stopSources();
@@ -1471,6 +1504,7 @@ class GalHookSessionController extends ChangeNotifier {
         injectorPath: injector,
         lunaPcHooks: lunaPcHooks,
         japaneseLocaleMode: japaneseLocaleMode,
+        contentLanguage: contentLanguage,
       ),
     );
     await _attachPersistedHookProfiles(engine);
@@ -1486,19 +1520,47 @@ class GalHookSessionController extends ChangeNotifier {
     // 即使随后注入失败降级到 loopback，游戏也已经在 CP932 下跑着了——而误转区正是
     // 「文字乱码 / 脚本加载失败」这类症状的常见来源，此时把标记丢掉等于让用户在最需要
     // 线索的那一刻失去线索。
+    final GalJapaneseLocaleVerdict? verdict = engine.japaneseLocaleVerdict;
+    final GalJapaneseLocaleSkipReason? skipReason =
+        engine.japaneseLocaleSkipReason;
     _setState(
-      _state.copyWith(japaneseLocaleApplied: engine.japaneseLocaleApplied),
+      _state.copyWith(
+        japaneseLocaleApplied: engine.japaneseLocaleApplied,
+        japaneseLocaleVerdict: verdict,
+        japaneseLocaleSkipReason: skipReason,
+        clearJapaneseLocaleVerdict: verdict == null,
+      ),
     );
+    // 事件里的 need / evidence 用稳定字面量 key，不用 enum.name / index。
+    final Map<String, Object?> localeDetails = <String, Object?>{
+      'mode': galJapaneseLocaleModeToKey(japaneseLocaleMode),
+      'exe': executablePath,
+      if (verdict != null) 'need': galJapaneseLocaleNeedToKey(verdict.need),
+      if (verdict != null)
+        'evidence': verdict.evidence
+            .map(galJapaneseLocaleEvidenceToKey)
+            .toList(growable: false),
+      // 「跳过」配「需要」并不矛盾：reason 会说明是工程门（64 位 / 系统本就日文区）。
+      if (skipReason != null)
+        'reason': galJapaneseLocaleSkipReasonToKey(skipReason),
+    };
     if (engine.japaneseLocaleApplied) {
       _record(
         GalHookEventSeverity.info,
         'launch',
         'launch.japanese_locale_applied',
         'Launched the game with a Japanese (CP932) locale',
-        details: <String, Object?>{
-          'mode': japaneseLocaleMode.name,
-          'exe': executablePath,
-        },
+        details: localeDetails,
+      );
+    } else if (verdict != null) {
+      // `auto` 判为不转区也要留痕（BUG-2047）：证据空白的日文原版会先乱码，事后排障
+      // 得能看到「当时为什么没转」。
+      _record(
+        GalHookEventSeverity.info,
+        'launch',
+        'launch.japanese_locale_skipped',
+        'Launched the game without a Japanese locale (auto verdict)',
+        details: localeDetails,
       );
     }
     if (format == null && !engine.textHookReady) {
@@ -2266,8 +2328,38 @@ class GalHookSessionController extends ChangeNotifier {
   /// 两级分开报：`recycle` 是降级但没丢行（顶掉了最久没写的非选定道），`overflow` 是**真丢了行**。
   int _reportedLaneRecycles = 0;
   int _reportedLaneOverflows = 0;
+  int _reportedXaudioDiagnostics = 0;
+  int _reportedXaudioDiagnostics2 = 0;
+
+  /// 把引擎侧两个 XAudio2 诊断字的**每一次变化**记进会话事件。
+  ///
+  /// 位是粘性的（只置不清），所以变化即「又走到了一条新的失败/成功路径」，事件数天然
+  /// 有界。第二个字是身份分型位的唯一去处：hook 侧对「exe 摘要量不到」「哈希不是这个
+  /// 发行版」「结构门断在 section roles / 某个锚点 / return sites」各置了一位，而在此
+  /// 之前 Fushi 一侧一个读者都没有——写点有了、读点没有，整批分型位在真机上等于不存在。
+  void _reportEngineDiagnostics(EngineHookGalAudioSource engine) {
+    final int first = engine.xaudioDiagnostics;
+    final int second = engine.xaudioDiagnostics2;
+    if (first == _reportedXaudioDiagnostics &&
+        second == _reportedXaudioDiagnostics2) {
+      return;
+    }
+    _reportedXaudioDiagnostics = first;
+    _reportedXaudioDiagnostics2 = second;
+    _record(
+      GalHookEventSeverity.info,
+      'audio',
+      'audio.engine_diagnostics',
+      'Engine XAudio2 diagnostic words changed',
+      details: <String, Object?>{
+        'xaudioDiagnostics': '0x${first.toRadixString(16).padLeft(8, '0')}',
+        'xaudioDiagnostics2': '0x${second.toRadixString(16).padLeft(8, '0')}',
+      },
+    );
+  }
 
   void _reportTextLanePressure(EngineHookGalAudioSource engine) {
+    _reportEngineDiagnostics(engine);
     final int recycles = engine.textLaneRecycles;
     final int overflows = engine.textLaneOverflows;
     if (recycles > _reportedLaneRecycles) {

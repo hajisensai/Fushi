@@ -492,6 +492,7 @@ class AnkiMiningPayload {
     this.pitchCategories = '',
     this.phoneticTranscriptions = '',
     this.popupSelectionText = '',
+    this.glossarySelectionHighlighted = false,
     this.audio = '',
     this.selectedDictionary = '',
     this.dictionaryMedia = const [],
@@ -540,6 +541,8 @@ class AnkiMiningPayload {
       pitchCategories: json['pitchCategories'] as String? ?? '',
       phoneticTranscriptions: json['phoneticTranscriptions'] as String? ?? '',
       popupSelectionText: json['popupSelectionText'] as String? ?? '',
+      glossarySelectionHighlighted:
+          json['glossarySelectionHighlighted'] as bool? ?? false,
       audio: json['audio'] as String? ?? '',
       selectedDictionary: json['selectedDictionary'] as String? ?? '',
       dictionaryMedia: dictionaryMedia,
@@ -562,6 +565,15 @@ class AnkiMiningPayload {
   /// 想把音标单独映射到独立字段的用户（Yomitan 命名 `{phonetic-transcriptions}`）。
   final String phoneticTranscriptions;
   final String popupSelectionText;
+
+  /// 本次制卡里，用户选中的那一段是否**真的**作为 `<mark>` 落进了导出的释义树
+  /// （popup.js 的 applyGlossarySelectionHighlight 确实插入了标记）。
+  ///
+  /// 只是「上报事实」，不是「已经让位」：SelectionText 该不该让位取决于笔记类型
+  /// 和字段映射，而 popup.js 那一层两个都看不见。判据见
+  /// [BaseAnkiRepository.shouldYieldSelectionText]。旧 payload 没有这个键 →
+  /// `false` → 行为逐字节不变。
+  final bool glossarySelectionHighlighted;
   final String audio;
   final String selectedDictionary;
   final List<DictionaryMedia> dictionaryMedia;
@@ -697,18 +709,25 @@ class AnkiHandlebarRenderer {
   static String render(
     String template,
     AnkiMiningPayload payload,
-    AnkiMiningContext context,
-  ) =>
+    AnkiMiningContext context, {
+    bool yieldSelectionText = false,
+  }) =>
       template.replaceAllMapped(
         _handlebarRegex,
-        (match) => _handlebarToValue(match.group(0)!, payload, context),
+        (match) => _handlebarToValue(
+          match.group(0)!,
+          payload,
+          context,
+          yieldSelectionText: yieldSelectionText,
+        ),
       );
 
   static String _handlebarToValue(
     String handlebar,
     AnkiMiningPayload payload,
-    AnkiMiningContext context,
-  ) {
+    AnkiMiningContext context, {
+    bool yieldSelectionText = false,
+  }) {
     if (handlebar.startsWith(_singleGlossaryPrefix)) {
       final dictionary = handlebar.substring(
         _singleGlossaryPrefix.length,
@@ -754,7 +773,10 @@ class AnkiHandlebarRenderer {
           payload.selectedDictionary,
         );
       case '{popup-selection-text}':
-        return payload.popupSelectionText;
+        // 选中的那段已经作为 <mark> 进了释义字段时，是否还要在这里再放一份，
+        // 由知道笔记类型和字段映射的那一层决定
+        // （[BaseAnkiRepository.shouldYieldSelectionText]）。
+        return yieldSelectionText ? '' : payload.popupSelectionText;
       case '{sentence}':
         return _sentenceValue(payload, context);
       case '{cue-sentence}':

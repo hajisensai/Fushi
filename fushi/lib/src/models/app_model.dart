@@ -46,6 +46,7 @@ import 'package:fushi/src/models/builtin_tags.dart';
 import 'package:fushi/src/epub/book_title_conflict.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
+import 'package:fushi/src/dictionary/transform_description_locale.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
@@ -93,6 +94,7 @@ import 'package:fushi/src/media/torrent/anime_download_subtitle_resolver.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi/src/media/torrent/torrent_memory.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
+import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
@@ -136,6 +138,7 @@ import 'package:fushi/src/models/theme_notifier.dart'
 // consumers (theme swatch row, CustomThemePage) can name it.
 export 'package:fushi/src/models/theme_notifier.dart' show CustomThemeEntry;
 import 'package:fushi/src/models/audio_controller.dart';
+import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
@@ -2462,6 +2465,9 @@ class AppModel with ChangeNotifier {
       populateLanguages();
       populateLocales();
       LocaleSettings.setLocaleRaw(appLocale.toLanguageTag());
+      // 词形变化语法说明的译文表跟界面语言走（BUG-2038）。装的是一张内存查表，
+      // 与词典引擎里那份英文 transforms JSON 无关，所以放在引擎初始化之后也没问题。
+      unawaited(applyTransformDescriptionLocale(appLocale.toLanguageTag()));
       populateMediaTypes();
       populateMediaSources();
       populateDictionaryFormats();
@@ -2786,6 +2792,9 @@ class AppModel with ChangeNotifier {
       populateLanguages();
       populateLocales();
       LocaleSettings.setLocaleRaw(appLocale.toLanguageTag());
+      // 词形变化语法说明的译文表跟界面语言走（BUG-2038）。装的是一张内存查表，
+      // 与词典引擎里那份英文 transforms JSON 无关，所以放在引擎初始化之后也没问题。
+      unawaited(applyTransformDescriptionLocale(appLocale.toLanguageTag()));
       populateMediaTypes();
       MediaSource.setDatabase(_database);
       populateMediaSources();
@@ -3211,6 +3220,8 @@ class AppModel with ChangeNotifier {
   Future<void> setAppLocale(String localeTag) async {
     await _setPref('app_locale', localeTag);
     LocaleSettings.setLocaleRaw(localeTag);
+    // 语法说明译文表即时换掉：不重启的桌面端也要跟着变（BUG-2038）。
+    await applyTransformDescriptionLocale(localeTag);
     if (isDesktopPlatform) {
       notifyListeners();
       return;
@@ -3258,6 +3269,12 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoMpvLuaScriptsEnabled(bool value) =>
       prefsRepo.setVideoMpvLuaScriptsEnabled(value);
+
+  /// BUG-2032：随包 libmpv 是否编入 Lua（视频页探测后缓存；设置页据此说明）。
+  MpvLuaCapability get videoMpvLuaCapability => prefsRepo.videoMpvLuaCapability;
+
+  Future<void> setVideoMpvLuaCapability(MpvLuaCapability value) =>
+      prefsRepo.setVideoMpvLuaCapability(value);
 
   /// 用户手动指定的本机 mpv 配置/着色器目录（空=自动）。
   String get videoMpvShaderDir => prefsRepo.videoMpvShaderDir;
@@ -4383,6 +4400,15 @@ class AppModel with ChangeNotifier {
         ),
       );
   DiscoveryImportExecutor? _discoveryImportExecutor;
+
+  /// 有声书素材库（懒建）。目录由用户在设置里指定，扫描结果缓存在服务内；
+  /// 改目录后调 [AudiobookMaterialService.refresh] 重扫。
+  AudiobookMaterialService get audiobookMaterialService =>
+      _audiobookMaterialService ??= AudiobookMaterialService(
+        readDirs: () =>
+            decodeAudiobookMaterialDirs(prefsRepo.audiobookMaterialDirs),
+      );
+  AudiobookMaterialService? _audiobookMaterialService;
 
   /// 发现页源注册表（懒建，app 生命周期常驻）。内置源在此登记；加源 = 加一个
   /// adapter 实例。Sukebei（18+）默认不进「全部源」聚合，见
@@ -5998,6 +6024,28 @@ class AppModel with ChangeNotifier {
   double get extensionPopupMaxHeight => prefsRepo.extensionPopupMaxHeight;
   void setExtensionPopupMaxHeight(double height) =>
       prefsRepo.setExtensionPopupMaxHeight(height);
+
+  bool get galCardLookupIndependentSize =>
+      prefsRepo.galCardLookupIndependentSize;
+  Future<void> setGalCardLookupIndependentSize(bool value) =>
+      prefsRepo.setGalCardLookupIndependentSize(value);
+  double get galCardLookupMaxWidth => prefsRepo.galCardLookupMaxWidth;
+  void setGalCardLookupMaxWidth(double width) =>
+      prefsRepo.setGalCardLookupMaxWidth(width);
+  double get galCardLookupMaxHeight => prefsRepo.galCardLookupMaxHeight;
+  void setGalCardLookupMaxHeight(double height) =>
+      prefsRepo.setGalCardLookupMaxHeight(height);
+
+  /// 游戏内查词卡的「有效最大宽高」（跟随 app 内 / 解锁后独立）。
+  /// 与 [overlayLookupEffectiveSize] 分开：卡片贴在游戏客户区里，合适尺寸与浮在整块
+  /// 桌面上的覆盖窗本就不同，共用一个值必然一大一小。
+  LookupSize get galCardLookupEffectiveSize => effectiveLookupSize(
+        independent: galCardLookupIndependentSize,
+        sceneWidth: galCardLookupMaxWidth,
+        sceneHeight: galCardLookupMaxHeight,
+        sharedWidth: popupMaxWidth,
+        sharedHeight: popupMaxHeight,
+      );
 
   /// app 外覆盖查词卡的「有效最大宽高」（跟随 app 内 / 解锁后独立）。
   /// controller 的窗口尺寸测算读它，而不是直接读 [popupMaxWidth]/[popupMaxHeight]。

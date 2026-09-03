@@ -957,8 +957,8 @@ class WindowsInstaller {
   /// `msedgewebview2.exe`。即安装器本就能自己关掉其他 Hibiki 实例并解开 mutex 死锁。旧的
   /// Dart 预检却在**启动安装器之前**就因「检测到其他 hibiki.exe」硬 throw，用户永远走不到
   /// 这段自愈，只能被迫手动关进程——是过度防御。故这里改为：安装器杀得掉的占用进程只记警告、
-  /// 继续启动安装器交给 `.iss` 处理；只有安装器杀不掉的真外部锁（非 hibiki/WebView2 的进程
-  /// 按 image 名占用目标目录里的 `libmpv-2.dll`）才保留硬中止。
+  /// 继续启动安装器交给 `.iss` 处理；只有安装器**确实**处置不掉的外部锁（镜像不在安装目录
+  /// 树内、也不是 Fushi/WebView2 的进程，见 [_installerCanClose]）才保留硬中止。
   static void _throwIfWindowsInstallBlocked(
     WindowsInstallerDiagnostics diagnostics,
     String innoLogPath,
@@ -969,7 +969,10 @@ class WindowsInstaller {
 
     final String target = diagnostics.targetInstallDir ?? 'unknown';
     final List<WindowsProcessInfo> externalLocks = blockers
-        .where((WindowsProcessInfo process) => !_installerCanClose(process))
+        .where((WindowsProcessInfo process) => !_installerCanClose(
+              process,
+              targetInstallDir: diagnostics.targetInstallDir,
+            ))
         .toList(growable: false);
     if (externalLocks.isEmpty) {
       // 只剩安装器能强杀的 hibiki.exe / WebView2 实例：不中止，记警告后继续启动安装器，
@@ -985,28 +988,91 @@ class WindowsInstaller {
       return;
     }
 
-    // 不再点名 libmpv：占用者现在还可能是**正被 hook 的游戏**（持有
-    // `voice_hook/<arch>/` 下的 injector/hook DLL，见 [queryWindowsGalHookModuleHolders]）。
-    // 写死一个组件名会让另一半占用场景的报错答非所问，而 Holders 列表本来就已经指名到
-    // 进程路径了。
-    throw UpdateInstallerException(
-      'Fushi cannot install while a non-Fushi process is using files in the '
+    // 外部锁分两类，**成因与处置都不同**，所以报错必须分开说（BUG-2055）：
+    // ① [WindowsInstallerDiagnostics.galHookModuleHolders] —— 被 Fushi 自己的语音捕获
+    //   组件注入的程序（游戏，或任何被附着过的窗口）。它持有 `voice_hook/<arch>/` 下的
+    //   hook DLL 直到自身退出，这不是「别的软件在捣乱」，而是 Fushi 注进去的。旧文案把
+    //   所有占用者统称 `non-Fushi process`，等于把成因指向一个与 Fushi 无关的第三方程序 ——
+    //   用户照着这句话去找占用者，永远找不到自己正在玩的那个游戏为什么算「非 Fushi 程序」。
+    //   手动运行安装器那条路径（`fushi.iss` 的 `LockedGalHookComponent` 提示）早就把成因
+    //   讲清楚了；应用内更新是同一件事，不该比它更差。
+    // ② 其余外部锁 —— 真正与 Fushi 无关的进程占住了安装目录里的文件。
+    final Set<int> galHookHolderPids = diagnostics.galHookModuleHolders
+        .map((WindowsProcessInfo process) => process.pid)
+        .toSet();
+    final List<WindowsProcessInfo> hookHolders = externalLocks
+        .where((WindowsProcessInfo process) =>
+            galHookHolderPids.contains(process.pid))
+        .toList(growable: false);
+    final List<WindowsProcessInfo> otherLocks = externalLocks
+        .where((WindowsProcessInfo process) =>
+            !galHookHolderPids.contains(process.pid))
+        .toList(growable: false);
+
+    final StringBuffer message = StringBuffer(
+      'Fushi cannot install while another process is using files in the '
       'target directory (the installer cannot close it automatically). '
-      'Target: $target. Holders: ${_summarizeBlockingProcesses(externalLocks)}. '
-      'Close the listed process manually, then retry the installer. '
-      'Installer log: $innoLogPath',
+      'Target: $target. ',
     );
+    if (hookHolders.isNotEmpty) {
+      message.write(
+        "Fushi's voice capture component is injected into these programs and "
+        'stays loaded until they exit, so the installer cannot replace it: '
+        '${_summarizeBlockingProcesses(hookHolders)}. '
+        'Save your progress and close them, then retry the installer. ',
+      );
+    }
+    if (otherLocks.isNotEmpty) {
+      message.write(
+        'These non-Fushi processes are holding files in the target directory: '
+        '${_summarizeBlockingProcesses(otherLocks)}. '
+        'Close them manually, then retry the installer. ',
+      );
+    }
+    message.write('Installer log: $innoLogPath');
+    throw UpdateInstallerException(message.toString());
   }
 
-  /// 该占用进程是否能被 `hibiki.iss` 按 image 名强制结束（连同其子进程树）：
-  /// 只有 `hibiki.exe`（含 popup/floating 等同 exe 子入口与其子进程树）和 WebView2 的
-  /// `msedgewebview2.exe` 是安装器托管得到的。其余 image 名视为安装器杀不掉的真外部锁。
-  static bool _installerCanClose(WindowsProcessInfo process) {
+  /// 该占用进程是否由安装器自己处置得掉。判据与 `fushi.iss` 的**实际能力**对齐，而不是
+  /// 一张写死的 image 名清单：
+  ///
+  /// - `PrepareToInstall` 第一步就是 `KillProcessesUnderDir({app})`，它按**镜像路径**
+  ///   强制结束主模块位于安装目录树内的**任何**进程；唯一被显式跳过的
+  ///   `fushi_update_launcher.exe` 由 `MakeWayForRunningLauncher` 改名让路，同样不需要
+  ///   用户插手。
+  /// - `InitializeSetup` 另外按 image 名关掉 `fushi.exe` / `hibiki.exe` 和 WebView2 的
+  ///   `msedgewebview2.exe`（WebView2 的镜像不在安装目录里，只能按名字认）。
+  ///
+  /// 旧实现只认那三个名字，于是安装目录里的其它自有子进程 —— 以 `--hold` 常驻的
+  /// `voice_hook/<arch>/fushi_voice_injector.exe`、`unity_audio_runtime/` 下的提取器 ——
+  /// 会被判成「安装器杀不掉的外部锁」，在**交接给安装器之前**硬中止更新，而安装器本来
+  /// 一步就能清掉它们。判据按名字写死，每新增一个自有子进程就得补一条特例；改问「镜像
+  /// 是否在安装目录树内」，这类特例整类消失（BUG-2055）。
+  static bool _installerCanClose(
+    WindowsProcessInfo process, {
+    required String? targetInstallDir,
+  }) {
+    if (_processImageIsUnderDirectory(process, targetInstallDir)) return true;
     final String name = _windowsImageName(process);
     // 过渡期两个 exe 名都认（安装器 fushi.iss 会同时结束两者）。
     return name == 'fushi.exe' ||
         name == 'hibiki.exe' ||
         name == 'msedgewebview2.exe';
+  }
+
+  /// 进程主模块是否位于 [directory] 目录**树内**。
+  ///
+  /// 必须比到路径分隔符：裸 `startsWith` 会让 `D:\APP\Fushi2\x.exe` 落进
+  /// `D:\APP\Fushi`，把一个真外部锁误判成安装器处理得掉 —— 更新照常交接，随后在复制
+  /// 阶段失败，而那次失败在 `/VERYSILENT` 下是静默的（BUG-1675 的失败形状）。
+  static bool _processImageIsUnderDirectory(
+    WindowsProcessInfo process,
+    String? directory,
+  ) {
+    final String dir = _normalizeWindowsPath(directory ?? '');
+    final String path = _normalizeWindowsPath(process.path ?? '');
+    if (dir.isEmpty || path.isEmpty) return false;
+    return path.startsWith('$dir\\');
   }
 
   /// 取进程的 Windows image 名（小写）：优先 [WindowsProcessInfo.name]，缺失时退回

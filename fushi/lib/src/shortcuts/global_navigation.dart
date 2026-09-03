@@ -6,9 +6,12 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:macos_ui/macos_ui.dart' show WindowManipulator;
 import 'package:window_manager/window_manager.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
+import 'package:fushi/src/focus/page_scroll_registry.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 
 import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart';
@@ -334,6 +337,96 @@ KeyEventResult _handleGlobalToggleFullscreen(
 bool get desktopWindowFullscreenSupported =>
     Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
+/// app 根的**鼠标绑定兜底派发**：服务那些自己没有鼠标派发入口的表面（设置页 / 书架 /
+/// 统计页 / 对话框……）。
+///
+/// 它与键盘那条链的分工逐字对应：键盘走到最外层这个 `Focus`，说明更近的页面处理器
+/// 全都返回了 ignored；鼠标没有 ignored 可回，那个「更近的处理器已经接管」的事实由
+/// [MouseBindingDispatch] 表达——页面真派发出去时会认领这次按下，本层看到已被认领
+/// 就让路，否则同一次按下会被页面与根各派发一次（详见该类文档）。
+///
+/// 阶梯是 universal → global：与阅读器 / 漫画 / 视频三页键盘阶梯的尾段一致
+/// （页面 scope → universal → global）。两者值域不相交时先后无差别，相交（用户把同
+/// 一个键既绑「返回上一级」又绑某个 global 动作）时按与键盘相同的一侧赢。
+void _handleGlobalPointerDown(
+  BuildContext context,
+  GlobalKey<NavigatorState> navigatorKey,
+  FushiShortcutRegistry registry,
+  PointerDownEvent event,
+) {
+  final ShortcutAction? action = resolveMouseBindingAction(
+    registry: registry,
+    buttons: event.buttons,
+    ladder: const <ShortcutScope>[
+      ShortcutScope.universal,
+      ShortcutScope.global,
+    ],
+  );
+  if (action == null) return;
+  dispatchClaimedMouseAction(
+    event,
+    () => _executeGlobalMouseAction(context, navigatorKey, action),
+  );
+}
+
+/// [ShortcutScope.global] / [ShortcutScope.universal] 三个 + 一个动作的鼠标执行体。
+///
+/// 每个分支都复用该动作**键盘/手柄通道已有的**落地方式，不新造第二套语义：
+///   · [ShortcutAction.globalBack] → [Navigator.maybePop]（与 [_handleGlobalBack] 同）；
+///   · [ShortcutAction.globalToggleFullscreen] → [_toggleWindowFullscreen]（与
+///     [_handleGlobalToggleFullscreen] 同，移动端无窗口时有意 no-op）；
+///   · [ShortcutAction.globalScrollPageUp] / [ShortcutAction.globalScrollPageDown] →
+///     与手柄 LB/RB 完全同一条 [PageScrollRegistry] → [FushiFocusScroll] 路径
+///     （`gamepad_service._tryScrollPage`）。
+///
+/// 这三个是 global scope 的**全部**动作，加上 universal 的 globalBack 就是本兜底能
+/// 遇到的全集——没有落在 default 分支上的活动作，故不存在「绑了没反应」的死项。
+///
+/// 返回**本次是否真的执行了**：false 时调用方不得认领这次按下（见
+/// [MouseBindingDispatch] 的两步用法），否则「解析到但没执行」会把同一按钮上其它层
+/// 的合法绑定白白挡掉。
+bool _executeGlobalMouseAction(
+  BuildContext context,
+  GlobalKey<NavigatorState> navigatorKey,
+  ShortcutAction action,
+) {
+  switch (action) {
+    case ShortcutAction.globalBack:
+      final NavigatorState? nav = navigatorKey.currentState;
+      if (nav == null || !nav.canPop()) return false;
+      // 键盘那条路对 Escape + 弹层有一条「让给框架」的例外（barrierDismissible
+      // 契约）。鼠标键不是 Escape，触发不了那条例外，故这里无对应分支。
+      nav.maybePop();
+      return true;
+    case ShortcutAction.globalToggleFullscreen:
+      // 移动端没有可切换的窗口：键盘那条路在这种情况下仍然 handled（键是用户有意
+      // 分配的，不该再冒泡去干别的），鼠标同口径——认领掉，只是不做事。
+      if (desktopWindowFullscreenSupported) {
+        unawaited(_toggleWindowFullscreen());
+      }
+      return true;
+    case ShortcutAction.globalScrollPageUp:
+      return _scrollActivePage(context, -0.9);
+    case ShortcutAction.globalScrollPageDown:
+      return _scrollActivePage(context, 0.9);
+    default:
+      return false;
+  }
+}
+
+/// 整页滚动：优先已登记的当前页 [ScrollController]，退回按 context 找
+/// [PrimaryScrollController]。与手柄 LB/RB 同一实现，理由见
+/// `gamepad_service._tryScrollPage` 的注释（纯展示页的焦点节点在页面 scaffold 的
+/// PrimaryScrollController **之上**，只按 context 找必然找不到）。
+bool _scrollActivePage(BuildContext context, double signedFraction) {
+  final ScrollController? pageController = PageScrollRegistry.current;
+  if (pageController != null &&
+      FushiFocusScroll.scrollController(pageController, signedFraction)) {
+    return true;
+  }
+  return FushiFocusScroll.scrollPrimary(context, signedFraction);
+}
+
 /// 裸空格中和：焦点确认永不走空格（确认键统一 Enter / 手柄 A，由框架默认提供），故在
 /// 无文本输入时吞掉裸空格的按下沿，阻断 [WidgetsApp] 默认的 space→ActivateIntent。
 ///
@@ -617,7 +710,28 @@ Widget wrapWithGlobalNavigation({
     },
     child: Shortcuts(
       shortcuts: shortcuts,
-      child: child,
+      // 鼠标绑定的兜底派发层（见 [_handleGlobalPointerDown]）。注册表缺席时（widget
+      // 测试直接调本 wrapper）整层不挂，与键盘侧「无 registry 只留裸 Escape 降级」
+      // 同口径：没有绑定表就没有可派发的动作，挂个空监听只会白白进命中路径。
+      //
+      // `translucent`：本层不画任何东西，默认的 deferToChild 会让它在子树没命中时
+      // 也收不到事件（例如页面空白区）。旁听式监听必须自己占住命中，但它既不进手势
+      // 竞技场也不消费事件，下层照常收到同一次按下——点击 / 划词 / 拖拽零影响。
+      child: registry == null
+          ? child
+          : Builder(
+              builder: (BuildContext context) => Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: (PointerDownEvent event) =>
+                    _handleGlobalPointerDown(
+                  context,
+                  navigatorKey,
+                  registry,
+                  event,
+                ),
+                child: child,
+              ),
+            ),
     ),
   );
 }

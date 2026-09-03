@@ -19,8 +19,8 @@ import 'package:fushi/src/media/metadata/credential_redaction.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/magnet_utils.dart';
 import 'package:fushi/src/media/torrent/nyaa_client.dart' show kNyaaTrackers;
-import 'package:fushi/src/media/torrent/public_video_index_client.dart'
-    show kPublicVideoIndexTrackers;
+import 'package:fushi/src/media/torrent/public_trackers.dart'
+    show kPublicTrackers;
 import 'package:fushi/src/media/torrent/public_video_index_provider.dart'
     show kApibayResourceProviderId, kKnabenResourceProviderId;
 import 'package:fushi/src/media/torrent/torrent_add_coordinator.dart';
@@ -1994,7 +1994,7 @@ class VideoDownloadPipelineService {
     // apibay 联网走的也是同一份常量 tracker（`NyaaTorrent.magnet` /
     // `buildPublicVideoIndexMagnet`），完全等价；**Knaben 例外**——它的 API 直接
     // 给 `magnetUrl`，联网时原样透传，离线路径统一换成
-    // `kPublicVideoIndexTrackers`，可能丢掉 knaben 自带的少量 tracker。公共
+    // `kPublicTrackers`，可能丢掉 knaben 自带的少量 tracker。公共
     // tracker + DHT 足以补齐，用一条必然发生的 notFound 误报换它不划算。
     // 真正必须重搜的只剩私有 Torznab：它的 .torrent 走临时凭据 URL，不落库。
     final TorrentMagnetPayload? offline = _publicIndexerMagnetPayload(job);
@@ -2034,7 +2034,7 @@ class VideoDownloadPipelineService {
         ? kNyaaTrackers
         : isProvider(kApibayResourceProviderId) ||
               isProvider(kKnabenResourceProviderId)
-        ? kPublicVideoIndexTrackers
+        ? kPublicTrackers
         : null;
     if (trackers == null) return null;
     final String hash = (job.torrentHash ?? job.selectedResourceId)

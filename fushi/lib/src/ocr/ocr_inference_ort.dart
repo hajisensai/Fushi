@@ -54,14 +54,35 @@ OrtProvider _toOrtProvider(OcrExecutionProvider provider) {
   }
 }
 
-/// 用配置的加速 EP 创建会话；vendored `flutter_onnxruntime` 拒绝尚未实现的
-/// provider 时，按 [providers] 中已有的 CPU 后备重试一次。
+/// `getAvailableProviders()` 回报名 -> 本子系统的加速 EP。
 ///
-/// Windows 的 ONNX Runtime 会报告 `DmlExecutionProvider`，但当前插件的 Windows
-/// MethodChannel 只实现 CPU/CUDA 映射，传 `DIRECT_ML` 会在真正创建 ORT session
-/// 之前抛 `PlatformException(INVALID_PROVIDER, ...)`。调用层已经把 CPU 放在 EP
-/// 列表尾部，因此这里把插件边界的“拒绝整个列表”还原成 ORT 预期的逐级后备语义。
-/// 只捕获明确的 `INVALID_PROVIDER`；模型损坏、shape 错误和推理异常仍原样上抛。
+/// 只列**加速** EP：CPU 永远可用、永远是最后一档，不需要也不应该参与探测。
+/// 运行时回报的其他 EP（TensorRT、XNNPACK…）本子系统不选，落 null 被滤掉。
+const Map<OrtProvider, OcrExecutionProvider> _acceleratedProviders =
+    <OrtProvider, OcrExecutionProvider>{
+  OrtProvider.CUDA: OcrExecutionProvider.cuda,
+  OrtProvider.DIRECT_ML: OcrExecutionProvider.directml,
+  OrtProvider.CORE_ML: OcrExecutionProvider.coreml,
+};
+
+/// 用配置的加速 EP 创建会话；首选 EP 建不起来时，按 [providers] 中已有的 CPU
+/// 后备重试一次。
+///
+/// 判据是**「首选 EP 没建成会话」**，不是某一个错误码。加速 EP 失败的形态本来
+/// 就不止一种：插件不认识这个 provider 会在建 session 之前抛
+/// `PlatformException(INVALID_PROVIDER, ...)`；而 ORT 自己初始化 EP 失败是在
+/// 建 session 之中抛 `ORT_ERROR`——本机实测 DirectML 初始化 int8 检测器时抛
+/// `E_INVALIDARG (80070057)`，走的正是后一条路。按错误码枚举「哪种失败才算 EP
+/// 问题」注定漏，而漏掉的代价是整条 OCR 直接不可用：列表尾部那个 CPU 后备明明
+/// 在，却一次都轮不到（BUG-2034）。
+///
+/// 「模型损坏也会被多试一次 CPU」是这么换来的，而且这笔交易划算：那种输入下
+/// CPU 同样建不成，最终照样抛错，只是多花一次失败的时间；反过来，为了省这一次
+/// 而维护一张错误码白名单，换来的是真·EP 故障时功能整个躺平。
+///
+/// CPU 重试也失败时抛出的是**CPU 那次**的异常（类型与内容都不变，调用方原有的
+/// `on PlatformException` 之类照旧成立），首选 EP 的失败则落进日志——两次失败
+/// 都得留痕，回退不能变成「把第一个错误吃掉」。
 ///
 /// [onResolved] 在会话建成后**必定**被调用一次，回报本次真正生效的 provider
 /// 与降级原因（BUG-1163）：降级不允许静默发生，调用层据此写日志并把状态送到
@@ -80,24 +101,51 @@ Future<T> createOcrSessionWithProviderFallback<T>({
       OcrProviderResolution(requested: providers, effective: preferred),
     );
     return session;
-  } on PlatformException catch (error) {
-    final bool canFallbackToCpu = error.code == 'INVALID_PROVIDER' &&
-        providers.length > 1 &&
+  } on Exception catch (error) {
+    final bool canRetryOnCpu = preferred != OcrExecutionProvider.cpu &&
         providers.contains(OcrExecutionProvider.cpu);
-    if (!canFallbackToCpu) rethrow;
-    final T session =
-        await create(const <OcrExecutionProvider>[OcrExecutionProvider.cpu]);
+    if (!canRetryOnCpu) rethrow;
+    developer.log(
+      'OCR session on ${preferred.name} failed; retrying on CPU',
+      name: kOcrLogName,
+      error: error,
+    );
+    final T session;
+    try {
+      session = await create(const <OcrExecutionProvider>[
+        OcrExecutionProvider.cpu,
+      ]);
+    } on Exception catch (cpuError) {
+      developer.log(
+        'OCR session fell back to CPU and failed there too; '
+        '${preferred.name} had failed with: $error',
+        name: kOcrLogName,
+        error: cpuError,
+      );
+      rethrow;
+    }
     _notifyResolved(
       onResolved,
       OcrProviderResolution(
         requested: providers,
         effective: OcrExecutionProvider.cpu,
-        fallbackReason:
-            '${error.code}: ${error.message ?? 'provider rejected by plugin'}',
+        fallbackReason: _describeProviderFailure(error),
       ),
     );
     return session;
   }
+}
+
+/// 降级原因的可读形态。
+///
+/// `PlatformException` 保留 `code: message` 的老格式（UI 与日志都按它读）；其余
+/// 异常直接用 `toString`——比如 native 把非 UTF-8 字节送过 channel 时 Dart 侧抛的
+/// `FormatException`，那串偏移量本身就是排查线索，不该被抹成一句“未知错误”。
+String _describeProviderFailure(Object error) {
+  if (error is PlatformException) {
+    return '${error.code}: ${error.message ?? 'provider rejected by plugin'}';
+  }
+  return '$error';
 }
 
 void _notifyResolved(
@@ -172,15 +220,28 @@ class OrtOcrSessionFactory implements OcrSessionFactory {
 
   final OnnxRuntime _runtime;
 
-  /// 探测本机可用 EP（用于决定 `cudaAvailable` 再喂给
-  /// [selectOcrExecutionProviders]）。
+  /// 探测本机 ORT 运行时**编译进来**的加速 EP 集合，喂给
+  /// [selectOcrExecutionProviders]。
   ///
-  /// 探测本身失败是一条真实的降级路径（有 N 卡也会退到 DirectML/CPU），
-  /// 不允许调用方 `catch (_)` 静默吞掉——所以这里不吞异常，由调用方捕获后
-  /// 记进可观测的降级说明（BUG-1163）。
-  Future<bool> isCudaAvailable() async {
+  /// BUG-2050 的根因修复点：原先这里只问 CUDA，DirectML 的可用性靠平台分支硬
+  /// 假设。但 `getAvailableProviders()` 本来就一次性回报全部 EP（native 侧
+  /// `flutter_onnxruntime_plugin.cpp` 明确把 `DmlExecutionProvider` 映射成
+  /// `DIRECT_ML`），问一个和问全部同价——不问才是 bug。
+  ///
+  /// **语义边界**：这里回报的是「该 EP 编译进了当前 onnxruntime 运行时」，
+  /// **不是**「它此刻真能建出会话」（DirectML 还要能建出 D3D12 设备，CUDA 还要
+  /// 有驱动和可用显卡）。必要不充分，别拿它当运行期可用性的结论——
+  /// `createOcrSessionWithProviderFallback` 那层 CPU 回退因此不是死代码。
+  ///
+  /// 探测本身失败是一条真实的降级路径（有 N 卡也会退到 CPU），不允许调用方
+  /// `catch (_)` 静默吞掉——所以这里不吞异常，由调用方捕获后记进可观测的降级
+  /// 说明（BUG-1163）。
+  Future<Set<OcrExecutionProvider>> availableAcceleratedProviders() async {
     final List<OrtProvider> providers = await _runtime.getAvailableProviders();
-    return providers.contains(OrtProvider.CUDA);
+    return providers
+        .map((OrtProvider provider) => _acceleratedProviders[provider])
+        .whereType<OcrExecutionProvider>()
+        .toSet();
   }
 
   @override

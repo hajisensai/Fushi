@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/widgets.dart';
 
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
@@ -58,6 +59,7 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     required this.onAsbConfigChanged,
     required this.onMpvConfigChanged,
     this.onLuaScriptsEnabledChanged,
+    this.luaScriptStates,
     required this.onApplyShaders,
     required this.onSelectShaderTier,
     this.onMpvShaderDirChanged,
@@ -166,6 +168,11 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   /// 无法卸载、下次进入视频页生效——见 video_lua_script_manager.dart）。
   /// null = 无播放器上下文，schema 行退化为直接写 pref。
   final Future<void> Function(bool enabled)? onLuaScriptsEnabledChanged;
+
+  /// BUG-2032：活播放器的每脚本运行态（路径 → null=已装载无报错 / 报错原文；不在
+  /// 表里=本次播放未装载），设置页脚本列表据此显示状态。null = 无播放器上下文，
+  /// 列表只列文件名。
+  final ValueListenable<Map<String, String?>>? luaScriptStates;
 
   // ── 着色器（下载/勾选/一键选档，仅播放中实时应用）────────────────────────
   final Future<void> Function(List<String> enabledNames) onApplyShaders;
