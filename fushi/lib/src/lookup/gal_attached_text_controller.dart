@@ -1779,15 +1779,22 @@ class GalAttachedTextController extends ChangeNotifier {
       try {
         await callback(profileMode, forceAttached: forceAttached);
       } catch (_) {
-        _setAttachedProviderClaim(false);
+        // BUG-2091：只有仍然当前的这一轮才有权撤回认领。被抢占的旧轮次去撤，撤掉的是
+        // **新轮次刚发出的**那份认领。
         if (_isCurrent(operation, target)) {
+          _setAttachedProviderClaim(false);
           _activationFailure('provider_handoff_failed');
         }
         return false;
       }
     }
     if (stillCurrent != null && !stillCurrent()) {
-      _setAttachedProviderClaim(false);
+      // BUG-2091：被抢占时**不得**撤回认领。`_attachedProviderClaimed` 是跨轮次共享的
+      // 单一状态，新一轮已经（或即将）自己认领；旧轮次在这里撤一次，注入侧 registry
+      // 下一拍看到的就是 attachedReady=false，于是永远不会把 kind=4/id=11 判成 ready，
+      // 而宿主又在等这个 ready 才进 activeAttached —— 两边互等成活锁，状态永久停在
+      // geometryProviderPending。真机 WoH 上复现为「认领 40ms 后被撤回」。
+      // 认领的释放由当前轮次的 detach / 失败分支负责，不由旧轮次代劳。
       return false;
     }
     return _isCurrent(operation, target);

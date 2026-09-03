@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1952 条。点号进各自文件。
+> 共 1953 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2091](bugs/BUG-2091-attached-provider-claim-livelock.md) | ✅ | ✅ | 被抢占的旧轮次撤回 attached provider 认领，与注入侧 registry 形成活锁 |
 | [BUG-2090](bugs/BUG-2090-hunex-body-render-has-no-compose-layer.md) | ✅ | 🚧 | WoH 正文渲染没有合成层，HUNEX 几何模型的三级 compose 假设不成立 |
 | [BUG-2089](bugs/BUG-2089-hunex-compose-wrapper-anchor-never-called.md) | ✅ | ✅ | HUNEX 投影链的 compose wrapper 锚点在 WoH 上从未被调用，整条几何证据无从产生 |
 | [BUG-2088](bugs/BUG-2088-hunex-deferred-selected-read-masks-failure.md) | ✅ | ✅ | HUNEX 延迟选中文本读的空窗口覆盖掉第一次读的真实失败码，且候选计数被丢弃无法分型 |
