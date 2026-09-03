@@ -1477,8 +1477,13 @@ void PrintHunexGgeTraceEvent(
   using Kind = fushi_voice_hook::HunexGgeTraceKind;
   const Kind kind = static_cast<Kind>(event.kind);
   if (kind == Kind::kRenderItemBodyUncorrelated) {
-    printf(" lookup_worker={state:%d,selected_failure:%u}", event.result,
-           event.draw_arg13);
+    // BUG-2088：候选计数打在失败码旁边。stable=0&invalid=0 且 selected_failure=6
+    // ⇒「选定车道在窗口内一条候选都没有」；stable>0 ⇒「有候选但字节不等」。
+    printf(" lookup_worker={state:%d,selected_failure:%u,stable_events:%u,"
+           "invalid_events:%u}",
+           event.result, event.draw_arg13,
+           static_cast<uint32_t>(event.draw_arg12_bits & 0xFFFFFFFFull),
+           static_cast<uint32_t>(event.draw_arg12_bits >> 32));
     PrintHunexGgeLookupGate(event.lookup_gate_mask);
     PrintHunexGgeCaptureQuarantine(
         event.capture_quarantine_reason,

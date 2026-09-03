@@ -323,13 +323,23 @@ enum HunexGgeLookupWorkerTraceState : LONG {
 volatile LONG g_hunex_gge_lookup_worker_trace_state =
     kHunexGgeLookupWorkerIdle;
 volatile LONG g_hunex_gge_lookup_worker_selected_failure = 0;
+volatile LONG g_hunex_gge_lookup_worker_stable_events = 0;
+volatile LONG g_hunex_gge_lookup_worker_invalid_events = 0;
 
 void SetHunexGgeLookupWorkerTraceState(
     HunexGgeLookupWorkerTraceState state,
     fushi_voice_hook::HunexGgeSelectedTextFailure selected_failure =
-        fushi_voice_hook::HunexGgeSelectedTextFailure::kNone) {
+        fushi_voice_hook::HunexGgeSelectedTextFailure::kNone,
+    uint32_t stable_events = 0u, uint32_t invalid_events = 0u) {
   InterlockedExchange(&g_hunex_gge_lookup_worker_selected_failure,
                       static_cast<LONG>(selected_failure));
+  // BUG-2088：候选计数与失败码同源发布。没有它们，同一个 kNoExactRawLine 无法区分
+  // 「窗口内一条候选都没有」与「有候选但字节不等」——前者要查车道/fence，后者要查
+  // 文本同源性（ruby 标记、行首全角空格、换行分段），处置完全不同。
+  InterlockedExchange(&g_hunex_gge_lookup_worker_stable_events,
+                      static_cast<LONG>(stable_events));
+  InterlockedExchange(&g_hunex_gge_lookup_worker_invalid_events,
+                      static_cast<LONG>(invalid_events));
   InterlockedExchange(&g_hunex_gge_lookup_worker_trace_state,
                       static_cast<LONG>(state));
 }
@@ -1735,6 +1745,18 @@ void* Detour_HunexGgeRenderItem(void* arg1, void* arg2, void* arg3,
           &g_hunex_gge_lookup_worker_trace_state, 0, 0);
       event.draw_arg13 = static_cast<uint32_t>(InterlockedCompareExchange(
           &g_hunex_gge_lookup_worker_selected_failure, 0, 0));
+      // BUG-2088：body-submit 事件的 draw_arg12_bits 恒为 0（真机 trace 可证），
+      // 借这个空槽把选定车道的候选计数带出来，不改导出 ABI：低 32 位 = 稳定事件数、
+      // 高 32 位 = 非法事件数。两者同为 0 且失败码是 kNoExactRawLine ⇒「窗口内一条
+      // 候选都没有」（查车道/fence）；稳定数非 0 ⇒「有候选但字节不等」（查文本同源性）。
+      event.draw_arg12_bits =
+          static_cast<uint64_t>(static_cast<uint32_t>(
+              InterlockedCompareExchange(
+                  &g_hunex_gge_lookup_worker_stable_events, 0, 0))) |
+          (static_cast<uint64_t>(static_cast<uint32_t>(
+               InterlockedCompareExchange(
+                   &g_hunex_gge_lookup_worker_invalid_events, 0, 0)))
+           << 32);
       StampHunexGgeBodySubmitLookupDiagnostics(&event);
     }
     PublishHunexGgeTrace(event);
@@ -4228,6 +4250,11 @@ struct HunexGgeSnapshotSelection {
   uint64_t latest_strict_selected_line_seq = 0u;
   fushi_voice_hook::HunexGgeSelectedTextFailure failure =
       fushi_voice_hook::HunexGgeSelectedTextFailure::kNone;
+  // BUG-2088：把候选计数带出来。只有它们能把同一个 kNoExactRawLine 分成两种完全不同
+  // 的根因——「选定车道在窗口内根本没有事件」与「有事件但字节不等」。此前两个计数
+  // 在这里被整个丢掉，真机上只剩两 bit 信息，分型无从谈起。
+  uint32_t selected_stable_events = 0u;
+  uint32_t selected_invalid_events = 0u;
 };
 
 HunexGgeSnapshotSelection MatchHunexGgeSnapshotToSelectedText(
@@ -4252,6 +4279,12 @@ HunexGgeSnapshotSelection MatchHunexGgeSnapshotToSelectedText(
 
   fushi_voice_hook::HunexGgeSelectedTextResult selected = {};
   bool selected_read_attempted = false;
+  // BUG-2088：留住第一次读的结果。下面那次延迟读的窗口是 (seal_seq, now]，而 now 由
+  // **任意车道**的任意文本事件推进（含 thread-discovered）；选定车道在那一小段里通常
+  // 一条新行都没有，于是延迟读必然产出「窗口内空无一物」的 kNoExactRawLine，把第一次
+  // 读真正有意义的失败码整体盖掉——真机 WoH 上读到的永远是 6、从不是 8，正是这条噪声。
+  fushi_voice_hook::HunexGgeSelectedTextResult first_read = {};
+  bool first_read_attempted = false;
   if (selected_thread_id != 0u &&
       snapshot.text_window_through_seq >
           g_hunex_gge_lookup_last_selected_text_seq) {
@@ -4261,6 +4294,8 @@ HunexGgeSnapshotSelection MatchHunexGgeSnapshotToSelectedText(
     outcome.latest_strict_selected_line_seq =
         selected.latest_strict_selected_line_seq;
     selected_read_attempted = true;
+    first_read = selected;
+    first_read_attempted = true;
   }
 
   // WoH seals the renderer traversal before Luna publishes the same line.
@@ -4287,7 +4322,23 @@ HunexGgeSnapshotSelection MatchHunexGgeSnapshotToSelectedText(
   }
 
   if (selected_read_attempted) {
-    outcome.failure = selected.failure;
+    // 只有当延迟读**真的看到了候选**（稳定或非法事件非零）时，它的失败码才比第一次读
+    // 更有信息量；否则保留第一次读的失败码，别让一个空窗口把真相盖掉（BUG-2088）。
+    const bool deferred_saw_candidates =
+        selected.stable_selected_events != 0u ||
+        selected.invalid_selected_events != 0u;
+    const bool prefer_first_read =
+        first_read_attempted && !deferred_saw_candidates &&
+        (first_read.stable_selected_events != 0u ||
+         first_read.invalid_selected_events != 0u);
+    outcome.failure =
+        prefer_first_read ? first_read.failure : selected.failure;
+    outcome.selected_stable_events =
+        (std::max)(first_read.stable_selected_events,
+                   selected.stable_selected_events);
+    outcome.selected_invalid_events =
+        (std::max)(first_read.invalid_selected_events,
+                   selected.invalid_selected_events);
     if (selected.disposition ==
             fushi_voice_hook::HunexGgeSelectedTextDisposition::
                 kUseExactMatch &&
@@ -4446,6 +4497,9 @@ void ProcessHunexGgeLookupTick() {
   uint32_t newest_rejected_epoch = 0u;
   fushi_voice_hook::HunexGgeSelectedTextFailure newest_failure =
       fushi_voice_hook::HunexGgeSelectedTextFailure::kNone;
+  // 与 newest_failure 同源保留：失败码离开候选计数就无法分型（BUG-2088）。
+  uint32_t newest_stable_events = 0u;
+  uint32_t newest_invalid_events = 0u;
   uint64_t newest_selected_line_seq = 0u;
   for (uint32_t slot_index = 0u;
        slot_index <
@@ -4475,6 +4529,8 @@ void ProcessHunexGgeLookupTick() {
     } else if (candidate.epoch >= newest_rejected_epoch) {
       newest_rejected_epoch = candidate.epoch;
       newest_failure = candidate_selection.failure;
+      newest_stable_events = candidate_selection.selected_stable_events;
+      newest_invalid_events = candidate_selection.selected_invalid_events;
     }
   }
 
@@ -4482,7 +4538,7 @@ void ProcessHunexGgeLookupTick() {
     SetHunexGgeLookupWorkerTraceState(
         any_snapshot ? kHunexGgeLookupWorkerSelectedTextRejected
                      : kHunexGgeLookupWorkerNoSnapshot,
-        newest_failure);
+        newest_failure, newest_stable_events, newest_invalid_events);
     // Unrelated toolbar/body surfaces must not revoke an already exact-bound
     // story model. The model is retained only while the selected Luna lane is
     // unchanged; a newly exact-matched story snapshot replaces it below.
