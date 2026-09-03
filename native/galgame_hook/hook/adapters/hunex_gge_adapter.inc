@@ -255,6 +255,94 @@ thread_local HunexGgeGlyphEvidence g_hunex_gge_recent_glyph;
 thread_local HunexGgeBodyTraversalFence g_hunex_gge_body_traversal_fence;
 thread_local HunexGgeSurfaceComposeContext g_hunex_gge_surface_compose_context;
 thread_local HunexGgePendingStoryCompose g_hunex_gge_pending_story_compose;
+
+// BUG-2090：待定正文行的**进程内**发布副本。
+//
+// 上面那份是 `thread_local`，而 WoH 的渲染各段（compositor / 纹理上传 / quad / sprite）
+// 并不都跑在封存字形的那条线程上——实测 quad 段 `seen:0`、上传段某些会话 caller_tid 与
+// story_tid 不同。任何跨段相关都因此不可能成立。这里用与 PublishHunexGgeProjectionEvidence
+// 相同的 seqlock 范式发布一份进程内可见的副本；**不改变任何既有判据**，thread_local 那份
+// 仍是原有逻辑的唯一依据，本副本目前只用于诊断与跨段观测。
+struct HunexGgePublishedStoryCompose {
+  std::atomic<uint32_t> sequence{0u};
+  std::atomic<uint32_t> active{0u};
+  std::atomic<uint64_t> story_thread_address{0u};
+  std::atomic<uint64_t> raw_text_hash{0u};
+  std::atomic<uint32_t> render_thread_id{0u};
+  std::atomic<int32_t> rect_x{0};
+  std::atomic<int32_t> rect_y{0};
+  std::atomic<int32_t> rect_w{0};
+  std::atomic<int32_t> rect_h{0};
+  std::atomic<uint32_t> surface_words[8]{};
+  std::atomic<unsigned long long> sealed_tick{0ull};
+};
+HunexGgePublishedStoryCompose g_hunex_gge_published_story_compose;
+
+void PublishHunexGgeStoryCompose(const HunexGgePendingStoryCompose& story) {
+  auto& target = g_hunex_gge_published_story_compose;
+  uint32_t sequence = target.sequence.load(std::memory_order_acquire);
+  if ((sequence & 1u) != 0u ||
+      !target.sequence.compare_exchange_strong(
+          sequence, sequence + 1u, std::memory_order_acq_rel,
+          std::memory_order_acquire)) {
+    return;
+  }
+  target.active.store(story.active ? 1u : 0u, std::memory_order_relaxed);
+  target.story_thread_address.store(story.story_thread_address,
+                                    std::memory_order_relaxed);
+  target.raw_text_hash.store(story.raw_text_hash, std::memory_order_relaxed);
+  target.render_thread_id.store(story.render_thread_id,
+                                std::memory_order_relaxed);
+  target.rect_x.store(story.final_glyph_rect.x, std::memory_order_relaxed);
+  target.rect_y.store(story.final_glyph_rect.y, std::memory_order_relaxed);
+  target.rect_w.store(story.final_glyph_rect.width, std::memory_order_relaxed);
+  target.rect_h.store(story.final_glyph_rect.height,
+                      std::memory_order_relaxed);
+  for (size_t index = 0u; index < 8u; ++index) {
+    target.surface_words[index].store(story.final_glyph_surface.words[index],
+                                      std::memory_order_relaxed);
+  }
+  target.sealed_tick.store(story.sealed_tick, std::memory_order_relaxed);
+  target.sequence.store(sequence + 2u, std::memory_order_release);
+  if (story.active) {
+    InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+        &FushiHunexGgeTraceV3.story_sealed_published));
+  }
+}
+
+// 读一份稳定快照；序号奇数或前后不一致即判失败（与证据读取同纪律）。
+bool ReadHunexGgePublishedStoryCompose(HunexGgePendingStoryCompose* out) {
+  if (out == nullptr) return false;
+  const auto& source = g_hunex_gge_published_story_compose;
+  for (int attempt = 0; attempt < 8; ++attempt) {
+    const uint32_t before = source.sequence.load(std::memory_order_acquire);
+    if ((before & 1u) != 0u) continue;
+    HunexGgePendingStoryCompose candidate;
+    candidate.active = source.active.load(std::memory_order_relaxed) != 0u;
+    candidate.story_thread_address =
+        source.story_thread_address.load(std::memory_order_relaxed);
+    candidate.raw_text_hash =
+        source.raw_text_hash.load(std::memory_order_relaxed);
+    candidate.render_thread_id =
+        source.render_thread_id.load(std::memory_order_relaxed);
+    candidate.final_glyph_rect.x = source.rect_x.load(std::memory_order_relaxed);
+    candidate.final_glyph_rect.y = source.rect_y.load(std::memory_order_relaxed);
+    candidate.final_glyph_rect.width =
+        source.rect_w.load(std::memory_order_relaxed);
+    candidate.final_glyph_rect.height =
+        source.rect_h.load(std::memory_order_relaxed);
+    for (size_t index = 0u; index < 8u; ++index) {
+      candidate.final_glyph_surface.words[index] =
+          source.surface_words[index].load(std::memory_order_relaxed);
+    }
+    candidate.sealed_tick = source.sealed_tick.load(std::memory_order_relaxed);
+    std::atomic_thread_fence(std::memory_order_acquire);
+    if (source.sequence.load(std::memory_order_acquire) != before) continue;
+    *out = candidate;
+    return true;
+  }
+  return false;
+}
 thread_local HunexGgePendingSurfaceChain g_hunex_gge_pending_surface_chain;
 thread_local HunexGgePendingQuad g_hunex_gge_pending_quad;
 
@@ -508,6 +596,56 @@ void ScanHunexGgeUploadDescriptorOffsets(void* wrapper) {
     InterlockedIncrement(reinterpret_cast<volatile LONG*>(
         &trace->upload_desc_offset_count));
   }
+}
+
+// 前置声明：定义在下方。
+struct HunexGgePendingQuad;
+
+// BUG-2090：待定正文行活着时记录 quad 的纹理尺寸与顶点包围盒（最多 4 条）。只观测。
+void RecordHunexGgeStoryQuad(const HunexGgePendingQuad& quad) {
+  InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+      &FushiHunexGgeTraceV3.quad_reached_record));
+  // 读**进程内发布副本**而不是 thread_local：quad 段不在封存字形的那条线程上。
+  HunexGgePendingStoryCompose story;
+  if (!ReadHunexGgePublishedStoryCompose(&story) || !story.active ||
+      !IsFreshHunexGgeProjectionTick(story.sealed_tick, GetTickCount64())) {
+    return;
+  }
+  auto* trace = &FushiHunexGgeTraceV3;
+  InterlockedIncrement64(
+      reinterpret_cast<volatile LONG64*>(&trace->story_quad_seen));
+  const uint32_t slot = static_cast<uint32_t>(InterlockedCompareExchange(
+      reinterpret_cast<volatile LONG*>(&trace->story_quad_count), 0, 0));
+  if (slot >= 4u) return;
+  float min_x = quad.xy[0], max_x = quad.xy[0];
+  float min_y = quad.xy[1], max_y = quad.xy[1];
+  for (size_t i = 1u; i < 4u; ++i) {
+    const float x = quad.xy[i * 2u];
+    const float y = quad.xy[i * 2u + 1u];
+    if (x < min_x) min_x = x;
+    if (x > max_x) max_x = x;
+    if (y < min_y) min_y = y;
+    if (y > max_y) max_y = y;
+  }
+  // 只留「很扁很宽」的候选：宽 > 高 * 3 且宽 >= 120px，正文行条带的形状特征。
+  const float width = max_x - min_x;
+  const float height = max_y - min_y;
+  if (!(width >= 120.0f && height > 0.0f && width > height * 3.0f)) return;
+  uint32_t* row = &trace->story_quads[slot * 6u];
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&row[0]),
+                      static_cast<LONG>(quad.texture_width));
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&row[1]),
+                      static_cast<LONG>(quad.texture_height));
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&row[2]),
+                      static_cast<LONG>(static_cast<int32_t>(min_x)));
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&row[3]),
+                      static_cast<LONG>(static_cast<int32_t>(min_y)));
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&row[4]),
+                      static_cast<LONG>(static_cast<int32_t>(max_x)));
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&row[5]),
+                      static_cast<LONG>(static_cast<int32_t>(max_y)));
+  InterlockedIncrement(
+      reinterpret_cast<volatile LONG*>(&trace->story_quad_count));
 }
 
 void RecordHunexGgePendingUploadDim(uint32_t width, uint32_t height) {
@@ -1884,12 +2022,14 @@ void* Detour_HunexGgeRenderItem(void* arg1, void* arg2, void* arg3,
             pending.raw_text_hash != 0u &&
             IsSaneHunexGgeCpuSurface(pending.final_glyph_surface)) {
           g_hunex_gge_pending_story_compose = pending;
+          PublishHunexGgeStoryCompose(pending);
           InterlockedExchange(
               reinterpret_cast<volatile LONG*>(
                   &FushiHunexGgeTraceV3.pending_upload_story_tid),
               static_cast<LONG>(pending.render_thread_id));
         } else {
           g_hunex_gge_pending_story_compose = {};
+          PublishHunexGgeStoryCompose({});
         }
       }
       if (capture_outcome.quarantined) {
@@ -2530,6 +2670,7 @@ uint32_t Detour_HunexGgeQuadVertex(void* manager, const float* xy,
     pending.uv[index * 2u + 1u] = normalized_v;
   }
   g_hunex_gge_pending_quad = pending;
+  RecordHunexGgeStoryQuad(pending);
   return result;
 }
 

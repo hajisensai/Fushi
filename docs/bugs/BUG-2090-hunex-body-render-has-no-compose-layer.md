@@ -20,7 +20,11 @@
 - **[x] ⑥ 纹理上传段同样不成立：描述符从来读不出来，且 wrapper 里根本没有 CPU 表面指针** —
   - 把计数移到描述符门**之外**后读到决定性数字：`upload_desc={ok:0, fail:141070, with_active_story:3170}`。即 **14 万次上传里描述符一次都没读出来**，而其中 3170 次确实发生在待定正文行仍活着的时候——**待定行的存活窗口没有问题**（此前 ⑤ 里「窗口太短」的猜测据此排除），堵点纯粹在描述符可读性。
   - 于是在上传 wrapper 对象前 `0x200` 字节内**结构化搜索**「指向 sane CPU 表面的指针槽」（SEH 兜底、只在待定行活着时扫、最多记 4 个）。结果 **`count:0`**：整个范围内没有任何指针指向合法 CPU 表面。既有的 `wrapper+0xd8` / 回退 `+0x84` 不是「偏移写错了」，而是 **WoH 的上传路径根本不携带这种 CPU 表面描述符**（很可能直接从 D3D 托管资源或另一种结构上传）。
-- **总结：六段链对 WoH 逐段落空**。compose 两个入口零调用；draw→compositor 的两处调用不是正文合成点（4 次尝试 0 次源匹配）；字形坐标是行条带局部坐标；纹理上传不暴露 CPU 表面。**该引擎需要另起一套几何模型**，而不是修补现有链的某一环。可能方向（均未验证）：① 放弃 CPU 表面身份，改用 quad/sprite 的绘制顺序 + 行条带尺寸做相关；② 直接在 D3D 呈现层（Present / SetTexture）建立「条带纹理 → 屏幕矩形」的映射；③ 完全绕开渲染链，用游戏自己的 viewport/scale 全局加上从脚本层取到的行布局推算。
+- **[x] ⑦ quad 段同样落空，且 thread_local 是跨段相关的结构性障碍** —
+  - 先解决可见性：`g_hunex_gge_pending_story_compose` 是 `thread_local`，而 WoH 各渲染段并不都在封存字形的那条线程上（实测 quad 段 `seen:0`、上传段某些会话 `caller_tid != story_tid`）。**任何跨段相关都因此不可能成立**。故按文件里既有的 `PublishHunexGgeProjectionEvidence` seqlock 范式，新增一份**进程内发布副本** `g_hunex_gge_published_story_compose` + `PublishHunexGgeStoryCompose` / `ReadHunexGgePublishedStoryCompose`。**不改任何既有判据**——thread_local 那份仍是原逻辑唯一依据，发布副本目前只供诊断与跨段观测。
+  - 换用发布副本后 quad 观测仍是 `seen:0`，于是再加两个计数分型，得到决定性读数：**`story_seal={published:4, quad_reached:0}`**。即**确实有 4 条正文行封存并发布**，而 `RecordHunexGgeStoryQuad`（放在 quad 组装成功、`g_hunex_gge_pending_quad` 落地之后）**一次都没被调用到**。
+  - 而 `quad_vertex` 本身被调用 18 万次 ⇒ **quad 段每一次都在形状校验处提前返回**（要求原函数返回 4 顶点、`manager+0x18 mode == 1`、纹理尺寸 ∈ (0,32768]、offset 有限）。BUG-2087 给这几处补的 `kQuadShapeRejected` 等诊断只在 surface chain active 时才发，而那个前提在 WoH 永不成立，所以此前一直是哑的。
+- **总结：六段链对 WoH 逐段落空**。compose 两个入口零调用；draw→compositor 的两处调用不是正文合成点（4 次尝试 0 次源匹配）；字形坐标是行条带局部坐标；纹理上传不暴露 CPU 表面（0/141070，且 wrapper 前 0x200 字节内无任何 CPU 表面指针）；quad 段 18 万次调用**全部**在形状校验处被拒。**该引擎需要另起一套几何模型**，而不是修补现有链的某一环。可能方向（均未验证）：① 放弃 CPU 表面身份，改用 quad/sprite 的绘制顺序 + 行条带尺寸做相关；② 直接在 D3D 呈现层（Present / SetTexture）建立「条带纹理 → 屏幕矩形」的映射；③ 完全绕开渲染链，用游戏自己的 viewport/scale 全局加上从脚本层取到的行布局推算。
 - **[ ] ② 未完成：正文几何仍未发布** — 逐字形贴图假设的检验计数本轮读到 `glyph_texture={attempts:0,matches:0}`，因为那次会话 lookup 未开启、待定正文行不存在，**该假设既未证实也未证伪**。下一轮的最小动作：确保 lookup 已开启（`lookup_gate` 四位全开）后重读这两个计数；若 `matches>0` 则改为按「字形自己的纹理→quad→sprite」建立几何，整条 compose 段对 HUNEX 不再适用；若仍为 0，则需从 `sprite_draw` 的调用者反查正文绘制路径。
 - **[ ] ④ 未完成：attached 兜底路径卡在「宿主认领后 40ms 又撤回」的活锁（本轮定位到的最靠前边界）** — 强制一次重新求值后拿到确切原因 `attached=suspended/statusReason=geometryProviderPending`，且运行期日志复现出这个序列：
   ```

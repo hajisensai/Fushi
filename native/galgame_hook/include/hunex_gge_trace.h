@@ -14,7 +14,7 @@ inline constexpr char kHunexGgeTraceExportName[] = "FushiHunexGgeTraceV3";
 inline constexpr uint32_t kHunexGgeTraceMagic = 0x33544748u;  // "HGT3"
 // v4（BUG-2089）：头部增加四个投影 detour 的调用计数。probe 与 helper 同源构建，
 // 版本号不匹配时 probe 直接拒读，不存在跨版本误解释。
-inline constexpr uint32_t kHunexGgeTraceVersion = 14u;
+inline constexpr uint32_t kHunexGgeTraceVersion = 16u;
 inline constexpr uint32_t kHunexGgeTraceCapacity = 512u;
 
 enum class HunexGgeTraceKind : uint32_t {
@@ -335,6 +335,16 @@ struct alignas(8) HunexGgeTraceBuffer {
   uint32_t upload_desc_offsets[4] = {};
   uint32_t upload_desc_dims[8] = {};
   uint32_t upload_desc_offset_count = 0;
+  // v15：待定正文行活着时的 quad 观测。quad/sprite 两段**不需要 CPU 表面**，quad 自带
+  // 纹理尺寸与 XYZRHW 顶点，归一化后即屏幕坐标。行条带是很扁很宽的形状（N×27 宽、
+  // 约 34 高），据此可直接认出条带并拿到客户区矩形——绕开整条 compose/上传链。
+  // 每条记录 6 个 uint32：tex_w, tex_h, x0, y0, x1, y1（后四个是顶点包围盒取整）。
+  uint32_t story_quads[24] = {};
+  uint32_t story_quad_count = 0;
+  int64_t story_quad_seen = 0;
+  // v16：区分「这轮根本没有正文行封存过」与「封存了但 quad 段读不到」。
+  int64_t story_sealed_published = 0;
+  int64_t quad_reached_record = 0;
   int64_t texture_upload_calls = 0;
   int64_t quad_vertex_calls = 0;
   int64_t sprite_draw_calls = 0;
@@ -375,7 +385,7 @@ static_assert(offsetof(HunexGgeTraceEvent, lookup_gate_mask) == 440,
               "HUNEX/GGE lookup diagnostic trace ABI drifted");
 static_assert(sizeof(HunexGgeTraceSlot) == 464,
               "HUNEX/GGE trace slot ABI drifted");
-static_assert(offsetof(HunexGgeTraceBuffer, slots) == 464,
+static_assert(offsetof(HunexGgeTraceBuffer, slots) == 584,
               "HUNEX/GGE trace header ABI drifted");
 
 }  // namespace fushi_voice_hook

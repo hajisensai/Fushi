@@ -869,6 +869,11 @@ struct alignas(8) HunexGgeTraceHeaderSnapshot {
   uint32_t upload_desc_offsets[4] = {};
   uint32_t upload_desc_dims[8] = {};
   uint32_t upload_desc_offset_count = 0;
+  uint32_t story_quads[24] = {};
+  uint32_t story_quad_count = 0;
+  int64_t story_quad_seen = 0;
+  int64_t story_sealed_published = 0;
+  int64_t quad_reached_record = 0;
   int64_t texture_upload_calls = 0;
   int64_t quad_vertex_calls = 0;
   int64_t sprite_draw_calls = 0;
@@ -2130,6 +2135,19 @@ bool DumpHunexGgeTrace(DWORD pid) {
     printf("%s%ux%u", i ? "," : "", header.pending_upload_dims[i * 2],
            header.pending_upload_dims[i * 2 + 1]);
   }
+  printf("]}");
+  printf(" story_quads={seen:%lld,count:%u,rows:[",
+         static_cast<long long>(header.story_quad_seen),
+         header.story_quad_count);
+  for (uint32_t i = 0; i < 4; ++i) {
+    const uint32_t* r = &header.story_quads[i * 6];
+    printf("%stex%ux%u@(%d,%d)-(%d,%d)", i ? "," : "", r[0], r[1],
+           static_cast<int32_t>(r[2]), static_cast<int32_t>(r[3]),
+           static_cast<int32_t>(r[4]), static_cast<int32_t>(r[5]));
+  }
+  printf(" story_seal={published:%lld,quad_reached:%lld}",
+         static_cast<long long>(header.story_sealed_published),
+         static_cast<long long>(header.quad_reached_record));
   printf("]}");
   printf(" pending_upload_threads={any:%lld,story_tid:%u,caller_tid:%u}",
          static_cast<long long>(header.pending_upload_any_thread),
