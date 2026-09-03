@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1944 条。点号进各自文件。
+> 共 1945 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2090](bugs/BUG-2090-overlay-hover-highlight-brush-leak.md) | ✅ | ✅ | overlay 悬浮高亮窗口类每次重建都漏一个 GDI brush |
 | [BUG-2087](bugs/BUG-2087-sgre-looked-up-term-not-highlighted.md) | ✅ | ✅ | SGRE 游戏内查词点击后被查的词在台词里没有高亮：直连路径不把高亮区间发给 hook |
 | [BUG-2086](bugs/BUG-2086-sgre-hover-glyph-highlight-missing.md) | ✅ | 🚧 | SGRE 游戏内查词鼠标悬浮在字上没有高亮反馈：只有 KiriKiri 在引擎图层画高亮 |
 | [BUG-2085](bugs/BUG-2085-sgre-ingame-card-mining-text-generation-mismatch.md) | ✅ | ✅ | SGRE 游戏内卡片制卡恒失败：点击载荷 text_generation 填的是查词捕获代数而非文本行序号 |
