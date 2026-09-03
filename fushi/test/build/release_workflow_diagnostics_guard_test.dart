@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -215,9 +216,36 @@ void main() {
     final String macosJob = workflowJob(workflow, 'macos');
     final String iosJob = workflowJob(workflow, 'ios');
 
-    expect(workflow, contains("branches: ['main', 'develop']"),
+    // 判据钉的是「日常 main/develop 的 **PR** 都被四平台编译门覆盖」，而不是整份文件里
+    // 出现过那串字面量。原来那条是整文件 `contains`，**分不清 push 和 pull_request**。
+    // 实测出的确切洞（不是推测）：把 `pull_request` 的 develop 删掉、只留 `push` 的，
+    // 文件里那串字面量仍在 ⇒ 旧判据**照绿**，而编译门已经不覆盖 develop 的任何 PR 了。
+    // （两处都删则字面量消失、旧判据也会红——所以洞只有这一种形状。）按触发器切段再判。
+    //
+    // 2026-09-03：develop 的 **push** 已被有意移出本 workflow。每次合并会同时点燃三条长
+    // workflow，实测「Build and Test」常年被后续 push 的 concurrency 取消 = 等于没跑；
+    // develop push 上只保留 release.yml，因为它是**唯一**带 app 全量单测门的那条。
+    // 覆盖没有减少：develop 的每条 PR 仍跑本门（下面断言的就是这一条）。
+    final List<String> lines = const LineSplitter().convert(workflow);
+    final int prAt = lines.indexOf('  pull_request:');
+    expect(prAt, greaterThan(-1), reason: 'pull_request 触发器不见了');
+    // 段末 = 下一个同级（两空格缩进、非空白开头）的键。
+    int prEnd = lines.length;
+    for (int i = prAt + 1; i < lines.length; i++) {
+      final String l = lines[i];
+      if (l.startsWith('  ') && !l.startsWith('   ') && l.trim().isNotEmpty) {
+        prEnd = i;
+        break;
+      }
+    }
+    final String prBlock = lines.sublist(prAt, prEnd).join('|');
+    // 自校验：切出来的确实是 pull_request 段（段里必须有 branches:），否则下面的断言
+    // 会在一个错窗口上恒真/恒假地「通过」。
+    expect(prBlock, contains('branches:'),
+        reason: 'pull_request 段切歪了（prAt=$prAt prEnd=$prEnd），判据已失效');
+    expect(prBlock, contains("branches: ['main', 'develop']"),
         reason: 'the multiplatform compile gate must run on routine '
-            'main/develop PRs and pushes, not only ad-hoc ci/** branches');
+            'main/develop PRs, not only ad-hoc ci/** branches');
     expect(workflow, isNot(contains("branches: ['ci/**']")));
     expect(workflow, isNot(contains('if: false')),
         reason: 'iOS/macOS compile jobs must not be left disabled');

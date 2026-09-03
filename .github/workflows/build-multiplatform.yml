@@ -12,7 +12,13 @@ name: Build and Test Android / macOS / Linux / Windows
 on:
   workflow_dispatch:
   push:
-    branches: ['main', 'develop']
+    # develop push 上只保留 release.yml（Build Release APK，本仓唯一带 app 全量单测门的
+    # workflow）。此前每次合并会同时点燃三条长 workflow，runner 排队到互相 cancel，
+    # 「Build and Test」实测常年被后续 push 的 concurrency 取消、等于没跑。
+    # **日常覆盖没有减少**：下面的 pull_request 仍是 ['main','develop']，develop 的每条
+    # PR 照跑四平台编译门；手动 workflow_dispatch 也在。去掉的只是「合进 develop 之后
+    # 再重跑一遍」这份纯冗余。
+    branches: ['main']
     paths: &multiplatform_paths
       - 'fushi/**'
       - 'packages/**'

@@ -10,7 +10,11 @@ on:
   # Fushi 改名过渡期曾暂停 push 自动发布（2026-08-07 用户指示），
   # 2026-08-13 用户指示恢复。
   push:
-    branches: ['main', 'develop']
+    # develop push 只保留 release.yml（唯一带 app 全量单测门的那条）。本 workflow 不跑
+    # 任何 app 测试、只产发布物，合进 develop 后再出一份桌面/Apple 产物是纯冗余，且和
+    # 另外两条抢 runner（实测在 develop 上排队 30+ 分钟没跑上）。
+    # `release: [published]` 与 `workflow_dispatch` 不受影响 —— 手动发测试版/正式版照常。
+    branches: ['main']
     paths:
       - 'fushi/**'
       - 'packages/**'
