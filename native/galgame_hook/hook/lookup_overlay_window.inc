@@ -83,6 +83,82 @@ bool RequestLookupOverlayOutsideDismiss() {
   return true;
 }
 
+// ══ 悬浮字形高亮：可穿透、不激活的半透明分层窗 ══════════════════════════════════════
+//
+// KiriKiri 的悬浮高亮由 TJS 在引擎图层里同步绘制；没有脚本宿主的引擎（SGRE 等）过去
+// 什么都不画，用户把鼠标放在字上得不到任何反馈（BUG-2086）。这里用一个独立的分层窗
+// 盖在被悬浮字形的屏幕矩形上：WS_EX_TRANSPARENT 让点击穿透到游戏（LL 钩子照旧看得
+// 见），WS_EX_NOACTIVATE 绝不抢焦点，WindowFromPoint 也会跳过它，所以引擎适配器的
+// 「光标在游戏窗口内」判定不受影响。
+//
+// 线程模型与卡片呈现器一致：任意线程只写请求（下面几个原子量），UI 线程在
+// kOverlayTimerId 定时器里应用；窗口只在 UI 线程上创建/移动/隐藏。
+volatile LONG g_hover_highlight_visible = 0;
+volatile LONG g_hover_highlight_x = 0;
+volatile LONG g_hover_highlight_y = 0;
+volatile LONG g_hover_highlight_w = 0;
+volatile LONG g_hover_highlight_h = 0;
+// 每次请求变化 +1；UI 线程按它去重，静止的光标不会每 16ms 重复 SetWindowPos。
+volatile LONG g_hover_highlight_generation = 0;
+
+void RequestLookupHoverHighlight(int32_t screen_x, int32_t screen_y,
+                                 int32_t width, int32_t height) {
+  const bool same =
+      InterlockedCompareExchange(&g_hover_highlight_visible, 0, 0) != 0 &&
+      InterlockedCompareExchange(&g_hover_highlight_x, 0, 0) == screen_x &&
+      InterlockedCompareExchange(&g_hover_highlight_y, 0, 0) == screen_y &&
+      InterlockedCompareExchange(&g_hover_highlight_w, 0, 0) == width &&
+      InterlockedCompareExchange(&g_hover_highlight_h, 0, 0) == height;
+  if (same) return;
+  InterlockedExchange(&g_hover_highlight_x, screen_x);
+  InterlockedExchange(&g_hover_highlight_y, screen_y);
+  InterlockedExchange(&g_hover_highlight_w, width);
+  InterlockedExchange(&g_hover_highlight_h, height);
+  InterlockedExchange(&g_hover_highlight_visible, 1);
+  InterlockedIncrement(&g_hover_highlight_generation);
+}
+
+void ClearLookupHoverHighlight() {
+  if (InterlockedExchange(&g_hover_highlight_visible, 0) != 0) {
+    InterlockedIncrement(&g_hover_highlight_generation);
+  }
+}
+
+// ══ 被查词高亮区间（BUG-2087）══
+// host 直连路径 present 成功后追加一张 highlight-only 帧（无像素），只带
+// highlight_start/len（UTF-16 下标，与引擎精确文本同域）。通用呈现器不画它（那要引擎
+// 图层），但把区间记下来，让自带高亮窗的适配器在卡片可见期间把这段字格标出来；
+// dismiss / capture-suppress 帧清除。任意线程读，UI 线程写。
+volatile LONG g_term_highlight_active = 0;
+volatile LONG g_term_highlight_start = 0;
+volatile LONG g_term_highlight_len = 0;
+
+void SetLookupTermHighlight(uint32_t start, uint32_t len) {
+  InterlockedExchange(&g_term_highlight_start, static_cast<LONG>(start));
+  InterlockedExchange(&g_term_highlight_len, static_cast<LONG>(len));
+  InterlockedExchange(&g_term_highlight_active, len != 0 ? 1 : 0);
+}
+
+void ClearLookupTermHighlight() {
+  InterlockedExchange(&g_term_highlight_active, 0);
+}
+
+// 当前是否有被查词区间；有则输出 [start, start+len)。
+bool ReadLookupTermHighlight(uint32_t* start, uint32_t* len) {
+  if (InterlockedCompareExchange(&g_term_highlight_active, 0, 0) == 0) {
+    return false;
+  }
+  if (start != nullptr) {
+    *start = static_cast<uint32_t>(
+        InterlockedCompareExchange(&g_term_highlight_start, 0, 0));
+  }
+  if (len != nullptr) {
+    *len = static_cast<uint32_t>(
+        InterlockedCompareExchange(&g_term_highlight_len, 0, 0));
+  }
+  return true;
+}
+
 uint64_t ReadOverlaySharedU64(volatile uint64_t* value) {
   return static_cast<uint64_t>(InterlockedCompareExchange64(
       reinterpret_cast<volatile LONG64*>(value), 0, 0));
@@ -360,6 +436,7 @@ void PollOverlayFrame() {
 
   if ((frame->flags & fushi_voice_hook::kLookupFrameDismiss) != 0) {
     g_overlay.last_presented_seq = seq_before;
+    ClearLookupTermHighlight();
     HideOverlay();
     return;
   }
@@ -368,6 +445,7 @@ void PollOverlayFrame() {
   // 确认延后一轮（见函数开头）。
   if ((frame->flags & fushi_voice_hook::kLookupFrameCaptureSuppress) != 0) {
     g_overlay.last_presented_seq = seq_before;
+    ClearLookupTermHighlight();
     HideOverlay();
     g_overlay.pending_suppress_ack_seq = seq_before;
     return;
@@ -375,8 +453,10 @@ void PollOverlayFrame() {
   // 只更新高亮的帧按定义不带像素，过不了 IsLookupFrameSane。通用呈现器把高亮画在
   // 引擎自己的图层上这件事做不到（那是 KiriKiri 专属），所以这里**消费掉**它而不是
   // 判成坏帧——不消费会每 16ms 重复命中同一槽，判成坏帧则会点亮误导性的 frame_rejected。
+  // BUG-2087：区间本身记下来，自带高亮窗的适配器（SGRE）在卡片可见期间画它。
   if ((frame->flags & fushi_voice_hook::kLookupFrameHighlightOnly) != 0) {
     g_overlay.last_presented_seq = seq_before;
+    SetLookupTermHighlight(frame->highlight_start, frame->highlight_len);
     return;
   }
   // 跨进程不可信的 width/height/pitch 必须先过这道闸门再谈拷贝。
@@ -434,12 +514,114 @@ void PollOverlayFrame() {
   }
 }
 
+// 悬浮高亮窗（UI 线程私有）。颜色/透明度取「淡黄底、约 35% 不透明」：盖在白字上仍
+// 读得清，与 KiriKiri 图层高亮的观感一致。
+struct LookupHoverHighlightWindow {
+  HWND window = nullptr;
+  bool shown = false;
+  LONG applied_generation = 0;
+};
+LookupHoverHighlightWindow g_hover_highlight;
+constexpr BYTE kHoverHighlightAlpha = 90;
+constexpr COLORREF kHoverHighlightColor = RGB(255, 214, 64);
+constexpr wchar_t kHoverHighlightClassName[] = L"FushiLookupHoverHighlight";
+
+LRESULT CALLBACK LookupHoverHighlightProc(HWND window, UINT message,
+                                          WPARAM wparam, LPARAM lparam) {
+  switch (message) {
+    case WM_MOUSEACTIVATE:
+      return MA_NOACTIVATE;
+    case WM_NCHITTEST:
+      return HTTRANSPARENT;
+    default:
+      break;
+  }
+  return DefWindowProcW(window, message, wparam, lparam);
+}
+
+// UI 线程：把最新的高亮请求落到窗口上。只在请求代数变化时动窗口。
+void ApplyLookupHoverHighlight() {
+  const LONG generation =
+      InterlockedCompareExchange(&g_hover_highlight_generation, 0, 0);
+  if (generation == g_hover_highlight.applied_generation) return;
+  g_hover_highlight.applied_generation = generation;
+  const bool visible =
+      InterlockedCompareExchange(&g_hover_highlight_visible, 0, 0) != 0;
+  const int32_t x = InterlockedCompareExchange(&g_hover_highlight_x, 0, 0);
+  const int32_t y = InterlockedCompareExchange(&g_hover_highlight_y, 0, 0);
+  const int32_t w = InterlockedCompareExchange(&g_hover_highlight_w, 0, 0);
+  const int32_t h = InterlockedCompareExchange(&g_hover_highlight_h, 0, 0);
+  if (!visible || w <= 0 || h <= 0) {
+    if (g_hover_highlight.shown && g_hover_highlight.window != nullptr) {
+      ShowWindow(g_hover_highlight.window, SW_HIDE);
+    }
+    g_hover_highlight.shown = false;
+    return;
+  }
+  if (g_hover_highlight.window == nullptr) {
+    // BUG-2090：窗口类是**进程生命期的不可变全局**，注册一次即可。
+    //
+    // 原实现每次(重)建窗口都 `CreateSolidBrush` + `RegisterClassExW`，而
+    // [DestroyLookupHoverHighlight] 只销毁窗口、**从不 UnregisterClass** ⇒ 类一直在 ⇒
+    // 第二次起注册恒返回 `ERROR_CLASS_ALREADY_EXISTS`，**那一份新建的 brush 没有任何
+    // 人接管**（类只接管注册成功那一次传进去的）。overlay 线程每 Stop→Start 一轮就漏
+    // 一个 GDI brush，而本 DLL 常驻在游戏进程里。
+    //
+    // 收敛成「一次注册」之后，「建 brush → 交给类」这对配对全函数只发生一次，
+    // 两条没完成转交的路径就地 `DeleteObject`——不存在第二条泄漏路径可写漏。
+    //
+    // 线程：本函数只被 [LookupOverlayProc] 的 `WM_TIMER` 调到（overlay UI 线程单线程），
+    // 故用朴素 static 标志而不是函数内 magic static——后者首次初始化要拿一把锁，
+    // hook DLL 里能免则免（BUG-2046 的教训：hook 进程内的锁会撞 MinHook Freeze）。
+    // DLL 卸载时 Windows 会连同 hInstance 一起注销该类，重新加载后本标志也重置为
+    // false，两者同步，不会出现「标志说已注册、类其实没了」。
+    static bool s_hover_class_registered = false;
+    if (!s_hover_class_registered) {
+      WNDCLASSEXW wc = {};
+      wc.cbSize = sizeof(wc);
+      wc.lpfnWndProc = &LookupHoverHighlightProc;
+      wc.hInstance = g_module;
+      wc.lpszClassName = kHoverHighlightClassName;
+      const HBRUSH background = CreateSolidBrush(kHoverHighlightColor);
+      wc.hbrBackground = background;
+      const ATOM atom = RegisterClassExW(&wc);
+      if (atom == 0) {
+        // 注册没成功 = 类没接管这把 brush，无论哪种原因都必须自己删。
+        if (background != nullptr) DeleteObject(background);
+        if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return;
+        // 同名类已由别的模块（或本 DLL 的上一次加载）注册：直接复用它。
+      }
+      s_hover_class_registered = true;
+    }
+    g_hover_highlight.window = CreateWindowExW(
+        WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_NOACTIVATE |
+            WS_EX_TOOLWINDOW,
+        kHoverHighlightClassName, L"", WS_POPUP, x, y, w, h, nullptr, nullptr,
+        g_module, nullptr);
+    if (g_hover_highlight.window == nullptr) return;
+    SetLayeredWindowAttributes(g_hover_highlight.window, 0,
+                               kHoverHighlightAlpha, LWA_ALPHA);
+  }
+  SetWindowPos(g_hover_highlight.window, HWND_TOPMOST, x, y, w, h,
+               SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  g_hover_highlight.shown = true;
+}
+
+void DestroyLookupHoverHighlight() {
+  if (g_hover_highlight.window != nullptr) {
+    DestroyWindow(g_hover_highlight.window);
+    g_hover_highlight.window = nullptr;
+  }
+  g_hover_highlight.shown = false;
+}
+
 LRESULT CALLBACK LookupOverlayProc(HWND window, UINT message, WPARAM wparam,
                                    LPARAM lparam) {
   switch (message) {
     case WM_TIMER:
       if (wparam == kOverlayTimerId) {
         PollOverlayFrame();
+        ApplyLookupHoverHighlight();
         return 0;
       }
       break;
@@ -527,6 +709,7 @@ DWORD WINAPI LookupOverlayThread(LPVOID) {
   }
   KillTimer(g_overlay.window, kOverlayTimerId);
   InterlockedExchange(&g_lookup_overlay_input_shield_visible, 0);
+  DestroyLookupHoverHighlight();
   DestroyWindow(g_overlay.window);
   g_overlay.window = nullptr;
   return 0;

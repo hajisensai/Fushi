@@ -225,6 +225,47 @@ void main() {
       expect(service.entries.last.text, 'いいえ');
     });
 
+    test('同句两次快照之间插了别的线程也要折（SGRE：系统串线程夹在中间）', () {
+      // 真机：SGRE exact 先出半句，WideCharToMultiByte 线程紧接着喷几条
+      // normalrubytext…，然后 SGRE exact 才出整句。只看紧邻尾巴就断链，工作台
+      // 里两条各带同一份语音。（半句取 ≥ kMinFoldableLength 字：3 字的「ねぇね」
+      // 按「过短不折」判据本来就不参与折叠，那是另一条规则。）
+      final TexthookerLineEntry? first = append('ねぇねぇ。なに', seq: 1);
+      for (int i = 0; i < 3; i++) {
+        service.appendLine(
+          'normalrubytextrubytextruby',
+          source: TexthookerLineSource.engineHook,
+          sourceLabel: 'engine_hook',
+          sourceSequence: 10 + i,
+          textThreadKey: 'thread-system',
+        );
+      }
+      final TexthookerLineEntry? merged =
+          append('ねぇねぇ。なにブツブツ言ってるの？', seq: 20);
+
+      expect(merged!.id, first!.id, reason: '整句必须回吞到最早那条，身份不跳');
+      final List<String> texts =
+          service.entries.map((TexthookerLineEntry e) => e.text).toList();
+      expect(texts.where((String t) => t.startsWith('ねぇねぇ')).length, 1,
+          reason: '半句与整句折成一条');
+      expect(texts.where((String t) => t == 'normalrubytextrubytextruby').length,
+          3,
+          reason: '其它线程的行原地保留，不被折叠碰到');
+    });
+
+    test('回看只认同端点且仍要过折叠判据：隔着别的线程的两句无关台词不折', () {
+      append('おはようございます。', seq: 1);
+      service.appendLine(
+        'normalrubytextrubytextruby',
+        source: TexthookerLineSource.engineHook,
+        sourceLabel: 'engine_hook',
+        sourceSequence: 2,
+        textThreadKey: 'thread-system',
+      );
+      append('いってきます。', seq: 3);
+      expect(service.entries, hasLength(3));
+    });
+
     test('折叠后 lineId 保持最早那条（浮窗/游戏内卡片的身份不跳）', () {
       final TexthookerLineEntry? first = append(kZatoFirst, seq: 1);
       append(kZatoSecondSegment, seq: 2);
