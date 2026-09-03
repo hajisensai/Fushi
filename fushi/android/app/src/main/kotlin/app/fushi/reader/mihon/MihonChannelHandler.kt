@@ -124,7 +124,22 @@ class MihonChannelHandler(private val app: Application) {
         executor.shutdownNow()
     }
 
-    private fun handle(call: MethodCall): Any? = when (call.method) {
+    /**
+     * 通道回复的唯一出口：void 方法回 `null`。
+     *
+     * `dispatch` 是 `when` 表达式，分支若调的是 Unit 函数，表达式值就是
+     * `kotlin.Unit` 单例；StandardMessageCodec 不认它，`result.success(Unit)`
+     * 会在主线程抛 IllegalArgumentException 直接把进程带崩（BUG-2081：
+     * `uninstallPrivateExtension` / `clearSourceData` 两条分支都中招，预览
+     * 标记清不掉后每次进漫画 Discover/Import 都复崩）。收口放这里，不靠
+     * 每个分支手写 `; null`。
+     */
+    private fun handle(call: MethodCall): Any? {
+        val value = dispatch(call)
+        return if (value === Unit) null else value
+    }
+
+    private fun dispatch(call: MethodCall): Any? = when (call.method) {
         "capabilities" -> mapOf(
             "fushiMihonBridge" to 1,
             "sourceFactory" to true,
@@ -139,14 +154,8 @@ class MihonChannelHandler(private val app: Application) {
         "fetchImage" -> fetchPageImage(call.argumentsMap())
         "fetchSourceImage" -> fetchSourceImage(call.argumentsMap())
         "clearSourceData" -> clearSourceData(call.argumentsMap())
-        "invalidateExtension" -> {
-            loader.invalidate(stringArgument(call, "packageName"))
-            null
-        }
-        "dispose" -> {
-            loader.clear()
-            null
-        }
+        "invalidateExtension" -> loader.invalidate(stringArgument(call, "packageName"))
+        "dispose" -> loader.clear()
         else -> throw MihonHostException("NOT_IMPLEMENTED", "Unknown Mihon channel method")
     }
 
