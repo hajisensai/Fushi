@@ -111,6 +111,32 @@ void main() {
     );
   });
 
+  test('多包同体积时按路径定二:解哪个包与调用方清单顺序无关', () async {
+    // 两个 zip 的条目名等长、内容等长 → 字节数完全相同，只比体积必然平局，
+    // 平局落回输入顺序就会「同一份下载物两次解出不同的书」。
+    final File a = await _writeZip(tempDir, 'aaa.zip', <String, String>{
+      'a.epub': 'x',
+    });
+    final File z = await _writeZip(tempDir, 'zzz.zip', <String, String>{
+      'b.epub': 'x',
+    });
+    expect(a.lengthSync(), z.lengthSync(), reason: '前提：体积必须平局');
+
+    for (final List<String> input in <List<String>>[
+      <String>[a.path, z.path],
+      <String>[z.path, a.path],
+    ]) {
+      final List<String> log = <String>[];
+      final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
+        importers: _recordingImporters(log),
+        extractor: DiscoveryArchiveExtractor(sevenZipOverride: ''),
+      );
+      await executor.importPaths(DiscoveryMediaKind.novel, input);
+      expect(log, hasLength(1), reason: input.join(','));
+      expect(log.single, endsWith('a.epub'), reason: input.join(','));
+    }
+  });
+
   test('zip 有声书包:齐料 → 对齐导入', () async {
     final List<String> log = <String>[];
     final DiscoveryImportExecutor executor = DiscoveryImportExecutor(

@@ -20,12 +20,10 @@ void main() {
   // flutter test 的 cwd 是 hibiki 包根。
   late final String css;
   late final String js;
-  late final String html;
 
   setUpAll(() {
     css = File('assets/popup/popup.css').readAsStringSync();
     js = File('assets/popup/popup.js').readAsStringSync();
-    html = File('assets/popup/popup.html').readAsStringSync();
   });
 
   group('#1 音高来源彩色药丸', () {
@@ -124,11 +122,27 @@ void main() {
       expect(svgBody, contains('height: 1em'));
     });
 
-    test('标签说明遮罩的关闭按钮也换成内联 SVG（关闭图标一并统一）', () {
-      expect(html, contains('class="overlay-close"'),
-          reason: 'overlay-close 结构保留');
-      expect(RegExp(r'overlay-close"[^>]*>\s*<svg').hasMatch(html), isTrue,
-          reason: 'overlay-close 用内联 SVG 而非 × 文字字形');
+    test('标签说明浮层的关闭按钮也换成内联 SVG（关闭图标一并统一）', () {
+      // 浮层已不再是 popup.html 里的静态 `.overlay`，改由 popup.js 现建，
+      // 关闭按钮相应从 `.overlay-close` 变成 `.grammar-tooltip-close`。
+      // 判据不变：必须是内联 SVG，不能退回 × 文字字形（字形冒充图标会因
+      // 视觉重心偏移而无法真正居中，根治只能是几何绘制）。
+      final String js = File('assets/popup/popup.js').readAsStringSync();
+      expect(
+        js,
+        contains("className: 'grammar-tooltip-close'"),
+        reason: 'grammar-tooltip-close 结构保留',
+      );
+      expect(
+        js,
+        contains("close.innerHTML = iconSvg('close');"),
+        reason: '关闭按钮用内联 SVG（复用 ICON_PATHS.close）而非 × 文字字形',
+      );
+      expect(
+        js,
+        isNot(contains("textContent = '×'")),
+        reason: '不得退回 × 文字字形',
+      );
     });
   });
 

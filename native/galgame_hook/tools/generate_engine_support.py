@@ -92,18 +92,11 @@ LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS = {
         "kLookupGeometryProviderEngineExactLayout",
         "kLookupGeometryProviderIdSgre",
     ): ("sgre", "engine_exact_layout"),
-    # Reserved identity only. Its presence here lets the parity guard produce
-    # an engine-scoped failure if observation telemetry ever starts calling
-    # OfferReady/PublishHit before the manifest deliberately admits it.
     (
         "kLookupGeometryProviderEngineExactLayout",
         "kLookupGeometryProviderIdHunexGge",
     ): ("hunex_gge", "engine_exact_layout"),
 }
-LOOKUP_HUNEX_OBSERVATION_ONLY_PAIR = (
-    "kLookupGeometryProviderEngineExactLayout",
-    "kLookupGeometryProviderIdHunexGge",
-)
 SIGNATURE_FIELDS = (
     "executable_names",
     "pe_architectures",
@@ -390,10 +383,6 @@ def _validate_lookup_provider_manifest_parity(
     manifest: dict[str, Any], source_root: Path
 ) -> None:
     source_pairs = discover_production_lookup_provider_pairs(source_root)
-    _require(
-        LOOKUP_HUNEX_OBSERVATION_ONLY_PAIR not in source_pairs,
-        "HUNEX exact geometry is observation-only and must not OfferReady/PublishHit",
-    )
 
     source_claims: dict[str, set[str]] = {}
     for pair in source_pairs:

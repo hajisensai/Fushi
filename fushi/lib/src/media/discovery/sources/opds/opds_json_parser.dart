@@ -32,6 +32,7 @@ OpdsFeed parseOpdsJsonFeed(String body, {required Uri baseUri}) {
 
   String? nextHref;
   String? searchTemplate;
+  String? searchDescriptionHref;
   for (final Map<String, Object?> link in _mapList(decoded['links'])) {
     final String? href = _string(link['href']);
     if (href == null) continue;
@@ -40,7 +41,17 @@ OpdsFeed parseOpdsJsonFeed(String body, {required Uri baseUri}) {
       nextHref ??= _resolve(baseUri, href);
     }
     if (rels.contains('search')) {
-      searchTemplate ??= _normalizeSearchTemplate(baseUri, href);
+      // 与 1.2 侧同一条判据（`opds_atom_parser.dart` 的 `case 'search'`）：
+      // 只有**带模板占位符**的 href 才是能直接用的搜索模板。非模板的 search
+      // link（OpenSearch 描述文档，或服务端只给了一个搜索页地址）必须走
+      // searchDescriptionHref 二次抓取——把它当模板用的话，下游
+      // `replaceAll('{searchTerms}', …)` 替换 0 次，**用户的关键词被静默丢掉，
+      // 服务端返回的是未过滤的全量结果**：用户以为搜到了，其实搜索没生效。
+      if (_hasSearchTemplateToken(href)) {
+        searchTemplate ??= _normalizeSearchTemplate(baseUri, href);
+      } else {
+        searchDescriptionHref ??= _resolve(baseUri, href);
+      }
     }
   }
 
@@ -61,6 +72,7 @@ OpdsFeed parseOpdsJsonFeed(String body, {required Uri baseUri}) {
     entries: entries,
     nextHref: nextHref,
     searchTemplate: searchTemplate,
+    searchDescriptionHref: searchDescriptionHref,
   );
 }
 
@@ -93,12 +105,20 @@ OpdsPublicationEntry? _publication(Map<String, Object?> raw, Uri baseUri) {
     final String? href = _string(link['href']);
     if (href == null) continue;
     final String resolved = _resolve(baseUri, href);
+    final Set<String> rels = _rels(link['rel']);
     OpdsAcquisitionRel? rel;
-    for (final String candidate in _rels(link['rel'])) {
+    for (final String candidate in rels) {
       rel = OpdsAcquisitionRel.fromRel(candidate);
       if (rel != null) break;
     }
-    if (rel == null) continue;
+    // OPDS 2.0 里 acquisition link **省略 `rel` 是合法写法**——`links` 长在
+    // publication 底下，位置本身已经说明它是这本书的获取链接。按「没 rel 就
+    // 跳过」处理会让这条 link 被丢掉，links 随之为空，**整条出版物消失**：
+    // 用户看到的是「这个目录里少了一半书」，而且没有任何报错。
+    // 有 rel 但没有一个是 acquisition rel（`self` / `alternate` / `cover`）
+    // 仍然跳过——那些确实不是下载链接。
+    if (rel == null && rels.isNotEmpty) continue;
+    rel ??= OpdsAcquisitionRel.generic;
     final String? type = _string(link['type']);
     links.add(
       OpdsAcquisitionLink(
@@ -154,6 +174,14 @@ String _normalizeSearchTemplate(Uri baseUri, String href) {
   final String resolved = _resolve(baseUri, masked);
   return resolved.replaceAll(token, '{searchTerms}');
 }
+
+/// href 里是否带搜索模板占位符（1.2 的 OpenSearch 写法 + 2.0 的 RFC 6570 写法）。
+/// 没有占位符的 search link 不是模板，见 [parseOpdsJsonFeed] 里的分流注释。
+bool _hasSearchTemplateToken(String href) =>
+    href.contains('{searchTerms}') ||
+    href.contains('{query}') ||
+    href.contains('{?query}') ||
+    href.contains('{&query}');
 
 String _resolve(Uri baseUri, String href) {
   try {

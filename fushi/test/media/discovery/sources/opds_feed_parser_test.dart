@@ -365,4 +365,192 @@ void main() {
       expect(openAccess.bestLinkFor(DiscoveryMediaKind.novel), isNotNull);
     });
   });
+
+  // ── 跨格式契约 ─────────────────────────────────────────────────────────
+  //
+  // 上面两个 group 各测各的，于是「一侧有、另一侧漏」的洞谁都抓不到——实测
+  // 两侧至少差了搜索模板门与 next 覆盖方向两处，其中搜索模板门那处的后果是
+  // **用户的关键词被静默丢掉、返回未过滤的全量结果**。这个 group 用**等价的
+  // 两份文档**同时喂两个解析器，把「不论 1.2 还是 2.0 都必须成立」的不变式
+  // 一次钉死；新增方言处理只要只做了一侧，这里就红。
+  group('跨格式契约（1.2 与 2.0 必须给出同一套结论）', () {
+    /// 一对语义等价的文档：同一台服务器的同一页，只是换了个格式。
+    ({OpdsFeed atom, OpdsFeed json}) both({
+      required String atomBody,
+      required String jsonBody,
+    }) =>
+        (
+          atom: parseOpdsAtomFeed(atomBody, baseUri: _base),
+          json: parseOpdsJsonFeed(jsonBody, baseUri: _base),
+        );
+
+    test('search link 不是模板时：不许冒充模板，交给 searchDescriptionHref 二次抓取', () {
+      // 关键词替换在下游是 `replaceAll('{searchTerms}', …)`：把一个不含占位符的
+      // URL 当模板，替换 0 次，请求照发但**没带关键词**——服务端老老实实返回
+      // 整个目录，用户以为搜到了。
+      final ({OpdsFeed atom, OpdsFeed json}) f = both(
+        atomBody: '''
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <link rel="search" href="/api/v1/opds/search"
+        type="application/opensearchdescription+xml"/>
+</feed>
+''',
+        jsonBody: '''
+{"metadata":{"title":"x"},
+ "links":[{"rel":"search","href":"/api/v1/opds/search",
+           "type":"application/opensearchdescription+xml"}]}
+''',
+      );
+      for (final (String name, OpdsFeed feed) in <(String, OpdsFeed)>[
+        ('atom', f.atom),
+        ('json', f.json),
+      ]) {
+        expect(feed.searchTemplate, isNull, reason: '$name: 非模板不许当模板');
+        expect(
+          feed.searchDescriptionHref,
+          'https://books.example.com/api/v1/opds/search',
+          reason: '$name: 非模板的 search link 必须留给二次抓取',
+        );
+      }
+    });
+
+    test('search link 带占位符时：归一成含 {searchTerms} 的绝对模板', () {
+      final ({OpdsFeed atom, OpdsFeed json}) f = both(
+        atomBody: '''
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <link rel="search" href="/api/v1/opds/search?q={searchTerms}"
+        type="application/atom+xml"/>
+</feed>
+''',
+        // 2.0 的 RFC 6570 写法必须被归一成同一个下游只认的 {searchTerms}。
+        jsonBody: '''
+{"metadata":{"title":"x"},
+ "links":[{"rel":"search","href":"/api/v1/opds/search{?query}",
+           "type":"application/opds+json"}]}
+''',
+      );
+      expect(f.atom.searchTemplate,
+          'https://books.example.com/api/v1/opds/search?q={searchTerms}');
+      expect(f.json.searchTemplate,
+          'https://books.example.com/api/v1/opds/search?query={searchTerms}');
+      for (final OpdsFeed feed in <OpdsFeed>[f.atom, f.json]) {
+        expect(feed.searchTemplate, contains('{searchTerms}'));
+      }
+    });
+
+    test('服务端重复发 next 时：两侧都取文档顺序里的第一条', () {
+      // 覆盖方向不一致的后果是「同一台服务器换个格式就翻到不同的页」。
+      final ({OpdsFeed atom, OpdsFeed json}) f = both(
+        atomBody: '''
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <link rel="next" href="/p/2"/>
+  <link rel="next" href="/p/99"/>
+</feed>
+''',
+        jsonBody: '''
+{"metadata":{"title":"x"},
+ "links":[{"rel":"next","href":"/p/2"},{"rel":"next","href":"/p/99"}]}
+''',
+      );
+      expect(f.atom.nextHref, 'https://books.example.com/p/2');
+      expect(f.json.nextHref, 'https://books.example.com/p/2');
+    });
+
+    test('标题为空的条目：两侧都丢弃，不产出一行点不开的空标题', () {
+      final ({OpdsFeed atom, OpdsFeed json}) f = both(
+        atomBody: '''
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>   </title><id>urn:x:1</id>
+    <link rel="http://opds-spec.org/acquisition" href="/dl/1"
+          type="application/epub+zip"/>
+  </entry>
+</feed>
+''',
+        jsonBody: '''
+{"metadata":{"title":"x"},
+ "publications":[{"metadata":{"title":"   ","identifier":"urn:x:1"},
+   "links":[{"rel":"http://opds-spec.org/acquisition","href":"/dl/1",
+             "type":"application/epub+zip"}]}]}
+''',
+      );
+      expect(f.atom.entries, isEmpty);
+      expect(f.json.entries, isEmpty);
+    });
+
+    test('既无下载链接也不是目录的条目：两侧都丢弃', () {
+      final ({OpdsFeed atom, OpdsFeed json}) f = both(
+        atomBody: '''
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>Just a page</title><id>urn:x:2</id>
+    <link rel="alternate" href="/about" type="text/html"/>
+  </entry>
+</feed>
+''',
+        jsonBody: '''
+{"metadata":{"title":"x"},
+ "publications":[{"metadata":{"title":"Just a page","identifier":"urn:x:2"},
+   "links":[{"rel":"alternate","href":"/about","type":"text/html"}]}]}
+''',
+      );
+      expect(f.atom.entries, isEmpty);
+      expect(f.json.entries, isEmpty, reason: 'rel 明确但不是 acquisition 的链接不算下载物');
+    });
+
+    test('导航条目的相对 href：两侧都 resolve 成绝对地址', () {
+      final ({OpdsFeed atom, OpdsFeed json}) f = both(
+        atomBody: '''
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>Series</title>
+    <link href="/api/v1/opds/series"
+          type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
+  </entry>
+</feed>
+''',
+        jsonBody: '''
+{"metadata":{"title":"x"},
+ "navigation":[{"title":"Series","href":"/api/v1/opds/series",
+   "type":"application/opds+json"}]}
+''',
+      );
+      for (final OpdsFeed feed in <OpdsFeed>[f.atom, f.json]) {
+        expect(
+          feed.entries.whereType<OpdsNavigationEntry>().single.href,
+          'https://books.example.com/api/v1/opds/series',
+        );
+      }
+    });
+  });
+
+  group('OPDS 2.0 的格式专属写法（1.2 无对应物，故不进跨格式契约）', () {
+    test('acquisition link 省略 rel 是合法的：整条出版物不许因此消失', () {
+      // 2.0 里 `links` 长在 publication 底下，位置本身已经说明它是获取链接。
+      // 按「没 rel 就跳过」处理会让 links 为空 → 整条出版物被丢掉，用户看到
+      // 的是「目录里少了一半书」，而且没有任何报错。
+      final OpdsFeed feed = parseOpdsJsonFeed('''
+{"metadata":{"title":"Library"},
+ "publications":[{"metadata":{"title":"No Rel Book","identifier":"urn:n:9"},
+   "links":[{"href":"/dl/9","type":"application/epub+zip"}]}]}
+''', baseUri: _base);
+      final OpdsPublicationEntry entry =
+          feed.entries.whereType<OpdsPublicationEntry>().single;
+      expect(entry.title, 'No Rel Book');
+      expect(entry.links.single.href, 'https://books.example.com/dl/9');
+      expect(entry.links.single.rel, OpdsAcquisitionRel.generic,
+          reason: '省略 rel 按通用 acquisition 处理');
+      expect(entry.bestLinkFor(DiscoveryMediaKind.novel), isNotNull,
+          reason: '认不出可下载链接的话，这本书在发现页里根本不出现');
+    });
+
+    test('rel 明确但不是 acquisition 的链接仍然跳过（self/cover 不是下载物）', () {
+      final OpdsFeed feed = parseOpdsJsonFeed('''
+{"metadata":{"title":"Library"},
+ "publications":[{"metadata":{"title":"Only Self","identifier":"urn:n:10"},
+   "links":[{"rel":"self","href":"/meta/10","type":"application/opds+json"}]}]}
+''', baseUri: _base);
+      expect(feed.entries, isEmpty);
+    });
+  });
 }

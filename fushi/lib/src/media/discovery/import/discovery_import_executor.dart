@@ -77,9 +77,11 @@ class DiscoveryImportExecutor {
       final List<String> archives = <String>[
         for (final String path in filePaths)
           if (isDiscoveryArchivePath(path)) path,
-      ]..sort(
-          (String a, String b) => (sizes[b] ?? 0).compareTo(sizes[a] ?? 0),
-        );
+      ]..sort((String a, String b) {
+          // 同大小时按路径定二，不把「解哪个包」交给调用方清单的偶然顺序。
+          final int bySize = (sizes[b] ?? 0).compareTo(sizes[a] ?? 0);
+          return bySize != 0 ? bySize : a.compareTo(b);
+        });
       if (archives.isNotEmpty) {
         final File archive = File(archives.first);
         final Directory extracted = await _extractor.extract(

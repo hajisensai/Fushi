@@ -30,6 +30,17 @@
     box-sizing: border-box;
 }
 
+/* 自定义属性的兜底层**只能声明在 html 上**，不能连 body 一起声明。
+   主题真值（html[data-theme="light"|"dark"]、html.eink[...]）和 Dart 注入的
+   --md-* 都落在 documentElement 上；自定义属性靠继承往下传，而「元素自身的声明」
+   永远优先于「从父元素继承来的值」。一旦这些兜底值也声明在 body 上，body 及其
+   全部后代拿到的就永远是兜底值，主题块对它们完全失效：
+     · --surface-container-high 恒为 rgba(128,128,128,0.14) → 语法说明浮层
+       （.grammar-tooltip）背景半透明，直接透出下面的词典正文（BUG-2037）；
+     · 暗色主题下 --text-color-light1..4 / --background-color-dark1 恒为亮色值。
+   浏览器扩展侧不受影响也不会退化：generate-content-css.mjs 把 `html` 和 `body`
+   都重写成同一个 `:where(#entries-container)`，主题块重写成
+   `:where(#entries-container)[data-theme=...]`（特异性更高）——本来就是主题块赢。 */
 :where(#entries-container) {
     --font-size-no-units: 15;
     --line-height: 1.4;
@@ -47,6 +58,9 @@
     --outline-variant: rgba(128, 128, 128, 0.32);
     --primary-color: #386A58;
     --on-surface-variant: #44483F;
+}
+
+:where(#entries-container) {
     color: var(--text-color);
     background-color: var(--background-color, transparent);
     /* 内容语言字体链 · 兜底层。此前这里只有 macOS 的 Hiragino 两个家族名，
@@ -659,23 +673,77 @@
     text-underline-offset: 2px;
 }
 
-/* 词形变化的语法说明浮层（桌面 hover；触屏走 .overlay）。位置由 JS 按锚点算好
-   写进 left/top，这里只管观感。 */
+/* 词形变化的语法说明浮层。**这是唯一一套呈现**：hover 预览与 click 钉住共用同一个
+   节点，钉住态只是多一个 .is-pinned（BUG-2041 之前 click 走的是另一套 `.overlay`
+   全屏卡片）。位置与 max-width / max-height 由 JS 按锚点和视口现算写进行内样式，
+   这里只管观感与两态差异。 */
 .grammar-tooltip {
     display: none;
     position: fixed;
     z-index: 728;
+    /* max-width / max-height 由 JS 按视口现算（窄屏自适应 + zoom 折算）；这里留一个
+       不依赖视口的兜底，免得行内样式写入前先撑开一屏。 */
     max-width: 460px;
+    overflow-y: auto;
     padding: 8px 10px;
     font-size: 12px;
     line-height: 1.5;
-    white-space: pre-wrap;
     color: var(--text-color);
     background: var(--surface-container-high);
     border: 1px solid var(--outline-variant);
     border-radius: 8px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+    /* 预览态必须穿透：浮层贴着光标出现会立刻触发标签的 mouseleave，
+       不穿透就是「闪一下就没」的抖动。钉住态在下面翻回 auto。 */
     pointer-events: none;
+}
+
+/* 钉住态（点击）：接管原 `.overlay` 卡片的职责——可交互、可选中复制、字号回到正文
+   档位、带标题与关闭按钮。 */
+.grammar-tooltip.is-pinned {
+    pointer-events: auto;
+    padding: 10px;
+    font-size: 15px;
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+.grammar-tooltip-body {
+    /* 说明原文里的换行与缩进是有意义的（编号义项、Usage 段），必须保留。 */
+    white-space: pre-wrap;
+}
+
+/* 标题与关闭按钮只在钉住态出现：预览态多一行大字反而碍事。 */
+.grammar-tooltip-title,
+.grammar-tooltip-close {
+    display: none;
+}
+
+.grammar-tooltip.is-pinned .grammar-tooltip-title {
+    display: block;
+    min-height: 36px;
+    padding-right: 34px;
+    font-size: 26px;
+    line-height: 1.4;
+}
+
+/* TODO-1325 #4: 标签说明的关闭按钮走内联 SVG（× 图标），随 font-size 缩放。 */
+.grammar-tooltip.is-pinned .grammar-tooltip-close {
+    display: block;
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    font-size: 20px;
+    line-height: 1;
+    color: var(--on-surface-variant);
+    cursor: pointer;
+}
+
+.grammar-tooltip-close > svg {
+    width: 1em;
+    height: 1em;
+    display: block;
+    fill: currentColor;
 }
 
 .frequency-group {
@@ -893,6 +961,13 @@
 
 .glossary-group > summary {
     list-style: none;
+    /* BUG-2049: 词典名与释义之间的 2px 呼吸原本挂在 `div[data-dictionary]` 的
+       padding-top 上，而那个 div 只在展开态参与布局——于是「展开一本此词条下没有可见
+       释义的词典」也会凭空长高 2px（headless Edge 实测：卡片高 29px → 31px），
+       masonry 逐列重排再把这 2px 放大成整列上下跳动。
+       间距的拥有者改成恒存在的卡头：卡片基线高度与展开状态无关，展开只增加真实内容的
+       高度；有内容时卡头与释义之间仍是同样的 2px，观感不变。 */
+    padding-bottom: 2px;
 }
 
 .glossary-group > summary::-webkit-details-marker {
@@ -904,7 +979,16 @@
    (html,body{font-family:<custom>,...})；若该字体缺 U+25B6/U+25BC 或按 emoji 呈现，
    某些平台/WebView（Android WebView、自定义词典字体、emoji 回退）下三角会渲染成空白/彩色
    emoji/豆腐块，即「展开收起图标渲染不出来」。边框三角是纯几何，零字体依赖，全平台/全字体
-   一致渲染（与 Niratan 的 .entry-current::before 边框三角同法）。收起=指右▶，展开=指下▼。 */
+   一致渲染（与 Niratan 的 .entry-current::before 边框三角同法）。收起=指右▶，展开=指下▼。
+
+   BUG-2049: 展开态**只旋转，不重画边框**。边框三角的布局盒尺寸就是它两组对边之和，
+   所以「换朝向」必然「换盒子」：旧写法收起态是 5px 宽 × 8px 高（左边框 5 + 上下各 4），
+   展开态被重设成 8px 宽 × 5px 高（上边框 5 + 左右各 4）。盒宽 5→8 把后面的词典名
+   整体右推 3px，用户看到「展开/收起时词典头位置会动」。headless Edge 实测（真 popup.css，
+   Noto CJK / Yu Gothic / Meiryo / 默认 四种字体一致）：.dict-name 相对 summary 的
+   左偏移 收起 10px → 展开 13px。
+   transform 不参与布局：同一份右向三角旋转 90° 后，布局盒恒为 5×8，两态词典名左偏移
+   恒等；而旋转所得形状（底边 8、高 5、绕盒心）与旧展开态逐像素相同。 */
 .glossary-group > summary::before {
     content: '';
     display: inline-block;
@@ -921,18 +1005,18 @@
 }
 
 .glossary-group[open] > summary::before {
-    /* 展开态：下向三角（顶点朝下）——显式重设四边，避免残留收起态边框 */
-    border-top: 5px solid currentColor;
-    border-right: 4px solid transparent;
-    border-bottom: 0;
-    border-left: 4px solid transparent;
+    /* 展开态：下向三角（顶点朝下）。只旋转，不碰任何 border——布局盒必须与收起态恒等，
+       否则词典名会随展开状态横向跳动（BUG-2049）。 */
+    transform: rotate(90deg);
 }
 
 .glossary-group > div[data-dictionary] {
     display: block;
     font-size: 14px;
     line-height: 1.4;
-    padding-top: 2px;
+    /* BUG-2049: 这里不再放 padding-top——间距挂在 `.glossary-group > summary` 的
+       padding-bottom 上，见那条规则的注释。本 div 只在展开态存在，任何挂在它上面的
+       固定间距都会变成「展开就长高」的状态相关几何。 */
 }
 
 .glossary-group > div[data-dictionary] > ol {
@@ -1262,53 +1346,6 @@
     opacity: 1;
     color: var(--primary-color);
     font-weight: bold;
-}
-
-.overlay {
-    display: none;
-    position: fixed;
-    inset: 8px;
-    width: auto;
-    max-height: none;
-    overflow-y: auto;
-    padding: 10px;
-    z-index: 727;
-    color: var(--text-color);
-    background: var(--background-color);
-    border: 1px solid var(--outline-variant);
-    border-radius: 10px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
-}
-
-.overlay-title {
-    min-height: 36px;
-    padding-right: 34px;
-    font-size: 26px;
-    line-height: 1.4;
-}
-
-.overlay-content {
-    font-size: 15px;
-    padding: 4px 2px 2px;
-    white-space: pre-wrap;
-}
-
-.overlay-close {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    font-size: 20px;
-    line-height: 1;
-    color: var(--on-surface-variant);
-    cursor: pointer;
-}
-
-/* TODO-1325 #4: 标签说明遮罩的关闭按钮同样走内联 SVG（× 图标），随 font-size 缩放。 */
-.overlay-close > svg {
-    width: 1em;
-    height: 1em;
-    display: block;
-    fill: currentColor;
 }
 
 .category-section {

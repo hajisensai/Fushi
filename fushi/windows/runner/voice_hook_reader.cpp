@@ -1,5 +1,7 @@
 #include "voice_hook_reader.h"
 
+#include "game_client_extent.h"
+
 #include <windows.h>
 
 // v19 准入兜底：注入侧算不出游戏 exe 摘要时由 host 自己算（见 [ExeDigestCache]）。
@@ -70,7 +72,11 @@ struct ReaderState {
   uint32_t lookup_geometry_admission_mode_desired =
       fushi_voice_hook::kLookupGeometryAdmissionDisabled;
   bool lookup_geometry_attached_ready_desired = false;
-  bool lookup_geometry_native_input_ready_desired = false;
+  // Host risk/provider admission for semantic native input.  It shares the
+  // v21 geometry-admission request generation and is replayed into every new
+  // mapping before lookup runtime is enabled.  正边沿只有在发布到活映射之后
+  // 才写这里（见 SetLookupGeometryAdmission）：not_open 不得武装替换映射。
+  bool lookup_native_input_allowed_desired = false;
   // ── v19 查词准入游标（与上面同一把锁）───────────────────────────────────────
   // 上次向 Dart 报过的 lookup_admission_seq。[primed] 单独存在，是因为「新段刚开出来、
   // hook 还没上报」时共享 seq 就是 0，与游标 0 相等——只比 seq 会让新会话一条准入事件
@@ -182,6 +188,11 @@ VoiceHookStatus StatusFromHeaderLocked(const SharedHeader* h) {
   s.raw_voice_ready = fushi_voice_hook::HasReadyGameResourceAudio(
       h->reserved_luna, h->hook_diagnostics,
       h->reserved_hook_diagnostics, h->xaudio_diagnostics);
+  // 两个诊断字原样带出。第二个字不参与 raw_voice_ready 的判定（它装的是身份/锚点
+  // 分型位，不是"资源音频已就绪"），但必须能被读到：否则 hook 侧 SetXAudioDiagnostic2
+  // 置的每一位在 Fushi 这一侧都不存在。
+  s.xaudio_diagnostics = h->xaudio_diagnostics;
+  s.xaudio_diagnostics2 = h->xaudio_diagnostics2;
   s.text_lane_recycles = static_cast<int64_t>(h->text_lane_recycle_count);
   s.text_lane_overflows = static_cast<int64_t>(h->text_lane_overflow_count);
   s.native_loopback_requested =
@@ -737,6 +748,10 @@ flutter::EncodableValue LookupHitMap(const VoiceHookLookupHit& hit) {
       {flutter::EncodableValue("glyphH"), flutter::EncodableValue(hit.glyph_h)},
       {flutter::EncodableValue("viewW"), flutter::EncodableValue(hit.view_w)},
       {flutter::EncodableValue("viewH"), flutter::EncodableValue(hit.view_h)},
+      {flutter::EncodableValue("clientW"),
+       flutter::EncodableValue(hit.client_w)},
+      {flutter::EncodableValue("clientH"),
+       flutter::EncodableValue(hit.client_h)},
       {flutter::EncodableValue("submit"), flutter::EncodableValue(hit.submit)},
   });
 }
@@ -836,6 +851,10 @@ void PumpLookupOnce() {
   }
   VoiceHookLookupHit hit;
   if (reader.PollLookupHit(&hit) && pump.channel != nullptr) {
+    // 客户区**现量现报**：host 的卡片尺寸上界要按屏幕物理像素算，而它必须在
+    // 查词开始之前就知道。量不到就留 0，host 退回画布口径（保守但不越界）。
+    fushi::game_client_extent::QueryGameClientExtent(
+        reader.CurrentPid(), &hit.client_w, &hit.client_h);
     pump.channel->InvokeMethod(
         "onGalLookupHit",
         std::make_unique<flutter::EncodableValue>(LookupHitMap(hit)));
@@ -987,10 +1006,18 @@ void HandleLookupPresent(
   const uint32_t card_height = ReadLookupDimension(call, "cardHeight");
   const uint32_t view_width = ReadLookupDimension(call, "viewWidth");
   const uint32_t view_height = ReadLookupDimension(call, "viewHeight");
+  const int32_t glyph_x = static_cast<int32_t>(ReadLookupInt(call, "glyphX"));
+  const int32_t glyph_y = static_cast<int32_t>(ReadLookupInt(call, "glyphY"));
+  const uint32_t glyph_w = ReadLookupDimension(call, "glyphW");
+  const uint32_t glyph_h = ReadLookupDimension(call, "glyphH");
+  uint32_t client_width = 0;
+  uint32_t client_height = 0;
   if (pump.direct_presenter && card_width > 0 && card_height > 0 &&
       view_width > 0 && view_height > 0) {
     if (pump.direct_presenter(meta.anchor_x, meta.anchor_y, card_width,
-                              card_height, view_width, view_height)) {
+                              card_height, view_width, view_height, glyph_x,
+                              glyph_y, glyph_w, glyph_h, &client_width,
+                              &client_height)) {
       // Only retire the old bitmap AFTER the live composition surface is in
       // place. Dismissing first created a guaranteed blank interval whenever
       // direct presentation failed and CapturePreview had to recover.
@@ -1007,6 +1034,15 @@ void HandleLookupPresent(
            flutter::EncodableValue(static_cast<int64_t>(card_width))},
           {flutter::EncodableValue("height"),
            flutter::EncodableValue(static_cast<int64_t>(card_height))},
+          // 游戏客户区尺寸。Dart 手上只有画布(view)尺寸，用画布像素去夹屏幕像素会把
+          // 卡片系统性压小，所以把真实上界回报过去。
+          // 诊断用。**不是**卡片尺寸上界的来源：那个来源是每条 hit 上的
+          // clientW/clientH（现量现报）。从 present 回执反推 cap 会晚一次查词，
+          // 正是 BUG-2066 的原始症状，别再走回去。
+          {flutter::EncodableValue("clientWidth"),
+           flutter::EncodableValue(static_cast<int64_t>(client_width))},
+          {flutter::EncodableValue("clientHeight"),
+           flutter::EncodableValue(static_cast<int64_t>(client_height))},
       }));
       return;
     }
@@ -1115,12 +1151,12 @@ bool HandleLookupCall(const flutter::MethodCall<flutter::EncodableValue>& call,
     const uint32_t mode =
         static_cast<uint32_t>(ReadLookupInt(call, "mode"));
     const bool attached_ready = ReadLookupBool(call, "attachedReady");
-    const bool native_input_ready =
-        ReadLookupBool(call, "nativeInputReady");
+    const bool native_input_allowed =
+        ReadLookupBool(call, "nativeInputAllowed");
     uint32_t request_seq = 0;
     uint32_t applied_seq = 0;
     const VoiceHookLookupError error = reader.SetLookupGeometryAdmission(
-        mode, attached_ready, native_input_ready, &request_seq, &applied_seq);
+        mode, attached_ready, native_input_allowed, &request_seq, &applied_seq);
     if (error != VoiceHookLookupError::kNone) {
       result->Success(LookupErrorMap(error));
       return true;
@@ -1323,7 +1359,7 @@ VoiceHookOpenResult VoiceHookReader::Open(uint32_t pid) {
     (void)fushi_voice_hook::PublishLookupGeometryAdmission(
         header, st.lookup_geometry_admission_mode_desired,
         st.lookup_geometry_attached_ready_desired,
-        st.lookup_geometry_native_input_ready_desired);
+        st.lookup_native_input_allowed_desired);
     if (st.lookup_enabled_desired) {
       InterlockedExchange(
           reinterpret_cast<volatile LONG*>(&header->lookup_enabled), 1);
@@ -2086,7 +2122,7 @@ VoiceHookLookupError VoiceHookReader::SetLookupEnabled(bool enabled) {
 }
 
 VoiceHookLookupError VoiceHookReader::SetLookupGeometryAdmission(
-    uint32_t mode, bool attached_ready, bool native_input_ready,
+    uint32_t mode, bool attached_ready, bool native_input_allowed,
     uint32_t* request_seq, uint32_t* applied_seq) {
   if (request_seq != nullptr) *request_seq = 0;
   if (applied_seq != nullptr) *applied_seq = 0;
@@ -2103,15 +2139,15 @@ VoiceHookLookupError VoiceHookReader::SetLookupGeometryAdmission(
   // live mapping. A not_open request must not arm the replacement mapping
   // before Dart has reopened its local route. Negative edges always revoke any
   // prior replayable permission immediately.
-  st.lookup_geometry_native_input_ready_desired = false;
+  st.lookup_native_input_allowed_desired = false;
   SharedHeader* h = st.header;
   const VoiceHookLookupError gate = LookupGateLocked(h, false);
   if (gate != VoiceHookLookupError::kNone) return gate;
   const uint32_t published =
       fushi_voice_hook::PublishLookupGeometryAdmission(
-          h, mode, attached_ready, native_input_ready);
+          h, mode, attached_ready, native_input_allowed);
   if (published == 0) return VoiceHookLookupError::kControlRejected;
-  st.lookup_geometry_native_input_ready_desired = native_input_ready;
+  st.lookup_native_input_allowed_desired = native_input_allowed;
   if (request_seq != nullptr) *request_seq = published;
   if (applied_seq != nullptr) {
     *applied_seq = fushi_voice_hook::AtomicLoadShared32(

@@ -148,6 +148,12 @@ struct LoadedPeSection {
 
 struct LoadedPeImage {
   const uint8_t* base = nullptr;
+  // 绝对 VA 操作数所对齐的基址。0 表示与 base 相同——进程内已加载的模块就是这种情况
+  // （代码里的绝对操作数已被重定位成实际加载基址）。而把**磁盘上的原始映像**映射进来
+  // 校验时两者必然不同：那份副本由 LoadLeafPristineImage 手工按节展开（平坦数据映射
+  // + memcpy，不经加载器、不施加重定位），读字节要用副本地址 base，解绝对操作数却要用
+  // PE 头里的首选基址。合成一个字段会让其中一路恒错。
+  uintptr_t absolute_base = 0u;
   size_t size = 0u;
   uint16_t machine = 0u;
   uint8_t pointer_bits = 0u;
@@ -409,8 +415,15 @@ inline bool DecodeAbsolute32ImageAddress(const LoadedPeImage& image,
   uint32_t absolute = 0u;
   std::memcpy(&absolute, operand, sizeof(absolute));
   const uintptr_t address = absolute;
-  uintptr_t rva = 0u;
-  if (!AddressToRva(image, address, &rva)) return false;
+  // 只有**绝对** VA 操作数按 absolute_base 换算。rel32 / 寄存器间接那几路算出来的是
+  // 映射内地址，必须继续走 AddressToRva 的 image.base——把这条也改成 absolute_base，
+  // 未重定位的磁盘映像上那几路会整片假失败（实测过）。
+  const uintptr_t absolute_base =
+      image.absolute_base != 0u ? image.absolute_base
+                                : reinterpret_cast<uintptr_t>(image.base);
+  if (address < absolute_base || address - absolute_base >= image.size)
+    return false;
+  const uintptr_t rva = address - absolute_base;
   *target = address;
   if (target_rva != nullptr) *target_rva = rva;
   return true;

@@ -46,6 +46,7 @@ import 'package:fushi/src/models/builtin_tags.dart';
 import 'package:fushi/src/epub/book_title_conflict.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
+import 'package:fushi/src/dictionary/transform_description_locale.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
@@ -95,6 +96,7 @@ import 'package:fushi/src/media/torrent/anime_download_subtitle_resolver.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi/src/media/torrent/torrent_memory.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
+import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
@@ -138,6 +140,7 @@ import 'package:fushi/src/models/theme_notifier.dart'
 // consumers (theme swatch row, CustomThemePage) can name it.
 export 'package:fushi/src/models/theme_notifier.dart' show CustomThemeEntry;
 import 'package:fushi/src/models/audio_controller.dart';
+import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
@@ -2464,6 +2467,9 @@ class AppModel with ChangeNotifier {
       populateLanguages();
       populateLocales();
       LocaleSettings.setLocaleRaw(appLocale.toLanguageTag());
+      // 词形变化语法说明的译文表跟界面语言走（BUG-2038）。装的是一张内存查表，
+      // 与词典引擎里那份英文 transforms JSON 无关，所以放在引擎初始化之后也没问题。
+      unawaited(applyTransformDescriptionLocale(appLocale.toLanguageTag()));
       populateMediaTypes();
       populateMediaSources();
       populateDictionaryFormats();
@@ -2788,6 +2794,9 @@ class AppModel with ChangeNotifier {
       populateLanguages();
       populateLocales();
       LocaleSettings.setLocaleRaw(appLocale.toLanguageTag());
+      // 词形变化语法说明的译文表跟界面语言走（BUG-2038）。装的是一张内存查表，
+      // 与词典引擎里那份英文 transforms JSON 无关，所以放在引擎初始化之后也没问题。
+      unawaited(applyTransformDescriptionLocale(appLocale.toLanguageTag()));
       populateMediaTypes();
       MediaSource.setDatabase(_database);
       populateMediaSources();
@@ -3213,6 +3222,8 @@ class AppModel with ChangeNotifier {
   Future<void> setAppLocale(String localeTag) async {
     await _setPref('app_locale', localeTag);
     LocaleSettings.setLocaleRaw(localeTag);
+    // 语法说明译文表即时换掉：不重启的桌面端也要跟着变（BUG-2038）。
+    await applyTransformDescriptionLocale(localeTag);
     if (isDesktopPlatform) {
       notifyListeners();
       return;
@@ -3260,6 +3271,12 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoMpvLuaScriptsEnabled(bool value) =>
       prefsRepo.setVideoMpvLuaScriptsEnabled(value);
+
+  /// BUG-2032：随包 libmpv 是否编入 Lua（视频页探测后缓存；设置页据此说明）。
+  MpvLuaCapability get videoMpvLuaCapability => prefsRepo.videoMpvLuaCapability;
+
+  Future<void> setVideoMpvLuaCapability(MpvLuaCapability value) =>
+      prefsRepo.setVideoMpvLuaCapability(value);
 
   /// 用户手动指定的本机 mpv 配置/着色器目录（空=自动）。
   String get videoMpvShaderDir => prefsRepo.videoMpvShaderDir;
@@ -4386,53 +4403,82 @@ class AppModel with ChangeNotifier {
       );
   DiscoveryImportExecutor? _discoveryImportExecutor;
 
+  /// 有声书素材库（懒建）。目录由用户在设置里指定，扫描结果缓存在服务内；
+  /// 改目录后调 [AudiobookMaterialService.refresh] 重扫。
+  AudiobookMaterialService get audiobookMaterialService =>
+      _audiobookMaterialService ??= AudiobookMaterialService(
+        readDirs: () =>
+            decodeAudiobookMaterialDirs(prefsRepo.audiobookMaterialDirs),
+      );
+  AudiobookMaterialService? _audiobookMaterialService;
+
   /// 发现页源注册表（懒建，app 生命周期常驻）。内置源在此登记；加源 = 加一个
   /// adapter 实例。Sukebei（18+）默认不进「全部源」聚合，见
   /// [discoveryDisabledSourceIds]。
-  MediaDiscoveryService get mediaDiscoveryService =>
-      _mediaDiscoveryService ??= MediaDiscoveryService(
-        sources: <MediaDiscoverySource>[
-          CoreAudioDiscoverySource(
-            httpClientFactory: createDownloadHttpClient,
-          ),
-          NyaaDiscoverySource(
-            id: 'nyaa',
-            displayName: 'Nyaa',
-            priority: 10,
-            categoryByKind: const <DiscoveryMediaKind, String>{
-              // nyaa.si 分类：Literature=3_0 / Audio=2_0。
-              DiscoveryMediaKind.novel: '3_0',
-              DiscoveryMediaKind.audiobook: '2_0',
-            },
-            client: NyaaClient(),
-          ),
-          NyaaDiscoverySource(
-            id: 'sukebei',
-            displayName: 'Sukebei',
-            priority: 15,
-            categoryByKind: const <DiscoveryMediaKind, String>{
-              // sukebei 分类：Art - Games=1_3（galgame 种子主阵地）。
-              DiscoveryMediaKind.game: '1_3',
-            },
-            client: NyaaClient(baseUrl: 'https://sukebei.nyaa.si'),
-          ),
-          AListDiscoverySource(
-            id: 'alist-erogame',
-            displayName: 'erogame.space',
-            priority: 20,
-            baseUrl: 'https://alist.erogame.space',
-            kinds: const <DiscoveryMediaKind>{DiscoveryMediaKind.game},
-          ),
-          ShinnkuDiscoverySource(),
-          // 用户自配的 OPDS 服务器：**运行期**由偏好展开，一条配置 = 一个源
-          // 实例。停用的条目直接不进注册表（而不是进了再靠停用清单挡）——
-          // 源开关列表遍历的就是本注册表，两套「关掉」的语义并存只会让设置页
-          // 出现一个既在清单里又被排除的幽灵条目。
-          for (final OpdsServerConfig server in prefsRepo.discoveryOpdsServers)
-            if (server.enabled) OpdsDiscoverySource(config: server),
-        ],
-      );
+  ///
+  /// **偏好未就绪时也必须能建**：发现页与「发现来源」设置区在初始化早期就可能
+  /// 被构建（`_prefsRepo` 此时还是 null，[isPreferencesReady] 的存在本身就是
+  /// 这条时序的证据），无条件解引用 [prefsRepo] 会把「早一帧打开发现页」变成
+  /// 崩溃路径。此刻先给一份**不含用户自配 OPDS 源**的注册表，并记下这份是偏好
+  /// 缺席时建的；等偏好就绪后第一次取用时自动重建，免得把「我配的服务器全都
+  /// 不见了」latch 到整个进程生命周期。
+  MediaDiscoveryService get mediaDiscoveryService {
+    final MediaDiscoveryService? cached = _mediaDiscoveryService;
+    if (cached != null &&
+        !(_discoveryRegistryLacksPrefs && isPreferencesReady)) {
+      return cached;
+    }
+    cached?.close();
+    _discoveryRegistryLacksPrefs = !isPreferencesReady;
+    return _mediaDiscoveryService =
+        MediaDiscoveryService(sources: <MediaDiscoverySource>[
+      CoreAudioDiscoverySource(
+        httpClientFactory: createDownloadHttpClient,
+      ),
+      NyaaDiscoverySource(
+        id: 'nyaa',
+        displayName: 'Nyaa',
+        priority: 10,
+        categoryByKind: const <DiscoveryMediaKind, String>{
+          // nyaa.si 分类：Literature=3_0 / Audio=2_0。
+          DiscoveryMediaKind.novel: '3_0',
+          DiscoveryMediaKind.audiobook: '2_0',
+        },
+        client: NyaaClient(),
+      ),
+      NyaaDiscoverySource(
+        id: 'sukebei',
+        displayName: 'Sukebei',
+        priority: 15,
+        categoryByKind: const <DiscoveryMediaKind, String>{
+          // sukebei 分类：Art - Games=1_3（galgame 种子主阵地）。
+          DiscoveryMediaKind.game: '1_3',
+        },
+        client: NyaaClient(baseUrl: 'https://sukebei.nyaa.si'),
+      ),
+      AListDiscoverySource(
+        id: 'alist-erogame',
+        displayName: 'erogame.space',
+        priority: 20,
+        baseUrl: 'https://alist.erogame.space',
+        kinds: const <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+      ),
+      ShinnkuDiscoverySource(),
+      // 用户自配的 OPDS 服务器：**运行期**由偏好展开，一条配置 = 一个源
+      // 实例。停用的条目直接不进注册表（而不是进了再靠停用清单挡）——
+      // 源开关列表遍历的就是本注册表，两套「关掉」的语义并存只会让设置页
+      // 出现一个既在清单里又被排除的幽灵条目。
+      if (isPreferencesReady)
+        for (final OpdsServerConfig server in prefsRepo.discoveryOpdsServers)
+          if (server.enabled) OpdsDiscoverySource(config: server),
+    ]);
+  }
+
   MediaDiscoveryService? _mediaDiscoveryService;
+
+  /// 上一份注册表是否在偏好就绪前建的（因而必然缺用户自配的 OPDS 源）。
+  /// 偏好就绪后第一次取用就据此重建一次，见 [mediaDiscoveryService]。
+  bool _discoveryRegistryLacksPrefs = false;
 
   /// 重建发现源注册表：用户增删改 OPDS 服务器后必须调。
   ///
@@ -6030,6 +6076,28 @@ class AppModel with ChangeNotifier {
   double get extensionPopupMaxHeight => prefsRepo.extensionPopupMaxHeight;
   void setExtensionPopupMaxHeight(double height) =>
       prefsRepo.setExtensionPopupMaxHeight(height);
+
+  bool get galCardLookupIndependentSize =>
+      prefsRepo.galCardLookupIndependentSize;
+  Future<void> setGalCardLookupIndependentSize(bool value) =>
+      prefsRepo.setGalCardLookupIndependentSize(value);
+  double get galCardLookupMaxWidth => prefsRepo.galCardLookupMaxWidth;
+  void setGalCardLookupMaxWidth(double width) =>
+      prefsRepo.setGalCardLookupMaxWidth(width);
+  double get galCardLookupMaxHeight => prefsRepo.galCardLookupMaxHeight;
+  void setGalCardLookupMaxHeight(double height) =>
+      prefsRepo.setGalCardLookupMaxHeight(height);
+
+  /// 游戏内查词卡的「有效最大宽高」（跟随 app 内 / 解锁后独立）。
+  /// 与 [overlayLookupEffectiveSize] 分开：卡片贴在游戏客户区里，合适尺寸与浮在整块
+  /// 桌面上的覆盖窗本就不同，共用一个值必然一大一小。
+  LookupSize get galCardLookupEffectiveSize => effectiveLookupSize(
+        independent: galCardLookupIndependentSize,
+        sceneWidth: galCardLookupMaxWidth,
+        sceneHeight: galCardLookupMaxHeight,
+        sharedWidth: popupMaxWidth,
+        sharedHeight: popupMaxHeight,
+      );
 
   /// app 外覆盖查词卡的「有效最大宽高」（跟随 app 内 / 解锁后独立）。
   /// controller 的窗口尺寸测算读它，而不是直接读 [popupMaxWidth]/[popupMaxHeight]。

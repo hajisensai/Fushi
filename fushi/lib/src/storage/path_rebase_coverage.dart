@@ -619,6 +619,14 @@ final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
           '与 MediaSources.rootPath 同语义，不能随 Hibiki 应用数据根改写。'),
   PathRebasePref('video_mpv_shader_dir', PathRebaseKind.externalUserPath,
       PathValueShape.none, '用户本机 mpv 着色器目录，外部路径，不随数据根走。'),
+  PathRebasePref(
+      'audiobook_material_dirs',
+      PathRebaseKind.externalUserPath,
+      PathValueShape.none,
+      '有声书素材库目录（JSON 字符串数组）。用户自己挑的字幕/正文库位置——通常是外接盘'
+          '或下载目录，不在 Hibiki 数据根下，跟着数据根改写只会把有效路径改坏。'
+          '目录没了不影响已入库的书（素材在导入时已复制进书的存储），设置页按'
+          'missingDirs 如实提示。'),
   PathRebasePref('manga_external_mokuro_path', PathRebaseKind.externalUserPath,
       PathValueShape.none, '系统安装的 mokuro 可执行文件路径，外部路径。'),
   PathRebasePref(

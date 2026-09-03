@@ -381,8 +381,17 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 立即显示（不再 await 打在繁忙大 reader WebView 上的高亮 eval），高亮 eval 回来
   /// 拿到精修后的词 bbox（多字去屈折时比选区宽）再用它重锚，保证弹窗不覆盖被查词
   /// （BUG-767）。[e] 已被新查词替换/关闭、或 rect 未变 → no-op（不重建、不抖动）。
+  ///
+  /// BUG-2054：门是「**隐身热槽**不动」，不是「不可见就不动」。热槽还没被任何查词
+  /// 认领，迟到回调改它的 rect 毫无意义；但嵌套查词刚 push 的子层已挂上本次结果、
+  /// 正等自己的 WebView 渲染完才翻可见（[markPendingReveal]），而高亮 eval 的往返
+  /// 通常早于那次 reveal —— 用 visible 当门会把这条重锚恒吞掉，子弹窗就永远停在
+  /// 「点击首字符」的锚点上（跨行选区时正好盖住选区的第二行）。条目**显示时**才按
+  /// 当时的 [DictionaryPopupEntry.selectionRect] 定位，所以 reveal 前改反而一次到位、
+  /// 零跳变。
   void reanchorEntry(DictionaryPopupEntry e, Rect rect) {
-    if (!e.visible || !_entries.contains(e)) return;
+    if (!_entries.contains(e)) return;
+    if (!e.visible && e.isWarmSlot) return;
     if (e.selectionRect == rect) return;
     e.selectionRect = rect;
     notifyListeners();

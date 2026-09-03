@@ -2,6 +2,7 @@
 /// 响应体嗅探、失败收敛。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -333,6 +334,142 @@ void main() {
         ),
       ),
     );
+    source.close();
+  });
+
+  // ── 网络输入的三条边界（B3）─────────────────────────────────────────
+  //
+  // `createAppHttpIoClient()` 只给了**连接**超时：连上之后响应体读取是无限期、
+  // 无字节上限的。一台 slow-loris 服务端能让发现页那一栏永久转圈，而
+  // `_urlForPage` 的回走会把单次挂死放大成 50 次串行。三条边界（块间静默、
+  // 请求总时限、响应体字节数）各由一条测试钉住——只钉其中一条的话，另外两条
+  // 被删掉照样全绿。
+
+  test('连上后一个字节都不发：按块间静默上限收手，不是永久挂起', () async {
+    final StreamController<List<int>> silent = StreamController<List<int>>();
+    addTearDown(silent.close);
+    final OpdsDiscoverySource source = OpdsDiscoverySource(
+      config: _config(),
+      client: MockClient.streaming(
+        (http.BaseRequest request, http.ByteStream body) async =>
+            http.StreamedResponse(
+          silent.stream,
+          200,
+          headers: <String, String>{'content-type': 'application/atom+xml'},
+        ),
+      ),
+      idleTimeout: const Duration(milliseconds: 50),
+    );
+    await expectLater(
+      source.browse(const DiscoveryRequest(kind: DiscoveryMediaKind.novel)),
+      throwsA(
+        isA<ExternalProviderFailure>().having(
+          (ExternalProviderFailure f) => f.kind,
+          'kind',
+          ExternalProviderFailureKind.unavailable,
+        ),
+      ),
+    );
+    source.close();
+  });
+
+  test('一直挤牙膏的服务端：按请求总时限收手（块间静默永远不触发）', () async {
+    final OpdsDiscoverySource source = OpdsDiscoverySource(
+      config: _config(),
+      client: MockClient.streaming(
+        (http.BaseRequest request, http.ByteStream body) async =>
+            http.StreamedResponse(
+          Stream<List<int>>.periodic(
+            const Duration(milliseconds: 5),
+            (int _) => const <int>[0x20],
+          ),
+          200,
+          headers: <String, String>{'content-type': 'application/atom+xml'},
+        ),
+      ),
+      requestTimeout: const Duration(milliseconds: 120),
+      idleTimeout: const Duration(seconds: 30),
+    );
+    await expectLater(
+      source.browse(const DiscoveryRequest(kind: DiscoveryMediaKind.novel)),
+      throwsA(
+        isA<ExternalProviderFailure>().having(
+          (ExternalProviderFailure f) => f.kind,
+          'kind',
+          ExternalProviderFailureKind.unavailable,
+        ),
+      ),
+    );
+    source.close();
+  });
+
+  test('响应体超字节上限：截断成 invalidResponse，不整份读进内存', () async {
+    const int cap = 4096;
+    // 刻意用一份**合法**的 feed：去掉字节上限它就正常解析成功了，所以这条
+    // 断言只可能被上限本身满足。用畸形/空体的话，「响应体读不懂」那条既有
+    // 收敛会给出同一个 invalidResponse，把上限删掉照样绿（实测存活过一次）。
+    final List<int> feed = utf8.encode(
+      '<feed xmlns="http://www.w3.org/2005/Atom">'
+      '<!--${'x' * (cap * 2)}-->'
+      '</feed>',
+    );
+    expect(feed.length, greaterThan(cap));
+    OpdsDiscoverySource sourceWith({required int maxFeedBytes}) =>
+        OpdsDiscoverySource(
+          config: _config(),
+          client: MockClient.streaming(
+            (http.BaseRequest request, http.ByteStream body) async =>
+                http.StreamedResponse(
+              Stream<List<int>>.fromIterable(<List<int>>[
+                for (int i = 0; i < feed.length; i += 512)
+                  feed.sublist(
+                      i, i + 512 > feed.length ? feed.length : i + 512),
+              ]),
+              200,
+              headers: <String, String>{'content-type': 'application/atom+xml'},
+            ),
+          ),
+          maxFeedBytes: maxFeedBytes,
+        );
+
+    final OpdsDiscoverySource capped = sourceWith(maxFeedBytes: cap);
+    await expectLater(
+      capped.browse(const DiscoveryRequest(kind: DiscoveryMediaKind.novel)),
+      throwsA(
+        isA<ExternalProviderFailure>()
+            .having(
+              (ExternalProviderFailure f) => f.kind,
+              'kind',
+              ExternalProviderFailureKind.invalidResponse,
+            )
+            .having(
+              (ExternalProviderFailure f) => f.message,
+              'message',
+              contains('exceeds'),
+            ),
+      ),
+    );
+    capped.close();
+
+    // 对照：同一份响应体在上限之内就正常解析——证明上面那条红是上限造成的，
+    // 不是这份 feed 本身有问题。
+    final OpdsDiscoverySource roomy = sourceWith(maxFeedBytes: feed.length * 2);
+    final ProviderBatchResult<DiscoveryResultPage> ok = await roomy
+        .browse(const DiscoveryRequest(kind: DiscoveryMediaKind.novel));
+    expect(ok.items.single.entries, isEmpty);
+    roomy.close();
+  });
+
+  test('三条边界的默认值即同名常量（生产路径不传参，别让默认悄悄退化）', () {
+    final OpdsDiscoverySource source = _source(
+      MockClient((http.Request request) async => _xml('<feed/>')),
+    );
+    expect(source.requestTimeout, kOpdsRequestTimeout);
+    expect(source.idleTimeout, kOpdsIdleTimeout);
+    expect(source.maxFeedBytes, kOpdsMaxFeedBytes);
+    expect(kOpdsRequestTimeout, greaterThan(Duration.zero));
+    expect(kOpdsIdleTimeout, greaterThan(Duration.zero));
+    expect(kOpdsMaxFeedBytes, greaterThan(0));
     source.close();
   });
 

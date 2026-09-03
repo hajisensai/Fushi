@@ -64,7 +64,10 @@ OpdsFeed parseOpdsAtomFeed(String xml, {required Uri baseUri}) {
     final String resolved = _resolve(baseUri, href);
     switch (rel) {
       case 'next':
-        nextHref = resolved;
+        // 取**文档顺序里第一条**，与 2.0 侧 (`nextHref ??=`) 同向：服务端重复
+        // 发 next 时两个格式必须给出同一个下一页，否则同一台服务器换个格式
+        // 就翻到不同的页。
+        nextHref ??= resolved;
       case 'search':
         final String type = _attribute(link, 'type') ?? '';
         // 两种写法都在野：指向 OpenSearch 描述文档（需二次抓取），

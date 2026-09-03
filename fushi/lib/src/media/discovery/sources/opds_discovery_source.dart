@@ -23,6 +23,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -44,12 +45,38 @@ String opdsSourceIdFor(String configId) => '$kOpdsSourceIdPrefix$configId';
 /// 回走分页时最多走多少页——防止服务端把 `next` 指成自环时无限请求。
 const int _kMaxPageWalk = 50;
 
+/// 单次 feed / OpenSearch 请求的**总**时限（连接 + 响应体读完）。
+///
+/// `createAppHttpIoClient()` 只给了**连接**超时，响应体读取是无限期的：一台
+/// slow-loris 服务端（连上、每隔一会儿吐一个字节）能让发现页那一栏永久转圈，
+/// 而 [_kMaxPageWalk] 的回走会把它放大成 50 次串行。
+const Duration kOpdsRequestTimeout = Duration(seconds: 30);
+
+/// 两个数据块之间的最长静默。连上之后一个字节都不发是最常见的挂死形态，
+/// 单靠总时限要等满 [kOpdsRequestTimeout] 才收手。
+const Duration kOpdsIdleTimeout = Duration(seconds: 15);
+
+/// feed / OpenSearch 描述文档的响应体字节上限。
+///
+/// OPDS 目录是分页的，一页几百 KB 已经算大。没有上限的话一条 chunked 响应就能
+/// 把内存吃光——响应体先整份进 `bodyBytes`，`utf8.decode` 再复制一份。
+const int kOpdsMaxFeedBytes = 8 * 1024 * 1024;
+
 class OpdsDiscoverySource extends MediaDiscoverySource {
   OpdsDiscoverySource({
     required this.config,
     this.priority = 30,
     http.Client? client,
+    this.requestTimeout = kOpdsRequestTimeout,
+    this.idleTimeout = kOpdsIdleTimeout,
+    this.maxFeedBytes = kOpdsMaxFeedBytes,
   }) : _client = client ?? createAppHttpIoClient();
+
+  /// 单次请求总时限 / 块间静默上限 / 响应体字节上限。默认即同名常量；
+  /// 参数化只为让「挂死的服务端」在测试里能在毫秒级复现，生产路径不传。
+  final Duration requestTimeout;
+  final Duration idleTimeout;
+  final int maxFeedBytes;
 
   final OpdsServerConfig config;
 
@@ -319,48 +346,104 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
   }
 
   Future<_OpdsResponse> _get(Uri uri, {required String operation}) async {
-    final http.Response response = await _client.get(
-      uri,
-      headers: <String, String>{
+    final DateTime deadline = DateTime.now().add(requestTimeout);
+    final http.Request request = http.Request('GET', uri)
+      ..headers.addAll(<String, String>{
         'Accept': 'application/atom+xml, $kOpdsJsonMediaType, '
             'application/xml;q=0.8, */*;q=0.5',
         ..._headersFor(uri),
-      },
-    );
-    if (response.statusCode == 401 || response.statusCode == 403) {
-      throw ExternalProviderFailure(
-        providerId: id,
-        operation: operation,
-        kind: response.statusCode == 401
-            ? ExternalProviderFailureKind.unauthorized
-            : ExternalProviderFailureKind.forbidden,
-        message: 'server rejected the configured credentials',
-        statusCode: response.statusCode,
-      );
+      });
+    final http.StreamedResponse response;
+    try {
+      response = await _client.send(request).timeout(requestTimeout);
+    } on TimeoutException {
+      throw _timedOut(operation);
     }
-    if (response.statusCode == 404) {
-      throw ExternalProviderFailure(
-        providerId: id,
-        operation: operation,
-        kind: ExternalProviderFailureKind.notFound,
-        message: 'catalog endpoint not found',
-        statusCode: response.statusCode,
-      );
-    }
-    if (response.statusCode != 200) {
-      throw ExternalProviderFailure(
-        providerId: id,
-        operation: operation,
-        kind: ExternalProviderFailureKind.unavailable,
-        message: 'http status ${response.statusCode}',
-        statusCode: response.statusCode,
-      );
+    final ExternalProviderFailure? rejected =
+        _statusFailure(response.statusCode, operation);
+    if (rejected != null) {
+      // 不读的响应体会把连接一直挂着——显式取消订阅才是「关掉它」。
+      unawaited(response.stream.listen(null).cancel());
+      throw rejected;
     }
     return _OpdsResponse(
-      body: utf8.decode(response.bodyBytes, allowMalformed: true),
+      body: utf8.decode(
+        await _readBounded(response.stream, operation, deadline),
+        allowMalformed: true,
+      ),
       contentType: (response.headers['content-type'] ?? '').toLowerCase(),
     );
   }
+
+  /// 非 200 的状态码 → 稳定失败码；200 返回 null。
+  ExternalProviderFailure? _statusFailure(int status, String operation) =>
+      switch (status) {
+        200 => null,
+        401 => ExternalProviderFailure(
+            providerId: id,
+            operation: operation,
+            kind: ExternalProviderFailureKind.unauthorized,
+            message: 'server rejected the configured credentials',
+            statusCode: status,
+          ),
+        403 => ExternalProviderFailure(
+            providerId: id,
+            operation: operation,
+            kind: ExternalProviderFailureKind.forbidden,
+            message: 'server rejected the configured credentials',
+            statusCode: status,
+          ),
+        404 => ExternalProviderFailure(
+            providerId: id,
+            operation: operation,
+            kind: ExternalProviderFailureKind.notFound,
+            message: 'catalog endpoint not found',
+            statusCode: status,
+          ),
+        _ => ExternalProviderFailure(
+            providerId: id,
+            operation: operation,
+            kind: ExternalProviderFailureKind.unavailable,
+            message: 'http status $status',
+            statusCode: status,
+          ),
+      };
+
+  /// 读响应体，三条边界同时管着：块间静默 [kOpdsIdleTimeout]、总时限
+  /// [deadline]、字节上限 [kOpdsMaxFeedBytes]。任何一条越界都从 `await for`
+  /// 里抛出去——抛出即取消订阅，连接随之关掉，不会留一条挂死的 socket。
+  Future<List<int>> _readBounded(
+    Stream<List<int>> stream,
+    String operation,
+    DateTime deadline,
+  ) async {
+    final BytesBuilder builder = BytesBuilder(copy: false);
+    try {
+      await for (final List<int> chunk in stream.timeout(idleTimeout)) {
+        if (DateTime.now().isAfter(deadline)) throw _timedOut(operation);
+        builder.add(chunk);
+        if (builder.length > maxFeedBytes) {
+          throw ExternalProviderFailure(
+            providerId: id,
+            operation: operation,
+            kind: ExternalProviderFailureKind.invalidResponse,
+            message: 'catalog response exceeds $maxFeedBytes bytes',
+          );
+        }
+      }
+    } on TimeoutException {
+      throw _timedOut(operation);
+    }
+    return builder.takeBytes();
+  }
+
+  ExternalProviderFailure _timedOut(String operation) =>
+      ExternalProviderFailure(
+        providerId: id,
+        operation: operation,
+        kind: ExternalProviderFailureKind.unavailable,
+        message: 'catalog request timed out',
+      );
 
   /// 只给**配置服务器自己的 origin** 附认证头。
   ///
