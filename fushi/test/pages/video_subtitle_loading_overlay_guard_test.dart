@@ -79,8 +79,10 @@ void main() {
     final int start = src.indexOf('Future<void> _applyLoad({');
     expect(start, greaterThan(-1), reason: '应有 _applyLoad 方法');
     final int seedAt = src.indexOf('_seedWarmPopup();', start);
+    // 锚点跟随真实判据：流媒体书进度写穿后，统计采集器的门是「书架书且未建」
+    // （_bookRow != null），不再是 !_isRemote。
     final int watchAt =
-        src.indexOf('if (!_isRemote && _watchTracker == null)', start);
+        src.indexOf('if (_bookRow != null && _watchTracker == null)', start);
     final int prewarmAt = src.indexOf(
         'unawaited(prewarmEmbeddedSubtitleCache(videoPath));', start);
     expect(prewarmAt, greaterThan(seedAt), reason: '预抽应在视频打开成功后的 warmup 区域触发');

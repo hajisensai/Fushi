@@ -4,10 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
+import 'package:fushi/src/media/torrent/public_video_index_provider.dart';
+import 'package:fushi/src/media/torrent/nyaa_resource_provider.dart';
 import 'package:fushi/src/media/torrent/torznab_client.dart';
 import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
+import 'package:fushi/utils.dart';
 
 class _FakeStore implements VideoExternalSettingsStore {
   _FakeStore(this.snapshot);
@@ -20,6 +24,10 @@ class _FakeStore implements VideoExternalSettingsStore {
       <List<VideoDownloadBackendPathMappingConfig>>[];
   final List<int?> targetSourceWrites = <int?>[];
   final List<String> languageWrites = <String>[];
+  final List<String> jimakuKeyWrites = <String>[];
+  final List<bool> jimakuEnabledWrites = <bool>[];
+  final List<bool> ajattEnabledWrites = <bool>[];
+  final List<(String, bool)> builtinSourceWrites = <(String, bool)>[];
 
   @override
   Future<VideoExternalSettingsSnapshot> load() async => snapshot;
@@ -32,6 +40,26 @@ class _FakeStore implements VideoExternalSettingsStore {
   @override
   Future<void> saveOpenSubtitlesConfig(OpenSubtitlesConfig config) async {
     openSubtitlesWrites.add(config);
+  }
+
+  @override
+  Future<void> saveJimakuApiKey(String apiKey) async {
+    jimakuKeyWrites.add(apiKey);
+  }
+
+  @override
+  Future<void> saveJimakuEnabled(bool enabled) async {
+    jimakuEnabledWrites.add(enabled);
+  }
+
+  @override
+  Future<void> saveAjattEnabled(bool enabled) async {
+    ajattEnabledWrites.add(enabled);
+  }
+
+  @override
+  Future<void> saveBuiltinSourceEnabled(String sourceId, bool enabled) async {
+    builtinSourceWrites.add((sourceId, enabled));
   }
 
   @override
@@ -52,18 +80,49 @@ class _FakeStore implements VideoExternalSettingsStore {
   }
 }
 
-Widget _harness(_FakeStore store) => ProviderScope(
+/// 生产里三段各挂各的分区（字幕来源 / 资源索引器 → 在线服务，下载落盘 → 下载）；
+/// harness 默认把三段叠在一起，等价于拆分前的全量渲染，跨段用例不必各开一个
+/// 挂载点。每段一个独立 State、共用同一个 fake store。
+Widget _harness(
+  _FakeStore store, {
+  List<VideoExternalProviderScope> scopes = VideoExternalProviderScope.values,
+  double width = 560,
+}) =>
+    ProviderScope(
       child: MaterialApp(
         theme: ThemeData(useMaterial3: true),
         home: Scaffold(
           body: SizedBox(
-            width: 560,
+            width: width,
             child: SingleChildScrollView(
-              child: VideoExternalProviderSettingsSection(store: store),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  for (final VideoExternalProviderScope scope in scopes)
+                    VideoExternalProviderSettingsSection(
+                      // 同类型无 key 的重挂载会走 didUpdateWidget（不重跑
+                      // initState / _load），换 store 的用例会读到上一次的 store。
+                      key: ValueKey<String>('$scope@$width#${scopes.length}'),
+                      store: store,
+                      scope: scope,
+                    ),
+                ],
+              ),
             ),
           ),
         ),
       ),
+    );
+
+/// 宽窗 harness：原 bug 只在 pane 明显宽于内容宽度时才看得出来——560 的窄
+/// harness 下输入框（旧上限 480）与开关（占满 560）只差 80px，肉眼和断言都容易
+/// 放过；1400 下差距是好几百像素，正是用户截图里的样子。
+Widget _wideHarness(_FakeStore store) => _harness(
+      store,
+      scopes: const <VideoExternalProviderScope>[
+        VideoExternalProviderScope.subtitleSources,
+      ],
+      width: 1400,
     );
 
 Finder _textField(Key key) => find.descendant(
@@ -82,6 +141,73 @@ Future<void> _settleAutosave(WidgetTester tester) async {
 }
 
 void main() {
+  /// BUG-1747：宽窗下这一段三种行各有一套左右边界——输入框自己缩到 480、
+  /// `SwitchListTile` 吃 `CrossAxisAlignment.stretch` 的紧约束占满整个 pane、
+  /// 用户名/密码 `Row` 又是全宽再各占一半。用户看到的是「输入框只占左半边、
+  /// 开关孤零零贴在最右、中间一大片空白」。
+  ///
+  /// 不变式：整段共用同一条左右基线后，三者边缘必须重合。
+  ///
+  /// BUG-1858：这条基线之外此前还收了一层 560 右边界。那层只加在本段和下载设置
+  /// 上，同一个「在线服务」页里下面的元数据刮削行照旧撑满 pane，于是一页之内两种
+  /// 输入框宽度。用户 2026-08-25 拍板统一成撑满，右边界改为「pane 宽减两边各
+  /// 16px」。
+  testWidgets('BUG-1747：宽窗下输入框/开关/双列行的左右边界一致', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _FakeStore store = _FakeStore(
+      VideoExternalSettingsSnapshot(
+        openSubtitlesConfig: OpenSubtitlesConfig(
+          apiKey: 'sub-secret',
+          username: 'alice',
+          password: 'password',
+        ),
+      ),
+    );
+    await tester.pumpWidget(_wideHarness(store));
+    await tester.pumpAndSettle();
+
+    final Finder endpoint =
+        _textField(const ValueKey<String>('video-opensubtitles-endpoint'));
+    await _show(tester, endpoint);
+    final Rect endpointRect = tester.getRect(endpoint);
+
+    final Finder insecure =
+        find.byKey(const ValueKey<String>('video-opensubtitles-insecure-http'));
+    await _show(tester, insecure);
+    final Rect switchRect = tester.getRect(insecure);
+
+    expect(
+      endpointRect.left,
+      moreOrLessEquals(switchRect.left, epsilon: 1.0),
+      reason: '输入框与开关必须同一条左基线',
+    );
+    expect(
+      endpointRect.right,
+      moreOrLessEquals(switchRect.right, epsilon: 1.0),
+      reason: '输入框此前被局部限宽到 480、开关占满整个 pane，右边缘差几百像素；'
+          '收进同一个内容宽度容器后必须重合',
+    );
+
+    // 双列行（用户名/密码）是第三套宽度：Row 全宽 → Expanded 各半 → 再被局部
+    // 480 二次裁。它的整体左右边界同样要落在同一对基线上。
+    final Rect username = tester.getRect(
+        _textField(const ValueKey<String>('video-opensubtitles-username')));
+    final Rect password = tester.getRect(
+        _textField(const ValueKey<String>('video-opensubtitles-password')));
+    expect(username.left, moreOrLessEquals(endpointRect.left, epsilon: 1.0),
+        reason: '双列行左边界要与单列框一致');
+    expect(password.right, moreOrLessEquals(endpointRect.right, epsilon: 1.0),
+        reason: '双列行右边界要与单列框一致（此前密码框一路铺到 pane 最右）');
+
+    // BUG-1858：唯一的宽度规则是「吃满 pane 宽减两边各 16px」，不再另设上限。
+    expect(endpointRect.width, moreOrLessEquals(1400 - 2 * 16, epsilon: 1.0),
+        reason: '输入框吃满内容区（BUG-1858：与其余设置行同一条规则）');
+    expect(endpointRect.left, moreOrLessEquals(16, epsilon: 1.0),
+        reason: '左边缘落在普通设置行的 16px 基线上');
+  });
+
   testWidgets('secret fields are masked and unsafe remote HTTP is not saved',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(800, 3200);
@@ -246,7 +372,7 @@ void main() {
     await tester.pumpWidget(_harness(store));
     await tester.pumpAndSettle();
     final Finder language = find.byKey(
-      const ValueKey<String>('video-opensubtitles-language'),
+      const ValueKey<String>('video-subtitle-default-language'),
     );
     await _show(tester, language);
     await tester.tap(language);
@@ -254,6 +380,249 @@ void main() {
     await tester.tap(find.text('中文').last);
     await tester.pumpAndSettle();
     expect(store.languageWrites.last, 'zh');
+  });
+
+  // BUG-1712：字幕来源清单必须两家都在。Jimaku 曾只在设置 → 视频 → 字幕露过脸，
+  // 下载页那一区只有 OpenSubtitles，用户据此以为 app 不支持 Jimaku。现在两家只有
+  // 一个家（在线服务·字幕来源 = subtitleSources 段），且必须并列出现在这一段里。
+  testWidgets('subtitle sources scope lists both providers side by side',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 3200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final _FakeStore store = _FakeStore(
+      const VideoExternalSettingsSnapshot(jimakuApiKey: 'jimaku-secret'),
+    );
+    await tester.pumpWidget(_harness(
+      store,
+      scopes: const <VideoExternalProviderScope>[
+        VideoExternalProviderScope.subtitleSources,
+      ],
+    ));
+    await tester.pumpAndSettle();
+
+    const ValueKey<String> jimakuKeyId =
+        ValueKey<String>('video-jimaku-api-key');
+    final Finder jimakuKey = find.byKey(jimakuKeyId);
+    expect(jimakuKey, findsOneWidget,
+        reason: 'Jimaku must be listed next to OpenSubtitles');
+    expect(
+      find.byKey(const ValueKey<String>('video-opensubtitles-api-key')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-subtitle-default-language')),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<TextField>(_textField(jimakuKeyId)).obscureText,
+      isTrue,
+    );
+
+    await _show(tester, jimakuKey);
+    await tester.enterText(jimakuKey, 'typed-key');
+    await _settleAutosave(tester);
+    expect(store.jimakuKeyWrites.last, 'typed-key');
+  });
+
+  // 三段互斥：资源索引器段不得再夹带字幕来源，下载落盘段不得夹带索引器——否则
+  // 又回到「同一能力两个家」。
+  testWidgets('scopes render disjoint content', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 3200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _FakeStore store = _FakeStore(
+      const VideoExternalSettingsSnapshot(jimakuApiKey: 'jimaku-secret'),
+    );
+
+    await tester.pumpWidget(_harness(
+      store,
+      scopes: const <VideoExternalProviderScope>[
+        VideoExternalProviderScope.resourceSources,
+      ],
+    ));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('video-torznab-add')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('video-jimaku-api-key')),
+        findsNothing);
+    expect(find.byKey(const ValueKey<String>('video-path-mapping-add')),
+        findsNothing);
+
+    await tester.pumpWidget(_harness(
+      store,
+      scopes: const <VideoExternalProviderScope>[
+        VideoExternalProviderScope.downloadRouting,
+      ],
+    ));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('video-path-mapping-add')),
+        findsOneWidget);
+    expect(
+        find.byKey(const ValueKey<String>('video-torznab-add')), findsNothing);
+    expect(find.byKey(const ValueKey<String>('video-opensubtitles-api-key')),
+        findsNothing);
+  });
+
+  // 用户截图：视频设置页里 Jimaku / OpenSubtitles 整块比上一行「刮削后自动补
+  // 字幕」（标准设置行）更靠左——schema 的 SettingsCustomItem 裸渲染不给内边距，
+  // 本组件此前靠宿主 TorrentSettingsSection 补边距，单独挂进分区就贴边了。
+  // 不变式：本段内容左沿 == 设计 token 的 rowHorizontal（与标准设置行同一条基线）。
+  testWidgets('section content sits on the shared row baseline',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 3200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _FakeStore store = _FakeStore(const VideoExternalSettingsSnapshot());
+
+    await tester.pumpWidget(_harness(
+      store,
+      scopes: const <VideoExternalProviderScope>[
+        VideoExternalProviderScope.subtitleSources,
+      ],
+    ));
+    await tester.pumpAndSettle();
+
+    final Finder content = find.byKey(
+      const ValueKey<VideoExternalProviderScope>(
+        VideoExternalProviderScope.subtitleSources,
+      ),
+    );
+    expect(content, findsOneWidget);
+    final BuildContext context = tester.element(content);
+    final double baseline = FushiDesignTokens.of(context).spacing.rowHorizontal;
+    expect(baseline, greaterThan(0));
+    expect(
+      tester.getTopLeft(content).dx,
+      moreOrLessEquals(baseline, epsilon: 0.5),
+      reason: '内容左沿必须落在 rowHorizontal 基线上，不得贴到宿主左沿',
+    );
+    // 右侧同样留基线：560 上限 + 两侧边距在 800 宽的 pane 里都放得下。
+    expect(
+      tester.getSize(content).width,
+      lessThanOrEqualTo(800 - 2 * baseline + 0.5),
+    );
+  });
+
+  // BUG-1712：内置 Nyaa 一直在跑（动漫），但设置里一个字都没有，用户看到的是
+  // 「Torznab（空）」= 这个 app 自己没有任何来源。
+  testWidgets('built-in Nyaa source is listed', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 3200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _FakeStore store = _FakeStore(const VideoExternalSettingsSnapshot());
+
+    await tester.pumpWidget(_harness(store));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('video-builtin-source-nyaa')),
+      findsOneWidget,
+    );
+    expect(find.text('Nyaa'), findsOneWidget);
+  });
+
+  testWidgets(
+      'every built-in source has a switch that writes through the store',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 3200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _FakeStore store = _FakeStore(const VideoExternalSettingsSnapshot());
+
+    await tester.pumpWidget(_harness(store));
+    await tester.pumpAndSettle();
+
+    // 表驱动：内置源全表都必须有一行开关，而不是只有当年手写的那一行 Nyaa。
+    for (final BuiltinVideoResourceSource source
+        in kBuiltinVideoResourceSources) {
+      final Finder row =
+          find.byKey(ValueKey<String>('video-builtin-source-${source.id}'));
+      expect(row, findsOneWidget, reason: 'missing row for ${source.id}');
+      await _show(tester, row);
+      expect(
+        tester.widget<SwitchListTile>(row).value,
+        isTrue,
+        reason: '${source.id} defaults to enabled',
+      );
+    }
+
+    final Finder apibayRow = find.byKey(
+      ValueKey<String>('video-builtin-source-$kApibayResourceProviderId'),
+    );
+    await _show(tester, apibayRow);
+    await tester.tap(apibayRow);
+    await tester.pumpAndSettle();
+
+    expect(
+      store.builtinSourceWrites,
+      <(String, bool)>[(kApibayResourceProviderId, false)],
+    );
+    // 本地状态立刻翻转，不等下一次 load —— 否则开关会弹回去。
+    expect(tester.widget<SwitchListTile>(apibayRow).value, isFalse);
+  });
+
+  testWidgets('a disabled built-in source renders as off',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 3200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _FakeStore store = _FakeStore(
+      const VideoExternalSettingsSnapshot(
+        disabledBuiltinSourceIds: <String>{kKnabenResourceProviderId},
+      ),
+    );
+
+    await tester.pumpWidget(_harness(store));
+    await tester.pumpAndSettle();
+
+    final Finder knaben = find.byKey(
+      ValueKey<String>('video-builtin-source-$kKnabenResourceProviderId'),
+    );
+    await _show(tester, knaben);
+    expect(tester.widget<SwitchListTile>(knaben).value, isFalse);
+    final Finder nyaa = find.byKey(
+      ValueKey<String>('video-builtin-source-$kNyaaResourceProviderId'),
+    );
+    await _show(tester, nyaa);
+    expect(tester.widget<SwitchListTile>(nyaa).value, isTrue);
+  });
+
+  testWidgets('Jimaku has an enabled switch beside its API key, defaulting on',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 3200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    // 存量用户：填了 key、从没见过这个开关。默认必须是「开」。
+    final _FakeStore store = _FakeStore(
+      const VideoExternalSettingsSnapshot(jimakuApiKey: 'legacy-key'),
+    );
+
+    await tester.pumpWidget(_harness(
+      store,
+      scopes: const <VideoExternalProviderScope>[
+        VideoExternalProviderScope.subtitleSources,
+      ],
+    ));
+    await tester.pumpAndSettle();
+
+    final Finder jimaku =
+        find.byKey(const ValueKey<String>('video-jimaku-enabled'));
+    await _show(tester, jimaku);
+    expect(tester.widget<SwitchListTile>(jimaku).value, isTrue);
+    // 与 OpenSubtitles 并列同形：两家都在同一节里各有一个启用开关。
+    expect(
+      find.byKey(const ValueKey<String>('video-opensubtitles-enabled')),
+      findsOneWidget,
+    );
+
+    await tester.tap(jimaku);
+    await tester.pumpAndSettle();
+
+    expect(store.jimakuEnabledWrites, <bool>[false]);
+    // 关掉开关不得清空 key —— 双门控的意义就是留着 key 也能停用。
+    expect(store.jimakuKeyWrites, isEmpty);
   });
 
   testWidgets('compact layout has no horizontal overflow',

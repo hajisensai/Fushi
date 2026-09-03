@@ -383,7 +383,6 @@ void main() {
             .writeAsString('dictionary index');
         await File('${dictDir.path}/JMdict/media/pitch.png')
             .writeAsString('pitch image');
-        await SyncRepository(onDiskDb).setSyncDictionaryEnabled(true);
         await onDiskDb.upsertDictionaryMeta(
           DictionaryMetadataCompanion.insert(
             name: 'JMdict',
@@ -471,7 +470,6 @@ void main() {
             .create(recursive: true);
         await File('${missingDictDir.path}/download_temp/leftover.bin')
             .writeAsString('temporary file');
-        await SyncRepository(onDiskDb).setSyncDictionaryEnabled(true);
         await onDiskDb.upsertDictionaryMeta(
           DictionaryMetadataCompanion.insert(
             name: 'MissingDict',

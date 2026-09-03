@@ -8,6 +8,8 @@ import 'package:screen_retriever/screen_retriever.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:fushi/src/utils/window_caption_channel.dart';
+
 /// Desktop main-window sizing and placement policy.
 ///
 /// This intentionally lives outside [AppModel]: the window needs to be placed
@@ -35,8 +37,14 @@ class DesktopWindowPlacement {
   static const String _widthKey = 'desktop_main_window_width';
   static const String _heightKey = 'desktop_main_window_height';
 
+  /// 「上次是最大化关掉的」。与 [_xKey] 等四个 restore 键**正交**：最大化时窗口的
+  /// 真实 bounds 是整个工作区，存进去会让「取消最大化」后的还原尺寸永久丢失，所以
+  /// 最大化态只翻这个 flag，四个 restore 键保持上一次普通窗口的几何不动。
+  static const String _maximizedKey = 'desktop_main_window_maximized';
+
   static Timer? _saveTimer;
   static Rect? _lastSavedBounds;
+  static bool? _lastSavedMaximized;
 
   static bool get _isDesktop =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
@@ -61,6 +69,11 @@ class DesktopWindowPlacement {
 
       await windowManager.setMinimumSize(minimumSizeForWorkArea(workArea));
       await windowManager.setBounds(initialBounds);
+      // 最大化必须在 setBounds **之后**：先落还原几何，再请求最大化，这样用户按
+      // 「向下还原」拿回的是上次的普通窗口尺寸，而不是模板默认的 1280x720。
+      if (await _readSavedMaximized()) {
+        await windowManager.maximize();
+      }
     } catch (e) {
       debugPrint('[Fushi] desktop window placement skipped: $e');
     }
@@ -83,14 +96,36 @@ class DesktopWindowPlacement {
     _saveTimer?.cancel();
     _saveTimer = null;
     try {
-      if (await windowManager.isMinimized() ||
-          await windowManager.isMaximized() ||
-          await windowManager.isFullScreen()) {
+      // 三个窗口状态查询各是一次 platform-channel 往返。它们互不依赖，串行 await
+      // 会把退出路径的第一步拖成三个事件循环轮次 —— 一次并发取回。
+      //
+      // BUG-1933：Windows 全屏由 runner 自有实现拥有（WindowCaptionChannel），
+      // window_manager.isFullScreen 在 Windows 上恒 false——不加第四问就会把
+      // 「客户区盖满显示器」的巨窗矩形当普通 bounds 存盘，下次启动整窗贴屏。
+      final List<bool> flags = await Future.wait(<Future<bool>>[
+        windowManager.isMinimized(),
+        windowManager.isMaximized(),
+        windowManager.isFullScreen(),
+        WindowCaptionChannel.isFullscreen(),
+      ]);
+      final bool minimized = flags[0];
+      final bool maximized = flags[1];
+      final bool fullScreen = flags[2] || flags[3];
+
+      // 最小化没有可用几何；全屏是播放器的临时态（下次冷启动直接全屏会挡住书架）。
+      // 两者都保持上一次的记忆原样不动。
+      if (minimized || fullScreen) return;
+
+      if (maximized) {
+        // 只翻 flag：最大化时 getBounds 返回的是整个工作区，写进 restore 键会让
+        // 「向下还原」永久丢掉用户真正的窗口尺寸。
+        await _writeMaximized(true);
         return;
       }
 
       final Rect bounds = await windowManager.getBounds();
-      if (!_isUsableRect(bounds) || bounds == _lastSavedBounds) return;
+      if (!_isUsableRect(bounds)) return;
+      if (bounds == _lastSavedBounds && _lastSavedMaximized == false) return;
 
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       await Future.wait(<Future<bool>>[
@@ -98,10 +133,51 @@ class DesktopWindowPlacement {
         prefs.setDouble(_yKey, bounds.top),
         prefs.setDouble(_widthKey, bounds.width),
         prefs.setDouble(_heightKey, bounds.height),
+        prefs.setBool(_maximizedKey, false),
       ]);
       _lastSavedBounds = bounds;
+      _lastSavedMaximized = false;
     } catch (e) {
       debugPrint('[Fushi] desktop window placement save skipped: $e');
+    }
+  }
+
+  /// 最大化/还原事件的直连入口：Windows 上最大化不一定伴随 `onWindowResized`，
+  /// 只靠 resize 去抖会漏记这个状态。
+  static Future<void> rememberMaximized(bool maximized) async {
+    if (!_isDesktop) return;
+    try {
+      await _writeMaximized(maximized);
+    } catch (e) {
+      debugPrint('[Fushi] desktop window maximized save skipped: $e');
+    }
+  }
+
+  /// 清掉「上次写过什么」的进程内缓存。生产不用（进程生命周期内缓存本就该保留，它
+  /// 是为了省掉重复的 prefs 写），但测试之间必须复位——否则前一个用例写过的值会让
+  /// 后一个用例的写入被短路成 no-op。
+  @visibleForTesting
+  static void resetSaveCacheForTesting() {
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    _lastSavedBounds = null;
+    _lastSavedMaximized = null;
+  }
+
+  static Future<void> _writeMaximized(bool maximized) async {
+    if (_lastSavedMaximized == maximized) return;
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_maximizedKey, maximized);
+    _lastSavedMaximized = maximized;
+  }
+
+  static Future<bool> _readSavedMaximized() async {
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_maximizedKey) ?? false;
+    } catch (e) {
+      debugPrint('[Fushi] desktop window maximized read skipped: $e');
+      return false;
     }
   }
 
@@ -195,8 +271,10 @@ class DesktopWindowPlacement {
   static Rect _defaultBoundsForWorkArea(Rect workArea) {
     final Size effectiveMinimum = minimumSizeForWorkArea(workArea);
     final double maxWidth = math.min(_maximumDefaultSize.width, workArea.width);
-    final double maxHeight =
-        math.min(_maximumDefaultSize.height, workArea.height);
+    final double maxHeight = math.min(
+      _maximumDefaultSize.height,
+      workArea.height,
+    );
     final Size size = Size(
       _clampDouble(
         workArea.width * _defaultWidthFraction,
@@ -294,7 +372,10 @@ class DesktopWindowPlacement {
   }
 
   static double _clampDouble(
-      double value, double lowerLimit, double upperLimit) {
+    double value,
+    double lowerLimit,
+    double upperLimit,
+  ) {
     final double lower = math.min(lowerLimit, upperLimit);
     final double upper = math.max(lowerLimit, upperLimit);
     return value.clamp(lower, upper).toDouble();

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "id": "sgre",
+  "status": "implemented_unverified",
+  "detection": {
+    "executable_sha256": [
+      "75a83a0e2a7e22055417ae0474b47be98418c4e42c695c548b558705c404b9d8"
+    ],
+    "module_sha256": []
+  },
+  "capabilities": {
+    "text": false,
+    "resource_audio": true,
+    "pcm_audio": false
+  },
+  "evidence": []
+}

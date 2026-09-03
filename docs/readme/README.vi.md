@@ -10,120 +10,13 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | **Tiếng Việt** | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![Hướng dẫn sử dụng](https://img.shields.io/badge/%F0%9F%93%96%20H%C6%B0%E1%BB%9Bng%20d%E1%BA%ABn%20s%E1%BB%AD%20d%E1%BB%A5ng-0969DA?style=for-the-badge)](../user-guide.vi.md)
+[![fushi.moe](https://img.shields.io/badge/%F0%9F%8C%90%20fushi.moe-0969DA?style=for-the-badge)](https://fushi.moe/)
 
-**Không cần cấu hình rườm rà** — nhập từ điển và âm thanh được đề xuất chỉ trong một bước.
-
-[![Tải bản mới nhất](https://img.shields.io/badge/%E2%AC%87%20T%E1%BA%A3i%20b%E1%BA%A3n%20m%E1%BB%9Bi%20nh%E1%BA%A5t-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
+[![Tải bản mới nhất](https://img.shields.io/badge/%E2%AC%87%20T%E1%BA%A3i%20b%E1%BA%A3n%20m%E1%BB%9Bi%20nh%E1%BA%A5t-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Tham gia Discord](https://img.shields.io/badge/Tham%20gia%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
-> **Xem thứ bạn muốn xem, rồi tự nhiên học được ngôn ngữ.**
-
-Fushi biến những cuốn tiểu thuyết bạn đọc, những bộ phim bạn theo dõi và những cuốn sách nói bạn nghe thành nguồn tiếp nhận ngôn ngữ của bạn — chạm vào bất kỳ từ lạ nào để tra, rồi chỉ với một chạm biến nó thành thẻ Anki kèm ngữ cảnh gốc. Nó không bắt bạn học thuộc một danh sách từ định sẵn, mà chỉ giúp bạn nắm bắt những từ bạn **thực sự đọc và nghe**.
-
-Cách học ngôn ngữ hiệu quả nhất là tiếp xúc thật nhiều với nội dung thực tế, chứ không phải học thuộc những từ rời rạc trong sách từ vựng. Nhưng "đắm chìm" luôn có hai phiền toái: tra một từ làm gián đoạn mạch tập trung, và vừa rời mắt là quên ngay. Fushi nối liền vòng tròn đó:
-
-📖 **Đọc**: chạm vào một từ trong trình đọc EPUB để tra, mà không rời khỏi trang hiện tại.<br>
-🎧 **Nghe**: sách nói tô sáng theo từng câu và tự động lật trang.<br>
-🎬 **Xem**: tra từ và tạo thẻ ngay trên phụ đề video — theo dõi một bộ phim *chính là* tiếp nhận.<br>
-🃏 **Khắc ghi**: gửi bất kỳ từ nào bạn đã tra, ở bất kỳ tình huống nào, thẳng vào Anki, và chỉ ôn lại những từ bạn thực sự gặp.
-
-Mọi tình huống đều dùng chung một bộ từ điển, thống kê và quy trình ôn tập. Phù hợp với mọi ngôn ngữ (tiếng Nhật, tiếng Anh, …), và đặc biệt phù hợp với những người học theo lối đắm chìm tin vào **tiếp nhận thật nhiều + chỉ học thẻ tự làm**. Hỗ trợ Android và Windows (iOS, macOS đang lên kế hoạch).
-
-<table>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="Kệ sách" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="Thư viện video" width="100%"></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="Đọc dọc trên máy tính với cửa sổ tra từ" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="Tra từ trên video (cửa sổ lồng nhau)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="Tra từ trên video (danh sách phụ đề)" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="Tra từ bằng cách chọn văn bản ngoài ứng dụng (điện thoại)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="Tra từ bằng cách chọn văn bản ngoài ứng dụng (máy tính)" width="100%"></td>
-  </tr>
-</table>
-
-**Demo tạo thẻ Anki chỉ với một chạm**
-
-<!-- GitHub only renders <video> tags whose src is a user-attachments uuid URL
-     (uploaded via the web editor); raw repo links stay blank. Inline GIF is the
-     conventional workaround. To restore a real inline player, upload the mp4 in
-     the GitHub web editor and replace the img below with the generated
-     https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
-
-<sub>[Xem demo tạo thẻ một chạm ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
-## Tính năng
-
-### Kệ sách
-
-- Nhập EPUB từng cuốn, hàng loạt hoặc đệ quy theo thư mục; xem tiến độ đọc ngay trên kệ.
-- Sắp xếp sách bằng kệ tùy chỉnh, lọc theo thẻ và kéo để sắp xếp lại.
-- Kéo và thả tệp để nhập sách, phụ đề hoặc video (trên máy tính).
-- Tự động liên kết tệp phụ đề / âm thanh cùng tên khi nhập.
-
-### Đọc
-
-- Đọc theo bố cục dọc hoặc ngang; chuyển đổi giữa chế độ phân trang và cuộn liên tục.
-- Tùy chỉnh giao diện (sáng / tối / đen tuyền / tùy chỉnh), phông chữ, khoảng cách đoạn và các điều khiển của trình đọc.
-- Chú thích furigana (ふりがな).
-- Tỷ lệ giao diện điều chỉnh được; các điều khiển ở thanh dưới đi theo tỷ lệ.
-- Nhiều hồ sơ người dùng (Profile), tự động chuyển đổi cho mỗi cuốn sách.
-
-### Tra từ
-
-- Nhập từ điển [Yomitan](https://github.com/yomidevs/yomitan) (trước đây là Yomichan), ABBYY Lingvo (DSL), MDict (MDX) và Migaku.
-- Chạm vào văn bản trong trình đọc để tra từ, tìm trên trang từ điển, hoặc chia sẻ văn bản từ ứng dụng khác.
-- Khử biến cách bao phủ **toàn bộ ngôn ngữ biến đổi của Yomitan** + chuẩn hóa văn bản trước khi tra (hoa/thường / dấu phụ / harakat tiếng Ả Rập), vận hành theo điểm mã mà không cần chuyển ngôn ngữ.
-- Chạm vào từ bên trong nghĩa để tra đệ quy (cửa sổ lồng nhau).
-- Tra song song nhiều từ điển, ưu tiên và bật/tắt nguồn con, chú thích thanh điệu và tần suất.
-- Âm thanh từ trực tuyến và cục bộ.
-- Chèn CSS tùy chỉnh.
-
-### Tô sáng và thống kê
-
-- Thêm tô sáng năm màu khi đọc; nhảy đến bất kỳ vùng tô sáng nào bất cứ lúc nào.
-- Thống kê đọc: số ký tự đã đọc, thời lượng, tốc độ đọc — hiển thị theo thời gian thực khi đọc.
-- Thống kê video: thời lượng xem, số thẻ đã tạo và mục yêu thích.
-
-### Tạo thẻ Anki
-
-- Tạo thẻ qua [AnkiDroid](https://github.com/ankidroid/Anki-Android) hoặc AnkiConnect.
-- Loại ghi chú [Lapis](https://github.com/donkuri/lapis) tích hợp sẵn (vendored 1.7.0); tạo mẫu thẻ và bộ thẻ ngay trong ứng dụng chỉ với một chạm.
-- Tự động điền câu ngữ cảnh; ghi âm và cắt ảnh chụp màn hình.
-- Nhiều hồ sơ xuất (Profile) và ánh xạ trường tùy chỉnh.
-- Từ yêu thích; thẻ đã tạo và mục yêu thích được tính vào thống kê.
-
-### Đồng bộ sách nói (Sasayaki)
-
-- Hỗ trợ phụ đề SRT / LRC / VTT / ASS; tự động căn chỉnh văn bản phụ đề với nội dung EPUB.
-- Tô sáng câu theo nhịp đọc và tự động lật trang khi phát.
-- Tốc độ phát, thao tác tua và điều khiển media của hệ thống.
-- «Phát từ câu này» với chuyển tiếp liền mạch giữa các chương.
-
-### Tra từ trên phụ đề video
-
-- Trình phát video tích hợp dựa trên [media_kit](https://github.com/media-kit/media-kit) (lõi libmpv).
-- Phụ đề nhúng (dạng văn bản + dạng đồ họa) và phụ đề ngoài; nhập danh sách phát .m3u8.
-- Tra từ và tạo thẻ trực tiếp từ phụ đề khi phát.
-- Quản lý thư viện video, lọc theo thẻ, nhóm theo series và thao tác hàng loạt.
-
-### Đồng bộ dữ liệu
-
-- Bảy backend đồng bộ: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP và Fushi Interconnect.
-- Đồng bộ tiến độ đọc, thống kê và sách.
-
-### Khác
-
-- **17 ngôn ngữ giao diện**, bản địa hóa đầy đủ trên mọi nền tảng.
-- Chia sẻ văn bản từ ứng dụng khác để tra từ trực tiếp.
 
 ## Nền tảng hỗ trợ
 

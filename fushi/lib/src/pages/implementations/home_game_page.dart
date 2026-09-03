@@ -2,14 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
+import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/quick_import_section.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_add_flow.dart';
 import 'package:fushi/src/pages/implementations/galgame_home_page.dart';
 import 'package:fushi/src/pages/implementations/game_diagnostics_page.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
-import 'package:fushi/src/pages/implementations/game_statistics_page.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
+import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -68,6 +71,7 @@ class HomeGamePage extends StatefulWidget {
   static const Key diagnosticsKey = ValueKey<String>('game-diagnostics');
   static const Key settingsKey = ValueKey<String>('game-settings');
   static const Key importKey = ValueKey<String>('game-import');
+  static const Key discoverKey = ValueKey<String>('game-discover');
 
   /// 库页顶部会话状态带（原两张总览大卡的收敛替身），整条可点进入捕获工作台。
   static const Key captureStatusKey = ValueKey<String>('game-capture-status');
@@ -104,6 +108,11 @@ class _HomeGamePageState extends State<HomeGamePage> {
   }
 
   void _showSection(GameSection section) {
+    // 门必须在这里、不能逐调用点补：新的两个调用点（drop 落库后、文件选择器返回
+    // 后）都在 await 之后，用户完全可以在文件对话框开着时切走 tab / 关窗口。
+    // 那时 [dispose] 已经把 notifier 复位成 dashboard，这里再写一次就是把一次
+    // 过期的导航请求泄漏给下一次挂载——正是 [dispose] 那段注释要防的事。
+    if (!mounted) return;
     if (gameSectionNotifier.value != section) {
       gameSectionNotifier.value = section;
       return;
@@ -116,12 +125,6 @@ class _HomeGamePageState extends State<HomeGamePage> {
   void _showMonitor() => _showSection(GameSection.monitor);
   void _showDiagnostics() => _showSection(GameSection.diagnostics);
   void _showSettings() => _showSection(GameSection.settings);
-
-  Future<void> _openStatistics() => Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (BuildContext context) => const GameStatisticsPage(),
-        ),
-      );
 
   @override
   Widget build(BuildContext context) {
@@ -140,56 +143,100 @@ class _HomeGamePageState extends State<HomeGamePage> {
               onShowDiagnostics: _showDiagnostics,
               onLaunched: _showMonitor,
             );
+    // 子区内容按 [GameSection] 建表，再按 `GameSection.values` 顺序展开：既把
+    // 「IndexedStack 索引 == 枚举序」这条隐式约定变成结构约束（`index:` 用的就是
+    // `_section.index`），也保证**每个**子区必然经过下面同一处拖放作用域包裹，
+    // 以后新增子区不可能漏掉。
+    final Map<GameSection, Widget> sections = <GameSection, Widget>{
+      GameSection.dashboard: KeyedSubtree(
+        key: HomeGamePage.dashboardKey,
+        child: dashboardBuilder(context, _showLibrary),
+      ),
+      GameSection.library: KeyedSubtree(
+        key: HomeGamePage.libraryKey,
+        child: _buildLibrary(context),
+      ),
+      GameSection.monitor: KeyedSubtree(
+        key: HomeGamePage.monitorKey,
+        child: monitorBuilder(context, _showLibrary),
+      ),
+      GameSection.diagnostics: KeyedSubtree(
+        key: HomeGamePage.diagnosticsKey,
+        child: GameDiagnosticsPage(
+          controller: _controller,
+          onShowLibrary: _showLibrary,
+          onShowCapture: _showMonitor,
+        ),
+      ),
+      GameSection.settings: KeyedSubtree(
+        key: HomeGamePage.settingsKey,
+        child: Builder(
+          builder: (BuildContext context) {
+            final Widget navigation = GameSectionTabs(
+              selected: GameSection.settings,
+              focusIdPrefix: 'game-settings-tab',
+              onSelectDashboard: _showDashboard,
+              onSelectLibrary: _showLibrary,
+              onSelectMonitor: _showMonitor,
+              onSelectSettings: _showSettings,
+            );
+            return widget.settingsBuilder?.call(context, navigation) ??
+                ModuleSettingsView(
+                  destinationId: SettingsDestinationId.game,
+                  navigation: navigation,
+                );
+          },
+        ),
+      ),
+      GameSection.importGames: KeyedSubtree(
+        key: HomeGamePage.importKey,
+        child: _buildImport(context),
+      ),
+      GameSection.discover: KeyedSubtree(
+        key: HomeGamePage.discoverKey,
+        child: _buildDiscover(context),
+      ),
+    };
     return Material(
       type: MaterialType.transparency,
-      child: IndexedStack(
+      // 触屏横滑按页签**视觉序**（[kGameSectionTabOrder]）切相邻子区；诊断不在
+      // 页签序里，停在诊断时横滑不响应（导航层级只对页签序负责）。
+      child: SectionSwipeNavigator<GameSection>(
+        sections: kGameSectionTabOrder,
+        selected: _section,
+        onSelect: _showSection,
+        child: IndexedStack(
         index: _section.index,
         children: <Widget>[
-          KeyedSubtree(
-            key: HomeGamePage.dashboardKey,
-            child: dashboardBuilder(context, _showLibrary),
-          ),
-          KeyedSubtree(
-            key: HomeGamePage.libraryKey,
-            child: _buildLibrary(context),
-          ),
-          KeyedSubtree(
-            key: HomeGamePage.monitorKey,
-            child: monitorBuilder(context, _showLibrary),
-          ),
-          KeyedSubtree(
-            key: HomeGamePage.diagnosticsKey,
-            child: GameDiagnosticsPage(
-              controller: _controller,
-              onShowLibrary: _showLibrary,
-              onShowCapture: _showMonitor,
+          for (final GameSection section in GameSection.values)
+            // [IndexedStack] 比 [Offstage] 更狠：它**急切构建全部子区**并以完整约束
+            // 布局，而 desktop_drop 是进程级全局广播、只按各 drop target 的
+            // `RenderBox.paintBounds` 过滤 —— 于是七个子区的 drop target 会全部命中
+            // 同一次 OS drop。外层 home-shell 的作用域只回答「游戏 tab 可见吗」，
+            // 用户停在诊断/设置子区时答案照样是 true。判据与 `index:` 用的是同一个
+            // `_section`，且写成回调、在 drop 落地那一刻求值。
+            DropSurfaceScope(
+              isActive: () => _section == section,
+              child: sections[section]!,
             ),
-          ),
-          KeyedSubtree(
-            key: HomeGamePage.settingsKey,
-            child: Builder(
-              builder: (BuildContext context) {
-                final Widget navigation = GameSectionTabs(
-                  selected: GameSection.settings,
-                  focusIdPrefix: 'game-settings-tab',
-                  onSelectDashboard: _showDashboard,
-                  onSelectLibrary: _showLibrary,
-                  onSelectMonitor: _showMonitor,
-                  onSelectSettings: _showSettings,
-                );
-                return widget.settingsBuilder?.call(context, navigation) ??
-                    ModuleSettingsView(
-                      destinationId: SettingsDestinationId.game,
-                      navigation: navigation,
-                    );
-              },
-            ),
-          ),
-          KeyedSubtree(
-            key: HomeGamePage.importKey,
-            child: _buildImport(context),
-          ),
         ],
+        ),
+      ),
+    );
+  }
+
+  /// 游戏「发现」视图：统一发现页（shinnku / AList / sukebei 等在线源，
+  /// 下载完自动解压、登记进游戏库）。
+  Widget _buildDiscover(BuildContext context) {
+    return MediaDiscoveryPage(
+      kinds: const <DiscoveryMediaKind>[DiscoveryMediaKind.game],
+      navigation: GameSectionTabs(
+        selected: GameSection.discover,
+        focusIdPrefix: 'game-discover-tab',
+        onSelectDashboard: _showDashboard,
+        onSelectLibrary: _showLibrary,
+        onSelectMonitor: _showMonitor,
+        onSelectSettings: _showSettings,
       ),
     );
   }
@@ -199,59 +246,82 @@ class _HomeGamePageState extends State<HomeGamePage> {
   Widget _buildImport(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
-    return DesktopContentLayout(
-      kind: DesktopContentKind.readerShelf,
-      child: Column(
-        children: <Widget>[
-          FushiPageHeader.customTitle(
-            title: GameSectionTabs(
-              selected: GameSection.importGames,
-              focusIdPrefix: 'game-import-tab',
-              onSelectDashboard: _showDashboard,
-              onSelectLibrary: _showLibrary,
-              onSelectMonitor: _showMonitor,
-              onSelectSettings: _showSettings,
+    // 导入页自己接 drop：此前整个游戏域只有**库**页挂了 drop target，而
+    // `DropSurfaceScope` 又按当前 section 过滤，于是站在「导入」页拖 exe 进来
+    // 完全没反应——页面上还写着「也可以把 .exe 拖进来」。
+    return FushiFileDropTarget(
+      debugLabel: 'game-import',
+      // 必须把这个 future 交回去：`FushiFileDropTarget.runDrop` 特意 await 回调，
+      // 那是拖放路径上**唯一**的错误咽喉（否则 repo.load()/addAll() 抛出时异常
+      // 直接漂进 zone，用户看到的只有「拖了没反应」——正是本页要修的症状）。
+      // 包成 unawaited 等于把回调立刻变成 void，await 什么也接不到。
+      onDrop: (List<String> paths, Offset position) => addGamesFromPaths(
+        ProviderScope.containerOf(context, listen: false)
+            .read(appProvider)
+            .galgameRepo,
+        paths,
+        onImported: _showLibrary,
+      ),
+      child: DesktopContentLayout(
+        kind: DesktopContentKind.readerShelf,
+        child: Column(
+          children: <Widget>[
+            FushiPageHeader.customTitle(
+              title: GameSectionTabs(
+                selected: GameSection.importGames,
+                focusIdPrefix: 'game-import-tab',
+                onSelectDashboard: _showDashboard,
+                onSelectLibrary: _showLibrary,
+                onSelectMonitor: _showMonitor,
+                onSelectSettings: _showSettings,
+              ),
+              actions: const <Widget>[],
             ),
-            actions: const <Widget>[],
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Builder(
-                    builder: (BuildContext context) {
-                      return QuickImportSection(
-                        actions: <QuickImportAction>[
-                          QuickImportAction(
-                            icon: Icons.videogame_asset_outlined,
-                            label: t.game_add,
-                            // IndexedStack 急切构建全部子区，本视图在无
-                            // ProviderScope 的 widget 测试里也会被 build——
-                            // 容器只在点按时解析，构建期零 provider 依赖。
-                            onTap: () => addGameViaFilePicker(
-                              ProviderScope.containerOf(context, listen: false)
-                                  .read(appProvider)
-                                  .galgameRepo,
+            Expanded(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Builder(
+                      builder: (BuildContext context) {
+                        return QuickImportSection(
+                          actions: <QuickImportAction>[
+                            QuickImportAction(
+                              icon: Icons.videogame_asset_outlined,
+                              label: t.game_add,
+                              // IndexedStack 急切构建全部子区，本视图在无
+                              // ProviderScope 的 widget 测试里也会被 build——
+                              // 容器只在点按时解析，构建期零 provider 依赖。
+                              // 导入成功后跳到游戏库：新游戏落在**另一个** section
+                              // 里，停在导入页的话屏幕上什么都不变，成功与失败在
+                              // 观感上一模一样（用户「导成功没反应我还以为失败了
+                              // 重试了好几次」）。
+                              onTap: () => addGameViaFilePicker(
+                                ProviderScope.containerOf(context,
+                                        listen: false)
+                                    .read(appProvider)
+                                    .galgameRepo,
+                                onImported: _showLibrary,
+                              ),
                             ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    t.game_import_drop_hint,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                          ],
+                        );
+                      },
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    Text(
+                      t.game_import_drop_hint,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -262,14 +332,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
       child: Column(
         children: <Widget>[
           FushiPageHeader.customTitle(
-            actions: <Widget>[
-              FushiIconButton(
-                icon: Icons.bar_chart_outlined,
-                tooltip: t.game_statistics,
-                label: t.game_statistics,
-                onTap: _openStatistics,
-              ),
-            ],
+            // 统计入口已收敛到首页 dashboard（用户定案 2026-09-01）。
             title: GameSectionTabs(
               selected: GameSection.library,
               focusIdPrefix: 'game-library-tab',
@@ -279,7 +342,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
               onSelectSettings: _showSettings,
             ),
             // 顶部不再放「捕获工作台」图标钮——它与下方 GameSectionTabs 的
-            // 「捕获工作台」分段去向完全相同，纯冗余；入口收敛到分段导航 + 状态带。
+            // 「工作台」分段去向完全相同，纯冗余；入口收敛到分段导航 + 状态带。
           ),
           Expanded(
             child: Column(

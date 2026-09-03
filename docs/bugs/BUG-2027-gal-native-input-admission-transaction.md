@@ -1,0 +1,6 @@
+## BUG-2027 · Gal 原生查词风险未授权时仍吞输入，事务瞬态会拆半
+- **报告**：2026-09-02（用户：要求复核除已修 SGRE 外的已适配引擎）
+- **真实性**：✅ 真 bug。v21 已明确把 `lookup_enabled`（保持 sensor/geometry 活着）与 `native_input_ready`（允许新原生输入事务）分开，但 KRKR `kirikiri_adapter.inc:3264-3504`、Siglus `siglus_lookup.inc:906-1093` 与 Leaf/AQUAPLUS `leaf_aquaplus_adapter.inc:1556-1748` 开始字形点击时仍只看各自 runtime/`lookup_enabled`。因此未完成逐 exe 风险授权时，引擎先吞 down/up 并发布 hit，Dart 再于 `gal_ingame_lookup_controller.dart:535` 因 `providerAdmission=false` 丢弃，表现为“已命中/已画选区，但不弹卡且游戏也没收到点击”。Ren'Py `renpy_lookup.inc:720-732` 不吞左击，但未授权 Shift 仍会发布无效 hit。SGRE 稳态已用 `OwnsReadyProvider` 关闭新 down，但 `sgre_lookup.inc:703-737,2079-2106` 仍把 live ownership/光标瞬断用于已开始事务，可能在 down 已吞后取消 submit。
+- **[ ] ① 未修复** — 不能把 `OwnsReadyProvider()` 的任意一次 false 直接当稳定撤权：先前本地试改已证明这会把 writer-held/provider handoff/资源变化瞬态变成 KRKR 点击穿透与选区销毁。正确修复需要把 sensor runtime 与稳定 applied input arm/generation 分离：fresh down 只冻结一次 arm 快照；一旦吞 down 就必须完整排到 up/tail；明确撤权可取消 submit，但不能拆半事务或销毁当前视觉；payload 绑定 arm generation，重新授权后不得复活旧 submit。
+- **[ ] ② 未加自动化测试** — 当前 registry/adapter 测试只验 provider 和 hit 数，没有跨层断言“未授权时游戏原点击未被吞”。需为 KRKR、Siglus 双输入面、Leaf 双 poller、SGRE gesture 与 Ren'Py Shift 分别覆盖 disarmed pass-through、writer-held unknown、中途明确撤权、完整 up/tail 和旧提交不复活。
+- **备注**：attached/generic 已有 immutable snapshot + down/up/tail latch，是后续统一事务模型的参考。本次 KRKR 弹框止血故意不改任何原生适配，避免再引入同类点击事务回归。

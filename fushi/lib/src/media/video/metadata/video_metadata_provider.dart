@@ -76,15 +76,6 @@ abstract interface class VideoMetadataExtrasProvider {
   Future<List<VideoMetadataExtra>> fetchExtras(VideoMetadataLookup lookup);
 }
 
-/// Fanart 一类只补图、不参与作品识别的来源。
-abstract interface class VideoMetadataImageProvider {
-  bool get isAvailable;
-
-  Future<List<VideoMetadataImage>> fetchImages(VideoMetadataWork work);
-
-  void close();
-}
-
 class VideoMetadataProviderUnavailable implements Exception {
   const VideoMetadataProviderUnavailable(this.provider, this.reason);
 

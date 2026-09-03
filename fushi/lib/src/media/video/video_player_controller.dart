@@ -1,14 +1,20 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/video/video_black_flicker_detector.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/startup/media_handle_registry.dart';
+import 'package:fushi/src/media/video/video_lua_script_manager.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
+import 'package:fushi/src/models/preferences_repository.dart'
+    show VideoFitMode;
 import 'package:fushi/src/media/video/video_playback_source.dart';
 import 'package:fushi/src/media/video/video_shader_manager.dart';
 import 'package:fushi/src/media/video/video_subtitle_source.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -379,6 +385,35 @@ class VideoPlayerController extends ChangeNotifier
   StreamSubscription<int?>? _widthSub;
   StreamSubscription<int?>? _heightSub;
 
+  // ── Windows HDR 直通 / 10-bit 输出（video_hdr_output.dart）──────────────────
+  //
+  // 纹理路径常驻；直通只是把 libmpv 的 VO 在运行时切到 runner 宿主窗
+  // （`vo=gpu-next --wid`），不重建 Player。唯一判据在 [shouldUseHdrHostWindow]，
+  // 四个输入分别来自：平台、用户设置（[configureHdrOutput]）、显示器色彩空间
+  // （runner `displayInfo`，每次重判现读）、片源 `video-params`（[_onVideoParams]）。
+  /// `video-params` 订阅：primaries / gamma 决定片源是否 HDR。
+  StreamSubscription<VideoParams>? _videoParamsSub;
+
+  /// 宿主窗模式是否激活（页面据此把 Scaffold / 全屏 Material 底色改透明）。
+  final ValueNotifier<bool> hdrHostActive = ValueNotifier<bool>(false);
+
+  VideoHdrOutputMode _hdrOutputMode = VideoHdrOutputMode.auto;
+  VideoFitMode _hdrHostFitMode = VideoFitMode.contain;
+  bool _hdrSourceIsHdr = false;
+  Rect? _hdrHostRect;
+  HdrVideoHostChannel? _hdrHostChannel;
+
+  /// 重判串行链：`video-params` 在切 VO 期间会连发多次（每次解码器重配都发一次），
+  /// 若并发重判，在途的进入/退出会被后来者打断、甚至互相拆窗。所有重判排进同一条
+  /// Future 链顺序执行，每一轮开始时重新读状态，状态已一致就直接返回。
+  Future<void> _hdrEvalChain = Future<void>.value();
+
+  /// runner 只有**一个**宿主窗，这里记着当前占用它的控制器。外部打开等路径会在旧
+  /// 视频页仍在栈上时新建控制器：新控制器进入直通即接管宿主窗，旧控制器只把自己的
+  /// 直通位清掉（不拆窗、不改 VO——它的 Player 随页面弹出时一起释放）；旧控制器
+  /// dispose 时也只有仍是 owner 才拆窗，否则会拆掉新主人的窗。
+  static VideoPlayerController? _hdrHostOwner;
+
   /// TODO-1297：缓冲态变化订阅（始终挂，非诊断专用）。首开就绪判据
   /// [isReadyForFirstPaint] 依赖「缓冲结束」翻真，而缓冲结束可能不伴随宽高/播放态
   /// 变化，故单独订阅 `stream.buffering` 在其翻转时 [notifyListeners]，驱动页面
@@ -568,7 +603,9 @@ class VideoPlayerController extends ChangeNotifier
 
   @override
   bool get isPlaying =>
-      _debugIsPlayingOverride ?? (_player?.state.playing ?? false);
+      _debugIsPlayingOverride ??
+      _externalIsPlaying ??
+      (_player?.state.playing ?? false);
 
   /// 后台抽取/解析内封文本字幕 cue 是否仍在进行。
   bool get isSubtitleCuesLoading => _subtitleCuesLoading;
@@ -582,7 +619,9 @@ class VideoPlayerController extends ChangeNotifier
   /// （tick 整秒节流外的尾差）。
   @override
   int? get positionMs =>
-      _debugPositionOverride ?? _player?.state.position.inMilliseconds;
+      _debugPositionOverride ??
+      _externalPositionMs ??
+      _player?.state.position.inMilliseconds;
 
   /// 测试可注入的播放位置（毫秒）：widget 测试无真实 [Player]（[positionMs] 恒 null），
   /// 无法驱动 `\fad`/`\fade` 按位置逐帧求不透明度。置非 null 时覆盖 [positionMs]（并经
@@ -593,6 +632,35 @@ class VideoPlayerController extends ChangeNotifier
   void debugSetPositionForTesting(int? positionMs) {
     _debugPositionOverride = positionMs;
     notifyListeners();
+  }
+
+  // ── 外部播放态（网页播放器）────────────────────────────────────────────
+  //
+  // 内置网页播放器（WebView2 里由站点自己的播放器播放，Netflix 等）没有 media_kit
+  // [Player]：本 controller 只当 cue 仓库 + 字幕定位器用（字幕列表面板 / 画面字幕叠层 /
+  // 查词锚点全都只读它的 cues / currentCueIndex / positionMs / isPlaying）。播放位置、
+  // 播放中、总时长由页面 JS 轮询上报，经 [applyExternalPlaybackState] 注入。
+  // 优先级：测试覆盖 > 外部态 > 真 [Player]——网页播放器永不 [load]，[_player] 恒 null，
+  // 外部态即唯一来源；真播放器路径从不注入外部态，读到的仍是 [Player]。
+  int? _externalPositionMs;
+  bool? _externalIsPlaying;
+  int? _externalDurationMs;
+
+  /// 注入一次外部播放态并同步当前 cue（[updateCueForPosition]：cue 变化才通知；
+  /// 播放态 / 总时长变化另行通知）。[durationMs] 传 null = 保持上次值。
+  void applyExternalPlaybackState({
+    required int positionMs,
+    required bool playing,
+    int? durationMs,
+  }) {
+    final bool playingChanged = _externalIsPlaying != playing;
+    final bool durationChanged =
+        durationMs != null && _externalDurationMs != durationMs;
+    _externalPositionMs = positionMs;
+    _externalIsPlaying = playing;
+    if (durationMs != null) _externalDurationMs = durationMs;
+    updateCueForPosition(positionMs);
+    if (playingChanged || durationChanged) notifyListeners();
   }
 
   int? get _effectivePositionMs {
@@ -617,7 +685,9 @@ class VideoPlayerController extends ChangeNotifier
   /// 媒体总时长（毫秒）；未 [load] / 未解析媒体头时为 null。
   @override
   int? get durationMs =>
-      _debugDurationOverride ?? _player?.state.duration.inMilliseconds;
+      _debugDurationOverride ??
+      _externalDurationMs ??
+      _player?.state.duration.inMilliseconds;
 
   /// 测试注入的视频分辨率（widget 测试无真实解码帧；BUG-820 让 overlay 的
   /// 视频内容矩形几何可测）。生产恒 null。
@@ -644,6 +714,76 @@ class VideoPlayerController extends ChangeNotifier
   @visibleForTesting
   static bool framePresent(int? width, int? height) =>
       width != null && width > 0 && height != null && height > 0;
+
+  /// BUG-1863：**纯判据**——从真后台回到前台后，是否需要强制重建一次视频解码链。
+  ///
+  /// 症状是移动端切回来后画面「静止的地方变成灰色、运动的地方正常」。那个灰是
+  /// `#808080`（`1 << (bit_depth - 1)`），正是 libavcodec 在**参考帧缺失**时 error
+  /// concealment 填进帧里的中性灰；运动区域正常说明 P 帧残差解得好好的。合起来只有一个
+  /// 含义：解码器在播放中途被重建过，却**没有回到关键帧**就继续喂包，DPB 里没有可参考的
+  /// 前帧。移动端在 app 不可见期间被系统回收硬件解码器（MediaCodec 是有限资源，前台
+  /// 应用优先）就会产生这个中途重建，而画面要等到下一个 IDR 才自愈——GOP 长的片源可能
+  /// 是好几秒。
+  ///
+  /// media_kit 只在 **surface 真的被重建**时刷新（`android_video_controller` 的
+  /// `widListener` 尾部就是 `player.seek(currentPosition)`，与这里同一手法）。但 surface
+  /// 是否重建由 Flutter 的 `SurfaceProducer` 生命周期决定，与「解码器有没有被系统回收」
+  /// 是两件独立的事：短暂切走 / 系统没释放 surface 时 `wid` 不变，`ValueNotifier` 压根
+  /// 不通知，那条刷新路径整个不触发——正是「有时候才灰」的来源。
+  ///
+  /// **这不是「检测到灰了才刷」，是「每一次真后台返回都刷一次」**——必须说清楚，别被
+  /// 「按需」两个字骗了。解码器被系统回收这件事**没有任何可读信号**：mpv 不上报，
+  /// media_kit 不上报，画面已经解错了也不上报。下面三个入参里没有一个能区分「这次真的
+  /// 需要刷」和「这次白刷」，它们只负责把**刷了也没用 / 刷了有害**的场合排除掉。代价是
+  /// 每次从后台回来吃一次精确 seek 的解码延迟（media_kit 初始化时无条件下发
+  /// `hr-seek=yes` + `hr-seek-framedrop=no`，所以位置精确、但不靠丢帧掩盖这段延迟），
+  /// 长 GOP 片源上可感；换来的是灰屏不会一直挂到下一个 IDR。这是取舍，不是免费的。
+  ///
+  /// 入参，全部可测：
+  ///  - [enteredRealBackground]：真进过后台（`paused` / `hidden`）。`inactive`（通知栏
+  ///    下拉 / 多任务一瞥）不算——那期间 app 仍持有解码器。
+  ///  - [hasVideo]：当前有解码出画的视频轨（纯音频 / 未起播时刷新毫无意义）。注意它
+  ///    **只增不减**（media_kit 只在 `video-params` 到达时置位，解码器被回收后不会归零），
+  ///    所以它等价于「本次 load 曾经出过画」，对「现在是否需要刷」零信息量。
+  ///  - [seekable]：**时长已知且为正**。挡掉的是 duration == 0（未知时长流）——那上面
+  ///    这次 seek 可能把播放头甩走。**不要把它读成「挡住直播」**：HLS / DASH 滑动窗口
+  ///    直播通常上报非零 duration（= 可 seek 窗口长度），会正常穿过这条判据。
+  ///
+  /// [isMobile] 默认取 [isMobilePlatform]，注入仅为单测。桌面不做：窗口失焦不会让系统
+  /// 回收解码器，白白 seek 只会给用户一次无谓的卡顿。**iOS 是外推**：本仓只有 Android
+  /// 侧的机制证据（MediaCodec 前台优先回收），iOS 走 `NativeVideoController` +
+  /// videotoolbox，「后台丢解码会话」在业界是已知现象但**本仓没有取证**，先按同类处理。
+  static bool shouldRefreshDecodeOnResume({
+    required bool enteredRealBackground,
+    required bool hasVideo,
+    required bool seekable,
+    bool? isMobile,
+  }) {
+    if (!(isMobile ?? isMobilePlatform)) return false;
+    return enteredRealBackground && hasVideo && seekable;
+  }
+
+  /// BUG-1863：强制重建视频解码链——seek 到**当前位置**。
+  ///
+  /// mpv 的 seek 会 flush 解码器并从目标位置之前的关键帧重新解码，因而 DPB 被重新填满、
+  /// error concealment 的灰块被真实像素取代。这是 media_kit 自己在 surface 重建后用的
+  /// 同一手法（`android_video_controller` 的 `widListener`），不是新发明的偏方。
+  ///
+  /// 走 [Player.seek] 而不是 [seekMs]：这不是「用户改变了播放位置」，不该清主动跳转
+  /// 快照、不该作废「只播这一句就停」、也不该触发字幕权威重算——位置根本没变。
+  /// 未 [load]（无 player）时 no-op 安全。
+  ///
+  /// 一个边界要写明：`player.state.position` 是 mpv `time-pos` 属性事件**最后一次被
+  /// Dart 事件循环消费到**的值，不是实时读。而视频页真后台并不暂停播放，所以若后台期间
+  /// Dart 侧停摆（系统冻结进程 / 长时间不调度）而 mpv 仍在推进，这里读到的就是陈旧值，
+  /// 这一 seek 会把播放头真往回拉，偏差 = 停摆时长。media_kit 自己的 `widListener`
+  /// 有同一问题；本方法把这条路径的触发频率从「surface 重建时」提到了「每次真后台
+  /// 返回」，因此这个偏差的暴露面也跟着变大。
+  Future<void> refreshDecodeAfterResume() async {
+    final Player? player = _player;
+    if (player == null) return;
+    await player.seek(player.state.position);
+  }
 
   /// libmpv 当前是否处于缓冲态（`core-idle` / `paused-for-cache`）。media_kit 的
   /// 缓冲圈据同一 `player.state.buffering` 渲染，此处读同一真值让页面的首开就绪判据
@@ -712,6 +852,20 @@ class VideoPlayerController extends ChangeNotifier
   /// player），靠 analyze 验证编译。
   List<SubtitleTrack> get subtitleTracks =>
       _player?.state.tracks.subtitle ?? const <SubtitleTrack>[];
+
+  /// 当前选中字幕轨声明的语言（BCP-47 / ISO-639，视打包者而定）。没有轨、轨未声明
+  /// 语言、或值是 mpv 的占位（`und` / `auto` / `no`）时返回 null。
+  ///
+  /// 用途：字幕字体链的第二档真值（用户对本视频手动指定 > **这里** > 全局默认）。
+  /// 内嵌轨的 language 常被打包者写错或干脆不写，外挂 SRT 更是基本没有，所以它只能
+  /// 当线索用，不能当唯一依据——这正是 VideoBooks.language 手动指定存在的理由。
+  String? get currentSubtitleLanguage {
+    final String? language = _player?.state.track.subtitle.language?.trim();
+    if (language == null || language.isEmpty) return null;
+    const Set<String> placeholders = <String>{'und', 'auto', 'no', 'unknown'};
+    if (placeholders.contains(language.toLowerCase())) return null;
+    return language;
+  }
 
   /// 切换字幕轨（运行时 / Phase 1 预留）。未 [load] 时 no-op 安全。
   Future<void> selectSubtitleTrack(SubtitleTrack track) async {
@@ -1049,6 +1203,91 @@ class VideoPlayerController extends ChangeNotifier
     await applyShadersToPlayer(player, _shaderPaths);
   }
 
+  /// 本 Player 实例已装载的 Lua 脚本绝对路径。mpv 无 unload-script，重复
+  /// `load-script` 会实例化第二份脚本，故装载必须每 Player 实例幂等（见
+  /// video_lua_script_manager.dart 文件头）。
+  ///
+  /// 去重集的作用域是**单个 Player 实例**，不是 controller：controller 存活期间
+  /// Player 会被销毁重建（[_releaseMediaHandles] 为 TODO-1212 数据根迁移放句柄时
+  /// `dispose` 掉旧 Player 并置 null，下次 [load] 在 `_player ?? Player()` 处建新的）。
+  /// 若不随之清空，新 Player 会因「路径已在集合里」一条 `load-script` 都不发，脚本
+  /// 静默失效直到退出重进视频页。故 Player 置 null 的每一处都必须 clear（对照：
+  /// 着色器与 mpv 配置是无条件重发的，只有 Lua 走去重，漏清就是静默失效）。
+  final Set<String> _loadedLuaScripts = <String>{};
+
+  /// BUG-2032：每脚本运行态，供设置页列表显示。键 = 已下发 `load-script` 的脚本
+  /// 绝对路径（与 [_loadedLuaScripts] 同集合）；值 null = 已下发且 mpv 没报错，
+  /// 非 null = 归因到该脚本的最近一条 error/fatal 日志原文。不在 map 里 = 本
+  /// Player 未装载。随 [_resetLuaScriptState] 一起清空。
+  final ValueNotifier<Map<String, String?>> luaScriptStates =
+      ValueNotifier<Map<String, String?>>(const <String, String?>{});
+
+  /// BUG-2032：mpv 日志订阅，只为把 `load-script` 失败 / Lua 运行时错误归因到脚本
+  /// （[matchLuaLogToScripts]）。随 Player 生命周期挂一次、Player 释放时取消。
+  StreamSubscription<PlayerLog>? _luaLogSub;
+
+  /// BUG-2032：随包 libmpv 是否编入 Lua（建 Player 后读 `mpv-configuration`，
+  /// 见 [_probeLuaCapability]）。页面在 [load] 完成后落 pref，让全局设置页也能说明。
+  MpvLuaCapability luaCapability = MpvLuaCapability.unknown;
+
+  /// 装载 mpv Lua 脚本（设置面板开启开关 / 导入 / [load] 均走此入口）。幂等：已装载
+  /// 的路径跳过；未 [load]（无 player）时 no-op——脚本随下次 [load] 由页面
+  /// 重新解析传入。关闭开关无法从运行中的实例卸载，只对之后新建的 Player 生效。
+  ///
+  /// 首次真有脚本要装时先把文字 OSD 层打开（[buildLuaOsdProperties]，见管理器
+  /// 文件头"OSD"段）——放在 `load-script` 之前，脚本初始化时的 `mp.osd_message`
+  /// 才画得出来。没脚本的 Player 保持 media_kit 的 `osd-level=0`。
+  Future<void> applyLuaScripts(List<String> absolutePaths) async {
+    final Player? player = _player;
+    if (player == null) return;
+    final List<String> fresh = <String>[
+      for (final String path in absolutePaths)
+        if (_loadedLuaScripts.add(path)) path,
+    ];
+    if (fresh.isEmpty) return;
+    luaScriptStates.value = <String, String?>{
+      ...luaScriptStates.value,
+      for (final String path in fresh) path: null,
+    };
+    await _setMpvProperties(buildLuaOsdProperties());
+    if (!identical(_player, player)) return; // OSD 下发期间 Player 被换/销毁。
+    await applyLuaScriptsToPlayer(player, fresh);
+  }
+
+  /// BUG-2032：mpv 日志 → 脚本状态。与脚本无关的行（绝大多数）直接丢。
+  void _onMpvLogForLuaScripts(PlayerLog log) {
+    final LuaScriptLogHit? hit = matchLuaLogToScripts(
+      prefix: log.prefix,
+      level: log.level,
+      text: log.text,
+      scriptPaths: _loadedLuaScripts,
+    );
+    if (hit == null) return;
+    luaScriptStates.value = <String, String?>{
+      ...luaScriptStates.value,
+      for (final String path in hit.paths) path: hit.message,
+    };
+  }
+
+  /// BUG-2032：读一次 `mpv-configuration` 判断随包 libmpv 有没有编 Lua。每个
+  /// controller 只探一次（同一进程内二进制不会变）；非 libmpv 后端读到空串 → 保持
+  /// unknown，门控按"可能可用"处理。
+  Future<void> _probeLuaCapability() async {
+    if (luaCapability != MpvLuaCapability.unknown) return;
+    luaCapability =
+        parseMpvLuaCapability(await _getMpvProperty('mpv-configuration'));
+  }
+
+  /// BUG-2032：Player 置 null 的每一处都必须走这里——去重集、状态表、日志订阅三者
+  /// 的作用域都是**单个 Player 实例**，漏清任何一个就是「新 Player 一条
+  /// `load-script` 都不发」或「旧 Player 的报错挂在新 Player 上」。
+  void _resetLuaScriptState() {
+    _loadedLuaScripts.clear();
+    luaScriptStates.value = const <String, String?>{};
+    unawaited(_luaLogSub?.cancel());
+    _luaLogSub = null;
+  }
+
   /// 着色器「对比原画」旁路态：true 时临时清空 libmpv 着色器（看原画），但**保留**
   /// 启用集 [_shaderPaths]，恢复时一键贴回。供效果对比用（B：缺效果预览/对比）。
   bool _shadersBypassed = false;
@@ -1097,6 +1336,7 @@ class VideoPlayerController extends ChangeNotifier
     bool subtitleExplicitlyOff = false,
     int? renderGraphicStreamIndex,
     List<String> shaderPaths = const <String>[],
+    List<String> luaScriptPaths = const <String>[],
     VideoMpvConfig mpvConfig = VideoMpvConfig.defaults,
     Map<String, String> httpHeaderFields = const <String, String>{},
     bool autoPlay = false,
@@ -1202,9 +1442,24 @@ class VideoPlayerController extends ChangeNotifier
           hwdec: resolvePlatformHwdec(mpvConfig.hwdec),
         ),
       );
+      // 测试 / 取证钩子（与 runner 的 FUSHI_TEST_* 同类）：FUSHI_TEST_MPV_LOG_FILE 指定
+      // 路径时让 libmpv 把 verbose 日志写到该文件（VO / 交换链 / hwdec 协商全在里面，
+      // HDR 直通真机取证靠它）。不设即零行为。
+      final String? mpvLogFile =
+          Platform.environment['FUSHI_TEST_MPV_LOG_FILE'];
+      if (mpvLogFile != null && mpvLogFile.isNotEmpty) {
+        unawaited(_setMpvProperties(<String, String>{
+          'log-file': mpvLogFile,
+          'msg-level': 'all=v',
+        }));
+      }
       // TODO-1212：登记文件句柄释放（幂等，只在首次建 Player 时登记一次）。
-      _mediaHandleRegistration ??=
-          MediaHandleRegistry.instance.register(_releaseMediaHandles);
+      // mediaPath 每次现算：换集后这个 Player 握的是另一个文件，登记时快照会让
+      // 「删这一集前先放句柄」放错对象。
+      _mediaHandleRegistration ??= MediaHandleRegistry.instance.register(
+        _releaseMediaHandles,
+        mediaPath: () => videoPath,
+      );
       // BUG-739：设备切换后回补音量目标（详见 [_audioDeviceSub] 字段注释）。随 Player
       // 生命周期挂一次；换集复用同一 Player 不重挂，避免叠加订阅。
       _audioDeviceSub = player.stream.audioDevice.listen((_) {
@@ -1212,6 +1467,8 @@ class VideoPlayerController extends ChangeNotifier
         if (current == null) return;
         unawaited(current.setVolume(_muted ? 0.0 : _lastVolume));
       });
+      // BUG-2032：脚本报错归因。同样随 Player 生命周期挂一次，换集复用不重挂。
+      _luaLogSub = player.stream.log.listen(_onMpvLogForLuaScripts);
     }
     // 下面 8 处连续原生 FFI 下发（`open` / 网络缓存 / `setSubtitleTrack(no)` / 字幕抑制
     // / 着色器 / mpv 配置 / 音量 / 速率）全用方法开头捕获的局部 [player]。这些 await 缺口
@@ -1256,6 +1513,24 @@ class VideoPlayerController extends ChangeNotifier
         resolveEpisodeStart(startIntent, requestedStartMs, null);
     final bool startArmed = await applyMpvStartPosition(player, preloadStartMs);
     if (!_isCurrentLoad(player, loadToken)) return; // start 下发后换片/销毁。
+
+    // 装载 mpv Lua 脚本（开关开启时页面传入目录全集）。幂等：同一 Player 内已装载
+    // 路径跳过，不会重复实例化脚本（见 [applyLuaScripts]）。
+    //
+    // **必须在 `open` 之前**：mpv 脚本的惯用入口是 `mp.register_event("start-file")` /
+    // `"file-loaded"`，这两个事件由 loadfile 触发。装载晚于 `open` 时，本次 load 的
+    // 文件事件在脚本注册回调之前就已经发完了——首个文件上所有基于文件加载事件的脚本
+    // （autoload、按文件切 profile、自动字幕）全部空转，要换到下一集才开始生效，
+    // 用户观感是「脚本时灵时不灵」。放在 open 前则脚本必然赶上首个 loadfile。
+    // `NativePlayer.command` 自带 waitForInitialization，不需要额外等 Player 就绪。
+    //
+    // BUG-2032：先探一次随包 libmpv 有没有编 Lua（每 controller 一次，`getProperty`
+    // 同样自带 waitForInitialization）。探测不门控下发——Android 没 Lua 时
+    // `load-script` 本就是无害 no-op，门控的意义在设置页如实说明，不在这里省一条命令。
+    await _probeLuaCapability();
+    if (!_isCurrentLoad(player, loadToken)) return; // 能力探测后换片/销毁。
+    await applyLuaScripts(luaScriptPaths);
+    if (!_isCurrentLoad(player, loadToken)) return; // 脚本装载后换片/销毁。
 
     await player.open(
       Media(
@@ -1383,6 +1658,11 @@ class VideoPlayerController extends ChangeNotifier
     _heightSub = player.stream.height.listen((_) {
       notifyListeners();
     });
+    // HDR 直通：片源色彩参数到位后重判是否切宿主窗（换集复用同一 Player 时只挂一次）。
+    // media_kit 的流是广播流：`video-params` 若在订阅前已到达就丢了，故订阅后立刻拿
+    // 当前快照补判一次（快照为空时 [_onVideoParams] 自己会忽略）。
+    _videoParamsSub ??= player.stream.videoParams.listen(_onVideoParams);
+    _onVideoParams(player.state.videoParams);
 
     // TODO-1297：缓冲态翻转即 notifyListeners，让页面首开就绪判据
     // [isReadyForFirstPaint]（首帧已出画且缓冲结束）能在缓冲结束时被重新评估。
@@ -2168,6 +2448,155 @@ class VideoPlayerController extends ChangeNotifier
     await _mpvCommand(<String>[forward ? 'frame-step' : 'frame-back-step']);
   }
 
+  // ── HDR 直通 ────────────────────────────────────────────────────────────────
+
+  HdrVideoHostChannel get _hdrChannel {
+    return _hdrHostChannel ??= HdrVideoHostChannel()
+      ..onDisplayChanged = () => unawaited(_evaluateHdrOutput());
+  }
+
+  /// 单测注入假通道（必须在任何重判之前调用）。
+  @visibleForTesting
+  set debugHdrHostChannel(HdrVideoHostChannel channel) {
+    _hdrHostChannel = channel
+      ..onDisplayChanged = () => unawaited(_evaluateHdrOutput());
+  }
+
+  /// 页面把用户设置（[mode]）和画面 fit（[fitMode]）交进来；任一变化都当场重判 /
+  /// 重下发，不重建播放器。
+  void configureHdrOutput({VideoHdrOutputMode? mode, VideoFitMode? fitMode}) {
+    bool modeChanged = false;
+    if (mode != null && mode != _hdrOutputMode) {
+      _hdrOutputMode = mode;
+      modeChanged = true;
+    }
+    if (fitMode != null && fitMode != _hdrHostFitMode) {
+      _hdrHostFitMode = fitMode;
+      if (hdrHostActive.value) {
+        unawaited(_setMpvProperties(hdrHostFitProperties(fitMode)));
+      }
+    }
+    if (modeChanged) unawaited(_evaluateHdrOutput());
+  }
+
+  /// [HdrHostRectReporter] 回报的 Video 物理像素矩形（主窗客户区坐标系）。非直通时
+  /// 只记着，进入直通那一刻先把矩形下发再切 VO，画面不会先出现在错误位置。
+  void reportHdrHostRect(Rect physical) {
+    if (_hdrHostRect == physical) return;
+    _hdrHostRect = physical;
+    if (hdrHostActive.value) unawaited(_hdrChannel.setRect(physical));
+  }
+
+  void _onVideoParams(VideoParams params) {
+    // 卸载 / 未知时 primaries 为 null：保持上次判断，等下一个文件的参数到位。
+    if (params.primaries == null) return;
+    final bool hdr = isHdrVideoParams(
+      primaries: params.primaries,
+      gamma: params.gamma,
+    );
+    if (hdr == _hdrSourceIsHdr && hdrHostActive.value == hdr) return;
+    debugPrint('[hdr-host] params primaries=${params.primaries} '
+        'gamma=${params.gamma} hdr=$hdr');
+    _hdrSourceIsHdr = hdr;
+    unawaited(_evaluateHdrOutput());
+  }
+
+  /// 排队一次重判（串行，见 [_hdrEvalChain]）。
+  Future<void> _evaluateHdrOutput() {
+    final Future<void> next = _hdrEvalChain.then((_) => _evaluateHdrOutputNow());
+    _hdrEvalChain = next.catchError((Object _) {});
+    return next;
+  }
+
+  Future<void> _evaluateHdrOutputNow() async {
+    if (!Platform.isWindows) return;
+    final Player? player = _player;
+    if (player == null) return;
+    bool displayHdr = false;
+    if (_hdrOutputMode == VideoHdrOutputMode.auto) {
+      displayHdr = (await _hdrChannel.displayInfo()).isHdr;
+      if (!identical(_player, player)) return;
+    }
+    final bool want = shouldUseHdrHostWindow(
+      isWindows: true,
+      mode: _hdrOutputMode,
+      displayHdr: displayHdr,
+      sourceHdr: _hdrSourceIsHdr,
+    );
+    debugPrint('[hdr-host] eval mode=${_hdrOutputMode.name} '
+        'display=$displayHdr source=$_hdrSourceIsHdr want=$want '
+        'active=${hdrHostActive.value}');
+    if (want == hdrHostActive.value) return;
+    if (want) {
+      await _enterHdrHost(player);
+    } else {
+      await _exitHdrHost(player);
+    }
+  }
+
+  Future<void> _enterHdrHost(Player player) async {
+    final int hwnd = await _hdrChannel.create();
+    if (!identical(_player, player)) return;
+    if (hwnd == 0) {
+      debugPrint('[hdr-host] create failed (hwnd=0)');
+      return;
+    }
+    final Rect? rect = _hdrHostRect;
+    if (rect != null) await _hdrChannel.setRect(rect);
+    // fit 属性先于宿主属性；`vo` 在 [hdrHostMpvProperties] 里恒最后。
+    await _setMpvProperties(<String, String>{
+      ...hdrHostFitProperties(_hdrHostFitMode),
+      ...hdrHostMpvProperties(hwnd),
+    });
+    if (!identical(_player, player)) return;
+    final VideoPlayerController? previous = _hdrHostOwner;
+    if (previous != null && !identical(previous, this)) {
+      previous._releaseHdrHostOwnership();
+    }
+    _hdrHostOwner = this;
+    _videoController?.hidden.value = true;
+    hdrHostActive.value = true;
+    hdrHostActiveGlobal.value = true;
+    notifyListeners();
+    debugPrint('[hdr-host] enter hwnd=$hwnd rect=$rect fit=$_hdrHostFitMode '
+        'videoController=${_videoController != null}');
+  }
+
+  Future<void> _exitHdrHost(Player player) async {
+    // 先把 VO 切回 render API 再拆宿主窗：gpu-next 还在跑时销毁它的父窗会让 VO 报错。
+    await _setMpvProperties(kTextureMpvProperties);
+    if (!identical(_player, player)) return;
+    _videoController?.hidden.value = false;
+    hdrHostActive.value = false;
+    notifyListeners();
+    if (identical(_hdrHostOwner, this)) {
+      _hdrHostOwner = null;
+      hdrHostActiveGlobal.value = false;
+      await _hdrChannel.destroy();
+    }
+    debugPrint('[hdr-host] exit');
+  }
+
+  /// 被另一个控制器接管宿主窗：只清自己的直通位，窗和全局位归新主人。
+  void _releaseHdrHostOwnership() {
+    _videoController?.hidden.value = false;
+    hdrHostActive.value = false;
+    notifyListeners();
+  }
+
+  /// 按 map **顺序**逐条下发 mpv 属性；单条失败跳过（与 [applyMpvConfigToPlayer] 同范式）。
+  Future<void> _setMpvProperties(Map<String, String> props) async {
+    final dynamic native = _player?.platform;
+    if (native == null) return;
+    for (final MapEntry<String, String> e in props.entries) {
+      try {
+        await native.setProperty(e.key, e.value);
+      } catch (_) {
+        // 非 libmpv / 属性不接受：跳过这条，继续下一条。
+      }
+    }
+  }
+
   /// 读一条 libmpv 字符串属性（[property]），best-effort：非 libmpv 后端（无
   /// `getProperty`）/ 属性不存在 / 抛异常时返回 `''`。与 [_mpvCommand]（写命令）/
   /// [applyMpvConfigToPlayer]（写属性）同范式，只是方向相反——读 `chapter-list/*`、
@@ -2924,6 +3353,19 @@ class VideoPlayerController extends ChangeNotifier
     _widthSub = null;
     unawaited(_heightSub?.cancel());
     _heightSub = null;
+    unawaited(_videoParamsSub?.cancel());
+    _videoParamsSub = null;
+    // HDR 直通：播放器随后整个释放（VO 一起没了），只需拆宿主窗 + 还原主窗透明。
+    // （`_player = null` 在下面，排队中的重判到点后看到空 Player 直接返回。）
+    if (hdrHostActive.value) {
+      _videoController?.hidden.value = false;
+      hdrHostActive.value = false;
+    }
+    if (identical(_hdrHostOwner, this)) {
+      _hdrHostOwner = null;
+      hdrHostActiveGlobal.value = false;
+      unawaited(_hdrChannel.destroy());
+    }
     unawaited(_bufferingReadySub?.cancel());
     _bufferingReadySub = null;
     unawaited(_durationReadySub?.cancel());
@@ -2941,6 +3383,8 @@ class VideoPlayerController extends ChangeNotifier
     unawaited(_player?.dispose());
     _player = null;
     _videoController = null;
+    _resetLuaScriptState(); // 与 [_releaseMediaHandles] 一致，防复用残留。
+    luaScriptStates.dispose();
     _videoPath = null;
     _chapters = const <VideoChapter>[];
     super.dispose();
@@ -2955,6 +3399,7 @@ class VideoPlayerController extends ChangeNotifier
     if (player == null) return;
     _player = null;
     _videoController = null;
+    _resetLuaScriptState(); // 新 Player 必须重新 load-script（见字段注释）。
     await player.dispose();
   }
 

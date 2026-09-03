@@ -112,7 +112,6 @@ SyncOrchestrator _bookOrchestrator({
       syncContent: syncContent,
       syncAudioBookFiles: false,
       syncDictionary: false,
-      syncLocalAudio: false,
     );
 
 // ── Fake staged backend（云路径用，同 sync_orchestrator_live_dict_test.dart）──

@@ -146,8 +146,7 @@ class AnkiConnectService {
     }
     if (result['error'] != null) {
       final String message = result['error'].toString();
-      if (action == 'addNote' &&
-          message == 'cannot create note because it is a duplicate') {
+      if (action == 'addNote' && message == kAnkiConnectDuplicateError) {
         throw AnkiConnectDuplicateException(message);
       }
       throw AnkiConnectException(message);
@@ -415,8 +414,43 @@ class AnkiConnectService {
     return _asStringList(await _request('deckNames'), 'deckNames');
   }
 
+  /// BUG-2051：卡组名 → id。查询串里**不放卡组名**的前提（见
+  /// [ankiDuplicateDeckIds]）：Anki 搜索里的 `deck:` 是**通配匹配**（`_` 单字、
+  /// `*` 任意），而查重那侧（AnkiConnect `duplicateScopeOptions.deckName`）是
+  /// **精确名**。本机实测同一个真卡组名：`deck:"…zh-C_"` 命中 1501 条，而查重侧
+  /// 同样把最后一个字换成 `_` 就判「不重复」。带 `_` 的卡组名（本机确有
+  /// `galgame_card_test`）会让两侧对「哪些卡在范围内」给出不同答案。
+  Future<Map<String, int>> getDeckNamesAndIds() async {
+    return _asNameIdMap(await _request('deckNamesAndIds'), 'deckNamesAndIds');
+  }
+
   Future<List<String>> getModelNames() async {
     return _asStringList(await _request('modelNames'), 'modelNames');
+  }
+
+  /// BUG-2051：笔记类型名 → id。Anki 的第一字段判重（`dupe:` 搜索）以**笔记类型 id**
+  /// 为参数，所以要跨全部笔记类型复现 `canAddNotesWithErrorDetail` 的判据就必须先拿
+  /// 到全部 id。识别不出 id 的表项直接跳过（宁可少查一个笔记类型，也不要让整次打开
+  /// 因为一条脏数据失败）。
+  Future<Map<String, int>> getModelNamesAndIds() async {
+    return _asNameIdMap(await _request('modelNamesAndIds'), 'modelNamesAndIds');
+  }
+
+  /// `{名字: id}` 应答的共用解析。识别不出 id 的表项直接跳过（宁可少一个条目，
+  /// 也不要让整次调用因为一条脏数据失败）。
+  Map<String, int> _asNameIdMap(dynamic result, String action) {
+    if (result is! Map) {
+      throw AnkiConnectException(
+        'Unexpected AnkiConnect response for $action (expected an object)',
+      );
+    }
+    final out = <String, int>{};
+    result.forEach((dynamic key, dynamic value) {
+      final int? id =
+          value is int ? value : int.tryParse(value?.toString() ?? '');
+      if (id != null) out[key.toString()] = id;
+    });
+    return out;
   }
 
   Future<List<String>> getModelFields(String modelName) async {
@@ -460,21 +494,75 @@ class AnkiConnectService {
     return result is int ? result : int.tryParse(result.toString());
   }
 
-  /// [scope] 默认 [AnkiDuplicateScope.deck]（= 旧行为：只查选中卡组及其子卡组），
-  /// 所以未传该参数的旧调用点与测试行为逐字不变。
-  Future<bool> isDuplicate({
+  /// 查重：把「这张卡加不加得进去」原样问 Anki 自己，与 [addNote] **物理同源**。
+  ///
+  /// BUG-1915 根因。此前这里走 `findNotes "<第一字段名>:<词>"`，而 [addNote] 的判重是
+  /// Anki 内建的**第一字段 checksum**（`duplicateScopeOptions`，含 `checkAllModels`）。
+  /// 两者判的根本不是一件事：
+  ///
+  ///   * `findNotes` 按**字段名**匹配 → 只能命中「恰好也有同名字段」的笔记类型；
+  ///   * Anki 按**第一字段位置**匹配 → 跨全部笔记类型，不管那个字段叫什么。
+  ///
+  /// 于是一个卡组里混装两种笔记类型（实测：1501 张第一字段名为 `Word` 的旧卡 +
+  /// 12 张第一字段名为 `Expression` 的新卡）时，旧卡里已有的词查重恒判「不重复」→
+  /// 弹窗画可制卡 `+`，用户一点却被 [addNote] 以重复拒绝。两条判据必须是同一条。
+  ///
+  /// 做法不是「让两边的条件长得一样」（那还会再漂移一次），而是**删掉第二条判据**：
+  /// 直接调 AnkiConnect 的 `canAddNotesWithErrorDetail`，它内部走的就是 [addNote]
+  /// 用的同一个 `isNoteDuplicateOrEmptyInScope`。options 也复用同一个
+  /// [_addNoteDuplicateOptions]，不再手写一份。
+  ///
+  /// 只传第一字段：Anki 的判重只看第一字段，其余字段留空不影响判定，也省掉在查词
+  /// 渲染路径上构造整张卡的开销。
+  ///
+  /// 已知边界（无法在查词时消除）：探测传的第一字段值是词条本身（[firstFieldValue]），
+  /// 而制卡时那一格是 `fieldMappings` 渲染的结果。第一字段映射成 `{expression}`
+  /// （Lapis 出厂默认）时两者逐字节相同；映射成依赖句子/媒体的模板时，查词阶段根本
+  /// 拿不到那些数据，任何实现都无法预知制卡时的第一字段。此时探测退化为「按词查」，
+  /// 与旧行为一致，不比现状差。
+  Future<bool> isDuplicateForAdd({
     required String deckName,
-    required String fieldName,
-    required String fieldValue,
+    required String modelName,
+    required String firstFieldName,
+    required String firstFieldValue,
     AnkiDuplicateScope scope = AnkiDuplicateScope.deck,
   }) async {
-    return (await findNotesByField(
-      deckName: deckName,
-      fieldName: fieldName,
-      fieldValue: fieldValue,
-      scope: scope,
-    ))
-        .isNotEmpty;
+    final Map<String, Object?> note = <String, Object?>{
+      'deckName': deckName,
+      'modelName': modelName,
+      'fields': <String, String>{firstFieldName: firstFieldValue},
+      // 探测问的是「Anki 认不认为这是重复」，与用户的「允许重复」偏好无关：
+      // 恒传 allowDuplicate:false。若跟随 settings.allowDupes，开了允许重复的
+      // 用户就永远等不到 canAdd:false，✓ 再也画不出来。
+      'options': _addNoteDuplicateOptions(
+        deckName: deckName,
+        allowDuplicate: false,
+        scope: scope,
+      ),
+    };
+    final dynamic result = await _request(
+      'canAddNotesWithErrorDetail',
+      <String, dynamic>{
+        'notes': <Object?>[note],
+      },
+    );
+    if (result is! List || result.isEmpty) {
+      throw AnkiConnectException(
+        'Unexpected AnkiConnect response for canAddNotesWithErrorDetail '
+        '(expected a non-empty list)',
+      );
+    }
+    final dynamic first = result.first;
+    if (first is! Map) {
+      throw AnkiConnectException(
+        'Unexpected AnkiConnect response for canAddNotesWithErrorDetail '
+        '(expected an object per note)',
+      );
+    }
+    if (first['canAdd'] == true) return false;
+    // canAdd:false 有多种原因（卡组/笔记类型不存在、第一字段为空……）。只有 Anki
+    // 明说是重复才算重复——把「配置过期」当成「已制卡」会让每个词都画上 ✓。
+    return first['error']?.toString() == kAnkiConnectDuplicateError;
   }
 
   Future<List<int>> findNotesByField({
@@ -776,9 +864,45 @@ class AnkiConnectService {
   // `{query: 'nid:<id>'}`，把 Anki 主窗口的 Browse 视图过滤到该 note）。需要 Anki GUI
   // 在前台才有视觉效果；纯远程/无 GUI 时 AnkiConnect 仍返回成功（不抛）。
   Future<void> guiBrowse(int noteId) async {
-    await _request('guiBrowse', {'query': 'nid:$noteId'});
+    await guiBrowseQuery('nid:$noteId');
+  }
+
+  /// BUG-2051：把 Anki 浏览器过滤到任意 [query]，并回传**被选中的 card id**。
+  ///
+  /// ↗ 的调用方只喂 [ankiNoteIdBrowseQuery] 产出的 `nid:a,b,c`：命中与否已经由
+  /// 上一步（同源的 `dupe:` 查询）定死，这里只负责「打开」，**返回值不参与任何
+  /// 判定**。这是「返回值是附加信息、不是成败标志」的最强形式：调用方连读都不读，
+  /// 也就没有第二条判据可以漂移。下面的 `null` / `[]` 区分保留给其它调用方。
+  ///
+  /// 应答**不是列表**时返回 `null`，而不是空列表——这两件事不是一回事：
+  ///
+  /// - `[]` = 这台 Anki 明确答「一张都没选中」→ 可以说「没有找到已制的卡片」；
+  /// - `null` = 这台 AnkiConnect 的 `guiBrowse` 压根不回传命中列表（旧版本只回
+  ///   `null`）。`guiBrowse` 的语义是「**打开浏览器并搜索**」，返回值是附加信息
+  ///   而不是成败标志：请求既然没抛，浏览器就已经开着并过滤到了这条查询。把这个
+  ///   「未知」降维成「零命中」，那台机器上就会出现浏览器明明开着、我们却弹
+  ///   「没有找到已制的卡片」——正是 BUG-2051 要修掉的那句错话换个成因再来一次。
+  ///
+  /// 不做版本判断：那要多一次 `version` 往返，还得硬编码一张「哪个版本起回列表」
+  /// 的表，而任何代理 / fork 都能让这张表失效。按语义处理没有版本假设。
+  Future<List<int>?> guiBrowseQuery(String query) async {
+    final dynamic result = await _request('guiBrowse', {'query': query});
+    if (result is! List) return null;
+    return <int>[
+      for (final dynamic id in result)
+        if (id is int)
+          id
+        else if (int.tryParse(id.toString()) case final int parsed)
+          parsed,
+    ];
   }
 }
+
+/// AnkiConnect 在 `createNote` 里对重复卡抛出的固定文案。`addNote` 与
+/// `canAddNotesWithErrorDetail` 走的是同一段代码、同一句文案，所以两处判定复用
+/// 这一个字面量（BUG-1915：判据同源的前提是连错误文本都别各写一份）。
+const String kAnkiConnectDuplicateError =
+    'cannot create note because it is a duplicate';
 
 String _escapeAnkiQuery(String value) => value.replaceAll('"', '\\"');
 
@@ -788,9 +912,18 @@ String _escapeAnkiQuery(String value) => value.replaceAll('"', '\\"');
 /// 取代各处对 SocketException / http.ClientException 的 toString() 透传。
 String classifyAnkiConnectError(Object error) {
   if (error is AnkiConnectPreDeliveryException) {
-    return classifyAnkiConnectError(error.cause);
+    // 建连阶段就失败：一个 HTTP 请求都还没发出去。底层抛的是 SocketException
+    // 还是 `Socket.connect` 的超时，对用户是同一件事——那个地址上没人接。一律归
+    // refused，好让 connectionTimeout 保持**单一含义**（见下）。此前这里递归看
+    // cause，两个阶段的超时会撞进同一个码，提示也就只能含糊说「检查防火墙」。
+    return AnkiErrorCode.connectionRefused;
   }
   if (error is TimeoutException) {
+    // 走到这里的超时**一定是应答阶段**的：连接工厂已经把建连失败标成
+    // [AnkiConnectPreDeliveryException] 拦在上面，所以 TCP 是连上了、请求也发出去
+    // 了，只是没人按 AnkiConnect 的规矩回话。在 localhost 上这几乎只有两种可能：
+    // 这个端口上蹲着的根本不是 AnkiConnect（端口被别的程序占了），或者 Anki 卡住。
+    // 文案据此给出可操作的下一步（换端口），而不是泛泛的「网络超时」。
     return AnkiErrorCode.connectionTimeout;
   }
   if (error is SocketException) {
@@ -805,8 +938,18 @@ String classifyAnkiConnectError(Object error) {
   return AnkiErrorCode.connectionUnknown;
 }
 
+/// 是否是**传输层**失败（socket / 超时 / http），而不是 AnkiConnect 应答的业务错误、
+/// 也不是本地编程错误（payload 解析、空列表 firstWhere 之类）。
+///
+/// 这三选一原本在制卡失败映射、查重冷却、Lapis 一键配置三处各写了一份；判据同源才
+/// 不会漂成「一处认它是网络错、另一处不认」。
+bool isAnkiConnectTransportError(Object error) =>
+    error is SocketException ||
+    error is TimeoutException ||
+    error is http.ClientException;
+
 /// 给**设置页**（非 toast）用的英文可读提示：toast 走主 app 的本地化映射，这里仅服务
-/// checkConnection，文案与旧实现一致，但来源统一到稳定码（不再透传异常原文）。
+/// checkConnection；来源统一到稳定码（不再透传异常原文）。
 /// [host]/[port] 仅用于丰富英文回退文案；缺省时省略（用户看到的 toast 由主 app 按
 /// [code] 本地化，本回退串不含地址也无碍）。
 String ankiConnectErrorHint(String code, {String? host, int? port}) {
@@ -817,8 +960,10 @@ String ankiConnectErrorHint(String code, {String? host, int? port}) {
       return 'Connection refused$where (is Anki Desktop running?).\n'
           'Check that AnkiConnect add-on (2055492159) is installed.';
     case AnkiErrorCode.connectionTimeout:
-      return 'Connection timed out$where.\n'
-          'Check firewall settings or verify the host and port.';
+      return 'Connected to$where but got no answer.\n'
+          'Something is listening on that port and it is not answering as '
+          'AnkiConnect - the port is probably taken by another program '
+          '(or Anki is frozen). Switch AnkiConnect to a free port.';
     case AnkiErrorCode.httpError:
       return 'HTTP error connecting to AnkiConnect$where.';
     default:
@@ -885,6 +1030,118 @@ Map<String, Object> _addNoteDuplicateOptions({
       'checkAllModels': true,
     },
   };
+}
+
+/// BUG-2051：与 [AnkiConnectService.isDuplicateForAdd]（= `addNote` 内建判重）
+/// **同源**的搜索串——「Anki 认为这个词已经有卡」的那批卡，用搜索语法表达一遍。
+///
+/// 根因回顾：画 ✓ 的判据是 Anki 内建的**第一字段 checksum**（跨全部笔记类型，不看
+/// 字段叫什么名字），而 ↗「在 Anki 中打开」此前是另发一条 `"<第一字段名>:<词>"`
+/// 按**字段名**查。本机实测（卡组 `正在背::Kaishi 1.5k  zh-CH` 里混装两种笔记类型）：
+/// `canAddNotesWithErrorDetail` 判 `たっぷり` 重复 → 画 ✓，而
+/// `"Expression:たっぷり"` 恒 0 命中（那张卡是 Kaishi，第一字段叫 `Word`）→ ↗ 弹
+/// 「没有找到已制的卡片」。同一个词，两句互相打架的说法。
+///
+/// `canAddNotes` 只回布尔、给不出 note id，所以「同源」不能靠复用它。Anki 搜索语法
+/// 里的 `dupe:<笔记类型id>,<文本>` **就是**那条 checksum 判据的搜索版本（Anki 浏览器
+/// 侧栏的「重复」用的也是它），于是跨全部笔记类型 = 每个 id 一个 `dupe:` 子句 OR 起来，
+/// 再按 [deckIds] 前置一个**按 id** 的卡组过滤器（`did:`，见 [ankiDuplicateDeckIds]）。
+///
+/// 实测（本机真 Anki，AnkiConnect 25.x）：
+/// - `(did:1771332842760) ("dupe:1758278161949,たっぷり" OR …)` → `[1758347126448]`，
+///   正是 ✓ 认的那张；换成 `deck:"<同一卡组名>"` 结果相同，但见下面的通配符陷阱；
+/// - `dupe:` 按**第一个逗号**切（`"dupe:mid,x,たっぷり"` 不命中，排除了按最后一个逗号切），
+///   所以词里含逗号不会截断文本；
+/// - 未知的笔记类型 id 只是不命中、不报错，故全量 OR 安全；
+/// - 值里的引号/反斜杠/空格/冒号/括号/星号在整体加引号后都能解析，且 `*` 不当通配符
+///   （`dupe:` 是精确文本比较，不是模糊匹配）——**这是查询串里唯一还留着的名字，
+///   而它恰好是精确比较的那一个**。
+///
+/// [value] 为空或 [modelIds] 为空时返回空串——调用方据此不发这次请求（空搜索串会把
+/// 整个收藏集摊开，绝不能当成「这个词的卡」）。[deckIds] 为空 = 不限卡组。
+String ankiDuplicateSearchQuery({
+  required String value,
+  required Iterable<int> modelIds,
+  required Iterable<int> deckIds,
+}) {
+  if (value.isEmpty) return '';
+  final List<int> ids = modelIds.toList(growable: false);
+  if (ids.isEmpty) return '';
+  final String escaped = _escapeAnkiQuery(value);
+  // 每个子句整体加引号：值里的空格/冒号/括号否则会被 Anki 的查询解析器切开。
+  final String dupeTerms =
+      ids.map((int mid) => '"dupe:$mid,$escaped"').join(' OR ');
+  // 单个笔记类型也照样套括号：与卡组过滤器并置时 `A B OR C` 的结合律会把
+  // 卡组条件只绑到第一个子句上，那是一句悄悄查错范围的查询。
+  final String dupeGroup = '($dupeTerms)';
+  final String deckFilter = ankiDeckIdFilter(deckIds);
+  return deckFilter.isEmpty ? dupeGroup : '$deckFilter $dupeGroup';
+}
+
+/// BUG-2051：把卡组**范围**解析成一组卡组 id，替代往搜索串里塞卡组名。
+///
+/// 为什么不能按名字查：Anki 搜索里的 `deck:` 是**通配匹配**，`_` 匹配任一字符、
+/// `*` 匹配任意串；而画 ✓ 的那侧（AnkiConnect `duplicateScopeOptions.deckName`）
+/// 是**精确名**。本机实测（同一个真卡组）：
+/// `deck:"…zh-CH"` → 1501 条、`deck:"…zh-C_"` → 同样 1501 条、`deck:"e*"` → 整棵
+/// eggrolls 树；而查重侧把最后一个字换成 `_` 或用 `正在背::*` 都判「不重复」。
+/// 也就是说：只要卡组名里有 `_` 或 `*`（本机就有 `galgame_card_test`），两侧对
+/// 「哪些卡在范围内」的答案就不一样——那正是判据漂移的下一个入口。id 没有这个问题。
+///
+/// `did:` **只匹配该卡组自己、不含子卡组**（实测：父卡组 `did:` n=1，
+/// `deck:` n=10164），所以子卡组要在这里按名字前缀**精确**展开（`名 == 目标` 或
+/// `名.startsWith('目标::')`）——这与查重侧 `checkChildren: true` 的口径一致。
+/// 字符串比较在 Dart 里做，不经过 Anki 的查询解析器，也就没有通配符语义。
+///
+/// 返回空列表 = 不加卡组过滤（整个收藏集）：[AnkiDuplicateScope.collection] 本来
+/// 就不看卡组；卡组名为空或**已不存在**（配置过期）时同样退化成不限卡组——fail-open，
+/// 宁可多列几张也好过对着一张确实存在的卡说「没有找到」。
+///
+/// ⚠️ **这一格与 ✓ 侧的方向是相反的，而且是有意的**：画 ✓ 的查重走 AnkiConnect
+/// `duplicateScopeOptions.deckName`，卡组名解析不出时它直接判「不重复」（fail-**closed**）。
+/// 本侧 fail-open 只在「↗ 被 ✓ 门控」的前提下安全——↗ 按钮只在已画 ✓ 时可见，所以
+/// 多圈进来的卡用户看不到。**谁要是把本函数复用到不受 ✓ 门控的入口，先想清楚这条**：
+/// 那里 fail-open 会让「卡组配置过期」静默变成「整库范围」，而不是一个可见的失败。
+List<int> ankiDuplicateDeckIds({
+  required String deckName,
+  required AnkiDuplicateScope scope,
+  required Map<String, int> deckNamesAndIds,
+}) {
+  final String target = switch (scope) {
+    AnkiDuplicateScope.collection => '',
+    // `::` 是 Anki 的层级分隔符；没有分隔符时根卡组就是它自己。
+    AnkiDuplicateScope.deckRoot => deckName.split('::').first,
+    AnkiDuplicateScope.deck => deckName,
+  };
+  if (target.isEmpty) return const <int>[];
+  final String childPrefix = '$target::';
+  final List<int> ids = <int>[
+    for (final MapEntry<String, int> e in deckNamesAndIds.entries)
+      if (e.key == target || e.key.startsWith(childPrefix)) e.value,
+  ];
+  ids.sort();
+  return ids;
+}
+
+/// `(did:a OR did:b)`；空列表 → 空串（不限卡组）。
+String ankiDeckIdFilter(Iterable<int> deckIds) {
+  final List<int> ids = deckIds.toList(growable: false);
+  if (ids.isEmpty) return '';
+  // 与 dupe 组同样的理由套括号：`did:a OR did:b (X)` 的结合律会查错范围。
+  return '(${ids.map((int did) => 'did:$did').join(' OR ')})';
+}
+
+/// BUG-2051：把一批 note id 变成 Anki 浏览器的查询串 `nid:a,b,c`。
+///
+/// ↗ 最终喂给 `guiBrowse` 的**只有这一句**：浏览器地址栏里不出现词、不出现卡组名，
+/// 于是「浏览器里列出来的」与「我们判定命中的」在物理上是同一批笔记，中间没有第二次
+/// 匹配可以漂移。实测 `nid:a,b,c` 多 id 逗号形式被 Anki 接受（n=3）。
+///
+/// 空列表返回空串——调用方据此不发这次 `guiBrowse`（空搜索串会把整库摊开）。
+String ankiNoteIdBrowseQuery(Iterable<int> noteIds) {
+  final List<int> ids = noteIds.toList(growable: false);
+  if (ids.isEmpty) return '';
+  return 'nid:${ids.join(',')}';
 }
 
 String _fieldValueQuery({

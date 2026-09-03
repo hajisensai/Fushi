@@ -1,6 +1,7 @@
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
+import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -8,6 +9,8 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
+    show dispatchClaimedMouseAction;
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:fushi/utils.dart';
 
@@ -239,6 +242,36 @@ Rect resolvePopupRect({
   );
 }
 
+/// BUG-1651：根据 WebView 内容高度与当前视口高度的差值，求下一帧弹窗总高度。
+///
+/// `currentPopupHeight` 是包含 Flutter 顶栏/header 的外壳高度；JS 上报的两个值只属于
+/// WebView body。用差值增减当前总高，就不需要在 Dart 重复猜顶栏高度。结果受用户的
+/// 最小/最大高度约束；平台视图初始化期的 0/NaN 测量保持原高，避免闪跳。
+///
+/// **单位铁律**：[contentHeight] 与 [viewportHeight] 必须同为 **host CSS px**。内容
+/// 高度的原始测量是容器 `scrollHeight`——CSS `zoom` 不改它，那是未乘 z 的 layout px；
+/// 换算在 popup.js 的 `__fushiReportedContentHeight()` 里完成（乘回 documentElement /
+/// shadow host 上的 zoom = 界面大小 × 词典字号/16）。默认 z=1 时两种单位恰好相等，
+/// 所以只用 z=1 的用例永远发现不了单位错配。
+double resolveAutoFitPopupHeight({
+  required double currentPopupHeight,
+  required double contentHeight,
+  required double viewportHeight,
+  required double minHeight,
+  required double maxHeight,
+}) {
+  if (!currentPopupHeight.isFinite ||
+      !contentHeight.isFinite ||
+      !viewportHeight.isFinite ||
+      contentHeight < 0 ||
+      viewportHeight <= 0 ||
+      minHeight > maxHeight) {
+    return currentPopupHeight;
+  }
+  final double desired = currentPopupHeight + contentHeight - viewportHeight;
+  return desired.clamp(minHeight, maxHeight).toDouble();
+}
+
 /// Phase B 拖拽尺寸（2026-07-15）— 把贴词算出的 [anchored] rect 的**原点钉回**
 /// [topLeft]（拖拽起始时那张卡的左上角），只保留其尺寸并夹住不越出屏幕（右下不出界）。
 ///
@@ -317,6 +350,72 @@ Widget parkedPopupLayer({
       child: _PopupEntranceFade(visible: visible, child: child),
     ),
   );
+}
+
+/// 停驻 realm 在停驻期的外壳尺寸（逻辑像素）。接管时 Positioned 换成真实几何，
+/// WebView 随之改尺寸——与常驻热槽停驻期按 `Rect.zero` 算位一样只是个占位盒。
+const Size kParkedRealmSize = Size(360, 480);
+
+/// BUG-2039 ③：把一把停驻的嵌套 realm 键（[DictionaryPopupController.parkedRealms]）
+/// 渲染成一层**屏外隐藏**弹窗，让键背后的 WebView element 在两次嵌套查词之间活着。
+/// 宿主 Stack 里紧跟在 entries 层之后逐把渲染；下一条嵌套层用同一把键建 entry 时，
+/// 这层从 Stack 消失、entry 层带着同一把 GlobalKey 出现，Flutter 按 GlobalKey 把
+/// element（连同原生 WebView 表面）整体搬过去，不拆不建。
+///
+/// 停驻期只挂一个 seed 空结果（与热槽同一单例 [kPopupSearchingPlaceholderResult]，
+/// `keepWebViewWarm` 让 [DictionaryPopupLayer] 在无结果时也挂 WebView）；所有回调
+/// 都是 no-op——屏外隐藏层收不到任何用户输入。
+Widget parkedRealmPopupLayer({
+  required GlobalKey<DictionaryPopupWebViewState> webViewKey,
+  required Size screen,
+  required bool isDark,
+  Color? overrideFillColor,
+}) {
+  return parkedPopupLayer(
+    key: ObjectKey(webViewKey),
+    pos: Rect.fromLTWH(0, 0, kParkedRealmSize.width, kParkedRealmSize.height),
+    visible: false,
+    screen: screen,
+    child: DictionaryPopupLayer(
+      result: kPopupSearchingPlaceholderResult,
+      webViewKey: webViewKey,
+      keepWebViewWarm: true,
+      isDark: isDark,
+      overrideFillColor: overrideFillColor,
+      onDismiss: () {},
+      onTextSelected: (String text, Rect localRect) {},
+      onLinkClick: (String query, Rect localRect) {},
+      onMineEntry: (Map<String, String> fields) async =>
+          const MinePopupResult(),
+      onDuplicateCheck: (String expression, String reading) async => false,
+    ),
+  );
+}
+
+/// 一把停驻 realm 键 → 一批屏外隐藏层。**六（现七）个宿主共用的唯一原语**。
+///
+/// 此前只有 `DictionaryPageMixin.buildParkedRealmLayers` 一个薄封装，而
+/// `base_source_page.dart` 没混入那个 mixin，于是把循环体内联抄了一遍；
+/// `popup_dictionary_page.dart` 干脆一处都没接。漏一处的症状是**嵌套查词静默
+/// 退回冷建 WebView**——控制器照常把离栈层的键停驻（[_retireEntries] 是所有
+/// 出栈路径的必经处），宿主不渲染就等于键背后的 element 被销毁，
+/// `_takeRealmKey()` 接管到的是一把已死的键。测试全绿、analyze 全绿，
+/// 只有用户觉得慢。登记面由 `parked_realm_host_registration_guard_test.dart` 守。
+List<Widget> parkedRealmPopupLayers({
+  required Iterable<GlobalKey<DictionaryPopupWebViewState>> parkedRealms,
+  required Size screen,
+  required bool isDark,
+  Color? overrideFillColor,
+}) {
+  return <Widget>[
+    for (final GlobalKey<DictionaryPopupWebViewState> key in parkedRealms)
+      parkedRealmPopupLayer(
+        webViewKey: key,
+        screen: screen,
+        isDark: isDark,
+        overrideFillColor: overrideFillColor,
+      ),
+  ];
 }
 
 /// TODO-890 姊妹项：查词弹窗**入场淡入**收口。app 外覆盖窗靠注入 CSS
@@ -415,6 +514,54 @@ Rect popupWordScreenRect({
   return fallback;
 }
 
+/// BUG-2054：把嵌套查词刚打开的**子层**（父层 [parentIndex] + 1）从「点击的首字符」
+/// 重锚到**整词 bbox**。
+///
+/// 子层打开时用的锚点来自 selection.js `getSelectionRect()` —— 那是选区**首字符**的
+/// 矩形（发 textSelected 时词典还没查，匹配长度未知），跨行选区时它只覆盖点击那一行，
+/// 于是弹窗贴在第一行下方、正好盖住选区的第二行。查词命中后
+/// [DictionaryPopupWebView.highlightSelection] 返回的 [wordLocalRect] 才是整词
+/// bbox（跨行时 bottom 落在最后一行），用它重锚即可让弹窗落到整个选区之下 —— 与
+/// [popupWordScreenRect] 的 BUG-129、阅读器正文车道的 BUG-767 是同一条不变式：
+/// **弹窗不覆盖被查词**。
+///
+/// [expectedTerm] 是本次查的词，**身份门**：`pushNestedPopup` 的 `beginTop` 是在
+/// `await searchDictionary` **之前**同步压栈的，所以用户在高亮 eval 的往返（WebView2
+/// 一次 eval，桌面上可达数十 ms）期间再点一个词时，`truncateTo(index+1)` + `beginTop`
+/// 会立刻在**同一个下标**建好另一个词的子层。只按位置取条目就会把上一个词的 bbox 锚到
+/// 新子层上，弹窗停在完全无关的位置。比对词形即可挡住这种迟到回调（同词同锚，无害）。
+///
+/// 返回 true = 真的改了锚点（调用方若不监听 controller 需自行重建）。以下情况 no-op
+/// 并返回 false，一律退回既有锚点，绝不让重锚失败影响查词：
+/// - [wordLocalRect] 为 null（无匹配 / eval 失败）或退化为零面积；
+/// - 子层已不在栈内（期间被更新的查词截断 / 关栈）；
+/// - 子层已被换成**另一个词**（见 [expectedTerm]）；
+/// - 父卡 RenderBox 不可用（[popupWordScreenRect] 回落到 [fallback]）；
+/// - 算出的 rect 与现锚点相同（[DictionaryPopupController.reanchorEntry] 内部也再判
+///   一次热槽与 rect 变化，不重建、不抖动）。
+bool reanchorNestedPopupToWord({
+  required DictionaryPopupController controller,
+  required GlobalKey parentWebViewKey,
+  required int parentIndex,
+  required String expectedTerm,
+  required Rect? wordLocalRect,
+  required Rect fallback,
+}) {
+  if (wordLocalRect == null || wordLocalRect.isEmpty) return false;
+  final int childIndex = parentIndex + 1;
+  if (childIndex <= 0 || childIndex >= controller.entries.length) return false;
+  final DictionaryPopupEntry child = controller.entries[childIndex];
+  if (child.searchTerm != expectedTerm.trim()) return false;
+  final Rect screenRect = popupWordScreenRect(
+    webViewKey: parentWebViewKey,
+    localRect: wordLocalRect,
+    fallback: fallback,
+  );
+  if (screenRect == fallback || screenRect == child.selectionRect) return false;
+  controller.reanchorEntry(child, screenRect);
+  return true;
+}
+
 // [kPopupSearchingPlaceholderResult]（BUG-080 搜索期预挂载共享空结果）现声明于
 // dictionary_popup_controller.dart，经文件头 export 在此可用（_buildBody 的
 // `result ?? kPopupSearchingPlaceholderResult` 兜底与热槽 seed 是同一单例）。
@@ -445,6 +592,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onTapOutside,
     this.onScrolledToBottom,
     this.onRendered,
+    this.onContentMetrics,
     this.onRenderError,
     this.inputSpec = const DictionaryPopupInputSpec(),
     this.onHostInputToken,
@@ -507,9 +655,11 @@ class DictionaryPopupLayer extends StatelessWidget {
   final Future<MinePopupResult> Function(Map<String, String> fields)?
       onMinedCardAction;
 
-  /// TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮回调，透传给
-  /// [DictionaryPopupWebView]。宿主据 expression/reading 反查并直接在 Anki 中打开命中卡。
-  final Future<void> Function(String expression, String reading)? onOpenInAnki;
+  /// TODO-1360 / BUG-2051：已制卡的词旁 ↗「在 Anki 中打开卡片」按钮回调，透传给
+  /// [DictionaryPopupWebView]。宿主把 Anki 浏览器过滤到「Anki 认为这个词已有的卡」
+  /// （判据与画 ✓ 的查重同源），并回传三态结局供弹窗就地提示。
+  final Future<AnkiOpenWordOutcome> Function(String expression, String reading)?
+      onOpenInAnki;
   final Future<bool> Function(Map<String, String> fields)? onFavoriteEntry;
   final Future<bool> Function(String expression, String reading)?
       onFavoriteCheck;
@@ -537,6 +687,10 @@ class DictionaryPopupLayer extends StatelessWidget {
   final VoidCallback? onTapOutside;
   final VoidCallback? onScrolledToBottom;
   final VoidCallback? onRendered;
+
+  /// JS 内容高度与当前 WebView 视口高度。宿主用二者差值自适应外壳总高。
+  final void Function(double contentHeight, double viewportHeight)?
+      onContentMetrics;
 
   /// TODO-058 fail-safe：弹窗 WebView 主框架加载失败时触发，宿主据此立即翻可见
   /// 挂起的冷层（加载失败也显示，不卡死）。
@@ -656,6 +810,11 @@ class DictionaryPopupLayer extends StatelessWidget {
       color: fillColor,
       showBorder: showBorder,
       clipBehavior: showBorder ? Clip.antiAlias : Clip.none,
+      // BUG-1692：本 surface 里装的是原生 WebView（平台视图）。描边默认走
+      // foregroundPainter、画在 WebView **之后**且 bounds 覆盖整个浮层，macOS engine
+      // 据此把整块浮层写进 FlutterMutatorView 的 _hitTestIgnoreRegion，`hitTest:`
+      // 处处 return nil ⇒「查词框点哪都没反应」。挪到 WebView 之前绘制即解除。
+      borderOnForeground: false,
       child: surfaceChild,
     );
 
@@ -756,6 +915,27 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// WebView 的正常点击 / 划词 / 滑动关闭 / 尺寸把手全部照旧（Never break userspace）。
   /// 命中后走的 token 与 JS 桥**完全同形**（`Mouse<n>`），汇进同一个
   /// [onHostInputToken] → 同一个 resolve → 同一个宿主落地入口，没有第二套语义。
+  ///
+  /// ## 它同样必须认领这次按下（BUG-2031 第二条腿）
+  ///
+  /// 本层与 `LookupDismissBarrier` 是同一个几何问题的两半：barrier 覆盖弹窗矩形
+  /// **之外**，本层覆盖矩形**之内**。两者都是 app 根鼠标兜底 [Listener]
+  /// （`wrapWithGlobalNavigation`）的**后代**——Flutter 的命中收集沿命中路径把每一层
+  /// 都加进 result，`opaque` / `deferToChild` 只影响**同层兄弟**方向要不要继续测试，
+  /// 从不阻止祖先进入 result。所以只调 [onHostInputToken] 就往下走，根兜底照样收到
+  /// 同一次按下：侧键绑「返回上一级」时，指针压在浮窗**上**按一下 = 关词典 **+**
+  /// 退书，而键盘 Esc 在同样状态下只关词典。barrier 那一半已由 BUG-2031 修掉，本层
+  /// 当时漏了，症状只是从「浮窗外」挪到了「浮窗上」。
+  ///
+  /// **认领判据是「指针落在谁的表面上」，不是「动作最终做没做成」**：token 折得出来
+  /// 就说明这个按钮在弹窗那套输入表里（[dictionaryPopupPointerToken] 只对
+  /// `inputSpec.mouseButtons` 里的按钮出 token），而指针此刻确实压在弹窗表面上——
+  /// 所有权在这一刻是确定的，与 [onHostInputToken] 内部走到哪一级、关了几层无关。
+  ///
+  /// 这与**页面根**那条腿按「执行体是否真的 handled」认领的差异是**有意的**：那里
+  /// 指针落在页面自己的表面上，页面 scope 与 universal / global 谁都没有几何上的
+  /// 优先权，只能按「本层是否真消费」定夺，否则「解析到了但没执行」会把外层的合法
+  /// 绑定白白挡掉。本层没有这个歧义——弹窗表面就是弹窗的。
   Widget _maybeWrapHostPointerInput(Widget child) {
     final ValueChanged<String>? sink = onHostInputToken;
     // 判据默认取运行平台；测试显式注入，否则同一份守卫在 Windows 上过、Linux CI 上
@@ -766,12 +946,17 @@ class DictionaryPopupLayer extends StatelessWidget {
     return Listener(
       onPointerDown: (PointerDownEvent event) {
         if (event.kind != PointerDeviceKind.mouse) return;
-        final String? token = dictionaryPopupPointerToken(
-          buttons: event.buttons,
-          spec: inputSpec,
-        );
-        if (token == null) return;
-        sink(token);
+        dispatchClaimedMouseAction(event, () {
+          final String? token = dictionaryPopupPointerToken(
+            buttons: event.buttons,
+            spec: inputSpec,
+          );
+          // 折不出 token = 这个按钮不属于弹窗输入表 ⇒ 本层不是所有者，**不认领**，
+          // 让 app 根兜底照常解析同一按钮上的 universal / global 绑定。
+          if (token == null) return false;
+          sink(token);
+          return true;
+        });
       },
       child: child,
     );
@@ -793,12 +978,18 @@ class DictionaryPopupLayer extends StatelessWidget {
         Positioned(
           right: 0,
           bottom: 0,
-          child: _PopupResizeGrip(
-            key: resizeGripKey,
-            onStart: onResizeStart,
-            onUpdate: onResizeUpdate!,
-            onEnd: onResizeEnd,
-            onCancel: onResizeCancel,
+          // BUG-1692：把手排在浮层 WebView **之后**绘制。不自带 RepaintBoundary 就会
+          // 并进上层那张 cull rect = 整个浮层的 PictureLayer，macOS engine 把整块浮层
+          // 写进 FlutterMutatorView 的 _hitTestIgnoreRegion ⇒ WebView 全域收不到鼠标
+          // 事件。包一层让忽略区收缩到把手自身那一小角。
+          child: RepaintBoundary(
+            child: _PopupResizeGrip(
+              key: resizeGripKey,
+              onStart: onResizeStart,
+              onUpdate: onResizeUpdate!,
+              onEnd: onResizeEnd,
+              onCancel: onResizeCancel,
+            ),
           ),
         ),
       ],
@@ -870,9 +1061,11 @@ class DictionaryPopupLayer extends StatelessWidget {
       children: <Widget>[leftCluster, middle, rightCluster],
     );
 
-    // 无 header 的层（app 外覆盖窗/嵌套返回层）保持旧的 40 高度；有 header 时高度由
-    // header 自身（[ReaderChromeScaler] 跟随 UI 缩放）决定。
-    return headerWidget == null ? SizedBox(height: 40, child: bar) : bar;
+    // 无 header 的层（app 外覆盖窗/嵌套返回层）顶栏高度贴住 36×36 的
+    // [_topActionConstraints] 按钮（design-2026-08 讨论区反馈：压缩顶栏与词头间距，命中区零缩水，
+    // 旧值 40 只是给按钮上下各 2px 装饰性余量）；有 header 时高度由 header 自身
+    // （[ReaderChromeScaler] 跟随 UI 缩放）决定。
+    return headerWidget == null ? SizedBox(height: 36, child: bar) : bar;
   }
 
   /// TODO-1353 复诉：弹窗顶栏可见的 A−/A+ 手动字号按钮。点按经
@@ -959,6 +1152,7 @@ class DictionaryPopupLayer extends StatelessWidget {
             onSentenceContextPreview: onSentenceContextPreview,
             onScrolledToBottom: onScrolledToBottom,
             onRendered: onRendered,
+            onContentMetrics: onContentMetrics,
             onRenderError: onRenderError,
             inputSpec: inputSpec,
             onHostInputToken: onHostInputToken,

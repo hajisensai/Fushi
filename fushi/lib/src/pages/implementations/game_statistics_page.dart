@@ -1,20 +1,30 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/game_stat_aggregates.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
+import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/stats/stat_facts.dart';
+import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 全游戏统计页。
 ///
 /// 阅读、视频、游戏各自拥有独立统计页；本页的时长与次数只从
 /// `galgame_sessions` 事实表 GROUP BY 得出，活动时间线不参与统计。
 class GameStatisticsPage extends BasePage {
-  const GameStatisticsPage({super.key});
+  const GameStatisticsPage({super.key, this.embedded = false});
+
+  /// true = 作为统计中心的一个 tab 嵌入（不套 FushiPageScaffold，动作行内联）。
+  final bool embedded;
 
   @override
   BasePageState<GameStatisticsPage> createState() => _GameStatisticsPageState();
@@ -25,6 +35,18 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
   String? _error;
   GameStatsAggregate _aggregate = GameStatsAggregate();
 
+  /// 游戏域日面事实行（loadStatFacts 的 dailyGames 切片：galgame_sessions 时长
+  /// 段 + legacy hook 字数行）：时段明细 sheet 的数据源（阶段 1——本页此前只按
+  /// 天总量聚合，出不了 per-game 明细）。
+  List<StatFact> _gameFacts = <StatFact>[];
+
+  /// 库内游戏（明细行显示名 + 点击进详情用）。
+  List<GalgameEntry> _games = <GalgameEntry>[];
+
+  /// 合集归属（'game|<id>' → 主合集，与书架/统计页同源）。
+  Map<String, int> _primaryCollectionByEntry = <String, int>{};
+  Map<int, String> _collectionNamesById = <int, String>{};
+
   GalgameRepository get _repo => appModelNoUpdate.galgameRepo;
 
   @override
@@ -33,20 +55,36 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
+  /// 统计中心把三页塞进 TabBarView（无 keepAlive，离屏即 unmount），
+  /// 「点开 tab → DB 还在查 → 切走」是一秒可复现的常规操作：首帧 postFrameCallback
+  /// 与多次 await 之后的两处 setState 都必须过 mounted 门，否则 debug 断言
+  /// `setState() called after dispose()`、release 打在已置空的 _element 上。
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final List<GalgameEntry> games = await _repo.load();
+      final FushiDatabase db = appModelNoUpdate.database;
       final Map<String, (int totalSeconds, int sessionCount)> dailyTotals =
-          await appModelNoUpdate.database.getAllGalgameDailyTotals();
+          await db.getAllGalgameDailyTotals();
       _aggregate = computeGameStats(
         games: games,
         dailyTotals: dailyTotals,
         now: DateTime.now(),
       );
+      // 时段明细要 per-game × per-day 事实行：统一事实面是唯一读取入口
+      // （legacy hook 字数行 + galgame_sessions 段都在里面归一）。
+      final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
+      _gameFacts = facts.dailyGames.toList();
+      _games = games;
+      _collectionNamesById = <int, String>{
+        for (final MediaCollectionRow c in await db.getAllMediaCollections())
+          c.id: c.name,
+      };
+      _primaryCollectionByEntry = await db.getPrimaryCollectionIdByEntry();
     } catch (error, stack) {
       ErrorLogService.instance.log('GameStatisticsPage.load', error, stack);
       _error = error.toString();
@@ -56,32 +94,35 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final List<Widget> actions = <Widget>[
+      FushiIconButton(
+        icon: Icons.refresh,
+        tooltip: t.stat_refresh,
+        enabled: !_loading,
+        onTap: _load,
+      ),
+      FushiIconButton(
+        icon: Icons.delete_sweep_outlined,
+        tooltip: t.stat_clear_all,
+        enabled: !_loading,
+        onTap: _confirmAndClearAll,
+      ),
+    ];
+    final Widget body = buildStatPageBody(
+      loading: _loading,
+      error: _error,
+      isEmpty: _aggregate.allSessions == 0,
+      loadingBuilder: () =>
+          buildLoading(size: 25, color: theme.colorScheme.primary),
+      errorBuilder: (String error) => buildError(error: error),
+      emptyMessage: t.game_stat_no_sessions,
+      contentBuilder: _buildContent,
+    );
+    if (widget.embedded) return buildEmbeddedStatTab(context, actions, body);
     return FushiPageScaffold(
       title: t.game_statistics,
-      actions: <Widget>[
-        FushiIconButton(
-          icon: Icons.refresh,
-          tooltip: t.stat_refresh,
-          enabled: !_loading,
-          onTap: _load,
-        ),
-        FushiIconButton(
-          icon: Icons.delete_sweep_outlined,
-          tooltip: t.stat_clear_all,
-          enabled: !_loading,
-          onTap: _confirmAndClearAll,
-        ),
-      ],
-      body: buildStatPageBody(
-        loading: _loading,
-        error: _error,
-        isEmpty: _aggregate.allSessions == 0,
-        loadingBuilder: () =>
-            buildLoading(size: 25, color: theme.colorScheme.primary),
-        errorBuilder: (String error) => buildError(error: error),
-        emptyMessage: t.game_stat_no_sessions,
-        contentBuilder: _buildContent,
-      ),
+      actions: actions,
+      body: body,
     );
   }
 
@@ -125,6 +166,8 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
   }
 
   Widget _buildSummaryCards() {
+    // 时段谓词在点击时现算（跨日后点卡按点击时刻的窗口取数）。
+    final StatWindow w = StatWindow(DateTime.now());
     return buildStatPeriodSummaryGrid(
       context,
       <StatPeriodSummary>[
@@ -132,30 +175,40 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
           t.stat_today,
           _aggregate.todayMs,
           _aggregate.todaySessions,
+          contains: w.isToday,
         ),
         _periodSummary(
           t.stat_this_week,
           _aggregate.weekMs,
           _aggregate.weekSessions,
+          contains: w.inWeek,
         ),
         _periodSummary(
           t.stat_this_month,
           _aggregate.monthMs,
           _aggregate.monthSessions,
+          contains: w.inMonth,
         ),
         _periodSummary(
           t.stat_all_time,
           _aggregate.allMs,
           _aggregate.allSessions,
+          contains: (String _) => true,
         ),
       ],
     );
   }
 
-  StatPeriodSummary _periodSummary(String label, int ms, int sessions) {
+  StatPeriodSummary _periodSummary(
+    String label,
+    int ms,
+    int sessions, {
+    required bool Function(String dateKey) contains,
+  }) {
     return StatPeriodSummary(
       label: label,
       primaryValue: formatStatTime(ms),
+      onTap: () => _showPeriodDetail(label, contains),
       lines: <StatSummaryLine>[
         StatSummaryLine(
           label: t.game_stat_sessions,
@@ -163,6 +216,48 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
         ),
       ],
     );
+  }
+
+  /// 时段卡 → 时段明细 sheet（阶段 1 统一组件；本页是游戏统计，明细只吃游戏域
+  /// 切片 [_gameFacts]）。条目点击进游戏详情页（不静默拉起游戏，BUG-1111 同一
+  /// 约定）；已删游戏点了没有目标页，原地不动。
+  void _showPeriodDetail(
+    String label,
+    bool Function(String dateKey) contains,
+  ) {
+    unawaited(showStatPeriodDetailSheet(
+      context,
+      periodLabel: label,
+      contains: contains,
+      facts: _gameFacts,
+      resolvers: StatPeriodDetailResolvers(
+        titleOf: (StatFact f) {
+          final GalgameEntry? entry = findGalgameForActivity(
+            _games,
+            mediaKey: f.mediaKey,
+            title: f.title,
+          );
+          final String name =
+              displayTitleForGame(entry: entry, rawTitle: f.title);
+          return name.isEmpty ? f.mediaKey : name;
+        },
+        collectionOf: (StatFact f) => f.mediaKey.isEmpty
+            ? null
+            : statCollectionName(
+                MediaKind.game.compositeKey(f.mediaKey),
+                _primaryCollectionByEntry,
+                _collectionNamesById,
+              ),
+        onEntryTap: (String mediaKind, String mediaKey) async {
+          for (final GalgameEntry game in _games) {
+            if (game.id == mediaKey) {
+              await _openGame(game);
+              return;
+            }
+          }
+        },
+      ),
+    ));
   }
 
   Widget _buildGameRow(GalgameEntry game) {

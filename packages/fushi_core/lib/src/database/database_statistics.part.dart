@@ -4,7 +4,11 @@
 part of 'database.dart';
 
 mixin _FushiDbStatistics
-    on _$FushiDatabase, _FushiDbContentMisc, _FushiDbTagsSync {
+    on
+        _$FushiDatabase,
+        _FushiDbPrefsMedia,
+        _FushiDbContentMisc,
+        _FushiDbTagsSync {
   // ── reading statistics ──────────────────────────────────────────
   /// OVERWRITE semantics: sets the row for (title, dateKey) to the absolute
   /// values in [stat]. Use this when the caller already holds the final total
@@ -27,67 +31,10 @@ mixin _FushiDbStatistics
         ),
       );
 
-  /// ACCUMULATE semantics: adds [charsRead]/[timeMs] to the existing totals
-  /// for (title, dateKey). Use for reading-session deltas. For setting an
-  /// absolute total (e.g. sync merge) use [setReadingStatistic].
-  /// 累加一条当日阅读统计。[pagesRead] 是 v60 的页数维度（漫画/PDF 传真实翻过的
-  /// 页数，EPUB 不传即 0），与 [charsRead] 各自独立累加，互不顶替。
-  Future<void> addReadingStatistic({
-    required String title,
-    required String dateKey,
-    required int charsRead,
-    required int timeMs,
-    int pagesRead = 0,
-  }) =>
-      transaction(() async {
-        final existing = await (select(readingStatistics)
-              ..where((t) => t.title.equals(title) & t.dateKey.equals(dateKey)))
-            .getSingleOrNull();
-        if (existing != null) {
-          await (update(readingStatistics)
-                ..where((t) => t.id.equals(existing.id)))
-              .write(ReadingStatisticsCompanion(
-            charactersRead: Value(existing.charactersRead + charsRead),
-            readingTimeMs: Value(existing.readingTimeMs + timeMs),
-            pagesRead: Value(existing.pagesRead + pagesRead),
-            lastStatisticModified: Value(DateTime.now().millisecondsSinceEpoch),
-          ));
-        } else {
-          await into(readingStatistics).insert(
-            ReadingStatisticsCompanion.insert(
-              title: title,
-              dateKey: dateKey,
-              charactersRead: charsRead,
-              readingTimeMs: timeMs,
-              pagesRead: Value(pagesRead),
-              lastStatisticModified: DateTime.now().millisecondsSinceEpoch,
-            ),
-          );
-          // 首次为该书当日建统计行 = 用户重新读它：清其统计删除墓碑（若有），让
-          // 该书统计重新参与云同步 / 备份合并（TODO-1204 后续）。
-          await clearStatisticsTombstone(title, FushiDatabase.statSourceBook);
-        }
-      });
-
   Future<List<ReadingStatisticRow>> getAllReadingStatistics() =>
       select(readingStatistics).get();
 
   // ── reading hourly logs ─────────────────────────────────────────
-  /// ACCUMULATE：把 [deltaMs] 累加进 (dateKey, hour, format) 桶。[format] 是写入
-  /// 面身份（EPUB / PDF / 漫画阅读器各报各的），v67 起时段数据按它可拆。
-  Future<void> addHourlyReadingTime({
-    required String dateKey,
-    required int hour,
-    required int deltaMs,
-    required BookFormat format,
-  }) =>
-      _addHourlyReadingTimeRaw(
-        dateKey: dateKey,
-        hour: hour,
-        deltaMs: deltaMs,
-        format: format.dbValue,
-      );
-
   /// 云聚合同步专用：把旧端（不带 format 的 wire 快照）贡献的、无法归因到任何
   /// 写入面的逐时差额累加进 `''`（未区分）桶。普通写入面一律走带 [BookFormat]
   /// 的 [addHourlyReadingTime]，不得用本方法制造新的未区分数据。
@@ -171,54 +118,6 @@ mixin _FushiDbStatistics
       );
 
   // ── video watch statistics ──────────────────────────────────────
-  /// ACCUMULATE：把 [subtitleChars]/[watchTimeMs] 累加到 (title, dateKey) 现有
-  /// 总量。对照 [addReadingStatistic]，但视频专用、与阅读统计隔离。
-  Future<void> addVideoWatchStatistic({
-    required String title,
-    required String dateKey,
-    required int subtitleChars,
-    required int watchTimeMs,
-    String? bookUid,
-  }) =>
-      transaction(() async {
-        // v39：有 bookUid（当前所有真实写入方）按 (bookUid,dateKey) 键控，同名
-        // 不同视频各自累计；无 bookUid（兼容旧调用）按旧 (title,dateKey) 且只命中
-        // 无身份行，不污染新键控行。无身份判定 NULL 与 '' 都算（review3-9：与
-        // 删除/展示层同一判据，防 '' 编码漂移把无身份统计裂成两行）。
-        final List<VideoWatchStatisticRow> candidates =
-            await (select(videoWatchStatistics)
-                  ..where((t) => bookUid != null
-                      ? (t.bookUid.equals(bookUid) & t.dateKey.equals(dateKey))
-                      : (t.title.equals(title) &
-                          t.dateKey.equals(dateKey) &
-                          (t.bookUid.isNull() | t.bookUid.equals('')))))
-                .get();
-        final VideoWatchStatisticRow? existing =
-            candidates.isEmpty ? null : candidates.first;
-        if (existing != null) {
-          await (update(videoWatchStatistics)
-                ..where((t) => t.id.equals(existing.id)))
-              .write(VideoWatchStatisticsCompanion(
-            subtitleChars: Value(existing.subtitleChars + subtitleChars),
-            watchTimeMs: Value(existing.watchTimeMs + watchTimeMs),
-            lastModified: Value(DateTime.now().millisecondsSinceEpoch),
-          ));
-        } else {
-          await into(videoWatchStatistics).insert(
-            VideoWatchStatisticsCompanion.insert(
-              bookUid: Value(bookUid),
-              title: title,
-              dateKey: dateKey,
-              subtitleChars: subtitleChars,
-              watchTimeMs: watchTimeMs,
-              lastModified: DateTime.now().millisecondsSinceEpoch,
-            ),
-          );
-          // 重新观看该视频：清其统计删除墓碑（TODO-1204 后续）。
-          await clearStatisticsTombstone(title, FushiDatabase.statSourceVideo);
-        }
-      });
-
   Future<List<VideoWatchStatisticRow>> getAllVideoWatchStatistics() =>
       select(videoWatchStatistics).get();
 
@@ -231,49 +130,6 @@ mixin _FushiDbStatistics
   static String statDateKeyOf(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
-
-  /// P4 写侧收敛（2026-08 数据层重构）：一次阅读 session 的**唯一落库入口**。
-  ///
-  /// 同一事务写活动事实行（activity_events，精确时刻的 session 事实）并从
-  /// **同一份数字**派生日聚合投影（reading_statistics 经 [addReadingStatistic]，
-  /// 含清统计墓碑语义）。此前三个阅读面（EPUB/漫画/PDF）各自按顺序散调两个
-  /// DAO、事实与投影的 chars/timeMs/dateKey 各传一遍——传得不一致没有任何
-  /// 东西拦（结构性漂移面）；收敛后数字与时刻只进一次。
-  ///
-  /// 小时桶（reading_hourly_logs）**刻意不在此**：它是 ReadingTimeTracker 的
-  /// tick 粒度账本（60s 窗口 + 连续性守卫 + 跨时/日边界拆桶，BUG-892/1052），
-  /// 与 session 粒度不同构。视频侧同理不设 session 复合入口：
-  /// video_watch_statistics 的 flush 是**桶粒度**（dateKey 按各桶归属，跨午夜
-  /// 正确性依赖于此），与 activity 的 session 总量数值天然不同，强行统一会
-  /// 引入跨午夜归属 bug——见 video_fushi_page 的 VideoWatchTracker 接线注释。
-  Future<void> recordReadingSession({
-    required String title,
-    required String mediaKey,
-    required int charsRead,
-    required int timeMs,
-    int pagesRead = 0,
-    required DateTime at,
-  }) =>
-      transaction(() async {
-        final String dateKey = _FushiDbStatistics.statDateKeyOf(at);
-        await addActivityEvent(
-          eventType: 'read',
-          mediaType: 'book',
-          title: title,
-          mediaKey: mediaKey,
-          dateKey: dateKey,
-          timestampMs: at.millisecondsSinceEpoch,
-          durationMs: timeMs,
-          charsDelta: charsRead,
-        );
-        await addReadingStatistic(
-          title: title,
-          dateKey: dateKey,
-          charsRead: charsRead,
-          timeMs: timeMs,
-          pagesRead: pagesRead,
-        );
-      });
 
   Future<void> addActivityEvent({
     required String eventType,
@@ -378,6 +234,177 @@ mixin _FushiDbStatistics
 
   /// 清空全部活动事件。刻意无生产调用方(见上方决策注释)。
   Future<int> clearAllActivityEvents() => delete(activityEvents).go();
+
+  // ── study_segments (v92 统计域唯一事实表) ───────────────────────
+  //
+  // 写法只有一种：[upsertStudySegment] 绝对值 upsert（表注释见 tables.dart）。
+  // 本地写入面自 v92 起**只写本表**；上面的 reading_statistics /
+  // video_watch_statistics / *_hourly_logs / activity_events(read|watch|game) 累加
+  // DAO 已删除，剩下的 set* OVERWRITE 版只服务 legacy wire 的同步落地。
+
+  /// `sync_device_id` 偏好键（与 fushi 层 SyncRepository 同一把 key，同一张
+  /// preferences 表）：段的 provenance 列从这里取。
+  static const String studyDeviceIdPrefKey = 'sync_device_id';
+
+  static final Random _studyUidRandom = Random.secure();
+
+  /// 新段的幂等键：32 位 hex（128 bit 随机）。写入方在**打开段时**生成一次并持有，
+  /// 之后每个 tick 用同一 uid 写绝对值。
+  static String newStudySegmentUid() {
+    final StringBuffer sb = StringBuffer();
+    for (int i = 0; i < 16; i++) {
+      sb.write(_studyUidRandom.nextInt(256).toRadixString(16).padLeft(2, '0'));
+    }
+    return sb.toString();
+  }
+
+  /// 本机设备身份（段的 provenance）。无则生成并落 `sync_device_id`（与互联 /
+  /// 云同步取同一把 key，先到先建，两边格式都是不透明字符串）。
+  Future<String> getOrCreateStudyDeviceId() async {
+    final String? existing = await getPref(studyDeviceIdPrefKey);
+    if (existing != null && existing.isNotEmpty) return existing;
+    final String id = newStudySegmentUid();
+    await setPref(studyDeviceIdPrefKey, id);
+    return id;
+  }
+
+  /// **唯一写入口**：按 [uid] 绝对值 upsert。同 uid 重复写同值 = no-op；
+  /// 写入方持有段累计器，绝不在这里做 `+=`。
+  Future<void> upsertStudySegment(StudySegmentsCompanion row) =>
+      into(studySegments).insertOnConflictUpdate(row);
+
+  /// 闭区间 [fromDateKey, toDateKey]（`yyyy-MM-dd` 字典序即时间序）内的全部段；
+  /// 任一端 null = 不设界。
+  Future<List<StudySegmentRow>> getStudySegments({
+    String? fromDateKey,
+    String? toDateKey,
+  }) {
+    final SimpleSelectStatement<$StudySegmentsTable, StudySegmentRow> q =
+        select(studySegments);
+    if (fromDateKey != null) {
+      q.where((t) => t.dateKey.isBiggerOrEqualValue(fromDateKey));
+    }
+    if (toDateKey != null) {
+      q.where((t) => t.dateKey.isSmallerOrEqualValue(toDateKey));
+    }
+    return q.get();
+  }
+
+  /// 某媒体的全部段（详情 / 删除前预览）。
+  Future<List<StudySegmentRow>> getStudySegmentsForMedia({
+    required String mediaKind,
+    required String mediaKey,
+  }) =>
+      (select(studySegments)
+            ..where((t) =>
+                t.mediaKind.equals(mediaKind) & t.mediaKey.equals(mediaKey)))
+          .get();
+
+  /// 同步 / 备份落地用：按 uid 批量 upsert，**只在对端 `updatedAt` 严格更新时覆盖**
+  /// （LWW；同值重放 no-op、旧值不降级）。一次事务。
+  Future<void> upsertStudySegmentsIfNewer(
+    Iterable<StudySegmentsCompanion> rows,
+  ) =>
+      transaction(() async {
+        for (final StudySegmentsCompanion row in rows) {
+          await into(studySegments).insert(
+            row,
+            onConflict: DoUpdate(
+              (old) => row,
+              target: [studySegments.uid],
+              where: (old) =>
+                  old.updatedAt.isSmallerThanValue(row.updatedAt.value),
+            ),
+          );
+        }
+      });
+
+  /// 同步 / 备份落地用：写入一条对端墓碑（只在 deletedAt 严格更新时覆盖），并删掉
+  /// 本地该身份下 `updatedAt < deletedAt` 的段（删除跨端传播；之后又读的段不动）。
+  Future<void> applyStudySegmentTombstone({
+    required String mediaKind,
+    required String mediaKey,
+    required int deletedAt,
+  }) =>
+      transaction(() async {
+        await into(studySegmentTombstones).insert(
+          StudySegmentTombstonesCompanion.insert(
+            mediaKind: mediaKind,
+            mediaKey: mediaKey,
+            deletedAt: deletedAt,
+          ),
+          onConflict: DoUpdate(
+            (old) => StudySegmentTombstonesCompanion(
+              deletedAt: Value(deletedAt),
+            ),
+            target: [
+              studySegmentTombstones.mediaKind,
+              studySegmentTombstones.mediaKey,
+            ],
+            where: (old) => old.deletedAt.isSmallerThanValue(deletedAt),
+          ),
+        );
+        await (delete(studySegments)
+              ..where((t) =>
+                  t.mediaKind.equals(mediaKind) &
+                  t.mediaKey.equals(mediaKey) &
+                  t.updatedAt.isSmallerThanValue(deletedAt)))
+            .go();
+      });
+
+  // deleteStudySegmentsForMedia / clearStudySegments 住 _FushiDbContentMisc
+  // （legacy 的 delete*Statistics* / clearAll* 在那层连带调用，mixin 只能向下看）。
+
+  Future<List<StudySegmentTombstoneRow>> getStudySegmentTombstones() =>
+      select(studySegmentTombstones).get();
+
+  /// 某媒体种类每个 media_key 的最后一段 end_at（书架 / 视频页「最近阅读 / 观看」
+  /// 时刻；legacy 行的 lastModified 由调用方另并）。
+  Future<Map<String, int>> getLatestStudyEndAtByMedia(String mediaKind) async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT media_key, MAX(end_at) AS last_end FROM study_segments '
+      'WHERE media_kind = ? GROUP BY media_key',
+      variables: [Variable.withString(mediaKind)],
+      readsFrom: {studySegments},
+    ).get();
+    return <String, int>{
+      for (final QueryRow row in rows)
+        row.read<String>('media_key'): row.read<int>('last_end'),
+    };
+  }
+
+  /// galgame_sessions 按 (game_id, date_key) 的时长合计（秒）：喂统一事实面
+  /// （日明细按游戏分节、热力图游戏时长）。
+  Future<List<(String gameId, String dateKey, int totalSeconds)>>
+      getGalgameDailySecondsByGame() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT game_id, date_key, COALESCE(SUM(duration_seconds), 0) AS s '
+      'FROM galgame_sessions GROUP BY game_id, date_key',
+      readsFrom: {galgameSessions},
+    ).get();
+    return <(String, String, int)>[
+      for (final QueryRow row in rows)
+        (
+          row.read<String>('game_id'),
+          row.read<String>('date_key'),
+          row.read<int>('s'),
+        ),
+    ];
+  }
+
+  /// 同步 / 备份落地用：写入一条对端墓碑（同键取 deletedAt 大者由调用方裁决）。
+  Future<void> upsertStudySegmentTombstone({
+    required String mediaKind,
+    required String mediaKey,
+    required int deletedAt,
+  }) =>
+      into(studySegmentTombstones).insertOnConflictUpdate(
+        StudySegmentTombstonesCompanion.insert(
+          mediaKind: mediaKind,
+          mediaKey: mediaKey,
+          deletedAt: deletedAt,
+        ),
+      );
 
   // ── galgames / galgame_sources / galgame_sessions (v55 游戏库) ──────
   //
@@ -488,6 +515,14 @@ mixin _FushiDbStatistics
             ..limit(limit, offset: offset))
           .get();
 
+  /// 全库最近 [limit] 条游玩会话（按结束时刻倒序）：v92 起游玩不再写 activity 行，
+  /// 首页活动流 / 游戏首页时间线从这里合成「游玩」事件。
+  Future<List<GalgameSessionRow>> getRecentGalgameSessions({int limit = 200}) =>
+      (select(galgameSessions)
+            ..orderBy([(t) => OrderingTerm.desc(t.endMs)])
+            ..limit(limit))
+          .get();
+
   /// 删除单条会话（详情页「删掉这次记录」）。
   Future<int> deleteGalgameSession(int id) =>
       (delete(galgameSessions)..where((t) => t.id.equals(id))).go();
@@ -496,7 +531,11 @@ mixin _FushiDbStatistics
   ///
   /// 游戏库（[galgames]）与首页活动时间线（[activityEvents]）是独立用户数据，
   /// 不能因统计页的「清空」操作被连带删除。
-  Future<int> clearAllGalgameStatistics() => delete(galgameSessions).go();
+  Future<int> clearAllGalgameStatistics() => transaction(() async {
+        // v92：hook 字数段（chars-only）与游玩会话同属「游戏统计」，一起清。
+        await clearStudySegments(kActivityMediaGame);
+        return delete(galgameSessions).go();
+      });
 
   /// 全库每个游戏的时长合计（秒）+ 会话次数 + 最后游玩毫秒戳。
   ///
@@ -601,6 +640,10 @@ mixin _FushiDbStatistics
             activityEvents,
             readingStatistics,
             videoWatchStatistics,
+            // v92：学习统计唯一事实表；本地写入面只写它，首页热力图 / 今日 /
+            // 活动流全部从它派生。
+            studySegments,
+            galgameSessions,
             videoBooks,
             // 阅读位置是首页「继续」的数据源（MediaItem.position 与最近阅读时刻
             // 均派生自它）。此前不在表集里：互联/云同步把更远的对端进度写回
@@ -680,89 +723,6 @@ mixin _FushiDbStatistics
       });
 
   // ── video hourly logs ───────────────────────────────────────────
-  Future<void> addVideoHourlyWatchTime({
-    required String dateKey,
-    required int hour,
-    required int deltaMs,
-  }) =>
-      transaction(() async {
-        final existing = await (select(videoHourlyLogs)
-              ..where((t) => t.dateKey.equals(dateKey) & t.hour.equals(hour)))
-            .getSingleOrNull();
-        if (existing != null) {
-          await (update(videoHourlyLogs)
-                ..where((t) => t.id.equals(existing.id)))
-              .write(VideoHourlyLogsCompanion(
-            watchTimeMs: Value(existing.watchTimeMs + deltaMs),
-          ));
-        } else {
-          await into(videoHourlyLogs).insert(
-            VideoHourlyLogsCompanion.insert(
-              dateKey: dateKey,
-              hour: hour,
-              watchTimeMs: deltaMs,
-            ),
-          );
-        }
-      });
-
-  /// P4 写侧收敛（2026-08 数据层重构）：视频观看统计**累加写的唯一落库入口**
-  /// （tick/桶粒度，供 VideoWatchTracker 的 flush 与字幕字数路径）。
-  ///
-  /// 同一事务内逐桶写小时账本（[addVideoHourlyWatchTime]）与日聚合投影
-  /// （[addVideoWatchStatistic]），**桶归属零改动**——dateKey/hour 由调用方按各桶
-  /// 自身时刻拆好（splitWatchTime），跨午夜正确归两天依赖于此。此前接线是同一次
-  /// flush 两次独立 await 各自 fail-open，hourly 与 daily 可能不同步丢；收敛后
-  /// 两表同一事务、要么都落要么都不落。
-  ///
-  /// [subtitleChars] > 0 时把字幕字数按 [subtitleCharsDateKey]（调用方按 cue 时刻
-  /// 派生）累加进日聚合投影；字幕字数不进小时账本（它只记观看时长）。
-  ///
-  /// activity 行（addActivityEvent, watch）**刻意不在此**：它是 session 事件
-  /// （stop 时刻 dateKey + session 总量），与本入口的桶粒度天然不同构——跨午夜时
-  /// activity 全额归 stop 日、桶各归各日，两边数字与 dateKey 的口径差是**故意的**
-  /// （ed2f36443f）。不得从桶派生 activity 行，也不得「顺手统一」两边 dateKey，
-  /// 否则引入跨午夜归属 bug。
-  Future<void> recordWatchFlush({
-    required String title,
-    required String bookUid,
-    List<(String dateKey, int hour, int watchMs)> buckets = const <(
-      String,
-      int,
-      int
-    )>[],
-    int subtitleChars = 0,
-    String? subtitleCharsDateKey,
-  }) {
-    if (subtitleChars > 0 && subtitleCharsDateKey == null) {
-      throw ArgumentError(
-          'recordWatchFlush: subtitleChars > 0 需要 subtitleCharsDateKey');
-    }
-    return transaction(() async {
-      for (final (String dateKey, int hour, int watchMs) in buckets) {
-        await addVideoHourlyWatchTime(
-            dateKey: dateKey, hour: hour, deltaMs: watchMs);
-        // 逐桶配各自 dateKey：跨午夜正确归两天。
-        await addVideoWatchStatistic(
-          title: title,
-          dateKey: dateKey,
-          subtitleChars: 0,
-          watchTimeMs: watchMs,
-          bookUid: bookUid,
-        );
-      }
-      if (subtitleChars > 0) {
-        await addVideoWatchStatistic(
-          title: title,
-          dateKey: subtitleCharsDateKey!,
-          subtitleChars: subtitleChars,
-          watchTimeMs: 0,
-          bookUid: bookUid,
-        );
-      }
-    });
-  }
-
   Future<List<VideoHourlyLogRow>> getVideoHourlyLogsForDate(String dateKey) =>
       (select(videoHourlyLogs)..where((t) => t.dateKey.equals(dateKey))).get();
 

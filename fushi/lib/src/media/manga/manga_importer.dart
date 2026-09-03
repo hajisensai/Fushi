@@ -23,10 +23,17 @@ import 'package:fushi/src/utils/misc/fushi_time_format.dart';
 /// 手写漂移，bmp 漫画 OCR 静默缺页），守卫测试钉死两关口径一致。
 const Set<String> kMangaImageExtensions = kImageExtensionsBase;
 
-/// 是否可作为 mokuro 漫画导入：[paths] 中至少有一个 `.mokuro` 文件，且其同级目录里有图片
-/// 来源。图片来源识别一层深，覆盖 mokuro 的两种惯例布局：
-/// - `<卷名>.mokuro` 配 `<卷名>/`（或 `images/`）子目录，图片在该子目录内；
-/// - 图片直接平铺在 `.mokuro` 同级目录。
+/// **载体分类**判据：[paths] 中至少有一个 `.mokuro` 文件，且其同级目录（含一层子目录）
+/// 里有图片来源——即「这看起来是一卷 mokuro 漫画」，用于对话框即时禁用按钮 / 拖入分流。
+///
+/// **不是导入必定成功的保证**，也不该被当成保证使用：页图能不能对上取决于 `.mokuro` 里
+/// 的 `img_path` 惯例（见 [resolveMokuroPageRoot]），而那要读并解析可能几 MB 的 JSON，
+/// 不能塞进一个每帧都可能被调的同步判据里。真正的校验在 [MangaImporter.importFromMokuroPath]
+/// 内：解析页图根 + 逐页校验，失败时给出指名道姓的可诊断错误。
+///
+/// BUG-1830 之前这里与导入器是**两套**判据（这里探一层子目录、导入器硬编码同级），
+/// 于是卷子目录布局「门放行、执行必失败」。现在导入器认识两种惯例，门与执行不再打架；
+/// 门保持宽松且**廉价**，是有意的分工，不是遗漏。
 ///
 /// 纯判定（仅同步文件系统探测，无平台通道、无 async），便于单测与对话框即时禁用按钮。
 bool mangaImportCanImport(List<String> paths) {
@@ -77,6 +84,7 @@ class MangaImporter {
     String? title,
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
+    int? sourceId,
   }) async {
     final Directory root = Directory(imageDirPath);
     final MokuroPayload payload = await payloadFromImageFolder(root);
@@ -90,6 +98,7 @@ class MangaImporter {
       proposedTitle: proposedTitle,
       policy: policy,
       onProgress: onProgress,
+      sourceId: sourceId,
     );
   }
 
@@ -145,7 +154,7 @@ class MangaImporter {
       // sanitizeRelSegments 对含 `..` 的 img_path 抛 MangaImportException（防穿越红线）。
       final List<String> segments = MangaStorage.sanitizeRelSegments(page.url);
       destRels.add(MangaStorage.uniqueDestRel(segments, usedDestRels));
-      final File src = _sourceFile(srcDir.path, page.url);
+      final File src = mokuroPageFile(srcDir.path, page.url);
       if (!src.existsSync()) {
         throw MangaImportException('Missing manga page image: ${page.url}');
       }
@@ -172,7 +181,7 @@ class MangaImporter {
     for (int i = 0; i < total; i++) {
       final MokuroImage page = payload.images[i];
       final String destRel = destRels[i];
-      final File src = _sourceFile(srcDir.path, page.url);
+      final File src = mokuroPageFile(srcDir.path, page.url);
       final File dest = MangaStorage.destFile(bookDir, destRel);
       dest.parent.createSync(recursive: true);
       await src.copy(dest.path);
@@ -206,11 +215,10 @@ class MangaImporter {
     void Function(int done, int total)? onProgress,
     int? sourceId,
   }) async {
-    if (!mangaImportCanImport(<String>[mokuroPath])) {
-      throw const MangaImportException('Not a valid Mokuro manga folder');
-    }
-
     final File mokuroFile = File(mokuroPath);
+    if (!mokuroFile.existsSync()) {
+      throw MangaImportException('Mokuro file not found: $mokuroPath');
+    }
     final String jsonStr = await mokuroFile.readAsString();
     final MokuroPayload payload = parseMokuro(jsonStr);
     if (payload.images.isEmpty) {
@@ -223,12 +231,37 @@ class MangaImporter {
     final Map<String, Object?> root =
         rawRoot is Map ? rawRoot.cast<String, Object?>() : <String, Object?>{};
 
-    final Directory srcDir = mokuroFile.parent;
+    // 页图根**解析**出来，不硬编码成 `.mokuro` 同级（BUG-1830 的根因）：mokuro 的
+    // `img_path` 有两种并存惯例，卷子目录布局下裸文件名相对同级解析必然落空。判据与
+    // 远端扫描镜像、下游逐页校验共用 [resolveMokuroPageRoot] 一份实现。
+    final Directory mokuroDir = mokuroFile.parent;
+    final String volumeName = p.basenameWithoutExtension(mokuroPath);
+    final List<String>? pageRoot = resolveMokuroPageRoot(
+      payload: payload,
+      volumeName: volumeName,
+      pageExists: (String rel) =>
+          mokuroPageFile(mokuroDir.path, rel).existsSync(),
+    );
+    if (pageRoot == null) {
+      // 两种惯例都不成立：把搜过的目录逐条报出来。这条文案是用户唯一能拿到的线索，
+      // 只说「缺图」而不说「在哪找的」正是当初排查要靠逐帧截图的原因。
+      final String searched = mokuroPageRootCandidates(volumeName: volumeName)
+          .map((List<String> candidate) =>
+              p.joinAll(<String>[mokuroDir.path, ...candidate]))
+          .join(', ');
+      throw MangaImportException(
+        'Missing manga page image: ${payload.images.first.url} '
+        '(searched: $searched)',
+      );
+    }
+    final Directory srcDir = pageRoot.isEmpty
+        ? mokuroDir
+        : Directory(p.joinAll(<String>[mokuroDir.path, ...pageRoot]));
 
     // 标题 → 冲突解析 → bookKey（= 净化标题即主键，与 EpubImporter/PdfImporter 同口径）。
     final String proposedTitle = (title != null && title.trim().isNotEmpty)
         ? title.trim()
-        : _deriveTitle(root, mokuroPath);
+        : deriveMokuroTitle(root, mokuroPath);
 
     return _copyAndInsert(
       db: db,
@@ -394,13 +427,24 @@ class MangaImporter {
   }
 
   /// 把相对 [rawUrl]（正斜杠或反斜杠）解析成 [srcDirPath] 下的源图 [File]。
-  static File _sourceFile(String srcDirPath, String rawUrl) =>
+  ///
+  /// 公开是因为「造出一个 mokuro 卷目录」与「读一个 mokuro 卷目录」必须是同一套
+  /// 口径：[MangaArchiveImporter] 把压缩包里的页图铺进临时目录时，如果另用一套
+  /// 路径派生（例如 `MangaStorage.sanitizeRelSegments`——它会剥掉前导 `images/`
+  /// 段、还会改写 Windows 非法字符），铺出来的文件名在读取侧永远找不到，整卷导入
+  /// 必报 `Missing manga page image`。写入方与读取方共用本函数即消除该错位。
+  static File mokuroPageFile(String srcDirPath, String rawUrl) =>
       File(p.joinAll(<String>[srcDirPath, ...rawUrl.split(RegExp(r'[\\/]+'))]));
 
   /// 从 mokuro 顶层 `title` + `volume` 派生显示标题（进而派生 bookKey）。组合 `title volume`
   /// 让同系列不同卷得到唯一 bookKey（否则两卷 sanitize 后撞主键、被迫加 `(2)` 后缀）。缺 title
   /// 退化文件名（mokuro 惯例文件名即卷名，天然唯一）。
-  static String _deriveTitle(Map<String, Object?> root, String mokuroPath) {
+  ///
+  /// 公开是给来源库扫描的网络去重预检用（SourceLibraryScanner 先读远端 `.mokuro`
+  /// 派生标题、命中已入库即跳过整卷下载）：预检必须与导入器同一套身份派生，
+  /// 不允许出现第二套判重规则。
+  static String deriveMokuroTitle(
+      Map<String, Object?> root, String mokuroPath) {
     final String title = (root['title'] as String?)?.trim() ?? '';
     final String volume = (root['volume'] as String?)?.trim() ?? '';
     final String base = p.basenameWithoutExtension(mokuroPath);

@@ -1,7 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <glaze/glaze.hpp>
-#include <cstdint>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -63,9 +63,19 @@ struct ParsedFrequency {
   std::string display_value;
 };
 
+// 上游 79c55c2：pitch accent 完整规格。position 为数字时 pattern 为空；为字符串
+// pattern（"heiban" 等）时 position 无意义（保持 0）。nasal/devoice 是鼻浊音/清化
+// 的 mora 下标（Yomitan 规格里数字或数组，归一成数组）。
+struct ParsedAccent {
+  int position = 0;
+  std::string pattern;
+  std::vector<int> nasal;
+  std::vector<int> devoice;
+};
+
 struct ParsedPitch {
   std::string_view reading;
-  std::vector<int> pitches;
+  std::vector<ParsedAccent> pitches;
   std::vector<std::string_view> transcriptions;
 };
 

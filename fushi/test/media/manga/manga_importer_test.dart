@@ -52,6 +52,48 @@ String _writeValidSample(
   return mokuroPath;
 }
 
+/// 写出一份**卷子目录布局**（mokuro 惯例 B / BUG-1830 复现体）样本：`img_path` 是裸
+/// 文件名，页图躺在与 `.mokuro` 同名的子目录里。返回 `.mokuro` 路径。
+///
+/// 与 [_writeValidSample]（惯例 A：`img_path` 自带 `images/` 前缀，图与 `.mokuro` 同级）
+/// 的差别**只有布局**，页数、字段、字节写法刻意保持一致——两个 helper 的产物必须都能
+/// 导入，任何一个失败都说明页图根解析退回了单一惯例的硬编码。
+String _writeVolumeSubdirSample(
+  String srcDir, {
+  required String title,
+  String volume = 'DLRAW_VOL01',
+  String pagePrefix = 'DLRAW.TO_',
+}) {
+  Directory(srcDir).createSync(recursive: true);
+  final Directory pages = Directory(p.join(srcDir, volume))
+    ..createSync(recursive: true);
+  File(p.join(pages.path, '${pagePrefix}00001.jpeg'))
+      .writeAsBytesSync(<int>[11, 12, 13]);
+  File(p.join(pages.path, '${pagePrefix}00002.jpeg'))
+      .writeAsBytesSync(<int>[14, 15, 16]);
+  final Map<String, Object?> payload = <String, Object?>{
+    'version': '0.2.0',
+    'title': title,
+    'pages': <Object?>[
+      <String, Object?>{
+        'img_width': 1200,
+        'img_height': 1700,
+        'img_path': '${pagePrefix}00001.jpeg',
+        'blocks': <Object?>[],
+      },
+      <String, Object?>{
+        'img_width': 1200,
+        'img_height': 1700,
+        'img_path': '${pagePrefix}00002.jpeg',
+        'blocks': <Object?>[],
+      },
+    ],
+  };
+  final String mokuroPath = p.join(srcDir, '$volume.mokuro');
+  File(mokuroPath).writeAsStringSync(jsonEncode(payload));
+  return mokuroPath;
+}
+
 Map<String, Object?> _readMangaJson(String extractDir) => jsonDecode(
       File(p.join(extractDir, MangaStorage.kMangaJsonFileName))
           .readAsStringSync(),
@@ -443,5 +485,133 @@ void main() {
     );
     // 取消后不落第二本。
     expect((await db.getAllEpubBooks()).length, 1);
+  });
+
+  // ── BUG-1830：mokuro 的两种 img_path 惯例必须都能导入 ────────────────────
+  // 之前页图根被硬编码成「`.mokuro` 同级」，卷子目录布局（裸 img_path）解析成
+  // `<父目录>/<裸文件名>`，必然 `Missing manga page image`；而准入判定会往下探一层
+  // 子目录、把这种布局判为「可导入」——门放行、执行必失败。
+
+  test('卷子目录布局（裸 img_path）从 <卷名>/ 解析页图并成功导入', () async {
+    final String mokuro = _writeVolumeSubdirSample(
+      p.join(srcRoot.path, 'dlraw'),
+      title: 'DLRAW Vol.1',
+    );
+
+    final String bookKey =
+        await MangaImporter.importFromMokuroPath(db: db, mokuroPath: mokuro);
+
+    final EpubBookRow row = (await db.getEpubBook(bookKey))!;
+    expect(row.format, 'manga');
+    expect(row.chapterCount, 2);
+    // 裸 img_path → destRel 只加 `images/` 前缀，不再带卷名一层。
+    expect(row.coverPath, 'images/DLRAW.TO_00001.jpeg');
+    final File cover =
+        File(p.join(row.extractDir, 'images', 'DLRAW.TO_00001.jpeg'));
+    expect(cover.existsSync(), isTrue);
+    // 字节来自卷子目录里的真页图（不是同名空壳/别处文件）。
+    expect(cover.readAsBytesSync(), <int>[11, 12, 13]);
+    expect(
+      File(p.join(row.extractDir, 'images', 'DLRAW.TO_00002.jpeg'))
+          .readAsBytesSync(),
+      <int>[14, 15, 16],
+    );
+    final Map<String, Object?> json = _readMangaJson(row.extractDir);
+    expect(
+      (json['pages']! as List<Object?>)
+          .map((Object? page) => (page! as Map)['url'])
+          .toList(),
+      <String>['images/DLRAW.TO_00001.jpeg', 'images/DLRAW.TO_00002.jpeg'],
+    );
+  });
+
+  test('准入判定放行的卷子目录布局，执行也必须真能导入（门与执行不再两义）',
+      () async {
+    final String mokuro = _writeVolumeSubdirSample(
+      p.join(srcRoot.path, 'gate'),
+      title: 'Gate Vol.1',
+    );
+
+    // 门：探到一层子目录里有页图 → 放行（这一步一直是 true，从来不是 bug 所在）。
+    expect(mangaImportCanImport(<String>[mokuro]), isTrue);
+    // 执行：以前在这里抛 Missing manga page image，现在必须落库。
+    final String bookKey =
+        await MangaImporter.importFromMokuroPath(db: db, mokuroPath: mokuro);
+    expect((await db.getEpubBook(bookKey))!.format, 'manga');
+  });
+
+  test('卷子目录只绑自己那一卷，不会误取同批另一卷的同名页图', () async {
+    // 一个批量目录里两卷共存，页名都叫 001.jpg（不带卷前缀的常见命名）。
+    final Directory batch = Directory(p.join(srcRoot.path, 'batch'))
+      ..createSync(recursive: true);
+    for (final (String vol, List<int> bytes) in <(String, List<int>)>[
+      ('A', <int>[1, 1, 1]),
+      ('B', <int>[2, 2, 2]),
+    ]) {
+      Directory(p.join(batch.path, vol)).createSync(recursive: true);
+      File(p.join(batch.path, vol, '001.jpg')).writeAsBytesSync(bytes);
+      File(p.join(batch.path, '$vol.mokuro'))
+          .writeAsStringSync(jsonEncode(<String, Object?>{
+        'version': '0.2.0',
+        'title': 'Series $vol',
+        'pages': <Object?>[
+          <String, Object?>{
+            'img_width': 800,
+            'img_height': 1200,
+            'img_path': '001.jpg',
+            'blocks': <Object?>[],
+          },
+        ],
+      }));
+    }
+
+    final String bookKey = await MangaImporter.importFromMokuroPath(
+      db: db,
+      mokuroPath: p.join(batch.path, 'A.mokuro'),
+    );
+
+    final EpubBookRow row = (await db.getEpubBook(bookKey))!;
+    expect(
+      File(p.join(row.extractDir, 'images', '001.jpg')).readAsBytesSync(),
+      <int>[1, 1, 1],
+      reason: '候选根只有「就地」与「<卷名>/」两个，绝不能扫到 B/ 去',
+    );
+  });
+
+  test('两种布局都不成立时，错误文案指名道姓列出搜过的目录', () async {
+    final Directory srcDir = Directory(p.join(srcRoot.path, 'nowhere'))
+      ..createSync(recursive: true);
+    // 同级有一张不相干的图 → 准入判定仍放行，逼真复现「门放行」的前提。
+    File(p.join(srcDir.path, 'cover.jpg')).writeAsBytesSync(<int>[9]);
+    final String mokuro = p.join(srcDir.path, 'Vol9.mokuro');
+    File(mokuro).writeAsStringSync(jsonEncode(<String, Object?>{
+      'version': '0.2.0',
+      'title': 'Vol9',
+      'pages': <Object?>[
+        <String, Object?>{
+          'img_width': 800,
+          'img_height': 1200,
+          'img_path': 'p001.jpg',
+          'blocks': <Object?>[],
+        },
+      ],
+    }));
+
+    expect(mangaImportCanImport(<String>[mokuro]), isTrue);
+    await expectLater(
+      MangaImporter.importFromMokuroPath(db: db, mokuroPath: mokuro),
+      throwsA(
+        isA<MangaImportException>().having(
+          (MangaImportException e) => e.message,
+          'message',
+          allOf(
+            contains('p001.jpg'),
+            contains(srcDir.path),
+            contains(p.join(srcDir.path, 'Vol9')),
+          ),
+        ),
+      ),
+    );
+    expect(await db.getAllEpubBooks(), isEmpty);
   });
 }

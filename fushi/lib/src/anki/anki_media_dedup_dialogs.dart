@@ -50,16 +50,20 @@ Future<AnkiMediaDedupReport?> runAnkiMediaDedupWithProgress(
             ),
           ),
           actions: [
-            ValueListenableBuilder<bool>(
-              valueListenable: cancelRequested,
-              builder: (BuildContext context, bool requested, Widget? child) =>
-                  TextButton(
-                onPressed:
-                    requested ? null : () => cancelRequested.value = true,
-                child:
-                    Text(requested ? t.anki_dedup_cancelling : t.dialog_cancel),
+            // 后端不支持中途叫停（整轮在主机进程里跑）时**不画**取消按钮：
+            // 一个点了没反应的取消按钮比没有更糟，用户会以为已经停了。
+            if (runner.supportsProgress)
+              ValueListenableBuilder<bool>(
+                valueListenable: cancelRequested,
+                builder:
+                    (BuildContext context, bool requested, Widget? child) =>
+                        TextButton(
+                  onPressed:
+                      requested ? null : () => cancelRequested.value = true,
+                  child: Text(
+                      requested ? t.anki_dedup_cancelling : t.dialog_cancel),
+                ),
               ),
-            ),
           ],
         ),
       );

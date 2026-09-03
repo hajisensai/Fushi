@@ -34,7 +34,7 @@ class _UnsupportedOcrService implements MangaOcrService {
   Future<MangaOcrModelStatus> modelStatus() async => const MangaOcrModelStatus(
         detectorReady: false,
         recognizerReady: false,
-        downloadedBytes: 0,
+        diskBytes: 0,
         totalBytes: 1,
       );
 
@@ -43,7 +43,7 @@ class _UnsupportedOcrService implements MangaOcrService {
       const Stream<MangaOcrDownloadEvent>.empty();
 
   @override
-  Future<void> deleteModels() async {}
+  Future<int> deleteModels() async => 0;
 
   @override
   Stream<MangaOcrVolumeEvent> ocrFolder({
@@ -89,6 +89,7 @@ class _NoopLensRunner implements GoogleLensMangaOcrRunner {
     String? volumeTitle,
     int startPage = 0,
     bool onlyMissing = false,
+    String language = 'ja',
   }) =>
       const Stream<MangaOcrVolumeEvent>.empty();
 

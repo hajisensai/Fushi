@@ -1,9 +1,26 @@
+// CI 走 `--config Release`，MSVC 在该配置下定义 NDEBUG，裸 assert 会被整条编译掉，
+// 于是这个测试无论断言对不对都恒绿——与 BUG-1157「零测试执行伪装成通过」同一族。
+// 必须在任何 include 之前撤销它。守卫：tests/assert_liveness_guard_test.py
+#undef NDEBUG
+
 #include <array>
 #include <cstdio>
 
 #include "luna_hook_config.h"
 
 int main() {
+  fushi_voice_hook::LunaTargetIdentity wa2;
+  wa2.executable_sha256 =
+      "005e71107ed70e662c41cb526879cdcf0b9486e067c0e5a306308688c17409ed";
+  const auto wa2_profile = fushi_voice_hook::MatchLunaHookProfiles(
+      fushi_voice_hook::BuiltInLunaHookProfiles(), wa2);
+  if (wa2_profile.codepage != 932 || wa2_profile.enable_pc_hooks ||
+      wa2_profile.hook_codes.size() != 1 ||
+      wa2_profile.hook_codes.front() != L"HSX0:0@512BF:WA2.exe") {
+    std::fprintf(stderr, "WHITE ALBUM2 exact profile did not match\n");
+    return 9;
+  }
+
   fushi_voice_hook::LunaTargetIdentity nine;
   nine.executable_sha256 =
       "36448822f1a8bc3840b304d3993c07de912db6c803dddd8db1202ed676ba7019";
@@ -54,6 +71,20 @@ int main() {
           unterminated_log.data(), L"Krkr2wcs")) {
     std::fprintf(stderr, "unterminated Luna host log was accepted\n");
     return 7;
+  }
+
+  fushi_voice_hook::LunaTargetIdentity sgre;
+  sgre.executable_sha256 =
+      "75a83a0e2a7e22055417ae0474b47be98418c4e42c695c548b558705c404b9d8";
+  const auto sgre_profile = fushi_voice_hook::MatchLunaHookProfiles(
+      fushi_voice_hook::BuiltInLunaHookProfiles(), sgre);
+  if (sgre_profile.codepage != 932 || sgre_profile.enable_pc_hooks ||
+      !sgre_profile.normalize_mages_controls ||
+      sgre_profile.hook_codes.size() != 1 ||
+      sgre_profile.hook_codes.front() !=
+          L"HQFN-24@328E0:sgre_steam.exe") {
+    std::fprintf(stderr, "STEINS;GATE RE:BOOT profile did not match\n");
+    return 8;
   }
 
   fushi_voice_hook::LunaTargetIdentity moved = nine;

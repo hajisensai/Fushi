@@ -1267,6 +1267,7 @@ class RemoteVideoInfo {
     this.tagsAddedAt = const <String, int>{},
     this.tagTombstones = const <String, int>{},
     this.collection,
+    this.importedAt,
   });
 
   final String id;
@@ -1300,6 +1301,16 @@ class RemoteVideoInfo {
   /// 该视频在 host 端的主合集归属（多端库联合视图 §2.3 任务5.1；null = 散卡）。
   /// 远端占位卡据此归进对应合集行（UI 批任务 10）。
   final RemoteCollectionMembership? collection;
+
+  /// host 端 `VideoBooks.importedAt`（epoch 毫秒；null = 旧 host 不带该字段）。
+  ///
+  /// 缺了它，client 的视频首页「最近添加」行结构上就只能是本地条目——远端占位没有
+  /// 入库时刻，既排不进时间序也判不出是不是在窗口内，于是「互联」在首页只兑现了
+  /// 一半（继续观看有远端、最近添加没有）。同理 [_groupVideos] 只能给远端造一个
+  /// 负数假 importedAt 来占位排序。
+  ///
+  /// 旧 host 不带 → null → 与改动前逐字节同行为（不进「最近添加」、排序回落假值）。
+  final int? importedAt;
 
   /// 是否为多集远端播放列表（≥2 集）。client UI 据此渲染集数角标 + 切集面板。
   bool get isPlaylist => episodes.length > 1;
@@ -1396,6 +1407,7 @@ class RemoteVideoInfo {
         if (secondaryDelayUpdatedAtMs > 0)
           'secondaryDelayUpdatedAtMs': secondaryDelayUpdatedAtMs,
         if (completedAt != null) 'completedAt': completedAt,
+        if (importedAt != null) 'importedAt': importedAt,
         // 单视频（episodes <=1）向后兼容：不写 episodes/currentEpisode 键。
         if (episodes.length > 1) ...<String, Object?>{
           'episodes': <Map<String, Object?>>[
@@ -1461,6 +1473,7 @@ class RemoteVideoInfo {
         tagsAddedAt: tagsAddedAt,
         tagTombstones: tagTombstones,
         collection: collection ?? this.collection,
+        importedAt: importedAt,
       );
 
   static RemoteVideoInfo fromJson(Map<String, Object?> json) {
@@ -1495,6 +1508,7 @@ class RemoteVideoInfo {
       secondaryDelayUpdatedAtMs:
           _jsonInt(json['secondaryDelayUpdatedAtMs']) ?? 0,
       completedAt: _jsonInt(json['completedAt']),
+      importedAt: _jsonInt(json['importedAt']),
       episodes: _jsonVideoEpisodes(json['episodes']),
       currentEpisode: _jsonInt(json['currentEpisode']) ?? 0,
       tags: _jsonStringList(json['tags']),

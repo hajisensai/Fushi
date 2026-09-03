@@ -5,7 +5,6 @@ import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
-import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 查词弹窗（纯原生 WebView）要交回宿主页面的输入集合。
 ///
@@ -165,7 +164,9 @@ const String kDictionaryPopupInputHandler = 'hostInputToken';
 /// 所以这不是「平台特例分支」，而是指针所有权的事实：谁先拿到事件，谁负责分发。
 /// 两条路**互斥**，故 [dictionaryPopupInputBridgeScript] 在宿主拥有指针时不装鼠标
 /// 监听——否则中键/右键会被两条路各触发一次（关词典幂等看不出来，漫画翻页会翻两页）。
-bool get hostOwnsDictionaryPopupPointerInput => isWindowsPlatform;
+/// 判据已提升为共享的 [hostOwnsWebViewPointerInput]（漫画正文 WebView 也要按同一条
+/// 事实决定装不装 JS 鼠标监听）。此处保留同名薄封装，调用点与既有测试不变。
+bool get hostOwnsDictionaryPopupPointerInput => hostOwnsWebViewPointerInput;
 
 /// Flutter 焦点落在弹窗子树里时，把命中 [spec] 的按键折成与 JS 桥**完全同形**的
 /// token（`Escape` / `Ctrl+KeyD`），未命中返回 null。

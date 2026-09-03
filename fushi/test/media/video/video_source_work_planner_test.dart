@@ -62,6 +62,23 @@ void main() {
     expect(movie.members.single.bookUid, 'movie-a');
   });
 
+  test('纯集号标签标题判为不可自动识别（BUG-2001）', () async {
+    final int sourceId = await addSource('D:/A');
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    VideoSourceScrapeWork work(String title) => VideoSourceScrapeWork(
+          source: source,
+          title: title,
+          members: const <VideoBookRow>[],
+        );
+    expect(work('特典 S00E01').hasIdentifiableTitle, isFalse);
+    expect(work('S00E01').hasIdentifiableTitle, isFalse);
+    expect(work('SP S01E02').hasIdentifiableTitle, isFalse);
+    expect(work('sp-S00E03').hasIdentifiableTitle, isFalse);
+    expect(work('哆啦A梦：大雄的秘密道具博物馆').hasIdentifiableTitle, isTrue);
+    expect(work('Show S01E01 The Pilot').hasIdentifiableTitle, isTrue);
+    expect(work('Steins;Gate').hasIdentifiableTitle, isTrue);
+  });
+
   test('非视频来源不产生作品计划', () async {
     final int sourceId = await db.insertMediaSource(
       MediaSourcesCompanion.insert(

@@ -38,6 +38,7 @@ import 'package:fushi/src/ocr/manga_ocr_tokenizer.dart';
 import 'package:fushi/src/ocr/ocr_inference.dart';
 import 'package:fushi/src/ocr/ocr_inference_ort.dart';
 import 'package:fushi/src/ocr/text_detector.dart';
+import 'package:fushi/src/utils/misc/directory_bytes.dart';
 
 /// 纯函数：`Platform.operatingSystem` 字符串 → [OcrPlatform]。
 /// 未知平台（fuchsia 等）落 linux 档（纯 CPU），不会选到不存在的 EP。
@@ -157,6 +158,102 @@ class _JobIsolateArgs {
   final MangaOcrModelPaths modelPaths;
 }
 
+/// 请求 ORT 之前就能定下的 EP 决策：三个会话各请求哪些 provider，以及此刻**已经
+/// 能断定**的降级说明。
+///
+/// 做成一个对象、并且只经 [toAcceleration] 出口产出 [MangaOcrAcceleration]，是
+/// 为了让「决策」与「可观测性」不可分割。`_volumeJobIsolateMain` 跑在
+/// `Isolate.spawn` 里、直连真 ORT，单测够不到它；早先那版把降级说明散成 isolate
+/// 里的两句 `recordUnavailable(...)`，删掉这两句测试全绿——降级从此静默，没人
+/// 会发现（BUG-2050 审查 M5）。现在 provider 列表和降级说明装在同一个对象里，
+/// isolate 拿了列表就必然带着说明，想丢只能改这个可单测的类。
+class OcrAccelerationPlan {
+  const OcrAccelerationPlan({
+    required this.detectionProviders,
+    required this.recognitionProviders,
+    required this.degradeReasons,
+  });
+
+  /// 检测会话要提交给 ORT 的 provider 列表（末位永远是 CPU）。
+  final List<OcrExecutionProvider> detectionProviders;
+
+  /// 识别（encoder + decoder）会话要提交给 ORT 的 provider 列表。
+  final List<OcrExecutionProvider> recognitionProviders;
+
+  /// 请求前就能断定的降级说明（探测失败 / 想要的 EP 没编进运行时）。
+  final List<String> degradeReasons;
+
+  /// 合并「请求前」与「建会话时」两批降级说明，产出上报 UI 的加速状态。
+  ///
+  /// [runtimeDegradeReasons] 是 `createOcrSessionWithProviderFallback` 真回退时
+  /// 记下的那批；[degradeReasons] 无条件排在它前面（时间顺序）。
+  MangaOcrAcceleration toAcceleration({
+    required OcrExecutionProvider detection,
+    required OcrExecutionProvider recognition,
+    List<String> runtimeDegradeReasons = const <String>[],
+  }) {
+    return MangaOcrAcceleration(
+      detection: detection,
+      recognition: recognition,
+      degradeReasons: List<String>.unmodifiable(<String>[
+        ...degradeReasons,
+        ...runtimeDegradeReasons,
+      ]),
+    );
+  }
+}
+
+/// 由平台偏好与本机真实可用的加速 EP 推出 [OcrAccelerationPlan]（纯函数）。
+///
+/// [probeError] 非 null 表示 `availableAcceleratedProviders()` 自己抛了——那本身
+/// 就是一条降级（有 N 卡也会退到 CPU），不许静默（BUG-1163）。
+///
+/// 「平台想要加速 EP，但运行时里一个都没编译进来」也记一条：BUG-2050 修好之后
+/// 这条路径不再产生 session 创建失败，可观测性不能跟着一起消失——原先用户至少
+/// 还能从 `detector: directml -> cpu (INVALID_PROVIDER)` 看出来。
+///
+/// 反过来，平台**本来就该走纯 CPU**（偏好表为空：Windows 见 BUG-2050、Apple 见
+/// BUG-1613、linux/android 同档）不是降级，一条都不记——否则 Windows 每卷都会
+/// 弹一条用户永远消不掉的黄条。
+OcrAccelerationPlan planOcrAcceleration({
+  required OcrPlatform platform,
+  required Set<OcrExecutionProvider> availableProviders,
+  Object? probeError,
+}) {
+  final List<String> reasons = <String>[];
+  if (probeError != null) {
+    reasons.add('accelerated provider probe failed: $probeError');
+  }
+  final Map<String, OcrModelKind> roles = <String, OcrModelKind>{
+    'detector': OcrModelKind.detection,
+    'recognition': OcrModelKind.recognition,
+  };
+  final Map<OcrModelKind, List<OcrExecutionProvider>> chosen =
+      <OcrModelKind, List<OcrExecutionProvider>>{};
+  for (final MapEntry<String, OcrModelKind> role in roles.entries) {
+    final List<OcrExecutionProvider> providers = selectOcrExecutionProviders(
+      kind: role.value,
+      platform: platform,
+      availableProviders: availableProviders,
+    );
+    chosen[role.value] = providers;
+    if (providers.first != OcrExecutionProvider.cpu) continue;
+    final List<OcrExecutionProvider> wanted = acceleratedProviderPreference(
+      kind: role.value,
+      platform: platform,
+    );
+    if (wanted.isEmpty) continue;
+    final String names =
+        wanted.map((OcrExecutionProvider p) => p.name).join('/');
+    reasons.add('${role.key}: $names not built into this ONNX Runtime -> cpu');
+  }
+  return OcrAccelerationPlan(
+    detectionProviders: chosen[OcrModelKind.detection]!,
+    recognitionProviders: chosen[OcrModelKind.recognition]!,
+    degradeReasons: List<String>.unmodifiable(reasons),
+  );
+}
+
 /// isolate 入口：EP 探测/选择 → 建三个 ORT 会话 → 跑目录任务 → 回发事件。
 Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
   final ReceivePort control = ReceivePort();
@@ -175,42 +272,52 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
     if (token != null) {
       // 让 flutter_onnxruntime 的 MethodChannel 调用可从本后台 isolate 发出。
       BackgroundIsolateBinaryMessenger.ensureInitialized(token);
+    } else {
+      // 没有 token 就没有 MethodChannel：后面第一次 ORT 调用会以
+      // 「No implementation found」告终，而那条报错完全看不出根因在这里。
+      // 与上面 CUDA 探测失败一样留痕，别让它静默跳过。
+      developer.log(
+        'manga OCR volume job started without a RootIsolateToken; '
+        'ORT MethodChannel calls from this isolate will fail',
+        name: kOcrLogName,
+      );
     }
     final OrtOcrSessionFactory factory = OrtOcrSessionFactory();
-    final List<String> degradeReasons = <String>[];
-    bool cudaAvailable = false;
+    Set<OcrExecutionProvider> availableProviders =
+        const <OcrExecutionProvider>{};
+    Object? probeError;
     try {
-      cudaAvailable = await factory.isCudaAvailable();
+      availableProviders = await factory.availableAcceleratedProviders();
     } catch (error) {
-      // BUG-1163：探测失败也是降级（有 N 卡也会退到 DirectML/CPU），
+      // BUG-1163：探测失败也是降级（有 N 卡也会退到 CPU），
       // 必须留痕，不能 catch (_) 吞掉。
-      cudaAvailable = false;
-      degradeReasons.add('CUDA provider probe failed: $error');
+      availableProviders = const <OcrExecutionProvider>{};
+      probeError = error;
       developer.log(
-        'manga OCR CUDA provider probe failed; assuming unavailable',
+        'manga OCR accelerated provider probe failed; assuming CPU only',
         name: kOcrLogName,
         error: error,
       );
     }
     final OcrPlatform platform = resolveOcrPlatform(Platform.operatingSystem);
+    final OcrAccelerationPlan plan = planOcrAcceleration(
+      platform: platform,
+      availableProviders: availableProviders,
+      probeError: probeError,
+    );
     final List<OcrExecutionProvider> detectionProviders =
-        selectOcrExecutionProviders(
-      kind: OcrModelKind.detection,
-      platform: platform,
-      cudaAvailable: cudaAvailable,
-    );
+        plan.detectionProviders;
     final List<OcrExecutionProvider> recognitionProviders =
-        selectOcrExecutionProviders(
-      kind: OcrModelKind.recognition,
-      platform: platform,
-      cudaAvailable: cudaAvailable,
-    );
+        plan.recognitionProviders;
 
     OcrExecutionProvider detectionEffective = detectionProviders.first;
     OcrExecutionProvider recognitionEffective = recognitionProviders.first;
+    // 建会话过程中才知道的降级（BUG-1163）；请求前就能断定的那批由 [plan] 带着，
+    // 在 `plan.toAcceleration` 里与这批合并——本 isolate 没法把它漏掉。
+    final List<String> runtimeDegradeReasons = <String>[];
     void record(String role, OcrProviderResolution resolution) {
       if (!resolution.didFallBack) return;
-      degradeReasons.add('$role: ${resolution.requested.first.name} -> '
+      runtimeDegradeReasons.add('$role: ${resolution.requested.first.name} -> '
           '${resolution.effective.name} (${resolution.fallbackReason})');
     }
 
@@ -238,10 +345,10 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
         record('recognition decoder', resolution);
       },
     );
-    final MangaOcrAcceleration acceleration = MangaOcrAcceleration(
+    final MangaOcrAcceleration acceleration = plan.toAcceleration(
       detection: detectionEffective,
       recognition: recognitionEffective,
-      degradeReasons: List<String>.unmodifiable(degradeReasons),
+      runtimeDegradeReasons: runtimeDegradeReasons,
     );
     developer.log(
       'manga OCR volume job acceleration: $acceleration',
@@ -426,14 +533,32 @@ class MangaOcrServiceImpl implements MangaOcrService {
   static Future<Directory> defaultMangaOcrModelsDir() =>
       model_fp.defaultMangaOcrModelsDir();
 
-  /// 整卷本地 OCR 的平台闸门 = **桌面三端 + iOS**，且本机确有 ORT native
-  /// （[isLocalOnnxRuntimeAvailable]）。
+  /// 整卷本地 OCR 的平台闸门 = **本机确有 ORT native**（[isLocalOnnxRuntimeAvailable]），
+  /// 不再维护第二份平台白名单。
+  ///
+  /// 白名单存在的那段时间里，这一个布尔位承担了两个**互不相同**的语义——「本机能
+  /// 不能跑本地 ONNX 推理」和「整卷这种重活允不允许」。设置页的模型区（下载 / 删除 /
+  /// 占用）和框选识别只需要前者，却被后者连坐关掉：安卓因此陷入「点框选识别 → 提示
+  /// 去设置下载模型 → 设置里根本没有下载按钮」的死循环，已下一半的几百 MB 既下不完
+  /// 也删不掉（BUG-1780）。一个概念一个真相源，这类特殊情况才不会再长出来。
   ///
   /// macOS 是 2026-08 随 flutter_onnxruntime fork 重新接上 Apple native 后开的：
   /// 它就是桌面，和 Windows / Linux 同一档重活预算。
   ///
   /// iOS 一并开——整卷是重活，但 iPhone/iPad 上既没有外部 mokuro CLI 也没有桌面
   /// 可用，不开就等于「iOS 永远没有本地整卷 OCR」。
+  ///
+  /// **Android 于 2026-08-23 开启**（BUG-1780，用户明确要求）：它此前不开的理由
+  /// 不是技术阻塞——ORT native 一直正常注册，执行提供者也早有明确定义
+  /// （[selectOcrExecutionProviders] 对 android 返回纯 CPU）——而是低端机的重活
+  /// 预算顾虑。那是「慢」，与下面 A13 的量级同档；做成硬闸门等于替用户做了决定，
+  /// 还顺手废掉了本该可用的模型管理和框选识别。
+  ///
+  /// 说清楚一件事，免得下一个人误读：框选识别的闸门（`isLocalRescanSupported`）
+  /// 一直是 ORT 可用性、在安卓一直为真，但**这不等于它在安卓跑过**——模型下载
+  /// 入口被这同一个位连坐关掉，门开着而门后没路。所以本次是 Android 上第一次
+  /// 真正执行 ORT，与 BUG-1613 里 Apple CoreML「分支存在但从未被执行」同形，
+  /// 别把「闸门为真」当成「已验证」。
   ///
   /// **真机实测（2026-08-14，`integration_test/manga_ocr_volume_e2e_itest.dart`，
   /// 4 块竖排气泡的 1200×1700 页，识别逐字 100% 正确）**：
@@ -447,32 +572,44 @@ class MangaOcrServiceImpl implements MangaOcrService {
   /// 一页 10~15 块，A13 上折合约 35~50s/页。也就是说整卷在老机型上是「挂着跑几
   /// 小时」的量级——能用，但别当交互操作。新机型（A17/A18）大致快 3~4 倍。
   /// 用户不接受这个量级时，向导里的「已配对主机代跑」和 Google Lens 仍在。
-  ///
-  /// **Android 仍不开**：与本次改动无关，其闸门从来就不是 ORT 可用性决定的
-  /// （Android native 一直正常注册），而是低端机的重活预算问题，另案评估。
-  static bool defaultPlatformSupport() =>
-      (Platform.isWindows ||
-          Platform.isLinux ||
-          Platform.isMacOS ||
-          Platform.isIOS) &&
-      isLocalOnnxRuntimeAvailable;
+  static bool defaultPlatformSupport() => isLocalOnnxRuntimeAvailable;
 
   @override
   bool get isSupportedPlatform => _platformSupport();
+
+  /// 清单是否齐全（只 stat 清单里那几个文件，不遍历目录）。
+  ///
+  /// 与 [modelStatus] 分开：跑 OCR 的热路径只需要这个答案，而占用统计要递归遍历
+  /// 整个模型目录——把两者绑在一起等于让每次开跑都白扫一遍磁盘。
+  Future<bool> _manifestComplete() async {
+    final Directory dir = await _modelsDirProvider();
+    return _manifest.every(
+      (MangaOcrModelFile model) =>
+          isMangaOcrModelFileReady(File(p.join(dir.path, model.fileName))),
+    );
+  }
 
   @override
   Future<MangaOcrModelStatus> modelStatus() async {
     final Directory dir = await _modelsDirProvider();
     bool detectorReady = true;
     bool recognizerReady = true;
-    int downloadedBytes = 0;
     int totalBytes = 0;
+    int obtainedBytes = 0;
     for (final MangaOcrModelFile model in _manifest) {
       totalBytes += model.expectedBytes;
       final File file = File(p.join(dir.path, model.fileName));
       if (isMangaOcrModelFileReady(file)) {
-        downloadedBytes += file.lengthSync();
-      } else if (model.role == MangaOcrModelRole.detector) {
+        obtainedBytes += file.lengthSync();
+        continue;
+      }
+      // 未就绪的文件若留着 `.part`，那些字节下次点下载会被 Range 续上，必须
+      // 算进「已下多少」——否则用户看到的进度会在每次重进设置页时归零。
+      final File part = File('${file.path}.part');
+      if (part.existsSync()) {
+        obtainedBytes += part.lengthSync();
+      }
+      if (model.role == MangaOcrModelRole.detector) {
         detectorReady = false;
       } else {
         recognizerReady = false;
@@ -481,8 +618,11 @@ class MangaOcrServiceImpl implements MangaOcrService {
     return MangaOcrModelStatus(
       detectorReady: detectorReady,
       recognizerReady: recognizerReady,
-      downloadedBytes: downloadedBytes,
+      // 占用按目录实际大小，不按清单累加：`.part` 残留与遗留旧档同样占磁盘，
+      // 用户看到的数字必须能被「删除」兑现（BUG-1732）。
+      diskBytes: await measureDirectoryBytes(dir),
       totalBytes: totalBytes,
+      obtainedBytes: obtainedBytes,
     );
   }
 
@@ -493,11 +633,15 @@ class MangaOcrServiceImpl implements MangaOcrService {
   }
 
   @override
-  Future<void> deleteModels() async {
+  Future<int> deleteModels() async {
     final Directory dir = await _modelsDirProvider();
-    if (await dir.exists()) {
-      await dir.delete(recursive: true);
+    if (!await dir.exists()) {
+      return 0;
     }
+    // 先量后删：删完再量只会得到 0，用户就永远拿不到「到底释放了多少」。
+    final int freed = await measureDirectoryBytes(dir);
+    await dir.delete(recursive: true);
+    return freed;
   }
 
   Future<MangaOcrModelPaths> _resolveModelPaths() async {
@@ -538,8 +682,9 @@ class MangaOcrServiceImpl implements MangaOcrService {
             throw StateError(
                 'manga OCR is not supported on ${Platform.operatingSystem}');
           }
-          final MangaOcrModelStatus status = await modelStatus();
-          if (!status.allReady) {
+          // 只问「齐不齐」，不量「占多少」：占用统计要递归遍历整个模型目录，
+          // 那是设置页展示的开销，没有理由压在每次开跑 OCR 的路径上。
+          if (!await _manifestComplete()) {
             throw StateError('manga OCR models are not downloaded');
           }
           final MangaOcrModelPaths modelPaths = await _resolveModelPaths();

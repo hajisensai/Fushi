@@ -26,13 +26,21 @@ class MdictFormat extends DictionaryFormat {
   static final MdictFormat _instance = MdictFormat._privateConstructor();
 }
 
+/// 取目录里扩展名为 [ext] 的文件。
+///
+/// 包里有多个同扩展名文件时，选中哪个会决定词典的显示名
+/// （prepareNameMdictFormat），所以不能交给 listSync 的平台顺序：同一个 zip
+/// 在 Windows 与 Linux 上导出的名字必须一样。固定取路径字典序最小的那个。
 File? _findFileByExtension(Directory dir, String ext) {
+  File? best;
   for (final entity in dir.listSync(recursive: true)) {
     if (entity is File && entity.path.toLowerCase().endsWith(ext)) {
-      return entity;
+      if (best == null || entity.path.compareTo(best.path) < 0) {
+        best = entity;
+      }
     }
   }
-  return null;
+  return best;
 }
 
 Future<void> prepareDirectoryMdictFormat(PrepareDirectoryParams params) async {

@@ -107,9 +107,16 @@ void main() {
     });
 
     test('clearSearchHighlightInvocation', () {
+      final String result =
+          ReaderPaginationScripts.clearSearchHighlightInvocation();
+      expect(result, contains('window.fushiReader.clearSearchHighlight()'));
+      // BUG-1743：同款存在性守卫（VN 的 clearSearchHighlight 由 shim 提供，
+      // 但任何未实现的 shell 都不该因此抛异常）。
       expect(
-        ReaderPaginationScripts.clearSearchHighlightInvocation(),
-        'window.fushiReader.clearSearchHighlight()',
+        result,
+        contains(
+          'typeof window.fushiReader.clearSearchHighlight === "function"',
+        ),
       );
     });
   });
@@ -266,8 +273,18 @@ void main() {
           ReaderPaginationScripts.scrollToSearchMatchInvocation('a"b', 7);
       // The query must be emitted as a single, properly escaped JS string
       // literal so the raw quote cannot terminate the argument early.
-      expect(result, 'window.fushiReader.scrollToSearchMatch("a\\"b", 7)');
+      expect(
+        result,
+        contains('window.fushiReader.scrollToSearchMatch("a\\"b", 7)'),
+      );
       expect(result, isNot(contains('"a"b"')));
+      // BUG-1743：调用必须带存在性守卫——VN 等 shell 未实现时裸调会抛
+      // TypeError，中断同一次 evaluate 里的后续语句且 Dart 侧抓不到。
+      expect(
+        result,
+        contains(
+            'typeof window.fushiReader.scrollToSearchMatch === "function"'),
+      );
     });
 
     test('scrollToSearchMatchInvocation escapes backslash and newline', () {
@@ -286,7 +303,10 @@ void main() {
     test('scrollToSearchMatchInvocation preserves CJK query verbatim', () {
       final String result =
           ReaderPaginationScripts.scrollToSearchMatchInvocation('猫', 100);
-      expect(result, 'window.fushiReader.scrollToSearchMatch("猫", 100)');
+      expect(
+        result,
+        contains('window.fushiReader.scrollToSearchMatch("猫", 100)'),
+      );
     });
 
     test('highlightSentenceAudioCueInvocation escapes cue id and embeds bool',

@@ -361,16 +361,9 @@ class AnkiMobileRepository extends BaseAnkiRepository {
     final Map<String, String> dictionaryMediaTags =
         mediaResults[3] as Map<String, String>;
 
-    final mediaContext = AnkiMiningContext(
-      sentence: context.sentence,
-      cueSentence: context.cueSentence,
-      documentTitle: context.documentTitle,
-      coverPath: coverUrl,
-      sentenceAudioPath: sentenceAudioUrl,
-      sentenceOffset: context.sentenceOffset,
-      source: context.source,
-      bookTitleTag: context.bookTitleTag,
-      collectionTag: context.collectionTag,
+    final AnkiMiningContext mediaContext = context.withMediaRefs(
+      coverRef: coverUrl,
+      sentenceAudioRef: sentenceAudioUrl,
     );
 
     final mediaPayload = AnkiMiningPayload(
@@ -387,6 +380,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       pitchCategories: payload.pitchCategories,
       phoneticTranscriptions: payload.phoneticTranscriptions,
       popupSelectionText: payload.popupSelectionText,
+      glossarySelectionHighlighted: payload.glossarySelectionHighlighted,
       audio: audio.fieldValue,
       selectedDictionary: payload.selectedDictionary,
       dictionaryMedia: payload.dictionaryMedia,
@@ -398,6 +392,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         payload: mediaPayload,
         context: mediaContext,
         dictionaryMediaTags: dictionaryMediaTags,
+        noteTypeName: settings.selectedNoteTypeName,
       ),
     );
   }
@@ -418,7 +413,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         final data = AnkiAudioRef.decodeDataUri(audio);
         if (data == null) return const _AnkiMobileAudioField('');
         final tempFile = File('${Directory.systemTemp.path}'
-            '${Platform.pathSeparator}hibiki_word_audio_'
+            '${Platform.pathSeparator}fushi_word_audio_'
             '${DateTime.now().microsecondsSinceEpoch}.${data.extension}');
         try {
           await tempFile.writeAsBytes(data.bytes);
@@ -475,7 +470,7 @@ class _AnkiMobileMediaServer {
 
   static Future<_AnkiMobileMediaServer> start() async {
     final tempDir =
-        await Directory.systemTemp.createTemp('hibiki_ankimobile_media_');
+        await Directory.systemTemp.createTemp('fushi_ankimobile_media_');
     try {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       return _AnkiMobileMediaServer._(server, tempDir);

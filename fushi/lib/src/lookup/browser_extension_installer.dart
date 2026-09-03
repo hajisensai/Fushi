@@ -101,22 +101,50 @@ String? parseBrowserExtensionBuild(String defaultsJs) {
   return m?.group(1);
 }
 
-/// 把随 app 打包的扩展文件解压到 `<appSupport>/hibiki-browser-extension/`，返回该目录
+/// 解压目标目录名。改名（Hibiki → Fushi）时这里是最后一处硬编码旧名。
+const String _kExtensionDirName = 'fushi-browser-extension';
+
+/// 改名前的解压目录名。**不得删除对它的维护**：浏览器的「加载已解压的扩展程序」
+/// 按**绝对路径**记住扩展，老用户的 Chrome/Edge 里那份仍指着这个目录。只改新名会让
+/// 他们的扩展路径失效，且「目录不存在就不刷新」的门会让旧副本永远停在改名当天的版本
+/// （BUG-726 的老病复发）。策略：新安装只写新名，旧目录**存在才维护、绝不新建**，
+/// 随用户自然淘汰。
+const String _kLegacyExtensionDirName = 'hibiki-browser-extension';
+
+/// 把随 app 打包的扩展文件解压到 `<appSupport>/fushi-browser-extension/`，返回该目录
 /// 绝对路径（供用户在浏览器「加载已解压的扩展程序」时粘贴）。每次调用覆盖写入，保证与
 /// app 内置版本一致（升级即刷新）。仅桌面有意义。
+///
+/// 旧目录（[_kLegacyExtensionDirName]）已存在时一并覆盖写入，保证老用户浏览器里那份
+/// 跟着更新，不因改名停更。
 ///
 /// TODO-1087：传入 [serverConfig] 时，用其真值重写解压出的 `fushi-defaults.js`，
 /// 于是扩展默认即连本机 app、无需用户手填 host/port/token。不传则保留打包内的占位默认。
 Future<String> prepareBundledBrowserExtension({
   BrowserExtensionServerConfig? serverConfig,
 }) async {
+  final Map<String, Uint8List> assets = await _loadBundledExtensionAssets();
   final Directory dest = await _extensionDestDir();
+  await _extractExtensionTo(dest, assets, serverConfig);
+
+  final Directory legacy = await _legacyExtensionDestDir();
+  if (legacy.existsSync()) {
+    await _extractExtensionTo(legacy, assets, serverConfig);
+  }
+  return dest.path;
+}
+
+/// 整目录覆盖解压 [assets] 到 [dest]（先删后建，保证不残留旧版文件）。
+Future<void> _extractExtensionTo(
+  Directory dest,
+  Map<String, Uint8List> assets,
+  BrowserExtensionServerConfig? serverConfig,
+) async {
   if (dest.existsSync()) {
     await dest.delete(recursive: true);
   }
   await dest.create(recursive: true);
 
-  final Map<String, Uint8List> assets = await _loadBundledExtensionAssets();
   for (final MapEntry<String, Uint8List> entry in assets.entries) {
     final File out =
         File(p.join(dest.path, p.joinAll(p.posix.split(entry.key))));
@@ -133,12 +161,16 @@ Future<String> prepareBundledBrowserExtension({
       build: computeBrowserExtensionFingerprint(assets),
     ));
   }
-  return dest.path;
 }
 
 Future<Directory> _extensionDestDir() async {
   final Directory support = await getApplicationSupportDirectory();
-  return Directory(p.join(support.path, 'hibiki-browser-extension'));
+  return Directory(p.join(support.path, _kExtensionDirName));
+}
+
+Future<Directory> _legacyExtensionDestDir() async {
+  final Directory support = await getApplicationSupportDirectory();
+  return Directory(p.join(support.path, _kLegacyExtensionDirName));
 }
 
 /// 读出随 app 打包的全部扩展资产（相对路径 → 字节）。
@@ -168,26 +200,40 @@ Future<String> bundledBrowserExtensionFingerprint() async {
 
 String? _bundledFingerprintCache;
 
-/// BUG-726：app 启动时把 `<appSupport>/hibiki-browser-extension/` 的已解压副本刷新到
+/// BUG-726：app 启动时把 `<appSupport>/fushi-browser-extension/` 的已解压副本刷新到
 /// 当前内置版本。此前该副本只在用户手动跑「安装扩展」助手时写入，app 升级从不刷新——
 /// 用户浏览器里的扩展弹窗永远停在安装当天的旧版（BUG-621/688 修了也到不了浏览器）。
 ///
-/// - 副本目录不存在（用户从没装过扩展）→ 不落盘、返回 false；
-/// - 副本 `fushi-defaults.js` 里的 build 指纹与内置一致 → 已最新、返回 false；
-/// - 否则整目录重解压（注入 [serverConfig] 真值 + 新指纹）→ 返回 true。
+/// 改名后同时检查旧目录 [_kLegacyExtensionDirName]：老用户浏览器仍按绝对路径指着它，
+/// 不一并刷新就等于对他们复发 BUG-726。两个目录各自独立判断陈旧、各自重解压。
+///
+/// - 两个副本目录都不存在（用户从没装过扩展）→ 不落盘、返回 false；
+/// - 存在的副本 `fushi-defaults.js` 里的 build 指纹都与内置一致 → 已最新、返回 false；
+/// - 否则把陈旧的那些整目录重解压（注入 [serverConfig] 真值 + 新指纹）→ 返回 true。
 Future<bool> refreshBundledBrowserExtensionIfStale({
   required BrowserExtensionServerConfig serverConfig,
 }) async {
-  final Directory dest = await _extensionDestDir();
-  if (!dest.existsSync()) return false;
-  final File defaults = File(p.join(dest.path, _kDefaultsFileName));
-  final String? installed = defaults.existsSync()
-      ? parseBrowserExtensionBuild(await defaults.readAsString())
-      : null;
-  if (installed != null &&
-      installed == await bundledBrowserExtensionFingerprint()) {
-    return false;
+  final List<Directory> stale = <Directory>[];
+  for (final Directory dir in <Directory>[
+    await _extensionDestDir(),
+    await _legacyExtensionDestDir(),
+  ]) {
+    if (!dir.existsSync()) continue;
+    final File defaults = File(p.join(dir.path, _kDefaultsFileName));
+    final String? installed = defaults.existsSync()
+        ? parseBrowserExtensionBuild(await defaults.readAsString())
+        : null;
+    if (installed != null &&
+        installed == await bundledBrowserExtensionFingerprint()) {
+      continue;
+    }
+    stale.add(dir);
   }
-  await prepareBundledBrowserExtension(serverConfig: serverConfig);
+  if (stale.isEmpty) return false;
+
+  final Map<String, Uint8List> assets = await _loadBundledExtensionAssets();
+  for (final Directory dir in stale) {
+    await _extractExtensionTo(dir, assets, serverConfig);
+  }
   return true;
 }

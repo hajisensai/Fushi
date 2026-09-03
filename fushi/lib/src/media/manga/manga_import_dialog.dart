@@ -85,7 +85,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       // 预填路径来自已判定为漫画的上游（拖放决策层 / 书籍框转交），这里仍重跑一次
       // 分类以拿到细分载体；万一上游给了非漫画路径，宁可留空也不静默导错东西。
       final ImportCarrier carrier = _classify(initial);
-      if (carrier.isManga) {
+      if (carrier.isMangaCapable) {
         _path = initial;
         _pathName = p.basename(initial);
         _carrier = carrier;
@@ -205,6 +205,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   ///
   /// `.zip` / `.epub` 在此列是因为图片型压缩包与词典包/普通电子书同形，选中后由
   /// [classifyImportCarrier] 真读包定性；不是漫画的会被 [_adoptPath] 挡回。
+  /// `.pdf` 在此列是因为一卷扫描版漫画常常就是一份 PDF（逐页栅格化即页图）。
   static final Set<String> _mangaFileExtensions =
       kMangaCarrierFileExtensions.map((String ext) => ext.substring(1)).toSet();
 
@@ -246,7 +247,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   /// 收下一个候选路径：先定性，非漫画直接挡回并说明，绝不静默吞掉。
   void _adoptPath(String path) {
     final ImportCarrier carrier = _classify(path);
-    if (!carrier.isManga) {
+    if (!carrier.isMangaCapable) {
       final String ext = p.extension(path).toLowerCase();
       FushiToast.show(
         msg: t.import_unsupported_file_format(ext: ext.isEmpty ? path : ext),
@@ -271,7 +272,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     if (importing) return;
     // 拖进本框的东西只有一种可能有意义：漫画。取第一个能定性成漫画的路径。
     for (final String path in paths) {
-      if (_classify(path).isManga) {
+      if (_classify(path).isMangaCapable) {
         _adoptPath(path);
         return;
       }
@@ -364,6 +365,16 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     );
   }
 
+  /// PDF 逐页栅格化的进度（`(done, total)` 是页）。与 [_reportCopyProgress] 分开
+  /// 是因为文案单位不同：那边报的是「正在复制 <文件名>」，这边报的是第几页。
+  void _reportPageProgress(int done, int total) {
+    if (total <= 0) return;
+    reportProgress(
+      (done / total).clamp(0.0, 1.0),
+      t.import_step_copying_file(name: '$done / $total'),
+    );
+  }
+
   void _reportCopyProgress(int done, int total) {
     if (total <= 0) return;
     reportProgress(
@@ -442,9 +453,18 @@ class _MangaImportDialogState extends State<MangaImportDialog>
           case ImportCarrier.mangaBatchFolder:
             batchSummary = await _importBatchFolder(path);
           case ImportCarrier.pdf:
+            // 一份 PDF 进漫画库 = 按 PDF 导入 + 立刻转成漫画（逐页栅格化）。
+            // 两步都是现成零件，且书目录里留着 document.pdf，「转回 PDF」仍成立。
+            await MangaModule.importPdfAsManga(
+              db: widget.db,
+              path: path,
+              title: title,
+              policy: DuplicatePolicy.ask(_askOnDuplicate),
+              onProgress: _reportPageProgress,
+            );
           case ImportCarrier.epub:
           case ImportCarrier.text:
-            // 不可达：[_adoptPath] / [initState] 只收下 isManga 的载体。
+            // 不可达：[_adoptPath] / [initState] 只收下 isMangaCapable 的载体。
             throw StateError(
                 'non-manga carrier in MangaImportDialog: $carrier');
         }

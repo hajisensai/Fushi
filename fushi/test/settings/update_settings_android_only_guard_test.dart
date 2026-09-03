@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -84,13 +85,51 @@ void main() {
     final String workflow =
         File('../.github/workflows/release-desktop.yml').readAsStringSync();
     // 2026-08-07 过渡期曾暂停 push 自动发布（当时守卫钉注释形态）；
-    // 2026-08-13 用户指示恢复。守卫改钉「恢复是有意的」：push 触发块处于
-    // 激活形态且分支范围不漂移（防止有人悄悄再停用或改动触发分支）。
+    // 2026-08-13 用户指示恢复。守卫钉「恢复是有意的」：push 触发块处于激活形态，
+    // 且分支范围不漂移（防止有人悄悄再停用或改动触发分支）。
+    //
+    // 2026-09-03 用户指示：**develop push 只保留 release.yml**（本仓唯一带 app 全量
+    // 单测门的 workflow）。此前每次合并同时点燃三条长 workflow，runner 排队到互相
+    // cancel，本 workflow 在 develop 上实测排队 30+ 分钟没跑上、且它一条 app 测试
+    // 都不跑、只产发布物。于是 push 收到只剩 `['main']`。
+    // **这不是「悄悄改窄」**——`release`（手动发 GitHub Release）与 `workflow_dispatch`
+    // 两个触发器一个字没动，手动发测试版/正式版照常出桌面/Apple 产物。
+    // 判据跟着改成新基线，继续钉「不漂移」，而不是把这条断言删掉。
     expect(workflow, contains('\n  push:\n'),
         reason: 'push 自动发布已恢复（2026-08-13 用户指示），触发块必须处于激活形态');
-    expect(workflow, contains("branches: ['main', 'develop']"),
-        reason: 'push 触发分支范围 main/develop 不得漂移');
-    expect(workflow, isNot(contains(r"#   branches: ['main', 'develop']")),
+
+    // 按触发器切段再判：整文件 contains 分不清是哪个触发器的 branches，
+    // push 改窄而 release/dispatch 被误删时它照样绿。
+    final List<String> wLines = const LineSplitter().convert(workflow);
+    final int pushAt = wLines.indexOf('  push:');
+    expect(pushAt, greaterThan(-1), reason: 'push 触发器不见了');
+    int pushEnd = wLines.length;
+    for (int i = pushAt + 1; i < wLines.length; i++) {
+      final String l = wLines[i];
+      if (l.startsWith('  ') && !l.startsWith('   ') && l.trim().isNotEmpty) {
+        pushEnd = i;
+        break;
+      }
+    }
+    final List<String> pushLines = wLines.sublist(pushAt, pushEnd);
+    // 自校验：切出来的确实是 push 段，否则下面的断言在错窗口上恒真/恒假。
+    expect(pushLines.any((String l) => l.trim() == 'paths:'), isTrue,
+        reason: 'push 段切歪了（pushAt=$pushAt pushEnd=$pushEnd），判据已失效');
+    // 判据钉在 branches **那一行本身**，不是整段：段里有解释性注释，
+    // 对整段做 `isNot(contains('develop'))` 会被注释里的字面量触发（实测踩到）。
+    final String branchesLine = pushLines
+        .firstWhere((String l) => l.trim().startsWith('branches:'),
+            orElse: () => '')
+        .trim();
+    expect(branchesLine, "branches: ['main']",
+        reason: 'push 触发分支范围不得漂移（2026-09-03 起 main-only，'
+            'develop push 只留 release.yml）');
+    // 手动通道必须还在——这两条才是「桌面/Apple 产物随时发得出来」的保证。
+    expect(workflow, contains('\n  workflow_dispatch:\n'),
+        reason: '手动发布通道不得连带被删');
+    expect(workflow, contains('\n  release:\n'),
+        reason: '手动发 GitHub Release 的触发器不得连带被删');
+    expect(workflow, isNot(contains(r'#   branches:')),
         reason: '不得残留注释形态的 push 块（避免双份 branches 清单漂开）');
     expect(workflow, contains('Release channel: debug, beta, or formal'));
     expect(workflow, contains('- debug'));

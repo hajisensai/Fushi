@@ -34,4 +34,9 @@ class SrtBook {
 
   /// 关联的 EpubBooks.bookKey（空串表示 standalone SRT，不依赖 EPUB）。
   String bookKey = '';
+
+  /// 内容语言（BCP-47）。SRT 文件本身不声明语言，只能由用户在卡菜单里指定；
+  /// null = 未指定 → 跟全局默认内容语言。standalone 书开场时读它决定正文字体链
+  /// （配对书的正文由 EpubBooks 行承载，语言记在那边）。
+  String? language;
 }

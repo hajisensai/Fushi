@@ -69,6 +69,7 @@ class _VendoredTarget {
     required this.ffmpegName,
     required this.ffprobeName,
     required this.tlsFlag,
+    this.extraConfigurationFlags = const <String>[],
   });
 
   final String label;
@@ -79,6 +80,7 @@ class _VendoredTarget {
   /// 各平台走系统原生 TLS 后端（见 build-ffmpeg-min.sh 的 EXTRA_CONFIG 分支）：
   /// Windows schannel / macOS SecureTransport / Linux gnutls。
   final String tlsFlag;
+  final List<String> extraConfigurationFlags;
 }
 
 /// 当前入库的平台。Linux 暂不入库——release-desktop.yml 没有 Linux 发布 job
@@ -92,6 +94,7 @@ const List<_VendoredTarget> _targets = <_VendoredTarget>[
     ffmpegName: 'ffmpeg.exe',
     ffprobeName: 'ffprobe.exe',
     tlsFlag: '--enable-schannel',
+    extraConfigurationFlags: <String>['--enable-demuxer=xwma'],
   ),
   _VendoredTarget(
     label: 'macos',
@@ -246,6 +249,7 @@ void main() {
         for (final String flag in <String>[
           ..._requiredStandaloneFlags,
           target.tlsFlag,
+          ...target.extraConfigurationFlags,
         ]) {
           expect(
             configuration.contains(flag),

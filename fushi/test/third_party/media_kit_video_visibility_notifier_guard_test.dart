@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/workspace_pubspec.dart';
 
 /// TODO-364 source-scan guard: the vendored `media_kit_video` controls must keep
 /// publishing their **real** `visible` into the host's `visibilityNotifier`.
@@ -27,30 +28,30 @@ void main() {
   const String mobilePath = '${base}material.dart';
 
   test('pubspec override points media_kit_video at the vendored fork', () {
-    final String pubspec = File('pubspec.yaml').readAsStringSync();
-    final RegExp override = RegExp(
-      r'media_kit_video:\s*\n\s*path:\s*\.\./third_party/media_kit_video',
+    final WorkspacePubspec ws = WorkspacePubspec.load();
+    expect(
+      ws.isVendored('media_kit_video', 'third_party/media_kit_video'),
+      isTrue,
+      reason:
+          'dependency_overrides must point media_kit_video at the vendored '
+          'fork, otherwise the visibilityNotifier patch (TODO-364) is lost and '
+          'the subtitle dodge starts drifting again.',
     );
-    expect(override.hasMatch(pubspec), isTrue,
-        reason:
-            'dependency_overrides must point media_kit_video at the vendored '
-            'fork, otherwise the visibilityNotifier patch (TODO-364) is lost and '
-            'the subtitle dodge starts drifting again.');
   });
 
   for (final ({String label, String path, String themeClass}) target
       in <({String label, String path, String themeClass})>[
-    (
-      label: 'desktop',
-      path: desktopPath,
-      themeClass: 'MaterialDesktopVideoControlsThemeData',
-    ),
-    (
-      label: 'mobile',
-      path: mobilePath,
-      themeClass: 'MaterialVideoControlsThemeData',
-    ),
-  ]) {
+        (
+          label: 'desktop',
+          path: desktopPath,
+          themeClass: 'MaterialDesktopVideoControlsThemeData',
+        ),
+        (
+          label: 'mobile',
+          path: mobilePath,
+          themeClass: 'MaterialVideoControlsThemeData',
+        ),
+      ]) {
     group('${target.label} controls publish real visibility (TODO-364)', () {
       late String source;
       setUp(() => source = File(target.path).readAsStringSync());
@@ -64,26 +65,37 @@ void main() {
               'so the host can read the single source of truth.',
         );
         // Constructor + copyWith must wire it through (else host injection is dropped).
-        expect(source.contains('this.visibilityNotifier'), isTrue,
-            reason: 'constructor must accept visibilityNotifier');
+        expect(
+          source.contains('this.visibilityNotifier'),
+          isTrue,
+          reason: 'constructor must accept visibilityNotifier',
+        );
         expect(
           source.contains(
-              'visibilityNotifier: visibilityNotifier ?? this.visibilityNotifier'),
+            'visibilityNotifier: visibilityNotifier ?? this.visibilityNotifier',
+          ),
           isTrue,
           reason: 'copyWith must carry visibilityNotifier through',
         );
       });
 
       test('a _publishVisibility() helper pushes the real `visible`', () {
-        expect(source.contains('void _publishVisibility()'), isTrue,
-            reason: 'control State must have a _publishVisibility() helper');
+        expect(
+          source.contains('void _publishVisibility()'),
+          isTrue,
+          reason: 'control State must have a _publishVisibility() helper',
+        );
         // The helper writes the State's real `visible` into the injected notifier.
         final int fn = source.indexOf('void _publishVisibility()');
         final int end = source.indexOf('\n  }', fn);
         final String body = source.substring(fn, end);
-        expect(body.contains('visibilityNotifier?.value = visible'), isTrue,
-            reason: '_publishVisibility must push the real `visible` into the '
-                'notifier (the single source of truth).');
+        expect(
+          body.contains('visibilityNotifier?.value = visible'),
+          isTrue,
+          reason:
+              '_publishVisibility must push the real `visible` into the '
+              'notifier (the single source of truth).',
+        );
       });
 
       test('every `visible = ...` mutation is followed by a publish', () {
@@ -91,17 +103,26 @@ void main() {
         // count must be at least the mutation count so no transition is silent.
         // (The mount-initial publish is via an addPostFrameCallback notifier
         // write, counted separately below.)
-        final int mutations =
-            RegExp(r'visible = (?:true|false);').allMatches(source).length;
+        final int mutations = RegExp(
+          r'visible = (?:true|false);',
+        ).allMatches(source).length;
         final int publishes = '_publishVisibility();'.allMatches(source).length;
-        expect(publishes, greaterThanOrEqualTo(mutations),
-            reason: 'each `visible = ...` change must be followed by '
-                '_publishVisibility(); otherwise the host mirror drifts out of '
-                'phase (TODO-364). mutations=$mutations publishes=$publishes');
+        expect(
+          publishes,
+          greaterThanOrEqualTo(mutations),
+          reason:
+              'each `visible = ...` change must be followed by '
+              '_publishVisibility(); otherwise the host mirror drifts out of '
+              'phase (TODO-364). mutations=$mutations publishes=$publishes',
+        );
         // The initial (mount) visibility is published too, deferred post-frame.
-        expect(source.contains('addPostFrameCallback'), isTrue,
-            reason: 'initial visibility must be published post-frame to avoid '
-                're-entering host setState during mount.');
+        expect(
+          source.contains('addPostFrameCallback'),
+          isTrue,
+          reason:
+              'initial visibility must be published post-frame to avoid '
+              're-entering host setState during mount.',
+        );
       });
     });
   }

@@ -55,6 +55,250 @@ class VideoClipExportResult {
   bool get isSuccess => outputPath != null && failure == null;
 }
 
+/// 探测源编码用的超时。探测只读文件头，正常在几十毫秒内返回；给足 30 秒是为了网络
+/// 挂载/机械盘冷启动这类慢 IO，超时就按「探不到」退回全 copy，不拖累导出本身。
+const Duration _kClipProbeTimeout = Duration(seconds: 30);
+
+/// 源视频的编码画像：从 `ffmpeg -hide_banner -i <file>` 的日志里解析出来。
+///
+/// 为什么不用 ffprobe：随包的 ffmpeg-min 确实并排放着同一次 configure 编出的 ffprobe
+/// （`test/tools/ffmpeg_min_vendored_recipe_guard_test.dart` 守着），但那只覆盖**随包**
+/// 这一种情形——用户用 `FUSHI_FFMPEG` 指向自己的 ffmpeg、或回退到 PATH 上的 ffmpeg 时，
+/// 同目录未必有 ffprobe。`ffmpeg -i` 用的是 [resolveFfmpegExecutable] 解析出的那一个
+/// 二进制：只要这台机器裁得动片段，就一定探得到编码。仓库里也已有同款「解析 ffmpeg
+/// 日志拿流信息」的先例（`parseSubtitleStreamsFromFfmpegLog`）。
+@immutable
+class ClipSourceCodecs {
+  const ClipSourceCodecs({
+    this.videoCodec,
+    this.videoPixFmt,
+    this.audioCodecs = const <String>[],
+  });
+
+  /// 首条视频流的编码名（`h264` / `hevc` / `vp9`…）；解析不出为 null。
+  final String? videoCodec;
+
+  /// 首条视频流的像素格式（`yuv420p` / `yuv420p10le`…）；解析不出为 null。
+  final String? videoPixFmt;
+
+  /// 全部音频流的编码名，按 ffmpeg 枚举顺序（`['flac', 'aac', 'aac']`）。
+  /// 收全部而不只收第一条，是因为 `-map 0:a?` 会把**所有**音轨带进输出（BUG-345），
+  /// 只要其中一条不可播，产物在那台播放器上就是坏的。
+  final List<String> audioCodecs;
+
+  /// 一条流都没解析出来 —— 探测失败，调用方必须退回「原样 copy」的既有行为。
+  bool get isEmpty => videoCodec == null && audioCodecs.isEmpty;
+}
+
+/// 剥掉一行里所有 `(...)` 段：ffmpeg 的流描述行在括号里塞了带逗号的子字段
+/// （`yuv420p10le(tv, bt709/unknown/unknown)`），不剥就没法按逗号切字段。
+String _stripParenGroups(String line) {
+  final StringBuffer out = StringBuffer();
+  int depth = 0;
+  for (int i = 0; i < line.length; i++) {
+    final String ch = line[i];
+    if (ch == '(') {
+      depth++;
+    } else if (ch == ')') {
+      if (depth > 0) depth--;
+    } else if (depth == 0) {
+      out.write(ch);
+    }
+  }
+  return out.toString();
+}
+
+/// 纯函数：从 `ffmpeg -i` 的日志文本解析源流编码画像。
+///
+/// 目标行形如（括号内容先由 [_stripParenGroups] 剥掉，再按 `,` 切）：
+/// ```
+///   Stream #0:0[0x1](und): Video: hevc (Main 10) (hev1 / 0x…), yuv420p10le(tv, …), 1920x1080, …
+///   Stream #0:1[0x2](jpn): Audio: flac (fLaC / 0x…), 48000 Hz, stereo, …
+/// ```
+/// 只认输入流（`Stream #`…）；`ffmpeg -i` 不带输出文件，日志里本就只有输入流。
+@visibleForTesting
+ClipSourceCodecs parseClipSourceCodecs(String ffmpegLog) {
+  String? videoCodec;
+  String? videoPixFmt;
+  final List<String> audioCodecs = <String>[];
+
+  for (final String raw in const LineSplitter().convert(ffmpegLog)) {
+    final String line = raw.trim();
+    if (!line.startsWith('Stream #')) continue;
+
+    final int videoAt = line.indexOf('Video: ');
+    final int audioAt = line.indexOf('Audio: ');
+    if (videoAt >= 0) {
+      if (videoCodec != null) continue; // 只取首条视频流
+      final List<String> fields = _stripParenGroups(line.substring(videoAt + 7))
+          .split(',')
+          .map((String s) => s.trim())
+          .where((String s) => s.isNotEmpty)
+          .toList(growable: false);
+      if (fields.isEmpty) continue;
+      videoCodec = fields.first.toLowerCase();
+      // 第二个字段是像素格式；畸形日志可能没有第二段，留 null，由
+      // [_isCopyableVideoPixFmt] 按「探测失败 → 保持 copy」处理。
+      if (fields.length >= 2) videoPixFmt = fields[1].toLowerCase();
+    } else if (audioAt >= 0) {
+      final List<String> fields = _stripParenGroups(line.substring(audioAt + 7))
+          .split(',')
+          .map((String s) => s.trim())
+          .where((String s) => s.isNotEmpty)
+          .toList(growable: false);
+      if (fields.isNotEmpty) audioCodecs.add(fields.first.toLowerCase());
+    }
+  }
+
+  return ClipSourceCodecs(
+    videoCodec: videoCodec,
+    videoPixFmt: videoPixFmt,
+    audioCodecs: List<String>.unmodifiable(audioCodecs),
+  );
+}
+
+/// mp4 里「随便哪台机器都放得动」的视频编码。10-bit / VP9 / AV1 / MPEG-2 都不在内。
+const Set<String> _kClipCopyableVideoCodecs = <String>{'h264', 'hevc'};
+
+/// 同上，音频侧。FLAC-in-mp4 是标准里较晚才有的组合，Windows 系统解码器不认；
+/// Opus / DTS / TrueHD / PCM 同理，一律转 AAC。
+const Set<String> _kClipCopyableAudioCodecs = <String>{'aac', 'mp3'};
+
+/// 8-bit 像素格式白名单。用「笨但清晰」的枚举而不是「按名字尾巴猜位深」——后者会把
+/// `nv12`（8-bit）误判成 12-bit。名单外的格式一律重编码：宁可慢一次，也不要导出一个
+/// 播不了的片段。
+const Set<String> _kClipEightBitPixFmts = <String>{
+  'yuv420p',
+  'yuvj420p',
+  'yuva420p',
+  'yuv422p',
+  'yuvj422p',
+  'yuva422p',
+  'yuv444p',
+  'yuvj444p',
+  'yuva444p',
+  'nv12',
+  'nv21',
+  'gray',
+  'gbrp',
+  'rgb24',
+  'bgr24',
+  'rgba',
+  'bgra',
+};
+
+/// pixFmt 为 null（没解析出来）按「可 copy」处理：探测是优化判据，探测失败绝不能把
+/// 原本瞬时的导出变成整段重编码。只有**明确认出**是名单外格式才降级重编码。
+bool _isCopyableVideoPixFmt(String? pixFmt) {
+  if (pixFmt == null || pixFmt.isEmpty) return true;
+  return _kClipEightBitPixFmts.contains(pixFmt);
+}
+
+/// 「这一轮导出每条流该 copy 还是重编码」的决策结果。
+@immutable
+class ClipCodecPlan {
+  const ClipCodecPlan({
+    required this.copyVideo,
+    required this.copyAudio,
+    this.videoTag,
+  });
+
+  /// 中性计划：与加这层门控之前的行为**逐参数等价**（`-c copy`、不改 tag）。
+  /// 探测不可用、解析不出、或源本来就通用可播时用它。
+  static const ClipCodecPlan fullCopy =
+      ClipCodecPlan(copyVideo: true, copyAudio: true);
+
+  final bool copyVideo;
+  final bool copyAudio;
+
+  /// copy HEVC 时强制改写的 sample entry tag（恒 `hvc1`）。源里常见的 `hev1` 把参数集
+  /// 放在带内，Apple 生态、浏览器和 Windows Media Foundation 基本只认 `hvc1`；改 tag
+  /// 不碰码流，零成本。视频重编码时为 null（那时输出是 H.264）。
+  final String? videoTag;
+
+  bool get isFullCopy => copyVideo && copyAudio;
+}
+
+/// 纯函数：由源编码画像决出导出编码计划。
+///
+/// 这是「导出成功」判据的**前移**：原先的模型是「跑 `-c copy`，退出码非 0 才降级重编
+/// 码」，可 hev1 / 10-bit / FLAC 全都能成功封进 mp4、退出码 0——于是兜底永不触发，产物
+/// 播不了却被判成功。真正的判据是「产物能不能被通用播放器播」，只能在跑之前按流编码
+/// 判定。
+@visibleForTesting
+ClipCodecPlan resolveClipCodecPlan(ClipSourceCodecs codecs) {
+  if (codecs.isEmpty) return ClipCodecPlan.fullCopy;
+
+  final String? video = codecs.videoCodec;
+  final bool copyVideo = video == null ||
+      (_kClipCopyableVideoCodecs.contains(video) &&
+          _isCopyableVideoPixFmt(codecs.videoPixFmt));
+
+  // 空列表 = 没探到音频流信息，保持原 copy 行为；探到了就要求**每一条**都可播，
+  // 因为 `-map 0:a?` 会把它们全部带进输出。
+  final bool copyAudio = codecs.audioCodecs.isEmpty ||
+      codecs.audioCodecs.every(_kClipCopyableAudioCodecs.contains);
+
+  return ClipCodecPlan(
+    copyVideo: copyVideo,
+    copyAudio: copyAudio,
+    videoTag: copyVideo && video == 'hevc' ? 'hvc1' : null,
+  );
+}
+
+/// 纯函数：把 [plan] 摊成 ffmpeg 的编码参数段。
+///
+/// 全 copy 时**逐参数**回到加门控之前的 `-c copy`（外加可能的 `-tag:v hvc1`，它只改
+/// sample entry 四字符码、不碰码流），保证「源本来就通用可播」这条最常见路径的行为
+/// 和性能一个字节都没变。
+@visibleForTesting
+List<String> buildClipCodecArgs({required ClipCodecPlan plan}) {
+  final List<String> tag = plan.videoTag == null
+      ? const <String>[]
+      : <String>['-tag:v', plan.videoTag!];
+  if (plan.isFullCopy) return <String>['-c', 'copy', ...tag];
+  return <String>[
+    '-c:v',
+    if (plan.copyVideo) 'copy' else 'libx264',
+    if (!plan.copyVideo) ...<String>[
+      '-preset',
+      'veryfast',
+      '-crf',
+      '20',
+      '-pix_fmt',
+      'yuv420p',
+    ],
+    ...tag,
+    '-c:a',
+    if (plan.copyAudio) 'copy' else 'aac',
+    if (!plan.copyAudio) ...<String>['-b:a', '192k'],
+  ];
+}
+
+/// 跑一次 `ffmpeg -hide_banner -i <input>` 拿源编码画像并决出编码计划。
+///
+/// 没有输出文件，ffmpeg 必然以非 0 退出（`At least one output file must be
+/// specified`），但流信息此时已经打进日志——所以这里**不看退出码**，只解析输出。
+///
+/// 任何异常、解析不出、探测超时都退回 [ClipCodecPlan.fullCopy]：探测是优化判据，不是
+/// 导出的前置条件，它坏了不能让导出跟着坏。
+Future<ClipCodecPlan> _probeClipCodecPlan(
+  FfmpegBackend backend,
+  String inputPath,
+  Duration timeout,
+) async {
+  try {
+    final FfmpegRunResult probe = await backend.run(
+      <String>['-hide_banner', '-i', inputPath],
+      timeout,
+    );
+    return resolveClipCodecPlan(parseClipSourceCodecs(probe.output));
+  } catch (e, stack) {
+    ErrorLogService.instance.log('VideoClipExport', e, stack);
+    return ClipCodecPlan.fullCopy;
+  }
+}
+
 /// 纯函数：拼 `-map` 段，copy 与 reencode 两条裁剪路径共用（唯一真相源）。
 ///
 /// [subtitleInputCount] 是**额外字幕输入文件**的条数（输入下标从 1 起，0 是源视频）。
@@ -104,6 +348,7 @@ List<String> buildFfmpegVideoClipExportArgs({
   int? audioStreamCount,
   List<String> subtitlePaths = const <String>[],
   String? subtitleCodec,
+  ClipCodecPlan codecPlan = ClipCodecPlan.fullCopy,
 }) {
   final double startSeconds = startMs / 1000.0;
   final double durationSeconds = (endMs - startMs) / 1000.0;
@@ -136,12 +381,21 @@ List<String> buildFfmpegVideoClipExportArgs({
     // 此时绝不能加 `-sn`——它会把刚 map 进来的字幕流一起禁掉。
     if (!withSubtitles) '-sn',
     '-dn',
-    '-c',
-    'copy',
+    // 章节：ffmpeg 默认等价于 `-map_chapters 0`，会把**源整集**的章节表原样搬进片段，
+    // mp4 muxer 为此建一条与最后一个章节等长（≈整集时长）的 text track，把
+    // mvhd.duration 一路拉满——于是一个 5 秒的片段在播放器里显示成 21 分钟的进度条
+    // （BUG-2011）。片段继承整集章节本就没有意义，两条路径一律丢弃。
+    '-map_chapters',
+    '-1',
+    ...buildClipCodecArgs(plan: codecPlan),
     // 字幕流单独指定编码：Matroska 能直接 copy SRT，mp4/mov 系必须转 mov_text。
     if (withSubtitles) ...<String>['-c:s', subtitleCodec],
-    '-avoid_negative_ts',
-    'make_zero',
+    // `-avoid_negative_ts make_zero` 只在**视频重编码**时给（BUG-2011）：
+    // - 视频 copy 时输出必然从 `-ss` 之前的那个关键帧起，多出来的前导本该由 mp4 edit
+    //   list 表达成「播放时跳过」；make_zero 把这段负时间戳整体平移成正片内容，5.4 秒
+    //   的片段于是变成 10.8 秒、开头多出整整一个 GOP。
+    // - 视频重编码时 accurate seek 精确切在请求点，没有前导可跳，归零无副作用。
+    if (!codecPlan.copyVideo) ...<String>['-avoid_negative_ts', 'make_zero'],
     outputPath,
   ];
 }
@@ -201,6 +455,10 @@ List<String> buildFfmpegVideoClipReencodeArgs({
     ),
     if (!withSubtitles) '-sn',
     '-dn',
+    // 与 copy 路径同因：不丢章节，5 秒的片段会带着整集的章节表和一条整集长的 text
+    // track 落盘，进度条显示成整集时长（BUG-2011）。
+    '-map_chapters',
+    '-1',
     if (withSubtitles) ...<String>['-c:s', subtitleCodec],
     '-c:v',
     'libx264',
@@ -294,6 +552,13 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
   try {
     output.parent.createSync(recursive: true);
     final FfmpegBackend resolved = backend ?? resolveFfmpegBackend();
+    // 先探源编码，决定这一轮哪些流能 copy、哪些必须重编码（BUG-2011）。探测失败退回
+    // 全 copy，也就是加这层门控之前的行为。
+    final ClipCodecPlan codecPlan = await _probeClipCodecPlan(
+      resolved,
+      inputPath,
+      _kClipProbeTimeout,
+    );
     bool produced(FfmpegRunResult r) =>
         r.isSuccess && output.existsSync() && output.lengthSync() > 0;
 
@@ -325,6 +590,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
           audioStreamCount: audioStreamCount,
           subtitlePaths: subs,
           subtitleCodec: subtitleCodec,
+          codecPlan: codecPlan,
         ),
         timeout,
       );

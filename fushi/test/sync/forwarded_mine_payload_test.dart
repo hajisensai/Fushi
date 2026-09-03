@@ -19,6 +19,8 @@ void main() {
         sentenceOffset: 42,
         source: 'book',
         bookTitleTag: 'Book_tag',
+        clipStartMs: 12345,
+        clipEndMs: 67890,
         coverBytes: Uint8List.fromList(<int>[1, 2, 3]),
         coverExt: 'jpg',
         sentenceAudioBytes: Uint8List.fromList(<int>[4, 5]),
@@ -44,6 +46,8 @@ void main() {
       expect(r.sentenceOffset, 42);
       expect(r.source, 'book');
       expect(r.bookTitleTag, 'Book_tag');
+      expect(r.clipStartMs, 12345);
+      expect(r.clipEndMs, 67890);
       expect(r.coverBytes, <int>[1, 2, 3]);
       expect(r.coverExt, 'jpg');
       expect(r.sentenceAudioBytes, <int>[4, 5]);
@@ -53,6 +57,47 @@ void main() {
       expect(r.dictionaryMedia.single.dictionary, '明鏡');
       expect(r.dictionaryMedia.single.path, 'a/b.svg');
       expect(r.dictionaryMedia.single.bytes, <int>[7, 8]);
+    });
+
+    test('片段时间窗：不带两键的旧对端 → 解析成 null，卡照建', () {
+      // 服务端渲染 `{clip-timestamp}` 时两端 null → 空串（唯一有效性判据在
+      // AnkiHandlebarRenderer.formatClipTimestamp）。旧版本对端不发这两个键，
+      // 解析必须落 null 而不是 0/抛异常——否则整条远端制卡请求挂掉。
+      final ForwardedMinePayload r =
+          ForwardedMinePayload.fromJson(<String, dynamic>{
+        'rawPayloadJson': '{"expression":"猫"}',
+        'sentence': 'x',
+      });
+      expect(r.clipStartMs, isNull);
+      expect(r.clipEndMs, isNull);
+    });
+
+    test('片段时间窗：null 时不写进 wire（旧服务端不会收到多余键）', () {
+      const ForwardedMinePayload p = ForwardedMinePayload(
+        rawPayloadJson: '{"expression":"猫"}',
+        sentence: '猫がいる',
+      );
+      final Map<String, dynamic> j = p.toJson();
+      expect(j.containsKey('clipStartMs'), isFalse);
+      expect(j.containsKey('clipEndMs'), isFalse);
+    });
+
+    test('片段时间窗：0 起点是有效值，必须照发不误当缺失', () {
+      // `if (clipStartMs != null)` 而不是真值判断——0ms 起点（从头截的片段）
+      // 是完全合法的窗口起点，被吞掉会让卡上时间窗错位。
+      const ForwardedMinePayload p = ForwardedMinePayload(
+        rawPayloadJson: '{}',
+        sentence: 's',
+        clipStartMs: 0,
+        clipEndMs: 4200,
+      );
+      final Map<String, dynamic> j = p.toJson();
+      expect(j['clipStartMs'], 0);
+      expect(j['clipEndMs'], 4200);
+      final ForwardedMinePayload r = ForwardedMinePayload.fromJson(
+          jsonDecode(jsonEncode(j)) as Map<String, dynamic>);
+      expect(r.clipStartMs, 0);
+      expect(r.clipEndMs, 4200);
     });
 
     test('rawPayloadJson 缺失/空 → FormatException（真正的坏请求）', () {

@@ -44,7 +44,7 @@ struct glz::meta<Tag> {
 namespace internal {
 struct FrequencyValue {
   int value;
-  std::string display_value;
+  std::optional<std::string> display_value;
 };
 
 struct RawFrequencyFlat {
@@ -58,8 +58,13 @@ struct RawFrequency {
   std::variant<int, FrequencyValue> frequency;
 };
 
+// 上游 79c55c2：position 可以是数字或 pattern 字符串（"heiban" 等）——此前 int
+// 独取会让含 pattern 条目的整条 meta 记录解析失败、数字条目一起陪葬；nasal/
+// devoice 按规格是数字或数组，归一成数组。
 struct PitchesArray {
-  int position = 0;
+  std::variant<int, std::string> position;
+  std::optional<std::variant<int, std::vector<int>>> nasal;
+  std::optional<std::variant<int, std::vector<int>>> devoice;
 };
 
 struct RawPitch {
@@ -98,7 +103,7 @@ struct glz::meta<internal::RawFrequency> {
 template <>
 struct glz::meta<internal::PitchesArray> {
   using T = internal::PitchesArray;
-  static constexpr auto value = object("position", &T::position);
+  static constexpr auto value = object("position", &T::position, "nasal", &T::nasal, "devoice", &T::devoice);
 };
 
 template <>
@@ -166,7 +171,9 @@ bool yomitan_parser::parse_frequency(std::string_view content, ParsedFrequency& 
   }
 
   internal::RawFrequency parsed;
-  error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = false}>(parsed, content);
+  // 上游 01630e8：嵌套 object 变体与 flat 路径同样收紧——缺 frequency 键的畸形
+  // 条目从「静默解析成 0」变为拒绝；displayValue 显式空串也如实保留。
+  error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = true}>(parsed, content);
   if (error) {
     return false;
   }
@@ -179,21 +186,38 @@ bool yomitan_parser::parse_frequency(std::string_view content, ParsedFrequency& 
   } else {
     auto& freq = std::get<internal::FrequencyValue>(parsed.frequency);
     out.value = freq.value;
-    out.display_value = freq.display_value.empty() ? std::to_string(freq.value) : freq.display_value;
+    out.display_value = freq.display_value.value_or(std::to_string(freq.value));
   }
   return true;
 }
 
 bool yomitan_parser::parse_pitch(std::string_view content, ParsedPitch& out) {
   internal::RawPitch parsed;
-  auto error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = false}>(parsed, content);
+  auto error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = true}>(parsed, content);
   if (error) {
     return false;
   }
 
+  auto to_number_array = [](const std::optional<std::variant<int, std::vector<int>>>& value) -> std::vector<int> {
+    if (!value) {
+      return {};
+    }
+    if (std::holds_alternative<int>(*value)) {
+      return {std::get<int>(*value)};
+    }
+    return std::get<std::vector<int>>(*value);
+  };
+
   out.reading = parsed.reading;
-  out.pitches =
-      parsed.pitches | std::views::transform(&internal::PitchesArray::position) | std::ranges::to<std::vector>();
+  for (auto& pitch : parsed.pitches) {
+    ParsedAccent accent{.nasal = to_number_array(pitch.nasal), .devoice = to_number_array(pitch.devoice)};
+    if (std::holds_alternative<int>(pitch.position)) {
+      accent.position = std::get<int>(pitch.position);
+    } else {
+      accent.pattern = std::move(std::get<std::string>(pitch.position));
+    }
+    out.pitches.emplace_back(std::move(accent));
+  }
   return true;
 }
 

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
+import 'package:fushi/src/settings/settings_schema_storage.dart';
 import 'package:fushi/src/settings/settings_schema_system.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
@@ -40,7 +41,7 @@ void main() {
     test('regroups into four intent-based sections', () {
       // 互联（client 配置 / LAN 发现 / host 模式）已拆到独立的
       // buildInterconnectDestination（见下方 group），「数据存储位置」已挪到
-      // 「系统」大类展示（buildDataStorageLocationSection，见下方 group），
+      // 「存储」大类展示（buildDataStorageLocationSection，见下方 group），
       // 同步分类剩：method / content / actions / backup。
       expect(dest.sections, hasLength(4));
       expect(
@@ -77,8 +78,13 @@ void main() {
       expect(idsOf(dest.sections[1]), <String>[
         'sync.auto_sync',
         'sync.statistics',
-        'sync.dictionary',
-        'sync.local_audio',
+        // 升级前开着那两个自动同步开关的存量库才占位的一次性告知（确认后消失）。
+        'sync.asset_legacy_notice',
+        // 词典与本地音频源数据库不是开关，而是各自一对显式的上传 / 下载动作行。
+        'sync.dictionary_upload',
+        'sync.dictionary_download',
+        'sync.local_audio_upload',
+        'sync.local_audio_download',
         'sync.content',
         'sync.audiobook_files',
         'sync.video_files',
@@ -97,29 +103,32 @@ void main() {
     test(
         'auto-sync and upload switches are gated; content-scope switches are not',
         () {
-      // Auto-sync 与三个「上传X文件」开关都带可见性谓词（见下方 source guard 对
-      // 谓词内容的锁定）；统计/词典/本地音频是 content-scope 设置，恒显。
+      // Auto-sync、三个「上传X文件」开关、以及词典/本地音频那四个传输动作行都带可见性
+      // 谓词（见下方 source guard 对谓词内容的锁定）；只有统计是 content-scope，恒显。
+      //
+      // 那四个动作行归到「gated」这一侧，是因为它们**只在云备份通道上跑**（互联对端
+      // 的内容上传由互联页自己那组 opt-in 管，见 runManualAssetTransfer 里对互联通道
+      // 的显式跳过）。同步方式被选成互联时那条通道没有出站语义，留着就是四个死按钮。
       final SettingsSection content = dest.sections[1];
       SettingsItem byId(String id) =>
           content.items.firstWhere((SettingsItem i) => i.id == id);
       expect(byId('sync.auto_sync').visible, isNotNull,
           reason:
               'auto-sync hides when the sync method itself has no outbound');
-      for (final String id in <String>[
-        'sync.statistics',
-        'sync.dictionary',
-        'sync.local_audio',
-      ]) {
-        expect(byId(id).visible, isNull,
-            reason: '$id is a content-scope setting, global to every backend');
-      }
+      expect(byId('sync.statistics').visible, isNull,
+          reason:
+              'sync.statistics is a content-scope setting, global to every backend');
       for (final String id in <String>[
         'sync.content',
         'sync.audiobook_files',
         'sync.video_files',
+        'sync.dictionary_upload',
+        'sync.dictionary_download',
+        'sync.local_audio_upload',
+        'sync.local_audio_download',
       ]) {
         expect(byId(id).visible, isNotNull,
-            reason: '$id is a cloud-channel upload switch, gated on backend');
+            reason: '$id only acts on the cloud channel, gated on backend');
       }
     });
 
@@ -136,6 +145,12 @@ void main() {
         'sync.content',
         'sync.audiobook_files',
         'sync.video_files',
+        // 词典/本地音频那四个传输动作行同理：它们只在云备份通道上跑（互联对端的
+        // 内容上传归互联页那组 opt-in），方法选成互联时同样是死按钮。
+        'sync.dictionary_upload',
+        'sync.dictionary_download',
+        'sync.local_audio_upload',
+        'sync.local_audio_download',
       ]) {
         final int at = src.indexOf("id: '$id'");
         expect(at, greaterThanOrEqualTo(0));
@@ -270,9 +285,10 @@ void main() {
   });
 
   group('buildDataStorageLocationSection placement', () {
-    test('the data-storage section now lives in the system destination', () {
-      // 用户拍板（2026-07-26）：数据根是设备级存储配置，与备份无关，从同步备份
-      // 大类挪到「系统」展示；item id 'sync.data_storage_location' 保持不变
+    test('the data-storage section now lives in the storage destination', () {
+      // 用户拍板：数据根是设备级存储配置，与备份无关（2026-07-26 从同步备份挪到
+      // 「系统」），「存储」大类落地后再挪进「存储」（2026-08-22）——「数据放哪」
+      // 与「占了多少」同页；item id 'sync.data_storage_location' 保持不变
       // （历史命名前缀，搜索/导航锚点）。
       final SettingsSection section = buildDataStorageLocationSection();
       expect(section.visible, isNotNull,
@@ -281,13 +297,22 @@ void main() {
         section.items.map((SettingsItem i) => i.id),
         <String>['sync.data_storage_location'],
       );
+      final SettingsDestination storage = buildStorageDestination();
+      expect(
+        storage.sections
+            .expand((SettingsSection s) => s.items)
+            .where((SettingsItem i) => i.id == 'sync.data_storage_location'),
+        hasLength(1),
+        reason: '存储大类必须恰好承载一份数据存储位置行',
+      );
+      // 系统大类不得再残留一份（两处都挂 = 搜索出双份、改一处另一处不动）。
       final SettingsDestination system = buildSystemDestination();
       expect(
         system.sections
             .expand((SettingsSection s) => s.items)
             .where((SettingsItem i) => i.id == 'sync.data_storage_location'),
-        hasLength(1),
-        reason: '系统大类必须恰好承载一份数据存储位置行',
+        isEmpty,
+        reason: '数据存储位置不再挂在系统大类',
       );
     });
   });
@@ -301,9 +326,10 @@ void main() {
 
     test('is its own top-level destination (not inside syncBackup)', () {
       expect(dest.id, SettingsDestinationId.interconnect);
-      // 启用开关 + 连接设备 + 上传到互联对端（BUG-988）+ 交给已配对设备（制卡/备份
-      // 后端）+ 本机服务器 + 互联相关配置镜像（远端词典/音频来源/远端占位卡）。
-      expect(dest.sections, hasLength(6));
+      // 启用开关 + 连接设备 + 上传到互联对端（BUG-988）+ 与已配对设备共享（统计/
+      // 收藏夹，双向、默认开）+ 交给已配对设备（制卡/备份后端）+ 本机服务器 +
+      // 互联相关配置镜像（远端词典/音频来源/远端占位卡）。
+      expect(dest.sections, hasLength(7));
     });
 
     test('enable toggle is unconditional; config sections gated on the toggle',
@@ -339,14 +365,25 @@ void main() {
         'interconnect.upload_video_files',
       ]);
       expect(dest.sections[2].visible, isNotNull);
-      // 交给已配对设备：制卡到已配对设备（原在「制卡」分类）+ 用互联做备份后端。
+      // 与已配对设备共享：统计 / 收藏夹。刻意独立成区而不并进上面的上传区——那一区
+      // 是纯 OUTBOUND 的重内容、脚注承诺「默认全部关闭」，这两项双向且默认开启。
       expect(idsOf(dest.sections[3]), <String>[
-        'interconnect.mine_to_server',
-        'interconnect.backup_backend',
+        'interconnect.share_statistics',
+        'interconnect.share_favorites',
       ]);
       expect(dest.sections[3].visible, isNotNull);
-      expect(idsOf(dest.sections[4]), <String>['sync.server_mode']);
+      expect(dest.sections[3].footer, isNotNull,
+          reason: '双向 + 默认开启这件事必须在 UI 上说清楚');
+      // 交给已配对设备：制卡到已配对设备（原在「制卡」分类）+ 用互联做备份后端
+      // + 从 host 同步外部服务配置（BUG-1693 的 apikey 同步开关）。
+      expect(idsOf(dest.sections[4]), <String>[
+        'interconnect.mine_to_server',
+        'interconnect.backup_backend',
+        'interconnect.service_config_sync',
+      ]);
       expect(dest.sections[4].visible, isNotNull);
+      expect(idsOf(dest.sections[5]), <String>['sync.server_mode']);
+      expect(dest.sections[5].visible, isNotNull);
     });
 
     test('peer address list keeps its title and empty-state guidance', () {
@@ -390,18 +427,18 @@ void main() {
       // 作用于互联对端；在互联分类镜像同一入口（共享 builder，非复制），仅互联被选为
       // 同步方式时可见（与其它互联配置区一致）。
       expect(
-        idsOf(dest.sections[5]),
+        idsOf(dest.sections[6]),
         <String>[
           'lookup.remote_lookup',
           'lookup.audio_sources',
           'sync.show_remote_entries',
         ],
       );
-      expect(dest.sections[5].visible, isNotNull);
+      expect(dest.sections[6].visible, isNotNull);
     });
 
     test('host-server group keeps its explanatory footer', () {
-      expect(dest.sections[4].footer, isNotNull);
+      expect(dest.sections[5].footer, isNotNull);
     });
   });
 }

@@ -8,7 +8,7 @@ void main() {
       'lib/src/pages/implementations/home_page.dart',
     ).readAsStringSync();
 
-    expect(source, contains('VideoDiscoveryService.production(config)'));
+    expect(source, contains('VideoDiscoveryService.production('));
     expect(
       source,
       contains('discoveryController: _productionVideoDiscoveryController'),
@@ -31,11 +31,43 @@ void main() {
     expect(source, contains('VideoDiscoveryResourceSearchPage('));
     expect(source, contains('VideoDiscoverySubscriptionPage('));
     expect(source, contains('VideoDiscoverySubtitleSearchPage('));
+
+    final int resourceSearchStart =
+        source.indexOf('Future<void> _openVideoDiscoveryResourceSearch(');
+    final int subscriptionStart =
+        source.indexOf('Future<void> _openVideoDiscoverySubscription(');
+    final int subtitleSearchStart =
+        source.indexOf('Future<void> _openVideoDiscoverySubtitleSearch(');
+    expect(resourceSearchStart, isNonNegative);
+    expect(subscriptionStart, greaterThan(resourceSearchStart));
+    expect(subtitleSearchStart, greaterThan(subscriptionStart));
+
+    final String resourceSearch =
+        source.substring(resourceSearchStart, subscriptionStart);
+    final String subscription =
+        source.substring(subscriptionStart, subtitleSearchStart);
+    for (final String entryPoint in <String>[resourceSearch, subscription]) {
+      final int pageConstruction = entryPoint.indexOf('Page(');
+      final int submitCallback = entryPoint.indexOf('onSubmit:');
+      final int backendResolution =
+          entryPoint.indexOf('currentVideoDownloadBackendTarget()');
+      expect(pageConstruction, isNonNegative);
+      expect(submitCallback, greaterThan(pageConstruction));
+      expect(
+        backendResolution,
+        greaterThan(submitCallback),
+        reason: '浏览资源不依赖下载运行时；后端只应在用户提交时解析',
+      );
+    }
+
+    final String dialogSource = File(
+      'lib/src/pages/implementations/video_discovery_acquisition_dialogs.dart',
+    ).readAsStringSync();
     expect(
       RegExp(r'on VideoDownloadBackendUnavailable catch \(error\)')
-          .allMatches(source),
-      hasLength(2),
-      reason: '资源搜索和订阅入口都应向用户展示内置引擎缺失的可操作原因',
+          .allMatches(dialogSource),
+      hasLength(1),
+      reason: '提交下载时应在当前资源页展示内置引擎缺失的可操作原因',
     );
     expect(source, contains('Navigator.of(context).push<void>('));
     expect(source, contains('Navigator.of(context).push<String>('));
@@ -44,17 +76,44 @@ void main() {
     expect(source, contains('_videoDiscoveryService?.close()'));
   });
 
-  test('downloads first tab is resources rather than a second discovery page',
-      () {
+  test('downloads resources reuse the four production discovery surfaces', () {
     final String source = File(
       'lib/src/pages/implementations/downloads_page.dart',
     ).readAsStringSync();
+    final String home = File(
+      'lib/src/pages/implementations/home_page.dart',
+    ).readAsStringSync();
 
-    // PR#820 起下载页门头是 FushiSegmentedStrip（与库页同构），首段承载形态
-    // 由 `Tab(text: …)` 变为 `ButtonSegment(value: 0, label: Text(…))`；本条守的
-    // 行为不变：第一段必须是「资源」，不是第二个 discovery 页。
-    expect(source, contains('label: Text(t.download_resources_tab)'));
-    expect(source, contains('VideoResourceSearchSurface('));
+    // 首段的**承载形态**换过三次：`Tab(text: …)` → PR#820 与库页同构的
+    // `ButtonSegment(value: 0, label: Text(…))` → 2026-08-24 库页改走 MD3 tabs 后的
+    // `LibrarySectionTab(value: 0, label: …)`。本条守的**行为**三次都没变：第一段
+    // 必须是「资源」，不是第二个 discovery 页。
+    expect(source, contains('value: 0, label: t.download_resources_tab'));
+    // 承载形态第四次变化：下拉框 → 与库页同构的 FushiSegmentedStrip（#1097）。
+    // 判据按**泛型参数**认，与控件形态无关；再显式钉住「只有一个」——reason 里
+    // 「唯一」二字原来其实没被测到，contains 有一个就过。
+    final Iterable<RegExpMatch> domainSelectors = RegExp(
+      r'Fushi\w+<_DownloadsResourceDomain>\(',
+    ).allMatches(source);
+    expect(
+      domainSelectors.length,
+      1,
+      reason: '资源首页必须先用**唯一**一个类型选择器选择内容域'
+          '（形态可换，个数不能变）',
+    );
+    expect(source, contains('MediaDiscoveryPage('));
+    expect(source, contains('MangaDiscoveryPage('));
+    expect(source, contains('VideoDiscoveryPage('));
+    expect(source, contains('embedded: true'));
+    expect(
+      home,
+      contains('videoDiscoveryController: _productionVideoDiscoveryController'),
+      reason: '下载页视频发现不得落到 EmptyVideoDiscoveryController',
+    );
+    expect(
+      home,
+      contains('videoDiscoveryActions: _productionVideoDiscoveryActions'),
+    );
     expect(source, contains('VideoDownloadJobsPanel.database('));
     expect(source, contains('VideoDownloadSubscriptionsPanel()'));
     expect(source, isNot(contains('download_discover_tab')));

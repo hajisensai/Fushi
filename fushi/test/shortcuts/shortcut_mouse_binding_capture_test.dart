@@ -202,18 +202,29 @@ void main() {
     resetPlatform();
   });
 
-  // 通道被摘掉的 scope 上，历史快照里的鼠标绑定**不隐身、仍可删**（Never break
-  // userspace）。home 现在不开放 mouse 通道，故捕获入口消失，但老用户当年配下的
-  // 绑定仍要能看见并删掉——否则那条永不触发的死绑定就永远删不掉了。
-  testWidgets('desktop: 通道已摘的 scope 仍显示并可删除历史鼠标绑定（但没有捕获入口）',
+  // 通道没开的 scope 上，历史快照里的鼠标绑定**不隐身、仍可删**（Never break
+  // userspace）：捕获入口不出现，但老用户当年配下的绑定仍要能看见并删掉——否则那条
+  // 永不触发的死绑定就永远删不掉了。
+  //
+  // 取样从 home 换成 `globalExternalLookup`：home / global / universal / manga 四个
+  // scope 本轮都接上了真实的鼠标解析入口、通道随之打开，已经不再是「通道没开」的例子。
+  // `globalExternal` 是**按构造**开不了的那一类（OS 级 `RegisterHotKey` 的
+  // `HotKey.key` 类型就是 `KeyboardKey`，鼠标键要装 WH_MOUSE_LL 全局钩子并全系统吞掉
+  // 该键），所以它会长期留在这一侧，适合当这条不变式的锚点。
+  testWidgets('desktop: 通道未开的 scope 仍显示并可删除历史鼠标绑定（但没有捕获入口）',
       (WidgetTester tester) async {
     usePlatform(TargetPlatform.windows);
     final FushiShortcutRegistry registry =
         buildRegistry(TargetPlatform.windows);
+    // 前提自检：取样的 scope 必须真的没开 mouse，否则本用例测的是另一件事（假绿）。
+    expect(
+      ShortcutAction.globalExternalLookup.scope.channels,
+      isNot(contains(ShortcutChannel.mouse)),
+    );
     await pumpDialogHost(
       tester,
       registry,
-      action: ShortcutAction.homeFocusSearch,
+      action: ShortcutAction.globalExternalLookup,
       initial: const ShortcutBindingSet(
         mouseBindings: <MouseBinding>[MouseBinding(2)],
       ),
@@ -228,7 +239,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      registry.bindingsFor(ShortcutAction.homeFocusSearch).mouseBindings,
+      registry.bindingsFor(ShortcutAction.globalExternalLookup).mouseBindings,
       isEmpty,
     );
 

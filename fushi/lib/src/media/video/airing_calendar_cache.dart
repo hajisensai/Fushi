@@ -55,6 +55,7 @@ String encodeAiringScheduleCache(AiringScheduleCache cache) {
           if (e.media.english != null) 'english': e.media.english,
           if (e.media.native != null) 'native': e.media.native,
           if (e.media.coverUrl != null) 'cover': e.media.coverUrl,
+          if (e.media.format != null) 'format': e.media.format,
         },
     ],
   });
@@ -95,6 +96,7 @@ AiringScheduleCache? decodeAiringScheduleCache(
           english: e['english'] as String?,
           native: e['native'] as String?,
           coverUrl: e['cover'] as String?,
+          format: e['format'] as String?,
         ),
       ));
     }

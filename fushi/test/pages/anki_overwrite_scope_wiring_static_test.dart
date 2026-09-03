@@ -12,8 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   String read(String path) => File(path).readAsStringSync();
 
-  test(
-      'point1: tags input lives in the default-tags section, not the '
+  test('point1: tags input lives in the default-tags section, not the '
       'allow-duplicates group', () {
     final src = read('lib/src/pages/implementations/anki_settings_page.dart');
     final int defaultSectionIdx = src.indexOf('t.anki_tag_default_section');
@@ -21,40 +20,73 @@ void main() {
     final int tagsInputIdx = src.indexOf('_buildTagsInput(settings, vm)');
     expect(defaultSectionIdx, greaterThanOrEqualTo(0));
     expect(dupSwitchIdx, greaterThanOrEqualTo(0));
-    expect(tagsInputIdx, greaterThanOrEqualTo(0),
-        reason: 'the tags input must still be rendered');
+    expect(
+      tagsInputIdx,
+      greaterThanOrEqualTo(0),
+      reason: 'the tags input must still be rendered',
+    );
     // The tags input must appear AFTER the default-tags section title (i.e. it
     // moved into that section), not back up in the allow-duplicates group.
-    expect(tagsInputIdx, greaterThan(defaultSectionIdx),
-        reason: 'tags input must be inside the default-tags section');
+    expect(
+      tagsInputIdx,
+      greaterThan(defaultSectionIdx),
+      reason: 'tags input must be inside the default-tags section',
+    );
   });
 
-  test('point2: an overwrite-scope picker is wired to updateOverwriteScope',
-      () {
-    final src = read('lib/src/pages/implementations/anki_settings_page.dart');
-    expect(src.contains('_buildOverwriteScopePicker('), isTrue,
-        reason: 'a single-select overwrite-scope picker must exist');
-    expect(src.contains('AnkiOverwriteScope.latest'), isTrue);
-    expect(src.contains('AnkiOverwriteScope.all'), isTrue);
-    expect(src.contains('vm.updateOverwriteScope('), isTrue,
-        reason: 'the picker must persist the choice via the view model');
-  });
+  test(
+    'point2: an overwrite-scope picker is wired to updateOverwriteScope',
+    () {
+      final src = read('lib/src/pages/implementations/anki_settings_page.dart');
+      expect(
+        src.contains('_buildOverwriteScopePicker('),
+        isTrue,
+        reason: 'a single-select overwrite-scope picker must exist',
+      );
+      expect(src.contains('AnkiOverwriteScope.latest'), isTrue);
+      expect(src.contains('AnkiOverwriteScope.all'), isTrue);
+      expect(
+        src.contains('vm.updateOverwriteScope('),
+        isTrue,
+        reason: 'the picker must persist the choice via the view model',
+      );
+    },
+  );
 
-  test('point2: popup.js promotes an earlier card via overwriteTargetNoteId',
-      () {
+  test('point2: popup.js promotes an earlier card via overwriteTargetNoteId', () {
     final js = read('assets/popup/popup.js');
     // The lookup-time detection must probe overwriteTargetNoteId and feed a real
     // id into rememberLatestMined so an earlier card can become the editable ✓↩.
-    final int dupThenIdx = js
-        .indexOf("callHandler('duplicateCheck', { expression, reading }).then");
-    expect(dupThenIdx, greaterThanOrEqualTo(0));
-    final int probeIdx = js.indexOf("'overwriteTargetNoteId'", dupThenIdx);
-    expect(probeIdx, greaterThan(dupThenIdx),
-        reason: 'lookup-time detection must probe overwriteTargetNoteId');
+    final int scheduledCheckIdx = js.indexOf(
+      'scheduleEntryStateCheck(\n        mineButton,',
+    );
+    expect(scheduledCheckIdx, greaterThanOrEqualTo(0));
+    final int duplicateBridgeIdx = js.indexOf(
+      "'duplicateCheck', { expression, reading }",
+      scheduledCheckIdx,
+    );
+    expect(
+      duplicateBridgeIdx,
+      greaterThan(scheduledCheckIdx),
+      reason: 'the visible-lazy probe must still query duplicateCheck',
+    );
+    final int probeIdx = js.indexOf(
+      "'overwriteTargetNoteId'",
+      duplicateBridgeIdx,
+    );
+    expect(
+      probeIdx,
+      greaterThan(duplicateBridgeIdx),
+      reason: 'lookup-time detection must probe overwriteTargetNoteId',
+    );
     final int rememberIdx = js.indexOf('rememberLatestMined(', probeIdx);
-    expect(rememberIdx, greaterThan(probeIdx),
-        reason: 'a real overwrite-target id must be promoted to the latest '
-            'editable state');
+    expect(
+      rememberIdx,
+      greaterThan(probeIdx),
+      reason:
+          'a real overwrite-target id must be promoted to the latest '
+          'editable state',
+    );
     // And the probe must be gated on already being mined but NOT already latest
     // (avoid re-promoting / pointless calls).
     expect(
@@ -64,38 +96,42 @@ void main() {
     );
   });
 
-  test(
-      'point2: onOverwriteTargetNoteId is threaded through webview + layer + '
+  test('point2: onOverwriteTargetNoteId is threaded through webview + layer + '
       'every popup surface', () {
     expect(
-      read('lib/src/pages/implementations/dictionary_popup_webview.dart')
-          .contains('onOverwriteTargetNoteId'),
+      read(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      ).contains('onOverwriteTargetNoteId'),
       isTrue,
       reason:
           'webview must accept + register the overwriteTargetNoteId handler',
     );
     expect(
-      read('lib/src/pages/implementations/dictionary_popup_webview.dart')
-          .contains("handlerName: 'overwriteTargetNoteId'"),
+      read(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      ).contains("handlerName: 'overwriteTargetNoteId'"),
       isTrue,
       reason: 'webview must register the JS handler',
     );
     expect(
-      read('lib/src/pages/implementations/dictionary_popup_layer.dart')
-          .contains('onOverwriteTargetNoteId: onOverwriteTargetNoteId'),
+      read(
+        'lib/src/pages/implementations/dictionary_popup_layer.dart',
+      ).contains('onOverwriteTargetNoteId: onOverwriteTargetNoteId'),
       isTrue,
       reason: 'layer must forward the callback to the webview',
     );
     // Surfaces that drive popups must supply the callback.
     expect(
-      read('lib/src/pages/implementations/dictionary_page_mixin.dart')
-          .contains('onOverwriteTargetNoteId: findOverwriteTargetNoteId'),
+      read(
+        'lib/src/pages/implementations/dictionary_page_mixin.dart',
+      ).contains('onOverwriteTargetNoteId: findOverwriteTargetNoteId'),
       isTrue,
       reason: 'dictionary surfaces (home dict / standalone popup) wire it',
     );
     expect(
-      read('lib/src/pages/base_source_page.dart')
-          .contains('onOverwriteTargetNoteId:'),
+      read(
+        'lib/src/pages/base_source_page.dart',
+      ).contains('onOverwriteTargetNoteId:'),
       isTrue,
       reason: 'reader / audiobook / video surfaces wire it',
     );

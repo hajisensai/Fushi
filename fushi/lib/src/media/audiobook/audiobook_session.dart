@@ -303,6 +303,23 @@ class AudiobookSession extends ChangeNotifier {
     await _enqueueLifecycle<void>(_stopInternal);
   }
 
+  /// 当前正在播的书如果在 [bookKeys] 里，就先停掉会话并**真等到句柄放掉**
+  /// （[stop] 内部 `await disposeAndRelease()`）；否则空操作。
+  ///
+  /// 删除条目 + 「同时删除本地文件」的必经前置：不先停止引用就销毁实体，Windows 上
+  /// 音频文件句柄还开着，`File.delete()` 直接 errno 32——用户看到「删除成功」，回头
+  /// 发现盘上一个文件没少。
+  ///
+  /// [bookKeys] 要按 [SessionBookInfo.bookKey] 的口径给：EPUB 有声书是 EPUB 的
+  /// bookKey，纯字幕书是 srt_books 的 uid（见 `AudiobookSessionLauncher`）。调用方
+  /// 两种都塞进来即可，多给的键不会误伤——只有当前正在播的那个才可能命中。
+  Future<void> stopIfPlayingAny(Iterable<String> bookKeys) async {
+    final String? playing = _book?.bookKey;
+    if (!isActive || playing == null || playing.isEmpty) return;
+    if (!bookKeys.contains(playing)) return;
+    await stop();
+  }
+
   Future<void> _stopInternal() async {
     final AudiobookPlayerController? controller = _controller;
     _reader = null;
@@ -518,12 +535,31 @@ class AudiobookSession extends ChangeNotifier {
       cornerRadius: style.cornerRadius,
       windowWidth: style.windowWidth,
       clickLookupEnabled: _floatingLyricClickLookup(),
+      slotTooltips: _slotTooltips,
     );
     if (!shown) return false;
     await _applyFloatingLyricStyle(style);
     _setupFloatingLyricHandlers();
     return true;
   }
+
+  /// 工具条槽位悬停提示文案，**下标与 native `hook_toolbar::kAudiobookSlotActions`
+  /// 严格同序**（上一句 / 播放暂停 / 下一句 / 锁定 / 置顶 / 关闭）。
+  /// native 不持有 i18n，文案只能由这里按当前 locale 下发；表按 profile 分开存，
+  /// 不会和 galgame hook 台词浮窗的提示互相覆盖。
+  ///
+  /// 🔴 条数必须与 native 槽数**恰好相等**：这两张表靠下标对齐，多一条就从多出来
+  /// 的那一位起整体错位，第 N 颗按钮顶着第 N-1 颗的说明——后果不是「说明不准」
+  /// 而是「说明指向另一件事」。删 native 槽时必须同拍删掉这里对应的那条。
+  /// 守卫：`test/build/gal_hook_toolbar_tooltip_guard_test.dart`。
+  List<String> get _slotTooltips => <String>[
+        t.floating_lyric_previous,
+        t.floating_lyric_play_pause,
+        t.floating_lyric_next,
+        t.floating_lyric_lock,
+        t.floating_lyric_topmost,
+        t.floating_lyric_close,
+      ];
 
   Future<void> _applyFloatingLyricStyle(FloatingLyricStyle style) async {
     await FloatingLyricChannel.updateStyle(
@@ -561,6 +597,19 @@ class AudiobookSession extends ChangeNotifier {
       onPreviousCue: () => _controller?.skipToPrevCue(),
       onNextCue: () => _controller?.skipToNextCue(),
       onClose: _onFloatingLyricClose,
+      // 不接 onTogglePassThrough / onToggleTransparency：有声书的槽表里已经
+      // **没有**这两颗按钮了（hook_toolbar_window.h 的 kAudiobookSlotActions）。
+      //
+      // 原来这里各挂了一行 debugPrint，并注释说「native 就地生效、Dart 只做镜像」
+      // —— 那句话对 lock / topmost 成立（DispatchControlAction 里就地翻转），对这
+      // 两个 action **不成立**：它们经 on_control_ 转给 Dart，Dart 这边只打日志，
+      // 于是按钮画得出、点得到、按下去什么也不发生。galgame 那侧有真实现（穿透是
+      // hook 浮窗的核心能力），有声书没有。要加回来：先在这里接上真正的翻转，
+      // 再把 action 放回槽表。
+      onPassThroughChanged: (bool passThrough) {
+        // native 可能否决穿透（工具条窗建不出来时），所以真值以这条事件为准。
+        debugPrint('[Fushi] floating-lyric pass-through -> $passThrough');
+      },
       onLockChanged: (bool locked) {
         debugPrint('[Fushi] floating-lyric position lock -> $locked');
       },

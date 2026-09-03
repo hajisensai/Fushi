@@ -1,0 +1,6 @@
+## BUG-1813 · macOS 词典弹窗视口注入销毁竞态
+- **报告**：2026-08-24（Apple 全功能实机巡检）
+- **真实性**：✅ 真 bug。macOS 真实 Runner 在词典主页查询后清空结果时稳定进入平台视图销毁路径；`DictionaryPopupWebView` 的 `onLoadStop` Promise 链已开始执行 `_applyPopupViewportSize()`，WKWebView controller 随结果树卸载而在调用途中销毁，异常从未收口的 Future 逃到 Flutter 全局错误通道。第一次仅收口 controller 异常后，回归测试继续揭示同一链条在 `await` 后仍调用 `_pushResults()`，又会读取已反激活的 Riverpod 祖先。根因位于 `fushi/lib/src/pages/implementations/dictionary_popup_webview.dart:303-330,2217-2225`。
+- **[x] ① 已根因修复** — 视口 JS 注入把“State 已卸载或 controller 已换代”识别为正常生命周期完成；仍存活的同一 controller 发生真实 JS/平台错误时写入错误日志，但不再让无人等待的 Future 抛出。整个 load-stop bootstrap 由 `_completePopupLoad` 收口：caret/视口任一步失败都不会跳过后续 `_pushResults()`，`await` 后再次检查 `mounted`，禁止访问反激活的 Widget/Provider 树。提交 `9fe72017a`。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/dictionary_popup_push_dedup_test.dart:161-188` 用真实 `DictionaryPopupWebView` 生命周期与可控平台 controller，先让视口注入在途，再卸载 Widget 并让 controller Future 失败；修复前红于未处理 `StateError`，第一阶段修复后继续红于 `Looking up a deactivated widget's ancestor is unsafe`，最终要求全程 `tester.takeException() == null`。另由 macOS `feature_flows_test.dart` 与 `reader_computer_use_flow_test.dart` 真 Runner 回归覆盖查询清空、五轮弹窗开关和返回正文光标。
+- **备注**：同轮还修正了三项跨平台测试门假设：持久 Mac 词典历史使 F5 超过 80 个焦点步；宽屏设置使用内嵌 master-detail 而非 `SettingsDetailPage` push；长书架上的新 EPUB 夹具可能位于 lazy grid 屏外，必须按精确 bookKey 走生产 `openMedia` 路径，不能误开第一本可见书。

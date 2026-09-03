@@ -1,0 +1,189 @@
+# 内置 libtorrent 引擎（native/fushi_torrent）的 **PR 阶段 Android/Linux 编译门**。
+#
+# ── 补的是哪个缺口 ────────────────────────────────────────────────────────────
+# C ABI bridge + libtorrent 在本仓一共有三个构建入口，本 workflow 之前它们的 CI
+# 消费面是：
+#
+#   build_windows_dll.ps1   -> build-multiplatform.yml 的 windows job（有
+#                              `pull_request` 触发、paths 含 `native/**`）
+#                              + release-desktop.yml（发布路径）
+#                              ⇒ Windows 侧 **PR 上本来就有真编译门**，还顺带跑
+#                                packages/fushi_torrent 的 dlopen FFI 测试。
+#   build_android_so.sh     -> **只**被 release.yml 消费，而 release.yml 没有
+#                              `pull_request` 触发，push 触发的 paths 里也**没有**
+#                              `native/**`。
+#   build_android_so.ps1    -> 无 CI 消费（开发者本机 Windows 用）。
+#
+# 也就是说：一个只改 `native/fushi_torrent/**` 的 PR，Android 侧的 vcpkg 交叉编译
+# （NDK clang + arm64-android overlay triplet + 静态链 boost/openssl/libtorrent）
+# **在合进主干之前从未跑过一次**；更糟的是合进 develop 之后那次 push 同样不触发
+# release.yml（paths 不含 native/**），断供要等到下一个碰 fushi/** 的提交才暴露。
+# 本 workflow 就是把这条从未被跑过的边补成 PR 阶段的硬门。
+#
+# ── 它**不**负责什么（别误以为它覆盖了这些）────────────────────────────────────
+#   * 不覆盖 Windows DLL：那条已由 build-multiplatform.yml 的 windows job 在 PR 上
+#     真编真测，这里重复跑等于白烧一台 Windows runner 换零新增信息。
+#   * 不覆盖发布路径：release.yml / release-desktop.yml 的产物随包、签名、通道逻辑
+#     一概不碰。本 workflow 全程只读，`permissions: contents: read`，不上传产物、
+#     不建 tag、不碰任何 release。
+#   * 不覆盖运行期行为：这里只到「编得出、链得上、符号齐、ELF 形状对」，真机
+#     下载/做种/代理行为不在射程内。
+#   * 不覆盖 armeabi-v7a / x86 / x86_64：与 release.yml 的范围决策一致，只编
+#     arm64-v8a（其余 ABI 无 .so 时运行期回退外接 qBittorrent，不是静默破坏）。
+#
+# ── 退出码纪律 ────────────────────────────────────────────────────────────────
+# 两个 job 都跑在 ubuntu-latest、`shell: bash` + `set -euo pipefail`，刻意绕开
+# `shell: pwsh` 「只认最后一条命令退出码」的坑（native/galgame_hook 的
+# run_guards.ps1 里那个 Invoke-Checked 就是为那个坑存在的）。没有任何
+# `continue-on-error`：任何一步失败都把 job 打红。缓存未命中只会让构建变慢（冷编），
+# 不会让 job 变绿 —— 没有任何一步的成功条件挂在 cache-hit 上。
+name: native-torrent-gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['main', 'develop']
+    paths:
+      - 'native/fushi_torrent/**'
+      - 'packages/fushi_torrent/**'
+      - '.github/scripts/verify_torrent_abi.sh'
+      - '.github/workflows/native-torrent-gate.yml'
+
+# 全程只读：不构建发布产物、不碰任何 release/tag/发布通道。
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # 快车道（~3 min）：host GCC + Ubuntu 自带 libtorrent-rasterbar 2.0.10 直接编
+  # bridge。它与下面的 Android job 是**不同工具链**（GCC/libstdc++ vs NDK
+  # clang/libc++），bridge 源码里的语法/API/链接错误在这里几分钟内就红，不用等
+  # 那边几十分钟的 vcpkg 冷编。CMakeLists 的非 Windows 分支也只有这里走得到。
+  bridge-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install libtorrent-rasterbar (host toolchain)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libtorrent-rasterbar-dev libboost-dev libssl-dev ninja-build
+          # 版本必须仍是 2.0.x：fushi_torrent_ffi.cpp 用的是 2.0 API，2.1 移除或改名
+          # 了其中五处（native/fushi_torrent/vcpkg.json 的 why-pinned 有完整清单）。
+          # 发行版某天升到 2.1 时这一行会当场红，而不是让下面的编译吐一串看不懂的
+          # 模板错，把人往「bridge 写错了」的方向带。
+          ver="$(dpkg-query -W -f='${Version}' libtorrent-rasterbar-dev)"
+          echo "libtorrent-rasterbar-dev = $ver"
+          case "$ver" in
+            2.0.*) : ;;
+            *) echo "::error title=libtorrent ABI line drifted::期望 2.0.x，实际 $ver（bridge 是 2.0 API）"; exit 1 ;;
+          esac
+
+      - name: Configure + build bridge (Linux x86_64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -G Ninja -B "$RUNNER_TEMP/build-linux" -S native/fushi_torrent \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/build-linux"
+
+      - name: Verify exported C ABI surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          so="$RUNNER_TEMP/build-linux/libfushi_torrent_ffi.so"
+          test -f "$so" || { echo "::error::missing artifact $so"; exit 1; }
+          file "$so"
+          bash .github/scripts/verify_torrent_abi.sh "$so" nm
+
+  # 真门（冷编 ~40 min，命中二进制缓存后 ~5 min）：跑 release.yml 消费的**同一个**
+  # 脚本，参数也一样。故意不把脚本内容复制到这里 —— 门要守的是那条真实构建路径，
+  # 复制一份就等于守了个替身。
+  android-arm64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+
+      # 缓存 key 与 release.yml 的同名步骤**逐字一致**，这样 PR 上的这个 job 能直接
+      # 复用 develop push 时 release.yml 存下的条目（PR run 可读 base 分支与默认分支
+      # 的缓存）。key 必须带 runner ImageVersion：镜像决定 vcpkg 修订与工具链，也就
+      # 决定所有包的 ABI hash；常量 key 只装得下一种镜像，而 actions/cache 命中即不
+      # 回存，另一种镜像会永远冷编（TODO-2668 实测）。
+      - name: Resolve vcpkg cache identity
+        id: vcpkg_cache_id
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${ImageVersion:-unknown-image}"
+          image="$(echo "$image" | tr -c '0-9A-Za-z._-' '-')"
+          echo "vcpkg cache identity (runner ImageVersion): $image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Cache vcpkg source distfiles (libtorrent android)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/vcpkg-downloads
+            !${{ runner.temp }}/vcpkg-downloads/tools
+          key: ${{ runner.os }}-vcpkg-downloads-libtorrent-android-v1-${{ steps.vcpkg_cache_id.outputs.image }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-downloads-libtorrent-android-v1-
+
+      - name: Cache vcpkg binary archives (libtorrent android)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-vcpkg-libtorrent-arm64-android-v2-${{ steps.vcpkg_cache_id.outputs.image }}
+
+      # 这一步就是缺口本身：`build_android_so.sh` 会做 vcpkg baseline 断言、按
+      # manifest（libtorrent 2.0.11 + overrides）装依赖、用 overlay triplet 交叉编、
+      # 链接、strip。overlay ports（若有）里的 `git apply` 补丁也在这一步真跑，
+      # 不是静态 --check。
+      - name: Build embedded libtorrent Android .so (vcpkg, arm64-v8a)
+        shell: bash
+        env:
+          VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads
+        run: |
+          set -euo pipefail
+          chmod +x native/fushi_torrent/build_android_so.sh
+          bash native/fushi_torrent/build_android_so.sh \
+            "$VCPKG_INSTALLATION_ROOT" "$ANDROID_NDK_LATEST_HOME" arm64-v8a
+
+      # 「编出来了」不等于「编对了」：脚本自己只断言文件存在。这里再验产物形状。
+      - name: Verify .so shape and exported C ABI surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          so="native/fushi_torrent/prebuilt/android/arm64-v8a/libfushi_torrent_ffi.so"
+          test -f "$so" || { echo "::error::missing artifact $so"; exit 1; }
+          file "$so"
+
+          nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
+          bash .github/scripts/verify_torrent_abi.sh "$so" "$nm_bin"
+
+          # 目标机器类型必须是 AArch64（triplet / ANDROID_ABI 串了会静默产出别的架构）。
+          machine="$(readelf -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+          echo "ELF machine: $machine"
+          case "$machine" in
+            *AArch64*) : ;;
+            *) echo "::error title=wrong target arch::期望 AArch64，实际 $machine"; exit 1 ;;
+          esac
+
+          # Android 15+ 的 16KB page size 设备要求 LOAD segment 按 16KB 对齐；
+          # CMakeLists 用 -Wl,-z,max-page-size=16384 恒设。掉了的话 APK 在 16KB
+          # 设备上装不上，而构建本身完全成功 —— 正是要靠产物校验才抓得到的一类。
+          if ! readelf -lW "$so" | awk '$1 == "LOAD" { print $NF }' | grep -qx '0x4000'; then
+            echo "::error title=16KB alignment lost::LOAD segment 不是 0x4000 对齐（检查 CMakeLists 的 max-page-size）"
+            readelf -lW "$so" | sed -n '1,25p'
+            exit 1
+          fi
+          ls -lh "$so"

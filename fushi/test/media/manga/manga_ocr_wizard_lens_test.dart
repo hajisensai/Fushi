@@ -20,7 +20,7 @@ class _UnavailableLocalService implements MangaOcrService {
   Future<MangaOcrModelStatus> modelStatus() async => const MangaOcrModelStatus(
         detectorReady: false,
         recognizerReady: false,
-        downloadedBytes: 0,
+        diskBytes: 0,
         totalBytes: 1,
       );
 
@@ -29,7 +29,7 @@ class _UnavailableLocalService implements MangaOcrService {
       const Stream<MangaOcrDownloadEvent>.empty();
 
   @override
-  Future<void> deleteModels() async {}
+  Future<int> deleteModels() async => 0;
 
   @override
   Stream<MangaOcrVolumeEvent> ocrFolder({
@@ -41,6 +41,7 @@ class _UnavailableLocalService implements MangaOcrService {
 
 class _FakeLensRunner implements GoogleLensMangaOcrRunner {
   int requests = 0;
+  String? lastLanguage;
 
   @override
   Future<void> clearCache(String imageDirPath) async {}
@@ -51,8 +52,10 @@ class _FakeLensRunner implements GoogleLensMangaOcrRunner {
     String? volumeTitle,
     int startPage = 0,
     bool onlyMissing = true,
+    String language = 'ja',
   }) {
     requests += 1;
+    lastLanguage = language;
     return const Stream<MangaOcrVolumeEvent>.empty();
   }
 }

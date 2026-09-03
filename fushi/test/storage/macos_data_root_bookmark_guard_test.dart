@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 void main() {
   group('macOS data root security-scoped bookmark guard', () {
     String read(String path) {
@@ -29,6 +31,69 @@ void main() {
       expect(src, contains('.withSecurityScope'));
       expect(src, contains('startAccessingSecurityScopedResource()'));
       expect(src, contains('activeSecurityScopedURLs'));
+    });
+
+    test('registers custom channels on the nested Flutter controller', () {
+      final String appDelegate =
+          maskComments(read('macos/Runner/AppDelegate.swift'));
+      final String mainWindow =
+          maskComments(read('macos/Runner/MainFlutterWindow.swift'));
+
+      expect(
+        mainWindow,
+        contains('self.contentViewController = macOSWindowUtilsViewController'),
+        reason: 'the macOS window wraps Flutter in macos_window_utils',
+      );
+      final int wrapperIdx =
+          appDelegate.indexOf('as? MacOSWindowUtilsViewController');
+      final int nestedControllerIdx = appDelegate.indexOf(
+        'windowController.flutterViewController',
+        wrapperIdx,
+      );
+      final int dataRootChannelIdx =
+          appDelegate.indexOf('app.fushi/data_root_access');
+      final int dataRootMessengerIdx = appDelegate.indexOf(
+        'binaryMessenger: controller.engine.binaryMessenger',
+        dataRootChannelIdx,
+      );
+      final int dataRootHandlerIdx = appDelegate.indexOf(
+        'channel.setMethodCallHandler',
+        dataRootMessengerIdx,
+      );
+      final int dataRootDelegateIdx = appDelegate.indexOf(
+        'self?.handleDataRootAccess(call, result: result)',
+        dataRootHandlerIdx,
+      );
+      final int foregroundChannelIdx =
+          appDelegate.indexOf('app.fushi.reader/foreground_selection');
+      final int foregroundMessengerIdx = appDelegate.indexOf(
+        'binaryMessenger: controller.engine.binaryMessenger',
+        foregroundChannelIdx,
+      );
+      final int foregroundHandlerIdx = appDelegate.indexOf(
+        'foregroundSelectionChannel.setMethodCallHandler',
+        foregroundMessengerIdx,
+      );
+      final int foregroundDelegateIdx = appDelegate.indexOf(
+        'AppDelegate.handleForegroundSelection(call, result: result)',
+        foregroundHandlerIdx,
+      );
+      expect(wrapperIdx, greaterThan(0));
+      expect(nestedControllerIdx, greaterThan(wrapperIdx));
+      expect(dataRootChannelIdx, greaterThan(nestedControllerIdx));
+      expect(dataRootMessengerIdx, greaterThan(dataRootChannelIdx));
+      expect(dataRootHandlerIdx, greaterThan(dataRootMessengerIdx));
+      expect(dataRootDelegateIdx, greaterThan(dataRootHandlerIdx));
+      expect(foregroundChannelIdx, greaterThan(dataRootDelegateIdx));
+      expect(foregroundMessengerIdx, greaterThan(foregroundChannelIdx));
+      expect(foregroundHandlerIdx, greaterThan(foregroundMessengerIdx));
+      expect(foregroundDelegateIdx, greaterThan(foregroundHandlerIdx));
+      expect(
+        appDelegate,
+        isNot(contains('contentViewController as? FlutterViewController')),
+        reason: 'the top-level controller is MacOSWindowUtilsViewController; '
+            'casting it directly silently skips channel registration',
+      );
     });
 
     test('Dart startup restores bookmark before data root existence check', () {

@@ -142,9 +142,14 @@ void main() {
       expect(videoPage.contains('_ensureEnterBrightness()'), isTrue);
     });
 
-    test('does NOT break tap-to-pause: playAndPauseOnTap stays enabled', () {
+    test('does NOT break tap-to-pause: playAndPauseOnTap stays wired', () {
       // media_kit 的竖直 drag 与 tap 同一 arena，纯点击 drag 不启动 → 单击暂停照常。
-      expect(videoPage.contains('playAndPauseOnTap: true'), isTrue);
+      // 开/关现在是用户设置（默认 true，见 video_asbplayer_config_test 的 defaults
+      // 用例）；这里锁的是「竖滑手势没有把这条接线摘掉」。
+      expect(
+        videoPage.contains('playAndPauseOnTap: _asbConfig.tapTogglesPlayback'),
+        isTrue,
+      );
     });
   });
 

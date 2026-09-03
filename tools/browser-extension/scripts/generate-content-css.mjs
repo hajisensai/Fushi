@@ -97,10 +97,28 @@ function transformSelector(raw) {
   // reset killed `.ruby-unit { padding-top }` (deliberately kept low-specificity
   // via `:where()`) and glossary furigana printed on top of its base text in the
   // extension while the in-app popup rendered fine (BUG-752).
+  // 内容语言分流（`:lang(ja)` / `:lang(zh)` …）：popup.css 里它们是文档级的，
+  // 但 content.css 注入的是**宿主页面**——裸 `:lang()` 会把整个网页的字体一起换掉
+  // （最严重的一类泄漏：用户只是装了个查词扩展，结果所有日文网页字体全变）。
+  // 收进 `:where(#entries-container)` 后代，特异性仍是 (0,1,0)，与 app 内一致。
+  if (/^:lang\(/.test(p)) return ':where(#entries-container) ' + p;
   if (p === 'body') return ':where(#entries-container)';
-  if (/^html([.[ ]|$)/.test(p)) return ':where(#entries-container)' + p.slice(4);
+  // Niratan 对齐（2026-08-23）滚动条悬停/滚动显形：`*:hover` /
+  // `*.popup-scroll-active` 这类 `*` 前缀选择器重根为「容器自身 + 全部后代」
+  // （零特异性 :where 包容器，:hover/.popup-scroll-active 部分原样保留），
+  // 与顶部 `*` 通配 reset 的重根策略同源。
+  if (p.startsWith('*') && p.length > 1) {
+    return ':where(#entries-container, #entries-container *)' + p.slice(1);
+  }
+  if (/^body([.:])/.test(p)) return ':where(#entries-container)' + p.slice(4);
+  if (/^html([.[: ]|$)/.test(p)) return ':where(#entries-container)' + p.slice(4);
   if (p === '::selection') return ':where(#entries-container) ::selection';
-  if (p.startsWith('::-webkit-scrollbar')) return ':where(#entries-container) ' + p;
+  // 滚动条伪元素：覆盖「容器自身 + 全部后代」的滚动条（旧映射只带后代，
+  // #entries-container 自己作为滚动容器时其 thumb 落 UA 默认样式——静止隐形
+  // 设计下会退化成常驻灰滚动条）。
+  if (p.startsWith('::-webkit-scrollbar')) {
+    return ':where(#entries-container, #entries-container *)' + p;
+  }
   if (/^(hr|a)$/.test(p)) return ':where(#entries-container) ' + p;
   throw new Error(
     `[generate-content-css] UNKNOWN document-level selector ${JSON.stringify(p)}: ` +

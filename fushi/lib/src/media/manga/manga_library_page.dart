@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-import 'package:fushi/src/media/manga/manga_browse_page.dart';
+import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/manga/manga_sources_page.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
@@ -8,14 +8,19 @@ import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
 
-/// 顶层漫画库页：**恒为三视图**，五个平台完全同构。
+/// 顶层漫画库页：**恒为三视图**（外加设置），五个平台完全同构。
 ///
 /// - **书架**：数据、卡片、搜索、排序、合集、进度和删除全部复用小说书架；唯一差异
 ///   是只展示 `EpubBooks.format == 'manga'` 的条目。普通书架由同一页面反向排除漫画。
-/// - **浏览**：可浏览内容的在线来源清单——内置 mokuro.moe 目录 + 已启用的 Mihon
-///   在线来源，两者并列。
+/// - **发现**：漫画唯一的发现入口——来源筛选下拉 + 搜索框，正文是 AniList 元数据
+///   横滑行 + 各来源热门行 + 「浏览来源」清单（mokuro.moe / Aidoku / Mihon）。
+///   AniList 条目点开后在已启用来源里自动匹配可读条目（`discovery/`）。
 /// - **来源**：本地漫画扫描根 + 漫画扩展（仓库/安装/启停）+ 扩展提供的在线来源
 ///   设置。**扩展就是来源**，因此收在这里而不是另开一个顶层 tab。
+///
+/// 曾经还有第四个「浏览」视图（`library_view_browse`）放在线来源清单。它的文案被
+/// 改成「发现」之后，漫画库里出现了两个字面完全相同的 tab，用户点哪个都叫发现
+/// （BUG-1710）；两页能力互补，已合并进上面的「发现」，冗余 tab 删除。
 ///
 /// 视图列表是**无条件常量**：不按 `MihonRuntimeFactory.isSupported` 分叉，
 /// iOS / Linux 与 Android / Windows / macOS 的 tab 数量、顺序、kind 完全一致，
@@ -43,10 +48,10 @@ class MangaLibraryPage extends StatelessWidget {
               ReaderFushiHistoryPage(mangaOnly: true, navigation: navigation),
         ),
         MediaLibraryViewSpec(
-          kind: MediaLibraryViewKind.browse,
-          label: t.library_view_browse,
+          kind: MediaLibraryViewKind.discover,
+          label: t.library_view_discover,
           builder: (BuildContext context, Widget navigation) =>
-              MangaBrowsePage(navigation: navigation),
+              MangaDiscoveryPage(navigation: navigation),
         ),
         MediaLibraryViewSpec(
           kind: MediaLibraryViewKind.sources,

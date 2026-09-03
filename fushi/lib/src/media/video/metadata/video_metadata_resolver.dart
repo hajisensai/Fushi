@@ -56,8 +56,8 @@ class VideoMetadataResolution {
   final VideoMetadataWork? work;
   final VideoMetadataLookup? lookup;
 
-  /// 真正给出这条结果的资料源。主源未配置时会是降级链里的其它源，调用方据此
-  /// 构造候选 lookup —— **不能**再假定它等于 `request.selectedProvider`。
+  /// 真正给出这条结果的资料源。严格单源解析下它必定等于
+  /// `request.selectedProvider`；保留字段供调用方显式记录该不变量。
   final VideoMetadataProviderKind? providerKind;
   final List<VideoMetadataWork> candidates;
   final String? reason;
@@ -75,13 +75,6 @@ class VideoMetadataProviderRegistry {
   VideoMetadataProvider? provider(VideoMetadataProviderKind kind) =>
       _providers[kind];
 
-  List<VideoMetadataProviderKind> get availableProviders =>
-      <VideoMetadataProviderKind>[
-        for (final MapEntry<VideoMetadataProviderKind,
-            VideoMetadataProvider> entry in _providers.entries)
-          if (entry.value.isAvailable) entry.key,
-      ];
-
   void close() {
     for (final VideoMetadataProvider provider in _providers.values) {
       provider.close();
@@ -94,13 +87,8 @@ class VideoMetadataResolver {
 
   final VideoMetadataProviderRegistry registry;
 
-  /// 主源可用时只用主源（保持严格的单主源语义）；主源**未配置**时按枚举顺序
-  /// 降级到其余已配置的源。
-  ///
-  /// 识别（文件名 → 标题/季/集，`FilenameParser`）与刮削（provider 查询）本就是
-  /// 分离的两步，所以换源不需要重新识别，只是拿同一份识别结果换个源去查。没有
-  /// 这条链时，用户只要没填 TMDB key，整批条目就会全部失败在网络请求之前——
-  /// 而 Bangumi / AniList 本来就零 key 可用。
+  /// 严格单主源解析只返回所选 provider。缺失或不可用时 fail closed，绝不能把
+  /// registry 中的补充/历史 provider 静默提升为规范身份源。
   List<VideoMetadataProvider> _resolutionChain(
     VideoMetadataProviderKind selected,
   ) {
@@ -108,25 +96,20 @@ class VideoMetadataResolver {
     if (primary != null && primary.isAvailable) {
       return <VideoMetadataProvider>[primary];
     }
-    return <VideoMetadataProvider>[
-      for (final VideoMetadataProviderKind kind
-          in VideoMetadataProviderKind.values)
-        if (registry.provider(kind) case final VideoMetadataProvider provider)
-          if (provider.isAvailable) provider,
-    ];
+    return const <VideoMetadataProvider>[];
   }
 
   Future<VideoMetadataResolution> resolve(
     VideoMetadataResolveRequest request,
   ) async {
     final VideoMetadataLookup? confirmed = request.confirmedLookup;
-    if (confirmed != null) {
+    if (confirmed != null && confirmed.provider == request.selectedProvider) {
       final VideoMetadataResolution resolved = await _resolveLookup(
         confirmed,
         request,
         VideoMetadataResolutionMethod.confirmed,
       );
-      // 绑定身份所属的源没配置时不整条失败：往下走标题搜索降级链。
+      // 所选源不可用时继续走统一的 fail-closed 出口，不能换源。
       if (resolved.status !=
           VideoMetadataResolutionStatus.providerUnavailable) {
         return resolved;
@@ -142,21 +125,20 @@ class VideoMetadataResolver {
       fallbackMediaKind: request.mediaKind,
     );
     if (explicit.isNotEmpty) {
-      // 同一文件若声明了多个 provider id，只接受当前主源的声明；若主源没有声明，
-      // 仍采用第一个明确声明，避免把数字再次送进模糊标题搜索。
-      final VideoMetadataLookup lookup = explicit.firstWhere(
-        (VideoMetadataLookup value) =>
-            value.provider == request.selectedProvider,
-        orElse: () => explicit.first,
-      );
-      final VideoMetadataResolution resolved = await _resolveLookup(
-        lookup,
-        request,
-        VideoMetadataResolutionMethod.explicitId,
-      );
-      if (resolved.status !=
-          VideoMetadataResolutionStatus.providerUnavailable) {
-        return resolved;
+      // 明确 ID 只能命中当前主身份源。其它来源 ID 是 cross-reference hint，
+      // 不能把 TMDB/历史 provider 提升为 canonical；主源无 ID 时继续标题识别。
+      for (final VideoMetadataLookup lookup in explicit) {
+        if (lookup.provider != request.selectedProvider) continue;
+        final VideoMetadataResolution resolved = await _resolveLookup(
+          lookup,
+          request,
+          VideoMetadataResolutionMethod.explicitId,
+        );
+        if (resolved.status !=
+            VideoMetadataResolutionStatus.providerUnavailable) {
+          return resolved;
+        }
+        break;
       }
     }
 
@@ -215,6 +197,19 @@ class VideoMetadataResolver {
             _lookupForWork(candidate, provider.providerKind);
         if (lookup == null) continue;
         final String lookupKey = '${lookup.provider.name}:${lookup.externalId}';
+        final bool summaryMatches =
+            _matchesNormalizedTitle(candidate, normalizedTitles);
+        if (provider.providerKind == VideoMetadataProviderKind.anidb &&
+            !summaryMatches) {
+          // AniDB's local titles dump already carries the searchable title and
+          // alias set. Do not turn one fuzzy catalog query into up to fifteen
+          // rate-limited HTTP detail requests merely to discover that the
+          // title still does not match. Keep the catalog row available for
+          // explicit user confirmation; the selected identity is hydrated by
+          // the coordinator after confirmation.
+          reviewCandidates.putIfAbsent(lookupKey, () => candidate);
+          continue;
+        }
         VideoMetadataWork? details = fetchedDetails.containsKey(lookupKey)
             ? fetchedDetails[lookupKey]
             : await provider.fetchWork(lookup);
@@ -229,7 +224,7 @@ class VideoMetadataResolver {
         // 搜索摘要常常只带当前语言标题。真正详情会带原名/别名；MoviePilot
         // 同样用 title/original/alias/translation 做严格清洗后比较，因此必须在
         // detail gate 之后再做一次标题判定，不能在摘要阶段把罗马字别名丢掉。
-        if (_matchesNormalizedTitle(candidate, normalizedTitles) ||
+        if (summaryMatches ||
             _matchesNormalizedTitle(validated, normalizedTitles)) {
           exact[lookupKey] = validated;
         } else {
@@ -298,14 +293,16 @@ class VideoMetadataResolver {
         reason: 'Explicit identity does not exist',
       );
     }
-    work = await _validatedDetails(provider, lookup, work, request);
-    if (work == null) {
+    // A confirmed binding or an explicit provider ID is authoritative. Local
+    // filename/NFO year and season heuristics are search gates, not grounds to
+    // reject a known AniDB identity (continuation seasons routinely differ).
+    if (work.kind != request.mediaKind) {
       return VideoMetadataResolution(
         status: VideoMetadataResolutionStatus.notFound,
         method: method,
         lookup: lookup,
         providerKind: provider.providerKind,
-        reason: 'Explicit identity failed type or season validation',
+        reason: 'Explicit identity has a different media type',
       );
     }
     return VideoMetadataResolution(
@@ -322,7 +319,11 @@ class VideoMetadataResolver {
     VideoMetadataResolveRequest request,
   ) {
     if (candidate.kind != request.mediaKind) return false;
-    if (request.year != null && candidate.year != request.year) return false;
+    if (request.year != null &&
+        candidate.year != null &&
+        candidate.year != request.year) {
+      return false;
+    }
     return true;
   }
 
@@ -333,16 +334,23 @@ class VideoMetadataResolver {
     VideoMetadataResolveRequest request,
   ) async {
     if (work.kind != request.mediaKind) return null;
+    if (request.year != null &&
+        work.year != null &&
+        work.year != request.year) {
+      return null;
+    }
     final int? seasonNumber = request.seasonNumber;
     if (seasonNumber == null || work.kind == VideoMetadataMediaKind.movie) {
       return work;
     }
-    if (provider.providerKind == VideoMetadataProviderKind.bangumi ||
-        provider.providerKind == VideoMetadataProviderKind.anilist) {
+    if (provider.providerKind == VideoMetadataProviderKind.anidb) {
       final int? inferred = _inferredSeasonNumber(work);
-      return (inferred == null ? seasonNumber == 1 : inferred == seasonNumber)
-          ? work
-          : null;
+      // One AniDB aid represents one independently titled anime entry. Many
+      // sequels (for example `K-ON!!`) carry no parseable "Season 2" token,
+      // so an absent inferred number is unknown rather than season 1. Reject
+      // only an explicit conflicting season; the coordinator later remaps the
+      // single AniDB season to the locally parsed season number.
+      return inferred == null || inferred == seasonNumber ? work : null;
     }
     if (work.seasons.any(
       (VideoMetadataSeason season) => season.seasonNumber == seasonNumber,
@@ -481,7 +489,12 @@ List<VideoMetadataLookup> parseExplicitVideoMetadataIds(
     if (uri != null && uri.host.isNotEmpty) {
       final String host = uri.host.toLowerCase().replaceFirst('www.', '');
       final List<String> path = uri.pathSegments;
-      if (host.endsWith('themoviedb.org') && path.length >= 2) {
+      if (host.endsWith('anidb.net') &&
+          path.length >= 2 &&
+          path[0] == 'anime' &&
+          RegExp(r'^\d+$').hasMatch(path[1])) {
+        add(VideoMetadataProviderKind.anidb, path[1], fallbackMediaKind);
+      } else if (host.endsWith('themoviedb.org') && path.length >= 2) {
         final VideoMetadataMediaKind? kind = switch (path[0]) {
           'tv' => VideoMetadataMediaKind.tv,
           'movie' => VideoMetadataMediaKind.movie,
@@ -519,7 +532,7 @@ List<VideoMetadataLookup> parseExplicitVideoMetadataIds(
 
     final RegExp pattern = RegExp(
       r'(?:^|[\[{(_\s.-])'
-      r'(tmdb|tmdbid|douban|doubanid|bangumi|bgm|anilist)'
+      r'(anidb|aid|tmdb|tmdbid|douban|doubanid|bangumi|bgm|anilist)'
       r'\s*(?:id)?\s*[:=_-]\s*([A-Za-z0-9.-]+)',
       caseSensitive: false,
     );
@@ -527,6 +540,7 @@ List<VideoMetadataLookup> parseExplicitVideoMetadataIds(
       final String source = match.group(1)!.toLowerCase();
       final String id = match.group(2)!;
       final VideoMetadataProviderKind provider = switch (source) {
+        'anidb' || 'aid' => VideoMetadataProviderKind.anidb,
         'tmdb' || 'tmdbid' => VideoMetadataProviderKind.tmdb,
         'douban' || 'doubanid' => VideoMetadataProviderKind.douban,
         'bangumi' || 'bgm' => VideoMetadataProviderKind.bangumi,

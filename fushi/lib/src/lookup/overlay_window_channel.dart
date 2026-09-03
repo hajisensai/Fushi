@@ -1,12 +1,11 @@
-// spec 2026-07-10 — instance-level channel wrapper for a bare-WebView2 overlay
-// window. Extracted from the static GlobalLookupChannel (TODO-617, which stays
-// as a zero-churn delegating facade for the 1700-line controller) so the
-// SECOND window instance — the persistent clipboard panel — reuses the exact
-// same method contract on its own MethodChannel
-// (app.fushi.reader/clipboard_panel) instead of copy-pasting ~250 lines.
+// Instance-level channel wrapper for a bare-WebView2 overlay window. Extracted
+// from the static GlobalLookupChannel (TODO-617, which stays as a zero-churn
+// delegating facade for the 1700-line controller) so any second overlay
+// window instance can reuse the exact same method contract on its own
+// MethodChannel instead of copy-pasting ~250 lines.
 //
 // Native counterpart: windows/runner/global_lookup_window.cpp +
-// FlutterWindow::RegisterGlobalLookupChannel / RegisterClipboardPanelChannel.
+// FlutterWindow::RegisterGlobalLookupChannel.
 
 import 'dart:async';
 import 'dart:convert';
@@ -21,14 +20,14 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 /// original destination.
 class GlobalLookupRoute {
   const GlobalLookupRoute.desktop({this.routeEpoch = 0, this.lookupEpoch = 0})
-      : source = 'desktop',
-        target = '';
+    : source = 'desktop',
+      target = '';
 
   const GlobalLookupRoute.galCard({
     required this.routeEpoch,
     required this.lookupEpoch,
-  })  : source = 'galCard',
-        target = 'galCard';
+  }) : source = 'galCard',
+       target = 'galCard';
 
   final String source;
   final String target;
@@ -145,9 +144,7 @@ class OverlayWindowChannel {
   /// popup_bridge_adapter.js (flutter_assets/assets/popup at runtime). Must be
   /// called once before the first [showAt].
   Future<void> prepare(String assetsDir) =>
-      _invoke<void>('prepare', <String, Object?>{
-        'assetsDir': assetsDir,
-      });
+      _invoke<void>('prepare', <String, Object?>{'assetsDir': assetsDir});
 
   /// TODO-1079 — builds the overlay window + WebView2 OFF-SCREEN and navigates
   /// to host.html at startup so the first lookup hits a WARM surface.
@@ -165,7 +162,9 @@ class OverlayWindowChannel {
 
   /// Shows the overlay at screen coordinates (physical pixels) without
   /// stealing focus. Returns the native reply (see [GlobalLookupShowResult]).
-  /// [capWidth]/[capHeight]：**布局工作区**的物理像素上限（0 = 不限，用显示器工作区）。
+  /// [capWidth]/[capHeight]：**布局工作区**的物理像素尺寸（0 = 不覆盖，使用显示器
+  /// 工作区）；[capOriginX]/[capOriginY] 是窗口本地原点（根卡左上角）在该工作区内
+  /// 的物理像素坐标。
   ///
   /// 游戏内查词必须传：卡片最终是画在游戏画面里的，可用空间是**游戏视口**而不是
   /// 显示器工作区。不传的话弹窗按 2560x1440 排版、排完再被缩到卡片尺寸，而 runner
@@ -179,6 +178,8 @@ class OverlayWindowChannel {
     bool atCursor = false,
     int capWidth = 0,
     int capHeight = 0,
+    int capOriginX = 0,
+    int capOriginY = 0,
   }) async {
     final Object? reply = await _invoke<Object?>('showAt', <String, Object?>{
       'x': x,
@@ -188,6 +189,8 @@ class OverlayWindowChannel {
       'atCursor': atCursor,
       'capW': capWidth,
       'capH': capHeight,
+      'capX': capOriginX,
+      'capY': capOriginY,
     });
     if (reply is Map) {
       double num2(Object? v) => (v is num) ? v.toDouble() : 0;
@@ -210,9 +213,16 @@ class OverlayWindowChannel {
 
   /// Injects [popupJson] and calls window.renderPopup() in the overlay WebView.
   Future<void> render(String popupJson) =>
-      _invoke<void>('render', <String, Object?>{
-        'json': popupJson,
-      });
+      _invoke<void>('render', <String, Object?>{'json': popupJson});
+
+  /// 手柄重设计 P5：把一枚 Dart 侧解析好的手柄动作转发进 host
+  /// （window.__globalLookupHost.gamepadAction → 顶层卡片帧的 popup.js 入口）。
+  /// [action] 只接受 native 白名单里的 'next'/'prev'/'mine'/'audio'/'scroll'；
+  /// [dy] 仅 scroll 用（CSS 像素，正=向下）。
+  Future<void> gamepadAction(String action, {double dy = 0}) => _invoke<void>(
+    'gamepadAction',
+    <String, Object?>{'action': action, 'dy': dy},
+  );
 
   /// Resizes the overlay window (physical px), clamped to the work area by
   /// native. Keeps the current top-left anchor.
@@ -228,11 +238,10 @@ class OverlayWindowChannel {
   /// containing the reply's JSON. So we double-encode: the inner jsonEncode
   /// produces the reply JSON text, the outer jsonEncode turns that into a JS
   /// string literal native can splice in verbatim.
-  Future<void> resolveBridge(int id, Object? value) =>
-      _invoke<void>('resolveBridge', <String, Object?>{
-        'id': id,
-        'value': jsonEncode(jsonEncode(value)),
-      });
+  Future<void> resolveBridge(int id, Object? value) => _invoke<void>(
+    'resolveBridge',
+    <String, Object?>{'id': id, 'value': jsonEncode(jsonEncode(value))},
+  );
 
   /// Moves the off-screen-rendered overlay to its pending anchor at the final
   /// size and makes it visible.
@@ -251,17 +260,18 @@ class OverlayWindowChannel {
     required int dy,
     required int width,
     required int height,
+    required int geometryEpoch,
     double left = 0,
     double top = 0,
-  }) =>
-      _invoke<void>('revealStack', <String, Object?>{
-        'dx': dx,
-        'dy': dy,
-        'width': width,
-        'height': height,
-        'left': left,
-        'top': top,
-      });
+  }) => _invoke<void>('revealStack', <String, Object?>{
+    'dx': dx,
+    'dy': dy,
+    'width': width,
+    'height': height,
+    'geometryEpoch': geometryEpoch,
+    'left': left,
+    'top': top,
+  });
 
   /// Hides the overlay. [notify] true (default) = a genuine dismissal that
   /// fires the native `overlayHidden` callback; false = the programmatic reset
@@ -271,60 +281,26 @@ class OverlayWindowChannel {
 
   Future<bool> isShowing() async => (await _invoke<bool>('isShowing')) ?? false;
 
-  /// spec §6 — asks native for the Win11 acrylic system backdrop behind the
-  /// window's transparent pixels. Returns whether the OS accepted it (false on
-  /// Win10 / pre-22H2 / non-panel channels → caller keeps the surface opaque
-  /// and hides the opacity slider). Only wired on the clipboard-panel channel;
-  /// other channels answer notImplemented → false.
-  Future<bool> applyBackdrop() async {
-    try {
-      return (await _invoke<bool>('applyBackdrop')) ?? false;
-    } on MissingPluginException {
-      return false;
-    } on PlatformException {
-      return false;
-    }
-  }
+  /// Temporarily removes the routed card (and its native shadow) from DWM while
+  /// a galgame frame is captured.  This is deliberately distinct from [hide]:
+  /// the WebView, route and dictionary state remain live and can be restored by
+  /// the matching generation only.
+  Future<bool> suspendForCapture(int captureGeneration) async =>
+      (await _invoke<bool>('suspendForCapture', <String, Object?>{
+        'captureGeneration': captureGeneration,
+      })) ??
+      false;
 
-  /// spec 2026-07-10 panel pin — toggles HWND_TOPMOST. Only wired on the
-  /// clipboard-panel channel.
-  Future<void> setPinned(bool pinned) =>
-      _invoke<void>('setPinned', <String, Object?>{
-        'pinned': pinned,
-      });
+  Future<bool> restoreAfterCapture(int captureGeneration) async =>
+      (await _invoke<bool>('restoreAfterCapture', <String, Object?>{
+        'captureGeneration': captureGeneration,
+      })) ??
+      false;
 
   /// 防截屏 — SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)：窗口对用户可见
-  /// 但从截图 / 录屏 / 屏幕共享里排除。Wired on BOTH channels（剪贴板面板 +
-  /// 瞬态全局查词窗——同一 pref clipboardPanelBlockCapture 保护两块表面）。
+  /// 但从截图 / 录屏 / 屏幕共享里排除（pref lookupBlockCapture）。
   Future<void> setBlockCapture(bool block) =>
-      _invoke<void>('setBlockCapture', <String, Object?>{
-        'block': block,
-      });
-
-  /// 面板抬前台 — 把已显示的面板重排到 z 序最上，绝不激活（不抢当前前台窗口
-  /// 焦点）。[topmost]=true（已 pin）直接置顶，false 则顶到非置顶带最上。
-  /// Only wired on the clipboard-panel channel.
-  Future<void> raise({required bool topmost}) =>
-      _invoke<void>('raise', <String, Object?>{
-        'topmost': topmost,
-      });
-
-  /// 面板任务栏图标 — 任务栏按钮 / Alt-Tab 项的窗口标题（本地化文案）。
-  /// 窗口创建前设置则用于创建，已创建则即时更新。Only wired on the
-  /// clipboard-panel channel.
-  Future<void> setWindowTitle(String title) =>
-      _invoke<void>('setWindowTitle', <String, Object?>{
-        'title': title,
-      });
-
-  /// spec §6 真机修正 — 整窗不透明度（WS_EX_LAYERED + LWA_ALPHA，30-100%）。
-  /// 真透视：整窗（含文字）统一变淡，透出底下的游戏/网页；acrylic backdrop
-  /// 实测经 windowed WebView2 呈现为不透明且毛玻璃本就不是「看见底下」。
-  /// Only wired on the clipboard-panel channel.
-  Future<void> setWindowAlpha(int percent) =>
-      _invoke<void>('setWindowAlpha', <String, Object?>{
-        'percent': percent,
-      });
+      _invoke<void>('setBlockCapture', <String, Object?>{'block': block});
 
   /// Wires the overlay's reverse calls. [onGetMedia] resolves gaiji bytes for
   /// an `image://` url; [onJsMessage] receives raw bridge messages decoded
@@ -352,15 +328,32 @@ class OverlayWindowChannel {
             final Object? decoded = jsonDecode(raw);
             if (decoded is Map) {
               final message = decoded.cast<String, Object?>();
-              final String source = (envelope?['source'] as String?) ??
-                  (message['__source'] as String?) ??
-                  'desktop';
-              final int route = (envelope?['routeEpoch'] as num?)?.toInt() ??
-                  (message['__routeEpoch'] as num?)?.toInt() ??
-                  0;
-              final int lookup = (envelope?['lookupEpoch'] as num?)?.toInt() ??
-                  (message['__lookupEpoch'] as num?)?.toInt() ??
-                  0;
+              final Object? embeddedSource = message['__source'];
+              final Object? embeddedRoute = message['__routeEpoch'];
+              final Object? embeddedLookup = message['__lookupEpoch'];
+              // BUG-1982：The JSON fields are stamped when the browser event is emitted;
+              // the native envelope reads a mutable HWND route later. Consume
+              // the embedded identity only as one complete tuple so malformed
+              // content cannot mix old/new fields across those two clocks.
+              //
+              // 这四个局部必须保持 `final` 且不得重新赋值：`hasEmbeddedRoute` 的
+              // true 分支靠 Dart 的布尔局部变量提升把三个 `Object?` 提升成
+              // String/num/num，所以下面读它们时不需要 cast（写了反而是
+              // `unnecessary_cast`，CI 的 analyze 直接判红）。改成 `var` 或中途
+              // 赋值会让提升失效，这三行立刻变编译错误——不会静默降级。
+              final bool hasEmbeddedRoute =
+                  embeddedSource is String &&
+                  embeddedRoute is num &&
+                  embeddedLookup is num;
+              final String source = hasEmbeddedRoute
+                  ? embeddedSource
+                  : (envelope?['source'] as String?) ?? 'desktop';
+              final int route = hasEmbeddedRoute
+                  ? embeddedRoute.toInt()
+                  : (envelope?['routeEpoch'] as num?)?.toInt() ?? 0;
+              final int lookup = hasEmbeddedRoute
+                  ? embeddedLookup.toInt()
+                  : (envelope?['lookupEpoch'] as num?)?.toInt() ?? 0;
               final event = OverlayReverseEvent(
                 route: source == 'galCard'
                     ? GlobalLookupRoute.galCard(
@@ -404,17 +397,19 @@ class OverlayWindowChannel {
             final source = envelope?['source'] as String? ?? 'desktop';
             final route = (envelope?['routeEpoch'] as num?)?.toInt() ?? 0;
             final lookup = (envelope?['lookupEpoch'] as num?)?.toInt() ?? 0;
-            onRoutedOverlayHidden(OverlayReverseEvent(
-              route: source == 'galCard'
-                  ? GlobalLookupRoute.galCard(
-                      routeEpoch: route,
-                      lookupEpoch: lookup,
-                    )
-                  : GlobalLookupRoute.desktop(
-                      routeEpoch: route,
-                      lookupEpoch: lookup,
-                    ),
-            ));
+            onRoutedOverlayHidden(
+              OverlayReverseEvent(
+                route: source == 'galCard'
+                    ? GlobalLookupRoute.galCard(
+                        routeEpoch: route,
+                        lookupEpoch: lookup,
+                      )
+                    : GlobalLookupRoute.desktop(
+                        routeEpoch: route,
+                        lookupEpoch: lookup,
+                      ),
+              ),
+            );
           } else {
             onOverlayHidden?.call();
           }

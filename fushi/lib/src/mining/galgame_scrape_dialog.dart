@@ -14,7 +14,7 @@ import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
 import 'package:fushi/utils.dart';
 
-/// 游戏「刮削元数据」统一弹窗（对齐视频 `cover_match_dialog.dart` 的单弹窗闭环）。
+/// 游戏「刮削元数据」统一弹窗。
 ///
 /// 此前游戏刮削是三跳：库页卡菜单 → 详情页编辑 tab → 刮削按钮 → 再串行弹
 /// 「输入关键词」「纯文本候选」两个对话框，封面还只在无封面时隐式附带。本弹窗

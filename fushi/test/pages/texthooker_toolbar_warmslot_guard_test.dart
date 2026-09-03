@@ -52,11 +52,17 @@ void main() {
     });
 
     test('嵌入与独立两模式都复用同一构建方法', () {
-      expect(pageSrc.contains('_buildToolbarActions(context, embedded: false)'),
-          isTrue,
+      // 锚点用跨行正则而不是单行字面量：调用点会被格式化折行（#1093 之后嵌入模式
+      // 那处就是三行）。要钉的是「两模式都调同一个方法、且各自传对 embedded」，
+      // 不是这行当天怎么折。
+      bool callsWith(bool embedded) => RegExp(
+            r'_buildToolbarActions\(\s*context,\s*embedded:\s*' +
+                embedded.toString() + r'\s*,?\s*\)',
+            dotAll: true,
+          ).hasMatch(pageSrc);
+      expect(callsWith(false), isTrue,
           reason: '独立模式 AppBar actions 走共用方法');
-      expect(pageSrc.contains('_buildToolbarActions(context, embedded: true)'),
-          isTrue,
+      expect(callsWith(true), isTrue,
           reason: '嵌入模式页头 actions 走共用方法');
     });
 

@@ -14,6 +14,16 @@ abstract class RemoteCoverFetcher {
   /// 拉取 [coverUrl] 指向的封面为字节。失败（非 2xx / 握手失败 / 网络异常）抛异常，
   /// 由 [RemoteCoverImage] 转成占位图。
   Future<Uint8List> fetchRemoteCover(String coverUrl);
+
+  /// 本取图器的**磁盘缓存命名空间**（BUG-1693 批审计：封面缓存串味）。
+  ///
+  /// 磁盘封面缓存跨重启存活，键此前只有裸 id（video.id / 书名）——两台不同对端、
+  /// 或重新配对后的新对端，同名条目会共用同一个缓存文件（与 `RemoteLibraryCache`
+  /// 按 sourceId 分槽的纪律相反，BUG-1202 的教训在磁盘层重演）。命名空间由来源
+  /// 自己申报（与 [RemoteLibrarySource.remoteLibrarySourceId] 同款「编译器强制
+  /// 登记」），实现应取**配对身份级**的值：换 IP 不该变（封面没变，别白白重下，
+  /// BUG-847），换对端 / 重新配对必须变。
+  String get coverCacheNamespace;
 }
 
 /// 若 [client] 具备封面拉取能力则返回它，否则 null（调用方退回占位图）。

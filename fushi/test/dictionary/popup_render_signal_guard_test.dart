@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-712 P5 三镜像源码守卫：多词条查词弹窗 popupRendered 的「早发 + 双发」协议。
 ///
 /// 性能背景：多词条结果此前要等**全部**词条 build 完才发 popupRendered，宿主的
@@ -68,11 +70,32 @@ void main() {
         expect(idxTempDom, lessThan(idxEarly),
             reason: '临时首条视图写入必须先于早发（顺序不可颠倒）');
 
-        // 守的回归：早发不替代尾批渲染——早发之后必须仍存在尾批 setTimeout。
-        final int idxTail = js.indexOf('setTimeout', idxEarly);
+        // 守的回归：早发不替代尾批渲染——早发之后必须仍存在尾批宏任务调度
+        // （scheduleRenderTail：MessageChannel 宏任务，无则回落 setTimeout(fn, 0)）。
+        final int idxTail = js.indexOf('scheduleRenderTail(', idxEarly);
         expect(idxTail, greaterThan(idxEarly),
-            reason: '_firePopupRendered(true) 之后必须仍有尾批 setTimeout '
+            reason: '_firePopupRendered(true) 之后必须仍有尾批 scheduleRenderTail '
                 '（早发只提前可见时刻，剩余词条仍要在宏任务里补建）');
+      });
+
+      test('⑤ scheduleRenderTail 是真宏任务原语（MessageChannel / setTimeout 回落）', () {
+        // 守的回归：原语被改成同步直调 / 微任务（Promise.then / queueMicrotask）→
+        // 尾批重新压回首屏关键路径或饿死渲染，早发优化整体失效。
+        final int idxDef = js.indexOf('function scheduleRenderTail(');
+        expect(idxDef, greaterThan(-1), reason: 'scheduleRenderTail 原语缺失');
+        final int idxDefEnd = js.indexOf('\n}', idxDef);
+        final String defBody = js.substring(idxDef, idxDefEnd);
+        expect(defBody.contains('postMessage('), isTrue,
+            reason: '有 MessageChannel 时必须经 port.postMessage 排宏任务'
+                '（setTimeout 嵌套 >5 层被钳到 4ms，是尾批排队慢的根因）');
+        expect(RegExp(r'setTimeout\(\s*task\s*,\s*0\s*\)').hasMatch(defBody),
+            isTrue,
+            reason: '无 MessageChannel 的壳必须回落 setTimeout(task, 0) 宏任务');
+        expect(defBody.contains('queueMicrotask'), isFalse,
+            reason: '尾批不能是微任务（会饿死渲染）');
+        // 时间预算分片：一个宏任务连续建块直到预算用尽，而不是一块一任务。
+        expect(js.contains('TAIL_SLICE_BUDGET_MS'), isTrue,
+            reason: '尾批必须按时间预算分片（每宏任务建多块）');
       });
 
       test(
@@ -84,16 +107,16 @@ void main() {
 
         // 守的回归 A：尾批必须留在宏任务里，不能被搬回首屏同步路径。
         // 渐进渲染（PR #804）把「一个 setTimeout 建完剩余全部词条」拆成「每个宏
-        // 任务建一个词典块」，调度点统一是 setTimeout(renderNextDictionaryBlock, 0)：
-        // 一处在早发之后立即排首个尾批任务，一处在回调末尾自续下一块。任一处被
-        // 改成同步直调，剩余词条就重新压回首屏关键路径，① 的早发优化整体失效。
+        // 任务建一个词典块」；渲染尾巴优化再把它改成「每个宏任务按时间预算连续建
+        // 多块」，调度点统一是 scheduleRenderTail(renderNextDictionaryBlock)：一处在
+        // 早发之后立即排首个尾批任务，一处在分片末尾自续下一片。任一处被改成同步
+        // 直调，剩余词条就重新压回首屏关键路径，① 的早发优化整体失效。
         final RegExp tailSchedule =
-            RegExp(r'setTimeout\(\s*renderNextDictionaryBlock\s*,\s*0\s*\)');
+            RegExp(r'scheduleRenderTail\(\s*renderNextDictionaryBlock\s*\)');
         expect(
             tailSchedule.allMatches(afterEarly).length, greaterThanOrEqualTo(2),
-            reason: '早发之后必须有两处 setTimeout(renderNextDictionaryBlock, 0)'
-                '（首个尾批任务的排队 + 回调末尾的自续）；尾批必须是 '
-                'setTimeout(..., 0) 宏任务');
+            reason: '早发之后必须有两处 scheduleRenderTail(renderNextDictionaryBlock)'
+                '（首个尾批任务的排队 + 分片末尾的自续）；尾批必须是宏任务');
 
         // 守的回归 B：第二发被删 → Windows global-lookup host（依赖第二发把窗口
         // 量到全部词条的真实高度）窗口永远停在首条高度；且 _renderInProgress
@@ -130,7 +153,7 @@ void main() {
         // 调用被删＝尾批永不收尾，_renderInProgress 永远停在 true，
         // updatePopupIncremental 从此永远走全量回退，宿主窗口停在首条高度。
         final int idxSelfContinue = afterEarly.indexOf(RegExp(
-            r'setTimeout\(\s*renderNextDictionaryBlock\s*,\s*0\s*\);\s*\n\s*return;'));
+            r'scheduleRenderTail\(\s*renderNextDictionaryBlock\s*\);\s*\n\s*return;'));
         expect(idxSelfContinue, greaterThan(-1),
             reason: '逐块循环缺「还有待建块 → 自续下一个宏任务并 return」');
         expect(afterEarly.indexOf('finishRemainingEntries(', idxSelfContinue),
@@ -159,6 +182,62 @@ void main() {
         expect(idxCounts, greaterThan(-1));
         expect(idxUpd + m!.start, lessThan(idxCounts),
             reason: '回退守卫必须出现在读取 _renderedGlossaryCounts 之前');
+      });
+
+      // ── 生产接线（P1）─────────────────────────────────────────────────
+      //
+      // 下面两条钉的不是原语本身，是**原语被接进 renderPopup 生产路径的那一行**。
+      // 原语的行为由 `popup_render_tail_batching_test.js` 通过 `window.__test.*`
+      // 直调覆盖，而「把原语接上」那一行谁都没打：实测把它们各自删掉，功能不坏
+      // （只是退回全量重铺 / 每块一份 <style>，慢回去），node 行为测试 1274 条
+      // **一条都不红**。所以这两行只能由源码守卫来钉。
+      test('⑥ 逐块追加后只标脏本词条 body —— 生产接线，不是只有 __test 直调原语', () {
+        final String code = maskJsComments(js);
+        expect(
+          code.contains('markMasonryDirty(state.body)'),
+          isTrue,
+          reason: 'renderNextDictionaryBlock 追加完一块必须只标脏本词条的 body：'
+              '删掉这一行 = 退回全量重铺（O((词条×词典)²) 次强制回流），'
+              '而 node 行为测试全绿',
+        );
+        // 顺序：先标脏再合帧重排；反了等于没标（scheduleMasonry 那一帧读到的还是干净的）。
+        final int dirty = code.indexOf('markMasonryDirty(state.body)');
+        final int sched = code.indexOf('scheduleMasonry()', dirty);
+        expect(sched, greaterThan(dirty),
+            reason: '标脏必须出现在同一路径的 scheduleMasonry() 之前');
+        // 反向：追加路径不得回落成全量重铺。
+        final int block = code.indexOf('state.body.appendChild(section)');
+        expect(block, greaterThan(-1), reason: '逐块追加锚点漂了');
+        expect(
+          code.substring(block, dirty).contains('scheduleMasonryAll('),
+          isFalse,
+          reason: '逐块追加与标脏之间不得夹一次全量重铺',
+        );
+      });
+
+      test('⑤ 每词典一份样式表 —— 生产接线：块渲染走 ensureDictionaryStyle', () {
+        final String code = maskJsComments(js);
+        expect(
+          code.contains('ensureDictionaryStyle(dictName, styleText);'),
+          isTrue,
+          reason: '每个词典块必须把样式交给 ensureDictionaryStyle（同名词典复用同一个'
+              ' <style>）：换回「每块 appendChild 一份 <style>」功能不坏、只是慢，'
+              'node 行为测试全绿',
+        );
+        expect(code.contains('function ensureDictionaryStyle('), isTrue,
+            reason: '原语本身不许被删');
+        // 判别力来源：全文件只允许**一处**构造 <style> 元素，且必须在原语里。
+        // 没有这条，「块渲染里再 appendChild(el('style', …))」照样满足上面的
+        // contains——两份样式表并存，回退是静默的。
+        final Iterable<Match> styleNodes = "el('style'".allMatches(code);
+        expect(styleNodes.length, 1,
+            reason: '<style> 元素只许在 ensureDictionaryStyle 里构造一处，'
+                '实际有 ${styleNodes.length} 处');
+        final int primitive = code.indexOf('function ensureDictionaryStyle(');
+        final int primitiveEnd = code.indexOf('\n}', primitive);
+        expect(
+            styleNodes.single.start, inInclusiveRange(primitive, primitiveEnd),
+            reason: '唯一那处 <style> 构造必须落在 ensureDictionaryStyle 函数体内');
       });
     });
   });

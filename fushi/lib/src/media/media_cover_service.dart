@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
@@ -40,6 +41,8 @@ import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
 class MediaCoverService {
   const MediaCoverService._();
 
+  static int _temporarySerial = 0;
+
   /// 统一落盘入口（文件源）：把 [source] 原子地写到 [destPath]（先写
   /// `<dest>.tmp` 再删旧文件 rename——Windows rename 不覆盖；失败清 .tmp、
   /// **不动旧封面**并 rethrow），成功后**必然**双键驱逐旧解码缓存
@@ -52,9 +55,8 @@ class MediaCoverService {
     required File source,
     required String destPath,
   }) async {
-    final File tmp = File('$destPath.tmp');
+    final File tmp = File('$destPath.tmp.$pid.${_temporarySerial++}');
     try {
-      if (await tmp.exists()) await tmp.delete();
       await source.copy(tmp.path);
       final File dest = File(destPath);
       if (await dest.exists()) await dest.delete();
@@ -76,9 +78,8 @@ class MediaCoverService {
     required List<int> bytes,
     required String destPath,
   }) async {
-    final File tmp = File('$destPath.tmp');
+    final File tmp = File('$destPath.tmp.$pid.${_temporarySerial++}');
     try {
-      if (await tmp.exists()) await tmp.delete();
       await tmp.writeAsBytes(bytes, flush: true);
       final File dest = File(destPath);
       if (await dest.exists()) await dest.delete();
@@ -93,6 +94,23 @@ class MediaCoverService {
     }
     await evictLocalCoverCache(destPath);
   }
+
+  /// 统一「封面已消失」入口：[destPath] 上的封面文件**已经被删除**时调用，
+  /// 双键驱逐它的解码缓存。
+  ///
+  /// 为什么删也要走收口：BUG-1118 的不变量是「这条路径上的图变了就得驱逐」，
+  /// 而删除同样是变。少了这一步，「清理全部刮削记录」之后书架与详情页会继续画一
+  /// 张文件已经不在的封面，直到重启——和当年同路径覆盖写不驱逐的表现一模一样。
+  ///
+  /// 与 [applyCoverFile] / [applyCoverBytes] 的分工：那两条负责「写盘 → 驱逐」，
+  /// 这条负责「已删除 → 驱逐」。三条合起来才是 `evictLocalCoverCache` 的**全部**
+  /// 合法调用点（`test/media/media_cover_write_guard_test.dart` 的 allowed 名单
+  /// 因此仍只有收口这三个文件，删除路径不需要再散点手补 evict）。
+  ///
+  /// 本入口**不删文件**：删除的时机、准入与回滚由调用方掌握（例如刮削清理要先
+  /// 按 ledger SHA 校验再隔离再删），这里只承接删成功之后的缓存后果。
+  static Future<void> applyCoverRemoval({required String destPath}) =>
+      evictLocalCoverCache(destPath);
 
   /// 统一选图入口：移动端 image_picker 系统相册、桌面端 file_picker 原生文件
   /// 对话框（BUG-1074 的平台分流，委托 [pickGalleryImageFile]，分流决策见
@@ -122,8 +140,8 @@ class MediaCoverService {
   /// 视频：用用户手选的图片设置封面，返回落盘路径。
   ///
   /// 薄路由到 [setVideoCoverFromPickedFile]（拷盘 + 双键驱逐 + 落库 `coverPath`），
-  /// 再补记 [CoverOrigin.manual] 保护标记——批量在线刮削永不覆盖手动封面。
-  /// 标记为 best-effort：元数据记账失败不影响封面已设置。
+  /// 先持久化 [CoverOrigin.manual] 保护标记，再覆盖文件与 `coverPath`；标记失败
+  /// 时 fail closed，不把一张尚未受保护的用户文件暴露给自动维护流程。
   /// [coversDirectory] 是测试接缝：默认生产封面目录 [VideoStorage.coversDir]。
   static Future<String> applyVideoCoverManual({
     required VideoBookRepository repo,
@@ -131,21 +149,25 @@ class MediaCoverService {
     required String pickedPath,
     Directory? coversDirectory,
   }) async {
-    final String dest = await setVideoCoverFromPickedFile(
-      repo: repo,
-      bookUid: bookUid,
-      pickedPath: pickedPath,
-      coversDirectory: coversDirectory,
-    );
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) throw StateError('视频刮削资料正在清理');
     try {
-      final Directory covers =
-          coversDirectory ?? await VideoStorage.coversDir();
-      await CoverMetaStore(covers)
-          .set(bookUid, const CoverMeta(origin: CoverOrigin.manual));
-    } catch (_) {
-      // 元数据记账失败不影响封面已设置（best-effort，保护性标记）。
+      return await VideoCoverMutationGate.runExclusive(() async {
+        final Directory covers =
+            coversDirectory ?? await VideoStorage.coversDir();
+        await CoverMetaStore(covers)
+            .set(bookUid, const CoverMeta(origin: CoverOrigin.manual));
+        return setVideoCoverFromPickedFile(
+          repo: repo,
+          bookUid: bookUid,
+          pickedPath: pickedPath,
+          coversDirectory: covers,
+        );
+      });
+    } finally {
+      lease.release();
     }
-    return dest;
   }
 
   /// 游戏：用用户手选的图片设置封面，返回落盘路径；失败返回 null。

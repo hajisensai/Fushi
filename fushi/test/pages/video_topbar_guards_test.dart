@@ -91,10 +91,9 @@ void main() {
       final int titleStart = src.indexOf('Widget _topBarTitle()');
       expect(titleStart, greaterThanOrEqualTo(0),
           reason: '应存在 _topBarTitle() helper');
-      final int titleEnd =
-          src.indexOf('Widget _topBarInlineTitle(', titleStart);
+      final int titleEnd = src.indexOf('Widget _topBarTitleText(', titleStart);
       expect(titleEnd, greaterThan(titleStart),
-          reason: '_topBarTitle() 方法体应正常闭合在 _topBarInlineTitle 之前');
+          reason: '_topBarTitle() 方法体应正常闭合在 _topBarTitleText 之前');
       // 只看代码：方法体注释里必然复述 `Flexible(` / `Spacer()` 这些被禁写法的历史，
       // 带着注释扫会把「解释为什么禁用」误判成「还在用」。掩码走共享原语（块注释/行尾
       // 注释都能盖住，且不移动下标）。
@@ -114,6 +113,21 @@ void main() {
           reason: '桌面与移动顶栏都应经 VideoTopBarSlots 分宽');
       expect(RegExp(r'title:\s*_topBarTitle\(\)').hasMatch(src), isTrue,
           reason: '标题应作为 VideoTopBarSlots 的 title 槽传入');
+      // 标题被拖进左/右按钮槽时也走同一条路径：不能再有「组内固定宽内联标题」这个
+      // 特例——它会跟同组按钮抢横向空间，把按钮挤进横滚区（名称挡按钮的另一半根因）。
+      expect(src.contains('_topBarInlineTitle('), isFalse,
+          reason: '内联标题特例应已删除，标题统一由 VideoTopBarSlots 的 title 槽渲染');
+      expect(containsCodeLine(src, 'maxWidth: 220'), isFalse,
+          reason: '标题不得再有固定宽上限，宽度只能是「按钮分完之后剩下的」');
+      // 按钮组按 lead / tail 两段渲染，标题的槽内位置才能保住。
+      expect(src.contains('segment: VideoTopBarSegment.lead'), isTrue,
+          reason: '顶栏两槽应分别渲染标题之前的按钮段');
+      expect(src.contains('segment: VideoTopBarSegment.tail'), isTrue,
+          reason: '顶栏两槽应分别渲染标题之后的按钮段');
+      expect(
+          RegExp(r'titlePlacement:\s*_topBarTitlePlacement\(\)').hasMatch(src),
+          isTrue,
+          reason: '标题所在槽应驱动它在顶栏里的位置');
       // 标题截断兜底仍在（窄窗让位后靠 ellipsis 优雅收尾）。
       final int textStart = src.indexOf('Widget _topBarTitleText(');
       expect(textStart, greaterThanOrEqualTo(0));

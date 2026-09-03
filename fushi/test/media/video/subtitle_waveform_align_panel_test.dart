@@ -815,4 +815,106 @@ void main() {
     expect(stripText('S1'), findsNothing);
     await closeZoom(tester);
   });
+
+  // ---------------------------------------------------------------------
+  // BUG-1729：时间重叠的 cue（.ass 同屏双行/注音天然存在）在波形文本条上必须竖排
+  // 分行显示，不得叠画。历史实现每个 chip 都是 top: 0 / bottom: 0（占满条带全高）、
+  // x 只由时间决定，重叠句直接叠成一团。
+  // ---------------------------------------------------------------------
+
+  testWidgets('BUG-1729: time-overlapping cues land on different strip lanes',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[
+        _cue(1000, 3000, text: 'ohayou'),
+        _cue(1500, 3500, text: 'konbanwa'),
+      ],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5],
+      onCommitDelay: (int _) async {},
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+    final Rect a = tester.getRect(stripText('ohayou'));
+    final Rect b = tester.getRect(stripText('konbanwa'));
+    // 竖排分行：两 chip 文本 top 不同、矩形互不相交（历史 bug：同 top 且水平叠画）。
+    expect(a.top, isNot(closeTo(b.top, 0.5)));
+    expect(a.overlaps(b), isFalse);
+  });
+
+  group('BUG-1729: layoutCueStripChips greedy lane assignment (pure)', () {
+    List<CueStripSlot?> layout(
+      List<AudioCue> cues, {
+      double contentWidth = 7200,
+      int maxLanes = 3,
+    }) {
+      return layoutCueStripChips(
+        cues: cues,
+        delayMs: 0,
+        windowEndMs: 60000,
+        contentWidth: contentWidth,
+        minChipWidth: 48,
+        maxLanes: maxLanes,
+      );
+    }
+
+    test('time-overlapping cues get different lanes', () {
+      final List<CueStripSlot?> slots = layout(<AudioCue>[
+        _cue(1000, 3000, text: 'a'),
+        _cue(1500, 3500, text: 'b'),
+      ]);
+      expect(slots[0]!.lane, 0);
+      expect(slots[1]!.lane, 1);
+    });
+
+    test('pixel fake-overlap (min chip width at low zoom) also splits lanes',
+        () {
+      // 两句时间不重叠（0-100ms / 200-300ms），但低缩放下每句真实像素宽 ~1px，
+      // 被 minChipWidth=48 撑宽后像素区间重叠 → 仍要分行（按像素判、不按时间判）。
+      final List<CueStripSlot?> slots = layout(
+        <AudioCue>[
+          _cue(0, 100, text: 'a'),
+          _cue(200, 300, text: 'b'),
+        ],
+        contentWidth: 600,
+      );
+      expect(slots[0]!.lane, 0);
+      expect(slots[1]!.lane, 1);
+    });
+
+    test('non-overlapping cues all stay on lane 0', () {
+      final List<CueStripSlot?> slots = layout(<AudioCue>[
+        _cue(1000, 2000, text: 'a'),
+        _cue(3000, 4000, text: 'b'),
+        _cue(5000, 6000, text: 'c'),
+      ]);
+      expect(
+        slots.map((CueStripSlot? s) => s!.lane),
+        everyElement(0),
+      );
+    });
+
+    test('lane cap: 4 mutually overlapping cues cap at 3 lanes (last shared)',
+        () {
+      final List<CueStripSlot?> slots = layout(<AudioCue>[
+        _cue(1000, 9000, text: 'a'),
+        _cue(1100, 9000, text: 'b'),
+        _cue(1200, 9000, text: 'c'),
+        _cue(1300, 9000, text: 'd'),
+      ]);
+      expect(slots[0]!.lane, 0);
+      expect(slots[1]!.lane, 1);
+      expect(slots[2]!.lane, 2);
+      // 封顶：第 4 句挤进最后一行（接受叠画），不再开第 4 行。
+      expect(slots[3]!.lane, 2);
+    });
+
+    test('empty-text cue gets no slot and reserves no lane', () {
+      final List<CueStripSlot?> slots = layout(<AudioCue>[
+        _cue(1000, 3000), // 空文本：不上墙、不占 lane。
+        _cue(1500, 3500, text: 'b'),
+      ]);
+      expect(slots[0], isNull);
+      expect(slots[1]!.lane, 0);
+    });
+  });
 }

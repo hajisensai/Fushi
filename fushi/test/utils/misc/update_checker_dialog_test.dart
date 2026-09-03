@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/resumable_downloader.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
@@ -104,8 +105,7 @@ void main() {
         receivedBytes: 1234567,
         totalBytes: 987654321,
         bytesPerSecond: 123456,
-        resumed: false,
-        restartedFromZero: false,
+        resumeOutcome: DownloadResumeOutcome.none,
       ),
     );
     addTearDown(progress.dispose);
@@ -131,7 +131,114 @@ void main() {
     expect(find.textContaining('ghproxy.net'), findsOneWidget);
     expect(find.textContaining('1.2 MB'), findsOneWidget);
     expect(find.textContaining('120.6 KB/s'), findsOneWidget);
-    expect(find.textContaining(t.update_download_not_resumed), findsOneWidget);
+    // 全新下载没有可报的续传事实：整行不出现（不再显示「续传：未续传」）。
+    expect(
+      find.textContaining(t.update_download_resume_status(status: '')),
+      findsNothing,
+      reason: '无断点可续时不得渲染续传行',
+    );
+  });
+
+  testWidgets('下载遮罩把「本次没用上所选来源」说出来，没事时不占位',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(420, 520);
+    addTearDown(tester.view.reset);
+
+    final ValueNotifier<double> progress = ValueNotifier<double>(0);
+    final ValueNotifier<String> status =
+        ValueNotifier<String>(t.update_connecting);
+    final ValueNotifier<UpdateDownloadDiagnostics?> diagnostics =
+        ValueNotifier<UpdateDownloadDiagnostics?>(null);
+    final ValueNotifier<String?> notice = ValueNotifier<String?>(null);
+    addTearDown(progress.dispose);
+    addTearDown(status.dispose);
+    addTearDown(diagnostics.dispose);
+    addTearDown(notice.dispose);
+
+    await tester.pumpWidget(
+      buildApp(
+        Stack(
+          children: <Widget>[
+            buildUpdateDownloadOverlayForTest(
+              progress: progress,
+              status: status,
+              diagnostics: diagnostics,
+              notice: notice,
+              onHide: () {},
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final String message = t.update_download_source_unavailable(
+      source: t.update_download_source_cloudflare,
+    );
+    expect(find.text(message), findsNothing,
+        reason: '无事可报时不该占一行');
+
+    // 「所选来源对这个资产不适用」以前是纯静默降级：UI 零提示，用户以为自己锁定了
+    // Cloudflare。现在它是一等信息，必须能在遮罩上看见。
+    notice.value = message;
+    await tester.pump();
+    expect(find.text(message), findsOneWidget);
+  });
+
+  testWidgets('download diagnostics only shows the resume line when it resumed',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(420, 520);
+    addTearDown(tester.view.reset);
+
+    final ValueNotifier<double> progress = ValueNotifier<double>(0.42);
+    final ValueNotifier<String> status =
+        ValueNotifier<String>(t.update_downloading);
+    final ValueNotifier<UpdateDownloadDiagnostics?> diagnostics =
+        ValueNotifier<UpdateDownloadDiagnostics?>(
+      const UpdateDownloadDiagnostics(
+        sourceUrl: 'https://example.com/hibiki-9.9.9-windows-setup.exe',
+        sourceHost: 'example.com',
+        receivedBytes: 1234567,
+        totalBytes: 987654321,
+        bytesPerSecond: 123456,
+        resumeOutcome: DownloadResumeOutcome.resumed,
+      ),
+    );
+    addTearDown(progress.dispose);
+    addTearDown(status.dispose);
+    addTearDown(diagnostics.dispose);
+
+    await tester.pumpWidget(
+      buildApp(
+        Stack(
+          children: <Widget>[
+            buildUpdateDownloadOverlayForTest(
+              progress: progress,
+              status: status,
+              diagnostics: diagnostics,
+              onHide: () {},
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.textContaining(t.update_download_resumed), findsOneWidget);
+
+    diagnostics.value = const UpdateDownloadDiagnostics(
+      sourceUrl: 'https://example.com/hibiki-9.9.9-windows-setup.exe',
+      sourceHost: 'example.com',
+      receivedBytes: 1234567,
+      totalBytes: 987654321,
+      bytesPerSecond: 123456,
+      resumeOutcome: DownloadResumeOutcome.restartedFromZero,
+    );
+    await tester.pump();
+    expect(
+      find.textContaining(t.update_download_restarted_from_zero),
+      findsOneWidget,
+    );
   });
 
   // TODO-738: the download overlay exposes a Cancel escape hatch that fires the

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/focus/focus_geometry.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -33,8 +34,10 @@ class FushiFocusRing extends StatefulWidget {
 class _FushiFocusRingState extends State<FushiFocusRing>
     with WidgetsBindingObserver {
   final FocusManager _fm = FocusManager.instance;
+  final GlobalKey _stackKey = GlobalKey(debugLabel: 'fushi-focus-ring-stack');
 
-  // Cached focus rectangle, recomputed in a post-frame callback only. NEVER
+  // Cached focus rectangle in this ring Stack's LOCAL coordinate space,
+  // recomputed in a post-frame callback only. NEVER
   // read render geometry during build: the focused node's element can be
   // *inactive* mid-build (e.g. a route swap at startup), and findRenderObject()
   // asserts on inactive elements ("Cannot get renderObject of inactive
@@ -221,16 +224,45 @@ class _FushiFocusRingState extends State<FushiFocusRing>
   // avoids a second, differently-aligned scroll on ordinary Tab traversal
   // (which Flutter already reveals) while still covering the off-screen paths
   // (resize, autofocus, programmatic/gamepad focus).
+  /// 焦点控件的**视觉几何** context：受管控件用登记的渲染锚点，其余回退原生
+  /// context。绘制（[_computeFocusRect]）与 reveal（[_ensureVisibleIfHidden]）
+  /// 必须共用这一份——两处各算一遍迟早漂移。
+  ///
+  /// **不缓存**：`_FushiFocusScope.controller` 随实验开关在 null↔controller 之间
+  /// 翻转，而 `listen: false` 走 `getInheritedWidgetOfExactType`、**不建立
+  /// inherited 依赖**，`didChangeDependencies` 不会因此重跑。缓存下来就会永远停在
+  /// 冷启动第一帧读到的 null——`main.dart` 的 `runApp()` 在 `initialise()` 之前
+  /// 执行（为了先给用户看加载页而不是白屏），那一帧偏好还没加载完，
+  /// `experimentalFocusNavigationEnabled` 恒读默认 false。于是冷启动（偏好已开）、
+  /// 运行时翻开关、以及全部集成测试（`focus_driver` 就是「app 起来后再翻开关」）
+  /// 三条路径全废，修复整场会话静默失效。
+  ///
+  /// 就地解析的代价是每次一次哈希查表；两个调用点都在 post-frame，读取合法。
+  /// **绝不要改成 `listen: true`**：`_FushiFocusScope` 是 `InheritedNotifier`，
+  /// 那会让本层在每次焦点变化时整层重建。
+  BuildContext? _focusGeometryContext() {
+    if (!mounted) return null;
+    final FocusNode? primary = _fm.primaryFocus;
+    if (primary == null) return null;
+    final FushiFocusController? controller =
+        FushiFocusRoot.maybeControllerOf(context, listen: false);
+    return controller?.geometryContextFor(primary) ?? primary.context;
+  }
+
   void _ensureVisibleIfHidden() {
     if (_fm.highlightMode != FocusHighlightMode.traditional) return;
-    final BuildContext? ctx = _fm.primaryFocus?.context;
+    final BuildContext? ctx = _focusGeometryContext();
     if (ctx == null || !ctx.mounted) return;
     FushiFocusScroll.ensureVisibleIfHidden(ctx);
   }
 
   Rect? _computeFocusRect() {
     if (_fm.highlightMode != FocusHighlightMode.traditional) return null;
-    final BuildContext? ctx = _fm.primaryFocus?.context;
+    // Registered controls expose a render anchor around their whole visual
+    // surface. FocusNode.context can instead point at a framework-internal,
+    // inset child of composite inputs (SearchBar/TextFormField), which made the
+    // global ring frame the wrong rectangle across discovery and settings.
+    final BuildContext? ctx = _focusGeometryContext();
     if (ctx == null) return null;
     // ON-SCREEN (view-coord) rect of the focused control: globalRectOfBox maps
     // both corners through localToGlobal so the rect carries the SCALED size.
@@ -243,51 +275,46 @@ class _FushiFocusRingState extends State<FushiFocusRing>
     // window edge — clipped, and occluded by any overlaid chrome (e.g. a reader
     // bottom bar). Such a node draws its own inset focus indicator instead.
     final views = WidgetsBinding.instance.platformDispatcher.views;
-    if (views.isEmpty) return rect; // no view to size against — keep the ring
-    final view = views.first;
-    final double sw = view.physicalSize.width / view.devicePixelRatio;
-    final double sh = view.physicalSize.height / view.devicePixelRatio;
-    if (rect.width >= sw * 0.92 && rect.height >= sh * 0.92) return null;
-    return rect;
-  }
+    if (views.isNotEmpty) {
+      final view = views.first;
+      final double sw = view.physicalSize.width / view.devicePixelRatio;
+      final double sh = view.physicalSize.height / view.devicePixelRatio;
+      if (rect.width >= sw * 0.92 && rect.height >= sh * 0.92) return null;
+    }
 
-  // Scale a rect about the top-left origin (matches FushiAppUiScale's
-  // Transform.scale alignment: topLeft). Used to map a global-coord ring rect
-  // into this widget's scaled-down local canvas.
-  static Rect _scaleRect(Rect rect, double factor) => Rect.fromLTWH(
-        rect.left * factor,
-        rect.top * factor,
-        rect.width * factor,
-        rect.height * factor,
-      );
+    // BUG-1963: the ring Stack is not guaranteed to start at the view origin.
+    // The Windows custom title bar wraps the scaled app and places this Stack
+    // below its caption row. Treating [rect]'s global coordinates as local ones
+    // therefore added the title-bar height a second time and drew the ring one
+    // row below the focused subtitle-toolbar button. Convert both corners into
+    // the actual Stack coordinate space; this also preserves any transform
+    // between the view and the Stack instead of assuming scale is the only one.
+    final BuildContext? stackContext = _stackKey.currentContext;
+    if (stackContext == null || !stackContext.mounted) return null;
+    final RenderObject? stackObject = stackContext.findRenderObject();
+    if (stackObject is! RenderBox ||
+        !stackObject.hasSize ||
+        !stackObject.attached) {
+      return null;
+    }
+    return Rect.fromPoints(
+      stackObject.globalToLocal(rect.topLeft),
+      stackObject.globalToLocal(rect.bottomRight),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color color = Theme.of(context).colorScheme.primary;
-    // _rect comes from RenderBox.localToGlobal — it is in GLOBAL (view) coords.
-    // FushiFocusRing sits INSIDE FushiAppUiScale's Transform.scale (alignment
-    // topLeft), so this Stack's local coord system is the un-scaled logical
-    // canvas: local = global / scale. Build the 2px-inflated ring in GLOBAL
-    // coords (so the visual gap around the control stays a constant 2px at any
-    // scale), then map the whole rect back to local so the Transform re-magnifies
-    // it onto the focused control. At scale 1.0 (no Transform) this is a no-op,
-    // matching the pre-Transform behaviour. Reading the scale here also makes
-    // build() depend on _AppUiScaleScope, so a scale change rebuilds the ring.
-    //
-    // ASSUMPTION: the ONLY transform between this Stack and any focusable is that
-    // single app-level Transform.scale, so `local = global / scale` holds exactly.
-    // True for the app tree (FushiAppUiScale → FushiFocusRoot → FushiFocusRing
-    // → Navigator; routes/dialogs add offsets, never another scale). If a nested
-    // Transform/InteractiveViewer is ever placed between the ring and a focusable,
-    // this single-scale mapping breaks — switch to localToGlobal(ancestor: <this
-    // Stack's RenderObject>) to resolve the focused rect in local space directly.
+    // _rect is already expressed in this Stack's local coordinate system. The
+    // Stack sits inside FushiAppUiScale, so inflate by 2 / scale to retain a
+    // constant 2px visual gap after the outer transform magnifies it.
     final double scale = FushiAppUiScale.of(context);
-    final Rect? globalRect = widget.enabled ? _rect : null;
-    final Rect? ringRect = globalRect == null
-        ? null
-        : _scaleRect(globalRect.inflate(2), 1 / scale);
+    final Rect? localRect = widget.enabled ? _rect : null;
+    final Rect? ringRect = localRect?.inflate(2 / scale);
     return Stack(
+      key: _stackKey,
       children: <Widget>[
         // 滚动 / 动画 / 数据加载 reflow 期间环不滞后：traditional 模式下
         // [_armFrameTracker] 逐帧跟踪焦点控件几何（BUG-1300），旧的

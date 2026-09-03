@@ -117,8 +117,16 @@ List<String> reorderCandidatesByRaceWinner(
 /// **竞速接入入口（TODO-683）**：被 [_downloadUpdateAssetUncoalesced] 在候选串行循环前
 /// 调用。满足竞速门控（[_shouldRaceCandidates]）→ 并发探针选最快活源、把胜出 url 提首位
 /// 返回重排后的候选列表；不满足门控 / 竞速选不出源 → 原样返回 [candidateUrls]（现有串行
-/// 循环 + [selectRepresentativeDownloadFailure] 锚定直连完全不变）。把整段接入逻辑下沉到
-/// 本 race part，让下载 part 只剩一行调用、不越结构守卫的 1500 行天花板。
+/// 循环 + [selectRepresentativeDownloadFailure] 锚定直连完全不变）。竞速的 tie-break
+/// 偏好锚定候选首项：旧链首项仍是 GitHub 直连；加入官网 R2 后首项是 R2，避免它明明
+/// 最快/近似快却被 500ms 内到达的 GitHub 反抢。把整段接入逻辑下沉到本 race part，让
+/// 下载 part 只剩一行调用、不越结构守卫的 1500 行天花板。
+///
+/// [pinnedCandidateUrl] 非 null = 用户在设置里**显式**选了下载来源，且它在本资产上解析
+/// 得出候选（见 [UpdateDownloadPlan.pinnedUrl]，此时它就是 [candidateUrls] 首项）。这种
+/// 情况**一律不竞速**：探针只比「谁首字节快」，让它重排就会把用户选的源顶掉，只剩
+/// [_kDirectTieBreakWindow] 那 500ms 的宽限——设置页写的「优先尝试所选来源」就不成立了。
+/// 显式选择优先于测速；串行回退链原样保留，所选源失败照样逐个回退其余候选。
 Future<List<String>> orderedCandidatesAfterRace({
   required List<String> candidateUrls,
   required UpdateAsset asset,
@@ -127,7 +135,9 @@ Future<List<String>> orderedCandidatesAfterRace({
   required int minSegmentBytes,
   required _UpdateDownloadMetadata? metadata,
   required UpdateDownloadOpen openUrl,
+  String? pinnedCandidateUrl,
 }) async {
+  if (pinnedCandidateUrl != null) return candidateUrls;
   if (!await _shouldRaceCandidates(
     candidateUrls: candidateUrls,
     asset: asset,
@@ -142,7 +152,7 @@ Future<List<String>> orderedCandidatesAfterRace({
       await _UpdateDownloadMetadata.read(stagingPaths.metadataFile);
   final List<String>? raced = await raceSelectFastestCandidate(
     candidateUrls: candidateUrls,
-    directUrl: asset.url,
+    directUrl: candidateUrls.first,
     openUrl: openUrl,
     ifRange: raceMetadata?.etag ?? raceMetadata?.lastModified,
   );

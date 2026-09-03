@@ -13,6 +13,15 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+/// Bangumi 同步临时下线总开关（2026-08-19 用户决定：匹配/同步效果太差，先撤下、
+/// 改好后再加回）。false = 首页同步卡与设置入口不挂载、四个生产触发点（冷启动
+/// syncNow、视频看完、阅读进度落盘、游玩状态变更）不进本服务，对用户等效「功能
+/// 不存在」。服务/仓储/两张表/偏好键/i18n 全部原样保留：恢复只需把这里改回
+/// true；下线期间错过的完成事实由 `_reconcileAndSync` 的水位重扫补齐，不丢数据。
+/// 刻意不把闸门放进服务本体：`media/tracking` 三个测试文件直接驱动服务，下线期
+/// 间照常守护回归。
+const bool kMediaTrackingEnabled = false;
+
 const String kBangumiAccessTokenPref = 'media_tracking_bangumi_access_token';
 
 /// 连接成功时记下的 Bangumi 昵称/用户名。令牌本身不可读回账号，重开 app 后若不存
@@ -37,6 +46,19 @@ const String kBookTrackingReconcileWatermarkPref =
     'media_tracking_book_reconcile_watermark_v1';
 const String kGameTrackingReconcileWatermarkPref =
     'media_tracking_game_reconcile_watermark_v1';
+
+/// 换 Bangumi 令牌（含被清空）后必须归零的「本设备已对账水位」键。
+///
+/// 换账号 = 本地全部已完成事实都要对新账号重新对齐，继承旧账号的水位会让新账号
+/// 永远收不到迁移前看完的条目。写令牌的路径不止设置页一条：互联服务配置也会把
+/// host 的令牌落到子设备（[InterconnectServiceConfigSnapshot.applyTo]），所以这
+/// 条不变式必须是共享常量，而不是 [MediaTrackingService.setAccessToken] 里的一段
+/// 私有代码——否则两条写入路径必然漂开。
+const List<String> kBangumiTokenScopedWatermarkPrefs = <String>[
+  kVideoTrackingReconcileWatermarkPref,
+  kBookTrackingReconcileWatermarkPref,
+  kGameTrackingReconcileWatermarkPref,
+];
 
 typedef BangumiApiFactory = BangumiTrackingApi Function(String accessToken);
 
@@ -326,6 +348,11 @@ class MediaTrackingService {
 
   ValueListenable<int> get statusRevision => _statusRevision;
 
+  /// 令牌/账号名被**本服务之外**的路径改写后（互联服务配置导入、Profile 切换）
+  /// 通知状态监听者重读。服务本身不缓存令牌（[accessToken] 每次读偏好），所以
+  /// 只需要一次 revision bump，不需要重建服务。
+  void notifyStatusChanged() => _statusRevision.value++;
+
   String get accessToken =>
       (_preferences.getPref(kBangumiAccessTokenPref, defaultValue: '')
               as String)
@@ -345,9 +372,9 @@ class MediaTrackingService {
     await _preferences.setPref(kBangumiAccessTokenPref, normalized);
     if (previous != normalized) {
       // 新账号必须从全部本地已完成事实重新对齐，不能继承旧账号的校正水位。
-      await _preferences.setPref(kVideoTrackingReconcileWatermarkPref, 0);
-      await _preferences.setPref(kBookTrackingReconcileWatermarkPref, 0);
-      await _preferences.setPref(kGameTrackingReconcileWatermarkPref, 0);
+      for (final String key in kBangumiTokenScopedWatermarkPrefs) {
+        await _preferences.setPref(key, 0);
+      }
       // 账号名属于旧令牌，换令牌后必须失效，否则 UI 会挂着上一个账号的名字。
       await _preferences.setPref(kBangumiAccountNamePref, '');
     }

@@ -1587,7 +1587,7 @@ namespace flutter_inappwebview_plugin
           {"y", rect->y},
           {"width", rect->width},
           {"height", rect->height},
-          {"scale", scaleFactor_}
+          {"scale", deviceScaleFactor_}
         };
       }
     }
@@ -1812,16 +1812,45 @@ namespace flutter_inappwebview_plugin
   }
 
   // flutter_view
-  void InAppWebView::setSurfaceSize(size_t width, size_t height, float scale_factor)
+  void InAppWebView::applyWindowedBounds()
+  {
+    HWND child = nullptr;
+    if (!webViewController || !succeededOrLog(webViewController->get_ParentWindow(&child)) || !child) {
+      return;
+    }
+    // 子窗口坐标 = Flutter 视图客户区物理像素（逻辑 px × DPI），与 Flutter 布局一一对应。
+    ::SetWindowPos(child, HWND_TOP, windowedX_, windowedY_, windowedWidth_, windowedHeight_,
+      SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    RECT bounds{ 0, 0, windowedWidth_, windowedHeight_ };
+    failedLog(webViewController->put_Bounds(bounds));
+  }
+
+  void InAppWebView::setSurfaceSize(size_t width, size_t height,
+    float capture_scale_factor, float device_scale_factor)
   {
     if (!webViewController) {
       return;
     }
 
+    if (!surface_ && width > 0 && height > 0) {
+      // 窗口宿主模式：不设 BoundsMode / RasterizationScale（WebView2 自己按显示器 DPI 栅格化，
+      // 这正是硬件 PlayReady 走受保护输出所需的常规窗口路径）。
+      captureScaleFactor_ = device_scale_factor;
+      deviceScaleFactor_ = device_scale_factor;
+      windowedWidth_ = static_cast<int>(width * device_scale_factor);
+      windowedHeight_ = static_cast<int>(height * device_scale_factor);
+      applyWindowedBounds();
+      if (surfaceSizeChangedCallback_) {
+        surfaceSizeChangedCallback_(width, height);
+      }
+      return;
+    }
+
     if (surface_ && width > 0 && height > 0) {
-      scaleFactor_ = scale_factor;
-      auto scaled_width = width * scale_factor;
-      auto scaled_height = height * scale_factor;
+      captureScaleFactor_ = capture_scale_factor;
+      deviceScaleFactor_ = device_scale_factor;
+      auto scaled_width = width * capture_scale_factor;
+      auto scaled_height = height * capture_scale_factor;
 
       RECT bounds;
       bounds.left = 0;
@@ -1833,7 +1862,7 @@ namespace flutter_inappwebview_plugin
 
       wil::com_ptr<ICoreWebView2Controller3> webViewController3;
       if (SUCCEEDED(webViewController->QueryInterface(IID_PPV_ARGS(&webViewController3)))) {
-        webViewController3->put_RasterizationScale(scale_factor);
+        webViewController3->put_RasterizationScale(capture_scale_factor);
       }
 
       if (webViewController->put_Bounds(bounds) != S_OK) {
@@ -1853,8 +1882,20 @@ namespace flutter_inappwebview_plugin
       return;
     }
 
+    if (!surface_) {
+      // 窗口宿主模式：位置相对 Flutter 视图客户区（WS_CHILD），不是屏幕坐标。
+      captureScaleFactor_ = scale_factor;
+      deviceScaleFactor_ = scale_factor;
+      windowedX_ = static_cast<int>(x * scale_factor);
+      windowedY_ = static_cast<int>(y * scale_factor);
+      applyWindowedBounds();
+      return;
+    }
+
     if (x >= 0 && y >= 0) {
-      scaleFactor_ = scale_factor;
+      // Composition source scale belongs to setSurfaceSize. Position reports
+      // the device DPR for visual placement and wheel-delta restoration only.
+      deviceScaleFactor_ = scale_factor;
       auto scaled_x = static_cast<int>(x * scale_factor);
       auto scaled_y = static_cast<int>(y * scale_factor);
 
@@ -1885,8 +1926,8 @@ namespace flutter_inappwebview_plugin
     }
 
     POINT point;
-    point.x = static_cast<LONG>(x * scaleFactor_);
-    point.y = static_cast<LONG>(y * scaleFactor_);
+    point.x = static_cast<LONG>(x * captureScaleFactor_);
+    point.y = static_cast<LONG>(y * captureScaleFactor_);
     lastCursorPos_ = point;
 
     // https://docs.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2?view=webview2-1.0.774.44
@@ -1949,8 +1990,8 @@ namespace flutter_inappwebview_plugin
     }
 
     POINT point;
-    point.x = static_cast<LONG>(x * scaleFactor_);
-    point.y = static_cast<LONG>(y * scaleFactor_);
+    point.x = static_cast<LONG>(x * captureScaleFactor_);
+    point.y = static_cast<LONG>(y * captureScaleFactor_);
 
     RECT rect;
     rect.left = point.x - 2;
@@ -2025,12 +2066,13 @@ namespace flutter_inappwebview_plugin
     // → 0.67 个 WHEEL_DELTA，同一份 popup.js 收到的 deltaY 就比 app 外裸 WebView2 窗
     // （global_lookup_window.cpp 原样转发系统 WHEEL_DELTA=120）小 1/dpr，用户直观感受
     // 就是「app 内弹窗滚得比 app 外慢」。本文件的鼠标坐标（sendMouseInput / setPosition）
-    // 早已乘 scaleFactor_ 还原物理像素，唯独滚轮 delta 漏了这一步——先还原再乘倍数，
+    // 早已乘 captureScaleFactor_ 还原 WebView raw pixel，唯独滚轮 delta 要按 Flutter
+    // 事件被除掉的 device DPR 还原——先还原再乘倍数，
     // 使 WebView2 收到的 wheel 单位与系统原生一致。dpr=1 时逐帧与改前完全相同。
     // 副作用（正向）：dpr≥2 时改前 deltaY 会跌破 popup.js 的 60px 粗/细设备阈值被误判
     // 成触控板（factor 1.0 而非 0.24）而暴快，还原后分类回到设计假设。
     const double dprScale =
-      (scaleFactor_ > 0.0f) ? static_cast<double>(scaleFactor_) : 1.0;
+      (deviceScaleFactor_ > 0.0f) ? static_cast<double>(deviceScaleFactor_) : 1.0;
 
     // BUG-870 根因：static_cast<short>(delta * 6) 向零截断且无跨帧余量累积。精密触控板
     // 慢滑时 Flutter 每帧下发很小的 delta，delta*6 不足 1 时被截成 0 → 根本不发 wheel 给
@@ -2192,9 +2234,10 @@ namespace flutter_inappwebview_plugin
       failedLog(webView->Stop());
     }
     HWND parentWindow = nullptr;
-    if (webViewCompositionController && webViewController && succeededOrLog(webViewController->get_ParentWindow(&parentWindow))) {
-      // if it's an InAppWebView (so webViewCompositionController will be not a nullptr!),
-      // then destroy the Window created with it
+    // InAppWebViewManager 建的宿主 hwnd（composition 模式恒有 compositionController；窗口宿主模式
+    // 没有，由 destroyParentWindowOnClose 标记）随本实例销毁；InAppBrowser / headless 自管窗口。
+    if ((webViewCompositionController || destroyParentWindowOnClose) && webViewController &&
+        succeededOrLog(webViewController->get_ParentWindow(&parentWindow)) && parentWindow) {
       DestroyWindow(parentWindow);
     }
     if (webViewController) {

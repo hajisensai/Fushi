@@ -111,6 +111,10 @@ class SrtBooks extends Table {
   IntColumn get importedAt => integer()();
   // Standalone SRT books (no backing epub) use the empty-string sentinel.
   TextColumn get bookKey => text().withDefault(const Constant(''))();
+
+  /// v88：字幕书/有声书的内容语言（BCP-47）。SRT 文件本身不声明语言，所以这一列
+  /// 只能由用户指定；null = 未知，正文不写 font-family（不猜）。
+  TextColumn get language => text().nullable()();
 }
 
 // ── reader_positions ────────────────────────────────────────────────
@@ -310,6 +314,17 @@ class DictionaryMetadata extends Table {
   TextColumn get collapsedLanguagesJson =>
       text().withDefault(const Constant('[]'))();
 
+  /// v87：用户**手动指定**的词典内容语言（BCP-47，如 `ja` / `zh-Hant`）。
+  ///
+  /// null = 未指定，按自动来源推断（yomitan `index.json` 的 `sourceLanguage`，
+  /// 落在 [metadataJson] 里）。非 null 为用户覆盖，压过一切自动判断。
+  ///
+  /// 为什么不塞进 [metadataJson]：重导/在线更新词典时 metadata 会被包内 index.json
+  /// **整体重建**（见 `dictionary_import_manager` 的两处 persistDictionary），
+  /// 用户的手动指定会随之蒸发。它属于「用户设置」，必须与 hidden/collapsedLanguages
+  /// 走同一条继承通道（`preservedSettings`）。
+  TextColumn get languageOverride => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {name};
 }
@@ -407,6 +422,16 @@ class EpubBooks extends Table {
   TextColumn get tocJson => text().nullable()();
   TextColumn get sourceMetadata => text().nullable()();
   IntColumn get importedAt => integer()();
+
+  /// v87：书的内容语言（BCP-47，如 `ja` / `zh-Hant`），决定正文用哪条字体链。
+  ///
+  /// 导入时从 EPUB OPF 的 `dc:language` 回填（`EpubParser` 早就解析出来了，此前
+  /// 无人消费）；用户可在书籍设置里手动改，手动值压过自动值。null = 既没解析到
+  /// 也没指定 → 阅读器不写 `font-family`，保持浏览器默认（不猜，见
+  /// `content_font_chain.dart`）。
+  ///
+  /// 与 [mangaReadingMode] 同款「null=自动 / 非 null=用户覆盖」语义。
+  TextColumn get language => text().nullable()();
 
   /// 书身份格式判别（PDF 阅读器 Phase 1）：`'epub'`（默认，含 EPUB / TextToEpub /
   /// 有声书配对壳）、`'pdf'`（pdfrx 渲染的真 PDF）或 `'manga'`（漫画 OCR，第三种书）。
@@ -554,6 +579,14 @@ class VideoBooks extends Table {
   TextColumn get bookUid => text()();
   TextColumn get title => text()();
   TextColumn get videoPath => text()();
+
+  /// v88：视频的内容语言（BCP-47），决定字幕用哪条字体链。
+  ///
+  /// null = 未指定 → 字幕层退回「当前字幕轨的 language」，再没有则用历史兜底链。
+  /// 非 null 为用户手动指定，压过字幕轨声明——外挂 SRT 基本都不带语言标记，
+  /// 而内嵌轨的 language 又常被打包者写错，所以必须留一个用户说了算的入口。
+  TextColumn get language => text().nullable()();
+
   TextColumn get subtitleSource => text().nullable()();
 
   /// 副字幕源（TODO-857 视频双字幕 Path A）：与 [subtitleSource] 同款四态编码
@@ -945,6 +978,20 @@ class MediaCollections extends Table {
   /// 主字幕调轴（v86 前行为）。无损迁移：nullable 无 default → 旧库既有行全 NULL =
   /// 行为与旧版一致（Never break userspace）。
   IntColumn get secondarySubtitleDelayMs => integer().nullable()();
+
+  /// 系列级默认字幕语言代码（`ja` / `en` …，schema v91）。与 [subtitleDelayMs]
+  /// 同款「系列共享、nullable」语义：非 NULL 时覆盖合集内每一集的字幕语言选择。
+  /// **NULL = 没人配过 → 消费方回退视频内容语言链（`resolveContentLanguage`），
+  /// 绝不是 ja**——语言未知不许替用户猜。无损迁移：nullable 无 default → 旧库既有
+  /// 行全 NULL = 行为与旧版一致（Never break userspace）。
+  TextColumn get subtitleLanguage => text().nullable()();
+
+  /// 系列级偏好的字幕版本组键（schema v91）。值是
+  /// `subtitle_version_groups.dart` 的分组键（一个字符串），合集内多版本字幕
+  /// （不同字幕组/发布版本）时优先选这一组。与 [subtitleLanguage] 同款语义：
+  /// **NULL = 没人配过**（消费方走默认选轨），非 NULL 覆盖每集。无损迁移：
+  /// nullable 无 default → 旧库既有行全 NULL = 行为与旧版一致。
+  TextColumn get subtitleReleaseGroup => text().nullable()();
 }
 
 // ── media_collection_items (合集成员引用 = Jellyfin LinkedChildren) ────
@@ -1198,7 +1245,7 @@ class RevealedImages extends Table {
 // 为什么不是复用 [VideoScrapeMeta]：那张表主键是 bookUid、外键指向 VideoBooks，
 // 承载的是**单集**资料。而简介 / 评分 / 放送日期 / 标签本质属于「一部作品」——
 // 在统一合集模型里，「一部作品」就是合集，不是它的第 7 集。合集此前没有元数据
-// 宿主，于是合集刮削只能下一张海报就结束（`cover_match_dialog` 的合集分支），
+// 宿主，于是旧合集封面匹配流程只能下一张海报就结束，
 // 用户看到的详情页除了标题和进度什么都没有。
 //
 // 也不是往 [MediaCollections] 加十来个可空列：与 VideoScrapeMeta 同一条理由——
@@ -1939,6 +1986,53 @@ abstract final class VideoDownloadJobStage {
   static const String scrape = 'scrape';
 }
 
+/// 网页播放器自动制卡队列（schema v93）。
+///
+/// 观看网页流媒体（Netflix 等）时点「制卡」**只入队**：观看档可能是硬件 DRM 的 4K 窗口宿主
+/// 模式（画面不可捕获、无本地媒体源），录不了句子音频/截不了帧。之后在可捕获的 1080p
+/// 内置档里按队列逐句重放：seek → 播 → WASAPI loopback 录音 + 截帧 → 走沉浸制卡引擎落卡。
+/// 每行冻结点击那一刻的 Anki 字段 JSON（词典释义等）与 cue 时间窗；重放只补媒体。
+///
+/// 设备本地：含站点页 URL、本机重放状态，不进备份/同步（与 `video_download_jobs` 同列
+/// 于 backup 的 device-local 清单）。
+@DataClassName('WebMineQueueRow')
+class WebMineQueue extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// 书架流媒体书 uid（`video/stream/…`）。
+  TextColumn get bookUid => text()();
+
+  /// 站点内视频身份（`fushiVideoKey`，如 Netflix 的 `/watch/<id>`）与页面 URL（重放时导航）。
+  TextColumn get videoKey => text()();
+  TextColumn get href => text()();
+
+  IntColumn get cueStartMs => integer()();
+  IntColumn get cueEndMs => integer()();
+
+  /// 制卡句（多句合并后的整句）与锚点 cue 原句。
+  TextColumn get sentence => text()();
+  TextColumn get cueSentence => text().nullable()();
+
+  /// 弹窗点击时的 Anki 字段映射（`Map<String,String>` JSON），重放时原样喂引擎。
+  TextColumn get fieldsJson => text()();
+
+  /// [WebMineQueueStatus]。
+  TextColumn get status => text().withDefault(const Constant('pending'))();
+  TextColumn get error => text().nullable()();
+
+  /// 成功后的 Anki note id（AnkiDroid 后端恒 null）。
+  IntColumn get noteId => integer().nullable()();
+
+  IntColumn get createdAt => integer()();
+  IntColumn get minedAt => integer().nullable()();
+}
+
+abstract final class WebMineQueueStatus {
+  static const String pending = 'pending';
+  static const String done = 'done';
+  static const String failed = 'failed';
+}
+
 @DataClassName('VideoDownloadJobRow')
 class VideoDownloadJobs extends Table {
   /// 调用方生成的稳定任务 id；不能用自增 id 充当跨崩溃幂等键。
@@ -1965,6 +2059,11 @@ class VideoDownloadJobs extends Table {
   IntColumn get year => integer().nullable()();
   IntColumn get season => integer().nullable()();
   TextColumn get coverUrl => text().nullable()();
+
+  /// v94：发现页完整身份快照（`VideoMediaReference` 的 JSON：原名/别名/全部
+  /// 外部 id）。修 BUG-2003——修前入队只留显示名 + 单 provider id，刮削与字幕
+  /// 在下游各自从残渣重新猜身份。NULL = 旧任务/手动任务，走旧行为。
+  TextColumn get identityJson => text().nullable()();
 
   /// 后端连接身份与去重身份。敏感凭据不进数据库；backendProfileId 是下载配置档
   /// 的字符串身份，不是 Hibiki 用户 Profile，故没有 FK 到 Profiles。
@@ -2140,6 +2239,10 @@ class VideoDownloadSubscriptions extends Table {
   IntColumn get season => integer().nullable()();
   TextColumn get coverUrl => text().nullable()();
 
+  /// v94：发现页完整身份快照（同 `video_download_jobs.identity_json`）。订阅
+  /// 轮询用它恢复原名/别名做多名字资源搜索兜底。NULL = 旧订阅，走旧行为。
+  TextColumn get identityJson => text().nullable()();
+
   /// searchQuery + filterJson 是来源无关的订阅选择快照；filterJson 禁止放凭据。
   TextColumn get searchQuery => text()();
   TextColumn get filterJson => text().withDefault(const Constant('{}'))();
@@ -2263,6 +2366,12 @@ class Galgames extends Table {
 
   /// 游戏可执行文件绝对路径（hook 注入目标）。
   TextColumn get exePath => text()();
+
+  /// v88：游戏文本的内容语言（BCP-47），决定 hook 文本浮窗与查词卡用哪条字体链。
+  ///
+  /// hook 出来的文本没有任何语言声明可读，所以这一列只能由用户指定；null = 未知。
+  /// 不要因为「galgame 多半是日文」就默认 ja——那是全局假设，本仓不做这种假设。
+  TextColumn get language => text().nullable()();
 
   /// 工作目录（默认 exe 所在目录）。也是游玩计时判定「候选进程组」的范围依据。
   TextColumn get workdir => text()();
@@ -2391,6 +2500,89 @@ class GalgameSessions extends Table {
   TextColumn get dateKey => text()();
 }
 
+// ── study_segments ──────────────────────────────────────────────────
+/// v92（统计域根本性重构）：学习时长 / 字数 / 页数的**唯一事实表**。
+///
+/// 此前同一段学习被并行写进 `reading_statistics` / `video_watch_statistics`（日聚合）、
+/// `reading_hourly_logs` / `video_hourly_logs`（小时桶）、`activity_events`（session
+/// 行）三种投影，全部 `+=` 累加、无任何幂等键——任何写入路径 flush 两次（dispose 与
+/// 进程退出并发、生命周期抖动、hot restart）日汇总就永久翻倍，且身份用 title
+/// （同名书 / 裸集号 `S01E01` 跨作品互串）。本表照 [GalgameSessions] 的模式重做：
+/// 一段一行、按稳定媒体身份键控、**绝对值 upsert**。
+///
+/// 写法只有一种：[FushiDatabase.upsertStudySegment] —— `INSERT ... ON CONFLICT(uid)
+/// DO UPDATE` 写**绝对值**。写入方持有自己当前打开段的内存累计器，每个 tick 把绝对值
+/// 写回同一 [uid]；重复 flush = 同值覆盖 = no-op，重复计数在数据结构上不可能。
+///
+/// 段不跨本地小时边界（写入方在边界换新 uid），故 [dateKey] / [hour] 精确，小时图与
+/// 日总量从同一批行派生、永不打架。一个 3 小时 session ≈ 3~4 行，年级数据千行量级，
+/// 读取端直接 GROUP BY。
+///
+/// 旧四张投影表**冻结为 legacy**：v92 起本地写入面永不再写（守卫测试钉死），读取侧
+/// 把 legacy 行（v92 前日期）与本表并集（时间上不相交，零合成零双计）。不迁移旧数据：
+/// 日汇总行没 hour、小时行没 title，任何合成都得丢一维或双计。
+@DataClassName('StudySegmentRow')
+class StudySegments extends Table {
+  /// 写入方生成的幂等键（32 位 hex，见 [FushiDatabase.newStudySegmentUid]）。
+  TextColumn get uid => text()();
+
+  /// 产生本段的设备（`sync_device_id` 偏好，见 [FushiDatabase.getOrCreateStudyDeviceId]）。
+  /// 同步 v2 按 (uid) 并集时它是 provenance，不进任何合并判据。
+  TextColumn get deviceId => text()();
+
+  /// 'book' | 'video' | 'game'（[ActivityMediaKind.dbValue] 同值域）。
+  TextColumn get mediaKind => text()();
+
+  /// 稳定媒体身份：书=bookKey，视频=bookUid，游戏=galgames.id。**永不用 title**。
+  TextColumn get mediaKey => text()();
+
+  /// 写入面：'epub' | 'pdf' | 'manga'（[BookFormat.dbValue]），非书面 ''。
+  TextColumn get format => text().withDefault(const Constant(''))();
+
+  /// 展示快照：库表 join 不到（媒体已删）时回退显示，不参与任何分组。
+  TextColumn get title => text()();
+
+  /// 段起始 / 结束毫秒戳。[endAt] 随 tick 前进；`endAt - startAt >= durationMs`。
+  IntColumn get startAt => integer()();
+  IntColumn get endAt => integer()();
+
+  /// [startAt] 的本地 `yyyy-MM-dd` 与小时（段不跨小时边界，故两者精确）。
+  TextColumn get dateKey => text()();
+  IntColumn get hour => integer()();
+
+  /// 活跃时长（毫秒，已过前台 / 播放态 / 空闲 / 断档守卫）。
+  IntColumn get durationMs => integer().withDefault(const Constant(0))();
+
+  /// 字数（书 / 漫画 OCR = 实义字符；视频 = 字幕字符；游戏 = hook 文本）。
+  IntColumn get chars => integer().withDefault(const Constant(0))();
+
+  /// 页数（漫画 / PDF；EPUB 恒 0）。
+  IntColumn get pages => integer().withDefault(const Constant(0))();
+
+  /// 最后写入毫秒戳：同步 v2 同 uid 取大者（LWW），墓碑仲裁用它与 deletedAt 比。
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {uid};
+}
+
+// ── study_segment_tombstones ────────────────────────────────────────
+/// v92：按**媒体身份**的统计删除墓碑，取代按 (title, sourceType) 的
+/// [StatisticsTombstones]（那张只为 legacy 表的 title 粒度 wire 服务，冻结）。
+///
+/// 删某媒体统计 = 删其全部 [StudySegments] + 立本碑。仲裁：段 `updatedAt > deletedAt`
+/// → 段胜（用户又读了 = 自然复活，不用显式清碑）；否则墓碑胜（同步 / 备份里的旧段不
+/// 复活）。
+@DataClassName('StudySegmentTombstoneRow')
+class StudySegmentTombstones extends Table {
+  TextColumn get mediaKind => text()();
+  TextColumn get mediaKey => text()();
+  IntColumn get deletedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {mediaKind, mediaKey};
+}
+
 // （v79：galgame_tag_mappings 已并入 [TagAssignments]。与游戏**元数据标签**
 // （bgm/vndb 刮削字符串，存 [GalgameSources].dataJson + [Galgames].customDataJson）
 // 仍是两条正交轴，刻意不合并：元数据标签是外部事实、动辄上百个且随刮削变动，
@@ -2489,4 +2681,51 @@ class MangaTrustedSigners extends Table {
 
   @override
   Set<Column> get primaryKey => {fingerprint};
+}
+
+// ── manga_chapter_states ────────────────────────────────────────────
+/// 在线漫画的**每章**阅读状态。
+///
+/// 为什么必须是独立一张表：`ReaderPositions.bookUid` 是 `unique()`——一本书恒一
+/// 条位置。在线漫画一本书下有几十上百章，那一条位置只能表达「当前章读到第几
+/// 页」，于是换章时只能把它清零（v88 前 `MihonLibraryService.selectChapter` 正是
+/// 这么做的），上一章的位置永久丢失，也无从知道哪些章读过。
+///
+/// 本表把「章」升成一等实体，同时解决三件事：
+/// - **已读标记**：`readAt != null` = 这章读完了（作品页章节列表据此分实心/空心）。
+/// - **换章不丢进度**：切回旧章时从 `lastPage` 恢复，不再归零。
+/// - **继续阅读**：作品页据 `updatedAt` 最大的一条决定「继续阅读」落到哪章哪页。
+///
+/// 身份用 `(bookUid, chapterKey)`：`bookUid` 对齐 v82 起的书稳定身份（与
+/// `ReaderPositions` 同族，改名不丢位置）；`chapterKey` 是**源内**章节身份
+/// （Mihon = `chapter.url`，Aidoku = `chapter['key']`）。源刷新后章节顺序和索引
+/// 都可能变，但 key 稳定——所以这里刻意不存 index。
+///
+/// 刻意无 FK：与 `ReaderPositions` 同样跨书族，孤儿防线在应用层
+/// （`deleteEpubBook` 显式清理）。
+@DataClassName('MangaChapterStateRow')
+class MangaChapterStates extends Table {
+  /// 书稳定身份，= `EpubBooks.uid`（与 `ReaderPositions.bookUid` 同一族）。
+  TextColumn get bookUid => text()();
+
+  /// 源内章节身份。Mihon = `chapter.url`；Aidoku = `chapter['key']`。
+  TextColumn get chapterKey => text()();
+
+  /// 该章读到的 0-based 页码。
+  IntColumn get lastPage => integer().withDefault(const Constant(0))();
+
+  /// webtoon 页内分数（千分比 0..1000），与 `ReaderPositions.charOffset` 同编码。
+  /// -1 = 无精确偏移。
+  IntColumn get lastFraction => integer().withDefault(const Constant(-1))();
+
+  /// 该章总页数；拉过页表才知道，未知为 NULL。
+  IntColumn get pageCount => integer().nullable()();
+
+  /// 读完时刻（毫秒）。NULL = 未读完（可能读了一部分，看 [lastPage]）。
+  IntColumn get readAt => integer().nullable()();
+
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {bookUid, chapterKey};
 }

@@ -110,6 +110,7 @@ abstract interface class GoogleLensMangaOcrRunner {
     String? volumeTitle,
     int startPage,
     bool onlyMissing,
+    required String language,
   });
 
   Future<void> clearCache(String imageDirPath);
@@ -127,6 +128,7 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
     String? volumeTitle,
     int startPage = 0,
     bool onlyMissing = true,
+    required String language,
   }) {
     late final StreamController<MangaOcrVolumeEvent> controller;
     final OcrCancelToken cancelToken = OcrCancelToken();
@@ -138,6 +140,7 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
               imageDirPath: imageDirPath,
               startPage: startPage,
               onlyMissing: onlyMissing,
+              language: language,
               cancelToken: cancelToken,
               onProgress: (int done, int total) {
                 if (!controller.isClosed) {
@@ -180,6 +183,7 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
     required String imageDirPath,
     required int startPage,
     required bool onlyMissing,
+    required String language,
     required OcrCancelToken cancelToken,
     required void Function(int done, int total) onProgress,
   }) async {
@@ -194,7 +198,7 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
       p.join(
         outputDirectory.path,
         kMangaOcrPagesCacheDirName,
-        kGoogleLensEngineSignature,
+        googleLensEngineSignature(language),
       ),
     );
     final GoogleLensPageCache cache = GoogleLensPageCache(cacheDirectory);
@@ -221,7 +225,8 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
         results[pageIndex] = existingPage;
       } else {
         final MokuroImage? cached = await cache.read(pageIndex, page);
-        results[pageIndex] = cached ?? await _recognizePage(page);
+        results[pageIndex] =
+            cached ?? await _recognizePage(page, language: language);
         if (cached == null) {
           await cache.write(pageIndex, page, results[pageIndex]!);
         }
@@ -232,9 +237,9 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
     cancelToken.throwIfCancelled();
     final MokuroPayload payload = MokuroPayload(
       images: results.cast<MokuroImage>(),
-      ocr: const MangaOcrMetadata(
+      ocr: MangaOcrMetadata(
         engine: 'google_lens',
-        engineSignature: kGoogleLensEngineSignature,
+        engineSignature: googleLensEngineSignature(language),
         schemaVersion: 1,
       ),
     );
@@ -243,11 +248,15 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
     return output.path;
   }
 
-  Future<MokuroImage> _recognizePage(MangaOcrPageFile page) async {
+  Future<MokuroImage> _recognizePage(
+    MangaOcrPageFile page, {
+    required String language,
+  }) async {
     final Uint8List source = await page.file.readAsBytes();
     return recognizePageBytes(
       source,
       relativeUrl: page.relativeUrl,
+      language: language,
     );
   }
 
@@ -260,6 +269,7 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
   Future<MokuroImage> recognizePageBytes(
     Uint8List source, {
     required String relativeUrl,
+    required String language,
   }) async {
     final GoogleLensPreparedImage prepared =
         await Isolate.run<GoogleLensPreparedImage>(
@@ -269,6 +279,7 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
       imageData: prepared.data,
       width: prepared.width,
       height: prepared.height,
+      language: language,
     );
     final Uint8List response = await _transport.post(request);
     final List<GoogleLensParagraph> paragraphs;
@@ -276,6 +287,7 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
       // 归一化坐标与 rotation 都是相对**送检图**的，宽高比必须取 prepared 尺寸。
       paragraphs = GoogleLensProtocol.decodeResponse(
         response,
+        language: language,
         imageWidth: prepared.width,
         imageHeight: prepared.height,
       );
@@ -321,15 +333,16 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
 
   @override
   Future<void> clearCache(String imageDirPath) async {
-    final String path = p.join(
-      imageDirPath,
-      kMangaOcrOutDirName,
-      kMangaOcrPagesCacheDirName,
-      kGoogleLensEngineSignature,
+    // 签名带语言后缀，同一卷可能存在多种语言的 Lens 缓存目录，全部清掉。
+    final Directory root = Directory(
+      p.join(imageDirPath, kMangaOcrOutDirName, kMangaOcrPagesCacheDirName),
     );
-    final Directory directory = Directory(path);
-    if (directory.existsSync()) {
-      await directory.delete(recursive: true);
+    if (!root.existsSync()) return;
+    await for (final FileSystemEntity entry in root.list()) {
+      if (entry is Directory &&
+          p.basename(entry.path).startsWith(kGoogleLensEngineSignaturePrefix)) {
+        await entry.delete(recursive: true);
+      }
     }
   }
 
@@ -353,7 +366,8 @@ class GoogleLensPageCache {
     await directory.create(recursive: true);
     final Map<String, Object?> manifest = <String, Object?>{
       'schema_version': 1,
-      'engine_signature': kGoogleLensEngineSignature,
+      // 缓存目录名就是完整签名（前缀 + 语言），直接取目录名保证二者恒一致。
+      'engine_signature': p.basename(directory.path),
       'pages': <Map<String, Object?>>[
         for (final MangaOcrPageFile page in pages) _fingerprint(page),
       ],

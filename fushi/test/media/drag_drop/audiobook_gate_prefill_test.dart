@@ -36,12 +36,12 @@ void main() {
       // 造一本「已有完整有声书」的记录：audioPaths 非空 → _existingHasAudio 为真。
       // 无需真实文件，闸门判定只看记录字段。
       const String bookKey = 'gate-prefill-book';
-      final Audiobook existing = Audiobook()
-        ..bookKey = bookKey
-        ..audioPaths = <String>['/persisted/$bookKey/a.mp3']
-        ..alignmentFormat = 'srt'
-        ..alignmentPath = '/persisted/$bookKey/align.srt';
-      await repo.saveAudiobook(existing);
+      await repo.replaceAlignment(
+          bookKey: bookKey,
+          format: 'srt',
+          path: '/persisted/$bookKey/align.srt');
+      await repo.replaceAudio(
+          bookKey: bookKey, audioPaths: <String>['/persisted/$bookKey/a.mp3']);
 
       // 自检：确实是已有完整有声书（否则测试不锁闸门，等同没断言）。
       final Audiobook? loaded = await repo.findByBookKey(bookKey);

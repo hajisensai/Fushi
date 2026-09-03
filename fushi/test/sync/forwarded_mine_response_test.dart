@@ -27,6 +27,13 @@ class _FakeMining implements FushiRemoteMiningService {
       false;
 
   @override
+  Future<bool> probeMediaMaintenance() async => false;
+
+  @override
+  Future<AnkiMediaDedupReport?> runMediaDedup({bool dryRun = true}) async =>
+      null;
+
+  @override
   Future<RemoteMineResult> mineForwarded(ForwardedMinePayload payload) async {
     forwarded = payload;
     return result;

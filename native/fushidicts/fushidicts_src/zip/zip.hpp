@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "../memory/memory.hpp"
@@ -29,12 +30,39 @@ struct ZipEntry {
 constexpr uint64_t kMaxUncompressedEntryBytes = 1024ull * 1024ull * 1024ull;
 bool zip_uncompressed_size_in_range(const ZipEntry& e);
 
+// BUG-2053: entries macOS adds to an archive that are not part of the payload
+// and must not decide its layout. Compressing a folder in Finder emits an
+// AppleDouble resource-fork tree next to it ("__MACOSX/MyDict/._index.json"),
+// which turns a wrapped dictionary into a two-top-level-directory archive that
+// compute_root_prefix() then refuses to strip; Finder also drops a ".DS_Store"
+// beside the folder, a root-level *file* that ends the peel outright. Both are
+// fixed, Apple-owned names, so they are skipped by name -- this is deliberately
+// NOT a general "ignore junk" heuristic. They are also excluded from the media
+// files, since a resource fork is not dictionary media.
+bool is_packaging_noise(std::string_view name);
+
 struct Zip {
   memory::mapped_file file;
   std::vector<ZipEntry> entries;
 
+  // The single top-level directory every entry sits under, with its trailing
+  // '/' (e.g. "MyDict/"), or "" when entries already live at the archive root.
+  // Re-zipping an extracted dictionary is the common way to gain such a layer,
+  // and every consumer here addresses entries by their *dictionary-relative*
+  // name ("index.json", "term_bank_1.json", "img/a.png"). Stripping the layer
+  // once, here, keeps that the only name shape the rest of the importer sees.
+  // Computed by open(); see compute_root_prefix() in zip.cpp for the rules.
+  std::string root_prefix;
+
   ~Zip();
   bool open(const std::string& path);
+
+  // Entry name with root_prefix removed — the name callers should match on.
+  // Out-of-range index yields "".
+  std::string_view logical_name(int index) const;
+
+  // Matches against logical_name(), so "index.json" finds both a root-level
+  // entry and one nested under a single wrapper directory.
   int find(const std::string& name) const;
   std::string read(int index) const;
 

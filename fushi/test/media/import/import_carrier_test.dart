@@ -56,6 +56,12 @@ void main() {
       expect(classify('/m/vol1.cbz'), ImportCarrier.mangaArchive);
     });
 
+    test('.cbr / .rar / .cb7 → mangaArchive，无需读包', () {
+      expect(classify('/m/vol1.cbr'), ImportCarrier.mangaArchive);
+      expect(classify('/m/vol1.rar'), ImportCarrier.mangaArchive);
+      expect(classify('/m/vol1.cb7'), ImportCarrier.mangaArchive);
+    });
+
     test('图片型 .zip → mangaArchive', () {
       expect(
         classify('/m/vol1.zip', imageArchives: <String>{'/m/vol1.zip'}),
@@ -156,10 +162,13 @@ void main() {
   });
 
   group('读包判据只在真正二义时才被调用', () {
-    test('.cbz / .mokuro / .pdf / .txt 都不触发读包', () {
+    test('.cbz / .cbr / .rar / .cb7 / .mokuro / .pdf / .txt 都不触发读包', () {
       final List<String> probed = <String>[];
       for (final String path in <String>[
         '/x/a.cbz',
+        '/x/a.cbr',
+        '/x/a.rar',
+        '/x/a.cb7',
         '/x/a.mokuro',
         '/x/a.pdf',
         '/x/a.txt',
@@ -214,6 +223,8 @@ void main() {
   group('大小写与路径分隔符', () {
     test('扩展名大小写不敏感', () {
       expect(classify('/m/VOL1.CBZ'), ImportCarrier.mangaArchive);
+      expect(classify('/m/VOL1.RAR'), ImportCarrier.mangaArchive);
+      expect(classify('/m/VOL1.CBR'), ImportCarrier.mangaArchive);
       expect(classify('/m/VOL1.MOKURO'), ImportCarrier.mangaMokuro);
       expect(classify('/b/DOC.PDF'), ImportCarrier.pdf);
     });
@@ -291,6 +302,50 @@ void main() {
             reason: '缓存只省重复提问，绝不改答案');
       }
       expect(r.probes.length, 1);
+    });
+  });
+
+  group('PDF 能进漫画库，但不因此变成「漫画载体」', () {
+    test('.pdf 的载体身份仍是 pdf（书籍框据此走 PdfImporter）', () {
+      expect(classify('/b/scan.pdf'), ImportCarrier.pdf);
+      expect(classify('/b/SCAN.PDF'), ImportCarrier.pdf,
+          reason: '扩展名判定大小写不敏感');
+    });
+
+    test('pdf.isManga 恒 false：书籍框绝不把 PDF 转交漫画流程', () {
+      // 这一条是防回归的核心。把 pdf 并进 isManga 会让「从书架选一份 PDF」
+      // 弹出「这是漫画」并被转走——那是把一个本来正确的行为改坏。
+      expect(ImportCarrier.pdf.isManga, isFalse);
+    });
+
+    test('pdf.isMangaCapable 为 true：漫画框收得下它', () {
+      expect(ImportCarrier.pdf.isMangaCapable, isTrue);
+    });
+
+    test('isMangaCapable 只多放行 pdf，不放行 epub/text', () {
+      expect(ImportCarrier.epub.isMangaCapable, isFalse);
+      expect(ImportCarrier.text.isMangaCapable, isFalse);
+      for (final ImportCarrier c in ImportCarrier.values) {
+        if (c.isManga) {
+          expect(c.isMangaCapable, isTrue,
+              reason: '四种漫画载体必须全部仍被漫画框收下：$c');
+        }
+      }
+    });
+
+    test('.pdf 在整卷载体扩展名真相源里（选择器/批量枚举同源）', () {
+      expect(kMangaCarrierFileExtensions, contains('.pdf'));
+    });
+
+    test('装着一批 PDF 的目录 → mangaBatchFolder（逐卷导）', () {
+      expect(
+        classify(
+          '/m/series',
+          directories: <String>{'/m/series'},
+          carrierFileDirs: <String, int>{'/m/series': 12},
+        ),
+        ImportCarrier.mangaBatchFolder,
+      );
     });
   });
 }

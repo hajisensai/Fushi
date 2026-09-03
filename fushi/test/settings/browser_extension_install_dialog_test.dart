@@ -24,7 +24,7 @@ void main() {
     WidgetTester tester, {
     required bool serverEnabled,
     required bool hasToken,
-    String path = r'/home/u/.local/share/hibiki/hibiki-browser-extension',
+    String path = r'/home/u/.local/share/fushi/fushi-browser-extension',
     bool portConflict = false,
   }) async {
     await tester.pumpWidget(
@@ -46,7 +46,7 @@ void main() {
 
   testWidgets('renders numbered steps + chrome://extensions + path',
       (WidgetTester tester) async {
-    const String path = r'/data/hibiki/hibiki-browser-extension';
+    const String path = r'/data/fushi/fushi-browser-extension';
     await pumpSteps(tester, serverEnabled: true, hasToken: true, path: path);
 
     // 分步编号 1..5 都在。

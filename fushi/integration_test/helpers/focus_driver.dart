@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -99,8 +100,24 @@ class FocusDriver {
       // 语义；纯焦点状态操作，非坐标点击。不能用 unfocus——那会把遍历重置回
       // scope 起点，若首个 tab stop 恰是该输入框就永远乒乓）。
       if (key == LogicalKeyboardKey.tab &&
+          defaultTargetPlatform == TargetPlatform.macOS &&
           identical(focused, before) &&
           _insideEditableText(focused)) {
+        focused?.nextFocus();
+        await tester.pump(_settle);
+        if (reached()) return true;
+      }
+      // macOS native platform views (notably WKWebView) can release their OS
+      // focus without restoring a concrete Flutter node. The framework then
+      // exposes only the route's FocusScope as primaryFocus, and a synthetic
+      // Tab has no leaf from which to resume traversal. Advance that scope by
+      // the same semantic next-focus operation so the first real control is
+      // reachable again; _focusOwns deliberately never treats the scope itself
+      // as success.
+      if (key == LogicalKeyboardKey.tab &&
+          defaultTargetPlatform == TargetPlatform.macOS &&
+          identical(focused, before) &&
+          focused is FocusScopeNode) {
         focused?.nextFocus();
         await tester.pump(_settle);
         if (reached()) return true;

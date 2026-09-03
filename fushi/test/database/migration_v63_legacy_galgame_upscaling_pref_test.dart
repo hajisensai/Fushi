@@ -126,8 +126,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 86);
-    expect(db.schemaVersion, 86);
+    expect(version.read<int>('user_version'), 94);
+    expect(db.schemaVersion, 94);
 
     final List<QueryRow> preferences = await db
         .customSelect(
@@ -138,7 +138,10 @@ void main() {
       preferences.map((QueryRow row) =>
           (row.read<String>('key'), row.read<String>('value'))),
       <(String, String)>[
-        ('download_custom_proxy', 's:127.0.0.1:7890'),
+        // seed 里的 `download_custom_proxy` 走完阶梯后被 v90 删除：下载域独立
+        // 代理已并入全局项，没有 `download_network_proxy_mode = custom` 行的
+        // 孤立地址不归并（见 migration_v90_download_proxy_merge_test.dart）。
+        // 本用例的重点仍是 v63 只删自己那一个键、不动别的。
         ('theme', 's:dark'),
       ],
     );
@@ -203,12 +206,19 @@ void main() {
         final String after = schemaAfter[entry.key] ?? '';
         expect(after, contains('japanese_locale_mode'),
             reason: 'v75 必须给 galgames 加出该列');
-        final String stripped = after.replaceAll(
-          RegExp(r',\s*"?japanese_locale_mode"?[^,)]*'),
-          '',
-        );
+        // v87（内容语言字体链）同样在这条阶梯上合法 ADD COLUMN language。
+        expect(after, contains('language'), reason: 'v87 必须给 galgames 加出该列');
+        final String stripped = after
+            .replaceAll(
+              RegExp(r',\s*"?japanese_locale_mode"?[^,)]*'),
+              '',
+            )
+            .replaceAll(
+              RegExp(r',\s*"language"[^,)]*'),
+              '',
+            );
         expect(stripped, entry.value,
-            reason: '除 v75 那一列外，galgames 的形状必须逐字节不变'
+            reason: '除 v75 / v87 那两列外，galgames 的形状必须逐字节不变'
                 '（v63 只能删行，不得 ALTER/DROP/rebuild）');
         continue;
       }
@@ -265,11 +275,19 @@ void main() {
         'video_download_subscription_items',
         'tag_assignments',
         'media_open_history',
+        'manga_chapter_states',
+        'study_segments',
+        'study_segment_tombstones',
+        'web_mine_queue',
       },
       reason: '除 v64 的 collection_scrape_meta、v65 的 Mihon 五表、v66 的 '
           'collection_relations、v68 的 media_images、v77 视频来源刮削表、'
-          'v78 下载流水线表、v79 的 tag_assignments（五张标签映射表合一）与 '
-          'v80 的 media_open_history（取代 media_items）外，升级不得新增任何表',
+          'v78 下载流水线表、v79 的 tag_assignments（五张标签映射表合一）、'
+          'v80 的 media_open_history（取代 media_items）、v89 的 '
+          'manga_chapter_states（漫画每章阅读状态）与 v92 的 study_segments / '
+          'study_segment_tombstones（学习统计唯一事实表 + 按身份墓碑）、'
+          'v93 的 web_mine_queue（网页播放器自动制卡队列）外，'
+          '升级不得新增任何表',
     );
   });
 
@@ -287,7 +305,7 @@ void main() {
     expect(await db.getPref('theme'), 's:dark');
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 86);
+    expect(version.read<int>('user_version'), 94);
   });
 
   test(
@@ -318,7 +336,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 86);
+      expect(probe.select('PRAGMA user_version').first.values.first, 94);
       expect(
         probe.select(
           'SELECT 1 FROM profile_settings '

@@ -13,6 +13,19 @@ void main() {
       expect(r.audios, isEmpty);
     });
 
+    test('pdf goes to books（导入框认它，拖放也必须认）', () {
+      // 此前只有对话框的文件选择器白名单含 pdf，这份拖放白名单漏了，于是同一份
+      // PDF「按钮能导、拖进去说不支持」。
+      final r = classifyDroppedFiles([r'C:\x\scan.pdf']);
+      expect(r.books, [r'C:\x\scan.pdf']);
+      expect(r.unknown, isEmpty);
+      expect(r.mangas, isEmpty, reason: 'PDF 不是漫画载体，不得抢在 books 之前');
+    });
+
+    test('kDragBookExtensions 含 pdf', () {
+      expect(kDragBookExtensions, contains('pdf'));
+    });
+
     test('text formats go to books', () {
       final r = classifyDroppedFiles(['/x/a.txt', '/x/b.md']);
       expect(r.books, ['/x/a.txt', '/x/b.md']);

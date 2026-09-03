@@ -51,6 +51,20 @@ void main() {
     });
   });
 
+  group('allVideoThumbnailTargetWidthForWidth', () {
+    test('桌面宽屏使用更大的 16:9 缩略图目标宽', () {
+      expect(allVideoThumbnailTargetWidthForWidth(1991), 320);
+      expect(allVideoThumbnailTargetWidthForWidth(1440), 300);
+      expect(allVideoThumbnailTargetWidthForWidth(1100), 280);
+      expect(allVideoThumbnailTargetWidthForWidth(800), 240);
+    });
+
+    test('手机保持双列所需的紧凑目标宽', () {
+      expect(allVideoThumbnailTargetWidthForWidth(599), 150);
+      expect(allVideoThumbnailTargetWidthForWidth(360), 150);
+    });
+  });
+
   group('videoHeroHeightForWidth', () {
     test('21:9 影院比例，夹在 [220, 420]', () {
       expect(videoHeroHeightForWidth(840), closeTo(360, 0.001));
@@ -312,6 +326,86 @@ void main() {
       expect(nextEpisodeAfterLatestPlayed(members), 2);
     });
 
+    // 用户实报：一集从头看完再退出，合集就从「继续观看」消失（只剩「下一集」行）；
+    // 中途退出的反而在。本行改走 Next-Up 口径：看完 → 下一集。
+    test('继续观看：最近播放那集已看完 → 落到紧接的下一集', () {
+      const List<VideoSeriesPlaybackState> members = <VideoSeriesPlaybackState>[
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 300,
+          positionMs: 0,
+          completed: true,
+        ),
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 0,
+          positionMs: 0,
+          completed: false,
+        ),
+      ];
+      expect(continueWatchingSeriesIndex(members), 1);
+    });
+
+    test('继续观看：最近播放那集没看完 → 停在它自己', () {
+      const List<VideoSeriesPlaybackState> members = <VideoSeriesPlaybackState>[
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 100,
+          positionMs: 0,
+          completed: true,
+        ),
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 300,
+          positionMs: 60000,
+          completed: false,
+        ),
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 0,
+          positionMs: 0,
+          completed: false,
+        ),
+      ];
+      expect(continueWatchingSeriesIndex(members), 1);
+    });
+
+    test('继续观看：整部看完（最后一集已完成）→ 不进本行', () {
+      const List<VideoSeriesPlaybackState> members = <VideoSeriesPlaybackState>[
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 100,
+          positionMs: 0,
+          completed: true,
+        ),
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 300,
+          positionMs: 0,
+          completed: true,
+        ),
+      ];
+      expect(continueWatchingSeriesIndex(members), isNull);
+    });
+
+    test('继续观看：无痕迹 / 位置拖回 0 且未完成 → 不进本行', () {
+      const List<VideoSeriesPlaybackState> untouched =
+          <VideoSeriesPlaybackState>[
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 0,
+          positionMs: 0,
+          completed: false,
+        ),
+      ];
+      expect(continueWatchingSeriesIndex(untouched), isNull);
+      const List<VideoSeriesPlaybackState> rewound = <VideoSeriesPlaybackState>[
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 300,
+          positionMs: 0,
+          completed: false,
+        ),
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 0,
+          positionMs: 0,
+          completed: false,
+        ),
+      ];
+      expect(continueWatchingSeriesIndex(rewound), isNull);
+    });
+
     test('最后一集之后没有下一集', () {
       const List<VideoSeriesPlaybackState> members = <VideoSeriesPlaybackState>[
         VideoSeriesPlaybackState(
@@ -321,6 +415,64 @@ void main() {
         ),
       ];
       expect(nextEpisodeAfterLatestPlayed(members), isNull);
+    });
+  });
+
+  // BUG-1731：锚点输入的「最近观看时刻」必须能回落行级 lastPlayedAt（远端回灌
+  // 只写它、不产生本机统计行），否则子端看完的集数推不动 host 的下一集。
+  group('effectiveWatchedAtMs (BUG-1731)', () {
+    test('无统计行时回落行级 lastPlayedAt', () {
+      expect(
+        effectiveWatchedAtMs(statsWatchedAtMs: 0, lastPlayedAt: 5000),
+        5000,
+      );
+    });
+
+    test('统计行较新时仍以统计为准（本机行为不变）', () {
+      expect(
+        effectiveWatchedAtMs(statsWatchedAtMs: 9000, lastPlayedAt: 5000),
+        9000,
+      );
+    });
+
+    test('行级时刻较新时取行级（远端后来又看了该集）', () {
+      expect(
+        effectiveWatchedAtMs(statsWatchedAtMs: 5000, lastPlayedAt: 9000),
+        9000,
+      );
+    });
+
+    test('两者皆无 → 0（没看过）', () {
+      expect(
+        effectiveWatchedAtMs(statsWatchedAtMs: 0, lastPlayedAt: null),
+        0,
+      );
+    });
+
+    test('端到端形状：13 集本机看过、14/15 只有远端回灌时刻 → 锚点 15、下一集 16', () {
+      // 16 集合集：index 12 = 第 13 集（本机统计 t13），index 13/14 = 第 14/15 集
+      // （无统计行，只有远端回灌的 lastPlayedAt，t14 < t15），其余没看过。
+      const int t13 = 1000;
+      const int t14 = 2000;
+      const int t15 = 3000;
+      final List<VideoSeriesPlaybackState> members = <VideoSeriesPlaybackState>[
+        for (int i = 0; i < 16; i++)
+          VideoSeriesPlaybackState(
+            lastWatchedAtMs: switch (i) {
+              12 =>
+                effectiveWatchedAtMs(statsWatchedAtMs: t13, lastPlayedAt: t13),
+              13 =>
+                effectiveWatchedAtMs(statsWatchedAtMs: 0, lastPlayedAt: t14),
+              14 =>
+                effectiveWatchedAtMs(statsWatchedAtMs: 0, lastPlayedAt: t15),
+              _ => 0,
+            },
+            positionMs: i == 12 || i == 13 || i == 14 ? 1200000 : 0,
+            completed: false,
+          ),
+      ];
+      expect(latestPlayedSeriesIndex(members), 14, reason: '锚点 = 第 15 集');
+      expect(nextEpisodeAfterLatestPlayed(members), 15, reason: '下一集 = 第 16 集');
     });
   });
 }

@@ -4,8 +4,9 @@
 ///
 /// 布局契约：CBZ 顶层是一个 `<卷名>/` 目录（内放页图），`.mokuro` 的 `img_path`
 /// 与之一致（`<卷名>/001.jpg`）。解包目录 T 下得到 `T/<卷名>/*.jpg`，`.mokuro`
-/// 落 `T/<卷名>.mokuro`——正好满足 [mangaImportCanImport] 的「同级一层子目录有图」
-/// 判定，零转换直通现有导入链。
+/// 落 `T/<卷名>.mokuro`——即 mokuro 的惯例 A（`img_path` 自带卷名前缀，相对
+/// `.mokuro` 同级解析），[resolveMokuroPageRoot] 的首个候选就命中，零转换直通
+/// 现有导入链。
 ///
 /// 下载范式照 `manga_ocr_model_downloader.dart`（Range 续传 / 416 / 非 206 处理），
 /// 但 CBZ 无预知长度：完整性校验放宽为「zip 中央目录可解析」，不做 expectedBytes
@@ -192,8 +193,8 @@ class MokuroMoeVolumeDownloader {
         ),
       );
 
-      // 4. `.mokuro` 放到解包目录同级（`T/<卷名>.mokuro` 配 `T/<卷名>/` 图片目录，
-      // 满足 mangaImportCanImport 的同级判定；img_path 相对 T 解析）。
+      // 4. `.mokuro` 放到解包目录同级（`T/<卷名>.mokuro` 配 `T/<卷名>/` 图片目录；
+      // img_path 自带 `<卷名>/` 前缀，故页图根解析成「就地」，相对 T 解析）。
       _checkCancelled();
       final File placedMokuro =
           File(p.join(extractDir.path, '$volumeName.mokuro'));

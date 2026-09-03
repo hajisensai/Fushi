@@ -34,10 +34,22 @@ String _read(String path) {
 /// 断言比的是本地化 getter 本身，与具体语言无关。
 void main() {
   group('applyAppProxy: 进程级代理配置必须能到达不传参的调用方（BUG-1348）', () {
+    // 本组走「只有手填地址、没有已解析模式」那条兜底路径，故模式读取器必须显式置成
+    // 未解析：它是进程级全局，同一进程里任何一个 `PreferencesRepository.loadFromDb()`
+    // 都会把它接到真偏好上（偏好一读出来就接，见 app_proxy.dart 的
+    // kProxyModeUnresolved 文档），只存不设就等于让结论跟着用例顺序走。
     late String Function() savedReader;
+    late String Function() savedModeReader;
 
-    setUp(() => savedReader = appUserProxyReader);
-    tearDown(() => appUserProxyReader = savedReader);
+    setUp(() {
+      savedReader = appUserProxyReader;
+      savedModeReader = appUserProxyModeReader;
+      appUserProxyModeReader = () => kProxyModeUnresolved;
+    });
+    tearDown(() {
+      appUserProxyReader = savedReader;
+      appUserProxyModeReader = savedModeReader;
+    });
 
     test('省略 userProxy 时取 appUserProxyReader —— 同步层正是这么调的', () async {
       appUserProxyReader = () => '127.0.0.1:7890';
@@ -234,16 +246,21 @@ void main() {
 
   group('共享 sync client：并发首调不得各建一个（BUG-1348 收口）', () {
     late String Function() savedReader;
+    late String Function() savedModeReader;
 
     setUp(() {
       savedReader = appUserProxyReader;
+      savedModeReader = appUserProxyModeReader;
       // 短路掉 reg query / scutil / gsettings，测的是缓存语义不是平台探测。
+      // 模式同样要显式钉住（理由见上一组注释）。
+      appUserProxyModeReader = () => kProxyModeUnresolved;
       appUserProxyReader = () => '127.0.0.1:7890';
       resetSyncHttpClient();
     });
     tearDown(() {
       resetSyncHttpClient();
       appUserProxyReader = savedReader;
+      appUserProxyModeReader = savedModeReader;
     });
 
     test('两个后端同时首调，拿到同一个 client', () async {
@@ -272,13 +289,29 @@ void main() {
   });
 }
 
-/// 只捕获 `findProxy` 的最小 [HttpClient] 桩。
+/// 只捕获 `findProxy` / `authenticateProxy` 的最小 [HttpClient] 桩。
 ///
 /// 不用真 `HttpClient()`：flutter_test 默认装了 `HttpOverrides`，`HttpClient()` 拿到的是
 /// 框架的 mock，`findProxy` 未必存得住——那样测的就是 mock 的行为而不是本仓代码的。
+///
+/// BUG-1980 起 `applyAppProxy` 在手动模式下还会装 `authenticateProxy`（407 challenge
+/// 时注入凭据）。桩必须把用到的成员都模型化：`noSuchMethod` 走的是 `Object` 的实现、
+/// 对任何未显式实现的成员直接抛，漏一个就是整组用例 error 而不是断言失败。
 class _CapturingHttpClient implements HttpClient {
   @override
   String Function(Uri url)? findProxy;
+
+  @override
+  Future<bool> Function(String host, int port, String scheme, String? realm)?
+      authenticateProxy;
+
+  @override
+  void addProxyCredentials(
+    String host,
+    int port,
+    String realm,
+    HttpClientCredentials credentials,
+  ) {}
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

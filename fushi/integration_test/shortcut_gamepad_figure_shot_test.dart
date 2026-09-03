@@ -19,7 +19,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/shortcuts/visual/gamepad_layout_view.dart';
@@ -77,7 +77,7 @@ void main() {
     };
 
     try {
-      app.main();
+      await launchFushiTestApp();
       expect(await waitForHome(tester), isTrue, reason: '主页应在 90s 内出现');
       await tester.pump(const Duration(seconds: 2));
 

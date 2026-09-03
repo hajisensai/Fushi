@@ -35,9 +35,10 @@ import '../../pages/video_fushi_page_source_corpus.dart';
 /// BUG-853 回归守卫：日语输入法（Windows 微软 IME）激活时，视频页按空格无法暂停。
 ///
 /// 根因：IME 激活时裸 Space 的 `logicalKey` 被引擎改写成 [LogicalKeyboardKey.process]，
-/// 视频页两条空格「播放/暂停」路径（media_kit controls 的 `keyboardShortcuts` 与页级
-/// `_withPageSpaceOverride`）都用 `SingleActivator(LogicalKeyboardKey.space)` 匹配
-/// `logicalKey`，故 IME 下按空格既不被内层消费、也不被页级兜底消费 → 按了没反应。
+/// 视频页当时的两条空格「播放/暂停」路径（media_kit controls 的 `keyboardShortcuts` 与
+/// 页级 `_withPageSpaceOverride`，两者均已删除，见下）都用
+/// `SingleActivator(LogicalKeyboardKey.space)` 匹配 `logicalKey`，故 IME 下按空格既不被
+/// 内层消费、也不被页级兜底消费 → 按了没反应。
 /// 修复与阅读器 TODO-847（[resolveReaderSpaceOverride]）同范式：在最外层 Focus 的
 /// onKeyEvent 里按**物理键**还原 Space 语义（[isVideoImeSpacePlayPause]）。
 ///
@@ -143,7 +144,8 @@ void main() {
     expect(body, contains('focusedEditableText()'),
         reason: '必须在文本框 composing 时关闭回退');
     expect(body, contains('_runWhenImmersiveAllowsShortcuts'),
-        reason: '必须经沉浸锁快捷键门控（与页级 _withPageSpaceOverride 同语义）');
+        reason: '必须经沉浸锁快捷键门控（与主通道 _handleVideoKeyboardShortcut 走的 '
+            'videoActionCallbacks 执行体同语义）');
     expect(body, contains('controller.playOrPause()'),
         reason: 'IME 空格应触发播放/暂停');
 

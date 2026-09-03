@@ -151,6 +151,7 @@ class DictionaryRepository {
       metadata: metadata,
       hiddenLanguages: hiddenLanguages,
       collapsedLanguages: collapsedLanguages,
+      languageOverride: r.languageOverride,
     );
   }
 
@@ -163,6 +164,7 @@ class DictionaryRepository {
       metadataJson: Value(jsonEncode(d.metadata)),
       hiddenLanguagesJson: Value(jsonEncode(d.hiddenLanguages)),
       collapsedLanguagesJson: Value(jsonEncode(d.collapsedLanguages)),
+      languageOverride: Value(d.languageOverride),
     );
   }
 
@@ -205,6 +207,18 @@ class DictionaryRepository {
     for (final dictionary in newDictionaries) {
       await _db.upsertDictionaryMeta(_dictionaryToCompanion(dictionary));
     }
+  }
+
+  /// 用户手动指定这本词典的内容语言（BCP-47），null / 空串 = 恢复「自动」。
+  ///
+  /// 写完必须清查词结果缓存：词典语言只影响渲染（字体链 + structured content 的
+  /// lang 标注），但那份 HTML 是缓存过的——不清的话用户改了语言要等缓存自然过期
+  /// 才看得到变化（与 toggleDictionaryHidden 同款理由，BUG-171/BUG-177）。
+  void setDictionaryLanguageOverride(Dictionary dictionary, String? language) {
+    final String trimmed = language?.trim() ?? '';
+    dictionary.languageOverride = trimmed.isEmpty ? null : trimmed;
+    persistDictionary(dictionary);
+    clearDictionaryResultsCache();
   }
 
   void toggleDictionaryCollapsed(Dictionary dictionary, String languageCode) {
@@ -269,6 +283,11 @@ class DictionaryRepository {
     clearDictionaryResultsCache();
     await _db.deleteDictionaryMeta(name);
   }
+
+  /// 按当前 cache 重建 native 引擎（= 触发 `onCacheRebuild`）。
+  /// 给 [deleteDictionaryDirectory] 当 `reloadEngine`：删目录前要把引擎清空以释放
+  /// mmap view，删完得把剩下的词典装回去（BUG-1756）。
+  void rebuildEngine() => _onCacheRebuild?.call();
 
   void removeDictionaryFromCache(String name) {
     _dictionariesCache.removeWhere((d) => d.name == name);

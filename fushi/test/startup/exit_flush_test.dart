@@ -126,7 +126,10 @@ void main() {
 
       final int flushAt =
           main.indexOf('ExitFlushRegistry.instance.flushAll()', hookAt);
-      final int closeAt = main.indexOf('appModel.closeDatabase()', hookAt);
+      // 锚点用 `.closeDatabase(`：退出路径要传 pipelineDrainTimeout，调用被
+      // formatter 拆成多行，`appModel.closeDatabase()` 这个字面量已不存在
+      // （indexOf 返回 -1，下面的顺序断言会变成拿 -1 比大小）。
+      final int closeAt = main.indexOf('.closeDatabase(', hookAt);
       final int exitAt =
           main.indexOf('platformServices.lifecycle.exitApp()', hookAt);
 
@@ -134,6 +137,7 @@ void main() {
           reason: '退出前必须 flush 活跃页面 pending 进度/统计');
       expect(closeAt, greaterThan(flushAt),
           reason: 'flush 之后 close database 做 WAL checkpoint 排空 pending 写');
+      expect(closeAt, isNot(-1), reason: '锚点失配会让上面的顺序断言恒真');
       expect(exitAt, greaterThan(closeAt),
           reason: '数据落库（flush+closeDB）之后才 exit(0)——顺序即数据完整性保证');
     });

@@ -40,9 +40,19 @@ void main() {
       expect(session.contains('onLookupText: _onFloatingLyricLookup'), isTrue,
           reason:
               'Session wires the strip lookup tap to the installed handler.');
+      // 签名带 wordRect：native 回传被点字的屏幕矩形，查词卡据此锚定到那个词而不是
+      // 鼠标位置。丢了这个参数卡片会退回跟着光标飘。
+      //
+      // 用正则而不是整段字面量 contains：这个签名在源码里是折行写的，行宽一变
+      // 字面量就不匹配，守卫会红在「格式变了」而不是「参数没了」。
       expect(
-          reader.contains('_lookupFromFloatingLyric(String text, int index)'),
-          isTrue);
+        RegExp(r'_lookupFromFloatingLyric\(\s*String text,\s*int index,\s*'
+                r'Rect\? wordRect\)')
+            .hasMatch(reader),
+        isTrue,
+        reason: 'Lookup handler must carry the tapped word rect so the card '
+            'anchors to the word instead of the mouse.',
+      );
       // The lookup must reuse the existing segmenter + popup path.
       expect(reader.contains('wordFromIndex('), isTrue);
       expect(reader.contains('searchDictionaryResult('), isTrue);

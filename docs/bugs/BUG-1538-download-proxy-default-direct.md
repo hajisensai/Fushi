@@ -28,3 +28,4 @@
 - **备注**：i18n `download_network_proxy_auto_hint` 文案描述的是 auto 档行为本身，
   仍准确，未改 key。「发现除外」落地解释：发现页与刮削走 `app_proxy`
   （env > 系统代理 > 直连，用户手填优先）且来源聚合恒定；下载域默认直连。
+- **备注（2026-08-29 已被取代）**：用户要求「把代理统一到系统里、各处代理配置删除、默认自动、P2P 传输除外始终直连」。下载域独立三态（`download_network_proxy_mode` / `download_custom_proxy`）连同「发现网络」设置分区一并删除，下载发现链路改走全应用统一出口（`AppModel.createDownloadHttpClient` → `createAppHttpIoClient`，默认自动 = 手填 > env > 系统代理 > 直连）；存量偏好由 schema v89 迁移归并进 `update_custom_proxy` 后删除。本条「默认 direct」的产品决定就此反转，守卫改为 `fushi/test/torrent/download_http_client_proxy_test.dart` + `fushi/test/database/migration_v89_download_proxy_merge_test.dart`。torrent payload 流量本就不经代理，本次未变。

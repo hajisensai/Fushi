@@ -42,7 +42,7 @@ class MihonExtensionInspection {
   const MihonExtensionInspection({
     required this.packageName,
     required this.name,
-    required this.versionCode,
+    required this.apkVersionCode,
     required this.versionName,
     required this.libVersion,
     required this.signerSha256,
@@ -53,7 +53,7 @@ class MihonExtensionInspection {
       MihonExtensionInspection(
         packageName: json['packageName']! as String,
         name: json['name']! as String,
-        versionCode: (json['versionCode']! as num).toInt(),
+        apkVersionCode: (json['versionCode']! as num).toInt(),
         versionName: json['versionName']! as String,
         libVersion: json['libVersion']! as String,
         signerSha256: json['signerSha256']! as String,
@@ -64,7 +64,19 @@ class MihonExtensionInspection {
 
   final String packageName;
   final String name;
-  final int versionCode;
+
+  /// APK manifest 的 `android:versionCode`。名字只标**出处**（来自 APK），不标尺度。
+  ///
+  /// 与仓库索引的 [MihonAvailableExtension.extensionVersionCode] **是同一个量**，
+  /// 可直接比较。BUG-1996 一度写成「两侧不同尺度、索引是裸的 69、APK 是 104069」，
+  /// 那是错的：keiyoushi 两侧都由 gradle 的同一个 `androidVersionCodeProvider`
+  /// 产出（`ExtensionPlugin.kt` 同时喂给 APK output 与索引元数据），实测
+  /// `repo/index.pb` 的 field 5 与 APK 的 `android:versionCode` 逐字相同：
+  /// SamuraiScan 两侧都是 104069、Manga Mura 两侧都是 104005。
+  ///
+  /// DB 里 `manga_extensions.versionCode` 存的也是它（列名冻结），所以身份门、
+  /// 降级门 `DOWNGRADE_REJECTED`、「有更新」角标三处两侧同量、自洽。
+  final int apkVersionCode;
   final String versionName;
   final String libVersion;
   final String signerSha256;
@@ -146,6 +158,26 @@ class MihonManga {
   final String? genre;
   final int status;
   final bool initialized;
+
+  /// 把一次详情拉取的结果合回本条目。
+  ///
+  /// Mihon 的详情解析返回的是**增量**：`url` 是条目身份，扩展从不
+  /// 回填，上游官方 app 也从不读它。两个后端各自暴露了这个假设：
+  /// Android 原生桥直接读 `lateinit url` 而崩（RUNTIME_FAILURE），桌面
+  /// sidecar 则把它静默读成空串，导致接下来拉章节用空 url（BUG-1767）。
+  ///
+  /// 所以身份统一在这里收敛：新值只能覆盖元数据，覆盖不了 `url`。
+  MihonManga mergedWithDetails(MihonManga update) => MihonManga(
+        url: url,
+        title: update.title.isNotEmpty ? update.title : title,
+        coverUrl: update.coverUrl ?? coverUrl,
+        artist: update.artist ?? artist,
+        author: update.author ?? author,
+        description: update.description ?? description,
+        genre: update.genre ?? genre,
+        status: update.status != 0 ? update.status : status,
+        initialized: update.initialized || initialized,
+      );
 
   Map<String, Object?> toJson() => <String, Object?>{
         'url': url,
@@ -410,11 +442,30 @@ class MihonPreference {
 }
 
 class MihonRuntimeException implements Exception {
-  const MihonRuntimeException(this.code, this.message, {this.cause});
+  const MihonRuntimeException(
+    this.code,
+    this.message, {
+    this.cause,
+    this.details,
+  });
 
   final String code;
   final String message;
   final Object? cause;
+
+  /// 原生侧回传的完整堆栈（`PlatformException.details`）。
+  ///
+  /// 不进 [toString]：它会被直接渲染到页面上，几 KB 堆栈堆到
+  /// 屏幕上反而把真正可操作的 [message] 顶掉。堆栈只走诊断对话框
+  /// 和日志（见 [diagnostics]）。
+  final String? details;
+
+  /// 诊断通道（可复制对话框 / 日志）用的全文。
+  String get diagnostics {
+    final String? stack = details;
+    if (stack == null || stack.isEmpty) return toString();
+    return '${toString()}\n\n$stack';
+  }
 
   @override
   String toString() => 'MihonRuntimeException($code): $message';

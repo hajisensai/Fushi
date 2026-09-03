@@ -225,7 +225,7 @@ class _PreviewRuntime extends Fake implements MihonRuntime {
       MihonExtensionInspection(
         packageName: 'org.example.fixture',
         name: 'Fixture extension',
-        versionCode: versionCode,
+        apkVersionCode: versionCode,
         versionName: '1.6.$versionCode',
         libVersion: '1.6',
         signerSha256: 'aabb',

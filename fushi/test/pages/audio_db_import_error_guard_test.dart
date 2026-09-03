@@ -37,7 +37,12 @@ void main() {
       expect(schema.contains('result?.files.single.path'), isFalse,
           reason: 'files.single 会在 0/多文件时抛 StateError 被吞，必须移除');
       expect(schema, contains("'AudioSourcesDialog.pickLocalDb'"));
-      expect(schema, contains(r'count=${result.files.length}'));
+      // BUG-1667：选文件下沉到共享的 pickRealFilePathDetailed 后，条目数不再从
+      // `result.files.length` 现取，而由 PickedFileWithoutPathException 带出来。
+      // 断言意图不变——「选了文件但平台没给 path」必须记进诊断且显式失败，
+      // 绝不能与「用户取消」一样静默返回。
+      expect(schema, contains('on PickedFileWithoutPathException'));
+      expect(schema, contains(r'count=${e.count}'));
       expect(schema, contains('throw Exception('));
     });
 

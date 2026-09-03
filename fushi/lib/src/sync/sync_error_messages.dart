@@ -12,6 +12,12 @@ String? _friendlyClause(Object error) {
   if (error is SyncAuthError && error.kind != SyncAuthFailureKind.credentials) {
     return friendlySyncAuthFailure(error.kind, error.serverReason);
   }
+  // BUG-1693：互联对端一台都探不到——最常见成因是对端没运行 Fushi / 设备离线，
+  // 不是本机网络故障。按类型分派（此前它落到兜底、裸英文
+  // 'No reachable Fushi server address' 直接上屏）。
+  if (error is SyncPeerUnreachableError) {
+    return t.sync_err_peer_unreachable;
+  }
   final String msg =
       error is SyncBackendError ? error.message : _rawMessage(error);
   final String l = msg.toLowerCase();

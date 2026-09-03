@@ -1,8 +1,13 @@
 import 'package:path/path.dart' as p;
 
-/// 书籍扩展名（不带点，小写）。= epub + TextToEpub.supportedExtensions。
+/// 书籍扩展名（不带点，小写）。= epub + pdf + TextToEpub.supportedExtensions。
+///
+/// `pdf` 在列：PDF 是 `EpubBooks.format` 的三种书身份之一（`ImportCarrier.pdf` →
+/// `PdfImporter`），导入对话框的文件选择器一直认它。此前只有这份拖放白名单漏了，
+/// 于是「按钮能导、拖进去说不支持」——同一件东西两个入口两种答案（用户实报）。
 const Set<String> kDragBookExtensions = <String>{
   'epub',
+  'pdf',
   'txt',
   'html',
   'htm',
@@ -72,7 +77,8 @@ const Set<String> kDragDictionaryExtensions = <String>{
 /// 漫画扩展名（不带点，小写）：**明确**的漫画载体，落点表面一见即知。
 ///
 /// - `mokuro`：mokuro v0.2+ 的 OCR 结果文件（+ 同级图片），走 `MangaImporter`；
-/// - `cbz`：图片压缩包，走 `MangaArchiveImporter`。
+/// - `cbz`：ZIP 图片压缩包，走 `MangaArchiveImporter`；
+/// - `cbr` / `rar` / `cb7`：7-Zip 解包的图片压缩包（Windows 发布包自带）。
 ///
 /// 不含 `zip`：它同时是词典包扩展名，光看扩展名分不出「一包页图」还是 Yomitan
 /// 词典包，故走 [kDragImageArchiveProbeExtensions] + `isImageArchive` 注入判据。
@@ -85,6 +91,9 @@ const Set<String> kDragDictionaryExtensions = <String>{
 const Set<String> kDragMangaExtensions = <String>{
   'mokuro',
   'cbz',
+  'cbr',
+  'rar',
+  'cb7',
 };
 
 /// 需要**真读包内容**才能定性的容器扩展名（不带点，小写）。
@@ -104,11 +113,8 @@ const Set<String> kDragImageArchiveProbeExtensions = <String>{
 /// `archive` 包不解 RAR，故 cbr/cb7/rar 无法导入。单列一类只为一件事：让落点
 /// 给出明确的「不支持」提示，而不是归进 unknown 后静默无反应（用户实报「拖进去
 /// 一点反应都没有」）。
-const Set<String> kDragUnsupportedMangaExtensions = <String>{
-  'cbr',
-  'cb7',
-  'rar',
-};
+/// Superseded by the supported set above; RAR/CBR/CB7 no longer enter here.
+const Set<String> kDragUnsupportedMangaExtensions = <String>{};
 
 /// 音频扩展名（不带点，小写）。镜像 AudiobookStorage.audioExtensions（守卫测试钉死同步）。
 const Set<String> kDragAudioExtensions = <String>{
@@ -140,6 +146,7 @@ class DroppedFiles {
     required this.unknown,
     this.mangas = const <String>[],
     this.unsupportedMangas = const <String>[],
+    this.directories = const <String>[],
   });
 
   final List<String> books;
@@ -149,14 +156,22 @@ class DroppedFiles {
   final List<String> playlists;
   final List<String> dictionaries;
 
-  /// 漫画载体：`.mokuro` / `.cbz`，以及被 [classifyDroppedFiles] 的 `isDirectory`
-  /// 谓词判定为**目录**的路径（整目录页图导入，manga_importer 的
-  /// `importFromImageFolder` 路径）。
+  /// 漫画载体：`.mokuro` / `.cbz` / `.cbr` / `.rar` / `.cb7`，以及被
+  /// [classifyDroppedFiles] 的 `isDirectory` 谓词判定为**目录**的路径
+  /// （整目录页图导入，manga_importer 的 `importFromImageFolder` 路径）。
   final List<String> mangas;
 
   /// 认得出是漫画包但导入器不支持的（cbr/cb7/rar，见
   /// [kDragUnsupportedMangaExtensions]）——落点据此给明确提示而非静默。
   final List<String> unsupportedMangas;
+
+  /// 被 `isDirectory` 谓词判定为**目录**的路径，作为**事实**原样记录。
+  ///
+  /// 与 [mangas] 是交叠而非互斥的：目录同时也会进 [mangas]，保住书架/漫画库既有的
+  /// 「整目录页图导入一本漫画」。分开记的理由是——「这是个目录」是事实，「目录算漫画」
+  /// 是判断，判断必须留给知道落点表面的 [decideDropIntent] 去做。此前事实被就地
+  /// 编码成判断，于是视频页永远拿不到「用户拖进来的是个文件夹」这个信息。
+  final List<String> directories;
 
   /// 拖入的可导入网络流 URL（http(s)，非文件路径）。浏览器地址栏/链接拖进来时，
   /// 原生（Windows CFSTR_INETURLW / macOS public.url / Linux text/uri-list）把 URL
@@ -220,6 +235,7 @@ DroppedFiles classifyDroppedFiles(
   final List<String> urls = <String>[];
   final List<String> mangas = <String>[];
   final List<String> unsupportedMangas = <String>[];
+  final List<String> directories = <String>[];
   final List<String> unknown = <String>[];
 
   for (final String path in paths) {
@@ -232,6 +248,7 @@ DroppedFiles classifyDroppedFiles(
     // 目录（漫画页图文件夹）：整目录导入一本漫画。放在扩展名分类之前——目录名
     // 带点时（如 `第01巻.v2`）会被 p.extension 当成扩展名而误分类。
     if (isDirectory != null && isDirectory(path)) {
+      directories.add(path);
       mangas.add(path);
       continue;
     }
@@ -292,6 +309,7 @@ DroppedFiles classifyDroppedFiles(
     urls: urls,
     mangas: mangas,
     unsupportedMangas: unsupportedMangas,
+    directories: directories,
     unknown: unknown,
   );
 }
@@ -307,4 +325,19 @@ List<String> classifyDroppedFilesForDictionary(List<String> paths) {
       .where((String pth) => p.extension(pth).toLowerCase() == '.css')
       .toList();
   return <String>[...files.dictionaries, ...cssAttachments];
+}
+
+/// 给一个视频挑配对字幕：按**文件名主干**（不含扩展名）大小写不敏感匹配，
+/// 找不到返回 null。
+///
+/// 多个视频一起拖入时用它逐个配对——把同一条字幕挂到每一集比不挂更糟。单个视频
+/// 的历史行为（直接取第一条字幕）由调用方保留，不走这里。
+String? subtitleForVideoByStem(String videoPath, List<String> subtitles) {
+  final String stem = p.basenameWithoutExtension(videoPath).toLowerCase();
+  for (final String subtitle in subtitles) {
+    if (p.basenameWithoutExtension(subtitle).toLowerCase() == stem) {
+      return subtitle;
+    }
+  }
+  return null;
 }

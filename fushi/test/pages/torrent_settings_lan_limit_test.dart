@@ -15,7 +15,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
-import 'package:fushi/src/media/torrent/download_network_proxy.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/utils.dart';
@@ -48,10 +47,6 @@ class _TestAppModel extends AppModel {
   Future<void> setQbConnectionConfig(QbConnectionConfig? config) async {
     if (config != null) _config = config;
   }
-
-  @override
-  DownloadNetworkProxyConfig get downloadNetworkProxyConfig =>
-      const DownloadNetworkProxyConfig();
 }
 
 Widget _harness(QbConnectionConfig config) {
@@ -105,6 +100,24 @@ void main() {
       'Does not apply within your local network; LAN transfers always run at '
       'full speed.';
   const String included = 'Also applies within your local network.';
+
+  testWidgets('tracker subscription controls show the configured default URL',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1000, 3200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_harness(_embedded));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Tracker subscription'), findsOneWidget);
+    expect(
+      find.text('Automatically add subscription trackers to new downloads'),
+      findsOneWidget,
+    );
+    expect(find.text('https://cf.trackerslist.com/best.txt'), findsOneWidget);
+    expect(find.text('Fetch trackers'), findsOneWidget);
+  });
 
   testWidgets('开关关闭时说明写「不作用于局域网」', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1000, 2400);

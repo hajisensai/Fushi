@@ -94,11 +94,50 @@ class AppPaths {
     final Directory documents = await _resolveDocumentsRoot();
     final Directory support = await _resolveSupportRoot();
     final Directory temp = await _resolveTempRoot();
+    await _ensureResolvedRootsExist(documents, support);
     return AppPaths._(
       documentsRoot: documents,
       supportRoot: support,
       tempRoot: temp,
     );
+  }
+
+  /// BUG-1899：启动期确保两个根**目录真实存在**。
+  ///
+  /// 默认分支天然满足这个契约：`getApplicationSupportDirectory()` 内部就
+  /// `create(recursive: true)`，平台 `Documents` 更是一定在。而 dataRoot 分支
+  /// （[rootsForDataRoot] 派生的 `<dataRoot>/documents` 与 `<dataRoot>/support`）
+  /// **只是纯路径拼接**——安装向导的首启引导只 `create` 了 dataRoot 本身
+  /// （`installer_data_root_bootstrap.dart`），两个子目录从来没人建。
+  ///
+  /// 后果：sqlite 打开 `<dataRoot>/support/fushi.db` 拿到 SQLITE_CANTOPEN(14)，
+  /// 被恢复阶梯当成「侧车/损坏」，用户看到「Database damaged」并被引导去恢复备份或
+  /// 清空数据——而磁盘上什么都没坏，只是少一个空目录。设置页换位置那条路不受影响，
+  /// 因为 `DataRootMigrator` 搬文件时顺手把目录建了；只有「安装向导选自定义位置 →
+  /// 首启」这一条路会踩。
+  ///
+  /// 修的是**两条分支的契约不一致**，不是给 DB 打补丁：`resolve()` 承诺返回可用的根，
+  /// 就必须两条分支都可用。
+  ///
+  /// 只在 `resolve()` 里做，**绝不下沉进 `_resolve*Root()`**——那三个函数会被运行时的
+  /// 静态便捷层高频调用，其中包括 widget 测试里的封面/资源解析；`testWidgets` 跑在
+  /// FakeAsync 上，真实文件 IO 的 future 在那里永不完成（同 `_ensureDocumentsLayoutDecided`
+  /// 的理由）。
+  static Future<void> _ensureResolvedRootsExist(
+    Directory documents,
+    Directory support,
+  ) async {
+    for (final Directory dir in <Directory>[documents, support]) {
+      try {
+        if (await dir.exists()) continue;
+        await dir.create(recursive: true);
+      } on FileSystemException {
+        // 建不出来 = 这个位置真的不可用（无权限 / 只读介质 / 盘断链）。这与「配置的
+        // 数据位置不可达」是同一件事，走同一个可操作的逃生屏（重试 / 本次用默认位置），
+        // 而不是让它继续走到 DB 层被误报成「数据库损坏」。
+        throw DataRootUnavailableException(configuredPath: dir.path);
+      }
+    }
   }
 
   // ---- 单一真相源：三个根的解析函数（实例 + 静态层共用） ----
@@ -112,10 +151,10 @@ class AppPaths {
 
   /// `<dataRoot>` 下「内容/书库」子目录名。dataRoot 覆盖生效时，documentsRoot 落这里，
   /// 不与 supportRoot 子目录冲突（两根共一个 dataRoot 时仍各有独立子树）。
-  static const String _dataRootDocumentsChild = 'documents';
+  static const String dataRootDocumentsChild = 'documents';
 
   /// `<dataRoot>` 下「数据库/支持」子目录名。
-  static const String _dataRootSupportChild = 'support';
+  static const String dataRootSupportChild = 'support';
 
   /// BUG-1115：**默认** documents 根的布局键（SharedPreferences，与 [dataRootPrefKey]
   /// 同一通道，DB 打开前可读）。值只有两个：[documentsLayoutFlat] /
@@ -258,7 +297,7 @@ class AppPaths {
     if (test != null) return test;
     final Directory? dataRoot = await _resolveDataRoot();
     if (dataRoot != null) {
-      return Directory(p.join(dataRoot.path, _dataRootDocumentsChild));
+      return Directory(p.join(dataRoot.path, dataRootDocumentsChild));
     }
     return _resolveDefaultDocumentsRoot();
   }
@@ -316,6 +355,22 @@ class AppPaths {
     return prefs?.getString(documentsLayoutPrefKey) != documentsLayoutNested;
   }
 
+  /// BUG-1905：documents 根是不是 **Fushi 专属容器**（而不是与用户共享的平台
+  /// `Documents` 文件夹）。
+  ///
+  /// 存储统计要据此决定敢不敢把「白名单之外的顶层项」也算进占用：
+  /// * 自定义 dataRoot（`<dataRoot>/documents`）→ 专属；
+  /// * nested 默认布局（`<Documents>/Fushi/data`）→ 专属；
+  /// * **移动端**：沙盒里的 `Documents` 本就是 app 私有，扁平与否都专属
+  ///   （iOS 系统设置的「文稿与数据」算的也正是整个沙盒）；
+  /// * 只有**桌面的老扁平安装**为 false —— 那里 documents 根就是用户自己的文档
+  ///   文件夹，把用户的文件算成 app 占用既不准也吓人。
+  static Future<bool> documentsRootIsFushiOwned() async {
+    if (!isDesktopPlatform) return true;
+    if (await _resolveDataRoot() != null) return true;
+    return !await _useLegacyFlatDocumentsRoot();
+  }
+
   /// 判定 + 固化默认布局。**唯一做探测 IO 的地方**，只由 [resolve] 在启动期调用一次；
   /// 已判定（本进程判过 / prefs 有锚点）就直接沿用，不再探测。
   ///
@@ -335,7 +390,7 @@ class AppPaths {
       _legacyFlatDocumentsRoot = stored == documentsLayoutFlat;
       return;
     }
-    final bool flat = await _existingInstallHasDatabase();
+    final bool flat = await existingInstallHasDatabase();
     _legacyFlatDocumentsRoot = flat;
     // 固化锚点（best-effort）。写失败只意味着下次启动再探一次，不改变本次结果——而下次
     // 探测的判据（主库文件是否存在）此时只会更成立，不会翻转成新布局。
@@ -346,6 +401,12 @@ class AppPaths {
       debugPrint('AppPaths: 固化 documents 布局失败（下次启动重新判定）: $e');
     }
   }
+
+  /// 供 [resolve] 之前就需要「默认位置」定义的调用方（安装器数据根引导）提前定下容器名，
+  /// 保证它算出的 [defaultLocationDocumentsRoot] 与紧随其后的 [resolve] 是同一个；
+  /// [resolve] 内再调时已判定、直接沿用。
+  static Future<void> ensureDocumentsContainerDecided() async =>
+      _ensureDocumentsContainerDecided(await _prefsOrNull());
 
   /// Fushi 改名（Phase 3）：判定 + 固化 nested 容器名。锚点已有直接用；没有则
   /// 探测一次：老容器 `<Documents>/Hibiki/data` 存在而新容器不存在 → 存量安装，
@@ -391,7 +452,7 @@ class AppPaths {
   /// 兼看旧文件名 [legacyHibikiDatabaseFileName]：老安装在第一次开库前主库还叫
   /// `hibiki.db`（开库时 fushi_core 才做一次性改名），这里若只认新名会把老安装
   /// 误判成全新安装。
-  static Future<bool> _existingInstallHasDatabase() async {
+  static Future<bool> existingInstallHasDatabase() async {
     try {
       final Directory support = await _resolveSupportRoot();
       Future<bool> dbExists(String fileName) =>
@@ -419,7 +480,7 @@ class AppPaths {
     if (test != null) return test;
     final Directory? dataRoot = await _resolveDataRoot();
     if (dataRoot != null) {
-      return Directory(p.join(dataRoot.path, _dataRootSupportChild));
+      return Directory(p.join(dataRoot.path, dataRootSupportChild));
     }
     return getApplicationSupportDirectory();
   }
@@ -435,8 +496,8 @@ class AppPaths {
     String dataRootPath,
   ) =>
       (
-        Directory(p.join(dataRootPath, _dataRootDocumentsChild)),
-        Directory(p.join(dataRootPath, _dataRootSupportChild)),
+        Directory(p.join(dataRootPath, dataRootDocumentsChild)),
+        Directory(p.join(dataRootPath, dataRootSupportChild)),
       );
 
   /// TODO-1226：documents 根顶层**属于 Hibiki 的目录名全集**（数据根迁移白名单）。
@@ -458,6 +519,7 @@ class AppPaths {
   ///  - `game_covers` —— [gameCoversDirectory]；游戏库封面（手选 + 自动获取）。
   ///  - `video_subtitles` —— [videoSubtitlesDirectory]；`VideoStorage.subtitlesDirName`。
   ///  - `mpv_shaders` —— [mpvShadersDirectory]。
+  ///  - `mpv_scripts` —— [mpvLuaScriptsDirectory]。
   ///  - `remote_videos` —— [remoteVideosDirectory]。
   ///  - `videos` —— backup restore 的视频落点（`backup.part.dart`
   ///    `join(appDirectory, 'videos')`）。
@@ -487,6 +549,7 @@ class AppPaths {
     'game_covers',
     'video_subtitles',
     'mpv_shaders',
+    'mpv_scripts',
     'remote_videos',
     'videos',
     'anime_downloads',
@@ -498,6 +561,13 @@ class AppPaths {
     'dictionaryResources',
     'dictionaryImportWorkingDirectory',
     'webArchive',
+    // 新手引导推荐包的下载暂存目录（含 .part 半截文件，随根搬走以免续传丢进度；
+    // 导入成功后由向导 initState 整目录删除，常态下为空/不存在）。
+    'recommended_pack',
+    // 下载页「手动添加任务」落的 .torrent 元数据，随任务长期持久化，必须随数据根走
+    // （留在旧根 = 换根后任务恢复不出种子）。派生点：AppModel 的
+    // manualTorrentDirectory。
+    'manual_torrents',
   };
 
   /// BUG-1115：[newDataRoot] 落在**共享** documents 根（老安装的扁平布局 = 平台
@@ -571,6 +641,10 @@ class AppPaths {
   /// mpv 着色器目录 `<documents>/mpv_shaders`。
   static Future<Directory> mpvShadersDirectory() =>
       documentsSubdirectory('mpv_shaders');
+
+  /// mpv Lua 脚本目录 `<documents>/mpv_scripts`。
+  static Future<Directory> mpvLuaScriptsDirectory() =>
+      documentsSubdirectory('mpv_scripts');
 
   /// 远程视频下载目录 `<documents>/remote_videos`。
   static Future<Directory> remoteVideosDirectory() =>

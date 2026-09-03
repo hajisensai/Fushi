@@ -3,6 +3,8 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
+    show DictionaryPopupWebViewState;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// Unit tests for the shared [DictionaryPopupController] — the single set of
@@ -585,6 +587,110 @@ void main() {
       expect(view.length, 1, reason: 'live 视图实时反映内部列表变更');
       expect(() => view.clear(), throwsUnsupportedError, reason: '外部不可变语义保持不变');
       expect(identical(view, c.entries), true);
+    });
+  });
+
+  // BUG-2039 ③：嵌套层被裁掉时 WebView 键停驻，下一条嵌套层接管同一把键（同一个
+  // WebView element，静态段/字体/JIT 全热）；停驻的是**键**不是 entry，在途的旧查词
+  // 握着旧 entry 对象、`entries.contains` 恒假，绝不会把旧词结果灌进新层。
+  group('嵌套 realm 停驻与接管', () {
+    DictionaryPopupEntry pushNested(DictionaryPopupController c, String term) {
+      return c.beginTop(
+        term: term,
+        rect: Rect.zero,
+        reuseWarmSlot: false,
+        replaceStack: false,
+        visible: false,
+      );
+    }
+
+    test('裁掉的嵌套层把键停驻；下一条嵌套层接管同一把键、entry 是新对象', () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      pushNested(c, '一'); // 顶层（热槽不复用的路径，也走非热槽建层）
+      final DictionaryPopupEntry child = pushNested(c, '二');
+      final GlobalKey<DictionaryPopupWebViewState> childKey = child.webViewKey;
+      expect(c.parkedRealms, isEmpty);
+
+      c.truncateTo(2);
+      expect(c.entries.length, 2);
+      expect(c.parkedRealms, <GlobalKey<DictionaryPopupWebViewState>>[childKey],
+          reason: '被裁的嵌套层不再随 entry 一起死，键进池等待接管');
+
+      final DictionaryPopupEntry again = pushNested(c, '三');
+      expect(identical(again.webViewKey, childKey), true,
+          reason: '新嵌套层接管停驻 realm（同一把 GlobalKey ⇒ 同一个 WebView element）');
+      expect(identical(again, child), false,
+          reason: '停驻的是键不是 entry：旧异步查词握着的旧 entry 不在栈内');
+      expect(c.entries.contains(child), false);
+      expect(c.parkedRealms, isEmpty, reason: '接管后池空');
+    });
+
+    test('热槽永不入池；dismissAt(0) / pruneToWarmSlot 都把嵌套层停驻', () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final DictionaryPopupEntry top = c.beginTop(
+        term: '一',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: true,
+      );
+      final DictionaryPopupEntry child = pushNested(c, '二');
+      c.dismissAt(0);
+      expect(c.entries.length, 1);
+      expect(c.entries.first.isWarmSlot, true);
+      expect(c.parkedRealms.contains(top.webViewKey), false,
+          reason: '热槽自己就是常驻 realm，不进池');
+      expect(c.parkedRealms, [child.webViewKey]);
+
+      pushNested(c, '三');
+      c.pruneToWarmSlot();
+      expect(c.parkedRealms.length, 1);
+    });
+
+    test('池上限 kMaxParkedRealms：只留最近用过的', () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      pushNested(c, '一');
+      final DictionaryPopupEntry a = pushNested(c, '二');
+      final DictionaryPopupEntry b = pushNested(c, '三');
+      c.truncateTo(1);
+      expect(c.parkedRealms.length, DictionaryPopupController.kMaxParkedRealms);
+      expect(c.parkedRealms.last, b.webViewKey, reason: '最深（最近建的）那层最热，优先保留');
+      expect(c.parkedRealms.contains(a.webViewKey),
+          DictionaryPopupController.kMaxParkedRealms >= 2);
+    });
+
+    test('低内存不停驻；clear 连池一起清；replaceStack 也走停驻', () {
+      final lm = DictionaryPopupController(lowMemory: true);
+      pushNested(lm, '一');
+      pushNested(lm, '二');
+      lm.truncateTo(1);
+      expect(lm.parkedRealms, isEmpty, reason: '低内存与热槽同策略：不留 WebView');
+
+      final c = DictionaryPopupController(lowMemory: false);
+      final DictionaryPopupEntry first = pushNested(c, '一');
+      final DictionaryPopupEntry replaced = c.beginTop(
+        term: '二',
+        rect: Rect.zero,
+        reuseWarmSlot: false,
+        replaceStack: true,
+        visible: true,
+      );
+      expect(identical(replaced.webViewKey, first.webViewKey), true,
+          reason: 'replaceStack 清掉的层先停驻、再被新顶层立即接管');
+      c.clear();
+      expect(c.parkedRealms, isEmpty);
+      expect(c.entries, isEmpty);
+    });
+
+    test('pushChild 同样接管停驻 realm', () {
+      final c = DictionaryPopupController(lowMemory: false);
+      pushNested(c, '一');
+      final DictionaryPopupEntry child = c.pushChild(
+          term: '二', rect: Rect.zero, parentIndex: 0, visible: true);
+      c.dismissAt(1);
+      final DictionaryPopupEntry again = c.pushChild(
+          term: '三', rect: Rect.zero, parentIndex: 0, visible: true);
+      expect(identical(again.webViewKey, child.webViewKey), true);
     });
   });
 }

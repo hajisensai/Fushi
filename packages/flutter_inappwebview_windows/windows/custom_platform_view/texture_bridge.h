@@ -12,6 +12,8 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
+#include <vector>
 
 #include "graphics_context.h"
 
@@ -45,7 +47,9 @@ namespace flutter_inappwebview_plugin
   class TextureBridge {
   public:
     typedef std::function<void()> FrameAvailableCallback;
-    typedef std::function<void(Size size)> SurfaceSizeChangedCallback;
+    typedef std::function<void(Size size, float capture_scale_factor,
+      float device_scale_factor)>
+      SurfaceSizeChangedCallback;
     typedef std::chrono::duration<double, std::milli> FrameDuration;
 
     TextureBridge(GraphicsContext* graphics_context,
@@ -62,11 +66,41 @@ namespace flutter_inappwebview_plugin
 
     void SetOnSurfaceSizeChanged(SurfaceSizeChangedCallback callback)
     {
+      const std::lock_guard<std::mutex> lock(mutex_);
       surface_size_changed_ = std::move(callback);
+    }
+
+    // Flutter 平台视图的逻辑尺寸与 DPI。GPU bridge 会原子记录换算后的目标物理
+    // 像素尺寸，再用回调驱动 WebView2 surface；WGC 的尺寸通知不会反写目标尺寸。
+    virtual void SetOutputSize(size_t width, size_t height, float scale_factor)
+    {
+      if (width == 0 || height == 0 || scale_factor <= 0.0f) {
+        return;
+      }
+
+      SurfaceSizeChangedCallback callback;
+      {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        if (requested_surface_size_.width == width &&
+          requested_surface_size_.height == height &&
+          requested_scale_factor_ == scale_factor) {
+          return;
+        }
+        requested_surface_size_ = { width, height };
+        requested_scale_factor_ = scale_factor;
+        callback = surface_size_changed_;
+      }
+      if (callback) {
+        callback({ width, height }, scale_factor, scale_factor);
+      }
     }
 
     void NotifySurfaceSizeChanged(size_t width, size_t height);
     void SetFpsLimit(std::optional<int> max_fps);
+
+    // 计划 P2：mpv 用户着色器链（.glsl 文本，按序）。空 = 直通。只有 GPU 桥实现；
+    // 回 true = 全部解析成功并已启用。
+    virtual bool SetShaders(const std::vector<std::string>& shader_texts) { return false; }
 
   protected:
     typedef WgcPumpTickHandler PumpTickHandler;
@@ -80,6 +114,8 @@ namespace flutter_inappwebview_plugin
 
     FrameAvailableCallback frame_available_;
     SurfaceSizeChangedCallback surface_size_changed_;
+    Size requested_surface_size_ = { 0, 0 };
+    float requested_scale_factor_ = 0.0f;
     std::atomic<bool> needs_update_ = false;
     winrt::com_ptr<ID3D11Texture2D> last_frame_;
     std::optional<std::chrono::high_resolution_clock::time_point>

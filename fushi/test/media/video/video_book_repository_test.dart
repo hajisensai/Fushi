@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart'
     show
         videoRemoteAudioTrackAtPrefKey,
@@ -13,7 +17,25 @@ import 'package:fushi/src/sync/fushi_library_host_service.dart'
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+class _PausingDeleteVideoBookRepository extends VideoBookRepository {
+  _PausingDeleteVideoBookRepository(super.db);
+
+  final Completer<void> rowDeleted = Completer<void>();
+  final Completer<void> allowReclaim = Completer<void>();
+
+  @override
+  Future<void> deleteVideoBook(
+    String bookUid, {
+    DeleteScope scope = DeleteScope.keepLocalOnly,
+  }) async {
+    await super.deleteVideoBook(bookUid, scope: scope);
+    rowDeleted.complete();
+    await allowReclaim.future;
+  }
+}
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   test('saveVideoBook + saveCues + getByBookUid + loadCues round-trips',
       () async {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -598,5 +620,77 @@ void main() {
     // 归一不折叠大小写（与 externalVideoBookUid 保持一致）：盘符大小写不同视为
     // 不同文件，不应误命中。
     expect(await repo.findByVideoPath('d:/Foo/bar.mp4'), isNull);
+  });
+
+  test('刮削清理 maintenance 阻止既有视频封面指针写入', () async {
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/cover-gate'),
+        title: Value('Cover gate'),
+        videoPath: Value('/cover-gate.mkv'),
+      ),
+    );
+
+    final VideoScrapeOperationLease lease =
+        VideoScrapeOperationGate.tryEnterMaintenance()!;
+    try {
+      await expectLater(
+        repo.updateCover('video/cover-gate', '/must-not-be-written.jpg'),
+        throwsA(isA<StateError>()),
+      );
+    } finally {
+      lease.release();
+    }
+
+    expect((await repo.getByBookUid('video/cover-gate'))!.coverPath, isNull);
+  });
+
+  test('完整删除 operation 在 DB 删除与资源回收之间持续阻止 maintenance', () async {
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = _PausingDeleteVideoBookRepository(db);
+    await repo.saveVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/delete-gate'),
+        title: Value('Delete gate'),
+        videoPath: Value('/delete-gate.mkv'),
+      ),
+    );
+
+    final Future<bool> deletion = repo.deleteVideoBookAndReclaimAssets(
+      'video/delete-gate',
+      scope: DeleteScope.syncEverywhere,
+      compactDatabase: false,
+    );
+    await repo.rowDeleted.future;
+    try {
+      final VideoScrapeOperationLease? maintenance =
+          VideoScrapeOperationGate.tryEnterMaintenance();
+      maintenance?.release();
+      expect(maintenance, isNull, reason: 'DB 行已删但资源尚未回收时，全量清理不得入场');
+    } finally {
+      repo.allowReclaim.complete();
+    }
+
+    expect(await deletion, isTrue);
+    expect(await repo.getByBookUid('video/delete-gate'), isNull);
+    final List<SyncDeletionTombstoneRow> tombstones = await db
+        .getSyncDeletionTombstones();
+    expect(
+      tombstones.any(
+        (SyncDeletionTombstoneRow row) =>
+            row.mediaType == SyncTombstoneKind.video.dbValue &&
+            row.itemKey == 'video/delete-gate',
+      ),
+      isTrue,
+      reason: '组合 helper 必须透传 syncEverywhere scope',
+    );
+    final VideoScrapeOperationLease? maintenance =
+        VideoScrapeOperationGate.tryEnterMaintenance();
+    expect(maintenance, isNotNull);
+    maintenance?.release();
   });
 }

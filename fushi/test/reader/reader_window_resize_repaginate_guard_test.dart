@@ -26,10 +26,17 @@ void main() {
         () {
       // LayoutBuilder 必须在 build 里包住 reader 子树（return Actions 前），builder
       // 第一件事就是把 constraints 交给 resize 通道（零几何变换，原样返回子树）。
+      //
+      // 全屏收窄之后 build 的返回树根是零布局的 [WindowFullscreenHost]（小说页据此
+      // 声明自己是窗口全屏的合法宿主，见 lib/src/shortcuts/window_fullscreen_hosts.dart），
+      // LayoutBuilder 落在它的独生子上、改由局部变量承接。resize 通道的不变式一条没
+      // 变，变的只是它不再是字面上的 `return`——所以锚点跟着挪，并**补一条**断言钉住
+      // 「LayoutBuilder 就是那棵被包起来的 reader 子树」，免得日后有人在中间塞进一层
+      // 真的会改几何的 widget。
       final int idxBuild = src.indexOf('Widget build(BuildContext context) {');
       expect(idxBuild, greaterThan(0), reason: 'build 方法必须存在');
       final int idxLayoutBuilder =
-          src.indexOf('return LayoutBuilder(', idxBuild);
+          src.indexOf('final Widget page = LayoutBuilder(', idxBuild);
       expect(idxLayoutBuilder, greaterThan(idxBuild),
           reason: 'build 必须用透明 LayoutBuilder 包裹 reader 子树（TODO-690 resize 通道）');
       final int idxConstraintsCall = src.indexOf(
@@ -42,6 +49,13 @@ void main() {
       expect(idxReturnActions, greaterThan(idxConstraintsCall),
           reason:
               'builder 必须先调 _onReaderConstraintsChanged 再返回原 reader 子树（零几何变换）');
+      expect(
+        src.indexOf(
+            'return WindowFullscreenHost(child: page);', idxReturnActions),
+        greaterThan(idxReturnActions),
+        reason: 'build 的返回树根只允许是零布局的 WindowFullscreenHost，'
+            '它的独生子必须就是上面那棵 LayoutBuilder（resize 通道不得被隔开）',
+      );
     });
 
     test('_onReaderConstraintsChanged 用纯谓词判定 + 共享 50ms 尾沿防抖调 _syncPageSize',

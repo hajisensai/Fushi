@@ -156,6 +156,21 @@ summary:focus-visible {
   line-height: 1.55;
 }
 
+/* 「查词框大小」的数值输入：与开关同一列宽，右对齐，空值时显示「跟随应用」占位。 */
+.size-input {
+  flex: 0 0 auto;
+  width: 118px;
+  padding: 9px 11px;
+  border: 1px solid var(--outline);
+  border-radius: 10px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: right;
+}
+
+.size-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
 .switch {
   position: relative;
   flex: 0 0 auto;

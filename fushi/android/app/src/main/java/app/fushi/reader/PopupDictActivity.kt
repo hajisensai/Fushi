@@ -590,7 +590,8 @@ class PopupDictActivity : Activity() {
         intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()?.let { return it }
         intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()?.let { return it }
         intent.data?.let { uri ->
-            if (uri.scheme == "hibiki" && uri.host == "lookup") {
+            // BUG-1666: manifest 注册的 scheme 是 "fushi"；"hibiki" 为改名前残留，兼容保留。
+            if ((uri.scheme == "fushi" || uri.scheme == "hibiki") && uri.host == "lookup") {
                 uri.getQueryParameter("word")?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
             }
         }

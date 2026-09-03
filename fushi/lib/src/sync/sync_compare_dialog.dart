@@ -307,9 +307,8 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
 
 Future<List<SyncDictEntry>> _fetchDictEntries(
   FushiDatabase db,
-  SyncBackend backend, {
-  required bool includeLocalOnly,
-}) async {
+  SyncBackend backend,
+) async {
   final String ns = await backend.ensureNamespace(kSyncDictionaryNamespace);
   final List<AssetEntry> remote = await backend.listChildren(ns);
   // 写侧只产新后缀；读侧必须同时认 Hibiki 时代的旧后缀 —— 云根迁移只改根文件夹
@@ -342,9 +341,9 @@ Future<List<SyncDictEntry>> _fetchDictEntries(
         remoteAssetId: remoteByName[n],
       ),
   ];
-  // 门控：远端项始终保留（要删它）；纯本地项（无远端可删）只在词典同步选项
-  // 开启时才显示，避免选项关闭时用无关本地词典刷屏。
-  out.removeWhere((SyncDictEntry e) => !e.hasRemote && !includeLocalOnly);
+  // 纯本地项（远端没有、这里没得删）曾被「词典同步开关关着」过滤掉，理由是别用
+  // 无关本地词典刷屏。开关没了之后这个过滤反而有害：本地独有 = 「还没上传的那些」，
+  // 正是用户点设置页那个上传按钮之前要看的清单。远端项本来就始终保留（要删它）。
   out.sort((SyncDictEntry a, SyncDictEntry b) =>
       a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   return out;
@@ -563,8 +562,6 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
 
   Future<void> _load() async {
     try {
-      final repo = SyncRepository(widget.db);
-      final bool dictSyncOn = await repo.isSyncDictionaryEnabled();
       // Fetch the remote listing under the sync mutex: this re-lists the remote
       // and rewrites the singleton backend's folder-id cache, so running it
       // concurrently with an in-flight sync corrupted the sync's view and made
@@ -572,11 +569,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       final results =
           await runExclusiveWithSync(() => Future.wait(<Future<Object>>[
                 _fetchCompareData(widget.db, widget.backend),
-                _fetchDictEntries(
-                  widget.db,
-                  widget.backend,
-                  includeLocalOnly: dictSyncOn,
-                ),
+                _fetchDictEntries(widget.db, widget.backend),
               ]));
       final entries = results[0] as List<SyncCompareEntry>;
       final dicts = results[1] as List<SyncDictEntry>;
@@ -647,13 +640,17 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       // same contention that interrupted sync and timed out the load (BUG-083).
       await runExclusiveWithSync(() async {
         final repo = SyncRepository(widget.db);
-        final syncStats = await repo.isSyncStatsEnabled();
-        final syncAudioBook = await repo.isSyncAudioBookEnabled();
-        // BUG-988：手动解决冲突并应用时，互联通道读互联专属上传开关、云通道读共享开关，
-        // 与自动同步一致——否则「互联内容开、云内容关」时互联冲突的内容传输会被误跳过。
-        final syncContent = widget.backend is InterconnectSyncBackend
-            ? await repo.isInterconnectSyncContentEnabled()
-            : await repo.isSyncContentEnabled();
+        // BUG-988：手动「解决冲突并应用」与自动同步走**同一份** [resolveChannelSyncFlags]。
+        // 原来只有 content 在这里做了分通道三元式，统计仍读云备份的 sync_stats_enabled
+        // ——用户关掉互联「共享统计」后，手动应用一本书仍会把它的 `statistics_*.json`
+        // 推给互联 host 再 merge 回本地。整份 flags 一起解析就没有漏项可言。
+        final ChannelSyncFlags flags = await resolveChannelSyncFlags(
+          repo,
+          isInterconnect: widget.backend is InterconnectSyncBackend,
+        );
+        final bool syncStats = flags.syncStats;
+        final bool syncAudioBook = flags.syncAudioBookPosition;
+        final bool syncContent = flags.syncContent;
 
         var done = 0;
         // Blend per-file transfer fraction into the overall book progress so the

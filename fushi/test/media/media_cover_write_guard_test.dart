@@ -60,7 +60,30 @@ enum CoverDeriverRole {
 
   /// 只派生路径不写盘（读取 / 展示 / 删除 / 交给收口去写）：文件内不得出现裸写。
   derivesPathOnly,
+
+  /// 派生了封面目的地，但文件内的裸写属于**别的资产**（上传的视频本体、字幕
+  /// sidecar 等），封面本身仍交给收口或别的文件去写。
+  ///
+  /// 为什么需要这一档：分类是**逐文件**的（「这个文件里有没有裸写」），而一个文件
+  /// 完全可以既派生封面目录、又因为别的职责而搬运非封面文件——`derivesPathOnly` 对
+  /// 它是假的，`writesViaService` 也是假的，硬塞进任一档都会把登记变成谎话。
+  ///
+  /// 这一档**不是**放行：它必须在 [kNonCoverRawWriters] 里逐函数列出允许裸写的函数
+  /// 名，多一个少一个都红——与 BUG-1394 给白名单文件收的那份逐函数名单同一套判据。
+  rawWritesNonCoverAssets,
 }
+
+/// [CoverDeriverRole.rawWritesNonCoverAssets] 各文件里**允许**裸写的函数全名单。
+///
+/// 语义与 BUG-1394 的 `allowedRawWriters` 一致：新增一个裸写函数、或把这些函数改
+/// 去写封面，都会让登记与实际不符而转红。
+const Map<String, Set<String>> kNonCoverRawWriters = <String, Set<String>>{
+  'lib/src/sync/app_model_library_host_service.dart': <String>{
+    // 上传落地：搬的是视频本体（1 处）与外挂字幕（1 处），都不是封面。
+    // 本文件的封面路只派生 coversDir 交给 CoverMetaStore/extractVideoCover。
+    '_moveFileInto',
+  },
+};
 
 /// **封面目的地派生点的完整注册表**（TODO-2715 ③）。
 ///
@@ -84,17 +107,9 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
         '落盘，自己一个字节都不写。当年正因为「派生在这、裸写在那」，逐文件判据两边'
         '都不命中；现在这半边由本注册表钉住，写盘那半边由 writesViaService 钉住。',
   ),
-  'lib/src/media/video/scraper/cover_downloader.dart': (
-    CoverDeriverRole.writesViaService,
-    '刮削封面下载路，字节走 applyCoverBytes。',
-  ),
   'lib/src/media/video/scraper/cover_scraper_service.dart': (
     CoverDeriverRole.writesViaService,
-    '刮削换封面，字节走 applyCoverBytes。',
-  ),
-  'lib/src/media/video/scraper/episode_scrape_service.dart': (
-    CoverDeriverRole.derivesPathOnly,
-    '每集刮削只算目的地路径，落盘交给 cover_downloader。',
+    '本地 sidecar 封面复制走 applyCoverFile。',
   ),
   'lib/src/media/video/scraper/member_cover_cleanup.dart': (
     CoverDeriverRole.writesViaService,
@@ -102,9 +117,9 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
   ),
   'lib/src/media/video/cover_ui/video_scrape_actions.dart': (
     CoverDeriverRole.derivesPathOnly,
-    '运行时依赖组装层只派生 coversDir/video_scraper 目录，并把封面目录注入 '
-        'CoverMetaStore 与 CoverScraperService；实际图片字节由服务内的 '
-        'CoverDownloader 经 MediaCoverService.applyCoverBytes 落盘。',
+    '运行时依赖组装层只派生 coversDir，并把封面目录注入 CoverMetaStore 与 '
+        'CoverScraperService；实际 sidecar 图片由服务经 '
+        'MediaCoverService.applyCoverFile 落盘。',
   ),
   'lib/src/media/video/video_book_repository.dart': (
     CoverDeriverRole.derivesPathOnly,
@@ -131,7 +146,50 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
     CoverDeriverRole.derivesPathOnly,
     '目录派生的定义处，自身不落盘。',
   ),
+  'lib/main.dart': (
+    CoverDeriverRole.derivesPathOnly,
+    '「用 Fushi 打开」外部视频建行时派生 coversDir 交给 CoverMetaStore 做来源准入，'
+        '抽帧仍由 extractVideoCover 落盘；main 自己一个字节都不写。',
+  ),
+  'lib/src/media/source_library/source_library_scanner.dart': (
+    CoverDeriverRole.derivesPathOnly,
+    '扫描入库时派生 coversDir 做封面来源准入，落盘交给 extractVideoCover。',
+  ),
+  'lib/src/media/video/metadata/video_scrape_cleanup_service.dart': (
+    CoverDeriverRole.writesViaService,
+    '「清理全部刮削记录」删封面：隔离/删除由本文件自己按 ledger SHA 校验后执行，'
+        '删成功后的解码缓存驱逐走 MediaCoverService.applyCoverRemoval——删同样是'
+        '「这条路径上的图变了」，不驱逐就会在清理后继续画一张已不存在的封面。',
+  ),
+  'lib/src/pages/implementations/home_video_page.dart': (
+    CoverDeriverRole.derivesPathOnly,
+    '库页手选/重取封面时派生 coversDir 做来源准入与指针更新，字节落盘由被调用的'
+        '抽帧/服务侧完成，页面自身不写盘。',
+  ),
+  'lib/src/sync/app_model_library_host_service.dart': (
+    CoverDeriverRole.rawWritesNonCoverAssets,
+    '互联 host 收上传：派生 coversDir 只为 CoverMetaStore 的自动抽帧准入，封面字节'
+        '由 extractVideoCover 写。文件里的裸写是 _moveFileInto 搬上传的视频本体与'
+        '字幕，与封面无关（逐函数名单见 kNonCoverRawWriters）。',
+  ),
 };
+
+/// [path] 里出现裸写调用的函数名集合（判据与 BUG-1394 的逐函数名单同一套：
+/// 先等长掩码注释，再按「缩进 ≤2 的声明行」归属行到函数）。
+Set<String> _rawWriteFunctionsIn(String path) {
+  final RegExp declaration =
+      RegExp(r'^ {0,2}(?:static )?(?:[\w<>?,]+ )+(\w+)\s*[({]');
+  final List<String> lines =
+      maskComments(File(path).readAsStringSync()).split('\n');
+  final Set<String> found = <String>{};
+  String current = '<file-scope>';
+  for (final String line in lines) {
+    final RegExpMatch? decl = declaration.firstMatch(line);
+    if (decl != null) current = decl.group(1)!;
+    if (kRawWrite.hasMatch(line)) found.add(current);
+  }
+  return found;
+}
 
 void main() {
   final Directory libDir = Directory('lib');
@@ -218,6 +276,29 @@ void main() {
           if (state != 'pathOnly') {
             roleViolations.add('$path: 登记为「只派生路径不落盘」，实际 $state——'
                 '它开始写盘了，必须经 MediaCoverService.applyCover*');
+          }
+        case CoverDeriverRole.rawWritesNonCoverAssets:
+          if (state != 'rawWrite') {
+            roleViolations.add('$path: 登记为「裸写的是非封面资产」，实际 $state——'
+                '它已经不裸写了（该改 derivesPathOnly），或改走了收口（改 '
+                'writesViaService）');
+          }
+          // 逐函数名单：这一档的整个正当性建立在「裸写的那几个函数搬的不是封面」
+          // 上，所以函数集合必须与登记完全一致，多一个少一个都红。
+          final Set<String>? allowed = kNonCoverRawWriters[path];
+          if (allowed == null) {
+            roleViolations.add('$path: 登记为 rawWritesNonCoverAssets 却没有在 '
+                'kNonCoverRawWriters 里列出允许裸写的函数——没有名单的豁免等于'
+                '整文件放行');
+          } else {
+            final Set<String> found = _rawWriteFunctionsIn(path);
+            if (found.length != allowed.length ||
+                !found.containsAll(allowed)) {
+              roleViolations.add(
+                  '$path: 裸写函数与登记名单不符（实际=$found 登记=$allowed）——'
+                  '新增的裸写函数如果碰的是封面，必须改走 '
+                  'MediaCoverService.applyCover*');
+            }
           }
       }
     });

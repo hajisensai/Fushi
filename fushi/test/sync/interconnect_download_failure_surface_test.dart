@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 
 import '../helpers/source_guard.dart';
@@ -99,7 +100,7 @@ void main() {
       await pending;
     });
 
-    test('失败态仍完整保留错误文本（角标 tooltip 的数据源）', () async {
+    test('失败态存用户可读原因（BUG-1693：连接类错误 → 本地化文案，不上屏原始异常）', () async {
       await expectLater(
         manager.startVideoDownload(
           id: 'v1',
@@ -112,7 +113,83 @@ void main() {
       );
       final InterconnectDownloadTask task = manager.taskFor('v1')!;
       expect(task.status, InterconnectDownloadStatus.failed);
-      expect(task.error, contains('connection reset by peer'));
+      // 角标 tooltip 的数据源：连接类失败给本地化网络文案，而不是
+      // `SocketException: … errno = 1225` 这类开发者文本。
+      expect(task.error, equals(t.sync_err_network));
+      expect(task.error, isNot(contains('SocketException')));
+    });
+
+    test('BUG-1693 批审计：视频/书/纯 SRT 任务键域隔离，同名 id 三格并存不互相覆盖', () async {
+      // 键派生本身必须把三个值域分开（视频历史键冻结为裸 id，书/SRT 加域前缀）。
+      expect(InterconnectDownloadManager.bookTaskId('X'), isNot(equals('X')));
+      expect(
+        InterconnectDownloadManager.srtAudiobookTaskId('X'),
+        isNot(equals(InterconnectDownloadManager.bookTaskId('X'))),
+      );
+
+      Future<void> ok(File target,
+          {void Function(double progress)? onProgress}) async {}
+
+      await runOk('X'); // 视频任务（裸键）
+      await manager.startBookDownload(
+        downloadId: 'X',
+        title: 'X',
+        dest: dest('X.epub'),
+        run: ok,
+      );
+      await manager.startSrtAudiobookDownload(
+        identity: 'X',
+        title: 'X',
+        dest: dest('X.fushiaudio'),
+        run: ok,
+      );
+      expect(manager.tasks.length, 3,
+          reason: '同名 id 的视频/书/SRT 任务必须各占一格；共享任务表撞键会互相顶掉状态');
+      expect(
+          manager.taskFor('X')!.status, InterconnectDownloadStatus.completed);
+      expect(
+        manager.taskFor(InterconnectDownloadManager.bookTaskId('X'))!.status,
+        InterconnectDownloadStatus.completed,
+      );
+      expect(
+        manager
+            .taskFor(InterconnectDownloadManager.srtAudiobookTaskId('X'))!
+            .status,
+        InterconnectDownloadStatus.completed,
+      );
+    });
+
+    test('书下载任务失败落账（与视频同一生命周期：failed + 本地化 error）', () async {
+      await expectLater(
+        manager.startBookDownload(
+          downloadId: 'b1',
+          title: 'b1',
+          dest: dest('b1.epub'),
+          run: (File target, {void Function(double progress)? onProgress}) =>
+              throw const SocketException('connection refused'),
+        ),
+        throwsA(isA<SocketException>()),
+      );
+      final InterconnectDownloadTask task =
+          manager.taskFor(InterconnectDownloadManager.bookTaskId('b1'))!;
+      expect(task.status, InterconnectDownloadStatus.failed);
+      expect(task.error, equals(t.sync_err_network));
+    });
+
+    test('未知错误保留原文（friendly 回落不吞信息）', () async {
+      await expectLater(
+        manager.startVideoDownload(
+          id: 'v2',
+          title: 'v2',
+          dest: dest('v2.mp4'),
+          run: (File target, {void Function(double progress)? onProgress}) =>
+              throw StateError('weird custom failure'),
+        ),
+        throwsA(isA<StateError>()),
+      );
+      final InterconnectDownloadTask task = manager.taskFor('v2')!;
+      expect(task.status, InterconnectDownloadStatus.failed);
+      expect(task.error, contains('weird custom failure'));
     });
   });
 

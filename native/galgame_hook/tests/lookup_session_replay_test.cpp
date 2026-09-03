@@ -27,6 +27,11 @@
 //     adapter 那个 .inc 依赖 MinHook/TJS/游戏进程上下文，不能独立编译进测试。它与
 //     adapter 一致由 tests/kirikiri_lookup_source_guard_test.py 从源码侧另行钉住。
 
+// CI 走 `--config Release`，MSVC 在该配置下定义 NDEBUG，裸 assert 会被整条编译掉，
+// 于是这个测试无论断言对不对都恒绿——与 BUG-1157「零测试执行伪装成通过」同一族。
+// 必须在任何 include 之前撤销它。守卫：tests/assert_liveness_guard_test.py
+#undef NDEBUG
+
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -325,8 +330,17 @@ class LookupSessionModel {
     Check(hit != nullptr, "开启后 hit 槽必须可寻址");
     if (hit == nullptr) return;
     const std::string line = event.Str("line");
+    hit->provider_kind =
+        fushi_voice_hook::kLookupGeometryProviderRuntimeLayout;
+    hit->provider_id = fushi_voice_hook::kLookupGeometryProviderIdKirikiri;
     hit->char_index = static_cast<uint32_t>(event.Int("index"));
+    hit->source_length = 1;
     hit->char_count = static_cast<uint32_t>(event.Int("chars"));
+    hit->coordinate_space =
+        fushi_voice_hook::kLookupCoordinateSpacePrimaryLayer;
+    hit->writing_mode = fushi_voice_hook::kLookupWritingModeHorizontal;
+    hit->text_generation = hook_any_hit_seq_;
+    hit->geometry_generation = hook_any_hit_seq_;
     hit->glyph_x = static_cast<int32_t>(event.IntAt("glyph", 0));
     hit->glyph_y = static_cast<int32_t>(event.IntAt("glyph", 1));
     hit->glyph_w = static_cast<int32_t>(event.IntAt("glyph", 2));
@@ -343,6 +357,11 @@ class LookupSessionModel {
           "hit 自洽：char_index 必须落在本行字符数内");
     // seq **最后**写（与契约头注释同一套纪律）。
     hit->seq = hook_any_hit_seq_;
+    h->lookup_geometry_active_kind = hit->provider_kind;
+    h->lookup_geometry_active_id = hit->provider_id;
+    h->lookup_geometry_status = fushi_voice_hook::kLookupGeometryStatusActive;
+    h->lookup_geometry_text_generation = hit->text_generation;
+    h->lookup_geometry_generation = hit->geometry_generation;
     hook_submit_hit_seq_ = hook_any_hit_seq_;
     ++h->lookup_hit_count;
   }
@@ -534,6 +553,14 @@ class LookupSessionModel {
     h->lookup_hit_count = 0;
     h->lookup_frame_count_written = 0;
     h->lookup_input_count = 0;
+    h->lookup_geometry_active_kind =
+        fushi_voice_hook::kLookupGeometryProviderUnknown;
+    h->lookup_geometry_active_id =
+        fushi_voice_hook::kLookupGeometryProviderIdUnknown;
+    h->lookup_geometry_status =
+        fushi_voice_hook::kLookupGeometryStatusUnavailable;
+    h->lookup_geometry_text_generation = 0;
+    h->lookup_geometry_generation = 0;
     hook_any_hit_seq_ = 0;
     hook_submit_hit_seq_ = 0;
     host_publish_seq_ = 0;
@@ -626,7 +653,14 @@ void TestAnyAndSubmitHitFencesInReplay() {
           "present B 可显示，但必须 suppress 已过期的 B 高亮");
     const LookupHitSlot* shared_submit = LookupHitOf(mapping.header());
     Check(shared_submit != nullptr && shared_submit->seq == 1 &&
+              shared_submit->provider_kind ==
+                  fushi_voice_hook::kLookupGeometryProviderRuntimeLayout &&
+              shared_submit->provider_id ==
+                  fushi_voice_hook::kLookupGeometryProviderIdKirikiri &&
               shared_submit->char_index == 1 &&
+              shared_submit->source_length == 1 &&
+              shared_submit->writing_mode ==
+                  fushi_voice_hook::kLookupWritingModeHorizontal &&
               shared_submit->line_bytes == 1 &&
               shared_submit->line_utf8[0] == 'B' &&
               mapping.header()->lookup_hit_count == 1,
@@ -660,6 +694,19 @@ void TestAnyAndSubmitHitFencesInReplay() {
     Check(FramesNeverApplied(model.counters()) == 1,
           "被 submit D 作废的 present B 必须留在未应用计数中");
   }
+}
+
+void TestCardCoordinateSpaceFenceInReplay() {
+  Check(fushi_voice_hook::IsLookupCardCoordinateSpaceResolved(
+            fushi_voice_hook::kLookupCoordinateSpaceClientPhysicalPixels) &&
+            fushi_voice_hook::IsLookupCardCoordinateSpaceResolved(
+            fushi_voice_hook::kLookupCoordinateSpacePrimaryLayer),
+        "replay client/primaryLayer hit 必须可进入各自已证明的卡片坐标链");
+  Check(!fushi_voice_hook::IsLookupCardCoordinateSpaceResolved(
+                fushi_voice_hook::kLookupCoordinateSpaceDesignSurface) &&
+            !fushi_voice_hook::IsLookupCardCoordinateSpaceResolved(
+                fushi_voice_hook::kLookupCoordinateSpaceLayoutLocal),
+        "design/layout-local 没有唯一 transform 时不得原样解释为 card view");
 }
 
 std::string Join(const std::vector<std::string>& values) {
@@ -701,6 +748,7 @@ int main(int argc, char** argv) {
   LookupSessionModel model(&mapping);
   model.Run(events);
   TestAnyAndSubmitHitFencesInReplay();
+  TestCardCoordinateSpaceFenceInReplay();
   Counters& c = model.counters();
 
   const bool legacy_untouched =

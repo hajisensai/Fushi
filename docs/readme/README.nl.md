@@ -10,120 +10,13 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | **Nederlands** | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![Gebruikershandleiding](https://img.shields.io/badge/%F0%9F%93%96%20Gebruikershandleiding-0969DA?style=for-the-badge)](../user-guide.nl.md)
+[![fushi.moe](https://img.shields.io/badge/%F0%9F%8C%90%20fushi.moe-0969DA?style=for-the-badge)](https://fushi.moe/)
 
-**Geen omslachtige configuratie** — importeer de aanbevolen woordenboeken en audio in één stap.
-
-[![Nieuwste versie downloaden](https://img.shields.io/badge/%E2%AC%87%20Nieuwste%20versie%20downloaden-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
+[![Nieuwste versie downloaden](https://img.shields.io/badge/%E2%AC%87%20Nieuwste%20versie%20downloaden-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Word lid van Discord](https://img.shields.io/badge/Word%20lid%20van%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
-> **Kijk waar je zin in hebt en pik de taal onderweg op.**
-
-Fushi maakt van de romans die je leest, de series die je volgt en de audioboeken die je luistert jouw taalinput: tik op elk onbekend woord om het op te zoeken en maak er met één tik een Anki-kaart met originele context van. Het laat je geen vooraf samengestelde woordenlijst stampen, maar helpt je juist de woorden te grijpen die je **echt leest en hoort**.
-
-De effectiefste manier om een taal te leren is veelvuldige blootstelling aan echte content, niet het uit je hoofd leren van losse woorden uit een woordenboekje. Maar "onderdompeling" had altijd twee ergernissen: een woord opzoeken onderbreekt je flow, en je vergeet het zodra je wegkijkt. Fushi sluit die cirkel:
-
-📖 **Lezen**: tik op een woord in de EPUB-lezer om het op te zoeken, zonder de huidige pagina te verlaten.<br>
-🎧 **Luisteren**: audioboeken markeren zin voor zin mee en slaan automatisch de pagina om.<br>
-🎬 **Kijken**: zoek woorden op en maak kaarten direct in de video-ondertitels — een serie volgen *is* input.<br>
-🃏 **Vastleggen**: stuur elk opgezocht woord, in welke situatie dan ook, rechtstreeks naar Anki en herhaal alleen de woorden die je echt bent tegengekomen.
-
-Alle situaties delen dezelfde woordenboeken, statistieken en herhalingsworkflow. Geschikt voor elke taal (Japans, Engels, …) en vooral voor onderdompelingsleerders die geloven in **veel input + alleen zelfgemaakte kaarten**. Beschikbaar voor Android en Windows (iOS en macOS gepland).
-
-<table>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="Boekenplank" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="Videobibliotheek" width="100%"></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="Verticaal lezen op desktop met opzoek-pop-up" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="Opzoeken in video (geneste pop-ups)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="Opzoeken in video (ondertitellijst)" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="Opzoeken via tekstselectie buiten de app (mobiel)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="Opzoeken via tekstselectie buiten de app (desktop)" width="100%"></td>
-  </tr>
-</table>
-
-**Demo: Anki-kaarten maken met één tik**
-
-<!-- GitHub only renders <video> tags whose src is a user-attachments uuid URL
-     (uploaded via the web editor); raw repo links stay blank. Inline GIF is the
-     conventional workaround. To restore a real inline player, upload the mp4 in
-     the GitHub web editor and replace the img below with the generated
-     https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
-
-<sub>[Bekijk de demo voor het maken van kaarten met één klik ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
-## Functies
-
-### Boekenplank
-
-- Importeer EPUB's afzonderlijk, in bulk of recursief per map; bekijk de leesvoortgang direct op de plank.
-- Organiseer boeken met aangepaste boekenplanken, tagfilters en slepen om te herordenen.
-- Sleep bestanden om boeken, ondertitels of video's te importeren (desktop).
-- Koppel bij het importeren automatisch ondertitel-/audiobestanden met dezelfde naam.
-
-### Lezen
-
-- Lees in verticale of horizontale lay-out; schakel tussen pagina- en doorlopende-scrollmodus.
-- Pas thema's (licht / donker / puur zwart / aangepast), lettertypen, alinea-afstand en lezerbediening aan.
-- Furigana (ふりがな)-annotaties.
-- Aanpasbare UI-schaal; de bedieningselementen van de onderbalk volgen de schaal.
-- Profielen voor meerdere gebruikers (Profile), automatisch per boek gewisseld.
-
-### Opzoeken
-
-- Importeer woordenboeken van [Yomitan](https://github.com/yomidevs/yomitan) (voorheen Yomichan), ABBYY Lingvo (DSL), MDict (MDX) en Migaku.
-- Tik op tekst in de lezer om woorden op te zoeken, zoek op de woordenboekpagina of deel tekst vanuit andere apps.
-- Deflexie voor **alle Yomitan-transformatietalen** + tekstnormalisatie vóór het opzoeken (hoofdletters / diakritische tekens / Arabische harakat), aangestuurd door code points zonder taalwisseling.
-- Tik op woorden binnen definities voor recursief opzoeken (geneste pop-ups).
-- Parallelle zoekopdrachten in meerdere woordenboeken, prioriteit en in-/uitschakelen van subbronnen, toonhoogteaccent- en frequentie-annotaties.
-- Online en lokale woord-audio.
-- Eigen CSS injecteren.
-
-### Markeringen & Statistieken
-
-- Voeg tijdens het lezen markeringen in vijf kleuren toe; spring op elk moment naar elke markering.
-- Leesstatistieken: gelezen tekens, duur, leessnelheid — in realtime weergegeven tijdens het lezen.
-- Videostatistieken: kijktijd, gemaakte kaarten en favorieten.
-
-### Anki-kaarten maken
-
-- Maak kaarten via [AnkiDroid](https://github.com/ankidroid/Anki-Android) of AnkiConnect.
-- Ingebouwd [Lapis](https://github.com/donkuri/lapis)-notitietype (meegeleverd 1.7.0); maak kaartsjablonen en decks met één tik binnen de app.
-- Vul contextzinnen automatisch in; audio-opname en screenshot-bijsnijden.
-- Meerdere exportprofielen (Profile) en aangepaste veldtoewijzing.
-- Markeer woorden als favoriet; gemaakte kaarten en favorieten worden meegeteld in de statistieken.
-
-### Audioboeksynchronisatie (Sasayaki)
-
-- Ondersteuning voor SRT-/LRC-/VTT-/ASS-ondertitels; lijnt de ondertiteltekst automatisch uit met de EPUB-tekst.
-- Meelopende zinmarkering en automatisch omslaan van pagina's tijdens het afspelen.
-- Afspeelsnelheid, zoekacties en systeemmediabediening.
-- „Afspelen vanaf deze zin” met naadloze voortzetting over hoofdstukken heen.
-
-### Woorden opzoeken in videoondertitels
-
-- Ingebouwde videospeler op basis van [media_kit](https://github.com/media-kit/media-kit) (libmpv-kern).
-- Ingebedde (tekst- + grafische sporen) en externe ondertitels; import van .m3u8-afspeellijsten.
-- Zoek tijdens het afspelen woorden op en maak kaarten rechtstreeks vanuit de ondertitels.
-- Beheer van de videobibliotheek, tagfilters, seriegroepering en bulkbewerkingen.
-
-### Gegevenssynchronisatie
-
-- Zeven sync-backends: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP en Fushi Interconnect.
-- Synchroniseer leesvoortgang, statistieken en boeken.
-
-### Meer
-
-- **17 interfacetalen**, volledig gelokaliseerd op alle platforms.
-- Deel tekst vanuit andere apps om woorden direct op te zoeken.
 
 ## Platformondersteuning
 

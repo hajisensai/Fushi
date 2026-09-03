@@ -34,12 +34,14 @@ void main() {
       'buildListeningDestination()',
       'buildVideoDestination()',
       'buildDownloadsDestination()',
+      'buildServicesDestination()',
       'buildGameDestination()',
       'buildLookupDestination()',
       'buildCardCreationDestination()',
       'buildProfilesDestination()',
       'buildSyncBackupDestination()',
       'buildInterconnectDestination()',
+      'buildStorageDestination()',
       'buildSystemDestination()',
     ];
 

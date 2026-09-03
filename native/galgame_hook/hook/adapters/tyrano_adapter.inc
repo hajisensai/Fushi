@@ -11,8 +11,10 @@ constexpr int kTyranoAsarHandleSlots = 16;
 constexpr int kTyranoAsarTaskSlots = 32;
 constexpr uint32_t kMaxAsarHeaderBytes = 16u * 1024u * 1024u;
 
+// 无锁句柄表（tracked_handle_table.h）：Forget 走 CloseHandle detour，不得进 g_cs（BUG-2046）。
 struct TyranoAsarHandle {
   HANDLE handle = INVALID_HANDLE_VALUE;
+  volatile LONG seq = 0;
 };
 
 struct TyranoAsarTask {
@@ -91,45 +93,19 @@ bool LoadTyranoAsarVoiceIndex() {
 
 void RememberTyranoAsar(HANDLE handle, const wchar_t* path) {
   if (handle == INVALID_HANDLE_VALUE || !HasAppAsarSuffix(path) ||
-      InterlockedCompareExchange(&g_tyrano_asar_ready, 0, 0) == 0 ||
-      !g_cs_ready) {
+      InterlockedCompareExchange(&g_tyrano_asar_ready, 0, 0) == 0) {
     return;
   }
-  EnterCriticalSection(&g_cs);
-  for (int i = 0; i < kTyranoAsarHandleSlots; ++i) {
-    if (g_tyrano_asar_handles[i].handle == INVALID_HANDLE_VALUE ||
-        g_tyrano_asar_handles[i].handle == handle) {
-      g_tyrano_asar_handles[i].handle = handle;
-      break;
-    }
-  }
-  LeaveCriticalSection(&g_cs);
+  fushi_voice_hook::RememberTrackedHandle(g_tyrano_asar_handles, handle,
+                                          [](TyranoAsarHandle&) {});
 }
 
 bool IsTyranoAsarHandle(HANDLE handle) {
-  if (handle == INVALID_HANDLE_VALUE || !g_cs_ready) return false;
-  bool found = false;
-  EnterCriticalSection(&g_cs);
-  for (int i = 0; i < kTyranoAsarHandleSlots; ++i) {
-    if (g_tyrano_asar_handles[i].handle == handle) {
-      found = true;
-      break;
-    }
-  }
-  LeaveCriticalSection(&g_cs);
-  return found;
+  return fushi_voice_hook::IsTrackedHandle(g_tyrano_asar_handles, handle);
 }
 
 void ForgetTyranoAsar(HANDLE handle) {
-  if (handle == INVALID_HANDLE_VALUE || !g_cs_ready) return;
-  EnterCriticalSection(&g_cs);
-  for (int i = 0; i < kTyranoAsarHandleSlots; ++i) {
-    if (g_tyrano_asar_handles[i].handle == handle) {
-      g_tyrano_asar_handles[i].handle = INVALID_HANDLE_VALUE;
-      break;
-    }
-  }
-  LeaveCriticalSection(&g_cs);
+  fushi_voice_hook::ForgetTrackedHandle(g_tyrano_asar_handles, handle);
 }
 
 void QueueTyranoAsarVoice(uint32_t entry_index) {
@@ -289,9 +265,7 @@ void StopTyranoAsarAudio() {
   InterlockedExchange(&g_tyrano_asar_ready, 0);
   g_tyrano_voice_entries.clear();
   g_tyrano_asar_path[0] = 0;
-  for (int i = 0; i < kTyranoAsarHandleSlots; ++i) {
-    g_tyrano_asar_handles[i].handle = INVALID_HANDLE_VALUE;
-  }
+  fushi_voice_hook::ClearTrackedHandles(g_tyrano_asar_handles);
   g_tyrano_last_processed_entry = UINT32_MAX;
   g_tyrano_last_processed_tick = 0;
 }

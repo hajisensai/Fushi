@@ -27,6 +27,8 @@ class ForwardedMinePayload {
     this.sentenceOffset,
     this.source,
     this.bookTitleTag,
+    this.clipStartMs,
+    this.clipEndMs,
     this.coverBytes,
     this.coverExt,
     this.sentenceAudioBytes,
@@ -47,6 +49,12 @@ class ForwardedMinePayload {
   final String? source;
   final String? bookTitleTag;
 
+  /// `AnkiMiningContext.clipStartMs|clipEndMs`：本卡截取的媒体片段起止（毫秒偏移），
+  /// 服务端渲染 `{clip-timestamp}` 用。可空 = 无时间轴来源（书 / galgame），或对端是
+  /// 尚未带这两个键的旧版本——服务端解析成 null，占位符渲染成空串，卡照建。
+  final int? clipStartMs;
+  final int? clipEndMs;
+
   final Uint8List? coverBytes;
 
   /// 封面原文件扩展名（不含点，如 `jpg`/`gif`/`png`），供服务端命名临时文件、保留容器类型。
@@ -65,6 +73,8 @@ class ForwardedMinePayload {
         if (sentenceOffset != null) 'sentenceOffset': sentenceOffset,
         if (source != null) 'source': source,
         if (bookTitleTag != null) 'bookTitleTag': bookTitleTag,
+        if (clipStartMs != null) 'clipStartMs': clipStartMs,
+        if (clipEndMs != null) 'clipEndMs': clipEndMs,
         if (coverBytes != null) 'coverBase64': base64Encode(coverBytes!),
         if (coverExt != null) 'coverExt': coverExt,
         if (sentenceAudioBytes != null)
@@ -103,6 +113,8 @@ class ForwardedMinePayload {
       sentenceOffset: (json['sentenceOffset'] as num?)?.toInt(),
       source: json['source'] as String?,
       bookTitleTag: json['bookTitleTag'] as String?,
+      clipStartMs: (json['clipStartMs'] as num?)?.toInt(),
+      clipEndMs: (json['clipEndMs'] as num?)?.toInt(),
       coverBytes: tryDecodeBase64(json['coverBase64']),
       coverExt: sanitizeExt(json['coverExt']),
       sentenceAudioBytes: tryDecodeBase64(json['sentenceAudioBase64']),

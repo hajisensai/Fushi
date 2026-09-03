@@ -35,6 +35,8 @@ class ProfileKeys {
   static const Set<String> _excludedPrefKeys = {
     'active_profile_id',
     'first_time_setup',
+    // 新手引导完成标志与 first_time_setup 同族：描述本安装的状态，不随 Profile 切换。
+    'onboarding_completed',
     'current_home_tab_index',
     'startup_default_dictionary_tab',
     'app_ui_scale',
@@ -53,13 +55,19 @@ class ProfileKeys {
     // HBK-AUDIT-045: keep ALL update-channel/policy keys app-global so the
     // debug channel isn't asymmetrically profile-scoped vs the others.
     'update_debug_channel',
-    // TODO-871: custom update proxy is a global update-policy key (same family as
-    // update_beta_channel / update_debug_channel) — never per-profile snapshot.
+    // The app-wide network proxy (TODO-871; the only proxy setting since the
+    // download-specific mode was folded into it) describes this device's
+    // network, not a reading profile — never per-profile snapshot.
     'update_custom_proxy',
-    // Network routes describe this device, not a reading profile. Restoring a
-    // different profile must not silently redirect AniList/Nyaa/Jimaku.
-    'download_network_proxy_mode',
-    'download_custom_proxy',
+    'network_proxy_p2p_enabled',
+    'network_proxy_p2p_mode',
+    // BUG-1980 同族：出口模式（自动/直连/手动）描述的是这台设备的网络，地址已经是
+    // 设备本地的，模式却跟着 Profile 走 = 切一次 Profile 就把全局网络出口翻掉，
+    // 事后极难归因。
+    'network_proxy_mode',
+    // 更新下载源与 update_beta_channel / update_debug_channel / update_auto_install
+    // 同族（HBK-AUDIT-045：所有更新通道/策略键保持 app-global）。
+    'update_download_source',
     // TODO-1961: the download folder (and the history of folders we still have
     // to recognise) describes this device's disks, not a reading profile.
     // Snapshotting it would make a profile switch redirect downloads onto a

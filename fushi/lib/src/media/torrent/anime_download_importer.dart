@@ -7,14 +7,23 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/media/video/video_storage.dart';
 import 'package:fushi/src/media/video/video_cover_extractor.dart'
     show downloadVideoCoverToPath, extractVideoCover, videoCoverFileName;
 
-/// 把下载完成的视频路径按解析集号升序排（集号缺失排末尾，同集按文件名）。纯函数，
-/// 保证入库后合集成员顺序 = 集号顺序（importSplitPlaylist 按 entries 顺序挂成员）。
+/// 把**本批**下载完成的视频路径按解析集号升序排（集号缺失排末尾，同集按文件名）。
+///
+/// ⚠️ 这只定本批内部的相对序，**不是**合集成员顺序的真相源：`importSplitPlaylist`
+/// 对已存在的合集是尾插（`_nextCollectionSortIndex` 取 max+1），所以每一批都成为
+/// 「内部升序、整段追加到表尾」的区块，跨批次顺序 = 下载完成先后（BUG-1896：
+/// 13 | 01 02 | 07 08 | 05 …）。合集顺序的真相源是
+/// [VideoBookRepository.reorderDownloadedCollectionEpisodes]，入库后必须调用。
+///
+/// 本函数保留的作用：让批内 uid 创建序与「首集抽帧」取的 `sorted.first` 确定。
 List<String> sortVideoPathsByEpisode(List<String> paths) {
   final List<String> sorted = List<String>.of(paths);
   sorted.sort((String a, String b) {
@@ -70,6 +79,14 @@ Future<AnimeDownloadImportOutcome?> Function(
       ],
     );
 
+    // BUG-1896：番剧下载是「一集一个独立任务、完成先后随机」的自动下载流水线，与
+    // 手动 playlist 导入（作者序即真相）性质不同。上面的批内排序只管本批，合集是
+    // 尾插，跨批次就散了。这里显式把**整个合集**重排成季/集序——与
+    // VideoDownloadPipelineService 同一条纪律、同一个原语，是合集顺序的唯一真相源。
+    // 与 pipeline 侧一样不吞异常：重排是入库语义的一部分，DB 真炸了就该让
+    // AnimeDownloadService 把计划标 failed，而不是留一个顺序错乱的合集装作成功。
+    await repo.reorderDownloadedCollectionEpisodes(result.collectionId);
+
     // BUG-1417：番剧下载完成自动入库也是一次真实入库，必须进首页活动时间轴——
     // 与对话框 / 拖拽 / 扫描首导同粒度：整本 1 条 added（title=系列名、mediaKey=
     // 首集 uid），绝不每集一条。
@@ -98,47 +115,66 @@ Future<AnimeDownloadImportOutcome?> Function(
     }
 
     if (result.episodeUids.isNotEmpty) {
-      // ① 作品海报 → 合集自有封面（见函数注释）。文件名/目录与
-      //    applyCandidateToCollection 同约定；gcOrphanCovers 非递归，天然免疫。
-      final String? coverUrl = plan.coverUrl;
-      if (coverUrl != null && coverUrl.isNotEmpty) {
+      final VideoScrapeOperationLease? lease =
+          VideoScrapeOperationGate.tryEnterOperation();
+      if (lease != null) {
         try {
-          final Directory covers = collectionCoversDirectory ??
-              await VideoStorage.collectionCoversDir();
-          final String? collectionCoverPath = await downloadVideoCoverToPath(
-            coverUrl: coverUrl,
-            outputPath: p.join(
-              covers.path,
-              videoCoverFileName('${result.collectionId}'),
-            ),
-            httpClient: httpClient,
-          );
-          if (collectionCoverPath != null) {
-            await db.updateMediaCollectionCoverPath(
-              result.collectionId,
-              collectionCoverPath,
-            );
-          }
-        } catch (_) {}
-      }
+          await VideoCoverMutationGate.runExclusive(() async {
+            // ① 作品海报 → 合集自有封面（见函数注释）。文件名遵循合集封面目录
+            // 约定；gcOrphanCovers 非递归，天然免疫。
+            final String? coverUrl = plan.coverUrl;
+            if (coverUrl != null && coverUrl.isNotEmpty) {
+              try {
+                final Directory covers = collectionCoversDirectory ??
+                    await VideoStorage.collectionCoversDir();
+                final String? collectionCoverPath =
+                    await downloadVideoCoverToPath(
+                  coverUrl: coverUrl,
+                  outputPath: p.join(
+                    covers.path,
+                    videoCoverFileName('${result.collectionId}'),
+                  ),
+                  httpClient: httpClient,
+                );
+                if (collectionCoverPath != null) {
+                  await db.updateMediaCollectionCoverPath(
+                    result.collectionId,
+                    collectionCoverPath,
+                  );
+                }
+              } catch (_) {}
+            }
 
-      // ② 首集抽帧缩略图 → 首集条目封面 + coverSource 借用链兜底。
-      try {
-        final String firstUid = result.episodeUids.first;
-        final String? framePath = await extractVideoCover(
-          videoPath: sorted.first,
-          bookUid: firstUid,
-        );
-        if (framePath != null) {
-          await repo.updateCover(firstUid, framePath);
-          // ⚠️ 唯一落库点：MediaCollections.coverSource 持久化 'video|<uid>'，
-          // compositeKey 生成串与历史手写插值逐字节一致。
-          await db.updateMediaCollectionCover(
-            result.collectionId,
-            MediaKind.video.compositeKey(firstUid),
-          );
+            // ② 首集抽帧缩略图 → 首集条目封面 + coverSource 借用链兜底。
+            try {
+              final String firstUid = result.episodeUids.first;
+              final CoverMetaStore store =
+                  CoverMetaStore(await VideoStorage.coversDir());
+              if (await store.allowsAutoFrameWrite(firstUid)) {
+                final String? framePath = await extractVideoCover(
+                  videoPath: sorted.first,
+                  bookUid: firstUid,
+                );
+                if (framePath != null) {
+                  await repo.updateCover(firstUid, framePath);
+                  final bool committed =
+                      await store.markAutoFrameAfterWrite(firstUid);
+                  if (committed) {
+                    // ⚠️ 唯一落库点：MediaCollections.coverSource 持久化
+                    // 'video|<uid>'，compositeKey 与历史手写插值逐字节一致。
+                    await db.updateMediaCollectionCover(
+                      result.collectionId,
+                      MediaKind.video.compositeKey(firstUid),
+                    );
+                  }
+                }
+              }
+            } catch (_) {}
+          });
+        } finally {
+          lease.release();
         }
-      } catch (_) {}
+      }
     }
 
     return AnimeDownloadImportOutcome(collectionId: result.collectionId);

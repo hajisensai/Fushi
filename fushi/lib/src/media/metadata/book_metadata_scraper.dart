@@ -1,9 +1,9 @@
 /// 书籍 / 漫画封面刮削服务（跨媒体统一刮削 P1b）。
 ///
 /// 书族（EPUB / 漫画 / PDF）此前**没有**任何联网封面刮削（只能内嵌封面或手动选图），
-/// 视频与 galgame 各有一套。本服务复用刚抽出的共享传输层 [BangumiApiClient]
-/// （`filter.type = [1]` 书籍），把「搜书 → 拿封面」这条能力补给书族，与视频海报刮削
-/// 共享同一 Bangumi 传输，不再各写一份客户端。
+/// 本服务复用书籍与 galgame 共用的传输层 [BangumiApiClient]
+/// （`filter.type = [1]` 书籍），把「搜书 → 拿封面」这条能力补给书族。动画元数据
+/// 刮削不使用 Bangumi。
 ///
 /// 先接 Bangumi（中文书 / 轻小说 / 漫画条目最全，免 API key）；接口按候选中间表示
 /// [BookScrapeCandidate] 设计，后续接 Google Books / OpenLibrary（ISBN / 西文书）只需

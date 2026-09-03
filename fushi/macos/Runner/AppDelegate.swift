@@ -1,13 +1,16 @@
 import ApplicationServices
 import Cocoa
 import FlutterMacOS
+import macos_window_utils
 
 @main
 class AppDelegate: FlutterAppDelegate {
   private var activeSecurityScopedURLs: [String: URL] = [:]
 
   override func applicationDidFinishLaunching(_ notification: Notification) {
-    if let controller = mainFlutterWindow?.contentViewController as? FlutterViewController {
+    if let windowController =
+        mainFlutterWindow?.contentViewController as? MacOSWindowUtilsViewController {
+      let controller = windowController.flutterViewController
       let channel = FlutterMethodChannel(
         name: "app.fushi/data_root_access",
         binaryMessenger: controller.engine.binaryMessenger)
@@ -28,6 +31,8 @@ class AppDelegate: FlutterAppDelegate {
       foregroundSelectionChannel.setMethodCallHandler { call, result in
         AppDelegate.handleForegroundSelection(call, result: result)
       }
+    } else {
+      NSLog("[Fushi] macOS Flutter controller unavailable; custom channels were not registered")
     }
     super.applicationDidFinishLaunching(notification)
   }

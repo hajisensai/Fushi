@@ -247,6 +247,16 @@
         <meta-data
             android:name="io.flutter.embedding.android.EnableSurfaceControl"
             android:value="false" />
+        <!-- 设备自带 OCR（SystemOcrChannel）用的是 unbundled ML Kit：模型住在 Google
+             Play 服务里，不进 APK。这条 meta-data 让 Play 服务在**安装时**就把声明的
+             四套文字模型取下来，而不是拖到用户第一次识别时才现下——「安装完就能用、
+             不用自己下模型」靠的就是它。取不下来（无 GMS / 网络不通）不会静默：
+             SystemOcrChannel 把 ML Kit 的 UNAVAILABLE 单独报成 MODEL_UNAVAILABLE。
+             四套都声明的理由见 build.gradle：Fushi 没有全局学习语言，内容语言由调用方
+             传入，只声明日文等于替用户假设了学习语言。 -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="ocr,ocr_japanese,ocr_chinese,ocr_korean" />
         <!-- Don't delete the meta-data below.
                 This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

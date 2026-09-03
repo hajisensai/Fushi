@@ -123,6 +123,13 @@ class _FakeMining implements FushiRemoteMiningService {
   Future<bool> updateNoteTypeTemplates(
           String modelName, List<AnkiCardTemplate> templates) async =>
       true;
+
+  @override
+  Future<bool> probeMediaMaintenance() async => false;
+
+  @override
+  Future<AnkiMediaDedupReport?> runMediaDedup({bool dryRun = true}) async =>
+      null;
 }
 
 String _basic(String token) =>

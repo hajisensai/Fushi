@@ -1,7 +1,7 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/utils.dart';
 
 /// The content of the dialog used for managing and viewing items in the Stash.
@@ -164,7 +164,7 @@ class _OpenStashDialogPage extends BasePageState<OpenStashDialogPage> {
 
   void executeExport() async {
     String exportText = appModel.getStash().reversed.toList().join('\n');
-    await Share.share(exportText);
+    await FushiShare.shareText(exportText);
   }
 
   void executeSelect() {

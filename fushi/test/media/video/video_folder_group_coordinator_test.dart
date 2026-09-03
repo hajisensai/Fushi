@@ -95,6 +95,55 @@ void main() {
         reason: '机器自然排序不得伪装成用户手动排序');
   });
 
+  test('BUG-1739 用户删除的合集不被重扫复活；显式重建后恢复归组', () async {
+    final int sourceId = await addSource('/library');
+    await addVideo(
+      uid: 'show-01',
+      path: '/library/Show S01E01.mkv',
+      sourceId: sourceId,
+    );
+    await addVideo(
+      uid: 'show-02',
+      path: '/library/Show S01E02.mkv',
+      sourceId: sourceId,
+    );
+    final List<String> paths = <String>[
+      '/library/Show S01E01.mkv',
+      '/library/Show S01E02.mkv',
+    ];
+    final VideoFolderGroupSummary first = await coordinator.groupPaths(
+      videoPaths: paths,
+      sourceId: sourceId,
+    );
+    final int collectionId = first.createdCollectionIds.single;
+    final String name = (await db.getMediaCollectionById(collectionId))!.name;
+
+    // 用户删除合集（保留条目）→ 成员文件仍在来源目录，重扫不得按自然键复活。
+    // 没有这道门，deleteMediaCollection 写的墓碑会被 createMediaCollection
+    // 清掉，删除永远不生效（用户报「合集无法删除」）。
+    await db.deleteMediaCollection(collectionId);
+    final VideoFolderGroupSummary rescan = await coordinator.groupPaths(
+      videoPaths: paths,
+      sourceId: sourceId,
+    );
+    expect(rescan.createdCollectionIds, isEmpty);
+    expect(rescan.updatedCollectionIds, isEmpty);
+    expect(await db.getMediaCollectionByNaturalKey(name, 'playlist'), isNull);
+    expect(rescan.reusedVideoUids, <String>['show-01', 'show-02'],
+        reason: '只是不再归组，成员视频本身不受影响');
+
+    // 用户显式重建同名合集 = 撤销删除（createMediaCollection 清墓碑），之后
+    // 重扫恢复自动归组，把成员补回来。
+    final int recreated =
+        await db.createMediaCollection(name, collectionType: 'playlist');
+    await coordinator.groupPaths(videoPaths: paths, sourceId: sourceId);
+    expect(
+      (await db.getCollectionItems(recreated))
+          .map((MediaCollectionItemRow item) => item.entryKey),
+      <String>['show-01', 'show-02'],
+    );
+  });
+
   test('重扫幂等；新增与暂缺分集都复用原合集并对全集排序', () async {
     final int sourceId = await addSource('/library');
     for (final ({String uid, String path}) item in <({

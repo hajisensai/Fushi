@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
+import 'package:fushi/src/utils/misc/resumable_downloader.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
 
 void main() {
@@ -131,8 +132,7 @@ void main() {
       expect(last.receivedBytes, payload.length);
       expect(last.totalBytes, payload.length);
       expect(last.bytesPerSecond, isNotNull);
-      expect(last.resumed, isFalse);
-      expect(last.restartedFromZero, isFalse);
+      expect(last.resumeOutcome, DownloadResumeOutcome.none);
     });
 
     test('reports diagnostics for accepted resume and restart-from-zero',
@@ -173,10 +173,9 @@ void main() {
               (UpdateDownloadDiagnostics d) =>
                   d.receivedBytes == payload.length,
             )
-            .resumed,
-        isTrue,
+            .resumeOutcome,
+        DownloadResumeOutcome.resumed,
       );
-      expect(resumedDiagnostics.last.restartedFromZero, isFalse);
 
       final Directory restartDir =
           await Directory.systemTemp.createTemp('hibiki-update-restart');
@@ -211,8 +210,8 @@ void main() {
       final UpdateDownloadDiagnostics restartLast = restartDiagnostics.last;
       expect(restartLast.receivedBytes, payload.length);
       expect(restartLast.totalBytes, payload.length);
-      expect(restartLast.resumed, isFalse);
-      expect(restartLast.restartedFromZero, isTrue);
+      expect(
+          restartLast.resumeOutcome, DownloadResumeOutcome.restartedFromZero);
     });
 
     test('formats diagnostic byte sizes, speeds, and speed samples', () {

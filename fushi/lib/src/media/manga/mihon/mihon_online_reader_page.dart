@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import 'package:fushi/src/media/manga/mihon/mihon_library.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
+import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
@@ -38,8 +40,12 @@ class MihonChapterReaderPage extends StatefulWidget {
 class _MihonChapterReaderPageState extends State<MihonChapterReaderPage> {
   MihonReaderChapter? _resolved;
   Object? _error;
-  late final String _onlineBookKey =
-      MihonLibraryService.bookKeyFor(widget.context, widget.manga);
+  late final String _onlineBookKey = OnlineMangaLibraryService.bookKeyFor(
+    runtime: OnlineMangaRuntimeKind.mihon,
+    extensionPackage: widget.context.extension.packageName,
+    sourceId: widget.context.source.id,
+    seriesKey: widget.manga.url,
+  );
   late final String _readerBookKey =
       widget.libraryBookKey ?? '$_onlineBookKey-preview';
 
@@ -59,9 +65,9 @@ class _MihonChapterReaderPageState extends State<MihonChapterReaderPage> {
       );
       final String? libraryBookKey = widget.libraryBookKey;
       final Directory managedDirectory =
-          MihonLibraryService(widget.manager).chapterDirectory(
+          mihonOnlineLibraryService(widget.manager).chapterDirectory(
         libraryBookKey ?? _onlineBookKey,
-        widget.chapter,
+        MihonLibraryAdapter.chapterOf(widget.chapter),
       );
       if (!mounted) return;
       setState(() {

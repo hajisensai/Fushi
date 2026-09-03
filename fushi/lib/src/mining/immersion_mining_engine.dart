@@ -10,6 +10,51 @@ import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
 
+/// 制卡静图格式 → 降采样器的编码枚举（两层各自的词汇，在此处一次性对齐）。
+CardScreenshotEncoding cardScreenshotEncodingFor(MiningStillFormat format) =>
+    switch (format) {
+      MiningStillFormat.jpg => CardScreenshotEncoding.jpeg,
+      MiningStillFormat.png => CardScreenshotEncoding.png,
+    };
+
+/// [bytes] 实际是哪种静图格式（魔数嗅探），认不出时用 [fallback]。
+///
+/// [fallback] **必须由调用点显式给**，不能定一个「通用默认」：认不出只发生在降采样解码
+/// 失败、原样返回入参的路径上，此时唯一可靠的信息是**这条链的入参本来是什么格式**，而
+/// 各链并不相同——视频侧当前解码帧来自 media_kit 的 `image/jpeg`，gal 侧来自窗口抓图的
+/// PNG。给它一个统一默认，就等于在其中一条链上写出「扩展名与字节不符」的卡（Anki 按扩展
+/// 名判 MIME → 封面不显示），而且是只在解码失败时才现形的那种。
+MiningStillFormat stillFormatOfBytes(
+  Uint8List bytes, {
+  required MiningStillFormat fallback,
+}) =>
+    switch (cardScreenshotEncodingOf(bytes)) {
+      CardScreenshotEncoding.png => MiningStillFormat.png,
+      CardScreenshotEncoding.jpeg => MiningStillFormat.jpg,
+      null => fallback,
+    };
+
+/// 外部给定封面字节的落盘文件名：**扩展名跟随实际字节**，其余部分保留调用方给的名字
+/// （`netflix_frame` / `external_window` / `netflix_shot` 这些名字是「这张图哪来的」的
+/// 线索，媒体库里一眼能认，不该被格式归一化抹掉）。
+///
+/// 只有嗅探出是 JPEG/PNG 时才换扩展名；动图字节（GIF/WebP/AVIF）原样用调用方给的名字
+/// —— 它们的格式由动图那根轴负责，此处不得插手。[name] 为 null 时沿用历史默认
+/// `immersion_cover.gif`，但静图字节会把它改成对应的静图扩展名（`.gif` 里装 JPEG 同样
+/// 是 Anki 判 MIME 判错的那种卡）。
+String providedCoverFileName(String? name, Uint8List bytes) {
+  final CardScreenshotEncoding? actual = cardScreenshotEncodingOf(bytes);
+  final String fallback = name ?? 'immersion_cover.gif';
+  if (actual == null) return fallback;
+  final String extension = switch (actual) {
+    CardScreenshotEncoding.jpeg => MiningStillFormat.jpg.fileExtension,
+    CardScreenshotEncoding.png => MiningStillFormat.png.fileExtension,
+  };
+  final int dot = fallback.lastIndexOf('.');
+  final String stem = dot <= 0 ? fallback : fallback.substring(0, dot);
+  return '$stem.$extension';
+}
+
 /// 注入式抽取器（默认指向 desktop_audio_clipper.dart 真身，测试注入假件）。逐参对齐真身。
 typedef GifExtractor = Future<String?> Function({
   required String inputPath,
@@ -110,6 +155,25 @@ Future<AnimatedClipExtraction?> extractAnimatedClipWithFallback({
   return null;
 }
 
+/// BUG-1664：中止原因 = 症状 + 根因。[symptom] 是稳定的机器可读短语（既有调用方/测试
+/// 按它断言，前缀不变 → Never break userspace），[rootCause] 是抽取层已经算好的精确
+/// 摘要（ffmpeg 启动失败 / 非零退出 + stderr 等）。根因为空（真没抽取过，如 provided
+/// 字节路径丢音轨）时原样返回症状，与旧行为逐字相同。
+///
+/// 截断到 [_kRootCauseMaxChars]：这串会经 `/api/mine` 的 `message` 一路走到浏览器
+/// 扩展的 toast，ffmpeg 的 stderr 摘要可能很长，整段糊上去反而没人看。
+String _withRootCause(String symptom, String? rootCause) {
+  final String cause = rootCause?.trim() ?? '';
+  if (cause.isEmpty) return symptom;
+  final String clipped = cause.length > _kRootCauseMaxChars
+      ? '${cause.substring(0, _kRootCauseMaxChars)}…'
+      : cause;
+  return '$symptom ($clipped)';
+}
+
+/// 见 [_withRootCause]：拼进中止原因的根因摘要上限。
+const int _kRootCauseMaxChars = 300;
+
 /// 统一沉浸制卡引擎。降级阶梯与 `_mineVideoCard`（lookup_mining.part.dart L285-441）一致：
 /// GIF 主 → 单帧降级 → 当前解码帧兜底；音频段；requireAudio 且缺音频则中止；组 context 落卡。
 ///
@@ -200,21 +264,41 @@ class ImmersionMiningEngine {
     bool degradedToStill = false;
 
     // 按来源分流的两个上报口：各自先喂专属回调，再合流进 [onFailure]（保持既有语义）。
+    // BUG-1664：两个上报口流经的**精确**失败摘要（含 `ffmpeg launch failed:
+    // executable=ffmpeg; errorCode=2; message=No such file or directory`）过去只
+    // 进调用方的诊断日志，中止却回一句常量 'required audio missing'——症状而非根因。
+    // 结果：macOS/Linux 上没有 ffmpeg 时，浏览器扩展批量制卡整批失败，用户（和排查
+    // 的人）只能看到「已处理 0 · 失败 N」，必须翻到沙盒容器里的 error_log.txt 才知道
+    // 是缺 ffmpeg。这里就地留存**首个**摘要（首个最接近根因；后续多为它的连锁反应），
+    // 供下方 abort 时并进 abortReason，让根因一路走到用户眼前。
+    String? firstCoverFailure;
+    String? firstAudioFailure;
+
     void reportCover(String summary) {
+      firstCoverFailure ??= summary;
       onCoverFailure?.call(summary);
       onFailure?.call(summary);
     }
 
     void reportAudio(String summary) {
+      firstAudioFailure ??= summary;
       onAudioFailure?.call(summary);
       onFailure?.call(summary);
     }
 
     if (req.providedCoverBytes != null) {
-      coverPath = await _writeBytes(
-          tempDir,
-          req.providedCoverName ?? 'immersion_cover.gif',
-          req.providedCoverBytes!);
+      // 外部已经给好封面字节的三条路（gal 窗口抓图、浏览器扩展的 2A 截图、Netflix 片段
+      // 抽帧）过去在这里被逐字节写盘：格式是产字节那一侧定的，用户在设置里选的静图格式
+      // 对它们完全不生效。这里按偏好归一化一次——**只换编码、不改尺寸**（那些字节大多
+      // 已经降过采样，再压一遍是越权），动图字节（GIF/WebP/AVIF）由
+      // [transcodeCardScreenshot] 的嗅探原样放行。
+      final Uint8List provided = await transcodeCardScreenshotAsync(
+        req.providedCoverBytes!,
+        encoding: cardScreenshotEncodingFor(req.stillFormat),
+        quality: compression.screenshotQuality,
+      );
+      coverPath = await _writeBytes(tempDir,
+          providedCoverFileName(req.providedCoverName, provided), provided);
     }
 
     final String? src = req.mediaSource;
@@ -226,7 +310,8 @@ class ImmersionMiningEngine {
     //
     // 抽字幕区间动图（GIF）到临时文件；无 src / 无区间 → null。
     Future<String?> tryGif() async {
-      if (src == null || !req.hasRange) return null;
+      // `src != null` 已经把「有可裁的源」判掉了，这里只需再问窗几何。
+      if (src == null || !req.hasClipWindow) return null;
       // 首选用户所选格式、失败降级 GIF 的那条链（含每次尝试重新夹取 fps/宽度/扩展名）
       // 收在 [extractAnimatedClipWithFallback] 里，与 Netflix 录制片段共用同一份实现。
       // GIF 也失败才轮到下面既有的单帧降级阶梯。
@@ -246,15 +331,23 @@ class ImmersionMiningEngine {
     }
 
     // 抽字幕 cue 起始时间点的单帧；无 src → null。
+    //
+    // 输出扩展名由 [MiningStillFormat.fileExtension] 给（ffmpeg 按扩展名选 muxer/编码器）；
+    // 首选格式失败按 [MiningStillFormat.encodeAttempts] 退回 JPEG 再抽一次——捆绑 ffmpeg
+    // 缺 png 编码器时该丢的是这个格式，不是整张封面。
     Future<String?> tryStartFrame() async {
       if (src == null) return null;
-      return _frame(
-        inputPath: src,
-        outputPath: '$tempDir/immersion_frame.jpg',
-        atSeconds: req.clipStartMs / 1000.0,
-        onFailure: reportCover,
-        tlsPinSha256: req.mediaSourceTlsPinSha256,
-      );
+      for (final MiningStillFormat attempt in req.stillFormat.encodeAttempts) {
+        final String? produced = await _frame(
+          inputPath: src,
+          outputPath: '$tempDir/immersion_frame.${attempt.fileExtension}',
+          atSeconds: req.clipStartMs / 1000.0,
+          onFailure: reportCover,
+          tlsPinSha256: req.mediaSourceTlsPinSha256,
+        );
+        if (produced != null) return produced;
+      }
+      return null;
     }
 
     // 当前解码帧（`controller.screenshot`，点词已自动暂停）→ 降采样写盘；无 stillFallback → null。
@@ -268,8 +361,17 @@ class ImmersionMiningEngine {
         shot,
         maxLongEdge: compression.screenshotMaxLongEdge,
         quality: compression.screenshotQuality,
+        encoding: cardScreenshotEncodingFor(req.stillFormat),
       );
-      return _writeBytes(tempDir, 'immersion_shot.jpg', small);
+      // 扩展名跟随**实际字节**而非所选格式：降采样在解码失败时原样返回入参（media_kit 的
+      // `image/jpeg`），按所选拼名会写出 `.png` 里装 JPEG 的卡，Anki 按扩展名判 MIME →
+      // 封面不显示。同 Netflix 那条链对动图降级的处理（buildImmersionRequest）。
+      // 兜底 jpg：这条链的入参是 media_kit `controller.screenshot` 的 `image/jpeg`，
+      // 降采样解不开时原样返回的就是那份 JPEG 字节。
+      final MiningStillFormat produced =
+          stillFormatOfBytes(small, fallback: MiningStillFormat.jpg);
+      return _writeBytes(
+          tempDir, 'immersion_shot.${produced.fileExtension}', small);
     }
 
     // BUG-1205 — 音频抽取与下面的封面阶梯**无任何数据依赖**，故在此先启动、末尾才
@@ -337,14 +439,20 @@ class ImmersionMiningEngine {
     if (req.requireAudio &&
         audioPath == null &&
         (req.hasRange || viaProvidedBytes)) {
-      return const ImmersionMiningResult(
-          aborted: true, abortReason: 'required audio missing');
+      return ImmersionMiningResult(
+          aborted: true,
+          abortReason:
+              _withRootCause('required audio missing', firstAudioFailure));
     }
     // TODO-1303：空壳卡兜底——既无封面又无音频（截图/GIF/音频全失败），不建卡。这正是
     // 「降级空壳卡仍报成功」的根：任何来源下都不该产出无媒体的卡。
     if (coverPath == null && audioPath == null) {
-      return const ImmersionMiningResult(
-          aborted: true, abortReason: 'no cover and no audio produced');
+      // 封面与音频**都**没出来时，两条链的首个摘要通常是同一个根因（例如 ffmpeg 缺失
+      // 会同时打死两条）。取封面优先只是取一个稳定顺序，null 时自动退到音频那条。
+      return ImmersionMiningResult(
+          aborted: true,
+          abortReason: _withRootCause('no cover and no audio produced',
+              firstCoverFailure ?? firstAudioFailure));
     }
 
     final AnkiMiningContext context = AnkiMiningContext(
@@ -356,6 +464,14 @@ class ImmersionMiningEngine {
       source: req.source,
       bookTitleTag: req.bookTitleTag,
       collectionTag: req.collectionTag,
+      // 片段时间窗（渲染 `{clip-timestamp}`）：原样透传，有效性不在这里判——
+      // 唯一判据在 [AnkiHandlebarRenderer.formatClipTimestamp]（`end > start`，
+      // 与 [ImmersionMiningRequest.hasClipWindow] 同语义——**不是** [hasRange]：后者还
+      // 要求有可裁的源，Netflix 前台正是「有窗、无源」）。走本引擎但没有时间轴的来源
+      // （galgame）两端恒是 0，
+      // 到那里自然渲染成空串；书籍根本不进本引擎，见 AnkiMiningContext 的字段注释。
+      clipStartMs: req.clipStartMs,
+      clipEndMs: req.clipEndMs,
     );
 
     final MineOutcome outcome = req.updateNoteId == null
@@ -390,7 +506,8 @@ class ImmersionMiningEngine {
               'immersion_audio.${immersionMiningAudioExtension()}',
           req.providedAudioBytes!);
     }
-    if (audioSrc == null || !req.hasRange) return null;
+    // 同 tryGif：`audioSrc != null` 已判源，这里只问窗几何。
+    if (audioSrc == null || !req.hasClipWindow) return null;
 
     // BUG-1004：互联 host（LAN Hibiki 库）远端流优先走 **host 端裁**——host 用本地文件裁好
     // 句子音频再经已鉴权/钉扎的下载通道回传，client 全程不用 ffmpeg 抓远端流，从根上绕开
@@ -418,7 +535,11 @@ class ImmersionMiningEngine {
     // 只下小段、效率更高）不走物化、保持不变。物化失败回退直接对 URL 裁（best-effort，不劣于旧）。
     String cutInput = audioSrc;
     String? materialized;
-    if (req.audioSource != null && _isRemoteHttp(req.audioSource!)) {
+    // 判据是「这个源需不需要物化」而不是「有没有分离音轨」——见
+    // [audioSourceNeedsRangeMaterialization]：`range=` 查询参数分片是 googlevideo 专属绕行，
+    // 别的站点的分离音轨（bilibili 的 audio-only m4s 等）走进来会把同一个流反复下满
+    // maxBytes；它们直接对 URL `-ss` 裁即可（实测 3 秒片段约 1 秒出）。
+    if (audioSourceNeedsRangeMaterialization(req.audioSource)) {
       materialized = await _materialize(
         audioUrl: req.audioSource!,
         outputPath: '$tempDir/immersion_audio_src',

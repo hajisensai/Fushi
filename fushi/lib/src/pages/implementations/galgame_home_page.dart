@@ -21,9 +21,10 @@ import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
-import 'package:fushi/src/pages/implementations/game_statistics_page.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
 
 /// 游戏模块的默认首屏（游戏首页 / 仪表盘），布局对齐 ReinaManager `HomePage`
 /// （见 `docs/design/galgame-library-reina-visual-parity.md` §3）。
@@ -180,12 +181,13 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   Future<List<ActivityEventRow>> _loadTimelineRows(
     List<GalgameEntry> games,
   ) async {
-    final List<ActivityEventRow> dbRows = await _db.getRecentActivityEvents(
-      limit: 200,
-      eventTypes: <String>[kActivityGame, kActivityAdded],
-    );
-    final List<ActivityEventRow> gameRows = dbRows
-        .where((ActivityEventRow r) => r.mediaType == kActivityMediaGame)
+    // v92：活动流唯一数据源是统一事实面的 [StatFacts.activityRows]（legacy 活动行
+    // ∪ hook 字数段 ∪ galgame_sessions 合成的游玩事件）；游玩不再写 activity 行。
+    final StatFacts facts = await loadStatFacts(_db);
+    final List<ActivityEventRow> gameRows = facts.activityRows
+        .where((ActivityEventRow r) =>
+            r.mediaType == kActivityMediaGame &&
+            (r.eventType == kActivityGame || r.eventType == kActivityAdded))
         .toList();
     final List<ActivityEventRow> synthesizedAdds = <ActivityEventRow>[
       for (final GalgameEntry g in games)
@@ -280,6 +282,12 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       if (!installed || !mounted) return;
       final GalHookSessionController controller =
           widget.sessionController ?? GalHookSessionController.instance;
+      // TODO-2936：应用「游戏」媒体类型的 Profile 绑定（非致命、与启动并行）。
+      unawaited(
+        ref
+            .read(profileViewModelProvider.notifier)
+            .autoApplyBinding(mediaType: ProfileMediaKind.game),
+      );
       final GalHookLaunchResult result = await controller.launchGame(
         game.exePath,
         launchArguments: game.launchArgumentTokens,
@@ -288,6 +296,8 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         gameTitle: game.displayName,
         japaneseLocaleMode:
             galJapaneseLocaleModeFromKey(game.japaneseLocaleMode),
+        // BUG-2047：内容语言是转区 auto 判定的人工真值，entry 本来就在手上。
+        contentLanguage: game.language,
       );
       if (!mounted) return;
       // 每种结果都播报（BUG-1089）。旧实现只在 `!launched` 时说话，可注入降级和
@@ -346,15 +356,6 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     await _reload();
   }
 
-  Future<void> _openStatistics() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) => const GameStatisticsPage(),
-      ),
-    );
-    await _reload();
-  }
-
   @override
   Widget build(BuildContext context) {
     return DesktopContentLayout(
@@ -368,14 +369,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
               onSelectLibrary: widget.onShowLibrary,
               onSelectMonitor: widget.onShowMonitor,
             ),
-            actions: <Widget>[
-              FushiIconButton(
-                icon: Icons.bar_chart_outlined,
-                tooltip: t.game_statistics,
-                label: t.game_statistics,
-                onTap: _openStatistics,
-              ),
-            ],
+            // 统计入口已收敛到首页 dashboard（用户定案 2026-09-01）。
           ),
           Expanded(
             child: _games.isEmpty ? _buildEmpty(context) : _buildBody(context),

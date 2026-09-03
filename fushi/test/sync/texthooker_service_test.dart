@@ -179,6 +179,29 @@ void main() {
     expect(TexthookerService.instance.textThreads, isEmpty);
   });
 
+  test('text-ring lines rebuild a missing thread directory without publishing',
+      () {
+    for (int i = 1; i <= 3; i++) {
+      TexthookerService.instance.observeTextThreadLine(
+        key: 'hook:user1',
+        label: 'UserHook1',
+        hookCode: 'HQFN-24@328E0',
+        nativeThreadId: 0x1234,
+        text: '台詞$i',
+      );
+    }
+
+    expect(TexthookerService.instance.entries, isEmpty,
+        reason: '目录观测不能绕过控制器的选中线程发布门');
+    final TexthookerTextThread thread =
+        TexthookerService.instance.textThreads.single;
+    expect(thread.key, 'hook:user1');
+    expect(thread.label, 'UserHook1');
+    expect(thread.nativeThreadId, 0x1234);
+    expect(thread.observedLineCount, 3);
+    expect(thread.previewText, '台詞3');
+  });
+
   test('text-bearing threads sort before freshly-discovered 0-line threads',
       () {
     final DateTime base = DateTime(2026, 7, 26, 12);

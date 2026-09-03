@@ -12,8 +12,10 @@ constexpr uint32_t kDiagSiglusOvkOpened = 0x20000000u;
 constexpr uint32_t kDiagSiglusVoiceQueued = 0x40000000u;
 constexpr uint32_t kDiagSiglusVoiceDumped = 0x80000000u;
 
+// 无锁句柄表（tracked_handle_table.h）：Forget 走 CloseHandle detour，不得进 g_cs（BUG-2046）。
 struct SiglusOvkHandle {
   HANDLE handle = INVALID_HANDLE_VALUE;
+  volatile LONG seq = 0;
   wchar_t path[kSiglusPathChars] = {0};
 };
 
@@ -68,6 +70,21 @@ void RememberElfAi6VoiceArc(HANDLE handle, const wchar_t* path);
 void ObserveElfAi6VoiceArcRead(HANDLE file, const void* buffer, DWORD done,
                                LPOVERLAPPED overlapped);
 void ForgetElfAi6VoiceArc(HANDLE handle);
+// Leaf/AQUAPLUS owns the archive identity, index layout and worker tasks.  This
+// shared KernelBase boundary only fans file events out so engines never stack
+// competing ReadFile detours.
+void RememberLeafAquaplusVoicePak(HANDLE handle, const wchar_t* path);
+void ObserveLeafAquaplusVoicePakRead(HANDLE file, const void* buffer,
+                                    DWORD done, LPOVERLAPPED overlapped,
+                                    const void* caller);
+void ForgetLeafAquaplusVoicePak(HANDLE handle);
+// HUNEX GGE owns HFA identity, index parsing and worker tasks.  This shared
+// broker only forwards fixed file events; it never parses HFA/HW on a game
+// thread and never installs a competing KernelBase detour.
+void RememberHunexVoiceHfa(HANDLE handle, const wchar_t* path);
+void ObserveHunexVoiceHfaRead(HANDLE file, const void* buffer, DWORD done,
+                              LPOVERLAPPED overlapped);
+void ForgetHunexVoiceHfa(HANDLE handle);
 
 bool HasOvkSuffix(const wchar_t* path) {
   if (path == nullptr) return false;
@@ -105,19 +122,11 @@ void RememberUnityVoiceBundle(const wchar_t* path) {
 }
 
 void RememberSiglusOvk(HANDLE handle, const wchar_t* path) {
-  if (handle == INVALID_HANDLE_VALUE || path == nullptr || !g_cs_ready) return;
-  bool remembered = false;
-  EnterCriticalSection(&g_cs);
-  for (int i = 0; i < kSiglusHandleSlots; ++i) {
-    if (g_siglus_handles[i].handle == INVALID_HANDLE_VALUE ||
-        g_siglus_handles[i].handle == handle) {
-      g_siglus_handles[i].handle = handle;
-      wcsncpy_s(g_siglus_handles[i].path, path, _TRUNCATE);
-      remembered = true;
-      break;
-    }
-  }
-  LeaveCriticalSection(&g_cs);
+  if (handle == INVALID_HANDLE_VALUE || path == nullptr) return;
+  const bool remembered = fushi_voice_hook::RememberTrackedHandle(
+      g_siglus_handles, handle, [path](SiglusOvkHandle& slot) {
+        wcsncpy_s(slot.path, path, _TRUNCATE);
+      });
   if (remembered) {
     InterlockedExchange(&g_visual_arts_ovk_seen, 1);
     if (g_header != nullptr) {
@@ -129,34 +138,15 @@ void RememberSiglusOvk(HANDLE handle, const wchar_t* path) {
 }
 
 bool CopySiglusOvkPath(HANDLE handle, wchar_t* out, size_t out_chars) {
-  if (handle == INVALID_HANDLE_VALUE || out == nullptr || out_chars == 0 ||
-      !g_cs_ready) {
-    return false;
-  }
-  bool found = false;
-  EnterCriticalSection(&g_cs);
-  for (int i = 0; i < kSiglusHandleSlots; ++i) {
-    if (g_siglus_handles[i].handle == handle) {
-      wcsncpy_s(out, out_chars, g_siglus_handles[i].path, _TRUNCATE);
-      found = true;
-      break;
-    }
-  }
-  LeaveCriticalSection(&g_cs);
-  return found;
+  if (out == nullptr || out_chars == 0) return false;
+  return fushi_voice_hook::ReadTrackedHandle(
+      g_siglus_handles, handle, [out, out_chars](const SiglusOvkHandle& slot) {
+        wcsncpy_s(out, out_chars, slot.path, _TRUNCATE);
+      });
 }
 
 void ForgetSiglusOvk(HANDLE handle) {
-  if (handle == INVALID_HANDLE_VALUE || !g_cs_ready) return;
-  EnterCriticalSection(&g_cs);
-  for (int i = 0; i < kSiglusHandleSlots; ++i) {
-    if (g_siglus_handles[i].handle == handle) {
-      g_siglus_handles[i].handle = INVALID_HANDLE_VALUE;
-      g_siglus_handles[i].path[0] = 0;
-      break;
-    }
-  }
-  LeaveCriticalSection(&g_cs);
+  fushi_voice_hook::ForgetTrackedHandle(g_siglus_handles, handle);
 }
 
 HANDLE WINAPI Detour_CreateFileW(LPCWSTR file_name, DWORD desired_access,
@@ -177,6 +167,10 @@ HANDLE WINAPI Detour_CreateFileW(LPCWSTR file_name, DWORD desired_access,
   if (result != INVALID_HANDLE_VALUE) RememberCatSystem2Pcm(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberMalieArchive(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberElfAi6VoiceArc(result, file_name);
+  if (result != INVALID_HANDLE_VALUE) {
+    RememberLeafAquaplusVoicePak(result, file_name);
+  }
+  if (result != INVALID_HANDLE_VALUE) RememberHunexVoiceHfa(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberUnityVoiceBundle(file_name);
   return result;
 }
@@ -207,6 +201,8 @@ HANDLE WINAPI Detour_CreateFileA(LPCSTR file_name, DWORD desired_access,
       RememberCatSystem2Pcm(result, wide);
       RememberMalieArchive(result, wide);
       RememberElfAi6VoiceArc(result, wide);
+      RememberLeafAquaplusVoicePak(result, wide);
+      RememberHunexVoiceHfa(result, wide);
       RememberUnityVoiceBundle(wide);
     }
   }
@@ -262,6 +258,7 @@ void QueueSiglusVoice(const wchar_t* path, uint64_t offset) {
 
 BOOL WINAPI Detour_ReadFile(HANDLE file, LPVOID buffer, DWORD requested,
                             LPDWORD bytes_read, LPOVERLAPPED overlapped) {
+  const void* caller = _ReturnAddress();
   if (g_capture_enabled && overlapped != nullptr && requested > 0) {
     ObserveTyranoAsarReadRequest(file, requested, overlapped);
     ObserveMalieArchiveReadRequest(file, requested, overlapped);
@@ -276,6 +273,8 @@ BOOL WINAPI Detour_ReadFile(HANDLE file, LPVOID buffer, DWORD requested,
   ObserveCatSystem2PcmRead(file, done, overlapped);
   ObserveMalieArchiveRead(file, done, overlapped);
   ObserveElfAi6VoiceArcRead(file, buffer, done, overlapped);
+  ObserveLeafAquaplusVoicePakRead(file, buffer, done, overlapped, caller);
+  ObserveHunexVoiceHfaRead(file, buffer, done, overlapped);
   if (InterlockedCompareExchange(&g_visual_arts_ovk_seen, 0, 0) == 0) return ok;
 
   wchar_t path[kSiglusPathChars] = {0};
@@ -303,6 +302,11 @@ BOOL WINAPI Detour_ReadFile(HANDLE file, LPVOID buffer, DWORD requested,
   return ok;
 }
 
+// 🔴 这条 detour 里**不得出现任何阻塞原语**（EnterCriticalSection / SRW / Wait / Sleep），
+// 它调到的每个 Forget* 也一样——守卫 tests/close_handle_detour_lockfree_guard_test.py。
+// CloseHandle 是 MinHook Freeze/Unfreeze 在挂起了其它全部线程之后仍会调用的 API，而进程里
+// 除了我们还有 LunaHook32 那份 MinHook：它挂起主线程后走进这里等 g_cs，而 g_cs 的唤醒正
+// 排给了被它挂起的主线程 → 锁无人持有、两边永远互等（BUG-2046，真机 cdb 证据）。
 BOOL WINAPI Detour_CloseHandle(HANDLE handle) {
   ForgetTyranoAsar(handle);
   ForgetBgiVoiceArc(handle);
@@ -310,6 +314,8 @@ BOOL WINAPI Detour_CloseHandle(HANDLE handle) {
   ForgetCatSystem2Pcm(handle);
   ForgetMalieArchive(handle);
   ForgetElfAi6VoiceArc(handle);
+  ForgetLeafAquaplusVoicePak(handle);
+  ForgetHunexVoiceHfa(handle);
   ForgetMalieMapping(handle);
   if (InterlockedCompareExchange(&g_visual_arts_ovk_seen, 0, 0) != 0) {
     ForgetSiglusOvk(handle);
@@ -409,7 +415,17 @@ bool IsSiglusEngine() {
   if (GetModuleFileNameW(nullptr, path, MAX_PATH) == 0) return false;
   const wchar_t* slash = wcsrchr(path, L'\\');
   const wchar_t* base = slash != nullptr ? slash + 1 : path;
-  return _wcsicmp(base, L"SiglusEngine.exe") == 0;
+  if (_wcsicmp(base, L"SiglusEngine.exe") == 0) return true;
+  if (slash == nullptr) return false;
+
+  const std::wstring directory(path, static_cast<size_t>(slash - path));
+  return fushi_voice_hook::DirectoryLooksLikeSiglus(
+      directory, [](const std::wstring& dir, const wchar_t* name) {
+        const std::wstring candidate = dir + L"\\" + name;
+        const DWORD attributes = GetFileAttributesW(candidate.c_str());
+        return attributes != INVALID_FILE_ATTRIBUTES &&
+               (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
+      });
 }
 
 bool TryHookSiglusOvk() {

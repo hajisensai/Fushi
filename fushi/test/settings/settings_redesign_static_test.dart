@@ -228,8 +228,7 @@ void main() {
     final String cupertinoSource = readNormalizedSource(
         'lib/src/settings/cupertino_settings_renderer.dart');
 
-    expect(
-        containsIdentifierCall(materialSource, 'FushiDesignTokens'), isTrue);
+    expect(containsIdentifierCall(materialSource, 'FushiDesignTokens'), isTrue);
     expect(
       containsIdentifierCall(cupertinoSource, 'FushiDesignTokens'),
       isTrue,
@@ -429,8 +428,14 @@ void main() {
         enclosingCallOf(source, "id: 'sync.mode'").name, 'SettingsCustomItem');
     expect(enclosingCallOf(source, "id: 'sync.statistics'").name,
         'SettingsSwitchItem');
-    expect(enclosingCallOf(source, "id: 'sync.dictionary'").name,
-        'SettingsSwitchItem');
+    // 词典与本地音频源数据库不再是开关：各拆成一对显式的上传 / 下载动作行
+    // （`SettingsCustomItem` + `_AssetTransferWidget`），方向由用户点的那一下给出。
+    expect(enclosingCallOf(source, "id: 'sync.dictionary_upload'").name,
+        'SettingsCustomItem');
+    expect(enclosingCallOf(source, "id: 'sync.local_audio_download'").name,
+        'SettingsCustomItem');
+    expect(source, isNot(contains("id: 'sync.dictionary'")));
+    expect(source, isNot(contains("id: 'sync.local_audio'")));
     expect(source, isNot(contains("id: 'sync.audiobook'")));
     expect(source, isNot(contains("id: 'sync.options'")));
     expect(source, isNot(contains('class _SyncOptionsWidget')));

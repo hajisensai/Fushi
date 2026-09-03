@@ -26,6 +26,21 @@ public:
   // Get last Windows error as string
   static std::string getLastErrorAsString();
 
+  // Coerce a native diagnostic string into valid UTF-8.
+  //
+  // The Flutter method channel encodes strings as UTF-8 and Dart's decoder is
+  // strict, so a single stray byte makes the *reply itself* undecodable: the
+  // Dart caller gets a FormatException instead of the error we tried to report,
+  // and the real failure is lost. ONNX Runtime builds its Windows messages by
+  // appending the system error text, which FormatMessage renders in the
+  // machine's ANSI code page (GBK on a Chinese Windows), so this is the normal
+  // case for a failing session, not an exotic one.
+  //
+  // Already-valid UTF-8 is returned untouched; anything else is read as ANSI
+  // and re-encoded. Input that is neither keeps its ASCII skeleton (error code,
+  // file and line stay readable) with the undecodable bytes replaced.
+  static std::string toUtf8Message(const std::string &message);
+
   // Get path to application's temporary directory
   static std::string getAppTempDirectory();
 

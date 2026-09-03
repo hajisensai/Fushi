@@ -2,9 +2,11 @@
 
 #include <dwmapi.h>
 #include <shlwapi.h>
-#include <wincodec.h>  // WIC：CapturePreview 的 PNG 流 → BGRA8 直通 alpha 位图
+#include <wincodec.h>  // WIC：CapturePreview 压缩流 → BGRA8 直通 alpha 位图
 #include <windowsx.h>  // GET_X_LPARAM / GET_KEYSTATE_WPARAM（composition 鼠标转发）
 
+#include "gal_direct_card_geometry.h"
+#include "game_client_extent.h"
 #include "low_level_mouse_hook.h"
 #include "resource.h"
 
@@ -12,6 +14,7 @@
 // InjectLookupInput 的 [kind] 是跨进程契约的一部分，在这里手抄 0..4 就又造一个漂移源。
 #include "../../../native/galgame_hook/include/voice_hook_ipc.h"
 
+#include <algorithm>
 #include <cmath>
 #include <charconv>
 #include <fstream>
@@ -40,6 +43,10 @@ using Microsoft::WRL::Make;
 namespace {
 
 constexpr wchar_t kClassName[] = L"FushiGlobalLookupWindow";
+
+// 进程客户区查询已收成唯一原语（game_client_extent.h）：reader 在发 hit 时也要
+// 量同一个东西，两份实现必然漂。
+using fushi::game_client_extent::FindProcessClientWindow;
 
 std::wstring Utf8ToWide(const std::string& value) {
   if (value.empty()) {
@@ -283,6 +290,52 @@ bool ReadTopLevelJsonInt64(const std::string& json, const char* field,
   return true;
 }
 
+bool ReadTopLevelJsonArrayInt64(const std::string& json, const char* field,
+                                size_t index, int64_t* value) {
+  if (value == nullptr) {
+    return false;
+  }
+  size_t cursor = 0;
+  if (!FindTopLevelJsonValue(json, field, &cursor) || cursor >= json.size() ||
+      json[cursor] != '[') {
+    return false;
+  }
+  ++cursor;
+  for (size_t current_index = 0; current_index <= index; ++current_index) {
+    cursor = SkipJsonWhitespace(json, cursor);
+    if (current_index > 0) {
+      if (cursor >= json.size() || json[cursor] != ',') {
+        return false;
+      }
+      cursor = SkipJsonWhitespace(json, cursor + 1);
+    }
+    const char* begin = json.data() + cursor;
+    const char* end = json.data() + json.size();
+    int64_t parsed = 0;
+    const auto converted = std::from_chars(begin, end, parsed);
+    if (converted.ec != std::errc() || converted.ptr == begin) {
+      return false;
+    }
+    const size_t next = SkipJsonWhitespace(
+        json, static_cast<size_t>(converted.ptr - json.data()));
+    if (next >= json.size() ||
+        (json[next] != ',' && json[next] != ']')) {
+      return false;
+    }
+    if (current_index == index) {
+      *value = parsed;
+      return true;
+    }
+    cursor = next;
+  }
+  return false;
+}
+
+bool ScriptResultIsTrue(HRESULT error_code, LPCWSTR result_json) {
+  return SUCCEEDED(error_code) && result_json != nullptr &&
+         std::wstring(result_json) == L"true";
+}
+
 // Picks the HTTP Content-Type header for a resolved custom-scheme resource,
 // mirroring the in-app dictionary_webview_media.dart logic so the app-external
 // overlay serves the SAME content-type the in-app InAppWebView does:
@@ -363,9 +416,8 @@ void NativeGlog(const std::string& message) {
 // environments register. Falls back to %TEMP% then to empty (default) as a last
 // resort; empty only re-risks the conflict, which the added error logging then
 // surfaces instead of swallowing.
-// spec 2026-07-10 — |leaf| is the per-instance profile directory name (lookup
-// overlay: GlobalLookupWebView2; clipboard panel: ClipboardPanelWebView2).
-// Separate folders keep the two instances' environment options independent
+// |leaf| is the profile directory name (GlobalLookupWebView2); its own folder
+// keeps the overlay environment options independent of the in-app fork's
 // (same-folder different-options fails the second create with 0x8007139F).
 std::wstring OverlayUserDataFolder(const std::wstring& leaf) {
   wchar_t buf[MAX_PATH];
@@ -385,12 +437,11 @@ std::wstring OverlayUserDataFolder(const std::wstring& leaf) {
   return base + L"\\Fushi\\" + leaf;
 }
 
-// v14 游戏内查词 — 把 CapturePreview 吐出的 PNG 流解成契约规定的
+// v14 游戏内查词 — 把 CapturePreview 吐出的压缩图像流解成契约规定的
 // **BGRA8 / 直通（非预乘）alpha / 自顶向下**（voice_hook_ipc.h 的 v14 查词区注释）。
 //
 // 🔴 必须是 `GUID_WICPixelFormat32bppBGRA` 而**不是** `…32bppPBGRA`：后者是预乘。
-// 两端都用直通是有原因的——PNG 解码出来的本来就是直通（不转换就是零成本），注入侧
-// KiriKiri 的 `ltAlpha` 也正是直通合成模式（预乘对应的是 `ltAddAlpha`）。写成预乘不会
+// 注入侧 KiriKiri 的 `ltAlpha` 是直通合成模式（预乘对应的是 `ltAddAlpha`）。写成预乘不会
 // 报任何错，只会让卡片的半透明边缘（圆角、阴影、文字抗锯齿）整体发暗，症状是"看起来
 // 有点脏"，在真机上极难归因到像素格式。
 //
@@ -400,10 +451,13 @@ std::wstring OverlayUserDataFolder(const std::wstring& leaf) {
 // [max_width]/[max_height] 是硬裁剪上界（不是缩放）：超出就按左上角切，并置 [clamped]。
 // 缩放会让卡片文字糊掉，而卡片的价值就是"与 Hibiki 自身像素一致"——宁可切也不缩。
 // 全程 HRESULT 校验、零异常（runner 以 _HAS_EXCEPTIONS=0 编译）。
-bool DecodePngStreamToStraightBgra(IStream* stream, uint32_t max_width,
-                            uint32_t max_height, std::vector<uint8_t>* out,
-                            uint32_t* out_width, uint32_t* out_height,
-                            uint32_t* out_pitch, bool* out_clamped) {
+bool DecodeCaptureStreamToStraightBgra(IStream* stream, uint32_t max_width,
+                                       uint32_t max_height,
+                                       std::vector<uint8_t>* out,
+                                       uint32_t* out_width,
+                                       uint32_t* out_height,
+                                       uint32_t* out_pitch,
+                                       bool* out_clamped) {
   if (stream == nullptr || out == nullptr || out_width == nullptr ||
       out_height == nullptr || out_pitch == nullptr || out_clamped == nullptr) {
     return false;
@@ -457,7 +511,9 @@ bool DecodePngStreamToStraightBgra(IStream* stream, uint32_t max_width,
     *out_clamped = true;
   }
   wil::com_ptr<IWICBitmapSource> converted;
-  // 直通 alpha（见函数头注释）。改成 32bppPBGRA 会静默地把卡片边缘弄暗。
+  // 直通 alpha（见函数头注释）。PNG 会保留源 alpha；JPEG 先得到全不透明像素，
+  // 随后由 galCard 的精确 shell mask 重建边界 alpha。改成 32bppPBGRA 会静默地
+  // 把卡片边缘弄暗。
   hr = WICConvertBitmapSource(GUID_WICPixelFormat32bppBGRA, frame.get(),
                               &converted);
   if (FAILED(hr) || converted == nullptr) {
@@ -485,6 +541,132 @@ bool DecodePngStreamToStraightBgra(IStream* stream, uint32_t max_width,
   *out_height = static_cast<uint32_t>(height);
   *out_pitch = static_cast<uint32_t>(pitch);
   return true;
+}
+
+// BUG-1609 — CapturePreview captures the WebView2 composition surface, not the
+// HWND region installed by SetWindowRgn.  A promoted iframe/scrollbar gutter can
+// therefore leave square opaque pixels outside the host shell even though the
+// desktop window itself has a correct rounded HRGN.  galCard sends that BGRA
+// buffer straight into the game, so enforce the host's per-shell silhouette on
+// the pixels at the final boundary.
+//
+// The buffer uses STRAIGHT alpha.  For anti-aliased edge pixels we multiply only
+// alpha (never RGB); fully transparent pixels are cleared to black as well so a
+// texture sampler cannot bleed the old square canvas colour into the curve.
+struct PhysicalRoundedShell {
+  double left = 0.0;
+  double top = 0.0;
+  double right = 0.0;
+  double bottom = 0.0;
+  double radius = 0.0;
+};
+
+double RoundedShellCoverage(const PhysicalRoundedShell& shell, double x,
+                            double y) {
+  if (x < shell.left || x >= shell.right || y < shell.top ||
+      y >= shell.bottom) {
+    return 0.0;
+  }
+
+  // Signed-distance coverage for a rounded rectangle, sampled at the pixel
+  // centre.  The 0.5px ramp preserves a smooth edge without changing the
+  // straight-alpha RGB contract.
+  const double inner_left = shell.left + shell.radius;
+  const double inner_right = shell.right - shell.radius;
+  const double inner_top = shell.top + shell.radius;
+  const double inner_bottom = shell.bottom - shell.radius;
+  const double nearest_x = std::clamp(x, inner_left, inner_right);
+  const double nearest_y = std::clamp(y, inner_top, inner_bottom);
+  const double dx = x - nearest_x;
+  const double dy = y - nearest_y;
+  const double distance_squared = dx * dx + dy * dy;
+  const double fully_covered = shell.radius - 0.5;
+  if (fully_covered >= 0.0 &&
+      distance_squared <= fully_covered * fully_covered) {
+    return 1.0;
+  }
+  const double fully_clear = shell.radius + 0.5;
+  if (distance_squared >= fully_clear * fully_clear) {
+    return 0.0;
+  }
+  // sqrt is needed only in the one-pixel anti-aliasing band; the overwhelming
+  // majority of a captured card takes one of the squared-distance fast paths.
+  return std::clamp(fully_clear - std::sqrt(distance_squared), 0.0, 1.0);
+}
+
+void ApplyRoundedShellUnionAlphaMask(
+    const std::vector<std::array<double, 4>>& shell_rects_css, double dpr,
+    std::vector<uint8_t>* bgra, uint32_t width, uint32_t height,
+    uint32_t pitch) {
+  if (bgra == nullptr || shell_rects_css.empty() || !std::isfinite(dpr) ||
+      dpr <= 0.0 || width == 0 || height == 0 ||
+      pitch < static_cast<uint64_t>(width) * 4u ||
+      bgra->size() < static_cast<uint64_t>(pitch) * height) {
+    return;
+  }
+
+  std::vector<PhysicalRoundedShell> shells;
+  shells.reserve(shell_rects_css.size());
+  for (const std::array<double, 4>& rect : shell_rects_css) {
+    if (!std::isfinite(rect[0]) || !std::isfinite(rect[1]) ||
+        !std::isfinite(rect[2]) || !std::isfinite(rect[3]) || rect[2] <= 0.0 ||
+        rect[3] <= 0.0) {
+      continue;
+    }
+    PhysicalRoundedShell shell;
+    shell.left = rect[0] * dpr;
+    shell.top = rect[1] * dpr;
+    shell.right = (rect[0] + rect[2]) * dpr;
+    shell.bottom = (rect[1] + rect[3]) * dpr;
+    shell.radius = std::min(10.0 * dpr,
+                            std::min((shell.right - shell.left) * 0.5,
+                                     (shell.bottom - shell.top) * 0.5));
+    if (shell.radius > 0.0 && shell.right > 0.0 && shell.bottom > 0.0 &&
+        shell.left < static_cast<double>(width) &&
+        shell.top < static_cast<double>(height)) {
+      shells.push_back(shell);
+    }
+  }
+  if (shells.empty()) {
+    return;
+  }
+
+  for (uint32_t y = 0; y < height; ++y) {
+    uint8_t* row = bgra->data() + static_cast<size_t>(y) * pitch;
+    const double sample_y = static_cast<double>(y) + 0.5;
+    for (uint32_t x = 0; x < width; ++x) {
+      const double sample_x = static_cast<double>(x) + 0.5;
+      double coverage = 0.0;
+      for (const PhysicalRoundedShell& shell : shells) {
+        coverage =
+            std::max(coverage, RoundedShellCoverage(shell, sample_x, sample_y));
+        if (coverage >= 1.0) {
+          break;
+        }
+      }
+      uint8_t* pixel = row + static_cast<size_t>(x) * 4u;
+      if (coverage <= 0.0) {
+        pixel[0] = 0;
+        pixel[1] = 0;
+        pixel[2] = 0;
+        pixel[3] = 0;
+      } else if (coverage < 1.0) {
+        const uint32_t mask_alpha =
+            static_cast<uint32_t>(std::lround(coverage * 255.0));
+        // Treat the geometry mask as an alpha ceiling.  min() is idempotent when
+        // Chromium already anti-aliased the same curve; multiplying would clip
+        // that edge twice (for example 0.5 -> 0.25) and create a dark/thin halo.
+        const uint8_t masked_alpha = static_cast<uint8_t>(
+            std::min(static_cast<uint32_t>(pixel[3]), mask_alpha));
+        if (masked_alpha == 0) {
+          pixel[0] = 0;
+          pixel[1] = 0;
+          pixel[2] = 0;
+        }
+        pixel[3] = masked_alpha;
+      }
+    }
+  }
 }
 
 }  // namespace
@@ -635,8 +817,91 @@ void GlobalLookupWindow::SetRouteContext(std::string source,
     }
   }
 
+  const bool route_changed =
+      !route_context_bound_ || source != route_context_.source ||
+      route_epoch != route_context_.route_epoch ||
+      lookup_epoch != route_context_.lookup_epoch;
   route_context_ = {std::move(source), route_epoch, lookup_epoch};
   route_context_bound_ = true;
+  if (route_changed) {
+    // A lookup created while an older card is capture-suppressed owns the HWND
+    // from this point on.  Retire the old restoration token without showing
+    // anything; ShowAt/Reveal for the new route will establish its own state.
+    CancelCaptureSuppression();
+    ClearPendingShellGeometry();
+    direct_process_client_active_ = false;
+    direct_game_hwnd_ = nullptr;
+    direct_root_anchor_x_ = 0;
+    direct_root_anchor_y_ = 0;
+    direct_bbox_dx_ = 0;
+    direct_bbox_dy_ = 0;
+    direct_view_width_ = 0;
+    direct_view_height_ = 0;
+  }
+}
+
+bool GlobalLookupWindow::BeginGeometryRequest(int64_t geometry_epoch) {
+  if (geometry_epoch < 0) {
+    return false;
+  }
+  // Epoch zero is the compatibility path for an older Dart/host bundle. Once a
+  // routed document has emitted a real epoch, a delayed legacy command is stale
+  // and must not move a live direct HWND behind the current host geometry.
+  if (geometry_epoch == 0) {
+    return latest_geometry_epoch_ == 0;
+  }
+  if (geometry_epoch < latest_geometry_epoch_) {
+    return false;
+  }
+  // Record the highest REQUEST, not merely the highest successful resize. If a
+  // newer SetWindowPos fails, an older command arriving afterwards must still be
+  // unable to roll the visible HWND back and manufacture a stale host ack.
+  if (geometry_epoch > latest_geometry_epoch_) {
+    latest_geometry_epoch_ = geometry_epoch;
+  }
+  return true;  // Equal epochs are bounded capture/readiness retries.
+}
+
+bool GlobalLookupWindow::CommitPendingShellGeometry(
+    int64_t geometry_epoch) {
+  if (!shell_geometry_pending_) {
+    return false;
+  }
+  // A newer bbox-only request may legitimately commit the latest pending
+  // shellRects. An older/stale resize must never acknowledge them.
+  const bool matches = pending_shell_geometry_epoch_ == 0
+                           ? geometry_epoch == 0
+                           : geometry_epoch >= pending_shell_geometry_epoch_;
+  if (!matches) {
+    return false;
+  }
+  shell_rects_css_ = std::move(pending_shell_rects_css_);
+  pending_shell_rects_css_.clear();
+  shell_geometry_pending_ = false;
+  pending_shell_geometry_epoch_ = 0;
+  return true;
+}
+
+void GlobalLookupWindow::FinalizePendingShellGeometry(
+    int64_t geometry_epoch) {
+  if (!OwnsLiveWindow()) {
+    ClearPendingShellGeometry();
+    return;
+  }
+  if (!CommitPendingShellGeometry(geometry_epoch)) {
+    return;
+  }
+  // The host layer shift has executed, so committed shell rects and visible DOM
+  // now share one window-local origin. Only here may HRGN and shadow consume the
+  // transaction; applying pending rects on the preceding layer clips the parent.
+  ApplyRoundedRegion();
+  SyncShadow();
+}
+
+void GlobalLookupWindow::ClearPendingShellGeometry() {
+  shell_geometry_pending_ = false;
+  pending_shell_geometry_epoch_ = 0;
+  pending_shell_rects_css_.clear();
 }
 
 GlobalLookupWindow::RouteContext GlobalLookupWindow::RouteForMessage(
@@ -666,8 +931,8 @@ GlobalLookupWindow::~GlobalLookupWindow() {
     DestroyWindow(hwnd_);
     hwnd_ = nullptr;
   }
-  // spec 2026-07-10 — the window class is PROCESS-scoped and shared by both
-  // instances (lookup overlay + clipboard panel), so no instance may
+  // spec 2026-07-10 — the window class is PROCESS-scoped and shared by all
+  // instances (lookup overlay + gal card renderer), so no instance may
   // UnregisterClassW it: destroying one window would rip the class out from
   // under the other. The class stays registered for the process lifetime
   // (registered once in EnsureWindowClass; the OS reclaims it at exit).
@@ -722,12 +987,11 @@ void GlobalLookupWindow::ReleaseDismissHooks() {
     foreground_hook_ = nullptr;
   }
   if (mouse_hook_armed_) {
-    fushi::DisarmLowLevelMouseHook();
+    fushi::DisarmLowLevelMouseHook(hwnd_);
     mouse_hook_armed_ = false;
   }
-  // spec 2026-07-10 — only clear the hook owner if it is OURS: the persistent
-  // clipboard panel never arms the hooks, and its Hide() must not disarm the
-  // transient lookup overlay's live click-outside callbacks.
+  // Only clear the hook owner if it is OURS: another instance's Hide() must
+  // not disarm the transient lookup overlay's live click-outside callbacks.
   if (s_hook_owner_ == this) {
     s_hook_owner_ = nullptr;
   }
@@ -769,8 +1033,15 @@ void GlobalLookupWindow::ForgetDeadWindow() {
   recovering_ = false;
   visible_ = false;
   revealed_ = false;
+  CancelCaptureSuppression();
   offscreen_active_ = false;
+  latest_geometry_epoch_ = 0;
+  direct_process_client_active_ = false;
+  direct_game_hwnd_ = nullptr;
   shell_rects_css_.clear();  // BUG-749 — stale rects must not clip a rebuild.
+  ClearPendingShellGeometry();
+  // 锚窗已死，投影窗不能留在桌面上变成"孤儿影子"。
+  shadow_.Hide();
 }
 
 bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
@@ -784,6 +1055,14 @@ bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
   pending_x_ = x;
   pending_y_ = y;
   revealed_ = false;
+  direct_process_client_active_ = false;
+  direct_game_hwnd_ = nullptr;
+  direct_root_anchor_x_ = 0;
+  direct_root_anchor_y_ = 0;
+  direct_bbox_dx_ = 0;
+  direct_bbox_dy_ = 0;
+  direct_view_width_ = 0;
+  direct_view_height_ = 0;
   // Render OFF-SCREEN at the requested size. The page measures itself there and
   // Dart calls Reveal() with the final size, so the user only ever sees the
   // settled card (no width/height jitter on screen).
@@ -792,11 +1071,6 @@ bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
     // No WS_EX_LAYERED: WebView2 brings its own composition surface and does not
     // coexist with a layered window. WS_EX_NOACTIVATE keeps the foreground app's
     // keyboard focus intact when the card appears (design §5 guarantee 3).
-    // 真机第 4 轮 — 面板实例（activatable_）不带 NOACTIVATE：点击面板时焦点
-    // 落面板，滚轮不再穿到底下仍持焦点的游戏。程序化路径全程 SWP_NOACTIVATE /
-    // SW_SHOWNOACTIVATE，流式更新不抢焦点。
-    // 面板任务栏图标 — taskbar_presence_（面板实例）用 APPWINDOW 换掉
-    // TOOLWINDOW：任务栏出现独立按钮，点它即可把被压底的面板拉回前台。
     // 背景逐像素透明 — composition 模式下 OverlayCreateExStyle 带
     // WS_EX_NOREDIRECTIONBITMAP（透明像素经 DComp 上桌面）。
     hwnd_ = CreateWindowExW(
@@ -812,6 +1086,23 @@ bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
     EnsureWebView();
   } else {
     SetWindowPos(hwnd_, HWND_TOPMOST, off_x, 0, width, height, SWP_NOACTIVATE);
+  }
+  // A previous gal cascade can intentionally leave controller Bounds at its
+  // deep-stack high-water after the HWND has collapsed. If this fresh lookup's
+  // root happens to request the same HWND size, SetWindowPos emits no WM_SIZE;
+  // explicitly converge the new session's Chromium viewport to the real client
+  // instead of inheriting the old large innerWidth/innerHeight.
+  if (controller_) {
+    RECT client = {};
+    RECT current = {};
+    if (GetClientRect(hwnd_, &client) &&
+        (!SUCCEEDED(controller_->get_Bounds(&current)) ||
+         !EqualRect(&client, &current))) {
+      controller_->put_Bounds(client);
+      if (composition_active_ && dcomp_device_ != nullptr) {
+        dcomp_device_->Commit();
+      }
+    }
   }
   // Shown (so WebView2 lays out + renders) but parked off-screen and NOT yet
   // "visible_" — the click-outside hooks stay disarmed until Reveal().
@@ -861,8 +1152,10 @@ void GlobalLookupWindow::PrewarmWebView(int width, int height, HWND owner) {
   offscreen_active_ = false;
 }
 
-void GlobalLookupWindow::Reveal(int width, int height) {
-  if (hwnd_ == nullptr) {
+void GlobalLookupWindow::Reveal(int width, int height,
+                                bool clamp_to_work_area,
+                                HWND consume_outside_owner) {
+  if (hwnd_ == nullptr || capture_suppressed_) {
     return;
   }
   if (width <= 0 || height <= 0) {
@@ -876,21 +1169,52 @@ void GlobalLookupWindow::Reveal(int width, int height) {
   // Clamp the final card to the cursor monitor's work area (same math as
   // ResizeTo) so a tall/edge-anchored card stays fully on-screen.
   POINT cursor = {pending_x_, pending_y_};
-  HMONITOR monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
-  MONITORINFO mi = {};
-  mi.cbSize = sizeof(mi);
-  if (GetMonitorInfo(monitor, &mi)) {
-    const int work_w = mi.rcWork.right - mi.rcWork.left;
-    const int work_h = mi.rcWork.bottom - mi.rcWork.top;
-    width = width < work_w ? width : work_w;
-    height = height < work_h ? height : work_h;
-    if (x + width > mi.rcWork.right) x = mi.rcWork.right - width;
-    if (y + height > mi.rcWork.bottom) y = mi.rcWork.bottom - height;
-    if (x < mi.rcWork.left) x = mi.rcWork.left;
-    if (y < mi.rcWork.top) y = mi.rcWork.top;
+  if (clamp_to_work_area) {
+    HMONITOR monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = {};
+    mi.cbSize = sizeof(mi);
+    if (GetMonitorInfo(monitor, &mi)) {
+      const int work_w = mi.rcWork.right - mi.rcWork.left;
+      const int work_h = mi.rcWork.bottom - mi.rcWork.top;
+      width = width < work_w ? width : work_w;
+      height = height < work_h ? height : work_h;
+      if (x + width > mi.rcWork.right) x = mi.rcWork.right - width;
+      if (y + height > mi.rcWork.bottom) y = mi.rcWork.bottom - height;
+      if (x < mi.rcWork.left) x = mi.rcWork.left;
+      if (y < mi.rcWork.top) y = mi.rcWork.top;
+    }
   }
-  SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height,
-               SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
+  // BUG-1882 — direct galCard cannot be shown until the dedicated hook thread
+  // has acknowledged a live HHOOK. The normal desktop route deliberately stays
+  // asynchronous: it never consumes the underlying app click. At this point all
+  // geometry work is done, so the successful direct binding is published only
+  // a few instructions before SetWindowPos makes the off-screen renderer visible.
+  const bool prearm_direct_click_swallow = consume_outside_owner != nullptr;
+  if (prearm_direct_click_swallow) {
+    if (!fushi::ArmLowLevelMouseHookAndWait(hwnd_, consume_outside_owner)) {
+      fushi::DisarmLowLevelMouseHook(hwnd_);
+      mouse_hook_armed_ = false;
+      NativeGlog(
+          "gal direct reveal declined: mouse hook install was not acknowledged");
+      return;
+    }
+    mouse_hook_armed_ = true;
+  }
+  if (!SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height,
+                    SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW)) {
+    // The direct route published its game-click binding immediately before
+    // this call. A failed move/show must revoke that binding before returning
+    // to RevealOverProcessClient's bitmap fallback; otherwise the still
+    // off-screen prewarm HWND reports no card while continuing to eat clicks.
+    if (prearm_direct_click_swallow) {
+      fushi::DisarmLowLevelMouseHook(hwnd_);
+      mouse_hook_armed_ = false;
+    }
+    revealed_ = false;
+    visible_ = false;
+    NativeGlog("lookup reveal declined: SetWindowPos failed");
+    return;
+  }
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   revealed_ = true;
   visible_ = true;
@@ -900,28 +1224,29 @@ void GlobalLookupWindow::Reveal(int width, int height) {
   StartTopmostGuard();
   // Arm the click-outside dismiss only now that the card is on-screen (skip our
   // own process so interacting with the card / main window does not close it).
-  // spec 2026-07-10 — the clipboard panel instance is PERSISTENT (click-outside
-  // / foreground-switch must not close it): it never arms these hooks and thus
-  // never touches the singleton s_hook_owner_, which stays owned by the
-  // transient lookup overlay.
-  if (arm_dismiss_hooks_) {
-    s_hook_owner_ = this;
-    if (foreground_hook_ == nullptr) {
-      foreground_hook_ = SetWinEventHook(
-          EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
-          &GlobalLookupWindow::ForegroundHookProc, 0, 0,
-          WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
-    }
-    // BUG-1048 — 钩子跑在专用线程上（见 low_level_mouse_hook.h）：装在 platform 线程
-    // 时，全系统每个鼠标事件都要排在 Flutter 的帧后面，游戏里鼠标一动就卡。
+  s_hook_owner_ = this;
+  if (foreground_hook_ == nullptr) {
+    foreground_hook_ = SetWinEventHook(
+        EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
+        &GlobalLookupWindow::ForegroundHookProc, 0, 0,
+        WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+  }
+  // BUG-1048 — 钩子跑在专用线程上（见 low_level_mouse_hook.h）：装在 platform 线程
+  // 时，全系统每个鼠标事件都要排在 Flutter 的帧后面，游戏里鼠标一动就卡。
+  if (!prearm_direct_click_swallow) {
     fushi::ArmLowLevelMouseHook(hwnd_);
     mouse_hook_armed_ = true;
   }
+  // 投影：上面 SetWindowPos 触发的 WM_WINDOWPOSCHANGED 到达时 revealed_ 还是
+  // false（置位在其后），漏斗那次同步判为隐藏——首帧必须在标志置位后显式补一次。
+  SyncShadow();
 }
 
 void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
-                                     double bbox_left, double bbox_top) {
-  if (hwnd_ == nullptr || width <= 0 || height <= 0) {
+                                     double bbox_left, double bbox_top,
+                                     int64_t geometry_epoch) {
+  if (capture_suppressed_ || !BeginGeometryRequest(geometry_epoch) ||
+      hwnd_ == nullptr || width <= 0 || height <= 0) {
     return;
   }
   // The window moves to (cursor + dx, cursor + dy) and grows to the bbox size.
@@ -946,8 +1271,16 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
     if (x < mi.rcWork.left) x = mi.rcWork.left;
     if (y < mi.rcWork.top) y = mi.rcWork.top;
   }
-  SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height,
-               SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
+  if (width <= 0 || height <= 0) {
+    return;
+  }
+  if (!SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height,
+                    SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW)) {
+    // A geometry epoch is an acknowledgement of the HWND bounds, not merely of
+    // native control flow. Leave the host gate closed so the same epoch can be
+    // retried instead of revealing into the preceding window rectangle.
+    return;
+  }
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   revealed_ = true;
   visible_ = true;
@@ -982,25 +1315,40 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
         L"window.__globalLookupHost && "
         L"window.__globalLookupHost.commitLayerShift(" +
         std::to_wstring(bbox_left + clamp_dx_css) + L", " +
-        std::to_wstring(bbox_top + clamp_dy_css) + L");";
-    webview_->ExecuteScript(shift_script.c_str(), nullptr);
+        std::to_wstring(bbox_top + clamp_dy_css) + L", " +
+        std::to_wstring(geometry_epoch) + L");";
+    const HRESULT shift_hr = webview_->ExecuteScript(
+        shift_script.c_str(),
+        Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+            [this, geometry_epoch](HRESULT error_code,
+                                   LPCWSTR result_json) -> HRESULT {
+              if (ScriptResultIsTrue(error_code, result_json)) {
+                FinalizePendingShellGeometry(geometry_epoch);
+              }
+              return S_OK;
+            })
+            .Get());
+    if (FAILED(shift_hr)) {
+      ReportOverlayError("overlay layer-shift ExecuteScript call failed",
+                         shift_hr);
+    }
   }
   // Arm the click-outside dismiss hooks now that the stack is on-screen (the
-  // first reveal arms; later resizes are idempotent re-arms). The clipboard
-  // panel instance never arms them (persistent semantics, see Reveal).
-  if (arm_dismiss_hooks_) {
-    s_hook_owner_ = this;
-    if (foreground_hook_ == nullptr) {
-      foreground_hook_ = SetWinEventHook(
-          EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
-          &GlobalLookupWindow::ForegroundHookProc, 0, 0,
-          WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
-    }
-    // BUG-1048 — 钩子跑在专用线程上（见 low_level_mouse_hook.h）：装在 platform 线程
-    // 时，全系统每个鼠标事件都要排在 Flutter 的帧后面，游戏里鼠标一动就卡。
-    fushi::ArmLowLevelMouseHook(hwnd_);
-    mouse_hook_armed_ = true;
+  // first reveal arms; later resizes are idempotent re-arms).
+  s_hook_owner_ = this;
+  if (foreground_hook_ == nullptr) {
+    foreground_hook_ = SetWinEventHook(
+        EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
+        &GlobalLookupWindow::ForegroundHookProc, 0, 0,
+        WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
   }
+  // BUG-1048 — 钩子跑在专用线程上（见 low_level_mouse_hook.h）：装在 platform 线程
+  // 时，全系统每个鼠标事件都要排在 Flutter 的帧后面，游戏里鼠标一动就卡。
+  fushi::ArmLowLevelMouseHook(hwnd_);
+  mouse_hook_armed_ = true;
+  // 投影：与 Reveal 同因——上面 SetWindowPos 触发漏斗时 revealed_ 还是 false，
+  // 标志置位后显式补一次，首帧才有影。
+  SyncShadow();
 }
 
 void GlobalLookupWindow::ResizeTo(int width, int height) {
@@ -1033,9 +1381,9 @@ void GlobalLookupWindow::ResizeTo(int width, int height) {
                SWP_NOACTIVATE | SWP_NOOWNERZORDER);
 }
 
-void GlobalLookupWindow::ResizeOffscreen(int width, int height) {
+bool GlobalLookupWindow::ResizeOffscreen(int width, int height) {
   if (hwnd_ == nullptr || width <= 0 || height <= 0) {
-    return;
+    return false;
   }
   // ResizeTo deliberately clamps its current rectangle into the nearest
   // monitor's work area. That is correct for desktop overlays, but it moves the
@@ -1043,24 +1391,142 @@ void GlobalLookupWindow::ResizeOffscreen(int width, int height) {
   // HWND shown (WebView2 must continue laying out and painting for capture),
   // while parking it outside the virtual desktop and keeping reveal semantics
   // explicitly false.
-  SetWindowPos(hwnd_, HWND_TOPMOST, OffscreenX(), 0, width, height,
-               SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+  if (!SetWindowPos(hwnd_, HWND_TOPMOST, OffscreenX(), 0, width, height,
+                    SWP_NOACTIVATE | SWP_NOOWNERZORDER)) {
+    return false;
+  }
   visible_ = false;
   revealed_ = false;
   offscreen_active_ = true;
+  return true;
 }
 
-void GlobalLookupWindow::ResizeStackOffscreen(int width, int height,
-                                              double bbox_left,
-                                              double bbox_top) {
-  ResizeOffscreen(width, height);
+void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
+                                            int height, double bbox_left,
+                                            double bbox_top,
+                                            int64_t geometry_epoch) {
+  if (!BeginGeometryRequest(geometry_epoch)) {
+    return;
+  }
+  // BUG-1835 — layout already used the FULL game viewport; width/height is the
+  // resulting all-card union, not the single-card cap. If direct composition is
+  // active, resize/reposition the currently visible HWND around the frozen root
+  // anchor and never park it at OffscreenX between nested frames. Before direct
+  // activation (or in bitmap fallback), the same geometry is prepared off-screen.
+  const bool was_direct_visible = direct_process_client_active_ && visible_ &&
+                                  revealed_ && hwnd_ != nullptr &&
+                                  IsWindowVisible(hwnd_);
+  bool resized_in_place = false;
+  bool transient_direct_failure = false;
+  if (was_direct_visible &&
+      (direct_game_hwnd_ == nullptr || !IsWindow(direct_game_hwnd_) ||
+       direct_view_width_ == 0 || direct_view_height_ == 0 || width <= 0 ||
+       height <= 0)) {
+    transient_direct_failure = true;
+  } else if (was_direct_visible) {
+    RECT client = {};
+    POINT origin = {0, 0};
+    if (!GetClientRect(direct_game_hwnd_, &client) ||
+        !ClientToScreen(direct_game_hwnd_, &origin)) {
+      transient_direct_failure = true;
+    } else {
+      const int client_width = client.right - client.left;
+      const int client_height = client.bottom - client.top;
+      if (client_width <= 0 || client_height <= 0) {
+        transient_direct_failure = true;
+      }
+      // 与 PresentDirect 同一套映射：画布等比缩放进客户区并居中，只换算位置，卡片
+      // 保持自身物理像素。缩放 HWND 才会 WM_SIZE -> put_Bounds 让 Chromium 重排，
+      // 这里不缩放，所以非 1:1 也是安全的（1:1 时 scale==1、信箱边为 0——那是映射的
+      // 恒等性质，不代表落点不变，见 gal_direct_card_geometry.h 头部的对照表）。
+      const double scale = fushi::gal_direct_card_geometry::CanvasToClientScale(
+          client_width, client_height, direct_view_width_, direct_view_height_);
+      if (!transient_direct_failure && scale <= 0.0) {
+        transient_direct_failure = true;
+      }
+      if (!transient_direct_failure) {
+        const double content_left =
+            fushi::gal_direct_card_geometry::LetterboxOffset(
+                client_width, direct_view_width_, scale);
+        const double content_top =
+            fushi::gal_direct_card_geometry::LetterboxOffset(
+                client_height, direct_view_height_, scale);
+        const int screen_width = std::max(1, width);
+        const int screen_height = std::max(1, height);
+        // 嵌套 resize 必须复用 present 时的同一贴附基准，否则同一次查词里卡片会跳位。
+        double local_x = 0.0;
+        double local_y = 0.0;
+        if (direct_glyph_valid_) {
+          const auto placed =
+              fushi::gal_direct_card_geometry::GlyphAnchoredCardOrigin(
+                  direct_glyph_left_, direct_glyph_top_, direct_glyph_width_,
+                  direct_glyph_height_, screen_width, screen_height);
+          local_x = placed.left;
+          local_y = placed.top;
+        } else {
+          local_x = content_left + (direct_root_anchor_x_ + dx) * scale;
+          local_y = content_top + (direct_root_anchor_y_ + dy) * scale;
+        }
+        const int screen_x =
+            origin.x + fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
+                           local_x, screen_width, client_width);
+        const int screen_y =
+            origin.y + fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
+                           local_y, screen_height, client_height);
+        if (SetWindowPos(hwnd_, HWND_TOPMOST, screen_x, screen_y, screen_width,
+                         screen_height,
+                         SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW)) {
+          pending_x_ = screen_x;
+          pending_y_ = screen_y;
+          visible_ = true;
+          revealed_ = true;
+          offscreen_active_ = false;
+          resized_in_place = true;
+        } else {
+          transient_direct_failure = true;
+        }
+      }
+    }
+  }
+  if (!resized_in_place) {
+    if (was_direct_visible) {
+      // 失败绝不能把还活着的直连 HWND 停到 OffscreenX：那就是用户报过的整卡闪烁。
+      // 现在非 1:1 已由几何映射直接支持，剩下的只有可在有界重试里自愈的瞬时 Win32
+      // 失败（窗口查询或 SetWindowPos），所以保留旧 HWND 等下一拍。
+      if (transient_direct_failure) {
+        NativeGlog(
+            "gal direct resize retained old HWND: transient game-window query "
+            "or SetWindowPos failure");
+      }
+      return;
+    }
+    direct_process_client_active_ = false;
+    direct_game_hwnd_ = nullptr;
+    if (!ResizeOffscreen(width, height)) {
+      return;
+    }
+  }
   if (hwnd_ == nullptr || width <= 0 || height <= 0 || webview_ == nullptr) {
     return;
   }
-  // Nested cards share the normal popup renderer. Its union bbox may extend to
-  // the left or above the root card, so the host layer still needs the same
-  // compensating translation as an on-screen RevealStack. The off-screen HWND
-  // itself stays at OffscreenX(); there is no monitor-clamp delta to fold in.
+  // shellRects can change while the HWND bbox stays identical, in which case
+  // Win32 may emit no useful resize notification. With pending geometry this is
+  // a cheap deferred sync; the ExecuteScript completion below performs the one
+  // real final sync. Without pending geometry it keeps the existing same-bbox
+  // shadow/Z-order guarantee.
+  if (resized_in_place) {
+    SyncShadow();
+  }
+  // Only successful direct/off-screen HWND geometry becomes the anchor truth
+  // used by a later direct presentation. A failed epoch must preserve the last
+  // committed root/bbox relationship.
+  direct_bbox_dx_ = dx;
+  direct_bbox_dy_ = dy;
+  // Nested cards share the normal popup renderer. Their union may extend beyond
+  // the root card inside the FULL game viewport, so both output modes need the
+  // same compensating layer translation. In direct-active mode the HWND has just
+  // expanded/repositioned in place around the frozen root; in bitmap fallback it
+  // remains at OffscreenX. Neither path applies a desktop monitor-clamp delta.
   const std::wstring route_script =
       L"{source:'" + Utf8ToWide(route_context_.source) +
       L"',routeEpoch:" + std::to_wstring(route_context_.route_epoch) +
@@ -1073,126 +1539,46 @@ void GlobalLookupWindow::ResizeStackOffscreen(int width, int height,
   // same route-stamped message after a paint opportunity.  The production path
   // remains the host helper, which additionally rejects a stale active route.
   std::wstring shift_script =
-      L"(function(host,route,w,h){"
+      L"(function(host,route,w,h,epoch){"
       L"if(host&&typeof host.commitLayerShiftAndArmCapture==='function'){"
-      L"host.commitLayerShiftAndArmCapture(" +
+      L"var helperAccepted=host.commitLayerShiftAndArmCapture(" +
       std::to_wstring(bbox_left) + L"," + std::to_wstring(bbox_top) +
-      L",route,w,h);return;}"
-      L"if(host&&typeof host.commitLayerShift==='function'){host.commitLayerShift(" +
+      L",route,w,h,epoch);if(helperAccepted!==false)return;}"
+      L"if(host&&typeof host.commitLayerShift==='function'){var accepted=host.commitLayerShift(" +
       std::to_wstring(bbox_left) + L"," + std::to_wstring(bbox_top) +
-      L");}"
+      L",epoch);if(accepted===false)return;}"
       L"var token=(window.__fushiGalCaptureReadyToken||0)+1;"
       L"window.__fushiGalCaptureReadyToken=token;"
-      L"var post=function(){if(window.__fushiGalCaptureReadyToken!==token)"
-      L"return;try{window.chrome.webview.postMessage({"
-      L"handler:'captureReady',args:[w,h],__source:route.source,"
+      L"var done=false;var timer=null;"
+      L"var post=function(){if(done||window.__fushiGalCaptureReadyToken!==token)"
+      L"return;done=true;if(timer!==null&&typeof window.clearTimeout==='function')"
+      L"{try{window.clearTimeout(timer);}catch(e){}timer=null;}"
+      L"try{window.chrome.webview.postMessage({"
+      L"handler:'captureReady',args:[w,h,epoch],__source:route.source,"
       L"__routeEpoch:route.routeEpoch,__lookupEpoch:route.lookupEpoch});"
       L"}catch(e){}};"
+      L"if(typeof window.setTimeout==='function'){"
+      L"try{timer=window.setTimeout(post,120);}catch(e){timer=null;}}"
       L"if(typeof window.requestAnimationFrame==='function'){"
-      L"window.requestAnimationFrame(function(){"
-      L"window.requestAnimationFrame(post);});}else{post();}"
+      L"try{window.requestAnimationFrame(function(){"
+      L"try{window.requestAnimationFrame(post);}catch(e){post();}});"
+      L"}catch(e){post();}}else{post();}"
       L"})(window.__globalLookupHost," +
       route_script + L"," + std::to_wstring(width) + L"," +
-      std::to_wstring(height) + L");";
-  webview_->ExecuteScript(shift_script.c_str(), nullptr);
-}
-
-namespace {
-
-// spec §6 Win10 translucency fallback — the undocumented user32
-// SetWindowCompositionAttribute accent policy (the API TranslucentTB /
-// EarTrumpet shipped on for ~a decade; Win10 is feature-frozen so the removal
-// risk is effectively nil). Win10 has no documented per-window backdrop and
-// WS_EX_LAYERED is WebView2-incompatible, so this is the only viable
-// translucency path there. Deliberately ACCENT_ENABLE_BLURBEHIND (3), NOT
-// ACCENT_ENABLE_ACRYLICBLURBEHIND (4): the acrylic accent has a well-known,
-// never-fixed drag/resize lag regression since Win10 1903 — and the panel is
-// repositioned via the HTCAPTION modal drag loop, which would hit it head-on.
-// GradientColor is ABGR and must carry a non-zero alpha on some builds for the
-// blur to engage (0x01 black tint = visually neutral).
-struct AccentPolicy {
-  int accent_state;
-  int accent_flags;
-  DWORD gradient_color;
-  int animation_id;
-};
-
-struct WindowCompositionAttribData {
-  int attrib;
-  PVOID pv_data;
-  SIZE_T cb_data;
-};
-
-using SetWindowCompositionAttributeProc =
-    BOOL(WINAPI*)(HWND, WindowCompositionAttribData*);
-
-bool ApplyWin10AccentBlurBehind(HWND hwnd) {
-  const HMODULE user32 = GetModuleHandleW(L"user32.dll");
-  if (user32 == nullptr) {
-    return false;
-  }
-  const auto set_wca = reinterpret_cast<SetWindowCompositionAttributeProc>(
-      GetProcAddress(user32, "SetWindowCompositionAttribute"));
-  if (set_wca == nullptr) {
-    return false;
-  }
-  AccentPolicy accent{};
-  accent.accent_state = 3;             // ACCENT_ENABLE_BLURBEHIND
-  accent.accent_flags = 0;
-  accent.gradient_color = 0x01000000;  // ABGR: alpha 0x01, black tint
-  accent.animation_id = 0;
-  WindowCompositionAttribData data{};
-  data.attrib = 19;  // WCA_ACCENT_POLICY
-  data.pv_data = &accent;
-  data.cb_data = sizeof(accent);
-  return set_wca(hwnd, &data) != FALSE;
-}
-
-}  // namespace
-
-bool GlobalLookupWindow::ApplySystemBackdrop() {
-  if (hwnd_ == nullptr) {
-    return false;
-  }
-  // spec §6 semi-transparency gate — translucency chain (first hit wins):
-  // 1) Win11 22H2+ system backdrop: DWM paints acrylic (blurred desktop
-  //    content behind the window) wherever the client pixels are transparent;
-  //    the WebView2 default background is already fully transparent
-  //    (put_DefaultBackgroundColor A=0, TODO-893), so a CSS rgba card
-  //    background composites over the acrylic. Extend the frame into the whole
-  //    client area first — without it the backdrop only covers the (zero-size)
-  //    frame region.
-  // 2) Win10 fallback: undocumented accent-policy blur-behind (see
-  //    ApplyWin10AccentBlurBehind above) — same WebView2 transparency
-  //    prerequisite, plain blur instead of acrylic.
-  // 3) Both unavailable -> false: the panel stays opaque and Dart hides the
-  //    opacity slider (graceful degrade, spec §6 fallback).
-  const MARGINS margins{-1, -1, -1, -1};
-  DwmExtendFrameIntoClientArea(hwnd_, &margins);
-  int backdrop = 3;  // DWMSBT_TRANSIENTWINDOW (acrylic)
-  const HRESULT hr = DwmSetWindowAttribute(
-      hwnd_, 38 /* DWMWA_SYSTEMBACKDROP_TYPE */, &backdrop, sizeof(backdrop));
-  if (SUCCEEDED(hr)) {
-    return true;
-  }
-  return ApplyWin10AccentBlurBehind(hwnd_);
-}
-
-void GlobalLookupWindow::SetWindowTitle(const std::wstring& title) {
-  if (title.empty()) {
-    return;
-  }
-  window_title_ = title;
-  if (hwnd_ != nullptr) {
-    // 已创建（面板启动即预热）：任务栏按钮标题即时更新。
-    SetWindowTextW(hwnd_, window_title_.c_str());
+      std::to_wstring(height) + L"," + std::to_wstring(geometry_epoch) +
+      L");";
+  // ExecuteScript completion only proves that JavaScript ran, not that WebView2
+  // presented the shifted layer. The host posts captureReady after two
+  // animation frames (with a bounded fallback when an off-screen WebView2
+  // suspends rAF); WebMessageReceived commits the matching HRGN/shadow
+  // immediately before forwarding that paint-ready ack to Dart.
+  const HRESULT shift_hr = webview_->ExecuteScript(shift_script.c_str(), nullptr);
+  if (FAILED(shift_hr)) {
+    ReportOverlayError("gal layer-shift ExecuteScript call failed", shift_hr);
   }
 }
 
 // BUG-1479 — 显示期间周期性重申置顶。
-//
-// 判据必须是「本实例本来就要置顶」而不是「无脑重申」：未 pin 的常驻剪贴板面板
-// 有意落在非置顶带（见 RaiseToFront），定时器把它拖回置顶带就是另一个 bug。
 namespace {
 constexpr UINT_PTR kTopmostGuardTimerId = 0xA11D;
 // 800ms：够快到用户看不出被压过（游戏重申置顶通常在切场景/取焦点时），
@@ -1201,7 +1587,7 @@ constexpr UINT kTopmostGuardIntervalMs = 800;
 }  // namespace
 
 void GlobalLookupWindow::ReassertTopmost() {
-  if (hwnd_ == nullptr || !wants_topmost_ || !IsShowing()) {
+  if (hwnd_ == nullptr || !IsShowing()) {
     return;
   }
   SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
@@ -1209,7 +1595,7 @@ void GlobalLookupWindow::ReassertTopmost() {
 }
 
 void GlobalLookupWindow::StartTopmostGuard() {
-  if (hwnd_ == nullptr || !wants_topmost_ || topmost_guard_timer_ != 0) {
+  if (hwnd_ == nullptr || topmost_guard_timer_ != 0) {
     return;
   }
   topmost_guard_timer_ =
@@ -1224,20 +1610,6 @@ void GlobalLookupWindow::StopTopmostGuard() {
   topmost_guard_timer_ = 0;
 }
 
-void GlobalLookupWindow::SetTopmost(bool topmost) {
-  if (hwnd_ == nullptr) {
-    return;
-  }
-  // 记住意图：重申定时器据此决定该不该把窗口拖回置顶带。
-  wants_topmost_ = topmost;
-  if (!topmost) StopTopmostGuard();
-  // SWP_NOOWNERZORDER：不带它时改 Z 序会连带 owner 的 Z 序（真机症状=点图钉
-  // 把主 app 拉到前台）。面板现已无 owner（见 RegisterClipboardPanelChannel），
-  // 此标志兜底防回归；与 Reveal/RevealStack 的 SetWindowPos 口径一致。
-  SetWindowPos(hwnd_, topmost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
-               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
-}
-
 void GlobalLookupWindow::SetBlockCapture(bool block) {
   block_capture_ = block;
   ApplyBlockCapture();
@@ -1247,6 +1619,8 @@ void GlobalLookupWindow::ApplyBlockCapture() {
   if (hwnd_ == nullptr) {
     return;
   }
+  // 投影窗与锚窗联动排除捕获：录屏里"凭空一圈影子"同样泄露卡片轮廓。
+  shadow_.SetBlockCapture(block_capture_);
   // WDA_EXCLUDEFROMCAPTURE：窗口对用户可见但从截图 / 录屏 / 屏幕共享里排除
   // （查词内容不外泄）。Win10<2004 该值不被支持 -> API 失败，回退 WDA_MONITOR
   // （被捕获处画成黑块，同样不泄露内容）。关闭时 WDA_NONE 恢复正常可截。
@@ -1259,66 +1633,37 @@ void GlobalLookupWindow::ApplyBlockCapture() {
   }
 }
 
-void GlobalLookupWindow::RaiseToFront(bool topmost) {
-  if (hwnd_ == nullptr) {
-    return;
-  }
-  // 每次查词把已显示的面板重排到 z 序最上，绝不激活（SWP_NOACTIVATE，不抢当前
-  // 前台窗口键盘焦点）。SWP_NOOWNERZORDER 兜底不连带 owner（面板现无 owner，
-  // 与 SetTopmost/Reveal 口径一致）。
-  const UINT flags =
-      SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER;
-  if (topmost) {
-    // 已 pin：直接顶到置顶带最上。
-    SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0, flags);
-    return;
-  }
-  // 未 pin：裸 HWND_TOP 在别的 app 处于前台时可能被前台锁拒绝，故先短暂置顶
-  // 再撤销——面板落到「非置顶带最上、仍压在前台游戏/浏览器之上」，且全程不激活。
-  SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0, flags);
-  SetWindowPos(hwnd_, HWND_NOTOPMOST, 0, 0, 0, 0, flags);
-}
-
-void GlobalLookupWindow::SetWindowAlpha(int percent) {
-  if (hwnd_ == nullptr) {
-    return;
-  }
-  // 背景逐像素透明（composition）模式：透明由 DComp per-pixel 承担，整窗
-  // WS_EX_LAYERED + LWA_ALPHA 会与之冲突（把文字一起变淡、甚至令 NOREDIRECTIONBITMAP
-  // 窗不渲染）。此模式下整窗 alpha 是 no-op，透明度语义交给 CSS 卡背景（cardBgAlpha）。
-  if (composition_active_) {
-    return;
-  }
-  if (percent < 30) percent = 30;
-  if (percent > 100) percent = 100;
-  const LONG_PTR ex = GetWindowLongPtrW(hwnd_, GWL_EXSTYLE);
-  if ((ex & WS_EX_LAYERED) == 0) {
-    SetWindowLongPtrW(hwnd_, GWL_EXSTYLE, ex | WS_EX_LAYERED);
-  }
-  // A WS_EX_LAYERED window does not render AT ALL until
-  // SetLayeredWindowAttributes is called — always call it (100% => 255), and
-  // keep the layered bit once set (toggling it forces repaint quirks).
-  SetLayeredWindowAttributes(
-      hwnd_, 0, static_cast<BYTE>((255 * percent) / 100), LWA_ALPHA);
-}
-
 void GlobalLookupWindow::Hide(bool notify) {
   // Capture BEFORE clearing: the HiddenCallback must only fire on a transition
   // FROM on-screen (was_showing) so a double dismiss (mouse hook then foreground
   // hook, both fire on one click-outside) does not double-notify Dart.
   const bool was_showing = visible_ || offscreen_active_;
   const RouteContext hidden_route = route_context_;
+  // A genuine/programmatic dismissal wins over a pending capture restore.  Do
+  // this before clearing visible_ so RestoreAfterCapture can never reopen a
+  // card that was dismissed while the screenshot was in flight.
+  CancelCaptureSuppression();
   visible_ = false;
   revealed_ = false;
   offscreen_active_ = false;
+  direct_process_client_active_ = false;
+  direct_game_hwnd_ = nullptr;
   // BUG-749 — drop the per-shell region rects: the next lookup renders a new
   // cascade and re-posts fresh rects (the host resets its de-dup key in
   // beginLookup), so a stale region can never clip the next card.
   shell_rects_css_.clear();
+  ClearPendingShellGeometry();
   ReleaseDismissHooks();
   StopTopmostGuard();
-  if (hwnd_ != nullptr) {
+  // 投影窗随卡片同步隐藏（WM_WINDOWPOSCHANGED 也会兜到，这里显式先藏，
+  // 避免"卡没了影子晚一拍"）。
+  shadow_.Hide();
+  if (OwnsLiveWindow()) {
     ShowWindow(hwnd_, SW_HIDE);
+    // Clearing the C++ vectors does not remove the HRGN that user32 took
+    // ownership of. Remove it while hidden so a same-size fresh lookup cannot
+    // inherit a deep-stack clip when no WM_SIZE is generated.
+    SetWindowRgn(hwnd_, nullptr, FALSE);
   }
   // TODO-1233 -- tell Dart the overlay dismissed. The foreground hook, the
   // click-outside mouse hook and the JS 'dismiss'/'tapOutside' path all funnel
@@ -1339,6 +1684,73 @@ bool GlobalLookupWindow::IsShowing() const {
   // can never report the overlay as showing — otherwise Dart's re-check skips
   // the rebuild and renders into a window that no longer exists.
   return visible_ && OwnsLiveWindow() && IsWindowVisible(hwnd_);
+}
+
+bool GlobalLookupWindow::CaptureRouteIsCurrent() const {
+  return route_context_bound_ &&
+         capture_route_.source == route_context_.source &&
+         capture_route_.route_epoch == route_context_.route_epoch &&
+         capture_route_.lookup_epoch == route_context_.lookup_epoch;
+}
+
+void GlobalLookupWindow::CancelCaptureSuppression() {
+  capture_suppressed_ = false;
+  capture_was_window_visible_ = false;
+  capture_generation_ = 0;
+  capture_route_ = RouteContext{};
+}
+
+bool GlobalLookupWindow::SuspendForCapture(int64_t capture_generation) {
+  if (capture_generation <= 0 || !route_context_bound_) {
+    return false;
+  }
+  if (capture_suppressed_) {
+    return capture_generation_ == capture_generation &&
+           CaptureRouteIsCurrent();
+  }
+
+  capture_generation_ = capture_generation;
+  capture_route_ = route_context_;
+  capture_was_window_visible_ =
+      OwnsLiveWindow() && IsWindowVisible(hwnd_) != FALSE;
+  capture_suppressed_ = true;
+
+  // The shadow is a separate top-level HWND and must leave the compositor in
+  // the same transaction as the card, otherwise a captured frame can retain a
+  // one-frame outline even though the WebView itself is gone.
+  shadow_.Hide();
+  if (OwnsLiveWindow()) {
+    ShowWindow(hwnd_, SW_HIDE);
+  }
+  const HRESULT barrier = DwmFlush();
+  if (FAILED(barrier)) {
+    // A failed barrier cannot prove screenshot cleanliness.  Restore the exact
+    // card immediately and make the mining caller fail closed.
+    if (capture_was_window_visible_ && CaptureRouteIsCurrent() &&
+        OwnsLiveWindow() && visible_ && revealed_) {
+      ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
+      SyncShadow();
+    }
+    CancelCaptureSuppression();
+    return false;
+  }
+  return true;
+}
+
+bool GlobalLookupWindow::RestoreAfterCapture(int64_t capture_generation) {
+  if (!capture_suppressed_ || capture_generation <= 0 ||
+      capture_generation_ != capture_generation || !CaptureRouteIsCurrent()) {
+    return false;
+  }
+  const bool restore = capture_was_window_visible_ && OwnsLiveWindow() &&
+                       visible_ && revealed_;
+  CancelCaptureSuppression();
+  if (restore) {
+    ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
+    ReassertTopmost();
+    SyncShadow();
+  }
+  return SUCCEEDED(DwmFlush());
 }
 
 std::wstring GlobalLookupWindow::LoadAdapterScript() const {
@@ -1465,9 +1877,7 @@ DWORD GlobalLookupWindow::OverlayCreateExStyle() {
   if (composition_mode_ && !composition_active_) {
     composition_active_ = InitCompositionDevice();
   }
-  return WS_EX_TOPMOST |
-         (taskbar_presence_ ? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW) |
-         (activatable_ ? 0 : WS_EX_NOACTIVATE) |
+  return WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE |
          (composition_active_ ? WS_EX_NOREDIRECTIONBITMAP : 0);
 }
 
@@ -1539,6 +1949,21 @@ static_assert(fushi_voice_hook::kLookupInputWheel == 3,
               "lookup input kind drift");
 static_assert(fushi_voice_hook::kLookupInputLeave == 4,
               "lookup input kind drift");
+static_assert(fushi_voice_hook::kLookupInputDismissOutside == 5,
+              "lookup input kind drift");
+static_assert(
+    fushi_voice_hook::kLookupInputVirtualKeyLeftButton ==
+        static_cast<uint32_t>(
+            COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_LEFT_BUTTON),
+    "lookup input left-button key drift");
+static_assert(
+    fushi_voice_hook::kLookupInputVirtualKeyShift ==
+        static_cast<uint32_t>(COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_SHIFT),
+    "lookup input shift key drift");
+static_assert(
+    fushi_voice_hook::kLookupInputVirtualKeyControl ==
+        static_cast<uint32_t>(COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_CONTROL),
+    "lookup input control key drift");
 
 bool GlobalLookupWindow::InjectLookupInput(uint32_t kind, int32_t x, int32_t y,
                                            int32_t wheel, uint32_t keys) {
@@ -1576,6 +2001,16 @@ bool GlobalLookupWindow::InjectLookupInput(uint32_t kind, int32_t x, int32_t y,
       break;
     default:
       return false;
+  }
+  // Producers publish WebView2's bit layout directly. Normalize the button
+  // transition here as a final contract fence, and keep LEAVE at NONE as
+  // required by SendMouseInput even if an older producer leaked modifiers.
+  if (kind == fushi_voice_hook::kLookupInputLeftDown) {
+    keys |= fushi_voice_hook::kLookupInputVirtualKeyLeftButton;
+  } else if (kind == fushi_voice_hook::kLookupInputLeftUp) {
+    keys &= ~fushi_voice_hook::kLookupInputVirtualKeyLeftButton;
+  } else if (kind == fushi_voice_hook::kLookupInputLeave) {
+    keys = fushi_voice_hook::kLookupInputVirtualKeyNone;
   }
   const auto virtual_keys =
       static_cast<COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS>(keys);
@@ -1623,10 +2058,39 @@ void GlobalLookupWindow::CaptureBgraAsync(uint32_t max_width,
   // WRL 的 Callback 要求可调用对象可拷贝，而 BgraFrameCallback 只保证可移动语义可用；
   // 包一层 shared_ptr 既满足可拷贝，又保证 continuation 只有一份状态。
   auto sink = std::make_shared<BgraFrameCallback>(std::move(done));
+  // Snapshot geometry at the same instant CapturePreview is issued. The image
+  // completion is asynchronous; a later lookup may already have replaced the
+  // member rects by then, and using those would cut the captured older frame
+  // with a different card's silhouette.
+  std::vector<std::array<double, 4>> capture_shell_rects;
+  double capture_dpr = 1.0;
+  if (route_context_.source == "galCard" && !shell_rects_css_.empty()) {
+    capture_shell_rects = shell_rects_css_;
+    UINT dpi = hwnd_ == nullptr ? 96 : GetDpiForWindow(hwnd_);
+    if (dpi == 0) {
+      dpi = 96;
+    }
+    capture_dpr = static_cast<double>(dpi) / 96.0;
+  }
+  // BUG-1833 — PNG CapturePreview is catastrophically slow for a 1592x1020
+  // text-heavy card: the live SGRE path measured 180-230 ms for every full
+  // frame, so wheel scrolling could only update at about 5 FPS. WebView2 has no
+  // raw-texture capture API in the pinned SDK; JPEG is its only lower-latency
+  // capture format. It drops alpha, but once shell geometry is present the
+  // existing per-shell mask below reconstructs the exact transparent outside
+  // region and rounded corners. If geometry is not ready, retain PNG rather
+  // than risk publishing an opaque rectangular card.
+  const bool use_fast_opaque_capture = !capture_shell_rects.empty();
+  const COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT capture_format =
+      use_fast_opaque_capture
+          ? COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_JPEG
+          : COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG;
   const HRESULT hr = webview_->CapturePreview(
-      COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG, stream.get(),
+      capture_format, stream.get(),
       Callback<ICoreWebView2CapturePreviewCompletedHandler>(
-          [stream, sink, max_width, max_height](HRESULT result) -> HRESULT {
+          [stream, sink, max_width, max_height,
+           capture_shell_rects = std::move(capture_shell_rects),
+           capture_dpr](HRESULT result) -> HRESULT {
             std::vector<uint8_t> bgra;
             uint32_t width = 0;
             uint32_t height = 0;
@@ -1634,9 +2098,13 @@ void GlobalLookupWindow::CaptureBgraAsync(uint32_t max_width,
             bool clamped = false;
             const bool ok =
                 SUCCEEDED(result) &&
-                DecodePngStreamToStraightBgra(stream.get(), max_width, max_height,
-                                       &bgra, &width, &height, &pitch,
-                                       &clamped);
+                DecodeCaptureStreamToStraightBgra(
+                    stream.get(), max_width, max_height, &bgra, &width,
+                    &height, &pitch, &clamped);
+            if (ok && !capture_shell_rects.empty()) {
+              ApplyRoundedShellUnionAlphaMask(capture_shell_rects, capture_dpr,
+                                              &bgra, width, height, pitch);
+            }
             (*sink)(ok, clamped, bgra, width, height, pitch);
             return S_OK;
           })
@@ -1645,6 +2113,133 @@ void GlobalLookupWindow::CaptureBgraAsync(uint32_t max_width,
     // 同步失败 => 完成回调不会被调用，必须在这里补一次 continuation。
     (*sink)(false, false, std::vector<uint8_t>(), 0, 0, 0);
   }
+}
+
+bool GlobalLookupWindow::RevealOverProcessClient(
+    uint32_t pid, int32_t anchor_x, int32_t anchor_y, uint32_t card_width,
+    uint32_t card_height, uint32_t view_width, uint32_t view_height,
+    int32_t glyph_x, int32_t glyph_y, uint32_t glyph_w, uint32_t glyph_h,
+    uint32_t* out_client_width, uint32_t* out_client_height) {
+  ForgetDeadWindow();
+  if (capture_suppressed_) return false;
+  if (hwnd_ == nullptr || composition_controller_ == nullptr ||
+      !webview_ready_ || card_width == 0 || card_height == 0) {
+    return false;
+  }
+  HWND game = FindProcessClientWindow(pid);
+  if (game == nullptr) {
+    direct_process_client_active_ = false;
+    direct_game_hwnd_ = nullptr;
+    return false;
+  }
+  RECT client = {};
+  if (!GetClientRect(game, &client)) return false;
+  const int client_width = client.right - client.left;
+  const int client_height = client.bottom - client.top;
+  if (client_width <= 0 || client_height <= 0) return false;
+  // 回报给 Dart：卡片尺寸的上界要按**游戏客户区**算。Dart 手上只有画布(view)尺寸，
+  // 拿画布像素去夹屏幕像素会把卡片系统性压小（真机上纵向被钉在 0.6×720=432）。
+  if (out_client_width != nullptr) {
+    *out_client_width = static_cast<uint32_t>(client_width);
+  }
+  if (out_client_height != nullptr) {
+    *out_client_height = static_cast<uint32_t>(client_height);
+  }
+
+  if (view_width == 0 || view_height == 0) {
+    direct_process_client_active_ = false;
+    direct_game_hwnd_ = nullptr;
+    return false;
+  }
+
+  // 画布(primaryLayer) → 客户区的映射。引擎把画布等比缩放进客户区并居中，所以
+  // scale 取两轴较小者，content_* 就是信箱边；1:1 时 scale==1、content_*==0。
+  // （这只是映射本身的恒等性质。1:1 下卡片的**落点**仍然变了，因为下面的字形贴附
+  // 接管了定位——对照表见 gal_direct_card_geometry.h 头部。）
+  //
+  // 关键：**只映射位置，不缩放卡片**。卡片是屏幕空间的真实窗口，保持它自身的物理
+  // 像素既是它清晰的原因，也让它与台词浮窗同一尺度。缩放 HWND 会改 Chromium 视口
+  // 并让卡片重排——那正是原先把直连锁死在 1:1 的顾虑，这里不做，所以顾虑不成立。
+  // 输入也不需要逆映射：直连成功时宿主不再推位图帧（见 _present 的 directSurface
+  // 分支），引擎 Layer 是空的，鼠标由系统直接投递给这个窗口。
+  const double scale = fushi::gal_direct_card_geometry::CanvasToClientScale(
+      client_width, client_height, view_width, view_height);
+  if (scale <= 0.0) {
+    direct_process_client_active_ = false;
+    direct_game_hwnd_ = nullptr;
+    return false;
+  }
+  const double content_left = fushi::gal_direct_card_geometry::LetterboxOffset(
+      client_width, view_width, scale);
+  const double content_top = fushi::gal_direct_card_geometry::LetterboxOffset(
+      client_height, view_height, scale);
+  POINT origin = {0, 0};
+  if (!ClientToScreen(game, &origin)) return false;
+  const int screen_width = std::max(1, static_cast<int>(card_width));
+  const int screen_height = std::max(1, static_cast<int>(card_height));
+
+  // 贴附基准。字形有效时以它在屏幕上的矩形重排（卡片不是画布单位，anchor 不能直接乘
+  // scale——那正是卡片飘到字形上方一大截的原因）。**字形有效就无条件接管**，1:1 也不
+  // 例外：此时落点与旧路径不同（水平中心对齐 vs 左对齐、垂直优先上方 vs 下方），这是
+  // 有意的策略变更。只有字形缺失（glyph_w/h == 0）才退回旧的 anchor 映射，那条路径在
+  // 1:1 下与旧行为逐像素相同。
+  double local_x = 0.0;
+  double local_y = 0.0;
+  direct_glyph_valid_ = glyph_w > 0 && glyph_h > 0;
+  if (direct_glyph_valid_) {
+    direct_glyph_left_ = content_left + glyph_x * scale;
+    direct_glyph_top_ = content_top + glyph_y * scale;
+    direct_glyph_width_ = glyph_w * scale;
+    direct_glyph_height_ = glyph_h * scale;
+    const auto placed = fushi::gal_direct_card_geometry::GlyphAnchoredCardOrigin(
+        direct_glyph_left_, direct_glyph_top_, direct_glyph_width_,
+        direct_glyph_height_, screen_width, screen_height);
+    local_x = placed.left;
+    local_y = placed.top;
+  } else {
+    local_x = content_left + anchor_x * scale;
+    local_y = content_top + anchor_y * scale;
+  }
+  const int screen_x =
+      origin.x + fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
+                     local_x, screen_width, client_width);
+  const int screen_y =
+      origin.y + fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
+                     local_y, screen_height, client_height);
+
+  // Popup owner 与父子窗口不同：不改 Fushi/WebView2 的线程与 DPI 上下文，只让 Z 序
+  // 跟随游戏。WS_EX_NOACTIVATE 保证点卡片时游戏仍持有键盘焦点。
+  SetLastError(ERROR_SUCCESS);
+  const LONG_PTR previous_owner = SetWindowLongPtrW(
+      hwnd_, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(game));
+  if (previous_owner == 0 && GetLastError() != ERROR_SUCCESS) return false;
+  pending_x_ = screen_x;
+  pending_y_ = screen_y;
+  // The union was already clamped to the FULL game client viewport. Desktop
+  // rcWork excludes the taskbar and would move/trim a borderless/fullscreen game
+  // card a second time, so keep the common reveal lifecycle but bypass only that
+  // desktop clamp.
+  // BUG-1882 — Direct galCard is the only route whose outside click must be
+  // consumed. Pass the bound game HWND into the same reveal transaction that
+  // makes the popup visible, so there is no first-frame window where the hook
+  // is armed with desktop click-through semantics.
+  Reveal(screen_width, screen_height, false, game);
+  const bool shown = revealed_ && visible_ && IsWindowVisible(hwnd_);
+  if (shown) {
+    direct_process_client_active_ = true;
+    direct_game_hwnd_ = game;
+    // Dart presents the UNION origin (root+bbox). Subtract the bbox most recently
+    // sent through revealStack to retain the fixed root anchor for the next
+    // in-place nested resize.
+    direct_root_anchor_x_ = anchor_x - direct_bbox_dx_;
+    direct_root_anchor_y_ = anchor_y - direct_bbox_dy_;
+    direct_view_width_ = view_width;
+    direct_view_height_ = view_height;
+  } else {
+    direct_process_client_active_ = false;
+    direct_game_hwnd_ = nullptr;
+  }
+  return shown;
 }
 
 void GlobalLookupWindow::EnsureWebView() {
@@ -1995,6 +2590,35 @@ void GlobalLookupWindow::ConfigureWebView() {
     }
   }
 
+  // BUG-1887 ② —— 网页发起的权限请求一律拒绝（定位 / 麦克风 / 摄像头 / 通知 /
+  // 剪贴板读 / 传感器…）。
+  //
+  // in-app 的 fork 早就有这道门（in_app_webview.cpp 的 add_PermissionRequested：
+  // Dart 侧不接管时默认 put_State(DENY)），但 runner 自有的这两个裸 WebView2
+  // （app 外查词浮窗 + 剪贴板面板）从来没装，等于「不处理」——WebView2 的默认行为
+  // 是弹系统权限提示条。这个窗是无边框置顶浮窗、还开了防截屏，弹出来的提示条既
+  // 不该出现也没地方交互。
+  //
+  // 这与 ① 是两件事，别合并理解：① 拦的是浏览器进程启动期自己去占定位能力
+  // （Windows 显示「正在使用定位」的真正来源），② 拦的是页面运行期发起的请求。
+  // 只做 ② 修不掉系统显示；只做 ① 则将来某个词典/漫画页面（用户可导入任意 HTML
+  // 内容）请求麦克风时会弹提示条。两道门都要。
+  //
+  // put_State(DENY) 即拒绝且不显示默认 UI，无需 QI Args2 去设 Handled。
+  // ConfigureWebView 是两条创建路径（composition / windowed）+ BUG-693 自愈重建的
+  // 唯一漏斗，所以这个窗曾经拥有的每个 surface 都被覆盖。
+  webview_->add_PermissionRequested(
+      Callback<ICoreWebView2PermissionRequestedEventHandler>(
+          [](ICoreWebView2*,
+             ICoreWebView2PermissionRequestedEventArgs* args) -> HRESULT {
+            if (args != nullptr) {
+              args->put_State(COREWEBVIEW2_PERMISSION_STATE_DENY);
+            }
+            return S_OK;
+          })
+          .Get(),
+      nullptr);
+
   // Inject the bridge adapter at document start so popup.js's
   // window.flutter_inappwebview.callHandler maps to chrome.webview.postMessage.
   std::wstring adapter = LoadAdapterScript();
@@ -2104,14 +2728,14 @@ void GlobalLookupWindow::ConfigureWebView() {
             wil::unique_cotaskmem_string json;
             if (SUCCEEDED(args->get_WebMessageAsJson(&json))) {
               std::string body = WideToUtf8(json.get());
-              // spec 2026-07-10 panel — host-chrome window drag/resize. The
-              // client area is fully covered by the WebView2 child HWND, so
-              // WM_NCHITTEST never reaches this window; the panel grip posts
-              // {handler:'beginWindowDrag'/'beginWindowResize'} instead and we
-              // enter the modal move/size loop via the HTCAPTION trick.
+              // Phase C — host-chrome window resize. The client area is fully
+              // covered by the WebView2 child HWND, so WM_NCHITTEST never
+              // reaches this window; the root card grip posts
+              // {handler:'beginWindowResize'} instead and we enter the modal
+              // size loop via the WM_NCLBUTTONDOWN/HTBOTTOMRIGHT trick.
               // 真机修复：必须 PostMessage 而非 SendMessage——SendMessage 在
               // WebMessageReceived 的 COM 回调栈里同步进模态循环，会把 WebView2
-              // 的消息派发挂在回调里（真机表现=面板拖不动）。PostMessage 让模态
+              // 的消息派发挂在回调里（真机表现=拖不动）。PostMessage 让模态
               // 循环从消息泵正常入口启动；拖/拉结束后由 WM_EXITSIZEMOVE（见
               // HandleMessage）统一回报最终 rect 给 Dart 持久化。Matching
               // quoted handler names keeps glossary text that merely mentions
@@ -2123,20 +2747,41 @@ void GlobalLookupWindow::ConfigureWebView() {
               // log is not spammed once per measure pass.
               if (body.find("\"handler\":\"shellRects\"") !=
                   std::string::npos) {
-                SetShellRectsFromCsv(body);
+                // A CapturePreview completion uses a by-value geometry snapshot.
+                // Do not let a delayed shellRects message from the preceding
+                // lookup replace the current route's mask before that snapshot
+                // is taken.
+                const RouteContext shell_route = RouteForMessage(body);
+                if (!route_context_bound_ ||
+                    (shell_route.source == route_context_.source &&
+                     shell_route.route_epoch == route_context_.route_epoch &&
+                     shell_route.lookup_epoch == route_context_.lookup_epoch)) {
+                  SetShellRectsFromCsv(body);
+                }
                 return S_OK;
               }
-              if (body.find("\"handler\":\"beginWindowDrag\"") !=
-                      std::string::npos ||
-                  body.find("\"handler\":\"beginWindowResize\"") !=
-                      std::string::npos) {
-                const bool resize =
-                    body.find("\"handler\":\"beginWindowResize\"") !=
-                    std::string::npos;
+              if (body.find("\"handler\":\"captureReady\"") !=
+                  std::string::npos) {
+                const RouteContext capture_route = RouteForMessage(body);
+                int64_t geometry_epoch = 0;
+                if ((!route_context_bound_ ||
+                     (capture_route.source == route_context_.source &&
+                      capture_route.route_epoch == route_context_.route_epoch &&
+                      capture_route.lookup_epoch ==
+                          route_context_.lookup_epoch)) &&
+                    ReadTopLevelJsonArrayInt64(body, "args", 2,
+                                               &geometry_epoch) &&
+                    geometry_epoch > 0) {
+                  // captureReady follows the host's double-rAF paint gate.
+                  // Commit before Dart can capture/present this exact epoch.
+                  FinalizePendingShellGeometry(geometry_epoch);
+                }
+              }
+              if (body.find("\"handler\":\"beginWindowResize\"") !=
+                  std::string::npos) {
                 if (hwnd_ != nullptr) {
                   ReleaseCapture();
-                  PostMessage(hwnd_, WM_NCLBUTTONDOWN,
-                              resize ? HTBOTTOMRIGHT : HTCAPTION, 0);
+                  PostMessage(hwnd_, WM_NCLBUTTONDOWN, HTBOTTOMRIGHT, 0);
                 }
                 return S_OK;
               }
@@ -2192,6 +2837,16 @@ void GlobalLookupWindow::ConfigureWebView() {
               // existing cards) and openMinedNote (repo.openNoteInAnki). Its overwrite
               // / add-duplicate actions reuse the already-deferred updateEntry /
               // mineEntry, so this adds NO new write path.
+              // BUG-2051 -- openInAnki (the ↗ button) is DEFERRED for the same
+              // reason and is now the ONLY lane for it, in-app and out: Dart
+              // filters Anki's browser to the cards Anki itself calls duplicates
+              // of this word (repo.openWordInAnki -- the same criterion that
+              // paints the ✓) and replies with the outcome name, which popup.js
+              // turns into an inline hint. It used to resolve to an immediate
+              // null out here, which popup.js read as "the host handled it", so
+              // the app-external ↗ fell back to an in-page panel whose lookup
+              // (findMatchingNotes, by field NAME) could not see a duplicate
+              // living in a different note type -- ✓ said mined, ↗ said no card.
               // playWordAudio removed from this list: the bridge is dead —
               // popup.js plays the resolved URL itself (see bridge-shim.js) and
               // the Dart handler branch was deleted (it could only fail: a
@@ -2206,7 +2861,8 @@ void GlobalLookupWindow::ConfigureWebView() {
                   body.find("\"overwriteTargetNoteId\"") != std::string::npos ||
                   body.find("\"updateEntry\"") != std::string::npos ||
                   body.find("\"findMinedMatches\"") != std::string::npos ||
-                  body.find("\"openMinedNote\"") != std::string::npos;
+                  body.find("\"openMinedNote\"") != std::string::npos ||
+                  body.find("\"openInAnki\"") != std::string::npos;
               const std::string key = "\"__bridgeId\":";
               size_t pos = body.find(key);
               if (!deferred && pos != std::string::npos) {
@@ -2287,6 +2943,32 @@ void GlobalLookupWindow::ConfigureWebView() {
       nullptr);
 }
 
+void GlobalLookupWindow::DispatchGamepadAction(const std::string& action,
+                                               double dy) {
+  if (recovering_ || !webview_ready_ || !webview_) {
+    return;
+  }
+  // 动作名白名单：本方法把字符串拼进 ExecuteScript，绝不透传任意输入。
+  static const char* const kAllowedActions[] = {"next", "prev", "mine", "audio",
+                                                "scroll"};
+  bool allowed = false;
+  for (const char* const candidate : kAllowedActions) {
+    if (action == candidate) {
+      allowed = true;
+      break;
+    }
+  }
+  if (!allowed) {
+    return;
+  }
+  const std::wstring action_w(action.begin(), action.end());
+  const std::wstring script =
+      L"window.__globalLookupHost && "
+      L"window.__globalLookupHost.gamepadAction('" + action_w + L"', " +
+      std::to_wstring(dy) + L");";
+  webview_->ExecuteScript(script.c_str(), nullptr);
+}
+
 void GlobalLookupWindow::RenderJson(const std::string& full_script) {
   // full_script is the complete JS built in Dart (settings + lookupEntries +
   // renderPopup), mirroring dictionary_popup_webview._pushResults. Cached until
@@ -2348,6 +3030,12 @@ void GlobalLookupWindow::RecoverDeadWebView(const std::string& replay_script) {
     pending_json_ = replay_script;
   }
   webview_ready_ = false;
+  // The replacement host document restarts its JS geometry counter. Retaining
+  // the retired document's high-water mark would reject every valid epoch from
+  // the recovered realm even though the immutable lookup route is unchanged.
+  latest_geometry_epoch_ = 0;
+  shell_rects_css_.clear();
+  ClearPendingShellGeometry();
   if (recovering_) {
     return;
   }
@@ -2414,11 +3102,13 @@ LRESULT CALLBACK GlobalLookupWindow::WndProc(HWND hwnd, UINT message,
 // real cards keeps the window geometry 100% untouched (zero-motion holds)
 // while gap clicks physically pass through to whatever is beneath.
 void GlobalLookupWindow::ApplyRoundedRegion() {
-  if (hwnd_ == nullptr) {
+  if (!OwnsLiveWindow()) {
     return;
   }
-  RECT rc;
-  GetClientRect(hwnd_, &rc);
+  RECT rc = {};
+  if (!GetClientRect(hwnd_, &rc)) {
+    return;
+  }
   const int width = rc.right - rc.left;
   const int height = rc.bottom - rc.top;
   if (width <= 0 || height <= 0) {
@@ -2434,12 +3124,21 @@ void GlobalLookupWindow::ApplyRoundedRegion() {
   // shell 卡矩形裁剪、临时用整窗区域，让窗口可见地随拖拽增长（否则区域钉死在旧卡矩形，
   // 拖拽毫无视觉变化）。WM_EXITSIZEMOVE 结束时 resizing_=false 并重新 ApplyRoundedRegion
   // 复原 shell 裁剪。面板实例 shell_rects_css_ 恒空，本就走整窗区域，此条件对它是 no-op。
-  if (!shell_rects_css_.empty() && !resizing_) {
+  // Pending rects describe the DOM *after* commitLayerShift.  WM_SIZE,
+  // WM_DPICHANGED and WM_EXITSIZEMOVE can all run synchronously inside the
+  // preceding SetWindowPos, while the WebView still presents the committed
+  // layer.  Consuming pending rects from any of those paths clips the old
+  // parent for one frame and then installs the same HRGN a second time in
+  // FinalizePendingShellGeometry.  Keep every incidental region rebuild on the
+  // committed geometry; the finalizer moves pending -> committed first and is
+  // the only place allowed to expose the new hit/paint region.
+  const std::vector<std::array<double, 4>>& region_rects = shell_rects_css_;
+  if (!region_rects.empty() && !resizing_) {
     const double dpr = static_cast<double>(dpi) / 96.0;
     HRGN union_region = CreateRectRgn(0, 0, 0, 0);
     if (union_region != nullptr) {
       bool any = false;
-      for (const std::array<double, 4>& r : shell_rects_css_) {
+      for (const std::array<double, 4>& r : region_rects) {
         if (r[2] <= 0 || r[3] <= 0) {
           continue;
         }
@@ -2456,9 +3155,15 @@ void GlobalLookupWindow::ApplyRoundedRegion() {
       }
       if (any) {
         // SetWindowRgn takes ownership on success; the system frees it.
-        SetWindowRgn(hwnd_, union_region, TRUE);
-        return;
+        // DComp presents pixels independently. FALSE avoids asking user32 to
+        // repaint the whole WebView while still updating its Win32 hit region;
+        // windowed overlays retain the normal redraw request.
+        const BOOL redraw_region = composition_active_ ? FALSE : TRUE;
+        if (SetWindowRgn(hwnd_, union_region, redraw_region) != 0) {
+          return;
+        }
       }
+      // Ownership stays with us on failure (and when no valid card existed).
       DeleteObject(union_region);
     }
     // Region build failed -> fall through to the full-window region (worse UX,
@@ -2468,15 +3173,51 @@ void GlobalLookupWindow::ApplyRoundedRegion() {
       CreateRoundRectRgn(0, 0, width + 1, height + 1, diameter, diameter);
   if (region != nullptr) {
     // SetWindowRgn takes ownership of the region on success; the system frees it.
-    SetWindowRgn(hwnd_, region, TRUE);
+    const BOOL redraw_region = composition_active_ ? FALSE : TRUE;
+    if (SetWindowRgn(hwnd_, region, redraw_region) == 0) {
+      DeleteObject(region);
+    }
   }
 }
 
-// BUG-749 — parse {handler:'shellRects', args:['l,t,w,h;l,t,w,h;…']} (window-
-// relative CSS px, numbers only — produced by global_lookup_host.js
-// measureAndReport) and re-apply the window region. A malformed payload (or a
-// glossary string that merely contains the handler name) parses to zero rects
-// and leaves the previous region untouched — degraded, never garbage.
+// 2026-08-23 弹窗观感 — 投影同步单漏斗（调用点：WM_WINDOWPOSCHANGED /
+// WM_EXITSIZEMOVE；Hide 与 ForgetDeadWindow 直接
+// shadow_.Hide()）。
+//
+// 可见性判据 = revealed_ && visible_：离屏渲染（ShowAt 的 OffscreenX 停靠、
+// PrewarmWebView、gal 采集面 ResizeOffscreen）全程不带影；卡片真正上屏
+// （Reveal/RevealStack 置位）后影子才出现。卡矩形用 shellRects（BUG-749 的
+// 卡片几何真相源，瞬态级联逐卡画影）；面板实例 shellRects 恒空 → 整窗一影。
+// 模态 resize 循环（resizing_）中卡矩形已失真且每帧重画会拖慢拖拽：传
+// defer_repaint 让影子窗"几何脏了就先藏"，WM_EXITSIZEMOVE 复原。半径 10
+// 与 ApplyRoundedRegion 的 10 逻辑 px（diameter 20）同源，两者必须一起改。
+void GlobalLookupWindow::SyncShadow() {
+  // shellRects has announced a future DOM origin but the current root/shadow is
+  // still correct on screen. Keep that existing layered bitmap in place until
+  // the paint-ready finalize instead of hiding it on the intermediate HWND
+  // resize and synchronously rasterising it twice.
+  if (shell_geometry_pending_) {
+    return;
+  }
+  const bool show = revealed_ && visible_ && OwnsLiveWindow() &&
+                    IsWindowVisible(hwnd_);
+  // Match the visible DOM/HRGN transaction.  A topmost guard or
+  // WM_WINDOWPOSCHANGED may call this between shellRects and layer-shift
+  // completion; using pending rects there would hide or move the correct old
+  // shadow before the new pixels exist.
+  const std::vector<std::array<double, 4>>& shadow_rects = shell_rects_css_;
+  shadow_.Sync(hwnd_, show,
+               resizing_ ? std::vector<std::array<double, 4>>{}
+                         : shadow_rects,
+               10, resizing_);
+}
+
+// BUG-749 / BUG-1833 — parse
+// {handler:'shellRects', args:['l,t,w,h;l,t,w,h;…', geometryEpoch]}.
+// shellRects announces the bbox transaction before Dart's revealStack arrives.
+// Advancing the native epoch high-water here prevents a delayed A resize from
+// moving the HWND after B's newer region was already observed. Legacy one-arg
+// payloads retain epoch zero until this host document starts versioned geometry.
 void GlobalLookupWindow::SetShellRectsFromCsv(const std::string& body) {
   const std::string args_marker = "\"args\":[\"";
   const size_t args_at = body.find(args_marker);
@@ -2487,6 +3228,25 @@ void GlobalLookupWindow::SetShellRectsFromCsv(const std::string& body) {
   const size_t end = body.find('"', start);
   if (end == std::string::npos || end <= start) {
     return;
+  }
+  int64_t geometry_epoch = 0;
+  size_t cursor = end + 1;
+  while (cursor < body.size() &&
+         (body[cursor] == ' ' || body[cursor] == '\t')) {
+    ++cursor;
+  }
+  if (cursor < body.size() && body[cursor] == ',') {
+    ++cursor;
+    while (cursor < body.size() &&
+           (body[cursor] == ' ' || body[cursor] == '\t')) {
+      ++cursor;
+    }
+    const char* first = body.data() + cursor;
+    const char* last = body.data() + body.size();
+    const auto parsed = std::from_chars(first, last, geometry_epoch);
+    if (parsed.ec != std::errc() || parsed.ptr == first || geometry_epoch <= 0) {
+      return;
+    }
   }
   const std::string csv = body.substr(start, end - start);
   std::vector<std::array<double, 4>> rects;
@@ -2523,8 +3283,23 @@ void GlobalLookupWindow::SetShellRectsFromCsv(const std::string& body) {
   if (rects.empty()) {
     return;
   }
-  shell_rects_css_ = std::move(rects);
-  ApplyRoundedRegion();
+  if (!BeginGeometryRequest(geometry_epoch)) {
+    return;
+  }
+  pending_shell_rects_css_ = std::move(rects);
+  pending_shell_geometry_epoch_ = geometry_epoch;
+  shell_geometry_pending_ = true;
+  // Do not apply pending HRGN here. The HWND and WebView layer still use the
+  // preceding origin; applying the new card-local rects now is the exact
+  // root→child opening flash. matching reveal/resize executes commitLayerShift,
+  // then its completion calls FinalizePendingShellGeometry once both origins
+  // agree. Keeping HRGN (rather than disabling it for DComp) is required so
+  // transparent gaps remain true Win32 click/wheel pass-through regions.
+  // BUG-1833 — shellRects 是即将到来的同 epoch resize 的几何预告。此刻 HWND
+  // 仍是旧尺寸；同步重画不仅会提交错误事务的影子，还会在 overlaySize 消息送达
+  // Dart 之前阻塞 UI 线程。matching resize/reveal 成功后会以新 HWND 尺寸和刚
+  // 提交的 shell_rects_css_ 显式同步一次；WM_WINDOWPOSCHANGED 若已先画过，几何
+  // 指纹会让该同步免重栅格，因此这里不得抢跑。
 }
 
 void GlobalLookupWindow::ForwardGlobalClickToHost(int screen_x, int screen_y) {
@@ -2576,13 +3351,46 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
       // BUG-1166 — 钩子线程已把这一格滚轮从输入流里吞掉（游戏收不到了），这里负责
       // 让卡片照常滚。同样是钩子线程只搬数据、窗口线程做事。
       HandleGlobalWheel(fushi::UnpackMouseHookPoint(wparam),
-                        fushi::UnpackMouseHookWheel(lparam));
+                         fushi::UnpackMouseHookWheel(lparam));
       return 0;
+    case fushi::kLowLevelMouseShieldReleaseMessage:
+      // BUG-1882 — matching mouse-up 已由高优先级 hook 线程观测；跨进程
+      // DirectInput publication 在本窗口线程撤销，与下一次 Reveal 串行，避免旧 up
+      // 删除新 popup 的 gate。
+      fushi::FinalizeLowLevelMouseDirectInputShield(hwnd_);
+      return 0;
+    case WM_WINDOWPOSCHANGED:
+      // 2026-08-23 弹窗观感 — 投影同步单漏斗：移动/缩放/显隐/Z 序变化（含
+      // ReassertTopmost 的置顶重申与 Reveal/ResizeTo 的每一次 SetWindowPos）
+      // 全部经过本消息，投影窗在此一处跟随，杜绝散落的手工同步点漂移。
+      // 必须交回 DefWindowProc：WM_SIZE / WM_MOVE 是它在这里派生的。
+      SyncShadow();
+      return DefWindowProc(hwnd_, message, wparam, lparam);
     case WM_SIZE:
       if (controller_) {
         RECT rc;
         GetClientRect(hwnd_, &rc);
-        controller_->put_Bounds(rc);
+        RECT current = {};
+        const bool has_current = SUCCEEDED(controller_->get_Bounds(&current));
+        if (direct_process_client_active_ && visible_ && revealed_) {
+          // A deep gal cascade may temporarily grow the HWND/WebView viewport.
+          // Shrinking the HWND back to root must clip that already-rendered
+          // surface, not shrink Chromium's viewport and reflow/repaint the live
+          // root card. A fresh lookup clears direct mode before its first size,
+          // so normal root/desktop sizing still resets the viewport exactly.
+          if (has_current) {
+            rc.right = std::max(rc.right, current.right);
+            rc.bottom = std::max(rc.bottom, current.bottom);
+          }
+        }
+        // A deep N→1 close deliberately keeps Chromium's larger viewport and
+        // clips it with the smaller HWND. Do not call the COM setter with an
+        // identical high-water RECT: WebView2 does not promise an equal Bounds
+        // assignment is layout-free, and that was the remaining retained-root
+        // redraw path.
+        if (!has_current || !EqualRect(&rc, &current)) {
+          controller_->put_Bounds(rc);
+        }
       }
       // 背景逐像素透明（composition）：put_Bounds 后必须 Commit 才把新尺寸的透明帧
       // 推上桌面；且**不**设窗口 region——逐像素透明已让圆角/卡间隙靠 CSS 呈现，
@@ -2627,7 +3435,17 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
       if (controller_) {
         RECT rc;
         GetClientRect(hwnd_, &rc);
-        controller_->put_Bounds(rc);
+        RECT current = {};
+        const bool has_current = SUCCEEDED(controller_->get_Bounds(&current));
+        if (direct_process_client_active_ && visible_ && revealed_) {
+          if (has_current) {
+            rc.right = std::max(rc.right, current.right);
+            rc.bottom = std::max(rc.bottom, current.bottom);
+          }
+        }
+        if (!has_current || !EqualRect(&rc, &current)) {
+          controller_->put_Bounds(rc);
+        }
       }
       if (composition_active_) {
         if (dcomp_device_ != nullptr) {
@@ -2658,13 +3476,23 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
       ApplyRoundedRegion();
       return 0;
     case WM_EXITSIZEMOVE: {
-      // 模态 move/size 循环结束（面板拖动/调整，或 Phase C 起的瞬态覆盖窗拖角 resize）：
-      // 回报最终窗口 rect（物理 px）供 Dart 持久化。同一 windowMoved 通道，两实例各自的
-      // message_cb_ 落不同真值——面板落 clipboardPanelRect，瞬态窗落 overlay 尺寸键（Dart
-      // 侧按实例区分去向，见各自 controller 的 _onJsMessage / windowMoved 分支）。
+      // 模态 size 循环结束（Phase C 瞬态覆盖窗拖角 resize）：回报最终窗口 rect
+      // （物理 px）供 Dart 持久化（windowMoved → overlay 尺寸键，见 controller 的
+      // _onJsMessage / windowMoved 分支）。
       // Phase C — 先复原 resize 期间临时挂起的 shell 区域裁剪（resizing_ 归零后重算）。
       resizing_ = false;
       ApplyRoundedRegion();
+      // 拖拽期间投影因防掉帧被隐藏（见 SyncShadow），拖完立刻恢复。
+      SyncShadow();
+      // BUG-1857 — 拖拽期间 host 让 root 卡随 viewport 长（live-fit）；松手先解除，
+      // 再回报 windowMoved 让 Dart 权威重排接管 root 尺寸。顺序有意：先解除后回报，
+      // Dart 重排到达时 host 已不在 live 态。
+      if (webview_ != nullptr) {
+        webview_->ExecuteScript(
+            L"window.__globalLookupHost && "
+            L"window.__globalLookupHost.endLiveResize();",
+            nullptr);
+      }
       if (message_cb_ && hwnd_ != nullptr) {
         RECT r{};
         GetWindowRect(hwnd_, &r);

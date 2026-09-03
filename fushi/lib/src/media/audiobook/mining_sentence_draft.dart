@@ -131,8 +131,7 @@ Map<String, Object?> buildSentenceContextPreview({
 
 /// 把多句合成一段制卡用文本。纯函数（无副作用、可单测）。
 ///
-/// 与视频 `buildSelectedSubtitleCueContext` 的 `join('\n')` 语义一致：逐句 trim、
-/// 丢弃空句、用换行连接。单句时等价于原行为（trim 后直接返回）。
+/// 逐句 trim、丢弃空句、用换行连接。单句时等价于原行为（trim 后直接返回）。
 String joinMinedSentences(List<String> sentences) {
   return sentences
       .map((String s) => s.trim())

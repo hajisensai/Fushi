@@ -91,11 +91,25 @@ void main() {
       isFalse,
       reason: '滚轮命中判定这条路上不许出现 rect 判定（点击那条路不受影响）',
     );
-    expect(
-      hookProc.contains('target == nullptr || !IsWindow(target)'),
-      isTrue,
-      reason: '没有查词卡（Disarm 宽限期内）时回调必须纯放行',
-    );
+    // v19 把这条合并门拆成了两段：中间插进附着字形快路（它拿的是预校验过的屏幕
+    // 坐标快照，必须排在任何 HWND/属性/WindowFromPoint 系统调用之前）。放行语义
+    // 没变，两段各自 CallNextHookEx。分别断言比原来的合并串更严——合并串还在只
+    // 说明"有那么一行"，说不清拆开之后哪一条还在放行。
+    final int noTarget = hookProc.indexOf('if (target == nullptr)');
+    final int noTargetPass =
+        hookProc.indexOf('return CallNextHookEx(', noTarget);
+    expect(noTarget, greaterThanOrEqualTo(0),
+        reason: '没有查词卡（Disarm 宽限期内）时必须有纯放行门');
+    expect(noTargetPass, greaterThan(noTarget),
+        reason: '无 target 时必须直接 CallNextHookEx 放行，不做任何判定');
+
+    final int deadTarget = hookProc.indexOf('if (!IsWindow(target))');
+    final int deadTargetPass =
+        hookProc.indexOf('return CallNextHookEx(', deadTarget);
+    expect(deadTarget, greaterThan(noTarget),
+        reason: 'target 已销毁的放行门必须还在（排在无 target 门之后）');
+    expect(deadTargetPass, greaterThan(deadTarget),
+        reason: 'target 失效时同样必须纯放行');
     // 放行分支不止一处，且都走 CallNextHookEx。
     expect(
       'CallNextHookEx'.allMatches(hookProc).length >= 4,
@@ -105,7 +119,7 @@ void main() {
   });
 
   test('③ 移动事件仍被纯比较挡在所有系统调用之前（BUG-1048/1077 快路不回退）', () {
-    final int firstCompare = hookProc.indexOf('const bool is_click =');
+    final int firstCompare = hookProc.indexOf('const bool is_button_down =');
     final int firstSyscall = hookProc.indexOf('g_target.load');
     expect(firstCompare, greaterThan(0));
     expect(firstSyscall, greaterThan(firstCompare),
@@ -316,15 +330,15 @@ void main() {
 
   test('⑦ 不许靠改焦点模型来解决（瞬态查词窗必须保持不可激活）', () {
     expect(
-      winHdr.contains('bool activatable_ = false;'),
-      isTrue,
-      reason: '让查词卡抢焦点确实能挡住滚轮（剪贴板面板就是这么做的），但那会让'
-          'galgame 失焦——很多 VN 一失焦就暂停/变暗。design §5 保证 3 不得放弃',
+      winHdr.contains('SetActivatable'),
+      isFalse,
+      reason: '让查词卡抢焦点确实能挡住滚轮，但那会让 galgame 失焦——很多 VN '
+          '一失焦就暂停/变暗。design §5 保证 3 不得放弃：不得再给窗口加可激活开关',
     );
     expect(
-      winSrc.contains('(activatable_ ? 0 : WS_EX_NOACTIVATE)'),
+      winSrc.contains('WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE |'),
       isTrue,
-      reason: '瞬态覆盖窗的 NOACTIVATE 不得被顺手拿掉',
+      reason: '瞬态覆盖窗的 NOACTIVATE 不得被顺手拿掉（OverlayCreateExStyle）',
     );
   });
 }

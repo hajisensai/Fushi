@@ -7,10 +7,26 @@ import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
 
 import 'package:fushi/src/media/torrent/anime_release_descriptor.dart';
+import 'package:fushi/src/media/torrent/download_timeouts.dart';
+import 'package:fushi/src/media/torrent/public_trackers.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
 
-const String _nyaaNamespace = 'https://nyaa.si/xmlns/nyaa';
+/// nyaa 扩展字段命名空间的固定路径。上游 nyaa 软件把命名空间拼成
+/// `<站点 origin>/xmlns/nyaa`（`url_for('main.home', _external=True)`），
+/// 所以 nyaa.si / sukebei.nyaa.si / 各镜像的 host 各不相同，只有路径恒定；
+/// 硬编码 `https://nyaa.si/xmlns/nyaa` 会把 sukebei 每条 item 判成
+/// invalidNamespace（BUG-1946）。
+const String _nyaaNamespacePath = '/xmlns/nyaa';
+
+/// [uri] 是否 nyaa 扩展字段命名空间（http(s) 且路径为 [_nyaaNamespacePath]）。
+bool isNyaaNamespace(String? uri) {
+  final Uri? parsed = uri == null ? null : Uri.tryParse(uri);
+  return parsed != null &&
+      (parsed.scheme == 'https' || parsed.scheme == 'http') &&
+      parsed.host.isNotEmpty &&
+      parsed.path == _nyaaNamespacePath;
+}
 
 /// 严格搜索契约的稳定错误码。调用方可以按 [code] 区分「空响应、编码、XML、
 /// RSS 结构、字段」而不必解析第三方 parser 的易变错误文本。
@@ -33,13 +49,12 @@ class NyaaFeedFormatException extends FormatException {
   final NyaaFeedErrorCode code;
 }
 
-/// Nyaa 磁链标准 tracker 列表（nyaa.si 站点磁链默认附带的公开 tracker）。
+/// Nyaa 磁链 tracker 列表：站点专属 tracker 排最前，后面跟内置公开兜底集
+/// [kPublicTrackers]。nyaa 自己的 tracker 只覆盖本站种子，公开的那批才是
+/// 「站点 tracker 挂了/种子已从本站下架」时还能连上 peer 的那条路。
 const List<String> kNyaaTrackers = <String>[
   'http://nyaa.tracker.wf:7777/announce',
-  'udp://open.stunner.irish:80/announce',
-  'udp://tracker.opentrackr.org:1337/announce',
-  'udp://open.tracker.cl:1337/announce',
-  'udp://exodus.desync.com:6969/announce',
+  ...kPublicTrackers,
 ];
 
 /// 成对括号块（字幕组 / 画质 / 年份 tag）：`[...]` `(...)`。
@@ -310,10 +325,10 @@ List<NyaaTorrent> _parseNyaaDocumentStrict(XmlDocument doc) {
           'item is missing nyaa:$name',
         );
       }
-      if (element.name.namespaceUri != _nyaaNamespace) {
+      if (!isNyaaNamespace(element.name.namespaceUri)) {
         throw NyaaFeedFormatException(
           NyaaFeedErrorCode.invalidNamespace,
-          '$name must use $_nyaaNamespace',
+          '$name must use <site>$_nyaaNamespacePath',
         );
       }
       return element.innerText.trim();
@@ -330,7 +345,7 @@ List<NyaaTorrent> _parseNyaaDocumentStrict(XmlDocument doc) {
       );
     }
 
-    final String sizeText = _childTextInNamespace(item, 'size', _nyaaNamespace);
+    final String sizeText = _nyaaChildText(item, 'size');
     out.add(
       NyaaTorrent(
         title: title,
@@ -342,10 +357,9 @@ List<NyaaTorrent> _parseNyaaDocumentStrict(XmlDocument doc) {
         downloads: _optionalNyaaInt(item, 'downloads'),
         sizeText: sizeText,
         sizeBytes: parseNyaaSize(sizeText),
-        categoryId: _childTextInNamespace(item, 'categoryId', _nyaaNamespace),
-        trusted:
-            _childTextInNamespace(item, 'trusted', _nyaaNamespace) == 'Yes',
-        remake: _childTextInNamespace(item, 'remake', _nyaaNamespace) == 'Yes',
+        categoryId: _nyaaChildText(item, 'categoryId'),
+        trusted: _nyaaChildText(item, 'trusted') == 'Yes',
+        remake: _nyaaChildText(item, 'remake') == 'Yes',
         pubDate: parseNyaaPubDate(_childTextInNamespace(item, 'pubDate', null)),
       ),
     );
@@ -356,10 +370,10 @@ List<NyaaTorrent> _parseNyaaDocumentStrict(XmlDocument doc) {
 int _optionalNyaaInt(XmlElement item, String name) {
   final XmlElement? element = _childElement(item, name);
   if (element == null) return 0;
-  if (element.name.namespaceUri != _nyaaNamespace) {
+  if (!isNyaaNamespace(element.name.namespaceUri)) {
     throw NyaaFeedFormatException(
       NyaaFeedErrorCode.invalidNamespace,
-      '$name must use $_nyaaNamespace',
+      '$name must use <site>$_nyaaNamespacePath',
     );
   }
   final String value = element.innerText.trim();
@@ -389,6 +403,17 @@ String _childTextInNamespace(XmlElement item, String local, String? namespace) {
   return '';
 }
 
+/// 取 [item] 下 nyaa 扩展命名空间里本地名为 [local] 的第一个子元素文本；
+/// 没有返回空串。
+String _nyaaChildText(XmlElement item, String local) {
+  for (final XmlElement child in item.childElements) {
+    if (child.name.local == local && isNyaaNamespace(child.name.namespaceUri)) {
+      return child.innerText.trim();
+    }
+  }
+  return '';
+}
+
 /// 取 [item] 下本地名为 [local] 的第一个子元素文本（去首尾空白）；没有返回空串。
 String _childText(XmlElement item, String local) {
   for (final XmlElement child in item.childElements) {
@@ -406,11 +431,33 @@ String _childText(XmlElement item, String local) {
 /// category 直接透传（常用：`1_0` 全部动画 / `1_2` 英译 / `1_3` 非英译 /
 /// `1_4` 生肉 Raw）；filter：`0` 无过滤 / `2` 仅 trusted。
 class NyaaClient {
-  NyaaClient({this.baseUrl = 'https://nyaa.si', http.Client? client})
-      : _client = client ?? createAppHttpIoClient();
+  NyaaClient({
+    this.baseUrl = 'https://nyaa.si',
+    http.Client? client,
+    this.requestTimeout = kDownloadDiscoveryTimeout,
+  }) : _client = client ?? createAppHttpIoClient();
 
   final String baseUrl;
   final http.Client _client;
+
+  /// 单次请求的整体超时上限。默认取发现链路的唯一真相源
+  /// [kDownloadDiscoveryTimeout]；可注入只为测试能用短值跑。
+  ///
+  /// 没有这层，`search` 就完全不设时限：`http` 的 IO client 依赖
+  /// `HttpClient.connectionTimeout`，而它默认是 null（不超时），站点被墙或
+  /// 代理半开的连接能挂到操作系统重传耗尽为止（BUG-2079）。订阅检查
+  /// (`anime_download_subscription.dart`) 与搜索对话框在调用点各自包了
+  /// `.timeout(kDownloadDiscoveryTimeout)`，但 discovery source
+  /// (`nyaa_discovery_source.dart`) 与 resource provider
+  /// (`nyaa_resource_provider.dart`) 这两条注册表路径没有——超时必须落在
+  /// client 自己身上，否则每加一个消费方就要重记一次这笔账。
+  ///
+  /// **值必须是 [kDownloadDiscoveryTimeout] 而不是 torznab 那个 20s**：
+  /// 20s 正是 BUG-1141 从这条链路上拆掉的直连口径魔法数字（代理下握手 +
+  /// TLS 常年超它），而且它比上述调用点的外层 60s 更紧，等于替那两条路径
+  /// 偷偷回退 BUG-1141。torznab 的索引器多是自建/本机，20s 在那边另有依据，
+  /// 两边不合并。
+  final Duration requestTimeout;
 
   /// 按关键词搜索种子。网络错误 / 非 200 **抛出**（`ClientException` /
   /// `SocketException` / `HandshakeException` 等），由调用方决定展示或记录：
@@ -434,7 +481,7 @@ class NyaaClient {
         'f': filter,
       },
     );
-    final http.Response res = await _client.get(uri);
+    final http.Response res = await _client.get(uri).timeout(requestTimeout);
     if (!renderAsRss && res.statusCode == 404) {
       // Nyaa returns 404 when a valid HTML search asks past its final page.
       return const <NyaaTorrent>[];

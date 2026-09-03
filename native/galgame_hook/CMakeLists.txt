@@ -42,6 +42,12 @@ add_library(fushi_voice_hook SHARED
   "hook/dll_main.cpp"
   "hook/adapter.h"
   "hook/ffmpeg_runtime.h"
+  "hook/hook_original_registry.h"
+  "hook/tracked_handle_table.h"
+  "hook/geometry_provider_registry.h"
+  "hook/lookup_v19_runtime.h"
+  "hook/generic_input_shield.inc"
+  "hook/xaudio_resource_dispatch.h"
   "hook/bgi_arc.h"
   "hook/artemis_pfs.h"
   "hook/catsystem2_int.h"
@@ -53,6 +59,9 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/unity_adapter.inc"
   "hook/adapters/windows_audio_adapter.inc"
   "hook/adapters/siglus_adapter.inc"
+  "hook/adapters/exact_lookup_signature.h"
+  "hook/adapters/siglus_lookup.h"
+  "hook/adapters/siglus_lookup.inc"
   "hook/adapters/bgi_ethornell_adapter.inc"
   "hook/adapters/bgi_ethornell_profile.h"
   "hook/adapters/artemis_adapter.inc"
@@ -67,10 +76,40 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/renpy_adapter.inc"
   "hook/adapters/text_render_adapter.inc"
   "hook/adapters/loopback_adapter.inc"
+  "hook/adapters/sgre_adapter.inc"
+  "hook/adapters/sgre_anchors.h"
+  "hook/adapters/sgre_lookup.h"
+  "hook/adapters/sgre_lookup.inc"
+  "hook/adapters/sgre_profile.h"
+  "hook/adapters/sgre_voice_archive.h"
+  "hook/adapters/leaf_aquaplus_profile.h"
+  "hook/adapters/leaf_aquaplus_lookup.h"
+  "hook/adapters/leaf_aquaplus_voice_archive.h"
+  "hook/adapters/leaf_aquaplus_adapter.inc"
+  "hook/adapters/hunex_gge_adapter.inc"
+  "hook/adapters/hunex_gge_lookup.h"
+  "hook/adapters/hunex_gge_profile.h"
+  "include/hunex_gge_trace.h"
+  "include/generic_input_shield.h"
+  "include/leaf_d3d_trace.h"
 )
 target_include_directories(fushi_voice_hook PRIVATE "include")
 target_compile_definitions(fushi_voice_hook PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
-target_link_libraries(fushi_voice_hook PRIVATE minhook winhttp)
+target_link_libraries(fushi_voice_hook PRIVATE minhook winhttp ole32 bcrypt)
+
+# Exact self-rendered engine signatures are candidate locators, never build
+# identity. This synthetic gate pins global uniqueness across all executable
+# sections, relocated-operand masking, decoded targets, and call boundaries on
+# both helper architectures without shipping any game binary.
+add_executable(fushi_exact_lookup_signature_test
+  "tests/exact_lookup_signature_test.cpp"
+)
+target_include_directories(fushi_exact_lookup_signature_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_exact_lookup_signature_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_exact_lookup_signature_test
+  COMMAND fushi_exact_lookup_signature_test)
 
 # Siglus OVK 索引/Ogg 完整性解析是纯函数，独立小测试不需启动或注入游戏。
 enable_testing()
@@ -80,11 +119,59 @@ add_executable(fushi_siglus_ovk_test
 target_include_directories(fushi_siglus_ovk_test PRIVATE "hook")
 add_test(NAME fushi_siglus_ovk_test COMMAND fushi_siglus_ovk_test)
 
+# HUNEX story renderer callback-to-worker hand-off. The focused test exercises
+# only synthetic glyph/index/rectangle values and contains no game payload.
+add_executable(fushi_hunex_gge_capture_bridge_test
+  "tests/hunex_gge_capture_bridge_test.cpp"
+)
+target_include_directories(fushi_hunex_gge_capture_bridge_test PRIVATE
+  "hook/adapters")
+add_test(NAME fushi_hunex_gge_capture_bridge_test
+  COMMAND fushi_hunex_gge_capture_bridge_test)
+
+# HUNEX HFA/HW directory, wrapper and Ogg validation are worker-side pure
+# functions. The focused test uses only synthetic bytes and never game data.
+add_executable(fushi_hunex_gge_adapter_test
+  "tests/hunex_gge_adapter_test.cpp"
+)
+target_include_directories(fushi_hunex_gge_adapter_test PRIVATE "hook")
+add_test(NAME fushi_hunex_gge_adapter_test
+  COMMAND fushi_hunex_gge_adapter_test)
+
+add_executable(fushi_hunex_gge_lookup_test
+  "tests/hunex_gge_lookup_test.cpp"
+)
+target_include_directories(fushi_hunex_gge_lookup_test PRIVATE
+  "hook/adapters")
+add_test(NAME fushi_hunex_gge_lookup_test
+  COMMAND fushi_hunex_gge_lookup_test)
+
 add_executable(fushi_siglus_text_test
   "tests/siglus_text_test.cpp"
 )
 target_include_directories(fushi_siglus_text_test PRIVATE "hook")
 add_test(NAME fushi_siglus_text_test COMMAND fushi_siglus_text_test)
+
+add_executable(fushi_siglus_lookup_test
+  "tests/siglus_lookup_test.cpp"
+)
+target_include_directories(fushi_siglus_lookup_test PRIVATE "hook")
+add_test(NAME fushi_siglus_lookup_test COMMAND fushi_siglus_lookup_test)
+
+add_executable(fushi_leaf_aquaplus_adapter_test
+  "tests/leaf_aquaplus_adapter_test.cpp"
+)
+target_include_directories(fushi_leaf_aquaplus_adapter_test PRIVATE "hook")
+add_test(NAME fushi_leaf_aquaplus_adapter_test
+  COMMAND fushi_leaf_aquaplus_adapter_test)
+
+add_executable(fushi_leaf_aquaplus_voice_archive_test
+  "tests/leaf_aquaplus_voice_archive_test.cpp"
+)
+target_include_directories(fushi_leaf_aquaplus_voice_archive_test
+  PRIVATE "hook/adapters")
+add_test(NAME fushi_leaf_aquaplus_voice_archive_test
+  COMMAND fushi_leaf_aquaplus_voice_archive_test)
 
 add_executable(fushi_resource_audio_ready_test
   "tests/resource_audio_ready_test.cpp"
@@ -98,6 +185,57 @@ add_executable(fushi_utterance_window_test
 )
 target_include_directories(fushi_utterance_window_test PRIVATE "include")
 add_test(NAME fushi_utterance_window_test COMMAND fushi_utterance_window_test)
+
+add_executable(fushi_voice_clip_energy_test
+  "tests/voice_clip_energy_test.cpp"
+)
+target_include_directories(fushi_voice_clip_energy_test PRIVATE "include")
+add_test(NAME fushi_voice_clip_energy_test COMMAND fushi_voice_clip_energy_test)
+
+add_executable(fushi_xaudio_source_format_test
+  "tests/xaudio_source_format_test.cpp"
+)
+target_include_directories(fushi_xaudio_source_format_test PRIVATE "hook" "include")
+target_compile_definitions(fushi_xaudio_source_format_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_xaudio_source_format_test
+  COMMAND fushi_xaudio_source_format_test)
+
+add_executable(fushi_hook_original_registry_test
+  "tests/hook_original_registry_test.cpp"
+)
+target_include_directories(fushi_hook_original_registry_test PRIVATE "hook")
+add_test(NAME fushi_hook_original_registry_test
+  COMMAND fushi_hook_original_registry_test)
+
+add_executable(fushi_tracked_handle_table_test
+  "tests/tracked_handle_table_test.cpp"
+)
+target_include_directories(fushi_tracked_handle_table_test PRIVATE "hook")
+target_compile_definitions(fushi_tracked_handle_table_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_tracked_handle_table_test
+  COMMAND fushi_tracked_handle_table_test)
+
+add_executable(fushi_xaudio_trace_export_test
+  "tests/xaudio_trace_export_test.cpp"
+)
+target_include_directories(fushi_xaudio_trace_export_test PRIVATE "include")
+target_compile_definitions(fushi_xaudio_trace_export_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_dependencies(fushi_xaudio_trace_export_test fushi_voice_hook)
+add_test(NAME fushi_xaudio_trace_export_test
+  COMMAND fushi_xaudio_trace_export_test "$<TARGET_FILE:fushi_voice_hook>")
+
+add_executable(fushi_leaf_d3d_trace_export_test
+  "tests/leaf_d3d_trace_export_test.cpp"
+)
+target_include_directories(fushi_leaf_d3d_trace_export_test PRIVATE "include")
+target_compile_definitions(fushi_leaf_d3d_trace_export_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_dependencies(fushi_leaf_d3d_trace_export_test fushi_voice_hook)
+add_test(NAME fushi_leaf_d3d_trace_export_test
+  COMMAND fushi_leaf_d3d_trace_export_test "$<TARGET_FILE:fushi_voice_hook>")
 
 add_executable(fushi_voice_resource_filename_test
   "tests/voice_resource_filename_test.cpp"
@@ -130,6 +268,30 @@ add_executable(fushi_voice_session_reuse_test
 target_include_directories(fushi_voice_session_reuse_test PRIVATE "include")
 target_compile_definitions(fushi_voice_session_reuse_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_voice_session_reuse_test COMMAND fushi_voice_session_reuse_test)
+
+# ready 旧映射的 resident DLL 身份门：不启动/注入游戏，只验证路径与摘要的 fail-closed
+# 判定。Fushi 更新后旧 DLL 仍驻留时，injector 不得再误报 reuse_ready。
+# 同时带一条**调用侧**源码扫描守卫（FUSHI_INJECTOR_MAIN_SOURCE）：纯函数判据再对，只要
+# 调用方把两侧摘要都从磁盘读，kDigestMismatch 就恒不可达 —— 那种退化纯函数测试测不到。
+add_executable(fushi_hook_module_identity_test
+  "tests/hook_module_identity_test.cpp"
+)
+target_include_directories(fushi_hook_module_identity_test PRIVATE "include")
+target_compile_definitions(fushi_hook_module_identity_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
+  "FUSHI_INJECTOR_MAIN_SOURCE=\"${CMAKE_CURRENT_SOURCE_DIR}/injector/injector_main.cpp\"")
+add_test(NAME fushi_hook_module_identity_test COMMAND fushi_hook_module_identity_test)
+
+# v16 injected WASAPI loopback policy: pure ABI/publication/lifecycle reducer
+# coverage. It never opens an audio endpoint or starts a game and runs in both
+# Win32/x64 configurations.
+add_executable(fushi_native_loopback_policy_test
+  "tests/native_loopback_policy_test.cpp"
+)
+target_include_directories(fushi_native_loopback_policy_test PRIVATE "include")
+target_compile_definitions(fushi_native_loopback_policy_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_native_loopback_policy_test
+  COMMAND fushi_native_loopback_policy_test)
 
 add_executable(fushi_voice_hook_ipc_name_test
   "tests/voice_hook_ipc_name_test.cpp"
@@ -243,6 +405,15 @@ target_compile_definitions(fushi_text_lane_ipc_test
 add_test(NAME fushi_text_lane_ipc_test
   COMMAND fushi_text_lane_ipc_test)
 
+add_executable(fushi_hunex_gge_selected_text_test
+  tests/hunex_gge_selected_text_test.cpp)
+target_include_directories(fushi_hunex_gge_selected_text_test
+  PRIVATE "hook/adapters" "include")
+target_compile_definitions(fushi_hunex_gge_selected_text_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_hunex_gge_selected_text_test
+  COMMAND fushi_hunex_gge_selected_text_test)
+
 # v14 游戏内查词区的契约级测试：各子区不重叠/不越界/8 对齐、IsLookupFrameSane 的每条
 # 拒绝理由、旧会话给 nullptr 而非野指针、以及"v14 是纯追加"这条不变量。
 add_executable(fushi_lookup_ipc_contract_test
@@ -252,6 +423,16 @@ target_compile_definitions(fushi_lookup_ipc_contract_test
   PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_lookup_ipc_contract_test
   COMMAND fushi_lookup_ipc_contract_test)
+
+add_executable(fushi_geometry_provider_registry_test
+  tests/geometry_provider_registry_test.cpp)
+target_include_directories(fushi_geometry_provider_registry_test PRIVATE
+  include
+  hook)
+target_compile_definitions(fushi_geometry_provider_registry_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_geometry_provider_registry_test
+  COMMAND fushi_geometry_provider_registry_test)
 
 # 游戏内查词的会话 replay：hit→frame→apply、旧帧丢弃、未开启零写入、卡片外输入不转发、
 # 会话结束清理不串数据。fixture 走 argv（与 fushi_luna_text_replay_test 同一路子）。
@@ -264,6 +445,17 @@ add_test(NAME fushi_lookup_session_replay_test
   COMMAND fushi_lookup_session_replay_test
   "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/kirikiri_lookup_replay.tsv")
 
+# v19 generic bare-left-click shield reducers: complete down/up/tail ownership,
+# non-left byte isolation, standard DIMOUSESTATE layouts, stable buffered
+# compaction and Raw Input flag preservation. Pure synthetic data; no device.
+add_executable(fushi_generic_input_shield_test
+  tests/generic_input_shield_test.cpp)
+target_include_directories(fushi_generic_input_shield_test PRIVATE include)
+target_compile_definitions(fushi_generic_input_shield_test PRIVATE
+  "FUSHI_NATIVE_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\"")
+add_test(NAME fushi_generic_input_shield_test
+  COMMAND fushi_generic_input_shield_test)
+
 add_executable(fushi_unity_text_mesh_reassembler_test
   tests/unity_text_mesh_reassembler_test.cpp)
 target_include_directories(fushi_unity_text_mesh_reassembler_test
@@ -274,8 +466,25 @@ add_test(NAME fushi_unity_text_mesh_reassembler_test
   COMMAND fushi_unity_text_mesh_reassembler_test)
 
 add_executable(fushi_adapter_contract_test tests/adapter_contract_test.cpp)
-target_include_directories(fushi_adapter_contract_test PRIVATE hook)
+# v19 起 adapter.h 依赖 IPC 头（LookupAdmissionReport 是 adapter 契约的一部分：
+# adapter 要回答"本引擎的查词准入结论"，而那个结论的类型定义在跨进程契约里）。
+target_include_directories(fushi_adapter_contract_test PRIVATE hook include)
 add_test(NAME fushi_adapter_contract_test COMMAND fushi_adapter_contract_test)
+
+# 「模块表稳定了吗」的判据（hook/module_settle.h）。纯头、零 Win32 依赖，所以
+# 能被 CTest 单独包含——adapter_registry.inc 依赖 dll_main 的全局与 MinHook，
+# 永远无法单测，而这条收敛规则恰恰是查词准入误报的根因所在。
+add_executable(fushi_module_settle_test tests/module_settle_test.cpp)
+target_include_directories(fushi_module_settle_test PRIVATE hook include)
+add_test(NAME fushi_module_settle_test COMMAND fushi_module_settle_test)
+
+# 宿主 exe 摘要共享槽（hook/host_executable_digest.h）。同样是纯头，钉住"一次性写入"
+# 和"算不出发空串、不发一串零"这两条——摘要是准入判成不支持时用户唯一能报上来的信息。
+add_executable(fushi_host_executable_digest_test
+  tests/host_executable_digest_test.cpp)
+target_include_directories(fushi_host_executable_digest_test PRIVATE hook include)
+add_test(NAME fushi_host_executable_digest_test
+  COMMAND fushi_host_executable_digest_test)
 
 add_executable(fushi_directsound_format_registry_test
   tests/directsound_format_registry_test.cpp)
@@ -293,6 +502,13 @@ add_executable(fushi_voice_injector
 target_include_directories(fushi_voice_injector PRIVATE "include" "hook" "injector")
 target_compile_definitions(fushi_voice_injector PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(fushi_voice_injector PRIVATE shell32 bcrypt)
+
+# CLI-only preflight contract. The script launches only the injector itself
+# with --capabilities/invalid policy and never opens or creates a game process.
+add_test(NAME fushi_native_loopback_cli_contract_test
+  COMMAND ${CMAKE_COMMAND}
+    "-DINJECTOR=$<TARGET_FILE:fushi_voice_injector>"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/native_loopback_cli_contract_test.cmake")
 
 # Unity IL2CPP Streaming AudioClip 资源提取器（仅 x64 Unity 游戏需要）。它在 injector
 # 宿主进程解析 AssetBundle，并调用开源 vgmstream 解码 FSB5；游戏内 DLL 只写资源事件。
@@ -378,3 +594,9 @@ add_test(NAME fushi_reallive_adapter_test COMMAND fushi_reallive_adapter_test)
 add_executable(fushi_elf_ai6_adapter_test "tests/elf_ai6_adapter_test.cpp")
 target_include_directories(fushi_elf_ai6_adapter_test PRIVATE "hook")
 add_test(NAME fushi_elf_ai6_adapter_test COMMAND fushi_elf_ai6_adapter_test)
+add_executable(fushi_sgre_adapter_test "tests/sgre_adapter_test.cpp")
+target_include_directories(fushi_sgre_adapter_test PRIVATE "hook" "include")
+target_compile_definitions(fushi_sgre_adapter_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(fushi_sgre_adapter_test PRIVATE bcrypt)
+add_test(NAME fushi_sgre_adapter_test COMMAND fushi_sgre_adapter_test)

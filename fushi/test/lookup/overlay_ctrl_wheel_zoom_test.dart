@@ -151,14 +151,13 @@ void main() {
           reason: '换算必须在 measureContentHeight 里，别散到调用方');
     });
 
-    test('瞬态覆盖窗与剪贴板面板都接了这根 handler（两表面绝不漂开）', () {
+    test('瞬态覆盖窗接了这根 handler', () {
       for (final String path in <String>[
         'fushi/lib/src/lookup/global_lookup_controller.dart',
-        'fushi/lib/src/lookup/clipboard_panel_controller.dart',
       ]) {
         final String src = _repoFile(path).readAsStringSync();
         expect(src.contains('maybeHandleOverlayZoomFontStep('), isTrue,
-            reason: '$path 必须接 Ctrl+滚轮缩放，否则两个 app 外表面行为分叉');
+            reason: '$path 必须接 Ctrl+滚轮缩放');
         expect(src.contains('onFontSizeChanged:'), isTrue,
             reason: '$path 必须在字号变化后重渲，几何才跟得上新排版');
       }

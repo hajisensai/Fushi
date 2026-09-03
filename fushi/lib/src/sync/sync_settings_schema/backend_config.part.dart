@@ -217,7 +217,9 @@ class _WebDavConfigWidget extends StatelessWidget {
 
   static Future<void> _save(
       SyncRepository repo, List<String> texts, bool _) async {
-    final String url = texts[0].trim();
+    // 折全角后再落库：url 键盘只管手输，粘贴进来的全角会被原样存下去，
+    // 之后每次连接都用错的地址（BUG-1807）。
+    final String url = normalizeUrlInput(texts[0]);
     final String username = texts[1].trim();
     final String password = texts[2];
     await repo.setWebDavUrl(url.isEmpty ? null : url);
@@ -226,7 +228,9 @@ class _WebDavConfigWidget extends StatelessWidget {
   }
 
   static Future<String> _runTest(List<String> texts, bool _) async {
-    final String url = texts[0].trim();
+    // 与 _save 同口径：测试连接用的地址必须和将要存库的是同一个，
+    // 否则会出现「测试通过、保存后连不上」（或反过来）的错位。
+    final String url = normalizeUrlInput(texts[0]);
     final String username = texts[1].trim();
     final String password = texts[2];
     // 仅 URL 必填；用户名/密码留空 = 匿名 / 无鉴权 WebDAV（局域网自建、本机服务
@@ -433,7 +437,7 @@ class _FtpConfigWidget extends StatelessWidget {
 
   static Future<void> _save(
       SyncRepository repo, List<String> texts, bool useTls) async {
-    final String host = texts[0].trim();
+    final String host = normalizeUrlInput(texts[0]);
     final String user = texts[2].trim();
     final String pass = texts[3];
     final int port = int.tryParse(texts[1].trim()) ?? 21;
@@ -447,7 +451,8 @@ class _FtpConfigWidget extends StatelessWidget {
   static Future<String> _runTest(List<String> texts, bool useTls) async {
     try {
       await FtpSyncBackend.testConnection(
-        host: texts[0].trim(),
+        // 与 _save 同口径，避免「测试通过、保存后连不上」的错位。
+        host: normalizeUrlInput(texts[0]),
         port: int.tryParse(texts[1].trim()) ?? 21,
         username: texts[2].trim(),
         password: texts[3],
@@ -465,7 +470,11 @@ class _FtpConfigWidget extends StatelessWidget {
       settingsContext: settingsContext,
       saveLogTag: 'SyncConfig.saveFtp',
       fields: <_CredentialFieldSpec>[
-        _CredentialFieldSpec(label: t.sync_host, hint: 'ftp.example.com'),
+        _CredentialFieldSpec(
+          label: t.sync_host,
+          hint: 'ftp.example.com',
+          keyboardType: TextInputType.url,
+        ),
         _CredentialFieldSpec(
           label: t.sync_port,
           keyboardType: TextInputType.number,
@@ -503,7 +512,7 @@ class _SftpConfigWidget extends StatelessWidget {
 
   static Future<void> _save(
       SyncRepository repo, List<String> texts, bool _) async {
-    final String host = texts[0].trim();
+    final String host = normalizeUrlInput(texts[0]);
     final String user = texts[2].trim();
     final String pass = texts[3];
     final int port = int.tryParse(texts[1].trim()) ?? 22;
@@ -520,7 +529,8 @@ class _SftpConfigWidget extends StatelessWidget {
       final String pass = texts[3];
       final String key = texts[4].trim();
       await SftpSyncBackend.instance.testConnection(
-        host: texts[0].trim(),
+        // 与 _save 同口径，避免「测试通过、保存后连不上」的错位。
+        host: normalizeUrlInput(texts[0]),
         port: int.tryParse(texts[1].trim()) ?? 22,
         username: texts[2].trim(),
         password: pass.isEmpty ? null : pass,
@@ -538,7 +548,11 @@ class _SftpConfigWidget extends StatelessWidget {
       settingsContext: settingsContext,
       saveLogTag: 'SyncConfig.saveSftp',
       fields: <_CredentialFieldSpec>[
-        _CredentialFieldSpec(label: t.sync_host, hint: 'ssh.example.com'),
+        _CredentialFieldSpec(
+          label: t.sync_host,
+          hint: 'ssh.example.com',
+          keyboardType: TextInputType.url,
+        ),
         _CredentialFieldSpec(
           label: t.sync_port,
           keyboardType: TextInputType.number,

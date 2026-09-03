@@ -62,8 +62,10 @@ void main() {
 
     final String masked = maskComments(attempt);
     final int busyOn = masked.indexOf('_setPairV2Busy(true)');
-    final int probe = masked.indexOf('FushiTofuProbe.captureFingerprint');
-    final int ping = masked.indexOf('fetchFushiPing(');
+    // BUG-1741：两个探测都换成了带失败原因的分型版本（probeFingerprint /
+    // probeFushiPing）；忙态必须先于它们的语义不变。
+    final int probe = masked.indexOf('FushiTofuProbe.probeFingerprint');
+    final int ping = masked.indexOf('probeFushiPing(');
     final int pair = masked.indexOf('_runPairingV2(');
     expect(busyOn, isNonNegative, reason: '手动配对必须自己置忙态，不能只靠内层');
     expect(probe, isNonNegative);

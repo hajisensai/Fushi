@@ -25,32 +25,37 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'audio_source_configs',
   'audio_sources',
   'audiobook_background_play',
+  // String（JSON 数组）：有声书素材库目录（绝对路径）。库里放按作品身份命名的
+  // 字幕/正文文件，下载完成后据此自动配齐「正文 + 字幕 + 音频」。见
+  // media/audiobook/audiobook_material_library.dart。
+  'audiobook_material_dirs',
   'auto_add_book_name_to_tags',
   'auto_search',
   'auto_search_debounce_delay',
   'auto_update_dictionaries',
   'builtInTagsSeeded',
   'clipboard_panel_block_capture',
-  'clipboard_panel_opacity',
-  'clipboard_panel_pinned',
-  'clipboard_panel_rect',
-  'clipboard_text_window_bg_opacity',
   'collapse_dictionaries',
   'collapsed_collection_ids',
   'compress_mining_media',
   'current_home_tab_index',
   'custom_dict_css',
   'deduplicate_pitch_accents',
+  // String（BCP-47，如 'ja' / 'zh-Hant'；空串 = 未设置）：全局默认内容语言。
+  // 内容字体链优先级的第三档，兜在「资源手动指定 > 内容自带元数据」之后。
+  'default_content_language',
   'design_system',
-  'desktop_clipboard_always_on_top',
-  'desktop_clipboard_auto_lookup',
-  'desktop_clipboard_destination',
-  'desktop_clipboard_enabled',
-  'desktop_clipboard_window_mode',
   'dictionary_entry_font_size',
   'dictionary_update_interval',
-  'download_custom_proxy',
-  'download_network_proxy_mode',
+  // 发现页「全部源」聚合默认排除的源 id（逗号分隔；默认 sukebei——18+ 源
+  // 只在用户显式单选时使用）。String，读写见 PreferencesRepository。
+  'discovery_disabled_sources',
+  // 用户自配的 OPDS 书目服务器清单（JSON 数组：id/name/url/username/
+  // passwordB64/enabled/allowInsecureHttp）。String，读写见
+  // PreferencesRepository。与 discovery_disabled_sources 的分界同 Torznab：
+  // 自配服务器各自带 enabled 字段，不进那份停用清单。
+  // 含凭据 → 同时登记在 kCredentialPreferenceKeys 与 deviceLocalPrefKeys。
+  'discovery_opds_servers',
   'download_save_root',
   'download_save_root_history',
   'experimental_focus_navigation_enabled',
@@ -66,17 +71,45 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'floating_lyric_font_size',
   'floating_lyric_text_opacity',
   'floating_lyric_width',
+  'gal_card_lookup_independent_size',
+  'gal_card_lookup_max_height',
+  'gal_card_lookup_max_width',
+  'gal_hook_click_lookup',
+  'gal_hook_fold_progressive_lines',
   'gal_hook_ingame_lookup_enabled',
+  'gal_hook_lookup_trigger',
+  'gal_hook_passthrough_blocks_mouse',
+  'gal_hook_text_alignment',
+  'gal_hook_text_background_color',
+  'gal_hook_text_bold',
+  'gal_hook_text_color',
+  'gal_hook_text_corner_radius',
   'gal_hook_text_font_size',
+  'gal_hook_text_letter_spacing',
+  'gal_hook_text_line_height',
+  'gal_hook_text_outline_color',
+  'gal_hook_text_outline_width',
+  'gal_hook_text_padding',
+  'gal_hook_text_vertical_alignment',
+  'gal_hook_text_window_bg_opacity',
+  'gal_hook_toolbar_auto_hide',
   'gal_mining_animated_format',
   'gal_mining_image_mode',
+  'gal_mining_still_format',
   'galgame_library',
   'galgame_library_view',
   'games_collapsed_collection_ids',
   'global_dict_css',
   'harmonic_frequency',
+  // bool（默认 true，BUG-1891）：进视频页时是否自动向 Jellyfin/Emby 服务器枚举
+  // 条目。几十万条目的公共 Emby 服上自动枚举会被当成爬虫，关掉后改由下拉刷新手动触发。
+  'jellyfin_auto_list_videos',
   'jimaku_api_key',
   'jimaku_default_language',
+  // bool（默认 true）：Jimaku 是否参与字幕搜索。与 jimaku_api_key 组成
+  // `enabled && key` 双门控（对齐 OpenSubtitles）。默认 true 是兼容存量：
+  // 本键出现之前「填了 key」即启用，默认 false 会让存量用户升级后失效。
+  'jimaku_enabled',
   'jimaku_pref_langs',
   'last_dictionary_update_at',
   'last_selected_deck',
@@ -89,11 +122,14 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'low_memory_mode',
   'manga_external_mokuro_path',
   'manga_ocr_engine_preference',
+  'manga_ocr_lens_language',
   'manga_online_catalog_base_url',
   'manga_online_catalog_enabled',
   'manga_page_animation',
   'manga_reading_direction',
   'manga_spread_preference',
+  'manga_tap_to_ocr',
+  'manga_tap_to_ocr_notice_shown',
   'manga_tap_zone_paging',
   'manga_volume_key_paging',
   'manga_zoom_percent',
@@ -102,6 +138,23 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'mine_to_server',
   'mining_audio_quality',
   'mining_image_quality',
+  'module_books_enabled',
+  'module_browser_extension_enabled',
+  'module_dictionaries_enabled',
+  'module_downloads_enabled',
+  'module_games_enabled',
+  'module_manga_enabled',
+  'module_video_enabled',
+  // String：全局公网出口模式 auto / direct / manual（BUG-1980）。
+  'network_proxy_mode',
+  // bool：P2P（torrent）传输是否也走全局代理（旧键，冻结；三态 mode 键未写过
+  // 时作迁移来源，setP2pProxyMode 会写穿它保降级一致）。
+  'network_proxy_p2p_enabled',
+  // String：P2P（torrent）传输代理档位 direct / proxy / mixed，默认 direct。
+  'network_proxy_p2p_mode',
+  'network_proxy_password',
+  'network_proxy_username',
+  'onboarding_completed',
   'overlay_lookup_independent_size',
   'overlay_lookup_max_height',
   'overlay_lookup_max_width',
@@ -135,6 +188,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'update_beta_channel',
   'update_custom_proxy',
   'update_debug_channel',
+  'update_download_source',
   'update_never_remind',
   'video_anime4k_prompt_shown',
   'video_asbplayer_config',
@@ -142,6 +196,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_auto_scrape',
   'video_black_flicker_notice_suppressed',
   'video_control_customization',
+  'video_custom_action_bindings',
   'video_danmaku_block_rules',
   'video_danmaku_config',
   'video_danmaku_enabled',
@@ -153,18 +208,34 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_download_target_source_id',
   'video_fit_mode',
   'video_immersive_mode',
+  'video_library_auto_backfill_scrape',
   'video_lock_window_aspect_ratio',
   'video_mining_animated_format',
   'video_mining_image_mode',
+  'video_mining_still_format',
   'video_mpv_config',
+  // String（[MpvLuaCapability] 的 name）：随包 libmpv 有没有编入 Lua 解释器，
+  // 视频页建 Player 后读 `mpv-configuration` 探到并缓存。全局设置页没有播放器，
+  // 靠这份缓存如实说明脚本开关在本平台是否可用。默认 unknown = 从未播过视频。
+  // 见 media/video/video_lua_capability.dart（BUG-2032）。
+  'video_mpv_lua_capability',
+  'video_mpv_lua_scripts_enabled',
   'video_mpv_shader_dir',
   'video_remote_subtitle',
+  // 用户停用的内置视频资源索引器 id（逗号分隔，默认空 = 全部启用）。
+  // 与 discovery_disabled_sources 同形；自配 Torznab 各自带 enabled，不进这里。
+  'video_resource_disabled_sources',
   'video_resource_torznab_config',
   'video_respect_ass_style',
   'video_secondary_subtitle_blur',
   'video_secondary_subtitle_obscure_hide',
   'video_shaders_enabled',
   'video_sort_mode',
+  // bool（默认 true）：AJATT 日语字幕库（kitsunekko 镜像）是否参与字幕搜索。
+  // 零配置源，没有 key 门控；默认开是因为它是没填 Jimaku/OpenSubtitles key 的
+  // 用户唯一能用的源。
+  'video_subtitle_ajatt_enabled',
+  'video_subtitle_backfill_after_scrape',
   'video_subtitle_blur',
   'video_subtitle_list_auto_scroll',
   'video_subtitle_list_font_scale_index',
@@ -172,6 +243,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_subtitle_obscure_hide',
   'video_subtitle_opensubtitles_config',
   'video_subtitle_style',
+  'video_youtube_quality_height',
   'yomitan_api_key',
   'yomitan_api_port',
   'yomitan_api_server_enabled',
@@ -198,6 +270,7 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'audiobook_volume_',
   'current_source/',
   'gal_capture_memory::',
+  'gal_lookup_surface_v1::',
   'media_source_secret_',
   'src:',
   'video_danmaku_episode/',
@@ -219,6 +292,10 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
 /// 🔴 凭据键：值为 base64 敏感凭据，不进日志 / 不进明文导出。
 /// （`media_source_secret_<id>` 前缀族见 [kKnownPreferenceKeyPrefixes]。）
 const Set<String> kCredentialPreferenceKeys = <String>{
+  // 每条 OPDS 服务器记录里带 base64 的 passwordB64。
+  'discovery_opds_servers',
   'jimaku_api_key',
+  'network_proxy_password',
+  'network_proxy_username',
   'yomitan_api_key',
 };

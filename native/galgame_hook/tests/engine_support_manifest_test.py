@@ -7,6 +7,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +17,9 @@ from evidence_contract_test import _complete_evidence
 
 
 ROOT = Path(__file__).resolve().parents[1]
+WA2_EXACT_SHA256 = (
+    "005E71107ED70E662C41CB526879CDCF0B9486E067C0E5A306308688C17409ED"
+)
 
 
 def load_generator() -> ModuleType:
@@ -126,6 +130,144 @@ class EngineSupportManifestTest(unittest.TestCase):
                         group["evidence"]["kind"],
                         {"real_sample", "runtime_observation"},
                     )
+
+    def test_leaf_aquaplus_support_is_exact_hash_and_unverified(self) -> None:
+        leaf = self.engines["leaf_aquaplus"]
+        profile_document = json.loads(
+            (ROOT / "profiles" / "leaf_aquaplus.json").read_text(encoding="utf-8")
+        )
+        profile_header = (
+            ROOT / "hook" / "adapters" / "leaf_aquaplus_profile.h"
+        ).read_text(encoding="utf-8")
+        digest_match = re.search(
+            r"kWhiteAlbum2LeafAquaplusProfile\s*=\s*\{\s*\{(?P<digest>.*?)\}"
+            r"\s*,\s*kLeafAquaplusPeMachineI386\s*,\s*32u\s*,\s*0x734430u",
+            profile_header,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(digest_match)
+        assert digest_match is not None
+        profile_digest = bytes(
+            int(value, 16)
+            for value in re.findall(r"0x([0-9a-fA-F]{2})", digest_match["digest"])
+        ).hex().upper()
+
+        self.assertEqual("implemented_unverified", leaf["current_status"])
+        self.assertEqual([], leaf["verified_games"])
+        self.assertEqual(
+            [
+                {
+                    "algorithm": "sha256",
+                    "scope": "game_executable",
+                    "value": WA2_EXACT_SHA256,
+                    "version": "WHITE ALBUM2 bundled edition (version not recorded)",
+                }
+            ],
+            leaf["detection"]["hashes"]["values"],
+        )
+        self.assertEqual(
+            [WA2_EXACT_SHA256.lower()],
+            profile_document["detection"]["executable_sha256"],
+        )
+        self.assertEqual(WA2_EXACT_SHA256, profile_digest)
+        self.assertIn(
+            "constexpr uint16_t kLeafAquaplusPeMachineI386 = 0x014cu;",
+            profile_header,
+        )
+        self.assertTrue(
+            all(
+                capability["status"] == "implemented_unverified"
+                for capability in leaf["text"]["capabilities"]
+                + leaf["audio"]["priority"]
+            )
+        )
+        self.assertIn(
+            "tests/fixtures/leaf_aquaplus_replay.json", leaf["fixture_paths"]
+        )
+        self.assertIn(
+            "tests/leaf_d3d_trace_export_test.cpp", leaf["test_paths"]
+        )
+
+    def test_hunex_gge_profile_is_structural_generic_and_unverified(self) -> None:
+        hunex = self.engines["hunex_gge"]
+        profile_document = json.loads(
+            (ROOT / "profiles" / "hunex_gge.json").read_text(encoding="utf-8")
+        )
+        profile_header = (
+            ROOT / "hook" / "adapters" / "hunex_gge_profile.h"
+        ).read_text(encoding="utf-8")
+        title_profile = profile_document["profile_metadata"]["title_profiles"][0]
+
+        self.assertEqual("implemented_unverified", hunex["current_status"])
+        self.assertEqual([], hunex["verified_games"])
+        self.assertEqual([], hunex["detection"]["hashes"]["values"])
+        self.assertEqual([], hunex["detection"]["directory_files_all"]["values"])
+        self.assertEqual(
+            [], profile_document["detection"]["executable_sha256"]
+        )
+        self.assertEqual([], profile_document["detection"]["module_sha256"])
+        self.assertEqual("WoH.exe", title_profile["executable_name"])
+        self.assertEqual("data04000.hfa", title_profile["voice_archive_name"])
+        self.assertFalse(title_profile["family_invariant"])
+        self.assertIn("structural HFA/HW validation", title_profile["admission"])
+        self.assertIn("MatchesHunexGgeTitleProfile", profile_header)
+        self.assertIn("IsHunexGgeVoiceArchivePath", profile_header)
+        self.assertNotIn("ExecutableSha256", profile_header)
+        self.assertNotIn("executable_sha256", profile_header)
+
+        resource = hunex["audio"]["priority"][0]
+        self.assertEqual("hunex_hfa_hw_ogg_resource", resource["kind"])
+        self.assertEqual("implemented_unverified", resource["status"])
+        self.assertEqual("not_verified", resource["clean_voice"])
+        self.assertIn("tests/hunex_gge_adapter_test.cpp", hunex["test_paths"])
+        self.assertTrue(
+            any(
+                "resource_observed" in limitation
+                for limitation in hunex["known_limitations"]
+            )
+        )
+        self.assertTrue(
+            any(
+                "not a HUNEX-family invariant" in limitation
+                for limitation in hunex["known_limitations"]
+            )
+        )
+
+    def test_hunex_geometry_graduation_is_recorded_with_unverified_gates(self) -> None:
+        # The exact geometry provider was deliberately graduated out of
+        # observation-only, which deleted generate_engine_support.py's
+        # "must not OfferReady/PublishHit" assertion. Pin the graduation record
+        # and the still-unverified gates together, in one known_limitations
+        # entry, so a later edit cannot keep the promotion while dropping the
+        # caveat -- and so this guard cannot be satisfied by narrative that
+        # only states one of the two.
+        hunex = self.engines["hunex_gge"]
+        lookup = next(
+            record
+            for record in self.manifest["lookup_support"]["engines"]
+            if record["engine_id"] == "hunex_gge"
+        )
+        self.assertIn("engine_exact_layout", lookup["geometry"]["providers"])
+        self.assertEqual("implemented_unverified", lookup["geometry"]["status"])
+        self.assertEqual("implemented_unverified", hunex["current_status"])
+        self.assertEqual(
+            "not_verified", hunex["audio"]["priority"][0]["clean_voice"]
+        )
+        self.assertEqual([], hunex["verified_games"])
+        required = (
+            "observation-only",
+            "OfferReady/PublishHit",
+            "implemented_unverified",
+            "not_verified",
+        )
+        self.assertTrue(
+            any(
+                all(token in limitation for token in required)
+                for limitation in hunex["known_limitations"]
+            ),
+            "one known_limitations entry must record the graduation out of "
+            "observation-only together with the gates that stay unverified",
+        )
 
     def test_support_status_and_capability_promotions_require_evidence(self) -> None:
         reallive = self.engines["reallive"]
@@ -476,6 +618,82 @@ class EngineSupportManifestTest(unittest.TestCase):
             },
         }
         GENERATOR.validate_manifest(self.manifest)
+
+    def test_lookup_matrix_is_windows_only_no_ocr_and_excludes_audio_backend(self) -> None:
+        lookup = self.manifest["lookup_support"]
+        self.assertEqual(["windows_x86", "windows_x64"], lookup["platforms"])
+        self.assertEqual("forbidden", lookup["ocr_policy"])
+        self.assertFalse(lookup["experimental_providers_default_enabled"])
+        ids = {record["engine_id"] for record in lookup["engines"]}
+        self.assertEqual(GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS, ids)
+        self.assertNotIn("xaudio2_directsound", ids)
+        for record in lookup["engines"]:
+            self.assertEqual(
+                {"geometry", "verified_shield", "risky_left_click"},
+                set(GENERATOR.LOOKUP_EVIDENCE_AREAS).intersection(record),
+            )
+
+    def test_lookup_native_publishers_and_manifest_have_bidirectional_parity(self) -> None:
+        source_pairs = GENERATOR.discover_production_lookup_provider_pairs(ROOT)
+        hunex_pair = (
+            "kLookupGeometryProviderEngineExactLayout",
+            "kLookupGeometryProviderIdHunexGge",
+        )
+        self.assertIn(
+            hunex_pair,
+            source_pairs,
+            "HUNEX exact provider must remain visible to manifest parity",
+        )
+        GENERATOR.validate_manifest(self.manifest, ROOT)
+
+        hunex = next(
+            record
+            for record in self.manifest["lookup_support"]["engines"]
+            if record["engine_id"] == "hunex_gge"
+        )
+        hunex["geometry"]["providers"].remove("engine_exact_layout")
+        with self.assertRaisesRegex(
+            GENERATOR.ManifestError, "lookup provider manifest parity drift"
+        ):
+            GENERATOR.validate_manifest(self.manifest, ROOT)
+
+    def test_lookup_claim_cannot_be_promoted_without_real_build_gates(self) -> None:
+        siglus = next(
+            record
+            for record in self.manifest["lookup_support"]["engines"]
+            if record["engine_id"] == "siglus"
+        )
+        siglus["verified_shield"]["status"] = "verified"
+        siglus["verified_shield"]["scope"] = "exact_build"
+        siglus["verified_shield"]["build_evidence"] = []
+        with self.assertRaisesRegex(
+            GENERATOR.ManifestError, "independent real build"
+        ):
+            GENERATOR.validate_manifest(self.manifest)
+
+    def test_lookup_experimental_geometry_is_observation_only(self) -> None:
+        tyrano = next(
+            record
+            for record in self.manifest["lookup_support"]["engines"]
+            if record["engine_id"] == "tyrano_nwjs"
+        )
+        tyrano["geometry"]["providers"].append("pixel_template_experimental")
+        tyrano["geometry"]["status"] = "partial"
+        tyrano["geometry"]["scope"] = "exact_build"
+        tyrano["geometry"]["build_evidence"] = [
+            {
+                "exe_sha256": "A" * 64,
+                "positive_probes": 200,
+                "negative_samples": 100,
+                "stale_generation_cases": 100,
+                "same_session_card_e2e": 3,
+                "wrong_character_hits": 0,
+                "negative_false_publish": 0,
+                "stale_hits": 0,
+            }
+        ]
+        with self.assertRaisesRegex(GENERATOR.ManifestError, "observation-only"):
+            GENERATOR.validate_manifest(self.manifest)
 
 
 if __name__ == "__main__":

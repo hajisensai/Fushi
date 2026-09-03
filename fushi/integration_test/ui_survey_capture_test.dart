@@ -17,7 +17,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Navigator, NavigatorState;
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomePage, HomeTab;
@@ -92,7 +92,7 @@ void main() {
     };
 
     try {
-      app.main();
+      await launchFushiTestApp();
       expect(await waitForHome(tester), isTrue, reason: '主页应在 90s 内出现');
       await tester.pump(const Duration(seconds: 2));
       final AppModel appModel = await readyAppModel(tester);

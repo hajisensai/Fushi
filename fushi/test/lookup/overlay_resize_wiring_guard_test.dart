@@ -16,18 +16,16 @@ void main() {
       final File file = File('assets/popup/global_lookup_host.js');
       expect(file.existsSync(), isTrue);
       final String src = file.readAsStringSync();
-      // grip 元素 + 创建函数 + 发同一 native 通路 + 只在 cascade（非 panel）ROOT 挂。
+      // grip 元素 + 创建函数 + 发同一 native 通路。
       expect(src.contains('global-lookup-resize-grip'), isTrue,
           reason: 'grip 的 class/CSS 被删——覆盖窗拖不动');
       expect(src.contains('function createResizeGrip'), isTrue,
           reason: 'createResizeGrip 接线被删');
       expect(src.contains("postToHost('beginWindowResize'"), isTrue,
           reason: 'grip 未发 beginWindowResize——进不了 native 模态 size 循环');
-      expect(src.contains("layoutMode !== 'panel'"), isTrue,
-          reason: 'grip 未按 cascade 门控——会漏挂到面板或漏挂瞬态窗');
     });
 
-    test('controller — windowMoved 落 overlay 键（拖即解锁）且不串 panel/app 内键', () {
+    test('controller — windowMoved 落 overlay 键（拖即解锁）且不串 app 内键', () {
       final File file = File('lib/src/lookup/global_lookup_controller.dart');
       expect(file.existsSync(), isTrue);
       final String src = file.readAsStringSync();
@@ -39,9 +37,7 @@ void main() {
           reason: '拖动未解锁 overlay 独立尺寸');
       expect(src.contains('setOverlayLookupMaxWidth'), isTrue);
       expect(src.contains('setOverlayLookupMaxHeight'), isTrue);
-      // 红线：覆盖窗 controller 绝不写另外两个表面的真值。
-      expect(src.contains('setClipboardPanelRect'), isFalse,
-          reason: '覆盖窗 resize 串写了剪贴板面板 rect——破坏面板');
+      // 红线：覆盖窗 controller 绝不写 app 内弹窗表面的真值。
       expect(src.contains('setPopupMaxWidth'), isFalse,
           reason: '覆盖窗 resize 串写了 app 内共享键——破坏 app 内弹窗');
       // 松手即时填充：_onOverlayResized 方法体内必须重触发 _renderStack，当前卡才即时

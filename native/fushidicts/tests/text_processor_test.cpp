@@ -28,6 +28,16 @@ static void expect(const char* name, const std::string& src, const char* want) {
   }
 }
 
+// 负向断言：变体集**不得**含 forbidden。守卫吞字类处理器（BUG-1777 full_collapse）不被重新挂链。
+static void expect_absent(const char* name, const std::string& src, const char* forbidden) {
+  std::vector<TextVariant> vs = text_processor::process(src);
+  if (has_variant(vs, forbidden)) {
+    std::fprintf(stderr, "FAIL %s: forbidden variant '%s' present for src '%s'\n", name, forbidden,
+                 src.c_str());
+    ++g_fail;
+  }
+}
+
 int main() {
   // P2: 阿拉伯 harakat 去除  كَتَبَ -> كتب
   expect("ar-harakat", "\xD9\x83\xD9\x8E\xD8\xAA\xD9\x8E\xD8\xA8\xD9\x8E", "\xD9\x83\xD8\xAA\xD8\xA8");
@@ -66,6 +76,63 @@ int main() {
   expect("kanji-gaku-itaiji", "\xE5\xAD\xB8", "\xE5\xAD\xA6");
   // 體(U+9AD4 itaiji) -> 体(U+4F53 oyaji)。
   expect("kanji-tai-itaiji", "\xE9\xAB\x94", "\xE4\xBD\x93");
+
+  // 上游 9dc93b6 迭代符展开：佐々木 -> 佐佐木（々 U+3005 复读前一码点）。
+  expect("iter-kanji", "\xE4\xBD\x90\xE3\x80\x85\xE6\x9C\xA8", "\xE4\xBD\x90\xE4\xBD\x90\xE6\x9C\xA8");
+  // こゝ(U+309D) -> ここ；こゞ(U+309E 浊音版) -> こご（NFC 合成浊点）。
+  expect("iter-hira", "\xE3\x81\x93\xE3\x82\x9D", "\xE3\x81\x93\xE3\x81\x93");
+  expect("iter-hira-dakuten", "\xE3\x81\x93\xE3\x82\x9E", "\xE3\x81\x93\xE3\x81\x94");
+
+  // 上游 ee0384b 全角数字 -> 汉字：２(U+FF12) -> 二。
+  expect("num-fullwidth", "\xEF\xBC\x92", "\xE4\xBA\x8C");
+  // 链组合：ASCII 2 先经 alphanumeric_to_fullwidth 变 ２ 再变 二（2月 -> 二月）。
+  expect("num-ascii-chain", "2\xE6\x9C\x88", "\xE4\xBA\x8C\xE6\x9C\x88");
+
+  // 上游 aaf75c9 强调折叠：すっっごい -> すっごい（连续强调符折成一个）。
+  expect("emphatic-collapse-1", "\xE3\x81\x99\xE3\x81\xA3\xE3\x81\xA3\xE3\x81\x94\xE3\x81\x84",
+         "\xE3\x81\x99\xE3\x81\xA3\xE3\x81\x94\xE3\x81\x84");
+  // 长音符同理：ラーーメン -> ラーメン。
+  expect("emphatic-prolonged", "\xE3\x83\xA9\xE3\x83\xBC\xE3\x83\xBC\xE3\x83\xA1\xE3\x83\xB3",
+         "\xE3\x83\xA9\xE3\x83\xBC\xE3\x83\xA1\xE3\x83\xB3");
+
+  // BUG-1777：full_collapse（删单个っ/ッ/ー）故意不挂链——它把正常词吞字后产生的幻影
+  // 匹配消耗的源文本更长，在最长匹配优先排序下压过原形精确匹配。
+  // 原始失败路径：字幕「ヒットでしたね」查「ヒット」，ヒットで 经かな转换→ひっとで，
+  // 若再被全删促音就成 ひとで 命中「海星」并排到「ヒット」之上。
+  expect("emphatic-no-full-collapse-src", "\xE3\x83\x92\xE3\x83\x83\xE3\x83\x88\xE3\x81\xA7",
+         "\xE3\x81\xB2\xE3\x81\xA3\xE3\x81\xA8\xE3\x81\xA7");  // ヒットで 必须产出 ひっとで（促音保留）
+  expect_absent("emphatic-no-full-collapse", "\xE3\x83\x92\xE3\x83\x83\xE3\x83\x88\xE3\x81\xA7",
+                "\xE3\x81\xB2\xE3\x81\xA8\xE3\x81\xA7");  // ヒットで 不得产出 ひとで
+  expect_absent("emphatic-no-full-collapse-run", "\xE3\x81\x99\xE3\x81\xA3\xE3\x81\xA3\xE3\x81\x94\xE3\x81\x84",
+                "\xE3\x81\x99\xE3\x81\x94\xE3\x81\x84");  // すっっごい 不得产出 すごい
+
+  // 上游 1cb9b4b 链序修复：NFKC 必须在假名转换之前——半角片假名 ﾒｶﾞﾈ 先归一成
+  // メガネ 才能被 katakana_to_hiragana 转成 めがね。旧链序（NFKC 在假名转换后）
+  // 永远产不出这个变体。
+  expect("halfwidth-kana-chain", "\xEF\xBE\x92\xEF\xBD\xB6\xEF\xBE\x9E\xEF\xBE\x88",
+         "\xE3\x82\x81\xE3\x81\x8C\xE3\x81\xAD");
+
+  // BUG-2056 撇号归一：en.json 的五条撇号规则与绝大多数英文词典条目键都是 ASCII
+  // U+0027，而真实 EPUB 写的是排版撇号 U+2019；U+2019 没有兼容分解，NFKC 折不动它
+  // （下面 nfkc-keeps-rsquo 就是这条事实的负向钉子）。所以扫描层把 don’t 整词送进来
+  // 之后，必须由这里产出 ASCII 变体，还原/查表才可能命中。
+  //   don’t (U+2019) -> don't
+  expect("apos-rsquo-to-ascii", "don\xE2\x80\x99t", "don't");
+  //   canʼt (U+02BC) -> can't
+  expect("apos-modifier-to-ascii", "can\xCA\xBCt", "can't");
+  //   don‘t (U+2018，OCR 常把 ’ 认成它) -> don't
+  expect("apos-lsquo-to-ascii", "don\xE2\x80\x98t", "don't");
+  //   与 lowercase 组合：John’s -> john's（en.json possessive 规则吃的就是这个形）
+  expect("apos-with-lowercase", "John\xE2\x80\x99s", "john's");
+  //   反向：ASCII 查询串必须也能命中以排版撇号建键的词典条目。
+  expect("apos-ascii-to-rsquo", "don't", "don\xE2\x80\x99t");
+  //   恒等一路仍在：原文任何时候都是变体之一。
+  expect("apos-identity", "don\xE2\x80\x99t", "don\xE2\x80\x99t");
+  //   裸撇号也归一（NFKC 单独做不到这件事：U+2019 无兼容分解，
+  //   utf8proc_NFKC("’") 仍是 "’"——所以这条只可能由本处理器产出）。
+  expect("apos-bare-rsquo-to-ascii", "\xE2\x80\x99", "'");
+  //   撇号归一不得改动无撇号文本（负向：don 不得凭空长出撇号变体）。
+  expect_absent("apos-no-phantom", "don", "don'");
 
   if (g_fail) {
     std::fprintf(stderr, "%d FAIL\n", g_fail);

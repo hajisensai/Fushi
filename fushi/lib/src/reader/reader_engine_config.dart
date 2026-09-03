@@ -31,6 +31,7 @@ class ReaderEngineConfig {
     required this.debugLogging,
     required this.swipeDistThreshold,
     required this.swipeFastDistThreshold,
+    required this.wheelGestureQuietMs,
     required this.furiganaMode,
     required this.caretColor,
     required this.caretInsetTop,
@@ -43,6 +44,10 @@ class ReaderEngineConfig {
     required this.chromeBottomInset,
     required this.dartPageWidth,
     required this.dartPageHeight,
+    required this.marginTop,
+    required this.marginBottom,
+    required this.marginLeft,
+    required this.marginRight,
     required this.blurImages,
     required this.revealedKeys,
     required this.perfTraceEnabled,
@@ -70,6 +75,7 @@ class ReaderEngineConfig {
   final bool debugLogging;
   final int swipeDistThreshold;
   final int swipeFastDistThreshold;
+  final int wheelGestureQuietMs;
 
   /// `off` / `partial` / `toggle`（`ReaderSettings.furiganaMode` 的值域）。
   final String furiganaMode;
@@ -90,6 +96,10 @@ class ReaderEngineConfig {
   final double chromeBottomInset;
   final double? dartPageWidth;
   final double? dartPageHeight;
+  final double marginTop;
+  final double marginBottom;
+  final double marginLeft;
+  final double marginRight;
 
   // ── 图片 ──────────────────────────────────────────────────────────
   final bool blurImages;
@@ -122,6 +132,7 @@ class ReaderEngineConfig {
         'debugLogging': debugLogging,
         'swipeDistThreshold': swipeDistThreshold,
         'swipeFastDistThreshold': swipeFastDistThreshold,
+        'wheelGestureQuietMs': wheelGestureQuietMs,
         'furiganaMode': furiganaMode,
         'caretColor': caretColor,
         'caretInsetTop': caretInsetTop,
@@ -134,6 +145,10 @@ class ReaderEngineConfig {
         'chromeBottomInset': chromeBottomInset,
         'dartPageWidth': dartPageWidth?.round(),
         'dartPageHeight': dartPageHeight?.round(),
+        'marginTop': marginTop,
+        'marginBottom': marginBottom,
+        'marginLeft': marginLeft,
+        'marginRight': marginRight,
         'blurImages': blurImages,
         'revealedKeys': revealedKeys,
         'perfTraceEnabled': perfTraceEnabled,

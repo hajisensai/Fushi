@@ -29,16 +29,12 @@ void main() {
     'lib/src/lookup/global_lookup_controller.dart':
         'app 外瞬态查词覆盖窗：lookupText 与 _lookupNested 两条路径末尾各调 '
             '_autoReadFirstEntry（委托共享 OverlayAutoRead）。',
-    'lib/src/lookup/clipboard_panel_controller.dart':
-        'app 外常驻剪贴板面板：update()（剪贴板流）/ _lookupFromBanner（点字换根）/ '
-            '_lookupNested（嵌套查词）三条路径均调 _autoRead.autoReadFirstEntry。'
-            '前两条在 _renderPanel 之后还要核对 latest-wins 序号才朗读。',
     'lib/src/pages/base_source_page.dart':
         'app 内媒体页：查词后读 autoReadOnLookup 偏好并调 _autoReadWord。',
     'lib/src/pages/implementations/home_dictionary_page.dart':
         'app 内词典主页：除 mixin 的 searchPopup 外自己也直接查词（_performSearch），'
-            '命中后按 autoRead ?? autoReadOnLookup 调 autoReadWord。剪贴板注入那条路径'
-            '显式传 autoRead: false，是有意覆盖（避免被动注入时突然出声），不是漏接。',
+            '命中后按 autoRead ?? autoReadOnLookup 调 autoReadWord。深链/悬浮字幕注入'
+            '那条路径显式传 autoRead: false，是有意覆盖（避免注入时突然出声），不是漏接。',
     'lib/src/pages/implementations/dictionary_page_mixin.dart':
         'app 内词典页 mixin：searchPopup(autoRead:) 决定是否调 autoReadWord。'
             '五个消费方（home_dictionary / popup_dictionary / texthooker / '
@@ -115,8 +111,10 @@ void main() {
         what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
     // `found` 才是判据的真分母：扫描面还在、但预筛/掩码把命中全滤没了，同样是
     // 「守卫在对着空气跑」，而 isNotEmpty 放行到只剩 1 个都不会响。
+    // 2026-08-28 删桌面剪贴板查词后 clipboard_panel_controller.dart 整文件删除，
+    // 真分母从 10 降到 9：这是「真把那棵树删到了下界以下」的情形，下界同步下调。
     expectScanScale(found.length,
-        what: 'searchDictionary 调用点所在文件', atLeast: 10, measured: 12);
+        what: 'searchDictionary 调用点所在文件', atLeast: 9, measured: 9);
     final Set<String> declared = <String>{
       ...wiredSurfaces.keys,
       ...exemptCallSites.keys,

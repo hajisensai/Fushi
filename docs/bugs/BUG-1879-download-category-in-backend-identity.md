@@ -1,0 +1,13 @@
+## BUG-1879 · 改 qBittorrent 分类后全部在途下载任务卡死 needsAttention
+- **报告**：2026-08-26（用户：把下载后端的分类改成 `fushi` 之后，任务全部报 `The backend instance, profile, or category no longer matches this job`）
+- **真实性**：✅ 真 bug。根因 `fushi/lib/src/media/video/download/video_download_pipeline_service.dart:1391`（守卫把 `category` 当成后端身份的一部分）+ `fushi/lib/src/media/video/download/video_download_backend_identity.dart:8`（`VideoDownloadBackendIdentity` 把 `category` 收成字段）。
+- **[x] ① 已修复** — `category` 从后端身份里彻底拆出去：
+  - `VideoDownloadBackendIdentity` 只留 `kind`/`profileId`/`fingerprint`（真正的实例身份 = 内置引擎安装 id，或 qBittorrent 地址+账号的 sha256），新增 `matches()` 作为唯一比较入口；新增 `VideoDownloadBackendTarget{identity, category}` 承载「新任务往哪个后端的哪个分类投」。
+  - 流水线守卫 `_validateBackendBinding` 只比实例身份，不再比分类，文案改成 `The backend instance or profile no longer matches this job`。
+  - `VideoDownloadEnqueueRequest` / `VideoDownloadManualEnqueueRequest` 的 `backendIdentity` 改为 `backendTarget`，创建任务时把当时的分类快照进 `VideoDownloadJobs.category`；此后任务始终用自己那一份。
+  - legacy importer 不再要求旧记录的分类等于**当前配置**的分类（`app_model.dart` 的 `torrentMatcher`），改为直接拿旧记录自己的分类去后端核对 hash+title。
+  - 提交：见分支 `worktree-download-backend-identity-category`。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/media/video/download/video_download_pipeline_service_test.dart`：新增「改掉配置里的分类不会拦下已有任务，任务用自己那份分类投递」——旧任务 `category='hibiki'`、当前落点 `'fushi-video'`，断言任务照常推进到 download 且 `prepareCategory` 收到的是任务自己的分类；失配用例表把 `category` 一档换成 `profile` / `kind` 两档。
+  - `fushi/test/media/video/download/video_download_backend_identity_test.dart`：新增三条——内置引擎改分类身份不变、qBittorrent 身份只由地址+账号决定、落点带分类而身份不带。
+- **备注**：影响面比「用户手动改分类」更大——`fa1d429f06`（改名 P2）把默认分类从 `hibiki` 改成 `fushi`（`anime_download_config.dart:15`），**凡是从没在设置里保存过 qB 配置的用户，升级后走默认值就自动踩中同一条守卫**，全部在途任务当场失效，且 `retryJob` 重试会再撞同一道门，UI 上没有任何恢复路径。修复后这批任务重试即可自愈：它们的 `category` 仍是旧值，旧种子本来也还在 qBittorrent 的旧分类下。

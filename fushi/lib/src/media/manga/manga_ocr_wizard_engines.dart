@@ -5,6 +5,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/external_mokuro_runner.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
+import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
@@ -17,8 +18,9 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 /// OCR / 将来第三个），而每个引擎在 UI 上出不出现完全由「有没有传对应 runner」
 /// 决定。此前每个入口各自手抄一份构造参数表，阅读器入口（`openBookOcr`）抄漏了
 /// `remoteRunner`，「配对主机」引擎便在该入口永久不可见（BUG-1418）——这种遗漏
-/// 编译期无痕，运行期只表现为「选项少一个」，最受伤的是没有本地 OCR 引擎兜底的
-/// Android。
+/// 编译期无痕，运行期只表现为「选项少一个」，最受伤的是本地 OCR 引擎不可用、
+/// 只能靠配对主机兜底的形态（BUG-1418 当时的安卓正是如此；BUG-1780 后安卓已开本地
+/// ONNX，但「少一个选项且没人发现」这个结构性风险与平台无关，依然要靠本类堵住）。
 ///
 /// 收成一个**必填**对象后：① 向导只收 `engines` 一个必填参数，漏传直接编译不过；
 /// ② 生产依赖集只在 [MangaOcrWizardEngines.resolve] 里出现一次，新增入口无从抄漏，
@@ -31,7 +33,10 @@ class MangaOcrWizardEngines {
     this.externalRunner,
     this.remoteRunner,
     this.lensRunner,
+    this.systemOcrRunner,
     this.initialEnginePreference,
+    this.initialLensLanguage,
+    this.lensLanguageSetter,
   });
 
   /// 生产依赖集的**唯一**装配点。所有入口都必须经此，不得再手抄参数表。
@@ -59,7 +64,10 @@ class MangaOcrWizardEngines {
       remoteRunner: remoteRunnerOverride ??
           InterconnectMangaOcrClient(repo: SyncRepository(db)),
       lensRunner: GoogleLensMangaOcrService(),
+      systemOcrRunner: SystemOcrMangaService(),
       initialEnginePreference: appModel.mangaOcrEnginePreference,
+      initialLensLanguage: appModel.mangaOcrLensLanguage,
+      lensLanguageSetter: appModel.setMangaOcrLensLanguage,
     );
   }
 
@@ -76,6 +84,17 @@ class MangaOcrWizardEngines {
   /// Google Lens whole-page runner. Null keeps Lens absent in isolated tests.
   final GoogleLensMangaOcrRunner? lensRunner;
 
+  /// 设备自带 OCR；null = 该引擎不出现（隔离测试 / 尚未实现原生侧的平台）。
+  /// 注意「runner 非空」只表示代码路径在，能不能真跑要问
+  /// [SystemOcrMangaRunner.isAvailable]——原生侧没实现时它回 false。
+  final SystemOcrMangaRunner? systemOcrRunner;
+
   /// 默认引擎偏好键；null 时向导按 `auto` 解析。
   final String? initialEnginePreference;
+
+  /// Lens 识别语言初值（偏好）；null = `ja`。
+  final String? initialLensLanguage;
+
+  /// 用户在向导里改语言时回写偏好；null（测试）= 不持久化。
+  final void Function(String value)? lensLanguageSetter;
 }

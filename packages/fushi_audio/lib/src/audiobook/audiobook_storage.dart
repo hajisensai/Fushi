@@ -206,12 +206,83 @@ abstract final class AudiobookStorage {
   }) =>
       missingPaths(paths, exists: exists).isNotEmpty;
 
-  static Future<void> cleanAudioFiles(Directory persistDir) async {
+  /// 两组音频路径是否是**同一套音频**（BUG-1679 的进度作废判据）。
+  /// 有序比较：顺序就是 `AudioCue.audioFileIndex` 的含义，换序即换时间轴。
+  static bool sameAudioPathList(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  /// 把 [persistDir] 同步成**恰好** [sources] 这一组音频，返回落地后的路径
+  /// （顺序与 [sources] 一一对应，可直接落 `audioPaths`）。
+  ///
+  /// 这是持久目录音频的**唯一**写入原语，故意不暴露「清目录」和「复制」两步。
+  /// BUG-1678：拆成两步就必然有人写成「先清后拷」，而源文件本身可能就落在
+  /// [persistDir] 内——重新导入时「沿用现有音频」正是把已持久化的路径原样喂回
+  /// 来的。先清就是先把源文件删掉，随后复制循环再去读它抛 [FileSystemException]
+  /// 中止：用户的音频没了、库里还指着已不存在的路径（症状「换完字幕音频再也不
+  /// 响」）。同步语义让「全换新 / 全沿用 / 混合」三种情况走同一条无分支路径，
+  /// 且天然幂等——喂同一组进去是空操作。
+  ///
+  /// [copy] 为 false 时是引用导入（仅桌面）：清空持久目录后直接返回原始绝对路径。
+  /// [onProgress] 报的是**整批**字节进度；[onFile] 在每个文件开始复制时报 basename。
+  static Future<List<String>> syncAudioFiles(
+    Directory persistDir,
+    List<String> sources, {
+    bool copy = true,
+    void Function(int copiedBytes, int totalBytes)? onProgress,
+    void Function(String name)? onFile,
+  }) async {
+    final Set<String> keep = <String>{
+      if (copy)
+        for (final String path in sources) p.canonicalize(path),
+    };
+    await _pruneAudioFiles(persistDir, keep: keep);
+    if (!copy) return List<String>.from(sources);
+
+    // 只有需要真复制的文件计入总量：已经在目录里的源文件是零拷贝。
+    int totalBytes = 0;
+    for (final String path in sources) {
+      if (_isInside(persistDir, path)) continue;
+      totalBytes += await File(path).length();
+    }
+
+    final List<String> persisted = <String>[];
+    int copiedBytes = 0;
+    for (final String path in sources) {
+      final File src = File(path);
+      onFile?.call(p.basename(path));
+      final int base = copiedBytes;
+      persisted.add(await persistFileWithProgress(
+        src,
+        persistDir,
+        onProgress: (int copied, int total) =>
+            onProgress?.call(base + copied, totalBytes),
+      ));
+      if (!_isInside(persistDir, path)) copiedBytes += await src.length();
+      onProgress?.call(copiedBytes, totalBytes);
+    }
+    return persisted;
+  }
+
+  static bool _isInside(Directory dir, String path) =>
+      p.isWithin(p.canonicalize(dir.path), p.canonicalize(path));
+
+  /// 删掉 [persistDir] 里不在 [keep]（已 canonicalize）中的音频文件。
+  /// 私有：删除这一半单独暴露出去就是 BUG-1678 的形状，调用方只能走
+  /// [syncAudioFiles]。
+  static Future<void> _pruneAudioFiles(
+    Directory persistDir, {
+    required Set<String> keep,
+  }) async {
     if (!persistDir.existsSync()) return;
     for (final FileSystemEntity f in persistDir.listSync()) {
-      if (f is File && isAudioFile(f.path)) {
-        await f.delete();
-      }
+      if (f is! File || !isAudioFile(f.path)) continue;
+      if (keep.contains(p.canonicalize(f.path))) continue;
+      await f.delete();
     }
   }
 

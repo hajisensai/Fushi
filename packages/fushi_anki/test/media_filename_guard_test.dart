@@ -162,11 +162,11 @@ void main() {
       // 兼作 BUG-640 的「禁止退回 String.hashCode」守卫。
       expect(
         ankiDictionaryMediaCacheFilename('明鏡', 'gaiji/bs一.svg'),
-        'hibiki_dict_74259f28356918b3397453d0a5b467182d1ba404.svg',
+        'fushi_dict_74259f28356918b3397453d0a5b467182d1ba404.svg',
       );
       expect(
         ankiDictionaryMediaCacheFilename('明鏡', 'gaiji/noext'),
-        'hibiki_dict_7467bc1485d9e93b46b4c5885134bd3819e80c1e.bin',
+        'fushi_dict_7467bc1485d9e93b46b4c5885134bd3819e80c1e.bin',
       );
     });
 
@@ -178,8 +178,8 @@ void main() {
         final b = ankiDictionaryMediaCacheFilename('B', path);
         // 跨词典必须落到不同文件，否则后制卡的词典嵌入前者的外字（串味）。
         expect(a, isNot(b));
-        expect(a, 'hibiki_dict_2bd97ca34b2d23c7ac8666c112bf1aa849865b82.svg');
-        expect(b, 'hibiki_dict_834d0a756fd728a369a89c017bd202dbc766bc31.svg');
+        expect(a, 'fushi_dict_2bd97ca34b2d23c7ac8666c112bf1aa849865b82.svg');
+        expect(b, 'fushi_dict_834d0a756fd728a369a89c017bd202dbc766bc31.svg');
         // 同 dict 同 path 稳定一致（writer 与 reader 才对得上）。
         expect(
           ankiDictionaryMediaCacheFilename('A', path),

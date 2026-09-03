@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// Source-scan guard for BUG-870: the Windows WebView2 fork must accumulate a
 /// per-axis sub-unit remainder in [InAppWebView::sendScroll] instead of
 /// truncating each scroll delta to a `short` independently.
@@ -31,7 +33,9 @@ void main() {
     final int end = cpp.indexOf('void InAppWebView::setScrollDelta', start);
     expect(end, greaterThan(start),
         reason: 'setScrollDelta must follow sendScroll');
-    sendScrollBody = cpp.substring(start, end);
+    // 断言前剥注释：解释性注释里出现的符号既能把要求型断言骗绿，
+    // 也能把禁止型断言误伤（captureScaleFactor_ 就在本段注释里）。
+    sendScrollBody = maskComments(cpp.substring(start, end));
 
     // BUG-1065 对照端：app 外查词弹窗的裸 WebView2 overlay 转发路径。
     final String overlayCpp =
@@ -45,8 +49,8 @@ void main() {
         'void GlobalLookupWindow::EnsureWebView', overlayStart);
     expect(overlayEnd, greaterThan(overlayStart),
         reason: 'EnsureWebView must follow ForwardCompositionMouse');
-    forwardCompositionMouseBody =
-        overlayCpp.substring(overlayStart, overlayEnd);
+    forwardCompositionMouseBody = maskComments(
+        overlayCpp.substring(overlayStart, overlayEnd));
   });
 
   group('BUG-870 native sendScroll carries a sub-unit remainder', () {
@@ -95,10 +99,16 @@ void main() {
   // 小 1/dpr，用户直观感受就是「app 内滚得慢」。dpr≥2 时更会跌破 popup.js 的
   // POPUP_WHEEL_MOUSE_NOTCH_PX=60 粗/细设备阈值而被误判成触控板。
   group('BUG-1065 wheel delta 与 app 外 overlay 同尺度', () {
-    test('in-app sendScroll 按 scaleFactor_ 还原物理像素后再乘倍数', () {
-      expect(sendScrollBody.contains('scaleFactor_'), isTrue,
-          reason: '滚轮 delta 是逻辑像素，必须用 scaleFactor_（devicePixelRatio）'
-              '还原成物理像素，与同文件鼠标坐标 (x * scaleFactor_) 的处理一致');
+    test('in-app sendScroll 按 deviceScaleFactor_ 还原物理像素后再乘倍数', () {
+      expect(sendScrollBody.contains('deviceScaleFactor_'), isTrue,
+          reason: '滚轮 delta 是逻辑像素，必须用 deviceScaleFactor_'
+              '（devicePixelRatio）还原成物理像素');
+      // 同文件里还有一个 captureScaleFactor_（纹理采集缩放）。两者在多数机器上
+      // 恰好相等，拿错了本机测不出来，只有采集缩放 ≠ DPR 的机器上滚轮尺度才会
+      // 整体偏掉——所以这里显式钉死用的是哪一个。
+      expect(sendScrollBody.contains('captureScaleFactor_'), isFalse,
+          reason: '滚轮还原的是设备 DPR，不是纹理采集缩放；拿错了在 dpr == 采集'
+              '缩放的机器上完全看不出来');
       expect(
         RegExp(r'delta \* kScrollMultiplier \* \w+ \+ residual')
             .hasMatch(sendScrollBody),
@@ -115,10 +125,10 @@ void main() {
       );
     });
 
-    test('scaleFactor_ 为 0/未初始化时回退 1.0，绝不把 wheel 归零', () {
+    test('deviceScaleFactor_ 为 0/未初始化时回退 1.0，绝不把 wheel 归零', () {
       expect(sendScrollBody.contains('1.0'), isTrue,
-          reason: 'scaleFactor_ 非法（<=0）时必须回退 1.0，否则一乘 0 滚轮全死');
-      expect(RegExp(r'scaleFactor_ > 0').hasMatch(sendScrollBody), isTrue,
+          reason: 'deviceScaleFactor_ 非法（<=0）时必须回退 1.0，否则一乘 0 滚轮全死');
+      expect(RegExp(r'deviceScaleFactor_ > 0').hasMatch(sendScrollBody), isTrue,
           reason: '必须显式判非法缩放系数再回退');
     });
 

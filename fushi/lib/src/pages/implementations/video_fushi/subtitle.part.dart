@@ -39,9 +39,68 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// `Row[Expanded(video), 面板列]`）真把画面挤窄到左侧、不浮层遮挡（TODO-314 根因：此前误经
   /// `_showVideoSidePanel(subtitleList)` 进 overlay 系统，push-aside 成死代码）。与其它浮层
   /// 互斥：开字幕列表先关任何打开的浮层（[_videoSidePanel]）。打开时唤醒控制条让用户看到入口。
+  /// BUG-1907：导出本视频「收藏档」里的句子。
+  ///
+  /// 复用既有的导出原语（[buildSentenceExport] + [saveOrShareExport]）——它们是纯函数
+  /// + 平台分流，与收藏夹页完全解耦，本来就是为复用而拆的。面板只把句子交出来，
+  /// 落盘/分享这类副作用留在页面层（与 [_copyCueText] / [_toggleFavoriteCueForVideo]
+  /// 同一条纪律）。
+  ///
+  /// 格式固定 Markdown：这是个一键动作，不值得为它再弹一层格式选择框；要挑格式的
+  /// 用户走收藏夹页的导出面板（那里本来就有四种格式）。
+  Future<void> _exportFavoriteCues(List<AudioCue> favorites) async {
+    if (favorites.isEmpty) return;
+    final String title = _title ?? widget.bookUid;
+    final DateTime now = DateTime.now();
+    final List<ExportSentence> rows = <ExportSentence>[
+      for (final AudioCue cue in favorites)
+        ExportSentence(
+          text: cue.text.trim(),
+          bookTitle: title,
+          createdAt: now,
+          source: kFavoriteSentenceSourceVideo,
+          bookKey: widget.bookUid,
+        ),
+    ];
+    final String content =
+        buildSentenceExport(rows, format: ExportFormat.markdown);
+    final ExportFileMeta meta = exportFileMeta(ExportFormat.markdown);
+    if (!mounted) return;
+    await saveOrShareExport(
+      context: context,
+      content: content,
+      fileName: '${sanitizeExportFileName(title)}.${meta.extension}',
+      mimeType: meta.mimeType,
+      subject: title,
+    );
+  }
+
+  /// BUG-1907：Ctrl+F —— 打开字幕列表并聚焦搜索框。
+  ///
+  /// 焦点在播放器上时按键由视频页整表快捷键接住，那张表**够不到**面板
+  /// （面板是 media_kit controls 的兄弟节点），所以这里负责「先把列表开出来，
+  /// 再通过 [_subtitleSearchRequests] 让面板自己展开搜索框并抢焦点」。
+  /// 焦点已经在面板里时，面板自带的那份 activator 直接生效，走不到这里。
+  ///
+  /// PR#1032 审查 B1：列表还没打开时，这里开完列表就 +1，而面板要到**下一帧**才由
+  /// `layout.part.dart` 的 `ListenableBuilder` 构造、initState 才 addListener ——
+  /// 此刻 [_subtitleSearchRequests] 上零监听者。所以计数器的语义被定成「本次面板会话
+  /// 已请求到第 N 次」的**水位线**（基线由 [_toggleSubtitleJumpList] 打开分支归零），
+  /// 由面板在挂载时自己对齐，而不是「必须在我监听的瞬间刚好 +1」的边沿事件。
+  void _requestSubtitleListSearch() {
+    if (!_subtitleListVisible.value) {
+      _toggleSubtitleJumpList();
+    }
+    _subtitleSearchRequests.value = _subtitleSearchRequests.value + 1;
+  }
+
   void _toggleSubtitleJumpList() {
     final bool next = !_subtitleListVisible.value;
     if (next) {
+      // PR#1032 审查 B1：面板会话开始 = 搜索请求水位线归零。放在**打开**分支而不是关闭分支，
+      // 因为关闭有一条绕过 [_closeSubtitleJumpList] 的路径（`_showVideoSidePanel` 直接
+      // 置 false），而打开只有这一处，归零在这里才是无条件成立的。
+      _subtitleSearchRequests.value = 0;
       _clearRailHover();
       // 与浮层互斥：开 push-aside 字幕列表前关掉任何打开的浮层（设置/音轨/倍速等）。
       _hideVideoControlEditOverlay(revealControls: false);
@@ -72,11 +131,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 关闭 push-aside 字幕跳转列表（TODO-637）。**三条关闭路径的单一真相源**：
   /// 面板头部 × 按钮（[onClose]）、Esc 键、控制条字幕按钮（后两者经
   /// [_toggleSubtitleJumpList] 的关闭分支）都调它，避免「关闭副作用各写一份」分叉。
-  /// 关闭时必须：清挖词选择（[_clearSelectedMiningCues]）、隐藏列表
-  /// （[_subtitleListVisible]）、唤回控制条（[_pokeControlsVisible]）、把焦点归还视频
-  /// （[_focusOwnership]，否则键盘 / 手柄后续失焦）。
+  /// 关闭时必须：隐藏列表（[_subtitleListVisible]）、唤回控制条
+  /// （[_pokeControlsVisible]）、把焦点归还视频（[_focusOwnership]，否则键盘 / 手柄
+  /// 后续失焦）。
   void _closeSubtitleJumpList() {
-    _clearSelectedMiningCues();
     _subtitleListVisible.value = false;
     _pokeControlsVisible();
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
@@ -136,11 +194,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
       if (_jimakuQuery() != null)
         ListTile(
           leading: const Icon(Icons.cloud_download_outlined),
-          title: Text(t.video_jimaku_fetch),
+          title: Text(t.video_subtitle_search_open),
           enabled: !_subtitleLoadingShown,
           onTap: _subtitleLoadingShown
               ? null
-              : () => unawaited(_openJimakuDialog(controller)),
+              : () => unawaited(_openSubtitleWorkbench(controller)),
         ),
       ListTile(
         leading: const Icon(Icons.file_open_outlined),
@@ -225,27 +283,65 @@ extension _VideoSubtitle on _VideoFushiPageState {
                     )
                 : null,
           ),
-      if (!_isRemote)
-        for (final SubtitleSource source in _subtitleMenuSources)
-          ListTile(
-            leading: Icon(
-              source.isGraphicEmbedded
-                  ? Icons.image_outlined
-                  : (source.isEmbedded ? Icons.movie : Icons.subtitles),
-            ),
-            title: Text(source.label),
-            subtitle: source.isGraphicEmbedded
-                ? Text(t.video_subtitle_graphic_hint)
-                : null,
-            selected: subtitleSourceMatchesPersistedForMenu(
+      // BUG-1861：远端模式下本机落盘的字幕档（Jimaku 下载 / 手动导入）也要有自己的行。
+      // 远端字幕轨行原本只覆盖 YouTube 轨 / host sidecar / host 内封轨三类，本机档案
+      // 经 [_applyRemoteSubtitle] 应用后只改 `_currentSubtitleSource`，列表里没有任何
+      // 行能承载它——「字幕明明应用上了、列表里却没有它」。与 host sidecar 行按路径去重
+      // （重进时的持久化重放会把同一档案挂到 `_remoteSubtitlePath` 上，见 [_loadRemoteEpisode]）。
+      if (_isRemote)
+        for (final SubtitleSource source in _importedSubtitleSources)
+          if (hostSub == null ||
+              !sameExternalSubtitlePathForMenu(source, hostSub))
+            _withSubtitleFileMenu(
+              context,
+              controller,
               source,
-              _currentSubtitleSource,
+              ListTile(
+                leading: const Icon(Icons.subtitles),
+                title: Text(source.label),
+                selected: subtitleSourceMatchesPersistedForMenu(
+                  source,
+                  _currentSubtitleSource,
+                ),
+                selectedColor: cs.primary,
+                enabled: !_subtitleLoadingShown,
+                onTap: _subtitleLoadingShown
+                    ? null
+                    : () => unawaited(
+                          _applyRemoteSubtitle(
+                            controller,
+                            source.externalPath!,
+                            label: source.label,
+                          ),
+                        ),
+              ),
             ),
-            selectedColor: cs.primary,
-            enabled: !_subtitleLoadingShown,
-            onTap: _subtitleLoadingShown
-                ? null
-                : () => unawaited(_selectSubtitleSource(controller, source)),
+      if (!_isRemote)
+        for (final SubtitleSource source in _menuSubtitleSources)
+          _withSubtitleFileMenu(
+            context,
+            controller,
+            source,
+            ListTile(
+              leading: Icon(
+                source.isGraphicEmbedded
+                    ? Icons.image_outlined
+                    : (source.isEmbedded ? Icons.movie : Icons.subtitles),
+              ),
+              title: Text(source.label),
+              subtitle: source.isGraphicEmbedded
+                  ? Text(t.video_subtitle_graphic_hint)
+                  : null,
+              selected: subtitleSourceMatchesPersistedForMenu(
+                source,
+                _currentSubtitleSource,
+              ),
+              selectedColor: cs.primary,
+              enabled: !_subtitleLoadingShown,
+              onTap: _subtitleLoadingShown
+                  ? null
+                  : () => unawaited(_selectSubtitleSource(controller, source)),
+            ),
           ),
       // TODO-857 / TODO-1312 视频双字幕：副字幕入口。副字幕走 Flutter overlay 副层
       // cue 流（可逐字符查词）。TODO-2837：远端也支持（host sidecar / host 内嵌轨
@@ -261,7 +357,6 @@ extension _VideoSubtitle on _VideoFushiPageState {
         // 保持零：展开项本身是带默认 contentPadding 的 ListTile，各自缩进已对齐。
         leading: const Icon(Icons.subtitles_outlined),
         title: Text(t.video_secondary_subtitle_sources),
-        subtitle: Text(t.video_secondary_subtitle_hint),
         childrenPadding: EdgeInsets.zero,
         shape: const Border(),
         collapsedShape: const Border(),
@@ -354,6 +449,37 @@ extension _VideoSubtitle on _VideoFushiPageState {
                     )
                 : null,
           ),
+        // BUG-1861：与远端**主**字幕轨行完全同形——本机落盘的字幕档
+        // （[_pickAndImportRemoteSecondarySubtitle] 拷进 video_subtitles/）也要有自己的
+        // 行。否则「导入成功、副字幕生效、列表里找不到它、也切不回来」，正是主字幕那半
+        // 已修掉的同一个洞。与 host sidecar 行按路径去重。
+        for (final SubtitleSource source in _importedSubtitleSources)
+          if (hostSub == null ||
+              !sameExternalSubtitlePathForMenu(source, hostSub))
+            _withSubtitleFileMenu(
+              context,
+              controller,
+              source,
+              ListTile(
+                leading: const Icon(Icons.subtitles),
+                title: Text(source.label),
+                selected: subtitleSourceMatchesPersistedForMenu(
+                  source,
+                  _currentSecondarySubtitleSource,
+                ),
+                selectedColor: cs.primary,
+                enabled: !_subtitleLoadingShown,
+                onTap: _subtitleLoadingShown
+                    ? null
+                    : () => unawaited(
+                          _applyRemoteSecondarySubtitle(
+                            controller,
+                            source.externalPath!,
+                            label: source.label,
+                          ),
+                        ),
+              ),
+            ),
       ];
     }
     return <Widget>[
@@ -371,26 +497,221 @@ extension _VideoSubtitle on _VideoFushiPageState {
             : () => unawaited(_selectSecondarySubtitleOff(controller)),
       ),
       const Divider(height: 1),
-      // BUG-900：遍历完整 [_subtitleMenuSources]（与主字幕轨行同一份可用列表），外挂
-      // 字幕文件也能选为副字幕。图标与主字幕轨行一致：图形轨 image / 内嵌 movie /
-      // 外挂 subtitles。
-      for (final SubtitleSource source in _subtitleMenuSources)
-        ListTile(
-          leading: Icon(
-            source.isGraphicEmbedded
-                ? Icons.image_outlined
-                : (source.isEmbedded ? Icons.movie : Icons.subtitles),
+      // BUG-900：遍历完整可用列表（与主字幕轨行同一份，BUG-1861 起含本会话导入 /
+      // 下载的档案），外挂字幕文件也能选为副字幕。图标与主字幕轨行一致：图形轨
+      // image / 内嵌 movie / 外挂 subtitles。
+      for (final SubtitleSource source in _menuSubtitleSources)
+        _withSubtitleFileMenu(
+          context,
+          controller,
+          source,
+          ListTile(
+            leading: Icon(
+              source.isGraphicEmbedded
+                  ? Icons.image_outlined
+                  : (source.isEmbedded ? Icons.movie : Icons.subtitles),
+            ),
+            title: Text(source.label),
+            selected: source.matchesPersisted(_currentSecondarySubtitleSource),
+            selectedColor: cs.primary,
+            enabled: !_subtitleLoadingShown,
+            onTap: _subtitleLoadingShown
+                ? null
+                : () => unawaited(
+                      _selectSecondarySubtitleSource(controller, source),
+                    ),
           ),
-          title: Text(source.label),
-          selected: source.matchesPersisted(_currentSecondarySubtitleSource),
-          selectedColor: cs.primary,
-          enabled: !_subtitleLoadingShown,
-          onTap: _subtitleLoadingShown
-              ? null
-              : () =>
-                  unawaited(_selectSecondarySubtitleSource(controller, source)),
         ),
     ];
+  }
+
+  /// 外挂字幕行的长按 / 右键上下文菜单包装（主字幕轨行与副字幕轨行共用）。
+  ///
+  /// 只有磁盘上真有档案的外挂源（[SubtitleSource.external]：视频同目录 sidecar /
+  /// 导入副本 / Jimaku 下载）才挂手势；内嵌轨（`embedded:<n>`）没有任何可删除的
+  /// 东西，原样返回——「不给菜单」比「给一个禁用的删除项」少一个特殊状态。
+  /// 桌面右键 [GestureDetector.onSecondaryTapDown]、触屏长按
+  /// [GestureDetector.onLongPressStart] 都落到 [_showSubtitleFileMenu]；
+  /// [ListTile.onTap] 的单击选轨路径不动。
+  Widget _withSubtitleFileMenu(
+    BuildContext context,
+    VideoPlayerController controller,
+    SubtitleSource source,
+    Widget row,
+  ) {
+    if (source.isEmbedded) return row;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onLongPressStart: (LongPressStartDetails d) => unawaited(
+        _showSubtitleFileMenu(context, controller, source, d.globalPosition),
+      ),
+      onSecondaryTapDown: (TapDownDetails d) => unawaited(
+        _showSubtitleFileMenu(context, controller, source, d.globalPosition),
+      ),
+      child: row,
+    );
+  }
+
+  /// 在 [globalPosition] 处弹外挂字幕档案的上下文菜单：目前只有「删除字幕文件」
+  /// 一项（[_deleteSubtitleFile]）。照仓库既有长按 / 右键菜单范式
+  /// （tag_management_page `_showTagMenu`）：[globalPosition] 是手势报的真实视口
+  /// 坐标，而 [showMenu] 的 [RelativeRect] 落在根 Navigator 的 Overlay 坐标系，界面
+  /// 大小≠100% 时要经 `Overlay.globalToLocal` 换算才不偏移（BUG-781 同族）。
+  /// 字幕抽取进行中（[_subtitleLoadingShown]）不弹：与行本身 `enabled: false` 一致，
+  /// 避免删掉正在抽取 / 解析的那个档案。菜单是压在本页之上的覆盖层、会夺焦，按
+  /// docs/agent/focus-ownership.md 用 [PageFocusOwnership.guardOverlay] 包 `await`
+  /// 点，任何退出路径（选中 / 点外部 / Esc）都归还焦点。
+  Future<void> _showSubtitleFileMenu(
+    BuildContext context,
+    VideoPlayerController controller,
+    SubtitleSource source,
+    Offset globalPosition,
+  ) async {
+    if (_subtitleLoadingShown) return;
+    final RenderObject? overlay =
+        Overlay.of(context).context.findRenderObject();
+    if (overlay is! RenderBox) return;
+    final Offset anchor = overlay.globalToLocal(globalPosition);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool? delete = await _focusOwnership.guardOverlay(
+      () => showMenu<bool>(
+        context: context,
+        position: RelativeRect.fromRect(
+          Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
+          Offset.zero & overlay.size,
+        ),
+        items: <PopupMenuEntry<bool>>[
+          FushiPopupMenuItem<bool>(
+            value: true,
+            label: t.video_subtitle_delete,
+            icon: Icons.delete_outline,
+            color: scheme.error,
+          ),
+        ],
+      ),
+    );
+    if (delete != true || !mounted) return;
+    await _deleteSubtitleFile(controller, source);
+  }
+
+  /// 删除一个外挂字幕档案（[SubtitleSource.external]）：二次确认（显示完整路径）→
+  /// 删磁盘文件 → 若它正是当前主字幕则把选择清回「无偏好」、当前副字幕则走既有
+  /// 关闭路径 → 从两份列表移除。
+  ///
+  /// 为什么必须先清字幕再删列表项：单视频模式下 [_selectSubtitleSource] 把解析出的
+  /// cue 与源指针一起落库（BUG-081），只删文件不清库，重开视频时 `loadCues` 仍命中
+  /// 旧 cue、把已删字幕原样显示回来；副字幕 / 远端同理各有自己的持久化指针。
+  ///
+  /// 主字幕**不**复用 [_selectSubtitleOff] / [_clearRemoteSubtitle]：它们落的是
+  /// `off:` 显式关闭哨兵（TODO-818），下次起播会短路 sidecar 探测 / 内嵌轨自动抽取
+  /// / host 默认字幕。「删掉一个下错的字幕档」≠「我不要字幕」——用户删掉错误的
+  /// Jimaku 档后，下次重开理应像从没选过一样自动挑同目录 sidecar / 内嵌轨。故走
+  /// [_forgetDeletedSubtitleSelection] 清回 `null`（无偏好）。副字幕没有自动选择，
+  /// `null` 与 `off:` 恢复行为相同，直接复用 [_selectSecondarySubtitleOff] /
+  /// [_clearRemoteSecondarySubtitle]。判「是否当前源」用
+  /// [sameExternalSubtitlePathForMenu]（大小写 / 分隔符归一），与列表高亮同一判据。
+  ///
+  /// 列表项从 [_subtitleMenuSources]（枚举结果）与 [_importedSubtitleSources]
+  /// （本会话登记）两份都移除：渲染走 [mergeImportedSubtitleSourcesForMenu] 合并，
+  /// 只删一份另一份还会把它合回来。不重跑 ffmpeg 枚举——删的是本地档案，容器内封
+  /// 轨的缓存仍然有效。
+  ///
+  /// 先删文件再清字幕不会自锁：外挂字幕只解析进内存 cue，libmpv 侧收到的是
+  /// `SubtitleTrack.no()`，app 自身不持有该文件句柄。
+  Future<void> _deleteSubtitleFile(
+    VideoPlayerController controller,
+    SubtitleSource source,
+  ) async {
+    final String? path = source.externalPath;
+    if (path == null) return;
+    // 全 app 统一的「确认销毁」对话框（FushiDestructiveConfirmDialog）；pop null =
+    // 取消。对话框是覆盖层、会夺焦，guardOverlay 在任何退出路径归还焦点。
+    final FushiDestructiveConfirmResult? confirmed =
+        await _focusOwnership.guardOverlay(
+      () => showAppDialog<FushiDestructiveConfirmResult>(
+        context: context,
+        builder: (BuildContext _) => FushiDestructiveConfirmDialog(
+          title: t.video_subtitle_delete,
+          message: t.video_subtitle_delete_confirm(path: path),
+        ),
+      ),
+    );
+    if (confirmed == null || !mounted) return;
+    // 先停止引用，再销毁文件——顺序不是风格问题。反过来写（删完再清）时，
+    // `await file.delete()` 是一次真 IO await：用户在这期间退出视频页，State 就
+    // 不再 mounted，后面每一道 `if (!mounted) return;` 会把**持久化清理**一起挡掉。
+    // 结果是文件已经没了，而 VideoBooks.subtitleSource 仍指向那条路径、cue 也还在
+    // 库里：下次打开这个视频，_loadSingle 照常 loadCues 把已删除的字幕显示回来，而
+    // includeCurrentPersistedSubtitleForMenu 要求 existsSync，列表里又没有任何一行
+    // 承载它——用户看得见字幕却关不掉（正是 BUG-081 那类「指针与实体脱节」）。
+    // 把清理提到前面，这个窗口就不存在了，不需要再给它配守卫。
+    // 反向的失败态是可恢复的：清了但没删成 → 文件还在、菜单照样列得出来，用户重选
+    // 一次即可，且下面会明确报「删除失败」。
+    final String? primary = _currentSubtitleSource;
+    if (primary != null && sameExternalSubtitlePathForMenu(source, primary)) {
+      await _forgetDeletedSubtitleSelection(controller);
+    }
+    if (!mounted) return;
+    final String? secondary = _currentSecondarySubtitleSource;
+    if (secondary != null &&
+        sameExternalSubtitlePathForMenu(source, secondary)) {
+      await (_isRemote
+          ? _clearRemoteSecondarySubtitle(controller)
+          : _selectSecondarySubtitleOff(controller));
+    }
+    if (!mounted) return;
+    try {
+      final File file = File(path);
+      if (await file.exists()) await file.delete();
+    } catch (e) {
+      // 占用 / 只读 / 权限各不相同，用户报「删除失败」时要能从日志判型。
+      debugPrint(
+        '[video-playback] delete external subtitle failed path=$path: $e',
+      );
+      if (!mounted) return;
+      _showOsd(
+        t.video_subtitle_delete_failed(label: source.label),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+    bool notDeleted(SubtitleSource s) =>
+        !sameExternalSubtitlePathForMenu(s, path);
+    _rebuild(() {
+      _subtitleMenuSources = _subtitleMenuSources.where(notDeleted).toList();
+      _importedSubtitleSources =
+          _importedSubtitleSources.where(notDeleted).toList();
+    });
+    _showOsd(t.video_subtitle_deleted(label: source.label));
+  }
+
+  /// 当前主字幕档案已被删除：清空 overlay cue，并把持久化指针清回 `null`（无偏好）。
+  ///
+  /// 与 [_selectSubtitleOff] / [_clearRemoteSubtitle] 的唯一差别是落 `null` 而非
+  /// `off:` 哨兵（TODO-818 三态：非空=具体源 / `off:`=显式关闭 / `null`=无偏好→
+  /// 下次起播自动选默认），也**不**置 [_remoteSubtitleUserDismissed]——用户没有表达
+  /// 「不要字幕」。落库形状与各自的关闭路径逐项对齐：单视频 cue + 指针原子写
+  /// （BUG-081）、播放列表只写指针、远端经 [AppModel.setRemoteSubtitleSource]。
+  Future<void> _forgetDeletedSubtitleSelection(
+    VideoPlayerController controller,
+  ) async {
+    controller.setCues(const <AudioCue>[]);
+    await controller.selectSubtitleTrack(SubtitleTrack.no());
+    if (_isRemote) {
+      final (String uid, int ep) = _remotePositionKeyForIndex(_currentEpisode);
+      unawaited(appModel.setRemoteSubtitleSource(uid, ep, null));
+    } else if (_episodes.isEmpty) {
+      await widget.repo.saveSubtitleSelection(
+        bookUid: widget.bookUid,
+        subtitleSource: null,
+        cues: const <AudioCue>[],
+      );
+    } else {
+      await widget.repo.updateSubtitleSource(widget.bookUid, null);
+    }
+    if (!mounted) return;
+    _rebuild(() => _currentSubtitleSource = null);
   }
 
   /// 弹「字幕源」菜单：枚举当前视频的全部字幕源（内嵌轨 + 同目录外挂文件）+
@@ -495,15 +816,40 @@ extension _VideoSubtitle on _VideoFushiPageState {
   ///     带来的唯一新信息，就是我们手里这个已知路径的外挂文件。
   ///
   /// 新档是本 app 刚写下的外挂文件，路径与标签都在手里，没有任何需要向 ffmpeg 求证的
-  /// 东西：直接插到列表首位（与 [includeCurrentPersistedSubtitleForMenu] 的「当前导入排
-  /// 最前」约定一致），内嵌轨枚举缓存保持有效、不重探。尚未为当前视频枚举过（缓存 key
-  /// 不匹配）时什么都不做——首次枚举本就会经 [includeCurrentPersistedSubtitleForMenu]
-  /// 把它带上。远端视频没有本地枚举列表（走 host / YouTube 轨），直接跳过。
+  /// 东西：直接记进 [_importedSubtitleSources]，渲染时经
+  /// [mergeImportedSubtitleSourcesForMenu] 排到列表首位（与
+  /// [includeCurrentPersistedSubtitleForMenu] 的「当前导入排最前」约定一致），内嵌轨枚举
+  /// 缓存保持有效、不重探。
+  ///
+  /// BUG-1861：**登记不再有任何前置条件**。BUG-1329 的实现把新档直接写进
+  /// `_subtitleMenuSources`，因而必须先确认「枚举缓存对当前视频有效」
+  /// （`_subtitleMenuSourcesPath == videoPath`），否则就丢弃；并且远端模式整个跳过。
+  /// 这三种情况下用户都会看到「字幕应用上了、列表里却没有它」：
+  ///  1. **枚举尚在途**：用户一进「字幕」分类就点获取字幕，而大容器的 `ffmpeg -i` 探测要
+  ///     数秒到数十秒。缓存 key 此刻还没写，新档被丢；等枚举回来又用**它启动时抓的**
+  ///     `_currentSubtitleSource` 快照整体覆盖列表，新档也进不了
+  ///     [includeCurrentPersistedSubtitleForMenu]。
+  ///  2. **枚举失败**：ffmpeg 缺失 / 超时 / 路径不可枚举（网络流）时 `enumerated == null`，
+  ///     缓存 key 永远不写，此后每次登记都静默 return。
+  ///  3. **换集后未再进字幕分类**：缓存 key 还是上一集的路径。
+  /// 而「这个档案就在盘上、刚刚被应用」是**不依赖枚举的既成事实**，不该被枚举缓存的
+  /// 有效性 gate 掉。现在两份列表各自独立、渲染时合并（见
+  /// [mergeImportedSubtitleSourcesForMenu]）。
+  ///
+  /// 只收**外挂字幕档案路径**（[isExternalSubtitleFilePathForMenu]：非 `embedded:<n>`
+  /// 源指针、非 `off:` 哨兵、非空）；远端内封轨抽取出来的临时档由 `embedded:<n>` 源指针
+  /// 自己的行承载，不进这里。**刻意不按扩展名过滤**——Jimaku / OpenSubtitles 给的
+  /// `fileName` 不受白名单约束，拿扩展名当门会让 `.sup` / `.smi` / `.ttml` 下完之后在
+  /// 列表里彻底消失，与本函数两个调用点「坏档也该列出来、不按应用成功门控」的约定矛盾
+  /// （BUG-1861）。
+  ///
+  /// 首行判 [mounted]：四个调用点全在 FilePicker / 网络下载 / `File.copy` 等 await 之后，
+  /// 而 `_rebuild` 就是裸 `setState`。BUG-1861 去掉 `_isRemote` 早退之后，远端两条导入
+  /// 路径首次成为可达的 setState 路径，用户在拷贝期间退出视频页就会 setState-after-dispose。
   void _registerImportedSubtitleSource(String path) {
-    if (_isRemote) return;
-    final String? videoPath = _currentVideoPath;
-    if (videoPath == null || _subtitleMenuSourcesPath != videoPath) return;
-    final bool alreadyListed = _subtitleMenuSources.any(
+    if (!mounted) return;
+    if (!isExternalSubtitleFilePathForMenu(path)) return;
+    final bool alreadyListed = _importedSubtitleSources.any(
       (SubtitleSource source) => sameExternalSubtitlePathForMenu(source, path),
     );
     if (alreadyListed) return;
@@ -512,9 +858,20 @@ extension _VideoSubtitle on _VideoFushiPageState {
       label: p.basename(path),
     );
     _rebuild(() {
-      _subtitleMenuSources = <SubtitleSource>[added, ..._subtitleMenuSources];
+      _importedSubtitleSources = <SubtitleSource>[
+        added,
+        ..._importedSubtitleSources,
+      ];
     });
   }
+
+  /// 字幕轨 / 副字幕轨行共用的**最终可选列表**：枚举结果（内封轨 + 视频同目录 sidecar）
+  /// 与本会话导入 / 下载的档案合并（BUG-1861）。本地视频专用；远端各类轨各自成行。
+  List<SubtitleSource> get _menuSubtitleSources =>
+      mergeImportedSubtitleSourcesForMenu(
+        _subtitleMenuSources,
+        _importedSubtitleSources,
+      );
 
   /// **纯映射**：把 [SubtitleCueLoadFailure] 翻成给用户看的一句话。
   ///
@@ -689,6 +1046,50 @@ extension _VideoSubtitle on _VideoFushiPageState {
     return null;
   }
 
+  /// 组装在线字幕检索的**身份种子**：优先用刮削早就存下的外部 ID 与日文原名，而不是
+  /// 界面上的显示名（BUG-1842）。
+  ///
+  /// 根因背景：库里的显示名可能是中文译名（如「Re：从零开始的异世界生活 第四季 丧失篇」），
+  /// 而 Jimaku 的条目名只有罗马音/英文/日文，AniList 也匹配不上这种「中文译名 + 季度 +
+  /// 篇名」的长串——于是搜索必然空手而归，**尽管这个视频刮削过、库里明明存着它的 AniList
+  /// ID 和日文原名**。有身份就别再去猜名字。
+  ///
+  /// 归属规则（`video_metadata_works` 的 CHECK 约束）：合集里的一集，元数据挂在**合集**上
+  /// 而不是该集的 bookUid 上，故有 [VideoFushiPage.playlistCollectionId] 时必须走合集口，
+  /// 否则恒查不到。读不到元数据一律降级为纯文本检索（= 旧行为），绝不因此挡住搜索。
+  Future<SubtitleSearchSeed> _buildJimakuSeed(String fallbackTitle) async {
+    try {
+      final FushiDatabase db = appModel.database;
+      final int? collectionId = widget.playlistCollectionId;
+      final VideoMetadataWorkRow? work = collectionId != null
+          ? await db.getVideoMetadataWorkByCollection(collectionId)
+          : await db.getVideoMetadataWorkByBook(widget.bookUid);
+      final Map<String, String> externalIds = <String, String>{};
+      if (work != null) {
+        final List<VideoMetadataProviderIdentityRow> identities =
+            await db.getVideoMetadataProviderIdentities(workId: work.id);
+        for (final VideoMetadataProviderIdentityRow row in identities) {
+          externalIds[row.provider.trim().toLowerCase()] = row.externalId;
+        }
+      }
+      return buildSubtitleSearchSeed(
+        originalTitle: work?.originalTitle,
+        metadataTitle: work?.title,
+        displayTitle: fallbackTitle,
+        collectionTitle: _playlistTitle,
+        externalIds: externalIds,
+        isMovie: work?.mediaType == 'movie',
+      );
+    } on Object catch (error) {
+      ErrorLogService.instance
+          .logDiagnostic('VideoFushiPage._buildJimakuSeed', error);
+      return buildSubtitleSearchSeed(
+        displayTitle: fallbackTitle,
+        collectionTitle: _playlistTitle,
+      );
+    }
+  }
+
   /// 打开「自动获取字幕（Jimaku）」对话框：用番名（[_jimakuQuery]）搜 → 下载到
   /// `<appDocs>/video_subtitles/` → 应用。
   ///
@@ -697,7 +1098,34 @@ extension _VideoSubtitle on _VideoFushiPageState {
   ///   [_applyRemoteSubtitle]（与远端「本地导入字幕」同一不落 DB 的链路）。
   ///
   /// 真实拉取需有效 Jimaku API key + 联网（验证待用户）。
-  Future<void> _openJimakuDialog(VideoPlayerController controller) async {
+  /// 本集所属合集的成员（有序）；不在合集里 / 读不到 → null（工作台只给「本集」）。
+  Future<SubtitleCollectionSpec?> _subtitleCollectionSpec() async {
+    final int? collectionId = widget.playlistCollectionId;
+    if (collectionId == null) return null;
+    try {
+      final MediaCollectionRow? collection =
+          await widget.repo.getMediaCollectionById(collectionId);
+      if (collection == null) return null;
+      final List<MediaCollectionItemRow> items =
+          await widget.repo.getCollectionItems(collectionId);
+      final List<VideoBookRow> members = <VideoBookRow>[];
+      for (final MediaCollectionItemRow item in items) {
+        if (item.mediaType != MediaKind.video.dbValue) continue;
+        final VideoBookRow? row = await widget.repo.getByBookUid(item.entryKey);
+        if (row != null) members.add(row);
+      }
+      if (members.isEmpty) return null;
+      return SubtitleCollectionSpec(collection: collection, members: members);
+    } on Object catch (error) {
+      ErrorLogService.instance
+          .logDiagnostic('VideoFushiPage._subtitleCollectionSpec', error);
+      return null;
+    }
+  }
+
+  /// 打开全屏字幕工作台（本集作用域；本集在合集里时可切到「整个合集」批量配字幕）。
+  /// 「本集」下载成功后把路径带回来当场应用。
+  Future<void> _openSubtitleWorkbench(VideoPlayerController controller) async {
     final String? query = _jimakuQuery();
     if (query == null) return;
     // TODO-1236：经 AppPaths 解析（跟随桌面自定义数据根 → `<dataRoot>/documents/`
@@ -706,30 +1134,34 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (!context.mounted) return;
     // 语言记忆按系列（番名）粒度：seriesKey = query 归一（小写 + trim），与
     // PreferencesRepository 的 map key 约定一致。打开时读上次语言、选中时写回。
-    final String seriesKey = query.trim().toLowerCase();
-    // 该系列没有记忆时兜底设置页的默认字幕语言（三个 Jimaku 界面同一兜底）。
-    final String? preferredLanguage =
-        appModel.jimakuPreferredLanguages[seriesKey] ??
-            appModel.jimakuDefaultLanguageOrNull;
-    final String? downloaded = await showDialog<String>(
-      context: context,
-      builder: (_) => JimakuSubtitleDialog(
-        initialQuery: query,
-        initialApiKey: appModel.jimakuApiKey,
-        onApiKeyChanged: (String key) => appModel.setJimakuApiKey(key),
-        saveDirectory: saveDir,
-        httpClientFactory: appModel.createDownloadHttpClient,
-        initialPreferredLanguage: preferredLanguage,
-        onPreferredLanguageChanged: (String lang) =>
-            appModel.setJimakuPreferredLanguage(seriesKey, lang),
+    // 身份种子（外部 ID + 日文原名）；seriesKey 仍按原 query 算，免得预填词一换就把
+    // 用户此前的语言记忆全对不上。
+    final SubtitleSearchSeed seed = await _buildJimakuSeed(query);
+    final SubtitleCollectionSpec? collection = await _subtitleCollectionSpec();
+    if (!context.mounted) return;
+    final String? downloaded = await SubtitleWorkbenchPage.open(
+      context,
+      host: AppSubtitleWorkbenchHost(appModel),
+      saveDirectory: saveDir,
+      episode: SubtitleEpisodeSearchSpec(
+        initialQuery: seed.primaryQuery.isEmpty ? query : seed.primaryQuery,
+        seriesKey: query.trim().toLowerCase(),
+        seed: seed,
+        // 本地视频才有指纹可算（远端流恒 null），OpenSubtitles 据此按文件哈希精确匹配。
+        videoPath: _isRemote ? null : _currentVideoPath,
       ),
+      collection: collection,
     );
-    // Jimaku 对话框内含联网搜索/下载，会夺焦；关闭后把焦点还给 Video。
+    // 工作台内含联网搜索/下载，会夺焦；关闭后把焦点还给 Video。
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
     if (downloaded == null || !context.mounted) return;
     if (_isRemote) {
       // 远端：内存应用，不写本地 DB（_applyRemoteSubtitle 自带 cue 为空时的失败提示
       // + 成功 OSD），不叠加额外提示。
+      // BUG-1861：先登记再应用——远端字幕轨列表原本没有承载本机档案的行，下完只改了
+      // `_currentSubtitleSource`，用户看到字幕生效却在列表里找不到它（也就切不回来）。
+      // 与本地分支一样**不**按应用成功门控：文件已经在盘上了，坏档也该列出来。
+      _registerImportedSubtitleSource(downloaded);
       await _applyRemoteSubtitle(controller, downloaded);
       return;
     }
@@ -797,6 +1229,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     } catch (_) {
       // 保留原始 pick 路径应用；本次可播，只是可能不持久。
     }
+    // BUG-1861：与远端 Jimaku 下载同理，导入的档案要在字幕轨列表里有自己的行。
+    _registerImportedSubtitleSource(applyPath);
     await _applyRemoteSubtitle(controller, applyPath);
   }
 
@@ -1039,6 +1473,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     } catch (_) {
       // 保留原始 pick 路径应用；本次可用，只是可能不持久。
     }
+    // BUG-1861：与远端主字幕导入同理，档案要在**副**字幕轨列表里有自己的行。
+    _registerImportedSubtitleSource(applyPath);
     await _applyRemoteSecondarySubtitle(controller, applyPath);
   }
 
@@ -1433,6 +1869,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
                     // 在字幕列表上可见。`opaque:false` 不阻断指针下探（cue 行点击 / 查词 /
                     // 滚动照常）；仅桌面有 OS 光标语义才挂（移动端透传，零开销）。
                     child: _withSubtitleListCursorReveal(
+                      // BUG-2040：字幕列表**不领焦点**（与剧集轨 / 侧栏刻意不同，那两个
+                      // 仍走 PanelFocusScope）。它是 push-aside 侧栏、画面全程可见可点，
+                      // 焦点留在画面节点上，←/→/↑/↓ seek / 音量、Enter 等视频快捷键在
+                      // 列表开着时照常生效；列表本身只由指针 / 触屏操作。此前把焦点领进
+                      // 列表 + 列入 [_videoNavigablePanelOpen]，裸方向键就被让位给焦点
+                      // 遍历、页面还拒绝把焦点收回画面——用户看到的就是「一开字幕列表
+                      // 快捷键全没了」。搜索框点开时自己拿焦点（整条视频通道按 BUG-962
+                      // 让位），关掉时 Flutter 把焦点还给上一个持焦者（画面）。
                       SafeArea(
                         left: false,
                         // BUG-877：面板叠一层左边缘拖拽把手（[_subtitleListResizeHandle]）
@@ -1451,22 +1895,24 @@ extension _VideoSubtitle on _VideoFushiPageState {
                               onCopyCue: _copyCueText,
                               onFavoriteCue: _toggleFavoriteCueForVideo,
                               isCueFavorited: _isCueFavorited,
-                              isCueSelectedForCard: _isCueSelectedForCard,
-                              onToggleCueSelection: _toggleCueSelectedForCard,
-                              onClearCueSelection: _clearSelectedMiningCues,
+                              // 列表行跟用户设的字幕字体（FontTarget.videoSubtitle），
+                              // 与画面上的字幕同一套，不再各用各的。
+                              fontFamily: appModel.subtitleFontFamily,
                               // TODO-613：自动滚动开关初值从 Drift preferences 读，切换时落盘。
                               initialAutoScroll:
                                   appModel.videoSubtitleListAutoScroll,
                               onAutoScrollChanged: (bool value) => unawaited(
-                                appModel.setVideoSubtitleListAutoScroll(value),
+                                appModel
+                                    .setVideoSubtitleListAutoScroll(value),
                               ),
                               // BUG-878：行字号档位初值从 Drift preferences 读，A+/A- 或
                               // Ctrl+滚轮调节时落盘，跨开关 / 跨重启记住。
                               initialFontScaleIndex:
                                   appModel.videoSubtitleListFontScaleIndex,
-                              onFontScaleIndexChanged: (int value) => unawaited(
-                                appModel
-                                    .setVideoSubtitleListFontScaleIndex(value),
+                              onFontScaleIndexChanged: (int value) =>
+                                  unawaited(
+                                appModel.setVideoSubtitleListFontScaleIndex(
+                                    value),
                               ),
                               // BUG-879：列表行文本 Shift-悬停查词门控，与画面字幕同源。
                               hoverAutoLookupEnabled:
@@ -1478,6 +1924,20 @@ extension _VideoSubtitle on _VideoFushiPageState {
                               loadingHint: t.video_subtitle_list_loading,
                               fontSize: 14 * _videoUiScale,
                               width: panelWidth,
+                              // BUG-1907：Ctrl+F 的 activator 从快捷键注册表取
+                              // （唯一真相源，用户改绑后面板跟着变）。面板必须自带
+                              // 一份：整表快捷键只包 media_kit controls 子树，焦点
+                              // 一进面板就收不到按键了。
+                              searchActivators: <ShortcutActivator>[
+                                for (final InputBinding b in appModel
+                                    .shortcutRegistry
+                                    .bindingsFor(ShortcutAction
+                                        .videoSearchSubtitleList)
+                                    .keyboardBindings)
+                                  b.toActivator(includeRepeats: false),
+                              ],
+                              searchRequests: _subtitleSearchRequests,
+                              onExportFavorites: _exportFavoriteCues,
                             ),
                             Positioned(
                               left: 0,
@@ -1563,19 +2023,25 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// `_delayMs`，拿到新延迟后走既有权威写穿 [_setDelayMs]（clamp + 落盘 + OSD + 即时重算）。
   /// 无 controller / 无 cue / 位置未就绪 / 已是首末句无相邻 cue 时 no-op（不弹窗、不改延迟）。
   ///
+  /// 返回本次实际写穿的新延迟（毫秒），供**调轴面板按钮**路径把滑条 / 数值输入框 / 波形
+  /// 预览同步到新值——与 [_autoAlignSubtitle] 同款契约（TODO-1206）：面板持有自己的本地
+  /// 权威镜像 `_delayMs`，若这里只写穿页面侧而不回传，点完按钮面板控件会停在旧值。
+  /// no-op 的各分支返回 null（面板据此保持原值不动）。键盘路径忽略返回值，行为不变。
+  ///
   /// TODO-2837：本对齐（连同波形对轴 / 自动对轴）**只作用于主字幕轨**；副字幕的
   /// asbplayer 式/波形对齐是后续工作，本轮副轨只有快速设置面板的独立调轴段。
-  void _snapSubtitleDelayToCue({required bool next}) {
+  int? _snapSubtitleDelayToCue({required bool next}) {
     final VideoPlayerController? controller = _controller;
-    if (controller == null) return;
+    if (controller == null) return null;
     final int? newDelayMs = VideoPlayerController.snapSubtitleDelayMs(
       cues: controller.cues,
       positionMs: controller.positionMs,
       currentDelayMs: _delayMs,
       next: next,
     );
-    if (newDelayMs == null) return;
+    if (newDelayMs == null) return null;
     unawaited(_setDelayMs(newDelayMs));
+    return newDelayMs;
   }
 
   /// TODO-701 阶段1：一键字幕自动对轴。抽当前视频的逐帧音频能量包络（[extractAudioEnergyEnvelope]
@@ -1744,6 +2210,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
           initialDelayMs: _delayMs,
           onCommitDelay: _setDelayMs,
           onAutoAlign: canAutoAlign ? _autoAlignSubtitle : null,
+          // 「上/下一句对齐到当前时间」：本弹窗必然有 cue（进入前已判空并降级），故直接
+          // 接上执行体，与快速设置面板路径同源。
+          onSnapDelayToCue: _snapSubtitleDelayToCue,
           onPlayCue: (int startMs) async {
             await controller.seekMs(startMs);
             await controller.play();

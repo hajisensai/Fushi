@@ -5,6 +5,11 @@
 // system_loopback（BUG-1159 的失败链）。分道之后覆盖只发生在道内，这条失败链在结构上
 // 不存在——本测试就是钉死这个"结构上"。
 
+// CI 走 `--config Release`，MSVC 在该配置下定义 NDEBUG，裸 assert 会被整条编译掉，
+// 于是这个测试无论断言对不对都恒绿——与 BUG-1157「零测试执行伪装成通过」同一族。
+// 必须在任何 include 之前撤销它。守卫：tests/assert_liveness_guard_test.py
+#undef NDEBUG
+
 #include <cstdint>
 #include <cstdio>
 #include <cstring>

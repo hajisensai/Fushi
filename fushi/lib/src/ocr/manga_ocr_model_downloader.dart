@@ -1,5 +1,5 @@
 /// 漫画 OCR 模型下载器：逐文件字节进度、`.part` 临时名 + 原子 rename、
-/// HTTP Range 断点续传、系统代理环境变量。
+/// HTTP Range 断点续传、主源失败换镜像、系统代理环境变量。
 ///
 /// 事件契约对齐 [MangaOcrDownloadEvent]：按文件粒度报告 receivedBytes /
 /// totalBytes；全部文件完成后最后发一次 `done=true`；任何失败以 error 事件
@@ -26,10 +26,17 @@ const int kMangaOcrDownloadProgressInterval = 512 * 1024;
 class MangaOcrModelDownloader {
   MangaOcrModelDownloader({
     HttpClient Function()? createClient,
+    List<String> Function(MangaOcrModelFile file)? urlCandidates,
     this.progressByteInterval = kMangaOcrDownloadProgressInterval,
-  }) : _createClient = createClient ?? _defaultClient;
+  })  : _createClient = createClient ?? _defaultClient,
+        _urlCandidates = urlCandidates ?? mangaOcrModelUrlCandidates;
 
   final HttpClient Function() _createClient;
+
+  /// 单文件的下载候选 URL 序列（主源 + 镜像）。可注入：镜像回退这条分支只有
+  /// 把候选序列做成参数才测得到——真实候选写死了 huggingface 域名，测试里的
+  /// 本地 HttpServer 永远派生不出第二个候选。
+  final List<String> Function(MangaOcrModelFile file) _urlCandidates;
 
   /// 两次进度事件之间至少累积的字节数（首尾事件恒发）。
   final int progressByteInterval;
@@ -38,7 +45,11 @@ class MangaOcrModelDownloader {
   // 变量，读不到 Windows 注册表 / macOS / Linux 的 GUI 系统代理。而这条链路要从
   // huggingface 下约 470MB 模型，clash「系统代理」模式（写注册表、不导出 env）下
   // 等于裸直连。改走统一装配点后 env > GUI 系统代理 > DIRECT 一致生效。
-  static HttpClient _defaultClient() => createAppHttpClient();
+  static HttpClient _defaultClient() => createAppHttpClient()
+    // 主源在部分网络下是「连不上」而非「连上后慢」。系统默认超时可以拖到
+    // 数十秒，三个文件叠起来用户只看到一个不动的进度条。20s 足够覆盖正常
+    // 握手，又能让镜像回退在可感知的时间内发生。
+    ..connectionTimeout = const Duration(seconds: 20);
 
   /// 下载清单里所有未就绪文件到 [targetDir]。
   ///
@@ -82,15 +93,47 @@ class MangaOcrModelDownloader {
     }
   }
 
+  /// 单文件下载：主源失败按序换镜像（候选序列见 [mangaOcrModelUrlCandidates]）。
+  ///
+  /// 换源不清 `.part`——镜像与主源是同一个 blob，续传直接接上；万一遇到内容不
+  /// 一致的源，rename 前的长度校验仍会拦下并删掉坏 `.part`。全部候选都失败时抛
+  /// 最后一个错误，语义与单源时代一致。
   Stream<MangaOcrDownloadEvent> _downloadFile(
     HttpClient client,
     MangaOcrModelFile file,
     File target,
   ) async* {
+    final List<String> candidates = _urlCandidates(file);
+    Object? lastError;
+    StackTrace? lastStack;
+    for (final String url in candidates) {
+      try {
+        // 逐事件转发而不是 `yield*`：async* 里 `yield*` 委托出去的错误直接流向
+        // 下游监听者，**不经过**这里的 try/catch——那样写出来的回退循环长得
+        // 像模像样，实际第一个候选一失败就整条流报错，永远换不到镜像。
+        await for (final MangaOcrDownloadEvent event
+            in _downloadFileFrom(client, file, target, url)) {
+          yield event;
+        }
+        return;
+      } on Object catch (error, stack) {
+        lastError = error;
+        lastStack = stack;
+      }
+    }
+    Error.throwWithStackTrace(lastError!, lastStack!);
+  }
+
+  Stream<MangaOcrDownloadEvent> _downloadFileFrom(
+    HttpClient client,
+    MangaOcrModelFile file,
+    File target,
+    String url,
+  ) async* {
     final File part = File('${target.path}.part');
     int offset = part.existsSync() ? part.lengthSync() : 0;
 
-    final HttpClientRequest request = await client.getUrl(Uri.parse(file.url));
+    final HttpClientRequest request = await client.getUrl(Uri.parse(url));
     if (offset > 0) {
       request.headers.set(HttpHeaders.rangeHeader, 'bytes=$offset-');
     }
@@ -129,7 +172,7 @@ class MangaOcrModelDownloader {
       await response.drain<void>();
       throw HttpException(
         'download ${file.fileName} failed: HTTP ${response.statusCode}',
-        uri: Uri.parse(file.url),
+        uri: Uri.parse(url),
       );
     }
 

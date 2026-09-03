@@ -125,6 +125,9 @@ function loadPopup(entry) {
       multi: function() { return constructGlossaryHtml(0); },
       single: function() { return constructSingleGlossaryHtml(0); },
       image: function(data, exporting) { return createDefinitionImage(data, 'Dict', exporting); },
+      structured: function(parent, node, exporting) {
+        return renderStructuredContent(parent, node, null, 'Dict', exporting);
+      },
     };
   `;
   vm.runInContext(exported, sandbox, { filename: 'popup.js' });
@@ -217,6 +220,70 @@ function containerOf(node) {
     const container = containerOf(node);
     assert.strictEqual(container.style.width, '2em',
       'sizeUnits:em images stay em on export; got ' + container.style.width);
+  }
+
+  // BUG-1676 (1/3): a dictionary that declares NO size must not be exported at
+  // the `width = 100` fallback — that number is neither the image's size nor its
+  // aspect ratio, and as `100em` it resolves to ~100 x card-font-size (2000px on
+  // a 775px-wide card). The <img> itself becomes the layout box instead.
+  {
+    const sb = loadPopup(entry);
+    const node = sb.window.__test.image({ path: 'pic.png' }, true);
+    const container = containerOf(node);
+    assert.strictEqual(container.style.width, 'auto',
+      'an image with no declared size must be laid out by the <img>; got ' + container.style.width);
+    assert.ok(!/100em/.test(container.style.cssText + container.style.width),
+      'the 100 fallback must never be exported as 100em (BUG-1676); got ' + container.style.cssText);
+    assert.strictEqual(node.dataset.hasAspectRatio, 'false',
+      'no declared size means no invented 1:1 aspect ratio; got ' + node.dataset.hasAspectRatio);
+    const img = container.children.find(c => c.tagName === 'IMG');
+    assert.ok(img, 'exported node must contain an <img>');
+    assert.ok(img.width === undefined && img.height === undefined,
+      'the 100x100 fallback must not be written as width/height attributes; got ' +
+      img.width + 'x' + img.height);
+    assert.ok(/position:static/.test(img.style.cssText) && /max-width:100%/.test(img.style.cssText),
+      'the natural-size <img> must be in flow and capped at the card width; got ' + img.style.cssText);
+    assert.ok(!/position:absolute/.test(img.style.cssText),
+      'an absolutely positioned <img> would collapse the auto-width container to 0; got ' +
+      img.style.cssText);
+  }
+
+  // BUG-1676 (2/3): declared sizes are untouched — the BUG-1062 em semantics
+  // still apply, and the aspect-ratio sizer still drives the layout.
+  {
+    const sb = loadPopup(entry);
+    const node = sb.window.__test.image({ path: 'pic.png', width: 10, height: 5 }, true);
+    const container = containerOf(node);
+    assert.strictEqual(container.style.width, '10em',
+      'declared-size images keep Yomitan em sizing; got ' + container.style.width);
+    assert.strictEqual(node.dataset.hasAspectRatio, 'true',
+      'declared-size images keep their aspect-ratio sizer');
+    const img = container.children.find(c => c.tagName === 'IMG');
+    assert.ok(/position:absolute/.test(img.style.cssText),
+      'declared-size images keep the sizer + absolute <img> layout; got ' + img.style.cssText);
+  }
+
+  // BUG-1676 (3/3): exported structured-content tables carry the overflow guard
+  // inline. The popup gets it from popup.css; an Anki card has no stylesheet, and
+  // `table-layout:auto` ignores percentage max-width on cells — without this the
+  // whole card is dragged off the right edge of the screen by one wide table.
+  {
+    const sb = loadPopup(entry);
+    const parent = sb.document.createElement('div');
+    sb.window.__test.structured(parent, { tag: 'table', content: 'x' }, true);
+    const container = parent.children[0];
+    assert.ok(container && container.classList.contains('gloss-sc-table-container'),
+      'a structured-content table must be wrapped in .gloss-sc-table-container');
+    assert.ok(/overflow-x:auto/.test(container.style.cssText),
+      'exported table container must inline the overflow guard (BUG-1676); got ' +
+      container.style.cssText);
+    assert.ok(/max-width:100%/.test(container.style.cssText),
+      'exported table container must be capped at the card width; got ' + container.style.cssText);
+
+    const popupParent = sb.document.createElement('div');
+    sb.window.__test.structured(popupParent, { tag: 'table', content: 'x' }, false);
+    assert.strictEqual(popupParent.children[0].style.cssText, '',
+      'the popup path must stay CSS-driven, not inline-styled');
   }
 
   console.log('popup_glossary_export_parity_test.js: all assertions passed');

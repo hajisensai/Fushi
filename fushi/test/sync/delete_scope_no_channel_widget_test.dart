@@ -52,18 +52,20 @@ void main() {
     });
 
     testWidgets('无通道时确认 → 恒 keepLocalOnly', (WidgetTester tester) async {
-      DeleteScope? got;
+      DeleteDecision? got;
       await tester.pumpWidget(app(ReaderHistoryDeleteDialog(
         title: t.epub_delete_title,
         message: 'msg',
         showSyncScope: false,
-        onConfirm: (DeleteScope s) => got = s,
+        onConfirm: (DeleteDecision d) => got = d,
       )));
 
       await tester.tap(find.text(t.dialog_delete));
       await tester.pump();
 
-      expect(got, DeleteScope.keepLocalOnly);
+      expect(got?.scope, DeleteScope.keepLocalOnly);
+      expect(got?.deleteLocalFiles, isFalse,
+          reason: '没摆「同时删除本地文件」勾选框时恒为 false');
     });
   });
 

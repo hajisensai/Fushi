@@ -39,7 +39,10 @@ void main() {
   }
 
   List<Map<String, dynamic>> groups(List<FushiLookupResult> results) {
-    final json = buildPopupJsonFromLookup(results: results, maximumTerms: 100);
+    final json = buildPopupJsonFromLookup(
+        results: results,
+        maximumTerms: 100,
+        hiddenDictionaries: const <String>{});
     return (jsonDecode(json) as List).cast<Map<String, dynamic>>();
   }
 

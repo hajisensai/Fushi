@@ -129,7 +129,7 @@ void main() {
       final List<int> body = payload();
       await part().writeAsBytes(<int>[7, 7, 7], flush: true);
 
-      final List<bool> restarted = <bool>[];
+      final List<DownloadResumeOutcome> restarted = <DownloadResumeOutcome>[];
       final File file = await ResumableDownloader(
         url: 'http://host/stream',
         destination: dest(),
@@ -137,7 +137,7 @@ void main() {
         expectedSize: body.length,
         resumeState: const ResumableDownloadState(lastModified: 'yesterday'),
         onMeta: (ResumableDownloadMetaInfo info) =>
-            restarted.add(info.restartedFromZero),
+            restarted.add(info.resumeOutcome),
         open: (Uri uri, Map<String, String> headers) async {
           expect(headers[HttpHeaders.rangeHeader], 'bytes=3-');
           return ResumableDownloadResponse.bytes(
@@ -150,7 +150,8 @@ void main() {
         },
       ).download();
 
-      expect(restarted, <bool>[true]);
+      expect(restarted,
+          <DownloadResumeOutcome>[DownloadResumeOutcome.restartedFromZero]);
       expect(await file.readAsBytes(), body);
     });
 
@@ -202,17 +203,18 @@ void main() {
       expect(part().existsSync(), isFalse);
     });
 
-    test('reports resumed=true on accepted 206 resume', () async {
+    test('reports resumed outcome on accepted 206 resume', () async {
       final List<int> body = payload();
       await part().writeAsBytes(body.sublist(0, 6), flush: true);
-      final List<bool> resumedFlags = <bool>[];
+      final List<DownloadResumeOutcome> resumedFlags =
+          <DownloadResumeOutcome>[];
       await ResumableDownloader(
         url: 'http://host/stream',
         destination: dest(),
         partFile: part(),
         expectedSize: body.length,
         onMeta: (ResumableDownloadMetaInfo info) =>
-            resumedFlags.add(info.resumed),
+            resumedFlags.add(info.resumeOutcome),
         open: (Uri uri, Map<String, String> headers) async =>
             ResumableDownloadResponse.bytes(
           statusCode: HttpStatus.partialContent,
@@ -223,7 +225,8 @@ void main() {
           },
         ),
       ).download();
-      expect(resumedFlags, <bool>[true]);
+      expect(
+          resumedFlags, <DownloadResumeOutcome>[DownloadResumeOutcome.resumed]);
     });
   });
 }

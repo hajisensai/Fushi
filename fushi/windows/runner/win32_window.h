@@ -54,6 +54,35 @@ class Win32Window {
   // Return a RECT representing the bounds of the current client area.
   RECT GetClientArea();
 
+  // Test mode only (FUSHI_TEST_TOPMOST): see win32_window.cpp.
+  void ApplyTestTopmostPlacement(HWND window);
+
+  // BUG-1916: sets the colour this window paints its own surface with. Before
+  // the first Flutter frame that is what the user sees (the TODO-959 splash
+  // fill); afterwards the surface sits underneath the Flutter view and only
+  // shows through during maximize / restore / DPI transitions. Dart pushes
+  // the live theme surface colour here so those transitions show the app
+  // background instead of a teal "backdrop layer". |color| is a COLORREF
+  // (0x00BBGGRR).
+  void SetBackdropColor(COLORREF color);
+
+  // BUG-1933: flash-free fullscreen, owned by the runner. window_manager's
+  // SetFullScreen (and media_kit's EnterNativeFullscreen — same technique)
+  // strips WS_CAPTION|WS_THICKFRAME, which makes DWM rebuild the window's
+  // frame visual; for at least one composition the Flutter view's layer is
+  // absent and the redirection surface (theme surface colour — white in a
+  // light theme) shows full-window: the "one white frame" on every fullscreen
+  // enter/exit. Keeping the frame styles and instead oversizing the window so
+  // the client area covers the monitor (borders/caption hang off-screen) uses
+  // the same code path as maximize, which measurably never drops the view
+  // layer. HWND_TOPMOST covers the taskbar (the shell's fullscreen detection
+  // does not fire for an oversized framed window); topmost is dropped while
+  // the window is deactivated so other apps stay usable, and on exit the
+  // saved WINDOWPLACEMENT restores both geometry and a pre-fullscreen
+  // maximized state.
+  void SetFullscreen(bool fullscreen);
+  bool IsFullscreen() const { return fullscreen_; }
+
  protected:
   // Processes and route salient window messages for mouse handling,
   // size change and DPI. Delegates handling of these to member overloads that
@@ -100,6 +129,58 @@ class Win32Window {
 
   // window handle for hosted content.
   HWND child_content_ = nullptr;
+
+  // BUG-1916: fills |dc| over the whole client rect with |backdrop_brush_|.
+  // Whether the Flutter view is excluded depends on the DC: a BeginPaint /
+  // GetDC DC honours WS_CLIPCHILDREN and skips it; see FillSurfaceBackdrop
+  // for the deliberate unclipped variant.
+  void PaintBackdrop(HDC dc);
+
+  // BUG-1916: repaints this window's own redirection surface — including
+  // underneath the Flutter view — with |backdrop_brush_|. On the hardware
+  // path the view is composed as its own layer over that surface, so the
+  // surface colour is normally hidden, but maximize / restore / DPI
+  // transitions momentarily show the surface (DWM animates the window's
+  // surface, not the view). Keeping it uniformly theme-coloured is what
+  // removes the "backdrop layer" there. Under the engine's software-rendering
+  // fallback the view paints into this same surface, so a fill can show as at
+  // most one theme-coloured frame until the next present.
+  void FillSurfaceBackdrop();
+
+  // Owned solid brush used by PaintBackdrop. Starts as the TODO-959 splash
+  // colour and is replaced by SetBackdropColor; released in the destructor.
+  HBRUSH backdrop_brush_ = nullptr;
+
+  // BUG-1933: captures the window's current on-screen client pixels into
+  // |transition_snapshot_| (screen BitBlt; fails soft to no snapshot). While a
+  // snapshot is held, FillSurfaceBackdrop stretches it onto the surface
+  // instead of the solid brush, so if DWM races the fullscreen geometry jump
+  // the revealed surface shows the previous frame's content (a barely
+  // noticeable stretch) rather than a solid colour flash. Snapshots live only
+  // across one SetFullscreen call; interactive resizing (WM_SIZE without a
+  // snapshot) keeps the cheap brush fill (BUG-1917 cadence unaffected).
+  void CaptureTransitionSnapshot();
+  void ReleaseTransitionSnapshot();
+
+  // BUG-2006: Windows 11 paints the thin window border and rounds the corners
+  // in the compositor, ON TOP of the client area — neither belongs to the
+  // non-client area window_manager's hidden-title-bar WM_NCCALCSIZE leaves us.
+  // Whenever the client reaches the screen edges that chrome lands on app
+  // content: a 1 px accent-coloured line across the very top (measured
+  // 3830/3840 pixels of screen row 0) and four corner notches showing the
+  // desktop through. Windows itself drops both for a maximized window, so the
+  // policy here is the same one: suppress while the window presents
+  // edge-to-edge (runner fullscreen, maximized, or a normal window whose
+  // client covers the monitor), restore for an ordinary window. Applied only
+  // on transitions — a redundant DwmSetWindowAttribute per WM_SIZE would add
+  // work to every interactive resize frame (BUG-1917 cadence).
+  void UpdateFrameChrome();
+
+  bool fullscreen_ = false;
+  bool frame_chrome_suppressed_ = false;
+  WINDOWPLACEMENT placement_before_fullscreen_ = {};
+  HBITMAP transition_snapshot_ = nullptr;
+  SIZE transition_snapshot_size_ = {};
 
   // Registration handle for GUID_MONITOR_POWER_ON power-setting notifications.
   // Held so it can be unregistered on Destroy() (avoids a handle leak). nullptr

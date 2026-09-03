@@ -77,8 +77,11 @@ extension _VideoChapter on _VideoFushiPageState {
   /// 总时长换算成 `[0,1)` 比例画线（[chapterMarkerFractions]）。
   ///
   /// 仅当前视频有内封章节（[_hasChapters]）时挂；可见性随控制条（[_videoControlsVisible]）
-  /// 与 seek bar 同步淡入淡出。SafeArea 吃全屏路由的系统安全区，与 media_kit 控制条
-  /// `padding`（全屏 = MediaQuery.padding）对齐，保证窗口 / 全屏两条路径都不错位。
+  /// 与 seek bar 同步淡入淡出。外层 padding 走 [_videoControlsChromeInsets]，与 media_kit
+  /// 控制条**同一条真相**（BUG-1783：此处原本是 `SafeArea`，它恒吃 `MediaQuery.padding`，
+  /// 只在真的处于全屏路由时才与控制条等价；移动端因 BUG-221 永不进全屏路由，轨道恒零内缩，
+  /// 而 `shortEdges` 刘海让横屏 `padding.left/right` 非零 → 刻度层比轨道多缩一段，误差随
+  /// 比例斜切，首章右偏、末章左偏）。
   Widget _buildChapterMarkersOverlay(VideoPlayerController controller) {
     if (!_hasChapters) return const SizedBox.shrink();
     // 刻度竖线高度：比轨道再高一截（约轨道高 + 8px×缩放），让标记探出轨道上下、清晰可见，
@@ -95,8 +98,10 @@ extension _VideoChapter on _VideoFushiPageState {
       tickHeight: tickHeight,
     );
     return Positioned.fill(
-      child: SafeArea(
-        // 全屏安全区与 media_kit 控制条 padding 对齐；窗口态安全区为 0 不影响。
+      child: Padding(
+        // 与 media_kit 控制条同源的外层 padding（BUG-1783）；移动端 / 桌面窗口态恒为零，
+        // 只有真的进了全屏路由才吃系统安全区——和轨道逐像素对齐。
+        padding: _videoControlsChromeInsets(),
         child: ValueListenableBuilder<bool>(
           valueListenable: _videoControlsVisible,
           builder: (BuildContext _, bool controlsVisible, __) {
@@ -168,7 +173,10 @@ extension _VideoChapter on _VideoFushiPageState {
         band.bottom + band.height + 6.0 * _videoUiScale;
     final ColorScheme cs = _videoChromeColorScheme(context);
     return Positioned.fill(
-      child: SafeArea(
+      child: Padding(
+        // 与刻度层同源（BUG-1783）：本层目前桌面 only，SafeArea 的分叉在此没暴露，但几何
+        // 声明「与章节刻度层同源」，就不能两处各写一套——一并收敛到同一条真相。
+        padding: _videoControlsChromeInsets(),
         child: ValueListenableBuilder<bool>(
           valueListenable: _videoControlsVisible,
           builder: (BuildContext _, bool controlsVisible, __) {

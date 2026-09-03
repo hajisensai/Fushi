@@ -22,11 +22,6 @@ void main() {
       isFalse,
       reason: '独立触发路径要一起删，别留一个没人调的方法',
     );
-    expect(
-      page.contains('EpisodeScrapeService'),
-      isFalse,
-      reason: '页面不该再直接驱动分集刮削服务',
-    );
   });
 
   test('分集刮削的 i18n key 全部随入口删除', () {

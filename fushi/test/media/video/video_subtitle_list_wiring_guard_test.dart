@@ -176,8 +176,11 @@ void main() {
 
     test('toggling auto-scroll persists through appModel setter', () {
       expect(
+        // 与上一条同样要容忍 dart format 的换行：缩进变深时 `appModel` 与
+        // `.setVideoSubtitleListAutoScroll` 之间也会被折行（接线没变、只是排版变了），
+        // 写死点号紧邻会让这条守卫在无关改动上假红。
         RegExp(r'onAutoScrollChanged:\s*\(bool value\) => unawaited\(\s*'
-                r'appModel\.setVideoSubtitleListAutoScroll\(value\)')
+                r'appModel\s*\.\s*setVideoSubtitleListAutoScroll\(value\)')
             .hasMatch(src),
         isTrue,
         reason: 'auto-scroll toggle must be persisted via the appModel setter '

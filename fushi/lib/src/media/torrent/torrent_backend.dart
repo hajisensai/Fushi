@@ -50,6 +50,22 @@ abstract interface class TorrentMetainfoBackend implements TorrentBackend {
   });
 }
 
+/// 能把 metainfo 任务以暂停态交给后端的可选能力。选择合集内单个文件时必须先
+/// 以暂停态添加，再写入文件优先级，避免 add→pause 窗口把整颗合集拉下来。
+abstract interface class TorrentPausedMetainfoBackend
+    implements TorrentBackend {
+  Future<bool> addTorrentMetainfoPaused(
+    TorrentMetainfoPayload payload, {
+    required String category,
+  });
+}
+
+/// 支持给已有种子追加 Tracker 的可选能力。
+abstract interface class TorrentTrackerMutationBackend
+    implements TorrentBackend {
+  Future<bool> addTrackers(String torrentId, Iterable<String> trackerUrls);
+}
+
 /// 某一时刻单个种子任务的快照（后端无关）。
 class TorrentSnapshot {
   const TorrentSnapshot({
@@ -318,6 +334,17 @@ abstract interface class TorrentDetailBackend implements TorrentBackend {
 
   /// 某种子的 piece 位图（0 = 缺、1 = 下载中、2 = 已持有）。
   Future<TorrentPieceStates?> pieceStates(String torrentId);
+}
+
+/// 可一次写入多个文件优先级的可选能力。qBittorrent 的 WebUI 原生接受
+/// `index|index|...`，大合集若经单文件接口会产生数百次 HTTP 往返。
+abstract interface class TorrentBulkFilePriorityBackend
+    implements TorrentBackend {
+  Future<bool> setFilePriorities(
+    String torrentId,
+    Iterable<int> fileIndexes,
+    TorrentFilePriority priority,
+  );
 }
 
 /// 文件下载优先级的后端无关值域。

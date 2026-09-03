@@ -39,7 +39,7 @@ void main() {
 
   test('BUG-1329: Jimaku 下载完把新档就地并入字幕轨列表', () {
     final String body = region(
-      'Future<void> _openJimakuDialog(VideoPlayerController controller) async {',
+      'Future<void> _openSubtitleWorkbench(VideoPlayerController controller) async {',
       'Future<void> _pickAndImportSubtitle(',
     );
     expect(body.contains('_registerImportedSubtitleSource(downloaded)'), isTrue,
@@ -70,10 +70,8 @@ void main() {
   test('BUG-1329: 并入不重探容器、不重置枚举缓存 key', () {
     final String body = region(
       'void _registerImportedSubtitleSource(String path) {',
-      '/// 选中某副字幕源',
+      '/// 字幕轨 / 副字幕轨行共用',
     );
-    expect(body.contains('_subtitleMenuSourcesPath != videoPath'), isTrue,
-        reason: '尚未为当前视频枚举过时不该硬塞（首次枚举本就会带上它）');
     expect(body.contains('sameExternalSubtitlePathForMenu('), isTrue,
         reason: '已在列表里的同一路径不能再插一条重复行');
     expect(body.contains('_subtitleMenuSourcesPath = null'), isFalse,

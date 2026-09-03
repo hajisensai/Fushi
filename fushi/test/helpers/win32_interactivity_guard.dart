@@ -179,7 +179,16 @@ String? _memberDefinitionBody(String source, String className, String name) {
 
 /// [body] 的代码里以标识符身份被调用的所有名字。
 Set<String> _calledIdentifiers(String body) {
-  final RegExp call = RegExp(r'([A-Za-z_][A-Za-z0-9_]*)\s*\(');
+  // 只收**本类的**无限定调用：`Foo(` / `this->Foo(`。
+  //
+  // 必须排掉 `别的对象.Foo(` 和 `别的对象->Foo(`，否则同名成员会把闭包炸开成假
+  // 可达：`pass_through_toolbar_.Hide()` 里的 `Hide` 会被当成
+  // `FloatingLyricWindow::Hide`，于是「工具条自动隐藏」这条本来只碰工具条窗的
+  // 路径，看起来能一路走到 ApplyPassThroughExStyle / SetBodyExTransparent。
+  // 过近似不是「保守所以安全」：它让守卫在真正该红的时候也说不清红在哪，而且会
+  // 逼着人去改**实现**来迁就一个错误的可达图。
+  final RegExp call =
+      RegExp(r'(?<![A-Za-z0-9_.>])([A-Za-z_][A-Za-z0-9_]*)\s*\(');
   return call
       .allMatches(maskCommentsAndStrings(body))
       .map((RegExpMatch m) => m.group(1)!)

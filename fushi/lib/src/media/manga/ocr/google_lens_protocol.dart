@@ -15,7 +15,46 @@ const int kGoogleLensMaximumImageDimension = 1500;
 const int kGoogleLensMaximumResponseBytes = 12 * 1024 * 1024;
 const int kGoogleLensMaximumCachedPageBytes = 32 * 1024 * 1024;
 const int kGoogleLensMaximumRegionsPerPage = 100000;
-const String kGoogleLensEngineSignature = 'google-lens-v2-niratan-ja';
+
+/// Lens 逐页缓存/产物签名的公共前缀；完整签名 = 前缀 + 识别语言
+/// （[googleLensEngineSignature]）。语言进签名是缓存正确性的一部分：同一页
+/// 用 `ja` 和 `en` 识别的结果（normalize 规则、Lens 返回文本）都不同，混在
+/// 一个目录里会拿旧语言的缓存冒充新识别。`ja` 的完整签名与历史常量
+/// `google-lens-v2-niratan-ja` 逐字节相同，旧缓存无需迁移。
+const String kGoogleLensEngineSignaturePrefix = 'google-lens-v2-niratan-';
+
+String googleLensEngineSignature(String language) =>
+    '$kGoogleLensEngineSignaturePrefix$language';
+
+/// Google Lens 识别语言的可选项：`(主子标签, 语言自称名)`。自称名不进 i18n
+/// （各语言都用本族名显示，与浏览器语言选择器同惯例）。向导与设置页共用此表，
+/// 避免两处漂移。
+const List<(String, String)> kGoogleLensLanguageOptions = <(String, String)>[
+  ('ja', '日本語'),
+  ('en', 'English'),
+  ('zh', '中文'),
+  ('ko', '한국어'),
+  ('es', 'Español'),
+  ('fr', 'Français'),
+  ('de', 'Deutsch'),
+  ('it', 'Italiano'),
+  ('pt', 'Português'),
+  ('ru', 'Русский'),
+  ('id', 'Bahasa Indonesia'),
+  ('ar', 'العربية'),
+];
+
+/// 把外部语言标签（Mihon `en`/`pt-BR`、Aidoku `zh-hans`、BCP-47 等）压成
+/// Lens LocaleContext 用的主子标签；空/`multi` 等非语言值回退 [fallback]。
+String normalizeLensLanguage(String? raw, {String fallback = 'ja'}) {
+  final String trimmed = raw?.trim().toLowerCase() ?? '';
+  if (trimmed.isEmpty) return fallback;
+  final String primary = trimmed.split(RegExp(r'[-_]')).first;
+  final bool looksLikeLanguage = RegExp(r'^[a-z]{2,3}$').hasMatch(primary) &&
+      primary != 'all' &&
+      primary != 'mul';
+  return looksLikeLanguage ? primary : fallback;
+}
 
 /// Chromium Lens overlay protobuf 的字段号真值表（BUG-1163 配套）。
 ///
@@ -226,7 +265,7 @@ class GoogleLensProtocol {
     required Uint8List imageData,
     required int width,
     required int height,
-    String language = 'ja',
+    required String language,
     int? requestId,
   }) {
     final int resolvedRequestId = requestId ?? _randomRequestId();
@@ -279,7 +318,7 @@ class GoogleLensProtocol {
   /// 正方形页上成立。漫画页恒是竖长图，必须带着宽高比还原（BUG-1172）。
   static List<GoogleLensParagraph> decodeResponse(
     Uint8List data, {
-    String language = 'ja',
+    required String language,
     required int imageWidth,
     required int imageHeight,
   }) {

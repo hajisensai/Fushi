@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "engine_id": "leaf_aquaplus",
+  "status": "implemented_unverified",
+  "config": {
+    "selected_thread": "leaf-dialogue-thread",
+    "pair_tolerance_ms": 500,
+    "resource_late_wait_ms": 500
+  },
+  "events": [
+    {
+      "kind": "text",
+      "id": "synthetic-menu-line",
+      "timestamp_ms": 900,
+      "thread": "leaf-menu-thread",
+      "text": "synthetic menu text"
+    },
+    {
+      "kind": "text",
+      "id": "synthetic-leaf-line",
+      "timestamp_ms": 1000,
+      "thread": "leaf-dialogue-thread",
+      "text": "synthetic dialogue text"
+    },
+    {
+      "kind": "pcm",
+      "id": "synthetic-leaf-pcm",
+      "timestamp_ms": 1005,
+      "format": "s16le",
+      "sample_rate_hz": 48000,
+      "channels": 1,
+      "bits_per_sample": 16
+    },
+    {
+      "kind": "text",
+      "id": "synthetic-leaf-line-duplicate",
+      "timestamp_ms": 1010,
+      "thread": "leaf-dialogue-thread",
+      "text": "synthetic dialogue text"
+    },
+    {
+      "kind": "session_end",
+      "timestamp_ms": 1600
+    }
+  ],
+  "expected": {
+    "cards": [
+      {
+        "text_id": "synthetic-leaf-line",
+        "audio_backend": "pcm",
+        "audio_id": "synthetic-leaf-pcm"
+      }
+    ],
+    "duplicate_text_events": 1,
+    "thread_filtered_events": 1,
+    "session_clean": true
+  }
+}

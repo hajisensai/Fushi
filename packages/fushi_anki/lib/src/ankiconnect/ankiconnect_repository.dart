@@ -6,7 +6,6 @@ import 'dart:isolate';
 import 'package:collection/collection.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 
 import '../anki_media_dedup.dart';
 import '../anki_models.dart';
@@ -164,7 +163,7 @@ Future<String> fushiAnkiBase64EncodeAsync(List<int> bytes) {
 
 String _safeMediaPrefix(String prefix) {
   final String safe = prefix.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
-  return safe.isEmpty ? 'hibiki_media_' : safe;
+  return safe.isEmpty ? 'fushi_media_' : safe;
 }
 
 String _mediaExtensionFromSource(
@@ -635,9 +634,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   /// 'unexpected error: $e' 会泄漏乱码）。保持 mineEntry 的「永不抛出」契约（BUG-077）：
   /// 本方法不触网、不取服务，绝不抛。
   MineOutcome _mineFailureFor(Object e, StackTrace stack) {
-    if (e is SocketException ||
-        e is TimeoutException ||
-        e is http.ClientException) {
+    if (isAnkiConnectTransportError(e)) {
       final String code = classifyAnkiConnectError(e);
       return MineOutcome.failure(
         ankiConnectErrorHint(code),
@@ -726,13 +723,23 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           'Check your note type field mappings.',
         );
       }
+      // BUG-1900：字段名必须与**当前**笔记类型求交后再送出。AnkiDroid 后端一直是按
+      // `noteType.fields` 的位置取值（`ankidroid/anki_repository.dart` 的 fieldArray），
+      // 天然免疫；AnkiConnect 这条路把 map 原样丢给服务端，名字不认识就被静默丢弃。
+      final Map<String, String> outgoing = fieldsForNoteType(noteType, fields);
+      final MineOutcome? rejected =
+          preflightNoteFields(noteType, fields, outgoing);
+      if (rejected != null) {
+        await mediaTransaction.rollback();
+        return rejected;
+      }
       try {
         // TODO-270 A：接住 addNote 返回的 note id，带回 MineOutcome.success，供
         // 后续「更新已制卡片」（updateMinedNote）按 id 覆盖字段使用。
         final int? noteId = await service.addNote(
           deckName: deck.name,
           modelName: noteType.name,
-          fields: fields,
+          fields: outgoing,
           tags: tags,
           allowDuplicate: settings.allowDupes,
           duplicateScope: settings.duplicateScope,
@@ -811,7 +818,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
               service,
               mediaTransaction,
               context.coverPath!,
-              'hibiki_cover_',
+              'fushi_cover_',
             )
           : Future<String?>.value(null),
       context.sentenceAudioPath != null
@@ -954,6 +961,11 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     seconds: 30,
   );
 
+  /// AnkiConnect 对不认识的 action 固定回 `unsupported action`。用它把「这台
+  /// AnkiConnect 太老」与真正的业务/传输错误区分开——只有前者才该退回旧判据。
+  static bool _isUnsupportedActionError(AnkiConnectException e) =>
+      e.message.toLowerCase().contains('unsupported action');
+
   static DateTime? _duplicateCheckUnreachableUntil;
 
   /// 测试用：清掉进程级查重冷却，避免用例间互相污染。
@@ -1003,14 +1015,39 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     if (deck == null || noteType == null || noteType.fields.isEmpty) {
       return false;
     }
+    // 空词问 Anki 只会拿到「第一字段为空」，不是重复；提前退，别浪费一次往返。
+    if (expression.isEmpty) return false;
     try {
       final service = _serviceForSettings(settings);
-      final bool duplicate = await service.isDuplicate(
-        deckName: deck.name,
-        fieldName: noteType.fields.first,
-        fieldValue: expression,
-        scope: settings.duplicateScope,
-      );
+      bool duplicate;
+      try {
+        // BUG-1915：与 addNote 物理同源的判据
+        // （见 [AnkiConnectService.isDuplicateForAdd]）。
+        duplicate = await service.isDuplicateForAdd(
+          deckName: deck.name,
+          modelName: noteType.name,
+          firstFieldName: noteType.fields.first,
+          firstFieldValue: expression,
+          scope: settings.duplicateScope,
+        );
+      } on AnkiConnectException catch (e) {
+        // 老版 AnkiConnect 没有 `canAddNotesWithErrorDetail`。只有这一种错误才退回
+        // 按字段名查的旧判据——它在「卡组里只有一种笔记类型」时给的是对的答案，正是
+        // 这些用户今天已有的行为。宁可保住旧行为，也不要让他们的 ✓ 集体消失
+        // （Never break userspace）。这**不是**把两条判据并存回来：新版走的永远只有
+        // 上面那一条。
+        //
+        // 其余异常一律 rethrow 到下面那个 catch：本方法对调用方的契约是 fail-soft
+        // （查不到就当不重复，绝不抛给查词渲染路径），冷却是否武装也只在那里判。
+        if (!_isUnsupportedActionError(e)) rethrow;
+        duplicate = (await service.findNotesByField(
+          deckName: deck.name,
+          fieldName: noteType.fields.first,
+          fieldValue: expression,
+          scope: settings.duplicateScope,
+        ))
+            .isNotEmpty;
+      }
       // 拿到应答即证明主机活着，立刻解除冷却（不必等窗口自然到期）。
       _duplicateCheckUnreachableUntil = null;
       return duplicate;
@@ -1018,9 +1055,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       // 只有**传输层**失败才进冷却，与 _mineFailureFor 用同一套分类：AnkiConnect
       // 应答了业务错误（牌照不存在、字段不匹配等）说明主机可达，短路它只会让
       // 查重永久失灵。
-      if (e is SocketException ||
-          e is TimeoutException ||
-          e is http.ClientException) {
+      if (isAnkiConnectTransportError(e)) {
         _duplicateCheckUnreachableUntil = DateTime.now().add(
           kDuplicateCheckUnreachableCooldown,
         );
@@ -1137,6 +1172,31 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     }
   }
 
+  // BUG-1799：复核哪些 note 已被用户在 Anki 里删掉。一次 `notesInfo` 批量往返
+  // （常数 1 次，不随 id 数增长），把「应答里没出现」的 id 当作已删除。
+  //
+  // `notesInfoMany` 对不存在的 note 收到的是**空对象项**（没有 noteId 字段），
+  // 在那边已被跳过，所以「id 不在返回 map 里」精确等于「Anki 说这张 note 没了」。
+  //
+  // 传输层/业务层任何失败都返回**空集**（见基类口径）：问不到 ≠ 已删除。这里刻意
+  // **不**复用 isDuplicate 的 30s 不可达冷却窗（BUG-1302）——那个冷却是给渲染路径上
+  // 每词条一发的高频探测省超时的，而本方法是用户切回来才跑一次的低频复核，
+  // 借它的短路只会让「Anki 刚重新可达」的那一次复核白跑。
+  @override
+  Future<Set<int>> findDeletedNotes(Set<int> noteIds) async {
+    if (noteIds.isEmpty) return const <int>{};
+    try {
+      final service = await _getService();
+      final Map<int, Map<String, String>> infos =
+          await service.notesInfoMany(noteIds.toList()..sort());
+      return noteIds.where((int id) => !infos.containsKey(id)).toSet();
+    } catch (e, stack) {
+      debugPrint('AnkiConnectRepository.findDeletedNotes: $e');
+      debugPrint('$stack');
+      return const <int>{};
+    }
+  }
+
   // TODO-1007/1008：在 Anki 桌面端打开浏览器并选中该 note（guiBrowse(nid:<id>)）。
   //
   // 光发 guiBrowse 不够：Anki 若已经在后台开着「浏览」窗口，它内部只是 raise 一个
@@ -1146,12 +1206,17 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   //
   // 只对本机 Anki 生效：host 非 loopback 时说的是另一台机器上的 AnkiConnect，
   // 去激活本机窗口毫无意义。
+  //
+  // BUG-1837：认 Anki 进程要用 **service.port**（谁在监听我们正在对话的这个
+  // AnkiConnect），而不是「exe 叫 anki.exe」——新版 Anki 的 anki.exe 只是启动器，
+  // 真正持有窗口的是 venv 里的 pythonw.exe，按名字找必然落空、整套让渡空转。
   @override
   Future<bool> openNoteInAnki(int noteId) async {
     try {
       final service = await _getService();
       final int? ankiPid = ankiConnectHostIsLoopback(service.host)
-          ? AnkiDesktopForeground.grantForegroundToAnki()
+          ? AnkiDesktopForeground.grantForegroundToAnki(
+              ankiConnectPort: service.port)
           : null;
       await service.guiBrowse(noteId);
       await AnkiDesktopForeground.raiseAnkiWindow(ankiPid);
@@ -1160,6 +1225,74 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       debugPrint('AnkiConnectRepository.openNoteInAnki: $e');
       debugPrint('$stack');
       return false;
+    }
+  }
+
+  /// BUG-2051：↗「在 Anki 中打开这个词的卡」。判据与画 ✓ 的 [isDuplicate] 同源
+  /// （Anki 内建第一字段 checksum，见 [ankiDuplicateSearchQuery]），所以 ✓ 亮着
+  /// 时这里在物理上不可能查不到——包括那张笔记类型不同、字段名叫 `Word` 的旧卡。
+  ///
+  /// 两步、两个查询串，但**只有一条判据**：
+  /// 1. 用同源的 `dupe:` 串 `findNotes` → 这个词**全部同名笔记**的 id（跨笔记类型）；
+  /// 2. 把它们变成 `nid:a,b,c` 交给 `guiBrowse` 打开。
+  ///
+  /// 第 2 步不是第二条判据——它按第 1 步的**结果 id** 定位，不重新匹配任何东西。
+  /// 反过来说也别把 `guiBrowse` 的返回值当命中数：见 [AnkiConnectService.guiBrowseQuery]。
+  ///
+  /// 为什么要多这一次往返：查询串里从此不出现卡组名，浏览器地址栏里也不出现词。
+  /// Anki 搜索的 `deck:` 是通配匹配（`_`/`*`），而查重侧是精确名——把名字留在串里
+  /// 就等于给判据留了第二个漂移入口（见 [ankiDuplicateDeckIds] 的实测）。
+  ///
+  /// 卡组解析失败（配置过期）不早退：[ankiDuplicateDeckIds] 对空的/已不存在的卡组名
+  /// 退化成不限卡组（fail-open），宁可多列几张也好过对着一张确实存在的卡说没有。
+  @override
+  Future<AnkiOpenWordOutcome> openWordInAnki(
+    String expression,
+    String reading,
+  ) async {
+    if (expression.isEmpty) return AnkiOpenWordOutcome.failed;
+    try {
+      final settings = await loadSettings();
+      final deck = settings.availableDecks.firstWhereOrNull(
+            (d) => d.id == settings.selectedDeckId,
+          ) ??
+          (settings.selectedDeckName != null
+              ? settings.availableDecks.firstWhereOrNull(
+                  (d) => d.name == settings.selectedDeckName,
+                )
+              : null);
+      final service = _serviceForSettings(settings);
+      final Map<String, int> models = await service.getModelNamesAndIds();
+      final Map<String, int> decks = await service.getDeckNamesAndIds();
+      final String query = ankiDuplicateSearchQuery(
+        value: expression,
+        modelIds: models.values,
+        deckIds: ankiDuplicateDeckIds(
+          deckName: deck?.name ?? '',
+          scope: settings.duplicateScope,
+          deckNamesAndIds: decks,
+        ),
+      );
+      // 一个笔记类型都没有 = 这台 Anki 还没建过卡，不该发一条空搜索把整库摊开。
+      if (query.isEmpty) return AnkiOpenWordOutcome.noMatch;
+      final List<int> noteIds = await service.findNotesByQuery(query);
+      final String browseQuery = ankiNoteIdBrowseQuery(noteIds);
+      if (browseQuery.isEmpty) return AnkiOpenWordOutcome.noMatch;
+      final int? ankiPid = ankiConnectHostIsLoopback(service.host)
+          ? AnkiDesktopForeground.grantForegroundToAnki(
+              ankiConnectPort: service.port)
+          : null;
+      // 返回值**一概不读**：命中与否已经由上一步的 `findNotes` 定死，这里只是
+      // 「打开」。旧版 AnkiConnect 的 `guiBrowse` 只回 null、新版回 card id 列表，
+      // 两种机器在这条路径上从此没有行为差异——那条「浏览器明明开着却说没有卡」
+      // 的错话，成因被结构性地拿掉了，而不是靠 null/[] 分流去躲开。
+      await service.guiBrowseQuery(browseQuery);
+      await AnkiDesktopForeground.raiseAnkiWindow(ankiPid);
+      return AnkiOpenWordOutcome.opened;
+    } catch (e, stack) {
+      debugPrint('AnkiConnectRepository.openWordInAnki: $e');
+      debugPrint('$stack');
+      return AnkiOpenWordOutcome.failed;
     }
   }
 
@@ -1227,6 +1360,24 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
   @override
   bool get supportsMediaMaintenance => true;
+
+  /// AnkiConnect 报的媒体目录，**本机确实存在时**才返回，否则 null。
+  ///
+  /// 同一个仓库类既服务「桌面本机 Anki」也服务「手机连局域网里的桌面 Anki」，
+  /// 后者拿到的是那台机器的路径，本机不存在。判据只写这一份：能力探测
+  /// （[probeMediaMaintenance]，UI 据此决定显不显示）与真跑（[runMediaDedup]）
+  /// 各写一遍必然漂开，而漂开的表现就是「显示了一个点了只说不可用的区块」。
+  Future<Directory?> _localMediaDir() async {
+    final AnkiConnectService service = await _getService();
+    final String mediaPath = await service.getMediaDirPath();
+    if (mediaPath.isEmpty) return null;
+    final Directory dir = Directory(mediaPath);
+    return dir.existsSync() ? dir : null;
+  }
+
+  @override
+  Future<bool> probeMediaMaintenance() async =>
+      (await _localMediaDir()) != null;
 
   /// 媒体目录里的一个文件（媒体目录是扁平的，文件名即相对路径）。
   File _mediaFile(Directory mediaDir, String name) =>
@@ -1679,11 +1830,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     bool Function()? shouldCancel,
   }) async {
     final AnkiConnectService service = await _getService();
-    final String mediaPath = await service.getMediaDirPath();
-    final Directory mediaDir = Directory(mediaPath);
-    // AnkiConnect 在远程主机上时拿到的路径本机不存在——按不支持处理，绝不
-    // 盲扫错误目录。
-    if (!mediaDir.existsSync()) return null;
+    final Directory? mediaDir = await _localMediaDir();
+    // 媒体目录本机不存在（AnkiConnect 在另一台机器上）= 不支持，绝不盲扫。
+    // 判据与 [probeMediaMaintenance] 共用 [_localMediaDir]，不在这里再写一遍。
+    if (mediaDir == null) return null;
 
     bool cancelled = false;
     bool checkCancel() =>

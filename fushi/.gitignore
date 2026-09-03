@@ -62,6 +62,9 @@ ui-*.xml
 # TODO-2525: TMDB 官方署名 logo 是合约义务素材（Terms of Use 第 3 节），必须入库，
 # 同样不受上面的 *.png 全局忽略影响。来源/哈希见 assets/attribution/tmdb/README.md。
 !assets/attribution/tmdb/*.png
+# Windows 安装器的 MD3 图像（generate_md3_assets.py 生成）：ISCC 在编译期把它们
+# 打进 setup.exe，不入库就等于 CI 上编译失败，同样不受上面的 *.png 全局忽略影响。
+!windows/installer/assets/*.png
 test_screenshots/
 
 # Codex test outputs

@@ -93,8 +93,8 @@ std::string term_meta_bank_neko() {
 // UTF-8 byte order of the reading: ね(E3 81 AD) < び(E3 81 B3) < み(E3 81 BF),
 // i.e. ねこ, びょう, みょう. The correct frequency ranking is the opposite-ish
 // permutation びょう(100), みょう(5000), ねこ(90000). If enrichment ever moves
-// after the sort, every term's frequency list is empty, get_freq_values_for_dict
-// returns {INT_MAX} for all of them, the comparator ties on everything, and the
+// after the sort, every term's frequency list is empty, get_freq_value_for_dict
+// returns INT_MAX for all of them, the comparator ties on everything, and the
 // unsorted map order survives — which these assertions reject.
 const std::string kByouReading = "\xE3\x81\xB3\xE3\x82\x87\xE3\x81\x86";  // びょう
 const std::string kMyouReading = "\xE3\x81\xBF\xE3\x82\x87\xE3\x81\x86";  // みょう
@@ -159,13 +159,13 @@ void expect_freq_value(const char* what, const LookupResult& r, int want) {
 }
 
 void expect_pitch_position(const char* what, const LookupResult& r, int want) {
-  if (r.term.pitches.empty() || r.term.pitches.front().pitch_positions.empty()) {
+  if (r.term.pitches.empty() || r.term.pitches.front().pitches.empty()) {
     std::fprintf(stderr, "FAIL %s: term %s/%s has no pitch\n", what, r.term.expression.c_str(),
                  r.term.reading.c_str());
     ++g_fail;
     return;
   }
-  expect_eq_int(what, r.term.pitches.front().pitch_positions.front(), want);
+  expect_eq_int(what, r.term.pitches.front().pitches.front().position, want);
 }
 
 // Frequency must be enriched BEFORE the partial_sort, otherwise the comparator
@@ -265,12 +265,12 @@ void check_enriched(const char* label, const LookupResult* r) {
     ++g_fail;
   } else {
     const PitchEntry& pe = r->term.pitches.front();
-    if (pe.pitch_positions.size() != 2) {
-      std::fprintf(stderr, "FAIL %s pitch count: got %zu want 2\n", label, pe.pitch_positions.size());
+    if (pe.pitches.size() != 2) {
+      std::fprintf(stderr, "FAIL %s pitch count: got %zu want 2\n", label, pe.pitches.size());
       ++g_fail;
     } else {
-      expect_eq_int(label, pe.pitch_positions[0], 0);
-      expect_eq_int(label, pe.pitch_positions[1], 2);
+      expect_eq_int(label, pe.pitches[0].position, 0);
+      expect_eq_int(label, pe.pitches[1].position, 2);
     }
   }
 

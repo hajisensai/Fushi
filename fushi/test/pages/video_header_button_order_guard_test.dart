@@ -70,19 +70,19 @@ void main() {
   /// 在区间内按 tooltip 标识取相对位置；找不到返回 -1。
   int orderOf(String block, String token) => block.indexOf(token);
 
-  test('书架顶栏基准顺序：导入 → 收藏夹 → 统计', () {
+  test('书架顶栏基准顺序：导入 → 收藏夹（统计入口已收敛到首页）', () {
     final String block = headerActionsBlock(shelfSrc);
     final int importIdx = orderOf(block, 'buildBookImportButton');
     final int collectionsIdx = orderOf(block, 't.collections');
     final int statsIdx = orderOf(block, 't.reading_statistics');
     expect(importIdx, greaterThanOrEqualTo(0), reason: '书架应有导入按钮');
     expect(collectionsIdx, greaterThanOrEqualTo(0), reason: '书架应有收藏夹按钮');
-    expect(statsIdx, greaterThanOrEqualTo(0), reason: '书架应有统计按钮');
+    expect(statsIdx, -1,
+        reason: '统计入口已收敛到首页 dashboard（2026-09-01），书架顶栏不再挂');
     expect(importIdx, lessThan(collectionsIdx), reason: '书架基准：导入应在收藏夹之前');
-    expect(collectionsIdx, lessThan(statsIdx), reason: '书架基准：收藏夹应在统计之前');
   });
 
-  test('视频顶栏移除导入/全部刮削，仍为收藏夹 → 统计', () {
+  test('视频顶栏移除导入/全部刮削/统计，只剩收藏夹', () {
     final String block = headerActionsBlock(videoSrc);
     final int importIdx = orderOf(block, 't.video_import_action');
     final int scrapeIdx = orderOf(block, 't.scrape_all');
@@ -91,8 +91,8 @@ void main() {
     expect(importIdx, -1, reason: '视频常规入库应统一从来源添加文件夹');
     expect(scrapeIdx, -1, reason: '视频全部刮削入口应位于来源页');
     expect(collectionsIdx, greaterThanOrEqualTo(0), reason: '视频应有收藏夹按钮');
-    expect(statsIdx, greaterThanOrEqualTo(0), reason: '视频应有统计按钮');
-    expect(collectionsIdx, lessThan(statsIdx), reason: '视频收藏夹按钮应在统计之前');
+    expect(statsIdx, -1,
+        reason: '统计入口已收敛到首页 dashboard（2026-09-01），视频顶栏不再挂');
   });
 
   test('视频空库只提供前往「导入」视图的 CTA，不提供单视频导入', () {

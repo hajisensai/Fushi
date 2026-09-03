@@ -148,6 +148,18 @@ void main() {
         width: 800,
         height: 180,
       ),
+      fontFamily: 'Klee One',
+      fontPath: r'C:\fonts\klee.ttf',
+      letterSpacing: 1.5,
+      lineHeight: 1.25,
+      bold: false,
+      textAlignment: 'left',
+      textColor: 0xFF112233,
+      bgColor: 0x80445566,
+      outlineColor: 0xCC010203,
+      outlineWidth: 2.5,
+      textPadding: 32,
+      cornerRadius: 18,
       passThrough: true,
       locked: true,
     );
@@ -158,7 +170,18 @@ void main() {
         captured?.arguments as Map<Object?, Object?>;
     expect(args['windowWidth'], 900.0);
     expect(args['windowHeight'], 140.0);
-    expect(args['bgColor'], 0xE0000000);
+    expect(args['fontFamily'], 'Klee One');
+    expect(args['fontPath'], r'C:\fonts\klee.ttf');
+    expect(args['letterSpacing'], 1.5);
+    expect(args['lineHeight'], 1.25);
+    expect(args['bold'], isFalse);
+    expect(args['textAlignment'], 1);
+    expect(args['textColor'], 0xFF112233);
+    expect(args['bgColor'], 0x80445566);
+    expect(args['outlineColor'], 0xCC010203);
+    expect(args['outlineWidth'], 2.5);
+    expect(args['textPadding'], 32);
+    expect(args['cornerRadius'], 18);
     expect(args['clickLookupEnabled'], isTrue);
     expect(args['left'], 12);
     expect(args['top'], 34);

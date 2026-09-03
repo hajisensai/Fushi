@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.network
 
 import android.content.Context
+import android.webkit.WebSettings
 import eu.kanade.tachiyomi.network.interceptor.CloudflareInterceptor
 import eu.kanade.tachiyomi.network.interceptor.UncaughtExceptionInterceptor
 import eu.kanade.tachiyomi.network.interceptor.UserAgentInterceptor
@@ -21,7 +22,7 @@ class NetworkHelper(context: Context) {
             .cookieJar(cookieJar)
             .addInterceptor(UncaughtExceptionInterceptor())
             .addInterceptor(UserAgentInterceptor(::defaultUserAgentProvider))
-            .addInterceptor(CloudflareInterceptor())
+            .addInterceptor(CloudflareInterceptor(context, ::defaultUserAgentProvider))
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(45, TimeUnit.SECONDS)
             .callTimeout(2, TimeUnit.MINUTES)
@@ -33,8 +34,16 @@ class NetworkHelper(context: Context) {
     val cloudflareClient: OkHttpClient
         get() = client
 
-    private var userAgent: String =
-        System.getProperty("http.agent").orEmpty().ifBlank { "Hibiki Mihon Extension Host" }
+    // Cloudflare binds cf_clearance to the solving User-Agent, and the WebView
+    // that solves the challenge reports the platform's browser UA. Seeding the
+    // OkHttp UA from the same WebView default keeps the two in lockstep and
+    // makes ordinary requests look like a browser (falling back to a generic
+    // string only if WebView is somehow unavailable).
+    private var userAgent: String = runCatching { WebSettings.getDefaultUserAgent(context) }
+        .getOrNull()
+        ?.takeIf { it.isNotBlank() }
+        ?: System.getProperty("http.agent").orEmpty()
+            .ifBlank { "Hibiki Mihon Extension Host" }
 
     fun setUA(value: String) {
         userAgent = value

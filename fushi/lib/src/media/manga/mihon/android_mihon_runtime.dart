@@ -192,6 +192,7 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
         error.code,
         error.message ?? 'Android Mihon runtime failed',
         cause: error,
+        details: error.details?.toString(),
       );
     } on MissingPluginException catch (error) {
       throw MihonRuntimeException(

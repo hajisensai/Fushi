@@ -190,6 +190,21 @@ void main() {
   });
 
   group('groupVideosIntoPlaylists', () {
+    test('URL 路径（网络来源）：解码后参与解析，编码不渗进系列名/集标题', () {
+      const String base = 'https://dav.example.com/media/Show%20A';
+      final List<VideoGroup> groups = groupVideosIntoPlaylists(<String>[
+        '$base/Show%20A%20S01E01.mkv',
+        '$base/Show%20A%20S01E02.mkv',
+      ]);
+      expect(groups, hasLength(1));
+      final VideoGroup g = groups.single;
+      expect(g.series, 'Show A', reason: '系列名必须是解码后的（不能是 Show%20A）');
+      expect(g.isPlaylist, isTrue);
+      expect(g.episodes.first.title, 'Show A S01E01', reason: '集标题同理解码');
+      expect(g.episodes.first.path, '$base/Show%20A%20S01E01.mkv',
+          reason: 'path 保持原始 URL（播放/入库身份不动）');
+    });
+
     test('整季分集标题各不相同 → 仍归一组，按集号排序（BUG-1435）', () {
       const String prefix = '/v/日々は過ぎれど飯うまし.S01E';
       const String suffix = '.WEBRip.Netflix.ja[cc].mkv';

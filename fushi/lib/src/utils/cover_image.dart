@@ -13,6 +13,12 @@ const int kLocalCoverDecodePixelWidth = 720;
 /// 有声书迷你条等极小封面（约 36 逻辑像素）的解码上限，进一步省内存。
 const int kMiniCoverDecodePixelWidth = 144;
 
+/// 首页活动时间轴缩略图（40×56 / 68×40）的解码上限。
+///
+/// 取 192 而非默认 720：覆盖 3x DPR 仍有余量，同时把活动列表中几十张封面的
+/// 解码内存压到约 1/14，避免滚动时 ImageCache 淘汰与重解码抖动。
+const int kActivityCoverDecodePixelWidth = 192;
+
 /// 给本地文件封面 [ImageProvider] 套解码上限。
 ///
 /// [ResizeImage] 只按 [width] 上限降采样（`allowUpscaling: false` 保证不放大、不裁切、
