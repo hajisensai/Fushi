@@ -1320,6 +1320,21 @@ class AnkiErrorCode {
   /// «Permission not granted for: CardContentProvider.query /decks» 直接塞进 toast。
   static const String permissionDenied = 'ANKI_PERMISSION_DENIED';
 
+  /// BUG-2098：权限被**永久拒绝**（系统不再弹框）。
+  ///
+  /// 与 [permissionDenied] 分开是因为下一步动作完全不同：那个还能靠再点一次按钮
+  /// 弹出系统对话框，这个再怎么点都不会弹——唯一出路是应用设置页里手动授予。
+  /// 沿用同一条「刚弹出的对话框里允许」文案会把用户直接送进死路。
+  static const String permissionPermanentlyDenied =
+      'ANKI_PERMISSION_PERMANENTLY_DENIED';
+
+  /// BUG-2098：AnkiDroid 未安装（或其 API 被禁用）。
+  ///
+  /// `READ_WRITE_DATABASE` 是 AnkiDroid 自己定义的权限：没装 AnkiDroid 时它在系统里
+  /// 根本不存在，请求必然静默失败，设置页里也找不到这一项。此时提示「去设置授权」
+  /// 是误导，正确的话是「先装 AnkiDroid，或改用 AnkiConnect」。
+  static const String ankiDroidUnavailable = 'ANKI_DROID_UNAVAILABLE';
+
   /// TODO-752a：AnkiConnect 网络错误的稳定分类码。给用户看的 toast 文案必须由
   /// 主 app 按这些**与 locale 无关、永不乱码**的码映射本地化文案，而不是透传
   /// `SocketException`/`http.ClientException` 的 `toString()`——后者既是英文，又会在

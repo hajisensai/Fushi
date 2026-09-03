@@ -4178,5 +4178,8 @@
   "discovery_opds_allow_http_hint": "Nötig für einen selbst gehosteten Server im lokalen Netzwerk",
   "discovery_opds_test": "Verbindung testen",
   "discovery_opds_test_ok": "Verbunden. Der Stammkatalog hat ${count} Einträge",
-  "discovery_opds_test_failed": "Verbindung fehlgeschlagen: ${reason}"
+  "discovery_opds_test_failed": "Verbindung fehlgeschlagen: ${reason}",
+  "anki_error_permission_permanently_denied": "AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.",
+  "anki_error_ankidroid_unavailable": "AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.",
+  "anki_action_open_settings": "Open settings"
 }

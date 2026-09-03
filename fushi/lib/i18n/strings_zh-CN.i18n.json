@@ -4178,5 +4178,8 @@
   "discovery_opds_allow_http_hint": "局域网自建服务器需要打开",
   "discovery_opds_test": "测试连接",
   "discovery_opds_test_ok": "连接成功，根目录有 ${count} 个条目",
-  "discovery_opds_test_failed": "连接失败：${reason}"
+  "discovery_opds_test_failed": "连接失败：${reason}",
+  "anki_error_permission_permanently_denied": "AnkiDroid 卡片访问权限已被永久拒绝，系统不再弹出授权对话框。请到应用设置里授予该权限后重试。",
+  "anki_error_ankidroid_unavailable": "未安装 AnkiDroid（或其 API 被禁用），无法授予卡片访问权限。请安装 AnkiDroid 并启用其 API，或改用 AnkiConnect。",
+  "anki_action_open_settings": "去设置"
 }
