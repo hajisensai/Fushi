@@ -12,7 +12,6 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:fushi/src/media/video/video_duration_probe.dart';
 import 'package:fushi/src/media/video/video_specs_display.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/utils/components/cover_badge.dart';
@@ -57,17 +56,26 @@ class _VideoSpecsBadgeStripState extends ConsumerState<VideoSpecsBadgeStrip> {
   Widget build(BuildContext context) {
     final String? path = widget.filePath;
     if (path == null || path.isEmpty) return const SizedBox.shrink();
-    final VideoProbeFacts? facts = ref.watch(videoSpecsProvider).specsFor(path);
-    final List<String> badges = videoSpecsCoverBadges(facts);
-    if (badges.isEmpty) return const SizedBox.shrink();
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        for (final String badge in badges) ...<Widget>[
-          if (badge != badges.first) const SizedBox(width: 4),
-          CoverBadge(label: badge),
-        ],
-      ],
+    // videoSpecsProvider 是普通 Provider（它交出的是 AppModel 持有的实例，
+    // 不能让 riverpod 接管其生命周期，见该 provider 的注释），所以变化要靠
+    // ListenableBuilder 显式订阅——重建面仍然只有这一小块。
+    final VideoSpecsService service = ref.watch(videoSpecsProvider);
+    return ListenableBuilder(
+      listenable: service,
+      builder: (BuildContext context, Widget? _) {
+        final List<String> badges =
+            videoSpecsCoverBadges(service.specsFor(path));
+        if (badges.isEmpty) return const SizedBox.shrink();
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            for (final String badge in badges) ...<Widget>[
+              if (badge != badges.first) const SizedBox(width: 4),
+              CoverBadge(label: badge),
+            ],
+          ],
+        );
+      },
     );
   }
 }

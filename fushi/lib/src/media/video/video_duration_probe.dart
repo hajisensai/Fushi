@@ -37,7 +37,10 @@ const Duration kVideoDurationProbeTimeout = Duration(seconds: 20);
 /// 落库缓存拿它当失效判据之一：字段集扩了（比如以后加 side_data 里的 Dolby Vision），
 /// 旧行即便文件没变也必须重探，否则新字段永远是空的。**改动下面的 `-show_entries`
 /// 就必须 +1**。
-const int kVideoProbeFieldSetVersion = 2;
+///
+/// v3：加 `attached_pic` disposition——此前拿第一条 video 流当视频轨，内嵌封面图会把
+/// 4K 片子标成「480p · MJPEG」；已缓存的错行靠这次 +1 自动重探。
+const int kVideoProbeFieldSetVersion = 3;
 
 /// 一次 ffprobe 的产出。每个字段各自可空：探到什么算什么，绝不因为一半缺失就把
 /// 另一半也丢掉。
@@ -395,7 +398,7 @@ const String kVideoProbeShowEntries = 'format=duration,size,bit_rate:'
     'stream=index,codec_type,codec_name,width,height,pix_fmt,'
     'color_primaries,color_transfer,color_space,bits_per_raw_sample,'
     'r_frame_rate,bit_rate,channels,channel_layout,sample_rate:'
-    'stream_disposition=default,forced,comment:'
+    'stream_disposition=default,forced,comment,attached_pic:'
     'stream_tags=language,title';
 
 /// 只要时长的窄入口（老调用点保持原样）。
@@ -450,6 +453,16 @@ int? _durationMsFrom(Object? format) {
 
 VideoStreamFacts? _videoFrom(Object? streams) {
   for (final Map<String, dynamic> stream in _streamsOfType(streams, 'video')) {
+    // 内嵌封面图在 ffprobe 眼里也是一条 video 流，codec 是 mjpeg/png、尺寸是海报
+    // 尺寸。它若排在真正的视频轨前面，卡片就会把一个 4K 片子标成「600x900 · MJPEG」。
+    // **必须跳过**，不能拿第一条 video 流了事。
+    //
+    // 实测（ffprobe n7.1.5）：`attached_pic` 是 **mp4/mov** 的机制，封面流上为 1、
+    // 真视频轨为 0。**mkv 设不上这个 disposition**（Matroska 走 Attachments，封面
+    // 根本不作为 stream 出现），所以 mkv 不需要也无法靠这个判据——那边天然没有这个
+    // 问题，别因为 mkv 测不出来就以为判据没用。
+    final Map<String, dynamic>? disposition = _mapOrNull(stream['disposition']);
+    if (_flagFrom(disposition, 'attached_pic')) continue;
     final String? pixelFormat = _stringFrom(stream['pix_fmt']);
     return VideoStreamFacts(
       codec: _stringFrom(stream['codec_name']),
@@ -534,19 +547,26 @@ String? _tagFrom(Map<String, dynamic> stream, String key) {
 bool _flagFrom(Map<String, dynamic>? disposition, String key) =>
     _intFrom(disposition?[key]) == 1;
 
-/// 从 `yuv420p10le` 这样的 pix_fmt 推每分量位深。
+/// 从 `yuv420p10le` 这样的 pix_fmt 推每分量位深；**推不出返回 null**。
 ///
-/// 规则是「`p` 后紧跟的数字」：`yuv420p10le` → 10、`yuv444p12le` → 12、`p010le` → 10；
-/// `yuv420p` 没有后缀数字 → 8（未标位深的都是 8-bit）。
+/// 规则是「`p` 后紧跟的数字」：`yuv420p10le` → 10、`yuv444p12le` → 12、`p010le` → 10。
+/// `yuv420p` 这类以 `p` 结尾、无后缀数字的平面格式 → 8（未标位深的都是 8-bit）。
+///
+/// 但**不以 `p` 收尾的格式（`rgb48le`、`xyz12le`、`nv20`…）一律返回 null**，好让调用
+/// 方回退到 ffprobe 的 `bits_per_raw_sample`。此前这里无条件兜底成 8，等于把那些格式
+/// 的真实位深（16 / 12）永久盖成 8，而回退值明明就在同一条 JSON 里。
 @visibleForTesting
 int? bitDepthFromPixelFormat(String? pixelFormat) {
   final String? value = _stringFrom(pixelFormat)?.toLowerCase();
   if (value == null) return null;
   final RegExpMatch? match = RegExp(r'p(\d+)').firstMatch(value);
-  if (match == null) return 8;
-  final int? depth = int.tryParse(match.group(1)!);
-  if (depth == null || depth <= 0) return 8;
-  return depth;
+  if (match != null) {
+    final int? depth = int.tryParse(match.group(1)!);
+    if (depth != null && depth > 0) return depth;
+  }
+  // 平面格式以 `p` 结尾（yuv420p / gbrp / yuvj444p）= 8-bit。
+  if (value.endsWith('p')) return 8;
+  return null;
 }
 
 /// 解析 ffprobe 的分数帧率 `"2997/125"` → 23976（fps×1000）。

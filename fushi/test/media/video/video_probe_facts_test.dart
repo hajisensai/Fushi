@@ -207,16 +207,98 @@ void main() {
     });
   });
 
+  group('内嵌封面图不能被当成视频轨', () {
+    // 真实输出（ffprobe n7.1.5，样本是 ffmpeg 造的 mp4：1080p h264 + 600x900 mjpeg
+    // 封面）。注意 attached_pic 是 mp4/mov 的机制——mkv 走 Attachments，封面根本不
+    // 作为 stream 出现，所以那边天然没这个问题。
+    const String coverAfter = '''
+{
+    "streams": [
+        {
+            "index": 0, "codec_name": "h264", "codec_type": "video",
+            "width": 1920, "height": 1080, "pix_fmt": "yuv420p",
+            "disposition": { "attached_pic": 0 }
+        },
+        {
+            "index": 1, "codec_name": "mjpeg", "codec_type": "video",
+            "width": 600, "height": 900, "pix_fmt": "yuvj420p",
+            "disposition": { "attached_pic": 1 }
+        }
+    ]
+}
+''';
+
+    // 同一份数据，封面排在**前面**——muxer 顺序不保证，这是会真的出错的排列。
+    const String coverFirst = '''
+{
+    "streams": [
+        {
+            "index": 0, "codec_name": "mjpeg", "codec_type": "video",
+            "width": 600, "height": 900, "pix_fmt": "yuvj420p",
+            "disposition": { "attached_pic": 1 }
+        },
+        {
+            "index": 1, "codec_name": "h264", "codec_type": "video",
+            "width": 1920, "height": 1080, "pix_fmt": "yuv420p",
+            "disposition": { "attached_pic": 0 }
+        }
+    ]
+}
+''';
+
+    test('封面在后：取到真视频轨', () {
+      final VideoStreamFacts video = parseFfprobeFacts(coverAfter).video!;
+      expect(video.codecLabel, 'H.264');
+      expect(video.resolutionLabel, '1080p');
+    });
+
+    test('封面在前：仍取到真视频轨，不会标成 MJPEG 海报尺寸', () {
+      final VideoStreamFacts video = parseFfprobeFacts(coverFirst).video!;
+      expect(video.codec, 'h264', reason: '拿第一条 video 流会得到 mjpeg');
+      expect(video.width, 1920);
+      expect(video.height, 1080);
+      expect(video.resolutionLabel, '1080p',
+          reason: '封面是 600x900，误判会显示 900p 一类');
+    });
+
+    test('只有封面没有真视频轨 → 没有视频流（纯音频带封面）', () {
+      const String onlyCover = '''
+{"streams":[{"index":0,"codec_name":"mjpeg","codec_type":"video",
+"width":600,"height":900,"disposition":{"attached_pic":1}},
+{"index":1,"codec_name":"flac","codec_type":"audio","channels":2}]}
+''';
+      final VideoProbeFacts facts = parseFfprobeFacts(onlyCover);
+      expect(facts.video, isNull);
+      expect(facts.audioTracks, hasLength(1));
+    });
+  });
+
   group('色深从 pix_fmt 推', () {
-    test('无后缀数字 = 8bit', () {
+    test('以 p 结尾无后缀数字 = 8bit', () {
       expect(bitDepthFromPixelFormat('yuv420p'), 8);
       expect(bitDepthFromPixelFormat('yuvj420p'), 8);
+      expect(bitDepthFromPixelFormat('gbrp'), 8);
     });
 
     test('10 / 12 bit', () {
       expect(bitDepthFromPixelFormat('yuv420p10le'), 10);
       expect(bitDepthFromPixelFormat('yuv444p12le'), 12);
       expect(bitDepthFromPixelFormat('gbrp10le'), 10);
+    });
+
+    test('不以 p 收尾的格式 → null（回退到 bits_per_raw_sample）', () {
+      // 兜底成 8 会把这些格式的真实位深永久盖掉，而正确值就在同一条 JSON 里。
+      expect(bitDepthFromPixelFormat('rgb48le'), isNull);
+      expect(bitDepthFromPixelFormat('xyz12le'), isNull);
+      expect(bitDepthFromPixelFormat('nv20'), isNull);
+    });
+
+    test('解析器与 bits_per_raw_sample 的协作：pix_fmt 推不出时用后者', () {
+      const String json = '''
+{"streams":[{"index":0,"codec_type":"video","codec_name":"ffv1",
+"width":1920,"height":1080,"pix_fmt":"rgb48le","bits_per_raw_sample":"16"}]}
+''';
+      expect(parseFfprobeFacts(json).video!.bitDepth, 16);
     });
 
     test('null → null（不猜）', () {

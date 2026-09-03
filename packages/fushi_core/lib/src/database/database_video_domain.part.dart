@@ -2350,6 +2350,17 @@ mixin _FushiDbVideoDomain
         // TODO-616：同事务清 shelf_entry（mediaType='video'、entryKey=bookUid）。
         await deleteShelfEntry(MediaKind.video, bookUid);
         await deleteTagAssignmentsForHost(TagHostKind.video, bookUid);
+        // v95：同事务清该书涉及的规格缓存。缓存以**文件路径**为键、与 book 无 FK，
+        // 不在这里清就永远不会被清——`video_file_specs` 会随「每个曾经扫描过的文件」
+        // 单调增长，删片子也不缩。取主视频 + 播放列表里的每一集。
+        final VideoBookRow? row = await (select(videoBooks)
+              ..where((t) => t.bookUid.equals(bookUid)))
+            .getSingleOrNull();
+        if (row != null) {
+          for (final String path in videoBookFilePaths(row)) {
+            await deleteVideoFileSpec(path);
+          }
+        }
         await (delete(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
             .go();
       });
@@ -2391,4 +2402,33 @@ mixin _FushiDbVideoDomain
   /// 删一个文件的规格缓存（文件被删/被移出库时）。
   Future<void> deleteVideoFileSpec(String filePath) =>
       (delete(videoFileSpecs)..where((t) => t.filePath.equals(filePath))).go();
+}
+
+/// 一本视频书涉及的全部本地文件路径：主视频 + 播放列表里的每一集。
+///
+/// 规格缓存以**文件路径**为键、与 `video_books` 之间没有外键（键的粒度本就比 book 细，
+/// 见 `video_file_specs` 表注释），所以删书时必须由调用方按这份清单去清，否则那些行
+/// 永远没人回收。
+///
+/// `playlistJson` 是 `[{title, path}]` 数组，其中 `path` 与 `videoPath` 同语义。
+/// **坏 JSON 只当作「没有播放列表」**：删书事务绝不能因为一条脏缓存键而整个回滚。
+List<String> videoBookFilePaths(VideoBookRow row) {
+  final Set<String> out = <String>{};
+  if (row.videoPath.isNotEmpty) out.add(row.videoPath);
+  final String? playlist = row.playlistJson;
+  if (playlist != null && playlist.isNotEmpty) {
+    try {
+      final Object? decoded = jsonDecode(playlist);
+      if (decoded is List) {
+        for (final Object? item in decoded) {
+          if (item is! Map) continue;
+          final Object? path = item['path'];
+          if (path is String && path.isNotEmpty) out.add(path);
+        }
+      }
+    } catch (_) {
+      // 见上：只清主视频，不抛。
+    }
+  }
+  return List<String>.unmodifiable(out);
 }

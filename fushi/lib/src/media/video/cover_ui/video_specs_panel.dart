@@ -66,7 +66,16 @@ class _VideoSpecsPanelState extends ConsumerState<VideoSpecsPanel> {
   Widget build(BuildContext context) {
     final String? path = widget.filePath;
     if (path == null || path.isEmpty) return const SizedBox.shrink();
-    final VideoProbeFacts? facts = ref.watch(videoSpecsProvider).specsFor(path);
+    // 见 videoSpecsProvider 注释：它是普通 Provider，变化靠 ListenableBuilder 订阅。
+    final VideoSpecsService service = ref.watch(videoSpecsProvider);
+    return ListenableBuilder(
+      listenable: service,
+      builder: (BuildContext context, Widget? _) =>
+          _buildPanel(context, service.specsFor(path)),
+    );
+  }
+
+  Widget _buildPanel(BuildContext context, VideoProbeFacts? facts) {
     if (facts == null) return const SizedBox.shrink();
 
     final t = Translations.of(context);
@@ -239,18 +248,24 @@ class _VideoSpecsInlineLineState extends ConsumerState<VideoSpecsInlineLine> {
   Widget build(BuildContext context) {
     final String? path = widget.filePath;
     if (path == null || path.isEmpty) return const SizedBox.shrink();
-    final VideoProbeFacts? facts = ref.watch(videoSpecsProvider).specsFor(path);
-    final String? summary = videoSpecsInlineSummary(facts);
-    // 未探到时不占位：集卡高度是钳死的，多一行会把简介挤掉。
-    if (summary == null) return const SizedBox.shrink();
-    return Text(
-      summary,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: widget.style ??
-          Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+    final VideoSpecsService service = ref.watch(videoSpecsProvider);
+    return ListenableBuilder(
+      listenable: service,
+      builder: (BuildContext context, Widget? _) {
+        final String? summary =
+            videoSpecsInlineSummary(service.specsFor(path));
+        // 未探到时不占位：集卡高度是钳死的，多一行会把简介挤掉。
+        if (summary == null) return const SizedBox.shrink();
+        return Text(
+          summary,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: widget.style ??
+              Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+        );
+      },
     );
   }
 }

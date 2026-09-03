@@ -158,7 +158,7 @@ void main() {
       addTearDown(service.dispose);
 
       await service.prime(<String>[path]);
-      await _settle();
+      await service.drain();
       expect(probeCalls, 1, reason: '字段集扩了，旧行的新字段是空的，必须重探');
     });
 
@@ -215,7 +215,7 @@ void main() {
     addTearDown(service.dispose);
 
     await service.prime(<String>[known, unknown]);
-    await _settle();
+    await service.drain();
 
     expect(probed, <String>[unknown], reason: '只该探库里没有的那个');
     expect(service.specsFor(known), isNotNull);
@@ -243,7 +243,7 @@ void main() {
     addTearDown(service.dispose);
 
     await service.prime(paths);
-    await _settle();
+    await service.drain();
 
     expect(peak, lessThanOrEqualTo(kVideoSpecsProbeConcurrency),
         reason: '并发上限被突破会跟正在播放的视频抢磁盘');
@@ -299,6 +299,53 @@ void main() {
     expect(tracks[1].channelLabel, '2.0');
   });
 
+  test('落库失败不丢已探到的结果（探测成功 ≠ 持久化成功）', () async {
+    final String path = writeFile('j.mkv');
+    // 制造一个必然写失败的持久化层。**不能用 db.close()**：实测 drift 关闭后的
+    // 查询既不抛也不挂，读返回 null、写返回 0，根本造不出失败。把表 drop 掉才是
+    // 真的会抛（no such table）。
+    await db.customStatement('DROP TABLE video_file_specs');
+
+    final VideoSpecsService service =
+        VideoSpecsService(db, probe: (String p) async => facts());
+    addTearDown(service.dispose);
+
+    final VideoProbeFacts? resolved = await service.resolve(path);
+    expect(resolved, isNotNull, reason: 'ffprobe 明明成功了');
+    expect(service.specsFor(path), isNotNull,
+        reason: '写库失败只是丢了跨启动缓存，本次会话的事实照样有效——'
+            '一起判死会让角标在探测成功时消失，且 isResolved 已 true 不再重试');
+    expect(service.specsFor(path)!.video!.resolutionLabel, '4K');
+  });
+
+  test('resolve 与队列共用在途表：同一文件不会并发探两次', () async {
+    final String path = writeFile('k.mkv');
+    int probeCalls = 0;
+    final VideoSpecsService service = VideoSpecsService(
+      db,
+      probe: (String p) async {
+        probeCalls++;
+        // 留出重叠窗口：prime 起的那次还没落地，resolve 就进来了。
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+        return facts();
+      },
+    );
+    addTearDown(service.dispose);
+
+    // 集卡渲染排队 + 用户紧接着开「媒体信息」弹窗。
+    final Future<void> primed = service.prime(<String>[path]);
+    final Future<VideoProbeFacts?> resolved = service.resolve(path);
+    await primed;
+    final VideoProbeFacts? facts0 = await resolved;
+    await service.drain();
+
+    expect(probeCalls, 1,
+        reason: '起第二个 ffprobe 正好废掉并发上限想守的东西（别跟播放中的视频抢 IO）');
+    expect(facts0, isNotNull);
+    expect(service.specsFor(path), isNotNull);
+  });
+
   test('invalidate 清掉内存与库两处', () async {
     final String path = writeFile('i.mkv');
     final VideoSpecsService service =
@@ -313,12 +360,103 @@ void main() {
     expect(service.isResolved(path), isFalse);
     expect(await db.videoFileSpec(path), isNull);
   });
-}
 
-/// 等后台队列跑空。队列是「完成即拉下一个」的自驱动链，没有定时器可等，
-/// 让出若干轮事件循环即可。
-Future<void> _settle() async {
-  for (int i = 0; i < 40; i++) {
-    await Future<void>.delayed(Duration.zero);
-  }
+  group('删书时回收规格缓存（表以文件路径为键、与 book 无 FK，没人清就只增不减）',
+      () {
+    test('单视频：删书清掉它的规格行', () async {
+      const String main = r'D:\media\solo.mkv';
+      await db.customStatement(
+        'INSERT INTO video_books (book_uid, title, video_path, imported_at) '
+        "VALUES ('solo', '单片', '$main', 1700000000)",
+      );
+      await db.upsertVideoFileSpec(videoFileSpecCompanion(
+        filePath: main,
+        facts: facts(),
+        fileSizeBytes: 1,
+        fileModifiedAt: 1,
+      ));
+      expect(await db.videoFileSpec(main), isNotNull);
+
+      await db.deleteVideoBook('solo');
+      expect(await db.videoFileSpec(main), isNull);
+    });
+
+    test('播放列表：每一集的规格行都要清', () async {
+      const String main = r'D:\media\ep1.mkv';
+      const String ep2 = r'D:\media\ep2.mkv';
+      const String ep3 = r'D:\media\ep3.mkv';
+      const String playlist =
+          r'[{"title":"1","path":"D:\\media\\ep1.mkv"},'
+          r'{"title":"2","path":"D:\\media\\ep2.mkv"},'
+          r'{"title":"3","path":"D:\\media\\ep3.mkv"}]';
+      await db.customStatement(
+        'INSERT INTO video_books (book_uid, title, video_path, playlist_json, '
+        'imported_at) VALUES (?, ?, ?, ?, ?)',
+        <Object?>['series', '连续剧', main, playlist, 1700000000],
+      );
+      for (final String path in <String>[main, ep2, ep3]) {
+        await db.upsertVideoFileSpec(videoFileSpecCompanion(
+          filePath: path,
+          facts: facts(),
+          fileSizeBytes: 1,
+          fileModifiedAt: 1,
+        ));
+      }
+
+      await db.deleteVideoBook('series');
+
+      for (final String path in <String>[main, ep2, ep3]) {
+        expect(await db.videoFileSpec(path), isNull, reason: '$path 该被清');
+      }
+    });
+
+    test('别的书的规格行不受牵连', () async {
+      const String mine = r'D:\media\mine.mkv';
+      const String other = r'D:\media\other.mkv';
+      await db.customStatement(
+        'INSERT INTO video_books (book_uid, title, video_path, imported_at) '
+        "VALUES ('mine', 'A', '$mine', 1700000000)",
+      );
+      for (final String path in <String>[mine, other]) {
+        await db.upsertVideoFileSpec(videoFileSpecCompanion(
+          filePath: path,
+          facts: facts(),
+          fileSizeBytes: 1,
+          fileModifiedAt: 1,
+        ));
+      }
+
+      await db.deleteVideoBook('mine');
+
+      expect(await db.videoFileSpec(mine), isNull);
+      expect(await db.videoFileSpec(other), isNotNull,
+          reason: '只清这本书涉及的文件');
+    });
+
+    test('坏 playlist_json 不让删除事务回滚（只清主视频）', () async {
+      const String main = r'D:\media\broken.mkv';
+      await db.customStatement(
+        'INSERT INTO video_books (book_uid, title, video_path, playlist_json, '
+        'imported_at) VALUES (?, ?, ?, ?, ?)',
+        <Object?>['broken', 'B', main, '{not json at all', 1700000000],
+      );
+      await db.upsertVideoFileSpec(videoFileSpecCompanion(
+        filePath: main,
+        facts: facts(),
+        fileSizeBytes: 1,
+        fileModifiedAt: 1,
+      ));
+
+      await db.deleteVideoBook('broken');
+
+      expect(await db.videoFileSpec(main), isNull);
+      expect(
+        await (db.select(db.videoBooks)
+              ..where((t) => t.bookUid.equals('broken')))
+            .getSingleOrNull(),
+        isNull,
+        reason: '书本身必须删掉——不能因为一条脏缓存键让整个事务回滚',
+      );
+    });
+  });
 }

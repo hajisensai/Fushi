@@ -29,10 +29,22 @@ import 'package:fushi/src/models/app_model.dart' show appProvider;
 /// 机械盘/网络盘上互相抢寻道，反而更慢，还会跟正在播放的视频抢 IO。
 const int kVideoSpecsProbeConcurrency = 2;
 
-/// 订阅面。生命周期归 `AppModel`（那里懒建、db 关闭时销毁），这里只负责让 widget
-/// 订阅到它，**且只重建 watch 它的那个子树**——服务通知频率高（滚一屏几十次），
-/// 绝不能经 AppModel 的 `notifyListeners` 转发出去。
-final videoSpecsProvider = ChangeNotifierProvider<VideoSpecsService>(
+/// 取服务实例。生命周期归 `AppModel`（那里懒建、db 关闭时销毁）。
+///
+/// **必须是普通 [Provider]，不能是 `ChangeNotifierProvider`**：后者会给它返回的
+/// notifier 注册 `onDispose(notifier.dispose)`，也就是说 provider 一旦重算，上一次
+/// 的返回值就被 dispose。而这里返回的是 AppModel 持有并复用的那一个实例——它会被
+/// 就地打死，AppModel 毫不知情、继续把这个死实例发给所有人（`_disposed` 让全部探测
+/// 短路，重算时的 `addListener` 还会直接抛断言）。
+///
+/// 触发条件一点也不罕见：`appProvider` 本身是 `ChangeNotifierProvider<AppModel>`，
+/// riverpod 对 ChangeNotifier 恒判 `updateShouldNotify = true`，于是**每一次**
+/// `AppModel.notifyListeners()`（写设置、扫描、播放进度…）都会让本 provider 重算。
+/// 机制由 `test/media/video/video_specs_provider_lifecycle_test.dart` 钉住。
+///
+/// 消费方拿到实例后用 `ListenableBuilder` 订阅变化——重建面照样收敛在角标子树，
+/// 服务通知频率高（滚一屏几十次），绝不能经 AppModel 的 `notifyListeners` 转发。
+final videoSpecsProvider = Provider<VideoSpecsService>(
   (ref) => ref.watch(appProvider).videoSpecsService,
 );
 
@@ -51,6 +63,12 @@ class VideoSpecsService extends ChangeNotifier {
 
   final Queue<String> _queue = Queue<String>();
   final Set<String> _queued = <String>{};
+
+  /// 在途探测：路径 → 那一次探测的 Future。队列与详情页直探共用，保证同一文件
+  /// 同时只有一个 ffprobe（见 [_startProbe]）。
+  final Map<String, Future<VideoProbeFacts?>> _inFlight =
+      <String, Future<VideoProbeFacts?>>{};
+
   int _running = 0;
   bool _disposed = false;
 
@@ -79,8 +97,17 @@ class VideoSpecsService extends ChangeNotifier {
     if (unknown.isEmpty) return;
 
     // 先批量读库：绝大多数情况下这一步就够了，一条 IN 查询换掉几十次 ffprobe。
-    final Map<String, VideoFileSpecRow> rows =
-        await _db.videoFileSpecsByPath(unknown);
+    //
+    // 整段裹 try：本方法是从 widget 的 initState 里 fire-and-forget 调用的，抛出去
+    // 就是无人接管的异步错误。db 在卡片还挂着时被关掉是真实场景（数据根迁移、切
+    // Profile、恢复备份都会 close/reopen FushiDatabase），那时应当安静地退化成
+    // 「这批没读到」，而不是把异常抛进 zone。
+    Map<String, VideoFileSpecRow> rows = const <String, VideoFileSpecRow>{};
+    try {
+      rows = await _db.videoFileSpecsByPath(unknown);
+    } catch (e) {
+      debugPrint('[VideoSpecsService] prime read failed: $e');
+    }
     if (_disposed) return;
 
     bool changed = false;
@@ -100,18 +127,71 @@ class VideoSpecsService extends ChangeNotifier {
 
   /// 立刻探一个文件并等结果（详情页用：只有一个文件，值得等）。
   ///
-  /// 与队列共用缓存与失效判据，不会重复探。
+  /// 与队列共用缓存、失效判据**和在途集合**，不会重复探。
   Future<VideoProbeFacts?> resolve(String filePath) async {
     if (filePath.isEmpty) return null;
     if (_cache.containsKey(filePath)) return _cache[filePath];
-    final VideoFileSpecRow? row = await _db.videoFileSpec(filePath);
+
+    // 同一个文件很容易两条路径同时进来：集卡渲染 prime() 把它排进队列，用户紧接着
+    // 打开该集的「媒体信息」弹窗触发 resolve()。共用在途表就只探一次——否则会起第二个
+    // ffprobe，正好废掉 kVideoSpecsProbeConcurrency 想守的东西（别跟正在播放的视频抢 IO）。
+    final Future<VideoProbeFacts?>? inFlight = _inFlight[filePath];
+    if (inFlight != null) return inFlight;
+
+    VideoFileSpecRow? row;
+    try {
+      row = await _db.videoFileSpec(filePath);
+    } catch (e) {
+      // 与 prime() 同理：db 可能已在别处被关掉，安静退化成「没缓存」去现探。
+      debugPrint('[VideoSpecsService] resolve read failed for "$filePath": $e');
+    }
+    if (_disposed) return null;
     if (row != null && await _rowIsFresh(row)) {
       final VideoProbeFacts facts = videoProbeFactsFromRow(row);
       _cache[filePath] = facts;
-      if (!_disposed) notifyListeners();
+      notifyListeners();
       return facts;
     }
-    return _probeAndStore(filePath);
+
+    return _startProbe(filePath);
+  }
+
+  /// 起一次探测，**同一路径共用同一个 Future**。
+  ///
+  /// 队列与详情页的直探都经过这里，所以「一个文件同时被探两次」在结构上不可能发生，
+  /// 而不是靠两处各自记得检查对方的集合。
+  Future<VideoProbeFacts?> _startProbe(String path) {
+    final Future<VideoProbeFacts?>? existing = _inFlight[path];
+    if (existing != null) return existing;
+    final Future<VideoProbeFacts?> future =
+        _probeAndStore(path).whenComplete(() {
+      // **必须是块体，不能写成 `() => _inFlight.remove(path)`**：
+      // `Map.remove` 返回被移除的值（这里正是这个 future 自己），而
+      // `Future.whenComplete` 的契约是「回调返回 Future 就等它完成」——
+      // 于是 future 等自己，永久挂死。箭头函数会把返回值隐式带出去。
+      _inFlight.remove(path);
+    });
+    _inFlight[path] = future;
+    return future;
+  }
+
+  /// 等队列与在途探测全部落地。
+  ///
+  /// 只给测试用。测试若靠「让出 N 轮事件循环」来等异步队列，N 就成了一个随实现层数
+  /// 漂移的魔数——探测链上多包一层 `whenComplete` 就可能不够，表现为随机的
+  /// 「should have been probed」失败，且会把未完成的任务漏给下一个用例。
+  @visibleForTesting
+  Future<void> drain() async {
+    while (!_disposed && (_inFlight.isNotEmpty || _queue.isNotEmpty)) {
+      if (_inFlight.isEmpty) {
+        // 队列里还有，但还没被 _pump 拉起来——让出一轮再看。
+        await Future<void>.delayed(Duration.zero);
+        continue;
+      }
+      await Future.wait<VideoProbeFacts?>(
+        _inFlight.values.toList(growable: false),
+      );
+    }
   }
 
   /// 丢弃一个文件的缓存（文件被删/被替换时）。
@@ -134,7 +214,7 @@ class VideoSpecsService extends ChangeNotifier {
         _queue.isNotEmpty) {
       final String path = _queue.removeFirst();
       _running++;
-      unawaited(_probeAndStore(path).whenComplete(() {
+      unawaited(_startProbe(path).whenComplete(() {
         _running--;
         _queued.remove(path);
         _pump();
@@ -142,36 +222,48 @@ class VideoSpecsService extends ChangeNotifier {
     }
   }
 
-  /// 真探一次并落库。任何失败都在 [_cache] 里记 null（已问过，别再问）。
+  /// 真探一次并落库。
+  ///
+  /// **探测失败与落库失败分开处理**：探测失败才在 [_cache] 里记 null（已问过，别再问）；
+  /// 落库失败只是丢了跨启动的缓存，本次会话探到的事实照样有效——把它一起判死会让角标
+  /// 在 ffprobe 明明成功的情况下消失，而且 `isResolved` 已为 true，再也不会重试。
   Future<VideoProbeFacts?> _probeAndStore(String path) async {
+    final FileStat stat;
+    final VideoProbeFacts facts;
     try {
-      final FileStat stat = await FileStat.stat(path);
+      stat = await FileStat.stat(path);
       if (stat.type == FileSystemEntityType.notFound) {
         _cache[path] = null;
         return null;
       }
-      final VideoProbeFacts facts = await probe(path);
-      if (_disposed) return null;
-      if (facts.isEmpty) {
-        // 探不出就不落库——写一个空壳会让它永远「命中缓存」，再也不会重试。
-        _cache[path] = null;
-        notifyListeners();
-        return null;
-      }
-      _cache[path] = facts;
+      facts = await probe(path);
+    } catch (e) {
+      debugPrint('[VideoSpecsService] probe failed for "$path": $e');
+      _cache[path] = null;
+      return null;
+    }
+    if (_disposed) return null;
+    if (facts.isEmpty) {
+      // 探不出就不落库——写一个空壳会让它永远「命中缓存」，再也不会重试。
+      _cache[path] = null;
+      notifyListeners();
+      return null;
+    }
+    _cache[path] = facts;
+    try {
       await _db.upsertVideoFileSpec(videoFileSpecCompanion(
         filePath: path,
         facts: facts,
         fileSizeBytes: stat.size,
         fileModifiedAt: stat.modified.millisecondsSinceEpoch,
       ));
-      if (!_disposed) notifyListeners();
-      return facts;
     } catch (e) {
-      debugPrint('[VideoSpecsService] probe failed for "$path": $e');
-      _cache[path] = null;
-      return null;
+      // 库写不进去（磁盘满 / 迁移中把 db 关了 / 约束冲突）不影响本次结果，
+      // 只是下次启动要重探一遍。
+      debugPrint('[VideoSpecsService] persist failed for "$path": $e');
     }
+    if (!_disposed) notifyListeners();
+    return facts;
   }
 
   /// 缓存行是否仍代表磁盘上那个文件。
