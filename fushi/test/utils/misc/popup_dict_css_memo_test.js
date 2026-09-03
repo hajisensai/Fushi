@@ -159,4 +159,34 @@ for (const css of SAMPLES) {
     'LRU：期间反复命中的 probe 桶不该被淘汰重算（clear() 语义会重算 ' + probeRecomputes + ' 次）');
 }
 
+// ④b 上面那条只证明「一直被摸的桶活下来了」——probe 从头到尾没被淘汰过，于是
+//     `after === before` 只是一次缓存命中，**「被淘汰过的桶重算后仍然正确」这条
+//     覆盖没有任何键在跑**（把桶上限调成 100000，④ 照样绿）。这里补一个真正的
+//     受害者：只在最开始摸一次，之后一直不碰，灌满之后它必须已被淘汰（重算一次）
+//     且重算结果与未 memo 实现逐字节一致。
+{
+  const dict = 'Evicted';
+  const victimCss = '.victim { color: green; }';
+  const first = ctx.constructDictCss(victimCss, dict);
+  let victimRecomputes = 0;
+  const uncachedOriginal = ctx.constructDictCssUncached;
+  ctx.constructDictCssUncached = function(css, name, scope) {
+    if (css === victimCss) victimRecomputes++;
+    return uncachedOriginal(css, name, scope);
+  };
+  for (let i = 0; i < 300; i++) {
+    ctx.constructDictCss(`.evict${i} { color: red; }`, dict);
+  }
+  const again = ctx.constructDictCss(victimCss, dict);
+  ctx.constructDictCssUncached = uncachedOriginal;
+  assert.strictEqual(
+    victimRecomputes, 1,
+    '桶上限没起作用：一直不碰的桶应当被淘汰并在再次取用时重算一次，实际重算 '
+      + victimRecomputes + ' 次');
+  assert.strictEqual(again, first, '淘汰后重算的结果与首次不一致');
+  assert.strictEqual(
+    again, ctx.constructDictCssUncached(victimCss, dict),
+    '淘汰后重算的结果与未 memo 实现不一致');
+}
+
 }

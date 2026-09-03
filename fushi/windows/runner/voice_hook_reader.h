@@ -54,6 +54,12 @@ struct VoiceHookStatus {
   uint32_t native_loopback_request_seq = 0;
   uint32_t native_loopback_state = 0;
   uint32_t native_loopback_applied_seq = 0;
+  // 两个 XAudio2 诊断字的原样快照。**必须原样带出来**：它们是引擎侧唯一的可分型
+  // 事实（第二个字里是 SGRE 家族/锚点、Leaf 身份哈希、结构门断在哪一组）。
+  // 只在 host 内部用第一个字算 raw_voice_ready，等于写点有了、读点一个没有——
+  // 真机上「为什么这台机器整场降级 Loopback」就只剩猜。
+  uint32_t xaudio_diagnostics = 0;
+  uint32_t xaudio_diagnostics2 = 0;
 };
 
 // [VoiceHookReader::Open] 失败的**结构化原因**。
@@ -176,6 +182,17 @@ struct VoiceHookLookupHit {
   int32_t glyph_h = 0;
   int32_t view_w = 0;   // primaryLayer 尺寸；host 据此定位与钳制卡片
   int32_t view_h = 0;
+  // 本次命中这一刻游戏窗口的客户区物理尺寸（0 = 量不到）。
+  //
+  // 与 view_* 的区别是**域**：coordinate_space==ClientPhysicalPixels 时两者
+  // 相等；KiriKiri（PrimaryLayer）放大运行时 view 是引擎画布、远小于客户区。
+  // 卡片是屏幕空间的真实窗口、尺寸是屏幕物理像素，所以它的尺寸上界只能按客户区
+  // 算。这一对随每条 hit 现量现报，host 侧因此不需要任何会话级缓存，也就没有
+  // 「本局第一次查词还不知道」和「玩家中途全屏↔窗口化后读到旧值」这两个坑
+  // （BUG-2066）。**不是**跨进程 IPC 字段：注入侧不知道也不该知道窗口尺寸，
+  // 这是 runner 在本进程用 GetClientRect 量出来的。
+  int32_t client_w = 0;
+  int32_t client_h = 0;
   bool submit = false;  // true=点击提交，false=悬停预览
 };
 
@@ -391,9 +408,13 @@ class VoiceHookReader {
       uint32_t max_width, uint32_t max_height, LookupCaptureCallback done)>;
   // 已渲染 WebView2 的零拷贝呈现主路。返回 true 表示 composition HWND 已直接贴到
   // 游戏客户区；false 时调用方保留 CapturePreview 位图回退。
+  // glyph_* 是命中字形在**游戏画布**坐标系的矩形。卡片在直连路径上保持自身物理像素，
+  // 不随画布缩放，所以贴附要以字形为基准在屏幕空间重排；anchor_* 只在字形缺失时回退。
   using LookupDirectPresenter = std::function<bool(
       int32_t anchor_x, int32_t anchor_y, uint32_t card_width,
-      uint32_t card_height, uint32_t view_width, uint32_t view_height)>;
+      uint32_t card_height, uint32_t view_width, uint32_t view_height,
+      int32_t glyph_x, int32_t glyph_y, uint32_t glyph_w, uint32_t glyph_h,
+      uint32_t* out_client_width, uint32_t* out_client_height)>;
   // 把一条游戏侧转发来的输入喂给离屏 WebView2（接
   // [GlobalLookupWindow::InjectLookupInput]）。
   using LookupInputSink = std::function<bool(uint32_t kind, int32_t x,
@@ -454,13 +475,17 @@ class VoiceHookReader {
   // host→hook 开关（header->lookup_enabled）。开启时同时起/停轮询定时器。
   VoiceHookLookupError SetLookupEnabled(bool enabled);
 
-  // v21 几何所有权控制。它与 lookup_enabled 分离：attachedReady 可让
-  // attached_calibrated 成为 registry 的 host-owned offer；nativeInputReady
+  // v21 几何所有权控制。它与 lookup_enabled 分离：attached_ready 可让
+  // attached_calibrated 成为 registry 的 host-owned offer；native_input_allowed
   // 则只在风险准入通过后允许当前 native owner 吞掉游戏点击。injected
   // generic shield 继续运行。payload 先写、request_seq 最后发布。
+  //
+  // 这是发布 admission 字的唯一入口：允许位随 mode/attached_ready 一起写，
+  // 不再有第二个只写允许位的方法（两个入口=两份台账，谁后写谁赢）。
   VoiceHookLookupError SetLookupGeometryAdmission(
-      uint32_t mode, bool attached_ready, bool native_input_ready,
+      uint32_t mode, bool attached_ready, bool native_input_allowed,
       uint32_t* request_seq, uint32_t* applied_seq);
+
 
   // 发布 v19 输入盾事务。|target| 必须属于当前已打开的游戏 PID；begin 固定传
   // active_buttons=kLookupShieldButtonLeft，matching up/cancel 以同一 transaction_id

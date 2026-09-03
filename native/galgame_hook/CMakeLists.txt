@@ -43,6 +43,7 @@ add_library(fushi_voice_hook SHARED
   "hook/adapter.h"
   "hook/ffmpeg_runtime.h"
   "hook/hook_original_registry.h"
+  "hook/tracked_handle_table.h"
   "hook/geometry_provider_registry.h"
   "hook/lookup_v19_runtime.h"
   "hook/generic_input_shield.inc"
@@ -117,6 +118,16 @@ add_executable(fushi_siglus_ovk_test
 )
 target_include_directories(fushi_siglus_ovk_test PRIVATE "hook")
 add_test(NAME fushi_siglus_ovk_test COMMAND fushi_siglus_ovk_test)
+
+# HUNEX story renderer callback-to-worker hand-off. The focused test exercises
+# only synthetic glyph/index/rectangle values and contains no game payload.
+add_executable(fushi_hunex_gge_capture_bridge_test
+  "tests/hunex_gge_capture_bridge_test.cpp"
+)
+target_include_directories(fushi_hunex_gge_capture_bridge_test PRIVATE
+  "hook/adapters")
+add_test(NAME fushi_hunex_gge_capture_bridge_test
+  COMMAND fushi_hunex_gge_capture_bridge_test)
 
 # HUNEX HFA/HW directory, wrapper and Ogg validation are worker-side pure
 # functions. The focused test uses only synthetic bytes and never game data.
@@ -196,6 +207,15 @@ add_executable(fushi_hook_original_registry_test
 target_include_directories(fushi_hook_original_registry_test PRIVATE "hook")
 add_test(NAME fushi_hook_original_registry_test
   COMMAND fushi_hook_original_registry_test)
+
+add_executable(fushi_tracked_handle_table_test
+  "tests/tracked_handle_table_test.cpp"
+)
+target_include_directories(fushi_tracked_handle_table_test PRIVATE "hook")
+target_compile_definitions(fushi_tracked_handle_table_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_tracked_handle_table_test
+  COMMAND fushi_tracked_handle_table_test)
 
 add_executable(fushi_xaudio_trace_export_test
   "tests/xaudio_trace_export_test.cpp"
@@ -384,6 +404,15 @@ target_compile_definitions(fushi_text_lane_ipc_test
   PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_text_lane_ipc_test
   COMMAND fushi_text_lane_ipc_test)
+
+add_executable(fushi_hunex_gge_selected_text_test
+  tests/hunex_gge_selected_text_test.cpp)
+target_include_directories(fushi_hunex_gge_selected_text_test
+  PRIVATE "hook/adapters" "include")
+target_compile_definitions(fushi_hunex_gge_selected_text_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_hunex_gge_selected_text_test
+  COMMAND fushi_hunex_gge_selected_text_test)
 
 # v14 游戏内查词区的契约级测试：各子区不重叠/不越界/8 对齐、IsLookupFrameSane 的每条
 # 拒绝理由、旧会话给 nullptr 而非野指针、以及"v14 是纯追加"这条不变量。

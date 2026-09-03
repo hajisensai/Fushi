@@ -90,6 +90,20 @@ add_fushi_test(simple_dict_deinflection_test simple_dict_deinflection_test.cpp)
 # header / mined Anki term is the dictionary form, not the inflected surface.
 add_fushi_test(mdx_redirect_lemma_lookup_test mdx_redirect_lemma_lookup_test.cpp)
 
+# BUG-2056: 英文缩合形/所有格的**闭环** e2e。扫描层把 don’t 整词送进来只是半条链；
+# en.json 的撇号规则与词典条目键都是 ASCII，U+2019 又没有 NFKC 兼容分解，所以还得
+# 靠 text_processor 的撇号归一才查得到。真 en.json 路径经 argv 传入（不依赖 cwd）。
+add_executable(en_apostrophe_lookup_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/en_apostrophe_lookup_test.cpp")
+target_link_libraries(en_apostrophe_lookup_test PRIVATE fushidicts)
+target_include_directories(en_apostrophe_lookup_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(en_apostrophe_lookup_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME en_apostrophe_lookup_test
+         COMMAND en_apostrophe_lookup_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json")
+
 # --- TODO-892: malformed-DEFLATE / null-decompressor / breadcrumb guards ---
 # zip_malformed_deflate_test includes <libdeflate.h> (to forge a real deflate
 # stream) + "zip/zip.hpp" + the public importer header. fushidicts links

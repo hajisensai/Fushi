@@ -1,3 +1,9 @@
+// release 也要真断言：NDEBUG 会把 assert 编成空语句，本文件的断言就会整批
+// 消失、测试空跑照样"通过"（CI 的 C4189「变量没人引用」正是它漏出来的痕迹）。
+// 与 attached_overlayability_test.cpp 同一写法；无 assert 的文件也照写，免得
+// 日后新增断言时又要重走一遍这个坑。
+#undef NDEBUG
+
 #include "../lookup_hit_validation.h"
 
 #include <cassert>

@@ -427,6 +427,19 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
           children: <Widget>[
             for (int i = 0; i < _popup.entries.length; i++)
               _buildLayer(context, i, cardSize: Size(cardWidth, cardHeight)),
+            // BUG-2039 ③：本页此前是**唯一一个建了控制器却从不渲染停驻层**的宿主。
+            // 控制器在所有出栈路径上都会把离栈层的 WebView 键停驻
+            // （`_retireEntries`，本页 `truncateTo` 走的就是它），宿主不把它们挂在
+            // 屏外，键背后的 element 当帧就被销毁——`_takeRealmKey()` 下次接管到的
+            // 是一把已死的键，嵌套查词静默退回冷建。与另外六个宿主同一条原语。
+            ...parkedRealmPopupLayers(
+              parkedRealms: _popup.parkedRealms,
+              screen: Size(cardWidth, cardHeight),
+              isDark: (appModel.overrideDictionaryTheme ?? Theme.of(context))
+                      .brightness ==
+                  Brightness.dark,
+              overrideFillColor: appModel.overrideDictionaryColor,
+            ),
           ],
         );
       },

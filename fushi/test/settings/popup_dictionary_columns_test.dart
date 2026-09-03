@@ -27,7 +27,11 @@ import '../helpers/test_platform_services.dart';
 /// 这里验证三层契约：
 ///  1. 源码守卫：popup.css 的 grid 规则真实存在、只用 column-gap（不含 row-gap/
 ///     裸 gap，避免 N=1 时 gap+margin 叠成双倍纵向间距破坏老用户默认观感）。
-///  2. 源码守卫：dictionary_popup_webview.dart 真把 --dict-columns 注入文档。
+///  2. 源码守卫：--dict-columns 只由**静态注入段**的 `_themeVariablesJs` 随其余主题
+///     变量一起注入，`dictionary_popup_webview.dart` 里**不得**再有第二份
+///     `setProperty('--dict-columns')` 拷贝（第二份会漏 eink / 卡底色）。
+///     注：这条早年确实由 webview 注入，注释一直没跟上搬家——下面 :250 的断言
+///     钉的正是「webview 里不许有」，与旧描述完全相反。
 ///  3. UI 行为：真实 schema 的 Result Display 组里有这条滑块，min1/max4/divisions3，
 ///     副标题带「实验性」后缀。
 void main() {

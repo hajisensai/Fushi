@@ -7,7 +7,16 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-/// 查词弹窗「渲染尾巴」实测 itest —— 只产出计时数据，不做性能断言（机器差异假红）。
+/// 查词弹窗「渲染尾巴」实测 itest —— **手动探针，不是守卫**。
+///
+/// 状态要说清楚（此前这份文件长得像守卫，其实两样都不是）：
+/// 1. 它**不在任何 runner 清单里**。`ci/integration-test.sh` 的 `ALL_TARGETS` 按
+///    `integration_test/<target>_test.dart` 解析目标名，`_itest.dart` 后缀天然进
+///    不去——本目录 45 个 `_itest.dart` 全是这样，一律只经
+///    `tool/run_windows_itest.ps1` 手动跑。别指望 CI 会跑它。
+/// 2. 绝对耗时**不做断言**（机器差异假红）；下面只断言**不依赖机器的比值/计数**，
+///    那几条正是「渲染尾巴」这批改动的形态本身：退回旧实现时它们必然不成立。
+///    没有这几条的话，本文件跑通只证明「没抛异常」。
 ///
 /// 量的是 popup.js 首词条同步渲染之后那段：余下词条/词典块逐宏任务补建 + masonry
 /// 合帧重排 + 高度回报，直到 DOM 与布局都稳定。用户感知就是「弹窗先出来，然后内容
@@ -46,8 +55,7 @@ void main() {
     );
     final String popupJs = await rootBundle.loadString('assets/popup/popup.js');
     // 与 DictionaryPopupWebViewState._buildInlinePopupHtml 同形（Windows 生产路径）。
-    inlineHtml =
-        '<!DOCTYPE html>'
+    inlineHtml = '<!DOCTYPE html>'
         '<html data-theme="dark" '
         'style="--background-color:#202020;--dict-columns:2">'
         '<head><meta charset="utf-8">'
@@ -108,17 +116,16 @@ void main() {
                     callback: (List<dynamic> args) => null,
                   );
                 },
-                onConsoleMessage:
-                    (
-                      InAppWebViewController controller,
-                      ConsoleMessage message,
-                    ) {
-                      if (message.messageLevel == ConsoleMessageLevel.ERROR) {
-                        debugPrint(
-                          '[render-tail-perf] console: ${message.message}',
-                        );
-                      }
-                    },
+                onConsoleMessage: (
+                  InAppWebViewController controller,
+                  ConsoleMessage message,
+                ) {
+                  if (message.messageLevel == ConsoleMessageLevel.ERROR) {
+                    debugPrint(
+                      '[render-tail-perf] console: ${message.message}',
+                    );
+                  }
+                },
                 onLoadStop: (InAppWebViewController controller, WebUri? url) {
                   if (!ready.isCompleted) ready.complete(controller);
                 },
@@ -139,10 +146,10 @@ void main() {
 
       const List<({int entries, int dicts})> scenarios =
           <({int entries, int dicts})>[
-            (entries: 10, dicts: 5),
-            (entries: 30, dicts: 5),
-            (entries: 3, dicts: 12),
-          ];
+        (entries: 10, dicts: 5),
+        (entries: 30, dicts: 5),
+        (entries: 3, dicts: 12),
+      ];
       for (final ({int entries, int dicts}) s in scenarios) {
         // 每个场景跑两遍，第一遍暖 JIT / CSS memo，只报第二遍。
         for (int round = 0; round < 2; round++) {
@@ -166,6 +173,27 @@ void main() {
           }
           expect(result, isNotNull, reason: 'render tail never settled');
           result!['reports'] = popupRenderedCalls;
+
+          // ── 不依赖机器的形态不变式（绝对耗时仍然只作数据输出）──────────
+          final int blocks = s.entries * s.dicts;
+          expect(result['cards'], blocks,
+              reason: '每个 (词条 × 词典) 必须各成一块：块数对不上说明尾批把词条'
+                  '丢了，后面几条比值也就没有意义了');
+          if (blocks > s.dicts) {
+            // 论点⑤：每词典一份 <style>。退回「每块一份」时 styleElements >= blocks。
+            // 这里比的是「样式表数 vs 块数」而不是绝对值——applyCustomCSS 之类
+            // 另外插的 <style> 只是常数项，不影响这个数量级判据。
+            expect(result['styleElements'] as int, lessThan(blocks),
+                reason: '样式表数 ${result['styleElements']} 不该逼近块数 $blocks：'
+                    '每个词典块各插一份 <style> 就是被这条钉住的退化形态');
+          }
+          if (blocks > 2) {
+            // 论点①：尾批按时间预算分片，一个宏任务连续建多块。退回「一块一宏
+            // 任务」时 tailTasks 恰好等于待建块数。
+            expect(result['tailTasks'] as int, lessThan(blocks),
+                reason: '尾批宏任务数 ${result['tailTasks']} 不该逼近块数 $blocks：'
+                    '一块一任务就是 TAIL_SLICE_BUDGET_MS 失效的形态');
+          }
           int distinct = 0;
           num? last;
           for (final num h in reportedHeights) {
@@ -315,8 +343,7 @@ String _buildEntriesJson(int entries, int dicts) {
         for (int i = 0; i < lines; i++)
           <String, Object>{
             'tag': 'li',
-            'content':
-                '释义 $i：これはテスト用の語釈です。同じ内容が続きます。'
+            'content': '释义 $i：これはテスト用の語釈です。同じ内容が続きます。'
                 'entry=$e dict=$d line=$i',
           },
       ];

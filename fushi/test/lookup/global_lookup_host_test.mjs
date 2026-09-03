@@ -1765,6 +1765,90 @@ function flushTimers() {
   );
 }
 
+// 33b. BUG-2054 (wrapped-selection anchor): highlightSelection ALSO returns the
+//      matched word's bbox in the parent realm's own viewport (it unions every
+//      getClientRects() fragment, so on a WRAPPED selection its bottom is the
+//      LAST line). The child card was anchored on getSelectionRect() instead —
+//      the FIRST CHARACTER's rect (textSelected fires before the dictionary
+//      runs) — which on a wrapped selection covers only the tapped line, so the
+//      child sat under the first line and hid the second. highlightFrame must
+//      report that bbox back through the SAME iframe-local -> window-local
+//      transform the original anchor took, so Dart can re-anchor the child.
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1,
+        frame: { left: 40, top: 12, width: 360, height: 480 },
+        settingsJs: '/* s0 */' },
+      { id: 'frame-1', parentIndex: 0,
+        frame: { left: 60, top: 300, width: 360, height: 480 },
+        settingsJs: '/* s1 */' },
+    ],
+  });
+  const parentShell = shellsOf(document)[0];
+  const parentIframe = parentShell.children.find((c) => c.tagName === 'IFRAME');
+  // The parent realm reports a word wrapping across two lines: y 20..56 in the
+  // iframe viewport (line 1 = 20..36, line 2 = 36..56).
+  parentIframe.contentWindow.eval = (code) => {
+    evalLog.push({ frameId: 'frame-0', code });
+    return { x: 10, y: 20, width: 120, height: 36 };
+  };
+  hostPostLog.length = 0;
+  assert.strictEqual(host.highlightFrame(0, 7, 42), true);
+  const anchorMsg = hostPostLog.find((m) => m.handler === 'nestedWordAnchor');
+  assert.ok(anchorMsg, 'host reports the highlighted word bbox for re-anchoring');
+  assert.strictEqual(anchorMsg.args[0], 0, 'reports the PARENT frame index');
+  assert.strictEqual(anchorMsg.args[2], 42,
+    'the report echoes the request token (Dart routes the waiter by it)');
+  const reported = anchorMsg.args[1];
+  assert.deepStrictEqual(
+    { x: reported.x, y: reported.y, width: reported.width, height: reported.height },
+    // shell origin (40,12) + FRAME_CONTENT_TOP(0) — the identical transform
+    // anchorRectToScreen applies to a textSelected/onLinkClick anchor.
+    { x: 50, y: 32, width: 120, height: 36 },
+    'iframe-local word bbox is mapped with the shell origin',
+  );
+  // The whole point: the reported bottom is the LAST line's bottom (68), well
+  // below where a first-character anchor (16px tall -> bottom 48) would put it.
+  assert.ok(
+    reported.y + reported.height > 32 + 16,
+    'reported bbox reaches past the FIRST line — otherwise the child card '
+      + 'would still cover the second line of the selection',
+  );
+  // A realm with nothing usable still ANSWERS (rect null): Dart is awaiting this
+  // report before it places the child card, so a silent drop would cost it the
+  // full timeout. Null means "keep the first-character anchor".
+  for (const bad of [null, undefined, { x: 1, y: 2, width: 0, height: 0 }]) {
+    parentIframe.contentWindow.eval = () => bad;
+    hostPostLog.length = 0;
+    assert.strictEqual(host.highlightFrame(0, 7, 43), true,
+      'highlight itself still succeeds without a usable bbox');
+    const nullMsg = hostPostLog.find((m) => m.handler === 'nestedWordAnchor');
+    assert.ok(nullMsg, 'a tokened request is always answered');
+    assert.strictEqual(nullMsg.args[1], null, 'unusable bbox reports null');
+    assert.strictEqual(nullMsg.args[2], 43, 'answer carries the token');
+  }
+  // A THROWING realm must not escape highlightFrame (its stated contract) and
+  // must still answer, otherwise the Dart wait rides out its timeout.
+  parentIframe.contentWindow.eval = () => { throw new Error('realm gone'); };
+  hostPostLog.length = 0;
+  assert.strictEqual(host.highlightFrame(0, 7, 44), false,
+    'a throwing realm reports failure instead of propagating');
+  const thrownMsg = hostPostLog.find((m) => m.handler === 'nestedWordAnchor');
+  assert.ok(thrownMsg, 'a throwing realm still answers the tokened request');
+  assert.strictEqual(thrownMsg.args[1], null);
+  assert.strictEqual(thrownMsg.args[2], 44);
+  // Un-tokened calls (the plain highlight-only path) post nothing.
+  parentIframe.contentWindow.eval = () => ({ x: 10, y: 20, width: 120, height: 36 });
+  hostPostLog.length = 0;
+  assert.strictEqual(host.highlightFrame(0, 7), true);
+  assert.ok(
+    !hostPostLog.some((m) => m.handler === 'nestedWordAnchor'),
+    'no token -> nobody is waiting -> no report',
+  );
+}
+
 // 34. TODO-1189 (layer-shift hit-test): when a nested sub-popup is pushed
 //     UP/LEFT off the cursor (screen-edge second lookup -> minLeft/minTop < 0),
 //     measureAndReport shifts the layer by (-minLeft,-minTop) so the union bbox

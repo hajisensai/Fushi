@@ -23,6 +23,31 @@ part of '../reader_fushi_page.dart';
 /// `caretSetState` / `caretExitPrimaryRing`) cannot live on an extension and
 /// stay in the shell, reachable via the shared private class scope, as does
 /// the audiobook middle-click helper `_seekToClickedSentence`.
+/// 阅读器鼠标通道的解析阶梯：reader → audiobook → universal → global。
+///
+/// **Flutter 腿与 WebView(JS) 腿共用同一条**，且与 `_handleKeyEvent` 的键盘阶梯
+/// 同序（页面专属优先）。
+///
+/// BUG-2031 修正：第一版给两条腿各写了一条阶梯——Flutter 侧刻意砍掉 universal /
+/// global，理由是「那两段留给 app 根兜底，页面再解析一遍就会双派发」。两处都错：
+///
+/// 1. 防双派发的机制是 [MouseBindingDispatch] 的认领，不是「把阶梯修窄」。修窄
+///    换来的是**动作降级**：`globalBack` 在页内解析不到，只能落到 app 根那份平铺的
+///    `Navigator.maybePop()`，而键盘 / 手柄的 `globalBack` 走的是本页**逐级退出**
+///    （先关光标 / 关弹窗，最后才退书）。同一动作两条通道两种行为。
+/// 2. 两条腿阶梯不等，等于同一个绑定在「指针归宿主」与「指针归 WebView」的平台上
+///    行为不同（见 [hostOwnsWebViewPointerInput]）。合成一条后，两条腿只剩「谁拿到
+///    事件」的区别，覆盖面逐字相同。
+///
+/// 页面解析到但执行体没接（返回 ignored）时**不认领**，app 根照常兜底——这正是
+/// 键盘「返回 ignored 就冒泡」的等价物。
+const List<ShortcutScope> kReaderMouseLadder = <ShortcutScope>[
+  ShortcutScope.reader,
+  ShortcutScope.audiobook,
+  ShortcutScope.universal,
+  ShortcutScope.global,
+];
+
 extension _ReaderCaret on _ReaderFushiPageState {
   /// 当前按下的修饰键集合（Ctrl/Shift/Alt/Meta）。键盘快捷解析与底栏焦点的
   /// Space 覆写共用，避免两处各自重建一份。
@@ -519,6 +544,43 @@ extension _ReaderCaret on _ReaderFushiPageState {
         .gamepadBindings
         .map((b) => b.button)
         .toSet();
+  }
+
+  /// 阅读器 Flutter 侧的鼠标绑定入口（挂在 build 的页面根 [Listener] 上）。
+  ///
+  /// **位置型动作在这里被有意跳过**：「seek 到点击句」要知道点在哪一句上，只有页内
+  /// JS 拿得到坐标，故它恒由 `onPointerSeek` 承担（判据 [isSeekToClickedSentenceButton]
+  /// 两侧共用，不会各判各的）。
+  void _handleReaderPointerDown(PointerDownEvent event) {
+    // BUG-2031 审查②：两条腿的互斥必须是**构造性**的，不能只门控一侧。
+    //
+    // 原先只有 JS 那条腿带 [hostOwnsWebViewPointerInput] 门控，本 Flutter 腿是**无条件
+    // 挂载**的，注释却写着「两条路按平台互斥」。那个判据是从查词弹窗那边提上来的——
+    // 弹窗在 Android 上是独立 Activity，确实在 Flutter 命中树之外；但本页正文的 WebView
+    // 是**树内 platform view**，祖先 [Listener] 照样收得到指针（同一条「opaque 只排除
+    // 兄弟、不排除祖先」的事实）。于是非 Windows 上同一次按下可能被 Flutter 腿与 JS 腿
+    // 各执行一次，而 JS 腿没有 pointer id、无法参与认领协议。
+    //
+    // 补上这道门后，任一平台恒只有一条腿活着。代价是非 Windows 上**页面外壳**（正文
+    // WebView 之外）的鼠标绑定不生效——那恰是本轮之前的行为（本页当时根本没有 Flutter
+    // 侧鼠标腿），故不是回归；正文区照常由 JS 腿覆盖完整阶梯。
+    if (!hostOwnsWebViewPointerInput) return;
+    final int? button = domMouseButtonFromPointerButtons(event.buttons);
+    if (button == null) return;
+    final FushiShortcutRegistry registry = appModel.shortcutRegistry;
+    if (isSeekToClickedSentenceButton(registry, button)) return;
+    final ShortcutAction? action = resolveMouseBindingActionForButton(
+      registry: registry,
+      button: button,
+      ladder: kReaderMouseLadder,
+    );
+    if (action == null) return;
+    // 执行体返回 ignored（例如无弹窗时的 readerDismissDict）说明本页没消费，等价于
+    // 键盘的 ignored 冒泡：**不认领**，让 app 根兜底照常解析 universal / global。
+    dispatchClaimedMouseAction(
+      event,
+      () => _executeShortcutAction(action) == KeyEventResult.handled,
+    );
   }
 
   KeyEventResult _executeShortcutAction(

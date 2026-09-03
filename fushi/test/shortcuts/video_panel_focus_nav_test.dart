@@ -214,10 +214,9 @@ void main() {
       );
     });
 
-    test('三类面板都包了 PanelFocusScope（焦点领进面板的唯一入口）', () {
+    test('两类可导航面板都包了 PanelFocusScope（焦点领进面板的唯一入口）', () {
       const Map<String, String> panels = <String, String>{
         'lib/src/pages/implementations/video_fushi/episode.part.dart': '剧集轨',
-        'lib/src/pages/implementations/video_fushi/subtitle.part.dart': '字幕列表',
         'lib/src/pages/implementations/video_fushi/side_panel.part.dart': '侧栏',
       };
       panels.forEach((String path, String label) {
@@ -226,6 +225,29 @@ void main() {
             reason: '$label（$path）没包 PanelFocusScope：打开后焦点留在页面节点，'
                 'D-pad 让位了也没有可移动的焦点');
       });
+    });
+
+    test('字幕列表不领焦点，且不在 _videoNavigablePanelOpen 集内（BUG-2040）', () {
+      // 两半必须同时成立：只砍 PanelFocusScope 不改集合 ⇒ 列表开着时方向键让位、
+      // 页面又拒绝收回焦点，dpad/方向键既进不了列表也不调音量（比砍之前更差）；
+      // 只改集合不砍 PanelFocusScope ⇒ 焦点仍被领进列表，方向键在列表里当遍历用。
+      final String subtitle = maskComments(
+          File('lib/src/pages/implementations/video_fushi/subtitle.part.dart')
+              .readAsStringSync());
+      expect(subtitle.contains('PanelFocusScope('), isFalse,
+          reason: '字幕列表包了 PanelFocusScope：打开后焦点被领进列表，'
+              '←/→/↑/↓ 等视频快捷键失效（BUG-2040）');
+      final String page = maskComments(
+          File('lib/src/pages/implementations/video_fushi_page.dart')
+              .readAsStringSync());
+      final int start = page.indexOf('bool get _videoNavigablePanelOpen =>');
+      expect(start, greaterThan(0));
+      final String body = page.substring(start, page.indexOf(';', start));
+      expect(body.contains('_subtitleListVisible'), isFalse,
+          reason: '_videoNavigablePanelOpen 仍计入字幕列表：列表开着时裸方向键 / dpad '
+              '让位给焦点遍历，而焦点根本不在列表里');
+      expect(body.contains('_episodeListVisible'), isTrue,
+          reason: '前置条件：锚点确实截到了 getter 主体（剧集轨仍在集内）');
     });
   });
 }

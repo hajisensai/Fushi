@@ -8,7 +8,8 @@
     `layoutMasonry()` 对**所有** body 全量重铺（旧 :4396）；
   - `layoutMasonry` 每张卡片「写 6 个样式 → 读 `offsetHeight`」（旧 :4437-4445）；
   - `dict-media.js:43` `__dictCssCache` 满 64 桶整表 `clear()`。
-- **[x] ① 已修复** — 本分支（`worktree-popup-render-tail`）：masonry 三相批处理 + 脏 body
+- **[x] ① 已修复** — 本分支（`worktree-popup-render-tail`）；提交 `3c71c13575`（第一批）
+  + `047614e023`（第二批）+ 合 develop 后的前置补齐（本条 PR 的合并提交）：masonry 三相批处理 + 脏 body
   集合、尾批 MessageChannel + 时间预算分片、CSS memo LRU（256 桶）；第二批（同分支）：
   每本词典一份 `<style>`（原每块一份）、尾批在途不回报高度（原逐帧回报 = 宿主逐帧重定尺）、
   ResizeObserver 高度未变不重铺、renderPopup 换代断开旧 observer（热槽跨查词攒已摘除卡片
@@ -19,7 +20,10 @@
   `fushi/test/dictionary/popup_render_signal_guard_test.dart`
   （尾批原语改锚 + 新增 ⑤ 宏任务原语守卫）、`fushi/test/utils/misc/popup_dict_css_memo_test.{js,dart}`
   （④ 改 LRU 语义：反复命中的桶不得被淘汰）、`fushi/integration_test/popup_render_tail_perf_itest.dart`
-  （新，Windows 离屏计时，不做性能断言）、`fushi/test/pages/dictionary_popup_controller_test.dart`
+  （新，Windows 离屏计时；**绝对耗时不做断言**，但补了三条不依赖机器的形态不变式：
+  块数守恒、样式表数 < 块数、尾批宏任务数 < 块数。它**不在任何 runner 清单里**——
+  `ci/integration-test.sh` 的 `ALL_TARGETS` 只解析 `<target>_test.dart`，本目录 45 个
+  `_itest.dart` 一律只经 `tool/run_windows_itest.ps1` 手动跑）、`fushi/test/pages/dictionary_popup_controller_test.dart`
   （新组「嵌套 realm 停驻与接管」5 条）、`fushi/integration_test/popup_dictionary_test.dart`
   （新 Phase 5：真 WebView2 上嵌套→关→再嵌套断言接管同一 WebView State）
 - **备注**：查词 FFI 挪独立 isolate **判定不做**——真实词典实测引擎段首查 0～6ms、复查 0～3ms
@@ -31,7 +35,9 @@
 itest 把 popup.css / dict-media.js / selection.js / popup.js 按生产 Windows 弹窗同款
 `initialData` 内联，灌合成词条（结构化释义高度参差），`--dict-columns: 2`，钩住
 `requestAnimationFrame` / `HTMLElement.prototype.offsetHeight` / `popupRendered` 计数。
-每场景跑两轮取第二轮（热 JIT / CSS memo）：
+每场景跑两轮取第二轮（热 JIT / CSS memo）。⚠️ **下表是作者本机的单次采样**：没有第二台
+机器复核，CI 也从不跑这个 itest（见上条 ②）。绝对数字只用来说明量级与趋势，不是回归门；
+真正会红的是那三条不依赖机器的比值不变式。
 
 | 场景（词条×词典＝块） | complete | RAF 帧 | offsetHeight 读 | popupRendered 回报 |
 |---|---|---|---|---|
@@ -145,3 +151,13 @@ Novel 频率 4.6MB，`isolated-root/fixtures/perf-dicts/`）：`[perf-engine]` �
   （≈ 一次 iframe 装载），只有两次嵌套间隔短于补货窗口才会吃到冷 realm，人手点词达不到；
   多停一个就多一份 realm 内存，没有测得的收益不加。
 - 嵌套时 `entriesJs` 的重传随 realm 接管已经只发本层词条，不再需要反向回补通道。
+
+### 设计代价（这批改动换来的新观感，不是 bug 但要写明）
+
+`_renderInProgress` 门（尾批在途不回报高度）把「弹窗高度一帧一变」换成了**「先高后缩一次」**：
+首词条渲染完之后、整个尾巴期间，宿主拿到的高度是 masonry 铺开之前那个**偏高的 grid 高度**，
+直到收尾才一次性收缩到真实高度。也就是说抖动没有被消灭，是被**换成了一次幅度较大的收缩**。
+
+这是刻意的取舍：一次可预期的收缩比 140 次逐帧重定尺好，但它是一种**新的**观感，
+不是「和以前一样只是更快」。真要连这一次收缩也去掉，得让宿主在尾批期间按预估终高定尺
+（需要一个尾批开始前就能算出的高度上界），那是另一件事，不在本条范围内。

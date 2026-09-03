@@ -66,9 +66,15 @@ class HomeDictionaryPage extends BaseTabPage {
     super.key,
     this.focusSignal,
     this.showBackButton = false,
+    this.initialQuery,
   });
 
   final ValueNotifier<int>? focusSignal;
+
+  /// 挂载后立即当作用户输入查一次的文本（不写查词历史）。新手引导用它把练习句子
+  /// 直接喂进本页：源文本条显示整句，用户在真实查词面板里点词。与在搜索框里粘贴
+  /// 这句话走**同一条** [_search] 路径，不另开入口。
+  final String? initialQuery;
 
   /// 本页作为**独立路由**承载时（查词 tab 被「功能模块」隐藏，热键/桌面取词仍要有
   /// 落地面，见 HomePage 的 `_revealDictionary`）在页头左侧显示返回箭头。作为 tab
@@ -149,6 +155,14 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _onDesktopLookupPending();
     });
+    // 新手引导的练习句子：挂载后当作用户输入查一次（不写历史），源文本条随即显示
+    // 整句供点词。
+    final String? initialQuery = widget.initialQuery;
+    if (initialQuery != null && initialQuery.trim().isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _search(initialQuery, writeHistory: false);
+      });
+    }
     // TODO-931: 首页查词原本每次 lookup 走 replaceStack 销毁+冷建弹窗 WebView，连点会让某次
     // WebView 析构撞上上一个 WebView 仍在途的 WebResourceRequested 拦截 deferral → Windows
     // inappwebview fork 里 use-after-free 崩溃。与 reader（base_source_page）/ video 一致，
@@ -960,6 +974,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                           ReaderFushiSource.instance.enableSwipeToClose,
                       sensitivity:
                           ReaderFushiSource.instance.dismissSwipeSensitivity,
+                      // 弹窗可见时 barrier 吃掉全部指针，页面根收不到——「浮窗矩形
+                      // 之外」按鼠标非主键这半边只能在这里接（见钩子文档）。
+                      onNonPrimaryButtonDown: onDismissBarrierNonPrimaryButton,
                     ),
                   ),
                 // 搜索期加载占位卡（搜索→就绪才显示，与书内同观感）。

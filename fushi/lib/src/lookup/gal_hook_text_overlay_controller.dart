@@ -179,7 +179,6 @@ class GalHookTextOverlayController extends ChangeNotifier {
   ({
     GalLookupGeometryAdmissionMode mode,
     bool attachedReady,
-    bool nativeInputReady,
   })?
   _geometrySyncDesiredRequest;
   bool _geometrySyncNeedsReconcile = false;
@@ -367,7 +366,6 @@ class GalHookTextOverlayController extends ChangeNotifier {
       () => _ingameLookup.setGeometryAdmission(
         GalLookupGeometryAdmissionMode.disabled,
         attachedReady: false,
-        nativeInputReady: false,
       ),
       () => _ingameLookup.setSessionActive(false),
       GalHookTextOverlayChannel.hide,
@@ -677,14 +675,13 @@ class GalHookTextOverlayController extends ChangeNotifier {
     GalLookupSurfaceMode profileMode, {
     required bool forceAttached,
   }) async {
-    // Retire the Dart route before asking the injected registry to change
-    // owner. The registry itself waits for down/up/tail; the runner will not
-    // publish attached boxes until kind=4/id=11 is active.
+    // setProviderAdmission(false) first publishes the native deny generation,
+    // then retires the Dart route. The registry itself waits for down/up/tail;
+    // the runner will not publish attached boxes until kind=4/id=11 is active.
     await _ingameLookup.setProviderAdmission(false);
     final GalLookupCallResult? result = await _setGeometryAdmissionBounded(
       _geometryAdmissionMode(profileMode, forceAttached: forceAttached),
       attachedReady: true,
-      nativeInputReady: false,
       stage: 'attached-handoff',
     );
     if (result == null) {
@@ -702,15 +699,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
   Future<GalLookupCallResult?> _setGeometryAdmissionBounded(
     GalLookupGeometryAdmissionMode mode, {
     required bool attachedReady,
-    required bool nativeInputReady,
     required String stage,
     bool Function()? stillCurrent,
   }) async {
-    final request = (
-      mode: mode,
-      attachedReady: attachedReady,
-      nativeInputReady: nativeInputReady,
-    );
+    final request = (mode: mode, attachedReady: attachedReady);
     _geometrySyncDesiredRequest = request;
     final Future<GalLookupCallResult>? active = _geometrySyncInFlight;
     if (active != null) {
@@ -723,7 +715,6 @@ class GalHookTextOverlayController extends ChangeNotifier {
         .setGeometryAdmission(
           mode,
           attachedReady: attachedReady,
-          nativeInputReady: nativeInputReady,
           stillCurrent: () =>
               _started &&
               _geometrySyncDesiredRequest == request &&
@@ -754,12 +745,12 @@ class GalHookTextOverlayController extends ChangeNotifier {
       }
       glog(
         'gal-ingame: geometryAdmission stage=$stage mode=${mode.name} '
-        'nativeInputReady=$nativeInputReady timed out; provider remains closed',
+        'geometryAdmission stage=$stage timed out; provider remains closed',
       );
     } catch (error, stackTrace) {
       glog(
         'gal-ingame: geometryAdmission stage=$stage mode=${mode.name} '
-        'nativeInputReady=$nativeInputReady EXCEPTION $error\n$stackTrace',
+        'geometryAdmission stage=$stage EXCEPTION $error\n$stackTrace',
       );
     }
     return null;
@@ -770,7 +761,6 @@ class GalHookTextOverlayController extends ChangeNotifier {
     ({
       GalLookupGeometryAdmissionMode mode,
       bool attachedReady,
-      bool nativeInputReady,
     })
     request,
   ) {
@@ -984,8 +974,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
         disabledGeometry = await _setGeometryAdmissionBounded(
           GalLookupGeometryAdmissionMode.disabled,
           attachedReady: false,
-          nativeInputReady: false,
-          stage: 'session-rollover',
+            stage: 'session-rollover',
           stillCurrent: () =>
               _isSyncSnapshotCurrent(syncRevision, nextSessionKey),
         );
@@ -1163,14 +1152,13 @@ class GalHookTextOverlayController extends ChangeNotifier {
           await _setGeometryAdmissionBounded(
             geometryMode,
             attachedReady: attachedReady,
-            nativeInputReady: nativeProviderDesired,
             stage: 'central-sync',
             stillCurrent: stillCurrent,
           );
       if (!_isSyncSnapshotCurrent(syncRevision, nextSessionKey)) {
         // The native call may have crossed the revision edge after publishing
         // its payload. Close the local route immediately; the queued central
-        // sync will clear nativeInputReady for the new snapshot.
+        // sync will clear nativeInputAllowed for the new snapshot.
         if (nativeProviderDesired) {
           await _setProviderAdmissionIsolated(false);
         }
@@ -1849,17 +1837,36 @@ class GalHookTextOverlayController extends ChangeNotifier {
     return firstError;
   }
 
-  /// 游戏内查词的制卡 handler：按台词文本回溯本局会话里的那一行，复用浮窗点词
+  /// 游戏内查词的制卡 handler：按 native 文本代数回溯本局会话里的那一行，复用浮窗点词
   /// 完全相同的 [_mineFromLookup]（截图 / 语音 / 标签 / 压缩档全部同源）。
   ///
-  /// hook 报上来的只有文本，没有行 id。同一句台词一局里可能出现多次（回想、重读），
-  /// 只允许绑定当前线程的**最新一条**。TextRender 与文本线程的载荷可能不同：后者可带
-  /// `.ks` 文件名等元数据，甚至把同一句完整重复；因此先做最新行逐字匹配，再做受限
-  /// containment。绝不回溯历史 exact：同一句可能重复出现，旧 id 会把当前截图/音频
-  /// 错绑到上一次 occurrence。
-  String? _resolveIngameMiningLineId(String line) {
+  /// [textGeneration] 与文本 IPC `TextSlot.seq` 同源；session controller 已把它保存到
+  /// [TexthookerLineEntry.sourceSequence]。只在命中时的同一 session/HWND 内按这个身份
+  /// 精确匹配，不能让重复台词或 containment 把当前截图/音频绑到另一 occurrence。
+  /// 旧载荷没有 generation 时才保留原有的“当前最新行 exact → 受限 containment”回退。
+  String? _resolveIngameMiningLineId(
+    String line, {
+    required int? textGeneration,
+    required DateTime? sessionStartedAt,
+    required int? targetHwnd,
+  }) {
+    final GalHookSessionState state = _session.state;
+    if (sessionStartedAt == null ||
+        targetHwnd == null ||
+        state.sessionStartedAt != sessionStartedAt ||
+        state.boundWindow?.hwnd != targetHwnd) {
+      return null;
+    }
     final List<TexthookerLineEntry> lines = _session.selectedSessionLines;
     if (lines.isEmpty) return null;
+    if (textGeneration != null) {
+      for (final TexthookerLineEntry entry in lines.reversed) {
+        if (entry.sourceSequence == textGeneration) return entry.id;
+      }
+      // generation 是 occurrence 身份：有值但未命中时必须 fail closed，不能再拿相同或
+      // 包含关系的文本冒充当前行。
+      return null;
+    }
     final TexthookerLineEntry latest = lines.last;
     if (latest.text == line) return latest.id;
     final String normalizedLine = line.replaceAll(RegExp(r'\s+'), '');
@@ -1873,11 +1880,22 @@ class GalHookTextOverlayController extends ChangeNotifier {
     return null;
   }
 
-  OverlayMiningHandler _ingameMiningHandlerFor(String line) {
+  OverlayMiningHandler _ingameMiningHandlerFor(
+    String line, {
+    required int? textGeneration,
+  }) {
+    final DateTime? sessionStartedAt = _session.state.sessionStartedAt;
+    final int? targetHwnd = _session.state.boundWindow?.hwnd;
     return ({required Map<String, String> fields, int? updateNoteId}) async {
       // resolver 在 popup 构造时被保存，而文本线程可能稍后才发布当前行。到真正点「制卡」
-      // 时重新解析，既覆盖这段时序差，也会重新套用当前 session/thread 的筛选。
-      final String? resolved = _resolveIngameMiningLineId(line);
+      // 时重新解析，既覆盖这段时序差，也会重新套用当前 thread 的筛选；但 session/HWND
+      // 必须仍是命中时那一对，不能让迟到的 popup 借用下一局的同 seq 或同文行。
+      final String? resolved = _resolveIngameMiningLineId(
+        line,
+        textGeneration: textGeneration,
+        sessionStartedAt: sessionStartedAt,
+        targetHwnd: targetHwnd,
+      );
       if (resolved == null) {
         // BUG-1734：这里过去是**纯静默返回**——不 toast、不记录、不打日志。popup 侧收到
         // ankiConnect:false 同样什么都不做（assets/popup/popup.js 的 mine 分支只在

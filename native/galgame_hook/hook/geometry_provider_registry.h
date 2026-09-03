@@ -255,7 +255,7 @@ class GeometryProviderRegistry {
     }
     const LookupGeometryAdmissionSnapshot admission =
         ReadLookupGeometryAdmission(header);
-    if (!admission.valid || !admission.native_input_ready() ||
+    if (!admission.valid || !admission.native_input_allowed() ||
         (admission.mode != kLookupGeometryAdmissionAuto &&
          admission.mode != kLookupGeometryAdmissionNativeOnly)) {
       return false;
@@ -299,6 +299,42 @@ class GeometryProviderRegistry {
     return matches;
   }
 
+  // Fail-closed HUNEX semantic-input gate.  OfferReady/provider discovery must
+  // remain independent from host risk admission; consuming the semantic click
+  // is allowed only after the host request (including NativeInputAllowed) is
+  // fully applied and this exact provider is the stable active owner.
+  bool NativeInputAllowed(const SharedHeader* header, uint32_t provider_kind,
+                          uint32_t provider_id) {
+    if (provider_kind != kLookupGeometryProviderEngineExactLayout ||
+        provider_id != kLookupGeometryProviderIdHunexGge ||
+        !IsHeaderSane(header, true)) {
+      return false;
+    }
+
+    uint32_t admission_seq = 0;
+    if (!NativeInputAdmissionApplied(header, &admission_seq) ||
+        !TryAcquireSRWLockShared(&lock_)) {
+      return false;
+    }
+    const int provider_index = LookupGeometryProductionProviderIndex(
+        provider_kind, provider_id);
+    const bool active =
+        provider_index >= 0 && ready_offers_[provider_index] &&
+        provider_kind == active_kind_ && provider_id == active_id_ &&
+        !active_retire_pending_ &&
+        (active_status_ == kLookupGeometryStatusReady ||
+         (active_status_ == kLookupGeometryStatusActive &&
+          text_generation_ != 0 && geometry_generation_ != 0));
+    ReleaseSRWLockShared(&lock_);
+    if (!active) return false;
+
+    // Close the host-disable race across the registry snapshot.  A changed or
+    // writer-held request, or an ack for any other generation, fails closed.
+    uint32_t confirmed_seq = 0;
+    return NativeInputAdmissionApplied(header, &confirmed_seq) &&
+           confirmed_seq == admission_seq;
+  }
+
   bool PublishHit(SharedHeader* header,
                   const LookupGeometryHitPublication& publication,
                   uint64_t* published_seq = nullptr) {
@@ -317,7 +353,13 @@ class GeometryProviderRegistry {
     const bool same_provider =
         publication.provider_kind == active_kind_ &&
         publication.provider_id == active_id_;
+    const bool hunex_native_input_allowed =
+        publication.provider_kind !=
+            kLookupGeometryProviderEngineExactLayout ||
+        publication.provider_id != kLookupGeometryProviderIdHunexGge ||
+        NativeInputAdmissionApplied(header);
     if (!same_provider || active_retire_pending_ ||
+        !hunex_native_input_allowed ||
         publication.text_generation < text_generation_ ||
         publication.geometry_generation < geometry_generation_) {
       ReleaseSRWLockExclusive(&lock_);
@@ -647,6 +689,34 @@ class GeometryProviderRegistry {
     }
     return publication.line_utf8 != nullptr && publication.line_bytes != 0 &&
            publication.line_bytes <= kLookupLineBytes;
+  }
+
+  static bool NativeInputAdmissionApplied(const SharedHeader* header,
+                                          uint32_t* stable_seq = nullptr) {
+    if (stable_seq != nullptr) *stable_seq = 0;
+    if (header == nullptr ||
+        AtomicLoadShared32(&header->lookup_enabled) == 0) {
+      return false;
+    }
+    const LookupGeometryAdmissionSnapshot admission =
+        ReadLookupGeometryAdmission(header);
+    if (!admission.valid || !admission.native_input_allowed() ||
+        AtomicLoadShared32(&header->lookup_geometry_admission_applied_seq) !=
+            admission.seq) {
+      return false;
+    }
+    MemoryBarrier();
+    const LookupGeometryAdmissionSnapshot confirmed =
+        ReadLookupGeometryAdmission(header);
+    if (!confirmed.valid || confirmed.seq != admission.seq ||
+        !confirmed.native_input_allowed() ||
+        AtomicLoadShared32(&header->lookup_geometry_admission_applied_seq) !=
+            confirmed.seq ||
+        AtomicLoadShared32(&header->lookup_enabled) == 0) {
+      return false;
+    }
+    if (stable_seq != nullptr) *stable_seq = confirmed.seq;
+    return true;
   }
 
   SRWLOCK lock_ = SRWLOCK_INIT;

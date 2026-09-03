@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-712 P5 三镜像源码守卫：多词条查词弹窗 popupRendered 的「早发 + 双发」协议。
 ///
 /// 性能背景：多词条结果此前要等**全部**词条 build 完才发 popupRendered，宿主的
@@ -76,8 +78,7 @@ void main() {
                 '（早发只提前可见时刻，剩余词条仍要在宏任务里补建）');
       });
 
-      test('⑤ scheduleRenderTail 是真宏任务原语（MessageChannel / setTimeout 回落）',
-          () {
+      test('⑤ scheduleRenderTail 是真宏任务原语（MessageChannel / setTimeout 回落）', () {
         // 守的回归：原语被改成同步直调 / 微任务（Promise.then / queueMicrotask）→
         // 尾批重新压回首屏关键路径或饿死渲染，早发优化整体失效。
         final int idxDef = js.indexOf('function scheduleRenderTail(');
@@ -181,6 +182,62 @@ void main() {
         expect(idxCounts, greaterThan(-1));
         expect(idxUpd + m!.start, lessThan(idxCounts),
             reason: '回退守卫必须出现在读取 _renderedGlossaryCounts 之前');
+      });
+
+      // ── 生产接线（P1）─────────────────────────────────────────────────
+      //
+      // 下面两条钉的不是原语本身，是**原语被接进 renderPopup 生产路径的那一行**。
+      // 原语的行为由 `popup_render_tail_batching_test.js` 通过 `window.__test.*`
+      // 直调覆盖，而「把原语接上」那一行谁都没打：实测把它们各自删掉，功能不坏
+      // （只是退回全量重铺 / 每块一份 <style>，慢回去），node 行为测试 1274 条
+      // **一条都不红**。所以这两行只能由源码守卫来钉。
+      test('⑥ 逐块追加后只标脏本词条 body —— 生产接线，不是只有 __test 直调原语', () {
+        final String code = maskJsComments(js);
+        expect(
+          code.contains('markMasonryDirty(state.body)'),
+          isTrue,
+          reason: 'renderNextDictionaryBlock 追加完一块必须只标脏本词条的 body：'
+              '删掉这一行 = 退回全量重铺（O((词条×词典)²) 次强制回流），'
+              '而 node 行为测试全绿',
+        );
+        // 顺序：先标脏再合帧重排；反了等于没标（scheduleMasonry 那一帧读到的还是干净的）。
+        final int dirty = code.indexOf('markMasonryDirty(state.body)');
+        final int sched = code.indexOf('scheduleMasonry()', dirty);
+        expect(sched, greaterThan(dirty),
+            reason: '标脏必须出现在同一路径的 scheduleMasonry() 之前');
+        // 反向：追加路径不得回落成全量重铺。
+        final int block = code.indexOf('state.body.appendChild(section)');
+        expect(block, greaterThan(-1), reason: '逐块追加锚点漂了');
+        expect(
+          code.substring(block, dirty).contains('scheduleMasonryAll('),
+          isFalse,
+          reason: '逐块追加与标脏之间不得夹一次全量重铺',
+        );
+      });
+
+      test('⑤ 每词典一份样式表 —— 生产接线：块渲染走 ensureDictionaryStyle', () {
+        final String code = maskJsComments(js);
+        expect(
+          code.contains('ensureDictionaryStyle(dictName, styleText);'),
+          isTrue,
+          reason: '每个词典块必须把样式交给 ensureDictionaryStyle（同名词典复用同一个'
+              ' <style>）：换回「每块 appendChild 一份 <style>」功能不坏、只是慢，'
+              'node 行为测试全绿',
+        );
+        expect(code.contains('function ensureDictionaryStyle('), isTrue,
+            reason: '原语本身不许被删');
+        // 判别力来源：全文件只允许**一处**构造 <style> 元素，且必须在原语里。
+        // 没有这条，「块渲染里再 appendChild(el('style', …))」照样满足上面的
+        // contains——两份样式表并存，回退是静默的。
+        final Iterable<Match> styleNodes = "el('style'".allMatches(code);
+        expect(styleNodes.length, 1,
+            reason: '<style> 元素只许在 ensureDictionaryStyle 里构造一处，'
+                '实际有 ${styleNodes.length} 处');
+        final int primitive = code.indexOf('function ensureDictionaryStyle(');
+        final int primitiveEnd = code.indexOf('\n}', primitive);
+        expect(
+            styleNodes.single.start, inInclusiveRange(primitive, primitiveEnd),
+            reason: '唯一那处 <style> 构造必须落在 ensureDictionaryStyle 函数体内');
       });
     });
   });

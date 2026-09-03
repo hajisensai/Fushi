@@ -20,8 +20,11 @@ import '../helpers/source_guard.dart';
 
 const String _controllerPath =
     'lib/src/lookup/gal_hook_text_overlay_controller.dart';
+const String _ingameControllerPath =
+    'lib/src/lookup/gal_ingame_lookup_controller.dart';
 const String _handlerSignature =
     'OverlayMiningHandler _ingameMiningHandlerFor(';
+const String _resolverSignature = 'String? _resolveIngameMiningLineId(';
 const String _toastCall = 'FushiToast.show(';
 const String _failureReturn = "'ankiConnect': false";
 
@@ -33,8 +36,9 @@ const String _failureReturn = "'ankiConnect': false";
 }
 
 List<String> findSilentIngameMiningFailure(String handlerBody) {
-  final ({int toastAt, int failureAt})? offsets =
-      _failurePathOffsets(handlerBody);
+  final ({int toastAt, int failureAt})? offsets = _failurePathOffsets(
+    handlerBody,
+  );
   if (offsets == null) {
     return <String>[
       '_ingameMiningHandlerFor 里找不到 ankiConnect:false 失败分支，'
@@ -77,6 +81,73 @@ void main() {
         body.contains('game_hook_line_unavailable'),
         isTrue,
         reason: '「有台词但对不上」沿用浮窗点词路径的同一条文案',
+      );
+    });
+  });
+
+  group('游戏内命中必须按 TextSlot.seq 绑定 mining lineId', () {
+    test('hit.textGeneration 贯穿 resolver，存在 generation 时禁止文本降级', () {
+      final String ingameSource = File(
+        _ingameControllerPath,
+      ).readAsStringSync();
+      final String runLookup = compactCode(
+        methodBody(ingameSource, 'Future<void> _runLookup('),
+      );
+      expect(
+        runLookup.contains(
+          'textGeneration:hit.textGeneration>0?hit.textGeneration:null',
+        ),
+        isTrue,
+        reason: 'native TextSlot.seq 必须从 hit.textGeneration 传入 mining resolver',
+      );
+
+      final String overlaySource = File(_controllerPath).readAsStringSync();
+      final String resolver = compactCode(
+        methodBody(overlaySource, _resolverSignature),
+      );
+      final int sequenceGate = resolver.indexOf('if(textGeneration!=null)');
+      final int sequenceMatch = resolver.indexOf(
+        'entry.sourceSequence==textGeneration',
+      );
+      final int textFallback = resolver.indexOf(
+        'finalTexthookerLineEntrylatest=lines.last',
+      );
+      expect(sequenceGate, greaterThanOrEqualTo(0));
+      expect(sequenceMatch, greaterThan(sequenceGate));
+      expect(textFallback, greaterThan(sequenceMatch));
+      expect(
+        resolver.substring(sequenceMatch, textFallback).contains('returnnull;'),
+        isTrue,
+        reason: 'generation 存在但未命中必须 fail closed，不能落入文本/containment fallback',
+      );
+      expect(
+        resolver.contains('state.sessionStartedAt!=sessionStartedAt') &&
+            resolver.contains('state.boundWindow?.hwnd!=targetHwnd'),
+        isTrue,
+        reason: '迟到 popup 不得跨 session 或 HWND 借用 lineId',
+      );
+
+      final String handler = compactCode(
+        methodBody(overlaySource, _handlerSignature),
+      );
+      final int sessionSnapshot = handler.indexOf(
+        'finalDateTime?sessionStartedAt=_session.state.sessionStartedAt',
+      );
+      final int hwndSnapshot = handler.indexOf(
+        'finalint?targetHwnd=_session.state.boundWindow?.hwnd',
+      );
+      final int deferredMining = handler.indexOf(
+        'return({requiredMap<String,String>fields,int?updateNoteId})async',
+      );
+      expect(sessionSnapshot, greaterThanOrEqualTo(0));
+      expect(hwndSnapshot, greaterThan(sessionSnapshot));
+      expect(deferredMining, greaterThan(hwndSnapshot));
+      expect(
+        handler.contains('textGeneration:textGeneration') &&
+            handler.contains('sessionStartedAt:sessionStartedAt') &&
+            handler.contains('targetHwnd:targetHwnd'),
+        isTrue,
+        reason: 'resolver 必须使用 hit 时冻结的 generation/session/HWND，而非制卡时重取',
       );
     });
   });

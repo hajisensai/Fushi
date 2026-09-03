@@ -79,11 +79,11 @@ void main() {
   });
 
   test('可导航浮层面板打开期间，页面不得抢回焦点（手柄重设计 P3）', () {
-    // 面板（剧集轨 / 字幕列表 / 侧栏）打开时焦点归 PanelFocusScope。判据漏了这条
-    // 就是纯回归：字幕列表是 push-aside，视频区全程可点，用户点一下画面
-    // （reclaim(gesture)）或从字幕行查完词关浮层（reclaim(popupDismissed)）焦点就被
-    // 拽回页面节点；而 PanelFocusScope 只在 visible 边沿认领一次、不复领，面板却仍
-    // 开着 ⇒ dpad/A 继续让位给焦点兜底，结果 dpad 既进不了面板也不调音量/seek。
+    // 面板（剧集轨 / 侧栏；字幕列表不领焦点，BUG-2040）打开时焦点归 PanelFocusScope。
+    // 判据漏了这条就是纯回归：面板开着时画面仍可点，用户点一下画面
+    // （reclaim(gesture)）或查完词关浮层（reclaim(popupDismissed)）焦点就被拽回页面
+    // 节点；而 PanelFocusScope 只在 visible 边沿认领一次、不复领，面板却仍开着 ⇒
+    // dpad/A 继续让位给焦点兜底，结果 dpad 既进不了面板也不调音量/seek。
     // 必须先屏蔽注释：本条断言的 token 也出现在上面那段说明里，直接扫原文的话，
     // 代码被删而注释留着仍然绿——「断言塞注释」的假绿。
     final String masked = maskComments(src);
