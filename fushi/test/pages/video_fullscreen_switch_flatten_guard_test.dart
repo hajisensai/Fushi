@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-839 / BUG-2043 守卫：全屏下连播/换集不得漏栈旧集页，也不得先退原生全屏再进。
 ///
 /// 根因（BUG-839）：全屏播放时 app 全屏路由被推到 **root navigator**（`fullscreen.part.dart`
@@ -43,12 +45,6 @@ void main() {
   late String fullscreenSrc;
   late String pageSrc;
 
-  /// 剥掉 `//` 行注释，避免注释里提到的符号被 indexOf 先命中。
-  String stripLineComments(String src) => src
-      .split('\n')
-      .where((String line) => !line.trimLeft().startsWith('//'))
-      .join('\n');
-
   setUpAll(() {
     for (final File f in <File>[episodePart, fullscreenPart, pageFile]) {
       expect(f.existsSync(), isTrue, reason: '缺文件 ${f.path}');
@@ -62,12 +58,12 @@ void main() {
     // 方法体终点锚：下一个 `\n  /// ` 文档注释（_showEpisodeList 前）。
     final int end = episodeSrc.indexOf('\n  /// ', start);
     expect(end, greaterThan(start), reason: '找不到 _switchEpisode 方法体终点');
-    switchBody = stripLineComments(episodeSrc.substring(start, end));
+    switchBody = maskComments(episodeSrc.substring(start, end));
 
-    fullscreenSrc = stripLineComments(
+    fullscreenSrc = maskComments(
       fullscreenPart.readAsStringSync().replaceAll('\r\n', '\n'),
     );
-    pageSrc = stripLineComments(
+    pageSrc = maskComments(
       pageFile.readAsStringSync().replaceAll('\r\n', '\n'),
     );
   });
