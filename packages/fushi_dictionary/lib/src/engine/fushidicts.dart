@@ -330,12 +330,28 @@ class FushiDicts {
   /// （清空全部词典会逐本调一次）。
   static int _loadedDictCount = 0;
 
+  /// 已排期但还没装载的词典集合（null = 引擎与元数据一致，没有待办）。
+  ///
+  /// 为什么要有这个「待办」而不是每次写元数据就地重建：重建 = 卸掉全部词典的
+  /// 文件映射再逐本重新装回来，代价与**当前总词典数**成正比。而写元数据是逐本
+  /// 发生的——批量导入 N 本就写 N 次，启动期的类型自愈也是逐本写——于是总代价
+  /// 变成 O(N²)：导第 100 本时要把前 99 本卸了再装回去。词典一多，导入越来越慢，
+  /// 启动更是直接卡死（用户报告：一次性导入很多词典后 app 打不开）。
+  ///
+  /// 排期后重建**只发生在真正要用引擎之前**（见 [instance] / [dictionaryStyles]）。
+  /// 批量写入期间没人查词，于是 N 次排期塌成 1 次重建，而且不需要任何调用方声明
+  /// 「我是批量的」——少写一个声明就退化回 O(N²) 的设计不算修好。
+  static _PendingDicts? _pending;
+
   static FushiDicts get instance {
+    _applyPendingIfAny();
     assert(_instance != null, 'FushiDicts.initialize() must be called first');
     return _instance!;
   }
 
-  static bool get isInitialized => _instance != null;
+  /// 引擎是否可用。有待办时同样算已初始化：待办本身就说明词典集合已知，
+  /// 调用方接着就会经 [instance] 触发结算。
+  static bool get isInitialized => _instance != null || _pending != null;
 
   static List<String>? _cachedTransformJsons;
 
@@ -369,7 +385,14 @@ class FushiDicts {
     }
   }
 
+  /// 旧的扁平装载 API（每条路径同时进 term/freq/pitch 三桶）：立刻生效。
+  ///
+  /// 与 [initializeTyped] 一样属于「立刻」一族，所以同样要清掉待办并推进代次
+  /// ——否则它装完之后，下一次访问 [instance] 会把一份陈旧的待办重放上来，把刚
+  /// 装好的集合盖掉。
   static void initialize(List<String> paths) {
+    _pending = null;
+    _generation++;
     _instance?.dispose();
     final h = FushiDicts();
     h._loadCachedTransforms();
@@ -383,12 +406,135 @@ class FushiDicts {
     _rebuildStylesCache();
   }
 
+  /// **立刻**把引擎重建成给定集合（卸掉旧映射 + 逐本装载）。
+  ///
+  /// 只在「必须马上生效」时用：删词典目录前后（[releaseAllMappings] / BUG-1756，
+  /// 文件映射不释放就删不掉文件），以及测试。**写元数据的路径请用 [scheduleTyped]**
+  /// ——那条路是逐本触发的，就地重建会把总代价推成 O(N²)。
   static void initializeTyped({
     List<String> termPaths = const [],
     List<String> freqPaths = const [],
     List<String> pitchPaths = const [],
     List<String> kanjiPaths = const [],
   }) {
+    _pending = null;
+    _applyTyped(termPaths, freqPaths, pitchPaths, kanjiPaths);
+  }
+
+  /// 排期一次引擎重建：只记下目标集合，真正装载推迟到下一次要用引擎时
+  /// （[instance] / [dictionaryStyles] / [loadPendingNow]）。见 [_pending]。
+  ///
+  /// 连续排期只保留最后一次——中间那些集合从来没被任何人观察到，装了也是白装。
+  static void scheduleTyped({
+    List<String> termPaths = const [],
+    List<String> freqPaths = const [],
+    List<String> pitchPaths = const [],
+    List<String> kanjiPaths = const [],
+  }) {
+    _pending = _PendingDicts(
+      termPaths: termPaths,
+      freqPaths: freqPaths,
+      pitchPaths: pitchPaths,
+      kanjiPaths: kanjiPaths,
+    );
+    _generation++;
+  }
+
+  /// 主动结算待办（如果有）。给「知道自己接下来会用引擎、且希望装载成本落在此处
+  /// 而不是落在某次用户查词里」的调用方用，比如启动流程。
+  static void loadPendingNow() => _applyPendingIfAny();
+
+  /// 是否还有没结算的待办。测试与启动流程用来断言「引擎已经跟上元数据」。
+  static bool get hasPendingDicts => _pending != null;
+
+  /// 测试观察点：当前待办里的 term 路径（无待办时为空）。只读，不触发结算。
+  @visibleForTesting
+  static List<String> debugPendingTermPathsForTest() =>
+      List<String>.unmodifiable(_pending?.termPaths ?? const <String>[]);
+
+  /// 测试收尾：丢掉待办而**不**装载它。用来隔离用例间的静态状态——直接调
+  /// [loadPendingNow] 会真的去装载路径，那需要 native 库。
+  @visibleForTesting
+  static void dropPendingForTest() {
+    _pending = null;
+    _generation++;
+  }
+
+  /// 装载代次。每次排期或立刻装载都 +1，用来判定一次进行中的异步装载是否已经
+  /// 被更新的意图取代（见 [loadPendingAsync]）。
+  static int _generation = 0;
+
+  /// **分批让出**地结算待办：每装一本就把控制权交回事件循环一次。
+  ///
+  /// 为什么启动路径必须走这条而不是 [loadPendingNow]：装载是同步 FFI，一口气装
+  /// N 本就是 N 本的时间里主 isolate 完全不动——首帧画不出来，更要命的是**所有
+  /// Timer 都不会触发**，于是 `AppModel` 的 12 秒启动 IO 超时和 `main.dart` 的
+  /// 20 秒「加载太久」逃生 UI 双双失效：两层看门狗都是 Timer，被同步代码堵住的
+  /// 事件循环根本轮不到它们。用户那边看到的就是一直转圈、没有任何逃生口。
+  /// 每本之间让出后，装载再慢也只是慢，看门狗照常计时、UI 照常响应。
+  ///
+  /// 让出必须用 [Future.delayed] 而不是 `await null`：后者只让到 microtask 队列，
+  /// Timer 回调排在 event 队列，microtask 让出救不了看门狗。
+  ///
+  /// 装载在**影子实例**上进行，全部装完才原子替换 [_instance]：让出期间落进来的
+  /// 查词看到的是完整的旧集合，而不是装到一半的半成品。若让出期间有人排了新的
+  /// 集合（或直接同步装载过），本次结果按代次作废并丢弃——最后一次意图说了算。
+  static Future<void> loadPendingAsync() async {
+    final _PendingDicts? pending = _pending;
+    if (pending == null) return;
+    _pending = null;
+    final int generation = _generation;
+
+    final FushiDicts shadow = FushiDicts();
+    shadow._loadCachedTransforms();
+    Future<void> loadAll(
+        List<String> paths, void Function(String) add) async {
+      for (final String p in paths) {
+        add(p);
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+
+    await loadAll(pending.termPaths, shadow.addTermDict);
+    await loadAll(pending.freqPaths, shadow.addFreqDict);
+    await loadAll(pending.pitchPaths, shadow.addPitchDict);
+    await loadAll(pending.kanjiPaths, shadow.addKanjiDict);
+
+    if (generation != _generation) {
+      // 让出期间意图变了：丢掉这份成果（连同它持有的文件映射），别把已经过时的
+      // 集合盖回引擎上。新意图会由它自己的结算路径装载。
+      shadow.dispose();
+      return;
+    }
+
+    _instance?.dispose();
+    _instance = shadow;
+    _loadedDictCount = pending.termPaths.length +
+        pending.freqPaths.length +
+        pending.pitchPaths.length +
+        pending.kanjiPaths.length;
+    _rebuildStylesCache();
+  }
+
+  static void _applyPendingIfAny() {
+    final _PendingDicts? pending = _pending;
+    if (pending == null) return;
+    // 先清待办再装载：装载过程若抛异常，待办不该留在原地被下一次访问重放一遍
+    // （同一份坏数据会把每一次查词都变成一次全量重建尝试）。
+    _pending = null;
+    _applyTyped(pending.termPaths, pending.freqPaths, pending.pitchPaths,
+        pending.kanjiPaths);
+  }
+
+  static void _applyTyped(
+    List<String> termPaths,
+    List<String> freqPaths,
+    List<String> pitchPaths,
+    List<String> kanjiPaths,
+  ) {
+    // 同步装载同样算一次新意图：进行中的 [loadPendingAsync] 会据此作废自己的成果，
+    // 不把过时集合盖回来。
+    _generation++;
     _instance?.dispose();
     final h = FushiDicts();
     h._loadCachedTransforms();
@@ -417,6 +563,7 @@ class FushiDicts {
   }
 
   static void disposeInstance() {
+    _pending = null;
     _instance?.dispose();
     _instance = null;
     _loadedDictCount = 0;
@@ -434,11 +581,17 @@ class FushiDicts {
   /// 用「重建成空引擎」而不是 [disposeInstance]：`_instance` 始终非 null，释放到
   /// 重新加载之间落进来的查词退化成空结果，而不是撞 `_instance!` 的 null check。
   static void releaseAllMappings() {
+    // 待办也要一起清：留着它，删完目录后任何一次查词都会把「含已删词典」的那份
+    // 排期重放回引擎，等于映射又长回来了。
+    _pending = null;
     if (_instance == null || _loadedDictCount == 0) return;
     initializeTyped();
   }
 
-  static Map<String, String> get dictionaryStyles => _stylesCache;
+  static Map<String, String> get dictionaryStyles {
+    _applyPendingIfAny();
+    return _stylesCache;
+  }
 
   static void _rebuildStylesCache() {
     if (_instance == null) {
@@ -776,4 +929,22 @@ class FushiDicts {
       h.dispose();
     }
   }
+}
+
+/// [FushiDicts.scheduleTyped] 排下的待装载词典集合（不可变快照）。
+///
+/// 分四桶而不是一张扁平表：装载时每桶走不同的 native 入口（term/freq/pitch/kanji
+/// 各有自己的索引），合成一张表就得在结算时再分一次，白丢已经算好的信息。
+class _PendingDicts {
+  const _PendingDicts({
+    required this.termPaths,
+    required this.freqPaths,
+    required this.pitchPaths,
+    required this.kanjiPaths,
+  });
+
+  final List<String> termPaths;
+  final List<String> freqPaths;
+  final List<String> pitchPaths;
+  final List<String> kanjiPaths;
 }
