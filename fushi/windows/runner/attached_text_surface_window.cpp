@@ -21,6 +21,7 @@
 #include "lookup_hit_validation.h"
 #include "low_level_mouse_hook.h"
 #include "window_capture.h"
+#include "voice_hook_reader.h"
 
 namespace {
 
@@ -1614,6 +1615,14 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
     return;
   }
   native_provider_retire_pending_ = false;
+  // BUG-2093：引擎层原点一次性自动求解。放在这里是因为此刻的前置条件正好齐了——
+  // 目标已解析、shield 已握手、游戏还没被判成后台/最小化，画面就是可抓的。
+  // 解出来一次就够（origin 是常量），失败什么都不发布，注入侧照旧退回贴合层。
+  // 用户完全不需要手动框范围。
+  if (target_.hwnd != nullptr && TargetIsForeground()) {
+    fushi::VoiceHookReader::Instance().TrySolveAndPublishLookupLayerOrigin(
+        target_.hwnd);
+  }
   const HWND geometry_window =
       presentation_hwnd_ != nullptr ? presentation_hwnd_ : target_.hwnd;
   if (IsIconic(target_.hwnd) || IsIconic(geometry_window)) {

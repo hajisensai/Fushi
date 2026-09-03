@@ -23,6 +23,7 @@ add_custom_command(
 add_executable(${BINARY_NAME} WIN32
   "attached_text_surface_window.cpp"
   "audio_loopback_capture.cpp"
+  "layer_origin_solver.cpp"
   "voice_hook_reader.cpp"
   "crash_dump.cpp"
   "external_video_handoff.cpp"

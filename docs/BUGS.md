@@ -38,7 +38,7 @@
 | [BUG-2096](bugs/BUG-2096-attached-body-thread-recovery-edge-only.md) | ✅ | ✅ | attached 从 `waitingForBodyThread` 的恢复只挂在「正文从无到有」这一次性边沿上 |
 | [BUG-2095](bugs/BUG-2095-attached-dwrite-baseline-breaks-japanese-clusters.md) | ✅ | ✅ | attached 子面 DirectWrite 基线硬编码 0.8em，日文正文必然上溢版面框，字形簇永远建不出来 |
 | [BUG-2094](bugs/BUG-2094-attached-noglyphclusters-withdraws-claim.md) | ✅ | ✅ | attached 子面回 `noGlyphClusters` 时撤回了跨轮次共享的 provider 认领，与 BUG-2091 是同一个活锁的另一道门 |
-| [BUG-2093](bugs/BUG-2093-hunex-body-glyph-coords-are-logical-layer-local.md) | 🚧 | ✅ | WoH 正文字形 render x/y 是「1920×1080 逻辑空间的文本层局部坐标」，客户区映射已实测成立，只差层原点 |
+| [BUG-2093](bugs/BUG-2093-hunex-body-glyph-coords-are-logical-layer-local.md) | ✅ | ✅ | WoH 正文字形 render x/y 是「1920×1080 逻辑空间的文本层局部坐标」，客户区映射已实测成立，只差层原点 |
 | [BUG-2092](bugs/BUG-2092-attached-status-without-reason-undiagnosable.md) | ✅ | 🚧 | attached 状态机十二处 `needsRiskAcceptance` / `needsCalibration` / `waitingForBodyThread` 不带 reason，真机上无法定位是哪条分支 |
 | [BUG-2091](bugs/BUG-2091-attached-provider-claim-livelock.md) | ✅ | ✅ | 被抢占的旧轮次撤回 attached provider 认领，与注入侧 registry 形成活锁 |
 | [BUG-2090](bugs/BUG-2090-hunex-body-render-has-no-compose-layer.md) | ✅ | 🚧 | WoH 正文渲染没有合成层，HUNEX 几何模型的三级 compose 假设不成立 |

@@ -1184,8 +1184,41 @@ struct SharedHeader {
   // 时保证有值：那是唯一需要用户把自己的版本身份报回来的情形（hash-pinned 白名单不中）。
   // 有界读——上界就是 kHookModuleDigestChars，绝不假设写侧给了 NUL。
   char lookup_executable_sha256[kHookModuleDigestChars];
+  // ── BUG-2093 引擎层原点（双向；纯追加）────────────────────────────────────
+  // 背景：HUNEX/GGE 的正文字形位置是**文本层局部坐标**（1920x1080 逻辑单位），
+  // client = (render + origin) * client/(design_w, design_h) 已在两种窗口尺寸 × 三条行
+  // 上实测成立。origin 是每作一个常量，但**游戏内存里读不到现成的**——item 前 0x70 字节、
+  // render_item 另三个参数、body_submit 调用帧 0x000..0x180、viewport/scale 全局邻域
+  // 四处都排除过。所以由**宿主**抓一帧画面自动解出来，再回传给注入侧。
+  //
+  // hook→host：当前行在层空间的包围盒 + 设计分辨率。宿主据此预测「墨迹应该在哪」，
+  // 与实拍的墨迹框做二维平移求解。line_seq 单调，0=尚无。
+  volatile uint32_t lookup_layer_line_seq;
+  volatile uint32_t lookup_layer_design_w;
+  volatile uint32_t lookup_layer_design_h;
+  volatile uint32_t lookup_layer_glyph_count;
+  volatile int32_t lookup_layer_line_left;
+  volatile int32_t lookup_layer_line_top;
+  volatile int32_t lookup_layer_line_right;
+  volatile int32_t lookup_layer_line_bottom;
+  // host→hook：解出来的层原点。origin_seq 最后写；0=宿主尚未给出，注入侧此时**不得**
+  // 假装几何可用（fail-closed，照常退回贴合层）。
+  volatile int32_t lookup_layer_origin_x;
+  volatile int32_t lookup_layer_origin_y;
+  volatile uint32_t lookup_layer_origin_seq;
+  uint32_t lookup_layer_reserved;
 };
 #pragma pack(pop)
+
+// ── BUG-2093 层原点：两侧读写器 ─────────────────────────────────────────────
+struct LookupLayerLineSnapshot {
+  uint32_t seq = 0;
+  uint32_t design_w = 0;
+  uint32_t design_h = 0;
+  uint32_t glyph_count = 0;
+  int32_t left = 0, top = 0, right = 0, bottom = 0;
+  bool valid = false;
+};
 
 struct LookupGeometryAdmissionSnapshot {
   uint32_t seq = 0;
@@ -1549,6 +1582,128 @@ inline bool PublishLookupShieldStatus(
 //
 // 只在**内容真的变了**时推进 seq：registry 每 16~200ms 就 Poll 一次，稳态下无脑推 seq
 // 会让 host 每轮都当成新事件去刷 UI。返回值告诉调用方这轮有没有发生变化。
+// hook 侧发布：payload 先写，seq 最后写。内容没变就不推进 seq——宿主每轮都在轮询，
+// 无脑推序号会让它把同一行当成新行反复重解原点。
+inline bool PublishLookupLayerLine(SharedHeader* header, uint32_t design_w,
+                                   uint32_t design_h, uint32_t glyph_count,
+                                   int32_t left, int32_t top, int32_t right,
+                                   int32_t bottom) {
+  if (header == nullptr || design_w == 0u || design_h == 0u ||
+      glyph_count == 0u || right <= left || bottom <= top) {
+    return false;
+  }
+  const bool same =
+      AtomicLoadShared32(&header->lookup_layer_design_w) == design_w &&
+      AtomicLoadShared32(&header->lookup_layer_design_h) == design_h &&
+      AtomicLoadShared32(&header->lookup_layer_glyph_count) == glyph_count &&
+      static_cast<int32_t>(AtomicLoadShared32(
+          reinterpret_cast<volatile uint32_t*>(
+              &header->lookup_layer_line_left))) == left &&
+      static_cast<int32_t>(AtomicLoadShared32(
+          reinterpret_cast<volatile uint32_t*>(
+              &header->lookup_layer_line_top))) == top &&
+      static_cast<int32_t>(AtomicLoadShared32(
+          reinterpret_cast<volatile uint32_t*>(
+              &header->lookup_layer_line_right))) == right &&
+      static_cast<int32_t>(AtomicLoadShared32(
+          reinterpret_cast<volatile uint32_t*>(
+              &header->lookup_layer_line_bottom))) == bottom;
+  if (same && AtomicLoadShared32(&header->lookup_layer_line_seq) != 0u) {
+    return false;
+  }
+  AtomicStoreShared32(&header->lookup_layer_design_w, design_w);
+  AtomicStoreShared32(&header->lookup_layer_design_h, design_h);
+  AtomicStoreShared32(&header->lookup_layer_glyph_count, glyph_count);
+  AtomicStoreShared32(
+      reinterpret_cast<volatile uint32_t*>(&header->lookup_layer_line_left),
+      static_cast<uint32_t>(left));
+  AtomicStoreShared32(
+      reinterpret_cast<volatile uint32_t*>(&header->lookup_layer_line_top),
+      static_cast<uint32_t>(top));
+  AtomicStoreShared32(
+      reinterpret_cast<volatile uint32_t*>(&header->lookup_layer_line_right),
+      static_cast<uint32_t>(right));
+  AtomicStoreShared32(
+      reinterpret_cast<volatile uint32_t*>(&header->lookup_layer_line_bottom),
+      static_cast<uint32_t>(bottom));
+  AtomicStoreShared32(&header->lookup_layer_line_seq,
+                      AtomicLoadShared32(&header->lookup_layer_line_seq) + 1u);
+  return true;
+}
+
+// host 侧读取。seq==0 表示注入侧还没发布过任何一行，宿主此时无从求解。
+inline LookupLayerLineSnapshot ReadLookupLayerLine(const SharedHeader* header) {
+  LookupLayerLineSnapshot out;
+  if (header == nullptr) return out;
+  auto* mutable_header = const_cast<SharedHeader*>(header);
+  const uint32_t seq =
+      AtomicLoadShared32(&mutable_header->lookup_layer_line_seq);
+  if (seq == 0u) return out;
+  out.seq = seq;
+  out.design_w = AtomicLoadShared32(&mutable_header->lookup_layer_design_w);
+  out.design_h = AtomicLoadShared32(&mutable_header->lookup_layer_design_h);
+  out.glyph_count =
+      AtomicLoadShared32(&mutable_header->lookup_layer_glyph_count);
+  out.left = static_cast<int32_t>(AtomicLoadShared32(
+      reinterpret_cast<volatile uint32_t*>(
+          &mutable_header->lookup_layer_line_left)));
+  out.top = static_cast<int32_t>(AtomicLoadShared32(
+      reinterpret_cast<volatile uint32_t*>(
+          &mutable_header->lookup_layer_line_top)));
+  out.right = static_cast<int32_t>(AtomicLoadShared32(
+      reinterpret_cast<volatile uint32_t*>(
+          &mutable_header->lookup_layer_line_right)));
+  out.bottom = static_cast<int32_t>(AtomicLoadShared32(
+      reinterpret_cast<volatile uint32_t*>(
+          &mutable_header->lookup_layer_line_bottom)));
+  // 再读一次 seq：中途被改过就当这份快照没读到（与其它槽同一套纪律）。
+  if (AtomicLoadShared32(&mutable_header->lookup_layer_line_seq) != seq) {
+    return LookupLayerLineSnapshot{};
+  }
+  out.valid = out.design_w != 0u && out.design_h != 0u &&
+              out.glyph_count != 0u && out.right > out.left &&
+              out.bottom > out.top;
+  return out;
+}
+
+// host 侧发布原点：payload 先写，seq 最后写。
+inline bool PublishLookupLayerOrigin(SharedHeader* header, int32_t origin_x,
+                                     int32_t origin_y) {
+  if (header == nullptr) return false;
+  AtomicStoreShared32(
+      reinterpret_cast<volatile uint32_t*>(&header->lookup_layer_origin_x),
+      static_cast<uint32_t>(origin_x));
+  AtomicStoreShared32(
+      reinterpret_cast<volatile uint32_t*>(&header->lookup_layer_origin_y),
+      static_cast<uint32_t>(origin_y));
+  AtomicStoreShared32(
+      &header->lookup_layer_origin_seq,
+      AtomicLoadShared32(&header->lookup_layer_origin_seq) + 1u);
+  return true;
+}
+
+// hook 侧读取原点。返回 false = 宿主还没给，注入侧必须 fail-closed。
+inline bool ReadLookupLayerOrigin(const SharedHeader* header, int32_t* out_x,
+                                  int32_t* out_y) {
+  if (header == nullptr || out_x == nullptr || out_y == nullptr) return false;
+  auto* mutable_header = const_cast<SharedHeader*>(header);
+  const uint32_t seq =
+      AtomicLoadShared32(&mutable_header->lookup_layer_origin_seq);
+  if (seq == 0u) return false;
+  const int32_t x = static_cast<int32_t>(AtomicLoadShared32(
+      reinterpret_cast<volatile uint32_t*>(
+          &mutable_header->lookup_layer_origin_x)));
+  const int32_t y = static_cast<int32_t>(AtomicLoadShared32(
+      reinterpret_cast<volatile uint32_t*>(
+          &mutable_header->lookup_layer_origin_y)));
+  if (AtomicLoadShared32(&mutable_header->lookup_layer_origin_seq) != seq) {
+    return false;
+  }
+  *out_x = x;
+  *out_y = y;
+  return true;
+}
+
 inline bool PublishLookupAdmission(SharedHeader* header,
                                    const LookupAdmissionReport& report) {
   if (header == nullptr) return false;

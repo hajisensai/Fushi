@@ -1255,6 +1255,77 @@ bool SolveHunexGgeAffineProjection(const HunexGgeProjectionEvidence& evidence,
   return true;
 }
 
+// BUG-2093：设计分辨率由引擎自己的 viewport/scale 全局反解，不写死。
+// 真机 WoH：viewport={0,0,1788,1006}，scale=0.93125/0.931481 → 1788/0.93125=1920,
+// 1006/0.931481=1080。
+bool ReadHunexGgeDesignSize(uint32_t* design_w, uint32_t* design_h) {
+  if (design_w == nullptr || design_h == nullptr) return false;
+  fushi_voice_hook::HunexGgeTraceEvent probe;
+  if (!CaptureHunexGgeViewportTransform(&probe)) return false;
+  const double width = static_cast<double>(probe.viewport_right) -
+                       static_cast<double>(probe.viewport_left);
+  const double height = static_cast<double>(probe.viewport_bottom) -
+                        static_cast<double>(probe.viewport_top);
+  float scale_x_value = 0.0f, scale_y_value = 0.0f;
+  std::memcpy(&scale_x_value, &probe.scale_x_bits, sizeof(scale_x_value));
+  std::memcpy(&scale_y_value, &probe.scale_y_bits, sizeof(scale_y_value));
+  const double scale_x = static_cast<double>(scale_x_value);
+  const double scale_y = static_cast<double>(scale_y_value);
+  if (!(width > 0.0) || !(height > 0.0) || !(scale_x > 0.01) ||
+      !(scale_y > 0.01)) {
+    return false;
+  }
+  const double w = width / scale_x;
+  const double h = height / scale_y;
+  if (!(w >= 320.0) || !(w <= 8192.0) || !(h >= 240.0) || !(h <= 8192.0)) {
+    return false;
+  }
+  *design_w = static_cast<uint32_t>(w + 0.5);
+  *design_h = static_cast<uint32_t>(h + 0.5);
+  return true;
+}
+
+// BUG-2093：宿主解出层原点后的确定性投影。
+// client = (layer + origin) * client / design —— 该式已在两种窗口尺寸 × 三条行上实测成立。
+// 不依赖 sprite draw 那条证据链（真机已证明它在 WoH 正文上五段全灭）。
+bool TransformHunexGgeProjectionByLayerOrigin(
+    fushi_voice_hook::hunex_lookup_core::RubyTextProjection* projection,
+    int32_t origin_x, int32_t origin_y, uint32_t design_w, uint32_t design_h,
+    int32_t client_width, int32_t client_height) {
+  namespace core = fushi_voice_hook::hunex_lookup_core;
+  if (projection == nullptr || projection->glyph_count == 0u ||
+      design_w == 0u || design_h == 0u || client_width <= 0 ||
+      client_height <= 0) {
+    return false;
+  }
+  const double sx = static_cast<double>(client_width) /
+                    static_cast<double>(design_w);
+  const double sy = static_cast<double>(client_height) /
+                    static_cast<double>(design_h);
+  for (uint16_t index = 0u; index < projection->glyph_count; ++index) {
+    core::Rect& bounds = projection->glyphs[index].logical_bounds;
+    const double left = (static_cast<double>(bounds.x) + origin_x) * sx;
+    const double top = (static_cast<double>(bounds.y) + origin_y) * sy;
+    const double right =
+        (static_cast<double>(bounds.x) + bounds.width + origin_x) * sx;
+    const double bottom =
+        (static_cast<double>(bounds.y) + bounds.height + origin_y) * sy;
+    // 落在客户区之外的行不发布：原点解错时必须失败，而不是给出一片错位热区。
+    if (!(left >= -8.0) || !(top >= -8.0) ||
+        !(right <= static_cast<double>(client_width) + 8.0) ||
+        !(bottom <= static_cast<double>(client_height) + 8.0) ||
+        !(right > left) || !(bottom > top)) {
+      return false;
+    }
+    bounds.x = static_cast<int32_t>(left + 0.5);
+    bounds.y = static_cast<int32_t>(top + 0.5);
+    bounds.width = static_cast<int32_t>(right + 0.5) - bounds.x;
+    bounds.height = static_cast<int32_t>(bottom + 0.5) - bounds.y;
+    if (bounds.width <= 0 || bounds.height <= 0) return false;
+  }
+  return true;
+}
+
 bool TransformHunexGgeProjectionToClient(
     const HunexGgeProjectionEvidence& evidence,
     const HunexGgeAffineProjection& transform,
@@ -1417,6 +1488,54 @@ bool BuildHunexGgeClientProjection(
   // 九个子条件拆开报点：它们指向的排障方向完全不同——没有证据说明 sprite draw 那一段
   // 从未成功发布过；身份不符说明证据属于另一条语义行/另一个渲染线程；尺寸不符说明窗口
   // 在两次采样之间变了；过期说明 2s 新鲜窗没赶上。
+  // BUG-2093：层原点直连路径。把本行在**层空间**的包围盒发布给宿主（它抓一帧画面、
+  // 量出墨迹框、二维平移求解 origin 再回传）；拿到 origin 就用确定性公式投影，整条
+  // sprite draw 证据链不参与——真机已证明它在 WoH 正文上 compose/texture/quad/sprite
+  // 五段全灭。没拿到 origin 就照旧走下面的证据链（fail-closed，不假装几何可用）。
+  uint32_t design_w = 0u, design_h = 0u;
+  if (ReadHunexGgeDesignSize(&design_w, &design_h)) {
+    int32_t line_left = 0, line_top = 0, line_right = 0, line_bottom = 0;
+    bool has_bounds = false;
+    for (uint16_t index = 0u; index < projection->glyph_count; ++index) {
+      // 只统计**会出墨**的字形。行首的全角空格 U+3000 在层空间照样占一格却不画任何
+      // 像素，把它算进包围盒会让宿主拿墨迹左边缘求出的原点整体右偏整整一格——真机上
+      // 表现为「点第 N 个字查出第 N-1 个字」。半角空格与 TAB 同理。
+      const uint32_t scalar = projection->glyphs[index].scalar;
+      if (scalar == 0x20u || scalar == 0x09u || scalar == 0x3000u) continue;
+      const auto& bounds = projection->glyphs[index].logical_bounds;
+      if (bounds.width <= 0 || bounds.height <= 0) continue;
+      const int32_t right = bounds.x + bounds.width;
+      const int32_t bottom = bounds.y + bounds.height;
+      if (!has_bounds) {
+        line_left = bounds.x; line_top = bounds.y;
+        line_right = right; line_bottom = bottom;
+        has_bounds = true;
+        continue;
+      }
+      if (bounds.x < line_left) line_left = bounds.x;
+      if (bounds.y < line_top) line_top = bounds.y;
+      if (right > line_right) line_right = right;
+      if (bottom > line_bottom) line_bottom = bottom;
+    }
+    if (has_bounds) {
+      fushi_voice_hook::PublishLookupLayerLine(
+          g_header, design_w, design_h, projection->glyph_count, line_left,
+          line_top, line_right, line_bottom);
+    }
+    int32_t origin_x = 0, origin_y = 0;
+    if (has_bounds &&
+        fushi_voice_hook::ReadLookupLayerOrigin(g_header, &origin_x,
+                                                &origin_y)) {
+      if (TransformHunexGgeProjectionByLayerOrigin(
+              projection, origin_x, origin_y, design_w, design_h,
+              client_width, client_height)) {
+        return true;
+      }
+      return reject(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                        kWorkerClientTransformRejected);
+    }
+  }
+
   HunexGgeProjectionEvidence evidence;
   if (!ReadHunexGgeProjectionEvidence(&evidence) ||
       evidence.generation == 0u || evidence.draw_sequence == 0u ||
@@ -1850,6 +1969,29 @@ void* Detour_HunexGgeRenderItem(void* arg1, void* arg2, void* arg3,
           event.story_line_base = static_cast<uint64_t>(frame.line_base);
           event.evidence_flags |= fushi_voice_hook::
               kHunexGgeTraceEvidenceStoryFrameSlotsRead;
+          // BUG-2093：正文文本层原点探针。字形 render x/y 是文本层局部坐标
+          // （1920x1080 逻辑单位），客户区映射 client = (render + origin) * client/(1920,1080)
+          // 已在两种窗口尺寸 × 三条行上实测成立，唯一缺的就是 origin。字形 item 前 0x70
+          // 字节与 render_item 另三个参数都已 dump 过、无候选；本轮改抄 body_submit 的
+          // **调用帧窗口**（0x000..0x180，已知 0x78/0x7c/0x88/0xdc 四个槽都在其中，说明
+          // 正文绘制状态就摊在这里）。只读、只抄一次、不参与任何几何判据。
+          if (FushiHunexGgeTraceV3.body_arg_captured == 0u) {
+            uint32_t window[3][32] = {};
+            bool copied = false;
+            __try {
+              std::memcpy(window, wrapper_return_slot, sizeof(window));
+              copied = true;
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+            }
+            if (copied &&
+                InterlockedCompareExchange(
+                    reinterpret_cast<volatile LONG*>(
+                        &FushiHunexGgeTraceV3.body_arg_captured),
+                    1, 0) == 0) {
+              std::memcpy(FushiHunexGgeTraceV3.body_arg_words, window,
+                          sizeof(window));
+            }
+          }
           if (capture_admitted_at_entry && CaptureHunexGgeStoryLine(
                   frame.line_base, body_raw_text.data(),
                   body_raw_text.size(), &body_raw_text_units,
@@ -1910,31 +2052,6 @@ void* Detour_HunexGgeRenderItem(void* arg1, void* arg2, void* arg3,
     } __except (EXCEPTION_EXECUTE_HANDLER) {
       event.outer_caller_rva = 0u;
       event.outer_function_rva = 0u;
-    }
-  }
-
-  // BUG-2093：正文文本层原点探针。render x/y 是文本层局部坐标（1920x1080 逻辑单位），
-  // 客户区映射 client = (render + origin) * client/(1920,1080) 已在两种窗口尺寸下实测成立，
-  // 唯一缺的就是 origin。字形 item 前 0x70 字节里没有候选，故把 render_item 的另外三个
-  // 参数各抄前 32 dword 一次，纯离线定位用；只读、幂等、不参与任何几何判据。
-  if (body_submit && FushiHunexGgeTraceV3.body_arg_captured == 0u) {
-    uint32_t dump[3][32] = {};
-    bool dumped = false;
-    void* const args[3] = {arg1, arg2, arg3};
-    for (size_t index = 0; index < 3; ++index) {
-      if (args[index] == nullptr) continue;
-      __try {
-        std::memcpy(dump[index], args[index], sizeof(dump[index]));
-        dumped = true;
-      } __except (EXCEPTION_EXECUTE_HANDLER) {
-      }
-    }
-    if (dumped &&
-        InterlockedCompareExchange(
-            reinterpret_cast<volatile LONG*>(
-                &FushiHunexGgeTraceV3.body_arg_captured),
-            1, 0) == 0) {
-      std::memcpy(FushiHunexGgeTraceV3.body_arg_words, dump, sizeof(dump));
     }
   }
 
