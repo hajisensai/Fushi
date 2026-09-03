@@ -19,7 +19,7 @@ import 'package:fushi/i18n/strings.g.dart';
 ///   拼成各格式字符串，无任何 IO，可单测。
 /// - 平台分流（[saveOrShareExport]）照搬 `log_exporter.dart` 的 [_isDesktop] 二分：桌面
 ///   （含 Linux）严格走 [FilePicker.saveFile]，**绝不触 share_plus**（Linux 无 share_plus
-///   注册，误调会崩）；移动端走 [Share.shareXFiles]。
+///   注册，误调会崩）；移动端走 [FushiShare.shareFiles]。
 /// - 分组键统一用 [ExportSentence.bookTitle]（恒非空），不用可空的 bookKey。
 
 /// 导出格式。
@@ -902,7 +902,7 @@ bool get _isDesktop =>
 /// 把导出内容落盘（桌面）或分享（移动）。
 ///
 /// 平台分流硬约束：桌面（含 Linux）走 [FilePicker.saveFile]，移动端才用
-/// [Share.shareXFiles]（Linux 无 share_plus 注册）。tmp 文件 + `context.mounted`
+/// [FushiShare.shareFiles]（Linux 无 share_plus 注册）。tmp 文件 + `context.mounted`
 /// 守卫 + finally 清理，照搬 `log_exporter.dart`。
 Future<void> saveOrShareExport({
   required BuildContext context,

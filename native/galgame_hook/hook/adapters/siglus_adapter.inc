@@ -12,8 +12,10 @@ constexpr uint32_t kDiagSiglusOvkOpened = 0x20000000u;
 constexpr uint32_t kDiagSiglusVoiceQueued = 0x40000000u;
 constexpr uint32_t kDiagSiglusVoiceDumped = 0x80000000u;
 
+// 无锁句柄表（tracked_handle_table.h）：Forget 走 CloseHandle detour，不得进 g_cs（BUG-2046）。
 struct SiglusOvkHandle {
   HANDLE handle = INVALID_HANDLE_VALUE;
+  volatile LONG seq = 0;
   wchar_t path[kSiglusPathChars] = {0};
 };
 
@@ -120,19 +122,11 @@ void RememberUnityVoiceBundle(const wchar_t* path) {
 }
 
 void RememberSiglusOvk(HANDLE handle, const wchar_t* path) {
-  if (handle == INVALID_HANDLE_VALUE || path == nullptr || !g_cs_ready) return;
-  bool remembered = false;
-  EnterCriticalSection(&g_cs);
-  for (int i = 0; i < kSiglusHandleSlots; ++i) {
-    if (g_siglus_handles[i].handle == INVALID_HANDLE_VALUE ||
-        g_siglus_handles[i].handle == handle) {
-      g_siglus_handles[i].handle = handle;
-      wcsncpy_s(g_siglus_handles[i].path, path, _TRUNCATE);
-      remembered = true;
-      break;
-    }
-  }
-  LeaveCriticalSection(&g_cs);
+  if (handle == INVALID_HANDLE_VALUE || path == nullptr) return;
+  const bool remembered = fushi_voice_hook::RememberTrackedHandle(
+      g_siglus_handles, handle, [path](SiglusOvkHandle& slot) {
+        wcsncpy_s(slot.path, path, _TRUNCATE);
+      });
   if (remembered) {
     InterlockedExchange(&g_visual_arts_ovk_seen, 1);
     if (g_header != nullptr) {
@@ -144,34 +138,15 @@ void RememberSiglusOvk(HANDLE handle, const wchar_t* path) {
 }
 
 bool CopySiglusOvkPath(HANDLE handle, wchar_t* out, size_t out_chars) {
-  if (handle == INVALID_HANDLE_VALUE || out == nullptr || out_chars == 0 ||
-      !g_cs_ready) {
-    return false;
-  }
-  bool found = false;
-  EnterCriticalSection(&g_cs);
-  for (int i = 0; i < kSiglusHandleSlots; ++i) {
-    if (g_siglus_handles[i].handle == handle) {
-      wcsncpy_s(out, out_chars, g_siglus_handles[i].path, _TRUNCATE);
-      found = true;
-      break;
-    }
-  }
-  LeaveCriticalSection(&g_cs);
-  return found;
+  if (out == nullptr || out_chars == 0) return false;
+  return fushi_voice_hook::ReadTrackedHandle(
+      g_siglus_handles, handle, [out, out_chars](const SiglusOvkHandle& slot) {
+        wcsncpy_s(out, out_chars, slot.path, _TRUNCATE);
+      });
 }
 
 void ForgetSiglusOvk(HANDLE handle) {
-  if (handle == INVALID_HANDLE_VALUE || !g_cs_ready) return;
-  EnterCriticalSection(&g_cs);
-  for (int i = 0; i < kSiglusHandleSlots; ++i) {
-    if (g_siglus_handles[i].handle == handle) {
-      g_siglus_handles[i].handle = INVALID_HANDLE_VALUE;
-      g_siglus_handles[i].path[0] = 0;
-      break;
-    }
-  }
-  LeaveCriticalSection(&g_cs);
+  fushi_voice_hook::ForgetTrackedHandle(g_siglus_handles, handle);
 }
 
 HANDLE WINAPI Detour_CreateFileW(LPCWSTR file_name, DWORD desired_access,
@@ -327,6 +302,11 @@ BOOL WINAPI Detour_ReadFile(HANDLE file, LPVOID buffer, DWORD requested,
   return ok;
 }
 
+// 🔴 这条 detour 里**不得出现任何阻塞原语**（EnterCriticalSection / SRW / Wait / Sleep），
+// 它调到的每个 Forget* 也一样——守卫 tests/close_handle_detour_lockfree_guard_test.py。
+// CloseHandle 是 MinHook Freeze/Unfreeze 在挂起了其它全部线程之后仍会调用的 API，而进程里
+// 除了我们还有 LunaHook32 那份 MinHook：它挂起主线程后走进这里等 g_cs，而 g_cs 的唤醒正
+// 排给了被它挂起的主线程 → 锁无人持有、两边永远互等（BUG-2046，真机 cdb 证据）。
 BOOL WINAPI Detour_CloseHandle(HANDLE handle) {
   ForgetTyranoAsar(handle);
   ForgetBgiVoiceArc(handle);

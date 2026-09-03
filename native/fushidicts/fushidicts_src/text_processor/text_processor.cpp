@@ -268,8 +268,53 @@ std::vector<TextProcessor> get_diacritic_removal_processors() {
   };
 }
 
+// BUG-2056：撇号有多个码点写法，词形还原规则与词典条目却只认一种。
+// 真实 EPUB 的英文缩合形/所有格几乎一律用排版撇号 U+2019（don’t / John’s），而
+// assets/transforms/en.json 的五条撇号规则（'s / s' / 'd / in' / "don't "）与绝大
+// 多数英文词典的条目键都是 ASCII U+0027。NFKC 帮不上忙——U+2019 没有兼容分解
+// （utf8proc_NFKC("’") 仍是 "’"）。所以哪怕扫描层把 don’t 整词送了进来，还原与查
+// 表两级仍会全部落空，最终命中的还是修复前那条 "don"。
+//
+// 折成**一个规范码点**并双向各出一路变体（option 0 保留原文，既有命中一条不丢）：
+//   option 1: 所有撇号 -> ASCII '    查询 don’t 命中 ASCII 条目 / ASCII 还原规则
+//   option 2: 所有撇号 -> U+2019 ’   查询 don't 命中以排版撇号建键的词典
+// 覆盖「文本写法 x 词典写法」四格全部，且无撇号文本 processed == variant，变体集
+// 原地折叠、零额外查询。
+constexpr char32_t APOSTROPHE_ASCII = U'\'';
+constexpr char32_t APOSTROPHE_RIGHT_SINGLE = 0x2019;
+
+bool is_apostrophe_like(char32_t c) {
+  return c == APOSTROPHE_ASCII ||     // '  U+0027
+         c == 0x2018 ||               // ‘  左单引号（OCR 常把 ’ 认成它）
+         c == APOSTROPHE_RIGHT_SINGLE ||  // ’  U+2019
+         c == 0x02BC;                 // ʼ  MODIFIER LETTER APOSTROPHE
+}
+
+std::u32string normalize_apostrophes(const std::u32string& text, char32_t to) {
+  std::u32string result;
+  result.reserve(text.size());
+  for (char32_t c : text) {
+    result += is_apostrophe_like(c) ? to : c;
+  }
+  return result;
+}
+
 std::vector<TextProcessor> get_english_processors() {
   return {
+      // BUG-2056：撇号写法归一（见上）。放在 lowercase 之前或之后都一样——两个处理器
+      // 互不依赖，变体扇出会把两种组合都算出来。
+      {.options = {0, 1, 2},
+       .process =
+           [](const std::u32string& text, int opt) -> std::u32string {
+             switch (opt) {
+               case 1:
+                 return normalize_apostrophes(text, APOSTROPHE_ASCII);
+               case 2:
+                 return normalize_apostrophes(text, APOSTROPHE_RIGHT_SINGLE);
+               default:
+                 return text;
+             }
+           }},
       // lowercase
       {.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
          if (opt == 1) {

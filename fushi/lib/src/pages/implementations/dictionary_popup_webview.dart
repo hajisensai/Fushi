@@ -8,7 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi_anki/fushi_anki.dart' show MineOutcome, MineResult;
+import 'package:fushi_anki/fushi_anki.dart'
+    show AnkiOpenWordOutcome, MineOutcome, MineResult;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
@@ -20,6 +21,7 @@ import 'package:fushi/src/platform/selection_external_actions.dart';
 import 'package:fushi/src/reader/dictionary_font_css.dart';
 import 'package:fushi/src/reader/popup_swipe_close_script.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
+import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart' show activeModifierKeys;
 import 'package:fushi/src/shortcuts/reader_space_override.dart'
@@ -247,11 +249,15 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   final Future<MinePopupResult> Function(Map<String, String> fields)?
       onMinedCardAction;
 
-  /// TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮回调。宿主据 [expression]/[reading]
-  /// 反查 Anki 全部命中卡并直接跳转打开（单卡直开 / 多卡弹选择 / 无卡 toast）。与
-  /// [onMinedCardAction]（点 ✓ 弹覆写·新增·查看操作单）解耦：本回调只做「查找并在 Anki
-  /// 中打开」，不改卡片。null 时 popup 端点击是 no-op（按钮仅在已制卡时显示）。
-  final Future<void> Function(String expression, String reading)? onOpenInAnki;
+  /// TODO-1360 / BUG-2051：已制卡的词旁 ↗「在 Anki 中打开卡片」按钮回调。宿主把 Anki
+  /// 浏览器过滤到「Anki 认为 [expression] 已有的卡」（判据与画 ✓ 的查重同源，见
+  /// [BaseAnkiRepository.openWordInAnki]），并回传三态结局——弹窗按钮据此就地提示
+  /// 「没有找到已制的卡片」/「无法在 Anki 中打开」，不再由宿主 toast：app 外表面
+  /// 根本没有 Flutter toast 可用，提示只能画在按钮旁边，两条车道共用同一份文案。
+  /// 与 [onMinedCardAction]（点 ✓ 弹覆写·新增·查看操作单）解耦：本回调不改卡片。
+  /// null 时 popup 端点击是 no-op（按钮仅在已制卡时显示）。
+  final Future<AnkiOpenWordOutcome> Function(String expression, String reading)?
+      onOpenInAnki;
 
   /// 切换收藏：返回切换后的新状态（true=已收藏）。供弹窗「☆/★」按钮回调。
   final Future<bool> Function(Map<String, String> fields)? onFavoriteEntry;
@@ -425,15 +431,15 @@ class DictionaryPopupWebViewState
     }
   }
 
-  Future<void> _completePopupLoad(
-      InAppWebViewController controller) async {
+  Future<void> _completePopupLoad(InAppWebViewController controller) async {
     try {
       await controller.evaluateJavascript(source: ReaderCaretScripts.source());
       if (!mounted) return;
       await _applyPopupViewportSize();
     } catch (e, stack) {
       if (mounted) {
-        ErrorLogService.instance.log('DictPopupWebview.loadBootstrap', e, stack);
+        ErrorLogService.instance
+            .log('DictPopupWebview.loadBootstrap', e, stack);
       }
     }
     if (!mounted) return;
@@ -760,11 +766,35 @@ JSON.stringify((function(){
     _controller?.evaluateJavascript(source: _surfaceRepaintNudgeJs);
   }
 
-  void highlightSelection(int charCount) {
-    _controller?.evaluateJavascript(
-      source:
-          'window.fushiSelection?.highlightSelection && window.fushiSelection.highlightSelection($charCount)',
-    );
+  /// BUG-2054：高亮被查词，并返回它在**本 WebView 视口内**的整词 bbox（CSS px），
+  /// 供调用方把刚打开的子弹窗从「点击的首字符」重锚到整词矩形。
+  ///
+  /// selection.js 的 `highlightSelection` 早就把跨行的多段 `getClientRects()` 聚合
+  /// 成一个 bbox 并 `return`（跨行选区时它的 bottom 落在**最后一行**），此前这里裸
+  /// eval 把返回值丢了：子弹窗只能锚在 `getSelectionRect` 给的首字符矩形上，于是
+  /// 跨行选区的子弹窗贴在第一行下方，正好盖住选区所在的第二行。与阅读器正文车道
+  /// （BUG-717②/BUG-767，`reader_fushi/lookup.part.dart`）同一范式，共用
+  /// [ReaderSelectionScripts] 的调用串与解析器，不另造第二份。
+  ///
+  /// 返回 null = 没拿到可用 bbox（无匹配 / WebView 已半销毁 / 解析失败）：调用方
+  /// 保持原锚点，重锚失败绝不打断查词。
+  Future<Rect?> highlightSelection(int charCount) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return null;
+    try {
+      final Object? raw = await controller.evaluateJavascript(
+        source: 'window.fushiSelection?.highlightSelection ? '
+            '${ReaderSelectionScripts.highlightInvocation(charCount)} : null',
+      );
+      return ReaderSelectionScripts.highlightRectFromResult(raw);
+    } catch (e, stack) {
+      // BUG-005 同根因（TODO-678）：WebView 半销毁时其 per-instance method channel
+      // 已摘除，evaluateJavascript 抛 MissingPluginException。`controller != null`
+      // 防不了通道已废 —— 必须 try/catch；重锚是锦上添花，绝不冒泡打断查词。
+      ErrorLogService.instance
+          .log('DictPopupWebview.highlightSelection', e, stack);
+      return null;
+    }
   }
 
   void clearSelection() {
@@ -2000,9 +2030,12 @@ JSON.stringify((function(){
           },
         );
 
-        // TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮 → popup.js 调本处理器（带
-        // expression/reading）。宿主反查 Anki 命中卡并直接跳转打开。自带 try/catch 永不
-        // 让异常穿过原生桥（BUG-293）；无回传（打开是副作用），返回 null。
+        // TODO-1360 / BUG-2051：已制卡的词旁 ↗「在 Anki 中打开卡片」按钮 → popup.js 调
+        // 本处理器（带 expression/reading）。宿主把 Anki 浏览器过滤到这个词已有的卡，
+        // 并回传三态结局名（'opened' / 'noMatch' / 'failed'），popup.js 据此就地提示。
+        // 自带 try/catch 永不让异常穿过原生桥（BUG-293）；异常与未接线一律回
+        // 'failed'——**绝不回 null**：null 是「这个宿主根本没接这根桥」的专用信号，
+        // popup.js 靠它区分「打不开」与「没人管」，两者混一起就又变回点了没反应。
         controller.addJavaScriptHandler(
           handlerName: 'openInAnki',
           callback: (args) async {
@@ -2013,13 +2046,15 @@ JSON.stringify((function(){
                 final data = args[0] as Map;
                 final expression = (data['expression'] ?? '').toString();
                 final reading = (data['reading'] ?? '').toString();
-                await widget.onOpenInAnki!(expression, reading);
+                final AnkiOpenWordOutcome outcome =
+                    await widget.onOpenInAnki!(expression, reading);
+                return outcome.name;
               }
             } catch (e, stack) {
               ErrorLogService.instance
                   .log('DictPopupWebview.openInAnki', e, stack);
             }
-            return null;
+            return AnkiOpenWordOutcome.failed.name;
           },
         );
 

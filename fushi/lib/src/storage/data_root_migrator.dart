@@ -544,28 +544,41 @@ class DataRootMigrator {
   }
 
   static bool _isCrossDevice(FileSystemException e) {
-    final int? code = e.osError?.errorCode;
-    // POSIX EXDEV=18；Windows ERROR_NOT_SAME_DEVICE=17。
-    return code == 18 || code == 17;
+    return _isCrossDeviceErrorCode(e.osError?.errorCode);
   }
 
+  // POSIX EXDEV=18；Windows ERROR_NOT_SAME_DEVICE=17。
+  static bool _isCrossDeviceErrorCode(int? code) => code == 18 || code == 17;
+
   static bool _shouldCopyAfterRenameFailure(FileSystemException e) {
-    if (_isCrossDevice(e)) return true;
-    final int? code = e.osError?.errorCode;
+    return _shouldCopyAfterRenameErrorCode(
+      e.osError?.errorCode,
+      isMacOS: Platform.isMacOS,
+    );
+  }
+
+  static bool _shouldCopyAfterRenameErrorCode(
+    int? code, {
+    required bool isMacOS,
+  }) {
     // macOS sandboxed apps can receive EPERM/EACCES for directory rename into
-    // a user-selected security-scoped folder while individual file copy/delete
-    // still works. Falling back is safe: if copy or source delete fails, the
-    // caller rolls the new root back and leaves the old root intact.
-    return code == 1 || code == 13;
+    // a user-selected security-scoped folder. File Provider-backed Documents
+    // (notably iCloud Drive) can instead time out the domain-crossing rename
+    // with ETIMEDOUT=60. In both cases individual file copy/delete still works.
+    // Falling back is safe: if copy or source delete fails, the caller rolls the
+    // new root back and leaves the old root intact.
+    return _isCrossDeviceErrorCode(code) ||
+        code == 1 ||
+        code == 13 ||
+        (isMacOS && code == 60);
   }
 
   @visibleForTesting
-  static bool shouldCopyAfterRenameFailureForTesting(int errorCode) =>
-      _shouldCopyAfterRenameFailure(FileSystemException(
-        'rename failed',
-        null,
-        OSError('', errorCode),
-      ));
+  static bool shouldCopyAfterRenameFailureForTesting(
+    int errorCode, {
+    bool isMacOS = false,
+  }) =>
+      _shouldCopyAfterRenameErrorCode(errorCode, isMacOS: isMacOS);
 
   /// 仅供单测：直接驱动跨盘复制 + 进度回报，不依赖伪造 EXDEV/EXDEV-17 错误。复制 [src]
   /// 整树到 [dst] 并按真实文件数回报 (copied, total)，与生产跨盘路径走同一份逻辑。

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'package:fushi/src/media/external_provider.dart';
+import 'package:fushi/src/media/torrent/public_trackers.dart';
 import 'package:fushi/src/media/torrent/public_video_index_client.dart';
 import 'package:fushi/src/media/torrent/public_video_index_provider.dart';
 import 'package:fushi/src/media/torrent/search_query_script.dart';
@@ -57,8 +58,28 @@ void main() {
     );
     expect(magnet, startsWith('magnet:?xt=urn:btih:$_hashA'));
     expect(magnet, contains('dn=Some+Show+S01E01'));
-    for (final String tracker in kPublicVideoIndexTrackers) {
+    for (final String tracker in kPublicTrackers) {
       expect(magnet, contains(Uri.encodeQueryComponent(tracker)));
+    }
+    expect('&tr='.allMatches(magnet), hasLength(kPublicTrackers.length));
+  });
+
+  test('kPublicTrackers 每条都是合法 announce URL 且互不重复', () {
+    // 打错一个字符的 tracker 不会报错，只会安静地永远连不上；重复一条则让每个
+    // 种子对同一个 host 多打一轮 announce。两种都要等用户抱怨才可能被发现。
+    //
+    // 形状判据走原始字符串正则，不用 `Uri.hasPort`：后者问的是「端口是否非本
+    // 协议默认值」，`https://host:443/announce` 明明写了端口也返回 false。
+    final RegExp announceUrl = RegExp(
+      r'^(?:udp|https?)://[A-Za-z0-9.-]+:\d{1,5}/announce$',
+    );
+    expect(kPublicTrackers.toSet(), hasLength(kPublicTrackers.length));
+    for (final String tracker in kPublicTrackers) {
+      expect(
+        announceUrl.hasMatch(tracker),
+        isTrue,
+        reason: '不是 <scheme>://<host>:<port>/announce 形状：$tracker',
+      );
     }
   });
 

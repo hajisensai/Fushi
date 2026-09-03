@@ -17,6 +17,7 @@ import 'package:fushi/src/media/video/video_hdr_output.dart'
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 // 迁移判据要用「这个存量代理地址归一得出来吗」，与 applyAppProxy 同一份实现，
@@ -580,6 +581,37 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // 游戏内查词卡（galgame hook 直接贴进游戏画面的那张）是**第三个形态**。它与 app 外
+  // 覆盖窗曾共用 overlay 那组键，于是「游戏里合适」和「桌面上合适」只能二选一——真机上
+  // 表现为一个过小、另一个过大。合适尺寸本就不同：覆盖窗浮在整块桌面上，游戏内卡片要
+  // 挤在游戏客户区里且不能遮住正文，所以给它自己的键。默认同样 independent=false，
+  // 跟随 app 内共享值，解锁后才用自己的宽高（解锁瞬间不跳尺寸）。
+  bool get galCardLookupIndependentSize =>
+      getPref('gal_card_lookup_independent_size', defaultValue: false) as bool;
+
+  Future<void> setGalCardLookupIndependentSize(bool value) async {
+    await setPref('gal_card_lookup_independent_size', value);
+    notifyListeners();
+  }
+
+  double get galCardLookupMaxWidth =>
+      getPref('gal_card_lookup_max_width', defaultValue: defaultPopupMaxWidth)
+          as double;
+
+  void setGalCardLookupMaxWidth(double width) async {
+    await setPref('gal_card_lookup_max_width', width);
+    notifyListeners();
+  }
+
+  double get galCardLookupMaxHeight =>
+      getPref('gal_card_lookup_max_height', defaultValue: defaultPopupMaxHeight)
+          as double;
+
+  void setGalCardLookupMaxHeight(double height) async {
+    await setPref('gal_card_lookup_max_height', height);
+    notifyListeners();
+  }
+
   bool get extensionPopupIndependentSize =>
       getPref('extension_popup_independent_size', defaultValue: false) as bool;
 
@@ -830,6 +862,19 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setVideoMpvLuaScriptsEnabled(bool value) async {
     await setPref('video_mpv_lua_scripts_enabled', value);
+    notifyListeners();
+  }
+
+  /// BUG-2032：随包 libmpv 是否编入 Lua（视频页建 Player 后读 `mpv-configuration`
+  /// 探到的结果缓存，存 [MpvLuaCapability.name]）。全局设置页没有播放器，靠这份
+  /// 缓存如实说明脚本开关在本平台是否可用。默认 unknown = 从未播过视频。
+  MpvLuaCapability get videoMpvLuaCapability => MpvLuaCapability.fromName(
+        getPref('video_mpv_lua_capability', defaultValue: 'unknown') as String,
+      );
+
+  Future<void> setVideoMpvLuaCapability(MpvLuaCapability value) async {
+    if (videoMpvLuaCapability == value) return;
+    await setPref('video_mpv_lua_capability', value.name);
     notifyListeners();
   }
 
@@ -2676,6 +2721,17 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setDownloadSaveRoot(String value) async {
     await setPref('download_save_root', value);
+    notifyListeners();
+  }
+
+  /// 有声书素材库目录（JSON 字符串数组）。库里放按作品身份命名的字幕/正文，
+  /// 下载完成后据此自动配齐「正文 + 字幕 + 音频」；解码见
+  /// `decodeAudiobookMaterialDirs`。
+  String get audiobookMaterialDirs =>
+      getPref('audiobook_material_dirs', defaultValue: '') as String;
+
+  Future<void> setAudiobookMaterialDirs(String value) async {
+    await setPref('audiobook_material_dirs', value);
     notifyListeners();
   }
 

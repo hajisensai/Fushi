@@ -640,81 +640,140 @@ function openExternalLink(url) {
     window.flutter_inappwebview.callHandler('openLink', url);
 }
 
-function showDescription(element) {
-    const description = element.getAttribute('data-description');
-    if (!description) {
-        return;
-    }
-    const root = __fushiRootNode();
-    const overlay = root.querySelector('.overlay');
-    const title = root.querySelector('.overlay-title');
-    const content = root.querySelector('.overlay-content');
-    if (!overlay || !content) return;
-    if (title) title.textContent = element.textContent || '';
-    content.textContent = description;
-    overlay.style.display = 'block';
-    overlay.scrollTop = 0;
-}
+/* 词形变化标签的语法说明浮层。**WebView 弹窗只有这一套呈现**：
+   hover 是预览（不钉住，移开即收），click 是钉住（可选中复制，带标题与关闭按钮）。
 
-function closeOverlay() {
-    const root = __fushiRootNode();
-    const overlay = root.querySelector('.overlay');
-    if (!overlay) return;
-    overlay.style.display = 'none';
-    const title = root.querySelector('.overlay-title');
-    const content = root.querySelector('.overlay-content');
-    if (title) title.textContent = '';
-    if (content) content.textContent = '';
-}
+   BUG-2041 之前是两套皮：click 走 popup.html 里的静态 `.overlay` 全屏卡片
+   （showDescription / closeOverlay），hover 走这个浮层——同一段 data-description
+   披着两套 DOM、两套定位、两套关闭、两套配色字号。`.overlay` 还是顶层节点、不在
+   .entry 内，于是点它的正文会一路落到本文件末尾 document click 的 dismiss 分支，
+   把整个查词窗关掉。收成一套后那个缺陷一并消失（新浮层在同一处显式豁免）。
+   原 `.overlay` 存在的理由是「窄屏放不下浮层」——现在由 showGrammarTooltip 里按
+   视口收窄 max-width 承担，窄屏时浮层自己收成贴边卡片，不必另开一套 DOM。
 
-/* 词形变化标签的语法说明浮层（桌面 hover）。
-   点击走 showDescription 的内嵌查词卡片——触屏上没有 hover，且窄屏放不下这块浮层。
-   浮层是懒创建的，挂在 __fushiOverlayParent()（shadow root 或 document.body）下，
+   浮层懒创建，挂在 __fushiOverlayParent()（shadow root 或 document.body）下，
    这样扩展注入到宿主页面时也不会跑到词典的 Shadow DOM 外面去。 */
+
+/** 当前钉住的那枚 .deinflection-tag；null = 未钉住（hover 预览态或已收起）。 */
+let _grammarPinnedAnchor = null;
+
+/** 语法说明是否处于钉住（点击）态。可观测状态，供 dismiss 分支与测试使用。 */
+function isGrammarTooltipPinned() {
+    return _grammarPinnedAnchor != null;
+}
+
 function ensureGrammarTooltip() {
     const root = __fushiRootNode();
     let tooltip = root.querySelector('.grammar-tooltip');
-    if (!tooltip) {
-        tooltip = el('div', { className: 'grammar-tooltip' });
-        __fushiOverlayParent().appendChild(tooltip);
-        /* 浮层是 position:fixed 且挂在词条容器之外，唯一的隐藏入口原本只有标签自己的
-           mouseleave。于是：悬停着滚动列表，标签跟着滚走而浮层钉在旧坐标不动；新一次
-           查词把 #entries-container 整个重渲染掉时，被移除节点的 mouseleave 在各引擎
-           行为不一致，浮层可能一直挂着。捕获阶段监听覆盖嵌套滚动容器，只装一次。 */
-        document.addEventListener('scroll', hideGrammarTooltip, true);
-        document.addEventListener('pointerdown', hideGrammarTooltip, true);
-    }
+    if (tooltip) return tooltip;
+
+    // 关闭按钮的 × 复用 ICON_PATHS.close（注释里就写着「标签说明遮罩关闭 ×」），
+    // 与原 `.overlay-close` 同一份路径数据，不再手抄第二份 SVG。
+    const close = el('div', { className: 'grammar-tooltip-close' });
+    close.innerHTML = iconSvg('close');
+    close.addEventListener('click', (e) => {
+        e.stopPropagation();
+        hideGrammarTooltip();
+    });
+    const title = el('div', { className: 'grammar-tooltip-title' });
+    const body = el('div', { className: 'grammar-tooltip-body' });
+    tooltip = el('div', { className: 'grammar-tooltip' }, [close, title, body]);
+    __fushiOverlayParent().appendChild(tooltip);
+
+    /* 浮层是 position:fixed 且挂在词条容器之外，唯一的隐藏入口原本只有标签自己的
+       mouseleave。于是：悬停着滚动列表，标签跟着滚走而浮层钉在旧坐标不动；新一次
+       查词把 #entries-container 整个重渲染掉时，被移除节点的 mouseleave 在各引擎
+       行为不一致，浮层可能一直挂着。捕获阶段监听覆盖嵌套滚动容器，只装一次。
+       钉住态在**锚点**滚走时同样收起：坐标是按锚点算的，锚点走了还钉在原地更怪。
+       但浮层自己的滚动必须豁免（见 onGrammarTooltipScroll）——它带
+       overflow-y:auto，长说明就是要在它内部滚着读的。 */
+    document.addEventListener('scroll', onGrammarTooltipScroll, true);
+    document.addEventListener('pointerdown', onGrammarTooltipPointerDown, true);
     return tooltip;
 }
 
-function showGrammarTooltip(element) {
-    /* 只有能 hover 的指针设备才显示。触屏浏览器会在 tap 时补发一次 mouseenter，
-       那样浮层会一直粘在屏幕上没人收（没有后续的 mouseleave）。 */
-    try {
-        if (window.matchMedia && !window.matchMedia('(hover: hover)').matches) return;
-    } catch (_) { /* matchMedia 不可用时按可 hover 处理 */ }
+/* 捕获阶段的「锚点滚走就收起」。必须看事件目标：钉住态自己带 overflow-y:auto
+   和现算 maxHeight（见 showGrammarTooltip 里的定位），也就是说它**本身就是一个
+   滚动容器**——长说明（transforms 里最长 471 字符 / 7 个硬换行）在默认弹窗高度下
+   必然溢出。裸把 hideGrammarTooltip 当监听器注册，用户往下读一行浮层就自杀了，
+   等于把「读不到折线以下」换掉了旧 .overlay 的毛病。豁免与上面 pointerdown 同形。 */
+function onGrammarTooltipScroll(e) {
+    const raw = __fushiEventTarget(e);
+    const target = raw?.nodeType === Node.TEXT_NODE ? raw.parentElement : raw;
+    if (target?.closest?.('.grammar-tooltip')) return;
+    hideGrammarTooltip();
+}
+
+/* 捕获阶段的「点别处收起」。两个豁免缺一不可：
+   ① 点浮层自身——钉住态要能选中复制文字、要能点关闭按钮，一按下就收全废了；
+   ② 点当前钉住的那枚标签——它自己的 click 要做 toggle，这里先收掉的话
+      _grammarPinnedAnchor 已成 null，toggle 永远判成「没钉住」→ 再点一次收不起来。 */
+function onGrammarTooltipPointerDown(e) {
+    const raw = __fushiEventTarget(e);
+    const target = raw?.nodeType === Node.TEXT_NODE ? raw.parentElement : raw;
+    if (target?.closest?.('.grammar-tooltip')) return;
+    if (_grammarPinnedAnchor &&
+        target?.closest?.('.deinflection-tag') === _grammarPinnedAnchor) {
+        return;
+    }
+    hideGrammarTooltip();
+}
+
+/** 显示语法说明。[pinned] 为真 = 点击钉住（可交互、带标题与关闭按钮）。 */
+function showGrammarTooltip(element, pinned) {
+    /* hover 预览只给能 hover 的指针设备：触屏浏览器会在 tap 时补发一次 mouseenter，
+       那样浮层会一直粘在屏幕上没人收（没有后续的 mouseleave）。
+       **钉住态不受此限**——触屏本来就是靠点击看说明，那正是原 `.overlay` 的职责。 */
+    if (!pinned) {
+        try {
+            if (window.matchMedia && !window.matchMedia('(hover: hover)').matches) return;
+        } catch (_) { /* matchMedia 不可用时按可 hover 处理 */ }
+    }
 
     const description = element.getAttribute('data-description');
     if (!description) return;
 
     const tooltip = ensureGrammarTooltip();
-    tooltip.textContent = description;
+    const root = __fushiRootNode();
+    const bodyEl = root.querySelector('.grammar-tooltip-body');
+    const titleEl = root.querySelector('.grammar-tooltip-title');
+    if (bodyEl) bodyEl.textContent = description;
+    // 标题只在钉住态显示（原 `.overlay-title` 的职责）：预览态多一行大字反而碍事。
+    if (titleEl) titleEl.textContent = pinned ? (element.textContent || '') : '';
+    tooltip.classList.toggle('is-pinned', !!pinned);
+    _grammarPinnedAnchor = pinned ? element : null;
+
     tooltip.style.display = 'block';
-    /* 先落地再量：宽度受 CSS max-width 约束，量完才知道该往哪边收。 */
+
+    /* 单位（BUG-2042）：getBoundingClientRect() / __fushiViewportWidth() /
+       window.innerHeight 都是**视觉 px**（已乘内容 zoom），而写进 style 的
+       left/top/max-* 是 **layout px**，渲染时还会再乘一次 zoom。所以全程按视觉 px
+       算，最后一步统一 `/ z` 折回 layout px——少这一步就是双重缩放，zoom != 1 时
+       整块浮层按 z 倍偏移。与 dictionary_popup_webview.dart 的
+       __fushiApplyPopupViewport（layoutWidth = width / z）是同一套换算。 */
+    const z = __fushiPopupContentZoom();
+    const margin = 8;
+    const viewportWidth = __fushiViewportWidth();
+    const viewportHeight = window.innerHeight;
+
+    /* 先按视口收窄再量：窄屏（原 `.overlay` 铺满弹窗的唯一理由）由这条自适应承担。 */
+    const maxWidth = Math.max(160, Math.min(460, viewportWidth - 2 * margin));
+    tooltip.style.maxWidth = (maxWidth / z) + 'px';
+    tooltip.style.maxHeight = (Math.max(80, viewportHeight - 2 * margin) / z) + 'px';
+    /* 先落地再量：宽度受 max-width 约束，量完才知道该往哪边收。 */
     tooltip.style.left = '0px';
     tooltip.style.top = '0px';
 
     const anchor = element.getBoundingClientRect();
     const box = tooltip.getBoundingClientRect();
-    const margin = 8;
 
     let left = anchor.left;
-    const maxLeft = __fushiViewportWidth() - box.width - margin;
+    const maxLeft = viewportWidth - box.width - margin;
     if (left > maxLeft) left = maxLeft;
     if (left < margin) left = margin;
 
     let top = anchor.bottom + 6;
-    if (top + box.height > window.innerHeight - margin) {
+    if (top + box.height > viewportHeight - margin) {
         const above = anchor.top - box.height - 6;
         /* 上方也放不下就维持在下方：宁可截断底部，也不要顶出视口外够不着。 */
         if (above >= margin) top = above;
@@ -722,16 +781,25 @@ function showGrammarTooltip(element) {
     /* 「截断底部」必须真的只截底部：不 clamp 的话上下都放不下时 top 停在
        anchor.bottom + 6，整块浮层落到视口外，用户悬停后什么也看不到——那不是截断，
        是消失。先按底边收，再保证不越过上边（浮层比视口还高时贴顶、底部截断）。 */
-    top = Math.min(top, window.innerHeight - margin - box.height);
+    top = Math.min(top, viewportHeight - margin - box.height);
     if (top < margin) top = margin;
 
-    tooltip.style.left = left + 'px';
-    tooltip.style.top = top + 'px';
+    tooltip.style.left = (left / z) + 'px';
+    tooltip.style.top = (top / z) + 'px';
 }
 
 function hideGrammarTooltip() {
-    const tooltip = __fushiRootNode().querySelector('.grammar-tooltip');
-    if (tooltip) tooltip.style.display = 'none';
+    _grammarPinnedAnchor = null;
+    const root = __fushiRootNode();
+    const tooltip = root.querySelector('.grammar-tooltip');
+    if (!tooltip) return;
+    tooltip.style.display = 'none';
+    tooltip.classList.remove('is-pinned');
+    // 说明属于某一轮查词结果，收起时一并清空（原 closeOverlay 的语义）。
+    const bodyEl = root.querySelector('.grammar-tooltip-body');
+    if (bodyEl) bodyEl.textContent = '';
+    const titleEl = root.querySelector('.grammar-tooltip-title');
+    if (titleEl) titleEl.textContent = '';
 }
 
 // https://github.com/yomidevs/yomitan/blob/c24d4c9b39ceec1b5fd133df774c41972e9ebbdc/ext/js/language/ja/japanese.js#L171
@@ -1055,6 +1123,231 @@ function rewriteExportedGlossaryAnchors(root) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// 选中制卡高亮（选中的释义段落在导出的卡片释义里被 <mark> 标出）
+//
+// 数据结构是这件事的全部难点。制卡导出的释义 HTML **不是**屏幕上那棵 DOM 的克隆：
+// constructGlossaryHtml / constructSingleGlossaryHtml 从 entry.glossaries 的原始
+// content 重新渲染到临时 div（exporting=true）。所以「用户选中了屏幕上这一段」这个
+// 事实，必须表达成一个能在两棵树之间通用的坐标，才可能落到卡片上。
+//
+// 选的坐标是 `(glossaryIndex, start, end)`——原始 entry.glossaries 下标 + 该义项
+// **文本流**内的字符区间：
+//   * glossaryIndex 是原始下标而非分组序号，因为分组 / 隐藏词典过滤 / 重定向过滤
+//     都会打乱顺序并留下空洞（createGlossarySectionWrapper）。
+//   * 字符区间而非节点路径，因为两棵树的**结构**并不保证同构（exporting 分支换
+//     元素、HTML 型词典内容屏幕走 rewriteDictLinks 而导出走 sanitizeHtml），但
+//     两边跑的是同一个 renderStructuredContent，**文本流是一致的**：exporting 只
+//     影响图片，language 只影响 lang 属性。
+//
+// 唯一的文本流缺口是图片：导出端在不嵌媒体时会把 alt 写成可见文本
+// （createDefinitionImage 的 `image.textContent = alt`），屏幕端只有 <img>/<canvas>
+// 不产文本。故两侧一律跳过 .gloss-image-link 子树，让文本流严格对齐——这是谓词
+// 层面的统一，不是给导出端打的补丁。
+//
+// 即便如此仍留一道校验：落 mark 之前比对导出树上该区间的文本是否与选中文本逐字
+// 相等，不等就整段放弃高亮。宁可不标，绝不标错位置。
+const GLOSSARY_SELECTION_MARK_CLASS = 'fushi-selection';
+// 出厂默认色写成 inline style 是**有意的**：卡片可能是任意笔记类型，不能依赖 Lapis
+// 的 CSS 存在。半透明琥珀在明/暗两种卡背景上都保持文字对比度；color: inherit 必须
+// 显式写，否则 <mark> 的浏览器默认前景色在暗色卡上是黑字。用户想改颜色走 Lapis 可视化
+// 样式编辑器，那套声明全部带 !important（lapis_styling.dart），天然压过 inline style。
+const GLOSSARY_SELECTION_MARK_STYLE =
+    'background-color: rgba(255, 213, 79, 0.35); color: inherit; border-radius: 2px;';
+
+let lastSelectionSpans = [];
+
+// 选区快照：文本与位置必须在**同一时刻**取，否则两者可能描述不同的选区。
+// 时机与原来一致（pointerdown / touchstart，document 的 click 处理器清掉选区之前）。
+function snapshotSelection() {
+    lastSelection = __fushiSel()?.toString() || '';
+    lastSelectionSpans = lastSelection ? collectGlossarySelectionSpans() : [];
+}
+
+// 屏幕侧释义容器的坐标锚点。两侧共享 entry.glossaries 原始下标。
+function tagGlossaryContent(element, entryIdx, glossaryIndex) {
+    if (!element || typeof glossaryIndex !== 'number') return;
+    element.dataset.fushiEntry = String(entryIdx);
+    element.dataset.fushiGloss = String(glossaryIndex);
+}
+
+function createGlossaryTextWalker(root) {
+    return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+            return node.parentElement?.closest('.gloss-image-link')
+                ? NodeFilter.FILTER_REJECT
+                : NodeFilter.FILTER_ACCEPT;
+        }
+    });
+}
+
+function glossaryTextFlow(root) {
+    const walker = createGlossaryTextWalker(root);
+    let text = '';
+    let node;
+    while ((node = walker.nextNode())) {
+        text += node.nodeValue;
+    }
+    return text;
+}
+
+// (node, nodeOffset) 这个 DOM 点在 root 文本流中的字符偏移。落在被跳过的子树里
+// （只可能是图片 alt）时返回该子树之前的偏移，不会错位到别处。
+function glossaryTextOffsetAt(root, node, nodeOffset) {
+    const probe = document.createRange();
+    try {
+        probe.setStart(node, nodeOffset);
+        probe.setEnd(node, nodeOffset);
+    } catch {
+        return 0;
+    }
+    const walker = createGlossaryTextWalker(root);
+    let count = 0;
+    let cur;
+    while ((cur = walker.nextNode())) {
+        const len = cur.nodeValue.length;
+        let cmp;
+        try {
+            cmp = probe.comparePoint(cur, len);
+        } catch {
+            return count;
+        }
+        if (cmp === -1) {
+            // 该文本节点整体排在探针之前。
+            count += len;
+            continue;
+        }
+        if (cur === node) return count + nodeOffset;
+        // 探针停在这个文本节点之前的某个元素边界上。
+        return count;
+    }
+    return count;
+}
+
+// 把当前选区切成「每个释义容器一段」的字符区间。跨义项拖选自然产出多段，
+// 落在释义外（词头 / 标签 / 例句以外的装饰）的部分不产出任何段。
+function collectGlossarySelectionSpans() {
+    const sel = __fushiSel();
+    if (!sel || !sel.rangeCount || sel.isCollapsed) return [];
+    const scope = window.__fushiRoot || document;
+    const hosts = [...scope.querySelectorAll('[data-fushi-gloss]')];
+    if (!hosts.length) return [];
+
+    const spans = [];
+    for (let i = 0; i < sel.rangeCount; i++) {
+        const range = sel.getRangeAt(i);
+        if (range.collapsed) continue;
+        for (const host of hosts) {
+            let intersects;
+            try {
+                intersects = range.intersectsNode(host);
+            } catch {
+                intersects = false;
+            }
+            if (!intersects) continue;
+
+            const hostRange = document.createRange();
+            hostRange.selectNodeContents(host);
+            const flow = glossaryTextFlow(host);
+            let start;
+            let end;
+            try {
+                start = range.compareBoundaryPoints(Range.START_TO_START, hostRange) <= 0
+                    ? 0
+                    : glossaryTextOffsetAt(host, range.startContainer, range.startOffset);
+                end = range.compareBoundaryPoints(Range.END_TO_END, hostRange) >= 0
+                    ? flow.length
+                    : glossaryTextOffsetAt(host, range.endContainer, range.endOffset);
+            } catch {
+                continue;
+            }
+            start = Math.max(0, Math.min(start, flow.length));
+            end = Math.max(0, Math.min(end, flow.length));
+            if (end <= start) continue;
+            if (!flow.slice(start, end).trim()) continue;
+
+            spans.push({
+                entry: Number.parseInt(host.dataset.fushiEntry, 10) || 0,
+                gloss: Number.parseInt(host.dataset.fushiGloss, 10),
+                start,
+                end,
+                text: flow.slice(start, end)
+            });
+        }
+    }
+    return spans;
+}
+
+// 在导出树上按字符区间落 <mark>。校验不过就整棵树放弃高亮（返回 false），
+// 绝不落在错误的位置上。
+function applyGlossarySelectionHighlight(root, spans) {
+    if (!spans.length) return false;
+    const nodes = [];
+    const walker = createGlossaryTextWalker(root);
+    let offset = 0;
+    let cur;
+    while ((cur = walker.nextNode())) {
+        const len = cur.nodeValue.length;
+        nodes.push({ node: cur, start: offset, end: offset + len });
+        offset += len;
+    }
+    if (!nodes.length) return false;
+
+    const flow = nodes.map(n => n.node.nodeValue).join('');
+    const usable = spans.filter(span => flow.slice(span.start, span.end) === span.text);
+    if (!usable.length) return false;
+
+    let marked = false;
+    // 节点表是**先收集后修改**的：splitText 只在父节点里插入新的兄弟节点，不动
+    // 表里已有节点的身份与内容，所以节点之间的处理顺序无关紧要。真正有顺序要求的
+    // 是**同一个文本节点内的多个片段**（下面那层循环）——每次 splitText 都会截短
+    // 当前节点，先切前面的片段会让后面片段的偏移失效，故从后往前切。
+    for (let i = nodes.length - 1; i >= 0; i--) {
+        const entry = nodes[i];
+        const pieces = [];
+        for (const span of usable) {
+            const from = Math.max(span.start, entry.start);
+            const to = Math.min(span.end, entry.end);
+            if (to > from) pieces.push([from - entry.start, to - entry.start]);
+        }
+        if (!pieces.length) continue;
+        pieces.sort((a, b) => a[0] - b[0]);
+        for (let p = pieces.length - 1; p >= 0; p--) {
+            const [from, to] = pieces[p];
+            let target = entry.node;
+            if (to < target.nodeValue.length) target.splitText(to);
+            if (from > 0) target = target.splitText(from);
+            const parent = target.parentNode;
+            if (!parent) continue;
+            const mark = document.createElement('mark');
+            mark.className = GLOSSARY_SELECTION_MARK_CLASS;
+            mark.setAttribute('style', GLOSSARY_SELECTION_MARK_STYLE);
+            parent.insertBefore(mark, target);
+            mark.appendChild(target);
+            marked = true;
+        }
+    }
+    return marked;
+}
+
+// 制卡时取用：只认属于当前词条、且落在这一条义项里的选区段。
+function selectionSpansFor(entryIndex, glossaryIndex) {
+    return lastSelectionSpans.filter(
+        span => span.entry === entryIndex && span.gloss === glossaryIndex);
+}
+
+// 本轮 buildMinePayload 期间实际落下的高亮数（与 currentDictionaryMedia 同款：
+// 由 buildMinePayload 开启和关闭，不跨制卡存活）。
+let currentSelectionHighlights = 0;
+
+function highlightExportedGlossary(root, entryIndex, glossaryIndex) {
+    const spans = selectionSpansFor(entryIndex, glossaryIndex);
+    if (!spans.length) return;
+    if (applyGlossarySelectionHighlight(root, spans)) {
+        currentSelectionHighlights++;
+    }
+}
+
 // the following two should roughly match the glossary format of yomitan and keep compatibility with notetypes like lapis
 // 23.01.2026: this still has some differences
 // 24.01.2026: should be a bit closer now
@@ -1105,7 +1398,7 @@ function constructSingleGlossaryHtml(entryIndex) {
     // same way createGlossarySectionWrapper does for the lookup popup, so a disabled
     // dictionary's glossary never ends up in an Anki card field.
     const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
-    entry.glossaries.forEach(g => {
+    entry.glossaries.forEach((g, glossaryIndex) => {
         if (hiddenDictionaryNames.includes(g.dictionary)) return;
         if (isRedirectGlossary(g)) return;
         const dictName = g.dictionary;
@@ -1137,6 +1430,7 @@ function constructSingleGlossaryHtml(entryIndex) {
         const filteredTags = parsedTags.filter(tag => !isPartOfSpeech(tag) || !(prevTags !== null && prevTags === currentTags));
         const tags = filteredTags.length > 0 ? filteredTags.join(', ') : '';
         rewriteExportedGlossaryAnchors(tempDiv);
+        highlightExportedGlossary(tempDiv, entryIndex, glossaryIndex);
         const content = applyTableStyles(tempDiv.innerHTML);
         let listIdentifier = '';
         if (dictChanged) {
@@ -1164,7 +1458,7 @@ function constructGlossaryHtml(entryIndex) {
     let prevTags = null;
     
     const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
-    entry.glossaries.forEach(g => {
+    entry.glossaries.forEach((g, glossaryIndex) => {
         if (hiddenDictionaryNames.includes(g.dictionary)) return;
         if (isRedirectGlossary(g)) return;
         const dictName = g.dictionary;
@@ -1202,6 +1496,7 @@ function constructGlossaryHtml(entryIndex) {
         }
         
         rewriteExportedGlossaryAnchors(tempDiv);
+        highlightExportedGlossary(tempDiv, entryIndex, glossaryIndex);
         glossaryItems += `<li data-dictionary="${dictName}"><i>${label}</i> <span>${applyTableStyles(tempDiv.innerHTML)}</span></li>`;
         prevTags = currentTags;
         
@@ -1637,12 +1932,24 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     const idx = entryIndex || 0;
     const furiganaPlain = constructFuriganaPlain(expression, reading);
     currentDictionaryMedia = new Map();
+    currentSelectionHighlights = 0;
     const glossary = constructGlossaryHtml(idx);
     const freqHarmonicRank = getFrequencyHarmonicRank(frequencies);
     const frequenciesHtml = constructFrequencyHtml(frequencies);
     const singleGlossaries = constructSingleGlossaryHtml(idx);
     const dictionaryMedia = currentDictionaryMedia;
     currentDictionaryMedia = null;
+    // 选中段已经在释义里被 <mark> 标出来了，就不要再产出一份重复的 SelectionText。
+    // 选中的释义段已经作为 <mark> 进了导出的释义树。此时把同一段文本再原样塞进
+    // SelectionText 字段是否合适，**取决于用户的笔记类型和字段映射**——而这一层
+    // 两个都不知道：popup.js 只看得见 DOM，看不见 fieldMappings。所以这里只如实
+    // 上报「高亮是否真的落进了导出树」，让位与否交给知道映射的 Dart 层
+    // （BaseAnkiRepository.shouldYieldSelectionText）。
+    //
+    // 高亮**没**落地时（选中落在例句 / 词头 / 标签这些释义之外，或导出树文本流
+    // 校验没过）这个标志是 false，Dart 侧照旧把原文交给 SelectionText。
+    const glossarySelectionHighlighted = currentSelectionHighlights > 0;
+    currentSelectionHighlights = 0;
     const glossaryFirst = Object.values(singleGlossaries)[0] || '';
     const pitchPositions = constructPitchPositionHtml(pitches);
     const pitchCategories = constructPitchCategories(pitches, reading, rules);
@@ -1690,6 +1997,7 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         pitchCategories,
         phoneticTranscriptions,
         popupSelectionText,
+        glossarySelectionHighlighted,
         audio,
         selectedDictionary: selectedDictionaries[idx]?.name || '',
         dictionaryMedia: JSON.stringify([...dictionaryMedia.values()])
@@ -1783,9 +2091,6 @@ async function openMinedNoteInAnki(noteId) {
 // 与 app 内对话框一致：点遮罩不关闭（制卡/覆写有副作用，误触不该丢掉整次操作），
 // 只有「取消」与 Esc 能取消。
 function showMinedCardActionPanel(matches, options) {
-    // openOnly（BUG-1064）：↗ 的多卡选择形态——只列卡片 + 打开，不带覆写 /
-    // 新增重复卡（那是点 ✓ 的职责），与 app 内 showAnkiOpenNotePicker 单一语义一致。
-    const openOnly = !!(options && options.openOnly);
     return new Promise((resolve) => {
         // 弹窗是否拥有整个文档：app 内/app 外都是独立的 popup.html 文档（true）；
         // 浏览器扩展把同一份 popup.js 注入到宿主页面的 shadow root 里（__fushiRoot），
@@ -1845,7 +2150,7 @@ function showMinedCardActionPanel(matches, options) {
             className: 'mined-action-title',
             textContent: window.i18nMinedCardTitle || '卡片已在 Anki 中',
         }));
-        const subtitle = (matches.length > 1 || openOnly)
+        const subtitle = (matches.length > 1)
             ? (window.i18nMinedMultipleMatches || '{count} 张匹配的卡片')
                 .replace('{count}', String(matches.length))
             : (window.i18nMinedCardSubtitle || '选择对这张已存在的卡片做什么。');
@@ -1859,7 +2164,7 @@ function showMinedCardActionPanel(matches, options) {
                 textContent: note.preview || ('#' + note.noteId),
             }));
             const rowButtons = el('div', { className: 'mined-action-row-buttons' });
-            const overwriteBtn = openOnly ? null : el('button', {
+            const overwriteBtn = el('button', {
                 className: 'mined-action-btn ghost',
                 textContent: window.i18nMinedActionOverwrite || '覆写这张卡',
                 onclick: () => {
@@ -1884,10 +2189,8 @@ function showMinedCardActionPanel(matches, options) {
                 },
             });
             buttons.push(viewBtn);
-            if (overwriteBtn) {
-                buttons.push(overwriteBtn);
-                rowButtons.appendChild(overwriteBtn);
-            }
+            buttons.push(overwriteBtn);
+            rowButtons.appendChild(overwriteBtn);
             rowButtons.appendChild(viewBtn);
             row.appendChild(rowButtons);
             list.appendChild(row);
@@ -1912,10 +2215,8 @@ function showMinedCardActionPanel(matches, options) {
         });
         buttons.push(cancelBtn);
         actions.appendChild(cancelBtn);
-        if (!openOnly) {
-            buttons.push(duplicateBtn);
-            actions.appendChild(duplicateBtn);
-        }
+        buttons.push(duplicateBtn);
+        actions.appendChild(duplicateBtn);
         panel.appendChild(actions);
 
         // 瞬态查词窗的窗口高度会被收缩到卡片内容高度（host measureAndReport），矮卡片
@@ -1924,7 +2225,7 @@ function showMinedCardActionPanel(matches, options) {
         if (ownsDocument) rootEl.classList.add(MINED_ACTION_OPEN_CLASS);
         __fushiOverlayParent().appendChild(backdrop);
         document.addEventListener('keydown', onKey, true);
-        (openOnly ? cancelBtn : duplicateBtn).focus();
+        duplicateBtn.focus();
     });
 }
 
@@ -1952,31 +2253,31 @@ function showInlineHint(button, message) {
     }, 1800);
 }
 
-// BUG-1064：↗「在 Anki 中打开卡片」在 app 外的页内车道。
+// BUG-2051：↗「在 Anki 中打开这个词的卡」——**唯一**一条车道，app 内外同一根桥。
 //
-// 与点 ✓ 是**同一个根因的第二个入口**：宿主 handler `openInAnki` 同样没有被 app 外的
-// 裸 WebView2 窗口 DEFER（它同样要弹 Flutter 的多卡选择框 / toast），于是同样被立刻
-// 解析成 null——按钮转一圈什么都不发生。这里按宿主能力分流后，用与 app 内
-// `openMinedCardInAnki` 完全相同的三分支语义就地处理：
-//   - 无命中（探测时显示已制卡、现在查不到）→ 提示，不静默。
-//   - 命中 1 张 → 直接打开；打不开也提示，绝不假装成功。
-//   - 命中多张 → 弹页内面板的 openOnly 形态（只列卡片 + 打开，不带覆写/新增——
-//     那是 ✓ 的职责，与 app 内 showAnkiOpenNotePicker 的单一语义一致）。
-async function runInPageOpenInAnki(button, expression, reading) {
-    const matches = await findMinedMatches(expression, reading);
-    if (!matches.length) {
-        showInlineHint(button, window.i18nMinedOpenNoCard || '没有找到已制的卡片。');
-        return;
+// 旧实现按宿主能力分成两条：app 内交给宿主，app 外自己先 findMinedMatches 反查 note id
+// 再 openMinedNote。那条反查按第一字段**名**查（`"Expression:词"`），而画 ✓ 的查重是
+// Anki 内建的第一字段 checksum（跨全部笔记类型，不看字段叫什么）。同一个卡组里混装两
+// 种笔记类型时两者给出相反答案：✓ 说已制卡，↗ 说「没有找到已制的卡片」。判据只能留一条，
+// 于是页内那条整个删掉，宿主统一把 Anki 浏览器过滤到「Anki 认为这个词已有的卡」。
+//
+// 回传是三态名（'opened' / 'noMatch' / 'failed'）；**null 专指「这个宿主没接这根桥」**
+// （浏览器扩展的 bridge-shim 默认分支），与 'failed' 同样提示打不开，但语义分开保留，
+// 免得以后有人把「没人管」读成「Anki 打不开」。
+async function openWordInAnki(button, expression, reading) {
+    let outcome = null;
+    try {
+        outcome = await window.flutter_inappwebview.callHandler(
+            'openInAnki', { expression, reading });
+    } catch (e) {
+        // 桥本身抛（宿主已重载/未注册）→ 与 failed 同待遇，绝不静默。
+        console.error('open-anki button: openInAnki failed', e);
+        outcome = 'failed';
     }
-    if (matches.length === 1) {
-        const ok = await openMinedNoteInAnki(matches[0].noteId);
-        if (!ok) {
-            showInlineHint(button,
-                window.i18nMinedOpenFailed || '无法在 Anki 中打开这张卡片。');
-        }
-        return;
-    }
-    await showMinedCardActionPanel(matches, { openOnly: true });
+    if (outcome === 'opened') return;
+    showInlineHint(button, outcome === 'noMatch'
+        ? (window.i18nMinedOpenNoCard || '没有找到已制的卡片。')
+        : (window.i18nMinedOpenFailed || '无法在 Anki 中打开这张卡片。'));
 }
 
 // 页内面板的完整编排。返回：
@@ -2313,12 +2614,22 @@ function createDeinflectionTag(tag) {
         textContent: tag.name,
         'data-description': tag.description,
         onclick() {
-            showDescription(this);
+            /* 点击 = 钉住／收起（toggle），与 hover 预览共用同一套浮层，
+               不再另开 `.overlay` 全屏卡片（BUG-2041）。 */
+            if (_grammarPinnedAnchor === this) {
+                hideGrammarTooltip();
+                return;
+            }
+            showGrammarTooltip(this, true);
         },
         onmouseenter() {
-            showGrammarTooltip(this);
+            // 已钉住时，鼠标划过别的标签不抢浮层：钉住是用户的显式选择，
+            // 被划过就顶掉会很跳。要换看哪一条，点它。
+            if (_grammarPinnedAnchor) return;
+            showGrammarTooltip(this, false);
         },
         onmouseleave() {
+            if (_grammarPinnedAnchor) return;
             hideGrammarTooltip();
         }
     });
@@ -2602,14 +2913,18 @@ function createGlossarySectionWrapper(entry) {
     // collapsedDictionaryNames is consumed in createGlossarySection.
     const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
     const grouped = {};
-    entry.glossaries.forEach(g => {
+    // glossaryIndex 是**原始** entry.glossaries 下标，不是分组后的序号：它是屏幕 DOM 与
+    // 制卡导出树之间唯一的共享坐标（选中高亮靠它对齐，见 collectGlossarySelectionSpans）。
+    // 分组、隐藏词典过滤、重定向过滤都会打乱顺序或留空洞，只有原始下标不受影响。
+    entry.glossaries.forEach((g, glossaryIndex) => {
         if (hiddenDictionaryNames.includes(g.dictionary)) return;
         if (isRedirectGlossary(g)) return;
         if (!grouped[g.dictionary]) grouped[g.dictionary] = [];
         grouped[g.dictionary].push({
             content: g.content,
             definitionTags: g.definitionTags,
-            termTags: g.termTags
+            termTags: g.termTags,
+            glossaryIndex
         });
     });
     const dictNames = Object.keys(grouped);
@@ -3042,13 +3357,13 @@ function createEntryHeader(entry, idx) {
         // pen, and touch path so selecting definition text can populate the
         // card's popupSelectionText on desktop as well as mobile.
         onpointerdown: () => {
-            lastSelection = __fushiSel()?.toString() || '';
+            snapshotSelection();
         },
         // Older embedded WebViews without Pointer Events keep the existing
         // touch fallback. Duplicate snapshots are harmless and preserve the
         // exact selected text until onclick builds the mining payload.
         ontouchstart: () => {
-            lastSelection = __fushiSel()?.toString() || '';
+            snapshotSelection();
         },
         onclick: async () => {
             // Single-flight guard against double-firing one click. Always cleared
@@ -3245,18 +3560,9 @@ function createEntryHeader(entry, idx) {
             openAnkiButton.dataset.busy = '1';
             openAnkiButton.disabled = true;
             try {
-                // BUG-1064：与点 ✓ 同一分流——宿主有原生对话框（app 内）就交给
-                // openInAnki；没有（app 外裸窗 / 扩展）则就地处理，否则那根桥同样
-                // 只会回 null，按钮转一圈什么都不发生。
-                if (hasNativeMinedCardAction()) {
-                    await window.flutter_inappwebview.callHandler(
-                        'openInAnki', { expression, reading });
-                } else {
-                    await runInPageOpenInAnki(openAnkiButton, expression, reading);
-                }
-            } catch (e) {
-                // 跳转失败不能卡死按钮；记日志并恢复可点（宿主侧另有 toast 反馈）。
-                console.error('open-anki button: openInAnki failed', e);
+                // BUG-2051：不再按宿主能力分流——↗ 在 app 内外走同一根桥、同一条判据。
+                // 结果提示画在按钮旁边（app 外没有 Flutter toast），见 openWordInAnki。
+                await openWordInAnki(openAnkiButton, expression, reading);
             } finally {
                 openAnkiButton.dataset.busy = '';
                 openAnkiButton.disabled = false;
@@ -3766,6 +4072,7 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
                 li.appendChild(tags);
             }
             const content = el('div', { className: 'glossary-content' });
+            tagGlossaryContent(content, entryIdx, item.glossaryIndex);
             renderContent(content, item.content);
             li.appendChild(content);
             ol.appendChild(li);
@@ -3780,6 +4087,7 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
                 wrapper.appendChild(tags);
             }
             const content = el('div', { className: 'glossary-content' });
+            tagGlossaryContent(content, entryIdx, item.glossaryIndex);
             renderContent(content, item.content);
             wrapper.appendChild(content);
             dictWrapper.appendChild(wrapper);
@@ -4483,7 +4791,6 @@ function scheduleMasonry() {
 window.__fushiPrepareRealmForReuse = () => {
     window._renderGeneration += 1;
     window._renderInProgress = false;
-    closeOverlay();
     hideGrammarTooltip();
     resetEntryStateChecks();
     if (masonryRaf != null) {
@@ -4559,8 +4866,7 @@ window.renderPopup = function() {
     // could append stale cards into the freshly-rendered empty state.
     const gen = ++window._renderGeneration;
     // 变形说明属于上一轮查词结果，不能独立于查询会话存活。它挂在 entries-container
-    // 外面，单纯重建词条 DOM 不会移除，因此每轮渲染必须显式关闭并清空。
-    closeOverlay();
+    // 外面，单纯重建词条 DOM 不会移除，因此每轮渲染必须显式关闭并清空（含钉住态）。
     hideGrammarTooltip();
     // Cancel not-yet-visible status probes from the previous DOM before any new
     // entry headers are built. In-flight probes are epoch-gated on completion.
@@ -5253,6 +5559,11 @@ document.addEventListener('click', (e) => {
     // It also hardens the app-OUT global overlay path (host frameIdAtPoint).
     if (target?.closest('.mine-button') || target?.closest('.audio-button') ||
         target?.closest('.favorite-button')) return;
+    // BUG-2041：语法说明浮层的钉住态是可交互的（选中复制 / 关闭按钮），且它挂在
+    // __fushiOverlayParent() 顶层、**不在 .entry 内**——不豁免就会一路落到本函数末尾
+    // 的 tapOutside，点说明正文直接关掉整个查词窗。被它取代的旧 `.overlay` 卡片同样
+    // 是顶层节点，当年正是这个毛病。
+    if (target?.closest('.grammar-tooltip')) return;
     if (target?.closest('summary')) return;
     if (target?.closest('.glossary-content')) {
         // BUG-767：glossary 内的锚点（MDX 原始 HTML 交叉引用/外链/发音）统一走
@@ -5320,7 +5631,7 @@ document.addEventListener('mousemove', function(e) {
 // hover 只覆盖桌面鼠标，这里补触屏/键盘滚动：任意滚动事件给根节点 + body +
 // 事件目标挂 .popup-scroll-active，900ms 无滚动后整体清除（与 Niratan
 // setPopupScrollIndicatorActive 同法同参）。capture:true 才收得到内部滚动容器
-// （.overlay / .expression-scroll 等）的 scroll（scroll 不冒泡）。
+// （.grammar-tooltip / .expression-scroll 等）的 scroll（scroll 不冒泡）。
 var __fushiPopupScrollIndicatorTimer = 0;
 document.addEventListener('scroll', function (event) {
     var root = document.documentElement;

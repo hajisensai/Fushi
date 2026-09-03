@@ -223,6 +223,35 @@ abstract class BaseAnkiRepository {
   /// **默认实现 = 优雅降级**：基类返回 `false`。
   Future<bool> openNoteInAnki(int noteId) async => false;
 
+  /// BUG-2051：点 ↗「在 Anki 中打开**这个词**已有的卡」。
+  ///
+  /// 语义是「按词去 Anki 里看」，不是「按我们记下的某个 note id 去看」——后者要求
+  /// 先反查一遍 id，而那条反查（按第一字段**名**查）与画 ✓ 的判据（Anki 内建第一
+  /// 字段 checksum，跨笔记类型）根本不是一件事，于是出现「✓ 说已制卡、↗ 说没有卡」。
+  /// 两条判据只能留一条。
+  ///
+  /// **默认实现**：没有原生「按词打开」能力的后端（AnkiDroid 只有按 note id 的
+  /// deep link）走 [findMatchingNotes] + [openNoteInAnki]。这些后端的查重与反查
+  /// 本来就限定同一笔记类型（AnkiDroid 的 `checkForDuplicates` / `findNotesByContent`
+  /// 都传 `models:[当前笔记类型]`），两者同源，不存在本 bug；多张命中时打开**最近
+  /// 一张**（note id 最大 = 创建时间最新），不再弹选择面板——↗ 的职责是「带我去看」，
+  /// 挑哪张是 Anki 浏览器自己的事。
+  Future<AnkiOpenWordOutcome> openWordInAnki(
+    String expression,
+    String reading,
+  ) async {
+    if (expression.isEmpty) return AnkiOpenWordOutcome.failed;
+    final List<MinedNoteRef> matches =
+        await findMatchingNotes(expression, reading);
+    if (matches.isEmpty) return AnkiOpenWordOutcome.noMatch;
+    final int newest = matches
+        .map((MinedNoteRef m) => m.noteId)
+        .reduce((int a, int b) => a > b ? a : b);
+    return await openNoteInAnki(newest)
+        ? AnkiOpenWordOutcome.opened
+        : AnkiOpenWordOutcome.failed;
+  }
+
   /// BUG-1799：复核 [noteIds] 里哪些 note **已经不在 Anki 中了**（用户在 Anki 里删了卡）。
   ///
   /// 返回值口径是本方法的全部要害：**只返回「后端明确应答、且应答里没有这张 note」的 id**。
@@ -542,17 +571,52 @@ abstract class BaseAnkiRepository {
   ///   会被这里过滤掉、字段名不进 map，两后端 native 都「未给出的字段保留旧值」，
   ///   表现为「只覆盖图片和语音、原文句子不更新」。用户选定语义：覆盖=整体替换，
   ///   句子为空则随之清空（`updateMinedNote` 另有「全部字段皆空 → 拒绝清整卡」总守卫）。
+  /// 选中的释义段已经作为 `<mark>` 进了释义字段时，`{popup-selection-text}` 要不要
+  /// 让位（渲染成空）。
+  ///
+  /// 让位的**唯一理由**是 Lapis 的卡背轮播（`updateDefDisplay`）：非空 SelectionText
+  /// 会把默认页占成一段脱离上下文的裸文本，用户反而要翻页才看得到带高亮的释义。
+  /// 这个理由只对 Lapis 成立，而且只在高亮**确实进了卡**时成立，所以三条缺一不可：
+  ///
+  /// 1. 高亮真的落进了导出的释义树（[AnkiMiningPayload.glossarySelectionHighlighted]）；
+  /// 2. 笔记类型是 Lapis——别的笔记类型没有那个轮播，凭什么替用户丢内容；
+  /// 3. 用户确实把某个 glossary 类占位符映射到了某个字段——没映的话高亮根本没进卡，
+  ///    这时候清空 SelectionText 就是让用户选中的内容**凭空消失**。
+  ///
+  /// 判据必须在这一层：popup.js 看得见 DOM 却看不见 `fieldMappings`，它只能上报
+  /// 「高亮落地了没有」这件客观事实。
+  @protected
+  static bool shouldYieldSelectionText({
+    required AnkiMiningPayload payload,
+    required String? noteTypeName,
+    required Map<String, String> fieldMappings,
+  }) =>
+      payload.glossarySelectionHighlighted &&
+      noteTypeName == LapisNoteType.modelName &&
+      fieldMappings.values.any((String t) => t.contains('glossary'));
+
   @protected
   Map<String, String> buildMinedFields({
     required Map<String, String> fieldMappings,
     required AnkiMiningPayload payload,
     required AnkiMiningContext context,
     required Map<String, String> dictionaryMediaTags,
+    String? noteTypeName,
     bool keepEmpty = false,
   }) {
+    final bool yieldSelectionText = shouldYieldSelectionText(
+      payload: payload,
+      noteTypeName: noteTypeName,
+      fieldMappings: fieldMappings,
+    );
     final fields = <String, String>{};
     for (final entry in fieldMappings.entries) {
-      var value = AnkiHandlebarRenderer.render(entry.value, payload, context);
+      var value = AnkiHandlebarRenderer.render(
+        entry.value,
+        payload,
+        context,
+        yieldSelectionText: yieldSelectionText,
+      );
       for (final mediaEntry in dictionaryMediaTags.entries) {
         value = value.replaceAll(mediaEntry.key, mediaEntry.value);
       }
@@ -669,6 +733,7 @@ abstract class BaseAnkiRepository {
       pitchCategories: payload.pitchCategories,
       phoneticTranscriptions: payload.phoneticTranscriptions,
       popupSelectionText: payload.popupSelectionText,
+      glossarySelectionHighlighted: payload.glossarySelectionHighlighted,
       audio: processedAudio,
       selectedDictionary: payload.selectedDictionary,
       dictionaryMedia: payload.dictionaryMedia,
@@ -680,6 +745,7 @@ abstract class BaseAnkiRepository {
         payload: mediaPayload,
         context: mediaContext,
         dictionaryMediaTags: dictionaryMediaTags,
+        noteTypeName: settings.selectedNoteTypeName,
         keepEmpty: keepEmpty,
       ),
       audioWarning: audioWarning,

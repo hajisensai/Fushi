@@ -1,14 +1,30 @@
-## BUG-2052 · 白2 身份结构门扫的是被 LunaHook 改写过的进程内存，导致点击穿透+语音降级
+## BUG-2076 · 白2 身份结构门扫的是被 LunaHook 改写过的进程内存，导致点击穿透+语音降级
 - **报告**：2026-09-03（用户：点击还是会穿透点到下一句 / 白色相簿好像有问题音频都降级了）
 - **真实性**：✅ 真 bug，根因 `native/galgame_hook/hook/adapters/leaf_aquaplus_adapter.inc`
   的 `IsLeafAquaplusProfileMatched()` 二进制结构校验读 `GetModuleHandleW(nullptr)` 的**进程内存**
 - **[x] ① 已修复** — 结构校验改读磁盘上的原始映像：平坦映射后**手工按节展开**成私有副本
   （不经加载器、不执行代码、不施加重定位），并给 `LoadedPeImage` 增加 `absolute_base` 让绝对 VA
   操作数按首选基址解码。**注意第一版用 `LoadLibraryEx` 的修法无效**，原因见下文修复小节。
+- **[x] ①b 同批补修** — 结构门改读磁盘后**新引入**了一条文件 IO 失败面：
+  `LoadLeafPristineImage()` 走 `CreateFileW` + `CreateFileMappingW` + `VirtualAlloc`，
+  杀软扫描期占住 exe、共享冲突、32 位地址空间碎片都能让它临时失败，而失败一路走下去是
+  `opened=false` → 三组全 false → `g_leaf_exact_binary_structure_state` 被写成 -1 →
+  profile 置空 → `g_leaf_aquaplus_profile_state` 永久 -1，症状与 [[BUG-2074]] 完全同形。
+  改动前的结构门只读进程内存、没有任何文件 IO，这条失败面是本次修法自己引进来的。
+  现在 `!pristine_ready` 与「摘要量不到」共用同一个有界重试窗口
+  （`LeafIdentityRetryWindowExhausted()`），窗口内直接返回、不写任何永久缓存，并置
+  `kXAudioDiag2LeafImageUnopened`；窗口耗尽后才落回原路径同时置 `LeafStructureRejected`
+  （两位同时在 = 已钉死，只有 `ImageUnopened` = 还在重试）。
 - **[x] ② 已加自动化测试** —
   `native/galgame_hook/tests/adapter_structure_test.py::test_leaf_structure_gate_reads_the_pristine_file_not_process_memory`
   （源码扫描守卫；变异验证：① 改回读 `module` ② 让 `absolute_base` 渗回 `AddressToRva`，均报错。
-  守卫另钉住「取原始映像不得用 `LoadLibraryEx`／`SEC_IMAGE`」——正是第一版栽进去的那个坑）
+  守卫另钉住「取原始映像不得用 `LoadLibraryEx`／`SEC_IMAGE`」——正是第一版栽进去的那个坑），
+  外加 `::test_leaf_structure_gate_retries_a_transient_pristine_image_failure`（钉住 ①b：
+  映像映不上时必须先走重试窗口再考虑写永久缓存）。
+  两条既有断言同批加固——它们**实测能被变异存活**：`assertNotIn("OpenLoadedPeImage(module,")`
+  是逐字面量锚点，把实参折成两行就完全看不见回改，已改成按括号配对取实参表再压空白的语义
+  锚点；`assertIn("VirtualFree", source)` 查的是整份 1500 行源文件，删掉析构里那句仍然全绿
+  （每次泄漏 ≈1.2MB），已改成对 `~LeafPristineImage()` 的**析构体**断言。
 
 ### 现象
 
@@ -44,7 +60,7 @@ structure_matched = ... && embed.count == 1u && ...   // 恒假
 
 ### 实机证据
 
-带 BUG-2051 修复的 DLL（`hook_module_sha256=5f543760…`）会话 pid 28828：
+带 BUG-2074 修复的 DLL（`hook_module_sha256=5f543760…`）会话 pid 28828：
 
 ```
 exe_sha256=005e7110…09ed        ← 与 profile 钉定值一致
@@ -89,4 +105,4 @@ geometry=0/0 status=0  hits=0   ← 几何 provider 从未上线
 
 - **备注**：本条只恢复被这道门挡掉的三个传感器。是否把 `engine-support.yaml` 里白2 的查词能力
   升级，仍须回到原始启动路径完成「显示台词 → 对应语音 → 截图 → 真卡写入」E2E 后再定。
-  相关：[[BUG-2051]]（同一函数第一层的永久缓存缺陷，先修的那条）。
+  相关：[[BUG-2074]]（同一函数第一层的永久缓存缺陷，先修的那条）。

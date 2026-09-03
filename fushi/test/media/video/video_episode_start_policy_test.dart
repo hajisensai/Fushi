@@ -160,4 +160,136 @@ void main() {
       expect(kAutoPlayNextCountdownSeconds, lessThanOrEqualTo(10));
     });
   });
+
+  // BUG-2043：全屏换集的路由决策真值表。生产路径 `_switchEpisode`
+  // （video_fushi/episode.part.dart）不再手写布尔表达式，直接消费本函数的输出，
+  // 所以「条件被改成恒真/恒假、接管块整体变死代码」这类回归在这里就红——纯源码
+  // 守卫（video_fullscreen_switch_flatten_guard_test.dart）只看字面、证明不了可达性。
+  group('resolveEpisodeSwitchPlan', () {
+    test('窗口模式（无全屏路由、未接管原生全屏）-> 顶替，不交接全屏', () {
+      const EpisodeSwitchPlan plan = EpisodeSwitchPlan(
+        mode: EpisodeSwitchMode.replace,
+        handOverNativeFullscreen: false,
+      );
+      expect(
+        resolveEpisodeSwitchPlan(
+          fullscreenRouteActive: false,
+          ownsHandedOverNativeFullscreen: false,
+          hasCurrentRoute: true,
+        ),
+        plan,
+      );
+      expect(
+        resolveEpisodeSwitchPlan(
+          fullscreenRouteActive: false,
+          ownsHandedOverNativeFullscreen: false,
+          hasCurrentRoute: false,
+        ),
+        plan,
+      );
+    });
+
+    test('全屏路由在栈上 -> 接管，并把原生全屏交给新页', () {
+      expect(
+        resolveEpisodeSwitchPlan(
+          fullscreenRouteActive: true,
+          ownsHandedOverNativeFullscreen: false,
+          hasCurrentRoute: true,
+        ),
+        const EpisodeSwitchPlan(
+          mode: EpisodeSwitchMode.takeover,
+          handOverNativeFullscreen: true,
+        ),
+      );
+    });
+
+    test('接管来的原生全屏还没压上路由 -> 仍算全屏，走接管（不得只看路由）', () {
+      // 上一次换集的新页还在就绪窗口里（持有原生全屏、自己的全屏路由未压上），
+      // 此时再按下一集：只看 fullscreenRouteActive 会误判成窗口模式 →
+      // pushReplacement → 原生全屏没人收口，窗口停在无全屏路由的原生全屏态。
+      expect(
+        resolveEpisodeSwitchPlan(
+          fullscreenRouteActive: false,
+          ownsHandedOverNativeFullscreen: true,
+          hasCurrentRoute: true,
+        ),
+        const EpisodeSwitchPlan(
+          mode: EpisodeSwitchMode.takeover,
+          handOverNativeFullscreen: true,
+        ),
+      );
+    });
+
+    test('拿不到本页路由 -> 退回顶替（摘不掉本页会漏栈），但仍交接全屏态', () {
+      for (final bool routeActive in <bool>[true, false]) {
+        expect(
+          resolveEpisodeSwitchPlan(
+            fullscreenRouteActive: routeActive,
+            ownsHandedOverNativeFullscreen: !routeActive,
+            hasCurrentRoute: false,
+          ),
+          const EpisodeSwitchPlan(
+            mode: EpisodeSwitchMode.replace,
+            handOverNativeFullscreen: true,
+          ),
+          reason: 'routeActive=$routeActive',
+        );
+      }
+    });
+
+    test('全部 8 种输入组合的真值表完全钉死', () {
+      final Map<String, EpisodeSwitchPlan> expected =
+          <String, EpisodeSwitchPlan>{
+        // key = 'fullscreenRouteActive,ownsHandedOver,hasCurrentRoute'
+        'false,false,false': const EpisodeSwitchPlan(
+          mode: EpisodeSwitchMode.replace,
+          handOverNativeFullscreen: false,
+        ),
+        'false,false,true': const EpisodeSwitchPlan(
+          mode: EpisodeSwitchMode.replace,
+          handOverNativeFullscreen: false,
+        ),
+        'false,true,false': const EpisodeSwitchPlan(
+          mode: EpisodeSwitchMode.replace,
+          handOverNativeFullscreen: true,
+        ),
+        'false,true,true': const EpisodeSwitchPlan(
+          mode: EpisodeSwitchMode.takeover,
+          handOverNativeFullscreen: true,
+        ),
+        'true,false,false': const EpisodeSwitchPlan(
+          mode: EpisodeSwitchMode.replace,
+          handOverNativeFullscreen: true,
+        ),
+        'true,false,true': const EpisodeSwitchPlan(
+          mode: EpisodeSwitchMode.takeover,
+          handOverNativeFullscreen: true,
+        ),
+        'true,true,false': const EpisodeSwitchPlan(
+          mode: EpisodeSwitchMode.replace,
+          handOverNativeFullscreen: true,
+        ),
+        'true,true,true': const EpisodeSwitchPlan(
+          mode: EpisodeSwitchMode.takeover,
+          handOverNativeFullscreen: true,
+        ),
+      };
+      expect(expected.length, 8, reason: '真值表必须覆盖全部 2^3 组合');
+      for (final bool a in <bool>[false, true]) {
+        for (final bool b in <bool>[false, true]) {
+          for (final bool c in <bool>[false, true]) {
+            expect(
+              resolveEpisodeSwitchPlan(
+                fullscreenRouteActive: a,
+                ownsHandedOverNativeFullscreen: b,
+                hasCurrentRoute: c,
+              ),
+              expected['$a,$b,$c'],
+              reason: 'fullscreenRouteActive=$a owns=$b hasCurrentRoute=$c',
+            );
+          }
+        }
+      }
+    });
+  });
 }

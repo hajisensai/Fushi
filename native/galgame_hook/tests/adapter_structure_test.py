@@ -139,6 +139,54 @@ class AdapterStructureTest(unittest.TestCase):
             leaf_publication,
         )
 
+    def test_geometry_publishers_declare_an_admitted_coordinate_space(self) -> None:
+        """每个几何发布者的坐标域必须是被 host 直连路径认过的两种之一。
+
+        host 的直连覆盖窗（fushi/windows/runner/gal_direct_card_geometry.h）把
+        `view` 按等比缩放 + 居中映射到游戏客户区，再以字形矩形贴附卡片。该映射的正确性
+        建立在一条**跨仓约定**上：
+
+          * ClientPhysicalPixels 的发布者，view 必须就是客户区 —— 此时 scale 恒为 1、
+            信箱边为 0，映射退化成恒等变换，与放开 1:1 闸门之前逐像素相同；
+          * PrimaryLayer 的发布者（目前只有 KiriKiri），view 是引擎画布 —— 正是需要
+            那次缩放的那一个。
+
+        若将来有适配器发布 LayoutLocal（IPC 枚举允许，见 voice_hook_ipc.h 的
+        IsPublicationSane 上界），它的坐标既不是客户区也不是画布，host 仍会照着上面
+        两条之一去缩放，症状是「卡片贴在离谱的位置」，而三边都不报错。本守卫让这种
+        新增在**编译期之外的最早时刻**变红，逼调用方回来改 host 的映射，而不是等真机。
+        """
+        adapter_root = ROOT / "hook" / "adapters"
+        admitted = {
+            "kLookupCoordinateSpaceClientPhysicalPixels",
+            "kLookupCoordinateSpacePrimaryLayer",
+        }
+        seen: dict[str, str] = {}
+        for path in sorted(adapter_root.rglob("*.inc")):
+            source = self._strip_comments(path.read_text(encoding="utf-8"))
+            if "g_geometry_provider_registry.PublishHit" not in source:
+                continue
+            name = path.relative_to(adapter_root).as_posix()
+            marker = "publication.coordinate_space ="
+            at = source.find(marker)
+            self.assertNotEqual(-1, at, f"{name} 必须显式声明 coordinate_space")
+            tail = source[at + len(marker) : at + len(marker) + 200]
+            spaces = [c for c in admitted if c in tail]
+            self.assertEqual(
+                1,
+                len(spaces),
+                f"{name} 的 coordinate_space 不在 host 直连路径认过的集合里：{tail.strip()[:80]}",
+            )
+            seen[name] = spaces[0]
+
+        self.assertEqual(6, len(seen), seen)
+        # PrimaryLayer 是唯一需要 host 做画布→客户区缩放的域；它多一个成员就意味着
+        # 多一个引擎走那条缩放路径，必须连同 host 的映射与其单测一起复核。
+        primary = sorted(
+            n for n, c in seen.items() if c == "kLookupCoordinateSpacePrimaryLayer"
+        )
+        self.assertEqual(["kirikiri_adapter.inc"], primary, seen)
+
     def test_sgre_lookup_uses_game_parsed_draw_state(self) -> None:
         source = (
             ROOT / "hook" / "adapters" / "sgre_lookup.inc"
@@ -1386,6 +1434,34 @@ class AdapterStructureTest(unittest.TestCase):
                     return source[open_at : i + 1]
         raise AssertionError(f"unbalanced braces after {signature}")
 
+    @staticmethod
+    def _call_arguments(source: str, callee: str) -> list[str]:
+        """取 `callee(` 每个调用点的实参表，空白已归一。
+
+        逐字面量锚点（`assertNotIn("Foo(module,")`）对 clang-format 敏感：把实参折成
+        两行，守卫就完全看不见回改。这里按括号配对取整个实参表再压空白，换行/缩进
+        怎么变都命中同一串。
+        """
+        out: list[str] = []
+        at = 0
+        while True:
+            at = source.find(callee + "(", at)
+            if at < 0:
+                return out
+            open_at = at + len(callee)
+            depth = 0
+            for i in range(open_at, len(source)):
+                if source[i] == "(":
+                    depth += 1
+                elif source[i] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        out.append(" ".join(source[open_at + 1 : i].split()))
+                        at = i + 1
+                        break
+            else:
+                raise AssertionError(f"unbalanced parens after {callee}")
+
     def test_hunex_hfa_reuses_shared_file_broker_and_parses_only_on_worker(
         self,
     ) -> None:
@@ -1558,10 +1634,109 @@ class AdapterStructureTest(unittest.TestCase):
             "测量失败必须早于 profile 选择返回",
         )
 
-        # 重试有界：无界重试会把 1.2MB 的 SHA-256 摊进每一拍 Poll。
-        self.assertIn("kLeafIdentityMeasureBudget", body)
-        self.assertIn("InterlockedIncrement(&g_leaf_identity_measure_attempts)", body)
+        # 重试有界，且**量纲是时间不是调用次数**：本函数每轮 Poll 被打 5~7 次
+        # （PollDelayMs 自己也调 leaf_aquaplus_.probe()），DispatchNewModules 每拍
+        # 还对每个新模块再打 3 次；按 32 次调用限界只有 0.2~1.2 秒，启动期模块风暴下
+        # 单个 200ms 拍就能烧光，而要覆盖的注入窗口以秒计。
+        self.assertIn("LeafIdentityRetryWindowExhausted()", body)
         self.assertIn("kXAudioDiag2LeafExecutableUnmeasurable", body)
+        whole = (ROOT / "hook" / "adapters" / "leaf_aquaplus_adapter.inc").read_text(
+            encoding="utf-8"
+        )
+        gate = self._strip_comments(whole)
+        self.assertIn("kLeafIdentityRetryWindowMs", gate)
+        self.assertIn("kLeafIdentityRetryIntervalMs", gate)
+        self.assertNotIn(
+            "g_leaf_identity_measure_attempts",
+            gate,
+            "调用次数预算量的是「被问了多少次」，要限的是「等了多久」——不得回退",
+        )
+        # 计次仍要挡 CPU：高频 Poll 不能把 SHA-256 + 映像展开摊进每一次调用。
+        self.assertIn("LeafIdentityMeasurementThrottled()", body)
+
+    def test_leaf_structure_gate_retries_a_transient_pristine_image_failure(
+        self,
+    ) -> None:
+        """原始映像映不上是瞬时条件，不得一次失败就永久钉死身份。
+
+        LoadLeafPristineImage 走 CreateFileW + CreateFileMappingW + VirtualAlloc：
+        杀软扫描期占住 exe、共享冲突、32 位地址空间碎片都能让它临时失败。往下走的
+        结局是 opened=false → 三组全 false → g_leaf_exact_binary_structure_state 被
+        写成 -1 → profile 置空 → g_leaf_aquaplus_profile_state 永久 -1，症状与
+        「exe 摘要量不到」完全一样：LAC 原声 hook 一次都不装、整场降级 Loopback。
+
+        结构门在改成读磁盘原始映像之前只读进程内存、没有任何文件 IO——这条失败面是
+        那次修法自己引进来的，必须共用同一个有界重试窗口。
+        """
+        source = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "leaf_aquaplus_adapter.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        body = self._function_body(source, "bool IsLeafAquaplusProfileMatched(")
+
+        guard = body.index("if (!pristine_ready)")
+        self.assertLess(
+            guard,
+            body.index("LeafIdentityRetryWindowExhausted()", guard),
+            "映像映不上必须走与摘要量不到同一个有界重试窗口",
+        )
+        self.assertLess(
+            guard,
+            body.index("InterlockedExchange(&g_leaf_exact_binary_structure_state"),
+            "重试窗口未耗尽时必须在写结构门永久缓存之前返回",
+        )
+        self.assertLess(
+            guard,
+            body.rindex("InterlockedExchange(&g_leaf_aquaplus_profile_state"),
+            "重试窗口未耗尽时也不得写 profile 的永久缓存",
+        )
+
+    def test_generic_shield_reservation_is_not_a_one_shot_static(self) -> None:
+        """通用护盾对共享 USER32 导出的预留判断不得只求值一次。
+
+        TryInstallGenericKeyAndRawInputShield() 的第一次调用就在 dll_main 里
+        MH_Initialize() 成功的那一刻——注入窗口最深处，正是 exact 身份最可能还没量出来
+        的时候。判断写成函数内 `static const bool` 就整个进程只求值那一次：那次返回
+        false，通用护盾把 GetAsyncKeyState 抢走，之后 exact 侧再来装拿不到 trampoline
+        （HookFn 已被占），身份重试成功也救不回来——BUG-2074 场景下「点击穿透」这一半
+        根本没修好。
+
+        并且「身份未定」必须按**预留**处置：抢占是不可逆的，不预留最多只是晚一拍装上
+        通用护盾（本函数每个 Poll 拍都会重来）。代价不对称时站在可逆的那一边。
+        """
+        source = self._strip_comments(
+            (ROOT / "hook" / "generic_input_shield.inc").read_text(encoding="utf-8")
+        )
+        body = self._function_body(
+            source, "void TryInstallGenericKeyAndRawInputShield("
+        )
+        for line in body.splitlines():
+            stripped = line.strip()
+            if "reserve_" in stripped and "=" in stripped:
+                self.assertFalse(
+                    stripped.startswith("static "),
+                    f"预留判断不得是函数内 static（只求值一次）：{stripped!r}",
+                )
+        self.assertIn("IsLeafAquaplusIdentityUndecided()", body)
+        self.assertIn("IsSiglusLookupIdentityUndecided()", body)
+
+        # 三态查询读的必须是身份状态本身，不能是把三态压成 bool 的那个函数。
+        for adapter, state in (
+            ("leaf_aquaplus_adapter.inc", "g_leaf_aquaplus_profile_state"),
+            ("siglus_lookup.inc", "g_siglus_lookup_profile_state"),
+        ):
+            adapter_source = self._strip_comments(
+                (ROOT / "hook" / "adapters" / adapter).read_text(encoding="utf-8")
+            )
+            name = (
+                "bool IsLeafAquaplusIdentityUndecided("
+                if "leaf" in adapter
+                else "bool IsSiglusLookupIdentityUndecided("
+            )
+            undecided = self._function_body(adapter_source, name)
+            self.assertIn(state, undecided)
+            self.assertIn("== 0", undecided)
 
     def test_leaf_structure_gate_reads_the_pristine_file_not_process_memory(
         self,
@@ -1585,11 +1760,25 @@ class AdapterStructureTest(unittest.TestCase):
 
         self.assertIn("LoadLeafPristineImage(executable, &pristine)", body)
         self.assertIn("image.absolute_base = preferred_base;", body)
-        self.assertNotIn(
-            "OpenLoadedPeImage(module,",
-            body,
-            "结构校验不得读进程内已加载的模块：那段内存会被 LunaHook 与我们自己的 hook 改写",
-        )
+        # 语义锚点：不逐字面量比 "OpenLoadedPeImage(module," ——那对 clang-format
+        # 敏感，参数一旦折行守卫就看不见回改（实测能存活变异）。改成取实参表本身。
+        calls = self._call_arguments(body, "OpenLoadedPeImage")
+        self.assertTrue(calls, "结构校验必须真的打开一份 PE 映像")
+        for arguments in calls:
+            subject = arguments.split(",")[0]
+            self.assertIn(
+                "pristine",
+                subject,
+                "结构校验只能打开 LoadLeafPristineImage 展开的私有副本，"
+                f"实参却是 {subject!r}",
+            )
+            self.assertNotIn(
+                "module",
+                subject,
+                "结构校验不得读进程内已加载的模块："
+                "那段内存会被 LunaHook 与我们自己的 hook 改写",
+            )
+            self.assertNotIn("GetModuleHandle", subject)
         self.assertLess(
             body.index("LoadLeafPristineImage(executable, &pristine)"),
             body.index("FindUniqueAbsolute32PatternInExecutableSections("),
@@ -1608,7 +1797,12 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertNotIn("SEC_IMAGE", loader, "SEC_IMAGE 映射到非首选基址会施加重定位")
         self.assertIn("PAGE_READONLY", loader)
         self.assertIn("IMAGE_FIRST_SECTION", loader)
-        self.assertIn("VirtualFree", source)
+        # 私有副本每次 ~1.2MB，且 IsLeafAquaplusProfileMatched 在身份未定期间会被
+        # 反复调用。释放必须断言在**析构体**上：整份 1500 行源文件里 VirtualFree
+        # 到处都有，删掉析构里那一句仍然全绿（实测存活的变异）。
+        destructor = self._function_body(source, "~LeafPristineImage()")
+        self.assertIn("VirtualFree", destructor)
+        self.assertIn("MEM_RELEASE", destructor)
 
         # absolute_base 只能作用于绝对操作数解码：rel32/寄存器间接算出的是映射内地址。
         shared = self._strip_comments(

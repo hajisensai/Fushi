@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
+import 'package:fushi/src/mining/galgame_japanese_locale_probe.dart';
 import 'package:fushi/src/mining/galgame_hook_runtime_stage.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart'
     show PcmFormat, transcodeVoiceResourcesToMiningAudio;
@@ -1156,6 +1157,19 @@ typedef GalHookProcessOutputSink = void Function(
   String chunk,
 );
 
+/// 转区 `auto` 的证据探测器签名（BUG-2047）。[exePath] 是 launch 的 exe，[language]
+/// 是该游戏声明的内容语言（null = 未声明）。
+typedef GalJapaneseLocaleNeedProbe = Future<GalJapaneseLocaleVerdict> Function(
+  String exePath,
+  String? language,
+);
+
+Future<GalJapaneseLocaleVerdict> _defaultJapaneseLocaleNeedProbe(
+  String exePath,
+  String? language,
+) =>
+    probeGalJapaneseLocaleNeed(exePath: exePath, language: language);
+
 Future<Process> _startGalHookProcess(
   String executable,
   List<String> arguments,
@@ -1195,7 +1209,9 @@ class EngineHookGalAudioSource implements GalAudioSource {
     this.launchWorkdir = '',
     required this.injectorPath,
     this.japaneseLocaleMode = kGalDefaultJapaneseLocaleMode,
+    this.contentLanguage,
     this.systemAnsiCodePageProbe = readSystemAnsiCodePage,
+    this.japaneseLocaleNeedProbe = _defaultJapaneseLocaleNeedProbe,
     this.lunaPcHooks = false,
     this.lunaCodepage,
     this.lunaHookProfilePath,
@@ -1252,8 +1268,16 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// 而用户没有任何开关可以关掉它。
   final GalJapaneseLocaleMode japaneseLocaleMode;
 
+  /// 该游戏的内容语言（`GalgameEntry.language`，BCP-47；null = 未声明）。
+  /// 转区 `auto` 判定里唯一的人工真值：声明了就压过一切自动证据（BUG-2047）。
+  final String? contentLanguage;
+
   /// 读宿主机 ANSI 代码页（可注入，便于单测）。
   final int? Function() systemAnsiCodePageProbe;
+
+  /// 「这个游戏需不需要 CP932」的证据探测（可注入，便于单测）。默认走
+  /// [probeGalJapaneseLocaleNeed] 的有界离线探测；只在 launch + `auto` 时调用。
+  final GalJapaneseLocaleNeedProbe japaneseLocaleNeedProbe;
 
   /// 是否让 LunaHook 连接后额外插入通用 PC hooks。Unity/Mono/IL2CPP 这类自绘文本路径需要它，
   /// 经典 GDI/KiriKiri/Siglus 默认关闭以减少重复线程。
@@ -1325,6 +1349,30 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// 转没转。所以这个事实必须离开本类，一路走到会话状态与诊断里。
   bool get japaneseLocaleApplied => _japaneseLocaleApplied;
 
+  GalJapaneseLocaleVerdict? _japaneseLocaleVerdict;
+
+  /// `auto` 档本局的判定结论与证据；attach / `on` / `off` 不判定，为 null。
+  ///
+  /// 与 [japaneseLocaleApplied] 在 [start] 的同一处赋值：命令行里的 `--japanese-locale`
+  /// 是按这个结论算出来的，会话卡上列的「判据」必须就是它，不能另算一份。
+  GalJapaneseLocaleVerdict? get japaneseLocaleVerdict => _japaneseLocaleVerdict;
+
+  GalJapaneseLocaleSkipReason? _japaneseLocaleSkipReason;
+
+  /// `auto` 档判定后没转区的原因（语义门 / 工程门）；转了、或不是 `auto`，为 null。
+  /// 与 [japaneseLocaleVerdict] 同处赋值、同处复位。
+  GalJapaneseLocaleSkipReason? get japaneseLocaleSkipReason =>
+      _japaneseLocaleSkipReason;
+
+  /// 探测器抛了也只是「没答上来」：结论 unknown ⇒ 不转区，启动照常。
+  Future<GalJapaneseLocaleVerdict> _judgeJapaneseLocaleNeed(String exe) async {
+    try {
+      return await japaneseLocaleNeedProbe(exe, contentLanguage);
+    } on Object {
+      return GalJapaneseLocaleVerdict.unknown;
+    }
+  }
+
   int _launchedPid = 0;
 
   /// launch 模式下 injector 回报的**已创建**游戏 PID（`LAUNCH pid=`）。注入是否成功
@@ -1373,6 +1421,15 @@ class EngineHookGalAudioSource implements GalAudioSource {
   int get textLaneRecycles => _textLaneRecycles;
   int get textLaneOverflows => _textLaneOverflows;
 
+  /// 引擎侧两个 XAudio2 诊断字的原样快照（粘性 or 位，只会置位不会清零）。
+  ///
+  /// [xaudioDiagnostics2] 是第二个字，装的不是队列状态而是**身份分型位**：SGRE 家族/
+  /// 锚点是否解出、Leaf 的 exe 摘要是否匹配、结构门断在哪一组（section roles / 各锚点 /
+  /// return sites）。没有它，「这台机器为什么整场语音降级 Loopback」在真机上只能猜——
+  /// 而 hook 侧每一条失败路径都老老实实置了位。
+  int get xaudioDiagnostics => _xaudioDiagnostics;
+  int get xaudioDiagnostics2 => _xaudioDiagnostics2;
+
   /// 共享内存已通过与 [start] **完全相同**的就绪门（`ready` + 有效 PCM 格式）时的格式。
   ///
   /// null 只说明「游戏还没播过语音」，不说明 hook 没装上（那看 [textHookReady] 与 native
@@ -1388,6 +1445,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
   bool _rawVoiceReady = false;
   int _textLaneRecycles = 0;
   int _textLaneOverflows = 0;
+  int _xaudioDiagnostics = 0;
+  int _xaudioDiagnostics2 = 0;
   PcmFormat? _readyFormat;
 
   /// 查目标进程 [pid] 是否 32 位（WOW64）。hibiki.exe 是 64 位，故 native `IsWow64Process`
@@ -1590,6 +1649,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
     _readyFormat = null;
     _launchedPid = 0;
     _japaneseLocaleApplied = false;
+    _japaneseLocaleVerdict = null;
+    _japaneseLocaleSkipReason = null;
     _diagnosticsBuffer.clear();
     _lastFailure = const GalHookInjectorDiagnostics();
     final String? path = injectorPath;
@@ -1637,15 +1698,32 @@ class EngineHookGalAudioSource implements GalAudioSource {
       return null;
     }
     _sessionStartedAt = DateTime.now();
+    // `auto` 先问语义（BUG-2047）：只有 launch 模式才可能转区，也只有 auto 才需要证据；
+    // 探测是有界离线 IO，失败一律当 unknown ⇒ 不转区，绝不阻塞启动。
+    final GalJapaneseLocaleVerdict? verdict =
+        launchMode && japaneseLocaleMode == GalJapaneseLocaleMode.auto
+            ? await _judgeJapaneseLocaleNeed(exe)
+            : null;
+    final bool is32Bit = launchMode && await exeIs32Bit(exe) == true;
+    final int? systemAnsiCodePage = systemAnsiCodePageProbe();
     final bool japaneseLocale = resolveJapaneseLocale(
       mode: japaneseLocaleMode,
       launchMode: launchMode,
-      is32Bit: launchMode && await exeIs32Bit(exe) == true,
-      systemAnsiCodePage: systemAnsiCodePageProbe(),
+      is32Bit: is32Bit,
+      systemAnsiCodePage: systemAnsiCodePage,
+      need: verdict?.need ?? GalJapaneseLocaleNeed.unknown,
     );
-    // 在传给 injector 的同一处记账：命令行里的 `--japanese-locale` 与这个字段必须同源，
+    // 在传给 injector 的同一处记账：命令行里的 `--japanese-locale` 与这三个字段必须同源，
     // 否则「诊断说没转区、进程其实转了」这种分叉比不诊断更糟。
     _japaneseLocaleApplied = japaneseLocale;
+    _japaneseLocaleVerdict = verdict;
+    _japaneseLocaleSkipReason = verdict == null || japaneseLocale
+        ? null
+        : resolveJapaneseLocaleSkipReason(
+            need: verdict.need,
+            is32Bit: is32Bit,
+            systemAnsiCodePage: systemAnsiCodePage,
+          );
     // 1. 拉起 injector 子进程（注入报毒代码只在这个隔离子进程里执行）。
     //    launch 模式：`--launch <exe>` CREATE_SUSPENDED 早注入，从 stdout 解析子进程 PID；
     //    attach 模式：`--pid <PID>` 附着已运行进程。
@@ -1922,6 +2000,10 @@ class EngineHookGalAudioSource implements GalAudioSource {
       _textLaneRecycles = (r['textLaneRecycles'] as int?) ?? _textLaneRecycles;
       _textLaneOverflows =
           (r['textLaneOverflows'] as int?) ?? _textLaneOverflows;
+      _xaudioDiagnostics =
+          (r['xaudioDiagnostics'] as int?) ?? _xaudioDiagnostics;
+      _xaudioDiagnostics2 =
+          (r['xaudioDiagnostics2'] as int?) ?? _xaudioDiagnostics2;
       // 就绪门只有一处真相源：start() 与运行中的 refreshReadiness() 必须用同一判据，
       // 否则「启动时不算就绪、运行中却算就绪」会让两条路径对同一份共享内存给出
       // 互相矛盾的结论（BUG-1100）。
