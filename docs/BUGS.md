@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1944 条。点号进各自文件。
+> 共 1945 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2082](bugs/BUG-2082-kirikiri-ingame-click-advances-no-card.md) | 🚧 | 🚧 | 真机:KiriKiri(Limelight)游戏内单击文字推进对白而非弹查词卡,悬停高亮正常 |
 | [BUG-2080](bugs/BUG-2080-gal-mining-audio-before-utterance-settles.md) | ✅ | ✅ | 台词一出就制卡只拿到句子音频的开头（引擎 PCM 收敛 / loopback 冻结未收口） |
 | [BUG-2079](bugs/BUG-2079-nyaa-search-missing-timeout.md) | 🚧 | 🚧 | NyaaClient.search 无超时，订阅检查可被单个慢响应挂住 |
 | [BUG-2076](bugs/BUG-2076-leaf-structure-gate-reads-hooked-memory.md) | ✅ | ✅ | 白2 身份结构门扫的是被 LunaHook 改写过的进程内存，导致点击穿透+语音降级 |
