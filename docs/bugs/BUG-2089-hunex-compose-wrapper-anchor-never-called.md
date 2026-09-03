@@ -19,7 +19,17 @@
   - `hook/adapters/hunex_gge_adapter.inc`：`BuildHunexGgeClientProjection` 每个拒绝点补报点（判据与控制流一字未动）；四个投影 detour 入口各加一次计数；投影诊断去重表 4→5 段，发布器 stage 上界 4→5。
   - `tools/ring_probe.cpp`：打印 `worker` 段名、9 个新失败码名，以及四个调用计数。
 - **[x] ② 已加自动化测试** — 本条是纯诊断/计数补全，无行为不变式变化，由既有守卫整批兜底并全部重跑：x64/x86 双架构 `ctest` 各 56/56 通过；`hunex_gge_trace.h` 自带的 static_assert 与 `tests/hunex_gge_lookup_test.cpp` 的布局断言在编译期钉住 v4 ABI（`slots` 偏移写死 216）；`adapter_structure_test.py` / `engine_support_manifest_test.py` / `assert_liveness_guard_test.py` / `evidence_contract_test.py` 与两个生成器 `--check` 全绿。
-- **[ ] ③ 未修复：正确的 compose 锚点尚未找到** — 这是本条留下的真正实现工作。要让 WoH 发布几何，必须先回答「WoH 的正文行到底经由哪个函数合成到目标表面」，候选做法：
+- **[x] ④ 真机已定位到真实的合成调用点（2026-09-03 16:45，WoH pid=59024）** — 又两轮测量，结论是**WoH 正文路径上根本不存在 compose 这一层**：
+  1. 先补齐另外两个合成入口的计数（trace v5）。实测：`compose_wrapper:0`、`compose:0`、**`compositor:2740`**。即两个 compose 锚点**都是**假阳性，而 compositor 锚点是真的——它确实被调用。
+  2. 再记录 compositor 的真实调用者 RVA（trace v6）。**未加闸门**时 `count:4, overflow:1691`，即 1776 次调用里绝大多数来自与正文无关的调用点（`0x000cba6e/8e/b4` 三个相邻点 + `0x0006b2ca`），4 个槽位毫无意义——compositor 是通用 blit。
+  3. 于是把记录**闸门在「本线程刚封存过一条正文行且仍新鲜」**上。实测立刻收敛到：
+     ```
+     compositor_callers={count:1, overflow:0, rvas:[0013535a]}
+     ```
+     **唯一一个调用点，零溢出。**
+  - **RVA `0x0013535a` 的归属**：已知锚点 `draw=0x00133fc0`、`render_item_return=0x001355d3`（后者是 draw 内部调用 render_item 的返回地址，故 draw 函数至少跨越 `0x133fc0..0x1355d3`）。`0x13535a < 0x1355d3` ⇒ **该调用点就在 draw 函数体内部**，与 `direct_first_glyph_return=0x00134595`、`direct_second_glyph_return=0x0013471d` 同属一个函数族；而未加闸门时看到的 `0x000cbxxx` 系列在完全不同的代码区（靠近 `key_poller=0x000cc000`），属于其它 UI 表面。
+- **由此得出的架构性结论**：**WoH 的正文是 `draw → render_item(逐字形) → compositor` 直连，没有中间的 compose / compose-wrapper 层。** 适配器现有模型假设的三级结构（wrapper → compose → compositor）在 WoH 正文路径上不存在；两个 compose 模式匹配到的是别处（其它 UI 表面用的同形函数）。这解释了为什么「结构唯一 + hook 就绪」全绿却零调用——**唯一性从来不能证明「就是它」**。
+- **[ ] ③ 未修复：需要按上述事实重建相关性锚点**（原文保留如下，但方向已由 ④ 收敛） — 这是本条留下的真正实现工作。要让 WoH 发布几何，必须先回答「WoH 的正文行到底经由哪个函数合成到目标表面」，候选做法：
   1. 用 `sprite_draw` / `texture_upload` 的真实调用点反查其调用者（trace 已有 `caller_rva`/`outer_caller_rva` 机制），从下往上找真实的合成入口，替换或补充 `kSurfaceComposeWrapperPattern`；
   2. 检查现有 wrapper 模式是否命中了某条**同形但不在正文路径**的函数（例如工具栏/立绘合成），必要时把「唯一命中」升级为「唯一命中且运行期被调用过」——扫描期就能证伪的假阳性不该等到运行期才暴露；
   3. 若 WoH 的正文根本不走 wrapper 形态，则 `wrapper_scope` 这个硬前提需要重新设计（compositor 相关性判据当前完全依赖它）。

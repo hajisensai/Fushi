@@ -14,7 +14,7 @@ inline constexpr char kHunexGgeTraceExportName[] = "FushiHunexGgeTraceV3";
 inline constexpr uint32_t kHunexGgeTraceMagic = 0x33544748u;  // "HGT3"
 // v4（BUG-2089）：头部增加四个投影 detour 的调用计数。probe 与 helper 同源构建，
 // 版本号不匹配时 probe 直接拒读，不存在跨版本误解释。
-inline constexpr uint32_t kHunexGgeTraceVersion = 4u;
+inline constexpr uint32_t kHunexGgeTraceVersion = 6u;
 inline constexpr uint32_t kHunexGgeTraceCapacity = 512u;
 
 enum class HunexGgeTraceKind : uint32_t {
@@ -280,6 +280,16 @@ struct alignas(8) HunexGgeTraceBuffer {
   // 的排障方向完全相反（前者说明 WoH 的正文走的不是扫描锚点假设的那条渲染路径）。
   // 只有无条件的调用计数能把它们分开。
   int64_t surface_compose_wrapper_calls = 0;
+  // v5：wrapper 之外的另两个合成入口也要单独计数。上一轮只数了 wrapper，无法回答
+  // 「是整条合成路径都不走，还是只有 wrapper 这一个锚点选错了」——后者的修法要小得多。
+  int64_t surface_compose_calls = 0;
+  int64_t surface_compositor_calls = 0;
+  // v6（BUG-2089 ③）：compositor 实际被调用了，但两个 compose 锚点都零调用，说明
+  // compositor 的真实调用者是另一个函数——那个函数才是 WoH 正文的合成入口。这里记下
+  // 最多 4 个**互异**的调用返回地址 RVA，直接把「该去哪找锚点」变成可读数字。
+  uint32_t compositor_caller_rvas[4] = {};
+  uint32_t compositor_caller_rva_count = 0;
+  uint32_t compositor_caller_rva_overflow = 0;
   int64_t texture_upload_calls = 0;
   int64_t quad_vertex_calls = 0;
   int64_t sprite_draw_calls = 0;
@@ -320,7 +330,7 @@ static_assert(offsetof(HunexGgeTraceEvent, lookup_gate_mask) == 440,
               "HUNEX/GGE lookup diagnostic trace ABI drifted");
 static_assert(sizeof(HunexGgeTraceSlot) == 464,
               "HUNEX/GGE trace slot ABI drifted");
-static_assert(offsetof(HunexGgeTraceBuffer, slots) == 216,
+static_assert(offsetof(HunexGgeTraceBuffer, slots) == 256,
               "HUNEX/GGE trace header ABI drifted");
 
 }  // namespace fushi_voice_hook

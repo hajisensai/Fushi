@@ -452,6 +452,50 @@ void PublishHunexGgeTrace(fushi_voice_hook::HunexGgeTraceEvent event) {
   InterlockedExchange(&g_hunex_gge_trace_writer, 0);
 }
 
+// BUG-2089 ③：记录 compositor 的真实调用者 RVA（最多 4 个互异值）。
+//
+// 真机计数证明 compose / compose_wrapper 两个锚点零调用而 compositor 被调用上千次，
+// 即 compositor 的调用者不是扫描器认定的那两个函数。把这些返回地址导出来，就能直接
+// 定位 WoH 正文真正的合成入口，不必再靠模式猜。只写一次、无锁、绝不阻塞渲染线程。
+// 前置声明：定义在下方投影段，本记录器需要它做新鲜度闸门。
+bool IsFreshHunexGgeProjectionTick(ULONGLONG then, ULONGLONG now);
+
+void RecordHunexGgeCompositorCallerRva(uintptr_t return_address) {
+  // 只在**本线程刚封存过一条正文行且仍新鲜**时记录。compositor 是通用 blit，全量记录
+  // 时 1776 次调用里有 1691 次来自与正文无关的调用点（首轮实测），4 个槽位毫无意义。
+  // 用待定正文行做闸门后，留下的就是正文合成路径上的调用者。
+  const HunexGgePendingStoryCompose& pending = g_hunex_gge_pending_story_compose;
+  if (!pending.active ||
+      pending.render_thread_id != GetCurrentThreadId() ||
+      !IsFreshHunexGgeProjectionTick(pending.sealed_tick, GetTickCount64())) {
+    return;
+  }
+  const uintptr_t module = g_hunex_gge_anchors.module;
+  if (module == 0u || return_address < module) return;
+  const uintptr_t offset = return_address - module;
+  if (offset > 0xFFFFFFFFull) return;
+  const uint32_t rva = static_cast<uint32_t>(offset);
+  auto* trace = &FushiHunexGgeTraceV3;
+  for (uint32_t index = 0u; index < 4u; ++index) {
+    auto* slot = reinterpret_cast<volatile LONG*>(&trace->compositor_caller_rvas[index]);
+    const LONG existing = InterlockedCompareExchange(slot, 0, 0);
+    if (existing == static_cast<LONG>(rva)) return;
+    if (existing == 0) {
+      if (InterlockedCompareExchange(slot, static_cast<LONG>(rva), 0) == 0) {
+        InterlockedIncrement(reinterpret_cast<volatile LONG*>(
+            &trace->compositor_caller_rva_count));
+        return;
+      }
+      // 竞争失败：重读同一槽，可能正是同一个 rva。
+      if (InterlockedCompareExchange(slot, 0, 0) == static_cast<LONG>(rva)) {
+        return;
+      }
+    }
+  }
+  InterlockedIncrement(
+      reinterpret_cast<volatile LONG*>(&trace->compositor_caller_rva_overflow));
+}
+
 void PublishHunexGgeProjectionDiagnostic(
     fushi_voice_hook::HunexGgeTraceEvent event,
     fushi_voice_hook::HunexGgeProjectionTraceStage stage,
@@ -1848,6 +1892,9 @@ uint32_t Detour_HunexGgeSurfaceCompose(
     void* line_this, void* destination_b, void* destination_a,
     int32_t y_base, uint32_t blend, const int32_t* x_offsets,
     uint32_t layout_selector, uint32_t node_filter) {
+  // BUG-2089：无条件调用计数（同 wrapper）。
+  InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+      &FushiHunexGgeTraceV3.surface_compose_calls));
   const HunexGgeSurfaceComposeContext previous =
       g_hunex_gge_surface_compose_context;
   // The admitted wrapper's non-zero path is the one legitimate nested entry:
@@ -1893,8 +1940,12 @@ uint32_t Detour_HunexGgeSurfaceCompose(
 uint32_t Detour_HunexGgeSurfaceCompositor(
     void* destination, int32_t destination_x, int32_t destination_y,
     const void* source, uint32_t mode, uint32_t alpha) {
+  // BUG-2089：无条件调用计数（同 wrapper）。
+  InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+      &FushiHunexGgeTraceV3.surface_compositor_calls));
   const uintptr_t return_address =
       reinterpret_cast<uintptr_t>(_ReturnAddress());
+  RecordHunexGgeCompositorCallerRva(return_address);
   auto& context = g_hunex_gge_surface_compose_context;
   uint32_t ordinal = 0u;
   bool zero_mode = false;

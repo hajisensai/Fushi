@@ -843,6 +843,11 @@ struct alignas(8) HunexGgeTraceHeaderSnapshot {
   uint32_t capture_quarantine_conflicting_thread_id = 0;
   // BUG-2089：与 HunexGgeTraceBuffer 逐字段同序（下方 static_assert 钉住整体大小）。
   int64_t surface_compose_wrapper_calls = 0;
+  int64_t surface_compose_calls = 0;
+  int64_t surface_compositor_calls = 0;
+  uint32_t compositor_caller_rvas[4] = {};
+  uint32_t compositor_caller_rva_count = 0;
+  uint32_t compositor_caller_rva_overflow = 0;
   int64_t texture_upload_calls = 0;
   int64_t quad_vertex_calls = 0;
   int64_t sprite_draw_calls = 0;
@@ -2062,7 +2067,8 @@ bool DumpHunexGgeTrace(DWORD pid) {
       "hunex_gge_trace pid=%lu module=%ls base=0x%llx "
       "export_rva=0x%08x next=%llu dropped_busy=%llu capacity=%u "
       "calls={draw:%llu,glyph:%llu,render_item:%llu,input:%llu,"
-      "compose_wrapper:%llu,texture_upload:%llu,quad_vertex:%llu,"
+      "compose_wrapper:%llu,compose:%llu,compositor:%llu,"
+      "texture_upload:%llu,quad_vertex:%llu,"
       "sprite_draw:%llu}",
       pid, module.path.c_str(), static_cast<unsigned long long>(module.base),
       export_rva, static_cast<unsigned long long>(header.next_sequence),
@@ -2072,9 +2078,16 @@ bool DumpHunexGgeTrace(DWORD pid) {
       static_cast<unsigned long long>(header.render_item_calls),
       static_cast<unsigned long long>(header.input_calls),
       static_cast<unsigned long long>(header.surface_compose_wrapper_calls),
+      static_cast<unsigned long long>(header.surface_compose_calls),
+      static_cast<unsigned long long>(header.surface_compositor_calls),
       static_cast<unsigned long long>(header.texture_upload_calls),
       static_cast<unsigned long long>(header.quad_vertex_calls),
       static_cast<unsigned long long>(header.sprite_draw_calls));
+  printf(" compositor_callers={count:%u,overflow:%u,rvas:[%08x,%08x,%08x,%08x]}",
+         header.compositor_caller_rva_count,
+         header.compositor_caller_rva_overflow,
+         header.compositor_caller_rvas[0], header.compositor_caller_rvas[1],
+         header.compositor_caller_rvas[2], header.compositor_caller_rvas[3]);
   PrintHunexGgeScannerStatus(header.scanner_status);
   PrintHunexGgeLookupGate(header.lookup_gate_mask);
   PrintHunexGgeCaptureQuarantine(
