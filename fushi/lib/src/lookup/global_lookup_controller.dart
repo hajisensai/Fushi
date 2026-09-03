@@ -224,6 +224,18 @@ class GlobalLookupController {
   // host.js anchorRectToScreen) and delivered via onLinkClick args[1]. Fed to
   // computeFrameRect so each child card cascades off its word.
   final Map<String, Rect?> _frameAnchors = <String, Rect?>{};
+  // BUG-2054 — in-flight whole-word anchor requests, keyed by the token the host
+  // echoes back in its `nestedWordAnchor` report. The token (not the stack
+  // position) is what routes a report to its waiter, so a late answer from a
+  // superseded lookup completes nothing instead of moving an unrelated card.
+  final Map<int, Completer<Rect?>> _pendingWordAnchors =
+      <int, Completer<Rect?>>{};
+  int _wordAnchorToken = 0;
+  // One highlight eval round-trip inside an already-loaded iframe realm. Kept
+  // short: this sits between the dictionary result and the child card appearing,
+  // and its failure mode (fall back to the first-character anchor) is the exact
+  // behaviour that shipped before this fix.
+  static const Duration _kWordAnchorReportTimeout = Duration(milliseconds: 400);
   // TODO-867 P3c E1/D2 — the cascade layout bounds (window-local CSS px) the
   // off-screen measurement window is sized to. Children cascade WITHIN these
   // bounds; D2's union bbox then reveals/resizes the window to the real extent.
@@ -312,7 +324,7 @@ class GlobalLookupController {
       final double dpr = _devicePixelRatio();
       // 弹窗尺寸精细化：app 外覆盖窗默认跟随 app 内，解锁后用 overlay 自己的键。
       final LookupSize overlaySize = _clampToPhysicalCap(
-        model.overlayLookupEffectiveSize,
+        _effectiveLookupSizeForCurrentRoute(model),
         model,
         dpr,
       );
@@ -557,6 +569,31 @@ class GlobalLookupController {
 
   /// 把逻辑尺寸夹到 [_physicalCap]。等比缩小而不是各轴独立裁剪：独立裁剪会改变
   /// 卡片的宽高比，排版跟着变形；等比缩小只是变小。
+  /// 当前 route 所属形态的「有效最大宽高」。
+  ///
+  /// 游戏内查词卡与 app 外覆盖窗是**两个形态**：前者贴在游戏客户区里、不能压住正文，
+  /// 后者浮在整块桌面上；合适尺寸本就不同。两者曾共读 overlay 那一组键，于是只能
+  /// 二选一——真机上就是「游戏内过小、浮窗过大」。这里按 route 分流，形态各读各的键。
+  LookupSize _effectiveLookupSizeForCurrentRoute(AppModel model) =>
+      GlobalLookupChannel.currentRoute.source == 'galCard'
+      ? model.galCardLookupEffectiveSize
+      : model.overlayLookupEffectiveSize;
+
+  /// 卡片尺寸上界（物理像素）。真机上它决定「最大宽/高」这个设置到底生不生效。
+  @visibleForTesting
+  ({int w, int h})? get debugPhysicalCap => _physicalCap;
+
+  /// 级联布局工作区 + 根卡原点。四个分量**必须同域**，测试据此咬住。
+  @visibleForTesting
+  ({int w, int h, int x, int y})? get debugLayoutWorkArea =>
+      _physicalLayoutWorkArea;
+
+  /// 按当前 route 分流出来的「有效最大宽高」。galCard 与桌面覆盖窗读的是两组不同的
+  /// 偏好键，这条分流是「游戏内查词卡独立尺寸」整个功能的唯一开关点。
+  @visibleForTesting
+  LookupSize debugEffectiveLookupSizeForCurrentRoute(AppModel model) =>
+      _effectiveLookupSizeForCurrentRoute(model);
+
   LookupSize _clampToPhysicalCap(LookupSize size, AppModel model, double dpr) {
     final ({int w, int h})? cap = _physicalCap;
     if (cap == null) return size;
@@ -757,7 +794,7 @@ class GlobalLookupController {
       // computeRootShellOffset), so a single-frame lookup still reveals exactly
       // at the card size after the bbox trims the bounds — no regression.
       final LookupSize overlaySize = _clampToPhysicalCap(
-        model.overlayLookupEffectiveSize,
+        _effectiveLookupSizeForCurrentRoute(model),
         model,
         dpr,
       );
@@ -1111,7 +1148,7 @@ class GlobalLookupController {
       return;
     }
     final double dpr = _devicePixelRatio();
-    final LookupSize current = model.overlayLookupEffectiveSize;
+    final LookupSize current = _effectiveLookupSizeForCurrentRoute(model);
     final LookupSize size = resolveOverlayResizeFromDelta(
       currentWidth: current.width,
       currentHeight: current.height,
@@ -1393,6 +1430,81 @@ class GlobalLookupController {
     //     case.
     if (handler == 'onLinkClick' || handler == 'textSelected') {
       _dispatchNestedLookup(message);
+      return;
+    }
+    // BUG-2054 — the parent realm's whole-word bbox report; completes the wait
+    // `_lookupNested` is holding before it places the child card.
+    if (_maybeHandleNestedWordAnchor(handler, message)) {
+      return;
+    }
+  }
+
+  /// BUG-2054 — the parent realm's answer to a tokened [buildHighlightFrameScript]
+  /// request: the highlighted word's whole-word bbox (window-local CSS px, host
+  /// already applied the same `anchorRectToScreen` the original anchor took), or
+  /// null when the realm had nothing usable.
+  ///
+  /// args = [parentFrameIndex, rect|null, token]. Routing is by TOKEN, not by
+  /// stack position: the awaiting `_lookupNested` owns the token and re-checks
+  /// its own route/generation after the await, so a late or cross-route report
+  /// completes nothing (a stale token has already been removed) instead of
+  /// overwriting an unrelated card's anchor.
+  bool _maybeHandleNestedWordAnchor(
+    Object? handler,
+    Map<String, Object?> message,
+  ) {
+    if (handler != 'nestedWordAnchor') {
+      return false;
+    }
+    final Object? args = message['args'];
+    if (args is List && args.length >= 3) {
+      final Object? rawToken = args[2];
+      final int? token =
+          rawToken is num ? rawToken.toInt() : int.tryParse('$rawToken');
+      if (token != null) {
+        final Completer<Rect?>? completer = _pendingWordAnchors.remove(token);
+        if (completer != null && !completer.isCompleted) {
+          completer.complete(_anchorRectFromArg(args[1]));
+        }
+      }
+    }
+    return true;
+  }
+
+  /// BUG-2054 — highlight the searched word in the parent realm and WAIT for the
+  /// whole-word bbox it reports back, so the child card can be placed against the
+  /// real word on its FIRST render.
+  ///
+  /// Why the wait instead of a re-anchor afterwards: unlike the in-app cards
+  /// (whose child sits behind `markPendingReveal` until its own WebView renders),
+  /// the overlay child is rendered and handed to the host's reveal gate by
+  /// `_renderStack()` immediately. Re-anchoring after that would move an already
+  /// visible card AND re-drive the whole overlay window geometry (union bbox ->
+  /// overlaySize -> native move/resize) on EVERY nested lookup — the word bbox
+  /// differs from the first-character rect even on a single-line selection.
+  ///
+  /// Returns null on timeout / no usable bbox / a retired route: the caller then
+  /// keeps the first-character anchor, exactly as before this fix.
+  Future<Rect?> _highlightAndAwaitWordAnchor(
+    int sourceIndex,
+    int highlightCount,
+  ) async {
+    final int token = ++_wordAnchorToken;
+    final Completer<Rect?> completer = Completer<Rect?>();
+    _pendingWordAnchors[token] = completer;
+    try {
+      await GlobalLookupChannel.render(
+        buildHighlightFrameScript(sourceIndex, highlightCount, token: token),
+      );
+      return await completer.future.timeout(_kWordAnchorReportTimeout);
+    } on TimeoutException {
+      glog('nested: word-anchor token=$token TIMEOUT');
+      return null;
+    } catch (e) {
+      glog('nested: word-anchor token=$token EXCEPTION $e');
+      return null;
+    } finally {
+      _pendingWordAnchors.remove(token);
     }
   }
 
@@ -1513,6 +1625,38 @@ class GlobalLookupController {
       final DictionarySearchResult result = await search;
       if (!_isCurrentRoute || generation != _nestedLookupGeneration) return;
 
+      // TODO-1190 — mark the searched word inside the PARENT card's popup.js
+      // realm (host.highlightFrame -> fushiSelection.highlightSelection). Only
+      // when the child search matched something; count = the matched char length
+      // (same source the in-app lookupHighlightCharCount reads). No-op host-side
+      // on a bad index / non-positive count.
+      //
+      // BUG-2054 — the same round-trip brings back the highlighted word's
+      // whole-word bbox, and it runs BEFORE the push/render below so the child
+      // card is placed against the real word on its FIRST render (see
+      // [_highlightAndAwaitWordAnchor] for why re-anchoring afterwards is worse
+      // here than it is for the in-app cards). Anything unusable leaves
+      // anchorRect untouched — the first-character anchor, as before. It stays
+      // ABOVE the source re-resolve below so every async boundary this lookup
+      // crosses is behind that one immutable-id check.
+      final int highlightCount = result.entries.isEmpty
+          ? 0
+          : JapaneseLanguage.instance.getFinalHighlightLength(
+              result: result,
+              searchTerm: query,
+            );
+      Rect? effectiveAnchor = anchorRect;
+      if (sourceIndex >= 0 && highlightCount > 0) {
+        final Rect? wordAnchor = await _highlightAndAwaitWordAnchor(
+          sourceIndex,
+          highlightCount,
+        );
+        if (!_isCurrentRoute || generation != _nestedLookupGeneration) return;
+        if (wordAnchor != null && !wordAnchor.isEmpty) {
+          effectiveAnchor = wordAnchor;
+        }
+      }
+
       // The query crossed an async boundary. Re-resolve the immutable source id:
       // an ancestor close/root replacement must make this result inert, while a
       // valid source is truncated again before push in case another side effect
@@ -1537,7 +1681,7 @@ class GlobalLookupController {
       final bool childPushed = _pushChildFrame(
         query,
         result,
-        anchorRect,
+        effectiveAnchor,
         parentIndex: sourceIndex,
       );
       if (childPushed) {
@@ -1550,22 +1694,8 @@ class GlobalLookupController {
         'nested: source=$sourceFrameId[$sourceIndex] "$query" '
         'entries=${result.entries.length}',
       );
-      // TODO-1190 — mark the searched word inside the PARENT card's popup.js
-      // realm (host.highlightFrame -> fushiSelection.highlightSelection). Only
-      // when the child search matched something; count = the matched char length
-      // (same source the in-app lookupHighlightCharCount reads). No-op host-side
-      // on a bad index / non-positive count.
-      final int highlightCount = result.entries.isEmpty
-          ? 0
-          : JapaneseLanguage.instance.getFinalHighlightLength(
-              result: result,
-              searchTerm: query,
-            );
-      if (childPushed && sourceIndex >= 0 && highlightCount > 0) {
-        await GlobalLookupChannel.render(
-          buildHighlightFrameScript(sourceIndex, highlightCount),
-        );
-      }
+      // (The parent-card highlight already ran above, together with the
+      // whole-word anchor round-trip it shares — BUG-2054.)
       _autoReadFirstEntry(model, result);
     } catch (e, st) {
       // The ancestor-replacement fast path keeps old physical descendants only
@@ -1746,7 +1876,7 @@ class GlobalLookupController {
     // trims the window down to the real extent.
     final double dpr = _devicePixelRatio();
     final LookupSize overlaySize = _clampToPhysicalCap(
-      model.overlayLookupEffectiveSize,
+      _effectiveLookupSizeForCurrentRoute(model),
       model,
       dpr,
     );
@@ -2098,7 +2228,7 @@ class GlobalLookupController {
   /// scrollHeight, exactly as before D2. Kept as a fallback so a frame that
   /// somehow reports the scalar form still sizes correctly.
   void _applyOverlayScalar(AppModel model, double dpr, double physH) {
-    final LookupSize overlaySize = model.overlayLookupEffectiveSize;
+    final LookupSize overlaySize = _effectiveLookupSizeForCurrentRoute(model);
     final int width = (overlaySize.width * model.appUiScale * dpr).round();
     final double maxHeight = overlaySize.height * model.appUiScale * dpr;
     final int height = (physH > maxHeight ? maxHeight : physH).round();

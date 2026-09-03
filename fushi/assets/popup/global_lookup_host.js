@@ -3556,7 +3556,7 @@
   // window.fushiSelection.highlightSelection(count) inside its iframe realm (the
   // popup.js selection already spans the just-clicked word). No-op on a bad index
   // / count / missing frame so a failed highlight never breaks the lookup.
-  function highlightFrame(frameIndex, count) {
+  function highlightFrame(frameIndex, count, token) {
     if (typeof frameIndex !== 'number' || frameIndex < 0) {
       return false;
     }
@@ -3583,15 +3583,42 @@
     if (!win || typeof win.eval !== 'function') {
       return false;
     }
+    // BUG-2054 — everything that can throw stays INSIDE this try (the function's
+    // contract, stated above, is that a failed highlight never breaks the
+    // lookup): win.eval, the shell-geometry read inside anchorRectToScreen and
+    // postToHost alike. Dart AWAITS this report before it places the child card,
+    // so a throw here would also strand that wait until its timeout.
     try {
-      win.eval(
+      var bounds = win.eval(
           'window.fushiSelection && ' +
-          'window.fushiSelection.highlightSelection && ' +
-          'window.fushiSelection.highlightSelection(' + count + ');');
-      return true;
+          'window.fushiSelection.highlightSelection ? ' +
+          'window.fushiSelection.highlightSelection(' + count + ') : null;');
+      // highlightSelection also RETURNS the matched word's bbox in the parent
+      // iframe's own viewport: it unions every getClientRects() fragment, so on
+      // a WRAPPED selection its bottom is the LAST line. The child card would
+      // otherwise be anchored on selection.js's getSelectionRect() — the FIRST
+      // CHARACTER's rect (textSelected fires before the dictionary runs, so the
+      // matched length is unknown then) — which on a wrapped selection covers
+      // only the tapped line, leaving the child card on top of the second one.
+      // Reported through the SAME iframe-local -> window-local transform the
+      // original anchor took (in-app cards do it via reanchorNestedPopupToWord).
+      var anchor = anchorRectToScreen(target, bounds);
+      var usable = !!anchor && anchor.width > 0 && anchor.height > 0;
+      // Always answer a TOKENED request — Dart is waiting on it before placing
+      // the child card, and a silent drop would cost it the full timeout. An
+      // unusable bbox reports null: Dart then keeps the first-character anchor.
+      if (typeof token === 'number') {
+        postToHost('nestedWordAnchor', [frameIndex, usable ? anchor : null, token],
+            cloneRoute((target && target.route) || activeRoute));
+      }
     } catch (e) {
+      if (typeof token === 'number') {
+        postToHost('nestedWordAnchor', [frameIndex, null, token],
+            cloneRoute((target && target.route) || activeRoute));
+      }
       return false;
     }
+    return true;
   }
 
   // BUG-1127 — drive the overlay AUTO-READ through popup.js's own HTML5

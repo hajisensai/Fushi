@@ -59,6 +59,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: _SilentLoopback.new,
@@ -109,6 +110,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: _SilentLoopback.new,
@@ -166,6 +168,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -252,6 +255,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () {

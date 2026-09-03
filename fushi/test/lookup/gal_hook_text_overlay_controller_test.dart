@@ -120,6 +120,7 @@ void main() {
             String launchWorkdir = '',
             GalJapaneseLocaleMode japaneseLocaleMode =
                 kGalDefaultJapaneseLocaleMode,
+            String? contentLanguage,
           }) => _OverlayTestEngine(),
       endpointStatusLoader: () => const [],
     );

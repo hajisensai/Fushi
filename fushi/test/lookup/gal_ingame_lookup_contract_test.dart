@@ -11,8 +11,12 @@
 //   4. runner 的失败是编码在应答里的 error token，不是异常——不许被吞成"成功"。
 //
 // 坐标域纪律（错了就是卡片乱跑）：glyph/view/anchor 要么全在 client physical px，
-// 要么全在 primaryLayer px。runner 对前者强制 view/client 1:1 并 ClientToScreen，后者
-// 走 in-process presenter；design/layout-local 没唯一 transform 时必须丢弃。
+// 要么全在 primaryLayer px。runner 的直连覆盖窗对两者用**同一套**映射——把 view 等比
+// 缩放并居中到游戏客户区，再 ClientToScreen；前者 view 即客户区，scale 恒为 1、信箱边
+// 为 0，映射退化成恒等变换，后者（目前只有 KiriKiri）才真正发生缩放。卡片本身**不随
+// 画布缩放**：它保持自身物理像素，贴附以字形矩形为基准在屏幕空间重排。
+// design/layout-local 没唯一 transform 时必须丢弃；新增该域的适配器会被
+// native/galgame_hook/tests/adapter_structure_test.py 的坐标域守卫拦下。
 
 import 'dart:io';
 
@@ -703,6 +707,10 @@ void main() {
             cardHeight: 320,
             viewWidth: hit.viewW,
             viewHeight: hit.viewH,
+            glyphX: hit.glyphX,
+            glyphY: hit.glyphY,
+            glyphW: hit.glyphW,
+            glyphH: hit.glyphH,
           );
       expect(calls.single.method, 'galLookupPresent');
       expect(calls.single.arguments, <String, Object?>{
@@ -715,6 +723,12 @@ void main() {
         'cardHeight': 320,
         'viewWidth': 1280,
         'viewHeight': 720,
+        // 字形矩形必须原样过线：直连覆盖窗要靠它在屏幕空间贴附卡片，丢了就退回按
+        // 画布尺寸排的 anchor，放大运行时卡片会飘离命中的字。
+        'glyphX': hit.glyphX,
+        'glyphY': hit.glyphY,
+        'glyphW': hit.glyphW,
+        'glyphH': hit.glyphH,
       });
       expect(result.ok, isTrue);
       expect(result.width, 480);
@@ -743,6 +757,10 @@ void main() {
             cardHeight: 320,
             viewWidth: 1280,
             viewHeight: 720,
+            glyphX: 0,
+            glyphY: 0,
+            glyphW: 24,
+            glyphH: 24,
           );
       expect(result.ok, isFalse);
       expect(result.error, 'lookup_region_missing');
@@ -1173,6 +1191,10 @@ void main() {
           cardHeight: 320,
           viewWidth: 1280,
           viewHeight: 720,
+          glyphX: 0,
+          glyphY: 0,
+          glyphW: 24,
+          glyphH: 24,
         )).error,
         'unsupported_platform',
       );
