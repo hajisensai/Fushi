@@ -74,9 +74,10 @@ const Map<String, String> kFilePickerAllowlist = <String, String>{
   'lib/src/pages/implementations/profile_management_page.dart':
       'Profile JSON：选中即读入并落库',
   'lib/src/sync/sync_settings_schema/backup.part.dart': '备份 zip：选中即校验并恢复，不长期引用',
-  'lib/src/pages/implementations/onboarding_wizard_page.dart':
-      '新手引导「选择本地推荐包」：备份 zip 选中即走 runBackupImportFlowForFile 校验并恢复，'
-          '与 backup.part.dart 同语义，不长期引用',
+  // 原有一条 'lib/src/pages/implementations/onboarding_wizard_page.dart'（新手引导
+  // 「选择本地推荐包」）已于 BUG-2107 修掉并按「清单只减不增」删除：推荐包是 9.5 GB 的
+  // 备份 zip，安卓上裸 pickFiles 先整份复制进 app cache（≈2 倍体积、几分钟无反馈），
+  // 失败还与「用户取消」同形被静默丢弃。现改走 pickRealFilePathDetailed（同 BUG-1667）。
   'lib/src/utils/misc/gallery_image_picker.dart': '制卡图片：选中即读字节写进卡片，不长期引用',
   'lib/src/pages/implementations/video_shader_dialog.dart':
       '着色器文件：选中即拷进 mpv_shaders 目录',

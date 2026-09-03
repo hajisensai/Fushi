@@ -23,6 +23,7 @@ import 'package:fushi/src/storage/macos_data_root_access.dart';
 import 'package:fushi/src/sync/backup_merge_engine.dart'
     show BackupMergePreview;
 import 'package:fushi/src/sync/backup_service.dart';
+import 'package:fushi/src/sync/backup_validating_overlay_route.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';

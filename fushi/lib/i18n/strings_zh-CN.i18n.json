@@ -4178,5 +4178,7 @@
   "discovery_opds_allow_http_hint": "局域网自建服务器需要打开",
   "discovery_opds_test": "测试连接",
   "discovery_opds_test_ok": "连接成功，根目录有 ${count} 个条目",
-  "discovery_opds_test_failed": "连接失败：${reason}"
+  "discovery_opds_test_failed": "连接失败：${reason}",
+  "onboarding_pack_pick_failed": "选择包文件失败：${message}",
+  "onboarding_pack_pick_no_path": "系统没有交出这个文件的路径。请把包放到手机存储里再选，或授予「所有文件访问」权限。"
 }

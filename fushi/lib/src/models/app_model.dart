@@ -1208,6 +1208,21 @@ class AppModel with ChangeNotifier {
   BackupImportPhase? get backupImportPhase => _backupImportPhase;
   bool get backupImportActive => _backupImportPhase != null;
 
+  /// BUG-2106：备份导入遮罩是否要**独占 app 根**（换根、卸载整棵子树含 Navigator）。
+  ///
+  /// 只有 [BackupImportPhase.running] / [BackupImportPhase.done] /
+  /// [BackupImportPhase.failed] 才为真：这三个相位之前已 [closeDatabase]，页面若还挂着
+  /// 就会去查已关闭的库，必须换根独占（且随后重启进程）。
+  ///
+  /// [BackupImportPhase.validating] **恒为假**：那一段只是读 zip + 生成合并预览，DB 仍
+  /// 打开、可取消，换根却会把调用方路由连 Navigator 一起销毁 —— 引导向导因此被整段摧毁
+  /// （进度丢失、`await Navigator.push` 的 future 永不完成、失败提示无处可弹 = 用户报的
+  /// 「选完本地包就强制退出引导且没有任何提醒」）。该相位改由压在调用方页面之上的模态
+  /// 路由承载，见 [buildBackupValidatingOverlayRoute]。
+  bool get backupImportOwnsAppRoot =>
+      _backupImportPhase != null &&
+      _backupImportPhase != BackupImportPhase.validating;
+
   /// 导入完成/失败后展示在确认视图里的文案（成功提示或失败原因）。
   String? _backupImportMessage;
   String? get backupImportMessage => _backupImportMessage;

@@ -4178,5 +4178,7 @@
   "discovery_opds_allow_http_hint": "จำเป็นสำหรับเซิร์ฟเวอร์ที่โฮสต์เองในเครือข่ายภายใน",
   "discovery_opds_test": "ทดสอบการเชื่อมต่อ",
   "discovery_opds_test_ok": "เชื่อมต่อแล้ว แคตตาล็อกรากมี ${count} รายการ",
-  "discovery_opds_test_failed": "เชื่อมต่อไม่สำเร็จ: ${reason}"
+  "discovery_opds_test_failed": "เชื่อมต่อไม่สำเร็จ: ${reason}",
+  "onboarding_pack_pick_failed": "Could not use the chosen file: ${message}",
+  "onboarding_pack_pick_no_path": "The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access."
 }

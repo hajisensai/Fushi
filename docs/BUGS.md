@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1965 条。点号进各自文件。
+> 共 1967 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2107](bugs/BUG-2107-onboarding-pack-pick-bare-filepicker.md) | ✅ | ✅ | 引导选本地包走裸 pickFiles：安卓整份复制进 cache，失败静默无提示 |
+| [BUG-2106](bugs/BUG-2106-backup-validating-overlay-destroys-caller-route.md) | ✅ | ✅ | 备份 validating 遮罩换根摧毁调用方路由：引导选包后引导蒸发且无提示 |
 | [BUG-2105](bugs/BUG-2105-fullscreen-episode-switch-mobile-orientation.md) | ✅ | ✅ | 移动端换集后掉出全屏：旧页 dispose 无条件放开横屏锁并清空系统栏回调 |
 | [BUG-2090](bugs/BUG-2090-overlay-hover-highlight-brush-leak.md) | ✅ | ✅ | overlay 悬浮高亮窗口类每次重建都漏一个 GDI brush |
 | [BUG-2089](bugs/BUG-2089-inapp-mining-payload-bool-cast-crash.md) | ✅ | ✅ | 应用内制卡全部失败：「导出卡片失败: Invalid card data (payload parse failed): type 'String' is not a subtype of type 'bool?' in type cast」 |

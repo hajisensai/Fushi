@@ -873,15 +873,26 @@ Future<void> runBackupImportFlowForFile({
   required String filePath,
   Future<void> Function()? onImportConfirmed,
 }) async {
-  // appModel 驱动全程遮罩：validating/running 遮罩都会切走调用方页面（tree swap），
-  // 此后不依赖任何页面 `mounted`/context；确认对话框由全局 [AppModel.navigatorKey]
-  // 宿主弹出（退出遮罩、切回正常 app 树后再弹）。
+  // appModel 驱动全程遮罩，此后不依赖任何页面 `mounted`/context；确认对话框由全局
+  // [AppModel.navigatorKey] 宿主弹出。
+  //
+  // BUG-2106：两个相位的遮罩宿主**不同**，别再当成同一件事：
+  //   * validating（本函数前半段）：DB 仍打开、可取消 → 遮罩是压在**调用方页面之上的
+  //     模态路由**（[_BackupValidatingOverlay]），调用方路由留在栈里。原先它也走换根，
+  //     整棵 Navigator 被卸载 → 引导向导整段蒸发、`await push` 的 future 永不完成、
+  //     失败提示无处可弹（= 用户报的「选完本地包强制退出引导且没有任何提醒」）。
+  //   * running/done/failed（后半段）：已 closeDatabase，页面再挂着就会查已关闭的库 →
+  //     必须换根独占（`main.dart` 的 [AppModel.backupImportOwnsAppRoot] 分支），随后重启。
   //
   // TODO-1151: 先上屏「正在读取备份…」全屏遮罩（validating 相位），再跑 validate + 合并
   // 预览——大 zip 这段要数十秒，旧版只有设置行 24px 小圈无明显反馈。beginBackupValidating
   // 返回本轮 token；用户点「取消」或新一轮校验会作废它，in-flight 后台 isolate 结果回来
   // 时用 isBackupValidatingCurrent 判断是否仍是最新，陈旧结果直接丢弃（干净 token 判定）。
   final int validatingToken = appModel.beginBackupValidating();
+  // BUG-2106：校验遮罩压成模态路由（不换根），调用方页面留在栈里。
+  final _BackupValidatingOverlay overlay = _BackupValidatingOverlay.show(
+    appModel,
+  );
   BackupMeta? meta;
   BackupMergePreview? mergePreview;
   BackupContentSummary? summary;
@@ -897,12 +908,13 @@ Future<void> runBackupImportFlowForFile({
     // 已取消/被新一轮校验取代 → 丢弃陈旧结果（遮罩已由 cancel 退出，无需再动）。
     if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
     if (validated == null) {
-      await _endValidatingThenSnack(appModel, t.backup_import_invalid);
+      await _endValidatingThenSnack(appModel, overlay, t.backup_import_invalid);
       return;
     }
     if (validated.schemaVersion > appModel.database.schemaVersion) {
       await _endValidatingThenSnack(
         appModel,
+        overlay,
         t.backup_schema_newer(version: validated.schemaVersion.toString()),
       );
       return;
@@ -931,18 +943,32 @@ Future<void> runBackupImportFlowForFile({
     if (appModel.isBackupValidatingCurrent(validatingToken)) {
       await _endValidatingThenSnack(
         appModel,
+        overlay,
         t.backup_import_failed(message: friendlySyncErrorDetail(e)),
       );
     }
     return;
+  } finally {
+    // BUG-2106：遮罩路由 `canPop:false`，任何一条退出路径（成功 / 无效 / 异常 /
+    // token 作废的早退）漏摘一次，app 就被永久挡在遮罩后面。幂等，重复调用无害。
+    overlay.dismiss();
   }
 
-  // 校验成功、合并预览就绪：退出 validating 遮罩，等根 widget 切回正常 app 树、全局
-  // navigator 重新挂载后，在其 context 上弹确认对话框（调用方页面此刻已卸载，不能用其
-  // context——遮罩是根 build 替换模型，宿主是 appModel.navigatorKey 的正常 MaterialApp）。
+  // 校验成功、合并预览就绪：摘掉校验遮罩路由，在全局 navigator 的 context 上弹确认
+  // 对话框（调用方页面仍在栈里，但对话框统一由全局 navigatorKey 宿主，和 running 相位
+  // 的换根模型保持同一个出口）。
   appModel.endBackupValidating();
   final BuildContext? rootCtx = await _rootContextAfterOverlay(appModel);
-  if (rootCtx == null || !rootCtx.mounted) return;
+  if (rootCtx == null || !rootCtx.mounted) {
+    // BUG-2106：这条曾是「点了本地包之后什么都没发生」的最后一道静默门。现在遮罩不再
+    // 换根、navigator 全程挂着，走到这里已属异常；至少留诊断，别再无声吞掉整个流程。
+    ErrorLogService.instance.log(
+      'runBackupImportFlowForFile',
+      'no root context after the validating overlay; import confirm dialog '
+          'could not be shown (file=$filePath)',
+    );
+    return;
+  }
 
   final _BackupImportChoice? choice = await _showBackupImportConfirmDialog(
       rootCtx, meta, mergePreview, summary);
@@ -1041,12 +1067,69 @@ Future<BuildContext?> _rootContextAfterOverlay(AppModel appModel) async {
   return null;
 }
 
-/// validate/preview 阶段的失败/无效出口：退出 validating 遮罩、切回调用方页面后用 root
-/// context 弹 snackbar（调用方页面此刻已卸载，用其 context 无效）。
-Future<void> _endValidatingThenSnack(AppModel appModel, String message) async {
+/// validate/preview 阶段的失败/无效出口：**先摘掉校验遮罩路由**再用 root context 弹
+/// snackbar —— 遮罩是 `opaque` 模态路由，不先摘就把提示压在遮罩底下（BUG-2106：这正是
+/// 「无效备份文件」之类提示从来没被用户看见的原因之一）。
+Future<void> _endValidatingThenSnack(
+  AppModel appModel,
+  _BackupValidatingOverlay overlay,
+  String message,
+) async {
+  overlay.dismiss();
   appModel.endBackupValidating();
   final BuildContext? rootCtx = await _rootContextAfterOverlay(appModel);
-  if (rootCtx != null && rootCtx.mounted) _showSnackBar(rootCtx, message);
+  if (rootCtx != null && rootCtx.mounted) {
+    _showSnackBar(rootCtx, message);
+    return;
+  }
+  // 提示是这条路径的**唯一**用户可见产物，丢了就等于「点了没反应」；至少留诊断。
+  ErrorLogService.instance.log(
+    'runBackupImportFlowForFile',
+    'validating failed but no root context to show the message: $message',
+  );
+}
+
+/// BUG-2106：validating 遮罩路由的句柄。
+///
+/// 遮罩宿主从「换根」改成「压在调用方页面之上的模态路由」（理由见
+/// [buildBackupValidatingOverlayRoute]）。摘除**必须** `removeRoute`：路由带
+/// `PopScope(canPop: false)`（挡系统返回把底下的调用方页面 pop 掉），`pop` 会被它拦下。
+///
+/// 拿不到全局 navigator（极早期 / 无 UI 宿主）时退化成「无遮罩但流程照跑」：校验本身不
+/// 依赖遮罩，宁可少一层视觉反馈，也不能因为没 navigator 就把导入整条流程掐掉。
+class _BackupValidatingOverlay {
+  _BackupValidatingOverlay._(this._navigator, this._route);
+
+  factory _BackupValidatingOverlay.show(AppModel appModel) {
+    final NavigatorState? navigator = appModel.navigatorKey.currentState;
+    if (navigator == null) return _BackupValidatingOverlay._(null, null);
+    late final _BackupValidatingOverlay handle;
+    final Route<void> route = buildBackupValidatingOverlayRoute(
+      onCancel: () {
+        // 用户点「取消」：先摘遮罩，再作废 in-flight 校验 token（回调用方页面）。
+        handle.dismiss();
+        appModel.cancelBackupValidating();
+      },
+    );
+    handle = _BackupValidatingOverlay._(navigator, route);
+    navigator.push<void>(route);
+    return handle;
+  }
+
+  final NavigatorState? _navigator;
+  final Route<void>? _route;
+  bool _dismissed = false;
+
+  /// 摘掉遮罩路由。幂等：每条退出路径都会调，重复调用无害。
+  void dismiss() {
+    if (_dismissed) return;
+    _dismissed = true;
+    final NavigatorState? navigator = _navigator;
+    final Route<void>? route = _route;
+    if (navigator == null || route == null) return;
+    if (!route.isActive) return;
+    navigator.removeRoute<void>(route);
+  }
 }
 
 /// Asks how to apply the backup (TODO-888): OVERWRITE the whole library

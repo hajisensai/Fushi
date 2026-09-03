@@ -4178,5 +4178,7 @@
   "discovery_opds_allow_http_hint": "로컬 네트워크의 자체 호스팅 서버에 필요합니다",
   "discovery_opds_test": "연결 테스트",
   "discovery_opds_test_ok": "연결되었습니다. 루트 카탈로그에 ${count}개 항목이 있습니다",
-  "discovery_opds_test_failed": "연결 실패: ${reason}"
+  "discovery_opds_test_failed": "연결 실패: ${reason}",
+  "onboarding_pack_pick_failed": "Could not use the chosen file: ${message}",
+  "onboarding_pack_pick_no_path": "The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access."
 }

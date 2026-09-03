@@ -4178,5 +4178,7 @@
   "discovery_opds_allow_http_hint": "Нужно для сервера, размещённого в вашей локальной сети",
   "discovery_opds_test": "Проверить соединение",
   "discovery_opds_test_ok": "Подключено. В корневом каталоге ${count} записей",
-  "discovery_opds_test_failed": "Не удалось подключиться: ${reason}"
+  "discovery_opds_test_failed": "Не удалось подключиться: ${reason}",
+  "onboarding_pack_pick_failed": "Could not use the chosen file: ${message}",
+  "onboarding_pack_pick_no_path": "The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access."
 }

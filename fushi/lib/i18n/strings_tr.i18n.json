@@ -4178,5 +4178,7 @@
   "discovery_opds_allow_http_hint": "Yerel ağdaki kendi sunucun için gerekli",
   "discovery_opds_test": "Bağlantıyı sına",
   "discovery_opds_test_ok": "Bağlanıldı. Kök katalogda ${count} girdi var",
-  "discovery_opds_test_failed": "Bağlantı başarısız: ${reason}"
+  "discovery_opds_test_failed": "Bağlantı başarısız: ${reason}",
+  "onboarding_pack_pick_failed": "Could not use the chosen file: ${message}",
+  "onboarding_pack_pick_no_path": "The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access."
 }

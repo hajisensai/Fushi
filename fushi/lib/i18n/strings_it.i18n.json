@@ -4178,5 +4178,7 @@
   "discovery_opds_allow_http_hint": "Necessario per un server self-hosted sulla rete locale",
   "discovery_opds_test": "Prova connessione",
   "discovery_opds_test_ok": "Connesso. Il catalogo radice ha ${count} voci",
-  "discovery_opds_test_failed": "Connessione non riuscita: ${reason}"
+  "discovery_opds_test_failed": "Connessione non riuscita: ${reason}",
+  "onboarding_pack_pick_failed": "Could not use the chosen file: ${message}",
+  "onboarding_pack_pick_no_path": "The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access."
 }

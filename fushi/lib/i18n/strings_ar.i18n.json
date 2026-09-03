@@ -4178,5 +4178,7 @@
   "discovery_opds_allow_http_hint": "مطلوب لخادم ذاتي الاستضافة على شبكتك المحلية",
   "discovery_opds_test": "اختبار الاتصال",
   "discovery_opds_test_ok": "تم الاتصال. يحتوي الفهرس الجذر على ${count} عنصرًا",
-  "discovery_opds_test_failed": "فشل الاتصال: ${reason}"
+  "discovery_opds_test_failed": "فشل الاتصال: ${reason}",
+  "onboarding_pack_pick_failed": "Could not use the chosen file: ${message}",
+  "onboarding_pack_pick_no_path": "The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access."
 }

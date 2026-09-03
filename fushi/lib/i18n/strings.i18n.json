@@ -4178,5 +4178,7 @@
   "discovery_opds_allow_http_hint": "Needed for a self-hosted server on your local network",
   "discovery_opds_test": "Test connection",
   "discovery_opds_test_ok": "Connected. Root catalog has ${count} entries",
-  "discovery_opds_test_failed": "Connection failed: ${reason}"
+  "discovery_opds_test_failed": "Connection failed: ${reason}",
+  "onboarding_pack_pick_failed": "Could not use the chosen file: ${message}",
+  "onboarding_pack_pick_no_path": "The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access."
 }
