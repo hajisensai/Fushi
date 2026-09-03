@@ -36,11 +36,13 @@
       "version": "2.1.1"
     },
     {
-      "name": "fushi-2.1.1-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.1.1/fushi-2.1.1-windows-setup.exe",
-      "releaseSequence": 11666,
-      "tag": "v2.1.1",
-      "version": "2.1.1"
+      "name": "fushi-2.2.4-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.2.4/fushi-2.2.4-windows-setup.exe",
+      "releaseSequence": 13362,
+      "tag": "v2.2.4",
+      "version": "2.2.4",
+      "size": 264175233,
+      "sha256": "87e4218fb36414cff2a2677fee5ffbeedaa0abd04a9fd978049018d30a953ba5"
     }
   ]
 }
