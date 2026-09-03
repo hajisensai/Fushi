@@ -14,6 +14,14 @@
 //   events [n]                  最近 n 条会话事件
 //   profile                     attached 表面 profile / 风险确认请求
 //   accept                      确认当前 exe 的裸左击风险（同工作台按钮）
+//   calibrate <l> <t> <w> <h> [fontPerH] [lineHeight] [align] [valign]
+//                               用给定归一化文本框 + 排版直接提交一份 attached 校准
+//                               profile（走 handleCalibrationCommitted，跳过三点探针），
+//                               让 needsCalibration → activeAttached，从而可点字/悬浮查词。
+//                               align∈{left,center,right}，valign∈{top,center,bottom}。
+//   mine                        对「当前会话最新台词行」制卡（走与浮窗➕同一条采集链：
+//                               封面按 galMiningImageMode/格式偏好、句子音频按会话音频后端），
+//                               打印 noteId 与产出的图/音字段，供 AnkiConnect 取证。
 //   lines [n]                   最近 n 条台词
 //   shot game|card|hwnd:<n>     WGC 抓窗口像素（与制卡截图同一通道）
 //   windows                     枚举 FushiGlobalLookupWindow 类窗口的可见性/矩形
@@ -30,15 +38,22 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
+import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
+import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 
@@ -288,6 +303,95 @@ void main() {
               final bool accepted =
                   await attached.acceptUnsafeRiskAndRetry(request);
               out('#$seq accept=$accepted ${describeState()}');
+            case 'calibrate':
+              // calibrate <l> <t> <w> <h> [fontPerH] [lineHeight] [align] [valign]
+              // 直接提交一份 attached 校准 profile，让 needsCalibration → activeAttached。
+              final GalAttachedTextController attached =
+                  GalHookTextOverlayController.instance.attachedText;
+              final GalAttachedSurfaceTarget? target = attached.target;
+              final GalLookupReferenceClientV1? client = attached.currentClient;
+              if (target == null || client == null) {
+                out('#$seq calibrate: no target/client '
+                    '(status=${attached.status.name})');
+                break;
+              }
+              double at(int i, double fallback) => parts.length > i
+                  ? (double.tryParse(parts[i]) ?? fallback)
+                  : fallback;
+              String strAt(int i, String fallback) =>
+                  parts.length > i ? parts[i] : fallback;
+              final GalLookupNormalizedRectV1 bodyRect =
+                  GalLookupNormalizedRectV1(
+                left: at(1, 0.08),
+                top: at(2, 0.68),
+                width: at(3, 0.84),
+                height: at(4, 0.24),
+              );
+              final GalLookupTextLayoutV1 layout = GalLookupTextLayoutV1(
+                fontFamily: 'Yu Gothic',
+                fontSizePerClientHeight: at(5, 0.045),
+                letterSpacingPerClientHeight: 0,
+                lineHeight: at(6, 1.6),
+                textAlign: strAt(7, 'left'),
+                verticalAlign: strAt(8, 'top'),
+              );
+              await attached.handleCalibrationCommitted(
+                GalAttachedCalibrationEvent(
+                  target: target,
+                  bodyRect: bodyRect,
+                  referenceClient: client,
+                  layout: layout,
+                  riskAccepted: true,
+                  calibrationProbeMask: 7,
+                ),
+              );
+              await tester.pump(const Duration(milliseconds: 300));
+              out('#$seq calibrate committed rect=$bodyRect '
+                  'font=${layout.fontSizePerClientHeight} '
+                  'lh=${layout.lineHeight} -> ${describeState()}');
+              out('#$seq profile=${attached.profile?.toJson()}');
+            case 'mine':
+              final ProviderContainer container = ProviderScope.containerOf(
+                tester.element(find.byType(MaterialApp).first),
+              );
+              final AppModel appModel = container.read(appProvider);
+              final List<TexthookerLineEntry> lines =
+                  session.selectedSessionLines;
+              if (lines.isEmpty) {
+                out('#$seq mine: no session lines');
+                break;
+              }
+              final TexthookerLineEntry entry = lines.last;
+              final BaseAnkiRepository repo =
+                  appModel.platformServices.createAnkiRepository();
+              final GalHookMiningCoordinator coordinator =
+                  GalHookMiningCoordinator();
+              final GalHookMiningResult result = await coordinator.mineLine(
+                lineId: entry.id,
+                fields: <String, String>{'Sentence': entry.text},
+                sentenceOverride: entry.text,
+                compression: MiningMediaCompression.resolve(
+                  imageTier: appModel.miningImageQuality,
+                  audioTier: appModel.miningAudioQuality,
+                  format: appModel.galMiningAnimatedFormat,
+                ),
+                repo: repo,
+                imageMode: appModel.galMiningImageMode,
+                animatedFormat: appModel.galMiningAnimatedFormat,
+                stillFormat: appModel.galMiningStillFormat,
+              );
+              out('#$seq mine lineId=${entry.id} '
+                  'imageMode=${appModel.galMiningImageMode.name} '
+                  'animated=${appModel.galMiningAnimatedFormat.name} '
+                  'result=${result.outcome?.result.name} '
+                  'noteId=${result.outcome?.noteId} '
+                  'aborted=${result.aborted} success=${result.success} '
+                  'audioMissing=${result.sentenceAudioMissing} '
+                  'audioWarning=${result.outcome?.audioWarning} '
+                  'audioFallbackDisabled=${result.audioFallbackDisabled} '
+                  'degradedToStill=${result.degradedToStill} '
+                  'failureReason=${result.failureReason} '
+                  'text=${entry.text.replaceAll('\n', '⏎')}');
             case 'thread':
               await session.selectTextThread(int.parse(parts[1]));
               out('#$seq thread ok ${describeState()}');

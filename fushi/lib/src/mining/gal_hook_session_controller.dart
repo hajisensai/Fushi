@@ -3018,6 +3018,13 @@ class GalHookSessionController extends ChangeNotifier {
   /// 多余的事件循环间隙（旧契约下采集作业总是先于后续 attach 作业入队）。
   Future<void>? _lineAudioSettleWait(String lineId) {
     if (_isUserAdjudicated(lineId)) return null;
+    // BUG-2080 §2.4：game_resource 行到达时资源常比文本晚落盘 → 先标 pending 并排了一个
+    // loopback 冻结定时器兜底；随后 _refreshPendingResourceMatches 把行提成 matched、把
+    // 源资源 id 固化到本行。制卡时 _captureAudioBytesNow 的资源原件分支
+    // （_waitForPairedResourceAudio）会在首轮直接返回整段源 Ogg，那份 loopback 冻结片段
+    // 注定被丢弃。此时若还为「冻结快到点」干等，就是让「台词一出就制卡」白等一个用不上的
+    // 兜底窗（≤4s+1.5s）。资源已固化到本行即零等待放行。
+    if (_resourceIdForLine(lineId) != null) return null;
     final bool settling = _utteranceSettleInFlight.containsKey(lineId);
     bool freezing = false;
     if (_loopbackFreezeTimers.containsKey(lineId)) {
@@ -5293,6 +5300,11 @@ class GalHookSessionController extends ChangeNotifier {
         backend: 'game_resource',
         resourceId: resourceId,
       );
+      // 资源原件配上后，为这一行排的 loopback 冻结兜底已经无意义：制卡走整段源 Ogg，
+      // 那段整机混音永远不会被读取，留着定时器只会到点抓一段纯 BGM 并让制卡按
+      // _lineAudioSettleWait 白等（BUG-2080 §2.4）。撤掉它。
+      _loopbackFreezeTimers.remove(pending.key)?.cancel();
+      _loopbackFreezeStartedAt.remove(pending.key);
       matched.add(pending.key);
     }
     for (final String lineId in matched) {

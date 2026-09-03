@@ -239,6 +239,105 @@ void main() {
     session.endpoints.dispose();
   });
 
+  test(
+      'BUG-2080 §2.4 game_resource 行先 pending 排了冻结、后被资源匹配提升：'
+      '制卡零等待取整段原件，不触发那段被丢弃的 loopback 冻结', () async {
+    // 冻结窗故意设大：若制卡仍为「已被撤销/终将丢弃」的冻结窗干等，用例会耗到 4s+，
+    // 断言 elapsed < 1500ms 会把回归钉红。
+    const Duration freezeDelay = Duration(seconds: 4);
+    final _ProportionalLoopback loopback = _ProportionalLoopback();
+    final _LateResourceEngine engine = _LateResourceEngine(
+      lines: <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 3000,
+          text: '資源が文本より遅れて落ちる台詞',
+          threadId: 5,
+          hookName: 'fake',
+        ),
+      ],
+    );
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      targetImagePathProbe: (_) => null,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      loopbackFreezeDelay: freezeDelay,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      startWindowRecording: ({required int hwnd}) async => false,
+      stopWindowRecording: () async {},
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 21, pid: 4242, title: 'Attached game'),
+    );
+    await controller.selectTextThread(5);
+    await waitUntil(() => service.entries.isNotEmpty);
+    final String lineId = service.entries.single.id;
+
+    // 资源比文本晚落盘：行到达时 rawVoiceReady=true 但 findPairedVoiceResourceId 返回 null
+    // → 行标 pending，并为它排了一个 4s 的 loopback 冻结兜底（这正是 §2.4 描述的时序）。
+    await waitUntil(
+      () =>
+          service.entries.single.audioStatus ==
+          TexthookerLineAudioStatus.pending,
+    );
+
+    // 资源随后落盘：poll 循环的 _refreshPendingResourceMatches 把行提升为 matched，
+    // 并（本次修复）撤掉那个已无意义的冻结定时器。
+    engine.revealResource();
+    await waitUntil(
+      () =>
+          service.entries.single.audioStatus ==
+          TexthookerLineAudioStatus.matched,
+    );
+
+    // 「台词一出就制卡」：资源已固化到本行 → 走整段源 Ogg 分支，零等待。
+    final Stopwatch waited = Stopwatch()..start();
+    final Uint8List? bytes = await controller.captureAudioBytes(
+      lineId: lineId,
+      sentence: service.entries.single.text,
+      outputExtension: 'm4a',
+    );
+    waited.stop();
+
+    expect(bytes, isNotNull, reason: '制卡必须拿到整段源资源字节');
+    expect(bytes!.isNotEmpty, isTrue);
+    expect(
+      waited.elapsedMilliseconds,
+      lessThan(1500),
+      reason: '资源已匹配的行不该为一个终将丢弃的 loopback 冻结窗干等（§2.4）',
+    );
+    expect(
+      loopback.backMsCalls,
+      isEmpty,
+      reason: '走 game_resource 整段原件，绝不回取 loopback 混音片段',
+    );
+    expect(service.entries.single.audioBackend, 'game_resource');
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
   test('BUG-2080 冻结已到点的历史行：制卡不再多等', () async {
     const Duration freezeDelay = Duration(milliseconds: 100);
     final _ProportionalLoopback loopback = _ProportionalLoopback();
@@ -351,6 +450,105 @@ class _AttachEngine extends EngineHookGalAudioSource {
     bool allowLatestSessionFallback = true,
   }) async =>
       null;
+
+  @override
+  Future<void> pruneVoiceDump({
+    int keepNewest = 400,
+    Duration maxAge = const Duration(minutes: 30),
+  }) async {}
+
+  @override
+  Future<void> stop() async {}
+}
+
+/// game_resource（HUNEX/SGRE 式）引擎替身：rawVoiceReady 一直为真，但配对资源 id 先返回
+/// null（资源比文本晚落盘），[revealResource] 之后才返回。用来复现 BUG-2080 §2.4：行到达
+/// 时先 pending + 排冻结，随后被资源匹配提升。
+class _LateResourceEngine extends EngineHookGalAudioSource {
+  _LateResourceEngine({List<GalHookedLine> lines = const <GalHookedLine>[]})
+      : _pending = List<GalHookedLine>.of(lines),
+        super(targetPid: 0, launchExe: null, injectorPath: 'fake.exe');
+
+  final List<GalHookedLine> _pending;
+  bool _resourceRevealed = false;
+
+  void revealResource() => _resourceRevealed = true;
+
+  @override
+  int? get gamePid => 4242;
+
+  @override
+  bool get textHookReady => true;
+
+  // 引擎已握到源资源音频（late game_resource ready），但逐条的配对要等资源落盘。
+  @override
+  bool get rawVoiceReady => true;
+
+  @override
+  PcmFormat? get readyPcmFormat => null;
+
+  @override
+  bool get pcmReady => false;
+
+  @override
+  Future<PcmFormat?> start() async => null;
+
+  @override
+  Future<bool> refreshReadiness() async => false;
+
+  @override
+  Future<GalTextPoll?> pollText(int fromSeq) async {
+    final List<GalHookedLine> fresh = _pending
+        .where((GalHookedLine line) => line.seq > fromSeq)
+        .toList(growable: false);
+    return GalTextPoll(count: _pending.length, lines: fresh);
+  }
+
+  @override
+  Future<bool> selectTextThread(int? threadId) async => true;
+
+  @override
+  Future<GalAudioSlice?> grabUtterance(
+    int tsMs, {
+    int? sourcePtr,
+    List<int>? exclude,
+    int? endTsMs,
+  }) async =>
+      null;
+
+  @override
+  Future<GalAudioSlice?> grabClipNear(
+    int tsMs, {
+    int tolMs = 8000,
+    int? sourcePtr,
+    List<int>? exclude,
+    int? endTsMs,
+  }) async =>
+      null;
+
+  @override
+  Future<List<GalAudioTrack>> listAudioTracks(int tsMs) async =>
+      const <GalAudioTrack>[];
+
+  @override
+  String? findPairedVoiceResourceId(
+    int textTsMs, {
+    int? textEventId,
+    bool allowLatestSessionFallback = true,
+  }) =>
+      _resourceRevealed ? 'res-$textEventId' : null;
+
+  @override
+  Future<Uint8List?> grabPairedVoiceBytes(
+    int textTsMs, {
+    required String outputExtension,
+    int? textEventId,
+    String? resourceId,
+    bool allowLatestSessionFallback = true,
+  }) async =>
+      _resourceRevealed
+          ? Uint8List.fromList(const <int>[0x4F, 0x67, 0x67, 0x53]) // "OggS"
+          : null;
 
   @override
   Future<void> pruneVoiceDump({
