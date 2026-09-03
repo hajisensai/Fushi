@@ -4158,5 +4158,6 @@
   "gal_card_lookup_independent_size": "ขนาดแยกสำหรับการ์ดในเกม",
   "gal_card_lookup_independent_size_hint": "กำหนดขนาดการ์ดค้นหาในเกมแยกจากหน้าต่างค้นหาลอย",
   "gal_card_lookup_max_width": "ความกว้างสูงสุดของการ์ดในเกม",
-  "gal_card_lookup_max_height": "ความสูงสูงสุดของการ์ดในเกม"
+  "gal_card_lookup_max_height": "ความสูงสูงสุดของการ์ดในเกม",
+  "handlebar_clip_timestamp": "เวลาของคลิป"
 }

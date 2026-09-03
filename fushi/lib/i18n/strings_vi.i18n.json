@@ -4158,5 +4158,6 @@
   "gal_card_lookup_independent_size": "Kích thước riêng cho thẻ trong trò chơi",
   "gal_card_lookup_independent_size_hint": "Đặt kích thước thẻ tra cứu trong trò chơi tách khỏi cửa sổ tra cứu nổi",
   "gal_card_lookup_max_width": "Chiều rộng tối đa thẻ trong trò chơi",
-  "gal_card_lookup_max_height": "Chiều cao tối đa thẻ trong trò chơi"
+  "gal_card_lookup_max_height": "Chiều cao tối đa thẻ trong trò chơi",
+  "handlebar_clip_timestamp": "Dấu thời gian đoạn cắt"
 }

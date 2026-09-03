@@ -4158,5 +4158,6 @@
   "gal_card_lookup_independent_size": "遊戲內查詞卡獨立尺寸",
   "gal_card_lookup_independent_size_hint": "讓遊戲內查詞卡與彈出查詞窗各自設定大小",
   "gal_card_lookup_max_width": "遊戲內查詞卡最大寬度",
-  "gal_card_lookup_max_height": "遊戲內查詞卡最大高度"
+  "gal_card_lookup_max_height": "遊戲內查詞卡最大高度",
+  "handlebar_clip_timestamp": "片段時間"
 }

@@ -7510,6 +7510,11 @@ class _AppModelRemoteLookupService
         sentenceOffset: payload.sentenceOffset,
         source: _forwardedSourceFromName(payload.source),
         bookTitleTag: payload.bookTitleTag,
+        // 转发 payload 本来就带片段时间窗（Netflix / YouTube 扩展制卡按视频
+        // 时间轴填）。原样透传，有效性由 formatClipTimestamp 单点判定——非视频
+        // 转发两端为 null，渲染成空串。
+        clipStartMs: payload.clipStartMs,
+        clipEndMs: payload.clipEndMs,
       );
       final MineOutcome outcome = await repo.mineEntry(
         rawPayloadJson: rawPayloadJson,

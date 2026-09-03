@@ -4158,5 +4158,6 @@
   "gal_card_lookup_independent_size": "Ukuran terpisah untuk kartu dalam game",
   "gal_card_lookup_independent_size_hint": "Atur ukuran kartu pencarian dalam game terpisah dari jendela pencarian pop-out",
   "gal_card_lookup_max_width": "Lebar maks kartu dalam game",
-  "gal_card_lookup_max_height": "Tinggi maks kartu dalam game"
+  "gal_card_lookup_max_height": "Tinggi maks kartu dalam game",
+  "handlebar_clip_timestamp": "Stempel waktu klip"
 }

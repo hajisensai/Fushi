@@ -77,9 +77,26 @@ abstract class BaseAnkiRepository {
   /// 清理条件：无（SharedPreferences 无版本阶梯，载入期改写即是它的迁移通道）。
   static const String _legacySentenceAudioAlias = '{sasayaki-audio}';
 
-  /// 读原始设置 JSON 的**唯一通道**：两个载入期迁移（W2-7 键搬移 + W2-2 别名
-  /// 改写）都收敛在这里。子类若覆写 [loadSettings]（AnkiDroid 的 legacy deck
-  /// 迁移）也必须经由本方法取原始串，否则迁移被绕过。返回 null = 从未存过。
+  /// 载入期一次性迁移：存量配置里 `MiscInfo` 的映射**一字不差**还是旧出厂默认
+  /// `{document-title}` 时，补成新出厂默认 `{document-title} {clip-timestamp}`，
+  /// 让卡片底部「=== Details ===」栏带上片段时间窗（见 [LapisNoteType]）。
+  ///
+  /// 为什么只认「等于旧默认」：这等价于「用户从没碰过这个字段」，补齐是在替他
+  /// 跟进出厂默认。凡是被改过的值——清空、换成别的占位符、已经含
+  /// `{clip-timestamp}`、或自己拼过别的组合——一律不动，不覆盖用户意图。
+  /// 幂等：改写后值不再等于旧默认。清理条件：无（SharedPreferences 无版本阶梯，
+  /// 载入期改写即是它的迁移通道，与上面的别名改写同构）。
+  static const String _legacyMiscInfoMapping = '{document-title}';
+  static const String _miscInfoMappingWithClipTime =
+      '{document-title} {clip-timestamp}';
+
+  /// 读原始设置 JSON 的**唯一通道**：三个载入期迁移（W2-7 键搬移 + W2-2 别名改写
+  /// + MiscInfo 补片段时间窗）都收敛在这里。子类若覆写 [loadSettings]（AnkiDroid 的
+  /// legacy deck 迁移）也必须经由本方法取原始串，否则迁移被绕过。返回 null = 从未存过。
+  ///
+  /// 顺序有意：别名改写只把 `{sasayaki-audio}` 换成 `{sentence-audio}`，不可能凭空
+  /// 造出或抹掉 `{document-title}`，故两条迁移互不干扰；但必须先改写再补 MiscInfo，
+  /// 否则 `replaceAll` 会作用在已重编码的串上、把后一步的结果覆盖掉。
   @protected
   Future<String?> readSettingsJson(SharedPreferences prefs) async {
     String? raw = prefs.getString(settingsKey);
@@ -95,7 +112,46 @@ abstract class BaseAnkiRepository {
       raw = raw.replaceAll(_legacySentenceAudioAlias, '{sentence-audio}');
       await prefs.setString(settingsKey, raw);
     }
+    if (raw != null) {
+      final String? upgraded = upgradeMiscInfoMapping(raw);
+      if (upgraded != null) {
+        await prefs.setString(settingsKey, upgraded);
+        raw = upgraded;
+      }
+    }
     return raw;
+  }
+
+  /// [_legacyMiscInfoMapping] → [_miscInfoMappingWithClipTime] 的纯改写。
+  /// 返回改写后的 JSON 串；**不需要改写时返回 `null`**（调用方据此决定要不要回写
+  /// 持久层，避免每次启动都白写一遍）。
+  ///
+  /// 串不可解析 / 结构不对时同样返回 `null`：迁移不是校验器，损坏串该由既有的
+  /// [loadSettings] try-catch 报告并退回默认设置，这里静默跳过不改变那条诊断路径。
+  @visibleForTesting
+  static String? upgradeMiscInfoMapping(String raw) {
+    // 廉价前置门，与上面别名迁移的 `raw.contains(...)` 同一模式：loadSettings 在制卡 /
+    // 查重 / 反查的热路径上被反复调用，settings 串含 availableDecks|availableNoteTypes
+    // 可以很大。没有这一行，迁移完成后每次调用都要白解析一整份 JSON（叠加 loadSettings
+    // 自己那次 = 解析两遍）。
+    //
+    // 门必须是**整个键值对**而不是裸 `{document-title}`：新值里也含那个子串，只判子串
+    // 的话已迁移的用户仍会每次解析，门等于没加。形态依据是 `saveSettings` 恒用
+    // `jsonEncode`（无空格）；万一哪天形态变了，最坏结果是这条迁移不触发（用户手动改
+    // 一次映射），不会误改也不会崩——真正的判据仍是下面的结构化比较。
+    if (!raw.contains('"MiscInfo":"$_legacyMiscInfoMapping"')) return null;
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      return null;
+    }
+    if (decoded is! Map<String, dynamic>) return null;
+    final Object? mappings = decoded['fieldMappings'];
+    if (mappings is! Map) return null;
+    if (mappings['MiscInfo'] != _legacyMiscInfoMapping) return null;
+    mappings['MiscInfo'] = _miscInfoMappingWithClipTime;
+    return jsonEncode(decoded);
   }
 
   Future<AnkiSettings> loadSettings() async {
@@ -598,8 +654,14 @@ abstract class BaseAnkiRepository {
         value = value.replaceAll(mediaEntry.key, mediaEntry.value);
       }
       value = normalizeAnkiDictionaryHtml(value);
-      if (keepEmpty || value.trim().isNotEmpty) {
-        fields[entry.key] = value;
+      // 判空与写入用同一个 trim 口径。此前判空 trim、写入却是原值，于是一个字段里
+      // 拼多个占位符时（出厂默认 MiscInfo = `{document-title} {clip-timestamp}`），
+      // 某个占位符渲染成空串就会把模板里的字面分隔符留成首尾空白写进 Anki 字段。
+      // 首尾空白对 Anki 字段没有任何语义（HTML 渲染同样忽略），trim 掉即可；
+      // keepEmpty 路径上空值 trim 后仍是空串，照常写入，覆盖语义不变。
+      final String trimmed = value.trim();
+      if (keepEmpty || trimmed.isNotEmpty) {
+        fields[entry.key] = trimmed;
       }
     }
     return fields;
@@ -687,13 +749,9 @@ abstract class BaseAnkiRepository {
     String? audioWarning,
     bool keepEmpty = false,
   }) {
-    final mediaContext = AnkiMiningContext(
-      sentence: context.sentence,
-      cueSentence: context.cueSentence,
-      documentTitle: context.documentTitle,
-      coverPath: coverRef,
-      sentenceAudioPath: sentenceAudioRef,
-      sentenceOffset: context.sentenceOffset,
+    final AnkiMiningContext mediaContext = context.withMediaRefs(
+      coverRef: coverRef,
+      sentenceAudioRef: sentenceAudioRef,
     );
 
     final mediaPayload = AnkiMiningPayload(

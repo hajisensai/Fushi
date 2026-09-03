@@ -4158,5 +4158,6 @@
   "gal_card_lookup_independent_size": "Independent in-game card size",
   "gal_card_lookup_independent_size_hint": "Size the in-game lookup card separately from the desktop overlay card",
   "gal_card_lookup_max_width": "In-game card max width",
-  "gal_card_lookup_max_height": "In-game card max height"
+  "gal_card_lookup_max_height": "In-game card max height",
+  "handlebar_clip_timestamp": "Clip timestamp"
 }

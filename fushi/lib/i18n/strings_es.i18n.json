@@ -4158,5 +4158,6 @@
   "gal_card_lookup_independent_size": "Tamaño separado para la tarjeta dentro del juego",
   "gal_card_lookup_independent_size_hint": "Dimensiona la tarjeta de búsqueda dentro del juego por separado de la ventana de búsqueda emergente",
   "gal_card_lookup_max_width": "Ancho máximo de la tarjeta dentro del juego",
-  "gal_card_lookup_max_height": "Altura máxima de la tarjeta dentro del juego"
+  "gal_card_lookup_max_height": "Altura máxima de la tarjeta dentro del juego",
+  "handlebar_clip_timestamp": "Marca de tiempo del fragmento"
 }
