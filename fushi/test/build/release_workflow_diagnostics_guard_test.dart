@@ -211,6 +211,54 @@ void main() {
     expect(enableKvm, contains('sudo udevadm trigger --name-match=kvm'));
   });
 
+  // BUG-2088：正式版/测试版的更新公告必须真的喂进 `body`（= manifest 的 `notes`，
+  // 应用内更新弹窗渲染的就是它）。此前 `BODY` 只有一行模板，实测 v2.1.1 的
+  // latest-stable.json 里 notes 是「Manual formal release from … @ 4d1c8f4.」，
+  // 而 GitHub 上那份正文有 3613 字——**发出去的每个正式版，弹窗里都是占位符**。
+  //
+  // 判据按 channel step 逐个数，不是整文件 contains：release-desktop.yml 有 4 个
+  // channel step（windows/macos/ios/publish），少接一个就是那个平台的用户看占位符，
+  // 而整文件 contains 只要有一个接了就绿。
+  test('BUG-2088：每个 channel step 都把真实公告喂进 body', () {
+    const String notesRead = r'if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi';
+    const String notesFileDef = r'NOTES_FILE="docs/release-notes/${VERSION}.md"';
+    const String releaseBodyFirst = r'BODY="${RELEASE_BODY:-}"';
+
+    for (final MapEntry<String, int> e in <String, int>{
+      // 文件 -> 它有几个 channel step
+      'release.yml': 1,
+      'release-desktop.yml': 4,
+    }.entries) {
+      final String w = readRepositoryWorkflow(e.key);
+      final int steps = e.value;
+      // 每个 step 各定义一次 NOTES_FILE。
+      expect(RegExp(RegExp.escape(notesFileDef)).allMatches(w).length, steps,
+          reason: '${e.key}: NOTES_FILE 定义数应等于 channel step 数（$steps）');
+      // 每个 step 里 formal + beta 两档各读一次 = 2 * steps。
+      expect(RegExp(RegExp.escape(notesRead)).allMatches(w).length, steps * 2,
+          reason: '${e.key}: formal/beta 两档都必须读公告文件');
+      // release 事件分支：先取作者写的 Release 正文。
+      expect(RegExp(RegExp.escape(releaseBodyFirst)).allMatches(w).length, steps,
+          reason: '${e.key}: 手动发 Release 时必须优先用作者正文');
+      // env 里必须真把 release body 传进来，否则上一条取到的恒是空。
+      expect(
+          RegExp(RegExp.escape(r'RELEASE_BODY: ${{ github.event.release.body }}'))
+              .allMatches(w)
+              .length,
+          steps,
+          reason: '${e.key}: RELEASE_BODY 没接进 env，作者正文取不到');
+    }
+
+    // debug 通道**有意不取**公告：滚动开发构建挂完整 changelog 会误导。
+    // 反向断言——debug 那两行模板后面不许紧跟读公告。
+    final String rel = readReleaseWorkflow();
+    final int debugAt = rel.indexOf('Manual release-signed debug-channel build from');
+    expect(debugAt, greaterThan(-1), reason: 'debug 模板行不见了，判据锚点失效');
+    final String afterDebug = rel.substring(debugAt, debugAt + 400);
+    expect(afterDebug.contains(notesRead), isFalse,
+        reason: 'debug 通道不应挂正式版 changelog');
+  });
+
   test('build-multiplatform gates iOS and macOS on normal PRs', () {
     final String workflow = readBuildMultiplatformWorkflow();
     final String macosJob = workflowJob(workflow, 'macos');

@@ -85,6 +85,7 @@ jobs:
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
           RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_BODY: ${{ github.event.release.body }}
         run: |
           set -euo pipefail
           VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//')
@@ -98,6 +99,14 @@ jobs:
           CHANNEL="${INPUT_CHANNEL:-}"
           TAG="${INPUT_TAG_NAME:-}"
           NAME="${INPUT_RELEASE_NAME:-}"
+          # BUG-2088：正式版/测试版**真实更新公告**的来源。此前 BODY 只有一行模板，
+          # 而 NOTES 就是它——实测 v2.1.1 的 latest-stable.json 里 notes 是
+          # 「Manual formal release from bridge/auto-migrate-download @ 4d1c8f4.」，
+          # 而 GitHub 上那份正文有 3613 字：**应用内更新弹窗给用户看的一直是占位符**。
+          # 约定：公告写在 docs/release-notes/<语义版本>.md，正式/测试通道自动取用；
+          # 手动发 GitHub Release 时优先用 Release 正文（那才是当场写的那份）。
+          # debug 通道不取——滚动开发构建挂完整 changelog 会误导。
+          NOTES_FILE="docs/release-notes/${VERSION}.md"
           BODY=""
           PRERELEASE=true
           MAKE_LATEST=false
@@ -127,11 +136,13 @@ jobs:
                   TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
                   NAME="${NAME:-Fushi ${VERSION} beta ${RELEASE_SEQUENCE}}"
                   BODY="Manual desktop beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
                   ;;
                 formal)
                   TAG="${TAG:-v${VERSION}}"
                   NAME="${NAME:-Fushi ${VERSION}}"
                   BODY="Manual desktop formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
                   PRERELEASE=false
                   MAKE_LATEST=true
                   ;;
@@ -144,6 +155,10 @@ jobs:
               ;;
             release)
               CHANNEL=github-release
+              # 手动发 GitHub Release：正文就是当场写的公告，优先用它；留空（先建空
+              # Release 再补正文）时回落到仓库里的公告文件。
+              BODY="${RELEASE_BODY:-}"
+              if [ -z "$BODY" ] && [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
               TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
               # BUG-869: a manually-published NON-prerelease Release IS the formal
               # stable release → emit latest-stable.json (with releaseSequence) for
@@ -827,6 +842,7 @@ jobs:
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
           RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_BODY: ${{ github.event.release.body }}
         run: |
           set -euo pipefail
           VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//')
@@ -840,6 +856,14 @@ jobs:
           CHANNEL="${INPUT_CHANNEL:-}"
           TAG="${INPUT_TAG_NAME:-}"
           NAME="${INPUT_RELEASE_NAME:-}"
+          # BUG-2088：正式版/测试版**真实更新公告**的来源。此前 BODY 只有一行模板，
+          # 而 NOTES 就是它——实测 v2.1.1 的 latest-stable.json 里 notes 是
+          # 「Manual formal release from bridge/auto-migrate-download @ 4d1c8f4.」，
+          # 而 GitHub 上那份正文有 3613 字：**应用内更新弹窗给用户看的一直是占位符**。
+          # 约定：公告写在 docs/release-notes/<语义版本>.md，正式/测试通道自动取用；
+          # 手动发 GitHub Release 时优先用 Release 正文（那才是当场写的那份）。
+          # debug 通道不取——滚动开发构建挂完整 changelog 会误导。
+          NOTES_FILE="docs/release-notes/${VERSION}.md"
           BODY=""
           PRERELEASE=true
           MAKE_LATEST=false
@@ -869,11 +893,13 @@ jobs:
                   TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
                   NAME="${NAME:-Fushi ${VERSION} beta ${RELEASE_SEQUENCE}}"
                   BODY="Manual desktop beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
                   ;;
                 formal)
                   TAG="${TAG:-v${VERSION}}"
                   NAME="${NAME:-Fushi ${VERSION}}"
                   BODY="Manual desktop formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
                   PRERELEASE=false
                   MAKE_LATEST=true
                   ;;
@@ -886,6 +912,10 @@ jobs:
               ;;
             release)
               CHANNEL=github-release
+              # 手动发 GitHub Release：正文就是当场写的公告，优先用它；留空（先建空
+              # Release 再补正文）时回落到仓库里的公告文件。
+              BODY="${RELEASE_BODY:-}"
+              if [ -z "$BODY" ] && [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
               TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
               # BUG-869: a manually-published NON-prerelease Release IS the formal
               # stable release → emit latest-stable.json (with releaseSequence) for
@@ -1366,6 +1396,7 @@ jobs:
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
           RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_BODY: ${{ github.event.release.body }}
         run: |
           set -euo pipefail
           VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//')
@@ -1379,6 +1410,14 @@ jobs:
           CHANNEL="${INPUT_CHANNEL:-}"
           TAG="${INPUT_TAG_NAME:-}"
           NAME="${INPUT_RELEASE_NAME:-}"
+          # BUG-2088：正式版/测试版**真实更新公告**的来源。此前 BODY 只有一行模板，
+          # 而 NOTES 就是它——实测 v2.1.1 的 latest-stable.json 里 notes 是
+          # 「Manual formal release from bridge/auto-migrate-download @ 4d1c8f4.」，
+          # 而 GitHub 上那份正文有 3613 字：**应用内更新弹窗给用户看的一直是占位符**。
+          # 约定：公告写在 docs/release-notes/<语义版本>.md，正式/测试通道自动取用；
+          # 手动发 GitHub Release 时优先用 Release 正文（那才是当场写的那份）。
+          # debug 通道不取——滚动开发构建挂完整 changelog 会误导。
+          NOTES_FILE="docs/release-notes/${VERSION}.md"
           BODY=""
           PRERELEASE=true
           MAKE_LATEST=false
@@ -1408,11 +1447,13 @@ jobs:
                   TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
                   NAME="${NAME:-Fushi ${VERSION} beta ${RELEASE_SEQUENCE}}"
                   BODY="Manual desktop beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
                   ;;
                 formal)
                   TAG="${TAG:-v${VERSION}}"
                   NAME="${NAME:-Fushi ${VERSION}}"
                   BODY="Manual desktop formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
                   PRERELEASE=false
                   MAKE_LATEST=true
                   ;;
@@ -1425,6 +1466,10 @@ jobs:
               ;;
             release)
               CHANNEL=github-release
+              # 手动发 GitHub Release：正文就是当场写的公告，优先用它；留空（先建空
+              # Release 再补正文）时回落到仓库里的公告文件。
+              BODY="${RELEASE_BODY:-}"
+              if [ -z "$BODY" ] && [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
               TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
               # BUG-869: a manually-published NON-prerelease Release IS the formal
               # stable release → emit latest-stable.json (with releaseSequence) for
@@ -1821,6 +1866,7 @@ jobs:
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
           RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_BODY: ${{ github.event.release.body }}
         run: |
           set -euo pipefail
           VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//')
@@ -1834,6 +1880,14 @@ jobs:
           CHANNEL="${INPUT_CHANNEL:-}"
           TAG="${INPUT_TAG_NAME:-}"
           NAME="${INPUT_RELEASE_NAME:-}"
+          # BUG-2088：正式版/测试版**真实更新公告**的来源。此前 BODY 只有一行模板，
+          # 而 NOTES 就是它——实测 v2.1.1 的 latest-stable.json 里 notes 是
+          # 「Manual formal release from bridge/auto-migrate-download @ 4d1c8f4.」，
+          # 而 GitHub 上那份正文有 3613 字：**应用内更新弹窗给用户看的一直是占位符**。
+          # 约定：公告写在 docs/release-notes/<语义版本>.md，正式/测试通道自动取用；
+          # 手动发 GitHub Release 时优先用 Release 正文（那才是当场写的那份）。
+          # debug 通道不取——滚动开发构建挂完整 changelog 会误导。
+          NOTES_FILE="docs/release-notes/${VERSION}.md"
           BODY=""
           PRERELEASE=true
           MAKE_LATEST=false
@@ -1863,11 +1917,13 @@ jobs:
                   TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
                   NAME="${NAME:-Fushi ${VERSION} beta ${RELEASE_SEQUENCE}}"
                   BODY="Manual desktop beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
                   ;;
                 formal)
                   TAG="${TAG:-v${VERSION}}"
                   NAME="${NAME:-Fushi ${VERSION}}"
                   BODY="Manual desktop formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
                   PRERELEASE=false
                   MAKE_LATEST=true
                   ;;
@@ -1880,6 +1936,10 @@ jobs:
               ;;
             release)
               CHANNEL=github-release
+              # 手动发 GitHub Release：正文就是当场写的公告，优先用它；留空（先建空
+              # Release 再补正文）时回落到仓库里的公告文件。
+              BODY="${RELEASE_BODY:-}"
+              if [ -z "$BODY" ] && [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
               TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
               # BUG-869: a manually-published NON-prerelease Release IS the formal
               # stable release → emit latest-stable.json (with releaseSequence) for
