@@ -104,5 +104,92 @@ void main() {
       expect(req.providedAudioBytes, isNull);
       expect(req.requireAudio, false);
     });
+
+    // 媒体文件名的前缀是「这份字节哪来的」的来源标记（见 ImmersionMiningEngine 文件头）。
+    // 扩展现在会在任意网页（bilibili.com 等）取当前解码帧走同一条 provided 字节路——
+    // 那些卡再标成 netflix_* 就是把来源标记写成假的。判据取 Netflix 独有的两个字段：
+    // 录制片段字节、或后台软解用的 netflixVideoId。
+    test('非 Netflix 来源（网页解码帧）不得标成 netflix_*，标题也不回落 Netflix', () {
+      final req = buildImmersionRequest(
+        ImmersionMinePayload(
+          fields: const {'expression': '正道'},
+          sentence: '正道ではなく邪道',
+          screenshotBytes: Uint8List.fromList([1, 2, 3]),
+        ),
+        const ImmersionCaptureResult(error: 'skip'),
+        audioExpected: false,
+      );
+      expect(req.providedCoverName, 'web_shot.jpg');
+      expect(req.documentTitle, 'Web',
+          reason: '非 Netflix 的卡上写着 Netflix 是错的事实，不是缺省值');
+      expect(req.providedCoverBytes, [1, 2, 3]);
+      expect(req.requireAudio, false, reason: '截图卡本就无音频，不算失败');
+    });
+
+    test('扩展带上来的页面标题优先于任何回落', () {
+      final req = buildImmersionRequest(
+        ImmersionMinePayload(
+          fields: const {'expression': '正道'},
+          sentence: 's',
+          documentTitle: 'Re:ゼロ 第四季 第13話',
+          screenshotBytes: Uint8List.fromList([1]),
+        ),
+        const ImmersionCaptureResult(error: 'skip'),
+        audioExpected: false,
+      );
+      expect(req.documentTitle, 'Re:ゼロ 第四季 第13話');
+    });
+
+    test('Netflix 来源（录制片段/后台软解）的来源标记与标题一字未改', () {
+      // 只有 clipBytes、没有 netflixVideoId 时也必须认出是 Netflix 来源。
+      final req = buildImmersionRequest(
+        ImmersionMinePayload(
+          fields: const {'expression': 'x'},
+          sentence: 's',
+          clipBytes: Uint8List.fromList([1]),
+          screenshotBytes: Uint8List.fromList([2]),
+        ),
+        const ImmersionCaptureResult(error: 'black frame'),
+        audioExpected: false,
+      );
+      expect(req.providedCoverName, 'netflix_shot.jpg');
+      expect(req.documentTitle, 'Netflix');
+    });
+  });
+  // PR#1172：来源判据收成唯一原语——封面命名与失败提示语必须问同一个函数，
+  // 否则会出现「卡的封面叫 web_shot.jpg，失败提示却说 Netflix 制卡失败」。
+  group('immersionPayloadFromNetflix', () {
+    test('录制片段字节 = Netflix 捕获路', () {
+      expect(
+          immersionPayloadFromNetflix(ImmersionMinePayload(
+              fields: const {'expression': 'x'},
+              sentence: 's',
+              clipBytes: Uint8List.fromList(<int>[1]))),
+          isTrue);
+    });
+    test('netflixVideoId = Netflix 后台软解路', () {
+      expect(
+          immersionPayloadFromNetflix(const ImmersionMinePayload(
+              fields: {'expression': 'x'},
+              sentence: 's',
+              netflixVideoId: '81',
+              clipStartMs: 0,
+              clipEndMs: 1)),
+          isTrue);
+    });
+    test('两者皆无 = 非 Netflix（primevideo / hulu.jp / tver.jp / bilibili.tv 等）',
+        () {
+      expect(
+          immersionPayloadFromNetflix(ImmersionMinePayload(
+              fields: const {'expression': 'x'},
+              sentence: 's',
+              documentTitle: 'Prime Video',
+              screenshotBytes: Uint8List.fromList(<int>[1]))),
+          isFalse);
+      expect(
+          immersionPayloadFromNetflix(const ImmersionMinePayload(
+              fields: {'expression': 'x'}, sentence: 's')),
+          isFalse);
+    });
   });
 }
