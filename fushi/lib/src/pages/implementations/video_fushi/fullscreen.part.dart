@@ -87,8 +87,11 @@ extension _VideoFullscreen on _VideoFushiPageState {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_didInitialFullscreen || !mounted) return;
       // 失败/缺失态 controls 永不建 → context 永为 null；超时兜底防逐帧死循环。
+      // BUG-2043：放弃重进全屏路由时必须把接管来的原生全屏还回去，否则窗口停在
+      // 无全屏路由的原生全屏态（标题栏隐着、ESC 退页后书架铺满整屏）。
       if (_failed || _missingResource || _initialFullscreenRetries > 30) {
         _didInitialFullscreen = true;
+        _releaseHandedOverNativeFullscreen();
         return;
       }
       final BuildContext? ctx = _videoControlsContext;
@@ -98,8 +101,38 @@ extension _VideoFullscreen on _VideoFushiPageState {
         return;
       }
       _didInitialFullscreen = true;
-      if (!isFullscreen(ctx)) unawaited(_pushNeutralizedVideoFullscreen(ctx));
+      if (isFullscreen(ctx)) {
+        // 栈上已有全屏路由（退出由它的 pop 收口）：接管来的所有权本就归路由，放手。
+        _ownsHandedOverNativeFullscreen = false;
+        return;
+      }
+      // 所有权在 [_pushNeutralizedVideoFullscreen] 真的建出全屏路由的那一刻才翻假，
+      // 不在这里提前翻——该方法开头还有 `_videoFullscreenTransitioning` 一道提前
+      // return，提前翻假会让窗口停在「原生全屏但栈上无全屏路由」的悬空态，且
+      // dispose 的 [_releaseHandedOverNativeFullscreen] 已成 no-op、退不回去。
+      unawaited(_pushNeutralizedVideoFullscreen(ctx));
     });
+  }
+
+  /// BUG-2043：从全屏页换集而来的新页（[VideoFushiPage.initialFullscreen]）在 initState
+  /// 认领旧页留下的**原生**全屏：旧页不再退原生全屏就被摘掉，窗口此刻仍是原生全屏、
+  /// 但栈上没有全屏路由（要等本页就绪才压）。认领 = 记下「本页负责收尾」+ Windows 上
+  /// 立刻持有 app 标题栏 owner（旧页 dispose 会释放它自己的 owner；没有本页这份，
+  /// 标题栏会在全屏尺寸的窗口顶部闪出一条）。
+  void _claimHandedOverNativeFullscreen() {
+    if (!widget.initialFullscreen || isMobilePlatform) return;
+    _ownsHandedOverNativeFullscreen = true;
+    if (Platform.isWindows) {
+      FushiWindowsTitleBar.setContentFullscreen(owner: this, enabled: true);
+    }
+  }
+
+  /// BUG-2043：本页还持有接管来的原生全屏、却不会再压全屏路由（就绪失败 / 超时 /
+  /// 加载中被退出）时，亲自退原生全屏。幂等；所有权已移交路由或下一集时 no-op。
+  void _releaseHandedOverNativeFullscreen() {
+    if (!_ownsHandedOverNativeFullscreen) return;
+    _ownsHandedOverNativeFullscreen = false;
+    unawaited(_exitVideoNativeFullscreen());
   }
 
   Future<void> _pushNeutralizedVideoFullscreen(BuildContext context) async {
@@ -243,6 +276,10 @@ extension _VideoFullscreen on _VideoFushiPageState {
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       );
+      // BUG-2043：全屏路由真的建出来了，接管来的原生全屏所有权就此移交给它——退出由
+      // 路由 pop 收口（media_kit PopScope → [_exitVideoNativeFullscreen]）。翻假点必须
+      // 在本方法开头两道提前 return 之后，才不会出现「所有权已放手、路由却没压上」。
+      _ownsHandedOverNativeFullscreen = false;
       _videoFullscreenRoute = fullscreenRoute;
       // 全屏路由关闭的唯一汇聚点：Esc / F / 全屏按钮 / 双击 / 系统返回全部
       // 经由路由 future 完成，无论哪条退出路径都在这里复位 + 归还焦点。

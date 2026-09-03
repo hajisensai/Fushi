@@ -1228,6 +1228,62 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     }
   }
 
+  /// BUG-2051：↗「在 Anki 中打开这个词的卡」。判据与画 ✓ 的 [isDuplicate] 同源
+  /// （Anki 内建第一字段 checksum，见 [ankiDuplicateSearchQuery]），所以 ✓ 亮着
+  /// 时这里在物理上不可能查不到——包括那张笔记类型不同、字段名叫 `Word` 的旧卡。
+  ///
+  /// 不先反查 note id：`guiBrowse` 的应答就是被选中的 card id 列表，「打开」与
+  /// 「有没有卡」是同一次往返的两个产物。这也是为什么这里没有第二条查询可以漂移。
+  ///
+  /// 卡组解析失败（配置过期）不早退：[AnkiDuplicateScope.collection] 本来就不看
+  /// 卡组，其余 scope 下 [ankiDuplicateDeckFilter] 对空卡组名会退化成不限卡组
+  /// （fail-open，与查重同一口径），宁可多列几张也好过打不开。
+  @override
+  Future<AnkiOpenWordOutcome> openWordInAnki(
+    String expression,
+    String reading,
+  ) async {
+    if (expression.isEmpty) return AnkiOpenWordOutcome.failed;
+    try {
+      final settings = await loadSettings();
+      final deck = settings.availableDecks.firstWhereOrNull(
+            (d) => d.id == settings.selectedDeckId,
+          ) ??
+          (settings.selectedDeckName != null
+              ? settings.availableDecks.firstWhereOrNull(
+                  (d) => d.name == settings.selectedDeckName,
+                )
+              : null);
+      final service = _serviceForSettings(settings);
+      final Map<String, int> models = await service.getModelNamesAndIds();
+      final String query = ankiDuplicateSearchQuery(
+        deckName: deck?.name ?? '',
+        value: expression,
+        scope: settings.duplicateScope,
+        modelIds: models.values,
+      );
+      // 一个笔记类型都没有 = 这台 Anki 还没建过卡，不该发一条空搜索把整库摊开。
+      if (query.isEmpty) return AnkiOpenWordOutcome.noMatch;
+      final int? ankiPid = ankiConnectHostIsLoopback(service.host)
+          ? AnkiDesktopForeground.grantForegroundToAnki(
+              ankiConnectPort: service.port)
+          : null;
+      final List<int>? cardIds = await service.guiBrowseQuery(query);
+      await AnkiDesktopForeground.raiseAnkiWindow(ankiPid);
+      // null = 这台 AnkiConnect 不回传命中列表（旧版 `guiBrowse` 只回 null）：
+      // 浏览器**已经**打开并过滤到了这条查询，只是拿不到计数。此时报 noMatch 就
+      // 是「浏览器开着却说没有卡」，正是本 bug 的那句错话。只有明确答「空」才是
+      // 真的没有卡。
+      return cardIds != null && cardIds.isEmpty
+          ? AnkiOpenWordOutcome.noMatch
+          : AnkiOpenWordOutcome.opened;
+    } catch (e, stack) {
+      debugPrint('AnkiConnectRepository.openWordInAnki: $e');
+      debugPrint('$stack');
+      return AnkiOpenWordOutcome.failed;
+    }
+  }
+
   @override
   Future<bool> createNoteType(AnkiNoteTypeTemplate template) async {
     final service = await _getService();

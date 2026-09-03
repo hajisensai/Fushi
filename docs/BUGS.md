@@ -29,14 +29,20 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1934 条。点号进各自文件。
+> 共 1942 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2079](bugs/BUG-2079-nyaa-search-missing-timeout.md) | 🚧 | 🚧 | NyaaClient.search 无超时，订阅检查可被单个慢响应挂住 |
 | [BUG-2076](bugs/BUG-2076-leaf-structure-gate-reads-hooked-memory.md) | ✅ | ✅ | 白2 身份结构门扫的是被 LunaHook 改写过的进程内存，导致点击穿透+语音降级 |
+| [BUG-2075](bugs/BUG-2075-macos-data-root-channel-unregistered.md) | ✅ | ✅ | macOS 更改数据位置失败：data_root_access 通道未注册 |
 | [BUG-2074](bugs/BUG-2074-leaf-identity-latched-unmeasured-exe.md) | ✅ | ✅ | 白2 一次瞬时的 exe 摘要测量失败被钉成永久身份拒绝，整场语音降级 Loopback |
+| [BUG-2073](bugs/BUG-2073-macos-icloud-data-root-rename-timeout.md) | ✅ | ✅ | macOS iCloud Documents 迁移到本地目录时 rename 超时并回滚 |
+| [BUG-2072](bugs/BUG-2072-data-root-rollback-misses-inflight-plan.md) | 🚧 | 🚧 | 数据根迁移回滚：搬移途中抛错的 plan 从未进 done，已 rename 的顶层项随新根被删 |
+| [BUG-2071](bugs/BUG-2071-data-root-rollback-skips-mixed-deferred-plan.md) | 🚧 | 🚧 | 数据根迁移回滚：混合 rename+copy 的选择性 plan 被整条跳过，已 rename 的顶层项随新根被删 |
 | [BUG-2066](bugs/BUG-2066-gal-card-size-not-independent.md) | ✅ | ✅ | 游戏内查词卡尺寸不可独立配置，且上界用画布像素夹屏幕像素被系统性压小 |
 | [BUG-2065](bugs/BUG-2065-gal-ingame-card-canvas-upscale.md) | ✅ | ✅ | 游戏内查词卡在放大运行的游戏里模糊且过大：直连覆盖窗被 1:1 闸门挡掉，回退成画布内位图合成 |
+| [BUG-2064](bugs/BUG-2064-ios-share-position-origin.md) | ✅ | ✅ | iOS 截图分享缺 sharePositionOrigin 锚点导致 PlatformException |
 | [BUG-2062](bugs/BUG-2062-subtitle-workbench-scope-extra-row.md) | ✅ | ✅ | 字幕工作台作用域开关独占一行：挂在 AppBar.bottom 上，标题行右半边全空 |
 | [BUG-2061](bugs/BUG-2061-subtitle-collection-download-all-not-pinned.md) | ✅ | ✅ | 合集字幕面板「下载全部」不贴底：两个 Flexible 分份额，用不满的部分落成死白 |
 | [BUG-2060](bugs/BUG-2060-subtitle-collection-no-source-picker.md) | ✅ | ✅ | 「整个合集」字幕面板无法选取字幕：未绑 AniList 的合集不发首搜，来源选择区整块隐藏 |
@@ -45,6 +51,7 @@
 | [BUG-2056](bugs/BUG-2056-en-apostrophe-word-scan.md) | ✅ | ✅ | 英文缩合形/所有格查不到词：撇号被当扫描终点 + 撇号写法不归一 |
 | [BUG-2055](bugs/BUG-2055-update-blocked-by-own-voice-hook.md) | ✅ | ✅ | 应用内更新被 Fushi 自己注入游戏的 voice hook 挡住，报错却称占用者为「非 Fushi 程序」 |
 | [BUG-2054](bugs/BUG-2054-nested-lookup-anchor-multiline.md) | ✅ | ✅ | 嵌套查词弹窗锚在选区首行下方遮住跨行选区的第二行 |
+| [BUG-2051](bugs/BUG-2051-anki-open-in-anki-not-same-source.md) | ✅ | ✅ | 点已制卡 ↗ 在 Anki 中打开：反查判据与查重判据不同源，跨笔记类型的卡查不到 |
 | [BUG-2050](bugs/BUG-2050-ocr-directml-availability-never-probed.md) | ✅ | ✅ | Windows OCR 从不探测 DirectML 可用性，每次任务白付一次注定失败的建会话 |
 | [BUG-2049](bugs/BUG-2049-popup-disclosure-toggle-shifts-header.md) | ✅ | ✅ | 查词弹窗词典分组展开/收起时卡头位移且卡片凭空增高 |
 | [BUG-2048](bugs/BUG-2048-galgame-hunex-native-structural-complexity.md) | 🚧 | 🚧 | HUNEX 原生适配层 9 处结构性复杂度待清（认知复杂度 55/44/43/40/35、24 字段类、13/12/8 参函数） |
@@ -52,6 +59,7 @@
 | [BUG-2046](bugs/BUG-2046-gal-luna-startup-deadlock.md) | ✅ | ✅ | 9/2 构建 fushi_voice_hook 与 LunaHook 装 hook 时同一临界区死锁：游戏启动无窗口（用户报「转区后 DLL 注入失败」） |
 | [BUG-2045](bugs/BUG-2045-mihon-desktop-host-abi-drift.md) | ✅ | ✅ | 桌面 Mihon sidecar 用漫画源搜在线漫画报错（500） |
 | [BUG-2044](bugs/BUG-2044-deletion-prompt-readd-arbitration.md) | ✅ | ✅ | 删除墓碑确认弹窗把本机删后重加的收藏句当成其他设备已删除 |
+| [BUG-2043](bugs/BUG-2043-fullscreen-episode-switch-native-bounce.md) | ✅ | ✅ | 全屏换集先退再进原生全屏抖动、字幕列表丢失 |
 | [BUG-2042](bugs/BUG-2042-grammar-tooltip-zoom-double-scaled.md) | ✅ | ✅ | 语法说明浮层定位未按内容 zoom 折算，zoom!=1 时双重缩放偏移 |
 | [BUG-2041](bugs/BUG-2041-grammar-description-two-surfaces.md) | ✅ | ✅ | 语法说明有 hover 浮层和点击全屏卡片两套呈现，交互不统一 |
 | [BUG-2040](bugs/BUG-2040-video-subtitle-list-steals-shortcuts.md) | ✅ | ✅ | 字幕列表打开后方向键等视频快捷键失效 |

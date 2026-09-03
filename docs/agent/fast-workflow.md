@@ -50,8 +50,8 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
   - 🔴 **别靠脑子想「相邻功能」是哪些，机器能算**：改了 `fushi/lib/**` 时用
     `dart run tool/tests_for_changes.dart --include-dart --explain <改的文件…>` 反查
     「谁在源码里读这个文件」。**`--include-dart` 不加就恒为空**——工具默认把 Dart 树的
-    改动整条过滤掉（`isDefaultBatchCoveredChange`，理由是「整批 35 条 + 定向测试兜底」），
-    而**点名单个生产文件的守卫既不在那 35 条里、也不按功能域取名**，正好落在两道门的缝里。
+    改动整条过滤掉（`isDefaultBatchCoveredChange`，理由是「整批 37 条 + 定向测试兜底」），
+    而**点名单个生产文件的守卫既不在那 37 条里、也不按功能域取名**，正好落在两道门的缝里。
     实测漏网：PR#764 收口弹窗复制入口，`test/dictionary/popup_touch_copy_actionmode_guard_test.dart`
     只被 `test/lookup` 的定向测试擦肩而过，红直接进了 develop（TODO-2745）。
 - **`flutter analyze` 全量在 push 前必跑**（含 test 目录）——它本身只要秒级~1 分钟，而 CI 把 warning 当致命，省这一步只会在 CI 上浪费一轮。
@@ -125,7 +125,7 @@ Get-CimInstance Win32_Process |
 
 **只枚举某个子树**的同样不进（`lib/src/sync` 的空 catch / PIN / TLS 三条、`lib/src/settings` 的旧 pref key、5 个媒体页根的焦点所有权……）：改动落在那个子树时，定向测试本来就会挑到它。
 
-### 清单（36 条，2026-08-02 反向枚举全量得出；TODO-2707 补入三份新语料守卫；BUG-1498 补入出站装配守卫）
+### 清单（37 条，2026-08-02 反向枚举全量得出；TODO-2707 补入三份新语料守卫；BUG-1498 补入出站装配守卫；BUG-2064 补入分享入口守卫）
 
 | 测试 | 扫描根 | 守什么 |
 |---|---|---|
@@ -165,8 +165,9 @@ Get-CimInstance Win32_Process |
 | `test/pages/video_fushi_page_source_corpus_test.dart` | `video_fushi/` part 目录枚举 | 同上，视频页语料 |
 | `test/sync/sync_settings_schema_source_corpus_test.dart` | `sync_settings_schema/` part 目录枚举 | 同上，同步设置 schema 语料 |
 | `test/tools/outbound_http_discipline_guard_test.dart` | `fushi/lib` + 6 个 `packages/*/lib` | 裸 `HttpClient(`/`http.Client(`/`IOClient(`/`Dio(` 必须经统一装配点，例外须登记（BUG-1498） |
+| `test/utils/share_entry_point_guard_test.dart` | `lib` 全树 | 系统分享只能走 `FushiShare` 入口，裸 `Share.share`/`SharePlus*` 会丢 iOS popover 锚点（BUG-2064） |
 
-一条命令跑完，**当前基线 250 tests**（2026-08-11，本条守卫 11 例并入后实测；上一基线 239）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
+一条命令跑完，**当前基线 256 tests**（2026-09-03，本条守卫 2 例并入后实测；上一基线 250）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
 
 **N 的演进链要留着，别只写当前值**——「N 应该是多少」本身就是判空转的信号，只写当前值就丢掉了「它为什么变」：
 
@@ -177,7 +178,8 @@ Get-CimInstance Win32_Process |
 | 225 | 35 | PR#760 给禁止型判据补 18 条自校验 |
 | 227 | 35 | 期间合入的 PR 又补了 2 条（这一格是**事后补记**：`develop` 上实测 227，没人在改动那刻更新这张表——N 的演进链只有当场记才准） |
 | 239 | 35 | BUG-1489 给 `media_kind_persistence_guard` 补冻结迁移登记出口 + 10 条合成语料自校验 + 2 条登记自校验（3→15） |
-| **250** | **36** | BUG-1498 新增 `outbound_http_discipline_guard`（11 例：登记制 + 规模哨兵 + 陈旧检测 + 总数常量 + 5 组合成语料自校验，**当前基线**） |
+| 250 | 36 | BUG-1498 新增 `outbound_http_discipline_guard`（11 例：登记制 + 规模哨兵 + 陈旧检测 + 总数常量 + 5 组合成语料自校验） |
+| **256** | **37** | BUG-2064 新增 `share_entry_point_guard`（2 例：入口唯一性 + 锚点双路径）。**+6 里只有 +2 是本条**——同一棵树上先跑旧的 36 条实测 254，250→254 的 +4 来自这期间合入的其它改动。这一格就是「N 变了要能说出是哪一行变的」的样例：不实测旧清单就会把 +6 整个记到新守卫头上（**当前基线**） |
 
 ⚠️ **N 变了不一定是坏事，但必须能说出是哪一行变的**；反过来，**N 没变也不一定是漏跑**——见下面「判 N 之前先问：新增用例落在哪一批里」。
 
@@ -206,7 +208,8 @@ cd fushi && dart run tool/flutter_test_failures.dart --no-pub \
   test/pages/reader_history_source_corpus_test.dart \
   test/pages/video_fushi_page_source_corpus_test.dart \
   test/sync/sync_settings_schema_source_corpus_test.dart \
-  test/tools/outbound_http_discipline_guard_test.dart
+  test/tools/outbound_http_discipline_guard_test.dart \
+  test/utils/share_entry_point_guard_test.dart
 ```
 
 ### 清单会过期——怎么重新推导
@@ -264,7 +267,7 @@ TODO-2707（PR#756）已把这条补完：**35 条现在条条有扫描规模哨
 
 ## 另一半：按触发条件加跑——**不点名，按树推导**
 
-上面那 35 条扫的是 Dart 源码树。另一半守卫读的是 **native / 资产 / 配置树**：`fushi/windows`、`fushi/android`、`fushi/{ios,macos,linux}`、`packages/*/windows`、`native/`、`tools/browser-extension`、`.github/workflows`、`third_party/`。整批清单抓不到它们，因为它们只在碰对应资产时才可能红。
+上面那 37 条扫的是 Dart 源码树。另一半守卫读的是 **native / 资产 / 配置树**：`fushi/windows`、`fushi/android`、`fushi/{ios,macos,linux}`、`packages/*/windows`、`native/`、`tools/browser-extension`、`.github/workflows`、`third_party/`。整批清单抓不到它们，因为它们只在碰对应资产时才可能红。
 
 ### 这里曾经挂着一份手写的 9 个测试名，它烂了——而且是必然烂的
 
@@ -343,9 +346,9 @@ dart run tool/flutter_test_failures.dart --no-pub \
 
 ⇒ 建议**把签名解析一次性收敛成单一实现**（三个原语共用一份），而不是每个原语各修各的；并给上面每一种形态各写一条**合成语料**的判据自校验（`test/helpers/source_guard_lexer_test.dart` 已经是这个形状）。理由不是洁癖：三次翻车分别落在三个不同的原语上，说明缺陷跟着「谁来解析签名」走，不跟着「谁在用它」走——**修好一个不会连带修好另外两个，这已经被实证三次了**。
 
-### 改共享原语时的门：不是 35 条，是按 import 反查爆炸半径
+### 改共享原语时的门：不是 37 条，是按 import 反查爆炸半径
 
-35 条清单守的是「目录枚举型守卫扫到新文件」，`tests_for_changes.dart` 守的是「改了哪棵树」。共享测试原语两边都漏：它既不是被扫描的生产文件，也不是被守卫用字面量点名的仓库路径——它是被 `import` 进来的。原语坏了，**所有**用它的守卫都可能静默拿错窗口，而它们散布在全仓各功能域，定向测试同样挑不到。
+37 条清单守的是「目录枚举型守卫扫到新文件」，`tests_for_changes.dart` 守的是「改了哪棵树」。共享测试原语两边都漏：它既不是被扫描的生产文件，也不是被守卫用字面量点名的仓库路径——它是被 `import` 进来的。原语坏了，**所有**用它的守卫都可能静默拿错窗口，而它们散布在全仓各功能域，定向测试同样挑不到。
 
 正确的门是按 import 反查，整批跑：
 
@@ -440,7 +443,7 @@ gh api -H "Accept: application/vnd.github.raw" \
 
 这和既有的「grep 只能定位不能定性」是同一个坑的两个面：那条讲**查代码**，这条讲**判测试覆盖**。
 
-**同一个坑的另一面：「加了用例，N 就该变大」也不成立。** 这条只在**新增用例结构上属于被统计的那一批**时才成立。实例：PR#768 给共享原语补了判据自校验用例，但那些用例落在 `test/helpers/source_guard_lexer_test.dart`——一个**非目录枚举型**的新文件，压根不在 35 条清单的扫描面里。⇒ 跑整批时 **N 持平才是正确结果**。
+**同一个坑的另一面：「加了用例，N 就该变大」也不成立。** 这条只在**新增用例结构上属于被统计的那一批**时才成立。实例：PR#768 给共享原语补了判据自校验用例，但那些用例落在 `test/helpers/source_guard_lexer_test.dart`——一个**非目录枚举型**的新文件，压根不在 37 条清单的扫描面里。⇒ 跑整批时 **N 持平才是正确结果**。
 
 🔴 **判 N 之前必须先问一句：新增用例落在哪一批里？** 不问就会把正确结果当成失败，而这个方向的错误特别危险——它会**反过来逼施工方去改判据凑数字**，把一个本来正确的实现改坏。「N 变了要说得出是哪一行变的」和「N 没变要说得出为什么本来就不该变」，是同一条纪律的两半。
 

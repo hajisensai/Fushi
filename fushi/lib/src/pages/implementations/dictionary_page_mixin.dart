@@ -508,19 +508,17 @@ mixin DictionaryPageMixin {
     return MinePopupResult(ankiConnect: r.ankiConnect, noteId: r.noteId);
   }
 
-  /// TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮的车道入口（视频/首页/独立查词，
-  /// 与 reader 车道 [BaseSourcePageState.onOpenInAnkiFromPopup] 对称）。据 [expression]/
-  /// [reading] 反查命中卡并直接跳转打开（单卡直开 / 多卡弹选择 / 无卡 toast）。
-  Future<void> onOpenInAnki(String expression, String reading) async {
+  /// TODO-1360 / BUG-2051：已制卡的词旁 ↗「在 Anki 中打开卡片」按钮的车道入口
+  /// （视频/首页/独立查词，与 reader 车道 [BaseSourcePageState.onOpenInAnkiFromPopup]
+  /// 对称）。判据与画 ✓ 的查重同源，见 [BaseAnkiRepository.openWordInAnki]：直接把
+  /// Anki 浏览器过滤到「Anki 认为这个词已有的卡」，不再先反查 note id、也不再由我们
+  /// 弹「打开哪一张」——多张就让 Anki 浏览器列出来。结局回传给弹窗按钮就地提示。
+  Future<AnkiOpenWordOutcome> onOpenInAnki(
+    String expression,
+    String reading,
+  ) async {
     final repo = ref.read(ankiRepositoryProvider);
-    await openMinedCardInAnki(
-      context: context,
-      repo: repo,
-      expression: expression,
-      reading: reading,
-      // BUG-1040：多卡选择框同样是 Flutter 层，期间停靠弹窗。
-      runHidden: runWithLookupPopupHidden,
-    );
+    return repo.openWordInAnki(expression, reading);
   }
 
   /// 把一次成功制卡计入统计（按 [dictionarySourceType]）。

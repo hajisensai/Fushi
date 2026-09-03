@@ -1442,6 +1442,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// context 可用再进全屏；失败/缺失态或超过上限则放弃，避免死循环（见
   /// [_scheduleInitialFullscreenIfNeeded]）。
   bool _didInitialFullscreen = false;
+
+  /// BUG-2043：本页是否持有从上一集页**接管**来的原生全屏（窗口已是原生全屏、栈上
+  /// 尚无本页的全屏路由）。initState 经 [_claimHandedOverNativeFullscreen] 置真；就绪
+  /// 后压上全屏路由（退出改由路由 pop 收口）、再换下一集（所有权继续传递）或
+  /// [_releaseHandedOverNativeFullscreen] 亲自退出，三者都把它翻假。
+  bool _ownsHandedOverNativeFullscreen = false;
   int _initialFullscreenRetries = 0;
 
   /// 观看统计采集器（观看时长 + 字幕字数 + 完成标记）；首次 load 建，dispose 释放。
@@ -1909,6 +1915,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-1204：接线查词计数（视频来源，带 bookUid + 剧集标题）。
     attachLookupCounter(_popup);
     _subtitleListVisible.value = widget.initialSubtitleListVisible;
+    // BUG-2043：从全屏页换集而来 → 认领旧页留下的原生全屏（见 fullscreen.part.dart）。
+    _claimHandedOverNativeFullscreen();
     // TODO-364 单一真相源：字幕避让可见性恒由 media_kit 真实可见性
     // （[_mediaKitControlsVisible]）+ 三个门控派生。订阅这四个输入，任一变化即重派生
     // [_videoControlsVisible]，杜绝旧镜像与真实控制条相位反。
@@ -3731,6 +3739,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   void dispose() {
+    // BUG-2043：加载中就被退出（ESC / 系统返回）而还没压上全屏路由 → 接管来的原生
+    // 全屏由本页亲自退，不能把窗口留在「原生全屏、栈上无全屏路由」的悬空态。
+    _releaseHandedOverNativeFullscreen();
     if (Platform.isWindows) {
       WindowsImeSpaceChannel.clearHandler(this);
       // Abnormal route teardown must never leave the app frame hidden. The

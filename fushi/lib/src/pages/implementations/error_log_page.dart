@@ -107,7 +107,7 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
       ],
       body: FushiLogPanel(
         log: _log,
-        shareAction: (text) => Share.share(text),
+        shareAction: (text) => FushiShare.shareText(text),
       ),
     );
   }

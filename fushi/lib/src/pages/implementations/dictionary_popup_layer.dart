@@ -1,6 +1,7 @@
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
+import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -588,9 +589,11 @@ class DictionaryPopupLayer extends StatelessWidget {
   final Future<MinePopupResult> Function(Map<String, String> fields)?
       onMinedCardAction;
 
-  /// TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮回调，透传给
-  /// [DictionaryPopupWebView]。宿主据 expression/reading 反查并直接在 Anki 中打开命中卡。
-  final Future<void> Function(String expression, String reading)? onOpenInAnki;
+  /// TODO-1360 / BUG-2051：已制卡的词旁 ↗「在 Anki 中打开卡片」按钮回调，透传给
+  /// [DictionaryPopupWebView]。宿主把 Anki 浏览器过滤到「Anki 认为这个词已有的卡」
+  /// （判据与画 ✓ 的查重同源），并回传三态结局供弹窗就地提示。
+  final Future<AnkiOpenWordOutcome> Function(String expression, String reading)?
+      onOpenInAnki;
   final Future<bool> Function(Map<String, String> fields)? onFavoriteEntry;
   final Future<bool> Function(String expression, String reading)?
       onFavoriteCheck;
