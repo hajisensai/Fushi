@@ -524,6 +524,7 @@ struct LookupHoverHighlightWindow {
 LookupHoverHighlightWindow g_hover_highlight;
 constexpr BYTE kHoverHighlightAlpha = 90;
 constexpr COLORREF kHoverHighlightColor = RGB(255, 214, 64);
+constexpr wchar_t kHoverHighlightClassName[] = L"FushiLookupHoverHighlight";
 
 LRESULT CALLBACK LookupHoverHighlightProc(HWND window, UINT message,
                                           WPARAM wparam, LPARAM lparam) {
@@ -558,20 +559,44 @@ void ApplyLookupHoverHighlight() {
     return;
   }
   if (g_hover_highlight.window == nullptr) {
-    WNDCLASSEXW wc = {};
-    wc.cbSize = sizeof(wc);
-    wc.lpfnWndProc = &LookupHoverHighlightProc;
-    wc.hInstance = g_module;
-    wc.lpszClassName = L"FushiLookupHoverHighlight";
-    wc.hbrBackground = CreateSolidBrush(kHoverHighlightColor);
-    if (RegisterClassExW(&wc) == 0 &&
-        GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
-      return;
+    // BUG-2090：窗口类是**进程生命期的不可变全局**，注册一次即可。
+    //
+    // 原实现每次(重)建窗口都 `CreateSolidBrush` + `RegisterClassExW`，而
+    // [DestroyLookupHoverHighlight] 只销毁窗口、**从不 UnregisterClass** ⇒ 类一直在 ⇒
+    // 第二次起注册恒返回 `ERROR_CLASS_ALREADY_EXISTS`，**那一份新建的 brush 没有任何
+    // 人接管**（类只接管注册成功那一次传进去的）。overlay 线程每 Stop→Start 一轮就漏
+    // 一个 GDI brush，而本 DLL 常驻在游戏进程里。
+    //
+    // 收敛成「一次注册」之后，「建 brush → 交给类」这对配对全函数只发生一次，
+    // 两条没完成转交的路径就地 `DeleteObject`——不存在第二条泄漏路径可写漏。
+    //
+    // 线程：本函数只被 [LookupOverlayProc] 的 `WM_TIMER` 调到（overlay UI 线程单线程），
+    // 故用朴素 static 标志而不是函数内 magic static——后者首次初始化要拿一把锁，
+    // hook DLL 里能免则免（BUG-2046 的教训：hook 进程内的锁会撞 MinHook Freeze）。
+    // DLL 卸载时 Windows 会连同 hInstance 一起注销该类，重新加载后本标志也重置为
+    // false，两者同步，不会出现「标志说已注册、类其实没了」。
+    static bool s_hover_class_registered = false;
+    if (!s_hover_class_registered) {
+      WNDCLASSEXW wc = {};
+      wc.cbSize = sizeof(wc);
+      wc.lpfnWndProc = &LookupHoverHighlightProc;
+      wc.hInstance = g_module;
+      wc.lpszClassName = kHoverHighlightClassName;
+      const HBRUSH background = CreateSolidBrush(kHoverHighlightColor);
+      wc.hbrBackground = background;
+      const ATOM atom = RegisterClassExW(&wc);
+      if (atom == 0) {
+        // 注册没成功 = 类没接管这把 brush，无论哪种原因都必须自己删。
+        if (background != nullptr) DeleteObject(background);
+        if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return;
+        // 同名类已由别的模块（或本 DLL 的上一次加载）注册：直接复用它。
+      }
+      s_hover_class_registered = true;
     }
     g_hover_highlight.window = CreateWindowExW(
         WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_NOACTIVATE |
             WS_EX_TOOLWINDOW,
-        wc.lpszClassName, L"", WS_POPUP, x, y, w, h, nullptr, nullptr,
+        kHoverHighlightClassName, L"", WS_POPUP, x, y, w, h, nullptr, nullptr,
         g_module, nullptr);
     if (g_hover_highlight.window == nullptr) return;
     SetLayeredWindowAttributes(g_hover_highlight.window, 0,
