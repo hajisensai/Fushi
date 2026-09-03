@@ -7,6 +7,8 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi/src/utils/net/dictionary_dio.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1493：**「更新这么慢，是网络原因吗」** —— 词典更新长时间没有任何可归因的反馈。
 ///
 /// 查下来是两件独立的事，都在这里钉住：
@@ -133,31 +135,6 @@ void main() {
   });
 
   group('BUG-1493 回归守卫：词典链路不得再用裸 Dio', () {
-    /// 剥掉注释再扫——本文件与被扫文件的文档注释里都写着这条根因的名字，不剥就是
-    /// 一条稳定的假阳性（守卫的第一版正是这么红的）。
-    String stripComments(String code) {
-      final StringBuffer out = StringBuffer();
-      bool inBlock = false;
-      for (final String rawLine in code.split('\n')) {
-        String line = rawLine;
-        if (inBlock) {
-          final int end = line.indexOf('*/');
-          if (end < 0) continue;
-          line = line.substring(end + 2);
-          inBlock = false;
-        }
-        final int blockStart = line.indexOf('/*');
-        if (blockStart >= 0) {
-          line = line.substring(0, blockStart);
-          inBlock = true;
-        }
-        final int lineComment = line.indexOf('//');
-        if (lineComment >= 0) line = line.substring(0, lineComment);
-        out.writeln(line);
-      }
-      return out.toString();
-    }
-
     test('downloader / update service 的出站一律经 createDictionaryDio', () {
       final List<String> paths = <String>[
         '../packages/fushi_dictionary/lib/src/formats/dictionary_downloader.dart',
@@ -167,7 +144,10 @@ void main() {
       for (final String p in paths) {
         final File file = File(p);
         expect(file.existsSync(), isTrue, reason: '守卫扫描目标不存在：$p');
-        final String code = stripComments(file.readAsStringSync());
+        // 剥掉注释再扫——本文件与被扫文件的文档注释里都写着这条根因的名字，
+        // 不剥就是一条稳定的假阳性（守卫的第一版正是这么红的）。共享词法掩码
+        // 等长，且保留字符串字面量（手写的按行截断会把 URL 里的 `//` 当注释）。
+        final String code = maskComments(file.readAsStringSync());
 
         // 唯一允许的裸构造是 `createDictionaryDio` 内部「工厂未接线」的回退
         // （`?? Dio()`）；别处再直接 new 一个就是绕开代理与超时装配。
@@ -182,12 +162,12 @@ void main() {
       }
     });
 
-    test('剥注释器本身有效：注释里的裸构造不算命中，代码里的算', () {
-      expect(stripComments('// 用裸 Dio() 出站\nfinal x = 1;'),
+    test('掩码器在本判据上有效：注释里的裸构造不算命中，代码里的算', () {
+      expect(maskComments('// 用裸 Dio() 出站\nfinal x = 1;'),
           isNot(contains('Dio()')));
-      expect(stripComments('/// 回退裸 Dio()\nfinal Dio d = Dio();'),
+      expect(maskComments('/// 回退裸 Dio()\nfinal Dio d = Dio();'),
           contains('Dio()'));
-      expect(stripComments('/* 块注释 Dio() */\nfinal y = 2;'),
+      expect(maskComments('/* 块注释 Dio() */\nfinal y = 2;'),
           isNot(contains('Dio()')));
     });
   });
