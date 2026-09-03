@@ -60,9 +60,15 @@ void main() {
       expect(body.contains('FushiDicts.probeDictContent('), isTrue,
           reason: 'classification must come from the native single source of '
               'truth (probe blobs.bin), not a fragile Dart blob header read');
-      expect(body.contains('type: DictionaryType.term'), isTrue,
+      expect(body.contains('DictionaryType.term'), isTrue,
           reason: 'a kanji dict that actually contains term records must be '
               'demoted back to term so word lookup hits again');
+      // 探测结果必须落库——包括「探过、结论是不用改」。少了这一步，「没探过」和
+      // 「探过、无需改判」在数据上不可区分，纯 kanji 词典每次启动都要把整张 hash
+      // 表重扫一遍（同步 FFI + 随机跳读 blobs.bin），词典一多启动直接卡死。
+      expect(body.contains('kDictTypeProbeKey'), isTrue,
+          reason: 'the probe result must be recorded so the scan runs once '
+              'per dictionary, not once per launch');
       expect(body.contains("'hasKanji'"), isTrue,
           reason:
               'the demoted mixed dict must be tagged hasKanji so the bucket '
