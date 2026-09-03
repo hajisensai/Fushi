@@ -21,6 +21,7 @@ import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/video_scrape_actions.dart';
+import 'package:fushi/src/media/video/cover_ui/video_specs_badges.dart';
 import 'package:fushi/src/media/video/video_home_layout.dart';
 import 'package:fushi/src/media/video/scraper/auto_scrape_service.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
@@ -6111,6 +6112,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       ),
                     ),
                   ),
+                // v95：清晰度 / HDR 角标。落左下角是因为另外三角已被占满（左上=标签
+                // 与勾选框、右上=集数/新增、右下=云端），bottom 给 6 让开 3px 进度条。
+                // 不随多选态隐藏——它在左下，与左上的勾选框本就不同角，没有让位的必要。
+                Positioned(
+                  bottom: 6,
+                  left: 6,
+                  child: IgnorePointer(
+                    child: VideoSpecsBadgeStrip(filePath: book.videoPath),
+                  ),
+                ),
               ],
             ),
           ),

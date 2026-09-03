@@ -4178,5 +4178,17 @@
   "discovery_opds_allow_http_hint": "局域网自建服务器需要打开",
   "discovery_opds_test": "测试连接",
   "discovery_opds_test_ok": "连接成功，根目录有 ${count} 个条目",
-  "discovery_opds_test_failed": "连接失败：${reason}"
+  "discovery_opds_test_failed": "连接失败：${reason}",
+  "video_specs_title": "媒体信息",
+  "video_specs_resolution": "清晰度",
+  "video_specs_dynamic_range": "动态范围",
+  "video_specs_video_codec": "视频编码",
+  "video_specs_bit_depth": "色深",
+  "video_specs_frame_rate": "帧率",
+  "video_specs_bitrate": "码率",
+  "video_specs_audio_tracks": "音轨",
+  "video_specs_subtitle_tracks": "字幕轨",
+  "video_specs_track_commentary": "评论音轨",
+  "video_specs_track_forced": "强制",
+  "video_specs_track_default": "默认"
 }

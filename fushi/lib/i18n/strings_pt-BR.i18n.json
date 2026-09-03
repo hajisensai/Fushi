@@ -4178,5 +4178,17 @@
   "discovery_opds_allow_http_hint": "Necessário para um servidor auto-hospedado na sua rede local",
   "discovery_opds_test": "Testar conexão",
   "discovery_opds_test_ok": "Conectado. O catálogo raiz tem ${count} itens",
-  "discovery_opds_test_failed": "Falha na conexão: ${reason}"
+  "discovery_opds_test_failed": "Falha na conexão: ${reason}",
+  "video_specs_title": "Media info",
+  "video_specs_resolution": "Resolution",
+  "video_specs_dynamic_range": "Dynamic range",
+  "video_specs_video_codec": "Video codec",
+  "video_specs_bit_depth": "Bit depth",
+  "video_specs_frame_rate": "Frame rate",
+  "video_specs_bitrate": "Bitrate",
+  "video_specs_audio_tracks": "Audio tracks",
+  "video_specs_subtitle_tracks": "Subtitle tracks",
+  "video_specs_track_commentary": "Commentary",
+  "video_specs_track_forced": "Forced",
+  "video_specs_track_default": "Default"
 }

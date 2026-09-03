@@ -8,6 +8,7 @@ import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
+import 'package:fushi/src/media/video/cover_ui/video_specs_panel.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
@@ -320,6 +321,12 @@ class _StandaloneVideoWorkDetailState
                     ),
               ),
             ),
+          // v95：技术规格。这一页是「一个文件 = 一部作品」，规格无歧义，摊开显示。
+          // 探不到时整块不占位（VideoSpecsPanel 内部返回 shrink）。
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+            child: VideoSpecsPanel(filePath: book.videoPath),
+          ),
           _buildTerms(tokens),
           _buildCredits(tokens),
           _buildExtras(tokens),
