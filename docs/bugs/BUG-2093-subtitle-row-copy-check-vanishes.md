@@ -8,7 +8,7 @@
   反馈窗口在播放头走出该 cue 的那一帧就结束（短台词常在几百毫秒内切走）。暂停浏览列表时复制才正常。
   实测 probe：点当前播放行的复制 → `Icons.check` findsOneWidget；`debugUpdateCueForPosition(2500)`
   + 一帧 → `Found 0 widgets with icon check`。
-- **[x] ① 已修复** — 提交 `PENDING_FIX_SHA`。状态的真正拥有者是**面板**（它知道 rawIndex），
+- **[x] ① 已修复** — 提交 `6dc7e65ec5`。状态的真正拥有者是**面板**（它知道 rawIndex），
   不是身份被列表控制的行 Element：`int? _copiedRawIndex` + 一个 `Timer` 提到
   `_VideoSubtitleJumpPanelState`（`video_subtitle_jump_panel.dart` 的 `_copiedRawIndex` /
   `_markCueCopied` / `dispose`），行内按钮按 `rawIndex == _copiedRawIndex` 渲染。
@@ -17,7 +17,7 @@
   原生页 `_copyCueText`、网页页 `_copyCue`）收敛成一份：`VideoSubtitleJumpPanel.onCopyCue`
   改返回 `bool`，面板只读返回值。`CopyFeedback` 组件保留给查词浮层顶栏那颗独苗按钮，
   并把与 `dispose` 里 `cancel()` 互为冗余的 `if (!mounted) return` 砍掉（两道都在时谁都钉不住）。
-- **[x] ② 已加自动化测试** — 提交 `PENDING_FIX_SHA`。
+- **[x] ② 已加自动化测试** — 提交 `6dc7e65ec5`。
   - `fushi/test/media/video/video_subtitle_jump_panel_test.dart`：
     `inline copy check survives the playhead leaving that row (BUG-2093)`（复现上面那条 probe：
     复制当前播放行 → `debugUpdateCueForPosition(2500)` → ✓ 仍在，窗口到点才回落）、
