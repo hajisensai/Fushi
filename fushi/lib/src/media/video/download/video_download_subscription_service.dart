@@ -120,6 +120,14 @@ class VideoDownloadSubscriptionService {
         workerId =
             workerId ?? 'video-sub-${generateVideoDownloadInstallationId()}',
         _now = now ?? DateTime.now {
+    // `cadence` 一旦给了，`checkInterval` 就被**静默忽略**（它只用来兜底造一个默认
+    // cadence）。两个都传 = 调用方以为自己设了基准间隔、实际一点没生效 —— 正是
+    // 「同一个数字两层两语义」那种运行期谜题。构造时就拒绝，别留到线上去猜。
+    assert(
+      cadence == null || checkInterval == const Duration(minutes: 15),
+      'checkInterval 与 cadence 同传时前者被忽略；把基准间隔写进 '
+      'SubscriptionCheckCadence(baseInterval: ...)。',
+    );
     if (leaseDuration <= Duration.zero) {
       throw ArgumentError.value(leaseDuration, 'leaseDuration');
     }

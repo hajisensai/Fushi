@@ -127,6 +127,52 @@ VideoDownloadSubscriptionService _service(
   return service;
 }
 
+/// 唤醒计数探针。
+///
+/// 服务不暴露 `_timer`，而两条唤醒 clamp 生效的场景里库里一行都领不走
+/// （`_EmptyResourceProvider.searchCount` 恒为 0），唯一可观测的就是定时器回调
+/// 本身。定时器回调只有 `checkNow` 一个入口，覆写它就能数出真实排程节奏。
+class _WakeCountingService extends VideoDownloadSubscriptionService {
+  _WakeCountingService({
+    required super.database,
+    required super.resourceRegistry,
+    required super.enqueue,
+    required super.cadence,
+    required super.now,
+    super.workerId,
+  });
+
+  int wakeCount = 0;
+
+  @override
+  Future<void> checkNow() {
+    wakeCount++;
+    return super.checkNow();
+  }
+}
+
+/// 冻结时钟 + 一条领不走的订阅：每一轮重排算出的 delay 都是同一个常数，
+/// 断言排程节奏才是确定的（定时器只会晚不会早，上界因此可判）。
+_WakeCountingService _countingService(
+  FushiDatabase database, {
+  required DateTime now,
+  required SubscriptionCheckCadence cadence,
+}) {
+  final _WakeCountingService service = _WakeCountingService(
+    database: database,
+    resourceRegistry: VideoResourceRegistry(<VideoResourceProvider>[
+      _EmptyResourceProvider(),
+    ]),
+    enqueue: (VideoDownloadEnqueueRequest request) async =>
+        fail('no candidate should be enqueued'),
+    workerId: 'clamp-test-worker',
+    cadence: cadence,
+    now: () => now,
+  );
+  addTearDown(service.dispose);
+  return service;
+}
+
 /// 定时器行为用的压缩节奏：真等毫秒级，不改变任何分支逻辑。
 ///
 /// 取值刻意不再更小。同目录下有几条时间敏感的既有用例（例如 90ms lease 的
@@ -381,6 +427,89 @@ void main() {
       );
     });
 
+    test('下一次到期近在眼前时，唤醒不会快过热窗（下界 clamp）', () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      final DateTime frozen = kRelease;
+      final int at = frozen.millisecondsSinceEpoch;
+      await _insertSubscription(
+        database,
+        id: 'held',
+        sourceId: sourceId,
+        nextCheckAt: at - 1000,
+      );
+      // 别的 worker 正占着这一行，租约还差 1ms 到期：行早就到期了，本 worker
+      // 却领不走。这正是唤醒下限那条注释说的「已到期但领不走」，dueAt 恒等于
+      // 租约到期时刻，算出来的 delay 恒为 1ms。
+      expect(
+        await database.claimNextVideoDownloadSubscription(
+          workerId: 'other-worker',
+          nowAt: at - 999,
+          leaseDurationMs: 1000,
+        ),
+        isNotNull,
+      );
+      expect(
+        await database.nextVideoDownloadSubscriptionDueAt(),
+        at + 1,
+        reason: '喂给唤醒下限的 delay 必须真的是 1ms，否则这条用例测的不是 clamp',
+      );
+
+      final _WakeCountingService service = _countingService(
+        database,
+        now: frozen,
+        cadence: kFastCadence,
+      );
+      service.start();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+
+      // 时钟冻结 + 领不走：每一轮重排读到的都是同一个 1ms，库里没有任何写入
+      // 能让它自己收敛。定时器只会晚不会早，所以上界是确定的——start() 那一次
+      // 加上 600ms 里最多 6 个 hotInterval(100ms)。去掉下限 clamp 就是每毫秒
+      // 重排一轮的空转。
+      expect(
+        service.wakeCount,
+        greaterThanOrEqualTo(2),
+        reason: '调度器压根没再醒过，这一轮没观测到任何排程',
+      );
+      expect(
+        service.wakeCount,
+        lessThanOrEqualTo(12),
+        reason: '唤醒快过热窗：600ms 里醒了 ${service.wakeCount} 次，等于空转',
+      );
+    });
+
+    test('下一次到期远在未来时，冷窗仍兜底探测（上界 clamp）', () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      final DateTime frozen = kRelease;
+      final int at = frozen.millisecondsSinceEpoch;
+      await _insertSubscription(
+        database,
+        id: 'far',
+        sourceId: sourceId,
+        nextCheckAt: at + const Duration(hours: 1).inMilliseconds,
+      );
+      expect(
+        await database.nextVideoDownloadSubscriptionDueAt(),
+        at + const Duration(hours: 1).inMilliseconds,
+        reason: '喂给唤醒封顶的 delay 必须真的是 1 小时',
+      );
+
+      final _WakeCountingService service = _countingService(
+        database,
+        now: frozen,
+        cadence: kFastCadence,
+      );
+      service.start();
+
+      // 冷窗 300ms。没有封顶，这一条就会睡满一小时，兜底探测再也不会发生。
+      expect(
+        await _waitFor(() => service.wakeCount >= 3),
+        isTrue,
+        reason: '唤醒被推迟到了冷窗之外，等了 10s 只醒了 ${service.wakeCount} 次',
+      );
+    });
   });
 
   group('构造参数校验', () {
