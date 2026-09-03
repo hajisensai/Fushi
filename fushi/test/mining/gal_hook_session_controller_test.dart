@@ -17,6 +17,8 @@ import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/source_guard.dart';
+
 void main() {
   // BUG-1027 音轨快照自动刷新会在会话激活后触发（未 mock 的）voice_hook channel 的
   // listAudioTracks——必须先初始化 binding，让调用以 MissingPluginException 收敛为
@@ -2237,11 +2239,10 @@ void _playTrackerWiringGuard() {
   test('P4 B1 守卫：launch 路径必须接线游玩计时器并落 galgame_sessions', () {
     final File src = File('lib/src/mining/gal_hook_session_controller.dart');
     expect(src.existsSync(), isTrue);
-    // 注释里出现的同名字面量不算接线：先剥掉行注释再匹配。
-    final String body = src.readAsStringSync().split('\n').map((String line) {
-      final int at = line.indexOf('//');
-      return at >= 0 ? line.substring(0, at) : line;
-    }).join('\n');
+    // 注释里出现的同名字面量不算接线：先过共享词法掩码（行注释 + 块注释一起掩，
+    // 字符串字面量原样保留）再匹配。掩码等长，下面 indexOf/substring 的下标仍与
+    // 原文对齐。
+    final String body = maskComments(src.readAsStringSync());
     expect(
       body.contains('GalgamePlayTracker('),
       isTrue,

@@ -58,6 +58,13 @@ void main() {
     // 方法体终点锚：下一个 `\n  /// ` 文档注释（_showEpisodeList 前）。
     final int end = episodeSrc.indexOf('\n  /// ', start);
     expect(end, greaterThan(start), reason: '找不到 _switchEpisode 方法体终点');
+    // 掩掉注释，避免注释里提到的符号被 contains / indexOf 先命中。
+    // [maskComments] 等长（行注释 + 块注释一起换成空白、字符串字面量原样保留），
+    // 所以下面所有顺序判据的下标仍与原文对齐——旧的「整行以 // 开头就丢掉」既放行
+    // 块注释与行尾注释，又会让 indexOf 的下标与原文错位。
+    //
+    // 窗口本身只能在**原文**上切：`_switchEpisode` 方法体的终点锚是下一条文档
+    // 注释 `\n  /// `，掩码之后它变成空白就找不着了。
     switchBody = maskComments(episodeSrc.substring(start, end));
 
     fullscreenSrc = maskComments(

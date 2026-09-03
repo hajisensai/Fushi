@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-2056：英文正文/字幕里点 `don’t` 的 don 只查到 "don"，点 t 只查到 "t"；
 /// `it’s` / `John’s` / `we’ve` 这类**缩合形与所有格**整类匹配不到词条。
 ///
@@ -36,10 +38,20 @@ void main() {
 
   /// 四份实现的**真值**：三份 selection.js 从盘上读，阅读器那份来自
   /// `ReaderSelectionScripts.source()`（与真机注入的是同一个字符串）。
+  ///
+  /// 读进来就先过 [maskJsComments]：四份都是 **JS**，两处修复的说明注释里都写着
+  /// isIntraWordApostrophe / isScanStop 这些标识符，不掩的话下面的顺序判据会先
+  /// 命中注释、退化成恒真；被注释掉的旧 `scanDelimiters:` 行同样能骗过字面量提取。
+  /// 掩码等长（下标不错位）且保留串 / 模板串 / 正则字面量的内容，所以
+  /// `intraWordApostrophePattern: /[…]/` 与 `scanDelimiters: '…'` 照常提得出来。
+  ///
+  /// 用 JS 版而不是 [maskComments]：后者不认正则字面量，正则里的 `//` 会被读成
+  /// 「除号 + 行注释」，从正则处到行尾整段凭空消失。
   final Map<String, String> sources = <String, String>{
     for (final String path in selectionCopies)
-      path: File(path).readAsStringSync(),
-    'reader_selection_scripts.dart (source())': ReaderSelectionScripts.source(),
+      path: maskJsComments(File(path).readAsStringSync()),
+    'reader_selection_scripts.dart (source())':
+        maskJsComments(ReaderSelectionScripts.source()),
   };
 
   test(
@@ -102,11 +114,10 @@ void main() {
   test(
       'intra-word apostrophe is bridged before the scan-stop test, and the '
       'word-start back-off stays untouched', () {
-    sources.forEach((String label, String src) {
-      // 顺序判据必须在**剥掉注释**的代码上算：两处修复的说明注释里都写着
-      // isIntraWordApostrophe / isScanStop 这些标识符，裸 indexOf 会先命中注释，
-      // 顺序断言就变成恒真（见 docs/agent 的顺序守卫纪律）。
-      final String code = _stripLineComments(src);
+    sources.forEach((String label, String code) {
+      // `code` 在 sources 构造处已过 maskJsComments：顺序判据必须在**掩掉注释**的
+      // 代码上算，否则裸 indexOf 会先命中说明注释、顺序断言退化成恒真
+      // （见 docs/agent 的顺序守卫纪律）。
 
       const String bridge =
           'if (this.isIntraWordApostrophe(content, scanOffset)) {';
@@ -186,14 +197,6 @@ void main() {
               '不到这个变化（实测 ③ 仍绿），只有这条源码守卫拦得住');
     });
   });
-}
-
-/// 去掉 `//` 行注释（保留换行，偏移仍然单调），供顺序判据使用。
-String _stripLineComments(String src) {
-  return src.split('\n').map((String line) {
-    final int idx = line.indexOf('//');
-    return idx < 0 ? line : line.substring(0, idx);
-  }).join('\n');
 }
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.

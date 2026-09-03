@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 // BUG-107: clicking a dictionary image opens a full-viewport lightbox
 // (`.dict-image-lightbox`, the enlarged image with max-width/height:100% nearly
 // fills the popup). The lightbox closes on a tap of the overlay, but the image
@@ -14,7 +16,13 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('image lightbox closes on any tap (no stopPropagation on the image)',
       () {
-    final String source = File('assets/popup/popup.js').readAsStringSync();
+    // Mask JS comments at read time so neither the function-body window nor
+    // the assertions below can be fooled by a comment. maskJsComments keeps
+    // string / template / regex literal *content* intact and is
+    // length-preserving, so the indexOf/substring offsets below still line up
+    // with the real file.
+    final String source =
+        maskJsComments(File('assets/popup/popup.js').readAsStringSync());
 
     final int openIdx = source.indexOf('function openImageLightbox(');
     expect(openIdx, greaterThanOrEqualTo(0),
@@ -32,18 +40,14 @@ void main() {
     // The image must NOT carry its own click handler — an
     // `image.addEventListener('click', …)` was used to stopPropagation, which
     // swallowed taps on the image (the only hittable part) and broke close.
-    // Strip JS line comments first so a comment mentioning the old pattern
-    // doesn't trip the guard.
-    final String code = body.split('\n').map((String line) {
-      final int c = line.indexOf('//');
-      return c >= 0 ? line.substring(0, c) : line;
-    }).join('\n');
-    expect(code.contains("image.addEventListener('click'"), isFalse,
+    // `body` is already comment-masked (see the read above), so a comment
+    // mentioning the old pattern cannot trip the guard.
+    expect(body.contains("image.addEventListener('click'"), isFalse,
         reason:
             'the lightbox image must not have its own click handler — tapping '
             'the enlarged image (which fills the viewport) must bubble to the '
             'overlay and close the lightbox (BUG-107)');
-    expect(code.contains('stopPropagation'), isFalse,
+    expect(body.contains('stopPropagation'), isFalse,
         reason: 'no stopPropagation inside openImageLightbox code (BUG-107)');
   });
 }

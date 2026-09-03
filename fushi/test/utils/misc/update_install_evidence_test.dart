@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart';
 
+import '../../helpers/source_guard.dart';
+
 /// BUG-1836 根因修复：「这次更新到底装上了没有」的三源证据表。
 ///
 /// 现场（2026-08-24）：用户照 BUG-1786 / BUG-1831 的指引**手动双击**装完
@@ -314,7 +316,9 @@ void main() {
         // 先剔掉注释再断言。`settings_schema_system.dart` 是几千行的大文件，光是
         // 解释这条规矩的注释里就出现了 `resolveCurrentAppVersion`；裸 `contains`
         // 会被散文喂饱，把「删掉真实调用、只留注释」的改动放行。
-        final String code = stripDartLineComments(file.readAsStringSync());
+        // 共享词法掩码：行注释 + 块注释一起掩、等长、字符串字面量原样保留
+        // （手写的按行截断会把 URL 里的 `//` 当注释起点、吃掉半行）。
+        final String code = maskComments(file.readAsStringSync());
         // 断言布尔而不是把整份源码丢给 `contains` matcher：这两个文件都是几千行，
         // 失败时 matcher 会把全文当 `Actual` 打出来，真正的失败原因被埋掉。
         expect(
@@ -450,18 +454,4 @@ void main() {
       expect(result!.status, WindowsUpdateHandoffStatus.launchFailed);
     });
   });
-}
-
-/// 剔除 Dart 行注释（`//` 与 `///`），只留代码。
-///
-/// 只处理行注释：本守卫的目标文件里没有 `/* */` 块注释，多一层状态机只是多一个
-/// 出错面。也不识别字符串字面量——会被误剔的只有字面量里的 `//`（如 URL），而本
-/// 守卫断言的 token 都不会出现在 URL 里。
-String stripDartLineComments(String source) {
-  final StringBuffer out = StringBuffer();
-  for (final String line in const LineSplitter().convert(source)) {
-    final int idx = line.indexOf('//');
-    out.writeln(idx < 0 ? line : line.substring(0, idx));
-  }
-  return out.toString();
 }
