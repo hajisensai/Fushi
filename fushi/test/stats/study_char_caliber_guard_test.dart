@@ -211,31 +211,15 @@ void main() {
   /// （串里的花括号会把配对带偏）。这三份文件的 JS 缩进稳定，行锚点确定。
   /// 同名函数（分页 shell 与连续 shell 各有一个 `getFirstVisibleCharOffset`）**全部**
   /// 取出来逐个断言，不许只看第一个。
-  /// 剥掉 JS 行注释。**必须剥**：这些 JS 活在 Dart 三引号原始串里，`maskComments`
-  /// 是 Dart 词法器，串内容原样保留 —— 于是 `textItems` 里那句「有声书 cue 的
-  /// collectMatchableSegments 仍走 isMatchableChar」注释会先被 indexOf 命中，
-  /// 把一条本该绿的反向断言变成恒红。
   ///
-  /// 只剥整行注释与「前面引号成对」的行尾注释，`https://` 之类串内内容不动。
-  String stripJsLineComments(String body) {
-    final List<String> kept = <String>[];
-    for (final String line in body.split('\n')) {
-      if (line.trimLeft().startsWith('//')) continue;
-      int? cut;
-      for (final Match m in RegExp('//').allMatches(line)) {
-        final String before = line.substring(0, m.start);
-        final bool balanced =
-            _oddQuotes(before, "'") && _oddQuotes(before, '"');
-        if (balanced && !before.trimRight().endsWith(':')) {
-          cut = m.start;
-          break;
-        }
-      }
-      kept.add(cut == null ? line : line.substring(0, cut));
-    }
-    return kept.join('\n');
-  }
-
+  /// [source] **必须**是 [maskCommentsAndScriptLines] 掩过的：这些 JS 活在 Dart 三引号
+  /// 原始串里，光用 [maskComments]（Dart 词法器，按设计保留串内容）会把串里的 JS 注释
+  /// 原样留下 —— 于是 `textItems` 里那句「有声书 cue 的 collectMatchableSegments 仍走
+  /// isMatchableChar」注释会先被 `contains` 命中，把一条本该绿的反向断言变成恒红。
+  /// 共享掩码是**等长**的（注释字符换空白、不删行），行数与缩进都不漂移，所以下面
+  /// 按缩进取收口行的锚点照旧成立。手写剥注释是全仓禁用形态（守卫
+  /// `test/tools/source_guard_adoption_test.dart`）：它放过块注释与行尾注释，
+  /// 删行还会让下标与原文错位。
   List<String> jsFunctionBodies(String source, String header) {
     final List<String> lines = source.split('\n');
     final List<String> bodies = <String>[];
@@ -261,7 +245,7 @@ void main() {
       expect(closed, isTrue,
           reason: '取不到 `$header` 的函数体收口行（缩进 ${indent.length} 空格）。'
               '缩进变了就换锚点，别把守卫留在恒不匹配的状态上——那等于零断言。');
-      bodies.add(stripJsLineComments(body.toString()));
+      bodies.add(body.toString());
     }
     return bodies;
   }
@@ -274,9 +258,9 @@ void main() {
       test('[计数] ${path.split('/').last} · $header 走学习单位口径', () {
         final File f = File(path);
         expect(f.existsSync(), isTrue, reason: '$path 不在了');
-        // 只剥 Dart 注释：JS 语料在三引号串里，串内容必须保留。
-        final List<String> bodies =
-            jsFunctionBodies(maskComments(f.readAsStringSync()), header);
+        // Dart 注释 + 三引号串内的 JS 注释一起掩（等长掩码，下标不漂移）。
+        final List<String> bodies = jsFunctionBodies(
+            maskCommentsAndScriptLines(f.readAsStringSync()), header);
         expect(bodies.length, evidence.length,
             reason: '$path 里 `$header` 有 ${bodies.length} 份实现，本表登记了 '
                 '${evidence.length} 份。\n'
@@ -305,8 +289,8 @@ void main() {
       test('[cue 匹配] ${path.split('/').last} · $header 保留 isMatchableChar', () {
         final File f = File(path);
         expect(f.existsSync(), isTrue, reason: '$path 不在了');
-        final List<String> bodies =
-            jsFunctionBodies(maskComments(f.readAsStringSync()), header);
+        final List<String> bodies = jsFunctionBodies(
+            maskCommentsAndScriptLines(f.readAsStringSync()), header);
         expect(bodies, isNotEmpty, reason: '$path 里找不到 `$header`');
         for (final String body in bodies) {
           expect(body.contains('isMatchableChar'), isTrue,
@@ -321,7 +305,8 @@ void main() {
     }
 
     test('取函数体的锚点自身可信（不会把相邻函数一起吞进来）', () {
-      final String src = maskComments(File(selectionPath).readAsStringSync());
+      final String src =
+          maskCommentsAndScriptLines(File(selectionPath).readAsStringSync());
       final List<String> bodies =
           jsFunctionBodies(src, 'getNormalizedOffset: function(');
       expect(bodies.length, 1);
@@ -333,6 +318,3 @@ void main() {
     });
   });
 }
-
-/// 引号是否成对（偶数个）。抽成顶层函数只为了让 stripJsLineComments 读得顺。
-bool _oddQuotes(String s, String quote) => quote.allMatches(s).length % 2 == 0;
