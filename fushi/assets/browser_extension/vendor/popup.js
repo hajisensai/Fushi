@@ -640,81 +640,140 @@ function openExternalLink(url) {
     window.flutter_inappwebview.callHandler('openLink', url);
 }
 
-function showDescription(element) {
-    const description = element.getAttribute('data-description');
-    if (!description) {
-        return;
-    }
-    const root = __fushiRootNode();
-    const overlay = root.querySelector('.overlay');
-    const title = root.querySelector('.overlay-title');
-    const content = root.querySelector('.overlay-content');
-    if (!overlay || !content) return;
-    if (title) title.textContent = element.textContent || '';
-    content.textContent = description;
-    overlay.style.display = 'block';
-    overlay.scrollTop = 0;
-}
+/* 词形变化标签的语法说明浮层。**WebView 弹窗只有这一套呈现**：
+   hover 是预览（不钉住，移开即收），click 是钉住（可选中复制，带标题与关闭按钮）。
 
-function closeOverlay() {
-    const root = __fushiRootNode();
-    const overlay = root.querySelector('.overlay');
-    if (!overlay) return;
-    overlay.style.display = 'none';
-    const title = root.querySelector('.overlay-title');
-    const content = root.querySelector('.overlay-content');
-    if (title) title.textContent = '';
-    if (content) content.textContent = '';
-}
+   BUG-2041 之前是两套皮：click 走 popup.html 里的静态 `.overlay` 全屏卡片
+   （showDescription / closeOverlay），hover 走这个浮层——同一段 data-description
+   披着两套 DOM、两套定位、两套关闭、两套配色字号。`.overlay` 还是顶层节点、不在
+   .entry 内，于是点它的正文会一路落到本文件末尾 document click 的 dismiss 分支，
+   把整个查词窗关掉。收成一套后那个缺陷一并消失（新浮层在同一处显式豁免）。
+   原 `.overlay` 存在的理由是「窄屏放不下浮层」——现在由 showGrammarTooltip 里按
+   视口收窄 max-width 承担，窄屏时浮层自己收成贴边卡片，不必另开一套 DOM。
 
-/* 词形变化标签的语法说明浮层（桌面 hover）。
-   点击走 showDescription 的内嵌查词卡片——触屏上没有 hover，且窄屏放不下这块浮层。
-   浮层是懒创建的，挂在 __fushiOverlayParent()（shadow root 或 document.body）下，
+   浮层懒创建，挂在 __fushiOverlayParent()（shadow root 或 document.body）下，
    这样扩展注入到宿主页面时也不会跑到词典的 Shadow DOM 外面去。 */
+
+/** 当前钉住的那枚 .deinflection-tag；null = 未钉住（hover 预览态或已收起）。 */
+let _grammarPinnedAnchor = null;
+
+/** 语法说明是否处于钉住（点击）态。可观测状态，供 dismiss 分支与测试使用。 */
+function isGrammarTooltipPinned() {
+    return _grammarPinnedAnchor != null;
+}
+
 function ensureGrammarTooltip() {
     const root = __fushiRootNode();
     let tooltip = root.querySelector('.grammar-tooltip');
-    if (!tooltip) {
-        tooltip = el('div', { className: 'grammar-tooltip' });
-        __fushiOverlayParent().appendChild(tooltip);
-        /* 浮层是 position:fixed 且挂在词条容器之外，唯一的隐藏入口原本只有标签自己的
-           mouseleave。于是：悬停着滚动列表，标签跟着滚走而浮层钉在旧坐标不动；新一次
-           查词把 #entries-container 整个重渲染掉时，被移除节点的 mouseleave 在各引擎
-           行为不一致，浮层可能一直挂着。捕获阶段监听覆盖嵌套滚动容器，只装一次。 */
-        document.addEventListener('scroll', hideGrammarTooltip, true);
-        document.addEventListener('pointerdown', hideGrammarTooltip, true);
-    }
+    if (tooltip) return tooltip;
+
+    // 关闭按钮的 × 复用 ICON_PATHS.close（注释里就写着「标签说明遮罩关闭 ×」），
+    // 与原 `.overlay-close` 同一份路径数据，不再手抄第二份 SVG。
+    const close = el('div', { className: 'grammar-tooltip-close' });
+    close.innerHTML = iconSvg('close');
+    close.addEventListener('click', (e) => {
+        e.stopPropagation();
+        hideGrammarTooltip();
+    });
+    const title = el('div', { className: 'grammar-tooltip-title' });
+    const body = el('div', { className: 'grammar-tooltip-body' });
+    tooltip = el('div', { className: 'grammar-tooltip' }, [close, title, body]);
+    __fushiOverlayParent().appendChild(tooltip);
+
+    /* 浮层是 position:fixed 且挂在词条容器之外，唯一的隐藏入口原本只有标签自己的
+       mouseleave。于是：悬停着滚动列表，标签跟着滚走而浮层钉在旧坐标不动；新一次
+       查词把 #entries-container 整个重渲染掉时，被移除节点的 mouseleave 在各引擎
+       行为不一致，浮层可能一直挂着。捕获阶段监听覆盖嵌套滚动容器，只装一次。
+       钉住态在**锚点**滚走时同样收起：坐标是按锚点算的，锚点走了还钉在原地更怪。
+       但浮层自己的滚动必须豁免（见 onGrammarTooltipScroll）——它带
+       overflow-y:auto，长说明就是要在它内部滚着读的。 */
+    document.addEventListener('scroll', onGrammarTooltipScroll, true);
+    document.addEventListener('pointerdown', onGrammarTooltipPointerDown, true);
     return tooltip;
 }
 
-function showGrammarTooltip(element) {
-    /* 只有能 hover 的指针设备才显示。触屏浏览器会在 tap 时补发一次 mouseenter，
-       那样浮层会一直粘在屏幕上没人收（没有后续的 mouseleave）。 */
-    try {
-        if (window.matchMedia && !window.matchMedia('(hover: hover)').matches) return;
-    } catch (_) { /* matchMedia 不可用时按可 hover 处理 */ }
+/* 捕获阶段的「锚点滚走就收起」。必须看事件目标：钉住态自己带 overflow-y:auto
+   和现算 maxHeight（见 showGrammarTooltip 里的定位），也就是说它**本身就是一个
+   滚动容器**——长说明（transforms 里最长 471 字符 / 7 个硬换行）在默认弹窗高度下
+   必然溢出。裸把 hideGrammarTooltip 当监听器注册，用户往下读一行浮层就自杀了，
+   等于把「读不到折线以下」换掉了旧 .overlay 的毛病。豁免与上面 pointerdown 同形。 */
+function onGrammarTooltipScroll(e) {
+    const raw = __fushiEventTarget(e);
+    const target = raw?.nodeType === Node.TEXT_NODE ? raw.parentElement : raw;
+    if (target?.closest?.('.grammar-tooltip')) return;
+    hideGrammarTooltip();
+}
+
+/* 捕获阶段的「点别处收起」。两个豁免缺一不可：
+   ① 点浮层自身——钉住态要能选中复制文字、要能点关闭按钮，一按下就收全废了；
+   ② 点当前钉住的那枚标签——它自己的 click 要做 toggle，这里先收掉的话
+      _grammarPinnedAnchor 已成 null，toggle 永远判成「没钉住」→ 再点一次收不起来。 */
+function onGrammarTooltipPointerDown(e) {
+    const raw = __fushiEventTarget(e);
+    const target = raw?.nodeType === Node.TEXT_NODE ? raw.parentElement : raw;
+    if (target?.closest?.('.grammar-tooltip')) return;
+    if (_grammarPinnedAnchor &&
+        target?.closest?.('.deinflection-tag') === _grammarPinnedAnchor) {
+        return;
+    }
+    hideGrammarTooltip();
+}
+
+/** 显示语法说明。[pinned] 为真 = 点击钉住（可交互、带标题与关闭按钮）。 */
+function showGrammarTooltip(element, pinned) {
+    /* hover 预览只给能 hover 的指针设备：触屏浏览器会在 tap 时补发一次 mouseenter，
+       那样浮层会一直粘在屏幕上没人收（没有后续的 mouseleave）。
+       **钉住态不受此限**——触屏本来就是靠点击看说明，那正是原 `.overlay` 的职责。 */
+    if (!pinned) {
+        try {
+            if (window.matchMedia && !window.matchMedia('(hover: hover)').matches) return;
+        } catch (_) { /* matchMedia 不可用时按可 hover 处理 */ }
+    }
 
     const description = element.getAttribute('data-description');
     if (!description) return;
 
     const tooltip = ensureGrammarTooltip();
-    tooltip.textContent = description;
+    const root = __fushiRootNode();
+    const bodyEl = root.querySelector('.grammar-tooltip-body');
+    const titleEl = root.querySelector('.grammar-tooltip-title');
+    if (bodyEl) bodyEl.textContent = description;
+    // 标题只在钉住态显示（原 `.overlay-title` 的职责）：预览态多一行大字反而碍事。
+    if (titleEl) titleEl.textContent = pinned ? (element.textContent || '') : '';
+    tooltip.classList.toggle('is-pinned', !!pinned);
+    _grammarPinnedAnchor = pinned ? element : null;
+
     tooltip.style.display = 'block';
-    /* 先落地再量：宽度受 CSS max-width 约束，量完才知道该往哪边收。 */
+
+    /* 单位（BUG-2042）：getBoundingClientRect() / __fushiViewportWidth() /
+       window.innerHeight 都是**视觉 px**（已乘内容 zoom），而写进 style 的
+       left/top/max-* 是 **layout px**，渲染时还会再乘一次 zoom。所以全程按视觉 px
+       算，最后一步统一 `/ z` 折回 layout px——少这一步就是双重缩放，zoom != 1 时
+       整块浮层按 z 倍偏移。与 dictionary_popup_webview.dart 的
+       __fushiApplyPopupViewport（layoutWidth = width / z）是同一套换算。 */
+    const z = __fushiPopupContentZoom();
+    const margin = 8;
+    const viewportWidth = __fushiViewportWidth();
+    const viewportHeight = window.innerHeight;
+
+    /* 先按视口收窄再量：窄屏（原 `.overlay` 铺满弹窗的唯一理由）由这条自适应承担。 */
+    const maxWidth = Math.max(160, Math.min(460, viewportWidth - 2 * margin));
+    tooltip.style.maxWidth = (maxWidth / z) + 'px';
+    tooltip.style.maxHeight = (Math.max(80, viewportHeight - 2 * margin) / z) + 'px';
+    /* 先落地再量：宽度受 max-width 约束，量完才知道该往哪边收。 */
     tooltip.style.left = '0px';
     tooltip.style.top = '0px';
 
     const anchor = element.getBoundingClientRect();
     const box = tooltip.getBoundingClientRect();
-    const margin = 8;
 
     let left = anchor.left;
-    const maxLeft = __fushiViewportWidth() - box.width - margin;
+    const maxLeft = viewportWidth - box.width - margin;
     if (left > maxLeft) left = maxLeft;
     if (left < margin) left = margin;
 
     let top = anchor.bottom + 6;
-    if (top + box.height > window.innerHeight - margin) {
+    if (top + box.height > viewportHeight - margin) {
         const above = anchor.top - box.height - 6;
         /* 上方也放不下就维持在下方：宁可截断底部，也不要顶出视口外够不着。 */
         if (above >= margin) top = above;
@@ -722,16 +781,25 @@ function showGrammarTooltip(element) {
     /* 「截断底部」必须真的只截底部：不 clamp 的话上下都放不下时 top 停在
        anchor.bottom + 6，整块浮层落到视口外，用户悬停后什么也看不到——那不是截断，
        是消失。先按底边收，再保证不越过上边（浮层比视口还高时贴顶、底部截断）。 */
-    top = Math.min(top, window.innerHeight - margin - box.height);
+    top = Math.min(top, viewportHeight - margin - box.height);
     if (top < margin) top = margin;
 
-    tooltip.style.left = left + 'px';
-    tooltip.style.top = top + 'px';
+    tooltip.style.left = (left / z) + 'px';
+    tooltip.style.top = (top / z) + 'px';
 }
 
 function hideGrammarTooltip() {
-    const tooltip = __fushiRootNode().querySelector('.grammar-tooltip');
-    if (tooltip) tooltip.style.display = 'none';
+    _grammarPinnedAnchor = null;
+    const root = __fushiRootNode();
+    const tooltip = root.querySelector('.grammar-tooltip');
+    if (!tooltip) return;
+    tooltip.style.display = 'none';
+    tooltip.classList.remove('is-pinned');
+    // 说明属于某一轮查词结果，收起时一并清空（原 closeOverlay 的语义）。
+    const bodyEl = root.querySelector('.grammar-tooltip-body');
+    if (bodyEl) bodyEl.textContent = '';
+    const titleEl = root.querySelector('.grammar-tooltip-title');
+    if (titleEl) titleEl.textContent = '';
 }
 
 // https://github.com/yomidevs/yomitan/blob/c24d4c9b39ceec1b5fd133df774c41972e9ebbdc/ext/js/language/ja/japanese.js#L171
@@ -2313,12 +2381,22 @@ function createDeinflectionTag(tag) {
         textContent: tag.name,
         'data-description': tag.description,
         onclick() {
-            showDescription(this);
+            /* 点击 = 钉住／收起（toggle），与 hover 预览共用同一套浮层，
+               不再另开 `.overlay` 全屏卡片（BUG-2041）。 */
+            if (_grammarPinnedAnchor === this) {
+                hideGrammarTooltip();
+                return;
+            }
+            showGrammarTooltip(this, true);
         },
         onmouseenter() {
-            showGrammarTooltip(this);
+            // 已钉住时，鼠标划过别的标签不抢浮层：钉住是用户的显式选择，
+            // 被划过就顶掉会很跳。要换看哪一条，点它。
+            if (_grammarPinnedAnchor) return;
+            showGrammarTooltip(this, false);
         },
         onmouseleave() {
+            if (_grammarPinnedAnchor) return;
             hideGrammarTooltip();
         }
     });
@@ -4490,7 +4568,6 @@ function scheduleMasonry() {
 window.__fushiPrepareRealmForReuse = () => {
     window._renderGeneration += 1;
     window._renderInProgress = false;
-    closeOverlay();
     hideGrammarTooltip();
     resetEntryStateChecks();
     if (masonryRaf != null) {
@@ -4566,8 +4643,7 @@ window.renderPopup = function() {
     // could append stale cards into the freshly-rendered empty state.
     const gen = ++window._renderGeneration;
     // 变形说明属于上一轮查词结果，不能独立于查询会话存活。它挂在 entries-container
-    // 外面，单纯重建词条 DOM 不会移除，因此每轮渲染必须显式关闭并清空。
-    closeOverlay();
+    // 外面，单纯重建词条 DOM 不会移除，因此每轮渲染必须显式关闭并清空（含钉住态）。
     hideGrammarTooltip();
     // Cancel not-yet-visible status probes from the previous DOM before any new
     // entry headers are built. In-flight probes are epoch-gated on completion.
@@ -5260,6 +5336,11 @@ document.addEventListener('click', (e) => {
     // It also hardens the app-OUT global overlay path (host frameIdAtPoint).
     if (target?.closest('.mine-button') || target?.closest('.audio-button') ||
         target?.closest('.favorite-button')) return;
+    // BUG-2041：语法说明浮层的钉住态是可交互的（选中复制 / 关闭按钮），且它挂在
+    // __fushiOverlayParent() 顶层、**不在 .entry 内**——不豁免就会一路落到本函数末尾
+    // 的 tapOutside，点说明正文直接关掉整个查词窗。被它取代的旧 `.overlay` 卡片同样
+    // 是顶层节点，当年正是这个毛病。
+    if (target?.closest('.grammar-tooltip')) return;
     if (target?.closest('summary')) return;
     if (target?.closest('.glossary-content')) {
         // BUG-767：glossary 内的锚点（MDX 原始 HTML 交叉引用/外链/发音）统一走
@@ -5327,7 +5408,7 @@ document.addEventListener('mousemove', function(e) {
 // hover 只覆盖桌面鼠标，这里补触屏/键盘滚动：任意滚动事件给根节点 + body +
 // 事件目标挂 .popup-scroll-active，900ms 无滚动后整体清除（与 Niratan
 // setPopupScrollIndicatorActive 同法同参）。capture:true 才收得到内部滚动容器
-// （.overlay / .expression-scroll 等）的 scroll（scroll 不冒泡）。
+// （.grammar-tooltip / .expression-scroll 等）的 scroll（scroll 不冒泡）。
 var __fushiPopupScrollIndicatorTimer = 0;
 document.addEventListener('scroll', function (event) {
     var root = document.documentElement;
