@@ -147,6 +147,10 @@ struct HunexGgeRuntimeAnchors {
   uintptr_t surface_compose_second_return = 0;
   uintptr_t surface_compose_final_first_return = 0;
   uintptr_t surface_compose_final_second_return = 0;
+  // BUG-2090：WoH 正文没有 compose 层，draw 直接调 compositor。这是 draw 函数体内
+  // 那唯一一处对 compositor 的调用的返回地址，结构化推导、不写死 RVA。
+  uintptr_t body_compositor_return = 0;
+  uintptr_t body_compositor_return_alt = 0;
   uintptr_t viewport_rect = 0;
   uintptr_t scale_x = 0;
   uintptr_t scale_y = 0;
@@ -1946,6 +1950,109 @@ uint32_t Detour_HunexGgeSurfaceCompositor(
   const uintptr_t return_address =
       reinterpret_cast<uintptr_t>(_ReturnAddress());
   RecordHunexGgeCompositorCallerRva(return_address);
+  // BUG-2090：WoH 正文的直连合成路径。真机证明该引擎的正文是
+  // draw → render_item(逐字形) → compositor，**没有** compose / compose-wrapper 层，
+  // 因此 wrapper_scope 恒假、下面那套 ordinal/candidate/final-link 相关性一次都不成立。
+  // 这里按同样严格的身份判据另开一条直连相关：调用点必须是结构化推导出的
+  // draw→compositor 唯一调用返回地址；本线程必须刚封存过一条正文行且仍新鲜；源表面
+  // 必须与该行末字形位图逐字节相同；目标落点必须正好等于末字形矩形。四者全中才把目标
+  // 表面登记为该行的合成表面。任一不成立即什么都不做，保持 fail-closed。
+  const bool body_compositor_callsite =
+      (g_hunex_gge_anchors.body_compositor_return != 0u &&
+       return_address == g_hunex_gge_anchors.body_compositor_return) ||
+      (g_hunex_gge_anchors.body_compositor_return_alt != 0u &&
+       return_address == g_hunex_gge_anchors.body_compositor_return_alt);
+  if (body_compositor_callsite && destination != nullptr &&
+      source != nullptr) {
+    const HunexGgePendingStoryCompose& story =
+        g_hunex_gge_pending_story_compose;
+    const ULONGLONG now = GetTickCount64();
+    if (story.active && story.render_thread_id == GetCurrentThreadId() &&
+        IsFreshHunexGgeProjectionTick(story.sealed_tick, now)) {
+      InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+          &FushiHunexGgeTraceV3.body_compose_attempts));
+      HunexGgeCpuSurfaceIdentity destination_identity;
+      HunexGgeCpuSurfaceIdentity source_identity;
+      const bool descriptors_ok =
+          ReadHunexGgeCpuSurfaceIdentity(destination, &destination_identity) &&
+          ReadHunexGgeCpuSurfaceIdentity(source, &source_identity);
+      const bool source_ok =
+          descriptors_ok &&
+          SameHunexGgeCpuSurface(source_identity, story.final_glyph_surface);
+      const bool destination_ok =
+          source_ok && destination_x == story.final_glyph_rect.x &&
+          destination_y == story.final_glyph_rect.y;
+      const bool surface_ok =
+          destination_ok && IsSaneHunexGgeCpuSurface(destination_identity);
+      if (source_ok) {
+        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+            &FushiHunexGgeTraceV3.body_compose_source_matches));
+      }
+      if (surface_ok) {
+        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+            &FushiHunexGgeTraceV3.body_compose_published));
+        HunexGgePendingSurfaceChain pending;
+        pending.active = true;
+        pending.generation = static_cast<uint64_t>(InterlockedIncrement64(
+            reinterpret_cast<volatile LONG64*>(
+                &FushiHunexGgeTraceV3.next_sequence)));
+        pending.story_thread_address = story.story_thread_address;
+        pending.raw_text_hash = story.raw_text_hash;
+        pending.render_thread_id = story.render_thread_id;
+        pending.surface = destination_identity;
+        pending.updated_tick = now;
+        g_hunex_gge_pending_surface_chain = pending;
+      } else {
+        fushi_voice_hook::HunexGgeTraceEvent reject;
+        reject.story_line_base = story.story_thread_address;
+        reject.story_line_hash = story.raw_text_hash;
+        // 目标落点与该行末字形矩形一并带出，「差多少」一眼可见。
+        reject.render_x = destination_x;
+        reject.render_y = destination_y;
+        reject.draw_arg12_bits =
+            (static_cast<uint64_t>(
+                 static_cast<uint32_t>(story.final_glyph_rect.x)) &
+             0xFFFFFFFFull) |
+            (static_cast<uint64_t>(
+                 static_cast<uint32_t>(story.final_glyph_rect.y))
+             << 32);
+        if (descriptors_ok) {
+          std::memcpy(reject.descriptor_words, source_identity.words,
+                      sizeof(reject.descriptor_words));
+          // 借 probe 一定会打印的两组字段，把「源表面尺寸」与「该行末字形位图尺寸」
+          // 直接摆出来对比：output_words[21]/[22] 会以 glyph_metrics.bitmap_w/h 打印，
+          // render_item_words[6]/[7] 会以 item_offsets 打印。
+          reject.output_words[21] = source_identity.words[1];
+          reject.output_words[22] = source_identity.words[2];
+          reject.render_item_words[6] =
+              story.final_glyph_surface.words[1];
+          reject.render_item_words[7] =
+              story.final_glyph_surface.words[2];
+          reject.viewport_left =
+              static_cast<int32_t>(source_identity.words[0]);
+          reject.viewport_right = static_cast<int32_t>(
+              story.final_glyph_surface.words[0]);
+        }
+        PublishHunexGgeProjectionDiagnostic(
+            reject,
+            fushi_voice_hook::HunexGgeProjectionTraceStage::kCompositor,
+            !descriptors_ok
+                ? fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                      kBodyComposeDescriptorUnreadable
+                : !source_ok
+                      ? fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                            kBodyComposeSourceMismatch
+                      : !destination_ok
+                            ? fushi_voice_hook::
+                                  HunexGgeProjectionTraceFailure::
+                                      kBodyComposeDestinationMismatch
+                            : fushi_voice_hook::
+                                  HunexGgeProjectionTraceFailure::
+                                      kBodyComposeSurfaceInsane);
+      }
+    }
+  }
+
   auto& context = g_hunex_gge_surface_compose_context;
   uint32_t ordinal = 0u;
   bool zero_mode = false;
@@ -2071,6 +2178,21 @@ uint32_t Detour_HunexGgeTextureUpload(void* wrapper, uint32_t flags) {
   }
   descriptor_read =
       ReadHunexGgeCpuSurfaceIdentity(descriptor, &upload_surface);
+  // BUG-2090：逐字形贴图假设的检验点。只观测、不改变任何行为。
+  if (descriptor_read) {
+    const HunexGgePendingStoryCompose& story =
+        g_hunex_gge_pending_story_compose;
+    if (story.active && story.render_thread_id == GetCurrentThreadId() &&
+        IsFreshHunexGgeProjectionTick(story.sealed_tick, GetTickCount64())) {
+      InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+          &FushiHunexGgeTraceV3.glyph_texture_upload_attempts));
+      if (SameHunexGgeCpuSurface(upload_surface,
+                                 story.final_glyph_surface)) {
+        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+            &FushiHunexGgeTraceV3.glyph_texture_upload_matches));
+      }
+    }
+  }
   const uint32_t result = g_orig_hunex_gge_texture_upload(wrapper, flags);
 
   auto& pending = g_hunex_gge_pending_surface_chain;
@@ -3182,6 +3304,13 @@ bool ScanHunexGgeRuntimeAnchors() {
   const bool body_submit_graph_valid =
       body_submit_graph_matches == 1u && body_submit != nullptr;
   trace->render_item_call_match_count = render_item_call.count;
+  // BUG-2090：draw → compositor 的直连调用点。真机计数证明 WoH 正文不经过 compose/
+  // compose-wrapper（两者零调用），compositor 却被调用；把记录闸门在待定正文行上后，
+  // 唯一调用者落在 draw 函数体内。这里按同一条既有范式结构化推导它，要求**恰好一处**，
+  // 多解或零解一律留 0（下游按 0 判定为不可用，保持 fail-closed）。
+  uintptr_t body_compositor_return = 0u;
+  uintptr_t body_compositor_return_alt = 0u;
+  uint32_t body_compositor_call_count = 0u;
 
   const uint8_t* surface_compose_span = nullptr;
   size_t surface_compose_bytes = 0u;
@@ -3599,6 +3728,33 @@ bool ScanHunexGgeRuntimeAnchors() {
     g_hunex_gge_anchors.surface_compose =
         reinterpret_cast<uintptr_t>(surface_compose);
     g_hunex_gge_anchors.surface_compositor = surface_compositor_target;
+    // draw 跨度内对 compositor 的唯一调用（BUG-2090）。surface_compose_graph_valid
+    // 已保证 surface_compositor_target 可信；这里只多问一句「draw 是否也直接调它」。
+    if (draw_span != nullptr && draw_bytes != 0u) {
+      uintptr_t direct_return = 0u;
+      uintptr_t direct_return_alt = 0u;
+      body_compositor_call_count =
+          fushi_voice_hook::hunex_lookup::FindRel32CallReturnsToTarget(
+              draw_span, draw_bytes, surface_compositor_target,
+              &direct_return, &direct_return_alt);
+      // 实测 WoH 的 draw 里对 compositor 恰有**两处** rel32 调用，运行期只有其中一处
+      // 在正文合成时触发。两处都收进锚点：返回地址只负责把范围**收紧到 draw 函数内**，
+      // 真正的判据是下游逐行的表面身份（源位图 == 该行末字形位图、落点 == 末字形矩形），
+      // 那一关一个字节都不放松。上界仍是 2，出现第三处即判为多解并整体留 0。
+      if (body_compositor_call_count == 1u ||
+          body_compositor_call_count == 2u) {
+        body_compositor_return = direct_return;
+        body_compositor_return_alt =
+            body_compositor_call_count == 2u ? direct_return_alt : 0u;
+      }
+    }
+    g_hunex_gge_anchors.body_compositor_return = body_compositor_return;
+    g_hunex_gge_anchors.body_compositor_return_alt =
+        body_compositor_return_alt;
+    trace->body_compositor_return_rva = HunexGgeRva(body_compositor_return);
+    trace->body_compositor_return_alt_rva =
+        HunexGgeRva(body_compositor_return_alt);
+    trace->body_compositor_call_count = body_compositor_call_count;
     g_hunex_gge_anchors.surface_compose_zero_first_return =
         surface_compose_zero_first_return;
     g_hunex_gge_anchors.surface_compose_zero_second_return =

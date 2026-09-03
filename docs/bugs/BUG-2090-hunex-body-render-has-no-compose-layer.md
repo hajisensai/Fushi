@@ -1,0 +1,17 @@
+## BUG-2090 · WoH 正文渲染没有合成层，HUNEX 几何模型的三级 compose 假设不成立
+- **报告**：2026-09-03（BUG-2089 定位到 compose 锚点假阳性后，继续按真机计数逐步收敛）
+- **真实性**：✅ 真 bug（引擎模型与实际渲染架构不符），全部结论由真机计数支撑。
+- **逐步测得的事实**（每一步都是新增计数/诊断后读出的，不是推断）：
+  1. `compose_wrapper:0`、`compose:0`、`compositor:2740` —— **两个 compose 入口都从未被调用**，compositor 被调用上千次。适配器把 `wrapper_scope` 当作 compositor 相关性的硬前提，因此候选恒为空。
+  2. compositor 的调用者：不加闸门时 `count:4, overflow:1691`（通用 blit，绝大多数与正文无关）；把记录闸门在「本线程刚封存过正文行且仍新鲜」后收敛为 **唯一调用点 `RVA 0x0013535a`**，落在 `draw`（0x133fc0）与 `render_item_return`（0x1355d3）之间，即 **draw 函数体内部**。
+  3. 据此实现了 draw→compositor 的结构化锚点（在 draw 跨度内找对 compositor 的 rel32 调用）。首次实现要求「恰好一处」，真机读出 **`call_count:2`** —— draw 里有**两处**这样的调用，于是 fail-closed 留空。改为接纳两处后，两个锚点均推导成功：`return_rva:0x001352c5`、`alt_rva:0x0013535a`。
+  4. 直连相关性路径随即**开始触发**（trace 首次出现 `stage:2(compositor)` 事件），但内层身份判据不过。把四个子条件拆开报点后得到 **`failure:35(body_compose_source_mismatch)`**：源表面不是该行末字形的位图。
+  5. 再加尝试/命中计数：**`body_compose={attempts:4, source_matches:0, published:0}`**。即待定正文行的新鲜窗内，这个调用点只触发 4 次，且**没有一次**的源表面是该行字形位图；配合被拒事件里 `destination=(0,0)`、源表面 24×25、而该行末字形位图 55×56，可判定**这两处调用不是正文的合成点**。
+- **结论**：**WoH 的正文渲染路径上不存在「把字形位图合成到目标表面」这一层**。适配器的几何模型（wrapper → compose → compositor → texture upload → quad → sprite draw 六段链）假设了一个 WoH 没有的中间结构。`texture_upload` 约 20 万次、`quad_vertex` 约 7~14 万次、`sprite_draw` 约 25 万次的量级，更像**逐字形贴图直绘**而非「整层合成后一次上传」。该假设本轮未能证实（见下）。
+- **[x] ① 已实现的部分（量具 + 直连锚点，几何判据未放宽）**：
+  - trace v4→v10：新增 `kWorker` 段与 9 个 worker 失败码；四个投影 detour 的无条件调用计数；compositor 调用者 RVA 记录（带待定正文行闸门）；`body_compositor_return/alt` 锚点推导结果；直连路径的 attempts/source_matches/published 计数；逐字形贴图假设的 attempts/matches 计数；`kBodyCompose*` 四个失败码。probe 全部可读。
+  - `hook/adapters/hunex_gge_adapter.inc`：在 draw 跨度内结构化推导 draw→compositor 调用点（**不写死 RVA**，上界两处，第三处即判多解并整体留空）；compositor detour 增加一条直连相关性路径，判据与既有同级严格（调用点 + 同线程 + 新鲜 + 源表面逐字节相同 + 落点等于末字形矩形 + 目标表面 sane），任一不成立即什么都不做。
+  - 驱动 `profile`/`state` 现在打印 `statusReason`。
+- **[ ] ② 未完成：正文几何仍未发布** — 逐字形贴图假设的检验计数本轮读到 `glyph_texture={attempts:0,matches:0}`，因为那次会话 lookup 未开启、待定正文行不存在，**该假设既未证实也未证伪**。下一轮的最小动作：确保 lookup 已开启（`lookup_gate` 四位全开）后重读这两个计数；若 `matches>0` 则改为按「字形自己的纹理→quad→sprite」建立几何，整条 compose 段对 HUNEX 不再适用；若仍为 0，则需从 `sprite_draw` 的调用者反查正文绘制路径。
+- **[ ] ③ 未完成：attached 兜底路径被风险/护盾门挡住** — 本轮给驱动加的 `calibrate` 命令**已可用并验证**：提交后 profile 真的写出了 variant（`aspectRatio 1.777`、`bodyRect{0.149,0.442,0.678,0.134}`、`fontSizePerClientHeight 0.042`、`lineHeight 1.75`），且**跨进程重启后仍在**，状态一度从 `suspended` 变为 `waitingForBodyThread`，运行期日志也出现过一拍 `attachedReady=true`。但随后稳定停在 `needsRiskAcceptance`（`statusReason=null`），而此时 `profile.unsafeLeftClickAccepted=true`、文本在流、variant 与客户区 aspect 匹配。同时 `lookup_gate` 缺 `shield_ready` 位。按代码 `ShieldPermitsLookup() = !ShieldFaulted() && (ShieldVerified() || risk_accepted_)`，Dart 侧确实透传了 `riskAccepted:true`（`flutter_window.cpp` 的 `attachedConfigure` 取值正确），因此该状态的来源尚未定位——**这是下一轮该查的第一个边界**，因为它比几何更靠前，且一旦打通，attached 路径本身已实现全部四项目标行为（吞点击、Shift 悬浮、关弹窗不推进、带图与整句音频，见 BUG-2053）。
+- **备注**：`engine-support.yaml` 的 `hunex_gge` 不提升，仍 `implemented_unverified`。真机链路当前状态：`process_found → helper_ready → ipc_ready → text_ready ✅ → text_thread_selected ✅（逐进程需重选，见 BUG-2088）→ 选中文本绑定 ✅ → 几何证据 ❌`。**用户目标「点击可查词制卡且不进入下一句」在 WoH 上尚未达成**，两条可能通路（原生几何 / attached 兜底）各自的下一步动作已列在 ② ③。

@@ -204,7 +204,8 @@ void main() {
         ..write('pid=${s.gamePid} audio=${s.audioBackend.name} ')
         ..write('fallback=${s.fallbackReason} err=${s.lastError} ')
         ..write(
-            'attached=${GalHookTextOverlayController.instance.attachedText.status.name} ')
+            'attached=${GalHookTextOverlayController.instance.attachedText.status.name}'
+            '/${GalHookTextOverlayController.instance.attachedText.statusReason} ')
         ..write('lines=${text.entries.length}');
       return sb.toString();
     }
@@ -288,6 +289,7 @@ void main() {
               final GalAttachedTextController attached =
                   GalHookTextOverlayController.instance.attachedText;
               out('#$seq profile status=${attached.status.name} '
+                  'reason=${attached.statusReason} '
                   'profile=${attached.profile?.toJson()} '
                   'request=${attached.unsafeRiskAcceptanceRequest?.exePath}/'
                   '${attached.unsafeRiskAcceptanceRequest?.exeSha256}');

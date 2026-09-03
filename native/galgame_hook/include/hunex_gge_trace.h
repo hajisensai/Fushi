@@ -14,7 +14,7 @@ inline constexpr char kHunexGgeTraceExportName[] = "FushiHunexGgeTraceV3";
 inline constexpr uint32_t kHunexGgeTraceMagic = 0x33544748u;  // "HGT3"
 // v4（BUG-2089）：头部增加四个投影 detour 的调用计数。probe 与 helper 同源构建，
 // 版本号不匹配时 probe 直接拒读，不存在跨版本误解释。
-inline constexpr uint32_t kHunexGgeTraceVersion = 6u;
+inline constexpr uint32_t kHunexGgeTraceVersion = 10u;
 inline constexpr uint32_t kHunexGgeTraceCapacity = 512u;
 
 enum class HunexGgeTraceKind : uint32_t {
@@ -99,6 +99,12 @@ enum class HunexGgeProjectionTraceFailure : int32_t {
   kWorkerEvidenceStale = 31,
   kWorkerAffineRejected = 32,
   kWorkerClientTransformRejected = 33,
+  // 34..37 = BUG-2090 直连正文合成路径（draw → compositor）。四个子条件必须分开报，
+  // 否则又回到「一个码盖住四种原因」的老问题。
+  kBodyComposeDescriptorUnreadable = 34,
+  kBodyComposeSourceMismatch = 35,
+  kBodyComposeDestinationMismatch = 36,
+  kBodyComposeSurfaceInsane = 37,
 };
 
 enum HunexGgeTraceScannerStatus : uint32_t {
@@ -290,6 +296,21 @@ struct alignas(8) HunexGgeTraceBuffer {
   uint32_t compositor_caller_rvas[4] = {};
   uint32_t compositor_caller_rva_count = 0;
   uint32_t compositor_caller_rva_overflow = 0;
+  // v7（BUG-2090）：draw→compositor 直连锚点的推导结果。0 表示没推导出来（rel32 扫描
+  // 零解或多解），据此可分辨「锚点没建立」与「建立了但运行期判据不成立」。
+  uint32_t body_compositor_return_rva = 0;
+  uint32_t body_compositor_call_count = 0;
+  uint32_t body_compositor_return_alt_rva = 0;
+  uint32_t body_compositor_reserved = 0;
+  // v9：直连正文合成路径的尝试/命中/发布计数。诊断事件按 (行, 阶段, 失败码) 去重，
+  // 只能看到**第一条**失败，无法回答「后面有没有一次命中」。计数才能。
+  int64_t body_compose_attempts = 0;
+  int64_t body_compose_source_matches = 0;
+  int64_t body_compose_published = 0;
+  // v10：检验「逐字形贴图」假设。若 WoH 把每个字形位图直接上传为纹理再画成 quad，
+  // 那么待定正文行新鲜期内，应能观察到 upload 的表面**就是**该行末字形的位图。
+  int64_t glyph_texture_upload_attempts = 0;
+  int64_t glyph_texture_upload_matches = 0;
   int64_t texture_upload_calls = 0;
   int64_t quad_vertex_calls = 0;
   int64_t sprite_draw_calls = 0;
@@ -330,7 +351,7 @@ static_assert(offsetof(HunexGgeTraceEvent, lookup_gate_mask) == 440,
               "HUNEX/GGE lookup diagnostic trace ABI drifted");
 static_assert(sizeof(HunexGgeTraceSlot) == 464,
               "HUNEX/GGE trace slot ABI drifted");
-static_assert(offsetof(HunexGgeTraceBuffer, slots) == 256,
+static_assert(offsetof(HunexGgeTraceBuffer, slots) == 312,
               "HUNEX/GGE trace header ABI drifted");
 
 }  // namespace fushi_voice_hook

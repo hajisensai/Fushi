@@ -848,6 +848,15 @@ struct alignas(8) HunexGgeTraceHeaderSnapshot {
   uint32_t compositor_caller_rvas[4] = {};
   uint32_t compositor_caller_rva_count = 0;
   uint32_t compositor_caller_rva_overflow = 0;
+  uint32_t body_compositor_return_rva = 0;
+  uint32_t body_compositor_call_count = 0;
+  uint32_t body_compositor_return_alt_rva = 0;
+  uint32_t body_compositor_reserved = 0;
+  int64_t body_compose_attempts = 0;
+  int64_t body_compose_source_matches = 0;
+  int64_t body_compose_published = 0;
+  int64_t glyph_texture_upload_attempts = 0;
+  int64_t glyph_texture_upload_matches = 0;
   int64_t texture_upload_calls = 0;
   int64_t quad_vertex_calls = 0;
   int64_t sprite_draw_calls = 0;
@@ -1285,6 +1294,10 @@ const char* HunexGgeProjectionFailureName(int32_t failure) {
     case Failure::kWorkerEvidenceStale: return "worker_evidence_stale";
     case Failure::kWorkerAffineRejected: return "worker_affine_rejected";
     case Failure::kWorkerClientTransformRejected: return "worker_client_transform_rejected";
+    case Failure::kBodyComposeDescriptorUnreadable: return "body_compose_descriptor_unreadable";
+    case Failure::kBodyComposeSourceMismatch: return "body_compose_source_mismatch";
+    case Failure::kBodyComposeDestinationMismatch: return "body_compose_destination_mismatch";
+    case Failure::kBodyComposeSurfaceInsane: return "body_compose_surface_insane";
   }
   return "unknown";
 }
@@ -2088,6 +2101,17 @@ bool DumpHunexGgeTrace(DWORD pid) {
          header.compositor_caller_rva_overflow,
          header.compositor_caller_rvas[0], header.compositor_caller_rvas[1],
          header.compositor_caller_rvas[2], header.compositor_caller_rvas[3]);
+  printf(" body_compositor={return_rva:%08x,alt_rva:%08x,call_count:%u}",
+         header.body_compositor_return_rva,
+         header.body_compositor_return_alt_rva,
+         header.body_compositor_call_count);
+  printf(" body_compose={attempts:%lld,source_matches:%lld,published:%lld}",
+         static_cast<long long>(header.body_compose_attempts),
+         static_cast<long long>(header.body_compose_source_matches),
+         static_cast<long long>(header.body_compose_published));
+  printf(" glyph_texture={attempts:%lld,matches:%lld}",
+         static_cast<long long>(header.glyph_texture_upload_attempts),
+         static_cast<long long>(header.glyph_texture_upload_matches));
   PrintHunexGgeScannerStatus(header.scanner_status);
   PrintHunexGgeLookupGate(header.lookup_gate_mask);
   PrintHunexGgeCaptureQuarantine(
