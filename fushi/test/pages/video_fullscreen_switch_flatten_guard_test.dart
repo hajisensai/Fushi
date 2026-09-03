@@ -45,15 +45,6 @@ void main() {
   late String fullscreenSrc;
   late String pageSrc;
 
-  /// 剥掉注释，避免注释里提到的符号被 indexOf 先命中。
-  ///
-  /// 走共享词法原语而不是手写 `startsWith('//')`（`source_guard_adoption_test`
-  /// 钉的就是这条）：手写形态只跳 `//` 开头的整行——块注释 `/* needle */` 与行尾
-  /// 注释一概放行，于是「实现删光、注释里留着字面量」能把要求型断言骗绿；删行
-  /// 还会让后续 indexOf/substring 的下标与原文错位。`maskComments` 把注释换成
-  /// **等长空白**，下标与原文逐字节对齐。
-  String stripLineComments(String src) => maskComments(src);
-
   setUpAll(() {
     for (final File f in <File>[episodePart, fullscreenPart, pageFile]) {
       expect(f.existsSync(), isTrue, reason: '缺文件 ${f.path}');
@@ -67,12 +58,12 @@ void main() {
     // 方法体终点锚：下一个 `\n  /// ` 文档注释（_showEpisodeList 前）。
     final int end = episodeSrc.indexOf('\n  /// ', start);
     expect(end, greaterThan(start), reason: '找不到 _switchEpisode 方法体终点');
-    switchBody = stripLineComments(episodeSrc.substring(start, end));
+    switchBody = maskComments(episodeSrc.substring(start, end));
 
-    fullscreenSrc = stripLineComments(
+    fullscreenSrc = maskComments(
       fullscreenPart.readAsStringSync().replaceAll('\r\n', '\n'),
     );
-    pageSrc = stripLineComments(
+    pageSrc = maskComments(
       pageFile.readAsStringSync().replaceAll('\r\n', '\n'),
     );
   });

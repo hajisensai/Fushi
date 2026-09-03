@@ -14,7 +14,10 @@ import 'package:flutter_test/flutter_test.dart';
 ///   * a collapsed selection (tap single point) -> byte-identical to the
 ///     start-sentence-only behaviour (never-break constraint);
 ///   * a reversed / discontiguous (cross-block) span -> conservative fallback to
-///     the start sentence.
+///     the start sentence;
+///   * BUG-2058: `getNormalizedOffset` 的边界值（句首 / 句中 / 句尾 / 跨节点 / 西文
+///     词中前缀）在**真**学习单位口径下逐点对上 —— harness 直接跑
+///     `reader_study_unit_script.dart` 的 `kStudyUnitJs`，与真机注入同一个常量。
 ///
 /// The JS runs via Node (same harness pattern as
 /// reader_get_sentence_context_boundary_test). When no `node` is on PATH the
@@ -52,8 +55,8 @@ void main() {
     final String stdout = result.stdout.toString();
     expect(stdout, contains('all assertions passed'),
         reason: 'harness must reach its success marker');
-    expect(stdout, contains('passed 6 cases'),
-        reason: 'all six span cases must run');
+    expect(stdout, contains('passed 7 cases'),
+        reason: 'all seven span cases must run');
   });
 }
 

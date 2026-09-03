@@ -251,7 +251,7 @@ class EpubImporter {
                 'mediaType': entry.value.mediaType,
                 'characters': characterCounts[entry.key],
                 // TODO-1192: 标记该 characters 计数的口径版本，供开书判定是否需
-                // 要按新口径（[japaneseCharCount]）后台重算并回写（见
+                // 要按新口径（`countStudyChars`）后台重算并回写（见
                 // [kChapterCharCountCaliber] / charCountsFromChaptersJson）。
                 'charCaliber': kChapterCharCountCaliber,
               })
