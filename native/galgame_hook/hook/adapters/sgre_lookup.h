@@ -215,6 +215,15 @@ inline float SgreLookupRenderScale(int32_t client_width,
           static_cast<float>(kSgreDesignHeight));
 }
 
+// text_generation carried by a hit publication: the text-lane seq the exact
+// line was published with (what the host mines by), falling back to the
+// lookup capture generation only when the text lane never published the line
+// (keeps the hit well-formed; the host then fails closed on mining as before).
+inline uint64_t SgreLookupHitTextGeneration(uint64_t text_seq,
+                                            uint64_t capture_generation) {
+  return text_seq != 0 ? text_seq : capture_generation;
+}
+
 // Expected scenario line height for a client size; 0 when unknown.
 inline float SgreScenarioLineHeightForClient(int32_t client_width,
                                              int32_t client_height) {

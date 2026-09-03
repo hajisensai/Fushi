@@ -498,6 +498,10 @@ int main() {
                                                            expected_1080p));
   assert(!fushi_voice_hook::MatchesSgreScenarioDrawMetrics(80.0f, 80.0f, false,
                                                            expected_4k));
+  // A hit's text_generation is the text-lane seq of the exact line (what the
+  // host mines by); the capture generation is only a well-formedness fallback.
+  assert(fushi_voice_hook::SgreLookupHitTextGeneration(43, 11) == 43);
+  assert(fushi_voice_hook::SgreLookupHitTextGeneration(0, 11) == 11);
   // Client size unknown (shield not published yet): self-consistency band only.
   assert(fushi_voice_hook::MatchesSgreScenarioDrawMetrics(40.0f, 40.0f, true,
                                                           0.0f));

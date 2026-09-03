@@ -104,6 +104,10 @@ struct SgreLookupCapture {
   uint32_t glyph_count = 0;
   float line_height = 0.0f;
   ULONGLONG captured_tick = 0;
+  // Text-lane seq of the exact line this capture was drawn from (0 = the text
+  // lane did not publish it). The host resolves a lookup hit back to the
+  // occurrence it mines by this seq, so the hit publication must carry it.
+  uint64_t text_seq = 0;
   wchar_t text[kSgreLookupMaxTextUnits] = {};
   fushi_voice_hook::SgreLookupGlyphGeometry glyphs[kSgreLookupMaxGlyphs] = {};
   uint8_t glyph_spaces[kSgreLookupMaxGlyphs] = {};
@@ -147,6 +151,8 @@ uint64_t g_sgre_lookup_active_generation = 0;
 uint64_t g_sgre_lookup_generation_counter = 0;
 ULONGLONG g_sgre_lookup_active_capture_tick = 0;
 uint32_t g_sgre_last_text_units = 0;
+// Text-lane seq of the last published exact line (duplicates keep it).
+uint64_t g_sgre_last_text_seq = 0;
 wchar_t g_sgre_last_text[kSgreLookupMaxTextUnits] = {};
 volatile LONG g_sgre_lookup_structure_state = 0;
 volatile LONG g_sgre_direct_input_structure_state = 0;
@@ -1203,6 +1209,7 @@ void PublishSgreLookupCaptureSnapshot(const SgreLookupCapture& snapshot) {
   capture->glyph_count = snapshot.glyph_count;
   capture->line_height = snapshot.line_height;
   capture->captured_tick = snapshot.captured_tick;
+  capture->text_seq = snapshot.text_seq;
   if (snapshot.text_units != 0) {
     memcpy(capture->text, snapshot.text,
            static_cast<size_t>(snapshot.text_units) * sizeof(wchar_t));
@@ -1219,16 +1226,21 @@ void ResetSgreExactTextDedup() {
   if (!g_text_cs_ready) return;
   EnterCriticalSection(&g_text_cs);
   g_sgre_last_text_units = 0;
+  g_sgre_last_text_seq = 0;
   memset(g_sgre_last_text, 0, sizeof(g_sgre_last_text));
   LeaveCriticalSection(&g_text_cs);
 }
 
-void PublishSgreExactText(const SgreLookupCapture& snapshot,
-                          void* text_surface) {
+// Publishes the exact line to the text lane (deduplicated against the last
+// published text) and returns the text-lane seq that identifies this line:
+// the fresh seq on a new line, the retained seq on a redraw of the same
+// text, 0 when nothing was published.
+uint64_t PublishSgreExactText(const SgreLookupCapture& snapshot,
+                              void* text_surface) {
   if (!g_capture_enabled || g_header == nullptr || g_text_base == nullptr ||
       !g_text_cs_ready || snapshot.text_units == 0 ||
       snapshot.text_units > kSgreLookupMaxTextUnits) {
-    return;
+    return 0;
   }
 
   // This identity describes the SGRE/wind3d11 scenario renderer ABI, not a
@@ -1264,8 +1276,10 @@ void PublishSgreExactText(const SgreLookupCapture& snapshot,
     if (published != 0) {
       memcpy(g_sgre_last_text, snapshot.text, bytes);
       g_sgre_last_text_units = snapshot.text_units;
+      g_sgre_last_text_seq = published;
     }
   }
+  const uint64_t text_seq = g_sgre_last_text_seq;
   LeaveCriticalSection(&g_text_cs);
 
   g_sgre_text_scenario_surface.store(text_surface,
@@ -1274,6 +1288,7 @@ void PublishSgreExactText(const SgreLookupCapture& snapshot,
   // field name says Luna, but its contract is simply "an exact text producer
   // is active" (Siglus uses it the same way).
   g_header->luna_active = 1;
+  return text_seq;
 }
 
 void CaptureSgreLookupDrawState(void* text_surface) {
@@ -1289,7 +1304,9 @@ void CaptureSgreLookupDrawState(void* text_surface) {
   const SgreLookupCaptureResult capture_result =
       CopySgreLookupDrawState(text_surface, &snapshot);
   if (capture_result == SgreLookupCaptureResult::kOk) {
-    if (text_requested) PublishSgreExactText(snapshot, text_surface);
+    if (text_requested) {
+      snapshot.text_seq = PublishSgreExactText(snapshot, text_surface);
+    }
     if (!lookup_requested) return;
     snapshot.valid = 1;
     snapshot.captured_tick = GetTickCount64();
@@ -1836,11 +1853,13 @@ bool AppendSgreLookupCapture(const SgreLookupCapture& source,
       std::max(destination->line_height, source.line_height);
   destination->captured_tick =
       std::max(destination->captured_tick, source.captured_tick);
+  // The scenario capture carries the text-lane seq; UI runs carry 0.
+  if (source.text_seq != 0) destination->text_seq = source.text_seq;
   destination->valid = 1;
   return true;
 }
 
-bool PublishSgreLookupHit(uint64_t capture_generation,
+bool PublishSgreLookupHit(uint64_t capture_generation, uint64_t text_seq,
                           const std::wstring& line, uint32_t char_index,
                           const fushi_voice_hook::SgreLookupRect& rect,
                           int32_t client_width, int32_t client_height) {
@@ -1862,7 +1881,13 @@ bool PublishSgreLookupHit(uint64_t capture_generation,
   publication.coordinate_space =
       fushi_voice_hook::kLookupCoordinateSpaceClientPhysicalPixels;
   publication.writing_mode = fushi_voice_hook::kLookupWritingModeHorizontal;
-  publication.text_generation = capture_generation;
+  // BUG-2085: the host resolves the mined occurrence by
+  // TexthookerLineEntry.sourceSequence == hit.textGeneration, i.e. the
+  // text-lane seq the exact line was published with. The lookup capture
+  // generation is a different counter and never matched, so every in-game
+  // card mining on SGRE failed closed ("ankiConnect: false").
+  publication.text_generation = fushi_voice_hook::SgreLookupHitTextGeneration(
+      text_seq, capture_generation);
   publication.geometry_generation = capture_generation;
   publication.glyph_x = rect.x;
   publication.glyph_y = rect.y;
@@ -1967,8 +1992,12 @@ bool PublishSgreLookupClickPayload(const SgreLookupClickPayload& payload) {
     return false;
   }
   const std::wstring line(payload.text, payload.text + payload.text_units);
+  // IsSgreLookupPayloadCurrent pins the payload to the active capture's
+  // logical generation, so the active capture's text-lane seq is the seq of
+  // exactly this line.
   if (!IsSgreLookupPayloadCurrent(payload) ||
-      !PublishSgreLookupHit(payload.logical_generation, line,
+      !PublishSgreLookupHit(payload.logical_generation,
+                            g_sgre_lookup_active_capture.text_seq, line,
                             payload.char_index,
                             payload.rect, payload.client_width,
                             payload.client_height)) {
