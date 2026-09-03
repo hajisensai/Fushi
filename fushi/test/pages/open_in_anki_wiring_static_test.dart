@@ -1,7 +1,8 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+
+import '../helpers/source_guard.dart';
 
 /// TODO-1360 / BUG-2051：「已制卡的词旁 ↗『在 Anki 中打开卡片』按钮」可达性链路的
 /// 源码守卫。锁住 openInAnki 从 popup.js（仅已制卡显示 + 点击调宿主）→ webview handler
@@ -127,12 +128,10 @@ void main() {
   // 打开」——那正是本 bug 的成因（同一个问题两条判据各查各的）换个位置重来。
   // 所以下面三条按**目录枚举**扫全树：新文件自动落进扫描面，白名单之外一出现就红。
 
-  /// 源码判据必须剥注释：文档注释里到处写着 [BaseAnkiRepository.openWordInAnki]，
-  /// 不剥的话每个提到它的文件都会被算成调用点，断言直接失去判别力。
-  String stripComments(String src) => const LineSplitter()
-      .convert(src)
-      .where((String line) => !line.trimLeft().startsWith('//'))
-      .join('\n');
+  // 源码判据必须剥注释：文档注释里到处写着 [BaseAnkiRepository.openWordInAnki]，
+  // 不剥的话每个提到它的文件都会被算成调用点，断言直接失去判别力。
+  // 用仓库的 maskComments 而不是手写 startsWith('//')——后者只认行注释、放过
+  // /* ... */ 块注释，而且 source_guard_adoption_test 明令禁止手写这一套。
 
   List<String> dartFilesUnder(String dir) {
     final Directory root = Directory(dir);
@@ -150,7 +149,7 @@ void main() {
   Set<String> filesWhere(String dir, bool Function(String code) predicate) {
     return <String>{
       for (final String path in dartFilesUnder(dir))
-        if (predicate(stripComments(File(path).readAsStringSync()))) path,
+        if (predicate(maskComments(File(path).readAsStringSync()))) path,
     };
   }
 
