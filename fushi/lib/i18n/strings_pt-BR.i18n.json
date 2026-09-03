@@ -4178,5 +4178,10 @@
   "discovery_opds_allow_http_hint": "Necessário para um servidor auto-hospedado na sua rede local",
   "discovery_opds_test": "Testar conexão",
   "discovery_opds_test_ok": "Conectado. O catálogo raiz tem ${count} itens",
-  "discovery_opds_test_failed": "Falha na conexão: ${reason}"
+  "discovery_opds_test_failed": "Falha na conexão: ${reason}",
+  "onboarding_pack_status_downloading": "Downloading recommended pack",
+  "onboarding_pack_status_ready": "Recommended pack downloaded",
+  "onboarding_pack_import_now": "Import now",
+  "onboarding_pack_download_finished": "Recommended pack finished downloading. Import it from Settings → System.",
+  "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System."
 }

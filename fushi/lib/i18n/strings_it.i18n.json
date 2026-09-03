@@ -4178,5 +4178,10 @@
   "discovery_opds_allow_http_hint": "Necessario per un server self-hosted sulla rete locale",
   "discovery_opds_test": "Prova connessione",
   "discovery_opds_test_ok": "Connesso. Il catalogo radice ha ${count} voci",
-  "discovery_opds_test_failed": "Connessione non riuscita: ${reason}"
+  "discovery_opds_test_failed": "Connessione non riuscita: ${reason}",
+  "onboarding_pack_status_downloading": "Downloading recommended pack",
+  "onboarding_pack_status_ready": "Recommended pack downloaded",
+  "onboarding_pack_import_now": "Import now",
+  "onboarding_pack_download_finished": "Recommended pack finished downloading. Import it from Settings → System.",
+  "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System."
 }

@@ -4178,5 +4178,10 @@
   "discovery_opds_allow_http_hint": "Yerel ağdaki kendi sunucun için gerekli",
   "discovery_opds_test": "Bağlantıyı sına",
   "discovery_opds_test_ok": "Bağlanıldı. Kök katalogda ${count} girdi var",
-  "discovery_opds_test_failed": "Bağlantı başarısız: ${reason}"
+  "discovery_opds_test_failed": "Bağlantı başarısız: ${reason}",
+  "onboarding_pack_status_downloading": "Downloading recommended pack",
+  "onboarding_pack_status_ready": "Recommended pack downloaded",
+  "onboarding_pack_import_now": "Import now",
+  "onboarding_pack_download_finished": "Recommended pack finished downloading. Import it from Settings → System.",
+  "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System."
 }
