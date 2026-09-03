@@ -1745,6 +1745,37 @@ JSON.stringify((function(){
         // 全局 window.onerror / unhandledrejection + 渲染 catch，经此桥把 {source,message,stack}
         // 回传，落 ErrorLogService（错误日志页可见）。四查词表面（书内 / 视频 / 首页 / app 外悬浮）
         // 共用本 WebView，一处接通全覆盖。
+        // 词典自带脚本的源码通道（dict-media.js 的 fetchDictAsset）。MDX 条目
+        // HTML 里的 <script src> 指向 .mdd 内的文件或 .mdx 旁的散文件，native
+        // 导入时已把两者收进同一个媒体库，这里按名取回文本。
+        //
+        // 只放行 .js：这个桥的用途就是取脚本，其余媒体（图片/音频/字体）各有自己
+        // 的 image:// / dictmedia:// 通道，没有理由从这里以文本形式倒出来。
+        controller.addJavaScriptHandler(
+          handlerName: 'getDictAsset',
+          callback: (args) {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.getDictAsset',
+              null,
+              ErrorLogService.instance,
+              () {
+                final Object? raw = args.isNotEmpty ? args.first : null;
+                if (raw is! Map) return null;
+                final String dictionary = raw['dictionary'] as String? ?? '';
+                final String path = raw['path'] as String? ?? '';
+                if (dictionary.isEmpty || path.isEmpty) return null;
+                if (!path.toLowerCase().endsWith('.js')) return null;
+                final Uint8List? bytes = FushiDicts.instance.getMediaFile(
+                  dictionary,
+                  path,
+                );
+                if (bytes == null || bytes.isEmpty) return null;
+                return utf8.decode(bytes, allowMalformed: true);
+              },
+            );
+          },
+        );
+
         controller.addJavaScriptHandler(
           handlerName: 'reportJsError',
           callback: (args) {
