@@ -39,6 +39,10 @@ void main() {
       const List<String> consumers = <String>[
         'lib/src/pages/implementations/anime_download_dialog.dart',
         'lib/src/media/torrent/anime_download_subscription.dart',
+        // BUG-2079：NyaaClient 自己也是消费方——注册表路径
+        // （nyaa_discovery_source / nyaa_resource_provider）的调用点没有外层
+        // 超时，所以时限必须落在 client 上；同样不许在这里重新长出裸 20s。
+        'lib/src/media/torrent/nyaa_client.dart',
       ];
       // `.timeout(` 后面直接跟 Duration(...) 的写法即为漏网魔法数字。
       // `const` 可省，故设为可选——只匹配 `const Duration` 的正则会被
@@ -47,7 +51,12 @@ void main() {
       for (final String path in consumers) {
         final File file = File(path);
         expect(file.existsSync(), isTrue, reason: '找不到 $path（文件被移动？）');
-        final String src = file.readAsStringSync();
+        // 剥注释后再判：doc comment 里提一句 `kDownloadDiscoveryTimeout`
+        // 不算消费——那正是本文件测试 C 已经防过的「注释在说代码没做的事」，
+        // 加进 nyaa_client.dart 后这条尤其要紧（它的常量既出现在注释里也
+        // 出现在默认参数值里，不剥注释就分不出两者）。maskComments 等长
+        // 替换，正则偏移与原串一致。
+        final String src = maskComments(file.readAsStringSync());
         expect(
           bare.hasMatch(src),
           isFalse,
