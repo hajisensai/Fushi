@@ -129,7 +129,7 @@ void main() {
         reason: '手动发布通道不得连带被删');
     expect(workflow, contains('\n  release:\n'),
         reason: '手动发 GitHub Release 的触发器不得连带被删');
-    expect(workflow, isNot(contains(r"#   branches:")),
+    expect(workflow, isNot(contains(r'#   branches:')),
         reason: '不得残留注释形态的 push 块（避免双份 branches 清单漂开）');
     expect(workflow, contains('Release channel: debug, beta, or formal'));
     expect(workflow, contains('- debug'));

@@ -480,6 +480,46 @@ void main() {
     });
   });
 
+  // BUG-2082 — showBelow 是本函数**自己**的判据，必须原样交给调用方：返回的 top
+  // 经 screenBorderPadding clamp、height 又按锚侧空间收缩，`top < selY` 这类反推
+  // 在「卡片比锚侧空间大得多」时会给出相反结论。
+  group('showBelow 由函数自报，不许从 top 反推', () {
+    test('下方空间够 -> showBelow true；不够 -> false（翻到上方）', () {
+      final GlobalLookupFrameRect below = computeFrameRect(
+        selectionRect: const Rect.fromLTWH(300, 300, 40, 40),
+        screenW: 1280,
+        screenH: 720,
+        maxWidth: 600,
+        maxHeight: 560,
+        isVertical: false,
+      );
+      expect(below.showBelow, isTrue);
+      expect(below.top, 344);
+
+      final GlobalLookupFrameRect above = computeFrameRect(
+        selectionRect: const Rect.fromLTWH(300, 640, 40, 40),
+        screenW: 1280,
+        screenH: 720,
+        maxWidth: 600,
+        maxHeight: 560,
+        isVertical: false,
+      );
+      expect(above.showBelow, isFalse);
+    });
+
+    test('竖排放左/右，不存在上下翻转 -> 恒 true', () {
+      final GlobalLookupFrameRect r = computeFrameRect(
+        selectionRect: const Rect.fromLTWH(300, 640, 40, 40),
+        screenW: 1280,
+        screenH: 720,
+        maxWidth: 300,
+        maxHeight: 560,
+        isVertical: true,
+      );
+      expect(r.showBelow, isTrue);
+    });
+  });
+
   group('GlobalLookupFrameRect data class', () {
     test('centerX/centerY derived plus value equality', () {
       const GlobalLookupFrameRect a = GlobalLookupFrameRect(
@@ -487,6 +527,7 @@ void main() {
         top: 20,
         width: 100,
         height: 50,
+        showBelow: true,
       );
       expect(a.centerX, 60);
       expect(a.centerY, 45);
@@ -495,9 +536,18 @@ void main() {
         top: 20,
         width: 100,
         height: 50,
+        showBelow: true,
       );
       expect(a, b);
       expect(a.hashCode, b.hashCode);
+      const GlobalLookupFrameRect flipped = GlobalLookupFrameRect(
+        left: 10,
+        top: 20,
+        width: 100,
+        height: 50,
+        showBelow: false,
+      );
+      expect(a, isNot(flipped));
     });
   });
 

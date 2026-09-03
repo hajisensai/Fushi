@@ -59,6 +59,19 @@
 | 制卡 | note 1788380145993：Sentence 「……<b>はい</b>」、Picture AVIF、SentenceAudio = **5 s 系统混音降级**（`engine_utterance_unavailable`，75 条全部降级）→ BUG-2070（wuopus 语音未进资源/PCM 路径，需 native 侧另开） |
 | 观察 | Ctrl 快进时 TextRender 连续重绘被折叠成一条超长台词（已拆出 **BUG-2078**，现象已观察、根因未定） |
 
+## 下午：用户复验（worktree 构建，SGRE 窗口模式）暴露的四条真 bug
+
+用户报「音频捕获全空、悬浮无高亮、弹窗位置不对、默认线程选错、内嵌查词没反应」。逐条追到根因（全部真机复现，windowed 1942×1136）：
+
+| 号 | 侧 | 根因 | 修法 | 真机复验 |
+|---|---|---|---|---|
+| BUG-2082 | Dart | 游戏内卡片按 8 MB 位图上限尺寸算左上角，4K 下 cap 高 1087 vs 实际 773，翻到台词上方空 314 px | 宿主上报根卡高度；`GalRootPlacement` 以贴字形的边为不动点 | 窗口 1080p：anchor y=178 + 卡高 648 = 826 = 字形顶 − 4，卡片紧贴台词 |
+| BUG-2083 | hook | `MatchesSgreScenarioDrawMetrics` 钉死行高 80（4K 全屏实测值）；引擎字格随渲染尺寸缩放，1080p 行高 40 被判 kSurfaceMetrics → 无 SGRE exact 线程、geometry=0/0、查词全断、只能选 UserHook1（**这就是「默认线程选错」「内嵌查词没反应」「音频空」的共同根因**；Alt+Enter 切全屏后 5 s 内 0/0→2/5 是判定证据） | 期望行高 = 40 × min(client/1920, client/1080)，客户区未知退自洽带 | 三次窗口启动均 `geometry=2/5`，SGRE exact 自动选中，逐句 game_resource 音频就绪 |
+| BUG-2084 | Dart | 渐进折叠只看缓冲区尾巴，系统串线程插队就断链 | 向前找同端点最近一条（回看 32） | 测试锁定；真机「ねぇね」3 字按既定「过短不折」规则仍单列 |
+| BUG-2085 | hook | 点击载荷 `text_generation` 填成查词捕获代数，host 按文本行序号解析 occurrence 恒 fail closed → 游戏内「+」恒 `ankiConnect:false` | `PublishSgreExactText` 返回文本通道 seq 随快照透传 | 命中 `generation=43/10`；note 1788410725159：整句 AAC 3.55 s（无静音间隙）、AVIF 3.875 s |
+
+未修：SGRE 悬浮高亮（只有 KiriKiri 适配器画选区高亮，SGRE 侧无实现，需 native 另开）；工作台把配对资源条目原始长度（21.93 s）标在行上而制卡已按发声窗裁到整句，标签口径待议；Siglus 的 `text_generation` 同病未改。
+
 ## 未做 / 堵塞
 
 - SGRE：逐句资源音频的**字节哈希一致性**与**纯人声分类**两项证据未采（yaml evidence 已显式写明缺失）；DirectInput 盾 1,000 次交易门未跑；那 1 次泄漏未定根因（怀疑 needsRiskAcceptance→activeNative 正边沿与首张卡 Reveal 的 LL 钩子装配竞态，需要在改代码前先做可复现实验）；新构建真机复验三条 host 改动待做。

@@ -919,6 +919,40 @@ function commitLatestGeometry(host) {
   assert.strictEqual(layer.style.top, '0px', 'commitLayerShift shifts by -minTop');
 }
 
+// 11b. BUG-2082 — the overlaySize box also carries the ROOT card's own measured
+//      height. The union bbox alone cannot express it (a nested child extends
+//      the union past the root's bottom), and the in-game presenter anchors the
+//      root by the edge that touches the clicked glyph, so it needs the ROOT
+//      height, not the union's. rootHeight is also part of the de-dup key: a
+//      root that shrinks under a taller child leaves the union unchanged.
+{
+  const { host } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 100, height: 80 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: -40, top: 60, width: 100, height: 80 }, settingsJs: '' },
+    ],
+  });
+  const box = hostPostLog.filter((m) => m.handler === 'overlaySize').pop().args[1];
+  assert.strictEqual(box.height, 140, 'precondition: the child extends the union bbox');
+  assert.strictEqual(box.rootHeight, 80,
+    'overlaySize reports the ROOT shell height, not the union height');
+
+  // Shrink the root only. The union bottom is still owned by the child, so the
+  // bbox is byte-identical -- yet the report must NOT be de-duped away.
+  hostPostLog = [];
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 100, height: 50 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: -40, top: 60, width: 100, height: 80 }, settingsJs: '' },
+    ],
+  });
+  const shrunk = hostPostLog.filter((m) => m.handler === 'overlaySize').pop();
+  assert.ok(shrunk, 'a root-only height change still reports overlaySize');
+  assert.strictEqual(shrunk.args[1].height, 140, 'union bbox unchanged');
+  assert.strictEqual(shrunk.args[1].rootHeight, 50, 'the new root height is reported');
+}
+
 // Flush all captured safety timers (simulate the timeout firing).
 function flushTimers() {
   const due = pendingTimers.slice();

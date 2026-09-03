@@ -75,6 +75,10 @@ try {
   # CloseHandle detour 及其可达的 Forget* 不得阻塞：MinHook Freeze（含 LunaHook32 那份）
   # 挂起全部线程后仍会调 CloseHandle，锁在这里等于等一个被自己挂起的线程（BUG-2046）。
   Invoke-Checked $python 'tests/close_handle_detour_lockfree_guard_test.py'
+  # overlay 窗口类的 GDI 资源：建一次、交一次。DestroyLookupHoverHighlight 只销毁窗口、
+  # 从不 UnregisterClass ⇒ 类常驻 ⇒ 每次重建窗口再 CreateSolidBrush 都无人接管，
+  # overlay 线程每 Stop→Start 一轮漏一个 brush，而本 DLL 常驻在游戏进程里（BUG-2090）。
+  Invoke-Checked $python 'tests/overlay_gdi_ownership_guard_test.py'
   # 每个原生测试都必须在任何 include 之前 `#undef NDEBUG`，否则 CI 的
   # `--config Release` 会把裸 assert 整条编译掉，测试恒绿。这条守卫本身
   # 必须登记在此：它曾经写好却没接进来，于是 generic_input_shield_test.cpp
