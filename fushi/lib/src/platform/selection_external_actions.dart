@@ -1,13 +1,14 @@
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:fushi/src/utils/misc/fushi_share.dart';
 
 typedef ShareSelectedText = Future<void> Function(String text);
 
 /// Narrow platform seam for actions that hand a selected text payload to
 /// another Android app.
 ///
-/// Sharing intentionally reuses [Share.share]. Web search is not a URL launch:
+/// Sharing intentionally reuses [FushiShare.shareText] (the single share entry
+/// point that carries the iOS popover anchor). Web search is not a URL launch:
 /// Android receives the original text through `ACTION_WEB_SEARCH` /
 /// `SearchManager.QUERY` and lets the system-selected handler decide where it
 /// goes.
@@ -18,7 +19,7 @@ class SelectionExternalActions {
   })  : _channel = channel ?? FushiChannels.selectionActions,
         _shareSelectedText = shareSelectedText ??
             ((String text) async {
-              await Share.share(text);
+              await FushiShare.shareText(text);
             });
 
   static final SelectionExternalActions instance = SelectionExternalActions();

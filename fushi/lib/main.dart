@@ -84,7 +84,7 @@ import 'package:fushi_core/fushi_core.dart'
         ProfileMediaKind,
         FushiDatabaseFailureKind;
 import 'package:path/path.dart' as p;
-import 'package:share_plus/share_plus.dart';
+import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
 
 Color? _savedSplashColor;
@@ -1637,7 +1637,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       ),
                       textAlign: TextAlign.center,
                       selectionControls: FushiTextSelectionControls(
-                        shareAction: (text) => Share.share(text),
+                        shareAction: (text) => FushiShare.shareText(text),
                         allowCopy: true,
                         allowCut: false,
                         allowPaste: false,
