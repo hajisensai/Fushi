@@ -771,6 +771,29 @@ class TexthookerService extends ChangeNotifier {
     );
   }
 
+  /// 折叠回看窗口：同端点上一条最多隔多少条其它端点的行。SGRE 实测两次重绘之间
+  /// 插进来的系统串是个位数；给 32 既盖住并行 hook 的喷发，又不让判定退化成扫全表。
+  static const int _foldLookback = 32;
+
+  /// 从尾巴往前找同一生产端点（source / sourceLabel / textThreadKey 三段全等）的
+  /// 最近一条，最多回看 [_foldLookback] 条；找不到返回 -1。
+  int _lastIndexOfEndpoint(
+    TexthookerLineSource source,
+    String? sourceLabel,
+    String? textThreadKey,
+  ) {
+    final int floor = _entries.length - _foldLookback;
+    for (int i = _entries.length - 1; i >= 0 && i >= floor; i--) {
+      final TexthookerLineEntry entry = _entries[i];
+      if (entry.source == source &&
+          entry.sourceLabel == sourceLabel &&
+          entry.textThreadKey == textThreadKey) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
   TexthookerLineEntry? appendLine(
     String line, {
     TexthookerLineSource source = TexthookerLineSource.unknown,
@@ -818,8 +841,7 @@ class TexthookerService extends ChangeNotifier {
       // 回吞深度上限：一句台词的快照数是个位数，给个上限免得畸形输入把每行的
       // 折叠判定拖成 O(buffer)。
       const int maxAbsorb = 8;
-      while (absorbed.length < maxAbsorb && _entries.isNotEmpty) {
-        final TexthookerLineEntry tail = _entries[_entries.length - 1];
+      while (absorbed.length < maxAbsorb) {
         // 折叠只在**同一个生产端点**内成立，三段判据缺一不可：
         //   source        —— 通道种类（WS / 引擎 hook）；
         //   sourceLabel   —— 端点身份。WS 路径下 textThreadKey 恒 null、source 恒
@@ -827,11 +849,17 @@ class TexthookerService extends ChangeNotifier {
         //                    并发连接的**只有**它（ws client 传的是 url）；漏了它
         //                    就是把两个工具的输出折成一条。
         //   textThreadKey —— 引擎 hook 的并行线程。
-        if (tail.source != source ||
-            tail.sourceLabel != sourceLabel ||
-            tail.textThreadKey != textThreadKey) {
-          break;
-        }
+        // 同端点的上一条不一定就在尾巴上：SGRE 一句台词的两次重绘之间，
+        // WideCharToMultiByte 这类系统串线程会插进来好几条，只看紧邻尾巴就断链，
+        // 工作台里「ねぇね」和整句各留一条。所以向前找同端点的最近一条（有界），
+        // 其它端点的行原地保留、不参与折叠。
+        final int tailIndex = _lastIndexOfEndpoint(
+          source,
+          sourceLabel,
+          textThreadKey,
+        );
+        if (tailIndex < 0) break;
+        final TexthookerLineEntry tail = _entries[tailIndex];
         final bool layoutRefresh =
             isWhitespaceOnlyLayoutRefresh(tail.text, mergedText);
         if (!layoutRefresh && !isProgressiveTextUpdate(tail.text, mergedText)) {
@@ -845,7 +873,7 @@ class TexthookerService extends ChangeNotifier {
           mergedText = tail.text;
           mergedSpans = tail.rubySpans;
         }
-        absorbed.add(_entries.removeLast());
+        absorbed.add(_entries.removeAt(tailIndex));
       }
     }
 
