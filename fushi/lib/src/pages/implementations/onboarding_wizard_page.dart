@@ -163,9 +163,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         appModelNoUpdate.moduleBrowserExtensionEnabled) {
       _selected.add(OnboardingFeature.browserExtension);
     }
-    // 上一轮推荐包导入成功后进程已重启：把落盘的 9.5 GB zip 删掉（flag 判定，
-    // 未导入过 / 半截下载不受影响）。
-    unawaited(RecommendedPackDownloader.cleanupIfImported(_packDir));
+    // 推荐包导入后的收尾删包**不在这里**：见 AppModel 初始化里的
+    // `cleanupIfImported`（BUG-2097）。导入会把 `onboarding_completed` 整层
+    // 替换成 true，重启回来根本不会再打开本页，挂这儿等于永不执行。
     // 落盘名从「URL 尾段推导」改成恒定名之前下的半截包叫 `download*`，搬过来，
     // 别让升级把已下的 9.5 GB 作废。
     RecommendedPackDownloader.migrateLegacyArtifacts(_packDir);
