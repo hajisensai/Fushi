@@ -57,7 +57,6 @@ import 'package:fushi/src/models/dictionary_directory.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/onboarding/recommended_pack.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
@@ -2404,8 +2403,8 @@ class AppModel with ChangeNotifier {
         db: _database,
         documentsRoot: _appDirectory.path,
         supportRoot: _databaseDirectory.path,
-        onError: (Object e, StackTrace stack) =>
-            ErrorLogService.instance.log('AppModel.sandboxRelocation', e, stack),
+        onError: (Object e, StackTrace stack) => ErrorLogService.instance
+            .log('AppModel.sandboxRelocation', e, stack),
       );
       //    cloud backup backend can now coexist);
       // 4) BUG-1576: drop the pre-decoupling GLOBAL folder cache. Two channels
@@ -2518,17 +2517,6 @@ class AppModel with ChangeNotifier {
           dictionaryImportWorkingDirectory.create(recursive: true),
           dictionaryResourceDirectory.create(recursive: true).then((_) =>
               purgePendingDictionaryDeletes(dictionaryResourceDirectory)),
-          // BUG-2097：推荐包（9.5 GB zip）导入后的收尾删除。判据是包目录里的
-          // `imported.flag`——没导入过、或只下了一半的包都不受影响。
-          //
-          // 收尾必须挂在**启动必经路径**上，不能挂新手引导页：推荐包本身是一份
-          // 含 settings 类目的备份，导入时 `preferences` 表被整层替换，
-          // `onboarding_completed` 随之变成 true（该键缺省值本来也是 true），于是
-          // 导入后的那次重启首页不再自动弹引导页，挂在引导页 initState 上的清理
-          // 永远等不到执行，9.5 GB 就永久留在盘上（用户实测：存储页词典类目
-          // 11.3 GB，展开的词典明细只有 583 MB）。
-          RecommendedPackDownloader.cleanupIfImported(
-              Directory(path.join(appDirectory.path, 'recommended_pack'))),
           refreshSystemPalette(),
           () async {
             _exportDirectory = await prepareExportDirectory();
@@ -2764,6 +2752,28 @@ class AppModel with ChangeNotifier {
           startAnimeDownloadService().catchError((Object e, StackTrace s) {
         ErrorLogService.instance
             .log('AppModel.startAnimeDownloadService', e, s);
+      }));
+      // 推荐包（9.5 GB zip）的包目录进场收尾：删掉「已导入」的残包、搬改名前的旧
+      // 半截文件，再把下载阶段对齐磁盘。
+      //
+      // BUG-2109：收尾必须挂在**启动必经路径**上，不能挂新手引导页 ——
+      // 推荐包本身是一份含 settings 类目的备份，导入时 `preferences` 表被整层
+      // 替换，`onboarding_completed` 随之变成 true，导入后的那次重启根本不会再
+      // 打开引导页，9.5 GB 就永久留在盘上。
+      //
+      // BUG-2109：但它**不能**挂进 `_guardInitIo` 那批启动关键 IO：那层是 12s
+      // 硬超时，同批其它任务全是毫秒级 mkdir，而删 9.5 GB（外置卡 / FAT32 /
+      // 网络盘）超 12s 完全可能 —— 清个残包把启动干成错误屏。它不是启动关键
+      // IO，放到这里 fire-and-forget。
+      //
+      // BUG-2109：同时这也是 `stage` 在新进程里唯一的对盘点。不跑它，stage 永远
+      // 停在 idle，设置 → 系统里那行（判据是 `isActive`）就不渲染：下完没导入就
+      // 关 app 的用户，重开后磁盘上躺着的 9.5 GB 既看不见也导不了。
+      unawaited(recommendedPackDownloadController
+          .prepareDiskState()
+          .catchError((Object e, StackTrace s) {
+        ErrorLogService.instance
+            .log('AppModel.recommendedPackPrepareDiskState', e, s);
       }));
       notifyListeners();
     } on DataRootUnavailableException catch (e, stack) {

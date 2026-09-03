@@ -675,7 +675,7 @@ class StorageUsageService {
         ),
       // BUG-2096：本类目的三个根里只有 `dictionaryResources/<名>` 是 DB 认识的。
       // 导入工作目录的残留、删词典留下的孤儿目录，以及新手引导下的推荐包暂存
-      // （`recommended_pack/` 里那个 9.5 GB zip，BUG-2097 之前永不删）全落在差集
+      // （`recommended_pack/` 里那个 9.5 GB zip，BUG-2109 之前永不删）全落在差集
       // 里——正是用户报的「词典 11.3 GB，展开只有 583 MB」。
       ..._childEntries(
         children,

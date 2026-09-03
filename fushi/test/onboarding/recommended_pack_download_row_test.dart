@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
@@ -37,13 +36,13 @@ void main() {
   RecommendedPackDownloadController newController() {
     return RecommendedPackDownloadController(
       packDirectory: () => packDir,
-      runner:
-          ({
-            required Directory packDir,
-            required ValueNotifier<double> progress,
-            required ValueNotifier<int> receivedBytes,
-            required CancelToken cancelToken,
-          }) async => throw StateError('本用例不下载'),
+      runner: ({
+        required Directory packDir,
+        required ValueNotifier<double> progress,
+        required ValueNotifier<int> receivedBytes,
+        required CancelToken cancelToken,
+      }) async =>
+          throw StateError('本用例不下载'),
       showOutcome: (String message, ToastSeverity severity) {},
     );
   }

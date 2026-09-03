@@ -298,8 +298,9 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
       if (localized != null) return (message: localized, code: code);
       return (message: e.message ?? e.code, code: code);
     }
-    if (!isAnkiConnectTransportError(e))
+    if (!isAnkiConnectTransportError(e)) {
       return (message: e.toString(), code: null);
+    }
     final String code = classifyAnkiConnectError(e);
     return (
       message: localizeAnkiFetchError(ankiConnectErrorHint(code), code),

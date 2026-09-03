@@ -209,8 +209,11 @@ class AnkiRepository extends BaseAnkiRepository {
         context: context,
       );
     } catch (e, stack) {
+      // 带上错误码：_ensurePermission 抛的 PlatformException 正是从这里冒出去的，
+      // 不分类就等于把刚收口的英文原文原样糊回 UI。
       return MineOutcome.failure(
         'AnkiDroid: unexpected error: $e',
+        errorCode: e is PlatformException ? classifyPlatformError(e) : null,
         error: e,
         stackTrace: stack,
       );
@@ -221,6 +224,11 @@ class AnkiRepository extends BaseAnkiRepository {
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async {
+    // BUG-2098：native 的 requirePermission 只做「没权限就干净失败」的兜底，
+    // **不再自己弹框**（那次请求无人等待，会被静默丢弃）。发起与等待的单一职责
+    // 在 requestAnkidroidPermissions 上，所以每个碰 provider 的用户主动入口都得
+    // 先过这道门 —— 漏掉就等于该入口再也弹不出权限框，只剩 PERMISSION_DENIED。
+    await _ensurePermission();
     final settings = await loadSettings();
 
     final AnkiDeck? deck = resolveSelectedDeck(settings);
@@ -452,6 +460,11 @@ class AnkiRepository extends BaseAnkiRepository {
     required AnkiMiningContext context,
   }) async {
     try {
+      // BUG-2098：native 的 requirePermission 只做「没权限就干净失败」的兜底，
+      // **不再自己弹框**（那次请求无人等待，会被静默丢弃）。发起与等待的单一职责
+      // 在 requestAnkidroidPermissions 上，所以每个碰 provider 的用户主动入口都得
+      // 先过这道门 —— 漏掉就等于该入口再也弹不出权限框，只剩 PERMISSION_DENIED。
+      await _ensurePermission();
       final settings = await loadSettings();
 
       final AnkiMiningPayload payload;
@@ -506,8 +519,11 @@ class AnkiRepository extends BaseAnkiRepository {
         );
       }
     } catch (e, stack) {
+      // 带上错误码：_ensurePermission 抛的 PlatformException 正是从这里冒出去的，
+      // 不分类就等于把刚收口的英文原文原样糊回 UI。
       return MineOutcome.failure(
         'AnkiDroid: unexpected error: $e',
+        errorCode: e is PlatformException ? classifyPlatformError(e) : null,
         error: e,
         stackTrace: stack,
       );
@@ -606,6 +622,7 @@ class AnkiRepository extends BaseAnkiRepository {
   @override
   Future<bool> openNoteInAnki(int noteId) async {
     try {
+      await _ensurePermission();
       final dynamic ok = await _channel.invokeMethod(
         'openNote',
         <String, dynamic>{'noteId': noteId},

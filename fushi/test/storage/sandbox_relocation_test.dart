@@ -286,5 +286,83 @@ void main() {
         reason: '数据根之外的路径不在重基作用域内，改它就是数据损坏',
       );
     });
+
+    test('旧根**之下**的非 Hibiki 路径同样原样不动', () async {
+      // 上一条用例的外部路径落在 `<sandbox>/external/nas`，压根不在 oldRoot 之下
+      // —— `isInScope` 第一句就返回 false，scopeTopLevelNames 传什么都能通过。
+      // 真正要守的形状是**位于旧根之内、但不属于 Hibiki 顶层项**的路径：用户把
+      // 外部媒体库放在数据根旁边，它就长这样。
+      await seedMovedBook();
+      final Directory foreign =
+          Directory(p.join(oldRoot.path, 'MyNasLibrary', 'anime'))
+            ..createSync(recursive: true);
+      await db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: 'foreign1',
+        title: 'foreign',
+        epubPath: 'x.epub',
+        extractDir: foreign.path,
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+      ));
+
+      final SandboxRelocationOutcome outcome =
+          await SandboxRelocation.reconcile(
+        db: db,
+        documentsRoot: newRoot.path,
+        supportRoot: p.join(sandbox.path, 'BBBB-2222', 'Support'),
+      );
+      expect(outcome.rebased, isTrue, reason: '本轮确实发生了重基，断言才有意义');
+
+      final EpubBookRow kept = (await db.getAllEpubBooks())
+          .firstWhere((EpubBookRow r) => r.bookKey == 'foreign1');
+      expect(
+        kept.extractDir,
+        foreign.path,
+        reason: 'MyNasLibrary 不是 Hibiki 的顶层项，重基不该碰它 —— '
+            'scopeTopLevelNames 传 null 时这里会被一起改写',
+      );
+    });
+
+    test('新根套在旧台账根里面 → 不重基（已被 DataRootMigrator 改写过）', () async {
+      // DataRootMigrator 把数据收进 `<旧根>/Hibiki/data`：全库路径它已经改写好，
+      // 但台账不在 kPathRebasePrefs 里、仍停在旧根。此时若照台账再重基一次，
+      // 就会把已经正确的 `<新根>/fushi_books/book1` 再前缀一遍。
+      final Directory nested = Directory(p.join(oldRoot.path, 'Hibiki', 'data'))
+        ..createSync(recursive: true);
+      final Directory live =
+          Directory(p.join(nested.path, 'fushi_books', 'book1'))
+            ..createSync(recursive: true);
+      await db.setPref(
+          SandboxRelocation.lastDocumentsRootPrefKey, oldRoot.path);
+      await db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: 'nested1',
+        title: 'nested',
+        epubPath: 'x.epub',
+        extractDir: live.path,
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+      ));
+
+      final SandboxRelocationOutcome outcome =
+          await SandboxRelocation.reconcile(
+        db: db,
+        documentsRoot: nested.path,
+        supportRoot: p.join(sandbox.path, 'BBBB-2222', 'Support'),
+      );
+
+      expect(outcome.rebased, isFalse, reason: '嵌套根不是容器漂移，不该重基');
+      expect(
+        (await db.getAllEpubBooks()).single.extractDir,
+        live.path,
+        reason: '再重基一次就会变成 <新根>/Hibiki/data/fushi_books/book1（BUG-1174 ③）',
+      );
+      expect(
+        await db.getPref(SandboxRelocation.lastDocumentsRootPrefKey),
+        nested.path,
+        reason: '台账要跟上新根，否则下次启动还会再判一次嵌套',
+      );
+    });
   });
 }

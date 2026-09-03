@@ -14,7 +14,7 @@
   - `fushi/lib/src/pages/implementations/storage_usage_view.dart:473` `_buildEntryRows`
     只渲染 `usage.entries`（外加「其余 N 项」折叠行），**没有任何差额行**——两套口径的
     缺口在 UI 上彻底静默。
-  用户这 10.7 GB 的具体归属见 [BUG-2097](BUG-2097-recommended-pack-never-deleted.md)
+  用户这 10.7 GB 的具体归属见 [BUG-2109](BUG-2109-recommended-pack-never-deleted.md)
   （新手引导推荐包的 9.5 GB zip 导入后永不删除，就落在 `recommended_pack/`）。本条只
   管「占了盘却不出现在明细里」这个显示缺陷本身——即使换成别的残留，洞一样在。
 - **[x] ① 已修复** — `_scanBooks` / `_scanDictionaries` 改为：一次 isolate 调用同时取

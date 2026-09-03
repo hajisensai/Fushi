@@ -525,9 +525,13 @@ public class AnkiChannelHandler {
      * provider 访问前的权限守卫。BUG-824 起每个碰 provider 的分支都过它。
      *
      * <p>BUG-2098：这里不再自己发起权限请求——发起与等待是
-     * {@link #requestAnkidroidPermissions} 的单一职责，Dart 侧每个 provider 调用前
-     * 都会先走那条路并等结果。此处只做「没权限就干净失败」的兜底，避免同一次用户
-     * 操作弹两次框、以及本方法发起的那次请求因无人等待而被静默丢弃。
+     * {@link #requestAnkidroidPermissions} 的单一职责（本方法发起的那次请求无人
+     * 等待，会被静默丢弃）。此处只做「没权限就干净失败」的兜底。
+     *
+     * <p>因此 Dart 侧**每个碰 provider 的用户主动入口**都必须先走
+     * {@code _ensurePermission()}（AnkiRepository 里那条），否则该入口再也弹
+     * 不出权限框，只剩 PERMISSION_DENIED。守卫见
+     * {@code packages/fushi_anki/test/ankidroid_permission_flow_test.dart}。
      */
     private boolean requirePermission(MethodChannel.Result result) {
         if (ankiDroid.shouldRequestPermission()) {

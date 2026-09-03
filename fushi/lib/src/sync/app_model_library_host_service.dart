@@ -100,27 +100,26 @@ class AppModelLibraryHostService
     Future<String?> Function({
       required String videoPath,
       required String bookUid,
-    })?
-    extractVideoCover,
-  }) : _db = db,
-       _dictionaryResourceRoot = dictionaryResourceRoot,
-       _packages = packages,
-       _refreshDictionaryCache = refreshDictionaryCache,
-       _runExclusive = runExclusive,
-       _importBookFromFile = importBookFromFile,
-       _cleanupBookOnDisk = cleanupBookOnDisk,
-       _localAudioEntries = localAudioEntries,
-       _localAudioStagingDir = localAudioStagingDir,
-       _onLocalAudioImported = onLocalAudioImported,
-       _audioDatabaseRoot = audioDatabaseRoot,
-       _removeLocalAudioEntry = removeLocalAudioEntry,
-       _isProfileTransferEnabled = isProfileTransferEnabled,
-       _exportActiveProfileJson = exportActiveProfileJson,
-       _importProfileJson = importProfileJson,
-       _videoSubtitleLangCode = videoSubtitleLangCode,
-       _uploadedVideoRoot = uploadedVideoRoot,
-       _videoCoversDirectory = videoCoversDirectory,
-       _extractVideoCover = extractVideoCover;
+    })? extractVideoCover,
+  })  : _db = db,
+        _dictionaryResourceRoot = dictionaryResourceRoot,
+        _packages = packages,
+        _refreshDictionaryCache = refreshDictionaryCache,
+        _runExclusive = runExclusive,
+        _importBookFromFile = importBookFromFile,
+        _cleanupBookOnDisk = cleanupBookOnDisk,
+        _localAudioEntries = localAudioEntries,
+        _localAudioStagingDir = localAudioStagingDir,
+        _onLocalAudioImported = onLocalAudioImported,
+        _audioDatabaseRoot = audioDatabaseRoot,
+        _removeLocalAudioEntry = removeLocalAudioEntry,
+        _isProfileTransferEnabled = isProfileTransferEnabled,
+        _exportActiveProfileJson = exportActiveProfileJson,
+        _importProfileJson = importProfileJson,
+        _videoSubtitleLangCode = videoSubtitleLangCode,
+        _uploadedVideoRoot = uploadedVideoRoot,
+        _videoCoversDirectory = videoCoversDirectory,
+        _extractVideoCover = extractVideoCover;
 
   final FushiDatabase _db;
   final Directory _dictionaryResourceRoot;
@@ -146,22 +145,37 @@ class AppModelLibraryHostService
     return enabled();
   }
 
+  /// 导出**也**要串行：激活 Profile 的导出会先 `snapshotCurrentSettings()`，
+  /// 那是一次写库 —— 一个远端 GET 就能和正在跑的备份恢复 / 集合同步交错。
   @override
   Future<String> exportInterconnectProfile() async {
     final Future<String> Function()? export = _exportActiveProfileJson;
     if (export == null) {
       throw UnsupportedError('profile export not wired on this host');
     }
-    return export();
+    late final String json;
+    await _runExclusive(() async {
+      json = await export();
+    });
+    return json;
   }
 
+  /// 导入必须串行：底下的 `importProfileFromJson` 是跨三个 await 的
+  /// check-then-act（算唯一名 → 建 Profile → 写设置）。两个并发对端（或一个对端
+  /// 重试）会算出**同一个名字**，而且在建行与写设置之间存在一个「有名字、零设置」
+  /// 的半成品 Profile 对本机 UI 可见。client 侧的 `_busy` 只挡本机重复点击，挡不
+  /// 住并发对端 —— 串行锁得由 host 侧兜。
   @override
   Future<String> importInterconnectProfile(String json) async {
     final Future<String> Function(String json)? import = _importProfileJson;
     if (import == null) {
       throw UnsupportedError('profile import not wired on this host');
     }
-    return import(json);
+    late final String name;
+    await _runExclusive(() async {
+      name = await import(json);
+    });
+    return name;
   }
 
   @override
@@ -1761,12 +1775,12 @@ class AppModelLibraryHostService
         () => VideoCoverMutationGate.runExclusive(() async {
           final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
           if (row == null) return; // 幂等：不存在则静默跳过
-          final bool deleted = await VideoBookRepository(_db)
-              .deleteVideoBookAndReclaimAssets(
-                id,
-                scope: DeleteScope.syncEverywhere,
-                compactDatabase: false,
-              );
+          final bool deleted =
+              await VideoBookRepository(_db).deleteVideoBookAndReclaimAssets(
+            id,
+            scope: DeleteScope.syncEverywhere,
+            compactDatabase: false,
+          );
           if (!deleted) return;
           await _deleteUploadedVideoCopy(row);
         }),

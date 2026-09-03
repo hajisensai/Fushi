@@ -5,7 +5,9 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/onboarding/recommended_pack.dart';
 
-/// BUG-2097：推荐包（9.5 GB zip）导入后的收尾删除。
+import '../helpers/source_guard.dart';
+
+/// BUG-2109：推荐包（9.5 GB zip）导入后的收尾删除。
 ///
 /// 判据（包目录里的 `imported.flag`）从来没错，错的是**挂在哪儿**：收尾一度只挂
 /// 在新手引导页的 initState 上，而推荐包本身是一份含 settings 类目的备份，导入时
@@ -30,8 +32,7 @@ void main() {
   });
 
   void writePack(int bytes) {
-    final File f =
-        File(p.join(packDir.path, 'fushi_recommended_pack.zip'));
+    final File f = File(p.join(packDir.path, 'fushi_recommended_pack.zip'));
     f.parent.createSync(recursive: true);
     f.writeAsBytesSync(List<int>.filled(bytes, 0x61));
   }
@@ -63,14 +64,13 @@ void main() {
     });
   });
 
-  group('BUG-2097 守卫：收尾必须挂在启动必经路径上', () {
+  group('BUG-2109 守卫：收尾必须挂在启动必经路径上', () {
     final File appModel = File('lib/src/models/app_model.dart');
     final File wizard =
         File('lib/src/pages/implementations/onboarding_wizard_page.dart');
 
     test('AppModel 初始化持有 cleanupIfImported 调用', () {
-      expect(appModel.existsSync(), isTrue,
-          reason: '守卫锚点文件不在了，先修锚点再改断言');
+      expect(appModel.existsSync(), isTrue, reason: '守卫锚点文件不在了，先修锚点再改断言');
       // 布尔断言而非 contains matcher：后者失败时会把整份 app_model.dart
       // （5000+ 行）打进失败信息，淹没掉 reason。
       expect(
@@ -85,16 +85,12 @@ void main() {
     });
 
     test('新手引导页不再是清理入口（导入后它根本不会再打开）', () {
-      expect(wizard.existsSync(), isTrue,
-          reason: '守卫锚点文件不在了，先修锚点再改断言');
+      expect(wizard.existsSync(), isTrue, reason: '守卫锚点文件不在了，先修锚点再改断言');
       // 注释里提到函数名是允许的（本次修复就留了指向说明），红线是**调用**。
-      final String source = wizard
-          .readAsStringSync()
-          .split('\n')
-          .where((String line) => !line.trimLeft().startsWith('//'))
-          .join('\n');
+      // 注释掩码统一走 source_guard 的 containsCodeLine：
+      // 手写的 startsWith 剥不掉块注释，也剥不掉行尾注释。
       expect(
-        source.contains('cleanupIfImported('),
+        containsCodeLine(wizard.readAsStringSync(), 'cleanupIfImported('),
         isFalse,
         reason: '引导页在导入后的那次启动不会再打开，清理挂这儿等于永不执行',
       );
