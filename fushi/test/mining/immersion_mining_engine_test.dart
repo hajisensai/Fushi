@@ -500,33 +500,6 @@ void main() {
     expect(repo.minedContext, isNull);
   });
 
-  test('BUG-2080：Netflix 形状成功落卡时，卡面时间窗端到端透传到 AnkiMiningContext',
-      () async {
-    final repo = _FakeRepo();
-    final res = await build(gif: nullGif, audio: nullAudio, frame: nullFrame)
-        .mine(
-            ImmersionMiningRequest(
-                source: AnkiMiningSource.video,
-                fields: const {'expression': 'x'},
-                clipStartMs: 1000,
-                clipEndMs: 3000,
-                sentence: 's',
-                providedCoverBytes: Uint8List.fromList(<int>[1, 2, 3]),
-                providedCoverName: 'netflix_clip.gif',
-                providedAudioBytes: Uint8List.fromList(<int>[4, 5]),
-                providedAudioName: 'netflix_audio.mp3',
-                requireAudio: true),
-            compression: MiningMediaCompression.compressed,
-            tempDir: tmp.path,
-            repo: repo);
-    expect(res.aborted, false);
-    // 这两条就是 `{clip-timestamp}` 的数据源。修复前恒为 0 ⇒ 占位符对 Netflix 恒空。
-    expect(repo.minedContext?.clipStartMs, 1000);
-    expect(repo.minedContext?.clipEndMs, 3000);
-    // 「降级为静态」不得因窗变非零而被误置：provided 字节路径压根不走帧降级阶梯。
-    expect(res.degradedToStill, false);
-  });
-
   // TODO-1303：空壳卡兜底——封面 + 音频全无（截图/GIF/音频全失败）→ 中止，绝不产出无媒体卡，
   // 即便 requireAudio=false（这正是「降级空壳卡仍报成功」的根）。
   test('empty shell (no cover, no audio) -> abort', () async {

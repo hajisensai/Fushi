@@ -376,10 +376,12 @@ class ImmersionMiningRequest {
   /// 抽取意图**——与两处抽取点各自已有的前置守卫同源（[ImmersionMiningEngine] 里
   /// `src = mediaSource`、`audioSrc = audioSource ?? src`，两处都先判 `== null`）。
   ///
-  /// 零行为变更：本判据收敛之前，`mediaSource`/`audioSource` 双 null 的来源
-  /// （Netflix 前台、galgame 外部窗口）两端恒是 0 ⇒ 旧式 `hasRange` 也恒 false。
-  bool get hasRange =>
-      hasClipWindow && (mediaSource != null || audioSource != null);
+  /// **无可观测行为变更，但不是因为「无源就一定没窗」**——`web_video_fushi_page.dart`
+  /// 的网页流媒体队列卡就是「无源 + 真实字幕 cue 窗」，收敛前后 `hasRange` 由真变假。
+  /// 那里没有差异是另外两条理由：它显式 `requireAudio: false`（掐死 `:437/:440` 的中止
+  /// 条件），且没有 `stillFallback`（`:410` 的 `coverPath` 恒 null，不可达）。
+  /// 另外两处双 null 来源（Netflix 前台、galgame 外部窗口）两端才是恒 0。
+  bool get hasRange => hasClipWindow && mediaSource != null;
 
   /// 入队前冻结所有可变输入。视频页可能在任务真正执行前已经换集或关闭弹窗；队列里的
   /// 卡必须继续使用点击制卡那一刻的字段和外部媒体字节，不能读到调用方后续修改。

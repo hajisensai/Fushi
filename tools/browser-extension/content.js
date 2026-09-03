@@ -475,7 +475,10 @@ window.fushiEnqueue = function (fields, sentence) {
     fields: fields, sentence: sentence || w.text || '',
     startV: Math.max(0, w.startV - 200), endV: w.endV + 200,
     // BUG-1416：startV 带了 200ms 录制头部提前量，不是真句首；静态帧「字幕开头」要的是真句首。
+    // BUG-2080：cueEndV 与 cueStartV 成对存下——卡面 `{clip-timestamp}` 要显示的是**字幕窗**，
+    // 不是带 ±200ms 录制余量的 startV/endV。老队列项没有本字段，发送侧按 null 处理。
     cueStartV: w.startV,
+    cueEndV: w.endV,
     mineAtV: mineAtV,
     site: site,
     youtubeId: youtubeId,
@@ -694,6 +697,10 @@ async function fushiRunNetflixBatch() {
                 // BUG-1416：静态帧模式要「制卡那一刻」的帧，服务端据这三个视频时间换算片段内偏移。
                 clipAnchorMs: anchorV, clipAnchorUncertaintyMs: anchorUncertaintyMs,
                 cueStartMs: (typeof q.cueStartV === 'number' ? q.cueStartV : null),
+                // BUG-2080：卡面时间窗（字幕窗，非录制余量窗）。老队列项缺 cueEndV → null，
+                // 服务端 `?? 0` 回落成 0/0，`formatClipTimestamp` 渲染成空串（旧行为）。
+                clipStartMs: (typeof q.cueStartV === 'number' ? q.cueStartV : null),
+                clipEndMs: (typeof q.cueEndV === 'number' ? q.cueEndV : null),
                 mineAtMs: (typeof q.mineAtV === 'number' ? q.mineAtV : null),
                 documentTitle: q.documentTitle || (typeof netflixDocumentTitle === 'function' ? netflixDocumentTitle() : '') },
               (resp) => {

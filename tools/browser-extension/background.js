@@ -869,6 +869,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             ...(typeof msg.clipAnchorUncertaintyMs === 'number'
               ? { clipAnchorUncertaintyMs: msg.clipAnchorUncertaintyMs } : {}),
             ...(typeof msg.cueStartMs === 'number' ? { cueStartMs: msg.cueStartMs } : {}),
+            // BUG-2080：卡面时间窗透传到 /api/mine（与 mineYoutube 分支同名同语义）。两端都得是
+            // 数字才发——只发一半会让服务端拿到半个窗，`end > start` 判据结果不可预期。
+            ...(typeof msg.clipStartMs === 'number' && typeof msg.clipEndMs === 'number'
+              ? { clipStartMs: msg.clipStartMs, clipEndMs: msg.clipEndMs } : {}),
             ...(typeof msg.mineAtMs === 'number' ? { mineAtMs: msg.mineAtMs } : {}),
             ...(msg.documentTitle ? { documentTitle: msg.documentTitle } : {}),
           }),

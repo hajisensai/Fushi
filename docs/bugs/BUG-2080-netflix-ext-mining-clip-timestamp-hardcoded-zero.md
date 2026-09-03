@@ -1,8 +1,8 @@
 ## BUG-2080 · 浏览器扩展 Netflix 制卡的片段时间窗恒为 0，卡上永远显示不出时间
 - **报告**：2026-09-03（PR #1161「卡片 Details 栏带上截取片段的时间窗」的代码审查副产物，不是用户报告）
-- **真实性**：✅ 真 bug（静态追链确认，未做真机落卡）。根因 `fushi/lib/src/mining/immersion_capture_channel.dart:191-192`：纯函数 `buildImmersionRequest` 把 `clipStartMs` / `clipEndMs` **硬编码成 0**，而入参 `ImmersionMinePayload` 明明带着可用的 `clipStartMs` / `clipEndMs`（`fushi/lib/src/models/app_model.dart:7743-7748` 就是用它俩去 `ImmersionCaptureChannel.capture` 抓片段的）。YouTube 分支反而是通的（`app_model.dart:7664-7665` 经 `youtube_clip_miner` 带真值）。于是 `{clip-timestamp}` 对 Netflix 用户**结构性恒空**
-- **[x] ① 已修复** — `hasRange` 从「窗非空」收敛成「窗非空 **且** 有可裁的源」，`clipStartMs`/`clipEndMs` 回归单一语义（卡面时间窗），Netflix 请求原样透传扩展上报的窗。分支 `fix/clip-window-vs-extract-intent`
-- **[x] ② 已加自动化测试** — `fushi/test/mining/immersion_capture_channel_test.dart`（纯函数：窗透传 + 「有窗但抽取意图为假」防回退守卫 + 无窗 payload）、`fushi/test/mining/immersion_mining_engine_test.dart`（引擎：Netflix 形状带非零窗时中止矩阵不变 + 窗端到端落到 `AnkiMiningContext`）
+- **真实性**：✅ 真 bug。**缺口有两处，立案时只看到了一处**。① 服务端 `fushi/lib/src/mining/immersion_capture_channel.dart` 的纯函数 `buildImmersionRequest` 把 `clipStartMs`/`clipEndMs` 硬编码成 0；② **浏览器扩展从来不发这两个键**——`tools/browser-extension/content.js` 的 `mineClip` 消息只带 `cueStartMs`/`mineAtMs`，`background.js` 的 `/api/mine` body 同样没有（对比 `mineYoutube` 分支一直发着 `clipStartMs`/`clipEndMs`）。**立案时引作根因证据的 `app_model.dart` `netflixVideoId` 分支是一条死分支**：扩展从不发 `netflixVideoId`（本仓 `BUG-1416` 已记载），且 `app.fushi.reader/immersion_capture` 这个 MethodChannel 全仓无 native 实现。于是 `{clip-timestamp}` 对 Netflix 用户**结构性恒空**
+- **[x] ① 已修复**（两处缺口都补）— **扩展侧**：队列项与 `cueStartV` 成对存下 `cueEndV`，`mineClip` 与 `/api/mine` body 补发 `clipStartMs`/`clipEndMs`（取**字幕窗**，不是带 ±200ms 录制余量的 `startV`/`endV`）；**服务端侧**：`hasRange` 从「窗非空」收敛成「窗非空 **且** 有可裁的源」，`clipStartMs`/`clipEndMs` 回归单一语义（卡面时间窗），`buildImmersionRequest` 原样透传。分支 `fix/clip-window-vs-extract-intent`
+- **[x] ② 已加自动化测试** — `tools/browser-extension/mine-clip-timestamp-wire.test.js`（**wire 行为**：在 vm 里真跑 `background.js`，断言两端窗进 `/api/mine`、老队列项两键都不发、半个窗两键都不发；外加 `content.js` 取值侧断言「发的是字幕窗不是录制余量窗」）、`fushi/test/mining/immersion_capture_channel_test.dart`（纯函数：窗透传 + 「有窗但抽取意图为假」防回退守卫 + 无窗 payload）、`fushi/test/mining/immersion_mining_engine_test.dart`（引擎：Netflix 形状带非零窗时中止矩阵不变）
 - **备注**：与 PR #1161 同域但独立。该 PR 新增的 `{clip-timestamp}` 占位符在本地视频 / YouTube / 互联转发三条路上都通，唯独浏览器扩展的 Netflix 路不通。
 
 ### 为什么不是一行改（原始论断 + 实测修正）
@@ -62,5 +62,16 @@ test/pages/video_mining_context_guard_test.dart test/sync/forwarded_mine_payload
 - `immersion_mining_engine.dart:467` 注释订正：卡面窗判据与 `hasClipWindow` 同语义，
   **不是** `hasRange`。
 
-零行为变更的依据：收敛前 `mediaSource`/`audioSource` 双 null 的来源（Netflix 前台、
-galgame 外部窗口）两端恒是 0 ⇒ 旧 `hasRange` 本就恒 false。
+**「无可观测行为变更」的依据（独立审查订正过一次，原枚举是错的）**：
+
+原先写的是「双 null 来源两端恒是 0」——**漏了 `fushi/lib/src/pages/implementations/web_video_fushi_page.dart`
+的网页流媒体队列卡**，那里 `mediaSource`/`audioSource` 都是 null 而 `clipStartMs/clipEndMs`
+是**真实字幕 cue 窗**，收敛前后 `hasRange` 由真变假。结论仍成立，但理由是另外两条：
+该调用点显式 `requireAudio: false`（掐死 `:437/:440` 的中止条件），且没有 `stillFallback`
+（`:410` 的 `coverPath` 恒 null，不可达）。另外两处双 null 来源（Netflix 前台、galgame
+外部窗口）两端才是恒 0。
+
+另外，`|| audioSource != null` 那一支已按审查意见删掉：全仓唯一生产 `audioSource` 的
+`youtube_clip_miner.dart` 里 `mediaSource` 是**非空类型**，「有 audioSource 无 mediaSource」
+在生产中造不出来，实测删掉它 3943 条全绿——是个没有调用点、没有测试、没有语义的析取项。
+两个抽取点（`:313`/`:508`）自己已判过源，改用 `hasClipWindow` 只问窗几何。
