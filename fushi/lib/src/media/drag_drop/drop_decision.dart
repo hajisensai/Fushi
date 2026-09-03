@@ -27,6 +27,14 @@ enum DropIntent {
   /// 拖入的可导入网络流 URL → 走视频「流媒体导入」（[_importStreamUrl]，入库进视频
   /// 书架）。books/video 两表面都自动切到视频导入，与拖视频文件的自动切换一致（TODO-1306）。
   importVideoUrl,
+
+  /// 拖入的是**文件夹** → 按当前页面的媒体类型登记成扫描根（source library）并扫描。
+  ///
+  /// 只有 [DropSurface.video] 产出它：书架/漫画库把目录当「一本漫画的页图文件夹」是
+  /// 既有能力（`importFromImageFolder`），不能拿掉。视频页此前对目录**完全静默**
+  /// （没传 isDirectory 谓词 → 落 unknown → ignore），用户拖一整季文件夹进去毫无反应。
+  addFolderAsSource,
+
   attachToBookCard,
   attachToVideoCard,
   needCardTarget,
@@ -96,6 +104,9 @@ DropIntent decideDropIntent({
         cardHit: cardHit,
       );
     case DropSurface.video:
+      // 文件夹优先于其中的单个文件：用户拖一整个剧集目录进来，要的是「把这个目录
+      // 加成来源」，不是「导入我恰好也选中的那一个 mp4」。
+      if (files.directories.isNotEmpty) return DropIntent.addFolderAsSource;
       if (files.urls.isNotEmpty) return DropIntent.importVideoUrl;
       if (files.playlists.isNotEmpty) return DropIntent.importNewPlaylist;
       if (files.videos.isNotEmpty) return DropIntent.importNewVideo;

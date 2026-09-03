@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -78,7 +79,10 @@ void main() {
               createdAt: 0,
               orderUpdatedAt: 0,
             ),
-            loadMembers: loadMembers,
+            loadEpisodes: () async => <CollectionEpisodeSlot>[
+              for (final VideoBookRow row in await (loadMembers)())
+                CollectionEpisodeSlot.local(row),
+            ],
             onOpenEpisode: (VideoBookRow _) {},
             onChanged: () {},
           ),
@@ -168,8 +172,7 @@ void main() {
     expect(c2.dy, greaterThan(c1.dy));
   });
 
-  testWidgets('「在 Bangumi 打开本集」菜单项：仅 Bangumi 绑定的合集出现',
-      (WidgetTester tester) async {
+  testWidgets('历史 Bangumi 绑定不再暴露会触网的分集外链菜单项', (WidgetTester tester) async {
     useSurface(tester, const Size(1280, 1600));
     await db.upsertCollectionScrapeMeta(CollectionScrapeMetaCompanion.insert(
       collectionId: Value<int>(collectionId),
@@ -190,8 +193,12 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
-    expect(find.text(t.collection_episode_open_bangumi), findsOneWidget,
-        reason: 'Bangumi 绑定合集的集卡菜单必须有外链项（TODO-2488 降级实现）');
+    expect(
+      find.byIcon(Icons.open_in_new),
+      findsNothing,
+      reason: '历史绑定只读兼容，不得重新构造外部网络入口',
+    );
+    expect(find.text(t.collection_episode_download), findsOneWidget);
   });
 
   testWidgets('未刮削合集：集卡菜单不出现 Bangumi 外链项', (WidgetTester tester) async {
@@ -208,7 +215,7 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
-    expect(find.text(t.collection_episode_open_bangumi), findsNothing);
+    expect(find.byIcon(Icons.open_in_new), findsNothing);
     expect(find.text(t.collection_episode_download), findsOneWidget,
         reason: '下载本集不依赖刮削绑定，恒在');
     // 关掉菜单，别把打开的菜单留给下一个用例。

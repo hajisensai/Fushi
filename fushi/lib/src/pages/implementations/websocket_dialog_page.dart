@@ -92,6 +92,7 @@ class _WebsocketDialogPageState extends BasePageState<WebsocketDialogPage> {
                 controller: _addressController,
                 hintText: 'wss://',
                 labelText: t.server_address,
+                keyboardType: TextInputType.url,
                 suffixIcon: FushiIconButton(
                   size: 18,
                   tooltip: t.clear,

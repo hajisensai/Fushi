@@ -2,10 +2,32 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// TODO-1360：「已制卡的词旁『在 Anki 中打开卡片』按钮」可达性链路的源码守卫。锁住
-/// openInAnki 从 popup.js（仅已制卡显示 + 点击调宿主）→ webview handler → layer 透传
-/// → 两条宿主车道（mixin / base_source_page）→ 编排（openMinedCardInAnki）全程接线，
-/// 避免任一层漏接导致按钮点了没反应或永不出现。
+import '../helpers/source_guard.dart';
+
+/// TODO-1360 / BUG-2051：「已制卡的词旁 ↗『在 Anki 中打开卡片』按钮」可达性链路的
+/// 顶层函数体的结束位置：从 [from] 起找**列 0 的 `}`**。
+///
+/// 不能直接 `indexOf('\n}')`：命名参数表的 `})` 同样在列 0，先命中它就会把「函数体」
+/// 截成只剩一个参数表，后面所有 `contains` 断言随之恒假——那是个不会报错、只会悄悄
+/// 失去判别力的守卫。所以跳过后面紧跟 `)` 的那些。
+int topLevelBodyEnd(String src, int from) {
+  int i = from;
+  while (true) {
+    i = src.indexOf('\n}', i + 1);
+    if (i < 0) return -1;
+    final int next = i + 2;
+    if (next >= src.length || src[next] != ')') return i;
+  }
+}
+
+/// 源码守卫。锁住 openInAnki 从 popup.js（仅已制卡显示 + 点击调宿主）→ webview handler
+/// → layer 透传 → 两条宿主车道（mixin / base_source_page）→ 仓库
+/// （[BaseAnkiRepository.openWordInAnki]）全程接线，避免任一层漏接导致按钮点了没反应。
+///
+/// BUG-2051 之后这条链路只剩**一条判据**：宿主把 Anki 浏览器过滤到「Anki 认为这个词
+/// 已有的卡」（第一字段 checksum，与画 ✓ 的查重同源），不再先按第一字段**名**反查
+/// note id——那条反查看不见笔记类型不同的重复卡，于是 ✓ 说已制卡、↗ 说没有卡。
+
 void main() {
   String read(String relativePath) {
     final file = File(relativePath);
@@ -60,9 +82,11 @@ void main() {
     expect(src.contains('widget.onOpenInAnki!'), isTrue);
     expect(
         src.contains(
-            'Future<void> Function(String expression, String reading)? onOpenInAnki'),
+            'Future<AnkiOpenWordOutcome> Function(String expression, String reading)?'),
         isTrue,
         reason: 'onOpenInAnki field must be declared on the webview');
+    expect(src.contains('return outcome.name;'), isTrue,
+        reason: '三态结局必须回传，popup.js 靠它区分「没有卡」与「打不开」');
   });
 
   test('dictionary_popup_layer.dart threads onOpenInAnki to the webview', () {
@@ -75,32 +99,148 @@ void main() {
   test('both host lanes provide onOpenInAnki and wire it into the layer', () {
     final mixin =
         read('lib/src/pages/implementations/dictionary_page_mixin.dart');
-    expect(
-        mixin.contains(
-            'Future<void> onOpenInAnki(String expression, String reading)'),
-        isTrue);
+    expect(mixin.contains('Future<AnkiOpenWordOutcome> onOpenInAnki('), isTrue);
     expect(mixin.contains('onOpenInAnki: onOpenInAnki'), isTrue);
-    expect(mixin.contains('openMinedCardInAnki('), isTrue);
+    expect(mixin.contains('repo.openWordInAnki(expression, reading)'), isTrue);
 
     final base = read('lib/src/pages/base_source_page.dart');
-    expect(
-        base.contains(
-            'Future<void> onOpenInAnkiFromPopup(String expression, String reading)'),
+    expect(base.contains('Future<AnkiOpenWordOutcome> onOpenInAnkiFromPopup('),
         isTrue);
     expect(base.contains('onOpenInAnki: onOpenInAnkiFromPopup'), isTrue);
-    expect(base.contains('openMinedCardInAnki('), isTrue);
+    expect(base.contains('repo.openWordInAnki(expression, reading)'), isTrue);
   });
 
-  test('orchestrator: single opens directly, empty toasts, many pick', () {
-    final src = read('lib/src/anki/anki_mined_card_action_sheet.dart');
-    expect(src.contains('Future<void> openMinedCardInAnki('), isTrue);
-    // 无命中 → toast，不静默。
-    expect(src.contains('if (matches.isEmpty)'), isTrue);
-    expect(src.contains('t.anki_open_no_card'), isTrue);
-    // 单卡 → 直接 openNoteInAnki。
-    expect(src.contains('if (matches.length == 1)'), isTrue);
-    expect(src.contains('repo.openNoteInAnki(matches.first.noteId)'), isTrue);
-    // 多卡 → 轻量选择。
-    expect(src.contains('showAnkiOpenNotePicker('), isTrue);
+  test('BUG-2051 仓库层：↗ 与查重同源，且查询串里不放名字', () {
+    final repo = read(
+        '../packages/fushi_anki/lib/src/ankiconnect/ankiconnect_repository.dart');
+    final int openWordAt =
+        repo.indexOf('Future<AnkiOpenWordOutcome> openWordInAnki(');
+    expect(openWordAt, greaterThan(-1));
+    // 方法体 = 到下一个 @override 为止（不用固定窗口：那会随代码长短漂移，
+    // 要么切掉半个方法、要么把邻居的实现算进来，两头都让断言失去判别力）。
+    final int nextOverride = repo.indexOf('\n  @override', openWordAt);
+    expect(nextOverride, greaterThan(openWordAt));
+    final String body = repo.substring(openWordAt, nextOverride);
+    // 判命中：与查重共用的 dupe 构造器。
+    expect(body.contains('ankiDuplicateSearchQuery('), isTrue);
+    expect(body.contains('findNotesByField('), isFalse,
+        reason: '按第一字段名查是被删掉的那条判据，不得在 ↗ 路径上复活');
+    // 卡组范围按 **id** 解析：Anki 搜索的 `deck:` 是通配匹配（`_`/`*`），而查重侧
+    // 是精确名——把卡组名塞回搜索串就是给判据留第二个漂移入口。
+    expect(body.contains('ankiDuplicateDeckIds('), isTrue,
+        reason: '卡组必须先按名字精确解析成 id，不能交给 Anki 的通配匹配');
+    // 打开：只喂 note id。词与卡组名都不进浏览器的查询串。
+    expect(body.contains('ankiNoteIdBrowseQuery('), isTrue);
+    expect(body.contains('service.guiBrowseQuery(browseQuery)'), isTrue);
+
+    // 构造器自己也不许再拼卡组名：`ankiDuplicateDeckFilter` 产出的是 `deck:"名字"`，
+    // 那条通配路径只留给尚未改造的旧字段名查询（见 BUG-2051 备注），不得回流到这里。
+    final service = read(
+        '../packages/fushi_anki/lib/src/ankiconnect/ankiconnect_service.dart');
+    final int qAt = service.indexOf('String ankiDuplicateSearchQuery(');
+    expect(qAt, greaterThan(-1));
+    final int qEnd = topLevelBodyEnd(service, qAt);
+    expect(qEnd, greaterThan(qAt));
+    final String queryBody = service.substring(qAt, qEnd);
+    // 非空转自检：真取到了函数体（不是被参数表截断成一小段）。
+    expect(queryBody, contains('dupe:'));
+    expect(queryBody.contains('ankiDeckIdFilter('), isTrue);
+    expect(queryBody.contains('ankiDuplicateDeckFilter('), isFalse,
+        reason: '卡组名进搜索串 = 交给 Anki 的通配匹配，与查重侧的精确名不同源');
+    expect(queryBody.contains('deck:'), isFalse);
+
+    // 没有原生「按词打开」能力的后端走基类默认（按 note id，两者本就同源）。
+    final base =
+        read('../packages/fushi_anki/lib/src/base_anki_repository.dart');
+    expect(
+        base.contains('Future<AnkiOpenWordOutcome> openWordInAnki('), isTrue);
+    expect(base.contains('AnkiOpenWordOutcome.noMatch'), isTrue,
+        reason: '「Anki 可达但这个词没有卡」必须是独立的第三态');
+  });
+
+  // ── BUG-2051（守卫覆盖面）：「打开 Anki」只有一个原语 ────────────────────
+  //
+  // 上面那条仓库层守卫只钉了 openWordInAnki **方法体内**不许复活按字段名的反查。
+  // 它拦不住「再加一处入口，自己 findMatchingNotes + openNoteInAnki 拼一条按词
+  // 打开」——那正是本 bug 的成因（同一个问题两条判据各查各的）换个位置重来。
+  // 所以下面三条按**目录枚举**扫全树：新文件自动落进扫描面，白名单之外一出现就红。
+
+  // 源码判据必须剥注释：文档注释里到处写着 [BaseAnkiRepository.openWordInAnki]，
+  // 不剥的话每个提到它的文件都会被算成调用点，断言直接失去判别力。
+  // 用仓库的 maskComments 而不是手写 startsWith('//')——后者只认行注释、放过
+  // /* ... */ 块注释，而且 source_guard_adoption_test 明令禁止手写这一套。
+
+  List<String> dartFilesUnder(String dir) {
+    final Directory root = Directory(dir);
+    expect(root.existsSync(), isTrue, reason: 'missing $dir');
+    return root
+        .listSync(recursive: true)
+        .whereType<File>()
+        // Windows 上 listSync 给的是反斜杠路径；白名单用正斜杠写，两边先归一化，
+        // 否则本机绿、CI（Linux）也绿，但白名单永远匹配不上 = 恒红/恒空。
+        .map((File f) => f.path.replaceAll(Platform.pathSeparator, '/'))
+        .where((String p) => p.endsWith('.dart'))
+        .toList();
+  }
+
+  Set<String> filesWhere(String dir, bool Function(String code) predicate) {
+    return <String>{
+      for (final String path in dartFilesUnder(dir))
+        if (predicate(maskComments(File(path).readAsStringSync()))) path,
+    };
+  }
+
+  test('BUG-2051 ↗ 的调用点只有登记的三条车道（目录枚举，新文件自动入网）', () {
+    // 三条已知车道：应用内词典页 / 媒体页弹窗 / galgame overlay 浮窗。
+    const Set<String> lanes = <String>{
+      'lib/src/pages/implementations/dictionary_page_mixin.dart',
+      'lib/src/pages/base_source_page.dart',
+      'lib/src/lookup/overlay_bridge_handlers.dart',
+    };
+    expect(
+      filesWhere('lib', (String code) => code.contains('.openWordInAnki(')),
+      lanes,
+      reason: '新入口要么走这三条车道之一，要么把自己登记进来并说明为什么另起一处',
+    );
+  });
+
+  test('BUG-2051 没有第二处自制的「按词 → note id → 打开」拼装', () {
+    // 白名单两处都是**按 note id** 的既有车道，不是按词打开：
+    // - action sheet：已经知道是哪张卡，查候选是为了列面板给用户挑；
+    // - overlay bridge：note id 那条 handler 与 openWordInAnki 那条并列，各管各的。
+    const Set<String> idLanes = <String>{
+      'lib/src/anki/anki_mined_card_action_sheet.dart',
+      'lib/src/lookup/overlay_bridge_handlers.dart',
+    };
+    expect(
+      filesWhere(
+        'lib',
+        (String code) =>
+            code.contains('.findMatchingNotes(') &&
+            code.contains('.openNoteInAnki('),
+      ),
+      idLanes,
+      reason: '同一个文件里既反查又打开 = 在重造 openWordInAnki，那条链只该有一份',
+    );
+  });
+
+  test('BUG-2051 guiBrowseQuery 只在 AnkiConnect 仓库/服务内部被调用', () {
+    // 谁都能自己发一条 guiBrowse 查询绕开原语——那就又有了第二条判据。
+    const Set<String> owners = <String>{
+      '../packages/fushi_anki/lib/src/ankiconnect/ankiconnect_service.dart',
+      '../packages/fushi_anki/lib/src/ankiconnect/ankiconnect_repository.dart',
+    };
+    expect(
+      filesWhere('../packages/fushi_anki/lib',
+          (String code) => code.contains('guiBrowseQuery(')),
+      owners,
+    );
+  });
+
+  test('BUG-2051 popup.js 只有一条车道（页内反查已删）', () {
+    final src = read('assets/popup/popup.js');
+    expect(src.contains('async function openWordInAnki('), isTrue);
+    expect(src.contains('runInPageOpenInAnki'), isFalse);
+    expect(src.contains('openOnly'), isFalse);
   });
 }

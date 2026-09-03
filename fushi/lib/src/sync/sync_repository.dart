@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:fushi/src/sync/fushi_sync_server.dart';
+import 'package:fushi/src/sync/jellyfin_video_client.dart'
+    show JellyfinServerConfig;
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -183,10 +185,18 @@ class SyncRepository {
   static const _keyFolderCache = 'sync_folder_cache';
   static const _keySyncStats = 'sync_stats_enabled';
   static const _keySyncAudioBook = 'sync_audiobook_enabled';
-  static const _keySyncDictionary = 'sync_dictionary_enabled';
+  // 废弃：词典与本地音频源数据库不再有「同步开关」，改成设置页的显式上传 / 下载
+  // 动作（见 `SyncOrchestrator.runAssetTransferOnly`）。存量库里的这两行不做 schema
+  // 迁移（要冒着改动已发布版本的风险），但**必须还读一次**：升级前开着自动同步的
+  // 用户，升级后同步会静默停下——「立即同步」照常报「完成 N 项」，而新导入的词典
+  // 再也不上云。用户没有任何信号知道备份里已经没有词典了。这不是数据丢失，是
+  // 「我以为还在备份」的静默失效，正是 never break userspace 要挡的东西。所以留一条
+  // 一次性告知（见 sync_settings_schema 的 sync.asset_legacy_notice），读到 true 就
+  // 在同步设置页说明改动，用户确认后写 false 关掉，此后这两个键才真正是死数据。
+  static const _keyLegacySyncDictionary = 'sync_dictionary_enabled';
+  static const _keyLegacySyncLocalAudio = 'sync_local_audio_enabled';
   static const _keySyncAudioBookFiles = 'sync_audiobook_files_enabled';
   static const _keySyncVideoFiles = 'sync_video_files_enabled';
-  static const _keySyncLocalAudio = 'sync_local_audio_enabled';
   static const _keyAutoSync = 'sync_auto_enabled';
   static const _keyLastSyncMs = 'sync_last_sync_ms';
   static const _keyCollectionsBaselineMs = 'sync_collections_baseline_ms';
@@ -222,13 +232,28 @@ class SyncRepository {
   static const _keyInterconnectSyncAudioBookFiles =
       'interconnect_sync_audiobook_files';
   static const _keyInterconnectSyncVideoFiles = 'interconnect_sync_video_files';
+  // 互联通道专属的「共享统计 / 共享收藏夹」开关。此前互联的聚合同步（统计 + 收藏
+  // 词句）无条件复用云备份的 sync_stats_enabled，用户在互联页既看不到这两类数据
+  // 正在跨设备流动，也没法只对互联单独关掉——与 BUG-988 拆四个上传开关时修掉的
+  // 是同一个毛病（互联通道借用云备份开关 = 用户失去分通道控制权）。
+  // 缺键时**继承旧键 sync_stats_enabled 的当前值**（不是硬编码 true）：旧键是个
+  // 用户可见开关，把它关掉的存量用户升级后绝不能被默认值静默复位成「又在同步」。
+  // 只有用户真的动过互联这两个新开关（新键有行）时才用新值。
+  static const _keyInterconnectSyncStats = 'interconnect_sync_stats';
+  static const _keyInterconnectSyncFavorites = 'interconnect_sync_favorites';
+  // apikey 同步设定重设计（2026-08-17）：互联 service-config（host 的外部服务
+  // API key / 服务配置，interconnect_service_config.dart 白名单）此前是**无 UI、
+  // 无开关**的隐形通道——用户既看不见「配对后 host 的 Jimaku/TMDB key 会同步过来」
+  // 这件事，也关不掉它。默认 true 保持既有行为（TLS 开着的互联用户无感知），
+  // 开关落设备本地（要不要接收 host 凭据是每台设备自己的信任决策，不跨设备跟随）。
+  static const _keyInterconnectServiceConfigSync =
+      'interconnect_sync_service_config';
   static const _keyWebDavUrl = 'sync_webdav_url';
   static const _keyWebDavUsername = 'sync_webdav_username';
   static const _keyWebDavPassword = 'sync_webdav_password';
 
   static const String syncStatsPreferenceKey = _keySyncStats;
   static const String syncAudioBookPreferenceKey = _keySyncAudioBook;
-  static const String syncDictionaryPreferenceKey = _keySyncDictionary;
 
   // ── Folder cache（按通道分槽，BUG-1576） ───────────────────────────
   //
@@ -318,6 +343,19 @@ class SyncRepository {
 
   // ── Sync settings ─────────────────────────────────────────────────
 
+  /// 升级前这台设备是否开着词典 / 本地音频的自动同步（任一为真即算）。
+  /// 只被那条一次性告知读；确认后经 [acknowledgeLegacyAssetAutoSync] 归零。
+  Future<bool> hadLegacyAssetAutoSync() async =>
+      await _db.getPrefTyped<bool>(_keyLegacySyncDictionary, false) ||
+      await _db.getPrefTyped<bool>(_keyLegacySyncLocalAudio, false);
+
+  /// 用户已看过告知：把两个废弃键写 false，提示不再出现。
+  /// 写 false 而不是删行——`Preferences` 没有删除接口，写值不需要动已发布 schema。
+  Future<void> acknowledgeLegacyAssetAutoSync() async {
+    await _db.setPrefTyped<bool>(_keyLegacySyncDictionary, false);
+    await _db.setPrefTyped<bool>(_keyLegacySyncLocalAudio, false);
+  }
+
   Future<bool> isSyncStatsEnabled() =>
       _db.getPrefTyped<bool>(_keySyncStats, true);
   Future<void> setSyncStatsEnabled(bool v) =>
@@ -326,11 +364,6 @@ class SyncRepository {
   Future<bool> isSyncAudioBookEnabled() async => true;
   Future<void> setSyncAudioBookEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keySyncAudioBook, true);
-
-  Future<bool> isSyncDictionaryEnabled() =>
-      _db.getPrefTyped<bool>(_keySyncDictionary, false);
-  Future<void> setSyncDictionaryEnabled(bool v) =>
-      _db.setPrefTyped<bool>(_keySyncDictionary, v);
 
   /// 是否同步有声书文件（音频 + 字幕包）。默认 false：包大，需用户显式开启。
   Future<bool> isSyncAudioBookFilesEnabled() =>
@@ -345,12 +378,6 @@ class SyncRepository {
       _db.getPrefTyped<bool>(_keySyncVideoFiles, false);
   Future<void> setSyncVideoFilesEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keySyncVideoFiles, v);
-
-  /// 是否同步本地音频来源（DB 文件 + 配置）。默认 false：DB 大，需用户显式开启。
-  Future<bool> isSyncLocalAudioEnabled() =>
-      _db.getPrefTyped<bool>(_keySyncLocalAudio, false);
-  Future<void> setSyncLocalAudioEnabled(bool v) =>
-      _db.setPrefTyped<bool>(_keySyncLocalAudio, v);
 
   Future<bool> isAutoSyncEnabled() =>
       _db.getPrefTyped<bool>(_keyAutoSync, false);
@@ -626,6 +653,45 @@ class SyncRepository {
       _db.getPrefTyped<bool>(_keyInterconnectSyncVideoFiles, false);
   Future<void> setInterconnectSyncVideoFilesEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keyInterconnectSyncVideoFiles, v);
+
+  /// 互联通道「共享统计」：阅读/观看时长、字数、逐时桶、查词与制卡计数。关掉后本设备
+  /// 既不把统计推给对端，也不把对端统计折进本地——两个方向一起停，否则「关了还在收」
+  /// 会让本地统计继续被对端撑大，用户看到的仍是没关掉。
+  ///
+  /// **缺键时继承旧开关 [isSyncStatsEnabled]**，不是硬编码 true。拆开关前互联的
+  /// 统计/收藏就是由 `sync_stats_enabled` 一刀切代管的（那是个**无 visible 门控、
+  /// 文案就叫「同步统计」的用户可见开关**）。存量用户把它关掉 = 明示「别同步我的
+  /// 统计」；新键硬编码默认 true 会让升级后第一轮互联 sweep 就把统计 + 收藏词句推给
+  /// 对端并把对端的折回本地，用户零操作、零提示 —— never break userspace。只有用户
+  /// **真的动过互联那个新开关**（新键有行才成立）时才用新值。
+  Future<bool> isInterconnectSyncStatsEnabled() =>
+      _interconnectAggregateFlag(_keyInterconnectSyncStats);
+  Future<void> setInterconnectSyncStatsEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectSyncStats, v);
+
+  /// 互联通道「共享收藏夹」：收藏词 + 收藏句（以及它们的删除墓碑，取消收藏要能
+  /// 跨端传播）。与统计同为聚合快照的一半，但语义不同——收藏是用户挑出来的内容，
+  /// 值得独立开关。同样双向一起停；缺键时同样继承旧的 [isSyncStatsEnabled]
+  /// （收藏族拆开关前也归它管，见 [isInterconnectSyncStatsEnabled] 的说明）。
+  Future<bool> isInterconnectSyncFavoritesEnabled() =>
+      _interconnectAggregateFlag(_keyInterconnectSyncFavorites);
+  Future<void> setInterconnectSyncFavoritesEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectSyncFavorites, v);
+
+  /// 聚合快照两族（统计 / 收藏）互联侧开关的统一读法：新键有行就用新值，缺行则
+  /// 回退到拆开关前代管它们的旧键 `sync_stats_enabled`（其自身默认 true）。
+  Future<bool> _interconnectAggregateFlag(String key) async {
+    if (await _db.getPref(key) == null) return isSyncStatsEnabled();
+    return _db.getPrefTyped<bool>(key, true);
+  }
+
+  /// 互联 service-config 同步（host 的外部服务 API key / 服务配置随互联下发）。
+  /// 默认 true = 既有行为不变；关掉后本设备不再向 host 请求 service-config，
+  /// 已导入的值保持原样（不回滚——那是用户此刻正在用的配置）。
+  Future<bool> isInterconnectServiceConfigSyncEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectServiceConfigSync, true);
+  Future<void> setInterconnectServiceConfigSyncEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectServiceConfigSync, v);
 
   // ── Per-book audiobook position (synced) ──────────────────────────
 
@@ -912,6 +978,32 @@ class SyncRepository {
     return id;
   }
 
+  // ── Jellyfin / Emby 媒体服务器 ───────────────────────────────────
+
+  static const _keyJellyfinServer = 'sync_jellyfin_server';
+
+  /// 已登录的 Jellyfin/Emby 服务器配置；未配置 / 已登出 / 脏 JSON → null。
+  /// v1 单服务器（与视频页单远端源架构对齐）。
+  Future<JellyfinServerConfig?> getJellyfinServer() async {
+    final String? raw = await _getStringOrNull(_keyJellyfinServer);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        return JellyfinServerConfig.fromJson(decoded);
+      }
+    } catch (_) {
+      // Best-effort: 脏 JSON / 旧格式一律当「未配置」（下面 return null），不弹错也不
+      // 抛——这条只是读缓存里的服务器配置，登录页会让用户重新配。
+    }
+    return null;
+  }
+
+  /// 保存 / 清除（null = 登出删键）Jellyfin 服务器配置。
+  Future<void> setJellyfinServer(JellyfinServerConfig? config) => config == null
+      ? _deleteKey(_keyJellyfinServer)
+      : _setString(_keyJellyfinServer, jsonEncode(config.toJson()));
+
   // ── Hibiki Client (connect to another Hibiki instance) ─────────
 
   static const _keyFushiClientUrl = 'sync_hibiki_client_url';
@@ -1114,7 +1206,7 @@ class SyncRepository {
   ///
   /// 故意排除：
   /// - 行为开关 `sync_auto_enabled`/`sync_stats_enabled`/`sync_audiobook_enabled`/
-  ///   `sync_dictionary_enabled`/`sync_content_enabled` —— 当作用户设置，随备份恢复。
+  ///   `sync_content_enabled` —— 当作用户设置，随备份恢复。
   /// - 内容 `audiobook_pos_*` —— 随备份恢复。
   /// - folder cache `sync_root_folder_id`/`sync_folder_cache` —— 不还原，下次同步重建。
   ///
@@ -1169,6 +1261,11 @@ class SyncRepository {
     _keyFushiClientUrls,
     _keyFushiClientToken,
     _keyFushiClientUrl,
+    // Jellyfin 服务器绑定含访问令牌，属设备本地凭据，绝不随备份跨设备。
+    _keyJellyfinServer,
+    // 「要不要接收 host 的 service-config（外部服务 API key）」是每台设备自己的
+    // 信任决策，跨设备携带会把 A 机的选择强加给 B 机。
+    _keyInterconnectServiceConfigSync,
     // 合集同步因果基线：描述「本设备见过共享清单到什么时刻」，跨设备携带会让
     // 新设备把没见过的墓碑误判成旧闻而复活成员（见 getCollectionsSyncBaselineMs）。
     // 这两条是**解耦前的全局键**：现值仍被 per-channel 读作迁移初值，故照旧不能
@@ -1188,6 +1285,10 @@ class SyncRepository {
     // 都描述本机能力。跨设备恢复会携带明文凭据、无效绝对路径或错误 source id。
     'video_resource_torznab_config',
     'video_subtitle_opensubtitles_config',
+    // 用户自配的 OPDS 书目服务器：条目里带 base64 密码，且服务器地址多是
+    // 局域网 IP（`http://192.168.x.x:8080`），跨设备恢复既泄凭据又指向一台
+    // 新机根本连不到的主机。
+    'discovery_opds_servers',
     'video_download_backend_path_mappings',
     'video_download_target_source_id',
     'video_download_embedded_installation_id',

@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 
 /// 触发「把键盘焦点收回本页正文」的原因。
 ///
@@ -86,6 +87,16 @@ class PageFocusOwnership {
   /// 返回是否真的发起了请求——供测试断言，也让调用点能在被判据否决时走别的
   /// 路径（正常业务代码通常忽略返回值）。
   bool reclaim(FocusReclaimCause cause) {
+    // BUG-1619：[FocusReclaimCause.appResumed] 背后的 `AppLifecycleState.resumed`
+    // 是**进程级**信号。桌面版 Fushi 是多顶层窗口进程，剪贴板查词面板 / app 外
+    // 查词覆盖窗夺得前台时同样会把进程带到前台，而主窗其实还压在用户的游戏 /
+    // 浏览器底下。此时 requestFocus 会被引擎翻译成 SetFocus(FlutterView)，
+    // Win32 语义下连带激活主窗 —— 主界面凭空盖住用户正在用的窗口。
+    // 判据是**窗口级**的：主窗自己在前台才回收（Alt+Tab 真的切回来那次照常）。
+    if (cause == FocusReclaimCause.appResumed &&
+        !DesktopForegroundGuard.isMainWindowForeground()) {
+      return false;
+    }
     if (!_canOwn(cause)) return false;
     node.requestFocus();
     return true;

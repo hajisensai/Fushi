@@ -156,11 +156,19 @@
   // 拿到轨 URL → 页面身份抓字幕原文 → 送隔离世界。best-effort，失败静默（不影响站点播放）。
   function fetchTrack(track) {
     if (!track || !track.url || seenUrls[track.url]) return;
+    // BUG-1728 同款（netflix-bridge.js）：去重标记占坑防并发、失败在 .catch 撤销允许重试；
+    // 裸 fetch 不带 credentials——跨源字幕 CDN 回 ACAO:* 时带凭据请求会被 CORS 整个拒掉。
     seenUrls[track.url] = 1;
-    fetch(track.url, { credentials: 'include' })
-      .then(function (r) { return r.text(); })
+    fetch(track.url)
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      })
       .then(function (text) { if (text) postCues(track.label, track.format, text); })
-      .catch(function () {});
+      .catch(function (e) {
+        delete seenUrls[track.url];
+        try { console.warn('[Fushi] subtitle track fetch failed:', track.url, e); } catch (_) {}
+      });
   }
   function fetchTracks(tracks) {
     if (!tracks) return;

@@ -9,7 +9,8 @@ import 'package:flutter/services.dart'
         PhysicalKeyboardKey;
 import 'package:flutter/widgets.dart';
 
-import 'package:fushi/src/shortcuts/input_binding.dart' show ModifierKey;
+import 'package:fushi/src/shortcuts/input_binding.dart'
+    show GamepadButton, InputBinding, ModifierKey;
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
@@ -67,6 +68,7 @@ class VideoPlayerShortcutActions {
     required this.screenshot,
     required this.toggleFullscreen,
     required this.toggleSubtitleList,
+    required this.searchSubtitleList,
     required this.toggleImmersiveLock,
     required this.toggleSubtitleBlur,
     required this.cycleSubtitleObscure,
@@ -115,6 +117,9 @@ class VideoPlayerShortcutActions {
 
   /// 打开/关闭字幕跳转列表面板（TODO-069，默认裸 L 键；asbplayer 式 transcript 列表）。
   final VoidCallback toggleSubtitleList;
+
+  /// BUG-1907：打开字幕列表并聚焦搜索框（默认 Ctrl+F）。列表已开则只聚焦。
+  final VoidCallback searchSubtitleList;
 
   /// 翻转锁定 / 沉浸模式（TODO-101，默认 Shift+L）。锁定后控制条按钮不再随鼠标/触摸弹出，
   /// 视频纯画面播放，但查词与快捷键仍可用；再按一次（或点常驻解锁按钮）退出。
@@ -174,6 +179,69 @@ class VideoPlayerShortcutActions {
 /// single fixed wiring between the (remappable) registry actions and the
 /// concrete player operations; the keys themselves come from the registry so
 /// users can rebind them (TODO-134).
+/// 能绑到视频页**屏幕按钮**（自定义「快捷键 1..4」）上的动作全集。
+///
+/// 真相源是 [videoActionCallbacks]：只有它接过线的动作才真的能在本页执行，把别的动作
+/// 放进选择列表 = 用户配得上、按了没反应。这里之所以另写一份常量而不是直接取
+/// `videoActionCallbacks(...).keys`，是因为**设置页拿不到 live 的
+/// [VideoPlayerShortcutActions]**（那需要一个正在播放的 controller），而选择列表在没
+/// 打开视频时也要能展示。
+///
+/// ⚠️ 两份必须一致：守卫测试 `video_custom_action_bindings_test` 用一个哑实例调
+/// [videoActionCallbacks] 并与本表逐个比对，漏加 / 多加即红。顺序 = 选择列表的展示
+/// 顺序，按「播放 → 字幕 → 对轴 → 音量 → 画面 → 学习」分簇，与设置页快捷键分组同序。
+const List<ShortcutAction> kVideoAssignableActions = <ShortcutAction>[
+  // 播放控制
+  ShortcutAction.videoTogglePlayPause,
+  ShortcutAction.videoPlay,
+  ShortcutAction.videoPause,
+  ShortcutAction.videoSeekBackward,
+  ShortcutAction.videoSeekForward,
+  ShortcutAction.videoPreviousFrame,
+  ShortcutAction.videoNextFrame,
+  // 倍速
+  ShortcutAction.videoSpeedUp,
+  ShortcutAction.videoSpeedDown,
+  ShortcutAction.videoResetSpeed,
+  ShortcutAction.videoHoldSpeed,
+  // 字幕跳转 / 重播
+  ShortcutAction.videoPreviousSubtitle,
+  ShortcutAction.videoNextSubtitle,
+  ShortcutAction.videoReplayCurrentSubtitle,
+  ShortcutAction.videoReplayPreviousSubtitle,
+  // 章节
+  ShortcutAction.videoPreviousChapter,
+  ShortcutAction.videoNextChapter,
+  // 字幕显示 / 遮蔽
+  ShortcutAction.videoToggleSubtitleList,
+  ShortcutAction.videoSearchSubtitleList,
+  ShortcutAction.videoToggleSubtitleBlur,
+  ShortcutAction.videoCycleSubtitleObscure,
+  ShortcutAction.videoToggleSubtitleHide,
+  ShortcutAction.videoCycleSecondarySubtitleObscure,
+  ShortcutAction.videoToggleSecondarySubtitleHide,
+  // 字幕对轴
+  ShortcutAction.videoOpenSubtitleAlign,
+  ShortcutAction.videoSubtitleDelayIncrease,
+  ShortcutAction.videoSubtitleDelayDecrease,
+  ShortcutAction.videoAlignSubtitleToPrev,
+  ShortcutAction.videoAlignSubtitleToNext,
+  // 音量
+  ShortcutAction.videoVolumeUp,
+  ShortcutAction.videoVolumeDown,
+  ShortcutAction.videoToggleMute,
+  // 画面 / 杂项
+  ShortcutAction.videoToggleFullscreen,
+  ShortcutAction.videoScreenshot,
+  ShortcutAction.videoToggleShaderCompare,
+  ShortcutAction.videoToggleImmersiveLock,
+  // 学习
+  ShortcutAction.videoToggleFavoriteSentence,
+  ShortcutAction.videoEnterCaret,
+  // 「返回上一级」：视频页把它解释成逐级退出阶梯（关字幕列表 → 退侧栏 → … → 退页）。
+  ShortcutAction.globalBack,
+];
+
 Map<ShortcutAction, VoidCallback> videoActionCallbacks(
   VideoPlayerShortcutActions actions,
 ) {
@@ -198,6 +266,7 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoScreenshot: actions.screenshot,
     ShortcutAction.videoToggleFullscreen: actions.toggleFullscreen,
     ShortcutAction.videoToggleSubtitleList: actions.toggleSubtitleList,
+    ShortcutAction.videoSearchSubtitleList: actions.searchSubtitleList,
     ShortcutAction.videoToggleImmersiveLock: actions.toggleImmersiveLock,
     ShortcutAction.videoToggleSubtitleBlur: actions.toggleSubtitleBlur,
     ShortcutAction.videoCycleSubtitleObscure: actions.cycleSubtitleObscure,
@@ -226,12 +295,39 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
   };
 }
 
-/// Builds the `Map<ShortcutActivator, VoidCallback>` for the video player from
-/// the live registry's video-scope bindings (TODO-134). Every keyboard binding
-/// the user has mapped to a video action becomes a [SingleActivator] pointing
-/// at that action's callback, so rebinding in the shortcut settings page takes
-/// effect immediately. The subtitle-blur toggle stays press-edge-only
-/// (includeRepeats:false) to preserve its previous non-repeating behaviour.
+/// 长按**不**连发的视频动作（按一下翻一次）。TODO-840 Part B 起是模糊切换 / 遮蔽
+/// 循环 / 隐藏切换；进入选词光标与制卡同属此类（长按不该连发查词 / 连发制卡）。
+///
+/// **真正逐条生效的只有页级 press-time 通道**：[resolveVideoKeyboardShortcut] 把本集合
+/// 翻译成「[KeyRepeatEvent] 不消费」，5 个成员条条管用。
+///
+/// 还在用 activator 表的那条路径（[buildVideoPlayerShortcutsFromRegistry]，只服务字幕
+/// 对轴弹窗与网页视频页）只翻译得到其中 3 个：`videoEnterCaret` 被那个函数显式
+/// `continue` 掉、根本不进表；`popupMineEntry` 属 dictionaryPopup scope，压根不在
+/// [videoActionCallbacks] 里、也就不在被遍历的动作集合里。所以这不是「两条通道逐字
+/// 等价」的真相源，而是「press-time 通道的真相源 + activator 表尽力翻译的子集」——
+/// 读成前者就会以为往集合里加一个动作两边都生效，那正是漏改一侧的起点。
+const Set<ShortcutAction> kVideoPressEdgeOnlyActions = <ShortcutAction>{
+  ShortcutAction.videoToggleSubtitleBlur,
+  ShortcutAction.videoCycleSubtitleObscure,
+  ShortcutAction.videoToggleSubtitleHide,
+  ShortcutAction.videoEnterCaret,
+  ShortcutAction.popupMineEntry,
+};
+
+/// 把注册表里的视频键盘绑定冻结成一张 `Map<ShortcutActivator, VoidCallback>`
+/// （TODO-134）。
+///
+/// **这不是视频页的主键盘通道**。主通道是 press-time 解析的
+/// [resolveVideoKeyboardShortcut]（挂在视频页最外层 `Focus.onKeyEvent`，与手柄
+/// [FushiShortcutRegistry.resolveGamepad] 派发同构）。本函数只服务**推到 Navigator
+/// 上的独立弹窗**（字幕波形对轴视图）——那些路由不在视频页 Focus 的祖先链上，收不到
+/// 主通道，只能自带一张表。
+///
+/// build 时冻结意味着表建好之后注册表改键不会自动反映到已挂载的弹窗上，也无法表达
+/// 「命中了但这次不消费」（见下面两个 `continue` 的注释）；弹窗是短生命周期、按键面
+/// 也窄，这两条限制在那里可以接受，在整页主通道上则不行——那正是主通道改成 press-time
+/// 的原因。[exclude] 让调用点摘掉会破坏弹窗自身的动作（Esc / 全屏 / 打开字幕列表…）。
 Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
   FushiShortcutRegistry registry,
   VideoPlayerShortcutActions actions, {
@@ -247,31 +343,18 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
     // 调用点可排除个别动作（如字幕对轴弹窗复用本 map 时排除 Escape / 全屏 / 打开字幕列表 /
     // 沉浸锁，避免它们拦掉弹窗自身的关闭或在弹窗后面改变布局）。
     if (exclude.contains(action)) continue;
-    // 按住临时倍速的**键盘绑定永不进本表**：按住语义需要 keyup 边沿，装成
-    // SingleActivator 会在 keydown 就把事件消费掉，页面级 Focus.onKeyEvent 的
-    // 按下/松开判定（_handleHoldSpeedKey）就永远收不到。手柄通道不受影响——
-    // resolveGamepad 派发仍走 videoActionCallbacks 里的 toggleHoldSpeed。
+    // 这两个动作**永远不进 activator 表**，因为它们要表达的语义 [SingleActivator]
+    // 根本表达不了；两者都由主通道 [resolveVideoKeyboardShortcut] 在 press-time 处理。
+    //
+    // · videoHoldSpeed：按住加速 / 松开恢复需要 keyup 边沿，activator 只有按下沿。
+    // · videoEnterCaret（默认 Enter）：需要「命中了绑定键但仍然放行」——Enter 是本
+    //   app 唯一的焦点确认键（裸空格已被中和成 DoNothingIntent，见
+    //   `global_navigation.dart`），焦点落在弹窗按钮上时必须继续上浮到
+    //   Enter→ActivateIntent。[CallbackShortcuts] 一旦匹配就无条件 handled，回调里
+    //   再怎么判断也收不回这次消费。
     if (action == ShortcutAction.videoHoldSpeed) continue;
-    // 进入字级选词光标的**键盘绑定同样永不进本表**（默认 Enter）。本表被装进
-    // media_kit 桌面 controls 的 `keyboardShortcuts`，即一个 [CallbackShortcuts]，
-    // 而它**包住整个 controls 子树**（顶栏 / 底栏按钮全在里面）、一旦 activator
-    // 匹配就无条件返回 handled——回调里再怎么判断也收不回这次消费。Enter 是本 app
-    // 的全局焦点确认键（裸空格已被中和成 DoNothingIntent，见 `global_navigation.dart`），
-    // 装进这张表等于把控制条上每个按钮的 Enter 确认整片吃掉：Tab / 手柄把焦点落到
-    // 播放 / 全屏 / ±10s 上再按 Enter，按钮不会被按下，而是弹出选词光标。
-    // 改由页面最外层 Focus.onKeyEvent 按**焦点归属**做 contextual 判定——只有视频
-    // 画面持焦才进光标，焦点在 chrome 按钮上时不消费、放行给 ActivateIntent
-    // （[decideVideoEnterCaretKey]，阅读器 `_isCaretEntryTrigger` 同款范式）。
-    // 顺带（有意）：任何复用本表的调用点（如字幕对轴弹窗）都不会再意外装上 Enter。
     if (action == ShortcutAction.videoEnterCaret) continue;
-    // 模糊切换 / 遮蔽循环 / 隐藏切换都是 press-edge-only（按一下翻一次，长按不连发，
-    // 与历史 videoToggleSubtitleBlur 同语义）。TODO-840 Part B。
-    const Set<ShortcutAction> pressEdgeOnly = <ShortcutAction>{
-      ShortcutAction.videoToggleSubtitleBlur,
-      ShortcutAction.videoCycleSubtitleObscure,
-      ShortcutAction.videoToggleSubtitleHide,
-    };
-    final bool includeRepeats = !pressEdgeOnly.contains(action);
+    final bool includeRepeats = !kVideoPressEdgeOnlyActions.contains(action);
     for (final binding in registry.bindingsFor(action).keyboardBindings) {
       // Last writer wins if two actions share a key; the settings UI's conflict
       // check prevents users from creating that within the video scope, and the
@@ -280,48 +363,6 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
     }
   }
   return result;
-}
-
-/// BUG-924：词典浮层开着时，让**任一**已映射的视频快捷键先关掉顶层浮层并消费掉这一次
-/// 按键，而不是穿透去控制后面的视频（对齐阅读器：浮层可见时导航/退出类键先关浮层，见
-/// `reader_fushi/caret.part.dart` 的 `readerDismissDict` 及各键 `isDictionaryShown` 分支）。
-///
-/// 纯函数、无页面依赖，方便单测：把 [base] 里每个回调包一层守卫——[isPopupVisible] 为真时
-/// 调 [dismissPopup] 关一层浮层后 return（不跑原动作）；为假时原样执行 [base] 的回调。视频
-/// scope 没有任何「作用于浮层本身」的快捷键（制卡走浮层内按钮，非视频快捷键），故整表统一
-/// 守卫等价于阅读器的逐键 `isDictionaryShown` 判定，不误吞需要作用于浮层的键。
-/// 字级选词光标激活期的键盘接管（videoEnterCaret）：把注册表 activator 表里每个
-/// 回调包一层守卫——光标激活时，若该 activator 的**无修饰**触发键在光标键表里
-/// （方向键=移动、Enter=查词、Esc=退出，`ReaderCaretRouter.decideKeyboard` 同源），
-/// 先走光标动作、不跑原动作（裸方向键不再 seek/调音量）；带 Ctrl/Alt/Meta 的组合键
-/// （如 Ctrl+←=上一句）与非光标键照常执行。光标未激活时零行为变化。
-///
-/// 纯函数、无页面依赖（与 [guardVideoShortcutsWithPopupDismiss] 同范式，可单测）。
-/// [runCaretKey] 由页面提供：对 (键, shift) 执行光标动作，返回是否已消费。
-Map<ShortcutActivator, VoidCallback> guardVideoShortcutsWithSubtitleCaret(
-  Map<ShortcutActivator, VoidCallback> base, {
-  required bool Function() isCaretActive,
-  required bool Function(LogicalKeyboardKey key, {required bool shift})
-      runCaretKey,
-}) {
-  return base.map(
-    (ShortcutActivator activator, VoidCallback callback) => MapEntry(
-      activator,
-      () {
-        if (isCaretActive() && activator is SingleActivator) {
-          // Ctrl/Alt/Meta 组合键不是光标键（Ctrl+← 上一句等照常放行）；Shift 作为
-          // 光标语义的一部分透传（Shift+Tab=后退一字，与阅读器一致）。
-          final bool hasHardModifier =
-              activator.control || activator.alt || activator.meta;
-          if (!hasHardModifier &&
-              runCaretKey(activator.trigger, shift: activator.shift)) {
-            return;
-          }
-        }
-        callback();
-      },
-    ),
-  );
 }
 
 /// 字级选词光标会话的「暂停 → 再播放」迁移追踪（videoEnterCaret）。
@@ -355,79 +396,9 @@ class SubtitleCaretPauseTracker {
   }
 }
 
-/// [decideVideoEnterCaretKey] 的判决：一次按键对「进入字级选词光标」意味着什么。
-///
-/// 把判据和执行分开，是因为这条路径的要害恰恰在「**什么时候不该消费**」——它
-/// 必须能表达「命中了绑定键但仍然放行」，而回调式的 [CallbackShortcuts] 表达不了
-/// （见 [buildVideoPlayerShortcutsFromRegistry] 里 videoEnterCaret 的 skip 注释）。
-enum VideoEnterCaretKeyDecision {
-  /// 不是「进入选词光标」的绑定键，或光标已激活 / 焦点在文本框：本层不消费，
-  /// 事件按原有路径继续（光标激活期由 `_handleCaretUnboundKey` 接管）。
-  notTrigger,
-
-  /// 命中绑定键，但**焦点不在视频画面上**（控制条按钮等其它控件持焦）：一样不
-  /// 消费——Enter 在本 app 是全局焦点确认键，必须继续上浮到 WidgetsApp 的
-  /// Enter→ActivateIntent，让按钮的 onPressed 照常触发。
-  passThrough,
-
-  /// 命中绑定键且有可见词典浮层：先关顶层浮层（BUG-924：浮层可见时任一视频键
-  /// 都先关浮层，不穿透去控制后面的视频）。
-  dismissPopup,
-
-  /// 命中绑定键且视频画面持焦：进入 / 推进字级选词光标。
-  enterCaret,
-}
-
-/// videoEnterCaret 的键盘触发判据（纯函数，与本文件另两个 guard 同范式，可单测）。
-///
-/// [enterActivators] = 注册表里 [ShortcutAction.videoEnterCaret] 的实时键盘绑定
-/// （默认 Enter，可重映射），由调用方以 `includeRepeats: false` 构造 → 长按不连发。
-/// [videoSurfaceHoldsFocus] = 视频画面的 FocusNode 是否**精确持焦**（`hasPrimaryFocus`）：
-/// 这就是阅读器 `_isCaretEntryTrigger` 那条 contextual 判据在视频侧的对应物——
-/// 「正文持焦才算选词键」在视频侧就是「画面持焦才算选词键」。
-VideoEnterCaretKeyDecision decideVideoEnterCaretKey({
-  required KeyEvent event,
-  required Iterable<ShortcutActivator> enterActivators,
-  required HardwareKeyboard keyboardState,
-  required bool caretActive,
-  required bool hasEditableFocus,
-  required bool hasVisiblePopup,
-  required bool videoSurfaceHoldsFocus,
-}) {
-  if (caretActive || hasEditableFocus) {
-    return VideoEnterCaretKeyDecision.notTrigger;
-  }
-  final bool hit = enterActivators.any(
-    (ShortcutActivator activator) => activator.accepts(event, keyboardState),
-  );
-  if (!hit) return VideoEnterCaretKeyDecision.notTrigger;
-  if (hasVisiblePopup) return VideoEnterCaretKeyDecision.dismissPopup;
-  if (!videoSurfaceHoldsFocus) return VideoEnterCaretKeyDecision.passThrough;
-  return VideoEnterCaretKeyDecision.enterCaret;
-}
-
-Map<ShortcutActivator, VoidCallback> guardVideoShortcutsWithPopupDismiss(
-  Map<ShortcutActivator, VoidCallback> base, {
-  required bool Function() isPopupVisible,
-  required VoidCallback dismissPopup,
-}) {
-  return base.map(
-    (ShortcutActivator activator, VoidCallback callback) => MapEntry(
-      activator,
-      () {
-        if (isPopupVisible()) {
-          dismissPopup();
-          return;
-        }
-        callback();
-      },
-    ),
-  );
-}
-
 /// BUG-853 / BUG-936 / TODO-847 对齐（视频版）：Windows 微软 IME 激活时裸 Space 的
 /// [logicalKey] 会被引擎改写，视频页两条空格「播放/暂停」路径（media_kit controls 的
-/// `keyboardShortcuts` 与页级 `_withPageSpaceOverride`）都用
+/// 旧 media_kit `keyboardShortcuts` 与页级空格兜底都用
 /// `SingleActivator(LogicalKeyboardKey.space)` 匹配 [logicalKey]，故 IME 下按空格暂停
 /// 失效。本谓词在 KeyEvent 层按**物理键**还原 Space 语义，命中后由调用方触发
 /// togglePlayPause。
@@ -516,19 +487,24 @@ HoldSpeedKeyTransition resolveHoldSpeedKeyTransition({
 ///
 /// 修饰键取 [HardwareKeyboard] 实时状态（与 SingleActivator 同口径）；physicalKey
 /// 透传给 [FushiShortcutRegistry.resolveKeyboard] 供 IME 改写回退（TODO-847）。
-/// [hasEditableFocus] 为 true（文本框持焦）时恒不命中，避免输入时误触加速。
+/// [hasEditableFocus] 为 true 时按**与主通道同一条** [editableFocusClaimsKey] 判：文本框
+/// 自己会用的键让位（默认裸 E 正是这一类，输入时不会误触加速），它用不上的硬修饰组合
+/// 照常命中。这条通道排在主通道之前，判据必须与主通道同源，否则两条路径会在同一个键上
+/// 给出相反答案。
 bool keyDownMatchesHoldSpeed(
   FushiShortcutRegistry registry,
   KeyDownEvent event, {
   required bool hasEditableFocus,
 }) {
-  if (hasEditableFocus) return false;
-  final Set<ModifierKey> modifiers = <ModifierKey>{
-    if (HardwareKeyboard.instance.isControlPressed) ModifierKey.ctrl,
-    if (HardwareKeyboard.instance.isShiftPressed) ModifierKey.shift,
-    if (HardwareKeyboard.instance.isAltPressed) ModifierKey.alt,
-    if (HardwareKeyboard.instance.isMetaPressed) ModifierKey.meta,
-  };
+  final Set<ModifierKey> modifiers =
+      currentKeyboardModifiers(HardwareKeyboard.instance);
+  if (hasEditableFocus &&
+      editableFocusClaimsKey(
+        logicalKey: event.logicalKey,
+        modifiers: modifiers,
+      )) {
+    return false;
+  }
   return registry.resolveKeyboard(
         event.logicalKey,
         modifiers: modifiers,
@@ -536,4 +512,361 @@ bool keyDownMatchesHoldSpeed(
         physicalKey: event.physicalKey,
       ) ==
       ShortcutAction.videoHoldSpeed;
+}
+
+/// 手柄重设计 P3：浮层面板（字幕列表 / 剧集轨 / 侧栏）打开时**让位给通用焦点导航**
+/// 的按钮集合——D-pad 移焦、A 激活聚焦行（视频页把这些按钮直接交回 GamepadService
+/// 兜底，而不是解析成音量 / seek / 播放暂停）。其余按钮照常解析 video scope
+/// （LB/RB seek、Y 下一句等在面板开着时仍可用），B 经 universal globalBack 走既有
+/// 逐级退出阶梯关面板。
+bool isVideoPanelFocusNavButton(GamepadButton button) {
+  switch (button) {
+    case GamepadButton.dpadUp:
+    case GamepadButton.dpadDown:
+    case GamepadButton.dpadLeft:
+    case GamepadButton.dpadRight:
+    case GamepadButton.a:
+      return true;
+    default:
+      return false;
+  }
+}
+
+/// [isVideoPanelFocusNavButton] 的**键盘对应物**：浮层面板（剧集轨 / 侧栏；字幕
+/// 列表不领焦点，见 BUG-2040）持焦时让位给 Flutter 通用焦点遍历的按键。
+///
+/// D-pad 四向 ↔ 裸方向键，一一对应。手柄那侧的 A（激活聚焦行）在键盘侧是 Enter，
+/// 它绑着 [ShortcutAction.videoEnterCaret]，由「视频画面**精确**持焦才算选词键」
+/// 那条 contextual 判据天然让位（面板持焦时画面必不持焦），不必在这里重复列一遍。
+///
+/// 让位只对**不带硬修饰**（Ctrl/Alt/Meta）的方向键成立：Ctrl+←/→（上/下一句字幕）、
+/// Ctrl+Shift+←/→（字幕偏移对齐）是明确的视频动作，面板开着时照常执行。Shift 不算硬
+/// 修饰（Shift+方向键在列表里是扩选，仍归焦点遍历），用的是与
+/// [videoCaretKeyboardTakesPrecedence] / [editableFocusClaimsKey] 同一条
+/// [hasHardModifier]。这条判据与「焦点确实已不在画面上」一起由调用方
+/// [resolveVideoKeyboardShortcut] 施加。
+bool isVideoPanelFocusNavKey(LogicalKeyboardKey key) {
+  return key == LogicalKeyboardKey.arrowUp ||
+      key == LogicalKeyboardKey.arrowDown ||
+      key == LogicalKeyboardKey.arrowLeft ||
+      key == LogicalKeyboardKey.arrowRight;
+}
+
+/// 一次按键在视频页键盘通道里的去向（[resolveVideoKeyboardShortcut] 的判决）。
+enum VideoKeyboardDispatch {
+  /// 本层**不消费**，事件继续冒泡。涵盖：未绑定、文本框持焦、面板持焦时的裸方向键、
+  /// press-edge-only 动作的重复事件、以及「命中了绑定键但按 contextual 判据应放行」
+  /// （videoEnterCaret 在画面不持焦时）。
+  ignore,
+
+  /// 执行 [VideoKeyboardResolution.action] 并消费。
+  run,
+
+  /// 命中了某个视频动作，但有可见词典浮层：先关顶层浮层并消费（BUG-924）。
+  dismissPopup,
+
+  /// 消费掉但**不执行**：命中了一个「长按不该连发」的动作的重复沿。
+  ///
+  /// 与 [ignore] 的区别是这次按键必须被吃掉。放行会漏给 WidgetsApp 默认的
+  /// space→ActivateIntent，长按空格就变成连点激活当前焦点控件——全局
+  /// `_neutralizeBareSpace` 只把**按下沿**中和成 DoNothingIntent，挡不住重复沿。
+  ///
+  /// 这是旧 `PageSpaceOverrideDecision.swallowRepeat` 的等价物。press-time 判决把
+  /// 「不消费」升成一等结论时必须把它一并带上，否则就是拿「命中但不消费」顶替
+  /// 「消费但不做」，两者在冒泡语义上根本不是一回事。
+  swallowRepeat,
+}
+
+/// [resolveVideoKeyboardShortcut] 的判决 + 命中的动作。
+@immutable
+class VideoKeyboardResolution {
+  const VideoKeyboardResolution(this.dispatch, [this.action]);
+
+  final VideoKeyboardDispatch dispatch;
+
+  /// 仅 [VideoKeyboardDispatch.run] 时非空。
+  final ShortcutAction? action;
+
+  static const VideoKeyboardResolution ignored =
+      VideoKeyboardResolution(VideoKeyboardDispatch.ignore);
+  static const VideoKeyboardResolution dismissPopup =
+      VideoKeyboardResolution(VideoKeyboardDispatch.dismissPopup);
+  static const VideoKeyboardResolution swallowedRepeat =
+      VideoKeyboardResolution(VideoKeyboardDispatch.swallowRepeat);
+
+  @override
+  bool operator ==(Object other) =>
+      other is VideoKeyboardResolution &&
+      other.dispatch == dispatch &&
+      other.action == action;
+
+  @override
+  int get hashCode => Object.hash(dispatch, action);
+
+  @override
+  String toString() => 'VideoKeyboardResolution($dispatch, $action)';
+}
+
+/// 当前物理修饰键状态（与 [SingleActivator] 同口径），供 press-time 解析取值。
+Set<ModifierKey> currentKeyboardModifiers(HardwareKeyboard keyboard) {
+  return <ModifierKey>{
+    if (keyboard.isControlPressed) ModifierKey.ctrl,
+    if (keyboard.isShiftPressed) ModifierKey.shift,
+    if (keyboard.isAltPressed) ModifierKey.alt,
+    if (keyboard.isMetaPressed) ModifierKey.meta,
+  };
+}
+
+/// 「硬修饰键」= Ctrl / Alt / Meta。**Shift 不算**。
+///
+/// 视频页有两个会临时抢走键盘的模态输入宿主——字级选词光标与文本框——「这次按键归
+/// 宿主还是归视频通道」用的是同一条线：宿主只认领**不带硬修饰**的键。理由两边一致：
+/// 裸键与 Shift 组合是宿主的正常输入（移动光标 / Shift+Tab 后退一字 / 打大写字母），
+/// 而 Ctrl/Alt/Meta 组合从来不是「输入一个字符」，那是命令。面板持焦时的方向键让位
+/// （[isVideoPanelFocusNavKey]）同理。
+///
+/// 两个宿主之间**只有一处差异，且是宿主自身能力的差异、不是第二套模型**：文本框对一小
+/// 撮硬修饰组合另有用途（Ctrl+←/→ 按词移动、Ctrl+A/C/V/X/Z 编辑），那份清单在
+/// [isTextEditingCombination]；光标那份是空集，所以它不需要第二个判据。
+bool hasHardModifier(Set<ModifierKey> modifiers) {
+  return modifiers.contains(ModifierKey.ctrl) ||
+      modifiers.contains(ModifierKey.alt) ||
+      modifiers.contains(ModifierKey.meta);
+}
+
+/// 文本框在**带硬修饰**时仍会自己消费的键。
+///
+/// 这不是「所有能在文本框里按的键」，而是 Flutter 桌面端 `DefaultTextEditingShortcuts`
+/// 真正注册了 Ctrl/Alt/Meta 组合的那一小撮：按词 / 按行移动与扩选（方向键、Home/End）、
+/// 按词删除（Backspace/Delete）、剪贴板与撤销重做（A/C/V/X/Z/Y）。
+///
+/// 为什么必须显式列出来，而不是「有硬修饰就一律归视频」：video scope 的 Ctrl+←/→ 是
+/// 「上/下一句字幕」。不排除的话，用户在 mpv.conf 编辑框 / 弹幕规则框 / 侧栏搜索框里按
+/// Ctrl+← 就不再是按词左移而是跳字幕——那是**新造**的回归（旧实现里文本框根本够不到那张
+/// 表）。反过来 Ctrl+Enter（制卡）、Ctrl+F（字幕列表搜索）、Ctrl+D（收藏句子）不在表里，
+/// 文本框对它们没有任何用途，交回视频通道才是对的。
+///
+/// 判据只看**逻辑键**、不看按的是哪个修饰键：macOS 的 Meta+←/A/C/V 与 Windows/Linux 的
+/// Ctrl+… 是同一批键，一份清单同时覆盖两端。
+bool isTextEditingCombination(LogicalKeyboardKey key) {
+  return key == LogicalKeyboardKey.arrowLeft ||
+      key == LogicalKeyboardKey.arrowRight ||
+      key == LogicalKeyboardKey.arrowUp ||
+      key == LogicalKeyboardKey.arrowDown ||
+      key == LogicalKeyboardKey.home ||
+      key == LogicalKeyboardKey.end ||
+      key == LogicalKeyboardKey.backspace ||
+      key == LogicalKeyboardKey.delete ||
+      key == LogicalKeyboardKey.keyA ||
+      key == LogicalKeyboardKey.keyC ||
+      key == LogicalKeyboardKey.keyV ||
+      key == LogicalKeyboardKey.keyX ||
+      key == LogicalKeyboardKey.keyY ||
+      key == LogicalKeyboardKey.keyZ;
+}
+
+/// 文本框持焦时，这次按键是否归**文本框**（= 视频键盘通道必须整条让位）。
+///
+/// BUG-962 的本体是第一条：不带硬修饰的键一律让位——裸空格、裸字母、裸方向键、
+/// Shift+字母（打大写）、Shift+方向键（扩选）全在内。少了它就是在 mpv.conf 多行框里
+/// 打一个 `f` 直接切全屏。
+///
+/// 第二条只在带硬修饰时才问：那是不是文本框自己也要用的组合（[isTextEditingCombination]）。
+/// 两条合起来正好是「宿主认领它用得上的键，用不上的交回视频」，与
+/// [videoCaretKeyboardTakesPrecedence] 同一个模型（光标那侧第二条恒为假）。
+bool editableFocusClaimsKey({
+  required LogicalKeyboardKey logicalKey,
+  required Set<ModifierKey> modifiers,
+}) {
+  if (!hasHardModifier(modifiers)) return true;
+  return isTextEditingCombination(logicalKey);
+}
+
+/// 字级选词光标激活期，一次键盘事件是否**先于注册表解析**交给光标路由
+/// （`ReaderCaretRouter.decideKeyboard`）。
+///
+/// 选词是模态操作：激活期的裸方向键是移动光标，不是 seek / 调音量。但**带硬修饰
+/// （Ctrl/Alt/Meta）的组合键不是光标键**——Ctrl+←/→ 是上/下一句字幕、Ctrl+Shift+←/→
+/// 是字幕偏移对齐，光标激活时照常执行（跳句后页面会自动重锚）。Shift 不算硬修饰：
+/// 它是光标语义的一部分（Shift+Tab = 后退一字，与阅读器一致），透传给光标路由。
+/// 判据就是共享的 [hasHardModifier]——与文本框那侧同一条线；光标不像文本框那样对硬
+/// 修饰组合另有用途，所以这里不需要 [isTextEditingCombination] 那份清单。
+///
+/// 方案 D 之前这条豁免写在套在 media_kit 表外面的 caret 守卫里，键盘通道合并为一条
+/// 之后搬到这里。少了它，光标一开 Ctrl+← 就变成「光标左移一字」。
+bool videoCaretKeyboardTakesPrecedence({
+  required KeyEvent event,
+  required Set<ModifierKey> modifiers,
+  required bool caretActive,
+  required bool hasEditableFocus,
+}) {
+  if (!caretActive) return false;
+  if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
+  if (hasEditableFocus) return false;
+  return !hasHardModifier(modifiers);
+}
+
+/// 给仍使用 activator 表的网页视频页增加「词典浮层优先关闭」语义。
+///
+/// 原生视频页已经改为 [resolveVideoKeyboardShortcut] 的页级 press-time 单通道，不再
+/// 调用本函数；网页视频页仍持有短生命周期的 [CallbackShortcuts] 表，因此继续复用
+/// 这个无页面依赖的包装器。浮层可见时只关闭顶层浮层并消费按键，否则执行原动作。
+///
+/// 与主通道的两处**有意**差异（网页视频页那张表的形状决定的，不要照抄原生页语义）：
+/// ① 无条件包住表里**每一个** activator，没有制卡豁免——`popupMineEntry` 不在
+///    [videoActionCallbacks] 里，那张表里根本没有制卡键可豁免；
+/// ② 只作用于表里已有的键，未绑定的键不进表、也就不会被吞。
+/// 回归覆盖在 `test/media/video/web_video_popup_dismiss_guard_test.dart`。
+Map<ShortcutActivator, VoidCallback> guardVideoShortcutsWithPopupDismiss(
+  Map<ShortcutActivator, VoidCallback> base, {
+  required bool Function() isPopupVisible,
+  required VoidCallback dismissPopup,
+}) {
+  return base.map(
+    (ShortcutActivator activator, VoidCallback callback) => MapEntry(
+      activator,
+      () {
+        if (isPopupVisible()) {
+          dismissPopup();
+          return;
+        }
+        callback();
+      },
+    ),
+  );
+}
+
+/// 视频页键盘通道的 **press-time 解析**：每次按键当场问注册表要动作，与手柄通道
+/// （[FushiShortcutRegistry.resolveGamepad] → [videoActionCallbacks] 派发）同构。
+///
+/// 为什么不是一张 activator 表：[CallbackShortcuts] 一旦 activator 匹配就**无条件**
+/// 返回 handled，表达不了「命中了但这次不该消费」。视频页恰恰有三处必须这么表达——
+/// 按住倍速要 keyup 边沿、Enter 在 chrome 持焦时要放行给焦点确认、面板持焦时裸方向键
+/// 要让位给焦点遍历——旧实现只能靠「把这些动作从表里剔除 + 在别处另写一条路径」绕开，
+/// 每绕一次就多一个特例分支和一处真相源。press-time 解析让「不消费」成为一等结论，
+/// 三个特例收敛回同一个判决函数。build 时冻结的另一个毛病也一并消失：全屏路由的
+/// `pageBuilder` 只跑一次，冻结的表在那条路径上会陈旧，press-time 永远读当前注册表。
+///
+/// 纯函数（[modifiers] 由调用方用 [currentKeyboardModifiers] 取），无页面依赖，可单测。
+/// 判据顺序即优先级，逐条都对应一条既有语义，改动顺序会改行为。
+VideoKeyboardResolution resolveVideoKeyboardShortcut(
+  FushiShortcutRegistry registry,
+  KeyEvent event, {
+  required Set<ModifierKey> modifiers,
+  required bool hasEditableFocus,
+  required bool hasVisiblePopup,
+  required bool videoSurfaceHoldsFocus,
+  required bool videoNavigablePanelOpen,
+}) {
+  // 只解析按下 / 重复沿。keyup 属于按住倍速状态机（页面在本函数之前一层处理）。
+  if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+    return VideoKeyboardResolution.ignored;
+  }
+  // 文本框持焦（含 IME composing）：文本框认领的键整条通道让位，一个视频动作都不解析。
+  // 判据是 [editableFocusClaimsKey]——与选词光标那侧同一条修饰键模型：不带硬修饰的键
+  // 全让（BUG-962 的本体），带硬修饰的只让文本框自己也要用的那一小撮编辑组合。
+  if (hasEditableFocus &&
+      editableFocusClaimsKey(
+        logicalKey: event.logicalKey,
+        modifiers: modifiers,
+      )) {
+    return VideoKeyboardResolution.ignored;
+  }
+
+  // 手柄重设计 P3 的键盘对应物：可导航面板打开、且焦点确实已不在画面上时，不带硬修饰
+  // 的方向键让位给通用焦点遍历（见 [isVideoPanelFocusNavKey]）。必须在解析之前——方向
+  // 键在注册表里绑着 seek / 音量，解析之后再让位就等于「先执行再后悔」。
+  //
+  // `!videoSurfaceHoldsFocus` 这一半不是冗余：让位的**理由**是「焦点在面板里、方向键
+  // 此刻是在面板内选行」。今天这个前提由**另一个模块**的门控间接成立（页面的
+  // `_canOwnVideoFocus` 在面板打开时不抢焦），本函数拿不到任何保证。那条门控一改，
+  // 面板开着而焦点仍在画面上时裸方向键就既不移焦、也不 seek——静默失效，没有任何报错。
+  // 把前提就地判掉，这个远程依赖就不存在了。
+  if (videoNavigablePanelOpen &&
+      !videoSurfaceHoldsFocus &&
+      !hasHardModifier(modifiers) &&
+      isVideoPanelFocusNavKey(event.logicalKey)) {
+    return VideoKeyboardResolution.ignored;
+  }
+
+  final ShortcutAction? action = _resolveVideoKeyboardAction(
+    registry,
+    event,
+    modifiers,
+  );
+  if (action == null) return VideoKeyboardResolution.ignored;
+
+  // 长按不连发的动作：重复沿不消费（等价旧表的 includeRepeats:false）。
+  if (event is KeyRepeatEvent && kVideoPressEdgeOnlyActions.contains(action)) {
+    return VideoKeyboardResolution.ignored;
+  }
+
+  // 播放/暂停的重复沿：消费但不重复执行（旧 PageSpaceOverrideDecision.swallowRepeat）。
+  // 这里不能像上面那样返回 ignored：放行会漏给 WidgetsApp 默认的
+  // space→ActivateIntent，长按空格变成连点激活当前焦点控件；返回 run 则是按 OS
+  // 重复率连点播放/暂停。两个都不对，所以必须是「消费但不做」。
+  if (event is KeyRepeatEvent &&
+      action == ShortcutAction.videoTogglePlayPause) {
+    return VideoKeyboardResolution.swallowedRepeat;
+  }
+
+  // 按住临时倍速：keyup 边沿语义，由页面的状态机独占（本函数之前一层已消费按下沿）。
+  if (action == ShortcutAction.videoHoldSpeed) {
+    return VideoKeyboardResolution.ignored;
+  }
+
+  // 制卡（popupMineEntry）必须绕开下面那条「浮层可见 → 先关浮层」：它恰恰只在浮层
+  // 可见时才有意义，被守卫吃掉就永远制不了卡（旧实现靠「合并在守卫之后」达到同样
+  // 效果）。浮层不可见时照旧消费成 no-op（执行体自带 idx<0 早返回）。
+  if (action == ShortcutAction.popupMineEntry) {
+    return const VideoKeyboardResolution(
+      VideoKeyboardDispatch.run,
+      ShortcutAction.popupMineEntry,
+    );
+  }
+
+  // 进入字级选词光标：命中绑定键（默认 Enter）但**画面不精确持焦**时必须放行，让
+  // Enter 继续上浮到 WidgetsApp 的 Enter→ActivateIntent，否则控制条 / 面板上每个
+  // 按钮的焦点确认被整片吃掉。浮层可见优先于焦点判据（与旧 decideVideoEnterCaretKey
+  // 的分支顺序一致）。
+  if (action == ShortcutAction.videoEnterCaret) {
+    if (hasVisiblePopup) return VideoKeyboardResolution.dismissPopup;
+    if (!videoSurfaceHoldsFocus) return VideoKeyboardResolution.ignored;
+  }
+
+  // BUG-924：浮层可见时任一已绑视频键先关顶层浮层，不穿透去控制后面的视频。
+  if (hasVisiblePopup) return VideoKeyboardResolution.dismissPopup;
+  return VideoKeyboardResolution(VideoKeyboardDispatch.run, action);
+}
+
+/// 按键 → 动作的查表部分（[resolveVideoKeyboardShortcut] 内部）。
+///
+/// 解析顺序 = 旧 activator 表的写入优先级：制卡键最后写入、覆盖同键的视频动作，故这里
+/// 最先查；video scope 未命中才落到 universal（globalBack 的逐级退出），与手柄
+/// [FushiShortcutRegistry.resolveGamepad] 的两段式兜底逐字对应。
+ShortcutAction? _resolveVideoKeyboardAction(
+  FushiShortcutRegistry registry,
+  KeyEvent event,
+  Set<ModifierKey> modifiers,
+) {
+  final InputBinding target = InputBinding(
+    key: event.logicalKey,
+    modifiers: modifiers,
+  );
+  for (final InputBinding binding
+      in registry.bindingsFor(ShortcutAction.popupMineEntry).keyboardBindings) {
+    if (binding == target) return ShortcutAction.popupMineEntry;
+  }
+  return registry.resolveKeyboard(
+        event.logicalKey,
+        modifiers: modifiers,
+        scope: ShortcutScope.video,
+        physicalKey: event.physicalKey,
+      ) ??
+      registry.resolveKeyboard(
+        event.logicalKey,
+        modifiers: modifiers,
+        scope: ShortcutScope.universal,
+        physicalKey: event.physicalKey,
+      );
 }

@@ -890,8 +890,70 @@ bool sameExternalSubtitlePathForMenu(
   String currentSubtitleSource,
 ) {
   if (source.isEmbedded || source.externalPath == null) return false;
-  return _subtitleMenuPathKey(source.externalPath!) ==
-      _subtitleMenuPathKey(currentSubtitleSource);
+  return sameSubtitleFilePath(source.externalPath!, currentSubtitleSource);
+}
+
+/// **纯函数**：两个字幕文件路径是否指向同一个档案（大小写 / 分隔符 / `..` 归一）。
+/// [sameExternalSubtitlePathForMenu] 的裸路径版，供尚未包成 [SubtitleSource] 的登记 /
+/// 去重路径复用同一判据（BUG-1861）。
+bool sameSubtitleFilePath(String a, String b) =>
+    _subtitleMenuPathKey(a) == _subtitleMenuPathKey(b);
+
+/// **纯函数**：[path] 是否是一个可以进字幕轨菜单的**外挂档案路径**，而不是源指针
+/// （`embedded:<n>` 内封轨指针 / `off:` 显式关闭哨兵 / 空串）。
+///
+/// BUG-1861：这是「本会话落盘的档案」登记路径（`_registerImportedSubtitleSource`）的
+/// 唯一过滤条件，**刻意不看扩展名**。登记的语义是「这个档案就在盘上、刚刚被应用」，
+/// 而扩展名是 provider 给的：Jimaku / OpenSubtitles 的 `fileName` 只经
+/// `safeSubtitleFileName` 防路径逃逸，不做白名单，`.sup` / `.smi` / `.ttml` 一样会落进
+/// `<dataRoot>/documents/video_subtitles/`。拿扩展名当登记门 = 下完之后列表里连它的名字
+/// 都看不到，用户只能猜自己有没有下成功——与「坏档也该列出来、不按应用成功门控」
+/// （`_openJimakuDialog` / `_importExternalSubtitleInner` 的既有约定）自相矛盾。
+///
+/// 与 [isImportedExternalSubtitlePath] 是**两件事**，不要合并：那个判的是「一条**持久化
+/// 值**是否可以按路径直接重放」，扩展名是它的必要条件（restore 时要真去解析这个档），
+/// 消费方在 [shouldReusePersistedSubtitleAcrossEpisode] 与视频页的换集恢复链路上，保持
+/// 不变。
+bool isExternalSubtitleFilePathForMenu(String path) {
+  if (path.trim().isEmpty) return false;
+  if (path.startsWith(SubtitleSource.embeddedPrefix)) return false;
+  if (SubtitleSource.isOff(path)) return false;
+  return true;
+}
+
+/// **纯函数**：把「本次播放会话里落盘并应用过的外挂字幕档」[imported] 并进字幕轨菜单
+/// 的枚举结果 [enumerated]，返回最终要渲染的列表（导入档排在前，与
+/// [includeCurrentPersistedSubtitleForMenu] 的「当前导入排最前」约定一致）。
+///
+/// BUG-1861：这一层存在的理由是**枚举结果与「用户刚拿到的字幕档」是两件独立的事实**。
+/// [listAllSubtitleSources] 按设计只看内封轨 + 视频同目录 sidecar；Jimaku 下载 / 手动
+/// 导入的档案住在 `<dataRoot>/documents/video_subtitles/`，它永远枚举不到。而枚举本身
+/// 会失败（ffprobe 不可用 / 超时）、会在途（大容器探测数秒到数十秒）、也会因换集而让
+/// 缓存 key 失配。BUG-1329 把「并入新档」挂在「枚举缓存有效」这个前置条件上，于是上述
+/// 三种情况下新档被**静默丢弃** —— 用户看到「字幕明明应用上了、列表里却没有它」。
+///
+/// 两份列表在渲染时合并（而不是把新档写进枚举缓存）：枚举缓存保持「纯枚举结果」语义，
+/// 后到的枚举结果整体覆盖它时也不会把导入档冲掉。按路径去重（[sameSubtitleFilePath]），
+/// 导入档若同时是视频同目录 sidecar（已在 [enumerated] 里）则不重复列出。
+List<SubtitleSource> mergeImportedSubtitleSourcesForMenu(
+  List<SubtitleSource> enumerated,
+  List<SubtitleSource> imported,
+) {
+  if (imported.isEmpty) return enumerated;
+  final List<SubtitleSource> extras = <SubtitleSource>[];
+  for (final SubtitleSource source in imported) {
+    final String? path = source.externalPath;
+    if (path == null) continue;
+    final bool listed =
+        enumerated.any((SubtitleSource s) =>
+                sameExternalSubtitlePathForMenu(s, path)) ||
+            extras.any((SubtitleSource s) =>
+                sameExternalSubtitlePathForMenu(s, path));
+    if (listed) continue;
+    extras.add(source);
+  }
+  if (extras.isEmpty) return enumerated;
+  return <SubtitleSource>[...extras, ...enumerated];
 }
 
 SubtitleSource? firstTextEmbeddedSubtitleSource(

@@ -43,34 +43,42 @@ import 'package:fushi/src/reader/popup_swipe_close_script.dart';
 /// The string is meant to be eval'd INSIDE a frame's contentWindow by
 /// global_lookup_host.js injectContent, so every `window.` / `document.`
 /// reference targets that frame's own realm.
-String buildFrameSettingsJs({
+class GlobalLookupFrameSettingsJs {
+  const GlobalLookupFrameSettingsJs({
+    required this.staticHeadJs,
+    required this.staticTailJs,
+    required this.staticRevision,
+    required this.entriesJs,
+    required this.renderJs,
+  });
+
+  final String staticHeadJs;
+  final String staticTailJs;
+  final int staticRevision;
+  final String entriesJs;
+  final String renderJs;
+
+  /// Legacy/full-frame form used by source-contract tests and any caller that
+  /// deliberately wants one self-contained script. The hot host path sends the
+  /// four parts separately so the multi-megabyte font/static body is not copied
+  /// across the platform channel on every lookup.
+  String get combined => '$staticHeadJs$entriesJs$staticTailJs$renderJs';
+}
+
+GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
   required BuildContext context,
   required AppModel appModel,
   required DictionarySearchResult result,
-  String sentence = '',
-  double cardBgAlpha = 1.0,
-  bool panelRoot = false,
-  int sentenceHitStart = -1,
-  int sentenceHitLength = 0,
-  bool sentenceOnly = false,
 }) {
-  final String settingsJs = buildPopupSettingsJs(
+  final PopupStaticSettingsJs staticSettings = buildPopupStaticSettingsJs(
     appModel: appModel,
     theme: Theme.of(context),
-    result: result,
     options: const PopupSettingsOptions(globalLookup: true),
   );
-  // spec 2026-07-10 §6 — 半透明卡背景变量。面板路径传用户值（且仅当 Win11
-  // acrylic backdrop 可用），瞬态窗恒 1.0；in-app 路径不经此处。**恒注入**当前
-  // 值（审查修正：面板 WebView 常驻不重建，若 1.0 时不注入，从 0.85 调回 100%
-  // 后 documentElement 上的旧 0.85 残留、面板停在半透明）。同一 alpha 下
-  // settingsJs 跨渲染字节稳定（host 以 settingsJs 变更为重渲判据）。
-  final String cardBgAlphaLine =
-      "document.documentElement.style.setProperty('--fushi-card-bg-alpha', "
-      "'${cardBgAlpha.toStringAsFixed(2)}');\n";
+  final String entriesJs = buildPopupEntriesJs(result);
   // TODO-1231 P1 — `window.__hasChildPopup` is DELIBERATELY NOT part of this body
   // anymore. The flag flips whenever a child card opens/closes on top of THIS
-  // frame, but everything else in the body (theme/zoom/entries/sentence) is
+  // frame, but everything else in the body (theme/zoom/entries) is
   // invariant across that. Baking the flag in (TODO-1067 子4) made the parent's
   // settingsJs change on every nested open/close, so global_lookup_host.js
   // re-eval'd the WHOLE body — which ends in renderPopup() = a full card DOM
@@ -89,36 +97,35 @@ String buildFrameSettingsJs({
   // self-guards against double-install (window.__fushiTopPullInstalled) and
   // reports through flutter_inappwebview.callHandler('topPullReleased'), which
   // the controller already gates on the enableSwipeToClose preference.
-  // 真机第 4 轮 — 仅面板 root 注入选词区标记 + 引擎命中区间（码点下标；
-  // popup.js 句子条据此走 panelSentenceLookup 原地更新语义并整词高亮）。
-  // 非面板帧（瞬态窗 / 嵌套子卡）恒为空串：同一帧同一结果下 settingsJs 跨
-  // 渲染字节稳定（host 以 settingsJs 变更为重渲判据），面板语义永不外溢。
-  final String panelRootLines = panelRoot
-      ? 'window.__globalLookupPanelRoot = true;\n'
-          '    window.__globalLookupSentenceHit = '
-          '{start: $sentenceHitStart, length: $sentenceHitLength};\n'
-      : '';
-  // 剪切板「关自动查词」纯文字态：面板只显示句子横幅（逐字可点），不显示词典结果。
-  // 传入的是空结果（无 entries），popup.js 会渲染句子横幅 + 一块「No results」提示；
-  // 这里在 renderPopup 之后就地摘掉那块提示节点，达成「只剩文字」。仅面板 root、仅
-  // sentenceOnly 时注入，故自动查词路径 settingsJs 逐字节不变（host 以此判重渲）。
-  // 走 app 侧渲染脚本而非改 popup.js，避开浏览器扩展三镜像 + content.css 重生成。
-  final String sentenceOnlyLine = sentenceOnly
-      ? 'var __fushiNoRes = document.querySelector(".no-results"); '
-          'if (__fushiNoRes) __fushiNoRes.remove();\n'
-      : '';
-  return '''
-    $settingsJs
+  //
+  // 同一帧同一结果下这段 renderJs 跨渲染字节稳定（host 以 settingsJs 变更为
+  // 重渲判据）：这里不得再掺任何每次查词都会变的上下文（曾经的句子横幅文本
+  // 注入已随桌面剪贴板查词一并移除）。
+  const String renderJs = '''
     $kPopupTopPullReleaseJs
-    $cardBgAlphaLine
     if (window.resetSentenceContextMirror) window.resetSentenceContextMirror();
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
-    window.__globalLookupSentence = ${jsonEncode(sentence)};
-    $panelRootLines
     window.renderPopup && window.renderPopup();
-    $sentenceOnlyLine
 ''';
+  return GlobalLookupFrameSettingsJs(
+    staticHeadJs: staticSettings.head,
+    staticTailJs: staticSettings.tail,
+    staticRevision: staticSettings.revision,
+    entriesJs: entriesJs,
+    renderJs: renderJs,
+  );
 }
+
+String buildFrameSettingsJs({
+  required BuildContext context,
+  required AppModel appModel,
+  required DictionarySearchResult result,
+}) =>
+    buildFrameSettingsJsParts(
+      context: context,
+      appModel: appModel,
+      result: result,
+    ).combined;
 
 /// One stacked lookup card as the host script expects it (TODO-867 P3b/P3c).
 /// [frame] supplies the stack identity/linkage (id, parentIndex); [result]
@@ -137,21 +144,10 @@ class GlobalLookupFramePayload {
     required this.frame,
     required this.result,
     this.anchorRect,
-    this.sentence = '',
-    this.sentenceOnly = false,
   });
 
   final GlobalLookupFrame frame;
   final DictionarySearchResult result;
-
-  /// 剪切板「关自动查词」纯文字态：只渲染句子横幅、摘掉「No results」结果块。
-  /// 仅面板 root 帧有意义（子卡/瞬态窗恒 false）。
-  final bool sentenceOnly;
-
-  /// TODO-1030 M0 — the current sentence to show as a context banner in this
-  /// card (only the ROOT frame carries it; empty = no banner). Body text stays
-  /// inside the frame realm and is never logged.
-  final String sentence;
 
   /// Screen-space CSS px anchor rect (selection / clicked word). Null when the
   /// caller has no anchor yet (placeholder cascade offset is used instead).
@@ -170,6 +166,55 @@ const double kGlobalLookupCascadeStep = 28.0;
 /// real-device fit is the user's call (the bbox is the authoritative final size).
 const double kGlobalLookupLayoutBoundsWidthFactor = 2.4;
 const double kGlobalLookupLayoutBoundsHeightFactor = 2.0;
+
+/// 每个**物理宿主**（一个独立的 WebView2 realm：桌面瞬态窗 / galCard 浮窗 /
+/// 剪贴板面板各算一个）已经装载好的静态设置版本号集合。
+///
+/// BUG-1833 起，静态设置段（主题变量 + 词典字体 + 词典样式 + 自定义 CSS + 各种
+/// window.* 开关）按 [PopupStaticSettingsJs.revision] 去重：宿主已经装过的版本不再
+/// 随渲染负载重发。这件事非做不可——用户导入的词典字体是 `data:` URL 内联的，两个
+/// CJK 字体就能让这一段到几十 MB；每次查词重发一遍，等于每次查词都往平台通道里灌
+/// 几十 MB、在 WebView2 里解析一遍，然后被宿主按 revision 认出是旧相识、原样丢弃。
+///
+/// 这个类存在的理由是「让漏做去重在结构上不可能」：去重状态曾经由每个调用方自己
+/// 拿 `Map<String, Set<int>>` 拼，而 [buildStackRenderScript] 的对应形参是**可选**
+/// 的——于是剪贴板面板那条路径压根没传，整套去重对它完全失效，每次查词（包括每次
+/// 在面板里点词的嵌套查词）都重发全量静态段。现在形参必填、待确认版本从返回值带
+/// 出，少传一个就是编译错误。
+class PopupStaticRevisionCache {
+  final Map<String, Set<int>> _byHost = <String, Set<int>>{};
+
+  /// [hostKey] 宿主当前已确认装载的版本集合的**可变副本**。
+  ///
+  /// 刻意不返回内部集合本身。这个类存在的全部动机就是「别让漏做去重在结构上成为
+  /// 可能」，那么把「请不要改写我返回的 Set」这条纪律寄托在一句注释上就是自相矛盾
+  /// ——渲染器拿到它之后本来就要往里加本次发出的版本，一不小心加到内部集合上，
+  /// 就等于在平台调用还没发生时先记了账。
+  Set<int> snapshotFor(String hostKey) => <int>{..._known(hostKey)};
+
+  Set<int> _known(String hostKey) =>
+      _byHost.putIfAbsent(hostKey, () => <int>{});
+
+  /// 把本次渲染真正发出去的版本记为「已装载」。
+  ///
+  /// **必须等平台侧 render 调用成功之后再调**：脚本没送到宿主就先记账，会让后续
+  /// 渲染以为宿主已经有这个版本而不再下发，卡片就永远拿不到主题/字体/样式。
+  void commit(String hostKey, Set<int> emitted) {
+    if (emitted.isEmpty) return;
+    _known(hostKey).addAll(emitted);
+  }
+
+  /// 宿主自报某个版本没了（整块 WebView 恢复、iframe realm 重建等，见 host.js 的
+  /// `staticSettingsRequired`），把它从已装载集合里划掉，下一次渲染重新带上。
+  void invalidate(String hostKey, int revision) {
+    _byHost[hostKey]?.remove(revision);
+  }
+}
+
+/// [buildStackRenderScript] 的产物：要执行的脚本，以及**本次真正带上了静态段**的
+/// 版本号集合。调用方在平台 render 成功后把后者交给
+/// [PopupStaticRevisionCache.commit]。
+typedef StackRenderScript = ({String script, Set<int> pendingRevisions});
 
 /// TODO-1095 — the STABLE root frame id reused across hotkey lookups. Before
 /// this, every hotkey lookup minted a fresh `frame-N` id, so the host tore the
@@ -208,6 +253,18 @@ String buildBeginLookupScript(
       'window.__globalLookupHost.beginLookup($encodedId, $encodedRoute);';
 }
 
+/// Builds the lightweight physical-stack truncate command used by close/back.
+/// The surviving iframe realms already own the correct entries, render body and
+/// measured card DOM, so only their stable id prefix crosses the platform
+/// boundary. A full [buildStackRenderScript] remains the recovery/content-change
+/// path; this command is only emitted in response to a message from the live
+/// host that is being truncated.
+String buildRetainStackScript(Iterable<String> frameIds) {
+  final String encodedIds = jsonEncode(frameIds.toList(growable: false));
+  return 'window.__globalLookupHost && '
+      'window.__globalLookupHost.retainStack($encodedIds);';
+}
+
 /// TODO-1190 — builds the host `highlightFrame(frameIndex, count)` script that
 /// marks the searched word inside a PARENT frame's popup.js realm after a nested
 /// lookup (parity with the in-app popup, which highlights the clicked word in
@@ -215,9 +272,20 @@ String buildBeginLookupScript(
 /// is the parent's insertion-order stack depth (0 = root); [count] is the matched
 /// char count ([lookupHighlightCharCount]). Inert when the host is not installed
 /// (guarded) and a no-op host-side on a bad index / non-positive count.
-String buildHighlightFrameScript(int frameIndex, int count) {
+///
+/// BUG-2054 — with a [token], the host also answers with the highlighted word's
+/// **whole-word bbox** as a `nestedWordAnchor` [frameIndex, rect|null, token]
+/// message (same shape as the BUG-1127 `wordAudioPlayed` token report). The
+/// caller awaits it BEFORE placing the child card, so the child is positioned
+/// against the real word instead of the first-character rect `textSelected`
+/// carried — placing first and re-anchoring after would move an already visible
+/// card and re-drive the whole overlay window geometry. A tokened request is
+/// ALWAYS answered (null on any failure), so the wait never rides its timeout
+/// out on an ordinary miss.
+String buildHighlightFrameScript(int frameIndex, int count, {int? token}) {
+  final String tokenArg = token == null ? '' : ', $token';
   return 'window.__globalLookupHost && '
-      'window.__globalLookupHost.highlightFrame($frameIndex, $count);';
+      'window.__globalLookupHost.highlightFrame($frameIndex, $count$tokenArg);';
 }
 
 /// BUG-1127 — builds the host `playWordAudioInFrame(frameId, url, token)` script
@@ -246,16 +314,17 @@ String buildPlayWordAudioScript(String frameId, String url, int token) {
 ///
 /// Each popup carries: id, parentIndex, a real cascade `frame` rect
 /// (left/top/width/height, CSS px) computed from the payload's anchorRect via
-/// [computeFrameRect], and a `settingsJs` string (this frame's own
-/// buildFrameSettingsJs body, run inside its iframe realm). The single-frame
-/// overlay path was retired in commit-2 (the top-level document is now
+/// [computeFrameRect], plus a static revision and the per-lookup entries/render
+/// bodies. Only a revision unknown to the physical host carries the static
+/// head/tail (which may include a multi-megabyte font). The single-frame overlay
+/// path was retired in commit-2 (the top-level document is now
 /// global_lookup_host.html); a single frame is stack depth 1 rendered the SAME
 /// way as a nested card through renderStack — this is the only render path.
 ///
 /// [screenWidth]/[screenHeight] and [maxWidth]/[maxHeight] are CSS / logical px
 /// (NOT physical — see global_lookup_layout coordinate rule): the dpr boundary
 /// is the C++ window geometry, never this layout math.
-String buildStackRenderScript({
+StackRenderScript buildStackRenderScript({
   required BuildContext context,
   required AppModel appModel,
   required List<GlobalLookupFramePayload> payloads,
@@ -264,18 +333,37 @@ String buildStackRenderScript({
   required double maxWidth,
   required double maxHeight,
   Offset selectionScreenOffset = Offset.zero,
+  // Desktop reserves its HWND origin toward the monitor edge. galCard passes
+  // zero for both floors: with a non-zero game root origin, reserving back to
+  // the viewport's top-left would create a mostly-transparent near-viewport
+  // union instead of allowing the live surface to grow only where a child lands.
   double originFloorLeft = 0,
   double originFloorTop = 0,
-  // spec 2026-07-10 — 'panel' = 常驻剪贴板面板（root 撑满固定视口、host 短路
-  // measureAndReport）。默认 'cascade' 时 payload 不带 layoutMode 键，瞬态窗
-  // 载荷与改动前逐字节相同（Never break userspace）。
-  String layoutMode = 'cascade',
-  double cardBgAlpha = 1.0,
-  // 真机第 4 轮 — 面板选词区的引擎命中区间（码点下标），只作用于面板 root
-  // 帧的 settingsJs；cascade 模式忽略。
-  int sentenceHitStart = -1,
-  int sentenceHitLength = 0,
+  // BUG-1835 — screenWidth/Height is the FULL game viewport while maxWidth/
+  // Height remains the SINGLE-CARD cap. The gal route uses the same above/below,
+  // anchor-side height fitting as the in-app dictionary layer; otherwise a
+  // nearly full-height child is clamped across the selected word. Keep this
+  // opt-in so the desktop global-lookup cascade remains unchanged.
+  bool fitNestedHeightToAnchorSide = false,
+  // BUG-1833 — static settings revisions already acknowledged by this physical
+  // host. The stable root iframe survives lookup-to-lookup, so a custom font
+  // (two CJK faces already run to tens of MB once base64-inlined) must not ride
+  // the platform message on every lookup. Unknown/new frames still receive a
+  // self-contained static payload.
+  //
+  // 这两个参数**必填**，而且是同一件事的两半：从哪个宿主的账本上查（[hostKey]），
+  // 查到的账本是谁（[staticRevisions]）。曾经它们是带默认值的可选参数，剪贴板面板
+  // 那条调用路径就那么静默地一个都没传，去重对它完全失效——每次查词重发几十 MB。
+  // 必填之后，少传就是编译错误。本次真正发出去的版本从返回值的 pendingRevisions
+  // 带出，调用方在 render 成功后 commit。
+  required PopupStaticRevisionCache staticRevisions,
+  required String hostKey,
 }) {
+  // 本次渲染开始时宿主已装载的版本（副本）；下面每发出一个新版本就往里加，
+  // 同一次调用内的后续帧据此不再重复携带同一份静态段。
+  final Set<int> availableStaticRevisions =
+      staticRevisions.snapshotFor(hostKey);
+  final Set<int> emittedStaticRevisions = <int>{};
   // TODO-867 P3c F2 — the host shell (.global-lookup-frame-shell) is built in the
   // TOP-LEVEL host document, which carries no data-theme of its own (the theme
   // vars live INSIDE each iframe). So the shell's dark/light border variant can't
@@ -299,17 +387,10 @@ String buildStackRenderScript({
   final List<Map<String, Object?>> popups = <Map<String, Object?>>[];
   for (int i = 0; i < payloads.length; i++) {
     final GlobalLookupFramePayload p = payloads[i];
-    final bool isPanelRoot = layoutMode == 'panel' && p.frame.parentIndex < 0;
-    final String settingsJs = buildFrameSettingsJs(
+    final GlobalLookupFrameSettingsJs settings = buildFrameSettingsJsParts(
       context: context,
       appModel: appModel,
       result: p.result,
-      sentence: p.sentence,
-      cardBgAlpha: cardBgAlpha,
-      panelRoot: isPanelRoot,
-      sentenceHitStart: isPanelRoot ? sentenceHitStart : -1,
-      sentenceHitLength: isPanelRoot ? sentenceHitLength : 0,
-      sentenceOnly: isPanelRoot && p.sentenceOnly,
     );
     final Map<String, Object?> map = p.frame.toRenderMap();
     map['theme'] = shellTheme;
@@ -329,15 +410,22 @@ String buildStackRenderScript({
       maxHeight: maxHeight,
       selectionScreenOffset: selectionScreenOffset,
       rootShellOffset: rootShellOffset,
+      fitNestedHeightToAnchorSide: fitNestedHeightToAnchorSide,
     );
-    map['settingsJs'] = settingsJs;
+    map['staticRevision'] = settings.staticRevision;
+    map['entriesJs'] = settings.entriesJs;
+    map['renderJs'] = settings.renderJs;
+    if (!availableStaticRevisions.contains(settings.staticRevision)) {
+      map['staticHeadJs'] = settings.staticHeadJs;
+      map['staticTailJs'] = settings.staticTailJs;
+      emittedStaticRevisions.add(settings.staticRevision);
+      availableStaticRevisions.add(settings.staticRevision);
+    }
     popups.add(map);
   }
-  final Map<String, Object?> payloadObj = <String, Object?>{'popups': popups};
-  // spec 2026-07-10 — 仅面板模式携带 layoutMode 键；cascade 载荷字节不变。
-  if (layoutMode == 'panel') {
-    payloadObj['layoutMode'] = 'panel';
-  }
+  final Map<String, Object?> payloadObj = <String, Object?>{
+    'popups': popups,
+  };
   // TODO-1345 (BUG-583 深层根因续) — reserve cascade headroom toward the screen
   // interior so an up/left child lands INSIDE the window origin committed at the
   // first reveal; the host's measureAndReport then never moves the origin when the
@@ -352,8 +440,11 @@ String buildStackRenderScript({
     };
   }
   final String payloadJson = jsonEncode(payloadObj);
-  return 'window.__globalLookupHost && '
-      'window.__globalLookupHost.renderStack($payloadJson);';
+  return (
+    script: 'window.__globalLookupHost && '
+        'window.__globalLookupHost.renderStack($payloadJson);',
+    pendingRevisions: emittedStaticRevisions,
+  );
 }
 
 /// Resolves ONE frame's shell rect (CSS px) for the host payload. With a real
@@ -369,6 +460,7 @@ Map<String, Object?> _frameRectMap({
   required double maxHeight,
   Offset selectionScreenOffset = Offset.zero,
   ({double left, double top}) rootShellOffset = (left: 0.0, top: 0.0),
+  bool fitNestedHeightToAnchorSide = false,
 }) {
   if (anchorRect != null && screenWidth > 0 && screenHeight > 0) {
     // TODO-893 v2 (symptom 3) — the host re-anchored the child's word rect to
@@ -393,10 +485,15 @@ Map<String, Object?> _frameRectMap({
       maxWidth: maxWidth,
       maxHeight: maxHeight,
       isVertical: false,
-      // 嵌套卡的可用高度属于整个工作区，不属于父卡内锚点的某一侧。否则点击
-      // 父 popup 中部的词会把 child 高度再次压成半屏；实际只应在屏幕顶 / 底边界
-      // 不足时裁切。根卡 / 其他 computeFrameRect 调用仍走默认 true。
-      fitHeightToAnchorSide: depth <= 0,
+      // Desktop keeps the historical full-work-area nested height.  The
+      // game-card route opts into the in-app contract: a horizontal nested card
+      // lives wholly above or below the selected word and shrinks to that side.
+      // The game work area is the FULL viewport, not the single-card cap, so the
+      // child may legitimately extend outside the root card's current union.
+      // A direct-active host expands/repositions its already-visible HWND around
+      // the frozen root; only the bitmap fallback needs an off-screen resize +
+      // captureReady handshake. This flag guarantees placement, not zero resize.
+      fitHeightToAnchorSide: depth <= 0 || fitNestedHeightToAnchorSide,
     );
     return <String, Object?>{
       'left': r.left - selectionScreenOffset.dx,

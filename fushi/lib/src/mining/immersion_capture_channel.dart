@@ -107,6 +107,7 @@ class ImmersionCaptureResult {
     this.error,
     this.animatedFormat = MiningAnimatedFormat.gif,
     this.coverIsStill = false,
+    this.stillFormat = MiningStillFormat.jpg,
   });
 
   /// 动图封面字节。字段名与 MethodChannel 的 wire key `gifBytes` 一样是历史名，**不代表
@@ -130,8 +131,16 @@ class ImmersionCaptureResult {
   /// 为什么不新开一个 `stillBytes` 字段：[gifBytes] 就是这条链路的「封面字节」通道，
   /// 分成两个字段会让每个下游都长出一对 if。字节走原通道，用这个布尔说明它是什么——
   /// 与 [animatedFormat] 同样是「实际产出物的自描述」。
-  /// [animatedFormat] 在本值为 true 时不参与文件名（封面是 `.jpg`）。
+  /// [animatedFormat] 在本值为 true 时不参与文件名（改由 [stillFormat] 参与）。
   final bool coverIsStill;
+
+  /// [coverIsStill] 为 true 时，[gifBytes] 里那张静态帧**实际被编码成的**格式。
+  ///
+  /// 与 [animatedFormat] 同一理由：`transcodeClipToCapture` 在 png 编码器缺失时会退回
+  /// JPEG，调用方按用户偏好拼名就会写出 `.png` 里装 JPEG 的卡。默认
+  /// [MiningStillFormat.jpg] —— 动图路径与 native 后台实例路径都不产静态帧，此时该字段
+  /// 不参与文件名（见 [buildImmersionRequest] 的 `coverIsAnimated`）。
+  final MiningStillFormat stillFormat;
 
   bool get ok => error == null;
 
@@ -157,6 +166,17 @@ class ImmersionCaptureResult {
 /// 卡还报成功（「只本应有音频却失败才算失败」）。为 false（2A 截图卡 / 后台软解不可用）时
 /// [requireAudio]=false → 截图卡本就无音频，不算失败。旧实现按 `audio != null` 推 requireAudio
 /// 是自毁的——音频恰好丢时反而关掉了守卫。
+/// 这份 payload 是不是 **Netflix 那条捕获路**来的。
+///
+/// 判据取 Netflix 独有的两个字段：扩展录制的片段字节、或后台软解用的 `netflixVideoId`；
+/// 两者皆无即非 Netflix 来源。**故意收成一个原语**：这个判断此前在
+/// [buildImmersionRequest] 里就地写了一份，而 `app_model` 的兜底失败分支又硬编码了字面
+/// 「Netflix 制卡失败」——于是 primevideo / hulu.jp / tver.jp / bilibili.tv（manifest 已
+/// 纳入范围、`fushiClipSource()` 返回 null → 走同一条兜底路）失败时，用户看到的是
+/// 「**Netflix** 制卡失败」。多一个入口就会多一次漂移，所以只留这一个判据。
+bool immersionPayloadFromNetflix(ImmersionMinePayload p) =>
+    p.clipBytes != null || p.netflixVideoId != null;
+
 ImmersionMiningRequest buildImmersionRequest(
   ImmersionMinePayload p,
   ImmersionCaptureResult cap, {
@@ -167,22 +187,39 @@ ImmersionMiningRequest buildImmersionRequest(
       useCapture ? (cap.gifBytes ?? p.screenshotBytes) : p.screenshotBytes;
   final bool coverFromCapture = useCapture && cap.gifBytes != null;
   final bool coverIsAnimated = coverFromCapture && !cap.coverIsStill;
-  // BUG-1416：三种封面各自的名字（Anki 按扩展名判 MIME）。片段里抽的静态帧与 2A 截图都是
-  // JPEG，但分开命名——媒体库里一眼看得出这张卡的封面是哪条路产出的。
+  // 媒体临时文件名的前缀 = **这份字节哪来的**（[ImmersionMiningEngine] 文件头把
+  // `netflix_frame` / `external_window` / `netflix_shot` 明确定义成来源标记）。
+  // 本函数过去只服务 Netflix 一条路，于是前缀被写死成 `netflix_`；扩展现在会在任意网页
+  // （bilibili.com 等）取当前解码帧走同一条 provided 字节路，再叫 netflix_* 就是让媒体库里
+  // 一张 B 站的卡标着 netflix——与该命名的用途正相反。判据取 Netflix 那条路**独有**的两个
+  // 字段：录制片段字节、或后台软解用的 netflixVideoId；两者皆无即非 Netflix 来源。
+  final bool fromNetflix = immersionPayloadFromNetflix(p);
+  final String origin = fromNetflix ? 'netflix' : 'web';
+  // BUG-1416：三种封面各自的名字（Anki 按扩展名判 MIME），分开命名——媒体库里一眼看得出
+  // 这张卡的封面是哪条路产出的。片段里抽的静态帧跟随 [ImmersionCaptureResult.stillFormat]
+  // （用户偏好，降级后为实际格式）；2A 截图是扩展直接给的字节、不经我们编码，恒 JPEG。
   final String coverName = coverIsAnimated
-      ? 'netflix_clip.${cap.animatedFormat.fileExtension}'
+      ? '${origin}_clip.${cap.animatedFormat.fileExtension}'
       : coverFromCapture
-          ? 'netflix_frame.jpg'
-          : 'netflix_shot.jpg';
+          ? '${origin}_frame.${cap.stillFormat.fileExtension}'
+          : '${origin}_shot.jpg';
   final Uint8List? audio = useCapture ? cap.audioBytes : null;
   return ImmersionMiningRequest(
     fields: p.fields,
     mediaSource: null,
-    clipStartMs: 0,
-    clipEndMs: 0,
+    // BUG-2080：卡面时间窗原样透传（扩展上报的播放器时间轴）。这里曾硬编码 0，因为
+    // 当时 `hasRange` 就是「窗非空」，填真值会连带打开区间抽取——而 Netflix 前台
+    // `mediaSource == null`，根本没有可裁的源。判据收敛到
+    // [ImmersionMiningRequest.hasRange]（窗非空 **且** 有源）之后两者解耦：窗只喂卡面
+    // `{clip-timestamp}`，抽取路径照旧关着。
+    clipStartMs: p.clipStartMs ?? 0,
+    clipEndMs: p.clipEndMs ?? 0,
     sentence: p.sentence,
     cueSentence: p.cueSentence,
-    documentTitle: p.documentTitle ?? 'Netflix',
+    // BUG-676：扩展不发 documentTitle 时的回落。同样不能恒为 'Netflix'——非 Netflix 来源
+    // 的卡上写着 Netflix 是错的事实，不是缺省值。扩展现在会带页面标题上来，这条回落只在
+    // 老版扩展/标题为空时触发。
+    documentTitle: p.documentTitle ?? (fromNetflix ? 'Netflix' : 'Web'),
     source: AnkiMiningSource.video,
     providedCoverBytes: cover,
     // 扩展名跟随**实际产出格式**，不是用户所选：编码器缺失时捕获内部已降级 GIF，按所选
@@ -191,7 +228,7 @@ ImmersionMiningRequest buildImmersionRequest(
     providedAudioBytes: audio,
     providedAudioName: audio == null
         ? null
-        : 'netflix_audio.${immersionMiningAudioExtension()}',
+        : '${origin}_audio.${immersionMiningAudioExtension()}',
     requireAudio: audioExpected,
   );
 }
@@ -227,6 +264,7 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
   required MiningMediaCompression compression,
   required String tempDir,
   MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+  MiningStillFormat stillFormat = MiningStillFormat.jpg,
   ClipStillTarget? stillTarget,
   GifExtractor gifExtractor = extractClipGifViaFfmpeg,
   AudioExtractor audioExtractor = extractAudioSegmentViaFfmpeg,
@@ -240,14 +278,25 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
     final int endMs = durationMs > 0 ? durationMs : 6000;
     // 静态帧模式：片段内定点抽一帧，**不进** extractAnimatedClipWithFallback（既是行为正确
     // 性，也避免顶格档动图编码那种大体积开销 —— 静态帧不吃 gifFps/gifWidth）。
-    final String? framePath = stillTarget == null
-        ? null
-        : await frameExtractor(
-            inputPath: clip.path,
-            outputPath: '${dir.path}/clip_frame.jpg',
-            atSeconds: stillTarget.offsetMs / 1000.0,
-            decodeFromStart: true,
-          );
+    // 输出扩展名由 [MiningStillFormat.fileExtension] 给（ffmpeg 按扩展名选编码器），首选
+    // 失败按 [MiningStillFormat.encodeAttempts] 退回 JPEG 再抽一次；实际用成的那个格式随
+    // 结果带回，供文件名跟随真实字节。
+    String? framePath;
+    MiningStillFormat producedStillFormat = MiningStillFormat.jpg;
+    if (stillTarget != null) {
+      for (final MiningStillFormat attempt in stillFormat.encodeAttempts) {
+        framePath = await frameExtractor(
+          inputPath: clip.path,
+          outputPath: '${dir.path}/clip_frame.${attempt.fileExtension}',
+          atSeconds: stillTarget.offsetMs / 1000.0,
+          decodeFromStart: true,
+        );
+        if (framePath != null) {
+          producedStillFormat = attempt;
+          break;
+        }
+      }
+    }
     // 输出扩展名由每次尝试的格式补（ffmpeg 按扩展名选 muxer），故这里只给不含扩展名的前缀。
     final AnimatedClipExtraction? animated = stillTarget != null
         ? null
@@ -285,6 +334,8 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
       // 实际产出格式（可能已降级），不是用户所选。cover==null / 静态帧时不参与文件名。
       animatedFormat: animated?.format ?? MiningAnimatedFormat.gif,
       coverIsStill: framePath != null,
+      // 同上：实际编成的静图格式（可能已从 png 退回 jpg），不是用户所选。
+      stillFormat: producedStillFormat,
     );
   } catch (e) {
     return ImmersionCaptureResult(error: 'clip transcode failed: $e');

@@ -34,6 +34,28 @@ part of '../video_fushi_page.dart';
 /// controls_theme.part.dart in batch11) is left untouched in the main shell — it
 /// is a batch11 leftover, not part of this fullscreen block, so it is not moved.
 extension _VideoFullscreen on _VideoFushiPageState {
+  /// 当前是否真的处于 **media_kit 全屏路由**（BUG-1783）。
+  ///
+  /// 给叠在控制条 Stack 上的**兄弟层**（章节刻度 / 缩略图预览）判断该不该吃系统安全区用：
+  /// 它们不在 controls 子树里，拿不到 media_kit 的 Fullscreen InheritedWidget，只能经
+  /// [_videoControlsContext]（controls 子树内 Builder 捕获）反查。
+  ///
+  /// 移动端**直接短路 false**：BUG-221 已把移动端全屏路由统一 no-op 掉，横屏沉浸态是唯一
+  /// 形态。短路同时避开「兄弟层在同帧早于 Builder 回调执行、只能读到上一帧 context」的时序
+  /// 依赖——移动端恰恰是本 bug 的唯一暴露面，不能让它的正确性挂在帧序上。
+  bool get _isVideoFullscreenRoute {
+    if (isMobilePlatform) return false;
+    final BuildContext? ctx = _videoControlsContext;
+    return ctx != null && ctx.mounted && isFullscreen(ctx);
+  }
+
+  /// 控制条兄弟层与 media_kit 控制条**同源**的外层 padding（BUG-1783）。
+  /// 几何收敛进纯函数 [videoControlsChromeInsets]，页面与测试同源调用。
+  EdgeInsets _videoControlsChromeInsets() => videoControlsChromeInsets(
+        isFullscreenRoute: _isVideoFullscreenRoute,
+        systemPadding: MediaQuery.of(context).padding,
+      );
+
   Future<void> _toggleVideoFullscreen(BuildContext context) {
     // BUG-221: 移动端永不进 media_kit 全屏路由（横屏沉浸态即唯一形态）。统一在此单一收口
     // no-op，杜绝任何入口（双击 / 全屏按钮 / 快捷键 / 右键菜单）把移动端推进全屏路由——
@@ -65,8 +87,11 @@ extension _VideoFullscreen on _VideoFushiPageState {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_didInitialFullscreen || !mounted) return;
       // 失败/缺失态 controls 永不建 → context 永为 null；超时兜底防逐帧死循环。
+      // BUG-2043：放弃重进全屏路由时必须把接管来的原生全屏还回去，否则窗口停在
+      // 无全屏路由的原生全屏态（标题栏隐着、ESC 退页后书架铺满整屏）。
       if (_failed || _missingResource || _initialFullscreenRetries > 30) {
         _didInitialFullscreen = true;
+        _releaseHandedOverNativeFullscreen();
         return;
       }
       final BuildContext? ctx = _videoControlsContext;
@@ -76,8 +101,38 @@ extension _VideoFullscreen on _VideoFushiPageState {
         return;
       }
       _didInitialFullscreen = true;
-      if (!isFullscreen(ctx)) unawaited(_pushNeutralizedVideoFullscreen(ctx));
+      if (isFullscreen(ctx)) {
+        // 栈上已有全屏路由（退出由它的 pop 收口）：接管来的所有权本就归路由，放手。
+        _ownsHandedOverNativeFullscreen = false;
+        return;
+      }
+      // 所有权在 [_pushNeutralizedVideoFullscreen] 真的建出全屏路由的那一刻才翻假，
+      // 不在这里提前翻——该方法开头还有 `_videoFullscreenTransitioning` 一道提前
+      // return，提前翻假会让窗口停在「原生全屏但栈上无全屏路由」的悬空态，且
+      // dispose 的 [_releaseHandedOverNativeFullscreen] 已成 no-op、退不回去。
+      unawaited(_pushNeutralizedVideoFullscreen(ctx));
     });
+  }
+
+  /// BUG-2043：从全屏页换集而来的新页（[VideoFushiPage.initialFullscreen]）在 initState
+  /// 认领旧页留下的**原生**全屏：旧页不再退原生全屏就被摘掉，窗口此刻仍是原生全屏、
+  /// 但栈上没有全屏路由（要等本页就绪才压）。认领 = 记下「本页负责收尾」+ Windows 上
+  /// 立刻持有 app 标题栏 owner（旧页 dispose 会释放它自己的 owner；没有本页这份，
+  /// 标题栏会在全屏尺寸的窗口顶部闪出一条）。
+  void _claimHandedOverNativeFullscreen() {
+    if (!widget.initialFullscreen || isMobilePlatform) return;
+    _ownsHandedOverNativeFullscreen = true;
+    if (Platform.isWindows) {
+      FushiWindowsTitleBar.setContentFullscreen(owner: this, enabled: true);
+    }
+  }
+
+  /// BUG-2043：本页还持有接管来的原生全屏、却不会再压全屏路由（就绪失败 / 超时 /
+  /// 加载中被退出）时，亲自退原生全屏。幂等；所有权已移交路由或下一集时 no-op。
+  void _releaseHandedOverNativeFullscreen() {
+    if (!_ownsHandedOverNativeFullscreen) return;
+    _ownsHandedOverNativeFullscreen = false;
+    unawaited(_exitVideoNativeFullscreen());
   }
 
   Future<void> _pushNeutralizedVideoFullscreen(BuildContext context) async {
@@ -122,8 +177,18 @@ extension _VideoFullscreen on _VideoFushiPageState {
         // 只有 B 走 navigatorKey.maybePop 兜底还活着。同一个 wrapper 让全屏子树
         // 拥有与窗口完全一致的手柄语义（A=播放/暂停、dpad=快进快退/音量、
         // B=globalBack「返回上一级」逐级退出……），不在 gamepad_service 里加全屏特判。
-        pageBuilder: (_, __, ___) => _wrapVideoGamepadControls(Material(
-          child: FushiAppUiScaleNeutralizer(
+        // HDR 直通：全屏路由的 Material 底色在宿主窗激活时透明（同窗口侧 Scaffold），
+        // 否则视频洞被路由底色填死、后方宿主窗透不出来。
+        pageBuilder: (_, __, ___) => _wrapVideoGamepadControls(
+          ValueListenableBuilder<bool>(
+            valueListenable:
+                playerController?.hdrHostActive ?? _kHdrHostInactive,
+            builder: (BuildContext _, bool hdrHost, Widget? child) =>
+                Material(
+              color: hdrHost ? Colors.transparent : null,
+              child: child,
+            ),
+            child: FushiAppUiScaleNeutralizer(
             child: MaterialVideoControlsTheme(
               normal:
                   mobileTheme?.normal ?? kDefaultMaterialVideoControlsThemeData,
@@ -192,7 +257,12 @@ extension _VideoFullscreen on _VideoFushiPageState {
                           if (playerController == null) return fullscreenVideo;
                           return _videoWithSubtitlePanel(
                             playerController,
-                            fullscreenVideo,
+                            // HDR 直通：全屏路由的 Video 同样上报矩形（与窗口侧
+                            // [_buildVideoBody] 一致，宿主窗跟着全屏画面走）。
+                            HdrHostRectReporter(
+                              onRect: playerController.reportHdrHostRect,
+                              child: fullscreenVideo,
+                            ),
                           );
                         },
                       ),
@@ -206,6 +276,10 @@ extension _VideoFullscreen on _VideoFushiPageState {
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       );
+      // BUG-2043：全屏路由真的建出来了，接管来的原生全屏所有权就此移交给它——退出由
+      // 路由 pop 收口（media_kit PopScope → [_exitVideoNativeFullscreen]）。翻假点必须
+      // 在本方法开头两道提前 return 之后，才不会出现「所有权已放手、路由却没压上」。
+      _ownsHandedOverNativeFullscreen = false;
       _videoFullscreenRoute = fullscreenRoute;
       // 全屏路由关闭的唯一汇聚点：Esc / F / 全屏按钮 / 双击 / 系统返回全部
       // 经由路由 future 完成，无论哪条退出路径都在这里复位 + 归还焦点。
@@ -240,11 +314,15 @@ extension _VideoFullscreen on _VideoFushiPageState {
   Future<void> _exitVideoFullscreen(BuildContext context) async {
     if (_videoFullscreenTransitioning || !isFullscreen(context)) return;
     if (!context.mounted) return;
+    final NavigatorState navigator = Navigator.of(context);
+    final VideoState parent = FullscreenInheritedWidget.of(context).parent;
     _videoFullscreenTransitioning = true;
     try {
-      await Navigator.of(context).maybePop();
-      if (context.mounted) {
-        FullscreenInheritedWidget.of(context).parent.refreshView();
+      await navigator.maybePop();
+      // BUG-1945: pop 后 controls element 可能仍 mounted、却已 deactivated；这里只能
+      // 使用 pop 前捕获的稳定引用，不能再从旧 context 查祖先。
+      if (parent.mounted) {
+        parent.refreshView();
       }
     } finally {
       _videoFullscreenTransitioning = false;
@@ -297,7 +375,26 @@ extension _VideoFullscreen on _VideoFushiPageState {
   /// （改动前窗口侧 Video 未传回调、落 media_kit 默认 = 桌面真全屏），属本修复范围外的
   /// 桌面回归，故桌面转调默认回调原样保留。
   Future<void> _enterVideoNativeFullscreen() async {
-    if (!isMobilePlatform) return defaultEnterNativeFullscreen();
+    if (!isMobilePlatform) {
+      if (Platform.isWindows) {
+        // Hide the app frame before the native transition so no title-bar
+        // frame remains above the fullscreen surface.
+        FushiWindowsTitleBar.setContentFullscreen(
+          owner: this,
+          enabled: true,
+        );
+        // BUG-1933：Windows 不再走 media_kit 的 `Utils.EnterNativeFullscreen`
+        // ——它与 window_manager 同技法（剥 WS_CAPTION|WS_THICKFRAME），DWM
+        // 重建窗口 visual 时 Flutter 子窗图层缺席一帧，露出表面色（浅色主题
+        // =白帧）。改走 runner 自有保边框全屏（WindowCaptionChannel，吞平台
+        // 异常故无需回滚 chrome 的 try/catch）。macOS / Linux 保留 media_kit
+        // 默认回调不变。
+        await WindowCaptionChannel.setFullscreen(true);
+        return;
+      }
+      await defaultEnterNativeFullscreen();
+      return;
+    }
     await SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.immersiveSticky,
       overlays: <SystemUiOverlay>[],
@@ -321,6 +418,17 @@ extension _VideoFullscreen on _VideoFushiPageState {
   /// 设备方向，无竖屏问题。
   Future<void> _exitVideoNativeFullscreen() async {
     if (!isMobilePlatform) {
+      if (Platform.isWindows) {
+        // BUG-1933：与进入回调对称，Windows 走 runner 自有全屏退出。await 返回
+        // 时 runner 已同步还原窗口矩形，再亮出 app frame——早亮会在退出过程上
+        // 闪一下标题栏。
+        await WindowCaptionChannel.setFullscreen(false);
+        FushiWindowsTitleBar.setContentFullscreen(
+          owner: this,
+          enabled: false,
+        );
+        return;
+      }
       await defaultExitNativeFullscreen();
       // BUG-973: AppKit 的 `toggleFullScreen` 退出原生全屏会重建标题栏视图、可能把
       // `standardWindowButton.isHidden` 复位 → 交通灯在窗口化播放态重新遮住左上角控件。

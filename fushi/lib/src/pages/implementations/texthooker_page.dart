@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HardwareKeyboard, KeyEvent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -22,21 +23,29 @@ import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_hook_code_profile.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
+import 'package:fushi/src/mining/galgame_japanese_locale_text.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
+import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/pages/implementations/gal_capture_setup_dialog.dart';
+import 'package:fushi/src/pages/implementations/gal_attached_lookup_workbench.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
-    show MinePopupResult;
+    show DictionaryPopupWebViewState, MinePopupResult;
+import 'package:fushi/src/shortcuts/input_binding.dart' show InputBinding;
+import 'package:fushi/src/shortcuts/shortcut_action.dart' show ShortcutAction;
 import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/sync/texthooker_word_cache.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
-import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:fushi/media.dart';
+import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi_core/fushi_core.dart' show ProfileMediaKind;
 
 /// fallback 制卡（非外部窗口/非 Windows，走普通 in-app popup 制卡）也要带上当前活跃
 /// hook 台词作 sentence，否则挖出的卡 `{sentence}` 恒空（BUG-954）。仅在 [fields] 未自带
@@ -53,6 +62,17 @@ Map<String, String> injectActiveSentence(
     return fields;
   }
   return Map<String, String>.from(fields)..['sentence'] = activeSentence;
+}
+
+String _selectedThreadPreview(
+  List<TexthookerTextThread> threads,
+  String? selectedKey,
+) {
+  if (selectedKey == null) return '';
+  for (final TexthookerTextThread thread in threads) {
+    if (thread.key == selectedKey) return thread.displayPreviewText ?? '';
+  }
+  return '';
 }
 
 /// texthooker 捕获工作台：实时展示 WebSocket 收到的文本行，逐词查词 + 挖词。
@@ -80,7 +100,7 @@ class TexthookerPage extends ConsumerStatefulWidget {
 }
 
 class _TexthookerPageState extends ConsumerState<TexthookerPage>
-    with DictionaryPageMixin {
+    with DictionaryPageMixin, WidgetsBindingObserver {
   final DictionaryPopupController _popup = DictionaryPopupController(
     lowMemory: false,
     onLookupStackDepthChanged: recordLookupStackDepth,
@@ -89,6 +109,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   final GalHookSessionController _session = GalHookSessionController.instance;
   OverlayEntry? _popupOverlayEntry;
   bool _overlayInert = false;
+
+  /// BUG-1799：「已制卡」徽章向 Anki 复核的单次在途守卫。切回前台可能连发多次
+  /// （resumed 事件 + 首帧），复核本身是一次网络往返，重入只会白打。
+  bool _revalidatingMined = false;
   bool _popupOverlayRebuildScheduled = false;
   String? _activeLineId;
   String? _activeSentence;
@@ -128,8 +152,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       await DesktopAudioPlayback.stop();
       return;
     }
-    final GalTrackPreview? preview =
-        await _session.exportLineAudioPreview(line.id);
+    final GalTrackPreview? preview = await _session.exportLineAudioPreview(
+      line.id,
+    );
     if (!mounted) return;
     if (preview == null) {
       FushiToast.show(
@@ -149,14 +174,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     }
     _linePreviewResetTimer?.cancel();
     setState(() => _previewingLineId = line.id);
-    final int resetMs =
-        preview.durationMs > 0 ? preview.durationMs + 300 : _kLinePreviewMaxMs;
-    _linePreviewResetTimer = Timer(
-      Duration(milliseconds: resetMs),
-      () {
-        if (mounted) setState(() => _previewingLineId = null);
-      },
-    );
+    final int resetMs = preview.durationMs > 0
+        ? preview.durationMs + 300
+        : _kLinePreviewMaxMs;
+    _linePreviewResetTimer = Timer(Duration(milliseconds: resetMs), () {
+      if (mounted) setState(() => _previewingLineId = null);
+    });
   }
 
   /// 为单条台词改选语音轨（BUG-1102 的用户裁决出口）。
@@ -166,12 +189,59 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// [GalHookSessionController.setLineVoiceTrack] 独立取音。列表复用会话已有的音轨
   /// 快照，并保留逐轨试听，让用户先听再定。
   Future<void> _pickLineTrack(TexthookerLineEntry line) async {
+    if (line.audioBackend == 'game_resource') {
+      // 资源模式的行：这句语音是按句从游戏资源直提的，PCM 轨与它无关（能量恒
+      // -1.0、"这句时刻没有声音"）。列 PCM 轨只会被读成「音频没抓到」，所以这里
+      // 只展示本句真正的资源音频并给试听；文案与右侧面板
+      // GalTrackEmptyHint.resourceMode 同一句。
+      final int durationMs = line.audioDurationMs ?? 0;
+      await showAppDialog<void>(
+        context: context,
+        builder: (BuildContext dialogContext) => StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) =>
+              SimpleDialog(
+                title: Text(t.game_line_track_dialog_title),
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+                    child: Text(
+                      t.game_tracks_resource_mode_hint,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  FushiListItem(
+                    leading: const Icon(Icons.audiotrack_outlined),
+                    title: Text(line.audioBackend ?? t.game_track_voice),
+                    subtitle: Text(
+                      <String>[
+                        if (line.audioResourceId != null)
+                          line.audioResourceId!,
+                        if (durationMs > 0)
+                          '${(durationMs / 1000).toStringAsFixed(2)}s',
+                      ].join(' · '),
+                    ),
+                    trailing: FushiIconButton(
+                      icon: _previewingLineId == line.id
+                          ? Icons.stop_circle_outlined
+                          : Icons.play_circle_outline,
+                      tooltip: _previewingLineId == line.id
+                          ? t.game_track_preview_stop
+                          : t.game_line_preview_tooltip,
+                      onTap: () async {
+                        await _toggleLinePreview(line);
+                        if (context.mounted) setDialogState(() {});
+                      },
+                    ),
+                  ),
+                ],
+              ),
+        ),
+      );
+      return;
+    }
     final List<GalAudioTrack> tracks = _session.state.audioTracks;
     if (tracks.isEmpty) {
-      FushiToast.show(
-        msg: t.game_no_tracks,
-        severity: ToastSeverity.error,
-      );
+      FushiToast.show(msg: t.game_no_tracks, severity: ToastSeverity.error);
       return;
     }
     final int? picked = await showAppDialog<int>(
@@ -179,80 +249,89 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       builder: (BuildContext dialogContext) => StatefulBuilder(
         builder: (BuildContext context, StateSetter setDialogState) =>
             SimpleDialog(
-          title: Text(t.game_line_track_dialog_title),
-          children: <Widget>[
-            for (final GalAudioTrack track in tracks)
-              Builder(
-                builder: (BuildContext context) {
-                  final bool excluded = _session.state.excludedAudioSourcePtrs
-                      .contains(track.sourcePtr);
-                  // BUG-1425：行骨架走共享 MD3 组件，不再裸 ListTile。本文件的
-                  // reviewed 豁免只覆盖「hook 状态胶囊是实时内容指示器」，从不覆盖
-                  // 对话框行骨架。`ListTile.enabled` 的两个作用分开落地：不可选走
-                  // onTap: null（本来就有），置灰走显式 disabled 前景色。
-                  final Color disabledColor = FushiDesignTokens.of(context)
-                      .surfaces
-                      .onSurface
-                      .withValues(alpha: 0.38);
-                  return FushiListItem(
-                    leading: Icon(
-                      excluded ? Icons.music_off_outlined : Icons.graphic_eq,
-                      color: excluded ? disabledColor : null,
-                    ),
-                    title: Text(
-                      '${t.game_track_voice} ${track.orderIndex + 1} · '
-                      '${track.format.sampleRate} Hz · '
-                      '${track.format.channels} ch',
-                      style: excluded ? TextStyle(color: disabledColor) : null,
-                    ),
-                    subtitle: Text(
-                      <String>[
-                        '${t.game_track_clips} ${track.clipCount}',
-                        '${t.game_track_energy} '
-                            '${track.avgEnergy.toStringAsFixed(1)}',
-                        if (excluded) t.game_track_bgm,
-                      ].join(' · '),
-                      style: excluded ? TextStyle(color: disabledColor) : null,
-                    ),
-                    trailing: Wrap(
-                      spacing: 4,
-                      children: <Widget>[
-                        FushiIconButton(
-                          icon: Icons.play_circle_outline,
-                          tooltip: t.game_track_preview,
-                          onTap: () => unawaited(
-                            _previewLineTrackInDialog(
-                              line.id,
-                              track.sourcePtr,
+              title: Text(t.game_line_track_dialog_title),
+              children: <Widget>[
+                for (final GalAudioTrack track in tracks)
+                  Builder(
+                    builder: (BuildContext context) {
+                      final bool excluded = _session
+                          .state
+                          .excludedAudioSourcePtrs
+                          .contains(track.sourcePtr);
+                      // BUG-1425：行骨架走共享 MD3 组件，不再裸 ListTile。本文件的
+                      // reviewed 豁免只覆盖「hook 状态胶囊是实时内容指示器」，从不覆盖
+                      // 对话框行骨架。`ListTile.enabled` 的两个作用分开落地：不可选走
+                      // onTap: null（本来就有），置灰走显式 disabled 前景色。
+                      final Color disabledColor = FushiDesignTokens.of(
+                        context,
+                      ).surfaces.onSurface.withValues(alpha: 0.38);
+                      return FushiListItem(
+                        leading: Icon(
+                          excluded
+                              ? Icons.music_off_outlined
+                              : Icons.graphic_eq,
+                          color: excluded ? disabledColor : null,
+                        ),
+                        title: Text(
+                          '${t.game_track_voice} ${track.orderIndex + 1} · '
+                          '${track.format.sampleRate} Hz · '
+                          '${track.format.channels} ch',
+                          style: excluded
+                              ? TextStyle(color: disabledColor)
+                              : null,
+                        ),
+                        subtitle: Text(
+                          <String>[
+                            '${t.game_track_clips} ${track.clipCount}',
+                            '${t.game_track_energy} '
+                                '${track.avgEnergy.toStringAsFixed(1)}',
+                            if (excluded) t.game_track_bgm,
+                          ].join(' · '),
+                          style: excluded
+                              ? TextStyle(color: disabledColor)
+                              : null,
+                        ),
+                        trailing: Wrap(
+                          spacing: 4,
+                          children: <Widget>[
+                            FushiIconButton(
+                              icon: Icons.play_circle_outline,
+                              tooltip: t.game_track_preview,
+                              onTap: () => unawaited(
+                                _previewLineTrackInDialog(
+                                  line.id,
+                                  track.sourcePtr,
+                                ),
+                              ),
                             ),
-                          ),
+                            FushiIconButton(
+                              icon: excluded
+                                  ? Icons.undo
+                                  : Icons.music_off_outlined,
+                              tooltip: excluded
+                                  ? t.game_track_restore
+                                  : t.game_track_exclude_bgm,
+                              onTap: () {
+                                _session.setTrackExcluded(
+                                  track.sourcePtr,
+                                  !excluded,
+                                );
+                                setDialogState(() {});
+                              },
+                            ),
+                          ],
                         ),
-                        FushiIconButton(
-                          icon:
-                              excluded ? Icons.undo : Icons.music_off_outlined,
-                          tooltip: excluded
-                              ? t.game_track_restore
-                              : t.game_track_exclude_bgm,
-                          onTap: () {
-                            _session.setTrackExcluded(
-                              track.sourcePtr,
-                              !excluded,
-                            );
-                            setDialogState(() {});
-                          },
-                        ),
-                      ],
-                    ),
-                    // 已明确标为 BGM 的轨不能再被误点成这句语音；仍可试听与恢复。
-                    onTap: excluded
-                        ? null
-                        : () =>
-                            Navigator.of(dialogContext).pop(track.sourcePtr),
-                  );
-                },
-              ),
-          ],
-        ),
+                        // 已明确标为 BGM 的轨不能再被误点成这句语音；仍可试听与恢复。
+                        onTap: excluded
+                            ? null
+                            : () => Navigator.of(
+                                dialogContext,
+                              ).pop(track.sourcePtr),
+                      );
+                    },
+                  ),
+              ],
+            ),
       ),
     );
     if (picked == null || !mounted) return;
@@ -266,8 +345,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   /// 选轨对话框里的逐轨试听：与确认选择共用当前行时间戳，避免试听偷播最新一句。
   Future<void> _previewLineTrackInDialog(String lineId, int sourcePtr) async {
-    final GalTrackPreview? preview =
-        await _session.exportLineTrackPreview(lineId, sourcePtr);
+    final GalTrackPreview? preview = await _session.exportLineTrackPreview(
+      lineId,
+      sourcePtr,
+    );
     if (preview == null) {
       FushiToast.show(
         msg: t.game_track_preview_failed,
@@ -302,8 +383,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 await DesktopAudioPlayback.stop();
                 return;
               }
-              final GalTrackPreview? preview =
-                  await _session.exportTrackPreview(track.sourcePtr);
+              final GalTrackPreview? preview = await _session
+                  .exportTrackPreview(track.sourcePtr);
               if (!dialogContext.mounted) return;
               if (preview == null) {
                 FushiToast.show(
@@ -312,8 +393,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 );
                 return;
               }
-              final bool started =
-                  await DesktopAudioPlayback.playFile(preview.filePath);
+              final bool started = await DesktopAudioPlayback.playFile(
+                preview.filePath,
+              );
               if (!dialogContext.mounted) return;
               if (!started) {
                 FushiToast.show(
@@ -395,7 +477,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 分词结果缓存：行文本按 id 不可变，缓存 textToWords 避免每次 rebuild 重复分词
   /// （每来一行整页 setState）。行对象随音频/制卡/收藏态 copyWith 换新但 id/text 不变，
   /// 按 id 缓存恒安全。上限略高于行 buffer 上限，越界淘汰最旧插入项。
-  final _TexthookerWordCache _wordCache = _TexthookerWordCache();
+  final TexthookerWordCache _wordCache = TexthookerWordCache(
+    tokenize: JapaneseLanguage.instance.textToWords,
+  );
 
   /// 缓存的 [AppModel] 引用（`appProvider` 为单例，实例不变）。在 [initState] 一次性
   /// 读取：浮层层在 `LayoutBuilder` 回调里访问 `mixinAppModel`，widget 失活后再
@@ -416,6 +500,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _lastObservedLineId = initialLines.isEmpty ? null : initialLines.last.id;
     TexthookerService.instance.addListener(_onLines);
     _session.addListener(_onSessionChanged);
+    // BUG-1799：监听前台/后台切换，用户去 Anki 删卡再切回来时复核「已制卡」徽章。
+    WidgetsBinding.instance.addObserver(this);
+    HardwareKeyboard.instance.addHandler(_handlePopupMineHardwareKey);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
     attachLookupCounter(_popup);
     // BUG-1028：开页 seed 常驻隐藏热槽，使查词弹窗 WebView 冷加载一次后全程复用，
@@ -428,7 +515,49 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         _scroll.jumpTo(_scroll.position.maxScrollExtent);
       }
       _maybeScheduleCaptureSetupDialog();
+      // BUG-1799：进页也复核一次——卡可能是在别的页面制的、随后在 Anki 里被删掉，
+      // 那种路径不经过本页的前台切换事件。
+      unawaited(_revalidateMinedLines());
     });
+  }
+
+  /// BUG-1799：切回前台就复核「已制卡」徽章。用户的原始路径正是「在本页制卡 →
+  /// 切到 Anki 删掉那张卡 → 切回 Hibiki」，`resumed` 就是这条路径回到 app 的那一刻。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_revalidateMinedLines());
+    }
+  }
+
+  /// BUG-1799：把本会话所有「已制卡且带 note id」的行拿去问 Anki，凡是 Anki 明确
+  /// 应答「这张 note 不存在」的，把对应行的徽章清掉。
+  ///
+  /// 复核的真相源是 Anki 本身，与 [BUG-186] 给查词弹窗 ✓ 定下的口径一致：徽章不是
+  /// 装饰，它表示「Anki 里现在有这张卡」。
+  ///
+  /// **不可达绝不清**：`findDeletedNotes` 在查询失败 / AnkiConnect 不可达时返回空集
+  /// （见其文档），因此 Anki 没开着的时候本方法什么都不做，而不是把满屏徽章清空。
+  Future<void> _revalidateMinedLines() async {
+    if (_revalidatingMined) return;
+    final Set<int> noteIds = TexthookerService.instance.minedNoteIds;
+    if (noteIds.isEmpty) return;
+    if (!mounted || !_appModel.isInitialised) return;
+    _revalidatingMined = true;
+    try {
+      final BaseAnkiRepository repo = _appModel.platformServices
+          .createAnkiRepository();
+      final Set<int> deleted = await repo.findDeletedNotes(noteIds);
+      if (deleted.isEmpty) return;
+      TexthookerService.instance.clearMinedForNotes(deleted);
+    } catch (e, stack) {
+      // 复核是纯装饰性刷新，任何失败都不得冒泡打断捕获工作台。
+      debugPrint('TexthookerPage._revalidateMinedLines: $e');
+      debugPrint('$stack');
+    } finally {
+      _revalidatingMined = false;
+    }
   }
 
   @override
@@ -453,6 +582,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   @override
   void dispose() {
     _linePreviewResetTimer?.cancel();
+    HardwareKeyboard.instance.removeHandler(_handlePopupMineHardwareKey);
+    WidgetsBinding.instance.removeObserver(this);
     TexthookerService.instance.removeListener(_onLines);
     _session.removeListener(_onSessionChanged);
     final OverlayEntry? popupOverlay = _popupOverlayEntry;
@@ -550,7 +681,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       );
       final String? lineId = _activeLineId;
       if (result.ankiConnect && lineId != null) {
-        TexthookerService.instance.markLineMined(lineId);
+        // BUG-1799：带上 note id，供日后向 Anki 复核这张卡是否还在。
+        TexthookerService.instance.markLineMined(lineId, noteId: result.noteId);
       }
       return result;
     }
@@ -566,8 +698,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (!sessionState.externalWindowMode ||
         sessionState.boundWindow == null ||
         !Platform.isWindows) {
-      return super
-          .onUpdateEntry(noteId, injectActiveSentence(fields, _activeSentence));
+      return super.onUpdateEntry(
+        noteId,
+        injectActiveSentence(fields, _activeSentence),
+      );
     }
     return _mineActiveLine(fields: fields, updateNoteId: noteId);
   }
@@ -577,8 +711,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     int? updateNoteId,
   }) async {
     final String? lineId = _activeLineId;
-    final TexthookerLineEntry? entry =
-        lineId == null ? null : _session.entryById(lineId);
+    final TexthookerLineEntry? entry = lineId == null
+        ? null
+        : _session.entryById(lineId);
     if (entry == null) {
       FushiToast.showMine(
         msg: t.game_hook_line_unavailable,
@@ -593,32 +728,33 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       status: MineToastStatus.pending,
     );
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
-    final GalHookMiningResult result =
-        await GalHookMiningCoordinator.instance.mineLine(
-      lineId: entry.id,
-      fields: effectiveFields,
-      compression: MiningMediaCompression.resolve(
-        imageTier: mixinAppModel.miningImageQuality,
-        audioTier: mixinAppModel.miningAudioQuality,
-        // 顶格档的动图参数随格式变，必须一并传入解析（见 MiningAnimatedFormat）。
-        // gal 窗口动图当前不吃清晰度档（`captureWindowGifBytes` 用自己的
-        // fps/maxWidth），所以这里传不传都一样——传是为了让两个 gal 入口与视频侧
-        // 逐字同形，免得哪天 gal 接上档位时又漏一处。
-        format: mixinAppModel.galMiningAnimatedFormat,
-      ),
-      repo: repo,
-      updateNoteId: updateNoteId,
-      addTitleTag: mixinAppModel.autoAddBookNameToTags,
-      imageMode: mixinAppModel.galMiningImageMode,
-      animatedFormat: mixinAppModel.galMiningAnimatedFormat,
-    );
+    final GalHookMiningResult result = await GalHookMiningCoordinator.instance
+        .mineLine(
+          lineId: entry.id,
+          fields: effectiveFields,
+          compression: MiningMediaCompression.resolve(
+            imageTier: mixinAppModel.miningImageQuality,
+            audioTier: mixinAppModel.miningAudioQuality,
+            // 顶格档的动图参数随格式变，必须一并传入解析（见 MiningAnimatedFormat）。
+            // gal 窗口动图当前不吃清晰度档（`captureWindowGifBytes` 用自己的
+            // fps/maxWidth），所以这里传不传都一样——传是为了让两个 gal 入口与视频侧
+            // 逐字同形，免得哪天 gal 接上档位时又漏一处。
+            format: mixinAppModel.galMiningAnimatedFormat,
+          ),
+          repo: repo,
+          updateNoteId: updateNoteId,
+          addTitleTag: mixinAppModel.autoAddBookNameToTags,
+          imageMode: mixinAppModel.galMiningImageMode,
+          animatedFormat: mixinAppModel.galMiningAnimatedFormat,
+          stillFormat: mixinAppModel.galMiningStillFormat,
+        );
     if (result.aborted) {
       FushiToast.showMine(
         msg: result.audioFallbackDisabled
             ? t.game_audio_fallback_disabled_missing
             : result.failureReason != null
-                ? '${t.external_window_capture_failed}：${result.failureReason}'
-                : t.external_window_capture_failed,
+            ? '${t.external_window_capture_failed}：${result.failureReason}'
+            : t.external_window_capture_failed,
         status: MineToastStatus.failed,
       );
       return const MinePopupResult();
@@ -643,7 +779,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (result.unmappedTokens.isNotEmpty) {
       // 冒号统一全角（与上方 external_window_capture_failed toast 一致）。
       FushiToast.show(
-        msg: '${t.game_card_mapping_missing}：'
+        msg:
+            '${t.game_card_mapping_missing}：'
             '${result.unmappedTokens.join(', ')}',
         severity: ToastSeverity.warning,
       );
@@ -651,7 +788,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (described.success) {
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
-    return const MinePopupResult();
+    return MinePopupResult.failed(outcome);
   }
 
   Future<void> _toggleExternalWindowMode() async {
@@ -704,10 +841,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final int? gamePid = _session.state.gamePid;
     final int? boundHwnd = _session.state.boundWindow?.hwnd;
     final List<ExternalWindowInfo> ordered = <ExternalWindowInfo>[
-      ...windows
-          .where((ExternalWindowInfo w) => gamePid != null && w.pid == gamePid),
-      ...windows
-          .where((ExternalWindowInfo w) => gamePid == null || w.pid != gamePid),
+      ...windows.where(
+        (ExternalWindowInfo w) => gamePid != null && w.pid == gamePid,
+      ),
+      ...windows.where(
+        (ExternalWindowInfo w) => gamePid == null || w.pid != gamePid,
+      ),
     ];
     final ExternalWindowInfo? picked = await showAppDialog<ExternalWindowInfo>(
       context: context,
@@ -741,8 +880,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     ? Text(
                         t.external_window_current_game,
                         style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
-                              color: Theme.of(ctx).colorScheme.primary,
-                            ),
+                          color: Theme.of(ctx).colorScheme.primary,
+                        ),
                       )
                     : null,
                 onTap: () => Navigator.of(ctx).pop(window),
@@ -777,6 +916,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         state.boundWindow?.hwnd == picked.hwnd) {
       return;
     }
+    // TODO-2936：应用「游戏」媒体类型的 Profile 绑定（非致命、与附着并行）。
+    unawaited(
+      ref
+          .read(profileViewModelProvider.notifier)
+          .autoApplyBinding(mediaType: ProfileMediaKind.game),
+    );
     await _session.startAttachedCapture(picked);
   }
 
@@ -823,6 +968,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         _appModel.galgameRepo.games,
         executable,
       );
+      // TODO-2936：应用「游戏」媒体类型的 Profile 绑定（非致命、与启动并行）。
+      unawaited(
+        ref
+            .read(profileViewModelProvider.notifier)
+            .autoApplyBinding(mediaType: ProfileMediaKind.game),
+      );
       final GalHookLaunchResult result = await _session.launchGame(
         executable,
         launchArguments: known?.launchArgumentTokens ?? const <String>[],
@@ -830,8 +981,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         gameId: known?.id,
         gameTitle: known?.displayName,
         // 库里没有这个 exe（临时选的文件）→ auto，与旧行为等价。
-        japaneseLocaleMode:
-            galJapaneseLocaleModeFromKey(known?.japaneseLocaleMode),
+        japaneseLocaleMode: galJapaneseLocaleModeFromKey(
+          known?.japaneseLocaleMode,
+        ),
+        // BUG-2047：内容语言是转区 auto 判定的人工真值；库里没有 → null = 只靠自动证据。
+        contentLanguage: known?.language,
       );
       if (!mounted) return;
       // 与游戏库页共用同一条结果播报（BUG-1089）。旧实现在这里自己判 `boundWindow`
@@ -860,8 +1014,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             GalHookLaunchOutcome.running => ToastSeverity.success,
             GalHookLaunchOutcome.degradedLoopback => ToastSeverity.warning,
             GalHookLaunchOutcome.failed ||
-            GalHookLaunchOutcome.windowMissing =>
-              ToastSeverity.error,
+            GalHookLaunchOutcome.windowMissing => ToastSeverity.error,
             // message 为 null 时根本不播报，这里走不到。
             GalHookLaunchOutcome.superseded => ToastSeverity.neutral,
           },
@@ -918,6 +1071,121 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         severity: ToastSeverity.success,
       );
     } catch (_) {
+      FushiToast.show(
+        msg: t.audiobook_import_error,
+        severity: ToastSeverity.error,
+      );
+    }
+  }
+
+  /// BUG-1909：把用户粘来的一串特殊码转成可入库的 profile 行。
+  ///
+  /// 用户原话：「特殊码确实是可以用在 fushi 上的，不过要稍微转换一下，因为 fushi 只接受
+  /// tsv 合适的，一般特殊码只是一串字符」。缺的正是这段转换：
+  /// * 洗掉复制带来的引号/换行/全角噪声（[normalizeGalHookCode]）；
+  /// * 补上 profile 的身份列——**当前运行游戏 exe 的 SHA-256**。这是 profile 能被
+  ///   下次自动复用的唯一依据（native 按 exe 哈希匹配），也是用户手工拼 TSV 时最过不去
+  ///   的一关；
+  /// * 补 codepage 932 与 label，拼成七列行。
+  ///
+  /// 用 `upsert` 而不是导入用的 `replaceFrom`：粘一条码不该把用户既有的其它 profile
+  /// 全部清掉。
+  Future<void> _pasteLunaHookCode() async {
+    final String? executable = _session.currentLaunchExecutable;
+    if (executable == null) {
+      // 没有正在运行的游戏 = 算不出身份哈希，这条码存下来也永远匹配不上。
+      FushiToast.show(
+        msg: t.game_text_thread_hint,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    final TextEditingController codeController = TextEditingController();
+    final TextEditingController labelController = TextEditingController(
+      text: executable.split(RegExp(r'[/\\]')).last,
+    );
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => FushiDialogFrame(
+        maxWidth: 480,
+        child: FushiModalSheetFrame(
+          title: t.game_hook_code_paste_title,
+          scrollable: true,
+          body: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(t.game_hook_code_paste_body),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: codeController,
+                  autofocus: true,
+                  maxLines: 2,
+                  minLines: 1,
+                  decoration: InputDecoration(
+                    labelText: 'Hook Code',
+                    hintText: t.game_hook_code_paste_hint,
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: labelController,
+                  decoration: InputDecoration(
+                    labelText: t.game_hook_code_label,
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          footer: Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(t.dialog_save),
+            ),
+          ),
+        ),
+      ),
+    );
+    final String code = normalizeGalHookCode(codeController.text);
+    final String label = labelController.text.trim();
+    codeController.dispose();
+    labelController.dispose();
+    if (confirmed != true || !mounted) return;
+    if (code.isEmpty) {
+      FushiToast.show(
+        msg: t.game_hook_code_paste_invalid,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    try {
+      final String hash = await sha256File(File(executable));
+      final LunaHookCodeProfileStore store =
+          await LunaHookCodeProfileStore.openDefault();
+      await store.upsert(
+        LunaHookCodeProfile(
+          executableSha256: hash,
+          moduleName: '',
+          moduleSha256: '',
+          codepage: 932,
+          hookCode: code,
+          label: label.isEmpty
+              ? executable.split(RegExp(r'[/\\]')).last
+              : label,
+        ),
+      );
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.game_hook_code_paste_saved,
+        severity: ToastSeverity.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
       FushiToast.show(
         msg: t.audiobook_import_error,
         severity: ToastSeverity.error,
@@ -1056,6 +1324,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         _captureSetupDialogScheduled) {
       return;
     }
+    final GalAttachedTextController attachedText =
+        GalHookTextOverlayController.instance.attachedText;
     final GalHookSessionState state = _session.state;
     final DateTime? sessionStartedAt = state.sessionStartedAt;
     if (!shouldPromptGalCaptureSetup(
@@ -1064,6 +1334,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       selectedTextThreadKey: _session.selectedTextThreadKey,
       textThreadCount: _session.textThreads.length,
       sessionAlreadyPrompted: _captureSetupShownForSession == sessionStartedAt,
+      lookupRiskAcceptancePending: attachedText.needsUnsafeRiskAcceptance,
     )) {
       return;
     }
@@ -1081,30 +1352,38 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             selectedTextThreadKey: _session.selectedTextThreadKey,
             textThreadCount: _session.textThreads.length,
             sessionAlreadyPrompted: false,
+            lookupRiskAcceptancePending: attachedText.needsUnsafeRiskAcceptance,
           )) {
         return;
       }
       _captureSetupShownForSession = sessionStartedAt;
       _captureSetupDialogOpen = true;
-      await showAppDialog<void>(
+      final GalCaptureSetupOutcome? outcome =
+          await showAppDialog<GalCaptureSetupOutcome>(
         context: context,
         builder: (BuildContext dialogContext) => GalCaptureSetupDialog(
           session: _session,
+          attachedText: attachedText,
           onSelectThread: (TexthookerTextThread thread) =>
               _session.selectTextThread(
-            thread.nativeThreadId,
-            threadKey: thread.key,
-            remember: true,
-          ),
+                thread.nativeThreadId,
+                threadKey: thread.key,
+                remember: true,
+              ),
         ),
       );
       _captureSetupDialogOpen = false;
+      // 「本会话已提示过」这个标记的唯一用途，是让**用户主动关掉**弹窗后不再被每来
+      // 一行台词就弹一次（选中线程有自己的判据 selectedTextThreadKey == null，不靠
+      // 它）。给点击风险确认让位不是用户的意思：标记落在 showAppDialog 之前，让位
+      // 又把弹窗关掉，于是确认完风险之后本会话再也拿不到捕获设置——右栏独有的采集源
+      // 判读 / 语音轨试听 / BGM 排除全都没了，而且全仓只有这一个构造点，没有手动重开
+      // 入口。所以只回滚这一条出口，用户自己关掉的照旧不再提示。
+      if (outcome == GalCaptureSetupOutcome.yieldedToRiskConsent) {
+        _captureSetupShownForSession = null;
+      }
     });
   }
-
-  /// TODO-1052：查词浮层 barrier 上「桌面水平拖过阈关一层」的纯状态追踪器（与
-  /// reader/audiobook、video、home_dictionary 共用 [BarrierSwipeDismissTracker]）。
-  final BarrierSwipeDismissTracker _barrierSwipe = BarrierSwipeDismissTracker();
 
   /// texthooker 每次点词复用热槽（`reuseWarmSlot: true`），可见栈至多一层（+ 隐藏热槽）；
   /// 关一层即收起当前查词。逐层关索引取最后可见层（无可见层回退 0，与 barrier 只在有可见层
@@ -1114,20 +1393,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     return i < 0 ? 0 : i;
   }
 
-  void _onBarrierHorizontalDragStart(DragStartDetails details) {
-    _barrierSwipe.begin();
-  }
-
-  void _onBarrierHorizontalDragUpdate(DragUpdateDetails details) {
-    _barrierSwipe.update(details.delta.dx);
-  }
-
-  void _onBarrierHorizontalDragEnd(DragEndDetails details) {
-    if (_barrierSwipe.end(
-      sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
-    )) {
-      popNestedPopupAt(_topVisiblePopupIndex, _popup);
-    }
+  /// TODO-1052：barrier 水平拖过阈关一层（判轴/累积/阈值收在
+  /// [LookupDismissBarrier] 内，BUG-1757：横拖不进手势竞技场）。
+  void _dismissTopNestedPopup() {
+    popNestedPopupAt(_topVisiblePopupIndex, _popup);
   }
 
   /// 从命中的那个字起做查词（BUG-1478）。
@@ -1137,11 +1406,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 切出来的那个词：引擎本来就按查询串做最长匹配并回报 `bestLength`（弹窗据此高亮
   /// 整词跨度），所以点「永」照样命中「永遠」，而点「遠」能单独查到「遠」——
   /// 老实现把整词当查询串，后者根本无从下手。
-  void _onCharTap(
-    TexthookerLineEntry line,
-    int charIndex,
-    Rect rect,
-  ) {
+  void _onCharTap(TexthookerLineEntry line, int charIndex, Rect rect) {
     final String word = lookupQueryFromIndex(line.text, charIndex);
     if (word.isEmpty) return;
     _selectLine(line);
@@ -1163,6 +1428,40 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       _activeLineId = line.id;
       _activeSentence = line.text;
     });
+  }
+
+  /// App 内查词 WebView 不在 JS 侧处理制卡快捷键，避免同一次按键同时被
+  /// WebView 与 Flutter 消费后制出两张卡。因此 texthooker 必须像视频页一样，
+  /// 在宿主侧把 [ShortcutAction.popupMineEntry]（默认 Ctrl+Enter）接回当前
+  /// 顶层弹窗的既有制卡按钮；执行体仍走 WebView 的三态、查重与单飞门。
+  void _mineFromTopPopup() {
+    if (!_popup.hasVisiblePopup) return;
+    final int index = _topVisiblePopupIndex;
+    final DictionaryPopupWebViewState? popup =
+        _popup.entries[index].webViewKey.currentState;
+    if (popup == null) return;
+    unawaited(popup.mineFirstVisibleEntry());
+  }
+
+  /// Root Overlay 与原生 WebView 都不保证存在可用的 Flutter Focus 后代。
+  ///
+  /// 因此仅在 texthooker 查词弹窗可见时，从 [HardwareKeyboard] 的页面生命周期
+  /// handler 接收用户配置的制卡绑定。它先于 Focus/Shortcuts 路由处理命中的事件，
+  /// 不依赖浮层焦点，也不会让同一次按键再落到 WebView 形成重复制卡。
+  bool _handlePopupMineHardwareKey(KeyEvent event) {
+    if (!mounted || !_popup.hasVisiblePopup) return false;
+    for (final InputBinding binding
+        in mixinAppModel.shortcutRegistry
+            .bindingsFor(ShortcutAction.popupMineEntry)
+            .keyboardBindings) {
+      if (binding
+          .toActivator(includeRepeats: false)
+          .accepts(event, HardwareKeyboard.instance)) {
+        _mineFromTopPopup();
+        return true;
+      }
+    }
+    return false;
   }
 
   /// 翻转某行收藏态（仅会话内存态，不落 DB）。service 通知 → [_onLines] setState 刷新徽章。
@@ -1191,16 +1490,15 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       _maybeScheduleCaptureSetupDialog();
     }
     if (widget.embedded) {
-      final List<Widget> actions =
-          _buildToolbarActions(context, embedded: true);
+      final List<Widget> actions = _buildToolbarActions(
+        context,
+        embedded: true,
+      );
       final Widget? sectionTabs = _buildSectionTabs();
       return Column(
         children: <Widget>[
           if (sectionTabs != null)
-            FushiPageHeader.customTitle(
-              title: sectionTabs,
-              actions: actions,
-            )
+            FushiPageHeader.customTitle(title: sectionTabs, actions: actions)
           else
             FushiPageHeader(
               title: t.game_capture_workbench,
@@ -1305,7 +1603,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       FushiIconButton(
         key: const ValueKey<String>('game-toolbar-audio-fallback'),
         icon: Icons.graphic_eq,
-        tooltip: '${t.game_audio_fallback_policy} · '
+        tooltip:
+            '${t.game_audio_fallback_policy} · '
             '${_audioFallbackPolicyLabel(state.audioFallbackPolicy)}',
         focusId: const FushiFocusId('game-toolbar-audio-fallback'),
         onTap: () => unawaited(_showAudioFallbackPolicyDialog()),
@@ -1419,18 +1718,18 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             listenable: _session,
             builder: (BuildContext context, Widget? child) =>
                 SingleChildScrollView(
-              child: _CaptureHealthCard(
-                state: _session.state,
-                endpoints: _session.endpointStatuses,
-                // BUG-1007 根因修复：健康卡 Anki 行此前写死「未配置」，不反映真实
-                // 配置。接 app 级 AnkiViewModel 的已配置判定（牌组 + 笔记类型均已选）。
-                ankiConfigured: ref.watch(
-                  ankiViewModelProvider.select(
-                    (AnkiUiState uiState) => uiState.isConfigured,
+                  child: _CaptureHealthCard(
+                    state: _session.state,
+                    endpoints: _session.endpointStatuses,
+                    // BUG-1007 根因修复：健康卡 Anki 行此前写死「未配置」，不反映真实
+                    // 配置。接 app 级 AnkiViewModel 的已配置判定（牌组 + 笔记类型均已选）。
+                    ankiConfigured: ref.watch(
+                      ankiViewModelProvider.select(
+                        (AnkiUiState uiState) => uiState.isConfigured,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
           ),
         ),
         actions: <Widget>[
@@ -1469,7 +1768,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     );
     return Column(
       children: <Widget>[
-        _buildExperimentalBanner(context),
         if (state.externalWindowMode) _buildExternalWindowBar(context),
         Expanded(
           child: Padding(
@@ -1488,18 +1786,15 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 // 「听 → 判断 → 排除 BGM」这条真正需要反复操作的动线。
                 final Widget lineTracks =
                     readiness == GalWorkbenchReadiness.waitingForThread
-                        ? const _ThreadSelectionRequiredCard()
-                        : _LineTracksCard(
-                            session: _session,
-                            line: _selectedOrLatestLine(lines),
-                          );
+                    ? const _ThreadSelectionRequiredCard()
+                    : _LineTracksCard(
+                        session: _session,
+                        line: _selectedOrLatestLine(lines),
+                      );
                 if (box.maxWidth >= 1280) {
                   return Column(
                     children: <Widget>[
-                      _SessionOverviewCard(
-                        state: state,
-                        readiness: readiness,
-                      ),
+                      _SessionOverviewCard(state: state, readiness: readiness),
                       const SizedBox(height: 12),
                       Expanded(
                         child: Row(
@@ -1517,10 +1812,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 if (box.maxWidth >= 840) {
                   return Column(
                     children: <Widget>[
-                      _SessionOverviewCard(
-                        state: state,
-                        readiness: readiness,
-                      ),
+                      _SessionOverviewCard(state: state, readiness: readiness),
                       const SizedBox(height: 12),
                       Expanded(
                         child: Row(
@@ -1569,9 +1861,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     );
   }
 
-  TexthookerLineEntry? _selectedOrLatestLine(
-    List<TexthookerLineEntry> lines,
-  ) {
+  TexthookerLineEntry? _selectedOrLatestLine(List<TexthookerLineEntry> lines) {
     final String? activeId = _activeLineId;
     if (activeId != null) {
       for (final TexthookerLineEntry line in lines) {
@@ -1592,8 +1882,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         .where((TexthookerLineEntry e) => lineMatchesFilter(e, _lineFilter))
         .toList(growable: false);
     // 重名线程（同 hookName + 地址、不同调用上下文）补 `#N` 序号，供下拉区分。
-    final Map<String, String> threadDisplayLabels =
-        assignThreadDisplayLabels(textThreads);
+    final Map<String, String> threadDisplayLabels = assignThreadDisplayLabels(
+      textThreads,
+    );
     return FushiCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -1628,9 +1919,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                         child: Text(
                           '${t.game_unread_lines} $_unreadLines',
                           style: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onTertiaryContainer,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onTertiaryContainer,
                           ),
                         ),
                       ),
@@ -1654,20 +1945,65 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     }
                   },
                 ),
-                IconButton(
-                  tooltip: 'Hook Code · ${t.dialog_save}',
-                  icon: const Icon(Icons.bookmark_add_outlined, size: 20),
-                  onPressed: _saveSelectedLunaHookCode,
-                ),
-                IconButton(
-                  tooltip: 'Hook Code · ${t.dialog_import}',
-                  icon: const Icon(Icons.file_download_outlined, size: 20),
-                  onPressed: _importLunaHookProfiles,
-                ),
-                IconButton(
-                  tooltip: 'Hook Code · ${t.dialog_export}',
-                  icon: const Icon(Icons.file_upload_outlined, size: 20),
-                  onPressed: _exportLunaHookProfiles,
+                // BUG-1909：粘贴一串现成的特殊码。此前唯一能把自定义 H-code 送进
+                // native 的用户路径是「导入一个七列 TSV 文件」，而首列还必须是游戏 exe
+                // 的 SHA-256——用户拿到的特殊码只是一串字符，中间那层转换没人做。
+                // BUG-1909：Hook Code 动作组改成**可横滚**。
+                //
+                // 实测：这一行在 520px 下本来就没有横向余量了，直接再加一个
+                // IconButton 会让整卡 RenderFlex overflow（既有守卫
+                // `texthooker_page_test` 的 520px 用例当场转红）。这里用的正是本页
+                // 页头已有的那条兜底范式——「窄窗必须是可滚动，而不是 overflow，
+                // 更不能把入口整个丢掉」。用 Flexible 而不是固定宽度：宽窗下它按
+                // 内容占位，与改动前逐字节一致。
+                Flexible(
+                  // 桌面端鼠标必须能拖动这个横滚区（默认 dragDevices 不含 mouse）——
+                  // 全仓横向滚动区的统一包裹件，由 horizontal_drag_scroll_guard 钉死。
+                  child: HorizontalDragScrollable(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          // 粘贴一串现成的特殊码。此前唯一能把自定义 H-code 送进
+                          // native 的用户路径是「导入一个七列 TSV 文件」，而首列还必须
+                          // 是游戏 exe 的 SHA-256——用户拿到的只是一串字符。
+                          IconButton(
+                            tooltip: t.game_hook_code_paste_title,
+                            icon: const Icon(
+                              Icons.content_paste_go_outlined,
+                              size: 20,
+                            ),
+                            onPressed: _pasteLunaHookCode,
+                          ),
+                          IconButton(
+                            tooltip: 'Hook Code · ${t.dialog_save}',
+                            icon: const Icon(
+                              Icons.bookmark_add_outlined,
+                              size: 20,
+                            ),
+                            onPressed: _saveSelectedLunaHookCode,
+                          ),
+                          IconButton(
+                            tooltip: 'Hook Code · ${t.dialog_import}',
+                            icon: const Icon(
+                              Icons.file_download_outlined,
+                              size: 20,
+                            ),
+                            onPressed: _importLunaHookProfiles,
+                          ),
+                          IconButton(
+                            tooltip: 'Hook Code · ${t.dialog_export}',
+                            icon: const Icon(
+                              Icons.file_upload_outlined,
+                              size: 20,
+                            ),
+                            onPressed: _exportLunaHookProfiles,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -1690,10 +2026,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   focusId: const FushiFocusId('game-text-thread-selector'),
                   label: t.game_text_thread,
                   enabled: textThreads.isNotEmpty,
-                  selected: textThreads.any(
-                    (TexthookerTextThread thread) =>
-                        thread.key == selectedTextThreadKey,
-                  )
+                  selected:
+                      textThreads.any(
+                        (TexthookerTextThread thread) =>
+                            thread.key == selectedTextThreadKey,
+                      )
                       ? selectedTextThreadKey
                       : '',
                   entries: <GamepadDropdownEntry<String>>[
@@ -1763,13 +2100,27 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   child: Text(
                     t.game_text_thread_hint,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
+          if (Platform.isWindows)
+            GalAttachedLookupWorkbench(
+              controller: GalHookTextOverlayController.instance.attachedText,
+              hasSelectedBodyThread:
+                  selectedTextThreadKey != null &&
+                  textThreads.any(
+                    (TexthookerTextThread thread) =>
+                        thread.key == selectedTextThreadKey,
+                  ),
+              bodyPreview: _selectedThreadPreview(
+                textThreads,
+                selectedTextThreadKey,
+              ),
+            ),
           const Divider(height: 1),
           Expanded(
             child: lines.isEmpty
@@ -1813,10 +2164,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                         previewingAudio: line.id == _previewingLineId,
                         // 逐行改音轨要求：会话内有 engine helper、有可选音轨快照，
                         // 且这行属于当前会话（历史会话的时间戳早已失效）。
-                        canPickTrack: _session.hasEngineSource &&
+                        canPickTrack:
+                            _session.hasEngineSource &&
                             _session.state.audioTracks.isNotEmpty &&
                             _session.isLineInCurrentSession(line),
-                        canRecapture: Platform.isWindows &&
+                        canRecapture:
+                            Platform.isWindows &&
                             _session.state.isActive &&
                             _session.isLineInCurrentSession(line),
                         recapturing: _session.recapturingLineId == line.id,
@@ -1848,38 +2201,40 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     List<TexthookerLineEntry> lines,
   ) {
     final int total = lines.length;
-    final int withAudio =
-        lines.where((TexthookerLineEntry e) => e.hasAudio).length;
+    final int withAudio = lines
+        .where((TexthookerLineEntry e) => e.hasAudio)
+        .length;
     final int mined = lines.where((TexthookerLineEntry e) => e.mined).length;
-    final int favorited =
-        lines.where((TexthookerLineEntry e) => e.favorited).length;
+    final int favorited = lines
+        .where((TexthookerLineEntry e) => e.favorited)
+        .length;
     final List<(TexthookerLineFilter, String, int, IconData)> specs =
         <(TexthookerLineFilter, String, int, IconData)>[
-      (
-        TexthookerLineFilter.all,
-        t.game_filter_all,
-        total,
-        Icons.list_alt_outlined
-      ),
-      (
-        TexthookerLineFilter.withAudio,
-        t.game_filter_with_audio,
-        withAudio,
-        Icons.graphic_eq_outlined,
-      ),
-      (
-        TexthookerLineFilter.mined,
-        t.game_filter_mined,
-        mined,
-        Icons.style_outlined
-      ),
-      (
-        TexthookerLineFilter.favorited,
-        t.game_filter_favorited,
-        favorited,
-        Icons.star_outline,
-      ),
-    ];
+          (
+            TexthookerLineFilter.all,
+            t.game_filter_all,
+            total,
+            Icons.list_alt_outlined,
+          ),
+          (
+            TexthookerLineFilter.withAudio,
+            t.game_filter_with_audio,
+            withAudio,
+            Icons.graphic_eq_outlined,
+          ),
+          (
+            TexthookerLineFilter.mined,
+            t.game_filter_mined,
+            mined,
+            Icons.style_outlined,
+          ),
+          (
+            TexthookerLineFilter.favorited,
+            t.game_filter_favorited,
+            favorited,
+            Icons.star_outline,
+          ),
+        ];
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -1888,8 +2243,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
               TexthookerLineFilter filter,
               String label,
               int count,
-              IconData icon
-            ) in specs)
+              IconData icon,
+            )
+            in specs)
           FushiSelectableChip(
             label: '$label $count',
             leadingIcon: icon,
@@ -1898,35 +2254,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             onSelected: (_) => setState(() => _lineFilter = filter),
           ),
       ],
-    );
-  }
-
-  /// texthooker 为实验性功能：页头下方常驻一条提示横幅，复用视频 tab
-  /// （[HomeVideoPage]）同款 secondaryContainer 调性与 textTheme，不抢内容焦点。
-  Widget _buildExperimentalBanner(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      color: colors.secondaryContainer,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
-        children: <Widget>[
-          Icon(
-            Icons.science_outlined,
-            size: 18,
-            color: colors.onSecondaryContainer,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              t.texthooker_experimental_banner,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colors.onSecondaryContainer,
-                  ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1945,28 +2272,22 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         hiddenByDialog: lookupPopupHiddenByDialog,
       ))
         Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: () => popNestedPopupAt(_topVisiblePopupIndex, _popup),
-            onHorizontalDragStart: ReaderFushiSource.instance.enableSwipeToClose
-                ? _onBarrierHorizontalDragStart
-                : null,
-            onHorizontalDragUpdate:
-                ReaderFushiSource.instance.enableSwipeToClose
-                    ? _onBarrierHorizontalDragUpdate
-                    : null,
-            onHorizontalDragEnd: ReaderFushiSource.instance.enableSwipeToClose
-                ? _onBarrierHorizontalDragEnd
-                : null,
-            child: const ColoredBox(color: Colors.transparent),
+          // BUG-1757：barrier 收口成唯一原语 [LookupDismissBarrier]，横拖走它
+          // 内部不入竞技场的 Listener 旁路 + 可单测的判轴。
+          child: LookupDismissBarrier(
+            onTapDismiss: (_) =>
+                popNestedPopupAt(_topVisiblePopupIndex, _popup),
+            onSwipeDismiss: _dismissTopNestedPopup,
+            swipeEnabled: ReaderFushiSource.instance.enableSwipeToClose,
+            sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
+            // 弹窗可见时 barrier 吃掉全部指针，页面根收不到——「浮窗矩形之外」
+            // 按鼠标非主键这半边只能在这里接（见钩子文档）。
+            onNonPrimaryButtonDown: onDismissBarrierNonPrimaryButton,
           ),
         ),
       // 搜索期加载占位卡（搜索→就绪才显示，与首页查词同观感）。
       if (_popup.isSearchingUi && _popup.pendingRect != null)
-        buildPopupLoadingPlaceholder(
-          rect: _popup.pendingRect!,
-          screen: screen,
-        ),
+        buildPopupLoadingPlaceholder(rect: _popup.pendingRect!, screen: screen),
       for (int i = 0; i < _popup.entries.length; i++)
         buildNestedPopupLayer(
           index: i,
@@ -1979,6 +2300,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           ),
           onPop: (int index) => popNestedPopupAt(index, _popup),
         ),
+      ...buildParkedRealmLayers(screen: screen, controller: _popup),
     ];
   }
 
@@ -2010,6 +2332,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   Widget _buildPopupOverlay(BuildContext overlayContext) {
     if (!mounted || _overlayInert) return const SizedBox.shrink();
+    // 本浮层插在 root Overlay，不是 TexthookerPage 页面子树的后代；键盘接线由
+    // 页面生命周期内的 HardwareKeyboard handler 承担，不再依赖浮层 Focus 链。
     return FushiAppUiScaleNeutralizer(
       child: Theme(
         data: _appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
@@ -2044,11 +2368,41 @@ class _SessionOverviewCard extends StatelessWidget {
         readiness == GalWorkbenchReadiness.waitingForThread;
     final String audio = galHookAudioBackendLabel(state.audioBackend);
     final String phase = galHookSessionPhaseLabel(state.phase);
+    // 转区标记**窄屏也留着**：它和降级原因同属「不显示就没有第二处能看到」的事实。
+    // `auto` 档在设置页只显示「自动」，真正转没转是启动时按证据判定 + 系统 ACP + 目标
+    // 位数现算的，判错时用户看到的只有游戏文字乱码，没有任何线索指向 Hibiki 改了区域。
+    // BUG-2047：`auto` 判为「不需要 / 证据不足」而未转区时同样要亮短标记——证据空白的
+    // 日文原版会先乱码，用户得知道是「没转」而不是「转坏了」，才会去改「始终开启」。
+    final GalJapaneseLocaleVerdict? verdict = state.japaneseLocaleVerdict;
+    final GalJapaneseLocaleSkipReason? skipReason =
+        state.japaneseLocaleSkipReason;
+    // 原因分两类说话：语义门（证据不足 / 判为不需要）提示改「始终开启」；工程门
+    // （64 位 / 系统本就日文区）改档位也没用，得直说，否则用户会白改一轮。
+    final String? localeSkippedHint = state.japaneseLocaleApplied ||
+            verdict == null ||
+            skipReason == null
+        ? null
+        : switch (skipReason) {
+            GalJapaneseLocaleSkipReason.notNeeded ||
+            GalJapaneseLocaleSkipReason.unknown =>
+              t.game_session_japanese_locale_skipped_hint(
+                evidence: galJapaneseLocaleEvidenceListLabel(verdict.evidence),
+              ),
+            GalJapaneseLocaleSkipReason.systemAlreadyJapanese =>
+              t.game_session_japanese_locale_skipped_hint_system_japanese,
+            GalJapaneseLocaleSkipReason.targetNot32Bit =>
+              t.game_session_japanese_locale_skipped_hint_not_32bit,
+          };
+    final String localeSuffix = state.japaneseLocaleApplied
+        ? ' · ${t.game_session_japanese_locale}'
+        : localeSkippedHint != null
+            ? ' · ${t.game_session_japanese_locale_skipped}'
+            : '';
     final String? format = state.audioFormat == null
         ? null
         : '${state.audioFormat!.sampleRate} Hz · '
-            '${state.audioFormat!.channels} ch · '
-            '${state.audioFormat!.bitsPerSample} bit';
+              '${state.audioFormat!.channels} ch · '
+              '${state.audioFormat!.bitsPerSample} bit';
     return FushiCard(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Row(
@@ -2057,8 +2411,8 @@ class _SessionOverviewCard extends StatelessWidget {
             waitingForThread
                 ? Icons.forum_outlined
                 : state.isActive
-                    ? Icons.sensors
-                    : Icons.sensors_off_outlined,
+                ? Icons.sensors
+                : Icons.sensors_off_outlined,
             color: state.isActive
                 ? Theme.of(context).colorScheme.primary
                 : Theme.of(context).colorScheme.outline,
@@ -2072,8 +2426,8 @@ class _SessionOverviewCard extends StatelessWidget {
                   waitingForThread
                       ? t.game_session_waiting_thread
                       : state.isActive
-                          ? t.game_session_listening
-                          : t.game_session_idle,
+                      ? t.game_session_listening
+                      : t.game_session_idle,
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 2),
@@ -2081,13 +2435,49 @@ class _SessionOverviewCard extends StatelessWidget {
                   waitingForThread
                       ? '$phase · ${t.game_text_thread_unset}'
                       : compact
-                          ? '$phase · $audio'
-                          : '$phase · $audio'
-                              '${format == null ? '' : ' · $format'}',
+                      ? '$phase · $audio$localeSuffix'
+                      : '$phase · $audio'
+                            '${format == null ? '' : ' · $format'}'
+                            '$localeSuffix',
                   maxLines: compact ? 1 : 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                // 转区的**可执行处置**：上面那行只说「已转区」，这里说清它可能造成什么、
+                // 以及去哪关。误转区（多语言版 / 汉化版落进 `auto` 的「32 位 ⇒ 日文原版」
+                // 判据）会把游戏自己的 GBK/UTF-8 字符串按 CP932 解坏，症状从窗口标题乱码
+                // 到脚本加载失败都有。[resolveJapaneseLocale] 已经论证过 `auto` 不可能总
+                // 判对、真正兜底的是用户手动选「永不转区」——够得着那个档位的前提就是这
+                // 一行。compact 下省掉：窄屏留短标记即可，长句会把整张卡挤爆。
+                if (state.japaneseLocaleApplied && !compact)
+                  Text(
+                    // `auto` 判定转区时把判据列在处置后面：用户看到「版本资源为日语」
+                    // 才知道 Hibiki 凭什么转、判错了该怀疑哪条。`on` 档没有判定，只有处置。
+                    verdict == null || verdict.evidence.isEmpty
+                        ? t.game_session_japanese_locale_hint
+                        : '${t.game_session_japanese_locale_hint}\n'
+                            '${t.game_session_japanese_locale_evidence(
+                            evidence: galJapaneseLocaleEvidenceListLabel(
+                              verdict.evidence,
+                            ),
+                          )}',
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                  ),
+                // BUG-2047：`auto` 未转区的处置——说清是「判为不需要（列判据）」还是
+                // 「证据不足」，并指向另一头的兜底档「始终开启」。
+                if (localeSkippedHint != null && !compact)
+                  Text(
+                    localeSkippedHint,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                  ),
                 // 降级原因：优先显示结构化失败的可执行处置（「游戏以管理员身份运行，
                 // 请同样以管理员身份启动 Hibiki」之类）。旧实现把 `engine_attach_failed`
                 // 这种内部代码原样甩给用户，等于什么都没说。没有结构化原因时才退回代码。
@@ -2107,8 +2497,8 @@ class _SessionOverviewCard extends StatelessWidget {
                     maxLines: compact ? 2 : 3,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.tertiary,
-                        ),
+                      color: Theme.of(context).colorScheme.tertiary,
+                    ),
                   ),
                 // native 一手证据**独立一行**（BUG-1446）。这张卡以前只渲染上面那句处置，
                 // 把 `injectorDetail` 整个丢了：`protocol_mismatch` 时 native 侧
@@ -2124,8 +2514,8 @@ class _SessionOverviewCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
                   ),
               ],
             ),
@@ -2134,10 +2524,10 @@ class _SessionOverviewCard extends StatelessWidget {
             label: waitingForThread
                 ? t.game_status_waiting
                 : state.isDegraded
-                    ? t.game_line_audio_fallback
-                    : (state.isActive
-                        ? t.game_status_ready
-                        : t.game_status_waiting),
+                ? t.game_line_audio_fallback
+                : (state.isActive
+                      ? t.game_status_ready
+                      : t.game_status_waiting),
             ready: !waitingForThread && state.isActive && !state.isDegraded,
           ),
         ],
@@ -2176,8 +2566,8 @@ class _ThreadSelectionRequiredCard extends StatelessWidget {
                 t.game_audio_requires_thread,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -2246,8 +2636,9 @@ class _LineTracksCardState extends State<_LineTracksCard> {
     if (!force && _tracksLineId == line.id) return;
     if (_loading) return;
     _loading = true;
-    final List<GalAudioTrack> tracks =
-        await widget.session.tracksForLine(line.id);
+    final List<GalAudioTrack> tracks = await widget.session.tracksForLine(
+      line.id,
+    );
     _loading = false;
     if (!mounted) return;
     setState(() {
@@ -2263,8 +2654,8 @@ class _LineTracksCardState extends State<_LineTracksCard> {
       await DesktopAudioPlayback.stop();
       return;
     }
-    final GalTrackPreview? preview =
-        await widget.session.exportLineTrackPreview(lineId, track.sourcePtr);
+    final GalTrackPreview? preview = await widget.session
+        .exportLineTrackPreview(lineId, track.sourcePtr);
     if (!mounted) return;
     if (preview == null) {
       FushiToast.show(
@@ -2308,8 +2699,9 @@ class _LineTracksCardState extends State<_LineTracksCard> {
   Widget build(BuildContext context) {
     final TexthookerLineEntry? line = widget.line;
     final GalHookSessionState state = widget.session.state;
-    final int? lineVoicePtr =
-        line == null ? null : widget.session.lineVoiceSourcePtr(line.id);
+    final int? lineVoicePtr = line == null
+        ? null
+        : widget.session.lineVoiceSourcePtr(line.id);
     return FushiCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2343,16 +2735,25 @@ class _LineTracksCardState extends State<_LineTracksCard> {
                     Text(t.game_no_active_line)
                   else ...<Widget>[
                     // 正文 + 音频元信息：原「最新台词」卡的核心内容，不因换面板丢失。
-                    Text(
-                      line.text,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            height: 1.5,
-                          ),
+                    // 台词跟 FontTarget.gameLookup（与 native hook 浮窗同一设置），
+                    // 不跟界面字体——否则同一句话在浮窗和这里是两种字体。
+                    Consumer(
+                      builder: (_, WidgetRef ref, __) => Text(
+                        line.text,
+                        style: ref
+                            .watch(appProvider)
+                            .applyGameTextFont(
+                              Theme.of(
+                                context,
+                              ).textTheme.bodyLarge?.copyWith(height: 1.5),
+                            ),
+                      ),
                     ),
                     const SizedBox(height: 10),
                     _MetadataRow(
                       label: t.game_health_audio,
-                      value: line.audioBackend ??
+                      value:
+                          line.audioBackend ??
                           texthookerLineAudioStatusLabel(line.audioStatus),
                     ),
                     if (line.audioDurationMs != null)
@@ -2370,9 +2771,8 @@ class _LineTracksCardState extends State<_LineTracksCard> {
                     Text(
                       t.game_line_tracks_hint,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     if (_tracks.isEmpty)
@@ -2386,8 +2786,9 @@ class _LineTracksCardState extends State<_LineTracksCard> {
                           track: track,
                           // 这里的「选中」是**本句**用哪条轨，不是会话级默认选源。
                           selected: lineVoicePtr == track.sourcePtr,
-                          excluded: state.excludedAudioSourcePtrs
-                              .contains(track.sourcePtr),
+                          excluded: state.excludedAudioSourcePtrs.contains(
+                            track.sourcePtr,
+                          ),
                           previewing: _previewingSourcePtr == track.sourcePtr,
                           // 逐行选轨与逐行排除都绕开「当前后端是否消费会话级选源」
                           // 那道自动门（它防的是自动误配），只要有 engine 就能用。
@@ -2453,8 +2854,9 @@ class _CaptureHealthCard extends StatelessWidget {
             ),
             _HealthRow(
               label: t.game_health_window,
-              value:
-                  state.hasWindow ? t.game_window_bound : t.game_window_missing,
+              value: state.hasWindow
+                  ? t.game_window_bound
+                  : t.game_window_missing,
               ready: state.hasWindow,
             ),
             // 窗口超分：与上面的「窗口」相邻，因为说的是同一个游戏窗口。整行在用户
@@ -2518,7 +2920,8 @@ class _UpscalingHealthRows extends StatelessWidget {
         }
         // 只有真的收到 Magpie 的「缩放开始」广播才算就绪。拉起了进程不等于放大了，
         // 不拿意图冒充结果。
-        final bool on = report.status == MagpieUpscalingStatus.active &&
+        final bool on =
+            report.status == MagpieUpscalingStatus.active &&
             report.scalingActive;
         final String? hint = magpieUpscalingActionHint(report);
         return Column(
@@ -2535,8 +2938,8 @@ class _UpscalingHealthRows extends StatelessWidget {
                 child: Text(
                   hint,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.tertiary,
-                      ),
+                    color: Theme.of(context).colorScheme.tertiary,
+                  ),
                 ),
               ),
           ],
@@ -2603,16 +3006,10 @@ class _MetadataRow extends StatelessWidget {
         children: <Widget>[
           SizedBox(
             width: 92,
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            child: Text(label, style: Theme.of(context).textTheme.bodySmall),
           ),
           Expanded(
-            child: Text(
-              value,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            child: Text(value, style: Theme.of(context).textTheme.bodySmall),
           ),
         ],
       ),
@@ -2629,10 +3026,12 @@ class _StatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
-    final Color background =
-        ready ? colors.primaryContainer : colors.surfaceContainerHighest;
-    final Color foreground =
-        ready ? colors.onPrimaryContainer : colors.onSurfaceVariant;
+    final Color background = ready
+        ? colors.primaryContainer
+        : colors.surfaceContainerHighest;
+    final Color foreground = ready
+        ? colors.onPrimaryContainer
+        : colors.onSurfaceVariant;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
@@ -2645,9 +3044,9 @@ class _StatusPill extends StatelessWidget {
 }
 
 /// 一行文本：日语分词成可点 span（引擎未初始化时按字符降级，widget 测试不崩）。
-/// [words] 由页级 [_TexthookerWordCache] 按行 id 预分词后注入（本 widget 不再自行
+/// [words] 由页级 [TexthookerWordCache] 按行 id + 文本预分词后注入（本 widget 不再自行
 /// textToWords），避免每来一行整页 rebuild 时重复分词。
-class _TexthookerLine extends StatelessWidget {
+class _TexthookerLine extends ConsumerWidget {
   const _TexthookerLine({
     required this.line,
     required this.words,
@@ -2696,17 +3095,22 @@ class _TexthookerLine extends StatelessWidget {
   final ValueChanged<TexthookerLineEntry> onCopy;
 
   /// 命中正文里的某个字：回调带该字在整行文本里的 UTF-16 偏移（BUG-1478）。
-  final void Function(
-    TexthookerLineEntry line,
-    int charIndex,
-    Rect rect,
-  ) onCharTap;
+  final void Function(TexthookerLineEntry line, int charIndex, Rect rect)
+  onCharTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final String source =
         line.sourceLabel ?? texthookerLineSourceLabel(line.source);
+    // 台词字体在**行级**解析一次再传给每个 [_WordSpan]：一行有几十个词，若每个词
+    // 各自 watch(appProvider)，AppModel 每次 notifyListeners 都会把整行逐词重建。
+    // 样式与命中度量必须同源——字宽变了命中矩形要跟着变，否则点击位置和看到的字错开。
+    final TextStyle? wordStyle = ref
+        .watch(appProvider)
+        .applyGameTextFont(
+          Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
+        );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: FushiCard(
@@ -2728,8 +3132,8 @@ class _TexthookerLine extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
+                      color: colors.onSurfaceVariant,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -2818,6 +3222,7 @@ class _TexthookerLine extends StatelessWidget {
                   _WordSpan(
                     word: word,
                     startIndex: start,
+                    style: wordStyle,
                     onTapChar: (int charIndex, Rect rect) =>
                         onCharTap(line, charIndex, rect),
                   ),
@@ -2835,9 +3240,9 @@ class _TexthookerLine extends StatelessWidget {
                     '${(line.audioDurationMs! / 1000).toStringAsFixed(2)}s',
                   if (line.fallbackReason != null) line.fallbackReason!,
                 ].join(' · '),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
               ),
             ],
           ],
@@ -2867,10 +3272,9 @@ class _LineMinedChip extends StatelessWidget {
           const SizedBox(width: 4),
           Text(
             t.game_line_mined,
-            style: Theme.of(context)
-                .textTheme
-                .labelSmall
-                ?.copyWith(color: colors.onPrimary),
+            style: Theme.of(
+              context,
+            ).textTheme.labelSmall?.copyWith(color: colors.onPrimary),
           ),
         ],
       ),
@@ -2936,38 +3340,42 @@ class _LineAudioChip extends StatelessWidget {
     }
     final (String, Color, Color) appearance = switch (status) {
       TexthookerLineAudioStatus.pending => (
-          t.game_line_audio_pending,
-          colors.secondaryContainer,
-          colors.onSecondaryContainer,
-        ),
+        t.game_line_audio_pending,
+        colors.secondaryContainer,
+        colors.onSecondaryContainer,
+      ),
       TexthookerLineAudioStatus.matched => (
-          t.game_line_audio_matched,
-          colors.primaryContainer,
-          colors.onPrimaryContainer,
-        ),
+        t.game_line_audio_matched,
+        colors.primaryContainer,
+        colors.onPrimaryContainer,
+      ),
       TexthookerLineAudioStatus.encoded => (
-          t.game_line_audio_encoded,
-          colors.primaryContainer,
-          colors.onPrimaryContainer,
-        ),
+        t.game_line_audio_encoded,
+        colors.primaryContainer,
+        colors.onPrimaryContainer,
+      ),
       TexthookerLineAudioStatus.fallback => (
-          t.game_line_audio_fallback,
-          colors.tertiaryContainer,
-          colors.onTertiaryContainer,
-        ),
+        t.game_line_audio_fallback,
+        colors.tertiaryContainer,
+        colors.onTertiaryContainer,
+      ),
       TexthookerLineAudioStatus.missing => (
-          t.game_line_audio_missing,
-          colors.errorContainer,
-          colors.onErrorContainer,
-        ),
+        t.game_line_audio_missing,
+        colors.errorContainer,
+        colors.onErrorContainer,
+      ),
       TexthookerLineAudioStatus.unavailable => (
-          t.game_line_audio_unavailable,
-          colors.surfaceContainerHighest,
-          colors.onSurfaceVariant,
-        ),
+        t.game_line_audio_unavailable,
+        colors.surfaceContainerHighest,
+        colors.onSurfaceVariant,
+      ),
     };
-    final Widget chip =
-        _chip(context, appearance.$1, appearance.$2, appearance.$3);
+    final Widget chip = _chip(
+      context,
+      appearance.$1,
+      appearance.$2,
+      appearance.$3,
+    );
     // loopback 是整机混音兜底：状态标签照旧，但悬停要说清「可能混入 BGM」。
     if (backend == 'system_loopback') {
       return Tooltip(message: t.game_line_audio_loopback_hint, child: chip);
@@ -2989,8 +3397,9 @@ class _LineAudioChip extends StatelessWidget {
       ),
       child: Text(
         label,
-        style:
-            Theme.of(context).textTheme.labelSmall?.copyWith(color: foreground),
+        style: Theme.of(
+          context,
+        ).textTheme.labelSmall?.copyWith(color: foreground),
       ),
     );
   }
@@ -3022,10 +3431,16 @@ class _WordSpan extends StatelessWidget {
   const _WordSpan({
     required this.word,
     required this.startIndex,
+    required this.style,
     required this.onTapChar,
   });
 
   final String word;
+
+  /// 台词文本样式，由行级的 [_TexthookerLine] 解析一次后传下来（含
+  /// [FontTarget.gameLookup] 字体链）。不在这里自己 watch：一行几十个词，逐词订阅
+  /// 会让 AppModel 每次 notify 都把整行重建。
+  final TextStyle? style;
 
   /// 本词首字在整行文本里的 UTF-16 偏移。
   final int startIndex;
@@ -3035,10 +3450,9 @@ class _WordSpan extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final TextStyle? style =
-        Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6);
-    final Color hover =
-        Theme.of(context).colorScheme.primary.withValues(alpha: 0.1);
+    final Color hover = Theme.of(
+      context,
+    ).colorScheme.primary.withValues(alpha: 0.1);
     int offset = startIndex;
     final List<Widget> glyphs = <Widget>[];
     for (final String grapheme in word.characters) {
@@ -3086,25 +3500,5 @@ class _CharSpan extends StatelessWidget {
       },
       child: Text(grapheme, style: style),
     );
-  }
-}
-
-/// 行分词结果缓存：行文本按 id 不可变（copyWith 只改音频/制卡/收藏态，不动 id/text），
-/// 故按 id 缓存 [JapaneseLanguage.textToWords] 恒安全。每来一行整页 setState，无缓存时
-/// 每行每帧都重新分词——本缓存把它降为「每行只分一次」。默认 Map 保持插入序，越界时
-/// 淘汰最旧插入项（上限略高于行 buffer 上限 [TexthookerService.maxLines]，可见行不会被淘汰）。
-class _TexthookerWordCache {
-  static const int _maxEntries = 800;
-  final Map<String, List<String>> _cache = <String, List<String>>{};
-
-  List<String> wordsFor(String id, String text) {
-    final List<String>? cached = _cache[id];
-    if (cached != null) return cached;
-    final List<String> words = JapaneseLanguage.instance.textToWords(text);
-    _cache[id] = words;
-    if (_cache.length > _maxEntries) {
-      _cache.remove(_cache.keys.first);
-    }
-    return words;
   }
 }

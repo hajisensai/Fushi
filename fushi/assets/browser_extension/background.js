@@ -193,6 +193,38 @@ async function diagnoseConnectionCapped(base, timeoutMs = 750) {
   }
 }
 
+// BUG-1718：查词弹窗「CSS 尾段」缓存（词典包自带 styles.css + 用户全局/单典自定义 CSS）。
+// 这三件套是 popup.js 渲染词典自带样式的唯一输入；app 内弹窗由 Dart 侧注入，扩展只能随查词
+// 响应拿。但它体量大（实测整库 285 KB，单本 OALDPE 就 210 KB），不能每次 hover 查词都传，
+// 故走 revision 门控：请求里带上已缓存的 revision，server 只在指纹变了（用户导入/删词典、
+// 改自定义 CSS）时才回全量，其余时候只回指纹。SW 被回收后缓存清空，下次查词自动重取一次。
+let fushiPopupCss = { revision: null, dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {} };
+
+// 把服务端这次查词响应里的 CSS 尾段并进缓存，并把**完整**尾段回填进 data，
+// 让 content.js / side-panel.js 无论命中缓存与否都能拿到同一份可直接赋给 window.* 的值。
+function fushiMergePopupCss(data) {
+  if (!data || typeof data !== 'object') return data;
+  const revision = typeof data.dictionaryStylesRevision === 'string'
+    ? data.dictionaryStylesRevision : null;
+  if (revision === null) return data; // 老 app：没有该契约，保持旧行为（扩展侧退化为空样式）
+  if (data.dictionaryStyles && typeof data.dictionaryStyles === 'object') {
+    fushiPopupCss = {
+      revision,
+      dictionaryStyles: data.dictionaryStyles,
+      globalDictCSS: typeof data.globalDictCSS === 'string' ? data.globalDictCSS : '',
+      customDictCSS: (data.customDictCSS && typeof data.customDictCSS === 'object')
+        ? data.customDictCSS : {},
+    };
+  } else if (fushiPopupCss.revision !== revision) {
+    // 指纹变了但这次响应没带正文（不该发生；真发生时宁可清空也不能用陈旧样式）。
+    fushiPopupCss = { revision, dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {} };
+  }
+  data.dictionaryStyles = fushiPopupCss.dictionaryStyles;
+  data.globalDictCSS = fushiPopupCss.globalDictCSS;
+  data.customDictCSS = fushiPopupCss.customDictCSS;
+  return data;
+}
+
 // BUG-726：扩展自更新。app 启动时会把 <appSupport> 的已解压副本刷新到当前内置版本，并把
 // 内容指纹写进 fushi-defaults.js（build）+ 随查词响应下发（extensionBuild）。这里比对
 // 两者：不一致 = 磁盘上已有新版而当前加载的还是旧版 → chrome.runtime.reload() 从磁盘拉新
@@ -615,8 +647,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const maximumTerms = lookupTrace.maximumTerms;
         lookupTrace.phase = 'fetch-headers';
         const fetchStartedAt = performance.now();
+        // 查词 fetch 必须有上限：app 侧一旦长阻塞（词典重载/磁盘 stall），无超时的 await 会让
+        // sendResponse 永不被调——Side Panel 的「正在查词…」就永久停留。超时走下方 catch 分支
+        // 回错误响应，用户看到可重试的失败文案而不是无限转圈。上限 > Side Panel 兜底(8s)，
+        // 正常慢查询不受影响。
         const r = await fetch(base + '/api/lookup/dictionary', {
           method: 'POST',
+          signal: AbortSignal.timeout(10000),
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({
             term: msg.term,
@@ -626,6 +663,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             popupOnly: true,
             maximumTerms,
             lookupTraceId: lookupId,
+            // BUG-1718：已缓存的弹窗 CSS 尾段指纹。字段在 = 本客户端认识该契约；
+            // 与服务端当前指纹一致时服务端只回指纹不回正文（数百 KB 不上路）。
+            stylesRevision: fushiPopupCss.revision,
           }),
         });
         const headersAt = performance.now();
@@ -640,7 +680,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const parseStartedAt = performance.now();
         lookupTrace.phase = 'outer-json-parse';
         if (r.ok) {
-          try { data = JSON.parse(raw); } catch (error) { parseError = String(error && error.message || error); }
+          try {
+            data = JSON.parse(raw);
+            fushiMergePopupCss(data); // BUG-1718：并进/回填词典 CSS 尾段
+          } catch (error) { parseError = String(error && error.message || error); }
         }
         const finishedAt = performance.now();
         lookupTrace.phase = 'response-ready';
@@ -745,12 +788,66 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           data: r.ok ? await r.json() : null,
           ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
         });
+      } else if (msg.type === 'jimakuSearch') {
+        // Jimaku 查字幕①：Side Panel 搜索框 → server /api/subtitle/jimaku/search（server 持
+        // 用户在 app 设置里填的 Jimaku API key；真人剧 anime=false 补搜也在 server 侧）。
+        const r = await fetch(base + '/api/subtitle/jimaku/search', {
+          method: 'POST',
+          signal: AbortSignal.timeout(20000),
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({
+            query: msg.query || '',
+            ...(Number.isInteger(msg.episode) ? { episode: msg.episode } : {}),
+            ...(typeof msg.anime === 'boolean' ? { anime: msg.anime } : {}),
+          }),
+        });
+        sendResponse({
+          ok: r.ok,
+          status: r.status,
+          data: r.ok ? await r.json() : null,
+          ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
+        });
+      } else if (msg.type === 'jimakuFetch') {
+        // Jimaku 查字幕②：候选 handle → server 下载+自动识别编码+解析，响应与
+        // /api/subtitle/parse 同形（{format,cues}），Side Panel 直接走既有 InstallTrack。
+        const r = await fetch(base + '/api/subtitle/jimaku/fetch', {
+          method: 'POST',
+          signal: AbortSignal.timeout(30000),
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({ handle: msg.handle || '' }),
+        });
+        sendResponse({
+          ok: r.ok,
+          status: r.status,
+          data: r.ok ? await r.json() : null,
+          ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
+        });
       } else if (msg.type === 'mine') {
-        // 纯文本挖词（非流媒体页 / 回落）：直接 POST {fields,sentence}，无媒体。
+        // 立即出卡（不进批量剪辑队列的一切页面：普通网页 + 有字幕轨/有视频但尚无流解析器的
+        // 站点，如 bilibili.com）。**媒体不再恒为空**：
+        //   · screenshotBase64 = 页面 `<video>` 的当前解码帧（`frame-capture.js`；原生分辨率、
+        //     无弹幕/无播放器 UI/无字幕层，取不到就不带，绝不退化成截屏）；
+        //   · cueStartMs / clipStartMs / clipEndMs / mineAtMs = 当前字幕行的视频时间窗，
+        //     服务端据此从原始流裁句子音频/动图（`immediate` 档站点）；
+        //   · clipSourceKind / clipSourceId = 可裁原始流的站点身份（有解析器时才发）；
+        //   · documentTitle = 页面标题 → Anki 视频名字段（不发则服务端回落字面 'Netflix'）。
+        // 全部为可选：一个都不带时行为与改动前逐字等价（纯文本挖词回落）。
         const r = await fetch(base + '/api/mine', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
-          body: JSON.stringify({ fields: msg.fields, sentence: msg.sentence || '' }),
+          body: JSON.stringify({
+            fields: msg.fields, sentence: msg.sentence || '',
+            ...(msg.screenshotBase64 ? { screenshotBase64: msg.screenshotBase64 } : {}),
+            ...(typeof msg.cueStartMs === 'number' ? { cueStartMs: msg.cueStartMs } : {}),
+            ...(typeof msg.clipStartMs === 'number' ? { clipStartMs: msg.clipStartMs } : {}),
+            ...(typeof msg.clipEndMs === 'number' ? { clipEndMs: msg.clipEndMs } : {}),
+            ...(typeof msg.mineAtMs === 'number' ? { mineAtMs: msg.mineAtMs } : {}),
+            ...(msg.clipSourceKind ? { clipSourceKind: msg.clipSourceKind } : {}),
+            ...(msg.clipSourceId ? { clipSourceId: msg.clipSourceId } : {}),
+            ...(typeof msg.clipSourcePart === 'number'
+              ? { clipSourcePart: msg.clipSourcePart } : {}),
+            ...(msg.documentTitle ? { documentTitle: msg.documentTitle } : {}),
+          }),
         });
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'duplicate') {
@@ -792,6 +889,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             ...(typeof msg.clipAnchorUncertaintyMs === 'number'
               ? { clipAnchorUncertaintyMs: msg.clipAnchorUncertaintyMs } : {}),
             ...(typeof msg.cueStartMs === 'number' ? { cueStartMs: msg.cueStartMs } : {}),
+            // BUG-2080：卡面时间窗透传到 /api/mine（与 mineYoutube 分支同名同语义）。两端都得是
+            // 数字才发——只发一半会让服务端拿到半个窗，`end > start` 判据结果不可预期。
+            ...(typeof msg.clipStartMs === 'number' && typeof msg.clipEndMs === 'number'
+              ? { clipStartMs: msg.clipStartMs, clipEndMs: msg.clipEndMs } : {}),
             ...(typeof msg.mineAtMs === 'number' ? { mineAtMs: msg.mineAtMs } : {}),
             ...(msg.documentTitle ? { documentTitle: msg.documentTitle } : {}),
           }),

@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/utils.dart' show t;
@@ -51,7 +51,7 @@ void main() {
       };
 
       try {
-        app.main();
+        await launchFushiTestApp();
         expect(await waitForHome(tester), isTrue, reason: 'Home must render');
         await tester.pump(const Duration(seconds: 2));
 

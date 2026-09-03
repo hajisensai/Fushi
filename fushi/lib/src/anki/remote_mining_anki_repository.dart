@@ -57,6 +57,13 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   static const String tokenRejectedMessage =
       'The paired device rejected the interconnect token. Re-pair the device.';
 
+  /// 没有互联主机可接收制卡请求时，同时说明失败结果和两条恢复路径。
+  /// 避免把内部术语 "server-side mining" 暴露给只想完成制卡的用户。
+  static const String pairedDeviceUnreachableMessage =
+      "Couldn't create the card because no paired device could be reached. "
+      'Make sure Fushi is running on the paired device, or turn off '
+      'Mine to paired device in Anki settings to create cards locally.';
+
   final BaseAnkiRepository _local;
   final RemoteMineSender _client;
   final DictMediaByteLoader _dictMediaLoader;
@@ -176,6 +183,8 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
       sentenceOffset: context.sentenceOffset,
       source: context.source?.name,
       bookTitleTag: context.bookTitleTag,
+      clipStartMs: context.clipStartMs,
+      clipEndMs: context.clipEndMs,
       coverBytes: coverBytes,
       coverExt: _extOf(context.coverPath),
       sentenceAudioBytes: sentenceAudioBytes,
@@ -215,8 +224,8 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   MineOutcome _outcomeFromResponse(Map<String, dynamic>? json) {
     if (json == null) {
       return MineOutcome.failure(
-        'No paired device is reachable for server-side mining.',
-        errorCode: AnkiErrorCode.connectionUnknown,
+        pairedDeviceUnreachableMessage,
+        errorCode: AnkiErrorCode.pairedDeviceUnreachable,
       );
     }
     final String result = json['result']?.toString() ?? MineResult.error.name;
@@ -305,9 +314,26 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
           String modelName, List<AnkiCardTemplate> templates) =>
       _client.updateNoteTypeTemplates(modelName, templates);
 
-  // 媒体去重同为配置/维护类：作用于本机 Anki，委派本地仓库。
+  // ── 媒体存储优化：作用于**主机端** collection.media ────────────────────
+  //
+  // 这里曾委派本地仓库（`_local.supportsMediaMaintenance`），那是把「配置类
+  // 方法一律委派本地」的规则套错了地方：卡片落在主机的 Anki 上，重复媒体也
+  // 堆在主机的 collection.media 里，客户端本机连那个目录都没有。委派本地的
+  // 后果是——Android 上本地是 AnkiDroid（恒 false），于是明明主机能去重，
+  // 手机上整区隐藏；而 note type 编辑（就在上面几行）却已经走远端。同一个
+  // 「制卡到已配对设备」模式下两个维护动作指向两台不同机器，是自相矛盾的。
+  //
+  // 与 note type 编辑同构：能力与执行都在主机侧。
+
   @override
-  bool get supportsMediaMaintenance => _local.supportsMediaMaintenance;
+  bool get supportsMediaMaintenance => true;
+
+  /// 整轮去重在主机进程里跑，进度与取消跨不过这一次 HTTP 往返。
+  @override
+  bool get supportsMediaMaintenanceProgress => false;
+
+  @override
+  Future<bool> probeMediaMaintenance() => _client.probeMediaMaintenance();
 
   @override
   Future<AnkiMediaDedupReport?> runMediaDedup({
@@ -315,11 +341,11 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     Future<void> Function(Map<String, dynamic> entry)? onJournal,
     AnkiMediaDedupOnProgress? onProgress,
     bool Function()? shouldCancel,
-  }) =>
-      _local.runMediaDedup(
-        dryRun: dryRun,
-        onJournal: onJournal,
-        onProgress: onProgress,
-        shouldCancel: shouldCancel,
-      );
+  }) {
+    // onJournal 有意不接：改写/删除都发生在主机，审计日志也该落在主机（主机
+    // 侧经自己的 AnkiMediaDedupRunner 落 journal）。把主机的删除记进客户端的
+    // 日志目录只会造出一份「本机什么都没删」的假账。
+    // onProgress / shouldCancel 同理跨不过来，见 supportsMediaMaintenanceProgress。
+    return _client.runMediaDedup(dryRun: dryRun);
+  }
 }

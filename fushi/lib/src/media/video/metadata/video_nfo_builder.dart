@@ -150,7 +150,7 @@ class VideoNfoBuilder {
       );
     }
 
-    for (final String type in const <String>['tmdb', 'tvdb', 'imdb']) {
+    for (final String type in const <String>['anidb', 'tmdb', 'tvdb', 'imdb']) {
       final VideoMetadataId? id = ids
           .where((VideoMetadataId value) =>
               value.type.trim().toLowerCase() == type)

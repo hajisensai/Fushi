@@ -15,7 +15,7 @@ import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
 import 'package:fushi/utils.dart';
 
-/// 统一刮削弹窗守卫（对齐视频 cover_match_dialog 的单弹窗闭环）：
+/// 游戏统一刮削弹窗守卫：
 /// 1. 打开即按预填词自动首搜，候选带「源 · ID · 发行日」副行与每行「使用」按钮；
 /// 2. 点「使用」→ fetchById 补全 → saveScrapeResult 真写穿 DB（primarySource
 ///    单源记该源 key），弹窗以 true 关闭；

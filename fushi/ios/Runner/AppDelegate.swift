@@ -7,6 +7,9 @@ import Flutter
   private var initialUrl: String?
   private var urlEventSink: FlutterEventSink?
   private var ankiMobileMediaBackgroundTask: UIBackgroundTaskIdentifier = .invalid
+  private let aidokuRuntimeQueue = DispatchQueue(
+    label: "app.fushi.reader.aidoku-runtime",
+    qos: .userInitiated)
 
   // TODO-057: brightness override applied during a video session. We snapshot
   // the user's brightness the first time the player asks (getBrightness) and
@@ -22,6 +25,20 @@ import Flutter
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     installChannels(binaryMessenger: engineBridge.applicationRegistrar.messenger())
+  }
+
+  /// 安装来源判据 = 系统写进 bundle 的 App Store 收据文件，不是猜测：
+  /// - App Store 安装 → `.../receipt`
+  /// - TestFlight 安装 → `.../sandboxReceipt`
+  /// - 侧载 / 自签 / Xcode 直接跑 → 收据**文件不存在**（`appStoreReceiptURL` 仍给得
+  ///   出路径，所以必须查文件是否真的在，只看文件名会把侧载误判成 TestFlight）。
+  private static func currentInstallSource() -> String {
+    guard let receiptUrl = Bundle.main.appStoreReceiptURL,
+      FileManager.default.fileExists(atPath: receiptUrl.path)
+    else {
+      return "sideload"
+    }
+    return receiptUrl.lastPathComponent == "sandboxReceipt" ? "testFlight" : "appStore"
   }
 
   private func installChannels(binaryMessenger: FlutterBinaryMessenger) {
@@ -112,6 +129,91 @@ import Flutter
         result(nil)
       default:
         result(FlutterMethodNotImplemented)
+      }
+    }
+
+    // 更新落地入口分流（Dart 侧 IosUpdater.resolveDownloadLanding）。iOS 有三条互不
+    // 相干的分发链路 —— App Store / TestFlight / GitHub 未签名 ipa 侧载 —— 而「该去
+    // 哪儿更新」只由「这份 app 是从哪儿装来的」决定。这里回答的就是这一个事实。
+    let updateChannel = FlutterMethodChannel(
+      name: "app.fushi.reader/update",
+      binaryMessenger: binaryMessenger)
+    updateChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "getInstallSource":
+        result(Self.currentInstallSource())
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    let aidokuRuntimeChannel = FlutterMethodChannel(
+      name: "app.fushi.reader/aidoku_runtime",
+      binaryMessenger: binaryMessenger)
+    aidokuRuntimeChannel.setMethodCallHandler { [weak self] (call, result) in
+      guard call.method == "invoke" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard
+        let request = call.arguments as? [String: Any],
+        JSONSerialization.isValidJSONObject(request),
+        let requestData = try? JSONSerialization.data(withJSONObject: request),
+        let requestJson = String(data: requestData, encoding: .utf8)
+      else {
+        result(FlutterError(
+          code: "INVALID_REQUEST",
+          message: "Aidoku runtime request must be a JSON object",
+          details: nil))
+        return
+      }
+      guard let self = self else {
+        result(FlutterError(
+          code: "RUNTIME_UNAVAILABLE",
+          message: "Aidoku runtime channel was released",
+          details: nil))
+        return
+      }
+      self.aidokuRuntimeQueue.async {
+        let responsePointer = requestJson.withCString { pointer in
+          fushi_aidoku_invoke(pointer)
+        }
+        guard let responsePointer else {
+          DispatchQueue.main.async {
+            result(FlutterError(
+              code: "RUNTIME_FAILED",
+              message: "Aidoku runtime returned no response",
+              details: nil))
+          }
+          return
+        }
+        let responseJson = String(cString: responsePointer)
+        fushi_aidoku_string_free(responsePointer)
+        let responseData = Data(responseJson.utf8)
+        guard
+          let response = try? JSONSerialization.jsonObject(with: responseData),
+          let responseObject = response as? [String: Any]
+        else {
+          DispatchQueue.main.async {
+            result(FlutterError(
+              code: "INVALID_RESPONSE",
+              message: "Aidoku runtime returned invalid JSON",
+              details: responseJson))
+          }
+          return
+        }
+        DispatchQueue.main.async {
+          if let message = responseObject["error"] as? String {
+            // 整个错误信封原样透传：`CLOUDFLARE_CHALLENGE` 带 `challengeUrl`，
+            // Dart 侧靠它决定在 WebView 里打开哪一页解题（BUG-1876）。
+            result(FlutterError(
+              code: responseObject["code"] as? String ?? "RUNTIME_FAILED",
+              message: message,
+              details: responseObject))
+          } else {
+            result(responseObject)
+          }
+        }
       }
     }
   }

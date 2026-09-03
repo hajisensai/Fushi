@@ -285,6 +285,47 @@ void main() {
       });
     });
 
+    // 静图格式同理，而且漏传更隐蔽：形参默认 jpg，恰好等于改动前的硬编码行为——
+    // 用户选了 PNG，某个入口照样出 JPEG，日志里一个字都没有。三个入口一条不落。
+    test('每个制卡入口都显式透传静图格式偏好（漏传只会静默退回 JPG）', () {
+      const Map<String, (String, String)> entries = <String, (String, String)>{
+        'lib/src/pages/implementations/video_fushi/lookup_mining.part.dart': (
+          'videoMiningStillFormat',
+          'appModel',
+        ),
+        'lib/src/pages/implementations/texthooker_page.dart': (
+          'galMiningStillFormat',
+          'mixinAppModel',
+        ),
+        'lib/src/lookup/gal_hook_text_overlay_controller.dart': (
+          'galMiningStillFormat',
+          'model',
+        ),
+      };
+      entries.forEach((String path, (String, String) wiring) {
+        final (String getter, String owner) = wiring;
+        final String src = File(path).readAsStringSync();
+        final String pref = '$owner.$getter';
+        final Set<String> allowed = <String>{pref};
+        for (final RegExpMatch m in RegExp(
+                r'final MiningStillFormat (\w+)\s*=\s*([^;]*);',
+                multiLine: true)
+            .allMatches(src)) {
+          if (m.group(2)!.contains(pref)) allowed.add(m.group(1)!);
+        }
+        final Iterable<String> actual = RegExp(r'\bstillFormat:\s*([\w.]+)')
+            .allMatches(src)
+            .map((RegExpMatch m) => m.group(1)!);
+        expect(
+          actual.isNotEmpty && actual.every(allowed.contains),
+          isTrue,
+          reason: '$path 的 `stillFormat:` 实参必须是 $pref（或由它派生的局部变量），'
+              '实际是 ${actual.isEmpty ? "（一个都没传）" : actual.toSet()}；'
+              '漏传时形参默认 jpg，用户选的 PNG 静默失效',
+        );
+      });
+    });
+
     // 动图格式是「文件长什么样」，它必须能被 MIME 表认出来。编码器缺失有 fail-open
     // 降级兜底，**渲染端认不出没有任何兜底**：卡已经写进 Anki 了，用户看到的是永久
     // 破图。`.webp` 缺项就是 BUG-1122 的原始形态，`.avif` 是同一个坑的下一个入口。

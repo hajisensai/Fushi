@@ -79,6 +79,7 @@ void main() {
           selectedTextThreadKey: null,
           textThreadCount: 2,
           sessionAlreadyPrompted: false,
+          lookupRiskAcceptancePending: false,
         ),
         isTrue,
       );
@@ -89,6 +90,7 @@ void main() {
         String? selected,
         int count = 2,
         bool shown = false,
+        bool riskPending = false,
       }) =>
           shouldPromptGalCaptureSetup(
             state: launched,
@@ -96,11 +98,13 @@ void main() {
             selectedTextThreadKey: selected,
             textThreadCount: count,
             sessionAlreadyPrompted: shown,
+            lookupRiskAcceptancePending: riskPending,
           );
 
       expect(prompt(count: 0), isFalse);
       expect(prompt(selected: 'pid:thread:hook'), isFalse);
       expect(prompt(shown: true), isFalse);
+      expect(prompt(riskPending: true), isFalse);
     });
 
     test('启动早期与停止阶段即使残留候选也不能弹窗', () {
@@ -121,6 +125,7 @@ void main() {
             selectedTextThreadKey: null,
             textThreadCount: 2,
             sessionAlreadyPrompted: false,
+            lookupRiskAcceptancePending: false,
           ),
           isFalse,
           reason: '$phase 尚不能安全选择线程',

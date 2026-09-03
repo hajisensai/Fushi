@@ -6,6 +6,65 @@ import 'package:fushi/src/media/video/ffmpeg_backend.dart';
 /// 桌面 ffmpeg 可执行解析优先级：FUSHI_FFMPEG 覆盖 > 程序旁捆绑 ffmpeg > 系统 PATH。
 /// 让没装 ffmpeg 的电脑也能用捆绑的（开箱即用），同时保留显式覆盖与 PATH 回退。
 void main() {
+  // BUG-1664：环境变量覆盖的「新名优先、旧名回退」。改名批次把 5 个调用点都写成了
+  // `env['FUSHI_FFMPEG'] ?? env['FUSHI_FFMPEG']`——两边同名，注释承诺的 `HIBIKI_FFMPEG`
+  // 回退从未生效。旧名是改名前公开给用户的变量，设了它的人一升级就静默失去覆盖能力，
+  // 而这恰恰是「机器上没有 ffmpeg」时的自救出口。
+  group('resolveEnvOverrideFrom 新名优先旧名回退', () {
+    test('新名存在时用新名', () {
+      expect(
+        resolveEnvOverrideFrom(
+          const <String, String>{
+            'FUSHI_FFMPEG': '/new/ffmpeg',
+            'HIBIKI_FFMPEG': '/old/ffmpeg',
+          },
+          const <String>['FUSHI_FFMPEG', 'HIBIKI_FFMPEG'],
+        ),
+        '/new/ffmpeg',
+      );
+    });
+
+    test('只设旧名时**必须**回退到旧名（漏改点）', () {
+      expect(
+        resolveEnvOverrideFrom(
+          const <String, String>{'HIBIKI_FFMPEG': '/old/ffmpeg'},
+          const <String>['FUSHI_FFMPEG', 'HIBIKI_FFMPEG'],
+        ),
+        '/old/ffmpeg',
+      );
+      expect(
+        resolveEnvOverrideFrom(
+          const <String, String>{'HIBIKI_FFPROBE': '/old/ffprobe'},
+          const <String>['FUSHI_FFPROBE', 'HIBIKI_FFPROBE'],
+        ),
+        '/old/ffprobe',
+      );
+    });
+
+    test('新名为空串时不挡住旧名', () {
+      expect(
+        resolveEnvOverrideFrom(
+          const <String, String>{
+            'FUSHI_FFMPEG': '   ',
+            'HIBIKI_FFMPEG': '/old/ffmpeg',
+          },
+          const <String>['FUSHI_FFMPEG', 'HIBIKI_FFMPEG'],
+        ),
+        '/old/ffmpeg',
+      );
+    });
+
+    test('都没设 → null（交给捆绑/PATH 阶梯）', () {
+      expect(
+        resolveEnvOverrideFrom(
+          const <String, String>{},
+          const <String>['FUSHI_FFMPEG', 'HIBIKI_FFMPEG'],
+        ),
+        isNull,
+      );
+    });
+  });
+
   group('resolveFfmpegExecutableFrom 优先级', () {
     test('FUSHI_FFMPEG 覆盖最高优先', () {
       expect(

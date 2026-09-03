@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -66,8 +68,8 @@ double _requiredTextHeight(WidgetTester tester, Finder finder) {
 
 Widget _panel({
   required VideoPlayerController controller,
-  bool withSelectionControls = false,
   bool Function(AudioCue cue)? isCueFavorited,
+  int fontScaleIndex = 1,
 }) =>
     VideoSubtitleJumpPanel(
       controller: controller,
@@ -81,9 +83,25 @@ Widget _panel({
       emptyHint: 'empty',
       fontSize: _kFontSize,
       width: _kPanelWidth,
-      isCueSelectedForCard: withSelectionControls ? (_) => false : null,
-      onToggleCueSelection: withSelectionControls ? (_) {} : null,
+      initialFontScaleIndex: fontScaleIndex,
     );
+
+/// 该行的行盒（[_buildRow] 里承载背景 / 收藏色条 / 上下内缩的那个 [Container]），
+/// 高度 = `ListView.itemExtentBuilder` 给出的行高。
+double _rowHeight(WidgetTester tester, String text) => tester
+    .renderObject<RenderBox>(
+      find
+          .ancestor(
+            of: _cueTextFinder(text),
+            matching: find.byType(Container),
+          )
+          .first,
+    )
+    .size
+    .height;
+
+double _textHeight(WidgetTester tester, String text) =>
+    tester.renderObject<RenderBox>(_cueTextFinder(text)).size.height;
 
 void main() {
   group('BUG-1034 字幕列表行高', () {
@@ -102,7 +120,7 @@ void main() {
         ]);
 
         await tester.pumpWidget(_wrap(
-          _panel(controller: controller, withSelectionControls: true),
+          _panel(controller: controller),
           textScaler: scaler,
         ));
         await tester.pump();
@@ -132,27 +150,58 @@ void main() {
       addTearDown(controller.dispose);
       controller.setCues(<AudioCue>[_cue(0, 0, _kLongCue)]);
 
-      for (final bool withSelection in <bool>[false, true]) {
-        await tester.pumpWidget(_wrap(
-          _panel(controller: controller, withSelectionControls: withSelection),
-        ));
-        await tester.pump();
+      await tester.pumpWidget(_wrap(_panel(controller: controller)));
+      await tester.pump();
 
-        final RenderBox textBox =
-            tester.renderObject<RenderBox>(_cueTextFinder(_kLongCue));
-        final double expected = subtitleRowTextWidth(
-          rowWidth: _kPanelWidth,
-          effectiveFontSize: _kFontSize,
-          timestampColumnWidth: subtitleTimestampColumnWidth(_kFontSize, false),
-          hasSelectionControls: withSelection,
-        );
-        expect(
-          textBox.size.width,
-          closeTo(expected, 0.5),
-          reason: '行高按 subtitleRowTextWidth 排版，渲染宽度必须与之一致'
-              '（withSelection=$withSelection）',
-        );
-      }
+      final RenderBox textBox =
+          tester.renderObject<RenderBox>(_cueTextFinder(_kLongCue));
+      final double expected = subtitleRowTextWidth(
+        rowWidth: _kPanelWidth,
+        effectiveFontSize: _kFontSize,
+        timestampColumnWidth: subtitleTimestampColumnWidth(_kFontSize, false),
+      );
+      expect(
+        textBox.size.width,
+        closeTo(expected, 0.5),
+        reason: '行高按 subtitleRowTextWidth 排版，渲染宽度必须与之一致',
+      );
+    });
+
+    // BUG-1997：桌面端每个列表右侧常驻一条覆盖式滚动条（不占布局、且吞点击）。
+    // 最右一列是星标按钮，行右内缩只有 4px，星标图标盒离面板右缘 6px —— 被盖住
+    // 一半还点不动。行必须给滚动条让出 gutter。
+    //
+    // 纯几何断言：flutter_test 默认 platform 是 android，不会自动包 Scrollbar，
+    // 所以这里不依赖「真渲染出一条滚动条」，只断言让位的距离够。
+    testWidgets('GUARD: 最右侧星标按钮为滚动条让出 gutter（BUG-1997）', (
+      WidgetTester tester,
+    ) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, _kLongCue)]);
+
+      await tester.pumpWidget(_wrap(_panel(controller: controller)));
+      await tester.pump();
+
+      // 量**可点区域**（InkResponse）而不是 Icon：被滚动条吞掉的是命中测试，而
+      // Icon 的 rect 不含按钮自身那 2px padding —— 拿 Icon 量会多出 2px 余量，
+      // 把 gutter 去掉这条守卫照样绿（空转）。
+      final Finder starButton = find.ancestor(
+        of: find.byIcon(Icons.star_border).first,
+        matching: find.byType(InkResponse),
+      );
+      expect(starButton, findsOneWidget);
+      final Rect buttonRect = tester.getRect(starButton);
+      final Rect panelRect = tester.getRect(
+        find.byType(VideoSubtitleJumpPanel),
+      );
+
+      expect(
+        panelRect.right - buttonRect.right,
+        greaterThanOrEqualTo(kSubtitleRowScrollbarGutter),
+        reason: '星标可点区域右缘到面板右缘的距离必须 ≥ 滚动条通道宽度，'
+            '否则滚动条盖住它并吞掉点击',
+      );
     });
 
     testWidgets('收藏行的左侧竖色条不挤占文本列宽度', (WidgetTester tester) async {
@@ -182,5 +231,97 @@ void main() {
         reason: '收藏色条挤窄文本列会让行高偏小并重演裁剪（BUG-1034）',
       );
     });
+  });
+
+  /// BUG-2057：字幕列表行高曾有一条保底下界 `56 * 字号档`。56 是 asbplayer 版列表最初的
+  /// **固定**行高（`static const double _itemExtent = 56`），BUG-1034 改自适应行高时把它
+  /// 留成了下界——于是默认字号下 1 行（16+17.5=33.5）和 2 行（16+35=51）双双被抬到 56，
+  /// 两种行一样高、单行行里六成是空白。英文译文最常只占 1 行，用户看到的就是
+  /// 「英语的上下间距特别高」。
+  ///
+  /// 守卫的是行高的**几何契约本身**：
+  /// `行高 == kSubtitleRowPaddingVertical + max(文本, 时间戳单行, 动作图标)`。
+  /// 三个分量全部取自真实渲染，不复刻实现里的常量；任何形式的保底下界（56、48、
+  /// 按档缩放的都算）都会让最矮的那行对不上而变红。
+  group('BUG-2057 行高只由内容决定（无保底下界）', () {
+    for (final int scaleIndex in <int>[0, 1, 4]) {
+      testWidgets('行高 == 内缩 + 内容高（字号档下标 $scaleIndex）', (
+        WidgetTester tester,
+      ) async {
+        // 第一遍只为量出该档位的真实排版尺度：行内字号 + 文本列宽。测试字体 Ahem
+        // 每个字符宽 = 字号，据此造出恰好 1 / 2 / 3 行的样例，不写死行数。
+        final VideoPlayerController probe = VideoPlayerController();
+        addTearDown(probe.dispose);
+        probe.setCues(<AudioCue>[_cue(0, 0, 'あ')]);
+        await tester.pumpWidget(_wrap(
+          _panel(controller: probe, fontScaleIndex: scaleIndex),
+        ));
+        await tester.pump();
+
+        final RichText probeRich =
+            tester.widget<RichText>(_cueTextFinder('あ'));
+        final double rowFontSize = probeRich.text.style!.fontSize!;
+        final double textColumnWidth =
+            tester.renderObject<RenderBox>(_cueTextFinder('あ')).size.width;
+        final int perLine = (textColumnWidth / rowFontSize).floor();
+        expect(perLine, greaterThan(2), reason: '文本列窄到造不出多行样例');
+
+        const String oneLine = 'あ';
+        final String twoLines = 'い' * (perLine + 1);
+        final String threeLines = 'う' * (2 * perLine + 1);
+
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(<AudioCue>[
+          _cue(0, 0, oneLine),
+          _cue(1, 4000, twoLines),
+          _cue(2, 8000, threeLines),
+        ]);
+        await tester.pumpWidget(_wrap(
+          _panel(controller: controller, fontScaleIndex: scaleIndex),
+        ));
+        await tester.pump();
+
+        // 样例真的分别是 1 / 2 / 3 行，否则这条守卫失去意义。
+        final double line = _textHeight(tester, oneLine);
+        expect(_textHeight(tester, twoLines), closeTo(line * 2, 0.5));
+        expect(_textHeight(tester, threeLines), closeTo(line * 3, 0.5));
+
+        // 行内另两个子项的**真实**渲染高度（Row 高度 = 子项高度最大值）。
+        final double timestampHeight =
+            tester.renderObject<RenderBox>(find.text('0:00')).size.height;
+        final double actionsHeight = tester
+            .renderObject<RenderBox>(find.ancestor(
+              of: find.byIcon(Icons.play_arrow).first,
+              matching: find.byType(InkResponse),
+            ))
+            .size
+            .height;
+
+        for (final String text in <String>[oneLine, twoLines, threeLines]) {
+          final double content = math.max(
+            _textHeight(tester, text),
+            math.max(timestampHeight, actionsHeight),
+          );
+          expect(
+            _rowHeight(tester, text),
+            closeTo(kSubtitleRowPaddingVertical + content, 0.5),
+            reason: '行高必须等于「上下内缩 + 内容」，不许有保底下界把矮行撑高'
+                '（BUG-2057：单行英文译文上下留白特别大）',
+          );
+        }
+
+        // 用户可见的症状：曾经 1 行和 2 行的行一样高。
+        expect(
+          _rowHeight(tester, oneLine),
+          lessThan(_rowHeight(tester, twoLines)),
+          reason: '1 行的行必须比 2 行的行矮',
+        );
+        expect(
+          _rowHeight(tester, twoLines),
+          lessThan(_rowHeight(tester, threeLines)),
+        );
+      });
+    }
   });
 }

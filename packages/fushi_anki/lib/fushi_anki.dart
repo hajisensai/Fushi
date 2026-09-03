@@ -14,5 +14,6 @@ export 'src/lapis_style_preview.dart';
 export 'src/lapis_styling.dart';
 export 'src/ankidroid/anki_repository.dart';
 export 'src/ankiconnect/anki_desktop_foreground.dart';
+export 'src/ankiconnect/ankiconnect_installer.dart';
 export 'src/ankiconnect/ankiconnect_repository.dart';
 export 'src/ankiconnect/ankiconnect_service.dart';

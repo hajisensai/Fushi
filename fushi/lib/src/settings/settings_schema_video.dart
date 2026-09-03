@@ -1,19 +1,22 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:fushi/src/media/video/dandanplay_client.dart';
-import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:flutter/services.dart';
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/media/video/video_lua_script_manager.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
-import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/utils.dart';
 
 /// 视频设置唯一真相源（阶段 B）：每个条目声明一次，同时服务两个宿主——
@@ -117,6 +120,68 @@ SettingsDestination buildVideoDestination() {
               await setVideoFitModeDual(settingsContext, mode);
             },
           ),
+          // Windows HDR 直通 / 10-bit 输出（docs/plans/2026-08-30-video-hdr-passthrough.md）：
+          // auto = 显示器 HDR 开着且片源 HDR 才走宿主窗直通；always = 只要在 Windows
+          // 就走宿主窗（10-bit）；off = 纹理路径（现状）。只有 Windows 有这条链路。
+          SettingsSegmentedItem<VideoHdrOutputMode>(
+            id: 'video.playback.hdr_output',
+            title: t.video_setting_hdr_output,
+            subtitle: t.video_setting_hdr_output_hint,
+            icon: Icons.hdr_on_outlined,
+            dropdown: true,
+            visible: (_) => isWindowsPlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 31),
+            options: <SettingsSegmentOption<VideoHdrOutputMode>>[
+              SettingsSegmentOption<VideoHdrOutputMode>(
+                value: VideoHdrOutputMode.auto,
+                label: t.video_setting_hdr_output_auto,
+              ),
+              SettingsSegmentOption<VideoHdrOutputMode>(
+                value: VideoHdrOutputMode.always,
+                label: t.video_setting_hdr_output_always,
+              ),
+              SettingsSegmentOption<VideoHdrOutputMode>(
+                value: VideoHdrOutputMode.off,
+                label: t.video_setting_hdr_output_off,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoHdrOutputMode,
+            onChanged: (
+              SettingsContext settingsContext,
+              VideoHdrOutputMode mode,
+            ) async {
+              await setVideoHdrOutputModeDual(settingsContext, mode);
+            },
+          ),
+          // YouTube 显式画质目标（0=自动=默认策略：编码优先、≤1080p）。非 0 起播即选
+          // ≤目标 的最高档（画质菜单同语义），4K 档在 YouTube 侧只有 vp9/av01——无硬解
+          // 设备可能软解掉帧，故默认仍是「自动」。长标签多档 → dropdown 渲染。
+          SettingsSegmentedItem<int>(
+            id: 'video.playback.youtube_quality',
+            title: t.video_setting_youtube_quality,
+            subtitle: t.video_setting_youtube_quality_hint,
+            icon: Icons.high_quality_outlined,
+            dropdown: true,
+            video: VideoPlacement(group: VideoGroup.playback, order: 15),
+            options: <SettingsSegmentOption<int>>[
+              SettingsSegmentOption<int>(
+                value: 0,
+                label: t.video_quality_auto,
+              ),
+              for (final int height in <int>[480, 720, 1080, 1440, 2160])
+                SettingsSegmentOption<int>(
+                  value: height,
+                  label: '${height}p',
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.youtubeQualityTargetHeight,
+            onChanged: (SettingsContext settingsContext, int height) async {
+              await settingsContext.appModel
+                  .setYoutubeQualityTargetHeight(height);
+            },
+          ),
           SettingsSegmentedItem<int>(
             id: 'video.playback.double_tap',
             title: t.video_setting_double_tap,
@@ -145,6 +210,27 @@ SettingsDestination buildVideoDestination() {
                 settingsContext,
                 (VideoAsbplayerConfig c) =>
                     c.copyWith(doubleTapSeekSeconds: value),
+              );
+            },
+          ),
+          // 点击画面是否切换播放/暂停（默认开 = 旧行为）。桌面对应控制条主题的
+          // `playAndPauseOnTap`（单击画面），移动端对应双击中带的暂停 fallback
+          // （BUG-221）——两端同一开关、语义一致，故全平台可见，不是假开关。
+          // 关掉后点画面只唤醒/收起控制条；空格键、控制条按钮、右键菜单的播放/暂停
+          // 是独立入口，不受影响。
+          SettingsSwitchItem(
+            id: 'video.playback.tap_toggles_playback',
+            title: t.video_setting_tap_toggles_playback,
+            subtitle: t.video_setting_tap_toggles_playback_hint,
+            icon: Icons.touch_app_outlined,
+            video: VideoPlacement(group: VideoGroup.playback, order: 14),
+            value: (SettingsContext settingsContext) =>
+                currentVideoAsbConfig(settingsContext).tapTogglesPlayback,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) =>
+                    c.copyWith(tapTogglesPlayback: value),
               );
             },
           ),
@@ -254,144 +340,23 @@ SettingsDestination buildVideoDestination() {
       SettingsSection(
         title: t.section_video_library,
         items: <SettingsItem>[
-          // 条目自动刮削总闸：刮削从「页头按钮手动触发」改为「进视频页/新导入自动
-          // 后台跑」后，这是唯一能让库信息不自动出网的开关。默认开（与旧版用户点
-          // 一下按钮就会刮的预期一致），关掉只停后续自动请求，已刮到的资料保留、
-          // 长按卡片手动匹配仍可用。无 VideoPlacement：这是库级设置，播放页面板里
-          // 出现它没有意义。
+          // AniDB 客户端身份 / TMDB key 已迁到「在线服务」分区（第三方凭据一个家，
+          // 见 settings_schema_services.dart）；这里只留刮削行为本身的偏好。
+          //
+          // 库内自动补刮的总闸。这项会联网（AniDB 每日标题包，配了客户端身份时还
+          // 会打 httpapi/TMDB），所以必须有一个用户看得见、关得掉的开关：早先它挂
+          // 在 video_auto_scrape 上，而那个键的契约明写「不发元数据网络请求」且已
+          // 从设置页撤下——等于给一项后台联网行为配了个不存在的开关。
           SettingsSwitchItem(
-            id: 'video.library.auto_scrape',
-            title: t.video_setting_auto_scrape,
-            subtitle: t.video_setting_auto_scrape_hint,
-            icon: Icons.auto_awesome_motion_outlined,
+            id: 'video.library.scrape_auto_backfill',
+            title: t.video_library_scrape_auto_backfill,
+            subtitle: t.video_library_scrape_auto_backfill_hint,
+            icon: Icons.auto_fix_high_outlined,
             value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoAutoScrape,
+                settingsContext.appModel.videoLibraryAutoBackfillScrape,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setVideoAutoScrape(value);
-            },
-          ),
-          // 来源刮削只有一个主源。来源行可以覆盖它；未覆盖时使用这里的全局默认。
-          // 存储值限定为四个公开 adapter，Fanart 只负责补图，不能成为主源。
-          SettingsSegmentedItem<String>(
-            id: 'video.library.metadata_primary_provider',
-            title: t.video_source_scrape_global_provider,
-            subtitle: t.video_source_scrape_global_provider_hint,
-            icon: Icons.travel_explore_outlined,
-            dropdown: true,
-            options: const <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(value: 'tmdb', label: 'TMDB'),
-              SettingsSegmentOption<String>(
-                value: 'bangumi',
-                label: 'Bangumi',
-              ),
-              SettingsSegmentOption<String>(
-                value: 'anilist',
-                label: 'AniList',
-              ),
-              SettingsSegmentOption<String>(value: 'douban', label: 'Douban'),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                parsePrimaryVideoMetadataProvider(
-              settingsContext.appModel.prefsRepo.getPref(
-                kVideoMetadataPrimaryProviderPref,
-                defaultValue: 'tmdb',
-              ) as String,
-            ).name,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await settingsContext.appModel.prefsRepo.setPref(
-                kVideoMetadataPrimaryProviderPref,
-                value,
-              );
-            },
-          ),
-          // 自定义 TMDB API key —— **内置 key 的逃生口**，不是必填项。
-          //
-          // 刮削默认用随包内置的项目 key（见 tmdb_default_key.dart），绝大多数用户
-          // 永远不需要碰这里。留这个入口只为两种情况：① 内置 key 被 TMDB 吊销/限流
-          // 时用户能自救；② 用户想用自己的配额。留空 = 用内置 key。
-          //
-          // secret: true → 明文遮蔽 + 眼睛按钮，与其它 API key 项一致。
-          SettingsTextItem(
-            id: 'video.library.tmdb_api_key',
-            title: t.video_setting_tmdb_key,
-            subtitle: t.video_setting_tmdb_key_hint,
-            icon: Icons.key_outlined,
-            secret: true,
-            value: (SettingsContext settingsContext) => settingsContext
-                    .appModel.prefsRepo
-                    .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '')
-                as String,
-            onChanged: (SettingsContext settingsContext, String value) async =>
-                settingsContext.appModel.prefsRepo.setPref(
-              kVideoScraperTmdbApiKeyPref,
-              value.trim(),
-            ),
-          ),
-          SettingsTextItem(
-            id: 'video.library.metadata_fanart_api_key',
-            title: t.video_source_scrape_fanart_key,
-            subtitle: t.video_source_scrape_fanart_key_hint,
-            icon: Icons.image_search_outlined,
-            secret: true,
-            value: (SettingsContext settingsContext) => settingsContext
-                    .appModel.prefsRepo
-                    .getPref(kVideoMetadataFanartApiKeyPref, defaultValue: '')
-                as String,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await settingsContext.appModel.prefsRepo.setPref(
-                kVideoMetadataFanartApiKeyPref,
-                value.trim(),
-              );
-            },
-          ),
-          SettingsTextItem(
-            id: 'video.library.metadata_bangumi_token',
-            title: t.video_source_scrape_bangumi_token,
-            subtitle: t.video_source_scrape_bangumi_token_hint,
-            icon: Icons.vpn_key_outlined,
-            secret: true,
-            value: (SettingsContext settingsContext) => settingsContext
-                    .appModel.prefsRepo
-                    .getPref(kVideoMetadataBangumiTokenPref, defaultValue: '')
-                as String,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await settingsContext.appModel.prefsRepo.setPref(
-                kVideoMetadataBangumiTokenPref,
-                value.trim(),
-              );
-            },
-          ),
-          SettingsTextItem(
-            id: 'video.library.metadata_douban_endpoint',
-            title: t.video_source_scrape_douban_endpoint,
-            subtitle: t.video_source_scrape_douban_endpoint_hint,
-            icon: Icons.link_outlined,
-            value: (SettingsContext settingsContext) => settingsContext
-                    .appModel.prefsRepo
-                    .getPref(kVideoMetadataDoubanEndpointPref, defaultValue: '')
-                as String,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await settingsContext.appModel.prefsRepo.setPref(
-                kVideoMetadataDoubanEndpointPref,
-                value.trim(),
-              );
-            },
-          ),
-          SettingsTextItem(
-            id: 'video.library.metadata_douban_token',
-            title: t.video_source_scrape_douban_token,
-            subtitle: t.video_source_scrape_douban_token_hint,
-            icon: Icons.vpn_key_outlined,
-            secret: true,
-            value: (SettingsContext settingsContext) => settingsContext
-                    .appModel.prefsRepo
-                    .getPref(kVideoMetadataDoubanTokenPref, defaultValue: '')
-                as String,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await settingsContext.appModel.prefsRepo.setPref(
-                kVideoMetadataDoubanTokenPref,
-                value.trim(),
-              );
+              await settingsContext.appModel
+                  .setVideoLibraryAutoBackfillScrape(value);
             },
           ),
           SettingsTextItem(
@@ -405,9 +370,109 @@ SettingsDestination buildVideoDestination() {
                     .getPref(kVideoMetadataLocalePref, defaultValue: 'zh-CN')
                 as String,
             onChanged: (SettingsContext settingsContext, String value) async {
-              await settingsContext.appModel.prefsRepo.setPref(
+              await commitVideoMetadataRuntimePreference(
+                settingsContext,
                 kVideoMetadataLocalePref,
-                value.trim(),
+                value,
+              );
+            },
+          ),
+          SettingsActionItem(
+            id: 'video.library.scrape_records_clear_all',
+            title: t.video_source_scrape_clear_all,
+            subtitle: t.video_source_scrape_clear_all_hint,
+            icon: Icons.delete_sweep_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              await showClearAllVideoScrapeRecordsAction(
+                context: settingsContext.context,
+                database: settingsContext.appModel.database,
+                onCompleted: settingsContext.refresh,
+              );
+            },
+          ),
+        ],
+      ),
+      // HDR：这一节控制的是「HDR 片源压到 SDR 屏幕上」那一次不可避免的映射做得好不好，
+      // **不是 HDR 直通**。Windows 侧走 vo=libmpv → ANGLE → Flutter 外部纹理，共享纹理
+      // 格式写死 8-bit BGRA；Android 侧还额外强制 vf=format=yuv420p 降位（BUG-465）。
+      // 直通要动 vendored 的原生 surface 与 Flutter 合成，不在本节范围内。
+      SettingsSection(
+        title: t.video_setting_mpv_group_hdr,
+        collapsedByDefault: true,
+        items: <SettingsItem>[
+          SettingsSegmentedItem<String>(
+            id: 'video.hdr.tone_mapping',
+            title: t.video_setting_hdr_tone_mapping,
+            subtitle: t.video_setting_hdr_tone_mapping_hint,
+            icon: Icons.hdr_auto_outlined,
+            dropdown: true,
+            video: VideoPlacement(
+              // 72/74 而不是 70/71：mpv 组的扁平 order 已被占用（画质小节止于
+              // 70 = video.quality.correct_downscale，几何小节起于 80），而
+              // buildVideoGroupDestination 是把**相邻**同名 section 合并成小节。
+              // 撞号会让播放器快捷面板里出现「画质 → HDR → 画质 → 几何」这种
+              // 标题重复，且撞号两者的相对次序取决于不稳定的 List.sort。
+              // 全量设置页看不出来（那边 HDR 是独立声明的 section）。
+              group: VideoGroup.mpv,
+              order: 72,
+              section: t.video_setting_mpv_group_hdr,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'auto',
+                label: t.video_setting_hdr_auto,
+              ),
+              // 曲线名直接用 mpv 的标识符：这些是行业术语（BT.2390 等），翻译反而
+              // 让人对不上 mpv 文档和别处的教程。
+              //
+              // **从白名单派生，不要在这里再抄一份**：另一份清单意味着「UI 多列
+              // 一条、decode 白名单没有」这种分叉随时可能发生，而那条分叉是静默的
+              // （选了就被 decode 打回默认值，用户只看到「选了没保存」）。
+              // `Set` 字面量在 Dart 里是插入序，所以显示顺序仍由白名单那份决定。
+              for (final String curve
+                  in kHdrToneMappingValues.where((String c) => c != 'auto'))
+                SettingsSegmentOption<String>(value: curve, label: curve),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                currentVideoMpvConfig(settingsContext).hdrToneMapping,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(hdrToneMapping: value),
+              );
+            },
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'video.hdr.compute_peak',
+            title: t.video_setting_hdr_compute_peak,
+            subtitle: t.video_setting_hdr_compute_peak_hint,
+            icon: Icons.brightness_7_outlined,
+            dropdown: true,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 74,
+              section: t.video_setting_mpv_group_hdr,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'auto',
+                label: t.video_setting_hdr_auto,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'yes',
+                label: t.video_setting_hdr_on,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'no',
+                label: t.video_setting_hdr_off,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                currentVideoMpvConfig(settingsContext).hdrComputePeak,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(hdrComputePeak: value),
               );
             },
           ),
@@ -1130,46 +1195,33 @@ SettingsDestination buildVideoDestination() {
                   ?.call();
             },
           ),
-          // ── Jimaku（在线字幕源）───────────────────────────────────────────
-          // 此前 API key 只能在三个对话框（视频字幕 / 番剧下载 / 批量匹配）里就地填，
-          // 设置页压根没有入口；下载对话框那个还只在 key 为空时才显示，key 填错了
-          // 无处可改。这里是**唯一权威入口**，对话框里的就地输入只是快捷方式。
-          SettingsTextItem(
-            id: 'video.subtitle.jimaku_api_key',
-            title: t.video_jimaku_api_key,
-            subtitle: t.video_jimaku_api_key_hint,
-            icon: Icons.vpn_key_outlined,
-            secret: true,
+          // ── 自动获取字幕 ─────────────────────────────────────────────────
+          // 这个开关的主要价值是**让用户知道这件事存在**（BUG-1698）。
+          //
+          // 自动配字幕其实一直开着（下载流水线的字幕阶段默认 bestEffort），但它
+          // 从来没有名字、没有位置、失败只落在任务行一句英文 note 里——用户没有
+          // 任何途径发现这个能力，更不知道要去配 Jimaku key 才能用上。给它一个
+          // 有名字的条目放在字幕来源配置**正上方**，设置搜索（settings_search）
+          // 就能命中「字幕」搜到它，配置项也在同屏可见。
+          SettingsSwitchItem(
+            id: 'video.subtitle.backfill_after_scrape',
+            title: t.video_setting_subtitle_backfill,
+            subtitle: t.video_setting_subtitle_backfill_hint,
+            icon: Icons.subtitles_outlined,
             value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.jimakuApiKey,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await settingsContext.appModel.setJimakuApiKey(value.trim());
+                settingsContext.appModel.videoSubtitleBackfillAfterScrape,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setVideoSubtitleBackfillAfterScrape(value);
             },
           ),
-          // 默认字幕语言：没有该系列记忆（jimakuPreferredLanguages）时的兜底优先语言。
-          // `''` = 不限（按 jimakuLanguageRank 默认权重排）。
-          SettingsSegmentedItem<String>(
-            id: 'video.subtitle.jimaku_default_language',
-            title: t.video_setting_jimaku_default_language,
-            subtitle: t.video_setting_jimaku_default_language_hint,
-            icon: Icons.translate_outlined,
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: '',
-                label: t.video_jimaku_language_all,
-              ),
-              for (final String code in kJimakuLanguageCodes)
-                SettingsSegmentOption<String>(
-                  value: code,
-                  label: jimakuLanguageLabel(code),
-                ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.jimakuDefaultLanguage,
-            onChanged: (SettingsContext settingsContext, String code) async {
-              await settingsContext.appModel.setJimakuDefaultLanguage(code);
-            },
-          ),
+          // ── 在线字幕来源 → 「在线服务」分区 ─────────────────────────────
+          // Jimaku / OpenSubtitles 曾在这里与下载页各挂一份同一组件（BUG-1712 的
+          // 「一个能力两个家」修法是双挂载——那是把症状固化）。第三方凭据现在只
+          // 有一个家：settings_schema_services.dart；这里留一条跳转，用户在字幕
+          // 分区仍能一步到达，且「刮削后自动补字幕」的依赖（要配 Jimaku key）
+          // 同屏可见。媒体服务器（Jellyfin/Emby）同理迁走。
+          buildOpenServicesItem('video.subtitle.online_sources'),
         ],
       ),
       SettingsSection(
@@ -1218,25 +1270,8 @@ SettingsDestination buildVideoDestination() {
               await setVideoDanmakuMaxActiveDual(settingsContext, v.round());
             },
           ),
-          // 弹幕来源配置只剩自建/镜像 Dandanplay 服务器地址（高级项，空=官方
-          // api.dandanplay.net）。官方 AppId/AppSecret 已内置（dandanplay_secret.dart，
-          // 见 DandanplayConfig.embeddedAppId），请求自动 v2 签名，用户**无需手动输入
-          // API**——故原 AppId/AppSecret 两个输入框已删除。写入 videoDanmakuConfig
-          // （纯 pref），同步推进程级 DandanplayConfig.current，下次匹配弹幕即生效。
-          SettingsTextItem(
-            id: 'video.danmaku.server_url',
-            title: t.video_setting_danmaku_server_url,
-            icon: Icons.dns_outlined,
-            keyboardType: TextInputType.url,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoDanmakuConfig.baseUrl,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await _commitVideoDanmakuConfig(
-                settingsContext,
-                (DandanplayConfig c) => c.copyWith(baseUrl: value.trim()),
-              );
-            },
-          ),
+          // 自建/镜像 Dandanplay 服务器地址是第三方端点，已迁到「在线服务」分区
+          // （settings_schema_services.dart）；弹幕行为开关留在这里。
         ],
       ),
       // ── 播放中专属（控制器绑定 / 仅播放页有意义）───────────────────────────
@@ -1420,6 +1455,99 @@ SettingsDestination buildVideoDestination() {
             ),
             builder: buildVideoMpvRawConfField,
           ),
+          // mpv Lua 脚本：`<documents>/mpv_scripts` 整目录装载（对齐 mpv `scripts/`
+          // 目录语义，删文件即禁用）。host 在场开启即时装载（幂等）；mpv 无
+          // unload-script，关闭一律下次进入视频页生效（见 video_lua_script_manager.dart）。
+          // BUG-2032：随包 libmpv 没编 Lua 的平台（Android 实测 `-Dlua=disabled`）
+          // 只在副标题如实说明，不禁用开关——开关表达意图，能力是另一回事
+          // （settings_schema_widgets.dart `_switch` 的既定约定）。
+          SettingsSwitchItem(
+            id: 'video.player.mpv_lua_scripts',
+            title: t.video_setting_mpv_lua_scripts,
+            subtitle: t.video_setting_mpv_lua_scripts_hint,
+            subtitleBuilder: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoMpvLuaCapability ==
+                        MpvLuaCapability.unavailable
+                    ? '${t.video_setting_mpv_lua_scripts_unavailable}\n'
+                        '${t.video_setting_mpv_lua_scripts_hint}'
+                    : t.video_setting_mpv_lua_scripts_hint,
+            icon: Icons.data_object_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 212,
+              section: t.video_setting_mpv_group_advanced,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoMpvLuaScriptsEnabled,
+            onChanged: _setVideoLuaScriptsEnabled,
+          ),
+          SettingsActionItem(
+            id: 'video.player.mpv_lua_scripts_import',
+            title: t.video_setting_mpv_lua_scripts_import,
+            icon: Icons.note_add_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 214,
+              section: t.video_setting_mpv_group_advanced,
+            ),
+            onTap: (SettingsContext settingsContext) async {
+              final FilePickerResult? result =
+                  await FilePicker.platform.pickFiles(
+                type: FileType.custom,
+                allowedExtensions: const <String>['lua'],
+                allowMultiple: true,
+              );
+              if (result == null) return;
+              bool imported = false;
+              for (final PlatformFile f in result.files) {
+                final String? path = f.path;
+                if (path == null) continue;
+                await importLuaScriptFile(path);
+                imported = true;
+              }
+              if (!imported) return;
+              // BUG-2032：导入即启用。导入动作本身就是「我要跑这些脚本」，此前
+              // 导入完开关还是关的、提示只说"已导入"，用户播视频什么都不发生。
+              // 与开关走同一条写穿：host 在场把目录（含刚导入的）即时装进活播放器。
+              await _setVideoLuaScriptsEnabled(settingsContext, true);
+              _showVideoSettingsSnackBar(
+                settingsContext,
+                t.video_setting_mpv_lua_scripts_imported,
+              );
+              settingsContext.refresh();
+            },
+          ),
+          // BUG-2032：脚本清单 + 每脚本运行态（播放中：已装载 / 报错原文；无播放器
+          // 只列文件名）+ 输入边界说明。"貌似用不了"在这里变成"哪个脚本报了什么"。
+          SettingsCustomItem(
+            id: 'video.player.mpv_lua_scripts_list',
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 215,
+              section: t.video_setting_mpv_group_advanced,
+            ),
+            builder: buildVideoLuaScriptList,
+          ),
+          // 复制目录路径（全平台一致，不做平台分支的文件管理器跳转）：用户拿路径
+          // 自行增删/编辑脚本文件。
+          SettingsActionItem(
+            id: 'video.player.mpv_lua_scripts_dir',
+            title: t.video_setting_mpv_lua_scripts_dir_copy,
+            icon: Icons.folder_copy_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 216,
+              section: t.video_setting_mpv_group_advanced,
+            ),
+            onTap: (SettingsContext settingsContext) async {
+              final String dirPath = (await mpvLuaScriptDirectory()).path;
+              await Clipboard.setData(ClipboardData(text: dirPath));
+              _showVideoSettingsSnackBar(
+                settingsContext,
+                '${t.video_setting_mpv_lua_scripts_dir_copied}\n$dirPath',
+              );
+            },
+          ),
           // 重置：全部回 mpv 默认（含清空原始 conf 框，经 pref 回填输入框）。
           SettingsActionItem(
             id: 'video.player.mpv_reset',
@@ -1530,14 +1658,26 @@ SettingsDestination buildVideoDestination() {
   );
 }
 
-/// 读改写 videoDanmakuConfig（纯 pref）：decode 当前 → 应用 [mutate] → 落盘 → 刷新面板。
-Future<void> _commitVideoDanmakuConfig(
-  SettingsContext settingsContext,
-  DandanplayConfig Function(DandanplayConfig config) mutate,
-) async {
-  final DandanplayConfig current = settingsContext.appModel.videoDanmakuConfig;
-  await settingsContext.appModel.setVideoDanmakuConfig(mutate(current));
-  settingsContext.refresh();
+/// 轻量提示条（与 settings_schema_lookup.dart 的 `_showSettingsSnackBar` 同款）。
+void _showVideoSettingsSnackBar(
+    SettingsContext settingsContext, String message) {
+  final BuildContext ctx = settingsContext.context;
+  if (!ctx.mounted) return;
+  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(message)));
+}
+
+/// BUG-2032：Lua 脚本开关的**唯一**写穿点（开关行 / 导入按钮共用）。host 在场走
+/// 页面回调（落 pref + 开启时把脚本目录即时装载进活播放器，幂等），否则直接落 pref
+/// 下次进入视频页生效。两条入口各写一份就会再次分叉成"导入了但没启用"。
+Future<void> _setVideoLuaScriptsEnabled(
+    SettingsContext settingsContext, bool value) async {
+  final Future<void> Function(bool)? live =
+      videoQuickSettingsHostOf(settingsContext)?.onLuaScriptsEnabledChanged;
+  if (live != null) {
+    await live(value);
+  } else {
+    await settingsContext.appModel.setVideoMpvLuaScriptsEnabled(value);
+  }
 }
 
 /// mpv 布尔开关的声明模板：读写同一 [AppModel.videoMpvConfig]，无 host 落 pref

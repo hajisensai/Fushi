@@ -12,9 +12,56 @@ import 'package:gamepads/gamepads.dart' as gp;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/focus/page_scroll_registry.dart';
+import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+
+/// dictionaryPopup scope 的手柄兜底（手柄重设计 P2）：页面 Actions **未消费**的
+/// 按钮，在有可见查词弹窗时按弹窗绑定解析并执行（词条导航/制卡/发音）。桌面轮询
+/// （[GamepadService._dispatchButton]）与 Android 键事件链
+/// （`wrapWithGlobalNavigation`）共用这一个入口——页面专属键永远优先，弹窗只吃
+/// 页面没占的按钮，与 universal「返回上一级」同一哲学。
+bool tryDictionaryPopupGamepadButton(
+  FushiShortcutRegistry? registry,
+  GamepadButton button,
+) {
+  final DictionaryPopupGamepadHooks? hooks =
+      DictionaryPopupGamepadRegistry.current;
+  if (hooks == null) return false;
+  return dispatchDictionaryPopupGamepadButton(hooks, registry, button);
+}
+
+/// 按 dictionaryPopup scope 解析 [button] 并在 [hooks] 上执行。
+/// [tryDictionaryPopupGamepadButton]（app 内弹窗兜底）与 P5 的游戏内卡片独占
+/// 路由（[GalIngameLookupGamepadRoute]）共用这一个解析/执行体。
+bool dispatchDictionaryPopupGamepadButton(
+  DictionaryPopupGamepadHooks hooks,
+  FushiShortcutRegistry? registry,
+  GamepadButton button,
+) {
+  if (registry == null) return false;
+  final ShortcutAction? action = registry.resolveGamepad(
+    button,
+    scope: ShortcutScope.dictionaryPopup,
+  );
+  switch (action) {
+    case ShortcutAction.popupNextEntry:
+      unawaited(hooks.entryMove(true));
+      return true;
+    case ShortcutAction.popupPrevEntry:
+      unawaited(hooks.entryMove(false));
+      return true;
+    case ShortcutAction.popupMineEntry:
+      unawaited(hooks.mineFirstEntry());
+      return true;
+    case ShortcutAction.popupPlayAudio:
+      unawaited(hooks.playFirstAudio());
+      return true;
+    default:
+      return false;
+  }
+}
 
 /// Intent dispatched for a physical gamepad button on platforms where Flutter
 /// does NOT deliver `gameButton*` key events (desktop / Apple). The active page
@@ -353,6 +400,7 @@ class GamepadService {
         onButton: _dispatchButton,
         onLongPress: _dispatchLongPress,
         onStickMove: _dispatchStickMove,
+        onRightStickScroll: _dispatchRightStickScroll,
       ),
     )..start();
   }
@@ -375,6 +423,16 @@ class GamepadService {
   /// reader's registry page-turn bindings (e.g. D-pad-right → page forward)
   /// fire; when unbound in the active scope they fall back to directional focus.
   void _dispatchButton(GamepadButton button) {
+    // 手柄重设计 P5：游戏内查词卡片可见时**独占**手柄——命中弹窗动作转发进
+    // 卡片 WebView2，未命中也一律吞掉，绝不驱动后台 app 的页面/焦点/返回
+    // （游戏本身经原生输入照常收到手柄；这里只管 app 进程的这份轮询）。
+    // 不碰焦点高亮策略：app 在后台，别为游戏里的按键点亮 app 的焦点环。
+    final DictionaryPopupGamepadHooks? galHooks =
+        GalIngameLookupGamepadRoute.current;
+    if (galHooks != null) {
+      dispatchDictionaryPopupGamepadButton(galHooks, registry, button);
+      return;
+    }
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
     _setHighlightForHardwareNav();
@@ -385,6 +443,11 @@ class GamepadService {
         ) ==
         true;
     if (handled) return;
+
+    // 手柄重设计 P2：页面没消费的按钮，弹窗可见时先按 dictionaryPopup scope 解析
+    // （词条导航/制卡/发音）。排在页面之后 = 页面专属键永远优先；排在滚动/焦点
+    // 兜底之前 = 弹窗可见时 dpad 上下先导航词条，而不是把焦点从弹窗底下移走。
+    if (tryDictionaryPopupGamepadButton(registry, button)) return;
 
     // The page didn't consume the button: LB/RB (or whatever the user bound to
     // the global scroll-page actions) page-scrolls the current page's primary
@@ -461,10 +524,28 @@ class GamepadService {
   /// focus ring like an arrow key; whatever is focused is then activated by a
   /// SEPARATE explicit press (A / the rebindable enter-caret key).
   void _dispatchStickMove(TraversalDirection dir) {
+    // P5：游戏内卡片独占期间左摇杆也吞掉——后台 app 的焦点不能被游戏里的
+    // 摇杆悄悄挪走。
+    if (GalIngameLookupGamepadRoute.current != null) return;
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
     _setHighlightForHardwareNav();
     gamepadMoveFocusInDirection(ctx, dir);
+  }
+
+  /// 每 tick 满偏时滚动的 CSS 像素（60ms 一 tick ≈ 满偏 400px/s，半偏减半）。
+  static const double _kRightStickScrollPxPerTick = 24;
+
+  /// 手柄重设计 P2：右摇杆连续滚动**可见查词弹窗**的内容。无弹窗时不做事——
+  /// 页面滚动已有 LB/RB 整页滚（globalScrollPage*）与左摇杆焦点滚动兜底，右摇杆
+  /// 现阶段专职弹窗，避免同一根摇杆在不同页面语义漂移。
+  void _dispatchRightStickScroll(double dyNorm) {
+    // P5：游戏内卡片可见时右摇杆滚动卡片内容（独占路由优先）。
+    final DictionaryPopupGamepadHooks? hooks =
+        GalIngameLookupGamepadRoute.current ??
+            DictionaryPopupGamepadRegistry.current;
+    if (hooks == null) return;
+    unawaited(hooks.scrollBy(dyNorm * _kRightStickScrollPxPerTick));
   }
 
   /// LB/RB page-scroll fallback: if [button] is bound to a global scroll-page
@@ -499,6 +580,8 @@ class GamepadService {
   /// A widget that supports long-press maps the intent to the same callback its
   /// `onLongPress` uses; if nothing handles it, the long-press is a no-op.
   void _dispatchLongPress(GamepadButton button) {
+    // P5：游戏内卡片独占期间长按也吞掉（后台 app 的长按语义不该被游戏触发）。
+    if (GalIngameLookupGamepadRoute.current != null) return;
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
     _setHighlightForHardwareNav();
@@ -815,7 +898,18 @@ class GamepadFrameProcessor {
     required this.onButton,
     this.onLongPress,
     this.onStickMove,
+    this.onRightStickScroll,
   });
+
+  /// 手柄重设计 P2：右摇杆的**连续滚动**通道。每个采样 tick（60ms）在死区外都
+  /// 发一次归一化纵向偏移（-1..1，**向下为正**——插件轴 +Y=上，滚动语义相反，
+  /// 这里翻好号），消费方按偏移量滚动查词弹窗内容。与左摇杆（焦点导航）刻意
+  /// 分开：左手移焦点、右手滚内容，互不抢通道。Null（未接线/单元测试）= no-op。
+  final void Function(double dyNorm)? onRightStickScroll;
+
+  /// 右摇杆滚动死区（约 24% 满偏）：比左摇杆的方向滞回门槛（stickEnter）低——
+  /// 滚动是连续量不怕抖动误触发，门槛太高反而丢慢速微调。
+  static const int rightStickDeadZone = 8000;
 
   /// Emits a discrete [GamepadButton] press. TODO-700 T6: the D-pad emits here
   /// (dpad* buttons, routed through the shortcut registry as bindable triggers);
@@ -907,6 +1001,8 @@ class GamepadFrameProcessor {
     required int stickX,
     required int stickY,
     required int nowMs,
+    int rightStickX = 0,
+    int rightStickY = 0,
   }) {
     // Edge-detected discrete buttons. A is handled separately below when
     // long-press is supported (decided on release), so skip it here to avoid a
@@ -970,6 +1066,13 @@ class GamepadFrameProcessor {
       _updateHeldStickDirection(stickDir, nowMs: nowMs);
     } else {
       _heldStickDir = null;
+    }
+
+    // 右摇杆连续滚动（P2）：无边沿检测、无自动重复——它是速度量，每 tick 在死区
+    // 外都发（横轴暂不消费，只采纵轴）。
+    final void Function(double dyNorm)? scrollEmit = onRightStickScroll;
+    if (scrollEmit != null && rightStickY.abs() > rightStickDeadZone) {
+      scrollEmit(-rightStickY / GamepadFrameBits.axisMax);
     }
   }
 
@@ -1070,6 +1173,8 @@ class GamepadFrameState {
   int rightTrigger = 0;
   int stickX = 0; // -axisMax..axisMax
   int stickY = 0;
+  int rightStickX = 0; // -axisMax..axisMax（P2：右摇杆滚动通道）
+  int rightStickY = 0;
 
   // Normalized gamepads button -> frame bitmask (only the directional/face/
   // shoulder/thumb/menu buttons the processor understands; home/touchpad are
@@ -1111,6 +1216,10 @@ class GamepadFrameState {
       stickX = (value * GamepadFrameBits.axisMax).round();
     } else if (axis == gp.GamepadAxis.leftStickY) {
       stickY = (value * GamepadFrameBits.axisMax).round();
+    } else if (axis == gp.GamepadAxis.rightStickX) {
+      rightStickX = (value * GamepadFrameBits.axisMax).round();
+    } else if (axis == gp.GamepadAxis.rightStickY) {
+      rightStickY = (value * GamepadFrameBits.axisMax).round();
     } else if (axis == gp.GamepadAxis.leftTrigger) {
       leftTrigger = (value * GamepadFrameBits.triggerMax).round();
     } else if (axis == gp.GamepadAxis.rightTrigger) {
@@ -1156,6 +1265,8 @@ class _PluginGamepadPoller {
         rightTrigger: _state.rightTrigger,
         stickX: _state.stickX,
         stickY: _state.stickY,
+        rightStickX: _state.rightStickX,
+        rightStickY: _state.rightStickY,
         nowMs: _clock.elapsedMilliseconds,
       );
     });

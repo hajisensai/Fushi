@@ -19,11 +19,18 @@ void main() {
     );
 
     final int lyricsModeBranch = onLoadStop.indexOf('if (_lyricsMode)');
-    final int guardCall =
-        onLoadStop.indexOf('_isLoadedLyricsDocument(controller)');
-    final int completeCall =
-        onLoadStop.indexOf('_onChapterLoadComplete(controller)');
+    final int finalizeCall =
+        onLoadStop.indexOf('_finalizeLyricsDocumentIfReady(');
     expect(lyricsModeBranch, isNonNegative);
+    expect(finalizeCall, isNonNegative);
+
+    final String finalize = _functionSource(
+      source,
+      '  Future<bool> _finalizeLyricsDocumentIfReady(',
+      '  Future<void> _onChapterLoadComplete(',
+    );
+    final int guardCall = finalize.indexOf('_isLoadedLyricsDocument(');
+    final int completeCall = finalize.indexOf('_onChapterLoadComplete(');
     expect(guardCall, isNonNegative);
     expect(completeCall, isNonNegative);
     expect(
@@ -39,6 +46,18 @@ void main() {
     );
     expect(guard, contains('window.__lyricsSetCue'));
     expect(guard, contains("document.getElementById('lc')"));
+    expect(guard, contains('window.__fushiLyricsLoadGeneration'));
+    expect(source, contains('int _lyricsLoadGeneration = 0;'));
+    expect(source, contains('++_lyricsLoadGeneration'));
+    expect(source, contains('loadGeneration: loadGeneration'));
+    expect(source, contains('generation != _lyricsLoadGeneration'));
+    expect(source, contains('lyricsGeneration: generation'));
+    expect(source, contains('int? _lyricsDocumentLoadGeneration;'));
+    expect(source, contains(r"'generation': '$loadGeneration'"));
+    expect(source, contains('_isCurrentLyricsDocumentUrl(url)'));
+    expect(source,
+        contains('_lyricsDocumentGenerationFromUrl(request.url.toString())'));
+    expect(source, isNot(contains('bool _lyricsDocumentLoadInFlight')));
   });
 }
 

@@ -141,6 +141,19 @@ class RemoteLibraryCache {
     _invalidateSlot(_slotKey(sourceId, key));
   }
 
+  /// 作废 [sourceId] 的**全部**域槽（books/videos/audiobooks/activity:* …）。
+  ///
+  /// 「我刚对这个来源做了写操作（删远端条目等），它的远端库整体可能已变」的
+  /// 正确失效粒度：逐域点名必然漏（BUG-1693 批审计实证——远端删除只强刷了
+  /// 自己那个域，activity 槽在 TTL 内继续给首页时间轴喂已删条目的活动），且
+  /// activity 按 limit 分槽，调用方根本枚举不全。
+  void invalidateSource(String sourceId) {
+    final String prefix = '$sourceId|';
+    for (final String slotKey in _slots.keys.toList()) {
+      if (slotKey.startsWith(prefix)) _invalidateSlot(slotKey);
+    }
+  }
+
   void _invalidateSlot(String slotKey) {
     final _CacheSlot? slot = _slots[slotKey];
     if (slot == null) return;
@@ -157,6 +170,28 @@ class RemoteLibraryCache {
     for (final String slotKey in _slots.keys.toList()) {
       _invalidateSlot(slotKey);
     }
+  }
+
+  /// 只读取已缓存的值，**绝不触发取数**（BUG-1891）。
+  ///
+  /// 「关掉自动列出条目」的语义就是这个：进页面不发请求，但上一次手动刷新拿到的
+  /// 清单还得留在屏幕上——否则切一次 tab 回来卡片就全没了，用户只能反复手动刷新，
+  /// 比自动枚举还糟。
+  ///
+  /// [maxAge] 为 null = 不看新鲜度，返回槽里最后一次成功的值（[invalidate] /
+  /// [invalidateSource] / [invalidateAll] 之后为 null）。命中在途请求不算——
+  /// 本方法是纯读，不复用 future。
+  T? peek<T>({
+    required String sourceId,
+    required String key,
+    Duration? maxAge,
+  }) {
+    final _CacheSlot? slot = _slots[_slotKey(sourceId, key)];
+    if (slot == null || !slot.hasValue) return null;
+    if (maxAge != null && _nowMs() - slot.fetchedAtMs >= maxAge.inMilliseconds) {
+      return null;
+    }
+    return slot.value as T?;
   }
 
   /// 仅供测试与诊断：[sourceId] 的 [key] 槽当前是否持有未过期的缓存值。

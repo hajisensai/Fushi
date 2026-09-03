@@ -76,9 +76,62 @@ jobs:
             mingw-w64-x86_64-x264 mingw-w64-x86_64-svt-av1 mingw-w64-x86_64-libwebp
             mingw-w64-x86_64-ffmpeg
 
-      - name: Build (Linux/macOS)
-        if: runner.os != 'Windows'
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
         run: FFMPEG_REF="${{ github.event.inputs.ffmpeg_ref }}" OUT="$PWD/out" bash tool/ffmpeg-min/build-ffmpeg-min.sh
+
+      # BUG-1668：macOS 产物必须是 universal(x86_64+arm64)。
+      #
+      # 背景：`flutter build macos --release` 出的 app 是 universal，而本 workflow 过去
+      # 只跑一次原生构建 —— runner 是 Apple Silicon，于是随包 ffmpeg/ffprobe 是
+      # arm64-only。Intel Mac 上 app 跑得好好的，ffmpeg 却被内核以 Bad CPU type
+      # (EBADARCH) 拒掉，制卡音频/封面、内封字幕、片段导出全线静默失效。
+      # 下面的 `-version` 冒烟在 arm64 runner 上永远绿，测不出这个缺口，所以另加
+      # lipo 架构硬门。
+      #
+      # ⚠️ 每个架构必须用**独立**的 SRC / STATIC_DEPS / OUT：build-ffmpeg-min.sh 对
+      # 三个静态依赖有 `if [ ! -f "$prefix/lib/libx264.a" ]` 的缓存短路，共用 prefix
+      # 会让第二个架构直接复用第一个架构的 .a，lipo 出来的“universal”里两片其实是
+      # 同一架构 —— 看着修好了，Intel 上照样跑不起来。configure 生成的 config.h 同样
+      # 是架构相关的，源码树也不能共用。
+      - name: Build (macOS, universal x86_64+arm64)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          REF="${{ github.event.inputs.ffmpeg_ref }}"
+          for arch in x86_64 arm64; do
+            echo "::group::build $arch"
+            MACOS_ARCH="$arch" FFMPEG_REF="$REF" \
+              OUT="$PWD/out-$arch" \
+              SRC="$PWD/ffmpeg-src-$arch" \
+              STATIC_DEPS="$PWD/ffmpeg-min-deps-$arch" \
+              bash tool/ffmpeg-min/build-ffmpeg-min.sh
+            echo "::endgroup::"
+            # 每个切片单独验一次：合并后再查就分不清是哪一半编错了。
+            for tool in ffmpeg ffprobe; do
+              got="$(lipo -archs "$PWD/out-$arch/bin/$tool")"
+              if [ "$got" != "$arch" ]; then
+                echo "::error title=Wrong slice arch::out-$arch/bin/$tool 是 '$got'，期望 '$arch'"
+                exit 1
+              fi
+            done
+          done
+          mkdir -p out/bin
+          for tool in ffmpeg ffprobe; do
+            lipo -create "out-x86_64/bin/$tool" "out-arm64/bin/$tool" -output "out/bin/$tool"
+            chmod +x "out/bin/$tool"
+          done
+          # 硬门：合并产物必须同时含两个架构，缺一即失败（这正是发给用户的那份）。
+          for tool in ffmpeg ffprobe; do
+            archs="$(lipo -archs "out/bin/$tool")"
+            echo "$tool: $archs"
+            for want in x86_64 arm64; do
+              case " $archs " in
+                *" $want "*) ;;
+                *) echo "::error title=Not universal::out/bin/$tool 缺 $want（实际: $archs）"; exit 1 ;;
+              esac
+            done
+          done
 
       - name: Build (Windows / MSYS2)
         if: runner.os == 'Windows'

@@ -57,8 +57,13 @@ function Copy-Tree {
     param([string] $From, [string] $To)
     # -Force：vendored 树里有 .gitattributes / .gitignore / .github 这类点开头
     # 的条目，缺了它 Get-ChildItem 会静默漏掉隐藏项。
+    # [IO.Path]::GetRelativePath 只存在于 .NET Core/5+；Windows PowerShell 5.1
+    # 跑在 .NET Framework 上会 MethodNotFound 直接中断构建。用根前缀裁剪算相对
+    # 路径，pwsh 7 与 5.1 行为一致。
+    $fromRoot = [IO.Path]::GetFullPath($From).TrimEnd([IO.Path]::DirectorySeparatorChar)
     Get-ChildItem -LiteralPath $From -Recurse -File -Force | ForEach-Object {
-        $relativePath = [IO.Path]::GetRelativePath($From, $_.FullName)
+        $relativePath = [IO.Path]::GetFullPath($_.FullName).Substring($fromRoot.Length).TrimStart(
+            [IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
         $destination = Join-Path $To $relativePath
         [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination)) | Out-Null
         Copy-Item -LiteralPath $_.FullName -Destination $destination -Force
@@ -89,6 +94,17 @@ try {
         (Join-Path $overlayRoot "server-build.gradle.patch")
     )
     Copy-Tree (Join-Path $overlayRoot "overlay") $sourceRoot
+
+    # 把 vendored 的 org.jogamp 离线 Maven 仓库搬进构建树。补丁后的 build.gradle.kts
+    # 用 `rootProject.file("hibiki-offline-maven/jogamp")` 找它，目录在就离线解析、
+    # 不在就回落到两个远端镜像（见 third_party/jogamp/UPSTREAM：那两个主机分别在
+    # 2026-08-09 和 2026-08-25 把 CI 弄红过，而 Maven Central 根本没有 2.5.0）。
+    # 路径必须与补丁里的字面量一致，守卫 fushi/test/build/mihon_vendored_jogamp_guard_test.dart。
+    $jogampRepo = Join-Path $repositoryRoot "third_party\jogamp"
+    if (-not (Test-Path -LiteralPath (Join-Path $jogampRepo "org\jogamp\jogl\jogl-all\2.5.0\jogl-all-2.5.0.jar") -PathType Leaf)) {
+        throw "Vendored org.jogamp repository is missing at $jogampRepo"
+    }
+    Copy-Tree (Join-Path $jogampRepo "org") (Join-Path $sourceRoot "hibiki-offline-maven\jogamp\org")
 
     $archivePath = Join-Path $resolvedCache $temurinArchive
     if (-not (Test-Path -LiteralPath $archivePath)) {
@@ -194,7 +210,12 @@ try {
             archiveSha256 = $temurinSha256
         }
     }
-    $checksums | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $stagingRoot "checksums.json") -Encoding utf8NoBOM
+    # -Encoding utf8NoBOM 是 pwsh 6+ 独有的值，5.1 只认 utf8（带 BOM）并会报
+    # ParameterArgumentValidationError。直接用 .NET 写无 BOM UTF-8，两个 shell 同结果。
+    [IO.File]::WriteAllText(
+        (Join-Path $stagingRoot "checksums.json"),
+        ($checksums | ConvertTo-Json -Depth 4),
+        (New-Object Text.UTF8Encoding($false)))
 
     $backup = $null
     if (Test-Path -LiteralPath $resolvedOutput) {

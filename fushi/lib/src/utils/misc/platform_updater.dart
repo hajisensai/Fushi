@@ -2,11 +2,15 @@ import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
 
+import 'package:fushi/src/mining/galgame_helper_installer.dart'
+    show kGalgameHelperInstallDirectoryName;
 import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
+import 'package:fushi/src/utils/misc/helper_process_registry.dart';
 import 'package:fushi/src/platform/desktop/windows_process_query.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/mac_update_handoff.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart';
+import 'package:fushi/src/utils/misc/update_landing.dart';
 import 'package:fushi/utils.dart'; // ErrorLogService
 
 export 'update_handoff.dart'
@@ -116,6 +120,15 @@ abstract class PlatformUpdater {
 
   /// 应用已下载到 [file] 的更新。仅在 [supportsInAppInstall] 为 true 时被调用。
   Future<void> apply(File file, String version);
+
+  /// 不能应用内安装时，「前往下载」按钮该落到哪里。默认 = GitHub release 网页
+  /// （[releaseHtmlUrl]），即所有桌面/未实现平台的既有行为。
+  ///
+  /// 做成平台方法而不是在 update_checker 里 `if (Platform.isIOS)`：「本平台的更新
+  /// 从哪儿来」和「本平台怎么选包/怎么装」是同一个问题的三个面，属于同一个
+  /// [PlatformUpdater]；散到调用方就会出现「某个入口忘了分流」的静默空档。
+  Future<UpdateLanding> resolveDownloadLanding(String releaseHtmlUrl) async =>
+      UpdateLanding(url: releaseHtmlUrl, kind: UpdateLandingKind.releasePage);
 }
 
 /// 本期支持「应用内安装」的平台集合（单一真相源；Linux 在其阶段加入）。macOS 走
@@ -380,8 +393,15 @@ class MacUpdater extends PlatformUpdater {
 }
 
 /// iOS：Apple 平台禁止应用内下载/执行外部可执行文件（即便当前不在 App Store，也守住
-/// 合规边界便于将来上架）。永远只「检查版本→打开发布页」，[selectAsset] 恒 null 使
-/// 上层走 `_showFallbackDialog`。CI 产出的 `hibiki-<v>-ios.ipa` 供用户手动侧载。
+/// 合规边界便于将来上架）。永远只「检查版本→前往分发渠道」，[selectAsset] 恒 null 使
+/// 上层走 `_showFallbackDialog`。
+///
+/// 「分发渠道」不是一条：TestFlight 装的包只能从 TestFlight 更新（TestFlight 本身就
+/// 会自动更新，这里只是给用户一个手动入口），将来上架后 App Store 装的包只能从
+/// App Store 更新，而 GitHub Release 里那个未签名 `fushi-<v>-ios.ipa` 只对 AltStore /
+/// Sideloadly 侧载用户有意义。三者由**安装来源**（系统写的收据文件，见
+/// [IosInstallSource]）决定，不由更新通道决定——按通道猜会把侧载用户送进 TestFlight
+/// （他们进不去）、把 TestFlight 用户送去下一个装不上的 ipa。
 class IosUpdater extends PlatformUpdater {
   @override
   bool get supportsUpdateCheck => true;
@@ -395,6 +415,12 @@ class IosUpdater extends PlatformUpdater {
     UpdateChannel channel = UpdateChannel.stable,
   }) async =>
       null;
+
+  @override
+  Future<UpdateLanding> resolveDownloadLanding(String releaseHtmlUrl) async {
+    final IosInstallSource source = await IosInstallSourceResolver.resolve();
+    return iosUpdateLanding(source: source, releaseHtmlUrl: releaseHtmlUrl);
+  }
 
   @override
   Future<void> apply(File file, String version) async {
@@ -463,6 +489,12 @@ List<String> windowsInstallerArgs(
 
 const String kWindowsUpdateLauncherExecutable = 'fushi_update_launcher.exe';
 
+/// 「改名让路」在安装目录里留下的 launcher 残留名（`fushi.iss` 的
+/// `MakeWayForRunningLauncher`）。它和 [kWindowsUpdateLauncherExecutable] 是**同一份
+/// 可执行映像**，只是换了个文件名，照样能拉起 Inno。
+const String kWindowsUpdateLauncherStaleExecutable =
+    'fushi_update_launcher.old.exe';
+
 String windowsUpdateLauncherPath({String? currentExecutablePath}) {
   final String executablePath =
       currentExecutablePath ?? Platform.resolvedExecutable;
@@ -472,11 +504,78 @@ String windowsUpdateLauncherPath({String? currentExecutablePath}) {
       '${Platform.pathSeparator}$kWindowsUpdateLauncherExecutable';
 }
 
+/// 解析一个**实际存在**的 launcher 可执行文件：先要原件，原件不在就用「改名让路」
+/// 留下的 `.old` 残留。两个都没有返回 null（调用方据此抛 not found）。
+///
+/// 根因（BUG-1831）：BUG-1786 的「改名让路」把 launcher 从「必然存在的文件」变成了
+/// **可以永久消失的文件**。改名之后 `fushi_update_launcher.exe` 这个路径是空的，Inno
+/// 往里写的是一个**新建**文件——而 Inno 的回滚会删除本次新建的文件（只有被覆盖的文件
+/// 才原样保留）。于是任何一次「改名让路后仍然回滚」的安装都留下：原件已改名成 `.old`、
+/// 新件被回滚删掉 ⇒ 安装目录里**再也没有** launcher。
+///
+/// 此后每一次应用内更新都在 `runAndExit` 抛 `update launcher not found`，安装器一次都
+/// 起不来（连 Inno 日志都不会产生），BUG-1786 备注里「下一次应用内更新即自愈」的通道
+/// 被自己切断，用户只剩手动跑安装包一条路。现场：`{app}` 下只有
+/// `fushi_update_launcher.old.exe`，`data\app.so` 停在四天前。
+///
+/// `.old` 与原件是同一份映像，拿它当 stage 源即可自愈：这次更新照常跑完，Inno 会把
+/// 新 launcher 装回原位。
+/// 让路残留名的公共前缀。让路目标一旦删不掉就退让到带序号的名字
+/// （`fushi_update_launcher.old1.exe`…），所以这里按**前缀**认而不是逐个名字硬编码
+/// ——两侧靠一份命名约定对齐，不靠一张必须同步维护的名字清单。
+const String kWindowsUpdateLauncherStalePrefix = 'fushi_update_launcher.old';
+
+String? resolveWindowsUpdateLauncherSource({
+  required String installedLauncherPath,
+  bool Function(String path)? exists,
+  List<String> Function(String dirPath)? listDirectory,
+}) {
+  final bool Function(String path) probe =
+      exists ?? (String path) => File(path).existsSync();
+  if (probe(installedLauncherPath)) return installedLauncherPath;
+
+  final int sep = _lastPathSeparatorIndex(installedLauncherPath);
+  if (sep < 0) return null;
+  final String dirPath = installedLauncherPath.substring(0, sep);
+  String joined(String name) => '$dirPath${Platform.pathSeparator}$name';
+
+  // 常态残留名优先，命中就不必列目录。
+  final String stalePath = joined(kWindowsUpdateLauncherStaleExecutable);
+  if (probe(stalePath)) return stalePath;
+
+  // 带序号的退让名（`.old1.exe`…）。名字不固定，只能扫。
+  final List<String> Function(String dirPath) list = listDirectory ??
+      (String path) {
+        try {
+          return Directory(path)
+              .listSync(followLinks: false)
+              .whereType<File>()
+              .map((File f) => f.path.substring(
+                  _lastPathSeparatorIndex(f.path) + 1))
+              .toList();
+        } catch (_) {
+          return const <String>[];
+        }
+      };
+  final List<String> candidates = list(dirPath)
+      .where((String name) =>
+          name.toLowerCase().startsWith(kWindowsUpdateLauncherStalePrefix) &&
+          name.toLowerCase().endsWith('.exe'))
+      .toList()
+    ..sort();
+  for (final String name in candidates) {
+    final String path = joined(name);
+    if (probe(path)) return path;
+  }
+  return null;
+}
+
 List<String> windowsUpdateLauncherArgs({
   required String markerPath,
   required int parentProcessId,
   required String installerPath,
   required List<String> installerArgs,
+  String? appExecutablePath,
 }) =>
     <String>[
       '--marker',
@@ -485,9 +584,68 @@ List<String> windowsUpdateLauncherArgs({
       '$parentProcessId',
       '--installer',
       installerPath,
+      // BUG-1786：launcher 从安装目录外的副本运行，副本同目录没有 fushi.exe，
+      // 「安装失败就把 app 拉回来」这一环必须拿到显式路径才不至于失效。
+      if (appExecutablePath != null && appExecutablePath.trim().isNotEmpty)
+        ...<String>['--app-exe', appExecutablePath],
       '--',
       ...installerArgs,
     ];
+
+/// launcher 副本的落地目录名（在 updates 目录下，**安装目录之外**）。
+const String kWindowsUpdateLauncherStageDirName = 'launcher';
+
+/// 把 `{app}\fushi_update_launcher.exe` 复制到 [stageRoot]（updates 目录）下的
+/// 副本并返回副本路径；任何一步失败都返回 null，由调用方回退到安装目录里的原件。
+///
+/// 根因（BUG-1786）：launcher 的职责是**在安装目录被整体重写期间存活**——等 app 退出、
+/// 拉起 Inno、等 Inno 结束、必要时把 app 拉回来。可它自己就住在那个被重写的目录里，
+/// 于是 Inno 复制到 `fushi_update_launcher.exe` 时必然撞上「文件正被使用」：
+/// `DeleteFile failed; code 5`，而 `/SUPPRESSMSGBOXES` 让 Inno 对这个「Abort/Retry/
+/// Ignore」弹窗**默认取 Abort**，整包回滚。排在它后面的 `data\app.so`（全部 Dart 代码）
+/// 与 `flutter_assets\` 一个都装不上，而字母序排在它之前的 `fushi.exe` 已经落地并被保留
+/// ——新 exe + 旧 Dart 代码的半更新态，且版本号（读自 exe 资源）显示为新版。
+///
+/// 修法与 BUG-1708 处理注入运行时同一原则：**谁要在安装期间存活，谁就不能住在安装目录里**。
+/// 从副本运行后安装目录里的 launcher 不再被任何进程持有，Inno 可以正常替换它。
+Future<String?> stageWindowsUpdateLauncher({
+  required String launcherPath,
+  required Directory stageRoot,
+  Future<void> Function(File source, String destination)? copyFile,
+}) async {
+  try {
+    final File source = File(launcherPath);
+    if (!await source.exists()) return null;
+    final Directory stageDir = Directory(
+      '${stageRoot.path}${Platform.pathSeparator}'
+      '$kWindowsUpdateLauncherStageDirName',
+    );
+    await stageDir.create(recursive: true);
+    // 上一轮的副本可能仍被那一次的 launcher 持有（它要活到 Inno 结束）。固定名写不进去
+    // 就退让到带序号的名字——绝不因为一个残留副本放弃整次更新。序号有界，避免无限重试。
+    for (int attempt = 0; attempt < 8; attempt++) {
+      final String name = attempt == 0
+          ? kWindowsUpdateLauncherExecutable
+          : 'fushi_update_launcher-$attempt.exe';
+      final String destination =
+          '${stageDir.path}${Platform.pathSeparator}$name';
+      try {
+        if (copyFile != null) {
+          await copyFile(source, destination);
+        } else {
+          await source.copy(destination);
+        }
+        return destination;
+      } catch (_) {
+        // 这个名字占用中，换下一个。
+      }
+    }
+    return null;
+  } catch (_) {
+    // best-effort：副本失败不阻断更新，回退到安装目录里的原件（退化成旧行为）。
+    return null;
+  }
+}
 
 String windowsInstallerLogPath(String installerPath) {
   final int sep = _lastPathSeparatorIndex(installerPath);
@@ -649,6 +807,19 @@ class WindowsInstaller {
       if (Platform.isWindows) {
         await ensureWindowsInstallTargetWritable(Directory(targetInstallDir));
       }
+      // 先收干净我们自己拉起的辅助子进程（ffmpeg/ffprobe 的可执行文件就在安装目录里），
+      // 再把安装交出去。它们不随 app 退出而死（Dart 的 Process.start 不绑 job object），
+      // 留一个还在转码的 ffmpeg 就足以让 Inno 在复制阶段 `DeleteFile failed; code 5`
+      // 并**整包回滚**——而那时 app 已经退出，用户只看到「关掉了没再打开」（BUG-1708）。
+      // 必须在启动 launcher 之前完成：launcher 等到本进程一退出就立刻拉起 Inno。
+      final int reaped = await HelperProcessRegistry.instance.terminateAll();
+      if (reaped > 0) {
+        ErrorLogService.instance.log(
+          'WindowsInstaller.reapHelpers',
+          'Terminated $reaped helper subprocess(es) before handing off to the '
+              'installer (they hold files inside $targetInstallDir).',
+        );
+      }
       if (Platform.isWindows || hasInjectedDiagnostics) {
         _throwIfWindowsInstallBlocked(diagnostics, innoLogPath);
       }
@@ -659,10 +830,47 @@ class WindowsInstaller {
         targetInstallDir: Platform.isWindows ? targetInstallDir : null,
       );
       final bool useDelayedLauncher = handoffMarkerFile != null;
+      final String installedLauncherPath = windowsUpdateLauncherPath(
+        currentExecutablePath: resolvedExecutablePath,
+      );
+      // BUG-1786：从安装目录**外**的副本运行 launcher。留在安装目录里运行等于自己占着
+      // 自己的文件，Inno 复制到它必然 code 5 → /SUPPRESSMSGBOXES 默认 Abort → 整包回滚，
+      // data\app.so（全部 Dart 代码）永远装不上。副本失败则退化成旧行为，不阻断更新。
+      // BUG-1831：原件可能已被「改名让路 + 本次安装回滚」的组合抹掉，安装目录里只剩
+      // `fushi_update_launcher.old.exe`。它是同一份映像，拿它接着走即可自愈；不接受
+      // 它就等于让这台机器永远发不出更新（安装器一次都起不来，连日志都不会有）。
+      final String launcherSourcePath = resolveWindowsUpdateLauncherSource(
+            installedLauncherPath: installedLauncherPath,
+          ) ??
+          installedLauncherPath;
+      if (useDelayedLauncher && launcherSourcePath != installedLauncherPath) {
+        ErrorLogService.instance.log(
+          'WindowsInstaller.staleLauncher',
+          'Update launcher missing at $installedLauncherPath; falling back to '
+              'the rename-out-of-the-way leftover at $launcherSourcePath '
+              '(same image). This install will put the real one back.',
+        );
+      }
+      final String? stagedLauncherPath =
+          useDelayedLauncher && Platform.isWindows
+              ? await stageWindowsUpdateLauncher(
+                  launcherPath: launcherSourcePath,
+                  stageRoot: handoffMarkerFile.parent,
+                )
+              : null;
+      if (useDelayedLauncher) {
+        ErrorLogService.instance.log(
+          'WindowsInstaller.stageLauncher',
+          stagedLauncherPath != null
+              ? 'Running update launcher from a staged copy outside the '
+                  'install dir: $stagedLauncherPath'
+              : 'Staging the update launcher failed; falling back to the '
+                  'in-place copy at $installedLauncherPath '
+                  '(Inno may abort on it).',
+        );
+      }
       final String executable = useDelayedLauncher
-          ? windowsUpdateLauncherPath(
-              currentExecutablePath: resolvedExecutablePath,
-            )
+          ? (stagedLauncherPath ?? launcherSourcePath)
           : installerPath;
       final List<String> launchArgs = useDelayedLauncher
           ? windowsUpdateLauncherArgs(
@@ -670,6 +878,7 @@ class WindowsInstaller {
               parentProcessId: pid,
               installerPath: installerPath,
               installerArgs: args,
+              appExecutablePath: resolvedExecutablePath,
             )
           : args;
       if (useDelayedLauncher &&
@@ -748,8 +957,8 @@ class WindowsInstaller {
   /// `msedgewebview2.exe`。即安装器本就能自己关掉其他 Hibiki 实例并解开 mutex 死锁。旧的
   /// Dart 预检却在**启动安装器之前**就因「检测到其他 hibiki.exe」硬 throw，用户永远走不到
   /// 这段自愈，只能被迫手动关进程——是过度防御。故这里改为：安装器杀得掉的占用进程只记警告、
-  /// 继续启动安装器交给 `.iss` 处理；只有安装器杀不掉的真外部锁（非 hibiki/WebView2 的进程
-  /// 按 image 名占用目标目录里的 `libmpv-2.dll`）才保留硬中止。
+  /// 继续启动安装器交给 `.iss` 处理；只有安装器**确实**处置不掉的外部锁（镜像不在安装目录
+  /// 树内、也不是 Fushi/WebView2 的进程，见 [_installerCanClose]）才保留硬中止。
   static void _throwIfWindowsInstallBlocked(
     WindowsInstallerDiagnostics diagnostics,
     String innoLogPath,
@@ -760,7 +969,10 @@ class WindowsInstaller {
 
     final String target = diagnostics.targetInstallDir ?? 'unknown';
     final List<WindowsProcessInfo> externalLocks = blockers
-        .where((WindowsProcessInfo process) => !_installerCanClose(process))
+        .where((WindowsProcessInfo process) => !_installerCanClose(
+              process,
+              targetInstallDir: diagnostics.targetInstallDir,
+            ))
         .toList(growable: false);
     if (externalLocks.isEmpty) {
       // 只剩安装器能强杀的 hibiki.exe / WebView2 实例：不中止，记警告后继续启动安装器，
@@ -776,24 +988,91 @@ class WindowsInstaller {
       return;
     }
 
-    throw UpdateInstallerException(
-      'Fushi cannot install while a non-Fushi process is using libmpv in the '
+    // 外部锁分两类，**成因与处置都不同**，所以报错必须分开说（BUG-2055）：
+    // ① [WindowsInstallerDiagnostics.galHookModuleHolders] —— 被 Fushi 自己的语音捕获
+    //   组件注入的程序（游戏，或任何被附着过的窗口）。它持有 `voice_hook/<arch>/` 下的
+    //   hook DLL 直到自身退出，这不是「别的软件在捣乱」，而是 Fushi 注进去的。旧文案把
+    //   所有占用者统称 `non-Fushi process`，等于把成因指向一个与 Fushi 无关的第三方程序 ——
+    //   用户照着这句话去找占用者，永远找不到自己正在玩的那个游戏为什么算「非 Fushi 程序」。
+    //   手动运行安装器那条路径（`fushi.iss` 的 `LockedGalHookComponent` 提示）早就把成因
+    //   讲清楚了；应用内更新是同一件事，不该比它更差。
+    // ② 其余外部锁 —— 真正与 Fushi 无关的进程占住了安装目录里的文件。
+    final Set<int> galHookHolderPids = diagnostics.galHookModuleHolders
+        .map((WindowsProcessInfo process) => process.pid)
+        .toSet();
+    final List<WindowsProcessInfo> hookHolders = externalLocks
+        .where((WindowsProcessInfo process) =>
+            galHookHolderPids.contains(process.pid))
+        .toList(growable: false);
+    final List<WindowsProcessInfo> otherLocks = externalLocks
+        .where((WindowsProcessInfo process) =>
+            !galHookHolderPids.contains(process.pid))
+        .toList(growable: false);
+
+    final StringBuffer message = StringBuffer(
+      'Fushi cannot install while another process is using files in the '
       'target directory (the installer cannot close it automatically). '
-      'Target: $target. Holders: ${_summarizeBlockingProcesses(externalLocks)}. '
-      'Close the listed process manually, then retry the installer. '
-      'Installer log: $innoLogPath',
+      'Target: $target. ',
     );
+    if (hookHolders.isNotEmpty) {
+      message.write(
+        "Fushi's voice capture component is injected into these programs and "
+        'stays loaded until they exit, so the installer cannot replace it: '
+        '${_summarizeBlockingProcesses(hookHolders)}. '
+        'Save your progress and close them, then retry the installer. ',
+      );
+    }
+    if (otherLocks.isNotEmpty) {
+      message.write(
+        'These non-Fushi processes are holding files in the target directory: '
+        '${_summarizeBlockingProcesses(otherLocks)}. '
+        'Close them manually, then retry the installer. ',
+      );
+    }
+    message.write('Installer log: $innoLogPath');
+    throw UpdateInstallerException(message.toString());
   }
 
-  /// 该占用进程是否能被 `hibiki.iss` 按 image 名强制结束（连同其子进程树）：
-  /// 只有 `hibiki.exe`（含 popup/floating 等同 exe 子入口与其子进程树）和 WebView2 的
-  /// `msedgewebview2.exe` 是安装器托管得到的。其余 image 名视为安装器杀不掉的真外部锁。
-  static bool _installerCanClose(WindowsProcessInfo process) {
+  /// 该占用进程是否由安装器自己处置得掉。判据与 `fushi.iss` 的**实际能力**对齐，而不是
+  /// 一张写死的 image 名清单：
+  ///
+  /// - `PrepareToInstall` 第一步就是 `KillProcessesUnderDir({app})`，它按**镜像路径**
+  ///   强制结束主模块位于安装目录树内的**任何**进程；唯一被显式跳过的
+  ///   `fushi_update_launcher.exe` 由 `MakeWayForRunningLauncher` 改名让路，同样不需要
+  ///   用户插手。
+  /// - `InitializeSetup` 另外按 image 名关掉 `fushi.exe` / `hibiki.exe` 和 WebView2 的
+  ///   `msedgewebview2.exe`（WebView2 的镜像不在安装目录里，只能按名字认）。
+  ///
+  /// 旧实现只认那三个名字，于是安装目录里的其它自有子进程 —— 以 `--hold` 常驻的
+  /// `voice_hook/<arch>/fushi_voice_injector.exe`、`unity_audio_runtime/` 下的提取器 ——
+  /// 会被判成「安装器杀不掉的外部锁」，在**交接给安装器之前**硬中止更新，而安装器本来
+  /// 一步就能清掉它们。判据按名字写死，每新增一个自有子进程就得补一条特例；改问「镜像
+  /// 是否在安装目录树内」，这类特例整类消失（BUG-2055）。
+  static bool _installerCanClose(
+    WindowsProcessInfo process, {
+    required String? targetInstallDir,
+  }) {
+    if (_processImageIsUnderDirectory(process, targetInstallDir)) return true;
     final String name = _windowsImageName(process);
     // 过渡期两个 exe 名都认（安装器 fushi.iss 会同时结束两者）。
     return name == 'fushi.exe' ||
         name == 'hibiki.exe' ||
         name == 'msedgewebview2.exe';
+  }
+
+  /// 进程主模块是否位于 [directory] 目录**树内**。
+  ///
+  /// 必须比到路径分隔符：裸 `startsWith` 会让 `D:\APP\Fushi2\x.exe` 落进
+  /// `D:\APP\Fushi`，把一个真外部锁误判成安装器处理得掉 —— 更新照常交接，随后在复制
+  /// 阶段失败，而那次失败在 `/VERYSILENT` 下是静默的（BUG-1675 的失败形状）。
+  static bool _processImageIsUnderDirectory(
+    WindowsProcessInfo process,
+    String? directory,
+  ) {
+    final String dir = _normalizeWindowsPath(directory ?? '');
+    final String path = _normalizeWindowsPath(process.path ?? '');
+    if (dir.isEmpty || path.isEmpty) return false;
+    return path.startsWith('$dir\\');
   }
 
   /// 取进程的 Windows image 名（小写）：优先 [WindowsProcessInfo.name]，缺失时退回
@@ -831,6 +1110,12 @@ class WindowsInstaller {
     // 全机同名 DLL 结果收窄回来，同时也把「exe 在别处却持有我们这份 libmpv」
     // 的外部进程一并漏掉了。特殊情况就此消失。
     for (final WindowsProcessInfo process in diagnostics.libmpvModuleHolders) {
+      blockers[process.pid] = process;
+    }
+    // galgame helper 组件的占用者（正在被 hook 的游戏 + `--hold` 的 injector host）。
+    // 与 libmpv 同一条道理：Inno 换不掉被占用的文件，而静默安装参数会把这次失败吞掉，
+    // 落地成「新本体 + 旧 helper」，下次开游戏就是 protocol_mismatch（BUG-1675）。
+    for (final WindowsProcessInfo process in diagnostics.galHookModuleHolders) {
       blockers[process.pid] = process;
     }
     return blockers.values.toList(growable: false);
@@ -885,6 +1170,11 @@ Future<WindowsInstallerDiagnostics> collectWindowsInstallerDiagnostics({
           .where((WindowsProcessInfo process) =>
               currentProcessId == null || process.pid != currentProcessId)
           .toList(growable: false);
+  final List<WindowsProcessInfo> galHookModuleHolders =
+      (await queryWindowsGalHookModuleHolders(targetInstallDir))
+          .where((WindowsProcessInfo process) =>
+              currentProcessId == null || process.pid != currentProcessId)
+          .toList(growable: false);
 
   return WindowsInstallerDiagnostics(
     currentExecutablePath: currentExecutablePath,
@@ -893,6 +1183,7 @@ Future<WindowsInstallerDiagnostics> collectWindowsInstallerDiagnostics({
     detectedInstallLocations: detectedInstallLocations,
     runningFushiProcesses: runningFushiProcesses,
     libmpvModuleHolders: libmpvModuleHolders,
+    galHookModuleHolders: galHookModuleHolders,
     pathMismatchWarning: windowsInstallPathMismatchWarning(
       targetInstallDir: targetInstallDir,
       locations: detectedInstallLocations,
@@ -1061,6 +1352,62 @@ Future<List<WindowsProcessInfo>> queryWindowsLibmpvModuleHolders(
               path: entry.path,
             ))
         .toList(growable: false);
+  } catch (_) {
+    return const <WindowsProcessInfo>[];
+  }
+}
+
+/// 目标安装目录里的 galgame helper 组件（`voice_hook/<arch>/` 下的 exe/dll）现在被谁占着。
+///
+/// 与 [queryWindowsLibmpvModuleHolders] 同一个机制、同一个理由，但占用者不是本机的
+/// 播放器进程而是**用户正在玩的游戏**：
+/// - `fushi_voice_hook.dll` 被注入游戏进程后由该进程持有，直到游戏退出；
+/// - `fushi_voice_injector.exe` 以 `--hold` 跑 host 模式维持共享内存，同样活到游戏退出
+///   （injector_main.cpp 用法段）；
+/// - `LunaHook*.dll` / `LunaHost*.dll` 由上面两者加载。
+///
+/// 🔴 这就是 protocol_mismatch 的根因（BUG-1675）：用户在游戏还开着时更新 Fushi，Inno
+/// 的 `[Files]` 换不掉这些被锁的文件，而应用内更新用的是
+/// `/VERYSILENT /SUPPRESSMSGBOXES`（见 [windowsSilentInstallArgs]），**这次失败是静默的**。
+/// 落地结果是新 `fushi.exe`（读取端编译进当前 `kSharedVersion`）配旧 injector（写出旧版本号
+/// 的共享内存段），下次启动游戏就是 `voice_hook open protocol_mismatch shm=13/want 15`。
+/// 那条提示叫用户「关掉游戏重开」——对这个场景永远无效，因为坏的是磁盘上的文件。
+///
+/// 把这些文件纳入占用检测后，[WindowsInstaller._throwIfWindowsInstallBlocked] 会在**交接给
+/// 安装器之前**硬中止并指名占用进程，坏状态从此不再产生。
+///
+/// 只查 `.exe` / `.dll`：同目录的 `.txt` / `.tpk` / `COPYING` 不会被任何进程加载，查了也只是
+/// 白跑 Restart Manager 会话。目录不存在（未装 helper / 非 Windows 包）→ 空列表。
+Future<List<WindowsProcessInfo>> queryWindowsGalHookModuleHolders(
+  String targetInstallDir,
+) async {
+  if (!Platform.isWindows || targetInstallDir.isEmpty) {
+    return const <WindowsProcessInfo>[];
+  }
+  try {
+    final Directory root = Directory(
+      '$targetInstallDir${Platform.pathSeparator}'
+      '$kGalgameHelperInstallDirectoryName',
+    );
+    if (!root.existsSync()) return const <WindowsProcessInfo>[];
+    // 按 pid 去重：一个游戏进程通常同时持有 hook DLL 和它加载的 LunaHook DLL，
+    // 逐文件查会把同一个占用者报好几遍。
+    final Map<int, WindowsProcessInfo> holders = <int, WindowsProcessInfo>{};
+    for (final FileSystemEntity entity
+        in root.listSync(recursive: true, followLinks: false)) {
+      if (entity is! File) continue;
+      final String lower = entity.path.toLowerCase();
+      if (!lower.endsWith('.dll') && !lower.endsWith('.exe')) continue;
+      for (final WindowsProcessEntry entry
+          in windowsProcessesHoldingFile(entity.path)) {
+        holders[entry.pid] = WindowsProcessInfo(
+          pid: entry.pid,
+          name: entry.name,
+          path: entry.path,
+        );
+      }
+    }
+    return holders.values.toList(growable: false);
   } catch (_) {
     return const <WindowsProcessInfo>[];
   }

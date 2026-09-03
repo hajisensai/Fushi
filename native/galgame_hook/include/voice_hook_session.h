@@ -30,7 +30,7 @@ inline bool AdvanceUnityEventCursorIfCommitted(
 inline MappingSessionAction InspectMappingSession(
     bool already_exists, const SharedHeader* header,
     uint32_t expected_ring_capacity, uint32_t expected_text_offset,
-    uint32_t expected_clip_offset) {
+    uint32_t expected_clip_offset, bool resident_hook_matches_request) {
   if (!already_exists) {
     return MappingSessionAction::kInitializeFresh;
   }
@@ -39,7 +39,7 @@ inline MappingSessionAction InspectMappingSession(
       header->ring_capacity != expected_ring_capacity ||
       header->text_region_offset != expected_text_offset ||
       header->clip_region_offset != expected_clip_offset ||
-      header->hooked == 0) {
+      header->hooked == 0 || !resident_hook_matches_request) {
     return MappingSessionAction::kRejectStale;
   }
   return MappingSessionAction::kReuseReady;

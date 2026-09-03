@@ -98,7 +98,7 @@ class _DebugLogPageState extends State<DebugLogPage> {
       ],
       body: FushiLogPanel(
         log: _log,
-        shareAction: (text) => Share.share(text),
+        shareAction: (text) => FushiShare.shareText(text),
       ),
     );
   }

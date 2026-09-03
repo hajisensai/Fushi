@@ -130,6 +130,8 @@ String syncActivityLine(SyncActivity a) {
       return (title == null || title.isEmpty)
           ? t.sync_progress_book
           : t.sync_progress_book_titled(title: title);
+    case SyncActivityKind.assetTransfer:
+      return t.sync_progress_asset_transfer;
   }
 }
 
@@ -174,6 +176,69 @@ Future<ManualSyncOutcome> runManualSyncWithFeedback({
   bool announceNotConfigured = true,
   bool announceBusy = true,
   bool announceCompleted = true,
+}) =>
+    _runWithSyncFeedback(
+      context: context,
+      appModel: appModel,
+      announceNotConfigured: announceNotConfigured,
+      announceBusy: announceBusy,
+      announceCompleted: announceCompleted,
+      run: () => runManualFullSync(
+        db: appModel.database,
+        dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
+        audioDatabaseRoot:
+            Directory('${appModel.appDirectory.path}/audiobooks'),
+        tempDir: appModel.temporaryDirectory,
+        localAudioEntries: appModel.localAudioDbs,
+        onLocalAudioImported: appModel.importSyncedLocalAudioDb,
+        onPostRun: appModel.refreshAfterSyncRun,
+      ),
+    );
+
+/// 设置页「词典 / 本地音频数据库」两行的显式上传 / 下载动作在 UI 层的入口。
+///
+/// 与 [runManualSyncWithFeedback] 共用同一个反馈外壳 —— 它跑的是
+/// [runManualAssetTransfer]（只一类资产、一个方向），其余（busy guard、三种 outcome
+/// 的提示、逐通道冲突呈现、鉴权失效登出）逐字相同，不该有第二份实现。
+Future<ManualSyncOutcome> runAssetTransferWithFeedback({
+  required BuildContext context,
+  required AppModel appModel,
+  required SyncAssetKind kind,
+  required SyncAssetDirection direction,
+}) =>
+    _runWithSyncFeedback(
+      context: context,
+      appModel: appModel,
+      announceNotConfigured: true,
+      announceBusy: true,
+      announceCompleted: true,
+      run: () => runManualAssetTransfer(
+        db: appModel.database,
+        kind: kind,
+        direction: direction,
+        dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
+        audioDatabaseRoot:
+            Directory('${appModel.appDirectory.path}/audiobooks'),
+        tempDir: appModel.temporaryDirectory,
+        localAudioEntries: appModel.localAudioDbs,
+        onLocalAudioImported: appModel.importSyncedLocalAudioDb,
+        onPostRun: appModel.refreshAfterSyncRun,
+      ),
+    );
+
+/// 「跑一轮同步 + 统一反馈」的共享外壳。[run] 决定这一轮**跑的是什么**（全量 sweep
+/// 还是一次资产传输），其余全部相同。
+///
+/// 抽出来是因为这套反馈不能被复制成两份：冲突必须按各自通道的后端呈现、
+/// [SyncAuthError] 必须登出以让登录按钮回来，任何一份漏掉一步就是静默写错端或卡在
+/// 一个无效会话里。
+Future<ManualSyncOutcome> _runWithSyncFeedback({
+  required BuildContext context,
+  required AppModel appModel,
+  required Future<ManualSyncResult> Function() run,
+  required bool announceNotConfigured,
+  required bool announceBusy,
+  required bool announceCompleted,
 }) async {
   // 重入 / 已在飞 guard：设置页整行是焦点目标（Activate 也会触发），且后台/开机
   // 自动同步可能已经持有 sweep 锁。两种情况下第二次触发都是 no-op —— 全局
@@ -183,15 +248,7 @@ Future<ManualSyncOutcome> runManualSyncWithFeedback({
     return ManualSyncOutcome.busy;
   }
   try {
-    final ManualSyncResult result = await runManualFullSync(
-      db: appModel.database,
-      dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
-      audioDatabaseRoot: Directory('${appModel.appDirectory.path}/audiobooks'),
-      tempDir: appModel.temporaryDirectory,
-      localAudioEntries: appModel.localAudioDbs,
-      onLocalAudioImported: appModel.importSyncedLocalAudioDb,
-      onPostRun: appModel.refreshAfterSyncRun,
-    );
+    final ManualSyncResult result = await run();
     if (!context.mounted) return result.outcome;
     switch (result.outcome) {
       case ManualSyncOutcome.notConfigured:

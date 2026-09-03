@@ -38,7 +38,6 @@ void main() {
           syncContent: false,
           syncAudioBookFiles: false,
           syncDictionary: false,
-          syncLocalAudio: false,
         );
 
     setUp(() async {

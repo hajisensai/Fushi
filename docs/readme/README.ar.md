@@ -10,120 +10,13 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | **العربية**
 
-[![دليل المستخدم](https://img.shields.io/badge/%F0%9F%93%96%20%D8%AF%D9%84%D9%8A%D9%84%20%D8%A7%D9%84%D9%85%D8%B3%D8%AA%D8%AE%D8%AF%D9%85-0969DA?style=for-the-badge)](../user-guide.ar.md)
+[![fushi.moe](https://img.shields.io/badge/%F0%9F%8C%90%20fushi.moe-0969DA?style=for-the-badge)](https://fushi.moe/)
 
-**بدون إعداد معقّد** — استورد القواميس والصوت المُوصى بها في خطوة واحدة.
-
-[![تنزيل أحدث إصدار](https://img.shields.io/badge/%E2%AC%87%20%D8%AA%D9%86%D8%B2%D9%8A%D9%84%20%D8%A3%D8%AD%D8%AF%D8%AB%20%D8%A5%D8%B5%D8%AF%D8%A7%D8%B1-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
+[![تنزيل أحدث إصدار](https://img.shields.io/badge/%E2%AC%87%20%D8%AA%D9%86%D8%B2%D9%8A%D9%84%20%D8%A3%D8%AD%D8%AF%D8%AB%20%D8%A5%D8%B5%D8%AF%D8%A7%D8%B1-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![انضم إلى Discord](https://img.shields.io/badge/%D8%A7%D9%86%D8%B6%D9%85%20%D8%A5%D9%84%D9%89%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
-> **شاهِد ما تحبّ مشاهدته، وستتعلّم اللغة في الطريق.**
-
-يحوّل Fushi الروايات التي تقرؤها، والمسلسلات التي تتابعها، والكتب الصوتية التي تستمع إليها إلى مُدخَلات لغتك — انقر على أي كلمة لا تعرفها للبحث عنها، ثم حوّلها بنقرة واحدة إلى بطاقة Anki مع سياقها الأصلي. لا يفرض عليك حفظ قائمة كلمات مُعدّة مسبقًا، بل يساعدك فقط على التقاط الكلمات التي **تقرؤها وتسمعها فعلًا**.
-
-أكثر الطرق فاعلية لتعلّم لغة هي التعرّض بكثرة لمحتوى حقيقي، لا حفظ كلمات منعزلة من كتاب مفردات. لكن "الانغماس" كانت له دائمًا مشكلتان: البحث عن كلمة يقطع تدفّق التركيز، وتنساها بمجرد أن تُشيح بنظرك. يغلق Fushi هذه الحلقة:
-
-📖 **اقرأ**: انقر على كلمة في قارئ EPUB للبحث عنها، دون مغادرة الصفحة الحالية.<br>
-🎧 **استمع**: تُبرز الكتب الصوتية النص جملةً جملةً وتقلّب الصفحات تلقائيًا.<br>
-🎬 **شاهِد**: ابحث عن الكلمات وأنشئ البطاقات مباشرةً من ترجمات الفيديو — متابعة مسلسلٍ *هي* مُدخَل بحدّ ذاتها.<br>
-🃏 **ترسيخ**: أرسِل أي كلمة بحثت عنها، في أي موقف، مباشرةً إلى Anki، وراجِع فقط الكلمات التي صادفتها فعلًا.
-
-تتشارك جميع المواقف القواميس والإحصاءات وسير المراجعة نفسها. يصلح لأي لغة (اليابانية، الإنجليزية، …)، وهو مناسب بشكل خاص لمتعلّمي الانغماس الذين يؤمنون بـ**كثرة المُدخَلات + حفظ البطاقات التي تصنعها بنفسك فقط**. متاح لنظامي Android وWindows (يُخطَّط لدعم iOS وmacOS).
-
-<table>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="رفّ الكتب" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="مكتبة الفيديو" width="100%"></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="القراءة العمودية على سطح المكتب مع نافذة بحث منبثقة" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="البحث في الفيديو (نوافذ منبثقة متداخلة)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="البحث في الفيديو (قائمة الترجمات)" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="البحث بتحديد النص خارج التطبيق (الهاتف)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="البحث بتحديد النص خارج التطبيق (سطح المكتب)" width="100%"></td>
-  </tr>
-</table>
-
-**عرض توضيحي لإنشاء بطاقات Anki بنقرة واحدة**
-
-<!-- GitHub only renders <video> tags whose src is a user-attachments uuid URL
-     (uploaded via the web editor); raw repo links stay blank. Inline GIF is the
-     conventional workaround. To restore a real inline player, upload the mp4 in
-     the GitHub web editor and replace the img below with the generated
-     https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
-
-<sub>[شاهد عرض إنشاء البطاقات بنقرة واحدة ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
-## الميزات
-
-### رفّ الكتب
-
-- استيراد ملفات EPUB فُرادى أو دفعةً واحدة أو بشكل متكرر حسب المجلد؛ واطّلع على تقدّم القراءة على الرفّ.
-- نظّم الكتب باستخدام رفوف مخصّصة، وتصفية الوسوم، والسحب لإعادة الترتيب.
-- اسحب الملفات وأفلِتها لاستيراد الكتب أو الترجمات أو مقاطع الفيديو (سطح المكتب).
-- ربط ملفات الترجمة / الصوت ذات الاسم نفسه تلقائيًا عند الاستيراد.
-
-### القراءة
-
-- اقرأ بتخطيط عمودي أو أفقي؛ وبدّل بين وضع الصفحات ووضع التمرير المستمر.
-- خصّص السمات (فاتح / داكن / أسود خالص / مخصّص)، والخطوط، وتباعد الفقرات، وعناصر تحكّم القارئ.
-- تعليقات Furigana (ふりがな).
-- مقياس واجهة قابل للتعديل؛ تتبع عناصر تحكّم الشريط السفلي المقياس.
-- ملفات تعريف متعدّدة المستخدمين (Profile)، تتبدّل تلقائيًا لكل كتاب.
-
-### البحث عن الكلمات
-
-- استورد قواميس [Yomitan](https://github.com/yomidevs/yomitan) (المعروف سابقًا باسم Yomichan)، وABBYY Lingvo (DSL)، وMDict (MDX)، وMigaku.
-- انقر على النص في القارئ للبحث عن الكلمات، أو ابحث في صفحة القاموس، أو شارك نصًّا من تطبيقات أخرى.
-- إزالة التصريف تشمل **جميع لغات جداول تحويل Yomitan** + تطبيع النص قبل البحث (حالة الأحرف / علامات التشكيل / حركات العربية)، مدفوعةً بنقاط الترميز (code points) دون تبديل اللغة.
-- انقر على الكلمات داخل التعريفات للبحث المتكرر (نوافذ منبثقة متداخلة).
-- استعلامات متوازية على قواميس متعدّدة، وأولوية المصادر الفرعية وتبديلها، وتعليقات نبرة النطق (pitch-accent) والتكرار.
-- صوت الكلمات عبر الإنترنت ومحليًّا.
-- حقن CSS مخصّص.
-
-### الإبرازات والإحصاءات
-
-- أضِف إبرازات بخمسة ألوان أثناء القراءة؛ وانتقل إلى أي إبراز في أي وقت.
-- إحصاءات القراءة: عدد الأحرف المقروءة، والمدة، وسرعة القراءة — تُعرض في الوقت الفعلي أثناء القراءة.
-- إحصاءات الفيديو: مدة المشاهدة، والبطاقات المُنشأة، والمفضّلات.
-
-### إنشاء بطاقات Anki
-
-- أنشِئ البطاقات عبر [AnkiDroid](https://github.com/ankidroid/Anki-Android) أو AnkiConnect.
-- نوع ملاحظات [Lapis](https://github.com/donkuri/lapis) مُضمَّن (vendored 1.7.0)؛ أنشِئ قوالب البطاقات والحُزَم داخل التطبيق بنقرة واحدة.
-- تعبئة تلقائية لجُمَل السياق؛ وتسجيل الصوت واقتصاص لقطات الشاشة.
-- ملفات تصدير متعدّدة (Profile) وربط حقول مخصّص.
-- الكلمات المفضّلة؛ تُحتسب البطاقات المُنشأة والمفضّلات في الإحصاءات.
-
-### مزامنة الكتب الصوتية (Sasayaki)
-
-- دعم ترجمات SRT / LRC / VTT / ASS؛ مع محاذاة نص الترجمة تلقائيًا مع متن EPUB.
-- إبراز الجُمَل المتتبِّع وتقليب الصفحات تلقائيًا أثناء التشغيل.
-- سرعة التشغيل، وإجراءات التنقّل في الموضع، وعناصر تحكّم وسائط النظام.
-- "تشغيل من هذه الجملة" مع استمرار سلس عبر الفصول.
-
-### البحث عن الكلمات من ترجمات الفيديو
-
-- مشغّل فيديو مُدمَج يعتمد على [media_kit](https://github.com/media-kit/media-kit) (نواة libmpv).
-- ترجمات مُضمَّنة (مسارات نصية + رسومية) وخارجية؛ واستيراد قوائم تشغيل .m3u8.
-- ابحث عن الكلمات وأنشِئ البطاقات مباشرةً من الترجمات أثناء التشغيل.
-- إدارة مكتبة الفيديو، وتصفية الوسوم، وتجميع السلاسل، والعمليات الجماعية.
-
-### مزامنة البيانات
-
-- سبعة خوادم مزامنة خلفية: Google Drive، وOneDrive، وDropbox، وWebDAV، وFTP، وSFTP، وFushi Interconnect.
-- مزامنة تقدّم القراءة، والإحصاءات، والكتب.
-
-### المزيد
-
-- **17 لغة للواجهة**، مُترجَمة بالكامل عبر جميع المنصّات.
-- شارك نصًّا من تطبيقات أخرى للبحث عن الكلمات مباشرةً.
 
 ## دعم المنصّات
 

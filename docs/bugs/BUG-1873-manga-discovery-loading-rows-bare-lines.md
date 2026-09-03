@@ -1,0 +1,7 @@
+## BUG-1873 · 漫画发现页来源热门行加载态是一排无标签的裸横线
+- **报告**：2026-08-25（用户：截图——漫画「发现」页顶部一个转圈，下面二十多条等距的深色横线铺满整页；「漫画的发现加载太抽象了」）
+- **真实性**：✅ 真 bug。`fushi/lib/src/media/manga/discovery/manga_discovery_page.dart:574`（修前）`MangaDiscoverySourceRow.build` 在 `_items == null` 时只渲染 `LinearProgressIndicator(minHeight: 2)`：每个已启用 Mihon 源一条（`mihonDiscoverySourceFeeds` 按 `enabledMangaOnlineSources` 逐源建行），启用二十几个源就是二十几条没有任何标签的 2px 横线，看不出那是什么、也看不出在等谁；加载完成后行头才出现，布局跳动。全局搜索页同场景早已是「源名行头 + 16px 行内转圈」（`manga_global_search_page.dart:238` `_statusTrailing`）。
+- **[x] ① 已修复** — `c953b9494d` 首修 + PR #1018 复审补完：加载中就渲染带源名的行头（`manga_discovery_source_popular(source:)`）+ 行内 16px `CircularProgressIndicator`，与全局搜索页同形；`items.isEmpty`/失败仍整行收起。
+  首修只抄了行头和转圈，**没抄占位高度**：`if (items != null) ...[SizedBox(height: 8), SizedBox(height: 214, ...)]` 让加载中完全不占那 222px，加载完成那一刻凭空插入，标题下方所有内容整体下移。它引为「同形」的参照 `manga_global_search_page.dart:281` 恰恰是 `case loading: return const SizedBox(height: 200);`（加载中就把高度占住）。现在 `SizedBox(height: 214, child: items == null ? null : …)` 无条件占位，行高在 pending → done 之间不变。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/discovery/manga_discovery_page_test.dart`：「来源热门行加载中显示带源名的行头，而不是一条裸横线」用 `Completer` 钉住 pending 态，断言行头文案 + 行内转圈存在、`LinearProgressIndicator` 不存在；完成后卡片出现、转圈消失。PR #1018 复审补**高度断言**：在 pending 态直接量 `MangaDiscoverySourceRow` 的行高，与 done 态比必须相等（原来的 `pumpAndSettle` 跳过中间帧，钉不住布局稳定性）。变异实测：`items == null` 时收起整行 → 红；把占位高度改回 0（即首修那种 `if (items != null)` 写法）→ 高度断言红，`Expected: <40.0> Actual: <262.0>`，正好是 222px 的跳动。
+- **备注**：二十几个源同时 `getPopular` 的请求量本条不动（是行首次挂载即加载的既有设计）；只修可读性。

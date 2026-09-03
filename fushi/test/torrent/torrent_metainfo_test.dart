@@ -42,6 +42,10 @@ void main() {
       expect(inspected.torrentId, inspected.v2InfoHash!.substring(0, 40));
     });
 
+    test('exposes info.name as suggestedName（手动添加任务预填标题用）', () {
+      expect(inspectTorrentMetainfo(_v1Metainfo()).suggestedName, 'test');
+    });
+
     test('rejects a declared hash mismatch', () {
       expect(
         () => inspectTorrentMetainfo(

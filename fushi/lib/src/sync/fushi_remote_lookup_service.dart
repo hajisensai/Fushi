@@ -119,10 +119,11 @@ abstract class FushiRemoteMiningService {
 
   // ── 互联 Lapis 客制化：主机端 note type 模板读写 ──────────────────────
   //
-  // 手机端（AnkiDroid / AnkiMobile）没有改已存在模板的平台 API；开启「制卡到
-  // 已配对设备」时卡片落在主机的 Anki 上，Lapis 样式客制化因此必须经互联作用
-  // 于**主机端**卡型。三个方法与 `BaseAnkiRepository` 同名同契约，实现方直接
-  // 委派主机本地 Anki 仓库。
+  // 开启「制卡到已配对设备」时卡片落在**主机**的 Anki 上，改客户端本机卡型
+  // 毫无意义——Lapis 样式客制化因此必须经互联作用于主机端卡型。三个方法与
+  // `BaseAnkiRepository` 同名同契约，实现方直接委派主机本地 Anki 仓库。
+  // （客户端本机能不能改模板是另一回事：AnkiDroid 经 Content Provider 可以，
+  // iOS 的 AnkiMobile 只有加卡的 URL scheme，不行。）
 
   /// 读主机端 [modelName] 的完整定义（字段/卡模板/CSS）。主机后端不支持模板
   /// 读写或模型不存在返回 `null`；主机 Anki 不可达照抛（调用方转成失败响应）。
@@ -136,6 +137,23 @@ abstract class FushiRemoteMiningService {
     String modelName,
     List<AnkiCardTemplate> templates,
   );
+
+  // ── 互联媒体存储优化：主机端 collection.media 字节级去重 ────────────────
+  //
+  // 卡片落在主机的 Anki 上，媒体副本也堆在**主机**的 collection.media 里；
+  // 客户端（手机）本机根本没有那个目录。去重因此与上面的模板读写同类：能力与
+  // 执行都在主机侧，客户端只发起、只看结果。
+
+  /// 主机端此刻能不能做媒体去重（= 主机本地 Anki 仓库的
+  /// `probeMediaMaintenance`）。主机 Anki 不可达照抛。
+  Future<bool> probeMediaMaintenance();
+
+  /// 在主机端跑一轮媒体去重。返回 `null` = 主机后端不支持。
+  ///
+  /// **不带进度与取消**：这条链路是一次 HTTP 往返，进度回调与取消判据都在
+  /// 主机进程内，跨不过来。客户端据此隐藏取消按钮（见
+  /// `AnkiMediaDedupRunner.supportsCancel`），绝不摆一个点了没用的按钮。
+  Future<AnkiMediaDedupReport?> runMediaDedup({bool dryRun});
 }
 
 /// 把一次查词结果写入 Hibiki 查词历史（无 UI 副作用）。浏览器扩展 record 用。

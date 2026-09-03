@@ -34,6 +34,19 @@ class SyncBackendError implements Exception {
   String toString() => 'SyncBackendError: $message';
 }
 
+/// BUG-1693：互联「所有候选地址都探不到已配对对端」的类型化错误。
+///
+/// 它既不是「网络故障」（本机网络多半好好的）也不该以裸英文上屏——最常见成因
+/// 是**对端设备没运行 Fushi**（app 关了 / 设备睡眠 / 不在同一网段）。此前抛的是
+/// 裸 `SyncBackendError('No reachable Fushi server address')`，错误文案层
+/// （sync_error_messages 的 `_friendlyClause`）任何分支都命不中 → 英文原文直接
+/// 进 SnackBar/对话框，用户误以为自己网络坏了。判据是类型，不是字符串
+/// （与 SyncAuthFailureKind 的教训同款）。
+class SyncPeerUnreachableError extends SyncBackendError {
+  SyncPeerUnreachableError()
+      : super('No reachable Fushi server address', isRetryable: true);
+}
+
 /// 鉴权类失败的三种**互不相同**的语义（BUG-1323 / BUG-1348）。
 ///
 /// 压成同一条 `SyncAuthError('Authentication failed')` 会把 [forbidden] 误报成

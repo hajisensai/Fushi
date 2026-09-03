@@ -3,7 +3,7 @@ import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
 
-/// Search-only adapter for the existing TMDB, AniList, and Bangumi metadata
+/// Search-only adapter for the existing TMDB and AniList metadata
 /// providers. Recommendation feeds remain a separate capability: the metadata
 /// contract has no trending/popular endpoint and this adapter does not invent
 /// one.

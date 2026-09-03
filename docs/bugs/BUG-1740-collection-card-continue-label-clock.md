@@ -1,0 +1,6 @@
+## BUG-1740 · 合集卡续播标签没用统一时钟与详情页差一集
+- **报告**：2026-08-19（用户：QQ 截图报「播放列表外显示继续看第八集。进去以后显示看第九集」）
+- **真实性**：✅ 真 bug。系列页合集卡的进度行 `_collectionProgressLabel`（`fushi/lib/src/pages/implementations/home_video_page.dart:4460-4493`，修前）自绕了一套选集实现：`latestPlayedSeriesIndex` + **只读本机统计时钟**（`_watchAtByUid`/`_legacyWatchAtByTitle`），完全忽略行级 `VideoBooks.lastPlayedAt`。而详情页 hero 的续播（`media_collection_detail_page.dart:458` → `continueMemberIndex`，`collection_continue.dart`）锚点走 `lastPlayedAt`。互联对端回灌的进度**只写行级 `lastPlayedAt`、不产生本机统计行**（BUG-1731 已在 `_seriesPlaybackStates`/`_slotPlaybackStates` 修过同一形状，`video_home_layout.dart:150-156` 的 `effectiveWatchedAtMs`），本函数是**修漏的调用点**：外侧锚点钉在本机最后播的那集 → 卡片说「继续看 第8集」，详情页锚到对端刚看完的第8集 → 推进显示第9集，两套答案。
+- **[x] ① 已修复** — `_collectionProgressLabel` 改与详情页同一实现：选集走 `continueMemberIndex` 纯函数，锚点时刻走 `_slotWatchedAtMs`（= `effectiveWatchedAtMs(本机统计, 行级 lastPlayedAt)` 取大，远端槽用 host 下发时刻），完成态与 `CollectionEpisodeSlot.completed` 同口径（远端成员认 host 的 completedAt）。删掉了自绕的 `latestPlayedSeriesIndex` + `nextEpisodeAfterLatestPlayed` 分支。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/home_video_collection_cover_card_test.dart`（BUG-1740 续播标签认行级 lastPlayedAt，与详情页同锚点：回头看更早集时锚点跟最近播放、锚点完成时推进下一集）。
+- **备注**：残余口径差（有意留待观察）：详情页 `_continueIndex` 只读行级 `lastPlayedAt` 不并本机统计（BUG-1731 备注称本机播放两处同写、近似相等）；若未来出现统计行新于行级时刻的库，详情页需同样换 `effectiveWatchedAtMs`。

@@ -6,6 +6,7 @@
 # thread + data races + a wild callback-token pointer), so the patches live in
 # windows/gamepad.{h,cpp} and windows/gamepads_windows_plugin.{h,cpp} below.
 name: gamepads_windows
+resolution: workspace
 publish_to: none
 description: Windows implementation of gamepads, a Flutter plugin to handle gamepad input across multiple platforms.
 version: 0.3.0+1
@@ -20,7 +21,7 @@ flutter:
         pluginClass: GamepadsWindowsPluginCApi
 
 environment:
-  sdk: ">=3.5.0 <4.0.0"
+  sdk: ">=3.8.0 <4.0.0"
   flutter: ">=3.24.0"
 
 dependencies:

@@ -26,11 +26,12 @@ import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 
 const String _torrentHash = '0123456789abcdef0123456789abcdef01234567';
-const VideoDownloadBackendIdentity _backendIdentity =
-    VideoDownloadBackendIdentity(
-  kind: 'embedded',
-  profileId: 'embedded',
-  fingerprint: 'integration-installation',
+const VideoDownloadBackendTarget _backendTarget = VideoDownloadBackendTarget(
+  identity: VideoDownloadBackendIdentity(
+    kind: 'embedded',
+    profileId: 'embedded',
+    fingerprint: 'integration-installation',
+  ),
   category: 'fushi-video',
 );
 
@@ -65,7 +66,6 @@ void registerVideoDiscoveryDownloadPipelineTests() {
         VideoMetadataProviderRegistry(<VideoMetadataProvider>[
       metadataProvider,
     ]);
-    final _NoImages noImages = _NoImages();
     late final VideoSourceScrapeCoordinator scrapeCoordinator;
     late final VideoDownloadPipelineService pipeline;
     try {
@@ -80,20 +80,15 @@ void registerVideoDiscoveryDownloadPipelineTests() {
       await database.upsertVideoSourceScrapeSettings(
         VideoSourceScrapeSettingsCompanion.insert(
           sourceId: Value<int>(sourceId),
-          providerOverride: const Value<String?>('anilist'),
           writeNfo: const Value<bool>(true),
           writeImages: const Value<bool>(false),
-          fanartEnabled: const Value<bool>(false),
           updatedAt: 1,
         ),
       );
       scrapeCoordinator = VideoSourceScrapeCoordinator(
         database: database,
-        config: const VideoSourceScrapeGlobalConfig(
-          primaryProvider: VideoMetadataProviderKind.anilist,
-        ),
+        config: const VideoSourceScrapeGlobalConfig(),
         registry: metadataRegistry,
-        fanartProvider: noImages,
       );
       final _MovingTorrentBackend backend = _MovingTorrentBackend(
         incomingRoot: incoming,
@@ -105,7 +100,7 @@ void registerVideoDiscoveryDownloadPipelineTests() {
         subtitleRegistry: subtitleRegistry,
         backendResolver: (_) async => VideoDownloadBackendBinding(
           backend: backend,
-          identity: _backendIdentity,
+          identity: _backendTarget.identity,
           pathMappings: <VideoDownloadPathMapping>[
             VideoDownloadPathMapping(
               remoteRoot: '/downloads',
@@ -136,7 +131,7 @@ void registerVideoDiscoveryDownloadPipelineTests() {
             anilistId: 100,
           ),
           resource: resourceProvider.candidate,
-          backendIdentity: _backendIdentity,
+          backendTarget: _backendTarget,
           targetSourceId: sourceId,
           subtitlePolicy: VideoDownloadSubtitlePolicy.required,
         ),
@@ -157,8 +152,8 @@ void registerVideoDiscoveryDownloadPipelineTests() {
       expect(resourceProvider.resolveCalls, 1);
       expect(subtitleProvider.searchCalls, 2);
       expect(subtitleProvider.downloadCalls, 2);
-      expect(metadataProvider.searchCalls, 0,
-          reason: '发现页身份必须走 confirmed lookup，禁止标题搜索');
+      expect(metadataProvider.searchCalls, 1,
+          reason: 'AniList 发现身份只作交叉引用，不得越过 AniDB 标题门控');
       expect(metadataProvider.fetchCalls, 1);
       expect(database.videoLibraryRefreshCalls, 2,
           reason: '导入后与元数据应用后各刷新一次当前视频库');
@@ -235,8 +230,16 @@ void registerVideoDiscoveryDownloadPipelineTests() {
           await database.getVideoMetadataProviderIdentities(
         workId: metadata!.id,
       );
-      expect(identities.single.provider, 'anilist');
-      expect(identities.single.externalId, '100');
+      expect(
+        identities.map(
+          (VideoMetadataProviderIdentityRow row) =>
+              '${row.provider}:${row.externalId}:${row.isPrimary}',
+        ),
+        unorderedEquals(<String>[
+          'anidb:100:true',
+          'anilist:100:false',
+        ]),
+      );
       final List<VideoSourceScrapeRunRow> scrapeRuns =
           await database.getVideoSourceScrapeRuns(sourceId: sourceId);
       expect(scrapeRuns.single.scope, 'work');
@@ -251,7 +254,6 @@ void registerVideoDiscoveryDownloadPipelineTests() {
       resourceRegistry.close();
       subtitleRegistry.close();
       metadataRegistry.close();
-      noImages.close();
       await database.close();
       if (await sandbox.exists()) await sandbox.delete(recursive: true);
     }
@@ -307,6 +309,12 @@ class _ResourceProvider implements VideoResourceProvider {
   @override
   String get id => 'nyaa';
 
+  /// 测试替身不限域：本用例断言的是「发现 → 下载」闭环，不该再依赖
+  /// 「id 恰好叫 nyaa」这种间接门控。
+  @override
+  Set<VideoDiscoveryCategory> get categories =>
+      const <VideoDiscoveryCategory>{};
+
   @override
   int get priority => 0;
 
@@ -347,6 +355,10 @@ class _SubtitleCandidate extends VideoSubtitleCandidate {
 }
 
 class _SubtitleProvider implements VideoSubtitleProvider {
+  /// 测试假实现：不发真请求，探测门控取值不影响被测行为。
+  @override
+  bool get allowsFreeProbeDownload => false;
+
   int searchCalls = 0;
   int downloadCalls = 0;
 
@@ -489,14 +501,14 @@ class _MetadataProvider implements VideoMetadataProvider {
   int fetchCalls = 0;
 
   VideoMetadataWork get work => VideoMetadataWork(
-        provider: VideoMetadataProviderKind.anilist,
+        provider: VideoMetadataProviderKind.anidb,
         kind: VideoMetadataMediaKind.tv,
         title: 'Show',
         year: 2026,
         seasonCount: 1,
         episodeCount: 2,
         ids: const <VideoMetadataId>[
-          VideoMetadataId(type: 'anilist', value: '100', isDefault: true),
+          VideoMetadataId(type: 'anidb', value: '100', isDefault: true),
         ],
         seasons: <VideoMetadataSeason>[
           VideoMetadataSeason(
@@ -509,7 +521,7 @@ class _MetadataProvider implements VideoMetadataProvider {
 
   @override
   VideoMetadataProviderKind get providerKind =>
-      VideoMetadataProviderKind.anilist;
+      VideoMetadataProviderKind.anidb;
 
   @override
   bool get isAvailable => true;
@@ -545,7 +557,7 @@ class _MetadataProvider implements VideoMetadataProvider {
           episodeNumber: 1,
           title: 'Pilot',
           ids: const <VideoMetadataId>[
-            VideoMetadataId(type: 'anilist', value: '100-1'),
+            VideoMetadataId(type: 'anidb', value: '100-1'),
           ],
         ),
         VideoMetadataEpisode(
@@ -553,22 +565,10 @@ class _MetadataProvider implements VideoMetadataProvider {
           episodeNumber: 2,
           title: 'Second',
           ids: const <VideoMetadataId>[
-            VideoMetadataId(type: 'anilist', value: '100-2'),
+            VideoMetadataId(type: 'anidb', value: '100-2'),
           ],
         ),
       ];
-
-  @override
-  void close() {}
-}
-
-class _NoImages implements VideoMetadataImageProvider {
-  @override
-  bool get isAvailable => false;
-
-  @override
-  Future<List<VideoMetadataImage>> fetchImages(VideoMetadataWork work) async =>
-      const <VideoMetadataImage>[];
 
   @override
   void close() {}

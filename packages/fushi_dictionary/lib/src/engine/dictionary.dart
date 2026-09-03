@@ -20,6 +20,7 @@ class Dictionary {
       ),
       hiddenLanguages: List<String>.from(map['hiddenLanguages'] ?? []),
       collapsedLanguages: List<String>.from(map['collapsedLanguages'] ?? []),
+      languageOverride: map['languageOverride'] as String?,
     );
   }
   Dictionary({
@@ -30,6 +31,7 @@ class Dictionary {
     this.metadata = const {},
     this.hiddenLanguages = const [],
     this.collapsedLanguages = const [],
+    this.languageOverride,
   });
 
   final String name;
@@ -39,6 +41,43 @@ class Dictionary {
   final Map<String, String> metadata;
   List<String> hiddenLanguages;
   List<String> collapsedLanguages;
+
+  /// 用户**手动指定**的词典内容语言（BCP-47，如 `ja` / `zh-Hant`）。null = 未指定。
+  ///
+  /// 与 [hiddenLanguages] / [collapsedLanguages] 同属「用户设置」：重导或在线更新
+  /// 词典时由 `preservedSettings` 继承，不会被包内 index.json 冲掉。这与
+  /// [sourceLanguage]（自动、随包刷新）是两个字段，不要合并。
+  String? languageOverride;
+
+  /// yomitan `index.json` 声明的**词头语言**（词典在解释哪种语言）。
+  /// 导入时由 `readSourceMetadataFromIndex` 落进 [metadata]；旧词典/本地包缺则空串。
+  String get sourceLanguage => metadata['sourceLanguage'] ?? '';
+
+  /// yomitan `index.json` 声明的**释义语言**（词典用哪种语言解释）。
+  ///
+  /// 日中词典就是 `sourceLanguage: ja` + `targetLanguage: zh`——这正是「词头日文、
+  /// 释义中文」这件事的结构性真值，不需要靠字符检测猜。
+  String get targetLanguage => metadata['targetLanguage'] ?? '';
+
+  /// 词头区（`.expression` / 振假名）实际该用的语言：用户指定优先，其次 index.json
+  /// 的 sourceLanguage，都没有则 null（调用方不猜，见 `content_font_chain.dart`）。
+  String? get effectiveSourceLanguage => _firstNonEmpty(
+        <String?>[languageOverride, sourceLanguage],
+      );
+
+  /// 释义区实际该用的语言：用户指定优先（用户指定的是「这本词典是什么语言的」，
+  /// 对单语词典而言词头和释义同语言），其次 index.json 的 targetLanguage。
+  String? get effectiveTargetLanguage => _firstNonEmpty(
+        <String?>[languageOverride, targetLanguage],
+      );
+
+  static String? _firstNonEmpty(List<String?> candidates) {
+    for (final String? candidate in candidates) {
+      final String trimmed = candidate?.trim() ?? '';
+      if (trimmed.isNotEmpty) return trimmed;
+    }
+    return null;
+  }
 
   bool isHidden(Language language) {
     return hiddenLanguages.contains(language.languageCode);
@@ -75,6 +114,7 @@ class Dictionary {
       'metadata': jsonEncode(metadata),
       'hiddenLanguages': hiddenLanguages,
       'collapsedLanguages': collapsedLanguages,
+      'languageOverride': languageOverride,
     });
   }
 

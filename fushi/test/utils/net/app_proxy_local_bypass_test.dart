@@ -64,9 +64,28 @@ const List<String> kPublicTargets = <String>[
 /// 运行时真的发生了赋值。
 class _CapturingHttpClient implements HttpClient {
   String Function(Uri)? captured;
+  Future<bool> Function(String, int, String, String?)? capturedAuth;
+  (String, int, String, HttpClientCredentials)? addedCredential;
 
   @override
   set findProxy(String Function(Uri url)? f) => captured = f;
+
+  @override
+  set authenticateProxy(
+          Future<bool> Function(String host, int port, String scheme,
+                  String? realm)?
+              f) =>
+      capturedAuth = f;
+
+  @override
+  void addProxyCredentials(
+    String host,
+    int port,
+    String realm,
+    HttpClientCredentials credentials,
+  ) {
+    addedCredential = (host, port, realm, credentials);
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
@@ -75,14 +94,23 @@ class _CapturingHttpClient implements HttpClient {
 
 void main() {
   final String Function() savedReader = appUserProxyReader;
+  final String Function() savedModeReader = appUserProxyModeReader;
+  final String Function() savedUsernameReader = appUserProxyUsernameReader;
+  final String Function() savedPasswordReader = appUserProxyPasswordReader;
 
   setUp(() {
     appUserProxyReader = () => '';
+    appUserProxyModeReader = () => kProxyModeUnresolved;
+    appUserProxyUsernameReader = () => '';
+    appUserProxyPasswordReader = () => '';
     resetAppProxyCacheForTest();
   });
 
   tearDown(() {
     appUserProxyReader = savedReader;
+    appUserProxyModeReader = savedModeReader;
+    appUserProxyUsernameReader = savedUsernameReader;
+    appUserProxyPasswordReader = savedPasswordReader;
     resetAppProxyCacheForTest();
   });
 
@@ -130,6 +158,26 @@ void main() {
   });
 
   group('resolveAppProxyDirective：闸门在解析层生效', () {
+    test('显式直连模式忽略环境与已填写的服务器', () {
+      appUserProxyReader = () => '1.2.3.4:8080';
+      appUserProxyModeReader = () => 'direct';
+      expect(
+        resolveAppProxyDirective(Uri.parse('https://github.com/x/y')),
+        'DIRECT',
+      );
+    });
+
+    test('手动模式缺少合法服务器时安全直连，不偷用系统代理', () {
+      appUserProxyReader = () => 'bad proxy';
+      appUserProxyModeReader = () => 'manual';
+      debugSetCachedSystemProxyEnv(const <String, String>{
+        'https_proxy': '9.9.9.9:9000',
+      });
+      expect(
+        resolveAppProxyDirective(Uri.parse('https://github.com/x/y')),
+        'DIRECT',
+      );
+    });
     test('用户手填代理下，本机 / 局域网仍直连，公网走代理', () {
       appUserProxyReader = () => '1.2.3.4:8080';
       for (final String url in kLocalOnlyTargets) {
@@ -175,6 +223,17 @@ void main() {
   });
 
   group('applyAppProxy（异步版）与同步版给出同一答案', () {
+    test('直连模式不会被调用方透传的存量手填地址重新覆盖', () async {
+      appUserProxyReader = () => '1.2.3.4:8080';
+      appUserProxyModeReader = () => 'direct';
+      final _CapturingHttpClient client = _CapturingHttpClient();
+      await applyAppProxy(client, userProxy: '1.2.3.4:8080');
+      expect(
+        client.captured!(Uri.parse('https://github.com/x/y')),
+        'DIRECT',
+      );
+    });
+
     test('手填代理分支：本机直连、公网走代理', () async {
       final _CapturingHttpClient client = _CapturingHttpClient();
       await applyAppProxy(client, userProxy: '1.2.3.4:8080');
@@ -196,6 +255,72 @@ void main() {
   });
 
   group('applyAppProxySync：装配点真的装上了出口', () {
+    test('手动代理认证只在 407 challenge 时注入凭据（BUG-1980）', () async {
+      appUserProxyReader = () => '1.2.3.4:8080';
+      appUserProxyModeReader = () => 'manual';
+      appUserProxyUsernameReader = () => 'alice';
+      appUserProxyPasswordReader = () => 'secret';
+      final _CapturingHttpClient client = _CapturingHttpClient();
+
+      applyAppProxySync(client);
+      expect(client.capturedAuth, isNotNull);
+      expect(await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'realm'),
+          isTrue);
+      expect(client.addedCredential?.$1, '1.2.3.4');
+      expect(client.addedCredential?.$2, 8080);
+      expect(client.addedCredential?.$3, 'realm');
+      expect(client.addedCredential?.$4, isA<HttpClientBasicCredentials>());
+    });
+
+    test('同一 challenge 只交付一次凭据——密码错时不得进无限重试环（BUG-1980）',
+        () async {
+      // dart:io 的 retry() 没有深度计数器：回调每次都 addProxyCredentials + 返回
+      // true 的话，密码错就会「407 → 移除已用凭据 → 再问回调 → 又加同一份 → retry」
+      // 无限打转，请求永不返回、用户只看到转圈。被问第二次 = 上一份被代理拒了。
+      appUserProxyReader = () => '1.2.3.4:8080';
+      appUserProxyModeReader = () => 'manual';
+      appUserProxyUsernameReader = () => 'alice';
+      appUserProxyPasswordReader = () => 'wrong-password';
+      final _CapturingHttpClient client = _CapturingHttpClient();
+
+      applyAppProxySync(client);
+      expect(await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'realm'),
+          isTrue,
+          reason: '第一次必须交付，否则认证代理根本用不了');
+      expect(await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'realm'),
+          isFalse,
+          reason: '第二次必须收手，让 dart:io 把 407 抛给调用方而不是无限重试');
+      // 另一个 realm 是另一次 challenge，不受上一次影响。
+      expect(await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'other'),
+          isTrue);
+    });
+
+    test('Digest challenge 直接放弃，不塞永远匹配不上的 Basic 凭据（BUG-1980）',
+        () async {
+      appUserProxyReader = () => '1.2.3.4:8080';
+      appUserProxyModeReader = () => 'manual';
+      appUserProxyUsernameReader = () => 'alice';
+      appUserProxyPasswordReader = () => 'secret';
+      final _CapturingHttpClient client = _CapturingHttpClient();
+
+      applyAppProxySync(client);
+      expect(await client.capturedAuth!('1.2.3.4', 8080, 'Digest', 'realm'),
+          isFalse,
+          reason: 'findCredentials(Digest) 永远匹配不到 Basic 凭据，返 true 就是'
+              '「无凭据 → 问回调 → 加 Basic → retry」的无限环');
+      expect(client.addedCredential, isNull);
+    });
+
+    test('没配用户名时根本不装认证钩子（不给每个 client 白挂捕获闭包）', () {
+      appUserProxyReader = () => '1.2.3.4:8080';
+      appUserProxyModeReader = () => 'manual';
+      appUserProxyUsernameReader = () => '';
+      appUserProxyPasswordReader = () => '';
+      final _CapturingHttpClient client = _CapturingHttpClient();
+
+      applyAppProxySync(client);
+      expect(client.capturedAuth, isNull);
+    });
     test('装上的闭包非空——裸 HttpClient 的 findProxy 恒为 null，那正是根因形态', () {
       final _CapturingHttpClient client = _CapturingHttpClient();
       expect(client.captured, isNull);
@@ -232,6 +357,42 @@ void main() {
       expect(c, isA<HttpClient>());
       expect(createAppHttpIoClient(), isNotNull);
       expect(createAppDio(), isNotNull);
+    });
+  });
+
+  group('两个装配点走同一条路（异步版不得再自成一套）', () {
+    test('自动模式下异步版同样装上 407 凭据钩子', () async {
+      appUserProxyReader = () => '1.2.3.4:8080';
+      appUserProxyModeReader = () => kProxyModeAuto;
+      appUserProxyUsernameReader = () => 'alice';
+      appUserProxyPasswordReader = () => 'secret';
+      final _CapturingHttpClient client = _CapturingHttpClient();
+
+      await applyAppProxy(client);
+
+      expect(client.capturedAuth, isNotNull,
+          reason: '凭据钩子以前只装在 manual 分支里——用户在 auto 模式下建好的 client '
+              '之后改成 manual，那些 client 永远拿不到 407 应答');
+      expect(await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'r'), isFalse,
+          reason: '钩子装上了，但当前模式不是 manual 时不该交付凭据');
+    });
+
+    test('异步版装的是请求时求值的闭包：client 建好之后改模式立刻跟上', () async {
+      appUserProxyReader = () => '1.2.3.4:8080';
+      appUserProxyModeReader = () => kProxyModeDirect;
+      final _CapturingHttpClient client = _CapturingHttpClient();
+
+      await applyAppProxy(client);
+      expect(client.captured!(Uri.parse('https://example.com/')), 'DIRECT');
+
+      appUserProxyModeReader = () => kProxyModeManual;
+      expect(client.captured!(Uri.parse('https://example.com/')),
+          'PROXY 1.2.3.4:8080',
+          reason: '异步版以前把模式裁决烘焙进闭包：初始化前建好的 client 之后永远'
+              '停在当时那个模式上——这正是「初始化前那一发」的真实形状');
+
+      appUserProxyModeReader = () => kProxyModeDirect;
+      expect(client.captured!(Uri.parse('https://example.com/')), 'DIRECT');
     });
   });
 }

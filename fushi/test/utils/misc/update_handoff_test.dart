@@ -14,6 +14,28 @@ Future<File> _markerFile() async {
   return WindowsUpdateHandoff.markerFile(dir);
 }
 
+/// 一份「安装真的装完了」的 Inno 日志，放在 [marker] 同目录，返回其路径。
+///
+/// BUG-1786：`reconcile` 判成功现在要求**正面证据**——Inno 日志明确写了
+/// `Installation process succeeded.`。在此之前唯一的判据是
+/// `currentVersion >= targetVersion`，而它在 debug/beta 通道恒为真（SemVer 里
+/// 正式版 `2.2.1` > 同号预发布版 `2.2.1-debug.12067`），于是整包回滚要报成功、
+/// 安装器压根没跑起来也报成功——用户连着几天收到「更新成功」却一直跑旧代码。
+///
+/// 下面几条成功路径用例原本把 `innoLogPath` 填成一个**不存在**的 `C:\tmp\...` 占位，
+/// 它们真正要钉的是 marker 生命周期（清理 / 幂等 / prompted 版本），不是「没有日志也算
+/// 成功」。所以这里补上真日志，让它们继续钉住原本的东西。
+Future<String> _succeededInnoLog(File marker) async {
+  final File log = File(
+    '${marker.parent.path}${Platform.pathSeparator}install.log',
+  );
+  await log.writeAsString(
+    '2026-06-17 10:31:00.000   Successfully installed the file.\n'
+    '2026-06-17 10:31:02.000   Installation process succeeded.\n',
+  );
+  return log.path;
+}
+
 void main() {
   group('WindowsUpdateHandoff marker', () {
     test('writes the target version, installer, Inno log, and launch result',
@@ -206,7 +228,7 @@ void main() {
         markerFile: marker,
         targetVersion: '1.2.3',
         installerPath: r'C:\tmp\hibiki-1.2.3-windows-setup.exe',
-        innoLogPath: r'C:\tmp\hibiki-1.2.3.install.log',
+        innoLogPath: await _succeededInnoLog(marker),
         startedAt: DateTime.utc(2026, 6, 17, 10, 30),
       );
       await WindowsUpdateHandoff.markLaunchSucceeded(
@@ -233,7 +255,7 @@ void main() {
         markerFile: marker,
         targetVersion: '1.2.3',
         installerPath: r'C:\tmp\hibiki-1.2.3-windows-setup.exe',
-        innoLogPath: r'C:\tmp\hibiki-1.2.3.install.log',
+        innoLogPath: await _succeededInnoLog(marker),
         startedAt: DateTime.utc(2026, 6, 17, 10, 30),
       );
       await WindowsUpdateHandoff.markLaunchSucceeded(
@@ -265,7 +287,7 @@ void main() {
           WindowsUpdateHandoffRecord.fromJson(<String, dynamic>{
         'targetVersion': '1.2.3',
         'installerPath': r'C:\tmp\hibiki-1.2.3-windows-setup.exe',
-        'innoLogPath': r'C:\tmp\hibiki-1.2.3.install.log',
+        'innoLogPath': await _succeededInnoLog(marker),
         'startedAt': '2026-06-17T10:30:00Z',
         'installerLaunchSucceeded': true,
         'lastPromptedAppVersion': '1.2.3',
@@ -414,7 +436,7 @@ void main() {
         markerFile: marker,
         targetVersion: '0.5.1-debug.19',
         installerPath: r'C:\tmp\hibiki-0.5.1-debug.19-windows-setup.exe',
-        innoLogPath: r'C:\tmp\hibiki-debug.install.log',
+        innoLogPath: await _succeededInnoLog(marker),
         startedAt: DateTime.utc(2026, 6, 17, 10, 30),
       );
 
@@ -571,11 +593,15 @@ void main() {
                 '${dir.path}${Platform.pathSeparator}hibiki.exe',
             currentInstallDir: dir.path,
             targetInstallDir: dir.path,
-            libmpvModuleHolders: <WindowsProcessInfo>[
+            // BUG-2055 —— 占用者的镜像必须在**安装目录之外**，这条用例才名副其实：
+            // `fushi.iss` 的 `PrepareToInstall` 第一步就是
+            // `KillProcessesUnderDir({app})`，按镜像路径清掉安装目录树内的任何进程。
+            // 把「外部程序」摆进安装目录里，断言的其实是一个安装器自己就能解决的情形。
+            libmpvModuleHolders: const <WindowsProcessInfo>[
               WindowsProcessInfo(
                 pid: 9001,
                 name: 'someplayer.exe',
-                path: '${dir.path}${Platform.pathSeparator}someplayer.exe',
+                path: r'D:\Media\Player\someplayer.exe',
               ),
             ],
           ),
@@ -594,8 +620,224 @@ void main() {
       expect(record?.installerLaunchSucceeded, isFalse);
       expect(record?.libmpvModuleHolders.single.pid, 9001);
       expect(record?.launchError, contains('non-Fushi process'));
+      expect(record?.launchError, contains('Close them manually'));
+    });
+
+    test(
+        'BUG-1675 更新前拦下正占用 galgame helper 组件的游戏进程'
+        '（否则 Inno 静默换不掉 voice_hook/，落地成新本体+旧 helper）', () async {
+      final File marker = await _markerFile();
+      final Directory dir = marker.parent;
+      final File installer = File(
+          '${dir.path}${Platform.pathSeparator}fushi-1.2.3-windows-setup.exe');
+      await installer.writeAsBytes(<int>[0x4D, 0x5A, 0x90, 0x00]);
+
+      var startCalled = false;
+      await expectLater(
+        WindowsInstaller.runAndExit(
+          installer.path,
+          targetVersion: '1.2.3',
+          handoffMarkerFile: marker,
+          collectDiagnostics: () async => WindowsInstallerDiagnostics(
+            currentExecutablePath:
+                '${dir.path}${Platform.pathSeparator}fushi.exe',
+            currentInstallDir: dir.path,
+            targetInstallDir: dir.path,
+            // 被 hook 的游戏：安装器按 image 名杀不掉它（不是 fushi.exe /
+            // msedgewebview2.exe），所以必须硬中止而不是「交给安装器处理」。
+            galHookModuleHolders: <WindowsProcessInfo>[
+              WindowsProcessInfo(
+                pid: 7777,
+                name: 'SiglusEngine.exe',
+                path: r'D:\Games\SomeGal\SiglusEngine.exe',
+              ),
+            ],
+          ),
+          startProcess: (String executable, List<String> args) async {
+            startCalled = true;
+            return const WindowsInstallerStartedProcess(pid: 4242);
+          },
+          exitProcess: (_) {},
+        ),
+        throwsA(isA<UpdateInstallerException>()),
+      );
+
+      final WindowsUpdateHandoffRecord? record =
+          await WindowsUpdateHandoff.read(marker);
+      // 关键断言：安装器**根本没被启动**。这一条就是根因修复本身——旧行为是照常
+      // 静默启动安装器，Inno 换不掉被游戏持有的 fushi_voice_hook.dll /
+      // fushi_voice_injector.exe，失败被 /SUPPRESSMSGBOXES 吞掉，用户下次开游戏
+      // 才在 `voice_hook open protocol_mismatch shm=13/want 15` 里看到后果。
+      expect(startCalled, isFalse);
+      expect(record?.installerLaunchSucceeded, isFalse);
+      expect(record?.galHookModuleHolders.single.pid, 7777);
+      expect(record?.galHookModuleHolders.single.name, 'SiglusEngine.exe');
+      // BUG-2055 —— 报错必须说清成因：占用者不是「某个非 Fushi 程序」，而是被 Fushi
+      // 自己的语音捕获组件注入的程序。旧文案把所有占用者统称 non-Fushi process，
+      // 等于把用户指向一个与 Fushi 无关的第三方，照着这句话永远找不到占用者。
       expect(
-          record?.launchError, contains('Close the listed process manually'));
+        record?.launchError,
+        contains("Fushi's voice capture component is injected"),
+      );
+      expect(
+        record?.launchError,
+        contains('Save your progress and close them'),
+      );
+      expect(record?.launchError, isNot(contains('non-Fushi process')));
+      // 报错不得把占用者说成 libmpv：这次占用的是 helper 组件，指名错组件会把
+      // 用户引到完全无关的排查方向。
+      expect(record?.launchError, isNot(contains('libmpv')));
+    });
+
+    test(
+        'BUG-2055 镜像在安装目录树内的自有子进程交给安装器，不再硬中止'
+        '（KillProcessesUnderDir 按镜像路径清扫，Dart 侧不该比它更严）', () async {
+      final File marker = await _markerFile();
+      final Directory dir = marker.parent;
+      final File installer = File(
+          '${dir.path}${Platform.pathSeparator}fushi-1.2.3-windows-setup.exe');
+      await installer.writeAsBytes(<int>[0x4D, 0x5A, 0x90, 0x00]);
+
+      var startCalled = false;
+      await WindowsInstaller.runAndExit(
+        installer.path,
+        targetVersion: '1.2.3',
+        handoffMarkerFile: marker,
+        collectDiagnostics: () async => WindowsInstallerDiagnostics(
+          currentExecutablePath:
+              '${dir.path}${Platform.pathSeparator}fushi.exe',
+          currentInstallDir: dir.path,
+          targetInstallDir: dir.path,
+          // 以 `--hold` 常驻的自有 injector：镜像在安装目录树内，安装器
+          // `KillProcessesUnderDir` 一步就清得掉。旧判据只认三个 image 名，把它
+          // 当成「安装器杀不掉的外部锁」硬中止，用户这次更新就永远做不下去，而
+          // 关掉它根本不需要用户插手。
+          galHookModuleHolders: <WindowsProcessInfo>[
+            WindowsProcessInfo(
+              pid: 4321,
+              name: 'fushi_voice_injector.exe',
+              path: '${dir.path}${Platform.pathSeparator}voice_hook'
+                  '${Platform.pathSeparator}x86'
+                  '${Platform.pathSeparator}fushi_voice_injector.exe',
+            ),
+          ],
+        ),
+        startProcess: (String executable, List<String> args) async {
+          startCalled = true;
+          return const WindowsInstallerStartedProcess(pid: 4242);
+        },
+        exitProcess: (_) {},
+      );
+
+      expect(startCalled, isTrue,
+          reason: '镜像在安装目录树内的进程由安装器清掉，Dart 不该抢先中止更新');
+      final WindowsUpdateHandoffRecord? record =
+          await WindowsUpdateHandoff.read(marker);
+      expect(record?.galHookModuleHolders.single.pid, 4321);
+      expect(record?.launchError, isNull);
+    });
+
+    test(
+        'BUG-2055 同前缀的兄弟目录不算「安装目录树内」，仍按外部锁硬中止', () async {
+      final File marker = await _markerFile();
+      final Directory dir = marker.parent;
+      final File installer = File(
+          '${dir.path}${Platform.pathSeparator}fushi-1.2.3-windows-setup.exe');
+      await installer.writeAsBytes(<int>[0x4D, 0x5A, 0x90, 0x00]);
+
+      var startCalled = false;
+      await expectLater(
+        WindowsInstaller.runAndExit(
+          installer.path,
+          targetVersion: '1.2.3',
+          handoffMarkerFile: marker,
+          collectDiagnostics: () async => WindowsInstallerDiagnostics(
+            currentExecutablePath:
+                '${dir.path}${Platform.pathSeparator}fushi.exe',
+            currentInstallDir: dir.path,
+            targetInstallDir: dir.path,
+            // 目录名以安装目录为前缀、但**不是**它的子目录。裸 startsWith 会把它
+            // 误判成安装器清得掉，于是照常交接、随后在复制阶段静默失败
+            // （BUG-1675 的失败形状）。判据必须比到路径分隔符。
+            libmpvModuleHolders: <WindowsProcessInfo>[
+              WindowsProcessInfo(
+                pid: 9100,
+                name: 'someplayer.exe',
+                path: '${dir.path}-sibling'
+                    '${Platform.pathSeparator}someplayer.exe',
+              ),
+            ],
+          ),
+          startProcess: (String executable, List<String> args) async {
+            startCalled = true;
+            return const WindowsInstallerStartedProcess(pid: 4242);
+          },
+          exitProcess: (_) {},
+        ),
+        throwsA(isA<UpdateInstallerException>()),
+      );
+
+      expect(startCalled, isFalse);
+      final WindowsUpdateHandoffRecord? record =
+          await WindowsUpdateHandoff.read(marker);
+      expect(record?.launchError, contains('non-Fushi process'));
+    });
+
+    test('BUG-1675 galHookModuleHolders 计入锁证据，且 wire 键可往返', () async {
+      const WindowsInstallerDiagnostics diagnostics =
+          WindowsInstallerDiagnostics(
+        galHookModuleHolders: <WindowsProcessInfo>[
+          WindowsProcessInfo(pid: 7777, name: 'SiglusEngine.exe'),
+        ],
+      );
+      expect(diagnostics.hasLockEvidence, isTrue);
+
+      // Inno 日志侧：helper 换不掉时报的是 voice_hook\ 下的路径，只认 libmpv 会让
+      // 这半边锁证据整个看不见（重启 Windows 的提示也就不会出现）。
+      const WindowsInstallerDiagnostics fromInnoLog =
+          WindowsInstallerDiagnostics(
+        innoLogDeleteFileFailures: <WindowsInnoDeleteFileFailure>[
+          WindowsInnoDeleteFileFailure(
+            path: r'C:\Users\u\AppData\Local\Fushi\voice_hook\x86'
+                r'\fushi_voice_hook.dll',
+            code: 5,
+          ),
+        ],
+      );
+      expect(fromInnoLog.hasLockEvidence, isTrue);
+
+      // 无关路径的删除失败仍不算锁证据（别把这条守卫放宽成「有失败就算」）。
+      const WindowsInstallerDiagnostics unrelated = WindowsInstallerDiagnostics(
+        innoLogDeleteFileFailures: <WindowsInnoDeleteFileFailure>[
+          WindowsInnoDeleteFileFailure(path: r'C:\x\readme.txt', code: 5),
+        ],
+      );
+      expect(unrelated.hasLockEvidence, isFalse);
+
+      final WindowsUpdateHandoffRecord record = WindowsUpdateHandoffRecord(
+        targetVersion: '1.2.3',
+        installerPath: r'C:\tmp\setup.exe',
+        innoLogPath: r'C:\tmp\setup.install.log',
+        startedAt: DateTime.utc(2026, 8, 15),
+        galHookModuleHolders: const <WindowsProcessInfo>[
+          WindowsProcessInfo(pid: 7777, name: 'SiglusEngine.exe'),
+        ],
+      );
+      final WindowsUpdateHandoffRecord roundTripped =
+          WindowsUpdateHandoffRecord.fromJson(
+        jsonDecode(jsonEncode(record.toJson())) as Map<String, dynamic>,
+      );
+      expect(roundTripped.galHookModuleHolders.single.pid, 7777);
+
+      // 旧版本写的标记里没有这个键：必须读成空列表，不能抛。
+      final WindowsUpdateHandoffRecord legacy =
+          WindowsUpdateHandoffRecord.fromJson(<String, dynamic>{
+        'targetVersion': '1.2.3',
+        'installerPath': r'C:\tmp\setup.exe',
+        'innoLogPath': r'C:\tmp\setup.install.log',
+        'startedAt': '2026-08-15T00:00:00.000Z',
+      });
+      expect(legacy.galHookModuleHolders, isEmpty);
     });
 
     test(

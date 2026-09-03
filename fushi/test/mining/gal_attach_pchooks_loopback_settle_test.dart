@@ -53,7 +53,7 @@ void main() {
         isWindows: true,
         targetWow64Probe: (_) async => false,
         targetImagePathProbe: (_) => imagePath,
-        injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
         engineSourceFactory: ({
           required int targetPid,
           required String? launchExe,
@@ -64,6 +64,7 @@ void main() {
           String launchWorkdir = '',
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
         }) {
           seen = lunaPcHooks;
           return engine;
@@ -142,7 +143,7 @@ void main() {
       isWindows: true,
       targetWow64Probe: (_) async => false,
       targetImagePathProbe: (_) => null,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -153,6 +154,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -242,7 +244,7 @@ void main() {
       isWindows: true,
       targetWow64Probe: (_) async => false,
       targetImagePathProbe: (_) => null,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -253,6 +255,7 @@ void main() {
         String launchWorkdir = '',
         GalJapaneseLocaleMode japaneseLocaleMode =
             kGalDefaultJapaneseLocaleMode,
+        String? contentLanguage,
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,

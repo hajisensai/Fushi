@@ -3,6 +3,11 @@
 // 这层要挡住的是「卡片飘到游戏窗口外面」这一类症状：用户看不见卡片，与「host 压根没投帧」
 // 在现象上完全同形，真机上分不开。
 
+// CI 走 `--config Release`，MSVC 在该配置下定义 NDEBUG，裸 assert 会被整条编译掉，
+// 于是这个测试无论断言对不对都恒绿——与 BUG-1157「零测试执行伪装成通过」同一族。
+// 必须在任何 include 之前撤销它。守卫：tests/assert_liveness_guard_test.py
+#undef NDEBUG
+
 #include <cstdio>
 
 #include "lookup_overlay_geometry.h"

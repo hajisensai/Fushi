@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -43,7 +43,7 @@ void main() {
     'BUG-712: measure real lookup latency (e2e + engine segments)',
     timeout: const Timeout(Duration(minutes: 40)),
     (WidgetTester tester) async {
-      app.main();
+      await launchFushiTestApp();
       expect(await waitForHome(tester), isTrue, reason: 'Home must render');
       await tester.pump(const Duration(seconds: 2));
 

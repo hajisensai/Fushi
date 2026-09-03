@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/stats/study_char_count.dart';
 import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 import 'package:html/parser.dart' as html_parser;
 import 'package:html/dom.dart' as html_dom;
@@ -89,19 +90,35 @@ class EpubBook {
   /// Used by EpubSrtMatcher and sasayaki rematch for audiobook alignment.
   String chapterPlainText(int index) {
     if (index < 0 || index >= chapters.length) return '';
-    final html_dom.Document doc = html_parser.parse(chapters[index].html);
+    final html_dom.Document doc = parseChapterHtml(chapters[index].html);
     return _chapterPlainTextFromBody(doc.body);
+  }
+
+  /// BUG-2017：章节 XHTML 的**唯一** DOM 解析入口。
+  ///
+  /// EPUB 章节是 XML（`application/xhtml+xml`），WebView 按该 MIME 走 XML 解析，
+  /// 于是 `<script src="…"/>` / `<title/>` 是合法空元素。但这里的 HTML5 解析器
+  /// 不认 raw-text 元素的自闭合写法：`<script/>` 被当成**未闭合的开标签**，
+  /// tokenizer 进入 script data 状态，一路把文档剩余部分（含整个 `<body>`）
+  /// 吞成该元素的文本，`doc.body` 于是为空。kobo 处理过的日文 EPUB 正是这种
+  /// 形态（head 里一行自闭合 `<script src="../../js/kobo.js"/>`、全文无
+  /// `</script>`），导致每章纯文本为空 —— 有声书对齐匹配率 0、每章字数落库 0、
+  /// 每章都被 [isImageOnlyChapter] 判成纯图片章。
+  ///
+  /// 归一化自闭合 raw-text 标签后再交给 HTML 解析器，两侧解析结果重新一致。
+  static html_dom.Document parseChapterHtml(String html) {
+    return html_parser.parse(normalizeSelfClosingRawTextTags(html));
   }
 
   /// TODO-1192: chapter [index] 的「实义字符数」——只数假名 / 汉字 / 叠字符 /
   /// 字母数字，剔除所有标点、括号（「」『』（）等）、全角/半角空白与全角符号，
   /// 与 hoshi/ttu `getCharacterCount`（`isNotJapaneseRegex`）口径一致（见
-  /// [japaneseCharCount]）。基于 [chapterPlainText]（振假名 `<rt>/<rp>/<rtc>` 已
+  /// [countStudyChars]）。基于 [chapterPlainText]（振假名 `<rt>/<rp>/<rtc>` 已
   /// 剥离故不计入），再过滤非实义字符。用于导入时落库的每章字数与阅读统计，让
   /// 「书的总字数 / 统计字数 / 阅读速度」贴近 hoshi，而不是含标点/括号/空白高约
   /// 10~20%。**不改** [chapterPlainText]（查词 / 对齐 / 搜索仍需完整文本）。
   int chapterCharacterCount(int index) {
-    return japaneseCharCount(chapterPlainText(index));
+    return countStudyChars(chapterPlainText(index));
   }
 
   /// Whitespace-collapsed plain text of an already-parsed [body], with ruby
@@ -157,7 +174,7 @@ class EpubBook {
         hints[index] > _imageChapterMaxTextChars) {
       return _imageOnlyChapterMemo[index] = false;
     }
-    final html_dom.Document doc = html_parser.parse(chapters[index].html);
+    final html_dom.Document doc = parseChapterHtml(chapters[index].html);
     final bool value = _chapterImageRefs(doc).isNotEmpty &&
         _chapterPlainTextFromBody(doc.body).length <= _imageChapterMaxTextChars;
     return _imageOnlyChapterMemo[index] = value;
@@ -177,7 +194,7 @@ class EpubBook {
   /// or SVG-`<image>` illustration page never loses an illustration when merged.
   List<String> chapterImageSrcs(int index) {
     if (index < 0 || index >= chapters.length) return const <String>[];
-    final html_dom.Document doc = html_parser.parse(chapters[index].html);
+    final html_dom.Document doc = parseChapterHtml(chapters[index].html);
     return _chapterImageRefs(doc);
   }
 
@@ -253,7 +270,7 @@ class EpubBook {
     int order = 0;
     for (int i = 0; i < chapters.length; i++) {
       final String chapterHref = chapters[i].href;
-      final html_dom.Document doc = html_parser.parse(chapters[i].html);
+      final html_dom.Document doc = parseChapterHtml(chapters[i].html);
       for (final html_dom.Element img in doc.querySelectorAll('img')) {
         final String? src = img.attributes['src'];
         if (src == null || src.trim().isEmpty) continue;
@@ -513,113 +530,134 @@ String decodeEpubText(List<int> rawBytes) {
   return utf8.decode(bytes, allowMalformed: true);
 }
 
+/// BUG-2017：HTML5 里内容会一路读到**显式结束标签**才终止的元素。
+///
+/// 对这些元素，tokenizer 见到开标签就切进 raw-text / escapable-raw-text /
+/// plaintext 状态，此后的 `<` 不再当标签看。因此 XML 风格的自闭合写法
+/// （`<script/>`）在 HTML 解析器眼里是个**永不闭合的开标签**：文档剩余部分
+/// 整体成为该元素的文本，`<body>` 连同全部正文一起消失。
+///
+/// 空元素（`<br/>` `<img/>` `<meta/>`）不在此列——它们本就无内容，自闭合写法
+/// 在两种解析器下等价，不能碰。
+const Set<String> kRawTextTags = <String>{
+  'script',
+  'style',
+  'textarea',
+  'title',
+  'iframe',
+  'noembed',
+  'noframes',
+  'noscript',
+  'xmp',
+  'plaintext',
+};
+
+/// BUG-2017：把 XHTML 里自闭合的 raw-text 标签（`<script src="…"/>`）改写成
+/// 显式闭合（`<script src="…"></script>`），使 HTML 解析器得到与 XML 解析器
+/// （WebView 按 `application/xhtml+xml` 走的那条）一致的文档树。
+///
+/// 只改 [kRawTextTags] 里的标签，且只在其**自身**以 `/>` 结束时改写，所以对
+/// 合法 HTML 是恒等变换：普通 HTML 不会把 `<script/>` 当空元素写，真写了也
+/// 本就是当前这种「吞掉后文」的坏形态。注释 / CDATA / DOCTYPE / XML 声明整段
+/// 原样透传，属性值里的 `>` 由引号状态机跳过，都不会被误判成标签边界。
+String normalizeSelfClosingRawTextTags(String html) {
+  if (!html.contains('/>')) return html;
+  final StringBuffer out = StringBuffer();
+  int i = 0;
+  while (i < html.length) {
+    final int lt = html.indexOf('<', i);
+    if (lt < 0) {
+      out.write(html.substring(i));
+      break;
+    }
+    out.write(html.substring(i, lt));
+    final int passthrough = _markupPassthroughEnd(html, lt);
+    if (passthrough >= 0) {
+      out.write(html.substring(lt, passthrough));
+      i = passthrough;
+      continue;
+    }
+    final int gt = _tagCloseIndex(html, lt);
+    if (gt < 0) {
+      out.write(html.substring(lt));
+      break;
+    }
+    out.write(_expandSelfClosingRawTextTag(html.substring(lt, gt + 1)));
+    i = gt + 1;
+  }
+  return out.toString();
+}
+
+/// 注释 / CDATA / DOCTYPE / 处理指令的结束下标（exclusive）；[lt] 处不是这类
+/// 标记时返回 -1。未闭合时吃到串尾，与 HTML 解析器的 bogus-comment 收尾一致。
+int _markupPassthroughEnd(String s, int lt) {
+  if (s.startsWith('<!--', lt)) {
+    final int end = s.indexOf('-->', lt + 4);
+    return end < 0 ? s.length : end + 3;
+  }
+  if (s.startsWith('<![CDATA[', lt)) {
+    final int end = s.indexOf(']]>', lt + 9);
+    return end < 0 ? s.length : end + 3;
+  }
+  if (s.startsWith('<!', lt) || s.startsWith('<?', lt)) {
+    final int end = s.indexOf('>', lt);
+    return end < 0 ? s.length : end + 1;
+  }
+  return -1;
+}
+
+/// 从 [lt]（指向 `<`）扫到该标签的 `>` 下标；引号内的 `>` 不算边界。未闭合
+/// 返回 -1。
+int _tagCloseIndex(String s, int lt) {
+  String? quote;
+  for (int i = lt + 1; i < s.length; i++) {
+    final String c = s[i];
+    if (quote != null) {
+      if (c == quote) quote = null;
+      continue;
+    }
+    if (c == '"' || c == "'") {
+      quote = c;
+    } else if (c == '>') {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/// 自闭合的 raw-text 标签 → 显式闭合；其余标签原样返回。
+String _expandSelfClosingRawTextTag(String tag) {
+  if (!tag.endsWith('/>')) return tag;
+  final Match? m = RegExp(r'^<([A-Za-z][A-Za-z0-9]*)').firstMatch(tag);
+  if (m == null) return tag;
+  final String name = m.group(1)!.toLowerCase();
+  if (!kRawTextTags.contains(name)) return tag;
+  return '${tag.substring(0, tag.length - 2)}></$name>';
+}
+
 /// TODO-1192: 存进 [EpubBooks.chaptersJson] 每章 `characters` 字段用的计数口径版本。
-/// v1（无 `charCaliber` 标记）= 旧的 `chapterPlainText().length`（含标点/括号/空白，
-/// 比 hoshi 高约 10~20%）；v2 = 第一版 [japaneseCharCount]，但 whitelist 与 ttu
-/// `isNotJapaneseRegex` 有残差（多数了 ヽヾヿ / ﾞﾟ / 整块 CJK 兼容汉字，少数了全角
-/// 字母数字与 CJK 部首），同一本书仍比 hoshi 高上百字；v3 = whitelist 逐区间对齐
-/// ttu 的正则（见 [_isCountedJapaneseRune]）。**改动 whitelist 必须同步 +1 本版本
-/// 号**，否则已按旧 whitelist 重算成 v2 的缓存永不再重算、继续偏高。开书发现缓存
-/// 不是当前口径 → 后台按当前 whitelist 重算并回写。
-const int kChapterCharCountCaliber = 3;
-
-/// TODO-1192: 统计一段文本里的「实义字符数」，与 ttu/hoshi `getCharacterCount`
-/// 使用的正则逐区间对齐：
 ///
-/// ```
-/// isNotJapaneseRegex =
-///   /[^0-9A-Z○◯々-〇〻ぁ-ゖゝ-ゞァ-ヺー０-９Ａ-Ｚｦ-ﾝ\p{Radical}\p{Unified_Ideograph}]+/gimu
-/// ```
+/// - v1（无 `charCaliber` 标记）= 旧的 `chapterPlainText().length`（含标点/括号/空白，
+///   比 hoshi 高约 10~20%）；
+/// - v2 = 第一版 `japaneseCharCount`，whitelist 与 ttu `isNotJapaneseRegex` 有残差；
+/// - v3 = whitelist 逐区间对齐 ttu 的正则；
+/// - v4 = 收敛到全仓唯一口径 [countStudyChars]（`package:fushi/src/stats/study_char_count.dart`）。
 ///
-/// ttu 用 `replace(isNotJapaneseRegex, '')` 剔掉所有「非日文」再数剩下的码点；本
-/// 函数等价地对 whitelist 逐码点计数（`[^…]` 取反 = 只计入 `[…]` 内的码点）。`i`
-/// flag 使 `A-Z`/`Ａ-Ｚ` 同时含小写，`u` flag 使 BMP 外扩展汉字按码点计。计入：
-///   - 半角字母数字 0-9 / A-Z / a-z；
-///   - 全角字母数字 ０-９ / Ａ-Ｚ / ａ-ｚ；
-///   - 圈号 ○◯；叠字/重复符号 々〆〇〻 与 ゝゞ；
-///   - 平假名 ぁ-ゖ、片假名 ァ-ヺ、长音符 ー（**只** U+30FC，不含 ヽヾヿ）；
-///   - 半角片假名 ｦ-ﾝ（U+FF66-FF9D，**不含** 半角浊点/半浊点 ﾞﾟ）；
-///   - CJK 部首（部首补充 + 康熙部首，对应 `\p{Radical}`）；
-///   - 统一表意文字 `\p{Unified_Ideograph}`：扩展A / 统一 / 12 个被归为统一的兼容
-///     汉字 / 扩展B~I（**不含** 其余 CJK 兼容汉字块与兼容补充块）。
-/// 其余一律不计：所有标点、括号（「」『』（）【】等）、全/半角空白、全角标点、
-/// 半角浊点、片假名叠字 ヽヾ 等。用 [String.runes] 遍历，正确处理代理对（每个码点
-/// 算一字，不因 UTF-16 拆成两半重复计）。纯函数，供单测锁定口径（撤销修复即转红）。
-int japaneseCharCount(String text) {
-  int count = 0;
-  for (final int rune in text.runes) {
-    if (_isCountedJapaneseRune(rune)) count++;
-  }
-  return count;
-}
-
-/// 单个码点是否计入 [japaneseCharCount]（whitelist；其余全部剔除）。逐区间对齐
-/// ttu `isNotJapaneseRegex` 的 `[…]` 白名单，见 [japaneseCharCount] 文档。
-bool _isCountedJapaneseRune(int c) {
-  // 半角字母数字：0-9 / A-Z（`i` flag → 含 a-z）。
-  if (c >= 0x30 && c <= 0x39) return true; // 0-9
-  if (c >= 0x41 && c <= 0x5A) return true; // A-Z
-  if (c >= 0x61 && c <= 0x7A) return true; // a-z
-  // 圈号 ○(25CB) ◯(25EF)。
-  if (c == 0x25CB || c == 0x25EF) return true;
-  // CJK 部首（`\p{Radical}`）：部首补充 2E80-2EF3（2E9A 未分配）+ 康熙部首 2F00-2FD5。
-  if (c >= 0x2E80 && c <= 0x2E99) return true;
-  if (c >= 0x2E9B && c <= 0x2EF3) return true;
-  if (c >= 0x2F00 && c <= 0x2FD5) return true;
-  // 叠字/重复符号：々(3005) 〆(3006) 〇(3007)、〻(303B)、ゝゞ(309D-309E)。
-  if (c >= 0x3005 && c <= 0x3007) return true;
-  if (c == 0x303B) return true;
-  if (c >= 0x309D && c <= 0x309E) return true;
-  // 平假名 ぁ-ゖ。
-  if (c >= 0x3041 && c <= 0x3096) return true;
-  // 片假名 ァ-ヺ 与长音符 ー(30FC)。ttu 白名单到 `ー` 为止，**不含** ヽヾヿ(30FD-30FF)。
-  if (c >= 0x30A1 && c <= 0x30FA) return true;
-  if (c == 0x30FC) return true;
-  // 全角字母数字：０-９(FF10-FF19) / Ａ-Ｚ(FF21-FF3A)（`i` flag → ａ-ｚ FF41-FF5A）。
-  if (c >= 0xFF10 && c <= 0xFF19) return true;
-  if (c >= 0xFF21 && c <= 0xFF3A) return true;
-  if (c >= 0xFF41 && c <= 0xFF5A) return true;
-  // 半角片假名 ｦ-ﾝ(FF66-FF9D)。**不含** 半角浊点 ﾞ(FF9E) / 半浊点 ﾟ(FF9F)。
-  if (c >= 0xFF66 && c <= 0xFF9D) return true;
-  // 统一表意文字 `\p{Unified_Ideograph}`：
-  //   扩展A(3400-4DBF)、统一表意(4E00-9FFF)。
-  if (c >= 0x3400 && c <= 0x4DBF) return true;
-  if (c >= 0x4E00 && c <= 0x9FFF) return true;
-  //   CJK 兼容汉字块里 12 个被 Unicode 归为统一表意的码点（其余兼容汉字**不计**）。
-  if (_isUnifiedCompatIdeograph(c)) return true;
-  //   BMP 外扩展 B/C/D/E/F/I/G/H（各扩展块，**不含** 兼容表意补充块 2F800-2FA1D）。
-  if (c >= 0x20000 && c <= 0x2A6DF) return true; // 扩展 B
-  if (c >= 0x2A700 && c <= 0x2B739) return true; // 扩展 C
-  if (c >= 0x2B740 && c <= 0x2B81D) return true; // 扩展 D
-  if (c >= 0x2B820 && c <= 0x2CEA1) return true; // 扩展 E
-  if (c >= 0x2CEB0 && c <= 0x2EBE0) return true; // 扩展 F
-  if (c >= 0x2EBF0 && c <= 0x2EE5D) return true; // 扩展 I
-  if (c >= 0x30000 && c <= 0x3134A) return true; // 扩展 G
-  if (c >= 0x31350 && c <= 0x323AF) return true; // 扩展 H
-  return false;
-}
-
-/// CJK 兼容汉字块（F900-FAFF）里被 Unicode `Unified_Ideograph=Yes` 归为统一表意
-/// 的 12 个码点（其余是纯兼容字形，`\p{Unified_Ideograph}` 不含，故不计）。
-bool _isUnifiedCompatIdeograph(int c) {
-  switch (c) {
-    case 0xFA0E:
-    case 0xFA0F:
-    case 0xFA11:
-    case 0xFA13:
-    case 0xFA14:
-    case 0xFA1F:
-    case 0xFA21:
-    case 0xFA23:
-    case 0xFA24:
-    case 0xFA27:
-    case 0xFA28:
-    case 0xFA29:
-      return true;
-    default:
-      return false;
-  }
-}
+/// v3→v4 换掉的是**口径本身**，不只是残差：ttu 白名单只收 ASCII 字母数字 + 假名 +
+/// 汉字 + 全角字母数字 + 半角片假名，于是英语按字母计（虚高约 5 倍）、`café` 的 é
+/// 漏计、俄 / 韩 / 希腊 / 阿拉伯 / 希伯来 / 泰 / 天城文**整个脚本记 0**——后者连带
+/// 让 `computeBookProgress` 的分母为 0、章内进度退化成「章号 / 章数」。v4 按文字
+/// 自身的分词方式计「学习单位」：无空格文字按码点、空格分词文字按连续串。日文正文
+/// 的数字实测变化 <0.1%（只在夹杂西文串处），中文同理。
+///
+/// **改动计数口径必须同步 +1 本版本号**，否则已按旧口径算好的缓存永不再重算。开书
+/// 发现缓存不是当前口径 → 后台按当前口径重算并回写。
+///
+/// 阅读器 WebView 侧有一份等价的 JS 实现（`reader_pagination_scripts.dart` 的
+/// `countChars`），两份必须同口径——JS 算出的 `charOffset` 会写进 DB 的 `char_offset`
+/// 列，并在 `computeCharWatermark` / `computeBookProgress` 里与本文件算出的每章
+/// `characters` **直接相加**。对拍守卫见 `fushi/test/stats/study_char_count_parity_test.dart`。
+const int kChapterCharCountCaliber = 4;
 
 String normalizeHref(String href) => href
     .trim()

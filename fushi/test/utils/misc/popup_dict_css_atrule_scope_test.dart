@@ -78,8 +78,14 @@ void main() {
       greaterThan(atBranch),
       reason: 'at-rule branch must split conditional groups from the rest',
     );
+    // 递归走的是 constructDictCssUncached：外层 constructDictCss 现在是带 memo 的
+    // 入口（同一本词典的 CSS 会被每条词条的每个词典块重复请求，见
+    // popup_dict_css_memo_test.js），递归分支刻意绕开缓存，免得把每个 at-block 的
+    // 子串都塞进缓存。这里钉的不变量没变：条件组 at-rule 必须**递归**，内部规则才
+    // 会被加上作用域前缀。
     final int recurse = js.indexOf(
-        'constructDictCss(atBlockContent, dictName, scopePrefix)', atBranch);
+        'constructDictCssUncached(atBlockContent, dictName, scopePrefix)',
+        atBranch);
     expect(
       recurse,
       greaterThan(atBranch),

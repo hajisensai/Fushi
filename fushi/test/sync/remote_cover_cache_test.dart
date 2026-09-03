@@ -51,4 +51,42 @@ void main() {
       isFalse,
     );
   });
+
+  test('超龄条目按未命中处理并删除（BUG-1693 批：host 换封面后客户端永不自愈）', () async {
+    final Uint8List bytes = Uint8List.fromList(<int>[1, 2, 3]);
+    await RemoteCoverCache.write('stale', bytes);
+    // 把文件 mtime 拨回 TTL 之前。
+    final File f =
+        File('${tmp.path}/cache/${RemoteCoverCache.fileNameFor('stale')}');
+    f.setLastModifiedSync(DateTime.now()
+        .subtract(RemoteCoverCache.maxEntryAge + const Duration(hours: 1)));
+    expect(await RemoteCoverCache.read('stale'), isNull,
+        reason: '超龄必须按未命中走网络重拉（不存在「host 封面变了」的失效信号）');
+    expect(f.existsSync(), isFalse, reason: '超龄条目顺带删除');
+  });
+
+  test('容量上限：超过 maxEntries 时修剪最旧条目', () async {
+    // 直接造小文件绕过 write 的概率性抽查，用 debugTrimNow 强制修剪。
+    final Directory dir = Directory('${tmp.path}/cache');
+    await dir.create(recursive: true);
+    final DateTime base = DateTime.now().subtract(const Duration(hours: 2));
+    for (int i = 0; i < RemoteCoverCache.maxEntries + 8; i++) {
+      final File f = File('${dir.path}/${RemoteCoverCache.fileNameFor('k$i')}');
+      f.writeAsBytesSync(<int>[1]);
+      // 递增 mtime：k0 最旧。
+      f.setLastModifiedSync(base.add(Duration(seconds: i)));
+    }
+    await RemoteCoverCache.debugTrimNow();
+    final int remaining = dir.listSync().whereType<File>().length;
+    expect(remaining, RemoteCoverCache.maxEntries, reason: '缓存不再无界增长');
+    expect(
+        File('${dir.path}/${RemoteCoverCache.fileNameFor('k0')}').existsSync(),
+        isFalse,
+        reason: '修剪按 mtime 淘汰最旧');
+    expect(
+        File('${dir.path}/${RemoteCoverCache.fileNameFor('k${RemoteCoverCache.maxEntries + 7}')}')
+            .existsSync(),
+        isTrue,
+        reason: '最新条目保留');
+  });
 }

@@ -61,14 +61,30 @@ class ResumableDownloadState {
   }
 }
 
+/// 一次下载相对已有 `.part` 断点的**实际处置**，三态互斥。
+///
+/// 之前用 `resumed` / `restartedFromZero` 两个 bool 编码，`false/false` 同时表示
+/// 「本来就没断点可续」和「结论还没出来」，消费端无法把「没这回事」与「续传失败」
+/// 分开，UI 于是把全新下载渲染成「未续传」。收成一个枚举后 [none] 就是明确的
+/// 「本次没有可报的续传事实」，UI 据此整行不渲染。
+enum DownloadResumeOutcome {
+  /// 没有可续的 `.part`（或首响应尚未到达、结论未定）：本次不涉及续传。
+  none,
+
+  /// 服务器接受了 Range（206 且起点匹配）：真正从断点续上。
+  resumed,
+
+  /// 请求了 Range 但服务器忽略（200 / 416）：旧 part 已丢弃，从 0 全量重写。
+  restartedFromZero,
+}
+
 @immutable
 class ResumableDownloadMetaInfo {
   const ResumableDownloadMetaInfo({
     required this.etag,
     required this.lastModified,
     required this.totalBytes,
-    required this.resumed,
-    required this.restartedFromZero,
+    required this.resumeOutcome,
     required this.writeOffset,
   });
 
@@ -76,11 +92,8 @@ class ResumableDownloadMetaInfo {
   final String? lastModified;
   final int? totalBytes;
 
-  /// 本次接受了 Range 续传（服务器返回 206 且起点匹配）。
-  final bool resumed;
-
-  /// 本次请求了 Range 但服务器忽略（返回 200 / 416），已丢弃旧 part 从 0 全量重写。
-  final bool restartedFromZero;
+  /// 本次相对已有断点的实际处置。
+  final DownloadResumeOutcome resumeOutcome;
 
   /// body 实际写入的起始偏移（续传 = resumeOffset；全量重写 = 0）。
   final int writeOffset;
@@ -155,8 +168,11 @@ class ResumableDownloader {
     final ResumableDownloadResponse response = await opened;
 
     int writeOffset = resumeOffset;
-    var resumed = false;
-    var restartedFromZero = restarted;
+    // restarted=true 只可能来自本函数因 416 / 坏 Content-Range 的一次自我重入，
+    // 那次 resumeOffset 已清成 0，处置就是「从零重下」。
+    var outcome = restarted
+        ? DownloadResumeOutcome.restartedFromZero
+        : DownloadResumeOutcome.none;
     if (requestedRange &&
         response.statusCode == HttpStatus.requestedRangeNotSatisfiable &&
         !restarted) {
@@ -174,12 +190,12 @@ class ResumableDownloader {
         if (!restarted) return _run(resumeOffset: 0, restarted: true);
         throw HttpException('invalid content-range for resume: $url');
       }
-      resumed = true;
+      outcome = DownloadResumeOutcome.resumed;
     } else if (response.statusCode == HttpStatus.ok) {
       if (requestedRange) {
         await _deleteFile(partFile);
         writeOffset = 0;
-        restartedFromZero = true;
+        outcome = DownloadResumeOutcome.restartedFromZero;
       }
     } else if (response.statusCode != HttpStatus.partialContent) {
       await response.stream.drain<void>();
@@ -191,8 +207,7 @@ class ResumableDownloader {
       etag: response.header(HttpHeaders.etagHeader),
       lastModified: response.header(HttpHeaders.lastModifiedHeader),
       totalBytes: expectedSize ?? total,
-      resumed: resumed,
-      restartedFromZero: restartedFromZero,
+      resumeOutcome: outcome,
       writeOffset: writeOffset,
     ));
 

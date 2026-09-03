@@ -8,17 +8,85 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
 
+/// Jimaku 条目标记位。
+///
+/// API 层把服务端内部的 u32 bitfield 展开成 JSON 对象再返回（服务端 `models.rs` 注释
+/// 原文：*At the API level, we expand the flags to a dict*），故此处按对象解析；字段缺失
+/// 一律按 `false`（与服务端 `#[serde(default)]` 同语义）。
+class JimakuEntryFlags {
+  const JimakuEntryFlags({
+    this.anime = false,
+    this.unverified = false,
+    this.external = false,
+    this.movie = false,
+    this.adult = false,
+  });
+
+  /// 该条目属于动画。
+  final bool anime;
+
+  /// 尚未经编辑审核。
+  final bool unverified;
+
+  /// 条目来自外部来源（如 kitsunekko/jpsubbers 镜像）。
+  final bool external;
+
+  /// 该条目是电影（而非剧集）。
+  final bool movie;
+
+  /// 面向成人受众。
+  final bool adult;
+
+  /// 是否为真人条目：`anime` 位取反。UI 用它给条目打「真人」标。
+  bool get isLiveAction => !anime;
+}
+
+/// 解析 Jimaku entry 的 `flags` 字段；非对象（或缺失）返回全 false 的默认值。
+///
+/// 只认对象形态：API 只会返回对象，站点页面里内嵌的 u32 bitfield 不是本客户端的输入，
+/// 不为不存在的情况写解析分支。
+JimakuEntryFlags parseJimakuEntryFlags(Object? raw) {
+  if (raw is! Map) return const JimakuEntryFlags();
+  bool read(String key) => raw[key] == true;
+  return JimakuEntryFlags(
+    anime: read('anime'),
+    unverified: read('unverified'),
+    external: read('external'),
+    movie: read('movie'),
+    adult: read('adult'),
+  );
+}
+
+/// 按 Jimaku 的 TMDB ID 编码拼串：`tv:<id>` / `movie:<id>`。
+///
+/// 编码来自服务端 schema 的 `pattern = (tv|movie):(\d+)`；Hibiki 侧的 TMDB 元数据
+/// （`TmdbVideoMetadataProvider`）只给出裸数字 id + 媒体种类，需经此函数转换。
+/// TMDB 的电影与剧集是两个独立号段，种类必须一起编码，否则会张冠李戴。
+String jimakuTmdbId({required bool movie, required int tmdbId}) =>
+    '${movie ? 'movie' : 'tv'}:$tmdbId';
+
 /// Jimaku（jimaku.cc）字幕条目：一个番剧/作品。
 class JimakuEntry {
   const JimakuEntry({
     required this.id,
     required this.name,
     this.anilistId,
+    this.tmdbId,
+    this.japaneseName,
+    this.flags = const JimakuEntryFlags(),
   });
 
   final int id;
   final String name;
   final int? anilistId;
+
+  /// `tv:<id>` / `movie:<id>` 形态的 TMDB ID；动画条目通常为 null（BUG-1849）。
+  final String? tmdbId;
+
+  /// 日文（含汉字假名）名。真人剧的用户输入常是日文原名，服务端模糊搜索也会匹配此字段。
+  final String? japaneseName;
+
+  final JimakuEntryFlags flags;
 }
 
 /// Jimaku 条目下的一个字幕文件。
@@ -27,11 +95,16 @@ class JimakuFile {
     required this.name,
     required this.url,
     this.size,
+    this.lastModifiedMs,
   });
 
   final String name;
   final String url;
   final int? size;
+
+  /// API `last_modified`（ISO-8601）解析成的 epoch 毫秒；缺失/不可解析为
+  /// null。版本选择器的「N 天前」与最新文件判定用。
+  final int? lastModifiedMs;
 
   /// 文件扩展名（小写，不含点）；用于选解析器（srt/ass/vtt）。
   String get extension {
@@ -139,14 +212,21 @@ List<JimakuEntry> parseJimakuEntries(String body, {bool strict = false}) {
       }
       final String primaryName = (e['name'] as String?)?.trim() ?? '';
       final String englishName = (e['english_name'] as String?)?.trim() ?? '';
+      final String japaneseName = (e['japanese_name'] as String?)?.trim() ?? '';
+      final String tmdbId = (e['tmdb_id'] as String?)?.trim() ?? '';
       out.add(JimakuEntry(
         id: id,
         name: primaryName.isNotEmpty
             ? primaryName
             : englishName.isNotEmpty
                 ? englishName
-                : '#$id',
+                : japaneseName.isNotEmpty
+                    ? japaneseName
+                    : '#$id',
         anilistId: e['anilist_id'] as int?,
+        tmdbId: tmdbId.isEmpty ? null : tmdbId,
+        japaneseName: japaneseName.isEmpty ? null : japaneseName,
+        flags: parseJimakuEntryFlags(e['flags']),
       ));
     }
     return out;
@@ -314,6 +394,7 @@ List<JimakuFile> parseJimakuFiles(String body, {bool strict = false}) {
         name: name,
         url: url,
         size: f['size'] is int ? f['size'] as int : null,
+        lastModifiedMs: parseJimakuTimestampMs(f['last_modified']),
       ));
     }
     return out;
@@ -328,6 +409,13 @@ List<JimakuFile> parseJimakuFiles(String body, {bool strict = false}) {
     }
     return const <JimakuFile>[];
   }
+}
+
+/// 解析 Jimaku 的 `last_modified`（ISO-8601 字符串）为 epoch 毫秒。
+/// 非字符串/不可解析 → null（时间只是增强信息，绝不让它挡住文件本身）。
+int? parseJimakuTimestampMs(Object? raw) {
+  if (raw is! String || raw.trim().isEmpty) return null;
+  return DateTime.tryParse(raw.trim())?.toUtc().millisecondsSinceEpoch;
 }
 
 /// Jimaku 请求失败。默认客户端路径仍可 fail-open；需要向用户区分「零结果」与「请求
@@ -359,6 +447,34 @@ Uri buildListFilesUri(String base, int entryId, {int? episode}) {
   return uri.replace(queryParameters: <String, String>{'episode': '$episode'});
 }
 
+/// `/entries/search` 的 `anime` 过滤三态。
+///
+/// Jimaku 服务端把 `anime` 当**硬相等过滤**（不是排序权重），且**缺省 `true`**。
+/// 此前本客户端从不拼这个参数，等于每次都在 `anime=true` 的子集里搜——Jimaku 上
+/// 数千条真人日剧/电影条目**在任何入口都搜不到**（BUG-1694）。这不是「匹配不准」，
+/// 是整类内容的功能缺失，所以修法是把过滤面变成调用方可表达的值，而不是在某一处
+/// 补一个 if。
+enum JimakuAnimeFilter {
+  /// 只搜动画（= 服务端缺省，与本改动前逐字节同一结果集）。
+  anime,
+
+  /// 只搜真人（日剧 / 真人电影）。
+  liveAction,
+
+  /// 种类未知：先动画、空结果再真人。
+  either;
+
+  /// 本过滤态展开成的 `anime` 参数值序列（按尝试顺序）。
+  ///
+  /// 动画排在前面不是随手定的：本 app 的主用例是动画，动画命中就不该为一个同名
+  /// 真人条目多打一次请求，且结果顺序直接决定 `searchEntries` 返回的首条。
+  List<String> get queryValues => switch (this) {
+        JimakuAnimeFilter.anime => const <String>['true'],
+        JimakuAnimeFilter.liveAction => const <String>['false'],
+        JimakuAnimeFilter.either => const <String>['true', 'false'],
+      };
+}
+
 /// Jimaku API 客户端（参照 asbplayer 的 Jimaku 集成）。需用户在设置/对话框填 API key。
 ///
 /// 端点：`/api/entries/search`（按 anilist_id 或 query 搜条目）、`/api/entries/<id>/files`
@@ -377,13 +493,48 @@ class JimakuClient {
         'Accept': 'application/json',
       };
 
+  /// 组 `/entries/search` 的 query 参数。Jimaku 的 `anime` 是**硬相等过滤且服务端默认
+  /// true**：不显式带 `anime=false` 永远搜不到真人剧/日剧条目（jimaku.cc 的 dramas 区）。
+  /// [anime] 为 null 时不带该参数（= 旧行为，只搜番剧），true/false 显式透传。
+  static Map<String, String> buildEntrySearchParams(
+    Map<String, String> base, {
+    bool? anime,
+  }) {
+    if (anime == null) return base;
+    return <String, String>{...base, 'anime': anime ? 'true' : 'false'};
+  }
+
   /// 按 AniList id 搜 Jimaku 条目。
+  ///
+  /// [animeFilter] 见 [JimakuAnimeFilter]；缺省 [JimakuAnimeFilter.either]
+  /// （动画搜不到再搜真人）。调用方知道种类时显式传，可省掉那次兜底请求。
   Future<List<JimakuEntry>> searchByAnilistId(
     int anilistId, {
     bool throwOnError = false,
+    JimakuAnimeFilter animeFilter = JimakuAnimeFilter.either,
   }) async {
-    return _searchEntries(
+    return _searchWithAnimeFilter(
       <String, String>{'anilist_id': '$anilistId'},
+      animeFilter,
+      throwOnError: throwOnError,
+    );
+  }
+
+  /// 按 TMDB ID（`tv:<id>` / `movie:<id>`，见 [jimakuTmdbId]）精确搜条目。
+  ///
+  /// 真人剧的权威关联键：AniList ID 是动画专属键，真人剧此前只剩「按显示名模糊搜」这一条
+  /// 路（BUG-1849）。注意 Jimaku 的 `anime` 硬相等过滤**先于** ID 匹配执行，所以种类未知时
+  /// 必须靠 [JimakuAnimeFilter.either] 两档都试，只查一边会漏。
+  Future<List<JimakuEntry>> searchByTmdbId(
+    String tmdbId, {
+    bool throwOnError = false,
+    JimakuAnimeFilter animeFilter = JimakuAnimeFilter.either,
+  }) async {
+    final String trimmed = tmdbId.trim();
+    if (trimmed.isEmpty) return const <JimakuEntry>[];
+    return _searchWithAnimeFilter(
+      <String, String>{'tmdb_id': trimmed},
+      animeFilter,
       throwOnError: throwOnError,
     );
   }
@@ -392,12 +543,33 @@ class JimakuClient {
   Future<List<JimakuEntry>> searchByQuery(
     String query, {
     bool throwOnError = false,
+    JimakuAnimeFilter animeFilter = JimakuAnimeFilter.either,
   }) async {
     if (query.trim().isEmpty) return const <JimakuEntry>[];
-    return _searchEntries(
+    return _searchWithAnimeFilter(
       <String, String>{'query': query},
+      animeFilter,
       throwOnError: throwOnError,
     );
+  }
+
+  /// 按 [filter] 把一次逻辑搜索展开成 1~2 次 `/entries/search`。
+  ///
+  /// 顺序回退而非并发两发：见 [JimakuAnimeFilter.queryValues]。任一档命中即停，
+  /// 所以动画用例的请求数与本改动前完全一致（仍是 1 次）。
+  Future<List<JimakuEntry>> _searchWithAnimeFilter(
+    Map<String, String> params,
+    JimakuAnimeFilter filter, {
+    required bool throwOnError,
+  }) async {
+    for (final String value in filter.queryValues) {
+      final List<JimakuEntry> found = await _searchEntries(
+        <String, String>{...params, 'anime': value},
+        throwOnError: throwOnError,
+      );
+      if (found.isNotEmpty) return found;
+    }
+    return const <JimakuEntry>[];
   }
 
   /// 「先按 AniList id 搜、搜不到再按文本搜」的收敛入口——Jimaku 条目只有被人工挂上
@@ -407,21 +579,35 @@ class JimakuClient {
   /// 「其实有字幕却报无字幕」。纯委托，便于用 fake [http.Client] 单测。
   Future<List<JimakuEntry>> searchEntries({
     int? anilistId,
+    String? tmdbId,
     List<String> queryFallbacks = const <String>[],
     bool throwOnError = false,
+    JimakuAnimeFilter animeFilter = JimakuAnimeFilter.either,
   }) async {
     if (anilistId != null) {
       final List<JimakuEntry> byId = await searchByAnilistId(
         anilistId,
         throwOnError: throwOnError,
+        animeFilter: animeFilter,
       );
       if (byId.isNotEmpty) return byId;
+    }
+    // 权威 ID 键先于模糊标题：TMDB 是真人剧唯一的精确关联键（BUG-1849），AniList 在
+    // 真人条目上恒空，两者都空才退到显示名。
+    if (tmdbId != null && tmdbId.trim().isNotEmpty) {
+      final List<JimakuEntry> byTmdb = await searchByTmdbId(
+        tmdbId,
+        throwOnError: throwOnError,
+        animeFilter: animeFilter,
+      );
+      if (byTmdb.isNotEmpty) return byTmdb;
     }
     for (final String query in queryFallbacks) {
       if (query.trim().isEmpty) continue;
       final List<JimakuEntry> byQuery = await searchByQuery(
         query,
         throwOnError: throwOnError,
+        animeFilter: animeFilter,
       );
       if (byQuery.isNotEmpty) return byQuery;
     }

@@ -167,8 +167,8 @@ void main() {
   });
 
   test(
-      'floating lyric window stays noactivate/shownoactivate; only the '
-      'clipboard text window opts into the taskbar', () {
+      'floating lyric window stays noactivate/shownoactivate and off the '
+      'taskbar', () {
     final String cpp = read('windows/runner/floating_lyric_window.cpp');
     final int createWindow = cpp.indexOf('CreateWindowExW(');
     final int showWindow = cpp.indexOf('ShowWindow(hwnd_,', createWindow);
@@ -181,22 +181,15 @@ void main() {
     expect(createBlock.contains('WS_EX_NOACTIVATE'), isTrue);
     expect(cpp.contains('ShowWindow(hwnd_, SW_SHOWNOACTIVATE)'), isTrue);
 
-    // Taskbar contract: only the transparent clipboard text window
-    // (`text_only_ && !hook_text_mode_`) enters the taskbar / Alt-Tab via
-    // WS_EX_APPWINDOW so the user can find/raise the otherwise-invisible overlay;
-    // the audiobook lyric strip and the galgame hook window keep
-    // WS_EX_TOOLWINDOW (off the taskbar). The branch lives in `taskbar_ex`, and
-    // CreateWindowExW must consume it rather than hard-coding an ex-style.
-    expect(
-      cpp.contains('(text_only_ && !hook_text_mode_) '
-          '? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW'),
-      isTrue,
-      reason: 'lyric strip / hook window keep TOOLWINDOW; only the clipboard '
-          'text window uses APPWINDOW.',
-    );
-    expect(createBlock.contains('taskbar_ex'), isTrue,
-        reason: 'CreateWindowExW must use the taskbar_ex branch, not a '
-            'hard-coded ex-style.');
+    // Taskbar contract: both FloatingLyricWindow instances (the audiobook lyric
+    // strip and the galgame hook window) stay WS_EX_TOOLWINDOW — no taskbar /
+    // Alt-Tab entry. (The clipboard text window, the only instance that used
+    // to opt into WS_EX_APPWINDOW, was removed together with desktop clipboard
+    // lookup.)
+    expect(createBlock.contains('WS_EX_TOOLWINDOW'), isTrue,
+        reason: 'CreateWindowExW must keep the strip off the taskbar.');
+    expect(cpp.contains('WS_EX_APPWINDOW'), isFalse,
+        reason: 'no FloatingLyricWindow instance may re-enter the taskbar.');
   });
 
   // TODO-615 方案A：原生 runner 必须提供主动熄灭任务栏高亮的能力

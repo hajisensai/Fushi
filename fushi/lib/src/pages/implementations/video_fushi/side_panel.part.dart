@@ -21,7 +21,7 @@ part of '../video_fushi_page.dart';
 /// `_buildVideoQuickSettingsSheet`, `_buildChapterSidePanel`), the controls/rail
 /// collaborators (`_clearRailHover`, `_hideVideoControlEditOverlay`,
 /// `_hideControlPopover`, `_markControlsVisible`, `_pokeControlsVisible`,
-/// `_focusOwnership`, `_clearSelectedMiningCues`), the `_subtitleListVisible` /
+/// `_focusOwnership`), the `_subtitleListVisible` /
 /// `_episodeListVisible` notifiers and `_videoUiScale` all stay in the main
 /// shell; the extension reads/calls them through the shared private scope.
 extension _VideoSidePanel on _VideoFushiPageState {
@@ -55,7 +55,6 @@ extension _VideoSidePanel on _VideoFushiPageState {
     );
     // 与 push-aside 字幕列表互斥（TODO-314）：开任何浮层都先关字幕列表。
     if (_subtitleListVisible.value) {
-      _clearSelectedMiningCues();
       _subtitleListVisible.value = false;
     }
     // TODO-638：开任何浮层都关掉 push-aside 剧集列表（与字幕列表同处右栏，互斥）。
@@ -136,9 +135,16 @@ extension _VideoSidePanel on _VideoFushiPageState {
           __,
         ) {
           if (panelState == null) return const SizedBox.shrink();
-          final Widget panelContent = _buildVideoSidePanelContent(
-            panelState,
-            controller,
+          // 手柄重设计 P3：侧栏随打开挂载，挂载即领焦点进面板、卸载还给页面
+          // 焦点——D-pad 才能在速度/设置/章节/画质行间移动。
+          final Widget panelContent = PanelFocusScope(
+            visible: true,
+            restoreFocus: () =>
+                _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
+            child: _buildVideoSidePanelContent(
+              panelState,
+              controller,
+            ),
           );
           // BUG-254：面板打开时在面板「后面 / 左侧空白」铺一层全屏不可见 barrier，
           // 点面板之外任意位置 → [_hideVideoSidePanel] 关闭面板。barrier 用

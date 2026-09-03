@@ -22,22 +22,31 @@ String persistedVideoResourceProviderId(VideoResourceCandidate candidate) =>
     '${candidate.providerId}:${candidate.providerInstanceId}';
 
 /// 资源搜索的共享入口。发现详情页、下载模块“资源”页和订阅调度都使用同一实例，
-/// 因而动漫的 Nyaa+Torznab 与电影/剧集的 Torznab 规则不会在三处漂移。
+/// 因而「动漫走 Nyaa、电影/剧集走内置公共索引器、Torznab 全域参与」的规则不会在
+/// 三处漂移。域归属由 provider 自报（[VideoResourceProvider.categories]），本类
+/// 只做交集 + 停用清单，不再持有任何 provider id 的知识。
 class VideoResourceRegistry {
-  VideoResourceRegistry(Iterable<VideoResourceProvider> providers)
-      : providers = List<VideoResourceProvider>.unmodifiable(providers);
+  VideoResourceRegistry(
+    Iterable<VideoResourceProvider> providers, {
+    Set<String> disabledProviderIds = const <String>{},
+  })  : providers = List<VideoResourceProvider>.unmodifiable(providers),
+        disabledProviderIds = Set<String>.unmodifiable(disabledProviderIds);
 
   final List<VideoResourceProvider> providers;
+
+  /// 用户在设置里停用的内置源 id。停用是**不参与查询**，不是「查了再过滤掉」
+  /// ——后者会让停用的源照样打出网络请求，失败照样进 failures 吓用户。
+  final Set<String> disabledProviderIds;
 
   Future<ProviderBatchResult<VideoResourceCandidate>> search(
     VideoResourceSearchRequest request,
   ) async {
-    final bool anime =
-        request.media?.discoveryCategory == VideoDiscoveryCategory.anime;
+    final VideoDiscoveryCategory? category = request.media?.discoveryCategory;
     final List<VideoResourceProvider> applicable = providers
         .where(
           (VideoResourceProvider provider) =>
-              provider.id == 'torznab' || (anime && provider.id == 'nyaa'),
+              !disabledProviderIds.contains(provider.id) &&
+              videoResourceProviderApplies(provider, category),
         )
         .toList()
       ..sort(

@@ -2,7 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/media/torrent/download_network_proxy.dart';
+import 'package:fushi/src/media/torrent/download_timeouts.dart';
+
+import '../helpers/source_guard.dart';
 
 /// BUG-1141：用户报：挂着代理搜 Nyaa，「发现」页只出
 /// `TimeoutException after 0:00:20.000000: Future not completed` + 「请点重试」。
@@ -37,6 +39,10 @@ void main() {
       const List<String> consumers = <String>[
         'lib/src/pages/implementations/anime_download_dialog.dart',
         'lib/src/media/torrent/anime_download_subscription.dart',
+        // BUG-2079：NyaaClient 自己也是消费方——注册表路径
+        // （nyaa_discovery_source / nyaa_resource_provider）的调用点没有外层
+        // 超时，所以时限必须落在 client 上；同样不许在这里重新长出裸 20s。
+        'lib/src/media/torrent/nyaa_client.dart',
       ];
       // `.timeout(` 后面直接跟 Duration(...) 的写法即为漏网魔法数字。
       // `const` 可省，故设为可选——只匹配 `const Duration` 的正则会被
@@ -45,7 +51,12 @@ void main() {
       for (final String path in consumers) {
         final File file = File(path);
         expect(file.existsSync(), isTrue, reason: '找不到 $path（文件被移动？）');
-        final String src = file.readAsStringSync();
+        // 剥注释后再判：doc comment 里提一句 `kDownloadDiscoveryTimeout`
+        // 不算消费——那正是本文件测试 C 已经防过的「注释在说代码没做的事」，
+        // 加进 nyaa_client.dart 后这条尤其要紧（它的常量既出现在注释里也
+        // 出现在默认参数值里，不剥注释就分不出两者）。maskComments 等长
+        // 替换，正则偏移与原串一致。
+        final String src = maskComments(file.readAsStringSync());
         expect(
           bare.hasMatch(src),
           isFalse,
@@ -70,16 +81,21 @@ void main() {
         inInclusiveRange(5, 20),
         reason: '太短会误杀慢代理握手，太长就失去「连不上快速失败」的意义',
       );
-      // 光有常量不算数——必须真的赋给 HttpClient，否则注释又在说代码没做的事。
-      final File proxy =
-          File('lib/src/media/torrent/download_network_proxy.dart');
-      expect(proxy.existsSync(), isTrue);
+      // 光有常量不算数——必须真的传给 client 工厂，否则注释又在说代码没做的事。
+      // 下载链路的 client 现在由 AppModel.createDownloadHttpClient 经统一装配点
+      // createAppHttpIoClient 建（代理出口全应用同一个），本链路特有的只剩这个
+      // 比默认 20s 短的建连超时，必须显式传进去。剥注释后匹配，防止只剩注释假绿。
+      final File appModel = File('lib/src/models/app_model.dart');
+      expect(appModel.existsSync(), isTrue);
+      final String code = compactCode(appModel.readAsStringSync());
       expect(
-        RegExp(r'connectionTimeout\s*=\s*kDownloadConnectionTimeout')
-            .hasMatch(proxy.readAsStringSync()),
-        isTrue,
-        reason: 'buildDownloadHttpClient 必须把 kDownloadConnectionTimeout '
-            '赋给 HttpClient.connectionTimeout',
+        code,
+        contains(
+          'createDownloadHttpClient()async=>createAppHttpIoClient('
+          'connectionTimeout:kDownloadConnectionTimeout)',
+        ),
+        reason: 'AppModel.createDownloadHttpClient 必须把 '
+            'kDownloadConnectionTimeout 传给 createAppHttpIoClient',
       );
     });
   });

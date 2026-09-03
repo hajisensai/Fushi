@@ -166,6 +166,15 @@ run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
 assert_nonempty "$WORK/frame.jpg"
 
 echo "[ffmpeg-min-smoke] exporting sentence audio"
+# Windows Galgame 资源链需要专用 xWMA demuxer；只有 wav demuxer + WMA decoder
+# 无法打开 RIFF/XWMA。真实游戏样本不入库，这里至少把随包二进制的能力位钉住。
+if [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* ]]; then
+  "$FFMPEG_MIN" -hide_banner -demuxers 2>&1 |
+    grep -Eq '^[[:space:]]*D[[:space:]]+xwma([[:space:]]|$)' || {
+      echo "[ffmpeg-min-smoke] missing Windows xwma demuxer" >&2
+      exit 1
+    }
+fi
 for input in \
   "$MP4_FIXTURE" \
   "$MKV_FIXTURE" \
@@ -392,7 +401,19 @@ assert_self_contained() {
   local binary="$1"
   local deps=""
   case "$(uname -s)" in
-    Darwin) deps="$(otool -L "$binary" | tail -n +2 | awk '{print $1}')" ;;
+    # BUG-1668：按「依赖行必有缩进」取，别再用 `tail -n +2` 跳过表头。
+    # `otool -L` 对**瘦**二进制只有一行表头（`/path/ffmpeg:`），对 **universal**
+    # 则是每个架构一段：
+    #     /path/ffmpeg (architecture x86_64):
+    #     <TAB>/usr/lib/libSystem.B.dylib …
+    #     /path/ffmpeg (architecture arm64):
+    #     <TAB>/usr/lib/libSystem.B.dylib …
+    # `tail -n +2` 只吃掉第一行，第二个架构的表头会被当成一条依赖；它是产物自身的
+    # 绝对路径，在 CI 上正好长成 /Users/runner/…，直接命中下面的黑名单 → 产物明明
+    # 自包含却报 FATAL（实测：改出 universal 后 CI 第一次就栽在这）。
+    # 依赖行一律以制表符/空格开头、表头一律顶格，按缩进筛既修了假阳性，又顺带把
+    # **两个架构**的依赖都纳入检查（比原来只看一段更严）。
+    Darwin) deps="$(otool -L "$binary" | awk '/^[[:space:]]/ {print $1}')" ;;
     Linux) deps="$(objdump -p "$binary" | awk '/NEEDED|RPATH|RUNPATH/ {print $2}')
 $(ldd "$binary" 2>/dev/null | awk '{print $3}')" ;;
     # Windows/MSYS：产物是 --extra-ldflags=-static 的单文件 PE，没有 Unix 式

@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 
 import 'helpers/focus_driver.dart';
@@ -34,7 +34,7 @@ void main() {
   testWidgets(
       'BUG-007 e2e: real paginated reader reveals image on cross, text on resume',
       (WidgetTester tester) async {
-    app.main();
+    await launchFushiTestApp();
     expect(await waitForHome(tester), isTrue, reason: 'Home must render');
     await tester.pump(const Duration(seconds: 2));
 

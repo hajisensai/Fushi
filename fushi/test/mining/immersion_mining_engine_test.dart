@@ -136,6 +136,11 @@ void main() {
     expect(repo.minedContext!.sentenceAudioPath,
         endsWith('immersion_audio.${immersionMiningAudioExtension()}'));
     expect(repo.minedContext!.source, AnkiMiningSource.video);
+    // 片段时间窗必须原样接进落卡 context（渲染 `{clip-timestamp}` 的唯一来源）。
+    // 引擎是「制卡请求 → 落卡 context」的唯一收口：这里漏传，视频页真实制卡就没有
+    // 时间窗，而直调渲染器 / 直造 context 的测试结构上照不到这根线。
+    expect(repo.minedContext!.clipStartMs, 1000);
+    expect(repo.minedContext!.clipEndMs, 3000);
   });
 
   test('BUG-1004 remoteAudioClipper 命中远端流 → 用 host 端裁产物、不调 ffmpeg 音频抽取',
@@ -355,6 +360,9 @@ void main() {
     expect(repo.minedContext!.coverPath, endsWith('.jpg'));
   });
 
+  // TODO-1314(B5) / PR#1172: 物化判据是「谁在限速」而不是「有没有分离音轨」——`range=` 查询参数
+  // 分片是 googlevideo 专属绕行，所以 fixture 必须用真的 googlevideo 主机名（旧 fixture
+  // `audio-only.example` 只满足旧的形状判据，与用例名里的 youtube split 不一致）。
   test(
       'audioSource (youtube split) is materialized locally then cut (TODO-1314 B5)',
       () async {
@@ -411,7 +419,8 @@ void main() {
                 source: AnkiMiningSource.video,
                 fields: {'expression': 'x'},
                 mediaSource: 'https://video-only.example/v',
-                audioSource: 'https://audio-only.example/a',
+                audioSource:
+                    'https://rr1---sn-4g5e6nez.googlevideo.com/videoplayback?id=x',
                 clipStartMs: 0,
                 clipEndMs: 2000,
                 sentence: 's'),
@@ -420,8 +429,64 @@ void main() {
             repo: repo);
     expect(gifInput, 'https://video-only.example/v'); // GIF 仍从视频流
     // 分离 audio-only 流先经 range 分片下载物化到本地，再对本地文件裁（不再对 URL 直接 HTTP seek）。
-    expect(materializedUrl, 'https://audio-only.example/a');
+    expect(materializedUrl,
+        'https://rr1---sn-4g5e6nez.googlevideo.com/videoplayback?id=x');
     expect(audioInput, localAudio);
+  });
+
+  // PR#1172 反向守卫：非 googlevideo 的分离音轨（bilibili DASH audio-only m4s 等）
+  // **不得**走 range 分片物化——`range=` 是它们不认识的查询参数，被忽略后每一片
+  // 都返回整个文件，会把同一个流反复下满 maxBytes（比直接 seek 慢几十倍）。
+  // 它们直接对 URL `-ss` 裁即可。这一条钉住判据是「谁在限速」而非「有没有分离音轨」。
+  test('non-googlevideo split audio is cut from the URL, not materialized',
+      () async {
+    final repo = _FakeRepo();
+    String? audioInput;
+    String? materializedUrl;
+    const String biliAudio =
+        'https://upos-hz-mirrorakam.akamaized.net/upgcxcode/x-1-30280.m4s';
+    Future<String?> capAudio(
+        {required String inputPath,
+        required int startMs,
+        required int endMs,
+        required String outputPath,
+        int? audioStreamIndex,
+        int? audioStreamCount,
+        FfmpegFailureReporter? onFailure,
+        int audioChannels = 1,
+        String audioBitrate = '64k',
+        String? tlsPinSha256}) async {
+      audioInput = inputPath;
+      return outputPath;
+    }
+
+    Future<String?> capMaterialize(
+        {required String audioUrl,
+        required String outputPath,
+        FfmpegFailureReporter? onFailure}) async {
+      materializedUrl = audioUrl;
+      return '${tmp.path}/should_not_be_used';
+    }
+
+    await build(
+            gif: okGif,
+            audio: capAudio,
+            frame: okFrame,
+            materializer: capMaterialize)
+        .mine(
+            const ImmersionMiningRequest(
+                source: AnkiMiningSource.video,
+                fields: {'expression': 'x'},
+                mediaSource: 'https://video-only.example/v',
+                audioSource: biliAudio,
+                clipStartMs: 0,
+                clipEndMs: 2000,
+                sentence: 's'),
+            compression: MiningMediaCompression.compressed,
+            tempDir: tmp.path,
+            repo: repo);
+    expect(materializedUrl, isNull);
+    expect(audioInput, biliAudio);
   });
 
   test('updateNoteId routes to updateMinedNote', () async {
@@ -466,6 +531,35 @@ void main() {
     expect(repo.minedContext, isNull);
   });
 
+  // ── BUG-2080：Netflix 现在带真实卡面时间窗，抽取路径必须一个字节都不变 ──────
+  //
+  // 修复前 `buildImmersionRequest` 把窗硬编码成 0，唯一目的就是让当时「窗非空 = 要裁」
+  // 的 `hasRange` 保持 false。窗改成透传真值后，抽取意图改由 [hasRange]（窗非空 **且**
+  // 有可裁的源）承载 —— 下面两条把「Netflix 形状 + 非零窗」这个此前不存在的组合钉住。
+  test('BUG-2080：Netflix 形状（无源 + provided 字节 + 非零窗）音频丢失仍中止', () async {
+    final repo = _FakeRepo();
+    final res = await build(gif: nullGif, audio: nullAudio, frame: nullFrame)
+        .mine(
+            ImmersionMiningRequest(
+                source: AnkiMiningSource.video,
+                fields: const {'expression': 'x'},
+                // 非零窗：修复前这里只可能是 0/0。
+                clipStartMs: 1000,
+                clipEndMs: 3000,
+                sentence: 's',
+                providedCoverBytes: Uint8List.fromList(<int>[1, 2, 3]),
+                providedCoverName: 'netflix_clip.gif',
+                requireAudio: true),
+            compression: MiningMediaCompression.compressed,
+            tempDir: tmp.path,
+            repo: repo);
+    // 中止判据走的仍是 provided-bytes 那条腿（`providedCoverBytes != null && !hasRange`），
+    // 没有因为窗变非零而改走 range 腿。
+    expect(res.aborted, true);
+    expect(res.abortReason, contains('audio'));
+    expect(repo.minedContext, isNull);
+  });
+
   // TODO-1303：空壳卡兜底——封面 + 音频全无（截图/GIF/音频全失败）→ 中止，绝不产出无媒体卡，
   // 即便 requireAudio=false（这正是「降级空壳卡仍报成功」的根）。
   test('empty shell (no cover, no audio) -> abort', () async {
@@ -485,6 +579,118 @@ void main() {
     expect(res.aborted, true);
     expect(res.abortReason, contains('no cover'));
     expect(repo.minedContext, isNull);
+  });
+
+  // ── BUG-1664：中止原因必须带**根因**，不能只报症状 ──────────────────────
+  // 真实事故：macOS 装的包（build 885，早于 BUG-1421 给 macOS bundle 补 ffmpeg）里
+  // Contents/MacOS/ 没有 ffmpeg，PATH 上也没有（macOS 不自带）→ 抽取层 Process.start
+  // 抛 ProcessException(errorCode=2, "No such file or directory")。该精确摘要**已经**
+  // 经 onFailure 送到了引擎，却只被调用方丢进诊断日志；引擎回的是常量 'required audio
+  // missing'。于是浏览器扩展批量制卡整批失败，用户只看到「已处理 0 · 失败 4」，必须翻到
+  // 沙盒容器里的 error_log.txt 才知道是缺 ffmpeg。这三条锁住「根因一路走到 abortReason」。
+
+  /// 抽取失败并**如实上报根因**（模拟 ffmpeg 可执行不存在），再返回 null。
+  Future<String?> reportingNullAudio(
+      {required String inputPath,
+      required int startMs,
+      required int endMs,
+      required String outputPath,
+      int? audioStreamIndex,
+      int? audioStreamCount,
+      FfmpegFailureReporter? onFailure,
+      int audioChannels = 1,
+      String audioBitrate = '64k',
+      String? tlsPinSha256}) async {
+    onFailure?.call('ffmpeg launch failed: executable=ffmpeg; '
+        'errorCode=2; message=No such file or directory');
+    return null;
+  }
+
+  test('BUG-1664 abort carries the real root cause, not just the symptom',
+      () async {
+    final repo = _FakeRepo();
+    final res =
+        await build(gif: okGif, audio: reportingNullAudio, frame: nullFrame)
+            .mine(
+                const ImmersionMiningRequest(
+                    source: AnkiMiningSource.video,
+                    fields: {'expression': 'x'},
+                    mediaSource: '/tmp/in.mp4',
+                    clipStartMs: 0,
+                    clipEndMs: 1000,
+                    sentence: 's',
+                    requireAudio: true),
+                compression: MiningMediaCompression.compressed,
+                tempDir: tmp.path,
+                repo: repo);
+    expect(res.aborted, true);
+    // 症状前缀保持不变（既有调用方/测试按它断言）……
+    expect(res.abortReason, startsWith('required audio missing'));
+    // ……根因必须跟在后面，且点名 ffmpeg 与「找不到」。
+    expect(res.abortReason, contains('ffmpeg launch failed'));
+    expect(res.abortReason, contains('No such file or directory'));
+    expect(repo.minedContext, isNull);
+  });
+
+  // 没有任何抽取上报根因时（provided-bytes 路径真没跑过抽取）逐字保持旧文案，
+  // 不给用户凭空拼一个空括号。
+  test('BUG-1664 abort reason unchanged when no root cause was reported',
+      () async {
+    final repo = _FakeRepo();
+    final res = await build(gif: nullGif, audio: nullAudio, frame: nullFrame)
+        .mine(
+            ImmersionMiningRequest(
+                source: AnkiMiningSource.video,
+                fields: const {'expression': 'x'},
+                clipStartMs: 0,
+                clipEndMs: 0,
+                sentence: 's',
+                providedCoverBytes: Uint8List.fromList(<int>[1, 2, 3]),
+                providedCoverName: 'netflix_clip.gif',
+                requireAudio: true),
+            compression: MiningMediaCompression.compressed,
+            tempDir: tmp.path,
+            repo: repo);
+    expect(res.aborted, true);
+    expect(res.abortReason, 'required audio missing');
+  });
+
+  // 超长根因（ffmpeg 的 stderr 可以很长）要截断——这串会一路走到扩展 toast。
+  test('BUG-1664 long root cause is clipped', () async {
+    final repo = _FakeRepo();
+    final String longCause = 'x' * 900;
+    Future<String?> longReportingAudio(
+        {required String inputPath,
+        required int startMs,
+        required int endMs,
+        required String outputPath,
+        int? audioStreamIndex,
+        int? audioStreamCount,
+        FfmpegFailureReporter? onFailure,
+        int audioChannels = 1,
+        String audioBitrate = '64k',
+        String? tlsPinSha256}) async {
+      onFailure?.call(longCause);
+      return null;
+    }
+
+    final res =
+        await build(gif: okGif, audio: longReportingAudio, frame: nullFrame)
+            .mine(
+                const ImmersionMiningRequest(
+                    source: AnkiMiningSource.video,
+                    fields: {'expression': 'x'},
+                    mediaSource: '/tmp/in.mp4',
+                    clipStartMs: 0,
+                    clipEndMs: 1000,
+                    sentence: 's',
+                    requireAudio: true),
+                compression: MiningMediaCompression.compressed,
+                tempDir: tmp.path,
+                repo: repo);
+    expect(res.aborted, true);
+    expect(res.abortReason!.length, lessThan(longCause.length));
+    expect(res.abortReason, contains('…'));
   });
 
   // ── 视频制卡封面图片模式（VideoMiningImageMode）─────────────────────────

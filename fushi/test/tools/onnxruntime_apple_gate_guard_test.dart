@@ -23,6 +23,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/workspace_pubspec.dart';
+
 /// 从当前 cwd 向上找含 `third_party/flutter_onnxruntime` 的仓库根。
 Directory _repoRoot() {
   var dir = Directory.current;
@@ -34,8 +36,10 @@ Directory _repoRoot() {
     if (parent.path == dir.path) break;
     dir = parent;
   }
-  fail('找不到含 third_party/flutter_onnxruntime 的仓库根'
-      '（从 ${Directory.current.path} 向上）');
+  fail(
+    '找不到含 third_party/flutter_onnxruntime 的仓库根'
+    '（从 ${Directory.current.path} 向上）',
+  );
 }
 
 /// 平台键是否在 `flutter.plugin.platforms` 段以行首缩进键的形式声明。
@@ -70,18 +74,27 @@ void main() {
         'macos',
         'windows',
       ]) {
-        expect(_declaresPlatform(platformsSection, name), isTrue,
-            reason: '$name 平台声明必须保留，否则该端本地 OCR 静默降级为 '
-                'MissingPluginException');
+        expect(
+          _declaresPlatform(platformsSection, name),
+          isTrue,
+          reason:
+              '$name 平台声明必须保留，否则该端本地 OCR 静默降级为 '
+              'MissingPluginException',
+        );
       }
     });
 
     test('Apple 原生源码树存在（ios/ 与 macos/ 的 Swift 插件实现）', () {
       for (final platform in const <String>['ios', 'macos']) {
-        final plugin = File('${forkDir.path}/$platform/flutter_onnxruntime/'
-            'Sources/flutter_onnxruntime/FlutterOnnxruntimePlugin.swift');
-        expect(plugin.existsSync(), isTrue,
-            reason: '$platform 插件 Swift 实现缺失：${plugin.path}');
+        final plugin = File(
+          '${forkDir.path}/$platform/flutter_onnxruntime/'
+          'Sources/flutter_onnxruntime/FlutterOnnxruntimePlugin.swift',
+        );
+        expect(
+          plugin.existsSync(),
+          isTrue,
+          reason: '$platform 插件 Swift 实现缺失：${plugin.path}',
+        );
       }
     });
 
@@ -90,23 +103,30 @@ void main() {
       // Flutter 会改走 SwiftPM，onnxruntime-swift-package-manager 的
       // `.macOS(.v14)` 会把整个 app 拖到 macOS 14，构建当场失败。
       for (final platform in const <String>['ios', 'macos']) {
-        final manifest =
-            File('${forkDir.path}/$platform/flutter_onnxruntime/Package.swift');
-        expect(manifest.existsSync(), isFalse,
-            reason: '$platform/flutter_onnxruntime/Package.swift 必须删除，'
-                '否则 SwiftPM 会把部署目标拖到 macOS 14 / iOS 15');
+        final manifest = File(
+          '${forkDir.path}/$platform/flutter_onnxruntime/Package.swift',
+        );
+        expect(
+          manifest.existsSync(),
+          isFalse,
+          reason:
+              '$platform/flutter_onnxruntime/Package.swift 必须删除，'
+              '否则 SwiftPM 会把部署目标拖到 macOS 14 / iOS 15',
+        );
       }
     });
 
-    test('fushi/pubspec.yaml 把 flutter_onnxruntime override 到 vendored fork',
-        () {
-      final pubspec =
-          File('${root.path}/fushi/pubspec.yaml').readAsStringSync();
-      final override = RegExp(
-          r'flutter_onnxruntime:\s*\n\s+path:\s*\.\./third_party/flutter_onnxruntime');
-      expect(override.hasMatch(pubspec), isTrue,
-          reason:
-              'flutter_onnxruntime 必须经 dependency_overrides 指向 vendored fork');
+    test('workspace 根 pubspec 把 flutter_onnxruntime 接到 vendored fork', () {
+      // 迁到 pub workspace 后 dependency_overrides 只能写在仓库根，这里跟着
+      // 从 fushi/pubspec.yaml 改到根，path 也不再带 ../ 前缀。
+      final WorkspacePubspec ws = WorkspacePubspec.load(
+        path: '${root.path}/pubspec.yaml',
+      );
+      expect(
+        ws.isVendored('flutter_onnxruntime', 'third_party/flutter_onnxruntime'),
+        isTrue,
+        reason: 'flutter_onnxruntime 必须经根 pubspec 指向 vendored fork',
+      );
     });
   });
 
@@ -118,15 +138,23 @@ void main() {
     const String kMacosFloor = '13.4';
 
     test('fork 的 Apple podspec 声明 iOS $kIosFloor / macOS $kMacosFloor', () {
-      final ios = File('${forkDir.path}/ios/flutter_onnxruntime.podspec')
-          .readAsStringSync();
-      expect(ios, contains("s.platform = :ios, '$kIosFloor'"),
-          reason: 'iOS podspec 下限漂移；onnxruntime-objc 1.23.0 要求 15.1');
+      final ios = File(
+        '${forkDir.path}/ios/flutter_onnxruntime.podspec',
+      ).readAsStringSync();
+      expect(
+        ios,
+        contains("s.platform = :ios, '$kIosFloor'"),
+        reason: 'iOS podspec 下限漂移；onnxruntime-objc 1.23.0 要求 15.1',
+      );
 
-      final macos = File('${forkDir.path}/macos/flutter_onnxruntime.podspec')
-          .readAsStringSync();
-      expect(macos, contains("s.platform = :osx, '$kMacosFloor'"),
-          reason: 'macOS podspec 下限漂移；onnxruntime-objc 1.23.0 要求 13.4');
+      final macos = File(
+        '${forkDir.path}/macos/flutter_onnxruntime.podspec',
+      ).readAsStringSync();
+      expect(
+        macos,
+        contains("s.platform = :osx, '$kMacosFloor'"),
+        reason: 'macOS podspec 下限漂移；onnxruntime-objc 1.23.0 要求 13.4',
+      );
     });
 
     test('Apple podspec 都标 static_framework（use_frameworks! 下的硬要求）', () {
@@ -134,42 +162,61 @@ void main() {
       // CocoaPods 会以 "transitive dependencies that include statically linked
       // binaries" 中止安装。上游没踩到是因为他们的 example 只走 SwiftPM。
       for (final platform in const <String>['ios', 'macos']) {
-        final spec =
-            File('${forkDir.path}/$platform/flutter_onnxruntime.podspec')
-                .readAsStringSync();
-        expect(spec, contains('s.static_framework = true'),
-            reason: '$platform podspec 缺 static_framework，pod install 会中止');
+        final spec = File(
+          '${forkDir.path}/$platform/flutter_onnxruntime.podspec',
+        ).readAsStringSync();
+        expect(
+          spec,
+          contains('s.static_framework = true'),
+          reason: '$platform podspec 缺 static_framework，pod install 会中止',
+        );
       }
     });
 
     test('Podfile 平台声明与 podspec 下限一致', () {
-      final iosPodfile =
-          File('${root.path}/fushi/ios/Podfile').readAsStringSync();
+      final iosPodfile = File(
+        '${root.path}/fushi/ios/Podfile',
+      ).readAsStringSync();
       expect(iosPodfile, contains("platform :ios, '$kIosFloor'"));
 
-      final macosPodfile =
-          File('${root.path}/fushi/macos/Podfile').readAsStringSync();
+      final macosPodfile = File(
+        '${root.path}/fushi/macos/Podfile',
+      ).readAsStringSync();
       expect(macosPodfile, contains("platform :osx, '$kMacosFloor'"));
     });
 
     test('Xcode 工程三个 configuration 的部署目标都不低于 podspec 下限', () {
-      final iosProject = File('${root.path}/fushi/ios/Runner.xcodeproj/'
-              'project.pbxproj')
-          .readAsStringSync();
-      final iosTargets =
-          _deploymentTargets(iosProject, 'IPHONEOS_DEPLOYMENT_TARGET');
-      expect(iosTargets, <String>{kIosFloor},
-          reason: 'iOS 部署目标必须全部恰为 $kIosFloor（Debug/Profile/Release 三份），'
-              '实测为 $iosTargets');
+      final iosProject = File(
+        '${root.path}/fushi/ios/Runner.xcodeproj/'
+        'project.pbxproj',
+      ).readAsStringSync();
+      final iosTargets = _deploymentTargets(
+        iosProject,
+        'IPHONEOS_DEPLOYMENT_TARGET',
+      );
+      expect(
+        iosTargets,
+        <String>{kIosFloor},
+        reason:
+            'iOS 部署目标必须全部恰为 $kIosFloor（Debug/Profile/Release 三份），'
+            '实测为 $iosTargets',
+      );
 
-      final macosProject = File('${root.path}/fushi/macos/Runner.xcodeproj/'
-              'project.pbxproj')
-          .readAsStringSync();
-      final macosTargets =
-          _deploymentTargets(macosProject, 'MACOSX_DEPLOYMENT_TARGET');
-      expect(macosTargets, <String>{kMacosFloor},
-          reason: 'macOS 部署目标必须全部恰为 $kMacosFloor（Debug/Profile/Release 三份），'
-              '实测为 $macosTargets');
+      final macosProject = File(
+        '${root.path}/fushi/macos/Runner.xcodeproj/'
+        'project.pbxproj',
+      ).readAsStringSync();
+      final macosTargets = _deploymentTargets(
+        macosProject,
+        'MACOSX_DEPLOYMENT_TARGET',
+      );
+      expect(
+        macosTargets,
+        <String>{kMacosFloor},
+        reason:
+            'macOS 部署目标必须全部恰为 $kMacosFloor（Debug/Profile/Release 三份），'
+            '实测为 $macosTargets',
+      );
     });
   });
 }

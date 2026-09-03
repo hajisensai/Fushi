@@ -311,9 +311,84 @@ def test_mirror_never_creates_a_manifest():
     check(out == {}, "mirror is a no-op when there is no manifest to augment")
 
 
+# ── integrity fields (size / sha256) ────────────────────────────────────────
+#
+# publish_update_manifest.sh computes both from the artifact on disk so the
+# website's chunked downloader can verify the reassembled file. They must
+# survive normalization (incoming AND retained-from-existing), and malformed
+# values must be dropped rather than persisted.
+
+
+def _by_name(manifest, name):
+    return next(a for a in manifest["assets"] if a["name"] == name)
+
+
+def test_integrity_fields_survive_incoming():
+    tag, version, assets, name = _android(10200)
+    assets[0]["size"] = 123456789
+    assets[0]["sha256"] = "AB" * 32
+    m = merge_manifest(
+        {},
+        tag=tag,
+        channel="debug",
+        version=version,
+        prerelease=True,
+        notes="",
+        release_sequence=10200,
+        new_assets=assets,
+    )
+    a = _by_name(json.loads(json.dumps(m)), name)
+    check(a.get("size") == 123456789, "incoming size persisted")
+    check(a.get("sha256") == "ab" * 32, "incoming sha256 persisted, lower-cased")
+
+
+def test_integrity_fields_survive_retained_asset():
+    tag, version, assets, exe = _desktop(10182)
+    assets[0]["size"] = 42
+    assets[0]["sha256"] = "cd" * 32
+    m = merge_manifest(
+        {},
+        tag=tag,
+        channel="debug",
+        version=version,
+        prerelease=True,
+        notes="",
+        release_sequence=10182,
+        new_assets=assets,
+    )
+    # live=None（不是 `{exe, apk} if False else None`）：那个 `if False` 恒假，等价于
+    # None，但 `apk` 在这一行还没绑定——只因为 Python 不求值未选中的分支才没炸
+    # NameError。谁把它「清理」成 `if True` 就立刻爆，写成实话。
+    m2, apk = _publish(json.loads(json.dumps(m)), _android, 10192, live=None)
+    a = _by_name(m2, exe)
+    check(a.get("size") == 42 and a.get("sha256") == "cd" * 32, "retained desktop asset keeps size/sha256")
+    check("sha256" not in _by_name(m2, apk), "asset published without sha256 carries none (no invented value)")
+
+
+def test_integrity_fields_malformed_dropped():
+    tag, version, assets, name = _android(10300)
+    assets[0]["size"] = "big"
+    assets[0]["sha256"] = "not-a-hash"
+    m = merge_manifest(
+        {},
+        tag=tag,
+        channel="debug",
+        version=version,
+        prerelease=True,
+        notes="",
+        release_sequence=10300,
+        new_assets=assets,
+    )
+    a = _by_name(json.loads(json.dumps(m)), name)
+    check("size" not in a and "sha256" not in a, "malformed size/sha256 are dropped, not persisted")
+
+
 def main():
     for fn in [
         test_first_publish,
+        test_integrity_fields_survive_incoming,
+        test_integrity_fields_survive_retained_asset,
+        test_integrity_fields_malformed_dropped,
         test_cross_platform_union_newer_tag,
         test_monotonic_guard_old_platform_late,
         test_same_platform_downgrade_rejected,

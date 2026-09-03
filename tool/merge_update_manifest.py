@@ -149,13 +149,33 @@ def _stamp(
     version: str,
 ) -> dict[str, Any]:
     """Normalize an asset to the persisted shape with provenance stamped on."""
-    return {
+    out = {
         "name": asset["name"],
         "browser_download_url": asset["browser_download_url"],
         "releaseSequence": seq,
         "tag": tag,
         "version": version,
     }
+    return _with_integrity(out, asset)
+
+
+def _with_integrity(out: dict[str, Any], asset: dict[str, Any]) -> dict[str, Any]:
+    """Copy the optional integrity fields (size / sha256) when they are well-formed.
+
+    publish_update_manifest.sh computes both from the artifact on disk so the
+    website downloader can verify a chunked download; older manifests (and
+    assets retained from them) simply carry neither. Garbage is dropped rather
+    than persisted: a malformed sha256 would make every client-side check fail.
+    """
+    size = asset.get("size")
+    if isinstance(size, int) and not isinstance(size, bool) and size >= 0:
+        out["size"] = size
+    sha = asset.get("sha256")
+    if isinstance(sha, str):
+        sha = sha.strip().lower()
+        if len(sha) == 64 and all(c in "0123456789abcdef" for c in sha):
+            out["sha256"] = sha
+    return out
 
 
 def merge_manifest(
@@ -247,13 +267,16 @@ def merge_manifest(
             else existing_version
         )
         normalized_existing.append(
-            {
-                "name": a["name"],
-                "browser_download_url": a["browser_download_url"],
-                "releaseSequence": seq,
-                "tag": atag,
-                "version": aver,
-            }
+            _with_integrity(
+                {
+                    "name": a["name"],
+                    "browser_download_url": a["browser_download_url"],
+                    "releaseSequence": seq,
+                    "tag": atag,
+                    "version": aver,
+                },
+                a,
+            )
         )
 
     # Group per platform, keeping the highest-sequence asset SET per platform.

@@ -1,13 +1,18 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_control_layout_editor.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart';
+import 'package:fushi/src/media/video/video_lua_script_manager.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
 import 'package:fushi/src/media/video/video_shader_manager.dart';
@@ -33,6 +38,18 @@ VideoQuickSettingsHost? videoQuickSettingsHostOf(SettingsContext context) {
 /// 播放中才可见的行的统一门控。
 bool videoHostVisible(SettingsContext context) =>
     videoQuickSettingsHostOf(context) != null;
+
+/// 刮削运行期偏好（AniDB 客户端身份 / TMDB key / 刮削语言）的统一写穿：落
+/// prefsRepo 后重建下载流水线的刮削快照，下一次刮削即用新值。视频·媒体库
+/// （刮削语言）与在线服务（AniDB / TMDB 凭据）两个分区共用。
+Future<void> commitVideoMetadataRuntimePreference(
+  SettingsContext settingsContext,
+  String key,
+  String value,
+) async {
+  await settingsContext.appModel.prefsRepo.setPref(key, value.trim());
+  await settingsContext.appModel.reloadVideoDownloadPipelineRuntime();
+}
 
 // ── videoAsbplayerConfig（手势/播放行为 JSON pref）────────────────────────────
 
@@ -250,6 +267,18 @@ Future<void> setVideoFitModeDual(
     await host.onVideoFitModeChanged(mode);
   } else {
     await context.appModel.setVideoFitMode(mode);
+  }
+}
+
+Future<void> setVideoHdrOutputModeDual(
+  SettingsContext context,
+  VideoHdrOutputMode mode,
+) async {
+  final VideoQuickSettingsHost? host = videoQuickSettingsHostOf(context);
+  if (host?.onHdrOutputModeChanged != null) {
+    await host!.onHdrOutputModeChanged!(mode);
+  } else {
+    await context.appModel.setVideoHdrOutputMode(mode);
   }
 }
 
@@ -511,6 +540,138 @@ Widget buildVideoShaderManager(SettingsContext context) {
   );
 }
 
+/// BUG-2032：mpv Lua 脚本清单 + 每脚本运行态 + 输入边界说明。
+///
+/// 清单来自 `mpv_scripts` 目录（[listLuaScriptPaths]），每次 schema 刷新（导入后
+/// `settingsContext.refresh()`）重扫。状态来自 [VideoQuickSettingsHost.luaScriptStates]
+/// （controller 对 mpv 日志的归因）：不在表里 = 本次播放未装载；值 null = 已下发且
+/// 无报错；字符串 = 归因到该脚本的最近一条 error/fatal 日志原文。无播放器只列文件名。
+Widget buildVideoLuaScriptList(SettingsContext context) {
+  return _VideoLuaScriptList(settingsContext: context);
+}
+
+class _VideoLuaScriptList extends StatefulWidget {
+  const _VideoLuaScriptList({required this.settingsContext});
+
+  final SettingsContext settingsContext;
+
+  @override
+  State<_VideoLuaScriptList> createState() => _VideoLuaScriptListState();
+}
+
+class _VideoLuaScriptListState extends State<_VideoLuaScriptList> {
+  List<String>? _paths;
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  @override
+  void didUpdateWidget(covariant _VideoLuaScriptList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 每次 schema 刷新都拿到新的 SettingsContext 实例 → 重扫目录。旧清单先留着，
+    // 新结果到了再换，不闪空白。
+    if (!identical(oldWidget.settingsContext, widget.settingsContext)) {
+      _reload();
+    }
+  }
+
+  Future<void> _reload() async {
+    final List<String> paths = await listLuaScriptPaths();
+    if (!mounted) return;
+    setState(() => _paths = paths);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<String>? paths = _paths;
+    if (paths == null) return const SizedBox.shrink();
+    final ThemeData theme = Theme.of(context);
+    final TextStyle? noteStyle = theme.textTheme.bodySmall
+        ?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    final Widget note = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Text(t.video_setting_mpv_lua_scripts_input_note, style: noteStyle),
+    );
+    if (paths.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              t.video_setting_mpv_lua_scripts_empty,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ),
+          note,
+        ],
+      );
+    }
+    final ValueListenable<Map<String, String?>>? states =
+        videoQuickSettingsHostOf(widget.settingsContext)?.luaScriptStates;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        if (states == null)
+          for (final String path in paths) _row(context, path, null)
+        else
+          ValueListenableBuilder<Map<String, String?>>(
+            valueListenable: states,
+            builder: (BuildContext _, Map<String, String?> map, Widget? __) {
+              return Column(
+                children: <Widget>[
+                  for (final String path in paths) _row(context, path, map),
+                ],
+              );
+            },
+          ),
+        note,
+      ],
+    );
+  }
+
+  /// [states] null = 无播放器（只列名）；否则按三态给图标 + 副标题。
+  Widget _row(BuildContext context, String path, Map<String, String?>? states) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool live = states != null;
+    final bool loaded = states != null && states.containsKey(path);
+    final String? error = loaded ? states[path] : null;
+    final String? status = !live
+        ? null
+        : !loaded
+            ? t.video_setting_mpv_lua_scripts_status_not_loaded
+            : error == null
+                ? t.video_setting_mpv_lua_scripts_status_loaded
+                : '${t.video_setting_mpv_lua_scripts_status_error}: $error';
+    final IconData icon = error != null
+        ? Icons.error_outline
+        : loaded
+            ? Icons.check_circle_outline
+            : Icons.description_outlined;
+    final Color? tint = error != null
+        ? scheme.error
+        : loaded
+            ? scheme.primary
+            : null;
+    return FushiListItem(
+      density: FushiListDensity.compact,
+      leading: Icon(icon, color: tint),
+      title: Text(p.basename(path)),
+      subtitle: status == null
+          ? null
+          : Text(
+              status,
+              style: error != null ? TextStyle(color: scheme.error) : null,
+            ),
+      subtitleMaxLines: 3,
+    );
+  }
+}
+
 /// 原始 mpv.conf 多行逃生口（AdaptiveSettingsTextField 不支持多行故用原生
 /// TextField）。TODO-561：标题用 TextField 上方独立、可换行、完整显示的 Text（不挂
 /// InputDecoration.labelText 单行浮动 label）。
@@ -673,5 +834,8 @@ Widget buildVideoControlLayoutEditor(SettingsContext context) {
     layout: host.controlLayout(),
     onLayoutChanged: host.onControlLayoutChanged,
     isTouchControls: host.isTouchControls,
+    customActionBindings:
+        host.customActionBindings?.call() ?? VideoCustomActionBindings.empty,
+    onCustomActionBindingsChanged: host.onCustomActionBindingsChanged,
   );
 }

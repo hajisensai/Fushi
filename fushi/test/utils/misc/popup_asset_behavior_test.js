@@ -94,6 +94,7 @@ class FakeElement {
     // Pre-declared so el()'s `key in element` check routes these as real
     // properties (a callable handler / boolean), not stringified attributes.
     this.onclick = null;
+    this.onpointerdown = null;
     this.ontouchstart = null;
     this.disabled = false;
   }
@@ -145,6 +146,18 @@ class FakeElement {
 
   hasAttribute(name) {
     return Object.prototype.hasOwnProperty.call(this.attributes, name);
+  }
+
+  // BUG-1666: rewriteExportedGlossaryAnchors 走导出制卡路径，读/删锚点的 href。
+  // 真 DOM 上 getAttribute 缺属性时返回 null（不是 undefined），照此实现。
+  getAttribute(name) {
+    return Object.prototype.hasOwnProperty.call(this.attributes, name)
+      ? this.attributes[name]
+      : null;
+  }
+
+  removeAttribute(name) {
+    delete this.attributes[name];
   }
 
   addEventListener(type, handler) {
@@ -205,6 +218,35 @@ class FakeElement {
       return null;
     };
     return visit(this);
+  }
+
+  // BUG-1666: 与 querySelector 同一套最小选择器语法，另加「属性存在」判据，
+  // 因为 rewriteExportedGlossaryAnchors 用的是 'a[href]'。真 DOM 返回 NodeList，
+  // 生产代码只对它 .forEach，所以这里返回数组即可。
+  querySelectorAll(selector) {
+    const parsed = selector.match(/^([a-zA-Z]+)?(?:\.([\w-]+))?(?:\[([\w-]+)\])?$/);
+    if (!parsed || (!parsed[1] && !parsed[2] && !parsed[3])) {
+      return [];
+    }
+    const wantTag = parsed[1] ? parsed[1].toUpperCase() : null;
+    const wantClass = parsed[2] || null;
+    const wantAttr = parsed[3] || null;
+    const matches = (el) =>
+      (wantTag === null || el.tagName === wantTag) &&
+      (wantClass === null || (!!el.classList && el.classList.contains(wantClass))) &&
+      (wantAttr === null ||
+        (typeof el.hasAttribute === 'function' && el.hasAttribute(wantAttr)));
+    const found = [];
+    const visit = (el) => {
+      for (const child of el.children ?? []) {
+        if (matches(child)) {
+          found.push(child);
+        }
+        visit(child);
+      }
+    };
+    visit(this);
+    return found;
   }
 
   closest(selector) {
@@ -385,8 +427,9 @@ function createPopupContext() {
   return context;
 }
 
-function loadPopup() {
+function loadPopup(configureContext) {
   const context = createPopupContext();
+  configureContext?.(context);
   vm.runInNewContext(fs.readFileSync(dictMediaPath, 'utf8'), context, {
     filename: dictMediaPath,
   });
@@ -395,6 +438,55 @@ function loadPopup() {
   });
   return context;
 }
+
+function testRealmReuseCancelsStaleMasonryPresentation() {
+  const queuedFrames = [];
+  const cancelledFrames = [];
+  const bridgeCalls = [];
+  let observerDisconnects = 0;
+  const context = loadPopup((value) => {
+    value.requestAnimationFrame = (callback) => {
+      queuedFrames.push(callback);
+      return queuedFrames.length;
+    };
+    value.cancelAnimationFrame = (id) => cancelledFrames.push(id);
+    value.ResizeObserver = class {
+      observe() {}
+      disconnect() { observerDisconnects += 1; }
+    };
+    value.document.getElementById = () => null;
+    value.window.flutter_inappwebview.callHandler = (handler, ...args) => {
+      bridgeCalls.push({handler, args});
+      return Promise.resolve(true);
+    };
+  });
+
+  context.window.fushiRelayoutDictionaries();
+  assert.equal(queuedFrames.length, 1,
+    'masonry relayout queues one presentation callback');
+  const staleMasonry = queuedFrames[0];
+  const generationBeforeReuse = context.window._renderGeneration;
+  context.window.__fushiPrepareRealmForReuse();
+  assert.ok(context.window._renderGeneration > generationBeforeReuse,
+    'realm reuse retires callbacks from the previous logical card');
+  assert.deepEqual(cancelledFrames, [1],
+    'realm reuse cancels the pending masonry frame');
+  assert.equal(observerDisconnects, 1,
+    'realm reuse disconnects the previous card ResizeObserver');
+
+  // A browser may still deliver a callback that was already dequeued when it
+  // was cancelled. Its captured generation must suppress both layout and the
+  // popupRendered height signal, otherwise the host can reveal the replacement
+  // child before its own content/geometry is ready.
+  staleMasonry(0);
+  assert.equal(
+    bridgeCalls.filter((call) => call.handler === 'popupRendered').length,
+    0,
+    'stale masonry callback cannot publish popupRendered for the rebound realm',
+  );
+}
+
+testRealmReuseCancelsStaleMasonryPresentation();
 
 function testEmSizedWideImagesUseHorizontalScrollWrapper() {
   const context = loadPopup();
@@ -1304,11 +1396,165 @@ function buildMineHeader(context) {
 }
 
 async function flush() {
-  // Drain microtasks (the in-flight duplicateCheck/mineEntry promises).
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+  // Drain microtasks (the visibility scheduler + in-flight
+  // duplicateCheck/overwriteTargetNoteId/mineEntry promises).
+  for (let i = 0; i < 6; i++) {
+    await Promise.resolve();
+  }
 }
+
+// BUG-1972: desktop mouse/pen selection must be captured before clicking the
+// mine button clears the live browser Selection. Mobile already had a
+// touchstart snapshot; Pointer Events are the missing cross-input boundary.
+async function testMineButtonCapturesSelectedDefinitionOnPointerDown() {
+  const context = loadPopup();
+  const mined = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      return Promise.resolve({ankiConnect: true, noteId: 1972});
+    }
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+
+  const selectedDefinition = '生命を維持するために食物を取る。';
+  context.window.getSelection().text = selectedDefinition;
+  mineButton.onpointerdown();
+  // Model the focus/click transition that clears the live desktop selection.
+  context.window.getSelection().removeAllRanges();
+  await mineButton.onclick();
+  await flush();
+
+  assert.equal(mined.length, 1, 'clicking + mines exactly one card');
+  assert.equal(
+    mined[0].popupSelectionText,
+    selectedDefinition,
+    'the selected definition survives focus loss and reaches SelectionText',
+  );
+}
+
+testMineButtonCapturesSelectedDefinitionOnPointerDown().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+// BUG-1833 follow-up: a real browser exposes IntersectionObserver. Initial
+// favorite/duplicate decoration must stay off the synchronous card-render path,
+// repeated words must share one backend call, and a superseding render must make
+// an already-started result stale.
+async function testEntryStateChecksAreVisibleLazyDedupedAndEpochGated() {
+  const observers = [];
+  class FakeIntersectionObserver {
+    constructor(callback, options) {
+      this.callback = callback;
+      this.options = options;
+      this.targets = new Set();
+      this.disconnected = false;
+      observers.push(this);
+    }
+
+    observe(target) {
+      this.targets.add(target);
+    }
+
+    unobserve(target) {
+      this.targets.delete(target);
+    }
+
+    disconnect() {
+      this.disconnected = true;
+      this.targets.clear();
+    }
+
+    reveal(target) {
+      this.callback([{target, isIntersecting: true}]);
+    }
+  }
+
+  const context = loadPopup((value) => {
+    value.IntersectionObserver = FakeIntersectionObserver;
+  });
+  let fetches = 0;
+  const applied = [];
+  const first = {};
+  const second = {};
+  const fetchState = () => {
+    fetches += 1;
+    return Promise.resolve(true);
+  };
+
+  context.scheduleEntryStateCheck(
+    first, 'duplicate\u0000刀\u0000刀', fetchState,
+    (value) => applied.push(['first', value]));
+  context.scheduleEntryStateCheck(
+    second, 'duplicate\u0000刀\u0000刀', fetchState,
+    (value) => applied.push(['second', value]));
+
+  assert.equal(fetches, 0, 'off-viewport headers must not call the backend');
+  assert.equal(observers.length, 1, 'one observer serves the whole render');
+  assert.equal(observers[0].options.rootMargin, '240px 0px');
+
+  observers[0].reveal(first);
+  observers[0].reveal(second);
+  await flush();
+  assert.equal(fetches, 1, 'same word entering together reuses one in-flight promise');
+  assert.deepEqual(applied, [['first', true], ['second', true]]);
+
+  // A real user can click before the observer's first delivery. The click must
+  // force/join the lazy duplicate probe and route an existing card through the
+  // existing-card action, never through a speculative new mine from the "+"
+  // placeholder.
+  let earlyActionCalls = 0;
+  let earlyMineCalls = 0;
+  context.window.__fushiMinedCardActionNative = true;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') return Promise.resolve(true);
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
+    if (name === 'minedCardAction') {
+      earlyActionCalls += 1;
+      return Promise.resolve({ankiConnect: false, noteId: null});
+    }
+    if (name === 'mineEntry') {
+      earlyMineCalls += 1;
+      return Promise.resolve({ankiConnect: false, noteId: null});
+    }
+    if (name === 'resolveWordAudio') return Promise.resolve(null);
+    return Promise.resolve(true);
+  };
+  const earlyMineButton = buildMineHeader(context);
+  assert.equal(earlyMineButton.textContent, '+',
+    'before observer delivery the button is only a temporary placeholder');
+  await earlyMineButton.onclick();
+  await flush();
+  assert.equal(earlyActionCalls, 1,
+    'click-before-observer joins the state probe and opens existing-card handling');
+  assert.equal(earlyMineCalls, 0,
+    'click-before-observer must not create a duplicate from placeholder state');
+
+  let resolveStale;
+  const stale = {};
+  context.scheduleEntryStateCheck(
+    stale, 'duplicate\u0000犬\u0000犬',
+    () => new Promise((resolve) => { resolveStale = resolve; }),
+    () => applied.push(['stale', true]));
+  observers[0].reveal(stale);
+  context.resetEntryStateChecks();
+  resolveStale(true);
+  await flush();
+  assert.equal(observers[0].disconnected, true,
+    'a new render disconnects never-visible jobs from the old DOM');
+  assert.ok(!applied.some(([name]) => name === 'stale'),
+    'an old in-flight result cannot repaint a newer render');
+}
+
+testEntryStateChecksAreVisibleLazyDedupedAndEpochGated().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
 
 // LOOKUP-TIME DETECTION (primary mechanism): when the popup renders a word the
 // initial duplicateCheck queries Anki and sets the ACCURATE button state.
@@ -1512,10 +1758,25 @@ async function testFailedMineDoesNotRefreshIntoSuccessAfterDuplicateCheck() {
 
   assert.equal(duplicateChecks, 1,
     'failed/uncertain mine results must not run a delayed duplicateCheck');
-  assert.equal(context.__timers.size, 0,
-    'failed/uncertain mine results must not schedule delayed refresh timers');
   assert.equal(mineButton.textContent, '+',
     'a failed/uncertain mine must not later paint itself as success');
+
+  // BUG-1908：原先这里断言的是 `context.__timers.size === 0`，把「一个 pending
+  // 定时器都没有」当成「没有延迟刷新」的代理。那个代理太宽——失败时**就地提示**
+  // （showInlineHint，BUG-1064 为「app 外没有 Flutter toast 可用」建的页内车道）
+  // 本身就带一个 1.8s 自渐隐定时器，与 TODO-448 要防的「延迟 duplicateCheck 把按钮
+  // 翻成 ✓」毫无关系。
+  //
+  // 换成**更强**的直接断言：把所有挂起的定时器全跑一遍，再看有没有人偷偷刷新/翻转。
+  // 数定时器只能证明「没人排队」，跑完定时器能证明「排了队也不会翻」。
+  for (const timer of [...context.__timers.values()]) {
+    if (!timer.cleared) timer.callback();
+  }
+  await flush();
+  assert.equal(duplicateChecks, 1,
+    'no timer may run a delayed duplicateCheck after a failed mine');
+  assert.equal(mineButton.textContent, '+',
+    'no timer may repaint a failed mine as success');
 }
 
 // ── TODO-270 D: tri-state mine button (overwrite the latest mined card) ─────
@@ -1902,14 +2163,70 @@ function testRenderPopupNoKanjiNoEntriesShowsNoResults() {
 
   context.window.lookupEntries = [];
   context.window.kanjiResults = [];
+  const generationBefore = context.window._renderGeneration;
 
   context.window.renderPopup();
 
+  assert.ok(context.window._renderGeneration > generationBefore,
+    'no-results render must retire deferred dictionary tasks from the old card');
   // No kanji + no entries keeps the original no-results behaviour: the
   // container's innerHTML is set to the no-results placeholder markup.
   assert.ok((container.textContent || '').includes('No results') ||
     (container.textContent || '').includes('no-results'),
     'empty everything must still show the no-results placeholder');
+}
+
+// BUG-1885: conjugation descriptions live outside #entries-container. A fresh
+// lookup therefore has to retire that detail surface explicitly before it
+// rebuilds the result DOM, including the no-results/early-return branches.
+function testConjugationDescriptionUsesPopupCardAndClosesOnNextLookup() {
+  const context = loadPopup();
+  const container = new FakeElement('div');
+
+  // 说明面从静态 `.overlay` 改成 popup.js 现建的 `.grammar-tooltip`
+  // （`-title` / `-body` 两个子节点，收起入口统一成 hideGrammarTooltip）。
+  // 这里预置好节点：ensureGrammarTooltip 走 querySelector 命中就直接返回，
+  // 不需要假 DOM 支持 el()/iconSvg()/getBoundingClientRect()。
+  //
+  // 本用例只钉「下一轮查词必须把上一轮的说明面退掉」这一条——它是
+  // grammar-tooltip-single-surface.test.js 那 17 条**没有**覆盖的一半
+  // （那边测 hover/钉住/收起/zoom，不驱动 renderPopup）。
+  const tooltip = new FakeElement('div');
+  tooltip.classList.add('grammar-tooltip');
+  tooltip.classList.add('is-pinned');
+  tooltip.style.display = 'block';
+  const title = new FakeElement('div');
+  title.classList.add('grammar-tooltip-title');
+  title.textContent = '-ている';
+  const body = new FakeElement('div');
+  body.classList.add('grammar-tooltip-body');
+  body.textContent = 'Indicates an action in progress.';
+  tooltip.append(title, body);
+  context.document.body.append(tooltip);
+
+  stubRenderPopupRuntime(context, container);
+  context.window.lookupEntries = [];
+  context.window.kanjiResults = [];
+  context.window.renderPopup();
+
+  assert.equal(tooltip.style.display, 'none',
+    'a new lookup closes the previous conjugation detail surface');
+  assert.equal(tooltip.classList.contains('is-pinned'), false,
+    'a new lookup also drops the pinned state, not just visibility');
+  assert.equal(title.textContent, '',
+    'a closed detail surface cannot retain the previous conjugation title');
+  assert.equal(body.textContent, '',
+    'a closed detail surface cannot retain the previous grammar text');
+
+  const css = fs.readFileSync(popupCssPath, 'utf8');
+  const rule = css.match(/\.grammar-tooltip\s*\{([^}]*)\}/);
+  assert.ok(rule, '.grammar-tooltip rule must exist');
+  assert.ok(/background\s*:\s*var\(--surface-container-high\)\s*;/.test(rule[1]),
+    'conjugation detail uses an opaque themed surface (BUG-2037)');
+  assert.ok(/border-radius\s*:\s*8px\s*;/.test(rule[1]),
+    'conjugation detail keeps the shared popup radius');
+  assert.ok(!/width\s*:\s*100%\s*;/.test(rule[1]),
+    'conjugation detail is an anchored tooltip, not a full-width bottom sheet');
 }
 
 testEmSizedWideImagesUseHorizontalScrollWrapper();
@@ -1944,6 +2261,7 @@ testKanjiCardEmptyPayloadRendersNothing();
 testKanjiCardOmitsAbsentFields();
 testRenderPopupShowsKanjiCardWithNoTermEntries();
 testRenderPopupNoKanjiNoEntriesShowsNoResults();
+testConjugationDescriptionUsesPopupCardAndClosesOnNextLookup();
 testSelectionHighlightReturnsBoundsForPopupPositioning();
 // TODO: testLongPress* tests access document.__listeners.touchstart but popup.js
 // registers touchstart on per-entry summary elements. Rewrite tests to create a
@@ -2096,14 +2414,14 @@ function findPanelButton(context, label) {
   return button;
 }
 
-function stubAppExternalHost(context, {matches, calls}) {
+function stubAppExternalHost(context, {matches, calls, openOutcome = 'opened'}) {
   context.window.flutter_inappwebview.callHandler = (name, payload) => {
     if (name === 'duplicateCheck') return Promise.resolve(true);
-    // The app-external native layer resolves this one with an immediate null
-    // too — the ↗ half of the same root cause (BUG-1064).
+    // BUG-2051：↗ 现在在 app 内外走同一根桥（原生侧已把它列入 DEFERRED），宿主回
+    // 三态结局名；null 专指「这个宿主根本没接这根桥」（浏览器扩展的 shim）。
     if (name === 'openInAnki') {
       calls.openInAnki.push(payload);
-      return Promise.resolve(null);
+      return Promise.resolve(openOutcome);
     }
     if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
     // The app-external native layer resolves this one with an immediate null —
@@ -2258,10 +2576,12 @@ testAppExternalMinedClickReminesWhenCardIsGone().catch((error) => {
   process.exitCode = 1;
 });
 
-// BUG-1064 ↗「在 Anki 中打开卡片」——同一根因的第二个入口。宿主 handler `openInAnki`
-// 同样没有被 app 外裸窗 DEFER（它同样要弹 Flutter 的多卡选择框 / toast），同样被立刻
-// 解析成 null，于是按钮点了什么都不发生。以下三条钉死页内车道的三分支语义
-// （与 app 内 openMinedCardInAnki 一致：无命中提示 / 单卡直开 / 多卡弹选择）。
+// BUG-2051 ↗「在 Anki 中打开卡片」——app 内外**同一根桥、同一条判据**。
+//
+// 旧实现按宿主能力分两条：app 内交给 openInAnki，app 外自己先 findMinedMatches 反查
+// note id 再 openMinedNote 打开。那条反查按第一字段**名**查，而画 ✓ 的查重是 Anki 内建
+// 的第一字段 checksum（跨全部笔记类型）——同一个卡组混装两种笔记类型时两者答案相反：
+// ✓ 说已制卡、↗ 说「没有找到已制的卡片」。页内那条整条删掉，判据只留一条。
 
 function buildOpenAnkiButton(context) {
   const entry = {
@@ -2289,119 +2609,270 @@ function buildOpenAnkiButton(context) {
   return button;
 }
 
-async function testAppExternalOpenInAnkiSingleMatchOpensDirectly() {
-  const context = loadPopup();
-  const calls = newCalls();
-  stubAppExternalHost(context, {
-    matches: [{ noteId: 7001, preview: '刀' }],
-    calls,
-  });
-
+async function clickOpenAnki(context, calls, openOutcome) {
+  stubAppExternalHost(context, { matches: [{ noteId: 7001, preview: '刀' }], calls, openOutcome });
   const button = buildOpenAnkiButton(context);
   await flush();
   await button.onclick();
   await flush();
+  return button;
+}
 
-  assert.equal(calls.openInAnki.length, 0,
-    'an app-external host must NOT be handed openInAnki (it only ever replies null)');
-  assert.equal(calls.openMinedNote.length, 1, 'a single match opens straight away');
-  assert.equal(calls.openMinedNote[0].noteId, 7001, 'the matched note is the one opened');
+// app 外表面（裸 WebView2 / galgame 浮窗）：不得再自己反查，必须交给宿主。
+async function testAppExternalOpenInAnkiGoesToTheHostBridge() {
+  const context = loadPopup();
+  const calls = newCalls();
+  const button = await clickOpenAnki(context, calls, 'opened');
+
+  assert.equal(calls.openInAnki.length, 1,
+    'the app-external ↗ must go through the host bridge, not an in-page lookup');
+  assert.equal(calls.openInAnki[0].expression, '刀', 'the bridge is handed the word');
+  assert.equal(calls.findMinedMatches.length, 0,
+    'the by-field-name lookup is gone — it could not see a cross-note-type duplicate');
+  assert.equal(calls.openMinedNote.length, 0, 'no note id is resolved any more');
   assert.equal(context.document.querySelector('.mined-action-panel'), null,
-    'no panel for a single match');
+    'multiple cards are listed by Anki browser itself, not by an in-page panel');
+  assert.equal(context.document.querySelector('.inline-hint'), null,
+    'a successful open says nothing');
   assert.equal(button.disabled, false, 'the button is never left disabled');
 }
 
-async function testAppExternalOpenInAnkiMultipleMatchesShowsOpenOnlyPanel() {
+// 「Anki 可达、但这个词现在一张卡都没有」必须与「打不开 Anki」说不同的话。
+async function testOpenInAnkiNoMatchHintsInsteadOfSilence() {
   const context = loadPopup();
   const calls = newCalls();
-  stubAppExternalHost(context, {
-    matches: [
-      { noteId: 7002, preview: '刀 — A' },
-      { noteId: 7003, preview: '刀 — B' },
-    ],
-    calls,
-  });
+  await clickOpenAnki(context, calls, 'noMatch');
 
-  const button = buildOpenAnkiButton(context);
-  await flush();
-  const click = button.onclick();
-  await flush();
-
-  const panel = context.document.querySelector('.mined-action-panel');
-  assert.ok(panel, 'multiple matches must offer a choice, not silently pick one');
-  // openOnly 形态：只列卡片 + 打开，不得混入覆写 / 新增重复卡（那是 ✓ 的职责）。
-  const labels = [];
-  const collect = (node) => {
-    if (node.tagName === 'BUTTON') labels.push(node.textContent);
-    for (const child of node.children ?? []) collect(child);
-  };
-  collect(panel);
-  assert.ok(!labels.includes('新增为重复卡'),
-    'the open-only panel must not offer add-duplicate');
-  assert.ok(!labels.includes('覆写这张卡'),
-    'the open-only panel must not offer overwrite');
-  assert.equal(labels.filter((l) => l === '查看 / 在 Anki 中打开').length, 2,
-    'every matching card is openable');
-
-  findPanelButton(context, '取消').onclick();
-  await click;
-  await flush();
-  assert.equal(calls.openMinedNote.length, 0, 'cancelling opens nothing');
-}
-
-async function testAppExternalOpenInAnkiNoMatchHintsInsteadOfSilence() {
-  const context = loadPopup();
-  const calls = newCalls();
-  stubAppExternalHost(context, { matches: [], calls });
-
-  const button = buildOpenAnkiButton(context);
-  await flush();
-  await button.onclick();
-  await flush();
-
-  assert.equal(calls.openMinedNote.length, 0, 'nothing to open');
   const hint = context.document.querySelector('.inline-hint');
   assert.ok(hint, 'a vanished card must say so, never fail silently');
-  assert.ok((hint.textContent || '').length > 0, 'the hint carries a message');
+  assert.equal(hint.textContent, '没有找到已制的卡片。');
 }
 
-// app 内宿主（自带原生对话框 / toast）必须仍然把 ↗ 原样交给 openInAnki。
-async function testInAppOpenInAnkiStillGoesToHost() {
+async function testOpenInAnkiFailureSaysSo() {
+  const context = loadPopup();
+  const calls = newCalls();
+  await clickOpenAnki(context, calls, 'failed');
+
+  const hint = context.document.querySelector('.inline-hint');
+  assert.ok(hint, 'an unreachable Anki must say so');
+  assert.equal(hint.textContent, '无法在 Anki 中打开这张卡片。');
+}
+
+// null = 这个宿主没接这根桥（浏览器扩展的 bridge-shim 默认分支）。仍要提示，
+// 绝不能退回「点了没反应」——那正是 BUG-1064 的原始症状。
+async function testOpenInAnkiUnwiredHostStillHints() {
+  const context = loadPopup();
+  const calls = newCalls();
+  await clickOpenAnki(context, calls, null);
+
+  const hint = context.document.querySelector('.inline-hint');
+  assert.ok(hint, 'an unwired host must not degrade to a dead button');
+  assert.equal(hint.textContent, '无法在 Anki 中打开这张卡片。');
+}
+
+// app 内宿主走的是同一条路——没有第二条车道可以漂移。
+async function testInAppOpenInAnkiUsesTheSameLane() {
   const context = loadPopup();
   context.window.__fushiMinedCardActionNative = true;
   const calls = newCalls();
-  stubAppExternalHost(context, {
-    matches: [{ noteId: 7004, preview: '刀' }],
-    calls,
-  });
-
-  const button = buildOpenAnkiButton(context);
-  await flush();
-  await button.onclick();
-  await flush();
+  await clickOpenAnki(context, calls, 'opened');
 
   assert.equal(calls.openInAnki.length, 1,
-    'the in-app host keeps handling ↗ itself (Flutter picker / toast)');
+    'the in-app host is handed the same bridge call');
   assert.equal(calls.findMinedMatches.length, 0,
-    'the in-app lane must not run the in-page orchestration');
+    'neither lane runs an in-page orchestration any more');
 }
 
-testAppExternalOpenInAnkiSingleMatchOpensDirectly().catch((error) => {
+testAppExternalOpenInAnkiGoesToTheHostBridge().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
 
-testAppExternalOpenInAnkiMultipleMatchesShowsOpenOnlyPanel().catch((error) => {
+testOpenInAnkiNoMatchHintsInsteadOfSilence().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
 
-testAppExternalOpenInAnkiNoMatchHintsInsteadOfSilence().catch((error) => {
+testOpenInAnkiFailureSaysSo().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
 
-testInAppOpenInAnkiStillGoesToHost().catch((error) => {
+testOpenInAnkiUnwiredHostStillHints().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testInAppOpenInAnkiUsesTheSameLane().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+// ---------------------------------------------------------------------------
+// BUG-1908：制卡失败必须**就地**说出来，且按钮态不许硬猜。
+//
+// galgame 浮窗是独立的 native WebView2 窗口，宿主的 Flutter toast 画在主 app 窗口
+// 的 Overlay 上——游戏全屏时主窗在后台，那些 toast 一个也看不见。浮窗内唯一可见的
+// 反馈通道是 showInlineHint（BUG-1064 为「app 外没有 Flutter toast 可用」而建）。
+// ---------------------------------------------------------------------------
+
+function inlineHintText(context) {
+  const hint = context.document.querySelector('.inline-hint');
+  return hint ? (hint.textContent || '') : null;
+}
+
+// 覆写（✓↩）失败：以前 result.message 被直接丢掉、并照画一个「成功」的绿勾。宿主
+// （gal_hook_text_overlay_controller）**专门为覆写失败算好了**本地化文案，扔掉后那段
+// Dart 在覆写路上成了没有消费者的死代码。
+// 按钮态本身仍是 ✓：这条路进来时卡已经在 Anki 里，覆写成不成功它都还在；失败只是把
+// 「最新可改」降级回普通 ✓。
+async function testOverwriteFailureSaysWhyAndKeepsTheCard() {
+  const context = loadPopup();
+  context.window.allowDupes = true;
+  let cardExists = false;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') return Promise.resolve(cardExists);
+    if (name === 'mineEntry') {
+      cardExists = true;
+      return Promise.resolve({ ankiConnect: true, noteId: 555 });
+    }
+    if (name === 'updateEntry') {
+      // 覆写失败：宿主带回已本地化的原因（describeMineOutcome(overwrite: true)）。
+      return Promise.resolve({
+        ankiConnect: false,
+        noteId: null,
+        message: '字段映射对不上，Anki 拒绝了这张卡',
+      });
+    }
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeaderFor(context, '猫');
+  await flush();
+  await mineButton.onclick(); // 新制 → 成为「最新可改」✓↩
+  await flush();
+  assert.equal(mineButton.dataset.latest, '1', '前置条件：这张是最新可改');
+
+  await mineButton.onclick(); // 覆写，失败
+  await flush();
+
+  assert.equal(inlineHintText(context), '字段映射对不上，Anki 拒绝了这张卡',
+    '覆写失败必须就地说出宿主给的原因，不能把 message 丢掉');
+  assert.equal(mineButton.dataset.mined, '1',
+    '覆写失败原卡仍在 Anki 里，按钮不能退回可制卡 +');
+  assert.notEqual(mineButton.dataset.latest, '1',
+    '失败没有回带 note id → 从「最新可改」降级回普通 ✓');
+  assert.equal(mineButton.textContent, '✓', '降级后是普通 ✓');
+  assert.equal(mineButton.disabled, false, '按钮永不卡死');
+}
+
+// duplicate 走的正是 ankiConnect:false（error_log_service 的 MineResult.duplicate
+// 分支 success:false）。此时 Anki 里**确定**有这张卡，以前被硬写成 +，↗「在 Anki 中
+// 打开」还跟着藏起来——用户被告知「已存在」却没有任何入口。
+// 修法不是回查 Anki（TODO-448 禁止），而是宿主把这个确定事实放进同一条 reply。
+async function testDuplicateFailureShowsCheckmarkWithoutReQueryingAnki() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  let duplicateChecks = 0;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') {
+      duplicateChecks += 1;
+      return Promise.resolve(false); // 查词时没查到（探测与真相不一致）
+    }
+    if (name === 'mineEntry') {
+      return Promise.resolve({
+        ankiConnect: false,
+        noteId: null,
+        message: '卡片已存在',
+        duplicate: true,
+      });
+    }
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.equal(mineButton.textContent, '+', '前置条件：查词时判为可制卡');
+  assert.equal(duplicateChecks, 1, '只有查词那一次探测');
+
+  await mineButton.onclick();
+  await flush();
+
+  assert.equal(duplicateChecks, 1,
+    'TODO-448：失败后绝不回查 Anki（「先失败后成功」那次投诉的根因）');
+  assert.equal(inlineHintText(context), '卡片已存在', '必须就地说出原因');
+  assert.equal(mineButton.dataset.mined, '1',
+    'duplicate = 卡确定在 Anki 里，不能画成可制卡 +');
+  assert.equal(mineButton.textContent, '✓', '真实状态是已制卡 ✓');
+}
+
+// 反面：不带 duplicate 位的普通失败仍然停在 +（TODO-448 的「不确定就别翻」）。
+// 这条与上一条成对，防止把 duplicate 的修法过度泛化成「失败就画 ✓」。
+async function testNonDuplicateFailureStaysMineableAndStillSaysWhy() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'mineEntry') {
+      return Promise.resolve({
+        ankiConnect: false,
+        noteId: null,
+        message: '还没选牌组',
+      });
+    }
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  await mineButton.onclick();
+  await flush();
+
+  assert.equal(inlineHintText(context), '还没选牌组', '普通失败同样要说原因');
+  assert.notEqual(mineButton.dataset.mined, '1',
+    '没有 duplicate 位 = 状态不确定，必须停在可制卡 +，不许翻成 ✓');
+  assert.equal(mineButton.textContent, '+', '不确定就停在 +');
+}
+
+// 桥自身 reject（Dart handler 抛 / JS 组包出错）以前只有 console.error —— 对用户
+// 完全静默，与「点了没反应」无法区分（BUG-077 只修了「不卡死」，没修「说出来」）。
+async function testBridgeRejectionIsNeverSilent() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'mineEntry') return Promise.reject(new Error('bridge down'));
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  await mineButton.onclick();
+  await flush();
+
+  const hint = inlineHintText(context);
+  assert.ok(hint && hint.length > 0,
+    '桥 reject 必须有可见提示，不能只写 console.error');
+  assert.equal(mineButton.textContent, '+', '状态不可知 → 退回可点的 + 让用户重试');
+  assert.equal(mineButton.disabled, false, 'BUG-077：永不卡死');
+}
+
+testOverwriteFailureSaysWhyAndKeepsTheCard().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testDuplicateFailureShowsCheckmarkWithoutReQueryingAnki().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testNonDuplicateFailureStaysMineableAndStillSaysWhy().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testBridgeRejectionIsNeverSilent().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });

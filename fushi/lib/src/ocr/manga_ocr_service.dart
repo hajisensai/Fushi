@@ -19,8 +19,12 @@ abstract class MangaOcrService {
   /// 事件按文件粒度报告字节进度；出错以 error 事件结束流。
   Stream<MangaOcrDownloadEvent> downloadModels();
 
-  /// 删除已下载模型，释放磁盘。
-  Future<void> deleteModels();
+  /// 删除已下载模型，释放磁盘；返回**实际释放的字节数**。
+  ///
+  /// 返回值不是「清单总和」这种推算值，而是删除前模型目录的真实递归占用，
+  /// 因此把未完成的 `.part`、旧清单遗留档一并计入——用户看到的释放量与磁盘
+  /// 实际变化一致（BUG-1732）。
+  Future<int> deleteModels();
 
   /// 对一个裸图片目录跑整卷 OCR，产出内部 manga.json（不落库；落库由
   /// 导入器接手）。事件：逐页完成进度 → 最终 [MangaOcrVolumeEvent.finished]
@@ -36,20 +40,46 @@ class MangaOcrModelStatus {
   const MangaOcrModelStatus({
     required this.detectorReady,
     required this.recognizerReady,
-    required this.downloadedBytes,
+    required this.diskBytes,
     required this.totalBytes,
+    this.obtainedBytes = 0,
   });
 
   final bool detectorReady;
   final bool recognizerReady;
 
-  /// 已就绪文件的磁盘字节数。
-  final int downloadedBytes;
+  /// 模型目录的**真实递归占用**字节数。
+  ///
+  /// BUG-1732：这里以前叫 `downloadedBytes`，只累加清单里列出且已就绪的文件——
+  /// 于是「设置页显示 450 MB」与「删掉后磁盘少了多少」是两个数：中断留下的
+  /// `.part`、上游换档后遗留的旧模型档都不在清单里，用户既看不到也不知道能删。
+  /// 真相源只能是磁盘本身，故改为按目录实际大小记账。
+  final int diskBytes;
 
-  /// 全套模型的预期总字节数（用于设置页展示体积）。
+  /// 全套模型的预期总字节数（清单常量之和，用于展示「需要下多少」）。
   final int totalBytes;
 
+  /// 朝着 [totalBytes] **已经拿到手**的有效字节数：已就绪文件 + 未完成下载的
+  /// `.part` 里攒下的部分。
+  ///
+  /// 与 [diskBytes] 是两个数，别混：[diskBytes] 是目录真实占用（含上游漂移后
+  /// 的遗留旧档），回答「删掉能腾出多少」；这个数回答「还差多少下完」。
+  ///
+  /// 有这个数才能把「上次下到一半」说清楚。没有它，用户取消或断网后回到设置页
+  /// 只看到一个「下载模型」按钮，会以为那 176 MB 白下了——实际下载器一直有
+  /// Range 续传，再点就是接着下。能力早就在，缺的只是把它说出来。
+  final int obtainedBytes;
+
   bool get allReady => detectorReady && recognizerReady;
+
+  /// 是否存在可续传的半成品（决定按钮显示「下载」还是「继续下载」）。
+  bool get hasResumableDownload => !allReady && obtainedBytes > 0;
+
+  /// 磁盘上是否还留着任何模型文件（含未完成的 `.part` 与遗留档）。
+  ///
+  /// 与 [allReady] 分开：非本地引擎下「模型不全但仍占着几百 MB」必须能被看见、
+  /// 能被删，否则用户永远找不到那块空间。
+  bool get hasAnyFiles => diskBytes > 0;
 }
 
 /// 模型下载进度事件。

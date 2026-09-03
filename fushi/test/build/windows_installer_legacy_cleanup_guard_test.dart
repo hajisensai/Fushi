@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 回归守卫：Fushi 改名的「旧名残留清理」必须在 ssPostInstall 执行，
 /// 不得放回 `[InstallDelete]`。
 ///
@@ -61,10 +63,11 @@ void main() {
       reason: '必须存在 procedure CurStepChanged(CurStep: TSetupStep); '
           '旧名清理只能在它的 ssPostInstall 分支里做。',
     );
-    return match!.group(1)!.split('\n').map((String line) {
-      final int comment = line.indexOf('//');
-      return comment < 0 ? line : line.substring(0, comment);
-    }).join('\n');
+    // 只掩这一段 Pascal 过程体，**不掩整份 .iss**：`[Setup]` 段的
+    // `AppUpdatesURL=https://…` 之类是 ini 行、不是字符串字面量，整份掩会把它们
+    // 从 `//` 起截到行尾；`;` 注释也不归 [maskComments] 管（`directiveLines` 另行
+    // 处理）。过程体本身是纯 Pascal 代码，掩码等长且字符串字面量原样保留。
+    return maskComments(match!.group(1)!);
   }
 
   test('[InstallDelete] no longer deletes legacy binaries or shortcuts', () {

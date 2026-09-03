@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../anki_models.dart';
+import '../anki_note_type_definition.dart';
 import '../anki_remote_media_http.dart';
 import '../base_anki_repository.dart';
 import '../ankiconnect/ankiconnect_repository.dart';
@@ -229,6 +230,15 @@ class AnkiRepository extends BaseAnkiRepository {
         'Check your note type field mappings.',
       );
     }
+    // BUG-1900：Anki 的 `fields_check()` **只看第一个字段**——其余字段填得再满，首字段
+    // 空照样整张卡被拒。上面那条 every-empty 守卫拦不住「首字段空、别的字段有内容」。
+    // 与 AnkiConnect 后端共用同一条预检和同一组分类错误码，两个后端行为一致。
+    final MineOutcome? rejected = preflightNoteFields(
+      noteType,
+      fields,
+      fieldsForNoteType(noteType, fields),
+    );
+    if (rejected != null) return rejected;
     // TODO-062: append the `hibiki` tag (de-duped, order preserved) to the
     // user's configured tags via the shared base helper — same behavior as the
     // AnkiConnect backend.
@@ -574,6 +584,84 @@ class AnkiRepository extends BaseAnkiRepository {
     return true;
   }
 
+  // ── note type 模板读写（Lapis 客制化/备份/自动迁移）────────────────────
+  //
+  // 长期以来这里默认降级（基类的 false），依据是「AnkiDroid Content Provider
+  // 改不了已存在的 note type」。那个前提是错的：AnkiDroid 的
+  // CardContentProvider.update() 在 `models/<mid>` 分支支持写 `Model.CSS`，
+  // 在 `models/<mid>/templates/<ord>` 分支支持写 QUESTION_FORMAT /
+  // ANSWER_FORMAT；被明确拒绝的只有改字段名（"Field names cannot be changed
+  // via provider"），而 Lapis 样式客制化一个字段名都不改。真正的平台边界是
+  // iOS 的 AnkiMobile（只有加卡的 URL scheme），那边仍然降级。
+
+  @override
+  bool get supportsNoteTypeEditing => true;
+
+  @override
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
+    String modelName,
+  ) async {
+    await _channel.invokeMethod('requestAnkidroidPermissions');
+    final Map? raw = await _channel.invokeMethod(
+      'readNoteType',
+      <String, dynamic>{'noteTypeName': modelName},
+    ) as Map?;
+    if (raw == null) return null;
+    final List<dynamic> templates =
+        (raw['templates'] as List?) ?? const <dynamic>[];
+    return AnkiNoteTypeDefinition(
+      name: raw['name']?.toString() ?? modelName,
+      fields: ((raw['fields'] as List?) ?? const <dynamic>[])
+          .map((dynamic e) => e?.toString() ?? '')
+          .toList(growable: false),
+      // ord 只在写回时用于定位（Java 侧按模板名反查），backend 无关的
+      // AnkiCardTemplate 不带它——备份文件里存位置号毫无意义，模板被重排
+      // 之后按位置写回就会把正面写进另一张卡。
+      templates: templates.map((dynamic e) {
+        final Map tmpl = e as Map;
+        return AnkiCardTemplate(
+          name: tmpl['name']?.toString() ?? '',
+          front: tmpl['front']?.toString() ?? '',
+          back: tmpl['back']?.toString() ?? '',
+        );
+      }).toList(growable: false),
+      css: raw['css']?.toString() ?? '',
+    );
+  }
+
+  @override
+  Future<bool> updateNoteTypeStyling(String modelName, String css) async {
+    await _channel.invokeMethod('requestAnkidroidPermissions');
+    final bool? ok = await _channel.invokeMethod(
+      'updateNoteTypeStyling',
+      <String, dynamic>{'noteTypeName': modelName, 'css': css},
+    ) as bool?;
+    return ok ?? false;
+  }
+
+  @override
+  Future<bool> updateNoteTypeTemplates(
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  ) async {
+    if (templates.isEmpty) return false;
+    await _channel.invokeMethod('requestAnkidroidPermissions');
+    final bool? ok = await _channel.invokeMethod(
+      'updateNoteTypeTemplates',
+      <String, dynamic>{
+        'noteTypeName': modelName,
+        'templates': templates
+            .map((AnkiCardTemplate t) => <String, String>{
+                  'name': t.name,
+                  'front': t.front,
+                  'back': t.back,
+                })
+            .toList(growable: false),
+      },
+    ) as bool?;
+    return ok ?? false;
+  }
+
   @override
   Future<bool> createDeck(String name) async {
     await _channel.invokeMethod('requestAnkidroidPermissions');
@@ -589,7 +677,7 @@ class AnkiRepository extends BaseAnkiRepository {
   Future<String?> _addCoverImage(String path) async {
     final preferredName = await _preferredMediaNameForFile(
       path,
-      'hibiki_cover_',
+      'fushi_cover_',
     );
     if (preferredName == null) return null;
     final raw = await _addMediaFile(path, preferredName, mimeTypeForPath(path));
@@ -776,7 +864,7 @@ class AnkiRepository extends BaseAnkiRepository {
   /// 路径。AnkiDroid 通过原生 `FileProvider.getUriForFile` 摄取媒体，而 FileProvider
   /// 只能服务 `provider_paths.xml` 声明过的根（code_cache / files / cache / external*）。
   /// Dart 的 [Directory.systemTemp] 解析到 app 的 `code_cache`，所以已经写在那里的媒体
-  /// （句子音频 `hibiki_mine_sentence_audio_*`、词典媒体、下载音频、视频制卡封面）都能被
+  /// （句子音频 `fushi_mine_sentence_audio_*`、词典媒体、下载音频、视频制卡封面）都能被
   /// FileProvider 服务。但**书籍封面**是直接从 EPUB 解压目录取的——解压目录 base 是
   /// `getApplicationDocumentsDirectory()` = `/data/data/<pkg>/app_flutter`（`files` 的
   /// 兄弟目录，**不在任何配置根下**）。对该路径调用 `getUriForFile` 会抛

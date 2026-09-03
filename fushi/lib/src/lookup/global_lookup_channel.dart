@@ -6,8 +6,8 @@
 // JS bridge messages (jsMessage — dismiss/audio in later phases).
 //
 // spec 2026-07-10 — the implementation moved to the instance-level
-// [OverlayWindowChannel] (shared with the persistent clipboard panel's second
-// window). This file stays as the zero-churn static facade the 1700-line
+// [OverlayWindowChannel] (an instance-level wrapper reusable by any second
+// overlay window). This file stays as the zero-churn static facade the 1700-line
 // GlobalLookupController calls; every method is a one-line delegate to the
 // shared instance bound to the global_lookup MethodChannel.
 //
@@ -85,18 +85,26 @@ abstract final class GlobalLookupChannel {
     bool atCursor = false,
     int capWidth = 0,
     int capHeight = 0,
-  }) =>
-      _impl.showAt(
-        x: x,
-        y: y,
-        width: width,
-        height: height,
-        atCursor: atCursor,
-        capWidth: capWidth,
-        capHeight: capHeight,
-      );
+    int capOriginX = 0,
+    int capOriginY = 0,
+  }) => _impl.showAt(
+    x: x,
+    y: y,
+    width: width,
+    height: height,
+    atCursor: atCursor,
+    capWidth: capWidth,
+    capHeight: capHeight,
+    capOriginX: capOriginX,
+    capOriginY: capOriginY,
+  );
 
   static Future<void> render(String popupJson) => _impl.render(popupJson);
+
+  /// 手柄重设计 P5：转发一枚手柄动作到当前路由的 overlay host（见
+  /// [OverlayWindowChannel.gamepadAction]）。
+  static Future<void> gamepadAction(String action, {double dy = 0}) =>
+      _impl.gamepadAction(action, dy: dy);
 
   static Future<void> resize({required int width, required int height}) =>
       _impl.resize(width: width, height: height);
@@ -112,17 +120,18 @@ abstract final class GlobalLookupChannel {
     required int dy,
     required int width,
     required int height,
+    required int geometryEpoch,
     double left = 0,
     double top = 0,
-  }) =>
-      _impl.revealStack(
-        dx: dx,
-        dy: dy,
-        width: width,
-        height: height,
-        left: left,
-        top: top,
-      );
+  }) => _impl.revealStack(
+    dx: dx,
+    dy: dy,
+    width: width,
+    height: height,
+    geometryEpoch: geometryEpoch,
+    left: left,
+    top: top,
+  );
 
   /// 防截屏（与剪贴板面板同一 pref）：把 display affinity 应用到瞬态覆盖窗。
   static Future<void> setBlockCapture(bool block) =>
@@ -132,18 +141,23 @@ abstract final class GlobalLookupChannel {
 
   static Future<bool> isShowing() => _impl.isShowing();
 
+  static Future<bool> suspendForCapture(int captureGeneration) =>
+      _impl.suspendForCapture(captureGeneration);
+
+  static Future<bool> restoreAfterCapture(int captureGeneration) =>
+      _impl.restoreAfterCapture(captureGeneration);
+
   static void setHandlers({
     required Future<Uint8List> Function(String url) onGetMedia,
     required void Function(Map<String, Object?> message) onJsMessage,
     void Function()? onOverlayHidden,
     void Function(OverlayReverseEvent event)? onRoutedJsMessage,
     void Function(OverlayReverseEvent event)? onRoutedOverlayHidden,
-  }) =>
-      _impl.setHandlers(
-        onGetMedia: onGetMedia,
-        onJsMessage: onJsMessage,
-        onOverlayHidden: onOverlayHidden,
-        onRoutedJsMessage: onRoutedJsMessage,
-        onRoutedOverlayHidden: onRoutedOverlayHidden,
-      );
+  }) => _impl.setHandlers(
+    onGetMedia: onGetMedia,
+    onJsMessage: onJsMessage,
+    onOverlayHidden: onOverlayHidden,
+    onRoutedJsMessage: onRoutedJsMessage,
+    onRoutedOverlayHidden: onRoutedOverlayHidden,
+  );
 }

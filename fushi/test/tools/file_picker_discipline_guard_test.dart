@@ -59,34 +59,45 @@ const Map<String, String> kFilePickerAllowlist = <String, String>{
   // (b) 当场消费：解析成 cue / 转 EPUB / 拷进存储后即与原路径脱钩。
   'lib/src/media/audiobook/book_import_dialog.dart':
       '书文件与封面：导入时拷进 app 存储，与原路径脱钩（EPUB 一条 TODO：安卓白拷一份，可迁 pickRealFilePath）',
-  'lib/src/media/video/video_import_dialog.dart':
-      'm3u8 播放列表：选中即解析成 playlist，不长期引用',
+  'lib/src/settings/settings_schema_video.dart':
+      'mpv Lua 脚本：选中即 importLuaScriptFile 拷进 app 的 mpv_scripts 目录，与原路径脱钩',
   'lib/src/pages/implementations/video_fushi/subtitle.part.dart':
       '字幕：选中即解析成 cue（与 pickSystemFilePath 同语义，board 1360）',
   'lib/src/pages/implementations/dictionary_dialog_page.dart':
       '词典包：选中即经 FFI 导入，导完与原路径脱钩',
   'lib/src/pages/implementations/custom_fonts_page.dart':
       '字体文件：校验魔数后拷进 app 字体目录',
+  'lib/src/pages/implementations/manual_download_task_dialog.dart':
+      '.torrent 元数据：withData: true 当场读字节、随即写进 app 的 manual_torrents 目录，与原路径脱钩',
   'lib/src/pages/implementations/miscellaneous_settings_page.dart':
       '应用图标：拷进 app 存储（image_picker 在 Windows 无实现，TODO-1239）',
   'lib/src/pages/implementations/profile_management_page.dart':
       'Profile JSON：选中即读入并落库',
   'lib/src/sync/sync_settings_schema/backup.part.dart': '备份 zip：选中即校验并恢复，不长期引用',
+  'lib/src/pages/implementations/onboarding_wizard_page.dart':
+      '新手引导「选择本地推荐包」：备份 zip 选中即走 runBackupImportFlowForFile 校验并恢复，'
+          '与 backup.part.dart 同语义，不长期引用',
   'lib/src/utils/misc/gallery_image_picker.dart': '制卡图片：选中即读字节写进卡片，不长期引用',
   'lib/src/pages/implementations/video_shader_dialog.dart':
       '着色器文件：选中即拷进 mpv_shaders 目录',
   'lib/src/pages/implementations/home_video_page.dart': '视频页文件选择：当场消费',
   'lib/src/media/manga/mihon/mihon_extensions_page.dart':
       'Mihon 扩展 APK：选中即 readAsBytes 拷进 app 存储的 tmp/extension-<sha>.apk.part 再校验安装，原路径不入库',
+  'lib/src/media/manga/manga_sources_page.dart':
+      'Aidoku 扩展 .aix：选中即 inspect 校验并 AidokuPackageStore.install 拷进 app 存储，原路径不入库（与上面 Mihon APK 同语义）',
+  'lib/src/media/manga/manga_ocr_settings_section.dart':
+      '手动导入的 OCR 模型文件 / zip：选中即按清单校验字节数并拷进 app 的模型目录'
+          '（MangaOcrModelImporter，原子 rename），原路径不入库。同一入口的「选择'
+          '文件夹」走 pickRealDirectoryPath——那条要的是真实目录路径，不是当场消费。',
   // (a) 长期引用，但**仅 Windows** 路径可达，安卓那条腿根本跑不到：
   // （2026-08-13 选 exe 逻辑从 games_library_page 收敛到共享动作 galgame_add_flow）
   'lib/src/mining/galgame_add_flow.dart':
       'galgame exe：Windows 专属（见 galgame SOP），安卓无此入口',
   'lib/src/pages/implementations/texthooker_page.dart':
       'galgame exe / LunaHook tsv：Windows 专属（见 galgame SOP）',
-  // (a) TODO：桌面「引用原文件不复制」时长期引用绝对路径；安卓恒复制故当前不坏。
-  'lib/src/settings/settings_schema_lookup.dart':
-      '本地音频库：桌面可选「引用原文件」长期引用（安卓恒复制，故当前不坏）',
+  // 原有一条 'lib/src/settings/settings_schema_lookup.dart'（本地音频库导入）已于
+  // BUG-1667 修掉并按「清单只减不增」删除：它改走 pickRealFilePathDetailed，安卓不再
+  // 先复制进 app cache（6 GB 的 android.db 曾需要 2 倍内部存储才导得进来）。
 };
 
 /// 扫 `lib/` 下所有 .dart，返回调用了 `.<member>(` 的文件相对路径集合。

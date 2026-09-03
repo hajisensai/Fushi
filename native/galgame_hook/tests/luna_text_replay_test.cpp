@@ -1,3 +1,8 @@
+// CI 走 `--config Release`，MSVC 在该配置下定义 NDEBUG，裸 assert 会被整条编译掉，
+// 于是这个测试无论断言对不对都恒绿——与 BUG-1157「零测试执行伪装成通过」同一族。
+// 必须在任何 include 之前撤销它。守卫：tests/assert_liveness_guard_test.py
+#undef NDEBUG
+
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -14,6 +19,38 @@ std::vector<std::string> Split(const std::string& value) {
 }
 
 int main(int argc, char** argv) {
+  {
+    if (!fushi_voice_hook::LunaTextRequiresExactThreadContext("typemoon") ||
+        fushi_voice_hook::LunaTextRequiresExactThreadContext("EmbedKrkrZ") ||
+        fushi_voice_hook::LunaTextRequiresExactThreadContext("SiglusEngine") ||
+        fushi_voice_hook::LunaTextRequiresExactThreadContext(nullptr)) {
+      return 52;
+    }
+  }
+  {
+    const std::wstring escaped =
+        L"first\\nsecond\u00a5nthird\uffe5nfourth\\r\\nfifth%r"
+        L"#ff8A00;\u30b3\u30b9\u30d7\u30ec%p-1;\u2500%p;\u2500";
+    const std::wstring normalized =
+        fushi_voice_hook::LunaNormalizeMagesControls(
+            escaped.c_str(), static_cast<int>(escaped.size()), true);
+    if (normalized !=
+        L"first\nsecond\nthird\nfourth\nfifth\n\u30b3\u30b9\u30d7\u30ec\u2500\u2500") {
+      return 49;
+    }
+    if (fushi_voice_hook::LunaNormalizeMagesControls(
+            escaped.c_str(), static_cast<int>(escaped.size()), false) !=
+        escaped) {
+      return 50;
+    }
+    const std::wstring malformed =
+        L"literal%text #ff8G00;kept #12345;kept %p-;kept";
+    if (fushi_voice_hook::LunaNormalizeMagesControls(
+            malformed.c_str(), static_cast<int>(malformed.size()), true) !=
+        malformed) {
+      return 51;
+    }
+  }
   if (argc != 2) return 1;
   const std::wstring single_line =
       L"\u300c\u6c17\u3092\u4ed8\u3051\u307e\u3059\u3063\u3002"
@@ -31,6 +68,54 @@ int main(int argc, char** argv) {
   if (fushi_voice_hook::LunaTextIsArtifact(duplicated_line.c_str(),
                                              normalized_length)) {
     return 5;
+  }
+
+  // TYPEMOON/HUNEX's top toolbar can concatenate multiple independently
+  // doubled descriptions into one output event.  The same structural fold as
+  // EmbedKrkrZ must be applied before both preview and lane publication; no
+  // localized toolbar string is special-cased by production code.
+  {
+    const std::wstring previous_scene =
+        L"\u524d\u306e\u30b7\u30fc\u30f3\u3001\u9078\u629e\u80a2\u307e\u3067\u30b8\u30e3\u30f3\u30d7\u3057\u307e\u3059";
+    const std::wstring rewind =
+        L"\u62bc\u3057\u3066\u3044\u308b\u9593\u3001\u65e9\u623b\u3057\u3057\u307e\u3059";
+    const std::wstring quick_save =
+        L"\u30af\u30a4\u30c3\u30af\u30bb\u30fc\u30d6\u3092\u884c\u3044\u307e\u3059";
+    const std::wstring paired_toolbar =
+        previous_scene + previous_scene + rewind + rewind + quick_save +
+        quick_save;
+    const int typemoon_length =
+        fushi_voice_hook::LunaNormalizedTextLengthForHook(
+            "typemoon", paired_toolbar.c_str(),
+            static_cast<int>(paired_toolbar.size()));
+    if (typemoon_length != static_cast<int>(previous_scene.size()) ||
+        std::wstring(paired_toolbar.c_str(),
+                     paired_toolbar.c_str() + typemoon_length) !=
+            previous_scene ||
+        fushi_voice_hook::LunaTextIsArtifact(paired_toolbar.c_str(),
+                                             typemoon_length)) {
+      return 53;
+    }
+
+    // Ordinary TYPEMOON dialogue, including a legitimate repeated prefix with
+    // an unmatched tail, must remain intact.
+    const std::wstring ordinary_dialogue =
+        L"\u308f\u304b\u3063\u305f\u308f\u304b\u3063\u305f\u3001\u3067\u3082\u4eca\u306f\u623b\u308c\u306a\u3044\u3002";
+    if (fushi_voice_hook::LunaNormalizedTextLengthForHook(
+            "typemoon", ordinary_dialogue.c_str(),
+            static_cast<int>(ordinary_dialogue.size())) !=
+        static_cast<int>(ordinary_dialogue.size())) {
+      return 54;
+    }
+
+    // The fold remains hook-scoped.  Other engines keep an identical byte
+    // shape verbatim, so the TYPEMOON fix cannot alter their previews/lanes.
+    if (fushi_voice_hook::LunaNormalizedTextLengthForHook(
+            "OtherEngine", paired_toolbar.c_str(),
+            static_cast<int>(paired_toolbar.size())) !=
+        static_cast<int>(paired_toolbar.size())) {
+      return 55;
+    }
   }
 
   const int other_engine_length =

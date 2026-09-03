@@ -267,6 +267,9 @@ class SyncRunReport {
   final Map<String, int> deletionTombstonesHighWaterMsByScope = <String, int>{};
 
   /// 记一条通道本轮复核到的删除时刻（取该通道的 max）。
+  ///
+  /// 调用方**必须**先确认本轮完整读到了该通道的全部远端墓碑：这个值一旦落地就成了
+  /// 「此刻之前的删除都已复核」的断言，而没读到的那些标记会被它连坐压制（BUG-1934）。
   void noteDeletionHighWater(SyncChannelScope scope, int deletedAt) {
     final int? prev = deletionTombstonesHighWaterMsByScope[scope.id];
     if (prev == null || deletedAt > prev) {
@@ -371,6 +374,41 @@ class SyncAuthFailure {
   bool get isForbidden => kind == SyncAuthFailureKind.forbidden;
 }
 
+/// 一次资产传输的方向。
+///
+/// 方向以前是**隐含**的：一个 `sync_*_enabled` 开关开着就双向 union，关着就完全不
+/// 传，用户没法表达「现在把本机词典推上去」这种一次性意图。词典 / 本地音频源数据库
+/// 改成显式的上传 / 下载动作后，方向成了调用点必须携带的数据，而不是从开关反推出
+/// 来的行为。
+///
+/// [both] 不是兼容补丁：互联通道的词典在「上传词典到互联对端」开关下**仍然**是双向
+/// union（BUG-988 的通道解耦语义），那是真实存在的第三种方向。
+enum SyncAssetDirection {
+  /// 只把本端独有的资产推给远端。
+  upload,
+
+  /// 只把远端独有的资产拉到本端。
+  download,
+
+  /// 双向 union（自动同步路径）。
+  both;
+
+  /// 本方向是否包含「拉远端独有」。
+  bool get pulls => this != SyncAssetDirection.upload;
+
+  /// 本方向是否包含「推本端独有」。
+  bool get pushes => this != SyncAssetDirection.download;
+}
+
+/// 显式传输的资产类别（[SyncOrchestrator.runAssetTransferOnly]）。
+enum SyncAssetKind {
+  /// 词典包（含导入的词典资源）。
+  dictionary,
+
+  /// 本地音频来源数据库（`.db` + 来源配置）。
+  localAudio,
+}
+
 /// Orchestrates sync across any [SyncBackend].
 ///
 /// Layers the three previously-missing capabilities on top of the existing
@@ -386,8 +424,10 @@ class SyncAuthFailure {
 /// over the interconnect live API are bidirectional (TODO-809) but pull only into
 /// books the device already owns (no orphan audiobook rows; remote audiobooks for
 /// unknown books still wait for manual download). Deletes are never propagated.
-/// Dictionaries and local-audio sources remain union-synced because they are
-/// separate opt-in sharing pools.
+/// 词典与本地音频源数据库**不再随自动同步跑**：它们改由设置页的显式「上传 /
+/// 下载」动作驱动（[runAssetTransferOnly]），方向由用户在点击时给出，而不是从一个
+/// 开关反推。唯一例外是互联通道的词典 —— 「上传词典到互联对端」开关仍按 BUG-988
+/// 的通道语义驱动一轮双向 union，本次不动。
 class SyncOrchestrator {
   SyncOrchestrator({
     required FushiDatabase db,
@@ -397,12 +437,12 @@ class SyncOrchestrator {
     required Directory tempDir,
     this.deviceId = '',
     required this.syncStats,
+    this.syncFavorites = true,
     required this.syncAudioBookPosition,
     required this.syncContent,
     required this.syncAudioBookFiles,
     this.syncVideoFiles = false,
     required this.syncDictionary,
-    required this.syncLocalAudio,
     this.localAudioEntries = const <LocalAudioDbEntry>[],
     this.onLocalAudioImported,
     this.statsSyncMode = StatisticsSyncMode.merge,
@@ -435,6 +475,11 @@ class SyncOrchestrator {
   final String deviceId;
 
   final bool syncStats;
+
+  /// 收藏词 / 收藏句是否参与聚合同步。互联通道由「共享收藏夹」开关驱动，与
+  /// [syncStats] 互相独立；云通道两者同源（见 [ChannelSyncFlags.syncFavorites]）。
+  /// 默认 true：省略该参数的既有调用点行为不变。
+  final bool syncFavorites;
   final bool syncAudioBookPosition;
   final bool syncContent;
   final bool syncAudioBookFiles;
@@ -445,9 +490,10 @@ class SyncOrchestrator {
 
   final bool syncDictionary;
 
-  /// 是否同步本地音频来源（DB 文件 + 配置）。orchestrator 不依赖 AppModel：导出用的
-  /// 条目列表由 [localAudioEntries] 注入，导入注册经 [onLocalAudioImported] 回调。
-  final bool syncLocalAudio;
+  /// 本地音频来源（DB 文件 + 配置）传输所需的数据。orchestrator 不依赖 AppModel：
+  /// 导出用的条目列表由 [localAudioEntries] 注入，导入注册经 [onLocalAudioImported]
+  /// 回调。这一维度不再随自动同步跑，只由 [runAssetTransferOnly] 的显式上传 / 下载
+  /// 驱动。
   final List<LocalAudioDbEntry> localAudioEntries;
   final Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported;
 
@@ -541,43 +587,65 @@ class SyncOrchestrator {
     int readingDone = 0;
     int readingTotal = 0;
     String? readingTitle;
-    final List<SyncBookResult> bookResults = await SyncManager(
-      db: _db,
-      backend: _backend,
-      onContentProgress: (double f) => _emit(SyncPhase.readingData,
-          itemIndex: readingDone,
-          itemTotal: readingTotal,
-          title: readingTitle,
-          fileFraction: f),
-    ).syncAllBooks(
-      syncStats: syncStats,
-      statsSyncMode: statsSyncMode,
-      syncAudioBook: syncAudioBookPosition,
-      syncContent: managerSyncContent,
-      listing: listing,
-      onBookProgress: (int done, int total, String title) {
-        readingDone = done;
-        readingTotal = total;
-        readingTitle = title;
-        _emit(SyncPhase.readingData,
-            itemIndex: done, itemTotal: total, title: title);
-      },
-    );
+    // 书阶段与后续各阶段（词典/音频/进度/合集/墓碑）互相独立，但它是整条流水线里
+    // 唯一没有自带 try/catch 的阶段——它一抛，合集/墓碑等后续阶段整轮到不了
+    // （客户端设备从不本机建合集、watcher 轻量路径也永远不触发，于是 host 合集
+    // 永远落不了库、库页永远散卡）。对齐其余 _sync*Live 阶段的形状：失败记
+    // report.errors，流水线继续。
+    //
+    // SyncAuthError 例外放行：它冲出 run() 是承重契约——manual_sync_ui 靠捕获它
+    // 登出并引导重新登录（TODO-836 / BUG-1323），吞成 report.errors 会把「凭据已
+    // 失效」降级成一条无操作性的杂项错误；且鉴权死了后续阶段本来也无法工作。
+    List<SyncBookResult> bookResults = const <SyncBookResult>[];
+    try {
+      bookResults = await SyncManager(
+        db: _db,
+        backend: _backend,
+        onContentProgress: (double f) => _emit(SyncPhase.readingData,
+            itemIndex: readingDone,
+            itemTotal: readingTotal,
+            title: readingTitle,
+            fileFraction: f),
+      ).syncAllBooks(
+        syncStats: syncStats,
+        statsSyncMode: statsSyncMode,
+        syncAudioBook: syncAudioBookPosition,
+        syncContent: managerSyncContent,
+        listing: listing,
+        onBookProgress: (int done, int total, String title) {
+          readingDone = done;
+          readingTotal = total;
+          readingTitle = title;
+          _emit(SyncPhase.readingData,
+              itemIndex: done, itemTotal: total, title: title);
+        },
+      );
+    } on SyncAuthError {
+      rethrow;
+    } catch (e) {
+      report.errors.add('books: $e');
+    }
     _collectConflicts(bookResults, report);
 
-    if (syncDictionary) await syncDictionaries(report);
+    // 词典只剩互联通道会自动跑（「上传词典到互联对端」开关，BUG-988 的通道语义）。
+    // 云通道的 [syncDictionary] 恒为 false：那一侧的词典改由设置页的显式上传 /
+    // 下载驱动，见 [runAssetTransferOnly]。
+    if (syncDictionary) {
+      await syncDictionaries(report, direction: SyncAssetDirection.both);
+    }
 
-    // 互联（InterconnectSyncBackend）本地音频 + 有声书包走 live 端点；
-    // 云后端仍走原 __local_audio__ 暂存路径（不变）。
+    // 本地音频源数据库两条通道都不再自动传（无论互联还是云）：它没有任何开关了，
+    // 只由 [runAssetTransferOnly] 的显式动作驱动。
+    //
+    // 互联（InterconnectSyncBackend）有声书包走 live 端点；
+    // 云后端仍走原暂存路径（不变）。
     if (isInterconnect) {
-      if (syncLocalAudio) await _syncLocalAudioLive(report, b);
       if (syncAudioBookFiles) await _syncAudiobooksLive(report, b);
       // 互联视频文件 live push（client→host）：单文件本地视频经 host 上传端点注册进
       // host 视频库。与云后端 syncVideoAssets 同为 syncVideoFiles 开关驱动、同为
       // upload-only（host→client 仍走按需流式/下载）。
       if (syncVideoFiles) await _syncVideosLive(report, b);
     } else {
-      if (syncLocalAudio) await syncLocalAudioPackages(report);
       if (syncAudioBookFiles) await syncAudiobookPackages(root, report);
       // 云视频资产上传（多端库联合视图 §2.6）：仅云后端走 __videos__ 伪装资产。互联
       // 视频文件走上面 _syncVideosLive 的 host API 上传，不走此云后端分支。
@@ -599,11 +667,12 @@ class SyncOrchestrator {
       await _syncBookProgressLive(report, b);
       await _syncVideoProgressLive(report, b);
       await _syncAudiobookProgressLive(report, b);
-      // 互联聚合（统计 + 收藏）live 双向合并（TODO-1056 phase C）。复用 syncStats
-      // 开关（聚合 = 统计 + 收藏，同属「统计同步」语义，不新增设置项 / schema）。
+      // 互联聚合（统计 + 收藏）live 双向合并（TODO-1056 phase C）。两族各自由互联
+      // 页的「共享统计 / 共享收藏夹」开关控制（默认均 true = 拆开关前的行为），裁剪
+      // 在 [AggregateSyncService.syncOverClient] 内按族做，两族都关时整轮不发请求。
       // 互联无 per-device 快照文件、不依赖 deviceId：host 单份权威快照，client GET →
       // 并集折叠 → 写回本地 → PUT 回 host（host 再 MAX/并集折叠进自己 DB）。
-      if (syncStats) await _syncAggregateLive(report, b);
+      if (syncStats || syncFavorites) await _syncAggregateLive(report, b);
     }
 
     // 云后端聚合同步（统计 + 收藏跨端共享，TODO-1056 phase B）。互联 live 端点
@@ -674,6 +743,12 @@ class SyncOrchestrator {
     InterconnectSyncBackend backend,
   ) async {
     try {
+      // apikey 同步设定重设计：service-config（host 的外部服务 API key）此前是
+      // 无 UI 无开关的隐形通道。开关默认 true（行为不变）；关掉 = 本设备不再向
+      // host 请求 service-config（连请求都不发，不是拉回来再丢弃）。
+      if (!await SyncRepository(_db).isInterconnectServiceConfigSyncEnabled()) {
+        return;
+      }
       final InterconnectServiceConfigSnapshot? snapshot =
           await backend.getRemoteServiceConfig();
       if (snapshot == null) return;
@@ -701,6 +776,8 @@ class SyncOrchestrator {
       await AggregateSyncService(_db, scope: _scope).syncOverClient(
         fetchRemote: backend.getRemoteAggregate,
         pushMerged: backend.putRemoteAggregate,
+        shareStats: syncStats,
+        shareFavorites: syncFavorites,
       );
     } catch (e) {
       report.noteError('aggregate live sync', e);
@@ -744,6 +821,32 @@ class SyncOrchestrator {
       // 云路径的 ensureNamespace 依赖同步根已解析（与 [run] 开头一致）。
       await _backend.findOrCreateRootFolder();
       await syncCollections(report);
+    }
+    return report;
+  }
+
+  /// 只跑**一类资产、一个方向**的轻量传输 —— 设置页「词典 / 本地音频数据库」两行
+  /// 的显式上传 / 下载动作走这条路。
+  ///
+  /// 与 [runCollectionsOnly] 同范式：**不写** lastSyncMs 冷却戳（那是完整 sweep 的
+  /// 语义），不碰任何其它维度，内部逐项错误自己进 [SyncRunReport.errors] 不中断。
+  ///
+  /// 云路径的 `ensureNamespace` 依赖同步根已解析（与 [run] 开头一致），故先
+  /// [SyncBackend.findOrCreateRootFolder]；互联 live 路径直打对端端点不需要根，
+  /// 也就不为它多跑一次网络往返。
+  Future<SyncRunReport> runAssetTransferOnly({
+    required SyncAssetKind kind,
+    required SyncAssetDirection direction,
+  }) async {
+    final SyncRunReport report = SyncRunReport();
+    if (_backend is! InterconnectSyncBackend) {
+      await _backend.findOrCreateRootFolder();
+    }
+    switch (kind) {
+      case SyncAssetKind.dictionary:
+        await syncDictionaries(report, direction: direction);
+      case SyncAssetKind.localAudio:
+        await syncLocalAudioSources(report, direction: direction);
     }
     return report;
   }
@@ -932,46 +1035,60 @@ class SyncOrchestrator {
   ) =>
       _syncCollectionsLive(report, backend);
 
-  /// 收集本设备当前在库的资产键（按 mediaType 分组），供删除墓碑消费端算 deleteLocal
-  /// 候选（远端有删除标记 ∧ 本地仍在库）。itemKey 与写墓碑点严格一致：book/audiobook =
-  /// bookKey（[writeSyncDeletionTombstone] 调用点 reader_fushi_source / audiobook），
-  /// video = bookUid（video_book_repository），localaudio = displayName，
-  /// srtbook = srt_books.uid（仅 standalone，见下）。
+  /// 收集本设备当前在库的资产（按 mediaType 分组 → `itemKey → 存在起始时刻`），供删除
+  /// 墓碑消费端算 deleteLocal 候选（远端有删除标记 ∧ 本地仍在库 ∧ 标记管得着这条）。
+  /// itemKey 与写墓碑点严格一致：book/audiobook = bookKey（[writeSyncDeletionTombstone]
+  /// 调用点 reader_fushi_source / audiobook），video = bookUid（video_book_repository），
+  /// localaudio = displayName，srtbook = srt_books.uid（仅 standalone，见下）。
   ///
   /// 键一律用 [SyncTombstoneKind.dbValue] 而非裸字符串字面量：这张 map 与写墓碑点必须
   /// 逐字一致，拼错一个字符的后果是「对端删了、本地永远不弹确认」这种静默失效。
-  Future<Map<String, Set<String>>> _collectPresentDeletionKeys() async {
-    return <String, Set<String>>{
-      SyncTombstoneKind.book.dbValue: <String>{
-        for (final EpubBookRow r in await _db.getAllEpubBooks()) r.bookKey,
+  ///
+  /// BUG-2044：值是**存在起始时刻**而不再是单纯的「在不在库」。删除后又重新加回来的条目
+  /// 时刻晚于墓碑 deletedAt，[tombstoneAppliesTo] 据此把它排除在候选之外——否则本机自己
+  /// 取消收藏产生、发布到远端后再也不会被 GC 的那条墓碑，会在用户重新收藏同一句之后被读
+  /// 回来，弹「其他设备已删除」问用户要不要删掉自己刚收藏的东西。
+  Future<DeletionPresentEntries> _collectPresentDeletionKeys() async {
+    return <String, Map<String, int?>>{
+      SyncTombstoneKind.book.dbValue: <String, int?>{
+        for (final EpubBookRow r in await _db.getAllEpubBooks())
+          r.bookKey: r.importedAt,
       },
-      SyncTombstoneKind.audiobook.dbValue: <String>{
-        for (final AudiobookRow r in await _db.getAllAudiobooks()) r.bookKey,
+      // 有声书表没有自己的导入时刻列，且与 epub 共享 bookKey——借 epub 的 importedAt
+      // 会把「书早就在、有声书是后加的」记成前者。宁可 null（多问一次），不编造时刻。
+      SyncTombstoneKind.audiobook.dbValue: <String, int?>{
+        for (final AudiobookRow r in await _db.getAllAudiobooks())
+          r.bookKey: null,
       },
       // 纯字幕书（standalone SRT）身份 = uid。**只收 bookKey 为空的行**：与
       // [SrtBookRepository.delete] 的写墓碑判据同源——srt-backed 行的身份是 bookKey，
       // 已由上面的 book 键覆盖，重复收进来会让同一资产在对端弹两条确认（TODO-2470）。
-      SyncTombstoneKind.srtbook.dbValue: <String>{
+      SyncTombstoneKind.srtbook.dbValue: <String, int?>{
         for (final SrtBookRow r in await _db.getAllSrtBooks())
-          if (r.bookKey.isEmpty) r.uid,
+          if (r.bookKey.isEmpty) r.uid: r.importedAt,
       },
-      SyncTombstoneKind.video.dbValue: <String>{
-        for (final VideoBookRow r in await _db.allVideoBooks()) r.bookUid,
+      SyncTombstoneKind.video.dbValue: <String, int?>{
+        for (final VideoBookRow r in await _db.allVideoBooks())
+          r.bookUid: r.importedAt,
       },
-      SyncTombstoneKind.localaudio.dbValue: <String>{
-        for (final LocalAudioDbEntry e in localAudioEntries) e.displayName,
+      // localaudio 条目不记录加入时刻 → null = 无从仲裁，保持「只看在不在库」的旧语义。
+      SyncTombstoneKind.localaudio.dbValue: <String, int?>{
+        for (final LocalAudioDbEntry e in localAudioEntries)
+          e.displayName: null,
       },
-      SyncTombstoneKind.favoriteword.dbValue: <String>{
+      SyncTombstoneKind.favoriteword.dbValue: <String, int?>{
         for (final FavoriteWordRow r in await _db.getAllFavoriteWords())
           FushiDatabase.favoriteWordItemKey(
-              r.expression, r.reading, r.sourceType),
+              r.expression, r.reading, r.sourceType): r.createdAt,
       },
       // 收藏句无稳定 id，用内容键（[FavoriteSentenceRepository.itemKeyOf]）；与写墓碑点、
-      // aggregate 去重键同源。
-      SyncTombstoneKind.favoritesentence.dbValue: <String>{
+      // aggregate 去重键同源。时刻取 createdAt——重新收藏会生成新的 createdAt，正是
+      // BUG-2044 仲裁所依据的那个时刻。
+      SyncTombstoneKind.favoritesentence.dbValue: <String, int?>{
         for (final FavoriteSentence s
             in await FavoriteSentenceRepository(_db).getAll())
-          FavoriteSentenceRepository.itemKeyOf(s),
+          FavoriteSentenceRepository.itemKeyOf(s):
+              s.createdAt.millisecondsSinceEpoch,
       },
     };
   }
@@ -992,6 +1109,10 @@ class SyncOrchestrator {
   /// 不自动 GC 远端标记：本设备仍持有该资产且 deletedAt <= 基线时，无法区分「保留」与
   /// 「删后重加」，误删标记会破坏其它设备的删除传播——书/视频不自动重导入，标记长存只是
   /// 极小的存储/新设备重弹成本，GC 留待 Phase F。整段 try/catch，错误进 report.errors。
+  ///
+  /// **完整观测不变式**（BUG-1934）：只有本轮把列出的标记**全部**读成了 marker，才登记
+  /// [SyncRunReport.noteDeletionHighWater]（=允许 UI 推进基线）。少读一条就闭嘴——基线
+  /// 是标量，推过头会把那条没读到的、deletedAt 更小的删除永久压成「旧闻」。
   Future<void> syncDeletionTombstones(SyncRunReport report) async {
     try {
       final String ns =
@@ -1014,8 +1135,13 @@ class SyncOrchestrator {
       }
 
       // ── 消费：读远端标记 → deleteLocal 候选（过基线守卫）──
-      final Map<String, Set<String>> remoteTombstones = <String, Set<String>>{};
-      final Map<String, int> remoteDeletedAt = <String, int>{};
+      // itemKey → deletedAt（同资产多标记取较新；理论上主键唯一，防御性取 max）。
+      final DeletionTombstoneEntries remoteTombstones =
+          <String, Map<String, int>>{};
+      // 本轮是否**完整**观测了远端标记集合：列出来了却没读成 marker 的每一条都置假。
+      // 基线的语义是「已复核到此时刻的删除」，只有完整观测撑得起这句话（BUG-1934，
+      // 见下方推进点的长注释）。
+      bool scanComplete = true;
       final List<AssetEntry> children = await _backend.listChildren(ns);
       for (final AssetEntry e in children) {
         if (e.isFolder) continue;
@@ -1023,41 +1149,73 @@ class SyncOrchestrator {
         try {
           json = await _backend.getJsonAsset(e.id);
         } catch (err) {
+          scanComplete = false;
           report.noteError('deletion tombstone "${e.name}" unreadable', err);
           continue;
         }
+        if (json == null) {
+          // listChildren 刚列到它、读回来却是空：要么本轮被对端删了（下轮不再列出，
+          // 自愈），要么后端把读失败映射成了 null 而不是抛（[SftpSyncBackend
+          // .getJsonAsset] 就是这样吞 SyncBackendError 的）。两种都不是「已观测」，
+          // 按不完整处理——静默 continue 会让后者变成一次无声的永久压制。
+          scanComplete = false;
+          report.noteError(
+              'deletion tombstone "${e.name}" unreadable', 'empty response');
+          continue;
+        }
         final parsed = parseDeletionTombstoneJson(json);
-        if (parsed == null) continue;
-        remoteTombstones
-            .putIfAbsent(parsed.mediaType, () => <String>{})
-            .add(parsed.itemKey);
-        final String k = '${parsed.mediaType}\u0000${parsed.itemKey}';
-        // 同资产多标记取较新 deletedAt（理论上主键唯一，防御性取 max）。
-        final int? prev = remoteDeletedAt[k];
+        if (parsed == null) {
+          // 读到了但内容不合法（截断上传 / 非本协议文件）。这是**永久**状态，重试不会
+          // 变好，故不置 scanComplete=false（否则基线被一个坏文件永久钉死，用户每轮
+          // 重看同一批确认框）。只如实记一条，别再静默丢。
+          report.noteError(
+              'deletion tombstone "${e.name}" malformed', 'skipped');
+          continue;
+        }
+        final Map<String, int> byKey = remoteTombstones.putIfAbsent(
+            parsed.mediaType, () => <String, int>{});
+        final int? prev = byKey[parsed.itemKey];
         if (prev == null || parsed.deletedAt > prev) {
-          remoteDeletedAt[k] = parsed.deletedAt;
+          byKey[parsed.itemKey] = parsed.deletedAt;
         }
       }
 
-      final Map<String, Set<String>> present =
+      final DeletionPresentEntries present =
           await _collectPresentDeletionKeys();
       int baseline = await repo.getDeletionTombstonesBaselineMs(_scope);
       if (baseline > nextBaseline) baseline = nextBaseline; // 时钟回拨钳制。
+      bool heldBaseline = false;
 
-      // deleteLocal 方向：远端有标记 ∧ 本地在库。localTombstones/remotePresent 传空
-      // ⇒ 只产 deleteLocal，不产 deleteRemote（本设备的删除靠发布标记让对端各自消费）。
+      // deleteLocal 方向：远端有标记 ∧ 本地在库 ∧ 该标记管得着本地这条
+      // （BUG-2044 的存在起始时刻仲裁在 [computeDeletionPropagation] 内统一做）。
+      // localTombstones/remotePresent 传空 ⇒ 只产 deleteLocal，不产 deleteRemote
+      // （本设备的删除靠发布标记让对端各自消费）。
       final List<DeletionPropagationCandidate> raw = computeDeletionPropagation(
-        localTombstones: const <String, Set<String>>{},
+        localTombstones: const <String, Map<String, int>>{},
         remoteTombstones: remoteTombstones,
         localPresent: present,
-        remotePresent: const <String, Set<String>>{},
+        remotePresent: const <String, Map<String, int?>>{},
       );
       for (final DeletionPropagationCandidate c in raw) {
         if (c.direction != DeletionPropagationDirection.deleteLocal) continue;
-        final int? at = remoteDeletedAt['${c.mediaType}\u0000${c.itemKey}'];
+        final int? at = remoteTombstones[c.mediaType]?[c.itemKey];
         if (at == null || at <= baseline) continue; // 旧闻 / 已处理，不再弹。
         report.deletionCandidates.add(c);
-        report.noteDeletionHighWater(_scope, at);
+        // BUG-1934：读失败的标记必须挡住基线推进。基线是**标量**，UI 复核完这批就把它
+        // 推到本轮最大 deletedAt，于是任何 deletedAt 更小、本轮恰好没读出来的标记，下轮
+        // 就落进上面那句 `at <= baseline` 的旧闻分支——永久不再弹，用户在对端删掉的东西
+        // 在本机静默留存。触发它只要一次 TLS 握手失败（HandshakeException）。候选照常
+        // 上报（该弹的还得弹），只是不认领「已复核到此刻」这个断言，下轮读全了再推进。
+        // 互联通道无需同样处理：它一次 GET 取回全部墓碑，失败即整体抛出，无部分观测。
+        if (scanComplete) {
+          report.noteDeletionHighWater(_scope, at);
+        } else {
+          heldBaseline = true;
+        }
+      }
+      if (heldBaseline) {
+        report.errors.add('deletion tombstones scan incomplete; '
+            'consumption baseline held until a complete read');
       }
     } catch (e) {
       report.noteError('deletion tombstones sync', e);
@@ -1092,34 +1250,32 @@ class SyncOrchestrator {
           await backend.getRemoteDeletionTombstones();
       if (remote == null) return; // 老 host 无 /api/tombstones 端点，优雅跳过。
 
-      final Map<String, Set<String>> remoteTombstones = <String, Set<String>>{};
-      final Map<String, int> remoteDeletedAt = <String, int>{};
+      final DeletionTombstoneEntries remoteTombstones =
+          <String, Map<String, int>>{};
       for (final r in remote) {
-        remoteTombstones
-            .putIfAbsent(r.mediaType, () => <String>{})
-            .add(r.itemKey);
-        final String k = '${r.mediaType}\u0000${r.itemKey}';
-        final int? prev = remoteDeletedAt[k];
+        final Map<String, int> byKey =
+            remoteTombstones.putIfAbsent(r.mediaType, () => <String, int>{});
+        final int? prev = byKey[r.itemKey];
         if (prev == null || r.deletedAt > prev) {
-          remoteDeletedAt[k] = r.deletedAt;
+          byKey[r.itemKey] = r.deletedAt;
         }
       }
 
       final SyncRepository repo = SyncRepository(_db);
-      final Map<String, Set<String>> present =
+      final DeletionPresentEntries present =
           await _collectPresentDeletionKeys();
       int baseline = await repo.getDeletionTombstonesBaselineMs(_scope);
       if (baseline > nextBaseline) baseline = nextBaseline;
 
       final List<DeletionPropagationCandidate> raw = computeDeletionPropagation(
-        localTombstones: const <String, Set<String>>{},
+        localTombstones: const <String, Map<String, int>>{},
         remoteTombstones: remoteTombstones,
         localPresent: present,
-        remotePresent: const <String, Set<String>>{},
+        remotePresent: const <String, Map<String, int?>>{},
       );
       for (final DeletionPropagationCandidate c in raw) {
         if (c.direction != DeletionPropagationDirection.deleteLocal) continue;
-        final int? at = remoteDeletedAt['${c.mediaType}\u0000${c.itemKey}'];
+        final int? at = remoteTombstones[c.mediaType]?[c.itemKey];
         if (at == null || at <= baseline) continue;
         report.deletionCandidates.add(c);
         report.noteDeletionHighWater(_scope, at);
@@ -2073,9 +2229,10 @@ class SyncOrchestrator {
   @visibleForTesting
   Future<void> syncLocalAudioLiveForTest(
     SyncRunReport report,
-    InterconnectSyncBackend backend,
-  ) =>
-      _syncLocalAudioLive(report, backend);
+    InterconnectSyncBackend backend, {
+    SyncAssetDirection direction = SyncAssetDirection.both,
+  }) =>
+      _syncLocalAudioLive(report, backend, direction);
 
   /// 测试入口：直接调用 [_syncAudiobooksLive]。
   @visibleForTesting
@@ -2087,18 +2244,38 @@ class SyncOrchestrator {
 
   /// Union-syncs dictionaries. 互联（InterconnectSyncBackend）→ 直读对端实时库（无暂存）；
   /// 云后端 → 走现有 __dictionaries__ 暂存路径（不变）。无旧设备故无能力探测。
-  Future<void> syncDictionaries(SyncRunReport report) async {
+  Future<void> syncDictionaries(
+    SyncRunReport report, {
+    required SyncAssetDirection direction,
+  }) async {
     final SyncBackend b = _backend;
     if (b is InterconnectSyncBackend) {
-      await _syncDictionariesLive(report, b);
+      await _syncDictionariesLive(report, b, direction);
       return;
     }
-    await _syncDictionariesStaged(report);
+    await _syncDictionariesStaged(report, direction);
+  }
+
+  /// 本地音频源数据库的通道分派（与 [syncDictionaries] 同形）：互联走 live 端点，
+  /// 云后端走 `__local_audio__` 暂存命名空间。
+  Future<void> syncLocalAudioSources(
+    SyncRunReport report, {
+    required SyncAssetDirection direction,
+  }) async {
+    final SyncBackend b = _backend;
+    if (b is InterconnectSyncBackend) {
+      await _syncLocalAudioLive(report, b, direction);
+      return;
+    }
+    await syncLocalAudioPackages(report, direction: direction);
   }
 
   /// 互联直读对端实时词典：按名 union，绝不创建/读写 __dictionaries__。
   Future<void> _syncDictionariesLive(
-      SyncRunReport report, InterconnectSyncBackend backend) async {
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+    SyncAssetDirection direction,
+  ) async {
     final List<DictionaryMetaRow> localDicts =
         await _db.getAllDictionaryMetadata();
     final List<RemoteDictionaryInfo> remoteDicts =
@@ -2111,10 +2288,14 @@ class SyncOrchestrator {
       },
     );
 
-    final int total = diff.toPull.length + diff.toPush.length;
+    // 方向裁剪放在**循环之外**：total 从一开始就是这次真正要做的量，循环体一行不
+    // 改。把 if 塞进循环里只会让进度分母撒谎（显示 0/5 却只做 2 件事）。
+    final List<String> pulls = <String>[if (direction.pulls) ...diff.toPull];
+    final List<String> pushes = <String>[if (direction.pushes) ...diff.toPush];
+    final int total = pulls.length + pushes.length;
     int index = 0;
 
-    for (final String name in diff.toPull) {
+    for (final String name in pulls) {
       _emit(SyncPhase.dictionaries,
           itemIndex: index, itemTotal: total, title: name);
       File? tmp;
@@ -2139,7 +2320,7 @@ class SyncOrchestrator {
       index++;
     }
 
-    for (final String name in diff.toPush) {
+    for (final String name in pushes) {
       _emit(SyncPhase.dictionaries,
           itemIndex: index, itemTotal: total, title: name);
       File? tmp;
@@ -2167,7 +2348,10 @@ class SyncOrchestrator {
   }
 
   /// Union-syncs dictionary packages in the `__dictionaries__` namespace.
-  Future<void> _syncDictionariesStaged(SyncRunReport report) async {
+  Future<void> _syncDictionariesStaged(
+    SyncRunReport report,
+    SyncAssetDirection direction,
+  ) async {
     final String ns = await _backend.ensureNamespace(kSyncDictionaryNamespace);
     final List<DictionaryMetaRow> localDicts =
         await _db.getAllDictionaryMetadata();
@@ -2184,15 +2368,17 @@ class SyncOrchestrator {
 
     // Resolve both sides' work first so progress has a real denominator.
     final List<DictionaryMetaRow> toPush = <DictionaryMetaRow>[
-      for (final DictionaryMetaRow d in localDicts)
-        if (!remoteNames.contains(d.name)) d,
+      if (direction.pushes)
+        for (final DictionaryMetaRow d in localDicts)
+          if (!remoteNames.contains(d.name)) d,
     ];
     final List<AssetEntry> toPull = <AssetEntry>[
-      for (final AssetEntry e in remote)
-        if (!e.isFolder &&
-            _isDictionaryAsset(e.name) &&
-            !localNames.contains(_stripDictionaryAssetSuffix(e.name)))
-          e,
+      if (direction.pulls)
+        for (final AssetEntry e in remote)
+          if (!e.isFolder &&
+              _isDictionaryAsset(e.name) &&
+              !localNames.contains(_stripDictionaryAssetSuffix(e.name)))
+            e,
     ];
     final int total = toPush.length + toPull.length;
     int index = 0;
@@ -2262,11 +2448,13 @@ class SyncOrchestrator {
   /// - toPull：远端有 ∧ 本端无 → `getRemoteLocalAudio` 下载包 → `onLocalAudioImported` 注册；
   /// - toPush：本端有 ∧ 远端无 → `exportLocalAudioPackage` 打包 → `putRemoteLocalAudio` 上传。
   ///
-  /// 仅当 client syncLocalAudio 开且 isInterconnect 时由 [run] 调用。
+  /// [direction] 裁剪要做哪一半（显式上传 / 下载动作用；[SyncAssetDirection.both]
+  /// 保留完整 union 语义）。只由 [syncLocalAudioSources] 分派调用，不再随 [run] 跑。
   /// 进度走 [SyncPhase.localAudio]，临时文件 finally 清理，逐项错误进 report.errors 不中断。
   Future<void> _syncLocalAudioLive(
     SyncRunReport report,
     InterconnectSyncBackend backend,
+    SyncAssetDirection direction,
   ) async {
     final List<RemoteLocalAudioInfo> remoteEntries =
         await backend.listRemoteLocalAudio();
@@ -2282,11 +2470,14 @@ class SyncOrchestrator {
       remoteKeys: remoteNames,
     );
 
-    final int total = diff.toPull.length + diff.toPush.length;
+    // 方向裁剪在循环之外（同 [_syncDictionariesLive]）：total 即本次真实工作量。
+    final List<String> pulls = <String>[if (direction.pulls) ...diff.toPull];
+    final List<String> pushes = <String>[if (direction.pushes) ...diff.toPush];
+    final int total = pulls.length + pushes.length;
     int index = 0;
 
     // ── Pull：远端独有 → 下载并注册 ────────────────────────────────────────
-    for (final String name in diff.toPull) {
+    for (final String name in pulls) {
       _emit(SyncPhase.localAudio,
           itemIndex: index, itemTotal: total, title: name);
       File? tmp;
@@ -2319,7 +2510,7 @@ class SyncOrchestrator {
     }
 
     // ── Push：本端独有 → 打包并上传 ─────────────────────────────────────────
-    for (final String name in diff.toPush) {
+    for (final String name in pushes) {
       _emit(SyncPhase.localAudio,
           itemIndex: index, itemTotal: total, title: name);
       File? tmp;
@@ -2651,7 +2842,10 @@ class SyncOrchestrator {
   ///
   /// 已知限制：displayName 无唯一约束，撞名按「同一库」union 跳过（与词典按 name
   /// 同语义）；真正的唯一性去重列为 follow-up。
-  Future<void> syncLocalAudioPackages(SyncRunReport report) async {
+  Future<void> syncLocalAudioPackages(
+    SyncRunReport report, {
+    required SyncAssetDirection direction,
+  }) async {
     final String ns = await _backend.ensureNamespace(kSyncLocalAudioNamespace);
     final List<AssetEntry> remote = await _backend.listChildren(ns);
 
@@ -2667,16 +2861,18 @@ class SyncOrchestrator {
     // Resolve both sides' work first so progress has a real denominator. The
     // push side also drops libraries whose DB file is gone (nothing to send).
     final List<LocalAudioDbEntry> toPush = <LocalAudioDbEntry>[
-      for (final LocalAudioDbEntry d in localAudioEntries)
-        if (!remoteNames.contains(d.displayName) && File(d.path).existsSync())
-          d,
+      if (direction.pushes)
+        for (final LocalAudioDbEntry d in localAudioEntries)
+          if (!remoteNames.contains(d.displayName) && File(d.path).existsSync())
+            d,
     ];
     final List<AssetEntry> toPull = <AssetEntry>[
-      for (final AssetEntry e in remote)
-        if (!e.isFolder &&
-            _isLocalAudioAsset(e.name) &&
-            !localNames.contains(_stripLocalAudioAssetSuffix(e.name)))
-          e,
+      if (direction.pulls)
+        for (final AssetEntry e in remote)
+          if (!e.isFolder &&
+              _isLocalAudioAsset(e.name) &&
+              !localNames.contains(_stripLocalAudioAssetSuffix(e.name)))
+            e,
     ];
     final int total = toPush.length + toPull.length;
     int index = 0;

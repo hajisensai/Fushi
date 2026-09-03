@@ -8,6 +8,29 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import '../helpers/source_guard.dart';
 
 void main() {
+  group('resolvePopupViewportHeight', () {
+    test('uses the live JS viewport when it is valid', () {
+      expect(
+        resolvePopupViewportHeight(reportedHeight: 280, layoutHeight: 310),
+        280,
+      );
+    });
+
+    test('falls back to Flutter layout for an offscreen native WebView', () {
+      expect(
+        resolvePopupViewportHeight(reportedHeight: 0, layoutHeight: 310),
+        310,
+      );
+    });
+
+    test('returns null when neither side has a usable viewport', () {
+      expect(
+        resolvePopupViewportHeight(reportedHeight: 0, layoutHeight: 0),
+        isNull,
+      );
+    });
+  });
+
   group('dictionary popup asset bootstrap', () {
     test('iOS uses inline popup assets instead of a file URL main frame', () {
       final source = File(
@@ -28,6 +51,47 @@ void main() {
         reason: 'When inline data is available, the WebView must not also '
             'navigate to assets/popup/popup.html as its main frame.',
       );
+    });
+    test('iOS zero innerWidth uses a zoom-correct popup container width',
+        () {
+      final String source = File(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      ).readAsStringSync();
+      expect(source, contains('Future<void> _applyPopupViewportSize()'));
+      expect(source, isNot(contains('document.documentElement.style.width')));
+      expect(source, isNot(contains('document.body.style.width')));
+      expect(source, contains('window.__fushiApplyPopupViewport'));
+      expect(source, contains('width / z'));
+      expect(source, contains('bodyStyle.paddingLeft'));
+      expect(source, contains('bodyStyle.paddingRight'));
+      expect(source, contains("getElementById('entries-container')"));
+      expect(source, contains('LayoutBuilder('),
+          reason: 'the popup must measure its actual Flutter constraints');
+      final int completeLoadAt =
+          source.indexOf('Future<void> _completePopupLoad');
+      final int applyAt = source.indexOf(
+        'await _applyPopupViewportSize();',
+        completeLoadAt,
+      );
+      final int pushAt = source.indexOf('_pushResults();', applyAt);
+      expect(completeLoadAt, isNonNegative);
+      expect(applyAt, isNonNegative);
+      expect(
+        applyAt,
+        lessThan(pushAt),
+        reason: 'the width must be fixed before renderPopup creates entries',
+      );
+    });
+
+    test('every in-app zoom change reapplies the Flutter viewport width', () {
+      final String popup = File(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      ).readAsStringSync();
+      final String injection = File(
+        'lib/src/pages/implementations/popup_settings_injection.dart',
+      ).readAsStringSync();
+      expect(popup, contains('window.__fushiApplyPopupViewport();'));
+      expect(injection, contains('window.__fushiApplyPopupViewport?.();'));
     });
   });
 
@@ -297,6 +361,8 @@ void main() {
         {
           'dictionary': 'NHK',
           'pitchPositions': [2],
+          // 79c55c2 二期：pattern 式 accent 平行数组（数字位词典恒空）。
+          'patterns': <String>[],
           // TODO-687 block3: pitch entries now always carry a transcriptions
           // list (empty for plain pitch-accent dicts, populated for IPA dicts).
           'transcriptions': <String>[],
@@ -395,7 +461,8 @@ void main() {
               ),
             ],
             pitches: [
-              FushiPitchEntry(dictName: 'NHK', pitchPositions: [2]),
+              FushiPitchEntry(
+                  dictName: 'NHK', pitchPositions: [2], patterns: ['heiban']),
               // IPA transcription dict: no pitch positions, only transcriptions.
               // Exercises the TODO-687 block3 passthrough end to end.
               FushiPitchEntry(
@@ -432,7 +499,8 @@ void main() {
               ),
             ],
             pitches: [
-              FushiPitchEntry(dictName: 'NHK', pitchPositions: [2]),
+              FushiPitchEntry(
+                  dictName: 'NHK', pitchPositions: [2], patterns: ['heiban']),
               FushiPitchEntry(
                 dictName: 'IPA',
                 pitchPositions: [],
@@ -449,9 +517,9 @@ void main() {
       const maxTerms = 100;
 
       final newJson = buildPopupJsonFromLookup(
-        results: lookupResults,
-        maximumTerms: maxTerms,
-      );
+          results: lookupResults,
+          maximumTerms: maxTerms,
+          hiddenDictionaries: const <String>{});
       final oldResult = buildResultFromLookup(
         searchTerm: '食べた',
         results: lookupResults,
@@ -497,6 +565,8 @@ void main() {
         for (var j = 0; j < nPitches.length; j++) {
           expect(nPitches[j]['dictionary'], oPitches[j]['dictionary']);
           expect(nPitches[j]['pitchPositions'], oPitches[j]['pitchPositions']);
+          // 79c55c2 二期：pattern 式 accent 两条路径逐字段一致。
+          expect(nPitches[j]['patterns'], oPitches[j]['patterns']);
           // TODO-687 block3: transcriptions must survive both paths identically
           // (parity is field-level — adding a field never auto-fails, so this
           // assertion is hand-added together with the IPA fixture data above).
@@ -545,18 +615,18 @@ void main() {
 
       // ① 屈折命中（matched≠deinflected 且非空）→ 恰好一条痕迹。
       final withTrace = jsonDecode(buildPopupJsonFromLookup(
-        results: [make(matched: '食べた', deinflected: '食べる')],
-        maximumTerms: 100,
-      )) as List;
+          results: [make(matched: '食べた', deinflected: '食べる')],
+          maximumTerms: 100,
+          hiddenDictionaries: const <String>{})) as List;
       expect((withTrace.single as Map<String, dynamic>)['deinflectionTrace'], [
         {'name': '食べた → 食べる', 'description': ''},
       ]);
 
       // ② 原形直查（matched == deinflected）→ 空数组，不生成自指痕迹。
       final noInflection = jsonDecode(buildPopupJsonFromLookup(
-        results: [make(matched: '食べる', deinflected: '食べる')],
-        maximumTerms: 100,
-      )) as List;
+          results: [make(matched: '食べる', deinflected: '食べる')],
+          maximumTerms: 100,
+          hiddenDictionaries: const <String>{})) as List;
       expect(
         (noInflection.single as Map<String, dynamic>)['deinflectionTrace'],
         isEmpty,
@@ -564,9 +634,9 @@ void main() {
 
       // ③ 引擎未回填 deinflected（空串）→ 同样空数组，不生成「x → 」残缺痕迹。
       final emptyDeinflected = jsonDecode(buildPopupJsonFromLookup(
-        results: [make(matched: '食べた', deinflected: '')],
-        maximumTerms: 100,
-      )) as List;
+          results: [make(matched: '食べた', deinflected: '')],
+          maximumTerms: 100,
+          hiddenDictionaries: const <String>{})) as List;
       expect(
         (emptyDeinflected.single as Map<String, dynamic>)['deinflectionTrace'],
         isEmpty,
@@ -598,9 +668,9 @@ void main() {
     test('maximumTerms 约束词头卡数，不腰斩单个词头的注释', () {
       final lookupResults = makeLookupResults();
       final json = buildPopupJsonFromLookup(
-        results: lookupResults,
-        maximumTerms: 2,
-      );
+          results: lookupResults,
+          maximumTerms: 2,
+          hiddenDictionaries: const <String>{});
       final parsed = jsonDecode(json) as List;
       expect(parsed.length, 1, reason: '两条结果同属一个词头，只该出一张卡');
       final entry = parsed.single as Map<String, dynamic>;
@@ -613,37 +683,38 @@ void main() {
 
     test('maximumTerms 真的截断词头卡数', () {
       final json = buildPopupJsonFromLookup(
-        results: <FushiLookupResult>[
-          ...makeLookupResults(),
-          FushiLookupResult(
-            matched: '食べた',
-            deinflected: '食べる',
-            trace: const [],
-            preprocessorSteps: 0,
-            term: FushiTermResult(
-              expression: '喰べる',
-              reading: 'くべる',
-              rules: '',
-              glossaries: [
-                FushiGlossaryEntry(
-                  dictName: '大辞林',
-                  glossary: jsonEncode('別表記・別読み'),
-                  definitionTags: '',
-                  termTags: '',
-                ),
-              ],
-              frequencies: const [],
-              pitches: const [],
+          results: <FushiLookupResult>[
+            ...makeLookupResults(),
+            FushiLookupResult(
+              matched: '食べた',
+              deinflected: '食べる',
+              trace: const [],
+              preprocessorSteps: 0,
+              term: FushiTermResult(
+                expression: '喰べる',
+                reading: 'くべる',
+                rules: '',
+                glossaries: [
+                  FushiGlossaryEntry(
+                    dictName: '大辞林',
+                    glossary: jsonEncode('別表記・別読み'),
+                    definitionTags: '',
+                    termTags: '',
+                  ),
+                ],
+                frequencies: const [],
+                pitches: const [],
+              ),
             ),
-          ),
-        ],
-        maximumTerms: 1,
-      );
+          ],
+          maximumTerms: 1,
+          hiddenDictionaries: const <String>{});
       expect((jsonDecode(json) as List).length, 1);
     });
 
     test('returns empty array for empty results', () {
-      final json = buildPopupJsonFromLookup(results: [], maximumTerms: 100);
+      final json = buildPopupJsonFromLookup(
+          results: [], maximumTerms: 100, hiddenDictionaries: const <String>{});
       expect(json, '[]');
     });
   });

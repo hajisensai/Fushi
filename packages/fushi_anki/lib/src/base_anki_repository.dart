@@ -77,9 +77,26 @@ abstract class BaseAnkiRepository {
   /// 清理条件：无（SharedPreferences 无版本阶梯，载入期改写即是它的迁移通道）。
   static const String _legacySentenceAudioAlias = '{sasayaki-audio}';
 
-  /// 读原始设置 JSON 的**唯一通道**：两个载入期迁移（W2-7 键搬移 + W2-2 别名
-  /// 改写）都收敛在这里。子类若覆写 [loadSettings]（AnkiDroid 的 legacy deck
-  /// 迁移）也必须经由本方法取原始串，否则迁移被绕过。返回 null = 从未存过。
+  /// 载入期一次性迁移：存量配置里 `MiscInfo` 的映射**一字不差**还是旧出厂默认
+  /// `{document-title}` 时，补成新出厂默认 `{document-title} {clip-timestamp}`，
+  /// 让卡片底部「=== Details ===」栏带上片段时间窗（见 [LapisNoteType]）。
+  ///
+  /// 为什么只认「等于旧默认」：这等价于「用户从没碰过这个字段」，补齐是在替他
+  /// 跟进出厂默认。凡是被改过的值——清空、换成别的占位符、已经含
+  /// `{clip-timestamp}`、或自己拼过别的组合——一律不动，不覆盖用户意图。
+  /// 幂等：改写后值不再等于旧默认。清理条件：无（SharedPreferences 无版本阶梯，
+  /// 载入期改写即是它的迁移通道，与上面的别名改写同构）。
+  static const String _legacyMiscInfoMapping = '{document-title}';
+  static const String _miscInfoMappingWithClipTime =
+      '{document-title} {clip-timestamp}';
+
+  /// 读原始设置 JSON 的**唯一通道**：三个载入期迁移（W2-7 键搬移 + W2-2 别名改写
+  /// + MiscInfo 补片段时间窗）都收敛在这里。子类若覆写 [loadSettings]（AnkiDroid 的
+  /// legacy deck 迁移）也必须经由本方法取原始串，否则迁移被绕过。返回 null = 从未存过。
+  ///
+  /// 顺序有意：别名改写只把 `{sasayaki-audio}` 换成 `{sentence-audio}`，不可能凭空
+  /// 造出或抹掉 `{document-title}`，故两条迁移互不干扰；但必须先改写再补 MiscInfo，
+  /// 否则 `replaceAll` 会作用在已重编码的串上、把后一步的结果覆盖掉。
   @protected
   Future<String?> readSettingsJson(SharedPreferences prefs) async {
     String? raw = prefs.getString(settingsKey);
@@ -95,7 +112,46 @@ abstract class BaseAnkiRepository {
       raw = raw.replaceAll(_legacySentenceAudioAlias, '{sentence-audio}');
       await prefs.setString(settingsKey, raw);
     }
+    if (raw != null) {
+      final String? upgraded = upgradeMiscInfoMapping(raw);
+      if (upgraded != null) {
+        await prefs.setString(settingsKey, upgraded);
+        raw = upgraded;
+      }
+    }
     return raw;
+  }
+
+  /// [_legacyMiscInfoMapping] → [_miscInfoMappingWithClipTime] 的纯改写。
+  /// 返回改写后的 JSON 串；**不需要改写时返回 `null`**（调用方据此决定要不要回写
+  /// 持久层，避免每次启动都白写一遍）。
+  ///
+  /// 串不可解析 / 结构不对时同样返回 `null`：迁移不是校验器，损坏串该由既有的
+  /// [loadSettings] try-catch 报告并退回默认设置，这里静默跳过不改变那条诊断路径。
+  @visibleForTesting
+  static String? upgradeMiscInfoMapping(String raw) {
+    // 廉价前置门，与上面别名迁移的 `raw.contains(...)` 同一模式：loadSettings 在制卡 /
+    // 查重 / 反查的热路径上被反复调用，settings 串含 availableDecks|availableNoteTypes
+    // 可以很大。没有这一行，迁移完成后每次调用都要白解析一整份 JSON（叠加 loadSettings
+    // 自己那次 = 解析两遍）。
+    //
+    // 门必须是**整个键值对**而不是裸 `{document-title}`：新值里也含那个子串，只判子串
+    // 的话已迁移的用户仍会每次解析，门等于没加。形态依据是 `saveSettings` 恒用
+    // `jsonEncode`（无空格）；万一哪天形态变了，最坏结果是这条迁移不触发（用户手动改
+    // 一次映射），不会误改也不会崩——真正的判据仍是下面的结构化比较。
+    if (!raw.contains('"MiscInfo":"$_legacyMiscInfoMapping"')) return null;
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      return null;
+    }
+    if (decoded is! Map<String, dynamic>) return null;
+    final Object? mappings = decoded['fieldMappings'];
+    if (mappings is! Map) return null;
+    if (mappings['MiscInfo'] != _legacyMiscInfoMapping) return null;
+    mappings['MiscInfo'] = _miscInfoMappingWithClipTime;
+    return jsonEncode(decoded);
   }
 
   Future<AnkiSettings> loadSettings() async {
@@ -200,6 +256,48 @@ abstract class BaseAnkiRepository {
   /// **默认实现 = 优雅降级**：基类返回 `false`。
   Future<bool> openNoteInAnki(int noteId) async => false;
 
+  /// BUG-2051：点 ↗「在 Anki 中打开**这个词**已有的卡」。
+  ///
+  /// 语义是「按词去 Anki 里看」，不是「按我们记下的某个 note id 去看」——后者要求
+  /// 先反查一遍 id，而那条反查（按第一字段**名**查）与画 ✓ 的判据（Anki 内建第一
+  /// 字段 checksum，跨笔记类型）根本不是一件事，于是出现「✓ 说已制卡、↗ 说没有卡」。
+  /// 两条判据只能留一条。
+  ///
+  /// **默认实现**：没有原生「按词打开」能力的后端（AnkiDroid 只有按 note id 的
+  /// deep link）走 [findMatchingNotes] + [openNoteInAnki]。这些后端的查重与反查
+  /// 本来就限定同一笔记类型（AnkiDroid 的 `checkForDuplicates` / `findNotesByContent`
+  /// 都传 `models:[当前笔记类型]`），两者同源，不存在本 bug；多张命中时打开**最近
+  /// 一张**（note id 最大 = 创建时间最新），不再弹选择面板——↗ 的职责是「带我去看」，
+  /// 挑哪张是 Anki 浏览器自己的事。
+  Future<AnkiOpenWordOutcome> openWordInAnki(
+    String expression,
+    String reading,
+  ) async {
+    if (expression.isEmpty) return AnkiOpenWordOutcome.failed;
+    final List<MinedNoteRef> matches =
+        await findMatchingNotes(expression, reading);
+    if (matches.isEmpty) return AnkiOpenWordOutcome.noMatch;
+    final int newest = matches
+        .map((MinedNoteRef m) => m.noteId)
+        .reduce((int a, int b) => a > b ? a : b);
+    return await openNoteInAnki(newest)
+        ? AnkiOpenWordOutcome.opened
+        : AnkiOpenWordOutcome.failed;
+  }
+
+  /// BUG-1799：复核 [noteIds] 里哪些 note **已经不在 Anki 中了**（用户在 Anki 里删了卡）。
+  ///
+  /// 返回值口径是本方法的全部要害：**只返回「后端明确应答、且应答里没有这张 note」的 id**。
+  /// 查询失败、后端不可达、后端不支持一律返回**空集**，而不是「全都当成已删除」——
+  /// 调用方拿它去清「已制卡」标记，一旦把「问不到」误判成「已删除」，Anki 没开着就会
+  /// 把满屏徽章全部清空，那比不复核更糟。这也是本方法返回**已删除集合**而不是
+  /// `bool` / `Map<int,bool>` 的原因：`bool` 表达不了「不知道」这个第三态，
+  /// 空集天然等于「没有任何一张被确认删除」。
+  ///
+  /// **默认实现 = 优雅降级**：基类恒返回空集（拿不到 note 存在性的后端 —— AnkiDroid
+  /// 只回 bool 查重、AnkiMobile 只有 URL scheme —— 保持既有 latch 行为不变）。
+  Future<Set<int>> findDeletedNotes(Set<int> noteIds) async => const <int>{};
+
   Future<bool> isDuplicate(String expression, String reading);
 
   /// Create [template] as a note type in the backend. Idempotent: returns
@@ -255,6 +353,26 @@ abstract class BaseAnkiRepository {
   /// 的对称缺口需要补。AnkiDroid 的 ContentProvider 确实有 `bulkInsert`，但那是
   /// 写卡路径的能力，与本功能无关。
   bool get supportsMediaMaintenance => false;
+
+  /// 本后端**此刻真能不能**做媒体去重。
+  ///
+  /// [supportsMediaMaintenance] 只说「这个后端类型实现了去重」，说不了「媒体
+  /// 目录这台机器读得到」——AnkiConnect 是同一个类，桌面上跑是本机直读，手机
+  /// 连局域网里的桌面 Anki 也是同一个类，但 `getMediaDirPath` 返回的是**那台
+  /// 机器**的路径，本机根本不存在。用静态能力当门控的后果是手机上显示一个
+  /// 点了只会说「不可用」的区块。
+  ///
+  /// 默认实现 = 静态能力（不做任何 I/O）；需要探测的后端覆写。后端不可达时
+  /// **照抛**——调用方据此保持「未知」，不要把「Anki 没开」误判成「不支持」。
+  Future<bool> probeMediaMaintenance() async => supportsMediaMaintenance;
+
+  /// [runMediaDedup] 的 `onProgress` / `shouldCancel` 是不是真的会被调用。
+  ///
+  /// 本进程内跑的后端恒 true。互联「制卡到已配对设备」把整轮去重推给主机跑，
+  /// 一次 HTTP 往返里没有回传进度的通道、也没有中途叫停的通道——那种后端返回
+  /// false，UI 据此画不确定进度条并**隐藏取消按钮**。摆一个点了没反应的取消
+  /// 按钮比没有取消按钮更糟：用户会以为已经停了。
+  bool get supportsMediaMaintenanceProgress => true;
 
   /// 跑一轮媒体字节级去重：找出字节完全相同的文件组 → 把笔记字段与卡模板/
   /// styling 里的引用统一改指保留份 → 复核引用清干净后删除多余副本。
@@ -486,26 +604,128 @@ abstract class BaseAnkiRepository {
   ///   会被这里过滤掉、字段名不进 map，两后端 native 都「未给出的字段保留旧值」，
   ///   表现为「只覆盖图片和语音、原文句子不更新」。用户选定语义：覆盖=整体替换，
   ///   句子为空则随之清空（`updateMinedNote` 另有「全部字段皆空 → 拒绝清整卡」总守卫）。
+  /// 选中的释义段已经作为 `<mark>` 进了释义字段时，`{popup-selection-text}` 要不要
+  /// 让位（渲染成空）。
+  ///
+  /// 让位的**唯一理由**是 Lapis 的卡背轮播（`updateDefDisplay`）：非空 SelectionText
+  /// 会把默认页占成一段脱离上下文的裸文本，用户反而要翻页才看得到带高亮的释义。
+  /// 这个理由只对 Lapis 成立，而且只在高亮**确实进了卡**时成立，所以三条缺一不可：
+  ///
+  /// 1. 高亮真的落进了导出的释义树（[AnkiMiningPayload.glossarySelectionHighlighted]）；
+  /// 2. 笔记类型是 Lapis——别的笔记类型没有那个轮播，凭什么替用户丢内容；
+  /// 3. 用户确实把某个 glossary 类占位符映射到了某个字段——没映的话高亮根本没进卡，
+  ///    这时候清空 SelectionText 就是让用户选中的内容**凭空消失**。
+  ///
+  /// 判据必须在这一层：popup.js 看得见 DOM 却看不见 `fieldMappings`，它只能上报
+  /// 「高亮落地了没有」这件客观事实。
+  @protected
+  static bool shouldYieldSelectionText({
+    required AnkiMiningPayload payload,
+    required String? noteTypeName,
+    required Map<String, String> fieldMappings,
+  }) =>
+      payload.glossarySelectionHighlighted &&
+      noteTypeName == LapisNoteType.modelName &&
+      fieldMappings.values.any((String t) => t.contains('glossary'));
+
   @protected
   Map<String, String> buildMinedFields({
     required Map<String, String> fieldMappings,
     required AnkiMiningPayload payload,
     required AnkiMiningContext context,
     required Map<String, String> dictionaryMediaTags,
+    String? noteTypeName,
     bool keepEmpty = false,
   }) {
+    final bool yieldSelectionText = shouldYieldSelectionText(
+      payload: payload,
+      noteTypeName: noteTypeName,
+      fieldMappings: fieldMappings,
+    );
     final fields = <String, String>{};
     for (final entry in fieldMappings.entries) {
-      var value = AnkiHandlebarRenderer.render(entry.value, payload, context);
+      var value = AnkiHandlebarRenderer.render(
+        entry.value,
+        payload,
+        context,
+        yieldSelectionText: yieldSelectionText,
+      );
       for (final mediaEntry in dictionaryMediaTags.entries) {
         value = value.replaceAll(mediaEntry.key, mediaEntry.value);
       }
       value = normalizeAnkiDictionaryHtml(value);
-      if (keepEmpty || value.trim().isNotEmpty) {
-        fields[entry.key] = value;
+      // 判空与写入用同一个 trim 口径。此前判空 trim、写入却是原值，于是一个字段里
+      // 拼多个占位符时（出厂默认 MiscInfo = `{document-title} {clip-timestamp}`），
+      // 某个占位符渲染成空串就会把模板里的字面分隔符留成首尾空白写进 Anki 字段。
+      // 首尾空白对 Anki 字段没有任何语义（HTML 渲染同样忽略），trim 掉即可；
+      // keepEmpty 路径上空值 trim 后仍是空串，照常写入，覆盖语义不变。
+      final String trimmed = value.trim();
+      if (keepEmpty || trimmed.isNotEmpty) {
+        fields[entry.key] = trimmed;
       }
     }
     return fields;
+  }
+
+  /// BUG-1900：只保留**属于 [noteType] 的字段**。
+  ///
+  /// AnkiConnect 按字段**名**匹配，不认识的名字被服务端静默丢弃。而
+  /// [fieldMappingsAfterFetch] 对非 Lapis 笔记类型直接 `return current.fieldMappings`
+  /// ——换了笔记类型，映射里的字段名可能一个都不属于新类型。此前这些名字原样送出，
+  /// Anki 收到一张全空的卡，`fields_check()` 判首字段空后返回
+  /// `cannot create note because it is empty`，用户既看不出是选错了笔记类型，也不知道
+  /// 去哪儿改（用户 2026-08-28 报告）。
+  ///
+  /// AnkiDroid 后端按 `noteType.fields` 的**位置**取值，天然免疫；这里把同一条纪律
+  /// 补给 AnkiConnect。
+  ///
+  /// [noteType] 的字段清单为空时**原样返回**：那说明我们手上没有可信的字段真相
+  /// （设置陈旧 / 从未 fetch 过），此时猜不如不猜，交由服务端裁决。
+  @protected
+  Map<String, String> fieldsForNoteType(
+    AnkiNoteType noteType,
+    Map<String, String> rendered,
+  ) {
+    if (noteType.fields.isEmpty) return rendered;
+    final Set<String> known = noteType.fields.toSet();
+    return <String, String>{
+      for (final MapEntry<String, String> e in rendered.entries)
+        if (known.contains(e.key)) e.key: e.value,
+    };
+  }
+
+  /// BUG-1900：本地预检，把服务端那句不可操作的英文原文换成能照着做的分类错误。
+  ///
+  /// Anki 的 `fields_check()` **只看第一个字段**：空就拒收整张卡。返回非 null 即表示
+  /// 这张卡送出去必然失败，调用方应回滚媒体事务并把它当作失败结果返回。
+  ///
+  /// [rendered] 是渲染出的原始字段（映射键），[outgoing] 是 [fieldsForNoteType] 过滤后
+  /// 真正会送出的字段——两者的差别正是「配置的字段名不属于当前笔记类型」这一情形，
+  /// 需要与「字段确实没渲染出内容」区分开，否则用户拿到的建议是错的。
+  @protected
+  MineOutcome? preflightNoteFields(
+    AnkiNoteType noteType,
+    Map<String, String> rendered,
+    Map<String, String> outgoing,
+  ) {
+    if (noteType.fields.isEmpty) return null;
+    final String firstField = noteType.fields.first;
+    if ((outgoing[firstField] ?? '').trim().isNotEmpty) return null;
+
+    if (outgoing.isEmpty && rendered.isNotEmpty) {
+      return MineOutcome.failure(
+        'None of the configured field names exist on note type '
+        '"${noteType.name}" (configured: ${rendered.keys.join(", ")}; '
+        'available: ${noteType.fields.join(", ")}). Re-map the fields in Anki '
+        'settings, or use "Create Lapis deck".',
+        errorCode: AnkiErrorCode.fieldMappingMismatch,
+      );
+    }
+    return MineOutcome.failure(
+      'The first field "$firstField" of note type "${noteType.name}" is empty; '
+      'Anki refuses such a note. Map a field to it in Anki settings.',
+      errorCode: AnkiErrorCode.firstFieldEmpty,
+    );
   }
 
   /// 用已备好的媒体引用把 [payload] + [context] 组装成最终渲染结果。
@@ -529,13 +749,9 @@ abstract class BaseAnkiRepository {
     String? audioWarning,
     bool keepEmpty = false,
   }) {
-    final mediaContext = AnkiMiningContext(
-      sentence: context.sentence,
-      cueSentence: context.cueSentence,
-      documentTitle: context.documentTitle,
-      coverPath: coverRef,
-      sentenceAudioPath: sentenceAudioRef,
-      sentenceOffset: context.sentenceOffset,
+    final AnkiMiningContext mediaContext = context.withMediaRefs(
+      coverRef: coverRef,
+      sentenceAudioRef: sentenceAudioRef,
     );
 
     final mediaPayload = AnkiMiningPayload(
@@ -552,6 +768,7 @@ abstract class BaseAnkiRepository {
       pitchCategories: payload.pitchCategories,
       phoneticTranscriptions: payload.phoneticTranscriptions,
       popupSelectionText: payload.popupSelectionText,
+      glossarySelectionHighlighted: payload.glossarySelectionHighlighted,
       audio: processedAudio,
       selectedDictionary: payload.selectedDictionary,
       dictionaryMedia: payload.dictionaryMedia,
@@ -563,6 +780,7 @@ abstract class BaseAnkiRepository {
         payload: mediaPayload,
         context: mediaContext,
         dictionaryMediaTags: dictionaryMediaTags,
+        noteTypeName: settings.selectedNoteTypeName,
         keepEmpty: keepEmpty,
       ),
       audioWarning: audioWarning,

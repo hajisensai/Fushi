@@ -39,6 +39,16 @@ import 'package:path/path.dart' as p;
 /// 封面目录因文件名与 bookUid 1:1 绑定、引用集对封面完整，单独提供安全的历史 GC
 /// [gcOrphanCovers]。
 class VideoStorage {
+  static const Set<String> _coverImageExtensions = <String>{
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.webp',
+    '.gif',
+    '.bmp',
+    '.avif',
+  };
+
   const VideoStorage._();
 
   static const String coversDirName = 'video_covers';
@@ -251,6 +261,17 @@ class VideoStorage {
     int removed = 0;
     await for (final FileSystemEntity entity in covers.list()) {
       if (entity is! File) continue;
+      final String name = p.basename(entity.path).toLowerCase();
+      final String extension = p.extension(name);
+      // 顶层还承载 provenance、原子写临时文件与全量清理 quarantine；它们从来
+      // 不是孤儿封面候选。只接受明确图片扩展，保留名再做独立硬护栏以防未来命名
+      // 变化把 JSON/恢复文件误纳入。
+      if (!_coverImageExtensions.contains(extension) ||
+          name.startsWith('cover_meta.json') ||
+          name.contains('.fushi-scrape-cleanup') ||
+          name.contains('.tmp.')) {
+        continue;
+      }
       if (keepCanon.contains(p.canonicalize(entity.path))) continue;
       try {
         await entity.delete();

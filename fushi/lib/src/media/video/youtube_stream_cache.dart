@@ -28,6 +28,7 @@ class YoutubeStreamCacheEntry {
     required this.miningVideoHasAudio,
     required this.httpHeaders,
     required this.expiresAtMs,
+    this.targetHeight,
   });
 
   final String streamUrl;
@@ -35,6 +36,11 @@ class YoutubeStreamCacheEntry {
   final String? miningVideoUrl;
   final bool miningVideoHasAudio;
   final Map<String, String> httpHeaders;
+
+  /// 解析这条缓存时的用户显式画质目标（null=自动/默认策略）。用户改设置后旧缓存的
+  /// streamUrl 还是旧档位，[buildStreamVideoLaunch] 据此判缓存是否可用（不匹配=miss）。
+  /// 旧缓存 JSON 无此字段 → null（当年只有默认策略，语义正确）。
+  final int? targetHeight;
 
   /// 过期时间（unix 毫秒）= min(各流 expire) - 安全余量；此刻 >= 它即过期。
   final int expiresAtMs;
@@ -48,6 +54,7 @@ class YoutubeStreamCacheEntry {
         'miningVideoHasAudio': miningVideoHasAudio,
         'httpHeaders': httpHeaders,
         'expiresAtMs': expiresAtMs,
+        if (targetHeight != null) 'targetHeight': targetHeight,
       };
 
   /// 缺 streamUrl / expiresAtMs 抛（调用方按条目跳过脏数据）。
@@ -71,6 +78,8 @@ class YoutubeStreamCacheEntry {
       miningVideoHasAudio: json['miningVideoHasAudio'] == true,
       httpHeaders: httpHeaders,
       expiresAtMs: expiresAtMs,
+      targetHeight:
+          json['targetHeight'] is int ? json['targetHeight'] as int : null,
     );
   }
 }

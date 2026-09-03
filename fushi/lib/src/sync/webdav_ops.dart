@@ -1,3 +1,4 @@
+import 'dart:async' show TimeoutException;
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -53,9 +54,11 @@ class WebDavOps {
     required String password,
     Duration connectionTimeout = const Duration(seconds: 60),
     String? pinnedFingerprint,
+    void Function()? onConnectivityError,
   })  : _baseUrl = baseUrl,
         _connectionTimeout = connectionTimeout,
         _pinnedFingerprint = pinnedFingerprint,
+        _onConnectivityError = onConnectivityError,
         // 用户名和密码都空 = 匿名 / 无鉴权 WebDAV：根本不带 Authorization 头，
         // 而不是发 `Basic base64(':')`（很多匿名服务器仍会因此回 401）。任一凭据
         // 非空时行为完全不变（BUG-1016）。
@@ -66,6 +69,13 @@ class WebDavOps {
   final String _baseUrl;
   final String? _authHeader;
   final Duration _connectionTimeout;
+
+  /// BUG-1693（审计项：故障切换失效）：连接类失败（拒连/握手失败/超时/断流）的
+  /// 通知回调。互联 backend 用它把 `_sessionResolved` 置脏——已解析地址一掉线，
+  /// 下一次操作自动重探全部候选（否则页面级读取失败后永远钉死在死地址上，
+  /// 第二条候选到手动同步/重启前不会被尝试）。HTTP 状态码错误（4xx/5xx）**不算**
+  /// ——服务器能回状态码说明连接是好的。null = 不通知（云 WebDAV 等无候选概念）。
+  final void Function()? _onConnectivityError;
 
   /// TODO-961 M1: https 端点的证书 SHA-256 钉扎指纹（aa:bb:.. 形式）。null = 明文
   /// http 老路径，用裸 [HttpClient]（行为零变化）；非 null = 用 pinned client，仅
@@ -99,11 +109,36 @@ class WebDavOps {
   }
 
   Future<HttpClientRequest> buildRequest(String method, String url) async {
-    final request = await _client().openUrl(method, Uri.parse(url));
-    request.followRedirects = false;
-    final String? auth = _authHeader;
-    if (auth != null) request.headers.set('Authorization', auth);
-    return request;
+    try {
+      final request = await _client().openUrl(method, Uri.parse(url));
+      request.followRedirects = false;
+      final String? auth = _authHeader;
+      if (auth != null) request.headers.set('Authorization', auth);
+      return request;
+    } on Object catch (e) {
+      _notifyIfConnectivity(e);
+      rethrow;
+    }
+  }
+
+  /// 统一的响应获取漏斗：全部 `request.close()` 走这里，连接类失败（拒连/超时/
+  /// 握手失败/传输中断流）先通知 [_onConnectivityError] 再原样 rethrow。
+  Future<HttpClientResponse> closeRequest(HttpClientRequest request) async {
+    try {
+      return await request.close();
+    } on Object catch (e) {
+      _notifyIfConnectivity(e);
+      rethrow;
+    }
+  }
+
+  void _notifyIfConnectivity(Object e) {
+    if (e is SocketException ||
+        e is HandshakeException ||
+        e is TimeoutException ||
+        e is HttpException) {
+      _onConnectivityError?.call();
+    }
   }
 
   Future<void> testConnection() async {
@@ -112,7 +147,7 @@ class WebDavOps {
       request.headers.set('Depth', '0');
       request.headers.set('Content-Type', 'application/xml; charset=utf-8');
       request.add(utf8.encode(propfindBody));
-      final response = await request.close();
+      final response = await closeRequest(request);
 
       if (response.statusCode == 401) {
         await response.drain<void>();
@@ -146,12 +181,12 @@ class WebDavOps {
     checkReq.headers.set('Depth', '0');
     checkReq.headers.set('Content-Type', 'application/xml; charset=utf-8');
     checkReq.add(utf8.encode(propfindBody));
-    final checkResp = await checkReq.close();
+    final checkResp = await closeRequest(checkReq);
     await checkResp.drain<void>();
     if (checkResp.statusCode == 207) return;
 
     final mkcolReq = await buildRequest('MKCOL', path);
-    final mkcolResp = await mkcolReq.close();
+    final mkcolResp = await closeRequest(mkcolReq);
     await mkcolResp.drain<void>();
     if (mkcolResp.statusCode >= 400 && mkcolResp.statusCode != 405) {
       throw SyncBackendError(
@@ -167,7 +202,7 @@ class WebDavOps {
     request.headers.set('Depth', '0');
     request.headers.set('Content-Type', 'application/xml; charset=utf-8');
     request.add(utf8.encode(propfindBody));
-    final response = await request.close();
+    final response = await closeRequest(request);
     await response.drain<void>();
     return response.statusCode == 207;
   }
@@ -179,7 +214,7 @@ class WebDavOps {
     final request = await buildRequest('MOVE', fromPath);
     request.headers.set('Destination', toPath);
     request.headers.set('Overwrite', 'F');
-    final response = await request.close();
+    final response = await closeRequest(request);
     await response.drain<void>();
     checkStatus(response.statusCode, 'MOVE $fromPath -> $toPath');
   }
@@ -189,7 +224,7 @@ class WebDavOps {
     request.headers.set('Depth', '1');
     request.headers.set('Content-Type', 'application/xml; charset=utf-8');
     request.add(utf8.encode(propfindBody));
-    final response = await request.close();
+    final response = await closeRequest(request);
 
     if (response.statusCode == 401) {
       throw SyncAuthError('Authentication failed');
@@ -283,7 +318,7 @@ class WebDavOps {
 
   Future<dynamic> downloadJson(String fileId) async {
     final request = await buildRequest('GET', fileId);
-    final response = await request.close();
+    final response = await closeRequest(request);
     checkStatus(response.statusCode, 'GET $fileId');
     final BytesBuilder builder = BytesBuilder(copy: false);
     await for (final List<int> chunk in response) {
@@ -308,21 +343,21 @@ class WebDavOps {
     request.headers.set('Content-Type', contentType);
     request.headers.set('Content-Length', '${bytes.length}');
     request.add(bytes);
-    final response = await request.close();
+    final response = await closeRequest(request);
     await response.drain<void>();
     checkStatus(response.statusCode, 'PUT $path');
   }
 
   Future<bool> headFile(String path) async {
     final request = await buildRequest('HEAD', path);
-    final response = await request.close();
+    final response = await closeRequest(request);
     await response.drain<void>();
     return response.statusCode >= 200 && response.statusCode < 300;
   }
 
   Future<void> deleteFile(String path) async {
     final request = await buildRequest('DELETE', path);
-    final response = await request.close();
+    final response = await closeRequest(request);
     await response.drain<void>();
     if (response.statusCode >= 400 && response.statusCode != 404) {
       throw SyncBackendError('DELETE failed: ${response.statusCode}');

@@ -162,12 +162,19 @@ void main() {
               'GlobalLookupChannel.runWithRoute(route, () => _onOverlayHidden(route))'),
           isTrue,
           reason: '必须在来源路由的上下文里派发 hidden');
-      // between-lookups 的三处 reset 必须 notify:false：_onHotKey（热键前导）、
-      // _lookupExternal（渲染前 TODO-1079 D）、lookupText（TODO-1268/BUG-578 程序化
-      // 悬浮字幕点词前导复位，与热键对齐）；真实关闭路径（_onJsMessage 的
-      // dismiss/tapOutside）保持默认 notify:true。
-      expect('GlobalLookupChannel.hide(notify: false)'.allMatches(c).length, 3,
-          reason: '恰三处 between-lookups reset 用 notify:false');
+      // notify:false 只属于「不是用户关闭」的两类路径，共 5 处：
+      //   前导复位 3 处：_onHotKey（热键前导）、_lookupExternal（渲染前
+      //     TODO-1079 D）、lookupText（TODO-1268/BUG-578 程序化悬浮字幕点词）；
+      //   失败收尾 2 处：_lookupExternal 里 showAt 被拒 / 抛异常时，把一张从未
+      //     给用户看到过的卡收掉。同样不是用户关闭：发 overlayHidden 会把
+      //     暂停的视频当成「用户关了卡」恢复播放。
+      expect('GlobalLookupChannel.hide(notify: false)'.allMatches(c).length, 5,
+          reason: '只有非用户关闭的前导 / 失败收尾才能用 notify:false');
+      // 反向判据。光数 notify:false 的条数可以被绕：把一条真用户关闭改成静默、
+      // 再删掉一条前导，总数不变而语义已经反了。_onJsMessage 的四条真实关闭
+      // 路径（tapOutside 两分支、dismissPopupAt、topPullReleased）必须走默认 notify:true。
+      expect('GlobalLookupChannel.hide();'.allMatches(c).length, 4,
+          reason: '用户关闭路径必须保持裸 hide()（notify 默认 true）');
     });
   });
 }

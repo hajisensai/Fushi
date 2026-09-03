@@ -153,17 +153,22 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
             // 桌面默认 MaterialScrollBehavior 的 dragDevices 不含鼠标——横排行用
             // 鼠标左右拖会毫无反应（用户实报）。共享件统一放开 mouse/trackpad/
             // stylus 拖动；触屏行为不变。
-            child: HorizontalDragScrollable(
-              child: ListView.separated(
+            // [SectionSwipeCascade]：行滚到边缘后继续拖，交给库页壳的
+            // [SectionSwipeNavigator] 级联切分区；壳外（独立 push 的页面）无壳
+            // 层接收，标记自然无效。
+            child: SectionSwipeCascade(
+              child: HorizontalDragScrollable(
+                child: ListView.separated(
                 controller: _controller,
                 scrollDirection: Axis.horizontal,
                 physics: desktopAwareScrollPhysics(),
                 itemCount: widget.itemCount,
                 separatorBuilder: (BuildContext _, int __) =>
                     SizedBox(width: widget.itemGap),
-                itemBuilder: (BuildContext context, int i) => SizedBox(
-                  width: widget.itemWidth,
-                  child: widget.itemBuilder(context, i),
+                  itemBuilder: (BuildContext context, int i) => SizedBox(
+                    width: widget.itemWidth,
+                    child: widget.itemBuilder(context, i),
+                  ),
                 ),
               ),
             ),

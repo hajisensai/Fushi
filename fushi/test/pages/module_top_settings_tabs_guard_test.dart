@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/pages/implementations/game_shared.dart';
 
 import '../helpers/source_guard.dart';
 
@@ -11,18 +12,21 @@ bool _containsCode(String source, String needle) =>
 
 /// 下载页的「设置」顶部段。
 ///
-/// PR#820 把下载页门头从 `AppBar + TabBar` 换成与库页同构的
-/// `FushiPageHeader.customTitle` + `FushiSegmentedStrip`，承载形态从
-/// `Tab(text: …)` 变成 `ButtonSegment(value: …, label: Text(…))`。守卫要守的
-/// **行为**没变（设置是常驻的第四个顶部段，不是临时齿轮模式），锚点跟着搬到
-/// 新形态即可——别因为形态换了就把断言删掉。
+/// 承载形态换过三次：`Tab(text: …)` → PR#820 与库页同构的
+/// `ButtonSegment(value: …, label: Text(…))` → 2026-08-24 库页顶栏改走 MD3 tabs 后的
+/// `LibrarySectionTab(value: …, label: …)`。守卫要守的**行为**三次都没变（设置是常驻的
+/// 第四个顶部段，不是临时齿轮模式），锚点跟着搬到新形态即可——别因为形态换了就把断言
+/// 删掉。
 bool _hasSettingsSegment(String source) => RegExp(
-      r'\bButtonSegment<int>\s*\(\s*value:\s*3\s*,\s*'
-      r'label:\s*Text\s*\(\s*t\.settings\s*\)\s*\)',
+      r'\bLibrarySectionTab<int>\s*\(\s*value:\s*3\s*,\s*'
+      r'label:\s*t\.settings\s*\)',
     ).hasMatch(_code(source));
 
+/// BUG-1858 起 `constrainWidth` 参数已删：全宽不再是调用点的一个选项，而是
+/// [TorrentSettingsSection] 唯一的形态。守的**行为**没变（下载页的设置面是全宽的），
+/// 锚点跟着搬到无参调用。
 bool _hasFullWidthTorrentSettings(String source) => RegExp(
-      r'\bTorrentSettingsSection\s*\(\s*constrainWidth:\s*false\s*\)',
+      r'\bTorrentSettingsSection\s*\(\s*\)',
     ).hasMatch(_code(source));
 
 void main() {
@@ -33,8 +37,8 @@ void main() {
 // kind: MediaLibraryViewKind.settings
 /* value: GameSection.settings
 value: VideoLibrarySection.settings
-ButtonSegment<int>(value: 3, label: Text(t.settings))
-TorrentSettingsSection(constrainWidth: false)
+LibrarySectionTab<int>(value: 3, label: t.settings)
+TorrentSettingsSection()
 */
 ''';
     expect(
@@ -62,8 +66,8 @@ const String decoy = '''
 kind: MediaLibraryViewKind.settings
 value: GameSection.settings
 value: VideoLibrarySection.settings
-ButtonSegment<int>(value: 3, label: Text(t.settings))
-TorrentSettingsSection(constrainWidth: false)
+LibrarySectionTab<int>(value: 3, label: t.settings)
+TorrentSettingsSection()
 ''';
 """;
     expect(
@@ -105,12 +109,27 @@ TorrentSettingsSection(constrainWidth: false)
       reason: '视频顶部导航缺少设置页',
     );
 
+    // 2026-09 起游戏页签序收敛进 [kGameSectionTabOrder]（横滑切区与页签共用同
+    // 一份真相），tab 行由它循环生成——旧锚点 `value: GameSection.settings` 的
+    // 字面不复存在。守的行为不变，锚点跟着搬：源码上钉「页签确实从序生成」，
+    // 行为上直接钉序的内容（比字面扫描更强）。
     final String game = source(
       'lib/src/pages/implementations/game_shared.dart',
     );
-    expect(_containsCode(game, 'value: GameSection.settings'), isTrue);
-    expect(_containsCode(game, 'value: GameSection.diagnostics'), isFalse,
+    expect(
+      _containsCode(
+        game,
+        'for (final GameSection section in kGameSectionTabOrder)',
+      ),
+      isTrue,
+      reason: '游戏页签必须由 kGameSectionTabOrder 循环生成（序的唯一真相）',
+    );
+    expect(kGameSectionTabOrder.contains(GameSection.settings), isTrue,
+        reason: '游戏顶部导航缺少设置页');
+    expect(kGameSectionTabOrder.contains(GameSection.diagnostics), isFalse,
         reason: '兼容性诊断不能继续占用游戏顶部高频 tab');
+    expect(kGameSectionTabOrder.last, GameSection.settings,
+        reason: '设置恒排末位，与书 / 漫画 / 视频库页同构');
   });
 
   test('下载把设置作为第四个顶部 tab，而不是临时齿轮模式', () {
@@ -123,10 +142,10 @@ TorrentSettingsSection(constrainWidth: false)
 
     final String downloadsCode = _code(downloads);
     final int subscriptions = downloadsCode.indexOf(
-      'Text(t.download_subscriptions_tab)',
+      'label: t.download_subscriptions_tab',
     );
     final Match? settings = RegExp(
-      r'label:\s*Text\s*\(\s*t\.settings\s*\)',
+      r'label:\s*t\.settings\b',
     ).firstMatch(downloadsCode);
     expect(subscriptions, greaterThanOrEqualTo(0));
     expect(settings, isNotNull);

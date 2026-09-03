@@ -22,7 +22,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
@@ -79,7 +79,7 @@ void main() {
       label: 'min-window',
       collectedErrors: errors,
       body: () async {
-        app.main();
+        await launchFushiTestApp();
         expect(await waitForHome(tester), isTrue, reason: '主页应在 90s 内出现');
         await tester.pump(const Duration(seconds: 2));
 

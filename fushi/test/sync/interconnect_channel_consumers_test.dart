@@ -54,9 +54,9 @@ void main() {
     test('互联通道的词典门控读互联专属开关，不读云备份共享开关', () async {
       await repo.setBackendType(SyncBackendType.googleDrive);
       await repo.setInterconnectEnabled(true);
-      // 云词典同步关、互联词典上传开——旧写法（单一 `repo.isSyncDictionaryEnabled()`
+      // 互联词典上传开。云侧已**没有**词典开关（那一侧改成了设置页的显式上传 /
+      // 下载动作，flags 恒 false）——旧写法（单一 `repo.isSyncDictionaryEnabled()`
       // 一刀切）在这里会直接 return，互联对端上的词典永远删不掉。
-      await repo.setSyncDictionaryEnabled(false);
       await repo.setInterconnectSyncDictionaryEnabled(true);
 
       final ChannelSyncFlags cloud =
@@ -69,22 +69,24 @@ void main() {
           reason: '互联通道必须读 isInterconnectSyncDictionaryEnabled（BUG-988 分通道语义）');
     });
 
-    test('云词典开、互联词典关 → 只有云通道该被传播（反向）', () async {
+    // 反向：互联词典关 → 两条通道都不传播删除。云侧不再有开关可开，所以它恒 false；
+    // 这条同时钉住「云通道不会因为任何遗留偏好又开始自动同步/删除词典」。
+    test('互联词典关 → 两条通道都不传播（云侧已无开关）', () async {
       await repo.setBackendType(SyncBackendType.googleDrive);
       await repo.setInterconnectEnabled(true);
-      await repo.setSyncDictionaryEnabled(true);
       await repo.setInterconnectSyncDictionaryEnabled(false);
 
       expect(
         (await resolveChannelSyncFlags(repo, isInterconnect: false))
             .syncDictionary,
-        isTrue,
+        isFalse,
+        reason: '云通道的词典改成显式上传 / 下载，自动路径恒不碰',
       );
       expect(
         (await resolveChannelSyncFlags(repo, isInterconnect: true))
             .syncDictionary,
         isFalse,
-        reason: '互联专属开关关着时不得因为云开着就顺手动对端',
+        reason: '互联专属开关关着时不得顺手动对端',
       );
     });
 

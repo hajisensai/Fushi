@@ -17,7 +17,7 @@ part of '../video_fushi_page.dart';
 /// `_videoButtonBarHeight`, `_videoControlIconSize`, `_videoSeekBar*`,
 /// `_mediaKitControlsVisible`, `_brightness`, `_enterBrightness`,
 /// `_onMediaKitVolumeChanged`, `_onMediaKitBrightnessChanged`,
-/// `_videoKeyboardShortcuts`, `_topBarSlotGroup`, `_topBarTitle`,
+/// `_topBarSlotGroup`, `_topBarTitle`,
 /// `_centeredBottomControlBar`, `_videoBottomSystemInset`, `_videoTopBarMargin`)
 /// and stays bare,
 /// resolved through the shared private scope.
@@ -67,15 +67,28 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // r5：选集列表 [_episodeListVisible] 与字幕列表同为 push-aside 侧栏（[_videoWithSubtitlePanel]
       // 的 Row 兄弟列），机理完全相同 → 必须一并排除，否则切到选集列表时视频列 controls MouseRegion
       // 仍走 cursor:none 分支、跨列 none→basic 竞态复现（此前只排除字幕列表 = 选集列表光标照样隐藏）。
-      // ⚠️ 防哑火：本值依赖 [_subtitleListVisible] / [_episodeListVisible]，但构造本 theme 的 builder
-      // （layout.part.dart :_buildVideoControlsInner）必须同时监听这两个 notifier、否则其翻转时 theme
-      // 不重建 = 改了值也白改（见 layout.part.dart 的 ListenableBuilder.merge）。仅桌面 theme，移动端不动。
-      hideMouseOnControlsRemoval:
-          !(_subtitleListVisible.value || _episodeListVisible.value),
+      // BUG-1798：**查词浮层**（[_lookupOverlayActive]）同样必须排除，且这是本条最要紧的一项。
+      // 它与两个 push-aside 侧栏的机理不同但结论相同：浮层是盖在视频列**正上方**的根 Overlay，
+      // 用户此刻全部注意力和指针操作都在弹窗里（点词、点发音、拖 resize 把手、滚正文），而控制条
+      // 照常 2s 自动淡出 → fork 的控制条 MouseRegion（`mount=false` 分支）把整条视频列判成
+      // `cursor:none`，鼠标悬在弹窗上时 OS 光标直接消失（查词浮层子树除右下角 resize 把手外不声明
+      // 任何 cursor，解析必然下穿到这层）。Hibiki 侧 [_buildCursorOverlay] 那层 `none` 已由
+      // [_hasVideoOverlay] 纳入 [_lookupOverlayActive] 修掉，但**两层是独立的**：只修一层，另一层
+      // 照样把光标吃掉，必须同时排除才有效。
+      // ⚠️ 防哑火：本值依赖 [_subtitleListVisible] / [_episodeListVisible] / [_lookupOverlayActive]，
+      // 但构造本 theme 的 builder（layout.part.dart :_buildVideoControlsInner）必须同时监听这三个
+      // notifier、否则其翻转时 theme 不重建 = 改了值也白改（见 layout.part.dart 的
+      // ListenableBuilder.merge）。仅桌面 theme，移动端不动。
+      hideMouseOnControlsRemoval: !(_subtitleListVisible.value ||
+          _episodeListVisible.value ||
+          _lookupOverlayActive.value),
       // 单击画面 = 播放/暂停（media_kit 桌面默认 false，故此前点画面毫无反应，
       // BUG-130）。字幕字符点击在更上层 [VideoSubtitleOverlay] 的 opaque GestureDetector
       // 独立处理、不会冒泡到这里，故启用后点字幕仍是查词、点空白区才暂停，不冲突。
-      playAndPauseOnTap: true,
+      // 用户设置 [_asbConfig.tapTogglesPlayback] 可关掉（默认开 = 旧行为）：关掉后单击
+      // 只唤醒/收起控制条，不改播放态。theme 在 [_setAsbConfig] 的 setState 后重建，
+      // 改完立即生效。
+      playAndPauseOnTap: _asbConfig.tapTogglesPlayback,
       toggleFullscreenOnDoublePress: false,
       // 播放器 chrome 前景固定亮色（UI 巡检 PR-4 P1）：控制条压在 fork 固定深色
       // scrim（material_desktop.dart 0x61000000）上，表面固定深色 OSD 体系不随
@@ -94,7 +107,17 @@ extension _VideoControlsTheme on _VideoFushiPageState {
           _VideoFushiPageState._videoDesktopSeekBarContainerHeight,
       seekBarBottomButtonBarOverlap:
           _VideoFushiPageState._videoDesktopSeekBarButtonBarOverlap,
-      keyboardShortcuts: _videoKeyboardShortcuts(controller),
+      // 方案 D（BUG-1864 同源缺口）：media_kit 这层**故意留空**，不再是视频快捷键的
+      // 挂载点。它只包 `AdaptiveVideoControls` 子树，而字幕列表 / 剧集轨 / 侧栏是
+      // `Video` 的**兄弟**——焦点一进面板（[PanelFocusScope] 会主动抢），整张表就够不
+      // 着了：注册表声明的作用域是整页（[ShortcutScope.video]），挂载点却只在 controls
+      // 子树，scope ≠ mount 就是那个根因。整表已上移到 [_wrapVideoGamepadControls] 的
+      // `Focus.onKeyEvent`（[_handleVideoKeyboardShortcut]，press-time 解析）。
+      //
+      // 传空表而不是 null：fork 的实现是 `keyboardShortcuts ?? _defaultKeyboardShortcuts`
+      // （`material_desktop.dart`），给 null 会把 media_kit 自己那套默认键装回来，
+      // 与注册表打架。
+      keyboardShortcuts: const <ShortcutActivator, VoidCallback>{},
       primaryButtonBar: const <Widget>[],
       // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左右按钮和标题均从用户布局
       // slot 渲染；标题仍监听 _titleNotifier。
@@ -105,18 +128,35 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         // 永远拿不到自己需要的宽。
         Expanded(
           child: VideoTopBarSlots(
-            left: _topBarSlotGroup(
+            leftLead: _topBarSlotGroup(
               VideoControlSlot.topLeft,
               controller,
               layout: layout,
               desktop: true,
+              segment: VideoTopBarSegment.lead,
+            ),
+            leftTail: _topBarSlotGroup(
+              VideoControlSlot.topLeft,
+              controller,
+              layout: layout,
+              desktop: true,
+              segment: VideoTopBarSegment.tail,
             ),
             title: _topBarTitle(),
-            right: _topBarSlotGroup(
+            titlePlacement: _topBarTitlePlacement(),
+            rightLead: _topBarSlotGroup(
               VideoControlSlot.topRight,
               controller,
               layout: layout,
               desktop: true,
+              segment: VideoTopBarSegment.lead,
+            ),
+            rightTail: _topBarSlotGroup(
+              VideoControlSlot.topRight,
+              controller,
+              layout: layout,
+              desktop: true,
+              segment: VideoTopBarSegment.tail,
             ),
           ),
         ),
@@ -278,18 +318,35 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         // 不再让三段各占 fork 顶栏 Row 的 1/3 flex 份额。
         Expanded(
           child: VideoTopBarSlots(
-            left: _topBarSlotGroup(
+            leftLead: _topBarSlotGroup(
               VideoControlSlot.topLeft,
               controller,
               layout: layout,
               desktop: false,
+              segment: VideoTopBarSegment.lead,
+            ),
+            leftTail: _topBarSlotGroup(
+              VideoControlSlot.topLeft,
+              controller,
+              layout: layout,
+              desktop: false,
+              segment: VideoTopBarSegment.tail,
             ),
             title: _topBarTitle(),
-            right: _topBarSlotGroup(
+            titlePlacement: _topBarTitlePlacement(),
+            rightLead: _topBarSlotGroup(
               VideoControlSlot.topRight,
               controller,
               layout: layout,
               desktop: false,
+              segment: VideoTopBarSegment.lead,
+            ),
+            rightTail: _topBarSlotGroup(
+              VideoControlSlot.topRight,
+              controller,
+              layout: layout,
+              desktop: false,
+              segment: VideoTopBarSegment.tail,
             ),
           ),
         ),

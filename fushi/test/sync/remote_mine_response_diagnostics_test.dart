@@ -48,6 +48,13 @@ class _DiagMining implements FushiRemoteMiningService {
   Future<bool> updateNoteTypeTemplates(
           String modelName, List<AnkiCardTemplate> templates) async =>
       false;
+
+  @override
+  Future<bool> probeMediaMaintenance() async => false;
+
+  @override
+  Future<AnkiMediaDedupReport?> runMediaDedup({bool dryRun = true}) async =>
+      null;
 }
 
 Map<String, dynamic> _entryBody() => <String, dynamic>{

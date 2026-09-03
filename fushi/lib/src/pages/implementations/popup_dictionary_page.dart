@@ -198,7 +198,14 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       closeInApp();
       return;
     }
-    await PopupChannel.instance.finishPopup();
+    // BUG-1757：`_isClosing` 唯一的复位点是「宿主推来新词」（didUpdateWidget）。
+    // 所以关闭一旦没真正发生，这个闭锁就永远解不开——X / 点外面 / 横滑 / 系统返回
+    // 全部撞上开头那句早退，窗口留在屏幕上、外观毫无变化，用户侧就是「关不掉」。
+    // 原生侧会告诉我们有没有人真的接下这次关闭；没接就把锁解开让用户能再关一次。
+    final bool accepted = await PopupChannel.instance.finishPopup();
+    if (!accepted && mounted) {
+      _isClosing = false;
+    }
   }
 
   void _onSearchSubmit(String text) {
@@ -420,6 +427,19 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
           children: <Widget>[
             for (int i = 0; i < _popup.entries.length; i++)
               _buildLayer(context, i, cardSize: Size(cardWidth, cardHeight)),
+            // BUG-2039 ③：本页此前是**唯一一个建了控制器却从不渲染停驻层**的宿主。
+            // 控制器在所有出栈路径上都会把离栈层的 WebView 键停驻
+            // （`_retireEntries`，本页 `truncateTo` 走的就是它），宿主不把它们挂在
+            // 屏外，键背后的 element 当帧就被销毁——`_takeRealmKey()` 下次接管到的
+            // 是一把已死的键，嵌套查词静默退回冷建。与另外六个宿主同一条原语。
+            ...parkedRealmPopupLayers(
+              parkedRealms: _popup.parkedRealms,
+              screen: Size(cardWidth, cardHeight),
+              isDark: (appModel.overrideDictionaryTheme ?? Theme.of(context))
+                      .brightness ==
+                  Brightness.dark,
+              overrideFillColor: appModel.overrideDictionaryColor,
+            ),
           ],
         );
       },

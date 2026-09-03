@@ -26,11 +26,14 @@ void main() {
   group('A — overlay WebView2 is prewarmed off-screen (own ownership)', () {
     test('Dart channel exposes prewarmWebView', () {
       final String
-          ch = // spec 2026-07-10: channel 实现在 overlay_window_channel.dart（门面+实现拼接扫描）
+      ch = // spec 2026-07-10: channel 实现在 overlay_window_channel.dart（门面+实现拼接扫描）
           read('lib/src/lookup/global_lookup_channel.dart') +
-              read('lib/src/lookup/overlay_window_channel.dart');
-      expect(ch.contains("_invoke<void>('prewarmWebView'"), isTrue,
-          reason: 'a dedicated prewarm channel method must exist');
+          read('lib/src/lookup/overlay_window_channel.dart');
+      expect(
+        ch.contains("_invoke<void>('prewarmWebView'"),
+        isTrue,
+        reason: 'a dedicated prewarm channel method must exist',
+      );
     });
 
     test('每个通道调用都经注入 target 的唯一出口', () {
@@ -39,21 +42,27 @@ void main() {
       // 出现在出口自身体内。
       // 先掩码再数：那段 helper 的注释里正好逐字写着这个调用（它在解释为什么这里
       // 必须是 _channel.invokeMethod 而不是 _invoke），裸计数会把注释一起算进来。
-      final String impl =
-          maskComments(read('lib/src/lookup/overlay_window_channel.dart'));
-      expect('_channel.invokeMethod'.allMatches(impl).length, 1,
-          reason: '除 _invoke 自身外不得裸调 _channel.invokeMethod');
+      final String impl = maskComments(
+        read('lib/src/lookup/overlay_window_channel.dart'),
+      );
+      expect(
+        '_channel.invokeMethod'.allMatches(impl).length,
+        1,
+        reason: '除 _invoke 自身外不得裸调 _channel.invokeMethod',
+      );
     });
 
     test('controller triggers the prewarm from start()', () {
       final String c = read('lib/src/lookup/global_lookup_controller.dart');
       expect(c.contains('GlobalLookupChannel.prewarmWebView('), isTrue);
-      expect(c.contains('_prewarmOverlay('), isTrue,
-          reason: 'start() must kick the off-screen prewarm');
+      expect(
+        c.contains('_prewarmOverlay('),
+        isTrue,
+        reason: 'start() must kick the off-screen prewarm',
+      );
     });
 
-    test('native window has a PrewarmWebView entry that navigates host.html',
-        () {
+    test('native window has a PrewarmWebView entry that navigates host.html', () {
       final String h = read('windows/runner/global_lookup_window.h');
       expect(h.contains('void PrewarmWebView('), isTrue);
       final String cpp = read('windows/runner/global_lookup_window.cpp');
@@ -83,9 +92,9 @@ void main() {
 
     test('a readiness query exists on the channel + native', () {
       final String
-          ch = // spec 2026-07-10: channel 实现在 overlay_window_channel.dart（门面+实现拼接扫描）
+      ch = // spec 2026-07-10: channel 实现在 overlay_window_channel.dart（门面+实现拼接扫描）
           read('lib/src/lookup/global_lookup_channel.dart') +
-              read('lib/src/lookup/overlay_window_channel.dart');
+          read('lib/src/lookup/overlay_window_channel.dart');
       expect(ch.contains("_invoke<bool>('isWebViewReady')"), isTrue);
       final String fw = read('windows/runner/flutter_window.cpp');
       expect(fw.contains('method == "isWebViewReady"'), isTrue);
@@ -95,27 +104,60 @@ void main() {
 
     test('the safety reveal confirms readiness before revealing', () {
       expect(c.contains('_scheduleReadyDrivenSafety('), isTrue);
-      expect(c.contains('GlobalLookupChannel.isWebViewReady()'), isTrue,
-          reason: 'the fallback must gate on isWebViewReady, not reveal blind');
+      expect(
+        c.contains('GlobalLookupChannel.isWebViewReady()'),
+        isTrue,
+        reason: 'the fallback must gate on isWebViewReady, not reveal blind',
+      );
     });
+
+    test(
+      'galCard waits for versioned geometry before the bounded fallback',
+      () {
+        expect(
+          c.contains('final bool awaitingGalGeometry ='),
+          isTrue,
+          reason:
+              'game cards need overlaySize/captureReady, not readiness alone',
+        );
+        expect(c.contains("currentRoute.source == 'galCard'"), isTrue);
+        expect(
+          c.contains('(!awaitingGalGeometry && ready)'),
+          isTrue,
+          reason: 'WebView readiness must retain the desktop-only fast path',
+        );
+        expect(
+          c.contains('attempt >= _kReadySafetyMaxAttempts'),
+          isTrue,
+          reason: 'galCard must retain a bounded epoch-0 last resort',
+        );
+      },
+    );
 
     test('the retired blind-timeout reveal is gone', () {
       // The old path revealed unconditionally on a 450ms Timer regardless of
       // readiness. That exact "SAFETY timeout" reveal must no longer exist.
-      expect(c.contains("glog('reveal: SAFETY timeout"), isFalse,
-          reason: 'the blind 450ms reveal must be replaced by the ready gate');
+      expect(
+        c.contains("glog('reveal: SAFETY timeout"),
+        isFalse,
+        reason: 'the blind 450ms reveal must be replaced by the ready gate',
+      );
     });
   });
 
   group('C — host bbox de-dup is reset per new lookup', () {
     test('host resets lastBBoxKey when the root frame id changes', () {
       final String js = read('assets/popup/global_lookup_host.js');
-      expect(js.contains('lastRootId'), isTrue,
-          reason: 'the host must track the root id to detect a fresh lookup');
+      expect(
+        js.contains('lastRootId'),
+        isTrue,
+        reason: 'the host must track the root id to detect a fresh lookup',
+      );
       // A changed root id clears the de-dup so the new card overlaySize fires.
       expect(
-          js.contains('lastBBoxKey = ') && js.contains('rootId !== lastRootId'),
-          isTrue);
+        js.contains('lastBBoxKey = ') && js.contains('rootId !== lastRootId'),
+        isTrue,
+      );
     });
   });
 
@@ -123,8 +165,9 @@ void main() {
     test('_onHotKey issues an unconditional hide() up front', () {
       final String c = read('lib/src/lookup/global_lookup_controller.dart');
       final int fire = c.indexOf("glog('hotkey: FIRED');");
-      final int capture =
-          c.indexOf('SelectionCapture.captureForegroundSelection');
+      final int capture = c.indexOf(
+        'SelectionCapture.captureForegroundSelection',
+      );
       expect(fire, greaterThanOrEqualTo(0));
       expect(capture, greaterThan(fire));
       // The hide() reset must sit between the hotkey firing and selection
@@ -134,9 +177,10 @@ void main() {
       // reset, not a user dismissal → must not fire overlayHidden). The
       // unconditional-reset INTENT the guard protects is unchanged.
       expect(
-          prelude.contains('GlobalLookupChannel.hide(notify: false);'), isTrue,
-          reason:
-              'each lookup must reset reveal state before showAt re-arms it');
+        prelude.contains('GlobalLookupChannel.hide(notify: false);'),
+        isTrue,
+        reason: 'each lookup must reset reveal state before showAt re-arms it',
+      );
     });
   });
 }

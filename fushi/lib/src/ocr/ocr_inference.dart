@@ -103,13 +103,68 @@ enum OcrModelKind { detection, recognition }
 /// 平台（纯枚举入参，保持 [selectOcrExecutionProviders] 可测纯函数）。
 enum OcrPlatform { windows, macos, ios, linux, android }
 
-/// EP 选择策略（用户拍板 + 本机实测）：
+/// 平台想要的**加速** EP 优先级（不含 CPU）。
 ///
-/// - Windows 有 CUDA：检测与识别都走 CUDA（fallback CPU）。
-/// - Windows 无 CUDA：检测走 DirectML（实测比 CPU 快 ~25 倍），识别走 CPU
-///   —— 实测 DirectML 对自回归逐步解码是负优化（每步 GPU 往返开销远大于
-///   小 batch 计算本身）。
-/// - **macOS / iOS：检测与识别都走 CPU**（BUG-1613）。这里曾经按 Windows 的
+/// 只表达「偏好」，不表达「可用」——真实可用性由调用方探测后交给
+/// [selectOcrExecutionProviders] 求交集。把这两件事拆开是 BUG-2050 的根因修复：
+/// 原先 Windows 分支直接假设 DirectML 可用（只有 CUDA 被真探测过），运行时里
+/// 没有 DML 时每个任务都要白付一次注定失败的建会话再退 CPU。
+///
+/// 策略依据（用户拍板 + 本机实测）：
+///
+/// - **Windows 检测：只考虑 CUDA，不要 DirectML**（BUG-2050 实测拍板）。
+///   我们出包用的检测器是 **int8** 量化的 RT-DETR-v2
+///   （`detector-v4-s_int8.onnx`），它在 ORT 1.22.0 的 DML EP 上**根本建不出
+///   会话**——挂在 DML 算子授权层
+///   `DmlExecutionProvider/src/MLOperatorAuthorImpl.cpp(2851)`，
+///   `E_INVALIDARG (0x80070057)`，错误码 `ORT_RUNTIME_EXCEPTION`。
+///
+///   2026-09-02 本机实测（RTX 5090 / ORT 1.22.0 DirectML build / DirectML
+///   1.15.4 / 同一 640×640 输入、1 次预热 + 3 次取最优）：
+///
+///   | 模型 | DML 建会话 | DML 稳态 | CPU 建会话 | CPU 稳态 |
+///   |---|---|---|---|---|
+///   | **int8（出包用）** | **❌ 失败，白付 1547ms** | — | 734ms | **81.5ms** |
+///   | fp32（同架构对照） | ✅ 2957ms | 21.6ms | 1461ms | 419.4ms |
+///
+///   对照组是关键：fp32 档在同一台机器、同一个运行时上**建得起来且比 CPU 快
+///   19.4 倍**，`D3D12CreateDevice` 也正常——所以这不是显卡、不是 WDDM 状态、
+///   不是打包问题，**变量精确就是 int8 量化**。
+///
+///   旧注释里那句「DirectML 实测比 CPU 快 ~25 倍」量的就是 **fp32 档**（19.4x
+///   与之同量级）。后来检测器换成 int8 小档（11MB vs 168MB，且 int8 在 CPU 上
+///   反而比 fp32 快 5 倍：81.5ms vs 419.4ms），加速前提就没了，那句话却留了
+///   下来——于是每个任务白付一次 1.5 秒的失败建会话。**别再凭那句话把
+///   DirectML 加回来**：换模型才是重新评估的前提，要加先用 BUG-2050 里的探针
+///   在真机上重新拿数。
+/// - Windows 识别：也不要 DirectML —— 实测 DirectML 对自回归逐步解码是负优化
+///   （每步 GPU 往返开销远大于小 batch 计算本身）。
+///
+/// - **Windows 结论：一个加速 EP 都不要**。DirectML 由上面两条排除；CUDA 则是
+///   **我们出的包里根本没有**——`third_party/flutter_onnxruntime/windows/CMakeLists.txt`
+///   按 SHA-256 钉死下载 NuGet `microsoft.ml.onnxruntime.directml 1.22.0`
+///   （`29F9872D…E732E60`），随包只有 `onnxruntime.dll` /
+///   `onnxruntime_providers_shared.dll` / `DirectML.dll` 三个（`:88-89`），
+///   `runtimes/win-x64/native/` 里也没有 `onnxruntime_providers_cuda.dll`。
+///   逐字节扫那份 `onnxruntime.dll` 复核：`OrtSessionOptionsAppendExecutionProvider_CUDA`
+///   / `cudart64` / `cudnn64` / `CUDA_PATH` 全部 0 命中，`DmlExecutionProvider`
+///   109 命中；仅有的两处 `onnxruntime_providers_cuda.dll` 是
+///   `provider_bridge_ort.cc` 里那张「共享 provider 懒加载文件名」表（任何 ORT
+///   构建都有，与是否编进 CUDA EP 无关）。
+///   `Ort::GetAvailableProviders()` 回报的是**编译进来**的 EP，所以
+///   `availableAcceleratedProviders()` 在 Windows 上永远拿不到 CUDA。
+///
+///   偏好表里留一个恒不可满足的 CUDA 不是「留个位置」，是**制造一条用户消不掉
+///   的假告警**：`MangaOcrServiceImpl` 的 `recordUnavailable` 会对每个整卷任务
+///   产出两条 `cuda not built into this ONNX Runtime -> cpu` 并弹黄条，而实际
+///   能力与写空表时逐字相同（都是纯 CPU）。所以这里写空表——`wanted.isEmpty`
+///   正是「这个平台本来就该走 CPU」的静默判据。
+///
+///   要把 CUDA 加回来，前提是**换掉出包的 ORT NuGet**（换成带 CUDA EP 的包并随
+///   包发 `onnxruntime_providers_cuda.dll` + CUDA/cuDNN 运行库），而不是改这里的
+///   常量。[kind] 这个轴保留：检测与识别排除加速 EP 的理由完全不同（检测是 int8
+///   模型建不出会话，识别是架构性负优化），任一条前提变了它们就会重新分叉。
+/// - **macOS / iOS：不要任何加速 EP**（BUG-1613）。这里曾经按 Windows 的
 ///   类比给检测选 CoreML，但那段分支写下时 Apple 的 ORT native 整个被 gate 掉，
 ///   从未被执行过。2026-08-14 打开 Apple 本地 OCR 后真机对拍（同一页、1 次预热
 ///   + 3 次稳态取中位）：
@@ -128,35 +183,50 @@ enum OcrPlatform { windows, macos, ios, linux, android }
 ///   别再凭直觉把 CoreML 加回来——要加先在真机上拿数，
 ///   `integration_test/manga_ocr_volume_e2e_itest.dart` 是现成的量具（它就是
 ///   抓到本 bug 的那条测试：CoreML 下它检出 0 块）。
-/// - 其他平台：CPU。
-///
-/// [cudaAvailable] 由调用方探测（例如 `OnnxRuntime().getAvailableProviders()`
-/// 是否包含 CUDA），保持本函数无 IO。
-List<OcrExecutionProvider> selectOcrExecutionProviders({
+/// - Linux / Android：不要任何加速 EP。
+List<OcrExecutionProvider> acceleratedProviderPreference({
   required OcrModelKind kind,
   required OcrPlatform platform,
-  required bool cudaAvailable,
 }) {
   switch (platform) {
+    // Windows：DirectML 实测排除（检测建不出会话 / 识别负优化），CUDA 压根没随
+    // 包（DirectML NuGet 里没有 CUDA EP，见上），所以偏好表为空。写 [cuda] 只会
+    // 让 recordUnavailable 每卷产出一条永远消不掉的假告警，能力上一模一样。
     case OcrPlatform.windows:
-      if (cudaAvailable) {
-        return const <OcrExecutionProvider>[
-          OcrExecutionProvider.cuda,
-          OcrExecutionProvider.cpu,
-        ];
-      }
-      if (kind == OcrModelKind.detection) {
-        return const <OcrExecutionProvider>[
-          OcrExecutionProvider.directml,
-          OcrExecutionProvider.cpu,
-        ];
-      }
-      return const <OcrExecutionProvider>[OcrExecutionProvider.cpu];
-    // BUG-1613：Apple 两端与 linux/android 同档走 CPU（实测见上表）。
+    // BUG-1613：Apple 两端与 linux/android 同档，一个加速 EP 都不要（实测见上表）。
     case OcrPlatform.macos:
     case OcrPlatform.ios:
     case OcrPlatform.linux:
     case OcrPlatform.android:
-      return const <OcrExecutionProvider>[OcrExecutionProvider.cpu];
+      return const <OcrExecutionProvider>[];
   }
+}
+
+/// 按平台偏好与**本机真实可用的** EP 求交集，产出提交给 ORT 的 provider 列表。
+///
+/// 取 [acceleratedProviderPreference] 里第一个真实可用的加速 EP，后面永远缀一个
+/// CPU 兜底；一个都不可用就返回纯 CPU。CPU 不参与探测——它永远在，也永远是
+/// 最后一档，所以这里没有「CPU 可不可用」这种特殊情况。
+///
+/// [availableProviders] 是本机 ORT 运行时**编译进来**的加速 EP 集合，由调用方
+/// 探测（`OrtOcrSessionFactory.availableAcceleratedProviders`），保持本函数无 IO。
+///
+/// 它是**必要不充分**条件：EP 编译进来了不代表此刻真能建出会话——DirectML 还要
+/// 能建出 D3D12 设备，CUDA 还要有驱动和可用显卡。所以防线是两层，缺一不可：
+/// 本函数负责「别去请求一个根本不存在的 EP」（BUG-2050），运行期真失败由
+/// `createOcrSessionWithProviderFallback` 退到 CPU（BUG-1149 / BUG-1968）。
+List<OcrExecutionProvider> selectOcrExecutionProviders({
+  required OcrModelKind kind,
+  required OcrPlatform platform,
+  required Set<OcrExecutionProvider> availableProviders,
+}) {
+  final List<OcrExecutionProvider> preference = acceleratedProviderPreference(
+    kind: kind,
+    platform: platform,
+  );
+  for (final OcrExecutionProvider candidate in preference) {
+    if (!availableProviders.contains(candidate)) continue;
+    return <OcrExecutionProvider>[candidate, OcrExecutionProvider.cpu];
+  }
+  return const <OcrExecutionProvider>[OcrExecutionProvider.cpu];
 }

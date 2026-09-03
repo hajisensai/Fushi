@@ -4,12 +4,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
-import 'package:fushi/src/media/metadata/scrape_batch.dart';
+import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
-import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -42,7 +41,7 @@ void main() {
     await runFushiItest(
       label: 'video-source-import',
       body: () async {
-        app.main();
+        await launchFushiTestApp();
         expect(await waitForHome(tester), isTrue, reason: '主页应在 90s 内出现');
         final AppModel appModel = await enableFocusNavigation(tester);
         await appModel.setVideoAutoScrape(false);
@@ -54,7 +53,7 @@ void main() {
           await _waitFor(
             tester,
             () => find
-                .byType(FushiAdjustableSegmented<MediaLibraryViewKind>)
+                .byType(FushiAdjustableSegmented<VideoLibrarySection>)
                 .evaluate()
                 .isNotEmpty,
           ),
@@ -63,9 +62,19 @@ void main() {
         );
 
         final Finder navigation =
-            find.byType(FushiAdjustableSegmented<MediaLibraryViewKind>);
-        expect(await driver.focusWidget(navigation), isTrue);
-        await driver.adjust(steps: 1); // 媒体库 → 来源
+            find.byType(FushiAdjustableSegmented<VideoLibrarySection>);
+        await _stepVideoSections(
+          tester,
+          driver,
+          navigation,
+          expected: const <VideoLibrarySection>[
+            VideoLibrarySection.discover,
+            VideoLibrarySection.series,
+            VideoLibrarySection.allVideos,
+            VideoLibrarySection.sources,
+          ],
+          delta: 1,
+        );
 
         final Finder addSource = find.byWidgetPredicate(
           (Widget widget) =>
@@ -75,6 +84,15 @@ void main() {
         expect(await _waitFor(tester, () => addSource.evaluate().isNotEmpty),
             isTrue);
         expect(await driver.focusWidget(addSource), isTrue);
+        await driver.activate();
+
+        final Finder localFolder = find.text(t.media_source_add_local_folder);
+        expect(
+          await _waitFor(tester, () => localFolder.evaluate().isNotEmpty),
+          isTrue,
+          reason: '添加来源应先出现本地文件夹/网络来源选择',
+        );
+        expect(await driver.focusWidget(localFolder), isTrue);
         await driver.activate();
 
         expect(
@@ -94,8 +112,18 @@ void main() {
             await captureFlutterFrame(tester, 'video-source-after-scan');
         expect(sourcesShot.saved && sourcesShot.nonBlank, isTrue);
 
-        expect(await driver.focusWidget(navigation), isTrue);
-        await driver.adjust(steps: -1); // 来源 → 媒体库
+        await _stepVideoSections(
+          tester,
+          driver,
+          navigation,
+          expected: const <VideoLibrarySection>[
+            VideoLibrarySection.allVideos,
+            VideoLibrarySection.series,
+            VideoLibrarySection.discover,
+            VideoLibrarySection.home,
+          ],
+          delta: -1,
+        );
         expect(
           await _waitFor(
             tester,
@@ -108,43 +136,107 @@ void main() {
             await captureFlutterFrame(tester, 'video-library-after-scan');
         expect(libraryShot.saved && libraryShot.nonBlank, isTrue);
 
-        expect(await driver.focusWidget(navigation), isTrue);
-        await driver.adjust(steps: 1); // 媒体库 → 来源
+        await _stepVideoSections(
+          tester,
+          driver,
+          navigation,
+          expected: const <VideoLibrarySection>[
+            VideoLibrarySection.discover,
+            VideoLibrarySection.series,
+            VideoLibrarySection.allVideos,
+            VideoLibrarySection.sources,
+          ],
+          delta: 1,
+        );
         final Finder scrapeAll = find.byWidgetPredicate(
           (Widget widget) =>
               widget is FushiIconButton && widget.tooltip == t.scrape_all,
         );
-        expect(await _waitFor(tester, () => scrapeAll.evaluate().isNotEmpty),
-            isTrue);
-        expect(await driver.focusWidget(scrapeAll), isTrue);
-        await driver.activate();
+        if (scrapeAll.evaluate().isNotEmpty) {
+          expect(await driver.focusWidget(scrapeAll), isTrue);
+          await driver.activate();
+        } else {
+          final Finder moreActions = find.byWidgetPredicate(
+            (Widget widget) =>
+                widget is FushiIconButton &&
+                widget.tooltip == t.common_more_actions,
+          );
+          expect(
+            await _waitFor(tester, () => moreActions.evaluate().isNotEmpty),
+            isTrue,
+            reason: '窄屏应把来源页动作收进更多操作菜单',
+          );
+          expect(await driver.focusWidget(moreActions), isTrue);
+          await driver.activate();
+          final Finder scrapeMenuItem = find.text(t.scrape_all);
+          expect(
+            await _waitFor(tester, () => scrapeMenuItem.evaluate().isNotEmpty),
+            isTrue,
+            reason: '更多操作菜单应保留全部刮削能力',
+          );
+          expect(await driver.focusWidget(scrapeMenuItem), isTrue);
+          await driver.activate();
+        }
         expect(
           await _waitFor(
             tester,
-            () => find.byType(ScrapeBatchDialog).evaluate().isNotEmpty,
+            () =>
+                find.byType(AlertDialog).evaluate().isNotEmpty &&
+                find
+                    .text(t.video_source_scrape_tasks_open)
+                    .evaluate()
+                    .isNotEmpty,
           ),
           isTrue,
-          reason: '来源页全部刮削应打开共享视频批处理弹窗',
+          reason: '来源页全部刮削应启动后台任务并打开任务面板',
         );
         final ObserveShot scrapeShot =
-            await captureFlutterFrame(tester, 'video-source-scrape-dialog');
+            await captureFlutterFrame(tester, 'video-source-scrape-task-panel');
         expect(scrapeShot.saved && scrapeShot.nonBlank, isTrue);
 
-        // 真实批处理会访问在线元数据源，Windows UI 验收只验证入口、依赖组装与弹窗；
-        // 覆盖保护和逐项结果由 CoverScraperService / scrape batch 定向测试验证。
-        final Finder cancel = find.text(t.dialog_cancel);
-        expect(await driver.focusWidget(cancel), isTrue);
+        // 真实任务会访问在线元数据源；本 UI 验收只验证启动、任务面板与观察入口。
+        final Finder close = find.text(t.dialog_close);
+        expect(await driver.focusWidget(close), isTrue);
         await driver.activate();
         expect(
           await _waitFor(
             tester,
-            () => find.byType(ScrapeBatchDialog).evaluate().isEmpty,
+            () => find.byType(AlertDialog).evaluate().isEmpty,
           ),
           isTrue,
         );
       },
     );
   });
+}
+
+Future<void> _stepVideoSections(
+  WidgetTester tester,
+  FocusDriver driver,
+  Finder navigation, {
+  required List<VideoLibrarySection> expected,
+  required int delta,
+}) async {
+  for (final VideoLibrarySection section in expected) {
+    expect(
+      await driver.requestFocusInside(
+        navigation,
+        debugLabelContains: 'video-library-view-sections',
+      ),
+      isTrue,
+    );
+    await driver.adjust(steps: delta);
+    expect(
+      await _waitFor(
+        tester,
+        () => tester
+            .widget<FushiAdjustableSegmented<VideoLibrarySection>>(navigation)
+            .selected == section,
+      ),
+      isTrue,
+      reason: '视频库分段导航应逐步切到 $section',
+    );
+  }
 }
 
 Future<bool> _waitFor(

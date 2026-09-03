@@ -7,7 +7,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
-import 'package:fushi/src/media/video/video_subtitle_selection.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
@@ -245,9 +244,8 @@ void main() {
       expect(tapped!.text, 'second line');
     });
 
-    testWidgets(
-        'filters favorites/selected, checkbox multi-selects card context, '
-        'and row tap still seeks', (WidgetTester tester) async {
+    testWidgets('filters favorites and row tap still seeks',
+        (WidgetTester tester) async {
       final VideoPlayerController controller = VideoPlayerController();
       addTearDown(controller.dispose);
       final List<AudioCue> cues = <AudioCue>[
@@ -256,34 +254,19 @@ void main() {
         _cue(2, 4000, 5200, 'gamma line'),
       ];
       controller.setCues(cues);
-      final Set<int> selectedStarts = <int>{};
       AudioCue? tapped;
 
-      await tester.pumpWidget(_wrap(StatefulBuilder(
-        builder: (BuildContext context, StateSetter setState) {
-          return VideoSubtitleJumpPanel(
-            controller: controller,
-            onTapCue: (AudioCue cue) => tapped = cue,
-            onClose: () {},
-            onCopyCue: (_) {},
-            onFavoriteCue: (_) async {},
-            isCueFavorited: (AudioCue cue) => cue.text.contains('favorite'),
-            isCueSelectedForCard: (AudioCue cue) =>
-                selectedStarts.contains(cue.startMs),
-            onToggleCueSelection: (AudioCue cue) {
-              setState(() {
-                if (!selectedStarts.add(cue.startMs)) {
-                  selectedStarts.remove(cue.startMs);
-                }
-              });
-            },
-            onClearCueSelection: () => setState(selectedStarts.clear),
-            colorScheme: const ColorScheme.dark(),
-            title: 'Subtitle list',
-            emptyHint: 'empty',
-            width: 520,
-          );
-        },
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (AudioCue cue) => tapped = cue,
+        onClose: () {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (AudioCue cue) => cue.text.contains('favorite'),
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+        width: 520,
       )));
 
       expect(find.text('alpha line'), findsOneWidget);
@@ -297,33 +280,37 @@ void main() {
 
       await tester.tap(find.text(t.video_subtitle_filter_all));
       await tester.pumpAndSettle();
-      await tester.tap(find.byType(Checkbox).at(0));
-      await tester.pump();
-      expect(tapped, isNull,
-          reason: 'checkbox selection must not trigger the row seek callback');
-      await tester.tap(find.byType(Checkbox).at(2));
-      await tester.pump();
-      expect(selectedStarts, <int>{0, 4000});
-
-      final AudioCue? context = buildSelectedSubtitleCueContext(
-        cues: cues,
-        selectedStartMs: selectedStarts,
-      );
-      expect(context, isNotNull);
-      expect(context!.startMs, 0);
-      expect(context.endMs, 5200);
-      expect(context.text, 'alpha line\ngamma line');
-
-      await tester.tap(find.text(t.video_subtitle_filter_selected));
-      await tester.pumpAndSettle();
-      expect(find.text('alpha line'), findsOneWidget);
-      expect(find.text('gamma line'), findsOneWidget);
-      expect(find.text('beta favorite'), findsNothing);
 
       await tester.tap(find.text('gamma line'));
       await tester.pump();
       expect(tapped, isNotNull);
       expect(tapped!.startMs, 4000);
+    });
+
+    testWidgets('row has no card-selection checkbox', (
+      WidgetTester tester,
+    ) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[
+        _cue(0, 0, 1000, 'alpha line'),
+        _cue(1, 2000, 3000, 'beta line'),
+      ]);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onClose: () {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+        width: 520,
+      )));
+
+      expect(find.byType(Checkbox), findsNothing);
     });
 
     testWidgets('highlights the current playing cue and follows changes', (
@@ -428,41 +415,6 @@ void main() {
               'hint, not the not-loaded emptyHint');
       expect(find.text('No subtitles loaded'), findsNothing,
           reason: 'subtitles ARE loaded; must not claim not-loaded');
-    });
-
-    testWidgets(
-        'BUG-795: loaded cues + empty selected filter shows selected-empty hint',
-        (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[
-        _cue(0, 0, 1000, 'alpha line'),
-        _cue(1, 2000, 3000, 'beta line'),
-      ]);
-
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        controller: controller,
-        onTapCue: (_) {},
-        onClose: () {},
-        onCopyCue: (_) {},
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        // 已选档需要选择控件存在才有意义；谓词恒 false → 已选集为空。
-        isCueSelectedForCard: (_) => false,
-        onToggleCueSelection: (_) {},
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'No subtitles loaded',
-        width: 520,
-      )));
-
-      await tester.tap(find.text(t.video_subtitle_filter_selected));
-      await tester.pumpAndSettle();
-
-      expect(find.text(t.video_subtitle_filter_selected_empty), findsOneWidget,
-          reason: 'loaded cues with 0 selected must show the selected-empty '
-              'hint, not the not-loaded emptyHint');
-      expect(find.text('No subtitles loaded'), findsNothing);
     });
 
     // 「全部」档筛出 0 条只可能因 cues 本身为空 → 仍是真未加载 → emptyHint。
@@ -803,7 +755,7 @@ void main() {
       final String body = _sourceBetween(
         source,
         'Widget _buildRowText(',
-        'Widget _buildSelectionCheckbox',
+        'Widget _buildRowActions(',
       );
 
       expect(body, isNot(contains('characters.toList')),
@@ -1706,12 +1658,11 @@ void main() {
         (WidgetTester tester) async {
       final VideoPlayerController controller = VideoPlayerController();
       addTearDown(controller.dispose);
-      // 短视频（无小时级时间戳）+ 制卡多选控件（勾选框常驻），复现窄面板拥挤场景。
+      // 短视频（无小时级时间戳），复现窄面板拥挤场景。
       controller.setCues(<AudioCue>[
         _cue(0, 6000, 8000, 'ユーアーマイフレンド'),
         _cue(1, 12000, 14000, 'これはテスト字幕です'),
       ]);
-      final Set<int> selected = <int>{};
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
         controller: controller,
@@ -1720,8 +1671,6 @@ void main() {
         onCopyCue: (_) {},
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
-        isCueSelectedForCard: (AudioCue c) => selected.contains(c.startMs),
-        onToggleCueSelection: (_) {},
         colorScheme: const ColorScheme.dark(),
         title: 'Subtitle list',
         emptyHint: 'empty',
@@ -1734,11 +1683,8 @@ void main() {
       // 时间戳列宽（内容自适应，短视频窄列）。
       final double tsWidth = subtitleTimestampColumnWidth(14, false);
       expect(textBox.size.width, greaterThan(tsWidth), reason: '文本列必须宽于时间戳列');
-      // 旧实现下文本列被挤到 ~50px（3-4 个假名折行）。修复后应明显更宽。
-      // 下界 78 而非 80：BUG-1034 把勾选框列宽锁死为 [kSubtitleRowSelectionSize]（36，
-      // 原自然宽 35.7），行高测量才能按确定的文本列宽排版；文本列因此少 0.3px，不影响
-      // 本用例「文本列拿到主要空间」的意图。文本列宽与测量同源另有专门守卫
-      // （video_subtitle_row_extent_guard_test.dart）。
+      // 旧实现下文本列被挤到 ~50px（3-4 个假名折行）。修复后应明显更宽。文本列宽与
+      // 测量同源另有专门守卫（video_subtitle_row_extent_guard_test.dart）。
       expect(textBox.size.width, greaterThan(78),
           reason: '窄面板上文本列应拿到足够宽度，不再 3-4 字硬折行');
       // 文本列应是行内最大的单列（宽于时间戳与动作列）。

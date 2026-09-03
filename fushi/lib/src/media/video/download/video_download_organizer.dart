@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
+import 'package:fushi/src/media/video/metadata/video_local_extra_classifier.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/utils/misc/safe_file_name.dart';
 import 'package:path/path.dart' as p;
@@ -68,9 +70,8 @@ class VideoOrganizationResult {
   final String? error;
 }
 
-typedef VideoOrganizationFileCommitted = Future<void> Function(
-  VideoOrganizationFilePlan file,
-);
+typedef VideoOrganizationFileCommitted =
+    Future<void> Function(VideoOrganizationFilePlan file);
 
 /// 只通过 torrent backend 改名和移动的受管来源整理器。
 class VideoDownloadOrganizer {
@@ -84,10 +85,12 @@ class VideoDownloadOrganizer {
       throw const FormatException('torrent has no files');
     }
     final String title = _safeSegment(request.title);
-    final String displayRoot =
-        request.year == null ? title : '$title (${request.year})';
-    final String? remoteRoot =
-        request.pathMapping.localToRemote(request.sourceRoot);
+    final String displayRoot = request.year == null
+        ? title
+        : '$title (${request.year})';
+    final String? remoteRoot = request.pathMapping.localToRemote(
+      request.sourceRoot,
+    );
     if (remoteRoot == null) {
       throw const FormatException(
         'managed source is outside the backend path mapping',
@@ -102,44 +105,93 @@ class VideoDownloadOrganizer {
     }
     final TorrentFileEntry? mainMovie =
         request.kind == VideoOrganizationKind.movie
-            ? (videoFiles.toList()
-                  ..sort((TorrentFileEntry a, TorrentFileEntry b) =>
-                      b.size.compareTo(a.size)))
-                .first
-            : null;
-    final Set<String> targetKeys = <String>{};
+        ? (videoFiles.toList()..sort(
+                (TorrentFileEntry a, TorrentFileEntry b) =>
+                    b.size.compareTo(a.size),
+              ))
+              .first
+        : null;
+    final String? sharedRoot = _sharedRootSegment(videoFiles);
+    // 先按目录判正片/特典、再解析集号（BUG-1865）。纯特典种子（用户单独下的
+    // SP 盘）在这一口径下会一集都认不出——那不是「种子与 kind 不符」，只是这个
+    // 种子里根本没有正片。这种情况退回旧口径（只按文件名解集号）再走一遍，别
+    // 把一个本来能整理的种子打成硬失败。
+    _OrganizationPass pass = _planFiles(
+      request,
+      videoFiles,
+      displayRoot: displayRoot,
+      sharedRoot: sharedRoot,
+      mainMovie: mainMovie,
+      classifyExtras: true,
+    );
+    if (request.kind == VideoOrganizationKind.episodic &&
+        pass.recognizedEpisodes == 0) {
+      pass = _planFiles(
+        request,
+        videoFiles,
+        displayRoot: displayRoot,
+        sharedRoot: sharedRoot,
+        mainMovie: mainMovie,
+        classifyExtras: false,
+      );
+    }
+    // 两种口径都一集认不出，才是真的与「剧集」判定不符（比如误标 kind）：全
+    // Extras 的静默入库只会把问题藏起来，仍然显式失败。
+    if (request.kind == VideoOrganizationKind.episodic &&
+        pass.recognizedEpisodes == 0) {
+      throw FormatException(
+        'unable to determine episode number: ${videoFiles.first.name}',
+      );
+    }
+    return VideoOrganizationPlan(
+      remoteSourceRoot: remoteRoot,
+      files: pass.files,
+    );
+  }
+
+  /// 单趟排布：把每个视频文件映射到目标相对路径，并记账认出了多少集正片。
+  ///
+  /// [classifyExtras] 为 false 时不判显式附件，退回「只按文件名解集号」的旧
+  /// 口径——只有第一趟一集都没认出（纯特典种子）时才会用到。
+  _OrganizationPass _planFiles(
+    VideoOrganizationRequest request,
+    List<TorrentFileEntry> videoFiles, {
+    required String displayRoot,
+    required String? sharedRoot,
+    required TorrentFileEntry? mainMovie,
+    required bool classifyExtras,
+  }) {
+    final Map<String, String> claimedTargets = <String, String>{};
     final List<VideoOrganizationFilePlan> planned =
         <VideoOrganizationFilePlan>[];
+    var recognizedEpisodes = 0;
     for (final TorrentFileEntry file in videoFiles) {
       final String extension = p.extension(file.name).toLowerCase();
       late final String relative;
       int? seasonNumber;
       int? episodeNumber;
-      if (request.kind == VideoOrganizationKind.movie) {
-        if (identical(file, mainMovie)) {
-          relative = _portableJoin(<String>[
-            displayRoot,
-            '$displayRoot$extension',
-          ]);
-        } else {
-          final String extraName = _safeSegment(
-            p.basenameWithoutExtension(file.name),
-          );
-          relative = _portableJoin(<String>[
-            displayRoot,
-            'Extras',
-            '$extraName$extension',
-          ]);
-        }
-      } else {
-        final VideoNameInfo parsed = parseVideoFilename(p.basename(file.name));
+      // 剧集与电影共用同一条 Extras 规则：认得出集号的进 Season 目录，其余
+      // 一律镜像进 Extras（预告/特典/菜单等，BUG-1785），下游 `kind: 'extra'`
+      // 已是既有概念。电影额外把最大文件抬成正片。
+      //
+      // 集号只对**正片**有意义（BUG-1865）：发布组把特典收进 `EXTRA/` `SPs/`
+      // `Previews/` 时，那些文件名同样以 `- 05` / `[SP05]` 结尾，硬解析会让
+      // 「Making Video Collection - 05」和真正的第 5 集抢同一个目标名。所以
+      // 先按目录判正片/特典、再解析集号；顺序反过来就只能靠撞号事后发现，
+      // 而**没撞上的那些会被静默改名成正片**——后者才是更贵的一半。
+      if (request.kind == VideoOrganizationKind.episodic &&
+          !(classifyExtras &&
+              _isExplicitExtra(file.name, sharedRoot: sharedRoot))) {
+        final VideoNameInfo parsed = parseVideoFilename(
+          _segments(file.name).last,
+        );
         episodeNumber = parsed.episode;
-        if (episodeNumber == null) {
-          throw FormatException(
-            'unable to determine episode number: ${file.name}',
-          );
+        if (episodeNumber != null) {
+          seasonNumber = parsed.season ?? request.defaultSeasonNumber;
         }
-        seasonNumber = parsed.season ?? request.defaultSeasonNumber;
+      }
+      if (episodeNumber != null) {
+        recognizedEpisodes += 1;
         final String season = seasonNumber.toString().padLeft(2, '0');
         final String episode = episodeNumber.toString().padLeft(2, '0');
         relative = _portableJoin(<String>[
@@ -147,26 +199,104 @@ class VideoDownloadOrganizer {
           'Season $season',
           '$displayRoot - S${season}E$episode$extension',
         ]);
+      } else if (identical(file, mainMovie)) {
+        relative = _portableJoin(<String>[
+          displayRoot,
+          '$displayRoot$extension',
+        ]);
+      } else if (mainMovie != null &&
+          _isStandaloneMovieCandidate(
+            file,
+            mainMovie: mainMovie,
+            sharedRoot: sharedRoot,
+          )) {
+        // 多部电影一个种子（BUG-2007）：修前只有最大文件算正片，其余剧场版被
+        // 镜像进 Extras——下游标成 `kind: 'extra'`，从此不入库、不刮削。够体量
+        // 的并列正片沿用与 Extras 完全相同的「镜像源目录结构」落位（源路径唯一
+        // ⇒ 目标唯一），只是不进 `Extras/` 段，让下游按 `kind: 'video'` 入库。
+        // 目录名**不做任何有损重命名**：拿解析出的标题当目录名会把
+        // 「劇場版 X ～前編～」「～後編～」归约成同名，撞名后整条 job 硬失败。
+        relative = _portableJoin(<String>[
+          displayRoot,
+          ..._extraSegments(file.name, sharedRoot: sharedRoot),
+        ]);
+      } else {
+        relative = _portableJoin(<String>[
+          displayRoot,
+          'Extras',
+          ..._extraSegments(file.name, sharedRoot: sharedRoot),
+        ]);
       }
-      final String targetKey =
-          Platform.isWindows ? relative.toLowerCase() : relative;
-      if (!targetKeys.add(targetKey)) {
-        throw FormatException('organization target collision: $relative');
+      final String targetKey = Platform.isWindows
+          ? relative.toLowerCase()
+          : relative;
+      // 冲突消息必须点名**两个**源文件：只报目标名的话，用户看到
+      // 「S03E05 撞了」根本不知道是哪两个文件在抢，也就无从判断该删哪个。
+      final String? claimedBy = claimedTargets[targetKey];
+      if (claimedBy != null) {
+        throw FormatException(
+          'organization target collision: $relative '
+          '(claimed by "$claimedBy", also matched by "${file.name}")',
+        );
       }
-      final String finalPath = p.normalize(p.joinAll(<String>[
-        request.sourceRoot,
-        ...relative.split('/'),
-      ]));
-      planned.add(VideoOrganizationFilePlan(
-        backendFileIndex: file.index,
-        originalRelativePath: file.name,
-        targetRelativePath: relative,
-        finalLocalPath: finalPath,
-        seasonNumber: seasonNumber,
-        episodeNumber: episodeNumber,
-      ));
+      claimedTargets[targetKey] = file.name;
+      final String finalPath = p.normalize(
+        p.joinAll(<String>[request.sourceRoot, ...relative.split('/')]),
+      );
+      planned.add(
+        VideoOrganizationFilePlan(
+          backendFileIndex: file.index,
+          originalRelativePath: file.name,
+          targetRelativePath: relative,
+          finalLocalPath: finalPath,
+          seasonNumber: seasonNumber,
+          episodeNumber: episodeNumber,
+        ),
+      );
     }
-    return VideoOrganizationPlan(remoteSourceRoot: remoteRoot, files: planned);
+    return _OrganizationPass(
+      files: planned,
+      recognizedEpisodes: recognizedEpisodes,
+    );
+  }
+
+  /// 「先来后到」闸：同一批目标路径同时只允许一条 job 走完
+  /// 「查重 → 改名 → 落位」。
+  ///
+  /// [finalLocalPath] 是 (title, year, sourceRoot, season/episode) 的**纯函数**，
+  /// 所以同一作品的两条 job 必然算出同一路径。此前查重只有下面那一趟
+  /// `exists()` 前置检查：两条 job 并发进来会**双双通过**（那时磁盘上还什么都
+  /// 没有），随后各自让后端往同一个路径搬 —— 内置引擎靠 libtorrent 的
+  /// `fail_if_exist` 兜住（第二条直接 needsAttention，用户莫名其妙），而外接
+  /// qBittorrent 的 `setLocation` 自己的注释就写着「不保证目标已存在时整体失败
+  /// 不覆盖」且是异步的，存在真实的互相覆盖窗口。
+  ///
+  /// 作品页允许「下载中再下一个」之后，这条路径从「UI 不可达」变成一键可达，
+  /// 所以必须把这个窗口关掉。两条 job 跑在同一个 app 进程里，进程内串行化就够：
+  /// 第二条排队等第一条落位完成，再跑 `exists()` 时就能看到真实结果，走正常的
+  /// 「organization target already exists」失败路径而不是覆盖。
+  static final Map<String, Future<void>> _targetLocks =
+      <String, Future<void>>{};
+
+  static Future<T> _withTargetLock<T>(
+    String key,
+    Future<T> Function() body,
+  ) async {
+    final Future<void>? previous = _targetLocks[key];
+    final Completer<void> release = Completer<void>();
+    _targetLocks[key] = release.future;
+    try {
+      if (previous != null) {
+        // 前一条的失败不该把后一条也拖死：只等它结束，不接它的异常。
+        await previous.catchError((Object _) {});
+      }
+      return await body();
+    } finally {
+      release.complete();
+      if (identical(_targetLocks[key], release.future)) {
+        _targetLocks.remove(key);
+      }
+    }
   }
 
   Future<VideoOrganizationResult> organize({
@@ -174,8 +304,9 @@ class VideoDownloadOrganizer {
     required VideoOrganizationRequest request,
     VideoOrganizationFileCommitted? onFileCommitted,
   }) async {
-    final List<TorrentFileEntry> backendFiles =
-        await backend.listFiles(request.torrentId);
+    final List<TorrentFileEntry> backendFiles = await backend.listFiles(
+      request.torrentId,
+    );
     final VideoOrganizationPlan planned;
     try {
       planned = plan(request, backendFiles);
@@ -186,69 +317,81 @@ class VideoDownloadOrganizer {
         error: error.message.toString(),
       );
     }
-    for (final VideoOrganizationFilePlan file in planned.files) {
-      if (await File(file.finalLocalPath).exists()) {
-        return VideoOrganizationResult(
-          ok: false,
-          files: planned.files,
-          error: 'organization target already exists: ${file.finalLocalPath}',
-        );
-      }
-    }
-    final List<VideoOrganizationFilePlan> committed =
-        <VideoOrganizationFilePlan>[];
-    for (final VideoOrganizationFilePlan file in planned.files) {
-      if (_normalizeRelative(file.originalRelativePath) !=
-          _normalizeRelative(file.targetRelativePath)) {
-        final TorrentStorageResult renamed = await backend.renameFile(
-          request.torrentId,
-          file.backendFileIndex,
-          file.targetRelativePath,
-        );
-        if (!renamed.ok) {
+    // 查重 → 改名 → 落位必须是一个不可分割的段（见 [_withTargetLock]）。
+    // 闸的键取本次计划的全部目标路径：同一作品的两条 job 键相同、排队；不同作品
+    // 的 job 键不同、照常并行，不引入无谓的全局串行。
+    final String lockKey =
+        (planned.files
+                .map((VideoOrganizationFilePlan f) => f.finalLocalPath)
+                .toList()
+              ..sort())
+            .join('\u0000');
+    return _withTargetLock(lockKey, () async {
+      for (final VideoOrganizationFilePlan file in planned.files) {
+        if (await File(file.finalLocalPath).exists()) {
           return VideoOrganizationResult(
             ok: false,
-            files: committed,
-            error: renamed.error ?? 'backend file rename failed',
+            files: planned.files,
+            error: 'organization target already exists: ${file.finalLocalPath}',
           );
         }
       }
-      committed.add(file);
-      await onFileCommitted?.call(file);
-    }
-    final TorrentStorageResult moved = await backend.moveStorage(
-      request.torrentId,
-      planned.remoteSourceRoot,
-    );
-    if (!moved.ok) {
-      return VideoOrganizationResult(
-        ok: false,
-        files: committed,
-        error: moved.error ?? 'backend storage move failed',
+      final List<VideoOrganizationFilePlan> committed =
+          <VideoOrganizationFilePlan>[];
+      for (final VideoOrganizationFilePlan file in planned.files) {
+        if (_normalizeRelative(file.originalRelativePath) !=
+            _normalizeRelative(file.targetRelativePath)) {
+          final TorrentStorageResult renamed = await backend.renameFile(
+            request.torrentId,
+            file.backendFileIndex,
+            file.targetRelativePath,
+          );
+          if (!renamed.ok) {
+            return VideoOrganizationResult(
+              ok: false,
+              files: committed,
+              error: renamed.error ?? 'backend file rename failed',
+            );
+          }
+        }
+        committed.add(file);
+        await onFileCommitted?.call(file);
+      }
+      final TorrentStorageResult moved = await backend.moveStorage(
+        request.torrentId,
+        planned.remoteSourceRoot,
       );
-    }
-    return VideoOrganizationResult(ok: true, files: planned.files);
+      if (!moved.ok) {
+        return VideoOrganizationResult(
+          ok: false,
+          files: committed,
+          error: moved.error ?? 'backend storage move failed',
+        );
+      }
+      return VideoOrganizationResult(ok: true, files: planned.files);
+    });
   }
 
   static bool _isVideo(String value) => const <String>{
-        '.3gp',
-        '.avi',
-        '.flv',
-        '.m2ts',
-        '.m4v',
-        '.mkv',
-        '.mov',
-        '.mp4',
-        '.mpeg',
-        '.mpg',
-        '.ts',
-        '.webm',
-        '.wmv',
-      }.contains(p.extension(value).toLowerCase());
+    '.3gp',
+    '.avi',
+    '.flv',
+    '.m2ts',
+    '.m4v',
+    '.mkv',
+    '.mov',
+    '.mp4',
+    '.mpeg',
+    '.mpg',
+    '.ts',
+    '.webm',
+    '.wmv',
+  }.contains(p.extension(value).toLowerCase());
 
   static String _safeSegment(String value) {
-    final String safe =
-        safeWindowsFileName(value).replaceAll(RegExp(r'[. ]+$'), '').trim();
+    final String safe = safeWindowsFileName(
+      value,
+    ).replaceAll(RegExp(r'[. ]+$'), '').trim();
     if (safe.isEmpty) throw const FormatException('empty media title');
     return safe;
   }
@@ -257,4 +400,158 @@ class VideoDownloadOrganizer {
 
   static String _normalizeRelative(String value) =>
       value.replaceAll('\\', '/').replaceFirst(RegExp(r'^/+'), '');
+
+  /// 种子内相对路径切段（`/` 与 `\` 都认：qBittorrent 返回 `/`，内置引擎在
+  /// Windows 上返回 `\`）。
+  static List<String> _segments(String name) => name
+      .split(RegExp(r'[\\/]+'))
+      .where((String s) => s.trim().isNotEmpty)
+      .toList(growable: false);
+
+  /// 单根种子的发布目录名（所有视频文件共享的第一段）；平铺种子返回 null。
+  /// Extras 镜像时剥掉它，免得多出一层 `[Group] Title [1080p]` 噪音目录。
+  static String? _sharedRootSegment(List<TorrentFileEntry> files) {
+    String? root;
+    for (final TorrentFileEntry file in files) {
+      final List<String> segments = _segments(file.name);
+      if (segments.length < 2) return null;
+      if (root == null) {
+        root = segments.first;
+      } else if (segments.first != root) {
+        return null;
+      }
+    }
+    return root;
+  }
+
+  /// 发布组显式划为「非正片」的目录名（归一化后比较，见 [_normalizedSegment]）。
+  ///
+  /// 只用来判**目录段**，绝不拿这张宽词表去扫文件名：正片文件名天然带 `S3` `BD Rip`
+  /// `FLACx3` 这类词，同一张表扫文件名迟早误伤真番剧标题（`Extra Olympia
+  /// Kyklos`、`Special A`）。目录是发布组自己划的边界，语义确定得多；表里没有
+  /// 的目录名只会退回旧口径（按集号判），不会把正片错判成特典。
+  static const Set<String> _extraDirectoryNames = <String>{
+    'bdscan',
+    'bdscans',
+    'bonus',
+    'cd',
+    'cds',
+    'cm',
+    'extra',
+    'extras',
+    'interview',
+    'interviews',
+    'making',
+    'menu',
+    'menus',
+    'misc',
+    'nc',
+    'nced',
+    'ncop',
+    'other',
+    'others',
+    'preview',
+    'previews',
+    'pv',
+    'scan',
+    'scans',
+    'sp',
+    'special',
+    'specials',
+    'sps',
+    'trailer',
+    'trailers',
+    'webpreview',
+    'webpreviews',
+    // 中日文命名的特典目录（归一化保留汉字/假名后才谈得上命中，见
+    // [_normalizedSegment]）。日语/华语发布组用这几个词比用 `EXTRA` 更常见。
+    '映像特典',
+    '特典',
+    '特典映像',
+    'メニュー',
+    '予告',
+    '菜单',
+  };
+
+  /// 并列正片判据（BUG-2007，只在 movie 形态种子里用）：
+  /// * 不在发布组标记的特典目录、文件名也不是显式附件（NCOP/PV 等）；
+  /// * 体量 ≥ 最大正片的 1/4——菜单/CM/预告即使躺在根目录也够不着这个门；
+  /// * 文件名不带集号（带集号的是误标 kind 的剧集，不在本判据修复范围）。
+  static bool _isStandaloneMovieCandidate(
+    TorrentFileEntry file, {
+    required TorrentFileEntry mainMovie,
+    required String? sharedRoot,
+  }) {
+    if (_isExplicitExtra(file.name, sharedRoot: sharedRoot)) return false;
+    if (file.size * 4 < mainMovie.size) return false;
+    return parseVideoFilename(_segments(file.name).last).episode == null;
+  }
+
+  /// 该文件是否躺在发布组标记的特典目录里（共享根与文件名段都不参与判定）。
+  static bool _isInExtraDirectory(String name, {String? sharedRoot}) {
+    final List<String> segments = _segments(name);
+    final List<String> inner = sharedRoot != null && segments.length > 1
+        ? segments.sublist(1)
+        : segments;
+    for (final String segment in inner.take(inner.length - 1)) {
+      if (_extraDirectoryNames.contains(_normalizedSegment(segment))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// 是否为发布组明确标出的非正片附件。
+  ///
+  /// 目录继续走整理器的宽词表；文件名只复用元数据链路的严格附件分类器，它按
+  /// token 边界识别 `NCOP` / `NCED` / `creditless OP|ED` / `PV`，不会把普通
+  /// 标题里的 `Extra` / `Special` 等宽泛词直接当附件（BUG-1969）。
+  static bool _isExplicitExtra(String name, {String? sharedRoot}) {
+    if (_isInExtraDirectory(name, sharedRoot: sharedRoot)) return true;
+    final List<String> segments = _segments(name);
+    return segments.isNotEmpty &&
+        classifyLocalVideoExtra(segments.last) != null;
+  }
+
+  /// 目录名归一化：转小写并去掉分隔符与标点，`SPs` → `sps`、`[SP]` → `sp`、
+  /// `Web Previews` → `webpreviews`、`BD Scans` → `bdscans`、`【特典映像】` →
+  /// `特典映像`。
+  ///
+  /// 去的是**标点**，不是「非 ASCII」：旧口径写成 `[^a-z0-9]`，等于把中日文目录
+  /// 名整段删成空串，`特典` / `映像特典` / `メニュー` 在词表里永远不可能命中——
+  /// 而这恰恰是本仓最常见的发布组命名。`\p{L}` 收字母（含汉字、假名，`ー` 是
+  /// `Lm` 也在内），`\p{N}` 收数字，其余（空格 / `[]` / `【】` / `・` / `-`）全去。
+  static final RegExp _segmentNoise = RegExp(r'[^\p{L}\p{N}]', unicode: true);
+
+  static String _normalizedSegment(String value) =>
+      value.toLowerCase().replaceAll(_segmentNoise, '');
+
+  /// Extras 目标段：镜像种子内目录结构（剥共享根），路径天然唯一，不同子目录
+  /// 里的同名特典不会互相顶掉。每段过 [_safeSegment]，末段扩展名统一小写。
+  static List<String> _extraSegments(String name, {String? sharedRoot}) {
+    final List<String> segments = _segments(name);
+    final List<String> inner = sharedRoot != null && segments.length > 1
+        ? segments.sublist(1)
+        : segments;
+    final String extension = p.extension(inner.last).toLowerCase();
+    final String stem = _safeSegment(p.basenameWithoutExtension(inner.last));
+    return <String>[
+      ...inner.sublist(0, inner.length - 1).map(_safeSegment),
+      '$stem$extension',
+    ];
+  }
+}
+
+/// 一趟排布的产物：目标计划 + 认出的正片集数。
+///
+/// 集数是**换口径重来**的唯一判据（见 [VideoDownloadOrganizer.plan]），所以它跟
+/// 计划一起返回，而不是让调用方回头去数 `episodeNumber != null`。
+class _OrganizationPass {
+  const _OrganizationPass({
+    required this.files,
+    required this.recognizedEpisodes,
+  });
+
+  final List<VideoOrganizationFilePlan> files;
+  final int recognizedEpisodes;
 }

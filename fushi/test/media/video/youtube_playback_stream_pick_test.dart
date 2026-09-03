@@ -126,6 +126,69 @@ void main() {
     });
   });
 
+  group('pickVideoStreamForTargetHeight (显式画质目标 = 画质菜单语义)', () {
+    _FakeStream pickTarget(List<_FakeStream> streams, int target) {
+      return pickVideoStreamForTargetHeight<_FakeStream>(
+        streams,
+        heightOf: (_FakeStream s) => s.height,
+        codecOf: (_FakeStream s) => s.codec,
+        throttledOf: (_FakeStream s) => s.throttled,
+        targetHeight: target,
+      );
+    }
+
+    test('目标 2160：分辨率优先越过编码（vp9@2160 胜 avc1@1080）', () {
+      final List<_FakeStream> streams = <_FakeStream>[
+        const _FakeStream(1080, 'avc1.640028'),
+        const _FakeStream(2160, 'vp9'),
+        const _FakeStream(1440, 'vp9'),
+      ];
+      final _FakeStream chosen = pickTarget(streams, 2160);
+      expect(chosen.height, 2160);
+      expect(chosen.codec, 'vp9');
+    });
+
+    test('同一目标高度内编码偏好仍生效（avc1 胜 vp9）', () {
+      final List<_FakeStream> streams = <_FakeStream>[
+        const _FakeStream(1080, 'vp9'),
+        const _FakeStream(1080, 'avc1.640028'),
+        const _FakeStream(720, 'avc1.640028'),
+      ];
+      final _FakeStream chosen = pickTarget(streams, 1080);
+      expect(chosen.height, 1080);
+      expect(chosen.codec, 'avc1.640028');
+    });
+
+    test('无恰好目标档：取 ≤目标 的最高档（目标 1440，只有 1080/720 → 1080）', () {
+      final List<_FakeStream> streams = <_FakeStream>[
+        const _FakeStream(1080, 'vp9'),
+        const _FakeStream(720, 'avc1.640028'),
+      ];
+      expect(pickTarget(streams, 1440).height, 1080);
+    });
+
+    test('目标 480 降档省流：不选更高档', () {
+      final List<_FakeStream> streams = <_FakeStream>[
+        const _FakeStream(1080, 'avc1.640028'),
+        const _FakeStream(480, 'avc1.640028'),
+        const _FakeStream(360, 'avc1.640028'),
+      ];
+      expect(pickTarget(streams, 480).height, 480);
+    });
+
+    test('全部高于目标 → 退最低档（宁流畅勿卡死）', () {
+      final List<_FakeStream> streams = <_FakeStream>[
+        const _FakeStream(2160, 'vp9'),
+        const _FakeStream(1440, 'vp9'),
+      ];
+      expect(pickTarget(streams, 480).height, 1440);
+    });
+
+    test('空列表抛 StateError', () {
+      expect(() => pickTarget(<_FakeStream>[], 1080), throwsStateError);
+    });
+  });
+
   group('dedupeVideoStreamsByHeight (YouTube 画质档去重)', () {
     test('每个高度只留一条，按高度降序', () {
       final List<_FakeStream> streams = <_FakeStream>[

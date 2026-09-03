@@ -11,6 +11,7 @@ import '../formats/dictionary_format.dart';
 import '../models/dictionary_entry.dart';
 import '../models/dictionary_search_result.dart';
 import 'language_utils.dart';
+import 'transform_description_i18n.dart';
 
 /// Defines common characteristics required for tuning locale and text
 /// segmentation behaviour for different languages. Override the variables
@@ -409,12 +410,105 @@ abstract class Language {
   }
 }
 
+/// 弹窗上的一枚词形变化标签：变形名（`-て`）+ 该变形的语法说明。
+typedef DeinflectionTag = ({String name, String description});
+
+/// 词形变化链 → 弹窗标签序列。**这是全 app 唯一一处生成变形标签的地方**，
+/// 三条弹窗路径（[buildPopupJsonFromLookup] / `buildLookupEntriesJson` /
+/// 原生弹窗）和 C++ 的 `build_popup_json` 都必须走这套语义，不允许各自再拼。
+///
+/// `trace` 是唯一真相：引擎每剥掉一层变形就往里压一个 [FushiTransformGroup]，
+/// 带着变形名和 `assets/transforms/<lang>.json` 里的语法说明。压栈顺序是**剥离
+/// 顺序**（最外层的变形最先被剥），而用户要看的是**接续顺序**——从词典形出发依
+/// 次接上了哪些变形，所以显示时整体反转：`当たっていた` 的 trace 是
+/// `[-た, -いる, -て]`，显示成 `-て « -いる « -た`（与 Yomitan 一致）。
+///
+/// trace 为空、而 matched 又确实不等于 deinflected 时，回落成单条
+/// `matched → deinflected`：那是 `lookup.cpp` 的**文本变体归一**（colour→color
+/// 一类），不经过任何变形规则，所以既没有 trace 也没有语法说明。这条回落分支
+/// 不能删——删了这类查询就完全不提示词形变化了。
+List<DeinflectionTag> buildDeinflectionTags({
+  required String matched,
+  required String deinflected,
+  required List<FushiTransformGroup> trace,
+}) {
+  if (trace.isNotEmpty) {
+    return <DeinflectionTag>[
+      for (final FushiTransformGroup t in trace.reversed)
+        (name: t.name, description: t.description),
+    ];
+  }
+  if (matched != deinflected && deinflected.isNotEmpty) {
+    return <DeinflectionTag>[
+      (name: '$matched → $deinflected', description: '')
+    ];
+  }
+  return const <DeinflectionTag>[];
+}
+
+/// [buildDeinflectionTags] 的结果 → 弹窗 JSON 里的 `deinflectionTrace` 数组。
+List<Map<String, String>> deinflectionTagsToJson(List<DeinflectionTag> tags) {
+  return <Map<String, String>>[
+    for (final DeinflectionTag t in tags)
+      <String, String>{'name': t.name, 'description': t.description},
+  ];
+}
+
+/// 变形标签的语法说明 → 当前界面语言（[TransformDescriptionCatalog]，BUG-2038）。
+///
+/// **只在显示边界调用**，不要下沉进 [buildDeinflectionTags]：后者同时喂着
+/// [buildLookupEntryExtra] 这条**持久化**路径，那份 extra 会被缓存复用，写进译文就
+/// 等于把「写入时的界面语言」腌进数据里。存英文、显示时再翻，换语言才能整体生效。
+List<DeinflectionTag> localizeDeinflectionTags(List<DeinflectionTag> tags) {
+  return <DeinflectionTag>[
+    for (final DeinflectionTag t in tags)
+      (
+        name: t.name,
+        description: TransformDescriptionCatalog.localize(t.description),
+      ),
+  ];
+}
+
+/// 从 [buildLookupEntryExtra] 写出的 extra 里读回变形标签。
+///
+/// extra 里存的已经是 [buildDeinflectionTags] 的成品（含回落），所以这里**只解析、
+/// 不再判断**——回落语义只有一份。老 extra（没有 `deinflectionTrace` 键）才走末尾
+/// 的兼容分支，靠 matched/deinflected 现算。
+List<DeinflectionTag> deinflectionTagsFromExtra(Map<String, dynamic> extra) {
+  final Object? raw = extra['deinflectionTrace'];
+  if (raw is List) {
+    // extra 里存的是英文原文（见 [localizeDeinflectionTags] 的说明），读出来给弹窗
+    // 显示时才翻译。原生弹窗和 buildLookupEntriesJson 都走这里。
+    return localizeDeinflectionTags(<DeinflectionTag>[
+      for (final Object? item in raw)
+        if (item is Map)
+          (
+            name: (item['name'] ?? '').toString(),
+            description: (item['description'] ?? '').toString(),
+          ),
+    ]);
+  }
+  return localizeDeinflectionTags(buildDeinflectionTags(
+    matched: (extra['matched'] ?? '').toString(),
+    deinflected: (extra['deinflected'] ?? '').toString(),
+    trace: const <FushiTransformGroup>[],
+  ));
+}
+
 String buildLookupEntryExtra(FushiLookupResult r, FushiGlossaryEntry g) {
   return jsonEncode({
     'definitionTags': g.definitionTags,
     'termTags': g.termTags,
     'matched': r.matched,
     'deinflected': r.deinflected,
+    // 变形链带着语法说明一起随 entry 走。走 extra 的两条弹窗路径（原生弹窗、
+    // buildLookupEntriesJson）本来只能看到 matched/deinflected，只好现编一条
+    // 「matched → deinflected」且说明恒空——语法说明就是断在这里的。
+    'deinflectionTrace': deinflectionTagsToJson(buildDeinflectionTags(
+      matched: r.matched,
+      deinflected: r.deinflected,
+      trace: r.trace,
+    )),
     'frequencies': r.term.frequencies
         .map((f) => {
               'dictName': f.dictName,
@@ -430,6 +524,7 @@ String buildLookupEntryExtra(FushiLookupResult r, FushiGlossaryEntry g) {
         .map((p) => {
               'dictName': p.dictName,
               'positions': p.pitchPositions,
+              'patterns': p.patterns,
               'transcriptions': p.transcriptions,
             })
         .toList(),
@@ -440,6 +535,7 @@ DictionarySearchResult buildResultFromLookup({
   required String searchTerm,
   required List<FushiLookupResult> results,
   required int maximumTerms,
+  List<String> dictionaryOrder = const <String>[],
 }) {
   int bestLength = 0;
   final entries = <DictionaryEntry>[];
@@ -463,7 +559,8 @@ DictionarySearchResult buildResultFromLookup({
       break outer;
     }
     headwords.add(headword);
-    for (final g in r.term.glossaries) {
+    for (final g
+        in _glossariesInDictionaryOrder(r.term.glossaries, dictionaryOrder)) {
       entries.add(DictionaryEntry(
         dictionaryName: g.dictName,
         word: r.term.expression,
@@ -496,6 +593,8 @@ String lookupHeadwordKey(FushiLookupResult r) {
 String buildPopupJsonFromLookup({
   required List<FushiLookupResult> results,
   required int maximumTerms,
+  required Set<String> hiddenDictionaries,
+  List<String> dictionaryOrder = const <String>[],
 }) {
   if (results.isEmpty) return '[]';
 
@@ -504,6 +603,7 @@ String buildPopupJsonFromLookup({
   final groupReading = <String, String>{};
   final groupMatched = <String, String>{};
   final groupDeinflected = <String, String>{};
+  final groupTrace = <String, List<FushiTransformGroup>>{};
   final groupFrequencies = <String, List<FushiFrequencyEntry>>{};
   final groupPitches = <String, List<FushiPitchEntry>>{};
   final seenFreqs = <String, Set<String>>{};
@@ -525,13 +625,24 @@ String buildPopupJsonFromLookup({
     if (!groupExpression.containsKey(key) && groupKeys.length >= maximumTerms) {
       break outer;
     }
-    for (final g in r.term.glossaries) {
+    for (final g
+        in _glossariesInDictionaryOrder(r.term.glossaries, dictionaryOrder)) {
+      // 被用户关掉的词典在源头就不进 popupJson。此前这步只存在于渲染期的 JS
+      // （靠宿主注入 window.hiddenDictionaryNames 驱动），app 内 WebView 注入了、浏览器
+      // 扩展走的 HTTP 路径从来不下发它 ⇒ 关掉的词典在扩展里照旧出释义，
+      // 连制卡也一并写进去。过滤下沉到这个唯一数据出口后，app 内弹窗 / 全局查词窗 /
+      // 浏览器扩展 / 制卡四个消费者一次性全对；JS 侧原有过滤退化为冗余保险。
+      //
+      // 放在循环最前（而不是只跳 groupGlossaries.add）：只有隐藏词典释义的词头不应
+      // 该撑起一张空卡片，也不应占用 maximumTerms 词头预算。
+      if (hiddenDictionaries.contains(g.dictName)) continue;
       if (!groupExpression.containsKey(key)) {
         groupKeys.add(key);
         groupExpression[key] = r.term.expression;
         groupReading[key] = r.term.reading;
         groupMatched[key] = r.matched;
         groupDeinflected[key] = r.deinflected;
+        groupTrace[key] = r.trace;
         groupFrequencies[key] = [];
         groupPitches[key] = [];
         seenFreqs[key] = {};
@@ -544,6 +655,7 @@ String buildPopupJsonFromLookup({
         // and trace stay consistent on the same FushiLookupResult.
         groupMatched[key] = r.matched;
         groupDeinflected[key] = r.deinflected;
+        groupTrace[key] = r.trace;
       }
 
       for (final f in r.term.frequencies) {
@@ -554,10 +666,12 @@ String buildPopupJsonFromLookup({
         }
       }
       for (final p in r.term.pitches) {
-        // Fold transcriptions into the dedup key (mirrors native popup_json):
-        // IPA entries have no pitch positions, so positions-only keys would
-        // collapse distinct IPA records of one dict and drop all but the first.
-        final pKey = '${p.dictName}:${p.pitchPositions.join(',')}'
+        // Fold patterns + transcriptions into the dedup key (mirrors native
+        // popup_json): IPA entries have no pitch accents, and pattern-only
+        // accents have no numeric positions, so a positions-only key would
+        // collapse distinct records of one dict and drop all but the first.
+        final pKey =
+            '${p.dictName}:${p.pitchPositions.join(',')},${p.patterns.join(',')}'
             '|${p.transcriptions.join(',')}';
         if (seenPitches[key]!.add(pKey)) {
           groupPitches[key]!.add(p);
@@ -587,15 +701,13 @@ String buildPopupJsonFromLookup({
     sb.write(',"matched":');
     sb.write(jsonEncode(groupMatched[key]));
     sb.write(',"rules":[],"deinflectionTrace":');
-    final matched = groupMatched[key]!;
-    final deinflected = groupDeinflected[key]!;
-    if (matched != deinflected && deinflected.isNotEmpty) {
-      sb.write('[{"name":');
-      sb.write(jsonEncode('$matched → $deinflected'));
-      sb.write(',"description":""}]');
-    } else {
-      sb.write('[]');
-    }
+    // 弹窗 JSON 是显示路径 → 翻译；持久化的 extra 不翻（BUG-2038）。
+    sb.write(jsonEncode(
+        deinflectionTagsToJson(localizeDeinflectionTags(buildDeinflectionTags(
+      matched: groupMatched[key]!,
+      deinflected: groupDeinflected[key]!,
+      trace: groupTrace[key] ?? const <FushiTransformGroup>[],
+    )))));
     sb.write(',"glossaries":[');
     final gl = groupGlossaries[key]!;
     for (var j = 0; j < gl.length; j++) {
@@ -636,6 +748,8 @@ String buildPopupJsonFromLookup({
       sb.write(jsonEncode(pitches[pi].dictName));
       sb.write(',"pitchPositions":');
       sb.write(jsonEncode(pitches[pi].pitchPositions));
+      sb.write(',"patterns":');
+      sb.write(jsonEncode(pitches[pi].patterns));
       sb.write(',"transcriptions":');
       sb.write(jsonEncode(pitches[pi].transcriptions));
       sb.write('}');
@@ -644,4 +758,34 @@ String buildPopupJsonFromLookup({
   }
   sb.write(']');
   return sb.toString();
+}
+
+/// Applies the user-managed dictionary priority at the Dart result boundary.
+///
+/// The native engine normally appends glossaries in dictionary registration
+/// order, but that is an implementation detail rather than part of the FFI
+/// payload. A warm/independent lookup surface can therefore hand this builder
+/// an older ordering even though the management page already exposes the new
+/// one. Sorting here makes both [DictionarySearchResult] and popup JSON consume
+/// the explicit current order. Unknown dictionaries stay last and stable.
+List<FushiGlossaryEntry> _glossariesInDictionaryOrder(
+  List<FushiGlossaryEntry> glossaries,
+  List<String> dictionaryOrder,
+) {
+  if (glossaries.length < 2 || dictionaryOrder.isEmpty) return glossaries;
+
+  final Map<String, int> rank = <String, int>{
+    for (int i = 0; i < dictionaryOrder.length; i++) dictionaryOrder[i]: i,
+  };
+  final List<({FushiGlossaryEntry glossary, int sourceIndex})> indexed =
+      <({FushiGlossaryEntry glossary, int sourceIndex})>[
+    for (int i = 0; i < glossaries.length; i++)
+      (glossary: glossaries[i], sourceIndex: i),
+  ];
+  indexed.sort((a, b) {
+    final int byRank = (rank[a.glossary.dictName] ?? dictionaryOrder.length)
+        .compareTo(rank[b.glossary.dictName] ?? dictionaryOrder.length);
+    return byRank != 0 ? byRank : a.sourceIndex.compareTo(b.sourceIndex);
+  });
+  return <FushiGlossaryEntry>[for (final item in indexed) item.glossary];
 }

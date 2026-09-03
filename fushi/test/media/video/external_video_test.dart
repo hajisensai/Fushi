@@ -110,4 +110,43 @@ void main() {
       expect(firstExternalVideoArg(<String>['--flag', 'x.txt']), isNull);
     });
   });
+  group('sourceEntryBasename / decodedSourceBasename 的编码状态分工', () {
+    // 背景（#908 审查）：来源库条目路径**已经是解码态**——WebDAV 的 PROPFIND href
+    // 在 webdav_ops.dart 就 Uri.decodeFull 过了，SFTP/FTP 路径本就不是百分号编码。
+    // 生产上有两个落点会对它再解一次：漫画远端镜像的查找表构建，以及
+    // NetworkSourceFileSystem.copyToLocal 派生本地文件名（经 _urlBasename，现已
+    // 收敛到 sourceEntryBasename）。再解一次的两种后果都在下面钉住。
+    test('不解码：真名含 % 不抛异常（旧实现在这里 ArgumentError）', () {
+      // 断言字面量：'50% off.jpg'
+      expect(sourceEntryBasename('https://h/m/Odd/50% off.jpg'), '50% off.jpg');
+      expect(sourceEntryBasename('https://h/m/100%.jpg'), '100%.jpg');
+      // 旧实现走 Uri.decodeComponent / Uri.parse().pathSegments，对上面这两个
+      // 输入直接抛 ArgumentError: Invalid URL encoding。
+    });
+
+    test('不解码：真名里的 %20 是字面量，不能被解成空格', () {
+      // 断言字面量：'p%20a.jpg'（解成 'p a.jpg' 就与 mokuro 的 img_path 对不上）
+      expect(sourceEntryBasename('https://h/m/Odd/p%20a.jpg'), 'p%20a.jpg');
+    });
+
+    test('字面空格与中文原样返回', () {
+      expect(sourceEntryBasename('https://h/m/Show A/Show A S01E01.mkv'),
+          'Show A S01E01.mkv');
+      expect(sourceEntryBasename('https://h/m/第1話 表紙.jpg'), '第1話 表紙.jpg');
+    });
+
+    test('反斜杠与正斜杠都算分隔符，无分隔符时返回整串', () {
+      expect(sourceEntryBasename(r'D:\v\a.mkv'), 'a.mkv');
+      expect(sourceEntryBasename('a.mkv'), 'a.mkv');
+    });
+
+    test('decodedSourceBasename 仍为「尚未解码的 URL」保留解码语义', () {
+      // 用户粘贴的地址、m3u8 清单里的原始行走这条；两个函数分工不能混。
+      expect(decodedSourceBasename('https://h/v/clip%201.mkv'), 'clip 1.mkv');
+      // 非法编码时它有 try/catch 兜底，返回原串而不是抛。
+      expect(decodedSourceBasename('https://h/v/50% off.mkv'), '50% off.mkv');
+      // 本地路径不解码。
+      expect(decodedSourceBasename(r'D:\v\p%20a.mkv'), 'p%20a.mkv');
+    });
+  });
 }

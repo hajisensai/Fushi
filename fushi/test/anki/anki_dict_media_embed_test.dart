@@ -167,7 +167,7 @@ void main() {
     // 模拟 backend 落盘后回填的 context：coverPath 已是 <img src="ref"> 媒体引用。
     const AnkiMiningContext mediaContext = AnkiMiningContext(
       sentence: '',
-      coverPath: '<img src="hibiki_cover_x.gif">',
+      coverPath: '<img src="fushi_cover_x.gif">',
     );
     const AnkiMiningPayload payload = AnkiMiningPayload(expression: '一');
 
@@ -185,7 +185,7 @@ void main() {
         context: mediaContext,
         tags: const <String, String>{},
       );
-      expect(clipFields['Image'], '<img src="hibiki_cover_x.gif">');
+      expect(clipFields['Image'], '<img src="fushi_cover_x.gif">');
       expect(clipFields['Image'], coverFields['Image']);
     });
 

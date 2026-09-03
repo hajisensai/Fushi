@@ -413,7 +413,7 @@ void main() {
       service.checking.dispose();
     });
 
-    test('missing selected subtitle keeps the episode pending', () async {
+    test('BUG-1696 字幕还没上传时照常下片，字幕落 pending 交给完成后反查', () async {
       final AnimeDownloadSubscription subscription =
           AnimeDownloadSubscription.fromSelection(
         anilistId: 42,
@@ -439,9 +439,27 @@ void main() {
       await service.checkSubscription(subscription.id);
       final AnimeDownloadSubscription updated =
           (await subscriptionStore.loadAll()).single;
-      expect(updated.processedEpisodes, isEmpty);
-      expect(updated.lastError, contains('subtitle not available'));
-      expect(await planStore.loadAll(), isEmpty);
+
+      // 旧行为：delete plan + continue + processedEpisodes 保持空。于是绑了
+      // Jimaku 条目的订阅在字幕上传前**一集都不下**，而生肉普遍早字幕数小时到
+      // 数天——用户看到的是「订阅永远不动」。
+      expect(
+        updated.processedEpisodes,
+        <int>{2},
+        reason: '字幕没到不是不下这一集的理由',
+      );
+      final AnimeDownloadPlan plan = (await planStore.loadAll()).single;
+      expect(plan.id, 'abc123');
+      expect(plan.subtitles, isEmpty);
+      expect(
+        plan.subtitleStatus,
+        AnimeDownloadPlan.subtitlePending,
+        reason: 'pending 才会在下载完成时按包内真实文件名反查 + backoff 重试；'
+            '落 none 等于宣告这一集永远没字幕',
+      );
+      expect(plan.jimakuEntryId, 77, reason: '重试要靠它找回来源');
+      // 用户仍然被告知这一集的字幕还没到。
+      expect(updated.lastError, contains('subtitle not yet available'));
       service.stop();
       service.checking.dispose();
     });

@@ -24,14 +24,23 @@ enum ProfileMediaKind {
   lyrics('lyrics'),
 
   /// 视频。
-  video('video');
+  video('video'),
+
+  /// 漫画（OCR 阅读器，`EpubBooks.format == 'manga'`）。TODO-2936。
+  manga('manga'),
+
+  /// 游戏（galgame hook 会话：launch / attach 查词浮窗）。TODO-2936。
+  game('game'),
+
+  /// 浏览器（浏览器扩展经 yomitan-api server 查词）。TODO-2936。
+  browser('browser');
 
   const ProfileMediaKind(this.dbValue);
 
   /// 落 DB 的字符串。永不改变；持久化场景只用本字段，绝不用 `.name`。
   final String dbValue;
 
-  /// 严格解析：精确匹配五个落库值之一，未知 / null → null，绝不抛
+  /// 严格解析：精确匹配已知落库值之一，未知 / null → null，绝不抛
   /// （`media_type_profiles` 表接受任意串，历史行可能含旧值域）。
   static ProfileMediaKind? tryParse(String? raw) {
     for (final ProfileMediaKind kind in ProfileMediaKind.values) {

@@ -1,5 +1,5 @@
 import 'package:fushi_dictionary/fushi_dictionary.dart';
-import 'dart:async' show unawaited;
+import 'dart:async' show StreamSubscription, Timer, unawaited;
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
@@ -11,6 +11,7 @@ import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/epub/book_file_location.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
@@ -26,6 +27,7 @@ import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/manga/book_format_convert.dart';
 import 'package:fushi/src/media/manga/book_format_rebuild.dart';
+import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
@@ -65,6 +67,7 @@ import 'package:fushi/src/media/selection/selection_gestures.dart';
 import 'package:fushi/src/media/collections/collection_shelf_row.dart';
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:fushi/src/pages/implementations/series_shelf_card.dart';
+import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 import 'package:fushi/src/utils/misc/shelf_ordering.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
@@ -74,8 +77,11 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:fushi/src/sync/cloud_remote_book_client.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
+import 'package:fushi/src/sync/local_file_delete_feedback.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/deletion_propagation_availability.dart';
+import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
+import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
@@ -303,10 +309,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 用于识别「显示远端条目」开关翻转，翻转时重新取数。
   bool? _remoteGateAtLastLoad;
 
-  /// 正在下载中的远端书（key = book.title）。值为进度分数 0..1；收到首个
-  /// onProgress 前为 null（不确定进度）。下载期间用它在卡片上替换下载按钮为进度
-  /// 指示（#3：远端下载全程有进行中反馈，不再 await 完才弹一次提示）。
-  final Map<String, double?> _downloadingBooks = <String, double?>{};
+  // 远端书 / 纯 SRT 有声书的下载进度与失败态不再挂本页 State（旧
+  // `_downloadingBooks` 已删，BUG-1561 书侧补齐）：任务活在 app 级
+  // InterconnectDownloadManager，占位卡经 _remoteBookTaskBadge 按任务状态渲染。
 
   /// 正在下载有声书包的本地书（key = 导入后的本地 bookKey，BUG-990）。远端有声书
   /// 走「先下 EPUB 后下有声书」两阶段：EPUB 一落库，书架 provider 自动刷新把远端占位
@@ -393,6 +398,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 重跑（本 State 存活、future 非 null）。这里显式监听刷新信号重载映射，使后台
     // 合集同步落库后书架立即成组（否则合集不渲染，直到重启 app）。
     mediaType.tabRefreshNotifier.addListener(_reloadShelfMapsOnTabRefresh);
+    // BUG-1699：refreshTab 信号只覆盖「谁写库谁记得通知」登记过的路径（全量同步
+    // 收尾的 refreshAfterSyncRun）；防抖轻量合集同步（runCollectionsOnly）与其它
+    // 写入者没有登记，落库后书架照旧散卡。直接订阅合集两张表的数据层信号，任何
+    // 写入者天然覆盖。
+    _collectionTablesSub = appModelNoUpdate.database
+        .watchCollectionTablesChanged()
+        .listen(_onCollectionTablesChanged);
     // 统一下载中心：mokuro.moe 卷经共享队列后台落库（可能在「在线目录」对话框
     // 关闭后才完成）。监听队列 importedCount 增量失效书架 provider，取代旧的
     // 「对话框关闭回传导入数」信号（该信号已随对话框改队列化而移除）。
@@ -450,6 +462,23 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     });
   }
 
+  /// BUG-1699：合集表变更订阅 + 合并窗口（同视频页 _onCollectionTablesChanged，
+  /// 同步/导入批量落库合并成一次映射重载）。
+  StreamSubscription<void>? _collectionTablesSub;
+  Timer? _collectionsReloadDebounce;
+
+  /// BUG-1699：合集表写入回调——重载书架折叠映射（只动 _shelfMapsFuture，不
+  /// invalidate 书列表 provider：合集归属变化不改变书行本身）。
+  void _onCollectionTablesChanged(void _) {
+    _collectionsReloadDebounce?.cancel();
+    _collectionsReloadDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      setState(() {
+        _shelfMapsFuture = _loadShelfMaps();
+      });
+    });
+  }
+
   /// mokuro.moe 共享下载队列（app 级；initState 挂监听、dispose 摘除）。
   MokuroMoeDownloadQueue? _mokuroQueue;
   int _mokuroImportedSeen = 0;
@@ -467,6 +496,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   void dispose() {
     _searchController.dispose();
     mediaType.tabRefreshNotifier.removeListener(_reloadShelfMapsOnTabRefresh);
+    _collectionTablesSub?.cancel();
+    _collectionsReloadDebounce?.cancel();
     _mokuroQueue?.removeListener(_onMokuroQueueChanged);
     homeShellTabNotifier.removeListener(_onShellTabActivated);
     appModelNoUpdate.prefsRepo.removeListener(_onPrefsChangedForRemoteGate);
@@ -717,11 +748,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         icon: Icons.collections_bookmark_outlined,
         onTap: _openCollections,
       ),
-      _headerAction(
-        tooltip: t.reading_statistics,
-        icon: Icons.bar_chart_outlined,
-        onTap: _openReadingStatistics,
-      ),
+      // 统计入口已收敛到首页 dashboard（用户定案 2026-09-01：各媒体页头不再
+      // 各挂一个「xx统计」，统一从首页进统计中心）。
     ];
     final Widget? navigation = _pageWidget.navigation;
     if (navigation != null) {
@@ -769,16 +797,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       adaptivePageRoute(
         context: context,
         builder: (_) => const CollectionsPage(),
-      ),
-    );
-  }
-
-  void _openReadingStatistics() {
-    Navigator.push(
-      context,
-      adaptivePageRoute(
-        context: context,
-        builder: (_) => const ReadingStatisticsPage(),
       ),
     );
   }
@@ -1396,10 +1414,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           membership.collectionName,
           membership.collectionType,
         );
-        if (cid == null) continue; // 归属解析不到本地合集 → 散卡降级
-        primaryByEntry[key] = cid;
-        memberSortIndex[key] = membership.sortIndex;
-        continue;
+        if (cid != null) {
+          primaryByEntry[key] = cid;
+          memberSortIndex[key] = membership.sortIndex;
+          continue;
+        }
+        // BUG-1699：(name,type) 在本地解析不到（合集清单还没同步落库 / 用户改过
+        // 本地合集名）不能直接散卡——合集同步若已把透传成员行（键=对端 bookKey）
+        // 落进本地 MediaCollectionItems，下方按本地已同步归属回查的兜底照样能
+        // 救回。此前这里 continue 把兜底整个跳过了。
       }
       // 云盘后端（CloudRemoteBookClient）没有 host 实时库 API，不下发 collection
       // 字段。但合集成员已由 collection_sync_engine 落进本地 MediaCollectionItems。
@@ -1454,10 +1477,18 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       final String? key = _looseSelectionKey(g.items.first.payload);
       if (key != null) visibleLooseKeys.add(key);
     }
-    _selection.setVisibleOrder(
-      loose: visibleLooseKeys,
-      collections: _visibleCollectionIds,
-    );
+    // 可见序真变了就补一帧：它是 build 期算出来的（搜索 / 标签筛选 / 排序的
+    // 结果），而底栏「已选 N」在同一帧更早的位置就读过选中集，会慢一拍且没有
+    // 后续 setState 补上。只在多选态补（非多选态选中集恒空）。
+    if (_selection.setVisibleOrder(
+          loose: visibleLooseKeys,
+          collections: _visibleCollectionIds,
+        ) &&
+        _selectionMode) {
+      WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+        if (mounted) setState(() {});
+      });
+    }
     _epubCoverUrisByBookKey = epubCoverUrisByBookKey;
     _epubBackedBookKeys = epubBackedBookKeys;
     _epubProgressByBookKey = epubProgressByBookKey;
@@ -1936,30 +1967,40 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     }
   }
 
-  /// 弹删除确认框，返回用户选择的删除范围（[DeleteScope.syncEverywhere] = 同步删除到
-  /// 其他设备 / [DeleteScope.keepLocalOnly] = 仅本机）；取消或已 unmount 返回 null。
-  Future<DeleteScope?> _confirmMediaDelete({
+  /// 弹删除确认框，返回用户的 [DeleteDecision]（scope：[DeleteScope.syncEverywhere]
+  /// = 同步删除到其他设备 / [DeleteScope.keepLocalOnly] = 仅本机；deleteLocalFiles：
+  /// 是否连原始音频文件一起删，仅 [localFilesSubtitle] 非 null 时可勾）；取消或已 unmount 返回
+  /// null。
+  Future<DeleteDecision?> _confirmMediaDelete({
     required String title,
     required String message,
     DeletionDisclosure? disclosure,
+    String? localFilesSubtitle,
   }) async {
     // TODO-2470 死角②：本机没有任何删除传播通道时不摆那个兑现不了的勾选框。
     // 纯本地零网络判据，在弹窗弹出前解析完（弹窗自身不做 IO）。
     final bool canSyncEverywhere =
         await hasDeletionPropagationChannel(SyncRepository(appModel.database));
+    final DeletePromptPreferenceStore preferenceStore =
+        DeletePromptPreferenceStore(appModel.database);
+    final DeletePromptRememberedChoices? rememberedChoices =
+        await preferenceStore.load();
     if (!mounted) return null;
-    final DeleteScope? scope = await showAppDialog<DeleteScope>(
+    final DeleteDecision? decision = await showAppDialog<DeleteDecision>(
       context: context,
       builder: (ctx) => ReaderHistoryDeleteDialog(
         title: title,
         message: message,
         disclosure: disclosure,
         showSyncScope: canSyncEverywhere,
-        onConfirm: (DeleteScope s) => Navigator.pop(ctx, s),
+        localFilesSubtitle: localFilesSubtitle,
+        rememberedChoices: rememberedChoices,
+        onPersistChoices: preferenceStore.write,
+        onConfirm: (DeleteDecision d) => Navigator.pop(ctx, d),
       ),
     );
     if (!mounted) return null;
-    return scope;
+    return decision;
   }
 
   @override
@@ -2088,6 +2129,24 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             ),
       dragLabel: displayTitleForBook(item: item, rawTitle: item.title),
       onTap: () async {
+        // 漫画先进作品页，不直接开书。
+        //
+        // 作品页**刻意不走 `openMedia`**：那条路是「媒体会话」语义——沉浸模式、
+        // wakelock、audio handler、_currentMediaSource 全在里面开。作品页是个可
+        // 浏览的库页面（章节列表、已读标记、刷新），当媒体会话打开会让它顶着
+        // 隐藏的系统 UI、亮着屏。真正的会话由作品页内部再 `openMedia` 开阅读器
+        // 时启动，语义与 v88 前逐字相同。
+        if (_isMangaItem(item) && bookKey != null) {
+          await Navigator.of(context).push(
+            adaptivePageRoute<void>(
+              context: context,
+              builder: (BuildContext context) => MangaSeriesPage(
+                target: ShelfMangaSeriesTarget(bookKey, item: item),
+              ),
+            ),
+          );
+          return;
+        }
         final MediaSource source = item.getMediaSource(appModel: appModel);
         await appModel.openMedia(
           ref: ref,
@@ -2157,6 +2216,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         icon: Icons.headphones_outlined,
         onPressed: () => _openAudiobookImport(item, bookKey),
       ),
+      // 桌面才有文件管理器契约（[currentRevealHost] 在移动端返回 null）——整条隐藏，
+      // 而不是画一个点了没反应的按钮。漫画卷要手改 mokuro 数据时，这一条直接把书目录
+      // 里的 manga.json 选中，省掉「书在哪个 bookKey 目录」这层猜。
+      if (currentRevealHost() != null)
+        DialogListAction(
+          label: t.book_file_location_open,
+          icon: Icons.folder_open_outlined,
+          onPressed: () => _openBookFileLocation(bookKey),
+        ),
       DialogListAction(
         label: _completedBookKeys.contains(bookKey)
             ? t.book_mark_uncompleted_action
@@ -2196,6 +2264,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         icon: Icons.account_circle_outlined,
         onPressed: () => _openBookProfilePicker(item, bookKey),
       ),
+      // 内容语言：决定这本书正文用哪条字体链。导入时从 EPUB OPF 的 dc:language
+      // 自动回填，但自制/旧 EPUB 常常不声明，那时只有用户知道这本是什么语言的。
+      DialogListAction(
+        label: t.book_language_action,
+        icon: Icons.translate,
+        onPressed: () => _openBookLanguagePicker(bookKey),
+      ),
       DialogListAction(
         label: t.book_css_editor_edit_css,
         icon: Icons.code_outlined,
@@ -2219,6 +2294,26 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           _isMangaItem(item) ? BookFormatTarget.book : BookFormatTarget.manga,
         ),
       ),
+      // 漫画作品页：卡片点击已经先进这里，但键盘/手柄用户长按 A 弹的是本对话框，
+      // 没有这一条就只能从对话框退出去再确认一次卡片。菜单里给出同一个入口。
+      if (_isMangaItem(item))
+        DialogListAction(
+          label: t.manga_series_open_series,
+          icon: Icons.auto_stories_outlined,
+          onPressed: () {
+            Navigator.pop(context);
+            unawaited(
+              Navigator.of(context).push(
+                adaptivePageRoute<void>(
+                  context: context,
+                  builder: (BuildContext context) => MangaSeriesPage(
+                    target: ShelfMangaSeriesTarget(bookKey, item: item),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
       // TODO-291 阶段2：书架长按「悬浮字幕」= 启动该书的后台听书会话（无正在播则用该书
       // 启动 + 拉起悬浮窗），不再只翻 bool。该书已是活动会话则改为「停止后台听书」。
       if (Platform.isAndroid || Platform.isWindows)
@@ -2423,6 +2518,22 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 不必为了画一行菜单再去读一次库。
   bool _isMangaItem(MediaItem item) =>
       item.mediaSourceIdentifier == MangaFushiSource.kUniqueKey;
+
+  /// 在系统文件管理器里定位这本书的磁盘文件（EPUB / PDF / 漫画同一条路径）。
+  ///
+  /// 与 [_convertBookFormat] 同款：读行 + 探磁盘都放在**点击后**，塞进菜单 build 会让
+  /// 书架每次重绘都吃一遍 IO。定位不到（书目录已被外部删除、文件管理器起不来）时给
+  /// 一句提示，不静默——静默的「打开文件位置」和坏掉的按钮无法区分。
+  Future<void> _openBookFileLocation(String bookKey) async {
+    Navigator.pop(context);
+    final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);
+    final bool revealed = row != null && await revealBookLocation(row);
+    if (revealed || !mounted) return;
+    FushiToast.show(
+      msg: t.book_file_location_failed,
+      severity: ToastSeverity.error,
+    );
+  }
 
   /// 单卡「书 ↔ 漫画」转化：重建目标格式的磁盘产物，再把 `EpubBooks` 行指过去。
   ///

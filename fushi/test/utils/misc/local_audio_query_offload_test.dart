@@ -38,19 +38,30 @@ void main() {
           dbSrc, contains('static Future<void> ensureIndexes(String dbPath)'));
     });
 
-    test('CREATE INDEX DDL only lives in the _indexDdls const, nowhere else',
-        () {
-      final int ddlConst = dbSrc.indexOf('_indexDdls = <String>[');
-      final int ensureStart =
-          dbSrc.indexOf('static Future<void> ensureIndexes');
-      expect(ddlConst, greaterThanOrEqualTo(0));
-      expect(ensureStart, greaterThan(ddlConst));
+    test(
+        'CREATE INDEX DDL only lives in the index-building region, nowhere '
+        'else', () {
+      // BUG-1667：索引真相源从裸 DDL 串常量（`_indexDdls`）改成「表 + 列」spec
+      // （`_indexSpecs`），DDL 现在由 `_ensureIndexesImpl` 按缺失项拼出来——因为
+      // `CREATE INDEX IF NOT EXISTS` 只按**索引名**判存在，判不了「真库已有同列
+      // 异名索引」。本断言的意图不变：DDL 只许出现在建索引区段里，查询路径
+      // （queryMeta / extractBlob）一律只读、零 DDL。
+      final int specConst = dbSrc.indexOf('_indexSpecs = <(');
+      final int queryStart =
+          dbSrc.indexOf('static ({String file, String source})? queryMeta(');
+      expect(specConst, greaterThanOrEqualTo(0),
+          reason: '索引真相源必须是单一常量 _indexSpecs');
+      expect(queryStart, greaterThan(specConst));
       final Iterable<Match> hits = 'CREATE INDEX'.allMatches(dbSrc);
-      expect(hits.length, 2, reason: '恰好两条索引 DDL（entries + android）');
+      expect(hits.isNotEmpty, isTrue);
       for (final Match m in hits) {
-        expect(m.start, inInclusiveRange(ddlConst, ensureStart),
+        expect(m.start, inInclusiveRange(specConst, queryStart),
             reason: '查询路径（queryMeta/extractBlob）不得再有任何 DDL');
       }
+      // 仍然恰好两条索引（entries + android），别悄悄多塞。
+      expect(
+          'name:'.allMatches(_slice(dbSrc, '_indexSpecs = <(', ';')).length, 2,
+          reason: '恰好两条索引 spec（entries + android）');
     });
 
     test('queryMeta opens readOnly and has no DDL / no readWrite', () {

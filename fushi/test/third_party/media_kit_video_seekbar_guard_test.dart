@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/workspace_pubspec.dart';
 
 /// BUG-235 source-scan guard: the vendored `media_kit_video` desktop seek bar
 /// must keep its use-after-dispose guards.
@@ -35,14 +36,12 @@ void main() {
       'src/controls/material.dart';
 
   test('vendored media_kit_video override is wired in pubspec', () {
-    final String pubspec = File('pubspec.yaml').readAsStringSync();
-    final RegExp override = RegExp(
-      r'media_kit_video:\s*\n\s*path:\s*\.\./third_party/media_kit_video',
-    );
+    final WorkspacePubspec ws = WorkspacePubspec.load();
     expect(
-      override.hasMatch(pubspec),
+      ws.isVendored('media_kit_video', 'third_party/media_kit_video'),
       isTrue,
-      reason: 'dependency_overrides must point media_kit_video at '
+      reason:
+          'dependency_overrides must point media_kit_video at '
           '../third_party/media_kit_video (BUG-235). Without it the pub.dev '
           'package returns and the seek bar onPointerUp UAF crash comes back.',
     );
@@ -60,8 +59,11 @@ void main() {
     /// `if (!mounted) return;` elsewhere in the file.
     String bodyOf(String name) {
       final int sig = source.indexOf(RegExp('void\\s+$name\\s*\\('));
-      expect(sig, isNonNegative,
-          reason: 'expected a `void $name(` handler in $controlsPath');
+      expect(
+        sig,
+        isNonNegative,
+        reason: 'expected a `void $name(` handler in $controlsPath',
+      );
       final int open = source.indexOf('{', sig);
       expect(open, isNonNegative);
       int depth = 0;
@@ -78,8 +80,9 @@ void main() {
 
     test('onPointerUp returns early when unmounted', () {
       expect(
-        bodyOf('onPointerUp')
-            .contains(RegExp(r'if\s*\(\s*!mounted\s*\)\s*return')),
+        bodyOf(
+          'onPointerUp',
+        ).contains(RegExp(r'if\s*\(\s*!mounted\s*\)\s*return')),
         isTrue,
         reason:
             'onPointerUp dereferences controller(context); it must bail out '
@@ -90,10 +93,12 @@ void main() {
 
     test('onPointerMove returns early when unmounted', () {
       expect(
-        bodyOf('onPointerMove')
-            .contains(RegExp(r'if\s*\(\s*!mounted\s*\)\s*return')),
+        bodyOf(
+          'onPointerMove',
+        ).contains(RegExp(r'if\s*\(\s*!mounted\s*\)\s*return')),
         isTrue,
-        reason: 'onPointerMove also dereferences controller(context); it must '
+        reason:
+            'onPointerMove also dereferences controller(context); it must '
             'bail out with `if (!mounted) return;` (BUG-235).',
       );
     });
@@ -110,8 +115,11 @@ void main() {
     /// the mobile `material.dart`.
     String bodyOf(String name) {
       final int sig = source.indexOf(RegExp('void\\s+$name\\s*\\('));
-      expect(sig, isNonNegative,
-          reason: 'expected a `void $name(` handler in $mobileControlsPath');
+      expect(
+        sig,
+        isNonNegative,
+        reason: 'expected a `void $name(` handler in $mobileControlsPath',
+      );
       final int open = source.indexOf('{', sig);
       expect(open, isNonNegative);
       int depth = 0;
@@ -128,10 +136,12 @@ void main() {
 
     test('onPointerUp returns early when unmounted', () {
       expect(
-        bodyOf('onPointerUp')
-            .contains(RegExp(r'if\s*\(\s*!mounted\s*\)\s*return')),
+        bodyOf(
+          'onPointerUp',
+        ).contains(RegExp(r'if\s*\(\s*!mounted\s*\)\s*return')),
         isTrue,
-        reason: 'mobile onPointerUp dereferences controller(context); it must '
+        reason:
+            'mobile onPointerUp dereferences controller(context); it must '
             'bail out with `if (!mounted) return;` before that, or the '
             'disposed-State crash (BUG-566, mobile mirror of BUG-235) returns.',
       );
@@ -139,10 +149,12 @@ void main() {
 
     test('onPointerMove returns early when unmounted', () {
       expect(
-        bodyOf('onPointerMove')
-            .contains(RegExp(r'if\s*\(\s*!mounted\s*\)\s*return')),
+        bodyOf(
+          'onPointerMove',
+        ).contains(RegExp(r'if\s*\(\s*!mounted\s*\)\s*return')),
         isTrue,
-        reason: 'mobile onPointerMove also dereferences controller(context); '
+        reason:
+            'mobile onPointerMove also dereferences controller(context); '
             'it must bail out with `if (!mounted) return;` (BUG-566).',
       );
     });
@@ -161,7 +173,8 @@ void main() {
           RegExp(r'void Function\(double\? fraction\)\?\s+onHoverPosition'),
         ),
         isTrue,
-        reason: 'MaterialDesktopVideoControlsThemeData must keep the '
+        reason:
+            'MaterialDesktopVideoControlsThemeData must keep the '
             'onHoverPosition field (TODO-669); without it the host can no '
             'longer drive the progress-bar thumbnail preview.',
       );
@@ -171,7 +184,8 @@ void main() {
       expect(
         source.contains(
           RegExp(
-              r'onHoverPosition:\s*onHoverPosition \?\? this\.onHoverPosition'),
+            r'onHoverPosition:\s*onHoverPosition \?\? this\.onHoverPosition',
+          ),
         ),
         isTrue,
         reason: 'copyWith must propagate onHoverPosition (TODO-669).',
@@ -186,7 +200,8 @@ void main() {
       expect(
         calls.length,
         greaterThanOrEqualTo(2),
-        reason: 'onHover and onEnter must surface the hover fraction to the '
+        reason:
+            'onHover and onEnter must surface the hover fraction to the '
             'host (TODO-669).',
       );
     });
@@ -195,7 +210,8 @@ void main() {
       expect(
         source.contains(RegExp(r'widget\.onHoverPosition\?\.call\(null\)')),
         isTrue,
-        reason: 'onExit must clear the host thumbnail preview with null '
+        reason:
+            'onExit must clear the host thumbnail preview with null '
             '(TODO-669).',
       );
     });
@@ -206,7 +222,8 @@ void main() {
           RegExp(r'onHoverPosition:\s*_theme\(context\)\s*\.onHoverPosition'),
         ),
         isTrue,
-        reason: 'The seek bar must be constructed with the theme '
+        reason:
+            'The seek bar must be constructed with the theme '
             "onHoverPosition (TODO-669), or the host's callback never fires.",
       );
     });
@@ -226,13 +243,15 @@ void main() {
       expect(
         desktopBody.contains('onHoverPosition: _onSeekBarHover'),
         isTrue,
-        reason: 'desktop controls theme must wire onHoverPosition to '
+        reason:
+            'desktop controls theme must wire onHoverPosition to '
             '_onSeekBarHover (TODO-669).',
       );
       expect(
         mobileBody.contains('onHoverPosition'),
         isFalse,
-        reason: 'mobile controls theme must NOT wire onHoverPosition — touch '
+        reason:
+            'mobile controls theme must NOT wire onHoverPosition — touch '
             'has no hover, mobile stays unchanged (TODO-669).',
       );
     });
@@ -244,7 +263,8 @@ void main() {
       expect(
         layoutSrc.contains('_buildThumbnailPreviewOverlay(controller)'),
         isTrue,
-        reason: 'the thumbnail preview overlay must ride the controls Stack '
+        reason:
+            'the thumbnail preview overlay must ride the controls Stack '
             '(TODO-669).',
       );
     });
@@ -252,16 +272,15 @@ void main() {
 
   // BUG-796 后续：进度条 seek 落点在途保护补丁（onSeekEnd(target)）必须在 re-vendor 后存活。
   // 缺任一环，进度条拖到无字幕段（尤其暂停）旧字幕不消失的 bug 复发。
-  group(
-      'BUG-796 follow-up: seek-bar onSeekEnd(target) patch survives re-vendor',
-      () {
+  group('BUG-796 follow-up: seek-bar onSeekEnd(target) patch survives re-vendor', () {
     for (final String path in <String>[controlsPath, mobileControlsPath]) {
       test('$path theme data class exposes onSeekEnd(Duration) field', () {
         final String source = File(path).readAsStringSync();
         expect(
           source.contains(RegExp(r'void Function\(Duration\)\?\s+onSeekEnd')),
           isTrue,
-          reason: 'the theme data class must expose a '
+          reason:
+              'the theme data class must expose a '
               'void Function(Duration)? onSeekEnd field (BUG-796 follow-up); '
               'without it the host cannot learn the progress-bar seek target.',
         );
@@ -270,8 +289,9 @@ void main() {
       test('$path copyWith carries onSeekEnd', () {
         final String source = File(path).readAsStringSync();
         expect(
-          source
-              .contains(RegExp(r'onSeekEnd:\s*onSeekEnd \?\? this\.onSeekEnd')),
+          source.contains(
+            RegExp(r'onSeekEnd:\s*onSeekEnd \?\? this\.onSeekEnd'),
+          ),
           isTrue,
           reason: 'copyWith must propagate onSeekEnd (BUG-796 follow-up).',
         );
@@ -282,46 +302,63 @@ void main() {
         // The seek-commit point passes the target Duration (duration * slider).
         expect(
           source.contains(
-              RegExp(r'widget\.onSeekEnd\?\.call\(duration \* slider\)')),
+            RegExp(r'widget\.onSeekEnd\?\.call\(duration \* slider\)'),
+          ),
           isTrue,
-          reason: 'the seek bar onPointerUp must call '
+          reason:
+              'the seek bar onPointerUp must call '
               'onSeekEnd(duration * slider) so the host gets the destination '
               '(BUG-796 follow-up).',
         );
         // The widget instantiation forwards the theme callback with the target.
         expect(
           source.contains(
-              RegExp(r'_theme\(context\)\s*\.onSeekEnd\s*\?\.call\(target\)')),
+            RegExp(r'_theme\(context\)\s*\.onSeekEnd\s*\?\.call\(target\)'),
+          ),
           isTrue,
-          reason: 'the seek bar must be constructed forwarding '
+          reason:
+              'the seek bar must be constructed forwarding '
               '_theme(context).onSeekEnd(target) (BUG-796 follow-up), or the '
               "host's callback never fires.",
         );
       });
     }
 
-    test('host wires onSeekEnd -> notifyExternalSeek in BOTH control themes',
-        () {
-      final String themeSrc = File(
-        'lib/src/pages/implementations/video_fushi/controls_theme.part.dart',
-      ).readAsStringSync();
-      final int desktopStart = themeSrc.indexOf('_desktopControlsTheme(');
-      final int mobileStart = themeSrc.indexOf('_mobileControlsTheme(');
-      expect(desktopStart, isNonNegative);
-      expect(mobileStart, isNonNegative);
-      final String desktopBody = themeSrc.substring(desktopStart, mobileStart);
-      final String mobileBody = themeSrc.substring(mobileStart);
-      final RegExp wiring = RegExp(
-        r'onSeekEnd:\s*\(Duration target\)\s*=>\s*'
-        r'controller\.notifyExternalSeek\(target\.inMilliseconds\)',
-      );
-      expect(wiring.hasMatch(desktopBody), isTrue,
-          reason: 'desktop controls theme must wire onSeekEnd to '
-              'notifyExternalSeek (BUG-796 follow-up).');
-      expect(wiring.hasMatch(mobileBody), isTrue,
-          reason: 'mobile controls theme must wire onSeekEnd to '
+    test(
+      'host wires onSeekEnd -> notifyExternalSeek in BOTH control themes',
+      () {
+        final String themeSrc = File(
+          'lib/src/pages/implementations/video_fushi/controls_theme.part.dart',
+        ).readAsStringSync();
+        final int desktopStart = themeSrc.indexOf('_desktopControlsTheme(');
+        final int mobileStart = themeSrc.indexOf('_mobileControlsTheme(');
+        expect(desktopStart, isNonNegative);
+        expect(mobileStart, isNonNegative);
+        final String desktopBody = themeSrc.substring(
+          desktopStart,
+          mobileStart,
+        );
+        final String mobileBody = themeSrc.substring(mobileStart);
+        final RegExp wiring = RegExp(
+          r'onSeekEnd:\s*\(Duration target\)\s*=>\s*'
+          r'controller\.notifyExternalSeek\(target\.inMilliseconds\)',
+        );
+        expect(
+          wiring.hasMatch(desktopBody),
+          isTrue,
+          reason:
+              'desktop controls theme must wire onSeekEnd to '
+              'notifyExternalSeek (BUG-796 follow-up).',
+        );
+        expect(
+          wiring.hasMatch(mobileBody),
+          isTrue,
+          reason:
+              'mobile controls theme must wire onSeekEnd to '
               'notifyExternalSeek (BUG-796 follow-up) — progress-bar drag '
-              'affects touch too.');
-    });
+              'affects touch too.',
+        );
+      },
+    );
   });
 }

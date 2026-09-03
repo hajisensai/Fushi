@@ -1,6 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
 import 'package:fushi/utils.dart';
 
 /// 库页视图种类：一个顶层 tab 内部的几个平级视图。
@@ -11,7 +12,12 @@ enum MediaLibraryViewKind {
   /// 已入库条目（书架 / 媒体库）。
   library,
 
-  /// 在线源浏览（漫画的 mokuro.moe 目录；将来小说源同位）。
+  /// 内容发现（漫画的 AniList 趋势/热门横滑行；条目是元数据，点开再匹配来源）。
+  discover,
+
+  /// 在线源浏览（书 tab 的统一发现页；视频同位）。**漫画已不再使用**：它的在线
+  /// 来源清单已并进 [discover]，两个 tab 的文案都叫「发现」曾让用户分不清
+  /// （BUG-1710）。
   browse,
 
   /// 来源管理：本地扫描根 + 在线源设置 + 漫画扩展（扩展本身就是「来源」，
@@ -48,20 +54,37 @@ class MediaLibraryViewSpec {
 /// 调用方自行回退（如直接开导入对话框）。
 class MediaLibraryShellScope extends InheritedWidget {
   const MediaLibraryShellScope({
+    required this.kinds,
     required this.select,
     required super.child,
     super.key,
   });
 
+  /// 本壳**真正声明了**哪些视图。各域只声明自己有的东西（见 [MediaLibraryViewKind]），
+  /// 所以「壳在」不等于「这个视图在」——判据必须是后者，见 [actionFor]。
+  final Set<MediaLibraryViewKind> kinds;
+
   /// 切到指定视图；壳没有该视图时静默忽略。
+  ///
+  /// **导航所有权在壳这边**：壳上面压着从壳里推出去的页面（全源搜索页 / 发现详情页）
+  /// 时，本方法先把它们弹掉再切视图，调用方不必再遵守「先 pop 再 select」这条口头
+  /// 契约——那条契约只在「调用页正好是壳上面唯一一层路由」时才成立，第二个调用点
+  /// 就不成立了（BUG-1871）。
   final void Function(MediaLibraryViewKind kind) select;
+
+  /// 切到 [kind] 的动作；本壳没有该视图时返回 null。
+  ///
+  /// 空态引导按钮的唯一正确判据：[select] 对不存在的视图是静默忽略，拿「壳在不在」
+  /// 当判据会渲染出一个点了什么都不发生的按钮。
+  VoidCallback? actionFor(MediaLibraryViewKind kind) =>
+      kinds.contains(kind) ? () => select(kind) : null;
 
   static MediaLibraryShellScope? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<MediaLibraryShellScope>();
 
   @override
   bool updateShouldNotify(MediaLibraryShellScope oldWidget) =>
-      select != oldWidget.select;
+      select != oldWidget.select || !setEquals(kinds, oldWidget.kinds);
 }
 
 /// 库页视图导航壳：在一个顶层 tab 内切换 [MediaLibraryViewSpec] 声明的若干视图。
@@ -100,7 +123,15 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
   void _select(MediaLibraryViewKind kind) {
     final int index = widget.views
         .indexWhere((MediaLibraryViewSpec spec) => spec.kind == kind);
-    if (index < 0 || index == _currentIndex) return;
+    if (index < 0) return;
+    // 「回到壳」的导航所有权收在这一处：切视图发生在壳里，壳上面压着的路由不弹掉
+    // 用户就什么都看不见。以本壳自己的路由为界一次弹到底，与调用方压了几层无关
+    // （全源搜索页从「发现」直接推是一层，从「发现详情页」推是两层）。
+    final ModalRoute<Object?>? route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) {
+      Navigator.of(context).popUntil((Route<dynamic> above) => above == route);
+    }
+    if (index == _currentIndex) return;
     setState(() {
       _currentIndex = index;
       _visited.add(index);
@@ -122,16 +153,28 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
   @override
   Widget build(BuildContext context) {
     final List<MediaLibraryViewSpec> views = widget.views;
+    final Set<MediaLibraryViewKind> kinds = <MediaLibraryViewKind>{
+      for (final MediaLibraryViewSpec spec in views) spec.kind,
+    };
     if (views.length < 2) {
       return MediaLibraryShellScope(
+        kinds: kinds,
         select: _select,
         child: views.first.builder(context, const SizedBox.shrink()),
       );
     }
     final Widget navigation = _buildNavigation(views);
     return MediaLibraryShellScope(
+      kinds: kinds,
       select: _select,
-      child: Stack(
+      // 触屏横滑切到相邻视图，序即 [views] 声明序（与分段条同一份真相）。
+      child: SectionSwipeNavigator<MediaLibraryViewKind>(
+        sections: <MediaLibraryViewKind>[
+          for (final MediaLibraryViewSpec spec in views) spec.kind,
+        ],
+        selected: views[_currentIndex].kind,
+        onSelect: _select,
+        child: Stack(
         children: <Widget>[
           for (int i = 0; i < views.length; i++)
             if (_visited.contains(i))
@@ -139,42 +182,44 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
                 offstage: i != _currentIndex,
                 child: TickerMode(
                   enabled: i == _currentIndex,
-                  child: views[i].builder(
-                    context,
-                    i == _currentIndex ? navigation : const SizedBox.shrink(),
+                  // [Offstage] 只关 Flutter 自己的 hitTest；desktop_drop 是进程级
+                  // 全局广播，只按各 drop target 的 `RenderBox.paintBounds` 过滤，
+                  // 而隐藏的保活视图仍以完整约束布局（全屏大小），于是**每个访问过
+                  // 的子视图都会收到同一次 OS drop**。外层 home-shell 的作用域只
+                  // 回答「书/漫画 tab 可见吗」，用户停在同一个 tab 的发现视图时答案
+                  // 照样是 true —— 隐藏的书架仍会把拖入的文件夹当漫画导入。
+                  // 判据与上面 `offstage:` 用的是同一个表达式，且写成回调、在 drop
+                  // 落地那一刻求值。
+                  child: DropSurfaceScope(
+                    isActive: () => i == _currentIndex,
+                    child: views[i].builder(
+                      context,
+                      i == _currentIndex ? navigation : const SizedBox.shrink(),
+                    ),
                   ),
                 ),
               ),
         ],
+        ),
       ),
     );
   }
 
   Widget _buildNavigation(List<MediaLibraryViewSpec> views) {
     final MediaLibraryViewKind selected = views[_currentIndex].kind;
-    final List<MediaLibraryViewKind> values = views
-        .map((MediaLibraryViewSpec spec) => spec.kind)
-        .toList(growable: false);
-    // 分段条必须包 [FushiAdjustableSegmented]：否则它只是一堆原生按钮，只遍历已注册
-    // target 的方向焦点控制器会整个跳过（手柄/键盘用户切不了视图）。包上后是单个焦点
-    // 停靠点，左右方向键原地切视图。
-    return FushiAdjustableSegmented<MediaLibraryViewKind>(
-      values: values,
+    // 分段条走库页共享的 [LibrarySectionTabs]（内含 [FushiAdjustableSegmented]：
+    // 单个焦点停靠点，左右方向键原地切视图，手柄/键盘可达）。
+    return LibrarySectionTabs<MediaLibraryViewKind>(
+      tabs: <LibrarySectionTab<MediaLibraryViewKind>>[
+        for (final MediaLibraryViewSpec spec in views)
+          LibrarySectionTab<MediaLibraryViewKind>(
+            value: spec.kind,
+            label: spec.label,
+          ),
+      ],
       selected: selected,
       onChanged: _select,
       focusIdPrefix: widget.focusIdPrefix,
-      focusId: FushiFocusId('${widget.focusIdPrefix}-sections'),
-      child: FushiSegmentedStrip<MediaLibraryViewKind>(
-        segments: <ButtonSegment<MediaLibraryViewKind>>[
-          for (final MediaLibraryViewSpec spec in views)
-            ButtonSegment<MediaLibraryViewKind>(
-              value: spec.kind,
-              label: Text(spec.label),
-            ),
-        ],
-        selected: selected,
-        onChanged: _select,
-      ),
     );
   }
 }

@@ -26,8 +26,23 @@ class AudiobookPlayerController extends ChangeNotifier {
   StreamSubscription<bool>? _playingSub;
   StreamSubscription<void>? _noisySub;
 
-  /// 主播放器的 play 激活串行尾。退出路径必须等激活完成后再采样位置和 stop，
-  /// 否则 just_audio 的平台切换会出现 play→stop 交错。
+  /// 主播放器的 play 激活串行尾：只负责**串行化并发 `play()`**，让两次激活不交错。
+  ///
+  /// **停止路径绝不允许 `await` 本字段**（守卫测试
+  /// `audiobook_stop_darwin_play_semantics_test.dart`）。它挂的是
+  /// `AudioPlayer.play()` 返回的 Future，而该 Future 的完成时机**因后端而异**：
+  ///
+  /// * media_kit（Windows / Linux）：平台接受 play 请求即完成。
+  /// * just_audio 原生 Darwin（macOS / iOS 的 AVQueuePlayer）与 Android
+  ///   （ExoPlayer）：把 play 的平台回调**挂起到 pause / complete / stop 才触发**
+  ///   （见 `just_audio/darwin/Classes/AudioPlayer.m` 的 `_playResult`：`play:`
+  ///   只把 `FlutterResult` 存起来，由 `pause` / `complete` / `stop` 释放）。
+  ///
+  /// 于是「播放中退出」时，若 [_stopPlaybackOnce] 先 `await` 本字段，就与**唯一能
+  /// 解开它的** `_player.stop()` 形成循环等待：stop 永不返回、音频一路播到整本
+  /// 结束；而 `AudiobookSession._stopInternal` 早已同步清空 `_book` / `_controller`
+  /// 并 notify，播放条随之消失、controller 沦为孤儿——用户除杀进程外没有任何停止
+  /// 入口。[_stopPlaybackOnce] 因此改为「先止声、后落库」，让 stop 成为解锁者。
   Future<void> _playActivationTail = Future<void>.value();
 
   /// 位置写入串行尾。周期写、后台 flush、最终 stop flush 共用一条队列，确保旧写入
@@ -881,8 +896,15 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   /// 开始播放。
   ///
-  /// 等待 just_audio 的平台 play 请求被接受。调用者仍可 fire-and-forget 本方法，
-  /// 但控制器会保留激活 Future，令 [stopPlayback] 在采样/停止前等待它 settle。
+  /// 等待 just_audio 的平台 play 请求被接受。调用者仍可 fire-and-forget 本方法。
+  ///
+  /// ⚠️ **[stopPlayback] 绝不能等这个 Future settle**（BUG-1736）：just_audio 的
+  /// 原生 Darwin(AVQueuePlayer) 与 Android(ExoPlayer) 后端把 play 的平台回调**挂起
+  /// 到 pause / complete / stop 才触发**，于是「stop 等 play、而唯一能解开 play 的
+  /// 正是 stop 自己」构成循环等待死锁，音频一路播到整本结束且无法手动关闭。
+  /// 停止路径现在是同步采样位置 → stop → 落库，不再 await 任何激活 Future；
+  /// BUG-1240 要求的「落库值取自 stop 归零之前」由同步采样满足。
+  /// 这段文档此前写的正好相反，是当初把死锁写进来的直接来源，别再改回去。
   Future<void> play() async {
     // 对齐 Sasayaki：首次 play 之后才允许跨章自动翻页。打开书 / 恢复
     // 位置阶段 cue 与 reader 当前章不一致是常态，不应在用户没按播放时
@@ -1734,22 +1756,37 @@ class AudiobookPlayerController extends ChangeNotifier {
       firstStack ??= stack;
     }
 
-    // BUG-1240：先等任何未 await 的 play 平台激活 settle，才允许采样与 stop。
-    try {
-      await _playActivationTail;
-    } catch (error, stack) {
-      remember(error, stack);
+    // BUG-1240 的不变式是「落库的位置必须是 stop 归零**之前**的位置」。位置采样
+    // （`_player.position`）是**同步**的，所以在这里取值就已经满足该不变式，不需要
+    // ——也绝不能——先 await 任何在途 Future。
+    //
+    // 尤其不能 `await _playActivationTail`：那会与下面的 `_player.stop()` 形成循环
+    // 等待（后端差异与后果见 [_playActivationTail] 的文档）。顺序因此定为
+    // 「同步采样 → 发出落库写 → 先止声 → 再 await 落库」：stop 反过来成为解开在途
+    // play 的那一方，且音频停得更快（不被一次数据库写入挡在前面）。
+    final String? uid = _audiobook?.bookKey;
+    final int? sampledPosMs =
+        uid == null ? null : _player.position.inMilliseconds;
+
+    // 位置写必须在 `_player.stop()` **之前发出**（这里只建链，不 await），真正的
+    // await 放到 stop 之后 —— 两个位置都不能挪：
+    //   * 在 stop 之前 **发出**：写的是 stop 归零前采样到的值（BUG-1240），且不让
+    //     一次数据库写挡在止声前面。
+    //   * 在 stop 之后 **await**：保证本方法返回时落库已完成。
+    //   * 但**绝不能把 `_enqueuePositionWrite` 的调用本身挪到 stop 之后**。
+    //     `_enqueuePositionWrite` 是往 `_positionWriteTail` 上 `.then()` 接链；在
+    //     `_player.stop()` 之后才接链会挂死 —— `now_listening_mini_bar_exit_flash_test`
+    //     的三条用例会各自吃满 10 分钟超时（该测试用 `tester.runAsync` 在真实异步区
+    //     跑 stop，而尾链此前是在 widget 测试的 FakeAsync 时钟下建立的；stop 之后再
+    //     往上接，新链就永远等不到那个不会被推进的时钟）。这条是实测结论，别凭
+    //     「反正最后都要 await」把两者合并回一处。
+    Future<void>? pendingWrite;
+    if (uid != null && sampledPosMs != null) {
+      _lastSavedWholeSec = sampledPosMs ~/ 1000;
+      pendingWrite = _enqueuePositionWrite(uid, sampledPosMs);
     }
 
-    // 捕获 live position → 等所有旧写入 → 写穿最终值。之后绝不再采样 position，
-    // 因为 just_audio stop 会归零。
-    try {
-      await flushPosition();
-    } catch (error, stack) {
-      remember(error, stack);
-    }
-
-    // 即使 play 或持久层失败，也必须尽力停掉两个播放器；错误在资源收束后再抛。
+    // 即使持久层失败，也必须尽力停掉两个播放器；错误在资源收束后再抛。
     try {
       final Future<void> Function()? stopForTesting =
           debugStopMainPlayerForTesting;
@@ -1763,6 +1800,12 @@ class AudiobookPlayerController extends ChangeNotifier {
       } catch (error, stack) {
         remember(error, stack);
       }
+    }
+
+    try {
+      await (pendingWrite ?? _positionWriteTail);
+    } catch (error, stack) {
+      remember(error, stack);
     }
 
     final Object? error = firstError;

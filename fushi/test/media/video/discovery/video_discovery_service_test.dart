@@ -594,94 +594,7 @@ void main() {
       expect(second.requestedPages, <int>[1, 1, 2]);
     });
 
-    test('post-filters and sorts Bangumi metadata search summaries', () async {
-      VideoDiscoveryItem bangumiItem({
-        required String id,
-        required String title,
-        required List<String> genres,
-        required List<String> countries,
-        required int votes,
-      }) =>
-          VideoDiscoveryItem.fromMetadataWork(
-            work: VideoMetadataWork(
-              provider: VideoMetadataProviderKind.bangumi,
-              kind: VideoMetadataMediaKind.tv,
-              title: title,
-              year: 2025,
-              rating: 8,
-              ratingVotes: votes,
-              genres: genres,
-              countries: countries,
-              ids: <VideoMetadataId>[
-                VideoMetadataId(
-                  type: 'bangumi',
-                  value: id,
-                  isDefault: true,
-                ),
-              ],
-            ),
-            discoveryCategory: VideoDiscoveryCategory.anime,
-          );
-
-      final _FakeProvider bangumi = _FakeProvider(
-        id: 'bangumi',
-        priority: 1,
-        supportsPaging: false,
-        response: ProviderBatchResult<VideoDiscoveryPage>.success(
-          <VideoDiscoveryPage>[
-            VideoDiscoveryPage(
-              items: <VideoDiscoveryItem>[
-                bangumiItem(
-                  id: '1',
-                  title: 'Low popularity',
-                  genres: const <String>['Sci-Fi'],
-                  countries: const <String>['Japan'],
-                  votes: 10,
-                ),
-                bangumiItem(
-                  id: '2',
-                  title: 'Wrong genre',
-                  genres: const <String>['Comedy'],
-                  countries: const <String>['JP'],
-                  votes: 1000,
-                ),
-                bangumiItem(
-                  id: '3',
-                  title: 'High popularity',
-                  genres: const <String>['Science Fiction'],
-                  countries: const <String>['JP'],
-                  votes: 100,
-                ),
-              ],
-              page: 1,
-              hasMore: false,
-            ),
-          ],
-        ),
-      );
-      final VideoDiscoveryService service = VideoDiscoveryService(
-        providers: <VideoDiscoveryProvider>[bangumi],
-      );
-
-      final ProviderBatchResult<VideoDiscoveryPage> result = await service.load(
-        const VideoDiscoveryRequest(
-          category: VideoDiscoveryCategory.anime,
-          query: 'Test',
-          year: 2025,
-          genre: 'Sci-Fi',
-          region: 'JP',
-          sort: VideoDiscoverySort.popularity,
-        ),
-      );
-
-      expect(
-        result.items.single.items
-            .map((VideoDiscoveryItem item) => item.reference.title),
-        <String>['High popularity', 'Low popularity'],
-      );
-    });
-
-    test('hydrates AniList details and supplements them from Bangumi',
+    test('hydrates AniList details without probing a legacy Bangumi id',
         () async {
       final VideoMetadataWork anilistWork = VideoMetadataWork(
         provider: VideoMetadataProviderKind.anilist,
@@ -742,12 +655,12 @@ void main() {
       final VideoMetadataWork? result = await service.loadDetails(item);
 
       expect(result?.provider, VideoMetadataProviderKind.anilist);
-      expect(result?.plot, 'Bangumi summary');
-      expect(result?.aliases, containsAll(<String>['中文标题', 'Bangumi Alias']));
-      expect(result?.credits.single.person.name, 'Voice Actor');
+      expect(result?.plot, isNull);
+      expect(result?.aliases, isEmpty);
+      expect(result?.credits, isEmpty);
       expect(
         result?.ids.map((VideoMetadataId id) => id.type),
-        containsAll(<String>['anilist', 'bangumi']),
+        <String>['anilist'],
       );
     });
   });

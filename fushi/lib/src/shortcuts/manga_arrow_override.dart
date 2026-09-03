@@ -31,7 +31,32 @@ ShortcutAction? resolveMangaArrowPageTurn({
   final bool isLeft = key == LogicalKeyboardKey.arrowLeft;
   final bool isRight = key == LogicalKeyboardKey.arrowRight;
   if (!isLeft && !isRight) return null;
-  // rtl（日漫默认）：下一页在左 → 左键前进。ltr：下一页在右 → 右键前进。
+  return _directionalPageTurn(isLeft: isLeft, rtl: rtl);
+}
+
+/// 漫画手柄 D-pad 左/右的跨页方向校正——[resolveMangaArrowPageTurn] 的手柄同构。
+///
+/// 语义完全一致：注册表存**页序语义**，dpadLeft/dpadRight 的物理朝向按书的跨页
+/// 方向（日漫默认 rtl）翻成 forward/backward；只在该按钮**当前仍绑定到翻页动作**时
+/// 介入（[boundAction] 判据），用户改绑/解绑后完全让路。RB/LB 等非方向按钮不参与
+/// 校正——它们与 PageDown/空格同属页序语义，任何排版下都一致。
+ShortcutAction? resolveMangaDpadPageTurn({
+  required GamepadButton button,
+  required bool rtl,
+  required ShortcutAction? boundAction,
+}) {
+  if (boundAction != ShortcutAction.mangaPageForward &&
+      boundAction != ShortcutAction.mangaPageBackward) {
+    return null;
+  }
+  final bool isLeft = button == GamepadButton.dpadLeft;
+  final bool isRight = button == GamepadButton.dpadRight;
+  if (!isLeft && !isRight) return null;
+  return _directionalPageTurn(isLeft: isLeft, rtl: rtl);
+}
+
+/// 物理左/右 → 页序动作。rtl（日漫默认）：下一页在左 → 左 = 前进。
+ShortcutAction _directionalPageTurn({required bool isLeft, required bool rtl}) {
   final bool leftIsForward = rtl;
   if (isLeft) {
     return leftIsForward

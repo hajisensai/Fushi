@@ -96,6 +96,7 @@ void main() {
     String? coverPath,
     DateTime? completedAt,
     int lastPositionMs = 0,
+    int? lastPlayedAt,
   }) async {
     await db.upsertVideoBook(VideoBooksCompanion(
       bookUid: Value(uid),
@@ -104,10 +105,17 @@ void main() {
       coverPath: Value(coverPath),
       completedAt: Value(completedAt),
       lastPositionMs: Value(lastPositionMs),
+      lastPlayedAt: Value(lastPlayedAt),
       importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
     ));
   }
 
+  /// 建合集并给它一条 **AniDB 主身份**。
+  ///
+  /// 系列墙的入墙资格是「有 AniDB primary identity 的规范作品」（
+  /// `aniDbScrapedVideoCollectionIds()`，见 video_library_series_structure_guard）。
+  /// 本文件测的是封面借用链与角标，不是入墙资格；不种身份的话每条用例都会停在
+  /// 「合集卡根本没渲染」上，测不到它真正要守的东西。
   Future<int> seedCollection(List<String> uids, {String name = '某番剧'}) async {
     final int cid = await db.createMediaCollection(
       name,
@@ -116,6 +124,26 @@ void main() {
     for (final String uid in uids) {
       await db.addToCollection(cid, MediaKind.video, uid);
     }
+    final int workId = await db.upsertVideoMetadataWork(
+      VideoMetadataWorksCompanion.insert(
+        mediaType: 'tv',
+        title: name,
+        collectionId: Value<int?>(cid),
+        updatedAt: DateTime(2026, 1, 1).millisecondsSinceEpoch,
+      ),
+    );
+    await db.replaceVideoMetadataProviderIdentities(
+      workId: workId,
+      identities: <VideoMetadataProviderIdentitiesCompanion>[
+        VideoMetadataProviderIdentitiesCompanion.insert(
+          identityKey: 'work:$workId:anidb',
+          provider: 'anidb',
+          externalId: 'anidb-$cid',
+          isPrimary: const Value<bool>(true),
+          updatedAt: DateTime(2026, 1, 1).millisecondsSinceEpoch,
+        ),
+      ],
+    );
     return cid;
   }
 
@@ -344,6 +372,66 @@ void main() {
       ),
       findsOneWidget,
       reason: '全部看完 → 「已看完 N/N」',
+    );
+  });
+
+  // BUG-1740：卡片进度行与详情页 hero 必须同一套续播答案。锚点时刻要认行级
+  // lastPlayedAt（互联对端回灌只写它、不产生本机统计行）——此前卡片只读本机
+  // 统计时钟，锚点退化成「位置最靠后的有痕迹成员」，与详情页（continueMemberIndex
+  // 按 lastPlayedAt 选锚）各说各话，出现「外面第8集、进去第9集」。
+  testWidgets('BUG-1740 续播标签认行级 lastPlayedAt，与详情页同锚点',
+      (WidgetTester tester) async {
+    // 用户在对端刚回头看了第1集（lastPlayedAt 最新）；第3集有更早的半截进度。
+    // 旧实现（无统计行时取位置最靠后的痕迹成员）会答「第3集」；正确答案与
+    // 详情页一致 = 锚在最近播放的第1集。
+    await seedEpisode(
+      'video/ep1',
+      '第1集',
+      lastPositionMs: 1000,
+      lastPlayedAt: DateTime(2026, 2, 2).millisecondsSinceEpoch,
+    );
+    await seedEpisode(
+      'video/ep2',
+      '第2集',
+    );
+    await seedEpisode(
+      'video/ep3',
+      '第3集',
+      lastPositionMs: 5000,
+      lastPlayedAt: DateTime(2026, 2, 1).millisecondsSinceEpoch,
+    );
+    final int cid = await seedCollection(
+      <String>['video/ep1', 'video/ep2', 'video/ep3'],
+    );
+
+    await pumpPage(tester);
+    expect(
+      find.descendant(
+        of: cardFinder(cid),
+        matching: find.text(t.collection_continue_progress(n: 1)),
+      ),
+      findsOneWidget,
+      reason: '锚点必须取 lastPlayedAt 最新的第1集（与详情页 continueMemberIndex 同源），'
+          '不得退回「位置最靠后的痕迹成员」第3集',
+    );
+
+    // 最近播放的那集已完成 → 与详情页同规则推进到下一集。
+    await seedEpisode(
+      'video/ep1',
+      '第1集',
+      lastPositionMs: 1000,
+      completedAt: DateTime(2026, 2, 2),
+      lastPlayedAt: DateTime(2026, 2, 2).millisecondsSinceEpoch,
+    );
+    HomeVideoPage.debugRefreshVideos?.call();
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: cardFinder(cid),
+        matching: find.text(t.collection_continue_progress(n: 2)),
+      ),
+      findsOneWidget,
+      reason: '锚点集已完成 → 推进到下一集（第2集），与详情页 hero 同答案',
     );
   });
 

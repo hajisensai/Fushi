@@ -1,26 +1,8 @@
-/// 视频海报刮削流水线的共享数据契约。
+/// 视频本地解析与历史刮削投影的共享数据契约。
 ///
-/// 五层流水线（成功率从高到低逐层兜底）：
-/// ① sidecar 识别（poster.jpg / tvshow.nfo，零网络）
-/// ② 文件名/目录名解析（anitomy 式规则，产出 [ParsedMediaName]）
-/// ③ 标题归一化（繁简/全半角/罗马数字季度/副标题拆分）
-/// ④ 匹配（离线别名库 → Bangumi → TMDB → AniList → Jikan，产出 [ScrapeCandidate]）
-/// ⑤ 打分校验（[MatchScorer] 产出 [MatchDecision]，置信度分级）
-///
-/// 第 ④ 层有**两种代价模型**，服务两种场景，不要合并：
-/// - 自动刮削按上面的顺序**逐层兜底**、命中 high 立即停（批量刮 500 本不能每本发 5 个
-///   请求）——`CoverScraperService._resolveBestDecision`；
-/// - 手动匹配弹窗**并发查全部可用源**再合并排序（用户在等，要一次看全）——
-///   `CoverScraperService.searchAllSources`，产出 [AggregatedSearchResult]。
-///
-/// 本文件只放跨模块共享的纯数据类型，**不放任何实现逻辑**；
-/// 各层实现见同目录 `filename_parser.dart` / `title_normalizer.dart` /
-/// `offline_index.dart` / `match_scorer.dart` / `bangumi_client.dart` /
-/// `tmdb_client.dart` / `anilist_client.dart` / `jikan_client.dart` /
-/// `sidecar_scanner.dart` / `cover_scraper_service.dart`。
+/// 新的动画元数据网络链由 metadata 域的 AniDB 主源与 TMDB 补源负责。本文件只
+/// 保留文件名解析、旧数据库读取和 sidecar 封面兼容所需的纯数据类型。
 library;
-
-import 'package:fushi_core/fushi_core.dart' show MediaImageKind;
 
 /// 从文件名/目录名解析出的结构化信息（解析层输出）。
 class ParsedMediaName {
@@ -62,98 +44,28 @@ class ParsedMediaName {
 
 /// 候选条目来源。
 ///
-/// 全部持久化都按 **name** 走（`ScrapeSource.values.asNameMap()`，见 [CoverMeta]、
-/// `alias_cache.dart`、`video_book_repository.dart`），不按 index —— 因此新增来源
-/// 可插在任意位置，旧数据不会错位。
-enum ScrapeSource { offlineDb, bangumi, tmdb, anilist, jikan, manualUrl }
-
-/// 各来源的展示名（结果列表来源徽标用）。
-///
-/// 刻意**不进 i18n**：这些是第三方站点的专有名词，17 种语言里都是同一个拉丁字母
-/// 写法，翻译它们只会让 `i18n_sync` 多 17 份完全一样的值。离线库是本地概念，是
-/// 唯一需要翻译的，故由调用方单独取 `t.video_scrape_source_offline`。
-const Map<ScrapeSource, String> kScrapeSourceLabels = <ScrapeSource, String>{
-  ScrapeSource.bangumi: 'Bangumi',
-  ScrapeSource.tmdb: 'TMDB',
-  ScrapeSource.anilist: 'AniList',
-  ScrapeSource.jikan: 'MAL',
-};
-
-/// 条目类型（用于打分时与 [ParsedMediaName.isMovieHint] 互验）。
-enum ScrapeEntryType { tv, movie, ova, special, unknown }
-
-/// 一个可用的匹配候选（匹配层输出，来自离线库或在线 API）。
-class ScrapeCandidate {
-  const ScrapeCandidate({
-    required this.source,
-    required this.entryId,
-    required this.title,
-    this.aliases = const <String>[],
-    this.year,
-    this.type = ScrapeEntryType.unknown,
-    this.episodeCount,
-    required this.posterUrl,
-    this.backdropUrl,
-    this.summary,
-    this.rating,
-    this.ratingCount,
-    this.detailUrl,
-    this.ratingText,
-  });
-
-  final ScrapeSource source;
-
-  /// 源内唯一 id（Bangumi subject id / TMDB id / 离线库 anime 索引等），字符串化存储。
-  final String entryId;
-
-  /// 展示用主标题（优先中文）。
-  final String title;
-
-  /// 全部别名/异语言标题（打分时参与相似度计算）。
-  final List<String> aliases;
-
-  final int? year;
-  final ScrapeEntryType type;
-
-  /// 总集数（离线库/API 提供时），用于集数一致性校验。
-  final int? episodeCount;
-
-  /// 海报图 URL（下载层负责落地到 video_covers/）。竖版 2:3。
-  final String posterUrl;
-
-  /// **横版背景图** URL（16:9），供详情页宽幅 hero 用；无则 null（BUG-1298/1299）。
-  ///
-  /// 只有 TMDB 提供（`backdrop_path`，且**就在搜索响应里**，不需要额外请求）。
-  /// Bangumi / 离线库只有竖版海报，恒为 null —— 那条路 hero 回落到海报 + 模糊垫底。
-  final String? backdropUrl;
-
-  /// 简介。TMDB 的 `overview` 随搜索响应一起返回，故候选就能带上；Bangumi 的简介
-  /// 要另拉详情端点（[ScrapeMetadata]），候选阶段为 null。
-  ///
-  /// 这是「候选只带够打分的轻量字段」原则的**有意例外**：对没有详情端点的源
-  /// （TMDB / 离线库），搜索响应就是它资料的全部来源，不在这里接住就永远丢失。
-  final String? summary;
-
-  /// 评分数值 0~10 与评分人数（[ratingText] 是它的展示化文本，二者不重复解析）。
-  final double? rating;
-  final int? ratingCount;
-
-  /// 条目详情页 URL（UI「查看条目」用），可为 null。
-  final String? detailUrl;
-
-  /// 评分展示文本（如 `Bangumi 8.1`），可为 null。
-  final String? ratingText;
+/// 历史持久化都按 **name** 走（`ScrapeSource.values.asNameMap()`，见 [CoverMeta]），
+/// 不按 index。退休来源只作为兼容输入保留，不能据此重新装配网络 client。
+enum ScrapeSource {
+  local,
+  anidb,
+  offlineDb,
+  bangumi,
+  tmdb,
+  anilist,
+  jikan,
+  manualUrl
 }
 
-// ─────────────────────── 条目级元数据（「抄 Bangumi」）───────────────────────
+// ─────────────────────────── 条目级元数据 ───────────────────────────
 
-/// 条目标签（Bangumi `tags`：名字 + 打标人数，按热度降序）。
+/// 条目标签（名字 + 打标人数，按热度降序）。
 class ScrapeTag {
   const ScrapeTag({required this.name, this.count = 0});
 
   final String name;
 
-  /// 打该标签的人数（Bangumi 提供；无则 0）。
+  /// 打该标签的人数（来源不提供时为 0）。
   final int count;
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -173,14 +85,14 @@ class ScrapeTag {
   }
 }
 
-/// infobox 一行（Bangumi 条目页右侧资料表：`导演` / `话数` / `别名` …）。
+/// infobox 一行（如 `导演` / `话数` / `别名`）。
 ///
 /// 源里 `value` 可能是字符串，也可能是 `[{k,v},…]` 数组（如「别名」多条）；本类型
-/// 只存**已摊平的展示字符串**，摊平规则见 `bangumi_client.dart`，展示层不再解析。
+/// 只存**已摊平的展示字符串**；历史数据继续按该形态读取，展示层不再解析。
 class ScrapeInfoboxEntry {
   const ScrapeInfoboxEntry({required this.key, required this.value});
 
-  /// 原始字段名（Bangumi 的 key 本就是中文，不翻译不映射）。
+  /// 原始字段名，不翻译、不映射。
   final String key;
 
   /// 摊平后的值（多值以 ` / ` 连接）。
@@ -199,11 +111,9 @@ class ScrapeInfoboxEntry {
   }
 }
 
-/// 条目级刮削资料（落 `video_scrape_meta` 表的领域对象）。
+/// 旧 `video_scrape_meta` 行的只读领域投影。
 ///
-/// 与 [ScrapeCandidate] 的分工：候选是**匹配阶段**的轻量条目（标题/年份/海报，够
-/// 打分即可），本类型是**匹配定案后**再拉一次详情得到的完整资料。分开是因为搜索
-/// 端点不返回简介/标签/infobox，硬塞进候选会让每条搜索结果都背一份用不上的重负载。
+/// 退休 provider 写下的记录仍可展示或迁移，但此类型不再承担网络搜索或详情抓取。
 class ScrapeMetadata {
   const ScrapeMetadata({
     required this.source,
@@ -222,7 +132,7 @@ class ScrapeMetadata {
 
   final ScrapeSource source;
 
-  /// 源内条目 id（Bangumi subject id）。
+  /// 源内条目 id。
   final String subjectId;
 
   /// 主标题（中文优先）。
@@ -252,129 +162,10 @@ class ScrapeMetadata {
   final String? detailUrl;
 }
 
-/// 一张已落盘的附加图（刮削产物 → `media_images` 行的领域对象，v68）。
-class ScrapedMediaImage {
-  const ScrapedMediaImage({
-    required this.kind,
-    this.position = 0,
-    required this.path,
-    this.sourceUrl,
-  });
-
-  final MediaImageKind kind;
-
-  /// 同种类内排序位（仅 backdrop 允许 >0，见 `MediaImages.position`）。
-  final int position;
-
-  /// 本地文件绝对路径。
-  final String path;
-
-  /// 来源远程 URL（重下/诊断用）。
-  final String? sourceUrl;
-}
-
-/// 合集刮削一次落地的全部产物（BUG-1310；v68 起横版背景并入 [images] 图组）。
-///
-/// 合集刮削此前只产出一张海报路径（`downloadCollectionCover` 返回 String），资料与
-/// 附加图无处安放。本类型把三样东西一次带回给调用方写库：封面、附加图组、条目资料。
-///
-/// 为什么由调用方写库而不是本层直接写：刮削 service 刻意不持有 [FushiDatabase]
-/// （见 `cover_scraper_service.dart` 顶注），不该为几列写入把整个数据库拖进它的依赖面。
-class CollectionScrapeResult {
-  const CollectionScrapeResult({
-    required this.coverPath,
-    this.images = const <ScrapedMediaImage>[],
-    required this.metadata,
-  });
-
-  /// 竖版海报本地路径（必有——没有海报的候选在匹配层就被滤掉了）。
-  final String coverPath;
-
-  /// 已落盘的附加图组（backdrop 0..n / logo / titleCard）。源没有横版图
-  /// （Bangumi / 离线库）或全部下载失败时为空列表——hero 自会回落到海报 +
-  /// 模糊垫底，那是这些源的常态路径，不是错误。
-  final List<ScrapedMediaImage> images;
-
-  /// 条目资料（Bangumi 走详情端点取全量；其余源由候选自身降级拼出）。
-  final ScrapeMetadata metadata;
-}
-
-/// 多源并发聚合搜索的结果（手动匹配弹窗用）。
-///
-/// 存在的理由是**把「部分源挂了」与「全部源都挂了」分开**：前者只是降级（其余源的
-/// 候选照常可用，用户根本不需要知道），后者才是「搜不了」必须给可见失败态
-/// （BUG-1176 的分界）。把失败折成一个 `bool hasError` 就会二选一地丢掉其中一半语义。
-class AggregatedSearchResult {
-  const AggregatedSearchResult({
-    required this.candidates,
-    required this.failures,
-    required this.queriedSources,
-  });
-
-  /// 合并后的候选（同源内按 entryId 去重，跨源不去重）。
-  final List<ScrapeCandidate> candidates;
-
-  /// 失败的源 → 原始异常。空 map = 全部源都成功。
-  final Map<ScrapeSource, Object> failures;
-
-  /// 本轮真正查过的源。判「全失败」必须拿它当分母——用全体枚举当分母会把
-  /// 「压根没配 TMDB」误算成「TMDB 失败了」。
-  final List<ScrapeSource> queriedSources;
-
-  /// 是否全部查过的源都失败了（= 真的搜不了，UI 出失败态）。
-  bool get allFailed =>
-      queriedSources.isNotEmpty && failures.length == queriedSources.length;
-
-  /// 任取一个失败异常（全失败时给 UI 折成可行动原因用）。
-  Object? get anyFailure => failures.isEmpty ? null : failures.values.first;
-}
-
-/// 打分置信度分级。
-enum MatchConfidence {
-  /// 达自动应用线：批量匹配直接落封面。
-  high,
-
-  /// 中间带：进人工确认队列。
-  medium,
-
-  /// 低于取用线：宁可不配，保留抽帧。
-  low,
-}
-
-/// 打分校验层输出：候选 + 置信度 + 明细分。
-class MatchDecision {
-  const MatchDecision({
-    required this.candidate,
-    required this.confidence,
-    required this.titleScore,
-    this.yearMatched,
-    this.typeMatched,
-    this.seasonMatched,
-    this.episodeCountConsistent,
-  });
-
-  final ScrapeCandidate candidate;
-  final MatchConfidence confidence;
-
-  /// 归一化后标题相似度 [0,1]。
-  final double titleScore;
-
-  /// 三态：null = 无信息不参与打分。
-  final bool? yearMatched;
-  final bool? typeMatched;
-  final bool? seasonMatched;
-  final bool? episodeCountConsistent;
-}
-
 /// 封面来源标记（落 `video_covers/cover_meta.json`）。
 ///
-/// 这个枚举回答的是**「这张封面是谁定的」**——批量刮削能不能覆盖它，完全由该问题
-/// 决定（见 [CoverOriginBatchPolicy.batchOverwritePolicy]）。
-///
-/// 历史教训（BUG-1325）：用户在匹配弹窗里**亲手选定**的封面与后台**自动刮到**的
-/// 封面曾经共用同一个 [scraped] 标记，系统事后分不出哪张是人选的，「全部刮削」开
-/// 覆盖开关时就会把用户的纠正一并冲掉。所以在线刮削从此按决定者拆成
-/// [autoScraped] / [userScraped] 两个值，[scraped] 只保留给读不出决定者的存量记录。
+/// [scraped] / [autoScraped] / [userScraped] 是旧在线封面链写下的兼容值。当前本地
+/// 服务只新增 [sidecar]；保留旧值是为了让历史覆盖策略仍能安全判定。
 enum CoverOrigin {
   /// 导入时自动抽帧（默认占位图，批量匹配允许覆盖）。
   autoFrame,
@@ -384,57 +175,26 @@ enum CoverOrigin {
 
   /// **存量记录专用**：旧版本写下的在线刮削标记，分不清是自动刮到的还是用户在
   /// 匹配弹窗里亲手选定的。新代码**不再写入**这个值（只在读旧 `cover_meta.json`
-  /// 时出现），覆盖判据走保守口径 [CoverOverwritePolicy.legacyStrict]。
+  /// 时出现）。
   scraped,
 
-  /// 自动在线刮削所得（后台自动刮 / 整库刮削里无人值守应用），记录 entryId 以便
-  /// 重刮/纠错。用户开「重刮已刮削的」时允许被覆盖。
+  /// 历史自动在线刮削所得。当前代码不再写入。
   autoScraped,
 
-  /// 用户在匹配弹窗里亲手点「使用」选定的条目，批量刮削**永不覆盖**（无论覆盖
-  /// 开关是否打开）。
+  /// 全量清理已为历史自动封面持久化内容摘要，但尚未完成文件与 DB 指针提交。
+  /// 仅供崩溃恢复；正常完成后删除，发现同路径替换物时转成
+  /// [cleanupReplacement]。
+  cleanupPending,
+
+  /// 清理隔离窗口内出现的同路径替换物。该来源永久按用户资产保护；单独枚举值也
+  /// 让下一轮能安全识别并收走崩溃遗留的旧 quarantine，而不猜测普通 manual 文件。
+  cleanupReplacement,
+
+  /// 历史手动在线匹配所得，批量任务永不覆盖。当前代码不再写入。
   userScraped,
 
   /// 目录 sidecar（poster.jpg 等）识别所得：用户自己放进目录的资产，**永不覆盖**。
   sidecar,
-}
-
-/// 批量刮削对一张**已有封面**的覆盖许可，由 [CoverOrigin] 唯一决定。
-///
-/// 把「能不能覆盖」收成一个枚举而不是散落的 `origin == X || origin == Y` 条件，
-/// 是为了让新增来源时编译器逼着人做决定（switch 穷尽），不会有哪条来源默默落进
-/// 「可覆盖」的默认分支。
-enum CoverOverwritePolicy {
-  /// 占位封面（导入抽帧）：批量随时可覆盖，不需要用户开开关。
-  free,
-
-  /// 自动刮削结果：只有用户显式要求「重刮已刮削的」时才覆盖。
-  rescrapeOnly,
-
-  /// 来源未知的**存量**刮削记录：即便用户要求重刮，也必须过「唯一归一化精确
-  /// 标题」才允许覆盖——旧记录里混着用户亲手选定的封面，宁可少刮一本也不能改掉
-  /// 人选的那张。
-  legacyStrict,
-
-  /// 用户亲自定的（手选本地图 / 弹窗选定 / 自己放的 sidecar）：**永不覆盖**。
-  never,
-}
-
-/// [CoverOrigin] → 批量覆盖许可的唯一映射。
-extension CoverOriginBatchPolicy on CoverOrigin {
-  /// 批量刮削遇到这张封面时的覆盖许可。
-  CoverOverwritePolicy get batchOverwritePolicy => switch (this) {
-        CoverOrigin.autoFrame => CoverOverwritePolicy.free,
-        CoverOrigin.autoScraped => CoverOverwritePolicy.rescrapeOnly,
-        CoverOrigin.scraped => CoverOverwritePolicy.legacyStrict,
-        CoverOrigin.manual ||
-        CoverOrigin.userScraped ||
-        CoverOrigin.sidecar =>
-          CoverOverwritePolicy.never,
-      };
-
-  /// 这张封面是不是用户亲自定的（UI 判「要不要提示会被刮削改掉」用）。
-  bool get isUserChosen => batchOverwritePolicy == CoverOverwritePolicy.never;
 }
 
 /// 单本封面的元数据（`cover_meta.json` 里按 bookUid 存）。
@@ -443,6 +203,7 @@ class CoverMeta {
     required this.origin,
     this.source,
     this.entryId,
+    this.contentSha256,
   });
 
   final CoverOrigin origin;
@@ -452,18 +213,41 @@ class CoverMeta {
   final ScrapeSource? source;
   final String? entryId;
 
+  /// 历史自动刮削封面的所有权摘要；进入 [CoverOrigin.cleanupPending] 后继续作为
+  /// 崩溃恢复 CAS。旧 autoScraped 记录通常没有它，因此清理必须 fail closed。
+  final String? contentSha256;
+
   Map<String, Object?> toJson() => <String, Object?>{
-        'origin': origin.name,
+        // 新清理状态对旧版本降级成既有保护来源，避免旧客户端把未知枚举回退为
+        // autoFrame 后覆盖替换物；新版本通过 cleanupState 无损恢复真实状态。
+        'origin': switch (origin) {
+          CoverOrigin.cleanupPending => CoverOrigin.scraped.name,
+          CoverOrigin.cleanupReplacement => CoverOrigin.manual.name,
+          _ => origin.name,
+        },
+        if (origin == CoverOrigin.cleanupPending)
+          'cleanupState': 'pending',
+        if (origin == CoverOrigin.cleanupReplacement)
+          'cleanupState': 'replacement',
         if (source != null) 'source': source!.name,
         if (entryId != null) 'entryId': entryId,
+        if (contentSha256 != null) 'contentSha256': contentSha256,
       };
 
-  static CoverMeta fromJson(Map<String, Object?> json) => CoverMeta(
-        origin: CoverOrigin.values.asNameMap()[json['origin']] ??
-            CoverOrigin.autoFrame,
-        source: json['source'] is String
-            ? ScrapeSource.values.asNameMap()[json['source']]
-            : null,
-        entryId: json['entryId'] as String?,
-      );
+  static CoverMeta fromJson(Map<String, Object?> json) {
+    final CoverOrigin origin = switch (json['cleanupState']) {
+      'pending' => CoverOrigin.cleanupPending,
+      'replacement' => CoverOrigin.cleanupReplacement,
+      _ => CoverOrigin.values.asNameMap()[json['origin']] ??
+          CoverOrigin.autoFrame,
+    };
+    return CoverMeta(
+      origin: origin,
+      source: json['source'] is String
+          ? ScrapeSource.values.asNameMap()[json['source']]
+          : null,
+      entryId: json['entryId'] as String?,
+      contentSha256: json['contentSha256'] as String?,
+    );
+  }
 }

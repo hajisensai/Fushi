@@ -115,6 +115,22 @@ void main() {
     });
   });
 
+  group('共享语音 reader 不接受游戏特例分类', () {
+    test('不按环内任意 clip 标志全局删源，并保留选源隔离窗', () {
+      final File reader = File(p.join(repoRoot().path, 'fushi', 'windows',
+          'runner', 'voice_hook_reader.cpp'));
+      final String source = maskComments(reader.readAsStringSync());
+      expect(source, isNot(contains('kVoiceClipFlagClassified')),
+          reason: '单个 producer 的分类标志不能改变整个共享环的可见源集合');
+      expect(source, isNot(contains('kVoiceClipFlagRoleVoice')),
+          reason: '角色语音正证据属于 engine adapter，不属于通用 PCM reader');
+      expect(source, contains('d >= -900 && d <= -250'));
+      expect(source, contains('d >= -150 && d <= 450'));
+      expect(source, isNot(contains('d >= -250 && d <= 450')),
+          reason: 'SGRE 的提前量不能抹掉所有引擎共享的 100ms 隔离带');
+    });
+  });
+
   group('契约不符的处置文案不得指向不存在的动作', () {
     /// 捕获组件自 BUG-1196 起随主包内置、零网络（守卫见
     /// `gal_helper_no_network_guard_test.dart`），用户手上**没有**「单独更新/重装捕获组件」
@@ -145,6 +161,29 @@ void main() {
           reason: 'restarting the game is the only fix when the game process '
               'still holds the previous component');
       expect(zh, contains('Fushi'), reason: '要说清组件是内置的，用户没有单独装它这一步');
+    });
+
+    test('BUG-1675：还必须给出「磁盘上的组件本身就是旧的」这条处置', () {
+      const String key = 'game_hook_reason_protocol_mismatch';
+      final String zh = valueOf('strings_zh-CN.i18n.json', key);
+      final String en = valueOf('strings.i18n.json', key);
+      // 上面那条只覆盖「游戏进程里挂着旧组件」，重开游戏能清掉。但真实用户报的那次是
+      // 另一种：更新 Fushi 时游戏正开着，Inno 换不掉被游戏持有的
+      // voice_hook\<arch>\fushi_voice_hook.dll / fushi_voice_injector.exe，而应用内更新的
+      // /SUPPRESSMSGBOXES 把失败吞了 —— 磁盘上真的留着旧组件，重开游戏一万次也没用。
+      // 只写第一种处置，等于让撞上第二种的用户在无效动作上原地打转（用户原话：
+      // 「怎么还有这个 bug」）。
+      expect(zh, contains('安装程序'),
+          reason: '磁盘上组件比本体旧时，唯一有效动作是重跑一次 Fushi 安装程序，文案必须说出来');
+      expect(en.toLowerCase(), contains('installer again'),
+          reason: 'the on-disk-stale case is only fixed by running the Fushi '
+              'installer again; the message must say so');
+      // 且必须点出「上次更新时游戏开着」这个前提，否则用户无从判断自己撞的是哪一种。
+      expect(zh, contains('游戏正开着'),
+          reason: '要让用户能自己分辨撞的是哪一种，必须点出「更新时游戏开着」这个成因');
+      expect(en.toLowerCase(), contains('while a game was running'),
+          reason: 'the user must be able to tell which of the two cases they '
+              'hit; name the cause');
     });
   });
 }

@@ -21,6 +21,7 @@ add_custom_command(
 )
 
 add_executable(${BINARY_NAME} WIN32
+  "attached_text_surface_window.cpp"
   "audio_loopback_capture.cpp"
   "voice_hook_reader.cpp"
   "crash_dump.cpp"
@@ -28,7 +29,9 @@ add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
   "floating_lyric_window.cpp"
   "foreground_selection.cpp"
+  "global_lookup_shadow.cpp"
   "global_lookup_window.cpp"
+  "hdr_video_host_window.cpp"
   "hook_toolbar_window.cpp"
   "ime_association_guard.cpp"
   "ime_space_dispatch.cpp"
@@ -61,6 +64,9 @@ target_link_libraries(${BINARY_NAME} PRIVATE ole32 shell32)
 # d2d1 / dwrite: rendering + char hit-testing for the desktop floating lyric
 # strip (floating_lyric_window.cpp).
 target_link_libraries(${BINARY_NAME} PRIVATE d2d1 dwrite)
+# bcrypt: SHA-256 fingerprint for attached galgame surface profiles. The hash
+# fences per-executable calibration from being reused by a different build.
+target_link_libraries(${BINARY_NAME} PRIVATE bcrypt)
 # WebView2 + WIL (.targets auto-add include dirs, import lib and WebView2Loader
 # deployment) for the global lookup overlay; Shlwapi for SHCreateMemStream.
 target_link_libraries(${BINARY_NAME} PRIVATE
@@ -84,6 +90,9 @@ target_link_libraries(${BINARY_NAME} PRIVATE avrt)
 # 剪切板面板背景逐像素透明（global_lookup_window composition 模式）：DirectComposition
 # 视觉树承载 WebView2 composition controller 的透明像素，dxguid 提供 DComp/DXGI IID。
 target_link_libraries(${BINARY_NAME} PRIVATE dcomp dxguid)
+# v19 galgame 查词准入：注入侧算不出游戏 exe 摘要时由 host 兜底算 SHA-256
+# （voice_hook_reader.cpp 的 Sha256HexOfFile）。
+target_link_libraries(${BINARY_NAME} PRIVATE bcrypt)
 # BUG-1450: ImmAssociateContextEx — detach the IME from the window while no text
 # field has focus so CJK IMEs stop swallowing every shortcut key.
 target_link_libraries(${BINARY_NAME} PRIVATE imm32)
@@ -141,6 +150,166 @@ add_custom_target(fushi_windows_activation_policy_gate
   VERBATIM
 )
 add_dependencies(${BINARY_NAME} fushi_windows_activation_policy_gate)
+
+# Capture suppression is authorized by an exact epoch/token, while text may
+# advance behind the hidden surface. Keep that release contract executable so
+# a sentence change cannot strand the invisible catch window forever or let an
+# old epoch/token reveal a newer surface.
+add_executable(fushi_windows_attached_capture_token_test
+  "tests/attached_capture_token_test.cpp"
+)
+apply_standard_settings(fushi_windows_attached_capture_token_test)
+target_compile_definitions(fushi_windows_attached_capture_token_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_attached_capture_token_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_attached_capture_token_test>"
+  DEPENDS fushi_windows_attached_capture_token_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_attached_capture_token_gate)
+
+# Attached runtime hit geometry is replaceable while a physical left button is
+# still held.  Keep the down/up latch rule executable: clearing a snapshot marks
+# cancellation but only the paired up may consume the transaction release.
+add_executable(fushi_windows_attached_glyph_latch_test
+  "tests/attached_glyph_transaction_latch_test.cpp"
+)
+apply_standard_settings(fushi_windows_attached_glyph_latch_test)
+target_compile_definitions(fushi_windows_attached_glyph_latch_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_attached_glyph_latch_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_attached_glyph_latch_test>"
+  DEPENDS fushi_windows_attached_glyph_latch_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_attached_glyph_latch_gate)
+
+# v19 lookup hits are untrusted shared-memory payloads. Compile and run strict
+# UTF-8/UTF-16 span, production provider-pair and bounded geometry validation
+# before the runner target may link.
+add_executable(fushi_windows_lookup_hit_validation_test
+  "tests/lookup_hit_validation_test.cpp"
+)
+apply_standard_settings(fushi_windows_lookup_hit_validation_test)
+target_compile_definitions(fushi_windows_lookup_hit_validation_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_lookup_hit_validation_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_lookup_hit_validation_test>"
+  DEPENDS fushi_windows_lookup_hit_validation_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_lookup_hit_validation_gate)
+
+# Attached profiles cross a MethodChannel and are therefore untrusted. Keep
+# the native scalar bounds and alignment enums executable so invalid values
+# cannot silently fall through to DirectWrite's left/top defaults.
+add_executable(fushi_windows_attached_layout_validation_test
+  "tests/attached_layout_validation_test.cpp"
+)
+apply_standard_settings(fushi_windows_attached_layout_validation_test)
+target_compile_definitions(fushi_windows_attached_layout_validation_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_attached_layout_validation_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_attached_layout_validation_test>"
+  DEPENDS fushi_windows_attached_layout_validation_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_attached_layout_validation_gate)
+
+# 直连覆盖窗的画布→客户区映射决定卡片贴在哪、以及它是否还留在游戏画面内。这段几何
+# 一旦回归就表现为「卡片偏位/跑到画面外」，故保持纯函数且可执行。
+#
+# 注意：1:1 下 scale==1、信箱边为 0 只是**这三个映射函数**的恒等性质；整条直连路径在
+# 1:1 下的落点已经随 GlyphAnchoredCardOrigin 一起变了（水平由左对齐改中心对齐、垂直由
+# 优先下方改优先上方），是有意的策略变更。对照表在 gal_direct_card_geometry.h 头部。
+add_executable(fushi_windows_gal_direct_card_geometry_test
+  "tests/gal_direct_card_geometry_test.cpp"
+)
+apply_standard_settings(fushi_windows_gal_direct_card_geometry_test)
+target_compile_definitions(fushi_windows_gal_direct_card_geometry_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_gal_direct_card_geometry_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_gal_direct_card_geometry_test>"
+  DEPENDS fushi_windows_gal_direct_card_geometry_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_gal_direct_card_geometry_gate)
+
+# Attached catch pixels are useful only while the mapped presentation HWND is
+# actually composable above the game.  Keep the fail-closed decision pure and
+# executable so borderless/Magpie admission cannot regress into a fullscreen
+# rectangle heuristic, and exclusive/unknown VidPN ownership remains rejected.
+add_executable(fushi_windows_attached_overlayability_test
+  "tests/attached_overlayability_test.cpp"
+)
+apply_standard_settings(fushi_windows_attached_overlayability_test)
+target_compile_definitions(fushi_windows_attached_overlayability_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_attached_overlayability_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_attached_overlayability_test>"
+  DEPENDS fushi_windows_attached_overlayability_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_attached_overlayability_gate)
+
+# The pure decision is insufficient if the production path publishes LL glyph
+# boxes before consulting it.  Pin the target-specific VidPN/DWM probes and the
+# final pre-publication ordering on every runner build.
+add_executable(fushi_windows_attached_overlayability_source_test
+  "tests/attached_overlayability_source_test.cpp"
+)
+apply_standard_settings(fushi_windows_attached_overlayability_source_test)
+target_compile_definitions(
+  fushi_windows_attached_overlayability_source_test PRIVATE
+  "NOMINMAX"
+  "FUSHI_RUNNER_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\"")
+add_custom_target(fushi_windows_attached_overlayability_source_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_attached_overlayability_source_test>"
+  DEPENDS fushi_windows_attached_overlayability_source_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME}
+  fushi_windows_attached_overlayability_source_gate)
+
+# WH_MOUSE_LL runs synchronously in the system input path. Lock regressions in
+# the attached down/up path can freeze all desktop mouse delivery, so guard the
+# non-blocking source contract in addition to the pure transaction reducer.
+add_executable(fushi_windows_attached_mouse_hook_nonblocking_source_test
+  "tests/attached_mouse_hook_nonblocking_source_test.cpp"
+)
+apply_standard_settings(
+  fushi_windows_attached_mouse_hook_nonblocking_source_test)
+target_compile_definitions(
+  fushi_windows_attached_mouse_hook_nonblocking_source_test PRIVATE
+  "NOMINMAX"
+  "FUSHI_RUNNER_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\"")
+add_custom_target(fushi_windows_attached_mouse_hook_nonblocking_source_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_attached_mouse_hook_nonblocking_source_test>"
+  DEPENDS fushi_windows_attached_mouse_hook_nonblocking_source_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME}
+  fushi_windows_attached_mouse_hook_nonblocking_source_gate)
+
+# A same-PID game window may be destroyed and recreated while the injected
+# mapping survives. Keep shield status target/transaction/epoch attribution
+# executable so a new HWND cannot borrow an old fault or verified conclusion,
+# while active/unacknowledged tails still block the re-handshake.
+add_executable(fushi_windows_attached_shield_status_policy_test
+  "tests/attached_shield_status_policy_test.cpp"
+)
+apply_standard_settings(fushi_windows_attached_shield_status_policy_test)
+target_compile_definitions(
+  fushi_windows_attached_shield_status_policy_test PRIVATE
+  "NOMINMAX"
+  "FUSHI_RUNNER_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\"")
+add_custom_target(fushi_windows_attached_shield_status_policy_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_attached_shield_status_policy_test>"
+  DEPENDS fushi_windows_attached_shield_status_policy_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME}
+  fushi_windows_attached_shield_status_policy_gate)
 
 add_executable(fushi_update_launcher WIN32
   "update_launcher.cpp"

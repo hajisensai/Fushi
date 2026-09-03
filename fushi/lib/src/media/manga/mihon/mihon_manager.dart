@@ -18,8 +18,14 @@ import 'package:fushi/src/startup/exit_flush_registry.dart';
 const String kMihonDefaultStoreIndexUrl =
     'https://github.com/keiyoushi/extensions/raw/repo/index.pb';
 
-/// 默认仓库**只自动添加一次**：置位后用户删掉它就不会被下次启动重新塞回来。
-/// 只在添加成功后置位，所以首次启动断网不会永久丢掉默认仓库。
+/// 默认仓库在拉到真实索引之前的显示名。第一次成功刷新会用仓库自报的名字覆写。
+const String kMihonDefaultStoreName = 'Keiyoushi';
+
+/// 默认仓库**只自动装配一次**：置位后用户删掉它就不会被下次启动重新塞回来。
+///
+/// 置位的判据是「装配这一步做完了」，而装配现在是一次**本地** DB 写（见
+/// [MihonManager._seedDefaultStore]），不依赖网络，所以不存在「置早了导致永不重试」
+/// 的窗口。存量里 pref 仍为 false 的用户（旧代码下装配因断网失败过）下次启动即自愈。
 const String kMihonDefaultStoreSeededPref = 'mihon_default_store_seeded';
 
 class MihonManager extends ChangeNotifier {
@@ -110,8 +116,10 @@ class MihonManager extends ChangeNotifier {
       // 必须在 reload 之后：判断孤儿要拿 installed 跟标记里的包名比对。
       await _recoverAbandonedPreview();
       await _clearStagedApks();
-      await _refreshStores();
+      // 种子必须在刷新**之前**：它只往本地写一行，写完紧接着的 _refreshStores
+      // 就把它的目录一并拉下来——默认仓库从此和用户自己加的仓库走同一条路径。
       await _seedDefaultStore();
+      await _refreshStores();
     } catch (exception) {
       error = '$exception';
       rethrow;
@@ -121,11 +129,17 @@ class MihonManager extends ChangeNotifier {
     }
   }
 
-  /// 首次启动把 [kMihonDefaultStoreIndexUrl] 装进来（见常量文档）。
+  /// 首次启动把 [kMihonDefaultStoreIndexUrl] 落成一行本地仓库配置（见常量文档）。
   ///
-  /// 放在 [_refreshStores] **之后**：那一步只刷已有仓库，首次启动是空跑，紧接着
-  /// 由 [addStore] 单独拉这一个仓库，不会把同一个索引拉两遍。整个过程吞异常——
-  /// 断网或仓库临时 502 不该让扩展子系统初始化失败（`_initialise` 会 rethrow）。
+  /// **纯本地写，不碰网络。** 早先这里调 [addStore]，于是「默认仓库存在」被绑死在
+  /// 「首次启动能连上 github.com」上：连不上就一行都不写，用户看到的是一个空列表，
+  /// 而且完全不知道本该有一个默认仓库——所谓「下次启动重试」在长期连不上的网络下
+  /// 等于永远没有。仓库**配置**和仓库**目录**是两件事：配置该无条件落地，目录由
+  /// 紧随其后的 [_refreshStores] 用和其它仓库完全相同的路径去拉，失败就照常写进
+  /// `lastError` 让用户看见并可手动重试，而不是静默消失。
+  ///
+  /// 落地后即置位 [kMihonDefaultStoreSeededPref]：置位语义是「已经替用户装配过」，
+  /// 不是「已经拉到过目录」——所以用户删掉它之后不会被下次启动塞回来。
   Future<void> _seedDefaultStore() async {
     if (!seedDefaultStore) return;
     final bool seeded = await database.getPrefTyped<bool>(
@@ -133,20 +147,30 @@ class MihonManager extends ChangeNotifier {
       false,
     );
     if (seeded) return;
-    if (stores.any((MangaExtensionStoreRow row) =>
+    // 用户自己先加过同一个地址：认下它，别用种子行覆盖掉他的排序/启用状态。
+    if (!stores.any((MangaExtensionStoreRow row) =>
         row.indexUrl == kMihonDefaultStoreIndexUrl)) {
-      await database.setPrefTyped<bool>(kMihonDefaultStoreSeededPref, true);
-      return;
+      await database.upsertMangaExtensionStore(
+        MangaExtensionStoresCompanion.insert(
+          indexUrl: kMihonDefaultStoreIndexUrl,
+          name: kMihonDefaultStoreName,
+          // index.pb。真实格式由第一次成功刷新覆写，这里只是让「从未刷新过」的行
+          // 也能被 _refreshStores 正常处理（etag/lastModified 都为空，不会走 304）。
+          format: MihonStoreFormat.currentProtobuf.name,
+          sortOrder: Value(_nextStoreSortOrder()),
+        ),
+      );
+      await reload();
     }
-    try {
-      await addStore(kMihonDefaultStoreIndexUrl);
-      await database.setPrefTyped<bool>(kMihonDefaultStoreSeededPref, true);
-    } catch (_) {
-      // 下次启动再试。`addStore` 的 `_guarded` 已经把失败写进 `error`，但「默认仓库
-      // 这次没拉到」不是用户发起的操作，不该在扩展页挂一条报错。
-      error = null;
-    }
+    await database.setPrefTyped<bool>(kMihonDefaultStoreSeededPref, true);
   }
+
+  int _nextStoreSortOrder() => stores.isEmpty
+      ? 0
+      : stores
+              .map((MangaExtensionStoreRow row) => row.sortOrder)
+              .reduce((int a, int b) => a > b ? a : b) +
+          1;
 
   Future<void> reload() async {
     stores = await database.getMangaExtensionStores();
@@ -170,12 +194,7 @@ class MihonManager extends ChangeNotifier {
         store,
         allowInsecure: allowInsecure,
       );
-      final int sortOrder = stores.isEmpty
-          ? 0
-          : stores
-                  .map((MangaExtensionStoreRow row) => row.sortOrder)
-                  .reduce((int a, int b) => a > b ? a : b) +
-              1;
+      final int sortOrder = _nextStoreSortOrder();
       await database.upsertMangaExtensionStore(
         MangaExtensionStoresCompanion.insert(
           indexUrl: store.indexUrl,
@@ -288,6 +307,84 @@ class MihonManager extends ChangeNotifier {
     await reload();
   }
 
+  /// 改仓库地址。
+  ///
+  /// `indexUrl` 是 `MangaExtensionStores` 的主键（表注释：仓库入口 URL 同时是
+  /// 稳定身份），所以数据层没有「改地址」这个动作，只能删旧行 + 插新行。
+  /// 之前 UI 索性不提供入口，用户只能删了重加——而在 [BUG-1804] 修好之前
+  /// 重加那条路本身是堵死的，于是「删掉官方仓库 → 加了个坏的 → 想改回来」
+  /// 变成死局（BUG-1806）。
+  ///
+  /// 顺序上**先把新地址完整拉通再动数据库**：拉不通就抛异常，旧行原封不动。
+  /// 反过来先删再拉，一旦新地址有问题，用户会同时失去旧仓库和新仓库。
+  Future<void> editStoreUrl(
+    String oldIndexUrl,
+    String newIndexUrl, {
+    bool allowInsecure = false,
+  }) async {
+    await _guarded(() async {
+      final MangaExtensionStoreRow? existing = stores
+          .where((MangaExtensionStoreRow row) => row.indexUrl == oldIndexUrl)
+          .firstOrNull;
+      if (existing == null) {
+        throw const MihonRuntimeException(
+          'STORE_MISSING',
+          'The extension store is no longer configured',
+        );
+      }
+      final MihonStoreFetchResult fetched = await _storeClient.fetchStore(
+        newIndexUrl,
+        allowInsecure: allowInsecure,
+      );
+      final MihonStore store = fetched.store!;
+      // 索引可能把我们重定向到另一个入口地址（legacy 分支跟随 index_v2），
+      // 落库的身份必须是解析后的那个，不是用户输入的那个。
+      if (store.indexUrl != oldIndexUrl &&
+          stores.any(
+              (MangaExtensionStoreRow row) => row.indexUrl == store.indexUrl)) {
+        throw const MihonRuntimeException(
+          'STORE_DUPLICATE',
+          'Another extension store already uses this URL',
+        );
+      }
+      final List<MihonAvailableExtension> extensions =
+          await _storeClient.fetchExtensions(
+        store,
+        allowInsecure: allowInsecure,
+      );
+      // 删旧行 + 插新行必须原子。两个独立 await 之间只要出事（第二步抛异常、
+      // 进程被杀、设备断电），用户的仓库行就**彻底消失**——比改地址失败严重得多，
+      // 而且正是 BUG-1806 那个死局的成因（仓库没了又加不回来）。
+      await database.transaction(() async {
+        await database.deleteMangaExtensionStore(oldIndexUrl);
+        await database.upsertMangaExtensionStore(
+          MangaExtensionStoresCompanion.insert(
+            indexUrl: store.indexUrl,
+            name: store.name,
+            format: store.format.name,
+            badgeLabel: Value(store.badgeLabel),
+            signingKey: Value(store.signingKey),
+            contactJson: Value(jsonEncode(store.contact)),
+            extensionListUrl: Value(store.extensionListUrl),
+            // 改的是地址，不是这一行的其他状态——启用位和排序必须跟着走，
+            // 否则「改个地址」会顺手把仓库关掉或者甩到列表末尾。
+            enabled: Value(existing.enabled),
+            sortOrder: Value(existing.sortOrder),
+            etag: Value(fetched.etag),
+            lastModified: Value(fetched.lastModified),
+            lastSyncAt: Value(DateTime.now().millisecondsSinceEpoch),
+          ),
+        );
+      });
+      available = <MihonAvailableExtension>[
+        ...available.where((MihonAvailableExtension item) =>
+            item.storeUrl != oldIndexUrl && item.storeUrl != store.indexUrl),
+        ...extensions,
+      ];
+      await reload();
+    });
+  }
+
   Future<void> removeStore(String indexUrl) async {
     await database.deleteMangaExtensionStore(indexUrl);
     available = available
@@ -314,15 +411,74 @@ class MihonManager extends ChangeNotifier {
     // `_validatedUri` 的 HTTPS 策略自我否决掉：一个 https 仓库可以在索引里塞一条
     // http 直链，用户看不到任何提示就被中间人换掉安装包。仓库地址在 addStore 时
     // 已经过 `_confirmInsecureUrl` 明示同意，继承它才是正确的信任传递。
+    final bool insecure = Uri.parse(store.indexUrl).scheme == 'http';
+    final MihonAvailableExtension target = await _resolveInstallTarget(
+      store,
+      extension,
+      allowInsecure: insecure,
+    );
     final Uint8List bytes = await _storeClient.downloadApk(
-      extension.apkUrl,
-      allowInsecure: Uri.parse(store.indexUrl).scheme == 'http',
+      target.apkUrl,
+      allowInsecure: insecure,
     );
     return _prepareInstallBytes(
       bytes,
-      expected: extension,
+      expected: target,
       expectedSigningKey: store.signingKey,
     );
+  }
+
+  /// 安装前**重新解析一次仓库索引**，拿当次索引里的直链去下载。
+  ///
+  /// [available] 是远端索引的**内存快照**，只在进程冷启动的 [_refreshStores]
+  /// 里刷一次（没有任何缓存表，重启即丢）。而快照里的 `apkUrl` 指向的是**短寿命
+  /// 资源**：keiyoushi 把 APK 挂在 GitHub release 上，只保留最近 7 个 release，
+  /// 旧 tag 连同资产一起被删（2026-08-18 实测：当时保留的 7 个 release 全部产于
+  /// 08-16，即保留窗口只有两天）。手机上进程在后台活了几天再点安装，快照里的
+  /// **每一条**直链都指向已删除的 tag——用户看到的就是 `STORE_HTTP_404`。
+  ///
+  /// 同一份快照还会让版本号漂移变成 `METADATA_MISMATCH`（下载到的 APK 比快照新，
+  /// 被当成「与仓库元数据不符」拒掉）。两个症状同一个根因：**下载时刻的真相源
+  /// 是索引，不是几天前的快照**。所以这里不是「404 了再重试一次」的补丁，而是把安装
+  /// 的输入从快照换成当次索引。
+  ///
+  /// 刷不到索引就直接失败，不回退到快照：下一步本来就要联网下 APK，「索引拿不到
+  /// 却假装能装」只会把同一个 404 推到下一步，还多一条分支。
+  Future<MihonAvailableExtension> _resolveInstallTarget(
+    MangaExtensionStoreRow store,
+    MihonAvailableExtension snapshot, {
+    required bool allowInsecure,
+  }) async {
+    final MihonStoreFetchResult fetched = await _storeClient.fetchStore(
+      store.indexUrl,
+      allowInsecure: allowInsecure,
+    );
+    final MihonStore resolved = fetched.store!;
+    final List<MihonAvailableExtension> extensions =
+        await _storeClient.fetchExtensions(
+      resolved,
+      allowInsecure: allowInsecure,
+    );
+    // 索引都重新拉了，顺手让目录跟上：卡片上的版本号不该跟马上要装的东西对不上。
+    // `index_v2` 会让最终 indexUrl 与库里那行不同，两个地址的旧条目都要清。
+    available = <MihonAvailableExtension>[
+      ...available.where((MihonAvailableExtension item) =>
+          item.storeUrl != store.indexUrl &&
+          item.storeUrl != resolved.indexUrl),
+      ...extensions,
+    ];
+    _notify();
+    final MihonAvailableExtension? target = extensions
+        .where((MihonAvailableExtension item) =>
+            item.packageName == snapshot.packageName)
+        .firstOrNull;
+    if (target == null) {
+      throw const MihonRuntimeException(
+        'EXTENSION_GONE',
+        'The extension is no longer listed in its repository',
+      );
+    }
+    return target;
   }
 
   Future<MihonInstallProposal> prepareLocalInstall(String apkPath) async {
@@ -358,12 +514,31 @@ class MihonManager extends ChangeNotifier {
           'Extension lib ${inspection.libVersion} is not supported',
         );
       }
+      // 身份门：「我拿到的 APK 是不是我点的那一个」。三个字段都是两侧同义量，
+      // 全等才放行。
+      //
+      // BUG-1996 曾把 versionCode 从判据里拿掉，理由是「索引 69 / APK 104069 不同
+      // 尺度」——**那个前提经实测证伪**：keiyoushi 的索引与 APK 由 gradle 的同一个
+      // `androidVersionCodeProvider` 产出，直连 `repo/index.pb` 实测 SamuraiScan
+      // field5 = 104069、Manga Mura = 104005，与各自 APK 的 android:versionCode
+      // 逐字相同。判据因此原样保留，并补上 versionName（严格更强，不是放宽）。
+      //
+      // 用户报的「扩展装不上」根因**仍未定位**（见 BUG-1996）。所以这里改的是可
+      // 诊断性：把两侧实际值写进异常，下一份报告才有得看——原来是一句常量。
+      //
+      // 真实性不由本门负责：APK 是不是仓库签的由下面 SIGNATURE_MISMATCH 对
+      // `signingKey` 保证，是不是与已装版本同一签名由 SIGNATURE_CHANGED 保证。
       if (expected != null) {
         if (inspection.packageName != expected.packageName ||
-            inspection.versionCode != expected.versionCode) {
-          throw const MihonRuntimeException(
+            inspection.apkVersionCode != expected.extensionVersionCode ||
+            inspection.versionName != expected.versionName) {
+          throw MihonRuntimeException(
             'METADATA_MISMATCH',
-            'Downloaded APK does not match the extension store metadata',
+            'Downloaded APK does not match the extension store metadata '
+                '(store: ${expected.packageName} '
+                'v${expected.extensionVersionCode}/${expected.versionName}; '
+                'apk: ${inspection.packageName} '
+                'v${inspection.apkVersionCode}/${inspection.versionName})',
           );
         }
       }
@@ -380,7 +555,8 @@ class MihonManager extends ChangeNotifier {
       final MangaExtensionRow? current =
           await database.getMangaExtension(inspection.packageName);
       if (current != null) {
-        if (inspection.versionCode < current.versionCode) {
+        // 两侧同为 APK 尺度（DB 列存的就是 `apkVersionCode`），自洽，BUG-1996 不动它。
+        if (inspection.apkVersionCode < current.versionCode) {
           throw const MihonRuntimeException(
             'DOWNGRADE_REJECTED',
             'Extension downgrade is not allowed',
@@ -471,7 +647,8 @@ class MihonManager extends ChangeNotifier {
             packageName: packageName,
             storeUrl: Value(proposal.expected?.storeUrl),
             name: proposal.inspection.name,
-            versionCode: proposal.inspection.versionCode,
+            // 列名冻结，语义 = APK 尺度（见 [MihonExtensionInspection.apkVersionCode]）。
+            versionCode: proposal.inspection.apkVersionCode,
             versionName: proposal.inspection.versionName,
             libVersion: proposal.inspection.libVersion,
             language: proposal.expected?.language ??

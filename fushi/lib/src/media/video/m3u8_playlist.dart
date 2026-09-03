@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/video/external_video.dart'
+    show decodedSourceBasename;
+
 /// **纯函数**：从 `VideoBooks.playlistJson` 解析出集数；空 / 非播放列表 / 解析失败
 /// 返回 0。供视频库卡片角标与「单视频 vs 播放列表」区分用——返回 ≥2 即播放列表。
 int playlistEpisodeCount(String? playlistJson) {
@@ -144,14 +147,48 @@ String resolveM3uEntryPath(
   final p.Context ctx = context ?? p.context;
   final String entry = entryRaw.trim();
   if (entry.isEmpty) return entry;
+  // 绝对 http(s) URL 条目（HLS/直链清单）：原样直通。此前会落进下面的
+  // 「相对」分支被 join 到 playlistDir 上，纯属误判。
+  if (_isHttpUrl(entry)) return entry;
   if (_isAbsoluteM3uEntryPath(entry)) {
     // Absolute: normalize only; never join playlistDir (would break drive/UNC).
     return ctx.normalize(entry);
+  }
+  // 网络（WebDAV）清单：基底是 URL，相对条目按 URL 语义解析——正斜杠 join、
+  // 段按需百分号编码（清单里通常写明文文件名；已编码段不二次编码）、`..`
+  // 钳制在 `scheme://host` 之下。不能走 p.Context：它会把 `https://` 的
+  // 双斜杠折叠掉。
+  if (_isHttpUrl(playlistDir)) {
+    final List<String> base = playlistDir.split('/');
+    while (base.isNotEmpty && base.last.isEmpty) {
+      base.removeLast();
+    }
+    for (final String seg in entry.replaceAll('\\', '/').split('/')) {
+      if (seg.isEmpty || seg == '.') continue;
+      if (seg == '..') {
+        // base 形如 ['https:', '', 'host', ...]：前三段是 scheme://host，不可越。
+        if (base.length > 3) base.removeLast();
+        continue;
+      }
+      base.add(_encodeUrlSegmentIfNeeded(seg));
+    }
+    return base.join('/');
   }
   // Relative: normalize both separators to `/`, resolve against the m3u8 dir.
   final String rel = entry.replaceAll('\\', '/');
   return ctx.normalize(ctx.join(playlistDir, rel));
 }
+
+/// 纯字符串判 http(s) URL（不经 Uri.parse，空串/畸形不抛）。
+bool _isHttpUrl(String s) =>
+    s.startsWith('http://') || s.startsWith('https://');
+
+final RegExp _pctEncodedSeq = RegExp(r'%[0-9A-Fa-f]{2}');
+
+/// URL 路径段按需编码：已含合法 %XX 序列的段视为「作者已编码」原样保留
+/// （二次编码会把 %20 变成 %2520）；其余按组件编码（空格/中文/括号全覆盖）。
+String _encodeUrlSegmentIfNeeded(String seg) =>
+    _pctEncodedSeq.hasMatch(seg) ? seg : Uri.encodeComponent(seg);
 
 /// Pure string test for whether m3u8 entry [entry] is an ABSOLUTE path (no IO,
 /// host-independent). True for: UNC prefix (`\`/`//`), Windows drive root
@@ -213,9 +250,10 @@ List<PlaylistEntry> parseM3u8({
 
     // 非注释非空行 = 视频相对/绝对路径。
     final String absPath = resolveM3uEntryPath(line, baseDir);
+    // 标题回退用解码 basename：URL 条目的 %20 之类不渗进集标题。
     final String title = (pendingTitle != null && pendingTitle.isNotEmpty)
         ? pendingTitle
-        : p.basename(absPath);
+        : decodedSourceBasename(absPath);
     entries.add(PlaylistEntry(title: title, path: absPath));
     pendingTitle = null;
   }

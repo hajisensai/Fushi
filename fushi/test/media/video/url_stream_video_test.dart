@@ -336,12 +336,26 @@ void main() {
         'https://cdn.example.com/live.m3u8',
         'https://192.168.1.34/stream.ts',
         'https://example.com/playlist.m3u8?token=abc',
-        // 已知网页视频站但非 YouTube（无法抓缩略图）→ 仍走抽帧（best-effort）。
-        'https://www.bilibili.com/video/BVxxx',
       ]) {
         expect(streamImportCoverStrategy(url),
             StreamImportCoverStrategy.ffmpegFrame,
             reason: url);
+      }
+    });
+
+    test('BUG-1975: known non-YouTube webpage URLs skip ffmpeg cover probing',
+        () {
+      for (final String url in <String>[
+        'https://www.bilibili.com/video/BVxxx',
+        'https://www.netflix.com/watch/123',
+        'https://www.nicovideo.jp/watch/sm9',
+        'https://tver.jp/episodes/example',
+      ]) {
+        expect(
+          streamImportCoverStrategy(url),
+          StreamImportCoverStrategy.noAutomaticCover,
+          reason: url,
+        );
       }
     });
   });

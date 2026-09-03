@@ -1,9 +1,10 @@
 name: fushi_audio
+resolution: workspace
 description: Audio playback, recording, audiobook matching, and subtitle parsing for Hibiki
 publish_to: none
 
 environment:
-  sdk: ">=3.5.0 <4.0.0"
+  sdk: ">=3.8.0 <4.0.0"
   flutter: ">=3.41.6"
 
 dependencies:

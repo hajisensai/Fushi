@@ -46,6 +46,7 @@ abstract class VideoResourceCandidate {
     this.releaseGroup,
     this.trusted = false,
     this.detailsUrl,
+    this.magnetUri,
   });
 
   final String providerId;
@@ -65,6 +66,12 @@ abstract class VideoResourceCandidate {
   final bool trusted;
   final String? detailsUrl;
 
+  /// 选择时刻就已在手的持久磁力链接（`magnet:` 前缀），入队时随任务落库
+  /// （BUG-1784）：重启/重试解析 payload 不再依赖回索引器重搜——发布名分词
+  /// 搜不回或条目被下架都会让「资源还在、钥匙丢了」变成 notFound。只有
+  /// 临时 URL（Torznab .torrent 下载链）的 provider 留 null，走重搜兜底。
+  final String? magnetUri;
+
   /// Cross-indexer dedupe uses the info hash; provider-local identity is a
   /// safe fallback when an indexer does not expose one.
   String get identityKey {
@@ -82,6 +89,15 @@ abstract interface class VideoResourceProvider {
 
   /// Lower values run first and win duplicate candidates.
   int get priority;
+
+  /// 本 provider 参与哪些视频域。**空集 = 不限域**（用户自配的 Torznab 索引器
+  /// 就是这种：搜什么由他自己填的分类决定，app 无权替他裁）。
+  ///
+  /// 这里之前不存在——域门控是 `VideoResourceRegistry` 里一行写死的 id 白名单
+  /// （`provider.id == 'torznab' || (anime && provider.id == 'nyaa')`）。每加一个
+  /// 内置源就得回去改那行 if，而 provider 自己对「我该在哪个域出现」一无所知。
+  /// 把它变成 provider 自报的能力，registry 那边的特殊情况就整个消失了。
+  Set<VideoDiscoveryCategory> get categories;
 
   Future<ProviderBatchResult<VideoResourceCandidate>> search(
     VideoResourceSearchRequest request,
@@ -115,3 +131,14 @@ List<VideoResourceCandidate> deduplicateVideoResources(
   });
   return List<VideoResourceCandidate>.unmodifiable(result);
 }
+
+/// provider 是否参与某个域的查询。
+///
+/// [category] 为 null = 请求没带身份（纯关键词搜索）：此时只有不限域的 provider
+/// 参与，与 id 白名单时代的行为逐字一致（那时 `anime` 为 false，Nyaa 同样不进）。
+bool videoResourceProviderApplies(
+  VideoResourceProvider provider,
+  VideoDiscoveryCategory? category,
+) =>
+    provider.categories.isEmpty ||
+    (category != null && provider.categories.contains(category));

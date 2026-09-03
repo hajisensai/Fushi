@@ -7,7 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
     show fushiMaterialNavKey;
 
@@ -32,7 +32,7 @@ void main() {
 
   testWidgets('TODO-1375 reader re-layout on a fullscreen-sized viewport',
       (WidgetTester tester) async {
-    app.main();
+    await launchFushiTestApp();
     ui.PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
       debugPrint('[t1375b] swallowed async error: $error');
       return true;
