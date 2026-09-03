@@ -19,7 +19,7 @@
   **为什么没被现有测试抓到**：`fushi/test/pages/video_volume_and_settings_dedupe_guard_test.dart` 把 `rawItems.contains(VideoControlItem.volume)` 这行**追加代码本身**断言成契约（`isTrue`），等于把 bug 锁进了守卫；`fushi/test/media/video/video_control_layout_test.dart` 是纯模型单测、从不渲染；`video_control_slot_renderer_defaults_test.dart` 文件头自陈「media_kit 控制条无法离屏渲染，只能用源码守卫」，其断言只能证明「调用了」不能证明「顺序对」。唯一断言顺序的 `video_header_button_order_guard_test.dart` 只覆盖 topRight 顶栏，底栏无等价守卫。
 
 - **[x] ① 已修复** — 消除特殊情况：**一次遍历** `itemsIn(slot)`，按用户摆的真实顺序出控件，音量的分派放进循环体内。音量与其它按钮的差别只在**用哪个 widget 画**（它有浮层、要按槽位做几何避让），不在**画在第几位**，位置逻辑不该为它分叉。volume 仍不经 `_shouldRenderControlItem`（与旧行为一致：本次只改顺序、不改「画不画」）。
-  - 提交：`ffdaa2a3f4`
+  - 提交：`7e17c7aff6`
 - **[x] ② 已加自动化测试** — 两处守卫从「钉住 bug」改成「钉住不变式」：
   - `fushi/test/media/video/video_volume_row_test.dart`：断言底栏方法体含 `_controlLayout.itemsIn(slot)`（顺序取自真相源）+ `if (item == VideoControlItem.volume)`（循环体内按位分派），且**不得**再出现第二份「先画完 chip 再追加」的列表。
   - `fushi/test/pages/video_volume_and_settings_dedupe_guard_test.dart`：同上替换掉原先钉住追加写法的那条断言。

@@ -12,7 +12,7 @@
   横向核对：PDF 阅读器有常驻 `AppBar`（`automaticallyImplyLeading` 默认给返回键），不受影响；小说阅读器在书文件缺失时**直接 pop**（`reader_fushi_page.dart:2143`），也不会困住用户。只有漫画页把出口挂在了内容状态上。
 
 - **[x] ① 已修复** — 出口不是内容的一部分，不随内容存亡：返回键的门控收成只由用户意图 `_chromeVisible` 决定，唤回按钮只由 `!_chromeVisible` 决定。顶栏（页码 / 框选 OCR / 单双页）**继续**挂内容门控——那些控件没有内容时确实无意义，这个区分是有意的。
-  - 提交：`ffdaa2a3f4`
+  - 提交：`7e17c7aff6`
 - **[x] ② 已加自动化测试** —
   - 行为断言（强）：`fushi/test/pages/manga_fushi_page_test.dart` 的「加载失败（无书行）时 chrome 不构建 → 无按钮」用例补上 `manga_reader_back_button` **必须在场**。
   - 源码守卫（改写而非放松）：`fushi/test/pages/manga_toggle_chrome_test.dart` 原先钉的是 `_bookRow != null && !_loadFailed && _chromeVisible` 出现 ≥2 次（即「返回键也要挂内容门控」——把 bug 钉成了契约）。改为断言内容门控**只剩顶栏那一处**、且唤回分支不得带内容门控。守卫先经 `maskComments` 剥注释再判（本次修复在源码注释里逐字引用了旧条件用于解释它为什么错，不剥会被自己数进去而恒红）。

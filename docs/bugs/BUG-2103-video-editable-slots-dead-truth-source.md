@@ -12,7 +12,7 @@
 - **[x] ① 已修复** — 把两个维度分开，并让真相源说真话且真的被消费：
   - `editableSlots` 纳入 `topCenter`（插在 topLeft 之后，得到的次序与覆盖层原硬编码表**逐项相同**，故覆盖层视觉零变化）。这个清单定的是**编辑器暴露哪些槽**；**每个槽收哪些按钮**仍由 `canMoveToSlot` 单独把关——topCenter 依旧只收标题。
   - 覆盖层 `_editorSlots` 改为直接返回 `VideoControlSlot.editableSlots`，删掉那份副本。
-  - 提交：`ffdaa2a3f4`
+  - 提交：`7e17c7aff6`
 - **[x] ② 已加自动化测试** — `fushi/test/media/video/video_control_layout_test.dart`：
   - 「两个维度」新用例：断言 `title.canMoveToSlot(topCenter) == true`，且**其余每一个** `VideoControlItem` 对 topCenter 都是 false（暴露不等于放宽收件能力）。
   - 「两个编辑器的槽位表都来自唯一真相源」新用例：覆盖层必须出现 `VideoControlSlot.editableSlots`；设置页编辑器按三行分组排版（版式不是成员资格），故断言**它提到的槽位集合 == `editableSlots`**，多一个少一个都红（先 `maskComments` 剥注释）。
