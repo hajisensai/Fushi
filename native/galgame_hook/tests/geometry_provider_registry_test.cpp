@@ -173,6 +173,48 @@ void TestStrictKindIdWhitelist() {
         "PublishHit must enforce the same strict pair whitelist");
 }
 
+void TestHunexNativeInputRequiresAppliedHostAdmission() {
+  FakeMapping mapping;
+  GeometryProviderRegistry registry;
+  registry.Reset(mapping.header());
+  auto hunex = Publication(
+      fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+      fushi_voice_hook::kLookupGeometryProviderIdHunexGge, 17);
+  Check(registry.OfferReady(mapping.header(), hunex.provider_kind,
+                            hunex.provider_id),
+        "HUNEX discovery/readiness must not depend on NativeInputAllowed");
+  Check(!registry.NativeInputAllowed(mapping.header(), hunex.provider_kind,
+                                     hunex.provider_id) &&
+            !registry.PublishHit(mapping.header(), hunex),
+        "HUNEX semantic consume/publication must default deny");
+
+  const uint32_t allow_seq =
+      fushi_voice_hook::PublishLookupGeometryAdmission(
+          mapping.header(), fushi_voice_hook::kLookupGeometryAdmissionAuto,
+          false, true);
+  Check(allow_seq != 0 &&
+            !registry.NativeInputAllowed(mapping.header(), hunex.provider_kind,
+                                         hunex.provider_id),
+        "an un-applied allow request must remain fail-closed");
+  Check(registry.Reconcile(mapping.header()) &&
+            mapping.header()->lookup_geometry_admission_applied_seq ==
+                allow_seq &&
+            registry.NativeInputAllowed(mapping.header(), hunex.provider_kind,
+                                        hunex.provider_id) &&
+            registry.PublishHit(mapping.header(), hunex),
+        "applied allow plus exact active HUNEX must admit one native hit");
+
+  const uint32_t deny_seq =
+      fushi_voice_hook::PublishLookupGeometryAdmission(
+          mapping.header(), fushi_voice_hook::kLookupGeometryAdmissionAuto,
+          false, false);
+  Check(deny_seq > allow_seq &&
+            !registry.NativeInputAllowed(mapping.header(), hunex.provider_kind,
+                                         hunex.provider_id) &&
+            !registry.PublishHit(mapping.header(), hunex),
+        "publishing deny must close consumption before its ack is observed");
+}
+
 void TestPriorityAndTransactionFencedRetire() {
   FakeMapping mapping;
   GeometryProviderRegistry registry;
@@ -513,6 +555,7 @@ void TestNativePreemptionRevokesAttachedOwnership() {
 int main() {
   TestCompletePublicationAndGenerationFence();
   TestStrictKindIdWhitelist();
+  TestHunexNativeInputRequiresAppliedHostAdmission();
   TestPriorityAndTransactionFencedRetire();
   TestFailClosedShapesAndUtf16Span();
   TestDisableRetiresOnlyAfterNeutralTail();

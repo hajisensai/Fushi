@@ -5,38 +5,46 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   late String js;
   late String css;
-  late String html;
 
   setUpAll(() {
     js = File('assets/popup/popup.js').readAsStringSync();
     css = File('assets/popup/popup.css').readAsStringSync();
-    html = File('assets/popup/popup.html').readAsStringSync();
   });
 
   test('变形说明使用正常查词卡片标题与表面', () {
-    expect(html, contains('class="overlay-title"'));
+    // 浮层已不再是 popup.html 里的静态 `.overlay`，改由 popup.js 现建
+    // （`.grammar-tooltip` + `-title` / `-body` 两个子节点）。判据跟着搬到 JS 与
+    // 新的 CSS 规则上，语义不变：仍然要求「变形名当标题」+「不透明主题表面」+
+    // 「不是贴底整宽 bottom sheet」。
     expect(
       js,
-      contains("if (title) title.textContent = element.textContent || '';"),
-      reason: '变形名称必须作为说明弹窗标题，不能只剩一块无标题正文',
+      contains("className: 'grammar-tooltip-title'"),
+      reason: '浮层必须有独立标题节点，不能只剩一块无标题正文',
+    );
+    expect(
+      js,
+      contains(
+        "if (titleEl) titleEl.textContent = pinned ? (element.textContent || '') : '';",
+      ),
+      reason: '变形名称必须作为钉住态说明的标题',
     );
 
-    final RegExpMatch? overlay = RegExp(
-      r'\.overlay\s*\{([^}]*)\}',
+    final RegExpMatch? tooltip = RegExp(
+      r'\.grammar-tooltip\s*\{([^}]*)\}',
     ).firstMatch(css);
-    expect(overlay, isNotNull);
-    final String rule = overlay!.group(1)!;
+    expect(tooltip, isNotNull);
+    final String rule = tooltip!.group(1)!;
     expect(
       rule,
-      contains('inset: 8px;'),
-      reason: '说明弹窗应是四边留白的查词卡片，不能退回贴底整宽 bottom sheet',
+      contains('background: var(--surface-container-high);'),
+      reason: '说明浮层必须使用不透明主题表面（BUG-2037：半透明会透出底下正文）',
     );
+    expect(rule, contains('border-radius: 8px;'));
     expect(
       rule,
-      contains('background: var(--background-color);'),
-      reason: '说明弹窗必须使用正常查词的不透明主题表面',
+      contains('position: fixed;'),
+      reason: '浮层按锚点定位，不能退回贴底整宽 bottom sheet',
     );
-    expect(rule, contains('border-radius: 10px;'));
     expect(rule, isNot(contains('bottom: 0;')));
     expect(rule, isNot(contains('width: 100%;')));
   });
@@ -50,7 +58,6 @@ void main() {
     expect(renderStart, greaterThanOrEqualTo(0));
     expect(renderBodyEnd, greaterThan(renderStart));
     final String renderPreamble = js.substring(renderStart, renderBodyEnd);
-    expect(renderPreamble, contains('closeOverlay();'));
     expect(renderPreamble, contains('hideGrammarTooltip();'));
 
     final int reuseStart = js.indexOf(
@@ -60,14 +67,20 @@ void main() {
     expect(reuseStart, greaterThanOrEqualTo(0));
     expect(reuseEnd, greaterThan(reuseStart));
     final String reusePreamble = js.substring(reuseStart, reuseEnd);
-    expect(reusePreamble, contains('closeOverlay();'));
     expect(reusePreamble, contains('hideGrammarTooltip();'));
 
-    final int closeStart = js.indexOf('function closeOverlay()');
-    final int closeEnd = js.indexOf('/* 词形变化标签的语法说明浮层', closeStart);
+    final int closeStart = js.indexOf('function hideGrammarTooltip()');
+    expect(closeStart, greaterThanOrEqualTo(0));
+    final int closeEnd = js.indexOf('function createFuriganaSegment', closeStart);
+    expect(closeEnd, greaterThan(closeStart));
     final String closeBody = js.substring(closeStart, closeEnd);
-    expect(closeBody, contains("overlay.style.display = 'none';"));
-    expect(closeBody, contains("if (title) title.textContent = '';"));
-    expect(closeBody, contains("if (content) content.textContent = '';"));
+    expect(closeBody, contains("tooltip.style.display = 'none';"));
+    expect(closeBody, contains("if (titleEl) titleEl.textContent = '';"));
+    expect(closeBody, contains("if (bodyEl) bodyEl.textContent = '';"));
+    expect(
+      closeBody,
+      contains('_grammarPinnedAnchor = null;'),
+      reason: '收起必须一并解除钉住锚点，否则下次点同一枚标签 toggle 判成「没钉住」',
+    );
   });
 }

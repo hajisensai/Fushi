@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/media/audiobook/audiobook_material_library_dialog.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -28,6 +29,23 @@ SettingsDestination buildListeningDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel
                   .setAudiobookBackgroundPlay(value: value);
+              settingsContext.refresh();
+            },
+          ),
+          // 有声书素材库：按作品身份命名的字幕/正文目录。下载完成后据此配齐
+          // 「正文 + 字幕 + 音频」，配不齐时由用户在导入框里手动补。
+          SettingsActionItem(
+            id: 'listening.audiobook_material_library',
+            title: t.audiobook_material_library,
+            subtitle: t.audiobook_material_library_hint,
+            icon: Icons.library_books_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              await showAppDialog<void>(
+                context: settingsContext.context,
+                builder: (_) => AudiobookMaterialLibraryDialog(
+                  appModel: settingsContext.appModel,
+                ),
+              );
               settingsContext.refresh();
             },
           ),

@@ -11,8 +11,12 @@
 //   4. runner 的失败是编码在应答里的 error token，不是异常——不许被吞成"成功"。
 //
 // 坐标域纪律（错了就是卡片乱跑）：glyph/view/anchor 要么全在 client physical px，
-// 要么全在 primaryLayer px。runner 对前者强制 view/client 1:1 并 ClientToScreen，后者
-// 走 in-process presenter；design/layout-local 没唯一 transform 时必须丢弃。
+// 要么全在 primaryLayer px。runner 的直连覆盖窗对两者用**同一套**映射——把 view 等比
+// 缩放并居中到游戏客户区，再 ClientToScreen；前者 view 即客户区，scale 恒为 1、信箱边
+// 为 0，映射退化成恒等变换，后者（目前只有 KiriKiri）才真正发生缩放。卡片本身**不随
+// 画布缩放**：它保持自身物理像素，贴附以字形矩形为基准在屏幕空间重排。
+// design/layout-local 没唯一 transform 时必须丢弃；新增该域的适配器会被
+// native/galgame_hook/tests/adapter_structure_test.py 的坐标域守卫拦下。
 
 import 'dart:io';
 
@@ -594,17 +598,36 @@ void main() {
           await GalHookTextOverlayChannel.galLookupSetGeometryAdmission(
             mode: GalLookupGeometryAdmissionMode.attachedOnly,
             attachedReady: true,
-            nativeInputReady: false,
+            nativeInputAllowed: false,
           );
       expect(calls.single.method, 'galLookupSetGeometryAdmission');
       expect(calls.single.arguments, <String, Object?>{
         'mode': 3,
         'attachedReady': true,
-        'nativeInputReady': false,
+        'nativeInputAllowed': false,
       });
       expect(result.ok, isTrue);
       expect(result.requestSeq, 7);
       expect(result.appliedSeq, 6, reason: 'down/up/tail 未排空时允许 ack 暂时落后');
+    });
+
+    test('NativeInputAllowed 复用 admission request/applied ack', () async {
+      mockRunner((_) => <String, Object?>{'requestSeq': 9, 'appliedSeq': 8});
+      final GalLookupCallResult result =
+          await GalHookTextOverlayChannel.galLookupSetGeometryAdmission(
+            mode: GalLookupGeometryAdmissionMode.nativeOnly,
+            attachedReady: false,
+            nativeInputAllowed: true,
+          );
+      expect(calls.single.method, 'galLookupSetGeometryAdmission');
+      expect(calls.single.arguments, <String, Object?>{
+        'mode': 2,
+        'attachedReady': false,
+        'nativeInputAllowed': true,
+      });
+      expect(result.ok, isTrue);
+      expect(result.requestSeq, 9);
+      expect(result.appliedSeq, 8);
     });
 
     test('galLookupPresent 送出 anchor / 卡片 / 游戏视口，并识别 direct surface', () async {
@@ -628,6 +651,10 @@ void main() {
             cardHeight: 320,
             viewWidth: hit.viewW,
             viewHeight: hit.viewH,
+            glyphX: hit.glyphX,
+            glyphY: hit.glyphY,
+            glyphW: hit.glyphW,
+            glyphH: hit.glyphH,
           );
       expect(calls.single.method, 'galLookupPresent');
       expect(calls.single.arguments, <String, Object?>{
@@ -640,6 +667,12 @@ void main() {
         'cardHeight': 320,
         'viewWidth': 1280,
         'viewHeight': 720,
+        // 字形矩形必须原样过线：直连覆盖窗要靠它在屏幕空间贴附卡片，丢了就退回按
+        // 画布尺寸排的 anchor，放大运行时卡片会飘离命中的字。
+        'glyphX': hit.glyphX,
+        'glyphY': hit.glyphY,
+        'glyphW': hit.glyphW,
+        'glyphH': hit.glyphH,
       });
       expect(result.ok, isTrue);
       expect(result.width, 480);
@@ -668,6 +701,10 @@ void main() {
             cardHeight: 320,
             viewWidth: 1280,
             viewHeight: 720,
+            glyphX: 0,
+            glyphY: 0,
+            glyphW: 24,
+            glyphH: 24,
           );
       expect(result.ok, isFalse);
       expect(result.error, 'lookup_region_missing');
@@ -818,10 +855,15 @@ void main() {
       expect(reader, contains('st.lookup_geometry_admission_mode_desired'));
       expect(
         reader,
-        contains('lookup_geometry_native_input_ready_desired'),
+        contains('lookup_native_input_allowed_desired'),
         reason: '原生点击授权必须随 mapping 身份单独保存并受成功发布约束',
       );
       expect(reader, contains('PublishLookupGeometryAdmission('));
+      expect(
+        reader,
+        isNot(contains('PublishLookupNativeInputAllowed(')),
+        reason: 'admission 字只许有一个发布入口；两个入口=两份台账，谁后写谁赢',
+      );
       expect(reader, contains('if (st.lookup_enabled_desired)'));
     });
 
@@ -834,10 +876,12 @@ void main() {
       );
       final GalIngameLookupController controller =
           GalIngameLookupController.test();
+      // 允许位的所有者是 setProviderAdmission；setGeometryAdmission 不再收第四参。
+      await controller.setProviderAdmission(true);
+      calls.clear();
       final GalLookupCallResult result = await controller.setGeometryAdmission(
         GalLookupGeometryAdmissionMode.auto,
         attachedReady: true,
-        nativeInputReady: true,
       );
       expect(result.ok, isTrue);
       expect(
@@ -845,7 +889,7 @@ void main() {
         GalLookupGeometryAdmissionMode.auto,
       );
       expect(controller.debugGeometryAttachedReady, isTrue);
-      expect(controller.debugGeometryNativeInputReady, isTrue);
+      expect(controller.debugGeometryNativeInputAllowed, isTrue);
       expect(calls, hasLength(1));
       expect(calls.single.method, 'galLookupSetGeometryAdmission');
       expect(
@@ -885,8 +929,95 @@ void main() {
         expect(lookupRuns, 0);
 
         await controller.setProviderAdmission(true);
+        expect(
+          calls.where(
+            (MethodCall call) =>
+                call.method == 'galLookupSetGeometryAdmission' &&
+                (call.arguments
+                        as Map<Object?, Object?>)['nativeInputAllowed'] ==
+                    true,
+          ),
+          hasLength(1),
+          reason: 'local admission 必须先打开，再发布 native allow request',
+        );
         await controller.handleHit(_hit(seq: 72));
         expect(lookupRuns, 1);
+      } finally {
+        await controller.stopForTesting();
+      }
+    });
+
+    test('NativeInputAllowed channel 异常保留同值重试与双向顺序', () async {
+      int enableAttempts = 0;
+      int disableAttempts = 0;
+      late GalIngameLookupController controller;
+      mockRunner((MethodCall call) {
+        if (call.method != 'galLookupSetGeometryAdmission') {
+          return <String, Object?>{};
+        }
+        final bool allowed =
+            (call.arguments
+                    as Map<Object?, Object?>)['nativeInputAllowed']!
+                as bool;
+        expect(
+          controller.debugProviderAdmission,
+          isTrue,
+          reason: allowed
+              ? 'enable 必须先开 local receive gate 再请求 native allow'
+              : 'disable 必须在 local gate 仍开着时先请求 native deny',
+        );
+        if (allowed) {
+          enableAttempts++;
+          if (enableAttempts == 1) {
+            throw PlatformException(code: 'transient-enable');
+          }
+        } else {
+          disableAttempts++;
+          if (disableAttempts == 1) {
+            throw PlatformException(code: 'transient-disable');
+          }
+        }
+        return <String, Object?>{
+          'requestSeq': enableAttempts + disableAttempts,
+          'appliedSeq': enableAttempts + disableAttempts,
+        };
+      });
+      controller = GalIngameLookupController.test(
+        preferenceReader: (String key, {required Object? defaultValue}) =>
+            key == GalIngameLookupController.enabledPreferenceKey
+            ? true
+            : defaultValue,
+      );
+      try {
+        await controller.start(appModel: AppModel(testPlatformServices()));
+        await controller.setSessionActive(true);
+
+        await controller.setProviderAdmission(true);
+        expect(controller.debugProviderAdmission, isTrue);
+        expect(controller.debugProviderAdmissionDesired, isTrue);
+        expect(controller.debugPushedProviderAdmission, isNull);
+        expect(controller.debugProviderAdmissionPushPending, isTrue);
+
+        await controller.setProviderAdmission(true);
+        expect(enableAttempts, 2, reason: '同值 enable 必须重试未知 delivery');
+        expect(controller.debugPushedProviderAdmission, isTrue);
+        expect(controller.debugProviderAdmissionPushPending, isFalse);
+
+        await controller.setProviderAdmission(false);
+        expect(
+          controller.debugProviderAdmission,
+          isTrue,
+          reason: 'native deny 未确认时不可让 native 吞点击、Dart 丢 hit',
+        );
+        expect(controller.debugProviderAdmissionDesired, isFalse);
+        expect(controller.debugPushedProviderAdmission, isNull);
+        expect(controller.debugProviderAdmissionPushPending, isTrue);
+
+        await controller.setProviderAdmission(false);
+        expect(disableAttempts, 2, reason: '同值 disable 必须重试未知 delivery');
+        expect(controller.debugProviderAdmission, isFalse);
+        expect(controller.debugPushedProviderAdmission, isFalse);
+        expect(controller.debugProviderAdmissionPushPending, isFalse);
       } finally {
         await controller.stopForTesting();
       }
@@ -938,6 +1069,7 @@ void main() {
       try {
         await controller.start(appModel: AppModel(testPlatformServices()));
         await controller.setSessionActive(true);
+        await controller.setProviderAdmission(true);
         final GalLookupHit hit = _hit(seq: 41, line: '同一句台词');
         await controller.handleHit(hit);
 
@@ -1003,6 +1135,10 @@ void main() {
           cardHeight: 320,
           viewWidth: 1280,
           viewHeight: 720,
+          glyphX: 0,
+          glyphY: 0,
+          glyphW: 24,
+          glyphH: 24,
         )).error,
         'unsupported_platform',
       );
