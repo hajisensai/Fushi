@@ -66,21 +66,52 @@ void main() {
 
   group('BUG-2109 守卫：收尾必须挂在启动必经路径上', () {
     final File appModel = File('lib/src/models/app_model.dart');
+    final File controller =
+        File('lib/src/onboarding/recommended_pack_download_controller.dart');
     final File wizard =
         File('lib/src/pages/implementations/onboarding_wizard_page.dart');
 
-    test('AppModel 初始化持有 cleanupIfImported 调用', () {
+    test('AppModel 初始化持有包目录收尾调用', () {
       expect(appModel.existsSync(), isTrue, reason: '守卫锚点文件不在了，先修锚点再改断言');
       // 布尔断言而非 contains matcher：后者失败时会把整份 app_model.dart
       // （5000+ 行）打进失败信息，淹没掉 reason。
+      //
+      // 收尾**不再**由 AppModel 直接调 cleanupIfImported：它现在走 controller 的
+      // prepareDiskState()（删残包 + 搬旧命名半截文件 + 对齐下载阶段三件一起做，
+      // 且不能挂进 `_guardInitIo` 那批 12s 硬超时的启动关键 IO —— 删 9.5 GB 超时
+      // 就把启动干成错误屏）。所以判据是**两段链**，不是单点字面量：
+      //   ① AppModel 初始化里调了 prepareDiskState()
+      //   ② prepareDiskState 的方法体里确实做了 cleanupIfImported
+      // 少断言任一段，「调用还在但里面已经不删了」这种退化就漏过去了。
       expect(
-        appModel
-            .readAsStringSync()
-            .contains('RecommendedPackDownloader.cleanupIfImported('),
+        containsCodeLine(
+          appModel.readAsStringSync(),
+          'recommendedPackDownloadController',
+        ),
         isTrue,
         reason: '推荐包收尾删除必须挂在启动必经路径（AppModel 初始化）上；'
             '任何「只在某个页面打开时才清理」的挂法都会被 onboarding_completed '
             '在导入时被整层替换成 true 而永不执行',
+      );
+      expect(
+        containsCodeLine(appModel.readAsStringSync(), '.prepareDiskState()'),
+        isTrue,
+        reason: '包目录收尾（含 cleanupIfImported）由 prepareDiskState 承担，'
+            'AppModel 初始化必须调它',
+      );
+    });
+
+    test('prepareDiskState 里确实做了收尾删除（链条第二段）', () {
+      expect(controller.existsSync(), isTrue, reason: '守卫锚点文件不在了，先修锚点再改断言');
+      final String body = methodBody(
+        controller.readAsStringSync(),
+        'Future<void> prepareDiskState() async {',
+      );
+      expect(
+        containsCodeLine(body, 'RecommendedPackDownloader.cleanupIfImported('),
+        isTrue,
+        reason: 'prepareDiskState 是启动路径上唯一的收尾入口；它不删，'
+            '9.5 GB 就永久留在盘上',
       );
     });
 
