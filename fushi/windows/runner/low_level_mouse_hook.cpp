@@ -188,6 +188,18 @@ constexpr SampledInputShieldContract kHunexGgeSampledInputShieldContract = {
     fushi_voice_hook::kHunexGgeSampledInputShieldTailAckProperty,
 };
 
+// smash/fzmedia swallows the click in a window-procedure subclass; there is
+// no sampled low bit to drain, so the contract has no tail handshake.
+constexpr SampledInputShieldContract kSmashFzmediaSampledInputShieldContract = {
+    fushi_voice_hook::kSmashFzmediaSampledInputShieldRequiredProperty,
+    fushi_voice_hook::kSmashFzmediaSampledInputShieldRequiredValue,
+    fushi_voice_hook::kSmashFzmediaSampledInputShieldReadyProperty,
+    fushi_voice_hook::kSmashFzmediaSampledInputShieldReadyValue,
+    fushi_voice_hook::kSmashFzmediaSampledInputShieldWindowProperty,
+    nullptr,
+    nullptr,
+};
+
 std::atomic<const SampledInputShieldContract*>
     g_direct_input_shield_contract{nullptr};
 std::atomic<uint32_t> g_direct_input_shield_tail_generation{0};
@@ -383,10 +395,13 @@ const SampledInputShieldContract* SelectSampledInputShieldContract(
       game, kLeafAquaplusSampledInputShieldContract);
   const bool hunex_gge = IsSampledInputShieldContractDeclared(
       game, kHunexGgeSampledInputShieldContract);
+  const bool smash_fzmedia = IsSampledInputShieldContractDeclared(
+      game, kSmashFzmediaSampledInputShieldContract);
   const uint32_t declared_count = static_cast<uint32_t>(sgre) +
                                   static_cast<uint32_t>(siglus) +
                                   static_cast<uint32_t>(leaf_aquaplus) +
-                                  static_cast<uint32_t>(hunex_gge);
+                                  static_cast<uint32_t>(hunex_gge) +
+                                  static_cast<uint32_t>(smash_fzmedia);
   if (any_declared != nullptr) *any_declared = declared_count != 0;
   // Multiple simultaneous declarations mean the target identity is
   // internally inconsistent. Never choose one arbitrarily: every injected ABI
@@ -394,8 +409,9 @@ const SampledInputShieldContract* SelectSampledInputShieldContract(
   if (declared_count != 1) return nullptr;
   if (sgre) return &kSgreSampledInputShieldContract;
   if (siglus) return &kSiglusSampledInputShieldContract;
-  return leaf_aquaplus ? &kLeafAquaplusSampledInputShieldContract
-                       : &kHunexGgeSampledInputShieldContract;
+  if (leaf_aquaplus) return &kLeafAquaplusSampledInputShieldContract;
+  return hunex_gge ? &kHunexGgeSampledInputShieldContract
+                   : &kSmashFzmediaSampledInputShieldContract;
 }
 
 bool HasSampledInputTailHandshake(

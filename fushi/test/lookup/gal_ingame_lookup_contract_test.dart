@@ -299,9 +299,11 @@ void main() {
     test('production provider whitelist matches native kind/id pairs', () {
       expect(isGalLookupProductionProviderPair(1, 1), isTrue);
       expect(isGalLookupProductionProviderPair(2, 14), isTrue);
+      expect(isGalLookupProductionProviderPair(2, 15), isTrue);
       expect(isGalLookupProductionProviderPair(3, 10), isTrue);
       expect(isGalLookupProductionProviderPair(1, 3), isFalse);
       expect(isGalLookupProductionProviderPair(2, 1), isFalse);
+      expect(isGalLookupProductionProviderPair(1, 15), isFalse);
       expect(isGalLookupProductionProviderPair(3, 11), isFalse);
     });
 
@@ -1146,8 +1148,7 @@ void main() {
           return <String, Object?>{};
         }
         final bool allowed =
-            (call.arguments
-                    as Map<Object?, Object?>)['nativeInputAllowed']!
+            (call.arguments as Map<Object?, Object?>)['nativeInputAllowed']!
                 as bool;
         expect(
           controller.debugProviderAdmission,
