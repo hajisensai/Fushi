@@ -50,8 +50,8 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
   - 🔴 **别靠脑子想「相邻功能」是哪些，机器能算**：改了 `fushi/lib/**` 时用
     `dart run tool/tests_for_changes.dart --include-dart --explain <改的文件…>` 反查
     「谁在源码里读这个文件」。**`--include-dart` 不加就恒为空**——工具默认把 Dart 树的
-    改动整条过滤掉（`isDefaultBatchCoveredChange`，理由是「整批 37 条 + 定向测试兜底」），
-    而**点名单个生产文件的守卫既不在那 37 条里、也不按功能域取名**，正好落在两道门的缝里。
+    改动整条过滤掉（`isDefaultBatchCoveredChange`，理由是「整批 51 条 + 定向测试兜底」），
+    而**点名单个生产文件的守卫既不在那 51 条里、也不按功能域取名**，正好落在两道门的缝里。
     实测漏网：PR#764 收口弹窗复制入口，`test/dictionary/popup_touch_copy_actionmode_guard_test.dart`
     只被 `test/lookup` 的定向测试擦肩而过，红直接进了 develop（TODO-2745）。
 - **`flutter analyze` 全量在 push 前必跑**（含 test 目录）——它本身只要秒级~1 分钟，而 CI 把 warning 当致命，省这一步只会在 CI 上浪费一轮。
@@ -125,7 +125,7 @@ Get-CimInstance Win32_Process |
 
 **只枚举某个子树**的同样不进（`lib/src/sync` 的空 catch / PIN / TLS 三条、`lib/src/settings` 的旧 pref key、5 个媒体页根的焦点所有权……）：改动落在那个子树时，定向测试本来就会挑到它。
 
-### 清单（37 条，2026-08-02 反向枚举全量得出；TODO-2707 补入三份新语料守卫；BUG-1498 补入出站装配守卫；BUG-2064 补入分享入口守卫）
+### 清单（51 条，2026-08-02 反向枚举全量得出；TODO-2707 补入三份新语料守卫；BUG-1498 补入出站装配守卫；BUG-2064 补入分享入口守卫；2026-09-03 反向枚举复核补入 14 条）
 
 | 测试 | 扫描根 | 守什么 |
 |---|---|---|
@@ -166,8 +166,22 @@ Get-CimInstance Win32_Process |
 | `test/sync/sync_settings_schema_source_corpus_test.dart` | `sync_settings_schema/` part 目录枚举 | 同上，同步设置 schema 语料 |
 | `test/tools/outbound_http_discipline_guard_test.dart` | `fushi/lib` + 6 个 `packages/*/lib` | 裸 `HttpClient(`/`http.Client(`/`IOClient(`/`Dio(` 必须经统一装配点，例外须登记（BUG-1498） |
 | `test/utils/share_entry_point_guard_test.dart` | `lib` 全树 | 系统分享只能走 `FushiShare` 入口，裸 `Share.share`/`SharePlus*` 会丢 iOS popover 锚点（BUG-2064） |
+| `test/dictionary/parked_realm_host_registration_guard_test.dart` | `lib` 全树 | 每个建 `DictionaryPopupController` 的宿主都要登记停驻 realm（自带 `hosts >= 7` 哨兵） |
+| `test/lookup/popup_static_revision_dedup_guard_test.dart` | `lib` 全树 | 每个 `buildStackRenderScript` 调用方必须 commit 版本并接 `staticSettingsRequired` 回补 |
+| `test/models/preference_keys_guard_test.dart` | `lib` + `../packages/*/lib` | `getPref*`/`setPref*` 的字面量键必须在 `kKnownPreferenceKeys` 里 |
+| `test/pages/legacy_video_scrape_surface_guard_test.dart` | `lib` 全树 | legacy 在线刮削（TMDB 直连 / 候选链 / 弹窗）不得复活 |
+| `test/pages/library_view_labels_unique_test.dart` | `lib` 全树 | 库页壳的视图标签全仓唯一（新壳自动入网） |
+| `test/pages/open_in_anki_wiring_static_test.dart` | `lib` 全树 + `packages/fushi_anki/lib` | 「按词打开 Anki」只有登记的三条车道，禁第二处自制反查拼装（BUG-2051） |
+| `test/shortcuts/video_pointer_channel_reachability_test.dart` | `lib` 全树 | 视频指针通道的每条腿都得有真宿主接住（两处 `expectScanScale`） |
+| `test/stats/study_char_caliber_guard_test.dart` | `lib` + `../packages/*/lib` | 裸 `.runes/.characters.length` 计字口径必须登记 |
+| `test/tools/epub_chapter_parse_entry_guard_test.dart` | `lib` + `../packages/*/lib` | EPUB 章节解析只有单一入口 |
+| `test/tools/fushi_rename_guard_test.dart` | `lib` + 6 个 `packages/*/lib`（另加路径形态扫描根） | 旧代号 `Hibiki` 在代码位零残留 + 白名单无过期豁免 |
+| `test/tools/outbound_user_agent_guard_test.dart` | `lib` 全树 | 对外 UA 不得再报旧名（本次补入 `expectScanScale`） |
+| `test/tools/statistics_write_convergence_guard_test.dart` | `lib` 全树 | 统计写入口收敛，legacy 四表禁直写 |
+| `test/tools/tests_for_changes_guard_test.dart` | `test/` 全树 + 全仓路径索引 | 「按触发条件加跑」的推导规则本身：索引规模 + 逐树下界 + 声明 glob 有效 |
+| `test/torrent/download_http_client_proxy_test.dart` | `lib` + 4 个 `packages/*/lib` | 下载链路的 HttpClient 必须走统一代理装配 |
 
-一条命令跑完，**当前基线 256 tests**（2026-09-03，本条守卫 2 例并入后实测；上一基线 250）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
+一条命令跑完，**当前基线 360 tests**（2026-09-03 反向枚举复核后实测，51 条 ~62 秒；上一基线 256 / 37 条）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
 
 **N 的演进链要留着，别只写当前值**——「N 应该是多少」本身就是判空转的信号，只写当前值就丢掉了「它为什么变」：
 
@@ -179,7 +193,8 @@ Get-CimInstance Win32_Process |
 | 227 | 35 | 期间合入的 PR 又补了 2 条（这一格是**事后补记**：`develop` 上实测 227，没人在改动那刻更新这张表——N 的演进链只有当场记才准） |
 | 239 | 35 | BUG-1489 给 `media_kind_persistence_guard` 补冻结迁移登记出口 + 10 条合成语料自校验 + 2 条登记自校验（3→15） |
 | 250 | 36 | BUG-1498 新增 `outbound_http_discipline_guard`（11 例：登记制 + 规模哨兵 + 陈旧检测 + 总数常量 + 5 组合成语料自校验） |
-| **256** | **37** | BUG-2064 新增 `share_entry_point_guard`（2 例：入口唯一性 + 锚点双路径）。**+6 里只有 +2 是本条**——同一棵树上先跑旧的 36 条实测 254，250→254 的 +4 来自这期间合入的其它改动。这一格就是「N 变了要能说出是哪一行变的」的样例：不实测旧清单就会把 +6 整个记到新守卫头上（**当前基线**） |
+| 256 | 37 | BUG-2064 新增 `share_entry_point_guard`（2 例：入口唯一性 + 锚点双路径）。**+6 里只有 +2 是本条**——同一棵树上先跑旧的 36 条实测 254，250→254 的 +4 来自这期间合入的其它改动。这一格就是「N 变了要能说出是哪一行变的」的样例：不实测旧清单就会把 +6 整个记到新守卫头上 |
+| **360** | **51** | 2026-09-03 反向枚举复核（`develop@6441344d66`）：清单已过期，14 条符合判据的守卫从未被登记。**+104 的拆解**：先在同一棵树上跑旧的 37 条实测 **257**，256→257 的 **+1** 是期间漂移——PR#1152（`599bb36e86`）给 `test/pages/lookup_overlay_dialog_gate_guard_test.dart` 加了一条「恒不可见不动点真的解析出了停驻层」，4→5；剩下的 **+103** 全部来自新登记的 14 条，其中 **102 是它们本来就有的用例**、**1 是本次给 `legacy_video_scrape_surface_guard` 补的扫描规模哨兵**（`outbound_user_agent_guard` 的哨兵是并进既有用例的内联断言，不产生新用例）（**当前基线**） |
 
 ⚠️ **N 变了不一定是坏事，但必须能说出是哪一行变的**；反过来，**N 没变也不一定是漏跑**——见下面「判 N 之前先问：新增用例落在哪一批里」。
 
@@ -209,7 +224,21 @@ cd fushi && dart run tool/flutter_test_failures.dart --no-pub \
   test/pages/video_fushi_page_source_corpus_test.dart \
   test/sync/sync_settings_schema_source_corpus_test.dart \
   test/tools/outbound_http_discipline_guard_test.dart \
-  test/utils/share_entry_point_guard_test.dart
+  test/utils/share_entry_point_guard_test.dart \
+  test/dictionary/parked_realm_host_registration_guard_test.dart \
+  test/lookup/popup_static_revision_dedup_guard_test.dart \
+  test/models/preference_keys_guard_test.dart \
+  test/pages/legacy_video_scrape_surface_guard_test.dart \
+  test/pages/library_view_labels_unique_test.dart \
+  test/pages/open_in_anki_wiring_static_test.dart \
+  test/shortcuts/video_pointer_channel_reachability_test.dart \
+  test/stats/study_char_caliber_guard_test.dart \
+  test/tools/epub_chapter_parse_entry_guard_test.dart \
+  test/tools/fushi_rename_guard_test.dart \
+  test/tools/outbound_user_agent_guard_test.dart \
+  test/tools/statistics_write_convergence_guard_test.dart \
+  test/tools/tests_for_changes_guard_test.dart \
+  test/torrent/download_http_client_proxy_test.dart
 ```
 
 ### 清单会过期——怎么重新推导
@@ -228,6 +257,9 @@ comm -12 /tmp/a /tmp/b   # 候选集，再逐个读代码定性
 
 1. **`listSync(` 会被 `dart format` 折行**成 `listSync(\n  recursive: true,\n)`。单行正则 `listSync\(recursive: true\)` 漏掉 `source_guard_adoption_test.dart` 本身——本清单第一版就是这么漏的。要么用多行匹配，要么只 grep `listSync` 裸词再逐个看。（同一个坑也存在于被守的一侧：`test/storage/data_root_migrator_test.dart` 里 `contains('listSync(recursive: true')` 这条断言就抓不到折行写法——**PR#760 已改成折行容忍正则**；例子留在这里不是因为它还没修，而是因为「精确字面量断言被 `dart format` 折行打断」这个形态还会再出现。）
 2. **grep 只能定位不能定性**。命中后必须**读代码**确认扫描根是仓库源码树而不是 `Directory.systemTemp` 临时目录——63 个候选里超过一半是「在临时目录造文件再遍历」的行为测试。
+3. 🔴 **这条 grep 本身有一个已实测的漏网面：枚举被委托给了共享 helper 的守卫，`listSync` 不在自己文件里**。2026-09-03 复核时，清单里 4 条合并语料守卫（`reader_fushi_page` / `reader_history` / `video_fushi_page` / `sync_settings_schema`）**一条都没进候选集**——它们的目录枚举全在 `expectPartManifestMatchesDisk` 里。也就是说：**候选集是下界，不是全集**；已在清单里的条目**不许**因为「这次 grep 没命中」而被摘掉，摘之前必须去看它调的 helper。反向推导只用来**找漏登记的**，不用来**裁既有的**。
+
+**2026-09-03 复核实测**（`develop@6441344d66`）：候选 97 个，其中 33 个已在清单里（另 4 条走 helper 未进候选）、64 个未登记。逐个读代码定性后 **14 条该进、50 条不该进**。50 条的排除理由分四类，比例大致是：**临时目录行为测试**（`Directory.systemTemp.createTemp*` 造文件再遍历）约 15 条；**native / 资产 / 配置树**（`.github/workflows`、`third_party/`、`native/`、`tools/browser-extension`、`android/app/src/main/res`）约 20 条——它们归下面「按触发条件加跑」那一半，不进本清单；**固定小目录**（`lib/i18n` 的 17 份、`assets/transforms`）约 8 条——新 PR 不会往里加文件，扫描面不生长；**子树枚举 / 点名清单**（`lib/src/sync`、`lib/src/settings`、`lib/src/media/video/discovery`、`_ScanRoot` 常量表）约 7 条，按上面「只枚举某个子树的不进」的既定判据排除。
 
 ### 扫描规模哨兵（TODO-2707 已补完）
 
@@ -236,6 +268,8 @@ TODO-2707（PR#756）已把这条补完：**35 条现在条条有扫描规模哨
 `if (!dir.existsSync()) continue;` 这个早退写法在其中 6 条里仍然留着（`dart_source_no_raw_nul`、`duplicate_policy_naming`、`media_kind_persistence`、`book_format_discipline`、`package_schema_version_literal`、`mime_types`），但**它已经不再等于静默空转**：早退之后哨兵会因为 `scanned` 太小而红。留着早退、由哨兵兜底，比在每个扫描根上各写一遍 `fail` 更少重复。
 
 🔴 **这件事真正的收获不是「修好了什么」，而是「以前无法证明什么」。**变异实测的做法是把 3 条守卫的扫描后缀改成永不匹配：**原判据在零文件扫描下全部保持绿色，只有哨兵响了**。也就是说此前那些「全绿」是真的绿，但**此前没有任何办法把它与「瞎着绿」区分开**。这也正是每次判绿都要自查 `N tests ran` 的 N 有没有偏小的理由——在哨兵补全之前，N 是唯一的空转信号。
+
+**2026-09-03 新登记的 14 条体检结果**：12 条本来就有等价哨兵——4 条走 `expectScanScale`（`video_pointer_channel_reachability` ×2、`study_char_caliber`、`statistics_write_convergence`、`epub_chapter_parse_entry`）、3 条自带计数下界（`preference_keys` 的 `scanned > 100`、`download_http_client_proxy` 的 `scanned > 500`、`tests_for_changes_guard` 的 `index.length >= 1700` + 逐树下界）、5 条走**下游结果哨兵**（`parked_realm` 的 `hosts >= 7`、`popup_static_revision_dedup` 的 `callers` 非空、`library_view_labels_unique` 的 `labelsByFile >= 2`、`open_in_anki_wiring_static` 的「集合等于非空登记表」、`fushi_rename` 的「白名单条目必须仍有命中」——扫描面塌成 0 时它们全会红）。**剩下 2 条是纯禁止型、零哨兵，本次补上**：`legacy_video_scrape_surface`（新增一条独立哨兵用例，并把两个投影收敛到唯一枚举点 `productionDartFiles()`，否则哨兵与判据各扫各的就是假绿形态 ③）、`outbound_user_agent`（在既有用例里内联 `expectScanScale`，与判据共用同一次 `listSync`）。两条都做了变异实测：把唯一枚举点的 `.dart` 改成 `.dartXX`，**9 tests ran / 2 failed**，红的正是两条哨兵（不是零测试执行的假红）。
 
 ### 禁止型断言的盲区：全绿 ≠ 在工作
 
@@ -267,7 +301,7 @@ TODO-2707（PR#756）已把这条补完：**35 条现在条条有扫描规模哨
 
 ## 另一半：按触发条件加跑——**不点名，按树推导**
 
-上面那 37 条扫的是 Dart 源码树。另一半守卫读的是 **native / 资产 / 配置树**：`fushi/windows`、`fushi/android`、`fushi/{ios,macos,linux}`、`packages/*/windows`、`native/`、`tools/browser-extension`、`.github/workflows`、`third_party/`。整批清单抓不到它们，因为它们只在碰对应资产时才可能红。
+上面那 51 条扫的是 Dart 源码树。另一半守卫读的是 **native / 资产 / 配置树**：`fushi/windows`、`fushi/android`、`fushi/{ios,macos,linux}`、`packages/*/windows`、`native/`、`tools/browser-extension`、`.github/workflows`、`third_party/`。整批清单抓不到它们，因为它们只在碰对应资产时才可能红。
 
 ### 这里曾经挂着一份手写的 9 个测试名，它烂了——而且是必然烂的
 
@@ -346,9 +380,9 @@ dart run tool/flutter_test_failures.dart --no-pub \
 
 ⇒ 建议**把签名解析一次性收敛成单一实现**（三个原语共用一份），而不是每个原语各修各的；并给上面每一种形态各写一条**合成语料**的判据自校验（`test/helpers/source_guard_lexer_test.dart` 已经是这个形状）。理由不是洁癖：三次翻车分别落在三个不同的原语上，说明缺陷跟着「谁来解析签名」走，不跟着「谁在用它」走——**修好一个不会连带修好另外两个，这已经被实证三次了**。
 
-### 改共享原语时的门：不是 37 条，是按 import 反查爆炸半径
+### 改共享原语时的门：不是 51 条，是按 import 反查爆炸半径
 
-37 条清单守的是「目录枚举型守卫扫到新文件」，`tests_for_changes.dart` 守的是「改了哪棵树」。共享测试原语两边都漏：它既不是被扫描的生产文件，也不是被守卫用字面量点名的仓库路径——它是被 `import` 进来的。原语坏了，**所有**用它的守卫都可能静默拿错窗口，而它们散布在全仓各功能域，定向测试同样挑不到。
+51 条清单守的是「目录枚举型守卫扫到新文件」，`tests_for_changes.dart` 守的是「改了哪棵树」。共享测试原语两边都漏：它既不是被扫描的生产文件，也不是被守卫用字面量点名的仓库路径——它是被 `import` 进来的。原语坏了，**所有**用它的守卫都可能静默拿错窗口，而它们散布在全仓各功能域，定向测试同样挑不到。
 
 正确的门是按 import 反查，整批跑：
 
@@ -443,7 +477,7 @@ gh api -H "Accept: application/vnd.github.raw" \
 
 这和既有的「grep 只能定位不能定性」是同一个坑的两个面：那条讲**查代码**，这条讲**判测试覆盖**。
 
-**同一个坑的另一面：「加了用例，N 就该变大」也不成立。** 这条只在**新增用例结构上属于被统计的那一批**时才成立。实例：PR#768 给共享原语补了判据自校验用例，但那些用例落在 `test/helpers/source_guard_lexer_test.dart`——一个**非目录枚举型**的新文件，压根不在 37 条清单的扫描面里。⇒ 跑整批时 **N 持平才是正确结果**。
+**同一个坑的另一面：「加了用例，N 就该变大」也不成立。** 这条只在**新增用例结构上属于被统计的那一批**时才成立。实例：PR#768 给共享原语补了判据自校验用例，但那些用例落在 `test/helpers/source_guard_lexer_test.dart`——一个**非目录枚举型**的新文件，压根不在这份清单的扫描面里。⇒ 跑整批时 **N 持平才是正确结果**。
 
 🔴 **判 N 之前必须先问一句：新增用例落在哪一批里？** 不问就会把正确结果当成失败，而这个方向的错误特别危险——它会**反过来逼施工方去改判据凑数字**，把一个本来正确的实现改坏。「N 变了要说得出是哪一行变的」和「N 没变要说得出为什么本来就不该变」，是同一条纪律的两半。
 
