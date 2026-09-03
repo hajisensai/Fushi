@@ -104,6 +104,10 @@ struct SgreLookupCapture {
   uint32_t glyph_count = 0;
   float line_height = 0.0f;
   ULONGLONG captured_tick = 0;
+  // Text-lane seq of the exact line this capture was drawn from (0 = the text
+  // lane did not publish it). The host resolves a lookup hit back to the
+  // occurrence it mines by this seq, so the hit publication must carry it.
+  uint64_t text_seq = 0;
   wchar_t text[kSgreLookupMaxTextUnits] = {};
   fushi_voice_hook::SgreLookupGlyphGeometry glyphs[kSgreLookupMaxGlyphs] = {};
   uint8_t glyph_spaces[kSgreLookupMaxGlyphs] = {};
@@ -147,6 +151,8 @@ uint64_t g_sgre_lookup_active_generation = 0;
 uint64_t g_sgre_lookup_generation_counter = 0;
 ULONGLONG g_sgre_lookup_active_capture_tick = 0;
 uint32_t g_sgre_last_text_units = 0;
+// Text-lane seq of the last published exact line (duplicates keep it).
+uint64_t g_sgre_last_text_seq = 0;
 wchar_t g_sgre_last_text[kSgreLookupMaxTextUnits] = {};
 volatile LONG g_sgre_lookup_structure_state = 0;
 volatile LONG g_sgre_direct_input_structure_state = 0;
@@ -1057,6 +1063,19 @@ SgreLookupCaptureResult CopySgreLookupDrawState(void* text_surface,
   if (text_surface == nullptr || capture == nullptr) {
     return SgreLookupCaptureResult::kNullInput;
   }
+  // Expected line height follows the live render size (design 40 x scale).
+  // The game window is the shield's published window; before it is known the
+  // metrics gate falls back to its self-consistency band.
+  float expected_line_height = 0.0f;
+  {
+    const HWND game =
+        g_sgre_direct_input_game_window.load(std::memory_order_acquire);
+    RECT client = {};
+    if (game != nullptr && IsWindow(game) && GetClientRect(game, &client)) {
+      expected_line_height = fushi_voice_hook::SgreScenarioLineHeightForClient(
+          client.right - client.left, client.bottom - client.top);
+    }
+  }
   __try {
     const auto* object = static_cast<const uint8_t*>(text_surface);
     if (*reinterpret_cast<const void* const*>(object) !=
@@ -1147,7 +1166,8 @@ SgreLookupCaptureResult CopySgreLookupDrawState(void* text_surface,
       previous_x = geometry.x;
     }
     if (!fushi_voice_hook::MatchesSgreScenarioDrawMetrics(
-            line_height, first_glyph_height, has_horizontal_advance)) {
+            line_height, first_glyph_height, has_horizontal_advance,
+            expected_line_height)) {
       return SgreLookupCaptureResult::kSurfaceMetrics;
     }
     capture->text_units = static_cast<uint32_t>(visible_glyphs);
@@ -1189,6 +1209,7 @@ void PublishSgreLookupCaptureSnapshot(const SgreLookupCapture& snapshot) {
   capture->glyph_count = snapshot.glyph_count;
   capture->line_height = snapshot.line_height;
   capture->captured_tick = snapshot.captured_tick;
+  capture->text_seq = snapshot.text_seq;
   if (snapshot.text_units != 0) {
     memcpy(capture->text, snapshot.text,
            static_cast<size_t>(snapshot.text_units) * sizeof(wchar_t));
@@ -1205,16 +1226,21 @@ void ResetSgreExactTextDedup() {
   if (!g_text_cs_ready) return;
   EnterCriticalSection(&g_text_cs);
   g_sgre_last_text_units = 0;
+  g_sgre_last_text_seq = 0;
   memset(g_sgre_last_text, 0, sizeof(g_sgre_last_text));
   LeaveCriticalSection(&g_text_cs);
 }
 
-void PublishSgreExactText(const SgreLookupCapture& snapshot,
-                          void* text_surface) {
+// Publishes the exact line to the text lane (deduplicated against the last
+// published text) and returns the text-lane seq that identifies this line:
+// the fresh seq on a new line, the retained seq on a redraw of the same
+// text, 0 when nothing was published.
+uint64_t PublishSgreExactText(const SgreLookupCapture& snapshot,
+                              void* text_surface) {
   if (!g_capture_enabled || g_header == nullptr || g_text_base == nullptr ||
       !g_text_cs_ready || snapshot.text_units == 0 ||
       snapshot.text_units > kSgreLookupMaxTextUnits) {
-    return;
+    return 0;
   }
 
   // This identity describes the SGRE/wind3d11 scenario renderer ABI, not a
@@ -1250,8 +1276,10 @@ void PublishSgreExactText(const SgreLookupCapture& snapshot,
     if (published != 0) {
       memcpy(g_sgre_last_text, snapshot.text, bytes);
       g_sgre_last_text_units = snapshot.text_units;
+      g_sgre_last_text_seq = published;
     }
   }
+  const uint64_t text_seq = g_sgre_last_text_seq;
   LeaveCriticalSection(&g_text_cs);
 
   g_sgre_text_scenario_surface.store(text_surface,
@@ -1260,6 +1288,7 @@ void PublishSgreExactText(const SgreLookupCapture& snapshot,
   // field name says Luna, but its contract is simply "an exact text producer
   // is active" (Siglus uses it the same way).
   g_header->luna_active = 1;
+  return text_seq;
 }
 
 void CaptureSgreLookupDrawState(void* text_surface) {
@@ -1275,7 +1304,9 @@ void CaptureSgreLookupDrawState(void* text_surface) {
   const SgreLookupCaptureResult capture_result =
       CopySgreLookupDrawState(text_surface, &snapshot);
   if (capture_result == SgreLookupCaptureResult::kOk) {
-    if (text_requested) PublishSgreExactText(snapshot, text_surface);
+    if (text_requested) {
+      snapshot.text_seq = PublishSgreExactText(snapshot, text_surface);
+    }
     if (!lookup_requested) return;
     snapshot.valid = 1;
     snapshot.captured_tick = GetTickCount64();
@@ -1822,11 +1853,13 @@ bool AppendSgreLookupCapture(const SgreLookupCapture& source,
       std::max(destination->line_height, source.line_height);
   destination->captured_tick =
       std::max(destination->captured_tick, source.captured_tick);
+  // The scenario capture carries the text-lane seq; UI runs carry 0.
+  if (source.text_seq != 0) destination->text_seq = source.text_seq;
   destination->valid = 1;
   return true;
 }
 
-bool PublishSgreLookupHit(uint64_t capture_generation,
+bool PublishSgreLookupHit(uint64_t capture_generation, uint64_t text_seq,
                           const std::wstring& line, uint32_t char_index,
                           const fushi_voice_hook::SgreLookupRect& rect,
                           int32_t client_width, int32_t client_height) {
@@ -1848,7 +1881,13 @@ bool PublishSgreLookupHit(uint64_t capture_generation,
   publication.coordinate_space =
       fushi_voice_hook::kLookupCoordinateSpaceClientPhysicalPixels;
   publication.writing_mode = fushi_voice_hook::kLookupWritingModeHorizontal;
-  publication.text_generation = capture_generation;
+  // BUG-2085: the host resolves the mined occurrence by
+  // TexthookerLineEntry.sourceSequence == hit.textGeneration, i.e. the
+  // text-lane seq the exact line was published with. The lookup capture
+  // generation is a different counter and never matched, so every in-game
+  // card mining on SGRE failed closed ("ankiConnect: false").
+  publication.text_generation = fushi_voice_hook::SgreLookupHitTextGeneration(
+      text_seq, capture_generation);
   publication.geometry_generation = capture_generation;
   publication.glyph_x = rect.x;
   publication.glyph_y = rect.y;
@@ -1953,8 +1992,12 @@ bool PublishSgreLookupClickPayload(const SgreLookupClickPayload& payload) {
     return false;
   }
   const std::wstring line(payload.text, payload.text + payload.text_units);
+  // IsSgreLookupPayloadCurrent pins the payload to the active capture's
+  // logical generation, so the active capture's text-lane seq is the seq of
+  // exactly this line.
   if (!IsSgreLookupPayloadCurrent(payload) ||
-      !PublishSgreLookupHit(payload.logical_generation, line,
+      !PublishSgreLookupHit(payload.logical_generation,
+                            g_sgre_lookup_active_capture.text_seq, line,
                             payload.char_index,
                             payload.rect, payload.client_width,
                             payload.client_height)) {
@@ -1965,7 +2008,17 @@ bool PublishSgreLookupClickPayload(const SgreLookupClickPayload& payload) {
   return true;
 }
 
+// 本轮 tick 没有把光标下的字形提交给悬浮高亮，就把高亮清掉——覆盖所有提前 return
+// 的分支（几何退休、查词关闭、盾未就绪、卡片可见、光标不在游戏窗口内……）。
+struct SgreHoverHighlightScope {
+  bool keep = false;
+  ~SgreHoverHighlightScope() {
+    if (!keep) ClearLookupHoverHighlight();
+  }
+};
+
 void ProcessSgreLookupTick() {
+  SgreHoverHighlightScope hover_highlight;
   if (g_stop || g_header == nullptr ||
       !fushi_voice_hook::HasLookupRegion(g_header)) {
     if (g_header != nullptr) {
@@ -2160,14 +2213,70 @@ void ProcessSgreLookupTick() {
   }
 
   const HWND point_window = WindowFromPoint(cursor);
-  const bool game_point =
-      GetForegroundWindow() == game && point_window != nullptr &&
-      (point_window == game || IsChild(game, point_window));
+  // The foreground test is its own fact: BOTH highlight windows are
+  // WS_EX_TOPMOST, so anything that paints without it keeps covering whatever
+  // the user alt-tabbed to. game_point additionally requires the cursor to be
+  // over the game.
+  const bool game_foreground = GetForegroundWindow() == game;
+  const bool game_point = game_foreground && point_window != nullptr &&
+                          (point_window == game || IsChild(game, point_window));
   cursor.x -= client_origin.x;
   cursor.y -= client_origin.y;
   fushi_voice_hook::SgreLookupRect hit_rect;
   const int glyph_index = FindSgreCapturedLookupGlyph(
       active, client_width, client_height, cursor.x, cursor.y, &hit_rect);
+
+  // BUG-2087 — while a card is up, the looked-up term (host's highlight
+  // range on the exact line, UTF-16 units == capture glyph indices) stays
+  // highlighted: union of its glyph cells on the row the term starts on.
+  uint32_t term_start = 0;
+  uint32_t term_len = 0;
+  if (game_foreground && popup_visible &&
+      ReadLookupTermHighlight(&term_start, &term_len) && term_len != 0 &&
+      term_start < active.glyph_count) {
+    const uint32_t term_end = std::min<uint32_t>(
+        active.glyph_count, term_start + term_len);
+    fushi_voice_hook::SgreLookupRect term_rect;
+    bool have_rect = false;
+    const uint16_t term_row = active.glyphs[term_start].line;
+    for (uint32_t index = term_start; index < term_end; ++index) {
+      if (active.glyphs[index].line != term_row) break;
+      fushi_voice_hook::SgreLookupRect cell;
+      if (!SgreLookupRectForCapturedGlyph(active, index, client_width,
+                                          client_height, &cell)) {
+        continue;
+      }
+      if (!have_rect) {
+        term_rect = cell;
+        have_rect = true;
+        continue;
+      }
+      const int32_t right = std::max(term_rect.x + term_rect.width,
+                                     cell.x + cell.width);
+      const int32_t bottom = std::max(term_rect.y + term_rect.height,
+                                      cell.y + cell.height);
+      term_rect.x = std::min(term_rect.x, cell.x);
+      term_rect.y = std::min(term_rect.y, cell.y);
+      term_rect.width = right - term_rect.x;
+      term_rect.height = bottom - term_rect.y;
+    }
+    if (have_rect) {
+      RequestLookupHoverHighlight(client_origin.x + term_rect.x,
+                                  client_origin.y + term_rect.y,
+                                  term_rect.width, term_rect.height);
+      hover_highlight.keep = true;
+    }
+  }
+
+  // BUG-2086 — hover highlight: the glyph under the cursor gets the shared
+  // translucent highlight window while no card is up. hit_rect is in client
+  // px; the highlight window lives in screen space.
+  if (glyph_index >= 0 && game_point && !popup_visible) {
+    RequestLookupHoverHighlight(client_origin.x + hit_rect.x,
+                                client_origin.y + hit_rect.y, hit_rect.width,
+                                hit_rect.height);
+    hover_highlight.keep = true;
+  }
 
   if (submit && glyph_index >= 0 && !click_submitted && !popup_visible &&
       game_point) {

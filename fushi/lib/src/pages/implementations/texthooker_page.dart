@@ -189,6 +189,56 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// [GalHookSessionController.setLineVoiceTrack] 独立取音。列表复用会话已有的音轨
   /// 快照，并保留逐轨试听，让用户先听再定。
   Future<void> _pickLineTrack(TexthookerLineEntry line) async {
+    if (line.audioBackend == 'game_resource') {
+      // 资源模式的行：这句语音是按句从游戏资源直提的，PCM 轨与它无关（能量恒
+      // -1.0、"这句时刻没有声音"）。列 PCM 轨只会被读成「音频没抓到」，所以这里
+      // 只展示本句真正的资源音频并给试听；文案与右侧面板
+      // GalTrackEmptyHint.resourceMode 同一句。
+      final int durationMs = line.audioDurationMs ?? 0;
+      await showAppDialog<void>(
+        context: context,
+        builder: (BuildContext dialogContext) => StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) =>
+              SimpleDialog(
+                title: Text(t.game_line_track_dialog_title),
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+                    child: Text(
+                      t.game_tracks_resource_mode_hint,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  FushiListItem(
+                    leading: const Icon(Icons.audiotrack_outlined),
+                    title: Text(line.audioBackend ?? t.game_track_voice),
+                    subtitle: Text(
+                      <String>[
+                        if (line.audioResourceId != null)
+                          line.audioResourceId!,
+                        if (durationMs > 0)
+                          '${(durationMs / 1000).toStringAsFixed(2)}s',
+                      ].join(' · '),
+                    ),
+                    trailing: FushiIconButton(
+                      icon: _previewingLineId == line.id
+                          ? Icons.stop_circle_outlined
+                          : Icons.play_circle_outline,
+                      tooltip: _previewingLineId == line.id
+                          ? t.game_track_preview_stop
+                          : t.game_line_preview_tooltip,
+                      onTap: () async {
+                        await _toggleLinePreview(line);
+                        if (context.mounted) setDialogState(() {});
+                      },
+                    ),
+                  ),
+                ],
+              ),
+        ),
+      );
+      return;
+    }
     final List<GalAudioTrack> tracks = _session.state.audioTracks;
     if (tracks.isEmpty) {
       FushiToast.show(msg: t.game_no_tracks, severity: ToastSeverity.error);

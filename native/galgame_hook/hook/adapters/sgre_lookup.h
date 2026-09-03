@@ -196,7 +196,40 @@ inline constexpr int32_t kSgreDesignWidth = 1920;
 inline constexpr int32_t kSgreDesignHeight = 1080;
 inline constexpr float kSgreDialogueOriginX = 320.0f;
 inline constexpr float kSgreDialogueOriginY = 830.0f;
-inline constexpr float kSgreScenarioLineHeight = 80.0f;
+// Scenario line/glyph cell in the 1920x1080 design space. The renderer scales
+// its draw units with the render target: 80 at 3840x2160 fullscreen, 40 in a
+// 1920x1080 window, 53.33 at 2560x1440. The historical constant pinned the
+// 4K value (80), so every windowed session failed the metrics gate and the
+// exact text lane, geometry and in-game lookup silently never appeared.
+inline constexpr float kSgreScenarioDesignLineHeight = 40.0f;
+inline constexpr float kSgreScenarioLineHeightTolerance = 1.0f;
+
+// Render scale shared by the metrics gate and the glyph->client conversion:
+// uniform, letterbox-aware (min of both axes). 0 when the client is unknown.
+inline float SgreLookupRenderScale(int32_t client_width,
+                                   int32_t client_height) {
+  if (client_width <= 0 || client_height <= 0) return 0.0f;
+  return std::min(
+      static_cast<float>(client_width) / static_cast<float>(kSgreDesignWidth),
+      static_cast<float>(client_height) /
+          static_cast<float>(kSgreDesignHeight));
+}
+
+// text_generation carried by a hit publication: the text-lane seq the exact
+// line was published with (what the host mines by), falling back to the
+// lookup capture generation only when the text lane never published the line
+// (keeps the hit well-formed; the host then fails closed on mining as before).
+inline uint64_t SgreLookupHitTextGeneration(uint64_t text_seq,
+                                            uint64_t capture_generation) {
+  return text_seq != 0 ? text_seq : capture_generation;
+}
+
+// Expected scenario line height for a client size; 0 when unknown.
+inline float SgreScenarioLineHeightForClient(int32_t client_width,
+                                             int32_t client_height) {
+  return kSgreScenarioDesignLineHeight *
+         SgreLookupRenderScale(client_width, client_height);
+}
 
 struct SgreLookupGlyphGeometry {
   float x = 0.0f;
@@ -292,13 +325,27 @@ inline bool StartsNextSgreLookupLine(float previous_x, float current_x) {
          current_x <= previous_x;
 }
 
+// Scenario-surface metrics gate. The dialogue renderer keeps one square cell:
+// line height == glyph height == design 40 x render scale. [expected_line_height]
+// comes from SgreScenarioLineHeightForClient; <= 0 means the game client size
+// is not known yet (shield not published), in which case only the
+// self-consistency band is checked (design scale 0.5x .. 4x) so the exact text
+// lane still starts before the DirectInput shield commits.
 inline bool MatchesSgreScenarioDrawMetrics(float line_height,
                                            float glyph_height,
-                                           bool has_horizontal_advance) {
-  return std::isfinite(line_height) && std::isfinite(glyph_height) &&
-         std::abs(line_height - kSgreScenarioLineHeight) <= 0.5f &&
-         std::abs(glyph_height - kSgreScenarioLineHeight) <= 0.5f &&
-         has_horizontal_advance;
+                                           bool has_horizontal_advance,
+                                           float expected_line_height) {
+  if (!std::isfinite(line_height) || !std::isfinite(glyph_height) ||
+      !has_horizontal_advance ||
+      std::abs(line_height - glyph_height) > 0.5f) {
+    return false;
+  }
+  if (expected_line_height > 0.0f) {
+    return std::abs(line_height - expected_line_height) <=
+           kSgreScenarioLineHeightTolerance;
+  }
+  return line_height >= kSgreScenarioDesignLineHeight * 0.5f &&
+         line_height <= kSgreScenarioDesignLineHeight * 4.0f;
 }
 
 inline bool IsSaneSgreLookupGlyph(const SgreLookupGlyphGeometry& glyph) {
@@ -316,10 +363,7 @@ inline bool SgreLookupRectForGlyph(const SgreLookupGlyphGeometry& glyph,
       !IsSaneSgreLookupGlyph(glyph)) {
     return false;
   }
-  const float scale = std::min(
-      static_cast<float>(client_width) / static_cast<float>(kSgreDesignWidth),
-      static_cast<float>(client_height) /
-          static_cast<float>(kSgreDesignHeight));
+  const float scale = SgreLookupRenderScale(client_width, client_height);
   const float offset_x =
       (static_cast<float>(client_width) - kSgreDesignWidth * scale) * 0.5f;
   const float offset_y =
