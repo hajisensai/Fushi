@@ -134,13 +134,19 @@ extension _VideoEpisode on _VideoFushiPageState {
     // 原生退全屏，栈仍恒平（[home, 新集页] → 新集页就绪后 [home, 新集页, 新全屏路由]）。
     // 新页若就绪失败 / 中途退出，由它自己释放原生全屏（[_releaseHandedOverNativeFullscreen]）。
     final PageRoute<void>? oldFullscreenRoute = _videoFullscreenRoute;
-    final bool wasFullscreen = (oldFullscreenRoute?.isActive ?? false) ||
-        _ownsHandedOverNativeFullscreen;
     // 捕获 NavigatorState / 本页路由（在 await 前），避免跨 async gap 用 context。
     final NavigatorState navigator = Navigator.of(context);
     final NavigatorState rootNavigator =
         Navigator.of(context, rootNavigator: true);
     final Route<Object?>? currentRoute = ModalRoute.of(context);
+    // 「接管 vs 顶替」与「是否把原生全屏交给新页」收敛进纯函数（真值表单测：
+    // test/media/video/video_episode_start_policy_test.dart）。这里不再手写布尔
+    // 表达式，杜绝「条件被改成恒真/恒假、接管块整体变死代码」这类源码守卫抓不到的回归。
+    final EpisodeSwitchPlan plan = resolveEpisodeSwitchPlan(
+      fullscreenRouteActive: oldFullscreenRoute?.isActive ?? false,
+      ownsHandedOverNativeFullscreen: _ownsHandedOverNativeFullscreen,
+      hasCurrentRoute: currentRoute != null,
+    );
     final int? curPos = _controller?.positionMs;
     if (curPos != null) {
       await _persistPosition(widget.bookUid, curPos);
@@ -160,10 +166,10 @@ extension _VideoEpisode on _VideoFushiPageState {
         playlistCollectionId: widget.playlistCollectionId,
         // BUG-2043：字幕列表随集常驻——换集前开着就带到新页，不再随旧页一起丢。
         initialSubtitleListVisible: _subtitleListVisible.value,
-        initialFullscreen: wasFullscreen,
+        initialFullscreen: plan.handOverNativeFullscreen,
       ),
     );
-    if (!wasFullscreen || currentRoute == null) {
+    if (plan.mode == EpisodeSwitchMode.replace) {
       await navigator.pushReplacement<void, void>(nextRoute);
       return;
     }
@@ -175,7 +181,7 @@ extension _VideoEpisode on _VideoFushiPageState {
     if (oldFullscreenRoute != null && oldFullscreenRoute.isActive) {
       rootNavigator.removeRoute<void>(oldFullscreenRoute);
     }
-    navigator.removeRoute<Object?>(currentRoute);
+    navigator.removeRoute<Object?>(currentRoute!);
   }
 
   /// 剧集列表入口（控制条剧集按钮）。保留 `_showEpisodeList` 作为控制条入口，

@@ -88,7 +88,7 @@ void main() {
       'rootNavigator.removeRoute<void>(oldFullscreenRoute)',
     );
     final int removeSelfIdx = switchBody.indexOf(
-      'navigator.removeRoute<Object?>(currentRoute)',
+      'navigator.removeRoute<Object?>(currentRoute!)',
     );
     expect(
       removeFsIdx,
@@ -121,15 +121,46 @@ void main() {
   });
 
   test('换集把全屏态与字幕列表可见性透传给新页', () {
+    // 决策收敛进纯函数 [resolveEpisodeSwitchPlan]（真值表见
+    // test/media/video/video_episode_start_policy_test.dart）。这里只守「生产路径
+    // 确实消费了它、两个输入都接在真字段上、分支条件没被额外析取项撑成恒真」——
+    // 语义正确性由真值表负责，可达性由「条件必须逐字等于 plan 查询」负责。
     expect(
-      switchBody.contains('wasFullscreen'),
+      switchBody
+          .contains('final EpisodeSwitchPlan plan = resolveEpisodeSwitchPlan('),
       isTrue,
-      reason: '换集应捕获换集前是否全屏（wasFullscreen）',
+      reason: '换集的路由决策必须走纯函数 resolveEpisodeSwitchPlan，不得手写布尔表达式',
     );
     expect(
-      switchBody.contains('initialFullscreen: wasFullscreen'),
+      switchBody.contains(
+        'fullscreenRouteActive: oldFullscreenRoute?.isActive ?? false,',
+      ),
       isTrue,
-      reason: '新页 neutralized 必须收到 initialFullscreen: wasFullscreen，才能重进全屏',
+      reason: 'fullscreenRouteActive 必须接旧全屏路由的真实 isActive（不得写死）',
+    );
+    expect(
+      switchBody.contains(
+        'ownsHandedOverNativeFullscreen: _ownsHandedOverNativeFullscreen,',
+      ),
+      isTrue,
+      reason: '接管来的原生全屏所有权必须参与判定，只看路由会漏掉就绪窗口内连按下一集',
+    );
+    expect(
+      switchBody.contains('hasCurrentRoute: currentRoute != null,'),
+      isTrue,
+      reason: 'hasCurrentRoute 必须接真实 ModalRoute（摘不掉本页就不能走接管）',
+    );
+    // 逐字断言分支条件：插入 `true || ` / `false && ` 让接管块变死代码即转红
+    // （纯函数真值表看不到调用点的条件被撑成恒真）。
+    expect(
+      switchBody.contains('if (plan.mode == EpisodeSwitchMode.replace) {'),
+      isTrue,
+      reason: '顶替分支条件必须逐字等于 plan 查询，不得掺入任何额外析取/合取项',
+    );
+    expect(
+      switchBody.contains('initialFullscreen: plan.handOverNativeFullscreen,'),
+      isTrue,
+      reason: '新页 neutralized 必须收到 plan.handOverNativeFullscreen，才能重进全屏',
     );
     expect(
       switchBody.contains(
@@ -255,20 +286,73 @@ void main() {
       lessThan(200),
       reason: '放弃分支必须紧接着释放原生全屏',
     );
-    // 成功压全屏路由后所有权移交路由。
+    // BUG-2043 P2：所有权只能在**全屏路由真的建出来之后**才翻假。
+    // `_pushNeutralizedVideoFullscreen` 开头有 `_videoFullscreenTransitioning` /
+    // 已全屏两道提前 return；在调用点提前翻假 → 提前 return 时窗口停在「原生全屏
+    // 但栈上无全屏路由」的悬空态，且 dispose 的 release 已成 no-op、退不回去。
+    final int pushDefIdx = fullscreenSrc.indexOf(
+      'Future<void> _pushNeutralizedVideoFullscreen(BuildContext context) async {',
+    );
+    expect(pushDefIdx, isNonNegative,
+        reason: '找不到 _pushNeutralizedVideoFullscreen');
+    final int routeAssignIdx = fullscreenSrc.indexOf(
+      '_videoFullscreenRoute = fullscreenRoute;',
+      pushDefIdx,
+    );
+    expect(routeAssignIdx, isNonNegative, reason: '找不到全屏路由的赋值点');
     final int handIdx = fullscreenSrc.indexOf(
       '_ownsHandedOverNativeFullscreen = false;',
-      giveUpIdx,
+      pushDefIdx,
     );
-    final int pushIdx = fullscreenSrc.indexOf(
-      'unawaited(_pushNeutralizedVideoFullscreen(ctx))',
-      giveUpIdx,
-    );
-    expect(handIdx, isNonNegative);
     expect(
-      pushIdx,
-      greaterThan(handIdx),
-      reason: '压全屏路由前先把所有权翻假（退出改由路由 pop 收口）',
+      handIdx,
+      isNonNegative,
+      reason: '建出全屏路由时必须把接管来的所有权移交路由',
+    );
+    expect(
+      handIdx,
+      lessThan(routeAssignIdx),
+      reason: '所有权翻假必须与 _videoFullscreenRoute 赋值同段（紧挨其前），不得散在别处',
+    );
+    expect(
+      routeAssignIdx - handIdx,
+      lessThan(60),
+      reason: '翻假与路由赋值之间不得插入任何可提前 return 的语句',
+    );
+    // 调用点（_scheduleInitialFullscreenIfNeeded）只在「栈上已有全屏路由」时放手，
+    // 其余一律交给 push 内部——把翻假搬回调用点即转红。
+    final int scheduleIdx = fullscreenSrc.indexOf(
+      'void _scheduleInitialFullscreenIfNeeded()',
+    );
+    expect(scheduleIdx, isNonNegative);
+    final String scheduleBody =
+        fullscreenSrc.substring(scheduleIdx, pushDefIdx);
+    expect(
+      'unawaited(_pushNeutralizedVideoFullscreen(ctx))'
+          .allMatches(scheduleBody)
+          .length,
+      1,
+      reason: '就绪后应经 _pushNeutralizedVideoFullscreen 重进全屏路由（恰一处）',
+    );
+    final int schedHandIdx = scheduleBody.indexOf(
+      '_ownsHandedOverNativeFullscreen = false;',
+    );
+    expect(schedHandIdx, isNonNegative, reason: '已全屏分支仍要把所有权还给路由');
+    final int schedGateIdx = scheduleBody.indexOf('if (isFullscreen(ctx)) {');
+    expect(
+      schedGateIdx,
+      isNonNegative,
+      reason: '调用点放手必须被「栈上已有全屏路由」这道门框住',
+    );
+    expect(
+      schedHandIdx,
+      greaterThan(schedGateIdx),
+      reason: '调用点不得在门外无条件翻假（提前 return 会留下悬空的原生全屏）',
+    );
+    expect(
+      scheduleBody.indexOf('unawaited(_pushNeutralizedVideoFullscreen(ctx))'),
+      greaterThan(schedHandIdx),
+      reason: '已全屏分支应 return，push 只在门外发生',
     );
     // 释放方法幂等且真的退原生全屏。
     final int releaseDefIdx = fullscreenSrc.indexOf(
