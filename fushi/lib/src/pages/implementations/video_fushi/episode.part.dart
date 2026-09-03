@@ -181,6 +181,9 @@ extension _VideoEpisode on _VideoFushiPageState {
     if (oldFullscreenRoute != null && oldFullscreenRoute.isActive) {
       rootNavigator.removeRoute<void>(oldFullscreenRoute);
     }
+    // `!` 安全：走到这里 plan.mode == takeover，而 takeover 蕴含入参
+    // hasCurrentRoute 为真（见 [resolveEpisodeSwitchPlan]——摘不掉本页会漏栈，
+    // 所以拿不到 ModalRoute 时它一律退回 replace 并在上面早退）。
     navigator.removeRoute<Object?>(currentRoute!);
   }
 
