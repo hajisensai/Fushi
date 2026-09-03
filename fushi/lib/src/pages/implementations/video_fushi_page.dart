@@ -3088,10 +3088,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   /// 字幕菜单来源：保留当前视频枚举结果，再只补入「当前视频已持久化」的导入字幕。
+  ///
+  /// BUG-2094：主字幕与副字幕**两条**持久化指针都要补——只被选作副字幕的导入档否则
+  /// 在重开视频后从列表里消失（画面还在显示它）。
   Future<List<SubtitleSource>> _subtitleSourcesForMenu({
     required String videoPath,
     required String? currentSubtitleSource,
     required List<AudioCue> currentCues,
+    required String? currentSecondarySubtitleSource,
+    required List<AudioCue> currentSecondaryCues,
   }) async {
     final List<SubtitleSource> sources = await listAllSubtitleSources(
       videoPath,
@@ -3103,6 +3108,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       bookUid: widget.bookUid,
       currentSubtitleSource: currentSubtitleSource,
       currentCues: currentCues,
+      currentSecondarySubtitleSource: currentSecondarySubtitleSource,
+      currentSecondaryCues: currentSecondaryCues,
     );
   }
 

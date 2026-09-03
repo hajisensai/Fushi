@@ -787,6 +787,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
         videoPath: videoPath,
         currentSubtitleSource: _currentSubtitleSource,
         currentCues: controller.cues,
+        currentSecondarySubtitleSource: _currentSecondarySubtitleSource,
+        currentSecondaryCues: controller.secondaryCues,
       );
     } catch (_) {
       enumerated = null;
